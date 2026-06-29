@@ -692,7 +692,7 @@ class EditorDialog(QDialog):
 
     def __init__(self, frame_path, layout=None, parent=None, current_name=""):
         super().__init__(parent)
-        self.setWindowTitle("Chỉnh mẫu (nền + video + chữ)")
+        self.setWindowTitle("Chỉnh mẫu — TỰ LƯU khi bấm Xong (bản mới)")
         self.resize(940, 820)
         self._next = 1
         self.rows = {}

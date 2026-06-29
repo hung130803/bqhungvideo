@@ -10,6 +10,8 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo Dang mo BQ Hung Video...
+REM Xoa cache .pyc cu de chac chan chay CODE MOI nhat
+for /d /r "app" %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" >nul 2>&1
 ".venv\Scripts\python.exe" main.py
 if errorlevel 1 (
     echo.
