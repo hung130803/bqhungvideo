@@ -67,6 +67,11 @@ class Settings:
     # Bật chấm điểm bằng hình ảnh (1) hay tắt (0)
     USE_VISION = _env("USE_VISION", "1") == "1"
 
+    # CHẾ ĐỘ MÁY YẾU (mặc định BẬT): KHÔNG dùng sức máy/GPU — dồn việc lên mây
+    # (Groq chép lời + AI cắt). Bỏ dò cảnh / phân tích âm thanh / bám khuôn mặt /
+    # chấm điểm bằng hình -> máy yếu vẫn chạy nhanh. Đặt LIGHT_MODE=0 để bật full.
+    LIGHT_MODE = _env("LIGHT_MODE", "1") == "1"
+
     # Whisper
     WHISPER_PROVIDER = _env("WHISPER_PROVIDER", "local").lower()  # local | groq
     GROQ_API_KEYS = _env("GROQ_API_KEYS")      # nhiều key, mỗi dòng/dấu phẩy 1 key

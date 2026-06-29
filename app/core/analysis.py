@@ -95,8 +95,17 @@ def run_analysis(
                 on_progress(base + span * p, msg)
         return fn
 
-    n = len(STEPS)
-    for i, (kind, label) in enumerate(STEPS):
+    # CHẾ ĐỘ MÁY YẾU: chỉ chép lời (mây); bỏ dò cảnh/âm thanh/khuôn mặt (ngốn CPU).
+    from config import settings as _st
+    steps = STEPS
+    if getattr(_st, "LIGHT_MODE", True):
+        steps = [s for s in STEPS if s[0] == "transcript"]
+        for k, _lbl in STEPS:                    # đánh dấu bước nặng = bỏ qua
+            if k != "transcript" and existing.get(k) != "done":
+                _set(video_id, k, "skipped")
+
+    n = len(steps)
+    for i, (kind, label) in enumerate(steps):
         base, span = i / n, 1 / n
         if not force and existing.get(kind) == "done":
             if on_progress:

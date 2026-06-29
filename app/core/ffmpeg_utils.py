@@ -187,8 +187,10 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     if encoder == "h264_nvenc":
         cq = "19" if quality == "high" else "23"
         return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq]
-    crf = "18" if quality == "high" else "23"
-    return ["-c:v", "libx264", "-preset", "medium", "-crf", crf]
+    # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
+    # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
+    crf = "20" if quality == "high" else "23"
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf]
 
 
 # Font hỗ trợ (tên hiển thị -> file trong thư mục Fonts của Windows)

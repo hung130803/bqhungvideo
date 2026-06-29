@@ -631,7 +631,9 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         ai_clips = []
         llm_error = str(e)
     if ai_clips:
-        used_vision = llm.vision_available()
+        from config import settings as _st
+        # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript
+        used_vision = llm.vision_available() and not getattr(_st, "LIGHT_MODE", True)
         if used_vision:
             ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
             ai_clips = _vision_rescore(video_id, ai_clips, ctx)
