@@ -827,9 +827,13 @@ class EditorDialog(QDialog):
         cs2 = QHBoxLayout()
         cs2.addWidget(QLabel("Cỡ"))
         self.cap_size = _NoWheelSlider(Qt.Orientation.Horizontal)
-        self.cap_size.setRange(30, 80); self.cap_size.setValue(45)  # = 4.5% chiều cao
+        # 18..80 = 1.8%..8.0% chiều cao -> kéo nhỏ hơn nhiều so với trước (min 30)
+        self.cap_size.setRange(18, 80); self.cap_size.setValue(40)  # = 4.0%
         self.cap_size.valueChanged.connect(self._refresh_cap)
-        cs2.addWidget(self.cap_size, 1)
+        self.cap_lbl_sz = QLabel("4.0%"); self.cap_lbl_sz.setFixedWidth(44)
+        self.cap_size.valueChanged.connect(
+            lambda v: self.cap_lbl_sz.setText(f"{v/10:.1f}%"))
+        cs2.addWidget(self.cap_size, 1); cs2.addWidget(self.cap_lbl_sz)
         gc.addLayout(cs2)
         # KHỚP GIỜ: đẩy phụ đề sớm/trễ (ms) cho khít lời (whisper hay hiện sớm)
         cs3 = QHBoxLayout()
