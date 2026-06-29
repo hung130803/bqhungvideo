@@ -170,7 +170,8 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                     "text": (_g(r, "text", "") or " ".join(full)).strip()}
         except Exception as e:  # noqa: BLE001
             last = str(e).lower()
-            if any(s in last for s in ("429", "rate", "quota", "limit")):
+            if any(s in last for s in ("429", "rate limit", "ratelimit",
+                                       "quota", "too many requests")):
                 continue                       # key hết lượt -> xoay key kế
             raise
     raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")

@@ -197,6 +197,8 @@ def _ensure_min_duration(segments: list, duration: float,
                          min_total: float = 60.0) -> list:
     """Đảm bảo tổng độ dài clip >= min_total bằng cách nới đoạn cuối/đầu."""
     segs = [list(s) for s in segments]
+    if not segs:                                 # không có đoạn -> khỏi nới
+        return segs
     total = sum(e - s for s, e in segs)
     if total >= min_total or duration <= 0:
         return segs

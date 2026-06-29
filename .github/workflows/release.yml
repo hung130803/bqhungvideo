@@ -50,6 +50,8 @@ jobs:
           --hidden-import requests
           --hidden-import psutil
           --hidden-import dotenv
+          --add-data "app/database/schema.sql;app/database"
+          --add-data "app/assets/fonts;app/assets/fonts"
           --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
           --add-data ".env.example;."
           --add-binary "bin/ffmpeg.exe;."

@@ -1394,7 +1394,7 @@ class StudioPage(QWidget):
                 continue
             sig = db.loads(c["signals"], {}) or {}
             segs = sig.get("segments")
-            t = ((segs[0][0] + segs[0][1]) / 2 if segs
+            t = ((segs[0][0] + segs[0][1]) / 2 if segs and len(segs[0]) >= 2
                  else (c["start_sec"] + c["end_sec"]) / 2)
             try:
                 extract_frame(vrow["src_path"], t, tp, width=232)
