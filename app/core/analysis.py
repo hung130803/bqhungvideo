@@ -139,7 +139,7 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
         return str(wav)
 
     if kind == "transcript":
-        if not transcribe.is_available():
+        if not transcribe.provider_ready():
             return None, ""
         wav = ensure_audio()
         model = profile.get("whisper_model", "small")

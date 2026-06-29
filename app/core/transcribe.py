@@ -22,6 +22,13 @@ def is_available() -> bool:
         return False
 
 
+def provider_ready() -> bool:
+    """Có cách chép lời không: Groq (mây, có key) HOẶC faster-whisper (máy)."""
+    if settings.WHISPER_PROVIDER == "groq" and settings.groq_keys():
+        return True
+    return is_available()
+
+
 def _ensure_cuda_libs() -> bool:
     """Đưa cuDNN/cuBLAS (cài qua pip nvidia-*) vào đường tìm DLL để whisper chạy
     GPU. Trả True nếu thấy thư viện. Gọi trước khi nạp model cuda."""
@@ -132,42 +139,29 @@ def _g(o, k, d=0):
     return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
 
 
-def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
-    """Nghe-chép qua GROQ (mây, FREE, rất nhanh) — máy yếu không cần GPU vẫn nhanh.
-    Xoay vòng nhiều key. Lỗi -> ném để transcribe() lùi về Local."""
+def _groq_one(audio_path: str, language, keys: list) -> tuple:
+    """Gửi 1 FILE cho Groq, xoay vòng key khi hết lượt. Trả (segs, words, lang, text)."""
     from openai import OpenAI
-    keys = settings.groq_keys()
-    if not keys:
-        raise RuntimeError("Chưa có GROQ key.")
     last = ""
     for key in keys:
         try:
-            if on_progress:
-                on_progress(0.2, "Đang chép lời (Groq mây)...")
             client = OpenAI(api_key=key,
-                            base_url="https://api.groq.com/openai/v1")
+                            base_url="https://api.groq.com/openai/v1",
+                            timeout=180, max_retries=1)
             with open(audio_path, "rb") as f:
                 r = client.audio.transcriptions.create(
                     file=f, model=settings.GROQ_WHISPER_MODEL,
                     response_format="verbose_json",
                     timestamp_granularities=["segment", "word"],
                     language=language or None)
-            segs, words, full = [], [], []
-            for s in (_g(r, "segments", None) or []):
-                tx = (_g(s, "text", "") or "").strip()
-                segs.append({"start": round(float(_g(s, "start", 0)), 3),
-                             "end": round(float(_g(s, "end", 0)), 3), "text": tx})
-                full.append(tx)
-            for w in (_g(r, "words", None) or []):
-                words.append({"start": round(float(_g(w, "start", 0)), 3),
-                              "end": round(float(_g(w, "end", 0)), 3),
-                              "word": (_g(w, "word", "") or "").strip()})
-            if on_progress:
-                on_progress(1.0, "Chép lời xong (Groq)")
-            return {"language": _g(r, "language", None) or language or "",
-                    "duration": segs[-1]["end"] if segs else 0.0,
-                    "segments": segs, "words": words,
-                    "text": (_g(r, "text", "") or " ".join(full)).strip()}
+            segs = [{"start": float(_g(s, "start", 0)), "end": float(_g(s, "end", 0)),
+                     "text": (_g(s, "text", "") or "").strip()}
+                    for s in (_g(r, "segments", None) or [])]
+            words = [{"start": float(_g(w, "start", 0)), "end": float(_g(w, "end", 0)),
+                      "word": (_g(w, "word", "") or "").strip()}
+                     for w in (_g(r, "words", None) or [])]
+            return segs, words, (_g(r, "language", None) or language or ""), \
+                (_g(r, "text", "") or "")
         except Exception as e:  # noqa: BLE001
             last = str(e).lower()
             if any(s in last for s in ("429", "rate limit", "ratelimit",
@@ -175,6 +169,62 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                 continue                       # key hết lượt -> xoay key kế
             raise
     raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")
+
+
+def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
+    """Nghe-chép qua GROQ (mây, FREE, nhanh). NÉN + CẮT NHỎ audio (mp3 16k mono
+    ~48kbps, ~10 phút/phần) để LUÔN dưới giới hạn 25MB của Groq -> video dài bao
+    nhiêu cũng chạy, máy yếu không cần GPU. Ghép lại theo mốc thời gian."""
+    import glob as _glob
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    keys = settings.groq_keys()
+    if not keys:
+        raise RuntimeError("Chưa có GROQ key.")
+    ff = shutil.which("ffmpeg") or settings.FFMPEG_PATH or "ffmpeg"
+    flags = 0x0800_0000 if os.name == "nt" else 0
+    work = tempfile.mkdtemp(prefix="gq_")
+    chunk = 600                                  # giây mỗi phần
+    try:
+        parts = []
+        try:                                     # nén + cắt thành nhiều mp3 nhẹ
+            subprocess.run(
+                [ff, "-y", "-i", audio_path, "-ac", "1", "-ar", "16000",
+                 "-b:a", "48k", "-f", "segment", "-segment_time", str(chunk),
+                 os.path.join(work, "p%03d.mp3")],
+                capture_output=True, creationflags=flags, timeout=900)
+            parts = sorted(_glob.glob(os.path.join(work, "p*.mp3")))
+        except Exception:  # noqa: BLE001
+            parts = []
+        single = not parts
+        if single:                               # nén lỗi -> gửi nguyên file gốc
+            parts = [audio_path]
+        all_segs, all_words, full, lang = [], [], [], (language or "")
+        n = len(parts)
+        for i, part in enumerate(parts):
+            off = 0 if single else i * chunk
+            if on_progress:
+                on_progress(0.1 + 0.85 * i / n,
+                            f"Đang chép lời (Groq) phần {i + 1}/{n}...")
+            segs, words, lg, _ = _groq_one(part, language, keys)
+            lang = lang or lg
+            for s in segs:
+                all_segs.append({"start": round(s["start"] + off, 3),
+                                 "end": round(s["end"] + off, 3), "text": s["text"]})
+                full.append(s["text"])
+            for w in words:
+                all_words.append({"start": round(w["start"] + off, 3),
+                                  "end": round(w["end"] + off, 3), "word": w["word"]})
+        if on_progress:
+            on_progress(1.0, "Chép lời xong (Groq)")
+        return {"language": lang,
+                "duration": all_segs[-1]["end"] if all_segs else 0.0,
+                "segments": all_segs, "words": all_words,
+                "text": " ".join(t for t in full if t).strip()}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def transcribe(
@@ -196,18 +246,21 @@ def transcribe(
       }
     Ưu tiên stable-ts (căn từ chuẩn hơn); lỗi -> lùi faster-whisper.
     """
-    if not is_available():
-        raise RuntimeError(
-            "Chưa cài faster-whisper. Chạy: pip install faster-whisper"
-        )
-
     language = language or settings.WHISPER_LANGUAGE
-    # GROQ (mây): nếu chọn provider=groq + có key -> chép trên mây (máy yếu vẫn nhanh)
+    # GROQ (mây) TRƯỚC — KHÔNG cần lib local. Máy yếu/không cài gì vẫn chép được.
     if settings.WHISPER_PROVIDER == "groq" and settings.groq_keys():
         try:
             return _transcribe_groq(audio_path, language, on_progress)
-        except Exception:  # noqa: BLE001 - Groq lỗi -> lùi Local cho chắc
-            pass
+        except Exception as e:  # noqa: BLE001
+            if not (is_available() or _stable_available()):
+                raise RuntimeError(f"Chép lời qua Groq lỗi: {e}")
+            # còn whisper máy -> thử tiếp ở dưới
+    # ---- Chép lời bằng MÁY (faster-whisper / stable-ts) ----
+    if not is_available():
+        raise RuntimeError(
+            "Chưa bật chép lời. Vào 'Cài đặt AI' bật Groq (dán key), "
+            "hoặc cài faster-whisper."
+        )
     if _stable_available():
         try:
             return _transcribe_stable(audio_path, model_name, device,
