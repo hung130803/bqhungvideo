@@ -18,6 +18,8 @@ from config import settings
 
 # Cờ giấu cửa sổ console đen trên Windows khi gọi subprocess
 _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
+# Ưu tiên THẤP cho ffmpeg nặng (encode) -> máy KHÔNG đơ, UI vẫn mượt khi đang xuất.
+_BELOW_NORMAL = 0x00004000 if hasattr(subprocess, "STARTUPINFO") else 0
 
 
 # Theo dõi tiến trình con đang chạy để DỪNG khi tắt app (tránh ffmpeg mồ côi
@@ -57,7 +59,7 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
         universal_newlines=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=_CREATE_NO_WINDOW,
+        creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
     )
     with _PROC_LOCK:
         _ACTIVE_PROCS.add(proc)
@@ -542,10 +544,13 @@ def export_canvas_clip(
                          f"crop={out_w}:{out_h},setsar=1[vv]")
             nextidx = 1
         elif bg == "blur":
+            # NHẸ: blur trên ảnh THU NHỎ 1/4 rồi phóng to -> rẻ ~16 lần, nhìn y hệt.
+            bw, bh = max(2, out_w // 4), max(2, out_h // 4)
+            br = max(2, blur_amt // 4)
             parts.append(f"{vsrc}split=2[bv][fv]")
-            parts.append(f"[bv]scale={out_w}:{out_h}:"
-                         f"force_original_aspect_ratio=increase,"
-                         f"crop={out_w}:{out_h},boxblur={blur_amt}:2,setsar=1[base]")
+            parts.append(f"[bv]scale={bw}:{bh}:force_original_aspect_ratio=increase,"
+                         f"crop={bw}:{bh},boxblur={br}:1,"
+                         f"scale={out_w}:{out_h},setsar=1[base]")
             parts.append(f"[fv]scale={vw}:-2:flags=lanczos,setsar=1[fg]")
             parts.append(f"[base][fg]overlay=x='{cx:.4f}*W-w/2':"
                          f"y='{cy:.4f}*H-h/2'[vv]")
