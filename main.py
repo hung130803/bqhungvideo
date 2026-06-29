@@ -31,15 +31,19 @@ def main() -> int:
 
     state = AppState()
 
-    # ---- BẮT BUỘC ĐĂNG NHẬP trước khi vào app ----
-    from PyQt6.QtWidgets import QDialog
-    from app.ui.login import LoginDialog
-    login = LoginDialog()
-    if login.exec() != QDialog.DialogCode.Accepted:
-        return 0                       # huỷ/đóng -> thoát app
-    state.user = login.user
-    state.role = login.role
-    state.admin_pass = login.password
+    # ---- ĐĂNG NHẬP: chỉ bắt buộc KHI đã cấu hình máy chủ tài khoản (Supabase).
+    # Bản phát hành cho team sẽ nướng sẵn cấu hình -> luôn bắt đăng nhập.
+    # Chưa cấu hình -> mở thẳng (tránh khoá chết khi đang cài đặt/test). ----
+    from app.auth_config import is_configured
+    if is_configured():
+        from PyQt6.QtWidgets import QDialog
+        from app.ui.login import LoginDialog
+        login = LoginDialog()
+        if login.exec() != QDialog.DialogCode.Accepted:
+            return 0                       # huỷ/đóng -> thoát app
+        state.user = login.user
+        state.role = login.role
+        state.admin_pass = login.password
 
     win = MainWindow(state)
     win.show()
