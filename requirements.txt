@@ -1,0 +1,34 @@
+# ============================================================
+# AI Content Studio - Python dependencies
+# Python 3.11 hoặc 3.12 (đã kiểm tra OK). TRÁNH 3.13/3.14: mediapipe chưa có bản cài.
+# ============================================================
+
+# ---- GUI ----
+PyQt6==6.7.1
+
+# ---- Lõi phân tích ----
+faster-whisper==1.0.3        # transcribe word-level (local, free)
+stable-ts==2.17.5            # căn chữ chuẩn hơn (ưu tiên dùng nếu có)
+scenedetect[opencv]==0.6.4   # scene detection
+librosa==0.10.2.post1        # audio: beat, peak, silence
+mediapipe==0.10.14           # face/object tracking
+opencv-python==4.10.0.84
+numpy==1.26.4                # giữ <2.0 cho tương thích mediapipe/librosa
+
+# ---- Tải video từ link (YouTube/TikTok...) ----
+yt-dlp>=2026.6.9             # GIỮ MỚI để né chặn bot YouTube
+
+# ---- Diarization (TÙY CHỌN - cần token HuggingFace) ----
+# pyannote.audio==3.3.1      # bỏ comment nếu muốn tách người nói
+# torch + torchaudio sẽ được kéo theo. Trên máy CPU cài bản CPU.
+
+# ---- AI / LLM ----
+openai>=1.55,<3              # dùng cho OpenAI / DeepSeek / Ollama (cùng SDK, đổi base_url)
+                             # >=1.55 để tránh lỗi 'proxies' với httpx mới
+google-generativeai==0.8.3   # Gemini
+python-dotenv==1.0.1
+
+# ---- Tiện ích ----
+psutil==6.0.0                # dò phần cứng (CPU/RAM)
+requests==2.32.3
+tqdm==4.66.5

@@ -1,0 +1,103 @@
+"""
+Đăng ký các job handler vào worker pool.
+
+  - "analyze" : chạy lõi phân tích (tiến trình con) cho 1 video.
+  - "auto"    : phân tích (nếu chưa) + tìm highlight trong 1 job — nút chính của UI.
+  - "m1_highlights" / "m1_mixed_cut" / "m1_export_clip": đăng ký trong m1_highlight.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+from app.core.analysis import analysis_status
+from config import ROOT_DIR
+from .worker import CanceledError, JobContext, register_handler
+
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+
+def _run_analyze(video_id: int, ctx: JobContext, force: bool,
+                 base: float = 0.0, span: float = 1.0) -> None:
+    """Chạy lõi phân tích trong tiến trình con; tiến độ trong khoảng base..base+span."""
+    args = [sys.executable, "-m", "app.core.analysis_runner", str(video_id)]
+    if force:
+        args.append("force")
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    proc = subprocess.Popen(
+        args, cwd=str(ROOT_DIR), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
+        creationflags=_CREATE_NO_WINDOW,
+    )
+    from app.core.ffmpeg_utils import register_proc, unregister_proc
+    register_proc(proc)
+    last_error = ""
+    try:
+        for line in proc.stdout:  # type: ignore[union-attr]
+            line = line.rstrip("\n")
+            if line.startswith("PROGRESS\t"):
+                parts = line.split("\t", 2)
+                try:
+                    p = float(parts[1])
+                except (ValueError, IndexError):
+                    p = 0.0
+                ctx.progress(base + span * p, parts[2] if len(parts) > 2 else "")
+            elif line.startswith("ERROR\t"):
+                last_error = line.split("\t", 1)[1]
+    except CanceledError:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
+    finally:
+        unregister_proc(proc)
+    code = proc.wait()
+    if code != 0:
+        if last_error:
+            raise RuntimeError(f"Phân tích lỗi: {last_error}")
+        raise RuntimeError(
+            f"Tiến trình phân tích dừng đột ngột (mã {code}). Thường do whisper GPU "
+            "thiếu cuDNN — bỏ trống WHISPER_DEVICE trong .env (chạy CPU) rồi thử lại.")
+
+
+def _analyze(payload: dict, ctx: JobContext) -> dict:
+    video_id = int(payload["video_id"])
+    _run_analyze(video_id, ctx, payload.get("force", False))
+    return {"video_id": video_id, "status": analysis_status(video_id)}
+
+
+def _auto(payload: dict, ctx: JobContext) -> dict:
+    """Tạo clip tự động: phân tích (nếu chưa) -> tìm highlight, 1 thanh tiến trình."""
+    from app.modules.m1_highlight import generate_highlights
+    video_id = int(payload["video_id"])
+
+    done = all(analysis_status(video_id).get(k) in ("done", "skipped")
+               for k in ("transcript", "scenes", "audio", "faces"))
+    if not done:
+        _run_analyze(video_id, ctx, force=False, base=0.0, span=0.8)
+
+    parent = ctx
+
+    class _Sub:
+        profile = parent.profile
+        def progress(self, p, m=""):
+            parent.progress(0.8 + 0.2 * p, m)
+        def check_canceled(self):
+            parent.check_canceled()
+
+    res = generate_highlights(
+        {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    return {"video_id": video_id, **res}
+
+
+register_handler("analyze", _analyze)
+register_handler("auto", _auto)
+
+# Nạp handler của Module 1 (tự register khi import)
+from app.modules import m1_highlight  # noqa: E402,F401

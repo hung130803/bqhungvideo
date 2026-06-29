@@ -1,0 +1,40 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# App data
+projects/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+*.log
+
+# Models cache
+models/
+.cache/
+
+# Runtime: PO-token provider exe (46MB) + COOKIE đăng nhập (NHẠY CẢM!) + cache
+_potoken/
+_cache/
+_fp.png
+_download/
+KhoVideo/
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.spec

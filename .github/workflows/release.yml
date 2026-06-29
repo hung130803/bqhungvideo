@@ -1,0 +1,66 @@
+name: Build Windows app
+
+# Chạy khi đẩy 1 tag dạng v* (vd v1.0.1) -> build .exe + tạo Release tự động.
+# Máy người dùng (đã cài app) sẽ thấy thông báo "có bản mới" và tải từ Release này.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:            # cho phép bấm chạy tay trên GitHub
+
+permissions:
+  contents: write              # để tạo Release + upload file
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cài thư viện
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.10.0
+
+      - name: Tải ffmpeg + yt-dlp (kèm theo app cho máy chưa có)
+        shell: bash
+        run: |
+          mkdir -p bin
+          curl -L -o yt-dlp.exe https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+          mv yt-dlp.exe bin/
+          curl -L -o ff.zip https://github.com/GyanD/codexffmpeg/releases/download/2024-12-19-git-current/ffmpeg-2024-12-19-git-current-essentials_build.zip || \
+          curl -L -o ff.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+          7z x ff.zip -off
+          find ff -name "ffmpeg.exe" -exec cp {} bin/ \;
+          find ff -name "ffprobe.exe" -exec cp {} bin/ \;
+          ls -la bin/
+
+      - name: Đóng gói (PyInstaller)
+        run: >
+          pyinstaller --noconfirm --windowed --name "BQHungVideo"
+          --collect-all mediapipe
+          --collect-all faster_whisper
+          --collect-all google.generativeai
+          --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
+          --add-data ".env.example;."
+          --add-binary "bin/ffmpeg.exe;."
+          --add-binary "bin/ffprobe.exe;."
+          --add-binary "bin/yt-dlp.exe;."
+          main.py
+
+      - name: Nén thư mục app
+        shell: bash
+        run: |
+          cd dist
+          7z a -tzip "BQHungVideo-${{ github.ref_name }}.zip" "BQHungVideo"
+
+      - name: Tạo Release + upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BQHungVideo-*.zip
+          generate_release_notes: true
