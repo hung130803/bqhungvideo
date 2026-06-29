@@ -835,6 +835,9 @@ class EditorDialog(QDialog):
             lambda v: self.cap_lbl_sz.setText(f"{v/10:.1f}%"))
         cs2.addWidget(self.cap_size, 1); cs2.addWidget(self.cap_lbl_sz)
         gc.addLayout(cs2)
+        # KÉO góc ô caption để resize -> ĐỒNG BỘ vào thanh Cỡ (để LƯU được).
+        # (Trước đây kéo ô caption không lưu vì chỉ thanh Cỡ mới được ghi.)
+        self.canvas.cap_box.on_resize = lambda _l, frac: self._cap_drag_size(frac)
         # KHỚP GIỜ: đẩy phụ đề sớm/trễ (ms) cho khít lời (whisper hay hiện sớm)
         cs3 = QHBoxLayout()
         cs3.addWidget(QLabel("Khớp giờ"))
@@ -984,6 +987,15 @@ class EditorDialog(QDialog):
             self._capcolor = c.name().upper()
             self.cap_color_btn.setStyleSheet(f"color:{self._capcolor};")
             self._refresh_cap()
+
+    def _cap_drag_size(self, frac):
+        """User kéo góc ô caption -> cập nhật thanh Cỡ = đúng cỡ vừa kéo (để lưu)."""
+        val = max(self.cap_size.minimum(),
+                  min(self.cap_size.maximum(), int(round(frac * 1000))))
+        self.cap_size.blockSignals(True)
+        self.cap_size.setValue(val)
+        self.cap_size.blockSignals(False)
+        self.cap_lbl_sz.setText(f"{val / 10:.1f}%")
 
     def _refresh_cap(self, *_):
         """Cập nhật ô PHỤ ĐỀ trong xem trước theo kiểu/cỡ/màu/font (giữ vị trí)."""
