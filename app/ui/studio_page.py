@@ -520,8 +520,8 @@ class StudioPage(QWidget):
 
     # ---- KHO VIDEO chung: <gốc>/Đã tải + <gốc>/Đã xuất/<tên video> ----
     def _lib_root(self):
-        from config import ROOT_DIR
-        p = self._settings.value("lib_root", "") or str(ROOT_DIR / "KhoVideo")
+        from config import DATA_DIR
+        p = self._settings.value("lib_root", "") or str(DATA_DIR / "KhoVideo")
         return Path(p)
 
     def _dl_dir(self):
@@ -605,12 +605,12 @@ class StudioPage(QWidget):
 
     # ---- COOKIE YouTube: dán 1 lần, lưu file, tự dùng khi tải ----
     def _cookie_file(self):
-        from config import ROOT_DIR
-        return ROOT_DIR / "_potoken" / "youtube_cookies.txt"
+        from config import DATA_DIR
+        return DATA_DIR / "_potoken" / "youtube_cookies.txt"
 
     def _cookie_dir(self):
-        from config import ROOT_DIR
-        d = ROOT_DIR / "_potoken" / "cookies"
+        from config import DATA_DIR
+        d = DATA_DIR / "_potoken" / "cookies"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -1295,9 +1295,9 @@ class StudioPage(QWidget):
 
     def _sample_frame(self):
         """Ảnh nền MẪU khi chưa chọn video — để Chỉnh mẫu không bắt phải có video."""
-        from config import ROOT_DIR
+        from config import DATA_DIR
         from PyQt6.QtGui import (QImage, QPainter, QLinearGradient, QColor, QFont)
-        d = ROOT_DIR / "_cache"; d.mkdir(parents=True, exist_ok=True)
+        d = DATA_DIR / "_cache"; d.mkdir(parents=True, exist_ok=True)
         out = d / "_tpl_sample.jpg"
         img = QImage(360, 640, QImage.Format.Format_RGB888)
         g = QLinearGradient(0, 0, 0, 640)

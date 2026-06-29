@@ -19,14 +19,14 @@ import time
 import urllib.request
 from pathlib import Path
 
-from config import ROOT_DIR
+from config import DATA_DIR
 
 PORT = 4416
 # Provider (Windows x86_64) khớp phiên bản plugin. Đổi cả 2 cùng lúc.
 PROVIDER_URL = ("https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/"
                 "releases/download/v0.8.1/bgutil-pot-windows-x86_64.exe")
 
-_POTOKEN_DIR = ROOT_DIR / "_potoken"
+_POTOKEN_DIR = DATA_DIR / "_potoken"
 _PLUGIN_DST = _POTOKEN_DIR / "yt_dlp_plugins" / "extractor"
 _PROVIDER_DST = _POTOKEN_DIR / "bgutil-pot.exe"
 

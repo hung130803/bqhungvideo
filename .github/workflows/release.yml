@@ -21,10 +21,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Cài thư viện
+      - name: Cài thư viện (bản gọn cho .exe)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-build.txt
           pip install pyinstaller==6.10.0
 
       - name: Tải ffmpeg + yt-dlp (kèm theo app cho máy chưa có)
@@ -43,9 +43,13 @@ jobs:
       - name: Đóng gói (PyInstaller)
         run: >
           pyinstaller --noconfirm --windowed --name "BQHungVideo"
-          --collect-all mediapipe
-          --collect-all faster_whisper
+          --collect-all PyQt6
+          --collect-submodules app
           --collect-all google.generativeai
+          --hidden-import openai
+          --hidden-import requests
+          --hidden-import psutil
+          --hidden-import dotenv
           --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
           --add-data ".env.example;."
           --add-binary "bin/ffmpeg.exe;."

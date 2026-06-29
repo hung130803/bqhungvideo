@@ -6,21 +6,33 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 # ---- Đường dẫn gốc ----
-ROOT_DIR = Path(__file__).resolve().parent
-load_dotenv(ROOT_DIR / ".env")  # nạp .env nếu có
+# ROOT_DIR = nơi chứa MÃ/tài nguyên đọc (plugin...). DATA_DIR = nơi chứa DỮ LIỆU
+# người dùng (project, db, .env, cookie). Tách 2 cái để khi cập nhật bản .exe
+# (thay _internal) KHÔNG làm mất dữ liệu người dùng.
+if getattr(sys, "frozen", False):                 # đang chạy bản .exe (PyInstaller)
+    ROOT_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    # cho subprocess tìm thấy ffmpeg/ffprobe/yt-dlp đã đóng gói KÈM trong app
+    os.environ["PATH"] = str(ROOT_DIR) + os.pathsep + os.environ.get("PATH", "")
+    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BQHungVideo"
+else:                                             # chạy từ mã nguồn (dev)
+    ROOT_DIR = Path(__file__).resolve().parent
+    DATA_DIR = ROOT_DIR
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+load_dotenv(DATA_DIR / ".env")  # nạp .env nếu có
 
 # Nơi lưu dữ liệu chạy (mỗi project 1 thư mục con)
-PROJECTS_DIR = ROOT_DIR / "projects"
-LOGS_DIR = ROOT_DIR / "logs"
-MODELS_DIR = ROOT_DIR / "models"  # cache model whisper...
+PROJECTS_DIR = DATA_DIR / "projects"
+LOGS_DIR = DATA_DIR / "logs"
+MODELS_DIR = DATA_DIR / "models"  # cache model whisper...
 
 # Database dùng chung cho toàn app (projects, jobs, kết quả phân tích, clip...)
-DB_PATH = ROOT_DIR / "studio.db"
+DB_PATH = DATA_DIR / "studio.db"
 
 for _d in (PROJECTS_DIR, LOGS_DIR, MODELS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -111,7 +123,7 @@ settings = Settings()
 def update_env(values: dict) -> None:
     """Ghi/cập nhật các khóa vào file .env (giữ nguyên dòng khác) + áp NGAY vào
     settings đang chạy (không cần khởi động lại)."""
-    path = ROOT_DIR / ".env"
+    path = DATA_DIR / ".env"
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     pending = {k: ("" if v is None else str(v)) for k, v in values.items()}
     out = []

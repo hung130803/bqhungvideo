@@ -1,0 +1,11 @@
+# Thư viện ĐỦ để build bản .exe chạy luồng MIỄN PHÍ (Groq mây):
+# tải YouTube + nghe-chép Groq + AI cắt Groq/Gemini + xuất ffmpeg + phụ đề.
+# KHÔNG gói torch/whisper/mediapipe/opencv (nặng GB) -> các bước phân tích
+# cục bộ tự bỏ qua. Muốn dùng phân tích cục bộ thì cài thêm từ requirements.txt.
+PyQt6==6.7.1
+openai>=1.55,<3
+google-generativeai==0.8.3
+python-dotenv==1.0.1
+psutil==6.0.0
+requests==2.32.3
+numpy==1.26.4
