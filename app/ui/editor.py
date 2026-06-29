@@ -1148,4 +1148,11 @@ class EditorDialog(QDialog):
 
     def _accept(self):
         self.layout_result = self._collect_layout()
+        # LƯU LUÔN khi bấm "Xong" (khỏi quên bấm 'Lưu' -> mở lại bị mất chỉnh).
+        try:
+            name = self.tmpl.currentData() or self._current_name or "Mẫu của tôi"
+            services.save_template(name, self.layout_result)
+            self._current_name = name
+        except Exception:  # noqa: BLE001
+            pass
         self.accept()

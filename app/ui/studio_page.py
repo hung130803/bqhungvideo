@@ -1315,10 +1315,12 @@ class StudioPage(QWidget):
                            current_name=self.tmpl_box.currentData() or "")
         if dlg.exec() and dlg.layout_result:
             self.layout_tpl = dlg.layout_result
-            # làm mới danh sách mẫu (có thể vừa lưu/đổi mẫu trong hộp thoại)
-            self._populate_templates(getattr(dlg, "_current_name", "")
-                                     or self.tmpl_box.currentData() or "")
-            self.status.setText("Đã cập nhật mẫu. Bấm Tải để xuất theo mẫu này.")
+            name = (getattr(dlg, "_current_name", "")
+                    or self.tmpl_box.currentData() or "")
+            # làm mới danh sách mẫu + NHỚ mẫu vừa sửa để mở lại đúng (khỏi reset)
+            self._populate_templates(name)
+            self._settings.setValue("last_template", name)
+            self.status.setText("Đã lưu mẫu. Bấm Tải để xuất theo mẫu này.")
 
     # ---- chọn / nhớ mẫu (hiện ngoài màn chính) ----
     def _populate_templates(self, select_name: str = ""):
