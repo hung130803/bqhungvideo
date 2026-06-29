@@ -7,9 +7,9 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QFormLayout, QHBoxLayout, QInputDialog,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.core import auth
@@ -85,7 +85,6 @@ class LoginDialog(QDialog):
 
         self.username = QLineEdit()
         self.username.setPlaceholderText("Tên đăng nhập")
-        self.username.setText(self._s.value("last_user", "") or "")
         self.password = QLineEdit()
         self.password.setPlaceholderText("Mật khẩu")
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -95,6 +94,17 @@ class LoginDialog(QDialog):
                 f"QLineEdit{{background:#1B1E27; border:1px solid {BORDER}; "
                 f"border-radius:8px; padding:6px 10px; color:{TEXT};}}")
         v.addWidget(self.username); v.addWidget(self.password)
+
+        # GHI NHỚ mật khẩu: lần sau tự điền sẵn -> chỉ bấm Đăng nhập
+        self.remember = QCheckBox("Ghi nhớ mật khẩu (lần sau khỏi gõ)")
+        self.remember.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        v.addWidget(self.remember)
+        saved_u = self._s.value("save_user", "") or self._s.value("last_user", "") or ""
+        saved_p = self._dec(self._s.value("save_pass", "") or "")
+        self.username.setText(saved_u)
+        if saved_p:
+            self.password.setText(saved_p)
+            self.remember.setChecked(True)
 
         self.note = QLabel(""); self.note.setWordWrap(True)
         self.note.setStyleSheet("font-size:12px;")
@@ -149,9 +159,31 @@ class LoginDialog(QDialog):
         if not res:
             self._set_note("err", "Sai tên đăng nhập/mật khẩu, hoặc tài khoản bị khoá.")
             return
-        self.user = res["username"]; self.role = res["role"]; self.password = p
+        self.user = res["username"]; self.role = res["role"]
         self._s.setValue("last_user", self.user)
+        self._s.setValue("save_user", self.user)
+        if self.remember.isChecked():            # GHI NHỚ mật khẩu cho lần sau
+            self._s.setValue("save_pass", self._enc(p))
+        else:
+            self._s.remove("save_pass")
+        self.password = p                         # trả mật khẩu cho main/admin
         self.accept()
+
+    @staticmethod
+    def _enc(s: str) -> str:
+        import base64
+        try:
+            return base64.b64encode((s or "").encode("utf-8")).decode("ascii")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    @staticmethod
+    def _dec(s: str) -> str:
+        import base64
+        try:
+            return base64.b64decode((s or "").encode("ascii")).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            return ""
 
 
 class AdminUsersDialog(QDialog):

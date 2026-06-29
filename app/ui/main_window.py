@@ -142,6 +142,11 @@ class MainWindow(QMainWindow):
             admin_btn.setToolTip("Tạo / khoá / xoá tài khoản cho team.")
             admin_btn.clicked.connect(self._open_admin)
             v.addWidget(admin_btn)
+        if self.state.user:
+            out = QPushButton("Đăng xuất")
+            out.setToolTip("Xoá mật khẩu đã lưu + thoát để đăng nhập tài khoản khác.")
+            out.clicked.connect(self._logout)
+            v.addWidget(out)
         v.addSpacing(6)
 
         ver = QLabel(f"v{__version__}"); ver.setStyleSheet(f"color:{MUTED}; font-size:11px;")
@@ -151,6 +156,15 @@ class MainWindow(QMainWindow):
     def _open_admin(self):
         from app.ui.login import AdminUsersDialog
         AdminUsersDialog(self.state.user, self.state.admin_pass, self).exec()
+
+    def _logout(self):
+        if QMessageBox.question(
+            self, "Đăng xuất",
+            "Xoá mật khẩu đã lưu và thoát app? Lần sau mở sẽ phải đăng nhập lại."
+        ) == QMessageBox.StandardButton.Yes:
+            QSettings("AIContentStudio", "studio").remove("save_pass")
+            from PyQt6.QtWidgets import QApplication
+            QApplication.quit()
 
     def _set_ai(self, v):
         self.state.pool.set_limits(max_gpu=v)
