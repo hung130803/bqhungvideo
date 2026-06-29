@@ -86,7 +86,11 @@ def suggest_profile(hw: HardwareInfo) -> ResourceProfile:
     # MẶC ĐỊNH chạy GPU nếu có card + đã cài cuDNN (pip nvidia-cudnn-cu12) -> nhanh
     # ~20 lần. Thiếu cuDNN hoặc ép WHISPER_DEVICE=cpu -> chạy CPU (vẫn ổn).
     import importlib.util as _ilu
-    cudnn_ok = _ilu.find_spec("nvidia.cudnn") is not None
+    try:
+        cudnn_ok = _ilu.find_spec("nvidia.cudnn") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        cudnn_ok = False        # bản .exe không kèm nvidia -> coi như không có cuDNN
+
     force_cpu = settings.WHISPER_DEVICE == "cpu"
     want_cuda = hw.has_cuda and cudnn_ok and not force_cpu and hw.vram_gb >= 6
     if want_cuda:

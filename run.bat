@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title AI Content Studio
+title BQ Hung Video
 cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
@@ -9,7 +9,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo Dang mo AI Content Studio...
+echo Dang mo BQ Hung Video...
 ".venv\Scripts\python.exe" main.py
 if errorlevel 1 (
     echo.
