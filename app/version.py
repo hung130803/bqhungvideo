@@ -8,5 +8,5 @@ from __future__ import annotations
 __version__ = "1.0.0"
 
 # Sẽ được điền đúng khi tạo kho trên GitHub (chủ kho / tên kho).
-GITHUB_OWNER = "PLACEHOLDER_OWNER"
+GITHUB_OWNER = "hung130803"
 GITHUB_REPO = "bqhungvideo"
