@@ -1189,16 +1189,18 @@ class StudioPage(QWidget):
         if not (self.state.project_id and self.state.video_id):
             QMessageBox.information(self, "Chưa chọn video", "Hãy thêm/chọn video.")
             return
-        # ĐÃ phân tích rồi -> hỏi, tránh làm lại thừa
+        # ĐÃ có clip -> hỏi CẮT LẠI với cài đặt cắt hiện tại (nhanh: khỏi chép lời lại)
         if services.list_clips(self.state.video_id):
             if QMessageBox.question(
-                self, "Video đã phân tích",
-                "Video này ĐÃ phân tích rồi (đã có clip).\n\n"
-                "Phân tích LẠI từ đầu? Bấm No để giữ clip cũ (chỉ xem/sửa/xuất).",
+                self, "Cắt lại?",
+                "Video này đã có clip.\n\nCẮT LẠI theo cài đặt hiện tại "
+                "(độ dài Min/Max, mục đích, kiểu)? Nhanh — KHÔNG chép lời lại, "
+                "clip cũ (chưa xuất) sẽ thay bằng clip mới.\n\n"
+                "Bấm No để giữ nguyên clip cũ.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes
             ) != QMessageBox.StandardButton.Yes:
-                self.status.setText("Giữ clip đã phân tích — không làm lại.")
+                self.status.setText("Giữ nguyên clip cũ.")
                 return
         jid = services.enqueue_auto(self.state.pool, self.state.video_id,
                                     self.state.project_id, self._cut_preset())
@@ -1314,13 +1316,15 @@ class StudioPage(QWidget):
         dlg = EditorDialog(frame, self.layout_tpl, self,
                            current_name=self.tmpl_box.currentData() or "")
         if dlg.exec() and dlg.layout_result:
-            self.layout_tpl = dlg.layout_result
             name = (getattr(dlg, "_current_name", "")
                     or self.tmpl_box.currentData() or "")
-            # làm mới danh sách mẫu + NHỚ mẫu vừa sửa để mở lại đúng (khỏi reset)
+            # làm mới + CHỌN đúng mẫu vừa sửa, rồi NẠP LẠI TỪ DB để layout dùng
+            # khi xuất KHỚP 100% với mẫu đã lưu (tránh lưu 1 nơi xuất 1 nơi).
             self._populate_templates(name)
             self._settings.setValue("last_template", name)
-            self.status.setText("Đã lưu mẫu. Bấm Tải để xuất theo mẫu này.")
+            self._apply_selected_template()
+            self.status.setText(f"Đã lưu & đang dùng mẫu: {name or 'Mặc định'}. "
+                                "Bấm Tải để xuất theo mẫu này.")
 
     # ---- chọn / nhớ mẫu (hiện ngoài màn chính) ----
     def _populate_templates(self, select_name: str = ""):

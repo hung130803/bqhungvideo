@@ -1148,9 +1148,16 @@ class EditorDialog(QDialog):
 
     def _accept(self):
         self.layout_result = self._collect_layout()
-        # LƯU LUÔN khi bấm "Xong" (khỏi quên bấm 'Lưu' -> mở lại bị mất chỉnh).
+        # LƯU LUÔN khi bấm "Xong". Chưa có mẫu -> HỎI TÊN (để studio dùng đúng mẫu
+        # này, tránh lưu 1 nơi xuất 1 nơi).
+        name = self.tmpl.currentData() or self._current_name
+        if not name:
+            name, ok = QInputDialog.getText(
+                self, "Đặt tên mẫu",
+                "Đặt tên mẫu để lưu (lần sau chọn lại + xuất theo mẫu này):",
+                text="Mẫu của tôi")
+            name = name.strip() if (ok and name.strip()) else "Mẫu của tôi"
         try:
-            name = self.tmpl.currentData() or self._current_name or "Mẫu của tôi"
             services.save_template(name, self.layout_result)
             self._current_name = name
         except Exception:  # noqa: BLE001

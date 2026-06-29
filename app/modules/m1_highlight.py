@@ -439,8 +439,25 @@ def _smooth_segments(segments: list, min_gap: float = 1.2,
     return kept or merged                        # nếu lỡ bỏ hết -> giữ merged
 
 
+def _cap_max_duration(segments: list, max_len: float) -> list:
+    """ÉP tổng độ dài clip <= max_len (cắt bớt khúc cuối). 0 = không giới hạn."""
+    if not max_len or max_len <= 0:
+        return segments
+    out, total = [], 0.0
+    for s, e in segments:
+        if total >= max_len:
+            break
+        dur = e - s
+        if total + dur <= max_len:
+            out.append([s, e]); total += dur
+        else:                                       # cắt ngắn khúc cuối cho vừa
+            out.append([round(s, 2), round(s + (max_len - total), 2)])
+            break
+    return out or segments[:1]
+
+
 def _normalize_clip(r, duration: float, boundaries=None,
-                    min_len: float = 60.0) -> Optional[dict]:
+                    min_len: float = 60.0, max_len: float = 0.0) -> Optional[dict]:
     """Kiểm tra & chuẩn hoá 1 clip từ JSON LLM. Trả None nếu không hợp lệ."""
     if not isinstance(r, dict):
         return None
@@ -461,6 +478,7 @@ def _normalize_clip(r, duration: float, boundaries=None,
             segments = _snap_segments(segments, boundaries)
         segments = _smooth_segments(segments)      # gộp khúc vụn cho mượt, đỡ giật
         segments = _ensure_min_duration(segments, duration, min_len)  # >= Min user đặt
+        segments = _cap_max_duration(segments, max_len)               # <= Max user đặt
         return {
             "title": str(r.get("title", "")).strip() or "Clip",
             # title_en = TIÊU ĐỀ GẮN LÊN VIDEO (theo NGÔN NGỮ video); ưu tiên
@@ -512,7 +530,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             continue
         rows = data if isinstance(data, list) else (data.get("clips") or [data])
         for r in rows or []:
-            clip = _normalize_clip(r, duration, boundaries, min_len)
+            clip = _normalize_clip(r, duration, boundaries, min_len, max_len)
             if clip:
                 all_clips.append(clip)
 
