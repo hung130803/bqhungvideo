@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from app.queue.resource_manager import HARDWARE, PROFILE
@@ -131,26 +131,9 @@ class MainWindow(QMainWindow):
         self.sp_cut.setToolTip("Số video cắt/xuất song song.")
 
         v.addStretch(1)
-
-        # --- Tài khoản đang đăng nhập ---
-        who = QLabel(f"Tài khoản: {self.state.user or '—'}"
-                     + ("  (Admin)" if self.state.role == "admin" else ""))
-        who.setStyleSheet(f"color:{MUTED}; font-size:12px;"); who.setWordWrap(True)
-        v.addWidget(who)
-        if self.state.role == "admin":
-            admin_btn = QPushButton("Quản lý tài khoản")
-            admin_btn.setToolTip("Tạo / khoá / xoá tài khoản cho team.")
-            admin_btn.clicked.connect(self._open_admin)
-            v.addWidget(admin_btn)
-        v.addSpacing(6)
-
         ver = QLabel(f"v{__version__}"); ver.setStyleSheet(f"color:{MUTED}; font-size:11px;")
         v.addWidget(ver)
         return w
-
-    def _open_admin(self):
-        from app.ui.login import AdminUsersDialog
-        AdminUsersDialog(self.state.user, self.state.admin_pass, self).exec()
 
     def _set_ai(self, v):
         self.state.pool.set_limits(max_gpu=v)
