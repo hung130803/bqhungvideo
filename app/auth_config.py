@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 
 # Điền sau khi tạo project Supabase (để team khỏi nhập tay). VD:
-_BAKED_URL = ""   # https://xxxxxxxx.supabase.co
-_BAKED_KEY = ""   # anon public key (eyJ...)
+_BAKED_URL = "https://fnlhgjohxgnttintmzmg.supabase.co"
+_BAKED_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubGhnam9oeGdudHRpbnRtem1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDU1MTUsImV4cCI6MjA5ODMyMTUxNX0.8bOsG5D9_Z0n8VpgGj4b0cw7qvjPJ2XOGOOaDe6lRAk"
 
 _ORG, _APP = "AIContentStudio", "studio"
 

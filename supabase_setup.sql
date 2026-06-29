@@ -3,7 +3,7 @@
 -- Mở Supabase project -> SQL Editor -> dán toàn bộ file này -> Run.
 -- ============================================================
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists app_users (
   id         bigint generated always as identity primary key,
@@ -25,7 +25,7 @@ language sql security definer set search_path = public as $$
   select u.username, u.role from app_users u
   where lower(u.username) = lower(p_username)
     and u.active = true
-    and u.pass_hash = crypt(p_password, u.pass_hash);
+    and u.pass_hash = extensions.crypt(p_password, u.pass_hash);
 $$;
 
 -- ---- Kiểm tra 1 cặp admin hợp lệ (nội bộ, không cấp cho anon) ----
@@ -34,7 +34,7 @@ returns boolean language sql security definer set search_path = public as $$
   select exists(
     select 1 from app_users u
     where lower(u.username) = lower(p_admin) and u.role = 'admin'
-      and u.active = true and u.pass_hash = crypt(p_admin_pass, u.pass_hash));
+      and u.active = true and u.pass_hash = extensions.crypt(p_admin_pass, u.pass_hash));
 $$;
 
 -- ---- Admin: tạo mới HOẶC đặt lại mật khẩu/quyền 1 user ----
@@ -46,7 +46,7 @@ begin
   if not _is_admin(p_admin, p_admin_pass) then return 'NOT_ADMIN'; end if;
   if coalesce(p_role,'user') not in ('admin','user') then p_role := 'user'; end if;
   insert into app_users(username, pass_hash, role, active)
-    values (p_username, crypt(p_password, gen_salt('bf')), p_role, true)
+    values (p_username, extensions.crypt(p_password, extensions.gen_salt('bf')), p_role, true)
   on conflict (username) do update
     set pass_hash = excluded.pass_hash, role = excluded.role, active = true;
   return 'OK';
@@ -92,5 +92,5 @@ grant execute on function app_admin_list_users(text,text) to anon;
 
 -- ---- Tài khoản ADMIN đầu tiên: admin / doimatkhau123  (ĐỔI NGAY sau khi vào) ----
 insert into app_users(username, pass_hash, role)
-  values ('admin', crypt('doimatkhau123', gen_salt('bf')), 'admin')
+  values ('admin', extensions.crypt('doimatkhau123', extensions.gen_salt('bf')), 'admin')
   on conflict (username) do nothing;
