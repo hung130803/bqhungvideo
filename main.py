@@ -31,6 +31,16 @@ def main() -> int:
 
     state = AppState()
 
+    # ---- BẮT BUỘC ĐĂNG NHẬP trước khi vào app ----
+    from PyQt6.QtWidgets import QDialog
+    from app.ui.login import LoginDialog
+    login = LoginDialog()
+    if login.exec() != QDialog.DialogCode.Accepted:
+        return 0                       # huỷ/đóng -> thoát app
+    state.user = login.user
+    state.role = login.role
+    state.admin_pass = login.password
+
     win = MainWindow(state)
     win.show()
 

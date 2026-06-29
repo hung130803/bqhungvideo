@@ -33,6 +33,10 @@ class AppState(QObject):
         )
         self.project_id: int | None = None
         self.video_id: int | None = None
+        # phiên đăng nhập (gán sau khi qua màn Login)
+        self.user: str | None = None
+        self.role: str | None = None
+        self.admin_pass: str | None = None    # để admin gọi RPC quản lý tài khoản
 
     def start(self):
         self.pool.start()
