@@ -16,9 +16,10 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
-    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
+    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from app import services
@@ -1667,6 +1668,7 @@ class StudioPage(QWidget):
             if jid:
                 jids.append(jid)
             n += 1
+            QApplication.processEvents()   # nhả cho UI đỡ đơ khi vẽ ảnh chữ hàng loạt
         return n
 
     def _export_all(self):
