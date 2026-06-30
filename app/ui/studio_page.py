@@ -910,6 +910,7 @@ class StudioPage(QWidget):
             return
         exe, dl, ff_dir = ready
         cookie_args = self._cookie_args()
+        self._dl_pid = self.state.project_id      # NHỚ kênh lúc bấm (tránh đổi giữa chừng)
         self.yt_btn.setEnabled(False)
         self.status.setText("Đang tải video từ YouTube...")
 
@@ -951,6 +952,7 @@ class StudioPage(QWidget):
             return
         cookie_args = self._cookie_args()
         self._batch_remaining = len(urls)
+        self._batch_pid = self.state.project_id   # NHỚ kênh lúc bấm (cố định cả loạt)
         self.yt_btn.setEnabled(False); self.yt_many_btn.setEnabled(False)
         n = len(urls)
 
@@ -970,11 +972,12 @@ class StudioPage(QWidget):
 
     def _on_batch_one(self, path, err):
         """1 video trong loạt tải xong -> import + tự phân tích/cắt (không popup lỗi)."""
-        if path and not err:
+        pid = getattr(self, "_batch_pid", None) or self.state.project_id
+        if path and not err and pid:
             try:
-                vid = services.import_video(self.state.project_id, path)
-                jid = services.enqueue_auto(self.state.pool, vid,
-                                            self.state.project_id, self._cut_preset())
+                vid = services.import_video(pid, path)
+                jid = services.enqueue_auto(self.state.pool, vid, pid,
+                                            self._cut_preset())
                 self._track_auto(jid, vid)
             except Exception:  # noqa: BLE001
                 pass
@@ -1000,12 +1003,15 @@ class StudioPage(QWidget):
             else:
                 self.status.setText("Tải YouTube LỖI: " + (err or "không rõ"))
             return
-        vid = services.import_video(self.state.project_id, path)
+        pid = getattr(self, "_dl_pid", None) or self.state.project_id
+        if not pid:
+            self.status.setText("Đã tải xong nhưng chưa có kênh để thêm vào.")
+            return
+        vid = services.import_video(pid, path)
         self.yt_url.clear()
         self._reload_videos()
         # TỰ ĐỘNG phân tích luôn (dán link -> tải -> phân tích -> tự xuất nếu bật)
-        jid = services.enqueue_auto(self.state.pool, vid, self.state.project_id,
-                                    self._cut_preset())
+        jid = services.enqueue_auto(self.state.pool, vid, pid, self._cut_preset())
         self._track_auto(jid, vid)
         extra = " → xong TỰ XUẤT" if self.auto_export_chk.isChecked() else ""
         self.status.setText(f"Đã tải xong → đang phân tích & cắt clip{extra}...")
@@ -1712,7 +1718,8 @@ class StudioPage(QWidget):
         chrow = db.query_one("SELECT name FROM projects WHERE id=?", (pid,))
         import re as _re
         chname = _re.sub(r'[<>:"/\\|?*]', "_",
-                         ((chrow["name"] if chrow else "") or "Kenh")).strip() or "Kenh"
+                         ((chrow["name"] if chrow else "") or "Kenh"))
+        chname = chname.strip().strip(". ") or "Kenh"   # bỏ chấm/cách cuối (Windows kỵ)
         out_root = str(self._export_root() / chname)
         vr = self.layout_tpl.get("video_rect")
         bg = self.layout_tpl.get("bg", "blur")

@@ -53,7 +53,7 @@ _SENTENCE_END = (".", "?", "!", "…", ".\"", "?\"", "!\"")
 def _safe_name(s: str, limit: int = 70) -> str:
     """Bỏ ký tự cấm trong tên file/thư mục Windows, gọn khoảng trắng."""
     s = re.sub(r'[\\/:*?"<>|\r\n\t]', "", s or "")
-    return re.sub(r"\s+", " ", s).strip()[:limit].strip()
+    return re.sub(r"\s+", " ", s).strip()[:limit].strip().strip(". ")  # bỏ chấm/cách cuối
 
 
 # ============================================================
