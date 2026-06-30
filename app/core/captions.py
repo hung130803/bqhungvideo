@@ -280,27 +280,36 @@ def build_ass(words: list, segments: list, out_path,
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
         act_c = primary                          # màu từ đang nói (vàng)
+        ev = []                                  # (start, end, is_first, is_last, body)
         for ch in _chunks(remapped):
-            cstart = max(0.0, ch[0][0] + delay)
-            cend = max(cstart + 0.1, ch[-1][1] + 0.25 + delay)
+            cend = ch[-1][1] + 0.25
             n = len(ch)
             for i, w in enumerate(ch):
                 wa = max(0.0, w[0] + delay)
-                we = (ch[i + 1][0] + delay) if i + 1 < n else cend
-                we = max(wa + 0.05, we)
+                we = ((ch[i + 1][0] + delay) if i + 1 < n else (cend + delay))
                 parts = []
                 for j, ww in enumerate(ch):
                     wt = _esc(ww[2])
-                    if j == i:                   # TỪ đang nói: nhảy sang vàng (+ phồng nhẹ)
-                        pop = ("\\t(0,110,\\fscx112\\fscy112)"
-                               "\\t(110,210,\\fscx100\\fscy100)"
+                    if j == i:                   # TỪ đang nói -> nhảy vàng (phồng nhẹ)
+                        pop = ("\\t(0,90,\\fscx110\\fscy110)\\t(90,170,\\fscx100\\fscy100)"
                                if p.get("pop") else "")
                         parts.append(f"{{\\1c{act_c}{pop}}}{wt}{{\\1c{rest_c}}}")
                     else:
                         parts.append(wt)
-                body = ("{\\fad(40,0)\\1c%s}" % rest_c) + " ".join(parts)
-                lines.append(
-                    f"Dialogue: 0,{_fmt(wa)},{_fmt(we)},Default,,0,0,0,,{body}\n")
+                ev.append([wa, we, i == 0, i == n - 1, " ".join(parts)])
+        # CHỐNG CHÈN NHAU: sắp theo giờ, ép mỗi dòng kết thúc TRƯỚC khi dòng kế bắt đầu
+        ev.sort(key=lambda e: e[0])
+        for k in range(len(ev) - 1):
+            if ev[k][1] > ev[k + 1][0]:
+                ev[k][1] = ev[k + 1][0]
+        for wa, we, first, last, parts in ev:
+            if we - wa < 0.06:                   # bỏ dòng quá ngắn (đỡ nhấp nháy)
+                continue
+            # fade chỉ ở ĐẦU/CUỐI cụm (giữa cụm chữ đứng yên, chỉ đổi màu) -> không chớp
+            fad = "\\fad(80,0)" if first else ("\\fad(0,90)" if last else "")
+            body = ("{%s\\1c%s}" % (fad, rest_c)) + parts
+            lines.append(
+                f"Dialogue: 0,{_fmt(wa)},{_fmt(we)},Default,,0,0,0,,{body}\n")
         Path(out_path).write_text("".join(lines), encoding="utf-8")
         return True
 
