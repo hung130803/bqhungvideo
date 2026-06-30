@@ -955,12 +955,17 @@ class StudioPage(QWidget):
         n = len(urls)
 
         def work():
+            import time
             pot = self._potoken()
             for k, url in enumerate(urls, 1):
                 self.dl_progress.emit(f"Tải video {k}/{n}...")
                 path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
                                             prefix=f"({k}/{n}) ")
                 self.dl_one.emit(path, err)
+                if k < n:                  # GIÃN NHỊP giữa các video -> đỡ bị chặn
+                    self.dl_progress.emit(f"Nghỉ chút trước video {k + 1}/{n} "
+                                          "(tránh YouTube chặn)...")
+                    time.sleep(5)
         threading.Thread(target=work, daemon=True).start()
 
     def _on_batch_one(self, path, err):
@@ -1703,6 +1708,12 @@ class StudioPage(QWidget):
         if not vrow:
             return 0
         pid = vrow["project_id"] or self.state.project_id   # đúng KÊNH của video
+        # KHO 'Đã xuất' / <tên KÊNH> / <tên video> -> không lẫn giữa các kênh
+        chrow = db.query_one("SELECT name FROM projects WHERE id=?", (pid,))
+        import re as _re
+        chname = _re.sub(r'[<>:"/\\|?*]', "_",
+                         ((chrow["name"] if chrow else "") or "Kenh")).strip() or "Kenh"
+        out_root = str(self._export_root() / chname)
         vr = self.layout_tpl.get("video_rect")
         bg = self.layout_tpl.get("bg", "blur")
         tb = self.layout_tpl.get("trim_black", False)
@@ -1721,7 +1732,7 @@ class StudioPage(QWidget):
             out_name = f"Part {no} {label}".strip()
             jid = services.enqueue_export(
                 self.state.pool, c["id"], video_id, pid,
-                out_dir=str(self._export_root()),   # KHO chung: <gốc>/Đã xuất/<video>
+                out_dir=out_root,   # <gốc>/Đã xuất/<KÊNH>/<video>/Part N.mp4
                 video_rect=vr, bg=bg, trim_black=tb, part_no=no, out_name=out_name,
                 captions=bool(self.layout_tpl.get("captions", True)),
                 cap_style={
@@ -1774,13 +1785,21 @@ class StudioPage(QWidget):
         # mở thẳng thư mục con của video đó.
         base = self._export_root()
         target = base
-        if self.state.video_id:
+        import re
+        # mở thẳng folder KÊNH đang chọn nếu có
+        if self.state.project_id:
+            chrow = db.query_one("SELECT name FROM projects WHERE id=?",
+                                 (self.state.project_id,))
+            if chrow and chrow["name"]:
+                ch = re.sub(r'[<>:"/\\|?*]', "_", chrow["name"]).strip()
+                if (base / ch).is_dir():
+                    target = base / ch
+        if self.state.video_id:                     # có video -> vào sâu folder video
             vrow = db.query_one("SELECT src_path FROM videos WHERE id=?",
                                 (self.state.video_id,))
             if vrow and vrow["src_path"]:
-                import re
                 stem = re.sub(r'[<>:"/\\|?*]', "_", Path(vrow["src_path"]).stem)
-                sub = base / stem
+                sub = target / stem
                 if sub.is_dir():
                     target = sub
         try:
