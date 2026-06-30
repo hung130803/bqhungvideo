@@ -88,6 +88,7 @@ class _SegBar(QWidget):
 class StudioPage(QWidget):
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
+    dl_progress = pyqtSignal(str)   # thông điệp tiến trình tải (hiện % cho user)
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -166,6 +167,7 @@ class StudioPage(QWidget):
         ytrow.addWidget(ck_btn)
         plw.addLayout(ytrow)
         self.dl_done.connect(self._on_dl_done)
+        self.dl_progress.connect(lambda m: self.status.setText(m))
 
         # ===== Hàng 2: HÀNH ĐỘNG tạo clip + công tắc tự xuất =====
         plw.addWidget(self._sec_hdr("Tạo clip", "#3DD68C"))
@@ -595,8 +597,9 @@ class StudioPage(QWidget):
         if not self.state.project_id:
             QMessageBox.information(self, "Chưa có kênh", "Tạo kênh trước.")
             return
+        start = str(self._dl_dir()) if self._dl_dir().is_dir() else ""
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Chọn video (chọn nhiều cùng lúc được)", "",
+            self, "Chọn video (chọn nhiều cùng lúc được)", start,
             "Video (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.ts)")
         self._import_paths(files)
 
@@ -859,8 +862,10 @@ class StudioPage(QWidget):
                 ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/136.0.0.0 Safari/537.36")
-                cmd = [exe, "--no-warnings", "--user-agent", ua,
-                       "-f",
+                # --newline + --no-quiet --progress: ép yt-dlp in % theo từng dòng
+                # (vì có --print nên mặc định nó im) -> đọc để hiện tiến trình.
+                cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
+                       "--user-agent", ua, "-f",
                        "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                        "--merge-output-format", "mp4", "--no-playlist",
                        "--print", "after_move:filepath", "-o", out_tmpl]
@@ -869,15 +874,31 @@ class StudioPage(QWidget):
                 if ff_dir:
                     cmd += ["--ffmpeg-location", ff_dir]
                 cmd.append(url)
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-                if r.returncode != 0:
-                    self.dl_done.emit("", (r.stderr or "lỗi tải")[-300:])
+                import re as _re
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    creationflags=0x0800_0000)
+                path, tail = "", []
+                for line in proc.stdout:        # đọc từng dòng -> hiện %
+                    line = line.strip()
+                    if not line:
+                        continue
+                    tail.append(line); tail[:] = tail[-8:]
+                    if os.path.exists(line):    # dòng after_move:filepath = đường dẫn
+                        path = line
+                    m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
+                    if m:
+                        self.dl_progress.emit(f"Đang tải video... {m.group(1)}%")
+                    elif "Merg" in line or "Fixup" in line:
+                        self.dl_progress.emit("Đang ghép hình + tiếng...")
+                    elif "[ExtractAudio]" in line or "Destination" in line:
+                        self.dl_progress.emit("Đang xử lý...")
+                proc.wait()
+                if proc.returncode != 0:
+                    self.dl_done.emit("", ("\n".join(tail) or "lỗi tải")[-300:])
                     return
-                path = ""
-                for ln in (r.stdout or "").splitlines()[::-1]:
-                    if ln.strip() and os.path.exists(ln.strip()):
-                        path = ln.strip(); break
-                if not path:                    # dự phòng: lấy file mp4 mới nhất
+                if not path or not os.path.exists(path):   # dự phòng: mp4 mới nhất
                     fs = sorted(dl.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
                     path = str(fs[-1]) if fs else ""
                 self.dl_done.emit(path, "" if path else "Không thấy file tải.")
@@ -1674,11 +1695,23 @@ class StudioPage(QWidget):
                                    "Kênh chưa có clip nào. Bấm 'Tất cả' để tạo trước.")
 
     def _open_dir(self):
-        # mở thư mục LƯU của kênh (user chọn, hoặc mặc định)
-        if self.state.project_id:
-            d = services.export_base(self.state.project_id)
-            if d and os.path.isdir(d):
-                os.startfile(d)  # noqa: S606
+        # mở KHO 'Đã xuất' (theo thư mục gốc hiện tại). Nếu đang chọn video ->
+        # mở thẳng thư mục con của video đó.
+        base = self._export_root()
+        target = base
+        if self.state.video_id:
+            vrow = db.query_one("SELECT src_path FROM videos WHERE id=?",
+                                (self.state.video_id,))
+            if vrow and vrow["src_path"]:
+                import re
+                stem = re.sub(r'[<>:"/\\|?*]', "_", Path(vrow["src_path"]).stem)
+                sub = base / stem
+                if sub.is_dir():
+                    target = sub
+        try:
+            os.startfile(str(target))  # noqa: S606
+        except Exception:  # noqa: BLE001
+            pass
 
     def _open_file(self, p):
         if p and os.path.isfile(p):

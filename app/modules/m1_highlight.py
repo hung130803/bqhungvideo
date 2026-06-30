@@ -901,15 +901,17 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     overlay_png = payload.get("overlay_png")    # ảnh lớp chữ render từ UI
     signals = db.loads(clip["signals"], {}) or {}
 
+    pfx = f"Part {part_no} — " if part_no > 0 else ""   # cho user biết đang xuất Part nào
+
     def on_prog(p: float):
-        ctx.progress(0.15 + 0.8 * p, "Đang xuất video 9:16...")
+        ctx.progress(0.15 + 0.8 * p, f"{pfx}đang cắt + chèn chữ + xuất 9:16...")
 
     if signals.get("mode") != "mixed" and video_rect:
         # ---- Mô hình CapCut: nền + khối video (ghép các khúc hay) ----
         segs = signals.get("segments") or [[clip["start_sec"], clip["end_sec"]]]
         pre_crop = None
         if payload.get("trim_black"):
-            ctx.progress(0.08, "Đang dò viền đen...")
+            ctx.progress(0.08, f"{pfx}đang dò viền đen...")
             pre_crop = detect_black_crop(src, segs[0][0])
         # PHỤ ĐỀ CHẠY CHỮ khớp lời (từ mốc từng-từ của whisper, ánh xạ theo đoạn ghép)
         ass_path = fonts_dir = None
@@ -937,7 +939,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                         hook_dur=float(cs.get("hook_dur", 6.0))):
                     ass_path = ap
                     fonts_dir = str(ROOT_DIR / "app" / "assets" / "fonts")
-        ctx.progress(0.15, "Đang dựng khung (nền + video + phụ đề)...")
+        ctx.progress(0.15, f"{pfx}đang dựng khung (nền + video + phụ đề)...")
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -952,7 +954,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                         "captions": bool(ass_path)}
     elif signals.get("mode") == "mixed":
         # ---- Mixed-Cut: ghép nhiều đoạn (crop thủ công không áp dụng) ----
-        ctx.progress(0.1, "Đang ghép các đoạn (Mixed-Cut)...")
+        ctx.progress(0.1, f"{pfx}đang ghép các đoạn (Mixed-Cut)...")
         export_stitched_clip(
             src, out_path, signals.get("moments", []),
             out_w=out_w, out_h=out_h, encoder=encoder,
