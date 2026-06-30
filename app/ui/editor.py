@@ -7,7 +7,7 @@ Editor kiểu CapCut (mở từ nút "Chỉnh"):
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen,
     QPixmap,
@@ -841,7 +841,7 @@ class EditorDialog(QDialog):
         self.cap_size = _NoWheelSlider(Qt.Orientation.Horizontal)
         # 18..80 = 1.8%..8.0% chiều cao -> kéo nhỏ hơn nhiều so với trước (min 30)
         self.cap_size.setRange(18, 80); self.cap_size.setValue(40)  # = 4.0%
-        self.cap_size.valueChanged.connect(self._refresh_cap)
+        self.cap_size.valueChanged.connect(self._refresh_cap_soon)   # gộp -> khỏi đơ
         self.cap_lbl_sz = QLabel("4.0%"); self.cap_lbl_sz.setFixedWidth(44)
         self.cap_size.valueChanged.connect(
             lambda v: self.cap_lbl_sz.setText(f"{v/10:.1f}%"))
@@ -1010,6 +1010,15 @@ class EditorDialog(QDialog):
         self.cap_size.setValue(val)
         self.cap_size.blockSignals(False)
         self.cap_lbl_sz.setText(f"{val / 10:.1f}%")
+
+    def _refresh_cap_soon(self, *_):
+        """Hoãn vẽ lại ~80ms -> kéo thanh trượt nhanh KHÔNG vẽ liên tục (đỡ đơ)."""
+        t = getattr(self, "_cap_timer", None)
+        if t is None:
+            t = self._cap_timer = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self._refresh_cap)
+        t.start(80)
 
     def _refresh_cap(self, *_):
         """Cập nhật ô PHỤ ĐỀ trong xem trước theo kiểu/cỡ/màu/font (giữ vị trí)."""

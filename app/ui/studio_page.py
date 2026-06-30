@@ -1085,8 +1085,11 @@ class StudioPage(QWidget):
             sld.blockSignals(True); sld.setValue(int(ms / dur * 1000)); sld.blockSignals(False)
             tlb.setText(fmt(ms))
         player.positionChanged.connect(on_pos)
+        # KÉO: chỉ đổi nhãn giờ; THẢ mới tua thật -> không tua liên tục (đỡ lag video)
         sld.sliderMoved.connect(
-            lambda v: player.setPosition(int(v / 1000 * (player.duration() or 0))))
+            lambda v: tlb.setText(fmt(int(v / 1000 * (player.duration() or 0)))))
+        sld.sliderReleased.connect(
+            lambda: player.setPosition(int(sld.value() / 1000 * (player.duration() or 0))))
 
         def toggle():
             if player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
