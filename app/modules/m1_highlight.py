@@ -277,25 +277,33 @@ _STYLE_HINT = {
 
 def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video",
                    purpose: str = "", style: str = "",
-                   min_len: float = 60.0, max_len: float = 0.0) -> str:
+                   min_len: float = 60.0, max_len: float = 0.0,
+                   count: int = 0) -> str:
     extra = ""
     if _PURPOSE_HINT.get(purpose):
         extra += "- " + _PURPOSE_HINT[purpose] + "\n"
     if _STYLE_HINT.get(style):
         extra += "- " + _STYLE_HINT[style] + "\n"
-    mn = int(min_len or 60)
-    mx = f", tối đa ~{int(max_len)} giây" if max_len else ""
+    how_many = (f"Chọn ĐÚNG {count} clip hay nhất" if count > 0
+                else "Chọn 3-6 clip hay nhất")
+    if min_len and min_len > 0:                 # có Min -> ép tối thiểu
+        mx = f", tối đa ~{int(max_len)} giây" if max_len else ""
+        len_rule = (f"- ĐỘ DÀI: TỐI THIỂU {int(min_len)} giây{mx}. Đoạn hay kéo "
+                    "dài thì để dài hơn, miễn hấp dẫn. ĐỪNG gò về đúng 1 phút.\n")
+    else:                                       # Min=0 -> độ dài TỰ DO / ngẫu nhiên
+        mxx = f" (không quá ~{int(max_len)} giây)" if max_len else ""
+        len_rule = ("- ĐỘ DÀI: TỰ DO theo nội dung" + mxx + " — khoảnh khắc nào "
+                    "hay thì lấy trọn, ngắn dài tuỳ nội dung, KHÔNG ép độ dài.\n")
     return (
         "Transcript (mỗi dòng: GIÂY_BẮT_ĐẦU GIÂY_KẾT_THÚC | lời nói):\n"
         f"{listing}\n\n"
         f"Video này nói bằng {lang_name.upper()}.\n"
-        "Chọn 3-6 clip hay nhất trong đoạn này. QUY TẮC:\n"
+        f"{how_many} trong đoạn này. QUY TẮC:\n"
         + extra +
         "- Ưu tiên cảnh ĐỈNH ĐIỂM/cao trào, có hook ở đầu, giữ chân người xem.\n"
         "- Mỗi clip là MỘT câu chuyện/cao trào TRỌN VẸN: lấy đủ phần dẫn dắt + cao "
         "trào + chốt, KHÔNG cắt cụt giữa chừng.\n"
-        f"- ĐỘ DÀI: TỐI THIỂU {mn} giây{mx}. Nếu đoạn hay kéo dài thì cứ để dài hơn "
-        "(trong giới hạn), miễn hấp dẫn liên tục. ĐỪNG gò mọi clip về đúng 1 phút.\n"
+        + len_rule +
         "- Có thể chia 1 clip thành NHIỀU đoạn nhỏ (tối đa ~6 khúc) để bỏ phần "
         "thừa/lặp/ngắt quãng, MIỄN ghép lại liền mạch, đúng mạch nội dung video.\n"
         "- Cắt vào RANH GIỚI CÂU trọn vẹn (đầu/cuối câu nói), ĐỪNG cắt giữa câu.\n"
@@ -366,7 +374,8 @@ def _clip_sentences(segments: list, segs: list) -> list:
     return out
 
 
-def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None) -> dict:
+def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
+                 min_len: float = 0.0) -> dict:
     """
     PASS 2 — AI ĐỌC KỸ transcript của 1 clip rồi CẮT GỌN: bỏ câu lan man/lặp/lạc đề,
     giữ phần hay (hook/cao trào/chốt) — ĐƯỢC giữ khoảng lặng nếu tạo kịch tính.
@@ -415,7 +424,10 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None) -> di
             merged.append([s, e])
     total = sum(e - s for s, e in merged)
     orig = sum(e - s for s, e in clip["segments"])
-    if total < 40 or total < 0.3 * orig:   # cắt quá tay -> nghi lỗi, giữ gốc
+    # cắt quá tay -> giữ gốc. QUAN TRỌNG: nếu user đặt Min mà tỉa xuống dưới Min
+    # thì GIỮ CLIP GỐC (đã >= Min từ PASS 1) -> không bao giờ ra clip < Min.
+    if (total < 40 or total < 0.3 * orig
+            or (min_len and total < min_len - 0.5)):
         return clip
     out = dict(clip)
     out["segments"] = merged
@@ -509,6 +521,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     cfg = cfg or {}
     min_len = float(cfg.get("min_len", 60.0))
     max_len = float(cfg.get("max_len", 0.0) or 0.0)
+    count = int(cfg.get("count", 0) or 0)          # số clip muốn cắt (0 = tự động)
     purpose = cfg.get("purpose", "")
     style = cfg.get("style", "")
     boundaries = _natural_boundaries(transcript, scenes)
@@ -523,7 +536,8 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                          f"AI đọc & chọn đoạn hay (phần {ci + 1}/{len(chunks)})...")
         try:
             data = llm.complete_json(
-                _select_prompt(listing, lang_name, purpose, style, min_len, max_len),
+                _select_prompt(listing, lang_name, purpose, style, min_len,
+                               max_len, count),
                 system=_SEL_SYSTEM)
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
             errors.append(str(e))
@@ -547,7 +561,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         if any(abs(s0 - k["segments"][0][0]) < 8.0 for k in kept):
             continue
         kept.append(c)
-        if len(kept) >= 12:  # đủ nhiều, tránh quá tải UI
+        if len(kept) >= (count if count > 0 else 12):  # đúng số user đặt (hoặc 12)
             break
     kept.sort(key=lambda c: c["segments"][0][0])  # theo thứ tự thời gian (Part 1,2,3)
 
@@ -557,7 +571,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         if ctx is not None:
             ctx.progress(0.55 + 0.05 * (i / max(1, len(kept))),
                          f"AI đọc kỹ & cắt gọn clip {i + 1}/{len(kept)}...")
-        refined.append(_refine_clip(c, segs, duration, boundaries))
+        refined.append(_refine_clip(c, segs, duration, boundaries, min_len))
     return refined
 
 

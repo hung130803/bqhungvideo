@@ -313,6 +313,7 @@ class StudioPage(QWidget):
         return {
             "min_len": float(s.value("cut_min", 60, type=int)),
             "max_len": float(s.value("cut_max", 0, type=int)),
+            "count": int(s.value("cut_count", 0, type=int)),
             "purpose": s.value("cut_purpose", "") or "",
             "style": s.value("cut_style", "") or "",
         }
@@ -333,13 +334,24 @@ class StudioPage(QWidget):
         lang.setCurrentIndex(i if i >= 0 else 0)
         lay.addWidget(lang)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Clip dài tối thiểu (giây):"))
-        mn = QSpinBox(); mn.setRange(10, 600); mn.setValue(s.value("cut_min", 60, type=int))
+        row.addWidget(QLabel("Dài tối thiểu (giây):"))
+        mn = QSpinBox(); mn.setRange(0, 600); mn.setValue(s.value("cut_min", 60, type=int))
+        mn.setToolTip("0 = NGẪU NHIÊN (AI tự quyết độ dài theo nội dung)")
         row.addWidget(mn)
         row.addWidget(QLabel("Tối đa:"))
         mx = QSpinBox(); mx.setRange(0, 900); mx.setValue(s.value("cut_max", 0, type=int))
         mx.setToolTip("0 = không giới hạn trên"); row.addWidget(mx)
         lay.addLayout(row)
+        lay.addWidget(QLabel("(Bỏ trống = đặt 0 thì độ dài NGẪU NHIÊN theo nội dung)"))
+        # Số clip muốn cắt
+        crow = QHBoxLayout()
+        crow.addWidget(QLabel("Số clip muốn cắt:"))
+        cnt = QSpinBox(); cnt.setRange(0, 20); cnt.setValue(s.value("cut_count", 0, type=int))
+        cnt.setToolTip("0 = tự động/ngẫu nhiên (AI tự chọn 3-6 clip).")
+        crow.addWidget(cnt)
+        crow.addWidget(QLabel("(0 = ngẫu nhiên)"))
+        crow.addStretch(1)
+        lay.addLayout(crow)
         lay.addWidget(QLabel("Mục đích cắt:"))
         purpose = QComboBox()
         for label, key in (("Tự động", ""), ("Compilation (nhiều khoảnh khắc)", "compilation"),
@@ -362,6 +374,7 @@ class StudioPage(QWidget):
 
         def save():
             s.setValue("cut_min", mn.value()); s.setValue("cut_max", mx.value())
+            s.setValue("cut_count", cnt.value())
             s.setValue("cut_purpose", purpose.currentData() or "")
             s.setValue("cut_style", style.currentData() or "")
             # ngôn ngữ -> .env để tiến trình phân tích (chạy riêng) đọc được
