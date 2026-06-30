@@ -15,14 +15,29 @@ from dotenv import load_dotenv
 # ROOT_DIR = nơi chứa MÃ/tài nguyên đọc (plugin...). DATA_DIR = nơi chứa DỮ LIỆU
 # người dùng (project, db, .env, cookie). Tách 2 cái để khi cập nhật bản .exe
 # (thay _internal) KHÔNG làm mất dữ liệu người dùng.
-if getattr(sys, "frozen", False):                 # đang chạy bản .exe (PyInstaller)
+FROZEN = getattr(sys, "frozen", False)
+if FROZEN:                                        # đang chạy bản .exe (PyInstaller)
     ROOT_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     # cho subprocess tìm thấy ffmpeg/ffprobe/yt-dlp đã đóng gói KÈM trong app
     os.environ["PATH"] = str(ROOT_DIR) + os.pathsep + os.environ.get("PATH", "")
+    # TRỎ THẲNG vào binary đóng gói (chắc chắn, khỏi phụ thuộc PATH)
+    for _b in ("ffmpeg", "ffprobe"):
+        _p = ROOT_DIR / f"{_b}.exe"
+        if _p.exists():
+            os.environ[_b.upper() + "_PATH"] = str(_p)
     DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BQHungVideo"
 else:                                             # chạy từ mã nguồn (dev)
     ROOT_DIR = Path(__file__).resolve().parent
     DATA_DIR = ROOT_DIR
+
+
+def bundled_exe(name: str) -> str:
+    """Đường dẫn binary đóng gói kèm (.exe) khi chạy bản đóng gói; '' nếu không có."""
+    if FROZEN:
+        p = ROOT_DIR / f"{name}.exe"
+        if p.exists():
+            return str(p)
+    return ""
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 load_dotenv(DATA_DIR / ".env")  # nạp .env nếu có
 

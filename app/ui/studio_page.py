@@ -840,15 +840,15 @@ class StudioPage(QWidget):
         if not self.state.project_id:
             QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
             return None
-        exe = shutil.which("yt-dlp")
+        from config import settings, bundled_exe
+        exe = bundled_exe("yt-dlp") or shutil.which("yt-dlp")   # ưu tiên bản đóng gói
         if not exe:
             QMessageBox.warning(self, "Thiếu yt-dlp",
                                 "Máy chưa có yt-dlp. Cài: pip install yt-dlp")
             return None
-        from config import settings
         dl = self._dl_dir()                  # KHO chung: <gốc>/Đã tải (giữ mãi)
-        ff_dir = os.path.dirname(shutil.which("ffmpeg") or settings.FFMPEG_PATH
-                                 or r"C:\ffmpeg\ffmpeg.exe")
+        ffmpeg = bundled_exe("ffmpeg") or shutil.which("ffmpeg") or settings.FFMPEG_PATH
+        ff_dir = os.path.dirname(ffmpeg) if os.path.sep in str(ffmpeg) else ""
         return exe, dl, ff_dir
 
     def _potoken(self):

@@ -23,7 +23,12 @@ _BELOW_NORMAL = 0x00004000 if sys.platform == "win32" else 0
 def _run_analyze(video_id: int, ctx: JobContext, force: bool,
                  base: float = 0.0, span: float = 1.0) -> None:
     """Chạy lõi phân tích trong tiến trình con; tiến độ trong khoảng base..base+span."""
-    args = [sys.executable, "-m", "app.core.analysis_runner", str(video_id)]
+    # Bản .exe (PyInstaller) KHÔNG chạy được "-m module" -> dùng cờ --analyze mà
+    # main.py nhận diện. Bản dev (python) thì chạy module như cũ.
+    if getattr(sys, "frozen", False):
+        args = [sys.executable, "--analyze", str(video_id)]
+    else:
+        args = [sys.executable, "-m", "app.core.analysis_runner", str(video_id)]
     if force:
         args.append("force")
     env = dict(os.environ)

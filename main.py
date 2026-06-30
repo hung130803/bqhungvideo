@@ -16,6 +16,12 @@ except Exception:  # noqa: BLE001
 
 
 def main() -> int:
+    # ---- Chế độ TIẾN TRÌNH CON PHÂN TÍCH (bản .exe không chạy được -m module) ----
+    if len(sys.argv) >= 3 and sys.argv[1] == "--analyze":
+        import app.core.analysis_runner as ar
+        sys.argv = [sys.argv[0]] + sys.argv[2:]   # -> [exe, video_id, force?]
+        return ar.main()
+
     from PyQt6.QtWidgets import QApplication
 
     # Nạp DB + đăng ký toàn bộ job handler (analyze, m1_*)
