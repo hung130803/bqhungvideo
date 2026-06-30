@@ -90,6 +90,7 @@ class StudioPage(QWidget):
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
     dl_progress = pyqtSignal(str)   # thông điệp tiến trình tải (hiện % cho user)
+    dl_one = pyqtSignal(str, str)   # 1 video TRONG LOẠT tải xong (path, lỗi) -> auto edit
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -162,6 +163,11 @@ class StudioPage(QWidget):
         self.yt_btn.setToolTip("Tải video 1080p từ link vào kênh đang chọn (yt-dlp).")
         self.yt_btn.clicked.connect(self._download_youtube)
         ytrow.addWidget(self.yt_btn)
+        self.yt_many_btn = QPushButton("Tải nhiều"); self.yt_many_btn.setProperty("primary", True)
+        self.yt_many_btn.setToolTip("Dán NHIỀU link (mỗi link 1 dòng) -> tải hết + "
+                                    "tự phân tích/cắt từng cái (bật 'tự xuất' thì xuất luôn).")
+        self.yt_many_btn.clicked.connect(self._download_many)
+        ytrow.addWidget(self.yt_many_btn)
         ck_btn = QPushButton("Cookie"); ck_btn.setProperty("ghost", True)
         ck_btn.setToolTip("Dán cookie YouTube (khi bị đòi đăng nhập). Lưu 1 lần dùng mãi.")
         ck_btn.clicked.connect(self._youtube_cookie)
@@ -169,6 +175,7 @@ class StudioPage(QWidget):
         plw.addLayout(ytrow)
         self.dl_done.connect(self._on_dl_done)
         self.dl_progress.connect(lambda m: self.status.setText(m))
+        self.dl_one.connect(self._on_batch_one)
 
         # ===== Hàng 2: HÀNH ĐỘNG tạo clip + công tắc tự xuất =====
         plw.addWidget(self._sec_hdr("Tạo clip", "#3DD68C"))
@@ -828,85 +835,151 @@ class StudioPage(QWidget):
         dlg.exec()
 
     # ---- tải video từ link YouTube (yt-dlp) ----
+    def _yt_ready(self):
+        """Kiểm tra sẵn sàng tải. Trả (exe, dl, ff_dir) hoặc None (kèm cảnh báo)."""
+        if not self.state.project_id:
+            QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
+            return None
+        exe = shutil.which("yt-dlp")
+        if not exe:
+            QMessageBox.warning(self, "Thiếu yt-dlp",
+                                "Máy chưa có yt-dlp. Cài: pip install yt-dlp")
+            return None
+        from config import settings
+        dl = self._dl_dir()                  # KHO chung: <gốc>/Đã tải (giữ mãi)
+        ff_dir = os.path.dirname(shutil.which("ffmpeg") or settings.FFMPEG_PATH
+                                 or r"C:\ffmpeg\ffmpeg.exe")
+        return exe, dl, ff_dir
+
+    def _potoken(self):
+        try:
+            from app.core import ytdlp_potoken
+            return ytdlp_potoken.ensure_running()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix=""):
+        """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress."""
+        import re as _re
+        ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
+        out_tmpl = str(dl / "%(title).80s.%(ext)s")
+        cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
+               "--user-agent", ua, "-f",
+               "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+               "--merge-output-format", "mp4", "--no-playlist",
+               "--print", "after_move:filepath", "-o", out_tmpl]
+        cmd += pot_args + cookie_args
+        if ff_dir:
+            cmd += ["--ffmpeg-location", ff_dir]
+        cmd.append(url)
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                encoding="utf-8", errors="replace", creationflags=0x0800_0000)
+        except Exception as e:  # noqa: BLE001
+            return "", str(e)[:200]
+        path, tail = "", []
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            tail.append(line); tail[:] = tail[-8:]
+            if os.path.exists(line):
+                path = line
+            m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
+            if m:
+                self.dl_progress.emit(f"{prefix}Đang tải... {m.group(1)}%")
+            elif "Merg" in line or "Fixup" in line:
+                self.dl_progress.emit(f"{prefix}Đang ghép hình + tiếng...")
+        proc.wait()
+        if proc.returncode != 0:
+            return "", ("\n".join(tail) or "lỗi tải")[-300:]
+        if not path or not os.path.exists(path):
+            fs = sorted(dl.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+            path = str(fs[-1]) if fs else ""
+        return path, "" if path else "Không thấy file tải."
+
     def _download_youtube(self):
         url = self.yt_url.text().strip()
         if not url:
             QMessageBox.information(self, "Chưa có link", "Dán link YouTube vào ô.")
             return
-        if not self.state.project_id:
-            QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
+        ready = self._yt_ready()
+        if not ready:
             return
-        exe = shutil.which("yt-dlp")
-        if not exe:
-            QMessageBox.warning(self, "Thiếu yt-dlp",
-                                "Máy chưa có yt-dlp. Cài: pip install yt-dlp")
-            return
-        from config import settings
-        dl = self._dl_dir()                  # KHO chung: <gốc>/Đã tải (giữ mãi)
-        ff_dir = os.path.dirname(shutil.which("ffmpeg") or settings.FFMPEG_PATH
-                                 or r"C:\ffmpeg\ffmpeg.exe")
-        out_tmpl = str(dl / "%(title).80s.%(ext)s")
+        exe, dl, ff_dir = ready
         cookie_args = self._cookie_args()
         self.yt_btn.setEnabled(False)
-        self.status.setText("Đang tải video từ YouTube... (xem chờ chút)")
+        self.status.setText("Đang tải video từ YouTube...")
 
         def work():
-            try:
-                # Né "Sign in to confirm you're not a bot" KHÔNG cần cookie:
-                # bật PO-token provider giống tool BQHungDown (best-effort).
-                pot_args = []
-                try:
-                    from app.core import ytdlp_potoken
-                    pot_args = ytdlp_potoken.ensure_running()
-                except Exception:  # noqa: BLE001
-                    pot_args = []
-                ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/136.0.0.0 Safari/537.36")
-                # --newline + --no-quiet --progress: ép yt-dlp in % theo từng dòng
-                # (vì có --print nên mặc định nó im) -> đọc để hiện tiến trình.
-                cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
-                       "--user-agent", ua, "-f",
-                       "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                       "--merge-output-format", "mp4", "--no-playlist",
-                       "--print", "after_move:filepath", "-o", out_tmpl]
-                cmd += pot_args
-                cmd += cookie_args
-                if ff_dir:
-                    cmd += ["--ffmpeg-location", ff_dir]
-                cmd.append(url)
-                import re as _re
-                proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace",
-                    creationflags=0x0800_0000)
-                path, tail = "", []
-                for line in proc.stdout:        # đọc từng dòng -> hiện %
-                    line = line.strip()
-                    if not line:
-                        continue
-                    tail.append(line); tail[:] = tail[-8:]
-                    if os.path.exists(line):    # dòng after_move:filepath = đường dẫn
-                        path = line
-                    m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
-                    if m:
-                        self.dl_progress.emit(f"Đang tải video... {m.group(1)}%")
-                    elif "Merg" in line or "Fixup" in line:
-                        self.dl_progress.emit("Đang ghép hình + tiếng...")
-                    elif "[ExtractAudio]" in line or "Destination" in line:
-                        self.dl_progress.emit("Đang xử lý...")
-                proc.wait()
-                if proc.returncode != 0:
-                    self.dl_done.emit("", ("\n".join(tail) or "lỗi tải")[-300:])
-                    return
-                if not path or not os.path.exists(path):   # dự phòng: mp4 mới nhất
-                    fs = sorted(dl.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
-                    path = str(fs[-1]) if fs else ""
-                self.dl_done.emit(path, "" if path else "Không thấy file tải.")
-            except Exception as e:  # noqa: BLE001
-                self.dl_done.emit("", str(e)[:300])
-
+            pot = self._potoken()
+            path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot)
+            self.dl_done.emit(path, err)
         threading.Thread(target=work, daemon=True).start()
+
+    def _download_many(self):
+        """Dán NHIỀU link -> tải hết -> mỗi video tự phân tích + cắt (+ tự xuất)."""
+        ready = self._yt_ready()
+        if not ready:
+            return
+        exe, dl, ff_dir = ready
+        dlg = QDialog(self); dlg.setWindowTitle("Tải nhiều link (tự cắt hàng loạt)")
+        dlg.resize(540, 440)
+        v = QVBoxLayout(dlg)
+        v.addWidget(QLabel("Dán NHIỀU link YouTube — MỖI LINK 1 DÒNG:"))
+        box = QPlainTextEdit()
+        box.setPlaceholderText("https://youtu.be/aaa\nhttps://youtu.be/bbb\n...")
+        v.addWidget(box, 1)
+        hint = QLabel("Tải xong từng video sẽ TỰ phân tích + cắt clip. Muốn xuất luôn "
+                      "thì bật ô 'Phân tích xong tự động xuất' ở mục Tạo clip.")
+        hint.setWordWrap(True); hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        v.addWidget(hint)
+        rowb = QHBoxLayout(); rowb.addStretch(1)
+        ok = QPushButton("Tải hết"); ok.setProperty("primary", True)
+        ok.clicked.connect(dlg.accept)
+        cc = QPushButton("Hủy"); cc.setProperty("ghost", True); cc.clicked.connect(dlg.reject)
+        rowb.addWidget(cc); rowb.addWidget(ok); v.addLayout(rowb)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        import re as _re
+        urls = [u for u in _re.split(r"[\s,]+", box.toPlainText())
+                if u.strip().startswith("http")]
+        if not urls:
+            QMessageBox.information(self, "Chưa có link", "Dán ít nhất 1 link hợp lệ.")
+            return
+        cookie_args = self._cookie_args()
+        self._batch_remaining = len(urls)
+        self.yt_btn.setEnabled(False); self.yt_many_btn.setEnabled(False)
+        n = len(urls)
+
+        def work():
+            pot = self._potoken()
+            for k, url in enumerate(urls, 1):
+                self.dl_progress.emit(f"Tải video {k}/{n}...")
+                path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
+                                            prefix=f"({k}/{n}) ")
+                self.dl_one.emit(path, err)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_batch_one(self, path, err):
+        """1 video trong loạt tải xong -> import + tự phân tích/cắt (không popup lỗi)."""
+        if path and not err:
+            try:
+                vid = services.import_video(self.state.project_id, path)
+                jid = services.enqueue_auto(self.state.pool, vid,
+                                            self.state.project_id, self._cut_preset())
+                self._track_auto(jid, vid)
+            except Exception:  # noqa: BLE001
+                pass
+        self._reload_videos()
+        self._batch_remaining = getattr(self, "_batch_remaining", 1) - 1
+        if self._batch_remaining <= 0:
+            self.yt_btn.setEnabled(True); self.yt_many_btn.setEnabled(True)
+            extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
+            self.status.setText(f"Đã tải xong cả loạt → đang phân tích & cắt từng "
+                                f"video{extra} (xem tiến trình dưới).")
 
     def _on_dl_done(self, path, err):
         self.yt_btn.setEnabled(True)
