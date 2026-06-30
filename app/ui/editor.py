@@ -481,8 +481,20 @@ class EditorCanvas(QGraphicsView):
                             "bg": True, "bg_color": "#000000", "radius": 30,
                             "nx": 0.5, "ny": 0.78}, "Phụ đề chạy chữ")
         self.scene.addItem(self.cap_box)
+        # ô HOOK (câu giật tít vàng to ở ĐẦU clip) — chỉ để XEM TRƯỚC, ẩn mặc định
+        self.hook_box = _TextBox(-98, on_guide=self._set_guides)
+        self.hook_box.apply({"size": 0.072, "font": "Anton", "color": "#FFD83D",
+                             "bg": True, "bg_color": "#000000", "radius": 30,
+                             "bg_alpha": 0.45, "nx": 0.5, "ny": 0.10},
+                            "HOOK GIẬT TÍT")
+        self.hook_box.setVisible(False)
+        self.scene.addItem(self.hook_box)
         self.bg = "blur"
         self._frame = QPixmap()
+
+    def show_hook(self, on):
+        """Hiện/ẩn ô HOOK xem trước ở đầu clip (khớp với lúc xuất)."""
+        self.hook_box.setVisible(bool(on))
 
     def set_cap_top(self, ny):
         # đặt ĐỈNH ô phụ đề tại ny (khớp neo an8 lúc render); ngang căn giữa
@@ -852,8 +864,9 @@ class EditorDialog(QDialog):
         cs3.addWidget(self.cap_delay, 1); cs3.addWidget(self.cap_lbl)
         gc.addLayout(cs3)
         # HOOK: câu giật tít to ở đầu clip (AI tự chọn) — giữ chân người xem
-        self.cap_hook = QCheckBox("Hiện HOOK đầu clip (câu giật tít to ~6s, AI tự chọn)")
-        self.cap_hook.setChecked(True)
+        self.cap_hook = QCheckBox("Hiện HOOK đầu clip (câu giật tít vàng to ~6s, AI tự chọn)")
+        self.cap_hook.setChecked(False)   # mặc định TẮT (chỉ bật khi user muốn)
+        self.cap_hook.toggled.connect(self.canvas.show_hook)  # bật/tắt -> hiện preview
         self.cap_hook.setToolTip("Hiện 1 câu gây tò mò TO ở đầu clip rồi ẩn — kiểu "
                                  "video viral. AI tự chọn câu từ lời thoại.")
         gc.addWidget(self.cap_hook)
@@ -911,7 +924,8 @@ class EditorDialog(QDialog):
                 self.cap_color_btn.setStyleSheet(f"color:{self._capcolor};")
             self.cap_delay.setValue(int(round(float(layout.get("cap_delay", 0.12))
                                               * 1000)))
-            self.cap_hook.setChecked(bool(layout.get("cap_hook", True)))
+            self.cap_hook.setChecked(bool(layout.get("cap_hook", False)))
+            self.canvas.show_hook(self.cap_hook.isChecked())   # khớp preview HOOK
             self.blur_amt.setValue(int(layout.get("blur_amt", 22)))
             sv = float(layout.get("speed", 1.0))
             for i in range(self.speed_cb.count()):
