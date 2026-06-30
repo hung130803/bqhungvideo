@@ -171,11 +171,23 @@ def _groq_one(audio_path: str, language, keys: list) -> tuple:
     raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")
 
 
+def _audio_duration(path: str, ff_probe: str, flags: int) -> float:
+    import subprocess
+    try:
+        r = subprocess.run(
+            [ff_probe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", path],
+            capture_output=True, text=True, timeout=60, creationflags=flags)
+        return float((r.stdout or "0").strip() or 0)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
-    """Nghe-chép qua GROQ (mây, FREE, nhanh). NÉN + CẮT NHỎ audio (mp3 16k mono
-    ~48kbps, ~10 phút/phần) để LUÔN dưới giới hạn 25MB của Groq -> video dài bao
-    nhiêu cũng chạy, máy yếu không cần GPU. Ghép lại theo mốc thời gian."""
-    import glob as _glob
+    """Nghe-chép qua GROQ (mây, FREE). Cắt audio thành CỬA SỔ CHÍNH XÁC 10 phút
+    (-ss i*600 -t 600) rồi nén mp3 nhẹ -> dưới giới hạn 25MB + mốc giờ KHÔNG lệch
+    (offset = i*600 ĐÚNG vì cắt đúng từ mốc đó). Ghép lại đúng timeline."""
+    import math
     import os
     import shutil
     import subprocess
@@ -184,39 +196,47 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     if not keys:
         raise RuntimeError("Chưa có GROQ key.")
     ff = shutil.which("ffmpeg") or settings.FFMPEG_PATH or "ffmpeg"
+    fp = shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe"
     flags = 0x0800_0000 if os.name == "nt" else 0
+    chunk = 600
+    total = _audio_duration(audio_path, fp, flags)
+    n = max(1, math.ceil(total / chunk)) if total > 0 else 1
     work = tempfile.mkdtemp(prefix="gq_")
-    chunk = 600                                  # giây mỗi phần
     try:
-        parts = []
-        try:                                     # nén + cắt thành nhiều mp3 nhẹ
-            subprocess.run(
-                [ff, "-y", "-i", audio_path, "-ac", "1", "-ar", "16000",
-                 "-b:a", "48k", "-f", "segment", "-segment_time", str(chunk),
-                 os.path.join(work, "p%03d.mp3")],
-                capture_output=True, creationflags=flags, timeout=900)
-            parts = sorted(_glob.glob(os.path.join(work, "p*.mp3")))
-        except Exception:  # noqa: BLE001
-            parts = []
-        single = not parts
-        if single:                               # nén lỗi -> gửi nguyên file gốc
-            parts = [audio_path]
         all_segs, all_words, full, lang = [], [], [], (language or "")
-        n = len(parts)
-        for i, part in enumerate(parts):
-            off = 0 if single else i * chunk
+        for i in range(n):
+            start = i * chunk                    # mốc CHÍNH XÁC của phần này
+            part = os.path.join(work, f"p{i}.mp3")
+            cmd = [ff, "-y", "-ss", str(start)]
+            if total > 0:
+                cmd += ["-t", str(chunk)]        # 1 cửa sổ 10 phút (chính xác)
+            cmd += ["-i", audio_path, "-ac", "1", "-ar", "16000", "-b:a", "48k",
+                    part]
+            try:
+                subprocess.run(cmd, capture_output=True, creationflags=flags,
+                               timeout=900)
+            except Exception:  # noqa: BLE001
+                continue
+            if not os.path.exists(part) or os.path.getsize(part) < 400:
+                continue
             if on_progress:
                 on_progress(0.1 + 0.85 * i / n,
                             f"Đang chép lời (Groq) phần {i + 1}/{n}...")
             segs, words, lg, _ = _groq_one(part, language, keys)
             lang = lang or lg
             for s in segs:
-                all_segs.append({"start": round(s["start"] + off, 3),
-                                 "end": round(s["end"] + off, 3), "text": s["text"]})
+                all_segs.append({"start": round(s["start"] + start, 3),
+                                 "end": round(s["end"] + start, 3),
+                                 "text": s["text"]})
                 full.append(s["text"])
             for w in words:
-                all_words.append({"start": round(w["start"] + off, 3),
-                                  "end": round(w["end"] + off, 3), "word": w["word"]})
+                all_words.append({"start": round(w["start"] + start, 3),
+                                  "end": round(w["end"] + start, 3),
+                                  "word": w["word"]})
+        if not all_words and not all_segs:       # nén/cắt hỏng -> gửi nguyên file
+            segs, words, lang, _ = _groq_one(audio_path, language, keys)
+            all_segs, all_words = segs, words
+            full = [s["text"] for s in segs]
         if on_progress:
             on_progress(1.0, "Chép lời xong (Groq)")
         return {"language": lang,
