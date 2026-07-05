@@ -13,10 +13,11 @@ from PyQt6.QtGui import (
     QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QDialog, QGraphicsItem,
+    QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QGraphicsItem,
     QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene,
     QGraphicsView, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout,
+    QWidget,
 )
 
 from app import services
@@ -245,8 +246,9 @@ class _VideoBox(QGraphicsItem):
         if not pm.isNull():
             self.aspect = pm.height() / pm.width()
             self.h = self.w * self.aspect
-            # thu nhỏ sẵn (≤2x bề rộng khung) -> vẽ rất nhanh khi kéo/resize
-            cap = int(FW * 2)
+            # thu nhỏ sẵn (≤3x bề rộng khung) -> vẽ nhanh mà vẫn NÉT khi
+            # khung xem trước được phóng to trên màn rộng
+            cap = int(FW * 3)
             self.disp = (pm.scaledToWidth(cap, Qt.TransformationMode.SmoothTransformation)
                          if pm.width() > cap else pm)
             self.prepareGeometryChange()
@@ -458,7 +460,12 @@ class EditorCanvas(QGraphicsView):
     def __init__(self, on_resize=None):
         super().__init__()
         self.on_resize = on_resize
-        self.setFixedSize(FW + 2, FH + 2)
+        # KHÔNG khóa cỡ: view GIÃN theo chỗ trống của dialog; khung 9:16 tự
+        # phóng to bằng fitInView (tọa độ scene FW×FH giữ nguyên -> logic
+        # kéo/thả, snap, lưu layout KHÔNG đổi).
+        self.setMinimumSize(420, 620)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Expanding)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # khung NHỎ -> vẽ lại NGUYÊN khung mỗi lần (đơn giản, không tính vùng,
@@ -509,6 +516,18 @@ class EditorCanvas(QGraphicsView):
         self.scene.addItem(self.hook_box)
         self.bg = "blur"
         self._frame = QPixmap()
+
+    def _fit(self):
+        """Phóng khung 9:16 chiếm gần hết chỗ view đang có (giữ tỉ lệ)."""
+        self.fitInView(QRectF(0, 0, FW, FH), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._fit()
 
     def show_hook(self, on):
         """Hiện/ẩn ô HOOK xem trước ở đầu clip (khớp với lúc xuất)."""
@@ -723,7 +742,13 @@ class EditorDialog(QDialog):
     def __init__(self, frame_path, layout=None, parent=None, current_name=""):
         super().__init__(parent)
         self.setWindowTitle("Chỉnh mẫu — TỰ LƯU khi bấm Xong (bản mới)")
-        self.resize(940, 820)
+        # MỞ TO theo màn hình: màn rộng -> khung xem trước to, chỉnh chữ dễ nhìn
+        scr = QApplication.primaryScreen().availableGeometry()
+        w = int(min(1560, scr.width() * 0.9))
+        h = int(scr.height() * 0.92)
+        self.resize(w, h)
+        self.move(scr.x() + (scr.width() - w) // 2,
+                  scr.y() + (scr.height() - h) // 2)
         self._next = 1
         self.rows = {}
         self.layout_result = None
@@ -732,22 +757,32 @@ class EditorDialog(QDialog):
         self._demo_ready.connect(self._play_demo)
 
         main = QHBoxLayout(self); main.setSpacing(14)
-        # ----- CỘT TRÁI: khung xem trước + hướng dẫn ngắn -----
+        # ----- CỘT TRÁI (GIÃN hết phần rộng còn lại): xem trước + ghi chú -----
         left = QVBoxLayout(); left.setSpacing(8)
         self.canvas = EditorCanvas(on_resize=self._on_resized)
-        left.addWidget(self.canvas, alignment=Qt.AlignmentFlag.AlignTop)
+        left.addWidget(self.canvas, 1)
         hint = QLabel("Kéo <b>khối video</b> để dời/phóng to · kéo <b>góc chữ</b> để "
                       "đổi cỡ · kéo <b>ô vàng</b> đặt chỗ phụ đề · kéo vào giữa có "
                       "vạch căn.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#9A9AA8; font-size:12px;")
-        hint.setFixedWidth(FW + 2)
         left.addWidget(hint)
-        left.addStretch(1)
-        main.addLayout(left)
+        main.addLayout(left, 1)
 
-        # ----- CỘT PHẢI: các nhóm điều khiển gọn gàng -----
-        right = QVBoxLayout(); right.setSpacing(12); main.addLayout(right, 1)
+        # ----- CỘT PHẢI: cố định ~470px, tự CUỘN dọc khi màn thấp -----
+        right_host = QWidget()
+        right = QVBoxLayout(right_host)
+        right.setSpacing(12); right.setContentsMargins(0, 0, 8, 0)
+        rscroll = QScrollArea(); rscroll.setWidgetResizable(True)
+        rscroll.setWidget(right_host)
+        rscroll.setFixedWidth(470)
+        rscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        rscroll.setStyleSheet(
+            "QScrollArea{border:none; background:transparent;}"
+            "QScrollArea>QWidget>QWidget{background:transparent;}")
+        rcol = QVBoxLayout(); rcol.setSpacing(8)
+        rcol.addWidget(rscroll, 1)
+        main.addLayout(rcol)
         self._sec_n = 0
 
         def _group(title, rgb):
@@ -985,7 +1020,7 @@ class EditorDialog(QDialog):
         brow.addWidget(cancel)
         ok = QPushButton("Xong"); ok.setProperty("primary", True)
         ok.clicked.connect(self._accept); brow.addWidget(ok)
-        right.addLayout(brow)
+        rcol.addLayout(brow)   # nút nằm NGOÀI vùng cuộn -> luôn thấy
 
         self.canvas.load_frame(frame_path)
         self._apply_layout(layout)

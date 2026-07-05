@@ -18,8 +18,8 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
-    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
-    QVBoxLayout, QWidget,
+    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea,
+    QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app import services
@@ -104,14 +104,11 @@ class StudioPage(QWidget):
         self.thumbs_ready.connect(self._rebuild_rows)
         self.setAcceptDrops(True)        # KÉO-THẢ video vào app
 
-        # nội dung giới hạn bề rộng + căn giữa cho cân đối (không kéo dàn mép)
+        # nội dung GIÃN theo cửa sổ (màn rộng dùng đủ bề ngang, không bó giữa)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addStretch(1)
         content = QWidget()
-        content.setMaximumWidth(1060)
-        outer.addWidget(content, 30)   # ưu tiên rộng tới max rồi mới chừa lề 2 bên
-        outer.addStretch(1)
+        outer.addWidget(content, 1)
         root = QVBoxLayout(content)
         root.setContentsMargins(8, 16, 8, 12)
         root.setSpacing(14)
@@ -1717,6 +1714,7 @@ class StudioPage(QWidget):
         """Định kỳ (theo timer): job của VIDEO ĐANG CHỌN vừa chạy XONG ->
         báo '✓ Xong — N clip' + cập nhật đuôi trạng thái combo. So sánh
         chữ ký busy trước/sau nên KHÔNG rebuild gì khi không có thay đổi."""
+        self._update_job_progress()   # % + message job đang chạy (cùng timer 1.5s)
         vid = self.state.video_id
         busy = self._video_busy(vid)
         prev_vid, prev_busy = getattr(self, "_job_watch", (None, False))
@@ -1755,6 +1753,7 @@ class StudioPage(QWidget):
     def _rebuild_rows(self):
         clips = getattr(self, "_cur_clips", [])
         vrow = getattr(self, "_cur_vrow", None)
+        self._job_bar = self._job_lbl = None   # widget cũ sắp bị gỡ khỏi list
         while self.list_box.count() > 1:
             w = self.list_box.takeAt(0).widget()
             if w:
@@ -1763,6 +1762,10 @@ class StudioPage(QWidget):
         if not clips:
             self.list_box.insertWidget(self.list_box.count() - 1, self._empty_state())
             return
+        # clip ĐÃ có nhưng job đang chạy lại (phân tích/xuất) -> thanh tiến độ
+        # NHỎ trên đầu danh sách (không che clip, video khác vẫn thao tác được)
+        if getattr(self, "_busy", False):
+            self.list_box.insertWidget(0, self._job_progress_widget(compact=True))
         missing = []
         for i, c in enumerate(clips):
             self.list_box.insertWidget(self.list_box.count() - 1,
@@ -1794,15 +1797,78 @@ class StudioPage(QWidget):
         self._thumb_busy = False
         self.thumbs_ready.emit()
 
+    # ---- tiến độ job của video đang chọn (hiện NGAY vùng clip) ----
+    def _job_progress_row(self, vid):
+        """Job đang CHẠY (ưu tiên) hoặc đang chờ của video: progress + message."""
+        if not vid:
+            return None
+        try:
+            return (db.query_one(
+                "SELECT progress, message, status FROM jobs WHERE video_id=? "
+                "AND status='running' ORDER BY id DESC LIMIT 1", (vid,))
+                or db.query_one(
+                "SELECT progress, message, status FROM jobs WHERE video_id=? "
+                "AND status='pending' ORDER BY id LIMIT 1", (vid,)))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _job_progress_widget(self, compact=False):
+        """Thanh % + dòng trạng thái job. compact=True: dải nhỏ đầu danh sách
+        clip; False: to hơn, căn giữa trong empty-state."""
+        w = QWidget()
+        lay = QVBoxLayout(w); lay.setSpacing(4)
+        lay.setContentsMargins(12, 8 if compact else 0, 12, 8 if compact else 0)
+        bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(0)
+        bar.setFixedHeight(14 if compact else 20)
+        bar.setTextVisible(True)
+        row = QHBoxLayout()
+        if compact:
+            row.addWidget(bar, 1)
+        else:
+            bar.setFixedWidth(520)
+            row.addStretch(1); row.addWidget(bar); row.addStretch(1)
+        lay.addLayout(row)
+        lbl = QLabel("Đang xử lý…")
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color:{MUTED}; font-size:13px;")
+        if not compact:
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(lbl)
+        self._job_bar, self._job_lbl = bar, lbl
+        self._update_job_progress()   # điền giá trị ngay, khỏi chờ nhịp timer
+        return w
+
+    def _update_job_progress(self):
+        """Cập nhật thanh tiến độ theo NHỊP TIMER 1.5s sẵn có (gọi từ
+        _poll_done) — không tạo timer mới, không rebuild danh sách."""
+        bar = getattr(self, "_job_bar", None)
+        lbl = getattr(self, "_job_lbl", None)
+        if bar is None or lbl is None:
+            return
+        r = self._job_progress_row(self.state.video_id)
+        if not r:
+            return
+        try:
+            pct = int(max(0.0, min(1.0, float(r["progress"] or 0))) * 100)
+            if r["status"] == "pending":
+                msg = r["message"] or "Đang chờ đến lượt trong hàng đợi…"
+            else:
+                msg = r["message"] or "Đang xử lý…"
+            bar.setValue(pct)
+            lbl.setText(msg)
+        except RuntimeError:          # widget vừa bị gỡ khi rebuild danh sách
+            self._job_bar = self._job_lbl = None
+
     def _empty_state(self):
         """Vùng danh sách khi CHƯA có clip: nói rõ đang ở bước nào —
         đang xử lý ngầm (job chạy) / chưa tạo clip / chưa có video."""
         vid = self.state.video_id
-        if vid and getattr(self, "_busy", False):
+        busy = bool(vid) and getattr(self, "_busy", False)
+        if busy:
             ic, ic_col = "⏳", WARN
             head = "Đang phân tích & cắt clip video này…"
-            sub = ("Xem % ở khu Tiến trình bên dưới. Xong clip sẽ TỰ hiện "
-                   "tại đây.")
+            sub = ("Tiến độ hiện ngay bên dưới. Xong clip sẽ TỰ hiện "
+                   "tại đây — video khác vẫn xem/thao tác bình thường.")
         elif vid:
             ic, ic_col = "✂", ACCENT
             head = "Chưa có clip"
@@ -1829,6 +1895,10 @@ class StudioPage(QWidget):
         t2.setStyleSheet(f"color:{MUTED}; font-size:14px;")
         t2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(t2)
+        if busy:
+            # thanh % + message của job (cập nhật qua timer 1.5s sẵn có)
+            lay.addSpacing(8)
+            lay.addWidget(self._job_progress_widget(compact=False))
         return w
 
     def _clip_row(self, c, vrow=None, part_no=1):
