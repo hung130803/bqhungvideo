@@ -166,12 +166,17 @@ def _llm_scores(candidates: list[dict], language: str) -> dict[int, dict]:
         "Chấm điểm tiềm năng viral của từng đoạn dựa trên hook, cảm xúc, "
         "tính trọn vẹn và khả năng giữ chân người xem. Trả về JSON THUẦN."
     )
+    lang_name = _lang_name(language)
     prompt = (
-        f"Ngôn ngữ nội dung: {language or 'không rõ'}.\n"
+        f"Ngôn ngữ nội dung: {lang_name}.\n"
         f"Dưới đây là các đoạn ứng viên cắt từ 1 video dài:\n{listing}\n\n"
         "Với MỖI đoạn, trả về một object trong mảng JSON:\n"
         '[{"index": số, "score": 0-100, "reason": "lý do ngắn gọn tiếng Việt", '
-        '"title": "tiêu đề giật tít gợi ý"}]\n'
+        '"title": "tiêu đề giật tít tiếng Việt (cho người dựng đọc)", '
+        '"title_pub": "tiêu đề giật tít viết BẰNG ĐÚNG NGÔN NGỮ VIDEO"}]\n'
+        f"QUY TẮC title_pub: viết bằng {lang_name.upper()} — ĐÚNG ngôn ngữ của "
+        "lời thoại trong ngoặc kép ở trên (dùng để GẮN LÊN video), TUYỆT ĐỐI "
+        "không dịch sang ngôn ngữ khác.\n"
         "Chỉ trả JSON, không thêm chữ nào khác."
     )
     try:
@@ -190,6 +195,8 @@ def _llm_scores(candidates: list[dict], language: str) -> dict[int, dict]:
                 "score": float(r.get("score", 50)),
                 "reason": str(r.get("reason", "")).strip(),
                 "title": str(r.get("title", "")).strip(),
+                # tiêu đề GẮN LÊN video — đúng ngôn ngữ video (không phải Việt)
+                "title_pub": str(r.get("title_pub", "")).strip(),
             }
         except (KeyError, ValueError, TypeError):
             continue
@@ -851,6 +858,14 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
     llm_map = _llm_scores(moments, transcript.get("language", ""))
     use_llm = bool(llm_map)
 
+    # KHÔNG AI + KHÔNG phân tích âm thanh (LIGHT_MODE) -> _audio_score trả hằng
+    # 50 cho mọi đoạn = chọn moment BỪA. Thà báo rõ còn hơn ghép lung tung.
+    has_audio = bool(((audio or {}).get("rms_envelope") or {}).get("values"))
+    if not use_llm and not has_audio:
+        return {"count": 0,
+                "note": "Mixed-Cut cần AI (dán key Groq trong Cài đặt AI) "
+                        "để chọn khoảnh khắc"}
+
     scored = []
     for i, m in enumerate(moments):
         a_s = _audio_score(audio, m["start"], m["end"])
@@ -859,7 +874,8 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
         l_s = l.get("score", 50.0)
         final = (cfg["w_llm"] * l_s + cfg["w_audio"] * a_s + cfg["w_scene"] * s_s
                  if use_llm else 0.6 * a_s + 0.4 * s_s)
-        scored.append({**m, "score": final, "title": l.get("title", "")})
+        scored.append({**m, "score": final, "title": l.get("title", ""),
+                       "title_pub": l.get("title_pub", "")})
 
     # chọn tham lam theo điểm, không chồng nhau, tới khi đủ độ dài
     ctx.progress(0.7, "Chọn & sắp xếp các đoạn hay nhất...")
@@ -880,16 +896,31 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
 
     chosen.sort(key=lambda x: x["start"])  # theo thứ tự thời gian
 
+    # SNAP đầu/cuối mỗi khoảnh khắc vào ranh giới CÂU NÓI + CẢNH của video gốc
+    # -> không cắt lẹm giữa câu (như highlights). Snap xong khử chồng lấn nhẹ.
+    boundaries = _natural_boundaries(transcript, scenes)
+    if boundaries:
+        snapped = _snap_segments([[m["start"], m["end"]] for m in chosen],
+                                 boundaries)
+        prev_end = 0.0
+        for m, (s, e) in zip(chosen, snapped):
+            s = max(s, prev_end)             # snap có thể làm 2 đoạn đè nhau
+            if e - s >= 1.0:
+                m["start"], m["end"] = round(s, 2), round(e, 2)
+            prev_end = m["end"]
+
     moments_out = [{"start": round(m["start"], 2), "end": round(m["end"], 2),
                     "cx": round(_moment_cx(faces, m["start"], m["end"]), 4)}
                    for m in chosen]
     dur_total = sum(m["end"] - m["start"] for m in moments_out)
-    best_title = max(chosen, key=lambda x: x["score"]).get("title", "")
-    title = best_title or f"Mix {len(chosen)} khoảnh khắc hay"
+    best = max(chosen, key=lambda x: x["score"])
+    title = best.get("title", "") or f"Mix {len(chosen)} khoảnh khắc hay"
     avg = round(sum(m["score"] for m in chosen) / len(chosen), 1)
 
     signals = {"mode": "mixed", "llm_used": use_llm,
-               "moments": moments_out, "n": len(moments_out)}
+               "moments": moments_out, "n": len(moments_out),
+               # tiêu đề GẮN LÊN video (đúng ngôn ngữ video) của moment đỉnh nhất
+               "title_en": (best.get("title_pub", "") or "").strip()}
 
     cid = db.insert(
         """INSERT INTO clips (video_id, start_sec, end_sec, score, reason, title,
@@ -997,9 +1028,17 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     def on_prog(p: float):
         ctx.progress(0.15 + 0.8 * p, f"{pfx}đang cắt + chèn chữ + xuất 9:16...")
 
-    if signals.get("mode") != "mixed" and video_rect:
+    if video_rect:
         # ---- Mô hình CapCut: nền + khối video (ghép các khúc hay) ----
-        segs = signals.get("segments") or [[clip["start_sec"], clip["end_sec"]]]
+        # Mixed-Cut CŨNG đi nhánh này khi có mẫu (video_rect): các moments trở
+        # thành segments -> ăn ĐỦ mẫu (nền/chữ/phụ đề/tốc độ/giọng/nhạc/logo)
+        # thay vì export_stitched_clip bỏ qua toàn bộ mẫu.
+        if signals.get("mode") == "mixed":
+            segs = ([[m["start"], m["end"]]
+                     for m in signals.get("moments", [])]
+                    or [[clip["start_sec"], clip["end_sec"]]])
+        else:
+            segs = signals.get("segments") or [[clip["start_sec"], clip["end_sec"]]]
         # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
         if payload.get("hook_first"):
             hseg = _pick_hook_seg(video_id, signals, segs)
@@ -1049,9 +1088,11 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             on_progress=on_prog,
         )
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),
-                        "captions": bool(ass_path)}
+                        "captions": bool(ass_path),
+                        "mixed": signals.get("mode") == "mixed"}
     elif signals.get("mode") == "mixed":
-        # ---- Mixed-Cut: ghép nhiều đoạn (crop thủ công không áp dụng) ----
+        # ---- Mixed-Cut KHÔNG có mẫu (video_rect): ghép kiểu cũ (crop bám mặt),
+        # crop thủ công không áp dụng ----
         ctx.progress(0.1, f"{pfx}đang ghép các đoạn (Mixed-Cut)...")
         export_stitched_clip(
             src, out_path, signals.get("moments", []),

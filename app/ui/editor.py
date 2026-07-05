@@ -479,33 +479,43 @@ class EditorCanvas(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.scene = QGraphicsScene(0, 0, FW, FH)
         self.setScene(self.scene)
+        # GỐC CLIP: mọi item nội dung là CON của khung 9:16 này -> phần tràn ra
+        # ngoài khung bị CẮT (trước đây view = đúng cỡ khung nên viewport tự cắt;
+        # sang fitInView view TO hơn khung -> nền mờ/video tràn sẽ lộ ra nếu
+        # không clip).
+        self.clip_root = QGraphicsRectItem(0, 0, FW, FH)
+        self.clip_root.setPen(QPen(Qt.GlobalColor.transparent))
+        self.clip_root.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self.clip_root.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemClipsChildrenToShape, True)
+        self.scene.addItem(self.clip_root)
         self.bg_solid = QGraphicsRectItem(0, 0, FW, FH)
         self.bg_solid.setPen(QPen(Qt.GlobalColor.transparent))
         self.bg_solid.setZValue(0)
-        self.scene.addItem(self.bg_solid)
+        self.bg_solid.setParentItem(self.clip_root)
         self.bg_blur = QGraphicsPixmapItem(); self.bg_blur.setZValue(0)
         self.bg_blur.setCacheMode(
             QGraphicsPixmapItem.CacheMode.DeviceCoordinateCache)  # nền tĩnh -> cache
-        self.scene.addItem(self.bg_blur)
+        self.bg_blur.setParentItem(self.clip_root)
         self.vbox = _VideoBox(on_guide=self._set_guides)
-        self.scene.addItem(self.vbox)
+        self.vbox.setParentItem(self.clip_root)
         border = QGraphicsRectItem(0, 0, FW, FH)
         border.setPen(QPen(QColor("#3b82f6"), 2)); border.setZValue(30)
-        self.scene.addItem(border)
+        self.scene.addItem(border)          # viền nằm NGOÀI clip -> không bị cắt nửa nét
         # vạch căn giữa (snap guide) — ẩn mặc định
         gpen = QPen(QColor("#FF3DAE"), 2, Qt.PenStyle.DashLine)
         self.gv = QGraphicsLineItem(FW / 2, 0, FW / 2, FH)
         self.gh = QGraphicsLineItem(0, FH / 2, FW, FH / 2)
         for g in (self.gv, self.gh):
             g.setPen(gpen); g.setZValue(40); g.setVisible(False)
-            self.scene.addItem(g)
+            g.setParentItem(self.clip_root)
         self.texts: dict[int, _TextBox] = {}
         # ô PHỤ ĐỀ kéo-thả (chỉ để chọn VỊ TRÍ; không phải lớp chữ overlay)
         self.cap_box = _TextBox(-99, on_guide=self._set_guides)
         self.cap_box.apply({"size": 0.045, "font": "Montserrat", "color": "#FFFF66",
                             "bg": True, "bg_color": "#000000", "radius": 30,
                             "nx": 0.5, "ny": 0.78}, "Phụ đề chạy chữ")
-        self.scene.addItem(self.cap_box)
+        self.cap_box.setParentItem(self.clip_root)
         # ô HOOK (câu giật tít vàng to ở ĐẦU clip) — chỉ để XEM TRƯỚC, ẩn mặc định
         self.hook_box = _TextBox(-98, on_guide=self._set_guides)
         self.hook_box.apply({"size": 0.072, "font": "Anton", "color": "#FFD83D",
@@ -513,7 +523,7 @@ class EditorCanvas(QGraphicsView):
                              "bg_alpha": 0.45, "nx": 0.5, "ny": 0.10},
                             "HOOK GIẬT TÍT")
         self.hook_box.setVisible(False)
-        self.scene.addItem(self.hook_box)
+        self.hook_box.setParentItem(self.clip_root)
         self.bg = "blur"
         self._frame = QPixmap()
 
@@ -577,7 +587,7 @@ class EditorCanvas(QGraphicsView):
         box = self.texts.get(lid)
         if box is None:
             box = _TextBox(lid, on_resize=self.on_resize, on_guide=self._set_guides)
-            self.scene.addItem(box); self.texts[lid] = box
+            box.setParentItem(self.clip_root); self.texts[lid] = box
         box.apply(data, preview)
 
     def remove_text(self, lid):
