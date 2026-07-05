@@ -27,7 +27,9 @@ from app.core.ffmpeg_utils import extract_frame
 from app.database import db
 from app.ui.editor import EditorDialog, render_overlay_png
 from app.ui.state import AppState
-from app.ui.theme import ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, WARN
+from app.ui.theme import (
+    ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, TEXT, WARN,
+)
 
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
 # ngay dưới. Vào "Chỉnh mẫu" để đổi vị trí/cỡ/màu; app tự điền khi xuất từng clip.
@@ -117,8 +119,8 @@ class StudioPage(QWidget):
         # ===== THẺ điều khiển (gom các nút vào 1 khối có viền cho dễ nhận biết) =====
         panel = QWidget(); panel.setObjectName("ctlPanel")
         panel.setStyleSheet(f"#ctlPanel{{background:{BASE}; border:1px solid {BORDER};"
-                            f"border-radius:14px;}}")
-        plw = QVBoxLayout(panel); plw.setContentsMargins(14, 12, 14, 12); plw.setSpacing(10)
+                            f"border-radius:12px;}}")
+        plw = QVBoxLayout(panel); plw.setContentsMargins(16, 8, 16, 14); plw.setSpacing(8)
         root.addWidget(panel)
 
         # ===== Hàng 1: chọn KÊNH + VIDEO =====
@@ -150,7 +152,7 @@ class StudioPage(QWidget):
         mgv = QPushButton("Quản lý video"); mgv.setProperty("ghost", True)
         mgv.setToolTip("Xem danh sách video, tích chọn nhiều rồi xóa cùng lúc.")
         mgv.clicked.connect(self._manage_videos); srcrow.addWidget(mgv)
-        plw.addWidget(self._sec_hdr("Nguồn video", "#5B8CFF"))
+        plw.addWidget(self._sec_hdr("Nguồn video", num=1))
         plw.addLayout(srcrow)
 
         # ===== Hàng tải từ LINK YOUTUBE thẳng vào kênh =====
@@ -159,11 +161,12 @@ class StudioPage(QWidget):
         self.yt_url = QLineEdit()
         self.yt_url.setPlaceholderText("Dán link YouTube vào đây để tải thẳng về kênh...")
         ytrow.addWidget(self.yt_url, 1)
-        self.yt_btn = QPushButton("Tải về"); self.yt_btn.setProperty("ghost", True)
+        self.yt_btn = QPushButton("Tải về"); self.yt_btn.setProperty("primary", True)
+        self.yt_btn.setMinimumHeight(40); self.yt_btn.setMinimumWidth(110)
         self.yt_btn.setToolTip("Tải video 1080p từ link vào kênh đang chọn (yt-dlp).")
         self.yt_btn.clicked.connect(self._download_youtube)
         ytrow.addWidget(self.yt_btn)
-        self.yt_many_btn = QPushButton("Tải nhiều"); self.yt_many_btn.setProperty("primary", True)
+        self.yt_many_btn = QPushButton("Tải nhiều"); self.yt_many_btn.setProperty("ghost", True)
         self.yt_many_btn.setToolTip("Dán NHIỀU link (mỗi link 1 dòng) -> tải hết + "
                                     "tự phân tích/cắt từng cái (bật 'tự xuất' thì xuất luôn).")
         self.yt_many_btn.clicked.connect(self._download_many)
@@ -178,22 +181,22 @@ class StudioPage(QWidget):
         self.dl_one.connect(self._on_batch_one)
 
         # ===== Hàng 2: HÀNH ĐỘNG tạo clip + công tắc tự xuất =====
-        plw.addWidget(self._sec_hdr("Tạo clip", "#3DD68C"))
+        plw.addWidget(self._sec_hdr("Tạo clip", num=2))
         actrow = QHBoxLayout(); actrow.setSpacing(8)
         self.auto_btn = QPushButton("Tạo clip")
         self.auto_btn.setProperty("primary", True)
         self.auto_btn.setMinimumHeight(40); self.auto_btn.setMinimumWidth(160)
         self.auto_btn.clicked.connect(self._auto); actrow.addWidget(self.auto_btn)
         self.auto_all_btn = QPushButton("Tất cả video")
-        self.auto_all_btn.setProperty("ghost", True); self.auto_all_btn.setMinimumHeight(40)
+        self.auto_all_btn.setProperty("ghost", True); self.auto_all_btn.setMinimumHeight(32)
         self.auto_all_btn.setToolTip("Đưa MỌI video chưa làm trong kênh vào hàng đợi.")
         self.auto_all_btn.clicked.connect(self._auto_all); actrow.addWidget(self.auto_all_btn)
         self.pick_btn = QPushButton("Chọn nhiều")
-        self.pick_btn.setProperty("ghost", True); self.pick_btn.setMinimumHeight(40)
+        self.pick_btn.setProperty("ghost", True); self.pick_btn.setMinimumHeight(32)
         self.pick_btn.setToolTip("Tích chọn nhiều video cụ thể để tạo clip cùng lúc.")
         self.pick_btn.clicked.connect(self._pick_videos); actrow.addWidget(self.pick_btn)
         self.mixed_btn = QPushButton("Mixed-Cut")
-        self.mixed_btn.setProperty("ghost", True); self.mixed_btn.setMinimumHeight(40)
+        self.mixed_btn.setProperty("ghost", True); self.mixed_btn.setMinimumHeight(32)
         self.mixed_btn.setToolTip(
             "Ghép các KHOẢNH KHẮC hay nhất KHẮP video thành 1 clip dài (~1-2 "
             "phút) — kiểu 'best moments'. Khác 'Tạo clip' (mỗi clip 1 câu chuyện).")
@@ -211,8 +214,8 @@ class StudioPage(QWidget):
         actrow.addWidget(self.auto_export_chk)
         plw.addLayout(actrow)
 
-        # ===== Hàng 3: CẤU HÌNH (mẫu + cài đặt) =====
-        plw.addWidget(self._sec_hdr("Mẫu & cài đặt", "#F5B544"))
+        # ===== Hàng 3: MẪU + XUẤT (cấu hình + nút xuất chính) =====
+        plw.addWidget(self._sec_hdr("Mẫu & Xuất", num=3))
         cfgrow = QHBoxLayout(); cfgrow.setSpacing(8)
         cfgrow.addWidget(self._tag("Mẫu"))
         self.tmpl_box = QComboBox(); self.tmpl_box.setMinimumWidth(190)
@@ -221,7 +224,6 @@ class StudioPage(QWidget):
         cfgrow.addWidget(self.tmpl_box)
         edit = QPushButton("Chỉnh mẫu"); edit.setProperty("ghost", True)
         edit.clicked.connect(self._edit_template); cfgrow.addWidget(edit)
-        cfgrow.addStretch(1)
         cut = QPushButton("Tùy chỉnh cắt"); cut.setProperty("ghost", True)
         cut.setToolTip("Ngôn ngữ, độ dài Min/Max clip, mục đích & phong cách cắt.")
         cut.clicked.connect(self._cut_settings); cfgrow.addWidget(cut)
@@ -231,10 +233,23 @@ class StudioPage(QWidget):
         self.ai_status = QLabel("")
         self.ai_status.setToolTip("AI đang dùng. Bấm 'Cài đặt AI' để đổi/kiểm tra.")
         cfgrow.addWidget(self.ai_status)
+        cfgrow.addStretch(1)
+        self.dl_chan = QPushButton("Xuất cả kênh")
+        self.dl_chan.setProperty("ghost", True)
+        self.dl_chan.setToolTip("Xuất clip của MỌI video trong kênh, 1 phát "
+                                "(đúng thứ tự Part từng video).")
+        self.dl_chan.clicked.connect(self._export_all_channel)
+        cfgrow.addWidget(self.dl_chan)
+        self.dl_all = QPushButton("Xuất video này")
+        self.dl_all.setProperty("primary", True)
+        self.dl_all.setMinimumHeight(40); self.dl_all.setMinimumWidth(150)
+        self.dl_all.setToolTip("Xuất clip của VIDEO đang chọn.")
+        self.dl_all.clicked.connect(self._export_all)
+        cfgrow.addWidget(self.dl_all)
         plw.addLayout(cfgrow)
         self._update_ai_status()
 
-        # ===== Hàng 3: kết quả + tải tất cả =====
+        # ===== Hàng kết quả: đếm clip + mở thư mục =====
         headrow = QHBoxLayout(); headrow.setSpacing(8)
         self.count_lbl = QLabel("Chưa có clip")
         self.count_lbl.setStyleSheet("font-size:16px; font-weight:600;")
@@ -242,17 +257,6 @@ class StudioPage(QWidget):
         headrow.addStretch(1)
         op = QPushButton("Mở thư mục"); op.setProperty("ghost", True)
         op.clicked.connect(self._open_dir); headrow.addWidget(op)
-        self.dl_chan = QPushButton("Xuất cả kênh")
-        self.dl_chan.setProperty("ghost", True)
-        self.dl_chan.setToolTip("Xuất clip của MỌI video trong kênh, 1 phát "
-                                "(đúng thứ tự Part từng video).")
-        self.dl_chan.clicked.connect(self._export_all_channel)
-        headrow.addWidget(self.dl_chan)
-        self.dl_all = QPushButton("Xuất video này")
-        self.dl_all.setProperty("primary", True)
-        self.dl_all.setToolTip("Xuất clip của VIDEO đang chọn.")
-        self.dl_all.clicked.connect(self._export_all)
-        headrow.addWidget(self.dl_all)
         root.addLayout(headrow)
 
         self.status = QLabel("")
@@ -294,15 +298,24 @@ class StudioPage(QWidget):
         lbl.setStyleSheet(f"color:{MUTED}; font-size:13px; font-weight:600;")
         return lbl
 
-    def _sec_hdr(self, text, color=ACCENT):
-        """Tiêu đề KHU (chia bố cục thành phần rõ ràng): chấm màu + chữ hoa nhỏ."""
-        w = QWidget(); r = QHBoxLayout(w)
-        r.setContentsMargins(0, 6, 0, 0); r.setSpacing(8)
-        dot = QLabel(); dot.setFixedSize(9, 9)
-        dot.setStyleSheet(f"background:{color}; border-radius:4px;")
-        lab = QLabel(text.upper())
-        lab.setStyleSheet(f"color:{MUTED}; font-size:11px; font-weight:800;"
-                          "letter-spacing:1px;")
+    def _sec_hdr(self, text, color=ACCENT, num=None):
+        """Tiêu đề BƯỚC: số tròn màu accent + chữ to đậm (phân cấp rõ ràng)."""
+        w = QWidget(); w.setStyleSheet("background:transparent;")
+        r = QHBoxLayout(w)
+        r.setContentsMargins(0, 8, 0, 0); r.setSpacing(9)
+        if num is not None:
+            dot = QLabel(str(num)); dot.setFixedSize(22, 22)
+            dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            dot.setStyleSheet(f"background:{ACCENT}; color:white; border-radius:11px;"
+                              "font-size:12px; font-weight:800;")
+            lab = QLabel(text)
+            lab.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:700;")
+        else:
+            dot = QLabel(); dot.setFixedSize(9, 9)
+            dot.setStyleSheet(f"background:{color}; border-radius:4px;")
+            lab = QLabel(text.upper())
+            lab.setStyleSheet(f"color:{MUTED}; font-size:11px; font-weight:800;"
+                              "letter-spacing:1px;")
         r.addWidget(dot); r.addWidget(lab); r.addStretch(1)
         return w
 
@@ -1806,35 +1819,43 @@ class StudioPage(QWidget):
             info.addWidget(_SegBar(segs))
         lay.addLayout(info, 1)
 
-        # ---- điểm viral (nhỏ, phía sau, chỉ tham khảo) ----
-        sc = QLabel(str(int(c["score"] or 0)))
+        # ---- điểm viral: BADGE TRÒN màu theo mức (>=80 xanh, >=60 vàng, <60 xám) ----
+        score = int(c["score"] or 0)
+        scol = SUCCESS if score >= 80 else (WARN if score >= 60 else MUTED)
+        sc = QLabel(str(score))
+        sc.setFixedSize(38, 38)
         sc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sc.setStyleSheet(f"background:{SURFACE}; color:{MUTED}; border-radius:9px; "
-                         "padding:2px 9px; font-size:12px; font-weight:600;")
+        sc.setStyleSheet(f"background:{SURFACE}; color:{scol}; border:1px solid {scol};"
+                         "border-radius:19px; font-size:13px; font-weight:700;")
         sc.setToolTip("Điểm tiềm năng viral (0–100) — AI chấm theo nội dung + hình ảnh")
         lay.addWidget(sc)
 
         pv = QPushButton("Xem & sửa"); pv.setFixedWidth(92); pv.setProperty("ghost", True)
+        pv.setFixedHeight(28)
         pv.setToolTip("Phát video, chỉnh tốc độ, cắt tay đầu/cuối rồi xuất.")
         pv.clicked.connect(lambda _, cc=c, n=part_no: self._review_clip(cc, n))
         lay.addWidget(pv)
         cap = QPushButton("Caption"); cap.setFixedWidth(78); cap.setProperty("ghost", True)
+        cap.setFixedHeight(28)
         cap.setToolTip("AI viết TIÊU ĐỀ + CAPTION + HASHTAG đăng bài cho clip "
                        "này — copy dán thẳng lên TikTok/Reels/Shorts.")
         cap.clicked.connect(lambda _, cc=c: self._write_caption(cc))
         lay.addWidget(cap)
         if c["status"] == "exported" and c["export_path"]:
-            mo = QPushButton("Mở"); mo.setFixedWidth(64); mo.setProperty("ghost", True)
+            mo = QPushButton("Mở"); mo.setFixedWidth(56); mo.setProperty("ghost", True)
+            mo.setFixedHeight(28)
             mo.clicked.connect(lambda _, p=c["export_path"]: self._open_file(p))
             lay.addWidget(mo)
             label = "Tải lại"
         else:
             label = "Tải"
         dl = QPushButton(label); dl.setFixedWidth(80); dl.setProperty("primary", True)
+        dl.setFixedHeight(32)
         dl.clicked.connect(
             lambda _, cid=c["id"]: self._export_video(self.state.video_id, cid))
         lay.addWidget(dl)
-        rm = QPushButton("Xóa"); rm.setFixedWidth(64); rm.setProperty("danger", True)
+        rm = QPushButton("Xóa"); rm.setFixedWidth(52); rm.setProperty("danger", True)
+        rm.setFixedHeight(28)
         rm.clicked.connect(lambda _, cid=c["id"]: self._del_clip(cid))
         lay.addWidget(rm)
         return w

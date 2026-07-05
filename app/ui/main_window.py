@@ -80,7 +80,21 @@ class MainWindow(QMainWindow):
         w = QWidget(); w.setObjectName("sidebar"); w.setFixedWidth(230)
         w.setStyleSheet(f"#sidebar{{background:{BASE}; border-right:1px solid {BORDER};}}"
                         f"#sidebar QLabel{{background:transparent;}}")
-        v = QVBoxLayout(w); v.setContentsMargins(18, 22, 18, 18); v.setSpacing(6)
+        v = QVBoxLayout(w); v.setContentsMargins(18, 24, 18, 18); v.setSpacing(6)
+
+        def hline():
+            # đường kẻ MẢNH ngăn cách các nhóm
+            ln = QWidget(); ln.setFixedHeight(1)
+            ln.setStyleSheet(f"background:{BORDER};")
+            return ln
+
+        def group_lbl(text):
+            # nhãn nhóm: chữ HOA nhỏ, mờ
+            g = QLabel(text)
+            g.setStyleSheet(f"color:{MUTED}; font-size:10px; font-weight:700;"
+                            "letter-spacing:2px;")
+            return g
+
         # --- Thương hiệu ---
         brand = QLabel("BQ Hung")
         brand.setStyleSheet(f"color:{TEXT}; font-size:21px; font-weight:800;")
@@ -90,7 +104,11 @@ class MainWindow(QMainWindow):
         tag = QLabel("Cắt clip viral tự động")
         tag.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         v.addWidget(brand); v.addWidget(brand2); v.addSpacing(2); v.addWidget(tag)
-        v.addSpacing(22)
+        v.addSpacing(18)
+        v.addWidget(hline())
+        v.addSpacing(14)
+        v.addWidget(group_lbl("THIẾT BỊ"))
+        v.addSpacing(8)
 
         # --- Thông tin máy (gọn, dọc) ---
         def info(label, val, col=None):
@@ -109,9 +127,11 @@ class MainWindow(QMainWindow):
              SUCCESS if HARDWARE.has_ffmpeg else DANGER)
 
         # --- Luồng chạy song song ---
-        hr = QLabel("CHẠY SONG SONG"); hr.setStyleSheet(
-            f"color:{MUTED}; font-size:11px; font-weight:700; letter-spacing:1px;")
-        v.addWidget(hr); v.addSpacing(4)
+        v.addSpacing(4)
+        v.addWidget(hline())
+        v.addSpacing(14)
+        v.addWidget(group_lbl("CHẠY SONG SONG"))
+        v.addSpacing(8)
 
         def spin_row(label, val, slot):
             r = QHBoxLayout()
@@ -130,6 +150,8 @@ class MainWindow(QMainWindow):
         v.addStretch(1)
 
         # --- Tài khoản đang đăng nhập ---
+        v.addWidget(hline())
+        v.addSpacing(10)
         who = QLabel(f"Tài khoản: {self.state.user or '—'}"
                      + ("  (Admin)" if self.state.role == "admin" else ""))
         who.setStyleSheet(f"color:{MUTED}; font-size:12px;"); who.setWordWrap(True)

@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 
 from app import services
 from app.ui.state import AppState
-from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE, TEXT
+from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE
 
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
          "m1_mixed_cut": "Mixed-Cut", "m1_export_clip": "Xuất clip"}
@@ -151,11 +151,9 @@ class QueuePanel(QWidget):
         lay.addWidget(name, 3)
 
         bar = QProgressBar()
-        bar.setFixedHeight(16)
+        bar.setFixedHeight(11)          # thanh MẢNH, dịu mắt
         bar.setRange(0, 100)
-        bar.setTextVisible(True)
-        bar.setFormat("%p%")
-        bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bar.setTextVisible(False)       # % hiện ở nhãn trạng thái (thanh quá mảnh)
         lay.addWidget(bar, 3)
 
         st = QLabel()
@@ -166,9 +164,10 @@ class QueuePanel(QWidget):
 
         btn = QPushButton()
         btn.setFixedWidth(76)
+        btn.setFixedHeight(26)
         lay.addWidget(btn, 0)
 
-        row = {"w": w, "bar": bar, "st": st, "btn": btn}
+        row = {"w": w, "bar": bar, "st": st, "btn": btn, "name": name, "col": col}
         self._wire_btn(btn, j)
         self._update(j, row)
         return row
@@ -197,19 +196,24 @@ class QueuePanel(QWidget):
         if j["status"] == "done":
             pct = 100
         bar.setValue(pct)
-        # màu thanh theo trạng thái + chữ % NHỎ lại
+        # màu thanh theo trạng thái: accent khi chạy, success DỊU khi xong
         chunk = {"failed": DANGER, "done": SUCCESS}.get(j["status"], ACCENT)
         bar.setStyleSheet(
-            f"QProgressBar{{background:{SURFACE}; border:none; border-radius:7px; "
-            f"font-size:11px; color:{TEXT};}} "
-            f"QProgressBar::chunk{{background:{chunk}; border-radius:7px;}}")
+            f"QProgressBar{{background:{SURFACE}; border:none; border-radius:5px;}} "
+            f"QProgressBar::chunk{{background:{chunk}; border-radius:5px;}}")
+        # việc đã xong/hủy: MỜ BỚT tên (đỡ tranh chú ý với việc đang chạy)
+        faded = j["status"] in ("done", "canceled", "skipped")
+        row["name"].setStyleSheet(
+            f"color:{MUTED if faded else row['col']}; font-size:13px; font-weight:600;")
         txt, color = _STATUS.get(j["status"], (j["status"], MUTED))
         msg = (j["message"] or j["error"] or "").strip()
-        # đang chạy: hiện bước hiện tại; lỗi: hiện lý do
+        # đang chạy: hiện % + bước hiện tại; lỗi: hiện lý do
         detail = msg if j["status"] in ("running", "failed") and msg else ""
+        if j["status"] == "running":
+            txt = f"{pct}% · {txt}"
         full = f"{txt}" + (f" · {detail}" if detail else "")
         row["st"].setText(full[:80])
-        row["st"].setStyleSheet(f"color:{color}; font-size:13px;")
+        row["st"].setStyleSheet(f"color:{color}; font-size:12px;")
         row["st"].setToolTip(full)
 
     # ---- hành động ----
