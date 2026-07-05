@@ -23,8 +23,19 @@ Phát hành cho khách dạng **`.exe` đóng gói PyInstaller** qua GitHub Rele
   - **Editor** chỉnh từng clip; **Mẫu** khung/nền/chữ/phụ đề (có sẵn mẫu *Pro*
     giật tít + phụ đề vàng kiểu TikTok); **Tùy chỉnh cắt** (ngôn ngữ, độ dài
     min/max, số clip, mục đích, phong cách)
+  - **Mixed-Cut**: nút ghép các **khoảnh khắc hay nhất khắp video** thành 1 clip
+    dài kiểu "best moments"
   - **Xuất**: *Xuất video này* / *Xuất cả kênh*, hoặc bật **"Phân tích xong tự
     động xuất"**. File ra tại `<Kho video>/Đã xuất/<Kênh>/<video>/Part N <tiêu đề>.mp4`
+- **Nâng chất clip** (bật trong Mẫu):
+  - **Hook-first**: tự đưa 2-4s **cao trào nhất** lên đầu clip giữ chân người xem
+  - **Nhạc nền tự động**: tắt / **ngẫu nhiên** từ thư mục nhạc của bạn (mỗi clip 1
+    bài) / cố định — tự lặp+cắt khớp độ dài, trộn nhỏ dưới tiếng gốc
+  - **Logo/watermark kênh**: đóng ảnh PNG lên góc mọi clip (chọn góc/cỡ/độ mờ)
+  - **13 kiểu phụ đề** chạy chữ khớp lời (vàng nhảy, karaoke, neon, hồng Reels,
+    đậm bóng đổ, hộp đen/trắng...) — bấm **Demo** xem trước ngay trong editor
+  - **AI viết caption + hashtag**: nút *Caption* mỗi clip → tiêu đề giật tít +
+    caption + hashtag để dán thẳng lên TikTok/Reels/Shorts (lưu được `.txt`)
 - **AI cắt (LLM)**: 5 provider chọn được — **Groq (mặc định, free)** / Ollama
   (local) / Gemini / OpenAI / DeepSeek. Dán **nhiều key** (mỗi dòng 1 key) app
   tự **xoay vòng** khi hết quota; không có key vẫn chạy bằng heuristic
