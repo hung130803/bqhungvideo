@@ -1072,7 +1072,10 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                         delay=float(cs.get("delay", 0.12)),
                         hook=(signals.get("hook", "")
                               if cs.get("hook_on", True) else ""),
-                        hook_dur=float(cs.get("hook_dur", 6.0))):
+                        hook_dur=float(cs.get("hook_dur", 6.0)),
+                        hook_nx=float(cs.get("hook_nx", 0.5)),
+                        hook_ny=float(cs.get("hook_ny", 0.10)),
+                        hook_size=float(cs.get("hook_size", 0) or 0)):
                     ass_path = ap
                     fonts_dir = str(ROOT_DIR / "app" / "assets" / "fonts")
         ctx.progress(0.15, f"{pfx}đang dựng khung (nền + video + phụ đề)...")

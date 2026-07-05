@@ -5,6 +5,7 @@ Chạy:  python main.py
 """
 from __future__ import annotations
 
+import os
 import sys
 
 # Console Windows mặc định cp1252 -> ép UTF-8 (log/print không lỗi tiếng Việt)

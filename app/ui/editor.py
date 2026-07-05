@@ -543,6 +543,23 @@ class EditorCanvas(QGraphicsView):
         """Hiện/ẩn ô HOOK xem trước ở đầu clip (khớp với lúc xuất)."""
         self.hook_box.setVisible(bool(on))
 
+    def set_hook_geom(self, nx=0.5, ny=0.10, size=0.0):
+        """Đặt vị trí/cỡ ô HOOK theo layout đã lưu (nx=tâm ngang, ny=ĐỈNH ô
+        — khớp neo an8 lúc render; size=cỡ chữ theo tỉ lệ chiều cao)."""
+        b = self.hook_box
+        if size and size > 0:
+            d = dict(b.d); d["size"] = float(size)
+            b.apply(d, b.disp)
+        b.setPos(float(nx) * FW - b.w / 2, max(0.0, float(ny)) * FH)
+
+    def hook_geom(self):
+        """Vị trí/cỡ ô HOOK hiện tại để LƯU vào mẫu (trước đây không lưu ->
+        kéo xong mở lại bị reset)."""
+        b = self.hook_box
+        return {"hook_nx": round((b.x() + b.w / 2) / FW, 4),
+                "hook_ny": round(max(0.0, min(1.0, b.y() / FH)), 4),
+                "hook_size": round(b.px / FH, 4)}
+
     def set_cap_top(self, ny):
         # đặt ĐỈNH ô phụ đề tại ny (khớp neo an8 lúc render); ngang căn giữa
         self.cap_box.setPos(FW / 2 - self.cap_box.w / 2, max(0.0, ny) * FH)
@@ -1060,6 +1077,9 @@ class EditorDialog(QDialog):
                                               * 1000)))
             self.cap_hook.setChecked(bool(layout.get("cap_hook", False)))
             self.canvas.show_hook(self.cap_hook.isChecked())   # khớp preview HOOK
+            self.canvas.set_hook_geom(float(layout.get("hook_nx", 0.5)),
+                                      float(layout.get("hook_ny", 0.10)),
+                                      float(layout.get("hook_size", 0) or 0))
             self.blur_amt.setValue(int(layout.get("blur_amt", 22)))
             sv = float(layout.get("speed", 1.0))
             for i in range(self.speed_cb.count()):
@@ -1355,6 +1375,7 @@ class EditorDialog(QDialog):
         lay["cap_preset"] = self.cap_preset.currentText()
         lay["cap_delay"] = self.cap_delay.value() / 1000.0
         lay["cap_hook"] = self.cap_hook.isChecked()
+        lay.update(self.canvas.hook_geom())   # hook_nx/hook_ny/hook_size
         lay["cap_ny"] = self.canvas.cap_ny()
         lay["blur_amt"] = self.blur_amt.value()
         lay["speed"] = float(self.speed_cb.currentText().rstrip("x") or 1.0)

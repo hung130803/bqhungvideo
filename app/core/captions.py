@@ -222,14 +222,20 @@ def build_ass(words: list, segments: list, out_path,
               font: str = "Montserrat", size: int = 0,
               color: str = "", ny: float = 0.78,
               preset: str = DEFAULT_PRESET, delay: float = 0.0,
-              hook: str = "", hook_dur: float = 6.0) -> bool:
+              hook: str = "", hook_dur: float = 6.0,
+              hook_nx: float = 0.5, hook_ny: float = 0.10,
+              hook_size: float = 0.0) -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
     delay = đẩy phụ đề TRỄ lại (giây) để khớp lời (whisper hay đánh dấu sớm);
-            số âm = hiện sớm hơn. ny = vị trí dọc (0=trên, 1=dưới) do user KÉO."""
+            số âm = hiện sớm hơn. ny = vị trí dọc (0=trên, 1=dưới) do user KÉO.
+    hook_nx/hook_ny = tâm-ngang/đỉnh ô HOOK (0..1, user kéo trong Chỉnh mẫu);
+    hook_size = cỡ chữ hook theo tỉ lệ chiều cao (0 = mặc định 1.5x phụ đề).
+    LƯU Ý: clip CÓ hook -> CHỈ hiện hook, BỎ phụ đề chạy chữ (user yêu cầu)."""
+    has_hook = bool((hook or "").strip()) and hook_dur > 0
     remapped = _remap_words(words or [], segments or [])
-    if not remapped:
+    if not remapped and not has_hook:
         return False
     p = CAPTION_PRESETS.get(preset) or CAPTION_PRESETS[DEFAULT_PRESET]
     mode = p["mode"]
@@ -273,8 +279,9 @@ def build_ass(words: list, segments: list, out_path,
              f"{back},-1,0,0,0,100,100,0,0,{border_style},{ow},{shadow},"
              f"{align},{side},{side},{margin_v},1")
     # HOOK: câu giật tít TO ở ĐẦU clip (an8 = trên, neo đỉnh); vàng nổi + viền dày
-    hsize = int(size * 1.5)
-    hmv = int(0.10 * out_h)
+    # vị trí/cỡ theo Ô HOOK user kéo trong Chỉnh mẫu (thiếu -> mặc định như cũ)
+    hsize = int(hook_size * out_h) if hook_size > 0 else int(size * 1.5)
+    hmv = int(max(0.0, min(0.9, hook_ny)) * out_h)
     hook_style = (f"Style: Hook,{font},{hsize},{primary},&H000000FF,{outline},"
                   f"{back},-1,0,0,0,100,100,0,0,1,{max(4, int(hsize*0.11))},2,"
                   f"8,{side},{side},{hmv},1")
@@ -291,14 +298,19 @@ def build_ass(words: list, segments: list, out_path,
         "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
     )
     lines = [head]
-    if hook and hook_dur > 0:               # 1 dòng HOOK to ở đầu clip
+    if has_hook:                            # 1 dòng HOOK to ở đầu clip
         ht = _esc(hook)
         if p.get("upper"):
             ht = ht.upper()
         han = ("\\fad(150,250)\\t(0,160,\\fscx112\\fscy112)"
                "\\t(160,320,\\fscx100\\fscy100)")
+        if abs(hook_nx - 0.5) > 0.01:       # user kéo lệch ngang -> neo bằng \pos
+            han = f"\\pos({int(hook_nx * out_w)},{hmv})" + han
         lines.append(f"Dialogue: 1,{_fmt(0)},{_fmt(hook_dur)},Hook,,0,0,0,,"
                      f"{{{han}}}{ht}\n")
+        # CÓ HOOK -> CHỈ hiện hook, BỎ toàn bộ phụ đề chạy chữ của clip này
+        Path(out_path).write_text("".join(lines), encoding="utf-8")
+        return True
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))

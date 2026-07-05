@@ -44,14 +44,16 @@ DEFAULT_LAYOUT = {"video_rect": (0.5, 0.5, 1.0), "bg": "blur",
                   "cap_font": "Montserrat", "cap_size": 0.05,
                   "cap_color": "", "cap_ny": 0.78,
                   "cap_preset": "Trắng đơn giản", "cap_delay": 0.12,
-                  "cap_hook": False, "cap_hook_dur": 6.0}   # HOOK opt-in (mặc định TẮT)
+                  "cap_hook": False, "cap_hook_dur": 6.0,   # HOOK opt-in (mặc định TẮT)
+                  "hook_nx": 0.5, "hook_ny": 0.10, "hook_size": 0.072}
 
 # MẪU PRO sẵn (giống ViralCut): nền đen gọn, HOOK giật tít đầu clip, phụ đề vàng
 # nhảy karaoke dưới, font Anton đậm, KHÔNG lớp chữ tĩnh (Hook lo phần tiêu đề).
 PRO_LAYOUT = {"video_rect": (0.5, 0.5, 1.0), "bg": "black", "layers": [],
               "captions": True, "cap_font": "Anton", "cap_size": 0.055,
               "cap_color": "", "cap_ny": 0.82, "cap_preset": "Vàng nhảy (TikTok)",
-              "cap_delay": 0.12, "cap_hook": True, "cap_hook_dur": 6.0}
+              "cap_delay": 0.12, "cap_hook": True, "cap_hook_dur": 6.0,
+              "hook_nx": 0.5, "hook_ny": 0.10, "hook_size": 0.072}
 PRO_NAME = "Pro (giật tít + phụ đề vàng)"
 _OLD_PRO_NAME = "⭐ Pro (giật tít + phụ đề vàng)"   # tên cũ có emoji tofu -> dọn
 
@@ -2267,7 +2269,11 @@ class StudioPage(QWidget):
                                                   "Trắng đơn giản"),
                     "delay": self.layout_tpl.get("cap_delay", 0.12),
                     "hook_on": self.layout_tpl.get("cap_hook", False),
-                    "hook_dur": self.layout_tpl.get("cap_hook_dur", 6.0)},
+                    "hook_dur": self.layout_tpl.get("cap_hook_dur", 6.0),
+                    # vị trí/cỡ ô HOOK user kéo trong Chỉnh mẫu
+                    "hook_nx": self.layout_tpl.get("hook_nx", 0.5),
+                    "hook_ny": self.layout_tpl.get("hook_ny", 0.10),
+                    "hook_size": self.layout_tpl.get("hook_size", 0.0)},
                 blur_amt=int(self.layout_tpl.get("blur_amt", 22)),
                 speed=float(sig.get("speed", self.layout_tpl.get("speed", 1.0))),
                 pitch=float(self.layout_tpl.get("pitch", 1.0)),
