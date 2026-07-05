@@ -39,3 +39,4 @@ build/
 dist/
 *.spec
 .anon_key.tmp
+app.lock
