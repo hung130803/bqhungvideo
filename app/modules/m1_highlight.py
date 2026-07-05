@@ -8,9 +8,10 @@ Chọn đoạn bằng 3 tín hiệu (đọc lại từ lõi phân tích đã cac
 
 Xuất: cắt + crop dọc 9:16 BÁM mặt người nói (face-track) trong 1 lệnh ffmpeg.
 
-Hai handler đăng ký vào worker:
-  - "m1_highlights"   : sinh danh sách clip đề xuất, lưu bảng clips.
+Handler đăng ký vào worker:
   - "m1_export_clip"  : xuất 1 clip ra file 9:16.
+generate_highlights / generate_mixed_cut KHÔNG đăng ký trực tiếp — được job
+"auto" / "auto_mixed" (app/queue/jobs.py) gọi sau bước phân tích.
 """
 from __future__ import annotations
 
@@ -700,7 +701,7 @@ def _delete_suggested(video_id: int) -> None:
 
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     """
-    Handler job 'm1_highlights'.
+    Bước "tìm highlight" — được job 'auto' (jobs.py) gọi sau khi phân tích.
     AI tự chọn clip (độ dài linh hoạt, bỏ đoạn thừa, ghép khúc hay). Nếu bật vision,
     chấm thêm bằng HÌNH ẢNH. Không có LLM -> heuristic (audio + cảnh).
     """
@@ -829,7 +830,7 @@ def _moment_cx(faces: dict, start: float, end: float) -> float:
 
 def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
     """
-    Handler job 'm1_mixed_cut'.
+    Bước "Mixed-Cut" — được job 'auto_mixed' (jobs.py) gọi sau khi phân tích.
     Chọn nhiều khoảnh khắc NGẮN điểm cao nhất khắp video, ghép theo thứ tự thời
     gian thành 1 clip dài (>1 phút). Lưu 1 dòng clip với signals.mode='mixed'.
     """
@@ -1137,6 +1138,4 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
 
 
 # ---- đăng ký handler với worker ----
-register_handler("m1_highlights", generate_highlights)
-register_handler("m1_mixed_cut", generate_mixed_cut)
 register_handler("m1_export_clip", export_clip)

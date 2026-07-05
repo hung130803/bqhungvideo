@@ -3,7 +3,8 @@
 
   - "analyze" : chạy lõi phân tích (tiến trình con) cho 1 video.
   - "auto"    : phân tích (nếu chưa) + tìm highlight trong 1 job — nút chính của UI.
-  - "m1_highlights" / "m1_mixed_cut" / "m1_export_clip": đăng ký trong m1_highlight.
+  - "auto_mixed" : phân tích (nếu chưa) + ghép khoảnh khắc hay nhất (Mixed-Cut).
+  - "m1_export_clip": đăng ký trong m1_highlight.
 """
 from __future__ import annotations
 

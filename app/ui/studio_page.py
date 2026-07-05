@@ -132,10 +132,9 @@ class StudioPage(QWidget):
         srcrow.addWidget(self.proj)
         np = QPushButton("+ Kênh"); np.setProperty("ghost", True)
         np.clicked.connect(self._new_proj); srcrow.addWidget(np)
-        sfd = QPushButton("Kho video"); sfd.setProperty("ghost", True)
-        sfd.setToolTip("Chọn 1 thư mục GỐC chung. Trong đó tự có 'Đã tải' "
-                       "(video YouTube) và 'Đã xuất' (clip theo từng video).")
-        sfd.clicked.connect(self._pick_lib_root); srcrow.addWidget(sfd)
+        self.lib_btn = QPushButton("Kho video"); self.lib_btn.setProperty("ghost", True)
+        self.lib_btn.clicked.connect(self._pick_lib_root); srcrow.addWidget(self.lib_btn)
+        self._update_lib_tooltip()   # tooltip hiện ĐƯỜNG DẪN kho đang dùng
         srcrow.addSpacing(16)
         srcrow.addWidget(self._tag("Video"))
         self.vid = QComboBox(); self.vid.setMinimumWidth(200)
@@ -183,6 +182,8 @@ class StudioPage(QWidget):
         self.auto_btn = QPushButton("Tạo clip")
         self.auto_btn.setProperty("primary", True)
         self.auto_btn.setMinimumHeight(40); self.auto_btn.setMinimumWidth(160)
+        self.auto_btn.setToolTip("Phân tích (nếu chưa) + AI tự tìm và cắt các đoạn "
+                                 "hay nhất của VIDEO đang chọn.")
         self.auto_btn.clicked.connect(self._auto); actrow.addWidget(self.auto_btn)
         self.auto_all_btn = QPushButton("Tất cả video")
         self.auto_all_btn.setProperty("ghost", True); self.auto_all_btn.setMinimumHeight(32)
@@ -220,6 +221,8 @@ class StudioPage(QWidget):
         self.tmpl_box.currentIndexChanged.connect(self._on_template_pick)
         cfgrow.addWidget(self.tmpl_box)
         edit = QPushButton("Chỉnh mẫu"); edit.setProperty("ghost", True)
+        edit.setToolTip("Sửa mẫu đang chọn: khung video, nền, chữ, phụ đề, "
+                        "logo, nhạc nền...")
         edit.clicked.connect(self._edit_template); cfgrow.addWidget(edit)
         cut = QPushButton("Tùy chỉnh cắt"); cut.setProperty("ghost", True)
         cut.setToolTip("Ngôn ngữ, độ dài Min/Max clip, mục đích & phong cách cắt.")
@@ -253,6 +256,8 @@ class StudioPage(QWidget):
         headrow.addWidget(self.count_lbl)
         headrow.addStretch(1)
         op = QPushButton("Mở thư mục"); op.setProperty("ghost", True)
+        op.setToolTip("Mở thư mục 'Đã xuất' chứa clip của kênh/video đang chọn "
+                      "trong Kho video.")
         op.clicked.connect(self._open_dir); headrow.addWidget(op)
         root.addLayout(headrow)
 
@@ -609,6 +614,16 @@ class StudioPage(QWidget):
     def _export_root(self):
         return self._lib_sub("Đã xuất")
 
+    def _update_lib_tooltip(self):
+        """Tooltip nút 'Kho video' luôn hiện ĐƯỜNG DẪN đang dùng — trả lời câu
+        'app đang lưu ở đâu?' mà không cần bấm gì."""
+        root = self._lib_root()
+        self.lib_btn.setToolTip(
+            "Đổi thư mục GỐC lưu mọi thứ.\n"
+            f"Đang lưu tại: {root}\n"
+            f"• Video tải về: {root / 'Đã tải'}\n"
+            f"• Clip xuất ra: {root / 'Đã xuất'}\\<Kênh>\\<Video>")
+
     def _pick_lib_root(self):
         """Chọn THƯ MỤC GỐC chung (chứa 'Đã tải' và 'Đã xuất')."""
         cur = str(self._lib_root())
@@ -617,7 +632,15 @@ class StudioPage(QWidget):
             cur)
         if d:
             self._settings.setValue("lib_root", d)
+            self._update_lib_tooltip()
             self.status.setText(f"Kho video: {d}  →  Đã tải / Đã xuất nằm trong đây")
+            # XÁC NHẬN RÕ nơi lưu mới — user từng không biết app lưu ở đâu
+            QMessageBox.information(
+                self, "Đã đổi Kho video",
+                f"Từ giờ mọi thứ lưu tại:\n{d}\n\n"
+                f"• Video tải về:  {Path(d) / 'Đã tải'}\n"
+                f"• Clip xuất ra:  {Path(d) / 'Đã xuất'}\\<Kênh>\\<Video>\n\n"
+                "File cũ ở kho trước KHÔNG tự chuyển sang.")
 
     def _new_proj(self, first=False):
         name, ok = QInputDialog.getText(self, "Kênh mới",
@@ -1999,13 +2022,15 @@ class StudioPage(QWidget):
         if c["status"] == "exported" and c["export_path"]:
             mo = QPushButton("Mở"); mo.setFixedWidth(56); mo.setProperty("ghost", True)
             mo.setFixedHeight(28)
+            mo.setToolTip("Phát file clip đã xuất.")
             mo.clicked.connect(lambda _, p=c["export_path"]: self._open_file(p))
             lay.addWidget(mo)
-            label = "Tải lại"
+            label = "Xuất lại"
         else:
-            label = "Tải"
+            label = "Xuất"
         dl = QPushButton(label); dl.setFixedWidth(80); dl.setProperty("primary", True)
         dl.setFixedHeight(32)
+        dl.setToolTip("Xuất clip này ra file MP4 (Kho video > Đã xuất).")
         dl.clicked.connect(
             lambda _, cid=c["id"]: self._export_video(self.state.video_id, cid))
         lay.addWidget(dl)
@@ -2215,7 +2240,7 @@ class StudioPage(QWidget):
         vpx = self._video_px_for(vrow)
         n = 0
         jids = []
-        # Xuất 1 clip cụ thể ('Tải lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
+        # Xuất 1 clip cụ thể ('Xuất lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
         # file mới -> ép xuất lại kể cả job cũ đã done (vd file bị xóa tay).
         force_one = bool(only_clip_id)
         for i, c in enumerate(clips):
@@ -2260,7 +2285,7 @@ class StudioPage(QWidget):
             # không để user chờ file mới mà không có job nào chạy
             self.status.setText(
                 "Các clip này đã xuất trước đó (không đổi gì) — không tạo job "
-                "mới. Muốn xuất lại 1 clip: mở clip đó bấm 'Tải lại'.")
+                "mới. Muốn xuất lại 1 clip: bấm 'Xuất lại' ở clip đó.")
         return len(jids)
 
     def _export_all(self):
@@ -2268,7 +2293,8 @@ class StudioPage(QWidget):
         if not self.state.video_id:
             return
         if not services.list_clips(self.state.video_id):
-            QMessageBox.information(self, "Chưa có clip", "Bấm 'Tạo clip tự động' trước.")
+            QMessageBox.information(self, "Chưa có clip",
+                                    "Bấm nút 'Tạo clip' để AI cắt clip trước.")
             return
         n = self._export_video(self.state.video_id)
         self.status.setText(f"Đang xuất {n} clip (video này) theo thứ tự Part...")
@@ -2286,27 +2312,33 @@ class StudioPage(QWidget):
                 "video, chạy song song)...")
         else:
             QMessageBox.information(self, "Chưa có clip",
-                                   "Kênh chưa có clip nào. Bấm 'Tất cả' để tạo trước.")
+                                    "Kênh chưa có clip nào. Bấm 'Tất cả video' "
+                                    "để tạo clip cho cả kênh trước.")
 
     def _open_dir(self):
         # mở KHO 'Đã xuất' (theo thư mục gốc hiện tại). Nếu đang chọn video ->
-        # mở thẳng thư mục con của video đó.
+        # mở thẳng thư mục con của video đó. Tên folder phải làm sạch Y HỆT lúc
+        # xuất (_export_video + m1_highlight._safe_name) kẻo mở trượt sang cha.
         base = self._export_root()
         target = base
         import re
-        # mở thẳng folder KÊNH đang chọn nếu có
+        # mở thẳng folder KÊNH đang chọn nếu có (sạch tên GIỐNG _export_video)
         if self.state.project_id:
             chrow = db.query_one("SELECT name FROM projects WHERE id=?",
                                  (self.state.project_id,))
-            if chrow and chrow["name"]:
-                ch = re.sub(r'[<>:"/\\|?*]', "_", chrow["name"]).strip()
-                if (base / ch).is_dir():
-                    target = base / ch
+            ch = re.sub(r'[<>:"/\\|?*]', "_",
+                        ((chrow["name"] if chrow else "") or "Kenh"))
+            ch = ch.strip().strip(". ") or "Kenh"
+            if (base / ch).is_dir():
+                target = base / ch
         if self.state.video_id:                     # có video -> vào sâu folder video
             vrow = db.query_one("SELECT src_path FROM videos WHERE id=?",
                                 (self.state.video_id,))
             if vrow and vrow["src_path"]:
-                stem = re.sub(r'[<>:"/\\|?*]', "_", Path(vrow["src_path"]).stem)
+                # folder video đặt tên bằng _safe_name lúc xuất -> dùng đúng hàm đó
+                from app.modules.m1_highlight import _safe_name
+                stem = (_safe_name(Path(vrow["src_path"]).stem)
+                        or f"video_{self.state.video_id}")
                 sub = target / stem
                 if sub.is_dir():
                     target = sub

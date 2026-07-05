@@ -2,8 +2,8 @@
 Lớp service: API mức cao cho UI. Giấu chi tiết DB/queue.
 
 Pipeline điển hình:
-  create_project -> import_video -> enqueue_analysis ->
-  enqueue_highlights -> (duyệt clip) -> enqueue_export
+  create_project -> import_video -> enqueue_auto (phân tích + tìm highlight)
+  -> (duyệt clip) -> enqueue_export
 """
 from __future__ import annotations
 
@@ -117,22 +117,6 @@ def enqueue_auto_mixed(pool: WorkerPool, video_id: int, project_id: int,
     )
 
 
-def enqueue_highlights(pool: WorkerPool, video_id: int, project_id: int,
-                       preset: Optional[dict] = None) -> Optional[int]:
-    return pool.enqueue(
-        "m1_highlights", {"video_id": video_id, "preset": preset or {}},
-        project_id=project_id, video_id=video_id, priority=5,
-    )
-
-
-def enqueue_mixed_cut(pool: WorkerPool, video_id: int, project_id: int,
-                      preset: Optional[dict] = None) -> Optional[int]:
-    return pool.enqueue(
-        "m1_mixed_cut", {"video_id": video_id, "preset": preset or {}},
-        project_id=project_id, video_id=video_id, priority=5,
-    )
-
-
 def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    project_id: int, out_w: int = 1080, out_h: int = 1920,
                    mode: str = "face", zoom: float = 1.0,
@@ -146,7 +130,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    hook_first: bool = False, bgm_path: str = "",
                    bgm_vol: float = 0.15,
                    force: bool = False) -> Optional[int]:
-    """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Tải lại' /
+    """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
     'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
     # sig phải phủ MỌI thứ ảnh hưởng kết quả: cả mốc cắt start/end của clip
     # (user kéo sửa trim rồi xuất lại) + NỘI DUNG chữ (overlay_png là đường dẫn
@@ -191,15 +175,6 @@ def list_clips(video_id: int) -> list:
         "SELECT * FROM clips WHERE video_id=? ORDER BY start_sec, id",
         (video_id,),
     )
-
-
-def update_clip_range(clip_id: int, start: float, end: float) -> None:
-    db.execute("UPDATE clips SET start_sec=?, end_sec=? WHERE id=?",
-               (start, end, clip_id))
-
-
-def set_clip_status(clip_id: int, status: str) -> None:
-    db.execute("UPDATE clips SET status=? WHERE id=?", (status, clip_id))
 
 
 # ---- Mẫu (template/preset) cho Module 1 ----
@@ -287,16 +262,6 @@ def _project_dir(project_id: int) -> Optional[Path]:
     return Path(row["assets_dir"]) if row else None
 
 
-def clips_dir(project_id: int) -> Optional[str]:
-    """Thư mục chứa clip đã xuất của project (tạo nếu chưa có)."""
-    pdir = _project_dir(project_id)
-    if not pdir:
-        return None
-    out = pdir / "clips"
-    out.mkdir(parents=True, exist_ok=True)
-    return str(out)
-
-
 def cache_dir(assets_dir) -> str:
     """Thư mục con _cache chứa ảnh tạm (thumbnail/preview/lớp chữ) — KHÔNG để lẫn
     vào thư mục người dùng nhìn. Tạo nếu chưa có."""
@@ -314,27 +279,6 @@ def project_dir(project_id: int) -> Optional[str]:
     """Thư mục gốc của Kênh (chứa các folder con theo từng video)."""
     pdir = _project_dir(project_id)
     return str(pdir) if pdir else None
-
-
-def set_export_dir(project_id: int, path: str) -> None:
-    db.execute("UPDATE projects SET export_dir=? WHERE id=?", (path or None, project_id))
-
-
-def get_export_dir(project_id: int) -> Optional[str]:
-    row = db.query_one("SELECT export_dir FROM projects WHERE id=?", (project_id,))
-    return (row["export_dir"] if row and "export_dir" in row.keys() else None) or None
-
-
-def export_base(project_id: int) -> Optional[str]:
-    """Thư mục LƯU clip của kênh: user chọn -> dùng; chưa chọn -> mặc định clips/."""
-    d = get_export_dir(project_id)
-    if d:
-        try:
-            Path(d).mkdir(parents=True, exist_ok=True)
-            return d
-        except OSError:
-            pass
-    return clips_dir(project_id)
 
 
 def delete_clip(clip_id: int) -> None:
