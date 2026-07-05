@@ -41,11 +41,24 @@ def main() -> int:
 
     try:
         run_analysis(video_id, profile_dict(PROFILE), on_progress=_emit, force=force)
-        print("DONE", flush=True)
-        return 0
     except Exception as e:  # noqa: BLE001
         print(f"ERROR\t{e}", flush=True)
         return 1
+
+    # run_analysis nuốt lỗi từng bước (đánh dấu 'failed' trong DB) — nhưng bước
+    # SỐNG CÒN (chép lời) mà lỗi thì job phải THẤT BẠI, không được báo "Hoàn tất"
+    # (các bước phụ scenes/audio/faces lỗi chỉ giảm chất lượng, không chặn).
+    from app.core.analysis import analysis_status
+    from app.database import db
+    if analysis_status(video_id).get("transcript") == "failed":
+        row = db.query_one(
+            "SELECT error FROM analysis WHERE video_id=? AND kind='transcript'",
+            (video_id,))
+        err = (row["error"] if row and row["error"] else "không rõ nguyên nhân")
+        print(f"ERROR\tChép lời thất bại: {err}", flush=True)
+        return 1
+    print("DONE", flush=True)
+    return 0
 
 
 if __name__ == "__main__":

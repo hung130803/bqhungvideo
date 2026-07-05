@@ -74,22 +74,60 @@ def _ensure_provider() -> str:
         except Exception:  # noqa: BLE001
             return str(_PRODOWN_PROVIDER)
     # 2) Tải mới (chỉ lần đầu, máy khác chưa có tool kia)
+    global _DOWNLOAD_FAILED
+    if _DOWNLOAD_FAILED:
+        return ""            # vừa fail trong phiên này -> đừng tải lại 46MB mỗi lần bấm
+    tmp = _PROVIDER_DST.with_suffix(".part")
     try:
-        tmp = _PROVIDER_DST.with_suffix(".part")
-        urllib.request.urlretrieve(PROVIDER_URL, tmp)
+        # urlretrieve KHÔNG có timeout -> mạng nghẽn sẽ treo thread tải VĨNH VIỄN
+        # (nút Tải bị disable mãi tới khi restart app). Đọc chunk với timeout.
+        req = urllib.request.Request(PROVIDER_URL,
+                                     headers={"User-Agent": "bqhungvideo"})
+        with urllib.request.urlopen(req, timeout=30) as r, open(tmp, "wb") as f:
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
         tmp.replace(_PROVIDER_DST)
         return str(_PROVIDER_DST)
     except Exception:  # noqa: BLE001
+        _DOWNLOAD_FAILED = True
+        try:
+            tmp.unlink(missing_ok=True)      # dọn file .part tải dở
+        except OSError:
+            pass
         return ""
 
 
+_DOWNLOAD_FAILED = False
+_PROVIDER_PROC = None       # handle server MÌNH spawn (để tắt khi thoát app)
+
+
+def _kill_provider() -> None:
+    """Tắt provider CHÍNH APP NÀY spawn (server có sẵn của tool khác thì
+    không đụng — _port_open() ở lần sau vẫn tái dùng được)."""
+    global _PROVIDER_PROC
+    p = _PROVIDER_PROC
+    if p is not None and p.poll() is None:
+        try:
+            p.kill()
+        except OSError:
+            pass
+    _PROVIDER_PROC = None
+
+
 def _spawn_provider(exe: str) -> None:
+    global _PROVIDER_PROC
     flags = 0x0800_0000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
     try:
-        subprocess.Popen(
+        _PROVIDER_PROC = subprocess.Popen(
             [exe, "server", "--host", "127.0.0.1", "--port", str(PORT)],
             creationflags=flags,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # không tắt thì bgutil-pot.exe (~46MB RAM) sống vĩnh viễn sau khi đóng app
+        import atexit
+        atexit.register(_kill_provider)
     except Exception:  # noqa: BLE001
         pass
 

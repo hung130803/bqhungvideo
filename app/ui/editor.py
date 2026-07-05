@@ -288,6 +288,9 @@ class _VideoBox(QGraphicsItem):
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
+        # PHẢI reset _dragging: nếu không, lần setPos theo CODE sau đó (áp mẫu)
+        # bị itemChange tưởng đang kéo tay -> snap lệch vị trí + vạch căn kẹt.
+        self._dragging = False
         was = self._resizing
         self._resizing = False
         if was:
@@ -1056,11 +1059,20 @@ class EditorDialog(QDialog):
                     t += d + 0.05
                 total = round(t + 0.7, 2)
                 tmp = tempfile.gettempdir()
+                # dọn demo cũ (tên duy nhất mỗi lần -> không đụng file đang bị
+                # QMediaPlayer của lần xem trước giữ handle)
+                import glob as _glob
+                for old in _glob.glob(os.path.join(tmp, "_capdemo*.mp4")):
+                    try:
+                        os.remove(old)
+                    except OSError:
+                        pass
                 ass = os.path.join(tmp, "_capdemo.ass")
                 captions.build_ass(words, [[0, total]], ass, out_w=1080,
                                    out_h=1920, font=font, size=size_px,
                                    color=color, ny=0.5, preset=preset)
-                out = os.path.join(tmp, "_capdemo.mp4")
+                import uuid as _uuid
+                out = os.path.join(tmp, f"_capdemo_{_uuid.uuid4().hex[:8]}.mp4")
                 ff = (shutil.which("ffmpeg") or settings.FFMPEG_PATH
                       or r"C:\ffmpeg\ffmpeg.exe")
                 assesc = ass.replace("\\", "/").replace(":", "\\:")
@@ -1075,7 +1087,13 @@ class EditorDialog(QDialog):
                            "-vf", f"subtitles='{assesc}'"]
                 cmd += ["-r", "25", "-pix_fmt", "yuv420p", "-c:v", "libx264",
                         "-preset", "ultrafast", out]
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                cmd.insert(1, "-nostdin")
+                # CREATE_NO_WINDOW: bản .exe windowed không có console -> thiếu
+                # cờ này sẽ bật cửa sổ cmd đen chiếm focus suốt lúc render demo
+                from app.core.ffmpeg_utils import _CREATE_NO_WINDOW
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=120, creationflags=_CREATE_NO_WINDOW,
+                                   stdin=subprocess.DEVNULL)
                 self._demo_ready.emit(out if (r.returncode == 0
                                               and os.path.exists(out)) else "")
             except Exception:  # noqa: BLE001
@@ -1114,7 +1132,14 @@ class EditorDialog(QDialog):
         cb = QPushButton("Đóng"); cb.setProperty("primary", True)
         cb.clicked.connect(lambda: (pl.stop(), dlg.accept())); v.addWidget(cb)
         pl.play()
-        dlg.exec(); pl.stop()
+        dlg.exec()
+        # GIẢI PHÓNG file: chỉ stop() thì backend Windows Media Foundation vẫn
+        # giữ handle -> ffmpeg lần Demo sau không ghi đè được. Dialog cũng phải
+        # deleteLater để không tích lũy player suốt phiên chỉnh mẫu.
+        pl.stop()
+        pl.setSource(QUrl())
+        pl.setVideoOutput(None)
+        dlg.deleteLater()
 
     def _reload_tmpl(self, select=None):
         self.tmpl.blockSignals(True); self.tmpl.clear()
@@ -1196,9 +1221,15 @@ class EditorDialog(QDialog):
                 "Đặt tên mẫu để lưu (lần sau chọn lại + xuất theo mẫu này):",
                 text="Mẫu của tôi")
             name = name.strip() if (ok and name.strip()) else "Mẫu của tôi"
+        self._current_name = name
         try:
             services.save_template(name, self.layout_result)
-            self._current_name = name
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            # KHÔNG nuốt im lặng: dialog hứa "tự lưu khi bấm Xong" — lưu fail
+            # mà báo 'Đã lưu' thì lần xuất sau dùng mẫu CŨ, user không hề biết.
+            QMessageBox.warning(
+                self, "Không lưu được mẫu",
+                f"Lỗi khi lưu mẫu “{name}”: {e}\n\n"
+                "Layout hiện tại VẪN được áp cho phiên này, nhưng CHƯA được "
+                "lưu vào máy — hãy thử bấm 'Lưu mẫu' lại sau.")
         self.accept()

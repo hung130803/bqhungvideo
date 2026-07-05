@@ -160,7 +160,7 @@ def update_env(values: dict) -> None:
     for k, v in values.items():
         val = v
         if k == "LLM_PROVIDER":
-            val = (str(v) or "gemini").strip().lower()
+            val = (str(v) or "groq").strip().lower()  # khớp mặc định ở trên
         elif k == "USE_VISION":
             val = str(v) == "1"
         if hasattr(Settings, k):

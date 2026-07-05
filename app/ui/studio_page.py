@@ -90,7 +90,7 @@ class StudioPage(QWidget):
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
     dl_progress = pyqtSignal(str)   # thông điệp tiến trình tải (hiện % cho user)
-    dl_one = pyqtSignal(str, str)   # 1 video TRONG LOẠT tải xong (path, lỗi) -> auto edit
+    dl_one = pyqtSignal(str, str, str)  # 1 video TRONG LOẠT xong (path, lỗi, url)
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -417,7 +417,7 @@ class StudioPage(QWidget):
             self, "Xóa kênh",
             f"Xóa kênh “{name}” (cả video, clip, file đã xuất)? Không hoàn tác được."
         ) == QMessageBox.StandardButton.Yes:
-            services.delete_project(int(pid))
+            services.delete_project(int(pid), self.state.pool)
             self.state.project_id = None
             self._reload_projects()
             self.status.setText(f"Đã xóa kênh “{name}”.")
@@ -508,15 +508,38 @@ class StudioPage(QWidget):
                                 "Nghe-chép) rồi bấm Kiểm tra.")
                 return
             set_note("wait", "Đang kiểm tra kết nối...")
-            QApplication.processEvents()
-            try:
-                r = llm.complete_text("Trả lời đúng 1 từ: OK", provider=prov)
-                name = {"gemini": "Gemini (mây)", "groq": "Groq (mây)",
-                        "ollama": "Ollama (máy)"}.get(prov, prov)
-                set_note("ok", f"AI ĐANG HOẠT ĐỘNG — {name} trả lời: "
-                               f"“{r.strip()[:30]}”. Bấm Lưu để dùng.")
-            except Exception as e:  # noqa: BLE001
-                set_note("err", "KHÔNG KẾT NỐI ĐƯỢC — " + friendly(str(e)))
+            # Gọi LLM ở THREAD NỀN: gọi đồng bộ trên UI thread sẽ treo toàn bộ
+            # app tới 2 phút nếu mạng chậm/timeout.
+            tb.setEnabled(False)
+            res: list = []
+
+            def bg():
+                try:
+                    r = llm.complete_text("Trả lời đúng 1 từ: OK", provider=prov)
+                    res.append(("ok", r))
+                except Exception as e:  # noqa: BLE001
+                    res.append(("err", str(e)))
+
+            threading.Thread(target=bg, daemon=True).start()
+            from PyQt6.QtCore import QTimer
+            timer = QTimer(dlg)
+
+            def poll():
+                if not res:
+                    return
+                timer.stop()
+                tb.setEnabled(True)
+                kind, val = res[0]
+                if kind == "ok":
+                    name = {"gemini": "Gemini (mây)", "groq": "Groq (mây)",
+                            "ollama": "Ollama (máy)"}.get(prov, prov)
+                    set_note("ok", f"AI ĐANG HOẠT ĐỘNG — {name} trả lời: "
+                                   f"“{val.strip()[:30]}”. Bấm Lưu để dùng.")
+                else:
+                    set_note("err", "KHÔNG KẾT NỐI ĐƯỢC — " + friendly(val))
+
+            timer.timeout.connect(poll)
+            timer.start(200)
 
         # gợi ý trạng thái ban đầu (chưa test) cho người dùng biết đang ở đâu
         set_note("info", "Dán key (Groq free hoặc Gemini) rồi bấm “Kiểm tra kết nối” "
@@ -547,15 +570,26 @@ class StudioPage(QWidget):
         p = self._settings.value("lib_root", "") or str(DATA_DIR / "KhoVideo")
         return Path(p)
 
-    def _dl_dir(self):
-        d = self._lib_root() / "Đã tải"
-        d.mkdir(parents=True, exist_ok=True)
+    def _lib_sub(self, name):
+        """Thư mục con trong kho. Kho trỏ ổ đã rút (USB/ổ mạng) -> mkdir nổ
+        OSError làm SẬP app khi bấm nút thường — lùi về kho mặc định + báo."""
+        d = self._lib_root() / name
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            from config import DATA_DIR
+            d = DATA_DIR / "KhoVideo" / name
+            d.mkdir(parents=True, exist_ok=True)
+            self.status.setText(
+                "⚠ Kho video đã chọn không truy cập được (ổ đã rút?) — "
+                "tạm dùng kho mặc định. Chọn lại ở nút 'Kho video'.")
         return d
 
+    def _dl_dir(self):
+        return self._lib_sub("Đã tải")
+
     def _export_root(self):
-        d = self._lib_root() / "Đã xuất"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+        return self._lib_sub("Đã xuất")
 
     def _pick_lib_root(self):
         """Chọn THƯ MỤC GỐC chung (chứa 'Đã tải' và 'Đã xuất')."""
@@ -586,12 +620,20 @@ class StudioPage(QWidget):
         self.state.set_project(int(pid))
         self._reload_videos()
 
-    def _reload_videos(self):
+    def _reload_videos(self, select_id=None):
+        """Nạp lại danh sách video. GIỮ NGUYÊN video đang chọn (nếu còn) —
+        nếu không, mỗi lần 1 video trong loạt tải xong sẽ nhảy về video đầu,
+        mất chỗ user đang làm việc. select_id: ép chọn video này (vd vừa tải)."""
+        cur = select_id if select_id is not None else self.vid.currentData()
         self.vid.blockSignals(True); self.vid.clear()
         if self.state.project_id:
             for v in services.list_videos(self.state.project_id):
                 mark = "  • đã phân tích" if services.video_analyzed(v["id"]) else ""
                 self.vid.addItem(f'{Path(v["src_path"]).name}{mark}', v["id"])
+        if cur is not None:
+            i = self.vid.findData(cur)
+            if i >= 0:
+                self.vid.setCurrentIndex(i)
         self.vid.blockSignals(False)
         if self.vid.count():
             self._on_vid(self.vid.currentIndex())
@@ -619,12 +661,24 @@ class StudioPage(QWidget):
             return
         vids = [p for p in paths
                 if os.path.isfile(p) and p.lower().endswith(self._VIDEO_EXT)]
+        ok, fails = 0, []
         for f in vids:
-            services.import_video(self.state.project_id, f)
-        if vids:
+            # file OneDrive online-only/USB rút/đang khóa -> OSError; nếu không
+            # bắt, exception xuyên qua Qt slot làm SẬP CẢ APP
+            try:
+                services.import_video(self.state.project_id, f)
+                ok += 1
+            except OSError as e:
+                fails.append(f"{Path(f).name}: {e}")
+        if ok:
             self._reload_videos()
-            self.status.setText(f"Đã thêm {len(vids)} video vào kênh.")
-        elif paths:
+            self.status.setText(f"Đã thêm {ok} video vào kênh.")
+        if fails:
+            QMessageBox.warning(
+                self, "Một số file không đọc được",
+                "Không import được:\n" + "\n".join(fails[:8])
+                + ("\n…" if len(fails) > 8 else ""))
+        if not vids and paths:
             self.status.setText("Không có file video hợp lệ (mp4/mov/mkv...).")
 
     # ---- COOKIE YouTube: dán 1 lần, lưu file, tự dùng khi tải ----
@@ -660,7 +714,8 @@ class StudioPage(QWidget):
             pass
 
     def _cookie_args(self):
-        """Arg cookie cho yt-dlp: hồ sơ đang chọn > file cũ > trình duyệt."""
+        """Arg cookie cho yt-dlp: hồ sơ đang chọn > trình duyệt (user chọn rõ)
+        > file cũ (bản trước)."""
         st = QSettings("AIContentStudio", "studio")
         name = st.value("yt_cookie_active", "")
         if name:
@@ -670,15 +725,17 @@ class StudioPage(QWidget):
                     return ["--cookies", str(p)]
             except Exception:  # noqa: BLE001
                 pass
+        # user CHỦ ĐỘNG chọn lấy từ trình duyệt (đã bỏ hồ sơ) -> ưu tiên trước
+        # file cookie cũ, nếu không cookie hết hạn cũ sẽ che mãi nhánh này
+        br = st.value("yt_cookie_browser", "")
+        if br:
+            return ["--cookies-from-browser", str(br)]
         old = self._cookie_file()
         try:
             if old.exists() and old.stat().st_size > 40:
                 return ["--cookies", str(old)]
         except Exception:  # noqa: BLE001
             pass
-        br = st.value("yt_cookie_browser", "")
-        if br:
-            return ["--cookies-from-browser", str(br)]
         return []
 
     def _youtube_cookie(self):
@@ -811,20 +868,30 @@ class StudioPage(QWidget):
         delb.clicked.connect(do_del)
 
         def do_save():
+            txt = box.toPlainText().strip()
+            br = bcb.currentText()
+            st.setValue("yt_cookie_browser", "" if br == "(không)" else br)
+            # Chọn TRÌNH DUYỆT + không dán cookie -> ý user là dùng cookie
+            # trình duyệt: phải BỎ hồ sơ active, nếu không _cookie_args luôn
+            # ưu tiên hồ sơ cũ (hết hạn) và nhánh trình duyệt không bao giờ chạy.
+            if br != "(không)" and not txt:
+                st.setValue("yt_cookie_active", "")
+                note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
+                note.setText(f"Sẽ lấy cookie từ trình duyệt '{br}'. "
+                             "(Lưu ý: nên ĐÓNG trình duyệt trước khi tải.)")
+                dlg.accept()
+                return
             name = pcb.currentText().strip()
             if not name:                       # chưa có hồ sơ -> tạo Mặc định
                 name = "Mặc định"
                 self._cookie_profile_path(name).write_text(
                     "# Netscape HTTP Cookie File\n", encoding="utf-8")
-            txt = box.toPlainText().strip()
             if txt and "# Netscape HTTP Cookie File" not in txt:
                 txt = "# Netscape HTTP Cookie File\n" + txt
             self._cookie_profile_path(name).write_text(
                 (txt + "\n") if txt else "# Netscape HTTP Cookie File\n",
                 encoding="utf-8")
             st.setValue("yt_cookie_active", name)
-            br = bcb.currentText()
-            st.setValue("yt_cookie_browser", "" if br == "(không)" else br)
             note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
             note.setText(f"Đã lưu & chọn hồ sơ '{name}'. Giờ bấm Tải lại nhé.")
             dlg.accept()
@@ -858,12 +925,28 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001
             return []
 
+    @staticmethod
+    def _is_multi_url(u: str) -> bool:
+        """Link playlist/kênh (yt-dlp sẽ tải HÀNG LOẠT thay vì 1 video)."""
+        import re as _re
+        u = u.lower()
+        if "watch" in u and "v=" in u:
+            return False                     # watch?v=..&list=.. -> --no-playlist lo
+        return ("/playlist" in u
+                or ("list=" in u and "v=" not in u)
+                or bool(_re.search(r"/(channel|c|user)/", u))
+                or ("/@" in u))
+
     def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix=""):
         """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress."""
         import re as _re
+        import time as _time
         ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
-        out_tmpl = str(dl / "%(title).80s.%(ext)s")
+        # [%(id)s] để tên file LUÔN duy nhất: 2 video trùng 80 ký tự đầu tiêu đề
+        # -> yt-dlp thấy file đã có, KHÔNG tải, âm thầm dùng lại video cũ.
+        out_tmpl = str(dl / "%(title).70s [%(id)s].%(ext)s")
+        t0 = _time.time()
         cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
                "--user-agent", ua, "-f",
                "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
@@ -879,31 +962,65 @@ class StudioPage(QWidget):
                 encoding="utf-8", errors="replace", creationflags=0x0800_0000)
         except Exception as e:  # noqa: BLE001
             return "", str(e)[:200]
+        # đăng ký để đóng app giết được yt-dlp (không tải tiếp sau khi app tắt)
+        from app.core.ffmpeg_utils import register_proc, unregister_proc
+        register_proc(proc)
         path, tail = "", []
-        for line in proc.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            tail.append(line); tail[:] = tail[-8:]
-            if os.path.exists(line):
-                path = line
-            m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
-            if m:
-                self.dl_progress.emit(f"{prefix}Đang tải... {m.group(1)}%")
-            elif "Merg" in line or "Fixup" in line:
-                self.dl_progress.emit(f"{prefix}Đang ghép hình + tiếng...")
-        proc.wait()
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                tail.append(line); tail[:] = tail[-8:]
+                if os.path.exists(line):
+                    path = line
+                m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
+                if m:
+                    self.dl_progress.emit(f"{prefix}Đang tải... {m.group(1)}%")
+                elif "Merg" in line or "Fixup" in line:
+                    self.dl_progress.emit(f"{prefix}Đang ghép hình + tiếng...")
+            proc.wait()
+        finally:
+            unregister_proc(proc)
         if proc.returncode != 0:
             return "", ("\n".join(tail) or "lỗi tải")[-300:]
         if not path or not os.path.exists(path):
-            fs = sorted(dl.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+            # fallback: CHỈ nhận file tạo SAU lúc bắt đầu tải — file mp4 "mới
+            # nhất" trong kho chung có thể là của lượt tải khác/video cũ
+            fs = sorted((p for p in dl.glob("*.mp4") if p.stat().st_mtime >= t0),
+                        key=lambda p: p.stat().st_mtime)
             path = str(fs[-1]) if fs else ""
         return path, "" if path else "Không thấy file tải."
+
+    def _dl_busy(self) -> bool:
+        """Đang có lượt tải chạy? 2 yt-dlp ghi cùng thư mục sẽ loạn tiến trình
+        + fallback vớ nhầm file của lượt kia."""
+        if getattr(self, "_dl_active", 0) > 0:
+            QMessageBox.information(
+                self, "Đang tải",
+                "Đang có lượt tải chạy — chờ xong rồi tải tiếp nhé.")
+            return True
+        return False
+
+    def _set_dl_active(self, on: bool):
+        self._dl_active = 1 if on else 0
+        self.yt_btn.setEnabled(not on)
+        self.yt_many_btn.setEnabled(not on)
 
     def _download_youtube(self):
         url = self.yt_url.text().strip()
         if not url:
             QMessageBox.information(self, "Chưa có link", "Dán link YouTube vào ô.")
+            return
+        if self._is_multi_url(url):
+            QMessageBox.warning(
+                self, "Link playlist/kênh",
+                "Đây là link PLAYLIST hoặc KÊNH — sẽ tải hàng loạt không kiểm "
+                "soát.\nHãy dán link VIDEO đơn (youtube.com/watch?v=... hoặc "
+                "youtu.be/...),\nhoặc dùng nút 'Tải nhiều' và dán từng link "
+                "video một dòng.")
+            return
+        if self._dl_busy():
             return
         ready = self._yt_ready()
         if not ready:
@@ -911,7 +1028,7 @@ class StudioPage(QWidget):
         exe, dl, ff_dir = ready
         cookie_args = self._cookie_args()
         self._dl_pid = self.state.project_id      # NHỚ kênh lúc bấm (tránh đổi giữa chừng)
-        self.yt_btn.setEnabled(False)
+        self._set_dl_active(True)
         self.status.setText("Đang tải video từ YouTube...")
 
         def work():
@@ -950,10 +1067,25 @@ class StudioPage(QWidget):
         if not urls:
             QMessageBox.information(self, "Chưa có link", "Dán ít nhất 1 link hợp lệ.")
             return
+        multi = [u for u in urls if self._is_multi_url(u)]
+        if multi:
+            QMessageBox.warning(
+                self, "Có link playlist/kênh",
+                f"{len(multi)} link là PLAYLIST/KÊNH (tải hàng loạt không kiểm "
+                "soát) — đã BỎ QUA:\n" + "\n".join(multi[:5])
+                + ("\n…" if len(multi) > 5 else "")
+                + "\n\nHãy dán link VIDEO đơn, mỗi link 1 dòng.")
+            urls = [u for u in urls if not self._is_multi_url(u)]
+            if not urls:
+                return
+        if self._dl_busy():
+            return
         cookie_args = self._cookie_args()
         self._batch_remaining = len(urls)
+        self._batch_ok = 0
+        self._batch_fails = []                    # [(url, lỗi)] để báo cuối loạt
         self._batch_pid = self.state.project_id   # NHỚ kênh lúc bấm (cố định cả loạt)
-        self.yt_btn.setEnabled(False); self.yt_many_btn.setEnabled(False)
+        self._set_dl_active(True)
         n = len(urls)
 
         def work():
@@ -963,15 +1095,17 @@ class StudioPage(QWidget):
                 self.dl_progress.emit(f"Tải video {k}/{n}...")
                 path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
                                             prefix=f"({k}/{n}) ")
-                self.dl_one.emit(path, err)
+                self.dl_one.emit(path, err, url)
                 if k < n:                  # GIÃN NHỊP giữa các video -> đỡ bị chặn
                     self.dl_progress.emit(f"Nghỉ chút trước video {k + 1}/{n} "
                                           "(tránh YouTube chặn)...")
                     time.sleep(5)
         threading.Thread(target=work, daemon=True).start()
 
-    def _on_batch_one(self, path, err):
-        """1 video trong loạt tải xong -> import + tự phân tích/cắt (không popup lỗi)."""
+    def _on_batch_one(self, path, err, url=""):
+        """1 video trong loạt tải xong -> import + tự phân tích/cắt.
+        GOM LỖI để báo cuối loạt — trước đây nuốt im lặng, cả 10 link fail
+        vẫn báo 'Đã tải xong cả loạt'."""
         pid = getattr(self, "_batch_pid", None) or self.state.project_id
         if path and not err and pid:
             try:
@@ -979,18 +1113,43 @@ class StudioPage(QWidget):
                 jid = services.enqueue_auto(self.state.pool, vid, pid,
                                             self._cut_preset())
                 self._track_auto(jid, vid)
-            except Exception:  # noqa: BLE001
-                pass
-        self._reload_videos()
+                self._batch_ok = getattr(self, "_batch_ok", 0) + 1
+                self._reload_videos()
+            except Exception as e:  # noqa: BLE001
+                self._batch_fails = getattr(self, "_batch_fails", [])
+                self._batch_fails.append((url, f"import lỗi: {e}"))
+        else:
+            self._batch_fails = getattr(self, "_batch_fails", [])
+            self._batch_fails.append((url, (err or "không rõ")[:160]))
         self._batch_remaining = getattr(self, "_batch_remaining", 1) - 1
         if self._batch_remaining <= 0:
-            self.yt_btn.setEnabled(True); self.yt_many_btn.setEnabled(True)
-            extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
-            self.status.setText(f"Đã tải xong cả loạt → đang phân tích & cắt từng "
-                                f"video{extra} (xem tiến trình dưới).")
+            self._set_dl_active(False)
+            ok = getattr(self, "_batch_ok", 0)
+            fails = getattr(self, "_batch_fails", [])
+            if fails:
+                self.status.setText(
+                    f"Tải xong {ok} video, LỖI {len(fails)} link.")
+                low = " ".join(e for _, e in fails).lower()
+                cookie_hint = ("sign in" in low or "not a bot" in low
+                               or "cookie" in low or "confirm" in low)
+                QMessageBox.warning(
+                    self, "Một số link tải lỗi",
+                    f"Tải được {ok}, lỗi {len(fails)} link:\n\n"
+                    + "\n".join(f"• {u}\n   {e}" for u, e in fails[:6])
+                    + ("\n…" if len(fails) > 6 else "")
+                    + ("\n\n👉 YouTube đòi cookie: bấm nút <b>Cookie</b> cạnh "
+                       "nút Tải → dán cookie → Lưu → tải lại các link lỗi."
+                       if cookie_hint else ""))
+            elif ok:
+                extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
+                self.status.setText(
+                    f"Đã tải xong cả loạt ({ok} video) → đang phân tích & cắt "
+                    f"từng video{extra} (xem tiến trình dưới).")
+            else:
+                self.status.setText("Loạt tải kết thúc: không có video nào.")
 
     def _on_dl_done(self, path, err):
-        self.yt_btn.setEnabled(True)
+        self._set_dl_active(False)
         if err or not path:
             low = (err or "").lower()
             if ("sign in" in low or "not a bot" in low or "confirm" in low
@@ -1007,9 +1166,13 @@ class StudioPage(QWidget):
         if not pid:
             self.status.setText("Đã tải xong nhưng chưa có kênh để thêm vào.")
             return
-        vid = services.import_video(pid, path)
+        try:
+            vid = services.import_video(pid, path)
+        except Exception as e:  # noqa: BLE001 - kênh vừa bị xóa/file lỗi -> không sập app
+            self.status.setText(f"Tải xong nhưng import lỗi: {str(e)[:160]}")
+            return
         self.yt_url.clear()
-        self._reload_videos()
+        self._reload_videos(select_id=vid)   # chọn đúng video VỪA TẢI
         # TỰ ĐỘNG phân tích luôn (dán link -> tải -> phân tích -> tự xuất nếu bật)
         jid = services.enqueue_auto(self.state.pool, vid, pid, self._cut_preset())
         self._track_auto(jid, vid)
@@ -1114,10 +1277,10 @@ class StudioPage(QWidget):
         cb = QPushButton("Đóng"); cb.setProperty("ghost", True); rowb.addWidget(cb)
         lay.addLayout(rowb)
 
-        def save_trim():
+        def save_trim() -> bool:
             if trim[1] - trim[0] < 1.0:
                 QMessageBox.information(dlg, "Đoạn quá ngắn", "Đầu/cuối chưa hợp lý.")
-                return
+                return False
             nsig = dict(sig)
             nsig["segments"] = [[round(trim[0], 2), round(trim[1], 2)]]
             nsig["n_seg"] = 1
@@ -1126,10 +1289,12 @@ class StudioPage(QWidget):
                        (round(trim[0], 2), round(trim[1], 2), db.dumps(nsig), c["id"]))
             self._refresh_clips(force=True)
             self.status.setText("Đã lưu cắt tay + tốc độ cho clip.")
+            return True
         sv.clicked.connect(save_trim)
 
         def do_export():
-            save_trim()
+            if not save_trim():      # trim không hợp lệ -> KHÔNG được xuất tiếp
+                return
             player.stop()
             dlg.accept()
             self._export_video(self.state.video_id, c["id"])
@@ -1166,7 +1331,7 @@ class StudioPage(QWidget):
             self, "Xóa video",
             "Xóa video này khỏi kênh (cả dữ liệu phân tích + clip đã tạo)?"
         ) == QMessageBox.StandardButton.Yes:
-            services.delete_video(int(vid))
+            services.delete_video(int(vid), self.state.pool)
             self.state.video_id = None
             self._reload_videos()
             self.status.setText("Đã xóa video.")
@@ -1250,7 +1415,7 @@ class StudioPage(QWidget):
 
         def do(ids):
             for vid in ids:
-                services.delete_video(int(vid))
+                services.delete_video(int(vid), self.state.pool)
                 if self.state.video_id == int(vid):
                     self.state.video_id = None
             self._reload_videos()
@@ -1270,7 +1435,7 @@ class StudioPage(QWidget):
 
         def do(ids):
             for pid in ids:
-                services.delete_project(int(pid))
+                services.delete_project(int(pid), self.state.pool)
                 if self.state.project_id == int(pid):
                     self.state.project_id = None
             self._reload_projects()
@@ -1730,6 +1895,9 @@ class StudioPage(QWidget):
         vpx = self._video_px_for(vrow)
         n = 0
         jids = []
+        # Xuất 1 clip cụ thể ('Tải lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
+        # file mới -> ép xuất lại kể cả job cũ đã done (vd file bị xóa tay).
+        force_one = bool(only_clip_id)
         for i, c in enumerate(clips):
             no = i + 1                         # số Part = vị trí trong video này
             if only_clip_id and c["id"] != only_clip_id:
@@ -1758,12 +1926,19 @@ class StudioPage(QWidget):
                 blur_amt=int(self.layout_tpl.get("blur_amt", 22)),
                 speed=float(sig.get("speed", self.layout_tpl.get("speed", 1.0))),
                 pitch=float(self.layout_tpl.get("pitch", 1.0)),
-                overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid))
+                overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
+                force=force_one)
             if jid:
                 jids.append(jid)
             n += 1
             QApplication.processEvents()   # nhả cho UI đỡ đơ khi vẽ ảnh chữ hàng loạt
-        return n
+        if n and not jids:
+            # mọi clip đều bị smart-skip (đã xuất y hệt trước đó) -> BÁO RÕ,
+            # không để user chờ file mới mà không có job nào chạy
+            self.status.setText(
+                "Các clip này đã xuất trước đó (không đổi gì) — không tạo job "
+                "mới. Muốn xuất lại 1 clip: mở clip đó bấm 'Tải lại'.")
+        return len(jids)
 
     def _export_all(self):
         """Tải tất cả clip của VIDEO đang chọn (theo Part)."""

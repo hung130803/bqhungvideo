@@ -204,6 +204,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     work = tempfile.mkdtemp(prefix="gq_")
     try:
         all_segs, all_words, full, lang = [], [], [], (language or "")
+        failed_windows: list = []
         for i in range(n):
             start = i * chunk                    # mốc CHÍNH XÁC của phần này
             part = os.path.join(work, f"p{i}.mp3")
@@ -212,12 +213,21 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                 cmd += ["-t", str(chunk)]        # 1 cửa sổ 10 phút (chính xác)
             cmd += ["-i", audio_path, "-ac", "1", "-ar", "16000", "-b:a", "48k",
                     part]
-            try:
-                subprocess.run(cmd, capture_output=True, creationflags=flags,
-                               timeout=900)
-            except Exception:  # noqa: BLE001
-                continue
-            if not os.path.exists(part) or os.path.getsize(part) < 400:
+            # cắt hỏng KHÔNG được bỏ qua im lặng (mất nguyên 10 phút transcript
+            # mà không ai biết) -> thử lại 1 lần; ghi nhận phần hỏng để xử lý
+            # sau vòng lặp.
+            ok_cut = False
+            for _attempt in (1, 2):
+                try:
+                    subprocess.run(cmd, capture_output=True, creationflags=flags,
+                                   timeout=900)
+                except Exception:  # noqa: BLE001
+                    pass
+                if os.path.exists(part) and os.path.getsize(part) >= 400:
+                    ok_cut = True
+                    break
+            if not ok_cut:
+                failed_windows.append(i + 1)
                 continue
             if on_progress:
                 on_progress(0.1 + 0.85 * i / n,
@@ -237,6 +247,12 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             segs, words, lang, _ = _groq_one(audio_path, language, keys)
             all_segs, all_words = segs, words
             full = [s["text"] for s in segs]
+        elif failed_windows:
+            # có kết quả MỘT PHẦN nhưng vài cửa sổ hỏng -> transcript thiếu
+            # nội dung; FAIL rõ ràng còn hơn cắt clip trên transcript khuyết.
+            raise RuntimeError(
+                f"Nén/cắt audio thất bại ở phần {failed_windows} (tổng {n} "
+                "phần) — transcript sẽ thiếu nội dung nên đã dừng. Thử lại sau.")
         if on_progress:
             on_progress(1.0, "Chép lời xong (Groq)")
         return {"language": lang,

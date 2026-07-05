@@ -88,15 +88,31 @@ class WorkerPool:
     def start(self) -> None:
         self._recover_crashed()
         self._stop.clear()
+        # cho phép start LẠI sau stop(): executor đã shutdown thì tạo mới
+        if self._cpu_pool._shutdown:
+            self._cpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="cpu")
+        if self._gpu_pool._shutdown:
+            self._gpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="gpu")
         self._dispatcher = threading.Thread(target=self._loop, daemon=True,
                                             name="dispatcher")
         self._dispatcher.start()
 
     def stop(self, wait: bool = False) -> None:
         self._stop.set()
-        self._cpu_pool.shutdown(wait=wait)
+        if self._dispatcher and self._dispatcher.is_alive():
+            self._dispatcher.join(timeout=2)  # dừng điều phối trước khi đóng pool
+        # Báo hủy cho job ĐANG chạy in-process (auto/LLM): thread sẽ thoát ở
+        # checkpoint gần nhất thay vì giữ .exe sống ngầm tới khi job xong
+        # (ThreadPoolExecutor join thread non-daemon lúc interpreter shutdown).
+        with self._lock:
+            self._canceled.update(self._inflight)
+        db.execute(
+            "UPDATE jobs SET status='pending', progress=0, "
+            "message='Tạm dừng do tắt app' WHERE status='running'"
+        )
+        self._cpu_pool.shutdown(wait=wait, cancel_futures=True)
         if self._gpu_pool:
-            self._gpu_pool.shutdown(wait=wait)
+            self._gpu_pool.shutdown(wait=wait, cancel_futures=True)
 
     def add_listener(self, fn: Callable[[], None]) -> None:
         """UI đăng ký để được báo khi có thay đổi (cập nhật bảng job)."""
@@ -122,7 +138,8 @@ class WorkerPool:
     def _recover_crashed(self) -> None:
         # Job dở mà CHƯA hết lượt -> đưa lại hàng đợi chạy tiếp.
         db.execute(
-            "UPDATE jobs SET status='pending', message='Khôi phục sau khi tắt app' "
+            "UPDATE jobs SET status='pending', progress=0, "
+            "message='Khôi phục sau khi tắt app' "
             "WHERE status='running' AND attempts < max_attempts"
         )
         # Job dở đã hết lượt (có thể đã làm sập app nhiều lần) -> đánh dấu thất bại,
@@ -138,9 +155,10 @@ class WorkerPool:
     # ---- enqueue (smart-skip) ----
     def enqueue(self, job_type: str, payload: dict, *, project_id=None,
                 video_id=None, needs_gpu: bool = False, priority: int = 0,
-                dedup_key: Optional[str] = None, max_attempts: int = 3) -> Optional[int]:
+                dedup_key: Optional[str] = None, max_attempts: int = 3,
+                skip_if_done: bool = True) -> Optional[int]:
         if dedup_key:
-            done = db.query_one(
+            done = skip_if_done and db.query_one(
                 "SELECT id FROM jobs WHERE dedup_key=? AND status='done'",
                 (dedup_key,),
             )
@@ -148,10 +166,18 @@ class WorkerPool:
                 return None  # đã làm rồi -> bỏ qua
             # đang chờ/đang chạy cùng key -> trả id cũ, không tạo trùng
             pend = db.query_one(
-                "SELECT id FROM jobs WHERE dedup_key=? AND status IN "
+                "SELECT id, status FROM jobs WHERE dedup_key=? AND status IN "
                 "('pending','running')", (dedup_key,),
             )
             if pend:
+                # Job trùng còn XẾP HÀNG -> cập nhật payload MỚI NHẤT (user vừa
+                # đổi cài đặt rồi bấm lại thì phải áp cài đặt mới). Điều kiện
+                # status='pending' trong UPDATE tránh race với dispatcher.
+                if pend["status"] == "pending":
+                    db.execute(
+                        "UPDATE jobs SET payload=? WHERE id=? AND status='pending'",
+                        (db.dumps(payload), pend["id"]),
+                    )
                 return int(pend["id"])
 
         job_id = db.insert(
@@ -226,7 +252,8 @@ class WorkerPool:
             if handler is None:
                 raise RuntimeError(f"Không có handler cho job type '{job_type}'")
             db.execute(
-                "UPDATE jobs SET status='running', started_at=datetime('now'), "
+                "UPDATE jobs SET status='running', progress=0, "
+                "started_at=datetime('now'), "
                 "attempts=attempts+1, message='Bắt đầu...' WHERE id=?", (job_id,),
             )
             self._notify()
@@ -249,7 +276,7 @@ class WorkerPool:
             max_att = row["max_attempts"] if row else 3
             if attempts < max_att:
                 db.execute(
-                    "UPDATE jobs SET status='pending', error=?, "
+                    "UPDATE jobs SET status='pending', progress=0, error=?, "
                     "message=? WHERE id=?",
                     (str(e), f"Lỗi, thử lại ({attempts}/{max_att})", job_id),
                 )

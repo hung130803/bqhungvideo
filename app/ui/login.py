@@ -23,6 +23,33 @@ def _wait(on: bool):
         QApplication.restoreOverrideCursor()
 
 
+def _dpapi(data: bytes, protect: bool):
+    """Mã hóa/giải mã bằng Windows DPAPI (khóa theo tài khoản Windows).
+    Trả bytes, hoặc None nếu không dùng được (non-Windows/lỗi)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Blob(ctypes.Structure):
+            _fields_ = [("cbData", wintypes.DWORD),
+                        ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+        buf = ctypes.create_string_buffer(data, len(data))
+        blob_in = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+        blob_out = _Blob()
+        fn = (ctypes.windll.crypt32.CryptProtectData if protect
+              else ctypes.windll.crypt32.CryptUnprotectData)
+        if not fn(ctypes.byref(blob_in), None, None, None, None, 0,
+                  ctypes.byref(blob_out)):
+            return None
+        try:
+            return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        finally:
+            ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class ServerConfigDialog(QDialog):
     """Nhập địa chỉ Supabase + anon key (admin làm 1 lần nếu app chưa nướng sẵn)."""
 
@@ -171,17 +198,30 @@ class LoginDialog(QDialog):
 
     @staticmethod
     def _enc(s: str) -> str:
+        """Mã hóa mật khẩu bằng DPAPI Windows — base64 thuần tương đương
+        plaintext, ai đọc Registry cũng lấy được tài khoản."""
         import base64
-        try:
-            return base64.b64encode((s or "").encode("utf-8")).decode("ascii")
+        raw = (s or "").encode("utf-8")
+        enc = _dpapi(raw, protect=True)
+        if enc is not None:
+            return "dpapi:" + base64.b64encode(enc).decode("ascii")
+        try:  # nền tảng không có DPAPI -> đành base64 như cũ
+            return base64.b64encode(raw).decode("ascii")
         except Exception:  # noqa: BLE001
             return ""
 
     @staticmethod
     def _dec(s: str) -> str:
         import base64
+        s = s or ""
         try:
-            return base64.b64decode((s or "").encode("ascii")).decode("utf-8")
+            if s.startswith("dpapi:"):
+                dec = _dpapi(base64.b64decode(s[6:].encode("ascii")),
+                             protect=False)
+                return dec.decode("utf-8") if dec is not None else ""
+            # tương thích bản cũ (base64 thuần): vẫn đọc được; lần đăng nhập
+            # sau sẽ tự lưu lại dạng DPAPI
+            return base64.b64decode(s.encode("ascii")).decode("utf-8")
         except Exception:  # noqa: BLE001
             return ""
 

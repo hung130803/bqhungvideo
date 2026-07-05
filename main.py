@@ -32,6 +32,21 @@ def main() -> int:
     qapp = QApplication(sys.argv)
     qapp.setApplicationName("BQ Hung Video")
 
+    # ---- CHỐNG MỞ 2 APP: 2 instance cùng đọc/ghi studio.db sẽ tranh job
+    # (1 job chạy 2 lần, gọi AI đôi, clip ghi đè lẫn nhau). ----
+    from PyQt6.QtCore import QLockFile
+    from config import DATA_DIR
+    lock = QLockFile(str(DATA_DIR / "app.lock"))
+    # (Qt tự kiểm tra PID trong lock: app crash -> lock tự phá, không khoá chết)
+    if not lock.tryLock(100):
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            None, "BQ Hung Video",
+            "App đang mở rồi (kiểm tra thanh taskbar).\n"
+            "Không thể chạy 2 cửa sổ cùng lúc.")
+        return 0
+    qapp._single_lock = lock          # giữ tham chiếu tới khi thoát
+
     from app.ui.theme import apply_theme
     apply_theme(qapp)
 

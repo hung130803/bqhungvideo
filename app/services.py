@@ -97,9 +97,13 @@ def enqueue_analysis(pool: WorkerPool, video_id: int, project_id: int,
 def enqueue_auto(pool: WorkerPool, video_id: int, project_id: int,
                  preset: Optional[dict] = None) -> Optional[int]:
     """Nút 'Tạo clip tự động': phân tích (nếu chưa) + tìm highlight trong 1 job."""
+    # dedup: bấm 2 lần khi job đang chờ/chạy -> KHÔNG tạo job trùng (2 job auto
+    # song song sẽ gọi LLM 2 lần + ghi đè lẫn nhau bảng clips). skip_if_done=False
+    # để sau khi xong vẫn bấm "Tạo clip" lại được (tạo lại gợi ý mới).
     return pool.enqueue(
         "auto", {"video_id": video_id, "preset": preset or {}},
         project_id=project_id, video_id=video_id, needs_gpu=True, priority=10,
+        dedup_key=f"auto:{video_id}", skip_if_done=False,
     )
 
 
@@ -128,9 +132,28 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    out_name: str = "", captions: bool = False,
                    cap_style: Optional[dict] = None,
                    blur_amt: int = 22, speed: float = 1.0,
-                   pitch: float = 1.0, out_dir: str = "") -> Optional[int]:
-    sig = (f"{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
-           f"{overlay_png}:cap{int(captions)}:{cap_style}:{blur_amt}:{speed}:{pitch}")
+                   pitch: float = 1.0, out_dir: str = "",
+                   force: bool = False) -> Optional[int]:
+    """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Tải lại' /
+    'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
+    # sig phải phủ MỌI thứ ảnh hưởng kết quả: cả mốc cắt start/end của clip
+    # (user kéo sửa trim rồi xuất lại) + NỘI DUNG chữ (overlay_png là đường dẫn
+    # cố định _ovl_{clip_id}.png nên phải hash nội dung file) + nơi lưu.
+    row = db.query_one("SELECT start_sec, end_sec FROM clips WHERE id=?",
+                       (clip_id,))
+    se = f"{row['start_sec']:.3f}-{row['end_sec']:.3f}" if row else "?"
+    ovl = ""
+    if overlay_png:
+        try:
+            st = Path(overlay_png).stat()
+            ovl = f"{st.st_size}:{st.st_mtime_ns}"
+        except OSError:
+            pass
+    extra = hashlib.sha1(
+        repr((text_overlays, cap_style, out_name, out_dir, ovl)).encode()
+    ).hexdigest()[:12]
+    sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
+           f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
     return pool.enqueue(
         "m1_export_clip",
         {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
@@ -143,6 +166,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",
+        skip_if_done=not force,
     )
 
 
@@ -316,32 +340,54 @@ def delete_clip(clip_id: int) -> None:
     db.execute("DELETE FROM clips WHERE id=?", (clip_id,))
 
 
-def delete_video(video_id: int) -> None:
+def _cancel_jobs(pool: Optional[WorkerPool], where: str, params: tuple) -> None:
+    """Hủy job đang chờ/chạy trước khi xóa video/kênh — nếu không, dòng job bị
+    cascade-xóa khỏi panel nhưng tiến trình phân tích/ffmpeg VẪN chạy ngầm và
+    có thể tạo lại thư mục 'ma' sau khi xóa."""
+    if not pool:
+        return
+    for j in db.query(
+            f"SELECT id FROM jobs WHERE status IN ('pending','running') "
+            f"AND {where}", params):
+        pool.cancel(int(j["id"]))
+
+
+def delete_video(video_id: int, pool: Optional[WorkerPool] = None) -> None:
     """
-    Xóa 1 video khỏi project: xóa file clip đã xuất + file audio tạm, rồi xóa
-    dòng DB (cascade xóa analysis/clips/jobs liên quan).
+    Xóa 1 video khỏi project: hủy job liên quan, xóa file clip đã xuất +
+    thumbnail + file audio tạm, rồi xóa dòng DB (cascade analysis/clips/jobs).
     """
+    _cancel_jobs(pool, "video_id=?", (video_id,))
     proj = db.query_one("SELECT project_id FROM videos WHERE id=?", (video_id,))
-    # xóa file clip trên đĩa
-    for c in db.query("SELECT export_path FROM clips WHERE video_id=?", (video_id,)):
+    pdir = _project_dir(proj["project_id"]) if proj else None
+    # xóa file clip + thumbnail trên đĩa
+    for c in db.query("SELECT id, export_path FROM clips WHERE video_id=?",
+                      (video_id,)):
         if c["export_path"]:
             try:
                 Path(c["export_path"]).unlink(missing_ok=True)
             except OSError:
                 pass
-    # xóa audio tạm nếu còn
-    if proj:
-        pdir = _project_dir(proj["project_id"])
         if pdir:
             try:
-                (pdir / f"audio_{video_id}.wav").unlink(missing_ok=True)
+                (Path(cache_dir(pdir)) / f"_thumb_{c['id']}.jpg").unlink(
+                    missing_ok=True)
+            except OSError:
+                pass
+    # xóa audio tạm nếu còn (nằm trong _cache/; dọn thêm chỗ cũ cho bản trước)
+    if pdir:
+        for wav in (pdir / "_cache" / f"audio_{video_id}.wav",
+                    pdir / f"audio_{video_id}.wav"):
+            try:
+                wav.unlink(missing_ok=True)
             except OSError:
                 pass
     db.execute("DELETE FROM videos WHERE id=?", (video_id,))  # cascade
 
 
-def delete_project(project_id: int) -> None:
-    """Xóa cả project: xóa thư mục assets + dòng DB (cascade toàn bộ)."""
+def delete_project(project_id: int, pool: Optional[WorkerPool] = None) -> None:
+    """Xóa cả project: hủy job, xóa thư mục assets + dòng DB (cascade toàn bộ)."""
+    _cancel_jobs(pool, "project_id=?", (project_id,))
     pdir = _project_dir(project_id)
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))  # cascade
     if pdir and pdir.exists():

@@ -179,7 +179,10 @@ def _llm_scores(candidates: list[dict], language: str) -> dict[int, dict]:
     except Exception:  # noqa: BLE001 - lỗi LLM KHÔNG được làm sập M1; lùi heuristic
         return {}
     out: dict[int, dict] = {}
-    rows = data if isinstance(data, list) else data.get("clips", [])
+    # LLM có thể trả JSON hợp lệ nhưng KHÔNG phải list/dict (chuỗi, số, null)
+    # -> .get sẽ nổ AttributeError làm sập job thay vì lùi heuristic
+    rows = (data if isinstance(data, list)
+            else (data.get("clips", []) if isinstance(data, dict) else []))
     for r in rows or []:
         try:
             idx = int(r["index"])
@@ -514,10 +517,10 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     câu nói + cảnh thật của video gốc để cắt sạch. Trả list theo thứ tự thời gian.
     """
     if not llm.is_configured():
-        return []
+        return [], []
     segs = (transcript or {}).get("segments", [])
     if not segs:
-        return []
+        return [], []
     cfg = cfg or {}
     min_len = float(cfg.get("min_len", 60.0))
     max_len = float(cfg.get("max_len", 0.0) or 0.0)
@@ -542,7 +545,12 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
             errors.append(str(e))
             continue
-        rows = data if isinstance(data, list) else (data.get("clips") or [data])
+        if isinstance(data, list):
+            rows = data
+        elif isinstance(data, dict):
+            rows = data.get("clips") or [data]
+        else:               # JSON scalar (chuỗi/số/null) -> chunk này không có clip
+            rows = []
         for r in rows or []:
             clip = _normalize_clip(r, duration, boundaries, min_len, max_len)
             if clip:
@@ -551,7 +559,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     if not all_clips:
         if errors:  # LLM có cấu hình nhưng gọi lỗi -> để generate_highlights báo rõ
             raise llm.LLMError(errors[0])
-        return []
+        return [], []
 
     # Khử trùng lặp: các clip có điểm bắt đầu gần nhau (<8s) -> giữ điểm cao hơn
     all_clips.sort(key=lambda c: c["score"], reverse=True)
@@ -572,7 +580,12 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             ctx.progress(0.55 + 0.05 * (i / max(1, len(kept))),
                          f"AI đọc kỹ & cắt gọn clip {i + 1}/{len(kept)}...")
         refined.append(_refine_clip(c, segs, duration, boundaries, min_len))
-    return refined
+    # Trả kèm lỗi từng chunk: video dài hết quota giữa chừng -> nửa sau video
+    # KHÔNG được AI đọc; phải cảnh báo chứ không được im lặng báo thành công.
+    warns = ([f"{len(errors)}/{len(chunks)} phần transcript gọi AI lỗi "
+              f"(phần sau video có thể chưa được phân tích)"]
+             if errors else [])
+    return refined, warns
 
 
 def _vision_rescore(video_id: int, clips: list, ctx) -> list:
@@ -588,7 +601,10 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
     if not vrow:
         return clips
     from pathlib import Path as _P
-    tmp = _P(vrow["assets_dir"])
+    # ảnh tạm vào _cache (không lẫn folder người dùng) + tên theo video_id
+    # (2 job song song 2 video cùng project sẽ không ghi đè ảnh của nhau)
+    tmp = _P(vrow["assets_dir"]) / "_cache"
+    tmp.mkdir(parents=True, exist_ok=True)
     # chỉ XEM hình các clip điểm cao nhất (đỡ tốn) — tối đa 10
     order = sorted(range(len(clips)), key=lambda i: clips[i]["score"], reverse=True)
     pick = set(order[:10])
@@ -597,7 +613,7 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
         if i not in pick:
             continue
         s, e = c["segments"][0]
-        fp = tmp / f"_vlf_{i}.jpg"
+        fp = tmp / f"_vlf_{video_id}_{i}.jpg"
         if extract_frame(vrow["src_path"], (s + e) / 2, fp, width=384):
             frames.append((i, str(fp)))
 
@@ -612,7 +628,8 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
             data = llm.complete_vision_json(prompt_tpl, [fp for _, fp in batch])
         except Exception:  # noqa: BLE001 - lỗi vision không làm sập; giữ điểm chữ
             continue
-        rows = data if isinstance(data, list) else data.get("clips", [])
+        rows = (data if isinstance(data, list)
+                else (data.get("clips", []) if isinstance(data, dict) else []))
         for r in rows or []:
             try:
                 local = int(r["index"])
@@ -632,6 +649,28 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
         except OSError:
             pass
     return clips
+
+
+def _delete_suggested(video_id: int) -> None:
+    """Xóa clip gợi ý cũ TRỪ clip đang có job xuất chờ/chạy — nếu xóa, job xuất
+    sẽ 'Không tìm thấy clip' và fail khó hiểu (race khi user bấm Tạo clip lại
+    ngay lúc đang xuất)."""
+    keep: set = set()
+    for j in db.query(
+            "SELECT payload FROM jobs WHERE type='m1_export_clip' "
+            "AND status IN ('pending','running') AND video_id=?", (video_id,)):
+        try:
+            keep.add(int(db.loads(j["payload"], {}).get("clip_id")))
+        except (TypeError, ValueError):
+            pass
+    if keep:
+        ph = ",".join("?" * len(keep))
+        db.execute(
+            f"DELETE FROM clips WHERE video_id=? AND status='suggested' "
+            f"AND id NOT IN ({ph})", (video_id, *keep))
+    else:
+        db.execute("DELETE FROM clips WHERE video_id=? AND status='suggested'",
+                   (video_id,))
 
 
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
@@ -657,8 +696,10 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                  "openai": "OpenAI", "deepseek": "DeepSeek"}.get(prov, prov)
     ctx.progress(0.30, f"AI [{prov_name}] đang đọc nội dung & chọn đoạn hay...")
     llm_error = ""
+    ai_warns: list = []
     try:
-        ai_clips = _llm_select_clips(transcript, duration, ctx, scenes, cfg)
+        ai_clips, ai_warns = _llm_select_clips(transcript, duration, ctx,
+                                               scenes, cfg)
     except llm.LLMError as e:  # gọi LLM lỗi thật -> báo rõ, vẫn lùi heuristic
         ai_clips = []
         llm_error = str(e)
@@ -670,8 +711,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
             ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
-        db.execute("DELETE FROM clips WHERE video_id=? AND status='suggested'",
-                   (video_id,))
+        _delete_suggested(video_id)
         clip_ids = []
         for c in ai_clips:
             segs = c["segments"]
@@ -691,6 +731,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             clip_ids.append(cid)
         msg = (f"AI [{prov_name}] chọn {len(clip_ids)} clip"
                + (" (có xem hình)" if used_vision else ""))
+        if ai_warns:
+            msg += " — CẢNH BÁO: " + "; ".join(ai_warns)
         cost = {}
         if prov == "gemini":            # CHI PHÍ ước tính cho video này
             u = llm.get_usage()
@@ -726,8 +768,7 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     candidates = candidates[: cfg["max_candidates"]]
     candidates.sort(key=lambda c: c["start"])  # theo thứ tự thời gian
 
-    db.execute("DELETE FROM clips WHERE video_id=? AND status='suggested'",
-               (video_id,))
+    _delete_suggested(video_id)
     clip_ids = []
     for c in candidates:
         a_s = _audio_score(audio, c["start"], c["end"])
@@ -856,7 +897,9 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     clip_id = int(payload["clip_id"])
     clip = db.query_one("SELECT * FROM clips WHERE id=?", (clip_id,))
     if not clip:
-        raise ValueError(f"Không tìm thấy clip id={clip_id}")
+        raise ValueError(
+            "Clip không còn tồn tại (đã bị xóa hoặc danh sách gợi ý đã được "
+            "tạo lại) — hãy xuất lại từ danh sách clip hiện tại.")
 
     video_id = clip["video_id"]
     vrow = db.query_one(

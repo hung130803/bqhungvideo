@@ -181,7 +181,8 @@ class QueuePanel(QWidget):
         if j["status"] in ("running", "pending"):
             btn.setText("Hủy"); btn.setProperty("danger", True); btn.show()
             btn.clicked.connect(lambda _, i=j["id"]: self._cancel(i))
-        elif j["status"] == "failed":
+        elif j["status"] in ("failed", "canceled"):
+            # retry() hỗ trợ cả 'canceled' -> lỡ tay hủy vẫn chạy lại được
             btn.setText("Thử lại"); btn.setProperty("ghost", True); btn.show()
             btn.clicked.connect(lambda _, i=j["id"]: self._retry(i))
         else:

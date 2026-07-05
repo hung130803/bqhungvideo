@@ -24,6 +24,15 @@ _RATE_WAIT = 7.0
 # điểm -> KHÔNG tràn VRAM card (Ollama 1 model), giữ chất lượng cắt + không lỗi.
 _LLM_LOCK = threading.Lock()
 
+# genai.configure(api_key) là STATE TOÀN CỤC của SDK Gemini: 2 thread xoay
+# 2 key khác nhau sẽ đè key của nhau -> khóa riêng cho configure+generate.
+_GEMINI_LOCK = threading.Lock()
+
+# NHỚ key vừa hết quota (429): bỏ qua trong _KEY_DOWN_TTL giây thay vì mỗi
+# chunk lại thử key chết trước (mỗi lần chờ retry SDK có thể tới ~60s).
+_KEY_DOWN: dict = {}
+_KEY_DOWN_TTL = 60.0
+
 # ---- ĐO token Gemini để ước tính CHI PHÍ ----
 # _USAGE: đếm cho 1 VIDEO (reset trước mỗi video). _TOTAL: cả phiên (từ lúc mở app).
 _USAGE = {"in": 0, "out": 0, "calls": 0}
@@ -147,15 +156,16 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
 
     if provider == "gemini":
         import google.generativeai as genai
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(
-            settings.GEMINI_MODEL, system_instruction=system or None,
-        )
-        resp = model.generate_content(
-            prompt, generation_config={"temperature": temperature,
-                                       "max_output_tokens": 8000},
-            request_options={"timeout": 120},
-        )
+        with _GEMINI_LOCK:      # configure là state toàn cục -> không cho đè key
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(
+                settings.GEMINI_MODEL, system_instruction=system or None,
+            )
+            resp = model.generate_content(
+                prompt, generation_config={"temperature": temperature,
+                                           "max_output_tokens": 8000},
+                request_options={"timeout": 120},
+            )
         um = getattr(resp, "usage_metadata", None)
         if um:
             _add_usage(getattr(um, "prompt_token_count", 0),
@@ -176,7 +186,12 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     last = ""
     with guard:
-        for key in keys:                      # XOAY VÒNG key: hết quota -> key kế
+        # BỎ QUA key vừa dính 429 (trong TTL) — nhưng nếu bỏ hết thì vẫn thử
+        # tất cả (thà chờ còn hơn fail ngay).
+        now = time.time()
+        alive = [k for k in keys
+                 if now - _KEY_DOWN.get((provider, k), 0) >= _KEY_DOWN_TTL]
+        for key in (alive or keys):           # XOAY VÒNG key: hết quota -> key kế
             try:
                 return _call_once(provider, key, prompt, system, temperature)
             except LLMError:
@@ -184,6 +199,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             except Exception as e:  # noqa: BLE001
                 last = str(e)
                 if _is_rate_limit(last):
+                    _KEY_DOWN[(provider, key)] = time.time()
                     continue                   # key này hết lượt -> thử key tiếp
                 raise LLMError(f"Gọi {provider} thất bại: {last}")
         # tất cả key hết quota; chỉ 1 key -> chờ rồi thử lại 1 lần (free tier)
@@ -261,7 +277,11 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                 model = settings.OLLAMA_VL_MODEL
             else:
                 base_url, key, model = None, settings.OPENAI_API_KEY, settings.OPENAI_MODEL
-            client = OpenAI(api_key=key, base_url=base_url)
+            # timeout: chống 1 lời gọi vision treo giữ _LLM_LOCK -> treo cả
+            # hàng đợi AI (nút Hủy vô tác dụng)
+            client = OpenAI(api_key=key, base_url=base_url,
+                            timeout=300 if provider == "ollama" else 120,
+                            max_retries=1)
             content = [{"type": "text", "text": prompt}]
             for p in image_paths:
                 content.append({"type": "image_url", "image_url":
@@ -277,14 +297,17 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
 
         if provider == "gemini":
             import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel(settings.GEMINI_MODEL,
-                                          system_instruction=system or None)
             parts = [prompt]
             for p in image_paths:
                 with open(p, "rb") as f:
                     parts.append({"mime_type": "image/jpeg", "data": f.read()})
-            resp = model.generate_content(parts)
+            with _GEMINI_LOCK:
+                genai.configure(api_key=settings.llm_key_for("gemini")
+                                or settings.GEMINI_API_KEY)
+                model = genai.GenerativeModel(settings.GEMINI_MODEL,
+                                              system_instruction=system or None)
+                resp = model.generate_content(
+                    parts, request_options={"timeout": 120})
             um = getattr(resp, "usage_metadata", None)
             if um:
                 _add_usage(getattr(um, "prompt_token_count", 0),

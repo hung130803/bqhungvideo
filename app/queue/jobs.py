@@ -43,9 +43,33 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
     from app.core.ffmpeg_utils import register_proc, unregister_proc
     register_proc(proc)
     last_error = ""
+
+    # Đọc stdout bằng THREAD RIÊNG + poll hủy mỗi 0.5s: nếu đọc trực tiếp,
+    # lúc tiến trình con im lặng lâu (nạp model whisper, transcribe đoạn dài)
+    # sẽ không có dòng nào -> nút Hủy bị lờ tới dòng PROGRESS kế tiếp.
+    import queue as _q
+    import threading
+    lines: _q.Queue = _q.Queue()
+
+    def _reader():
+        try:
+            for raw in proc.stdout:  # type: ignore[union-attr]
+                lines.put(raw.rstrip("\n"))
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            lines.put(None)          # hết stdout (tiến trình thoát)
+
+    threading.Thread(target=_reader, daemon=True).start()
     try:
-        for line in proc.stdout:  # type: ignore[union-attr]
-            line = line.rstrip("\n")
+        while True:
+            ctx.check_canceled()     # nhạy với nút Hủy kể cả pha im lặng
+            try:
+                line = lines.get(timeout=0.5)
+            except _q.Empty:
+                continue
+            if line is None:
+                break
             if line.startswith("PROGRESS\t"):
                 parts = line.split("\t", 2)
                 try:

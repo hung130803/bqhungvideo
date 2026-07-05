@@ -27,6 +27,8 @@ _BELOW_NORMAL = 0x00004000 if hasattr(subprocess, "STARTUPINFO") else 0
 import threading as _threading
 _ACTIVE_PROCS: set = set()
 _PROC_LOCK = _threading.Lock()
+# Bật khi app đang đóng -> cấm spawn ffmpeg mới (vd fallback NVENC->libx264)
+_SHUTDOWN = _threading.Event()
 
 
 def register_proc(p) -> None:
@@ -41,6 +43,7 @@ def unregister_proc(p) -> None:
 
 def terminate_all_children() -> None:
     """Dừng mọi tiến trình con (ffmpeg/phân tích) đang chạy (gọi khi đóng app)."""
+    _SHUTDOWN.set()      # chặn spawn ffmpeg mới (fallback encoder...) sau lúc này
     with _PROC_LOCK:
         procs = list(_ACTIVE_PROCS)
     for p in procs:
@@ -70,6 +73,15 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
         proc.wait()
         return proc.returncode
     finally:
+        # Thoát bất thường (on_line ném CanceledError khi bấm Hủy, lỗi khác...)
+        # -> PHẢI giết ffmpeg, nếu không nó chạy hết clip ăn CPU/GPU và giữ file
+        # output; đã unregister thì đóng app cũng không dọn được nữa.
+        if proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         with _PROC_LOCK:
             _ACTIVE_PROCS.discard(proc)
 
@@ -167,12 +179,22 @@ def ffmpeg_available() -> bool:
 
 def extract_frame(src: str | Path, t: float, dst: str | Path,
                   width: int = 360) -> bool:
-    """Trích 1 khung hình tại giây t -> ảnh (cho khung xem trước). True nếu OK."""
+    """Trích 1 khung hình tại giây t -> ảnh (cho khung xem trước). True nếu OK.
+
+    Hay được gọi từ UI thread (mở editor) -> PHẢI có timeout: file trên ổ
+    mạng/OneDrive đơ có thể làm ffmpeg treo -> treo cả app.
+    """
     cmd = [
         settings.FFMPEG_PATH, "-y", "-ss", f"{max(0, t):.3f}", "-i", str(src),
         "-frames:v", "1", "-vf", f"scale={width}:-1", "-q:v", "3", str(dst),
     ]
-    return _run(cmd) == 0
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=30,
+                           creationflags=_CREATE_NO_WINDOW,
+                           stdin=subprocess.DEVNULL)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def extract_audio_wav(src: str | Path, dst: str | Path, sr: int = 16000) -> bool:
@@ -312,12 +334,30 @@ def reframe_chain(mode: str, cx: float, out_w: int, out_h: int,
     )
 
 
+def _cleanup_dst(dst) -> None:
+    """Xóa file output dở dang (mp4 hỏng) khi xuất lỗi/hủy — best-effort."""
+    if not dst:
+        return
+    try:
+        Path(dst).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _run_with_fallback(build_cmd, encoder: str, total: float,
-                       on_progress, what: str) -> None:
-    """Chạy ffmpeg với encoder; nếu NVENC lỗi -> thử libx264. Ném lỗi kèm log."""
+                       on_progress, what: str, dst=None) -> None:
+    """Chạy ffmpeg với encoder; nếu NVENC lỗi -> thử libx264. Ném lỗi kèm log.
+
+    dst (nếu truyền): file output — sẽ bị XÓA khi thất bại/hủy để không để lại
+    .mp4 hỏng mang tên thành phẩm trong thư mục người dùng.
+    """
     encoders_to_try = [encoder] if encoder == "libx264" else [encoder, "libx264"]
     last_log = ""
     for enc in encoders_to_try:
+        # Đang đóng app (terminate_all_children đã giết ffmpeg NVENC) -> KHÔNG
+        # được spawn ffmpeg libx264 mới chạy mồ côi sau khi app tắt.
+        if _SHUTDOWN.is_set():
+            break
         tail: list[str] = []
 
         def _line(line: str) -> None:
@@ -333,12 +373,18 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
                 except (ValueError, IndexError):
                     pass
 
-        if _run(build_cmd(enc), _line) == 0:
+        try:
+            code = _run(build_cmd(enc), _line)
+        except Exception:          # CanceledError (bấm Hủy) hoặc lỗi khác
+            _cleanup_dst(dst)
+            raise
+        if code == 0:
             return
         last_log = "\n".join(tail[-6:])
         if enc == "h264_nvenc":
             global _ENCODER_CACHE
             _ENCODER_CACHE = "libx264"
+    _cleanup_dst(dst)
     raise RuntimeError(f"ffmpeg không {what}. Log cuối:\n" + (last_log or "(trống)"))
 
 
@@ -400,7 +446,8 @@ def export_vertical_clip(
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)]
         return cmd
 
-    _run_with_fallback(build, encoder, dur, on_progress, "xuất được clip")
+    _run_with_fallback(build, encoder, dur, on_progress, "xuất được clip",
+                       dst=dst)
     return True
 
 
@@ -427,6 +474,9 @@ def export_stitched_clip(
         raise RuntimeError("Mixed-Cut không có đoạn nào để ghép.")
     encoder = encoder or detect_encoder()
     total = sum(m["end"] - m["start"] for m in moments)
+    # Video KHÔNG có luồng tiếng (screen-record...) -> atrim/concat a=1 sẽ fail;
+    # ghép chỉ hình.
+    has_audio = probe(src).has_audio
 
     parts, labels = [], []
     for i, m in enumerate(moments):
@@ -436,14 +486,19 @@ def export_stitched_clip(
             f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[pv{i}]")
         parts.append(reframe_chain(mode, cx, out_w, out_h, zoom,
                                    f"pv{i}", f"v{i}", str(i)))
-        parts.append(
-            f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
-        labels.append(f"[v{i}][a{i}]")
+        if has_audio:
+            parts.append(
+                f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+            labels.append(f"[v{i}][a{i}]")
+        else:
+            labels.append(f"[v{i}]")
     n = len(moments)
     use_png = bool(overlay_png and os.path.exists(overlay_png))
     has_text = (not use_png) and any(o.get("text") for o in (text_overlays or []))
     vout = "[vcat]" if (use_png or has_text) else "[v]"
-    parts.append("".join(labels) + f"concat=n={n}:v=1:a=1{vout}[a]")
+    a_flag = 1 if has_audio else 0
+    parts.append("".join(labels) + f"concat=n={n}:v=1:a={a_flag}{vout}"
+                 + ("[a]" if has_audio else ""))
     if use_png:
         parts.append("[vcat][1:v]overlay=0:0[v]")
     elif has_text:
@@ -454,12 +509,15 @@ def export_stitched_clip(
         cmd = [settings.FFMPEG_PATH, "-y", "-i", str(src)]
         if use_png:
             cmd += ["-i", str(overlay_png)]
-        cmd += ["-filter_complex", fc, "-map", "[v]", "-map", "[a]",
-                *_enc_args(enc, quality),
+        cmd += ["-filter_complex", fc, "-map", "[v]"]
+        if has_audio:
+            cmd += ["-map", "[a]"]
+        cmd += [*_enc_args(enc, quality),
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)]
         return cmd
 
-    _run_with_fallback(build, encoder, total, on_progress, "ghép được Mixed-Cut")
+    _run_with_fallback(build, encoder, total, on_progress, "ghép được Mixed-Cut",
+                       dst=dst)
     return True
 
 
@@ -479,7 +537,16 @@ def detect_black_crop(src: str | Path, t: float = 0.0,
     for line in (out.stderr or "").splitlines():
         i = line.find("crop=")
         if i != -1:
-            crop = line[i + 5:].strip()
+            crop = line[i + 5:].strip().split()[0]
+    # Cảnh mở đầu TỐI/ĐEN hoàn toàn -> cropdetect trả giá trị 0/ÂM (vd
+    # "0:0:-1:-1") — đưa vào filter crop sẽ làm ffmpeg fail 100%. Validate kỹ.
+    if crop:
+        try:
+            w, h, x, y = (int(float(v)) for v in crop.split(":")[:4])
+        except (ValueError, IndexError):
+            return None
+        if w < 16 or h < 16 or x < 0 or y < 0:
+            return None
     return crop
 
 
@@ -511,6 +578,8 @@ def export_canvas_clip(
     encoder = encoder or detect_encoder()
     multi = len(segs) > 1
     total = sum(e - s for s, e in segs)
+    # Video KHÔNG có tiếng -> mọi filter [0:a] sẽ fail; xuất chỉ hình.
+    has_audio = probe(src).has_audio
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)
     use_png = bool(overlay_png and os.path.exists(overlay_png))
@@ -526,9 +595,15 @@ def export_canvas_clip(
             labs = ""
             for i, (s, e) in enumerate(segs):
                 parts.append(f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS[sv{i}]")
-                parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS[sa{i}]")
-                labs += f"[sv{i}][sa{i}]"
-            parts.append(f"{labs}concat=n={len(segs)}:v=1:a=1[cvid][caud]")
+                if has_audio:
+                    parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},"
+                                 f"asetpts=PTS-STARTPTS[sa{i}]")
+                    labs += f"[sv{i}][sa{i}]"
+                else:
+                    labs += f"[sv{i}]"
+            a_flag = 1 if has_audio else 0
+            parts.append(f"{labs}concat=n={len(segs)}:v=1:a={a_flag}[cvid]"
+                         + ("[caud]" if has_audio else ""))
             content, aud, aud_map = "[cvid]", "[caud]", "[caud]"
         else:
             s, e = segs[0]
@@ -581,22 +656,30 @@ def export_canvas_clip(
         if abs(speed - 1.0) > 0.01:
             parts.append(f"{final}setpts=PTS/{speed:.4f}[vsp]")
             final = "[vsp]"
-        # ĐỔI GIỌNG + tốc độ cho AUDIO
+        # ĐỔI GIỌNG + tốc độ cho AUDIO (chỉ khi video CÓ tiếng)
         af = []
         if abs(pitch - 1.0) > 0.01:     # đổi cao độ giọng (giữ tốc độ)
             af += [f"asetrate=48000*{pitch:.4f}", "aresample=48000",
                    f"atempo={1.0/pitch:.4f}"]
         if abs(speed - 1.0) > 0.01:
             af.append(f"atempo={speed:.4f}")
-        if af:
+        if has_audio and af:
             parts.append(f"{aud}aresample=48000,{','.join(af)}[aout]")
             amap = "[aout]"
-        else:
+        elif has_audio:
             amap = aud_map      # KHÔNG lọc -> map thẳng input (1 đoạn) / [caud] (ghép)
-        cmd += ["-filter_complex", ";".join(parts), "-map", final, "-map", amap,
-                *_enc_args(enc, "high"), "-c:a", "aac", "-b:a", "160k",
+        else:
+            amap = None          # không có luồng tiếng -> chỉ xuất hình
+        cmd += ["-filter_complex", ";".join(parts), "-map", final]
+        if amap:
+            cmd += ["-map", amap]
+        cmd += [*_enc_args(enc, "high"), "-c:a", "aac", "-b:a", "160k",
                 "-movflags", "+faststart", str(dst)]
         return cmd
 
-    _run_with_fallback(build, encoder, total, on_progress, "xuất được clip")
+    # ffmpeg log 'time=' là thời gian OUTPUT -> khi tăng tốc, tổng thời lượng
+    # ra = total/speed; dùng total gốc sẽ làm thanh % kẹt ở ~1/speed rồi nhảy vọt.
+    out_total = total / speed if abs(speed - 1.0) > 0.01 else total
+    _run_with_fallback(build, encoder, out_total, on_progress, "xuất được clip",
+                       dst=dst)
     return True
