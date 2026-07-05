@@ -1004,6 +1004,7 @@ class StudioPage(QWidget):
         t0 = _time.time()
         cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
                "--user-agent", ua, "-f",
+               "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
                "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                "--merge-output-format", "mp4", "--no-playlist",
                "--print", "after_move:filepath", "-o", out_tmpl]

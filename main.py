@@ -22,6 +22,9 @@ def main() -> int:
         sys.argv = [sys.argv[0]] + sys.argv[2:]   # -> [exe, video_id, force?]
         return ar.main()
 
+    # Trình phát xem trước dùng backend FFMPEG (Qt6 kèm sẵn): backend Windows
+    # mặc định không giải mã VP9/AV1 (video yt-dlp hay tải về) -> MÀN ĐEN.
+    os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
     from PyQt6.QtWidgets import QApplication
 
     # Nạp DB + đăng ký toàn bộ job handler (analyze, m1_*)
