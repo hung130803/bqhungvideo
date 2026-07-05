@@ -274,6 +274,7 @@ class StudioPage(QWidget):
         root.addWidget(sc, 1)
 
         self.timer = QTimer(self)
+        self.timer.timeout.connect(self._poll_done)     # job video đang chọn XONG -> báo ✓
         self.timer.timeout.connect(self._refresh_clips)
         self.timer.timeout.connect(self._check_auto_export)   # phân tích xong -> tự xuất
         self.timer.start(1500)
@@ -640,6 +641,42 @@ class StudioPage(QWidget):
         self.state.set_project(int(pid))
         self._reload_videos()
 
+    def _video_status_marks(self) -> dict:
+        """Đuôi trạng thái cho MỖI video trong combo — 2 query GỘP cho cả kênh
+        (không query từng video kẻo chậm khi nhiều video).
+        Ưu tiên: có clip -> '✂ N clip'; đang có job chạy -> '⏳ đang xử lý'."""
+        marks = {}
+        if not self.state.project_id:
+            return marks
+        try:
+            for r in db.query(
+                    "SELECT c.video_id AS vid, COUNT(*) AS n FROM clips c "
+                    "JOIN videos v ON v.id = c.video_id "
+                    "WHERE v.project_id=? GROUP BY c.video_id",
+                    (self.state.project_id,)):
+                marks[r["vid"]] = f'  ✂ {r["n"]} clip'
+            for r in db.query(
+                    "SELECT DISTINCT video_id AS vid FROM jobs "
+                    "WHERE project_id=? AND video_id IS NOT NULL "
+                    "AND status IN ('pending','running')",
+                    (self.state.project_id,)):
+                if r["vid"] not in marks:
+                    marks[r["vid"]] = "  ⏳ đang xử lý"
+        except Exception:  # noqa: BLE001 - nhãn trạng thái lỗi không được sập app
+            pass
+        return marks
+
+    def _video_busy(self, vid) -> bool:
+        """Video này ĐANG có job chạy/chờ (phân tích/cắt/xuất)? 1 query nhẹ."""
+        if not vid:
+            return False
+        try:
+            return bool(db.query_one(
+                "SELECT 1 FROM jobs WHERE video_id=? "
+                "AND status IN ('pending','running') LIMIT 1", (vid,)))
+        except Exception:  # noqa: BLE001
+            return False
+
     def _reload_videos(self, select_id=None):
         """Nạp lại danh sách video. GIỮ NGUYÊN video đang chọn (nếu còn) —
         nếu không, mỗi lần 1 video trong loạt tải xong sẽ nhảy về video đầu,
@@ -647,8 +684,9 @@ class StudioPage(QWidget):
         cur = select_id if select_id is not None else self.vid.currentData()
         self.vid.blockSignals(True); self.vid.clear()
         if self.state.project_id:
+            marks = self._video_status_marks()   # trạng thái TỪNG video (query gộp)
             for v in services.list_videos(self.state.project_id):
-                mark = "  • đã phân tích" if services.video_analyzed(v["id"]) else ""
+                mark = marks.get(v["id"], "  · chưa tạo clip")
                 self.vid.addItem(f'{Path(v["src_path"]).name}{mark}', v["id"])
         if cur is not None:
             i = self.vid.findData(cur)
@@ -996,9 +1034,9 @@ class StudioPage(QWidget):
                     path = line
                 m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
                 if m:
-                    self.dl_progress.emit(f"{prefix}Đang tải... {m.group(1)}%")
+                    self.dl_progress.emit(f"① {prefix}Đang tải... {m.group(1)}%")
                 elif "Merg" in line or "Fixup" in line:
-                    self.dl_progress.emit(f"{prefix}Đang ghép hình + tiếng...")
+                    self.dl_progress.emit(f"① {prefix}Đang ghép hình + tiếng...")
             proc.wait()
         finally:
             unregister_proc(proc)
@@ -1049,7 +1087,8 @@ class StudioPage(QWidget):
         cookie_args = self._cookie_args()
         self._dl_pid = self.state.project_id      # NHỚ kênh lúc bấm (tránh đổi giữa chừng)
         self._set_dl_active(True)
-        self.status.setText("Đang tải video từ YouTube...")
+        self.status.setText("① Đang tải video từ YouTube... "
+                            "(tải xong sẽ TỰ ② phân tích & cắt)")
 
         def work():
             pot = self._potoken()
@@ -1112,7 +1151,7 @@ class StudioPage(QWidget):
             import time
             pot = self._potoken()
             for k, url in enumerate(urls, 1):
-                self.dl_progress.emit(f"Tải video {k}/{n}...")
+                self.dl_progress.emit(f"① Tải video {k}/{n}...")
                 path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
                                             prefix=f"({k}/{n}) ")
                 self.dl_one.emit(path, err, url)
@@ -1163,8 +1202,9 @@ class StudioPage(QWidget):
             elif ok:
                 extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
                 self.status.setText(
-                    f"Đã tải xong cả loạt ({ok} video) → đang phân tích & cắt "
-                    f"từng video{extra} (xem tiến trình dưới).")
+                    f"✓ ① Tải xong cả loạt ({ok} video) → ② Đang phân tích & "
+                    f"cắt từng video{extra} (xem Tiến trình dưới). Xong clip "
+                    "TỰ hiện ở danh sách dưới.")
             else:
                 self.status.setText("Loạt tải kết thúc: không có video nào.")
 
@@ -1197,7 +1237,9 @@ class StudioPage(QWidget):
         jid = services.enqueue_auto(self.state.pool, vid, pid, self._cut_preset())
         self._track_auto(jid, vid)
         extra = " → xong TỰ XUẤT" if self.auto_export_chk.isChecked() else ""
-        self.status.setText(f"Đã tải xong → đang phân tích & cắt clip{extra}...")
+        self.status.setText(
+            f"✓ ① Tải xong → ② Đang phân tích & cắt clip (xem % ở khu Tiến "
+            f"trình dưới){extra}... Xong clip sẽ TỰ hiện ở danh sách dưới.")
 
     # ---- XEM & SỬA: phát video + cắt tay + tốc độ + xuất ----
     def _review_clip(self, c, part_no=1):
@@ -1513,7 +1555,8 @@ class StudioPage(QWidget):
                                     self.state.project_id, self._cut_preset())
         self._track_auto(jid, self.state.video_id)
         extra = " → xong sẽ TỰ xuất" if self.auto_export_chk.isChecked() else ""
-        self.status.setText(f"Đang phân tích & cắt clip{extra}... (xem tiến trình dưới)")
+        self.status.setText(f"② Đang phân tích & cắt clip{extra}... "
+                            "(xem % ở khu Tiến trình dưới — xong TỰ hiện ở đây)")
 
     def _auto_mixed(self):
         """Mixed-Cut: ghép các khoảnh khắc hay nhất khắp video thành 1 clip."""
@@ -1670,14 +1713,38 @@ class StudioPage(QWidget):
                             "Bấm Tải/Tải tất cả để xuất theo mẫu này.")
 
     # ---- danh sách clip ----
+    def _poll_done(self):
+        """Định kỳ (theo timer): job của VIDEO ĐANG CHỌN vừa chạy XONG ->
+        báo '✓ Xong — N clip' + cập nhật đuôi trạng thái combo. So sánh
+        chữ ký busy trước/sau nên KHÔNG rebuild gì khi không có thay đổi."""
+        vid = self.state.video_id
+        busy = self._video_busy(vid)
+        prev_vid, prev_busy = getattr(self, "_job_watch", (None, False))
+        self._job_watch = (vid, busy)
+        if vid is None or vid != prev_vid or busy or not prev_busy:
+            return                        # không phải chuyển busy -> xong
+        n = len(services.list_clips(vid))
+        # cập nhật đuôi '✂ N clip' ở combo, GIỮ video đang chọn (không giật)
+        self._reload_videos(select_id=vid)   # tự gọi _refresh_clips(force)
+        if n:
+            self.status.setText(
+                f"✓ ③ Xong — {n} clip đã sẵn sàng ở danh sách bên dưới.")
+        else:
+            self.status.setText(
+                "⚠ Xử lý xong nhưng chưa có clip — xem khu Tiến trình bên "
+                "dưới có báo lỗi không.")
+
     def _refresh_clips(self, force=False):
         vid = self.state.video_id
         clips = services.list_clips(vid) if vid else []
+        busy = self._video_busy(vid)      # để empty-state đổi khi job chạy/xong
         if not force and getattr(self, "_n", -1) == len(clips) \
+                and getattr(self, "_busy", None) == busy \
                 and all(getattr(self, "_st", {}).get(c["id"]) == c["status"]
                         for c in clips):
             return
         self._n = len(clips)
+        self._busy = busy
         self._st = {c["id"]: c["status"] for c in clips}
         self._cur_clips = clips
         self._cur_vrow = db.query_one(
@@ -1728,21 +1795,38 @@ class StudioPage(QWidget):
         self.thumbs_ready.emit()
 
     def _empty_state(self):
+        """Vùng danh sách khi CHƯA có clip: nói rõ đang ở bước nào —
+        đang xử lý ngầm (job chạy) / chưa tạo clip / chưa có video."""
+        vid = self.state.video_id
+        if vid and getattr(self, "_busy", False):
+            ic, ic_col = "⏳", WARN
+            head = "Đang phân tích & cắt clip video này…"
+            sub = ("Xem % ở khu Tiến trình bên dưới. Xong clip sẽ TỰ hiện "
+                   "tại đây.")
+        elif vid:
+            ic, ic_col = "✂", ACCENT
+            head = "Chưa có clip"
+            sub = "Bấm nút ② Tạo clip để AI phân tích & cắt video này."
+        else:
+            ic, ic_col = "+", ACCENT
+            head = "Chưa có clip nào"
+            sub = ("KÉO-THẢ video vào đây (hoặc “+ Thêm video”), rồi bấm "
+                   "“Tạo clip”.")
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 60, 0, 0)
         lay.setSpacing(10)
-        icon = QLabel("+")
-        icon.setStyleSheet(f"font-size:46px; font-weight:700; color:{ACCENT};")
+        icon = QLabel(ic)
+        icon.setStyleSheet(f"font-size:46px; font-weight:700; color:{ic_col};")
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(icon)
-        t1 = QLabel("Chưa có clip nào")
+        t1 = QLabel(head)
         t1.setStyleSheet("font-size:18px; font-weight:600;")
         t1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(t1)
-        t2 = QLabel("KÉO-THẢ video vào đây (hoặc “+ Thêm video”), rồi bấm "
-                    "“Tạo clip”.")
-        t2.setStyleSheet(f"color:{MUTED};")
+        t2 = QLabel(sub)
+        t2.setWordWrap(True)
+        t2.setStyleSheet(f"color:{MUTED}; font-size:14px;")
         t2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(t2)
         return w
