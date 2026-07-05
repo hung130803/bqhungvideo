@@ -37,9 +37,9 @@ def main() -> None:
 
     # Python
     v = sys.version_info
-    py_ok = (v.major, v.minor) in ((3, 10), (3, 11))
+    py_ok = (v.major, v.minor) in ((3, 10), (3, 11), (3, 12))  # khớp README
     print(f"{_ok(py_ok)} Python {v.major}.{v.minor}.{v.micro}"
-          + ("" if py_ok else "  ⚠ NÊN dùng 3.10/3.11 (xem README)"))
+          + ("" if py_ok else "  ⚠ NÊN dùng 3.11/3.12 (xem README)"))
 
     # Thư viện
     libs = {
