@@ -156,7 +156,10 @@ def _nvenc_works() -> bool:
     cmd = [
         settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error",
         "-f", "lavfi", "-i", "testsrc=size=128x128:rate=1",
-        "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-",
+        # testsrc mặc định rgb24 -> vài bản ffmpeg từ chối đưa thẳng vào NVENC;
+        # ép yuv420p để test không FAIL OAN (false negative) vì pixel format.
+        "-frames:v", "1", "-pix_fmt", "yuv420p",
+        "-c:v", "h264_nvenc", "-f", "null", "-",
     ]
     try:
         r = subprocess.run(cmd, capture_output=True,
@@ -214,7 +217,11 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
     # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
     crf = "20" if quality == "high" else "23"
-    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf]
+    # GIỚI HẠN thread mỗi ffmpeg: mặc định libx264 ăn HẾT luồng CPU -> 2-3 job
+    # song song là máy đơ 100% CPU. Chia ~1/3 số luồng cho mỗi job (2..8).
+    threads = max(2, min(8, (os.cpu_count() or 4) // 3))
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,
+            "-threads", str(threads)]
 
 
 # Font hỗ trợ (tên hiển thị -> file trong thư mục Fonts của Windows)

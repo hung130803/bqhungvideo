@@ -145,7 +145,9 @@ class MainWindow(QMainWindow):
         self.sp_ai = spin_row("Luồng AI", self.state.pool.max_gpu, self._set_ai)
         self.sp_ai.setToolTip("Số video phân tích/AI song song.")
         self.sp_cut = spin_row("Luồng cắt", self.state.pool.max_cpu, self._set_cut)
-        self.sp_cut.setToolTip("Số video cắt/xuất song song.")
+        self.sp_cut.setToolTip(
+            "Số video cắt/xuất song song.\n"
+            "⚠ Để cao quá sẽ ĐƠ MÁY khi encode bằng CPU (libx264).")
 
         v.addStretch(1)
 
