@@ -173,28 +173,48 @@ class LoginDialog(QDialog):
             self._set_note("err", "Chưa cấu hình máy chủ. Bấm 'Cấu hình máy chủ'.")
             return
         self.btn.setEnabled(False); self._set_note("info", "Đang đăng nhập...")
-        QApplication.processEvents()
-        _wait(True)
-        try:
-            res = auth.login(u, p)
-        except auth.AuthError as e:
-            _wait(False); self.btn.setEnabled(True)
-            self._set_note("err", str(e)); return
-        finally:
-            _wait(False)
-        self.btn.setEnabled(True)
-        if not res:
-            self._set_note("err", "Sai tên đăng nhập/mật khẩu, hoặc tài khoản bị khoá.")
-            return
-        self.user = res["username"]; self.role = res["role"]
-        self._s.setValue("last_user", self.user)
-        self._s.setValue("save_user", self.user)
-        if self.remember.isChecked():            # GHI NHỚ mật khẩu cho lần sau
-            self._s.setValue("save_pass", self._enc(p))
-        else:
-            self._s.remove("save_pass")
-        self.password = p                         # trả mật khẩu cho main/admin
-        self.accept()
+        # Gọi Supabase ở THREAD NỀN: gọi đồng bộ trên UI thread sẽ treo cứng
+        # màn đăng nhập ~20s khi mất mạng (không bấm được gì, tưởng app đơ).
+        import threading
+        out: list = []
+
+        def bg():
+            try:
+                out.append(("ok", auth.login(u, p)))
+            except auth.AuthError as e:
+                out.append(("err", str(e)))
+            except Exception as e:  # noqa: BLE001
+                out.append(("err", f"Lỗi kết nối: {e}"))
+
+        threading.Thread(target=bg, daemon=True).start()
+        from PyQt6.QtCore import QTimer
+        timer = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            timer.stop()
+            self.btn.setEnabled(True)
+            kind, res = out[0]
+            if kind == "err":
+                self._set_note("err", str(res))
+                return
+            if not res:
+                self._set_note("err",
+                               "Sai tên đăng nhập/mật khẩu, hoặc tài khoản bị khoá.")
+                return
+            self.user = res["username"]; self.role = res["role"]
+            self._s.setValue("last_user", self.user)
+            self._s.setValue("save_user", self.user)
+            if self.remember.isChecked():        # GHI NHỚ mật khẩu cho lần sau
+                self._s.setValue("save_pass", self._enc(p))
+            else:
+                self._s.remove("save_pass")
+            self.password = p                     # trả mật khẩu cho main/admin
+            self.accept()
+
+        timer.timeout.connect(poll)
+        timer.start(150)
 
     @staticmethod
     def _enc(s: str) -> str:

@@ -149,7 +149,12 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
 
     if kind == "transcript":
         if not transcribe.provider_ready():
-            return None, ""
+            # KHÔNG skip êm: thiếu transcript thì AI không chọn được đoạn hay,
+            # job vẫn báo "Hoàn tất" nhưng clip cắt mò -> khách tưởng app dở.
+            raise RuntimeError(
+                "Chưa có cách chép lời — vào 'Cài đặt AI' dán key Groq "
+                "(miễn phí, console.groq.com/keys) rồi bấm Tạo clip lại. "
+                "(Hoặc cài faster-whisper nếu muốn chạy trên máy.)")
         wav = ensure_audio()
         model = profile.get("whisper_model", "small")
         data = transcribe.transcribe(

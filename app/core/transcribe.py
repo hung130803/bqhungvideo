@@ -23,8 +23,13 @@ def is_available() -> bool:
 
 
 def provider_ready() -> bool:
-    """Có cách chép lời không: Groq (mây, có key) HOẶC faster-whisper (máy)."""
-    if settings.WHISPER_PROVIDER == "groq" and settings.groq_keys():
+    """Có cách chép lời không: Groq (mây, có key) HOẶC faster-whisper (máy).
+
+    Có key Groq thì luôn tính là sẵn sàng kể cả WHISPER_PROVIDER=local mà máy
+    thiếu faster-whisper (bản .exe nhẹ) — transcribe() sẽ tự lùi sang Groq.
+    """
+    if settings.groq_keys() and (settings.WHISPER_PROVIDER == "groq"
+                                 or not is_available()):
         return True
     return is_available()
 
@@ -114,9 +119,26 @@ def _transcribe_stable(audio_path, model_name, device, compute_type, language,
     if on_progress:
         on_progress(0.1, "Đang chép lời (căn chuẩn)...")
     model = _get_stable_model(model_name, device, compute_type)
-    # (Đã GỠ vad=True: torch CPU + tải model silero làm TREO bước chép lời.)
-    r = model.transcribe(audio_path, language=language, word_timestamps=True,
-                         verbose=False)
+    # transcribe() không có callback tiến độ -> NHỊP TIM nền: video dài đứng im
+    # ở 10% hàng chục phút làm user tưởng treo. Tiến dần (không tới 100%) + số
+    # giây đã chạy để biết app vẫn sống.
+    import threading as _th
+    import time as _time
+    _stop = _th.Event()
+    if on_progress:
+        def _beat():
+            t0 = _time.time()
+            while not _stop.wait(5):
+                el = _time.time() - t0
+                p = min(0.85, 0.1 + 0.75 * el / (el + 240))
+                on_progress(p, f"Đang chép lời (căn chuẩn)... {int(el)}s")
+        _th.Thread(target=_beat, daemon=True).start()
+    try:
+        # (Đã GỠ vad=True: torch CPU + tải model silero làm TREO bước chép lời.)
+        r = model.transcribe(audio_path, language=language, word_timestamps=True,
+                             verbose=False)
+    finally:
+        _stop.set()
     segments, words, full = [], [], []
     for seg in r.segments:
         segments.append({"start": round(seg.start, 3), "end": round(seg.end, 3),
@@ -283,8 +305,13 @@ def transcribe(
     Ưu tiên stable-ts (căn từ chuẩn hơn); lỗi -> lùi faster-whisper.
     """
     language = language or settings.WHISPER_LANGUAGE
+    provider = settings.WHISPER_PROVIDER
+    # MÁY KHÁCH (bản .exe nhẹ): không có faster-whisper nhưng CÓ key Groq ->
+    # tự dùng Groq, không bắt user phải biết đổi thêm 'Nguồn nghe-chép'.
+    if provider != "groq" and not is_available() and settings.groq_keys():
+        provider = "groq"
     # GROQ (mây) TRƯỚC — KHÔNG cần lib local. Máy yếu/không cài gì vẫn chép được.
-    if settings.WHISPER_PROVIDER == "groq" and settings.groq_keys():
+    if provider == "groq" and settings.groq_keys():
         try:
             return _transcribe_groq(audio_path, language, on_progress)
         except Exception as e:  # noqa: BLE001
@@ -294,8 +321,8 @@ def transcribe(
     # ---- Chép lời bằng MÁY (faster-whisper / stable-ts) ----
     if not is_available():
         raise RuntimeError(
-            "Chưa bật chép lời. Vào 'Cài đặt AI' bật Groq (dán key), "
-            "hoặc cài faster-whisper."
+            "Chưa bật chép lời. Vào 'Cài đặt AI' dán key Groq (miễn phí), "
+            "hoặc cài faster-whisper (pip install -r requirements.txt)."
         )
     if _stable_available():
         try:

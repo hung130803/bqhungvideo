@@ -34,10 +34,19 @@ _KEY_DOWN: dict = {}
 _KEY_DOWN_TTL = 60.0
 
 # ---- ĐO token Gemini để ước tính CHI PHÍ ----
-# _USAGE: đếm cho 1 VIDEO (reset trước mỗi video). _TOTAL: cả phiên (từ lúc mở app).
-_USAGE = {"in": 0, "out": 0, "calls": 0}
+# _USAGE đếm cho 1 VIDEO — để THEO THREAD (mỗi job auto chạy trọn trong 1
+# worker thread): 2 video chạy AI song song không cộng chéo/reset lẫn nhau.
+# _TOTAL: cả phiên (từ lúc mở app), dùng chung có khóa.
+_TLS = threading.local()
 _TOTAL = {"in": 0, "out": 0, "calls": 0}
 _USAGE_LOCK = threading.Lock()
+
+
+def _usage() -> dict:
+    d = getattr(_TLS, "usage", None)
+    if d is None:
+        d = _TLS.usage = {"in": 0, "out": 0, "calls": 0}
+    return d
 # Giá Gemini (USD / 1 TRIỆU token) — (input, output). Google có thể đổi giá.
 GEMINI_PRICE = {
     "gemini-2.5-flash": (0.30, 2.50),
@@ -48,13 +57,11 @@ USD_TO_VND = 25500          # tỉ giá ước tính (đổi tại đây nếu l
 
 
 def reset_usage() -> None:
-    with _USAGE_LOCK:
-        _USAGE.update(**{"in": 0, "out": 0, "calls": 0})
+    _usage().update(**{"in": 0, "out": 0, "calls": 0})
 
 
 def get_usage() -> dict:
-    with _USAGE_LOCK:
-        return dict(_USAGE)
+    return dict(_usage())
 
 
 def get_total_usage() -> dict:
@@ -63,11 +70,14 @@ def get_total_usage() -> dict:
 
 
 def _add_usage(p_in, p_out) -> None:
+    d = _usage()                      # theo thread, không cần khóa
+    d["in"] += int(p_in or 0)
+    d["out"] += int(p_out or 0)
+    d["calls"] += 1
     with _USAGE_LOCK:
-        for d in (_USAGE, _TOTAL):
-            d["in"] += int(p_in or 0)
-            d["out"] += int(p_out or 0)
-            d["calls"] += 1
+        _TOTAL["in"] += int(p_in or 0)
+        _TOTAL["out"] += int(p_out or 0)
+        _TOTAL["calls"] += 1
 
 
 def estimate_cost_vnd(usage: dict, model: str = "") -> int:
