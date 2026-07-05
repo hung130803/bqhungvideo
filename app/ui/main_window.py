@@ -24,7 +24,7 @@ class _NoWheelSpin(QSpinBox):
 
 
 class MainWindow(QMainWindow):
-    _update_found = pyqtSignal(str, str)        # (tag mới, trang tải)
+    _update_found = pyqtSignal(object)          # dict từ updater.check_latest()
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -59,24 +59,21 @@ class MainWindow(QMainWindow):
 
         def work():
             try:
+                # dọn rác của lần cập nhật trước (zip/thư mục tạm/_internal.old)
+                from app.core.self_update import cleanup_leftovers
+                cleanup_leftovers()
                 from app.core.updater import check_latest
                 res = check_latest()
                 if res:
-                    self._update_found.emit(res[0], res[1])
+                    self._update_found.emit(res)
             except Exception:  # noqa: BLE001
                 pass
         threading.Thread(target=work, daemon=True).start()
 
-    def _notify_update(self, tag, page):
-        import webbrowser
-        if QMessageBox.question(
-            self, "Có bản cập nhật mới",
-            f"Đã có phiên bản mới <b>{tag}</b> (bạn đang dùng v{__version__}).\n\n"
-            "Mở trang tải bản mới ngay?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
-        ) == QMessageBox.StandardButton.Yes:
-            webbrowser.open(page)
+    def _notify_update(self, info: dict):
+        # Tự tải + tự cài + tự mở lại (bản dev fallback mở trang tải)
+        from app.ui.update_dialog import UpdateDialog
+        UpdateDialog(info, self).exec()
 
     def _sidebar(self):
         from app.ui.theme import BASE, WINDOW, BORDER, MUTED, TEXT, ACCENT, SUCCESS, DANGER
@@ -163,8 +160,9 @@ class MainWindow(QMainWindow):
             "Xoá mật khẩu đã lưu và thoát app? Lần sau mở sẽ phải đăng nhập lại."
         ) == QMessageBox.StandardButton.Yes:
             QSettings("AIContentStudio", "studio").remove("save_pass")
-            from PyQt6.QtWidgets import QApplication
-            QApplication.quit()
+            # close() -> closeEvent chạy (dừng worker + giết tiến trình con);
+            # quit() thẳng sẽ để ffmpeg/phân tích thành mồ côi.
+            self.close()
 
     def _set_ai(self, v):
         self.state.pool.set_limits(max_gpu=v)
