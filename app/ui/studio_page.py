@@ -192,6 +192,13 @@ class StudioPage(QWidget):
         self.pick_btn.setProperty("ghost", True); self.pick_btn.setMinimumHeight(40)
         self.pick_btn.setToolTip("Tích chọn nhiều video cụ thể để tạo clip cùng lúc.")
         self.pick_btn.clicked.connect(self._pick_videos); actrow.addWidget(self.pick_btn)
+        self.mixed_btn = QPushButton("Mixed-Cut")
+        self.mixed_btn.setProperty("ghost", True); self.mixed_btn.setMinimumHeight(40)
+        self.mixed_btn.setToolTip(
+            "Ghép các KHOẢNH KHẮC hay nhất KHẮP video thành 1 clip dài (~1-2 "
+            "phút) — kiểu 'best moments'. Khác 'Tạo clip' (mỗi clip 1 câu chuyện).")
+        self.mixed_btn.clicked.connect(self._auto_mixed)
+        actrow.addWidget(self.mixed_btn)
         actrow.addStretch(1)
         self.auto_export_chk = QCheckBox("Phân tích xong tự động xuất")
         self.auto_export_chk.setToolTip(
@@ -1495,6 +1502,17 @@ class StudioPage(QWidget):
         extra = " → xong sẽ TỰ xuất" if self.auto_export_chk.isChecked() else ""
         self.status.setText(f"Đang phân tích & cắt clip{extra}... (xem tiến trình dưới)")
 
+    def _auto_mixed(self):
+        """Mixed-Cut: ghép các khoảnh khắc hay nhất khắp video thành 1 clip."""
+        if not self.state.video_id:
+            QMessageBox.information(self, "Chưa chọn video",
+                                    "Thêm/chọn 1 video trước đã.")
+            return
+        services.enqueue_auto_mixed(self.state.pool, self.state.video_id,
+                                    self.state.project_id, self._cut_preset())
+        self.status.setText("Đang phân tích & ghép Mixed-Cut... clip sẽ hiện "
+                            "trong danh sách khi xong (xem tiến trình dưới).")
+
     def _auto_all(self):
         """Đưa MỌI video chưa có clip trong kênh vào hàng đợi (chạy song song)."""
         if not self.state.project_id:
@@ -1800,6 +1818,11 @@ class StudioPage(QWidget):
         pv.setToolTip("Phát video, chỉnh tốc độ, cắt tay đầu/cuối rồi xuất.")
         pv.clicked.connect(lambda _, cc=c, n=part_no: self._review_clip(cc, n))
         lay.addWidget(pv)
+        cap = QPushButton("Caption"); cap.setFixedWidth(78); cap.setProperty("ghost", True)
+        cap.setToolTip("AI viết TIÊU ĐỀ + CAPTION + HASHTAG đăng bài cho clip "
+                       "này — copy dán thẳng lên TikTok/Reels/Shorts.")
+        cap.clicked.connect(lambda _, cc=c: self._write_caption(cc))
+        lay.addWidget(cap)
         if c["status"] == "exported" and c["export_path"]:
             mo = QPushButton("Mở"); mo.setFixedWidth(64); mo.setProperty("ghost", True)
             mo.clicked.connect(lambda _, p=c["export_path"]: self._open_file(p))
@@ -1832,6 +1855,98 @@ class StudioPage(QWidget):
         services.delete_clip(cid)
         self._refresh_clips(force=True)
 
+    # ---- AI viết caption + hashtag đăng bài ----
+    def _write_caption(self, c):
+        from app.ai import llm as _llm
+        if not _llm.is_configured():
+            QMessageBox.information(
+                self, "Chưa bật AI",
+                "Vào 'Cài đặt AI' dán key Groq (miễn phí) hoặc Gemini trước đã.")
+            return
+        # Lời thoại CỦA CLIP: ưu tiên cột transcript; rỗng (clip AI) thì cắt
+        # từ transcript video theo segments của clip.
+        from app.core.analysis import get_analysis
+        tr = get_analysis(c["video_id"], "transcript") or {}
+        text = (c["transcript"] or "").strip()
+        if not text:
+            segs = ((db.loads(c["signals"], {}) or {}).get("segments")
+                    or [[c["start_sec"], c["end_sec"]]])
+            parts = []
+            for s in tr.get("segments", []):
+                try:
+                    if any(float(s["start"]) < e and float(s["end"]) > b
+                           for b, e in segs):
+                        parts.append(s["text"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+            text = " ".join(parts)
+        chrow = db.query_one("SELECT name FROM projects WHERE id=?",
+                             (self.state.project_id,))
+        chname = (chrow["name"] if chrow else "") or ""
+        self.status.setText("✍ AI đang viết caption + hashtag...")
+        out: list = []
+
+        def bg():
+            try:
+                from app.ai import social
+                out.append(("ok", social.write_post(
+                    c["title"] or "", text, tr.get("language", ""), chname)))
+            except Exception as e:  # noqa: BLE001
+                out.append(("err", str(e)))
+
+        threading.Thread(target=bg, daemon=True).start()
+        timer = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            timer.stop()
+            kind, val = out[0]
+            if kind == "err":
+                self.status.setText("Viết caption lỗi.")
+                QMessageBox.warning(self, "AI viết caption lỗi", str(val)[:400])
+                return
+            self.status.setText("✓ Đã viết xong caption.")
+            self._show_caption_dialog(c, val)
+
+        timer.timeout.connect(poll)
+        timer.start(200)
+
+    def _show_caption_dialog(self, c, post):
+        from app.ai.social import format_post
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Caption đăng bài: " + (c["title"] or "clip"))
+        dlg.resize(560, 460)
+        v = QVBoxLayout(dlg)
+        hint = QLabel("Sửa thoải mái rồi bấm <b>Copy</b> — dán thẳng vào ô đăng "
+                      "TikTok/Reels/Shorts.")
+        hint.setWordWrap(True); v.addWidget(hint)
+        box = QPlainTextEdit(); box.setPlainText(format_post(post))
+        v.addWidget(box, 1)
+        row = QHBoxLayout(); row.addStretch(1)
+        if c["export_path"]:
+            sv = QPushButton("Lưu .txt cạnh clip"); sv.setProperty("ghost", True)
+
+            def save_txt():
+                try:
+                    p = Path(c["export_path"]).with_suffix(".txt")
+                    p.write_text(box.toPlainText(), encoding="utf-8")
+                    self.status.setText(f"Đã lưu caption: {p}")
+                except OSError as e:
+                    QMessageBox.warning(dlg, "Không lưu được", str(e))
+            sv.clicked.connect(save_txt)
+            row.addWidget(sv)
+        cp = QPushButton("Copy"); cp.setProperty("primary", True)
+
+        def do_copy():
+            QApplication.clipboard().setText(box.toPlainText())
+            cp.setText("Đã copy ✓")
+        cp.clicked.connect(do_copy)
+        row.addWidget(cp)
+        cl = QPushButton("Đóng"); cl.clicked.connect(dlg.accept); row.addWidget(cl)
+        v.addLayout(row)
+        dlg.exec()
+
     # ---- xuất ----
     def _video_px_for(self, vrow):
         """Vùng KHỐI VIDEO trong khung 1080x1920 (để chữ tránh, không đè video)."""
@@ -1857,13 +1972,42 @@ class StudioPage(QWidget):
                     project_id=None):
         layers = self.layout_tpl.get("layers", [])
         pid = project_id or self.state.project_id
-        if not layers or not pid:
+        # LOGO kênh (nếu mẫu có) — vẽ cùng PNG lớp chữ
+        logo = None
+        lp = self.layout_tpl.get("logo_path", "")
+        if lp and os.path.exists(lp):
+            logo = {"path": lp,
+                    "pos": self.layout_tpl.get("logo_pos", "tr"),
+                    "size": float(self.layout_tpl.get("logo_size", 0.14)),
+                    "opacity": float(self.layout_tpl.get("logo_op", 0.9))}
+        if (not layers and not logo) or not pid:
             return None
         # mỗi clip 1 PNG riêng (theo cid) vì tiêu đề khác nhau — để trong _cache
         png = os.path.join(services.project_cache_dir(pid),
                            f"_ovl_{cid or part_no}.png")
         return (png if render_overlay_png(layers, part_no, 1080, 1920, png,
-                                          title, title_vi, video_px) else None)
+                                          title, title_vi, video_px, logo=logo)
+                else None)
+
+    _MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
+
+    def _pick_bgm(self) -> str:
+        """Chọn file NHẠC NỀN theo mẫu: '' = không nhạc.
+        random = mỗi clip 1 bài ngẫu nhiên từ thư mục nhạc của user."""
+        mode = self.layout_tpl.get("bgm_mode", "off")
+        if mode == "fixed":
+            f = self.layout_tpl.get("bgm_file", "")
+            return f if f and os.path.exists(f) else ""
+        if mode == "random":
+            d = self.layout_tpl.get("bgm_dir", "")
+            try:
+                files = [str(p) for p in Path(d).iterdir()
+                         if p.suffix.lower() in self._MUSIC_EXT]
+            except OSError:
+                return ""
+            import random
+            return random.choice(files) if files else ""
+        return ""
 
     def _export_video(self, video_id, only_clip_id=None):
         """
@@ -1926,6 +2070,9 @@ class StudioPage(QWidget):
                 blur_amt=int(self.layout_tpl.get("blur_amt", 22)),
                 speed=float(sig.get("speed", self.layout_tpl.get("speed", 1.0))),
                 pitch=float(self.layout_tpl.get("pitch", 1.0)),
+                hook_first=bool(self.layout_tpl.get("hook_first")),
+                bgm_path=self._pick_bgm(),
+                bgm_vol=float(self.layout_tpl.get("bgm_vol", 0.15)),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 force=force_one)
             if jid:

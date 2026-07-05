@@ -104,7 +104,7 @@ def _draw_text_path(p, path, color, outline_w, outline_color="#000000"):
 
 
 def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
-                       title_vi="", video_px=None) -> bool:
+                       title_vi="", video_px=None, logo=None) -> bool:
     """Vẽ tất cả lớp chữ ra PNG trong suốt (dùng khi xuất). Trả True nếu có chữ.
     Placeholder: {n}->số Part, {title}->tiêu đề (Anh) gắn video, {title_vi}->Việt.
     Chữ quá dài TỰ CO NHỎ + bị CLAMP để KHÔNG bao giờ tràn ra ngoài khung.
@@ -183,6 +183,21 @@ def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
             tp.addText(x0 + (bw - lw) / 2, y0 + py + fm.ascent() + i * lh, f, ln)
         _draw_text_path(p, tp, d["color"], d.get("outline", 0.12) * size,
                         d.get("outline_color", "#000000"))
+    # ---- LOGO KÊNH (watermark): logo={"path","pos","size","opacity"} ----
+    # pos: tl|tr|bl|br; size: % chiều rộng khung (0..1); opacity 0..1
+    if logo and logo.get("path"):
+        lp = QPixmap(str(logo["path"]))
+        if not lp.isNull():
+            lw = max(24, int(float(logo.get("size", 0.14)) * out_w))
+            lp = lp.scaledToWidth(lw, Qt.TransformationMode.SmoothTransformation)
+            m = int(out_w * 0.03)
+            pos = logo.get("pos", "tr")
+            x = m if "l" in pos else out_w - m - lp.width()
+            y = m if "t" in pos else out_h - m - lp.height()
+            p.setOpacity(max(0.05, min(1.0, float(logo.get("opacity", 0.9)))))
+            p.drawPixmap(x, y, lp)
+            p.setOpacity(1.0)
+            drawn = True
     p.end()
     if drawn:
         img.save(str(path), "PNG")
@@ -804,6 +819,77 @@ class EditorDialog(QDialog):
             self.voice_cb.addItem(label, p)
         sp.addWidget(self.voice_cb, 1)
         gb.addLayout(sp)
+        # HOOK-FIRST: nhá hàng khoảnh khắc cao trào lên ĐẦU clip
+        self.hook_first_chk = QCheckBox("Mở đầu bằng 2-4s CAO TRÀO nhất (hook-first)")
+        self.hook_first_chk.setToolTip(
+            "Tự lấy khoảnh khắc sốc/cao trào nhất trong clip chiếu lên ĐẦU như "
+            "'nhá hàng' rồi mới phát nội dung — giữ chân người xem 3s đầu (meta "
+            "TikTok). AI chọn mốc; nếu không có thì dò theo âm thanh to nhất.")
+        gb.addWidget(self.hook_first_chk)
+
+        # Nhóm: Nhạc nền + Logo kênh (hồng)
+        gx, gx_box = _group("Nhạc nền + Logo kênh", (244, 114, 182))
+        mrow = QHBoxLayout(); mrow.addWidget(QLabel("Nhạc nền"))
+        self.bgm_mode = _NoWheelCombo()
+        for label, m in (("Tắt", "off"), ("Ngẫu nhiên từ thư mục", "random"),
+                         ("1 bài cố định", "fixed")):
+            self.bgm_mode.addItem(label, m)
+        self.bgm_mode.setToolTip(
+            "Ngẫu nhiên: mỗi clip xuất sẽ tự lấy 1 bài bất kỳ trong thư mục "
+            "nhạc của bạn. Nhạc tự lặp/cắt cho khớp độ dài clip, trộn NHỎ dưới "
+            "tiếng nói gốc.")
+        self.bgm_mode.currentIndexChanged.connect(self._bgm_mode_ui)
+        mrow.addWidget(self.bgm_mode, 1)
+        self.bgm_pick = QPushButton("Chọn…")
+        self.bgm_pick.clicked.connect(self._pick_bgm_src)
+        mrow.addWidget(self.bgm_pick)
+        gx.addLayout(mrow)
+        self.bgm_lbl = QLabel("")
+        self.bgm_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        self.bgm_lbl.setWordWrap(True)
+        gx.addWidget(self.bgm_lbl)
+        self._bgm_dir = ""; self._bgm_file = ""
+        vrow = QHBoxLayout(); vrow.addWidget(QLabel("Âm lượng nhạc"))
+        self.bgm_vol = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.bgm_vol.setRange(5, 60); self.bgm_vol.setValue(15)  # 5%..60%
+        vrow.addWidget(self.bgm_vol, 1)
+        self.bgm_vol_lbl = QLabel("15%"); self.bgm_vol_lbl.setFixedWidth(40)
+        self.bgm_vol.valueChanged.connect(
+            lambda v: self.bgm_vol_lbl.setText(f"{v}%"))
+        vrow.addWidget(self.bgm_vol_lbl)
+        gx.addLayout(vrow)
+        # logo kênh (watermark)
+        self._logo_path = ""
+        lrow = QHBoxLayout()
+        self.logo_btn = QPushButton("Chọn logo (PNG)…")
+        self.logo_btn.setToolTip("Ảnh PNG nền trong suốt sẽ được đóng lên góc "
+                                 "mọi clip xuất ra (watermark kênh).")
+        self.logo_btn.clicked.connect(self._pick_logo)
+        lrow.addWidget(self.logo_btn, 1)
+        lc = QPushButton("Bỏ"); lc.setProperty("ghost", True)
+        lc.clicked.connect(lambda: (setattr(self, "_logo_path", ""),
+                                    self.logo_lbl.setText("(chưa có logo)")))
+        lrow.addWidget(lc)
+        gx.addLayout(lrow)
+        self.logo_lbl = QLabel("(chưa có logo)")
+        self.logo_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        self.logo_lbl.setWordWrap(True)
+        gx.addWidget(self.logo_lbl)
+        l2 = QHBoxLayout(); l2.addWidget(QLabel("Góc"))
+        self.logo_pos = _NoWheelCombo()
+        for label, m in (("Trên phải", "tr"), ("Trên trái", "tl"),
+                         ("Dưới phải", "br"), ("Dưới trái", "bl")):
+            self.logo_pos.addItem(label, m)
+        l2.addWidget(self.logo_pos, 1)
+        l2.addWidget(QLabel("Cỡ"))
+        self.logo_size = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.logo_size.setRange(6, 30); self.logo_size.setValue(14)  # % rộng khung
+        l2.addWidget(self.logo_size, 1)
+        l2.addWidget(QLabel("Đậm"))
+        self.logo_op = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.logo_op.setRange(20, 100); self.logo_op.setValue(90)
+        l2.addWidget(self.logo_op, 1)
+        gx.addLayout(l2)
 
         # Nhóm: Phụ đề chạy chữ (vàng)
         gc, gc_box = _group("Phụ đề chạy chữ (khớp lời)", (251, 191, 36))
@@ -938,6 +1024,23 @@ class EditorDialog(QDialog):
             for i in range(self.voice_cb.count()):
                 if abs(float(self.voice_cb.itemData(i)) - pv) < 0.001:
                     self.voice_cb.setCurrentIndex(i); break
+            # hook-first + nhạc nền + logo
+            self.hook_first_chk.setChecked(bool(layout.get("hook_first")))
+            bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
+            if bi >= 0:
+                self.bgm_mode.setCurrentIndex(bi)
+            self._bgm_dir = layout.get("bgm_dir", "") or ""
+            self._bgm_file = layout.get("bgm_file", "") or ""
+            self.bgm_vol.setValue(int(float(layout.get("bgm_vol", 0.15)) * 100))
+            self._bgm_mode_ui()
+            self._logo_path = layout.get("logo_path", "") or ""
+            self.logo_lbl.setText(f"Logo: {self._logo_path}" if self._logo_path
+                                  else "(chưa có logo)")
+            li = self.logo_pos.findData(layout.get("logo_pos", "tr"))
+            if li >= 0:
+                self.logo_pos.setCurrentIndex(li)
+            self.logo_size.setValue(int(float(layout.get("logo_size", 0.14)) * 100))
+            self.logo_op.setValue(int(float(layout.get("logo_op", 0.9)) * 100))
             self.canvas.set_cap_top(layout.get("cap_ny", 0.78))
             self._refresh_cap()          # áp cỡ/màu/font đã lưu vào ô xem trước
             self.canvas.show_cap(self.cap_chk.isChecked())
@@ -983,6 +1086,49 @@ class EditorDialog(QDialog):
         row = self.rows.get(lid)
         if row:
             row.set_size_fraction(frac)
+
+    # ---- Nhạc nền + logo ----
+    def _bgm_mode_ui(self):
+        m = self.bgm_mode.currentData()
+        self.bgm_pick.setEnabled(m != "off")
+        self.bgm_pick.setText("Chọn thư mục…" if m == "random" else
+                              "Chọn bài…" if m == "fixed" else "Chọn…")
+        self._bgm_lbl_update()
+
+    def _bgm_lbl_update(self):
+        m = self.bgm_mode.currentData()
+        if m == "random":
+            self.bgm_lbl.setText(f"Thư mục nhạc: {self._bgm_dir or '(chưa chọn)'}")
+        elif m == "fixed":
+            self.bgm_lbl.setText(f"Bài: {self._bgm_file or '(chưa chọn)'}")
+        else:
+            self.bgm_lbl.setText("")
+
+    def _pick_bgm_src(self):
+        from PyQt6.QtWidgets import QFileDialog
+        m = self.bgm_mode.currentData()
+        if m == "random":
+            d = QFileDialog.getExistingDirectory(
+                self, "Chọn THƯ MỤC chứa nhạc nền (mp3/m4a/wav...)",
+                self._bgm_dir or "")
+            if d:
+                self._bgm_dir = d
+        elif m == "fixed":
+            f, _ = QFileDialog.getOpenFileName(
+                self, "Chọn bài nhạc nền", self._bgm_file or "",
+                "Nhạc (*.mp3 *.m4a *.aac *.wav *.ogg *.flac)")
+            if f:
+                self._bgm_file = f
+        self._bgm_lbl_update()
+
+    def _pick_logo(self):
+        from PyQt6.QtWidgets import QFileDialog
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Chọn logo kênh (PNG nền trong suốt đẹp nhất)",
+            self._logo_path or "", "Ảnh (*.png *.jpg *.jpeg *.webp)")
+        if f:
+            self._logo_path = f
+            self.logo_lbl.setText(f"Logo: {f}")
 
     def _gather(self):
         return [b.export_data() for b in self.canvas.texts.values()]
@@ -1168,6 +1314,15 @@ class EditorDialog(QDialog):
         lay["blur_amt"] = self.blur_amt.value()
         lay["speed"] = float(self.speed_cb.currentText().rstrip("x") or 1.0)
         lay["pitch"] = float(self.voice_cb.currentData() or 1.0)
+        lay["hook_first"] = self.hook_first_chk.isChecked()
+        lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
+        lay["bgm_dir"] = self._bgm_dir
+        lay["bgm_file"] = self._bgm_file
+        lay["bgm_vol"] = self.bgm_vol.value() / 100.0
+        lay["logo_path"] = self._logo_path
+        lay["logo_pos"] = self.logo_pos.currentData() or "tr"
+        lay["logo_size"] = self.logo_size.value() / 100.0
+        lay["logo_op"] = self.logo_op.value() / 100.0
         return lay
 
     def _save_tmpl(self):

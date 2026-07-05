@@ -318,9 +318,12 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         f"- hook = MỘT câu cực ngắn (3-7 từ) GÂY TÒ MÒ/SỐC nhất của clip (câu hỏi gây "
         f"thắc mắc, câu giật gân) viết BẰNG {lang_name.upper()} — để hiện TO ở đầu "
         f"clip giữ chân người xem. Lấy từ chính lời thoại hay nhất.\n"
+        "- hook_time = MỐC GIÂY [bắt_đầu, kết_thúc] của khoảnh khắc CAO TRÀO/SỐC "
+        "NHẤT trong clip (2-4 giây, phải nằm TRONG segments của clip) — dùng để "
+        "chiếu 'nhá hàng' lên ĐẦU clip giữ chân người xem.\n"
         "Trả về ĐÚNG định dạng JSON này (mảng), không thêm chữ:\n"
         '[{"title":"tiêu đề tiếng Việt","title_pub":"tiêu đề giật tít bằng đúng ngôn '
-        'ngữ video","hook":"câu hook ngắn giật tít","score":85,'
+        'ngữ video","hook":"câu hook ngắn giật tít","hook_time":[52,55],"score":85,'
         '"reason":"lý do ngắn","segments":[[30,95],[140,210]]}]')
 
 
@@ -494,12 +497,27 @@ def _normalize_clip(r, duration: float, boundaries=None,
         segments = _smooth_segments(segments)      # gộp khúc vụn cho mượt, đỡ giật
         segments = _ensure_min_duration(segments, duration, min_len)  # >= Min user đặt
         segments = _cap_max_duration(segments, max_len)               # <= Max user đặt
+        # hook_time: mốc cao trào 2-4s NẰM TRONG segments -> dùng cho hook-first
+        hook_seg = None
+        ht = r.get("hook_time")
+        if isinstance(ht, (list, tuple)) and len(ht) >= 2:
+            try:
+                hs, he = float(ht[0]), float(ht[1])
+                if he - hs >= 1.0:
+                    he = min(he, hs + 4.0)          # tối đa 4s
+                    inside = any(s - 0.5 <= hs and he <= e + 0.5
+                                 for s, e in segments)
+                    if inside:
+                        hook_seg = [round(hs, 2), round(he, 2)]
+            except (ValueError, TypeError):
+                pass
         return {
             "title": str(r.get("title", "")).strip() or "Clip",
             # title_en = TIÊU ĐỀ GẮN LÊN VIDEO (theo NGÔN NGỮ video); ưu tiên
             # title_pub (mới), lùi title_en (mẫu cũ) -> giữ tương thích.
             "title_en": str(r.get("title_pub") or r.get("title_en") or "").strip(),
             "hook": str(r.get("hook", "")).strip(),
+            "hook_seg": hook_seg,
             "score": float(r.get("score", 60)),
             "reason": str(r.get("reason", "")).strip(),
             "segments": segments,
@@ -720,6 +738,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "ai": prov, "ai_name": prov_name,
                        "vision": used_vision, "vscore": c.get("vscore"),
                        "title_en": c.get("title_en", ""), "hook": c.get("hook", ""),
+                       "hook_seg": c.get("hook_seg"),
                        "dur": round(total, 1)}
             cid = db.insert(
                 """INSERT INTO clips (video_id, start_sec, end_sec, score, reason,
@@ -888,6 +907,35 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
 # ============================================================
 # Xuất clip 9:16 face-track
 # ============================================================
+def _pick_hook_seg(video_id: int, signals: dict, segs: list):
+    """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
+    Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
+    Trả None nếu không tìm được / hook đã nằm ngay đầu clip (tránh lặp)."""
+    hs = signals.get("hook_seg")
+    try:
+        if isinstance(hs, (list, tuple)) and len(hs) >= 2:
+            a, b = float(hs[0]), float(hs[1])
+            if b - a >= 1.0 and abs(a - float(segs[0][0])) > 3.0:
+                return [round(a, 2), round(min(b, a + 4.0), 2)]
+            return None
+    except (ValueError, TypeError):
+        pass
+    audio = get_analysis(video_id, "audio")   # fallback: cửa sổ 2.5s to nhất
+    if not audio:
+        return None
+    best, best_sc = None, -1.0
+    for s0, e0 in segs:
+        t = float(s0)
+        while t + 2.5 <= float(e0):
+            sc = _audio_score(audio, t, t + 2.5)
+            if sc > best_sc:
+                best_sc, best = sc, [round(t, 2), round(t + 2.5, 2)]
+            t += 1.0
+    if best and abs(best[0] - float(segs[0][0])) > 3.0:
+        return best
+    return None
+
+
 def export_clip(payload: dict, ctx: JobContext) -> dict:
     """
     Handler job 'm1_export_clip'.
@@ -952,6 +1000,11 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     if signals.get("mode") != "mixed" and video_rect:
         # ---- Mô hình CapCut: nền + khối video (ghép các khúc hay) ----
         segs = signals.get("segments") or [[clip["start_sec"], clip["end_sec"]]]
+        # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
+        if payload.get("hook_first"):
+            hseg = _pick_hook_seg(video_id, signals, segs)
+            if hseg:
+                segs = [hseg] + [list(p) for p in segs]
         pre_crop = None
         if payload.get("trim_black"):
             ctx.progress(0.08, f"{pfx}đang dò viền đen...")
@@ -991,6 +1044,8 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             blur_amt=int(payload.get("blur_amt", 22)),
             speed=float(payload.get("speed", 1.0)),
             pitch=float(payload.get("pitch", 1.0)),
+            bgm_path=payload.get("bgm_path") or None,
+            bgm_vol=float(payload.get("bgm_vol", 0.15)),
             on_progress=on_prog,
         )
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),

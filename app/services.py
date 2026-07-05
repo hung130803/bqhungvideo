@@ -107,6 +107,16 @@ def enqueue_auto(pool: WorkerPool, video_id: int, project_id: int,
     )
 
 
+def enqueue_auto_mixed(pool: WorkerPool, video_id: int, project_id: int,
+                       preset: Optional[dict] = None) -> Optional[int]:
+    """Nút 'Mixed-Cut': phân tích (nếu chưa) + ghép khoảnh khắc hay nhất."""
+    return pool.enqueue(
+        "auto_mixed", {"video_id": video_id, "preset": preset or {}},
+        project_id=project_id, video_id=video_id, needs_gpu=True, priority=10,
+        dedup_key=f"automix:{video_id}", skip_if_done=False,
+    )
+
+
 def enqueue_highlights(pool: WorkerPool, video_id: int, project_id: int,
                        preset: Optional[dict] = None) -> Optional[int]:
     return pool.enqueue(
@@ -133,6 +143,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    cap_style: Optional[dict] = None,
                    blur_amt: int = 22, speed: float = 1.0,
                    pitch: float = 1.0, out_dir: str = "",
+                   hook_first: bool = False, bgm_path: str = "",
+                   bgm_vol: float = 0.15,
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Tải lại' /
     'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
@@ -150,7 +162,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         except OSError:
             pass
     extra = hashlib.sha1(
-        repr((text_overlays, cap_style, out_name, out_dir, ovl)).encode()
+        repr((text_overlays, cap_style, out_name, out_dir, ovl,
+              hook_first, bgm_path, bgm_vol)).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
@@ -162,7 +175,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "video_rect": video_rect, "bg": bg, "trim_black": trim_black,
          "part_no": part_no, "out_name": out_name, "captions": captions,
          "cap_style": cap_style or {}, "blur_amt": blur_amt,
-         "speed": speed, "pitch": pitch, "out_dir": out_dir},
+         "speed": speed, "pitch": pitch, "out_dir": out_dir,
+         "hook_first": hook_first, "bgm_path": bgm_path, "bgm_vol": bgm_vol},
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",

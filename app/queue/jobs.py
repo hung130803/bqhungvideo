@@ -127,8 +127,33 @@ def _auto(payload: dict, ctx: JobContext) -> dict:
     return {"video_id": video_id, **res}
 
 
+def _auto_mixed(payload: dict, ctx: JobContext) -> dict:
+    """Mixed-Cut 1 nút: phân tích (nếu chưa) -> ghép khoảnh khắc hay nhất."""
+    from app.modules.m1_highlight import generate_mixed_cut
+    video_id = int(payload["video_id"])
+
+    done = all(analysis_status(video_id).get(k) in ("done", "skipped")
+               for k in ("transcript", "scenes", "audio", "faces"))
+    if not done:
+        _run_analyze(video_id, ctx, force=False, base=0.0, span=0.8)
+
+    parent = ctx
+
+    class _Sub:
+        profile = parent.profile
+        def progress(self, p, m=""):
+            parent.progress(0.8 + 0.2 * p, m)
+        def check_canceled(self):
+            parent.check_canceled()
+
+    res = generate_mixed_cut(
+        {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    return {"video_id": video_id, **res}
+
+
 register_handler("analyze", _analyze)
 register_handler("auto", _auto)
+register_handler("auto_mixed", _auto_mixed)
 
 # Nạp handler của Module 1 (tự register khi import)
 from app.modules import m1_highlight  # noqa: E402,F401

@@ -566,6 +566,8 @@ def export_canvas_clip(
     blur_amt: int = 22,                 # độ mờ nền blur
     speed: float = 1.0,                 # tăng tốc clip (1.0-1.3...)
     pitch: float = 1.0,                 # đổi giọng (1=gốc, >1 cao/nữ, <1 trầm/nam)
+    bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
+    bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -644,6 +646,11 @@ def export_canvas_clip(
             cmd += ["-i", str(overlay_png)]
             parts.append(f"[vv][{nextidx}:v]overlay=0:0[v]")
             final = "[v]"
+        # NHẠC NỀN: thêm input (loop vô hạn, cắt theo độ dài clip ở dưới)
+        bgm_idx = None
+        if bgm_path and os.path.exists(str(bgm_path)):
+            bgm_idx = nextidx + (1 if use_png else 0)
+            cmd += ["-stream_loop", "-1", "-i", str(bgm_path)]
         if ass_path and os.path.exists(ass_path):
             ap = str(ass_path).replace("\\", "/").replace(":", "\\:")
             sub = f"subtitles='{ap}'"
@@ -663,7 +670,24 @@ def export_canvas_clip(
                    f"atempo={1.0/pitch:.4f}"]
         if abs(speed - 1.0) > 0.01:
             af.append(f"atempo={speed:.4f}")
-        if has_audio and af:
+        out_dur = total / speed if abs(speed - 1.0) > 0.01 else total
+        if bgm_idx is not None:
+            # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
+            parts.append(f"[{bgm_idx}:a]volume={max(0.0, min(1.0, bgm_vol)):.3f},"
+                         f"atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS[bgm]")
+            if has_audio:
+                if af:
+                    parts.append(f"{aud}aresample=48000,{','.join(af)}[vce]")
+                    voice = "[vce]"
+                else:
+                    voice = aud
+                # normalize=0: giữ NGUYÊN âm lượng tiếng nói, nhạc đã volume= ở trên
+                parts.append(f"{voice}[bgm]amix=inputs=2:duration=first:"
+                             f"normalize=0[aout]")
+                amap = "[aout]"
+            else:
+                amap = "[bgm]"   # video câm -> nhạc nền là audio duy nhất
+        elif has_audio and af:
             parts.append(f"{aud}aresample=48000,{','.join(af)}[aout]")
             amap = "[aout]"
         elif has_audio:
