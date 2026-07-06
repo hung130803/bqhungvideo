@@ -1206,6 +1206,14 @@ class StudioPage(QWidget):
                     tail.append(line); tail[:] = tail[-8:]
                     if os.path.exists(line):
                         path = line
+                    # video ĐÃ TẢI TRƯỚC ĐÓ: yt-dlp bỏ qua, không in filepath
+                    # qua --print -> bắt từ dòng "... has already been downloaded"
+                    elif line.endswith("has already been downloaded"):
+                        cand = line[len("[download] "):] if line.startswith(
+                            "[download] ") else line
+                        cand = cand[: -len(" has already been downloaded")].strip()
+                        if os.path.exists(cand):
+                            path = cand
                     m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
                     if m:
                         self.dl_progress.emit(
@@ -1225,6 +1233,14 @@ class StudioPage(QWidget):
                     (p for p in dl.glob("*.mp4") if p.stat().st_mtime >= t0),
                     key=lambda p: p.stat().st_mtime)
                 path = str(fs[-1]) if fs else ""
+            if not path:
+                # fallback CUỐI: tìm theo VIDEO ID trong tên file (template có
+                # "[id]") — phủ ca "đã tải trước đó" mà không bắt được dòng log
+                m = _re.search(r"(?:v=|youtu\.be/|/shorts/)([\w-]{11})", url)
+                if m:
+                    fs = sorted(dl.glob(f"*[[]{m.group(1)}[]]*.mp4"),
+                                key=lambda p: p.stat().st_mtime)
+                    path = str(fs[-1]) if fs else ""
             return path, "" if path else "Không thấy file tải."
 
         def retryable(e: str) -> bool:
