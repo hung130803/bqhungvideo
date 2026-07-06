@@ -287,15 +287,18 @@ _STYLE_HINT = {
 
 
 def _target_len(min_len: float, max_len: float) -> float:
-    """Độ dài MỤC TIÊU cho mỗi clip khi user đặt cả Min & Max.
-    target = min + 0.55*(max-min) -> vd 60/180 => ~126s. Kéo clip về GIỮA khoảng
-    thay vì dồn hết về sàn Min. Chỉ có Min -> nhắm min*1.6 (nhưng <= max nếu có).
-    Không có Min -> 0 (độ dài tự do)."""
+    """Độ dài MỤC TIÊU NGẪU NHIÊN cho MỖI clip trong khoảng [Min, Max] — để clip
+    ĐA DẠNG (cái ngắn cái dài) thay vì dồn đều 1 con số. Nghiêng nhẹ về giữa-trên
+    khoảng cho clip đủ 'đầy đặn' (dùng trung bình 2 lần random -> ít ra sát Min).
+    Chỉ có Min -> [min, min*1.8]. Không có Min -> 0 (tự do)."""
+    import random
     if min_len and min_len > 0 and max_len and max_len > min_len:
-        return round(min_len + 0.55 * (max_len - min_len), 1)
+        lo, hi = min_len, max_len
+        t = (random.uniform(lo, hi) + random.uniform(lo, hi)) / 2  # dồn về giữa
+        return round(t, 1)
     if min_len and min_len > 0:
-        t = min_len * 1.6
-        return round(min(t, max_len) if max_len else t, 1)
+        hi = max_len if max_len else min_len * 1.8
+        return round(random.uniform(min_len, max(min_len, hi)), 1)
     return 0.0
 
 
@@ -310,17 +313,17 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         extra += "- " + _STYLE_HINT[style] + "\n"
     how_many = (f"Chọn ĐÚNG {count} clip hay nhất" if count > 0
                 else "Chọn 3-6 clip hay nhất")
-    target = _target_len(min_len, max_len)
-    if min_len and min_len > 0:                 # có Min -> ép tối thiểu + TARGET
+    if min_len and min_len > 0:                 # có Min/Max -> độ dài ĐA DẠNG
         mx = f"{int(max_len)}" if max_len else "180"
         len_rule = (
-            f"- ĐỘ DÀI: mỗi clip NÊN DÀI KHOẢNG {int(target)} GIÂY (trong khoảng "
-            f"{int(min_len)}-{mx}s). {int(min_len)}s là SÀN CỨNG (không được ngắn "
-            f"hơn), {int(target)}s là MỤC TIÊU, {mx}s là TRẦN.\n"
+            f"- ĐỘ DÀI: mỗi clip dài TỰ DO trong khoảng {int(min_len)}-{mx}s, "
+            f"và NÊN KHÁC NHAU giữa các clip (cái ngắn ~{int(min_len)}s, cái dài "
+            f"gần {mx}s) tùy nội dung — ĐỪNG làm đều tăm tắp cùng 1 độ dài. "
+            f"{int(min_len)}s là SÀN CỨNG (không được ngắn hơn), {mx}s là TRẦN.\n"
             f"- LẤY TRỌN câu chuyện: phần dẫn dắt + diễn biến + cao trào + câu "
-            f"chốt. ĐƯỢC GHÉP nhiều đoạn liên quan (nhiều khúc trong 'segments') "
-            f"để ĐẠT ĐỘ DÀI ~{int(target)}s. ĐỪNG chỉ lấy 1 câu ngắn ~{int(min_len)}s "
-            f"rồi dừng — hãy mở rộng phần dẫn dắt và phần sau cao trào cho đủ dài.\n")
+            f"chốt. ĐƯỢC GHÉP nhiều đoạn liên quan (nhiều khúc trong 'segments'). "
+            f"Câu chuyện dài thì lấy dài (gần {mx}s), ngắn gọn thì thôi — miễn "
+            f"trọn vẹn và hấp dẫn, ĐỪNG cắt cụt ở {int(min_len)}s.\n")
     else:                                       # Min=0 -> độ dài TỰ DO / ngẫu nhiên
         mxx = f" (không quá ~{int(max_len)} giây)" if max_len else ""
         len_rule = ("- ĐỘ DÀI: TỰ DO theo nội dung" + mxx + " — khoảnh khắc nào "
