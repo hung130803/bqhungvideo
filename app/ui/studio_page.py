@@ -1303,6 +1303,30 @@ class StudioPage(QWidget):
         if not ready:
             return
         exe, dl, ff_dir = ready
+        # VIDEO ĐÃ TẢI TRƯỚC ĐÓ? -> HỎI user: dùng lại file có sẵn (nhanh)
+        # hay tải mới đè lên (file hỏng/muốn chất lượng khác) hay thôi.
+        extra_args = []
+        existing = self._find_downloaded(url, dl)
+        if existing:
+            box = QMessageBox(self)
+            box.setWindowTitle("Video này đã tải trước đó")
+            box.setText(f"Đã có sẵn trong kho:\n{os.path.basename(existing)}\n\n"
+                        "Bạn muốn làm gì?")
+            b_use = box.addButton("Dùng file có sẵn (nhanh)",
+                                  QMessageBox.ButtonRole.AcceptRole)
+            b_new = box.addButton("Tải lại mới (ghi đè)",
+                                  QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Hủy", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is b_use:
+                self._dl_pid = self.state.project_id
+                self._set_dl_active(True)
+                self._on_dl_done(existing, "")     # nhập + phân tích như tải xong
+                return
+            if box.clickedButton() is b_new:
+                extra_args = ["--force-overwrites"]
+            else:
+                return
         cookie_args = self._cookie_args()
         self._dl_pid = self.state.project_id      # NHỚ kênh lúc bấm (tránh đổi giữa chừng)
         self._set_dl_active(True)
@@ -1311,9 +1335,21 @@ class StudioPage(QWidget):
 
         def work():
             pot = self._potoken()
-            path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot)
+            path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
+                                        extra_args=extra_args)
             self.dl_done.emit(path, err)
         threading.Thread(target=work, daemon=True).start()
+
+    @staticmethod
+    def _find_downloaded(url: str, dl) -> str:
+        """File đã tải sẵn của video này trong kho (theo [video_id] trong tên)."""
+        import re as _re
+        m = _re.search(r"(?:v=|youtu\.be/|/shorts/)([\w-]{11})", url or "")
+        if not m:
+            return ""
+        fs = sorted(Path(dl).glob(f"*[[]{m.group(1)}[]]*.mp4"),
+                    key=lambda p: p.stat().st_mtime)
+        return str(fs[-1]) if fs else ""
 
     def _download_many(self):
         """Dán NHIỀU link -> tải hết -> mỗi video tự phân tích + cắt (+ tự xuất)."""
