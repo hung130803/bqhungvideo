@@ -170,10 +170,10 @@ class StudioPage(QWidget):
                                     "tự phân tích/cắt từng cái (bật 'tự xuất' thì xuất luôn).")
         self.yt_many_btn.clicked.connect(self._download_many)
         ytrow.addWidget(self.yt_many_btn)
-        ck_btn = QPushButton("Cookie"); ck_btn.setProperty("ghost", True)
-        ck_btn.setToolTip("Dán cookie YouTube (khi bị đòi đăng nhập). Lưu 1 lần dùng mãi.")
-        ck_btn.clicked.connect(self._youtube_cookie)
-        ytrow.addWidget(ck_btn)
+        self.ck_btn = QPushButton("Cookie"); self.ck_btn.setProperty("ghost", True)
+        self.ck_btn.clicked.connect(self._on_cookie_btn)
+        ytrow.addWidget(self.ck_btn)
+        self._refresh_cookie_btn_tip()
         plw.addLayout(ytrow)
         self.dl_done.connect(self._on_dl_done)
         self.dl_progress.connect(lambda m: self.status.setText(m))
@@ -814,6 +814,7 @@ class StudioPage(QWidget):
         else:
             self.state.video_id = None
             self._refresh_clips(force=True)
+        self._refresh_cookie_btn_tip()
 
     _VIDEO_EXT = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".ts")
 
@@ -946,6 +947,113 @@ class StudioPage(QWidget):
             pass
         return []
 
+    # cookie đăng nhập quan trọng — hết 1 trong số này là coi như phải đăng nhập lại
+    _COOKIE_KEYS = ("SID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID",
+                    "LOGIN_INFO", "__Secure-3PSIDTS")
+
+    @classmethod
+    def _cookie_health(cls, path):
+        """Đọc file cookie Netscape, xét các cookie đăng nhập quan trọng.
+
+        Trả (state, msg):
+          "ok"      — còn hạn (msg = còn ~N ngày theo cookie hết SỚM NHẤT trong
+                       nhóm quan trọng, bỏ qua expiry=0/session).
+          "expired" — có cookie quan trọng nhưng đã hết hạn.
+          "empty"   — chưa có/không đủ cookie đăng nhập.
+          "session" — chỉ có cookie quan trọng dạng session (expiry=0) — chết nhanh.
+        """
+        import time
+        keys = cls._COOKIE_KEYS
+        found = 0                 # số cookie quan trọng tìm thấy
+        session_only = 0          # cookie quan trọng nhưng expiry=0 (session)
+        exps = []                 # expiry > 0 của cookie quan trọng
+        try:
+            p = Path(path)
+            if not p.exists():
+                return "empty", "Chưa có cookie đăng nhập"
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:  # noqa: BLE001
+            return "empty", "Chưa có cookie đăng nhập"
+
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # dòng #HttpOnly_ vẫn là cookie hợp lệ; các # khác là comment
+            if line.startswith("#") and not line.startswith("#HttpOnly_"):
+                continue
+            if line.startswith("#HttpOnly_"):
+                line = line[len("#HttpOnly_"):]
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+            name = parts[5].strip()
+            if name not in keys:
+                continue
+            found += 1
+            try:
+                exp = int(float(parts[4].strip()))
+            except (ValueError, IndexError):
+                exp = 0
+            if exp <= 0:
+                session_only += 1
+            else:
+                exps.append(exp)
+
+        if found == 0:
+            return "empty", "Chưa có cookie đăng nhập"
+        if not exps:                       # chỉ toàn session cookie
+            return "session", "Chỉ có cookie tạm (session)"
+        now = time.time()
+        soonest = min(exps)
+        if soonest <= now:
+            return "expired", "Cookie đã hết hạn"
+        days = int((soonest - now) // 86400)
+        return "ok", f"Còn ~{days} ngày"
+
+    def _active_cookie_health(self):
+        """Sức khỏe cookie của hồ sơ đang chọn (không có hồ sơ -> empty)."""
+        st = QSettings("AIContentStudio", "studio")
+        name = st.value("yt_cookie_active", "")
+        if not name:
+            return "empty", "Chưa có cookie đăng nhập"
+        return self._cookie_health(self._cookie_profile_path(name))
+
+    @staticmethod
+    def _cookie_health_label(state, msg):
+        """(text hiển thị icon, màu theme) cho một trạng thái cookie."""
+        if state == "ok":
+            return f"🟢 Cookie còn hạn ({msg})", SUCCESS
+        if state == "expired":
+            return "🔴 Cookie ĐÃ HẾT HẠN — cần dán cookie mới", DANGER
+        if state == "session":
+            return ("🟡 Chỉ có cookie tạm (đóng trình duyệt là mất) — "
+                    "nên export lại"), WARN
+        return "⚪ Chưa có cookie đăng nhập", MUTED
+
+    def _cookie_fail_hint(self):
+        """Dòng thêm cho popup lỗi tải: chỉ hiện khi cookie đang dùng đã hết
+        hạn/chưa có -> nhắc user dán cookie MỚI."""
+        state, _msg = self._active_cookie_health()
+        if state in ("expired", "empty"):
+            return ("\n\n⚠ Cookie hiện tại đã hết hạn/chưa có — hãy dán cookie "
+                    "MỚI (xuất từ cửa sổ ẩn danh).")
+        return ""
+
+    def _refresh_cookie_btn_tip(self):
+        """Tooltip nút Cookie = trạng thái cookie hiện tại (gọi khi mở/tải/lưu)."""
+        btn = getattr(self, "ck_btn", None)
+        if btn is None:
+            return
+        state, msg = self._active_cookie_health()
+        text, _col = self._cookie_health_label(state, msg)
+        btn.setToolTip(
+            text + "\nBấm để dán/đổi cookie YouTube (lưu 1 lần dùng mãi).")
+
+    def _on_cookie_btn(self):
+        self._refresh_cookie_btn_tip()
+        self._youtube_cookie()
+
     def _youtube_cookie(self):
         from PyQt6.QtWidgets import QInputDialog
         self._migrate_old_cookie()
@@ -981,6 +1089,22 @@ class StudioPage(QWidget):
         delb = QPushButton("Xóa hồ sơ"); delb.setProperty("ghost", True)
         prow.addWidget(addb); prow.addWidget(delb)
         v.addLayout(prow)
+
+        # --- CHỈ BÁO TÌNH TRẠNG cookie của hồ sơ đang chọn ---
+        health = QLabel(""); health.setWordWrap(True)
+        health.setStyleSheet("font-size:13px; font-weight:600;")
+        v.addWidget(health)
+
+        def refresh_health():
+            name = pcb.currentText().strip()
+            if not name:
+                state, msg = "empty", ""
+            else:
+                state, msg = self._cookie_health(self._cookie_profile_path(name))
+            text, col = self._cookie_health_label(state, msg)
+            health.setStyleSheet(
+                f"color:{col}; font-size:13px; font-weight:600;")
+            health.setText(text)
 
         # nút nạp THẲNG từ file cookies.txt (khỏi copy-paste)
         frow = QHBoxLayout()
@@ -1034,10 +1158,12 @@ class StudioPage(QWidget):
                     pcb.setCurrentIndex(i)
             pcb.blockSignals(False)
             load_box(pcb.currentText()) if pcb.count() else box.clear()
+            refresh_health()
 
         def on_pick():
             if pcb.currentText():
                 load_box(pcb.currentText())
+            refresh_health()
         pcb.currentTextChanged.connect(lambda _t: on_pick())
 
         def do_load_file():
@@ -1108,6 +1234,8 @@ class StudioPage(QWidget):
                 (txt + "\n") if txt else "# Netscape HTTP Cookie File\n",
                 encoding="utf-8")
             st.setValue("yt_cookie_active", name)
+            refresh_health()
+            self._refresh_cookie_btn_tip()
             note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
             note.setText(f"Đã lưu & chọn hồ sơ '{name}'. Giờ bấm Tải lại nhé.")
             dlg.accept()
@@ -1496,7 +1624,10 @@ class StudioPage(QWidget):
                     + ("\n\n👉 Lỗi 403 = YouTube chặn tạm thời — thử lại sau "
                        "vài phút, dán cookie mới (nút Cookie), hoặc cập nhật "
                        "app (yt-dlp mới)."
-                       if ("403" in low or "forbidden" in low) else ""))
+                       if ("403" in low or "forbidden" in low) else "")
+                    + (self._cookie_fail_hint()
+                       if (cookie_hint or "403" in low or "forbidden" in low)
+                       else ""))
             elif ok:
                 if not self._ai_ready():
                     # đã tải nhưng KHÔNG tự phân tích (chưa có key Groq)
@@ -1520,7 +1651,8 @@ class StudioPage(QWidget):
                     or "cookies" in low or "cookie" in low):
                 msg = ("YouTube đòi đăng nhập/cookie cho video này.\n\n"
                        "Cách sửa (1 lần dùng mãi): bấm nút <b>Cookie</b> cạnh nút "
-                       "Tải → làm theo hướng dẫn dán cookie → Lưu → Tải lại.")
+                       "Tải → làm theo hướng dẫn dán cookie → Lưu → Tải lại."
+                       + self._cookie_fail_hint())
                 QMessageBox.warning(self, "YouTube đòi cookie", msg)
                 self.status.setText("Tải LỖI: YouTube đòi cookie — bấm nút Cookie.")
             elif "403" in low or "forbidden" in low:
@@ -1532,7 +1664,8 @@ class StudioPage(QWidget):
                     "• Bấm nút <b>Cookie</b> cạnh nút Tải → dán cookie mới → "
                     "tải lại.\n"
                     "• Cập nhật app lên bản mới nhất (kèm yt-dlp mới vá lỗi "
-                    "này).")
+                    "này)."
+                    + self._cookie_fail_hint())
                 self.status.setText(
                     "Tải LỖI 403: YouTube chặn tạm thời — thử lại sau vài phút "
                     "hoặc dán cookie mới.")
