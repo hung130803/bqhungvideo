@@ -1303,6 +1303,12 @@ class StudioPage(QWidget):
                 "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
                 "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "--merge-output-format", "mp4", "--no-playlist",
+                # TĂNG TỐC TẢI: kéo NHIỀU MẢNH song song (yt-dlp có sẵn, không
+                # cần cài gì) — né throttle của YouTube, nhanh gấp 3-5 lần.
+                "--concurrent-fragments", "8",
+                "--http-chunk-size", "10M",
+                # bỏ qua kiểm SSL cert lỗi vặt + retry mảnh lỗi (mạng VN chập chờn)
+                "--retries", "10", "--fragment-retries", "10",
                 "--print", "after_move:filepath", "-o", out_tmpl,
                 # bật thêm node (deno vẫn mặc định): yt-dlp ≥2025.11 cần JS
                 # runtime giải nsig — máy nào sẵn node thì tận dụng luôn
