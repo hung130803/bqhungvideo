@@ -39,9 +39,45 @@ class _NoWheelSlider(QSlider):
 
 
 class _NoWheelCombo(QComboBox):
-    """Combo KHÔNG đổi lựa chọn khi lăn chuột qua."""
+    """Combo KHÔNG đổi lựa chọn khi lăn chuột qua.
+
+    Co được (min width nhỏ) để KHÔNG đẩy nút cạnh nó bị xén chữ; ô hiển thị
+    tự cắt '…' khi hẹp, còn POPUP thì luôn rộng đủ để đọc hết tên (vd tên
+    giọng '⭐ Andrew — nam (US, đa ngữ)')."""
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        # co được: nhường chỗ cho nút cùng hàng thay vì xén nút
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(80)
+        self.setMinimumContentsLength(6)   # ô hẹp vẫn hiện được vài ký tự
+        self.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+
     def wheelEvent(self, e):
         e.ignore()
+
+    def showPopup(self):
+        # popup rộng theo item DÀI NHẤT (không để tên bị cắt '…')
+        fm = self.view().fontMetrics()
+        w = 0
+        for i in range(self.count()):
+            w = max(w, fm.horizontalAdvance(self.itemText(i)))
+        # + chỗ cho lề/scrollbar; không hẹp hơn chính combo
+        self.view().setMinimumWidth(max(self.width(), w + 60))
+        super().showPopup()
+
+
+def _fit_button(btn, extra=26, minw=0):
+    """Đặt bề rộng nút VỪA KHÍT chữ (theo fontMetrics) + KHÔNG cho co dưới mức
+    đó -> nút không bao giờ bị xén 'Nghe thử' -> 'Nghe t'."""
+    fm = btn.fontMetrics()
+    w = fm.horizontalAdvance(btn.text()) + extra
+    if minw:
+        w = max(w, minw)
+    btn.setMinimumWidth(w)
+    btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    return btn
 
 
 _QFONT = {
@@ -780,6 +816,8 @@ class EditorDialog(QDialog):
         w = int(min(1560, scr.width() * 0.9))
         h = int(scr.height() * 0.92)
         self.resize(w, h)
+        # min: canvas tối thiểu + cột phải 520 + lề -> cột phải không bao giờ ép hẹp
+        self.setMinimumSize(min(w, 1100), min(h, 700))
         self.move(scr.x() + (scr.width() - w) // 2,
                   scr.y() + (scr.height() - h) // 2)
         self._next = 1
@@ -811,13 +849,13 @@ class EditorDialog(QDialog):
         left.addWidget(hint)
         main.addLayout(left, 1)
 
-        # ----- CỘT PHẢI: cố định ~470px, tự CUỘN dọc khi màn thấp -----
+        # ----- CỘT PHẢI: cố định ~520px, tự CUỘN dọc khi màn thấp -----
         right_host = QWidget()
         right = QVBoxLayout(right_host)
         right.setSpacing(12); right.setContentsMargins(0, 0, 8, 0)
         rscroll = QScrollArea(); rscroll.setWidgetResizable(True)
         rscroll.setWidget(right_host)
-        rscroll.setFixedWidth(470)
+        rscroll.setFixedWidth(520)
         rscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         rscroll.setStyleSheet(
             "QScrollArea{border:none; background:transparent;}"
@@ -856,12 +894,12 @@ class EditorDialog(QDialog):
         self.tmpl = _NoWheelCombo(); mr.addWidget(self.tmpl, 1)
         self.tmpl.currentIndexChanged.connect(self._load_tmpl)
         sv = QPushButton("Lưu"); sv.setToolTip("Ghi đè LÊN mẫu đang chọn")
-        sv.clicked.connect(self._save_tmpl); mr.addWidget(sv)
+        sv.clicked.connect(self._save_tmpl); _fit_button(sv); mr.addWidget(sv)
         svn = QPushButton("Lưu mới"); svn.setToolTip("Lưu thành mẫu mới (đặt tên)")
-        svn.clicked.connect(self._save_tmpl_new); mr.addWidget(svn)
+        svn.clicked.connect(self._save_tmpl_new); _fit_button(svn); mr.addWidget(svn)
         dlt = QPushButton("Xóa"); dlt.setProperty("danger", True)
         dlt.setToolTip("Xóa mẫu đang chọn"); dlt.clicked.connect(self._del_tmpl)
-        mr.addWidget(dlt)
+        _fit_button(dlt); mr.addWidget(dlt)
         gt.addLayout(mr)
 
         # Nhóm: Nền khung (xanh lá)
@@ -873,6 +911,8 @@ class EditorDialog(QDialog):
             b.setToolTip("Lấp đầy = crop cắt 2 bên cho video đầy khung (chuẩn TikTok)"
                          if mode == "fill" else "")
             b.clicked.connect(lambda _, m=mode: self.canvas.set_bg(m))
+            _fit_button(b)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             bgrow.addWidget(b)
         gb.addLayout(bgrow)
         br = QHBoxLayout(); br.addWidget(QLabel("Độ mờ nền"))
@@ -919,6 +959,9 @@ class EditorDialog(QDialog):
         mrow.addWidget(self.bgm_mode, 1)
         self.bgm_pick = QPushButton("Chọn…")
         self.bgm_pick.clicked.connect(self._pick_bgm_src)
+        # rộng đủ cho nhãn DÀI NHẤT ("Chọn thư mục…") -> đổi text không bị xén
+        _fit_button(self.bgm_pick, minw=self.bgm_pick.fontMetrics().horizontalAdvance(
+            "Chọn thư mục…") + 26)
         mrow.addWidget(self.bgm_pick)
         gx.addLayout(mrow)
         self.bgm_lbl = QLabel("")
@@ -946,7 +989,7 @@ class EditorDialog(QDialog):
         lc = QPushButton("Bỏ"); lc.setProperty("ghost", True)
         lc.clicked.connect(lambda: (setattr(self, "_logo_path", ""),
                                     self.logo_lbl.setText("(chưa có logo)")))
-        lrow.addWidget(lc)
+        _fit_button(lc); lrow.addWidget(lc)
         gx.addLayout(lrow)
         self.logo_lbl = QLabel("(chưa có logo)")
         self.logo_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
@@ -983,13 +1026,17 @@ class EditorDialog(QDialog):
         dr1.addWidget(self.dub_lang, 1)
         dr1.addWidget(QLabel("Giọng"))
         self.dub_voice = _NoWheelCombo()
-        dr1.addWidget(self.dub_voice, 1)
+        dr1.addWidget(self.dub_voice, 2)   # combo giọng giãn nhiều hơn (tên dài)
+        gd.addLayout(dr1)
+        # "Nghe thử" xuống DÒNG RIÊNG: hàng trên đã chật (2 label + 2 combo) nên
+        # nhét thêm nút vào sẽ ép combo/nút hẹp -> xén chữ. Tách ra là hết xén.
+        dr1b = QHBoxLayout(); dr1b.addStretch(1)
         self.dub_prev_btn = QPushButton("🔊 Nghe thử")
         self.dub_prev_btn.setToolTip(
             "Đọc thử 1 câu ngắn bằng giọng đang chọn (cần mạng).")
         self.dub_prev_btn.clicked.connect(self._dub_preview)
-        dr1.addWidget(self.dub_prev_btn)
-        gd.addLayout(dr1)
+        _fit_button(self.dub_prev_btn); dr1b.addWidget(self.dub_prev_btn)
+        gd.addLayout(dr1b)
         self.dub_mute_chk = QCheckBox("Tắt hẳn tiếng gốc (mặc định: giảm nhỏ)")
         self.dub_mute_chk.setToolTip(
             "Bỏ chọn = tiếng gốc còn 15% làm 'không khí' nền dưới lời thuyết "
@@ -1015,6 +1062,9 @@ class EditorDialog(QDialog):
         self.cap_demo_btn = QPushButton("Demo")
         self.cap_demo_btn.setToolTip("Phát thử ~6 giây để xem kiểu chữ chạy thế nào.")
         self.cap_demo_btn.clicked.connect(self._demo_caption)
+        # rộng đủ cho cả text "Đang tạo…" khi bấm -> không xén
+        _fit_button(self.cap_demo_btn, minw=self.cap_demo_btn.fontMetrics()
+                    .horizontalAdvance("Đang tạo…") + 26)
         cps.addWidget(self.cap_demo_btn)
         gc.addLayout(cps)
         cs1 = QHBoxLayout()
@@ -1029,7 +1079,7 @@ class EditorDialog(QDialog):
         self.cap_color_btn = QPushButton("Màu chữ")
         self.cap_color_btn.setToolTip("Đổi màu chữ (ghi đè màu mặc định của kiểu).")
         self.cap_color_btn.clicked.connect(self._pick_cap_color)
-        cs1.addWidget(self.cap_color_btn)
+        _fit_button(self.cap_color_btn); cs1.addWidget(self.cap_color_btn)
         gc.addLayout(cs1)
         cs2 = QHBoxLayout()
         cs2.addWidget(QLabel("Cỡ"))
@@ -1071,11 +1121,14 @@ class EditorDialog(QDialog):
                             (244, 114, 182))
         ar = QHBoxLayout()
         a2 = QPushButton("+ Part")
-        a2.clicked.connect(lambda: self._add(is_part=True)); ar.addWidget(a2)
+        a2.clicked.connect(lambda: self._add(is_part=True))
+        _fit_button(a2); ar.addWidget(a2)
         a3 = QPushButton("+ Tiêu đề AI")
-        a3.clicked.connect(self._add_title); ar.addWidget(a3)
+        a3.clicked.connect(self._add_title)
+        _fit_button(a3); ar.addWidget(a3)
         a1 = QPushButton("+ Chữ cố định")
-        a1.clicked.connect(lambda: self._add(is_part=False)); ar.addWidget(a1)
+        a1.clicked.connect(lambda: self._add(is_part=False))
+        _fit_button(a1); ar.addWidget(a1)
         gl.addLayout(ar)
         self.box = QVBoxLayout(); self.box.setSpacing(8)
         host = QWidget(); host.setLayout(self.box)
