@@ -791,8 +791,6 @@ class EditorDialog(QDialog):
         # Lồng tiếng AI: nạp giọng nền + nghe thử
         self._dub_voice_pending = ""     # voice trong layout chờ list nạp xong
         self._dub_loading: set[str] = set()
-        self._dub_pl = None              # QMediaPlayer đang phát nghe thử
-        self._dub_ao = None
         self._dub_demo_ready.connect(self._play_dub_demo)
 
         main = QHBoxLayout(self); main.setSpacing(14)
@@ -1276,79 +1274,92 @@ class EditorDialog(QDialog):
         self._dub_voice_pending = ""
 
     def _dub_preview(self):
-        """Nghe thử giọng đang chọn: synth 1 câu ở thread nền -> phát luôn."""
+        """Nghe thử giọng đang chọn: synth 1 câu ở thread nền -> phát luôn.
+
+        Phát bằng winsound (WAV, stdlib) thay vì QMediaPlayer: backend
+        QtMultimedia trên nhiều máy Windows (wheel PyQt6 thiếu DLL FFmpeg)
+        chết im lặng -> bấm không kêu gì. winsound đi thẳng WinMM, luôn kêu."""
         voice = self.dub_voice.currentData() or self._dub_voice_pending
         if not voice:
             return
-        import glob, os, tempfile, threading, uuid
+        import glob, os, subprocess, tempfile, threading, uuid, winsound
+        # dừng tiếng demo cũ (nếu đang kêu) TRƯỚC khi dọn file
+        try:
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except RuntimeError:
+            pass
         self.dub_prev_btn.setEnabled(False)
         self.dub_prev_btn.setText("Đang đọc…")
         tmp = tempfile.gettempdir()
         # dọn demo cũ (tên duy nhất mỗi lần -> không đụng file lần trước
-        # còn bị player giữ handle)
-        for old in glob.glob(os.path.join(tmp, "_dubdemo_*.mp3")):
+        # có thể còn bị giữ handle)
+        for old in glob.glob(os.path.join(tmp, "_dubdemo_*.*")):
             try:
                 os.remove(old)
             except OSError:
                 pass
-        out = os.path.join(tmp, f"_dubdemo_{uuid.uuid4().hex[:8]}.mp3")
+        uid = uuid.uuid4().hex[:8]
+        mp3 = os.path.join(tmp, f"_dubdemo_{uid}.mp3")
+        wav = os.path.join(tmp, f"_dubdemo_{uid}.wav")
 
         def work():
             try:
                 from app.core.dubbing import synth_demo
-                ok = synth_demo(voice, out)
-                self._dub_demo_ready.emit(out if ok else "")
+                if not synth_demo(voice, mp3):
+                    self._dub_demo_ready.emit("")
+                    return
+                # mp3 -> wav (winsound chỉ phát WAV)
+                import shutil
+                from config import settings
+                from app.core.ffmpeg_utils import _CREATE_NO_WINDOW
+                ff = (shutil.which("ffmpeg") or settings.FFMPEG_PATH
+                      or r"C:\ffmpeg\ffmpeg.exe")
+                r = subprocess.run(
+                    [ff, "-nostdin", "-y", "-i", mp3, wav],
+                    capture_output=True, timeout=60,
+                    creationflags=_CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL)
+                ok = (r.returncode == 0 and os.path.exists(wav)
+                      and os.path.getsize(wav) > 5000)
+                self._dub_demo_ready.emit(wav if ok else "")
             except Exception:  # noqa: BLE001
                 self._dub_demo_ready.emit("")
 
         threading.Thread(target=work, daemon=True).start()
 
     def _dub_demo_done(self):
-        """Trả nút Nghe thử về bình thường + GIẢI PHÓNG file mp3 (phải
-        stop + setSource rỗng — Windows Media Foundation giữ handle nếu
-        chỉ stop(), file demo sau không dọn được)."""
-        pl = self._dub_pl
-        if pl is not None:
-            from PyQt6.QtCore import QUrl
-            try:
-                pl.stop()
-                pl.setSource(QUrl())
-            except RuntimeError:
-                pass
-            self._dub_pl = None
-            self._dub_ao = None
+        """Trả nút Nghe thử về bình thường (tiếng vẫn kêu nốt ở nền;
+        bấm Nghe thử lần nữa sẽ tự ngắt tiếng cũ)."""
         self.dub_prev_btn.setText("🔊 Nghe thử")
         self.dub_prev_btn.setEnabled(bool(self.dub_lang.currentData()))
 
     def _play_dub_demo(self, path):
         import os
+        self._dub_demo_done()
         if not path or not os.path.exists(path):
-            self._dub_demo_done()
             QMessageBox.information(
                 self, "Nghe thử lỗi",
-                "Không đọc thử được giọng này (kiểm tra mạng rồi thử lại).")
+                "Không đọc thử được giọng này (kiểm tra mạng + ffmpeg rồi "
+                "thử lại).")
             return
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-        pl = QMediaPlayer(self)
-        ao = QAudioOutput(self)
-        pl.setAudioOutput(ao)
-        ao.setVolume(1.0)
-        self._dub_pl, self._dub_ao = pl, ao       # giữ tham chiếu khi phát
+        import winsound
+        try:
+            winsound.PlaySound(
+                path, winsound.SND_FILENAME | winsound.SND_ASYNC
+                | winsound.SND_NODEFAULT)
+        except RuntimeError as e:
+            QMessageBox.warning(
+                self, "Nghe thử lỗi",
+                f"Không phát được âm thanh trên máy này:\n{e}")
 
-        def st(s):
-            if s in (QMediaPlayer.MediaStatus.EndOfMedia,
-                     QMediaPlayer.MediaStatus.InvalidMedia):
-                self._dub_demo_done()
-
-        pl.mediaStatusChanged.connect(st)
-        pl.errorOccurred.connect(lambda *_: self._dub_demo_done())
-        pl.setSource(QUrl.fromLocalFile(path))
-        pl.play()
-        # chốt an toàn: 20s chưa xong (codec/thiết bị kẹt) -> vẫn trả nút
-        QTimer.singleShot(
-            20000,
-            lambda: self._dub_demo_done() if self._dub_pl is pl else None)
+    def done(self, r):  # noqa: N802 (tên theo Qt)
+        """Đóng dialog -> ngắt tiếng nghe thử còn kêu dở (winsound chạy nền)."""
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:  # noqa: BLE001
+            pass
+        super().done(r)
 
     # ---- Nhạc nền + logo ----
     def _bgm_mode_ui(self):
@@ -1535,6 +1546,15 @@ class EditorDialog(QDialog):
             pl.mediaStatusChanged.connect(
                 lambda s: pl.play() if s == QMediaPlayer.MediaStatus.EndOfMedia
                 else None)
+        # PHÒNG HỜ: máy nào QMediaPlayer vẫn lỗi (codec/backend) -> đóng dialog
+        # và mở file demo bằng trình phát mặc định của Windows, không im lặng.
+        player_err = []
+
+        def on_err(_e, msg):
+            if not player_err:
+                player_err.append(msg or "không rõ")
+                dlg.reject()
+        pl.errorOccurred.connect(on_err)
         dlg._pl = pl; dlg._ao = ao
         info = QLabel("Phát lặp lại. Ưng thì bấm Đóng — kiểu này đã được chọn sẵn.")
         info.setStyleSheet("color:#9AA6BF; font-size:12px;"); v.addWidget(info)
@@ -1549,6 +1569,17 @@ class EditorDialog(QDialog):
         pl.setSource(QUrl())
         pl.setVideoOutput(None)
         dlg.deleteLater()
+        if player_err:
+            try:
+                os.startfile(path)               # trình phát mặc định Windows
+                QMessageBox.information(
+                    self, "Demo (dự phòng)",
+                    "Trình phát trong app lỗi — demo đã mở bằng trình phát "
+                    "mặc định của Windows.\nKiểu chữ này vẫn được chọn sẵn.")
+            except OSError:
+                QMessageBox.warning(
+                    self, "Demo lỗi",
+                    f"Không phát được demo: {player_err[0]}\nFile: {path}")
 
     def _reload_tmpl(self, select=None):
         self.tmpl.blockSignals(True); self.tmpl.clear()

@@ -1325,6 +1325,26 @@ class StudioPage(QWidget):
         player.setSource(QUrl.fromLocalFile(vrow["src_path"]))
         dlg._player = player; dlg._ao = ao          # giữ tham chiếu
 
+        # PHÒNG HỜ: máy nào QMediaPlayer lỗi (thiếu codec/backend hỏng) ->
+        # báo rõ + mở video bằng trình phát mặc định (vẫn cắt tay được theo
+        # số giây xem ở trình phát ngoài).
+        _err_once = []
+
+        def _on_player_err(_e, msg):
+            if _err_once:
+                return
+            _err_once.append(1)
+            QMessageBox.warning(
+                dlg, "Trình phát trong app lỗi",
+                f"Không phát được video trong app ({msg or 'không rõ'}).\n"
+                "Sẽ mở bằng trình phát mặc định của Windows — xem mốc giây "
+                "ở đó rồi quay lại đây đặt ĐẦU/CUỐI bằng thanh kéo.")
+            try:
+                os.startfile(vrow["src_path"])
+            except OSError:
+                pass
+        player.errorOccurred.connect(_on_player_err)
+
         # thanh thời gian + nút phát
         sld = QSlider(Qt.Orientation.Horizontal); sld.setRange(0, 1000)
         tlb = QLabel("0:00"); tlb.setFixedWidth(56)

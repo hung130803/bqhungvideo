@@ -16,6 +16,33 @@ except Exception:  # noqa: BLE001
     pass
 
 
+def _pick_media_backend() -> None:
+    """Đặt QT_MEDIA_BACKEND = backend phát media dùng được trên máy này.
+
+    "ffmpeg" chỉ khi tìm thấy DLL FFmpeg (avcodec*.dll) đi kèm Qt — cả khi
+    chạy nguồn (site-packages/PyQt6/Qt6) lẫn bản .exe (sys._MEIPASS/PyQt6/Qt6).
+    Không thấy -> "windows" (Media Foundation). User tự set biến môi trường
+    thì tôn trọng, không đè."""
+    if os.environ.get("QT_MEDIA_BACKEND"):
+        return
+    import glob
+    roots = []
+    base = getattr(sys, "_MEIPASS", None)          # bản đóng gói PyInstaller
+    if base:
+        roots.append(os.path.join(base, "PyQt6", "Qt6"))
+    try:
+        import PyQt6
+        roots.append(os.path.join(os.path.dirname(PyQt6.__file__), "Qt6"))
+    except ImportError:
+        pass
+    for r in roots:
+        for sub in ("bin", os.path.join("plugins", "multimedia"), ""):
+            if glob.glob(os.path.join(r, sub, "avcodec*.dll")):
+                os.environ["QT_MEDIA_BACKEND"] = "ffmpeg"
+                return
+    os.environ["QT_MEDIA_BACKEND"] = "windows"
+
+
 def main() -> int:
     # ---- Chế độ TIẾN TRÌNH CON PHÂN TÍCH (bản .exe không chạy được -m module) ----
     if len(sys.argv) >= 3 and sys.argv[1] == "--analyze":
@@ -23,9 +50,15 @@ def main() -> int:
         sys.argv = [sys.argv[0]] + sys.argv[2:]   # -> [exe, video_id, force?]
         return ar.main()
 
-    # Trình phát xem trước dùng backend FFMPEG (Qt6 kèm sẵn): backend Windows
-    # mặc định không giải mã VP9/AV1 (video yt-dlp hay tải về) -> MÀN ĐEN.
-    os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
+    # ---- Chọn backend QtMultimedia HOẠT ĐỘNG THẬT trên máy này ----
+    # Qt >= 6.5 mặc định dùng backend "ffmpeg", nhưng wheel PyQt6/Windows chỉ
+    # kèm ffmpegmediaplugin.dll mà THIẾU bộ DLL FFmpeg (avcodec/avformat...)
+    # -> plugin nạp thất bại IM LẶNG, QMediaPlayer thành backend rỗng: không
+    # phát, không lỗi, không tín hiệu (Nghe thử/Demo/Xem & sửa bấm im re).
+    # => chỉ dùng "ffmpeg" khi DLL FFmpeg thật sự có; không thì ép "windows"
+    # (Windows Media Foundation - luôn sẵn, phát tốt H.264/mp3/wav; nhược:
+    # không giải mã VP9/AV1 nhưng app đã ưu tiên tải H.264 nên ít gặp).
+    _pick_media_backend()
     from PyQt6.QtWidgets import QApplication
 
     # Nạp DB + đăng ký toàn bộ job handler (analyze, m1_*)
