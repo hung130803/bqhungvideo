@@ -1364,13 +1364,27 @@ class StudioPage(QWidget):
             # đăng ký để đóng app giết được yt-dlp (không tải tiếp sau khi app tắt)
             from app.core.ffmpeg_utils import register_proc, unregister_proc
             register_proc(proc)
-            path, tail = "", []
+            path, tail, diag = "", [], []
             try:
                 for line in proc.stdout:
                     line = line.strip()
                     if not line:
                         continue
                     tail.append(line); tail[:] = tail[-8:]
+                    # BẮT ĐÚNG LÝ DO THẬT: dòng "ERROR:" của yt-dlp (hoặc câu
+                    # chẩn đoán quan trọng) hay bị đẩy khỏi 8 dòng tail cuối ->
+                    # giữ riêng để hiện cho user thay vì tail cắt cụt vô nghĩa.
+                    low = line.lower()
+                    if (line.startswith("ERROR:")
+                            or "sign in to confirm" in low
+                            or "not a bot" in low
+                            or "n challenge solving failed" in low
+                            or "no supported javascript runtime" in low
+                            or "drm protected" in low
+                            or "requested format is not available" in low
+                            or "failed to extract" in low
+                            or "unable to extract" in low):
+                        diag.append(line); diag[:] = diag[-4:]
                     if os.path.exists(line):
                         path = line
                     # video ĐÃ TẢI TRƯỚC ĐÓ: yt-dlp bỏ qua, không in filepath
@@ -1392,7 +1406,10 @@ class StudioPage(QWidget):
             finally:
                 unregister_proc(proc)
             if proc.returncode != 0:
-                return "", ("\n".join(tail) or "lỗi tải")[-300:]
+                # ƯU TIÊN dòng ERROR:/chẩn đoán thật (lý do user cần đọc), chỉ
+                # dùng tail khi không bắt được dòng nào -> không còn cắt cụt.
+                msg = "\n".join(diag) if diag else "\n".join(tail)
+                return "", (msg or "lỗi tải")[-500:]
             if not path or not os.path.exists(path):
                 # fallback: CHỈ nhận file tạo SAU lúc bắt đầu tải — file mp4 "mới
                 # nhất" trong kho chung có thể là của lượt tải khác/video cũ
@@ -1414,7 +1431,13 @@ class StudioPage(QWidget):
             low = (e or "").lower()
             return any(s in low for s in (
                 "403", "forbidden", "fragment", "timed out", "timeout",
-                "connection reset"))
+                "connection reset",
+                # MÁY KHÔNG CÓ node/deno (bản .exe): client tv/web cần chữ ký JS
+                # (nsig) -> "n challenge solving failed" -> chỉ còn format DRM
+                # -> "DRM protected"/"format is not available". Các lỗi này
+                # SỬA được bằng lượt sau ép client android (KHÔNG cần JS runtime).
+                "drm protected", "n challenge", "javascript runtime",
+                "requested format is not available"))
 
         def run_attempt(extra):
             ck, tmp = cookie_for_attempt()
@@ -1423,10 +1446,14 @@ class StudioPage(QWidget):
             return p, e
 
         # CHUỖI FALLBACK tối đa 3 lượt: (1) mặc định + potoken ->
-        # (2) default,web_safari -> (3) android,tv (giữ potoken + cookie)
+        # (2) android_vr,android,ios,tv_simply -> (3) android,ios (nhẹ nhất).
+        # QUAN TRỌNG: mọi client fallback KHÔNG cần JS runtime (nsig) — máy
+        # khách bản .exe không kèm node/deno; client tv/web_safari (chain cũ)
+        # đòi giải nsig-js nên trên máy khách chỉ còn format DRM -> FAIL. Các
+        # client android/ios/tv_simply vẫn cho tới 1080p mà khỏi JS runtime.
         path, err = run_attempt([])
-        fallbacks = ["youtube:player_client=default,web_safari",
-                     "youtube:player_client=android,tv"]
+        fallbacks = ["youtube:player_client=android_vr,android,ios,tv_simply",
+                     "youtube:player_client=android,ios"]
         for k, client in enumerate(fallbacks, start=2):
             if not err or not retryable(err):
                 break
@@ -1628,6 +1655,12 @@ class StudioPage(QWidget):
                        "vài phút, dán cookie mới (nút Cookie), hoặc cập nhật "
                        "app (yt-dlp mới)."
                        if ("403" in low or "forbidden" in low) else "")
+                    + ("\n\n👉 DRM/chữ ký JS = YouTube tạm khóa định dạng — thử "
+                       "TẢI LẠI các link lỗi 1-2 lần (thường lần sau qua), hoặc "
+                       "chờ vài phút / cập nhật app."
+                       if ("drm protected" in low
+                           or "n challenge" in low
+                           or "javascript runtime" in low) else "")
                     + (self._cookie_fail_hint()
                        if (cookie_hint or "403" in low or "forbidden" in low)
                        else ""))
@@ -1672,8 +1705,27 @@ class StudioPage(QWidget):
                 self.status.setText(
                     "Tải LỖI 403: YouTube chặn tạm thời — thử lại sau vài phút "
                     "hoặc dán cookie mới.")
+            elif ("drm protected" in low or "n challenge solving failed" in low
+                  or "javascript runtime" in low
+                  or "requested format is not available" in low):
+                QMessageBox.warning(
+                    self, "YouTube đổi cách bảo vệ (thử lại)",
+                    "YouTube tạm khóa định dạng video này (DRM/chữ ký JS).\n\n"
+                    "Cách sửa:\n"
+                    "• Bấm <b>Tải về</b> lại 1-2 lần (thường lần sau qua được).\n"
+                    "• Thử lại sau vài phút.\n"
+                    "• Dán cookie mới (nút <b>Cookie</b>).\n"
+                    "• Cập nhật app lên bản mới nhất (kèm yt-dlp mới).\n\n"
+                    "Chi tiết lỗi:\n" + (err or "không rõ")[:400])
+                self.status.setText(
+                    "Tải LỖI (DRM/chữ ký): thử Tải lại 1-2 lần hoặc sau vài phút. "
+                    + (err or "")[:200])
             else:
-                self.status.setText("Tải YouTube LỖI: " + (err or "không rõ"))
+                QMessageBox.warning(
+                    self, "Tải YouTube lỗi",
+                    "Không tải được video. Chi tiết lỗi từ yt-dlp:\n\n"
+                    + (err or "không rõ")[:500])
+                self.status.setText("Tải YouTube LỖI: " + (err or "không rõ")[:200])
             return
         pid = getattr(self, "_dl_pid", None) or self.state.project_id
         if not pid:
