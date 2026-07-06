@@ -1770,16 +1770,24 @@ class StudioPage(QWidget):
         frame = self._a_frame() or self._sample_frame()   # có video thì dùng, không thì ảnh mẫu
         dlg = EditorDialog(frame, self.layout_tpl, self,
                            current_name=self.tmpl_box.currentData() or "")
-        if dlg.exec() and dlg.layout_result:
-            name = (getattr(dlg, "_current_name", "")
-                    or self.tmpl_box.currentData() or "")
-            # làm mới + CHỌN đúng mẫu vừa sửa, rồi NẠP LẠI TỪ DB để layout dùng
-            # khi xuất KHỚP 100% với mẫu đã lưu (tránh lưu 1 nơi xuất 1 nơi).
-            self._populate_templates(name)
-            self._settings.setValue("last_template", name)
-            self._apply_selected_template()
-            self.status.setText(f"Đã lưu & đang dùng mẫu: {name or 'Mặc định'}. "
-                                "Bấm Tải để xuất theo mẫu này.")
+        accepted = bool(dlg.exec() and dlg.layout_result)
+        # NẠP LẠI cả khi user bấm Lưu/Lưu mới/Xóa rồi đóng bằng Hủy/X: DB đã
+        # đổi mà layout_tpl trong RAM còn bản CŨ -> mở lại editor / xuất clip
+        # sẽ dùng sai mẫu (vd tắt HOOK, bấm Lưu, đóng -> HOOK bật lại).
+        if not (accepted or getattr(dlg, "_db_changed", False)):
+            return                       # không lưu gì -> giữ nguyên
+        name = getattr(dlg, "_current_name", "") or ""
+        # làm mới + CHỌN đúng mẫu vừa sửa, rồi NẠP LẠI TỪ DB để layout dùng
+        # khi xuất KHỚP 100% với mẫu đã lưu (tránh lưu 1 nơi xuất 1 nơi).
+        self._populate_templates(name)
+        self._settings.setValue("last_template", name)
+        self._apply_selected_template()
+        if accepted and getattr(dlg, "_save_failed", False):
+            # DB lưu lỗi nhưng dialog đã hứa "layout vẫn áp cho phiên này"
+            # -> dùng bản vừa chỉnh trong RAM thay vì bản cũ từ DB.
+            self.layout_tpl = dlg.layout_result
+        self.status.setText(f"Đã lưu & đang dùng mẫu: {name or 'Mặc định'}. "
+                            "Bấm Tải để xuất theo mẫu này.")
 
     # ---- chọn / nhớ mẫu (hiện ngoài màn chính) ----
     def _populate_templates(self, select_name: str = ""):

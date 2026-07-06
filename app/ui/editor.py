@@ -786,6 +786,11 @@ class EditorDialog(QDialog):
         self.rows = {}
         self.layout_result = None
         self._current_name = current_name or ""
+        # Cờ cho studio_page biết DB mẫu ĐÃ ĐỔI (Lưu/Lưu mới/Xóa) dù user đóng
+        # dialog bằng Hủy/X — nếu không nạp lại, layout_tpl trong RAM giữ bản CŨ
+        # (vd cap_hook=True) và lần mở sau/lúc xuất dùng sai mẫu.
+        self._db_changed = False
+        self._save_failed = False    # Xong bấm nhưng lưu DB lỗi -> studio dùng RAM
         self._frame_path = frame_path
         self._demo_ready.connect(self._play_demo)
         # Lồng tiếng AI: nạp giọng nền + nghe thử
@@ -1633,6 +1638,7 @@ class EditorDialog(QDialog):
             return
         services.save_template(name, self._collect_layout())
         self._current_name = name
+        self._db_changed = True
         QMessageBox.information(self, "Đã lưu", f"Đã cập nhật mẫu “{name}”.")
 
     def _save_tmpl_new(self):
@@ -1640,6 +1646,7 @@ class EditorDialog(QDialog):
         if ok and name.strip():
             services.save_template(name.strip(), self._collect_layout())
             self._current_name = name.strip()
+            self._db_changed = True
             self._reload_tmpl(select=name.strip())
 
     def _del_tmpl(self):
@@ -1652,6 +1659,7 @@ class EditorDialog(QDialog):
                 == QMessageBox.StandardButton.Yes:
             services.delete_template(name)
             self._current_name = ""
+            self._db_changed = True
             self._reload_tmpl()
 
     def _load_tmpl(self):
@@ -1679,7 +1687,9 @@ class EditorDialog(QDialog):
         self._current_name = name
         try:
             services.save_template(name, self.layout_result)
+            self._db_changed = True
         except Exception as e:  # noqa: BLE001
+            self._save_failed = True
             # KHÔNG nuốt im lặng: dialog hứa "tự lưu khi bấm Xong" — lưu fail
             # mà báo 'Đã lưu' thì lần xuất sau dùng mẫu CŨ, user không hề biết.
             QMessageBox.warning(
