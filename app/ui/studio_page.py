@@ -1019,8 +1019,10 @@ class StudioPage(QWidget):
 
     def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix=""):
         """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress.
-        Lỗi HTTP 403 (YouTube chặn chữ ký/bot theo client) -> TỰ thử lại 1 lần
-        với player_client khác (default,web_safari) trước khi báo lỗi."""
+        Lỗi HTTP 403 / fragment / timed out / connection reset (YouTube chặn
+        chữ ký-bot theo client hoặc mạng chập chờn) -> TỰ thử lại theo CHUỖI
+        tối đa 3 lượt: mặc định+potoken -> default,web_safari -> android,tv
+        (nghỉ 2s giữa các lượt) trước khi báo lỗi."""
         import re as _re
         import time as _time
         ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1080,15 +1082,25 @@ class StudioPage(QWidget):
                 path = str(fs[-1]) if fs else ""
             return path, "" if path else "Không thấy file tải."
 
+        def retryable(e: str) -> bool:
+            low = (e or "").lower()
+            return any(s in low for s in (
+                "403", "forbidden", "fragment", "timed out", "timeout",
+                "connection reset"))
+
+        # CHUỖI FALLBACK tối đa 3 lượt: (1) mặc định + potoken ->
+        # (2) default,web_safari -> (3) android,tv (giữ potoken + cookie)
         path, err = run_once(base + [url])
-        if err and ("403" in err or "forbidden" in err.lower()):
-            # YouTube chặn URL stream của client mặc định (android vr...) ->
-            # đổi player_client rồi thử lại 1 lần (giữ nguyên potoken + cookie)
+        fallbacks = ["youtube:player_client=default,web_safari",
+                     "youtube:player_client=android,tv"]
+        for k, client in enumerate(fallbacks, start=2):
+            if not err or not retryable(err):
+                break
             self.dl_progress.emit(
-                f"① {prefix}Bị YouTube chặn (403) — thử lại cách khác...")
+                f"① {prefix}Thử cách tải khác ({k}/3)...")
+            _time.sleep(2)                 # giãn nhịp -> đỡ bị chặn tiếp
             path, err = run_once(
-                base + ["--extractor-args",
-                        "youtube:player_client=default,web_safari", url])
+                base + ["--extractor-args", client, url])
         return path, err
 
     def _dl_busy(self) -> bool:

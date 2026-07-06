@@ -227,6 +227,8 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     try:
         all_segs, all_words, full, lang = [], [], [], (language or "")
         failed_windows: list = []
+        # ---- BƯỚC 1: cắt tất cả cửa sổ (ffmpeg, nhanh) ----
+        parts: dict = {}                         # i -> đường dẫn mp3 đã cắt
         for i in range(n):
             start = i * chunk                    # mốc CHÍNH XÁC của phần này
             part = os.path.join(work, f"p{i}.mp3")
@@ -248,13 +250,31 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                 if os.path.exists(part) and os.path.getsize(part) >= 400:
                     ok_cut = True
                     break
-            if not ok_cut:
+            if ok_cut:
+                parts[i] = part
+            else:
                 failed_windows.append(i + 1)
-                continue
+        # ---- BƯỚC 2: gửi Groq SONG SONG tối đa 3 cửa sổ (video dài nhanh hẳn).
+        # _groq_one an toàn thread: client OpenAI tạo mới mỗi lần gọi, keys chỉ
+        # đọc. Kết quả ghép theo index -> thứ tự + offset không đổi so với tuần tự.
+        results: dict = {}                       # i -> (segs, words, lg, text)
+        if parts:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            done = 0
             if on_progress:
-                on_progress(0.1 + 0.85 * i / n,
-                            f"Đang chép lời (Groq) phần {i + 1}/{n}...")
-            segs, words, lg, _ = _groq_one(part, language, keys)
+                on_progress(0.1, f"Đang chép lời (Groq) 0/{n} phần...")
+            with ThreadPoolExecutor(max_workers=min(3, len(parts))) as ex:
+                futs = {ex.submit(_groq_one, parts[i], language, keys): i
+                        for i in sorted(parts)}
+                for fut in as_completed(futs):
+                    results[futs[fut]] = fut.result()   # lỗi -> nổi lên như cũ
+                    done += 1
+                    if on_progress:
+                        on_progress(0.1 + 0.85 * done / n,
+                                    f"Đang chép lời (Groq) {done}/{n} phần...")
+        for i in sorted(results):                # ghép ĐÚNG THỨ TỰ thời gian
+            segs, words, lg, _ = results[i]
+            start = i * chunk
             lang = lang or lg
             for s in segs:
                 all_segs.append({"start": round(s["start"] + start, 3),
