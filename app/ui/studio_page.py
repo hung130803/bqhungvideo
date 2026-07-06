@@ -866,9 +866,17 @@ class StudioPage(QWidget):
             "<b>Khi YouTube đòi đăng nhập/cookie.</b> Có thể lưu NHIỀU hồ sơ "
             "cookie (mỗi tài khoản 1 hồ sơ) rồi chọn cái đang dùng — sau đổi "
             "tài khoản chỉ cần chọn lại hoặc thêm mới.<br><br>"
-            "<b>Lấy cookie:</b> cài tiện ích <b>“Get cookies.txt LOCALLY”</b> → mở "
-            "<b>youtube.com</b> (đã đăng nhập) → Export → copy hết file → dán vào "
-            "ô dưới → <b>Lưu</b>.")
+            "<b>Lấy cookie ĐÚNG CÁCH (theo yt-dlp, cookie sống lâu):</b><br>"
+            "1. Cài tiện ích <b>“Get cookies.txt LOCALLY”</b>.<br>"
+            "2. Mở <b>cửa sổ ẨN DANH</b> (Ctrl+Shift+N) → đăng nhập "
+            "youtube.com → vào <b>youtube.com/robots.txt</b> (chỉ mở đúng 1 "
+            "tab ẩn danh này) → Export cookie → <b>ĐÓNG NGAY cửa sổ ẩn danh</b>.<br>"
+            "3. Dán/nạp cookie vào ô dưới → <b>Lưu</b>.<br><br>"
+            "<b>⚠ Để cookie KHÔNG chết sau 1 lần tải:</b> sau khi lưu, "
+            "<b>ĐỪNG mở YouTube bằng tài khoản đó trên trình duyệt nữa</b> — "
+            "YouTube xoay cookie liên tục trên tab đang mở, làm cookie trong "
+            "app hết hạn ngay. Mỗi tài khoản chỉ dùng ở 1 nơi (app HOẶC trình "
+            "duyệt); muốn xem YouTube thì dùng tài khoản/trình duyệt khác.")
         guide.setWordWrap(True)
         guide.setStyleSheet(f"color:{MUTED}; font-size:13px;")
         v.addWidget(guide)
@@ -1077,9 +1085,50 @@ class StudioPage(QWidget):
                 # bật thêm node (deno vẫn mặc định): yt-dlp ≥2025.11 cần JS
                 # runtime giải nsig — máy nào sẵn node thì tận dụng luôn
                 "--js-runtimes", "node"]
-        base += pot_args + cookie_args + list(extra_args or [])
+        base += pot_args + list(extra_args or [])
         if ff_dir:
             base += ["--ffmpeg-location", ff_dir]
+
+        # --- BẢO VỆ file cookie hồ sơ ---
+        # yt-dlp GHI ĐÈ file --cookies khi thoát (write-back cookie đã được
+        # YouTube rotate). Điều đó CÓ LỢI khi tải THÀNH CÔNG (giữ rotation,
+        # cookie sống lâu), nhưng lượt FAIL bot-check/403 có thể ghi đè bộ
+        # cookie hỏng lên hồ sơ tốt -> các lần tải sau chết luôn, user phải
+        # xuất cookie mới. FIX: mỗi lượt chạy trên BẢN COPY tạm; chỉ khi lượt
+        # đó THÀNH CÔNG mới merge write-back về hồ sơ; lượt fail vứt bản tạm,
+        # lượt retry sau copy lại từ hồ sơ gốc (chưa bị đụng tới).
+        import shutil as _sh
+        import tempfile as _tmpmod
+        cookie_src = ""
+        if (len(cookie_args) == 2 and cookie_args[0] == "--cookies"
+                and os.path.isfile(cookie_args[1])):
+            cookie_src = cookie_args[1]
+
+        def cookie_for_attempt():
+            """Trả (args, tmp_path). Không phải file --cookies -> giữ nguyên."""
+            if not cookie_src:
+                return list(cookie_args), ""
+            try:
+                fd, tmp = _tmpmod.mkstemp(prefix="ytdlp_cookies_",
+                                          suffix=".txt")
+                os.close(fd)
+                _sh.copyfile(cookie_src, tmp)
+                return ["--cookies", tmp], tmp
+            except Exception:  # noqa: BLE001 - lỗi tạo temp thì dùng thẳng file
+                return list(cookie_args), ""
+
+        def merge_back(tmp, success):
+            if not tmp:
+                return
+            try:
+                if success and os.path.getsize(tmp) > 40:
+                    _sh.copyfile(tmp, cookie_src)   # giữ cookie đã rotate
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                os.remove(tmp)
+            except Exception:  # noqa: BLE001
+                pass
 
         def run_once(cmd):
             t0 = _time.time()
@@ -1129,9 +1178,15 @@ class StudioPage(QWidget):
                 "403", "forbidden", "fragment", "timed out", "timeout",
                 "connection reset"))
 
+        def run_attempt(extra):
+            ck, tmp = cookie_for_attempt()
+            p, e = run_once(base + ck + extra + [url])
+            merge_back(tmp, success=bool(p and not e))
+            return p, e
+
         # CHUỖI FALLBACK tối đa 3 lượt: (1) mặc định + potoken ->
         # (2) default,web_safari -> (3) android,tv (giữ potoken + cookie)
-        path, err = run_once(base + [url])
+        path, err = run_attempt([])
         fallbacks = ["youtube:player_client=default,web_safari",
                      "youtube:player_client=android,tv"]
         for k, client in enumerate(fallbacks, start=2):
@@ -1140,8 +1195,7 @@ class StudioPage(QWidget):
             self.dl_progress.emit(
                 f"① {prefix}Thử cách tải khác ({k}/3)...")
             _time.sleep(2)                 # giãn nhịp -> đỡ bị chặn tiếp
-            path, err = run_once(
-                base + ["--extractor-args", client, url])
+            path, err = run_attempt(["--extractor-args", client])
         return path, err
 
     def _dl_busy(self) -> bool:
