@@ -1,16 +1,22 @@
 """
 Né màn "Sign in to confirm you're not a bot" của YouTube mà KHÔNG cần cookie.
 
-Cơ chế giống hệt tool tải BQHungDown của bạn: chạy một PO-token provider
-(server cục bộ 127.0.0.1:4416, ~46MB) + cài plugin "bgutil" cho yt-dlp.
-yt-dlp sẽ tự xin PO token từ server này -> qua được tường chặn bot.
+Cơ chế: chạy PO-token provider (server cục bộ 127.0.0.1:4416, ~46MB, bản Rust
+jim60105/bgutil-ytdlp-pot-provider-rs) + plugin bgutil cho yt-dlp dạng ZIP
+(bgutil-ytdlp-pot-provider-rs.zip đặt THẲNG trong _potoken/ — yt-dlp ≥2025.03
+đọc zip trực tiếp từ --plugin-dirs). yt-dlp sẽ tự xin PO token từ server này.
 
-Tất cả best-effort: nếu tải/khởi động provider lỗi thì yt-dlp vẫn tải bình
-thường (chỉ là không có token). PO token KHÔNG đổi IP -> tải số lượng cực
-lớn vẫn cần proxy, nhưng cho nhu cầu thường ngày là đủ.
+LƯU Ý version: plugin zip và server exe PHẢI cùng release (plugin từ chối
+server lệch major). Vì vậy cả 2 được tải từ CÙNG một tag GitHub và ghi lại
+trong file release.tag; plugin được làm mới ~30 ngày/lần (kèm exe nếu đổi tag).
+
+Tất cả best-effort: nếu tải/khởi động lỗi thì yt-dlp vẫn tải bình thường
+(chỉ là không có token). PO token KHÔNG đổi IP -> IP bị YouTube gắn cờ nặng
+thì một số video vẫn đòi cookie đăng nhập.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import socket
@@ -22,19 +28,37 @@ from pathlib import Path
 from config import DATA_DIR
 
 PORT = 4416
-# Provider (Windows x86_64) khớp phiên bản plugin. Đổi cả 2 cùng lúc.
-PROVIDER_URL = ("https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/"
-                "releases/download/v0.8.1/bgutil-pot-windows-x86_64.exe")
+# Repo phát hành CẢ server exe lẫn plugin zip trong cùng 1 release.
+_REPO = "jim60105/bgutil-ytdlp-pot-provider-rs"
+# Tag dự phòng khi không hỏi được GitHub (khớp bản exe/zip bundle theo app).
+_FALLBACK_TAG = "v0.8.1"
+_PLUGIN_ZIP_NAME = "bgutil-ytdlp-pot-provider-rs.zip"
+_PLUGIN_TTL = 30 * 86400          # ~30 ngày mới kiểm tra bản mới 1 lần
 
 _POTOKEN_DIR = DATA_DIR / "_potoken"
-_PLUGIN_DST = _POTOKEN_DIR / "yt_dlp_plugins" / "extractor"
+_PLUGIN_ZIP = _POTOKEN_DIR / _PLUGIN_ZIP_NAME
 _PROVIDER_DST = _POTOKEN_DIR / "bgutil-pot.exe"
+_TAG_FILE = _POTOKEN_DIR / "release.tag"   # tag của cặp zip+exe đang cài
 
-# Plugin .py đi KÈM trong repo (chạy được trên MỌI máy, không phụ thuộc tool khác).
+# Plugin zip đi KÈM trong repo/app (máy khách offline lần đầu vẫn chạy được).
 _BUNDLED_PLUGINS = Path(__file__).resolve().parent / "potoken_plugins"
 # Tái dùng provider 46MB nếu máy này tình cờ đã cài BQHungDown (khỏi tải lại).
 _PRODOWN_PROVIDER = Path(
     os.path.expandvars(r"%APPDATA%\com.prodown.app\po\bgutil-pot.exe"))
+
+_UA = "bqhungvideo"
+_REFRESH_FAILED = False     # đã fail tải trong phiên này -> đừng thử lại mãi
+_DOWNLOAD_FAILED = False    # như trên, riêng cho exe 46MB
+
+
+def _provider_url(tag: str) -> str:
+    return (f"https://github.com/{_REPO}/releases/download/{tag}/"
+            "bgutil-pot-windows-x86_64.exe")
+
+
+def _plugin_url(tag: str) -> str:
+    return (f"https://github.com/{_REPO}/releases/download/{tag}/"
+            f"{_PLUGIN_ZIP_NAME}")
 
 
 def _port_open(port: int = PORT) -> bool:
@@ -43,25 +67,120 @@ def _port_open(port: int = PORT) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _install_plugin() -> bool:
-    """Chép 2 file plugin .py vào _potoken/yt_dlp_plugins/extractor/."""
+def _download(url: str, dst: Path, timeout: int = 30) -> bool:
+    """Tải url -> dst qua file .part (đọc chunk có timeout, không treo)."""
+    tmp = dst.with_suffix(dst.suffix + ".part")
     try:
-        _PLUGIN_DST.mkdir(parents=True, exist_ok=True)
-        if (_PLUGIN_DST / "getpot_bgutil.py").exists() and \
-           (_PLUGIN_DST / "getpot_bgutil_http.py").exists():
-            return True
-        srcs = list(_BUNDLED_PLUGINS.glob("getpot_bgutil*.py"))
-        if not srcs:
-            return False
-        for s in srcs:
-            shutil.copy2(s, _PLUGIN_DST / s.name)
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r, \
+                open(tmp, "wb") as f:
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+        tmp.replace(dst)
         return True
     except Exception:  # noqa: BLE001
-        return (_PLUGIN_DST / "getpot_bgutil.py").exists()
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def _latest_tag() -> str:
+    """Tag release mới nhất trên GitHub; '' nếu không hỏi được."""
+    url = f"https://api.github.com/repos/{_REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": _UA,
+                          "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return str(json.load(r).get("tag_name") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _current_tag() -> str:
+    try:
+        t = _TAG_FILE.read_text(encoding="utf-8").strip()
+        if t:
+            return t
+    except OSError:
+        pass
+    # cài từ đời trước (chưa có file tag): exe cũ là bản v0.8.1
+    return _FALLBACK_TAG if _PROVIDER_DST.exists() else ""
+
+
+def _cleanup_legacy() -> None:
+    """Dọn plugin ĐỜI CŨ (framework GetPOT trước yt-dlp 2025.03): thư mục
+    yt_dlp_plugins/ với getpot_bgutil*.py — để lại sẽ đè module trong zip."""
+    try:
+        old = _POTOKEN_DIR / "yt_dlp_plugins"
+        if old.exists():
+            shutil.rmtree(old, ignore_errors=True)
+        # zip của Brainicism (đòi server Node 1.x, không khớp exe Rust)
+        (_POTOKEN_DIR / "bgutil-ytdlp-pot-provider.zip").unlink(
+            missing_ok=True)
+    except OSError:
+        pass
+
+
+def _refresh_provider(tag: str) -> None:
+    """Tải lại server exe CÙNG tag với plugin (best-effort; nếu exe đang chạy
+    thì Windows khóa file -> giữ bản cũ, lần khởi động sau sẽ thay được)."""
+    exe_new = _PROVIDER_DST.with_suffix(".new")
+    if not _download(_provider_url(tag), exe_new, timeout=120):
+        return
+    try:
+        exe_new.replace(_PROVIDER_DST)
+    except OSError:                      # file đang bị khóa (server đang chạy)
+        pass
+
+
+def _install_plugin() -> bool:
+    """Bảo đảm zip plugin nằm trong _potoken/ (yt-dlp nạp zip trực tiếp).
+
+    Ưu tiên: zip sẵn còn "tươi" (<30 ngày) > tải bản mới nhất từ GitHub
+    (kèm exe cùng tag nếu đổi version) > zip cũ sẵn có > zip bundle theo app.
+    """
+    global _REFRESH_FAILED
+    try:
+        _POTOKEN_DIR.mkdir(parents=True, exist_ok=True)
+        _cleanup_legacy()
+        have = _PLUGIN_ZIP.exists() and _PLUGIN_ZIP.stat().st_size > 1000
+        if have and time.time() - _PLUGIN_ZIP.stat().st_mtime < _PLUGIN_TTL:
+            return True
+        if not _REFRESH_FAILED:
+            tag = _latest_tag()
+            cur = _current_tag()
+            if tag and have and tag == cur:
+                os.utime(_PLUGIN_ZIP)              # còn mới nhất -> reset TTL
+                return True
+            if tag and _download(_plugin_url(tag), _PLUGIN_ZIP):
+                if tag != cur:
+                    _refresh_provider(tag)   # server phải CÙNG release
+                try:
+                    _TAG_FILE.write_text(tag, encoding="utf-8")
+                except OSError:
+                    pass
+                return True
+            _REFRESH_FAILED = True          # đừng gọi GitHub mỗi lần bấm Tải
+        if have:
+            return True                     # cũ nhưng vẫn dùng được
+        # offline / GitHub lỗi: dùng zip đóng gói kèm app
+        bundled = _BUNDLED_PLUGINS / _PLUGIN_ZIP_NAME
+        if bundled.exists():
+            shutil.copy2(bundled, _PLUGIN_ZIP)
+        return _PLUGIN_ZIP.exists()
+    except Exception:  # noqa: BLE001
+        return _PLUGIN_ZIP.exists()
 
 
 def _ensure_provider() -> str:
-    """Đường dẫn provider exe (tái dùng > chép > tải). '' nếu thất bại."""
+    """Đường dẫn provider exe (sẵn có > tái dùng BQHungDown > tải). '' nếu fail."""
+    global _DOWNLOAD_FAILED
     if _PROVIDER_DST.exists() and _PROVIDER_DST.stat().st_size > 1_000_000:
         return str(_PROVIDER_DST)
     _POTOKEN_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,34 +192,16 @@ def _ensure_provider() -> str:
             return str(_PROVIDER_DST)
         except Exception:  # noqa: BLE001
             return str(_PRODOWN_PROVIDER)
-    # 2) Tải mới (chỉ lần đầu, máy khác chưa có tool kia)
-    global _DOWNLOAD_FAILED
+    # 2) Tải mới (chỉ lần đầu) — cùng tag với plugin đang cài
     if _DOWNLOAD_FAILED:
-        return ""            # vừa fail trong phiên này -> đừng tải lại 46MB mỗi lần bấm
-    tmp = _PROVIDER_DST.with_suffix(".part")
-    try:
-        # urlretrieve KHÔNG có timeout -> mạng nghẽn sẽ treo thread tải VĨNH VIỄN
-        # (nút Tải bị disable mãi tới khi restart app). Đọc chunk với timeout.
-        req = urllib.request.Request(PROVIDER_URL,
-                                     headers={"User-Agent": "bqhungvideo"})
-        with urllib.request.urlopen(req, timeout=30) as r, open(tmp, "wb") as f:
-            while True:
-                chunk = r.read(1 << 16)
-                if not chunk:
-                    break
-                f.write(chunk)
-        tmp.replace(_PROVIDER_DST)
+        return ""            # vừa fail trong phiên này -> đừng tải lại 46MB mỗi lần
+    tag = _current_tag() or _FALLBACK_TAG
+    if _download(_provider_url(tag), _PROVIDER_DST, timeout=120):
         return str(_PROVIDER_DST)
-    except Exception:  # noqa: BLE001
-        _DOWNLOAD_FAILED = True
-        try:
-            tmp.unlink(missing_ok=True)      # dọn file .part tải dở
-        except OSError:
-            pass
-        return ""
+    _DOWNLOAD_FAILED = True
+    return ""
 
 
-_DOWNLOAD_FAILED = False
 _PROVIDER_PROC = None       # handle server MÌNH spawn (để tắt khi thoát app)
 
 

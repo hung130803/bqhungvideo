@@ -1017,7 +1017,8 @@ class StudioPage(QWidget):
                 or bool(_re.search(r"/(channel|c|user)/", u))
                 or ("/@" in u))
 
-    def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix=""):
+    def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix="",
+                   extra_args=None):
         """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress.
         Lỗi HTTP 403 / fragment / timed out / connection reset (YouTube chặn
         chữ ký-bot theo client hoặc mạng chập chờn) -> TỰ thử lại theo CHUỖI
@@ -1035,8 +1036,11 @@ class StudioPage(QWidget):
                 "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
                 "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "--merge-output-format", "mp4", "--no-playlist",
-                "--print", "after_move:filepath", "-o", out_tmpl]
-        base += pot_args + cookie_args
+                "--print", "after_move:filepath", "-o", out_tmpl,
+                # bật thêm node (deno vẫn mặc định): yt-dlp ≥2025.11 cần JS
+                # runtime giải nsig — máy nào sẵn node thì tận dụng luôn
+                "--js-runtimes", "node"]
+        base += pot_args + cookie_args + list(extra_args or [])
         if ff_dir:
             base += ["--ffmpeg-location", ff_dir]
 
