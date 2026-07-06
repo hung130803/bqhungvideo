@@ -197,7 +197,14 @@ def _groq_one(audio_path: str, language, keys: list) -> tuple:
             if llm.is_rate_limit_error(last):
                 llm.mark_limited("groq", key, last)
                 continue                       # key hết lượt -> xoay key kế
-            raise                              # lỗi khác: KHÔNG giết oan key
+            if llm.is_auth_error(last):
+                llm.mark_invalid("groq", key)
+                continue                       # KEY SAI -> bỏ qua, thử key khác
+            raise                              # lỗi khác (mạng...): KHÔNG giết oan key
+    if llm.is_auth_error(last):
+        raise RuntimeError(
+            "Tất cả key Groq đều SAI/không hợp lệ — vào 'Cài đặt AI' kiểm tra "
+            f"lại key (xóa dấu cách thừa, dán key đúng). Chi tiết: {last}")
     raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")
 
 

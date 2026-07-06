@@ -552,7 +552,10 @@ class StudioPage(QWidget):
             lines = []
             try:
                 for st in llm.key_status("groq"):
-                    if st["state"] == "limited":
+                    if st["state"] == "invalid":
+                        lines.append(f"🔑 {st['key_masked']} — SAI KEY (kiểm tra "
+                                     "lại: xóa dấu cách thừa / dán key đúng)")
+                    elif st["state"] == "limited":
                         lines.append(f"⛔ {st['key_masked']} — hết lượt, thử lại "
                                      f"sau {_fmt_wait(st['wait_left'])}")
                     elif st["in_use"]:

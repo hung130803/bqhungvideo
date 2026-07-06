@@ -132,24 +132,30 @@ def _is_limited(st: dict, now: float) -> bool:
     return bool(st) and st.get("state") == "limited" and st.get("until", 0) > now
 
 
+def _is_invalid(st: dict) -> bool:
+    return bool(st) and st.get("state") == "invalid"
+
+
 def pick_keys(provider: str, keys=None) -> list:
     """DANH SÁCH key đã SẮP THỨ TỰ ƯU TIÊN để xoay vòng:
-    ready trước (giữ thứ tự trong settings), limited sau (hết cooldown sớm
-    nhất đứng trước). Không bao giờ rỗng nếu settings có key — tất cả limited
-    thì vẫn trả về để caller thử key sắp hồi trước (thà thử còn hơn fail)."""
+    ready trước (giữ thứ tự settings), limited giữa (hết cooldown sớm nhất
+    trước), key SAI xếp CUỐI (thử sau cùng, phòng khi user vừa sửa key).
+    Không bao giờ rỗng nếu settings có key."""
     if keys is None:
         keys = settings.llm_keys_for(provider)
     now = time.time()
-    ready, limited = [], []
+    ready, limited, invalid = [], [], []
     with _KEY_LOCK:
         for k in keys:
             st = _KEY_STATE.get((provider, k))
-            if st is not None and _is_limited(st, now):
+            if st is not None and _is_invalid(st):
+                invalid.append(k)
+            elif st is not None and _is_limited(st, now):
                 limited.append((st["until"], k))
             else:
                 ready.append(k)
     limited.sort(key=lambda t: t[0])
-    return ready + [k for _, k in limited]
+    return ready + [k for _, k in limited] + invalid
 
 
 def key_status(provider: str) -> list:
@@ -163,7 +169,7 @@ def key_status(provider: str) -> list:
     with _KEY_LOCK:
         for k in keys:
             st = _KEY_STATE.get((provider, k))
-            if st is None or not _is_limited(st, now):
+            if st is None or (not _is_limited(st, now) and not _is_invalid(st)):
                 next_key = k
                 break
         out = []
@@ -171,16 +177,19 @@ def key_status(provider: str) -> list:
             st = _KEY_STATE.get((provider, k)) or {
                 "state": "ready", "until": 0.0, "last_used": 0.0,
                 "last_ok": 0.0, "calls": 0, "note": ""}
+            invalid = _is_invalid(st)
             limited = _is_limited(st, now)
+            state = "invalid" if invalid else ("limited" if limited else "ready")
             recently = st["last_used"] and (now - st["last_used"]) < _IN_USE_WINDOW
             out.append({
                 "key_masked": "…" + k[-6:],
-                "state": "limited" if limited else "ready",
+                "state": state,
                 "wait_left": max(0.0, st["until"] - now) if limited else 0.0,
                 "last_used_ago": (now - st["last_used"]) if st["last_used"] else None,
                 "last_ok_ago": (now - st["last_ok"]) if st["last_ok"] else None,
                 "calls": st["calls"],
-                "in_use": bool((k == next_key and not limited) or recently),
+                "in_use": bool((k == next_key and not limited and not invalid)
+                               or recently),
                 "note": st["note"],
             })
     return out
@@ -292,6 +301,25 @@ def is_rate_limit_error(msg: str) -> bool:
 _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
 
 
+def is_auth_error(msg: str) -> bool:
+    """Lỗi KEY SAI/không hợp lệ (401, invalid api key, unauthorized...) —
+    key này hỏng hẳn, phải BỎ QUA dùng key khác chứ không dừng cả job."""
+    m = (msg or "").lower()
+    return any(s in m for s in ("invalid_api_key", "invalid api key",
+                                "401", "unauthorized", "authentication",
+                                "no auth credentials", "api key not valid"))
+
+
+def mark_invalid(provider: str, key: str) -> None:
+    """Đánh dấu key SAI (không hợp lệ). Xếp cuối hàng ưu tiên + hiện 'sai key'
+    trên UI. Không hết hạn (chờ user sửa key rồi lưu lại)."""
+    with _KEY_LOCK:
+        st = _state_for(provider, key)
+        st["state"] = "invalid"
+        st["until"] = time.time() + 3650 * 86400   # ~không bao giờ tự hồi
+        st["note"] = "API key sai/không hợp lệ"
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
                temperature: float) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
@@ -371,7 +399,10 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                 if is_rate_limit_error(last):
                     mark_limited(provider, key, last)
                     continue                   # key này hết lượt -> thử key tiếp
-                # lỗi KHÁC rate-limit (mạng, key sai...) -> KHÔNG đánh dấu limited
+                if is_auth_error(last):
+                    mark_invalid(provider, key)
+                    continue                   # KEY SAI -> bỏ qua, thử key khác
+                # lỗi KHÁC (mạng...) -> KHÔNG giết key, dừng luôn
                 raise LLMError(f"Gọi {provider} thất bại: {last}")
         # tất cả key hết quota; chỉ 1 key -> chờ rồi thử lại 1 lần (free tier)
         if len(keys) == 1 and is_rate_limit_error(last):
@@ -385,7 +416,12 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                 last = str(e)
                 if is_rate_limit_error(last):
                     mark_limited(provider, keys[0], last)
-    raise LLMError(f"Gọi {provider} thất bại (hết lượt tất cả key): {last}")
+    # phân biệt lý do để user biết đường sửa
+    if is_auth_error(last):
+        raise LLMError(
+            f"Tất cả key {provider} đều SAI/không hợp lệ. Vào 'Cài đặt AI' "
+            f"kiểm tra lại key (xóa dấu cách thừa, dán lại key đúng). Chi tiết: {last}")
+    raise LLMError(f"Gọi {provider} thất bại (hết lượt/lỗi tất cả key): {last}")
 
 
 def complete_json(prompt: str, system: str = "", provider: Optional[str] = None):
