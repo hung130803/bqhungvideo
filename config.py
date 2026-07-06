@@ -47,7 +47,11 @@ LOGS_DIR = DATA_DIR / "logs"
 MODELS_DIR = DATA_DIR / "models"  # cache model whisper...
 
 # Database dùng chung cho toàn app (projects, jobs, kết quả phân tích, clip...)
-DB_PATH = DATA_DIR / "studio.db"
+# Ưu tiên biến môi trường BQ_DB_PATH: khi app CHÍNH phải cứu DB hỏng và ĐỔI sang
+# file khác (studio_<ts>.db) hoặc RAM, nó set BQ_DB_PATH để mọi TIẾN TRÌNH CON
+# (phân tích) mở ĐÚNG file app chính đang dùng — nếu không subprocess mở studio.db
+# rỗng và báo "không tìm thấy video".
+DB_PATH = Path(os.environ.get("BQ_DB_PATH") or (DATA_DIR / "studio.db"))
 
 for _d in (PROJECTS_DIR, LOGS_DIR, MODELS_DIR):
     _d.mkdir(parents=True, exist_ok=True)

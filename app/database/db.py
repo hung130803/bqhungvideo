@@ -8,8 +8,10 @@ cho phép nhiều reader + 1 writer cùng lúc.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -22,7 +24,21 @@ class Database:
     def __init__(self, path: Path = DB_PATH):
         self.path = str(path)
         self._local = threading.local()
+        # True nếu phải rơi vào DB tạm trong RAM (không lưu qua phiên + TIẾN TRÌNH
+        # CON không chia sẻ được -> phân tích sẽ fail). UI dùng cờ này để cảnh báo.
+        self.in_memory = False
         self.init_schema()
+        # Chốt path THỰC vào biến môi trường để MỌI tiến trình con (phân tích)
+        # spawn sau (jobs.py truyền env=dict(os.environ)) mở ĐÚNG file này —
+        # kể cả khi recovery vừa đổi path sang studio_<ts>.db.
+        self._publish_path()
+
+    def _publish_path(self) -> None:
+        """Đăng path thực ra BQ_DB_PATH cho subprocess kế thừa (trừ khi RAM)."""
+        if self.path and self.path != ":memory:":
+            os.environ["BQ_DB_PATH"] = self.path
+        else:                     # RAM: KHÔNG chia sẻ được -> xoá để subprocess
+            os.environ.pop("BQ_DB_PATH", None)  # không mở nhầm file rỗng
 
     # ---- connection mỗi-thread ----
     def conn(self) -> sqlite3.Connection:
@@ -51,18 +67,24 @@ class Database:
             if not self._is_corrupt_err(e):
                 raise      # lỗi lạ (vd thiếu quyền ghi cả thư mục) -> ném thật
 
-        # (1) Dọn sạch file hỏng tại chỗ rồi thử lại
-        self._wipe_db_files(self.path)
-        try:
-            self._reset_conn()
-            self._apply_schema()
-            return
-        except Exception:  # noqa: BLE001
-            pass
+        # (1) Dọn sạch file hỏng TẠI CHỖ rồi thử lại VÀI LẦN (đợi chút giữa các
+        # lần): 'disk I/O'/khóa file thường do wal/shm mồ côi hoặc AV/OneDrive
+        # giữ handle tạm — chờ 1 nhịp là mở lại được. Giữ NGUYÊN studio.db là
+        # đáng tin nhất (subprocess luôn tìm đúng file), nên cố ở đây trước khi
+        # nhảy sang path mới.
+        for attempt in range(4):
+            self._wipe_db_files(self.path)
+            try:
+                self._reset_conn()
+                self._apply_schema()
+                return
+            except Exception:  # noqa: BLE001
+                if attempt < 3:
+                    time.sleep(0.3 * (attempt + 1))
 
-        # (2) Cùng chỗ vẫn lỗi (file khóa/ổ lỗi/OneDrive) -> DÙNG TÊN FILE MỚI
-        import time as _t
-        newp = str(Path(self.path).with_name(f"studio_{int(_t.time())}.db"))
+        # (2) Cùng chỗ vẫn lỗi (file khóa/ổ lỗi/OneDrive) -> DÙNG TÊN FILE MỚI.
+        # publish_path() sẽ set BQ_DB_PATH = file mới -> subprocess mở đúng file.
+        newp = str(Path(self.path).with_name(f"studio_{int(time.time())}.db"))
         try:
             self._wipe_db_files(newp)
             self.path = newp
@@ -74,7 +96,10 @@ class Database:
 
         # (3) Bó tay với đĩa -> DB trong RAM: app VẪN mở, chạy được trong phiên
         # (kênh/clip phiên này không lưu lại sau khi tắt — nhưng còn hơn crash).
+        # CẢNH BÁO: tiến trình con (phân tích) KHÔNG chia sẻ được RAM-DB -> sẽ
+        # không thấy video. UI đọc self.in_memory để báo user rõ.
         self.path = ":memory:"
+        self.in_memory = True
         self._reset_conn()
         self._apply_schema()
 

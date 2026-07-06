@@ -54,6 +54,24 @@ class MainWindow(QMainWindow):
         self._update_found.connect(self._notify_update)
         self._start_update_check()
 
+        # DB hỏng + không cứu được -> đang chạy tạm trong RAM. Tiến trình con
+        # (phân tích) KHÔNG dùng chung được DB này -> sẽ báo "không tìm thấy
+        # video". Cảnh báo user RÕ ngay thay vì để lỗi khó hiểu về sau.
+        self._warn_if_db_in_memory()
+
+    def _warn_if_db_in_memory(self):
+        from app.database import db
+        if getattr(db, "in_memory", False):
+            QMessageBox.warning(
+                self, "Ổ đĩa/CSDL đang lỗi",
+                "Không mở được cơ sở dữ liệu trên ổ đĩa (file hỏng hoặc ổ lỗi), "
+                "app đang chạy TẠM trong bộ nhớ.\n\n"
+                "• Dữ liệu phiên này sẽ KHÔNG được lưu lại.\n"
+                "• Chức năng phân tích/tạo clip có thể KHÔNG chạy được "
+                "(báo 'không tìm thấy video').\n\n"
+                "👉 Hãy KHỞI ĐỘNG LẠI app và kiểm tra ổ đĩa còn trống/không bị "
+                "chặn bởi OneDrive hay phần mềm diệt virus.")
+
     def _start_update_check(self):
         import threading
 
