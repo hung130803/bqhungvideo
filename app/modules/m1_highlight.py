@@ -792,7 +792,11 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
         return {"count": 0, "clip_ids": [], "note": "Không tạo được ứng viên."}
     candidates.sort(key=lambda c: _audio_score(audio, c["start"], c["end"]),
                     reverse=True)
-    candidates = candidates[: cfg["max_candidates"]]
+    # TÔN TRỌNG "Số clip muốn cắt" của user (trước đây đường dự phòng lấy
+    # nguyên max_candidates=25 -> user đặt 4 mà ra 25 clip). 0 = mặc định 12.
+    count = int(cfg.get("count", 0) or 0)
+    limit = count if count > 0 else 12
+    candidates = candidates[: min(limit, cfg["max_candidates"])]
     candidates.sort(key=lambda c: c["start"])  # theo thứ tự thời gian
 
     _delete_suggested(video_id)
