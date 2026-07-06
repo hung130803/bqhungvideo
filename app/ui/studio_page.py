@@ -101,6 +101,7 @@ class StudioPage(QWidget):
         self.state = state
         self.layout_tpl = copy.deepcopy(DEFAULT_LAYOUT)
         self._thumb_busy = False
+        self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
         self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
         self._settings = QSettings("AIContentStudio", "studio")
         self.thumbs_ready.connect(self._rebuild_rows)
@@ -233,7 +234,10 @@ class StudioPage(QWidget):
         aiset.setToolTip("Chọn AI máy/mây + key; Nghe-chép Local/Groq.")
         aiset.clicked.connect(self._ai_settings); cfgrow.addWidget(aiset)
         self.ai_status = QLabel("")
-        self.ai_status.setToolTip("AI đang dùng. Bấm 'Cài đặt AI' để đổi/kiểm tra.")
+        self.ai_status.setToolTip("AI đang dùng. Bấm vào nhãn này để mở Cài đặt AI.")
+        # nhãn CLICK ĐƯỢC: đang đỏ "chưa có key!" -> bấm là mở luôn Cài đặt AI
+        self.ai_status.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ai_status.mousePressEvent = lambda _e: self._ai_settings()
         cfgrow.addWidget(self.ai_status)
         cfgrow.addStretch(1)
         self.dl_chan = QPushButton("Xuất cả kênh")
@@ -340,6 +344,39 @@ class StudioPage(QWidget):
             txt, col = "AI: Ollama (máy)", MUTED
         self.ai_status.setText(txt)
         self.ai_status.setStyleSheet(f"color:{col}; font-size:12px; font-weight:700;")
+
+    # ---- CHẶN SỚM khi chưa có cách chép lời (không key Groq, không whisper máy) ----
+    _NO_AI_MSG = ("Chưa có cách chép lời. Bấm nút 'Cài đặt AI' dán key Groq "
+                  "(miễn phí, console.groq.com/keys) rồi thử lại.")
+
+    def _ai_ready(self) -> bool:
+        """Có cách chép lời chưa? Kiểm được thì trả đúng; kiểm lỗi thì cho
+        chạy — job phân tích sẽ tự báo lỗi rõ (không chặn oan)."""
+        try:
+            from app.core import transcribe
+            return bool(transcribe.provider_ready())
+        except Exception:  # noqa: BLE001
+            return True
+
+    def _require_ai(self) -> bool:
+        """Nút bấm TAY (Tạo clip/Tất cả/Chọn nhiều/Mixed-Cut): chưa sẵn sàng
+        -> popup hướng dẫn ngay, KHÔNG enqueue (đỡ job chạy rồi mới báo lỗi)."""
+        if self._ai_ready():
+            return True
+        QMessageBox.warning(self, "Chưa có cách chép lời", self._NO_AI_MSG)
+        return False
+
+    def _require_ai_after_dl(self) -> bool:
+        """Luồng TỰ chạy sau khi tải link: popup chỉ 1 LẦN ĐẦU trong phiên
+        (tải nhiều link mà popup dồn dập thì phiền), các lần sau báo ⚠ status."""
+        if self._ai_ready():
+            return True
+        if not self._warned_no_ai:
+            self._warned_no_ai = True
+            QMessageBox.warning(self, "Chưa có cách chép lời", self._NO_AI_MSG)
+        self.status.setText("⚠ Video đã tải về nhưng CHƯA phân tích — "
+                            + self._NO_AI_MSG)
+        return False
 
     # ---- Tùy chỉnh cắt (ngôn ngữ / Min-Max / mục đích / phong cách) ----
     def _cut_preset(self) -> dict:
@@ -1226,9 +1263,12 @@ class StudioPage(QWidget):
         if path and not err and pid:
             try:
                 vid = services.import_video(pid, path)
-                jid = services.enqueue_auto(self.state.pool, vid, pid,
-                                            self._cut_preset())
-                self._track_auto(jid, vid)
+                # CHẶN SỚM: chưa có cách chép lời -> vẫn giữ video đã tải,
+                # nhưng KHÔNG tự chạy job phân tích (chắc chắn fail).
+                if self._require_ai_after_dl():
+                    jid = services.enqueue_auto(self.state.pool, vid, pid,
+                                                self._cut_preset())
+                    self._track_auto(jid, vid)
                 self._batch_ok = getattr(self, "_batch_ok", 0) + 1
                 self._reload_videos()
             except Exception as e:  # noqa: BLE001
@@ -1261,6 +1301,12 @@ class StudioPage(QWidget):
                        "app (yt-dlp mới)."
                        if ("403" in low or "forbidden" in low) else ""))
             elif ok:
+                if not self._ai_ready():
+                    # đã tải nhưng KHÔNG tự phân tích (chưa có key Groq)
+                    self.status.setText(
+                        f"⚠ Đã tải {ok} video nhưng CHƯA phân tích — "
+                        + self._NO_AI_MSG)
+                    return
                 extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
                 self.status.setText(
                     f"✓ ① Tải xong cả loạt ({ok} video) → ② Đang phân tích & "
@@ -1307,6 +1353,9 @@ class StudioPage(QWidget):
             return
         self.yt_url.clear()
         self._reload_videos(select_id=vid)   # chọn đúng video VỪA TẢI
+        # CHẶN SỚM: chưa có cách chép lời thì đừng tự chạy job (chắc chắn fail)
+        if not self._require_ai_after_dl():
+            return
         # TỰ ĐỘNG phân tích luôn (dán link -> tải -> phân tích -> tự xuất nếu bật)
         jid = services.enqueue_auto(self.state.pool, vid, pid, self._cut_preset())
         self._track_auto(jid, vid)
@@ -1632,6 +1681,8 @@ class StudioPage(QWidget):
         if not (self.state.project_id and self.state.video_id):
             QMessageBox.information(self, "Chưa chọn video", "Hãy thêm/chọn video.")
             return
+        if not self._require_ai():
+            return
         # ĐÃ có clip -> hỏi CẮT LẠI với cài đặt cắt hiện tại (nhanh: khỏi chép lời lại)
         if services.list_clips(self.state.video_id):
             if QMessageBox.question(
@@ -1658,6 +1709,8 @@ class StudioPage(QWidget):
             QMessageBox.information(self, "Chưa chọn video",
                                     "Thêm/chọn 1 video trước đã.")
             return
+        if not self._require_ai():
+            return
         services.enqueue_auto_mixed(self.state.pool, self.state.video_id,
                                     self.state.project_id, self._cut_preset())
         self.status.setText("Đang phân tích & ghép Mixed-Cut... clip sẽ hiện "
@@ -1671,6 +1724,8 @@ class StudioPage(QWidget):
         vids = services.list_videos(self.state.project_id)
         if not vids:
             QMessageBox.information(self, "Chưa có video", "Thêm video vào kênh trước.")
+            return
+        if not self._require_ai():
             return
         n = 0
         for v in vids:
@@ -1696,6 +1751,8 @@ class StudioPage(QWidget):
         vids = services.list_videos(self.state.project_id)
         if not vids:
             QMessageBox.information(self, "Chưa có video", "Thêm video vào kênh trước.")
+            return
+        if not self._require_ai():
             return
         dlg = QDialog(self); dlg.setWindowTitle("Chọn nhiều video để tạo clip")
         dlg.resize(480, 500)

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app import services
@@ -213,8 +213,36 @@ class QueuePanel(QWidget):
             txt = f"{pct}% · {txt}"
         full = f"{txt}" + (f" · {detail}" if detail else "")
         row["st"].setText(full[:80])
-        row["st"].setStyleSheet(f"color:{color}; font-size:12px;")
-        row["st"].setToolTip(full)
+        if j["status"] == "failed":
+            # LỖI: nhãn "✕ Lỗi" phải nói được VÌ SAO — tooltip đủ lỗi trên cả
+            # tên + trạng thái, và CLICK vào nhãn trạng thái mở popup đầy đủ
+            # (nhãn cắt 80 ký tự, user không đọc được lý do).
+            err = self._fail_text(j)
+            tip = "LỖI: " + err + "\n\n(Bấm vào nhãn '✕ Lỗi' để xem đầy đủ)"
+            row["st"].setToolTip(tip)
+            row["name"].setToolTip(row["name"].text() + "\n\n" + tip)
+            row["st"].setCursor(Qt.CursorShape.PointingHandCursor)
+            title = row["name"].text()
+            row["st"].mousePressEvent = \
+                lambda _e, t=title, m=err: self._show_error(t, m)
+            row["st"].setStyleSheet(
+                f"color:{color}; font-size:12px; text-decoration:underline;")
+        else:
+            row["st"].setStyleSheet(f"color:{color}; font-size:12px;")
+            row["st"].setToolTip(full)
+
+    @staticmethod
+    def _fail_text(j) -> str:
+        """Ghép LÝ DO LỖI đầy đủ: error chính + thông báo bước cuối (nếu khác)."""
+        err = (j["error"] or "").strip()
+        last = (j["message"] or "").strip()
+        if err and last and last not in err:
+            return err + "\n\nBước cuối trước khi lỗi: " + last
+        return err or last or "Không rõ nguyên nhân (thử bấm 'Thử lại')."
+
+    def _show_error(self, title, err):
+        """Popup lỗi ĐẦY ĐỦ khi user bấm vào nhãn '✕ Lỗi' của việc thất bại."""
+        QMessageBox.warning(self, f"Việc thất bại — {title}", err)
 
     # ---- hành động ----
     def _cancel(self, i):
