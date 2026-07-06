@@ -145,7 +145,12 @@ def update_env(values: dict) -> None:
     settings đang chạy (không cần khởi động lại)."""
     path = DATA_DIR / ".env"
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    pending = {k: ("" if v is None else str(v)) for k, v in values.items()}
+    # .env là định dạng 1 dòng = 1 khóa. Giá trị NHIỀU DÒNG (vd dán nhiều key
+    # Groq mỗi dòng 1 key) sẽ vỡ file -> đọc lại chỉ được key ĐẦU. Chuyển
+    # newline -> dấu phẩy khi ghi (llm_keys_for/groq_keys tách cả 2 kiểu).
+    pending = {k: ("" if v is None else
+                   re.sub(r"[\r\n]+", ",", str(v)).strip(","))
+               for k, v in values.items()}
     out = []
     for ln in lines:
         m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*=", ln)
