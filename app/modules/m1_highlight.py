@@ -444,7 +444,8 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
         "- GIỮ phần hay: mở đầu hút (hook), cao trào, câu chốt, cảm xúc mạnh. "
         "ĐƯỢC giữ khoảng lặng nếu nó tạo kịch tính/hồi hộp.\n"
         "- BỎ: câu lan man, lặp lại, dài dòng, lạc đề, mở đầu/kết thúc thừa.\n"
-        "- Cố giữ tổng >= 60 giây nếu còn đủ phần hay; nội dung ít hay thì ngắn hơn.\n"
+        "- CHỈ bỏ câu THẬT SỰ thừa — GIỮ độ dài gần như hiện tại, ĐỪNG cắt "
+        "ngắn clip đi nhiều (không rút xuống dưới ~85% độ dài đang có).\n"
         '- Cắt vào ranh giới câu trọn vẹn.\n'
         'Trả JSON các mốc GIỮ LẠI (số giây): {"segments":[[s,e],...]}')
     try:
@@ -476,9 +477,10 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
             merged.append([s, e])
     total = sum(e - s for s, e in merged)
     orig = sum(e - s for s, e in clip["segments"])
-    # cắt quá tay -> giữ gốc. QUAN TRỌNG: nếu user đặt Min mà tỉa xuống dưới Min
-    # thì GIỮ CLIP GỐC (đã >= Min từ PASS 1) -> không bao giờ ra clip < Min.
-    if (total < 40 or total < 0.3 * orig
+    # PASS 2 CHỈ được DỌN NHẸ (bỏ câu thừa), KHÔNG được gọt mất độ dài đã nới ở
+    # PASS 1. Trước đây cho tỉa tới 30% -> clip 126s bị gọt về ~65s (hủy công
+    # nới, clip toàn ~1p). Giờ chỉ cho tỉa tối đa ~15%; rút nhiều hơn -> giữ gốc.
+    if (total < 40 or total < 0.85 * orig
             or (min_len and total < min_len - 0.5)):
         return clip
     out = dict(clip)
