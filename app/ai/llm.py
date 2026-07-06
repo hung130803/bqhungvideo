@@ -28,10 +28,162 @@ _LLM_LOCK = threading.Lock()
 # 2 key khác nhau sẽ đè key của nhau -> khóa riêng cho configure+generate.
 _GEMINI_LOCK = threading.Lock()
 
-# NHỚ key vừa hết quota (429): bỏ qua trong _KEY_DOWN_TTL giây thay vì mỗi
-# chunk lại thử key chết trước (mỗi lần chờ retry SDK có thể tới ~60s).
-_KEY_DOWN: dict = {}
-_KEY_DOWN_TTL = 60.0
+# ---- SỔ TRẠNG THÁI KEY tập trung (thread-safe) ----
+# _KEY_STATE[(provider, key)] = {"state": "ready|limited", "until": ts hết cooldown,
+#   "last_used": ts, "last_ok": ts, "calls": n, "note": "lỗi gần nhất"}
+# Nhiều worker thread (LLM + Groq whisper) cùng ghi -> khóa riêng.
+_KEY_STATE: dict = {}
+_KEY_LOCK = threading.Lock()
+
+# Cooldown mặc định khi KHÔNG parse được thời gian chờ từ message lỗi:
+_COOLDOWN_DAILY = 3600.0   # lỗi "per day/TPD": đừng đợi cả ngày, thử lại mỗi giờ
+_COOLDOWN_DEFAULT = 120.0  # rate-limit thường (per minute...)
+_COOLDOWN_MAX = 3600.0     # trần: kể cả server bảo chờ 4h cũng chỉ nghỉ 1h
+_IN_USE_WINDOW = 10.0      # key vừa dùng < Ns -> coi là "đang dùng" trên UI
+
+
+def _state_for(provider: str, key: str) -> dict:
+    """Lấy (hoặc tạo) bản ghi trạng thái. GỌI KHI ĐANG GIỮ _KEY_LOCK."""
+    st = _KEY_STATE.get((provider, key))
+    if st is None:
+        st = _KEY_STATE[(provider, key)] = {
+            "state": "ready", "until": 0.0, "last_used": 0.0,
+            "last_ok": 0.0, "calls": 0, "note": "",
+        }
+    return st
+
+
+def mark_used(provider: str, key: str) -> None:
+    """Ghi nhận: sắp gọi API bằng key này."""
+    with _KEY_LOCK:
+        st = _state_for(provider, key)
+        st["last_used"] = time.time()
+        st["calls"] += 1
+
+
+def mark_ok(provider: str, key: str) -> None:
+    """Ghi nhận: gọi thành công -> key chắc chắn còn sống, xóa cờ limited."""
+    with _KEY_LOCK:
+        st = _state_for(provider, key)
+        st["last_ok"] = time.time()
+        st["state"] = "ready"
+        st["until"] = 0.0
+        st["note"] = ""
+
+
+# Chuỗi thời lượng kiểu Groq/OpenAI: "7m30.5s", "1h2m3s", "1.234s", "232ms"
+_DUR_TOKEN = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|h|m|s)", re.IGNORECASE)
+_DUR_AFTER_IN = re.compile(
+    r"\bin\s+((?:\d+(?:\.\d+)?\s*(?:ms|h|m|s)\s*)+)", re.IGNORECASE)
+_RETRY_AFTER = re.compile(r"retry[-_ ]?after\D{0,4}(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def parse_retry_wait(err_text: str):
+    """Bóc SỐ GIÂY phải chờ từ message lỗi rate-limit.
+
+    Bắt các dạng: "Please try again in 7m30.5s" -> 450.5, "in 32s" -> 32,
+    "in 1.234s" -> 1.234, "in 232ms" -> 0.232, header "retry-after: 30" -> 30.
+    Không thấy -> None.
+    """
+    if not err_text:
+        return None
+    m = _DUR_AFTER_IN.search(err_text)
+    if m:
+        total, found = 0.0, False
+        for num, unit in _DUR_TOKEN.findall(m.group(1)):
+            found = True
+            total += float(num) * {"ms": 0.001, "s": 1.0, "m": 60.0,
+                                   "h": 3600.0}[unit.lower()]
+        if found and total > 0:
+            return total
+    m = _RETRY_AFTER.search(err_text)
+    if m:
+        try:
+            v = float(m.group(1))
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return None
+
+
+def mark_limited(provider: str, key: str, err_text: str = "") -> float:
+    """Ghi nhận: key dính rate-limit. PARSE thời gian chờ từ message lỗi;
+    không parse được thì: lỗi daily -> 1h, còn lại 120s. Trả về số giây cooldown."""
+    wait = parse_retry_wait(err_text or "")
+    if wait is None:
+        low = (err_text or "").lower()
+        if any(s in low for s in ("per day", "daily", "tpd", "rpd",
+                                  "tokens per day", "requests per day")):
+            wait = _COOLDOWN_DAILY
+        else:
+            wait = _COOLDOWN_DEFAULT
+    wait = min(float(wait), _COOLDOWN_MAX)
+    with _KEY_LOCK:
+        st = _state_for(provider, key)
+        st["state"] = "limited"
+        st["until"] = time.time() + wait
+        st["note"] = (err_text or "").strip()[:200]
+    return wait
+
+
+def _is_limited(st: dict, now: float) -> bool:
+    """Limited CÒN cooldown? (hết cooldown = tự về ready)."""
+    return bool(st) and st.get("state") == "limited" and st.get("until", 0) > now
+
+
+def pick_keys(provider: str, keys=None) -> list:
+    """DANH SÁCH key đã SẮP THỨ TỰ ƯU TIÊN để xoay vòng:
+    ready trước (giữ thứ tự trong settings), limited sau (hết cooldown sớm
+    nhất đứng trước). Không bao giờ rỗng nếu settings có key — tất cả limited
+    thì vẫn trả về để caller thử key sắp hồi trước (thà thử còn hơn fail)."""
+    if keys is None:
+        keys = settings.llm_keys_for(provider)
+    now = time.time()
+    ready, limited = [], []
+    with _KEY_LOCK:
+        for k in keys:
+            st = _KEY_STATE.get((provider, k))
+            if st is not None and _is_limited(st, now):
+                limited.append((st["until"], k))
+            else:
+                ready.append(k)
+    limited.sort(key=lambda t: t[0])
+    return ready + [k for _, k in limited]
+
+
+def key_status(provider: str) -> list:
+    """Trạng thái từng key (đúng THỨ TỰ trong settings) cho UI — chỉ đọc RAM,
+    KHÔNG gọi mạng. Mỗi phần tử: key_masked/state/wait_left/last_used_ago/
+    calls/in_use/note."""
+    keys = settings.llm_keys_for(provider)
+    now = time.time()
+    # key "được chọn kế tiếp" = key READY đầu tiên theo thứ tự settings
+    next_key = None
+    with _KEY_LOCK:
+        for k in keys:
+            st = _KEY_STATE.get((provider, k))
+            if st is None or not _is_limited(st, now):
+                next_key = k
+                break
+        out = []
+        for k in keys:
+            st = _KEY_STATE.get((provider, k)) or {
+                "state": "ready", "until": 0.0, "last_used": 0.0,
+                "last_ok": 0.0, "calls": 0, "note": ""}
+            limited = _is_limited(st, now)
+            recently = st["last_used"] and (now - st["last_used"]) < _IN_USE_WINDOW
+            out.append({
+                "key_masked": "…" + k[-6:],
+                "state": "limited" if limited else "ready",
+                "wait_left": max(0.0, st["until"] - now) if limited else 0.0,
+                "last_used_ago": (now - st["last_used"]) if st["last_used"] else None,
+                "last_ok_ago": (now - st["last_ok"]) if st["last_ok"] else None,
+                "calls": st["calls"],
+                "in_use": bool((k == next_key and not limited) or recently),
+                "note": st["note"],
+            })
+    return out
 
 # ---- ĐO token Gemini để ước tính CHI PHÍ ----
 # _USAGE đếm cho 1 VIDEO — để THEO THREAD (mỗi job auto chạy trọn trong 1
@@ -128,9 +280,16 @@ def _extract_json(text: str):
     return json.loads(text)  # ném lỗi nếu vẫn không parse được
 
 
-def _is_rate_limit(msg: str) -> bool:
-    m = msg.lower()
-    return "429" in m or "quota" in m or "rate limit" in m or "resource_exhausted" in m
+def is_rate_limit_error(msg: str) -> bool:
+    """Lỗi có phải RATE-LIMIT không (429/quota/hết lượt). Lỗi khác (mạng,
+    key sai...) KHÔNG được tính — đừng giết oan key vì lỗi mạng."""
+    m = (msg or "").lower()
+    return any(s in m for s in ("429", "quota", "rate limit", "ratelimit",
+                                "rate_limit", "resource_exhausted",
+                                "too many requests"))
+
+
+_is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
 
 
 def _call_once(provider: str, key: str, prompt: str, system: str,
@@ -196,29 +355,36 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     last = ""
     with guard:
-        # BỎ QUA key vừa dính 429 (trong TTL) — nhưng nếu bỏ hết thì vẫn thử
-        # tất cả (thà chờ còn hơn fail ngay).
-        now = time.time()
-        alive = [k for k in keys
-                 if now - _KEY_DOWN.get((provider, k), 0) >= _KEY_DOWN_TTL]
-        for key in (alive or keys):           # XOAY VÒNG key: hết quota -> key kế
+        # XOAY VÒNG key theo SỔ TRẠNG THÁI: key ready trước (đúng thứ tự
+        # settings), key limited còn cooldown xếp cuối (hết sớm nhất trước) —
+        # tất cả limited thì vẫn thử key sắp hồi trước thay vì fail luôn.
+        for key in pick_keys(provider, keys):
+            mark_used(provider, key)
             try:
-                return _call_once(provider, key, prompt, system, temperature)
+                out = _call_once(provider, key, prompt, system, temperature)
+                mark_ok(provider, key)
+                return out
             except LLMError:
                 raise
             except Exception as e:  # noqa: BLE001
                 last = str(e)
-                if _is_rate_limit(last):
-                    _KEY_DOWN[(provider, key)] = time.time()
+                if is_rate_limit_error(last):
+                    mark_limited(provider, key, last)
                     continue                   # key này hết lượt -> thử key tiếp
+                # lỗi KHÁC rate-limit (mạng, key sai...) -> KHÔNG đánh dấu limited
                 raise LLMError(f"Gọi {provider} thất bại: {last}")
         # tất cả key hết quota; chỉ 1 key -> chờ rồi thử lại 1 lần (free tier)
-        if len(keys) == 1 and _is_rate_limit(last):
+        if len(keys) == 1 and is_rate_limit_error(last):
             time.sleep(_RATE_WAIT)
+            mark_used(provider, keys[0])
             try:
-                return _call_once(provider, keys[0], prompt, system, temperature)
+                out = _call_once(provider, keys[0], prompt, system, temperature)
+                mark_ok(provider, keys[0])
+                return out
             except Exception as e:  # noqa: BLE001
                 last = str(e)
+                if is_rate_limit_error(last):
+                    mark_limited(provider, keys[0], last)
     raise LLMError(f"Gọi {provider} thất bại (hết lượt tất cả key): {last}")
 
 
@@ -278,6 +444,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
     """
     provider = provider or active_provider()
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
+    used_key = ""                       # key đang dùng -> ghi sổ trạng thái
     try:
       with guard:
         if provider in ("ollama", "openai"):
@@ -287,6 +454,8 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                 model = settings.OLLAMA_VL_MODEL
             else:
                 base_url, key, model = None, settings.OPENAI_API_KEY, settings.OPENAI_MODEL
+            used_key = key
+            mark_used(provider, key)
             # timeout: chống 1 lời gọi vision treo giữ _LLM_LOCK -> treo cả
             # hàng đợi AI (nút Hủy vô tác dụng)
             client = OpenAI(api_key=key, base_url=base_url,
@@ -303,6 +472,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             resp = client.chat.completions.create(
                 model=model, messages=msgs, temperature=0.3, max_tokens=1200,
                 extra_body=extra)
+            mark_ok(provider, used_key)
             return _extract_json(resp.choices[0].message.content or "")
 
         if provider == "gemini":
@@ -311,9 +481,11 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             for p in image_paths:
                 with open(p, "rb") as f:
                     parts.append({"mime_type": "image/jpeg", "data": f.read()})
+            used_key = (settings.llm_key_for("gemini")
+                        or settings.GEMINI_API_KEY)
+            mark_used(provider, used_key)
             with _GEMINI_LOCK:
-                genai.configure(api_key=settings.llm_key_for("gemini")
-                                or settings.GEMINI_API_KEY)
+                genai.configure(api_key=used_key)
                 model = genai.GenerativeModel(settings.GEMINI_MODEL,
                                               system_instruction=system or None)
                 resp = model.generate_content(
@@ -322,9 +494,13 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             if um:
                 _add_usage(getattr(um, "prompt_token_count", 0),
                            getattr(um, "candidates_token_count", 0))
+            mark_ok(provider, used_key)
             return _extract_json(resp.text or "")
     except LLMError:
         raise
     except Exception as e:  # noqa: BLE001
+        # chỉ đánh dấu limited khi ĐÚNG là rate-limit (lỗi mạng thì tha key)
+        if used_key and is_rate_limit_error(str(e)):
+            mark_limited(provider, used_key, str(e))
         raise LLMError(f"Vision {provider} lỗi: {e}")
     raise LLMError(f"Provider không hỗ trợ vision: {provider}")

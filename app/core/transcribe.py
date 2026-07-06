@@ -162,10 +162,17 @@ def _g(o, k, d=0):
 
 
 def _groq_one(audio_path: str, language, keys: list) -> tuple:
-    """Gửi 1 FILE cho Groq, xoay vòng key khi hết lượt. Trả (segs, words, lang, text)."""
+    """Gửi 1 FILE cho Groq, xoay vòng key khi hết lượt. Trả (segs, words, lang, text).
+
+    Dùng CHUNG sổ trạng thái key với app.ai.llm: key nào vừa 429 (kể cả do
+    LLM chọn clip) thì bị xếp cuối, key ready lên trước; mọi lời gọi đều
+    mark_used/mark_ok/mark_limited để UI 'Cài đặt AI' hiện trạng thái sống."""
     from openai import OpenAI
+    from app.ai import llm
     last = ""
-    for key in keys:
+    # ready trước, limited-sắp-hết-cooldown sau (không bao giờ rỗng nếu có key)
+    for key in llm.pick_keys("groq", keys):
+        llm.mark_used("groq", key)
         try:
             client = OpenAI(api_key=key,
                             base_url="https://api.groq.com/openai/v1",
@@ -182,14 +189,15 @@ def _groq_one(audio_path: str, language, keys: list) -> tuple:
             words = [{"start": float(_g(w, "start", 0)), "end": float(_g(w, "end", 0)),
                       "word": (_g(w, "word", "") or "").strip()}
                      for w in (_g(r, "words", None) or [])]
+            llm.mark_ok("groq", key)
             return segs, words, (_g(r, "language", None) or language or ""), \
                 (_g(r, "text", "") or "")
         except Exception as e:  # noqa: BLE001
-            last = str(e).lower()
-            if any(s in last for s in ("429", "rate limit", "ratelimit",
-                                       "quota", "too many requests")):
+            last = str(e)
+            if llm.is_rate_limit_error(last):
+                llm.mark_limited("groq", key, last)
                 continue                       # key hết lượt -> xoay key kế
-            raise
+            raise                              # lỗi khác: KHÔNG giết oan key
     raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")
 
 

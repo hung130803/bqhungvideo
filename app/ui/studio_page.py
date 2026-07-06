@@ -523,6 +523,61 @@ class StudioPage(QWidget):
         gkeys = QPlainTextEdit(settings.GROQ_API_KEYS or "")
         gkeys.setPlaceholderText("Để TRỐNG nếu chép lời bằng Máy")
         gkeys.setFixedHeight(50); lay.addWidget(gkeys)
+
+        # ----- Trạng thái key (thời gian thực) — chỉ đọc SỔ trong RAM, -----
+        # ----- KHÔNG gọi mạng; QTimer 2s cập nhật, dừng khi đóng dialog. -----
+        lay.addWidget(QLabel("Trạng thái key (thời gian thực):"))
+        kstat = QLabel("")
+        kstat.setObjectName("key_status_label")
+        kstat.setWordWrap(True)
+        kstat.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        kstat.setStyleSheet(f"color:{TEXT}; background:{SURFACE}; border:1px solid "
+                            f"{BORDER}; border-radius:8px; padding:8px 10px; "
+                            "font-size:12px; line-height:1.5;")
+        lay.addWidget(kstat)
+
+        def _fmt_wait(sec: float) -> str:
+            s = int(round(sec))
+            h, s = divmod(s, 3600)
+            m, s = divmod(s, 60)
+            if h:
+                return f"{h}h{m:02d}m"
+            if m:
+                return f"{m}m{s:02d}s"
+            return f"{s}s"
+
+        def refresh_keys():
+            lines = []
+            try:
+                for st in llm.key_status("groq"):
+                    if st["state"] == "limited":
+                        lines.append(f"⛔ {st['key_masked']} — hết lượt, thử lại "
+                                     f"sau {_fmt_wait(st['wait_left'])}")
+                    elif st["in_use"]:
+                        lines.append(f"🔵 {st['key_masked']} — ĐANG DÙNG · đã gọi "
+                                     f"{st['calls']} lần")
+                    else:
+                        lines.append(f"🟢 {st['key_masked']} — sẵn sàng · đã gọi "
+                                     f"{st['calls']} lần")
+                # key vừa DÁN nhưng chưa lưu -> nhắc bấm Lưu (không có trong sổ)
+                saved = set(settings.llm_keys_for("groq"))
+                typed = [k.strip() for k in gkeys.toPlainText()
+                         .replace(",", "\n").splitlines() if k.strip()]
+                for k in typed:
+                    if k not in saved:
+                        lines.append(f"⚪ …{k[-6:]} — (bấm Lưu để áp)")
+            except Exception as e:  # noqa: BLE001 - trạng thái chỉ để xem, không sập dialog
+                lines = [f"(không đọc được trạng thái: {e})"]
+            kstat.setText("\n".join(lines) or "Chưa có key Groq nào — dán key ở "
+                                              "ô trên rồi bấm Lưu.")
+
+        ktimer = QTimer(dlg)
+        ktimer.setObjectName("key_status_timer")
+        ktimer.timeout.connect(refresh_keys)
+        ktimer.start(2000)
+        dlg.finished.connect(ktimer.stop)     # đóng dialog -> timer dừng
+        refresh_keys()
+
         note = QLabel(""); note.setWordWrap(True)
         lay.addWidget(note); lay.addStretch(1)
 
