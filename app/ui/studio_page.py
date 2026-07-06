@@ -223,10 +223,12 @@ class StudioPage(QWidget):
         self.tmpl_box.setToolTip("Mẫu khung/chữ áp khi xuất. Nhớ mẫu đã chọn lần sau.")
         self.tmpl_box.currentIndexChanged.connect(self._on_template_pick)
         cfgrow.addWidget(self.tmpl_box)
-        edit = QPushButton("Chỉnh mẫu"); edit.setProperty("ghost", True)
-        edit.setToolTip("Sửa mẫu đang chọn: khung video, nền, chữ, phụ đề, "
-                        "logo, nhạc nền...")
-        edit.clicked.connect(self._edit_template); cfgrow.addWidget(edit)
+        self.tmpl_edit_btn = QPushButton("Chỉnh mẫu")
+        self.tmpl_edit_btn.setProperty("ghost", True)
+        self.tmpl_edit_btn.setToolTip(
+            "Sửa mẫu đang chọn: khung video, nền, chữ, phụ đề, logo, nhạc nền...")
+        self.tmpl_edit_btn.clicked.connect(self._edit_template)
+        cfgrow.addWidget(self.tmpl_edit_btn)
         cut = QPushButton("Tùy chỉnh cắt"); cut.setProperty("ghost", True)
         cut.setToolTip("Ngôn ngữ, độ dài Min/Max clip, mục đích & phong cách cắt.")
         cut.clicked.connect(self._cut_settings); cfgrow.addWidget(cut)
@@ -826,32 +828,66 @@ class StudioPage(QWidget):
         self._import_paths(files)
 
     def _import_paths(self, paths):
-        """Import danh sách file video vào kênh đang chọn (dùng cho cả nút + kéo-thả)."""
+        """Import danh sách file video vào kênh đang chọn (nút + kéo-thả).
+
+        CHẠY NỀN: import_video = ffprobe + hash 2MB MỖI file — thêm nhiều file
+        (nhất là trên ổ mạng/OneDrive) trên UI thread làm đơ app. Thread nền
+        import lần lượt, status báo 'Đang nhập video i/n...', xong mới
+        _reload_videos + báo lỗi gộp (giữ nguyên cách gom lỗi OSError cũ)."""
         if not self.state.project_id:
             QMessageBox.information(self, "Chưa có kênh",
                                    "Tạo/chọn kênh trước khi thêm video.")
             return
         vids = [p for p in paths
                 if os.path.isfile(p) and p.lower().endswith(self._VIDEO_EXT)]
-        ok, fails = 0, []
-        for f in vids:
-            # file OneDrive online-only/USB rút/đang khóa -> OSError; nếu không
-            # bắt, exception xuyên qua Qt slot làm SẬP CẢ APP
-            try:
-                services.import_video(self.state.project_id, f)
-                ok += 1
-            except OSError as e:
-                fails.append(f"{Path(f).name}: {e}")
-        if ok:
-            self._reload_videos()
-            self.status.setText(f"Đã thêm {ok} video vào kênh.")
-        if fails:
-            QMessageBox.warning(
-                self, "Một số file không đọc được",
-                "Không import được:\n" + "\n".join(fails[:8])
-                + ("\n…" if len(fails) > 8 else ""))
-        if not vids and paths:
-            self.status.setText("Không có file video hợp lệ (mp4/mov/mkv...).")
+        if not vids:
+            if paths:
+                self.status.setText("Không có file video hợp lệ (mp4/mov/mkv...).")
+            return
+        if getattr(self, "_import_busy", False):
+            self.status.setText("Đang nhập loạt video trước — chờ xong rồi "
+                                "thêm tiếp nhé.")
+            return
+        self._import_busy = True
+        pid = self.state.project_id      # NHỚ kênh lúc bấm (user có thể đổi kênh)
+        n = len(vids)
+        self.status.setText(f"Đang nhập video 1/{n}...")
+        res = {"ok": 0, "fails": [], "done": 0, "finished": False}
+
+        def bg():
+            for f in vids:
+                # file OneDrive online-only/USB rút/đang khóa -> OSError; lỗi
+                # khác cũng phải bắt: thread nền chết im lặng sẽ kẹt _import_busy
+                try:
+                    services.import_video(pid, f)
+                    res["ok"] += 1
+                except Exception as e:  # noqa: BLE001
+                    res["fails"].append(f"{Path(f).name}: {e}")
+                res["done"] += 1
+            res["finished"] = True
+
+        threading.Thread(target=bg, daemon=True).start()
+        timer = QTimer(self)
+
+        def poll():
+            if not res["finished"]:
+                if res["done"] < n:
+                    self.status.setText(f"Đang nhập video {res['done'] + 1}/{n}...")
+                return
+            timer.stop()
+            self._import_busy = False
+            ok, fails = res["ok"], res["fails"]
+            if ok:
+                self._reload_videos()
+                self.status.setText(f"Đã thêm {ok} video vào kênh.")
+            if fails:
+                QMessageBox.warning(
+                    self, "Một số file không đọc được",
+                    "Không import được:\n" + "\n".join(fails[:8])
+                    + ("\n…" if len(fails) > 8 else ""))
+
+        timer.timeout.connect(poll)
+        timer.start(150)
 
     # ---- COOKIE YouTube: dán 1 lần, lưu file, tự dùng khi tải ----
     def _cookie_file(self):
@@ -1952,8 +1988,13 @@ class StudioPage(QWidget):
                             if ids else "Chưa chọn video nào.")
 
     # ---- mẫu ----
-    def _a_frame(self):
-        """Lấy 1 khung hình để chỉnh mẫu (clip đầu hoặc giữa video)."""
+    def _a_frame_bg(self):
+        """Lấy 1 khung hình để chỉnh mẫu (clip đầu hoặc giữa video) — CHẠY NỀN.
+
+        Trả None NGAY nếu chưa chọn video/thiếu dữ liệu (mở editor với ảnh mẫu),
+        ngược lại trả (src_path, t, frame_path) để thread nền extract_frame:
+        ffmpeg đọc file trên ổ mạng/OneDrive có thể treo tới 30s — chạy trên
+        UI thread sẽ ĐƠ CẢ APP (đã gặp)."""
         vid = self.state.video_id
         if not vid:
             return None
@@ -1966,7 +2007,7 @@ class StudioPage(QWidget):
         t = (clips[0]["start_sec"] + clips[0]["end_sec"]) / 2 if clips \
             else (vrow["duration"] or 4) / 2
         frame = Path(services.cache_dir(vrow["assets_dir"])) / "_preview.jpg"
-        return str(frame) if extract_frame(vrow["src_path"], t, frame, 360) else None
+        return (vrow["src_path"], t, frame)
 
     def _sample_frame(self):
         """Ảnh nền MẪU khi chưa chọn video — để Chỉnh mẫu không bắt phải có video."""
@@ -1985,7 +2026,39 @@ class StudioPage(QWidget):
         return str(out)
 
     def _edit_template(self):
-        frame = self._a_frame() or self._sample_frame()   # có video thì dùng, không thì ảnh mẫu
+        """Bấm 'Chỉnh mẫu': lấy khung hình Ở THREAD NỀN rồi mới mở editor —
+        extract_frame trên UI thread từng làm đơ app 30s với file OneDrive."""
+        job = self._a_frame_bg()
+        if job is None:                     # chưa chọn video -> ảnh mẫu, mở luôn
+            self._open_editor(self._sample_frame())
+            return
+        src, t, frame = job
+        self.tmpl_edit_btn.setEnabled(False)   # chặn bấm đúp khi đang chờ
+        self.status.setText("Đang lấy khung hình xem trước...")
+        out: list = []
+
+        def bg():
+            try:
+                out.append(str(frame) if extract_frame(src, t, frame, 360)
+                           else "")
+            except Exception:  # noqa: BLE001 - lỗi gì cũng phải trả lời poll
+                out.append("")
+
+        threading.Thread(target=bg, daemon=True).start()
+        timer = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            timer.stop()
+            self.tmpl_edit_btn.setEnabled(True)
+            self.status.setText("")
+            self._open_editor(out[0] or self._sample_frame())
+
+        timer.timeout.connect(poll)
+        timer.start(100)
+
+    def _open_editor(self, frame):
         dlg = EditorDialog(frame, self.layout_tpl, self,
                            current_name=self.tmpl_box.currentData() or "")
         accepted = bool(dlg.exec() and dlg.layout_result)

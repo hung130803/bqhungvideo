@@ -144,11 +144,62 @@ def detect_encoder() -> str:
     # auto: TEST NVENC chạy thật (nhiều máy liệt kê có nhưng encode lỗi)
     global _ENCODER_CACHE
     if _ENCODER_CACHE is None:
-        _ENCODER_CACHE = "h264_nvenc" if _nvenc_works() else "libx264"
+        _ENCODER_CACHE = "h264_nvenc" if _nvenc_works_cached() else "libx264"
     return _ENCODER_CACHE
 
 
 _ENCODER_CACHE: Optional[str] = None
+_NVENC_CACHE_DAYS = 7
+
+
+def _nvenc_cache_key() -> str:
+    """Nhận diện binary ffmpeg đang dùng: đường dẫn + mtime + size — đổi
+    ffmpeg (cập nhật app/driver kèm binary mới) là test lại NVENC."""
+    import shutil
+    p = shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
+    try:
+        st = os.stat(p)
+        return f"{p}|{int(st.st_mtime)}|{st.st_size}"
+    except OSError:
+        return str(p)
+
+
+def _nvenc_works_cached() -> bool:
+    """_nvenc_works() nhưng CACHE kết quả ra file 7 ngày.
+
+    Test NVENC (encode thử 1 frame) chạy ĐỒNG BỘ lúc mở app (import
+    resource_manager) — máy có GPU thường tốn ~0.5-2s, treo tới 20s nếu driver
+    lỗi -> app lâu hiện. Cache theo binary ffmpeg; hết 7 ngày (driver có thể
+    đã đổi) thì test lại. VIDEO_ENCODER=nvenc/libx264 (ép tay) KHÔNG đi qua
+    đây (detect_encoder trả thẳng) nên đổi setting không cần xóa cache."""
+    import time
+    from config import DATA_DIR
+    cf = Path(DATA_DIR) / "_cache" / "nvenc_check.json"
+    key = _nvenc_cache_key()
+    try:
+        d = json.loads(cf.read_text(encoding="utf-8"))
+        if (d.get("ffmpeg") == key and isinstance(d.get("ok"), bool)
+                and 0 <= time.time() - float(d.get("ts", 0))
+                < _NVENC_CACHE_DAYS * 86400):
+            return d["ok"]
+    except (OSError, ValueError, TypeError):
+        pass
+    ok = _nvenc_works()
+    _save_nvenc_cache(ok)
+    return ok
+
+
+def _save_nvenc_cache(ok: bool) -> None:
+    import time
+    from config import DATA_DIR
+    cf = Path(DATA_DIR) / "_cache" / "nvenc_check.json"
+    try:
+        cf.parent.mkdir(parents=True, exist_ok=True)
+        cf.write_text(json.dumps({"ok": ok, "ts": time.time(),
+                                  "ffmpeg": _nvenc_cache_key()}),
+                      encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _nvenc_works() -> bool:
@@ -391,6 +442,8 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
         if enc == "h264_nvenc":
             global _ENCODER_CACHE
             _ENCODER_CACHE = "libx264"
+            _save_nvenc_cache(False)   # NVENC hỏng thật -> sửa luôn cache file
+                                       # (không đợi 7 ngày mới test lại)
     _cleanup_dst(dst)
     raise RuntimeError(f"ffmpeg không {what}. Log cuối:\n" + (last_log or "(trống)"))
 
