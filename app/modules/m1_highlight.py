@@ -286,6 +286,19 @@ _STYLE_HINT = {
 }
 
 
+def _target_len(min_len: float, max_len: float) -> float:
+    """Độ dài MỤC TIÊU cho mỗi clip khi user đặt cả Min & Max.
+    target = min + 0.55*(max-min) -> vd 60/180 => ~126s. Kéo clip về GIỮA khoảng
+    thay vì dồn hết về sàn Min. Chỉ có Min -> nhắm min*1.6 (nhưng <= max nếu có).
+    Không có Min -> 0 (độ dài tự do)."""
+    if min_len and min_len > 0 and max_len and max_len > min_len:
+        return round(min_len + 0.55 * (max_len - min_len), 1)
+    if min_len and min_len > 0:
+        t = min_len * 1.6
+        return round(min(t, max_len) if max_len else t, 1)
+    return 0.0
+
+
 def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video",
                    purpose: str = "", style: str = "",
                    min_len: float = 60.0, max_len: float = 0.0,
@@ -297,10 +310,17 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         extra += "- " + _STYLE_HINT[style] + "\n"
     how_many = (f"Chọn ĐÚNG {count} clip hay nhất" if count > 0
                 else "Chọn 3-6 clip hay nhất")
-    if min_len and min_len > 0:                 # có Min -> ép tối thiểu
-        mx = f", tối đa ~{int(max_len)} giây" if max_len else ""
-        len_rule = (f"- ĐỘ DÀI: TỐI THIỂU {int(min_len)} giây{mx}. Đoạn hay kéo "
-                    "dài thì để dài hơn, miễn hấp dẫn. ĐỪNG gò về đúng 1 phút.\n")
+    target = _target_len(min_len, max_len)
+    if min_len and min_len > 0:                 # có Min -> ép tối thiểu + TARGET
+        mx = f"{int(max_len)}" if max_len else "180"
+        len_rule = (
+            f"- ĐỘ DÀI: mỗi clip NÊN DÀI KHOẢNG {int(target)} GIÂY (trong khoảng "
+            f"{int(min_len)}-{mx}s). {int(min_len)}s là SÀN CỨNG (không được ngắn "
+            f"hơn), {int(target)}s là MỤC TIÊU, {mx}s là TRẦN.\n"
+            f"- LẤY TRỌN câu chuyện: phần dẫn dắt + diễn biến + cao trào + câu "
+            f"chốt. ĐƯỢC GHÉP nhiều đoạn liên quan (nhiều khúc trong 'segments') "
+            f"để ĐẠT ĐỘ DÀI ~{int(target)}s. ĐỪNG chỉ lấy 1 câu ngắn ~{int(min_len)}s "
+            f"rồi dừng — hãy mở rộng phần dẫn dắt và phần sau cao trào cho đủ dài.\n")
     else:                                       # Min=0 -> độ dài TỰ DO / ngẫu nhiên
         mxx = f" (không quá ~{int(max_len)} giây)" if max_len else ""
         len_rule = ("- ĐỘ DÀI: TỰ DO theo nội dung" + mxx + " — khoảnh khắc nào "
@@ -465,6 +485,38 @@ def _smooth_segments(segments: list, min_gap: float = 1.2,
     return kept or merged                        # nếu lỡ bỏ hết -> giữ merged
 
 
+def _extend_to_target(segments: list, segs: list, target: float,
+                      max_len: float = 0.0, gap_stop: float = 2.5) -> list:
+    """NỚI THÔNG MINH đoạn CUỐI bằng các CÂU transcript KẾ TIẾP (câu thật) cho tới
+    khi tổng độ dài đạt ~target. KHÔNG chèn im lặng — chỉ mở rộng bằng lời nói thật.
+    Dừng khi: đạt target, chạm max_len, hết câu liền mạch, hoặc gặp khoảng lặng
+    lớn (>gap_stop giây) giữa 2 câu (để không lấn sang chủ đề khác).
+    """
+    if not target or target <= 0 or not segments or not segs:
+        return segments
+    out = [list(s) for s in segments]
+    total = sum(e - s for s, e in out)
+    if total >= target:
+        return out
+    ordered = sorted(segs, key=lambda s: float(s["start"]))
+    cur_end = out[-1][1]
+    for s in ordered:
+        st, en = float(s["start"]), float(s["end"])
+        if en <= cur_end + 0.05:            # câu đã nằm trong/trước đoạn cuối
+            continue
+        if st - cur_end > gap_stop:         # khoảng lặng lớn -> dừng (đổi chủ đề)
+            break
+        add = en - cur_end                  # nới tới hết CÂU thật này (snap ranh giới câu)
+        if max_len and total + add > max_len + 0.5:
+            break                           # sẽ vượt trần -> dừng (giữ trọn câu)
+        out[-1][1] = round(en, 2)
+        cur_end = en
+        total += add
+        if total >= target:
+            break
+    return out
+
+
 def _cap_max_duration(segments: list, max_len: float) -> list:
     """ÉP tổng độ dài clip <= max_len (cắt bớt khúc cuối). 0 = không giới hạn."""
     if not max_len or max_len <= 0:
@@ -483,7 +535,8 @@ def _cap_max_duration(segments: list, max_len: float) -> list:
 
 
 def _normalize_clip(r, duration: float, boundaries=None,
-                    min_len: float = 60.0, max_len: float = 0.0) -> Optional[dict]:
+                    min_len: float = 60.0, max_len: float = 0.0,
+                    segs: list = None) -> Optional[dict]:
     """Kiểm tra & chuẩn hoá 1 clip từ JSON LLM. Trả None nếu không hợp lệ."""
     if not isinstance(r, dict):
         return None
@@ -503,6 +556,17 @@ def _normalize_clip(r, duration: float, boundaries=None,
         if boundaries:  # bám ranh giới câu/cảnh của video gốc -> cắt sạch
             segments = _snap_segments(segments, boundaries)
         segments = _smooth_segments(segments)      # gộp khúc vụn cho mượt, đỡ giật
+        # NỚI THÔNG MINH: LLM hay chọn đoạn ngắn ~min -> nếu còn ngắn hơn TARGET
+        # đáng kể (<target*0.8), mở rộng đoạn cuối bằng các CÂU transcript kế tiếp
+        # (câu thật) tới ~target/max. Không phụ thuộc LLM nghe lời.
+        target = _target_len(min_len, max_len)
+        if target and segs:
+            cur = sum(e - s for s, e in segments)
+            if cur < target * 0.8:
+                segments = _extend_to_target(segments, segs, target, max_len)
+                if boundaries:                     # snap lại ranh giới sau khi nới
+                    segments = _snap_segments(segments, boundaries)
+                    segments = _smooth_segments(segments)
         segments = _ensure_min_duration(segments, duration, min_len)  # >= Min user đặt
         segments = _cap_max_duration(segments, max_len)               # <= Max user đặt
         # hook_time: mốc cao trào 2-4s NẰM TRONG segments -> dùng cho hook-first
@@ -578,7 +642,8 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         else:               # JSON scalar (chuỗi/số/null) -> chunk này không có clip
             rows = []
         for r in rows or []:
-            clip = _normalize_clip(r, duration, boundaries, min_len, max_len)
+            clip = _normalize_clip(r, duration, boundaries, min_len, max_len,
+                                   segs)
             if clip:
                 all_clips.append(clip)
 
