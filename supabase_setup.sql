@@ -58,7 +58,8 @@ create or replace function app_admin_set_active(
 returns text language plpgsql security definer set search_path = public as $$
 begin
   if not _is_admin(p_admin, p_admin_pass) then return 'NOT_ADMIN'; end if;
-  update app_users set active = p_active where lower(username) = lower(p_username);
+  update app_users set active = p_active
+  where lower(username) = lower(p_username) and role <> 'admin';  -- KHÔNG khoá admin
   return 'OK';
 end; $$;
 

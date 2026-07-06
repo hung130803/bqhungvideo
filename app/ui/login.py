@@ -312,6 +312,9 @@ class AdminUsersDialog(QDialog):
         active = usr.get("active", True)
         lock = QPushButton("Mở khoá" if not active else "Khoá")
         lock.setProperty("ghost", True)
+        lock.setEnabled(not is_admin)       # không khoá admin (tự khoá mình
+        lock.setToolTip("" if not is_admin  # là mất quyền quản lý vĩnh viễn)
+                        else "Không thể khoá/xoá tài khoản admin.")
         lock.clicked.connect(lambda _, n=uname, a=active: self._toggle(n, not a))
         h.addWidget(lock)
         rs = QPushButton("Đổi MK"); rs.setProperty("ghost", True)
