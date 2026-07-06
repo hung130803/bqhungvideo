@@ -62,15 +62,21 @@ def _safe_name(s: str, limit: int = 70) -> str:
 # ============================================================
 def _build_candidates(transcript: dict, scenes: dict, duration: float,
                       cfg: dict) -> list[dict]:
-    """Tạo các cửa sổ [start,end] dài min..max giây, ưu tiên kết thúc trọn câu."""
+    """Tạo các cửa sổ [start,end] có độ dài ĐA DẠNG trong [min,max] giây.
+
+    MỖI ứng viên nhắm 1 độ dài NGẪU NHIÊN riêng (_target_len) trong [min,max]:
+    gom câu tới khi ĐẠT ~target đó rồi mới cắt ở ranh giới câu/cảnh gần nhất.
+    KHÔNG break ở min (đó là lỗi cũ làm mọi clip dồn về ~60s). Không tạo clip
+    < min (trừ đoạn CUỐI video không đủ nội dung). Giữ dedup chồng lấn.
+    """
     segs = (transcript or {}).get("segments", [])
     min_len, max_len = cfg["min_len"], cfg["max_len"]
 
     if not segs:
-        # Không có transcript: chia đều theo target_len
+        # Không có transcript: chia theo độ dài NGẪU NHIÊN mỗi bước (đa dạng)
         out, t = [], 0.0
-        step = cfg["target_len"]
         while t + min_len <= duration:
+            step = _target_len(min_len, max_len) or cfg["target_len"]
             out.append({"start": round(t, 2),
                         "end": round(min(t + step, duration), 2), "text": ""})
             t += step
@@ -81,6 +87,8 @@ def _build_candidates(transcript: dict, scenes: dict, duration: float,
     candidates: list[dict] = []
     for a_idx, anchor in enumerate(segs):
         a = anchor["start"]
+        # MỖI ứng viên có target NGẪU NHIÊN riêng -> độ dài trải đều [min,max].
+        target = _target_len(min_len, max_len) or max_len or (min_len + 30.0)
         end, text_parts = a, []
         for s in segs:
             if s["end"] <= a:
@@ -88,15 +96,22 @@ def _build_candidates(transcript: dict, scenes: dict, duration: float,
             end = s["end"]
             text_parts.append(s["text"])
             length = end - a
-            if length >= min_len:
+            # CHỈ dừng khi đã đạt target riêng của ứng viên (KHÔNG dừng ở min).
+            if length >= target:
                 ends_sentence = s["text"].rstrip().endswith(_SENTENCE_END)
                 near_cut = any(abs(end - c) < 0.6 for c in cut_points)
-                if ends_sentence or near_cut or length >= max_len * 0.9:
+                # đã đủ dài + ở ranh giới sạch -> cắt; hoặc lố target đáng kể
+                if ends_sentence or near_cut or length >= target + 8.0:
                     break
-            if length >= max_len:
+            if length >= max_len:              # chạm trần cứng -> dừng
                 break
         length = end - a
-        if min_len * 0.8 <= length <= max_len:
+        if length > max_len:                   # câu cuối lố trần -> ép về max
+            end = round(a + max_len, 2)
+            length = max_len
+        # KHÔNG nhận clip < min (trừ đoạn cuối video: hết câu mà chưa đủ min).
+        is_tail = end >= (segs[-1]["end"] - 0.5)
+        if length >= min_len - 0.5 or (is_tail and length >= min_len * 0.5):
             candidates.append({"start": round(a, 2), "end": round(end, 2),
                                "text": " ".join(text_parts).strip()})
 
@@ -489,12 +504,13 @@ def _smooth_segments(segments: list, min_gap: float = 1.2,
 
 
 def _extend_to_target(segments: list, segs: list, target: float,
-                      max_len: float = 0.0, gap_stop: float = 2.5) -> list:
+                      max_len: float = 0.0, gap_stop: float = 6.0,
+                      hard_gap: float = 8.0) -> list:
     """NỚI THÔNG MINH đoạn CUỐI bằng các CÂU transcript KẾ TIẾP (câu thật) cho tới
-    khi tổng độ dài đạt ~target. KHÔNG chèn im lặng — chỉ mở rộng bằng lời nói thật.
-    Dừng khi: đạt target, chạm max_len, hết câu liền mạch, hoặc gặp khoảng lặng
-    lớn (>gap_stop giây) giữa 2 câu (để không lấn sang chủ đề khác).
-    """
+    khi tổng độ dài đạt ~target. Clip là multi-segment nên khoảng lặng KHÔNG phải
+    rào cản chính: BẮC QUA khoảng lặng vừa (tới gap_stop~6s) bằng cách MỞ đoạn mới
+    (không chèn im lặng — chỉ tính từ câu tiếp). Dừng khi: đạt target, chạm max_len,
+    hết câu, hoặc gặp gap CỰC lớn (>hard_gap = đổi cảnh hẳn)."""
     if not target or target <= 0 or not segments or not segs:
         return segments
     out = [list(s) for s in segments]
@@ -507,14 +523,24 @@ def _extend_to_target(segments: list, segs: list, target: float,
         st, en = float(s["start"]), float(s["end"])
         if en <= cur_end + 0.05:            # câu đã nằm trong/trước đoạn cuối
             continue
-        if st - cur_end > gap_stop:         # khoảng lặng lớn -> dừng (đổi chủ đề)
+        gap = st - cur_end
+        if gap > hard_gap:                  # gap CỰC lớn -> dừng (đổi cảnh hẳn)
             break
-        add = en - cur_end                  # nới tới hết CÂU thật này (snap ranh giới câu)
-        if max_len and total + add > max_len + 0.5:
-            break                           # sẽ vượt trần -> dừng (giữ trọn câu)
-        out[-1][1] = round(en, 2)
+        if gap <= gap_stop:
+            add = en - cur_end              # gap nhỏ/vừa -> kéo dài đoạn hiện tại
+            if max_len and total + add > max_len + 0.5:
+                break                       # sẽ vượt trần -> dừng (giữ trọn câu)
+            out[-1][1] = round(en, 2)
+            total += add
+        else:
+            # gap vừa-lớn (gap_stop..hard_gap): bắc qua bằng đoạn MỚI (không tính
+            # phần im lặng vào tổng, chỉ tính lời nói thật -> không phình max).
+            add = en - st
+            if max_len and total + add > max_len + 0.5:
+                break
+            out.append([round(st, 2), round(en, 2)])
+            total += add
         cur_end = en
-        total += add
         if total >= target:
             break
     return out
@@ -867,20 +893,25 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     candidates = candidates[: min(limit, cfg["max_candidates"])]
     candidates.sort(key=lambda c: c["start"])  # theo thứ tự thời gian
 
+    min_len = float(cfg.get("min_len", 60.0))
     _delete_suggested(video_id)
     clip_ids = []
     for c in candidates:
-        a_s = _audio_score(audio, c["start"], c["end"])
-        s_s = _scene_score(scenes, c["start"], c["end"])
+        # SÀN MIN CỨNG cho đường heuristic: clip nào < Min mà video còn nội dung
+        # -> nới đủ Min (đường AI đã có bước này; trước đây heuristic thì không).
+        seg = _ensure_min_duration([[c["start"], c["end"]]], duration, min_len)
+        c_start, c_end = seg[0][0], seg[-1][1]
+        a_s = _audio_score(audio, c_start, c_end)
+        s_s = _scene_score(scenes, c_start, c_end)
         final = 0.6 * a_s + 0.4 * s_s
-        signals = {"segments": [[c["start"], c["end"]]], "n_seg": 1,
+        signals = {"segments": [[c_start, c_end]], "n_seg": 1,
                    "llm_used": False, "ai": "", "audio": round(a_s, 1),
                    "scene": round(s_s, 1)}
         cid = db.insert(
             """INSERT INTO clips (video_id, start_sec, end_sec, score, reason,
                                   title, transcript, signals, status)
                VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
-            (video_id, c["start"], c["end"], round(final, 1),
+            (video_id, c_start, c_end, round(final, 1),
              "Năng lượng/chuyển cảnh nổi bật.", "Clip", c["text"], db.dumps(signals)),
         )
         clip_ids.append(cid)
