@@ -311,7 +311,9 @@ def build_ass(words: list, segments: list, out_path,
                      f"{{{han}}}{ht}\n")
     # CÓ HOOK -> ẨN phụ đề chạy chữ TRONG lúc hook hiện (tránh chồng chữ):
     # bỏ cue nằm hẳn trong [0, hook_dur); cue vắt qua mốc -> cắt start = hook_dur.
-    min_start = hook_dur if has_hook else 0.0
+    # Hook và phụ đề chạy CÙNG NHAU (user chốt 2026-07): không ẩn phụ đề lúc
+    # hook hiện nữa — tắt hook thì chỉ hook biến mất, phụ đề luôn chạy từ 0s.
+    min_start = 0.0
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
