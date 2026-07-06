@@ -1091,19 +1091,25 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                     payload.get("dub_voice") or "", dw,
                     on_progress=lambda p, m="": ctx.progress(
                         0.05 + 0.10 * p, f"{pfx}lồng tiếng: {m}"))
-        # PHỤ ĐỀ CHẠY CHỮ khớp lời (từ mốc từng-từ của whisper, ánh xạ theo đoạn ghép)
+        # PHỤ ĐỀ CHẠY CHỮ + HOOK giật tít. HOOK render ĐỘC LẬP với phụ đề: bật
+        # hook mà tắt phụ đề vẫn hiện hook; chữ hook = hook AI, KHÔNG có thì
+        # lùi về tiêu đề clip (title_en/title) để bật hook là luôn có chữ.
         ass_path = fonts_dir = None
-        if payload.get("captions"):
+        _cs0 = payload.get("cap_style") or {}
+        _hook_txt0 = ((signals.get("hook") or signals.get("title_en")
+                       or clip["title"] or "").strip()
+                      if _cs0.get("hook_on", True) else "")
+        if payload.get("captions") or _hook_txt0:
             from app.core import captions
             from config import ROOT_DIR
             tr = get_analysis(video_id, "transcript") or {}
-            words = tr.get("words") or []
-            if not words and tr.get("segments"):
+            words = (tr.get("words") or []) if payload.get("captions") else []
+            if payload.get("captions") and not words and tr.get("segments"):
                 # Groq transcribe có thể KHÔNG trả mốc từng-từ -> nếu bỏ qua
                 # thì mất cả PHỤ ĐỀ lẫn HOOK. Tạo words giả từ segments.
                 words = _fake_words_from_segments(tr["segments"])
             cap_segs = segs
-            if dub_segs:
+            if dub_segs and payload.get("captions"):
                 # CÓ LỒNG TIẾNG -> phụ đề dùng CHỮ ĐÃ DỊCH. Bản dịch không có
                 # mốc từng-từ -> tạo words GIẢ chia đều thời gian cụm cho từng
                 # từ; mốc đã ở timeline ĐẦU RA nên segments = [[0, tổng]].
@@ -1118,10 +1124,9 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                                       "end": d["start"] + (k + 1) * step,
                                       "word": tk})
                 cap_segs = [[0.0, sum(float(e) - float(s) for s, e in segs)]]
-            cs = payload.get("cap_style") or {}
-            hook_txt = (signals.get("hook", "") or "") \
-                if cs.get("hook_on", True) else ""
-            # HOOK không cần words -> vẫn vẽ khi transcript trống/lỗi
+            cs = _cs0
+            hook_txt = _hook_txt0
+            # HOOK không cần words -> vẫn vẽ khi transcript trống/lỗi/tắt phụ đề
             if words or hook_txt.strip():
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
