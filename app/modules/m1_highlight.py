@@ -939,6 +939,27 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
 # ============================================================
 # Xuất clip 9:16 face-track
 # ============================================================
+def _fake_words_from_segments(segments: list) -> list:
+    """Transcript KHÔNG có mốc từng-từ (vd Groq không trả words) -> tạo words
+    GIẢ: chia đều thời gian mỗi segment cho từng từ (giống cách làm cho lồng
+    tiếng). Phụ đề vẫn chạy chữ, chỉ kém khớp lời hơn whisper word-level."""
+    out = []
+    for d in segments or []:
+        try:
+            s, e = float(d["start"]), float(d["end"])
+            toks = (d.get("text") or "").split()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not toks or e <= s:
+            continue
+        step = max(0.05, (e - s) / len(toks))
+        for k, tk in enumerate(toks):
+            out.append({"start": round(s + k * step, 3),
+                        "end": round(s + (k + 1) * step, 3),
+                        "word": tk})
+    return out
+
+
 def _pick_hook_seg(video_id: int, signals: dict, segs: list):
     """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
     Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
@@ -1073,6 +1094,10 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             from config import ROOT_DIR
             tr = get_analysis(video_id, "transcript") or {}
             words = tr.get("words") or []
+            if not words and tr.get("segments"):
+                # Groq transcribe có thể KHÔNG trả mốc từng-từ -> nếu bỏ qua
+                # thì mất cả PHỤ ĐỀ lẫn HOOK. Tạo words giả từ segments.
+                words = _fake_words_from_segments(tr["segments"])
             cap_segs = segs
             if dub_segs:
                 # CÓ LỒNG TIẾNG -> phụ đề dùng CHỮ ĐÃ DỊCH. Bản dịch không có
@@ -1089,11 +1114,14 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                                       "end": d["start"] + (k + 1) * step,
                                       "word": tk})
                 cap_segs = [[0.0, sum(float(e) - float(s) for s, e in segs)]]
-            if words:
+            cs = payload.get("cap_style") or {}
+            hook_txt = (signals.get("hook", "") or "") \
+                if cs.get("hook_on", True) else ""
+            # HOOK không cần words -> vẫn vẽ khi transcript trống/lỗi
+            if words or hook_txt.strip():
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
                 ap = str(cdir / f"_cap_{clip_id}.ass")
-                cs = payload.get("cap_style") or {}
                 csize = float(cs.get("size") or 0)
                 if captions.build_ass(
                         words, cap_segs, ap, out_w, out_h,
@@ -1103,8 +1131,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                         ny=float(cs.get("ny", 0.78)),
                         preset=cs.get("preset") or "Trắng đơn giản",
                         delay=float(cs.get("delay", 0.12)),
-                        hook=(signals.get("hook", "")
-                              if cs.get("hook_on", True) else ""),
+                        hook=hook_txt,
                         hook_dur=float(cs.get("hook_dur", 6.0)),
                         hook_nx=float(cs.get("hook_nx", 0.5)),
                         hook_ny=float(cs.get("hook_ny", 0.10)),

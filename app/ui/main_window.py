@@ -137,7 +137,8 @@ class MainWindow(QMainWindow):
             r = QHBoxLayout()
             lb = QLabel(label); lb.setStyleSheet(f"color:{TEXT}; font-size:13px;")
             r.addWidget(lb, 1)
-            sp = _NoWheelSpin(); sp.setRange(1, 16); sp.setFixedWidth(58); sp.setValue(val)
+            # 58px bị CẮT SỐ trên máy scale 125/150% -> 76px (đủ số 2 chữ số + nút)
+            sp = _NoWheelSpin(); sp.setRange(1, 16); sp.setFixedWidth(76); sp.setValue(val)
             sp.valueChanged.connect(slot); r.addWidget(sp)
             v.addLayout(r); v.addSpacing(2)
             return sp

@@ -80,6 +80,13 @@ QComboBox QAbstractItemView {{
     border-radius: 8px; selection-background-color: {ACCENT}; outline: none;
     padding: 4px;
 }}
+/* Ô SỐ: đủ rộng + chừa chỗ nút tăng/giảm — máy scale khác không bị CẮT SỐ */
+QSpinBox, QDoubleSpinBox {{
+    min-width: 64px;
+    padding-right: 22px;          /* chừa chỗ cột nút up/down (16px + viền) */
+    color: {TEXT};
+    font-size: 13px;
+}}
 QSpinBox::up-button, QSpinBox::down-button,
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
     background: {SURFACE_HOVER}; border: none; width: 16px;

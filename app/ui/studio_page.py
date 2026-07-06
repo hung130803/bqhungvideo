@@ -1018,7 +1018,9 @@ class StudioPage(QWidget):
                 or ("/@" in u))
 
     def _run_ytdlp(self, url, exe, dl, ff_dir, cookie_args, pot_args, prefix=""):
-        """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress."""
+        """Tải 1 URL (gọi trong thread). Trả (path, err); hiện % qua dl_progress.
+        Lỗi HTTP 403 (YouTube chặn chữ ký/bot theo client) -> TỰ thử lại 1 lần
+        với player_client khác (default,web_safari) trước khi báo lỗi."""
         import re as _re
         import time as _time
         ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1026,52 +1028,68 @@ class StudioPage(QWidget):
         # [%(id)s] để tên file LUÔN duy nhất: 2 video trùng 80 ký tự đầu tiêu đề
         # -> yt-dlp thấy file đã có, KHÔNG tải, âm thầm dùng lại video cũ.
         out_tmpl = str(dl / "%(title).70s [%(id)s].%(ext)s")
-        t0 = _time.time()
-        cmd = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
-               "--user-agent", ua, "-f",
-               "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
-               "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-               "--merge-output-format", "mp4", "--no-playlist",
-               "--print", "after_move:filepath", "-o", out_tmpl]
-        cmd += pot_args + cookie_args
+        base = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
+                "--user-agent", ua, "-f",
+                "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
+                "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                "--merge-output-format", "mp4", "--no-playlist",
+                "--print", "after_move:filepath", "-o", out_tmpl]
+        base += pot_args + cookie_args
         if ff_dir:
-            cmd += ["--ffmpeg-location", ff_dir]
-        cmd.append(url)
-        try:
-            proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                encoding="utf-8", errors="replace", creationflags=0x0800_0000)
-        except Exception as e:  # noqa: BLE001
-            return "", str(e)[:200]
-        # đăng ký để đóng app giết được yt-dlp (không tải tiếp sau khi app tắt)
-        from app.core.ffmpeg_utils import register_proc, unregister_proc
-        register_proc(proc)
-        path, tail = "", []
-        try:
-            for line in proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                tail.append(line); tail[:] = tail[-8:]
-                if os.path.exists(line):
-                    path = line
-                m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
-                if m:
-                    self.dl_progress.emit(f"① {prefix}Đang tải... {m.group(1)}%")
-                elif "Merg" in line or "Fixup" in line:
-                    self.dl_progress.emit(f"① {prefix}Đang ghép hình + tiếng...")
-            proc.wait()
-        finally:
-            unregister_proc(proc)
-        if proc.returncode != 0:
-            return "", ("\n".join(tail) or "lỗi tải")[-300:]
-        if not path or not os.path.exists(path):
-            # fallback: CHỈ nhận file tạo SAU lúc bắt đầu tải — file mp4 "mới
-            # nhất" trong kho chung có thể là của lượt tải khác/video cũ
-            fs = sorted((p for p in dl.glob("*.mp4") if p.stat().st_mtime >= t0),
-                        key=lambda p: p.stat().st_mtime)
-            path = str(fs[-1]) if fs else ""
-        return path, "" if path else "Không thấy file tải."
+            base += ["--ffmpeg-location", ff_dir]
+
+        def run_once(cmd):
+            t0 = _time.time()
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    creationflags=0x0800_0000)
+            except Exception as e:  # noqa: BLE001
+                return "", str(e)[:200]
+            # đăng ký để đóng app giết được yt-dlp (không tải tiếp sau khi app tắt)
+            from app.core.ffmpeg_utils import register_proc, unregister_proc
+            register_proc(proc)
+            path, tail = "", []
+            try:
+                for line in proc.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    tail.append(line); tail[:] = tail[-8:]
+                    if os.path.exists(line):
+                        path = line
+                    m = _re.search(r"\[download\]\s+([0-9.]+)%", line)
+                    if m:
+                        self.dl_progress.emit(
+                            f"① {prefix}Đang tải... {m.group(1)}%")
+                    elif "Merg" in line or "Fixup" in line:
+                        self.dl_progress.emit(
+                            f"① {prefix}Đang ghép hình + tiếng...")
+                proc.wait()
+            finally:
+                unregister_proc(proc)
+            if proc.returncode != 0:
+                return "", ("\n".join(tail) or "lỗi tải")[-300:]
+            if not path or not os.path.exists(path):
+                # fallback: CHỈ nhận file tạo SAU lúc bắt đầu tải — file mp4 "mới
+                # nhất" trong kho chung có thể là của lượt tải khác/video cũ
+                fs = sorted(
+                    (p for p in dl.glob("*.mp4") if p.stat().st_mtime >= t0),
+                    key=lambda p: p.stat().st_mtime)
+                path = str(fs[-1]) if fs else ""
+            return path, "" if path else "Không thấy file tải."
+
+        path, err = run_once(base + [url])
+        if err and ("403" in err or "forbidden" in err.lower()):
+            # YouTube chặn URL stream của client mặc định (android vr...) ->
+            # đổi player_client rồi thử lại 1 lần (giữ nguyên potoken + cookie)
+            self.dl_progress.emit(
+                f"① {prefix}Bị YouTube chặn (403) — thử lại cách khác...")
+            path, err = run_once(
+                base + ["--extractor-args",
+                        "youtube:player_client=default,web_safari", url])
+        return path, err
 
     def _dl_busy(self) -> bool:
         """Đang có lượt tải chạy? 2 yt-dlp ghi cùng thư mục sẽ loạn tiến trình
@@ -1221,7 +1239,11 @@ class StudioPage(QWidget):
                     + ("\n…" if len(fails) > 6 else "")
                     + ("\n\n👉 YouTube đòi cookie: bấm nút <b>Cookie</b> cạnh "
                        "nút Tải → dán cookie → Lưu → tải lại các link lỗi."
-                       if cookie_hint else ""))
+                       if cookie_hint else "")
+                    + ("\n\n👉 Lỗi 403 = YouTube chặn tạm thời — thử lại sau "
+                       "vài phút, dán cookie mới (nút Cookie), hoặc cập nhật "
+                       "app (yt-dlp mới)."
+                       if ("403" in low or "forbidden" in low) else ""))
             elif ok:
                 extra = " + tự xuất" if self.auto_export_chk.isChecked() else ""
                 self.status.setText(
@@ -1242,6 +1264,19 @@ class StudioPage(QWidget):
                        "Tải → làm theo hướng dẫn dán cookie → Lưu → Tải lại.")
                 QMessageBox.warning(self, "YouTube đòi cookie", msg)
                 self.status.setText("Tải LỖI: YouTube đòi cookie — bấm nút Cookie.")
+            elif "403" in low or "forbidden" in low:
+                QMessageBox.warning(
+                    self, "YouTube chặn tạm thời (403)",
+                    "YouTube đang chặn tải video này (HTTP 403).\n\n"
+                    "Cách sửa:\n"
+                    "• Thử lại sau vài phút (chặn thường tự hết).\n"
+                    "• Bấm nút <b>Cookie</b> cạnh nút Tải → dán cookie mới → "
+                    "tải lại.\n"
+                    "• Cập nhật app lên bản mới nhất (kèm yt-dlp mới vá lỗi "
+                    "này).")
+                self.status.setText(
+                    "Tải LỖI 403: YouTube chặn tạm thời — thử lại sau vài phút "
+                    "hoặc dán cookie mới.")
             else:
                 self.status.setText("Tải YouTube LỖI: " + (err or "không rõ"))
             return
