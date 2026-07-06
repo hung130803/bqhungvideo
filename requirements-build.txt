@@ -9,3 +9,4 @@ python-dotenv==1.0.1
 psutil==6.0.0
 requests==2.32.3
 numpy==1.26.4
+edge-tts>=6.1.12             # lồng tiếng AI (TTS Microsoft, cần mạng)

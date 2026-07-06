@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from app import services
 from app.core.captions import CAPTION_PRESETS
+from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
 
 FW, FH = 348, 619          # khung xem trước TO hơn cho dễ nhìn (tỉ lệ 9:16)
 
@@ -953,6 +954,30 @@ class EditorDialog(QDialog):
         l2.addWidget(self.logo_op, 1)
         gx.addLayout(l2)
 
+        # Nhóm: Lồng tiếng AI (xanh dương nhạt)
+        gd, gd_box = _group("Lồng tiếng AI (dubbing)", (96, 165, 250))
+        dr1 = QHBoxLayout(); dr1.addWidget(QLabel("Ngôn ngữ"))
+        self.dub_lang = _NoWheelCombo()
+        self.dub_lang.addItem("Tắt", "")
+        for code, label in DUB_LANGS.items():
+            self.dub_lang.addItem(label, code)
+        self.dub_lang.setToolTip(
+            "AI dịch lời thoại rồi ĐỌC THUYẾT MINH đè lên clip (giọng Microsoft "
+            "tự nhiên, khớp mốc thời gian). Phụ đề (nếu bật) cũng dùng chữ đã "
+            "dịch. Cần mạng + key AI để dịch.")
+        self.dub_lang.currentIndexChanged.connect(self._dub_lang_ui)
+        dr1.addWidget(self.dub_lang, 1)
+        dr1.addWidget(QLabel("Giọng"))
+        self.dub_voice = _NoWheelCombo()
+        dr1.addWidget(self.dub_voice, 1)
+        gd.addLayout(dr1)
+        self.dub_mute_chk = QCheckBox("Tắt hẳn tiếng gốc (mặc định: giảm nhỏ)")
+        self.dub_mute_chk.setToolTip(
+            "Bỏ chọn = tiếng gốc còn 15% làm 'không khí' nền dưới lời thuyết "
+            "minh. Chọn = chỉ còn giọng lồng tiếng (+ nhạc nền nếu có).")
+        gd.addWidget(self.dub_mute_chk)
+        self._dub_lang_ui()
+
         # Nhóm: Phụ đề chạy chữ (vàng)
         gc, gc_box = _group("Phụ đề chạy chữ (khớp lời)", (251, 191, 36))
         self.cap_chk = QCheckBox("Bật phụ đề — KÉO ô vàng trên khung để đặt chỗ")
@@ -1098,6 +1123,15 @@ class EditorDialog(QDialog):
             self._bgm_file = layout.get("bgm_file", "") or ""
             self.bgm_vol.setValue(int(float(layout.get("bgm_vol", 0.15)) * 100))
             self._bgm_mode_ui()
+            # lồng tiếng AI
+            di = self.dub_lang.findData(layout.get("dub_lang", "") or "")
+            if di >= 0:
+                self.dub_lang.setCurrentIndex(di)
+            self._dub_lang_ui()
+            dv = self.dub_voice.findData(layout.get("dub_voice", "") or "")
+            if dv >= 0:
+                self.dub_voice.setCurrentIndex(dv)
+            self.dub_mute_chk.setChecked(bool(layout.get("dub_mute", False)))
             self._logo_path = layout.get("logo_path", "") or ""
             self.logo_lbl.setText(f"Logo: {self._logo_path}" if self._logo_path
                                   else "(chưa có logo)")
@@ -1151,6 +1185,24 @@ class EditorDialog(QDialog):
         row = self.rows.get(lid)
         if row:
             row.set_size_fraction(frac)
+
+    # ---- Lồng tiếng AI ----
+    def _dub_lang_ui(self):
+        """Đổi ngôn ngữ -> nạp lại danh sách giọng (nữ/nam) của ngôn ngữ đó."""
+        lang = self.dub_lang.currentData() or ""
+        cur = self.dub_voice.currentData()
+        self.dub_voice.blockSignals(True)
+        self.dub_voice.clear()
+        for label, vid in DUB_VOICES.get(lang, []):
+            self.dub_voice.addItem(label, vid)
+        if cur:
+            i = self.dub_voice.findData(cur)
+            if i >= 0:
+                self.dub_voice.setCurrentIndex(i)
+        self.dub_voice.blockSignals(False)
+        on = bool(lang)
+        self.dub_voice.setEnabled(on)
+        self.dub_mute_chk.setEnabled(on)
 
     # ---- Nhạc nền + logo ----
     def _bgm_mode_ui(self):
@@ -1385,6 +1437,9 @@ class EditorDialog(QDialog):
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
         lay["bgm_vol"] = self.bgm_vol.value() / 100.0
+        lay["dub_lang"] = self.dub_lang.currentData() or ""
+        lay["dub_voice"] = self.dub_voice.currentData() or ""
+        lay["dub_mute"] = self.dub_mute_chk.isChecked()
         lay["logo_path"] = self._logo_path
         lay["logo_pos"] = self.logo_pos.currentData() or "tr"
         lay["logo_size"] = self.logo_size.value() / 100.0

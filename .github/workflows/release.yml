@@ -46,6 +46,7 @@ jobs:
           --collect-all PyQt6
           --collect-submodules app
           --collect-all google.generativeai
+          --collect-all edge_tts
           --hidden-import openai
           --hidden-import requests
           --hidden-import psutil

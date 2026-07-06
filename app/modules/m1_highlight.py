@@ -1049,6 +1049,23 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
         if payload.get("trim_black"):
             ctx.progress(0.08, f"{pfx}đang dò viền đen...")
             pre_crop = detect_black_crop(src, segs[0][0])
+        # LỒNG TIẾNG AI: dựng track thuyết minh (dịch + TTS) TRƯỚC khi export.
+        # Dựng theo segs SAU hook-first -> mốc khớp đúng timeline đầu ra.
+        dub_path = None
+        dub_segs = None
+        if payload.get("dub_lang"):
+            from app.core import dubbing
+            tr_dub = get_analysis(video_id, "transcript") or {}
+            if tr_dub.get("segments"):
+                cdir = Path(vrow["assets_dir"]) / "_cache"
+                cdir.mkdir(parents=True, exist_ok=True)
+                dw = str(cdir / f"_dub_{clip_id}.wav")
+                ctx.progress(0.05, f"{pfx}đang tạo lồng tiếng AI...")
+                dub_path, dub_segs = dubbing.build_dub_track(
+                    tr_dub, segs, payload["dub_lang"],
+                    payload.get("dub_voice") or "", dw,
+                    on_progress=lambda p, m="": ctx.progress(
+                        0.05 + 0.10 * p, f"{pfx}lồng tiếng: {m}"))
         # PHỤ ĐỀ CHẠY CHỮ khớp lời (từ mốc từng-từ của whisper, ánh xạ theo đoạn ghép)
         ass_path = fonts_dir = None
         if payload.get("captions"):
@@ -1056,6 +1073,22 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             from config import ROOT_DIR
             tr = get_analysis(video_id, "transcript") or {}
             words = tr.get("words") or []
+            cap_segs = segs
+            if dub_segs:
+                # CÓ LỒNG TIẾNG -> phụ đề dùng CHỮ ĐÃ DỊCH. Bản dịch không có
+                # mốc từng-từ -> tạo words GIẢ chia đều thời gian cụm cho từng
+                # từ; mốc đã ở timeline ĐẦU RA nên segments = [[0, tổng]].
+                words = []
+                for d in dub_segs:
+                    toks = (d["text"] or "").split()
+                    if not toks:
+                        continue
+                    step = max(0.05, (d["end"] - d["start"]) / len(toks))
+                    for k, tk in enumerate(toks):
+                        words.append({"start": d["start"] + k * step,
+                                      "end": d["start"] + (k + 1) * step,
+                                      "word": tk})
+                cap_segs = [[0.0, sum(float(e) - float(s) for s, e in segs)]]
             if words:
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
@@ -1063,7 +1096,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                 cs = payload.get("cap_style") or {}
                 csize = float(cs.get("size") or 0)
                 if captions.build_ass(
-                        words, segs, ap, out_w, out_h,
+                        words, cap_segs, ap, out_w, out_h,
                         font=cs.get("font") or "Montserrat",
                         size=int(csize * out_h) if csize < 1 else int(csize),
                         color=cs.get("color") or "",
@@ -1089,10 +1122,19 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             pitch=float(payload.get("pitch", 1.0)),
             bgm_path=payload.get("bgm_path") or None,
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
+            dub_path=dub_path,
+            dub_mute_original=bool(payload.get("dub_mute")),
             on_progress=on_prog,
         )
+        # dọn wav lồng tiếng tạm (đã trộn vào clip)
+        if dub_path:
+            try:
+                os.remove(dub_path)
+            except OSError:
+                pass
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),
                         "captions": bool(ass_path),
+                        "dub": payload.get("dub_lang", "") if dub_path else "",
                         "mixed": signals.get("mode") == "mixed"}
     elif signals.get("mode") == "mixed":
         # ---- Mixed-Cut KHÔNG có mẫu (video_rect): ghép kiểu cũ (crop bám mặt),

@@ -28,6 +28,9 @@ openai>=1.55,<3              # dùng cho OpenAI / DeepSeek / Ollama (cùng SDK, 
 google-generativeai==0.8.3   # Gemini
 python-dotenv==1.0.1
 
+# ---- Lồng tiếng AI (TTS Microsoft Neural, free, cần mạng) ----
+edge-tts>=6.1.12
+
 # ---- Tiện ích ----
 psutil==6.0.0                # dò phần cứng (CPU/RAM)
 requests==2.32.3

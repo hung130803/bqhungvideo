@@ -575,6 +575,8 @@ def export_canvas_clip(
     pitch: float = 1.0,                 # đổi giọng (1=gốc, >1 cao/nữ, <1 trầm/nam)
     bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
+    dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
+    dub_mute_original: bool = False,    # True = tắt hẳn tiếng gốc khi có lồng tiếng
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -589,6 +591,10 @@ def export_canvas_clip(
     total = sum(e - s for s, e in segs)
     # Video KHÔNG có tiếng -> mọi filter [0:a] sẽ fail; xuất chỉ hình.
     has_audio = probe(src).has_audio
+    dub_on = bool(dub_path and os.path.exists(str(dub_path)))
+    # Tắt hẳn tiếng gốc khi lồng tiếng -> KHÔNG concat/lọc audio gốc luôn
+    # (concat ra [caud] mà không dùng sẽ làm ffmpeg fail "unconnected output").
+    use_voice = has_audio and not (dub_on and dub_mute_original)
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)
     use_png = bool(overlay_png and os.path.exists(overlay_png))
@@ -604,15 +610,15 @@ def export_canvas_clip(
             labs = ""
             for i, (s, e) in enumerate(segs):
                 parts.append(f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS[sv{i}]")
-                if has_audio:
+                if use_voice:
                     parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},"
                                  f"asetpts=PTS-STARTPTS[sa{i}]")
                     labs += f"[sv{i}][sa{i}]"
                 else:
                     labs += f"[sv{i}]"
-            a_flag = 1 if has_audio else 0
+            a_flag = 1 if use_voice else 0
             parts.append(f"{labs}concat=n={len(segs)}:v=1:a={a_flag}[cvid]"
-                         + ("[caud]" if has_audio else ""))
+                         + ("[caud]" if use_voice else ""))
             content, aud, aud_map = "[cvid]", "[caud]", "[caud]"
         else:
             s, e = segs[0]
@@ -655,9 +661,17 @@ def export_canvas_clip(
             final = "[v]"
         # NHẠC NỀN: thêm input (loop vô hạn, cắt theo độ dài clip ở dưới)
         bgm_idx = None
+        aidx = nextidx + (1 if use_png else 0)
         if bgm_path and os.path.exists(str(bgm_path)):
-            bgm_idx = nextidx + (1 if use_png else 0)
+            bgm_idx = aidx
+            aidx += 1
             cmd += ["-stream_loop", "-1", "-i", str(bgm_path)]
+        # LỒNG TIẾNG AI: wav đã dựng sẵn dài đúng bằng clip (timeline gốc)
+        dub_idx = None
+        if dub_on:
+            dub_idx = aidx
+            aidx += 1
+            cmd += ["-i", str(dub_path)]
         if ass_path and os.path.exists(ass_path):
             ap = str(ass_path).replace("\\", "/").replace(":", "\\:")
             sub = f"subtitles='{ap}'"
@@ -678,29 +692,40 @@ def export_canvas_clip(
         if abs(speed - 1.0) > 0.01:
             af.append(f"atempo={speed:.4f}")
         out_dur = total / speed if abs(speed - 1.0) > 0.01 else total
+        # ---- TRỘN AUDIO: tiếng gốc (+lọc) / lồng tiếng AI / nhạc nền ----
+        # Có lồng tiếng: tiếng GỐC hạ còn 0.15 (giữ "không khí" nền) hoặc bỏ hẳn
+        # (dub_mute_original). amix normalize=0 để giữ nguyên âm lượng từng lớp.
+        mix: list[str] = []
+        amap = None
+        if use_voice:
+            vf = ["aresample=48000"] + af
+            if dub_idx is not None:
+                vf.append("volume=0.150")   # né tiếng gốc dưới lồng tiếng
+            need_mix = (dub_idx is not None) or (bgm_idx is not None)
+            if need_mix or af:
+                parts.append(f"{aud}{','.join(vf)}[vce]")
+                mix.append("[vce]")
+            else:
+                amap = aud_map  # KHÔNG lọc/trộn -> map thẳng (giữ hành vi cũ)
+        if dub_idx is not None:
+            dch = ["aresample=48000"]
+            if abs(speed - 1.0) > 0.01:     # dub dựng theo timeline gốc -> tua theo
+                dch.append(f"atempo={speed:.4f}")
+            parts.append(f"[{dub_idx}:a]{','.join(dch)},atrim=0:{out_dur:.3f},"
+                         f"asetpts=PTS-STARTPTS[dub]")
+            mix.append("[dub]")
         if bgm_idx is not None:
             # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
             parts.append(f"[{bgm_idx}:a]volume={max(0.0, min(1.0, bgm_vol)):.3f},"
                          f"atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS[bgm]")
-            if has_audio:
-                if af:
-                    parts.append(f"{aud}aresample=48000,{','.join(af)}[vce]")
-                    voice = "[vce]"
-                else:
-                    voice = aud
-                # normalize=0: giữ NGUYÊN âm lượng tiếng nói, nhạc đã volume= ở trên
-                parts.append(f"{voice}[bgm]amix=inputs=2:duration=first:"
-                             f"normalize=0[aout]")
-                amap = "[aout]"
-            else:
-                amap = "[bgm]"   # video câm -> nhạc nền là audio duy nhất
-        elif has_audio and af:
-            parts.append(f"{aud}aresample=48000,{','.join(af)}[aout]")
+            mix.append("[bgm]")
+        if len(mix) == 1:
+            amap = mix[0]
+        elif len(mix) >= 2:
+            parts.append("".join(mix) + f"amix=inputs={len(mix)}:"
+                         f"duration=first:normalize=0[aout]")
             amap = "[aout]"
-        elif has_audio:
-            amap = aud_map      # KHÔNG lọc -> map thẳng input (1 đoạn) / [caud] (ghép)
-        else:
-            amap = None          # không có luồng tiếng -> chỉ xuất hình
+        # amap còn None + không voice -> video câm, chỉ xuất hình
         cmd += ["-filter_complex", ";".join(parts), "-map", final]
         if amap:
             cmd += ["-map", amap]
