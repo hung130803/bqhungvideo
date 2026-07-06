@@ -41,30 +41,51 @@ class Database:
         return c
 
     def init_schema(self) -> None:
+        """Mở/ tạo DB. PHẢI luôn thành công để app mở được — nếu file DB hỏng
+        hoặc ổ lỗi thì lần lượt: dọn file hỏng -> đổi sang tên file MỚI ->
+        cuối cùng DB tạm trong RAM (app vẫn mở, chỉ không lưu qua phiên)."""
         try:
             self._apply_schema()
-        except sqlite3.DatabaseError as e:
-            # FILE DB HỎNG ("database disk image is malformed" — do tắt máy/
-            # mất điện lúc đang ghi, ổ lỗi...) -> app crash ngay khi mở, KHÔNG
-            # vào được. Cứu: đóng connection, ĐỔI TÊN file hỏng thành .corrupt
-            # (giữ lại phòng khi cứu tay được) rồi tạo DB MỚI trống -> app mở
-            # lại bình thường (mất lịch sử/kênh cũ, nhưng còn hơn không mở nổi).
-            if "malformed" not in str(e).lower() and "not a database" \
-                    not in str(e).lower():
-                raise
-            self._quarantine_corrupt()
+            return
+        except Exception as e:  # noqa: BLE001 - malformed / I/O error / notadb...
+            if not self._is_corrupt_err(e):
+                raise      # lỗi lạ (vd thiếu quyền ghi cả thư mục) -> ném thật
+
+        # (1) Dọn sạch file hỏng tại chỗ rồi thử lại
+        self._wipe_db_files(self.path)
+        try:
+            self._reset_conn()
             self._apply_schema()
+            return
+        except Exception:  # noqa: BLE001
+            pass
 
-    def _apply_schema(self) -> None:
-        sql = _SCHEMA_PATH.read_text(encoding="utf-8")
-        self.conn().executescript(sql)
-        self.conn().commit()
-        self._migrate()
-
-    def _quarantine_corrupt(self) -> None:
-        """Đóng connection + đổi tên mọi file DB hỏng (db + -wal + -shm) sang
-        .corrupt để tạo lại DB mới sạch."""
+        # (2) Cùng chỗ vẫn lỗi (file khóa/ổ lỗi/OneDrive) -> DÙNG TÊN FILE MỚI
         import time as _t
+        newp = str(Path(self.path).with_name(f"studio_{int(_t.time())}.db"))
+        try:
+            self._wipe_db_files(newp)
+            self.path = newp
+            self._reset_conn()
+            self._apply_schema()
+            return
+        except Exception:  # noqa: BLE001
+            pass
+
+        # (3) Bó tay với đĩa -> DB trong RAM: app VẪN mở, chạy được trong phiên
+        # (kênh/clip phiên này không lưu lại sau khi tắt — nhưng còn hơn crash).
+        self.path = ":memory:"
+        self._reset_conn()
+        self._apply_schema()
+
+    @staticmethod
+    def _is_corrupt_err(e: Exception) -> bool:
+        m = str(e).lower()
+        return isinstance(e, sqlite3.Error) and any(
+            s in m for s in ("malformed", "not a database", "disk i/o",
+                             "disk image", "file is encrypted", "corrupt"))
+
+    def _reset_conn(self) -> None:
         try:
             c = getattr(self._local, "conn", None)
             if c is not None:
@@ -72,17 +93,31 @@ class Database:
         except Exception:  # noqa: BLE001
             pass
         self._local = threading.local()
+
+    def _apply_schema(self) -> None:
+        sql = _SCHEMA_PATH.read_text(encoding="utf-8")
+        self.conn().executescript(sql)
+        self.conn().commit()
+        self._migrate()
+
+    def _wipe_db_files(self, path: str) -> None:
+        """Đóng connection + XÓA (đổi tên nếu xóa không được) db + wal + shm ở
+        `path`. Xóa hẳn chắc chắn hơn đổi tên khi mở lại (không còn wal/shm
+        mồ côi gây 'disk I/O error')."""
+        import time as _t
+        self._reset_conn()
         stamp = int(_t.time())
-        for suffix in ("", "-wal", "-shm"):
-            f = Path(self.path + suffix)
-            if f.exists():
-                try:
+        for suffix in ("-wal", "-shm", ""):        # xóa wal/shm TRƯỚC, db sau
+            f = Path(path + suffix)
+            if not f.exists():
+                continue
+            try:
+                f.unlink()
+            except OSError:
+                try:                               # khóa -> đổi tên né sang bên
                     f.rename(f.with_name(f.name + f".corrupt{stamp}"))
                 except OSError:
-                    try:
-                        f.unlink()          # đổi tên không được -> xóa để mở lại
-                    except OSError:
-                        pass
+                    pass
 
     def _migrate(self) -> None:
         """Thêm cột mới cho DB cũ (không làm mất dữ liệu)."""
