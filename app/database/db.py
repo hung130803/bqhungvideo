@@ -29,18 +29,60 @@ class Database:
         c = getattr(self._local, "conn", None)
         if c is None:
             c = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
-            c.row_factory = sqlite3.Row
-            c.execute("PRAGMA journal_mode = WAL;")
-            c.execute("PRAGMA foreign_keys = ON;")
-            c.execute("PRAGMA busy_timeout = 30000;")
+            try:
+                c.row_factory = sqlite3.Row
+                c.execute("PRAGMA journal_mode = WAL;")
+                c.execute("PRAGMA foreign_keys = ON;")
+                c.execute("PRAGMA busy_timeout = 30000;")
+            except Exception:      # DB hỏng -> ĐÓNG ngay (nhả file để quarantine
+                c.close()          # đổi tên/xóa được), rồi ném lên cho init_schema
+                raise
             self._local.conn = c
         return c
 
     def init_schema(self) -> None:
+        try:
+            self._apply_schema()
+        except sqlite3.DatabaseError as e:
+            # FILE DB HỎNG ("database disk image is malformed" — do tắt máy/
+            # mất điện lúc đang ghi, ổ lỗi...) -> app crash ngay khi mở, KHÔNG
+            # vào được. Cứu: đóng connection, ĐỔI TÊN file hỏng thành .corrupt
+            # (giữ lại phòng khi cứu tay được) rồi tạo DB MỚI trống -> app mở
+            # lại bình thường (mất lịch sử/kênh cũ, nhưng còn hơn không mở nổi).
+            if "malformed" not in str(e).lower() and "not a database" \
+                    not in str(e).lower():
+                raise
+            self._quarantine_corrupt()
+            self._apply_schema()
+
+    def _apply_schema(self) -> None:
         sql = _SCHEMA_PATH.read_text(encoding="utf-8")
         self.conn().executescript(sql)
         self.conn().commit()
         self._migrate()
+
+    def _quarantine_corrupt(self) -> None:
+        """Đóng connection + đổi tên mọi file DB hỏng (db + -wal + -shm) sang
+        .corrupt để tạo lại DB mới sạch."""
+        import time as _t
+        try:
+            c = getattr(self._local, "conn", None)
+            if c is not None:
+                c.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._local = threading.local()
+        stamp = int(_t.time())
+        for suffix in ("", "-wal", "-shm"):
+            f = Path(self.path + suffix)
+            if f.exists():
+                try:
+                    f.rename(f.with_name(f.name + f".corrupt{stamp}"))
+                except OSError:
+                    try:
+                        f.unlink()          # đổi tên không được -> xóa để mở lại
+                    except OSError:
+                        pass
 
     def _migrate(self) -> None:
         """Thêm cột mới cho DB cũ (không làm mất dữ liệu)."""

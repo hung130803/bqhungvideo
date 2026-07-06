@@ -40,3 +40,9 @@ dist/
 *.spec
 .anon_key.tmp
 app.lock
+
+_build*/
+_dist*/
+_venv_client/
+bin_audit/
+_hooks_test/
