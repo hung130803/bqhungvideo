@@ -21,10 +21,11 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from config import settings
+from config import DATA_DIR, settings
 
 _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
 
@@ -84,6 +85,144 @@ def default_voice(lang: str) -> str:
     """Giọng mặc định (nữ) của ngôn ngữ; '' nếu không hỗ trợ."""
     vs = VOICES.get(norm_lang(lang))
     return vs[0][1] if vs else ""
+
+
+# ------------------------------------------------------------------
+# Danh sách TOÀN BỘ giọng edge-tts (cache RAM + file, TTL 7 ngày)
+# ------------------------------------------------------------------
+_VOICES_CACHE_FILE = DATA_DIR / "_tts_voices.json"
+_VOICES_TTL = 7 * 24 * 3600            # 7 ngày
+_all_voices: list[dict] | None = None  # cache module-level (RAM)
+
+_GENDER_VI = {"female": "nữ", "male": "nam"}
+
+
+def _read_voices_cache(max_age: float) -> list[dict] | None:
+    """Đọc cache file nếu còn hạn (max_age giây); None nếu hỏng/quá hạn."""
+    try:
+        data = json.loads(_VOICES_CACHE_FILE.read_text(encoding="utf-8"))
+        if time.time() - float(data.get("ts", 0)) < max_age:
+            v = data.get("voices")
+            if isinstance(v, list) and v:
+                return v
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _fetch_all_voices() -> list[dict]:
+    """Toàn bộ giọng edge-tts [{ShortName,Gender,Locale}]. Thứ tự thử:
+    cache RAM -> cache file còn hạn (7 ngày) -> gọi mạng (rồi ghi cache)
+    -> offline: dùng cache file CŨ quá hạn -> [] (caller fallback VOICES)."""
+    global _all_voices
+    if _all_voices:
+        return _all_voices
+    v = _read_voices_cache(_VOICES_TTL)
+    if v is None:
+        try:
+            import edge_tts
+            raw = asyncio.run(edge_tts.list_voices())
+            v = [{"ShortName": x.get("ShortName", ""),
+                  "Gender": x.get("Gender", ""),
+                  "Locale": x.get("Locale", "")}
+                 for x in raw if x.get("ShortName")]
+            if v:
+                try:
+                    _VOICES_CACHE_FILE.write_text(
+                        json.dumps({"ts": time.time(), "voices": v},
+                                   ensure_ascii=False),
+                        encoding="utf-8")
+                except OSError:
+                    pass
+        except Exception:  # noqa: BLE001 — offline/mạng lỗi
+            v = _read_voices_cache(float("inf"))   # cache cũ còn hơn không
+    _all_voices = v or []
+    return _all_voices
+
+
+def _voice_label(v: dict) -> str:
+    """Nhãn thân thiện: 'HoaiMy — nữ (VN)' / 'Andrew — nam (US, đa ngữ)'."""
+    short = v.get("ShortName", "")
+    parts = short.split("-", 2)
+    name = parts[2] if len(parts) == 3 else short
+    if name.endswith("Neural"):
+        name = name[:-len("Neural")]
+    multi = "Multilingual" in name
+    if multi:
+        name = name.replace("Multilingual", "")
+    g = _GENDER_VI.get((v.get("Gender") or "").lower(), "?")
+    region = (v.get("Locale") or "").split("-")[-1]
+    return f"{name} — {g} ({region}, đa ngữ)" if multi \
+        else f"{name} — {g} ({region})"
+
+
+def list_voices_for(lang: str) -> list[tuple[str, str]]:
+    """TOÀN BỘ giọng edge-tts của ngôn ngữ `lang` -> [(nhãn, ShortName)].
+    Giọng cùng quốc gia chính lên đầu (vi -> vi-VN trước), kèm các giọng
+    Multilingual (đọc được mọi ngôn ngữ) ở cuối. Offline/lỗi mạng ->
+    fallback danh sách tĩnh VOICES."""
+    lang = norm_lang(lang)
+    static = list(VOICES.get(lang, []))
+    allv = _fetch_all_voices()
+    if not allv:
+        return static
+    pref = "-".join(static[0][1].split("-")[:2]) if static else ""  # "vi-VN"
+    native = [v for v in allv
+              if (v.get("Locale") or "").lower().startswith(lang + "-")]
+    seen = {v["ShortName"] for v in native}
+    multi = [v for v in allv
+             if "multilingual" in v.get("ShortName", "").lower()
+             and v["ShortName"] not in seen]
+    fav = {vid for _, vid in static}    # giọng mặc định cũ (đã kiểm chứng hay)
+    native.sort(key=lambda v: (0 if v.get("Locale") == pref else 1,
+                               0 if v["ShortName"] in fav else 1,
+                               v.get("Locale", ""), v.get("ShortName", "")))
+    multi.sort(key=lambda v: v.get("ShortName", ""))
+    out = [(_voice_label(v), v["ShortName"]) for v in native + multi]
+    return out or static
+
+
+# ------------------------------------------------------------------
+# Đọc thử 1 câu ngắn (nghe demo giọng trong UI)
+# ------------------------------------------------------------------
+_DEMO_TEXTS = {
+    "vi": "Xin chào, đây là giọng đọc thử của kênh.",
+    "en": "Hello, this is a voice preview.",
+    "id": "Halo, ini adalah contoh suara.",
+    "th": "สวัสดีค่ะ นี่คือเสียงตัวอย่าง",
+    "ko": "안녕하세요, 이것은 음성 미리 듣기입니다.",
+    "ja": "こんにちは、これは音声のサンプルです。",
+    "zh": "你好，这是语音试听。",
+    "es": "Hola, esta es una prueba de voz.",
+    "pt": "Olá, esta é uma amostra de voz.",
+    "fr": "Bonjour, ceci est un aperçu de la voix.",
+}
+
+
+def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None) -> bool:
+    """Đọc thử 1 câu ngắn bằng giọng `voice` -> file mp3. Câu mẫu tự chọn
+    theo ngôn ngữ của giọng (vi-VN-... -> câu tiếng Việt). True nếu ra file
+    hợp lệ; False nếu lỗi (mạng, giọng sai...)."""
+    voice = (voice or "").strip()
+    if not voice:
+        return False
+    lang = norm_lang(voice.split("-")[0])
+    txt = (text or "").strip() or _DEMO_TEXTS.get(lang) or _DEMO_TEXTS["en"]
+    out_mp3 = str(out_mp3)
+
+    async def _run() -> None:
+        import edge_tts
+        await edge_tts.Communicate(txt, voice, rate="+0%").save(out_mp3)
+
+    for _ in range(2):                  # mạng chập chờn -> thử lại 1 lần
+        try:
+            asyncio.run(_run())
+            if os.path.getsize(out_mp3) > 1000:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(0.8)
+    return False
 
 
 # ------------------------------------------------------------------

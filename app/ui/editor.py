@@ -24,6 +24,10 @@ from app import services
 from app.core.captions import CAPTION_PRESETS
 from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
 
+# Cache danh sách giọng lồng tiếng ĐẦY ĐỦ theo ngôn ngữ (nạp 1 lần/phiên app;
+# list_voices_for đã có cache file 7 ngày bên dưới nữa).
+_DUB_VOICE_CACHE: dict[str, list[tuple[str, str]]] = {}
+
 FW, FH = 348, 619          # khung xem trước TO hơn cho dễ nhìn (tỉ lệ 9:16)
 
 
@@ -766,6 +770,7 @@ class EditorDialog(QDialog):
     """Chỉnh MẪU: nền + khối video + chữ. Trả layout qua .layout."""
 
     _demo_ready = pyqtSignal(str)        # đường-dẫn-mp4 demo kiểu chữ (hoặc '' nếu lỗi)
+    _dub_demo_ready = pyqtSignal(str)    # đường-dẫn-mp3 nghe thử giọng (hoặc '')
 
     def __init__(self, frame_path, layout=None, parent=None, current_name=""):
         super().__init__(parent)
@@ -783,6 +788,12 @@ class EditorDialog(QDialog):
         self._current_name = current_name or ""
         self._frame_path = frame_path
         self._demo_ready.connect(self._play_demo)
+        # Lồng tiếng AI: nạp giọng nền + nghe thử
+        self._dub_voice_pending = ""     # voice trong layout chờ list nạp xong
+        self._dub_loading: set[str] = set()
+        self._dub_pl = None              # QMediaPlayer đang phát nghe thử
+        self._dub_ao = None
+        self._dub_demo_ready.connect(self._play_dub_demo)
 
         main = QHBoxLayout(self); main.setSpacing(14)
         # ----- CỘT TRÁI (GIÃN hết phần rộng còn lại): xem trước + ghi chú -----
@@ -970,6 +981,11 @@ class EditorDialog(QDialog):
         dr1.addWidget(QLabel("Giọng"))
         self.dub_voice = _NoWheelCombo()
         dr1.addWidget(self.dub_voice, 1)
+        self.dub_prev_btn = QPushButton("🔊 Nghe thử")
+        self.dub_prev_btn.setToolTip(
+            "Đọc thử 1 câu ngắn bằng giọng đang chọn (cần mạng).")
+        self.dub_prev_btn.clicked.connect(self._dub_preview)
+        dr1.addWidget(self.dub_prev_btn)
         gd.addLayout(dr1)
         self.dub_mute_chk = QCheckBox("Tắt hẳn tiếng gốc (mặc định: giảm nhỏ)")
         self.dub_mute_chk.setToolTip(
@@ -1123,12 +1139,14 @@ class EditorDialog(QDialog):
             self._bgm_file = layout.get("bgm_file", "") or ""
             self.bgm_vol.setValue(int(float(layout.get("bgm_vol", 0.15)) * 100))
             self._bgm_mode_ui()
-            # lồng tiếng AI
+            # lồng tiếng AI (voice để "pending" — list giọng nạp nền xong
+            # sẽ tự chọn lại; _collect_layout vẫn trả pending nếu chưa kịp)
+            self._dub_voice_pending = layout.get("dub_voice", "") or ""
             di = self.dub_lang.findData(layout.get("dub_lang", "") or "")
             if di >= 0:
                 self.dub_lang.setCurrentIndex(di)
             self._dub_lang_ui()
-            dv = self.dub_voice.findData(layout.get("dub_voice", "") or "")
+            dv = self.dub_voice.findData(self._dub_voice_pending)
             if dv >= 0:
                 self.dub_voice.setCurrentIndex(dv)
             self.dub_mute_chk.setChecked(bool(layout.get("dub_mute", False)))
@@ -1188,21 +1206,149 @@ class EditorDialog(QDialog):
 
     # ---- Lồng tiếng AI ----
     def _dub_lang_ui(self):
-        """Đổi ngôn ngữ -> nạp lại danh sách giọng (nữ/nam) của ngôn ngữ đó."""
+        """Đổi ngôn ngữ -> nạp danh sách giọng ĐẦY ĐỦ của ngôn ngữ đó
+        (edge-tts, thread nền + cache — không block UI)."""
         lang = self.dub_lang.currentData() or ""
-        cur = self.dub_voice.currentData()
-        self.dub_voice.blockSignals(True)
-        self.dub_voice.clear()
-        for label, vid in DUB_VOICES.get(lang, []):
-            self.dub_voice.addItem(label, vid)
-        if cur:
-            i = self.dub_voice.findData(cur)
-            if i >= 0:
-                self.dub_voice.setCurrentIndex(i)
-        self.dub_voice.blockSignals(False)
         on = bool(lang)
         self.dub_voice.setEnabled(on)
         self.dub_mute_chk.setEnabled(on)
+        self.dub_prev_btn.setEnabled(on)
+        if not lang:
+            self.dub_voice.blockSignals(True)
+            self.dub_voice.clear()
+            self.dub_voice.blockSignals(False)
+            return
+        if lang in _DUB_VOICE_CACHE:
+            self._fill_dub_voices(_DUB_VOICE_CACHE[lang])
+            return
+        # Chưa có cache -> hiện chờ + nạp ở thread nền (QTimer poll như
+        # pattern _write_caption bên studio_page — edge-tts gọi mạng).
+        self.dub_voice.blockSignals(True)
+        self.dub_voice.clear()
+        self.dub_voice.addItem("(đang tải danh sách giọng…)", "")
+        self.dub_voice.blockSignals(False)
+        if lang in self._dub_loading:
+            return
+        self._dub_loading.add(lang)
+        out: list = []
+
+        def bg():
+            try:
+                from app.core.dubbing import list_voices_for
+                out.append(list_voices_for(lang)
+                           or list(DUB_VOICES.get(lang, [])))
+            except Exception:  # noqa: BLE001
+                out.append(list(DUB_VOICES.get(lang, [])))
+
+        import threading
+        threading.Thread(target=bg, daemon=True).start()
+        timer = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            timer.stop(); timer.deleteLater()
+            self._dub_loading.discard(lang)
+            _DUB_VOICE_CACHE[lang] = out[0]
+            if (self.dub_lang.currentData() or "") == lang:
+                self._fill_dub_voices(out[0])
+
+        timer.timeout.connect(poll)
+        timer.start(150)
+
+    def _fill_dub_voices(self, voices):
+        """Đổ list giọng vào combo, giữ lựa chọn đang có / voice của layout."""
+        want = self.dub_voice.currentData() or self._dub_voice_pending
+        self.dub_voice.blockSignals(True)
+        self.dub_voice.clear()
+        for label, vid in voices:
+            self.dub_voice.addItem(label, vid)
+        if want:
+            i = self.dub_voice.findData(want)
+            if i >= 0:
+                self.dub_voice.setCurrentIndex(i)
+            elif want == self._dub_voice_pending:
+                # voice lưu trong mẫu cũ không có trong list (vd offline chỉ
+                # còn list tĩnh) -> vẫn giữ để layout round-trip không mất
+                self.dub_voice.addItem(want, want)
+                self.dub_voice.setCurrentIndex(self.dub_voice.count() - 1)
+        self.dub_voice.blockSignals(False)
+        self._dub_voice_pending = ""
+
+    def _dub_preview(self):
+        """Nghe thử giọng đang chọn: synth 1 câu ở thread nền -> phát luôn."""
+        voice = self.dub_voice.currentData() or self._dub_voice_pending
+        if not voice:
+            return
+        import glob, os, tempfile, threading, uuid
+        self.dub_prev_btn.setEnabled(False)
+        self.dub_prev_btn.setText("Đang đọc…")
+        tmp = tempfile.gettempdir()
+        # dọn demo cũ (tên duy nhất mỗi lần -> không đụng file lần trước
+        # còn bị player giữ handle)
+        for old in glob.glob(os.path.join(tmp, "_dubdemo_*.mp3")):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        out = os.path.join(tmp, f"_dubdemo_{uuid.uuid4().hex[:8]}.mp3")
+
+        def work():
+            try:
+                from app.core.dubbing import synth_demo
+                ok = synth_demo(voice, out)
+                self._dub_demo_ready.emit(out if ok else "")
+            except Exception:  # noqa: BLE001
+                self._dub_demo_ready.emit("")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _dub_demo_done(self):
+        """Trả nút Nghe thử về bình thường + GIẢI PHÓNG file mp3 (phải
+        stop + setSource rỗng — Windows Media Foundation giữ handle nếu
+        chỉ stop(), file demo sau không dọn được)."""
+        pl = self._dub_pl
+        if pl is not None:
+            from PyQt6.QtCore import QUrl
+            try:
+                pl.stop()
+                pl.setSource(QUrl())
+            except RuntimeError:
+                pass
+            self._dub_pl = None
+            self._dub_ao = None
+        self.dub_prev_btn.setText("🔊 Nghe thử")
+        self.dub_prev_btn.setEnabled(bool(self.dub_lang.currentData()))
+
+    def _play_dub_demo(self, path):
+        import os
+        if not path or not os.path.exists(path):
+            self._dub_demo_done()
+            QMessageBox.information(
+                self, "Nghe thử lỗi",
+                "Không đọc thử được giọng này (kiểm tra mạng rồi thử lại).")
+            return
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+        pl = QMediaPlayer(self)
+        ao = QAudioOutput(self)
+        pl.setAudioOutput(ao)
+        ao.setVolume(1.0)
+        self._dub_pl, self._dub_ao = pl, ao       # giữ tham chiếu khi phát
+
+        def st(s):
+            if s in (QMediaPlayer.MediaStatus.EndOfMedia,
+                     QMediaPlayer.MediaStatus.InvalidMedia):
+                self._dub_demo_done()
+
+        pl.mediaStatusChanged.connect(st)
+        pl.errorOccurred.connect(lambda *_: self._dub_demo_done())
+        pl.setSource(QUrl.fromLocalFile(path))
+        pl.play()
+        # chốt an toàn: 20s chưa xong (codec/thiết bị kẹt) -> vẫn trả nút
+        QTimer.singleShot(
+            20000,
+            lambda: self._dub_demo_done() if self._dub_pl is pl else None)
 
     # ---- Nhạc nền + logo ----
     def _bgm_mode_ui(self):
@@ -1438,7 +1584,9 @@ class EditorDialog(QDialog):
         lay["bgm_file"] = self._bgm_file
         lay["bgm_vol"] = self.bgm_vol.value() / 100.0
         lay["dub_lang"] = self.dub_lang.currentData() or ""
-        lay["dub_voice"] = self.dub_voice.currentData() or ""
+        # list giọng còn đang nạp nền -> giữ voice của layout cũ (pending)
+        lay["dub_voice"] = (self.dub_voice.currentData()
+                            or self._dub_voice_pending or "")
         lay["dub_mute"] = self.dub_mute_chk.isChecked()
         lay["logo_path"] = self._logo_path
         lay["logo_pos"] = self.logo_pos.currentData() or "tr"
