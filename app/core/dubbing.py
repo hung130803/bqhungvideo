@@ -60,6 +60,33 @@ VOICES: dict[str, list[tuple[str, str]]] = {
            ("Nam — Henri", "fr-FR-HenriNeural")],
 }
 
+# ---- GIỌNG HOT (được ưa dùng nhất, tự nhiên nhất) — ghim lên ĐẦU danh sách,
+# gắn ⭐. Gồm các giọng Multilingual đời mới (đọc được MỌI ngôn ngữ, tự nhiên
+# gần bằng ElevenLabs) + giọng bản địa hay nhất mỗi tiếng. ----
+_HOT_VOICES = {
+    # Đa ngữ (đọc được mọi thứ tiếng — hot nhất, giọng kể chuyện tự nhiên)
+    "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural",
+    "en-US-AvaMultilingualNeural", "en-US-EmmaMultilingualNeural",
+    # Tiếng Anh Mỹ nam trầm (kiểu "Adam" kể chuyện)
+    "en-US-GuyNeural", "en-US-DavisNeural", "en-US-JasonNeural",
+    "en-US-TonyNeural", "en-US-EricNeural", "en-US-AndrewNeural",
+    "en-US-BrianNeural", "en-US-SteffanNeural",
+    # Tiếng Anh Mỹ nữ hot
+    "en-US-JennyNeural", "en-US-AriaNeural", "en-US-MichelleNeural",
+    "en-US-SaraNeural", "en-US-NancyNeural",
+    # Anh-Anh (giọng Anh Quốc)
+    "en-GB-RyanNeural", "en-GB-SoniaNeural",
+    # Tiếng Việt
+    "vi-VN-NamMinhNeural", "vi-VN-HoaiMyNeural",
+    # Các tiếng khác — giọng hay nhất
+    "id-ID-ArdiNeural", "id-ID-GadisNeural",
+    "th-TH-NiwatNeural", "th-TH-PremwadeeNeural",
+    "ko-KR-InJoonNeural", "ko-KR-SunHiNeural",
+    "ja-JP-KeitaNeural", "ja-JP-NanamiNeural",
+    "zh-CN-YunxiNeural", "zh-CN-XiaoxiaoNeural", "zh-CN-YunjianNeural",
+    "es-ES-AlvaroNeural", "pt-BR-AntonioNeural", "fr-FR-HenriNeural",
+}
+
 # Nhãn tiếng Việt cho combo UI
 LANG_LABELS = {
     "vi": "Tiếng Việt", "en": "Tiếng Anh", "id": "Tiếng Indonesia",
@@ -152,8 +179,9 @@ def _voice_label(v: dict) -> str:
         name = name.replace("Multilingual", "")
     g = _GENDER_VI.get((v.get("Gender") or "").lower(), "?")
     region = (v.get("Locale") or "").split("-")[-1]
-    return f"{name} — {g} ({region}, đa ngữ)" if multi \
-        else f"{name} — {g} ({region})"
+    star = "⭐ " if short in _HOT_VOICES else ""      # giọng HOT -> gắn sao
+    return f"{star}{name} — {g} ({region}, đa ngữ)" if multi \
+        else f"{star}{name} — {g} ({region})"
 
 
 def list_voices_for(lang: str) -> list[tuple[str, str]]:
@@ -174,10 +202,14 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
              if "multilingual" in v.get("ShortName", "").lower()
              and v["ShortName"] not in seen]
     fav = {vid for _, vid in static}    # giọng mặc định cũ (đã kiểm chứng hay)
-    native.sort(key=lambda v: (0 if v.get("Locale") == pref else 1,
+    # Ưu tiên: giọng HOT (⭐) trước > cùng vùng chính > mặc định cũ > còn lại
+    native.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
+                               0 if v.get("Locale") == pref else 1,
                                0 if v["ShortName"] in fav else 1,
                                v.get("Locale", ""), v.get("ShortName", "")))
-    multi.sort(key=lambda v: v.get("ShortName", ""))
+    # giọng đa ngữ HOT lên đầu nhóm đa ngữ
+    multi.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
+                              v.get("ShortName", "")))
     out = [(_voice_label(v), v["ShortName"]) for v in native + multi]
     return out or static
 
