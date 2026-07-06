@@ -232,7 +232,8 @@ def build_ass(words: list, segments: list, out_path,
             số âm = hiện sớm hơn. ny = vị trí dọc (0=trên, 1=dưới) do user KÉO.
     hook_nx/hook_ny = tâm-ngang/đỉnh ô HOOK (0..1, user kéo trong Chỉnh mẫu);
     hook_size = cỡ chữ hook theo tỉ lệ chiều cao (0 = mặc định 1.5x phụ đề).
-    LƯU Ý: clip CÓ hook -> CHỈ hiện hook, BỎ phụ đề chạy chữ (user yêu cầu)."""
+    LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
+    bị ẨN trong lúc hook hiện (tránh chồng chữ), sau đó chạy bình thường."""
     has_hook = bool((hook or "").strip()) and hook_dur > 0
     remapped = _remap_words(words or [], segments or [])
     if not remapped and not has_hook:
@@ -308,9 +309,9 @@ def build_ass(words: list, segments: list, out_path,
             han = f"\\pos({int(hook_nx * out_w)},{hmv})" + han
         lines.append(f"Dialogue: 1,{_fmt(0)},{_fmt(hook_dur)},Hook,,0,0,0,,"
                      f"{{{han}}}{ht}\n")
-        # CÓ HOOK -> CHỈ hiện hook, BỎ toàn bộ phụ đề chạy chữ của clip này
-        Path(out_path).write_text("".join(lines), encoding="utf-8")
-        return True
+    # CÓ HOOK -> ẨN phụ đề chạy chữ TRONG lúc hook hiện (tránh chồng chữ):
+    # bỏ cue nằm hẳn trong [0, hook_dur); cue vắt qua mốc -> cắt start = hook_dur.
+    min_start = hook_dur if has_hook else 0.0
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
@@ -338,6 +339,9 @@ def build_ass(words: list, segments: list, out_path,
             if ev[k][1] > ev[k + 1][0]:
                 ev[k][1] = ev[k + 1][0]
         for wa, we, first, last, parts in ev:
+            if we <= min_start:                  # cue nằm hẳn trong lúc hook hiện -> bỏ
+                continue
+            wa = max(wa, min_start)              # vắt qua mốc hook -> cắt start
             if we - wa < 0.06:                   # bỏ dòng quá ngắn (đỡ nhấp nháy)
                 continue
             # fade chỉ ở ĐẦU/CUỐI cụm (giữa cụm chữ đứng yên, chỉ đổi màu) -> không chớp
@@ -353,6 +357,9 @@ def build_ass(words: list, segments: list, out_path,
     bord_kw = max(4, int(size * 0.06))
     for a, b, txt in cues:
         a2, b2 = max(0.0, a + delay), max(0.05, b + delay)   # đẩy trễ cho khớp lời
+        if b2 <= min_start:               # cue nằm hẳn trong lúc hook hiện -> bỏ
+            continue
+        a2 = max(a2, min_start)           # vắt qua mốc hook -> cắt start
         if p.get("highlight"):
             # CHỮ HOA + tô NEON cho TỪ KHÓA + phát sáng (glow qua \blur)
             word = _esc(txt)
