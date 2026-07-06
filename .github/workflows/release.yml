@@ -61,6 +61,19 @@ jobs:
           --add-binary "bin/yt-dlp.exe;."
           main.py
 
+      - name: Dọn DỮ LIỆU thừa (giảm ~100MB, an toàn tuyệt đối - chỉ xóa data)
+        shell: pwsh
+        run: |
+          $int = "dist/BQHungVideo/_internal"
+          # ~100MB JSON discovery cache của googleapiclient: google.generativeai
+          # (Gemini) dùng gRPC generativelanguage, KHÔNG đọc mấy file JSON này.
+          # Chỉ xóa DATA (không đụng code import) -> zero rủi ro.
+          Remove-Item -Recurse -Force "$int/googleapiclient/discovery_cache/documents" -EA SilentlyContinue
+          # Qt6 translations (.qm) — app dùng tiếng Việt tự viết, không dùng
+          Remove-Item -Recurse -Force "$int/PyQt6/Qt6/translations" -EA SilentlyContinue
+          Write-Host "Dung luong sau don:"
+          "{0:N0} MB" -f ((Get-ChildItem dist/BQHungVideo -Recurse | Measure-Object Length -Sum).Sum/1MB)
+
       - name: Nén thư mục app
         shell: bash
         run: |
