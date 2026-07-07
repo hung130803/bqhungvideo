@@ -410,39 +410,176 @@ def _atempo_chain(tempo: float) -> str:
 
 
 # ---- HIỆU ỨNG TINH TẾ ----
-# Vài biến thể "whoosh" (tiếng vút chuyển đoạn) TỔNG HỢP thuần bằng ffmpeg —
-# KHÔNG cần file nhạc kèm nên chạy trên MỌI máy khách (bản .exe nhẹ). Mỗi biến
-# thể khác nhau độ dài + dải tần bandpass + hướng quét cao/thấp -> nghe không
-# lặp lại nhàm. Âm lượng để NHỎ (0.25) ở nơi gọi -> tinh tế, không lố.
-_WHOOSH_VARIANTS = (
-    # (dur, f_center, width) — quét dải trung, mượt
-    (0.24, 1400, 900),
-    (0.28, 1000, 700),   # trầm hơn, dài hơn chút
-    (0.22, 1900, 1100),  # cao/sáng, ngắn
-    (0.26, 1200, 800),
+# Bộ tiếng chuyển đoạn TỔNG HỢP thuần bằng ffmpeg (anoisesrc/sine/aevalsrc +
+# bandpass/lowpass/highpass + afade + volume + atempo) — KHÔNG cần file kèm nên
+# chạy trên MỌI máy khách (bản .exe nhẹ). ~9 LOẠI khác hẳn nhau (không chỉ đổi
+# tần số) -> mỗi điểm ghép chọn NGẪU NHIÊN 1 loại, tránh lặp liên tiếp cùng loại
+# nên nghe ĐA DẠNG, không nhàm. TẤT CẢ đều NGẮN (~0.15-0.3s) + âm lượng NHỎ
+# (~0.2-0.28) -> tinh tế, không lố.
+#
+# Mỗi loại là 1 hàm build(delay_ms, vol) -> (input_args, filter_branch):
+#   input_args = phần "-f lavfi -t <dur> -i <src>" đưa vào lệnh ffmpeg (mỗi loại
+#     tự chọn nguồn: nhiễu trắng / sine / xung aevalsrc).
+#   filter_branch = chuỗi filter "[{IDX}:a]...[{OUT}]" — IDX/OUT được nơi gọi
+#     thay bằng chỉ số input thật + nhãn output. adelay đặt đúng mốc ghép.
+# Đặt {IDX}/{OUT} làm placeholder để nơi gọi (export_canvas_clip) không phải
+# biết chi tiết từng loại.
+
+def _fx_lavfi(dur: float, src: str) -> str:
+    """1 input lavfi ngắn: '-f lavfi -t <dur> -i <src>' (dạng đã nối chuỗi)."""
+    return f"-f|lavfi|-t|{dur:.3f}|-i|{src}"
+
+
+def _fx_whoosh_up(delay_ms: int, vol: float):
+    """Whoosh vút LÊN: nhiễu quét bandpass tần số TĂNG (afreqshift giả bằng
+    bandpass cố định + fade) — dùng nguồn nhiễu, highpass tăng dần cảm giác lên."""
+    dur = 0.26
+    return (_fx_lavfi(dur, "anoisesrc=color=white:r=48000"),
+            f"[{{IDX}}:a]highpass=f=600,bandpass=f=1500:width_type=h:w=1200,"
+            f"afade=t=in:st=0:d={dur*0.7:.3f}:curve=ipar,"
+            f"afade=t=out:st={dur*0.8:.3f}:d={dur*0.2:.3f}:curve=tri,"
+            f"volume={vol:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_whoosh_down(delay_ms: int, vol: float):
+    """Whoosh vút XUỐNG: nhiễu quét cảm giác GIẢM — fade vào nhanh, tắt dài,
+    lowpass để nghe trầm dần."""
+    dur = 0.28
+    return (_fx_lavfi(dur, "anoisesrc=color=white:r=48000"),
+            f"[{{IDX}}:a]bandpass=f=1300:width_type=h:w=1000,lowpass=f=2200,"
+            f"afade=t=in:st=0:d={dur*0.15:.3f}:curve=exp,"
+            f"afade=t=out:st={dur*0.35:.3f}:d={dur*0.65:.3f}:curve=qsin,"
+            f"volume={vol:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_swoosh_air(delay_ms: int, vol: float):
+    """Swoosh gió nhẹ: nhiễu + bandpass RỘNG (dải rộng nghe như luồng gió)."""
+    dur = 0.30
+    return (_fx_lavfi(dur, "anoisesrc=color=pink:r=48000"),
+            f"[{{IDX}}:a]bandpass=f=1100:width_type=h:w=2000,"
+            f"afade=t=in:st=0:d={dur*0.4:.3f}:curve=tri,"
+            f"afade=t=out:st={dur*0.5:.3f}:d={dur*0.5:.3f}:curve=tri,"
+            f"volume={vol*0.95:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_pop(delay_ms: int, vol: float):
+    """Pop: sine ngắn tắt CỰC nhanh (cú 'bụp' gọn)."""
+    dur = 0.12
+    return (_fx_lavfi(dur, "sine=frequency=440:r=48000"),
+            f"[{{IDX}}:a]afade=t=in:st=0:d=0.005:curve=exp,"
+            f"afade=t=out:st=0.02:d={dur-0.02:.3f}:curve=exp,"
+            f"volume={vol*0.9:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_tick(delay_ms: int, vol: float):
+    """Tick/click: xung CỰC ngắn (aevalsrc 1 nhịp) qua highpass -> 'tít' sắc."""
+    dur = 0.05
+    return (_fx_lavfi(dur, "sine=frequency=2200:r=48000"),
+            f"[{{IDX}}:a]highpass=f=1500,"
+            f"afade=t=out:st=0.008:d={dur-0.008:.3f}:curve=exp,"
+            f"volume={vol*0.8:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_riser(delay_ms: int, vol: float):
+    """Riser ngắn: sine sweep LÊN nhẹ (tạo hồi hộp) — aevalsrc quét tần số tăng."""
+    dur = 0.30
+    # aevalsrc: tần số tăng tuyến tính 300 -> 1500 Hz trong dur giây.
+    expr = f"sin(2*PI*t*(300+{1200/dur:.1f}*t))"
+    return (_fx_lavfi(dur, f"aevalsrc={expr}:s=48000"),
+            f"[{{IDX}}:a]afade=t=in:st=0:d={dur*0.6:.3f}:curve=ipar,"
+            f"afade=t=out:st={dur*0.85:.3f}:d={dur*0.15:.3f}:curve=tri,"
+            f"volume={vol*0.85:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_boom(delay_ms: int, vol: float):
+    """Soft boom/impact: sine THẤP tắt nhanh — RẤT nhẹ (không dội)."""
+    dur = 0.22
+    return (_fx_lavfi(dur, "sine=frequency=90:r=48000"),
+            f"[{{IDX}}:a]lowpass=f=180,"
+            f"afade=t=in:st=0:d=0.01:curve=exp,"
+            f"afade=t=out:st=0.04:d={dur-0.04:.3f}:curve=qsin,"
+            f"volume={vol*0.9:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_ding(delay_ms: int, vol: float):
+    """Ding nhẹ: sine CAO tắt dần — âm lượng nhỏ để không lố."""
+    dur = 0.28
+    return (_fx_lavfi(dur, "sine=frequency=1760:r=48000"),
+            f"[{{IDX}}:a]afade=t=in:st=0:d=0.006:curve=exp,"
+            f"afade=t=out:st=0.03:d={dur-0.03:.3f}:curve=qsin,"
+            f"volume={vol*0.7:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+def _fx_whoosh_mid(delay_ms: int, vol: float):
+    """Whoosh trung tính: nhiễu bandpass dải giữa, bán chuông mượt (gốc kinh điển)."""
+    dur = 0.24
+    return (_fx_lavfi(dur, "anoisesrc=color=white:r=48000"),
+            f"[{{IDX}}:a]bandpass=f=1400:width_type=h:w=900,"
+            f"afade=t=in:st=0:d={dur*0.3:.3f}:curve=exp,"
+            f"afade=t=out:st={dur*0.35:.3f}:d={dur*0.65:.3f}:curve=tri,"
+            f"volume={vol:.3f},aresample=48000,adelay={delay_ms}|{delay_ms}[{{OUT}}]")
+
+
+# Danh sách LOẠI tiếng tổng hợp (mỗi phần tử là 1 hàm build). ~9 loại khác hẳn.
+_FX_TYPES = (
+    _fx_whoosh_mid, _fx_whoosh_up, _fx_whoosh_down, _fx_swoosh_air,
+    _fx_pop, _fx_tick, _fx_riser, _fx_boom, _fx_ding,
 )
 
 
-def _whoosh_source(idx: int, at_sec: float, vol: float, lin: str,
-                   lout: str) -> str:
-    """Sinh 1 nhánh filtergraph tạo tiếng 'whoosh' ngắn tại giây at_sec.
+def _pick_fx_sequence(n: int, seed: Optional[int] = None) -> list[int]:
+    """Chọn n loại tiếng NGẪU NHIÊN, KHÔNG trùng loại 2 lần LIÊN TIẾP.
+    Trả về danh sách chỉ số vào _FX_TYPES."""
+    import random as _r
+    rng = _r.Random(seed) if seed is not None else _r
+    seq: list[int] = []
+    k = len(_FX_TYPES)
+    for _ in range(max(0, n)):
+        choices = [i for i in range(k) if not seq or i != seq[-1]]
+        seq.append(rng.choice(choices))
+    return seq
 
-    Dùng anoisesrc (nhiễu trắng) -> bandpass (nghe như tiếng gió/vút) -> afade
-    in/out (thành cú 'swoosh' gọn) -> volume nhỏ -> adelay đặt đúng mốc ghép.
-    lin = nhãn input lavfi (vd '2:a'), lout = nhãn output. Chọn biến thể theo
-    idx để mỗi điểm ghép nghe khác nhau (ngẫu nhiên nhẹ, tái lập được)."""
-    dur, fc, width = _WHOOSH_VARIANTS[idx % len(_WHOOSH_VARIANTS)]
+
+def _fx_synth_branch(type_idx: int, at_sec: float, vol: float, in_idx: int,
+                     out_label: str):
+    """Sinh (input_args_list, filter_branch) cho 1 loại tiếng tổng hợp tại at_sec.
+
+    input_args_list = list token '-f','lavfi','-t',...,'-i','<src>' để nối vào
+    lệnh ffmpeg. filter_branch đã thay {IDX}->in_idx, {OUT}->out_label."""
     delay_ms = max(0, int(round(at_sec * 1000)))
-    # afade dạng bán chuông: vào nhanh (t_curve exp) rồi tắt mượt -> "vút".
-    fade_out_start = max(0.02, dur * 0.35)
-    fade_out_dur = dur - fade_out_start
-    return (
-        f"[{lin}]bandpass=f={fc}:width_type=h:w={width},"
-        f"afade=t=in:st=0:d={dur*0.3:.3f}:curve=exp,"
-        f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_dur:.3f}:curve=tri,"
-        f"volume={vol:.3f},aresample=48000,"
-        f"adelay={delay_ms}|{delay_ms}[{lout}]"
-    )
+    build = _FX_TYPES[type_idx % len(_FX_TYPES)]
+    in_args, branch = build(delay_ms, vol)
+    return (in_args.split("|"),
+            branch.replace("{IDX}", str(in_idx)).replace("{OUT}", out_label))
+
+
+def _sfx_file_ok(path: str) -> bool:
+    """File tiếng động ĐỌC ĐƯỢC + có luồng audio? (ffprobe nhanh). File hỏng/
+    rỗng/không phải audio -> False để BỎ QUA an toàn (fallback tổng hợp), tránh
+    làm ffmpeg export FAIL."""
+    try:
+        r = subprocess.run(
+            [settings.FFPROBE_PATH, "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=_CREATE_NO_WINDOW, timeout=15)
+        return r.returncode == 0 and "audio" in (r.stdout or "")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _list_sfx_files(sfx_dir: Optional[str]) -> list[str]:
+    """Liệt kê file tiếng động HỢP LỆ (đọc được, có audio) trong thư mục user.
+    An toàn: thư mục/file lỗi -> rỗng -> nơi gọi tự fallback sang tiếng tổng hợp."""
+    if not sfx_dir:
+        return []
+    exts = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")
+    try:
+        cands = [str(p) for p in Path(sfx_dir).iterdir()
+                 if p.is_file() and p.suffix.lower() in exts]
+    except OSError:
+        return []
+    return [p for p in cands if _sfx_file_ok(p)]
 
 
 def _cleanup_dst(dst) -> None:
@@ -691,8 +828,12 @@ def export_canvas_clip(
                                         # đã giãn). 1.0 = không giãn.
     fx_fade: bool = True,               # HIỆU ỨNG: fade hình NHẸ đầu/cuối clip
                                         # (~0.35s) — tinh tế, chuyên nghiệp.
-    fx_whoosh: bool = True,             # HIỆU ỨNG: tiếng 'whoosh' nhỏ tại điểm
-                                        # ghép các đoạn (chỉ khi >1 segment).
+    fx_whoosh: bool = True,             # HIỆU ỨNG: tiếng chuyển đoạn NHỎ tại
+                                        # điểm ghép các đoạn (chỉ khi >1 segment).
+    fx_sfx_dir: Optional[str] = None,   # THƯ MỤC tiếng động RIÊNG của user (tùy
+                                        # chọn): nếu có + có file -> mỗi điểm ghép
+                                        # lấy NGẪU NHIÊN 1 file trong đó; để trống
+                                        # -> dùng bộ tiếng TỔNG HỢP đa dạng.
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -891,12 +1032,14 @@ def export_canvas_clip(
             parts.append(f"[{bgm_idx}:a]volume={max(0.0, min(1.0, bgm_vol)):.3f},"
                          f"atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS[bgm]")
             mix.append("[bgm]")
-        # HIỆU ỨNG WHOOSH: tiếng 'vút' NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).
-        # Tổng hợp thuần ffmpeg (anoisesrc -> bandpass -> afade) nên KHÔNG cần
-        # file ngoài -> chạy mọi máy khách. Mốc ghép tính ở timeline ĐẦU RA
-        # (chia vspeed vì video/tiếng đã tăng/giãn tốc). Nếu whoosh là NGUỒN
-        # audio DUY NHẤT (video câm) -> thêm 1 nền im lặng dài đủ clip trước để
-        # amix duration=first không cắt cụt output.
+        # HIỆU ỨNG TIẾNG CHUYỂN ĐOẠN: cú NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).
+        # Ưu tiên THƯ MỤC tiếng động của user (fx_sfx_dir) nếu có file -> mỗi
+        # điểm ghép lấy NGẪU NHIÊN 1 file (adelay + volume ~0.3, cắt out_dur,
+        # KHÔNG lặp). Không có -> dùng bộ tiếng TỔNG HỢP đa dạng (thuần ffmpeg,
+        # chạy mọi máy khách). Mốc ghép tính ở timeline ĐẦU RA (chia vspeed vì
+        # video/tiếng đã tăng/giãn tốc). Nếu tiếng chuyển đoạn là NGUỒN audio
+        # DUY NHẤT (video câm) -> thêm 1 nền im lặng dài đủ clip trước để amix
+        # duration=first không cắt cụt output.
         if whoosh_on:
             base_had_audio = len(mix) > 0 or (amap is not None)
             if not base_had_audio:
@@ -907,14 +1050,39 @@ def export_canvas_clip(
                         "-i", "anullsrc=r=48000:cl=stereo"]
                 parts.append(f"[{sil_idx}:a]asetpts=PTS-STARTPTS[wbed]")
                 mix.append("[wbed]")
-            for wi, off in enumerate(whoosh_offsets):
-                w_idx = aidx
-                aidx += 1
-                cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}",
-                        "-i", "anoisesrc=color=white:r=48000"]
-                parts.append(_whoosh_source(wi, off, 0.25,
-                                            f"{w_idx}:a", f"wh{wi}"))
-                mix.append(f"[wh{wi}]")
+            n_joint = len(whoosh_offsets)
+            # File tiếng động user hợp lệ (an toàn: lỗi/không đọc được -> rỗng ->
+            # tự fallback sang tổng hợp). random.sample tránh trùng file khi đủ;
+            # thiếu thì cho phép lặp (choices).
+            import random as _rnd
+            sfx_files = _list_sfx_files(fx_sfx_dir)
+            if sfx_files:
+                if len(sfx_files) >= n_joint:
+                    picked = _rnd.sample(sfx_files, n_joint)
+                else:
+                    picked = [_rnd.choice(sfx_files) for _ in range(n_joint)]
+                for wi, (off, fpath) in enumerate(zip(whoosh_offsets, picked)):
+                    s_idx = aidx
+                    aidx += 1
+                    cmd += ["-i", str(fpath)]
+                    d_ms = max(0, int(round(off * 1000)))
+                    # cắt về out_dur SAU adelay để không kéo dài clip; volume nhỏ.
+                    parts.append(
+                        f"[{s_idx}:a]aresample=48000,volume=0.3,"
+                        f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
+                        f"asetpts=PTS-STARTPTS[wh{wi}]")
+                    mix.append(f"[wh{wi}]")
+            else:
+                # Bộ TỔNG HỢP đa dạng: chọn loại ngẫu nhiên, không trùng liên tiếp.
+                fx_seq = _pick_fx_sequence(n_joint)
+                for wi, (off, tidx) in enumerate(zip(whoosh_offsets, fx_seq)):
+                    w_idx = aidx
+                    aidx += 1
+                    in_args, branch = _fx_synth_branch(tidx, off, 0.25,
+                                                       w_idx, f"wh{wi}")
+                    cmd += in_args
+                    parts.append(branch)
+                    mix.append(f"[wh{wi}]")
         if len(mix) == 1:
             amap = mix[0]
         elif len(mix) >= 2:

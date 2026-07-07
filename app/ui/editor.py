@@ -965,13 +965,38 @@ class EditorDialog(QDialog):
             "Làm hình mờ dần lên ở đầu (~0.35s) và mờ dần xuống ở cuối — "
             "chuyển cảnh tinh tế, chuyên nghiệp, không lố.")
         gb.addWidget(self.fx_fade_chk)
-        self.fx_whoosh_chk = QCheckBox("Tiếng chuyển đoạn (whoosh)")
+        self.fx_whoosh_chk = QCheckBox("Tiếng chuyển đoạn (đa dạng)")
         self.fx_whoosh_chk.setChecked(True)
         self.fx_whoosh_chk.setToolTip(
-            "Thêm tiếng 'vút' NHỎ tại điểm ghép giữa các đoạn (chỉ khi clip "
-            "ghép nhiều đoạn / Mixed-Cut). Tạo bằng ffmpeg nên không cần file "
-            "nhạc kèm.")
+            "Thêm tiếng chuyển đoạn NHỎ tại điểm ghép giữa các đoạn (chỉ khi "
+            "clip ghép nhiều đoạn / Mixed-Cut). Mỗi điểm ghép chọn NGẪU NHIÊN 1 "
+            "trong ~9 loại tiếng tổng hợp (whoosh lên/xuống, gió, pop, tick, "
+            "riser, boom nhẹ, ding...) — không lặp liên tiếp nên nghe đa dạng. "
+            "Tạo bằng ffmpeg nên không cần file kèm.")
         gb.addWidget(self.fx_whoosh_chk)
+        # THƯ MỤC tiếng động riêng (tùy chọn): giống nhạc nền ngẫu nhiên — có
+        # thư mục + có file thì mỗi điểm ghép lấy 1 file ngẫu nhiên; để trống ->
+        # dùng bộ tiếng tổng hợp đa dạng ở trên.
+        self._fx_sfx_dir = ""
+        srow = QHBoxLayout()
+        self.fx_sfx_pick = QPushButton("Chọn thư mục tiếng động…")
+        self.fx_sfx_pick.setToolTip(
+            "Tùy chọn: chọn 1 THƯ MỤC chứa file tiếng động (.mp3/.wav/.m4a...). "
+            "Nếu có, mỗi điểm ghép sẽ lấy NGẪU NHIÊN 1 file trong đó (trộn nhỏ). "
+            "Để trống -> dùng tiếng tổng hợp đa dạng.")
+        self.fx_sfx_pick.clicked.connect(self._pick_fx_sfx_dir)
+        srow.addWidget(self.fx_sfx_pick)
+        self.fx_sfx_clear = QPushButton("Bỏ")
+        self.fx_sfx_clear.clicked.connect(self._clear_fx_sfx_dir)
+        _fit_button(self.fx_sfx_clear,
+                    minw=self.fx_sfx_clear.fontMetrics().horizontalAdvance("Bỏ") + 26)
+        srow.addWidget(self.fx_sfx_clear)
+        gb.addLayout(srow)
+        self.fx_sfx_lbl = QLabel("")
+        self.fx_sfx_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        self.fx_sfx_lbl.setWordWrap(True)
+        gb.addWidget(self.fx_sfx_lbl)
+        self._fx_sfx_update()
 
         # Nhóm: Nhạc nền + Logo kênh (hồng)
         gx, gx_box = _group("Nhạc nền + Logo kênh", (244, 114, 182))
@@ -1248,6 +1273,8 @@ class EditorDialog(QDialog):
             self.hook_first_chk.setChecked(bool(layout.get("hook_first")))
             self.fx_fade_chk.setChecked(bool(layout.get("fx_fade", True)))
             self.fx_whoosh_chk.setChecked(bool(layout.get("fx_whoosh", True)))
+            self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
+            self._fx_sfx_update()
             bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
             if bi >= 0:
                 self.bgm_mode.setCurrentIndex(bi)
@@ -1583,6 +1610,23 @@ class EditorDialog(QDialog):
                 self._bgm_file = f
         self._bgm_lbl_update()
 
+    def _fx_sfx_update(self):
+        self.fx_sfx_lbl.setText(
+            f"Thư mục tiếng động: {self._fx_sfx_dir or '(để trống = tiếng tổng hợp)'}")
+
+    def _pick_fx_sfx_dir(self):
+        from PyQt6.QtWidgets import QFileDialog
+        d = QFileDialog.getExistingDirectory(
+            self, "Chọn THƯ MỤC chứa tiếng động chuyển đoạn (mp3/wav/m4a...)",
+            self._fx_sfx_dir or "")
+        if d:
+            self._fx_sfx_dir = d
+            self._fx_sfx_update()
+
+    def _clear_fx_sfx_dir(self):
+        self._fx_sfx_dir = ""
+        self._fx_sfx_update()
+
     def _pick_logo(self):
         from PyQt6.QtWidgets import QFileDialog
         f, _ = QFileDialog.getOpenFileName(
@@ -1800,6 +1844,7 @@ class EditorDialog(QDialog):
         lay["hook_first"] = self.hook_first_chk.isChecked()
         lay["fx_fade"] = self.fx_fade_chk.isChecked()
         lay["fx_whoosh"] = self.fx_whoosh_chk.isChecked()
+        lay["fx_sfx_dir"] = self._fx_sfx_dir
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file

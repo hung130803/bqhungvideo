@@ -2784,6 +2784,13 @@ class StudioPage(QWidget):
             return random.choice(files) if files else ""
         return ""
 
+    def _pick_sfx_dir(self) -> str:
+        """Thư mục tiếng động chuyển đoạn của user (tùy chọn). '' = dùng bộ
+        tiếng TỔNG HỢP đa dạng trong ffmpeg. Chỉ trả khi thư mục tồn tại (việc
+        chọn file ngẫu nhiên/validate để ffmpeg_utils lo, an toàn fallback)."""
+        d = self.layout_tpl.get("fx_sfx_dir", "") or ""
+        return d if d and os.path.isdir(d) else ""
+
     def _export_video(self, video_id, only_clip_id=None):
         """
         Xuất clip của 1 video THEO ĐÚNG THỨ TỰ: Part = vị trí trong danh sách
@@ -2859,6 +2866,7 @@ class StudioPage(QWidget):
                 dub_mode=self.layout_tpl.get("dub_mode", "natural") or "natural",
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
+                fx_sfx_dir=self._pick_sfx_dir(),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 force=force_one)
             if jid:
