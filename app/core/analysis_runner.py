@@ -14,6 +14,7 @@ Chạy:  python -m app.core.analysis_runner <video_id> [force]
 """
 from __future__ import annotations
 
+import os
 import sys
 
 try:
@@ -21,6 +22,28 @@ try:
     sys.stderr.reconfigure(encoding="utf-8")
 except Exception:  # noqa: BLE001
     pass
+
+
+def _limit_native_threads() -> None:
+    """NGÂN SÁCH LUỒNG cho lib native (numpy/torch/ctranslate2/onnx/mediapipe).
+
+    Mặc định chúng mở luồng = SỐ NHÂN MÁY -> phân tích 1 video ăn 50-100% CPU.
+    Phải set TRƯỚC khi import lib nặng (OpenMP đọc env lúc nạp DLL). Tôn trọng
+    giá trị user tự đặt sẵn trong môi trường."""
+    try:
+        from config import settings
+        eco = getattr(settings, "ECO_MODE", True)
+    except Exception:  # noqa: BLE001
+        eco = True
+    cores = os.cpu_count() or 4
+    n = max(2, min(4, cores // 4)) if eco else max(2, min(8, cores // 2))
+    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+                "CT2_INTRA_THREADS"):
+        os.environ.setdefault(var, str(n))
+
+
+_limit_native_threads()
 
 
 def _emit(p: float, msg: str) -> None:

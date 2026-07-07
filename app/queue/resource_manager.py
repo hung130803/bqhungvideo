@@ -158,6 +158,13 @@ def suggest_profile(hw: HardwareInfo) -> ResourceProfile:
     if settings.WHISPER_MODEL:
         p.whisper_model = settings.WHISPER_MODEL
         notes.append(f"(.env override) whisper={p.whisper_model}")
+    # Model LỚN trên CPU = 3-4GB RAM + chậm x10 -> chặn lại (kể cả .env đòi):
+    # CPU tối đa 'medium' khi RAM >=16GB, không thì 'small'. GPU giữ nguyên.
+    if p.device == "cpu" and p.whisper_model.startswith(("large", "turbo",
+                                                         "distil-large")):
+        p.whisper_model = "medium" if hw.ram_gb >= 16 else "small"
+        notes.append(f"Model whisper lớn KHÔNG hợp CPU -> dùng {p.whisper_model} "
+                     "(muốn model lớn cần GPU + cuDNN).")
     if settings.AI_WORKERS.isdigit():
         p.max_gpu_workers = max(1, int(settings.AI_WORKERS))
     if settings.EXPORT_WORKERS.isdigit():

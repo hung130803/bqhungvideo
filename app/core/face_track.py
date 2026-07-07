@@ -41,6 +41,12 @@ def track_faces(
     import cv2
     import mediapipe as mp
 
+    # Ngân sách luồng: cv2 mặc định mở luồng = số nhân -> chiếm cả máy.
+    try:
+        cv2.setNumThreads(2)
+    except Exception:  # noqa: BLE001
+        pass
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"Không mở được video: {video_path}")
@@ -64,6 +70,15 @@ def track_faces(
                 if not ok:
                     break
                 t = idx / src_fps
+                # DOWNSCALE về ~480p trước khi detect: mediapipe tự resize nhỏ
+                # hơn nữa bên trong nên toạ độ (chuẩn hoá 0..1) KHÔNG đổi độ
+                # chính xác đáng kể, còn RAM/CPU cho cvtColor + detect giảm ~5x
+                # với video 1080p/4K. Kết quả chỉ là cx/cy nên crop vẫn bám mặt.
+                h = frame.shape[0]
+                if h > 480:
+                    scale = 480.0 / h
+                    frame = cv2.resize(frame, None, fx=scale, fy=scale,
+                                       interpolation=cv2.INTER_AREA)
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 res = fd.process(rgb)
                 if res.detections:

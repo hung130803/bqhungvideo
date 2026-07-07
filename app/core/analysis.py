@@ -124,6 +124,11 @@ def run_analysis(
             _set(video_id, kind, "failed", error=str(e))
             if on_progress:
                 on_progress(base + span, f"{label}: lỗi ({e})")
+        finally:
+            if kind == "transcript":
+                # Trả RAM model whisper NGAY khi chép lời xong: các pha sau
+                # (scenes/faces) không cần model, để nó nằm chờ tốn 0.5-3GB.
+                transcribe.release_models()
 
     # Dọn file audio tạm: kết quả đã cache trong DB, không cần giữ .wav (~8MB/video).
     # Nếu sau này phân tích lại, ensure_audio() sẽ tự tách lại.

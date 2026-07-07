@@ -32,6 +32,14 @@ def detect_scenes(
 
     from scenedetect import detect, ContentDetector
 
+    # cv2 mặc định mở luồng = số nhân máy -> ghìm lại (PySceneDetect đã tự
+    # downscale khung hình khi dò nên chỉ cần giới hạn luồng).
+    try:
+        import cv2
+        cv2.setNumThreads(2)
+    except Exception:  # noqa: BLE001
+        pass
+
     if on_progress:
         on_progress(0.1, "Đang dò chuyển cảnh...")
 

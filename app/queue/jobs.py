@@ -36,6 +36,18 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
     env = dict(os.environ)
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    # NGÂN SÁCH LUỒNG cho lib native trong tiến trình phân tích (whisper/
+    # mediapipe/numpy): không set thì OpenMP mở luồng = số nhân -> 1 job
+    # phân tích ăn 50-100% CPU cả máy. (analysis_runner cũng tự set — đây là
+    # lớp bảo hiểm cho bản .exe, nơi PyInstaller có thể nạp numpy sớm.)
+    from config import settings as _st
+    cores = os.cpu_count() or 4
+    n = (max(2, min(4, cores // 4)) if getattr(_st, "ECO_MODE", True)
+         else max(2, min(8, cores // 2)))
+    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+                "CT2_INTRA_THREADS"):
+        env.setdefault(var, str(n))
     proc = subprocess.Popen(
         args, cwd=str(ROOT_DIR), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

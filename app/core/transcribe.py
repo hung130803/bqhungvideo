@@ -13,6 +13,36 @@ from config import settings
 _model_cache: dict = {}  # (model_name, device, compute) -> WhisperModel
 _cuda_libs_done = False
 
+# Model lớn chạy CPU ngốn RAM khủng (large-v3 int8 ~3-4GB) + CPU cả giờ.
+# Khi phải chạy CPU (máy không GPU / CUDA lỗi) thì hạ về model nhỏ: chậm hơn
+# chút nhưng máy user không "chết" 10GB RAM. GPU vẫn dùng model lớn như cũ.
+_CPU_MODEL_CAP = {"large-v3": "small", "large-v2": "small", "large-v1": "small",
+                  "large": "small", "distil-large-v3": "small",
+                  "large-v3-turbo": "small", "turbo": "small",
+                  "medium": "medium", "medium.en": "medium.en"}
+
+
+def _cap_cpu_model(model_name: str) -> str:
+    return _CPU_MODEL_CAP.get(model_name, model_name)
+
+
+def cpu_threads() -> int:
+    """Ngân sách luồng CPU cho whisper/ctranslate2: ECO (mặc định) 2-4 luồng,
+    tắt eco thì tối đa nửa số nhân — phân tích KHÔNG được chiếm cả máy."""
+    import os
+    cores = os.cpu_count() or 4
+    if getattr(settings, "ECO_MODE", True):
+        return max(2, min(4, cores // 4))
+    return max(2, min(8, cores // 2))
+
+
+def release_models() -> None:
+    """GIẢI PHÓNG model whisper khỏi RAM (gọi ngay khi chép lời xong, trước
+    các pha face/scene — không để model 1-3GB nằm chờ suốt job phân tích)."""
+    import gc
+    _model_cache.clear()
+    gc.collect()
+
 
 def is_available() -> bool:
     try:
@@ -62,6 +92,8 @@ def _ensure_cuda_libs() -> bool:
 
 
 def _get_model(model_name: str, device: str, compute_type: str):
+    if device != "cuda":
+        model_name = _cap_cpu_model(model_name)
     key = (model_name, device, compute_type)
     if key not in _model_cache:
         from faster_whisper import WhisperModel
@@ -71,13 +103,15 @@ def _get_model(model_name: str, device: str, compute_type: str):
         try:
             _model_cache[key] = WhisperModel(
                 model_name, device=device, compute_type=compute_type,
-                download_root=str(MODELS_DIR),
+                download_root=str(MODELS_DIR), cpu_threads=cpu_threads(),
             )
         except Exception:  # noqa: BLE001 - GPU lỗi/thiếu cuDNN -> lùi CPU cho chạy được
             if device == "cuda":
+                # CPU không kham nổi model GPU cỡ lớn (large-v3 int8 ~3-4GB RAM,
+                # chậm x10) -> hạ model khi rơi về CPU.
                 _model_cache[key] = WhisperModel(
-                    model_name, device="cpu", compute_type="int8",
-                    download_root=str(MODELS_DIR),
+                    _cap_cpu_model(model_name), device="cpu", compute_type="int8",
+                    download_root=str(MODELS_DIR), cpu_threads=cpu_threads(),
                 )
             else:
                 raise
@@ -93,6 +127,8 @@ def _stable_available() -> bool:
 
 
 def _get_stable_model(model_name: str, device: str, compute_type: str):
+    if device != "cuda":
+        model_name = _cap_cpu_model(model_name)
     key = ("stable", model_name, device, compute_type)
     if key not in _model_cache:
         import stable_whisper
@@ -102,12 +138,12 @@ def _get_stable_model(model_name: str, device: str, compute_type: str):
         try:
             _model_cache[key] = stable_whisper.load_faster_whisper(
                 model_name, device=device, compute_type=compute_type,
-                download_root=str(MODELS_DIR))
-        except Exception:  # noqa: BLE001 - GPU lỗi -> lùi CPU
+                download_root=str(MODELS_DIR), cpu_threads=cpu_threads())
+        except Exception:  # noqa: BLE001 - GPU lỗi -> lùi CPU (model nhỏ, xem _get_model)
             if device == "cuda":
                 _model_cache[key] = stable_whisper.load_faster_whisper(
-                    model_name, device="cpu", compute_type="int8",
-                    download_root=str(MODELS_DIR))
+                    _cap_cpu_model(model_name), device="cpu", compute_type="int8",
+                    download_root=str(MODELS_DIR), cpu_threads=cpu_threads())
             else:
                 raise
     return _model_cache[key]
@@ -364,7 +400,9 @@ def transcribe(
             return _transcribe_stable(audio_path, model_name, device,
                                       compute_type, language, on_progress)
         except Exception:  # noqa: BLE001 - stable-ts lỗi -> dùng faster-whisper thường
-            pass
+            # GIẢI PHÓNG model stable trước khi nạp model thường: không thì
+            # 2 bản model cùng nằm trong RAM (x2 GB với model lớn).
+            release_models()
     model = _get_model(model_name, device, compute_type)
 
     segments_iter, info = model.transcribe(
