@@ -2857,6 +2857,8 @@ class StudioPage(QWidget):
                 dub_voice=self.layout_tpl.get("dub_voice", "") or "",
                 dub_mute=bool(self.layout_tpl.get("dub_mute", False)),
                 dub_mode=self.layout_tpl.get("dub_mode", "natural") or "natural",
+                fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
+                fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 force=force_one)
             if jid:

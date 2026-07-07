@@ -409,6 +409,42 @@ def _atempo_chain(tempo: float) -> str:
     return ",".join(parts)
 
 
+# ---- HIỆU ỨNG TINH TẾ ----
+# Vài biến thể "whoosh" (tiếng vút chuyển đoạn) TỔNG HỢP thuần bằng ffmpeg —
+# KHÔNG cần file nhạc kèm nên chạy trên MỌI máy khách (bản .exe nhẹ). Mỗi biến
+# thể khác nhau độ dài + dải tần bandpass + hướng quét cao/thấp -> nghe không
+# lặp lại nhàm. Âm lượng để NHỎ (0.25) ở nơi gọi -> tinh tế, không lố.
+_WHOOSH_VARIANTS = (
+    # (dur, f_center, width) — quét dải trung, mượt
+    (0.24, 1400, 900),
+    (0.28, 1000, 700),   # trầm hơn, dài hơn chút
+    (0.22, 1900, 1100),  # cao/sáng, ngắn
+    (0.26, 1200, 800),
+)
+
+
+def _whoosh_source(idx: int, at_sec: float, vol: float, lin: str,
+                   lout: str) -> str:
+    """Sinh 1 nhánh filtergraph tạo tiếng 'whoosh' ngắn tại giây at_sec.
+
+    Dùng anoisesrc (nhiễu trắng) -> bandpass (nghe như tiếng gió/vút) -> afade
+    in/out (thành cú 'swoosh' gọn) -> volume nhỏ -> adelay đặt đúng mốc ghép.
+    lin = nhãn input lavfi (vd '2:a'), lout = nhãn output. Chọn biến thể theo
+    idx để mỗi điểm ghép nghe khác nhau (ngẫu nhiên nhẹ, tái lập được)."""
+    dur, fc, width = _WHOOSH_VARIANTS[idx % len(_WHOOSH_VARIANTS)]
+    delay_ms = max(0, int(round(at_sec * 1000)))
+    # afade dạng bán chuông: vào nhanh (t_curve exp) rồi tắt mượt -> "vút".
+    fade_out_start = max(0.02, dur * 0.35)
+    fade_out_dur = dur - fade_out_start
+    return (
+        f"[{lin}]bandpass=f={fc}:width_type=h:w={width},"
+        f"afade=t=in:st=0:d={dur*0.3:.3f}:curve=exp,"
+        f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_dur:.3f}:curve=tri,"
+        f"volume={vol:.3f},aresample=48000,"
+        f"adelay={delay_ms}|{delay_ms}[{lout}]"
+    )
+
+
 def _cleanup_dst(dst) -> None:
     """Xóa file output dở dang (mp4 hỏng) khi xuất lỗi/hủy — best-effort."""
     if not dst:
@@ -653,6 +689,10 @@ def export_canvas_clip(
                                         # theo hệ số này (>1) để giọng đọc lọt
                                         # khung tự nhiên (dub đã dựng theo timeline
                                         # đã giãn). 1.0 = không giãn.
+    fx_fade: bool = True,               # HIỆU ỨNG: fade hình NHẸ đầu/cuối clip
+                                        # (~0.35s) — tinh tế, chuyên nghiệp.
+    fx_whoosh: bool = True,             # HIỆU ỨNG: tiếng 'whoosh' nhỏ tại điểm
+                                        # ghép các đoạn (chỉ khi >1 segment).
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -692,6 +732,15 @@ def export_canvas_clip(
     # (chia dub_stretch). vspeed<1 = video chậm lại. Dùng cho setpts video +
     # atempo tiếng gốc/nhạc nền; RIÊNG dub giữ `speed` (đã dài sẵn theo stretch).
     vspeed = speed / dub_stretch
+    # MỐC GHÉP (giây) ở timeline ĐẦU RA cho whoosh: cộng dồn độ dài các đoạn
+    # (trừ đoạn cuối — không có ghép sau nó) rồi chia vspeed (video đã tăng/giãn
+    # tốc). Chỉ có khi >1 đoạn. Lệch mốc nhẹ vài chục ms không đáng kể với whoosh.
+    whoosh_offsets: list[float] = []
+    if multi:
+        acc = 0.0
+        for s, e in segs[:-1]:
+            acc += (e - s)
+            whoosh_offsets.append(acc / vspeed)
     orig_vol = max(0.0, min(1.0, float(orig_vol if orig_vol is not None else 1.0)))
     # ÂM LƯỢNG TIẾNG GỐC áp vào luồng tiếng gốc TRƯỚC khi amix. Khi có lồng
     # tiếng và user để mặc định 1.0 (thanh kéo chưa động) -> tự hạ nền ~0.12
@@ -783,6 +832,18 @@ def export_canvas_clip(
         if abs(vspeed - 1.0) > 0.001:
             parts.append(f"{final}setpts=PTS/{vspeed:.5f}[vsp]")
             final = "[vsp]"
+        # Độ dài OUTPUT (sau setpts) — dùng cho fade cuối + cắt audio.
+        out_dur = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
+        # HIỆU ỨNG FADE hình NHẸ đầu/cuối (~0.35s) — TINH TẾ, chuyên nghiệp,
+        # KHÔNG lố. Áp SAU cùng (sau overlay/phụ đề/setpts) trên khung ĐẦU RA
+        # nên khớp thời lượng thật; fade nhẹ nên phần chữ chớm mờ 0.35s đầu/cuối
+        # là chấp nhận được (yêu cầu). Bỏ qua nếu clip quá ngắn.
+        _fd = 0.35
+        if fx_fade and out_dur > _fd * 2 + 0.05:
+            fout_st = max(0.0, out_dur - _fd)
+            parts.append(f"{final}fade=t=in:st=0:d={_fd:.3f},"
+                         f"fade=t=out:st={fout_st:.3f}:d={_fd:.3f}[vfx]")
+            final = "[vfx]"
         # ĐỔI GIỌNG + tốc độ cho AUDIO GỐC (chỉ khi video CÓ tiếng)
         af = []
         if abs(pitch - 1.0) > 0.01:     # đổi cao độ giọng (giữ tốc độ)
@@ -790,13 +851,16 @@ def export_canvas_clip(
                    f"atempo={1.0/pitch:.4f}"]
         if abs(vspeed - 1.0) > 0.001:   # tiếng gốc theo tốc độ video hiệu dụng
             af.append(_atempo_chain(vspeed))
-        out_dur = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
         # ---- TRỘN AUDIO: tiếng gốc (+lọc) / lồng tiếng AI / nhạc nền ----
         # Tiếng gốc áp voice_vol (thanh kéo "Âm lượng tiếng gốc"); có lồng tiếng
         # + để mặc định thì tự hạ nền (đã tính ở voice_vol trên), hoặc bỏ hẳn
         # (dub_mute_original). amix normalize=0 để giữ nguyên âm lượng từng lớp.
         mix: list[str] = []
         amap = None
+        # Whoosh chuyển đoạn -> cũng là 1 lớp cần TRỘN vào tiếng gốc (nếu có)
+        # nên phải tính vào need_mix để tiếng gốc đi qua [vce] chứ không map thẳng
+        # (map thẳng sẽ để [caud] treo + whoosh nuốt mất tiếng gốc).
+        whoosh_on = bool(fx_whoosh and multi and whoosh_offsets)
         # voice_vol==0 -> tiếng gốc câm hẳn: BỎ khỏi mix (như dub_mute) để amix
         # không thừa 1 nhánh im lặng làm loãng các lớp khác.
         include_voice = use_voice and voice_vol > 0.0005
@@ -805,7 +869,7 @@ def export_canvas_clip(
             apply_vol = abs(voice_vol - 1.0) > 0.001
             if apply_vol:
                 vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
-            need_mix = (dub_idx is not None) or (bgm_idx is not None)
+            need_mix = (dub_idx is not None) or (bgm_idx is not None) or whoosh_on
             if need_mix or af or apply_vol:
                 parts.append(f"{aud}{','.join(vf)}[vce]")
                 mix.append("[vce]")
@@ -827,6 +891,30 @@ def export_canvas_clip(
             parts.append(f"[{bgm_idx}:a]volume={max(0.0, min(1.0, bgm_vol)):.3f},"
                          f"atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS[bgm]")
             mix.append("[bgm]")
+        # HIỆU ỨNG WHOOSH: tiếng 'vút' NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).
+        # Tổng hợp thuần ffmpeg (anoisesrc -> bandpass -> afade) nên KHÔNG cần
+        # file ngoài -> chạy mọi máy khách. Mốc ghép tính ở timeline ĐẦU RA
+        # (chia vspeed vì video/tiếng đã tăng/giãn tốc). Nếu whoosh là NGUỒN
+        # audio DUY NHẤT (video câm) -> thêm 1 nền im lặng dài đủ clip trước để
+        # amix duration=first không cắt cụt output.
+        if whoosh_on:
+            base_had_audio = len(mix) > 0 or (amap is not None)
+            if not base_had_audio:
+                # nền im lặng đủ dài để giữ độ dài + làm nhánh 'first' của amix
+                sil_idx = aidx
+                aidx += 1
+                cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}",
+                        "-i", "anullsrc=r=48000:cl=stereo"]
+                parts.append(f"[{sil_idx}:a]asetpts=PTS-STARTPTS[wbed]")
+                mix.append("[wbed]")
+            for wi, off in enumerate(whoosh_offsets):
+                w_idx = aidx
+                aidx += 1
+                cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}",
+                        "-i", "anoisesrc=color=white:r=48000"]
+                parts.append(_whoosh_source(wi, off, 0.25,
+                                            f"{w_idx}:a", f"wh{wi}"))
+                mix.append(f"[wh{wi}]")
         if len(mix) == 1:
             amap = mix[0]
         elif len(mix) >= 2:

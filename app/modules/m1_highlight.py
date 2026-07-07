@@ -1281,6 +1281,8 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             dub_path=dub_path,
             dub_mute_original=bool(payload.get("dub_mute")),
             dub_stretch=dub_stretch,
+            fx_fade=bool(payload.get("fx_fade", True)),
+            fx_whoosh=bool(payload.get("fx_whoosh", True)),
             on_progress=on_prog,
         )
         # dọn wav lồng tiếng tạm (đã trộn vào clip)

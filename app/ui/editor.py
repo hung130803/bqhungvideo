@@ -956,6 +956,22 @@ class EditorDialog(QDialog):
             "'nhá hàng' rồi mới phát nội dung — giữ chân người xem 3s đầu (meta "
             "TikTok). AI chọn mốc; nếu không có thì dò theo âm thanh to nhất.")
         gb.addWidget(self.hook_first_chk)
+        # HIỆU ỨNG tinh tế (mặc định BẬT nhẹ): fade hình đầu/cuối + tiếng
+        # chuyển đoạn. Whoosh tổng hợp thuần ffmpeg -> không cần file, chạy
+        # mọi máy khách.
+        self.fx_fade_chk = QCheckBox("Fade mượt đầu/cuối clip")
+        self.fx_fade_chk.setChecked(True)
+        self.fx_fade_chk.setToolTip(
+            "Làm hình mờ dần lên ở đầu (~0.35s) và mờ dần xuống ở cuối — "
+            "chuyển cảnh tinh tế, chuyên nghiệp, không lố.")
+        gb.addWidget(self.fx_fade_chk)
+        self.fx_whoosh_chk = QCheckBox("Tiếng chuyển đoạn (whoosh)")
+        self.fx_whoosh_chk.setChecked(True)
+        self.fx_whoosh_chk.setToolTip(
+            "Thêm tiếng 'vút' NHỎ tại điểm ghép giữa các đoạn (chỉ khi clip "
+            "ghép nhiều đoạn / Mixed-Cut). Tạo bằng ffmpeg nên không cần file "
+            "nhạc kèm.")
+        gb.addWidget(self.fx_whoosh_chk)
 
         # Nhóm: Nhạc nền + Logo kênh (hồng)
         gx, gx_box = _group("Nhạc nền + Logo kênh", (244, 114, 182))
@@ -1230,6 +1246,8 @@ class EditorDialog(QDialog):
                     self.voice_cb.setCurrentIndex(i); break
             # hook-first + nhạc nền + logo
             self.hook_first_chk.setChecked(bool(layout.get("hook_first")))
+            self.fx_fade_chk.setChecked(bool(layout.get("fx_fade", True)))
+            self.fx_whoosh_chk.setChecked(bool(layout.get("fx_whoosh", True)))
             bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
             if bi >= 0:
                 self.bgm_mode.setCurrentIndex(bi)
@@ -1780,6 +1798,8 @@ class EditorDialog(QDialog):
         lay["speed"] = float(self.speed_cb.currentText().rstrip("x") or 1.0)
         lay["pitch"] = float(self.voice_cb.currentData() or 1.0)
         lay["hook_first"] = self.hook_first_chk.isChecked()
+        lay["fx_fade"] = self.fx_fade_chk.isChecked()
+        lay["fx_whoosh"] = self.fx_whoosh_chk.isChecked()
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
