@@ -683,12 +683,25 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             raise llm.LLMError(errors[0])
         return [], []
 
-    # Khử trùng lặp: các clip có điểm bắt đầu gần nhau (<8s) -> giữ điểm cao hơn
+    # Khử TRÙNG NỘI DUNG: giữ clip điểm cao trước, BỎ clip nào ĐÈ LÊN clip đã
+    # giữ. So theo TOÀN KHOẢNG [đầu..cuối] chứ không chỉ điểm bắt đầu — vì clip
+    # đã được nới dài (tới ~target) nên 2 clip bắt đầu cách xa vẫn có thể chồng
+    # 40-50s -> Part 1 & Part 2 bị trùng đoạn. Bỏ nếu chồng > 25% clip ngắn hơn.
+    def _span(c):
+        return c["segments"][0][0], c["segments"][-1][1]
+
     all_clips.sort(key=lambda c: c["score"], reverse=True)
     kept: list = []
     for c in all_clips:
-        s0 = c["segments"][0][0]
-        if any(abs(s0 - k["segments"][0][0]) < 8.0 for k in kept):
+        cs, ce = _span(c)
+        clash = False
+        for k in kept:
+            ks, ke = _span(k)
+            ov = min(ce, ke) - max(cs, ks)          # độ chồng lấn (giây)
+            if ov > 0 and ov > 0.25 * min(ce - cs, ke - ks):
+                clash = True
+                break
+        if clash:
             continue
         kept.append(c)
         if len(kept) >= (count if count > 0 else 12):  # đúng số user đặt (hoặc 12)
