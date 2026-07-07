@@ -91,6 +91,13 @@ class Settings:
     # chấm điểm bằng hình -> máy yếu vẫn chạy nhanh. Đặt LIGHT_MODE=0 để bật full.
     LIGHT_MODE = _env("LIGHT_MODE", "1") == "1"
 
+    # TIẾT KIỆM MÁY (mặc định BẬT): khi app đang xuất/phân tích, máy vẫn dùng
+    # bình thường (lướt web, mở app khác không giật). Bật -> chỉ 1 job xuất +
+    # 1 job phân tích chạy cùng lúc, ffmpeg dùng ~1/2 ngân sách luồng CPU,
+    # yt-dlp tải 4 mảnh song song (thay vì 8). Tắt = "Hiệu năng tối đa" (nhiều
+    # job song song, chia đều ngân sách luồng — vẫn ưu tiên thấp + chừa 2 nhân).
+    ECO_MODE = _env("ECO_MODE", "1") == "1"
+
     # Whisper
     WHISPER_PROVIDER = _env("WHISPER_PROVIDER", "local").lower()  # local | groq
     GROQ_API_KEYS = _env("GROQ_API_KEYS")      # nhiều key, mỗi dòng/dấu phẩy 1 key
@@ -170,7 +177,7 @@ def update_env(values: dict) -> None:
         val = v
         if k == "LLM_PROVIDER":
             val = (str(v) or "groq").strip().lower()  # khớp mặc định ở trên
-        elif k == "USE_VISION":
-            val = str(v) == "1"
+        elif k in ("USE_VISION", "LIGHT_MODE", "ECO_MODE"):
+            val = str(v) == "1"    # setting bool: giữ đúng kiểu khi áp live
         if hasattr(Settings, k):
             setattr(Settings, k, val)

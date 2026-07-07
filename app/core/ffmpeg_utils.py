@@ -18,8 +18,10 @@ from config import settings
 
 # Cờ giấu cửa sổ console đen trên Windows khi gọi subprocess
 _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
-# Ưu tiên THẤP cho ffmpeg nặng (encode) -> máy KHÔNG đơ, UI vẫn mượt khi đang xuất.
-_BELOW_NORMAL = 0x00004000 if hasattr(subprocess, "STARTUPINFO") else 0
+# Ưu tiên IDLE cho tác vụ NẶNG (encode/phân tích dài): Windows LUÔN nhường mọi
+# app khác trước -> máy KHÔNG đơ khi đang xuất; máy rảnh thì encode vẫn full tốc.
+# (Tác vụ ngắn probe/demo giữ nguyên ưu tiên thường — xong trong vài giây.)
+_IDLE_PRIORITY = 0x00000040 if hasattr(subprocess, "STARTUPINFO") else 0
 
 
 # Theo dõi tiến trình con đang chạy để DỪNG khi tắt app (tránh ffmpeg mồ côi
@@ -91,7 +93,7 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
         universal_newlines=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
+        creationflags=_CREATE_NO_WINDOW | _IDLE_PRIORITY,
     )
     # register_proc: vào _ACTIVE_PROCS (dọn khi tắt app) + gắn vào JOB đang chạy
     # (nút Hủy job kill NGAY tiến trình này thay vì đợi nó chạy xong).
@@ -295,6 +297,40 @@ def extract_audio_wav(src: str | Path, dst: str | Path, sr: int = 16000) -> bool
     return _run(cmd) == 0
 
 
+# ---- NGÂN SÁCH CPU TOÀN CỤC cho encode ----
+# Tổng luồng encode của TẤT CẢ ffmpeg đang chạy <= ~60% số nhân logic và LUÔN
+# chừa >=2 nhân cho hệ thống -> khi app xuất video, máy vẫn dùng bình thường.
+
+def _encode_budget() -> int:
+    """Tổng số luồng encode cho phép (mọi job cộng lại)."""
+    cores = os.cpu_count() or 4
+    return max(1, min(cores - 2, (cores * 3) // 5))
+
+
+def _max_encode_jobs() -> int:
+    """Số job encode có thể chạy SONG SONG lúc này (để chia ngân sách luồng).
+    Tiết kiệm máy -> luôn 1. Hiệu năng tối đa -> theo 'Luồng cắt' của pool."""
+    if settings.ECO_MODE:
+        return 1
+    try:
+        from app.queue.worker import active_pool
+        pool = active_pool()
+        if pool is not None:
+            return max(1, int(pool.max_cpu))
+    except Exception:  # noqa: BLE001 - không có pool (subprocess/test) -> mặc định
+        pass
+    return 2
+
+
+def encode_threads() -> int:
+    """Số luồng -threads cho MỖI ffmpeg encode = ngân_sách // số job song song.
+    Tiết kiệm máy: chỉ 1 job nhưng cũng chỉ dùng ~1/2 ngân sách -> nhẹ hẳn."""
+    budget = _encode_budget()
+    if settings.ECO_MODE:
+        return max(1, budget // 2)
+    return max(1, budget // _max_encode_jobs())
+
+
 def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     """Tham số encode theo encoder + mức chất lượng."""
     if encoder == "h264_nvenc":
@@ -303,11 +339,17 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
     # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
     crf = "20" if quality == "high" else "23"
-    # GIỚI HẠN thread mỗi ffmpeg: mặc định libx264 ăn HẾT luồng CPU -> 2-3 job
-    # song song là máy đơ 100% CPU. Chia ~1/3 số luồng cho mỗi job (2..8).
-    threads = max(2, min(8, (os.cpu_count() or 4) // 3))
+    # GIỚI HẠN thread mỗi ffmpeg theo NGÂN SÁCH TOÀN CỤC (xem encode_threads):
+    # mặc định libx264 ăn HẾT luồng CPU -> 2-3 job song song là máy đơ 100%.
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,
-            "-threads", str(threads)]
+            "-threads", str(encode_threads())]
+
+
+def _global_enc_opts() -> list[str]:
+    """Tùy chọn TOÀN CỤC đặt ngay sau 'ffmpeg -y' cho lệnh export dùng
+    -filter_complex: giới hạn luồng của filter graph (mặc định ffmpeg lấy HẾT
+    số nhân cho MỖI graph -> nhiều job song song đẻ hàng trăm thread)."""
+    return ["-filter_complex_threads", str(encode_threads())]
 
 
 # Font hỗ trợ (tên hiển thị -> file trong thư mục Fonts của Windows)
@@ -734,7 +776,7 @@ def export_vertical_clip(
     def build(enc: str) -> list[str]:
         # -ss và -t ĐỀU là input-option của video gốc (trước -i) để cắt đúng
         # thời lượng kể cả khi có thêm input PNG.
-        cmd = [settings.FFMPEG_PATH, "-y",
+        cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts(),
                "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(src)]
         if use_png:
             cmd += ["-i", str(overlay_png)]
@@ -811,7 +853,7 @@ def export_stitched_clip(
     fc = ";".join(parts)
 
     def build(enc: str) -> list[str]:
-        cmd = [settings.FFMPEG_PATH, "-y", "-i", str(src)]
+        cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts(), "-i", str(src)]
         if use_png:
             cmd += ["-i", str(overlay_png)]
         cmd += ["-filter_complex", fc, "-map", "[v]"]
@@ -950,7 +992,7 @@ def export_canvas_clip(
         voice_vol = 0.12
 
     def build(enc: str) -> list[str]:
-        cmd = [settings.FFMPEG_PATH, "-y"]
+        cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
         parts = []
         if multi:
             cmd += ["-i", str(src)]

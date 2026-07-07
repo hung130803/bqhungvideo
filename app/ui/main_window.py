@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+    QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app.queue.resource_manager import HARDWARE, PROFILE
@@ -168,6 +168,20 @@ class MainWindow(QMainWindow):
             "Số video cắt/xuất song song.\n"
             "⚠ Để cao quá sẽ ĐƠ MÁY khi encode bằng CPU (libx264).")
 
+        # --- Tiết kiệm máy (mặc định BẬT) ---
+        from config import settings
+        v.addSpacing(6)
+        self.cb_eco = QCheckBox("Tiết kiệm máy")
+        self.cb_eco.setChecked(settings.ECO_MODE)
+        self.cb_eco.setToolTip(
+            "BẬT (khuyên dùng): app chỉ chạy 1 video xuất + 1 phân tích cùng "
+            "lúc, encode dùng ít luồng CPU và luôn NHƯỜNG app khác — máy vẫn "
+            "dùng bình thường (lướt web, mở app khác không giật).\n"
+            "TẮT = Hiệu năng tối đa: chạy đủ số luồng ở trên, xuất nhanh hơn "
+            "khi cần làm hàng loạt (vẫn chừa 2 nhân cho hệ thống).")
+        self.cb_eco.toggled.connect(self._set_eco)
+        v.addWidget(self.cb_eco)
+
         v.addStretch(1)
 
         # --- Tài khoản đang đăng nhập ---
@@ -214,6 +228,13 @@ class MainWindow(QMainWindow):
     def _set_cut(self, v):
         self.state.pool.set_limits(max_cpu=v)
         QSettings("AIContentStudio", "studio").setValue("cut_workers", v)
+
+    def _set_eco(self, on: bool):
+        # Lưu .env (tiến trình con phân tích cũng đọc được) + áp NGAY vào
+        # settings đang chạy — worker/_enc_args đọc settings.ECO_MODE mỗi lần.
+        from config import update_env
+        update_env({"ECO_MODE": "1" if on else "0"})
+        self.state.pool._notify()      # đánh thức dispatcher áp giới hạn mới
 
     def closeEvent(self, event):
         # dừng worker + GIẾT tiến trình con (ffmpeg/phân tích) để không mồ côi

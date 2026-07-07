@@ -17,8 +17,9 @@ from config import ROOT_DIR
 from .worker import CanceledError, JobContext, register_handler
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
-# Ưu tiên THẤP cho tiến trình phân tích -> lỡ chạy nặng cũng KHÔNG đơ máy yếu.
-_BELOW_NORMAL = 0x00004000 if sys.platform == "win32" else 0
+# Ưu tiên IDLE cho tiến trình phân tích (whisper/mediapipe chạy dài, nặng):
+# Windows LUÔN nhường app khác trước -> máy yếu cũng KHÔNG đơ khi phân tích.
+_IDLE_PRIORITY = 0x00000040 if sys.platform == "win32" else 0
 
 
 def _run_analyze(video_id: int, ctx: JobContext, force: bool,
@@ -39,7 +40,7 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
         args, cwd=str(ROOT_DIR), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
-        creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
+        creationflags=_CREATE_NO_WINDOW | _IDLE_PRIORITY,
     )
     from app.core.ffmpeg_utils import register_proc, unregister_proc
     register_proc(proc)

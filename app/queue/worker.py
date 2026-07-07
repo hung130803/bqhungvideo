@@ -40,6 +40,14 @@ _CURRENT = threading.local()            # .pool / .job_id của thread worker
 _JOB_PROCS: dict[int, set] = {}
 _JOB_PROCS_LOCK = threading.Lock()
 
+# Pool đang chạy của app (chỉ có 1). ffmpeg_utils đọc để chia NGÂN SÁCH luồng
+# encode (-threads = ngân_sách // max_cpu) mà không phải import UI.
+_ACTIVE_POOL: Optional["WorkerPool"] = None
+
+
+def active_pool() -> Optional["WorkerPool"]:
+    return _ACTIVE_POOL
+
 
 def _set_current_job(pool: "WorkerPool", job_id: int) -> None:
     _CURRENT.pool = pool
@@ -150,6 +158,8 @@ class WorkerPool:
         self._stop = threading.Event()
         self._dispatcher: Optional[threading.Thread] = None
         self._listeners: list[Callable[[], None]] = []
+        global _ACTIVE_POOL
+        _ACTIVE_POOL = self       # cho ffmpeg_utils chia ngân sách luồng encode
 
     # ---- vòng đời ----
     def start(self) -> None:
@@ -311,12 +321,26 @@ class WorkerPool:
                 pass
             time.sleep(self.poll_interval)
 
+    def _lane_limit(self, needs_gpu: bool) -> int:
+        """Số job tối đa của lane. TIẾT KIỆM MÁY (settings.ECO_MODE, mặc định
+        BẬT): mỗi lane chỉ 1 job (1 xuất + 1 phân tích) -> máy vẫn dùng bình
+        thường khi app chạy. Đọc settings mỗi lần nên bật/tắt có hiệu lực NGAY."""
+        limit = self.max_gpu if needs_gpu else self.max_cpu
+        try:
+            from config import settings
+            if settings.ECO_MODE:
+                return min(limit, 1)
+        except Exception:  # noqa: BLE001 - thiếu config (test) -> giữ nguyên
+            pass
+        return limit
+
     def _capacity(self, needs_gpu: bool) -> int:
         # dùng bộ nhớ (không truy vấn DB) -> nhanh, không nghẽn, đếm đúng
         with self._lock:
             running_gpu = sum(1 for v in self._inflight_gpu.values() if v)
             running_cpu = len(self._inflight) - running_gpu
-        return (self.max_gpu - running_gpu) if needs_gpu else (self.max_cpu - running_cpu)
+        running = running_gpu if needs_gpu else running_cpu
+        return self._lane_limit(needs_gpu) - running
 
     def _dispatch_once(self) -> None:
         rows = db.query(

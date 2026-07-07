@@ -134,12 +134,16 @@ def suggest_profile(hw: HardwareInfo) -> ResourceProfile:
 
     # ---- Số luồng SONG SONG (tách 2 khâu) ----
     # GPU lane = luồng AI/phân tích; CPU lane = luồng cắt/xuất video (libx264).
-    p.max_cpu_workers = 3
-    if p.encoder == "libx264":
-        # Encode CPU: mỗi ffmpeg đã bị giới hạn ~1/3 luồng (xem _enc_args) nhưng
-        # vẫn nặng -> TRẦN đề xuất = cpu_cores//8 để máy không đơ 100% CPU.
-        # Chỉ là MẶC ĐỊNH đề xuất — user vẫn override được (spin UI / .env).
-        p.max_cpu_workers = min(p.max_cpu_workers, max(1, hw.cpu_cores // 8))
+    # MẶC ĐỊNH HIỀN LÀNH để máy còn chỗ thở (user tự tăng nếu muốn): <=4 nhân
+    # -> 1 luồng cắt; <=8 -> 2; nhiều nhân -> 2 (3 nếu encode NVENC — GPU lo).
+    # Lưu ý: chế độ "Tiết kiệm máy" (ECO_MODE, mặc định BẬT) còn ép 1 job/lane
+    # lúc chạy bất kể số này.
+    if hw.cpu_cores <= 4:
+        p.max_cpu_workers = 1
+    elif hw.cpu_cores <= 8:
+        p.max_cpu_workers = 2
+    else:
+        p.max_cpu_workers = 3 if p.encoder == "h264_nvenc" else 2
     if hw.ram_gb:                                    # máy ít RAM -> giảm cho an toàn
         p.max_cpu_workers = max(1, min(p.max_cpu_workers, int(hw.ram_gb // 4)))
     # Số luồng pipeline (auto/xuất) chạy song song. Lời gọi AI (Ollama) được KHÓA

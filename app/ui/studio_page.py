@@ -1299,6 +1299,7 @@ class StudioPage(QWidget):
         # [%(id)s] để tên file LUÔN duy nhất: 2 video trùng 80 ký tự đầu tiêu đề
         # -> yt-dlp thấy file đã có, KHÔNG tải, âm thầm dùng lại video cũ.
         out_tmpl = str(dl / "%(title).70s [%(id)s].%(ext)s")
+        from config import settings as _st
         base = [exe, "--no-warnings", "--newline", "--no-quiet", "--progress",
                 "--user-agent", ua, "-f",
                 "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
@@ -1306,7 +1307,8 @@ class StudioPage(QWidget):
                 "--merge-output-format", "mp4", "--no-playlist",
                 # TĂNG TỐC TẢI: kéo NHIỀU MẢNH song song (yt-dlp có sẵn, không
                 # cần cài gì) — né throttle của YouTube, nhanh gấp 3-5 lần.
-                "--concurrent-fragments", "8",
+                # Tiết kiệm máy -> 4 mảnh (đỡ CPU giải nén + băng thông).
+                "--concurrent-fragments", "4" if _st.ECO_MODE else "8",
                 "--http-chunk-size", "10M",
                 # bỏ qua kiểm SSL cert lỗi vặt + retry mảnh lỗi (mạng VN chập chờn)
                 "--retries", "10", "--fragment-retries", "10",
@@ -1362,10 +1364,12 @@ class StudioPage(QWidget):
         def run_once(cmd):
             t0 = _time.time()
             try:
+                # 0x40 = IDLE_PRIORITY_CLASS: tải/ghép chạy dài -> luôn nhường
+                # app khác, máy không giật (tải là I/O mạng nên không chậm đi).
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, encoding="utf-8", errors="replace",
-                    creationflags=0x0800_0000)
+                    creationflags=0x0800_0000 | 0x0000_0040)
             except Exception as e:  # noqa: BLE001
                 return "", str(e)[:200]
             # đăng ký để đóng app giết được yt-dlp (không tải tiếp sau khi app tắt)
