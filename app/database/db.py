@@ -57,58 +57,114 @@ class Database:
         return c
 
     def init_schema(self) -> None:
-        """Mở/ tạo DB. PHẢI luôn thành công để app mở được — nếu file DB hỏng
-        hoặc ổ lỗi thì lần lượt: dọn file hỏng -> đổi sang tên file MỚI ->
-        cuối cùng DB tạm trong RAM (app vẫn mở, chỉ không lưu qua phiên)."""
+        """Mở/ tạo DB. PHẢI luôn thành công để app mở được, NHƯNG TUYỆT ĐỐI
+        không được hủy dữ liệu người dùng vì một lỗi TẠM THỜI.
+
+        Phân loại lỗi rất quan trọng (đây là nguyên nhân MẤT KÊNH/MẪU sau mỗi
+        lần cập nhật của bản cũ):
+          - HỎNG THẬT (malformed / not a database / encrypted / image is
+            malformed): file thực sự không đọc được -> mới được phép cách ly.
+            Nhưng KHÔNG xóa: SAO LƯU (copy) studio.db -> studio_backup_<ts>.db
+            trước, rồi tạo DB mới. Dữ liệu cũ vẫn cứu tay được.
+          - TẠM THỜI (disk I/O error / database is locked / unable to open /
+            timeout...): ngay sau cập nhật thường do AV/OneDrive đang quét file
+            vừa swap, wal/shm mồ côi, hoặc tiến trình app cũ chưa nhả handle.
+            KHÔNG xóa gì cả -> RETRY (đóng connection, đợi tăng dần). Nếu retry
+            hết vẫn lỗi -> GIỮ NGUYÊN studio.db, rơi vào DB RAM cho phiên này
+            (lần mở sau đĩa rảnh sẽ đọc lại được data). Không bao giờ wipe.
+        """
         try:
             self._apply_schema()
             return
-        except Exception as e:  # noqa: BLE001 - malformed / I/O error / notadb...
-            if not self._is_corrupt_err(e):
+        except Exception as e:  # noqa: BLE001
+            first_err = e
+            if self._is_true_corrupt(e):
+                self._recover_true_corrupt()
+                return
+            if not self._is_transient_err(e):
                 raise      # lỗi lạ (vd thiếu quyền ghi cả thư mục) -> ném thật
 
-        # (1) Dọn sạch file hỏng TẠI CHỖ rồi thử lại VÀI LẦN (đợi chút giữa các
-        # lần): 'disk I/O'/khóa file thường do wal/shm mồ côi hoặc AV/OneDrive
-        # giữ handle tạm — chờ 1 nhịp là mở lại được. Giữ NGUYÊN studio.db là
-        # đáng tin nhất (subprocess luôn tìm đúng file), nên cố ở đây trước khi
-        # nhảy sang path mới.
-        for attempt in range(4):
-            self._wipe_db_files(self.path)
+        # ---- LỖI TẠM THỜI: RETRY, KHÔNG ĐỘNG VÀO FILE ----
+        # Đợi tăng dần tới ~vài giây tổng cộng (0.3+0.6+...+1.8 ≈ 6.3s) cho
+        # AV/OneDrive/tiến trình cũ nhả file. Chỉ đóng connection, KHÔNG xóa.
+        for attempt in range(6):
+            time.sleep(0.3 * (attempt + 1))
             try:
                 self._reset_conn()
                 self._apply_schema()
                 return
-            except Exception:  # noqa: BLE001
-                if attempt < 3:
-                    time.sleep(0.3 * (attempt + 1))
+            except Exception as e:  # noqa: BLE001
+                first_err = e
+                if self._is_true_corrupt(e):   # hoá ra hỏng thật -> sao lưu + tạo mới
+                    self._recover_true_corrupt()
+                    return
+                if not self._is_transient_err(e):
+                    raise
 
-        # (2) Cùng chỗ vẫn lỗi (file khóa/ổ lỗi/OneDrive) -> DÙNG TÊN FILE MỚI.
-        # publish_path() sẽ set BQ_DB_PATH = file mới -> subprocess mở đúng file.
-        newp = str(Path(self.path).with_name(f"studio_{int(time.time())}.db"))
+        # ---- Retry hết vẫn lỗi tạm thời: GIỮ NGUYÊN studio.db ----
+        # KHÔNG wipe, KHÔNG đổi tên file. Rơi vào DB RAM để app mở được phiên
+        # này; lần khởi động sau khi đĩa rảnh, studio.db (còn nguyên data) sẽ
+        # đọc lại được. UI đọc self.in_memory để cảnh báo user.
+        self._fallback_memory()
+
+    def _recover_true_corrupt(self) -> None:
+        """File studio.db HỎNG THẬT: sao lưu (COPY) rồi tạo DB mới TẠI CHỖ.
+        Không bao giờ xóa vĩnh viễn — bản backup để user/mình cứu tay."""
+        self._backup_db_file(self.path)
+        # Sau khi đã có backup an toàn, dọn file hỏng tại chỗ để tạo mới.
+        # (backup là COPY nên xóa bản gốc hỏng ở đây không mất dữ liệu.)
+        self._wipe_db_files(self.path)
         try:
-            self._wipe_db_files(newp)
-            self.path = newp
             self._reset_conn()
             self._apply_schema()
             return
         except Exception:  # noqa: BLE001
             pass
+        # Cùng chỗ tạo mới vẫn lỗi (đĩa/khoá) -> DB RAM cho phiên này.
+        self._fallback_memory()
 
-        # (3) Bó tay với đĩa -> DB trong RAM: app VẪN mở, chạy được trong phiên
-        # (kênh/clip phiên này không lưu lại sau khi tắt — nhưng còn hơn crash).
-        # CẢNH BÁO: tiến trình con (phân tích) KHÔNG chia sẻ được RAM-DB -> sẽ
-        # không thấy video. UI đọc self.in_memory để báo user rõ.
+    def _fallback_memory(self) -> None:
+        """DB trong RAM: app VẪN mở, chạy được trong phiên (không lưu qua phiên).
+        CẢNH BÁO: tiến trình con (phân tích) KHÔNG chia sẻ được RAM-DB."""
         self.path = ":memory:"
         self.in_memory = True
         self._reset_conn()
         self._apply_schema()
 
+    def _backup_db_file(self, path: str) -> Optional[str]:
+        """COPY studio.db -> studio_backup_<ts>.db (không move/delete). Trả path
+        backup, hoặc None nếu không có gì để sao lưu / copy thất bại."""
+        import shutil as _sh
+        src = Path(path)
+        if not src.exists() or src.stat().st_size == 0:
+            return None
+        dst = src.with_name(f"studio_backup_{int(time.time())}.db")
+        try:
+            self._reset_conn()          # nhả handle trước khi copy
+            _sh.copy2(src, dst)
+            return str(dst)
+        except OSError:
+            return None
+
     @staticmethod
-    def _is_corrupt_err(e: Exception) -> bool:
+    def _is_true_corrupt(e: Exception) -> bool:
+        """CHỈ những lỗi cho thấy nội dung file thật sự hỏng — mới được cách ly.
+        KHÔNG gồm 'disk i/o error' / 'locked' / 'unable to open' (tạm thời)."""
         m = str(e).lower()
         return isinstance(e, sqlite3.Error) and any(
-            s in m for s in ("malformed", "not a database", "disk i/o",
-                             "disk image", "file is encrypted", "corrupt"))
+            s in m for s in ("malformed", "not a database",
+                             "file is encrypted", "image is malformed"))
+
+    @staticmethod
+    def _is_transient_err(e: Exception) -> bool:
+        """Lỗi có thể TỰ HẾT khi thử lại — TUYỆT ĐỐI không xóa dữ liệu."""
+        m = str(e).lower()
+        if not isinstance(e, sqlite3.Error):
+            return False
+        return any(s in m for s in (
+            "disk i/o", "database is locked", "unable to open",
+            "locked", "busy", "timeout", "readonly", "read-only",
+            "cannot open", "permission"))
 
     def _reset_conn(self) -> None:
         try:
