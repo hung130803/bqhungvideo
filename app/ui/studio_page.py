@@ -103,6 +103,7 @@ class StudioPage(QWidget):
         self._thumb_busy = False
         self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
         self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
+        self._hashtag_cache = {}      # video_id -> " #a #b" (sinh 1 lần/video)
         self._settings = QSettings("AIContentStudio", "studio")
         self.thumbs_ready.connect(self._rebuild_rows)
         self.setAcceptDrops(True)        # KÉO-THẢ video vào app
@@ -2791,6 +2792,45 @@ class StudioPage(QWidget):
         d = self.layout_tpl.get("fx_sfx_dir", "") or ""
         return d if d and os.path.isdir(d) else ""
 
+    def _video_hashtags(self, video_id, clips) -> str:
+        """Sinh 3-4 hashtag (đúng ngôn ngữ nội dung) CHUNG cho MỌI Part của video.
+
+        Sinh 1 LẦN/video rồi cache theo video_id -> mọi part dùng chung, không
+        tốn nhiều lượt LLM. Không có key / lỗi -> trả '' (tên file bỏ hashtag).
+        Trả chuỗi có sẵn khoảng trắng đầu, vd ' #a #b #c'; '' nếu không có.
+        """
+        if video_id in self._hashtag_cache:
+            return self._hashtag_cache[video_id]
+        tags_str = ""
+        try:
+            from app.ai import llm as _llm, social
+            from app.core.analysis import get_analysis
+            if _llm.is_configured():
+                tr = get_analysis(video_id, "transcript") or {}
+                lang = tr.get("language", "") or ""
+                # tiêu đề tổng + lời thoại: gom transcript các clip (đại diện video)
+                title = ""
+                text = ""
+                for c in clips:
+                    if not title:
+                        title = (c["title"] or "").strip()
+                    t = (c["transcript"] or "").strip()
+                    if t:
+                        text += " " + t
+                if not text.strip():
+                    text = " ".join(s.get("text", "")
+                                    for s in tr.get("segments", []))
+                tags = social.write_hashtags(title, text, lang, max_tags=4)
+            else:
+                tags = []
+        except Exception:  # noqa: BLE001 - lỗi/không key -> bỏ hashtag, không sập
+            tags = []
+        # _safe_name sẽ chạy trên toàn out_name ở export_clip; ở đây chỉ ghép
+        if tags:
+            tags_str = " " + " ".join(t for t in tags if t)
+        self._hashtag_cache[video_id] = tags_str
+        return tags_str
+
     def _export_video(self, video_id, only_clip_id=None):
         """
         Xuất clip của 1 video THEO ĐÚNG THỨ TỰ: Part = vị trí trong danh sách
@@ -2819,6 +2859,8 @@ class StudioPage(QWidget):
         bg = self.layout_tpl.get("bg", "blur")
         tb = self.layout_tpl.get("trim_black", False)
         vpx = self._video_px_for(vrow)
+        # HASHTAG chung cho MỌI Part của video (sinh 1 lần, cache theo video_id)
+        tags_str = self._video_hashtags(video_id, clips)
         n = 0
         jids = []
         # Xuất 1 clip cụ thể ('Xuất lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
@@ -2832,8 +2874,9 @@ class StudioPage(QWidget):
             vi = (c["title"] or "").strip()
             en = ((sig.get("title_en") or vi)).strip()
             label = en or vi or self._fixed_label()
-            # tên gọn "Part 1 <tiêu đề>" — đã nhóm theo folder video nên không lẫn
-            out_name = f"Part {no} {label}".strip()
+            # tên gọn "Part 1 <tiêu đề> #tag1 #tag2" — hashtag CHUNG toàn video,
+            # đúng ngôn ngữ nội dung. _safe_name ở export_clip giữ '#'/ký tự có dấu.
+            out_name = f"Part {no} {label}".strip() + tags_str
             jid = services.enqueue_export(
                 self.state.pool, c["id"], video_id, pid,
                 out_dir=out_root,   # <gốc>/Đã xuất/<KÊNH>/<video>/Part N.mp4

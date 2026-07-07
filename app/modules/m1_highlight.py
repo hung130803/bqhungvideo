@@ -1139,7 +1139,9 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     out_dir = base / vid_folder
     out_dir.mkdir(parents=True, exist_ok=True)
     part_no = int(payload.get("part_no", 0) or 0)
-    safe = _safe_name(payload.get("out_name", "") or "")   # = "Part N <tiêu đề>"
+    # limit rộng hơn (120): out_name = "Part N <tiêu đề ~70> #tag #tag #tag" -> để
+    # 70 sẽ cắt cụt hashtag. _safe_name vẫn bỏ ký tự cấm, GIỮ '#' + chữ có dấu/nhật.
+    safe = _safe_name(payload.get("out_name", "") or "", limit=120)  # "Part N <tiêu đề> #tags"
     stem = safe or (f"Part {part_no}" if part_no > 0 else f"clip_{clip_id}")
     out_path = out_dir / f"{stem}.mp4"
     # CHỐNG TRÙNG TÊN: nếu đã có file KHÁC (video khác cùng tên Part+tiêu đề) -> thêm

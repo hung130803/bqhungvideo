@@ -65,6 +65,51 @@ def write_post(title: str, transcript: str, language: str = "",
     }
 
 
+def write_hashtags(title: str, transcript: str, language: str = "",
+                   max_tags: int = 4) -> list[str]:
+    """Sinh 3-4 hashtag NGẮN GỌN, ĐÚNG NGÔN NGỮ nội dung để GẮN VÀO TÊN FILE.
+
+    Khác write_post (nhiều tag để đăng bài): hàm này chỉ trả 3-4 tag liên quan
+    sát nội dung, đúng ngôn ngữ lời thoại (video Anh -> tag Anh, Nhật -> tag
+    Nhật). Ném LLMError nếu LLM lỗi/chưa cấu hình -> nơi gọi tự bỏ hashtag.
+    """
+    if not llm.is_configured():
+        raise llm.LLMError("Chưa cấu hình LLM")
+    lang = (language or "").strip()
+    tx = (transcript or "").strip().replace("\n", " ")[:2000]
+    if lang:
+        lang_rule = (f"- NGÔN NGỮ: viết hashtag BẰNG {lang.upper()} (đúng ngôn "
+                     "ngữ của lời thoại). TUYỆT ĐỐI không dùng ngôn ngữ khác.\n")
+    else:
+        lang_rule = ("- NGÔN NGỮ: tự nhận diện ngôn ngữ từ chính đoạn lời thoại "
+                     "trong ngoặc kép và viết hashtag ĐÚNG ngôn ngữ đó.\n")
+    prompt = (
+        f"Tiêu đề video: {title or '(chưa có)'}\n"
+        f"Lời thoại:\n\"{tx}\"\n\n"
+        f"Sinh {max_tags} hashtag cho video này:\n"
+        + lang_rule +
+        f"- TỐI ĐA {max_tags} hashtag (ít thôi), NGẮN GỌN, LIÊN QUAN SÁT nội "
+        "dung video, KHÔNG lệch chủ đề, KHÔNG bịa.\n"
+        "- Mỗi hashtag 1 từ/cụm liền không dấu cách, bắt đầu bằng #.\n"
+        "Trả về ĐÚNG JSON: {\"hashtags\":[\"#...\",\"#...\"]}"
+    )
+    data = llm.complete_json(prompt, system=_SYSTEM)
+    if isinstance(data, list):
+        data = data[0] if data and isinstance(data[0], dict) else {}
+    if not isinstance(data, dict):
+        raise llm.LLMError("AI trả về định dạng lạ.")
+    tags: list[str] = []
+    for t in (data.get("hashtags") or []):
+        t = str(t).strip().replace(" ", "")
+        if t and not t.startswith("#"):
+            t = "#" + t
+        if t and len(t) > 1 and t not in tags:
+            tags.append(t)
+        if len(tags) >= max_tags:
+            break
+    return tags
+
+
 def format_post(post: dict) -> str:
     """Ghép thành văn bản dán thẳng vào ô đăng bài."""
     parts = []
