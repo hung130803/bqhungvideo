@@ -15,10 +15,19 @@ from app.ui.state import AppState
 from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE
 
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
-         "m1_mixed_cut": "Mixed-Cut", "m1_export_clip": "Xuất clip"}
+         "m1_mixed_cut": "Mixed-Cut", "auto_mixed": "Mixed-Cut",
+         "m1_export_clip": "Xuất clip"}
+# Nhãn NGẮN + icon theo GIAI ĐOẠN (hiện ở TRƯỚC để biết ngay đang làm gì)
+_TYPE_TAG = {"auto": "🔍 Phân tích", "analyze": "🔍 Phân tích",
+             "auto_mixed": "🔍 Mixed-Cut", "m1_mixed_cut": "🔍 Mixed-Cut",
+             "m1_highlights": "🔍 Tìm clip", "m1_export_clip": "✂ Xuất"}
 _STATUS = {"running": ("Đang chạy", ACCENT), "pending": ("Đang chờ", MUTED),
            "done": ("✓ Hoàn tất", SUCCESS), "failed": ("✕ Lỗi", DANGER),
            "canceled": ("Đã hủy", MUTED), "skipped": ("Bỏ qua", MUTED)}
+# MÀU THANH theo GIAI ĐOẠN: phân tích/AI = TÍM; cắt/xuất video = XANH NGỌC.
+_PHASE_ANALYZE = "#A78BFA"      # phân tích + AI chọn clip
+_PHASE_EXPORT = "#14B8A6"       # cắt + xuất video
+_EXPORT_TYPES = {"m1_export_clip"}
 # màu phân biệt KÊNH (mỗi kênh 1 màu cố định theo id)
 _PALETTE = ["#4F7DFF", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
             "#A78BFA", "#EF4444", "#14B8A6", "#F97316", "#8B5CF6"]
@@ -28,17 +37,37 @@ def _chan_color(pid):
     return _PALETTE[(int(pid) if pid else 0) % len(_PALETTE)]
 
 
+def _phase_color(jtype: str) -> str:
+    """Màu thanh theo giai đoạn: xuất video = xanh ngọc, còn lại = tím."""
+    return _PHASE_EXPORT if jtype in _EXPORT_TYPES else _PHASE_ANALYZE
+
+
+def _part_no(j) -> int:
+    """Số Part của việc XUẤT clip (đọc từ payload). 0 nếu không có."""
+    if j["type"] != "m1_export_clip":
+        return 0
+    try:
+        import json
+        p = j["payload"] if "payload" in j.keys() else ""
+        return int((json.loads(p) or {}).get("part_no", 0) or 0)
+    except (ValueError, TypeError, KeyError):
+        return 0
+
+
 def _job_name(j):
-    """Tên hiển thị: 'Kênh · Video'."""
+    """Nhãn: '<GIAI ĐOẠN> [Part N] · Kênh · Video' — hiện rõ loại việc + Part
+    Ở TRƯỚC để user biết ngay đang làm gì cho video nào."""
     import os
     chan = j["chan_name"] if "chan_name" in j.keys() and j["chan_name"] else "—"
     vid = ""
     if "vid_path" in j.keys() and j["vid_path"]:
         vid = os.path.splitext(os.path.basename(j["vid_path"]))[0]
-    label = _TYPE.get(j["type"], j["type"])
-    if vid:
-        return f"{chan} · {vid}", chan, vid
-    return f"{chan} · {label}", chan, label
+    tag = _TYPE_TAG.get(j["type"], _TYPE.get(j["type"], j["type"]))
+    part = _part_no(j)
+    if part > 0:
+        tag = f"{tag} Part {part}"          # ✂ Xuất Part 3
+    who = vid or _TYPE.get(j["type"], j["type"])
+    return f"{tag} · {chan} · {who}", chan, who
 
 
 class QueuePanel(QWidget):
@@ -196,8 +225,10 @@ class QueuePanel(QWidget):
         if j["status"] == "done":
             pct = 100
         bar.setValue(pct)
-        # màu thanh theo trạng thái: accent khi chạy, success DỊU khi xong
-        chunk = {"failed": DANGER, "done": SUCCESS}.get(j["status"], ACCENT)
+        # màu thanh: lỗi=đỏ, xong=xanh dịu; ĐANG CHẠY/CHỜ = màu theo GIAI ĐOẠN
+        # (phân tích=tím, cắt/xuất=xanh ngọc) -> nhìn màu biết ngay đang làm gì
+        chunk = {"failed": DANGER, "done": SUCCESS}.get(
+            j["status"], _phase_color(j["type"]))
         bar.setStyleSheet(
             f"QProgressBar{{background:{SURFACE}; border:none; border-radius:5px;}} "
             f"QProgressBar::chunk{{background:{chunk}; border-radius:5px;}}")
