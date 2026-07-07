@@ -142,9 +142,18 @@ class Database:
         try:
             self._reset_conn()          # nhả handle trước khi copy
             _sh.copy2(src, dst)
-            return str(dst)
         except OSError:
             return None
+        # GIỚI HẠN: giữ 3 bản backup mới nhất (mỗi bản = cả cỡ studio.db;
+        # DB hỏng lặp lại nhiều lần sẽ phình đĩa vô hạn nếu không chặn).
+        try:
+            baks = sorted(src.parent.glob("studio_backup_*.db"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+            for f in baks[3:]:
+                f.unlink()
+        except OSError:
+            pass
+        return str(dst)
 
     @staticmethod
     def _is_true_corrupt(e: Exception) -> bool:

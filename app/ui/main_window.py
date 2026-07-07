@@ -80,6 +80,10 @@ class MainWindow(QMainWindow):
                 # dọn rác của lần cập nhật trước (zip/thư mục tạm/_internal.old)
                 from app.core.self_update import cleanup_leftovers
                 cleanup_leftovers()
+                # dọn file tạm mồ côi (>3 ngày) trong projects/*/_cache: audio/
+                # dub wav 30-50MB mỗi cái sót lại khi job bị hủy/app tắt ngang
+                from app.services import cleanup_stale_temp
+                cleanup_stale_temp()
                 from app.core.updater import check_latest
                 res = check_latest()
                 if res:

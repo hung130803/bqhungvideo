@@ -354,6 +354,52 @@ def delete_video(video_id: int, pool: Optional[WorkerPool] = None) -> None:
     db.execute("DELETE FROM videos WHERE id=?", (video_id,))  # cascade
 
 
+def cleanup_stale_temp(days: float = 3.0) -> int:
+    """Dọn FILE TẠM MỒ CÔI trong projects/*/_cache lúc khởi động (chạy nền).
+
+    Đo thật cho thấy file tạm tích tụ khi job bị hủy/app bị tắt giữa chừng:
+    audio_*.wav (29-38MB/video), _dub_*.wav (~30-50MB/clip), _ovl_*.png,
+    _cap_*.ass, _vlf_*.jpg. Job đang chạy luôn tạo file MỚI (mtime hiện tại)
+    nên chỉ xóa file cũ hơn `days` ngày — an toàn tuyệt đối với job đang chạy
+    lẫn job sẽ retry. Kèm: giữ tối đa 3 bản studio_backup_*.db mới nhất.
+    Trả về số file đã xóa (để log/test)."""
+    import time
+    from config import DATA_DIR, PROJECTS_DIR
+    cutoff = time.time() - days * 86400
+    n = 0
+    pats = ("_ovl_*.png", "_cap_*.ass", "_dub_*.wav", "_vlf_*.jpg",
+            "audio_*.wav")
+    try:
+        cache_dirs = list(PROJECTS_DIR.glob("*/_cache"))
+    except OSError:
+        cache_dirs = []
+    for cd in cache_dirs:
+        for pat in pats:
+            try:
+                for f in cd.glob(pat):
+                    try:
+                        if f.stat().st_mtime < cutoff:
+                            f.unlink()
+                            n += 1
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+    # backup DB (tạo khi cứu DB hỏng): giữ 3 bản mới nhất, xóa phần còn lại
+    try:
+        baks = sorted(DATA_DIR.glob("studio_backup_*.db"),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+        for f in baks[3:]:
+            try:
+                f.unlink()
+                n += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return n
+
+
 def delete_project(project_id: int, pool: Optional[WorkerPool] = None) -> None:
     """Xóa cả project: hủy job, xóa thư mục assets + dòng DB (cascade toàn bộ)."""
     _cancel_jobs(pool, "project_id=?", (project_id,))

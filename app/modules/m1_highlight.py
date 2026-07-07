@@ -28,7 +28,7 @@ from app.core.ffmpeg_utils import (
     export_vertical_clip, extract_frame,
 )
 from app.database import db
-from app.queue.worker import JobContext, register_handler
+from app.queue.worker import CanceledError, JobContext, register_handler
 
 # ---- tham số mặc định (preset có thể override) ----
 DEFAULTS = {
@@ -1109,11 +1109,54 @@ def _pick_hook_seg(video_id: int, signals: dict, segs: list):
     return None
 
 
+def _cleanup_files(paths) -> None:
+    """Xóa best-effort danh sách file tạm (bỏ qua đường dẫn rỗng/lỗi)."""
+    for f in paths:
+        if not f:
+            continue
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
 def export_clip(payload: dict, ctx: JobContext) -> dict:
+    """Handler job 'm1_export_clip' — bọc dọn FILE TẠM quanh _export_clip_impl.
+
+    Đo thật cho thấy _cache tích tụ file tạm khi export LỖI/HỦY (mỗi clip:
+    _dub_*.wav ~30-50MB, _ovl_*.png, _cap_*.ass) — trước đây chỉ dọn khi
+    THÀNH CÔNG. Quy tắc dọn:
+      - _dub_/_cap_ (dựng lại được mỗi lượt chạy): dọn MỌI trường hợp
+        (xong/hủy/lỗi — lượt thử lại tự dựng lại).
+      - _ovl_ (UI render sẵn, handler KHÔNG dựng lại được): dọn khi xong/hủy;
+        khi lỗi chỉ dọn nếu job đã HẾT lượt thử lại (giữ cho retry ra đúng chữ).
     """
-    Handler job 'm1_export_clip'.
+    temps: list = []                       # impl append: _dub_*.wav, _cap_*.ass
+    ovl = str(payload.get("overlay_png") or "")
+    ovl_tmp = ovl if os.path.basename(ovl).startswith("_ovl_") else ""
+    try:
+        result = _export_clip_impl(payload, ctx, temps)
+    except CanceledError:
+        _cleanup_files(temps + [ovl_tmp])
+        raise
+    except Exception:
+        _cleanup_files(temps)
+        row = db.query_one("SELECT attempts, max_attempts FROM jobs WHERE id=?",
+                           (ctx.job_id,))
+        if ovl_tmp and (not row or row["attempts"] >= row["max_attempts"]):
+            _cleanup_files([ovl_tmp])      # lỗi HẲN (không retry nữa) -> dọn nốt
+        raise
+    _cleanup_files(temps + [ovl_tmp])
+    return result
+
+
+def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
+    """
+    Thân job 'm1_export_clip'.
     payload: {clip_id, out_w?, out_h?}
     Đọc face-track đã cache -> crop bám mặt -> xuất 9:16.
+    temps: danh sách file tạm tạo ra trong lúc chạy (_dub_/_cap_) — caller
+    (export_clip) dọn khi job kết thúc, KỂ CẢ lỗi/hủy.
     """
     clip_id = int(payload["clip_id"])
     clip = db.query_one("SELECT * FROM clips WHERE id=?", (clip_id,))
@@ -1205,6 +1248,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
                 dw = str(cdir / f"_dub_{clip_id}.wav")
+                temps.append(dw)          # dọn khi job kết thúc (kể cả lỗi/hủy)
                 ctx.progress(0.05, f"{pfx}đang tạo lồng tiếng AI...")
                 dub_path, dub_segs, dub_stretch = dubbing.build_dub_track(
                     tr_dub, segs, payload["dub_lang"],
@@ -1255,6 +1299,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
                 ap = str(cdir / f"_cap_{clip_id}.ass")
+                temps.append(ap)          # dọn khi job kết thúc (kể cả lỗi/hủy)
                 csize = float(cs.get("size") or 0)
                 if captions.build_ass(
                         words, cap_segs, ap, out_w, out_h,
@@ -1292,12 +1337,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             flip_h=flip_h,
             on_progress=on_prog,
         )
-        # dọn wav lồng tiếng tạm (đã trộn vào clip)
-        if dub_path:
-            try:
-                os.remove(dub_path)
-            except OSError:
-                pass
+        # (wav lồng tiếng + .ass tạm được caller export_clip dọn qua `temps`)
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),
                         "captions": bool(ass_path),
                         "dub": payload.get("dub_lang", "") if dub_path else "",
@@ -1340,12 +1380,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",
         (str(out_path), clip_id),
     )
-    # dọn PNG lớp chữ tạm
-    if overlay_png and os.path.basename(str(overlay_png)).startswith("_ovl_"):
-        try:
-            os.remove(overlay_png)
-        except OSError:
-            pass
+    # (PNG lớp chữ tạm _ovl_ được caller export_clip dọn — kể cả lỗi/hủy)
     ctx.progress(1.0, "Đã xuất clip")
     return {"clip_id": clip_id, "export_path": str(out_path), **result_extra}
 

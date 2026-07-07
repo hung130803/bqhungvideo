@@ -29,6 +29,10 @@ if FROZEN:                                        # đang chạy bản .exe (PyI
 else:                                             # chạy từ mã nguồn (dev)
     ROOT_DIR = Path(__file__).resolve().parent
     DATA_DIR = ROOT_DIR
+# BQ_DATA_DIR: override nơi chứa DỮ LIỆU (projects/db/cache) — dùng cho test
+# cách ly (không đụng dữ liệu thật) hoặc user muốn chuyển kho sang ổ khác.
+if os.environ.get("BQ_DATA_DIR"):
+    DATA_DIR = Path(os.environ["BQ_DATA_DIR"])
 
 
 def bundled_exe(name: str) -> str:
