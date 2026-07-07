@@ -406,6 +406,12 @@ def transcribe(
     # tự dùng Groq, không bắt user phải biết đổi thêm 'Nguồn nghe-chép'.
     if provider != "groq" and not is_available() and settings.groq_keys():
         provider = "groq"
+    # KHỎE NHẤT mà KHÔNG tốn máy: phải chạy CPU (không GPU) mà có key Groq
+    # -> mây TRƯỚC (whisper-large-v3, chính xác hơn model local đã cap, RAM ~0,
+    # CPU rảnh). Groq lỗi/hết hạn mức -> tự lùi về whisper máy ở dưới.
+    # GPU tốt -> giữ local như cũ (nhanh, không phụ thuộc hạn mức).
+    if provider != "groq" and device != "cuda" and settings.groq_keys():
+        provider = "groq"
     # GROQ (mây) TRƯỚC — KHÔNG cần lib local. Máy yếu/không cài gì vẫn chép được.
     if provider == "groq" and settings.groq_keys():
         try:
