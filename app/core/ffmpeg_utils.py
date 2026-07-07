@@ -34,11 +34,39 @@ _SHUTDOWN = _threading.Event()
 def register_proc(p) -> None:
     with _PROC_LOCK:
         _ACTIVE_PROCS.add(p)
+    # GẮN thêm vào job đang chạy trên thread này (nếu là thread worker) để nút
+    # Hủy job kill được tiến trình NGAY (không đợi lệnh chạy xong). Import trễ
+    # tránh vòng import; gọi từ thread thường (UI) thì không gắn gì.
+    try:
+        from app.queue import worker as _w
+        _w.register_job_proc(p)
+    except Exception:  # noqa: BLE001 - không được làm hỏng spawn vì registry
+        pass
 
 
 def unregister_proc(p) -> None:
     with _PROC_LOCK:
         _ACTIVE_PROCS.discard(p)
+    try:
+        from app.queue import worker as _w
+        _w.unregister_job_proc(p)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _job_canceled() -> bool:
+    """Job (worker) sở hữu thread hiện tại đã bị bấm Hủy? Thread thường -> False."""
+    try:
+        from app.queue import worker as _w
+        return _w.current_job_canceled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _raise_if_job_canceled() -> None:
+    if _job_canceled():
+        from app.queue.worker import CanceledError
+        raise CanceledError()
 
 
 def terminate_all_children() -> None:
@@ -55,6 +83,7 @@ def terminate_all_children() -> None:
 
 def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int:
     """Chạy lệnh, đẩy stderr (ffmpeg log) qua callback nếu cần."""
+    _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -64,13 +93,20 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
         errors="replace",
         creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
     )
-    with _PROC_LOCK:
-        _ACTIVE_PROCS.add(proc)
+    # register_proc: vào _ACTIVE_PROCS (dọn khi tắt app) + gắn vào JOB đang chạy
+    # (nút Hủy job kill NGAY tiến trình này thay vì đợi nó chạy xong).
+    register_proc(proc)
     try:
+        # đóng race: bấm Hủy đúng lúc vừa spawn (trước khi register xong)
+        _raise_if_job_canceled()
         for line in proc.stdout:  # type: ignore[union-attr]
             if on_line:
                 on_line(line.rstrip())
         proc.wait()
+        # Bị Hủy (cancel đã kill proc) -> ném CanceledError thay vì trả mã lỗi:
+        # nếu trả mã lỗi, _run_with_fallback sẽ tưởng NVENC hỏng (ghi cache sai)
+        # rồi spawn libx264 encode LẠI từ đầu -> hủy còn lâu hơn.
+        _raise_if_job_canceled()
         return proc.returncode
     finally:
         # Thoát bất thường (on_line ném CanceledError khi bấm Hủy, lỗi khác...)
@@ -82,8 +118,7 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
-        with _PROC_LOCK:
-            _ACTIVE_PROCS.discard(proc)
+        unregister_proc(proc)
 
 
 @dataclass

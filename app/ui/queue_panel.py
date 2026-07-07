@@ -110,9 +110,9 @@ class QueuePanel(QWidget):
         self.timer.start(400)           # nhịp nhanh hơn cho mượt
 
     def _cancel_all(self):
-        for j in services.list_jobs(limit=200):
-            if j["status"] in ("running", "pending"):
-                self.state.pool.cancel(j["id"])
+        # 1 lời gọi: pending -> canceled ngay (1 SQL), job đang chạy -> kill
+        # tiến trình con tức thì. Không join/chờ gì -> UI không đơ.
+        self.state.pool.cancel_all()
         self._sig = None
         self.refresh()
 

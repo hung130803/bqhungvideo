@@ -758,6 +758,8 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
         "động/cao trào, biểu cảm, độ hút mắt, bố cục. Trả JSON THUẦN: "
         '[{"index":0,"vscore":0-100}]')
     for b in range(0, len(frames), 4):  # batch 4 ảnh/lần
+        if ctx is not None:             # nhạy nút Hủy giữa các lượt gọi vision
+            ctx.check_canceled()
         batch = frames[b:b + 4]
         try:
             data = llm.complete_vision_json(prompt_tpl, [fp for _, fp in batch])

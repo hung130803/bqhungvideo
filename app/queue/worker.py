@@ -30,6 +30,73 @@ def register_handler(job_type: str, fn: Callable) -> None:
     _HANDLERS[job_type] = fn
 
 
+# ---- theo dõi TIẾN TRÌNH CON theo JOB (để Hủy có tác dụng NGAY) ----
+# Trước đây Hủy chỉ đặt cờ; worker chỉ kiểm cờ ở checkpoint (progress) -> nếu
+# đang kẹt trong 1 lệnh ffmpeg/phân tích dài thì phải đợi lệnh đó XONG (1-2
+# phút). Giờ: mỗi tiến trình con spawn từ thread job được GẮN vào job_id đang
+# chạy trên thread đó; cancel(job_id) -> kill NGAY các tiến trình này -> lệnh
+# đang chạy chết trong ~1s -> handler thấy cờ hủy -> CanceledError.
+_CURRENT = threading.local()            # .pool / .job_id của thread worker
+_JOB_PROCS: dict[int, set] = {}
+_JOB_PROCS_LOCK = threading.Lock()
+
+
+def _set_current_job(pool: "WorkerPool", job_id: int) -> None:
+    _CURRENT.pool = pool
+    _CURRENT.job_id = job_id
+
+
+def _clear_current_job() -> None:
+    _CURRENT.pool = None
+    _CURRENT.job_id = None
+
+
+def current_job_id() -> Optional[int]:
+    """job_id đang chạy trên thread hiện tại (None nếu không phải thread job)."""
+    return getattr(_CURRENT, "job_id", None)
+
+
+def current_job_canceled() -> bool:
+    """Job sở hữu thread hiện tại đã bị bấm Hủy? Gọi từ thread thường -> False."""
+    pool = getattr(_CURRENT, "pool", None)
+    jid = getattr(_CURRENT, "job_id", None)
+    return bool(pool is not None and jid is not None and jid in pool._canceled)
+
+
+def register_job_proc(p) -> None:
+    """Gắn tiến trình con vào job đang chạy trên thread này (nếu có).
+    cancel(job_id) sẽ kill NGAY các tiến trình đã gắn."""
+    jid = current_job_id()
+    if jid is None:
+        return
+    with _JOB_PROCS_LOCK:
+        _JOB_PROCS.setdefault(jid, set()).add(p)
+
+
+def unregister_job_proc(p) -> None:
+    jid = current_job_id()
+    if jid is None:
+        return
+    with _JOB_PROCS_LOCK:
+        procs = _JOB_PROCS.get(jid)
+        if procs:
+            procs.discard(p)
+
+
+def kill_job_procs(job_id: int) -> None:
+    """Giết NGAY mọi tiến trình con (ffmpeg/phân tích) của 1 job — gọi khi Hủy.
+    kill() không chờ tiến trình thoát -> KHÔNG block UI thread. Tiến trình đã
+    kết thúc (poll() không None) thì bỏ qua."""
+    with _JOB_PROCS_LOCK:
+        procs = list(_JOB_PROCS.get(job_id, ()))
+    for p in procs:
+        try:
+            if p.poll() is None:
+                p.kill()
+        except OSError:
+            pass
+
+
 class CanceledError(Exception):
     """Ném ra khi job bị hủy giữa chừng."""
 
@@ -192,10 +259,37 @@ class WorkerPool:
 
     def cancel(self, job_id: int) -> None:
         self._canceled.add(job_id)
+        # KILL NGAY tiến trình con của job (ffmpeg encode/tiến trình phân tích):
+        # lệnh đang chạy chết trong ~1s -> _run thấy cờ hủy -> CanceledError
+        # -> job kết thúc 'canceled' ngay thay vì đợi lệnh chạy hết (1-2 phút).
+        kill_job_procs(job_id)
         # nếu còn pending (chưa chạy) -> đánh dấu canceled luôn
         db.execute(
             "UPDATE jobs SET status='canceled', message='Đã hủy' "
             "WHERE id=? AND status='pending'", (job_id,),
+        )
+        # đang chạy -> báo 'Đang hủy...' để UI phản hồi tức thì
+        db.execute(
+            "UPDATE jobs SET message='Đang hủy...' "
+            "WHERE id=? AND status='running'", (job_id,),
+        )
+        self._notify()
+
+    def cancel_all(self) -> None:
+        """Hủy MỌI việc: job pending -> 'canceled' NGAY (1 lệnh SQL); job đang
+        chạy -> đặt cờ + kill tiến trình con từng job. Không chờ gì cả (an toàn
+        gọi từ UI thread)."""
+        with self._lock:
+            running = list(self._inflight)
+        self._canceled.update(running)
+        for jid in running:
+            kill_job_procs(jid)
+        db.execute(
+            "UPDATE jobs SET status='canceled', message='Đã hủy' "
+            "WHERE status='pending'"
+        )
+        db.execute(
+            "UPDATE jobs SET message='Đang hủy...' WHERE status='running'"
         )
         self._notify()
 
@@ -248,9 +342,17 @@ class WorkerPool:
         payload = db.loads(payload_json, {})
         ctx = JobContext(self, job_id, self.profile)
         handler = _HANDLERS.get(job_type)
+        _set_current_job(self, job_id)   # để register_job_proc gắn đúng job
         try:
             if handler is None:
                 raise RuntimeError(f"Không có handler cho job type '{job_type}'")
+            # Đóng race Hủy-tất-cả ↔ dispatcher: job vừa bị đánh dấu canceled
+            # (khi còn pending) nhưng dispatcher đã kịp submit -> không chạy.
+            if job_id in self._canceled:
+                raise CanceledError()
+            row = db.query_one("SELECT status FROM jobs WHERE id=?", (job_id,))
+            if row and row["status"] == "canceled":
+                raise CanceledError()
             db.execute(
                 "UPDATE jobs SET status='running', progress=0, "
                 "started_at=datetime('now'), "
@@ -287,6 +389,9 @@ class WorkerPool:
                     (str(e), job_id),
                 )
         finally:
+            _clear_current_job()
+            with _JOB_PROCS_LOCK:
+                _JOB_PROCS.pop(job_id, None)
             with self._lock:
                 self._inflight.discard(job_id)
                 self._inflight_gpu.pop(job_id, None)
