@@ -11,7 +11,11 @@ Quy trình build_dub_track:
   5. KHỚP THỜI GIAN (mặc định "Tự nhiên"): mỗi cụm NEO đúng start gốc; đọc tốc
      độ thường, CHỈ tăng tốc (atempo ≤1.5, chia tầng) khi lời đọc sắp ĐÈ sang
      start cụm kế; đọc ngắn hơn khung -> giữ nguyên (im lặng tự đệm, KHÔNG kéo
-     dài). Chế độ "Khớp chặt" -> ép mỗi cụm lọt khung riêng như cũ. Cụm TTS lỗi
+     dài). Chế độ "Khớp chặt" -> ép mỗi cụm lọt khung riêng như cũ. Chế độ
+     "Khớp video (mượt)" -> KHÔNG tăng tốc giọng (đọc hoàn toàn tự nhiên) và
+     TÍNH hệ số kéo dài tổng (stretch): khi lời đọc dài hơn khung gốc, trả về
+     ratio > 1 để export CO GIÃN NHẸ cả clip video cho khớp giọng (như
+     pyVideoTrans) thay vì tăng tốc gắt. Cụm TTS lỗi
      -> BỎ RIÊNG cụm đó, cụm khác GIỮ ĐÚNG mốc. Ghép: anullsrc đúng tổng độ dài
      + adelay từng cụm theo start + amix -> 1 file WAV 48kHz dài ĐÚNG bằng clip.
 
@@ -37,6 +41,11 @@ _JOIN_GAP = 0.4
 # Tăng tốc tối đa cho phép để nhét lời đọc vào khung thời gian (nghe vẫn tự nhiên).
 # 1.5 = trần khi lời đọc SẼ ĐÈ sang cụm kế (chỉ tăng tốc vừa đủ để không đè).
 _MAX_TEMPO = 1.5
+# Chế độ "Khớp video (mượt)": trần hệ số kéo dài (làm chậm) clip video. Vượt
+# quá thì phần dư vẫn tăng tốc giọng nhẹ (để clip không bị chậm đến mức lố).
+# 1.5 = cho phép clip dài ra tối đa 50% — đủ nuốt hầu hết câu dịch dài mà nhìn
+# vẫn tự nhiên (pyVideoTrans thường 1.05–1.3x).
+_MAX_STRETCH = 1.5
 # Số cụm TTS chạy song song (edge-tts qua mạng)
 _TTS_PARALLEL = 4
 
@@ -496,19 +505,29 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
                     llm_translate: bool = True,
                     dub_mode: str = "natural",
                     on_progress: Optional[Callable[[float, str], None]] = None,
-                    ) -> tuple[str, list[dict]]:
+                    ) -> tuple[str, list[dict], float]:
     """
-    Tạo track lồng tiếng cho clip. Trả (đường_dẫn_wav, dub_segments) với
-    dub_segments = [{"start","end","text"}] trên timeline ĐẦU RA (text đã dịch)
-    — dùng cho phụ đề khớp bản dịch. WAV 48kHz mono, dài ĐÚNG tổng độ dài clip.
+    Tạo track lồng tiếng cho clip. Trả (đường_dẫn_wav, dub_segments, stretch):
+      dub_segments = [{"start","end","text"}] trên timeline ĐẦU RA (text đã dịch)
+        — dùng cho phụ đề khớp bản dịch. WAV 48kHz mono, dài ĐÚNG tổng độ dài clip.
+      stretch = hệ số KÉO DÀI clip (>= 1.0). Chỉ khác 1.0 ở chế độ "video":
+        nếu tổng lời đọc tự nhiên dài hơn khung, trả ratio để export làm CHẬM
+        ĐỀU cả clip video (+ dub) cho khớp. Các chế độ khác luôn trả 1.0.
 
     dub_mode:
       "natural" (mặc định) — đọc tốc độ THƯỜNG, mỗi câu neo ĐÚNG start gốc;
                  chỉ tăng tốc khi lời đọc sắp ĐÈ sang câu kế (trần 1.5). Nghe
                  đều giọng, khớp mốc, không giật.
       "tight"  — ép mỗi câu lọt khung riêng của nó (khớp sát, có thể nhanh/giật).
+      "video"  — KHÔNG tăng tốc giọng (đọc hoàn toàn tự nhiên). Tính hệ số kéo
+                 dài tổng: nếu lời đọc dài hơn khung, trả stretch > 1 để export
+                 CO GIÃN NHẸ đoạn video cho khớp giọng (như pyVideoTrans) —
+                 mượt nhất, giọng tự nhiên nhất. Dub track vẫn dựng trên timeline
+                 gốc (dài = total); export nhân đều cả video lẫn dub theo stretch.
     """
-    tight = str(dub_mode or "natural").lower().startswith("t")
+    mode = str(dub_mode or "natural").lower()
+    tight = mode.startswith("t")
+    video_fit = mode.startswith("v")
     def prog(p: float, msg: str = "") -> None:
         if on_progress:
             on_progress(min(1.0, max(0.0, p)), msg)
@@ -541,9 +560,6 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
         texts = [(texts[i] if i < len(texts) and str(texts[i]).strip()
                   else chunks[i]["text"]) for i in range(len(chunks))]
 
-    dub_segments = [{"start": c["start"], "end": c["end"], "text": t}
-                    for c, t in zip(chunks, texts)]
-
     with tempfile.TemporaryDirectory(prefix="dub_") as td:
         # --- TTS song song ---
         mp3s = [os.path.join(td, f"c{i}.mp3") for i in range(len(chunks))]
@@ -558,35 +574,74 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
         ok = asyncio.run(_synth_all(texts, voice, mp3s, on_done=_tts_done))
 
         # --- Khớp thời gian từng cụm ---
-        # Neo mỗi cụm vào ĐÚNG start gốc (adelay ở _mix_track). Cụm TTS lỗi ->
-        # BỎ RIÊNG cụm đó, các cụm khác GIỮ ĐÚNG mốc (không dồn/lệch).
+        # gap[i] = khoảng cách từ start cụm i tới start cụm kế (hoặc hết clip)
+        # trên TIMELINE GỐC.
+        gaps = []
+        for i, c in enumerate(chunks):
+            nxt = chunks[i + 1]["start"] if i + 1 < len(chunks) else total
+            gaps.append(max(0.2, min(nxt, total) - c["start"] - 0.03))
+
+        # CHẾ ĐỘ "video": tính hệ số kéo dài tổng. Đo độ dài ĐỌC TỰ NHIÊN từng
+        # cụm (chỉ probe mp3, không encode). stretch = max(dur/gap) — giãn ĐỀU
+        # cả timeline (mốc + khung) theo stretch thì MỌI cụm lọt khung tự nhiên.
+        # KHÁC 2 chế độ kia: dub track dựng trên timeline ĐÃ GIÃN (dài total*
+        # stretch), export chỉ việc làm chậm video theo stretch, KHÔNG atempo dub.
+        stretch = 1.0
+        if video_fit:
+            for i in range(len(chunks)):
+                if not ok[i]:
+                    continue
+                d = probe_duration(mp3s[i])
+                if d > gaps[i] + 0.02:
+                    stretch = max(stretch, d / gaps[i])
+            stretch = min(_MAX_STRETCH, round(stretch, 4))
+
+        # Mốc cụm trên timeline ĐÃ GIÃN — CHỈ dùng để NEO track lồng tiếng
+        # (WAV dài total*stretch, khớp với video sau khi export setpts giãn).
+        out_start = [round(c["start"] * stretch, 3) for c in chunks]
+        out_total = round(total * stretch, 3)
+        # dub_segments cho PHỤ ĐỀ giữ mốc GỐC (chưa giãn): phụ đề .ass đốt vào
+        # video TRƯỚC bước setpts nên phải khớp timeline gốc; setpts sẽ giãn chữ
+        # cùng video (y như cơ chế `speed`). Nếu giãn sẵn ở đây sẽ lệch gấp đôi.
+        dub_segments = [{"start": c["start"], "end": c["end"], "text": texts[i]}
+                        for i, c in enumerate(chunks)]
+
+        # --- Khớp/encode từng cụm ---
+        # Neo mỗi cụm vào start (đã giãn nếu video). Cụm TTS lỗi -> BỎ RIÊNG cụm
+        # đó, các cụm khác GIỮ ĐÚNG mốc (không dồn/lệch).
         fitted: list[tuple[float, str]] = []
         for i, c in enumerate(chunks):
             if not ok[i]:                   # cụm này TTS hỏng/rỗng -> bỏ, giữ mốc
                 prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
                 continue
             window = c["end"] - c["start"]
-            # start cụm kế (hoặc hết clip) -> "ngân sách" thời gian tự nhiên của cụm
-            nxt = chunks[i + 1]["start"] if i + 1 < len(chunks) else total
-            # budget (chế độ Tự nhiên): tới sát start cụm kế -> chỉ tăng tốc khi
-            # lời đọc sẽ ĐÈ sang cụm sau. Chặn cứng hard_max để KHÔNG bao giờ đè.
-            budget = max(0.2, min(nxt, total) - c["start"] - 0.03)
-            hard_max = max(window, min(nxt, total) - c["start"] - 0.03)
+            gap = gaps[i]
             wav = os.path.join(td, f"f{i}.wav")
+            if video_fit:
+                # Khung ĐÃ GIÃN = gap*stretch. stretch chọn theo cụm chật nhất
+                # nên gap*stretch >= dur mọi cụm -> đọc y nguyên, KHÔNG tăng tốc.
+                # Chỉ khi stretch bị TRẦN (_MAX_STRETCH) mà cụm vẫn quá dài thì
+                # _fit_chunk mới tăng tốc NHẸ phần dư để không đè cụm kế.
+                lim = gap * stretch
+                fit_budget, fit_hard = lim, lim
+            else:
+                # budget (Tự nhiên): tới sát start cụm kế -> chỉ tăng tốc khi lời
+                # đọc sẽ ĐÈ sang cụm sau. Chặn cứng hard_max để KHÔNG bao giờ đè.
+                fit_budget, fit_hard = gap, max(window, gap)
             try:
-                _fit_chunk(mp3s[i], wav, budget, hard_max,
+                _fit_chunk(mp3s[i], wav, fit_budget, fit_hard,
                            tight=tight, window=window)
             except RuntimeError:            # file TTS hỏng lúc xử lý -> bỏ cụm
                 prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
                 continue
-            fitted.append((c["start"], wav))
+            fitted.append((out_start[i], wav))
             prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
 
-        # --- Ghép về 1 track dài đúng bằng clip ---
+        # --- Ghép về 1 track dài đúng bằng clip (đã giãn nếu chế độ video) ---
         # (fitted rỗng = mọi cụm TTS lỗi -> track im lặng đúng độ dài, KHÔNG vỡ)
         prog(0.88, "Ghép track lồng tiếng...")
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
-        _mix_track(fitted, total, str(out_wav))
+        _mix_track(fitted, out_total, str(out_wav))
 
     prog(1.0, "Xong lồng tiếng")
-    return str(out_wav), dub_segments
+    return str(out_wav), dub_segments, stretch

@@ -1192,6 +1192,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
         # Dựng theo segs SAU hook-first -> mốc khớp đúng timeline đầu ra.
         dub_path = None
         dub_segs = None
+        dub_stretch = 1.0            # >1 ở chế độ "Khớp video": làm chậm đều clip
         if payload.get("dub_lang"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
@@ -1200,7 +1201,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                 cdir.mkdir(parents=True, exist_ok=True)
                 dw = str(cdir / f"_dub_{clip_id}.wav")
                 ctx.progress(0.05, f"{pfx}đang tạo lồng tiếng AI...")
-                dub_path, dub_segs = dubbing.build_dub_track(
+                dub_path, dub_segs, dub_stretch = dubbing.build_dub_track(
                     tr_dub, segs, payload["dub_lang"],
                     payload.get("dub_voice") or "", dw,
                     dub_mode=payload.get("dub_mode", "natural") or "natural",
@@ -1238,6 +1239,9 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                         words.append({"start": d["start"] + k * step,
                                       "end": d["start"] + (k + 1) * step,
                                       "word": tk})
+                # dub_segs ở timeline GỐC (chưa giãn): phụ đề đốt trước setpts
+                # nên khung = tổng gốc; setpts sẽ giãn chữ cùng video khi có
+                # dub_stretch (như cơ chế `speed`).
                 cap_segs = [[0.0, sum(float(e) - float(s) for s, e in segs)]]
             cs = _cs0
             hook_txt = _hook_txt0
@@ -1276,6 +1280,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,
             dub_mute_original=bool(payload.get("dub_mute")),
+            dub_stretch=dub_stretch,
             on_progress=on_prog,
         )
         # dọn wav lồng tiếng tạm (đã trộn vào clip)

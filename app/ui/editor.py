@@ -1075,10 +1075,13 @@ class EditorDialog(QDialog):
         self.dub_mode = _NoWheelCombo()
         self.dub_mode.addItem("Tự nhiên (đọc đều, khớp mốc)", "natural")
         self.dub_mode.addItem("Khớp chặt (ép vừa khung, có thể nhanh)", "tight")
+        self.dub_mode.addItem("Khớp video (mượt nhất — hơi chậm hình)", "video")
         self.dub_mode.setToolTip(
             "Tự nhiên: đọc tốc độ thường, mỗi câu bắt đầu đúng lúc câu gốc — "
             "nghe đều, không giật. Khớp chặt: ép mỗi câu lọt khung riêng của nó "
-            "(bám sát nhất nhưng có chỗ đọc nhanh).")
+            "(bám sát nhất nhưng có chỗ đọc nhanh). Khớp video: đọc HOÀN TOÀN "
+            "tự nhiên (không tăng tốc giọng), CO GIÃN NHẸ đoạn video cho khớp "
+            "lời — mượt nhất, giọng hay nhất; đổi lại hình chậm nhẹ (tối đa ~1.5x).")
         dmr.addWidget(self.dub_mode, 1)
         gd.addLayout(dmr)
         self._dub_lang_ui()

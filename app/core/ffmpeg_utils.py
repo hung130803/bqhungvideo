@@ -392,6 +392,23 @@ def reframe_chain(mode: str, cx: float, out_w: int, out_h: int,
     )
 
 
+def _atempo_chain(tempo: float) -> str:
+    """Chuỗi atempo cho hệ số bất kỳ, CHIA TẦNG để luôn nằm trong [0.5, 2.0]
+    (khoảng an toàn atempo trên MỌI bản ffmpeg, kể cả cũ trên máy khách).
+    tempo<1 = chậm lại (giãn), >1 = nhanh lên. Trả 1 filter atempo=... hoặc
+    nhiều cái nối bằng dấu phẩy."""
+    tempo = max(0.01, float(tempo))
+    parts = []
+    while tempo < 0.5 - 1e-9:
+        parts.append("atempo=0.5")
+        tempo /= 0.5
+    while tempo > 2.0 + 1e-9:
+        parts.append("atempo=2.0")
+        tempo /= 2.0
+    parts.append(f"atempo={tempo:.4f}")
+    return ",".join(parts)
+
+
 def _cleanup_dst(dst) -> None:
     """Xóa file output dở dang (mp4 hỏng) khi xuất lỗi/hủy — best-effort."""
     if not dst:
@@ -632,11 +649,23 @@ def export_canvas_clip(
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
     dub_mute_original: bool = False,    # True = tắt hẳn tiếng gốc khi có lồng tiếng
+    dub_stretch: float = 1.0,           # CHẾ ĐỘ "Khớp video": làm CHẬM ĐỀU clip
+                                        # theo hệ số này (>1) để giọng đọc lọt
+                                        # khung tự nhiên (dub đã dựng theo timeline
+                                        # đã giãn). 1.0 = không giãn.
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
     Mô hình CapCut: khung 9:16 = NỀN (đen/trắng/mờ) + KHỐI video; hoặc 'fill' = crop
     cắt 2 bên cho video đầy khung. Nhiều khúc -> GHÉP. Tùy chọn tăng tốc + đổi giọng.
+
+    dub_stretch (>1): "Khớp video (mượt)" — làm CHẬM ĐỀU cả clip video (setpts)
+    để khớp giọng lồng tiếng đọc ở tốc độ TỰ NHIÊN, thay vì tăng tốc giọng gắt.
+    Track lồng tiếng (dub_path) đã được dựng trên timeline ĐÃ GIÃN (dài
+    total*dub_stretch) nên KHÔNG bị atempo theo dub_stretch — chỉ video + tiếng
+    gốc + nhạc nền chậm lại. Phụ đề .ass cũng đã build theo timeline giãn -> đốt
+    trước setpts nên tự khớp. Kết hợp với `speed` (user tua nhanh) qua 1 hệ số
+    video hiệu dụng = speed/dub_stretch (vẫn DUY NHẤT 1 lệnh ffmpeg).
     """
     segs = [(float(s), float(e)) for s, e in (segments or []) if e > s]
     if not segs:
@@ -656,6 +685,13 @@ def export_canvas_clip(
     blur_amt = max(1, int(blur_amt))
     speed = max(0.5, min(3.0, float(speed or 1.0)))
     pitch = max(0.5, min(2.0, float(pitch or 1.0)))
+    # "Khớp video (mượt)": chỉ áp khi THẬT có lồng tiếng (dub track dựng theo
+    # timeline đã giãn). Không có dub -> bỏ qua để không làm chậm oan clip.
+    dub_stretch = max(1.0, min(2.0, float(dub_stretch or 1.0))) if dub_on else 1.0
+    # TỐC ĐỘ VIDEO HIỆU DỤNG: user tua nhanh (speed) rồi giãn để khớp giọng
+    # (chia dub_stretch). vspeed<1 = video chậm lại. Dùng cho setpts video +
+    # atempo tiếng gốc/nhạc nền; RIÊNG dub giữ `speed` (đã dài sẵn theo stretch).
+    vspeed = speed / dub_stretch
     orig_vol = max(0.0, min(1.0, float(orig_vol if orig_vol is not None else 1.0)))
     # ÂM LƯỢNG TIẾNG GỐC áp vào luồng tiếng gốc TRƯỚC khi amix. Khi có lồng
     # tiếng và user để mặc định 1.0 (thanh kéo chưa động) -> tự hạ nền ~0.12
@@ -742,18 +778,19 @@ def export_canvas_clip(
                 sub += f":fontsdir='{fd}'"
             parts.append(f"{final}{sub}[vsub]")
             final = "[vsub]"
-        # TĂNG TỐC: setpts SAU phụ đề -> chữ đốt sẵn nên vẫn KHỚP khi tua nhanh
-        if abs(speed - 1.0) > 0.01:
-            parts.append(f"{final}setpts=PTS/{speed:.4f}[vsp]")
+        # TĂNG TỐC/GIÃN VIDEO: setpts SAU phụ đề -> chữ đốt sẵn nên vẫn KHỚP.
+        # vspeed = speed/dub_stretch: user tua nhanh + giãn khớp giọng gộp làm 1.
+        if abs(vspeed - 1.0) > 0.001:
+            parts.append(f"{final}setpts=PTS/{vspeed:.5f}[vsp]")
             final = "[vsp]"
-        # ĐỔI GIỌNG + tốc độ cho AUDIO (chỉ khi video CÓ tiếng)
+        # ĐỔI GIỌNG + tốc độ cho AUDIO GỐC (chỉ khi video CÓ tiếng)
         af = []
         if abs(pitch - 1.0) > 0.01:     # đổi cao độ giọng (giữ tốc độ)
             af += [f"asetrate=48000*{pitch:.4f}", "aresample=48000",
                    f"atempo={1.0/pitch:.4f}"]
-        if abs(speed - 1.0) > 0.01:
-            af.append(f"atempo={speed:.4f}")
-        out_dur = total / speed if abs(speed - 1.0) > 0.01 else total
+        if abs(vspeed - 1.0) > 0.001:   # tiếng gốc theo tốc độ video hiệu dụng
+            af.append(_atempo_chain(vspeed))
+        out_dur = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
         # ---- TRỘN AUDIO: tiếng gốc (+lọc) / lồng tiếng AI / nhạc nền ----
         # Tiếng gốc áp voice_vol (thanh kéo "Âm lượng tiếng gốc"); có lồng tiếng
         # + để mặc định thì tự hạ nền (đã tính ở voice_vol trên), hoặc bỏ hẳn
@@ -776,8 +813,12 @@ def export_canvas_clip(
                 amap = aud_map  # KHÔNG lọc/trộn -> map thẳng (giữ hành vi cũ)
         if dub_idx is not None:
             dch = ["aresample=48000"]
-            if abs(speed - 1.0) > 0.01:     # dub dựng theo timeline gốc -> tua theo
-                dch.append(f"atempo={speed:.4f}")
+            # Dub track đã dài = total*dub_stretch (timeline đã giãn để khớp
+            # video setpts). Chỉ cần theo `speed` (user tua nhanh) -> ra out_dur
+            # = total*dub_stretch/speed = total/vspeed, KHỚP video. KHÔNG atempo
+            # theo dub_stretch (nếu không dub sẽ nhanh gấp đôi so với hình).
+            if abs(speed - 1.0) > 0.01:
+                dch.append(_atempo_chain(speed))
             parts.append(f"[{dub_idx}:a]{','.join(dch)},atrim=0:{out_dur:.3f},"
                          f"asetpts=PTS-STARTPTS[dub]")
             mix.append("[dub]")
@@ -800,9 +841,9 @@ def export_canvas_clip(
                 "-movflags", "+faststart", str(dst)]
         return cmd
 
-    # ffmpeg log 'time=' là thời gian OUTPUT -> khi tăng tốc, tổng thời lượng
-    # ra = total/speed; dùng total gốc sẽ làm thanh % kẹt ở ~1/speed rồi nhảy vọt.
-    out_total = total / speed if abs(speed - 1.0) > 0.01 else total
+    # ffmpeg log 'time=' là thời gian OUTPUT -> tổng thời lượng ra = total/vspeed
+    # (vspeed=speed/dub_stretch); dùng total gốc sẽ làm thanh % kẹt rồi nhảy vọt.
+    out_total = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
     _run_with_fallback(build, encoder, out_total, on_progress, "xuất được clip",
                        dst=dst)
     return True
