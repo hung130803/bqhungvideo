@@ -128,8 +128,10 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    blur_amt: int = 22, speed: float = 1.0,
                    pitch: float = 1.0, out_dir: str = "",
                    hook_first: bool = False, bgm_path: str = "",
-                   bgm_vol: float = 0.15, dub_lang: str = "",
+                   bgm_vol: float = 0.15, orig_vol: float = 1.0,
+                   dub_lang: str = "",
                    dub_voice: str = "", dub_mute: bool = False,
+                   dub_mode: str = "natural",
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
     'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
@@ -148,8 +150,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
             pass
     extra = hashlib.sha1(
         repr((text_overlays, cap_style, out_name, out_dir, ovl,
-              hook_first, bgm_path, bgm_vol,
-              dub_lang, dub_voice, dub_mute)).encode()
+              hook_first, bgm_path, bgm_vol, orig_vol,
+              dub_lang, dub_voice, dub_mute, dub_mode)).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
@@ -163,7 +165,9 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "cap_style": cap_style or {}, "blur_amt": blur_amt,
          "speed": speed, "pitch": pitch, "out_dir": out_dir,
          "hook_first": hook_first, "bgm_path": bgm_path, "bgm_vol": bgm_vol,
-         "dub_lang": dub_lang, "dub_voice": dub_voice, "dub_mute": dub_mute},
+         "orig_vol": orig_vol,
+         "dub_lang": dub_lang, "dub_voice": dub_voice, "dub_mute": dub_mute,
+         "dub_mode": dub_mode},
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",

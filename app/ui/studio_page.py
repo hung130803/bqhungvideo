@@ -2844,9 +2844,11 @@ class StudioPage(QWidget):
                 hook_first=bool(self.layout_tpl.get("hook_first")),
                 bgm_path=self._pick_bgm(),
                 bgm_vol=float(self.layout_tpl.get("bgm_vol", 0.15)),
+                orig_vol=float(self.layout_tpl.get("orig_vol", 1.0)),
                 dub_lang=self.layout_tpl.get("dub_lang", "") or "",
                 dub_voice=self.layout_tpl.get("dub_voice", "") or "",
                 dub_mute=bool(self.layout_tpl.get("dub_mute", False)),
+                dub_mode=self.layout_tpl.get("dub_mode", "natural") or "natural",
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 force=force_one)
             if jid:

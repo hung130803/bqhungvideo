@@ -628,6 +628,8 @@ def export_canvas_clip(
     pitch: float = 1.0,                 # đổi giọng (1=gốc, >1 cao/nữ, <1 trầm/nam)
     bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
+    orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
+                                        # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
     dub_mute_original: bool = False,    # True = tắt hẳn tiếng gốc khi có lồng tiếng
     on_progress: Optional[Callable[[float], None]] = None,
@@ -654,6 +656,13 @@ def export_canvas_clip(
     blur_amt = max(1, int(blur_amt))
     speed = max(0.5, min(3.0, float(speed or 1.0)))
     pitch = max(0.5, min(2.0, float(pitch or 1.0)))
+    orig_vol = max(0.0, min(1.0, float(orig_vol if orig_vol is not None else 1.0)))
+    # ÂM LƯỢNG TIẾNG GỐC áp vào luồng tiếng gốc TRƯỚC khi amix. Khi có lồng
+    # tiếng và user để mặc định 1.0 (thanh kéo chưa động) -> tự hạ nền ~0.12
+    # để lời lồng tiếng nổi lên; user kéo mức khác thì tôn trọng đúng mức đó.
+    voice_vol = orig_vol
+    if dub_on and not dub_mute_original and orig_vol >= 0.999:
+        voice_vol = 0.12
 
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y"]
@@ -746,16 +755,21 @@ def export_canvas_clip(
             af.append(f"atempo={speed:.4f}")
         out_dur = total / speed if abs(speed - 1.0) > 0.01 else total
         # ---- TRỘN AUDIO: tiếng gốc (+lọc) / lồng tiếng AI / nhạc nền ----
-        # Có lồng tiếng: tiếng GỐC hạ còn 0.15 (giữ "không khí" nền) hoặc bỏ hẳn
+        # Tiếng gốc áp voice_vol (thanh kéo "Âm lượng tiếng gốc"); có lồng tiếng
+        # + để mặc định thì tự hạ nền (đã tính ở voice_vol trên), hoặc bỏ hẳn
         # (dub_mute_original). amix normalize=0 để giữ nguyên âm lượng từng lớp.
         mix: list[str] = []
         amap = None
-        if use_voice:
+        # voice_vol==0 -> tiếng gốc câm hẳn: BỎ khỏi mix (như dub_mute) để amix
+        # không thừa 1 nhánh im lặng làm loãng các lớp khác.
+        include_voice = use_voice and voice_vol > 0.0005
+        if include_voice:
             vf = ["aresample=48000"] + af
-            if dub_idx is not None:
-                vf.append("volume=0.150")   # né tiếng gốc dưới lồng tiếng
+            apply_vol = abs(voice_vol - 1.0) > 0.001
+            if apply_vol:
+                vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
             need_mix = (dub_idx is not None) or (bgm_idx is not None)
-            if need_mix or af:
+            if need_mix or af or apply_vol:
                 parts.append(f"{aud}{','.join(vf)}[vce]")
                 mix.append("[vce]")
             else:

@@ -1203,6 +1203,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
                 dub_path, dub_segs = dubbing.build_dub_track(
                     tr_dub, segs, payload["dub_lang"],
                     payload.get("dub_voice") or "", dw,
+                    dub_mode=payload.get("dub_mode", "natural") or "natural",
                     on_progress=lambda p, m="": ctx.progress(
                         0.05 + 0.10 * p, f"{pfx}lồng tiếng: {m}"))
         # PHỤ ĐỀ CHẠY CHỮ + HOOK giật tít. HOOK render ĐỘC LẬP với phụ đề: bật
@@ -1272,6 +1273,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             pitch=float(payload.get("pitch", 1.0)),
             bgm_path=payload.get("bgm_path") or None,
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
+            orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,
             dub_mute_original=bool(payload.get("dub_mute")),
             on_progress=on_prog,

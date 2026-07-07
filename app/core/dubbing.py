@@ -8,8 +8,11 @@ Quy trình build_dub_track:
   3. DỊCH 1 lần tất cả cụm bằng LLM (JSON mảng cùng số phần tử, văn nói NGẮN GỌN
      lọt khung thời gian). target == ngôn ngữ gốc -> bỏ qua dịch.
   4. TTS từng cụm (edge-tts, song song tối đa 4 cụm/lượt).
-  5. KHỚP THỜI GIAN: cụm đọc dài hơn khung -> tăng tốc atempo (≤1.35, chia tầng);
-     ngắn hơn -> giữ nguyên (im lặng tự đệm). Ghép: anullsrc đúng tổng độ dài
+  5. KHỚP THỜI GIAN (mặc định "Tự nhiên"): mỗi cụm NEO đúng start gốc; đọc tốc
+     độ thường, CHỈ tăng tốc (atempo ≤1.5, chia tầng) khi lời đọc sắp ĐÈ sang
+     start cụm kế; đọc ngắn hơn khung -> giữ nguyên (im lặng tự đệm, KHÔNG kéo
+     dài). Chế độ "Khớp chặt" -> ép mỗi cụm lọt khung riêng như cũ. Cụm TTS lỗi
+     -> BỎ RIÊNG cụm đó, cụm khác GIỮ ĐÚNG mốc. Ghép: anullsrc đúng tổng độ dài
      + adelay từng cụm theo start + amix -> 1 file WAV 48kHz dài ĐÚNG bằng clip.
 
 Chỉ dùng subprocess ffmpeg (settings.FFMPEG_PATH) — không thêm dependency audio.
@@ -31,8 +34,9 @@ _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
 
 # Gom 2 câu transcript liền kề thành 1 cụm nếu hở dưới ngưỡng này (giây)
 _JOIN_GAP = 0.4
-# Tăng tốc tối đa cho phép để nhét lời đọc vào khung thời gian (nghe vẫn tự nhiên)
-_MAX_TEMPO = 1.35
+# Tăng tốc tối đa cho phép để nhét lời đọc vào khung thời gian (nghe vẫn tự nhiên).
+# 1.5 = trần khi lời đọc SẼ ĐÈ sang cụm kế (chỉ tăng tốc vừa đủ để không đè).
+_MAX_TEMPO = 1.5
 # Số cụm TTS chạy song song (edge-tts qua mạng)
 _TTS_PARALLEL = 4
 
@@ -362,29 +366,37 @@ def _translate_chunks(chunks: list[dict], target_lang: str) -> list[str]:
 # Bước 4: TTS edge-tts (async, song song tối đa 4)
 # ------------------------------------------------------------------
 async def _synth_all(texts: list[str], voice: str, paths: list[str],
-                     on_done: Optional[Callable[[int], None]] = None) -> None:
+                     on_done: Optional[Callable[[int], None]] = None,
+                     ) -> list[bool]:
+    """Đọc từng câu song song. Trả list[bool] ok[i] = câu #i ra file hợp lệ.
+    Câu lỗi (retry 3 lần vẫn hỏng) -> ok[i]=False (KHÔNG ném lỗi cả track):
+    caller sẽ BỎ RIÊNG cụm đó, các cụm khác giữ ĐÚNG mốc (không dồn/lệch)."""
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
+    ok = [False] * len(texts)
 
     async def one(i: int) -> None:
         async with sem:
-            last = None
+            txt = (texts[i] or "").strip()
+            if not txt:                     # cụm rỗng -> coi như không có tiếng
+                if on_done:
+                    on_done(i)
+                return
             for attempt in range(3):        # mạng chập chờn -> thử lại
                 try:
-                    comm = edge_tts.Communicate(texts[i], voice, rate="+0%")
+                    comm = edge_tts.Communicate(txt, voice, rate="+0%")
                     await comm.save(paths[i])
                     if os.path.getsize(paths[i]) > 200:
-                        if on_done:
-                            on_done(i)
-                        return
-                    last = RuntimeError("edge-tts trả file rỗng")
-                except Exception as e:  # noqa: BLE001
-                    last = e
+                        ok[i] = True
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
                 await asyncio.sleep(1.5 * (attempt + 1))
-            raise RuntimeError(
-                f"Lồng tiếng thất bại ở câu #{i} (giọng {voice}): {last}")
+            if on_done:
+                on_done(i)
 
     await asyncio.gather(*(one(i) for i in range(len(texts))))
+    return ok
 
 
 # ------------------------------------------------------------------
@@ -424,21 +436,36 @@ def _tempo_filters(tempo: float) -> str:
     return ",".join(parts)
 
 
-def _fit_chunk(src_mp3: str, dst_wav: str, window: float, hard_max: float) -> None:
-    """Chuyển 1 cụm TTS (mp3) -> wav 48k mono, NÉN thời gian cho lọt khung:
-    dài hơn khung -> atempo (≤ _MAX_TEMPO); vẫn dư -> cắt cứng tại hard_max
-    (fade 120ms cuối cho khỏi bụp). Ngắn hơn khung -> giữ nguyên."""
+def _fit_chunk(src_mp3: str, dst_wav: str, budget: float, hard_max: float,
+               tight: bool = False, window: float = 0.0) -> float:
+    """Chuyển 1 cụm TTS (mp3) -> wav 48k mono. Trả về ĐỘ DÀI (giây) sau khi xử lý.
+
+    Chế độ "Tự nhiên" (tight=False, mặc định): đọc TỐC ĐỘ THƯỜNG, neo vào đúng
+    start. CHỈ tăng tốc khi lời đọc dài hơn `budget` (khoảng cách tới start cụm
+    kế) — tức sắp ĐÈ sang cụm sau; tăng vừa đủ, trần _MAX_TEMPO. Đọc ngắn hơn
+    khung -> để tự nhiên (im lặng phần dư, KHÔNG kéo dài).
+
+    Chế độ "Khớp chặt" (tight=True): ép lời đọc lọt khung riêng của cụm
+    (`window` = end-start) như cũ -> khớp sát nhưng có thể nhanh/giật.
+
+    hard_max: chặn cứng tuyệt đối (không cho tràn quá điểm này) -> cắt + fade
+    120ms cuối cho khỏi bụp. Đảm bảo cụm KHÔNG bao giờ đè lên start cụm kế."""
     dur = probe_duration(src_mp3)
+    if dur <= 0:
+        raise RuntimeError("edge-tts trả file audio hỏng (0 giây)")
     af = ["aresample=48000"]
-    if dur > window + 0.05 and window > 0.2:
-        tempo = min(_MAX_TEMPO, dur / window)
+    limit = window if (tight and window > 0.2) else budget
+    if limit > 0.2 and dur > limit + 0.05:
+        tempo = min(_MAX_TEMPO, dur / limit)
         af.append(_tempo_filters(tempo))
         dur = dur / tempo
-    if dur > hard_max + 0.05:           # atempo kịch trần vẫn dư -> cắt + fade
+    if hard_max > 0.05 and dur > hard_max + 0.05:   # trần vẫn dư -> cắt + fade
         af.append(f"atrim=0:{hard_max:.3f}")
         af.append(f"afade=t=out:st={max(0.0, hard_max - 0.12):.3f}:d=0.12")
+        dur = hard_max
     _ffmpeg(["-i", src_mp3, "-af", ",".join(af), "-ac", "1", "-ar", "48000",
              "-c:a", "pcm_s16le", dst_wav], "khớp thời gian lồng tiếng")
+    return dur
 
 
 def _mix_track(chunk_wavs: list[tuple[float, str]], total: float,
@@ -467,13 +494,21 @@ def _mix_track(chunk_wavs: list[tuple[float, str]], total: float,
 def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
                     voice: str, out_wav: str | Path,
                     llm_translate: bool = True,
+                    dub_mode: str = "natural",
                     on_progress: Optional[Callable[[float, str], None]] = None,
                     ) -> tuple[str, list[dict]]:
     """
     Tạo track lồng tiếng cho clip. Trả (đường_dẫn_wav, dub_segments) với
     dub_segments = [{"start","end","text"}] trên timeline ĐẦU RA (text đã dịch)
     — dùng cho phụ đề khớp bản dịch. WAV 48kHz mono, dài ĐÚNG tổng độ dài clip.
+
+    dub_mode:
+      "natural" (mặc định) — đọc tốc độ THƯỜNG, mỗi câu neo ĐÚNG start gốc;
+                 chỉ tăng tốc khi lời đọc sắp ĐÈ sang câu kế (trần 1.5). Nghe
+                 đều giọng, khớp mốc, không giật.
+      "tight"  — ép mỗi câu lọt khung riêng của nó (khớp sát, có thể nhanh/giật).
     """
+    tight = str(dub_mode or "natural").lower().startswith("t")
     def prog(p: float, msg: str = "") -> None:
         if on_progress:
             on_progress(min(1.0, max(0.0, p)), msg)
@@ -499,6 +534,13 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
     else:
         texts = [c["text"] for c in chunks]
 
+    # AN TOÀN: số bản dịch phải KHỚP số cụm (LLM có thể trả thiếu/thừa phần tử).
+    # Map theo index, cụm thiếu -> dùng nguyên văn gốc; thừa -> cắt bỏ. Nhờ vậy
+    # KHÔNG cụm nào bị lệch mốc dù bản dịch lỗi.
+    if len(texts) != len(chunks):
+        texts = [(texts[i] if i < len(texts) and str(texts[i]).strip()
+                  else chunks[i]["text"]) for i in range(len(chunks))]
+
     dub_segments = [{"start": c["start"], "end": c["end"], "text": t}
                     for c, t in zip(chunks, texts)]
 
@@ -513,21 +555,35 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
                  f"Đang đọc lời thoại ({done['n']}/{len(chunks)})...")
 
         prog(0.15, f"Đang đọc {len(chunks)} câu (edge-tts)...")
-        asyncio.run(_synth_all(texts, voice, mp3s, on_done=_tts_done))
+        ok = asyncio.run(_synth_all(texts, voice, mp3s, on_done=_tts_done))
 
         # --- Khớp thời gian từng cụm ---
+        # Neo mỗi cụm vào ĐÚNG start gốc (adelay ở _mix_track). Cụm TTS lỗi ->
+        # BỎ RIÊNG cụm đó, các cụm khác GIỮ ĐÚNG mốc (không dồn/lệch).
         fitted: list[tuple[float, str]] = []
         for i, c in enumerate(chunks):
+            if not ok[i]:                   # cụm này TTS hỏng/rỗng -> bỏ, giữ mốc
+                prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
+                continue
             window = c["end"] - c["start"]
-            # cho phép tràn nhẹ sang khoảng LẶNG sau cụm (tới cụm kế/hết clip)
+            # start cụm kế (hoặc hết clip) -> "ngân sách" thời gian tự nhiên của cụm
             nxt = chunks[i + 1]["start"] if i + 1 < len(chunks) else total
-            hard_max = max(window, min(nxt, total) - c["start"] - 0.05)
+            # budget (chế độ Tự nhiên): tới sát start cụm kế -> chỉ tăng tốc khi
+            # lời đọc sẽ ĐÈ sang cụm sau. Chặn cứng hard_max để KHÔNG bao giờ đè.
+            budget = max(0.2, min(nxt, total) - c["start"] - 0.03)
+            hard_max = max(window, min(nxt, total) - c["start"] - 0.03)
             wav = os.path.join(td, f"f{i}.wav")
-            _fit_chunk(mp3s[i], wav, window, hard_max)
+            try:
+                _fit_chunk(mp3s[i], wav, budget, hard_max,
+                           tight=tight, window=window)
+            except RuntimeError:            # file TTS hỏng lúc xử lý -> bỏ cụm
+                prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
+                continue
             fitted.append((c["start"], wav))
             prog(0.70 + 0.15 * (i + 1) / len(chunks), "Khớp thời gian...")
 
         # --- Ghép về 1 track dài đúng bằng clip ---
+        # (fitted rỗng = mọi cụm TTS lỗi -> track im lặng đúng độ dài, KHÔNG vỡ)
         prog(0.88, "Ghép track lồng tiếng...")
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
         _mix_track(fitted, total, str(out_wav))

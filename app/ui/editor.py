@@ -978,6 +978,22 @@ class EditorDialog(QDialog):
             lambda v: self.bgm_vol_lbl.setText(f"{v}%"))
         vrow.addWidget(self.bgm_vol_lbl)
         gx.addLayout(vrow)
+        # ÂM LƯỢNG TIẾNG GỐC (độc lập nhạc nền): kéo nhỏ khi muốn nhạc/lồng
+        # tiếng nổi hơn. Mặc định 100%. Khi có lồng tiếng, tiếng gốc tự hạ
+        # (~12%) trừ khi user kéo tại đây (giá trị này luôn được ưu tiên).
+        orow = QHBoxLayout(); orow.addWidget(QLabel("Âm lượng tiếng gốc"))
+        self.orig_vol = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.orig_vol.setRange(0, 100); self.orig_vol.setValue(100)  # 0%..100%
+        self.orig_vol.setToolTip(
+            "Âm lượng TIẾNG GỐC của video (độc lập với nhạc nền). Kéo nhỏ nếu "
+            "muốn nhạc nền/lồng tiếng nổi hơn. Khi bật lồng tiếng, để 100% thì "
+            "tiếng gốc tự hạ nhỏ làm nền; kéo tay để tự quyết mức.")
+        orow.addWidget(self.orig_vol, 1)
+        self.orig_vol_lbl = QLabel("100%"); self.orig_vol_lbl.setFixedWidth(40)
+        self.orig_vol.valueChanged.connect(
+            lambda v: self.orig_vol_lbl.setText(f"{v}%"))
+        orow.addWidget(self.orig_vol_lbl)
+        gx.addLayout(orow)
         # logo kênh (watermark)
         self._logo_path = ""
         lrow = QHBoxLayout()
@@ -1042,6 +1058,16 @@ class EditorDialog(QDialog):
             "Bỏ chọn = tiếng gốc còn 15% làm 'không khí' nền dưới lời thuyết "
             "minh. Chọn = chỉ còn giọng lồng tiếng (+ nhạc nền nếu có).")
         gd.addWidget(self.dub_mute_chk)
+        dmr = QHBoxLayout(); dmr.addWidget(QLabel("Kiểu khớp"))
+        self.dub_mode = _NoWheelCombo()
+        self.dub_mode.addItem("Tự nhiên (đọc đều, khớp mốc)", "natural")
+        self.dub_mode.addItem("Khớp chặt (ép vừa khung, có thể nhanh)", "tight")
+        self.dub_mode.setToolTip(
+            "Tự nhiên: đọc tốc độ thường, mỗi câu bắt đầu đúng lúc câu gốc — "
+            "nghe đều, không giật. Khớp chặt: ép mỗi câu lọt khung riêng của nó "
+            "(bám sát nhất nhưng có chỗ đọc nhanh).")
+        dmr.addWidget(self.dub_mode, 1)
+        gd.addLayout(dmr)
         self._dub_lang_ui()
 
         # Nhóm: Phụ đề chạy chữ (vàng)
@@ -1194,6 +1220,7 @@ class EditorDialog(QDialog):
             self._bgm_dir = layout.get("bgm_dir", "") or ""
             self._bgm_file = layout.get("bgm_file", "") or ""
             self.bgm_vol.setValue(int(float(layout.get("bgm_vol", 0.15)) * 100))
+            self.orig_vol.setValue(int(float(layout.get("orig_vol", 1.0)) * 100))
             self._bgm_mode_ui()
             # lồng tiếng AI (voice để "pending" — list giọng nạp nền xong
             # sẽ tự chọn lại; _collect_layout vẫn trả pending nếu chưa kịp)
@@ -1206,6 +1233,9 @@ class EditorDialog(QDialog):
             if dv >= 0:
                 self.dub_voice.setCurrentIndex(dv)
             self.dub_mute_chk.setChecked(bool(layout.get("dub_mute", False)))
+            dmi = self.dub_mode.findData(layout.get("dub_mode", "natural"))
+            if dmi >= 0:
+                self.dub_mode.setCurrentIndex(dmi)
             self._logo_path = layout.get("logo_path", "") or ""
             self.logo_lbl.setText(f"Logo: {self._logo_path}" if self._logo_path
                                   else "(chưa có logo)")
@@ -1268,6 +1298,7 @@ class EditorDialog(QDialog):
         on = bool(lang)
         self.dub_voice.setEnabled(on)
         self.dub_mute_chk.setEnabled(on)
+        self.dub_mode.setEnabled(on)
         self.dub_prev_btn.setEnabled(on)
         if not lang:
             self.dub_voice.blockSignals(True)
@@ -1672,11 +1703,13 @@ class EditorDialog(QDialog):
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
         lay["bgm_vol"] = self.bgm_vol.value() / 100.0
+        lay["orig_vol"] = self.orig_vol.value() / 100.0
         lay["dub_lang"] = self.dub_lang.currentData() or ""
         # list giọng còn đang nạp nền -> giữ voice của layout cũ (pending)
         lay["dub_voice"] = (self.dub_voice.currentData()
                             or self._dub_voice_pending or "")
         lay["dub_mute"] = self.dub_mute_chk.isChecked()
+        lay["dub_mode"] = self.dub_mode.currentData() or "natural"
         lay["logo_path"] = self._logo_path
         lay["logo_pos"] = self.logo_pos.currentData() or "tr"
         lay["logo_size"] = self.logo_size.value() / 100.0
