@@ -2552,9 +2552,17 @@ class StudioPage(QWidget):
         ai_lbl.setStyleSheet(f"color:{bcol}; font-size:11px; font-weight:700; "
                              "border:none;")
         info.addWidget(_shrinkable(ai_lbl))
-        total = sig.get("dur") or (c["end_sec"] - c["start_sec"])
-        segs = sig.get("segments") or []
-        nseg = sig.get("n_seg", len(segs) or 1)
+        # Mixed-Cut lưu key KHÁC (moments/n) so với clip AI (segments/n_seg/dur).
+        # Đọc nhầm -> card hiện SPAN đầu-cuối (vd 93s) + không có thanh đoạn nên
+        # nhìn như 1 clip liền, dù file xuất ra ĐÃ ghép đúng các moment rời.
+        if sig.get("mode") == "mixed":
+            segs = [[m["start"], m["end"]] for m in (sig.get("moments") or [])]
+            total = sum(e - s for s, e in segs) or (c["end_sec"] - c["start_sec"])
+            nseg = sig.get("n", len(segs) or 1)
+        else:
+            total = sig.get("dur") or (c["end_sec"] - c["start_sec"])
+            segs = sig.get("segments") or []
+            nseg = sig.get("n_seg", len(segs) or 1)
         seg_note = f" · ghép {nseg} đoạn hay" if nseg and nseg > 1 else ""
         sub = QLabel(f'{_dur(total)}{seg_note} · {c["reason"] or ""}'[:100])
         sub.setStyleSheet(f"color:{MUTED}; font-size:13px; border:none;")
