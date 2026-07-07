@@ -1161,6 +1161,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     bg = payload.get("bg", "blur")              # blur|black|white
     text_overlays = payload.get("text_overlays") or []  # fallback drawtext
     overlay_png = payload.get("overlay_png")    # ảnh lớp chữ render từ UI
+    flip_h = bool(payload.get("flip_h"))        # LẬT GƯƠNG ngang (né content-ID)
     signals = db.loads(clip["signals"], {}) or {}
 
     pfx = f"Part {part_no} — " if part_no > 0 else ""   # cho user biết đang xuất Part nào
@@ -1284,6 +1285,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             fx_fade=bool(payload.get("fx_fade", True)),
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
+            flip_h=flip_h,
             on_progress=on_prog,
         )
         # dọn wav lồng tiếng tạm (đã trộn vào clip)
@@ -1305,6 +1307,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             out_w=out_w, out_h=out_h, encoder=encoder,
             mode=(mode if mode != "manual" else "face"), zoom=zoom,
             text_overlays=text_overlays, overlay_png=overlay_png,
+            flip_h=flip_h,
             on_progress=on_prog,
         )
         result_extra = {"mixed": True, "moments": len(signals.get("moments", []))}
@@ -1324,6 +1327,7 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             encoder=encoder, mode=mode, zoom=zoom,
             crop_rect=tuple(crop_rect) if crop_rect else None,
             text_overlays=text_overlays, overlay_png=overlay_png,
+            flip_h=flip_h,
             on_progress=on_prog,
         )
         result_extra = {"mode": mode}

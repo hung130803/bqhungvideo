@@ -133,7 +133,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    dub_voice: str = "", dub_mute: bool = False,
                    dub_mode: str = "natural",
                    fx_fade: bool = True, fx_whoosh: bool = True,
-                   fx_sfx_dir: str = "",
+                   fx_sfx_dir: str = "", flip_h: bool = False,
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
     'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
@@ -154,7 +154,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         repr((text_overlays, cap_style, out_name, out_dir, ovl,
               hook_first, bgm_path, bgm_vol, orig_vol,
               dub_lang, dub_voice, dub_mute, dub_mode,
-              fx_fade, fx_whoosh, fx_sfx_dir)).encode()
+              fx_fade, fx_whoosh, fx_sfx_dir, flip_h)).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
@@ -171,7 +171,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "orig_vol": orig_vol,
          "dub_lang": dub_lang, "dub_voice": dub_voice, "dub_mute": dub_mute,
          "dub_mode": dub_mode, "fx_fade": fx_fade, "fx_whoosh": fx_whoosh,
-         "fx_sfx_dir": fx_sfx_dir},
+         "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h},
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",

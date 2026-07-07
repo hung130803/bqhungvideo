@@ -653,11 +653,15 @@ def export_vertical_clip(
     crop_rect: Optional[tuple] = None,
     text_overlays: Optional[list] = None,
     overlay_png: Optional[str] = None,
+    flip_h: bool = False,
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
     Cắt [start,end] -> đặt khung 9:16 (mode face/center/fit_blur/manual + zoom hoặc
     crop_rect) -> chèn lớp chữ -> encode, 1 lệnh ffmpeg.
+
+    flip_h: lật gương ngang (hflip) KHỐI video TRƯỚC reframe/overlay -> chỉ hình
+            soi gương, chữ overlay KHÔNG ngược.
 
     overlay_png: ảnh PNG trong suốt (đúng cỡ out_w×out_h) chứa toàn bộ chữ/nền —
                  ưu tiên dùng (render từ UI nên xem trước == xuất). Nếu không có,
@@ -675,8 +679,16 @@ def export_vertical_clip(
     use_png = bool(overlay_png and os.path.exists(overlay_png))
     has_text = (not use_png) and any(o.get("text") for o in (text_overlays or []))
     base_out = "vr" if (use_png or has_text) else "v"
-    base = reframe_chain(mode, cx, out_w, out_h, zoom, "0:v", base_out, "0",
+    # LẬT GƯƠNG: hflip lên video gốc TRƯỚC reframe (và trước overlay/chữ) -> chỉ
+    # hình soi gương, chữ overlay chồng sau nên KHÔNG ngược.
+    vin = "0:v"
+    pre = ""
+    if flip_h:
+        pre = "[0:v]hflip[vflip];"
+        vin = "vflip"
+    base = reframe_chain(mode, cx, out_w, out_h, zoom, vin, base_out, "0",
                          crop_rect=crop_rect)
+    base = pre + base
     if use_png:
         fc = base + ";[vr][1:v]overlay=0:0[v]"
     elif has_text:
@@ -713,11 +725,15 @@ def export_stitched_clip(
     zoom: float = 1.0,
     text_overlays: Optional[list] = None,
     overlay_png: Optional[str] = None,
+    flip_h: bool = False,
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
     GHÉP nhiều đoạn rời rạc thành 1 video dọc 9:16, trong DUY NHẤT 1 lệnh ffmpeg
     (filter_complex concat — không file tạm). overlay_png (nếu có) chèn lên toàn clip.
+
+    flip_h: lật gương ngang (hflip) từng đoạn video TRƯỚC reframe/concat/overlay
+            -> chỉ hình soi gương, chữ overlay KHÔNG ngược.
     """
     moments = [m for m in (moments or []) if m["end"] > m["start"]]
     if not moments:
@@ -732,8 +748,12 @@ def export_stitched_clip(
     for i, m in enumerate(moments):
         s, e = m["start"], m["end"]
         cx = float(m.get("cx", 0.5))
+        # LẬT GƯƠNG: hflip ngay sau trim (TRƯỚC reframe/concat/overlay) -> chỉ
+        # hình soi gương, overlay chữ + phụ đề chồng sau nên KHÔNG ngược.
+        flip_f = "hflip," if flip_h else ""
         parts.append(
-            f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[pv{i}]")
+            f"[0:v]trim=start={s:.3f}:end={e:.3f},{flip_f}"
+            f"setpts=PTS-STARTPTS[pv{i}]")
         parts.append(reframe_chain(mode, cx, out_w, out_h, zoom,
                                    f"pv{i}", f"v{i}", str(i)))
         if has_audio:
@@ -834,6 +854,10 @@ def export_canvas_clip(
                                         # chọn): nếu có + có file -> mỗi điểm ghép
                                         # lấy NGẪU NHIÊN 1 file trong đó; để trống
                                         # -> dùng bộ tiếng TỔNG HỢP đa dạng.
+    flip_h: bool = False,               # LẬT GƯƠNG ngang (né content-ID khi
+                                        # reup). Áp hflip lên KHỐI video content
+                                        # TRƯỚC overlay chữ/phụ đề -> hình soi
+                                        # gương nhưng CHỮ vẫn đọc bình thường.
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -912,6 +936,12 @@ def export_canvas_clip(
             s, e = segs[0]
             cmd += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
             content, aud, aud_map = "[0:v]", "[0:a]", "0:a?"
+        # LẬT GƯƠNG: hflip áp lên KHỐI video content SỚM NHẤT (ngay sau khi lấy
+        # content, TRƯỚC pre_crop/reframe/overlay PNG/phụ đề/fade). Nhờ vậy chỉ
+        # HÌNH bị soi gương; overlay chữ + phụ đề .ass chồng SAU nên KHÔNG ngược.
+        if flip_h:
+            parts.append(f"{content}hflip[cflip]")
+            content = "[cflip]"
         vsrc = content
         if pre_crop:
             parts.append(f"{content}crop={pre_crop}[cc]")

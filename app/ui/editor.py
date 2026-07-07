@@ -974,6 +974,16 @@ class EditorDialog(QDialog):
             "riser, boom nhẹ, ding...) — không lặp liên tiếp nên nghe đa dạng. "
             "Tạo bằng ffmpeg nên không cần file kèm.")
         gb.addWidget(self.fx_whoosh_chk)
+        # LẬT GƯƠNG (mirror trái-phải) để NÉ content-ID khi reup. Chỉ lật HÌNH;
+        # chữ tiêu đề/Part + phụ đề chồng SAU nên vẫn đọc bình thường.
+        self.flip_h_chk = QCheckBox("Lật gương video (né bản quyền)")
+        self.flip_h_chk.setChecked(False)
+        self.flip_h_chk.setToolTip(
+            "Lật gương video theo chiều NGANG (trái ↔ phải) để né hệ thống nhận "
+            "dạng bản quyền (Content-ID) khi đăng lại. Chỉ HÌNH bị soi gương; "
+            "tiêu đề, chữ Part và phụ đề vẫn đọc bình thường (không bị ngược). "
+            "Thời lượng, tiếng, mọi thứ khác giữ nguyên.")
+        gb.addWidget(self.flip_h_chk)
         # THƯ MỤC tiếng động riêng (tùy chọn): giống nhạc nền ngẫu nhiên — có
         # thư mục + có file thì mỗi điểm ghép lấy 1 file ngẫu nhiên; để trống ->
         # dùng bộ tiếng tổng hợp đa dạng ở trên.
@@ -1273,6 +1283,7 @@ class EditorDialog(QDialog):
             self.hook_first_chk.setChecked(bool(layout.get("hook_first")))
             self.fx_fade_chk.setChecked(bool(layout.get("fx_fade", True)))
             self.fx_whoosh_chk.setChecked(bool(layout.get("fx_whoosh", True)))
+            self.flip_h_chk.setChecked(bool(layout.get("flip_h", False)))
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
             bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
@@ -1845,6 +1856,7 @@ class EditorDialog(QDialog):
         lay["fx_fade"] = self.fx_fade_chk.isChecked()
         lay["fx_whoosh"] = self.fx_whoosh_chk.isChecked()
         lay["fx_sfx_dir"] = self._fx_sfx_dir
+        lay["flip_h"] = self.flip_h_chk.isChecked()
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
