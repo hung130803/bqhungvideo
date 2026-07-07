@@ -5,7 +5,7 @@ tag trùng (vd v1.0.1). Máy người dùng sẽ thấy thông báo "có bản m
 """
 from __future__ import annotations
 
-__version__ = "1.12.0"
+__version__ = "1.12.1"
 
 # Sẽ được điền đúng khi tạo kho trên GitHub (chủ kho / tên kho).
 GITHUB_OWNER = "hung130803"
