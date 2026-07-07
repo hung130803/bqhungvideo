@@ -931,10 +931,23 @@ class EditorDialog(QDialog):
         sp.addWidget(self.speed_cb, 1)
         sp.addWidget(QLabel("Giọng"))
         self.voice_cb = _NoWheelCombo()
-        for label, p in (("Gốc", 1.0), ("Trầm (nam)", 0.92), ("Cao (nữ)", 1.08),
-                        ("Đổi giọng (chống b.quyền)", 1.12), ("Già/lạ", 0.85)):
+        # Đổi CAO ĐỘ giọng GỐC (né bản quyền/content-ID khi reup). Giá trị =
+        # hệ số cao độ: <1 trầm hơn, >1 cao hơn.
+        for label, p in (("Gốc", 1.0),
+                         ("Trầm nhẹ (nam)", 0.94), ("Trầm sâu", 0.85),
+                         ("Trầm rất sâu", 0.78),
+                         ("Cao nhẹ (nữ)", 1.06), ("Cao (nữ)", 1.12),
+                         ("The thé", 1.22),
+                         ("Đổi giọng (né b.quyền)", 1.15),
+                         ("Già/khàn", 0.88), ("Robot/lạ", 1.30)):
             self.voice_cb.addItem(label, p)
         sp.addWidget(self.voice_cb, 1)
+        self.voice_demo_btn = QPushButton("🔊 Nghe")
+        self.voice_demo_btn.setToolTip("Nghe thử giọng gốc sau khi đổi cao độ "
+                                       "(dùng khung hình hiện tại của video).")
+        self.voice_demo_btn.clicked.connect(self._demo_voice_pitch)
+        _fit_button(self.voice_demo_btn)
+        sp.addWidget(self.voice_demo_btn)
         gb.addLayout(sp)
         # HOOK-FIRST: nhá hàng khoảnh khắc cao trào lên ĐẦU clip
         self.hook_first_chk = QCheckBox("Mở đầu bằng 2-4s CAO TRÀO nhất (hook-first)")
@@ -1440,6 +1453,71 @@ class EditorDialog(QDialog):
             QMessageBox.warning(
                 self, "Nghe thử lỗi",
                 f"Không phát được âm thanh trên máy này:\n{e}")
+
+    def _demo_voice_pitch(self):
+        """Nghe thử ĐỔI CAO ĐỘ giọng gốc: đọc 1 câu mẫu (edge-tts) rồi áp đúng
+        bộ lọc pitch (giống lúc xuất) -> nghe rõ trầm/cao/robot. winsound WAV."""
+        import glob, os, subprocess, tempfile, threading, uuid, winsound
+        from PyQt6.QtCore import QTimer
+        pitch = float(self.voice_cb.currentData() or 1.0)
+        try:
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except RuntimeError:
+            pass
+        self.voice_demo_btn.setEnabled(False); self.voice_demo_btn.setText("Đang đọc…")
+        tmp = tempfile.gettempdir()
+        for old in glob.glob(os.path.join(tmp, "_pitchdemo_*.*")):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        uid = uuid.uuid4().hex[:8]
+        mp3 = os.path.join(tmp, f"_pitchdemo_{uid}.mp3")
+        wav = os.path.join(tmp, f"_pitchdemo_{uid}.wav")
+        out: list = []
+
+        def work():
+            try:
+                from app.core.dubbing import synth_demo
+                if not synth_demo("vi-VN-NamMinhNeural", mp3,
+                                  text="Đây là giọng gốc sau khi đổi cao độ."):
+                    out.append(""); return
+                import shutil
+                from config import settings
+                from app.core.ffmpeg_utils import _CREATE_NO_WINDOW
+                ff = (shutil.which("ffmpeg") or settings.FFMPEG_PATH or "ffmpeg")
+                if abs(pitch - 1.0) < 0.01:
+                    af = "aresample=48000"
+                else:                       # đổi cao độ, giữ tốc độ (như lúc xuất)
+                    af = (f"asetrate=48000*{pitch:.4f},aresample=48000,"
+                          f"atempo={1.0/pitch:.4f}")
+                r = subprocess.run(
+                    [ff, "-nostdin", "-y", "-i", mp3, "-af", af, wav],
+                    capture_output=True, timeout=60,
+                    creationflags=_CREATE_NO_WINDOW, stdin=subprocess.DEVNULL)
+                out.append(wav if (r.returncode == 0 and os.path.exists(wav)
+                                   and os.path.getsize(wav) > 3000) else "")
+            except Exception:  # noqa: BLE001
+                out.append("")
+
+        threading.Thread(target=work, daemon=True).start()
+        t = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            t.stop()
+            self.voice_demo_btn.setText("🔊 Nghe"); self.voice_demo_btn.setEnabled(True)
+            if not out[0]:
+                QMessageBox.information(self, "Nghe thử lỗi",
+                                       "Không nghe thử được (cần mạng + ffmpeg).")
+                return
+            try:
+                winsound.PlaySound(out[0], winsound.SND_FILENAME
+                                   | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+            except RuntimeError:
+                pass
+        t.timeout.connect(poll); t.start(200)
 
     def done(self, r):  # noqa: N802 (tên theo Qt)
         """Đóng dialog -> ngắt tiếng nghe thử còn kêu dở (winsound chạy nền)."""
