@@ -14,16 +14,41 @@ _model_cache: dict = {}  # (model_name, device, compute) -> WhisperModel
 _cuda_libs_done = False
 
 # Model lớn chạy CPU ngốn RAM khủng (large-v3 int8 ~3-4GB) + CPU cả giờ.
-# Khi phải chạy CPU (máy không GPU / CUDA lỗi) thì hạ về model nhỏ: chậm hơn
-# chút nhưng máy user không "chết" 10GB RAM. GPU vẫn dùng model lớn như cũ.
-_CPU_MODEL_CAP = {"large-v3": "small", "large-v2": "small", "large-v1": "small",
-                  "large": "small", "distil-large-v3": "small",
-                  "large-v3-turbo": "small", "turbo": "small",
-                  "medium": "medium", "medium.en": "medium.en"}
+# Khi phải chạy CPU (máy không GPU / CUDA lỗi) thì hạ model theo RAM máy:
+# >=16GB -> medium (int8 ~1.5GB, chính xác gần large), <16GB -> small.
+# GPU vẫn dùng model lớn như cũ — không đổi gì.
+_BIG_MODELS = ("large", "distil-large", "turbo")
+
+
+def _ram_gb() -> float:
+    """Tổng RAM máy (GB) — ctypes thuần, không cần psutil (bản .exe nhẹ)."""
+    try:
+        import ctypes
+
+        class _MemStat(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_uint32),
+                        ("dwMemoryLoad", ctypes.c_uint32),
+                        ("ullTotalPhys", ctypes.c_uint64),
+                        ("ullAvailPhys", ctypes.c_uint64),
+                        ("ullTotalPageFile", ctypes.c_uint64),
+                        ("ullAvailPageFile", ctypes.c_uint64),
+                        ("ullTotalVirtual", ctypes.c_uint64),
+                        ("ullAvailVirtual", ctypes.c_uint64),
+                        ("ullAvailExtendedVirtual", ctypes.c_uint64)]
+
+        st = _MemStat()
+        st.dwLength = ctypes.sizeof(_MemStat)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            return st.ullTotalPhys / (1024 ** 3)
+    except Exception:  # noqa: BLE001 - không phải Windows / lỗi API
+        pass
+    return 0.0
 
 
 def _cap_cpu_model(model_name: str) -> str:
-    return _CPU_MODEL_CAP.get(model_name, model_name)
+    if not model_name.startswith(_BIG_MODELS):
+        return model_name          # small/base/medium giữ nguyên
+    return "medium" if _ram_gb() >= 15.5 else "small"
 
 
 def cpu_threads() -> int:
