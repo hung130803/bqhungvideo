@@ -559,6 +559,24 @@ class StudioPage(QWidget):
         gkeys.setPlaceholderText("Để TRỐNG nếu chép lời bằng Máy")
         gkeys.setFixedHeight(50); lay.addWidget(gkeys)
 
+        # ----- ElevenLabs TTS (giọng lồng tiếng/thuyết minh CAO CẤP) -----
+        # Tùy chọn — user tự cắm key. Có key -> nhóm giọng 🎧 ElevenLabs mở
+        # khóa trong Cài đặt Reup + combo giọng lồng tiếng. Free 10k ký tự/
+        # tháng, hết hạn mức tự lùi về edge-tts.
+        lay.addWidget(QLabel("ElevenLabs API key — giọng lồng tiếng/thuyết minh "
+                             "CAO CẤP (tùy chọn, nhiều key mỗi dòng 1):"))
+        elkeys = QPlainTextEdit((settings.ELEVENLABS_API_KEYS
+                                 or settings.ELEVENLABS_API_KEY or ""))
+        elkeys.setPlaceholderText("Để TRỐNG nếu chỉ dùng edge-tts (miễn phí). "
+                                  "Dán key từ elevenlabs.io -> mở khóa giọng "
+                                  "🎧 Adam...")
+        elkeys.setToolTip(
+            "Giọng ElevenLabs chất lượng cao nhất cho Reup thuyết minh + lồng "
+            "tiếng.\nFree 10.000 ký tự/tháng — hết hạn mức app TỰ lùi về giọng "
+            "edge-tts.\nElevenLabs không chỉnh được nhịp/tông (bỏ qua 2 mục "
+            "đó); tốc độ vẫn khớp khung tự động.")
+        elkeys.setFixedHeight(50); lay.addWidget(elkeys)
+
         # ----- Trạng thái key (thời gian thực) — chỉ đọc SỔ trong RAM, -----
         # ----- KHÔNG gọi mạng; QTimer 2s cập nhật, dừng khi đóng dialog. -----
         lay.addWidget(QLabel("Trạng thái key (thời gian thực):"))
@@ -650,6 +668,7 @@ class StudioPage(QWidget):
             Settings.GEMINI_API_KEY = key.toPlainText().strip()
             Settings.GEMINI_MODEL = mdl.currentData()
             Settings.GROQ_API_KEYS = gkeys.toPlainText().strip()
+            Settings.ELEVENLABS_API_KEYS = elkeys.toPlainText().strip()
 
         def do_test():
             apply_live()
@@ -710,7 +729,8 @@ class StudioPage(QWidget):
                         "GEMINI_API_KEY": key.toPlainText().strip(),
                         "GEMINI_MODEL": mdl.currentData(),
                         "WHISPER_PROVIDER": wsrc.currentData(),
-                        "GROQ_API_KEYS": gkeys.toPlainText().strip()})
+                        "GROQ_API_KEYS": gkeys.toPlainText().strip(),
+                        "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip()})
             self._update_ai_status()
             self.status.setText(f"Đã lưu cài đặt AI: {src.currentText()} · nghe-chép "
                                 f"{wsrc.currentText().split('—')[0].strip()}")

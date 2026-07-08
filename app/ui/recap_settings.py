@@ -97,6 +97,8 @@ class RecapSettingsDialog(QDialog):
             "Để 'Tự chọn' thì app dùng giọng hot nhất của ĐÚNG ngôn ngữ "
             "video.\nChọn cứng 1 giọng nếu muốn mọi clip cùng giọng:\n"
             "· 🔥 ĐỀ XUẤT = mượt & hot nhất, có mô tả từng giọng\n"
+            "· 🎧 ElevenLabs = chất lượng CAO NHẤT (cần key, free 10k ký tự/"
+            "tháng — không chỉnh nhịp/tông, hết hạn mức tự lùi edge-tts)\n"
             "· giọng 'đa ngôn ngữ' đọc được MỌI thứ tiếng\n"
             "· 🌟 Gemini nét nhất (cần key, hạn mức free thấp).")
         self.voice.addItem(_AUTO_VOICE_LABEL, "")

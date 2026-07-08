@@ -209,6 +209,125 @@ def _gemini_voice_items() -> list[tuple[str, str]]:
     return [(f"🌟 {n} (Gemini)", f"gemini:{n}") for n in _GEMINI_PREBUILT]
 
 
+# ---- ELEVENLABS TTS (tùy chọn CHẤT LƯỢNG CAO NHẤT — cần key, user tự cắm) ----
+# Voice id dạng "el:{voice_id}" (khác hẳn ShortName edge & "gemini:" -> không
+# đụng nhau). Trả BYTES mp3 trực tiếp (không base64) -> ghi thẳng .mp3, pipeline
+# hiện có xử lý như edge. KHÔNG có rate/pitch param -> bỏ qua (fit window vẫn
+# qua atempo). KHÔNG trả word timestamps -> phụ đề recap dùng câu-cụm (như
+# Gemini). Hạn mức free 10k ký tự/tháng -> 401/429 -> mark key + fallback edge.
+_ELEVEN_MODEL_DEFAULT = "eleven_multilingual_v2"
+# Bảng GIỌNG NỔI TIẾNG (voice_id premade CÔNG KHAI của ElevenLabs) — luôn có
+# kể cả khi GET /voices lỗi/chưa gọi. Adam ĐẦU danh sách (nam trầm Mỹ, hay kể
+# chuyện). [(voice_id, "Tên — mô tả")].
+_ELEVEN_PREMADE: list[tuple[str, str]] = [
+    ("pNInz6obpgDQGcFmaJgB", "Adam — Nam trầm Mỹ, kể chuyện hay"),
+    ("ErXwobaYiN019PkySvjV", "Antoni — Nam ấm, cuốn hút"),
+    ("VR6AewLTigWG4xSOukaG", "Arnold — Nam khỏe, dứt khoát"),
+    ("TxGEqnHWrfWFTfGW9XjX", "Josh — Nam trẻ, sâu"),
+    ("21m00Tcm4TlvDq8ikWAM", "Rachel — Nữ điềm tĩnh, rõ ràng"),
+    ("EXAVITQu4vr4xnSDxMaL", "Bella — Nữ nhẹ nhàng"),
+    ("AZnzlk1XvdvUeBnXmlld", "Domi — Nữ mạnh mẽ, tự tin"),
+    ("MF3mGyEYCl7XYWbV9V6O", "Elli — Nữ trẻ, tươi sáng"),
+    ("yoZ06aMxZJJ28mfd3POQ", "Sam — Nam trung tính, kể tin"),
+]
+# CACHE danh sách giọng account (GET /voices) 7 ngày như voice edge.
+_ELEVEN_VOICES_CACHE_FILE = DATA_DIR / "_eleven_voices.json"
+_ELEVEN_VOICES_TTL = 7 * 24 * 3600
+_eleven_voices_ram: list[tuple[str, str]] | None = None   # cache RAM
+
+
+def _eleven_keys() -> list:
+    """DANH SÁCH key ElevenLabs (đọc y hệt pattern key hiện có — .env)."""
+    try:
+        return settings.elevenlabs_keys()
+    except Exception:  # noqa: BLE001 — settings hỏng thì coi như không có
+        return []
+
+
+def _eleven_available() -> bool:
+    """Có key ElevenLabs trong settings không (đọc y hệt _gemini_available)."""
+    return bool(_eleven_keys())
+
+
+def _eleven_model() -> str:
+    """Model TTS ElevenLabs (settings.ELEVENLABS_MODEL) — mặc định
+    multilingual_v2 (đa ngôn ngữ, ổn định)."""
+    return (getattr(settings, "ELEVENLABS_MODEL", "") or "").strip() \
+        or _ELEVEN_MODEL_DEFAULT
+
+
+def _eleven_voices() -> list[tuple[str, str]]:
+    """Danh sách giọng ElevenLabs cho combo: [("🎧 Adam (ElevenLabs — Nam
+    trầm Mỹ)", "el:pNInz..."), ...]. Ưu tiên giọng ACCOUNT (GET /voices, cache
+    7 ngày) — có thì merge lên đầu (bỏ trùng premade); luôn KÈM bảng premade
+    công khai. Không key/lỗi mạng -> chỉ premade (vẫn dùng được)."""
+    premade = [(f"🎧 {desc.split(' — ')[0]} (ElevenLabs — "
+                f"{desc.split(' — ', 1)[1]})", f"el:{vid}")
+               for vid, desc in _ELEVEN_PREMADE]
+    if not _eleven_available():
+        return premade
+    account = _fetch_eleven_voices()      # [(name, voice_id)] từ account
+    if not account:
+        return premade
+    premade_ids = {vid for vid, _ in _ELEVEN_PREMADE}
+    acc_items = [(f"🎧 {name} (ElevenLabs)", f"el:{vid}")
+                 for name, vid in account if vid not in premade_ids]
+    # Adam (premade đầu) vẫn để trước, rồi giọng account, rồi premade còn lại
+    return premade[:1] + acc_items + premade[1:]
+
+
+def _read_eleven_cache(max_age: float) -> list | None:
+    """Đọc cache giọng account nếu còn hạn; None nếu hỏng/quá hạn."""
+    try:
+        data = json.loads(
+            _ELEVEN_VOICES_CACHE_FILE.read_text(encoding="utf-8"))
+        if time.time() - float(data.get("ts", 0)) < max_age:
+            v = data.get("voices")
+            if isinstance(v, list):
+                return [(x[0], x[1]) for x in v if isinstance(x, list)
+                        and len(x) == 2]
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _fetch_eleven_voices() -> list[tuple[str, str]]:
+    """Giọng account [(name, voice_id)] qua GET /v1/voices (header key).
+    Cache RAM -> cache file còn hạn (7 ngày) -> gọi mạng -> offline: cache cũ
+    -> [] (caller dùng premade)."""
+    global _eleven_voices_ram
+    if _eleven_voices_ram is not None:
+        return _eleven_voices_ram
+    v = _read_eleven_cache(_ELEVEN_VOICES_TTL)
+    if v is None:
+        keys = _eleven_keys()
+        if not keys:
+            _eleven_voices_ram = []
+            return []
+        try:
+            req = urllib.request.Request(
+                "https://api.elevenlabs.io/v1/voices",
+                headers={"xi-api-key": keys[0]}, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            v = [(str(x.get("name") or ""), str(x.get("voice_id") or ""))
+                 for x in (data.get("voices") or [])
+                 if x.get("voice_id")]
+            if v:
+                try:
+                    _ELEVEN_VOICES_CACHE_FILE.write_text(
+                        json.dumps({"ts": time.time(),
+                                    "voices": [list(t) for t in v]},
+                                   ensure_ascii=False),
+                        encoding="utf-8")
+                except OSError:
+                    pass
+        except Exception:  # noqa: BLE001 — offline/lỗi mạng/key sai
+            v = _read_eleven_cache(float("inf"))   # cache cũ còn hơn không
+    _eleven_voices_ram = v or []
+    return _eleven_voices_ram
+
+
 # Nhãn tiếng Việt cho combo UI
 LANG_LABELS = {
     "vi": "Tiếng Việt", "en": "Tiếng Anh", "id": "Tiếng Indonesia",
@@ -313,11 +432,12 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
     trước (vi -> vi-VN), kèm giọng Multilingual ở cuối. Offline/lỗi mạng ->
     fallback danh sách tĩnh VOICES."""
     lang = norm_lang(lang)
+    el = _eleven_voices() if _eleven_available() else []
     gem = _gemini_voice_items() if _gemini_available() else []
     static = list(VOICES.get(lang, []))
     allv = _fetch_all_voices()
     if not allv:
-        return gem + static
+        return el + gem + static
     pref = "-".join(static[0][1].split("-")[:2]) if static else ""  # "vi-VN"
     native = [v for v in allv
               if (v.get("Locale") or "").lower().startswith(lang + "-")]
@@ -335,7 +455,7 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
     multi.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
                               v.get("ShortName", "")))
     edge = [(_voice_label(v), v["ShortName"]) for v in native + multi]
-    return gem + (edge or static)
+    return el + gem + (edge or static)
 
 
 # Bảng locale/mã ngôn ngữ -> (cờ, tên tiếng Việt) cho danh sách giọng KỂ
@@ -381,6 +501,11 @@ _GROUP_ORDER = ["vi", "en-US", "en-GB", "ja", "ko", "zh-CN", "zh", "th",
 # user vẫn biết nhóm giọng Gemini TỒN TẠI và cần gì để mở.
 GEMINI_LOCKED_LABEL = ("🌟 Giọng Gemini: dán key Gemini trong 'Cài đặt AI' "
                        "để mở khóa")
+
+# Dòng thông báo khi CHƯA có key ElevenLabs (voice_id rỗng -> UI disable) —
+# user vẫn biết nhóm giọng cao cấp TỒN TẠI và cần gì để mở.
+ELEVEN_LOCKED_LABEL = ("🎧 ElevenLabs: dán key trong Cài đặt AI để mở khóa "
+                       "(giọng Adam...)")
 
 
 def _lang_group_label(key: str) -> str:
@@ -436,6 +561,14 @@ def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
     # 0) nhóm 🔥 ĐỀ XUẤT — curate tay kèm mô tả, KHÔNG cần mạng
     out.append(("🔥 ĐỀ XUẤT — mượt & hot nhất", ""))
     out += [(f"   🔥 {desc}", vid) for vid, desc in _RECOMMENDED_VOICES]
+    # 0b) nhóm 🎧 ElevenLabs — chất lượng cao nhất (CẦN key). Có key -> liệt kê
+    # giọng (Adam đầu + premade + account voices); KHÔNG key -> 1 dòng disabled
+    # chỉ cách mở khóa. ElevenLabs KHÔNG có rate/pitch (tooltip UI đã ghi).
+    if _eleven_available():
+        out.append(("🎧 ElevenLabs — chất lượng cao nhất (CẦN key)", ""))
+        out += [(f"   {lbl}", vid) for lbl, vid in _eleven_voices()]
+    else:
+        out.append((ELEVEN_LOCKED_LABEL, ""))
     allv = _fetch_all_voices()
     if all and allv:                    # kho ĐẦY ĐỦ (~500 giọng)
         pool = list(allv)
@@ -592,7 +725,7 @@ def _edge_fallback_voice(lang: str) -> str:
     """Giọng edge-tts DỰ PHÒNG khi Gemini hết hạn mức: giọng ⭐ hot đầu tiên
     của ngôn ngữ (list_voices_for đã xếp hot lên đầu), bỏ qua nhóm gemini."""
     for _lbl, vid in list_voices_for(lang):
-        if vid and not vid.startswith("gemini:"):
+        if vid and not vid.startswith("gemini:") and not vid.startswith("el:"):
             return vid
     return default_voice(lang) or "en-US-JennyNeural"
 
@@ -603,7 +736,8 @@ def _recap_backup_voice(lang: str, primary: str) -> str:
     NoAudioReceived theo GIỌNG — đổi giọng thường cứu được part).
     '' nếu không còn giọng nào khác."""
     for _lbl, vid in list_voices_for(lang):
-        if vid and not vid.startswith("gemini:") and vid != primary:
+        if (vid and not vid.startswith("gemini:")
+                and not vid.startswith("el:") and vid != primary):
             return vid
     return ""
 
@@ -656,6 +790,141 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
 
 
 # ------------------------------------------------------------------
+# ElevenLabs TTS (REST thuần — urllib stdlib, không thêm dependency)
+# ------------------------------------------------------------------
+def _eleven_tts_once(text: str, voice_id: str, model: str, key: str,
+                     out_path: str) -> None:
+    """1 lần gọi ElevenLabs TTS -> ghi BYTES mp3 thẳng ra out_path. Ném
+    RuntimeError kèm mã HTTP/body nếu lỗi (401/429 -> is_auth/is_rate bắt được).
+    API trả mp3 nhị phân trực tiếp (KHÔNG JSON base64)."""
+    url = (f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+           "?output_format=mp3_44100_128")
+    body = {
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75,
+                           "style": 0.0, "use_speaker_boost": True},
+    }
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"xi-api-key": key, "Content-Type": "application/json",
+                 "Accept": "audio/mpeg"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            audio = r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:800]
+        except OSError:
+            detail = ""
+        # mã HTTP trong message -> is_rate_limit_error/is_auth_error bắt được
+        raise RuntimeError(f"ElevenLabs HTTP {e.code}: {detail}") from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"ElevenLabs lỗi mạng: {e}") from None
+    if not audio or len(audio) < 500:      # mp3 rỗng/hỏng
+        raise RuntimeError("ElevenLabs trả audio rỗng/quá ngắn")
+    with open(out_path, "wb") as f:
+        f.write(audio)
+
+
+def _eleven_tts(text: str, voice: str, out_path: str | Path,
+                model: str = "", retries: int = 1) -> bool:
+    """Synth 1 đoạn text bằng ElevenLabs TTS -> file mp3. Trả True nếu OK.
+
+    voice: "el:{voice_id}" (hoặc voice_id trần). Key XOAY VÒNG qua sổ trạng
+    thái của llm (provider="elevenlabs") — dùng chung mark_limited/mark_invalid.
+    401 (key sai) -> bỏ key, thử key kế. 429/quota (hết hạn mức free 10k
+    ký tự/tháng) -> mark limited, thử key kế. model="eleven_v3" mà API báo
+    lỗi model -> TỰ LÙI về multilingual_v2 rồi thử lại. Hết key/lỗi -> False
+    (caller tự fallback edge-tts)."""
+    from app.ai import llm
+    vid = voice.split(":", 1)[1] if voice.startswith("el:") else voice
+    text = (text or "").strip()
+    if not text or not vid:
+        return False
+    out_path = str(out_path)
+    model = (model or _eleven_model()).strip()
+    for _attempt in range(retries + 1):
+        keys = llm.pick_keys("elevenlabs", _eleven_keys())
+        if not keys:
+            return False
+        cur_model = model
+        for key in keys:
+            llm.mark_used("elevenlabs", key)
+            try:
+                _eleven_tts_once(text, vid, cur_model, key, out_path)
+                llm.mark_ok("elevenlabs", key)
+                return True
+            except Exception as e:  # noqa: BLE001
+                msg = str(e)
+                # v3 alpha có thể chưa mở cho key -> LÙI multilingual_v2 &
+                # thử LẠI cùng key (không tính là lỗi key).
+                if (cur_model != _ELEVEN_MODEL_DEFAULT
+                        and ("model" in msg.lower()
+                             or "not found" in msg.lower()
+                             or "422" in msg)):
+                    cur_model = _ELEVEN_MODEL_DEFAULT
+                    try:
+                        _eleven_tts_once(text, vid, cur_model, key, out_path)
+                        llm.mark_ok("elevenlabs", key)
+                        return True
+                    except Exception as e2:  # noqa: BLE001
+                        msg = str(e2)
+                if llm.is_rate_limit_error(msg):
+                    llm.mark_limited("elevenlabs", key, msg)
+                    continue            # hết hạn mức -> thử key kế
+                if llm.is_auth_error(msg):
+                    llm.mark_invalid("elevenlabs", key)
+                    continue            # key sai -> thử key kế
+                # lỗi khác (mạng/parse) -> thử key kế trong vòng
+        if _attempt < retries:
+            time.sleep(1.5)
+    return False
+
+
+def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
+                      lang: str,
+                      on_done: Optional[Callable[[int], None]] = None,
+                      on_msg: Optional[Callable[[str], None]] = None,
+                      edge_rate: str = "",
+                      model: str = "",
+                      ) -> list[bool]:
+    """Synth TUẦN TỰ từng cụm qua ElevenLabs TTS (KHUÔN _synth_all_gemini).
+    CẢ 2 cụm đầu (không rỗng) đều lỗi -> coi như HẾT HẠN MỨC/key hỏng: CHUYỂN
+    CẢ TRACK sang edge-tts giọng dự phòng của ngôn ngữ NGAY (tránh nửa clip
+    giọng này nửa giọng kia), báo "ElevenLabs hết hạn mức -> dùng giọng dự
+    phòng". Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó.
+    ElevenLabs KHÔNG có rate/pitch -> edge_rate CHỈ áp cho đường fallback."""
+    ok = [False] * len(texts)
+    n_nonempty = sum(1 for t in texts if (t or "").strip())
+    head_need = max(1, min(2, n_nonempty))
+    seen = 0
+    head_fail = 0
+    for i, t in enumerate(texts):
+        txt = (t or "").strip()
+        if not txt:
+            if on_done:
+                on_done(i)
+            continue
+        good = _eleven_tts(txt, voice, paths[i], model=model)
+        ok[i] = good
+        seen += 1
+        if not good and head_fail == seen - 1:
+            head_fail += 1
+        if head_fail >= head_need:
+            fb = _edge_fallback_voice(lang)
+            if on_msg:
+                on_msg("ElevenLabs hết hạn mức -> dùng giọng dự phòng "
+                       f"({fb})...")
+            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done,
+                                          rate=edge_rate or "+0%"))
+        if on_done:
+            on_done(i)
+    return ok
+
+
+# ------------------------------------------------------------------
 # Đọc thử 1 câu ngắn (nghe demo giọng trong UI)
 # ------------------------------------------------------------------
 _DEMO_TEXTS = {
@@ -683,6 +952,16 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
     voice = (voice or "").strip()
     if not voice:
         return False
+    if voice.startswith("el:"):         # ElevenLabs: đa ngữ -> câu mẫu Việt
+        txt = (text or "").strip() or _DEMO_TEXTS["vi"]
+        try:
+            if _eleven_tts(txt, voice, str(out_mp3)):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        # lỗi/hết hạn mức -> fallback edge giọng đa ngữ (nghe thử vẫn ra)
+        return synth_demo("en-US-AndrewMultilingualNeural", out_mp3,
+                          text=txt, rate=rate, pitch=pitch)
     if voice.startswith("gemini:"):     # giọng Gemini: đa ngữ -> câu mẫu Việt
         txt = (text or "").strip() or _DEMO_TEXTS["vi"]
         try:
@@ -1305,7 +1584,18 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                  f"Thu giọng đoạn {done['n']}/{len(narr)}...")
 
         word_lists: list[list] = [[] for _ in narr]
-        if voice.startswith("gemini:"):
+        if voice.startswith("el:"):
+            # ElevenLabs TTS KHÔNG trả word boundary -> word_lists rỗng, phụ
+            # đề narrate dùng CÂU-CỤM chia theo D_final (tái dùng đường Gemini).
+            # ElevenLabs không có rate/pitch -> bỏ qua (fit window atempo tự
+            # bù). _synth_all_eleven tự đổi cả track sang edge-tts khi hết hạn
+            # mức (đường đó cũng không thu words -> phụ đề vẫn câu-cụm).
+            prog(0.05, f"Thu giọng {len(narr)} đoạn (ElevenLabs TTS)...")
+            ok = _synth_all_eleven(texts, voice, mp3s, norm_lang(lang),
+                                   on_done=_tts_done,
+                                   on_msg=lambda m: prog(0.06, m),
+                                   edge_rate=rate)
+        elif voice.startswith("gemini:"):
             # Gemini TTS KHÔNG trả word boundary -> word_lists rỗng, phụ đề
             # narrate fallback chia theo ký tự (m1._recap_caption_cues).
             # (_synth_all_gemini có thể tự đổi cả track sang edge-tts khi hết
@@ -1574,7 +1864,14 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
             prog(0.15 + 0.55 * done["n"] / max(1, len(chunks)),
                  f"Đang đọc lời thoại ({done['n']}/{len(chunks)})...")
 
-        if voice.startswith("gemini:"):
+        if voice.startswith("el:"):
+            # ElevenLabs TTS: tuần tự; 2 cụm đầu lỗi -> tự chuyển CẢ track
+            # sang edge-tts giọng dự phòng (on_msg báo lên progress).
+            prog(0.15, f"Đang đọc {len(chunks)} câu (ElevenLabs TTS)...")
+            ok = _synth_all_eleven(texts, voice, mp3s, target_lang,
+                                   on_done=_tts_done,
+                                   on_msg=lambda m: prog(0.16, m))
+        elif voice.startswith("gemini:"):
             # Gemini TTS: tuần tự (hạn mức thấp); 2 cụm đầu lỗi -> tự chuyển
             # CẢ track sang edge-tts giọng dự phòng (on_msg báo lên progress).
             prog(0.15, f"Đang đọc {len(chunks)} câu (Gemini TTS)...")

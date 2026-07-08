@@ -80,6 +80,16 @@ class Settings:
     DEEPSEEK_API_KEY = _env("DEEPSEEK_API_KEY")
     DEEPSEEK_MODEL = _env("DEEPSEEK_MODEL", "deepseek-chat")
 
+    # ElevenLabs TTS (giọng lồng tiếng/thuyết minh CAO CẤP — tùy chọn, user tự
+    # cắm key). Nhiều key mỗi dòng/dấu phẩy (tự xoay vòng khi hết hạn mức free
+    # 10k ký tự/tháng) — đọc y hệt GROQ_API_KEYS. ELEVENLABS_API_KEY giữ để
+    # tương thích/1 key; gộp cả 2 khi liệt kê key.
+    ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
+    ELEVENLABS_API_KEYS = _env("ELEVENLABS_API_KEYS")
+    # Model TTS ElevenLabs mặc định (đa ngôn ngữ, ổn định). Đặt "eleven_v3"
+    # để dùng v3 alpha (biểu cảm hơn); dubbing tự lùi về v2 nếu API báo lỗi.
+    ELEVENLABS_MODEL = _env("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+
     # Ollama (LLM chạy LOCAL, FREE, không giới hạn — dùng GPU của bạn)
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     # DÙNG 1 MODEL cho cả đọc chữ + nhìn hình (VL) -> card 12GB không phải
@@ -150,6 +160,21 @@ class Settings:
     def groq_keys(cls) -> list:
         return [k.strip() for k in (cls.GROQ_API_KEYS or "").replace(",", "\n")
                 .splitlines() if k.strip()]
+
+    @classmethod
+    def elevenlabs_keys(cls) -> list:
+        """DANH SÁCH key ElevenLabs (để XOAY VÒNG khi hết hạn mức). Gộp cả
+        ELEVENLABS_API_KEY (1 key) lẫn ELEVENLABS_API_KEYS (nhiều key), tách
+        theo dòng hoặc dấu phẩy, bỏ trùng — giữ thứ tự xuất hiện."""
+        raw = ((cls.ELEVENLABS_API_KEYS or "") + "\n" +
+               (cls.ELEVENLABS_API_KEY or ""))
+        out, seen = [], set()
+        for k in raw.replace(",", "\n").splitlines():
+            k = k.strip()
+            if k and k not in seen:
+                seen.add(k)
+                out.append(k)
+        return out
 
 
 settings = Settings()
