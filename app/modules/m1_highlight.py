@@ -1332,11 +1332,16 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 src_path=src, volume=_rvol,
                 on_progress=lambda p, m="": ctx.progress(
                     0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
-            # Khoảng tắt tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed
+            # Khoảng HẠ tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed
             # như dub — filter duck đặt sau atempo trong export_canvas_clip).
+            # Dùng n["duck"] = khoảng AI NÓI THẬT (speech±pad, kẹp trong
+            # part) — KHÔNG duck cả part: lời ngắn hơn part thì phần còn lại
+            # tiếng gốc TRỞ LẠI bình thường (hết 'khoảng chết' câm lặng).
             spd = max(0.5, min(3.0, float(payload.get("speed", 1.0) or 1.0)))
-            duck_ranges = [(n["start"] / spd, n["end"] / spd)
-                           for n in narr_events]
+            duck_ranges = []
+            for n in narr_events:
+                da, db = n.get("duck") or (n["start"], n["end"])
+                duck_ranges.append((float(da) / spd, float(db) / spd))
         elif payload.get("dub_lang"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
@@ -1445,7 +1450,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             dub_path=dub_path,
             duck_ranges=duck_ranges,
             # recap: KHÔNG tắt hẳn tiếng gốc theo cờ dub_mute của mẫu — đoạn
-            # orig phải giữ tiếng; duck_ranges đã tắt đúng các đoạn narrate.
+            # orig phải giữ tiếng; duck_ranges đã HẠ nền đúng lúc AI nói.
             dub_mute_original=bool(payload.get("dub_mute")) and not is_recap,
             dub_stretch=dub_stretch,
             fx_fade=bool(payload.get("fx_fade", True)),

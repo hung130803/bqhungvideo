@@ -1381,11 +1381,12 @@ _RECAP_TARGET_MAX = -9.0
 # ------------------------------------------------------------------
 # 🎙 REUP THUYẾT MINH (recap) — track giọng AI đọc KỊCH BẢN theo part
 # ------------------------------------------------------------------
-# atempo cho lời thuyết minh: cho phép CHẬM nhẹ (0.8) khi lời ngắn hơn khung
-# và NHANH nhẹ (1.28) khi dài hơn — đọc "vừa khít" part mà vẫn tự nhiên.
-# (1.35 cũ nghe đã hơi dồn; hạ 1.28 — phần lời tràn xử bằng MƯỢN THỜI GIAN
-# từ part orig kế, xem build_recap_track.)
-_RECAP_TEMPO_MIN = 0.8
+# atempo cho lời thuyết minh: KHÔNG BAO GIỜ kéo chậm (<1.0) — kênh recap
+# thật đọc TỐC ĐỘ TỰ NHIÊN; lời ngắn hơn part là bình thường (phần dư trả
+# tiếng gốc về, KHÔNG lấp bằng cách đọc lề mề — lỗi 'AI đọc quá chậm' user
+# gặp thật). Chỉ NÉN nhẹ (tối đa 1.28) khi lời dài hơn khung — phần tràn xử
+# bằng MƯỢN THỜI GIAN từ part orig kế, xem build_recap_track.
+_RECAP_TEMPO_MIN = 1.0
 _RECAP_TEMPO_MAX = 1.28
 # Part narrate CUỐI clip (không còn chỗ mượn): cho nói nhanh tới 1.4 trước
 # khi đành trim + fade — thà nhanh một chút còn hơn CỤT CHỮ giữa câu.
@@ -1442,8 +1443,10 @@ def _phrase_groups_even(text: str, start: float, speech_dur: float,
 def _fit_recap_chunk(src: str, dst_wav: str, window: float,
                      tempo_max: float = _RECAP_TEMPO_MAX,
                      ) -> tuple[float, float, float]:
-    """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-`tempo_max`;
-    vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế).
+    """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 1.0-`tempo_max`
+    (KHÔNG BAO GIỜ kéo chậm <1.0 — lời ngắn hơn khung thì giữ tốc độ tự
+    nhiên, phần dư của part caller trả tiếng gốc về); vẫn dư -> cắt + fade
+    120ms cuối (không tràn sang part kế).
 
     Trả (D_final, D_nat, tempo):
       - D_final = ĐỘ DÀI THẬT của file wav sau MỌI filter (đo lại bằng ffprobe,
@@ -1516,8 +1519,12 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     -18Hz/+0Hz/+18Hz (trầm ấm hơn / giữ nguyên / sáng cao hơn). Giọng Gemini
     KHÔNG hỗ trợ pitch -> bỏ qua (cả đường fallback edge của Gemini).
 
-    narrate_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
-    (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
+    narrate_events = [{"start","end","text","duck"[,"words"]}] trên timeline
+    ĐẦU RA (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges.
+    "end" = mép HẾT TIẾNG THẬT của giọng AI (đo audio, KHÔNG phải hết part)
+    -> phụ đề chỉ phủ đúng khoảng nói. "duck" = [a, b] khoảng HẠ tiếng gốc
+    (speech-0.3s .. speech+0.35s, kẹp trong part) — phần còn lại của part
+    narrate tiếng gốc TRỞ LẠI bình thường (hết 'khoảng chết' câm lặng).
     "words" = [[start, end, cụm], ...] mốc phụ đề narrate trên timeline clip.
     MẶC ĐỊNH = CÂU-CỤM (2-4 từ/nhóm) phân bố ĐỀU theo ĐỘ DÀI AUDIO THẬT
     (D_final đo bằng ffprobe sau MỌI filter) — ít trôi hơn karaoke từng từ vì
@@ -1712,6 +1719,20 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     speech_a = fa
                 if speech_a + 0.1 < lb < d_final:
                     speech_b = lb
+            # ---- DUCK CHỈ ĐÚNG LÚC AI NÓI (sửa 'khoảng chết' câm lặng) ----
+            # Trước đây caller duck CẢ PART narrate — lời LLM thường ngắn hơn
+            # part -> giọng AI hết mà tiếng gốc vẫn tắt = im lặng chết cả
+            # quãng. Giờ mỗi event mang "duck" = [speech_start-0.3,
+            # speech_end+0.35] KẸP TRONG PART (speech đo THẬT từ audio);
+            # phần còn lại của part tiếng gốc TRỞ LẠI bình thường. n["end"]
+            # cũng co về mép HẾT TIẾNG -> phụ đề narrate (kể cả fallback
+            # câu/ký tự của caller) chỉ phủ đúng khoảng nói, không phủ đuôi.
+            part_end = n["end"]
+            sp_a = n["start"] + speech_a
+            sp_b = min(part_end, n["start"] + speech_b)
+            n["duck"] = [round(max(n["start"], sp_a - 0.3), 3),
+                         round(min(part_end, sp_b + 0.35), 3)]
+            n["end"] = round(sp_b, 3)
             if not _recap_word_level():
                 # MẶC ĐỊNH: câu-cụm 2-4 từ phân bố ĐỀU theo phần CÓ TIẾNG (ít
                 # trôi hơn karaoke vì không phụ thuộc mốc TỪNG từ WordBoundary).

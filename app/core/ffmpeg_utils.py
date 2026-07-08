@@ -469,6 +469,14 @@ def reframe_chain(mode: str, cx: float, out_w: int, out_h: int,
     )
 
 
+# 🎙 RECAP: mức tiếng gốc TRONG khoảng duck (lúc giọng AI đang nói). 0.12 =
+# tiếng gốc còn văng vẳng ~12% làm NỀN SỐNG dưới giọng AI (như kênh recap
+# thật — video không chết sóng), thay vì câm tuyệt đối (volume=0 cũ). Giọng
+# AI vẫn áp đảo rõ: đã loudnorm to hơn gốc +1.5dB, còn nền 0.12 ≈ -18.4dB
+# so mức gốc -> chênh ~20dB (>12dB yêu cầu tách bạch lời nói).
+_DUCK_LEVEL = 0.12
+
+
 def _atempo_chain(tempo: float) -> str:
     """Chuỗi atempo cho hệ số bất kỳ, CHIA TẦNG để luôn nằm trong [0.5, 2.0]
     (khoảng an toàn atempo trên MỌI bản ffmpeg, kể cả cũ trên máy khách).
@@ -950,8 +958,9 @@ def export_canvas_clip(
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
     duck_ranges: Optional[list] = None, # 🎙 RECAP: các khoảng (a,b) trên timeline
-                                        # ĐẦU RA (sau speed) mà ÂM GỐC bị TẮT
-                                        # (volume=0) — đoạn thuyết minh. Chỉ áp
+                                        # ĐẦU RA (sau speed) mà ÂM GỐC bị HẠ
+                                        # xuống _DUCK_LEVEL (~12%, nền văng
+                                        # vẳng) — lúc giọng AI nói. Chỉ áp
                                         # lên tiếng gốc, KHÔNG đụng nhạc nền/
                                         # narration. Có duck_ranges -> KHÔNG tự
                                         # hạ nền tiếng gốc kiểu dub (orig_vol
@@ -1190,12 +1199,15 @@ def export_canvas_clip(
             if apply_vol:
                 vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
             if ducks:
-                # 🎙 RECAP: TẮT tiếng gốc trong các khoảng thuyết minh. Đặt SAU
-                # atempo (af) nên t = timeline ĐẦU RA (sau speed) — caller đã
-                # chia mốc cho speed. Chỉ nhánh tiếng gốc, không đụng lớp khác.
+                # 🎙 RECAP: HẠ tiếng gốc xuống _DUCK_LEVEL (nền văng vẳng ~12%
+                # — video 'sống' như kênh recap thật, KHÔNG câm tuyệt đối)
+                # trong các khoảng AI đang nói. Đặt SAU atempo (af) nên t =
+                # timeline ĐẦU RA (sau speed) — caller đã chia mốc cho speed.
+                # Chỉ nhánh tiếng gốc, không đụng lớp khác. (dub_mute_original
+                # đi đường khác — use_voice=False, không qua đây.)
                 expr = "+".join(f"between(t,{a:.3f},{b:.3f})"
                                 for a, b in ducks)
-                vf.append(f"volume=0:enable='{expr}'")
+                vf.append(f"volume={_DUCK_LEVEL}:enable='{expr}'")
             need_mix = ((dub_idx is not None) or (bgm_idx is not None)
                         or whoosh_on or bool(ducks))
             if need_mix or af or apply_vol:
