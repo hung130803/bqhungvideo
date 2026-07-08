@@ -67,6 +67,18 @@ def recap_pace_rate(pace: str) -> str:
     return RECAP_PACES.get(str(pace or "").strip().lower(), "+0%")
 
 
+# 🎙 Reup thuyết minh — TÔNG GIỌNG user chọn (Cài đặt Reup) -> pitch edge-tts.
+# ±18Hz nghe khác RÕ (trầm ấm hơn / sáng cao hơn) mà giọng không méo.
+# Giọng Gemini KHÔNG hỗ trợ pitch -> bỏ qua (giữ tông gốc).
+RECAP_PITCHES = {"low": "-18Hz", "normal": "+0Hz", "high": "+18Hz"}
+
+
+def recap_pitch_hz(pitch: str) -> str:
+    """Đổi key tông giọng ('low'/'normal'/'high') -> pitch edge-tts ('-18Hz'
+    /'+0Hz'/'+18Hz'). Key lạ/rỗng -> '+0Hz' (giữ tông gốc)."""
+    return RECAP_PITCHES.get(str(pitch or "").strip().lower(), "+0Hz")
+
+
 def _bump_rate(rate: str, delta: int) -> str:
     """Cộng thêm delta điểm % vào rate edge-tts ('+0%' + 2 -> '+2%').
     Dùng cho câu HOOK mở đầu recap (đọc nhanh hơn nhịp nền ~2% cho có
@@ -126,7 +138,7 @@ _HOT_VOICES = {
     # Tiếng Anh Mỹ nam trầm (kiểu "Adam" kể chuyện)
     "en-US-GuyNeural", "en-US-DavisNeural", "en-US-JasonNeural",
     "en-US-TonyNeural", "en-US-EricNeural", "en-US-AndrewNeural",
-    "en-US-BrianNeural", "en-US-SteffanNeural",
+    "en-US-BrianNeural", "en-US-SteffanNeural", "en-US-ChristopherNeural",
     # Tiếng Anh Mỹ nữ hot
     "en-US-JennyNeural", "en-US-AriaNeural", "en-US-MichelleNeural",
     "en-US-SaraNeural", "en-US-NancyNeural",
@@ -142,6 +154,33 @@ _HOT_VOICES = {
     "zh-CN-YunxiNeural", "zh-CN-XiaoxiaoNeural", "zh-CN-YunjianNeural",
     "es-ES-AlvaroNeural", "pt-BR-AntonioNeural", "fr-FR-HenriNeural",
 }
+
+# ---- NHÓM "🔥 ĐỀ XUẤT — mượt & hot nhất" (curate TAY, có MÔ TẢ từng giọng)
+# — sửa lỗi user "không biết giọng nào mượt/hot": danh sách ngắn đã nghe
+# kiểm chứng, ghim NGAY dưới nhóm Gemini. [(voice_id, "Tên — mô tả")].
+# Giọng "đa ngôn ngữ" đọc được MỌI thứ tiếng — hợp kênh reup đa nguồn. ----
+_RECOMMENDED_VOICES: list[tuple[str, str]] = [
+    # Đa ngôn ngữ (đọc mọi thứ tiếng)
+    ("en-US-AndrewMultilingualNeural",
+     "Andrew — Nam trầm ấm, kể chuyện hay nhất (đa ngôn ngữ)"),
+    ("en-US-BrianMultilingualNeural",
+     "Brian — Nam trẻ, tự nhiên (đa ngôn ngữ)"),
+    ("en-US-AvaMultilingualNeural",
+     "Ava — Nữ mượt, sáng (đa ngôn ngữ)"),
+    ("en-US-EmmaMultilingualNeural",
+     "Emma — Nữ ấm áp (đa ngôn ngữ)"),
+    # Tiếng Anh (Mỹ)
+    ("en-US-AndrewNeural", "Andrew — Nam trầm ấm (tiếng Anh)"),
+    ("en-US-BrianNeural", "Brian — Nam trẻ, tự nhiên (tiếng Anh)"),
+    ("en-US-ChristopherNeural",
+     "Christopher — Nam trầm uy tín (tiếng Anh)"),
+    ("en-US-GuyNeural", "Guy — Nam kiểu tin tức, dứt khoát (tiếng Anh)"),
+    ("en-US-AriaNeural", "Aria — Nữ rõ ràng, biểu cảm (tiếng Anh)"),
+    ("en-US-JennyNeural", "Jenny — Nữ thân thiện, đều giọng (tiếng Anh)"),
+    # Tiếng Việt
+    ("vi-VN-NamMinhNeural", "Nam Minh — Nam chuẩn (tiếng Việt)"),
+    ("vi-VN-HoaiMyNeural", "Hoài My — Nữ nhẹ nhàng (tiếng Việt)"),
+]
 
 # ---- GEMINI TTS (tùy chọn CAO CẤP — giọng nét nhất, cần key Gemini) ----
 # Voice id dạng "gemini:Kore" (khác hẳn ShortName edge -> không đụng nhau).
@@ -352,7 +391,8 @@ def _lang_group_label(key: str) -> str:
 
 def _recap_voice_label(v: dict) -> str:
     """Nhãn giọng cho danh sách recap: '   ⭐ Andrew (Nam)' /
-    '   ⭐ Ava (Nữ, đa ngữ)' — user thấy ngay tên + giới tính."""
+    '   ⭐ Ava (Nữ, đa ngữ)' — user thấy ngay tên + giới tính. Giọng
+    KHÔNG hot (chỉ hiện khi 'Hiện tất cả giọng') -> không gắn ⭐."""
     short = v.get("ShortName", "")
     parts = short.split("-", 2)
     name = parts[2] if len(parts) == 3 else short
@@ -363,21 +403,29 @@ def _recap_voice_label(v: dict) -> str:
         name = name.replace("Multilingual", "")
     g = {"female": "Nữ", "male": "Nam"}.get((v.get("Gender") or "").lower(),
                                             "?")
-    return (f"   ⭐ {name} ({g}, đa ngữ)" if multi
-            else f"   ⭐ {name} ({g})")
+    star = "⭐ " if short in _HOT_VOICES else ""
+    return (f"   {star}{name} ({g}, đa ngữ)" if multi
+            else f"   {star}{name} ({g})")
 
 
-def list_recap_voices() -> list[tuple[str, str]]:
-    """Giọng gợi ý cho GIỌNG KỂ Reup thuyết minh, NHÓM THEO NGÔN NGỮ với
-    nhãn tiếng Việt + cờ (sửa lỗi user 'danh sách mù mờ không biết tiếng
-    gì'). Trả [(nhãn, voice_id)]; dòng có voice_id RỖNG là NHÃN NHÓM /
-    thông báo — UI phải disable (không cho chọn).
+def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
+    """Giọng cho GIỌNG KỂ Reup thuyết minh, NHÓM THEO NGÔN NGỮ với nhãn
+    tiếng Việt + cờ (sửa lỗi user 'danh sách mù mờ không biết tiếng gì').
+    Trả [(nhãn, voice_id)]; dòng có voice_id RỖNG là NHÃN NHÓM / thông báo
+    — UI phải disable (không cho chọn).
+
+    all=False (mặc định): chỉ giọng ĐỀ XUẤT + ⭐ hot (danh sách gọn).
+    all=True: TOÀN BỘ kho ~500 giọng edge-tts (_fetch_all_voices, cache 7
+    ngày) — nhóm ngôn ngữ như cũ, giọng hot vẫn gắn ⭐; offline/mạng lỗi
+    -> tự rơi về danh sách gọn (không vỡ).
 
     Cấu trúc: nhóm 🌟 Gemini (có key -> giọng chọn được; KHÔNG key -> 1
-    dòng disabled chỉ cách mở khóa) -> nhóm 🌐 đa ngôn ngữ (Multilingual,
-    đọc mọi thứ tiếng) -> từng ngôn ngữ (🇻🇳 Tiếng Việt, 🇺🇸 Tiếng Anh
-    (Mỹ)...), mỗi giọng ghi 'Tên (Nam/Nữ)'. Offline/lỗi mạng -> dựng từ
-    danh sách tĩnh VOICES (gender lấy từ nhãn cũ 'Nữ —/Nam —')."""
+    dòng disabled chỉ cách mở khóa) -> nhóm 🔥 ĐỀ XUẤT (curate tay, có MÔ
+    TẢ từng giọng — mượt & hot nhất, luôn có kể cả offline) -> nhóm 🌐 đa
+    ngôn ngữ (Multilingual, đọc mọi thứ tiếng) -> từng ngôn ngữ (🇻🇳 Tiếng
+    Việt, 🇺🇸 Tiếng Anh (Mỹ)...), mỗi giọng ghi 'Tên (Nam/Nữ)'. Offline/
+    lỗi mạng -> dựng từ danh sách tĩnh VOICES (gender lấy từ nhãn cũ
+    'Nữ —/Nam —')."""
     out: list[tuple[str, str]] = []
     if _gemini_available():
         out.append(("🌟 Gemini — đa ngôn ngữ (CẦN key Gemini)", ""))
@@ -385,29 +433,36 @@ def list_recap_voices() -> list[tuple[str, str]]:
                 for n in _GEMINI_PREBUILT]
     else:
         out.append((GEMINI_LOCKED_LABEL, ""))
+    # 0) nhóm 🔥 ĐỀ XUẤT — curate tay kèm mô tả, KHÔNG cần mạng
+    out.append(("🔥 ĐỀ XUẤT — mượt & hot nhất", ""))
+    out += [(f"   🔥 {desc}", vid) for vid, desc in _RECOMMENDED_VOICES]
     allv = _fetch_all_voices()
-    hot = [v for v in (allv or []) if v.get("ShortName") in _HOT_VOICES]
-    if not hot:                         # offline -> giọng tĩnh đã kiểm chứng
+    if all and allv:                    # kho ĐẦY ĐỦ (~500 giọng)
+        pool = list(allv)
+    else:                               # danh sách gọn: chỉ giọng ⭐ hot
+        pool = [v for v in (allv or []) if v.get("ShortName") in _HOT_VOICES]
+    if not pool:                        # offline -> giọng tĩnh đã kiểm chứng
         seen: set = set()
         for _lang, vs in VOICES.items():
             for lbl, vid in vs:
                 if vid not in seen:
                     seen.add(vid)
-                    hot.append({
+                    pool.append({
                         "ShortName": vid,
                         "Gender": "Female" if lbl.startswith("Nữ") else "Male",
                         "Locale": "-".join(vid.split("-")[:2])})
     # 1) nhóm ĐA NGÔN NGỮ (đọc được mọi thứ tiếng — gợi ý mạnh nhất)
-    multi_ids = {v["ShortName"] for v in hot
+    multi_ids = {v["ShortName"] for v in pool
                  if "multilingual" in v["ShortName"].lower()}
-    multi = sorted((v for v in hot if v["ShortName"] in multi_ids),
-                   key=lambda v: v["ShortName"])
+    multi = sorted((v for v in pool if v["ShortName"] in multi_ids),
+                   key=lambda v: (v["ShortName"] not in _HOT_VOICES,
+                                  v["ShortName"]))
     if multi:
         out.append(("🌐 Đa ngôn ngữ — đọc được MỌI thứ tiếng", ""))
         out += [(_recap_voice_label(v), v["ShortName"]) for v in multi]
-    # 2) nhóm theo NGÔN NGỮ với nhãn Việt + cờ
+    # 2) nhóm theo NGÔN NGỮ với nhãn Việt + cờ (giọng ⭐ hot lên đầu nhóm)
     groups: dict[str, list[dict]] = {}
-    for v in hot:
+    for v in pool:
         if v["ShortName"] in multi_ids:
             continue
         loc = v.get("Locale") or "-".join(v["ShortName"].split("-")[:2])
@@ -418,7 +473,10 @@ def list_recap_voices() -> list[tuple[str, str]]:
     for k in ordered:
         out.append((_lang_group_label(k), ""))
         out += [(_recap_voice_label(v), v["ShortName"])
-                for v in sorted(groups[k], key=lambda v: v["ShortName"])]
+                for v in sorted(groups[k],
+                                key=lambda v: (v["ShortName"] not in
+                                               _HOT_VOICES,
+                                               v["ShortName"]))]
     return out
 
 
@@ -615,11 +673,13 @@ _DEMO_TEXTS = {
 
 
 def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
-               rate: str = "+0%") -> bool:
+               rate: str = "+0%", pitch: str = "+0Hz") -> bool:
     """Đọc thử 1 câu ngắn bằng giọng `voice` -> file mp3. Câu mẫu tự chọn
     theo ngôn ngữ của giọng (vi-VN-... -> câu tiếng Việt). True nếu ra file
     hợp lệ; False nếu lỗi (mạng, giọng sai...).
-    rate: tốc độ edge-tts (nghe thử nhịp kể recap); Gemini bỏ qua rate."""
+    rate: tốc độ edge-tts (nghe thử nhịp kể recap); pitch: tông giọng
+    edge-tts ('-18Hz'/'+0Hz'/'+18Hz' — Tông giọng recap). Gemini bỏ qua
+    cả rate lẫn pitch (không hỗ trợ)."""
     voice = (voice or "").strip()
     if not voice:
         return False
@@ -635,7 +695,14 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
 
     async def _run() -> None:
         import edge_tts
-        await edge_tts.Communicate(txt, voice, rate=rate).save(out_mp3)
+        kw = {"rate": rate}
+        if pitch and pitch != "+0Hz":
+            kw["pitch"] = pitch
+        try:
+            comm = edge_tts.Communicate(txt, voice, **kw)
+        except TypeError:               # bản edge-tts cổ không có pitch
+            comm = edge_tts.Communicate(txt, voice, rate=rate)
+        await comm.save(out_mp3)
 
     for _ in range(2):                  # mạng chập chờn -> thử lại 1 lần
         try:
@@ -796,6 +863,7 @@ _WB_TICKS = 10_000_000.0
 async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
                            rate: str | list = "+0%",
+                           pitch: str = "+0Hz",
                            ) -> tuple[list[bool], list[list]]:
     """Như _synth_all nhưng THU thêm WORD BOUNDARY của edge-tts (stream API:
     chunk type "WordBoundary" có offset/duration 100-ns) -> mốc TỪNG TỪ theo
@@ -808,6 +876,8 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
     audio THẬT (đã áp rate) nên mốc từng từ vẫn đúng, không cần bù.
     rate có thể là LIST cùng độ dài texts (rate RIÊNG từng cụm — câu hook
     recap đọc nhanh hơn +2%); chuỗi đơn = chung cho mọi cụm.
+    pitch: TÔNG GIỌNG edge-tts ('-18Hz'/'+0Hz'/'+18Hz' — Tông giọng recap),
+    chung cho mọi cụm; '+0Hz' -> không truyền (giữ hành vi cũ y nguyên).
     """
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
@@ -822,6 +892,9 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                     on_done(i)
                 return
             r_i = rate[i] if isinstance(rate, list) else rate
+            kw = {"rate": r_i}
+            if pitch and pitch != "+0Hz":   # tông giọng (edge-tts >=6 có)
+                kw["pitch"] = pitch
             for attempt in range(4):        # server MS chập chờn THEO ĐỢT
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 wb: list = []
@@ -829,10 +902,14 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                     try:
                         # edge-tts >=7 mặc định SentenceBoundary -> phải xin
                         # WordBoundary tường minh
-                        comm = edge_tts.Communicate(txt, voice, rate=r_i,
-                                                    boundary="WordBoundary")
+                        comm = edge_tts.Communicate(txt, voice,
+                                                    boundary="WordBoundary",
+                                                    **kw)
                     except TypeError:       # edge-tts <7: luôn WordBoundary
-                        comm = edge_tts.Communicate(txt, voice, rate=r_i)
+                        try:
+                            comm = edge_tts.Communicate(txt, voice, **kw)
+                        except TypeError:   # bản cổ không có pitch
+                            comm = edge_tts.Communicate(txt, voice, rate=r_i)
                     with open(paths[i], "wb") as f:
                         async for ch in comm.stream():
                             if ch["type"] == "audio" and ch.get("data"):
@@ -1137,7 +1214,7 @@ def _map_to_output(t: float, clip_segments: list) -> Optional[float]:
 def build_recap_track(parts: list, clip_segments: list, voice: str,
                       lang: str, out_wav: str | Path,
                       on_progress: Optional[Callable[[float, str], None]] = None,
-                      pace: str = "normal",
+                      pace: str = "normal", pitch: str = "normal",
                       src_path: str = "", volume: float = 1.0,
                       ) -> tuple[str, list[dict]]:
     """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
@@ -1156,6 +1233,9 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     text TTS (chỉ dẫn không lọt narrate_events/phụ đề). Fit window (atempo)
     tự bù nên mốc part vẫn khít; WordBoundary thu theo audio thật (đã áp
     rate) nên mốc từng từ vẫn đúng.
+    pitch: TÔNG GIỌNG "low"/"normal"/"high" (Cài đặt Reup) -> pitch edge-tts
+    -18Hz/+0Hz/+18Hz (trầm ấm hơn / giữ nguyên / sáng cao hơn). Giọng Gemini
+    KHÔNG hỗ trợ pitch -> bỏ qua (cả đường fallback edge của Gemini).
 
     narrate_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
     (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
@@ -1214,6 +1294,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
 
     texts = [n["text"] for n in narr]
     rate = recap_pace_rate(pace)
+    pitch_hz = recap_pitch_hz(pitch)    # tông giọng (chỉ đường edge-tts)
     with tempfile.TemporaryDirectory(prefix="recap_") as td:
         mp3s = [os.path.join(td, f"n{i}.mp3") for i in range(len(narr))]
         done = {"n": 0}
@@ -1245,7 +1326,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             if rates:
                 rates[0] = _bump_rate(rate, 2)
             ok, word_lists = asyncio.run(_synth_all_words(
-                texts, voice, mp3s, on_done=_tts_done, rate=rates))
+                texts, voice, mp3s, on_done=_tts_done, rate=rates,
+                pitch=pitch_hz))
             # LƯỢT VÉT: server MS hay lỗi NoAudioReceived THEO ĐỢT — nghỉ
             # ngắn rồi thử lại RIÊNG các part hỏng 1 lần nữa (đo thật cho
             # thấy đợt lỗi qua nhanh; trước đây part hỏng bị bỏ luôn ->
@@ -1257,7 +1339,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 ok2, wl2 = asyncio.run(_synth_all_words(
                     [texts[i] for i in fails], voice,
                     [mp3s[i] for i in fails],
-                    rate=[rates[i] for i in fails]))
+                    rate=[rates[i] for i in fails], pitch=pitch_hz))
                 for j, i in enumerate(fails):
                     if ok2[j]:
                         ok[i] = True
@@ -1275,7 +1357,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     ok3, wl3 = asyncio.run(_synth_all_words(
                         [texts[i] for i in fails], fb,
                         [mp3s[i] for i in fails],
-                        rate=[rates[i] for i in fails]))
+                        rate=[rates[i] for i in fails], pitch=pitch_hz))
                     for j, i in enumerate(fails):
                         if ok3[j]:
                             ok[i] = True

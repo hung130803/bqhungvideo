@@ -3024,6 +3024,8 @@ class StudioPage(QWidget):
                 recap_voice=str(self._settings.value("recap_voice", "") or ""),
                 recap_pace=str(self._settings.value("recap_pace", "normal")
                                or "normal"),
+                recap_pitch=str(self._settings.value("recap_pitch", "normal")
+                                or "normal"),
                 recap_volume=self._recap_volume(),
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),

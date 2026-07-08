@@ -1326,6 +1326,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 payload.get("recap_voice") or payload.get("dub_voice") or "",
                 lang, dw,
                 pace=payload.get("recap_pace") or "normal",
+                # "Tông giọng" (⚙ Cài đặt Reup) -> pitch edge-tts
+                pitch=payload.get("recap_pitch") or "normal",
                 # src: đo loudness tiếng gốc -> auto-match âm lượng giọng kể
                 src_path=src, volume=_rvol,
                 on_progress=lambda p, m="": ctx.progress(
