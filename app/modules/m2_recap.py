@@ -411,6 +411,12 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         ratio = float(preset.get("recap_ratio") or 55)
     except (TypeError, ValueError):
         ratio = 55.0
+    # 🎭 Giọng cảm xúc (audio tag v3): BẬT -> prompt dặn AI chèn tag cảm xúc
+    # ([excited]/[whispers]/[dramatic pause]) + nhấn CAPS vào lời narrate.
+    # MẶC ĐỊNH BẬT; tag chỉ phát huy khi export bằng giọng ElevenLabs v3,
+    # nhưng chèn sẵn KHÔNG hại (build_recap_track tự strip cho giọng khác).
+    emotion = str(preset.get("recap_emotion", True)).strip().lower() \
+        not in ("false", "0", "no", "off")
 
     if not llm.is_configured():
         raise RuntimeError(
@@ -502,7 +508,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 min(min_total, max(30.0, 0.6 * (c1 - c0))),
                 min(max_total, c1 - c0), ratio=ratio,
                 listing=_condense_listing(ch_segs, c1 - c0),
-                win_min=win_lo, win_max=win_hi)
+                win_min=win_lo, win_max=win_hi, emotion=emotion)
         except llm.LLMError:
             sc = None                  # chương lỗi -> bỏ riêng chương đó
         if sc:
@@ -643,7 +649,8 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             try:
                 sc = recap.write_script(sents, lang_name, style, s0, e1,
                                         title=c.get("title", ""),
-                                        frames=frames, ratio=ratio)
+                                        frames=frames, ratio=ratio,
+                                        emotion=emotion)
             except llm.LLMError as e:
                 errors.append(str(e))
                 sc = None

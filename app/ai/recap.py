@@ -193,6 +193,77 @@ def style_label(key: str) -> str:
 
 
 # ------------------------------------------------------------------
+# AUDIO TAG CẢM XÚC (ElevenLabs v3): AI đạo diễn chèn [excited]/[whispers]/
+# [dramatic pause]... + nhấn CAPS vào LỜI narrate để giọng lên xuống, nhấn
+# nhá như người thật. Các tag CHỈ để TTS v3 đọc — TUYỆT ĐỐI KHÔNG được lọt
+# vào PHỤ ĐỀ. _strip_audio_tags dọn tag + hạ CAPS về thường cho bản làm sub.
+# ------------------------------------------------------------------
+# [tag] cảm xúc: 1-3 từ chữ-thường trong ngoặc vuông (["excited"], [dramatic
+# pause], [whispers]...). KHÔNG bắt [123]/[..] tránh nuốt số/dấu người dùng gõ.
+_AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,28}\]")
+# TÁCH theo "từ" (chuỗi ký tự chữ liền nhau, giữ dấu Việt) để dò từ nhấn CAPS.
+# CỐ Ý dùng .isupper() thay vì regex range [A-ZÀ-Ỹ]: range unicode đó lồng cả
+# ký tự Việt THƯỜNG (ã, đ...) -> bắt oan chữ hoa đầu câu ("Gã" -> "gã"). Dùng
+# .isupper() (một từ chỉ True khi MỌI chữ cái đều hoa) mới đúng "từ nhấn CAPS".
+_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def _lower_caps_word(m: "re.Match") -> str:
+    """Hạ 1 TỪ NHẤN CAPS (>=2 chữ, TOÀN HOA: "SAI"/"GONE"/"THẮNG") về chữ
+    thường. Từ thường/viết-hoa-đầu ("Gã", "Poker") GIỮ NGUYÊN — chỉ từ nhấn
+    mạnh toàn hoa mới hạ (chuẩn cho phụ đề)."""
+    w = m.group(0)
+    return w.lower() if len(w) >= 2 and w.isupper() else w
+
+
+def _strip_audio_tags(text: str) -> str:
+    """Bỏ audio tag cảm xúc ([excited]/[whispers]/[dramatic pause]...) và HẠ
+    các từ nhấn CAPS về chữ thường -> bản SẠCH dùng cho PHỤ ĐỀ + word timing
+    (giọng edge/gemini cũng nhận bản này vì KHÔNG hiểu tag v3). CHỈ đường TTS
+    ElevenLabs v3 nhận bản CÓ tag. Chuẩn hoá khoảng trắng thừa do bỏ tag.
+    Hàm thuần — unit test được.
+
+    Ví dụ: '[excited]Không thể TIN nổi... [whispers]hắn đã thua.' ->
+           'Không thể tin nổi... hắn đã thua.'"""
+    t = str(text or "")
+    if not t:
+        return ""
+    t = _AUDIO_TAG_RE.sub(" ", t)          # bỏ mọi [tag]
+    t = _WORD_RE.sub(_lower_caps_word, t)  # HẠ từ nhấn CAPS (toàn hoa) về thường
+    # gọn khoảng trắng + khoảng trắng thừa trước dấu câu do bỏ tag
+    t = re.sub(r"\s+([,.!?…;:])", r"\1", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
+# Khối chỉ dẫn AI CHÈN audio tag cảm xúc (chỉ đưa vào prompt khi emotion BẬT).
+# Tag hợp lệ v3 + cách nhấn CAPS — AI tự chọn hợp NGỮ CẢNH từng câu.
+def _emotion_rule(ln: str) -> str:
+    """Chỉ dẫn CHÈN audio tag cảm xúc kiểu ElevenLabs v3 vào lời narrate
+    (chỉ khi user BẬT 'Giọng cảm xúc'). Tag nằm TRONG text narrate, hệ thống
+    tự tách khỏi phụ đề (chỉ giọng đọc)."""
+    return (
+        "🎭 GIỌNG CẢM XÚC (bắt buộc — kiểu ElevenLabs v3): CHÈN audio tag "
+        "cảm xúc NGAY TRONG lời narrate để giọng đọc lên xuống, nhấn nhá, "
+        "cảm xúc mạnh NHƯ NGƯỜI THẬT:\n"
+        "- Đặt tag trong ngoặc vuông NGAY TRƯỚC cụm cần cảm xúc, hợp NGỮ "
+        "CẢNH từng câu: [excited] (hào hứng), [whispers] (thì thầm gây tò "
+        "mò), [sighs] (thở dài), [laughs] (cười), [sarcastic] (mỉa mai), "
+        "[curious] (tò mò), [dramatic pause] (ngừng kịch tính trước cú "
+        "twist).\n"
+        "- NHẤN từ khoá GÂY SỐC bằng CHỮ IN HOA (vd: \"và rồi... tất cả "
+        "BIẾN MẤT\") + dùng dấu \"...\" để ngắt nhá.\n"
+        "- ĐỪNG lạm dụng: mỗi câu 0-1 tag, chọn ĐÚNG cảm xúc cảnh đó; tag "
+        "phải khớp nội dung (cảnh vui -> [excited]/[laughs]; cảnh căng -> "
+        "[whispers]/[dramatic pause]).\n"
+        "- Tag CHỈ để giọng đọc, hệ thống TỰ BỎ khỏi phụ đề — cứ chèn thoải "
+        "mái, phụ đề vẫn sạch.\n"
+        + ("  VÍ DỤ: \"[whispers]Không ai ngờ... [excited]hắn đã THẮNG tất "
+           "cả!\"\n" if _is_vi_lang(ln) else
+           "  EXAMPLE: \"[whispers]Nobody saw it coming... [excited]he "
+           "WON it all!\"\n"))
+
+
+# ------------------------------------------------------------------
 # NGÔN NGỮ ĐẦU RA: tên tiếng Anh chuẩn + hậu kiểm "viết sai ngôn ngữ"
 # ------------------------------------------------------------------
 # Tên ngôn ngữ CHUẨN TIẾNG ANH cho prompt: model tuân lệnh "write in
@@ -327,10 +398,11 @@ def _style_hint(key: str, ln: str = "") -> str:
             + "\n  VÍ DỤ chuẩn vibe (bắt chước VIBE, đừng chép): " + ex)
 
 
-def _narrator_rules(ln: str, style: str) -> str:
+def _narrator_rules(ln: str, style: str, emotion: bool = False) -> str:
     """Khối luật NGƯỜI KỂ CHUYỆN dùng chung cho prompt 1-clip (build_prompt)
     và prompt đạo diễn multi-window (build_director_prompt) — giữ 1 nguồn
-    để 2 đường không lệch luật (anti-copy, văn nói, vibe phong cách)."""
+    để 2 đường không lệch luật (anti-copy, văn nói, vibe phong cách).
+    emotion=True -> chèn thêm khối _emotion_rule (AI tự chèn audio tag v3)."""
     return (
         "QUY TRÌNH 2 BƯỚC (bắt buộc — nghĩ theo 2 vai TÁCH BẠCH):\n"
         "• BƯỚC 1 (VAI HIỂU CHUYỆN): đọc transcript, tự viết trong đầu 1 câu "
@@ -385,7 +457,33 @@ def _narrator_rules(ln: str, style: str) -> str:
         "- CẤM văn viết/thuyết trình/liệt kê: \"đầu tiên\", \"tiếp theo\", "
         "\"như các bạn thấy\", \"trong video này\", \"chúng ta có thể "
         "thấy\"...\n"
-        f"{_style_hint(style, ln)}\n"
+        # DRAMA/VIRAL nhưng BÁM SÁT nội dung (không bịa/không lệch) — few-shot
+        # cặp ĐÚNG (drama + dính chi tiết cảnh) vs SAI (bịa/chung chung/lệch).
+        "DRAMA & CUỐN (bắt buộc — nhưng BÁM SÁT nội dung, KHÔNG bịa):\n"
+        "- Mỗi câu kể phải NHẮC 1 chi tiết CỤ THỂ của cảnh (tên/hành động/"
+        "con số/đồ vật CÓ trong transcript) RỒI thêm cảm xúc/twist/stakes: "
+        "\"điều hắn không ngờ là...\", \"và đây là lúc mọi thứ sụp đổ...\", "
+        "\"cái giá phải trả lớn hơn hắn tưởng...\".\n"
+        "- CẤM bịa chi tiết KHÔNG có trong video; CẤM lệch chủ đề; CẤM câu "
+        "sáo rỗng chung chung lắp cảnh nào cũng được (\"thật không thể tin "
+        "được\", \"quá đỉnh luôn\").\n"
+        + ("  VÍ DỤ ✅ (drama + BÁM cảnh 'đặt cược 500 đô'): \"500 đô... đặt "
+           "hết vào một ván bài. Điều gã không ngờ là ván này sẽ đổi cả đời "
+           "gã.\"\n"
+           "  VÍ DỤ ❌ (bịa/lệch): \"Gã rút súng ra bắn\" (video KHÔNG có "
+           "súng) — BỊA.\n"
+           "  VÍ DỤ ❌ (chung chung): \"Thật không thể tin nổi các bạn ạ!\" "
+           "— không dính chi tiết nào, lắp đâu cũng được.\n"
+           if _is_vi_lang(ln) else
+           "  ✅ EXAMPLE (drama + on-scene 'bet 500 dollars'): \"500 "
+           "dollars... all on one hand. What he didn't expect was that this "
+           "hand would change everything.\"\n"
+           "  ❌ WRONG (fabricated): \"He pulls out a gun\" (video has NO "
+           "gun) — MADE UP.\n"
+           "  ❌ WRONG (generic): \"This is absolutely unbelievable guys!\" "
+           "— sticks to no detail, fits any clip.\n")
+        + (_emotion_rule(ln) if emotion else "")
+        + f"{_style_hint(style, ln)}\n"
         + ("(Lời narrate viết bằng TIẾNG VIỆT — đúng ngôn ngữ video.)\n"
            if _is_vi_lang(ln) else
            "(Chỉ dẫn/luật viết bằng tiếng Việt CHỈ để bạn hiểu — lời "
@@ -395,7 +493,8 @@ def _narrator_rules(ln: str, style: str) -> str:
 
 def build_prompt(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float, title: str = "",
-                 frames: Optional[list] = None, ratio: float = 55) -> str:
+                 frames: Optional[list] = None, ratio: float = 55,
+                 emotion: bool = False) -> str:
     """sentences = [(start, end, text)] các câu transcript TRONG clip.
     frames = [(giây, đường_dẫn_ảnh)] khung hình gửi kèm (vision) — ảnh #k
     chụp tại mốc giây tương ứng; None/rỗng = không có vision.
@@ -444,7 +543,7 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "Bạn đứng NGOÀI video, kể về nhân vật/sự việc cho khán giả của bạn "
         "nghe. Hãy viết KỊCH BẢN gồm các part xen kẽ: orig (nhân vật tự "
         "nói) / narrate (lời KỂ của bạn).\n\n"
-        + _narrator_rules(ln, style) + "\n"
+        + _narrator_rules(ln, style, emotion=emotion) + "\n"
         "CÔNG THỨC VIRAL (bắt buộc):\n"
         + _structure_rules() +
         "- HOOK: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở phải gây SỐC "
@@ -641,6 +740,35 @@ def _content_words(text: str) -> set:
     tự) — dùng so RELEVANCE lời narrate với transcript khung cảnh."""
     return {w for w in _norm_for_copy(text).split()
             if len(w) > 1 and w not in _STOPWORDS}
+
+
+# Độ dài PREFIX tối thiểu để coi 2 từ-nội-dung là LIÊN QUAN (cùng gốc/biến
+# thể) trong relevance check: "bet"~"betting", "cược"~"đặt cược". Nới relevance
+# để câu drama sáng tạo (dùng từ đồng nghĩa/biến thể thay vì trùng literal)
+# KHÔNG bị loại oan, vẫn CHẶN câu 0 liên quan (bịa hẳn).
+_RELEVANCE_PREFIX = 4
+
+
+def _is_relevant(text: str, near: set) -> bool:
+    """Lời narrate có LIÊN QUAN transcript khung (tập từ-nội-dung `near`) không.
+
+    NỚI so với 'trùng literal': câu QUA nếu có >= 1 từ-nội-dung
+      (a) trùng CHÍNH XÁC 1 từ trong near, HOẶC
+      (b) chia sẻ PREFIX >= _RELEVANCE_PREFIX ký tự với 1 từ near (bắt biến
+          thể/đồng nghĩa cùng gốc: 'bet'/'betting', 'cược'/'đặt cược').
+    0 từ liên quan (kể cả nới prefix) = câu chung chung/bịa hẳn -> LOẠI.
+    Hàm thuần — unit test được."""
+    words = _content_words(text)
+    if not words or not near:
+        return False
+    if words & near:                       # (a) trùng chính xác
+        return True
+    # (b) cùng prefix >= _RELEVANCE_PREFIX (chỉ khi CẢ 2 đủ dài — tránh khớp
+    # oan 2 từ ngắn 4 ký tự khác nghĩa: yêu cầu prefix dài hơn nếu từ dài).
+    npfx = {n[:_RELEVANCE_PREFIX] for n in near
+            if len(n) >= _RELEVANCE_PREFIX}
+    return any(len(w) >= _RELEVANCE_PREFIX and w[:_RELEVANCE_PREFIX] in npfx
+               for w in words)
 
 
 # ------------------------------------------------------------------
@@ -1098,7 +1226,8 @@ _WIN_MAX_N = 6
 def build_director_prompt(listing: str, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
-                          win_min: int = 3, win_max: int = 6) -> str:
+                          win_min: int = 3, win_max: int = 6,
+                          emotion: bool = False) -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
     win_min-win_max khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI
     giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6)."""
@@ -1185,7 +1314,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "NHẤT trong khung làm twist/đỉnh điểm.\n"
         "- CẤM SPOILER: không nhắc trước nội dung khung CHƯA chiếu tới — "
         "chỉ được GỢI tò mò.\n\n"
-        + _narrator_rules(ln, style) +
+        + _narrator_rules(ln, style, emotion=emotion) +
         f"\n- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate đọc VỪA KHÍT độ dài "
         "part (part 10 giây tiếng Anh ~20 từ, part 20 giây ~41-46 từ). "
         "ĐỪNG viết dài — sẽ bị cắt.\n"
@@ -1353,11 +1482,12 @@ def validate_parts_windows(parts, windows: list, sentences=None,
                 mode = str(p.get("mode") or "").strip().lower()
                 text = str(p.get("text") or "")
                 if (mode == "narrate" and text.strip()
-                        and not (_content_words(text) & near)
+                        and not _is_relevant(text, near)
                         and not (wi > 0 and j == 0)):
-                    # 0 từ-nội-dung trùng transcript khung (và khung kề) ->
-                    # nghi LẠC ĐỀ -> hạ orig. Tha CẦU NỐI (part đầu khung
-                    # thứ 2 trở đi — lời bắc cầu được phép thoát cảnh).
+                    # 0 từ-nội-dung LIÊN QUAN transcript khung (và khung kề;
+                    # NỚI: chấp nhận biến thể/đồng nghĩa cùng gốc qua prefix)
+                    # -> nghi LẠC ĐỀ/bịa -> hạ orig. Tha CẦU NỐI (part đầu
+                    # khung thứ 2 trở đi — lời bắc cầu được phép thoát cảnh).
                     p = dict(p, mode="orig", text="")
                 checked.append(p)
             sub = checked
@@ -1454,7 +1584,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
                           listing: str = "", win_min: int = 3,
-                          win_max: int = 6) -> Optional[dict]:
+                          win_max: int = 6,
+                          emotion: bool = False) -> Optional[dict]:
     """Gọi LLM đạo diễn trên TOÀN BỘ transcript -> {"title", "windows",
     "parts"} ĐÃ validate; None nếu windows/parts hỏng cả sau khi RETRY
     (caller fallback đường 1-span cũ).
@@ -1476,7 +1607,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                             for a, b, t in sentences)[:11000]
     prompt = build_director_prompt(listing, lang_name, style, duration,
                                    min_total, max_total, ratio=ratio,
-                                   win_min=win_min, win_max=win_max)
+                                   win_min=win_min, win_max=win_max,
+                                   emotion=emotion)
 
     def _lang_retry():
         """Gọi lại LLM kèm chỉ trích SAI NGÔN NGỮ -> script validate/None."""
@@ -1535,7 +1667,8 @@ def write_script(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float,
                  title: str = "",
                  frames: Optional[list] = None,
-                 ratio: float = 55) -> Optional[dict]:
+                 ratio: float = 55,
+                 emotion: bool = False) -> Optional[dict]:
     """Gọi LLM viết kịch bản 1 clip -> {"title","parts"} ĐÃ VALIDATE.
 
     sentences = [(start, end, text)] câu transcript trong phạm vi clip.
@@ -1547,7 +1680,8 @@ def write_script(sentences: list, lang_name: str, style: str,
     Trả None nếu LLM trả JSON không dùng được (không có part narrate nào).
     """
     base_prompt = build_prompt(sentences, lang_name, style, clip_start,
-                               clip_end, title, frames=frames, ratio=ratio)
+                               clip_end, title, frames=frames, ratio=ratio,
+                               emotion=emotion)
 
     def _call(prompt: str):
         data = None
@@ -1561,7 +1695,8 @@ def write_script(sentences: list, lang_name: str, style: str,
             p2 = prompt
             if frames:                  # vision fail -> prompt KHÔNG nhắc ảnh
                 p2 = build_prompt(sentences, lang_name, style, clip_start,
-                                  clip_end, title, ratio=ratio)
+                                  clip_end, title, ratio=ratio,
+                                  emotion=emotion)
                 if prompt != base_prompt:   # giữ chỉ trích retry ở cuối
                     p2 += prompt[len(base_prompt):]
             data = llm.complete_json(p2, system=_SYSTEM)

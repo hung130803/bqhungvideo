@@ -2221,6 +2221,11 @@ class StudioPage(QWidget):
         wmin = min(6, max(2, wmin))
         preset["recap_win_min"] = wmin
         preset["recap_win_max"] = max(wmin, min(8, max(3, wmax)))
+        # 🎭 Giọng cảm xúc (audio tag v3) — MẶC ĐỊNH BẬT; đưa vào preset để
+        # prompt biết mà chèn tag cảm xúc vào lời narrate.
+        preset["recap_emotion"] = str(
+            self._settings.value("recap_emotion", True)).strip().lower() \
+            not in ("false", "0", "no", "off")
         services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                     self.state.project_id, preset)
         self.status.setText(
@@ -3046,6 +3051,11 @@ class StudioPage(QWidget):
                                or "normal"),
                 recap_pitch=str(self._settings.value("recap_pitch", "normal")
                                 or "normal"),
+                # 🎭 emotion: BẬT + giọng ElevenLabs -> model v3 đọc audio
+                # tag; ảnh hưởng model TTS -> vào sig dedup (đổi -> xuất lại).
+                recap_emotion=str(
+                    self._settings.value("recap_emotion", True)).strip()
+                .lower() not in ("false", "0", "no", "off"),
                 recap_volume=self._recap_volume(),
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),

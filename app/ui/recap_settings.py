@@ -244,6 +244,21 @@ class RecapSettingsDialog(QDialog):
         prow.addLayout(pcol2, 1)
         lay.addLayout(prow)
 
+        # ---- 🎭 Giọng cảm xúc (audio tag ElevenLabs v3) ----
+        self.emotion = QCheckBox(
+            "🎭 Giọng cảm xúc (nhấn nhá như người thật)")
+        self.emotion.setToolTip(
+            "AI đạo diễn TỰ chèn cảm xúc vào lời kể (hào hứng, thì thầm, "
+            "ngừng kịch tính, nhấn từ khoá gây sốc) để giọng lên xuống như "
+            "người thật.\n"
+            "· Phát huy TỐI ĐA với giọng 🎧 ElevenLabs (model v3 hiểu audio "
+            "tag).\n"
+            "· Giọng khác (🔥/⭐ edge, 🌟 Gemini) vẫn hoạt động — tag tự bị "
+            "bỏ, giọng đọc bình thường.\n"
+            "· Phụ đề LUÔN sạch (không bao giờ hiện [excited] hay CHỮ HOA "
+            "nhấn).")
+        lay.addWidget(self.emotion)
+
         # ---- Nút ----
         brow = QHBoxLayout()
         brow.addStretch(1)
@@ -276,6 +291,10 @@ class RecapSettingsDialog(QDialog):
         self.pace.setCurrentIndex(max(0, self.pace.findData(pace)))
         pitch = str(self._s.value("recap_pitch", "normal") or "normal")
         self.pitch.setCurrentIndex(max(0, self.pitch.findData(pitch)))
+        # 🎭 Giọng cảm xúc — MẶC ĐỊNH BẬT (QSettings trả chuỗi -> so "false")
+        self.emotion.setChecked(
+            str(self._s.value("recap_emotion", True)).strip().lower()
+            not in ("false", "0", "no", "off"))
         try:                             # âm lượng giọng kể (80-200%)
             vol = int(self._s.value("recap_volume", 115))
         except (TypeError, ValueError):
@@ -310,6 +329,7 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue("recap_ratio", int(self.ratio.value()))
         self._s.setValue("recap_pace", self.pace.currentData() or "normal")
         self._s.setValue("recap_pitch", self.pitch.currentData() or "normal")
+        self._s.setValue("recap_emotion", bool(self.emotion.isChecked()))
         self._s.setValue("recap_volume", int(self.volume.value()))
         self._s.setValue("recap_count", int(self.count.value()))
         wmin, wmax = int(self.win_min.value()), int(self.win_max.value())
@@ -452,6 +472,7 @@ class RecapSettingsDialog(QDialog):
             voice = "en-US-AndrewMultilingualNeural"
         pace = self.pace.currentData() or "normal"
         pitch = self.pitch.currentData() or "normal"
+        emotion = bool(self.emotion.isChecked())
         try:
             import winsound
             winsound.PlaySound(None, winsound.SND_PURGE)
@@ -483,9 +504,12 @@ class RecapSettingsDialog(QDialog):
                     txt = _DEMO_NARR.get(lang) or _DEMO_NARR["en"]
                 # nghe thử áp CẢ nhịp kể + tông giọng đang chọn (Gemini
                 # bỏ qua cả 2 — synth_demo tự xử)
+                # 🎭 emotion CHỈ áp giọng ElevenLabs (v3 hiểu tag); giọng
+                # khác synth_demo tự bỏ qua.
                 if not synth_demo(voice, mp3, text=txt,
                                   rate=recap_pace_rate(pace),
-                                  pitch=recap_pitch_hz(pitch)):
+                                  pitch=recap_pitch_hz(pitch),
+                                  emotion=emotion):
                     self._demo_ready.emit("")
                     return
                 import shutil

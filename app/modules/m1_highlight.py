@@ -1415,6 +1415,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 pitch=payload.get("recap_pitch") or "normal",
                 # src: đo loudness tiếng gốc -> auto-match âm lượng giọng kể
                 src_path=src, volume=_rvol,
+                # 🎭 Giọng cảm xúc (audio tag v3) — BẬT + giọng ElevenLabs ->
+                # model eleven_v3 đọc [excited]/CAPS; giọng khác strip tag.
+                emotion=bool(payload.get("recap_emotion", True)),
                 on_progress=lambda p, m="": ctx.progress(
                     0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
             # Khoảng HẠ tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed

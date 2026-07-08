@@ -216,6 +216,11 @@ def _gemini_voice_items() -> list[tuple[str, str]]:
 # qua atempo). KHÔNG trả word timestamps -> phụ đề recap dùng câu-cụm (như
 # Gemini). Hạn mức free 10k ký tự/tháng -> 401/429 -> mark key + fallback edge.
 _ELEVEN_MODEL_DEFAULT = "eleven_multilingual_v2"
+# Model hỗ trợ AUDIO TAG cảm xúc ([excited]/[whispers]/[dramatic pause]...) —
+# dùng khi user BẬT "Giọng cảm xúc" + chọn giọng ElevenLabs. Chưa mở/lỗi model
+# -> _eleven_tts tự LÙI về _ELEVEN_MODEL_DEFAULT (v2 không hiểu tag -> caller
+# đã _strip_audio_tags trước khi gửi cho v2/edge/gemini).
+_ELEVEN_MODEL_V3 = "eleven_v3"
 # Bảng GIỌNG NỔI TIẾNG (voice_id premade CÔNG KHAI của ElevenLabs) — luôn có
 # kể cả khi GET /voices lỗi/chưa gọi. Adam ĐẦU danh sách (nam trầm Mỹ, hay kể
 # chuyện). [(voice_id, "Tên — mô tả")].
@@ -889,13 +894,19 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
                       on_msg: Optional[Callable[[str], None]] = None,
                       edge_rate: str = "",
                       model: str = "",
+                      edge_texts: Optional[list[str]] = None,
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua ElevenLabs TTS (KHUÔN _synth_all_gemini).
     CẢ 2 cụm đầu (không rỗng) đều lỗi -> coi như HẾT HẠN MỨC/key hỏng: CHUYỂN
     CẢ TRACK sang edge-tts giọng dự phòng của ngôn ngữ NGAY (tránh nửa clip
     giọng này nửa giọng kia), báo "ElevenLabs hết hạn mức -> dùng giọng dự
     phòng". Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó.
-    ElevenLabs KHÔNG có rate/pitch -> edge_rate CHỈ áp cho đường fallback."""
+    ElevenLabs KHÔNG có rate/pitch -> edge_rate CHỈ áp cho đường fallback.
+    model: model_id ElevenLabs (eleven_v3 khi bật audio tag cảm xúc; lỗi
+    model -> _eleven_tts tự lùi v2). edge_texts: bản text ĐÃ STRIP audio tag
+    dùng cho đường FALLBACK edge-tts (edge KHÔNG hiểu tag -> đọc to
+    "[excited]" nếu dùng texts có tag). None -> dùng chính `texts`."""
+    fb_texts = edge_texts if edge_texts is not None else texts
     ok = [False] * len(texts)
     n_nonempty = sum(1 for t in texts if (t or "").strip())
     head_need = max(1, min(2, n_nonempty))
@@ -917,7 +928,8 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
             if on_msg:
                 on_msg("ElevenLabs hết hạn mức -> dùng giọng dự phòng "
                        f"({fb})...")
-            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done,
+            # edge-tts KHÔNG hiểu audio tag v3 -> dùng bản ĐÃ STRIP (fb_texts)
+            return asyncio.run(_synth_all(fb_texts, fb, paths, on_done=on_done,
                                           rate=edge_rate or "+0%"))
         if on_done:
             on_done(i)
@@ -942,26 +954,38 @@ _DEMO_TEXTS = {
 
 
 def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
-               rate: str = "+0%", pitch: str = "+0Hz") -> bool:
+               rate: str = "+0%", pitch: str = "+0Hz",
+               emotion: bool = False) -> bool:
     """Đọc thử 1 câu ngắn bằng giọng `voice` -> file mp3. Câu mẫu tự chọn
     theo ngôn ngữ của giọng (vi-VN-... -> câu tiếng Việt). True nếu ra file
     hợp lệ; False nếu lỗi (mạng, giọng sai...).
     rate: tốc độ edge-tts (nghe thử nhịp kể recap); pitch: tông giọng
     edge-tts ('-18Hz'/'+0Hz'/'+18Hz' — Tông giọng recap). Gemini bỏ qua
-    cả rate lẫn pitch (không hỗ trợ)."""
+    cả rate lẫn pitch (không hỗ trợ).
+    emotion: BẬT + giọng ElevenLabs -> chèn 1-2 audio tag DEMO ([excited]/
+    [whispers]) + model eleven_v3 để nghe KHÁC BIỆT cảm xúc; giọng khác bỏ
+    qua (tag chỉ v3 hiểu)."""
     voice = (voice or "").strip()
     if not voice:
         return False
     if voice.startswith("el:"):         # ElevenLabs: đa ngữ -> câu mẫu Việt
         txt = (text or "").strip() or _DEMO_TEXTS["vi"]
+        model = ""
+        if emotion:                     # chèn 1-2 tag DEMO + model v3
+            from app.ai.recap import _strip_audio_tags
+            base = _strip_audio_tags(txt)   # bỏ tag cũ nếu có, tránh lồng
+            txt = f"[whispers]{base} [excited]KHÔNG thể tin nổi!"
+            model = _ELEVEN_MODEL_V3
         try:
-            if _eleven_tts(txt, voice, str(out_mp3)):
+            if _eleven_tts(txt, voice, str(out_mp3), model=model):
                 return True
         except Exception:  # noqa: BLE001
             pass
-        # lỗi/hết hạn mức -> fallback edge giọng đa ngữ (nghe thử vẫn ra)
+        # lỗi/hết hạn mức -> fallback edge giọng đa ngữ (STRIP tag: edge
+        # không hiểu; nghe thử vẫn ra, chỉ mất cảm xúc v3)
+        from app.ai.recap import _strip_audio_tags
         return synth_demo("en-US-AndrewMultilingualNeural", out_mp3,
-                          text=txt, rate=rate, pitch=pitch)
+                          text=_strip_audio_tags(txt), rate=rate, pitch=pitch)
     if voice.startswith("gemini:"):     # giọng Gemini: đa ngữ -> câu mẫu Việt
         txt = (text or "").strip() or _DEMO_TEXTS["vi"]
         try:
@@ -1498,6 +1522,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                       on_progress: Optional[Callable[[float, str], None]] = None,
                       pace: str = "normal", pitch: str = "normal",
                       src_path: str = "", volume: float = 1.0,
+                      emotion: bool = False,
                       ) -> tuple[str, list[dict]]:
     """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
 
@@ -1573,12 +1598,23 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         b = _map_to_output(float(p["end"]), clip_segments)
         if a is None or b is None or b - a < 0.8:
             continue
+        # RAW = lời narrate GỐC (có thể chứa audio tag [excited]/CAPS khi AI
+        # đạo diễn chèn cảm xúc). _raw để gửi TTS ElevenLabs v3; "text" = bản
+        # SẠCH (bỏ tag + hạ CAPS) dùng cho PHỤ ĐỀ + word timing.
+        from app.ai.recap import _strip_audio_tags
+        raw = str(p["text"]).strip()
         narr.append({"start": round(a, 3), "end": round(b, 3),
-                     "text": str(p["text"]).strip()})
+                     "text": _strip_audio_tags(raw), "_raw": raw})
     if not narr:
         raise RuntimeError("Kịch bản không có part thuyết minh hợp lệ.")
 
-    texts = [n["text"] for n in narr]
+    # AUDIO TAG CẢM XÚC (ElevenLabs v3): CHỈ khi user BẬT emotion + giọng el:
+    # thì gửi bản CÓ tag cho v3 đọc; mọi đường khác (v2/edge/Gemini/tắt
+    # emotion) nhận bản ĐÃ STRIP (edge/gemini không hiểu tag -> đọc to
+    # "[excited]" nếu không strip). Phụ đề LUÔN dùng n["text"] đã strip.
+    _use_v3 = bool(emotion and voice.startswith("el:"))
+    # texts = ĐẦU VÀO TTS: có tag nếu el v3 + emotion, ngược lại sạch.
+    texts = [(n["_raw"] if _use_v3 else n["text"]) for n in narr]
     rate = recap_pace_rate(pace)
     pitch_hz = recap_pitch_hz(pitch)    # tông giọng (chỉ đường edge-tts)
     with tempfile.TemporaryDirectory(prefix="recap_") as td:
@@ -1597,11 +1633,19 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # ElevenLabs không có rate/pitch -> bỏ qua (fit window atempo tự
             # bù). _synth_all_eleven tự đổi cả track sang edge-tts khi hết hạn
             # mức (đường đó cũng không thu words -> phụ đề vẫn câu-cụm).
-            prog(0.05, f"Thu giọng {len(narr)} đoạn (ElevenLabs TTS)...")
+            # emotion BẬT -> model eleven_v3 (đọc audio tag [excited]/CAPS);
+            # tắt -> multilingual_v2 mặc định (texts đã STRIP). v3 lỗi/chưa mở
+            # -> _eleven_tts tự lùi v2 (khi đó tag còn trong text nhưng v2 chỉ
+            # đọc phần lời, tag lọt ít — chấp nhận vì hiếm; sub vẫn sạch).
+            el_model = _ELEVEN_MODEL_V3 if _use_v3 else ""
+            _emo = " + cảm xúc v3" if _use_v3 else ""
+            prog(0.05, f"Thu giọng {len(narr)} đoạn (ElevenLabs TTS{_emo})...")
             ok = _synth_all_eleven(texts, voice, mp3s, norm_lang(lang),
                                    on_done=_tts_done,
                                    on_msg=lambda m: prog(0.06, m),
-                                   edge_rate=rate)
+                                   edge_rate=rate, model=el_model,
+                                   # đường fallback edge nhận bản ĐÃ strip tag
+                                   edge_texts=[n["text"] for n in narr])
         elif voice.startswith("gemini:"):
             # Gemini TTS KHÔNG trả word boundary -> word_lists rỗng, phụ đề
             # narrate fallback chia theo ký tự (m1._recap_caption_cues).
@@ -1809,6 +1853,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 pass                      # best-effort — track đã auto-match
 
     prog(1.0, "Xong thuyết minh")
+    for _n in kept:                     # _raw chỉ dùng nội bộ (TTS v3) -> bỏ
+        _n.pop("_raw", None)
     return str(out_wav), kept
 
 
