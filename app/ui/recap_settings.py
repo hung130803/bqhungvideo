@@ -111,6 +111,14 @@ class RecapSettingsDialog(QDialog):
         vrow.addWidget(self.prev_btn)
         lay.addLayout(vrow)
 
+        # Dòng credit ElevenLabs — CHỈ hiện khi đang chọn giọng el: (nạp
+        # NỀN khi mở dialog/đổi giọng, dubbing cache quota 5 phút).
+        self.el_credit = QLabel("")
+        self.el_credit.setStyleSheet("color: #8a8f98; font-size: 11px;")
+        self.el_credit.setVisible(False)
+        lay.addWidget(self.el_credit)
+        self.voice.currentIndexChanged.connect(self._update_el_credit)
+
         # ---- Tìm giọng + hiện toàn bộ kho (~500 giọng) ----
         self._voices: list = []          # list thô của chế độ đang chọn
         srow = QHBoxLayout()
@@ -274,6 +282,7 @@ class RecapSettingsDialog(QDialog):
 
         self._load()
         self._fill_voices_bg()
+        self._update_el_credit()
 
     # ------------------------------------------------------------------
     # Nạp / lưu QSettings
@@ -336,6 +345,50 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue("recap_win_min", wmin)
         self._s.setValue("recap_win_max", max(wmin, wmax))  # ép Min<=Max
         self.accept()
+
+    def _update_el_credit(self, _i: int = 0) -> None:
+        """Đang chọn giọng 🎧 el: -> hiện '🎧 ElevenLabs: còn ~N ký tự'
+        (tổng các key, dubbing.eleven_quota cache 5 phút — nạp ở THREAD
+        NỀN, không khựng dialog). Giọng khác -> ẩn dòng."""
+        vid = str(self.voice.currentData() or "")
+        if not vid.startswith("el:"):
+            self.el_credit.setVisible(False)
+            return
+        self.el_credit.setVisible(True)
+        self.el_credit.setText("🎧 ElevenLabs: đang kiểm tra credit...")
+        out: list = []
+
+        def bg():
+            try:
+                from app.core.dubbing import eleven_credit_remain
+                out.append(eleven_credit_remain())
+            except Exception:  # noqa: BLE001 — offline/lỗi -> hiện không rõ
+                out.append(None)
+
+        threading.Thread(target=bg, daemon=True).start()
+        timer = QTimer(self)
+
+        def poll():
+            if not out:
+                return
+            timer.stop()
+            timer.deleteLater()
+            cur = str(self.voice.currentData() or "")
+            if not cur.startswith("el:"):    # user đã đổi giọng trong lúc chờ
+                self.el_credit.setVisible(False)
+                return
+            r = out[0]
+            if r is None:
+                self.el_credit.setText(
+                    "🎧 ElevenLabs: không kiểm tra được credit (mạng/key — "
+                    "xem nút 'Kiểm tra credit' trong Cài đặt AI)")
+            else:
+                self.el_credit.setText(
+                    "🎧 ElevenLabs: còn ~{} ký tự (tổng các key)".format(
+                        f"{int(r):,}".replace(",", ".")))
+
+        timer.timeout.connect(poll)
+        timer.start(200)
 
     def _win_min_changed(self, v: int) -> None:
         """Kéo Min vượt Max -> Max nhích theo (giữ Min <= Max)."""
@@ -462,6 +515,10 @@ class RecapSettingsDialog(QDialog):
             self.count_lbl.setText(f"Khớp {m}/{n} giọng")
         else:
             self.count_lbl.setText(f"Đang có {n} giọng")
+        # combo rebuild với blockSignals -> currentIndexChanged không bắn;
+        # tự cập nhật dòng credit ElevenLabs theo giọng đang chọn.
+        if hasattr(self, "el_credit"):
+            self._update_el_credit()
 
     # ------------------------------------------------------------------
     # 🔊 Nghe thử (pattern editor._dub_preview — winsound, thread nền)

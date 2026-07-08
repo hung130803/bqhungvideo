@@ -577,6 +577,60 @@ class StudioPage(QWidget):
             "đó); tốc độ vẫn khớp khung tự động.")
         elkeys.setFixedHeight(50); lay.addWidget(elkeys)
 
+        # Nút "Kiểm tra" credit ElevenLabs: gọi GET /user/subscription cho
+        # TỪNG key ở THREAD NỀN -> hiện "Key …abc: còn 8.230/10.000 ký tự
+        # (free, reset 15/07)"; key lỗi hiện "SAI KEY"/lý do nguyên văn.
+        elrow = QHBoxLayout()
+        elbtn = QPushButton("Kiểm tra credit ElevenLabs")
+        elbtn.setProperty("ghost", True)
+        elbtn.setToolTip("Xem từng key còn bao nhiêu ký tự TTS (gói, ngày "
+                         "reset). Key sai/bị chặn sẽ báo rõ lý do.")
+        elrow.addWidget(elbtn); elrow.addStretch(1)
+        lay.addLayout(elrow)
+        elstat = QLabel("")
+        elstat.setObjectName("eleven_credit_label")
+        elstat.setWordWrap(True)
+        elstat.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        elstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        lay.addWidget(elstat)
+
+        def check_eleven():
+            keys = [k.strip() for k in elkeys.toPlainText()
+                    .replace(",", "\n").splitlines() if k.strip()]
+            if not keys:
+                elstat.setText("Chưa nhập key ElevenLabs — dán key ở ô trên "
+                               "rồi bấm lại.")
+                return
+            elbtn.setEnabled(False)
+            elstat.setText(f"Đang kiểm tra credit {len(keys)} key...")
+            res: list = []
+
+            def bg():
+                from app.core import dubbing
+                lines = []
+                for k in keys:
+                    try:
+                        lines.append(dubbing.eleven_key_status_line(k))
+                    except Exception as e:  # noqa: BLE001 — không sập dialog
+                        lines.append(f"⚠️ Key …{k[-6:]}: lỗi {e}")
+                res.append("\n".join(lines))
+
+            threading.Thread(target=bg, daemon=True).start()
+            eltimer = QTimer(dlg)
+
+            def poll():
+                if not res:
+                    return
+                eltimer.stop()
+                elbtn.setEnabled(True)
+                elstat.setText(res[0])
+
+            eltimer.timeout.connect(poll)
+            eltimer.start(200)
+
+        elbtn.clicked.connect(check_eleven)
+
         # ----- Trạng thái key (thời gian thực) — chỉ đọc SỔ trong RAM, -----
         # ----- KHÔNG gọi mạng; QTimer 2s cập nhật, dừng khi đóng dialog. -----
         lay.addWidget(QLabel("Trạng thái key (thời gian thực):"))

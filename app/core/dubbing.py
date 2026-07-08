@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -694,6 +696,15 @@ def _gemini_tts(text: str, voice: str, out_path: str | Path,
     if not text or not name:
         return False
     out_path = str(out_path)
+    # TTS CACHE (tiết kiệm hạn mức): cùng giọng+text đã synth trước đó ->
+    # dùng lại, không gọi API (cache dùng chung với ElevenLabs, xem tts_cache_*)
+    cached = tts_cache_get(f"gemini:{name}", _GEMINI_TTS_MODEL, text)
+    if cached:
+        try:
+            shutil.copyfile(cached, out_path)
+            return True
+        except OSError:
+            pass
     wait = 5.0                          # chờ mặc định khi 429 không kèm delay
     for attempt in range(retries + 1):
         keys = llm.pick_keys("gemini")
@@ -705,6 +716,8 @@ def _gemini_tts(text: str, voice: str, out_path: str | Path,
             try:
                 _gemini_tts_once(text, name, key, out_path)
                 llm.mark_ok("gemini", key)
+                tts_cache_put(f"gemini:{name}", _GEMINI_TTS_MODEL, text,
+                              out_path)
                 return True
             except Exception as e:  # noqa: BLE001
                 msg = str(e)
@@ -825,12 +838,80 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
 # ------------------------------------------------------------------
 # ElevenLabs TTS (REST thuần — urllib stdlib, không thêm dependency)
 # ------------------------------------------------------------------
+_ELEVEN_API = "https://api.elevenlabs.io/v1"
+
+
+class ElevenError(RuntimeError):
+    """Lỗi ElevenLabs ĐÃ PHÂN LOẠI theo detail.status trong body JSON của
+    API ({"detail": {"status": "...", "message": "..."}}). str(e) = NGUYÊN
+    VĂN detail.message (user thấy đúng lý do thật, không đoán mò).
+
+    kind:
+      quota           — hết credit THẬT (quota_exceeded) -> mark_limited
+      invalid_key     — key sai/bị chặn (invalid_api_key/401/
+                        detected_unusual_activity) -> mark_invalid
+      model_denied    — GÓI không có quyền model (model_access_denied /
+                        model_not_found — free/starter chưa chắc có
+                        eleven_v3!) -> KHÔNG phải hết credit, lùi v2
+      voice_not_found — voice id sai/không có trên account -> báo rõ
+      rate_limit      — 429 tạm thời (too_many_concurrent_requests) ->
+                        đợi ngắn retry, KHÔNG mark_limited vĩnh viễn
+      network / other — lỗi mạng / lỗi khác
+    """
+
+    def __init__(self, kind: str, message: str, http: int = 0):
+        super().__init__(message)
+        self.kind = kind
+        self.http = int(http or 0)
+
+
+def _classify_eleven_http(code: int, body: str) -> ElevenError:
+    """Phân loại HTTPError của ElevenLabs từ (mã HTTP, body JSON) ->
+    ElevenError đúng kind. QUAN TRỌNG: quota_exceeded của ElevenLabs trả về
+    HTTP 401 — phải đọc detail.status TRƯỚC, mã HTTP chỉ là fallback
+    (trước đây gộp mọi lỗi làm 'hết hạn mức' -> user 'còn credit mà báo
+    hết'). Hàm thuần — unit test được."""
+    status, message = "", ""
+    try:
+        det = json.loads(body or "{}").get("detail")
+        if isinstance(det, dict):
+            status = str(det.get("status") or "").strip().lower()
+            message = str(det.get("message") or "").strip()
+        elif isinstance(det, str):
+            message = det.strip()
+    except (ValueError, AttributeError, TypeError):
+        pass
+    if not message:
+        message = (body or "").strip()[:300] or f"HTTP {code}"
+    low = f"{status} {message}".lower()
+    if status == "quota_exceeded" or "quota_exceeded" in low:
+        kind = "quota"
+    elif (status in ("model_access_denied", "model_not_found")
+          or "model_access_denied" in low or "model_not_found" in low
+          or (code in (400, 422) and "model" in low)):
+        kind = "model_denied"
+    elif status == "voice_not_found" or "voice_not_found" in low:
+        kind = "voice_not_found"
+    elif (code == 429 or status in ("too_many_concurrent_requests",
+                                    "system_busy")
+          or "too many" in low or "too_many" in low):
+        kind = "rate_limit"
+    elif (status in ("invalid_api_key", "needs_authorization",
+                     "detected_unusual_activity")
+          or code in (401, 403) or "invalid api key" in low
+          or "unauthorized" in low):
+        kind = "invalid_key"
+    else:
+        kind = "other"
+    return ElevenError(kind, message, http=code)
+
+
 def _eleven_tts_once(text: str, voice_id: str, model: str, key: str,
                      out_path: str) -> None:
     """1 lần gọi ElevenLabs TTS -> ghi BYTES mp3 thẳng ra out_path. Ném
-    RuntimeError kèm mã HTTP/body nếu lỗi (401/429 -> is_auth/is_rate bắt được).
+    ElevenError ĐÃ PHÂN LOẠI (kind + detail.message nguyên văn) nếu lỗi.
     API trả mp3 nhị phân trực tiếp (KHÔNG JSON base64)."""
-    url = (f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    url = (f"{_ELEVEN_API}/text-to-speech/{voice_id}"
            "?output_format=mp3_44100_128")
     body = {
         "text": text,
@@ -851,66 +932,298 @@ def _eleven_tts_once(text: str, voice_id: str, model: str, key: str,
             detail = e.read().decode("utf-8", "replace")[:800]
         except OSError:
             detail = ""
-        # mã HTTP trong message -> is_rate_limit_error/is_auth_error bắt được
-        raise RuntimeError(f"ElevenLabs HTTP {e.code}: {detail}") from None
+        raise _classify_eleven_http(e.code, detail) from None
     except urllib.error.URLError as e:
-        raise RuntimeError(f"ElevenLabs lỗi mạng: {e}") from None
+        raise ElevenError("network", f"ElevenLabs lỗi mạng: {e}") from None
     if not audio or len(audio) < 500:      # mp3 rỗng/hỏng
-        raise RuntimeError("ElevenLabs trả audio rỗng/quá ngắn")
+        raise ElevenError("other", "ElevenLabs trả audio rỗng/quá ngắn")
     with open(out_path, "wb") as f:
         f.write(audio)
 
 
+# ---- KIỂM TRA CREDIT (GET /v1/user/subscription) + cache 5 phút ----
+_ELEVEN_QUOTA_CACHE: dict[str, tuple[float, dict]] = {}   # key -> (ts, quota)
+_ELEVEN_QUOTA_TTL = 300.0                                 # 5 phút
+
+
+def _eleven_quota_fetch(key: str, timeout: float = 20.0) -> dict:
+    """Gọi TƯƠI GET /user/subscription -> dict quota. Ném ElevenError
+    (kind invalid_key/network/...) nếu lỗi — caller UI hiện đúng lý do."""
+    req = urllib.request.Request(f"{_ELEVEN_API}/user/subscription",
+                                 headers={"xi-api-key": key}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:800]
+        except OSError:
+            detail = ""
+        raise _classify_eleven_http(e.code, detail) from None
+    except Exception as e:  # noqa: BLE001 — mạng/parse
+        raise ElevenError("network", f"lỗi mạng: {e}") from None
+    try:
+        used = int(data.get("character_count") or 0)
+        limit = int(data.get("character_limit") or 0)
+    except (TypeError, ValueError):
+        raise ElevenError("other", "subscription trả dữ liệu lạ") from None
+    q = {"used": used, "limit": limit, "remain": max(0, limit - used),
+         "tier": str(data.get("tier") or ""),
+         "reset_ts": float(data.get("next_character_count_reset_unix")
+                           or 0)}
+    _ELEVEN_QUOTA_CACHE[key] = (time.time(), q)
+    return q
+
+
+def eleven_quota(key: str, use_cache: bool = True) -> Optional[dict]:
+    """Credit ElevenLabs của 1 key -> {"used","limit","remain","tier",
+    "reset_ts"}; LỖI (key sai/mạng) -> None. use_cache: dùng cache RAM 5
+    phút (dialog ⚙/pre-flight gọi lặp không tốn request)."""
+    if use_cache:
+        hit = _ELEVEN_QUOTA_CACHE.get(key)
+        if hit and time.time() - hit[0] < _ELEVEN_QUOTA_TTL:
+            return dict(hit[1])
+    try:
+        return dict(_eleven_quota_fetch(key))
+    except ElevenError:
+        return None
+
+
+def eleven_credit_remain(keys: Optional[list] = None,
+                         use_cache: bool = True) -> Optional[int]:
+    """TỔNG ký tự CÒN LẠI trên tất cả key (bỏ key lỗi). None nếu KHÔNG key
+    nào trả được quota (mạng đứt/mọi key sai) — caller tự quyết pre-flight
+    kiểu cũ."""
+    keys = _eleven_keys() if keys is None else keys
+    total, got = 0, False
+    for k in keys:
+        q = eleven_quota(k, use_cache=use_cache)
+        if q is not None:
+            got = True
+            total += max(0, int(q.get("remain") or 0))
+    return total if got else None
+
+
+def eleven_key_status_line(key: str) -> str:
+    """Dòng trạng thái tiếng Việt cho nút 'Kiểm tra' (Cài đặt AI) — gọi
+    quota TƯƠI. Ví dụ: '🟢 Key …abc123: còn 8.230/10.000 ký tự (free,
+    reset 15/07)'; key lỗi -> 'SAI KEY'/lý do nguyên văn."""
+    masked = f"…{key[-6:]}" if len(key) > 6 else key
+    try:
+        q = _eleven_quota_fetch(key)
+    except ElevenError as e:
+        if e.kind == "invalid_key":
+            return f"🔴 Key {masked}: SAI KEY / bị chặn — {e}"
+        if e.kind == "network":
+            return f"⚠️ Key {masked}: lỗi mạng — {e}"
+        return f"⚠️ Key {masked}: {e.kind} — {e}"
+    reset = ""
+    if q.get("reset_ts"):
+        import datetime
+        try:
+            reset = ", reset " + datetime.datetime.fromtimestamp(
+                q["reset_ts"]).strftime("%d/%m")
+        except (OverflowError, OSError, ValueError):
+            reset = ""
+    tier = q.get("tier") or "?"
+    remain = f"{q['remain']:,}".replace(",", ".")
+    limit = f"{q['limit']:,}".replace(",", ".")
+    icon = "🟢" if q["remain"] > 0 else "⛔"
+    return f"{icon} Key {masked}: còn {remain}/{limit} ký tự ({tier}{reset})"
+
+
+# ---- TTS CACHE (tiết kiệm credit): sha1(voice|model|text) -> mp3 ----
+# Xuất lại cùng clip / chỉnh mẫu / bấm nghe thử nhiều lần -> KHÔNG tốn
+# credit lần 2. Chỉ giọng trả phí (el:/gemini:) đi qua cache — edge free.
+_TTS_CACHE_DIR = DATA_DIR / "_cache" / "tts"
+_TTS_CACHE_MAX_BYTES = 300 * 1024 * 1024      # 300MB — vượt thì xóa cũ nhất
+
+
+def _tts_cache_path(voice_id: str, model: str, text: str) -> Path:
+    h = hashlib.sha1(
+        f"{voice_id}|{model}|{text}".encode("utf-8")).hexdigest()
+    return _TTS_CACHE_DIR / f"{h}.mp3"
+
+
+def tts_cache_get(voice_id: str, model: str, text: str,
+                  touch: bool = True) -> Optional[str]:
+    """Đường dẫn file cache nếu CÓ (và hợp lệ >500B); None nếu chưa.
+    touch=True: cập nhật mtime (LRU — file hay dùng không bị dọn)."""
+    p = _tts_cache_path(voice_id, model, text)
+    try:
+        if p.is_file() and p.stat().st_size > 500:
+            if touch:
+                os.utime(p, None)
+            return str(p)
+    except OSError:
+        pass
+    return None
+
+
+def _tts_cache_evict(max_bytes: int = _TTS_CACHE_MAX_BYTES) -> None:
+    """Tổng cache vượt max_bytes -> xóa file CŨ NHẤT (mtime) tới khi lọt."""
+    try:
+        files = []
+        for f in _TTS_CACHE_DIR.iterdir():
+            try:
+                st = f.stat()
+                if f.is_file():
+                    files.append((st.st_mtime, st.st_size, f))
+            except OSError:
+                continue
+    except OSError:
+        return
+    total = sum(s for _, s, _ in files)
+    if total <= max_bytes:
+        return
+    for _, size, f in sorted(files):          # cũ nhất trước
+        try:
+            f.unlink()
+            total -= size
+        except OSError:
+            pass
+        if total <= max_bytes:
+            break
+
+
+def tts_cache_put(voice_id: str, model: str, text: str,
+                  src_path: str) -> None:
+    """Lưu audio vừa synth vào cache (best-effort — lỗi đĩa thì bỏ qua),
+    rồi dọn bớt nếu vượt 300MB."""
+    p = _tts_cache_path(voice_id, model, text)
+    try:
+        _TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(p) + ".tmp"
+        shutil.copyfile(src_path, tmp)
+        os.replace(tmp, p)
+    except OSError:
+        return
+    _tts_cache_evict()
+
+
+# Model bị API TỪ CHỐI trong phiên chạy (model_access_denied — gói không có
+# quyền, vd free tier chưa mở eleven_v3) -> các request sau dùng thẳng v2,
+# khỏi tốn 1 lượt lỗi mỗi part. KHÔNG lưu đĩa: user nâng gói thì restart là
+# thử lại v3.
+_ELEVEN_DENIED_MODELS: set = set()
+
+
+def _eleven_effective_model(model: str = "") -> str:
+    """Model sẽ THẬT SỰ gửi đi: model yêu cầu, trừ khi đã biết bị gói từ
+    chối trong phiên -> lùi _ELEVEN_MODEL_DEFAULT."""
+    m = (model or _eleven_model()).strip()
+    if m in _ELEVEN_DENIED_MODELS and m != _ELEVEN_MODEL_DEFAULT:
+        return _ELEVEN_MODEL_DEFAULT
+    return m
+
+
 def _eleven_tts(text: str, voice: str, out_path: str | Path,
-                model: str = "", retries: int = 1) -> bool:
+                model: str = "", retries: int = 1,
+                on_msg: Optional[Callable[[str], None]] = None) -> bool:
     """Synth 1 đoạn text bằng ElevenLabs TTS -> file mp3. Trả True nếu OK.
 
     voice: "el:{voice_id}" (hoặc voice_id trần). Key XOAY VÒNG qua sổ trạng
-    thái của llm (provider="elevenlabs") — dùng chung mark_limited/mark_invalid.
-    401 (key sai) -> bỏ key, thử key kế. 429/quota (hết hạn mức free 10k
-    ký tự/tháng) -> mark limited, thử key kế. model="eleven_v3" mà API báo
-    lỗi model -> TỰ LÙI về multilingual_v2 rồi thử lại. Hết key/lỗi -> False
+    thái của llm (provider="elevenlabs") — mỗi REQUEST thử lần lượt key sống
+    (pick_keys); voice premade GIỐNG NHAU giữa các account nên đổi key giữa
+    track vẫn CÙNG GIỌNG. Phân loại lỗi theo ElevenError.kind:
+      quota           -> mark_limited (kèm reset time nếu biết) + key kế NGAY
+      invalid_key     -> mark_invalid + key kế
+      model_denied    -> LÙI multilingual_v2 thử lại CÙNG key (gói không có
+                         quyền model — KHÔNG phải hết credit, KHÔNG rơi edge)
+      voice_not_found -> báo rõ, thử key kế (voice account khác nhau)
+      rate_limit      -> đợi ngắn (retry-after, trần 15s) retry CÙNG key,
+                         KHÔNG mark_limited vĩnh viễn
+    on_msg: nhận message lỗi NGUYÊN VĂN (detail.message) cho progress/log.
+    CACHE: sha1(voice|model|text) có sẵn -> dùng lại, KHÔNG gọi API (xuất
+    lại clip/nghe thử lặp không tốn credit). Hết key/lỗi hết -> False
     (caller tự fallback edge-tts)."""
     from app.ai import llm
+
+    def note(m: str) -> None:
+        if on_msg:
+            on_msg(m)
+
     vid = voice.split(":", 1)[1] if voice.startswith("el:") else voice
     text = (text or "").strip()
     if not text or not vid:
         return False
     out_path = str(out_path)
-    model = (model or _eleven_model()).strip()
+    model = _eleven_effective_model(model)
+    cached = tts_cache_get(vid, model, text)
+    if cached:
+        try:
+            shutil.copyfile(cached, out_path)
+            return True
+        except OSError:
+            pass                          # cache hỏng -> synth bình thường
     for _attempt in range(retries + 1):
         keys = llm.pick_keys("elevenlabs", _eleven_keys())
         if not keys:
             return False
-        cur_model = model
         for key in keys:
-            llm.mark_used("elevenlabs", key)
-            try:
-                _eleven_tts_once(text, vid, cur_model, key, out_path)
-                llm.mark_ok("elevenlabs", key)
-                return True
-            except Exception as e:  # noqa: BLE001
-                msg = str(e)
-                # v3 alpha có thể chưa mở cho key -> LÙI multilingual_v2 &
-                # thử LẠI cùng key (không tính là lỗi key).
-                if (cur_model != _ELEVEN_MODEL_DEFAULT
-                        and ("model" in msg.lower()
-                             or "not found" in msg.lower()
-                             or "422" in msg)):
-                    cur_model = _ELEVEN_MODEL_DEFAULT
-                    try:
-                        _eleven_tts_once(text, vid, cur_model, key, out_path)
-                        llm.mark_ok("elevenlabs", key)
-                        return True
-                    except Exception as e2:  # noqa: BLE001
-                        msg = str(e2)
-                if llm.is_rate_limit_error(msg):
-                    llm.mark_limited("elevenlabs", key, msg)
-                    continue            # hết hạn mức -> thử key kế
-                if llm.is_auth_error(msg):
-                    llm.mark_invalid("elevenlabs", key)
-                    continue            # key sai -> thử key kế
-                # lỗi khác (mạng/parse) -> thử key kế trong vòng
+            cur_model = _eleven_effective_model(model)
+            tries = 3                     # mỗi key: lùi model / retry 429
+            while tries > 0:
+                tries -= 1
+                llm.mark_used("elevenlabs", key)
+                try:
+                    _eleven_tts_once(text, vid, cur_model, key, out_path)
+                    llm.mark_ok("elevenlabs", key)
+                    tts_cache_put(vid, cur_model, text, out_path)
+                    return True
+                except ElevenError as e:
+                    if (e.kind == "model_denied"
+                            and cur_model != _ELEVEN_MODEL_DEFAULT):
+                        # GÓI không có quyền model (vd free chưa mở v3) —
+                        # KHÔNG phải hết credit -> lùi v2, TIẾP TỤC ElevenLabs
+                        _ELEVEN_DENIED_MODELS.add(cur_model)
+                        note(f"ElevenLabs: gói chưa có quyền model "
+                             f"{cur_model} (KHÔNG phải hết credit) -> dùng "
+                             f"{_ELEVEN_MODEL_DEFAULT}. Chi tiết: {e}")
+                        cur_model = _ELEVEN_MODEL_DEFAULT
+                        c2 = tts_cache_get(vid, cur_model, text)
+                        if c2:
+                            try:
+                                shutil.copyfile(c2, out_path)
+                                return True
+                            except OSError:
+                                pass
+                        continue          # thử lại CÙNG key với v2
+                    if e.kind == "quota":
+                        # HẾT CREDIT THẬT key này -> nghỉ tới kỳ reset (nếu
+                        # biết từ quota cache) rồi chuyển key kế NGAY —
+                        # track đang chạy TIẾP TỤC, không rơi edge.
+                        msg = str(e)
+                        hit = _ELEVEN_QUOTA_CACHE.get(key)
+                        if hit and hit[1].get("reset_ts"):
+                            w = hit[1]["reset_ts"] - time.time()
+                            if w > 0:
+                                msg += f" retry-after: {int(w)}"
+                        llm.mark_limited("elevenlabs", key, msg)
+                        note(f"ElevenLabs key …{key[-4:]} HẾT CREDIT: {e} "
+                             "-> chuyển key kế")
+                        break             # key kế
+                    if e.kind == "invalid_key":
+                        llm.mark_invalid("elevenlabs", key)
+                        note(f"ElevenLabs key …{key[-4:]} SAI/bị chặn: {e} "
+                             "-> thử key kế")
+                        break             # key kế
+                    if e.kind == "voice_not_found":
+                        note(f"ElevenLabs: KHÔNG có giọng '{vid}' trên "
+                             f"account key …{key[-4:]}: {e} — kiểm tra lại "
+                             "voice id / chọn giọng khác")
+                        break             # account khác có thể có -> key kế
+                    if e.kind == "rate_limit":
+                        w = llm.parse_retry_wait(str(e)) or 2.0
+                        note(f"ElevenLabs bận (429 tạm thời) — đợi "
+                             f"{w:.0f}s rồi thử lại: {e}")
+                        time.sleep(min(float(w), 15.0))
+                        continue          # retry CÙNG key, KHÔNG mark
+                    note(f"ElevenLabs lỗi ({e.kind}): {e}")
+                    break                 # network/other -> key kế
+                except Exception as e:  # noqa: BLE001 — lỗi lạ (đĩa/parse)
+                    note(f"ElevenLabs lỗi không phân loại: {e}")
+                    break
         if _attempt < retries:
             time.sleep(1.5)
     return False
@@ -925,22 +1238,34 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
                       edge_texts: Optional[list[str]] = None,
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua ElevenLabs TTS (KHUÔN _synth_all_gemini).
-    CẢ 2 cụm đầu (không rỗng) đều lỗi -> coi như HẾT HẠN MỨC/key hỏng: CHUYỂN
-    CẢ TRACK sang edge-tts giọng dự phòng của ngôn ngữ NGAY (tránh nửa clip
-    giọng này nửa giọng kia), báo "ElevenLabs hết hạn mức -> dùng giọng dự
-    phòng". Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó.
+    _eleven_tts tự XOAY KEY từng request (key hết credit -> key kế NGAY,
+    voice premade giống nhau giữa account nên CÙNG GIỌNG, track chạy tiếp
+    không gián đoạn) + tự lùi v2 khi gói không có quyền model. CHỈ khi
+    TẤT CẢ key đều hết/chết (part nào đó False) -> all-or-nothing fallback
+    edge, kèm LÝ DO THẬT (message cuối từ _eleven_tts) trong progress.
     ElevenLabs KHÔNG có rate/pitch -> edge_rate CHỈ áp cho đường fallback.
-    model: model_id ElevenLabs (eleven_v3 khi bật audio tag cảm xúc; lỗi
-    model -> _eleven_tts tự lùi v2). edge_texts: bản text ĐÃ STRIP audio tag
-    dùng cho đường FALLBACK edge-tts (edge KHÔNG hiểu tag -> đọc to
-    "[excited]" nếu dùng texts có tag). None -> dùng chính `texts`.
+    model: model_id ElevenLabs (eleven_v3 khi bật audio tag cảm xúc; gói
+    không có quyền -> _eleven_tts tự lùi v2, KHÔNG rơi edge). edge_texts:
+    bản text ĐÃ STRIP audio tag dùng cho đường FALLBACK edge-tts (edge
+    KHÔNG hiểu tag -> đọc to "[excited]" nếu dùng texts có tag). None ->
+    dùng chính `texts`.
 
-    GIỌNG NHẤT QUÁN TOÀN CLIP (all-or-nothing) — sửa lỗi 'mỗi part một giọng':
-    - PRE-FLIGHT: thử cụm NGẮN NHẤT trước; lỗi -> edge NGAY từ đầu (đỡ phí
-      quota 10k ký tự/tháng + đảm bảo mọi part CÙNG 1 giọng).
-    - BẤT KỲ cụm nào (kể cả part 3-4 khi quota cạn GIỮA CHỪNG) lỗi -> HỦY cả
-      track ElevenLabs, re-synth TẤT CẢ bằng edge (KHÔNG trộn 2 nguồn)."""
+    PRE-FLIGHT bằng CREDIT CHECK (đỡ phí credit nửa chừng):
+    - TÍNH TỔNG KÝ TỰ track sắp gửi (bỏ cụm đã có CACHE) -> so tổng remain
+      của các key (eleven_quota, cache 5 phút). Không đủ -> quyết fallback
+      edge NGAY TỪ ĐẦU (đồng nhất giọng + không phí credit).
+    - API quota lỗi (mạng/không đọc được) -> giữ pre-flight SYNTH cụm ngắn
+      nhất như cũ.
+    GIỌNG NHẤT QUÁN TOÀN CLIP (all-or-nothing): BẤT KỲ cụm nào lỗi (mọi key
+    chết giữa chừng) -> HỦY cả track ElevenLabs, re-synth TẤT CẢ bằng edge
+    (KHÔNG trộn 2 nguồn)."""
     fb_texts = edge_texts if edge_texts is not None else texts
+    last_err = {"msg": ""}                 # lý do lỗi CUỐI (hiện nguyên văn)
+
+    def _note(m: str) -> None:
+        last_err["msg"] = m
+        if on_msg:
+            on_msg(m)
 
     def _fallback_edge(reason: str) -> list[bool]:
         fb = _edge_fallback_voice(lang)
@@ -952,25 +1277,45 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
                                       rate=edge_rate or "+0%"))
 
     ok = [False] * len(texts)
-    # ---- PRE-FLIGHT cụm NGẮN NHẤT ----
     pf = _shortest_nonempty_index(texts)
     if pf < 0:
         for i in range(len(texts)):
             if on_done:
                 on_done(i)
         return ok
-    if not _eleven_tts(texts[pf].strip(), voice, paths[pf], model=model):
-        return _fallback_edge("hết hạn mức (pre-flight)")
-    ok[pf] = True
-    # ---- các cụm còn lại; BẤT KỲ cụm nào lỗi -> hủy cả track ----
+    # ---- PRE-FLIGHT: so TỔNG KÝ TỰ cần gửi với credit còn lại ----
+    vid = voice.split(":", 1)[1] if voice.startswith("el:") else voice
+    model_eff = _eleven_effective_model(model)
+    need = sum(len(t.strip()) for t in texts
+               if (t or "").strip()
+               and not tts_cache_get(vid, model_eff, t.strip(), touch=False))
+    if need > 0:
+        remain = eleven_credit_remain()
+        if remain is not None:
+            if need > remain:
+                return _fallback_edge(
+                    f"KHÔNG đủ credit cho cả track (cần ~{need} ký tự, các "
+                    f"key còn tổng ~{remain})")
+            if on_msg:
+                on_msg(f"🎧 ElevenLabs: còn ~{remain} ký tự, track cần "
+                       f"~{need} -> đủ, bắt đầu thu giọng...")
+        else:
+            # quota API lỗi -> pre-flight SYNTH cụm ngắn nhất như cũ
+            if not _eleven_tts(texts[pf].strip(), voice, paths[pf],
+                               model=model, on_msg=_note):
+                why = last_err["msg"] or "lỗi pre-flight (mọi key đều lỗi)"
+                return _fallback_edge(f"lỗi ngay từ đầu — {why}")
+            ok[pf] = True
+    # ---- synth từng cụm; BẤT KỲ cụm nào lỗi (mọi key chết) -> hủy track ----
     for i, t in enumerate(texts):
         txt = (t or "").strip()
-        if not txt or i == pf:
+        if not txt or ok[i]:               # cụm rỗng / đã làm ở pre-flight
             if on_done:
                 on_done(i)
             continue
-        if not _eleven_tts(txt, voice, paths[i], model=model):
-            return _fallback_edge("hết hạn mức giữa chừng")
+        if not _eleven_tts(txt, voice, paths[i], model=model, on_msg=_note):
+            why = last_err["msg"] or "mọi key đều hết credit/chết"
+            return _fallback_edge(f"lỗi giữa chừng — {why}")
         ok[i] = True
         if on_done:
             on_done(i)
