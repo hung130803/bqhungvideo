@@ -1317,11 +1317,17 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             dw = str(cdir / f"_dub_{clip_id}.wav")
             temps.append(dw)          # dọn khi job kết thúc (kể cả lỗi/hủy)
             ctx.progress(0.05, f"{pfx}đang thu giọng thuyết minh AI...")
+            try:                      # "Âm lượng giọng kể" (⚙ Cài đặt Reup)
+                _rvol = float(payload.get("recap_volume", 1.15) or 1.15)
+            except (TypeError, ValueError):
+                _rvol = 1.15
             dub_path, narr_events = dubbing.build_recap_track(
                 recap_parts, segs,
                 payload.get("recap_voice") or payload.get("dub_voice") or "",
                 lang, dw,
                 pace=payload.get("recap_pace") or "normal",
+                # src: đo loudness tiếng gốc -> auto-match âm lượng giọng kể
+                src_path=src, volume=_rvol,
                 on_progress=lambda p, m="": ctx.progress(
                     0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
             # Khoảng tắt tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed

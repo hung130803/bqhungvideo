@@ -2159,6 +2159,16 @@ class StudioPage(QWidget):
             self.status.setText("Đã lưu cài đặt Reup thuyết minh (áp dụng "
                                 "cho mọi kênh).")
 
+    def _recap_volume(self) -> float:
+        """Hệ số 'Âm lượng giọng kể' từ ⚙ Cài đặt Reup (QSettings
+        recap_volume 80-200%, mặc định 115) -> 0.8-2.0 cho build_recap_track
+        (nhân THÊM sau auto-match loudness với tiếng gốc)."""
+        try:
+            v = int(self._settings.value("recap_volume", 115))
+        except (TypeError, ValueError):
+            v = 115
+        return min(200, max(80, v)) / 100.0
+
     def _auto_recap(self):
         """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
         if not self.state.video_id:
@@ -2173,6 +2183,11 @@ class StudioPage(QWidget):
             preset["recap_ratio"] = int(self._settings.value("recap_ratio", 55))
         except (TypeError, ValueError):
             preset["recap_ratio"] = 55
+        try:                            # số clip thuyết minh (1-3) từ ⚙
+            preset["recap_count"] = min(3, max(1, int(
+                self._settings.value("recap_count", 2))))
+        except (TypeError, ValueError):
+            preset["recap_count"] = 2
         services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                     self.state.project_id, preset)
         self.status.setText(
@@ -2996,6 +3011,7 @@ class StudioPage(QWidget):
                 recap_voice=str(self._settings.value("recap_voice", "") or ""),
                 recap_pace=str(self._settings.value("recap_pace", "normal")
                                or "normal"),
+                recap_volume=self._recap_volume(),
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 fx_sfx_dir=self._pick_sfx_dir(),

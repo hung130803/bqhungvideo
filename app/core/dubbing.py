@@ -299,28 +299,127 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
     return gem + (edge or static)
 
 
+# Bảng locale/mã ngôn ngữ -> (cờ, tên tiếng Việt) cho danh sách giọng KỂ
+# recap (user không biết "en-US-Andrew" là tiếng gì -> nhóm + nhãn Việt).
+# Ưu tiên khớp FULL locale ("en-US") rồi mới tới mã ngôn ngữ ("en");
+# không có trong bảng -> hiện mã locale thô.
+_LOCALE_VI: dict[str, tuple[str, str]] = {
+    "vi": ("🇻🇳", "Tiếng Việt"),
+    "en-US": ("🇺🇸", "Tiếng Anh (Mỹ)"),
+    "en-GB": ("🇬🇧", "Tiếng Anh (Anh)"),
+    "en-AU": ("🇦🇺", "Tiếng Anh (Úc)"),
+    "en-IN": ("🇮🇳", "Tiếng Anh (Ấn Độ)"),
+    "en": ("🌍", "Tiếng Anh (vùng khác)"),
+    "ja": ("🇯🇵", "Tiếng Nhật"),
+    "ko": ("🇰🇷", "Tiếng Hàn"),
+    "zh-CN": ("🇨🇳", "Tiếng Trung"),
+    "zh-TW": ("🇹🇼", "Tiếng Trung (Đài Loan)"),
+    "zh-HK": ("🇭🇰", "Tiếng Quảng Đông (Hồng Kông)"),
+    "zh": ("🇨🇳", "Tiếng Trung"),
+    "th": ("🇹🇭", "Tiếng Thái"),
+    "id": ("🇮🇩", "Tiếng Indonesia"),
+    "ms": ("🇲🇾", "Tiếng Mã Lai"),
+    "fil": ("🇵🇭", "Tiếng Philippines"),
+    "fr": ("🇫🇷", "Tiếng Pháp"),
+    "de": ("🇩🇪", "Tiếng Đức"),
+    "es": ("🇪🇸", "Tiếng Tây Ban Nha"),
+    "es-MX": ("🇲🇽", "Tiếng Tây Ban Nha (Mexico)"),
+    "pt-BR": ("🇧🇷", "Tiếng Bồ Đào Nha (Brazil)"),
+    "pt": ("🇵🇹", "Tiếng Bồ Đào Nha"),
+    "ru": ("🇷🇺", "Tiếng Nga"),
+    "it": ("🇮🇹", "Tiếng Ý"),
+    "hi": ("🇮🇳", "Tiếng Hindi"),
+    "ar": ("🇸🇦", "Tiếng Ả Rập"),
+    "tr": ("🇹🇷", "Tiếng Thổ Nhĩ Kỳ"),
+    "nl": ("🇳🇱", "Tiếng Hà Lan"),
+    "pl": ("🇵🇱", "Tiếng Ba Lan"),
+}
+# Thứ tự nhóm ngôn ngữ trong combo (Việt trước, rồi các tiếng phổ biến)
+_GROUP_ORDER = ["vi", "en-US", "en-GB", "ja", "ko", "zh-CN", "zh", "th",
+                "id", "fr", "es", "pt-BR", "pt"]
+
+# Dòng thông báo khi CHƯA có key Gemini (voice_id rỗng -> UI disable) —
+# user vẫn biết nhóm giọng Gemini TỒN TẠI và cần gì để mở.
+GEMINI_LOCKED_LABEL = ("🌟 Giọng Gemini: dán key Gemini trong 'Cài đặt AI' "
+                       "để mở khóa")
+
+
+def _lang_group_label(key: str) -> str:
+    flag, name = _LOCALE_VI.get(key) or _LOCALE_VI.get(key.split("-")[0]) \
+        or ("🌍", key)
+    return f"{flag} {name}"
+
+
+def _recap_voice_label(v: dict) -> str:
+    """Nhãn giọng cho danh sách recap: '   ⭐ Andrew (Nam)' /
+    '   ⭐ Ava (Nữ, đa ngữ)' — user thấy ngay tên + giới tính."""
+    short = v.get("ShortName", "")
+    parts = short.split("-", 2)
+    name = parts[2] if len(parts) == 3 else short
+    if name.endswith("Neural"):
+        name = name[:-len("Neural")]
+    multi = "Multilingual" in name
+    if multi:
+        name = name.replace("Multilingual", "")
+    g = {"female": "Nữ", "male": "Nam"}.get((v.get("Gender") or "").lower(),
+                                            "?")
+    return (f"   ⭐ {name} ({g}, đa ngữ)" if multi
+            else f"   ⭐ {name} ({g})")
+
+
 def list_recap_voices() -> list[tuple[str, str]]:
-    """Giọng gợi ý cho GIỌNG KỂ Reup thuyết minh (chưa biết ngôn ngữ video
-    lúc cài đặt -> gom giọng dùng được cho MỌI kênh): nhóm 🌟 Gemini (chỉ khi
-    có key) + các giọng ⭐ HOT edge-tts (đa ngữ Multilingual lên đầu, rồi theo
-    locale). Offline/lỗi mạng -> fallback danh sách tĩnh VOICES."""
-    gem = _gemini_voice_items() if _gemini_available() else []
+    """Giọng gợi ý cho GIỌNG KỂ Reup thuyết minh, NHÓM THEO NGÔN NGỮ với
+    nhãn tiếng Việt + cờ (sửa lỗi user 'danh sách mù mờ không biết tiếng
+    gì'). Trả [(nhãn, voice_id)]; dòng có voice_id RỖNG là NHÃN NHÓM /
+    thông báo — UI phải disable (không cho chọn).
+
+    Cấu trúc: nhóm 🌟 Gemini (có key -> giọng chọn được; KHÔNG key -> 1
+    dòng disabled chỉ cách mở khóa) -> nhóm 🌐 đa ngôn ngữ (Multilingual,
+    đọc mọi thứ tiếng) -> từng ngôn ngữ (🇻🇳 Tiếng Việt, 🇺🇸 Tiếng Anh
+    (Mỹ)...), mỗi giọng ghi 'Tên (Nam/Nữ)'. Offline/lỗi mạng -> dựng từ
+    danh sách tĩnh VOICES (gender lấy từ nhãn cũ 'Nữ —/Nam —')."""
     out: list[tuple[str, str]] = []
+    if _gemini_available():
+        out.append(("🌟 Gemini — đa ngôn ngữ (CẦN key Gemini)", ""))
+        out += [(f"   🌟 {n} (Gemini)", f"gemini:{n}")
+                for n in _GEMINI_PREBUILT]
+    else:
+        out.append((GEMINI_LOCKED_LABEL, ""))
     allv = _fetch_all_voices()
-    if allv:
-        hot = [v for v in allv if v.get("ShortName") in _HOT_VOICES]
-        hot.sort(key=lambda v: (
-            0 if "multilingual" in v["ShortName"].lower() else 1,
-            v.get("Locale", ""), v.get("ShortName", "")))
-        out = [(_voice_label(v), v["ShortName"]) for v in hot]
-    if not out:                          # offline -> giọng tĩnh đã kiểm chứng
+    hot = [v for v in (allv or []) if v.get("ShortName") in _HOT_VOICES]
+    if not hot:                         # offline -> giọng tĩnh đã kiểm chứng
         seen: set = set()
-        for lang, vs in VOICES.items():
+        for _lang, vs in VOICES.items():
             for lbl, vid in vs:
                 if vid not in seen:
                     seen.add(vid)
-                    out.append((f"{lbl} ({LANG_LABELS.get(lang, lang)})", vid))
-    return gem + out
+                    hot.append({
+                        "ShortName": vid,
+                        "Gender": "Female" if lbl.startswith("Nữ") else "Male",
+                        "Locale": "-".join(vid.split("-")[:2])})
+    # 1) nhóm ĐA NGÔN NGỮ (đọc được mọi thứ tiếng — gợi ý mạnh nhất)
+    multi_ids = {v["ShortName"] for v in hot
+                 if "multilingual" in v["ShortName"].lower()}
+    multi = sorted((v for v in hot if v["ShortName"] in multi_ids),
+                   key=lambda v: v["ShortName"])
+    if multi:
+        out.append(("🌐 Đa ngôn ngữ — đọc được MỌI thứ tiếng", ""))
+        out += [(_recap_voice_label(v), v["ShortName"]) for v in multi]
+    # 2) nhóm theo NGÔN NGỮ với nhãn Việt + cờ
+    groups: dict[str, list[dict]] = {}
+    for v in hot:
+        if v["ShortName"] in multi_ids:
+            continue
+        loc = v.get("Locale") or "-".join(v["ShortName"].split("-")[:2])
+        key = loc if loc in _LOCALE_VI else loc.split("-")[0]
+        groups.setdefault(key, []).append(v)
+    ordered = ([k for k in _GROUP_ORDER if k in groups]
+               + sorted(k for k in groups if k not in _GROUP_ORDER))
+    for k in ordered:
+        out.append((_lang_group_label(k), ""))
+        out += [(_recap_voice_label(v), v["ShortName"])
+                for v in sorted(groups[k], key=lambda v: v["ShortName"])]
+    return out
 
 
 # ------------------------------------------------------------------
@@ -438,6 +537,17 @@ def _edge_fallback_voice(lang: str) -> str:
         if vid and not vid.startswith("gemini:"):
             return vid
     return default_voice(lang) or "en-US-JennyNeural"
+
+
+def _recap_backup_voice(lang: str, primary: str) -> str:
+    """Giọng edge-tts DỰ PHÒNG cho recap khi giọng CHÍNH fail hết retry:
+    giọng ⭐ hot kế tiếp CÙNG ngôn ngữ, khác giọng chính (server MS hay lỗi
+    NoAudioReceived theo GIỌNG — đổi giọng thường cứu được part).
+    '' nếu không còn giọng nào khác."""
+    for _lbl, vid in list_voices_for(lang):
+        if vid and not vid.startswith("gemini:") and vid != primary:
+            return vid
+    return ""
 
 
 def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
@@ -850,18 +960,92 @@ def _loudnorm_wav(wav_path: str, i_lufs: float = -16.0) -> None:
     os.replace(tmp, wav_path)
 
 
+def measure_loudness(path: str | Path, start: float = 0.0,
+                     dur: float = 0.0) -> Optional[float]:
+    """Đo integrated loudness (LUFS, EBU R128) của audio trong file/đoạn
+    [start, start+dur] bằng loudnorm print_format=json (chỉ decode, không ghi
+    file). Trả None nếu ffmpeg lỗi / không có audio / gần câm (<= -70 LUFS).
+
+    Dùng để ĐO ĐỘ TO THẬT của video nguồn: video nhạc/gaming thường rất to
+    (-6..-10 LUFS) — chuẩn hoá narration cứng về -16 LUFS vẫn CHÌM nghỉm
+    (lỗi 'giọng AI bé' user gặp thật). Đo gốc rồi match mới đúng."""
+    cmd = [settings.FFMPEG_PATH, "-hide_banner", "-nostats"]
+    if start > 0.01:
+        cmd += ["-ss", f"{start:.3f}"]
+    if dur > 0.01:
+        cmd += ["-t", f"{dur:.3f}"]
+    cmd += ["-i", str(path), "-vn", "-sn", "-map", "0:a:0",
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+            "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_CREATE_NO_WINDOW, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r'"input_i"\s*:\s*"?(-?[\d.]+|-inf)"?', r.stderr or "")
+    if not m or "inf" in m.group(1):
+        return None
+    try:
+        v = float(m.group(1))
+    except ValueError:
+        return None
+    return v if v > -70.0 else None
+
+
+def _gain_wav(wav_path: str, gain_db: float = 0.0,
+              factor: float = 1.0) -> None:
+    """Nhân âm lượng track WAV (gain dB và/hoặc hệ số), kèm limiter chống
+    clip (alimiter trần ~-0.45dBFS, level=false để không tự khuếch đại lại).
+    Ghi đè file gốc (giữ 48k mono pcm_s16le). Không có gì để chỉnh -> no-op.
+    Ném RuntimeError nếu ffmpeg lỗi (caller quyết best-effort)."""
+    af = []
+    if abs(gain_db) > 0.05:
+        af.append(f"volume={gain_db:.2f}dB")
+    if abs(factor - 1.0) > 0.02:
+        af.append(f"volume={max(0.1, min(4.0, factor)):.3f}")
+    if not af:
+        return
+    af.append("alimiter=limit=0.95:level=false")
+    tmp = wav_path + ".g.wav"
+    _ffmpeg(["-i", wav_path, "-af", ",".join(af) + ",aresample=48000",
+             "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", tmp],
+            "chỉnh âm lượng thuyết minh", timeout=600)
+    os.replace(tmp, wav_path)
+
+
+# Auto-match âm lượng narration với TIẾNG GỐC video: to hơn gốc nhẹ
+# (+1.5dB) cho lời kể nổi lên; kẹp target trong [-27, -9] LUFS (trần -9 để
+# loudnorm TP=-1.5 còn chỗ thở, sàn -27 khi video gốc gần câm).
+_RECAP_HEADROOM_DB = 1.5
+_RECAP_TARGET_MIN = -27.0
+_RECAP_TARGET_MAX = -9.0
+
+
 # ------------------------------------------------------------------
 # 🎙 REUP THUYẾT MINH (recap) — track giọng AI đọc KỊCH BẢN theo part
 # ------------------------------------------------------------------
 # atempo cho lời thuyết minh: cho phép CHẬM nhẹ (0.8) khi lời ngắn hơn khung
-# và NHANH nhẹ (1.35) khi dài hơn — đọc "vừa khít" part mà vẫn tự nhiên.
+# và NHANH nhẹ (1.28) khi dài hơn — đọc "vừa khít" part mà vẫn tự nhiên.
+# (1.35 cũ nghe đã hơi dồn; hạ 1.28 — phần lời tràn xử bằng MƯỢN THỜI GIAN
+# từ part orig kế, xem build_recap_track.)
 _RECAP_TEMPO_MIN = 0.8
-_RECAP_TEMPO_MAX = 1.35
+_RECAP_TEMPO_MAX = 1.28
+# Part narrate CUỐI clip (không còn chỗ mượn): cho nói nhanh tới 1.4 trước
+# khi đành trim + fade — thà nhanh một chút còn hơn CỤT CHỮ giữa câu.
+_RECAP_TEMPO_MAX_TAIL = 1.4
+# MƯỢN THỜI GIAN: lời narrate tràn khung (dù đã atempo 1.28) -> kéo dài window
+# sang đầu part orig kế, tối đa min(_BORROW_MAX_S, _BORROW_MAX_FRAC * độ dài
+# quãng orig kế). Phần orig bị mượn sẽ bị duck thêm (narr_events giãn theo)
+# — chấp nhận, còn hơn mất chữ.
+_BORROW_MAX_S = 3.0
+_BORROW_MAX_FRAC = 0.40
 
 
-def _fit_recap_chunk(src: str, dst_wav: str,
-                     window: float) -> tuple[float, float]:
-    """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-1.35;
+def _fit_recap_chunk(src: str, dst_wav: str, window: float,
+                     tempo_max: float = _RECAP_TEMPO_MAX,
+                     ) -> tuple[float, float]:
+    """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-`tempo_max`;
     vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế).
     Trả (độ_dài_sau_xử_lý, tempo) — tempo dùng để SCALE mốc word boundary
     (mốc thật sau atempo k = t/k)."""
@@ -871,7 +1055,8 @@ def _fit_recap_chunk(src: str, dst_wav: str,
     af = ["aresample=48000"]
     tempo = 1.0
     if window > 0.2 and abs(dur - window) > 0.05:
-        t = max(_RECAP_TEMPO_MIN, min(_RECAP_TEMPO_MAX, dur / window))
+        t = max(_RECAP_TEMPO_MIN, min(max(tempo_max, _RECAP_TEMPO_MIN),
+                                      dur / window))
         if abs(t - 1.0) > 0.02:
             tempo = t
             af.append(_tempo_filters(tempo))
@@ -901,8 +1086,14 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                       lang: str, out_wav: str | Path,
                       on_progress: Optional[Callable[[float, str], None]] = None,
                       pace: str = "normal",
+                      src_path: str = "", volume: float = 1.0,
                       ) -> tuple[str, list[dict]]:
     """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
+
+    src_path: đường dẫn VIDEO GỐC (tùy chọn) — dùng ĐO loudness thật của
+    tiếng gốc trong clip để auto-match âm lượng narration (gốc +1.5dB).
+    volume: hệ số "Âm lượng giọng kể" user chọn (0.8-2.0, mặc định 1.15) —
+    nhân THÊM sau bước auto-match (có limiter chống clip).
 
     parts: kịch bản [{"start","end","mode","text"}] — mốc theo TIMELINE VIDEO
     GỐC (app/ai/recap.py đã validate). Chỉ part mode="narrate" được đọc.
@@ -928,9 +1119,17 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
       (caller sẽ KHÔNG duck/không phụ đề part đó -> tiếng gốc giữ nguyên,
       KHÔNG còn 'khoảng chết' câm lặng giữa clip như trước).
     - MỌI part lỗi -> raise (không xuất clip thuyết minh câm).
-    - Track cuối được loudnorm 1 lần (EBU R128 I=-16, gating bỏ khoảng lặng)
-      -> giọng AI NGHE RÕ tương đương tiếng gốc video (edge-tts mặc định
-      nhỏ hơn video thường 6-10dB).
+    - CÂN ÂM LƯỢNG THEO NGUỒN: đo loudness THẬT của tiếng gốc video (đoạn
+      dài nhất của clip) -> loudnorm narration về mức gốc +1.5dB (kẹp
+      [-27,-9] LUFS). Chuẩn cứng -16 LUFS cũ vẫn CHÌM khi video nguồn to
+      (-6..-10 LUFS, nhạc/gaming) — lỗi 'giọng bé' user gặp thật. loudnorm
+      lỗi -> KHÔNG bỏ qua: fallback gain thô theo chênh loudness đo được.
+    - Lời narrate TRÀN khung: atempo trần 1.28, vẫn tràn -> MƯỢN THỜI GIAN
+      từ quãng orig kế (max min(3s, 40% quãng) — narr_events giãn theo nên
+      duck/phụ đề tự khớp); part cuối không mượn được -> atempo tới 1.4
+      rồi mới trim + fade (hết cảnh CỤT CHỮ giữa câu).
+    - Giọng chính fail hết retry -> thử GIỌNG DỰ PHÒNG cùng ngôn ngữ trước
+      khi bỏ part (server MS chập chờn theo GIỌNG là có thật).
     - Part narrate ĐẦU TIÊN (hook) đọc nhanh hơn nhịp nền +2% (năng lượng
       mở đầu) — chỉ đường edge-tts (Gemini không có rate).
     """
@@ -1008,6 +1207,24 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     if ok2[j]:
                         ok[i] = True
                         word_lists[i] = wl2[j]
+            # GIỌNG DỰ PHÒNG: giọng chính fail hết retry (dịch vụ chập chờn
+            # THEO GIỌNG) -> thử giọng hot khác CÙNG ngôn ngữ trước khi bỏ
+            # part (bỏ part = mất đoạn thuyết minh — lỗi user gặp thật).
+            fails = [i for i, k in enumerate(ok)
+                     if not k and texts[i].strip()]
+            if fails:
+                fb = _recap_backup_voice(lang, voice)
+                if fb:
+                    prog(0.63, f"Giọng chính lỗi {len(fails)} đoạn -> thử "
+                               f"giọng dự phòng ({fb})...")
+                    ok3, wl3 = asyncio.run(_synth_all_words(
+                        [texts[i] for i in fails], fb,
+                        [mp3s[i] for i in fails],
+                        rate=[rates[i] for i in fails]))
+                    for j, i in enumerate(fails):
+                        if ok3[j]:
+                            ok[i] = True
+                            word_lists[i] = wl3[j]
         if not any(ok):
             raise RuntimeError(
                 "TTS thuyết minh thất bại toàn bộ (mạng/giọng lỗi) — "
@@ -1020,8 +1237,29 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 continue
             wav = os.path.join(td, f"f{i}.wav")
             window = n["end"] - n["start"]
+            # ---- MƯỢN THỜI GIAN: lời đọc dài hơn khung (dù atempo trần
+            # 1.28) -> KÉO DÀI window sang đầu quãng orig kế (tối đa
+            # min(3s, 40% quãng)) thay vì TRIM CỤT CHỮ giữa câu (lỗi user
+            # gặp thật). n["end"] giãn theo -> duck_ranges + phụ đề (caller
+            # dùng narr_events) tự khớp; quãng orig bị mượn sẽ duck thêm —
+            # chấp nhận. Part cuối/không còn chỗ mượn -> nới atempo 1.4
+            # rồi mới đành trim + fade.
+            dur0 = probe_duration(mp3s[i])
+            nxt_start = narr[i + 1]["start"] if i + 1 < len(narr) else total
+            room = max(0.0, min(nxt_start, total) - n["end"])
+            tempo_max = _RECAP_TEMPO_MAX
+            if dur0 > 0 and dur0 / _RECAP_TEMPO_MAX > window + 0.05:
+                need = dur0 / _RECAP_TEMPO_MAX - window
+                borrow = min(_BORROW_MAX_S, _BORROW_MAX_FRAC * room,
+                             need + 0.1)
+                if borrow > 0.05:
+                    n["end"] = round(min(n["end"] + borrow, total), 3)
+                    window = n["end"] - n["start"]
+                if dur0 / _RECAP_TEMPO_MAX > window + 0.05:
+                    tempo_max = _RECAP_TEMPO_MAX_TAIL
             try:
-                _dur, tempo = _fit_recap_chunk(mp3s[i], wav, window)
+                _dur, tempo = _fit_recap_chunk(mp3s[i], wav, window,
+                                               tempo_max=tempo_max)
             except RuntimeError:
                 continue                    # part hỏng -> bỏ riêng part đó
             fitted.append((n["start"], wav))
@@ -1054,14 +1292,47 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         prog(0.92, "Ghép track thuyết minh...")
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
         _mix_track(fitted, round(total, 3), str(out_wav))
-        # CÂN ÂM LƯỢNG: chuẩn hoá loudness EBU R128 (I=-16 LUFS chuẩn giọng
-        # nói mobile; gating tự bỏ khoảng lặng giữa các part) -> giọng AI to
-        # rõ ngang tiếng gốc video (edge-tts mặc định nhỏ hơn 6-10dB, trước
-        # đây bị tiếng gốc/BGM đè). Lỗi loudnorm -> giữ track gốc (best-effort).
+        # ---- CÂN ÂM LƯỢNG THEO NGUỒN (sửa lỗi 'giọng AI cực bé') ----
+        # 1) ĐO loudness THẬT của tiếng gốc trong clip (đoạn dài nhất, mẫu
+        #    tối đa 60s): video nhạc/gaming thường -6..-10 LUFS -> chuẩn cứng
+        #    -16 LUFS cũ vẫn chìm nghỉm dưới tiếng gốc.
+        # 2) loudnorm narration về mức GỐC + 1.5dB (kẹp [-27,-9] LUFS;
+        #    TP=-1.5 chống clip). Không đo được nguồn -> giữ mặc định -16.
+        # 3) loudnorm LỖI -> KHÔNG lặng lẽ bỏ qua như trước (track giữ nguyên
+        #    bé tí): fallback GAIN THÔ theo chênh loudness đo được + limiter.
+        target = -16.0
+        src_i = None
+        if src_path and os.path.exists(str(src_path)) and clip_segments:
+            s0, e0 = max(((float(s), float(e)) for s, e in clip_segments),
+                         key=lambda p: p[1] - p[0])
+            src_i = measure_loudness(src_path, start=s0,
+                                     dur=min(e0 - s0, 60.0))
+        if src_i is not None:
+            target = max(_RECAP_TARGET_MIN,
+                         min(_RECAP_TARGET_MAX, src_i + _RECAP_HEADROOM_DB))
+        prog(0.94, f"Cân âm lượng giọng kể (gốc "
+                   f"{src_i:.1f} LUFS -> {target:.1f})..." if src_i is not None
+             else "Cân âm lượng giọng kể...")
         try:
-            _loudnorm_wav(str(out_wav))
+            _loudnorm_wav(str(out_wav), i_lufs=target)
         except (RuntimeError, OSError):
-            pass
+            prog(0.95, "loudnorm lỗi -> bù âm lượng thô theo chênh đo được...")
+            try:
+                cur = measure_loudness(str(out_wav))
+                gain = (target - cur) if cur is not None else 6.0
+                _gain_wav(str(out_wav),
+                          gain_db=max(-12.0, min(20.0, gain)))
+            except (RuntimeError, OSError):
+                prog(0.95, "CẢNH BÁO: không cân được âm lượng giọng kể "
+                           "(ffmpeg lỗi) — giọng có thể bé.")
+        # Slider "Âm lượng giọng kể" (80-200%, mặc định 115%) nhân THÊM sau
+        # auto-match — user chê bé/to thì tự nêm; limiter chống clip.
+        vol = max(0.5, min(2.5, float(volume or 1.0)))
+        if abs(vol - 1.0) > 0.02:
+            try:
+                _gain_wav(str(out_wav), factor=vol)
+            except (RuntimeError, OSError):
+                pass                      # best-effort — track đã auto-match
 
     prog(1.0, "Xong thuyết minh")
     return str(out_wav), kept

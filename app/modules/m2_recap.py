@@ -129,6 +129,35 @@ def _snap_parts(parts: list, edges: list, tol: float = _SNAP_TOL,
 
 
 # ------------------------------------------------------------------
+# 📚 CHIA CHƯƠNG: K clip thuyết minh độc lập (Part 1..K)
+# ------------------------------------------------------------------
+# Video ngắn hơn ngưỡng này (hoặc transcript quá mỏng) -> tự hạ còn 1 clip
+# (chia 3 chương cho video 2 phút chỉ ra clip vụn vô nghĩa).
+_MIN_DUR_PER_EXTRA_CLIP = 150.0     # 2.5 phút
+_MIN_SENTS_MULTI = 12
+
+
+def _split_chapters(duration: float, edges: list, k: int) -> list:
+    """Chia [0, duration] thành k CHƯƠNG thời lượng ~bằng nhau, mốc chia
+    SNAP vào mép câu transcript (không cắt ngang câu nói). Snap làm chương
+    teo (<20s) -> giữ mốc chia đều. k<=1/duration hỏng -> 1 chương cả video.
+    Hàm thuần — test được."""
+    dur = float(duration or 0)
+    if k <= 1 or dur <= 0:
+        return [(0.0, dur)]
+    bounds = [0.0]
+    for i in range(1, k):
+        t = _snap_time(dur * i / k, edges, tol=15.0)
+        if t - bounds[-1] < 20.0 or dur - t < 20.0:
+            t = dur * i / k              # snap phá chương -> chia đều
+        bounds.append(round(t, 2))
+    bounds.append(round(dur, 2))
+    out = [(bounds[i], bounds[i + 1]) for i in range(k)
+           if bounds[i + 1] - bounds[i] >= 20.0]
+    return out or [(0.0, dur)]
+
+
+# ------------------------------------------------------------------
 # 🎬 MULTI-WINDOW: rút gọn transcript cho prompt đạo diễn
 # ------------------------------------------------------------------
 def _condense_listing(segs: list, duration: float,
@@ -187,8 +216,11 @@ def _clip_frames(src: str, start: float, end: float, tmp_dir: str,
 def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
-    payload: {video_id, preset: {..., recap_style, recap_ratio}}. Kết quả: các dòng clips
-    status='suggested' kèm signals.recap (kịch bản). Lỗi LLM -> ném lỗi rõ.
+    payload: {video_id, preset: {..., recap_style, recap_ratio,
+    recap_count}}. recap_count (1-3, mặc định 2) = số clip thuyết minh —
+    chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập. Kết quả: các dòng
+    clips status='suggested' kèm signals.recap (kịch bản). Lỗi LLM -> ném
+    lỗi rõ.
     """
     video_id = int(payload["video_id"])
     preset = payload.get("preset") or {}
@@ -225,11 +257,13 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         except (KeyError, TypeError, ValueError):
             continue
 
-    # ---- 0) 🎬 ĐẠO DIỄN MULTI-WINDOW (mặc định): LLM nhận TOÀN BỘ
-    # transcript, TỰ CHỌN 3-6 khung cảnh RỜI NHAU theo mạch chuyện (mở -
-    # thân - twist - kết) + viết kịch bản có CẦU NỐI narrate giữa các khung
-    # (kiểu recap phim). Windows/kịch bản hỏng hoặc LLM lỗi -> FALLBACK
-    # đường 1-span liền mạch cũ bên dưới (giữ nguyên, không xóa).
+    # ---- 0) 🎬 ĐẠO DIỄN MULTI-WINDOW THEO CHƯƠNG (mặc định): chia video
+    # thành K CHƯƠNG thời lượng ~bằng nhau (user chọn 1-3 trong ⚙ Cài đặt
+    # Reup, mặc định 2) rồi chạy đạo diễn RIÊNG từng chương -> K clip recap
+    # ĐỘC LẬP Part 1..K, mỗi clip có hook + mạch chuyện + kết RIÊNG của
+    # chương đó (sửa lỗi user 'chỉ làm được 1 video'). Video ngắn (<2.5
+    # phút) / transcript mỏng -> tự hạ còn 1 clip (không chia vụn).
+    # Mọi chương hỏng hoặc LLM lỗi -> FALLBACK đường 1-span cũ bên dưới.
     prov = llm.active_provider()
     min_total = float(cfg.get("min_len") or 0) or 60.0
     max_total = float(cfg.get("max_len") or 0) or _HARD_MAX
@@ -242,32 +276,66 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         t = (s.get("text") or "").strip()
         if t:
             sents_all.append((a, b, t))
-    ctx.progress(0.06, f"AI [{prov}] đạo diễn: chọn khung cảnh + viết "
-                       "kịch bản cầu nối...")
-    script = None
     try:
-        script = recap.write_director_script(
-            sents_all, lang_name, style, duration, min_total, max_total,
-            ratio=ratio, listing=_condense_listing(segs, duration))
-    except llm.LLMError:
-        script = None                  # LLM lỗi -> thử đường cũ bên dưới
-    if script:
-        # SNAP mép khung vào mép câu rồi VALIDATE LẠI (snap có thể làm 2
-        # khung chạm/teo); part snap + validate TỪNG khung (không vắt khung).
-        snapped_w = [[_snap_time(s, edges), _snap_time(e, edges)]
-                     for s, e in script["windows"]]
-        windows = recap.validate_windows(snapped_w, duration)
-        parts: list = []
-        for ws, we in windows or []:
-            sub = [p for p in script["parts"]
-                   if ws - 0.01 <= (float(p["start"]) + float(p["end"])) / 2
-                   <= we + 0.01]
-            sub = _snap_parts(sub, edges, words=tr_words)
-            parts.extend(recap.validate_parts(
-                sub, ws, we, sentences=_clip_sentences(segs, ws, we)))
-        if windows and any(p["mode"] == "narrate" for p in parts):
-            _delete_suggested(video_id)
-            lang0 = (transcript.get("language") or "").strip()
+        count = int(preset.get("recap_count") or 2)
+    except (TypeError, ValueError):
+        count = 2
+    count = max(1, min(3, count))
+    if (duration < _MIN_DUR_PER_EXTRA_CLIP
+            or len(sents_all) < _MIN_SENTS_MULTI):
+        count = 1                       # video ngắn/thoại mỏng -> 1 clip
+    else:
+        # mỗi chương phải đủ dày (>=60s) để đạo diễn có cái mà cắt ghép
+        count = min(count, max(1, int(duration // 60.0)))
+
+    chapters = _split_chapters(duration, edges, count)
+    ch_scripts: list[tuple[int, float, float, dict]] = []
+    for ci, (c0, c1) in enumerate(chapters):
+        ctx.progress(0.06 + 0.34 * ci / max(1, len(chapters)),
+                     f"AI [{prov}] viết kịch bản chương "
+                     f"{ci + 1}/{len(chapters)} (chọn khung cảnh + cầu "
+                     "nối)...")
+        ch_sents = [(a, b, t) for a, b, t in sents_all
+                    if c0 - 0.01 <= (a + b) / 2 <= c1 + 0.01]
+        if len(chapters) > 1 and len(ch_sents) < 3:
+            continue                    # chương trống thoại -> bỏ chương
+        ch_segs = [s for s in segs
+                   if c0 - 0.01 <= (float(s.get("start", 0))
+                                    + float(s.get("end", 0))) / 2 <= c1 + 0.01]
+        try:
+            sc = recap.write_director_script(
+                ch_sents, lang_name, style, c1,
+                min(min_total, max(30.0, 0.6 * (c1 - c0))),
+                min(max_total, c1 - c0), ratio=ratio,
+                listing=_condense_listing(ch_segs, c1 - c0))
+        except llm.LLMError:
+            sc = None                  # chương lỗi -> bỏ riêng chương đó
+        if sc:
+            ch_scripts.append((ci, c0, c1, sc))
+
+    if ch_scripts:
+        _delete_suggested(video_id)
+        lang0 = (transcript.get("language") or "").strip()
+        clip_ids: list = []
+        for ci, c0, c1, script in ch_scripts:
+            # SNAP mép khung vào mép câu + KẸP vào chương (windows các clip
+            # KHÔNG chồng nhau) rồi VALIDATE LẠI; part snap + validate TỪNG
+            # khung (không vắt khung).
+            snapped_w = [[max(c0, _snap_time(s, edges)),
+                          min(c1, _snap_time(e, edges))]
+                         for s, e in script["windows"]]
+            windows = recap.validate_windows(snapped_w, duration)
+            parts: list = []
+            for ws, we in windows or []:
+                sub = [p for p in script["parts"]
+                       if ws - 0.01
+                       <= (float(p["start"]) + float(p["end"])) / 2
+                       <= we + 0.01]
+                sub = _snap_parts(sub, edges, words=tr_words)
+                parts.extend(recap.validate_parts(
+                    sub, ws, we, sentences=_clip_sentences(segs, ws, we)))
+            if not windows or not any(p["mode"] == "narrate" for p in parts):
+                continue                # chương snap hỏng -> bỏ riêng chương
             total = round(sum(e - s for s, e in windows), 1)
             title = script.get("title") or "Clip thuyết minh"
             wlist = [[round(s, 2), round(e, 2)] for s, e in windows]
@@ -276,23 +344,28 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 "ai": prov, "dur": total,
                 "title_en": script.get("title") or "",
                 "recap": {"style": style, "lang": lang0, "parts": parts,
-                          "windows": wlist},
+                          "windows": wlist, "chapter": [c0, c1]},
             }
+            chap_note = (f"Chương {ci + 1}/{len(chapters)}: "
+                         if len(chapters) > 1 else "")
             cid = db.insert(
                 """INSERT INTO clips (video_id, start_sec, end_sec, score,
                                       reason, title, transcript, signals,
                                       status)
                    VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
                 (video_id, wlist[0][0], wlist[-1][1], 80.0,
-                 f"Đạo diễn ghép {len(wlist)} khung cảnh (~{total:.0f}s), "
-                 "thuyết minh " + recap.style_label(style) + ".",
+                 f"{chap_note}đạo diễn ghép {len(wlist)} khung cảnh "
+                 f"(~{total:.0f}s), thuyết minh "
+                 + recap.style_label(style) + ".",
                  title, "", db.dumps(signals)))
-            ctx.progress(1.0, f"AI [{prov}] dựng 1 clip recap "
-                              f"{len(wlist)} khung cảnh (~{total:.0f}s, "
-                              f"{recap.style_label(style)})")
-            return {"count": 1, "clip_ids": [cid], "scripts": 1,
-                    "style": style, "llm_used": True,
-                    "windows": len(wlist)}
+            clip_ids.append(cid)
+        if clip_ids:
+            ctx.progress(1.0, f"AI [{prov}] dựng {len(clip_ids)} clip recap "
+                              f"theo {len(chapters)} chương "
+                              f"({recap.style_label(style)})")
+            return {"count": len(clip_ids), "clip_ids": clip_ids,
+                    "scripts": len(clip_ids), "style": style,
+                    "llm_used": True, "chapters": len(chapters)}
 
     # ---- 1) FALLBACK 1-SPAN: chọn các đoạn hay (đường chọn clip của auto) ----
     ctx.progress(0.05, f"AI [{prov}] đang đọc nội dung & chọn đoạn hay...")

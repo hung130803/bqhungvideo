@@ -120,11 +120,17 @@ def enqueue_auto_mixed(pool: WorkerPool, video_id: int, project_id: int,
 def enqueue_auto_recap(pool: WorkerPool, video_id: int, project_id: int,
                        preset: Optional[dict] = None) -> Optional[int]:
     """Nút '🎙 Reup thuyết minh': phân tích (nếu chưa) + AI viết kịch bản
-    thuyết minh (preset kèm recap_style). Dedup như auto."""
+    thuyết minh (preset kèm recap_style/recap_ratio/recap_count). Dedup như
+    auto — recap_count vào dedup key để đổi 'Số clip' rồi bấm lại vẫn chạy
+    (job cũ khác count đang chờ không nuốt mất lần bấm mới)."""
+    try:
+        cnt = int((preset or {}).get("recap_count") or 2)
+    except (TypeError, ValueError):
+        cnt = 2
     return pool.enqueue(
         "auto_recap", {"video_id": video_id, "preset": preset or {}},
         project_id=project_id, video_id=video_id, needs_gpu=True, priority=10,
-        dedup_key=f"autorecap:{video_id}", skip_if_done=False,
+        dedup_key=f"autorecap:{video_id}:c{cnt}", skip_if_done=False,
     )
 
 
@@ -144,6 +150,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    dub_voice: str = "", dub_mute: bool = False,
                    dub_mode: str = "natural",
                    recap_voice: str = "", recap_pace: str = "",
+                   recap_volume: float = 1.15,
                    fx_fade: bool = True, fx_whoosh: bool = True,
                    fx_sfx_dir: str = "", flip_h: bool = False,
                    fit_src: bool = False,
@@ -167,7 +174,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         repr((text_overlays, cap_style, out_name, out_dir, ovl,
               hook_first, bgm_path, bgm_vol, orig_vol,
               dub_lang, dub_voice, dub_mute, dub_mode,
-              recap_voice, recap_pace,
+              recap_voice, recap_pace, round(float(recap_volume or 0), 3),
               fx_fade, fx_whoosh, fx_sfx_dir, flip_h, fit_src)).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
@@ -186,6 +193,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "dub_lang": dub_lang, "dub_voice": dub_voice, "dub_mute": dub_mute,
          "dub_mode": dub_mode,
          "recap_voice": recap_voice, "recap_pace": recap_pace,
+         "recap_volume": recap_volume,
          "fx_fade": fx_fade, "fx_whoosh": fx_whoosh,
          "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src},
         project_id=project_id, video_id=video_id,
