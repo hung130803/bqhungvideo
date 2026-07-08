@@ -1081,27 +1081,55 @@ def _fake_words_from_segments(segments: list) -> list:
 
 
 def _recap_caption_cues(narr_events: list) -> list:
-    """Cue phụ đề cho ĐOẠN THUYẾT MINH (recap): hiện theo CÂU của lời thuyết
-    minh, thời gian chia theo SỐ KÝ TỰ từng câu trong part (không word-level).
-    narr_events = [{"start","end","text"}] trên timeline ĐẦU RA (chưa speed).
-    Trả [(start, end, text)] đưa vào build_ass qua extra_cues."""
+    """Cue phụ đề cho ĐOẠN THUYẾT MINH (recap).
+
+    narr_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
+    (chưa speed) — dubbing.build_recap_track trả về.
+
+    - Event CÓ "words" (edge-tts WordBoundary — mốc từng từ THẬT của giọng
+      đọc, đã scale theo atempo): phụ đề WORD-LEVEL y hệt đoạn gốc (mỗi từ
+      1 cue, giữ tới từ kế như captions._word_cues) -> đồng nhất trải nghiệm.
+    - Event KHÔNG có "words" (giọng Gemini không trả word boundary, hoặc
+      TTS lỗi event): FALLBACK chia câu theo SỐ KÝ TỰ như cũ.
+
+    Trả [(start, end, text, kind)] đưa vào build_ass qua extra_cues;
+    kind = "word" (chạy từng từ) | "sent" (hiện cả câu)."""
     cues = []
     for n in narr_events or []:
         text = (n.get("text") or "").strip()
         if not text:
             continue
+        n_end = float(n["end"])
+        words = n.get("words") or []
+        if words:
+            # WORD-LEVEL: từ hiện đúng lúc đọc, giữ tới từ kế (liền mạch,
+            # không nhấp nháy); từ cuối/trước khoảng lặng tắt sớm (+0.15s).
+            for i, (a, b, wtxt) in enumerate(words):
+                wtxt = str(wtxt).strip()
+                if not wtxt:
+                    continue
+                if i + 1 < len(words) and words[i + 1][0] - b < 0.45:
+                    end = words[i + 1][0]
+                else:
+                    end = b + 0.15
+                end = min(end, n_end)
+                a = max(float(n["start"]), float(a))
+                cues.append((round(a, 3), round(max(a + 0.05, end), 3),
+                             wtxt, "word"))
+            continue
+        # FALLBACK theo câu (giọng Gemini / không có word boundary)
         sents = [s.strip() for s in re.split(r"(?<=[.!?…;])\s+", text)
                  if s.strip()]
         if not sents:
             sents = [text]
         total_chars = sum(len(s) for s in sents)
         t = float(n["start"])
-        dur = float(n["end"]) - t
+        dur = n_end - t
         if dur <= 0.1:
             continue
         for s in sents:
             d = dur * len(s) / max(1, total_chars)
-            cues.append((round(t, 3), round(min(t + d, float(n["end"])), 3), s))
+            cues.append((round(t, 3), round(min(t + d, n_end), 3), s, "sent"))
             t += d
     return cues
 

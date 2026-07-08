@@ -607,6 +607,68 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
     return ok
 
 
+# WordBoundary của edge-tts trả offset/duration theo tick 100 nano-giây
+_WB_TICKS = 10_000_000.0
+
+
+async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
+                           on_done: Optional[Callable[[int], None]] = None,
+                           ) -> tuple[list[bool], list[list]]:
+    """Như _synth_all nhưng THU thêm WORD BOUNDARY của edge-tts (stream API:
+    chunk type "WordBoundary" có offset/duration 100-ns) -> mốc TỪNG TỪ theo
+    thời gian THẬT của giọng đọc (TRƯỚC atempo).
+
+    Trả (ok, words): ok[i] như _synth_all; words[i] = [[start_s, end_s, từ],
+    ...] tăng dần theo thời gian (rỗng nếu cụm rỗng/lỗi/không có event).
+    CHỈ edge-tts có event này — giọng Gemini dùng đường khác (không words).
+    """
+    import edge_tts
+    sem = asyncio.Semaphore(_TTS_PARALLEL)
+    ok = [False] * len(texts)
+    words: list[list] = [[] for _ in texts]
+
+    async def one(i: int) -> None:
+        async with sem:
+            txt = (texts[i] or "").strip()
+            if not txt:                     # cụm rỗng -> coi như không có tiếng
+                if on_done:
+                    on_done(i)
+                return
+            for attempt in range(3):        # mạng chập chờn -> thử lại
+                wb: list = []
+                try:
+                    try:
+                        # edge-tts >=7 mặc định SentenceBoundary -> phải xin
+                        # WordBoundary tường minh
+                        comm = edge_tts.Communicate(txt, voice, rate="+0%",
+                                                    boundary="WordBoundary")
+                    except TypeError:       # edge-tts <7: luôn WordBoundary
+                        comm = edge_tts.Communicate(txt, voice, rate="+0%")
+                    with open(paths[i], "wb") as f:
+                        async for ch in comm.stream():
+                            if ch["type"] == "audio" and ch.get("data"):
+                                f.write(ch["data"])
+                            elif ch["type"] == "WordBoundary":
+                                a = float(ch.get("offset", 0)) / _WB_TICKS
+                                d = float(ch.get("duration", 0)) / _WB_TICKS
+                                w = str(ch.get("text") or "").strip()
+                                if w and d >= 0:
+                                    wb.append([round(a, 3),
+                                               round(a + d, 3), w])
+                    if os.path.getsize(paths[i]) > 200:
+                        ok[i] = True
+                        words[i] = wb
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+                await asyncio.sleep(1.5 * (attempt + 1))
+            if on_done:
+                on_done(i)
+
+    await asyncio.gather(*(one(i) for i in range(len(texts))))
+    return ok, words
+
+
 # ------------------------------------------------------------------
 # ffmpeg helpers
 # ------------------------------------------------------------------
@@ -705,16 +767,21 @@ _RECAP_TEMPO_MIN = 0.8
 _RECAP_TEMPO_MAX = 1.35
 
 
-def _fit_recap_chunk(src: str, dst_wav: str, window: float) -> float:
+def _fit_recap_chunk(src: str, dst_wav: str,
+                     window: float) -> tuple[float, float]:
     """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-1.35;
-    vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế). Trả độ dài."""
+    vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế).
+    Trả (độ_dài_sau_xử_lý, tempo) — tempo dùng để SCALE mốc word boundary
+    (mốc thật sau atempo k = t/k)."""
     dur = probe_duration(src)
     if dur <= 0:
         raise RuntimeError("TTS trả file audio hỏng (0 giây)")
     af = ["aresample=48000"]
+    tempo = 1.0
     if window > 0.2 and abs(dur - window) > 0.05:
-        tempo = max(_RECAP_TEMPO_MIN, min(_RECAP_TEMPO_MAX, dur / window))
-        if abs(tempo - 1.0) > 0.02:
+        t = max(_RECAP_TEMPO_MIN, min(_RECAP_TEMPO_MAX, dur / window))
+        if abs(t - 1.0) > 0.02:
+            tempo = t
             af.append(_tempo_filters(tempo))
             dur = dur / tempo
     if window > 0.05 and dur > window + 0.05:       # tempo trần vẫn dư -> cắt
@@ -723,7 +790,7 @@ def _fit_recap_chunk(src: str, dst_wav: str, window: float) -> float:
         dur = window
     _ffmpeg(["-i", src, "-af", ",".join(af), "-ac", "1", "-ar", "48000",
              "-c:a", "pcm_s16le", dst_wav], "khớp thời gian thuyết minh")
-    return dur
+    return dur, tempo
 
 
 def _map_to_output(t: float, clip_segments: list) -> Optional[float]:
@@ -749,8 +816,12 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     clip_segments: các khúc của clip -> mốc part được ÁNH XẠ về timeline đầu ra.
     voice: giọng edge-tts hoặc "gemini:...". lang: để chọn giọng dự phòng.
 
-    narrate_events = [{"start","end","text"}] trên timeline ĐẦU RA (chưa
-    speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
+    narrate_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
+    (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
+    "words" = [[start, end, từ], ...] mốc TỪNG TỪ THẬT của giọng đọc (thu từ
+    WordBoundary edge-tts, ĐÃ chia theo atempo + offset vào timeline clip) —
+    dùng cho phụ đề word-level. Giọng Gemini KHÔNG có word boundary -> event
+    không có key "words" (caller fallback chia theo ký tự).
     WAV 48kHz mono dài ĐÚNG tổng độ dài clip; part TTS lỗi -> BỎ RIÊNG part
     đó (các part khác giữ đúng mốc); MỌI part lỗi -> track im lặng (không vỡ).
     """
@@ -788,15 +859,20 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             prog(0.05 + 0.60 * done["n"] / max(1, len(narr)),
                  f"Thu giọng đoạn {done['n']}/{len(narr)}...")
 
+        word_lists: list[list] = [[] for _ in narr]
         if voice.startswith("gemini:"):
+            # Gemini TTS KHÔNG trả word boundary -> word_lists rỗng, phụ đề
+            # narrate fallback chia theo ký tự (m1._recap_caption_cues).
+            # (_synth_all_gemini có thể tự đổi cả track sang edge-tts khi hết
+            # hạn mức — đường đó cũng không thu words, chấp nhận fallback.)
             prog(0.05, f"Thu giọng {len(narr)} đoạn (Gemini TTS)...")
             ok = _synth_all_gemini(texts, voice, mp3s, norm_lang(lang),
                                    on_done=_tts_done,
                                    on_msg=lambda m: prog(0.06, m))
         else:
             prog(0.05, f"Thu giọng {len(narr)} đoạn (edge-tts)...")
-            ok = asyncio.run(_synth_all(texts, voice, mp3s,
-                                        on_done=_tts_done))
+            ok, word_lists = asyncio.run(_synth_all_words(
+                texts, voice, mp3s, on_done=_tts_done))
         if not any(ok):
             raise RuntimeError(
                 "TTS thuyết minh thất bại toàn bộ (mạng/giọng lỗi) — "
@@ -807,11 +883,26 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             if not ok[i]:
                 continue
             wav = os.path.join(td, f"f{i}.wav")
+            window = n["end"] - n["start"]
             try:
-                _fit_recap_chunk(mp3s[i], wav, n["end"] - n["start"])
+                _dur, tempo = _fit_recap_chunk(mp3s[i], wav, window)
             except RuntimeError:
                 continue                    # part hỏng -> bỏ riêng part đó
             fitted.append((n["start"], wav))
+            # Mốc TỪNG TỪ thật: sau atempo k mọi mốc chia k; offset vào
+            # timeline clip theo start của part. Từ bị atrim cắt mất -> bỏ.
+            wl = word_lists[i] if i < len(word_lists) else []
+            if wl:
+                out_w = []
+                for a, b, wtxt in wl:
+                    a2, b2 = a / tempo, b / tempo
+                    if a2 >= window - 0.01:  # từ rơi vào phần bị cắt -> bỏ
+                        break
+                    out_w.append([round(n["start"] + a2, 3),
+                                  round(n["start"] + min(b2, window), 3),
+                                  wtxt])
+                if out_w:
+                    n["words"] = out_w
             prog(0.65 + 0.25 * (i + 1) / len(narr), "Khớp thời gian...")
 
         prog(0.92, "Ghép track thuyết minh...")

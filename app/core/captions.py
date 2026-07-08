@@ -233,9 +233,11 @@ def build_ass(words: list, segments: list, out_path,
             số âm = hiện sớm hơn. ny = vị trí dọc (0=trên, 1=dưới) do user KÉO.
     hook_nx/hook_ny = tâm-ngang/đỉnh ô HOOK (0..1, user kéo trong Chỉnh mẫu);
     hook_size = cỡ chữ hook theo tỉ lệ chiều cao (0 = mặc định 1.5x phụ đề).
-    extra_cues = [(start, end, text)] — cue THÊM đã ở TIMELINE ĐẦU RA (không
-    remap, không delay): phụ đề THUYẾT MINH recap hiện theo CÂU (đoạn narrate
-    tiếng gốc bị tắt nên không có words; words truyền vào chỉ phủ đoạn orig).
+    extra_cues = [(start, end, text[, kind])] — cue THÊM đã ở TIMELINE ĐẦU RA
+    (không remap, không delay): phụ đề THUYẾT MINH recap (đoạn narrate tiếng
+    gốc bị tắt nên không có words; words truyền vào chỉ phủ đoạn orig).
+    kind="word" = cue TỪNG TỪ (mốc word boundary thật của TTS) chạy chữ như
+    đoạn gốc; thiếu kind/"sent" = hiện cả câu với fade nhẹ.
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
     bị ẨN trong lúc hook hiện (tránh chồng chữ), sau đó chạy bình thường."""
     has_hook = bool((hook or "").strip()) and hook_dur > 0
@@ -320,16 +322,24 @@ def build_ass(words: list, segments: list, out_path,
     # Hook và phụ đề chạy CÙNG NHAU (user chốt 2026-07): không ẩn phụ đề lúc
     # hook hiện nữa — tắt hook thì chỉ hook biến mất, phụ đề luôn chạy từ 0s.
     min_start = 0.0
-    # Cue THUYẾT MINH (recap): hiện CẢ CÂU, mốc đã ở timeline đầu ra —
-    # không remap/delay; fade nhẹ vào/ra cho mượt. Dùng chung Style Default.
+    # Cue THUYẾT MINH (recap): mốc đã ở timeline đầu ra — không remap/delay.
+    # Phần tử thứ 4 (tuỳ chọn) = kind: "word" -> cue TỪNG TỪ (word boundary
+    # thật của edge-tts) render y hệt kiểu chạy chữ word (pop nhẹ nếu kiểu có
+    # animate, KHÔNG fade dài — fade 80ms trên cue 0.2s sẽ nhấp nháy);
+    # mặc định/"sent" -> hiện CẢ CÂU + fade nhẹ vào/ra. Dùng Style Default.
     extra_lines = []
-    for ea, eb, etxt in extra_cues:
+    word_pre = ("{\\fad(40,0)\\t(0,90,\\fscx118\\fscy118)"
+                "\\t(90,200,\\fscx100\\fscy100)}" if p.get("animate") else "")
+    for c in extra_cues:
+        ea, eb, etxt = c[0], c[1], c[2]
+        kind = str(c[3]) if len(c) > 3 else "sent"
         et = _esc(str(etxt))
         if p.get("upper"):
             et = et.upper()
+        pre = word_pre if kind == "word" else "{\\fad(80,80)}"
         extra_lines.append(
             f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},Default,,0,0,0,,"
-            f"{{\\fad(80,80)}}{et}\n")
+            f"{pre}{et}\n")
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
