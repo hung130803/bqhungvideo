@@ -1106,6 +1106,10 @@ class EditorDialog(QDialog):
         dr1.addWidget(self.dub_lang, 1)
         dr1.addWidget(QLabel("Giọng"))
         self.dub_voice = _NoWheelCombo()
+        self.dub_voice.setToolTip(
+            "Giọng đọc thuyết minh. ⭐ = giọng hot tự nhiên nhất (edge-tts, "
+            "free).\n🌟 Gemini = giọng nét nhất (cần key Gemini, hạn mức miễn "
+            "phí thấp).")
         dr1.addWidget(self.dub_voice, 2)   # combo giọng giãn nhiều hơn (tên dài)
         gd.addLayout(dr1)
         # "Nghe thử" xuống DÒNG RIÊNG: hàng trên đã chật (2 label + 2 combo) nên

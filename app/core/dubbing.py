@@ -1,5 +1,7 @@
 """
 LỒNG TIẾNG AI (dubbing) bằng edge-tts (giọng Microsoft Neural — hay, tự nhiên, free).
+Tùy chọn CAO CẤP: Gemini TTS (giọng "gemini:Kore"...) — nét hơn, cần key Gemini,
+hạn mức free thấp; hết hạn mức thì tự CHUYỂN CẢ TRACK về edge-tts (giọng dự phòng).
 
 Quy trình build_dub_track:
   1. Lấy các câu transcript nằm trong clip_segments, ÁNH XẠ mốc về timeline đầu ra
@@ -24,11 +26,16 @@ Chỉ dùng subprocess ffmpeg (settings.FFMPEG_PATH) — không thêm dependency
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
+import urllib.error
+import urllib.request
+import wave
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -99,6 +106,33 @@ _HOT_VOICES = {
     "zh-CN-YunxiNeural", "zh-CN-XiaoxiaoNeural", "zh-CN-YunjianNeural",
     "es-ES-AlvaroNeural", "pt-BR-AntonioNeural", "fr-FR-HenriNeural",
 }
+
+# ---- GEMINI TTS (tùy chọn CAO CẤP — giọng nét nhất, cần key Gemini) ----
+# Voice id dạng "gemini:Kore" (khác hẳn ShortName edge -> không đụng nhau).
+# Giọng prebuilt đa ngôn ngữ (đọc tiếng Việt tự nhiên). Hạn mức free THẤP
+# (vài request/phút) -> synth TUẦN TỰ + retry 429 + fallback edge-tts.
+_GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+_GEMINI_PREBUILT = [
+    "Kore", "Zephyr", "Puck", "Charon", "Fenrir", "Leda", "Orus", "Aoede",
+    "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
+    "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar",
+    "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi",
+    "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
+]
+
+
+def _gemini_available() -> bool:
+    """Có key Gemini trong settings không (đọc y hệt llm.py — .env)."""
+    try:
+        return bool(settings.llm_keys_for("gemini"))
+    except Exception:  # noqa: BLE001 — settings hỏng thì coi như không có
+        return False
+
+
+def _gemini_voice_items() -> list[tuple[str, str]]:
+    """Nhóm giọng Gemini cho combo: [("🌟 Kore (Gemini)", "gemini:Kore"), ...]."""
+    return [(f"🌟 {n} (Gemini)", f"gemini:{n}") for n in _GEMINI_PREBUILT]
+
 
 # Nhãn tiếng Việt cho combo UI
 LANG_LABELS = {
@@ -198,15 +232,17 @@ def _voice_label(v: dict) -> str:
 
 
 def list_voices_for(lang: str) -> list[tuple[str, str]]:
-    """TOÀN BỘ giọng edge-tts của ngôn ngữ `lang` -> [(nhãn, ShortName)].
-    Giọng cùng quốc gia chính lên đầu (vi -> vi-VN trước), kèm các giọng
-    Multilingual (đọc được mọi ngôn ngữ) ở cuối. Offline/lỗi mạng ->
+    """TOÀN BỘ giọng của ngôn ngữ `lang` -> [(nhãn, voice_id)].
+    Nhóm 🌟 Gemini (id "gemini:Kore"...) lên TRÊN CÙNG — CHỈ khi có key Gemini
+    (không key -> ẩn nhóm). Tiếp theo là giọng edge-tts: cùng quốc gia chính
+    trước (vi -> vi-VN), kèm giọng Multilingual ở cuối. Offline/lỗi mạng ->
     fallback danh sách tĩnh VOICES."""
     lang = norm_lang(lang)
+    gem = _gemini_voice_items() if _gemini_available() else []
     static = list(VOICES.get(lang, []))
     allv = _fetch_all_voices()
     if not allv:
-        return static
+        return gem + static
     pref = "-".join(static[0][1].split("-")[:2]) if static else ""  # "vi-VN"
     native = [v for v in allv
               if (v.get("Locale") or "").lower().startswith(lang + "-")]
@@ -223,8 +259,165 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
     # giọng đa ngữ HOT lên đầu nhóm đa ngữ
     multi.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
                               v.get("ShortName", "")))
-    out = [(_voice_label(v), v["ShortName"]) for v in native + multi]
-    return out or static
+    edge = [(_voice_label(v), v["ShortName"]) for v in native + multi]
+    return gem + (edge or static)
+
+
+# ------------------------------------------------------------------
+# Gemini TTS (REST thuần — urllib stdlib, không thêm dependency)
+# ------------------------------------------------------------------
+# Bóc "retryDelay": "30s" trong body lỗi 429 của Gemini (llm.parse_retry_wait
+# không bắt dạng này — nó bắt "in 30s"/"retry-after").
+_GEMINI_RETRY_DELAY = re.compile(r'retryDelay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)')
+
+
+def _gemini_tts_once(text: str, voice_name: str, key: str,
+                     out_path: str) -> None:
+    """1 lần gọi Gemini TTS -> ghi WAV (PCM 16-bit mono, rate parse từ
+    mimeType, thường 24000). Ném RuntimeError kèm mã HTTP/body nếu lỗi."""
+    url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{_GEMINI_TTS_MODEL}:generateContent")
+    body = {
+        "contents": [{"parts": [{"text": text}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {"voiceConfig": {
+                "prebuiltVoiceConfig": {"voiceName": voice_name}}},
+        },
+    }
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": key},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:800]
+        except OSError:
+            detail = ""
+        # mã HTTP nằm trong message -> is_rate_limit_error/is_auth_error bắt được
+        raise RuntimeError(f"Gemini TTS HTTP {e.code}: {detail}") from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Gemini TTS lỗi mạng: {e}") from None
+    try:
+        part = (data.get("candidates") or [{}])[0].get("content", {}) \
+            .get("parts", [{}])[0]
+    except (AttributeError, IndexError, TypeError):
+        part = {}
+    inline = (part.get("inlineData") or part.get("inline_data") or {}) \
+        if isinstance(part, dict) else {}
+    b64 = inline.get("data", "")
+    if not b64:
+        raise RuntimeError(f"Gemini TTS không trả audio: {str(data)[:300]}")
+    pcm = base64.b64decode(b64)
+    if len(pcm) < 2000:                 # < ~0.04s @24k -> coi như hỏng
+        raise RuntimeError("Gemini TTS trả audio quá ngắn")
+    mime = inline.get("mimeType") or inline.get("mime_type") or ""
+    m = re.search(r"rate=(\d+)", mime)
+    rate = int(m.group(1)) if m else 24000
+    with wave.open(out_path, "wb") as w:   # header WAV chuẩn -> winsound/ffmpeg OK
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+
+
+def _gemini_tts(text: str, voice: str, out_path: str | Path,
+                retries: int = 2, max_wait: float = 30.0) -> bool:
+    """Synth 1 đoạn text bằng Gemini TTS -> file WAV. Trả True nếu OK.
+
+    Key đọc y hệt llm.py (settings.llm_keys_for("gemini")) + XOAY VÒNG nhiều
+    key qua sổ trạng thái của llm (mark_limited/mark_invalid dùng chung với
+    phần dịch). 429 -> thử key kế; hết key thì đợi theo retryDelay của server
+    (trần `max_wait`) rồi thử lại, tối đa `retries` vòng. Không key/lỗi hết
+    -> False (caller tự fallback edge-tts)."""
+    from app.ai import llm
+    name = voice.split(":", 1)[1] if voice.startswith("gemini:") else voice
+    text = (text or "").strip()
+    if not text or not name:
+        return False
+    out_path = str(out_path)
+    wait = 5.0                          # chờ mặc định khi 429 không kèm delay
+    for attempt in range(retries + 1):
+        keys = llm.pick_keys("gemini")
+        if not keys:
+            return False
+        rate_limited = False
+        for key in keys:
+            llm.mark_used("gemini", key)
+            try:
+                _gemini_tts_once(text, name, key, out_path)
+                llm.mark_ok("gemini", key)
+                return True
+            except Exception as e:  # noqa: BLE001
+                msg = str(e)
+                if llm.is_rate_limit_error(msg):
+                    rate_limited = True
+                    llm.mark_limited("gemini", key, msg)
+                    md = _GEMINI_RETRY_DELAY.search(msg)
+                    w = (float(md.group(1)) if md
+                         else llm.parse_retry_wait(msg))
+                    if w:
+                        wait = min(float(w), max_wait)
+                    continue            # 429 -> thử key kế tiếp ngay
+                if llm.is_auth_error(msg):
+                    llm.mark_invalid("gemini", key)
+                    continue            # key sai -> bỏ, thử key khác
+                # lỗi khác (mạng/parse) -> nghỉ ngắn rồi thử vòng sau
+        if attempt < retries:
+            time.sleep(min(wait if rate_limited else 2.0, max_wait))
+    return False
+
+
+def _edge_fallback_voice(lang: str) -> str:
+    """Giọng edge-tts DỰ PHÒNG khi Gemini hết hạn mức: giọng ⭐ hot đầu tiên
+    của ngôn ngữ (list_voices_for đã xếp hot lên đầu), bỏ qua nhóm gemini."""
+    for _lbl, vid in list_voices_for(lang):
+        if vid and not vid.startswith("gemini:"):
+            return vid
+    return default_voice(lang) or "en-US-JennyNeural"
+
+
+def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
+                      lang: str,
+                      on_done: Optional[Callable[[int], None]] = None,
+                      on_msg: Optional[Callable[[str], None]] = None,
+                      ) -> list[bool]:
+    """Synth TUẦN TỰ từng cụm qua Gemini TTS (hạn mức free thấp — KHÔNG chạy
+    song song; _gemini_tts tự retry 429 theo retryDelay). CẢ 2 cụm đầu (không
+    rỗng) đều lỗi -> coi như hết hạn mức: CHUYỂN CẢ TRACK sang edge-tts giọng
+    dự phòng của ngôn ngữ NGAY TỪ ĐẦU (tránh nửa clip giọng này nửa giọng
+    kia). Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó (như edge).
+    Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội dung)."""
+    ok = [False] * len(texts)
+    n_nonempty = sum(1 for t in texts if (t or "").strip())
+    head_need = max(1, min(2, n_nonempty))  # số cụm đầu fail -> fallback
+    seen = 0                                # số cụm KHÔNG rỗng đã synth
+    head_fail = 0                           # fail LIÊN TIẾP tính từ cụm đầu
+    for i, t in enumerate(texts):
+        txt = (t or "").strip()
+        if not txt:                         # cụm rỗng -> không có tiếng
+            if on_done:
+                on_done(i)
+            continue
+        good = _gemini_tts(txt, voice, paths[i])
+        ok[i] = good
+        seen += 1
+        if not good and head_fail == seen - 1:
+            head_fail += 1
+        if head_fail >= head_need:
+            # Hết hạn mức/lỗi ngay từ đầu -> đổi CẢ track sang edge-tts
+            fb = _edge_fallback_voice(lang)
+            if on_msg:
+                on_msg("Gemini hết hạn mức -> dùng giọng dự phòng "
+                       f"({fb})...")
+            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done))
+        if on_done:
+            on_done(i)
+        time.sleep(1.0 if not good else 0.3)  # nghỉ nhẹ — tôn trọng hạn mức
+    return ok
 
 
 # ------------------------------------------------------------------
@@ -251,6 +444,12 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None) -> bool
     voice = (voice or "").strip()
     if not voice:
         return False
+    if voice.startswith("gemini:"):     # giọng Gemini: đa ngữ -> câu mẫu Việt
+        txt = (text or "").strip() or _DEMO_TEXTS["vi"]
+        try:
+            return _gemini_tts(txt, voice, str(out_mp3))
+        except Exception:  # noqa: BLE001
+            return False
     lang = norm_lang(voice.split("-")[0])
     txt = (text or "").strip() or _DEMO_TEXTS.get(lang) or _DEMO_TEXTS["en"]
     out_mp3 = str(out_mp3)
@@ -461,7 +660,7 @@ def _fit_chunk(src_mp3: str, dst_wav: str, budget: float, hard_max: float,
     120ms cuối cho khỏi bụp. Đảm bảo cụm KHÔNG bao giờ đè lên start cụm kế."""
     dur = probe_duration(src_mp3)
     if dur <= 0:
-        raise RuntimeError("edge-tts trả file audio hỏng (0 giây)")
+        raise RuntimeError("TTS trả file audio hỏng (0 giây)")
     af = ["aresample=48000"]
     limit = window if (tight and window > 0.2) else budget
     if limit > 0.2 and dur > limit + 0.05:
@@ -570,8 +769,17 @@ def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,
             prog(0.15 + 0.55 * done["n"] / max(1, len(chunks)),
                  f"Đang đọc lời thoại ({done['n']}/{len(chunks)})...")
 
-        prog(0.15, f"Đang đọc {len(chunks)} câu (edge-tts)...")
-        ok = asyncio.run(_synth_all(texts, voice, mp3s, on_done=_tts_done))
+        if voice.startswith("gemini:"):
+            # Gemini TTS: tuần tự (hạn mức thấp); 2 cụm đầu lỗi -> tự chuyển
+            # CẢ track sang edge-tts giọng dự phòng (on_msg báo lên progress).
+            prog(0.15, f"Đang đọc {len(chunks)} câu (Gemini TTS)...")
+            ok = _synth_all_gemini(texts, voice, mp3s, target_lang,
+                                   on_done=_tts_done,
+                                   on_msg=lambda m: prog(0.16, m))
+        else:
+            prog(0.15, f"Đang đọc {len(chunks)} câu (edge-tts)...")
+            ok = asyncio.run(_synth_all(texts, voice, mp3s,
+                                        on_done=_tts_done))
 
         # --- Khớp thời gian từng cụm ---
         # gap[i] = khoảng cách từ start cụm i tới start cụm kế (hoặc hết clip)
