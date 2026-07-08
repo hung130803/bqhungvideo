@@ -129,6 +129,41 @@ def _snap_parts(parts: list, edges: list, tol: float = _SNAP_TOL,
 
 
 # ------------------------------------------------------------------
+# 🎬 MULTI-WINDOW: rút gọn transcript cho prompt đạo diễn
+# ------------------------------------------------------------------
+def _condense_listing(segs: list, duration: float,
+                      max_chars: int = 11000) -> str:
+    """Transcript cho prompt ĐẠO DIỄN. Video ngắn (<=8 phút) -> nguyên từng
+    câu; dài hơn -> GỘP các câu liền kề thành dòng ~10s (đủ hiểu mạch chuyện,
+    tiết kiệm token); vẫn quá max_chars -> gộp thô 20s; chốt cắt max_chars."""
+    def build(step: float) -> str:
+        lines, cur_s, cur_e, buf = [], None, 0.0, []
+        for s in segs or []:
+            try:
+                a, b = float(s["start"]), float(s["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            t = (s.get("text") or "").strip()
+            if not t:
+                continue
+            if cur_s is None:
+                cur_s = a
+            buf.append(t)
+            cur_e = max(cur_e, b)
+            if step <= 0 or cur_e - cur_s >= step:
+                lines.append(f"{cur_s:.1f} {cur_e:.1f} | {' '.join(buf)}")
+                cur_s, buf = None, []
+        if buf:
+            lines.append(f"{cur_s:.1f} {cur_e:.1f} | {' '.join(buf)}")
+        return "\n".join(lines)
+
+    txt = build(0.0 if (duration or 0) <= 480 else 10.0)
+    if len(txt) > max_chars:
+        txt = build(20.0)
+    return txt[:max_chars]
+
+
+# ------------------------------------------------------------------
 # NGỮ CẢNH THỊ GIÁC: trích khung hình cho model vision "nhìn" clip
 # ------------------------------------------------------------------
 def _clip_frames(src: str, start: float, end: float, tmp_dir: str,
@@ -190,8 +225,76 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         except (KeyError, TypeError, ValueError):
             continue
 
-    # ---- 1) Chọn các đoạn hay (tái dùng đường chọn clip của auto) ----
+    # ---- 0) 🎬 ĐẠO DIỄN MULTI-WINDOW (mặc định): LLM nhận TOÀN BỘ
+    # transcript, TỰ CHỌN 3-6 khung cảnh RỜI NHAU theo mạch chuyện (mở -
+    # thân - twist - kết) + viết kịch bản có CẦU NỐI narrate giữa các khung
+    # (kiểu recap phim). Windows/kịch bản hỏng hoặc LLM lỗi -> FALLBACK
+    # đường 1-span liền mạch cũ bên dưới (giữ nguyên, không xóa).
     prov = llm.active_provider()
+    min_total = float(cfg.get("min_len") or 0) or 60.0
+    max_total = float(cfg.get("max_len") or 0) or _HARD_MAX
+    sents_all = []
+    for s in segs:
+        try:
+            a, b = float(s["start"]), float(s["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        t = (s.get("text") or "").strip()
+        if t:
+            sents_all.append((a, b, t))
+    ctx.progress(0.06, f"AI [{prov}] đạo diễn: chọn khung cảnh + viết "
+                       "kịch bản cầu nối...")
+    script = None
+    try:
+        script = recap.write_director_script(
+            sents_all, lang_name, style, duration, min_total, max_total,
+            ratio=ratio, listing=_condense_listing(segs, duration))
+    except llm.LLMError:
+        script = None                  # LLM lỗi -> thử đường cũ bên dưới
+    if script:
+        # SNAP mép khung vào mép câu rồi VALIDATE LẠI (snap có thể làm 2
+        # khung chạm/teo); part snap + validate TỪNG khung (không vắt khung).
+        snapped_w = [[_snap_time(s, edges), _snap_time(e, edges)]
+                     for s, e in script["windows"]]
+        windows = recap.validate_windows(snapped_w, duration)
+        parts: list = []
+        for ws, we in windows or []:
+            sub = [p for p in script["parts"]
+                   if ws - 0.01 <= (float(p["start"]) + float(p["end"])) / 2
+                   <= we + 0.01]
+            sub = _snap_parts(sub, edges, words=tr_words)
+            parts.extend(recap.validate_parts(
+                sub, ws, we, sentences=_clip_sentences(segs, ws, we)))
+        if windows and any(p["mode"] == "narrate" for p in parts):
+            _delete_suggested(video_id)
+            lang0 = (transcript.get("language") or "").strip()
+            total = round(sum(e - s for s, e in windows), 1)
+            title = script.get("title") or "Clip thuyết minh"
+            wlist = [[round(s, 2), round(e, 2)] for s, e in windows]
+            signals = {
+                "segments": wlist, "n_seg": len(wlist), "llm_used": True,
+                "ai": prov, "dur": total,
+                "title_en": script.get("title") or "",
+                "recap": {"style": style, "lang": lang0, "parts": parts,
+                          "windows": wlist},
+            }
+            cid = db.insert(
+                """INSERT INTO clips (video_id, start_sec, end_sec, score,
+                                      reason, title, transcript, signals,
+                                      status)
+                   VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
+                (video_id, wlist[0][0], wlist[-1][1], 80.0,
+                 f"Đạo diễn ghép {len(wlist)} khung cảnh (~{total:.0f}s), "
+                 "thuyết minh " + recap.style_label(style) + ".",
+                 title, "", db.dumps(signals)))
+            ctx.progress(1.0, f"AI [{prov}] dựng 1 clip recap "
+                              f"{len(wlist)} khung cảnh (~{total:.0f}s, "
+                              f"{recap.style_label(style)})")
+            return {"count": 1, "clip_ids": [cid], "scripts": 1,
+                    "style": style, "llm_used": True,
+                    "windows": len(wlist)}
+
+    # ---- 1) FALLBACK 1-SPAN: chọn các đoạn hay (đường chọn clip của auto) ----
     ctx.progress(0.05, f"AI [{prov}] đang đọc nội dung & chọn đoạn hay...")
 
     class _Sel:                       # map tiến độ chọn clip về 0.05..0.45

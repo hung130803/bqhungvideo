@@ -287,6 +287,18 @@ def build_ass(words: list, segments: list, out_path,
     style = (f"Style: Default,{font},{size},{primary},{secondary},{outline},"
              f"{back},-1,0,0,0,100,100,0,0,{border_style},{ow},{shadow},"
              f"{align},{side},{side},{margin_v},1")
+    # STYLE RIÊNG "Narrate" cho phụ đề THUYẾT MINH (recap): NGHIÊNG + màu
+    # ACCENT khác hẳn màu preset -> người xem phân biệt ngay lời KỂ của AI
+    # với lời THOẠI gốc (trước đây 2 loại giống hệt nhau -> 'sub linh tinh').
+    # Accent = màu glow của preset (neon) nếu có, không thì VÀNG NHẠT #FFD966;
+    # trùng màu chữ chính -> lùi về trắng (vẫn phân biệt nhờ nghiêng + fade).
+    narr_accent = p.get("glow") or "#FFD966"
+    if _ass_color(narr_accent) == primary:
+        narr_accent = "#FFFFFF" if primary != _ass_color("#FFFFFF") else "#FFD966"
+    narr_primary = _ass_color(narr_accent)
+    narr_style = (f"Style: Narrate,{font},{size},{narr_primary},{secondary},"
+                  f"{outline},{back},-1,-1,0,0,100,100,0,0,{border_style},"
+                  f"{ow},{shadow},{align},{side},{side},{margin_v},1")
     # HOOK: câu giật tít TO ở ĐẦU clip (an8 = trên, neo đỉnh); vàng nổi + viền dày
     # vị trí/cỡ theo Ô HOOK user kéo trong Chỉnh mẫu (thiếu -> mặc định như cũ)
     hsize = int(hook_size * out_h) if hook_size > 0 else int(size * 1.5)
@@ -302,7 +314,7 @@ def build_ass(words: list, segments: list, out_path,
         "OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,"
         "Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,"
         "MarginV,Encoding\n"
-        f"{style}\n{hook_style}\n\n"
+        f"{style}\n{hook_style}\n{narr_style}\n\n"
         "[Events]\n"
         "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
     )
@@ -324,12 +336,11 @@ def build_ass(words: list, segments: list, out_path,
     min_start = 0.0
     # Cue THUYẾT MINH (recap): mốc đã ở timeline đầu ra — không remap/delay.
     # Phần tử thứ 4 (tuỳ chọn) = kind: "word" -> cue TỪNG TỪ (word boundary
-    # thật của edge-tts) render y hệt kiểu chạy chữ word (pop nhẹ nếu kiểu có
-    # animate, KHÔNG fade dài — fade 80ms trên cue 0.2s sẽ nhấp nháy);
-    # mặc định/"sent" -> hiện CẢ CÂU + fade nhẹ vào/ra. Dùng Style Default.
+    # thật của edge-tts); mặc định/"sent" -> hiện CẢ CÂU. Dùng Style Narrate
+    # (nghiêng + màu accent) và KHÔNG dùng pop/karaoke của preset gốc — từng
+    # từ chỉ FADE NHẸ (50/30ms) -> nhìn là biết lời KỂ, không lẫn với thoại.
     extra_lines = []
-    word_pre = ("{\\fad(40,0)\\t(0,90,\\fscx118\\fscy118)"
-                "\\t(90,200,\\fscx100\\fscy100)}" if p.get("animate") else "")
+    word_pre = "{\\fad(50,30)}"
     for c in extra_cues:
         ea, eb, etxt = c[0], c[1], c[2]
         kind = str(c[3]) if len(c) > 3 else "sent"
@@ -338,7 +349,7 @@ def build_ass(words: list, segments: list, out_path,
             et = et.upper()
         pre = word_pre if kind == "word" else "{\\fad(80,80)}"
         extra_lines.append(
-            f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},Default,,0,0,0,,"
+            f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},Narrate,,0,0,0,,"
             f"{pre}{et}\n")
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":

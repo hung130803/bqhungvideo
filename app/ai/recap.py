@@ -101,6 +101,41 @@ def _style_hint(key: str) -> str:
     return STYLES.get(key, STYLES[DEFAULT_STYLE])[1]
 
 
+def _narrator_rules(ln: str, style: str) -> str:
+    """Khối luật NGƯỜI KỂ CHUYỆN dùng chung cho prompt 1-clip (build_prompt)
+    và prompt đạo diễn multi-window (build_director_prompt) — giữ 1 nguồn
+    để 2 đường không lệch luật (anti-copy, văn nói, vibe phong cách)."""
+    return (
+        "CẤM TUYỆT ĐỐI trong lời narrate:\n"
+        "- CẤM lặp lại, diễn giải lại hay tóm tắt lại câu nhân vật VỪA nói "
+        "hoặc SẮP nói trong transcript — người xem sắp nghe/vừa nghe câu đó "
+        "rồi, kể lại là thừa và chán.\n"
+        "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
+        "bảo là...\", \"anh ta giải thích rằng...\".\n\n"
+        "LỜI KỂ CỦA BẠN PHẢI:\n"
+        "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
+        "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
+        "video.\n"
+        "- THÊM cái transcript KHÔNG có: cảm xúc, phán đoán, bình luận, câu "
+        "hỏi ném cho khán giả, thông tin nền. Kiểu: \"Điều điên rồ là hắn "
+        "còn không biết...\", \"Ai cũng nghĩ X. Nhưng không.\"\n"
+        "- DẪN MỒI vào đoạn tiếng gốc kế tiếp như thả câu: lời kể ngay "
+        "TRƯỚC 1 part orig phải khiến người xem HÓNG câu nhân vật sắp nói "
+        "(kiểu: \"Và nghe hắn nói câu này...\") — đừng nói nội dung câu đó "
+        "ra.\n\n"
+        "VĂN NÓI kể miệng (bắt buộc):\n"
+        f"- Khẩu ngữ tự nhiên đúng {ln} — như nói vo, không phải đọc văn "
+        "bản.\n"
+        "- Dùng dấu \"...\" tạo khựng nhá tò mò; câu hỏi tu từ; câu NGẮN "
+        "dồn dập (tối đa 12 từ/câu).\n"
+        "- CẤM văn viết/thuyết trình/liệt kê: \"đầu tiên\", \"tiếp theo\", "
+        "\"như các bạn thấy\", \"trong video này\", \"chúng ta có thể "
+        "thấy\"...\n"
+        f"{_style_hint(style)}\n"
+        "(Ví dụ trên là tiếng Việt để bạn bắt VIBE — lời narrate thật phải "
+        f"viết bằng {ln}.)\n")
+
+
 def build_prompt(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float, title: str = "",
                  frames: Optional[list] = None, ratio: float = 55) -> str:
@@ -149,34 +184,7 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "Bạn đứng NGOÀI video, kể về nhân vật/sự việc cho khán giả của bạn "
         "nghe. Hãy viết KỊCH BẢN gồm các part xen kẽ: orig (nhân vật tự "
         "nói) / narrate (lời KỂ của bạn).\n\n"
-        "CẤM TUYỆT ĐỐI trong lời narrate:\n"
-        "- CẤM lặp lại, diễn giải lại hay tóm tắt lại câu nhân vật VỪA nói "
-        "hoặc SẮP nói trong transcript — người xem sắp nghe/vừa nghe câu đó "
-        "rồi, kể lại là thừa và chán.\n"
-        "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
-        "bảo là...\", \"anh ta giải thích rằng...\".\n\n"
-        "LỜI KỂ CỦA BẠN PHẢI:\n"
-        "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
-        "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
-        "video.\n"
-        "- THÊM cái transcript KHÔNG có: cảm xúc, phán đoán, bình luận, câu "
-        "hỏi ném cho khán giả, thông tin nền. Kiểu: \"Điều điên rồ là hắn "
-        "còn không biết...\", \"Ai cũng nghĩ X. Nhưng không.\"\n"
-        "- DẪN MỒI vào đoạn tiếng gốc kế tiếp như thả câu: lời kể ngay "
-        "TRƯỚC 1 part orig phải khiến người xem HÓNG câu nhân vật sắp nói "
-        "(kiểu: \"Và nghe hắn nói câu này...\") — đừng nói nội dung câu đó "
-        "ra.\n\n"
-        "VĂN NÓI kể miệng (bắt buộc):\n"
-        f"- Khẩu ngữ tự nhiên đúng {ln} — như nói vo, không phải đọc văn "
-        "bản.\n"
-        "- Dùng dấu \"...\" tạo khựng nhá tò mò; câu hỏi tu từ; câu NGẮN "
-        "dồn dập (tối đa 12 từ/câu).\n"
-        "- CẤM văn viết/thuyết trình/liệt kê: \"đầu tiên\", \"tiếp theo\", "
-        "\"như các bạn thấy\", \"trong video này\", \"chúng ta có thể "
-        "thấy\"...\n"
-        f"{_style_hint(style)}\n"
-        "(Ví dụ trên là tiếng Việt để bạn bắt VIBE — lời narrate thật phải "
-        f"viết bằng {ln}.)\n\n"
+        + _narrator_rules(ln, style) + "\n"
         "CÔNG THỨC VIRAL (bắt buộc):\n"
         "1) HOOK 2-3 GIÂY ĐẦU: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở "
         "phải gây SỐC hoặc TÒ MÒ tức thì (kiểu: \"Bạn sẽ không tin điều gã "
@@ -369,6 +377,193 @@ def narrate_ratio(parts: list[dict]) -> float:
     total = sum(p["end"] - p["start"] for p in parts) or 1.0
     nar = sum(p["end"] - p["start"] for p in parts if p["mode"] == "narrate")
     return nar / total
+
+
+# ------------------------------------------------------------------
+# 🎬 ĐẠO DIỄN MULTI-WINDOW (v4): LLM nhận TOÀN BỘ transcript, TỰ CHỌN
+# 3-6 KHUNG CẢNH rời nhau theo mạch chuyện + viết kịch bản CẦU NỐI
+# (kiểu recap phim). Windows hỏng -> caller fallback đường 1-span cũ.
+# ------------------------------------------------------------------
+_WIN_MIN = 6.0        # khung tối thiểu (prompt xin 8s; nhận từ 6s khỏi vứt oan)
+_WIN_MAX = 45.0       # khung tối đa (prompt xin 40s; nhận tới 45s)
+_WIN_MAX_N = 6
+
+
+def build_director_prompt(listing: str, lang_name: str, style: str,
+                          duration: float, min_total: float,
+                          max_total: float, ratio: float = 55) -> str:
+    """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
+    3-6 khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI giữa các khung."""
+    ln = lang_name.upper()
+    try:
+        pct = int(round(max(30.0, min(80.0, float(ratio)))))
+    except (TypeError, ValueError):
+        pct = 55
+    return (
+        f"Đây là TOÀN BỘ transcript của một video dài {duration:.0f} giây, "
+        f"nói bằng {ln} (mỗi dòng: GIÂY_BẮT_ĐẦU GIÂY_KẾT_THÚC | lời nói):\n"
+        f"{listing}\n\n"
+        "VAI CỦA BẠN: ĐẠO DIỄN kiêm NGƯỜI KỂ CHUYỆN của kênh recap triệu "
+        "view. Nhiệm vụ: CẮT GHÉP video thành 1 clip recap gồm NHIỀU KHUNG "
+        "CẢNH rời nhau kể TRỌN câu chuyện (như recap phim), rồi viết lời kể "
+        "của bạn phủ lên.\n\n"
+        "BƯỚC 1 — CHỌN KHUNG CẢNH (windows):\n"
+        "- Chọn 3-6 khung cảnh RỜI NHAU bám mạch chuyện: mở đầu -> diễn "
+        "biến -> twist/cao trào -> kết. ĐÚNG thứ tự thời gian, KHÔNG chồng "
+        "lấn, KHÔNG đảo đoạn.\n"
+        f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
+        f"{min_total:.0f}-{max_total:.0f} giây.\n"
+        "- Mép khung phải trùng mép câu transcript (không cắt ngang câu "
+        "nói).\n"
+        "- Chỉ lấy khoảnh khắc ĐẮT (kịch tính, twist, cảm xúc mạnh, câu "
+        "chốt) — mạnh dạn BỎ hẳn đoạn nhàm/lặp ở giữa; người xem sẽ được "
+        "lời kể của bạn nối mạch.\n\n"
+        "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (xen kẽ orig = "
+        "giữ tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
+        "- Mỗi part dài 3-15 giây; mốc part nằm TRONG khung, KHÔNG vắt qua "
+        "2 khung; các part PHỦ KÍN từng khung; start/end trùng mép câu.\n"
+        "- Part ĐẦU TIÊN của khung 1 BẮT BUỘC là narrate HOOK: câu mở gây "
+        "SỐC/TÒ MÒ tức thì. CẤM mở nhạt kiểu \"Trong video này...\".\n"
+        "- CẦU NỐI khi nhảy cảnh: part ĐẦU của mỗi khung từ khung thứ 2 "
+        "trở đi NÊN là narrate làm CẦU cho cú nhảy thời gian (kiểu: \"Và "
+        "ngay sau đó...\", \"Nhưng 5 phút sau, mọi thứ đổi khác...\") — "
+        "người xem không bị hụt khi cảnh nhảy. Chỉ bỏ cầu nếu 2 khung liền "
+        "mạch tự nhiên.\n"
+        "- CẤM KỂ ĐỀU ĐỀU: MỖI part narrate phải có ÍT NHẤT 1 trong: câu "
+        "hỏi ném cho khán giả / câu cảm thán / nhá twist (\"nhưng bạn chưa "
+        "thấy gì đâu...\") / con số gây sốc.\n"
+        f"- Part narrate CUỐI: câu chốt đắt + KÊU GỌI tương tác (hỏi ý "
+        f"kiến, kêu theo dõi) viết bằng {ln}.\n"
+        f"- Tổng thời lượng narrate ~{pct}% clip (chấp nhận "
+        f"{max(20, pct - 10)}-{min(90, pct + 10)}%); XEN KẼ với orig.\n"
+        "- Đoạn orig = ĐỒNG ĐẮT: chọn đúng câu nói/tiếng động/cảm xúc MẠNH "
+        "NHẤT trong khung làm twist/đỉnh điểm.\n"
+        "- CẤM SPOILER: không nhắc trước nội dung khung CHƯA chiếu tới — "
+        "chỉ được GỢI tò mò.\n\n"
+        + _narrator_rules(ln, style) +
+        f"\n- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate đọc VỪA KHÍT độ dài "
+        "part (part 6 giây tiếng Anh ~13-14 từ). ĐỪNG viết dài — sẽ bị "
+        "cắt.\n"
+        "- part orig KHÔNG cần text (chuỗi rỗng).\n"
+        f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
+        "Trả về ĐÚNG JSON này, không thêm chữ:\n"
+        '{"title": "...", "windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
+        '"parts": [{"start": giây, "end": giây, "mode": "orig"|"narrate", '
+        '"text": "lời thuyết minh nếu narrate"}]}')
+
+
+def validate_windows(windows, duration: float,
+                     min_total: float = 0.0, max_total: float = 0.0,
+                     min_w: float = _WIN_MIN, max_w: float = _WIN_MAX,
+                     max_n: int = _WIN_MAX_N) -> list:
+    """Chuẩn hoá danh sách khung LLM trả -> [[s,e],...] SẠCH hoặc [] (hỏng).
+
+    - phần tử không phải cặp số / dài < min_w -> BỎ; dài > max_w -> cắt đuôi.
+    - clamp vào [0, duration]; sort; CHỒNG LẤN -> đẩy start khung sau về end
+      khung trước (teo dưới min_w thì bỏ khung đó).
+    - quá max_n khung -> giữ max_n khung đầu (đúng mạch thời gian).
+    - max_total > 0: tổng vượt trần -> cắt bớt khung cuối (khúc cuối teo
+      dưới min_w thì bỏ hẳn).
+    - HỎNG -> []: còn < 2 khung (1 khung = chẳng phải cắt ghép, caller nên
+      dùng đường 1-span cũ) hoặc min_total > 0 mà tổng < 60% min_total.
+    Hàm thuần — unit test được."""
+    dur = float(duration or 0)
+    out = []
+    for w in (windows or []):
+        if not isinstance(w, (list, tuple)) or len(w) < 2:
+            continue
+        try:
+            s, e = float(w[0]), float(w[1])
+        except (TypeError, ValueError):
+            continue
+        s = max(0.0, s)
+        if dur > 0:
+            s, e = min(s, dur), min(e, dur)
+        if e - s > max_w:
+            e = s + max_w
+        if e - s >= min_w:
+            out.append([round(s, 2), round(e, 2)])
+    out.sort(key=lambda w: (w[0], w[1]))
+    fixed: list = []
+    for s, e in out:
+        if fixed and s < fixed[-1][1]:
+            s = fixed[-1][1]
+        if e - s >= min_w:
+            fixed.append([round(s, 2), round(e, 2)])
+    fixed = fixed[:max_n]
+    if max_total and max_total > 0:
+        total, cut = 0.0, []
+        for s, e in fixed:
+            if total >= max_total - 0.01:
+                break
+            if total + (e - s) > max_total:
+                e = round(s + (max_total - total), 2)
+                if e - s < min_w:
+                    break
+            cut.append([s, e])
+            total += e - s
+        fixed = cut
+    if len(fixed) < 2:
+        return []
+    if min_total and min_total > 0:
+        if sum(e - s for s, e in fixed) < 0.6 * min_total:
+            return []
+    return fixed
+
+
+def validate_parts_windows(parts, windows: list, sentences=None,
+                           min_part: float = 1.5) -> list[dict]:
+    """Validate kịch bản MULTI-WINDOW: chia parts về từng khung (theo TÂM
+    part), rồi validate_parts TỪNG khung (clamp vào khung, lấp hở bằng orig,
+    anti-copy...) -> part KHÔNG BAO GIỜ vắt qua 2 khung (mốc luôn map được
+    qua _map_to_output của dubbing). Trả list part phủ kín MỌI khung."""
+    out: list[dict] = []
+    for ws, we in windows or []:
+        sub = []
+        for p in parts or []:
+            if not isinstance(p, dict):
+                continue
+            try:
+                mid = (float(p.get("start")) + float(p.get("end"))) / 2
+            except (TypeError, ValueError):
+                continue
+            if ws - 0.01 <= mid <= we + 0.01:
+                sub.append(p)
+        out.extend(validate_parts(sub, ws, we, min_part=min_part,
+                                  sentences=sentences))
+    return out
+
+
+def write_director_script(sentences: list, lang_name: str, style: str,
+                          duration: float, min_total: float,
+                          max_total: float, ratio: float = 55,
+                          listing: str = "") -> Optional[dict]:
+    """Gọi LLM đạo diễn 1 LẦN trên TOÀN BỘ transcript -> {"title",
+    "windows", "parts"} ĐÃ validate; None nếu windows/parts hỏng (caller
+    fallback đường 1-span cũ).
+
+    sentences = [(start, end, text)] TOÀN transcript (để anti-copy).
+    listing = transcript RÚT GỌN cho prompt (caller gộp câu nếu video dài);
+    rỗng -> tự build từ sentences.
+    Ném llm.LLMError nếu gọi LLM thất bại (caller quyết fallback)."""
+    if not listing:
+        listing = "\n".join(f"{a:.1f} {b:.1f} | {t}"
+                            for a, b, t in sentences)[:11000]
+    prompt = build_director_prompt(listing, lang_name, style, duration,
+                                   min_total, max_total, ratio=ratio)
+    data = llm.complete_json(prompt, system=_SYSTEM)
+    if not isinstance(data, dict):
+        return None
+    windows = validate_windows(data.get("windows"), duration,
+                               min_total=min_total, max_total=max_total)
+    if not windows:
+        return None
+    parts = validate_parts_windows(data.get("parts"), windows,
+                                   sentences=sentences)
+    if not any(p["mode"] == "narrate" for p in parts):
+        return None
+    return {"title": str(data.get("title") or "").strip(),
+            "windows": windows, "parts": parts}
 
 
 def write_script(sentences: list, lang_name: str, style: str,
