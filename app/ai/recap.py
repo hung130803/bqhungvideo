@@ -812,13 +812,23 @@ def _fix_structure(parts: list[dict],
     hở/chồng lấn). Trả list part mới (đã gộp orig kề lần cuối)."""
     out = [dict(p) for p in parts]
 
-    # ---- (b) orig quá ngắn -> gộp vào narrate kề (ưu tiên narrate dài hơn)
+    # ---- (b) orig quá ngắn -> gộp vào narrate kề (ưu tiên narrate dài hơn).
+    # GIỮ TỐI THIỂU 1 part orig: nếu script CÓ orig, TUYỆT ĐỐI không nuốt hết
+    # (lỗi thật: LLM trả ping-pong toàn orig <3s -> gộp sạch -> clip 100% AI
+    # nói, tiếng gốc không còn window nào). Khi chỉ còn 1 orig, THA cú DÀI
+    # NHẤT (dù < ngưỡng) — thà bung gốc hơi ngắn còn hơn mất hẳn tiếng gốc.
+    n_orig0 = sum(1 for p in out if p["mode"] == "orig")
     changed = True
     while changed:
         changed = False
-        for i, p in enumerate(out):
-            if p["mode"] != "orig" or _part_dur(p) >= _STRUCT_ORIG_MIN:
-                continue
+        origs = [i for i, p in enumerate(out) if p["mode"] == "orig"]
+        if len(origs) <= 1:             # chỉ còn 1 orig -> giữ, không nuốt tiếp
+            break
+        # xử lý orig NGẮN NHẤT trước -> orig dài hơn có cơ hội sống sót
+        shorts = sorted((i for i in origs
+                         if _part_dur(out[i]) < _STRUCT_ORIG_MIN),
+                        key=lambda i: _part_dur(out[i]))
+        for i in shorts:
             prv = (out[i - 1] if i > 0
                    and out[i - 1]["mode"] == "narrate" else None)
             nxt = (out[i + 1] if i + 1 < len(out)
@@ -827,9 +837,9 @@ def _fix_structure(parts: list[dict],
                 continue                # không có narrate kề -> đành giữ
             if nxt is None or (prv is not None
                                and _part_dur(prv) >= _part_dur(nxt)):
-                prv["end"] = p["end"]
+                prv["end"] = out[i]["end"]
             else:
-                nxt["start"] = p["start"]
+                nxt["start"] = out[i]["start"]
             del out[i]
             changed = True
             break
@@ -883,7 +893,9 @@ def _limit_role_changes(parts: list[dict],
     dài hơn (narrate bị nuốt thì bỏ lời; orig bị nuốt thì narrate kề giãn
     thời gian — TTS fit tự bù). KHÔNG gộp vắt qua `barriers` (mốc ghép
     window — cú nhảy cảnh là cắt cứng, part không được vắt qua 2 khung);
-    KHÔNG nuốt part ĐẦU clip (hook). Hàm thuần — unit test được."""
+    KHÔNG nuốt part ĐẦU clip (hook); KHÔNG nuốt part ORIG CUỐI CÙNG (script
+    có orig thì phải còn >=1 orig — tránh clip 100% AI nói). Hàm thuần —
+    unit test được."""
     out = [dict(p) for p in parts]
     bset = {round(float(b), 2) for b in (barriers or ())}
 
@@ -892,6 +904,7 @@ def _limit_role_changes(parts: list[dict],
                    if out[i]["mode"] != out[i + 1]["mode"])
 
     while n_changes() > max_changes:
+        n_orig = sum(1 for p in out if p["mode"] == "orig")
         best, bi = None, -1
         for i in range(len(out) - 1):
             if out[i]["mode"] == out[i + 1]["mode"]:
@@ -899,8 +912,11 @@ def _limit_role_changes(parts: list[dict],
             if round(float(out[i]["end"]), 2) in bset:
                 continue                # mối ghép window -> không gộp qua
             d0, d1 = _part_dur(out[i]), _part_dur(out[i + 1])
-            if (i if d0 <= d1 else i + 1) == 0:
+            victim = i if d0 <= d1 else i + 1
+            if victim == 0:
                 continue                # nạn nhân là hook -> tha
+            if out[victim]["mode"] == "orig" and n_orig <= 1:
+                continue                # orig CUỐI CÙNG -> tha (giữ tiếng gốc)
             key = min(d0, d1)
             if best is None or key < best:
                 best, bi = key, i
