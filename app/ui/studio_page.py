@@ -2183,11 +2183,13 @@ class StudioPage(QWidget):
             preset["recap_ratio"] = int(self._settings.value("recap_ratio", 55))
         except (TypeError, ValueError):
             preset["recap_ratio"] = 55
-        try:                            # số clip thuyết minh (1-3) từ ⚙
-            preset["recap_count"] = min(3, max(1, int(
-                self._settings.value("recap_count", 2))))
+        try:                            # số clip thuyết minh từ ⚙
+            # 0 = "Tự động theo độ dài" (mặc định) — m2_recap tự tính theo
+            # duration; 1-3 = user chọn tay.
+            preset["recap_count"] = min(3, max(0, int(
+                self._settings.value("recap_count", 0))))
         except (TypeError, ValueError):
-            preset["recap_count"] = 2
+            preset["recap_count"] = 0
         services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                     self.state.project_id, preset)
         self.status.setText(

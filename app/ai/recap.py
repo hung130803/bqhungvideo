@@ -27,6 +27,7 @@ transcript trong đúng khoảng thời gian đó) -> orig. Có unit-test riêng
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from typing import Optional
@@ -284,6 +285,175 @@ def _window_words(sentences: list, start: float, end: float) -> set:
     return out
 
 
+# ------------------------------------------------------------------
+# STOPWORD vi+en (ngắn, tự nhúng) — dùng cho RELEVANCE CHECK: lời narrate
+# phải có >=1 TỪ-NỘI-DUNG (không tính stopword) trùng với transcript của
+# khung cảnh đó (hoặc khung kề) — 0 trùng = nghi "cắt 1 đằng nói 1 đằng".
+# ------------------------------------------------------------------
+_STOP_VI = set(
+    "và hay hoặc nhưng mà thì là của ở trong trên dưới tại cho với từ được "
+    "bị này kia đó những các một hai ba không có làm rồi đã đang sẽ cũng rất "
+    "quá lắm luôn nhé nha ạ ơi à ừ anh chị em ông bà cô chú nó họ tôi ta bạn "
+    "mình chúng gì sao khi nào đây đấy ai để vì nên còn lại ra vào lên xuống "
+    "cái con người việc chuyện lúc bây giờ nữa thôi đi đến về như vậy thế "
+    "nếu thật sự ấy hắn cả chỉ mới vừa ngay sau trước".split())
+_STOP_EN = set(
+    "the a an and or but so of to in on at for with from by as is are was "
+    "were be been being it its this that these those he she they them we "
+    "you i me his her their our my your not no nor do does did done will "
+    "would shall should can could may might must have has had having just "
+    "very really then than there here what when where which who whom whose "
+    "why how all any some more most other another into over under after "
+    "before again once out up down off only own same too also about because "
+    "while if else even still yet going go get got one two".split())
+_STOPWORDS = _STOP_VI | _STOP_EN
+
+
+def _content_words(text: str) -> set:
+    """Tập TỪ-NỘI-DUNG của text (đã chuẩn hoá, bỏ stopword vi+en, bỏ từ 1 ký
+    tự) — dùng so RELEVANCE lời narrate với transcript khung cảnh."""
+    return {w for w in _norm_for_copy(text).split()
+            if len(w) > 1 and w not in _STOPWORDS}
+
+
+# ------------------------------------------------------------------
+# HARD-FILTER khung cảnh RÁC: intro/outro/kêu subscribe/màn hình chữ.
+#  - _CTA_PATTERNS: lời chào/cảm ơn/kêu gọi (EN + VI) — window mà >30% từ
+#    thuộc câu dạng này -> loại (outro/intro kênh).
+#  - _MIN_DENSITY: mật độ lời thoại tối thiểu (từ/giây) — đoạn màn hình chữ
+#    /nhạc không lời rất thưa lời -> loại (trừ khi là window duy nhất).
+# Regex chạy trên text đã _norm_for_copy (chữ thường, bỏ dấu câu).
+# ------------------------------------------------------------------
+_CTA_PATTERNS = [re.compile(p, re.UNICODE) for p in (
+    # --- EN ---
+    r"thanks?\s+(?:you\s+)?(?:so\s+much\s+)?(?:all\s+)?for\s+watching",
+    r"\bsubscribe\b", r"\bunsubscribe\b",
+    r"hit\s+the\s+(?:like|bell|subscribe)",
+    r"smash\s+th(?:at|e)\s+like",
+    r"like\s+and\s+(?:share|subscribe)", r"like\s+comment",
+    r"see\s+you\s+(?:in\s+the\s+|guys\s+)?next",
+    r"link\s+in\s+(?:the\s+)?(?:bio|description)",
+    r"\bsponsored?\b", r"\bsponsors?\b",
+    r"welcome\s+back\s+to\s+(?:the\s+|my\s+)?channel",
+    r"don\s?t\s+forget\s+to\s+(?:like|subscribe)",
+    # --- VI ---
+    r"đăng\s+ký\s+kênh", r"(?:nhấn|bấm|ấn)\s+(?:nút\s+)?đăng\s+ký",
+    r"(?:nhấn|bật|bấm)\s+(?:cái\s+)?chuông",
+    r"like\s+(?:và\s+|va\s+)?share", r"like\s+share",
+    r"cảm\s+ơn\s+(?:\S+\s+){0,4}?đã\s+(?:xem|theo\s+dõi|đồng\s+hành|ủng\s+hộ)",
+    r"hẹn\s+gặp\s+lại", r"ủng\s+hộ\s+kênh",
+    r"chào\s+mừng\s+(?:\S+\s+){0,4}?(?:quay\s+trở\s+lại|đến\s+với\s+kênh)",
+    r"video\s+(?:lần\s+)?(?:sau|tiếp\s+theo|kế\s+tiếp)",
+    r"tài\s+trợ", r"quảng\s+cáo",
+)]
+_MIN_DENSITY = 1.2     # từ/giây trung bình tối thiểu của 1 window
+_CTA_MAX = 0.30        # >30% từ trong window là lời chào/kêu gọi -> loại
+
+
+def _is_cta_text(text: str) -> bool:
+    """Câu transcript có phải lời chào/cảm ơn/kêu subscribe/sponsor không."""
+    t = _norm_for_copy(text)
+    return bool(t) and any(p.search(t) for p in _CTA_PATTERNS)
+
+
+def _win_density(sentences: list, start: float, end: float) -> float:
+    """Mật độ lời thoại (từ/giây) của [start,end] theo transcript — câu giao
+    1 phần chỉ tính số từ THEO TỈ LỆ phần giao (không phồng mật độ ảo)."""
+    dur = max(0.001, float(end) - float(start))
+    words = 0.0
+    for a, b, t in sentences or []:
+        try:
+            a, b = float(a), float(b)
+        except (TypeError, ValueError):
+            continue
+        ov = min(b, end) - max(a, start)
+        if ov <= 0 or not t:
+            continue
+        n = len(_norm_for_copy(t).split())
+        words += n * min(1.0, ov / max(0.001, b - a))
+    return words / dur
+
+
+def _cta_ratio(sentences: list, start: float, end: float) -> float:
+    """Tỉ lệ (0..1) số TỪ trong [start,end] thuộc câu CHÀO/KÊU GỌI
+    (thanks for watching / đăng ký kênh / sponsor...) — outro/intro kênh."""
+    tot = cta = 0
+    for a, b, t in sentences or []:
+        try:
+            if float(b) <= start or float(a) >= end or not t:
+                continue
+        except (TypeError, ValueError):
+            continue
+        n = len(_norm_for_copy(t).split())
+        tot += n
+        if _is_cta_text(t):
+            cta += n
+    return (cta / tot) if tot else 0.0
+
+
+# ------------------------------------------------------------------
+# PARSER BAO DUNG: LLM hay trả windows/parts sai DẠNG (nhưng đúng Ý) —
+# chấp nhận mọi biến thể phổ biến thay vì vứt cả kịch bản rồi rơi fallback.
+# ------------------------------------------------------------------
+def _coerce_windows(raw) -> list:
+    """Ép mọi dạng 'windows' LLM hay trả -> list [s, e] THÔ (validate_windows
+    lọc số/độ dài sau — float() bên đó đã nhận cả chuỗi số "12.5"):
+      - [[s, e], ...] chuẩn.
+      - [{"start": s, "end": e}, ...] / {"s","e"} / {"from","to"} /
+        {"begin","end"} (LLM quen schema part).
+      - dict bọc thêm 1 lớp: {"windows": [...]} / {"list": [...]} hoặc
+        dict index {"0": [s, e], ...}.
+      - phần tử rác (số trần, chuỗi chữ, thiếu mốc) -> bỏ êm.
+    Hàm thuần — unit test được."""
+    if isinstance(raw, dict):
+        for k in ("windows", "list", "items", "data", "segments"):
+            v = raw.get(k)
+            if isinstance(v, (list, tuple, dict)):
+                return _coerce_windows(v)
+        raw = list(raw.values())
+    out = []
+    for w in (raw or []):
+        if isinstance(w, dict):
+            s = next((w[k] for k in ("start", "s", "from", "begin")
+                      if k in w), None)
+            e = next((w[k] for k in ("end", "e", "to", "finish", "stop")
+                      if k in w), None)
+            if s is not None and e is not None:
+                out.append([s, e])
+        elif isinstance(w, (list, tuple)) and len(w) >= 2:
+            out.append([w[0], w[1]])
+    return out
+
+
+def _coerce_parts(raw) -> list:
+    """Ép mọi dạng 'parts' LLM hay trả -> list dict THÔ có start/end/mode/
+    text (validate_parts lọc tiếp): nhận dict bọc ({"parts": [...]}) + key
+    thay thế (s/e, from/to, begin). Phần tử không phải dict -> bỏ êm."""
+    if isinstance(raw, dict):
+        for k in ("parts", "list", "items", "data", "script"):
+            v = raw.get(k)
+            if isinstance(v, (list, tuple, dict)):
+                return _coerce_parts(v)
+        raw = list(raw.values())
+    out = []
+    for p in (raw or []):
+        if not isinstance(p, dict):
+            continue
+        q = dict(p)
+        if "start" not in q:
+            for k in ("s", "from", "begin"):
+                if k in q:
+                    q["start"] = q[k]
+                    break
+        if "end" not in q:
+            for k in ("e", "to", "finish", "stop"):
+                if k in q:
+                    q["end"] = q[k]
+                    break
+        out.append(q)
+    return out
+
+
 def validate_parts(parts, clip_start: float, clip_end: float,
                    min_part: float = 1.5,
                    sentences: Optional[list] = None) -> list[dict]:
@@ -422,7 +592,19 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "nói).\n"
         "- Chỉ lấy khoảnh khắc ĐẮT (kịch tính, twist, cảm xúc mạnh, câu "
         "chốt) — mạnh dạn BỎ hẳn đoạn nhàm/lặp ở giữa; người xem sẽ được "
-        "lời kể của bạn nối mạch.\n\n"
+        "lời kể của bạn nối mạch.\n"
+        "- NÉ RÁC ĐẦU/CUỐI: CẤM lấy ~15 giây ĐẦU video (intro kênh/màn "
+        "hình chữ/nhạc hiệu) và ~20 giây CUỐI (outro/credits/kêu gọi đăng "
+        "ký) — trừ khi transcript cho thấy ở đó có nội dung chuyện THẬT SỰ "
+        "đắt.\n"
+        "- CẤM chọn khung mà lời thoại chủ yếu là chào/cảm ơn/kêu gọi/"
+        "quảng cáo — các kiểu: \"thanks for watching\", \"subscribe\", "
+        "\"like and share\", \"see you in the next video\", \"link in "
+        "description\", \"đăng ký kênh\", \"nhấn chuông\", \"like và "
+        "share\", \"cảm ơn các bạn đã xem\", \"hẹn gặp lại\", \"ủng hộ "
+        "kênh\", sponsor/tài trợ... Khung như vậy (hoặc khung gần như "
+        "KHÔNG có lời thoại — nhạc nền, chữ trên màn hình) sẽ bị hệ thống "
+        "LOẠI BỎ.\n\n"
         "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (xen kẽ orig = "
         "giữ tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
         "- Mỗi part dài 3-15 giây; mốc part nằm TRONG khung, KHÔNG vắt qua "
@@ -437,6 +619,16 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "- CẤM KỂ ĐỀU ĐỀU: MỖI part narrate phải có ÍT NHẤT 1 trong: câu "
         "hỏi ném cho khán giả / câu cảm thán / nhá twist (\"nhưng bạn chưa "
         "thấy gì đâu...\") / con số gây sốc.\n"
+        "- BÁM CẢNH (bắt buộc): MỖI part narrate phải nhắc ÍT NHẤT 1 CHI "
+        "TIẾT CỤ THỂ có trong transcript của ĐÚNG khung đó (tên riêng / "
+        "hành động / con số / đồ vật) — CẤM câu chung chung lắp vào cảnh "
+        "nào cũng được; lời lạc cảnh sẽ bị hệ thống LOẠI.\n"
+        "  VÍ DỤ ĐÚNG (transcript khung có \"đặt cược 500 đô\"): \"500 "
+        "đô... cho một ván bài gã chưa từng thắng.\" — dính chi tiết "
+        "'500 đô', 'ván bài' của đúng cảnh đó.\n"
+        "  VÍ DỤ SAI (bị loại): \"Thật không thể tin được!\", \"Quá đỉnh "
+        "luôn các bạn ạ.\" — không dính chi tiết nào của cảnh, lắp đâu "
+        "cũng được.\n"
         f"- Part narrate CUỐI: câu chốt đắt + KÊU GỌI tương tác (hỏi ý "
         f"kiến, kêu theo dõi) viết bằng {ln}.\n"
         f"- Tổng thời lượng narrate ~{pct}% clip (chấp nhận "
@@ -459,29 +651,39 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
         '{"title": "...", "windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
         '"parts": [{"start": giây, "end": giây, "mode": "orig"|"narrate", '
-        '"text": "lời thuyết minh nếu narrate"}]}')
+        '"text": "lời thuyết minh nếu narrate"}]}\n'
+        '("windows" BẮT BUỘC là MẢNG CÁC CẶP SỐ [[s, e], ...] — ÍT NHẤT 2 '
+        "khung — KHÔNG dùng object {\"start\": ...} cho windows.)")
 
 
 def validate_windows(windows, duration: float,
                      min_total: float = 0.0, max_total: float = 0.0,
                      min_w: float = _WIN_MIN, max_w: float = _WIN_MAX,
-                     max_n: int = _WIN_MAX_N) -> list:
+                     max_n: int = _WIN_MAX_N,
+                     sentences: Optional[list] = None) -> list:
     """Chuẩn hoá danh sách khung LLM trả -> [[s,e],...] SẠCH hoặc [] (hỏng).
 
-    - phần tử không phải cặp số / dài < min_w -> BỎ; dài > max_w -> cắt đuôi.
+    - CHẤP NHẬN mọi dạng LLM hay trả (_coerce_windows): [[s,e]], list dict
+      start/end (hoặc s/e, from/to), dict bọc {"windows": [...]}, chuỗi số.
+    - phần tử không ép được cặp số / dài < min_w -> BỎ; dài > max_w -> cắt đuôi.
     - clamp vào [0, duration]; sort; CHỒNG LẤN -> đẩy start khung sau về end
       khung trước (teo dưới min_w thì bỏ khung đó).
+    - sentences != None: HARD-FILTER khung RÁC —
+        + khung mà >30% từ là lời chào/kêu subscribe/sponsor (EN+VI) -> loại
+          (outro/intro kênh);
+        + khung thưa lời (< ~1.2 từ/giây — màn hình chữ/nhạc không lời) ->
+          loại, TRỪ khi là khung duy nhất.
     - quá max_n khung -> giữ max_n khung đầu (đúng mạch thời gian).
     - max_total > 0: tổng vượt trần -> cắt bớt khung cuối (khúc cuối teo
       dưới min_w thì bỏ hẳn).
-    - HỎNG -> []: còn < 2 khung (1 khung = chẳng phải cắt ghép, caller nên
-      dùng đường 1-span cũ) hoặc min_total > 0 mà tổng < 60% min_total.
+    - CÒN 1 KHUNG: nếu DÀI ĐỦ (>= max(20s, 60% min_total)) vẫn CHẤP NHẬN —
+      coi như 1-span hợp lệ (2 khung LLM trả sát nhau bị khử chồng lấn gộp
+      còn 1 không đáng vứt cả kịch bản); ngắn quá -> [].
+    - HỎNG -> []: không còn khung, hoặc min_total > 0 mà tổng < 60% min_total.
     Hàm thuần — unit test được."""
     dur = float(duration or 0)
     out = []
-    for w in (windows or []):
-        if not isinstance(w, (list, tuple)) or len(w) < 2:
-            continue
+    for w in _coerce_windows(windows):
         try:
             s, e = float(w[0]), float(w[1])
         except (TypeError, ValueError):
@@ -500,6 +702,18 @@ def validate_windows(windows, duration: float,
             s = fixed[-1][1]
         if e - s >= min_w:
             fixed.append([round(s, 2), round(e, 2)])
+    if sentences:
+        # HARD-FILTER khung rác theo transcript: outro/kêu sub + thưa lời
+        n_before = len(fixed)
+        kept = []
+        for s, e in fixed:
+            if _cta_ratio(sentences, s, e) > _CTA_MAX:
+                continue               # toàn lời chào/kêu gọi -> outro/intro
+            if (_win_density(sentences, s, e) < _MIN_DENSITY
+                    and n_before > 1):
+                continue               # thưa lời (chữ màn hình/nhạc) -> loại
+            kept.append([s, e])
+        fixed = kept
     fixed = fixed[:max_n]
     if max_total and max_total > 0:
         total, cut = 0.0, []
@@ -513,8 +727,12 @@ def validate_windows(windows, duration: float,
             cut.append([s, e])
             total += e - s
         fixed = cut
-    if len(fixed) < 2:
+    if not fixed:
         return []
+    if len(fixed) == 1:
+        # 1 khung dài đủ = 1-span hợp lệ (đừng vứt oan cả kịch bản)
+        need = max(20.0, 0.6 * float(min_total or 0.0))
+        return fixed if fixed[0][1] - fixed[0][0] >= need else []
     if min_total and min_total > 0:
         if sum(e - s for s, e in fixed) < 0.6 * min_total:
             return []
@@ -526,54 +744,143 @@ def validate_parts_windows(parts, windows: list, sentences=None,
     """Validate kịch bản MULTI-WINDOW: chia parts về từng khung (theo TÂM
     part), rồi validate_parts TỪNG khung (clamp vào khung, lấp hở bằng orig,
     anti-copy...) -> part KHÔNG BAO GIỜ vắt qua 2 khung (mốc luôn map được
-    qua _map_to_output của dubbing). Trả list part phủ kín MỌI khung."""
+    qua _map_to_output của dubbing). Trả list part phủ kín MỌI khung.
+
+    RELEVANCE CHECK (ngược chiều anti-copy, cần sentences): lời narrate phải
+    có >= 1 TỪ-NỘI-DUNG (bỏ stopword vi+en) trùng transcript của khung đó
+    HOẶC khung KỀ (cầu nối được nhắc cảnh trước/sau) — 0 trùng = câu chung
+    chung lắp đâu cũng được ("cắt 1 đằng nói 1 đằng") -> hạ orig. THA part
+    CẦU NỐI tại điểm ghép (part đầu của khung thứ 2 trở đi). Khoảng hợp lệ
+    của narrate: >=1 từ trùng (liên quan) nhưng <=60% (không chép lại —
+    _fuzzy_copy_ratio trong validate_parts vẫn chặn)."""
+    parts = _coerce_parts(parts)
+    wlist = list(windows or [])
+    # tập từ-nội-dung từng khung (cho relevance; tính 1 lần)
+    wwords: list[set] = []
+    if sentences:
+        for ws, we in wlist:
+            wwords.append({w for w in _window_words(sentences, ws, we)
+                           if len(w) > 1 and w not in _STOPWORDS})
     out: list[dict] = []
-    for ws, we in windows or []:
+    for wi, (ws, we) in enumerate(wlist):
         sub = []
-        for p in parts or []:
-            if not isinstance(p, dict):
-                continue
+        for p in parts:
             try:
                 mid = (float(p.get("start")) + float(p.get("end"))) / 2
             except (TypeError, ValueError):
                 continue
             if ws - 0.01 <= mid <= we + 0.01:
                 sub.append(p)
+        sub.sort(key=lambda p: float(p.get("start")))
+        if sentences and wwords:
+            near = set(wwords[wi])
+            if wi > 0:
+                near |= wwords[wi - 1]
+            if wi + 1 < len(wwords):
+                near |= wwords[wi + 1]
+            checked = []
+            for j, p in enumerate(sub):
+                mode = str(p.get("mode") or "").strip().lower()
+                text = str(p.get("text") or "")
+                if (mode == "narrate" and text.strip()
+                        and not (_content_words(text) & near)
+                        and not (wi > 0 and j == 0)):
+                    # 0 từ-nội-dung trùng transcript khung (và khung kề) ->
+                    # nghi LẠC ĐỀ -> hạ orig. Tha CẦU NỐI (part đầu khung
+                    # thứ 2 trở đi — lời bắc cầu được phép thoát cảnh).
+                    p = dict(p, mode="orig", text="")
+                checked.append(p)
+            sub = checked
         out.extend(validate_parts(sub, ws, we, min_part=min_part,
                                   sentences=sentences))
     return out
+
+
+def _director_from_data(data, sentences: list, duration: float,
+                        min_total: float, max_total: float):
+    """Ép + validate output đạo diễn -> ({'title','windows','parts'} | None,
+    thông_điệp_lỗi_cụ_thể) — thông điệp dùng cho lượt RETRY SỬA LỖI.
+    Chấp nhận data là chuỗi JSON / list bọc / dict; windows-parts mọi dạng
+    phổ biến (_coerce_windows/_coerce_parts). Hàm thuần — unit test được."""
+    if isinstance(data, str):           # model trả JSON-trong-chuỗi
+        try:
+            data = json.loads(data)
+        except ValueError:
+            return None, ("kết quả không phải JSON object — trả JSON THUẦN "
+                          "đúng schema, không bọc trong chuỗi/chữ")
+    if isinstance(data, list):          # model bọc object trong mảng
+        data = next((x for x in data if isinstance(x, dict)), None)
+    if not isinstance(data, dict):
+        return None, ('kết quả không phải JSON object dạng {"title", '
+                      '"windows", "parts"}')
+    windows = validate_windows(data.get("windows"), duration,
+                               min_total=min_total, max_total=max_total,
+                               sentences=sentences)
+    if not windows:
+        return None, (
+            '"windows" hỏng: phải là MẢNG CÁC CẶP SỐ [[giây_bắt_đầu, '
+            "giây_kết_thúc], ...] (KHÔNG dùng object), ít nhất 2 khung rời "
+            "nhau đúng thứ tự thời gian, mỗi khung 8-40 giây, tổng "
+            f"{min_total:.0f}-{max_total:.0f} giây; khung phải nằm ở đoạn "
+            "CÓ LỜI THOẠI DÀY và KHÔNG phải intro/outro/kêu subscribe")
+    parts = validate_parts_windows(data.get("parts"), windows,
+                                   sentences=sentences)
+    if not any(p["mode"] == "narrate" for p in parts):
+        return None, (
+            '"parts" hỏng: cần ít nhất 1 part {"start", "end", "mode": '
+            '"narrate", "text"} nằm TRONG các windows đã chọn, lời kể phải '
+            "nhắc chi tiết cụ thể từ transcript của đúng khung đó (không "
+            "chép nguyên văn, không câu chung chung lắp đâu cũng được)")
+    return {"title": str(data.get("title") or "").strip(),
+            "windows": windows, "parts": parts}, ""
 
 
 def write_director_script(sentences: list, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
                           listing: str = "") -> Optional[dict]:
-    """Gọi LLM đạo diễn 1 LẦN trên TOÀN BỘ transcript -> {"title",
-    "windows", "parts"} ĐÃ validate; None nếu windows/parts hỏng (caller
-    fallback đường 1-span cũ).
+    """Gọi LLM đạo diễn trên TOÀN BỘ transcript -> {"title", "windows",
+    "parts"} ĐÃ validate; None nếu windows/parts hỏng cả sau khi RETRY
+    (caller fallback đường 1-span cũ).
 
-    sentences = [(start, end, text)] TOÀN transcript (để anti-copy).
-    listing = transcript RÚT GỌN cho prompt (caller gộp câu nếu video dài);
-    rỗng -> tự build từ sentences.
-    Ném llm.LLMError nếu gọi LLM thất bại (caller quyết fallback)."""
+    RETRY SỬA LỖI: lần 1 trả JSON hỏng/không qua validate -> gọi LẠI đúng
+    1 lần, đính kèm THÔNG ĐIỆP LỖI CỤ THỂ (windows phải là [[s,e],...]...)
+    để model tự sửa — đỡ rơi fallback oan chỉ vì sai dạng JSON.
+
+    sentences = [(start, end, text)] TOÀN transcript (anti-copy + relevance
+    + lọc mật độ lời). listing = transcript RÚT GỌN cho prompt (caller gộp
+    câu nếu video dài); rỗng -> tự build từ sentences.
+    Ném llm.LLMError nếu gọi LLM thất bại vì mạng/key (caller quyết
+    fallback); lỗi PARSE JSON thì tự retry chứ không ném."""
     if not listing:
         listing = "\n".join(f"{a:.1f} {b:.1f} | {t}"
                             for a, b, t in sentences)[:11000]
     prompt = build_director_prompt(listing, lang_name, style, duration,
                                    min_total, max_total, ratio=ratio)
-    data = llm.complete_json(prompt, system=_SYSTEM)
-    if not isinstance(data, dict):
-        return None
-    windows = validate_windows(data.get("windows"), duration,
-                               min_total=min_total, max_total=max_total)
-    if not windows:
-        return None
-    parts = validate_parts_windows(data.get("parts"), windows,
-                                   sentences=sentences)
-    if not any(p["mode"] == "narrate" for p in parts):
-        return None
-    return {"title": str(data.get("title") or "").strip(),
-            "windows": windows, "parts": parts}
+    result, err = None, ""
+    try:
+        data = llm.complete_json(prompt, system=_SYSTEM)
+        result, err = _director_from_data(data, sentences, duration,
+                                          min_total, max_total)
+    except llm.LLMError as e:
+        if "không phải JSON" not in str(e):
+            raise                       # lỗi mạng/key/quota -> caller quyết
+        err = ("kết quả không phải JSON hợp lệ — trả DUY NHẤT 1 JSON object "
+               "đúng schema, không thêm chữ/markdown")
+    if result:
+        return result
+    # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
+    retry_prompt = (
+        prompt + "\n\nLẦN TRƯỚC bạn đã trả kết quả KHÔNG DÙNG ĐƯỢC — lỗi: "
+        + err + ".\nHãy SỬA ĐÚNG lỗi đó và trả lại DUY NHẤT 1 JSON object "
+        "đúng schema yêu cầu ở trên, không thêm chữ nào khác.")
+    try:
+        data = llm.complete_json(retry_prompt, system=_SYSTEM)
+    except llm.LLMError:
+        return None                     # retry vẫn hỏng -> caller fallback
+    result, _err = _director_from_data(data, sentences, duration,
+                                       min_total, max_total)
+    return result
 
 
 def write_script(sentences: list, lang_name: str, style: str,

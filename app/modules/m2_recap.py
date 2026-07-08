@@ -137,6 +137,31 @@ _MIN_DUR_PER_EXTRA_CLIP = 150.0     # 2.5 phút
 _MIN_SENTS_MULTI = 12
 
 
+def _auto_recap_count(duration: float) -> int:
+    """Số clip 'Tự động theo độ dài' (recap_count = 0, mặc định):
+    < 4 phút -> 1 clip; 4-12 phút -> 2; > 12 phút -> 3.
+    Hàm thuần — test được."""
+    d = float(duration or 0)
+    if d < 240.0:
+        return 1
+    if d <= 720.0:
+        return 2
+    return 3
+
+
+def _resolve_count(preset: dict, duration: float) -> int:
+    """recap_count trong preset -> số clip 1-3. 0/thiếu/hỏng = TỰ ĐỘNG theo
+    độ dài (mặc định mới — user vẫn chọn tay 1-3 trong ⚙ Cài đặt Reup).
+    Hàm thuần — test được."""
+    try:
+        c = int(preset.get("recap_count", 0))
+    except (TypeError, ValueError):
+        c = 0
+    if c <= 0:
+        c = _auto_recap_count(duration)
+    return max(1, min(3, c))
+
+
 def _split_chapters(duration: float, edges: list, k: int) -> list:
     """Chia [0, duration] thành k CHƯƠNG thời lượng ~bằng nhau, mốc chia
     SNAP vào mép câu transcript (không cắt ngang câu nói). Snap làm chương
@@ -217,10 +242,11 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
     payload: {video_id, preset: {..., recap_style, recap_ratio,
-    recap_count}}. recap_count (1-3, mặc định 2) = số clip thuyết minh —
-    chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập. Kết quả: các dòng
-    clips status='suggested' kèm signals.recap (kịch bản). Lỗi LLM -> ném
-    lỗi rõ.
+    recap_count}}. recap_count = số clip thuyết minh: 0/thiếu = TỰ ĐỘNG
+    theo độ dài (<4 phút 1 clip, 4-12 phút 2, >12 phút 3 — mặc định), hoặc
+    chọn tay 1-3 — chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập.
+    Kết quả: các dòng clips status='suggested' kèm signals.recap (kịch
+    bản). Lỗi LLM -> ném lỗi rõ.
     """
     video_id = int(payload["video_id"])
     preset = payload.get("preset") or {}
@@ -276,11 +302,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         t = (s.get("text") or "").strip()
         if t:
             sents_all.append((a, b, t))
-    try:
-        count = int(preset.get("recap_count") or 2)
-    except (TypeError, ValueError):
-        count = 2
-    count = max(1, min(3, count))
+    # duration DB có thể trống -> lấy mép câu cuối transcript làm độ dài
+    dur_hint = duration or (sents_all[-1][1] if sents_all else 0.0)
+    count = _resolve_count(preset, dur_hint)   # 0 = tự động theo độ dài
     if (duration < _MIN_DUR_PER_EXTRA_CLIP
             or len(sents_all) < _MIN_SENTS_MULTI):
         count = 1                       # video ngắn/thoại mỏng -> 1 clip
@@ -312,6 +336,11 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             sc = None                  # chương lỗi -> bỏ riêng chương đó
         if sc:
             ch_scripts.append((ci, c0, c1, sc))
+            # LOG RÕ ĐƯỜNG ĐI: user nhìn queue biết ngay chương này dùng
+            # kịch bản mấy cảnh (vs "1 mạch (dự phòng)" bên dưới).
+            ctx.progress(0.06 + 0.34 * (ci + 1) / max(1, len(chapters)),
+                         f"Chương {ci + 1}: kịch bản "
+                         f"{len(sc['windows'])} cảnh ✔")
 
     if ch_scripts:
         _delete_suggested(video_id)
@@ -324,16 +353,20 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             snapped_w = [[max(c0, _snap_time(s, edges)),
                           min(c1, _snap_time(e, edges))]
                          for s, e in script["windows"]]
-            windows = recap.validate_windows(snapped_w, duration)
-            parts: list = []
+            ch_sents = _clip_sentences(segs, c0, c1)
+            windows = recap.validate_windows(snapped_w, duration,
+                                             sentences=ch_sents)
+            snapped_parts: list = []
             for ws, we in windows or []:
                 sub = [p for p in script["parts"]
                        if ws - 0.01
                        <= (float(p["start"]) + float(p["end"])) / 2
                        <= we + 0.01]
-                sub = _snap_parts(sub, edges, words=tr_words)
-                parts.extend(recap.validate_parts(
-                    sub, ws, we, sentences=_clip_sentences(segs, ws, we)))
+                snapped_parts.extend(_snap_parts(sub, edges, words=tr_words))
+            # validate TỪNG khung + RELEVANCE (lời narrate phải dính chi
+            # tiết transcript khung đó/kề — validate_parts_windows lo)
+            parts = recap.validate_parts_windows(snapped_parts, windows,
+                                                 sentences=ch_sents)
             if not windows or not any(p["mode"] == "narrate" for p in parts):
                 continue                # chương snap hỏng -> bỏ riêng chương
             total = round(sum(e - s for s, e in windows), 1)
@@ -368,7 +401,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                     "llm_used": True, "chapters": len(chapters)}
 
     # ---- 1) FALLBACK 1-SPAN: chọn các đoạn hay (đường chọn clip của auto) ----
-    ctx.progress(0.05, f"AI [{prov}] đang đọc nội dung & chọn đoạn hay...")
+    # LOG RÕ ĐƯỜNG ĐI: đạo diễn multi-window hỏng -> kịch bản 1 mạch dự phòng
+    ctx.progress(0.05, f"AI [{prov}] kịch bản 1 mạch (dự phòng) — đang đọc "
+                       "nội dung & chọn đoạn hay...")
 
     class _Sel:                       # map tiến độ chọn clip về 0.05..0.45
         profile = ctx.profile
@@ -458,8 +493,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
              c.get("title") or "Clip thuyết minh", "", db.dumps(signals)))
         clip_ids.append(cid)
 
-    msg = (f"AI [{prov}] tạo {len(clip_ids)} clip thuyết minh "
-           f"({n_script} có kịch bản, phong cách {recap.style_label(style)})")
+    msg = (f"AI [{prov}] tạo {len(clip_ids)} clip thuyết minh 1 mạch "
+           f"(dự phòng — {n_script} có kịch bản, phong cách "
+           f"{recap.style_label(style)})")
     if errors:
         msg += f" — {len(errors)} clip viết kịch bản lỗi (giữ tiếng gốc)"
     if warns:

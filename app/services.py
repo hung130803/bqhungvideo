@@ -123,10 +123,10 @@ def enqueue_auto_recap(pool: WorkerPool, video_id: int, project_id: int,
     thuyết minh (preset kèm recap_style/recap_ratio/recap_count). Dedup như
     auto — recap_count vào dedup key để đổi 'Số clip' rồi bấm lại vẫn chạy
     (job cũ khác count đang chờ không nuốt mất lần bấm mới)."""
-    try:
-        cnt = int((preset or {}).get("recap_count") or 2)
+    try:                                # 0 = "Tự động theo độ dài" (hợp lệ,
+        cnt = int((preset or {}).get("recap_count", 0) or 0)   # đừng ép về 2)
     except (TypeError, ValueError):
-        cnt = 2
+        cnt = 0
     return pool.enqueue(
         "auto_recap", {"video_id": video_id, "preset": preset or {}},
         project_id=project_id, video_id=video_id, needs_gpu=True, priority=10,
