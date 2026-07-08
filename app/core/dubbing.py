@@ -747,6 +747,20 @@ def _recap_backup_voice(lang: str, primary: str) -> str:
     return ""
 
 
+def _shortest_nonempty_index(texts: list[str]) -> int:
+    """Chỉ số cụm KHÔNG rỗng NGẮN NHẤT (ít ký tự nhất) — dùng cho PRE-FLIGHT
+    giọng cao cấp: thử cụm ngắn nhất trước để tốn ít quota/token nhất mà vẫn
+    biết key còn sống hay đã hết hạn mức. -1 nếu mọi cụm rỗng."""
+    best, best_len = -1, None
+    for i, t in enumerate(texts):
+        s = (t or "").strip()
+        if not s:
+            continue
+        if best_len is None or len(s) < best_len:
+            best, best_len = i, len(s)
+    return best
+
+
 def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
                       lang: str,
                       on_done: Optional[Callable[[int], None]] = None,
@@ -755,42 +769,56 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
                       gemini_prefix: str = "",
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua Gemini TTS (hạn mức free thấp — KHÔNG chạy
-    song song; _gemini_tts tự retry 429 theo retryDelay). CẢ 2 cụm đầu (không
-    rỗng) đều lỗi -> coi như hết hạn mức: CHUYỂN CẢ TRACK sang edge-tts giọng
-    dự phòng của ngôn ngữ NGAY TỪ ĐẦU (tránh nửa clip giọng này nửa giọng
-    kia). Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó (như edge).
+    song song; _gemini_tts tự retry 429 theo retryDelay).
+
+    GIỌNG NHẤT QUÁN TOÀN CLIP (all-or-nothing) — sửa lỗi 'mỗi part một giọng':
+    - PRE-FLIGHT: thử cụm NGẮN NHẤT trước. Lỗi (hết hạn mức/key hỏng) -> CHUYỂN
+      CẢ TRACK sang edge-tts NGAY TỪ ĐẦU (đỡ phí quota + đảm bảo mọi part CÙNG
+      1 giọng). Không thì cụm đó đã có audio, tái dùng.
+    - Nếu BẤT KỲ cụm nào (kể cả part thứ 3-4 khi quota cạn GIỮA CHỪNG) synth
+      lỗi -> HỦY TOÀN BỘ track Gemini, re-synth TẤT CẢ bằng edge-tts giọng dự
+      phòng. KHÔNG BAO GIỜ trộn 2 nguồn trong 1 clip (trước đây chỉ bắt lỗi ở
+      2 cụm ĐẦU -> quota cạn ở part sau vẫn lọt -> clip nhiều giọng).
     Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội dung).
     gemini_prefix: CHỈ DẪN giọng điệu prepend vào text khi gọi Gemini (recap
     kể chuyện) — KHÔNG áp cho đường fallback edge-tts (edge sẽ ĐỌC to chỉ
     dẫn thành lời); edge_rate: rate cho đường fallback edge-tts."""
+    def _fallback_edge(reason: str) -> list[bool]:
+        # Hết hạn mức/lỗi -> đổi CẢ track sang edge-tts (text GỐC không prefix
+        # — edge đọc to mọi chữ trong text). Re-synth TẤT CẢ part -> đồng nhất.
+        fb = _edge_fallback_voice(lang)
+        if on_msg:
+            on_msg(f"Gemini {reason} -> synth LẠI toàn bộ bằng giọng dự "
+                   f"phòng ({fb}) cho đồng nhất...")
+        return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done,
+                                      rate=edge_rate))
+
     ok = [False] * len(texts)
-    n_nonempty = sum(1 for t in texts if (t or "").strip())
-    head_need = max(1, min(2, n_nonempty))  # số cụm đầu fail -> fallback
-    seen = 0                                # số cụm KHÔNG rỗng đã synth
-    head_fail = 0                           # fail LIÊN TIẾP tính từ cụm đầu
+    # ---- PRE-FLIGHT: thử cụm NGẮN NHẤT trước; lỗi -> edge ngay từ đầu ----
+    pf = _shortest_nonempty_index(texts)
+    if pf < 0:                              # mọi cụm rỗng -> không có gì để đọc
+        for i in range(len(texts)):
+            if on_done:
+                on_done(i)
+        return ok
+    if not _gemini_tts(gemini_prefix + texts[pf].strip(), voice, paths[pf]):
+        return _fallback_edge("hết hạn mức (pre-flight)")
+    ok[pf] = True
+    time.sleep(0.3)
+    # ---- Synth các cụm còn lại; BẤT KỲ cụm nào lỗi -> hủy cả track ----
     for i, t in enumerate(texts):
         txt = (t or "").strip()
-        if not txt:                         # cụm rỗng -> không có tiếng
+        if not txt or i == pf:              # cụm rỗng / đã làm ở pre-flight
             if on_done:
                 on_done(i)
             continue
-        good = _gemini_tts(gemini_prefix + txt, voice, paths[i])
-        ok[i] = good
-        seen += 1
-        if not good and head_fail == seen - 1:
-            head_fail += 1
-        if head_fail >= head_need:
-            # Hết hạn mức/lỗi ngay từ đầu -> đổi CẢ track sang edge-tts
-            # (text GỐC không prefix — edge đọc to mọi chữ trong text)
-            fb = _edge_fallback_voice(lang)
-            if on_msg:
-                on_msg("Gemini hết hạn mức -> dùng giọng dự phòng "
-                       f"({fb})...")
-            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done,
-                                          rate=edge_rate))
+        if not _gemini_tts(gemini_prefix + txt, voice, paths[i]):
+            # Quota cạn GIỮA CHỪNG -> re-synth TẤT CẢ bằng edge (đồng nhất)
+            return _fallback_edge("hết hạn mức giữa chừng")
+        ok[i] = True
         if on_done:
             on_done(i)
-        time.sleep(1.0 if not good else 0.3)  # nghỉ nhẹ — tôn trọng hạn mức
+        time.sleep(0.3)                     # nghỉ nhẹ — tôn trọng hạn mức
     return ok
 
 
@@ -905,32 +933,45 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
     model: model_id ElevenLabs (eleven_v3 khi bật audio tag cảm xúc; lỗi
     model -> _eleven_tts tự lùi v2). edge_texts: bản text ĐÃ STRIP audio tag
     dùng cho đường FALLBACK edge-tts (edge KHÔNG hiểu tag -> đọc to
-    "[excited]" nếu dùng texts có tag). None -> dùng chính `texts`."""
+    "[excited]" nếu dùng texts có tag). None -> dùng chính `texts`.
+
+    GIỌNG NHẤT QUÁN TOÀN CLIP (all-or-nothing) — sửa lỗi 'mỗi part một giọng':
+    - PRE-FLIGHT: thử cụm NGẮN NHẤT trước; lỗi -> edge NGAY từ đầu (đỡ phí
+      quota 10k ký tự/tháng + đảm bảo mọi part CÙNG 1 giọng).
+    - BẤT KỲ cụm nào (kể cả part 3-4 khi quota cạn GIỮA CHỪNG) lỗi -> HỦY cả
+      track ElevenLabs, re-synth TẤT CẢ bằng edge (KHÔNG trộn 2 nguồn)."""
     fb_texts = edge_texts if edge_texts is not None else texts
+
+    def _fallback_edge(reason: str) -> list[bool]:
+        fb = _edge_fallback_voice(lang)
+        if on_msg:
+            on_msg(f"ElevenLabs {reason} -> synth LẠI toàn bộ bằng giọng dự "
+                   f"phòng ({fb}) cho đồng nhất...")
+        # edge-tts KHÔNG hiểu audio tag v3 -> dùng bản ĐÃ STRIP (fb_texts)
+        return asyncio.run(_synth_all(fb_texts, fb, paths, on_done=on_done,
+                                      rate=edge_rate or "+0%"))
+
     ok = [False] * len(texts)
-    n_nonempty = sum(1 for t in texts if (t or "").strip())
-    head_need = max(1, min(2, n_nonempty))
-    seen = 0
-    head_fail = 0
+    # ---- PRE-FLIGHT cụm NGẮN NHẤT ----
+    pf = _shortest_nonempty_index(texts)
+    if pf < 0:
+        for i in range(len(texts)):
+            if on_done:
+                on_done(i)
+        return ok
+    if not _eleven_tts(texts[pf].strip(), voice, paths[pf], model=model):
+        return _fallback_edge("hết hạn mức (pre-flight)")
+    ok[pf] = True
+    # ---- các cụm còn lại; BẤT KỲ cụm nào lỗi -> hủy cả track ----
     for i, t in enumerate(texts):
         txt = (t or "").strip()
-        if not txt:
+        if not txt or i == pf:
             if on_done:
                 on_done(i)
             continue
-        good = _eleven_tts(txt, voice, paths[i], model=model)
-        ok[i] = good
-        seen += 1
-        if not good and head_fail == seen - 1:
-            head_fail += 1
-        if head_fail >= head_need:
-            fb = _edge_fallback_voice(lang)
-            if on_msg:
-                on_msg("ElevenLabs hết hạn mức -> dùng giọng dự phòng "
-                       f"({fb})...")
-            # edge-tts KHÔNG hiểu audio tag v3 -> dùng bản ĐÃ STRIP (fb_texts)
-            return asyncio.run(_synth_all(fb_texts, fb, paths, on_done=on_done,
-                                          rate=edge_rate or "+0%"))
+        if not _eleven_tts(txt, voice, paths[i], model=model):
+            return _fallback_edge("hết hạn mức giữa chừng")
+        ok[i] = True
         if on_done:
             on_done(i)
     return ok
@@ -1265,6 +1306,136 @@ def probe_duration(path: str | Path) -> float:
         return 0.0
 
 
+# silencedetect: khoảng IM ≥ ngưỡng này (giây) mới coi là "ngắt" (nối 2 đoạn
+# nói). Giọng cảm xúc v3 chèn [dramatic pause] tạo khoảng lặng 0.3-1s giữa câu
+# -> tách thành các đoạn CÓ TIẾNG riêng để phụ đề chỉ chạy khi đang nói.
+_SILENCE_NOISE_DB = -30.0
+_SILENCE_MIN_DUR = 0.25
+_SIL_START_RE = re.compile(r"silence_start:\s*(-?[\d.]+)")
+_SIL_END_RE = re.compile(r"silence_end:\s*(-?[\d.]+)")
+
+# Phụ đề narrate MẶC ĐỊNH chia theo CÂU-CỤM (2-4 từ/nhóm) phân bố theo audio
+# THẬT thay vì karaoke từng-từ: WordBoundary của Microsoft không phải lúc nào
+# cũng chuẩn (nhất là ngôn ngữ ngoài en) -> chia cụm ít trôi hơn. Word-level
+# giữ làm tuỳ chọn (RECAP_WORD_LEVEL_CAPTION=1). (Định nghĩa SỚM ở đây vì
+# _phrase_groups_by_speech ngay dưới dùng làm default arg.)
+_RECAP_PHRASE_MIN = 2
+_RECAP_PHRASE_MAX = 4
+
+
+def _detect_speech_segments(wav_path: str, total: float,
+                            noise_db: float = _SILENCE_NOISE_DB,
+                            min_sil: float = _SILENCE_MIN_DUR,
+                            ) -> list[tuple[float, float]]:
+    """DÒ các ĐOẠN CÓ TIẾNG trong file audio bằng ffmpeg silencedetect
+    (n=noise_db dB : d=min_sil giây). Trả [(a, b), ...] các khoảng NÓI (đã bỏ
+    khoảng im), theo thời gian file (0..total). Dùng để căn phụ đề giọng
+    KHÔNG có word timestamp (ElevenLabs/Gemini) khi bật cảm xúc: chữ chỉ chạy
+    lúc đang nói, ngắt [dramatic pause] thì chữ ĐỨNG.
+
+    Cách làm: silencedetect log các khoảng IM (silence_start/silence_end) ra
+    stderr; NGHỊCH ĐẢO thành các khoảng có tiếng. Không dò được đoạn im nào
+    (nói liền một mạch) -> trả [] để caller FALLBACK chia đều như cũ (không
+    ép tách vô cớ). total <= 0 -> []."""
+    if total <= 0.05:
+        return []
+    cmd = [settings.FFMPEG_PATH, "-hide_banner", "-nostats", "-i",
+           str(wav_path), "-af",
+           f"silencedetect=noise={noise_db:.1f}dB:d={min_sil:.3f}",
+           "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_CREATE_NO_WINDOW, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    log = r.stderr or ""
+    # Ghép cặp start/end theo thứ tự xuất hiện (ffmpeg log tuần tự).
+    sils: list[list[float]] = []
+    for line in log.splitlines():
+        ms = _SIL_START_RE.search(line)
+        if ms:
+            sils.append([float(ms.group(1)), total])   # end tạm = total
+            continue
+        me = _SIL_END_RE.search(line)
+        if me and sils:
+            sils[-1][1] = float(me.group(1))
+    if not sils:                        # không có khoảng im -> caller chia đều
+        return []
+    # NGHỊCH ĐẢO khoảng im -> khoảng có tiếng, kẹp trong [0, total]
+    speech: list[tuple[float, float]] = []
+    cur = 0.0
+    for a, b in sils:
+        a = max(0.0, min(a, total))
+        b = max(0.0, min(b, total))
+        if a - cur > 0.05:              # có tiếng trước khoảng im này
+            speech.append((round(cur, 3), round(a, 3)))
+        cur = max(cur, b)
+    if total - cur > 0.05:              # có tiếng sau khoảng im cuối
+        speech.append((round(cur, 3), round(total, 3)))
+    # Bỏ đoạn nói quá ngắn (<0.12s — nhiễu/bụp), tránh cụm chữ rơi vào rác
+    speech = [(a, b) for a, b in speech if b - a >= 0.12]
+    return speech
+
+
+def _phrase_groups_by_speech(text: str, start: float,
+                             speech_segs: list[tuple[float, float]],
+                             group: int = _RECAP_PHRASE_MAX) -> list:
+    """Chia `text` thành cụm ~`group` từ rồi RẢI vào các ĐOẠN CÓ TIẾNG
+    `speech_segs` (mốc THEO FILE audio, gốc 0). Mỗi đoạn nhận số cụm/thời
+    gian TỈ LỆ ĐỘ DÀI đoạn đó, trong đoạn chia tiếp theo TỈ LỆ SỐ KÝ TỰ ->
+    đoạn nói dài mang nhiều chữ hơn; KHÔNG có chữ trong khoảng im giữa các
+    đoạn. Neo về timeline clip bằng cộng `start`. Trả [[a, b, cụm], ...].
+
+    Dùng cho giọng el/Gemini khi BẬT cảm xúc (có [dramatic pause]) — sửa lỗi
+    'phụ đề delay lệch' do chia đều mù quáng qua khoảng lặng. speech_segs
+    rỗng -> [] (caller dùng _phrase_groups_even chia đều)."""
+    toks = str(text or "").split()
+    if not toks or not speech_segs:
+        return []
+    groups = [toks[i:i + group] for i in range(0, len(toks), group)]
+    ng = len(groups)
+    seg_dur = [max(0.01, b - a) for a, b in speech_segs]
+    total_dur = sum(seg_dur) or 1.0
+    # PHÂN BỔ số cụm cho từng đoạn theo TỈ LỆ độ dài đoạn (mỗi đoạn >=1 cụm
+    # nếu còn cụm; đoạn dài -> nhiều cụm hơn). Largest-remainder cho khỏi lệch.
+    want = [d / total_dur * ng for d in seg_dur]
+    cnt = [int(w) for w in want]
+    rem = ng - sum(cnt)
+    order = sorted(range(len(speech_segs)), key=lambda k: want[k] - cnt[k],
+                   reverse=True)
+    for k in order:
+        if rem <= 0:
+            break
+        cnt[k] += 1
+        rem -= 1
+    # đảm bảo không đoạn nào 0 cụm khi vẫn dư cụm ở đoạn khác >1 (dồn chữ lệch)
+    out: list = []
+    gi = 0
+    for si, (sa, sb) in enumerate(speech_segs):
+        take = cnt[si]
+        if take <= 0 or gi >= ng:
+            continue
+        segs_here = groups[gi:gi + take]
+        gi += take
+        chars = [max(1, len(" ".join(g))) for g in segs_here]
+        tot_c = sum(chars) or 1
+        t = float(start) + sa
+        seg_len = sb - sa
+        for g, c in zip(segs_here, chars):
+            d = seg_len * c / tot_c
+            out.append([round(t, 3), round(t + d, 3), " ".join(g)])
+            t += d
+        if out:                         # kẹp cụm cuối đoạn đúng mép có tiếng
+            out[-1][1] = round(float(start) + sb, 3)
+    # cụm còn sót (do làm tròn) -> nối vào đoạn cuối cùng
+    if gi < ng and out:
+        leftover = " ".join(" ".join(g) for g in groups[gi:])
+        if leftover.strip():
+            out[-1][2] = (out[-1][2] + " " + leftover).strip()
+    return out
+
+
 def _tempo_filters(tempo: float) -> str:
     """Chuỗi atempo (chia tầng nếu >2.0 — phòng xa, hiện _MAX_TEMPO=1.35)."""
     parts = []
@@ -1421,13 +1592,6 @@ _RECAP_TEMPO_MAX_TAIL = 1.4
 # — chấp nhận, còn hơn mất chữ.
 _BORROW_MAX_S = 3.0
 _BORROW_MAX_FRAC = 0.40
-
-# Phụ đề narrate MẶC ĐỊNH chia theo CÂU-CỤM (2-4 từ/nhóm) phân bố ĐỀU theo
-# audio THẬT (D_final) thay vì karaoke từng-từ: WordBoundary của Microsoft
-# không phải lúc nào cũng chuẩn (nhất là ngôn ngữ ngoài en) -> chia cụm ít
-# trôi hơn. Word-level giữ làm tuỳ chọn (RECAP_WORD_LEVEL_CAPTION=1).
-_RECAP_PHRASE_MIN = 2
-_RECAP_PHRASE_MAX = 4
 
 
 def _recap_word_level() -> bool:
@@ -1778,10 +1942,24 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                          round(min(part_end, sp_b + 0.35), 3)]
             n["end"] = round(sp_b, 3)
             if not _recap_word_level():
-                # MẶC ĐỊNH: câu-cụm 2-4 từ phân bố ĐỀU theo phần CÓ TIẾNG (ít
-                # trôi hơn karaoke vì không phụ thuộc mốc TỪNG từ WordBoundary).
-                grp = _phrase_groups_even(n["text"], n["start"] + speech_a,
-                                          speech_b - speech_a)
+                # MẶC ĐỊNH: câu-cụm 2-4 từ. CĂN theo GIỌNG THẬT:
+                #  - edge-tts (CÓ WordBoundary trong `wl`): tags đã strip nên
+                #    giọng đọc đều -> chia ĐỀU theo phần có tiếng (như cũ).
+                #  - el/Gemini (KHÔNG có word timestamp -> `wl` rỗng): khi bật
+                #    cảm xúc, [dramatic pause] tạo khoảng NGẮT -> DÒ đoạn nói
+                #    bằng silencedetect trên audio ĐÃ RENDER (wav) rồi rải cụm
+                #    chữ vào ĐÚNG các đoạn có tiếng (bỏ khoảng im) -> chữ chỉ
+                #    chạy khi đang nói. Không dò được đoạn nào -> chia đều.
+                grp = None
+                if not wl:
+                    segs_sp = _detect_speech_segments(wav, d_final)
+                    if len(segs_sp) >= 2:   # ≥2 đoạn -> có ngắt đáng kể
+                        grp = _phrase_groups_by_speech(
+                            n["text"], n["start"], segs_sp)
+                if not grp:                 # edge / nói liền / dò hỏng -> đều
+                    grp = _phrase_groups_even(n["text"],
+                                              n["start"] + speech_a,
+                                              speech_b - speech_a)
                 if grp:
                     n["words"] = grp
             elif wl:
