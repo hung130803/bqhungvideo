@@ -234,10 +234,15 @@ def build_ass(words: list, segments: list, out_path,
     hook_nx/hook_ny = tâm-ngang/đỉnh ô HOOK (0..1, user kéo trong Chỉnh mẫu);
     hook_size = cỡ chữ hook theo tỉ lệ chiều cao (0 = mặc định 1.5x phụ đề).
     extra_cues = [(start, end, text[, kind])] — cue THÊM đã ở TIMELINE ĐẦU RA
-    (không remap, không delay): phụ đề THUYẾT MINH recap (đoạn narrate tiếng
-    gốc bị tắt nên không có words; words truyền vào chỉ phủ đoạn orig).
-    kind="word" = cue TỪNG TỪ (mốc word boundary thật của TTS) chạy chữ như
-    đoạn gốc; thiếu kind/"sent" = hiện cả câu với fade nhẹ.
+    (không remap, không delay). Recap dùng CẢ 2 loại cue đồng thời (render
+    KHÔNG đè nhau vì mốc part orig/narrate rời nhau):
+      - narrate (lời KỂ AI): kind="word" (mốc WordBoundary TTS, chạy từng từ)
+        / "sent" (cả câu, fade nhẹ) -> Style Narrate (italic + accent vàng).
+      - orig (LỜI GỐC nhân vật đoạn mode="orig"): kind="orig_word" (word-level)
+        / "orig_sent" (fallback chia câu) -> Style Default (GIỐNG phụ đề clip
+        thường) — sửa lỗi 'đoạn gốc không có phụ đề'.
+    (đoạn narrate tiếng gốc bị tắt nên không có words; recap KHÔNG truyền
+    `words` — mọi phụ đề recap đi qua extra_cues cho nhất quán timeline.)
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
     bị ẨN trong lúc hook hiện (tránh chồng chữ), sau đó chạy bình thường."""
     has_hook = bool((hook or "").strip()) and hook_dur > 0
@@ -339,18 +344,34 @@ def build_ass(words: list, segments: list, out_path,
     # thật của edge-tts); mặc định/"sent" -> hiện CẢ CÂU. Dùng Style Narrate
     # (nghiêng + màu accent) và KHÔNG dùng pop/karaoke của preset gốc — từng
     # từ chỉ FADE NHẸ (50/30ms) -> nhìn là biết lời KỂ, không lẫn với thoại.
+    # kind:
+    #   "word"/"sent"       -> Style Narrate (lời KỂ của AI — italic + accent)
+    #   "orig_word"/"orig_sent" -> Style Default (LỜI GỐC nhân vật đoạn orig —
+    #                          GIỐNG phụ đề clip thường, KHÁC hẳn Narrate) — sửa
+    #                          lỗi 'đoạn gốc không có phụ đề'. Cue đã ở TIMELINE
+    #                          ĐẦU RA (m1._recap_orig_caption_cues đã map + trừ
+    #                          offset segment) nên KHÔNG remap/delay ở đây.
     extra_lines = []
     word_pre = "{\\fad(50,30)}"
+    orig_anim = ("{\\fad(30,0)\\t(0,90,\\fscx116\\fscy116)"
+                 "\\t(90,190,\\fscx100\\fscy100)}" if p.get("animate")
+                 else "{\\fad(40,0)}")
     for c in extra_cues:
         ea, eb, etxt = c[0], c[1], c[2]
         kind = str(c[3]) if len(c) > 3 else "sent"
         et = _esc(str(etxt))
         if p.get("upper"):
             et = et.upper()
-        pre = word_pre if kind == "word" else "{\\fad(80,80)}"
+        if kind.startswith("orig"):
+            # LỜI GỐC nhân vật -> Style Default (như clip thường)
+            pre = orig_anim if kind == "orig_word" else "{\\fad(60,40)}"
+            style_name = "Default"
+        else:
+            pre = word_pre if kind == "word" else "{\\fad(80,80)}"
+            style_name = "Narrate"
         extra_lines.append(
-            f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},Narrate,,0,0,0,,"
-            f"{pre}{et}\n")
+            f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},{style_name},,"
+            f"0,0,0,,{pre}{et}\n")
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))

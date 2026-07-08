@@ -273,6 +273,68 @@ def _split_chapters(duration: float, edges: list, k: int) -> list:
 
 
 # ------------------------------------------------------------------
+# 🚫 CHỐNG TRÙNG CẢNH GIỮA CÁC CLIP: mỗi giây video chỉ thuộc 1 clip.
+# Dùng "used ranges" (các khoảng đã dùng ở clip TRƯỚC) — clip sau CẮT BỎ
+# mọi phần giao với used (kèm khoảng đệm), cập nhật used sau mỗi clip.
+# ------------------------------------------------------------------
+_CLIP_GAP = 0.5           # đệm giữa 2 clip (giây) — clip sau bắt đầu sau
+_MIN_WIN_KEEP = 3.0       # window còn lại dưới ngưỡng này sau khi cắt -> bỏ
+
+
+def _merge_ranges(ranges: list, gap: float = 0.0) -> list:
+    """Gộp các khoảng [s,e] chồng/sát nhau (cách <= gap) -> list rời rạc,
+    sort tăng. Hàm thuần — test được."""
+    norm = sorted(([float(s), float(e)] for s, e in ranges or []
+                   if float(e) > float(s)), key=lambda x: x[0])
+    out: list = []
+    for s, e in norm:
+        if out and s <= out[-1][1] + gap:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
+def _subtract_used(windows: list, used: list, gap: float = _CLIP_GAP,
+                   min_keep: float = _MIN_WIN_KEEP) -> list:
+    """Cắt khỏi mỗi window mọi phần GIAO với các khoảng `used` (đã dùng ở
+    clip trước), nới `used` thêm `gap` đệm 2 bên. Trả các mảnh window còn
+    lại (>= min_keep giây), sort tăng, KHÔNG giao với used. Hàm thuần —
+    unit test được (nền tảng chống trùng cảnh giữa clip)."""
+    blocked = [[s - gap, e + gap] for s, e in _merge_ranges(used)]
+    out: list = []
+    for ws, we in windows or []:
+        ws, we = float(ws), float(we)
+        pieces = [[ws, we]]
+        for bs, be in blocked:
+            nxt = []
+            for ps, pe in pieces:
+                if be <= ps or bs >= pe:       # không giao -> giữ nguyên
+                    nxt.append([ps, pe])
+                    continue
+                if bs > ps:                    # giữ mảnh trước khối chặn
+                    nxt.append([ps, min(bs, pe)])
+                if be < pe:                    # giữ mảnh sau khối chặn
+                    nxt.append([max(be, ps), pe])
+            pieces = nxt
+        for ps, pe in pieces:
+            if pe - ps >= min_keep:
+                out.append([round(ps, 2), round(pe, 2)])
+    out.sort(key=lambda x: x[0])
+    return out
+
+
+def _has_overlap(windows: list) -> bool:
+    """Có cặp window nào GIAO nhau không (kiểm tra trong 1 clip). Hàm thuần."""
+    ws = sorted(([float(s), float(e)] for s, e in windows or []),
+                key=lambda x: x[0])
+    for i in range(len(ws) - 1):
+        if ws[i][1] > ws[i + 1][0] + 1e-6:
+            return True
+    return False
+
+
+# ------------------------------------------------------------------
 # 🎬 MULTI-WINDOW: rút gọn transcript cho prompt đạo diễn
 # ------------------------------------------------------------------
 def _condense_listing(segs: list, duration: float,
@@ -458,16 +520,21 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         _delete_suggested(video_id)
         lang0 = (transcript.get("language") or "").strip()
         clip_ids: list = []
+        used_ranges: list = []          # 🚫 khoảng ĐÃ dùng ở clip trước
         for ci, c0, c1, script in ch_scripts:
             # SNAP mép khung vào CHUYỂN CẢNH (ưu tiên, nếu không cắt ngang
-            # câu) / mép câu + KẸP vào chương (windows các clip KHÔNG chồng
-            # nhau) rồi VALIDATE LẠI; part snap + validate TỪNG khung
-            # (không vắt khung).
-            snapped_w = [[max(c0, _snap_time_scene(s, edges, scene_cuts,
-                                                   sent_spans)),
-                          min(c1, _snap_time_scene(e, edges, scene_cuts,
-                                                   sent_spans))]
+            # câu) / mép câu + KẸP CỨNG vào chương [c0,c1] (snap KHÔNG được
+            # vượt ranh giới chương) rồi VALIDATE LẠI; part snap + validate
+            # TỪNG khung (không vắt khung).
+            snapped_w = [[max(c0, min(c1, _snap_time_scene(
+                                  s, edges, scene_cuts, sent_spans))),
+                          max(c0, min(c1, _snap_time_scene(
+                                  e, edges, scene_cuts, sent_spans)))]
                          for s, e in script["windows"]]
+            # 🚫 CHỐNG TRÙNG CẢNH: cắt bỏ phần giao với các clip TRƯỚC (mỗi
+            # giây video chỉ thuộc 1 clip). Snap có thể nới window tràn sang
+            # chương/clip kế -> _subtract_used dồn về khoảng chưa dùng.
+            snapped_w = _subtract_used(snapped_w, used_ranges)
             ch_sents = _clip_sentences(segs, c0, c1)
             windows = recap.validate_windows(snapped_w, duration,
                                              max_n=win_hi,
@@ -510,6 +577,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                  + recap.style_label(style) + ".",
                  title, "", db.dumps(signals)))
             clip_ids.append(cid)
+            used_ranges.extend(wlist)   # 🚫 clip sau né các khung này
         if clip_ids:
             ctx.progress(1.0, f"AI [{prov}] dựng {len(clip_ids)} clip recap "
                               f"theo {len(chapters)} chương "
@@ -540,15 +608,21 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # hoặc mép câu transcript (±_SNAP_TOL) -> không mở/đóng clip giữa chừng
     # 1 câu nói.
     max_len = float(cfg.get("max_len") or 0) or _HARD_MAX
+    # clips đã sort theo thời gian; giữ mốc KẾT của span TRƯỚC để span sau
+    # bắt đầu SAU nó + đệm (🚫 chống trùng cảnh: các span PHẢI rời nhau —
+    # snap có thể kéo mép span sau lùi về trước mép span trước -> chồng).
     spans = []
+    prev_end = 0.0
     for c in clips:
         s0 = float(c["segments"][0][0])
         e1 = float(c["segments"][-1][1])
         s0 = max(0.0, _snap_time_scene(s0, edges, scene_cuts, sent_spans))
         e1 = _snap_time_scene(e1, edges, scene_cuts, sent_spans)
+        s0 = max(s0, prev_end + _CLIP_GAP if prev_end > 0 else s0)
         e1 = min(e1, s0 + max_len, duration or e1)
         if e1 - s0 >= 10.0:
             spans.append((round(s0, 2), round(e1, 2), c))
+            prev_end = e1
 
     # ---- 2) LLM đạo diễn viết kịch bản từng clip ----
     # NGỮ CẢNH THỊ GIÁC: nếu bật USE_VISION + model vision sẵn sàng -> trích

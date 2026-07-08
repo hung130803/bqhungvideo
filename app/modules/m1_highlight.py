@@ -1134,6 +1134,91 @@ def _recap_caption_cues(narr_events: list) -> list:
     return cues
 
 
+def _recap_orig_caption_cues(recap_parts: list, segs: list,
+                             tr_words: list, segments_transcript: list) -> list:
+    """Cue phụ đề cho ĐOẠN GỐC (mode="orig") của clip recap — phụ đề LỜI
+    GỐC nhân vật đang nói, WORD-LEVEL, trên TIMELINE ĐẦU RA (đã map + trừ
+    offset segment). Trả [(start, end, text, "orig_word"|"orig_sent")].
+
+    LỖI ĐÃ SỬA: trước đây đoạn orig lấy transcript words rồi để build_ass
+    tự _remap_words — nhưng words đó chia CHUNG style/đường với clip thường,
+    dễ rơi rớt khi mốc part (gốc) lệch mốc segment ghép. Giờ build TƯỜNG
+    MINH: với MỖI part orig, lấy words gốc rơi trong [part.start, part.end),
+    MAP về timeline đầu ra bằng dubbing._map_to_output (trừ tổng thời lượng
+    segment trước + offset trong segment — GIỐNG narrate), tạo cue word-level.
+
+    tr_words = [{"start","end","word"}] mốc VIDEO GỐC (whisper word-level
+    hoặc _fake_words_from_segments). Không có words phủ 1 part orig -> FALLBACK
+    chia đều theo KÝ TỰ các câu transcript giao part đó (kiểu phụ đề thường).
+    Mốc đầu ra CHƯA chia speed (giống narrate extra_cues — burn trước setpts).
+    Kind "orig_*" -> build_ass render Style Default (khác Narrate italic vàng).
+    """
+    from app.core import dubbing
+    orig_rngs = [(float(p["start"]), float(p["end"]))
+                 for p in (recap_parts or []) if p.get("mode") == "orig"]
+    if not orig_rngs:
+        return []
+    cues: list = []
+    for a, b in orig_rngs:
+        # words gốc BẮT ĐẦU trong part này -> map về đầu ra
+        win_words = []
+        for w in tr_words or []:
+            try:
+                ws, we = float(w["start"]), float(w["end"])
+                wtxt = str(w.get("word") or "").strip()
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not wtxt or not (a <= ws < b):
+                continue
+            oa = dubbing._map_to_output(ws, segs)
+            ob = dubbing._map_to_output(min(we, b), segs)
+            if oa is None:
+                continue
+            if ob is None or ob <= oa:
+                ob = oa + 0.2
+            win_words.append([round(oa, 3), round(ob, 3), wtxt])
+        if win_words:
+            win_words.sort(key=lambda x: x[0])
+            n = len(win_words)
+            for i, (oa, ob, wtxt) in enumerate(win_words):
+                # giữ tới từ kế (liền mạch) như captions._word_cues
+                if i + 1 < n and win_words[i + 1][0] - ob < 0.45:
+                    end = win_words[i + 1][0]
+                else:
+                    end = ob + 0.15
+                cues.append((round(oa, 3), round(max(oa + 0.05, end), 3),
+                             wtxt, "orig_word"))
+            continue
+        # FALLBACK: không có word-level -> chia đều theo KÝ TỰ các câu giao part
+        sents = []
+        for s in (segments_transcript or []):
+            try:
+                s0, e0 = float(s["start"]), float(s["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            txt = (s.get("text") or "").strip()
+            if txt and e0 > a and s0 < b:
+                sents.append((s0, e0, txt))
+        for s0, e0, txt in sents:
+            oa = dubbing._map_to_output(max(s0, a), segs)
+            ob = dubbing._map_to_output(min(e0, b), segs)
+            if oa is None or ob is None or ob <= oa or not txt.strip():
+                continue
+            # chia câu theo dấu câu, phân bổ thời gian theo số ký tự
+            import re as _re
+            pieces = [p.strip() for p in _re.split(r"(?<=[.!?…;,])\s+", txt)
+                      if p.strip()] or [txt.strip()]
+            tot = sum(len(p) for p in pieces) or 1
+            t = oa
+            for p in pieces:
+                d = (ob - oa) * len(p) / tot
+                cues.append((round(t, 3), round(min(t + d, ob), 3),
+                             p, "orig_sent"))
+                t += d
+    cues.sort(key=lambda c: c[0])
+    return cues
+
+
 def _pick_hook_seg(video_id: int, signals: dict, segs: list):
     """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
     Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
@@ -1377,21 +1462,18 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             cap_segs = segs
             extra_cues = None
             if is_recap and payload.get("captions"):
-                # 🎙 RECAP: đoạn ORIG giữ phụ đề gốc word-level như cũ; đoạn
-                # NARRATE (tiếng gốc tắt) hiện phụ đề theo CÂU thuyết minh.
-                # Lọc words: chỉ giữ từ BẮT ĐẦU trong 1 part orig (mốc gốc).
-                orig_rngs = [(float(p["start"]), float(p["end"]))
-                             for p in recap_parts if p.get("mode") == "orig"]
-
-                def _in_orig(w):
-                    try:
-                        t = float(w["start"])
-                    except (KeyError, TypeError, ValueError):
-                        return False
-                    return any(a <= t < b for a, b in orig_rngs)
-
-                words = [w for w in words if _in_orig(w)]
-                extra_cues = _recap_caption_cues(narr_events or [])
+                # 🎙 RECAP: MỌI phụ đề đi qua extra_cues (nhất quán timeline
+                # đầu ra — burn trước setpts) -> KHÔNG dùng đường words/
+                # _remap_words nữa (dễ rớt khi mốc part gốc lệch mốc segment
+                # ghép). 2 loại cue render đồng thời, KHÔNG đè (part rời nhau):
+                #   - NARRATE: phụ đề lời KỂ AI (Style Narrate).
+                #   - ORIG: phụ đề LỜI GỐC nhân vật word-level (Style Default,
+                #     như clip thường) — sửa lỗi 'đoạn gốc không có phụ đề'.
+                orig_cues = _recap_orig_caption_cues(
+                    recap_parts, segs, words, tr.get("segments") or [])
+                narr_cues = _recap_caption_cues(narr_events or [])
+                extra_cues = list(orig_cues) + list(narr_cues)
+                words = []          # recap: không dùng đường words trực tiếp
             if dub_segs and payload.get("captions"):
                 # CÓ LỒNG TIẾNG -> phụ đề dùng CHỮ ĐÃ DỊCH. Bản dịch không có
                 # mốc từng-từ -> tạo words GIẢ chia đều thời gian cụm cho từng
