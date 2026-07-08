@@ -1340,8 +1340,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             spd = max(0.5, min(3.0, float(payload.get("speed", 1.0) or 1.0)))
             duck_ranges = []
             for n in narr_events:
-                da, db = n.get("duck") or (n["start"], n["end"])
-                duck_ranges.append((float(da) / spd, float(db) / spd))
+                da, de = n.get("duck") or (n["start"], n["end"])
+                duck_ranges.append((float(da) / spd, float(de) / spd))
         elif payload.get("dub_lang"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
