@@ -1080,6 +1080,32 @@ def _fake_words_from_segments(segments: list) -> list:
     return out
 
 
+def _recap_caption_cues(narr_events: list) -> list:
+    """Cue phụ đề cho ĐOẠN THUYẾT MINH (recap): hiện theo CÂU của lời thuyết
+    minh, thời gian chia theo SỐ KÝ TỰ từng câu trong part (không word-level).
+    narr_events = [{"start","end","text"}] trên timeline ĐẦU RA (chưa speed).
+    Trả [(start, end, text)] đưa vào build_ass qua extra_cues."""
+    cues = []
+    for n in narr_events or []:
+        text = (n.get("text") or "").strip()
+        if not text:
+            continue
+        sents = [s.strip() for s in re.split(r"(?<=[.!?…;])\s+", text)
+                 if s.strip()]
+        if not sents:
+            sents = [text]
+        total_chars = sum(len(s) for s in sents)
+        t = float(n["start"])
+        dur = float(n["end"]) - t
+        if dur <= 0.1:
+            continue
+        for s in sents:
+            d = dur * len(s) / max(1, total_chars)
+            cues.append((round(t, 3), round(min(t + d, float(n["end"])), 3), s))
+            t += d
+    return cues
+
+
 def _pick_hook_seg(video_id: int, signals: dict, segs: list):
     """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
     Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
@@ -1227,8 +1253,14 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                     or [[clip["start_sec"], clip["end_sec"]]])
         else:
             segs = signals.get("segments") or [[clip["start_sec"], clip["end_sec"]]]
+        # 🎙 RECAP: clip có KỊCH BẢN thuyết minh (m2_recap) -> dựng track giọng
+        # AI + tắt tiếng gốc trong các khoảng narrate. Mốc part theo timeline
+        # video gốc nên hook-first (chèn đoạn lên đầu) sẽ làm LỆCH — bỏ qua.
+        recap_meta = signals.get("recap") or {}
+        recap_parts = recap_meta.get("parts") or []
+        is_recap = bool(recap_parts)
         # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
-        if payload.get("hook_first"):
+        if payload.get("hook_first") and not is_recap:
             hseg = _pick_hook_seg(video_id, signals, segs)
             if hseg:
                 segs = [hseg] + [list(p) for p in segs]
@@ -1241,7 +1273,29 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         dub_path = None
         dub_segs = None
         dub_stretch = 1.0            # >1 ở chế độ "Khớp video": làm chậm đều clip
-        if payload.get("dub_lang"):
+        duck_ranges = None           # 🎙 recap: các khoảng TẮT tiếng gốc (đầu ra)
+        narr_events = None           # 🎙 recap: [{"start","end","text"}] thuyết minh
+        if is_recap:
+            # ---- 🎙 REUP THUYẾT MINH: TTS kịch bản -> track narration ----
+            # (thay cho lồng tiếng dub thường; dub_lang của mẫu bị bỏ qua)
+            from app.core import dubbing
+            tr_rec = get_analysis(video_id, "transcript") or {}
+            lang = (recap_meta.get("lang") or tr_rec.get("language") or "")
+            cdir = Path(vrow["assets_dir"]) / "_cache"
+            cdir.mkdir(parents=True, exist_ok=True)
+            dw = str(cdir / f"_dub_{clip_id}.wav")
+            temps.append(dw)          # dọn khi job kết thúc (kể cả lỗi/hủy)
+            ctx.progress(0.05, f"{pfx}đang thu giọng thuyết minh AI...")
+            dub_path, narr_events = dubbing.build_recap_track(
+                recap_parts, segs, payload.get("dub_voice") or "", lang, dw,
+                on_progress=lambda p, m="": ctx.progress(
+                    0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
+            # Khoảng tắt tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed
+            # như dub — filter duck đặt sau atempo trong export_canvas_clip).
+            spd = max(0.5, min(3.0, float(payload.get("speed", 1.0) or 1.0)))
+            duck_ranges = [(n["start"] / spd, n["end"] / spd)
+                           for n in narr_events]
+        elif payload.get("dub_lang"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
             if tr_dub.get("segments"):
@@ -1274,6 +1328,23 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 # thì mất cả PHỤ ĐỀ lẫn HOOK. Tạo words giả từ segments.
                 words = _fake_words_from_segments(tr["segments"])
             cap_segs = segs
+            extra_cues = None
+            if is_recap and payload.get("captions"):
+                # 🎙 RECAP: đoạn ORIG giữ phụ đề gốc word-level như cũ; đoạn
+                # NARRATE (tiếng gốc tắt) hiện phụ đề theo CÂU thuyết minh.
+                # Lọc words: chỉ giữ từ BẮT ĐẦU trong 1 part orig (mốc gốc).
+                orig_rngs = [(float(p["start"]), float(p["end"]))
+                             for p in recap_parts if p.get("mode") == "orig"]
+
+                def _in_orig(w):
+                    try:
+                        t = float(w["start"])
+                    except (KeyError, TypeError, ValueError):
+                        return False
+                    return any(a <= t < b for a, b in orig_rngs)
+
+                words = [w for w in words if _in_orig(w)]
+                extra_cues = _recap_caption_cues(narr_events or [])
             if dub_segs and payload.get("captions"):
                 # CÓ LỒNG TIẾNG -> phụ đề dùng CHỮ ĐÃ DỊCH. Bản dịch không có
                 # mốc từng-từ -> tạo words GIẢ chia đều thời gian cụm cho từng
@@ -1295,7 +1366,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             cs = _cs0
             hook_txt = _hook_txt0
             # HOOK không cần words -> vẫn vẽ khi transcript trống/lỗi/tắt phụ đề
-            if words or hook_txt.strip():
+            if words or hook_txt.strip() or extra_cues:
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
                 ap = str(cdir / f"_cap_{clip_id}.ass")
@@ -1313,7 +1384,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                         hook_dur=float(cs.get("hook_dur", 6.0)),
                         hook_nx=float(cs.get("hook_nx", 0.5)),
                         hook_ny=float(cs.get("hook_ny", 0.10)),
-                        hook_size=float(cs.get("hook_size", 0) or 0)):
+                        hook_size=float(cs.get("hook_size", 0) or 0),
+                        extra_cues=extra_cues):
                     ass_path = ap
                     fonts_dir = str(ROOT_DIR / "app" / "assets" / "fonts")
         ctx.progress(0.15, f"{pfx}đang dựng khung (nền + video + phụ đề)...")
@@ -1329,7 +1401,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
             orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,
-            dub_mute_original=bool(payload.get("dub_mute")),
+            duck_ranges=duck_ranges,
+            # recap: KHÔNG tắt hẳn tiếng gốc theo cờ dub_mute của mẫu — đoạn
+            # orig phải giữ tiếng; duck_ranges đã tắt đúng các đoạn narrate.
+            dub_mute_original=bool(payload.get("dub_mute")) and not is_recap,
             dub_stretch=dub_stretch,
             fx_fade=bool(payload.get("fx_fade", True)),
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
@@ -1340,7 +1415,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # (wav lồng tiếng + .ass tạm được caller export_clip dọn qua `temps`)
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),
                         "captions": bool(ass_path),
-                        "dub": payload.get("dub_lang", "") if dub_path else "",
+                        "dub": (payload.get("dub_lang", "") if dub_path
+                                and not is_recap else ""),
+                        "recap": is_recap,
                         "mixed": signals.get("mode") == "mixed"}
     elif signals.get("mode") == "mixed":
         # ---- Mixed-Cut KHÔNG có mẫu (video_rect): ghép kiểu cũ (crop bám mặt),

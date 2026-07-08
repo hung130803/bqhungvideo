@@ -4,6 +4,7 @@
   - "analyze" : chạy lõi phân tích (tiến trình con) cho 1 video.
   - "auto"    : phân tích (nếu chưa) + tìm highlight trong 1 job — nút chính của UI.
   - "auto_mixed" : phân tích (nếu chưa) + ghép khoảnh khắc hay nhất (Mixed-Cut).
+  - "auto_recap" : phân tích (nếu chưa) + AI viết kịch bản 🎙 Reup thuyết minh.
   - "m1_export_clip": đăng ký trong m1_highlight.
 """
 from __future__ import annotations
@@ -165,9 +166,35 @@ def _auto_mixed(payload: dict, ctx: JobContext) -> dict:
     return {"video_id": video_id, **res}
 
 
+def _auto_recap(payload: dict, ctx: JobContext) -> dict:
+    """🎙 Reup thuyết minh 1 nút: phân tích (nếu chưa) -> AI viết kịch bản
+    thuyết minh cho các đoạn hay (m2_recap)."""
+    from app.modules.m2_recap import generate_recap
+    video_id = int(payload["video_id"])
+
+    done = all(analysis_status(video_id).get(k) in ("done", "skipped")
+               for k in ("transcript", "scenes", "audio", "faces"))
+    if not done:
+        _run_analyze(video_id, ctx, force=False, base=0.0, span=0.8)
+
+    parent = ctx
+
+    class _Sub:
+        profile = parent.profile
+        def progress(self, p, m=""):
+            parent.progress(0.8 + 0.2 * p, m)
+        def check_canceled(self):
+            parent.check_canceled()
+
+    res = generate_recap(
+        {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    return {"video_id": video_id, **res}
+
+
 register_handler("analyze", _analyze)
 register_handler("auto", _auto)
 register_handler("auto_mixed", _auto_mixed)
+register_handler("auto_recap", _auto_recap)
 
 # Nạp handler của Module 1 (tự register khi import)
 from app.modules import m1_highlight  # noqa: E402,F401

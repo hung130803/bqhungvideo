@@ -204,6 +204,27 @@ class StudioPage(QWidget):
             "phút) — kiểu 'best moments'. Khác 'Tạo clip' (mỗi clip 1 câu chuyện).")
         self.mixed_btn.clicked.connect(self._auto_mixed)
         actrow.addWidget(self.mixed_btn)
+        # 🎙 REUP THUYẾT MINH: AI viết kịch bản thuyết minh xen kẽ tiếng gốc
+        self.recap_btn = QPushButton("🎙 Reup thuyết minh")
+        self.recap_btn.setProperty("ghost", True); self.recap_btn.setMinimumHeight(32)
+        self.recap_btn.setToolTip(
+            "AI hiểu nội dung video rồi viết KỊCH BẢN THUYẾT MINH kiểu kênh "
+            "recap: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt) xen kẽ đoạn GIỌNG AI "
+            "kể/dẫn/bình (video tắt tiếng) — thuyết minh bằng ĐÚNG ngôn ngữ "
+            "video, giọng đọc = giọng lồng tiếng của mẫu.")
+        self.recap_btn.clicked.connect(self._auto_recap)
+        actrow.addWidget(self.recap_btn)
+        from app.ai.recap import STYLES as _RECAP_STYLES
+        self.recap_style = QComboBox()
+        self.recap_style.setToolTip("Phong cách thuyết minh cho nút 🎙 Reup.")
+        for key, (label, _hint) in _RECAP_STYLES.items():
+            self.recap_style.addItem(label, key)
+        _rs = self._settings.value("recap_style", "story") or "story"
+        self.recap_style.setCurrentIndex(max(0, self.recap_style.findData(_rs)))
+        self.recap_style.currentIndexChanged.connect(
+            lambda _i: self._settings.setValue(
+                "recap_style", self.recap_style.currentData() or "story"))
+        actrow.addWidget(self.recap_style)
         actrow.addStretch(1)
         self.auto_export_chk = QCheckBox("Phân tích xong tự động xuất")
         self.auto_export_chk.setToolTip(
@@ -2112,6 +2133,23 @@ class StudioPage(QWidget):
         self.status.setText("Đang phân tích & ghép Mixed-Cut... clip sẽ hiện "
                             "trong danh sách khi xong (xem tiến trình dưới).")
 
+    def _auto_recap(self):
+        """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
+        if not self.state.video_id:
+            QMessageBox.information(self, "Chưa chọn video",
+                                    "Thêm/chọn 1 video trước đã.")
+            return
+        if not self._require_ai():
+            return
+        preset = self._cut_preset()
+        preset["recap_style"] = self.recap_style.currentData() or "story"
+        services.enqueue_auto_recap(self.state.pool, self.state.video_id,
+                                    self.state.project_id, preset)
+        self.status.setText(
+            "🎙 Đang phân tích & viết kịch bản thuyết minh "
+            f"({self.recap_style.currentText()})... clip sẽ hiện trong danh "
+            "sách khi xong (xem tiến trình dưới).")
+
     def _auto_all(self):
         """Đưa MỌI video chưa có clip trong kênh vào hàng đợi (chạy song song)."""
         if not self.state.project_id:
@@ -2536,6 +2574,18 @@ class StudioPage(QWidget):
         title.setStyleSheet("font-size:16px; font-weight:500; border:none;")
         title.setToolTip("Tiêu đề tiếng Việt — để đọc hiểu nội dung")
         info.addWidget(_shrinkable(title))
+        if (sig.get("recap") or {}).get("parts"):
+            # 🎙 clip CÓ kịch bản thuyết minh -> xuất sẽ tự dựng giọng AI
+            rc = sig["recap"]
+            n_nar = sum(1 for p in rc["parts"] if p.get("mode") == "narrate")
+            rc_lbl = QLabel("🎙 Thuyết minh")
+            rc_lbl.setStyleSheet(f"color:{ACCENT}; font-size:11px; "
+                                 "font-weight:700; border:none;")
+            rc_lbl.setToolTip(
+                f"Kịch bản thuyết minh AI: {len(rc['parts'])} đoạn "
+                f"({n_nar} đoạn giọng AI, còn lại giữ tiếng gốc). Khi xuất, "
+                "tiếng gốc TẮT trong các đoạn thuyết minh.")
+            info.addWidget(_shrinkable(rc_lbl))
         en = (sig.get("title_en") or "").strip()
         if en:  # tiêu đề tiếng Anh (nhỏ, mờ) = cái sẽ GẮN LÊN video
             en_lbl = QLabel(en)

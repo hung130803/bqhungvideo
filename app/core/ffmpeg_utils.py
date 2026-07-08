@@ -918,6 +918,13 @@ def export_canvas_clip(
     orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
+    duck_ranges: Optional[list] = None, # 🎙 RECAP: các khoảng (a,b) trên timeline
+                                        # ĐẦU RA (sau speed) mà ÂM GỐC bị TẮT
+                                        # (volume=0) — đoạn thuyết minh. Chỉ áp
+                                        # lên tiếng gốc, KHÔNG đụng nhạc nền/
+                                        # narration. Có duck_ranges -> KHÔNG tự
+                                        # hạ nền tiếng gốc kiểu dub (orig_vol
+                                        # giữ nguyên ở các đoạn giữ tiếng gốc).
     dub_mute_original: bool = False,    # True = tắt hẳn tiếng gốc khi có lồng tiếng
     dub_stretch: float = 1.0,           # CHẾ ĐỘ "Khớp video": làm CHẬM ĐỀU clip
                                         # theo hệ số này (>1) để giọng đọc lọt
@@ -987,8 +994,17 @@ def export_canvas_clip(
     # ÂM LƯỢNG TIẾNG GỐC áp vào luồng tiếng gốc TRƯỚC khi amix. Khi có lồng
     # tiếng và user để mặc định 1.0 (thanh kéo chưa động) -> tự hạ nền ~0.12
     # để lời lồng tiếng nổi lên; user kéo mức khác thì tôn trọng đúng mức đó.
+    # Các khoảng TẮT ÂM GỐC (recap thuyết minh) — hợp lệ khi (a,b) đúng thứ tự
+    ducks: list[tuple[float, float]] = []
+    for pair in (duck_ranges or []):
+        try:
+            a, b = float(pair[0]), float(pair[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if b - a > 0.05:
+            ducks.append((max(0.0, a), b))
     voice_vol = orig_vol
-    if dub_on and not dub_mute_original and orig_vol >= 0.999:
+    if dub_on and not dub_mute_original and orig_vol >= 0.999 and not ducks:
         voice_vol = 0.12
 
     def build(enc: str) -> list[str]:
@@ -1117,7 +1133,15 @@ def export_canvas_clip(
             apply_vol = abs(voice_vol - 1.0) > 0.001
             if apply_vol:
                 vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
-            need_mix = (dub_idx is not None) or (bgm_idx is not None) or whoosh_on
+            if ducks:
+                # 🎙 RECAP: TẮT tiếng gốc trong các khoảng thuyết minh. Đặt SAU
+                # atempo (af) nên t = timeline ĐẦU RA (sau speed) — caller đã
+                # chia mốc cho speed. Chỉ nhánh tiếng gốc, không đụng lớp khác.
+                expr = "+".join(f"between(t,{a:.3f},{b:.3f})"
+                                for a, b in ducks)
+                vf.append(f"volume=0:enable='{expr}'")
+            need_mix = ((dub_idx is not None) or (bgm_idx is not None)
+                        or whoosh_on or bool(ducks))
             if need_mix or af or apply_vol:
                 parts.append(f"{aud}{','.join(vf)}[vce]")
                 mix.append("[vce]")

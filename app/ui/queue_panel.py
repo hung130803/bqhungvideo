@@ -23,10 +23,12 @@ from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE, WARN
 
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
          "m1_mixed_cut": "Mixed-Cut", "auto_mixed": "Mixed-Cut",
+         "auto_recap": "Reup thuyết minh",
          "m1_export_clip": "Xuất clip"}
 # Nhãn NGẮN + icon theo GIAI ĐOẠN (hiện ở TRƯỚC để biết ngay đang làm gì)
 _TYPE_TAG = {"auto": "🔍 Phân tích", "analyze": "🔍 Phân tích",
              "auto_mixed": "🔍 Mixed-Cut", "m1_mixed_cut": "🔍 Mixed-Cut",
+             "auto_recap": "🎙 Thuyết minh",
              "m1_highlights": "🔍 Tìm clip", "m1_export_clip": "✂ Xuất"}
 _STATUS = {"running": ("Đang chạy", ACCENT), "pending": ("Đang chờ", MUTED),
            "done": ("✓ Hoàn tất", SUCCESS), "failed": ("✕ Lỗi · bấm xem", DANGER),

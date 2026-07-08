@@ -697,6 +697,132 @@ def _mix_track(chunk_wavs: list[tuple[float, str]], total: float,
 
 
 # ------------------------------------------------------------------
+# 🎙 REUP THUYẾT MINH (recap) — track giọng AI đọc KỊCH BẢN theo part
+# ------------------------------------------------------------------
+# atempo cho lời thuyết minh: cho phép CHẬM nhẹ (0.8) khi lời ngắn hơn khung
+# và NHANH nhẹ (1.35) khi dài hơn — đọc "vừa khít" part mà vẫn tự nhiên.
+_RECAP_TEMPO_MIN = 0.8
+_RECAP_TEMPO_MAX = 1.35
+
+
+def _fit_recap_chunk(src: str, dst_wav: str, window: float) -> float:
+    """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-1.35;
+    vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế). Trả độ dài."""
+    dur = probe_duration(src)
+    if dur <= 0:
+        raise RuntimeError("TTS trả file audio hỏng (0 giây)")
+    af = ["aresample=48000"]
+    if window > 0.2 and abs(dur - window) > 0.05:
+        tempo = max(_RECAP_TEMPO_MIN, min(_RECAP_TEMPO_MAX, dur / window))
+        if abs(tempo - 1.0) > 0.02:
+            af.append(_tempo_filters(tempo))
+            dur = dur / tempo
+    if window > 0.05 and dur > window + 0.05:       # tempo trần vẫn dư -> cắt
+        af.append(f"atrim=0:{window:.3f}")
+        af.append(f"afade=t=out:st={max(0.0, window - 0.12):.3f}:d=0.12")
+        dur = window
+    _ffmpeg(["-i", src, "-af", ",".join(af), "-ac", "1", "-ar", "48000",
+             "-c:a", "pcm_s16le", dst_wav], "khớp thời gian thuyết minh")
+    return dur
+
+
+def _map_to_output(t: float, clip_segments: list) -> Optional[float]:
+    """Đổi mốc t (timeline VIDEO GỐC) -> timeline ĐẦU RA sau ghép khúc.
+    t nằm ngoài mọi khúc -> None."""
+    offset = 0.0
+    for s, e in clip_segments:
+        s, e = float(s), float(e)
+        if s - 0.05 <= t <= e + 0.05:
+            return offset + min(max(t, s), e) - s
+        offset += e - s
+    return None
+
+
+def build_recap_track(parts: list, clip_segments: list, voice: str,
+                      lang: str, out_wav: str | Path,
+                      on_progress: Optional[Callable[[float, str], None]] = None,
+                      ) -> tuple[str, list[dict]]:
+    """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
+
+    parts: kịch bản [{"start","end","mode","text"}] — mốc theo TIMELINE VIDEO
+    GỐC (app/ai/recap.py đã validate). Chỉ part mode="narrate" được đọc.
+    clip_segments: các khúc của clip -> mốc part được ÁNH XẠ về timeline đầu ra.
+    voice: giọng edge-tts hoặc "gemini:...". lang: để chọn giọng dự phòng.
+
+    narrate_events = [{"start","end","text"}] trên timeline ĐẦU RA (chưa
+    speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
+    WAV 48kHz mono dài ĐÚNG tổng độ dài clip; part TTS lỗi -> BỎ RIÊNG part
+    đó (các part khác giữ đúng mốc); MỌI part lỗi -> track im lặng (không vỡ).
+    """
+    def prog(p: float, msg: str = "") -> None:
+        if on_progress:
+            on_progress(min(1.0, max(0.0, p)), msg)
+
+    total = sum(float(e) - float(s) for s, e in (clip_segments or []))
+    if total <= 0.2:
+        raise ValueError("Clip không có đoạn nào để thuyết minh.")
+    voice = (voice or "").strip() or default_voice(lang) or "en-US-JennyNeural"
+
+    # Part narrate -> mốc đầu ra; part rơi ngoài clip/khung quá hẹp -> bỏ
+    narr: list[dict] = []
+    for p in parts or []:
+        if (p.get("mode") != "narrate"
+                or not str(p.get("text") or "").strip()):
+            continue
+        a = _map_to_output(float(p["start"]), clip_segments)
+        b = _map_to_output(float(p["end"]), clip_segments)
+        if a is None or b is None or b - a < 0.8:
+            continue
+        narr.append({"start": round(a, 3), "end": round(b, 3),
+                     "text": str(p["text"]).strip()})
+    if not narr:
+        raise RuntimeError("Kịch bản không có part thuyết minh hợp lệ.")
+
+    texts = [n["text"] for n in narr]
+    with tempfile.TemporaryDirectory(prefix="recap_") as td:
+        mp3s = [os.path.join(td, f"n{i}.mp3") for i in range(len(narr))]
+        done = {"n": 0}
+
+        def _tts_done(_i: int) -> None:
+            done["n"] += 1
+            prog(0.05 + 0.60 * done["n"] / max(1, len(narr)),
+                 f"Thu giọng đoạn {done['n']}/{len(narr)}...")
+
+        if voice.startswith("gemini:"):
+            prog(0.05, f"Thu giọng {len(narr)} đoạn (Gemini TTS)...")
+            ok = _synth_all_gemini(texts, voice, mp3s, norm_lang(lang),
+                                   on_done=_tts_done,
+                                   on_msg=lambda m: prog(0.06, m))
+        else:
+            prog(0.05, f"Thu giọng {len(narr)} đoạn (edge-tts)...")
+            ok = asyncio.run(_synth_all(texts, voice, mp3s,
+                                        on_done=_tts_done))
+        if not any(ok):
+            raise RuntimeError(
+                "TTS thuyết minh thất bại toàn bộ (mạng/giọng lỗi) — "
+                "thử lại hoặc đổi giọng đọc trong mẫu.")
+
+        fitted: list[tuple[float, str]] = []
+        for i, n in enumerate(narr):
+            if not ok[i]:
+                continue
+            wav = os.path.join(td, f"f{i}.wav")
+            try:
+                _fit_recap_chunk(mp3s[i], wav, n["end"] - n["start"])
+            except RuntimeError:
+                continue                    # part hỏng -> bỏ riêng part đó
+            fitted.append((n["start"], wav))
+            prog(0.65 + 0.25 * (i + 1) / len(narr), "Khớp thời gian...")
+
+        prog(0.92, "Ghép track thuyết minh...")
+        Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
+        _mix_track(fitted, round(total, 3), str(out_wav))
+
+    prog(1.0, "Xong thuyết minh")
+    return str(out_wav), narr
+
+
+# ------------------------------------------------------------------
 # API chính
 # ------------------------------------------------------------------
 def build_dub_track(transcript: dict, clip_segments: list, target_lang: str,

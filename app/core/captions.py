@@ -224,7 +224,8 @@ def build_ass(words: list, segments: list, out_path,
               preset: str = DEFAULT_PRESET, delay: float = 0.0,
               hook: str = "", hook_dur: float = 6.0,
               hook_nx: float = 0.5, hook_ny: float = 0.10,
-              hook_size: float = 0.0) -> bool:
+              hook_size: float = 0.0,
+              extra_cues: list | None = None) -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
@@ -232,11 +233,16 @@ def build_ass(words: list, segments: list, out_path,
             số âm = hiện sớm hơn. ny = vị trí dọc (0=trên, 1=dưới) do user KÉO.
     hook_nx/hook_ny = tâm-ngang/đỉnh ô HOOK (0..1, user kéo trong Chỉnh mẫu);
     hook_size = cỡ chữ hook theo tỉ lệ chiều cao (0 = mặc định 1.5x phụ đề).
+    extra_cues = [(start, end, text)] — cue THÊM đã ở TIMELINE ĐẦU RA (không
+    remap, không delay): phụ đề THUYẾT MINH recap hiện theo CÂU (đoạn narrate
+    tiếng gốc bị tắt nên không có words; words truyền vào chỉ phủ đoạn orig).
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
     bị ẨN trong lúc hook hiện (tránh chồng chữ), sau đó chạy bình thường."""
     has_hook = bool((hook or "").strip()) and hook_dur > 0
     remapped = _remap_words(words or [], segments or [])
-    if not remapped and not has_hook:
+    extra_cues = [c for c in (extra_cues or [])
+                  if len(c) >= 3 and str(c[2]).strip() and c[1] > c[0]]
+    if not remapped and not has_hook and not extra_cues:
         return False
     p = CAPTION_PRESETS.get(preset) or CAPTION_PRESETS[DEFAULT_PRESET]
     mode = p["mode"]
@@ -314,6 +320,16 @@ def build_ass(words: list, segments: list, out_path,
     # Hook và phụ đề chạy CÙNG NHAU (user chốt 2026-07): không ẩn phụ đề lúc
     # hook hiện nữa — tắt hook thì chỉ hook biến mất, phụ đề luôn chạy từ 0s.
     min_start = 0.0
+    # Cue THUYẾT MINH (recap): hiện CẢ CÂU, mốc đã ở timeline đầu ra —
+    # không remap/delay; fade nhẹ vào/ra cho mượt. Dùng chung Style Default.
+    extra_lines = []
+    for ea, eb, etxt in extra_cues:
+        et = _esc(str(etxt))
+        if p.get("upper"):
+            et = et.upper()
+        extra_lines.append(
+            f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},Default,,0,0,0,,"
+            f"{{\\fad(80,80)}}{et}\n")
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
@@ -351,6 +367,7 @@ def build_ass(words: list, segments: list, out_path,
             body = ("{%s\\1c%s}" % (fad, rest_c)) + parts
             lines.append(
                 f"Dialogue: 0,{_fmt(wa)},{_fmt(we)},Default,,0,0,0,,{body}\n")
+        lines.extend(extra_lines)
         Path(out_path).write_text("".join(lines), encoding="utf-8")
         return True
 
@@ -382,5 +399,6 @@ def build_ass(words: list, segments: list, out_path,
             body = prefix + body
         lines.append(
             f"Dialogue: 0,{_fmt(a2)},{_fmt(b2)},Default,,0,0,0,,{body}\n")
+    lines.extend(extra_lines)
     Path(out_path).write_text("".join(lines), encoding="utf-8")
     return True

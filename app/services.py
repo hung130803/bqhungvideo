@@ -117,6 +117,17 @@ def enqueue_auto_mixed(pool: WorkerPool, video_id: int, project_id: int,
     )
 
 
+def enqueue_auto_recap(pool: WorkerPool, video_id: int, project_id: int,
+                       preset: Optional[dict] = None) -> Optional[int]:
+    """Nút '🎙 Reup thuyết minh': phân tích (nếu chưa) + AI viết kịch bản
+    thuyết minh (preset kèm recap_style). Dedup như auto."""
+    return pool.enqueue(
+        "auto_recap", {"video_id": video_id, "preset": preset or {}},
+        project_id=project_id, video_id=video_id, needs_gpu=True, priority=10,
+        dedup_key=f"autorecap:{video_id}", skip_if_done=False,
+    )
+
+
 def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    project_id: int, out_w: int = 1080, out_h: int = 1920,
                    mode: str = "face", zoom: float = 1.0,
