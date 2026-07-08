@@ -107,12 +107,35 @@ def _narrator_rules(ln: str, style: str) -> str:
     và prompt đạo diễn multi-window (build_director_prompt) — giữ 1 nguồn
     để 2 đường không lệch luật (anti-copy, văn nói, vibe phong cách)."""
     return (
+        "QUY TRÌNH 2 BƯỚC (bắt buộc — nghĩ theo 2 vai TÁCH BẠCH):\n"
+        "• BƯỚC 1 (VAI HIỂU CHUYỆN): đọc transcript, tự viết trong đầu 1 câu "
+        "TÓM TẮT BỐI CẢNH ngắn — chuyện gì, ai, diễn biến. Câu này CHỈ để bạn "
+        "HIỂU, TUYỆT ĐỐI KHÔNG dùng làm lời đọc (điền vào trường "
+        "\"context_summary\").\n"
+        "• BƯỚC 2 (VAI NGƯỜI KỂ NGOÀI): dựa trên bối cảnh đó, viết lời "
+        "narrate — BÌNH LUẬN / CẢM XÚC / DỰ ĐOÁN / ĐẶT CÂU HỎI về chuyện. "
+        "Đoạn tiếng gốc (orig) để NHÂN VẬT TỰ NÓI — lời narrate chỉ DẪN MỒI "
+        "vào, KHÔNG nói hộ, KHÔNG thuật lại câu nhân vật.\n\n"
         "CẤM TUYỆT ĐỐI trong lời narrate:\n"
-        "- CẤM lặp lại, diễn giải lại hay tóm tắt lại câu nhân vật VỪA nói "
-        "hoặc SẮP nói trong transcript — người xem sắp nghe/vừa nghe câu đó "
-        "rồi, kể lại là thừa và chán.\n"
+        "- CẤM lặp lại, diễn giải lại, PARAPHRASE hay tóm tắt lại câu nhân "
+        "vật VỪA nói hoặc SẮP nói trong transcript — người xem sắp nghe/vừa "
+        "nghe câu đó rồi, kể lại là thừa và chán. Đổi vài từ/đảo trật tự VẪN "
+        "là thuật lại -> CẤM.\n"
+        "- CẤM dùng lại NGUYÊN CỤM 3 từ trở lên có trong transcript (nhại "
+        "cụm lời thoại).\n"
         "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
-        "bảo là...\", \"anh ta giải thích rằng...\".\n\n"
+        "bảo là...\", \"anh ta giải thích rằng...\".\n"
+        "VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
+        "  Transcript nhân vật: \"tôi bấm nhầm nút bán hết cổ phiếu\".\n"
+        "  ✅ ĐÚNG (bình luận góc ngoài): \"Gã này vừa mất cả gia tài chỉ "
+        "vì một cú click...\"\n"
+        "  ❌ SAI (thuật lại): \"Anh ấy nói anh ấy bấm nhầm nút bán hết cổ "
+        "phiếu.\"\n"
+        "  Transcript (EN): \"i accidentally sold all my shares\".\n"
+        "  ✅ RIGHT (outsider comment): \"One wrong click. His entire "
+        "fortune — gone.\"\n"
+        "  ❌ WRONG (retelling): \"He says he accidentally sold all his "
+        "shares.\"\n\n"
         "LỜI KỂ CỦA BẠN PHẢI:\n"
         "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
         "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
@@ -224,9 +247,12 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "trần SẼ BỊ CẮT CỤT giữa câu khi đọc.\n"
         "- part orig KHÔNG cần text (để chuỗi rỗng).\n"
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
+        "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
+        "hiểu, KHÔNG phải lời đọc.\n"
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
-        '{"title": "...", "parts": [{"start": giây, "end": giây, '
-        '"mode": "orig"|"narrate", "text": "lời thuyết minh nếu narrate"}]}')
+        '{"context_summary": "...", "title": "...", "parts": '
+        '[{"start": giây, "end": giây, "mode": "orig"|"narrate", '
+        '"text": "lời thuyết minh nếu narrate"}]}')
 
 
 # ------------------------------------------------------------------
@@ -254,7 +280,15 @@ def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
 
 # Ngưỡng FUZZY anti-copy: lời narrate trùng > tỉ lệ từ này với transcript
 # TRONG ĐÚNG KHOẢNG THỜI GIAN của part -> coi như AI kể lại lời nhân vật.
-_FUZZY_COPY_MAX = 0.60
+# SIẾT 0.60 -> 0.45: diễn giải SÁT NGHĨA (đổi vài từ, đảo trật tự) vẫn trùng
+# ~45-55% từ với transcript -> nghe như "đọc lại lời người kia". Lời KỂ sáng
+# tác thật (thêm cảm xúc/bình luận/góc ngoài) dùng từ vựng khác hẳn -> trùng
+# thấp (thường <30%), nên hạ ngưỡng vẫn KHÔNG loại nhầm câu sáng tác.
+_FUZZY_COPY_MAX = 0.45
+# n-gram CHẶN THEO Ý: narrate trùng >= số TỪ-NỘI-DUNG LIÊN TIẾP này với 1 cụm
+# trong transcript window -> coi là THUẬT LẠI lời nhân vật (dù tỉ lệ tổng thấp).
+# Bắt kiểu "anh ấy nói anh ấy bấm nhầm nút bán hết cổ phiếu" nhại nguyên cụm.
+_RETELL_NGRAM = 3
 
 
 def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
@@ -283,6 +317,53 @@ def _window_words(sentences: list, start: float, end: float) -> set:
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _window_text(sentences: list, start: float, end: float) -> str:
+    """Chuỗi transcript (đã chuẩn hoá, giữ THỨ TỰ) của các câu GIAO [start,end]
+    — dùng dò n-gram LIÊN TIẾP (chặn thuật lại nguyên cụm)."""
+    parts = []
+    for a, b, t in sentences or []:
+        try:
+            if float(b) > start and float(a) < end and t:
+                parts.append(_norm_for_copy(t))
+        except (TypeError, ValueError):
+            continue
+    return " ".join(parts)
+
+
+def _content_seq(text: str) -> list:
+    """Dãy TỪ-NỘI-DUNG (bỏ stopword vi+en, bỏ từ 1 ký tự) theo ĐÚNG thứ tự
+    xuất hiện — để dò n-gram liên tiếp trùng transcript."""
+    return [w for w in _norm_for_copy(text).split()
+            if len(w) > 1 and w not in _STOPWORDS]
+
+
+def _is_retelling(text: str, window_text: str, n: int = _RETELL_NGRAM) -> bool:
+    """narrate text có >= `n` TỪ-NỘI-DUNG LIÊN TIẾP trùng 1 cụm trong
+    transcript window không -> THUẬT LẠI (nhại nguyên cụm lời nhân vật).
+
+    Bắt kiểu (b) sai: transcript "tôi bấm nhầm nút bán hết cổ phiếu" ->
+    narrate "anh ấy nói anh ấy bấm nhầm nút bán hết cổ phiếu" (cụm nội dung
+    'bấm nhầm nút bán hết cổ phiếu' trùng liên tiếp) -> LOẠI. Câu (a) sáng
+    tác "gã này vừa mất cả gia tài chỉ vì một cú click" KHÔNG có n-gram nội
+    dung liên tiếp nào trùng -> QUA. Hàm thuần — unit test được.
+
+    Dùng _STOPWORDS (bỏ từ nối) trước khi ghép n-gram nên "anh ấy nói" (toàn
+    stopword/đại từ) không tính — chỉ cụm NỘI DUNG thật mới bị bắt."""
+    if n < 1:
+        return False
+    seq = _content_seq(text)
+    if len(seq) < n:
+        return False
+    win = _content_seq(window_text)
+    if len(win) < n:
+        return False
+    win_grams = {" ".join(win[i:i + n]) for i in range(len(win) - n + 1)}
+    for i in range(len(seq) - n + 1):
+        if " ".join(seq[i:i + n]) in win_grams:
+            return True
+    return False
 
 
 # ------------------------------------------------------------------
@@ -501,7 +582,10 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         if (mode == "narrate" and sentences
                 and _fuzzy_copy_ratio(
                     text, _window_words(sentences, s, e)) > _FUZZY_COPY_MAX):
-            mode, text = "orig", ""    # AI kể lại lời nhân vật -> tiếng gốc
+            mode, text = "orig", ""    # trùng FUZZY quá nhiều từ -> tiếng gốc
+        if (mode == "narrate" and sentences
+                and _is_retelling(text, _window_text(sentences, s, e))):
+            mode, text = "orig", ""    # nhại nguyên cụm (n-gram) -> tiếng gốc
         clean.append({"start": round(s, 2), "end": round(e, 2),
                       "mode": mode, "text": text if mode == "narrate" else ""})
 
@@ -552,6 +636,30 @@ def narrate_ratio(parts: list[dict]) -> float:
     total = sum(p["end"] - p["start"] for p in parts) or 1.0
     nar = sum(p["end"] - p["start"] for p in parts if p["mode"] == "narrate")
     return nar / total
+
+
+# Nếu anti-copy SIẾT làm rụng quá nhiều narrate (còn < tỉ lệ này số part
+# narrate mà LLM ĐỊNH viết) -> lời kể đang thuật lại lời nhân vật -> RETRY 1
+# lần với chỉ trích cụ thể (thà retry còn hơn xuất clip gần như toàn orig).
+_ANTICOPY_RETRY_KEEP = 0.5
+# Chỉ trích gửi kèm khi retry vì thuật lại (dùng cho cả 2 đường prompt).
+_RETELL_RETRY_NOTE = (
+    "LẦN TRƯỚC lời kể của bạn ĐANG THUẬT LẠI / diễn giải lại lời nhân vật "
+    "(lặp cụm từ trong transcript) nên bị hệ thống LOẠI gần hết. Hãy viết "
+    "LẠI: đứng NGOÀI video mà BÌNH LUẬN / cảm xúc / dự đoán / đặt câu hỏi về "
+    "chuyện — TUYỆT ĐỐI KHÔNG nhắc lại nội dung câu nhân vật đang/ sắp nói "
+    "(để họ TỰ nói ở đoạn orig), KHÔNG dùng lại cụm từ nào của transcript.")
+
+
+def _narrate_count(raw_parts) -> int:
+    """Số part LLM ĐỊNH viết narrate (trước khi validate/anti-copy hạ orig) —
+    để đo anti-copy có rụng quá nhiều không. raw = list dict thô."""
+    n = 0
+    for p in _coerce_parts(raw_parts):
+        if str(p.get("mode") or "").strip().lower() == "narrate" \
+                and str(p.get("text") or "").strip():
+            n += 1
+    return n
 
 
 # ------------------------------------------------------------------
@@ -648,8 +756,11 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "trần SẼ BỊ CẮT CỤT giữa câu khi đọc.\n"
         "- part orig KHÔNG cần text (chuỗi rỗng).\n"
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
+        "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
+        "hiểu, KHÔNG phải lời đọc.\n"
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
-        '{"title": "...", "windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
+        '{"context_summary": "...", "title": "...", '
+        '"windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
         '"parts": [{"start": giây, "end": giây, "mode": "orig"|"narrate", '
         '"text": "lời thuyết minh nếu narrate"}]}\n'
         '("windows" BẮT BUỘC là MẢNG CÁC CẶP SỐ [[s, e], ...] — ÍT NHẤT 2 '
@@ -867,7 +978,22 @@ def write_director_script(sentences: list, lang_name: str, style: str,
             raise                       # lỗi mạng/key/quota -> caller quyết
         err = ("kết quả không phải JSON hợp lệ — trả DUY NHẤT 1 JSON object "
                "đúng schema, không thêm chữ/markdown")
-    if result:
+    # ---- ANTI-COPY SIẾT rụng quá nửa narrate (thuật lại) -> RETRY chỉ trích ----
+    # (chỉ khi ĐÃ có result hợp lệ nhưng phần narrate bị hạ orig gần hết)
+    if result and isinstance(data, dict):
+        want = _narrate_count(data.get("parts"))
+        kept = sum(1 for p in result["parts"] if p["mode"] == "narrate")
+        if want >= 2 and kept < max(1, _ANTICOPY_RETRY_KEEP * want):
+            try:
+                d2 = llm.complete_json(prompt + "\n\n" + _RETELL_RETRY_NOTE,
+                                       system=_SYSTEM)
+                r2, _e2 = _director_from_data(d2, sentences, duration,
+                                              min_total, max_total)
+            except llm.LLMError:
+                r2 = None
+            if r2 and sum(1 for p in r2["parts"]
+                          if p["mode"] == "narrate") > kept:
+                return r2
         return result
     # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
     retry_prompt = (
@@ -898,28 +1024,47 @@ def write_script(sentences: list, lang_name: str, style: str,
     Ném llm.LLMError nếu gọi LLM thất bại (caller quyết fail/skip).
     Trả None nếu LLM trả JSON không dùng được (không có part narrate nào).
     """
-    prompt = build_prompt(sentences, lang_name, style, clip_start, clip_end,
-                          title, frames=frames, ratio=ratio)
-    data = None
-    if frames:
-        try:
-            data = llm.complete_vision_json(
-                prompt, [p for _t, p in frames], system=_SYSTEM)
-        except Exception:  # noqa: BLE001 — vision lỗi -> lùi prompt chữ
-            data = None
+    base_prompt = build_prompt(sentences, lang_name, style, clip_start,
+                               clip_end, title, frames=frames, ratio=ratio)
+
+    def _call(prompt: str):
+        data = None
+        if frames:
+            try:
+                data = llm.complete_vision_json(
+                    prompt, [p for _t, p in frames], system=_SYSTEM)
+            except Exception:  # noqa: BLE001 — vision lỗi -> lùi prompt chữ
+                data = None
+        if data is None:
+            p2 = prompt
+            if frames:                  # vision fail -> prompt KHÔNG nhắc ảnh
+                p2 = build_prompt(sentences, lang_name, style, clip_start,
+                                  clip_end, title, ratio=ratio)
+                if prompt != base_prompt:   # giữ chỉ trích retry ở cuối
+                    p2 += prompt[len(base_prompt):]
+            data = llm.complete_json(p2, system=_SYSTEM)
+        if isinstance(data, list):      # model trả thẳng mảng parts
+            data = {"parts": data}
+        return data if isinstance(data, dict) else None
+
+    data = _call(base_prompt)
     if data is None:
-        if frames:                      # vision fail -> prompt KHÔNG nhắc ảnh
-            prompt = build_prompt(sentences, lang_name, style,
-                                  clip_start, clip_end, title, ratio=ratio)
-        data = llm.complete_json(prompt, system=_SYSTEM)
-    if isinstance(data, list):          # model trả thẳng mảng parts
-        data = {"parts": data}
-    if not isinstance(data, dict):
         return None
     raw = data.get("parts")
     if not isinstance(raw, list):
         return None
     parts = validate_parts(raw, clip_start, clip_end, sentences=sentences)
+    kept = sum(1 for p in parts if p["mode"] == "narrate")
+    want = _narrate_count(raw)
+    # ANTI-COPY SIẾT rụng quá nửa narrate (thuật lại) -> RETRY 1 lần với chỉ
+    # trích cụ thể. Vẫn tệ -> GIỮ kết quả tốt hơn (thà orig còn hơn đọc lại).
+    if want >= 2 and kept < max(1, _ANTICOPY_RETRY_KEEP * want):
+        data2 = _call(base_prompt + "\n\n" + _RETELL_RETRY_NOTE)
+        if isinstance(data2, dict) and isinstance(data2.get("parts"), list):
+            parts2 = validate_parts(data2["parts"], clip_start, clip_end,
+                                    sentences=sentences)
+            if sum(1 for p in parts2 if p["mode"] == "narrate") > kept:
+                parts, data = parts2, data2
     if not any(p["mode"] == "narrate" for p in parts):
         return None                     # không có thuyết minh -> vô nghĩa
     return {"title": str(data.get("title") or "").strip(), "parts": parts}

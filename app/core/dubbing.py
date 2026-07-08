@@ -1041,17 +1041,66 @@ _RECAP_TEMPO_MAX_TAIL = 1.4
 _BORROW_MAX_S = 3.0
 _BORROW_MAX_FRAC = 0.40
 
+# Phụ đề narrate MẶC ĐỊNH chia theo CÂU-CỤM (2-4 từ/nhóm) phân bố ĐỀU theo
+# audio THẬT (D_final) thay vì karaoke từng-từ: WordBoundary của Microsoft
+# không phải lúc nào cũng chuẩn (nhất là ngôn ngữ ngoài en) -> chia cụm ít
+# trôi hơn. Word-level giữ làm tuỳ chọn (RECAP_WORD_LEVEL_CAPTION=1).
+_RECAP_PHRASE_MIN = 2
+_RECAP_PHRASE_MAX = 4
+
+
+def _recap_word_level() -> bool:
+    """Có bật phụ đề narrate WORD-LEVEL (karaoke từng từ) không. Mặc định
+    TẮT -> dùng câu-cụm (ít trôi). Bật qua biến môi trường / settings
+    RECAP_WORD_LEVEL_CAPTION khi muốn karaoke từng từ."""
+    v = os.environ.get("RECAP_WORD_LEVEL_CAPTION")
+    if v is None:
+        v = str(getattr(settings, "RECAP_WORD_LEVEL_CAPTION", "") or "")
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _phrase_groups_even(text: str, start: float, speech_dur: float,
+                        group: int = _RECAP_PHRASE_MAX) -> list:
+    """Chia `text` thành cụm ~`group` từ, PHÂN BỐ ĐỀU theo PHẦN CÓ TIẾNG THẬT:
+    mỗi cụm chiếm thời gian TỈ LỆ số từ của nó trên `speech_dur`, neo từ
+    `start`. speech_dur = độ dài phần LỜI NÓI thật (mép từ cuối), KHÔNG tính
+    khoảng lặng/hơi thở đuôi mà edge-tts hay thêm -> cụm cuối tắt đúng lúc hết
+    tiếng (không trôi +1s). Trả [[a, b, cụm], ...] trên timeline clip. Ít trôi
+    hơn karaoke từng-từ vì chỉ cần TỔNG speech_dur đúng (đo thật)."""
+    toks = str(text or "").split()
+    if not toks or speech_dur <= 0.05:
+        return []
+    groups = [toks[i:i + group] for i in range(0, len(toks), group)]
+    total_w = sum(len(g) for g in groups) or 1
+    out, t = [], float(start)
+    for g in groups:
+        d = speech_dur * len(g) / total_w
+        out.append([round(t, 3), round(t + d, 3), " ".join(g)])
+        t += d
+    # kẹp cụm cuối đúng mép tiếng (làm tròn tích luỹ)
+    if out:
+        out[-1][1] = round(float(start) + speech_dur, 3)
+    return out
+
 
 def _fit_recap_chunk(src: str, dst_wav: str, window: float,
                      tempo_max: float = _RECAP_TEMPO_MAX,
-                     ) -> tuple[float, float]:
+                     ) -> tuple[float, float, float]:
     """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 0.8-`tempo_max`;
     vẫn dư -> cắt + fade 120ms cuối (không tràn sang part kế).
-    Trả (độ_dài_sau_xử_lý, tempo) — tempo dùng để SCALE mốc word boundary
-    (mốc thật sau atempo k = t/k)."""
+
+    Trả (D_final, D_nat, tempo):
+      - D_final = ĐỘ DÀI THẬT của file wav sau MỌI filter (đo lại bằng ffprobe,
+        KHÔNG tin tham số dự kiến — atempo/aresample/atrim làm tròn khác dur/k).
+      - D_nat   = độ dài TỰ NHIÊN (trước atempo, sau khi có thể bị atrim ở
+        window*tempo_max) = phần audio gốc thực sự được nén vào D_final.
+      - tempo   = hệ số atempo đã áp (log/tham khảo).
+    Caller SCALE mốc word boundary theo D_final/D_nat (đo THẬT) thay vì 1/tempo
+    -> phụ đề khớp audio ~100% dù ffmpeg làm tròn/đổi mẫu (sửa lỗi 'chữ trôi')."""
     dur = probe_duration(src)
     if dur <= 0:
         raise RuntimeError("TTS trả file audio hỏng (0 giây)")
+    d_nat = dur                       # phần audio gốc ánh xạ vào D_final
     af = ["aresample=48000"]
     tempo = 1.0
     if window > 0.2 and abs(dur - window) > 0.05:
@@ -1064,10 +1113,13 @@ def _fit_recap_chunk(src: str, dst_wav: str, window: float,
     if window > 0.05 and dur > window + 0.05:       # tempo trần vẫn dư -> cắt
         af.append(f"atrim=0:{window:.3f}")
         af.append(f"afade=t=out:st={max(0.0, window - 0.12):.3f}:d=0.12")
+        # atrim cắt ở D_final=window -> phần gốc bị mất tương ứng: D_nat co lại
+        d_nat = window * tempo
         dur = window
     _ffmpeg(["-i", src, "-af", ",".join(af), "-ac", "1", "-ar", "48000",
              "-c:a", "pcm_s16le", dst_wav], "khớp thời gian thuyết minh")
-    return dur, tempo
+    d_final = probe_duration(dst_wav) or dur       # ĐO THẬT (không tin dur/k)
+    return d_final, d_nat, tempo
 
 
 def _map_to_output(t: float, clip_segments: list) -> Optional[float]:
@@ -1107,10 +1159,13 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
 
     narrate_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
     (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
-    "words" = [[start, end, từ], ...] mốc TỪNG TỪ THẬT của giọng đọc (thu từ
-    WordBoundary edge-tts, ĐÃ chia theo atempo + offset vào timeline clip) —
-    dùng cho phụ đề word-level. Giọng Gemini KHÔNG có word boundary -> event
-    không có key "words" (caller fallback chia theo ký tự).
+    "words" = [[start, end, cụm], ...] mốc phụ đề narrate trên timeline clip.
+    MẶC ĐỊNH = CÂU-CỤM (2-4 từ/nhóm) phân bố ĐỀU theo ĐỘ DÀI AUDIO THẬT
+    (D_final đo bằng ffprobe sau MỌI filter) — ít trôi hơn karaoke từng từ vì
+    KHÔNG phụ thuộc WordBoundary. Bật RECAP_WORD_LEVEL_CAPTION -> mốc TỪNG TỪ
+    thật (WordBoundary edge-tts, scale theo D_final/D_nat đo thật). Giọng
+    Gemini KHÔNG có word boundary -> word-level fallback rỗng; câu-cụm vẫn chia
+    được (chỉ cần D_final). Không có "words" -> caller fallback chia theo ký tự.
     WAV 48kHz mono dài ĐÚNG tổng độ dài clip.
 
     ĐỘ BỀN + CÂN ÂM LƯỢNG (sửa lỗi user):
@@ -1258,23 +1313,49 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 if dur0 / _RECAP_TEMPO_MAX > window + 0.05:
                     tempo_max = _RECAP_TEMPO_MAX_TAIL
             try:
-                _dur, tempo = _fit_recap_chunk(mp3s[i], wav, window,
-                                               tempo_max=tempo_max)
+                d_final, d_nat, tempo = _fit_recap_chunk(
+                    mp3s[i], wav, window, tempo_max=tempo_max)
             except RuntimeError:
                 continue                    # part hỏng -> bỏ riêng part đó
             fitted.append((n["start"], wav))
             kept.append(n)                  # có audio thật -> mới được duck/sub
-            # Mốc TỪNG TỪ thật: sau atempo k mọi mốc chia k; offset vào
-            # timeline clip theo start của part. Từ bị atrim cắt mất -> bỏ.
+            # ---- MỐC PHỤ ĐỀ khớp AUDIO THẬT (sửa lỗi 'chữ trôi') ----
+            # ĐO D_final (độ dài file wav THẬT sau atempo+atrim) rồi ánh xạ mốc
+            # theo tỉ lệ THẬT D_final/D_nat — KHÔNG chia theo tempo dự kiến
+            # (ffmpeg làm tròn/đổi mẫu nên dur/k lệch dần). offset = n["start"]
+            # = ĐÚNG mốc adelay của part trong _mix_track (1 biến, không tính 2
+            # nơi). loudnorm/gain sau vòng này KHÔNG đổi độ dài nên D_final vẫn
+            # đúng cho track cuối.
+            scale = (d_final / d_nat) if d_nat > 0.01 else (1.0 / tempo)
             wl = word_lists[i] if i < len(word_lists) else []
+            # KHOẢNG CÓ TIẾNG THẬT [speech_a, speech_b]: mép từ ĐẦU/CUỐI
+            # (WordBoundary) scale theo D_final/D_nat, kẹp trong D_final. Neo
+            # phụ đề vào ĐÚNG lúc bắt đầu/kết thúc có tiếng (bỏ khoảng lặng/hơi
+            # thở đầu-đuôi edge-tts hay thêm). Không words (Gemini) -> cả part.
+            speech_a, speech_b = 0.0, d_final
             if wl:
+                fa = wl[0][0] * scale
+                lb = wl[-1][1] * scale
+                if 0.0 <= fa < d_final:
+                    speech_a = fa
+                if speech_a + 0.1 < lb < d_final:
+                    speech_b = lb
+            if not _recap_word_level():
+                # MẶC ĐỊNH: câu-cụm 2-4 từ phân bố ĐỀU theo phần CÓ TIẾNG (ít
+                # trôi hơn karaoke vì không phụ thuộc mốc TỪNG từ WordBoundary).
+                grp = _phrase_groups_even(n["text"], n["start"] + speech_a,
+                                          speech_b - speech_a)
+                if grp:
+                    n["words"] = grp
+            elif wl:
+                # WORD-LEVEL (tuỳ chọn): mốc từng từ scale theo D_final/D_nat.
                 out_w = []
                 for a, b, wtxt in wl:
-                    a2, b2 = a / tempo, b / tempo
-                    if a2 >= window - 0.01:  # từ rơi vào phần bị cắt -> bỏ
+                    a2, b2 = a * scale, b * scale
+                    if a2 >= d_final - 0.01:  # từ rơi vào phần bị cắt -> bỏ
                         break
                     out_w.append([round(n["start"] + a2, 3),
-                                  round(n["start"] + min(b2, window), 3),
+                                  round(n["start"] + min(b2, d_final), 3),
                                   wtxt])
                 if out_w:
                     n["words"] = out_w
