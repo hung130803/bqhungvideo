@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton,
+    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app import services
 from app.ui.state import AppState
-from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE
+from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE, WARN
 
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
          "m1_mixed_cut": "Mixed-Cut", "auto_mixed": "Mixed-Cut",
@@ -35,6 +35,13 @@ _PALETTE = ["#4F7DFF", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
 
 def _chan_color(pid):
     return _PALETTE[(int(pid) if pid else 0) % len(_PALETTE)]
+
+
+def _rgba(hex_color: str, a: float) -> str:
+    """'#RRGGBB' -> 'rgba(r,g,b,a)' — làm NỀN MỜ cho chip đếm theo màu."""
+    h = hex_color.lstrip("#")
+    return (f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},"
+            f"{int(h[4:6], 16)},{a})")
 
 
 def _phase_color(jtype: str) -> str:
@@ -90,6 +97,22 @@ class QueuePanel(QWidget):
         clr.clicked.connect(self._clear_history)
         hd.addWidget(clr)
         outer.addLayout(hd)
+        # ---- BẢNG ĐẾM TRẠNG THÁI: hàng chip to rõ ngay trên danh sách ----
+        # 🔍 đang phân tích · ✂ đang cắt · ⏳ đang đợi · ✅ xong · ❌ lỗi
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        self.chip_analyze = self._make_chip("🔍", "Đang phân tích",
+                                            _PHASE_ANALYZE)
+        self.chip_export = self._make_chip("✂", "Đang cắt", _PHASE_EXPORT)
+        self.chip_wait = self._make_chip("⏳", "Đang đợi", WARN)
+        self.chip_done = self._make_chip("✅", "Đã xong", SUCCESS)
+        self.chip_fail = self._make_chip("❌", "Lỗi", DANGER)
+        self.chip_fail["w"].hide()      # chỉ hiện khi CÓ lỗi (đỡ dọa user)
+        for ch in (self.chip_analyze, self.chip_export, self.chip_wait,
+                   self.chip_done, self.chip_fail):
+            chips.addWidget(ch["w"], 1)  # chia đều, co giãn theo bề ngang
+        outer.addLayout(chips)
+        self._counts = None             # cache -> chỉ vẽ lại chip khi số ĐỔI
         # ---- vùng CUỘN chứa các dòng (xem lại việc trước) ----
         host = QWidget()
         self.lay = QVBoxLayout(host)
@@ -109,6 +132,63 @@ class QueuePanel(QWidget):
         self.timer.timeout.connect(self.refresh)
         self.timer.start(400)           # nhịp nhanh hơn cho mượt
 
+    # ---- chip đếm trạng thái ----
+    @staticmethod
+    def _make_chip(icon: str, label: str, color: str) -> dict:
+        """1 ô đếm: SỐ TO đậm màu + nhãn nhỏ, nền mờ bo góc theo màu."""
+        w = QFrame()
+        w.setStyleSheet(
+            f"QFrame{{background:{_rgba(color, 0.13)}; "
+            f"border:1px solid {_rgba(color, 0.35)}; border-radius:10px;}}")
+        w.setSizePolicy(QSizePolicy.Policy.Expanding,
+                        QSizePolicy.Policy.Preferred)
+        v = QVBoxLayout(w)
+        v.setContentsMargins(8, 5, 8, 4)
+        v.setSpacing(0)
+        num = QLabel(f"{icon} 0")
+        num.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        num.setStyleSheet(f"color:{color}; font-size:17px; font-weight:700; "
+                          f"background:transparent; border:none;")
+        lab = QLabel(label)
+        lab.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        lab.setStyleSheet(f"color:{MUTED}; font-size:11px; "
+                          f"background:transparent; border:none;")
+        for x in (num, lab):            # cho phép CO hẹp -> panel 300px không vỡ
+            x.setSizePolicy(QSizePolicy.Policy.Ignored,
+                            QSizePolicy.Policy.Preferred)
+        v.addWidget(num)
+        v.addWidget(lab)
+        return {"w": w, "num": num, "icon": icon}
+
+    def _update_chips(self):
+        """Đếm từ DB (1 GROUP BY nhẹ) rồi đổ số vào chip — mỗi nhịp poll."""
+        try:
+            c = services.queue_counts()
+        except Exception:
+            return                      # DB bận/khóa thoáng qua -> giữ số cũ
+        if c == self._counts:
+            return                      # số không đổi -> không đụng widget
+        self._counts = c
+        for ch, key in ((self.chip_analyze, "analyzing"),
+                        (self.chip_export, "exporting"),
+                        (self.chip_wait, "waiting"),
+                        (self.chip_done, "done"),
+                        (self.chip_fail, "failed")):
+            ch["num"].setText(f"{ch['icon']} {c[key]}")
+        self.chip_analyze["w"].setToolTip(
+            f"{c['analyzing']} video đang phân tích")
+        self.chip_export["w"].setToolTip(
+            f"{c['exporting']} clip đang cắt/xuất (mỗi Part là 1 clip)")
+        self.chip_wait["w"].setToolTip(
+            f"Đang đợi {c['waiting']} việc — đợi phân tích "
+            f"{c['wait_analyze']} · đợi cắt {c['wait_export']}")
+        self.chip_done["w"].setToolTip(
+            f"{c['done']} việc hoàn tất hôm nay")
+        self.chip_fail["w"].setToolTip(
+            f"{c['failed']} việc lỗi hôm nay — bấm 'Thử lại' ở dòng lỗi")
+        # chip LỖI chỉ hiện khi có lỗi thật (failed>0)
+        self.chip_fail["w"].setVisible(c["failed"] > 0)
+
     def _cancel_all(self):
         # 1 lời gọi: pending -> canceled ngay (1 SQL), job đang chạy -> kill
         # tiến trình con tức thì. Không join/chờ gì -> UI không đơ.
@@ -123,6 +203,7 @@ class QueuePanel(QWidget):
 
     # ---- vòng cập nhật ----
     def refresh(self):
+        self._update_chips()            # bảng đếm dùng CHUNG nhịp poll này
         jobs = services.list_jobs(limit=60)
         active = [j for j in jobs if j["status"] in ("running", "pending")]
         recent = [j for j in jobs

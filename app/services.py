@@ -244,6 +244,42 @@ def list_jobs(limit: int = 100) -> list:
     )
 
 
+def queue_counts() -> dict:
+    """Đếm job cho BẢNG ĐẾM TRẠNG THÁI khu Tiến trình (1 query GROUP BY nhẹ,
+    có idx_jobs_status).
+
+    - analyzing / exporting: đang chạy (running) — xuất = m1_export_clip,
+      còn lại là giai đoạn phân tích (khớp màu giai đoạn ở queue_panel).
+    - waiting: mọi việc pending (kèm tách wait_analyze / wait_export).
+    - done / failed: CHỈ đếm việc tạo HÔM NAY (created_at của SQLite là
+      datetime('now') = UTC -> quy đổi 0h local sang UTC để so sánh).
+    - canceled / skipped: KHÔNG tính vào bất kỳ ô nào.
+    """
+    from datetime import datetime, timezone
+    day0 = (datetime.now()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+    rows = db.query(
+        "SELECT status, type, COUNT(*) AS n FROM jobs "
+        "WHERE status IN ('running','pending') "
+        "   OR (status IN ('done','failed') AND created_at >= ?) "
+        "GROUP BY status, type", (day0,))
+    c = {"analyzing": 0, "exporting": 0, "waiting": 0,
+         "wait_analyze": 0, "wait_export": 0, "done": 0, "failed": 0}
+    for r in rows:
+        st, jt, n = r["status"], r["type"], int(r["n"])
+        if st == "running":
+            c["exporting" if jt == "m1_export_clip" else "analyzing"] += n
+        elif st == "pending":
+            c["waiting"] += n
+            c["wait_export" if jt == "m1_export_clip" else "wait_analyze"] += n
+        elif st == "done":
+            c["done"] += n
+        elif st == "failed":
+            c["failed"] += n
+    return c
+
+
 # ---- Trạng thái phân tích ----
 def video_analyzed(video_id: int) -> bool:
     """True nếu video đã chạy xong lõi phân tích (mọi bước done/skipped)."""
