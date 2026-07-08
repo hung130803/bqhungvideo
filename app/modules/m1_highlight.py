@@ -1438,6 +1438,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             flip_h=flip_h,
+            # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (không mất hình): export_canvas_clip
+            # tự tính lại video_rect theo tỉ lệ nguồn (đã có probe sẵn ở đó).
+            fit_src=bool(payload.get("fit_src")),
             on_progress=on_prog,
         )
         # (wav lồng tiếng + .ass tạm được caller export_clip dọn qua `temps`)

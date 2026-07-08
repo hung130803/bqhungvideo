@@ -897,6 +897,37 @@ def detect_black_crop(src: str | Path, t: float = 0.0,
     return crop
 
 
+def fit_src_video_rect(video_rect: tuple, src_w: int, src_h: int,
+                       out_w: int, out_h: int) -> tuple:
+    """KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (không mất hình).
+
+    Mẫu lưu video_rect=(cx, cy, scale_w) theo tỉ lệ video LÚC TẠO MẪU; nguồn
+    reup tỉ lệ khác (1:1, 16:9...) scale theo bề ngang đó sẽ TRÀN canvas
+    1080x1920 -> bị cắt mất 2 bên/trên dưới. Hàm này tính lại khung theo tỉ lệ
+    NGUỒN: giữ TÂM (cx,cy) + BỀ NGANG mẫu, chiều cao = w_px*(src_h/src_w);
+    nếu khung tràn canvas (cao/rộng quá) -> THU CẢ KHUNG lại vừa canvas (giữ
+    tỉ lệ nguồn); cuối cùng nắn tâm tối thiểu để khung nằm TRỌN trong canvas
+    -> video hiện đủ 100%, nền (blur/đen/trắng) lấp phần thừa.
+
+    Trả (cx, cy, scale_w) mới. src_w/src_h <= 0 -> trả nguyên (không đoán mò).
+    """
+    cx, cy, sw = (float(video_rect[0]), float(video_rect[1]),
+                  float(video_rect[2]))
+    if src_w <= 0 or src_h <= 0 or sw <= 0:
+        return video_rect
+    w_px = sw * out_w                      # bề ngang khung mẫu (pixel canvas)
+    h_px = w_px * src_h / src_w            # cao theo TỈ LỆ NGUỒN (scale=vw:-2)
+    k = min(1.0, out_w / w_px, out_h / h_px)   # tràn -> thu cả khung, giữ tâm
+    w_px *= k
+    h_px *= k
+    # Nắn tâm TỐI THIỂU để khung nằm trọn trong canvas (tâm mẫu đặt lệch +
+    # khung mới cao/rộng hơn có thể lòi ra mép -> vẫn mất hình nếu giữ nguyên).
+    hw, hh = w_px / (2 * out_w), h_px / (2 * out_h)
+    cx = min(max(cx, hw), 1.0 - hw)
+    cy = min(max(cy, hh), 1.0 - hh)
+    return (round(cx, 4), round(cy, 4), round(w_px / out_w, 4))
+
+
 def export_canvas_clip(
     src: str | Path,
     dst: str | Path,
@@ -942,6 +973,13 @@ def export_canvas_clip(
                                         # reup). Áp hflip lên KHỐI video content
                                         # TRƯỚC overlay chữ/phụ đề -> hình soi
                                         # gương nhưng CHỮ vẫn đọc bình thường.
+    fit_src: bool = False,              # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC: tính
+                                        # lại video_rect theo tỉ lệ NGUỒN (giữ
+                                        # tâm + bề ngang mẫu, clamp vừa canvas)
+                                        # -> nguồn 1:1/16:9 hiện TRỌN không bị
+                                        # cắt, nền lấp phần thừa. bg='fill'
+                                        # (crop đầy khung) mâu thuẫn "không mất
+                                        # hình" -> tự chuyển sang nền mờ.
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -963,11 +1001,29 @@ def export_canvas_clip(
     multi = len(segs) > 1
     total = sum(e - s for s, e in segs)
     # Video KHÔNG có tiếng -> mọi filter [0:a] sẽ fail; xuất chỉ hình.
-    has_audio = probe(src).has_audio
+    _info = probe(src)
+    has_audio = _info.has_audio
     dub_on = bool(dub_path and os.path.exists(str(dub_path)))
     # Tắt hẳn tiếng gốc khi lồng tiếng -> KHÔNG concat/lọc audio gốc luôn
     # (concat ra [caud] mà không dùng sẽ làm ffmpeg fail "unconnected output").
     use_voice = has_audio and not (dub_on and dub_mute_original)
+    if fit_src:
+        # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (dùng probe ĐÃ CÓ SẴN, không probe
+        # thêm). Kích thước hiệu dụng = sau pre_crop (cắt viền đen 'w:h:x:y'
+        # đổi tỉ lệ content thật). fill = crop đầy khung -> mâu thuẫn "không
+        # mất hình": đổi sang nền mờ để video vẫn hiện trọn.
+        if bg == "fill":
+            bg = "blur"
+        _ew, _eh = _info.width, _info.height
+        if pre_crop:
+            try:
+                _pw, _ph = (int(float(v))
+                            for v in str(pre_crop).split(":")[:2])
+                if _pw > 0 and _ph > 0:
+                    _ew, _eh = _pw, _ph
+            except (ValueError, IndexError):
+                pass
+        video_rect = fit_src_video_rect(video_rect, _ew, _eh, out_w, out_h)
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)
     use_png = bool(overlay_png and os.path.exists(overlay_png))

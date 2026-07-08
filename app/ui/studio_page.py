@@ -2965,6 +2965,7 @@ class StudioPage(QWidget):
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 fx_sfx_dir=self._pick_sfx_dir(),
                 flip_h=bool(self.layout_tpl.get("flip_h", False)),
+                fit_src=bool(self.layout_tpl.get("fit_src", False)),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 force=force_one)
             if jid:

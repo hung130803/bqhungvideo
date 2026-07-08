@@ -923,6 +923,17 @@ class EditorDialog(QDialog):
         gb.addLayout(br)
         self.trim_chk = QCheckBox("Tự cắt viền đen của video gốc (nếu có)")
         gb.addWidget(self.trim_chk)
+        # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC: lúc XUẤT app tính lại khung theo tỉ lệ
+        # nguồn (giữ tâm + bề ngang mẫu, clamp vừa canvas) -> nguồn vuông/ngang
+        # hiện TRỌN, không bị cắt 2 bên; nền lấp phần thừa.
+        self.fit_src_chk = QCheckBox("Khung tự khớp video gốc (không mất hình)")
+        self.fit_src_chk.setToolTip(
+            "Video vuông/ngang sẽ hiện TRỌN không bị cắt; khung mẫu chỉ định "
+            "vị trí tâm + bề ngang. Lúc xuất app tự tính lại chiều cao khung "
+            "theo tỉ lệ video nguồn (thu vừa canvas nếu tràn), phần thừa do "
+            "nền (mờ/đen/trắng) lấp. Nền 'Lấp đầy' sẽ tự chuyển sang nền mờ "
+            "khi bật.")
+        gb.addWidget(self.fit_src_chk)
         # Tốc độ + đổi giọng (chống bản quyền)
         sp = QHBoxLayout(); sp.addWidget(QLabel("Tốc độ"))
         self.speed_cb = _NoWheelCombo()
@@ -1253,6 +1264,7 @@ class EditorDialog(QDialog):
                 self.canvas.vbox.set_rect(*vr)
             self.canvas.set_bg(layout.get("bg", "blur"))
             self.trim_chk.setChecked(layout.get("trim_black", False))
+            self.fit_src_chk.setChecked(bool(layout.get("fit_src", False)))
             self.cap_chk.setChecked(layout.get("captions", True))
             fi = self.cap_font.findText(layout.get("cap_font", "Montserrat"))
             if fi >= 0:
@@ -1844,6 +1856,7 @@ class EditorDialog(QDialog):
         TRƯỚC ĐÂY lưu mẫu chỉ lấy canvas -> mất cài đặt sub -> đã sửa."""
         lay = self.canvas.get_layout(self._gather())
         lay["trim_black"] = self.trim_chk.isChecked()
+        lay["fit_src"] = self.fit_src_chk.isChecked()
         lay["captions"] = self.cap_chk.isChecked()
         lay["cap_font"] = self.cap_font.currentText()
         lay["cap_size"] = self.cap_size.value() / 1000.0
