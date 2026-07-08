@@ -97,16 +97,16 @@ class QueuePanel(QWidget):
         clr.clicked.connect(self._clear_history)
         hd.addWidget(clr)
         outer.addLayout(hd)
-        # ---- BẢNG ĐẾM TRẠNG THÁI: hàng chip to rõ ngay trên danh sách ----
+        # ---- BẢNG ĐẾM TRẠNG THÁI: hàng chip GỌN 1 dòng ngay trên danh sách ----
         # 🔍 đang phân tích · ✂ đang cắt · ⏳ đang đợi · ✅ xong · ❌ lỗi
         chips = QHBoxLayout()
-        chips.setSpacing(6)
-        self.chip_analyze = self._make_chip("🔍", "Đang phân tích",
+        chips.setSpacing(5)
+        self.chip_analyze = self._make_chip("🔍", "phân tích",
                                             _PHASE_ANALYZE)
-        self.chip_export = self._make_chip("✂", "Đang cắt", _PHASE_EXPORT)
-        self.chip_wait = self._make_chip("⏳", "Đang đợi", WARN)
-        self.chip_done = self._make_chip("✅", "Đã xong", SUCCESS)
-        self.chip_fail = self._make_chip("❌", "Lỗi", DANGER)
+        self.chip_export = self._make_chip("✂", "đang cắt", _PHASE_EXPORT)
+        self.chip_wait = self._make_chip("⏳", "đợi", WARN)
+        self.chip_done = self._make_chip("✅", "xong", SUCCESS)
+        self.chip_fail = self._make_chip("❌", "lỗi", DANGER)
         self.chip_fail["w"].hide()      # chỉ hiện khi CÓ lỗi (đỡ dọa user)
         for ch in (self.chip_analyze, self.chip_export, self.chip_wait,
                    self.chip_done, self.chip_fail):
@@ -135,29 +135,26 @@ class QueuePanel(QWidget):
     # ---- chip đếm trạng thái ----
     @staticmethod
     def _make_chip(icon: str, label: str, color: str) -> dict:
-        """1 ô đếm: SỐ TO đậm màu + nhãn nhỏ, nền mờ bo góc theo màu."""
+        """1 ô đếm GỌN 1 dòng: 'icon SỐ nhãn' — thấp, không chiếm chỗ danh sách."""
         w = QFrame()
         w.setStyleSheet(
             f"QFrame{{background:{_rgba(color, 0.13)}; "
-            f"border:1px solid {_rgba(color, 0.35)}; border-radius:10px;}}")
+            f"border:1px solid {_rgba(color, 0.35)}; border-radius:8px;}}")
         w.setSizePolicy(QSizePolicy.Policy.Expanding,
-                        QSizePolicy.Policy.Preferred)
-        v = QVBoxLayout(w)
-        v.setContentsMargins(8, 5, 8, 4)
-        v.setSpacing(0)
+                        QSizePolicy.Policy.Fixed)
+        h = QHBoxLayout(w)
+        h.setContentsMargins(7, 2, 7, 2)
+        h.setSpacing(4)
         num = QLabel(f"{icon} 0")
-        num.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        num.setStyleSheet(f"color:{color}; font-size:17px; font-weight:700; "
+        num.setStyleSheet(f"color:{color}; font-size:12px; font-weight:700; "
                           f"background:transparent; border:none;")
         lab = QLabel(label)
-        lab.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        lab.setStyleSheet(f"color:{MUTED}; font-size:11px; "
+        lab.setStyleSheet(f"color:{MUTED}; font-size:10px; "
                           f"background:transparent; border:none;")
-        for x in (num, lab):            # cho phép CO hẹp -> panel 300px không vỡ
-            x.setSizePolicy(QSizePolicy.Policy.Ignored,
-                            QSizePolicy.Policy.Preferred)
-        v.addWidget(num)
-        v.addWidget(lab)
+        lab.setSizePolicy(QSizePolicy.Policy.Ignored,   # nhãn co trước
+                          QSizePolicy.Policy.Preferred)  # -> panel hẹp không vỡ
+        h.addWidget(num)
+        h.addWidget(lab, 1)
         return {"w": w, "num": num, "icon": icon}
 
     def _update_chips(self):
