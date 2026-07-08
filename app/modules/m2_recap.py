@@ -29,7 +29,7 @@ from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import extract_frame
 from app.database import db
 from app.modules.m1_highlight import (
-    DEFAULTS, _delete_suggested, _lang_name, _llm_select_clips,
+    DEFAULTS, _delete_suggested, _llm_select_clips,
 )
 from app.queue.worker import JobContext
 
@@ -149,6 +149,23 @@ def _auto_recap_count(duration: float) -> int:
     return 3
 
 
+def _win_bounds(preset: dict) -> tuple:
+    """Min/Max SỐ CẢNH GHÉP mỗi clip từ ⚙ Cài đặt Reup (QSettings
+    recap_win_min 2-6 / recap_win_max 3-8, mặc định 3-6) -> (min, max)
+    đã kẹp; Min > Max -> ép Max = Min. Hàm thuần — test được."""
+    try:
+        lo = int(preset.get("recap_win_min", 3))
+    except (TypeError, ValueError):
+        lo = 3
+    try:
+        hi = int(preset.get("recap_win_max", 6))
+    except (TypeError, ValueError):
+        hi = 6
+    lo = min(6, max(2, lo))
+    hi = min(8, max(3, hi))
+    return lo, max(lo, hi)
+
+
 def _resolve_count(preset: dict, duration: float) -> int:
     """recap_count trong preset -> số clip 1-3. 0/thiếu/hỏng = TỰ ĐỘNG theo
     độ dài (mặc định mới — user vẫn chọn tay 1-3 trong ⚙ Cài đặt Reup).
@@ -242,7 +259,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
     payload: {video_id, preset: {..., recap_style, recap_ratio,
-    recap_count}}. recap_count = số clip thuyết minh: 0/thiếu = TỰ ĐỘNG
+    recap_count, recap_win_min, recap_win_max}}. recap_win_min/max = số
+    CẢNH ghép mong muốn mỗi clip (2-6 / 3-8, mặc định 3-6 — vào prompt
+    đạo diễn + trần validate_windows). recap_count = số clip thuyết minh:
+    0/thiếu = TỰ ĐỘNG
     theo độ dài (<4 phút 1 clip, 4-12 phút 2, >12 phút 3 — mặc định), hoặc
     chọn tay 1-3 — chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập.
     Kết quả: các dòng clips status='suggested' kèm signals.recap (kịch
@@ -274,7 +294,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                         (video_id,))
     duration = float(vrow["duration"] or 0) if vrow else 0.0
     src_path = (vrow["src_path"] or "") if vrow else ""
-    lang_name = _lang_name(transcript.get("language", ""))
+    # Tên ngôn ngữ CHUẨN TIẾNG ANH ("English"/"Vietnamese") cho prompt —
+    # tên kiểu "tiếng Anh" từng làm model viết kịch bản tiếng Việt cho
+    # video EN (model tuân "write in English" tốt hơn hẳn).
+    lang_name = recap.lang_en_name(transcript.get("language", ""))
     edges = _sentence_edges(segs)          # mép câu -> snap mốc cắt
     tr_words = []                          # (ws, we) word-level nếu whisper trả
     for w in (transcript.get("words") or []):
@@ -293,6 +316,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     prov = llm.active_provider()
     min_total = float(cfg.get("min_len") or 0) or 60.0
     max_total = float(cfg.get("max_len") or 0) or _HARD_MAX
+    win_lo, win_hi = _win_bounds(preset)   # min/max SỐ CẢNH ghép mỗi clip
     sents_all = []
     for s in segs:
         try:
@@ -331,7 +355,8 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 ch_sents, lang_name, style, c1,
                 min(min_total, max(30.0, 0.6 * (c1 - c0))),
                 min(max_total, c1 - c0), ratio=ratio,
-                listing=_condense_listing(ch_segs, c1 - c0))
+                listing=_condense_listing(ch_segs, c1 - c0),
+                win_min=win_lo, win_max=win_hi)
         except llm.LLMError:
             sc = None                  # chương lỗi -> bỏ riêng chương đó
         if sc:
@@ -341,6 +366,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             ctx.progress(0.06 + 0.34 * (ci + 1) / max(1, len(chapters)),
                          f"Chương {ci + 1}: kịch bản "
                          f"{len(sc['windows'])} cảnh ✔")
+            if sc.get("lang_warn"):    # hậu kiểm ngôn ngữ bắt lỗi -> báo user
+                ctx.progress(0.06 + 0.34 * (ci + 1) / max(1, len(chapters)),
+                             f"⚠ Chương {ci + 1}: {sc['lang_warn']}")
 
     if ch_scripts:
         _delete_suggested(video_id)
@@ -355,6 +383,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                          for s, e in script["windows"]]
             ch_sents = _clip_sentences(segs, c0, c1)
             windows = recap.validate_windows(snapped_w, duration,
+                                             max_n=win_hi,
                                              sentences=ch_sents)
             snapped_parts: list = []
             for ws, we in windows or []:
@@ -460,6 +489,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 snapped = _snap_parts(sc["parts"], edges, words=tr_words)
                 sc["parts"] = recap.validate_parts(snapped, s0, e1,
                                                    sentences=sents)
+                if sc.get("lang_warn"):  # hậu kiểm ngôn ngữ -> báo user
+                    ctx.progress(0.45 + 0.5 * i / max(1, len(spans)),
+                                 f"⚠ Kịch bản {i + 1}: {sc['lang_warn']}")
             scripts.append(sc)
     if spans and not any(scripts):
         raise RuntimeError(

@@ -35,8 +35,9 @@ from typing import Optional
 from app.ai import llm
 
 # 4 phong cách thuyết minh (key lưu QSettings/preset -> hint đưa vào prompt).
-# Mỗi phong cách có MÔ TẢ CÁCH VIẾT + 1-2 câu VÍ DỤ chuẩn vibe (few-shot —
-# ví dụ tiếng Việt, prompt dặn AI bắt chước VIBE bằng đúng ngôn ngữ video).
+# Mỗi phong cách có MÔ TẢ CÁCH VIẾT; VÍ DỤ chuẩn vibe (few-shot) tách riêng
+# _STYLE_EX THEO NGÔN NGỮ VIDEO — model hay bắt chước NGÔN NGỮ của ví dụ nên
+# video EN chỉ được thấy ví dụ EN, video VI chỉ thấy ví dụ VI (KHÔNG trộn).
 STYLES = {
     "story": (
         "Kể chuyện",
@@ -44,39 +45,65 @@ STYLES = {
         "  + Câu NGẮN, dồn dập, có khựng \"...\" nhá tò mò.\n"
         "  + Gọi nhân vật bằng biệt danh đời thường (gã này, bà chị, ông chú, "
         "cậu nhóc) — KHÔNG gọi trung tính kiểu 'người đàn ông'.\n"
-        "  + Cuối mỗi đoạn narrate cài 1 móc tò mò: chuyện gì xảy ra tiếp?\n"
-        "  VÍ DỤ chuẩn vibe (bắt chước VIBE, đừng chép): \"Gã này tưởng hôm "
-        "nay là ngày may mắn nhất đời mình. Sai. Sai khủng khiếp...\" — "
-        "\"Và cái cách bà chị phản ứng... tôi kể bạn nghe, không ai đỡ nổi.\""),
+        "  + Cuối mỗi đoạn narrate cài 1 móc tò mò: chuyện gì xảy ra tiếp?"),
     "clickbait": (
         "Giật gân câu view",
         "PHONG CÁCH GIẬT GÂN — cường điệu + câu hỏi treo LIÊN TỤC:\n"
         "  + Mở bằng cú sốc, liên tục treo: \"Nhưng khoan... bạn chưa thấy "
         "gì đâu.\"\n"
         "  + Phóng đại có kiểm soát: nhất/chưa từng/không tưởng — nhưng KHÔNG "
-        "bịa chi tiết sai với video.\n"
-        "  VÍ DỤ chuẩn vibe: \"Đây có thể là quyết định tệ nhất đời anh ta. "
-        "Và điên nhất là... anh ta còn chưa biết điều đó.\" — \"99% người xem "
-        "đoán sai đoạn tiếp theo. Bạn thì sao?\""),
+        "bịa chi tiết sai với video."),
     "funny": (
         "Hài hước",
         "PHONG CÁCH HÀI HƯỚC — mỉa nhẹ + nhân cách hóa, KHÔNG giải thích joke:\n"
         "  + Cà khịa như nói xấu bạn mình: chọc vào cái ngớ ngẩn, tương phản, "
         "sự tự tin lố của nhân vật.\n"
-        "  + Nhân cách hóa đồ vật/con vật; thả joke rồi ĐI TIẾP luôn.\n"
-        "  VÍ DỤ chuẩn vibe: \"Sự tự tin của ông chú này... đóng thuế được "
-        "luôn đấy.\" — \"Con mèo nhìn chủ kiểu: rồi, lại nữa rồi.\""),
+        "  + Nhân cách hóa đồ vật/con vật; thả joke rồi ĐI TIẾP luôn."),
     "analysis": (
         "Phân tích sâu",
         "PHONG CÁCH PHÂN TÍCH — mổ xẻ 'VÌ SAO' với giọng tự tin, sắc lạnh:\n"
         "  + Chỉ ra cái người xem KHÔNG tự nhận ra; khẳng định chắc nịch rồi "
         "chứng minh, không vòng vo 'có lẽ/hình như'.\n"
-        "  + Chốt mỗi ý bằng 1 câu đắt: bài học/ý nghĩa đằng sau.\n"
-        "  VÍ DỤ chuẩn vibe: \"Để ý tay trái gã... đó không phải ngẫu nhiên. "
-        "Đó là tính toán.\" — \"Ai cũng nghĩ cô ấy thua từ giây thứ ba. "
-        "Nhưng không. Chính lúc đó cô ấy đang thắng.\""),
+        "  + Chốt mỗi ý bằng 1 câu đắt: bài học/ý nghĩa đằng sau."),
 }
 DEFAULT_STYLE = "story"
+
+# Few-shot VÍ DỤ chuẩn vibe theo phong cách, TÁCH THEO NGÔN NGỮ video:
+# "vi" cho video tiếng Việt, "en" cho MỌI ngôn ngữ khác (ví dụ tiếng Anh
+# trung tính — quan trọng là KHÔNG cho model thấy tiếng Việt khi video
+# không phải tiếng Việt, tránh model trả lời theo ngôn ngữ của ví dụ).
+_STYLE_EX = {
+    "story": {
+        "vi": "\"Gã này tưởng hôm nay là ngày may mắn nhất đời mình. Sai. "
+              "Sai khủng khiếp...\" — \"Và cái cách bà chị phản ứng... tôi "
+              "kể bạn nghe, không ai đỡ nổi.\"",
+        "en": "\"This guy thought today was the luckiest day of his life. "
+              "Wrong. Horribly wrong...\" — \"And the way she reacted... "
+              "let me tell you, nobody saw that coming.\"",
+    },
+    "clickbait": {
+        "vi": "\"Đây có thể là quyết định tệ nhất đời anh ta. Và điên nhất "
+              "là... anh ta còn chưa biết điều đó.\" — \"99% người xem đoán "
+              "sai đoạn tiếp theo. Bạn thì sao?\"",
+        "en": "\"This might be the worst decision of his life. And the "
+              "craziest part... he doesn't even know it yet.\" — \"99% of "
+              "viewers guess the next part wrong. Will you?\"",
+    },
+    "funny": {
+        "vi": "\"Sự tự tin của ông chú này... đóng thuế được luôn đấy.\" — "
+              "\"Con mèo nhìn chủ kiểu: rồi, lại nữa rồi.\"",
+        "en": "\"The confidence on this man... you could tax it.\" — \"The "
+              "cat looks at its owner like: here we go again.\"",
+    },
+    "analysis": {
+        "vi": "\"Để ý tay trái gã... đó không phải ngẫu nhiên. Đó là tính "
+              "toán.\" — \"Ai cũng nghĩ cô ấy thua từ giây thứ ba. Nhưng "
+              "không. Chính lúc đó cô ấy đang thắng.\"",
+        "en": "\"Watch his left hand... that's not luck. That's "
+              "calculation.\" — \"Everyone thinks she lost by second three. "
+              "But no. That's exactly when she started winning.\"",
+    },
+}
 
 _SYSTEM = (
     "Bạn là NGƯỜI KỂ CHUYỆN (narrator) của một kênh video triệu view. Bạn "
@@ -98,8 +125,139 @@ def style_label(key: str) -> str:
     return STYLES.get(key, STYLES[DEFAULT_STYLE])[0]
 
 
-def _style_hint(key: str) -> str:
-    return STYLES.get(key, STYLES[DEFAULT_STYLE])[1]
+# ------------------------------------------------------------------
+# NGÔN NGỮ ĐẦU RA: tên tiếng Anh chuẩn + hậu kiểm "viết sai ngôn ngữ"
+# ------------------------------------------------------------------
+# Tên ngôn ngữ CHUẨN TIẾNG ANH cho prompt: model tuân lệnh "write in
+# English" tốt hơn hẳn "viết bằng tiếng Anh" (tên Việt dễ kéo model trả
+# lời tiếng Việt). Key = code whisper HOẶC alias tên dài/tên Việt cũ.
+_LANG_EN = {
+    "vi": "Vietnamese", "en": "English", "ja": "Japanese", "ko": "Korean",
+    "zh": "Chinese", "th": "Thai", "fr": "French", "es": "Spanish",
+    "de": "German", "ru": "Russian", "id": "Indonesian", "pt": "Portuguese",
+    "hi": "Hindi", "ar": "Arabic", "it": "Italian", "nl": "Dutch",
+    "tr": "Turkish", "pl": "Polish", "uk": "Ukrainian", "ms": "Malay",
+    "tl": "Filipino",
+}
+_LANG_ALIAS = {
+    "vietnamese": "vi", "tiếng việt": "vi", "tieng viet": "vi",
+    "english": "en", "tiếng anh": "en", "japanese": "ja", "tiếng nhật": "ja",
+    "korean": "ko", "tiếng hàn": "ko", "chinese": "zh", "tiếng trung": "zh",
+    "thai": "th", "tiếng thái": "th", "french": "fr", "tiếng pháp": "fr",
+    "spanish": "es", "tiếng tây ban nha": "es", "german": "de",
+    "tiếng đức": "de", "russian": "ru", "tiếng nga": "ru",
+    "indonesian": "id", "tiếng indonesia": "id", "portuguese": "pt",
+}
+
+
+def lang_en_name(code: str) -> str:
+    """Code/tên ngôn ngữ -> tên CHUẨN TIẾNG ANH ("English", "Vietnamese"...)
+    để ÉP ngôn ngữ đầu ra trong prompt recap. Không nhận diện được -> trả
+    nguyên chuỗi (vẫn ép được nếu whisper trả tên lạ); rỗng -> cụm mô tả.
+    Hàm thuần — unit test được."""
+    s = str(code or "").strip().lower()
+    s = _LANG_ALIAS.get(s, s)
+    if s in _LANG_EN:
+        return _LANG_EN[s]
+    return (str(code).strip() if str(code or "").strip()
+            else "the original spoken language of the video")
+
+
+def _is_vi_lang(lang_name: str) -> bool:
+    """lang_name (code/tên Anh/tên Việt) có phải TIẾNG VIỆT không."""
+    s = str(lang_name or "").strip().lower()
+    return _LANG_ALIAS.get(s, s) == "vi"
+
+
+# Ký tự ĐẶC TRƯNG tiếng Việt: ă đ ơ ư + nguyên âm mang dấu hỏi/ngã/nặng +
+# nguyên âm mũ/móc kèm thanh (ấ ề ộ ớ ữ...). CỐ TÌNH KHÔNG tính â ê ô á à
+# é è í ó ú ý ã õ trần — có trong Pháp/Bồ/Tây Ban Nha ("café", "hôtel",
+# "São") -> không bắt oan từ mượn trong lời kể tiếng Anh.
+_VI_CHAR_SET = frozenset(
+    "ăằắẳẵặầấẩẫậđềếểễệồốổỗộơờớởỡợưừứửữựạảẹẻẽịỉĩọỏụủũỹỵỷỳ")
+
+
+def looks_vietnamese(text: str) -> bool:
+    """Text có phải tiếng Việt không: >= 2 ký tự đặc trưng Việt VÀ mật độ
+    > 10% số ký tự chữ (câu Việt thật dày dấu; "café"/tên riêng lác đác
+    không đủ). Hàm thuần — unit test được."""
+    t = unicodedata.normalize("NFC", str(text or "")).lower()
+    letters = [c for c in t if c.isalpha()]
+    if not letters:
+        return False
+    hits = sum(1 for c in letters if c in _VI_CHAR_SET)
+    return hits >= 2 and hits / len(letters) > 0.10
+
+
+def _looks_wrong_lang(text: str, lang_name: str) -> bool:
+    """HẬU KIỂM ngôn ngữ: video KHÔNG phải tiếng Việt mà text (lời narrate/
+    title) là tiếng Việt -> SAI (LLM trả lời theo ngôn ngữ prompt thay vì
+    ngôn ngữ video). Hàm thuần — unit test được."""
+    return not _is_vi_lang(lang_name) and looks_vietnamese(text)
+
+
+def script_lang_issues(title: str, parts: list, lang_name: str):
+    """-> (list index part narrate SAI ngôn ngữ, title_sai: bool).
+    Chỉ bắt chiều 'video KHÔNG Việt mà viết Việt' (chiều chặn cứng);
+    chiều ngược lại chỉ cảnh báo (_vi_ascii_warn). Hàm thuần."""
+    bad = [i for i, p in enumerate(parts or [])
+           if str(p.get("mode") or "") == "narrate"
+           and _looks_wrong_lang(str(p.get("text") or ""), lang_name)]
+    return bad, _looks_wrong_lang(str(title or ""), lang_name)
+
+
+def _vi_ascii_warn(parts, lang_name: str) -> str:
+    """Video TIẾNG VIỆT mà TOÀN BỘ lời narrate không dấu (ASCII thuần) ->
+    NGHI sai ngôn ngữ — chỉ CẢNH BÁO, không chặn (tên riêng/không dấu vẫn
+    có thể hợp lệ). Hàm thuần."""
+    if not _is_vi_lang(lang_name):
+        return ""
+    texts = [str(p.get("text") or "") for p in (parts or [])
+             if str(p.get("mode") or "") == "narrate"]
+    joined = "".join(texts)
+    if texts and joined.strip() and all(ord(c) < 128 for c in joined):
+        return ("nghi kịch bản sai ngôn ngữ: video tiếng Việt nhưng lời kể "
+                "toàn chữ không dấu")
+    return ""
+
+
+# Chỉ trích gửi kèm khi RETRY vì viết sai ngôn ngữ (dùng cho cả 2 đường).
+_WRONG_LANG_NOTE = (
+    "LẦN TRƯỚC bạn VIẾT SAI NGÔN NGỮ: video này nói {ln} nhưng bạn viết "
+    "tiêu đề/lời kể bằng tiếng Việt. Bạn PHẢI viết lại TOÀN BỘ title, "
+    "context_summary và MỌI text narrate 100% bằng {ln} — KHÔNG một từ "
+    "tiếng Việt nào (giọng đọc {ln} sẽ đọc lời của bạn).")
+
+
+def _lang_rule(ln: str) -> str:
+    """Khối ÉP NGÔN NGỮ ĐẦU RA — đặt NGAY ĐẦU prompt (trước mọi luật) và
+    nhắc lại ở cuối sát chỗ yêu cầu JSON (model chú ý 2 đầu prompt)."""
+    out = (f"NGÔN NGỮ ĐẦU RA BẮT BUỘC: {ln}.\n"
+           f"TOÀN BỘ \"title\", \"context_summary\" và MỌI \"text\" trong "
+           f"parts PHẢI viết 100% bằng {ln}.\n")
+    if not _is_vi_lang(ln):
+        out += (f"CẤM viết tiếng Việt — video KHÔNG nói tiếng Việt; giọng "
+                f"đọc {ln} sẽ đọc lời bạn viết, chữ sai ngôn ngữ sẽ đọc lơ "
+                "lớ hỏng clip. (Chỉ dẫn dưới đây viết bằng tiếng Việt CHỈ "
+                f"để mô tả luật — đầu ra vẫn phải 100% {ln}.)\n")
+    return out
+
+
+def _lang_remind(ln: str) -> str:
+    """Nhắc lại luật ngôn ngữ NGAY TRƯỚC yêu cầu trả JSON."""
+    return (f"NHẮC LẠI — QUAN TRỌNG NHẤT: title, context_summary và mọi "
+            f"text narrate PHẢI viết 100% bằng {ln}"
+            + ("" if _is_vi_lang(ln) else ", TUYỆT ĐỐI KHÔNG tiếng Việt")
+            + ".\n")
+
+
+def _style_hint(key: str, ln: str = "") -> str:
+    """Mô tả phong cách + VÍ DỤ chuẩn vibe ĐÚNG NGÔN NGỮ video (vi -> ví dụ
+    Việt; mọi ngôn ngữ khác -> ví dụ tiếng Anh, không trộn 2 thứ tiếng)."""
+    k = key if key in STYLES else DEFAULT_STYLE
+    ex = _STYLE_EX[k]["vi" if _is_vi_lang(ln) else "en"]
+    return (STYLES[k][1]
+            + "\n  VÍ DỤ chuẩn vibe (bắt chước VIBE, đừng chép): " + ex)
 
 
 def _narrator_rules(ln: str, style: str) -> str:
@@ -125,17 +283,22 @@ def _narrator_rules(ln: str, style: str) -> str:
         "cụm lời thoại).\n"
         "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
         "bảo là...\", \"anh ta giải thích rằng...\".\n"
-        "VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
-        "  Transcript nhân vật: \"tôi bấm nhầm nút bán hết cổ phiếu\".\n"
-        "  ✅ ĐÚNG (bình luận góc ngoài): \"Gã này vừa mất cả gia tài chỉ "
-        "vì một cú click...\"\n"
-        "  ❌ SAI (thuật lại): \"Anh ấy nói anh ấy bấm nhầm nút bán hết cổ "
-        "phiếu.\"\n"
-        "  Transcript (EN): \"i accidentally sold all my shares\".\n"
-        "  ✅ RIGHT (outsider comment): \"One wrong click. His entire "
-        "fortune — gone.\"\n"
-        "  ❌ WRONG (retelling): \"He says he accidentally sold all his "
-        "shares.\"\n\n"
+        # VÍ DỤ ✅/❌ theo ĐÚNG ngôn ngữ video (video Việt -> ví dụ Việt;
+        # ngôn ngữ khác -> ví dụ tiếng Anh) — KHÔNG trộn 2 thứ tiếng để
+        # model không bắt chước nhầm ngôn ngữ của ví dụ.
+        + ("VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
+           "  Transcript nhân vật: \"tôi bấm nhầm nút bán hết cổ phiếu\".\n"
+           "  ✅ ĐÚNG (bình luận góc ngoài): \"Gã này vừa mất cả gia tài "
+           "chỉ vì một cú click...\"\n"
+           "  ❌ SAI (thuật lại): \"Anh ấy nói anh ấy bấm nhầm nút bán hết "
+           "cổ phiếu.\"\n\n"
+           if _is_vi_lang(ln) else
+           "VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
+           "  Transcript: \"i accidentally sold all my shares\".\n"
+           "  ✅ RIGHT (outsider comment): \"One wrong click. His entire "
+           "fortune — gone.\"\n"
+           "  ❌ WRONG (retelling): \"He says he accidentally sold all his "
+           "shares.\"\n\n") +
         "LỜI KỂ CỦA BẠN PHẢI:\n"
         "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
         "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
@@ -155,9 +318,12 @@ def _narrator_rules(ln: str, style: str) -> str:
         "- CẤM văn viết/thuyết trình/liệt kê: \"đầu tiên\", \"tiếp theo\", "
         "\"như các bạn thấy\", \"trong video này\", \"chúng ta có thể "
         "thấy\"...\n"
-        f"{_style_hint(style)}\n"
-        "(Ví dụ trên là tiếng Việt để bạn bắt VIBE — lời narrate thật phải "
-        f"viết bằng {ln}.)\n")
+        f"{_style_hint(style, ln)}\n"
+        + ("(Lời narrate viết bằng TIẾNG VIỆT — đúng ngôn ngữ video.)\n"
+           if _is_vi_lang(ln) else
+           "(Chỉ dẫn/luật viết bằng tiếng Việt CHỈ để bạn hiểu — lời "
+           f"narrate, title, context_summary THẬT phải viết 100% bằng {ln}, "
+           "KHÔNG được viết tiếng Việt.)\n"))
 
 
 def build_prompt(sentences: list, lang_name: str, style: str,
@@ -197,6 +363,9 @@ def build_prompt(sentences: list, lang_name: str, style: str,
             "(twist chỉ được hé khi video chiếu tới nó) — chỉ được GỢI tò mò.\n")
 
     return (
+        # KHỐI ÉP NGÔN NGỮ đặt TRƯỚC MỌI LUẬT (lỗi thật: video EN nhưng AI
+        # viết kịch bản tiếng Việt vì toàn bộ prompt là tiếng Việt).
+        _lang_rule(ln) + "\n"
         f"CLIP từ giây {clip_start:.1f} đến {clip_end:.1f} (dài {dur:.0f}s) "
         f"của một video nói bằng {ln}."
         + (f' Tiêu đề gợi ý: "{title}".' if title else "") + "\n"
@@ -249,6 +418,7 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
         "hiểu, KHÔNG phải lời đọc.\n"
+        + _lang_remind(ln) +
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
         '{"context_summary": "...", "title": "...", "parts": '
         '[{"start": giây, "end": giây, "mode": "orig"|"narrate", '
@@ -674,15 +844,28 @@ _WIN_MAX_N = 6
 
 def build_director_prompt(listing: str, lang_name: str, style: str,
                           duration: float, min_total: float,
-                          max_total: float, ratio: float = 55) -> str:
+                          max_total: float, ratio: float = 55,
+                          win_min: int = 3, win_max: int = 6) -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
-    3-6 khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI giữa các khung."""
+    win_min-win_max khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI
+    giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6)."""
     ln = lang_name.upper()
     try:
         pct = int(round(max(30.0, min(80.0, float(ratio)))))
     except (TypeError, ValueError):
         pct = 55
+    try:
+        w_lo = max(2, int(win_min))
+    except (TypeError, ValueError):
+        w_lo = 3
+    try:
+        w_hi = max(w_lo, int(win_max))
+    except (TypeError, ValueError):
+        w_hi = max(w_lo, 6)
     return (
+        # KHỐI ÉP NGÔN NGỮ đặt TRƯỚC MỌI LUẬT (lỗi thật: video EN nhưng AI
+        # viết kịch bản + tiêu đề tiếng Việt vì prompt toàn tiếng Việt).
+        _lang_rule(ln) + "\n"
         f"Đây là TOÀN BỘ transcript của một video dài {duration:.0f} giây, "
         f"nói bằng {ln} (mỗi dòng: GIÂY_BẮT_ĐẦU GIÂY_KẾT_THÚC | lời nói):\n"
         f"{listing}\n\n"
@@ -691,9 +874,9 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "CẢNH rời nhau kể TRỌN câu chuyện (như recap phim), rồi viết lời kể "
         "của bạn phủ lên.\n\n"
         "BƯỚC 1 — CHỌN KHUNG CẢNH (windows):\n"
-        "- Chọn 3-6 khung cảnh RỜI NHAU bám mạch chuyện: mở đầu -> diễn "
-        "biến -> twist/cao trào -> kết. ĐÚNG thứ tự thời gian, KHÔNG chồng "
-        "lấn, KHÔNG đảo đoạn.\n"
+        f"- Chọn {w_lo}-{w_hi} khung cảnh RỜI NHAU bám mạch chuyện: mở đầu "
+        "-> diễn biến -> twist/cao trào -> kết. ĐÚNG thứ tự thời gian, KHÔNG "
+        "chồng lấn, KHÔNG đảo đoạn.\n"
         f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
         f"{min_total:.0f}-{max_total:.0f} giây.\n"
         "- Mép khung phải trùng mép câu transcript (không cắt ngang câu "
@@ -758,6 +941,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
         "hiểu, KHÔNG phải lời đọc.\n"
+        + _lang_remind(ln) +
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
         '{"context_summary": "...", "title": "...", '
         '"windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
@@ -825,7 +1009,13 @@ def validate_windows(windows, duration: float,
                 continue               # thưa lời (chữ màn hình/nhạc) -> loại
             kept.append([s, e])
         fixed = kept
-    fixed = fixed[:max_n]
+    if len(fixed) > max_n:
+        # QUÁ max_n khung (user đặt Max cảnh) -> GIỮ các khung DÀI hơn
+        # (nhiều nội dung/điểm cao hơn), vẫn xếp theo thứ tự thời gian.
+        keep = sorted(sorted(range(len(fixed)),
+                             key=lambda i: fixed[i][1] - fixed[i][0],
+                             reverse=True)[:max_n])
+        fixed = [fixed[i] for i in keep]
     if max_total and max_total > 0:
         total, cut = 0.0, []
         for s, e in fixed:
@@ -908,11 +1098,15 @@ def validate_parts_windows(parts, windows: list, sentences=None,
 
 
 def _director_from_data(data, sentences: list, duration: float,
-                        min_total: float, max_total: float):
+                        min_total: float, max_total: float,
+                        win_max: int = _WIN_MAX_N):
     """Ép + validate output đạo diễn -> ({'title','windows','parts'} | None,
     thông_điệp_lỗi_cụ_thể) — thông điệp dùng cho lượt RETRY SỬA LỖI.
     Chấp nhận data là chuỗi JSON / list bọc / dict; windows-parts mọi dạng
-    phổ biến (_coerce_windows/_coerce_parts). Hàm thuần — unit test được."""
+    phổ biến (_coerce_windows/_coerce_parts). win_max = TRẦN số khung (user
+    đặt trong ⚙ Cài đặt Reup — thừa thì validate_windows giữ khung dài hơn;
+    DƯỚI Min user thì vẫn chấp nhận nếu >=2 khung/1 khung dài — Min chỉ là
+    mong muốn, không giết kịch bản). Hàm thuần — unit test được."""
     if isinstance(data, str):           # model trả JSON-trong-chuỗi
         try:
             data = json.loads(data)
@@ -926,6 +1120,7 @@ def _director_from_data(data, sentences: list, duration: float,
                       '"windows", "parts"}')
     windows = validate_windows(data.get("windows"), duration,
                                min_total=min_total, max_total=max_total,
+                               max_n=max(2, int(win_max or _WIN_MAX_N)),
                                sentences=sentences)
     if not windows:
         return None, (
@@ -946,10 +1141,49 @@ def _director_from_data(data, sentences: list, duration: float,
             "windows": windows, "parts": parts}, ""
 
 
+def _enforce_script_lang(result: Optional[dict], lang_name: str,
+                         retry_fn) -> Optional[dict]:
+    """HẬU KIỂM NGÔN NGỮ kịch bản đã validate (dùng chung 2 đường).
+
+    Video KHÔNG phải tiếng Việt mà title/lời narrate dính tiếng Việt ->
+    RETRY 1 lần qua retry_fn() (gọi LLM kèm chỉ trích _WRONG_LANG_NOTE,
+    trả script ĐÃ validate hoặc None). Retry vẫn sai -> LOẠI part sai
+    (hạ orig, giữ tiếng gốc) + xóa title sai (caller dùng title fallback)
+    + gắn result["lang_warn"] để caller log cảnh báo progress.
+    Video TIẾNG VIỆT mà lời toàn không dấu -> chỉ cảnh báo lang_warn."""
+    if not result:
+        return result
+    bad, tbad = script_lang_issues(result.get("title", ""),
+                                   result.get("parts") or [], lang_name)
+    if not bad and not tbad:
+        w = _vi_ascii_warn(result.get("parts"), lang_name)
+        if w:
+            result["lang_warn"] = w
+        return result
+    r2 = retry_fn()
+    if r2:
+        b2, tb2 = script_lang_issues(r2.get("title", ""),
+                                     r2.get("parts") or [], lang_name)
+        if not b2 and not tb2 and any(
+                p["mode"] == "narrate" for p in r2.get("parts") or []):
+            return r2                   # bản retry đúng ngôn ngữ -> dùng
+    # vẫn sai -> loại part sai (giữ tiếng gốc) + bỏ tiêu đề sai ngôn ngữ
+    for i in bad:
+        result["parts"][i] = dict(result["parts"][i], mode="orig", text="")
+    if tbad:
+        result["title"] = ""
+    result["lang_warn"] = (
+        f"AI viết sai ngôn ngữ (video nói {lang_name}) — đã giữ tiếng gốc "
+        f"cho {len(bad)} đoạn"
+        + (", dùng tiêu đề dự phòng" if tbad else ""))
+    return result
+
+
 def write_director_script(sentences: list, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
-                          listing: str = "") -> Optional[dict]:
+                          listing: str = "", win_min: int = 3,
+                          win_max: int = 6) -> Optional[dict]:
     """Gọi LLM đạo diễn trên TOÀN BỘ transcript -> {"title", "windows",
     "parts"} ĐÃ validate; None nếu windows/parts hỏng cả sau khi RETRY
     (caller fallback đường 1-span cũ).
@@ -957,22 +1191,39 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     RETRY SỬA LỖI: lần 1 trả JSON hỏng/không qua validate -> gọi LẠI đúng
     1 lần, đính kèm THÔNG ĐIỆP LỖI CỤ THỂ (windows phải là [[s,e],...]...)
     để model tự sửa — đỡ rơi fallback oan chỉ vì sai dạng JSON.
+    HẬU KIỂM NGÔN NGỮ: kịch bản/tiêu đề sai ngôn ngữ video -> retry 1 lần
+    kèm chỉ trích; vẫn sai -> loại part sai + "lang_warn" (caller log).
 
     sentences = [(start, end, text)] TOÀN transcript (anti-copy + relevance
     + lọc mật độ lời). listing = transcript RÚT GỌN cho prompt (caller gộp
     câu nếu video dài); rỗng -> tự build từ sentences.
+    win_min/win_max = khoảng SỐ KHUNG CẢNH mong muốn (⚙ Cài đặt Reup).
     Ném llm.LLMError nếu gọi LLM thất bại vì mạng/key (caller quyết
     fallback); lỗi PARSE JSON thì tự retry chứ không ném."""
     if not listing:
         listing = "\n".join(f"{a:.1f} {b:.1f} | {t}"
                             for a, b, t in sentences)[:11000]
     prompt = build_director_prompt(listing, lang_name, style, duration,
-                                   min_total, max_total, ratio=ratio)
+                                   min_total, max_total, ratio=ratio,
+                                   win_min=win_min, win_max=win_max)
+
+    def _lang_retry():
+        """Gọi lại LLM kèm chỉ trích SAI NGÔN NGỮ -> script validate/None."""
+        try:
+            d3 = llm.complete_json(
+                prompt + "\n\n" + _WRONG_LANG_NOTE.format(
+                    ln=lang_name.upper()), system=_SYSTEM)
+            r3, _e3 = _director_from_data(d3, sentences, duration,
+                                          min_total, max_total, win_max)
+        except llm.LLMError:
+            r3 = None
+        return r3
+
     result, err = None, ""
     try:
         data = llm.complete_json(prompt, system=_SYSTEM)
         result, err = _director_from_data(data, sentences, duration,
-                                          min_total, max_total)
+                                          min_total, max_total, win_max)
     except llm.LLMError as e:
         if "không phải JSON" not in str(e):
             raise                       # lỗi mạng/key/quota -> caller quyết
@@ -988,13 +1239,13 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                 d2 = llm.complete_json(prompt + "\n\n" + _RETELL_RETRY_NOTE,
                                        system=_SYSTEM)
                 r2, _e2 = _director_from_data(d2, sentences, duration,
-                                              min_total, max_total)
+                                              min_total, max_total, win_max)
             except llm.LLMError:
                 r2 = None
             if r2 and sum(1 for p in r2["parts"]
                           if p["mode"] == "narrate") > kept:
-                return r2
-        return result
+                return _enforce_script_lang(r2, lang_name, _lang_retry)
+        return _enforce_script_lang(result, lang_name, _lang_retry)
     # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
     retry_prompt = (
         prompt + "\n\nLẦN TRƯỚC bạn đã trả kết quả KHÔNG DÙNG ĐƯỢC — lỗi: "
@@ -1005,8 +1256,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     except llm.LLMError:
         return None                     # retry vẫn hỏng -> caller fallback
     result, _err = _director_from_data(data, sentences, duration,
-                                       min_total, max_total)
-    return result
+                                       min_total, max_total, win_max)
+    return _enforce_script_lang(result, lang_name, _lang_retry)
 
 
 def write_script(sentences: list, lang_name: str, style: str,
@@ -1067,4 +1318,27 @@ def write_script(sentences: list, lang_name: str, style: str,
                 parts, data = parts2, data2
     if not any(p["mode"] == "narrate" for p in parts):
         return None                     # không có thuyết minh -> vô nghĩa
-    return {"title": str(data.get("title") or "").strip(), "parts": parts}
+
+    # ---- HẬU KIỂM NGÔN NGỮ (đường 1-span cũng phải đúng ngôn ngữ video):
+    # sai -> retry 1 lần kèm chỉ trích; vẫn sai -> loại part sai + title
+    # fallback heuristic cũ (title tham số) + lang_warn cho caller log.
+    def _lang_retry():
+        try:
+            d3 = _call(base_prompt + "\n\n"
+                       + _WRONG_LANG_NOTE.format(ln=lang_name.upper()))
+        except llm.LLMError:
+            return None
+        if not (isinstance(d3, dict) and isinstance(d3.get("parts"), list)):
+            return None
+        p3 = validate_parts(d3["parts"], clip_start, clip_end,
+                            sentences=sentences)
+        return {"title": str(d3.get("title") or "").strip(), "parts": p3}
+
+    out = _enforce_script_lang(
+        {"title": str(data.get("title") or "").strip(), "parts": parts},
+        lang_name, _lang_retry)
+    if not out.get("title") and title:
+        out["title"] = title            # title sai ngôn ngữ -> heuristic cũ
+    if not any(p["mode"] == "narrate" for p in out["parts"]):
+        return None                     # part sai bị loại sạch -> bỏ kịch bản
+    return out

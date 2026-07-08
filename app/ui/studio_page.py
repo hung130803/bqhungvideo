@@ -2190,6 +2190,17 @@ class StudioPage(QWidget):
                 self._settings.value("recap_count", 0))))
         except (TypeError, ValueError):
             preset["recap_count"] = 0
+        try:                            # min/max số CẢNH ghép mỗi clip từ ⚙
+            wmin = int(self._settings.value("recap_win_min", 3))
+        except (TypeError, ValueError):
+            wmin = 3
+        try:
+            wmax = int(self._settings.value("recap_win_max", 6))
+        except (TypeError, ValueError):
+            wmax = 6
+        wmin = min(6, max(2, wmin))
+        preset["recap_win_min"] = wmin
+        preset["recap_win_max"] = max(wmin, min(8, max(3, wmax)))
         services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                     self.state.project_id, preset)
         self.status.setText(
