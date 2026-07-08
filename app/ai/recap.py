@@ -1,17 +1,20 @@
 """
-LLM "ĐẠO DIỄN" cho tính năng 🎙 Reup thuyết minh (recap).
+LLM "NGƯỜI KỂ CHUYỆN" cho tính năng 🎙 Reup thuyết minh (recap).
 
 Nhiệm vụ: từ transcript CỦA 1 CLIP (các câu start/end/text trong phạm vi clip),
 viết KỊCH BẢN chia clip thành các PART xen kẽ:
   - mode "orig"    : GIỮ TIẾNG GỐC (khoảnh khắc đắt — thoại hay, cao trào).
-  - mode "narrate" : TẮT TIẾNG GỐC, giọng AI THUYẾT MINH (kể/dẫn/bình) về nội
-                     dung đang diễn ra — viết bằng ĐÚNG NGÔN NGỮ video.
+  - mode "narrate" : TẮT TIẾNG GỐC, giọng AI KỂ CHUYỆN — người kể đứng NGOÀI
+                     video, TỰ SÁNG TÁC lời kể của riêng mình (transcript chỉ
+                     để HIỂU chuyện, KHÔNG phải nguồn kể lại) — viết bằng
+                     ĐÚNG NGÔN NGỮ video.
 
-Prompt viết theo CÔNG THỨC VIRAL: part ĐẦU TIÊN bắt buộc là narrate HOOK
-gây sốc/tò mò (2-3 giây đầu quyết định giữ chân), mạch chuyện mini story-arc
-(hook -> bối cảnh -> căng thẳng -> twist -> kết mở), câu ngắn dồn dập, cấm
-kể lại y nguyên cái người xem tự thấy. Nếu có ẢNH khung hình (vision), AI
-phải viết lời BÁM đúng cảnh đang chiếu.
+Prompt viết theo vai NGƯỜI KỂ CHUYỆN kênh triệu view: cấm lặp lại/diễn giải
+lại lời nhân vật, phải THÊM cái transcript không có (cảm xúc, phán đoán, bình
+luận, câu hỏi khán giả, thông tin nền), lời kể DẪN MỒI vào đoạn tiếng gốc kế
+tiếp. Giữ công thức viral: part ĐẦU TIÊN là narrate HOOK (2-3 giây đầu quyết
+định giữ chân), tuần tự thời gian, câu ngắn văn nói, đếm chữ khít khung.
+Nếu có ẢNH khung hình (vision), AI nhìn cảnh để hiểu bối cảnh rồi kể.
 
 Output JSON: {"title": "...", "parts": [{"start": s, "end": e,
               "mode": "orig"|"narrate", "text": "..."}]}
@@ -19,7 +22,8 @@ Các part PHỦ KÍN [clip_start, clip_end] theo thứ tự thời gian.
 
 validate_parts() là hàm THUẦN (không LLM) tự sửa output hỏng: clamp vào phạm
 vi clip, bỏ part rác, mode lạ -> orig, chồng lấn -> cắt, khoảng hở -> chèn
-part orig, narrate rỗng/COPY nguyên văn transcript -> orig. Có unit-test riêng.
+part orig, narrate rỗng/COPY transcript (kể cả FUZZY: trùng >60% từ với
+transcript trong đúng khoảng thời gian đó) -> orig. Có unit-test riêng.
 """
 from __future__ import annotations
 
@@ -30,50 +34,58 @@ from typing import Optional
 from app.ai import llm
 
 # 4 phong cách thuyết minh (key lưu QSettings/preset -> hint đưa vào prompt).
-# Mỗi phong cách có MÔ TẢ CÁCH VIẾT riêng rõ rệt (đưa nguyên văn vào prompt).
+# Mỗi phong cách có MÔ TẢ CÁCH VIẾT + 1-2 câu VÍ DỤ chuẩn vibe (few-shot —
+# ví dụ tiếng Việt, prompt dặn AI bắt chước VIBE bằng đúng ngôn ngữ video).
 STYLES = {
     "story": (
         "Kể chuyện",
-        "PHONG CÁCH KỂ CHUYỆN — viết như đang kể cho ĐỨA BẠN THÂN nghe:\n"
-        "  + Câu NGẮN, dồn dập, nhịp nhanh. Kiểu: \"Gã này tưởng ngon ăn. "
-        "Sai lầm. Sai lầm lớn nhất đời gã.\"\n"
+        "PHONG CÁCH KỂ CHUYỆN — kể cho ĐỨA BẠN THÂN nghe về gã trong video:\n"
+        "  + Câu NGẮN, dồn dập, có khựng \"...\" nhá tò mò.\n"
         "  + Gọi nhân vật bằng biệt danh đời thường (gã này, bà chị, ông chú, "
         "cậu nhóc) — KHÔNG gọi trung tính kiểu 'người đàn ông'.\n"
-        "  + Cuối mỗi đoạn narrate cài 1 móc tò mò: chuyện gì xảy ra tiếp?"),
+        "  + Cuối mỗi đoạn narrate cài 1 móc tò mò: chuyện gì xảy ra tiếp?\n"
+        "  VÍ DỤ chuẩn vibe (bắt chước VIBE, đừng chép): \"Gã này tưởng hôm "
+        "nay là ngày may mắn nhất đời mình. Sai. Sai khủng khiếp...\" — "
+        "\"Và cái cách bà chị phản ứng... tôi kể bạn nghe, không ai đỡ nổi.\""),
     "clickbait": (
         "Giật gân câu view",
         "PHONG CÁCH GIẬT GÂN — cường điệu + câu hỏi treo LIÊN TỤC:\n"
-        "  + Mở bằng cú sốc: \"Đây có thể là quyết định tệ nhất đời anh ta.\"\n"
-        "  + Liên tục đặt câu hỏi treo: \"Nhưng khoan. Bạn chưa thấy gì đâu.\" "
-        "\"Điều xảy ra tiếp theo không ai ngờ.\"\n"
+        "  + Mở bằng cú sốc, liên tục treo: \"Nhưng khoan... bạn chưa thấy "
+        "gì đâu.\"\n"
         "  + Phóng đại có kiểm soát: nhất/chưa từng/không tưởng — nhưng KHÔNG "
-        "bịa chi tiết sai với video."),
+        "bịa chi tiết sai với video.\n"
+        "  VÍ DỤ chuẩn vibe: \"Đây có thể là quyết định tệ nhất đời anh ta. "
+        "Và điên nhất là... anh ta còn chưa biết điều đó.\" — \"99% người xem "
+        "đoán sai đoạn tiếp theo. Bạn thì sao?\""),
     "funny": (
         "Hài hước",
         "PHONG CÁCH HÀI HƯỚC — mỉa nhẹ + nhân cách hóa, KHÔNG giải thích joke:\n"
-        "  + Bình luận như đang cà khịa bạn mình: chọc vào cái ngớ ngẩn, "
-        "tương phản, sự tự tin lố của nhân vật.\n"
-        "  + Nhân cách hóa đồ vật/con vật (con mèo khinh thường ra mặt, "
-        "cái ghế quyết định phản chủ).\n"
-        "  + Thả joke rồi ĐI TIẾP luôn — tuyệt đối không giải thích vì sao "
-        "nó buồn cười."),
+        "  + Cà khịa như nói xấu bạn mình: chọc vào cái ngớ ngẩn, tương phản, "
+        "sự tự tin lố của nhân vật.\n"
+        "  + Nhân cách hóa đồ vật/con vật; thả joke rồi ĐI TIẾP luôn.\n"
+        "  VÍ DỤ chuẩn vibe: \"Sự tự tin của ông chú này... đóng thuế được "
+        "luôn đấy.\" — \"Con mèo nhìn chủ kiểu: rồi, lại nữa rồi.\""),
     "analysis": (
         "Phân tích sâu",
         "PHONG CÁCH PHÂN TÍCH — mổ xẻ 'VÌ SAO' với giọng tự tin, sắc lạnh:\n"
-        "  + Chỉ ra cái người xem KHÔNG tự nhận ra: \"Để ý tay trái anh ta. "
-        "Đó không phải ngẫu nhiên.\"\n"
-        "  + Khẳng định chắc nịch rồi chứng minh bằng chi tiết trong video, "
-        "không vòng vo 'có lẽ/hình như'.\n"
-        "  + Chốt mỗi ý bằng 1 câu đắt: bài học/ý nghĩa đằng sau."),
+        "  + Chỉ ra cái người xem KHÔNG tự nhận ra; khẳng định chắc nịch rồi "
+        "chứng minh, không vòng vo 'có lẽ/hình như'.\n"
+        "  + Chốt mỗi ý bằng 1 câu đắt: bài học/ý nghĩa đằng sau.\n"
+        "  VÍ DỤ chuẩn vibe: \"Để ý tay trái gã... đó không phải ngẫu nhiên. "
+        "Đó là tính toán.\" — \"Ai cũng nghĩ cô ấy thua từ giây thứ ba. "
+        "Nhưng không. Chính lúc đó cô ấy đang thắng.\""),
 }
 DEFAULT_STYLE = "story"
 
 _SYSTEM = (
-    "Bạn là ĐẠO DIỄN kịch bản viral cho kênh reup-thuyết-minh (recap) video "
-    "ngắn TikTok/Reels. Bạn chia clip thành các đoạn XEN KẼ: đoạn GIỮ TIẾNG "
-    "GỐC (khoảnh khắc đắt nhất) và đoạn AI THUYẾT MINH (video tắt tiếng, "
-    "giọng AI kể/dẫn/bình về CẢNH ĐANG CHIẾU). 2-3 giây đầu quyết định người "
-    "xem ở lại hay lướt — câu mở phải gây sốc/tò mò tức thì. "
+    "Bạn là NGƯỜI KỂ CHUYỆN (narrator) của một kênh video triệu view. Bạn "
+    "đứng NGOÀI video, kể về nhân vật và sự việc trong video cho khán giả "
+    "của bạn nghe — như một người dẫn chuyện lôi cuốn, KHÔNG phải người "
+    "thuật lại lời thoại. Bạn tự hiểu bối cảnh + nội dung + lời thoại rồi "
+    "TỰ SÁNG TÁC lời kể hấp dẫn của riêng mình, chia clip thành các đoạn "
+    "XEN KẼ: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt nhất — để nhân vật tự nói) "
+    "và đoạn BẠN KỂ (video tắt tiếng, chỉ còn giọng bạn). 2-3 giây đầu quyết "
+    "định người xem ở lại hay lướt — câu mở phải gây sốc/tò mò tức thì. "
     "CHỈ trả JSON thuần, không thêm chữ nào khác.")
 
 # Tốc độ đọc TTS để AI canh độ dài lời thuyết minh (ghi thẳng vào prompt)
@@ -91,32 +103,37 @@ def _style_hint(key: str) -> str:
 
 def build_prompt(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float, title: str = "",
-                 frames: Optional[list] = None) -> str:
+                 frames: Optional[list] = None, ratio: float = 55) -> str:
     """sentences = [(start, end, text)] các câu transcript TRONG clip.
     frames = [(giây, đường_dẫn_ảnh)] khung hình gửi kèm (vision) — ảnh #k
-    chụp tại mốc giây tương ứng; None/rỗng = không có vision."""
+    chụp tại mốc giây tương ứng; None/rỗng = không có vision.
+    ratio = tỉ lệ % thời lượng AI kể (user chỉnh 30-80, mặc định 55) —
+    đưa vào prompt dạng ~X% ±10%."""
     lines = "\n".join(f"{a:.1f} {b:.1f} | {t}" for a, b, t in sentences)[:6000]
     dur = clip_end - clip_start
     ln = lang_name.upper()
+    try:
+        pct = int(round(max(30.0, min(80.0, float(ratio)))))
+    except (TypeError, ValueError):
+        pct = 55
 
-    # ---- NGỮ CẢNH THỊ GIÁC: có ảnh -> dặn bám cảnh; không -> bám transcript ----
+    # ---- NGỮ CẢNH THỊ GIÁC: có ảnh -> nhìn cảnh để HIỂU; không -> chỉ transcript ----
     if frames:
         vis = (
             "NGỮ CẢNH HÌNH ẢNH: kèm theo là "
             f"{len(frames)} ẢNH khung hình chụp từ chính clip, theo thứ tự: "
             + "; ".join(f"ảnh #{i} tại giây {t:.0f}"
                         for i, (t, _p) in enumerate(frames)) + ".\n"
-            "- HÃY NHÌN KỸ từng ảnh để hiểu cảnh gì đang chiếu tại mốc đó "
-            "(ai, làm gì, bối cảnh, biểu cảm).\n"
-            "- Lời narrate của part nào phải BÁM VÀO cảnh đang chiếu trong "
-            "khoảng thời gian part đó (đối chiếu ảnh gần mốc nhất + "
-            "transcript).\n")
+            "- HÃY NHÌN KỸ từng ảnh để HIỂU cảnh gì đang diễn ra tại mốc đó "
+            "(ai, làm gì, bối cảnh, biểu cảm) — rồi KỂ bằng góc nhìn của "
+            "bạn về đúng diễn biến đang chiếu trong khoảng part đó.\n")
     else:
         vis = (
-            "KHÔNG có ảnh kèm theo — ngữ cảnh duy nhất là transcript có mốc "
-            "thời gian ở trên:\n"
-            "- Lời narrate của part [start-end] phải nói về ĐÚNG nội dung các "
-            "câu transcript trong khoảng [start-end] ĐÓ.\n")
+            "KHÔNG có ảnh kèm theo — dùng transcript có mốc thời gian ở trên "
+            "để HIỂU chuyện gì đang diễn ra trong từng khoảng:\n"
+            "- Lời kể của part [start-end] phải khớp DIỄN BIẾN đang xảy ra "
+            "trong khoảng [start-end] đó (đừng kể lệch sang chuyện đoạn "
+            "khác) — nhưng KỂ theo cách của bạn, KHÔNG thuật lại lời thoại.\n")
     vis += ("- CẤM SPOILER: không nhắc trước nội dung của đoạn CHƯA chiếu tới "
             "(twist chỉ được hé khi video chiếu tới nó) — chỉ được GỢI tò mò.\n")
 
@@ -124,11 +141,42 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         f"CLIP từ giây {clip_start:.1f} đến {clip_end:.1f} (dài {dur:.0f}s) "
         f"của một video nói bằng {ln}."
         + (f' Tiêu đề gợi ý: "{title}".' if title else "") + "\n"
-        "Transcript trong clip (mỗi dòng: bắt_đầu kết_thúc | lời nói):\n"
+        "Transcript trong clip (mỗi dòng: bắt_đầu kết_thúc | lời nói) — "
+        "transcript CHỈ ĐỂ BẠN HIỂU chuyện, KHÔNG phải nguồn để kể lại:\n"
         f"{lines}\n\n"
         f"{vis}\n"
-        f"Hãy viết KỊCH BẢN THUYẾT MINH VIRAL kiểu kênh recap.\n"
-        f"{_style_hint(style)}\n\n"
+        "VAI CỦA BẠN: người kể chuyện (narrator) của kênh video triệu view. "
+        "Bạn đứng NGOÀI video, kể về nhân vật/sự việc cho khán giả của bạn "
+        "nghe. Hãy viết KỊCH BẢN gồm các part xen kẽ: orig (nhân vật tự "
+        "nói) / narrate (lời KỂ của bạn).\n\n"
+        "CẤM TUYỆT ĐỐI trong lời narrate:\n"
+        "- CẤM lặp lại, diễn giải lại hay tóm tắt lại câu nhân vật VỪA nói "
+        "hoặc SẮP nói trong transcript — người xem sắp nghe/vừa nghe câu đó "
+        "rồi, kể lại là thừa và chán.\n"
+        "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
+        "bảo là...\", \"anh ta giải thích rằng...\".\n\n"
+        "LỜI KỂ CỦA BẠN PHẢI:\n"
+        "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
+        "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
+        "video.\n"
+        "- THÊM cái transcript KHÔNG có: cảm xúc, phán đoán, bình luận, câu "
+        "hỏi ném cho khán giả, thông tin nền. Kiểu: \"Điều điên rồ là hắn "
+        "còn không biết...\", \"Ai cũng nghĩ X. Nhưng không.\"\n"
+        "- DẪN MỒI vào đoạn tiếng gốc kế tiếp như thả câu: lời kể ngay "
+        "TRƯỚC 1 part orig phải khiến người xem HÓNG câu nhân vật sắp nói "
+        "(kiểu: \"Và nghe hắn nói câu này...\") — đừng nói nội dung câu đó "
+        "ra.\n\n"
+        "VĂN NÓI kể miệng (bắt buộc):\n"
+        f"- Khẩu ngữ tự nhiên đúng {ln} — như nói vo, không phải đọc văn "
+        "bản.\n"
+        "- Dùng dấu \"...\" tạo khựng nhá tò mò; câu hỏi tu từ; câu NGẮN "
+        "dồn dập (tối đa 12 từ/câu).\n"
+        "- CẤM văn viết/thuyết trình/liệt kê: \"đầu tiên\", \"tiếp theo\", "
+        "\"như các bạn thấy\", \"trong video này\", \"chúng ta có thể "
+        "thấy\"...\n"
+        f"{_style_hint(style)}\n"
+        "(Ví dụ trên là tiếng Việt để bạn bắt VIBE — lời narrate thật phải "
+        f"viết bằng {ln}.)\n\n"
         "CÔNG THỨC VIRAL (bắt buộc):\n"
         "1) HOOK 2-3 GIÂY ĐẦU: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở "
         "phải gây SỐC hoặc TÒ MÒ tức thì (kiểu: \"Bạn sẽ không tin điều gã "
@@ -143,11 +191,8 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "đúng câu nói/tiếng động/cảm xúc MẠNH NHẤT (câu chốt, tiếng hét, "
         "khoảnh khắc vỡ òa) làm twist/đỉnh điểm — KHÔNG chọn đoạn nói "
         "chuyện thường.\n"
-        "4) VĂN PHONG: câu NGẮN (tối đa 12 từ/câu), chủ động, cấm từ thừa "
-        "(rằng, thì, là, việc, một cách...). CẤM tả lại y nguyên cái người "
-        "xem tự thấy trên hình — mỗi câu phải THÊM thông tin, cảm xúc hoặc "
-        "góc nhìn mới. CẤM chép lại nguyên văn lời thoại transcript vào "
-        "narrate (đoạn đó hãy để orig).\n\n"
+        "4) Mỗi câu narrate phải THÊM thông tin, cảm xúc hoặc góc nhìn mới "
+        "— CẤM tả lại y nguyên cái người xem tự thấy trên hình.\n\n"
         "QUY TẮC KỸ THUẬT:\n"
         f"- Chia CLIP thành các part PHỦ KÍN từ {clip_start:.1f}s đến "
         f"{clip_end:.1f}s, theo ĐÚNG thứ tự thời gian, KHÔNG chồng lấn, "
@@ -155,7 +200,8 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "- Mỗi part dài 3-15 giây. mode = \"orig\" hoặc \"narrate\".\n"
         "- start/end của MỖI part phải trùng mép câu transcript (không cắt "
         "ngang giữa câu nói).\n"
-        "- Tổng thời lượng narrate chiếm 40-70% clip; XEN KẼ với orig cho "
+        f"- Tổng thời lượng narrate chiếm ~{pct}% clip (chấp nhận "
+        f"{max(20, pct - 10)}-{min(90, pct + 10)}%); XEN KẼ với orig cho "
         "nhịp nhàng.\n"
         f"- text của part narrate: viết BẰNG {ln} (ĐÚNG ngôn ngữ video), "
         "văn NÓI tự nhiên.\n"
@@ -192,6 +238,39 @@ def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
     return t in transcript_norm
 
 
+# Ngưỡng FUZZY anti-copy: lời narrate trùng > tỉ lệ từ này với transcript
+# TRONG ĐÚNG KHOẢNG THỜI GIAN của part -> coi như AI kể lại lời nhân vật.
+_FUZZY_COPY_MAX = 0.60
+
+
+def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
+    """Tỉ lệ (0..1) từ của lời narrate XUẤT HIỆN trong tập từ transcript
+    của cửa sổ thời gian tương ứng (đã chuẩn hoá _norm_for_copy). Lời quá
+    ngắn (< 4 từ) -> 0.0 (trùng ngẫu nhiên là bình thường).
+
+    Đây là lưới FUZZY bắt kiểu 'diễn giải lại lời nhân vật' (đổi vài từ,
+    đảo trật tự) mà _is_transcript_copy (so nguyên văn) lọt: lời KỂ sáng
+    tác thật sự (thêm cảm xúc/bình luận/góc nhìn ngoài) dùng từ vựng khác
+    hẳn transcript nên tỉ lệ trùng thấp."""
+    words = _norm_for_copy(text).split()
+    if len(words) < 4 or not window_words:
+        return 0.0
+    hit = sum(1 for w in words if w in window_words)
+    return hit / len(words)
+
+
+def _window_words(sentences: list, start: float, end: float) -> set:
+    """Tập từ (đã chuẩn hoá) của các câu transcript GIAO với [start, end]."""
+    out: set = set()
+    for a, b, t in sentences or []:
+        try:
+            if float(b) > start and float(a) < end and t:
+                out.update(_norm_for_copy(t).split())
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def validate_parts(parts, clip_start: float, clip_end: float,
                    min_part: float = 1.5,
                    sentences: Optional[list] = None) -> list[dict]:
@@ -200,9 +279,10 @@ def validate_parts(parts, clip_start: float, clip_end: float,
     Tự sửa mọi lỗi thường gặp:
       - part không phải dict / start-end không phải số / dài < min_part -> BỎ.
       - mode lạ -> "orig"; narrate mà không có text (rỗng) -> "orig".
-      - narrate mà text CHÉP NGUYÊN VĂN transcript (AI lười copy) -> "orig"
-        (đoạn đó giữ tiếng gốc còn hơn AI đọc lại y hệt). Cần `sentences`
-        = [(start, end, text)] transcript trong clip để so.
+      - narrate mà text CHÉP NGUYÊN VĂN transcript (AI lười copy) HOẶC trùng
+        FUZZY > 60% từ với transcript trong ĐÚNG khoảng thời gian part đó
+        (AI diễn giải lại lời nhân vật) -> "orig" (giữ tiếng gốc còn hơn AI
+        đọc lại). Cần `sentences` = [(start, end, text)] transcript để so.
       - clamp start/end vào [clip_start, clip_end].
       - chồng lấn -> cắt start part sau về end part trước (hết chỗ -> bỏ).
       - khoảng hở / đầu / cuối thiếu -> chèn part "orig" lấp kín.
@@ -235,6 +315,10 @@ def validate_parts(parts, clip_start: float, clip_end: float,
             mode = "orig"              # narrate mà không có lời -> giữ tiếng gốc
         if mode == "narrate" and _is_transcript_copy(text, transcript_norm):
             mode, text = "orig", ""    # AI chép transcript -> giữ tiếng gốc
+        if (mode == "narrate" and sentences
+                and _fuzzy_copy_ratio(
+                    text, _window_words(sentences, s, e)) > _FUZZY_COPY_MAX):
+            mode, text = "orig", ""    # AI kể lại lời nhân vật -> tiếng gốc
         clean.append({"start": round(s, 2), "end": round(e, 2),
                       "mode": mode, "text": text if mode == "narrate" else ""})
 
@@ -290,18 +374,20 @@ def narrate_ratio(parts: list[dict]) -> float:
 def write_script(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float,
                  title: str = "",
-                 frames: Optional[list] = None) -> Optional[dict]:
+                 frames: Optional[list] = None,
+                 ratio: float = 55) -> Optional[dict]:
     """Gọi LLM viết kịch bản 1 clip -> {"title","parts"} ĐÃ VALIDATE.
 
     sentences = [(start, end, text)] câu transcript trong phạm vi clip.
     frames = [(giây, đường_dẫn_ảnh)] khung hình gửi kèm (chỉ khi caller đã
-    kiểm llm.vision_available()) — AI NHÌN cảnh để viết lời bám hình; lỗi
+    kiểm llm.vision_available()) — AI NHÌN cảnh để hiểu bối cảnh rồi kể; lỗi
     vision -> tự lùi về prompt chữ thuần (không vỡ luồng).
+    ratio = % thời lượng AI kể user chọn (30-80, mặc định 55).
     Ném llm.LLMError nếu gọi LLM thất bại (caller quyết fail/skip).
     Trả None nếu LLM trả JSON không dùng được (không có part narrate nào).
     """
     prompt = build_prompt(sentences, lang_name, style, clip_start, clip_end,
-                          title, frames=frames)
+                          title, frames=frames, ratio=ratio)
     data = None
     if frames:
         try:
@@ -312,7 +398,7 @@ def write_script(sentences: list, lang_name: str, style: str,
     if data is None:
         if frames:                      # vision fail -> prompt KHÔNG nhắc ảnh
             prompt = build_prompt(sentences, lang_name, style,
-                                  clip_start, clip_end, title)
+                                  clip_start, clip_end, title, ratio=ratio)
         data = llm.complete_json(prompt, system=_SYSTEM)
     if isinstance(data, list):          # model trả thẳng mảng parts
         data = {"parts": data}

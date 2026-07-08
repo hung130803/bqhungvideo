@@ -1306,6 +1306,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         if is_recap:
             # ---- 🎙 REUP THUYẾT MINH: TTS kịch bản -> track narration ----
             # (thay cho lồng tiếng dub thường; dub_lang của mẫu bị bỏ qua)
+            # GIỌNG KỂ: recap_voice từ "Cài đặt Reup thuyết minh" (toàn cục);
+            # rỗng -> dub_voice của payload (mẫu cũ, tương thích ngược) ->
+            # rỗng nốt thì build_recap_track tự chọn theo ngôn ngữ video.
             from app.core import dubbing
             tr_rec = get_analysis(video_id, "transcript") or {}
             lang = (recap_meta.get("lang") or tr_rec.get("language") or "")
@@ -1315,7 +1318,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             temps.append(dw)          # dọn khi job kết thúc (kể cả lỗi/hủy)
             ctx.progress(0.05, f"{pfx}đang thu giọng thuyết minh AI...")
             dub_path, narr_events = dubbing.build_recap_track(
-                recap_parts, segs, payload.get("dub_voice") or "", lang, dw,
+                recap_parts, segs,
+                payload.get("recap_voice") or payload.get("dub_voice") or "",
+                lang, dw,
+                pace=payload.get("recap_pace") or "normal",
                 on_progress=lambda p, m="": ctx.progress(
                     0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
             # Khoảng tắt tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed

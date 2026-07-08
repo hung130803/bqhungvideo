@@ -56,6 +56,31 @@ _MAX_STRETCH = 1.5
 # Số cụm TTS chạy song song (edge-tts qua mạng)
 _TTS_PARALLEL = 4
 
+# 🎙 Reup thuyết minh — NHỊP KỂ user chọn (Cài đặt Reup) -> rate edge-tts.
+# Giá trị NHỎ có chủ đích: fit window (atempo) tự bù phần lệch, rate chỉ đổi
+# "đà" giọng đọc gốc (thong thả vs dồn dập) trước khi khớp khung.
+RECAP_PACES = {"slow": "-3%", "normal": "+0%", "fast": "+4%"}
+
+
+def recap_pace_rate(pace: str) -> str:
+    """Đổi key nhịp kể ('slow'/'normal'/'fast') -> rate edge-tts."""
+    return RECAP_PACES.get(str(pace or "").strip().lower(), "+0%")
+
+
+# Giọng Gemini KHÔNG có tham số rate -> truyền vibe kể chuyện bằng CHỈ DẪN
+# prepend vào text TTS (chỉ dẫn KHÔNG lọt vào phụ đề/words — caller giữ text
+# gốc cho narrate_events).
+_GEMINI_NARRATE_PREFIX = {
+    "vi": "Kể như người kể chuyện lôi cuốn, ngắt nghỉ kịch tính: ",
+    "en": "Narrate like a gripping storyteller, with dramatic pauses: ",
+}
+
+
+def gemini_narrate_prefix(lang: str) -> str:
+    """Chỉ dẫn kể chuyện prepend vào text Gemini TTS, theo ngôn ngữ video."""
+    return _GEMINI_NARRATE_PREFIX.get(norm_lang(lang),
+                                      _GEMINI_NARRATE_PREFIX["en"])
+
 # Ngôn ngữ hỗ trợ -> [(nhãn hiển thị, voice_id NỮ), (nhãn, voice_id NAM)]
 VOICES: dict[str, list[tuple[str, str]]] = {
     "vi": [("Nữ — Hoài My", "vi-VN-HoaiMyNeural"),
@@ -263,6 +288,30 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
     return gem + (edge or static)
 
 
+def list_recap_voices() -> list[tuple[str, str]]:
+    """Giọng gợi ý cho GIỌNG KỂ Reup thuyết minh (chưa biết ngôn ngữ video
+    lúc cài đặt -> gom giọng dùng được cho MỌI kênh): nhóm 🌟 Gemini (chỉ khi
+    có key) + các giọng ⭐ HOT edge-tts (đa ngữ Multilingual lên đầu, rồi theo
+    locale). Offline/lỗi mạng -> fallback danh sách tĩnh VOICES."""
+    gem = _gemini_voice_items() if _gemini_available() else []
+    out: list[tuple[str, str]] = []
+    allv = _fetch_all_voices()
+    if allv:
+        hot = [v for v in allv if v.get("ShortName") in _HOT_VOICES]
+        hot.sort(key=lambda v: (
+            0 if "multilingual" in v["ShortName"].lower() else 1,
+            v.get("Locale", ""), v.get("ShortName", "")))
+        out = [(_voice_label(v), v["ShortName"]) for v in hot]
+    if not out:                          # offline -> giọng tĩnh đã kiểm chứng
+        seen: set = set()
+        for lang, vs in VOICES.items():
+            for lbl, vid in vs:
+                if vid not in seen:
+                    seen.add(vid)
+                    out.append((f"{lbl} ({LANG_LABELS.get(lang, lang)})", vid))
+    return gem + out
+
+
 # ------------------------------------------------------------------
 # Gemini TTS (REST thuần — urllib stdlib, không thêm dependency)
 # ------------------------------------------------------------------
@@ -384,13 +433,18 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
                       lang: str,
                       on_done: Optional[Callable[[int], None]] = None,
                       on_msg: Optional[Callable[[str], None]] = None,
+                      edge_rate: str = "+0%",
+                      gemini_prefix: str = "",
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua Gemini TTS (hạn mức free thấp — KHÔNG chạy
     song song; _gemini_tts tự retry 429 theo retryDelay). CẢ 2 cụm đầu (không
     rỗng) đều lỗi -> coi như hết hạn mức: CHUYỂN CẢ TRACK sang edge-tts giọng
     dự phòng của ngôn ngữ NGAY TỪ ĐẦU (tránh nửa clip giọng này nửa giọng
     kia). Cụm lỗi lẻ tẻ giữa chừng -> ok[i]=False, bỏ riêng cụm đó (như edge).
-    Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội dung)."""
+    Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội dung).
+    gemini_prefix: CHỈ DẪN giọng điệu prepend vào text khi gọi Gemini (recap
+    kể chuyện) — KHÔNG áp cho đường fallback edge-tts (edge sẽ ĐỌC to chỉ
+    dẫn thành lời); edge_rate: rate cho đường fallback edge-tts."""
     ok = [False] * len(texts)
     n_nonempty = sum(1 for t in texts if (t or "").strip())
     head_need = max(1, min(2, n_nonempty))  # số cụm đầu fail -> fallback
@@ -402,18 +456,20 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
             if on_done:
                 on_done(i)
             continue
-        good = _gemini_tts(txt, voice, paths[i])
+        good = _gemini_tts(gemini_prefix + txt, voice, paths[i])
         ok[i] = good
         seen += 1
         if not good and head_fail == seen - 1:
             head_fail += 1
         if head_fail >= head_need:
             # Hết hạn mức/lỗi ngay từ đầu -> đổi CẢ track sang edge-tts
+            # (text GỐC không prefix — edge đọc to mọi chữ trong text)
             fb = _edge_fallback_voice(lang)
             if on_msg:
                 on_msg("Gemini hết hạn mức -> dùng giọng dự phòng "
                        f"({fb})...")
-            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done))
+            return asyncio.run(_synth_all(texts, fb, paths, on_done=on_done,
+                                          rate=edge_rate))
         if on_done:
             on_done(i)
         time.sleep(1.0 if not good else 0.3)  # nghỉ nhẹ — tôn trọng hạn mức
@@ -437,10 +493,12 @@ _DEMO_TEXTS = {
 }
 
 
-def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None) -> bool:
+def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
+               rate: str = "+0%") -> bool:
     """Đọc thử 1 câu ngắn bằng giọng `voice` -> file mp3. Câu mẫu tự chọn
     theo ngôn ngữ của giọng (vi-VN-... -> câu tiếng Việt). True nếu ra file
-    hợp lệ; False nếu lỗi (mạng, giọng sai...)."""
+    hợp lệ; False nếu lỗi (mạng, giọng sai...).
+    rate: tốc độ edge-tts (nghe thử nhịp kể recap); Gemini bỏ qua rate."""
     voice = (voice or "").strip()
     if not voice:
         return False
@@ -456,7 +514,7 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None) -> bool
 
     async def _run() -> None:
         import edge_tts
-        await edge_tts.Communicate(txt, voice, rate="+0%").save(out_mp3)
+        await edge_tts.Communicate(txt, voice, rate=rate).save(out_mp3)
 
     for _ in range(2):                  # mạng chập chờn -> thử lại 1 lần
         try:
@@ -575,10 +633,12 @@ def _translate_chunks(chunks: list[dict], target_lang: str) -> list[str]:
 # ------------------------------------------------------------------
 async def _synth_all(texts: list[str], voice: str, paths: list[str],
                      on_done: Optional[Callable[[int], None]] = None,
+                     rate: str = "+0%",
                      ) -> list[bool]:
     """Đọc từng câu song song. Trả list[bool] ok[i] = câu #i ra file hợp lệ.
     Câu lỗi (retry 3 lần vẫn hỏng) -> ok[i]=False (KHÔNG ném lỗi cả track):
-    caller sẽ BỎ RIÊNG cụm đó, các cụm khác giữ ĐÚNG mốc (không dồn/lệch)."""
+    caller sẽ BỎ RIÊNG cụm đó, các cụm khác giữ ĐÚNG mốc (không dồn/lệch).
+    rate: tốc độ edge-tts ("-3%"/"+0%"/"+4%"...) — nhịp kể recap."""
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
@@ -592,7 +652,7 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                 return
             for attempt in range(3):        # mạng chập chờn -> thử lại
                 try:
-                    comm = edge_tts.Communicate(txt, voice, rate="+0%")
+                    comm = edge_tts.Communicate(txt, voice, rate=rate)
                     await comm.save(paths[i])
                     if os.path.getsize(paths[i]) > 200:
                         ok[i] = True
@@ -613,6 +673,7 @@ _WB_TICKS = 10_000_000.0
 
 async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
+                           rate: str = "+0%",
                            ) -> tuple[list[bool], list[list]]:
     """Như _synth_all nhưng THU thêm WORD BOUNDARY của edge-tts (stream API:
     chunk type "WordBoundary" có offset/duration 100-ns) -> mốc TỪNG TỪ theo
@@ -621,6 +682,8 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
     Trả (ok, words): ok[i] như _synth_all; words[i] = [[start_s, end_s, từ],
     ...] tăng dần theo thời gian (rỗng nếu cụm rỗng/lỗi/không có event).
     CHỈ edge-tts có event này — giọng Gemini dùng đường khác (không words).
+    rate: nhịp kể recap ("-3%"/"+0%"/"+4%") — WordBoundary do server trả theo
+    audio THẬT (đã áp rate) nên mốc từng từ vẫn đúng, không cần bù.
     """
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
@@ -640,10 +703,10 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                     try:
                         # edge-tts >=7 mặc định SentenceBoundary -> phải xin
                         # WordBoundary tường minh
-                        comm = edge_tts.Communicate(txt, voice, rate="+0%",
+                        comm = edge_tts.Communicate(txt, voice, rate=rate,
                                                     boundary="WordBoundary")
                     except TypeError:       # edge-tts <7: luôn WordBoundary
-                        comm = edge_tts.Communicate(txt, voice, rate="+0%")
+                        comm = edge_tts.Communicate(txt, voice, rate=rate)
                     with open(paths[i], "wb") as f:
                         async for ch in comm.stream():
                             if ch["type"] == "audio" and ch.get("data"):
@@ -808,6 +871,7 @@ def _map_to_output(t: float, clip_segments: list) -> Optional[float]:
 def build_recap_track(parts: list, clip_segments: list, voice: str,
                       lang: str, out_wav: str | Path,
                       on_progress: Optional[Callable[[float, str], None]] = None,
+                      pace: str = "normal",
                       ) -> tuple[str, list[dict]]:
     """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
 
@@ -815,6 +879,11 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     GỐC (app/ai/recap.py đã validate). Chỉ part mode="narrate" được đọc.
     clip_segments: các khúc của clip -> mốc part được ÁNH XẠ về timeline đầu ra.
     voice: giọng edge-tts hoặc "gemini:...". lang: để chọn giọng dự phòng.
+    pace: nhịp kể "slow"/"normal"/"fast" (Cài đặt Reup) -> rate edge-tts
+    (-3%/0%/+4%); giọng Gemini không có rate -> prepend CHỈ DẪN kể chuyện vào
+    text TTS (chỉ dẫn không lọt narrate_events/phụ đề). Fit window (atempo)
+    tự bù nên mốc part vẫn khít; WordBoundary thu theo audio thật (đã áp
+    rate) nên mốc từng từ vẫn đúng.
 
     narrate_events = [{"start","end","text"[,"words"]}] trên timeline ĐẦU RA
     (chưa speed) — dùng cho phụ đề thuyết minh + duck_ranges (tắt tiếng gốc).
@@ -850,6 +919,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         raise RuntimeError("Kịch bản không có part thuyết minh hợp lệ.")
 
     texts = [n["text"] for n in narr]
+    rate = recap_pace_rate(pace)
     with tempfile.TemporaryDirectory(prefix="recap_") as td:
         mp3s = [os.path.join(td, f"n{i}.mp3") for i in range(len(narr))]
         done = {"n": 0}
@@ -865,14 +935,19 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # narrate fallback chia theo ký tự (m1._recap_caption_cues).
             # (_synth_all_gemini có thể tự đổi cả track sang edge-tts khi hết
             # hạn mức — đường đó cũng không thu words, chấp nhận fallback.)
+            # Gemini không có rate -> prepend chỉ dẫn kể chuyện vào text TTS
+            # (chỉ khi gọi Gemini — narr events GIỮ text gốc nên chỉ dẫn
+            # không lọt phụ đề/words; fallback edge cũng dùng text gốc).
             prog(0.05, f"Thu giọng {len(narr)} đoạn (Gemini TTS)...")
             ok = _synth_all_gemini(texts, voice, mp3s, norm_lang(lang),
                                    on_done=_tts_done,
-                                   on_msg=lambda m: prog(0.06, m))
+                                   on_msg=lambda m: prog(0.06, m),
+                                   edge_rate=rate,
+                                   gemini_prefix=gemini_narrate_prefix(lang))
         else:
             prog(0.05, f"Thu giọng {len(narr)} đoạn (edge-tts)...")
             ok, word_lists = asyncio.run(_synth_all_words(
-                texts, voice, mp3s, on_done=_tts_done))
+                texts, voice, mp3s, on_done=_tts_done, rate=rate))
         if not any(ok):
             raise RuntimeError(
                 "TTS thuyết minh thất bại toàn bộ (mạng/giọng lỗi) — "

@@ -152,13 +152,17 @@ def _clip_frames(src: str, start: float, end: float, tmp_dir: str,
 def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
-    payload: {video_id, preset: {..., recap_style}}. Kết quả: các dòng clips
+    payload: {video_id, preset: {..., recap_style, recap_ratio}}. Kết quả: các dòng clips
     status='suggested' kèm signals.recap (kịch bản). Lỗi LLM -> ném lỗi rõ.
     """
     video_id = int(payload["video_id"])
     preset = payload.get("preset") or {}
     cfg = {**DEFAULTS, **preset}
     style = str(preset.get("recap_style") or recap.DEFAULT_STYLE)
+    try:                              # tỉ lệ AI kể (30-80%) từ Cài đặt Reup
+        ratio = float(preset.get("recap_ratio") or 55)
+    except (TypeError, ValueError):
+        ratio = 55.0
 
     if not llm.is_configured():
         raise RuntimeError(
@@ -235,7 +239,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             try:
                 sc = recap.write_script(sents, lang_name, style, s0, e1,
                                         title=c.get("title", ""),
-                                        frames=frames)
+                                        frames=frames, ratio=ratio)
             except llm.LLMError as e:
                 errors.append(str(e))
                 sc = None

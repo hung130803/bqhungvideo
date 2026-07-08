@@ -208,10 +208,10 @@ class StudioPage(QWidget):
         self.recap_btn = QPushButton("🎙 Reup thuyết minh")
         self.recap_btn.setProperty("ghost", True); self.recap_btn.setMinimumHeight(32)
         self.recap_btn.setToolTip(
-            "AI hiểu nội dung video rồi viết KỊCH BẢN THUYẾT MINH kiểu kênh "
-            "recap: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt) xen kẽ đoạn GIỌNG AI "
-            "kể/dẫn/bình (video tắt tiếng) — thuyết minh bằng ĐÚNG ngôn ngữ "
-            "video, giọng đọc = giọng lồng tiếng của mẫu.")
+            "AI hiểu nội dung video rồi TỰ SÁNG TÁC lời KỂ CHUYỆN kiểu kênh "
+            "recap: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt) xen kẽ đoạn GIỌNG "
+            "AI kể (video tắt tiếng) — kể bằng ĐÚNG ngôn ngữ video. Giọng "
+            "kể/tỉ lệ/nhịp chỉnh ở nút ⚙ bên cạnh.")
         self.recap_btn.clicked.connect(self._auto_recap)
         actrow.addWidget(self.recap_btn)
         from app.ai.recap import STYLES as _RECAP_STYLES
@@ -225,6 +225,17 @@ class StudioPage(QWidget):
             lambda _i: self._settings.setValue(
                 "recap_style", self.recap_style.currentData() or "story"))
         actrow.addWidget(self.recap_style)
+        # ⚙ CÀI ĐẶT RIÊNG cho Reup thuyết minh: giọng kể / phong cách /
+        # tỉ lệ AI kể / nhịp kể (QSettings toàn cục — không dính vào mẫu)
+        self.recap_cfg_btn = QPushButton("⚙")
+        self.recap_cfg_btn.setProperty("ghost", True)
+        self.recap_cfg_btn.setFixedWidth(34)
+        self.recap_cfg_btn.setMinimumHeight(32)
+        self.recap_cfg_btn.setToolTip(
+            "Cài đặt Reup thuyết minh: giọng kể, phong cách, tỉ lệ AI kể, "
+            "nhịp kể.")
+        self.recap_cfg_btn.clicked.connect(self._recap_settings)
+        actrow.addWidget(self.recap_cfg_btn)
         actrow.addStretch(1)
         self.auto_export_chk = QCheckBox("Phân tích xong tự động xuất")
         self.auto_export_chk.setToolTip(
@@ -2133,6 +2144,21 @@ class StudioPage(QWidget):
         self.status.setText("Đang phân tích & ghép Mixed-Cut... clip sẽ hiện "
                             "trong danh sách khi xong (xem tiến trình dưới).")
 
+    def _recap_settings(self):
+        """⚙ mở 'Cài đặt Reup thuyết minh' rồi ĐỒNG BỘ lại combo phong cách
+        ngoài màn hình chính (dialog + combo dùng chung key QSettings)."""
+        from app.ui.recap_settings import RecapSettingsDialog
+        dlg = RecapSettingsDialog(self)
+        if dlg.exec():
+            style = str(self._settings.value("recap_style", "story") or "story")
+            i = self.recap_style.findData(style)
+            if i >= 0 and i != self.recap_style.currentIndex():
+                # setCurrentIndex sẽ bắn signal -> ghi lại QSettings cùng giá
+                # trị (vô hại), không cần blockSignals
+                self.recap_style.setCurrentIndex(i)
+            self.status.setText("Đã lưu cài đặt Reup thuyết minh (áp dụng "
+                                "cho mọi kênh).")
+
     def _auto_recap(self):
         """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
         if not self.state.video_id:
@@ -2143,6 +2169,10 @@ class StudioPage(QWidget):
             return
         preset = self._cut_preset()
         preset["recap_style"] = self.recap_style.currentData() or "story"
+        try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
+            preset["recap_ratio"] = int(self._settings.value("recap_ratio", 55))
+        except (TypeError, ValueError):
+            preset["recap_ratio"] = 55
         services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                     self.state.project_id, preset)
         self.status.setText(
@@ -2961,6 +2991,11 @@ class StudioPage(QWidget):
                 dub_voice=self.layout_tpl.get("dub_voice", "") or "",
                 dub_mute=bool(self.layout_tpl.get("dub_mute", False)),
                 dub_mode=self.layout_tpl.get("dub_mode", "natural") or "natural",
+                # 🎙 giọng + nhịp KỂ từ ⚙ Cài đặt Reup (toàn cục, KHÔNG theo
+                # mẫu) — chỉ clip có signals.recap dùng; clip thường bỏ qua
+                recap_voice=str(self._settings.value("recap_voice", "") or ""),
+                recap_pace=str(self._settings.value("recap_pace", "normal")
+                               or "normal"),
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 fx_sfx_dir=self._pick_sfx_dir(),
