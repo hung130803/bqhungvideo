@@ -12,8 +12,10 @@ viết KỊCH BẢN chia clip thành các PART xen kẽ:
 Prompt viết theo vai NGƯỜI KỂ CHUYỆN kênh triệu view: cấm lặp lại/diễn giải
 lại lời nhân vật, phải THÊM cái transcript không có (cảm xúc, phán đoán, bình
 luận, câu hỏi khán giả, thông tin nền), lời kể DẪN MỒI vào đoạn tiếng gốc kế
-tiếp. Giữ công thức viral: part ĐẦU TIÊN là narrate HOOK (2-3 giây đầu quyết
-định giữ chân), tuần tự thời gian, câu ngắn văn nói, đếm chữ khít khung.
+tiếp. KHUÔN CẤU TRÚC kênh recap thật (v7 — _structure_rules): người kể nói
+CHỦ ĐẠO thành KHỐI DÀI 8-25s (2-5 câu liền mạch, hook đầu 3-6s), tiếng gốc
+chỉ BUNG 3-12s ở khoảnh khắc đắt (~2-4 lần/clip), CẤM ping-pong đổi vai vụn;
+mạch: HOOK -> DỰNG CHUYỆN -> BUNG GỐC -> KỂ TIẾP -> BUNG GỐC -> CHỐT.
 Nếu có ẢNH khung hình (vision), AI nhìn cảnh để hiểu bối cảnh rồi kể.
 
 Output JSON: {"title": "...", "parts": [{"start": s, "end": e,
@@ -23,7 +25,11 @@ Các part PHỦ KÍN [clip_start, clip_end] theo thứ tự thời gian.
 validate_parts() là hàm THUẦN (không LLM) tự sửa output hỏng: clamp vào phạm
 vi clip, bỏ part rác, mode lạ -> orig, chồng lấn -> cắt, khoảng hở -> chèn
 part orig, narrate rỗng/COPY transcript (kể cả FUZZY: trùng >60% từ với
-transcript trong đúng khoảng thời gian đó) -> orig. Có unit-test riêng.
+transcript trong đúng khoảng thời gian đó) -> orig; SỬA CẤU TRÚC chống
+ping-pong (_fix_structure + _limit_role_changes): narrate vụn kẹp giữa 2
+orig -> gộp vào orig, orig <3s -> gộp vào narrate kề, quá 2 cú bung/window
+-> giữ cú dài nhất, quá 8 lần đổi vai/clip -> gộp cặp ngắn nhất.
+Có unit-test riêng.
 """
 from __future__ import annotations
 
@@ -110,15 +116,76 @@ _SYSTEM = (
     "đứng NGOÀI video, kể về nhân vật và sự việc trong video cho khán giả "
     "của bạn nghe — như một người dẫn chuyện lôi cuốn, KHÔNG phải người "
     "thuật lại lời thoại. Bạn tự hiểu bối cảnh + nội dung + lời thoại rồi "
-    "TỰ SÁNG TÁC lời kể hấp dẫn của riêng mình, chia clip thành các đoạn "
-    "XEN KẼ: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt nhất — để nhân vật tự nói) "
-    "và đoạn BẠN KỂ (video tắt tiếng, chỉ còn giọng bạn). 2-3 giây đầu quyết "
-    "định người xem ở lại hay lướt — câu mở phải gây sốc/tò mò tức thì. "
-    "CHỈ trả JSON thuần, không thêm chữ nào khác.")
+    "TỰ SÁNG TÁC lời kể hấp dẫn của riêng mình. GIỌNG BẠN LÀ CHỦ ĐẠO: bạn "
+    "kể thành KHỐI DÀI liền mạch trên nền hình (video tắt tiếng); tiếng "
+    "gốc chỉ được BUNG ngắn ở đúng khoảnh khắc đắt nhất (để nhân vật tự "
+    "nói) — KHÔNG nói vụn 1-2 câu rồi nhả về tiếng gốc kiểu ping-pong. "
+    "2-3 giây đầu quyết định người xem ở lại hay lướt — câu mở phải gây "
+    "sốc/tò mò tức thì. CHỈ trả JSON thuần, không thêm chữ nào khác.")
 
 # Tốc độ đọc TTS để AI canh độ dài lời thuyết minh (ghi thẳng vào prompt)
 _RATE_HINT = ("Tốc độ giọng đọc AI: tiếng Anh ~2.3 từ/giây, tiếng Việt ~3.5 "
               "âm tiết/giây (ngôn ngữ khác tương đương ~2.5 từ/giây).")
+
+# ------------------------------------------------------------------
+# KHUÔN CẤU TRÚC KÊNH RECAP THẬT (v7): người kể nói CHỦ ĐẠO thành KHỐI DÀI
+# (8-25s = 2-5 câu liền mạch), tiếng gốc chỉ BUNG ngắn (3-12s) ở khoảnh
+# khắc đắt (~2-4 lần/clip) — hết kiểu ping-pong nói vụn 1-2 câu rồi nhả về
+# gốc. Ngưỡng dùng CHUNG cho prompt + validate (đổi 1 chỗ, 2 nơi cùng theo).
+# ------------------------------------------------------------------
+_NARR_MIN_S = 8            # khối kể thường 8-25 giây (2-5 câu liền mạch)
+_NARR_MAX_S = 25
+_HOOK_MIN_S = 3            # hook đầu clip 3-6 giây
+_HOOK_MAX_S = 6
+_ORIG_MIN_S = 3            # cú bung tiếng gốc 3-12 giây
+_ORIG_MAX_S = 12
+# Ngưỡng SỬA CẤU TRÚC trong validate (chống ping-pong):
+_STRUCT_NARR_MIN = 6.0     # narrate < 6s kẹp giữa 2 orig (không phải hook) -> gộp vào orig
+_STRUCT_ORIG_MIN = 3.0     # orig < 3s -> gộp vào narrate kề
+_MAX_ORIG_BREAKS = 2       # tối đa số lần bung tiếng gốc MỖI window
+_MAX_ROLE_CHANGES = 8      # tối đa TỔNG số lần đổi vai narrate<->orig cả clip
+
+
+def _structure_rules(per_window: bool = False) -> str:
+    """KHUÔN CẤU TRÚC kênh recap thật — dùng CHUNG cho prompt 1-span
+    (build_prompt) và prompt đạo diễn (build_director_prompt): người kể nói
+    chủ đạo khối dài, tiếng gốc chỉ bung ở khoảnh khắc đắt, cấm ping-pong.
+    per_window=True -> thêm trần số lần bung TỪNG KHUNG CẢNH (đạo diễn)."""
+    return (
+        "KHUÔN CẤU TRÚC CLIP (bắt buộc — dựng kịch bản theo ĐÚNG từng "
+        "bước):\n"
+        f"  B1. HOOK — narrate {_HOOK_MIN_S}-{_HOOK_MAX_S} giây: 1 câu mở "
+        "gây SỐC/TÒ MÒ tức thì.\n"
+        f"  B2. DỰNG CHUYỆN — narrate KHỐI DÀI {_NARR_MIN_S}-{_NARR_MAX_S} "
+        "giây (2-5 câu LIỀN MẠCH): bạn kể trên nền hình (video câm) — ai, "
+        "chuyện gì, vì sao đáng xem; CUỐI khối DẪN MỒI vào tiếng gốc "
+        "(kiểu: \"Và nghe gã nói câu này...\").\n"
+        f"  B3. BUNG TIẾNG GỐC lần 1 — orig {_ORIG_MIN_S}-{_ORIG_MAX_S} "
+        "giây: khoảnh khắc đắt (câu nói hay nhất / tiếng động / cao trào) "
+        "— để nhân vật TỰ nói.\n"
+        f"  B4. KỂ TIẾP ĐẨY CĂNG — narrate khối dài {_NARR_MIN_S}-"
+        f"{_NARR_MAX_S} giây: bình luận + đẩy căng thẳng, dẫn mồi cú bung "
+        "kế tiếp.\n"
+        f"  B5. BUNG TIẾNG GỐC lần 2 — orig {_ORIG_MIN_S}-{_ORIG_MAX_S} "
+        "giây: khoảnh khắc ĐỈNH NHẤT clip.\n"
+        f"  B6. CHỐT — narrate {_NARR_MIN_S}-{_NARR_MAX_S} giây: câu chốt "
+        "đắt + KÊU GỌI tương tác.\n"
+        "  (Clip DÀI -> chèn thêm cặp KỂ DÀI -> BUNG GỐC ở giữa; clip NGẮN "
+        "-> bỏ B4+B5 — nhưng THỨ TỰ các bước KHÔNG đổi.)\n"
+        "ĐỘ DÀI PART (bắt buộc):\n"
+        f"- Part narrate (trừ hook) dài {_NARR_MIN_S}-{_NARR_MAX_S} giây = "
+        "2-5 câu LIỀN MẠCH có nhịp — chỗ nhiều chỗ ít LINH HOẠT theo "
+        "chuyện, CẤM chia đều tăm tắp.\n"
+        f"- Part orig dài {_ORIG_MIN_S}-{_ORIG_MAX_S} giây; CẢ CLIP chỉ "
+        "BUNG tiếng gốc 2-4 lần"
+        + (" — MỖI khung cảnh TỐI ĐA 1-2 lần bung" if per_window else "")
+        + "; trước MỖI lần bung phải có lời DẪN MỒI.\n"
+        "CẤM PING-PONG (nói vụn 1-2 câu rồi nhả về tiếng gốc — nghe như "
+        "người chen ngang lúc nhân vật đang nói, nghiệp dư):\n"
+        f"- CẤM part narrate < {_STRUCT_NARR_MIN:.0f} giây kẹp giữa 2 part "
+        "orig (trừ HOOK đầu clip).\n"
+        f"- CẤM part orig < {_STRUCT_ORIG_MIN:.0f} giây.\n"
+        "- CẤM quá 2 lần đổi vai narrate<->orig trong bất kỳ 20 giây nào.\n")
 
 
 def style_label(key: str) -> str:
@@ -379,41 +446,45 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "nói) / narrate (lời KỂ của bạn).\n\n"
         + _narrator_rules(ln, style) + "\n"
         "CÔNG THỨC VIRAL (bắt buộc):\n"
-        "1) HOOK 2-3 GIÂY ĐẦU: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở "
-        "phải gây SỐC hoặc TÒ MÒ tức thì (kiểu: \"Bạn sẽ không tin điều gã "
-        "này sắp làm...\"). CẤM mở đầu nhạt kiểu \"Trong video này...\", "
-        "\"Hôm nay chúng ta...\", \"Xin chào...\".\n"
-        "2) MẠCH CHUYỆN mini story-arc theo ĐÚNG TRÌNH TỰ THỜI GIAN video: "
-        "hook -> dựng bối cảnh THẬT NHANH -> đẩy căng thẳng -> twist/đỉnh "
-        "điểm -> kết mở hoặc câu hỏi tương tác cho người xem. Người LẠ chưa "
-        "xem video gốc phải hiểu TRỌN câu chuyện (có mở-thân-kết), CẤM nhảy "
-        "cóc.\n"
-        "3) ĐOẠN GIỮ TIẾNG GỐC (orig) = ĐỒNG ĐẮT: đọc transcript và chọn "
+        + _structure_rules() +
+        "- HOOK: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở phải gây SỐC "
+        "hoặc TÒ MÒ tức thì (kiểu: \"Bạn sẽ không tin điều gã này sắp "
+        "làm...\"). CẤM mở đầu nhạt kiểu \"Trong video này...\", \"Hôm nay "
+        "chúng ta...\", \"Xin chào...\".\n"
+        "- MẠCH CHUYỆN theo ĐÚNG TRÌNH TỰ THỜI GIAN video. Người LẠ chưa "
+        "xem video gốc phải hiểu TRỌN câu chuyện (có mở-thân-kết), CẤM "
+        "nhảy cóc.\n"
+        "- ĐOẠN GIỮ TIẾNG GỐC (orig) = ĐỒNG ĐẮT: đọc transcript và chọn "
         "đúng câu nói/tiếng động/cảm xúc MẠNH NHẤT (câu chốt, tiếng hét, "
         "khoảnh khắc vỡ òa) làm twist/đỉnh điểm — KHÔNG chọn đoạn nói "
         "chuyện thường.\n"
-        "4) Mỗi câu narrate phải THÊM thông tin, cảm xúc hoặc góc nhìn mới "
+        "- Mỗi khối narrate phải THÊM thông tin, cảm xúc hoặc góc nhìn mới "
         "— CẤM tả lại y nguyên cái người xem tự thấy trên hình.\n\n"
         "QUY TẮC KỸ THUẬT:\n"
         f"- Chia CLIP thành các part PHỦ KÍN từ {clip_start:.1f}s đến "
         f"{clip_end:.1f}s, theo ĐÚNG thứ tự thời gian, KHÔNG chồng lấn, "
         "KHÔNG hở, KHÔNG đảo đoạn.\n"
-        "- Mỗi part dài 3-15 giây. mode = \"orig\" hoặc \"narrate\".\n"
+        f"- Độ dài part theo KHUÔN CẤU TRÚC ở trên: narrate {_NARR_MIN_S}-"
+        f"{_NARR_MAX_S} giây (hook {_HOOK_MIN_S}-{_HOOK_MAX_S} giây), orig "
+        f"{_ORIG_MIN_S}-{_ORIG_MAX_S} giây. mode = \"orig\" hoặc "
+        "\"narrate\".\n"
         "- start/end của MỖI part phải trùng mép câu transcript (không cắt "
         "ngang giữa câu nói).\n"
         f"- Tổng thời lượng narrate chiếm ~{pct}% clip (chấp nhận "
-        f"{max(20, pct - 10)}-{min(90, pct + 10)}%); XEN KẼ với orig cho "
-        "nhịp nhàng.\n"
+        f"{max(20, pct - 10)}-{min(90, pct + 10)}%) — người kể nói CHỦ "
+        "ĐẠO, tiếng gốc chỉ bung đúng chỗ đắt.\n"
         f"- text của part narrate: viết BẰNG {ln} (ĐÚNG ngôn ngữ video), "
-        "văn NÓI tự nhiên.\n"
+        "văn NÓI tự nhiên — khối dài = 2-5 câu NGẮN nối nhau LIỀN MẠCH "
+        "cùng 1 mạch ý.\n"
         f"- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate phải đọc VỪA KHÍT độ dài "
-        "part (part 6 giây tiếng Anh ~13-14 từ). ĐỪNG viết dài quá — sẽ bị "
-        "cắt.\n"
+        "part (part 10 giây tiếng Anh ~20 từ, part 20 giây ~41-46 từ). "
+        "ĐỪNG viết dài quá — sẽ bị cắt.\n"
         "- TRẦN CỨNG SỐ CHỮ (hệ số an toàn 0.9): TUYỆT ĐỐI KHÔNG viết quá "
-        "(số_giây_part × 2.3 × 0.9) từ tiếng Anh cho part đó — part 6 giây "
-        "tối đa 12 từ, part 10 giây tối đa 20 từ (tiếng Việt: số_giây × 3.5 "
-        "× 0.9 ≈ 3 âm tiết/giây). ĐẾM LẠI từng part trước khi trả — lời vượt "
-        "trần SẼ BỊ CẮT CỤT giữa câu khi đọc.\n"
+        "(số_giây_part × 2.3 × 0.9) từ tiếng Anh cho part đó — hook 6 giây "
+        "tối đa 12 từ, part 10 giây tối đa 20 từ, part 20 giây tối đa 41 "
+        "từ (tiếng Việt: số_giây × 3.5 × 0.9 ≈ 3 âm tiết/giây). ĐẾM LẠI "
+        "từng part trước khi trả — lời vượt trần SẼ BỊ CẮT CỤT giữa câu "
+        "khi đọc.\n"
         "- part orig KHÔNG cần text (để chuỗi rỗng).\n"
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
@@ -705,9 +776,149 @@ def _coerce_parts(raw) -> list:
     return out
 
 
+def _part_dur(p: dict) -> float:
+    return float(p["end"]) - float(p["start"])
+
+
+def _merge_orig_adjacent(parts: list[dict], gap: float = 0.3) -> list[dict]:
+    """Gộp các part orig liền kề (đỡ vụn). Hàm thuần."""
+    if not parts:
+        return []
+    merged: list[dict] = [dict(parts[0])]
+    for p in parts[1:]:
+        if (p["mode"] == "orig" and merged[-1]["mode"] == "orig"
+                and abs(p["start"] - merged[-1]["end"]) < gap):
+            merged[-1]["end"] = p["end"]
+        else:
+            merged.append(dict(p))
+    return merged
+
+
+def _fix_structure(parts: list[dict],
+                   max_orig_breaks: int = _MAX_ORIG_BREAKS) -> list[dict]:
+    """SỬA CẤU TRÚC chống PING-PONG trong 1 window/clip (hàm thuần —
+    unit test được). parts đã SẠCH (sorted, phủ kín, orig kề đã gộp):
+
+      (a) part narrate < _STRUCT_NARR_MIN kẹp giữa 2 part orig (không phải
+          part ĐẦU = hook) -> GỘP cả 3 thành 1 orig (bỏ lời vụn — người
+          xem nghe tiếng gốc liền mạch thay vì bị chen ngang 1-2 câu).
+      (b) part orig < _STRUCT_ORIG_MIN -> gộp vào part narrate KỀ (ưu tiên
+          narrate dài hơn) — cú bung tiếng gốc ngắn hơn 3s nghe như hụt.
+      (c) quá max_orig_breaks lần BUNG tiếng gốc -> giữ các orig DÀI NHẤT,
+          phần còn lại: có lời gốc hợp lệ (_otext — orig LLM trả kèm text
+          đã qua anti-copy) -> chuyển narrate; không -> gộp vào narrate kề.
+
+    Ranh giới part sau sửa vẫn PHỦ KÍN đúng khoảng cũ (chỉ gộp, không tạo
+    hở/chồng lấn). Trả list part mới (đã gộp orig kề lần cuối)."""
+    out = [dict(p) for p in parts]
+
+    # ---- (b) orig quá ngắn -> gộp vào narrate kề (ưu tiên narrate dài hơn)
+    changed = True
+    while changed:
+        changed = False
+        for i, p in enumerate(out):
+            if p["mode"] != "orig" or _part_dur(p) >= _STRUCT_ORIG_MIN:
+                continue
+            prv = (out[i - 1] if i > 0
+                   and out[i - 1]["mode"] == "narrate" else None)
+            nxt = (out[i + 1] if i + 1 < len(out)
+                   and out[i + 1]["mode"] == "narrate" else None)
+            if prv is None and nxt is None:
+                continue                # không có narrate kề -> đành giữ
+            if nxt is None or (prv is not None
+                               and _part_dur(prv) >= _part_dur(nxt)):
+                prv["end"] = p["end"]
+            else:
+                nxt["start"] = p["start"]
+            del out[i]
+            changed = True
+            break
+
+    # ---- (a) narrate vụn kẹp giữa 2 orig (trừ hook đầu) -> gộp 3 thành 1 orig
+    changed = True
+    while changed:
+        changed = False
+        for i in range(1, len(out) - 1):
+            p = out[i]
+            if (p["mode"] == "narrate"
+                    and _part_dur(p) < _STRUCT_NARR_MIN
+                    and out[i - 1]["mode"] == "orig"
+                    and out[i + 1]["mode"] == "orig"):
+                out[i - 1]["end"] = out[i + 1]["end"]
+                del out[i:i + 2]
+                changed = True
+                break
+
+    # ---- (c) quá số lần bung tiếng gốc cho phép -> giữ các orig DÀI nhất
+    origs = [i for i, p in enumerate(out) if p["mode"] == "orig"]
+    if len(origs) > max_orig_breaks:
+        keep = set(sorted(origs, key=lambda i: _part_dur(out[i]),
+                          reverse=True)[:max_orig_breaks])
+        for i in [j for j in origs if j not in keep][::-1]:
+            p = out[i]
+            otext = str(p.get("_otext") or "").strip()
+            if otext:                   # orig có lời hợp lệ -> thành narrate
+                out[i] = dict(p, mode="narrate", text=otext)
+                continue
+            prv = (out[i - 1] if i > 0
+                   and out[i - 1]["mode"] == "narrate" else None)
+            nxt = (out[i + 1] if i + 1 < len(out)
+                   and out[i + 1]["mode"] == "narrate" else None)
+            if prv is None and nxt is None:
+                continue                # không có narrate kề -> đành giữ
+            if nxt is None or (prv is not None
+                               and _part_dur(prv) >= _part_dur(nxt)):
+                prv["end"] = p["end"]
+            else:
+                nxt["start"] = p["start"]
+            del out[i]
+    return _merge_orig_adjacent(out)
+
+
+def _limit_role_changes(parts: list[dict],
+                        max_changes: int = _MAX_ROLE_CHANGES,
+                        barriers=()) -> list[dict]:
+    """(d) TỔNG số lần đổi vai narrate<->orig cả clip > max_changes -> gộp
+    bớt từ các CẶP KỀ NGẮN NHẤT: part ngắn hơn bị NUỐT vào mode của part
+    dài hơn (narrate bị nuốt thì bỏ lời; orig bị nuốt thì narrate kề giãn
+    thời gian — TTS fit tự bù). KHÔNG gộp vắt qua `barriers` (mốc ghép
+    window — cú nhảy cảnh là cắt cứng, part không được vắt qua 2 khung);
+    KHÔNG nuốt part ĐẦU clip (hook). Hàm thuần — unit test được."""
+    out = [dict(p) for p in parts]
+    bset = {round(float(b), 2) for b in (barriers or ())}
+
+    def n_changes() -> int:
+        return sum(1 for i in range(len(out) - 1)
+                   if out[i]["mode"] != out[i + 1]["mode"])
+
+    while n_changes() > max_changes:
+        best, bi = None, -1
+        for i in range(len(out) - 1):
+            if out[i]["mode"] == out[i + 1]["mode"]:
+                continue
+            if round(float(out[i]["end"]), 2) in bset:
+                continue                # mối ghép window -> không gộp qua
+            d0, d1 = _part_dur(out[i]), _part_dur(out[i + 1])
+            if (i if d0 <= d1 else i + 1) == 0:
+                continue                # nạn nhân là hook -> tha
+            key = min(d0, d1)
+            if best is None or key < best:
+                best, bi = key, i
+        if bi < 0:
+            break                       # hết cặp gộp được -> chịu
+        if _part_dur(out[bi]) <= _part_dur(out[bi + 1]):
+            out[bi + 1]["start"] = out[bi]["start"]   # part trước bị nuốt
+            del out[bi]
+        else:
+            out[bi]["end"] = out[bi + 1]["end"]       # part sau bị nuốt
+            del out[bi + 1]
+    return out
+
+
 def validate_parts(parts, clip_start: float, clip_end: float,
                    min_part: float = 1.5,
-                   sentences: Optional[list] = None) -> list[dict]:
+                   sentences: Optional[list] = None,
+                   limit_changes: bool = True) -> list[dict]:
     """Chuẩn hoá kịch bản LLM trả về -> list part SẠCH phủ kín clip.
 
     Tự sửa mọi lỗi thường gặp:
@@ -721,6 +932,12 @@ def validate_parts(parts, clip_start: float, clip_end: float,
       - chồng lấn -> cắt start part sau về end part trước (hết chỗ -> bỏ).
       - khoảng hở / đầu / cuối thiếu -> chèn part "orig" lấp kín.
       - gộp các part orig liền kề.
+      - SỬA CẤU TRÚC chống ping-pong (_fix_structure): narrate vụn (<6s)
+        kẹp giữa 2 orig (trừ hook đầu) -> gộp vào orig; orig <3s -> gộp
+        vào narrate kề; quá _MAX_ORIG_BREAKS lần bung tiếng gốc -> giữ các
+        cú DÀI nhất. limit_changes=True (mặc định, đường 1-span) -> giới
+        hạn thêm TỔNG số lần đổi vai <= _MAX_ROLE_CHANGES (đường window:
+        validate_parts_windows tự làm ở mức CẢ CLIP với mối ghép window).
     Luôn trả >= 1 part (parts rỗng/hỏng hết -> 1 part orig cả clip).
     """
     clip_start, clip_end = float(clip_start), float(clip_end)
@@ -743,6 +960,7 @@ def validate_parts(parts, clip_start: float, clip_end: float,
             continue
         mode = str(p.get("mode") or "").strip().lower()
         text = str(p.get("text") or "").strip()
+        was_narrate = mode == "narrate"
         if mode != "narrate":          # mode lạ/thiếu -> orig
             mode = "orig"
         if mode == "narrate" and not text:
@@ -756,8 +974,23 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         if (mode == "narrate" and sentences
                 and _is_retelling(text, _window_text(sentences, s, e))):
             mode, text = "orig", ""    # nhại nguyên cụm (n-gram) -> tiếng gốc
+        # LƯU LỜI GỐC HỢP LỆ của part orig LLM trả kèm text (_otext): nếu
+        # _fix_structure phải hạ bớt cú bung tiếng gốc thừa, part có lời
+        # sạch (qua ĐỦ 3 lưới anti-copy) được chuyển narrate thay vì gộp.
+        # Narrate bị anti-copy hạ orig thì KHÔNG được phục hồi (text bẩn).
+        otext = ""
+        orig_text = str(p.get("text") or "").strip()
+        if (mode == "orig" and not was_narrate and orig_text
+                and not _is_transcript_copy(orig_text, transcript_norm)
+                and not (sentences and _fuzzy_copy_ratio(
+                    orig_text,
+                    _window_words(sentences, s, e)) > _FUZZY_COPY_MAX)
+                and not (sentences and _is_retelling(
+                    orig_text, _window_text(sentences, s, e)))):
+            otext = orig_text
         clean.append({"start": round(s, 2), "end": round(e, 2),
-                      "mode": mode, "text": text if mode == "narrate" else ""})
+                      "mode": mode, "text": text if mode == "narrate" else "",
+                      "_otext": otext})
 
     clean.sort(key=lambda x: (x["start"], x["end"]))
 
@@ -790,14 +1023,13 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         return [{"start": round(clip_start, 2), "end": round(clip_end, 2),
                  "mode": "orig", "text": ""}]
 
-    # Gộp part orig liền kề (đỡ vụn)
-    merged: list[dict] = [dict(out[0])]
-    for p in out[1:]:
-        if (p["mode"] == "orig" and merged[-1]["mode"] == "orig"
-                and abs(p["start"] - merged[-1]["end"]) < 0.3):
-            merged[-1]["end"] = p["end"]
-        else:
-            merged.append(dict(p))
+    # Gộp part orig liền kề (đỡ vụn) rồi SỬA CẤU TRÚC chống ping-pong
+    merged = _merge_orig_adjacent(out)
+    merged = _fix_structure(merged)
+    if limit_changes:
+        merged = _limit_role_changes(merged)
+    for p in merged:                    # _otext chỉ dùng nội bộ -> bỏ
+        p.pop("_otext", None)
     return merged
 
 
@@ -896,10 +1128,13 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "kênh\", sponsor/tài trợ... Khung như vậy (hoặc khung gần như "
         "KHÔNG có lời thoại — nhạc nền, chữ trên màn hình) sẽ bị hệ thống "
         "LOẠI BỎ.\n\n"
-        "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (xen kẽ orig = "
-        "giữ tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
-        "- Mỗi part dài 3-15 giây; mốc part nằm TRONG khung, KHÔNG vắt qua "
-        "2 khung; các part PHỦ KÍN từng khung; start/end trùng mép câu.\n"
+        "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (orig = giữ "
+        "tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
+        + _structure_rules(per_window=True) +
+        "- KHUÔN trên áp cho CẢ CLIP xuyên các khung: HOOK ở đầu khung 1; "
+        "các cú BUNG GỐC rơi vào đúng khoảnh khắc đắt của từng khung.\n"
+        "- Mốc part nằm TRONG khung, KHÔNG vắt qua 2 khung; các part PHỦ "
+        "KÍN từng khung; start/end trùng mép câu.\n"
         "- Part ĐẦU TIÊN của khung 1 BẮT BUỘC là narrate HOOK: câu mở gây "
         "SỐC/TÒ MÒ tức thì. CẤM mở nhạt kiểu \"Trong video này...\".\n"
         "- CẦU NỐI khi nhảy cảnh: part ĐẦU của mỗi khung từ khung thứ 2 "
@@ -923,20 +1158,22 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         f"- Part narrate CUỐI: câu chốt đắt + KÊU GỌI tương tác (hỏi ý "
         f"kiến, kêu theo dõi) viết bằng {ln}.\n"
         f"- Tổng thời lượng narrate ~{pct}% clip (chấp nhận "
-        f"{max(20, pct - 10)}-{min(90, pct + 10)}%); XEN KẼ với orig.\n"
+        f"{max(20, pct - 10)}-{min(90, pct + 10)}%) — người kể nói CHỦ "
+        "ĐẠO, tiếng gốc chỉ bung đúng chỗ đắt.\n"
         "- Đoạn orig = ĐỒNG ĐẮT: chọn đúng câu nói/tiếng động/cảm xúc MẠNH "
         "NHẤT trong khung làm twist/đỉnh điểm.\n"
         "- CẤM SPOILER: không nhắc trước nội dung khung CHƯA chiếu tới — "
         "chỉ được GỢI tò mò.\n\n"
         + _narrator_rules(ln, style) +
         f"\n- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate đọc VỪA KHÍT độ dài "
-        "part (part 6 giây tiếng Anh ~13-14 từ). ĐỪNG viết dài — sẽ bị "
-        "cắt.\n"
+        "part (part 10 giây tiếng Anh ~20 từ, part 20 giây ~41-46 từ). "
+        "ĐỪNG viết dài — sẽ bị cắt.\n"
         "- TRẦN CỨNG SỐ CHỮ (hệ số an toàn 0.9): TUYỆT ĐỐI KHÔNG viết quá "
-        "(số_giây_part × 2.3 × 0.9) từ tiếng Anh cho part đó — part 6 giây "
-        "tối đa 12 từ, part 10 giây tối đa 20 từ (tiếng Việt: số_giây × 3.5 "
-        "× 0.9 ≈ 3 âm tiết/giây). ĐẾM LẠI từng part trước khi trả — lời vượt "
-        "trần SẼ BỊ CẮT CỤT giữa câu khi đọc.\n"
+        "(số_giây_part × 2.3 × 0.9) từ tiếng Anh cho part đó — hook 6 giây "
+        "tối đa 12 từ, part 10 giây tối đa 20 từ, part 20 giây tối đa 41 "
+        "từ (tiếng Việt: số_giây × 3.5 × 0.9 ≈ 3 âm tiết/giây). ĐẾM LẠI "
+        "từng part trước khi trả — lời vượt trần SẼ BỊ CẮT CỤT giữa câu "
+        "khi đọc.\n"
         "- part orig KHÔNG cần text (chuỗi rỗng).\n"
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
@@ -1053,7 +1290,13 @@ def validate_parts_windows(parts, windows: list, sentences=None,
     chung lắp đâu cũng được ("cắt 1 đằng nói 1 đằng") -> hạ orig. THA part
     CẦU NỐI tại điểm ghép (part đầu của khung thứ 2 trở đi). Khoảng hợp lệ
     của narrate: >=1 từ trùng (liên quan) nhưng <=60% (không chép lại —
-    _fuzzy_copy_ratio trong validate_parts vẫn chặn)."""
+    _fuzzy_copy_ratio trong validate_parts vẫn chặn).
+
+    SỬA CẤU TRÚC: validate_parts từng khung tự sửa ping-pong (narrate vụn
+    kẹp giữa 2 orig -> gộp; orig <3s -> gộp; > _MAX_ORIG_BREAKS cú bung
+    mỗi khung -> giữ cú dài nhất); sau khi ghép đủ các khung, giới hạn
+    TỔNG số lần đổi vai cả clip <= _MAX_ROLE_CHANGES (_limit_role_changes,
+    KHÔNG gộp part vắt qua mối ghép window)."""
     parts = _coerce_parts(parts)
     wlist = list(windows or [])
     # tập từ-nội-dung từng khung (cho relevance; tính 1 lần)
@@ -1093,8 +1336,10 @@ def validate_parts_windows(parts, windows: list, sentences=None,
                 checked.append(p)
             sub = checked
         out.extend(validate_parts(sub, ws, we, min_part=min_part,
-                                  sentences=sentences))
-    return out
+                                  sentences=sentences, limit_changes=False))
+    # (d) TỔNG đổi vai cả clip: gộp bớt từ cặp ngắn nhất; mốc cuối mỗi
+    # window (trừ window chót) là mối ghép — cấm gộp part vắt qua.
+    return _limit_role_changes(out, barriers=[we for _ws, we in wlist[:-1]])
 
 
 def _director_from_data(data, sentences: list, duration: float,

@@ -81,6 +81,63 @@ def _snap_time(t: float, edges: list, tol: float = _SNAP_TOL) -> float:
     return best
 
 
+# ------------------------------------------------------------------
+# SNAP CHUYỂN CẢNH: mốc chuyển kể<->gốc + mép window ưu tiên rơi vào mốc
+# CHUYỂN CẢNH hình ảnh (phân tích "scenes" đã chạy trong pipeline auto) —
+# cắt đúng nhịp hình chuyên nghiệp hơn. Mép câu vẫn là LUẬT CỨNG: mốc
+# chuyển cảnh mà cắt ngang câu nói thì mép câu thắng.
+# ------------------------------------------------------------------
+_SCENE_TOL = 2.0        # tìm mốc chuyển cảnh trong ±2 giây quanh mốc cắt
+
+
+def _scene_cuts(scenes) -> list:
+    """Mốc CHUYỂN CẢNH (giây, sort tăng) từ kết quả phân tích 'scenes'
+    (scene_detect: {"scenes": [{"start","end"}], "cut_points": [...]}).
+    Ưu tiên cut_points; thiếu -> lấy mép start các scene. Không có phân
+    tích scenes (LIGHT_MODE/skip) -> [] (mọi thứ chạy như cũ). Hàm thuần."""
+    if not isinstance(scenes, dict):
+        return []
+    cuts = []
+    for t in scenes.get("cut_points") or []:
+        try:
+            cuts.append(round(float(t), 2))
+        except (TypeError, ValueError):
+            continue
+    if not cuts:
+        for sc in scenes.get("scenes") or []:
+            try:
+                cuts.append(round(float(sc["start"]), 2))
+            except (KeyError, TypeError, ValueError):
+                continue
+    return sorted(set(c for c in cuts if c > 0.01))
+
+
+def _inside_sentence(t: float, spans: list, margin: float = 0.15) -> bool:
+    """Mốc t có rơi vào GIỮA 1 câu nói không (spans = [(start, end)] câu
+    transcript; margin = mép câu vẫn tính là ranh giới). Hàm thuần."""
+    for a, b in spans or []:
+        if a + margin < t < b - margin:
+            return True
+    return False
+
+
+def _snap_time_scene(t: float, edges: list, cuts: list, spans: list,
+                     tol: float = _SNAP_TOL,
+                     scene_tol: float = _SCENE_TOL) -> float:
+    """Snap mốc t: ƯU TIÊN mốc CHUYỂN CẢNH gần nhất trong ±scene_tol NẾU
+    mốc đó cũng không cắt ngang câu nói (kiểm CẢ 2 điều kiện); xung đột
+    (mốc cảnh nằm giữa câu) -> mép câu thắng (_snap_time như cũ). Không
+    có cuts -> y hệt _snap_time. Hàm thuần — unit test được."""
+    best, bd = None, scene_tol + 1e-9
+    for c in cuts or []:
+        d = abs(c - t)
+        if d < bd:
+            bd, best = d, c
+    if best is not None and not _inside_sentence(best, spans):
+        return float(best)
+    return _snap_time(t, edges, tol)
+
+
 def _unsplit_word(t: float, words: list) -> float:
     """Nếu mốc t rơi vào GIỮA 1 từ (word-level transcript) -> đẩy ra mép từ
     gần hơn (không cắt ngang từ). words = [(ws, we)]. Không words -> giữ t."""
@@ -91,7 +148,9 @@ def _unsplit_word(t: float, words: list) -> float:
 
 
 def _snap_parts(parts: list, edges: list, tol: float = _SNAP_TOL,
-                words: list | None = None, min_part: float = 1.5) -> list:
+                words: list | None = None, min_part: float = 1.5,
+                cuts: list | None = None,
+                spans: list | None = None) -> list:
     """Snap ranh giới GIỮA các part vào mép câu transcript (±tol giây).
 
     Ranh giới chung của part i và i+1 được dịch CÙNG NHAU (giữ phủ kín,
@@ -100,22 +159,36 @@ def _snap_parts(parts: list, edges: list, tol: float = _SNAP_TOL,
     orig vụn lên TRƯỚC hook, phá luật "part đầu là narrate"). Sau khi snap
     theo câu, nếu mốc vẫn nằm GIỮA 1 từ (transcript có words) -> đẩy ra mép
     từ. Snap nào làm 1 trong 2 part kề ngắn hơn min_part -> BỎ snap đó (giữ
-    mốc cũ). Hàm thuần — test được."""
+    mốc cũ).
+
+    cuts/spans != None: mốc CHUYỂN VAI narrate<->orig + mép đầu/cuối danh
+    sách part ƯU TIÊN snap vào mốc CHUYỂN CẢNH gần nhất ±_SCENE_TOL nếu mốc
+    đó không cắt ngang câu (_snap_time_scene — xung đột thì mép câu thắng);
+    ranh giới cùng vai vẫn snap mép câu như cũ. Hàm thuần — test được."""
     if not parts:
         return []
     out = [dict(p) for p in parts]
+
+    def snap_edge(t: float) -> float:
+        """Mốc chuyển vai / mép danh sách: ưu tiên chuyển cảnh nếu có."""
+        if cuts:
+            return _snap_time_scene(t, edges, cuts, spans or [], tol)
+        return _snap_time(t, edges, tol)
+
     # đầu part ĐẦU + cuối part CUỐI (validate_parts sẽ clamp vào span clip)
-    s0 = _unsplit_word(_snap_time(float(out[0]["start"]), edges, tol), words)
+    s0 = _unsplit_word(snap_edge(float(out[0]["start"])), words)
     if (abs(s0 - float(out[0]["start"])) >= 0.01
             and float(out[0]["end"]) - s0 >= min_part):
         out[0]["start"] = round(s0, 2)
-    e9 = _unsplit_word(_snap_time(float(out[-1]["end"]), edges, tol), words)
+    e9 = _unsplit_word(snap_edge(float(out[-1]["end"])), words)
     if (abs(e9 - float(out[-1]["end"])) >= 0.01
             and e9 - float(out[-1]["start"]) >= min_part):
         out[-1]["end"] = round(e9, 2)
     for i in range(len(out) - 1):
         b0 = float(out[i]["end"])
-        b1 = _snap_time(b0, edges, tol)
+        role_change = (str(out[i].get("mode") or "")
+                       != str(out[i + 1].get("mode") or ""))
+        b1 = snap_edge(b0) if role_change else _snap_time(b0, edges, tol)
         b1 = _unsplit_word(b1, words)
         if abs(b1 - b0) < 0.01:
             continue
@@ -305,6 +378,17 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             tr_words.append((float(w["start"]), float(w["end"])))
         except (KeyError, TypeError, ValueError):
             continue
+    # Mốc CHUYỂN CẢNH từ phân tích "scenes" (đã chạy trong pipeline auto;
+    # LIGHT_MODE/skip -> rỗng, snap chạy như cũ) + khoảng từng câu để kiểm
+    # "mốc cảnh có cắt ngang câu không" (mép câu là luật cứng, cảnh chỉ ưu
+    # tiên khi không phạm câu).
+    scene_cuts = _scene_cuts(scenes)
+    sent_spans = []
+    for s in segs:
+        try:
+            sent_spans.append((float(s["start"]), float(s["end"])))
+        except (KeyError, TypeError, ValueError):
+            continue
 
     # ---- 0) 🎬 ĐẠO DIỄN MULTI-WINDOW THEO CHƯƠNG (mặc định): chia video
     # thành K CHƯƠNG thời lượng ~bằng nhau (user chọn 1-3 trong ⚙ Cài đặt
@@ -375,11 +459,14 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         lang0 = (transcript.get("language") or "").strip()
         clip_ids: list = []
         for ci, c0, c1, script in ch_scripts:
-            # SNAP mép khung vào mép câu + KẸP vào chương (windows các clip
-            # KHÔNG chồng nhau) rồi VALIDATE LẠI; part snap + validate TỪNG
-            # khung (không vắt khung).
-            snapped_w = [[max(c0, _snap_time(s, edges)),
-                          min(c1, _snap_time(e, edges))]
+            # SNAP mép khung vào CHUYỂN CẢNH (ưu tiên, nếu không cắt ngang
+            # câu) / mép câu + KẸP vào chương (windows các clip KHÔNG chồng
+            # nhau) rồi VALIDATE LẠI; part snap + validate TỪNG khung
+            # (không vắt khung).
+            snapped_w = [[max(c0, _snap_time_scene(s, edges, scene_cuts,
+                                                   sent_spans)),
+                          min(c1, _snap_time_scene(e, edges, scene_cuts,
+                                                   sent_spans))]
                          for s, e in script["windows"]]
             ch_sents = _clip_sentences(segs, c0, c1)
             windows = recap.validate_windows(snapped_w, duration,
@@ -391,7 +478,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                        if ws - 0.01
                        <= (float(p["start"]) + float(p["end"])) / 2
                        <= we + 0.01]
-                snapped_parts.extend(_snap_parts(sub, edges, words=tr_words))
+                snapped_parts.extend(
+                    _snap_parts(sub, edges, words=tr_words,
+                                cuts=scene_cuts, spans=sent_spans))
             # validate TỪNG khung + RELEVANCE (lời narrate phải dính chi
             # tiết transcript khung đó/kề — validate_parts_windows lo)
             parts = recap.validate_parts_windows(snapped_parts, windows,
@@ -447,15 +536,16 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 "note": "AI không chọn được đoạn nào đủ hay để thuyết minh."}
 
     # Recap dùng SPAN LIỀN MẠCH (thuyết minh phủ cả đoạn, không cắt khúc giữa).
-    # Đầu/cuối span SNAP vào mép câu transcript (±_SNAP_TOL) -> không mở/đóng
-    # clip giữa chừng 1 câu nói.
+    # Đầu/cuối span SNAP vào CHUYỂN CẢNH (ưu tiên, nếu không cắt ngang câu)
+    # hoặc mép câu transcript (±_SNAP_TOL) -> không mở/đóng clip giữa chừng
+    # 1 câu nói.
     max_len = float(cfg.get("max_len") or 0) or _HARD_MAX
     spans = []
     for c in clips:
         s0 = float(c["segments"][0][0])
         e1 = float(c["segments"][-1][1])
-        s0 = max(0.0, _snap_time(s0, edges))
-        e1 = _snap_time(e1, edges)
+        s0 = max(0.0, _snap_time_scene(s0, edges, scene_cuts, sent_spans))
+        e1 = _snap_time_scene(e1, edges, scene_cuts, sent_spans)
         e1 = min(e1, s0 + max_len, duration or e1)
         if e1 - s0 >= 10.0:
             spans.append((round(s0, 2), round(e1, 2), c))
@@ -485,8 +575,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 sc = None
             if sc:
                 # SNAP mốc part vào mép câu (±_SNAP_TOL, không cắt ngang
-                # câu/từ) rồi validate lại cho phủ kín sạch sẽ.
-                snapped = _snap_parts(sc["parts"], edges, words=tr_words)
+                # câu/từ; mốc chuyển vai ưu tiên CHUYỂN CẢNH) rồi validate
+                # lại cho phủ kín sạch sẽ.
+                snapped = _snap_parts(sc["parts"], edges, words=tr_words,
+                                      cuts=scene_cuts, spans=sent_spans)
                 sc["parts"] = recap.validate_parts(snapped, s0, e1,
                                                    sentences=sents)
                 if sc.get("lang_warn"):  # hậu kiểm ngôn ngữ -> báo user
