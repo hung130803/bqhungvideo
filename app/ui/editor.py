@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app import services
-from app.core.captions import CAPTION_PRESETS, NARR_SAME_LABEL
+from app.core.captions import CAPTION_PRESETS, NARR_SAME_LABEL, apply_case
 from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
 
 # Cache danh sách giọng lồng tiếng ĐẦY ĐỦ theo ngôn ngữ (nạp 1 lần/phiên app;
@@ -183,6 +183,56 @@ def _draw_text_path(p, path, color, outline_w, outline_color="#000000"):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QBrush(QColor(color)))
     p.drawPath(path)
+
+
+def _caption_box_data(preset_name, *, size, font, ny, color="", outline="",
+                      ow=0.0, italic=False):
+    """Dựng dict style cho ô xem trước (cap_box / narr_box) SÁT với .ass mà
+    build_ass sinh ra, từ 1 preset + override của user. Trả dict dùng cho
+    _TextBox.apply().
+
+    Ánh xạ (khớp build_ass):
+      - màu chữ  = color (user) hoặc preset['color'] (mode active -> 'rest').
+      - viền     = outline/ow (user) hoặc preset['outline']/'ow'.
+                   ow là TỈ LỆ chiều cao chữ (như 'ow' preset); 0 -> theo preset.
+      - preset box=True -> NỀN HỘP sau chữ (BorderStyle=3): bg=True, bg_color=
+                   box_color, viền chữ TẮT (như build_ass đặt outline=box màu +
+                   ow=0.20 làm bề dày hộp — ở preview thể hiện bằng nền hộp).
+      - preset glow -> viền = màu glow (neon) nếu user không đặt màu viền riêng.
+      - preset không box -> KHÔNG nền hộp (chỉ viền chữ).
+    """
+    p = CAPTION_PRESETS.get(preset_name) or {}
+    # màu chữ
+    if color:
+        col = color
+    elif p.get("mode") == "active":
+        col = p.get("rest", "#FFFFFF")
+    else:
+        col = p.get("color", "#FFFFFF")
+    is_box = bool(p.get("box"))
+    # viền chữ: user ow (>0) ghi đè; else theo preset ow. glow -> màu viền = glow.
+    if is_box:
+        # nền hộp -> chữ KHÔNG viền (bề dày hộp thể hiện bằng nền), trừ khi
+        # user tự đặt độ dày viền.
+        ow_frac = float(ow) if (ow and ow > 0) else 0.0
+        oc = outline or p.get("outline", "#000000")
+    else:
+        ow_frac = float(ow) if (ow and ow > 0) else float(p.get("ow", 0.10))
+        if outline:
+            oc = outline
+        elif p.get("glow"):
+            oc = p["glow"]
+        else:
+            oc = p.get("outline", "#000000")
+    d = {"size": float(size), "font": font, "color": col,
+         "outline": ow_frac, "outline_color": oc,
+         "nx": 0.5, "ny": float(ny), "italic": bool(italic)}
+    if is_box:
+        d.update({"bg": True, "bg_color": p.get("box_color", "#000000"),
+                  "bg_alpha": 0.9, "radius": 12, "padx": 0.5, "pady": 0.35})
+    else:
+        d["bg"] = False
+    return d
 
 
 def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
@@ -446,7 +496,10 @@ class _TextBox(QGraphicsItem):
         self.update()   # BẮT BUỘC vẽ lại (cache thiết bị không tự đổi khi chỉ đổi màu/bo/font)
 
     def _font(self):
-        return _qfont(self.d.get("font", "Arial"), self.px)
+        f = _qfont(self.d.get("font", "Arial"), self.px)
+        if self.d.get("italic"):
+            f.setItalic(True)
+        return f
 
     def _recalc(self):
         self.prepareGeometryChange()
@@ -1267,6 +1320,7 @@ class EditorDialog(QDialog):
         self.cap_case = _case_combo(
             "Đổi kiểu chữ hoa cho phụ đề video gốc: Giữ nguyên / HOA / thường / "
             "Hoa Đầu Từ. Chỉ đổi cách HIỂN THỊ, không đổi lời/mốc.")
+        self.cap_case.currentIndexChanged.connect(self._refresh_cap)
         gc.addLayout(_frow("Chữ hoa", self.cap_case))
         # 3. MÀU CHỮ (để trống = theo preset)
         self._capcolor = ""        # '' = theo màu của kiểu; chọn để ghi đè
@@ -1357,6 +1411,7 @@ class EditorDialog(QDialog):
         # 2. CHỮ HOA
         self.narr_case = _case_combo(
             "Kiểu chữ hoa cho đoạn AI kể: Giữ nguyên / HOA / thường / Hoa Đầu Từ.")
+        self.narr_case.currentIndexChanged.connect(self._refresh_narr)
         gn.addLayout(_frow("Chữ hoa", self.narr_case))
         # 3. MÀU CHỮ (để trống = theo kiểu chạy chữ đã chọn)
         self._narr_color = _NARR_COLOR_DEFAULT
@@ -1373,6 +1428,7 @@ class EditorDialog(QDialog):
         self.narr_ow.setRange(0, 30)
         self.narr_ow.setValue(0)
         self.narr_ow.setToolTip("Độ dày viền chữ AI đọc (0 = theo kiểu).")
+        self.narr_ow.valueChanged.connect(self._refresh_narr_soon)
         self.narr_ow_lbl = QLabel("preset"); self.narr_ow_lbl.setFixedWidth(44)
         self.narr_ow.valueChanged.connect(
             lambda v: self.narr_ow_lbl.setText("preset" if v == 0 else str(v)))
@@ -1394,6 +1450,7 @@ class EditorDialog(QDialog):
         self.narr_italic.setChecked(True)      # mặc định BẬT
         self.narr_italic.setToolTip(
             "Chữ AI kể in nghiêng (mặc định BẬT — dễ phân biệt với thoại gốc).")
+        self.narr_italic.toggled.connect(self._refresh_narr)
         gn.addWidget(self.narr_italic)
 
         # Nhóm: Lớp chữ (hồng)
@@ -1406,10 +1463,12 @@ class EditorDialog(QDialog):
         self.hook_case = _case_combo(
             "Kiểu chữ hoa cho TIÊU ĐỀ AI + HOOK + chữ cố định (mọi lớp không "
             "phải Part).")
+        self.hook_case.currentIndexChanged.connect(self._sync_all_cases)
         lcr.addWidget(self.hook_case, 1)
         lcr.addWidget(QLabel("Part"))
         self.part_case = _case_combo(
             "Kiểu chữ hoa cho lớp Part (số phần).")
+        self.part_case.currentIndexChanged.connect(self._sync_all_cases)
         lcr.addWidget(self.part_case, 1)
         gl.addLayout(lcr)
         ar = QHBoxLayout()
@@ -1593,16 +1652,17 @@ class EditorDialog(QDialog):
                 self.narr_size.setValue(int(round(nsz * 1000)))
             self.canvas.set_narr_geom(float(layout.get("narr_ny", 0.62)),
                                       nsz)
-            self._refresh_narr()           # áp màu/cỡ đã lưu vào ô xem trước
-            # ---- KIỂU CHỮ HOA từng phần chữ ----
+            # ---- KIỂU CHỮ HOA từng phần chữ (đặt TRƯỚC refresh để preview áp
+            # đúng hoa/thường ngay lúc mở mẫu) ----
             for cb, key in ((self.cap_case, "cap_case"),
                             (self.narr_case, "narr_case"),
                             (self.hook_case, "hook_case"),
                             (self.part_case, "part_case")):
                 ci = cb.findData(layout.get(key, "") or "")
                 cb.setCurrentIndex(max(0, ci))
+            self._refresh_narr()           # áp màu/cỡ/viền/hoa đã lưu vào ô AI kể
             self.canvas.set_cap_top(layout.get("cap_ny", 0.78))
-            self._refresh_cap()          # áp cỡ/màu/font đã lưu vào ô xem trước
+            self._refresh_cap()          # áp cỡ/màu/viền/font/hoa đã lưu vào ô phụ đề
             self.canvas.show_cap(self.cap_chk.isChecked())
             for d in layout.get("layers", []):
                 lid = self._add(is_part=d.get("is_part", False), data=d)
@@ -1640,7 +1700,23 @@ class EditorDialog(QDialog):
                    .replace("{title}", "Tiêu đề ví dụ của clip"))
         if d["is_part"] and "{n}" not in d["text"] and "{title}" not in d["text"]:
             preview = f'{d["text"]} 1'.strip() if d["text"] else "Part 1"
+        # KIỂU CHỮ HOA (khớp render_overlay_png): lớp Part -> part_case; các lớp
+        # khác (tiêu đề/hook/cố định) -> hook_case. Áp lên CHỮ xem trước.
+        case = (self.part_case.currentData() if d.get("is_part")
+                else self.hook_case.currentData()) or ""
+        if case:
+            preview = apply_case(preview, case)
         self.canvas.upsert_text(lid, d, preview)
+
+    def _sync_all_cases(self, *_):
+        """Đổi Chữ hoa (Tiêu đề/Hook hoặc Part) -> vẽ lại MỌI lớp chữ + ô HOOK
+        xem trước với kiểu hoa mới NGAY."""
+        for lid in list(self.rows):
+            self._sync(lid)
+        # ô HOOK xem trước (không phải _LayerRow) cũng theo hook_case
+        hb = self.canvas.hook_box
+        txt = apply_case("HOOK GIẬT TÍT", self.hook_case.currentData() or "")
+        hb.apply(dict(hb.d), txt)
 
     def _on_resized(self, lid, frac):
         row = self.rows.get(lid)
@@ -1955,6 +2031,7 @@ class EditorDialog(QDialog):
         self._cap_outline = hexv or ""
         if hasattr(self, "_cap_outline_refresh"):
             self._cap_outline_refresh()
+        self._refresh_cap()
 
     def _narr_eff_color(self):
         """Màu chữ AI kể hiệu lực: user chọn (ghi đè) hoặc màu của KIỂU đang
@@ -1979,6 +2056,7 @@ class EditorDialog(QDialog):
         self._narr_outline = hexv or ""
         if hasattr(self, "_narr_outline_refresh"):
             self._narr_outline_refresh()
+        self._refresh_narr()
 
     def _cap_drag_size(self, frac):
         """User kéo góc ô caption -> cập nhật thanh Cỡ = đúng cỡ vừa kéo (để lưu)."""
@@ -1999,10 +2077,27 @@ class EditorDialog(QDialog):
         t.start(80)
 
     def _refresh_narr(self, *_):
-        """Cập nhật ô CHỮ AI KỂ xem trước theo màu/cỡ đang chọn (giữ vị trí)."""
-        self.canvas.set_narr_style(
-            color=self._narr_eff_color(),
-            size=self.narr_size.value() / 1000.0)
+        """Cập nhật ô CHỮ AI KỂ xem trước theo ĐÚNG kiểu/màu/viền/cỡ/nghiêng/hoa
+        đang chọn (SÁT .ass Style Narrate): narr_preset='(giống phụ đề gốc)' ->
+        vẽ GIỐNG cap_box (kiểu + viền/box của phụ đề gốc); chọn preset khác ->
+        theo preset đó. narr_color/outline/ow ghi đè; in nghiêng -> font italic;
+        hoa/thường theo narr_case."""
+        nb = self.canvas.narr_box
+        ny = nb.y() / FH                 # giữ vị trí dọc đang kéo
+        name = self.narr_preset.currentText()
+        # "(giống phụ đề gốc)" -> lấy kiểu của phụ đề gốc (như build_ass: np = p)
+        preset_name = (self.cap_preset.currentText()
+                       if name == NARR_SAME_LABEL else name)
+        d = _caption_box_data(
+            preset_name,
+            size=self.narr_size.value() / 1000.0,
+            font=self.cap_font.currentText(),   # Narrate dùng cùng font phụ đề
+            ny=ny, color=self._narr_color, outline=self._narr_outline,
+            ow=self.narr_ow.value() / 100.0,
+            italic=self.narr_italic.isChecked())
+        text = apply_case("Chữ AI kể", self.narr_case.currentData() or "")
+        nb.apply(d, text)
+        nb.setPos(FW / 2 - nb.w / 2, max(0.0, ny) * FH)
 
     def _refresh_narr_soon(self, *_):
         t = getattr(self, "_narr_timer", None)
@@ -2022,14 +2117,25 @@ class EditorDialog(QDialog):
         self.narr_sz_lbl.setText(f"{val / 10:.1f}%")
 
     def _refresh_cap(self, *_):
-        """Cập nhật ô PHỤ ĐỀ trong xem trước theo kiểu/cỡ/màu/font (giữ vị trí)."""
+        """Cập nhật ô PHỤ ĐỀ xem trước theo ĐÚNG kiểu/màu/viền/cỡ/font/hoa đang
+        chọn (SÁT với .ass lúc xuất): màu = cap_color hoặc màu preset; viền =
+        cap_outline + cap_ow (0 -> theo preset; glow -> viền neon; box -> nền
+        hộp); cỡ = cap_size; font = cap_font; hoa/thường = cap_case."""
         cb = self.canvas.cap_box
         ny = cb.y() / FH                 # giữ nguyên vị trí dọc đang kéo
-        cb.apply({"size": self.cap_size.value() / 1000.0,
-                  "font": self.cap_font.currentText(), "color": self._cap_eff_color(),
-                  "bg": True, "bg_color": "#000000", "radius": 30,
-                  "nx": 0.5, "ny": ny}, "Phụ đề chạy chữ")
+        d = _caption_box_data(
+            self.cap_preset.currentText(),
+            size=self.cap_size.value() / 1000.0,
+            font=self.cap_font.currentText(),
+            ny=ny, color=self._capcolor, outline=self._cap_outline,
+            ow=self.cap_ow.value() / 100.0)
+        text = apply_case("Phụ đề chạy chữ", self.cap_case.currentData() or "")
+        cb.apply(d, text)
         self.canvas.set_cap_top(ny)      # đặt lại đỉnh tại vị trí cũ
+        # narr "(giống phụ đề gốc)" ăn theo kiểu/font phụ đề gốc -> cập nhật cùng
+        if (getattr(self, "narr_preset", None) is not None
+                and self.narr_preset.currentText() == NARR_SAME_LABEL):
+            self._refresh_narr()
 
     # ---- DEMO kiểu chữ: tạo clip ~6s rồi phát để xem chữ chạy ----
     def _demo_caption(self):
