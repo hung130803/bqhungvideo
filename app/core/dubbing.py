@@ -906,12 +906,117 @@ def _classify_eleven_http(code: int, body: str) -> ElevenError:
     return ElevenError(kind, message, http=code)
 
 
+def _words_from_char_alignment(chars: list, starts: list,
+                               ends: list) -> list:
+    """Gom ALIGNMENT KÝ TỰ của ElevenLabs (endpoint with-timestamps) thành
+    MỐC TỪNG TỪ CHÍNH XÁC theo audio GỐC (trước atempo). Hàm THUẦN — unit
+    test được.
+
+    Đầu vào 3 list SONG SONG cùng độ dài (API bảo đảm):
+      chars  = ["H","e","l","l","o"," ",...]   (từng ký tự, gồm cả space)
+      starts = [t0, t1, ...]  (giây, mốc BẮT ĐẦU phát mỗi ký tự)
+      ends   = [t0e, t1e, ...] (giây, mốc KẾT THÚC mỗi ký tự)
+
+    TÁCH TỪ theo khoảng trắng (mọi whitespace) + dấu câu ngắt
+    (. , ! ? ; : … " ' ) ] } … — dấu dính LIỀN vào từ trước, KHÔNG tạo từ
+    riêng, nhưng vẫn tính vào end của từ đó. Trả [[start_s, end_s, word],
+    ...] — ĐÚNG format WordBoundary edge-tts (start, end, từ) để tái dùng y
+    hệt đường xử lý wl trong build_recap_track. Mốc không giảm; ký tự
+    thừa/thiếu list -> cắt theo min độ dài (bao dung).
+    """
+    n = min(len(chars or []), len(starts or []), len(ends or []))
+    if n <= 0:
+        return []
+    # Dấu câu DÍNH vào từ đứng trước (không tách thành token riêng)
+    trail_punct = set(".,!?;:…\"')]}»”’、。！？；：")
+    out: list = []
+    cur_chars: list[str] = []
+    cur_start: Optional[float] = None
+    cur_end = 0.0
+
+    def _flush() -> None:
+        nonlocal cur_chars, cur_start, cur_end
+        w = "".join(cur_chars).strip()
+        if w and cur_start is not None:
+            a = round(float(cur_start), 3)
+            b = round(max(float(cur_start), float(cur_end)), 3)
+            if out and a < out[-1][1]:      # mốc không lùi (phòng API lộn xộn)
+                a = out[-1][1]
+                b = max(a, b)
+            out.append([a, b, w])
+        cur_chars = []
+        cur_start = None
+        cur_end = 0.0
+
+    for i in range(n):
+        ch = str(chars[i])
+        try:
+            st = float(starts[i])
+            en = float(ends[i])
+        except (TypeError, ValueError):
+            continue
+        if ch.isspace():                    # khoảng trắng -> KẾT THÚC từ
+            _flush()
+            continue
+        # ký tự thường / dấu câu -> thuộc từ hiện tại (cập nhật mốc)
+        if cur_start is None:
+            cur_start = st
+        cur_chars.append(ch)
+        cur_end = max(cur_end, en)
+        # dấu câu ngắt -> đóng từ NGAY sau ký tự này (từ kế bắt đầu mới)
+        if ch in trail_punct:
+            _flush()
+    _flush()                                # từ cuối chưa có space đóng
+    return out
+
+
+def _parse_eleven_alignment(data: dict) -> list:
+    """Bóc alignment ký tự từ JSON response endpoint with-timestamps ->
+    [[start_s, end_s, word], ...] (format WordBoundary edge). Ưu tiên
+    `alignment` (mốc theo văn bản
+    GỐC — khớp text ta gửi/hiển thị); thiếu -> `normalized_alignment`.
+    Thiếu/hỏng -> [] (caller lùi STT/silencedetect). Hàm thuần."""
+    if not isinstance(data, dict):
+        return []
+    for key in ("alignment", "normalized_alignment"):
+        al = data.get(key)
+        if not isinstance(al, dict):
+            continue
+        chars = (al.get("characters")
+                 or al.get("chars") or [])
+        starts = (al.get("character_start_times_seconds")
+                  or al.get("charStartTimesMs") or [])
+        ends = (al.get("character_end_times_seconds")
+                or al.get("charEndTimesMs") or [])
+        # charStartTimesMs (mili-giây) -> giây nếu API trả biến thể ms
+        if "charStartTimesMs" in al:
+            starts = [float(x) / 1000.0 for x in starts]
+            ends = [float(x) / 1000.0 for x in ends]
+        words = _words_from_char_alignment(chars, starts, ends)
+        if words:
+            return words
+    return []
+
+
 def _eleven_tts_once(text: str, voice_id: str, model: str, key: str,
-                     out_path: str) -> None:
-    """1 lần gọi ElevenLabs TTS -> ghi BYTES mp3 thẳng ra out_path. Ném
-    ElevenError ĐÃ PHÂN LOẠI (kind + detail.message nguyên văn) nếu lỗi.
-    API trả mp3 nhị phân trực tiếp (KHÔNG JSON base64)."""
-    url = (f"{_ELEVEN_API}/text-to-speech/{voice_id}"
+                     out_path: str, want_timestamps: bool = True) -> list:
+    """1 lần gọi ElevenLabs TTS -> ghi mp3 ra out_path. Ném ElevenError ĐÃ
+    PHÂN LOẠI (kind + detail.message nguyên văn) nếu lỗi.
+
+    want_timestamps=True (mặc định): gọi endpoint /with-timestamps — API trả
+    JSON {"audio_base64": "<mp3 b64>", "alignment": {"characters":[...],
+    "character_start_times_seconds":[...], "character_end_times_seconds":[...]}}.
+    Decode audio_base64 -> ghi mp3 (như endpoint thường); PARSE alignment ->
+    gom ký tự thành TỪ -> trả [[start_s, end_s, word], ...] mốc CHÍNH XÁC
+    theo audio GỐC (trước atempo — chính ElevenLabs cung cấp, KHÔNG đoán).
+    Endpoint with-timestamps bị model từ chối / API lỗi 404 -> ném
+    ElevenError để caller LÙI endpoint thường (want_timestamps=False).
+
+    want_timestamps=False: endpoint thường (mp3 nhị phân trực tiếp) -> trả []
+    (không mốc; caller lùi STT/silencedetect như cũ).
+    """
+    suffix = "/with-timestamps" if want_timestamps else ""
+    url = (f"{_ELEVEN_API}/text-to-speech/{voice_id}{suffix}"
            "?output_format=mp3_44100_128")
     body = {
         "text": text,
@@ -919,26 +1024,51 @@ def _eleven_tts_once(text: str, voice_id: str, model: str, key: str,
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75,
                            "style": 0.0, "use_speaker_boost": True},
     }
+    # with-timestamps trả JSON; endpoint thường trả audio/mpeg nhị phân
+    accept = "application/json" if want_timestamps else "audio/mpeg"
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
         headers={"xi-api-key": key, "Content-Type": "application/json",
-                 "Accept": "audio/mpeg"},
+                 "Accept": accept},
         method="POST")
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
-            audio = r.read()
+            raw = r.read()
     except urllib.error.HTTPError as e:
         try:
             detail = e.read().decode("utf-8", "replace")[:800]
         except OSError:
             detail = ""
+        # endpoint /with-timestamps không tồn tại/không hỗ trợ (404/405) ->
+        # ném "other" (caller sẽ tự lùi endpoint thường, KHÔNG mark key).
         raise _classify_eleven_http(e.code, detail) from None
     except urllib.error.URLError as e:
         raise ElevenError("network", f"ElevenLabs lỗi mạng: {e}") from None
+    words: list = []
+    if want_timestamps:
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            raise ElevenError("other",
+                              "with-timestamps trả JSON hỏng") from None
+        b64 = (data.get("audio_base64") or data.get("audioBase64") or "") \
+            if isinstance(data, dict) else ""
+        if not b64:
+            raise ElevenError("other",
+                              "with-timestamps không có audio_base64")
+        try:
+            audio = base64.b64decode(b64)
+        except (ValueError, TypeError):
+            raise ElevenError("other",
+                              "with-timestamps audio_base64 hỏng") from None
+        words = _parse_eleven_alignment(data)
+    else:
+        audio = raw
     if not audio or len(audio) < 500:      # mp3 rỗng/hỏng
         raise ElevenError("other", "ElevenLabs trả audio rỗng/quá ngắn")
     with open(out_path, "wb") as f:
         f.write(audio)
+    return words
 
 
 # ---- KIỂM TRA CREDIT (GET /v1/user/subscription) + cache 5 phút ----
@@ -1117,9 +1247,53 @@ def _eleven_effective_model(model: str = "") -> str:
     return m
 
 
+# Endpoint /with-timestamps bị account/model TỪ CHỐI trong phiên (404/405/
+# không hỗ trợ) -> các request sau gọi thẳng endpoint thường, khỏi tốn 1 lượt
+# lỗi mỗi part. KHÔNG lưu đĩa (restart -> thử lại with-timestamps).
+_ELEVEN_TS_UNSUPPORTED = False
+
+
+def _eleven_align_cache_get(vid: str, model: str, text: str) -> Optional[list]:
+    """Đọc mốc TỪ đã cache kèm audio (sidecar .align.json cạnh mp3 cache —
+    LRU dọn chung). None nếu chưa/hỏng."""
+    p = _tts_cache_path(vid, model, text)
+    align = p.with_suffix(".align.json")
+    try:
+        if align.is_file():
+            data = json.loads(align.read_text(encoding="utf-8"))
+            os.utime(align, None)
+            w = data.get("words") if isinstance(data, dict) else None
+            if isinstance(w, list) and w:
+                return [[float(x[0]), float(x[1]), str(x[2])] for x in w
+                        if isinstance(x, (list, tuple)) and len(x) == 3]
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _eleven_align_cache_put(vid: str, model: str, text: str,
+                            words: list) -> None:
+    """Lưu mốc TỪ (với-timestamps) cạnh mp3 cache — xuất lại clip không tốn
+    credit VÀ giữ mốc chính xác (không phải STT lại)."""
+    if not words:
+        return
+    p = _tts_cache_path(vid, model, text)
+    align = p.with_suffix(".align.json")
+    try:
+        _TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(align) + ".tmp"
+        Path(tmp).write_text(
+            json.dumps({"words": words}, ensure_ascii=False),
+            encoding="utf-8")
+        os.replace(tmp, align)
+    except OSError:
+        pass
+
+
 def _eleven_tts(text: str, voice: str, out_path: str | Path,
                 model: str = "", retries: int = 1,
-                on_msg: Optional[Callable[[str], None]] = None) -> bool:
+                on_msg: Optional[Callable[[str], None]] = None,
+                words_out: Optional[list] = None) -> bool:
     """Synth 1 đoạn text bằng ElevenLabs TTS -> file mp3. Trả True nếu OK.
 
     voice: "el:{voice_id}" (hoặc voice_id trần). Key XOAY VÒNG qua sổ trạng
@@ -1134,14 +1308,24 @@ def _eleven_tts(text: str, voice: str, out_path: str | Path,
       rate_limit      -> đợi ngắn (retry-after, trần 15s) retry CÙNG key,
                          KHÔNG mark_limited vĩnh viễn
     on_msg: nhận message lỗi NGUYÊN VĂN (detail.message) cho progress/log.
+    words_out: nếu truyền list -> ĐỔ vào đó mốc TỪNG TỪ CHÍNH XÁC
+    [[start_s, end_s, word], ...] từ endpoint /with-timestamps (mốc theo
+    audio GỐC trước atempo). Endpoint đó không hỗ trợ / lỗi -> tự LÙI endpoint
+    thường (words_out để trống -> caller lùi STT/silencedetect).
     CACHE: sha1(voice|model|text) có sẵn -> dùng lại, KHÔNG gọi API (xuất
-    lại clip/nghe thử lặp không tốn credit). Hết key/lỗi hết -> False
-    (caller tự fallback edge-tts)."""
+    lại clip/nghe thử lặp không tốn credit); mốc TỪ cache sidecar .align.json.
+    Hết key/lỗi hết -> False (caller tự fallback edge-tts)."""
     from app.ai import llm
+    global _ELEVEN_TS_UNSUPPORTED
 
     def note(m: str) -> None:
         if on_msg:
             on_msg(m)
+
+    def _emit_words(ws: list) -> None:
+        if words_out is not None and ws:
+            words_out.clear()
+            words_out.extend(ws)
 
     vid = voice.split(":", 1)[1] if voice.startswith("el:") else voice
     text = (text or "").strip()
@@ -1153,6 +1337,7 @@ def _eleven_tts(text: str, voice: str, out_path: str | Path,
     if cached:
         try:
             shutil.copyfile(cached, out_path)
+            _emit_words(_eleven_align_cache_get(vid, model, text) or [])
             return True
         except OSError:
             pass                          # cache hỏng -> synth bình thường
@@ -1167,9 +1352,18 @@ def _eleven_tts(text: str, voice: str, out_path: str | Path,
                 tries -= 1
                 llm.mark_used("elevenlabs", key)
                 try:
-                    _eleven_tts_once(text, vid, cur_model, key, out_path)
+                    # ƯU TIÊN endpoint with-timestamps (mốc TỪ chính xác từ
+                    # chính ElevenLabs). Đã biết account không hỗ trợ -> thẳng
+                    # endpoint thường. want_ts=False khi caller KHÔNG cần mốc.
+                    want_ts = (words_out is not None
+                               and not _ELEVEN_TS_UNSUPPORTED)
+                    ws = _eleven_tts_once(text, vid, cur_model, key,
+                                          out_path, want_timestamps=want_ts)
                     llm.mark_ok("elevenlabs", key)
                     tts_cache_put(vid, cur_model, text, out_path)
+                    if ws:
+                        _eleven_align_cache_put(vid, cur_model, text, ws)
+                    _emit_words(ws)
                     return True
                 except ElevenError as e:
                     if (e.kind == "model_denied"
@@ -1219,6 +1413,18 @@ def _eleven_tts(text: str, voice: str, out_path: str | Path,
                              f"{w:.0f}s rồi thử lại: {e}")
                         time.sleep(min(float(w), 15.0))
                         continue          # retry CÙNG key, KHÔNG mark
+                    # Endpoint /with-timestamps không có/không hỗ trợ (404/405)
+                    # -> LÙI endpoint thường CÙNG key (KHÔNG phải lỗi credit;
+                    # chỉ mất mốc TỪ chính xác, caller lùi STT). Đặt cờ để các
+                    # part sau gọi thẳng endpoint thường.
+                    if (not _ELEVEN_TS_UNSUPPORTED
+                            and (words_out is not None)
+                            and e.http in (404, 405)):
+                        _ELEVEN_TS_UNSUPPORTED = True
+                        note("ElevenLabs: endpoint with-timestamps không hỗ "
+                             "trợ -> lùi endpoint thường (phụ đề dùng STT). "
+                             f"Chi tiết: {e}")
+                        continue          # thử lại CÙNG key, endpoint thường
                     note(f"ElevenLabs lỗi ({e.kind}): {e}")
                     break                 # network/other -> key kế
                 except Exception as e:  # noqa: BLE001 — lỗi lạ (đĩa/parse)
@@ -1236,6 +1442,7 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
                       edge_rate: str = "",
                       model: str = "",
                       edge_texts: Optional[list[str]] = None,
+                      words_out: Optional[list] = None,
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua ElevenLabs TTS (KHUÔN _synth_all_gemini).
     _eleven_tts tự XOAY KEY từng request (key hết credit -> key kế NGAY,
@@ -1258,8 +1465,21 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
       nhất như cũ.
     GIỌNG NHẤT QUÁN TOÀN CLIP (all-or-nothing): BẤT KỲ cụm nào lỗi (mọi key
     chết giữa chừng) -> HỦY cả track ElevenLabs, re-synth TẤT CẢ bằng edge
-    (KHÔNG trộn 2 nguồn)."""
+    (KHÔNG trộn 2 nguồn).
+
+    words_out: nếu truyền list -> caller nhận MỐC TỪNG TỪ CHÍNH XÁC từ
+    endpoint /with-timestamps: words_out[i] = [[start_s, end_s, word], ...]
+    (mốc theo audio GỐC part i, trước atempo). Cụm không có mốc (endpoint
+    không hỗ trợ / fallback edge) -> words_out[i] = [] (caller lùi STT).
+    Đường fallback edge KHÔNG điền words_out (caller STT như cũ)."""
     fb_texts = edge_texts if edge_texts is not None else texts
+    if words_out is not None:              # 1 ô mốc TỪ cho mỗi cụm
+        words_out.clear()
+        words_out.extend([[] for _ in texts])
+
+    def _pw(i: int) -> Optional[list]:
+        """Ô mốc TỪ của cụm i (None nếu caller không xin words_out)."""
+        return words_out[i] if words_out is not None else None
     last_err = {"msg": ""}                 # lý do lỗi CUỐI (hiện nguyên văn)
 
     def _note(m: str) -> None:
@@ -1302,7 +1522,7 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
         else:
             # quota API lỗi -> pre-flight SYNTH cụm ngắn nhất như cũ
             if not _eleven_tts(texts[pf].strip(), voice, paths[pf],
-                               model=model, on_msg=_note):
+                               model=model, on_msg=_note, words_out=_pw(pf)):
                 why = last_err["msg"] or "lỗi pre-flight (mọi key đều lỗi)"
                 return _fallback_edge(f"lỗi ngay từ đầu — {why}")
             ok[pf] = True
@@ -1313,7 +1533,8 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
             if on_done:
                 on_done(i)
             continue
-        if not _eleven_tts(txt, voice, paths[i], model=model, on_msg=_note):
+        if not _eleven_tts(txt, voice, paths[i], model=model, on_msg=_note,
+                           words_out=_pw(i)):
             why = last_err["msg"] or "mọi key đều hết credit/chết"
             return _fallback_edge(f"lỗi giữa chừng — {why}")
         ok[i] = True
@@ -2347,15 +2568,18 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
 
         word_lists: list[list] = [[] for _ in narr]
         if voice.startswith("el:"):
-            # ElevenLabs TTS KHÔNG trả word boundary -> word_lists rỗng, phụ
-            # đề narrate dùng CÂU-CỤM chia theo D_final (tái dùng đường Gemini).
-            # ElevenLabs không có rate/pitch -> bỏ qua (fit window atempo tự
-            # bù). _synth_all_eleven tự đổi cả track sang edge-tts khi hết hạn
-            # mức (đường đó cũng không thu words -> phụ đề vẫn câu-cụm).
-            # emotion BẬT -> model eleven_v3 (đọc audio tag [excited]/CAPS);
-            # tắt -> multilingual_v2 mặc định (texts đã STRIP). v3 lỗi/chưa mở
-            # -> _eleven_tts tự lùi v2 (khi đó tag còn trong text nhưng v2 chỉ
-            # đọc phần lời, tag lọt ít — chấp nhận vì hiếm; sub vẫn sạch).
+            # ElevenLabs endpoint /with-timestamps -> MỐC TỪNG TỪ CHÍNH XÁC
+            # từ CHÍNH ElevenLabs (word_lists[i] điền qua words_out, KHÔNG cần
+            # STT). Endpoint không hỗ trợ / fallback edge -> word_lists[i] rỗng
+            # -> caller lùi STT/câu-cụm như cũ. ElevenLabs không có rate/pitch
+            # -> bỏ qua (fit window atempo tự bù). emotion BẬT -> model
+            # eleven_v3 (đọc audio tag [excited]/CAPS); tắt -> multilingual_v2
+            # mặc định (texts đã STRIP). v3 lỗi/chưa mở -> _eleven_tts tự lùi
+            # v2. LƯU Ý: với-timestamps trả mốc theo TEXT GỬI ĐI — khi v3 +
+            # emotion text còn audio tag, các tag đó cũng có mốc; nhưng
+            # word_lists dùng để tính speech_a/speech_b + (word-level) hiển
+            # thị, còn cue phụ đề MẶC ĐỊNH dựng lại từ n["text"] SẠCH nên tag
+            # không lọt phụ đề.
             el_model = _ELEVEN_MODEL_V3 if _use_v3 else ""
             _emo = " + cảm xúc v3" if _use_v3 else ""
             prog(0.05, f"Thu giọng {len(narr)} đoạn (ElevenLabs TTS{_emo})...")
@@ -2364,7 +2588,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                                    on_msg=lambda m: prog(0.06, m),
                                    edge_rate=rate, model=el_model,
                                    # đường fallback edge nhận bản ĐÃ strip tag
-                                   edge_texts=[n["text"] for n in narr])
+                                   edge_texts=[n["text"] for n in narr],
+                                   words_out=word_lists)
         elif voice.startswith("gemini:"):
             # Gemini TTS KHÔNG trả word boundary -> word_lists rỗng, phụ đề
             # narrate fallback chia theo ký tự (m1._recap_caption_cues).
