@@ -1479,6 +1479,66 @@ def _recap_caption_cues(narr_events: list) -> list:
     return cues
 
 
+def _part_mode_at(recap_parts: list, t: float) -> str:
+    """mode ("orig"/"narrate") của part recap chứa mốc t (timeline GỐC); mốc
+    rơi ranh giới -> part BẮT ĐẦU tại t. Không tìm thấy -> "". Hàm thuần."""
+    best = ""
+    for p in recap_parts or []:
+        try:
+            a, b = float(p["start"]), float(p["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if a <= t < b or abs(a - t) < 0.05:
+            return str(p.get("mode") or "")
+        if a <= t <= b:
+            best = str(p.get("mode") or "")
+    return best
+
+
+def _join_categories(segs: list, recap_parts: list | None,
+                     is_recap: bool) -> list:
+    """NGỮ CẢNH cho MỖI điểm nối giữa các đoạn segs (len = len(segs)-1) ->
+    list category cho export_canvas_clip.
+
+    - Clip THƯỜNG / Mixed (không recap): mọi điểm nối = 'transition' (whoosh
+      nhẹ) — giữ hành vi cũ, an toàn.
+    - RECAP (biết vai part orig/narrate theo timeline GỐC):
+        * Điểm nối CUỐI (vào đoạn KẾT clip) -> 'reveal' (ding chốt nhẹ).
+        * Vào đoạn mà part ĐẦU là 'orig' (bung tiếng gốc "đắt"/cao trào) ->
+          'impact' (boom mạnh đầu đoạn).
+        * Vào đoạn mà part đầu là 'narrate' (mở 1 mạch kể/chương mới) ->
+          'riser' cho điểm nối ĐẦU TIÊN (tạo hồi hộp trước cao trào), các
+          điểm nối narrate còn lại -> 'transition'.
+        * Còn lại -> 'transition'.
+    Hàm thuần — unit test được (chỉ đọc mốc segs + recap_parts)."""
+    n_join = max(0, len(segs) - 1)
+    if n_join == 0:
+        return []
+    if not is_recap or not recap_parts:
+        return ["transition"] * n_join
+    cats: list = []
+    used_riser = False
+    for i in range(n_join):
+        # mốc BẮT ĐẦU đoạn kế (đoạn i+1) trên timeline GỐC
+        try:
+            nxt_start = float(segs[i + 1][0])
+        except (IndexError, TypeError, ValueError):
+            cats.append("transition")
+            continue
+        if i == n_join - 1:
+            cats.append("reveal")           # vào đoạn KẾT -> chốt nhẹ
+            continue
+        mode = _part_mode_at(recap_parts, nxt_start)
+        if mode == "orig":
+            cats.append("impact")           # bung tiếng gốc đắt -> boom
+        elif mode == "narrate" and not used_riser:
+            cats.append("riser")            # mở mạch kể mới đầu tiên -> hồi hộp
+            used_riser = True
+        else:
+            cats.append("transition")
+    return cats
+
+
 def _recap_orig_caption_cues(recap_parts: list, segs: list,
                              tr_words: list, segments_transcript: list) -> list:
     """Cue phụ đề cho ĐOẠN GỐC (mode="orig") của clip recap — phụ đề LỜI
@@ -1904,6 +1964,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                     ass_path = ap
                     fonts_dir = str(ROOT_DIR / "app" / "assets" / "fonts")
         ctx.progress(0.15, f"{pfx}đang dựng khung (nền + video + phụ đề)...")
+        # NGỮ CẢNH tiếng chuyển đoạn theo cấu trúc đoạn: recap biết vai part
+        # (orig climax -> impact, kết -> reveal, mở mạch kể -> riser); clip
+        # thường/Mixed -> transition. Thư viện SFX đóng gói chọn đúng loại.
+        join_cats = _join_categories(segs, recap_parts, is_recap)
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -1924,6 +1988,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             fx_fade=bool(payload.get("fx_fade", True)),
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
+            join_categories=join_cats,
             flip_h=flip_h,
             # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (không mất hình): export_canvas_clip
             # tự tính lại video_rect theo tỉ lệ nguồn (đã có probe sẵn ở đó).

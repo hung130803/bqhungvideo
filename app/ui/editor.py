@@ -1153,14 +1153,18 @@ class EditorDialog(QDialog):
             "Làm hình mờ dần lên ở đầu (~0.35s) và mờ dần xuống ở cuối — "
             "chuyển cảnh tinh tế, chuyên nghiệp, không lố.")
         gb.addWidget(self.fx_fade_chk)
-        self.fx_whoosh_chk = QCheckBox("Tiếng chuyển đoạn (đa dạng)")
+        self.fx_whoosh_chk = QCheckBox("Tiếng chuyển đoạn (thư viện theo ngữ cảnh)")
         self.fx_whoosh_chk.setChecked(True)
         self.fx_whoosh_chk.setToolTip(
             "Thêm tiếng chuyển đoạn NHỎ tại điểm ghép giữa các đoạn (chỉ khi "
-            "clip ghép nhiều đoạn / Mixed-Cut). Mỗi điểm ghép chọn NGẪU NHIÊN 1 "
-            "trong ~9 loại tiếng tổng hợp (whoosh lên/xuống, gió, pop, tick, "
-            "riser, boom nhẹ, ding...) — không lặp liên tiếp nên nghe đa dạng. "
-            "Tạo bằng ffmpeg nên không cần file kèm.")
+            "clip ghép nhiều đoạn / Mixed-Cut / Reup thuyết minh). App có sẵn "
+            "THƯ VIỆN tiếng động phong phú (đóng gói kèm, không cần tải): "
+            "whoosh/gió/tick (chuyển đoạn), boom (khoảnh khắc mạnh), riser "
+            "(hồi hộp trước cao trào), ding (chốt/lộ diện), pop/click. "
+            "App tự CHỌN loại THEO NGỮ CẢNH: Reup vào cao trào tiếng gốc -> "
+            "boom, đoạn kết -> ding, còn lại -> whoosh; mỗi loại chọn ngẫu "
+            "nhiên 1 tiếng, không lặp liên tiếp nên nghe đa dạng. Chọn thư "
+            "mục tiếng động riêng ở dưới -> ưu tiên dùng file của bạn.")
         gb.addWidget(self.fx_whoosh_chk)
         # LẬT GƯƠNG (mirror trái-phải) để NÉ content-ID khi reup. Chỉ lật HÌNH;
         # chữ tiêu đề/Part + phụ đề chồng SAU nên vẫn đọc bình thường.
