@@ -225,7 +225,9 @@ def build_ass(words: list, segments: list, out_path,
               hook: str = "", hook_dur: float = 6.0,
               hook_nx: float = 0.5, hook_ny: float = 0.10,
               hook_size: float = 0.0,
-              extra_cues: list | None = None) -> bool:
+              extra_cues: list | None = None,
+              narr_color: str = "", narr_italic: bool | None = None,
+              narr_same: bool = False) -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
@@ -241,6 +243,12 @@ def build_ass(words: list, segments: list, out_path,
       - orig (LỜI GỐC nhân vật đoạn mode="orig"): kind="orig_word" (word-level)
         / "orig_sent" (fallback chia câu) -> Style Default (GIỐNG phụ đề clip
         thường) — sửa lỗi 'đoạn gốc không có phụ đề'.
+    narr_color = màu hex CHỮ AI KỂ (Style Narrate) do user chọn ở ⚙ Cài đặt
+    Reup nhóm "Chữ AI kể"; ""/None -> #FFD966 (vàng mặc định cũ, có logic
+    tránh trùng màu chữ chính như trước). narr_italic = in nghiêng lời AI kể
+    (None -> True mặc định). narr_same=True -> đoạn AI kể dùng LUÔN Style
+    Default (render cue narrate "word"/"sent" bằng Default như đoạn gốc,
+    không phân biệt) — bỏ qua narr_color/narr_italic.
     (đoạn narrate tiếng gốc bị tắt nên không có words; recap KHÔNG truyền
     `words` — mọi phụ đề recap đi qua extra_cues cho nhất quán timeline.)
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
@@ -295,15 +303,26 @@ def build_ass(words: list, segments: list, out_path,
     # STYLE RIÊNG "Narrate" cho phụ đề THUYẾT MINH (recap): NGHIÊNG + màu
     # ACCENT khác hẳn màu preset -> người xem phân biệt ngay lời KỂ của AI
     # với lời THOẠI gốc (trước đây 2 loại giống hệt nhau -> 'sub linh tinh').
-    # Accent = màu glow của preset (neon) nếu có, không thì VÀNG NHẠT #FFD966;
-    # trùng màu chữ chính -> lùi về trắng (vẫn phân biệt nhờ nghiêng + fade).
-    narr_accent = p.get("glow") or "#FFD966"
-    if _ass_color(narr_accent) == primary:
-        narr_accent = "#FFFFFF" if primary != _ass_color("#FFFFFF") else "#FFD966"
-    narr_primary = _ass_color(narr_accent)
+    # Màu: user chọn ở ⚙ Cài đặt Reup (narr_color) -> dùng THẲNG (đã là 1
+    # trong 5 màu định sẵn, phân biệt tốt); KHÔNG chọn -> accent = màu glow
+    # của preset (neon) nếu có, không thì VÀNG NHẠT #FFD966, trùng màu chữ
+    # chính -> lùi về trắng (vẫn phân biệt nhờ nghiêng + fade).
+    # narr_italic (None -> True): 1 = nghiêng, 0 = thẳng. narr_same=True ->
+    # đoạn AI kể render Style Default (không cần Narrate) — vẫn dựng style
+    # cho an toàn nhưng cue narrate sẽ dùng Default (xem vòng extra_cues).
+    if narr_color:
+        narr_primary = _ass_color(narr_color)
+    else:
+        narr_accent = p.get("glow") or "#FFD966"
+        if _ass_color(narr_accent) == primary:
+            narr_accent = ("#FFFFFF" if primary != _ass_color("#FFFFFF")
+                           else "#FFD966")
+        narr_primary = _ass_color(narr_accent)
+    narr_ital = -1 if (True if narr_italic is None else narr_italic) else 0
     narr_style = (f"Style: Narrate,{font},{size},{narr_primary},{secondary},"
-                  f"{outline},{back},-1,-1,0,0,100,100,0,0,{border_style},"
-                  f"{ow},{shadow},{align},{side},{side},{margin_v},1")
+                  f"{outline},{back},-1,{narr_ital},0,0,100,100,0,0,"
+                  f"{border_style},{ow},{shadow},{align},{side},{side},"
+                  f"{margin_v},1")
     # HOOK: câu giật tít TO ở ĐẦU clip (an8 = trên, neo đỉnh); vàng nổi + viền dày
     # vị trí/cỡ theo Ô HOOK user kéo trong Chỉnh mẫu (thiếu -> mặc định như cũ)
     hsize = int(hook_size * out_h) if hook_size > 0 else int(size * 1.5)
@@ -365,6 +384,12 @@ def build_ass(words: list, segments: list, out_path,
         if kind.startswith("orig"):
             # LỜI GỐC nhân vật -> Style Default (như clip thường)
             pre = orig_anim if kind == "orig_word" else "{\\fad(60,40)}"
+            style_name = "Default"
+        elif narr_same:
+            # user chọn "giống hệt phụ đề mẫu" -> đoạn AI kể dùng LUÔN Style
+            # Default (không phân biệt) — dùng đúng animation kiểu orig để
+            # trông y hệt phụ đề đoạn gốc.
+            pre = orig_anim if kind == "word" else "{\\fad(60,40)}"
             style_name = "Default"
         else:
             pre = word_pre if kind == "word" else "{\\fad(80,80)}"

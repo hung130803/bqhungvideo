@@ -2280,6 +2280,11 @@ class StudioPage(QWidget):
         wmin = min(6, max(2, wmin))
         preset["recap_win_min"] = wmin
         preset["recap_win_max"] = max(wmin, min(8, max(3, wmax)))
+        # Tự-động số cảnh (mặc định BẬT) -> AI tự chọn số cảnh (m2 bound rộng
+        # 2-8 + prompt không gò cứng); TẮT -> dùng Min/Max ở trên.
+        preset["recap_win_auto"] = str(
+            self._settings.value("recap_win_auto", True)).strip().lower() \
+            not in ("false", "0", "no", "off")
         # 🎭 Giọng cảm xúc (audio tag v3) — MẶC ĐỊNH BẬT; đưa vào preset để
         # prompt biết mà chèn tag cảm xúc vào lời narrate.
         preset["recap_emotion"] = str(
@@ -3116,6 +3121,17 @@ class StudioPage(QWidget):
                     self._settings.value("recap_emotion", True)).strip()
                 .lower() not in ("false", "0", "no", "off"),
                 recap_volume=self._recap_volume(),
+                # 🎙 CHỮ AI KỂ (⚙ Cài đặt Reup) — màu/nghiêng/giống-mẫu phụ
+                # đề đoạn AI kể; chỉ clip recap dùng, clip thường bỏ qua.
+                recap_narr_color=str(
+                    self._settings.value("recap_narr_color", "#FFD966")
+                    or "#FFD966"),
+                recap_narr_italic=str(
+                    self._settings.value("recap_narr_italic", True)).strip()
+                .lower() not in ("false", "0", "no", "off"),
+                recap_narr_same=str(
+                    self._settings.value("recap_narr_same", False)).strip()
+                .lower() in ("true", "1", "yes", "on"),
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 fx_sfx_dir=self._pick_sfx_dir(),

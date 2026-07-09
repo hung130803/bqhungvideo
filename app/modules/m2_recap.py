@@ -223,9 +223,17 @@ def _auto_recap_count(duration: float) -> int:
 
 
 def _win_bounds(preset: dict) -> tuple:
-    """Min/Max SỐ CẢNH GHÉP mỗi clip từ ⚙ Cài đặt Reup (QSettings
-    recap_win_min 2-6 / recap_win_max 3-8, mặc định 3-6) -> (min, max)
-    đã kẹp; Min > Max -> ép Max = Min. Hàm thuần — test được."""
+    """Min/Max SỐ CẢNH GHÉP mỗi clip từ ⚙ Cài đặt Reup -> (min, max, auto).
+
+    recap_win_auto (mặc định BẬT) -> AI TỰ chọn số cảnh: trả bound RỘNG
+    (2, 8) chỉ để chặn vô lý (prompt không gò cứng, validate_windows dùng
+    max_n=8) + auto=True (caller đưa win_auto vào prompt đạo diễn).
+    TẮT -> dùng recap_win_min 2-6 / recap_win_max 3-8 (mặc định 3-6) như
+    cũ, kẹp; Min > Max -> ép Max = Min; auto=False. Hàm thuần — test được."""
+    auto = str(preset.get("recap_win_auto", True)).strip().lower() \
+        not in ("false", "0", "no", "off")
+    if auto:
+        return 2, 8, True
     try:
         lo = int(preset.get("recap_win_min", 3))
     except (TypeError, ValueError):
@@ -236,7 +244,7 @@ def _win_bounds(preset: dict) -> tuple:
         hi = 6
     lo = min(6, max(2, lo))
     hi = min(8, max(3, hi))
-    return lo, max(lo, hi)
+    return lo, max(lo, hi), False
 
 
 def _resolve_count(preset: dict, duration: float) -> int:
@@ -394,9 +402,11 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
     payload: {video_id, preset: {..., recap_style, recap_ratio,
-    recap_count, recap_win_min, recap_win_max}}. recap_win_min/max = số
-    CẢNH ghép mong muốn mỗi clip (2-6 / 3-8, mặc định 3-6 — vào prompt
-    đạo diễn + trần validate_windows). recap_count = số clip thuyết minh:
+    recap_count, recap_win_auto, recap_win_min, recap_win_max}}.
+    recap_win_auto (mặc định BẬT) -> AI TỰ chọn số cảnh (bound rộng 2-8,
+    prompt không gò cứng); TẮT -> recap_win_min/max = số CẢNH ghép mong
+    muốn mỗi clip (2-6 / 3-8, mặc định 3-6 — vào prompt đạo diễn + trần
+    validate_windows). recap_count = số clip thuyết minh:
     0/thiếu = TỰ ĐỘNG
     theo độ dài (<4 phút 1 clip, 4-12 phút 2, >12 phút 3 — mặc định), hoặc
     chọn tay 1-3 — chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập.
@@ -468,7 +478,8 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     prov = llm.active_provider()
     min_total = float(cfg.get("min_len") or 0) or 60.0
     max_total = float(cfg.get("max_len") or 0) or _HARD_MAX
-    win_lo, win_hi = _win_bounds(preset)   # min/max SỐ CẢNH ghép mỗi clip
+    # min/max SỐ CẢNH ghép mỗi clip (win_auto=True -> AI tự chọn, bound rộng)
+    win_lo, win_hi, win_auto = _win_bounds(preset)
     sents_all = []
     for s in segs:
         try:
@@ -508,7 +519,8 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 min(min_total, max(30.0, 0.6 * (c1 - c0))),
                 min(max_total, c1 - c0), ratio=ratio,
                 listing=_condense_listing(ch_segs, c1 - c0),
-                win_min=win_lo, win_max=win_hi, emotion=emotion)
+                win_min=win_lo, win_max=win_hi, emotion=emotion,
+                win_auto=win_auto)
         except llm.LLMError:
             sc = None                  # chương lỗi -> bỏ riêng chương đó
         if sc:

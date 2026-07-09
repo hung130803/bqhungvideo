@@ -1372,12 +1372,17 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
                           win_min: int = 3, win_max: int = 6,
-                          emotion: bool = False) -> str:
+                          emotion: bool = False,
+                          win_auto: bool = False) -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
     win_min-win_max khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI
     giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6).
     ratio 15-80 (mặc định 30); <= 40 -> KHUÔN LOW-RATIO (AI nói ít, nhanh
-    gọn, video gốc là chính — _structure_rules)."""
+    gọn, video gốc là chính — _structure_rules).
+
+    win_auto=True (MẶC ĐỊNH ⚙ Cài đặt Reup — "để AI tự chọn số cảnh"): bỏ
+    khung gò cứng win_min-win_max, thay bằng chỉ dẫn TỰ chọn số cảnh hợp lý
+    theo nội dung (thường 2-6), ưu tiên mạch chuyện hay."""
     ln = lang_name.upper()
     try:
         pct = int(round(max(15.0, min(80.0, float(ratio)))))
@@ -1403,10 +1408,16 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "CẢNH rời nhau kể TRỌN câu chuyện (như recap phim), rồi viết lời kể "
         "của bạn phủ lên.\n\n"
         "BƯỚC 1 — CHỌN KHUNG CẢNH (windows):\n"
-        f"- Chọn {w_lo}-{w_hi} khung cảnh RỜI NHAU bám mạch chuyện: mở đầu "
-        "-> diễn biến -> twist/cao trào -> kết. ĐÚNG thứ tự thời gian, KHÔNG "
-        "chồng lấn, KHÔNG đảo đoạn.\n"
-        f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
+        + ("- TỰ CHỌN số khung cảnh hợp lý theo nội dung (thường 2-6 khung) "
+           "— ưu tiên MẠCH CHUYỆN hay, KHÔNG gò cứng số lượng: chuyện cần "
+           "ít cảnh thì ít, cần nhiều thì nhiều. Các khung RỜI NHAU bám "
+           "mạch: mở đầu -> diễn biến -> twist/cao trào -> kết. ĐÚNG thứ tự "
+           "thời gian, KHÔNG chồng lấn, KHÔNG đảo đoạn.\n"
+           if win_auto else
+           f"- Chọn {w_lo}-{w_hi} khung cảnh RỜI NHAU bám mạch chuyện: mở "
+           "đầu -> diễn biến -> twist/cao trào -> kết. ĐÚNG thứ tự thời "
+           "gian, KHÔNG chồng lấn, KHÔNG đảo đoạn.\n")
+        + f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
         f"{min_total:.0f}-{max_total:.0f} giây.\n"
         "- Mép khung phải trùng mép câu transcript (không cắt ngang câu "
         "nói).\n"
@@ -1730,7 +1741,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                           max_total: float, ratio: float = 55,
                           listing: str = "", win_min: int = 3,
                           win_max: int = 6,
-                          emotion: bool = False) -> Optional[dict]:
+                          emotion: bool = False,
+                          win_auto: bool = False) -> Optional[dict]:
     """Gọi LLM đạo diễn trên TOÀN BỘ transcript -> {"title", "windows",
     "parts"} ĐÃ validate; None nếu windows/parts hỏng cả sau khi RETRY
     (caller fallback đường 1-span cũ).
@@ -1745,6 +1757,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     + lọc mật độ lời). listing = transcript RÚT GỌN cho prompt (caller gộp
     câu nếu video dài); rỗng -> tự build từ sentences.
     win_min/win_max = khoảng SỐ KHUNG CẢNH mong muốn (⚙ Cài đặt Reup).
+    win_auto=True (mặc định ⚙): AI TỰ chọn số cảnh — prompt bỏ khung gò
+    cứng, validate dùng bound rộng (caller truyền max_n rộng).
     Ném llm.LLMError nếu gọi LLM thất bại vì mạng/key (caller quyết
     fallback); lỗi PARSE JSON thì tự retry chứ không ném."""
     if not listing:
@@ -1753,7 +1767,7 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     prompt = build_director_prompt(listing, lang_name, style, duration,
                                    min_total, max_total, ratio=ratio,
                                    win_min=win_min, win_max=win_max,
-                                   emotion=emotion)
+                                   emotion=emotion, win_auto=win_auto)
 
     def _lang_retry():
         """Gọi lại LLM kèm chỉ trích SAI NGÔN NGỮ -> script validate/None."""
