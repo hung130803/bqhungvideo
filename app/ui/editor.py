@@ -1449,6 +1449,19 @@ class EditorDialog(QDialog):
             "riêng (Style Narrate).")
         self.narr_preset.currentIndexChanged.connect(self._refresh_narr)
         gn.addLayout(_frow("Kiểu chạy chữ", self.narr_preset))
+        # 1b. FONT chữ AI kể — DÙNG CHUNG danh sách với phụ đề gốc (cap_font).
+        # Mục ĐẦU "(giống phụ đề gốc)" = ăn theo font phụ đề gốc; còn lại = font
+        # riêng cho Style Narrate.
+        self.narr_font = _NoWheelCombo()
+        self.narr_font.addItem(NARR_SAME_LABEL)      # font = font phụ đề gốc
+        for f in ("Montserrat", "Be Vietnam Pro", "Anton", "Bungee", "Baloo 2",
+                  "Oswald", "Lexend", "Pattaya", "Arial"):
+            self.narr_font.addItem(f)
+        self.narr_font.setToolTip(
+            "Font cho đoạn AI kể. '(giống phụ đề gốc)' = dùng font phụ đề gốc "
+            "ở trên. Chọn font khác = đoạn AI kể có font riêng.")
+        self.narr_font.currentIndexChanged.connect(self._refresh_narr)
+        gn.addLayout(_frow("Font", self.narr_font))
         # 2. CHỮ HOA
         self.narr_case = _case_combo(
             "Kiểu chữ hoa cho đoạn AI kể: Giữ nguyên / HOA / thường / Hoa Đầu Từ.")
@@ -1684,6 +1697,11 @@ class EditorDialog(QDialog):
                            else "Trắng đơn giản")
             npi = self.narr_preset.findText(np_name)
             self.narr_preset.setCurrentIndex(max(0, npi))
+            # FONT chữ AI kể: mẫu CŨ không có key -> '(giống phụ đề gốc)' (giữ
+            # nguyên hành vi cũ = font phụ đề gốc). Mẫu MỚI dùng đúng giá trị đã lưu.
+            nf_name = layout.get("narr_font", "") or NARR_SAME_LABEL
+            nfi = self.narr_font.findText(nf_name)
+            self.narr_font.setCurrentIndex(max(0, nfi))
             # MÀU chữ / viền: '' = theo kiểu. Mẫu CŨ luôn lưu narr_color (1 trong
             # 5 màu) -> vẫn dùng làm override để giữ nguyên màu người dùng đã chọn.
             self._narr_color = layout.get("narr_color", "") or ""
@@ -2199,10 +2217,15 @@ class EditorDialog(QDialog):
         # "(giống phụ đề gốc)" -> lấy kiểu của phụ đề gốc (như build_ass: np = p)
         preset_name = (self.cap_preset.currentText()
                        if name == NARR_SAME_LABEL else name)
+        # FONT: '(giống phụ đề gốc)' -> font phụ đề gốc; ngược lại font riêng.
+        # WYSIWYG — preview vẽ đúng font sẽ dùng ở Style Narrate.
+        fname = self.narr_font.currentText()
+        narr_font = (self.cap_font.currentText()
+                     if fname == NARR_SAME_LABEL else fname)
         d = _caption_box_data(
             preset_name,
             size=self.narr_size.value() / 1000.0,
-            font=self.cap_font.currentText(),   # Narrate dùng cùng font phụ đề
+            font=narr_font,
             ny=ny, color=self._narr_color, outline=self._narr_outline,
             ow=self.narr_ow.value() / 100.0,
             italic=self.narr_italic.isChecked())
@@ -2244,8 +2267,11 @@ class EditorDialog(QDialog):
         cb.apply(d, text)
         self.canvas.set_cap_top(ny)      # đặt lại đỉnh tại vị trí cũ
         # narr "(giống phụ đề gốc)" ăn theo kiểu/font phụ đề gốc -> cập nhật cùng
+        # (kiểu SAME hoặc font SAME đều phụ thuộc phụ đề gốc).
         if (getattr(self, "narr_preset", None) is not None
-                and self.narr_preset.currentText() == NARR_SAME_LABEL):
+                and (self.narr_preset.currentText() == NARR_SAME_LABEL
+                     or (getattr(self, "narr_font", None) is not None
+                         and self.narr_font.currentText() == NARR_SAME_LABEL))):
             self._refresh_narr()
 
     # ---- DEMO kiểu chữ: tạo clip ~6s rồi phát để xem chữ chạy ----
@@ -2438,6 +2464,8 @@ class EditorDialog(QDialog):
         # cũ — mẫu cũ đọc lại vẫn đúng).
         lay["narr_preset"] = self.narr_preset.currentText()
         lay["narr_same"] = (self.narr_preset.currentText() == NARR_SAME_LABEL)
+        # FONT chữ AI kể: NARR_SAME_LABEL -> theo font phụ đề gốc (cap_font).
+        lay["narr_font"] = self.narr_font.currentText()
         lay["narr_size"] = self.narr_size.value() / 1000.0
         lay.update(self.canvas.narr_geom())   # narr_ny (+ narr_size từ ô kéo)
         # narr_geom trả narr_size theo ô kéo -> đồng nhất với thanh trượt (cùng

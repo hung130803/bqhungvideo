@@ -309,7 +309,7 @@ def build_ass(words: list, segments: list, out_path,
               hook_case: str = "",
               cap_outline: str = "", cap_ow: float = 0.0,
               narr_preset: str = "", narr_outline: str = "",
-              narr_ow: float = 0.0) -> bool:
+              narr_ow: float = 0.0, narr_font: str = "") -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
@@ -343,6 +343,8 @@ def build_ass(words: list, segments: list, out_path,
     (tương đương narr_same cũ); chọn preset khác -> Narrate lấy màu/viền/glow của
     preset đó + chạy hiệu ứng theo mode. narr_outline / narr_ow = màu viền / độ
     dày viền TÙY CHỌN cho Style Narrate (thiếu -> theo narr_preset).
+    narr_font = FONT riêng cho Style Narrate (Chỉnh mẫu khu "Chữ AI đọc");
+    rỗng / NARR_SAME_LABEL "(giống phụ đề gốc)" -> dùng font phụ đề gốc (`font`).
     (đoạn narrate tiếng gốc bị tắt nên không có words; recap KHÔNG truyền
     `words` — mọi phụ đề recap đi qua extra_cues cho nhất quán timeline.)
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
@@ -469,7 +471,11 @@ def build_ass(words: list, segments: list, out_path,
             now = max(0, int(nsize * narr_ow))
     narr_mv = (int(max(0.02, min(0.9, narr_ny)) * out_h)
                if narr_ny and narr_ny > 0 else margin_v)
-    narr_style = (f"Style: Narrate,{font},{nsize},{narr_primary},{secondary},"
+    # FONT Style Narrate: narr_font user chọn (Chỉnh mẫu khu "Chữ AI đọc");
+    # rỗng / NARR_SAME_LABEL -> dùng font phụ đề gốc (giữ hành vi cũ).
+    nfont = (font if (not narr_font or narr_font == NARR_SAME_LABEL)
+             else narr_font)
+    narr_style = (f"Style: Narrate,{nfont},{nsize},{narr_primary},{secondary},"
                   f"{narr_outline_c},{narr_back},-1,{narr_ital},0,0,100,100,0,0,"
                   f"{narr_border},{now},{narr_shadow},{align},{side},{side},"
                   f"{narr_mv},1")

@@ -2078,6 +2078,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                         # KIỂU chạy chữ riêng cho chữ AI ('(giống phụ đề gốc)'
                         # -> Style Default). narr_same giữ cho tương thích.
                         narr_preset=str(cs.get("narr_preset") or ""),
+                        narr_font=str(cs.get("narr_font") or ""),
                         narr_italic=(
                             None if cs.get("narr_italic") is None
                             else bool(cs.get("narr_italic"))),

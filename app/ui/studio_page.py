@@ -28,7 +28,7 @@ from app.database import db
 from app.ui.editor import EditorDialog, render_overlay_png
 from app.ui.state import AppState
 from app.ui.theme import (
-    ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, TEXT, WARN,
+    ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
 
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
@@ -528,52 +528,92 @@ class StudioPage(QWidget):
         # NHIỀU mục (Gemini/Groq/file key/ElevenLabs/trạng thái key) -> nội dung
         # DÀI hơn màn hình -> CUỘN được + cao vừa màn hình + nút Lưu GHIM dưới
         # (trước đây tràn màn hình, che mất nút Lưu/Kiểm tra).
-        from PyQt6.QtWidgets import QScrollArea, QWidget
+        from PyQt6.QtWidgets import QFrame, QScrollArea, QWidget
         _outer = QVBoxLayout(dlg); _outer.setContentsMargins(0, 0, 0, 0)
         _outer.setSpacing(0)
         _scroll = QScrollArea(); _scroll.setWidgetResizable(True)
         _scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         _outer.addWidget(_scroll, 1)
         _content = QWidget(); _scroll.setWidget(_content)
-        lay = QVBoxLayout(_content); lay.setSpacing(7)
-        lay.setContentsMargins(14, 12, 14, 12)
+        lay = QVBoxLayout(_content); lay.setSpacing(12)
+        lay.setContentsMargins(18, 16, 18, 16)
         try:
             _sh = self.screen().availableGeometry().height()
         except Exception:  # noqa: BLE001
             _sh = 800
-        dlg.resize(530, min(680, max(420, int(_sh) - 90)))
-        lay.addWidget(QLabel("Nguồn AI:"))
+        dlg.resize(580, min(720, max(460, int(_sh) - 90)))
+
+        # ---- Tiêu đề dialog + mô tả ngắn ----
+        _hdr = QLabel("Cài đặt AI")
+        _hdr.setStyleSheet(f"color:{TEXT}; font-size:19px; font-weight:800;")
+        lay.addWidget(_hdr)
+        _sub = QLabel("Cấu hình AI cho toàn bộ app — dán key rồi bấm Kiểm tra.")
+        _sub.setWordWrap(True)
+        _sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        lay.addWidget(_sub)
+
+        # ---- Nhà máy THẺ: QFrame bo góc 10px, nền nổi hơn nền dialog, viền mảnh,
+        # có TIÊU ĐỀ (icon) + mô tả MUTED. Trả về body-layout để nhét control.
+        def _card(title, desc=""):
+            fr = QFrame()
+            fr.setObjectName("aiCard")
+            fr.setStyleSheet(
+                f"#aiCard{{background:{ELEV}; border:1px solid {BORDER};"
+                f"border-radius:10px;}}"
+                f"#aiCard QLabel{{background:transparent;}}")
+            cl = QVBoxLayout(fr)
+            cl.setContentsMargins(15, 13, 15, 14)
+            cl.setSpacing(9)
+            t = QLabel(title)
+            t.setStyleSheet(f"color:{TEXT}; font-size:14px; font-weight:700;")
+            cl.addWidget(t)
+            if desc:
+                d = QLabel(desc); d.setWordWrap(True)
+                d.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+                cl.addWidget(d)
+            lay.addWidget(fr)
+            return cl
+
+        def _flabel(text):
+            """Nhãn phụ (mô tả field) — MUTED nhỏ, canh sát control bên dưới."""
+            x = QLabel(text); x.setWordWrap(True)
+            x.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+            return x
+
+        # ============ THẺ 1: 🧠 Bộ não AI ============
+        c_brain = _card(
+            "🧠 Bộ não AI",
+            "Chọn AI viết kịch bản / chọn đoạn hay. Groq miễn phí, Gemini khôn "
+            "nhất.")
+        c_brain.addWidget(_flabel("Nguồn AI"))
         src = QComboBox()
         src.addItem("Groq — mây (FREE, khôn, nhẹ — khuyên dùng)", "groq")
         src.addItem("Gemini — mây (khôn nhất, có phí nhẹ)", "gemini")
         i = src.findData(settings.LLM_PROVIDER or "groq")
         src.setCurrentIndex(i if i >= 0 else 0)
-        lay.addWidget(src)
-        lay.addWidget(QLabel("Gemini API key (nhiều key thì mỗi dòng 1 key — tự xoay "
-                             "vòng khi hết lượt):"))
+        c_brain.addWidget(src)
+        c_brain.addWidget(_flabel(
+            "Gemini API key (nhiều key mỗi dòng 1 — tự xoay vòng khi hết lượt)"))
         key = QPlainTextEdit(settings.GEMINI_API_KEY or "")
         key.setPlaceholderText("Dán 1 hoặc NHIỀU key, mỗi dòng 1 key")
-        key.setFixedHeight(60); lay.addWidget(key)
-        lay.addWidget(QLabel("Model Gemini:"))
+        key.setFixedHeight(60); c_brain.addWidget(key)
+        c_brain.addWidget(_flabel("Model Gemini"))
         mdl = QComboBox()
         mdl.addItem("Gemini 2.5 Flash — nhanh, rẻ (khuyên)", "gemini-2.5-flash")
         mdl.addItem("Gemini 2.5 Pro — khôn nhất, chậm/đắt hơn", "gemini-2.5-pro")
         j = mdl.findData(settings.GEMINI_MODEL)
         mdl.setCurrentIndex(j if j >= 0 else 0)
-        lay.addWidget(mdl)
-        # ----- Nghe-chép (Whisper): Máy hay Groq (mây) -----
-        lay.addWidget(QLabel("Nghe-chép lời (Whisper):"))
-        wsrc = QComboBox()
-        wsrc.addItem("Máy này — Local (cần GPU mới nhanh)", "local")
-        wsrc.addItem("Groq — mây (FREE, máy yếu vẫn nhanh)", "groq")
-        wi = wsrc.findData(settings.WHISPER_PROVIDER or "local")
-        wsrc.setCurrentIndex(wi if wi >= 0 else 0)
-        lay.addWidget(wsrc)
-        lay.addWidget(QLabel("Groq API key (console.groq.com/keys — nhiều key mỗi "
-                             "dòng 1):"))
+        c_brain.addWidget(mdl)
+
+        # ============ THẺ 2: 🔑 Key Groq ============
+        c_groq = _card(
+            "🔑 Key Groq",
+            "Key Groq dùng cho AI (nếu chọn Groq) và nghe-chép lời trên mây. "
+            "Lấy free tại console.groq.com/keys.")
+        c_groq.addWidget(_flabel("Groq API key (nhiều key mỗi dòng 1)"))
         gkeys = QPlainTextEdit(settings.GROQ_API_KEYS or "")
         gkeys.setPlaceholderText("Để TRỐNG nếu chép lời bằng Máy")
-        gkeys.setFixedHeight(50); lay.addWidget(gkeys)
+        gkeys.setFixedHeight(50); c_groq.addWidget(gkeys)
 
         # ----- TRỎ FILE KEY (mỗi dòng 1 key) — cho HÀNG TRĂM key -----
         # Trạng thái đường dẫn file giữ trong 1 ô [list] để đóng closure sửa được.
@@ -582,18 +622,18 @@ class StudioPage(QWidget):
                        "App gộp cả hai.")
         gnote.setWordWrap(True)
         gnote.setStyleSheet(f"color:{MUTED}; font-size:11px;")
-        lay.addWidget(gnote)
+        c_groq.addWidget(gnote)
         gfrow = QHBoxLayout()
         gfbtn = QPushButton("📄 Chọn file key (mỗi dòng 1 key)")
         gfbtn.setProperty("ghost", True)
         gfclear = QPushButton("Bỏ"); gfclear.setProperty("ghost", True)
         gfrow.addWidget(gfbtn); gfrow.addWidget(gfclear); gfrow.addStretch(1)
-        lay.addLayout(gfrow)
+        c_groq.addLayout(gfrow)
         gflbl = QLabel("")
         gflbl.setWordWrap(True)
         gflbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         gflbl.setStyleSheet(f"color:{TEXT}; font-size:11px;")
-        lay.addWidget(gflbl)
+        c_groq.addWidget(gflbl)
 
         def _refresh_gfile():
             p = gfile[0]
@@ -632,18 +672,18 @@ class StudioPage(QWidget):
         gckbtn.setToolTip("Test từng key sống/hết hạn/sai bằng call rẻ (không "
                           "tốn token). Chạy song song, có tiến độ.")
         gckrow.addWidget(gckbtn); gckrow.addStretch(1)
-        lay.addLayout(gckrow)
+        c_groq.addLayout(gckrow)
         gckstat = QLabel("")
         gckstat.setObjectName("groq_check_label")
         gckstat.setWordWrap(True)
         gckstat.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         gckstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
-        lay.addWidget(gckstat)
+        c_groq.addWidget(gckstat)
         # nút xoá key chết khỏi ô dán (chỉ hiện khi có key 401)
         gckdel = QPushButton("Xoá key chết khỏi ô dán")
         gckdel.setProperty("ghost", True)
         gckdel.setVisible(False)
-        lay.addWidget(gckdel)
+        c_groq.addWidget(gckdel)
 
         def _keys_to_check():
             # gộp ô dán + file (dedup giữ thứ tự) — giống config.groq_keys()
@@ -723,12 +763,15 @@ class StudioPage(QWidget):
 
         gckdel.clicked.connect(del_dead_keys)
 
-        # ----- ElevenLabs TTS (giọng lồng tiếng/thuyết minh CAO CẤP) -----
+        # ============ THẺ 3: 🎧 Giọng cao cấp ElevenLabs ============
         # Tùy chọn — user tự cắm key. Có key -> nhóm giọng 🎧 ElevenLabs mở
         # khóa trong Cài đặt Reup + combo giọng lồng tiếng. Free 10k ký tự/
         # tháng, hết hạn mức tự lùi về edge-tts.
-        lay.addWidget(QLabel("ElevenLabs API key — giọng lồng tiếng/thuyết minh "
-                             "CAO CẤP (tùy chọn, nhiều key mỗi dòng 1):"))
+        c_eleven = _card(
+            "🎧 Giọng cao cấp ElevenLabs (tùy chọn)",
+            "Giọng lồng tiếng / thuyết minh chất lượng cao nhất. Bỏ trống nếu "
+            "chỉ dùng edge-tts miễn phí. Hết hạn mức app tự lùi về edge-tts.")
+        c_eleven.addWidget(_flabel("ElevenLabs API key (nhiều key mỗi dòng 1)"))
         elkeys = QPlainTextEdit((settings.ELEVENLABS_API_KEYS
                                  or settings.ELEVENLABS_API_KEY or ""))
         elkeys.setPlaceholderText("Để TRỐNG nếu chỉ dùng edge-tts (miễn phí). "
@@ -739,7 +782,7 @@ class StudioPage(QWidget):
             "tiếng.\nFree 10.000 ký tự/tháng — hết hạn mức app TỰ lùi về giọng "
             "edge-tts.\nElevenLabs không chỉnh được nhịp/tông (bỏ qua 2 mục "
             "đó); tốc độ vẫn khớp khung tự động.")
-        elkeys.setFixedHeight(50); lay.addWidget(elkeys)
+        elkeys.setFixedHeight(50); c_eleven.addWidget(elkeys)
 
         # Nút "Kiểm tra" credit ElevenLabs: gọi GET /user/subscription cho
         # TỪNG key ở THREAD NỀN -> hiện "Key …abc: còn 8.230/10.000 ký tự
@@ -750,14 +793,14 @@ class StudioPage(QWidget):
         elbtn.setToolTip("Xem từng key còn bao nhiêu ký tự TTS (gói, ngày "
                          "reset). Key sai/bị chặn sẽ báo rõ lý do.")
         elrow.addWidget(elbtn); elrow.addStretch(1)
-        lay.addLayout(elrow)
+        c_eleven.addLayout(elrow)
         elstat = QLabel("")
         elstat.setObjectName("eleven_credit_label")
         elstat.setWordWrap(True)
         elstat.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         elstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
-        lay.addWidget(elstat)
+        c_eleven.addWidget(elstat)
 
         def check_eleven():
             keys = [k.strip() for k in elkeys.toPlainText()
@@ -795,9 +838,25 @@ class StudioPage(QWidget):
 
         elbtn.clicked.connect(check_eleven)
 
-        # ----- Trạng thái key (thời gian thực) — chỉ đọc SỔ trong RAM, -----
-        # ----- KHÔNG gọi mạng; QTimer 2s cập nhật, dừng khi đóng dialog. -----
-        lay.addWidget(QLabel("Trạng thái key (thời gian thực):"))
+        # ============ THẺ 4: 🎙 Nghe-chép lời (Whisper) ============
+        c_wsp = _card(
+            "🎙 Nghe-chép lời (Whisper)",
+            "Bóc lời thoại trong video thành phụ đề. Máy cần GPU mới nhanh; "
+            "Groq chạy trên mây, máy yếu vẫn nhanh (dùng key Groq ở trên).")
+        c_wsp.addWidget(_flabel("Chép lời bằng"))
+        wsrc = QComboBox()
+        wsrc.addItem("Máy này — Local (cần GPU mới nhanh)", "local")
+        wsrc.addItem("Groq — mây (FREE, máy yếu vẫn nhanh)", "groq")
+        wi = wsrc.findData(settings.WHISPER_PROVIDER or "local")
+        wsrc.setCurrentIndex(wi if wi >= 0 else 0)
+        c_wsp.addWidget(wsrc)
+
+        # ============ THẺ 5: 📊 Trạng thái key (thời gian thực) ============
+        # chỉ đọc SỔ trong RAM, KHÔNG gọi mạng; QTimer 2s cập nhật, dừng khi
+        # đóng dialog.
+        c_stat = _card(
+            "📊 Trạng thái key (thời gian thực)",
+            "Theo dõi từng key Groq: sẵn sàng / đang dùng / hết lượt / sai.")
         kstat = QLabel("")
         kstat.setObjectName("key_status_label")
         kstat.setWordWrap(True)
@@ -805,7 +864,7 @@ class StudioPage(QWidget):
         kstat.setStyleSheet(f"color:{TEXT}; background:{SURFACE}; border:1px solid "
                             f"{BORDER}; border-radius:8px; padding:8px 10px; "
                             "font-size:12px; line-height:1.5;")
-        lay.addWidget(kstat)
+        c_stat.addWidget(kstat)
 
         def _fmt_wait(sec: float) -> str:
             s = int(round(sec))
@@ -854,6 +913,7 @@ class StudioPage(QWidget):
 
         note = QLabel(""); note.setWordWrap(True)
         lay.addWidget(note); lay.addStretch(1)
+        # note nằm SÁT mép trong vùng cuộn -> nhìn như banner dưới các thẻ
 
         def set_note(kind, text):
             # kind: ok(xanh) / err(đỏ) / wait(vàng) / info(xám)
@@ -3287,6 +3347,8 @@ class StudioPage(QWidget):
                     # KIỂU chạy chữ RIÊNG cho chữ AI ('(giống phụ đề gốc)' =
                     # Style Default). narr_same giữ cho tương thích.
                     "narr_preset": self.layout_tpl.get("narr_preset", "") or "",
+                    # FONT chữ AI kể ('(giống phụ đề gốc)'/rỗng -> font phụ đề gốc)
+                    "narr_font": self.layout_tpl.get("narr_font", "") or "",
                     "narr_italic": bool(self.layout_tpl.get("narr_italic", True)),
                     "narr_same": bool(self.layout_tpl.get("narr_same", False)),
                     "narr_ny": float(self.layout_tpl.get("narr_ny", 0.0) or 0.0),
