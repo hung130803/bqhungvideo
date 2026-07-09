@@ -29,7 +29,7 @@ from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import extract_frame
 from app.database import db
 from app.modules.m1_highlight import (
-    DEFAULTS, _delete_suggested, _llm_select_clips,
+    DEFAULTS, _delete_suggested, _llm_select_clips, load_used_ranges,
 )
 from app.queue.worker import JobContext
 
@@ -430,6 +430,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                         (video_id,))
     duration = float(vrow["duration"] or 0) if vrow else 0.0
     src_path = (vrow["src_path"] or "") if vrow else ""
+    # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: các đoạn ĐÃ dùng ở clip trước của video
+    # này (đọc TRƯỚC _delete_suggested — giữ cả lần bấm trước còn treo
+    # suggested). Reup lần sau (hoặc sau khi đã Tạo clip thường) né các đoạn cũ.
+    prev_used = load_used_ranges(video_id)
     # Tên ngôn ngữ CHUẨN TIẾNG ANH ("English"/"Vietnamese") cho prompt —
     # tên kiểu "tiếng Anh" từng làm model viết kịch bản tiếng Việt cho
     # video EN (model tuân "write in English" tốt hơn hẳn).
@@ -523,7 +527,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         _delete_suggested(video_id)
         lang0 = (transcript.get("language") or "").strip()
         clip_ids: list = []
-        used_ranges: list = []          # 🚫 khoảng ĐÃ dùng ở clip trước
+        # 🚫 khoảng ĐÃ dùng: SEED bằng các clip lần trước (prev_used) + cập nhật
+        # dần sau mỗi chương -> windows mới né cả clip cũ lẫn chương trước.
+        used_ranges: list = list(prev_used)
         for ci, c0, c1, script in ch_scripts:
             # SNAP mép khung vào CHUYỂN CẢNH (ưu tiên, nếu không cắt ngang
             # câu) / mép câu + KẸP CỨNG vào chương [c0,c1] (snap KHÔNG được
@@ -618,6 +624,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # clips đã sort theo thời gian; giữ mốc KẾT của span TRƯỚC để span sau
     # bắt đầu SAU nó + đệm (🚫 chống trùng cảnh: các span PHẢI rời nhau —
     # snap có thể kéo mép span sau lùi về trước mép span trước -> chồng).
+    # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: các đoạn đã dùng ở clip trước làm khối
+    # chặn -> span mới né (mảnh còn lại dài nhất). span[i] sau đó cũng thành
+    # khối chặn cho span[i+1] (giữ các span rời nhau như cũ).
+    span_used = list(prev_used)
     spans = []
     prev_end = 0.0
     for c in clips:
@@ -627,9 +637,18 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         e1 = _snap_time_scene(e1, edges, scene_cuts, sent_spans)
         s0 = max(s0, prev_end + _CLIP_GAP if prev_end > 0 else s0)
         e1 = min(e1, s0 + max_len, duration or e1)
-        if e1 - s0 >= 10.0:
-            spans.append((round(s0, 2), round(e1, 2), c))
-            prev_end = e1
+        if e1 - s0 < 10.0:
+            continue
+        # né đoạn đã dùng: giữ MẢNH còn lại DÀI NHẤT (>=10s) sau khi trừ used
+        pieces = _subtract_used([[s0, e1]], span_used, min_keep=10.0)
+        if not pieces:
+            continue                         # toàn bộ span trùng -> bỏ clip này
+        ps, pe = max(pieces, key=lambda p: p[1] - p[0])
+        pe = min(pe, ps + max_len, duration or pe)
+        if pe - ps >= 10.0:
+            spans.append((round(ps, 2), round(pe, 2), c))
+            prev_end = pe
+            span_used.append([ps, pe])
 
     # ---- 2) LLM đạo diễn viết kịch bản từng clip ----
     # NGỮ CẢNH THỊ GIÁC: nếu bật USE_VISION + model vision sẵn sàng -> trích

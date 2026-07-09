@@ -186,6 +186,9 @@ def _llm_scores(candidates: list[dict], language: str) -> dict[int, dict]:
     prompt = (
         f"Ngôn ngữ nội dung: {lang_name}.\n"
         f"Dưới đây là các đoạn ứng viên cắt từ 1 video dài:\n{listing}\n\n"
+        "Chấm điểm sao cho khi lấy các đoạn điểm CAO sẽ RẢI ĐỀU toàn video "
+        "(đầu/giữa/cuối) và nội dung ĐA DẠNG — ưu tiên khoảnh khắc KHÁC nhau, "
+        "TRÁNH nhiều đoạn cùng 1 cảnh/chủ đề.\n"
         "Với MỖI đoạn, trả về một object trong mảng JSON:\n"
         '[{"index": số, "score": 0-100, "reason": "lý do ngắn gọn tiếng Việt", '
         '"title": "tiêu đề giật tít tiếng Việt (cho người dựng đọc)", '
@@ -349,6 +352,9 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         f"Video này nói bằng {lang_name.upper()}.\n"
         f"{how_many} trong đoạn này. QUY TẮC:\n"
         + extra +
+        "- ĐA DẠNG + RẢI ĐỀU: chọn các đoạn RẢI ĐỀU toàn video (đầu / giữa / "
+        "cuối), nội dung KHÁC NHAU — ĐỪNG chọn nhiều đoạn cùng 1 cảnh/chủ đề "
+        "hay dồn cụm 1 chỗ; ưu tiên các khoảnh khắc KHÁC nhau cho phong phú.\n"
         "- Ưu tiên cảnh ĐỈNH ĐIỂM/cao trào, có hook ở đầu, giữ chân người xem.\n"
         "- Mỗi clip là MỘT câu chuyện/cao trào TRỌN VẸN: lấy đủ phần dẫn dắt + cao "
         "trào + chốt, KHÔNG cắt cụt giữa chừng.\n"
@@ -885,6 +891,112 @@ def _delete_suggested(video_id: int) -> None:
                    (video_id,))
 
 
+# ============================================================
+# 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO (cross-run dedup)
+# ============================================================
+# Ngưỡng: ứng viên trùng > _USED_OVERLAP (30%) với 1 khoảng ĐÃ DÙNG -> loại
+# (đường heuristic) / phạt nặng điểm (đường LLM). "Đã dùng" = mọi clip của
+# video này đang ở trạng thái suggested/exported/done (kể cả lần bấm trước còn
+# treo suggested) -> bấm Tạo clip / Reup lần sau ra đoạn KHÁC.
+_USED_OVERLAP = 0.30
+_USED_STATUSES = ("suggested", "exported", "done")
+
+
+def _clip_used_ranges(signals: dict, start: float, end: float) -> list:
+    """Rút CÁC KHOẢNG [s,e] mà 1 clip THẬT SỰ dùng từ signals (clip ghép nhiều
+    đoạn: recap.windows / segments / moments) — lùi start_sec..end_sec nếu
+    signals thiếu. Hàm thuần — test được."""
+    out: list = []
+    sig = signals if isinstance(signals, dict) else {}
+    rec = sig.get("recap") if isinstance(sig.get("recap"), dict) else {}
+    # ưu tiên windows recap (span thật của clip thuyết minh) -> segments -> moments
+    for key, src in (("windows", rec), ("segments", sig)):
+        for pair in (src.get(key) or []):
+            try:
+                s, e = float(pair[0]), float(pair[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if e > s:
+                out.append([s, e])
+        if out:
+            return out
+    for m in (sig.get("moments") or []):
+        try:
+            s, e = float(m["start"]), float(m["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if e > s:
+            out.append([s, e])
+    if out:
+        return out
+    # không có signals chi tiết -> dùng span thô của clip
+    if end > start:
+        return [[float(start), float(end)]]
+    return []
+
+
+def load_used_ranges(video_id: int, statuses=_USED_STATUSES) -> list:
+    """Tập các khoảng [s,e] video này ĐÃ dùng ở các clip trước (mọi trạng thái
+    trong `statuses`). Đọc từ clips.signals (segments/recap.windows/moments) —
+    lùi start_sec/end_sec. Trả list đã sort tăng (chưa gộp). Gọi TRƯỚC khi
+    _delete_suggested để giữ được các đoạn của lần bấm trước còn treo suggested.
+    """
+    if not statuses:
+        return []
+    ph = ",".join("?" * len(statuses))
+    rows = db.query(
+        f"SELECT start_sec, end_sec, signals FROM clips "
+        f"WHERE video_id=? AND status IN ({ph})",
+        (video_id, *statuses))
+    used: list = []
+    for r in rows or []:
+        sig = db.loads(r["signals"], {}) or {}
+        used.extend(_clip_used_ranges(sig, r["start_sec"], r["end_sec"]))
+    used.sort(key=lambda x: x[0])
+    return used
+
+
+def _overlap_frac(s: float, e: float, used: list) -> float:
+    """Tỉ lệ đoạn [s,e] bị các khoảng `used` phủ (0..1). Hàm thuần — test được."""
+    span = e - s
+    if span <= 0 or not used:
+        return 0.0
+    # gộp phần giao (used có thể chồng nhau) rồi cộng độ dài giao
+    hits = sorted(([max(s, float(a)), min(e, float(b))] for a, b in used
+                   if min(e, float(b)) > max(s, float(a))), key=lambda x: x[0])
+    covered, cur_e = 0.0, -1e9
+    for a, b in hits:
+        if a > cur_e:
+            covered += b - a
+            cur_e = b
+        elif b > cur_e:
+            covered += b - cur_e
+            cur_e = b
+    return min(1.0, covered / span)
+
+
+def _filter_used_candidates(cands: list, used: list, keyfn=None,
+                            thr: float = _USED_OVERLAP) -> tuple[list, bool]:
+    """Loại ứng viên trùng > thr với `used`. keyfn(c) -> (start, end).
+    Nếu LOẠI HẾT (video đã dùng gần hết) -> trả lại DANH SÁCH GỐC sắp theo độ
+    trùng TĂNG DẦN (ít trùng nhất trước) + cờ exhausted=True để caller log.
+    Hàm thuần — test được."""
+    if not used or not cands:
+        return list(cands), False
+    keyfn = keyfn or (lambda c: (c["start"], c["end"]))
+    kept = []
+    for c in cands:
+        s, e = keyfn(c)
+        if _overlap_frac(float(s), float(e), used) <= thr:
+            kept.append(c)
+    if kept:
+        return kept, False
+    # đã dùng gần hết -> ưu tiên phần ÍT TRÙNG NHẤT (không bỏ trắng tay)
+    ranked = sorted(cands, key=lambda c: _overlap_frac(
+        float(keyfn(c)[0]), float(keyfn(c)[1]), used))
+    return ranked, True
+
+
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     """
     Bước "tìm highlight" — được job 'auto' (jobs.py) gọi sau khi phân tích.
@@ -900,6 +1012,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     scenes = get_analysis(video_id, "scenes") or {}
     vrow = db.query_one("SELECT duration FROM videos WHERE id=?", (video_id,))
     duration = float(vrow["duration"] or 0) if vrow else 0.0
+
+    # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: đọc các đoạn ĐÃ dùng của video này TRƯỚC
+    # khi _delete_suggested (giữ được cả lần bấm trước còn treo suggested) ->
+    # loại/phạt ứng viên trùng để lần này ra đoạn KHÁC.
+    used_ranges = load_used_ranges(video_id)
 
     # ---- Ưu tiên: AI tự chọn clip + segments ----
     llm.reset_usage()                 # đếm token Gemini riêng cho video này
@@ -923,6 +1040,18 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
             ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
+        # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: loại clip trùng >30% với đoạn đã dùng
+        # ở lần trước. Dùng span [đầu..cuối] của clip (clip đã nới dài). Hết
+        # sạch (video đã dùng gần hết) -> giữ clip ít trùng nhất + log.
+        exhausted_note = ""
+        if used_ranges:
+            ai_clips, exhausted = _filter_used_candidates(
+                ai_clips, used_ranges,
+                keyfn=lambda c: (c["segments"][0][0], c["segments"][-1][1]))
+            ai_clips.sort(key=lambda c: c["segments"][0][0])
+            if exhausted:
+                exhausted_note = ("video này đã tạo nhiều clip, các đoạn mới có "
+                                  "thể trùng phần đã dùng")
         _delete_suggested(video_id)
         # 🔒 RÀO CHẮN CUỐI: MỌI clip PHẢI lọt [min_len, max_len]. Chạy SAU tất
         # cả bước AI (chọn + refine + dedup) — sửa lỗi 'đặt min 60 mà ra 46s'
@@ -960,6 +1089,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             msg += " — CẢNH BÁO: " + "; ".join(ai_warns)
         if _len_notes:                  # có clip không nới đủ min (video ngắn)
             msg += f" — LƯU Ý: {len(_len_notes)} clip ngắn hơn Min (đoạn không đủ dài)"
+        if exhausted_note:              # video đã dùng gần hết -> cảnh báo trùng
+            msg += f" — ⚠ {exhausted_note}"
         cost = {}
         if prov == "gemini":            # CHI PHÍ ước tính cho video này
             u = llm.get_usage()
@@ -969,34 +1100,108 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             cost = {"tokens": tok, "cost_vnd": vnd}
         ctx.progress(1.0, msg)
         return {"count": len(clip_ids), "clip_ids": clip_ids,
-                "llm_used": True, "ai": prov, "vision": used_vision, **cost}
+                "llm_used": True, "ai_used": True, "ai": prov,
+                "vision": used_vision, **cost}
 
     # ---- Fallback heuristic (LLM chưa cấu hình HOẶC gọi lỗi) ----
+    # ⚠ MINH BẠCH: nói RÕ đây là cắt kiểu CƠ BẢN (kém thông minh hơn AI) +
+    # gợi ý dán key để AI chọn đoạn hay + đa dạng hơn. Trả cờ ai_used=False.
     if llm_error:
-        note = ("AI chọn clip gặp lỗi nên tạm dùng cắt cơ bản. Hãy kiểm tra Ollama "
-                f"đang chạy rồi thử lại. (Chi tiết: {llm_error[:160]})")
+        note = ("⚠ AI chọn đoạn gặp lỗi nên đang chọn đoạn kiểu CƠ BẢN (kém "
+                "thông minh hơn). Kiểm tra key/Ollama trong Cài đặt AI rồi thử "
+                f"lại để AI chọn đoạn hay + đa dạng hơn. (Chi tiết: {llm_error[:120]})")
     elif not llm.is_configured():
-        note = "Chưa bật AI (Ollama). Đang dùng cắt cơ bản theo âm thanh/cảnh."
+        note = ("⚠ Chưa có key AI -> đang chọn đoạn kiểu CƠ BẢN (kém thông minh "
+                "hơn). Dán key Groq trong Cài đặt AI để AI chọn đoạn hay + đa "
+                "dạng hơn.")
     else:
         note = ""
     return _generate_heuristic(video_id, cfg, transcript, audio, scenes,
-                               duration, ctx, note=note)
+                               duration, ctx, note=note, used_ranges=used_ranges)
+
+
+def _spread_pick(candidates: list, audio: dict, limit: int, duration: float,
+                 min_gap: float) -> list:
+    """ĐA DẠNG: chọn tối đa `limit` ứng viên RẢI ĐỀU toàn video thay vì lấy
+    top-N đỉnh năng lượng LIỀN NHAU (dồn cụm 1 chỗ). Chia [0,duration] thành
+    `limit` khoảng, MỖI khoảng lấy ứng viên điểm audio cao nhất; ép mọi cặp
+    đoạn chọn cách nhau >= min_gap (tính theo mốc bắt đầu). Thiếu (khoảng
+    trống) -> bù thêm đỉnh cao nhất còn lại vẫn thoả min_gap. Hàm thuần —
+    test được.
+    """
+    if not candidates:
+        return []
+    scored = sorted(candidates,
+                    key=lambda c: _audio_score(audio, c["start"], c["end"]),
+                    reverse=True)
+    if limit <= 0:
+        return scored
+    span = duration if duration and duration > 0 else (
+        max(c["end"] for c in candidates) or 1.0)
+
+    def _far_enough(c, chosen):
+        return all(abs(c["start"] - k["start"]) >= min_gap for k in chosen)
+
+    chosen: list = []
+    # 1) rải theo khoảng: mỗi khoảng lấy đỉnh cao nhất thoả min_gap
+    for b in range(limit):
+        lo, hi = span * b / limit, span * (b + 1) / limit
+        best = None
+        for c in scored:
+            mid = (c["start"] + c["end"]) / 2
+            if lo <= mid < hi and c not in chosen and _far_enough(c, chosen):
+                best = c
+                break                        # scored đã sort giảm -> đỉnh đầu
+        if best is not None:
+            chosen.append(best)
+    # 2) chưa đủ (nhiều khoảng trống) -> bù đỉnh cao nhất còn lại thoả min_gap
+    if len(chosen) < limit:
+        for c in scored:
+            if len(chosen) >= limit:
+                break
+            if c not in chosen and _far_enough(c, chosen):
+                chosen.append(c)
+    # 3) vẫn thiếu (video quá ngắn, min_gap chặn hết) -> nới: lấy đỉnh còn lại
+    if len(chosen) < limit:
+        for c in scored:
+            if len(chosen) >= limit:
+                break
+            if c not in chosen:
+                chosen.append(c)
+    return chosen
 
 
 def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
-                        note: str = ""):
-    """Bản dự phòng khi không có LLM: cửa sổ + chấm audio/cảnh (1 đoạn liền/clip)."""
+                        note: str = "", used_ranges: list = None):
+    """Bản dự phòng khi không có LLM: cửa sổ + chấm audio/cảnh (1 đoạn liền/clip).
+
+    ĐA DẠNG (VIỆC 2): thay vì lấy top-N đỉnh năng lượng LIỀN NHAU (dễ cụm 1
+    chỗ), chia video thành N khoảng RỜI rồi mỗi khoảng lấy đỉnh -> đoạn RẢI
+    ĐỀU đầu/giữa/cuối. Ép KHOẢNG CÁCH tối thiểu giữa các đoạn (>=8% thời lượng
+    hoặc 30s). CHỐNG TRÙNG (VIỆC 1): loại ứng viên trùng >30% với used_ranges.
+    """
     ctx.progress(0.5, "Tạo đoạn ứng viên (không có AI)...")
     candidates = _build_candidates(transcript, scenes, duration, cfg)
     if not candidates:
-        return {"count": 0, "clip_ids": [], "note": "Không tạo được ứng viên."}
-    candidates.sort(key=lambda c: _audio_score(audio, c["start"], c["end"]),
-                    reverse=True)
-    # TÔN TRỌNG "Số clip muốn cắt" của user (trước đây đường dự phòng lấy
-    # nguyên max_candidates=25 -> user đặt 4 mà ra 25 clip). 0 = mặc định 12.
+        return {"count": 0, "clip_ids": [], "note": "Không tạo được ứng viên.",
+                "llm_used": False, "ai_used": False}
+
+    # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: loại ứng viên trùng >30% với đoạn đã dùng
+    exhausted_note = ""
+    if used_ranges:
+        candidates, exhausted = _filter_used_candidates(candidates, used_ranges)
+        if exhausted:
+            exhausted_note = ("video này đã tạo nhiều clip, các đoạn mới có thể "
+                              "trùng phần đã dùng")
+
     count = int(cfg.get("count", 0) or 0)
     limit = count if count > 0 else 12
-    candidates = candidates[: min(limit, cfg["max_candidates"])]
+    limit = min(limit, cfg["max_candidates"])
+
+    # ĐA DẠNG: chọn đỉnh năng lượng RẢI theo các phần video (spread) + ép
+    # khoảng cách tối thiểu — không cụm 1 chỗ.
+    min_gap = max(30.0, 0.08 * duration) if duration > 0 else 30.0
+    candidates = _spread_pick(candidates, audio, limit, duration, min_gap)
     candidates.sort(key=lambda c: c["start"])  # theo thứ tự thời gian
 
     min_len = float(cfg.get("min_len", 60.0))
@@ -1026,9 +1231,12 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
         )
         clip_ids.append(cid)
     msg = note or f"Đề xuất {len(clip_ids)} clip (cắt cơ bản)"
+    if exhausted_note:
+        msg += f" — ⚠ {exhausted_note}"
     ctx.progress(1.0, msg)
+    # ai_used=False -> UI/card biết đây là cắt CƠ BẢN (không phải AI chọn)
     return {"count": len(clip_ids), "clip_ids": clip_ids, "llm_used": False,
-            "note": note}
+            "ai_used": False, "note": note}
 
 
 # ============================================================
@@ -1059,11 +1267,21 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
     vrow = db.query_one("SELECT duration FROM videos WHERE id=?", (video_id,))
     duration = float(vrow["duration"] or 0) if vrow else 0.0
 
+    # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO (đọc TRƯỚC khi ghi clip mới)
+    used_ranges = load_used_ranges(video_id)
+
     ctx.progress(0.15, "Tạo các khoảnh khắc ứng viên...")
     moment_cfg = {**cfg, "min_len": cfg["moment_min"], "max_len": cfg["moment_max"]}
     moments = _build_candidates(transcript, scenes, duration, moment_cfg)
     if len(moments) < 2:
         return {"count": 0, "note": "Video quá ngắn/ít nội dung để ghép."}
+
+    # 🚫 loại khoảnh khắc trùng >30% với đoạn đã dùng ở clip trước (né bản
+    # quyền: Mixed-Cut lần sau né các khúc đã ghép lần trước). Hết sạch ->
+    # giữ khúc ít trùng nhất.
+    mix_exhausted = False
+    if used_ranges:
+        moments, mix_exhausted = _filter_used_candidates(moments, used_ranges)
 
     # chấm điểm từng khoảnh khắc
     moments.sort(key=lambda c: _audio_score(audio, c["start"], c["end"]), reverse=True)
@@ -1144,7 +1362,10 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
          f"Ghép {len(chosen)} đoạn điểm cao (~{dur_total:.0f}s).", title,
          " ".join(m.get("text", "") for m in chosen), db.dumps(signals)),
     )
-    ctx.progress(1.0, f"Đã tạo Mixed-Cut ({len(chosen)} đoạn, {dur_total:.0f}s)")
+    mmsg = f"Đã tạo Mixed-Cut ({len(chosen)} đoạn, {dur_total:.0f}s)"
+    if mix_exhausted:
+        mmsg += " — ⚠ video này đã tạo nhiều clip, các đoạn mới có thể trùng"
+    ctx.progress(1.0, mmsg)
     return {"count": 1, "clip_id": cid, "moments": len(chosen),
             "duration": round(dur_total, 1), "llm_used": use_llm}
 

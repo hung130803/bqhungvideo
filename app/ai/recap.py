@@ -1420,6 +1420,9 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
            "gian, KHÔNG chồng lấn, KHÔNG đảo đoạn.\n")
         + f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
         f"{min_total:.0f}-{max_total:.0f} giây.\n"
+        "- RẢI ĐỀU + ĐA DẠNG: các khung phủ ĐẦU / GIỮA / CUỐI mạch chuyện, "
+        "nội dung KHÁC NHAU — ĐỪNG dồn nhiều khung vào cùng 1 cảnh/1 chỗ hay "
+        "lặp lại cùng chủ đề.\n"
         "- Mép khung phải trùng mép câu transcript (không cắt ngang câu "
         "nói).\n"
         "- Chỉ lấy khoảnh khắc ĐẮT (kịch tính, twist, cảm xúc mạnh, câu "
