@@ -1341,8 +1341,12 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
                 m["start"], m["end"] = round(s, 2), round(e, 2)
             prev_end = m["end"]
 
+    # LƯU KÈM "score" mỗi moment -> lúc xuất, _join_categories biết moment nào
+    # điểm CAO NHẤT để đặt 'impact' tại điểm nối VÀO đoạn đó (ngữ cảnh cấu trúc,
+    # không cần AI). score đã tính ở scored (LLM/audio+scene).
     moments_out = [{"start": round(m["start"], 2), "end": round(m["end"], 2),
-                    "cx": round(_moment_cx(faces, m["start"], m["end"]), 4)}
+                    "cx": round(_moment_cx(faces, m["start"], m["end"]), 4),
+                    "score": round(float(m.get("score", 0.0)), 1)}
                    for m in chosen]
     dur_total = sum(m["end"] - m["start"] for m in moments_out)
     best = max(chosen, key=lambda x: x["score"])
@@ -1535,13 +1539,85 @@ def _part_sfx_at(recap_parts: list, t: float):
     return best
 
 
+def _seg_index_containing(segs: list, a: float, b: float) -> int:
+    """Chỉ số đoạn trong segs GIAO NHIỀU NHẤT với khoảng [a,b] (timeline GỐC).
+    Không giao đoạn nào -> -1. Hàm thuần — test được."""
+    best_i, best_ov = -1, 0.0
+    for i, seg in enumerate(segs):
+        try:
+            s, e = float(seg[0]), float(seg[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        ov = min(b, e) - max(a, s)
+        if ov > best_ov:
+            best_ov, best_i = ov, i
+    return best_i
+
+
+def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
+    """NGỮ CẢNH CẤU TRÚC cho clip THƯỜNG / Mixed (KHÔNG có nhãn cảm xúc của AI).
+    Suy loại tiếng theo VỊ TRÍ điểm nối so với khoảnh khắc cao trào ĐÃ BIẾT
+    (không cần key AI):
+
+      - Điểm nối NGAY TRƯỚC / VÀO đoạn chứa hook_time (cao trào clip) -> 'impact'
+        HOẶC 'riser' (chọn ngẫu nhiên -> tạo nhấn/hồi hộp).
+      - Mixed-Cut: điểm nối VÀO đoạn (moment) điểm CAO NHẤT -> 'impact'.
+      - Điểm nối CUỐI (vào đoạn kết clip) -> 'reveal' (ding chốt nhẹ).
+      - Còn lại -> 'transition' (whoosh/gió) như cũ.
+
+    Ưu tiên: nếu 1 điểm nối vừa là cao trào vừa là điểm cuối -> giữ cao trào
+    (impact/riser) vì nhấn mạnh hơn chốt. hook_time đọc từ signals["hook_seg"]
+    (mốc TIMELINE GỐC do AI chọn ở _normalize_clip); moment điểm cao nhất đọc
+    từ signals["moments"][*]["score"]. Không có ngữ cảnh -> toàn 'transition'
+    (+ reveal cuối). Hàm thuần (chỉ đọc segs/signals) — unit test được."""
+    import random as _r
+    rng = _r.Random(seed) if seed is not None else _r
+    n_join = max(0, len(segs) - 1)
+    if n_join == 0:
+        return []
+    cats = ["transition"] * n_join
+    # (a) điểm nối CUỐI -> reveal (chốt nhẹ) — đặt trước, cao trào ghi đè sau.
+    cats[-1] = "reveal"
+
+    # (b) đoạn CAO TRÀO cần được nhấn ở điểm nối VÀO nó (join index = seg_idx-1).
+    climax_seg = -1
+    sig = signals if isinstance(signals, dict) else {}
+    moments = sig.get("moments") or []
+    if moments:                       # Mixed-Cut: moment điểm cao nhất
+        try:
+            climax_seg = max(range(len(moments)),
+                             key=lambda i: float(moments[i].get("score", 0.0)))
+        except (ValueError, TypeError):
+            climax_seg = -1
+    else:                             # Clip thường: đoạn chứa hook_time
+        hs = sig.get("hook_seg")
+        if isinstance(hs, (list, tuple)) and len(hs) >= 2:
+            try:
+                climax_seg = _seg_index_containing(
+                    segs, float(hs[0]), float(hs[1]))
+            except (ValueError, TypeError):
+                climax_seg = -1
+
+    # điểm nối VÀO đoạn cao trào = join index (climax_seg - 1). climax_seg==0
+    # (cao trào NẰM Ở ĐOẠN ĐẦU, vd hook-first đã đưa lên đầu) -> KHÔNG có điểm
+    # nối trước nó để nhấn; bỏ qua (đầu clip không ghép).
+    if climax_seg >= 1 and (climax_seg - 1) < n_join:
+        # hook: ngẫu nhiên impact HOẶC riser (nhấn/hồi hộp); mixed: impact.
+        if moments:
+            cats[climax_seg - 1] = "impact"
+        else:
+            cats[climax_seg - 1] = rng.choice(("impact", "riser"))
+    return cats
+
+
 def _join_categories(segs: list, recap_parts: list | None,
-                     is_recap: bool) -> list:
+                     is_recap: bool, signals: dict | None = None) -> list:
     """NGỮ CẢNH cho MỖI điểm nối giữa các đoạn segs (len = len(segs)-1) ->
     list category cho export_canvas_clip.
 
-    - Clip THƯỜNG / Mixed (không recap): mọi điểm nối = 'transition' (whoosh
-      nhẹ) — giữ hành vi cũ, an toàn.
+    - Clip THƯỜNG / Mixed (không recap): chọn tiếng THEO NGỮ CẢNH CẤU TRÚC
+      (_context_join_categories) — cao trào (hook_time / moment điểm cao nhất)
+      -> impact/riser; đoạn kết -> reveal; còn lại -> transition. KHÔNG cần AI.
     - RECAP:
         * ƯU TIÊN NHÃN AI: nếu part chứa điểm nối có field "sfx" hợp lệ do AI
           gắn (recap.build_director_prompt) -> DÙNG NHÃN ĐÓ (kể cả "none" =
@@ -1560,7 +1636,8 @@ def _join_categories(segs: list, recap_parts: list | None,
     if n_join == 0:
         return []
     if not is_recap or not recap_parts:
-        return ["transition"] * n_join
+        # Clip thường / Mixed: KHÔNG có nhãn cảm xúc AI -> dùng ngữ cảnh cấu trúc.
+        return _context_join_categories(segs, signals or {})
     cats: list = []
     used_riser = False
     for i in range(n_join):
@@ -2018,7 +2095,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # NGỮ CẢNH tiếng chuyển đoạn theo cấu trúc đoạn: recap biết vai part
         # (orig climax -> impact, kết -> reveal, mở mạch kể -> riser); clip
         # thường/Mixed -> transition. Thư viện SFX đóng gói chọn đúng loại.
-        join_cats = _join_categories(segs, recap_parts, is_recap)
+        join_cats = _join_categories(segs, recap_parts, is_recap, signals)
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
