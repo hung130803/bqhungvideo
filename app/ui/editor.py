@@ -379,6 +379,10 @@ class _VideoBox(QGraphicsItem):
         self.h = FW * self.aspect
         self._resizing = False
         self._dragging = False
+        # fit_src BẬT = "giữ trọn hình" (contain): lúc XUẤT app tính lại khung
+        # theo tỉ lệ NGUỒN + thu vừa canvas (fit_src_video_rect). BẬT cờ này ->
+        # khối video vẽ ĐÚNG vùng sẽ xuất (WYSIWYG) thay vì lấp đầy khung kéo.
+        self.fit_src = False
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange \
@@ -415,6 +419,31 @@ class _VideoBox(QGraphicsItem):
         self.prepareGeometryChange()
         self.setPos(cx * FW - self.w / 2, cy * FH - self.h / 2)
 
+    def set_fit_src(self, on):
+        """BẬT/TẮT chế độ "giữ trọn hình" (contain) cho XEM TRƯỚC. Vẽ lại để
+        khối video khớp vùng SẼ XUẤT (WYSIWYG) — bật thì hình co vừa canvas,
+        tắt thì lấp đầy khung kéo (cắt phần tràn)."""
+        self.fit_src = bool(on)
+        self.update()
+
+    def _fit_rect(self):
+        """Vùng video THỰC vẽ trong khung khi fit_src BẬT (contain): giữ TÂM +
+        BỀ NGANG khung kéo, cao theo tỉ lệ NGUỒN, thu vừa canvas nếu tràn —
+        khớp CHÍNH XÁC fit_src_video_rect() lúc xuất. Trả (x, y, w, h) theo tọa
+        độ CỦA ITEM (gốc 0,0 = góc trên-trái khung kéo)."""
+        cx = self.x() + self.w / 2
+        cy = self.y() + self.h / 2
+        w_px = self.w                      # bề ngang khung kéo (= scale*FW)
+        h_px = w_px * self.aspect          # cao theo tỉ lệ NGUỒN
+        k = min(1.0, FW / w_px if w_px else 1.0, FH / h_px if h_px else 1.0)
+        w_px *= k
+        h_px *= k
+        # nắn tâm tối thiểu để vùng video nằm TRỌN trong canvas (như export)
+        cx = min(max(cx, w_px / 2), FW - w_px / 2)
+        cy = min(max(cy, h_px / 2), FH - h_px / 2)
+        # -> tọa độ trong hệ của item (trừ đi vị trí góc item)
+        return (cx - w_px / 2 - self.x(), cy - h_px / 2 - self.y(), w_px, h_px)
+
     def boundingRect(self):
         return QRectF(-2, -2, self.w + self.HS, self.h + self.HS)
 
@@ -424,18 +453,34 @@ class _VideoBox(QGraphicsItem):
 
     def paint(self, p, opt, widget=None):
         src = self.disp if not self.disp.isNull() else self.pm
+        # VÙNG video THỰC: fit_src BẬT -> contain (co vừa canvas, khớp xuất);
+        # TẮT -> lấp đầy khung kéo (0,0,w,h) như cũ.
+        if self.fit_src:
+            vx, vy, vw, vh = self._fit_rect()
+        else:
+            vx, vy, vw, vh = 0.0, 0.0, self.w, self.h
+        vrect = QRectF(vx, vy, vw, vh)
         if not src.isNull():
             # đang resize -> vẽ NHANH (fast), nghỉ tay -> mượt (smooth)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,
                             not self._resizing)
-            p.drawPixmap(QRectF(0, 0, self.w, self.h), src, QRectF(src.rect()))
+            p.drawPixmap(vrect, src, QRectF(src.rect()))
         else:
-            p.fillRect(QRectF(0, 0, self.w, self.h), QColor("#333"))
+            p.fillRect(vrect, QColor("#333"))
         sel = self.isSelected()
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
-                      Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
-        p.drawRect(QRectF(0, 0, self.w, self.h))
+        # fit_src BẬT: viền khối video ở vùng THỰC (nét liền mảnh) để user thấy
+        # rõ khung "giữ trọn hình" khác khung kéo; khung kéo vẽ mờ để còn nắm tay.
+        if self.fit_src:
+            p.setPen(QPen(QColor("#6E8BFF"), 1, Qt.PenStyle.DotLine))
+            p.drawRect(QRectF(0, 0, self.w, self.h))   # khung KÉO (mờ, chấm)
+            p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
+                          Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
+            p.drawRect(vrect)                            # vùng VIDEO thực
+        else:
+            p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
+                          Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
+            p.drawRect(QRectF(0, 0, self.w, self.h))
         if sel:
             p.setPen(QPen(QColor("#6E8BFF"), 1)); p.setBrush(QColor("white"))
             p.drawRect(self._handle())
@@ -806,6 +851,11 @@ class EditorCanvas(QGraphicsView):
         self.bg_blur.setPos((FW - cover.width()) / 2, (FH - cover.height()) / 2)
         self.set_bg(self.bg)
 
+    def set_fit_src(self, on):
+        """Chuyển khối video xem trước sang chế độ "giữ trọn hình" (contain)
+        cho khớp lúc xuất (WYSIWYG)."""
+        self.vbox.set_fit_src(on)
+
     def set_bg(self, mode):
         self.bg = mode
         if mode == "blur":
@@ -1103,13 +1153,17 @@ class EditorDialog(QDialog):
         # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC: lúc XUẤT app tính lại khung theo tỉ lệ
         # nguồn (giữ tâm + bề ngang mẫu, clamp vừa canvas) -> nguồn vuông/ngang
         # hiện TRỌN, không bị cắt 2 bên; nền lấp phần thừa.
-        self.fit_src_chk = QCheckBox("Khung tự khớp video gốc (không mất hình)")
+        self.fit_src_chk = QCheckBox("Giữ trọn hình video gốc (không cắt, có viền)")
         self.fit_src_chk.setToolTip(
-            "Video vuông/ngang sẽ hiện TRỌN không bị cắt; khung mẫu chỉ định "
-            "vị trí tâm + bề ngang. Lúc xuất app tự tính lại chiều cao khung "
-            "theo tỉ lệ video nguồn (thu vừa canvas nếu tràn), phần thừa do "
-            "nền (mờ/đen/trắng) lấp. Nền 'Lấp đầy' sẽ tự chuyển sang nền mờ "
-            "khi bật.")
+            "BẬT = GIỮ TRỌN HÌNH: video vuông/ngang hiện đủ 100%, KHÔNG cắt — "
+            "phần thừa do nền (mờ/đen/trắng) lấp. Khung xem trước cập nhật NGAY "
+            "cho đúng cái sẽ xuất (khung nét = vùng video thực, khung chấm mờ = "
+            "khung bạn kéo). Nền 'Lấp đầy' tự chuyển sang nền mờ.\n"
+            "TẮT = LẤP ĐẦY KHUNG: video phóng to lấp đầy khung bạn kéo (cắt bớt "
+            "2 bên nếu là video ngang) — dùng khi muốn video TO/đầy khung.")
+        # BẬT/TẮT -> khung xem trước phản ánh NGAY (WYSIWYG): bật thì khối video
+        # co "giữ trọn hình" đúng như xuất; tắt thì lấp đầy khung kéo.
+        self.fit_src_chk.toggled.connect(self.canvas.set_fit_src)
         gb.addWidget(self.fit_src_chk)
         # Tốc độ + đổi giọng (chống bản quyền)
         sp = QHBoxLayout(); sp.addWidget(QLabel("Tốc độ"))
@@ -1613,6 +1667,9 @@ class EditorDialog(QDialog):
             self.canvas.set_bg(layout.get("bg", "blur"))
             self.trim_chk.setChecked(layout.get("trim_black", False))
             self.fit_src_chk.setChecked(bool(layout.get("fit_src", False)))
+            # đồng bộ chắc chắn (setChecked không phát toggled nếu state trùng
+            # sẵn -> canvas có thể lệch) để khung xem trước khớp mẫu vừa nạp
+            self.canvas.set_fit_src(self.fit_src_chk.isChecked())
             self.cap_chk.setChecked(layout.get("captions", True))
             fi = self.cap_font.findText(layout.get("cap_font", "Montserrat"))
             if fi >= 0:
