@@ -1299,9 +1299,18 @@ def enforce_narrate_ratio(parts: list[dict], ratio: float,
     except (TypeError, ValueError):
         limit = (30.0 + _RATIO_TOL_PCT) / 100.0
 
+    try:
+        target = max(0.0, min(100.0, float(ratio))) / 100.0
+    except (TypeError, ValueError):
+        target = 0.45
+
     def _narr_idx() -> list:
         return [i for i, p in enumerate(out) if p["mode"] == "narrate"]
 
+    # CHỌN HÀNH ĐỘNG đưa tỉ lệ GẦN mục tiêu (`target`) NHẤT — KHÔNG bỏ đoạn
+    # nếu bỏ xong lệch target XA HƠN giữ nguyên (tránh "cắt trụi": clip chỉ
+    # có hook + 1 đoạn giữa + chốt, bỏ đoạn giữa hụt sâu dưới target thì thà
+    # giữ hơi vượt trần). Chỉ bỏ ĐOẠN GIỮA, giữ hook + chốt, >= min_keep.
     while True:
         idx = _narr_idx()
         cur = sum(_part_dur(out[i]) for i in idx) / total
@@ -1310,8 +1319,18 @@ def enforce_narrate_ratio(parts: list[dict], ratio: float,
         middle = idx[1:-1]              # giữ hook (đầu) + chốt (cuối)
         if not middle:
             break
-        victim = max(middle, key=lambda i: _part_dur(out[i]))
-        out[victim] = dict(out[victim], mode="orig", text="")
+        # thử bỏ TỪNG đoạn giữa -> tỉ lệ còn lại; chọn cái đưa về gần target
+        # nhất; nếu không cái nào tốt hơn hiện tại -> dừng (giữ nguyên).
+        cur_dur = sum(_part_dur(out[j]) for j in idx)
+        best, best_gap = None, abs(cur - target)
+        for i in middle:
+            after = (cur_dur - _part_dur(out[i])) / total
+            gap = abs(after - target)
+            if gap < best_gap - 1e-9:
+                best, best_gap = i, gap
+        if best is None:
+            break
+        out[best] = dict(out[best], mode="orig", text="")
     return _merge_orig_adjacent(out)
 
 

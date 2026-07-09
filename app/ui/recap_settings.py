@@ -295,14 +295,15 @@ class RecapSettingsDialog(QDialog):
         style = str(self._s.value("recap_style", DEFAULT_STYLE) or DEFAULT_STYLE)
         self.style.setCurrentIndex(max(0, self.style.findData(style)))
         try:
-            ratio = int(self._s.value("recap_ratio", 30))
+            ratio = int(self._s.value("recap_ratio", 45))
         except (TypeError, ValueError):
-            ratio = 30
-        # MIGRATE NHẸ: 55 = mặc định CŨ chưa ai đổi -> coi như chưa đặt,
-        # dùng mặc định mới 30 (chỉ migrate ĐÚNG 55; giá trị khác giữ
-        # nguyên vì user tự chọn).
-        if ratio == 55:
-            ratio = 30
+            ratio = 45
+        # MIGRATE NHẸ: 55 (mặc định rất cũ) và 30 (mặc định v1.25 auto-set,
+        # user chê nói ÍT quá) -> đều là giá trị KHÔNG do user chủ động chọn
+        # -> dùng mặc định mới 45 (giảm vừa phải, không cắt trụi). Giá trị
+        # khác giữ nguyên (user tự chọn).
+        if ratio in (55, 30):
+            ratio = 45
         self.ratio.setValue(min(80, max(15, ratio)))
         self._ratio_changed(self.ratio.value())
         pace = str(self._s.value("recap_pace", "normal") or "normal")

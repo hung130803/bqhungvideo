@@ -408,9 +408,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     cfg = {**DEFAULTS, **preset}
     style = str(preset.get("recap_style") or recap.DEFAULT_STYLE)
     try:                              # tỉ lệ AI kể (15-80%) từ Cài đặt Reup
-        ratio = float(preset.get("recap_ratio") or 30)
+        ratio = float(preset.get("recap_ratio") or 45)
     except (TypeError, ValueError):
-        ratio = 30.0
+        ratio = 45.0
     # 🎭 Giọng cảm xúc (audio tag v3): BẬT -> prompt dặn AI chèn tag cảm xúc
     # ([excited]/[whispers]/[dramatic pause]) + nhấn CAPS vào lời narrate.
     # MẶC ĐỊNH BẬT; tag chỉ phát huy khi export bằng giọng ElevenLabs v3,
