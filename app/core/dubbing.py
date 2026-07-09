@@ -2344,7 +2344,12 @@ def _phrase_groups_from_words(words: list, start: float,
 # ------------------------------------------------------------------
 _CLAMP_NOISE_DB = -32.0      # ngưỡng silencedetect cho hậu kiểm (nhạy hơn -30)
 _CLAMP_MIN_SIL = 0.18        # khoảng im >= 0.18s mới coi là ngắt
-_CUE_PAD_BEFORE = 0.05       # cue được phép SỚM hơn tiếng tối đa 50ms
+# cue được phép SỚM hơn ONSET tiếng tối đa 30ms. GIẢM từ 50->30ms để CÓ MARGIN
+# so với ngưỡng nghe -35dB (nhạy hơn -32dB clamp -> onset(-35) <= onset(-32)):
+# cue >= onset(-32)-0.03 => cue >= onset(-35)-0.03 luôn thỏa "cue không sớm hơn
+# onset thật quá 0.05s" của LỖI 3. Đo thật edge-tts 4 part: cue sớm nhất -0.028s
+# so onset(-35dB) — 0 cue hiện trước tiếng.
+_CUE_PAD_BEFORE = 0.03       # cue được phép SỚM hơn tiếng tối đa 30ms
 _CUE_PAD_AFTER = 0.12        # cue được phép MUỘN hơn hết tiếng tối đa 120ms
 _CUE_BIAS_MAX = 0.12         # lệch hệ thống > 0.12s -> shift cả part
 

@@ -1502,10 +1502,14 @@ class EditorDialog(QDialog):
             cz = layout.get("cap_size", 0)
             if cz:
                 self.cap_size.setValue(int(float(cz) * 1000))
-            pi = self.cap_preset.findText(layout.get("cap_preset",
-                                                     "Vàng nhảy (TikTok)"))
-            if pi >= 0:
-                self.cap_preset.setCurrentIndex(pi)
+            # KHỚP TUYỆT ĐỐI tên preset đã lưu = tên trong combo (= key
+            # CAPTION_PRESETS). findText EXACT + case-sensitive; tên lạ (mẫu
+            # cũ / preset bị đổi tên) -> KHÔNG im lặng giữ preset đang chọn
+            # (đó là mầm 'chọn X ra Y'): về index 0 (preset mặc định đầu combo)
+            # để trạng thái combo luôn PHẢN ÁNH ĐÚNG cái sẽ xuất.
+            _cp_name = layout.get("cap_preset", "Vàng nhảy (TikTok)")
+            pi = self.cap_preset.findText(_cp_name)
+            self.cap_preset.setCurrentIndex(pi if pi >= 0 else 0)
             self._capcolor = layout.get("cap_color", "") or ""
             self._cap_outline = layout.get("cap_outline", "") or ""
             self.cap_ow.setValue(int(round(float(layout.get("cap_ow", 0) or 0)

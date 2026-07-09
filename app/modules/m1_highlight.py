@@ -565,6 +565,81 @@ def _cap_max_duration(segments: list, max_len: float) -> list:
     return out or segments[:1]
 
 
+def _enforce_len(segments: list, min_len: float, max_len: float,
+                 duration: float, boundaries=None) -> tuple[list, str]:
+    """RÀO CHẮN CUỐI CÙNG — ép TỔNG độ dài clip vào [min_len, max_len].
+
+    Chạy SAU MỌI bước (LLM chọn / heuristic / refine / dedup / extend) ngay
+    trước khi lưu clip. Bảo đảm TUYỆT ĐỐI (biên độ ±2s cho mép câu):
+      - Tổng > max_len -> CẮT khúc cuối về <= max_len (bám mép câu nếu có).
+      - Tổng < min_len -> NỚI: kéo dài khúc CUỐI về sau tới hết video, còn
+        thiếu thì kéo khúc ĐẦU về trước. Ưu tiên dừng ở ranh giới câu/cảnh
+        (boundaries) trong ±2s; hết chỗ (đầu/cuối video) -> nới tối đa có
+        thể, trả note để caller log 'không đủ dài'.
+
+    Trả (segments_moi, note). note != "" khi KHÔNG nới nổi tới min_len (video
+    ngắn hơn min). Hàm thuần (chỉ dùng duration/boundaries) — unit test được.
+    """
+    if not segments:
+        return segments, ""
+    segs = [[float(s), float(e)] for s, e in segments]
+    segs.sort(key=lambda x: x[0])
+    note = ""
+
+    def _total(ss):
+        return sum(e - s for s, e in ss)
+
+    # ---- 1) CẮT nếu quá max ----
+    if max_len and max_len > 0 and _total(segs) > max_len + 2.0:
+        segs = [[round(s, 2), round(e, 2)]
+                for s, e in _cap_max_duration(segs, max_len)]
+
+    # ---- 2) NỚI nếu dưới min ----
+    def _snap_up(t):
+        """Đẩy mốc CUỐI lên ranh giới câu GẦN NHẤT trong [t, t+2]."""
+        if not boundaries:
+            return t
+        cands = [b for b in boundaries if t - 0.05 <= b <= t + 2.0]
+        return max(cands) if cands else t
+
+    def _snap_down(t):
+        """Đẩy mốc ĐẦU xuống ranh giới câu GẦN NHẤT trong [t-2, t]."""
+        if not boundaries:
+            return t
+        cands = [b for b in boundaries if t - 2.0 <= b <= t + 0.05]
+        return min(cands) if cands else t
+
+    if min_len and min_len > 0 and _total(segs) < min_len - 2.0:
+        deficit = min_len - _total(segs)
+        # 2a) nới khúc CUỐI về sau (tới hết video)
+        last_end = segs[-1][1]
+        room_fwd = max(0.0, duration - last_end)
+        add = min(room_fwd, deficit)
+        if add > 0.01:
+            new_end = _snap_up(last_end + add)
+            new_end = min(new_end, duration)
+            if new_end - last_end < add - 0.5:   # snap kéo NGẮN lại -> bỏ snap
+                new_end = min(last_end + add, duration)
+            segs[-1][1] = round(new_end, 2)
+            deficit = min_len - _total(segs)
+        # 2b) còn thiếu -> nới khúc ĐẦU về trước
+        if deficit > 0.5:
+            first_start = segs[0][0]
+            room_bwd = max(0.0, first_start)
+            add2 = min(room_bwd, deficit)
+            if add2 > 0.01:
+                new_start = _snap_down(first_start - add2)
+                new_start = max(0.0, new_start)
+                if first_start - new_start < add2 - 0.5:
+                    new_start = max(0.0, first_start - add2)
+                segs[0][0] = round(new_start, 2)
+                deficit = min_len - _total(segs)
+        if deficit > 2.0:                        # vẫn thiếu -> video quá ngắn
+            note = (f"clip chỉ dài {_total(segs):.0f}s (< {min_len:.0f}s yêu "
+                    f"cầu) — video/đoạn không đủ dài để nới")
+    return [[round(s, 2), round(e, 2)] for s, e in segs], note
+
+
 def _normalize_clip(r, duration: float, boundaries=None,
                     min_len: float = 60.0, max_len: float = 0.0,
                     segs: list = None) -> Optional[dict]:
@@ -849,9 +924,21 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
         _delete_suggested(video_id)
+        # 🔒 RÀO CHẮN CUỐI: MỌI clip PHẢI lọt [min_len, max_len]. Chạy SAU tất
+        # cả bước AI (chọn + refine + dedup) — sửa lỗi 'đặt min 60 mà ra 46s'
+        # (extend_to_target bị gap chặn, refine cắt gọn...). Không nới nổi ->
+        # gom cảnh báo cho user.
+        _bnd = _natural_boundaries(transcript, scenes)
+        _min = float(cfg.get("min_len", 60.0))
+        _max = float(cfg.get("max_len", 0.0) or 0.0)
+        _len_notes: list = []
         clip_ids = []
         for c in ai_clips:
-            segs = c["segments"]
+            segs, _note = _enforce_len(c["segments"], _min, _max, duration,
+                                       _bnd)
+            c["segments"] = segs
+            if _note:
+                _len_notes.append(_note)
             total = sum(e - s for s, e in segs)
             signals = {"segments": segs, "n_seg": len(segs), "llm_used": True,
                        "ai": prov, "ai_name": prov_name,
@@ -871,6 +958,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                + (" (có xem hình)" if used_vision else ""))
         if ai_warns:
             msg += " — CẢNH BÁO: " + "; ".join(ai_warns)
+        if _len_notes:                  # có clip không nới đủ min (video ngắn)
+            msg += f" — LƯU Ý: {len(_len_notes)} clip ngắn hơn Min (đoạn không đủ dài)"
         cost = {}
         if prov == "gemini":            # CHI PHÍ ước tính cho video này
             u = llm.get_usage()
@@ -911,12 +1000,16 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     candidates.sort(key=lambda c: c["start"])  # theo thứ tự thời gian
 
     min_len = float(cfg.get("min_len", 60.0))
+    max_len = float(cfg.get("max_len", 0.0) or 0.0)
+    _bnd = _natural_boundaries(transcript, scenes)
     _delete_suggested(video_id)
     clip_ids = []
     for c in candidates:
-        # SÀN MIN CỨNG cho đường heuristic: clip nào < Min mà video còn nội dung
-        # -> nới đủ Min (đường AI đã có bước này; trước đây heuristic thì không).
-        seg = _ensure_min_duration([[c["start"], c["end"]]], duration, min_len)
+        # 🔒 RÀO CHẮN CUỐI: clip PHẢI lọt [min_len, max_len] (nới nếu < min,
+        # cắt nếu > max). Thay _ensure_min_duration cũ (chỉ lo min, không cắt
+        # max, không bám mép câu). Sửa lỗi 'đặt min 60 ra 46'.
+        seg, _ = _enforce_len([[c["start"], c["end"]]], min_len, max_len,
+                              duration, _bnd)
         c_start, c_end = seg[0][0], seg[-1][1]
         a_s = _audio_score(audio, c_start, c_end)
         s_s = _scene_score(scenes, c_start, c_end)
