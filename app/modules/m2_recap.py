@@ -223,28 +223,13 @@ def _auto_recap_count(duration: float) -> int:
 
 
 def _win_bounds(preset: dict) -> tuple:
-    """Min/Max SỐ CẢNH GHÉP mỗi clip từ ⚙ Cài đặt Reup -> (min, max, auto).
+    """Min/Max SỐ CẢNH GHÉP mỗi clip -> (min, max, auto).
 
-    recap_win_auto (mặc định BẬT) -> AI TỰ chọn số cảnh: trả bound RỘNG
-    (2, 8) chỉ để chặn vô lý (prompt không gò cứng, validate_windows dùng
-    max_n=8) + auto=True (caller đưa win_auto vào prompt đạo diễn).
-    TẮT -> dùng recap_win_min 2-6 / recap_win_max 3-8 (mặc định 3-6) như
-    cũ, kẹp; Min > Max -> ép Max = Min; auto=False. Hàm thuần — test được."""
-    auto = str(preset.get("recap_win_auto", True)).strip().lower() \
-        not in ("false", "0", "no", "off")
-    if auto:
-        return 2, 8, True
-    try:
-        lo = int(preset.get("recap_win_min", 3))
-    except (TypeError, ValueError):
-        lo = 3
-    try:
-        hi = int(preset.get("recap_win_max", 6))
-    except (TypeError, ValueError):
-        hi = 6
-    lo = min(6, max(2, lo))
-    hi = min(8, max(3, hi))
-    return lo, max(lo, hi), False
+    Số cảnh ghép GIỜ LUÔN do AI tự quyết (bỏ hẳn phần "Cắt ghép" trong ⚙
+    Cài đặt Reup) -> LUÔN trả bound RỘNG (2, 8) chỉ để chặn vô lý (prompt
+    đạo diễn không gò cứng, validate_windows dùng max_n=8) + auto=True.
+    preset không còn đọc key recap_win_* nữa. Hàm thuần — test được."""
+    return 2, 8, True
 
 
 def _resolve_count(preset: dict, duration: float) -> int:
@@ -402,12 +387,12 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     """Bước 'reup thuyết minh' — job 'auto_recap' gọi sau khi phân tích.
 
     payload: {video_id, preset: {..., recap_style, recap_ratio,
-    recap_count, recap_win_auto, recap_win_min, recap_win_max}}.
-    recap_win_auto (mặc định BẬT) -> AI TỰ chọn số cảnh (bound rộng 2-8,
-    prompt không gò cứng); TẮT -> recap_win_min/max = số CẢNH ghép mong
-    muốn mỗi clip (2-6 / 3-8, mặc định 3-6 — vào prompt đạo diễn + trần
-    validate_windows). recap_count = số clip thuyết minh:
-    0/thiếu = TỰ ĐỘNG
+    recap_count, min_len, max_len}}.
+    Số CẢNH ghép mỗi clip GIỜ LUÔN do AI tự quyết (bound rộng 2-8, prompt
+    không gò cứng). min_len/max_len = ĐỘ DÀI mỗi clip (giây) từ ⚙ Cài đặt
+    Reup (recap_min_sec/max_sec) — studio_page override 'Tùy chỉnh cắt'
+    chung; thiếu -> lùi cut_min/cut_max cũ. recap_count = số clip thuyết
+    minh: 0/thiếu = TỰ ĐỘNG
     theo độ dài (<4 phút 1 clip, 4-12 phút 2, >12 phút 3 — mặc định), hoặc
     chọn tay 1-3 — chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập.
     Kết quả: các dòng clips status='suggested' kèm signals.recap (kịch

@@ -2269,22 +2269,23 @@ class StudioPage(QWidget):
                 self._settings.value("recap_count", 0))))
         except (TypeError, ValueError):
             preset["recap_count"] = 0
-        try:                            # min/max số CẢNH ghép mỗi clip từ ⚙
-            wmin = int(self._settings.value("recap_win_min", 3))
-        except (TypeError, ValueError):
-            wmin = 3
+        # Độ dài mỗi clip Reup (giây) từ ⚙ Cài đặt Reup — OVERRIDE 'Tùy chỉnh
+        # cắt' chung cho ĐƯỜNG RECAP (m2.generate_recap đọc min_len/max_len).
+        # Thiếu key (phòng xa) -> giữ nguyên min_len/max_len từ _cut_preset().
         try:
-            wmax = int(self._settings.value("recap_win_max", 6))
+            lmin = int(self._settings.value("recap_min_sec", 25))
         except (TypeError, ValueError):
-            wmax = 6
-        wmin = min(6, max(2, wmin))
-        preset["recap_win_min"] = wmin
-        preset["recap_win_max"] = max(wmin, min(8, max(3, wmax)))
-        # Tự-động số cảnh (mặc định BẬT) -> AI tự chọn số cảnh (m2 bound rộng
-        # 2-8 + prompt không gò cứng); TẮT -> dùng Min/Max ở trên.
-        preset["recap_win_auto"] = str(
-            self._settings.value("recap_win_auto", True)).strip().lower() \
-            not in ("false", "0", "no", "off")
+            lmin = 25
+        try:
+            lmax = int(self._settings.value("recap_max_sec", 80))
+        except (TypeError, ValueError):
+            lmax = 80
+        lmin = min(180, max(10, lmin))
+        lmax = max(lmin, min(600, max(15, lmax)))
+        preset["min_len"] = float(lmin)
+        preset["max_len"] = float(lmax)
+        # Số cảnh ghép GIỜ LUÔN do AI tự quyết (m2 bound rộng 2-8 + prompt
+        # không gò cứng) — bỏ set recap_win_* vào preset.
         # 🎭 Giọng cảm xúc (audio tag v3) — MẶC ĐỊNH BẬT; đưa vào preset để
         # prompt biết mà chèn tag cảm xúc vào lời narrate.
         preset["recap_emotion"] = str(

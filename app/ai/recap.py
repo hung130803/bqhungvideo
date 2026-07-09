@@ -1375,14 +1375,15 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
                           emotion: bool = False,
                           win_auto: bool = False) -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
-    win_min-win_max khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI
-    giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6).
+    các khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI giữa các khung.
     ratio 15-80 (mặc định 30); <= 40 -> KHUÔN LOW-RATIO (AI nói ít, nhanh
     gọn, video gốc là chính — _structure_rules).
 
-    win_auto=True (MẶC ĐỊNH ⚙ Cài đặt Reup — "để AI tự chọn số cảnh"): bỏ
-    khung gò cứng win_min-win_max, thay bằng chỉ dẫn TỰ chọn số cảnh hợp lý
-    theo nội dung (thường 2-6), ưu tiên mạch chuyện hay."""
+    win_auto=True (m2_recap GIỜ LUÔN dùng — số cảnh do AI tự quyết, đã bỏ
+    hẳn phần "Cắt ghép" trong ⚙ Cài đặt Reup): bỏ khung gò cứng win_min-
+    win_max, thay bằng chỉ dẫn TỰ chọn số cảnh hợp lý theo nội dung (thường
+    2-6), ưu tiên mạch chuyện hay. win_auto=False (giữ cho tương thích/test):
+    ép chọn win_min-win_max khung."""
     ln = lang_name.upper()
     try:
         pct = int(round(max(15.0, min(80.0, float(ratio)))))
