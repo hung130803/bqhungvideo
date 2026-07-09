@@ -1973,6 +1973,141 @@ def _phrase_groups_even(text: str, start: float, speech_dur: float,
     return out
 
 
+# ------------------------------------------------------------------
+# 🔁 STT WORD-SYNC (sửa lỗi 'phụ đề lệch ở giọng cảm xúc'): giọng el/Gemini
+# (và đường fallback edge của chúng) KHÔNG có WordBoundary — silencedetect +
+# chia theo ký tự vẫn TRÔI vì tốc độ đọc KHÔNG ĐỀU trong 1 đoạn có tiếng
+# (chỗ nhanh chỗ chậm -> chữ nhảy trước khi nói). Giải quyết TRIỆT ĐỂ:
+# CHÉP LỜI word-level CHÍNH audio part ĐÃ RENDER (Groq whisper — đường
+# transcribe._groq_one sẵn có; part 5-25s nên nhanh + rẻ) -> dùng MỐC THỜI
+# GIAN của STT nhưng CHỮ của kịch bản. STT lỗi/không key/timeout/lệch từ
+# quá 40% -> fallback silencedetect + chia ký tự như cũ (không tệ hơn).
+# ------------------------------------------------------------------
+_STT_TIMEOUT_S = 20.0        # quá 20s -> bỏ STT, fallback silencedetect
+_STT_MISS_MAX = 0.40         # số từ STT lệch quá 40% so kịch bản -> coi fail
+
+
+def _stt_part_words(wav_path: str, lang: str,
+                    timeout: float = _STT_TIMEOUT_S) -> Optional[list]:
+    """Word-level STT cho 1 file audio part (Groq whisper — đường transcribe
+    SẴN CÓ của app). Trả [[start, end, từ], ...] theo thời gian FILE (gốc 0,
+    tăng dần) hoặc None (không key / lỗi / timeout / không nghe ra từ nào —
+    caller fallback silencedetect, không tệ hơn hiện tại).
+
+    CACHE theo SHA1 NỘI DUNG audio (nằm cùng thư mục TTS cache, LRU dọn
+    chung): part tái render y hệt (TTS cache hit -> audio byte-identical)
+    -> đọc cache, KHÔNG gọi STT lại — xuất lại clip không tốn lượt Groq."""
+    try:
+        h = hashlib.sha1(Path(wav_path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+    cache = _TTS_CACHE_DIR / f"{h}.stt.json"
+    try:
+        if cache.is_file():
+            data = json.loads(cache.read_text(encoding="utf-8"))
+            os.utime(cache, None)      # LRU — file hay dùng không bị dọn
+            w = data.get("words") if isinstance(data, dict) else None
+            if isinstance(w, list) and w:
+                return [[float(a), float(b), str(t)] for a, b, t in w]
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        keys = settings.groq_keys()
+    except Exception:  # noqa: BLE001 — settings hỏng thì coi như không key
+        keys = []
+    if not keys:
+        return None
+    import threading
+    from app.core import transcribe as _tr
+
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            _segs, w, _lg, _txt = _tr._groq_one(
+                wav_path, norm_lang(lang) or None, keys)
+            box["words"] = w
+        except Exception:  # noqa: BLE001 — 401/429/mạng -> fallback êm
+            pass
+
+    # Thread DAEMON + join có timeout (KHÔNG dùng ThreadPoolExecutor: worker
+    # của nó bị join ở exit — request treo sẽ giữ app không thoát được).
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    th.join(timeout)
+    words = box.get("words")           # quá timeout -> None (thread tự chết)
+    if not words:
+        return None
+    out = []
+    for w in words or []:
+        try:
+            a, b = float(w["start"]), float(w["end"])
+            t = str(w.get("word") or "").strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if t and b >= a >= 0:
+            out.append([round(a, 3), round(max(a, b), 3), t])
+    if not out:
+        return None
+    try:                               # cache best-effort (đĩa lỗi -> bỏ qua)
+        _TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(cache) + ".tmp"
+        Path(tmp).write_text(json.dumps({"words": out}, ensure_ascii=False),
+                             encoding="utf-8")
+        os.replace(tmp, cache)
+        _tts_cache_evict()
+    except OSError:
+        pass
+    return out
+
+
+def _align_stt_words(script_text: str, stt_words: list,
+                     miss_max: float = _STT_MISS_MAX) -> Optional[list]:
+    """Ghép MỐC THỜI GIAN của words STT với CHỮ của KỊCH BẢN (STT nghe nhầm
+    chính tả/dấu là thường — chữ hiển thị phải là bản kịch bản sạch). Align
+    ĐƠN GIẢN theo thứ tự từ: số từ bằng nhau -> map 1-1; lệch nhỏ -> map TỈ
+    LỆ chỉ số (từ kịch bản i nhận khoảng thời gian của cụm từ STT tương
+    ứng); lệch quá `miss_max` (40%) -> None (STT nghe sai quá nhiều — caller
+    fallback silencedetect). Trả [[start, end, từ_kịch_bản], ...] theo thời
+    gian FILE, mốc không giảm. Hàm thuần — unit test được."""
+    toks = str(script_text or "").split()
+    k = len(stt_words or [])
+    m = len(toks)
+    if not m or not k:
+        return None
+    if abs(m - k) / max(m, k) > miss_max:
+        return None
+    out = []
+    for i in range(m):
+        j0 = min(k - 1, (i * k) // m)
+        j1 = min(k - 1, max(j0, ((i + 1) * k) // m - 1))
+        a = float(stt_words[j0][0])
+        b = max(a, float(stt_words[j1][1]))
+        if out and a < out[-1][0]:     # phòng STT trả mốc lộn xộn
+            a = out[-1][0]
+            b = max(a, b)
+        out.append([round(a, 3), round(b, 3), toks[i]])
+    return out
+
+
+def _phrase_groups_from_words(words: list, start: float,
+                              group: int = _RECAP_PHRASE_MAX) -> list:
+    """Gom words [[a, b, từ], ...] (thời gian FILE, mốc TỪNG TỪ THẬT từ
+    STT/WordBoundary) thành CỤM ~`group` từ, neo timeline clip bằng cộng
+    `start` -> [[a, b, cụm], ...]. Mốc cụm = mép từ ĐẦU/CUỐI ĐO THẬT —
+    không chia đều ước lượng nên không trôi khi giọng đọc nhanh chậm thất
+    thường (giọng cảm xúc). Hàm thuần — unit test được."""
+    out = []
+    for i in range(0, len(words or []), group):
+        g = words[i:i + group]
+        txt = " ".join(str(w[2]).strip() for w in g if str(w[2]).strip())
+        if not txt:
+            continue
+        out.append([round(start + float(g[0][0]), 3),
+                    round(start + float(g[-1][1]), 3), txt])
+    return out
+
+
 def _fit_recap_chunk(src: str, dst_wav: str, window: float,
                      tempo_max: float = _RECAP_TEMPO_MAX,
                      ) -> tuple[float, float, float]:
@@ -2064,8 +2199,12 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     (D_final đo bằng ffprobe sau MỌI filter) — ít trôi hơn karaoke từng từ vì
     KHÔNG phụ thuộc WordBoundary. Bật RECAP_WORD_LEVEL_CAPTION -> mốc TỪNG TỪ
     thật (WordBoundary edge-tts, scale theo D_final/D_nat đo thật). Giọng
-    Gemini KHÔNG có word boundary -> word-level fallback rỗng; câu-cụm vẫn chia
-    được (chỉ cần D_final). Không có "words" -> caller fallback chia theo ký tự.
+    el/Gemini (và edge-fallback của chúng) KHÔNG có word boundary -> 🔁 STT
+    WORD-SYNC: chép lời word-level CHÍNH audio đã render bằng Groq whisper
+    (_stt_part_words, cache theo hash audio, timeout 20s) rồi dùng MỐC STT +
+    CHỮ kịch bản (_align_stt_words) — khớp cả giọng cảm xúc đọc nhanh chậm
+    thất thường; STT fail -> silencedetect/chia đều như cũ. Không có "words"
+    -> caller fallback chia theo ký tự.
     WAV 48kHz mono dài ĐÚNG tổng độ dài clip.
 
     ĐỘ BỀN + CÂN ÂM LƯỢNG (sửa lỗi user):
@@ -2260,10 +2399,25 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # đúng cho track cuối.
             scale = (d_final / d_nat) if d_nat > 0.01 else (1.0 / tempo)
             wl = word_lists[i] if i < len(word_lists) else []
+            # ---- 🔁 STT WORD-SYNC: part KHÔNG có WordBoundary (el/Gemini/
+            # edge-fallback của chúng) -> CHÉP LỜI word-level CHÍNH file wav
+            # ĐÃ RENDER (đã atempo -> mốc STT ở đúng thang D_final, KHÔNG
+            # cần scale) rồi lấy MỐC của STT + CHỮ của kịch bản. STT lỗi/
+            # không key/timeout/lệch từ >40% -> stt_wl=None, đi tiếp đường
+            # silencedetect + chia ký tự như cũ (không tệ hơn hiện tại).
+            stt_wl = None
+            if not wl and str(n["text"] or "").strip():
+                raw_stt = _stt_part_words(wav, lang)
+                if raw_stt:
+                    stt_wl = _align_stt_words(n["text"], raw_stt)
+                    if stt_wl:
+                        prog(0.65 + 0.25 * (i + 1) / len(narr),
+                             "Căn phụ đề theo giọng thật (STT)...")
             # KHOẢNG CÓ TIẾNG THẬT [speech_a, speech_b]: mép từ ĐẦU/CUỐI
             # (WordBoundary) scale theo D_final/D_nat, kẹp trong D_final. Neo
             # phụ đề vào ĐÚNG lúc bắt đầu/kết thúc có tiếng (bỏ khoảng lặng/hơi
-            # thở đầu-đuôi edge-tts hay thêm). Không words (Gemini) -> cả part.
+            # thở đầu-đuôi edge-tts hay thêm). Không words (Gemini) -> mốc STT
+            # nếu có; không nốt -> cả part.
             speech_a, speech_b = 0.0, d_final
             if wl:
                 fa = wl[0][0] * scale
@@ -2272,6 +2426,13 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     speech_a = fa
                 if speech_a + 0.1 < lb < d_final:
                     speech_b = lb
+            elif stt_wl:
+                fa = float(stt_wl[0][0])
+                lb = float(stt_wl[-1][1])
+                if 0.0 <= fa < d_final:
+                    speech_a = fa
+                if speech_a + 0.1 < lb:
+                    speech_b = min(lb, d_final)
             # ---- DUCK CHỈ ĐÚNG LÚC AI NÓI (sửa 'khoảng chết' câm lặng) ----
             # Trước đây caller duck CẢ PART narrate — lời LLM thường ngắn hơn
             # part -> giọng AI hết mà tiếng gốc vẫn tắt = im lặng chết cả
@@ -2290,13 +2451,17 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 # MẶC ĐỊNH: câu-cụm 2-4 từ. CĂN theo GIỌNG THẬT:
                 #  - edge-tts (CÓ WordBoundary trong `wl`): tags đã strip nên
                 #    giọng đọc đều -> chia ĐỀU theo phần có tiếng (như cũ).
-                #  - el/Gemini (KHÔNG có word timestamp -> `wl` rỗng): khi bật
-                #    cảm xúc, [dramatic pause] tạo khoảng NGẮT -> DÒ đoạn nói
-                #    bằng silencedetect trên audio ĐÃ RENDER (wav) rồi rải cụm
-                #    chữ vào ĐÚNG các đoạn có tiếng (bỏ khoảng im) -> chữ chỉ
-                #    chạy khi đang nói. Không dò được đoạn nào -> chia đều.
+                #  - el/Gemini (KHÔNG word timestamp -> `wl` rỗng): ƯU TIÊN
+                #    mốc TỪNG TỪ THẬT từ STT (`stt_wl` — chữ kịch bản, giờ
+                #    STT) gom thành cụm 2-4 từ -> khớp cả khi giọng cảm xúc
+                #    đọc nhanh chậm thất thường. STT fail -> DÒ đoạn nói
+                #    bằng silencedetect trên audio ĐÃ RENDER (wav) rồi rải
+                #    cụm chữ vào các đoạn có tiếng; không dò được -> chia đều
+                #    (đúng hành vi cũ).
                 grp = None
-                if not wl:
+                if stt_wl:
+                    grp = _phrase_groups_from_words(stt_wl, n["start"])
+                if not grp and not wl:
                     segs_sp = _detect_speech_segments(wav, d_final)
                     if len(segs_sp) >= 2:   # ≥2 đoạn -> có ngắt đáng kể
                         grp = _phrase_groups_by_speech(
@@ -2316,6 +2481,17 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                         break
                     out_w.append([round(n["start"] + a2, 3),
                                   round(n["start"] + min(b2, d_final), 3),
+                                  wtxt])
+                if out_w:
+                    n["words"] = out_w
+            elif stt_wl:
+                # WORD-LEVEL từ STT: mốc đã ở thang D_final -> cộng offset.
+                out_w = []
+                for a, b, wtxt in stt_wl:
+                    if a >= d_final - 0.01:   # từ rơi vào phần bị cắt -> bỏ
+                        break
+                    out_w.append([round(n["start"] + a, 3),
+                                  round(n["start"] + min(b, d_final), 3),
                                   wtxt])
                 if out_w:
                     n["words"] = out_w

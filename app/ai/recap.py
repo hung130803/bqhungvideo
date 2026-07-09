@@ -145,12 +145,60 @@ _STRUCT_ORIG_MIN = 3.0     # orig < 3s -> gộp vào narrate kề
 _MAX_ORIG_BREAKS = 2       # tối đa số lần bung tiếng gốc MỖI window
 _MAX_ROLE_CHANGES = 8      # tối đa TỔNG số lần đổi vai narrate<->orig cả clip
 
+# ---- KHUÔN LOW-RATIO (user kéo "Tỉ lệ AI kể" <= 40%): AI nói ÍT, NHANH
+# GỌN, nhường video gốc — hook ngắn + 1-2 cầu nối + chốt, còn lại tiếng
+# gốc chạy dài. Ngưỡng + độ dài dùng chung prompt (2 đường) 1 chỗ. ----
+_LOW_RATIO_MAX = 40.0      # ratio <= 40 -> khuôn low-ratio
+_LR_HOOK_MIN, _LR_HOOK_MAX = 3, 6        # hook mở đầu (giây)
+_LR_BRIDGE_MIN, _LR_BRIDGE_MAX = 4, 8    # cầu nối kể ngắn (giây)
+_LR_OUTRO_MIN, _LR_OUTRO_MAX = 3, 5      # chốt kể cuối (giây)
 
-def _structure_rules(per_window: bool = False) -> str:
+
+def _is_low_ratio(ratio) -> bool:
+    """Tỉ lệ AI kể có thuộc chế độ LOW-RATIO (<= 40%) không. Hàm thuần."""
+    try:
+        return float(ratio) <= _LOW_RATIO_MAX
+    except (TypeError, ValueError):
+        return False
+
+
+def _structure_rules(per_window: bool = False, ratio: float = 55.0) -> str:
     """KHUÔN CẤU TRÚC kênh recap thật — dùng CHUNG cho prompt 1-span
-    (build_prompt) và prompt đạo diễn (build_director_prompt): người kể nói
-    chủ đạo khối dài, tiếng gốc chỉ bung ở khoảnh khắc đắt, cấm ping-pong.
-    per_window=True -> thêm trần số lần bung TỪNG KHUNG CẢNH (đạo diễn)."""
+    (build_prompt) và prompt đạo diễn (build_director_prompt).
+    per_window=True -> thêm trần số lần bung TỪNG KHUNG CẢNH (đạo diễn).
+
+    2 KHUÔN THEO `ratio` (Tỉ lệ AI kể user chọn):
+      - ratio <= 40 (LOW-RATIO): AI nói ÍT + NHANH GỌN — HOOK ngắn 3-6s ->
+        VIDEO GỐC CHẠY DÀI -> 1 cầu nối kể NGẮN 4-8s -> GỐC DÀI -> chốt kể
+        3-5s. Video gốc là CHỦ ĐẠO (sửa lỗi user 'AI nói quá nhiều ~80%').
+      - ratio > 40: khuôn cũ — người kể nói chủ đạo khối dài, tiếng gốc chỉ
+        bung ở khoảnh khắc đắt, cấm ping-pong."""
+    if _is_low_ratio(ratio):
+        return (
+            "KHUÔN CẤU TRÚC CLIP (bắt buộc — chế độ AI NÓI ÍT, VIDEO GỐC "
+            "LÀ CHÍNH — dựng kịch bản theo ĐÚNG từng bước):\n"
+            f"  B1. HOOK — narrate NGẮN {_LR_HOOK_MIN}-{_LR_HOOK_MAX} giây: "
+            "1 câu mở gây SỐC/TÒ MÒ tức thì, NHANH GỌN rồi nhường ngay.\n"
+            "  B2. VIDEO GỐC CHẠY DÀI — orig 15-40 giây: để video TỰ KỂ, "
+            "KHÔNG chen lời.\n"
+            f"  B3. CẦU NỐI — narrate NGẮN {_LR_BRIDGE_MIN}-{_LR_BRIDGE_MAX} "
+            "giây: 1-2 câu ngắn nối cảnh/đẩy căng rồi NHƯỜNG lại ngay.\n"
+            "  B4. GỐC DÀI tiếp — orig 15-40 giây: khoảnh khắc đỉnh, nhân "
+            "vật tự nói.\n"
+            f"  B5. CHỐT — narrate {_LR_OUTRO_MIN}-{_LR_OUTRO_MAX} giây: 1 "
+            "câu chốt đắt + kêu gọi NGẮN.\n"
+            "  (Clip NGẮN -> bỏ B3+B4; clip DÀI -> chèn thêm cặp GỐC DÀI -> "
+            "cầu nối ngắn, nhưng CẢ CLIP tối đa 1-2 cầu nối.)\n"
+            "ĐỘ DÀI PART (bắt buộc — AI nói NHANH GỌN, KHÔNG lan man):\n"
+            f"- Part narrate NGẮN: hook {_LR_HOOK_MIN}-{_LR_HOOK_MAX} giây, "
+            f"cầu nối {_LR_BRIDGE_MIN}-{_LR_BRIDGE_MAX} giây, chốt "
+            f"{_LR_OUTRO_MIN}-{_LR_OUTRO_MAX} giây — câu NGẮN dồn dập, "
+            "CẤM viết khối kể dài.\n"
+            "- Part orig DÀI là CHỦ ĐẠO (video gốc tự kể chuyện)"
+            + (" — MỖI khung cảnh TỐI ĐA 1 cầu nối kể" if per_window else "")
+            + ".\n"
+            "- CẤM chen narrate giữa lúc nhân vật đang nói cao trào; lời kể "
+            "vượt tỉ lệ sẽ bị hệ thống CẮT BỚT.\n")
     return (
         "KHUÔN CẤU TRÚC CLIP (bắt buộc — dựng kịch bản theo ĐÚNG từng "
         "bước):\n"
@@ -186,6 +234,34 @@ def _structure_rules(per_window: bool = False) -> str:
         "orig (trừ HOOK đầu clip).\n"
         f"- CẤM part orig < {_STRUCT_ORIG_MIN:.0f} giây.\n"
         "- CẤM quá 2 lần đổi vai narrate<->orig trong bất kỳ 20 giây nào.\n")
+
+
+def _part_len_rule(pct: int) -> str:
+    """Dòng 'Độ dài part' trong QUY TẮC KỸ THUẬT — theo khuôn của ratio."""
+    if _is_low_ratio(pct):
+        return (f"- Độ dài part theo KHUÔN Ở TRÊN: narrate NGẮN (hook "
+                f"{_LR_HOOK_MIN}-{_LR_HOOK_MAX} giây, cầu nối "
+                f"{_LR_BRIDGE_MIN}-{_LR_BRIDGE_MAX} giây, chốt "
+                f"{_LR_OUTRO_MIN}-{_LR_OUTRO_MAX} giây); orig DÀI thoải "
+                "mái (video gốc là chính). mode = \"orig\" hoặc "
+                "\"narrate\".\n")
+    return (f"- Độ dài part theo KHUÔN CẤU TRÚC ở trên: narrate "
+            f"{_NARR_MIN_S}-{_NARR_MAX_S} giây (hook {_HOOK_MIN_S}-"
+            f"{_HOOK_MAX_S} giây), orig {_ORIG_MIN_S}-{_ORIG_MAX_S} giây. "
+            "mode = \"orig\" hoặc \"narrate\".\n")
+
+
+def _ratio_rule(pct: int) -> str:
+    """Dòng ÉP TỈ LỆ narrate trong prompt — vai chủ đạo đổi theo ratio."""
+    lo, hi = max(10, pct - 10), min(90, pct + 10)
+    if _is_low_ratio(pct):
+        return (f"- Tổng thời lượng narrate CHỈ ~{pct}% clip (chấp nhận "
+                f"{lo}-{hi}%) — TIẾNG GỐC là CHỦ ĐẠO, AI chỉ chen hook + "
+                "cầu nối + chốt NGẮN GỌN; kể vượt tỉ lệ sẽ bị hệ thống CẮT "
+                "bớt phần kể.\n")
+    return (f"- Tổng thời lượng narrate chiếm ~{pct}% clip (chấp nhận "
+            f"{lo}-{hi}%) — người kể nói CHỦ ĐẠO, tiếng gốc chỉ bung đúng "
+            "chỗ đắt.\n")
 
 
 def style_label(key: str) -> str:
@@ -499,15 +575,16 @@ def build_prompt(sentences: list, lang_name: str, style: str,
     """sentences = [(start, end, text)] các câu transcript TRONG clip.
     frames = [(giây, đường_dẫn_ảnh)] khung hình gửi kèm (vision) — ảnh #k
     chụp tại mốc giây tương ứng; None/rỗng = không có vision.
-    ratio = tỉ lệ % thời lượng AI kể (user chỉnh 30-80, mặc định 55) —
-    đưa vào prompt dạng ~X% ±10%."""
+    ratio = tỉ lệ % thời lượng AI kể (user chỉnh 15-80, mặc định 30) —
+    đưa vào prompt dạng ~X% ±10%; ratio <= 40 -> KHUÔN LOW-RATIO (AI nói
+    ít, nhanh gọn, nhường video gốc — xem _structure_rules)."""
     lines = "\n".join(f"{a:.1f} {b:.1f} | {t}" for a, b, t in sentences)[:6000]
     dur = clip_end - clip_start
     ln = lang_name.upper()
     try:
-        pct = int(round(max(30.0, min(80.0, float(ratio)))))
+        pct = int(round(max(15.0, min(80.0, float(ratio)))))
     except (TypeError, ValueError):
-        pct = 55
+        pct = 30
 
     # ---- NGỮ CẢNH THỊ GIÁC: có ảnh -> nhìn cảnh để HIỂU; không -> chỉ transcript ----
     if frames:
@@ -546,7 +623,7 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         "nói) / narrate (lời KỂ của bạn).\n\n"
         + _narrator_rules(ln, style, emotion=emotion) + "\n"
         "CÔNG THỨC VIRAL (bắt buộc):\n"
-        + _structure_rules() +
+        + _structure_rules(ratio=pct) +
         "- HOOK: part ĐẦU TIÊN BẮT BUỘC là narrate, câu mở phải gây SỐC "
         "hoặc TÒ MÒ tức thì (kiểu: \"Bạn sẽ không tin điều gã này sắp "
         "làm...\"). CẤM mở đầu nhạt kiểu \"Trong video này...\", \"Hôm nay "
@@ -564,19 +641,16 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         f"- Chia CLIP thành các part PHỦ KÍN từ {clip_start:.1f}s đến "
         f"{clip_end:.1f}s, theo ĐÚNG thứ tự thời gian, KHÔNG chồng lấn, "
         "KHÔNG hở, KHÔNG đảo đoạn.\n"
-        f"- Độ dài part theo KHUÔN CẤU TRÚC ở trên: narrate {_NARR_MIN_S}-"
-        f"{_NARR_MAX_S} giây (hook {_HOOK_MIN_S}-{_HOOK_MAX_S} giây), orig "
-        f"{_ORIG_MIN_S}-{_ORIG_MAX_S} giây. mode = \"orig\" hoặc "
-        "\"narrate\".\n"
+        + _part_len_rule(pct) +
         "- start/end của MỖI part phải trùng mép câu transcript (không cắt "
         "ngang giữa câu nói).\n"
-        f"- Tổng thời lượng narrate chiếm ~{pct}% clip (chấp nhận "
-        f"{max(20, pct - 10)}-{min(90, pct + 10)}%) — người kể nói CHỦ "
-        "ĐẠO, tiếng gốc chỉ bung đúng chỗ đắt.\n"
+        + _ratio_rule(pct) +
         f"- text của part narrate: viết BẰNG {ln} (ĐÚNG ngôn ngữ video), "
-        "văn NÓI tự nhiên — khối dài = 2-5 câu NGẮN nối nhau LIỀN MẠCH "
-        "cùng 1 mạch ý.\n"
-        f"- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate phải đọc VỪA KHÍT độ dài "
+        "văn NÓI tự nhiên — "
+        + ("mỗi part chỉ 1-2 câu NGẮN, vào thẳng ý, không lan man.\n"
+           if _is_low_ratio(pct) else
+           "khối dài = 2-5 câu NGẮN nối nhau LIỀN MẠCH cùng 1 mạch ý.\n")
+        + f"- {_RATE_HINT} HÃY ĐẾM CHỮ: lời narrate phải đọc VỪA KHÍT độ dài "
         "part (part 10 giây tiếng Anh ~20 từ, part 20 giây ~41-46 từ). "
         "ĐỪNG viết dài quá — sẽ bị cắt.\n"
         "- TRẦN CỨNG SỐ CHỮ (hệ số an toàn 0.9): TUYỆT ĐỐI KHÔNG viết quá "
@@ -1190,6 +1264,57 @@ def narrate_ratio(parts: list[dict]) -> float:
     return nar / total
 
 
+# Dung sai ÉP CỨNG tỉ lệ AI kể: tổng narrate được vượt ratio user chọn tối
+# đa chừng này ĐIỂM % (LLM canh giây không bao giờ khít tuyệt đối); vượt
+# hơn -> enforce_narrate_ratio CẮT bớt part kể (sửa lỗi user 'AI nói ~80%
+# dù chọn ít' — prompt xin thôi chưa đủ, phải ép sau validate).
+_RATIO_TOL_PCT = 12.0
+# Sau khi cắt vẫn giữ TỐI THIỂU chừng này part narrate (hook + 1) — clip
+# thuyết minh mà 0-1 part kể thì mất chất recap.
+_RATIO_MIN_NARR = 2
+
+
+def enforce_narrate_ratio(parts: list[dict], ratio: float,
+                          tol: float = _RATIO_TOL_PCT,
+                          min_keep: int = _RATIO_MIN_NARR) -> list[dict]:
+    """ÉP CỨNG tỉ lệ AI kể SAU validate: tổng thời lượng narrate vượt
+    `ratio` + `tol` (điểm %) -> CHUYỂN dần các part narrate ÍT QUAN TRỌNG
+    NHẤT thành orig (trả tiếng gốc về) đến khi lọt trần:
+
+      - LUÔN GIỮ part narrate ĐẦU (hook) + part narrate CUỐI (chốt).
+      - Ưu tiên bỏ part narrate Ở GIỮA DÀI NHẤT trước (part dài = chiếm
+        nhiều thời lượng nhất, bỏ 1 phát hạ ratio nhanh nhất).
+      - Dừng khi <= trần HOẶC chỉ còn `min_keep` part narrate (mặc định 2:
+        hook + 1) — thà hơi vượt trần còn hơn clip mất hết lời kể.
+
+    Trả list part mới (orig kề nhau đã gộp), KHÔNG sửa list vào. Parts có
+    <= min_keep part narrate -> trả nguyên (chỉ copy). Hàm thuần — unit
+    test được."""
+    out = [dict(p) for p in parts or []]
+    total = sum(_part_dur(p) for p in out)
+    if total <= 0:
+        return out
+    try:
+        limit = (max(0.0, min(100.0, float(ratio))) + float(tol)) / 100.0
+    except (TypeError, ValueError):
+        limit = (30.0 + _RATIO_TOL_PCT) / 100.0
+
+    def _narr_idx() -> list:
+        return [i for i, p in enumerate(out) if p["mode"] == "narrate"]
+
+    while True:
+        idx = _narr_idx()
+        cur = sum(_part_dur(out[i]) for i in idx) / total
+        if cur <= limit or len(idx) <= max(1, int(min_keep)):
+            break
+        middle = idx[1:-1]              # giữ hook (đầu) + chốt (cuối)
+        if not middle:
+            break
+        victim = max(middle, key=lambda i: _part_dur(out[i]))
+        out[victim] = dict(out[victim], mode="orig", text="")
+    return _merge_orig_adjacent(out)
+
+
 # Nếu anti-copy SIẾT làm rụng quá nhiều narrate (còn < tỉ lệ này số part
 # narrate mà LLM ĐỊNH viết) -> lời kể đang thuật lại lời nhân vật -> RETRY 1
 # lần với chỉ trích cụ thể (thà retry còn hơn xuất clip gần như toàn orig).
@@ -1231,12 +1356,14 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
                           emotion: bool = False) -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
     win_min-win_max khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI
-    giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6)."""
+    giữa các khung (min/max user chỉnh trong ⚙ Cài đặt Reup, mặc định 3-6).
+    ratio 15-80 (mặc định 30); <= 40 -> KHUÔN LOW-RATIO (AI nói ít, nhanh
+    gọn, video gốc là chính — _structure_rules)."""
     ln = lang_name.upper()
     try:
-        pct = int(round(max(30.0, min(80.0, float(ratio)))))
+        pct = int(round(max(15.0, min(80.0, float(ratio)))))
     except (TypeError, ValueError):
-        pct = 55
+        pct = 30
     try:
         w_lo = max(2, int(win_min))
     except (TypeError, ValueError):
@@ -1281,7 +1408,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "LOẠI BỎ.\n\n"
         "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (orig = giữ "
         "tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
-        + _structure_rules(per_window=True) +
+        + _structure_rules(per_window=True, ratio=pct) +
         "- KHUÔN trên áp cho CẢ CLIP xuyên các khung: HOOK ở đầu khung 1; "
         "các cú BUNG GỐC rơi vào đúng khoảnh khắc đắt của từng khung.\n"
         "- Mốc part nằm TRONG khung, KHÔNG vắt qua 2 khung; các part PHỦ "
@@ -1308,9 +1435,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "cũng được.\n"
         f"- Part narrate CUỐI: câu chốt đắt + KÊU GỌI tương tác (hỏi ý "
         f"kiến, kêu theo dõi) viết bằng {ln}.\n"
-        f"- Tổng thời lượng narrate ~{pct}% clip (chấp nhận "
-        f"{max(20, pct - 10)}-{min(90, pct + 10)}%) — người kể nói CHỦ "
-        "ĐẠO, tiếng gốc chỉ bung đúng chỗ đắt.\n"
+        + _ratio_rule(pct) +
         "- Đoạn orig = ĐỒNG ĐẮT: chọn đúng câu nói/tiếng động/cảm xúc MẠNH "
         "NHẤT trong khung làm twist/đỉnh điểm.\n"
         "- CẤM SPOILER: không nhắc trước nội dung khung CHƯA chiếu tới — "
@@ -1676,7 +1801,8 @@ def write_script(sentences: list, lang_name: str, style: str,
     frames = [(giây, đường_dẫn_ảnh)] khung hình gửi kèm (chỉ khi caller đã
     kiểm llm.vision_available()) — AI NHÌN cảnh để hiểu bối cảnh rồi kể; lỗi
     vision -> tự lùi về prompt chữ thuần (không vỡ luồng).
-    ratio = % thời lượng AI kể user chọn (30-80, mặc định 55).
+    ratio = % thời lượng AI kể user chọn (15-80, mặc định 30; <= 40 ->
+    prompt dùng khuôn LOW-RATIO — AI nói ít, nhanh gọn).
     Ném llm.LLMError nếu gọi LLM thất bại (caller quyết fail/skip).
     Trả None nếu LLM trả JSON không dùng được (không có part narrate nào).
     """

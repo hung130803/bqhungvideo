@@ -407,10 +407,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     preset = payload.get("preset") or {}
     cfg = {**DEFAULTS, **preset}
     style = str(preset.get("recap_style") or recap.DEFAULT_STYLE)
-    try:                              # tỉ lệ AI kể (30-80%) từ Cài đặt Reup
-        ratio = float(preset.get("recap_ratio") or 55)
+    try:                              # tỉ lệ AI kể (15-80%) từ Cài đặt Reup
+        ratio = float(preset.get("recap_ratio") or 30)
     except (TypeError, ValueError):
-        ratio = 55.0
+        ratio = 30.0
     # 🎭 Giọng cảm xúc (audio tag v3): BẬT -> prompt dặn AI chèn tag cảm xúc
     # ([excited]/[whispers]/[dramatic pause]) + nhấn CAPS vào lời narrate.
     # MẶC ĐỊNH BẬT; tag chỉ phát huy khi export bằng giọng ElevenLabs v3,
@@ -558,6 +558,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             # tiết transcript khung đó/kề — validate_parts_windows lo)
             parts = recap.validate_parts_windows(snapped_parts, windows,
                                                  sentences=ch_sents)
+            # ÉP CỨNG tỉ lệ AI kể (prompt xin thôi chưa đủ — LLM hay nói
+            # tràn ~80%): vượt ratio+12% -> chuyển part kể giữa dài nhất
+            # về orig, giữ hook + chốt (recap.enforce_narrate_ratio).
+            parts = recap.enforce_narrate_ratio(parts, ratio)
             if not windows or not any(p["mode"] == "narrate" for p in parts):
                 continue                # chương snap hỏng -> bỏ riêng chương
             total = round(sum(e - s for s, e in windows), 1)
@@ -662,6 +666,8 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                                       cuts=scene_cuts, spans=sent_spans)
                 sc["parts"] = recap.validate_parts(snapped, s0, e1,
                                                    sentences=sents)
+                # ÉP CỨNG tỉ lệ AI kể (như đường đạo diễn ở trên)
+                sc["parts"] = recap.enforce_narrate_ratio(sc["parts"], ratio)
                 if sc.get("lang_warn"):  # hậu kiểm ngôn ngữ -> báo user
                     ctx.progress(0.45 + 0.5 * i / max(1, len(spans)),
                                  f"⚠ Kịch bản {i + 1}: {sc['lang_warn']}")

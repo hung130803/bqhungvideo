@@ -2254,9 +2254,14 @@ class StudioPage(QWidget):
         preset = self._cut_preset()
         preset["recap_style"] = self.recap_style.currentData() or "story"
         try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
-            preset["recap_ratio"] = int(self._settings.value("recap_ratio", 55))
+            preset["recap_ratio"] = int(self._settings.value("recap_ratio", 30))
         except (TypeError, ValueError):
-            preset["recap_ratio"] = 55
+            preset["recap_ratio"] = 30
+        # MIGRATE NHẸ: 55 = mặc định CŨ chưa ai đổi -> dùng mặc định mới 30
+        # (chỉ đúng giá trị 55; giá trị khác là user tự chọn -> giữ nguyên).
+        if preset["recap_ratio"] == 55:
+            preset["recap_ratio"] = 30
+        preset["recap_ratio"] = min(80, max(15, preset["recap_ratio"]))
         try:                            # số clip thuyết minh từ ⚙
             # 0 = "Tự động theo độ dài" (mặc định) — m2_recap tự tính theo
             # duration; 1-3 = user chọn tay.
