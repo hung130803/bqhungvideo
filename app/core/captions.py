@@ -238,8 +238,21 @@ CAPTION_PRESETS = {
     "Cả câu, từ đang nói xanh": {"mode": "active", "color": "#16E0FF",
                                  "rest": "#FFFFFF", "outline": "#00161A",
                                  "ow": 0.12, "shadow": 2, "pop": True},
+    # ---- CỤM 2-3 chữ, KHÔNG nền hộp (box=False -> BorderStyle=1, chỉ viền) ----
+    # Hiện nguyên cụm, hết cụm nhảy cụm mới; không có nền chữ nhật ôm chữ.
+    "Cụm chữ trắng": {"mode": "group", "color": "#FFFFFF", "outline": "#000000",
+                      "ow": 0.13, "shadow": 2},
+    "Cụm chữ vàng": {"mode": "group", "color": "#FFD83D", "outline": "#241900",
+                     "ow": 0.13, "shadow": 2},
+    "Cụm chữ viền neon": {"mode": "group", "color": "#FFFFFF",
+                          "outline": "#19E3FF", "ow": 0.12, "shadow": 6,
+                          "glow": "#19E3FF"},
 }
 DEFAULT_PRESET = "Vàng nhảy (TikTok)"
+# Mục ĐẦU combo "Kiểu chạy chữ" của khu CHỮ AI ĐỌC: dùng Y HỆT phụ đề gốc
+# (Style Default) — tương đương narr_same=True cũ. Chọn 1 preset khác -> đoạn
+# AI kể render bằng MODE + màu/viền của preset đó (Style Narrate riêng).
+NARR_SAME_LABEL = "(giống phụ đề gốc)"
 
 
 def build_ass(words: list, segments: list, out_path,
@@ -255,7 +268,10 @@ def build_ass(words: list, segments: list, out_path,
               narr_same: bool = False,
               narr_ny: float = 0.0, narr_size: float = 0.0,
               cap_case: str = "", narr_case: str = "",
-              hook_case: str = "") -> bool:
+              hook_case: str = "",
+              cap_outline: str = "", cap_ow: float = 0.0,
+              narr_preset: str = "", narr_outline: str = "",
+              narr_ow: float = 0.0) -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
@@ -282,6 +298,13 @@ def build_ass(words: list, segments: list, out_path,
     Narrate theo tỉ lệ chiều cao; 0/thiếu -> = cỡ phụ đề gốc.
     cap_case / narr_case / hook_case = kiểu chữ HIỂN THỊ ("upper"/"lower"/
     "title"/""=giữ nguyên) áp cho cue gốc / cue AI kể / hook (không đổi mốc).
+    cap_outline / cap_ow = màu viền / độ dày viền TÙY CHỌN cho Style Default
+    (khu Phụ đề gốc); ""/0 -> theo preset. cap_ow theo tỉ lệ chiều cao (như 'ow'
+    của preset). narr_preset = tên KIỂU riêng cho đoạn AI kể (Style Narrate) —
+    rỗng / NARR_SAME_LABEL "(giống phụ đề gốc)" -> dùng Style Default y hệt gốc
+    (tương đương narr_same cũ); chọn preset khác -> Narrate lấy màu/viền/glow của
+    preset đó + chạy hiệu ứng theo mode. narr_outline / narr_ow = màu viền / độ
+    dày viền TÙY CHỌN cho Style Narrate (thiếu -> theo narr_preset).
     (đoạn narrate tiếng gốc bị tắt nên không có words; recap KHÔNG truyền
     `words` — mọi phụ đề recap đi qua extra_cues cho nhất quán timeline.)
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
@@ -312,6 +335,13 @@ def build_ass(words: list, segments: list, out_path,
         shadow = 0
     elif p.get("glow"):                         # KIỂU NEON: bóng = màu viền (phát sáng)
         back = _alpha_color(p["glow"], 0x40)
+    # OVERRIDE user (Chỉnh mẫu, khu Phụ đề): màu viền / độ dày viền cho Style
+    # Default. Thiếu -> giữ theo preset như trên. cap_ow theo tỉ lệ chiều cao
+    # (như 'ow' của preset) -> quy ra px theo size.
+    if cap_outline:
+        outline = _ass_color(cap_outline)
+    if cap_ow and cap_ow > 0:
+        ow = max(0, int(size * cap_ow))
     # secondary: karaoke = màu CHƯA nói (mờ); kiểu khác không dùng
     if mode == "karaoke":
         secondary = _alpha_color(p.get("unsung", "#FFFFFF"), 0x64)
@@ -347,26 +377,63 @@ def build_ass(words: list, segments: list, out_path,
     # narr_italic (None -> True): 1 = nghiêng, 0 = thẳng. narr_same=True ->
     # đoạn AI kể render Style Default (không cần Narrate) — vẫn dựng style
     # cho an toàn nhưng cue narrate sẽ dùng Default (xem vòng extra_cues).
+    # narr_preset (khu CHỮ AI ĐỌC): chọn KIỂU riêng cho đoạn AI kể. Rỗng /
+    # NARR_SAME_LABEL -> "giống phụ đề gốc" (Style Default, như narr_same cũ).
+    # Chọn preset khác -> Style Narrate lấy màu/viền/glow/box của preset ĐÓ,
+    # cue narrate chạy theo MODE preset đó (xem vòng extra_cues bên dưới).
+    narr_same = narr_same or (not narr_preset) or (
+        narr_preset == NARR_SAME_LABEL)
+    np = (CAPTION_PRESETS.get(narr_preset) if not narr_same else None) or p
+    narr_mode = np["mode"]
+    # màu chữ Narrate: user chọn (narr_color) ghi đè; thiếu -> màu của np, tránh
+    # trùng màu chữ chính (giữ logic phân biệt cũ khi dùng chung preset gốc).
     if narr_color:
         narr_primary = _ass_color(narr_color)
+    elif not narr_same:
+        narr_primary = _ass_color(np.get("color", "#FFFFFF"))
     else:
         narr_accent = p.get("glow") or "#FFD966"
         if _ass_color(narr_accent) == primary:
             narr_accent = ("#FFFFFF" if primary != _ass_color("#FFFFFF")
                            else "#FFD966")
         narr_primary = _ass_color(narr_accent)
+    # viền / bóng / hộp Narrate: theo np; narr_outline/narr_ow ghi đè viền.
+    narr_outline_c = _ass_color(np.get("outline", "#000000"))
+    narr_shadow = np.get("shadow", 1)
+    narr_border = 1
+    narr_back = _alpha_color("#000000", 0x96)
     narr_ital = -1 if (True if narr_italic is None else narr_italic) else 0
     # Cỡ + vị trí dọc RIÊNG cho Narrate (thiếu -> = phụ đề gốc). narr_size
     # theo tỉ lệ chiều cao (như size phụ đề); narr_ny theo neo an8 (đỉnh).
     nsize = int(narr_size * out_h) if narr_size and narr_size > 0 else size
-    now = max(0, int(nsize * p.get("ow", 0.10)))
-    if p.get("box"):
+    now = max(0, int(nsize * np.get("ow", 0.10)))
+    if np.get("box"):
+        narr_border = 3
+        narr_outline_c = _ass_color(np.get("box_color", "#000000"))
         now = max(8, int(nsize * 0.20))
+        narr_shadow = 0
+    elif np.get("glow"):
+        narr_back = _alpha_color(np["glow"], 0x40)
+    if narr_outline:
+        narr_outline_c = _ass_color(narr_outline)
+    if narr_ow and narr_ow > 0:
+        now = max(0, int(nsize * narr_ow))
+    # narr_same -> đồng bộ HẲN với Default (viền/bóng/hộp) để trông y hệt gốc.
+    if narr_same:
+        narr_outline_c, narr_shadow, narr_border, narr_back = (
+            outline, shadow, border_style, back)
+        now = max(0, int(nsize * p.get("ow", 0.10)))
+        if p.get("box"):
+            now = max(8, int(nsize * 0.20))
+        if narr_outline:
+            narr_outline_c = _ass_color(narr_outline)
+        if narr_ow and narr_ow > 0:
+            now = max(0, int(nsize * narr_ow))
     narr_mv = (int(max(0.02, min(0.9, narr_ny)) * out_h)
                if narr_ny and narr_ny > 0 else margin_v)
     narr_style = (f"Style: Narrate,{font},{nsize},{narr_primary},{secondary},"
-                  f"{outline},{back},-1,{narr_ital},0,0,100,100,0,0,"
-                  f"{border_style},{now},{shadow},{align},{side},{side},"
+                  f"{narr_outline_c},{narr_back},-1,{narr_ital},0,0,100,100,0,0,"
+                  f"{narr_border},{now},{narr_shadow},{align},{side},{side},"
                   f"{narr_mv},1")
     # HOOK: câu giật tít TO ở ĐẦU clip (an8 = trên, neo đỉnh); vàng nổi + viền dày
     # vị trí/cỡ theo Ô HOOK user kéo trong Chỉnh mẫu (thiếu -> mặc định như cũ)
@@ -422,6 +489,16 @@ def build_ass(words: list, segments: list, out_path,
     orig_anim = ("{\\fad(30,0)\\t(0,90,\\fscx116\\fscy116)"
                  "\\t(90,190,\\fscx100\\fscy100)}" if p.get("animate")
                  else "{\\fad(40,0)}")
+    # ANIMATION cue AI kể (Style Narrate) theo MODE của narr_preset: preset có
+    # animate/pop/karaoke -> phồng nhẹ khi vào (chạy giống kiểu đã chọn); preset
+    # tĩnh -> chỉ fade nhẹ. Cue narrate là chữ đã gom sẵn (word/sent) nên không
+    # nhúng \\kf từng-từ; dùng scale-pop cho cả cụm là gần nhất & không lỗi.
+    _narr_active = (not narr_same) and (
+        np.get("animate") or np.get("pop") or narr_mode == "karaoke")
+    narr_word_pre = ("{\\fad(40,0)\\t(0,90,\\fscx116\\fscy116)"
+                     "\\t(90,190,\\fscx100\\fscy100)}" if _narr_active
+                     else word_pre)
+    narr_sent_pre = "{\\fad(80,80)}"
     for c in extra_cues:
         ea, eb, etxt = c[0], c[1], c[2]
         kind = str(c[3]) if len(c) > 3 else "sent"
@@ -445,7 +522,7 @@ def build_ass(words: list, segments: list, out_path,
             pre = orig_anim if kind == "word" else "{\\fad(60,40)}"
             style_name = "Default"
         else:
-            pre = word_pre if kind == "word" else "{\\fad(80,80)}"
+            pre = narr_word_pre if kind == "word" else narr_sent_pre
             style_name = "Narrate"
         extra_lines.append(
             f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},{style_name},,"

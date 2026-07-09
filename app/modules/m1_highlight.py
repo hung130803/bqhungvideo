@@ -1522,6 +1522,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                         font=cs.get("font") or "Montserrat",
                         size=int(csize * out_h) if csize < 1 else int(csize),
                         color=cs.get("color") or "",
+                        # màu viền / độ dày viền TÙY CHỌN cho Style Default
+                        cap_outline=str(cs.get("cap_outline") or ""),
+                        cap_ow=float(cs.get("cap_ow", 0.0) or 0.0),
                         ny=float(cs.get("ny", 0.78)),
                         preset=cs.get("preset") or "Trắng đơn giản",
                         delay=float(cs.get("delay", 0.12)),
@@ -1535,6 +1538,11 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                         # (Style Narrate); clip thường/đoạn gốc bỏ qua. Lấy TỪ
                         # MẪU (cap_style), KHÔNG từ ⚙ Cài đặt Reup nữa.
                         narr_color=str(cs.get("narr_color") or ""),
+                        narr_outline=str(cs.get("narr_outline") or ""),
+                        narr_ow=float(cs.get("narr_ow", 0.0) or 0.0),
+                        # KIỂU chạy chữ riêng cho chữ AI ('(giống phụ đề gốc)'
+                        # -> Style Default). narr_same giữ cho tương thích.
+                        narr_preset=str(cs.get("narr_preset") or ""),
                         narr_italic=(
                             None if cs.get("narr_italic") is None
                             else bool(cs.get("narr_italic"))),

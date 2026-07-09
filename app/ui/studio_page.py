@@ -3093,6 +3093,10 @@ class StudioPage(QWidget):
                     "font": self.layout_tpl.get("cap_font", "Anton"),
                     "size": self.layout_tpl.get("cap_size", 0),
                     "color": self.layout_tpl.get("cap_color", ""),
+                    # màu viền / độ dày viền TÙY CHỌN cho phụ đề gốc (Chỉnh mẫu
+                    # khu Phụ đề); ''/0 -> theo preset.
+                    "cap_outline": self.layout_tpl.get("cap_outline", "") or "",
+                    "cap_ow": float(self.layout_tpl.get("cap_ow", 0.0) or 0.0),
                     "ny": self.layout_tpl.get("cap_ny", 0.78),
                     "preset": self.layout_tpl.get("cap_preset",
                                                   "Trắng đơn giản"),
@@ -3107,6 +3111,13 @@ class StudioPage(QWidget):
                     # ảnh hưởng cue narrate (Style Narrate) của clip recap;
                     # clip thường / đoạn gốc bỏ qua.
                     "narr_color": self.layout_tpl.get("narr_color", ""),
+                    "narr_outline": self.layout_tpl.get("narr_outline", "")
+                    or "",
+                    "narr_ow": float(self.layout_tpl.get("narr_ow", 0.0)
+                                     or 0.0),
+                    # KIỂU chạy chữ RIÊNG cho chữ AI ('(giống phụ đề gốc)' =
+                    # Style Default). narr_same giữ cho tương thích.
+                    "narr_preset": self.layout_tpl.get("narr_preset", "") or "",
                     "narr_italic": bool(self.layout_tpl.get("narr_italic", True)),
                     "narr_same": bool(self.layout_tpl.get("narr_same", False)),
                     "narr_ny": float(self.layout_tpl.get("narr_ny", 0.0) or 0.0),
