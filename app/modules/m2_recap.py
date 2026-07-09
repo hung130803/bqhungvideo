@@ -245,24 +245,83 @@ def _resolve_count(preset: dict, duration: float) -> int:
     return max(1, min(3, c))
 
 
-def _split_chapters(duration: float, edges: list, k: int) -> list:
-    """Chia [0, duration] thành k CHƯƠNG thời lượng ~bằng nhau, mốc chia
-    SNAP vào mép câu transcript (không cắt ngang câu nói). Snap làm chương
-    teo (<20s) -> giữ mốc chia đều. k<=1/duration hỏng -> 1 chương cả video.
-    Hàm thuần — test được."""
+def _split_chapters(duration: float, edges: list, k: int,
+                    sentences: list | None = None) -> list:
+    """Chia [0, duration] thành k CHƯƠNG, mốc chia SNAP vào mép câu transcript
+    (không cắt ngang câu nói). k<=1/duration hỏng -> 1 chương cả video.
+
+    CHIA THEO MẬT ĐỘ THOẠI (sửa lỗi 'số clip 3 -> ra 2'): nếu có `sentences`
+    ([(start,end,text)]) -> mốc chia rơi vào chỗ MỖI CHƯƠNG có ~tổng_câu/k
+    câu (thay vì chia đều thời gian -> chương giữa thưa thoại bị bỏ). Đoạn
+    thoại dày -> chương ngắn; đoạn thưa -> chương dài, nhưng CHƯƠNG NÀO CŨNG
+    có đủ câu để đạo diễn. Không có sentences -> chia đều thời gian như cũ.
+    Snap làm chương teo (<20s) -> giữ mốc chia gốc. Hàm thuần — test được."""
     dur = float(duration or 0)
     if k <= 1 or dur <= 0:
         return [(0.0, dur)]
+    # mốc chia THÔ: theo phân bố câu (đều SỐ CÂU/chương) nếu có transcript,
+    # nếu không thì chia đều thời gian.
+    raw_bounds = []
+    sents = sorted(((float(a) + float(b)) / 2 for a, b, *_ in (sentences or [])))
+    if len(sents) >= k:                  # đủ câu để chia theo mật độ
+        for i in range(1, k):
+            idx = int(round(len(sents) * i / k))
+            idx = max(1, min(len(sents) - 1, idx))
+            # mốc = giữa 2 câu quanh ranh giới nhóm câu (né cắt ngang câu)
+            raw_bounds.append((sents[idx - 1] + sents[idx]) / 2)
+    else:                                # thoại quá mỏng -> chia đều thời gian
+        raw_bounds = [dur * i / k for i in range(1, k)]
     bounds = [0.0]
-    for i in range(1, k):
-        t = _snap_time(dur * i / k, edges, tol=15.0)
+    for raw in raw_bounds:
+        t = _snap_time(raw, edges, tol=15.0)
         if t - bounds[-1] < 20.0 or dur - t < 20.0:
-            t = dur * i / k              # snap phá chương -> chia đều
+            t = raw                      # snap phá chương -> giữ mốc gốc
         bounds.append(round(t, 2))
     bounds.append(round(dur, 2))
     out = [(bounds[i], bounds[i + 1]) for i in range(k)
            if bounds[i + 1] - bounds[i] >= 20.0]
     return out or [(0.0, dur)]
+
+
+def _count_sents(sentences: list, c0: float, c1: float) -> int:
+    """Số câu transcript có TÂM rơi trong chương [c0,c1]. Hàm thuần."""
+    return sum(1 for a, b, *_ in (sentences or [])
+               if c0 - 0.01 <= (float(a) + float(b)) / 2 <= c1 + 0.01)
+
+
+def _merge_sparse_chapters(chapters: list, sentences: list,
+                           min_sents: int = 3) -> list:
+    """GỘP chương THƯA THOẠI (< min_sents câu) vào chương KỀ (ưu tiên chương
+    kề THƯA hơn để cân bằng) — thay vì BỎ chương thưa (bỏ -> thiếu clip).
+    Trả list chương [(c0,c1)] đã gộp, thứ tự thời gian giữ nguyên. Lặp tới
+    khi mọi chương đủ dày HOẶC chỉ còn 1 chương. Hàm thuần — test được."""
+    chs = [(float(c0), float(c1)) for c0, c1 in (chapters or [])]
+    if len(chs) <= 1:
+        return chs
+    changed = True
+    while changed and len(chs) > 1:
+        changed = False
+        for i, (c0, c1) in enumerate(chs):
+            if _count_sents(sentences, c0, c1) >= min_sents:
+                continue
+            # chương thưa -> gộp với chương kề có ÍT câu hơn (né phình chương dày)
+            left = chs[i - 1] if i > 0 else None
+            right = chs[i + 1] if i + 1 < len(chs) else None
+            if left and right:
+                nl = _count_sents(sentences, *left)
+                nr = _count_sents(sentences, *right)
+                merge_left = nl <= nr
+            else:
+                merge_left = right is None
+            if merge_left:
+                chs[i - 1] = (chs[i - 1][0], c1)
+                del chs[i]
+            else:
+                chs[i + 1] = (c0, chs[i + 1][1])
+                del chs[i]
+            changed = True
+            break
+    return chs
 
 
 # ------------------------------------------------------------------
@@ -325,6 +384,118 @@ def _has_overlap(windows: list) -> bool:
         if ws[i][1] > ws[i + 1][0] + 1e-6:
             return True
     return False
+
+
+def _snap_up(t: float, edges: list, tol: float = 3.0) -> float:
+    """Đẩy mốc CUỐI lên mép câu gần nhất trong [t, t+tol]; không có -> giữ t."""
+    cands = [b for b in edges if t - 0.05 <= b <= t + tol]
+    return max(cands) if cands else t
+
+
+def _snap_down(t: float, edges: list, tol: float = 3.0) -> float:
+    """Đẩy mốc ĐẦU xuống mép câu gần nhất trong [t-tol, t]; không có -> giữ t."""
+    cands = [b for b in edges if t - tol <= b <= t + 0.05]
+    return min(cands) if cands else t
+
+
+def _enforce_recap_len(windows: list, min_len: float, max_len: float,
+                       edges: list, chapter: tuple, used: list,
+                       duration: float,
+                       gap: float = _CLIP_GAP) -> list:
+    """ÉP TỔNG độ dài các window của 1 clip recap vào [min_len, max_len].
+
+    SỬA LỖI 'clip recap 46s khi min 60': validate_windows chỉ cắt TRẦN từng
+    khung, KHÔNG ép SÀN tổng -> AI chọn windows tổng < min vẫn lọt. Hàm này
+    chạy cho MỖI clip trước khi lưu:
+      - Tổng < min_len -> NỚI: kéo dài window CUỐI về sau (bám mép câu, KHÔNG
+        tràn ranh giới chương/video, né `used` + đệm gap). Không đủ trong
+        chương -> nới window ĐẦU về trước; vẫn thiếu -> nới CUỐI ra NGOÀI
+        chương (tới hết video) né used.
+      - Tổng > max_len -> CẮT bớt: rút window cuối (bám mép câu), khung teo
+        dưới _MIN_WIN_KEEP thì bỏ hẳn.
+    edges = mép câu transcript; chapter = (c0,c1) ranh giới chương; used =
+    các khoảng clip trước đã dùng (né trùng cảnh). Hàm thuần — test được."""
+    ws = [[float(s), float(e)] for s, e in (windows or [])]
+    if not ws:
+        return ws
+    ws.sort(key=lambda x: x[0])
+    c0, c1 = float(chapter[0]), float(chapter[1])
+    dur = float(duration or 0) or (ws[-1][1])
+    blocked = [[b0 - gap, b1 + gap] for b0, b1 in _merge_ranges(used)]
+
+    def _room_end(t: float, hard: float) -> float:
+        """Mốc xa nhất window cuối nới tới được (<= hard, né khối `used`)."""
+        limit = hard
+        for b0, b1 in blocked:
+            if b0 >= t and b0 < limit:      # khối chặn phía sau -> dừng trước nó
+                limit = b0
+        return max(t, limit)
+
+    def _room_start(t: float, hard: float) -> float:
+        """Mốc gần nhất window đầu lùi tới được (>= hard, né khối `used`)."""
+        limit = hard
+        for b0, b1 in blocked:
+            if b1 <= t and b1 > limit:
+                limit = b1
+        return min(t, limit)
+
+    def _total():
+        return sum(e - s for s, e in ws)
+
+    # ---- CẮT nếu quá max ----
+    if max_len and max_len > 0 and _total() > max_len + 1.0:
+        cut, tot = [], 0.0
+        for s, e in ws:
+            if tot >= max_len - 0.01:
+                break
+            if tot + (e - s) > max_len:
+                ne = round(s + (max_len - tot), 2)
+                ne = _snap_down(ne, edges, tol=2.0)
+                if ne - s < _MIN_WIN_KEEP:
+                    break
+                cut.append([s, ne]); tot += ne - s
+                break
+            cut.append([s, e]); tot += e - s
+        ws = cut or ws[:1]
+
+    # ---- NỚI nếu dưới min ----
+    if min_len and min_len > 0 and _total() < min_len - 1.0:
+        # 1) nới CUỐI về sau, tối đa tới hết chương (né used)
+        deficit = min_len - _total()
+        hard = _room_end(ws[-1][1], c1)
+        room = max(0.0, hard - ws[-1][1])
+        add = min(room, deficit)
+        if add > 0.05:
+            ne = _snap_up(ws[-1][1] + add, edges, tol=3.0)
+            ne = min(ne, hard)
+            if ne < ws[-1][1] + add - 0.5:  # snap kéo ngắn -> bỏ snap
+                ne = ws[-1][1] + add
+            ws[-1][1] = round(min(ne, hard), 2)
+        # 2) còn thiếu -> nới ĐẦU về trước (tới đầu chương, né used)
+        deficit = min_len - _total()
+        if deficit > 0.5:
+            hard = _room_start(ws[0][0], c0)
+            room = max(0.0, ws[0][0] - hard)
+            add = min(room, deficit)
+            if add > 0.05:
+                ns = _snap_down(ws[0][0] - add, edges, tol=3.0)
+                ns = max(ns, hard)
+                if ws[0][0] - ns < add - 0.5:
+                    ns = ws[0][0] - add
+                ws[0][0] = round(max(ns, hard), 2)
+        # 3) vẫn thiếu -> nới CUỐI ra NGOÀI chương tới hết video (né used)
+        deficit = min_len - _total()
+        if deficit > 0.5:
+            hard = _room_end(ws[-1][1], dur)
+            room = max(0.0, hard - ws[-1][1])
+            add = min(room, deficit)
+            if add > 0.05:
+                ne = _snap_up(ws[-1][1] + add, edges, tol=3.0)
+                ne = min(ne, hard)
+                if ne < ws[-1][1] + add - 0.5:
+                    ne = ws[-1][1] + add
+                ws[-1][1] = round(min(ne, hard), 2)
+    return [[round(s, 2), round(e, 2)] for s, e in ws]
 
 
 # ------------------------------------------------------------------
@@ -488,7 +659,18 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         # mỗi chương phải đủ dày (>=60s) để đạo diễn có cái mà cắt ghép
         count = min(count, max(1, int(duration // 60.0)))
 
-    chapters = _split_chapters(duration, edges, count)
+    chapters = _split_chapters(duration, edges, count, sents_all)
+    # 🚫 SỬA LỖI 'số clip N -> ra ít hơn': chương THƯA THOẠI (<3 câu) KHÔNG
+    # bị bỏ trống nữa (bỏ -> thiếu clip). Chia đã theo mật độ câu nên hiếm
+    # khi còn chương thưa; nếu vẫn còn (đoạn video gần như không lời) -> GỘP
+    # vào chương KỀ để cả 2 gộp lại vẫn đủ câu, giữ đúng tinh thần "cố ra đủ
+    # N khi video đủ nội dung". Gộp xong count thực tế có thể < N -> log rõ.
+    chapters = _merge_sparse_chapters(chapters, sents_all, min_sents=3)
+    if len(chapters) < count:
+        ctx.progress(0.05,
+                     f"⚠ Video không đủ nội dung cho {count} clip — sau khi "
+                     f"gộp chương thưa thoại chỉ tạo được tối đa "
+                     f"{len(chapters)} clip.")
     ch_scripts: list[tuple[int, float, float, dict]] = []
     for ci, (c0, c1) in enumerate(chapters):
         ctx.progress(0.06 + 0.34 * ci / max(1, len(chapters)),
@@ -497,8 +679,6 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                      "nối)...")
         ch_sents = [(a, b, t) for a, b, t in sents_all
                     if c0 - 0.01 <= (a + b) / 2 <= c1 + 0.01]
-        if len(chapters) > 1 and len(ch_sents) < 3:
-            continue                    # chương trống thoại -> bỏ chương
         ch_segs = [s for s in segs
                    if c0 - 0.01 <= (float(s.get("start", 0))
                                     + float(s.get("end", 0))) / 2 <= c1 + 0.01]
@@ -548,6 +728,14 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             windows = recap.validate_windows(snapped_w, duration,
                                              max_n=win_hi,
                                              sentences=ch_sents)
+            # 🔒 ÉP ĐỘ DÀI CLIP VÀO [min_total, max_total] (sửa lỗi 'clip
+            # recap 46s khi min 60'): validate_windows chỉ clamp TRẦN từng
+            # khung, KHÔNG ép SÀN tổng -> AI chọn windows tổng < min vẫn lọt.
+            # _enforce_recap_len nới/cắt tổng windows về đúng khoảng user đặt,
+            # bám mép câu, né used_ranges + ranh giới chương/video.
+            windows = _enforce_recap_len(
+                windows, min_total, max_total, edges,
+                (c0, c1), used_ranges, duration)
             snapped_parts: list = []
             for ws, we in windows or []:
                 sub = [p for p in script["parts"]

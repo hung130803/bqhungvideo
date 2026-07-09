@@ -43,9 +43,12 @@ def _remap_words(words: list, segments: list) -> list:
     return out
 
 
-def _group(words: list, max_words: int = 3, max_dur: float = 1.3,
+def _group(words: list, max_words: int = 3, max_dur: float = 2.4,
            gap: float = 0.6) -> list:
-    """Gom 2-3 từ/cụm. KHÔNG gom qua ranh giới đoạn ghép (seg_idx đổi -> cụm mới)."""
+    """Gom 2-3 từ/cụm. KHÔNG gom qua ranh giới đoạn ghép (seg_idx đổi -> cụm mới).
+    max_dur NỚI 1.3 -> 2.4s: whisper mỗi từ ~0.4-0.6s nên 3 từ ~1.5-1.8s hay
+    vượt 1.3 -> cụm bị teo còn 1-2 từ (lỗi 'chọn cụm mà hiện 1-2 chữ'). Nới
+    trần thời lượng cho cụm đủ 2-3 từ như tên gọi."""
     chunks, cur = [], []
     for w in words:
         if not cur:
@@ -59,6 +62,41 @@ def _group(words: list, max_words: int = 3, max_dur: float = 1.3,
     if cur:
         chunks.append(cur)
     return [[ch[0][0], ch[-1][1], " ".join(c[2] for c in ch)] for ch in chunks]
+
+
+def group_word_cues(word_cues: list, max_words: int = 3,
+                    max_dur: float = 2.4, gap: float = 0.6) -> list:
+    """Gom danh sách cue TỪNG TỪ [(a,b,txt),...] (đã ở TIMELINE ĐẦU RA) thành
+    CỤM 2-3 từ [(a,b,txt_cụm),...] — dùng cho phụ đề RECAP khi user chọn kiểu
+    'cụm' (group): trước đây recap LUÔN tách từng từ dù chọn cụm (lỗi 'chọn
+    chạy chữ theo cụm nhưng hiện 1 chữ'). Cắt cụm mới khi: đủ max_words từ,
+    quá max_dur giây, hoặc hở > gap (khoảng lặng -> câu/ý mới). Hàm thuần."""
+    chunks, cur = [], []
+    for c in word_cues or []:
+        try:
+            a, b, txt = float(c[0]), float(c[1]), str(c[2]).strip()
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not txt:
+            continue
+        if not cur:
+            cur = [[a, b, txt]]
+            continue
+        if (len(cur) >= max_words or (b - cur[0][0]) > max_dur
+                or (a - cur[-1][1]) > gap):
+            chunks.append(cur); cur = [[a, b, txt]]
+        else:
+            cur.append([a, b, txt])
+    if cur:
+        chunks.append(cur)
+    return [[ch[0][0], ch[-1][1], " ".join(w[2] for w in ch)] for ch in chunks]
+
+
+def preset_mode(preset: str) -> str:
+    """Trả MODE của 1 preset phụ đề (word/karaoke/group/active). Không có ->
+    mode của preset mặc định. Dùng để biết user chọn kiểu 'cụm' (group)."""
+    p = CAPTION_PRESETS.get(preset) or CAPTION_PRESETS[DEFAULT_PRESET]
+    return p.get("mode", "word")
 
 
 def _word_cues(words: list) -> list:

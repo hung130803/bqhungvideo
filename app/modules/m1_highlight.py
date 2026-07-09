@@ -1394,6 +1394,24 @@ def _fake_words_from_segments(segments: list) -> list:
     return out
 
 
+def _group_recap_cues(cues: list, out_kind: str) -> list:
+    """Gom cue phụ đề recap TỪNG TỪ (kind word/orig_word) thành CỤM 2-3 từ
+    khi user chọn kiểu 'cụm' (group). Cue đã là CẢ CÂU (kind sent/orig_sent)
+    -> giữ nguyên (fallback không có word boundary). out_kind = kind cụm mới
+    ('sent' cho narrate / 'orig_sent' cho gốc) -> build_ass render 1
+    Dialogue/cụm. Giữ đúng thứ tự thời gian. Hàm thuần."""
+    from app.core import captions as _cap
+    word_cues = [(c[0], c[1], c[2]) for c in cues
+                 if len(c) > 3 and str(c[3]) in ("word", "orig_word")]
+    other = [c for c in cues
+             if not (len(c) > 3 and str(c[3]) in ("word", "orig_word"))]
+    grouped = [(a, b, txt, out_kind)
+               for a, b, txt in _cap.group_word_cues(word_cues)]
+    out = list(other) + grouped
+    out.sort(key=lambda c: c[0])
+    return out
+
+
 def _recap_caption_cues(narr_events: list) -> list:
     """Cue phụ đề cho ĐOẠN THUYẾT MINH (recap).
 
@@ -1802,6 +1820,21 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 orig_cues = _recap_orig_caption_cues(
                     recap_parts, segs, words, tr.get("segments") or [])
                 narr_cues = _recap_caption_cues(narr_events or [])
+                # 🔤 KIỂU 'CỤM' (group): trước đây recap LUÔN tách TỪNG TỪ dù
+                # user chọn cụm (lỗi 'chọn chạy chữ theo cụm nhưng hiện 1
+                # chữ'). Preset gốc là group -> GOM cue orig thành cụm 2-3 từ;
+                # preset chữ AI (narr_preset, '' -> giống gốc) là group -> gom
+                # cue narrate. Gom xong đổi kind word->sent (build_ass render
+                # 1 Dialogue/cụm) — KHÁC kiểu word (1 Dialogue/từ).
+                from app.core import captions as _cap
+                _cs_pre = str(_cs0.get("preset") or "") or "Trắng đơn giản"
+                _np = str(_cs0.get("narr_preset") or "")
+                if _cap.preset_mode(_cs_pre) == "group":
+                    orig_cues = _group_recap_cues(orig_cues, "orig_sent")
+                _narr_eff = (_cs_pre if (not _np
+                             or _np == _cap.NARR_SAME_LABEL) else _np)
+                if _cap.preset_mode(_narr_eff) == "group":
+                    narr_cues = _group_recap_cues(narr_cues, "sent")
                 extra_cues = list(orig_cues) + list(narr_cues)
                 words = []          # recap: không dùng đường words trực tiếp
             if dub_segs and payload.get("captions"):
