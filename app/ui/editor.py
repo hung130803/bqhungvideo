@@ -97,6 +97,30 @@ _QFONT = {
 }
 
 
+# Kiểu chữ HOA/thường cho MỌI phần chữ (nhãn, giá trị lưu layout). "" = giữ
+# nguyên (mặc định). Khớp captions.apply_case.
+_CASE_OPTS = [("Giữ nguyên", ""), ("HOA", "upper"),
+              ("thường", "lower"), ("Hoa Đầu Từ", "title")]
+
+
+def _case_combo(tooltip=""):
+    """Combo 4 lựa chọn kiểu chữ hoa dùng chung cho từng phần chữ."""
+    cb = _NoWheelCombo()
+    for label, val in _CASE_OPTS:
+        cb.addItem(label, val)
+    if tooltip:
+        cb.setToolTip(tooltip)
+    return cb
+
+
+# Màu CHỮ AI KỂ (Style Narrate) — (nhãn, hex). Vàng #FFD966 mặc định (đầu list).
+_NARR_COLORS = [
+    ("Vàng", "#FFD966"), ("Trắng", "#FFFFFF"), ("Xanh ngọc", "#16E0FF"),
+    ("Hồng", "#FF5CA8"), ("Cam", "#FF9F1C"),
+]
+_NARR_COLOR_DEFAULT = "#FFD966"
+
+
 def _qfont(name, px):
     # có trong bảng -> dùng (family,bold); không -> coi name LÀ family (font đã nạp)
     fam, bold = _QFONT.get(name, (name or "Arial", False))
@@ -146,11 +170,16 @@ def _draw_text_path(p, path, color, outline_w, outline_color="#000000"):
 
 
 def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
-                       title_vi="", video_px=None, logo=None) -> bool:
+                       title_vi="", video_px=None, logo=None,
+                       part_case="", hook_case="") -> bool:
     """Vẽ tất cả lớp chữ ra PNG trong suốt (dùng khi xuất). Trả True nếu có chữ.
     Placeholder: {n}->số Part, {title}->tiêu đề (Anh) gắn video, {title_vi}->Việt.
     Chữ quá dài TỰ CO NHỎ + bị CLAMP để KHÔNG bao giờ tràn ra ngoài khung.
-    video_px=(vx,vy,vw,vh): vùng KHỐI VIDEO -> chữ bị đẩy ra dải nền, KHÔNG đè video."""
+    video_px=(vx,vy,vw,vh): vùng KHỐI VIDEO -> chữ bị đẩy ra dải nền, KHÔNG đè video.
+    part_case: kiểu chữ hoa cho lớp Part ("upper"/"lower"/"title"/""=giữ).
+    hook_case: kiểu chữ hoa cho lớp CHỮ (tiêu đề/hook/cố định) — mọi lớp không
+    phải Part. Áp lên CHỮ HIỂN THỊ (sau khi thay placeholder), KHÔNG đổi vị trí."""
+    from app.core.captions import apply_case
     drawn = False
     img = QImage(out_w, out_h, QImage.Format.Format_ARGB32)
     img.fill(QColor(0, 0, 0, 0))
@@ -171,6 +200,11 @@ def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
         text = text.strip()
         if not text:
             continue
+        # KIỂU CHỮ HOA cho phần chữ này: Part -> part_case; lớp khác (tiêu đề/
+        # hook/cố định) -> hook_case. Áp lên CHỮ HIỂN THỊ, KHÔNG đổi vị trí/cỡ.
+        _lcase = part_case if d.get("is_part") else hook_case
+        if _lcase:
+            text = apply_case(text, _lcase)
         drawn = True
         # --- chọn DẢI NỀN cho phép (trên/dưới video) để chữ KHÔNG đè khung video ---
         ay0, ay1 = margin, out_h - margin
@@ -565,6 +599,15 @@ class EditorCanvas(QGraphicsView):
                             "HOOK GIẬT TÍT")
         self.hook_box.setVisible(False)
         self.hook_box.setParentItem(self.clip_root)
+        # ô CHỮ AI KỂ (phụ đề đoạn AI thuyết minh — recap) kéo-thả chọn VỊ TRÍ
+        # DỌC; chỉ XEM TRƯỚC, ẩn mặc định (chỉ hiện khi user bật ở nhóm Chữ AI kể)
+        self.narr_box = _TextBox(-97, on_guide=self._set_guides)
+        self.narr_box.apply({"size": 0.045, "font": "Montserrat",
+                             "color": "#FFD966", "bg": True, "bg_color": "#000000",
+                             "radius": 30, "nx": 0.5, "ny": 0.62},
+                            "Chữ AI kể")
+        self.narr_box.setVisible(False)
+        self.narr_box.setParentItem(self.clip_root)
         self.bg = "blur"
         self._frame = QPixmap()
 
@@ -611,6 +654,36 @@ class EditorCanvas(QGraphicsView):
 
     def show_cap(self, on):
         self.cap_box.setVisible(on)
+
+    def show_narr(self, on):
+        self.narr_box.setVisible(bool(on))
+
+    def set_narr_geom(self, ny=0.62, size=0.0):
+        """Đặt vị trí dọc (đỉnh ô, khớp neo an8 lúc render) + cỡ ô CHỮ AI KỂ
+        theo layout đã lưu; ngang căn giữa."""
+        b = self.narr_box
+        if size and size > 0:
+            d = dict(b.d); d["size"] = float(size)
+            b.apply(d, b.disp)
+        b.setPos(FW / 2 - b.w / 2, max(0.0, float(ny)) * FH)
+
+    def narr_geom(self):
+        """Vị trí dọc + cỡ ô CHỮ AI KỂ hiện tại để LƯU vào mẫu."""
+        b = self.narr_box
+        return {"narr_ny": round(max(0.0, min(1.0, b.y() / FH)), 4),
+                "narr_size": round(b.px / FH, 4)}
+
+    def set_narr_style(self, color=None, size=None):
+        """Cập nhật MÀU / CỠ ô CHỮ AI KỂ xem trước (giữ vị trí dọc đang kéo)."""
+        b = self.narr_box
+        d = dict(b.d)
+        if color:
+            d["color"] = color
+        ny = b.y() / FH
+        if size and size > 0:
+            d["size"] = float(size)
+        b.apply(d, b.disp)
+        b.setPos(FW / 2 - b.w / 2, max(0.0, ny) * FH)
 
     def _set_guides(self, v, h):
         self.gv.setVisible(v)
@@ -1189,6 +1262,14 @@ class EditorDialog(QDialog):
         self.cap_color_btn.clicked.connect(self._pick_cap_color)
         _fit_button(self.cap_color_btn); cs1.addWidget(self.cap_color_btn)
         gc.addLayout(cs1)
+        # KIỂU CHỮ HOA cho phụ đề gốc (áp lên CHỮ HIỂN THỊ, không đổi mốc/lời)
+        ccr = QHBoxLayout()
+        ccr.addWidget(QLabel("Chữ hoa"))
+        self.cap_case = _case_combo(
+            "Đổi kiểu chữ hoa cho phụ đề video gốc: Giữ nguyên / HOA / thường / "
+            "Hoa Đầu Từ. Chỉ đổi cách HIỂN THỊ, không đổi lời/mốc.")
+        ccr.addWidget(self.cap_case, 1)
+        gc.addLayout(ccr)
         cs2 = QHBoxLayout()
         cs2.addWidget(QLabel("Cỡ"))
         self.cap_size = _NoWheelSlider(Qt.Orientation.Horizontal)
@@ -1224,9 +1305,78 @@ class EditorDialog(QDialog):
                                  "video viral. AI tự chọn câu từ lời thoại.")
         gc.addWidget(self.cap_hook)
 
+        # Nhóm: CHỮ AI ĐỌC (thuyết minh) — phụ đề đoạn AI KỂ (Style Narrate).
+        # Chỉ dùng khi bấm "Reup thuyết minh" (clip có kịch bản AI kể); clip
+        # thường KHÔNG sinh đoạn narrate nên nhóm này KHÔNG ảnh hưởng.
+        gn, gn_box = _group("Chữ AI đọc (thuyết minh)", (167, 139, 250))
+        self.narr_chk = QCheckBox(
+            "Xem trước ô chữ AI kể — KÉO ô để đặt VỊ TRÍ DỌC")
+        self.narr_chk.setToolTip(
+            "Bật để KÉO ô chữ AI kể trong khung xem trước (chọn vị trí dọc). "
+            "Chỉ để xem/đặt chỗ — không ảnh hưởng clip thường (clip thường "
+            "không có đoạn AI kể).")
+        self.narr_chk.toggled.connect(self.canvas.show_narr)
+        gn.addWidget(self.narr_chk)
+        # Cỡ chữ AI kể (tỉ lệ theo chiều cao, như phụ đề)
+        ns = QHBoxLayout(); ns.addWidget(QLabel("Cỡ chữ"))
+        self.narr_size = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.narr_size.setRange(18, 80); self.narr_size.setValue(45)  # = 4.5%
+        self.narr_size.valueChanged.connect(self._refresh_narr_soon)
+        self.narr_sz_lbl = QLabel("4.5%"); self.narr_sz_lbl.setFixedWidth(44)
+        self.narr_size.valueChanged.connect(
+            lambda v: self.narr_sz_lbl.setText(f"{v/10:.1f}%"))
+        ns.addWidget(self.narr_size, 1); ns.addWidget(self.narr_sz_lbl)
+        gn.addLayout(ns)
+        # kéo góc ô narr -> đồng bộ thanh Cỡ (như cap_box)
+        self.canvas.narr_box.on_resize = lambda _l, frac: self._narr_drag_size(frac)
+        # Màu + In nghiêng
+        nc = QHBoxLayout(); nc.addWidget(QLabel("Màu"))
+        self.narr_color = _NoWheelCombo()
+        for label, hexv in _NARR_COLORS:
+            self.narr_color.addItem(label, hexv)
+        self.narr_color.setToolTip(
+            "Màu chữ đoạn AI KỂ (đoạn gốc giữ màu theo phần Phụ đề ở trên) — "
+            "để người xem phân biệt lời KỂ với lời THOẠI gốc.")
+        self.narr_color.currentIndexChanged.connect(self._refresh_narr)
+        nc.addWidget(self.narr_color, 1)
+        self.narr_italic = QCheckBox("In nghiêng")
+        self.narr_italic.setChecked(True)      # mặc định BẬT
+        self.narr_italic.setToolTip(
+            "Chữ AI kể in nghiêng (mặc định BẬT — dễ phân biệt với thoại gốc).")
+        nc.addWidget(self.narr_italic)
+        gn.addLayout(nc)
+        # Kiểu chạy chữ + Chữ hoa
+        nk = QHBoxLayout(); nk.addWidget(QLabel("Kiểu"))
+        self.narr_mode = _NoWheelCombo()
+        # False = kiểu riêng (Style Narrate câu-cụm); True = giống phụ đề gốc
+        self.narr_mode.addItem("Kiểu riêng (câu-cụm)", False)
+        self.narr_mode.addItem("Giống phụ đề gốc", True)
+        self.narr_mode.setToolTip(
+            "Kiểu riêng: đoạn AI kể có màu + nghiêng riêng (Style Narrate). "
+            "Giống phụ đề gốc: đoạn AI kể dùng LUÔN kiểu như phụ đề đoạn gốc.")
+        nk.addWidget(self.narr_mode, 1)
+        nk.addWidget(QLabel("Chữ hoa"))
+        self.narr_case = _case_combo(
+            "Kiểu chữ hoa cho đoạn AI kể: Giữ nguyên / HOA / thường / Hoa Đầu Từ.")
+        nk.addWidget(self.narr_case, 1)
+        gn.addLayout(nk)
+
         # Nhóm: Lớp chữ (hồng)
         gl, gl_box = _group("Lớp chữ (Part · tiêu đề · cố định)",
                             (244, 114, 182))
+        # KIỂU CHỮ HOA cho lớp chữ overlay: Tiêu đề/Hook + Part (áp lên CHỮ
+        # HIỂN THỊ khi render PNG / hook ASS, không đổi vị trí).
+        lcr = QHBoxLayout()
+        lcr.addWidget(QLabel("Tiêu đề/Hook"))
+        self.hook_case = _case_combo(
+            "Kiểu chữ hoa cho TIÊU ĐỀ AI + HOOK + chữ cố định (mọi lớp không "
+            "phải Part).")
+        lcr.addWidget(self.hook_case, 1)
+        lcr.addWidget(QLabel("Part"))
+        self.part_case = _case_combo(
+            "Kiểu chữ hoa cho lớp Part (số phần).")
+        lcr.addWidget(self.part_case, 1)
+        gl.addLayout(lcr)
         ar = QHBoxLayout()
         a2 = QPushButton("+ Part")
         a2.clicked.connect(lambda: self._add(is_part=True))
@@ -1332,6 +1482,31 @@ class EditorDialog(QDialog):
                 self.logo_pos.setCurrentIndex(li)
             self.logo_size.setValue(int(float(layout.get("logo_size", 0.14)) * 100))
             self.logo_op.setValue(int(float(layout.get("logo_op", 0.9)) * 100))
+            # ---- CHỮ AI ĐỌC (thuyết minh) ----
+            nci = self.narr_color.findData(
+                layout.get("narr_color", _NARR_COLOR_DEFAULT))
+            if nci < 0:                    # màu lưu lạ -> thêm giữ lựa chọn
+                self.narr_color.addItem(
+                    layout.get("narr_color", _NARR_COLOR_DEFAULT),
+                    layout.get("narr_color", _NARR_COLOR_DEFAULT))
+                nci = self.narr_color.count() - 1
+            self.narr_color.setCurrentIndex(max(0, nci))
+            self.narr_italic.setChecked(bool(layout.get("narr_italic", True)))
+            self.narr_mode.setCurrentIndex(
+                1 if bool(layout.get("narr_same", False)) else 0)
+            nsz = float(layout.get("narr_size", 0) or 0)
+            if nsz:
+                self.narr_size.setValue(int(round(nsz * 1000)))
+            self.canvas.set_narr_geom(float(layout.get("narr_ny", 0.62)),
+                                      nsz)
+            self._refresh_narr()           # áp màu/cỡ đã lưu vào ô xem trước
+            # ---- KIỂU CHỮ HOA từng phần chữ ----
+            for cb, key in ((self.cap_case, "cap_case"),
+                            (self.narr_case, "narr_case"),
+                            (self.hook_case, "hook_case"),
+                            (self.part_case, "part_case")):
+                ci = cb.findData(layout.get(key, "") or "")
+                cb.setCurrentIndex(max(0, ci))
             self.canvas.set_cap_top(layout.get("cap_ny", 0.78))
             self._refresh_cap()          # áp cỡ/màu/font đã lưu vào ô xem trước
             self.canvas.show_cap(self.cap_chk.isChecked())
@@ -1702,6 +1877,29 @@ class EditorDialog(QDialog):
             t.timeout.connect(self._refresh_cap)
         t.start(80)
 
+    def _refresh_narr(self, *_):
+        """Cập nhật ô CHỮ AI KỂ xem trước theo màu/cỡ đang chọn (giữ vị trí)."""
+        self.canvas.set_narr_style(
+            color=self.narr_color.currentData() or _NARR_COLOR_DEFAULT,
+            size=self.narr_size.value() / 1000.0)
+
+    def _refresh_narr_soon(self, *_):
+        t = getattr(self, "_narr_timer", None)
+        if t is None:
+            t = self._narr_timer = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self._refresh_narr)
+        t.start(80)
+
+    def _narr_drag_size(self, frac):
+        """Kéo góc ô CHỮ AI KỂ -> đồng bộ thanh Cỡ (để LƯU narr_size)."""
+        val = max(self.narr_size.minimum(),
+                  min(self.narr_size.maximum(), int(round(frac * 1000))))
+        self.narr_size.blockSignals(True)
+        self.narr_size.setValue(val)
+        self.narr_size.blockSignals(False)
+        self.narr_sz_lbl.setText(f"{val / 10:.1f}%")
+
     def _refresh_cap(self, *_):
         """Cập nhật ô PHỤ ĐỀ trong xem trước theo kiểu/cỡ/màu/font (giữ vị trí)."""
         cb = self.canvas.cap_box
@@ -1889,6 +2087,21 @@ class EditorDialog(QDialog):
         lay["logo_pos"] = self.logo_pos.currentData() or "tr"
         lay["logo_size"] = self.logo_size.value() / 100.0
         lay["logo_op"] = self.logo_op.value() / 100.0
+        # ---- CHỮ AI ĐỌC (thuyết minh) — Style Narrate của phụ đề recap ----
+        lay["narr_color"] = self.narr_color.currentData() or _NARR_COLOR_DEFAULT
+        lay["narr_italic"] = bool(self.narr_italic.isChecked())
+        # narr_same: True = giống phụ đề gốc (Style Default); False = kiểu riêng
+        lay["narr_same"] = bool(self.narr_mode.currentData())
+        lay["narr_size"] = self.narr_size.value() / 1000.0
+        lay.update(self.canvas.narr_geom())   # narr_ny (+ narr_size từ ô kéo)
+        # narr_geom trả narr_size theo ô kéo -> đồng nhất với thanh trượt (cùng
+        # nguồn px); giữ giá trị thanh trượt cho chắc (đã set ở trên).
+        lay["narr_size"] = self.narr_size.value() / 1000.0
+        # ---- KIỂU CHỮ HOA từng phần chữ ----
+        lay["cap_case"] = self.cap_case.currentData() or ""
+        lay["narr_case"] = self.narr_case.currentData() or ""
+        lay["hook_case"] = self.hook_case.currentData() or ""
+        lay["part_case"] = self.part_case.currentData() or ""
         return lay
 
     def _save_tmpl(self):

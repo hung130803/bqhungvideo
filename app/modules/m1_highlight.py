@@ -1531,13 +1531,21 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                         hook_ny=float(cs.get("hook_ny", 0.10)),
                         hook_size=float(cs.get("hook_size", 0) or 0),
                         extra_cues=extra_cues,
-                        # 🎙 CHỮ AI KỂ (⚙ Cài đặt Reup) — chỉ ảnh hưởng cue
-                        # narrate (Style Narrate); clip thường/đoạn gốc bỏ qua.
-                        narr_color=str(payload.get("recap_narr_color") or ""),
+                        # 🎙 CHỮ AI ĐỌC (Chỉnh mẫu) — chỉ ảnh hưởng cue narrate
+                        # (Style Narrate); clip thường/đoạn gốc bỏ qua. Lấy TỪ
+                        # MẪU (cap_style), KHÔNG từ ⚙ Cài đặt Reup nữa.
+                        narr_color=str(cs.get("narr_color") or ""),
                         narr_italic=(
-                            None if payload.get("recap_narr_italic") is None
-                            else bool(payload.get("recap_narr_italic"))),
-                        narr_same=bool(payload.get("recap_narr_same", False))):
+                            None if cs.get("narr_italic") is None
+                            else bool(cs.get("narr_italic"))),
+                        narr_same=bool(cs.get("narr_same", False)),
+                        narr_ny=float(cs.get("narr_ny", 0.0) or 0.0),
+                        narr_size=float(cs.get("narr_size", 0.0) or 0.0),
+                        # KIỂU CHỮ HOA từng phần (Chỉnh mẫu): áp lên CHỮ HIỂN
+                        # THỊ, KHÔNG đổi mốc/timing.
+                        cap_case=str(cs.get("cap_case") or ""),
+                        narr_case=str(cs.get("narr_case") or ""),
+                        hook_case=str(cs.get("hook_case") or "")):
                     ass_path = ap
                     fonts_dir = str(ROOT_DIR / "app" / "assets" / "fonts")
         ctx.progress(0.15, f"{pfx}đang dựng khung (nền + video + phụ đề)...")

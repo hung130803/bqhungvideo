@@ -2963,8 +2963,13 @@ class StudioPage(QWidget):
         # mỗi clip 1 PNG riêng (theo cid) vì tiêu đề khác nhau — để trong _cache
         png = os.path.join(services.project_cache_dir(pid),
                            f"_ovl_{cid or part_no}.png")
-        return (png if render_overlay_png(layers, part_no, 1080, 1920, png,
-                                          title, title_vi, video_px, logo=logo)
+        return (png if render_overlay_png(
+            layers, part_no, 1080, 1920, png, title, title_vi, video_px,
+            logo=logo,
+            # KIỂU CHỮ HOA lớp overlay (từ mẫu): Part -> part_case; tiêu đề/
+            # hook/cố định -> hook_case.
+            part_case=self.layout_tpl.get("part_case", "") or "",
+            hook_case=self.layout_tpl.get("hook_case", "") or "")
                 else None)
 
     _MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
@@ -3097,7 +3102,20 @@ class StudioPage(QWidget):
                     # vị trí/cỡ ô HOOK user kéo trong Chỉnh mẫu
                     "hook_nx": self.layout_tpl.get("hook_nx", 0.5),
                     "hook_ny": self.layout_tpl.get("hook_ny", 0.10),
-                    "hook_size": self.layout_tpl.get("hook_size", 0.0)},
+                    "hook_size": self.layout_tpl.get("hook_size", 0.0),
+                    # 🎙 CHỮ AI ĐỌC (thuyết minh) — từ MẪU (Chỉnh mẫu), chỉ
+                    # ảnh hưởng cue narrate (Style Narrate) của clip recap;
+                    # clip thường / đoạn gốc bỏ qua.
+                    "narr_color": self.layout_tpl.get("narr_color", ""),
+                    "narr_italic": bool(self.layout_tpl.get("narr_italic", True)),
+                    "narr_same": bool(self.layout_tpl.get("narr_same", False)),
+                    "narr_ny": float(self.layout_tpl.get("narr_ny", 0.0) or 0.0),
+                    "narr_size": float(self.layout_tpl.get("narr_size", 0.0)
+                                       or 0.0),
+                    # KIỂU CHỮ HOA từng phần (từ mẫu)
+                    "cap_case": self.layout_tpl.get("cap_case", "") or "",
+                    "narr_case": self.layout_tpl.get("narr_case", "") or "",
+                    "hook_case": self.layout_tpl.get("hook_case", "") or ""},
                 blur_amt=int(self.layout_tpl.get("blur_amt", 22)),
                 speed=float(sig.get("speed", self.layout_tpl.get("speed", 1.0))),
                 pitch=float(self.layout_tpl.get("pitch", 1.0)),
@@ -3122,17 +3140,7 @@ class StudioPage(QWidget):
                     self._settings.value("recap_emotion", True)).strip()
                 .lower() not in ("false", "0", "no", "off"),
                 recap_volume=self._recap_volume(),
-                # 🎙 CHỮ AI KỂ (⚙ Cài đặt Reup) — màu/nghiêng/giống-mẫu phụ
-                # đề đoạn AI kể; chỉ clip recap dùng, clip thường bỏ qua.
-                recap_narr_color=str(
-                    self._settings.value("recap_narr_color", "#FFD966")
-                    or "#FFD966"),
-                recap_narr_italic=str(
-                    self._settings.value("recap_narr_italic", True)).strip()
-                .lower() not in ("false", "0", "no", "off"),
-                recap_narr_same=str(
-                    self._settings.value("recap_narr_same", False)).strip()
-                .lower() in ("true", "1", "yes", "on"),
+                # (CHỮ AI ĐỌC giờ lấy từ MẪU qua cap_style, không còn ở ⚙)
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
                 fx_sfx_dir=self._pick_sfx_dir(),

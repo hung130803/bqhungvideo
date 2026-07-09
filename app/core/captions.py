@@ -120,6 +120,31 @@ def _chunks(words: list, max_words: int = 5, max_dur: float = 2.8,
     return chunks
 
 
+def apply_case(text: str, mode: str) -> str:
+    """Đổi KIỂU CHỮ HIỂN THỊ (không đổi mốc/timing). mode:
+      "" / "keep" -> giữ nguyên
+      "upper"     -> HOA (unicode-safe, tiếng Việt có dấu OK)
+      "lower"     -> thường
+      "title"     -> Hoa Đầu Từ (tách theo dấu cách, chữ đầu mỗi từ viết hoa)
+    Dùng chung cho phụ đề gốc (cap_case), AI kể (narr_case), hook (hook_case),
+    và lớp chữ overlay title/part (hook_case/part_case)."""
+    if not text:
+        return text
+    m = (mode or "").strip().lower()
+    if m == "upper":
+        return text.upper()
+    if m == "lower":
+        return text.lower()
+    if m == "title":
+        # tách theo dấu cách (giữ nguyên khoảng trắng gốc) — chữ đầu mỗi từ HOA,
+        # phần còn lại thường. .title() của python vỡ ở dấu ' / số (it's->It'S)
+        # nên tự tách bằng space cho tiếng Việt/Anh đúng.
+        return " ".join(
+            (w[:1].upper() + w[1:].lower()) if w else w
+            for w in text.split(" "))
+    return text
+
+
 def _esc(text: str) -> str:
     return (text.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
                 .replace("\n", " ").strip())
@@ -227,7 +252,10 @@ def build_ass(words: list, segments: list, out_path,
               hook_size: float = 0.0,
               extra_cues: list | None = None,
               narr_color: str = "", narr_italic: bool | None = None,
-              narr_same: bool = False) -> bool:
+              narr_same: bool = False,
+              narr_ny: float = 0.0, narr_size: float = 0.0,
+              cap_case: str = "", narr_case: str = "",
+              hook_case: str = "") -> bool:
     """Ghi file .ass phụ đề khớp lời theo KIỂU (preset). Trả True nếu có chữ.
     preset = tên kiểu trong CAPTION_PRESETS (vàng nhảy / karaoke / hộp đen / neon...).
     color = màu chữ TÙY CHỌN (ghi đè màu mặc định của kiểu); '' = dùng màu kiểu.
@@ -243,12 +271,17 @@ def build_ass(words: list, segments: list, out_path,
       - orig (LỜI GỐC nhân vật đoạn mode="orig"): kind="orig_word" (word-level)
         / "orig_sent" (fallback chia câu) -> Style Default (GIỐNG phụ đề clip
         thường) — sửa lỗi 'đoạn gốc không có phụ đề'.
-    narr_color = màu hex CHỮ AI KỂ (Style Narrate) do user chọn ở ⚙ Cài đặt
-    Reup nhóm "Chữ AI kể"; ""/None -> #FFD966 (vàng mặc định cũ, có logic
+    narr_color = màu hex CHỮ AI KỂ (Style Narrate) do user chọn trong CHỈNH
+    MẪU phần "Chữ AI đọc"; ""/None -> #FFD966 (vàng mặc định cũ, có logic
     tránh trùng màu chữ chính như trước). narr_italic = in nghiêng lời AI kể
     (None -> True mặc định). narr_same=True -> đoạn AI kể dùng LUÔN Style
     Default (render cue narrate "word"/"sent" bằng Default như đoạn gốc,
     không phân biệt) — bỏ qua narr_color/narr_italic.
+    narr_ny = vị trí dọc RIÊNG (0..1) cho Style Narrate (MarginV theo neo an8);
+    0/thiếu -> dùng ny của phụ đề gốc như cũ. narr_size = cỡ chữ RIÊNG cho
+    Narrate theo tỉ lệ chiều cao; 0/thiếu -> = cỡ phụ đề gốc.
+    cap_case / narr_case / hook_case = kiểu chữ HIỂN THỊ ("upper"/"lower"/
+    "title"/""=giữ nguyên) áp cho cue gốc / cue AI kể / hook (không đổi mốc).
     (đoạn narrate tiếng gốc bị tắt nên không có words; recap KHÔNG truyền
     `words` — mọi phụ đề recap đi qua extra_cues cho nhất quán timeline.)
     LƯU Ý: clip CÓ hook -> hook hiện trong hook_dur giây đầu, phụ đề chạy chữ
@@ -282,7 +315,11 @@ def build_ass(words: list, segments: list, out_path,
     # secondary: karaoke = màu CHƯA nói (mờ); kiểu khác không dùng
     if mode == "karaoke":
         secondary = _alpha_color(p.get("unsung", "#FFFFFF"), 0x64)
-        cues = _karaoke_cues(remapped)
+        # karaoke nhúng \kf theo TỪNG TỪ -> áp case trên TỪ trước khi dựng tag
+        # (không thể áp lên cả body vì lẫn tag). cap_case rỗng -> giữ nguyên.
+        kw_src = ([[a, b, apply_case(t, cap_case), si]
+                   for a, b, t, si in remapped] if cap_case else remapped)
+        cues = _karaoke_cues(kw_src)
         prefix = "{\\fad(60,40)}"               # cả cụm vào/ra mượt
     elif mode == "active":
         secondary = "&H000000FF"
@@ -319,10 +356,18 @@ def build_ass(words: list, segments: list, out_path,
                            else "#FFD966")
         narr_primary = _ass_color(narr_accent)
     narr_ital = -1 if (True if narr_italic is None else narr_italic) else 0
-    narr_style = (f"Style: Narrate,{font},{size},{narr_primary},{secondary},"
+    # Cỡ + vị trí dọc RIÊNG cho Narrate (thiếu -> = phụ đề gốc). narr_size
+    # theo tỉ lệ chiều cao (như size phụ đề); narr_ny theo neo an8 (đỉnh).
+    nsize = int(narr_size * out_h) if narr_size and narr_size > 0 else size
+    now = max(0, int(nsize * p.get("ow", 0.10)))
+    if p.get("box"):
+        now = max(8, int(nsize * 0.20))
+    narr_mv = (int(max(0.02, min(0.9, narr_ny)) * out_h)
+               if narr_ny and narr_ny > 0 else margin_v)
+    narr_style = (f"Style: Narrate,{font},{nsize},{narr_primary},{secondary},"
                   f"{outline},{back},-1,{narr_ital},0,0,100,100,0,0,"
-                  f"{border_style},{ow},{shadow},{align},{side},{side},"
-                  f"{margin_v},1")
+                  f"{border_style},{now},{shadow},{align},{side},{side},"
+                  f"{narr_mv},1")
     # HOOK: câu giật tít TO ở ĐẦU clip (an8 = trên, neo đỉnh); vàng nổi + viền dày
     # vị trí/cỡ theo Ô HOOK user kéo trong Chỉnh mẫu (thiếu -> mặc định như cũ)
     hsize = int(hook_size * out_h) if hook_size > 0 else int(size * 1.5)
@@ -345,7 +390,9 @@ def build_ass(words: list, segments: list, out_path,
     lines = [head]
     if has_hook:                            # 1 dòng HOOK to ở đầu clip
         ht = _esc(hook)
-        if p.get("upper"):
+        if hook_case:                       # user chọn kiểu chữ hoa -> ưu tiên
+            ht = apply_case(ht, hook_case)
+        elif p.get("upper"):
             ht = ht.upper()
         han = ("\\fad(150,250)\\t(0,160,\\fscx112\\fscy112)"
                "\\t(160,320,\\fscx100\\fscy100)")
@@ -379,7 +426,13 @@ def build_ass(words: list, segments: list, out_path,
         ea, eb, etxt = c[0], c[1], c[2]
         kind = str(c[3]) if len(c) > 3 else "sent"
         et = _esc(str(etxt))
-        if p.get("upper"):
+        # case: cue gốc (orig_*) theo cap_case; cue AI kể (word/sent) theo
+        # narr_case. narr_same=True -> AI kể render Style Default -> vẫn dùng
+        # narr_case cho đúng lựa chọn phần "Chữ AI đọc".
+        _ecase = cap_case if kind.startswith("orig") else narr_case
+        if _ecase:
+            et = apply_case(et, _ecase)
+        elif p.get("upper"):
             et = et.upper()
         if kind.startswith("orig"):
             # LỜI GỐC nhân vật -> Style Default (như clip thường)
@@ -411,6 +464,8 @@ def build_ass(words: list, segments: list, out_path,
                 parts = []
                 for j, ww in enumerate(ch):
                     wt = _esc(ww[2])
+                    if cap_case:                 # kiểu chữ hoa cho phụ đề gốc
+                        wt = apply_case(wt, cap_case)
                     if j == i:                   # TỪ đang nói -> nhảy vàng (phồng nhẹ)
                         pop = ("\\t(0,90,\\fscx110\\fscy110)\\t(90,170,\\fscx100\\fscy100)"
                                if p.get("pop") else "")
@@ -449,7 +504,9 @@ def build_ass(words: list, segments: list, out_path,
         if p.get("highlight"):
             # CHỮ HOA + tô NEON cho TỪ KHÓA + phát sáng (glow qua \blur)
             word = _esc(txt)
-            if p.get("upper"):
+            if cap_case:                  # user chọn kiểu chữ hoa -> ưu tiên
+                word = apply_case(word, cap_case)
+            elif p.get("upper"):
                 word = word.upper()
             is_kw = _is_keyword(txt)
             if is_kw and not prev_kw:     # cụm từ-khóa LIỀN nhau dùng CÙNG màu
@@ -461,9 +518,13 @@ def build_ass(words: list, segments: list, out_path,
             else:
                 inl = (f"{{\\1c&H00FFFFFF\\3c{outline}\\bord{ow}\\blur0.6{anim}}}")
             body = inl + word
+        elif mode == "karaoke":
+            body = prefix + txt                 # karaoke đã có tag \kf — không đụng
         else:
-            body = txt if mode == "karaoke" else _esc(txt)  # karaoke đã có tag
-            body = prefix + body
+            wtxt = _esc(txt)
+            if cap_case:                        # phụ đề gốc word/group -> áp case
+                wtxt = apply_case(wtxt, cap_case)
+            body = prefix + wtxt
         lines.append(
             f"Dialogue: 0,{_fmt(a2)},{_fmt(b2)},Default,,0,0,0,,{body}\n")
     lines.extend(extra_lines)
