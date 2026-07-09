@@ -1091,6 +1091,11 @@ def _recap_caption_cues(narr_events: list) -> list:
       1 cue, giữ tới từ kế như captions._word_cues) -> đồng nhất trải nghiệm.
     - Event KHÔNG có "words" (giọng Gemini không trả word boundary, hoặc
       TTS lỗi event): FALLBACK chia câu theo SỐ KÝ TỰ như cũ.
+    - Event có cờ "clamped" (build_recap_track ĐÃ hậu kiểm cứng cue theo
+      tiếng THẬT): words rỗng nghĩa là hậu kiểm XÓA HẾT (part không dò được
+      tiếng khớp chữ) -> KHÔNG fallback chia ký tự (thà không chữ còn hơn
+      chữ sai lúc); words có thì KHÔNG nới đuôi (+0.15s) / không giữ chữ
+      qua khoảng lặng >=0.18s — mép cue đã là mép tiếng đo thật.
 
     Trả [(start, end, text, kind)] đưa vào build_ass qua extra_cues;
     kind = "word" (chạy từng từ) | "sent" (hiện cả câu)."""
@@ -1101,18 +1106,26 @@ def _recap_caption_cues(narr_events: list) -> list:
             continue
         n_end = float(n["end"])
         words = n.get("words") or []
+        clamped = bool(n.get("clamped"))
+        if clamped and not words:
+            continue        # hậu kiểm đã xóa hết cue -> part này không chữ
         if words:
             # WORD-LEVEL: từ hiện đúng lúc đọc, giữ tới từ kế (liền mạch,
             # không nhấp nháy); từ cuối/trước khoảng lặng tắt sớm (+0.15s).
+            # Cue ĐÃ CLAMP: mép cuối = mép hết tiếng đo thật (+0.12s pad có
+            # sẵn) -> KHÔNG cộng đuôi; chỉ giữ tới cue kế khi hở < 0.18s
+            # (dưới ngưỡng silencedetect — không phủ chữ lên khoảng im).
+            hold_gap = 0.18 if clamped else 0.45
+            tail = 0.0 if clamped else 0.15
             for i, (a, b, wtxt) in enumerate(words):
                 wtxt = str(wtxt).strip()
                 if not wtxt:
                     continue
-                if i + 1 < len(words) and words[i + 1][0] - b < 0.45:
+                if i + 1 < len(words) and words[i + 1][0] - b < hold_gap:
                     end = words[i + 1][0]
                 else:
-                    end = b + 0.15
-                end = min(end, n_end)
+                    end = b + tail
+                end = min(end, n_end) if not clamped else end
                 a = max(float(n["start"]), float(a))
                 cues.append((round(a, 3), round(max(a + 0.05, end), 3),
                              wtxt, "word"))

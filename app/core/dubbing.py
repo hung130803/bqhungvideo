@@ -2108,6 +2108,71 @@ def _phrase_groups_from_words(words: list, start: float,
     return out
 
 
+# ------------------------------------------------------------------
+# 🔒 KHÓA CỨNG ĐỘ CHÍNH XÁC PHỤ ĐỀ (hậu kiểm BẮT BUỘC sau khi build cue)
+# Yêu cầu TUYỆT ĐỐI: chữ hiện ĐÚNG LÚC nói — không bao giờ hiện TRƯỚC khi
+# nói hoặc SAU khi hết nói. Bất kể nguồn mốc (WordBoundary/STT/silencedetect/
+# chia đều), MỌI cue narrate đều phải qua 2 lớp:
+#   LỚP 1 (_clamp_cues_to_speech): clamp cứng vào các khoảng CÓ TIẾNG đo
+#     THẬT trên wav part CUỐI CÙNG (silencedetect -32dB/0.18 — nhạy hơn tham
+#     số cũ); cue hoàn toàn ngoài tiếng -> XÓA (thà không chữ còn hơn sai lúc).
+#   LỚP 2 (_cue_speech_bias): cue đầu part lệch speech onset thật > 0.12s
+#     (cả part trượt đều — offset/adelay/STT lệch hệ thống) -> DỊCH cả cụm
+#     đúng hiệu lệch rồi chạy lại lớp 1.
+# CHỈ áp cho cue NARRATE (orig cues lấy từ transcript video — vốn khớp).
+# ------------------------------------------------------------------
+_CLAMP_NOISE_DB = -32.0      # ngưỡng silencedetect cho hậu kiểm (nhạy hơn -30)
+_CLAMP_MIN_SIL = 0.18        # khoảng im >= 0.18s mới coi là ngắt
+_CUE_PAD_BEFORE = 0.05       # cue được phép SỚM hơn tiếng tối đa 50ms
+_CUE_PAD_AFTER = 0.12        # cue được phép MUỘN hơn hết tiếng tối đa 120ms
+_CUE_BIAS_MAX = 0.12         # lệch hệ thống > 0.12s -> shift cả part
+
+
+def _cue_speech_bias(cues: list, speech: list,
+                     thresh: float = _CUE_BIAS_MAX) -> float:
+    """LỚP 2 — TỰ CĂN LỆCH HỆ THỐNG: so mốc cue ĐẦU TIÊN với mốc BẮT ĐẦU
+    có tiếng THẬT (speech[0][0], đo silencedetect trên wav part cuối).
+    Lệch quá `thresh` giây (toàn bộ part trượt đều) -> trả HIỆU LỆCH để
+    caller DỊCH TẤT CẢ cue của part (shift cả cụm); lệch nhỏ -> 0.0.
+    `cues` [[a, b, text], ...] và `speech` [(a, b), ...] CÙNG gốc thời gian
+    (file part, gốc 0). Hàm thuần — unit test được."""
+    if not cues or not speech:
+        return 0.0
+    d = float(speech[0][0]) - float(cues[0][0])
+    return d if abs(d) > thresh else 0.0
+
+
+def _clamp_cues_to_speech(cues: list, speech: list,
+                          pad_before: float = _CUE_PAD_BEFORE,
+                          pad_after: float = _CUE_PAD_AFTER) -> list:
+    """LỚP 1 — CLAMP CỨNG: KHÔNG cue nào được nằm ngoài khoảng CÓ TIẾNG.
+    Với mỗi cue [a, b, text]:
+      - start = max(start, onset đoạn tiếng GẦN NHẤT - pad_before);
+      - end   = min(end,  mép HẾT tiếng gần nhất + pad_after);
+      - cue HOÀN TOÀN ngoài mọi khoảng tiếng -> XÓA. "Ngoài" tính theo mép
+        tiếng THẬT (KHÔNG cộng pad): cue chỉ lọt vùng pad (vd nằm trọn trong
+        120ms sau khi hết tiếng) vẫn là chữ hiện lúc KHÔNG nói -> xóa;
+      - sau clamp bị đảo/quá ngắn (end - start < 0.05) -> XÓA.
+    Cue trải qua NHIỀU đoạn tiếng (cụm chữ vắt qua ngắt ngắn) -> giữ, chỉ
+    kẹp 2 mép theo đoạn đầu/cuối giao được. `cues`/`speech` CÙNG gốc thời
+    gian. speech rỗng -> [] (không tiếng thì không chữ). Hàm thuần."""
+    if not speech:
+        return []
+    out: list = []
+    for a, b, txt in cues:
+        a, b = float(a), float(b)
+        touch = [(float(sa), float(sb)) for sa, sb in speech
+                 if min(b, float(sb)) - max(a, float(sa)) > 0.0]
+        if not touch:                    # không GIAO khoảng tiếng nào -> xóa
+            continue
+        na = max(a, touch[0][0] - pad_before)
+        nb = min(b, touch[-1][1] + pad_after)
+        if nb - na < 0.05:               # đảo/quá ngắn sau clamp -> xóa
+            continue
+        out.append([round(na, 3), round(nb, 3), txt])
+    return out
+
+
 def _fit_recap_chunk(src: str, dst_wav: str, window: float,
                      tempo_max: float = _RECAP_TEMPO_MAX,
                      ) -> tuple[float, float, float]:
@@ -2203,8 +2268,14 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     WORD-SYNC: chép lời word-level CHÍNH audio đã render bằng Groq whisper
     (_stt_part_words, cache theo hash audio, timeout 20s) rồi dùng MỐC STT +
     CHỮ kịch bản (_align_stt_words) — khớp cả giọng cảm xúc đọc nhanh chậm
-    thất thường; STT fail -> silencedetect/chia đều như cũ. Không có "words"
-    -> caller fallback chia theo ký tự.
+    thất thường; STT fail -> silencedetect/chia đều như cũ (progress cảnh
+    báo '⚠ Part N: phụ đề căn ước lượng').
+    🔒 HẬU KIỂM BẮT BUỘC (mọi nguồn mốc): mỗi event mang "clamped"=True —
+    cue "words" đã qua LỚP 2 (_cue_speech_bias: cả part trượt đều >0.12s so
+    speech onset thật -> dịch cả cụm) rồi LỚP 1 (_clamp_cues_to_speech:
+    clamp cứng vào khoảng CÓ TIẾNG đo silencedetect -32dB/0.18 trên wav part
+    cuối; cue ngoài tiếng bị XÓA). "clamped" + "words" rỗng -> caller KHÔNG
+    fallback chia ký tự (thà không chữ còn hơn chữ sai lúc).
     WAV 48kHz mono dài ĐÚNG tổng độ dài clip.
 
     ĐỘ BỀN + CÂN ÂM LƯỢNG (sửa lỗi user):
@@ -2413,6 +2484,14 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     if stt_wl:
                         prog(0.65 + 0.25 * (i + 1) / len(narr),
                              "Căn phụ đề theo giọng thật (STT)...")
+                if not stt_wl:
+                    # LỚP 3 — MINH BẠCH: không WordBoundary + STT fail/không
+                    # key -> mốc phụ đề part này là ƯỚC LƯỢNG (silencedetect/
+                    # chia đều); lớp clamp vẫn khóa 'không chữ ngoài lúc nói'
+                    # nhưng muốn khớp TỪNG TỪ thì cần key Groq.
+                    prog(0.65 + 0.25 * (i + 1) / len(narr),
+                         f"⚠ Part {i + 1}: phụ đề căn ước lượng — dán key "
+                         "Groq để khớp từng từ")
             # KHOẢNG CÓ TIẾNG THẬT [speech_a, speech_b]: mép từ ĐẦU/CUỐI
             # (WordBoundary) scale theo D_final/D_nat, kẹp trong D_final. Neo
             # phụ đề vào ĐÚNG lúc bắt đầu/kết thúc có tiếng (bỏ khoảng lặng/hơi
@@ -2495,6 +2574,37 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                                   wtxt])
                 if out_w:
                     n["words"] = out_w
+            # ==== 🔒 KHÓA CỨNG ĐỘ CHÍNH XÁC PHỤ ĐỀ (hậu kiểm BẮT BUỘC) ====
+            # LỚP 2 (bias) + LỚP 1 (clamp) trên wav part CUỐI CÙNG — chính là
+            # audio được adelay vào track (loudnorm/gain sau đó KHÔNG đổi
+            # thời gian). MỌI đường mốc (WordBoundary/STT/silencedetect/chia
+            # đều — kể cả word-level không dựng được cue) đều qua đây;
+            # orig cues KHÔNG (lời gốc theo transcript video — vốn khớp).
+            base = n.get("words") or []
+            if not base and str(n["text"] or "").strip():
+                # đường word-level không ra cue (hiếm) -> vẫn dựng cụm ước
+                # lượng để clamp — đảm bảo part có chữ nếu có tiếng khớp
+                base = _phrase_groups_even(n["text"], n["start"] + speech_a,
+                                           speech_b - speech_a)
+            speech_real = _detect_speech_segments(
+                wav, d_final, noise_db=_CLAMP_NOISE_DB,
+                min_sil=_CLAMP_MIN_SIL)
+            if not speech_real:
+                # không dò được khoảng im (nói liền mạch / ffmpeg lỗi) ->
+                # khoảng tiếng = [speech_a, speech_b] đã đo ở trên
+                speech_real = [(max(0.0, speech_a),
+                                min(d_final, max(speech_a + 0.1, speech_b)))]
+            off = n["start"]
+            fcues = [[float(a) - off, float(b) - off, t] for a, b, t in base]
+            bias = _cue_speech_bias(fcues, speech_real)
+            if bias:                       # LỚP 2: shift cả cụm đúng hiệu lệch
+                fcues = [[a + bias, b + bias, t] for a, b, t in fcues]
+            fcues = _clamp_cues_to_speech(fcues, speech_real)   # LỚP 1
+            n["words"] = [[round(a + off, 3), round(b + off, 3), t]
+                          for a, b, t in fcues]
+            # cờ cho caller (m1._recap_caption_cues): cue ĐÃ hậu kiểm —
+            # words rỗng nghĩa là XÓA HẾT (không fallback chia ký tự nữa).
+            n["clamped"] = True
             prog(0.65 + 0.25 * (i + 1) / len(narr), "Khớp thời gian...")
 
         # Part TTS/fit hỏng KHÔNG được nằm trong narrate_events: caller dùng
