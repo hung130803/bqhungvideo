@@ -1495,6 +1495,36 @@ def _part_mode_at(recap_parts: list, t: float) -> str:
     return best
 
 
+# Tập NHÃN "sfx" cố định mà AI (recap.build_director_prompt) được phép gắn cho
+# MỖI part; khớp SFX_CATEGORIES của ffmpeg_utils + "none" (không chèn). Dùng để
+# NHẬN nhãn AI trong _join_categories (ưu tiên hơn suy luận cấu trúc cũ).
+_AI_SFX_LABELS = frozenset((
+    "none", "transition", "impact", "riser", "reveal", "pop",
+    "suspense", "comedy", "scratch", "sad", "drumroll"))
+
+
+def _part_sfx_at(recap_parts: list, t: float):
+    """NHÃN "sfx" do AI gắn cho part recap CHỨA mốc t (timeline GỐC), nếu part
+    ĐÓ có field "sfx" hợp lệ (trong _AI_SFX_LABELS). Trả:
+      - tên nhãn ("impact"/"scratch"/.../"none") nếu part có nhãn AI hợp lệ,
+      - None nếu part KHÔNG có nhãn (kịch bản cũ/heuristic) hoặc nhãn lạ
+        -> caller tự lùi về suy luận cấu trúc.
+    Ưu tiên part BẮT ĐẦU tại t (điểm nối rơi đúng mép part). Hàm thuần."""
+    best = None
+    for p in recap_parts or []:
+        try:
+            a, b = float(p["start"]), float(p["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        raw = str(p.get("sfx") or "").strip().lower()
+        lab = raw if raw in _AI_SFX_LABELS else None
+        if a <= t < b or abs(a - t) < 0.05:
+            return lab
+        if a <= t <= b and best is None:
+            best = lab
+    return best
+
+
 def _join_categories(segs: list, recap_parts: list | None,
                      is_recap: bool) -> list:
     """NGỮ CẢNH cho MỖI điểm nối giữa các đoạn segs (len = len(segs)-1) ->
@@ -1502,15 +1532,20 @@ def _join_categories(segs: list, recap_parts: list | None,
 
     - Clip THƯỜNG / Mixed (không recap): mọi điểm nối = 'transition' (whoosh
       nhẹ) — giữ hành vi cũ, an toàn.
-    - RECAP (biết vai part orig/narrate theo timeline GỐC):
-        * Điểm nối CUỐI (vào đoạn KẾT clip) -> 'reveal' (ding chốt nhẹ).
-        * Vào đoạn mà part ĐẦU là 'orig' (bung tiếng gốc "đắt"/cao trào) ->
-          'impact' (boom mạnh đầu đoạn).
-        * Vào đoạn mà part đầu là 'narrate' (mở 1 mạch kể/chương mới) ->
-          'riser' cho điểm nối ĐẦU TIÊN (tạo hồi hộp trước cao trào), các
-          điểm nối narrate còn lại -> 'transition'.
-        * Còn lại -> 'transition'.
-    Hàm thuần — unit test được (chỉ đọc mốc segs + recap_parts)."""
+    - RECAP:
+        * ƯU TIÊN NHÃN AI: nếu part chứa điểm nối có field "sfx" hợp lệ do AI
+          gắn (recap.build_director_prompt) -> DÙNG NHÃN ĐÓ (kể cả "none" =
+          KHÔNG chèn tại điểm đó). Nhãn cảm xúc (scratch/comedy/sad/suspense/
+          drumroll...) chỉ đi đường này.
+        * FALLBACK suy luận cấu trúc (kịch bản cũ/heuristic KHÔNG có nhãn):
+          - Điểm nối CUỐI (vào đoạn KẾT clip) -> 'reveal' (ding chốt nhẹ).
+          - Vào đoạn mà part ĐẦU là 'orig' (bung tiếng gốc đắt/cao trào) ->
+            'impact' (boom mạnh đầu đoạn).
+          - Vào đoạn mà part đầu là 'narrate' (mở mạch kể mới) -> 'riser' cho
+            điểm nối ĐẦU TIÊN (hồi hộp trước cao trào), còn lại -> 'transition'.
+          - Còn lại -> 'transition'.
+    Trả list category DÀI = số điểm nối; phần tử "none" -> ffmpeg_utils BỎ QUA
+    (không chèn tiếng ở điểm đó). Hàm thuần — unit test được."""
     n_join = max(0, len(segs) - 1)
     if n_join == 0:
         return []
@@ -1525,6 +1560,12 @@ def _join_categories(segs: list, recap_parts: list | None,
         except (IndexError, TypeError, ValueError):
             cats.append("transition")
             continue
+        # (1) NHÃN AI có ưu tiên tuyệt đối (kể cả "none" = không chèn)
+        ai = _part_sfx_at(recap_parts, nxt_start)
+        if ai is not None:
+            cats.append(ai)
+            continue
+        # (2) FALLBACK: suy luận theo cấu trúc như v1.35 (part không nhãn)
         if i == n_join - 1:
             cats.append("reveal")           # vào đoạn KẾT -> chốt nhẹ
             continue

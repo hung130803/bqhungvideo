@@ -621,6 +621,14 @@ _CAT_SYNTH_IDX = {
     "riser": (6,),                # riser
     "reveal": (8,),               # ding
     "pop": (4, 5),                # pop / tick
+    # Loại CẢM XÚC MỚI (chỉ dùng khi THIẾU thư viện đóng gói — bản .exe cũ):
+    # ánh xạ về loại tổng hợp GẦN nhất (không có tiếng tổng hợp riêng cho
+    # suspense/comedy/scratch/sad/drumroll -> mượn boom/riser/whoosh/ding).
+    "suspense": (7, 6),           # boom trầm / riser -> căng
+    "comedy": (4, 8),             # pop / ding -> vui
+    "scratch": (1, 2),            # whoosh up/down -> quét nhanh
+    "sad": (8,),                  # ding trầm -> buồn
+    "drumroll": (6, 7),           # riser / boom -> dồn trước cao trào
 }
 
 
@@ -652,14 +660,22 @@ def _fx_synth_branch(type_idx: int, at_sec: float, vol: float, in_idx: int,
 # điểm nối (transition/impact/riser/reveal/pop) thay vì random bừa. Nếu thư
 # viện thiếu (bản cũ chưa có) -> tự lùi về bộ tiếng TỔNG HỢP (_FX_TYPES).
 
-# Danh sách category hợp lệ (khớp thư mục con dưới app/assets/sfx/).
-SFX_CATEGORIES = ("transition", "impact", "riser", "reveal", "pop")
+# Danh sách category hợp lệ (khớp thư mục con dưới app/assets/sfx/). 5 loại
+# GỐC (transition/impact/riser/reveal/pop) + 5 loại CẢM XÚC (suspense/comedy/
+# scratch/sad/drumroll) — AI đạo diễn tự gắn nhãn theo cảm xúc từng đoạn.
+SFX_CATEGORIES = ("transition", "impact", "riser", "reveal", "pop",
+                  "suspense", "comedy", "scratch", "sad", "drumroll")
 
 # Âm lượng trộn theo LOẠI (áp lên file .wav lúc mix trong export). impact/riser
 # to hơn transition chút (khoảnh khắc mạnh); reveal/ding nhẹ — không lố.
+# suspense/sad NHỎ (làm nền dưới giọng, không lấn); comedy VỪA (phải nghe rõ
+# cái vui); scratch RÕ (cú "khựng" bất ngờ phải nổi bật); drumroll VỪA-to (dồn
+# trước cao trào). Loại lạ -> 0.28 (an toàn như transition).
 _SFX_CAT_VOL = {
     "transition": 0.28, "impact": 0.42, "riser": 0.38,
     "reveal": 0.24, "pop": 0.30,
+    "suspense": 0.20, "comedy": 0.34, "scratch": 0.40,
+    "sad": 0.22, "drumroll": 0.40,
 }
 
 
@@ -1150,9 +1166,11 @@ def export_canvas_clip(
         for s, e in segs[:-1]:
             acc += (e - s)
             whoosh_offsets.append(acc / vspeed)
-    # NGỮ CẢNH mỗi điểm nối (transition/impact/riser/reveal/pop). Chuẩn hoá về
+    # NGỮ CẢNH mỗi điểm nối (10 loại SFX_CATEGORIES + "none"). Chuẩn hoá về
     # đúng len(whoosh_offsets): thiếu -> "transition" (như cũ); loại lạ ->
-    # "transition"; dư -> cắt bớt. Không có join_categories -> toàn transition.
+    # "transition"; "none" -> GIỮ NGUYÊN (điểm nối KHÔNG chèn tiếng — nhãn AI
+    # "none" hoặc lạ khác); dư -> cắt bớt. Không có join_categories -> toàn
+    # transition.
     join_cats: list[str] = []
     for i in range(len(whoosh_offsets)):
         c = "transition"
@@ -1160,6 +1178,8 @@ def export_canvas_clip(
             cand = str(join_categories[i] or "").strip().lower()
             if cand in SFX_CATEGORIES:
                 c = cand
+            elif cand == "none":
+                c = "none"          # AI gắn "none" -> bỏ chèn ở điểm này
         join_cats.append(c)
     orig_vol = max(0.0, min(1.0, float(orig_vol if orig_vol is not None else 1.0)))
     # ÂM LƯỢNG TIẾNG GỐC áp vào luồng tiếng gốc TRƯỚC khi amix. Khi có lồng
@@ -1346,8 +1366,18 @@ def export_canvas_clip(
         # DUY NHẤT (video câm) -> thêm 1 nền im lặng dài đủ clip trước để amix
         # duration=first không cắt cụt output.
         if whoosh_on:
+            # ĐIỂM NỐI có nhãn "none" (AI chỉ định KHÔNG chèn) -> BỎ QUA hẳn ở
+            # MỌI đường (user dir + thư viện) để tôn trọng ý đồ AI: index các
+            # điểm nối THỰC SỰ chèn tiếng. Tính TRƯỚC nền im lặng để KHÔNG thêm
+            # nền thừa khi MỌI điểm nối đều "none" (video câm -> vẫn câm).
+            active_ji = [i for i in range(len(whoosh_offsets))
+                         if join_cats[i] != "none"]
+            n_joint = len(active_ji)
+            # reset log điểm-nối MỖI lần export (mọi "none" -> danh sách rỗng)
+            global _SFX_LAST_PICK
+            _SFX_LAST_PICK = []
             base_had_audio = len(mix) > 0 or (amap is not None)
-            if not base_had_audio:
+            if not base_had_audio and n_joint:
                 # nền im lặng đủ dài để giữ độ dài + làm nhánh 'first' của amix
                 sil_idx = aidx
                 aidx += 1
@@ -1355,18 +1385,18 @@ def export_canvas_clip(
                         "-i", "anullsrc=r=48000:cl=stereo"]
                 parts.append(f"[{sil_idx}:a]asetpts=PTS-STARTPTS[wbed]")
                 mix.append("[wbed]")
-            n_joint = len(whoosh_offsets)
             import random as _rnd
             # ƯU TIÊN 1 — THƯ MỤC tiếng động của USER (giữ tính năng cũ): có file
             # hợp lệ -> mỗi điểm nối lấy NGẪU NHIÊN 1 file (không phân loại ngữ
             # cảnh vì file user tùy ý). random.sample tránh trùng khi đủ.
-            sfx_files = _list_sfx_files(fx_sfx_dir)
+            sfx_files = _list_sfx_files(fx_sfx_dir) if n_joint else []
             if sfx_files:
                 if len(sfx_files) >= n_joint:
                     picked = _rnd.sample(sfx_files, n_joint)
                 else:
                     picked = [_rnd.choice(sfx_files) for _ in range(n_joint)]
-                for wi, (off, fpath) in enumerate(zip(whoosh_offsets, picked)):
+                for wi, (ji, fpath) in enumerate(zip(active_ji, picked)):
+                    off = whoosh_offsets[ji]
                     s_idx = aidx
                     aidx += 1
                     cmd += ["-i", str(fpath)]
@@ -1377,18 +1407,20 @@ def export_canvas_clip(
                         f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
                         f"asetpts=PTS-STARTPTS[wh{wi}]")
                     mix.append(f"[wh{wi}]")
-            else:
+            elif n_joint:
                 # ƯU TIÊN 2 — THƯ VIỆN ĐÓNG GÓI theo NGỮ CẢNH (join_cats). Mỗi
                 # điểm nối chọn 1 file trong đúng category (không lặp liên tiếp
                 # cùng loại). Category THIẾU file (bản cũ chưa có thư viện) ->
                 # ƯU TIÊN 3: lùi bộ tiếng TỔNG HỢP hợp loại (_pick_synth_for_
                 # category, cũng tránh lặp liên tiếp). Ghi lại loại đã chọn để
                 # caller/log kiểm được (SFX_LAST_PICK).
-                picks = _pick_sfx_by_category(join_cats)
+                active_cats = [join_cats[i] for i in active_ji]
+                active_offs = [whoosh_offsets[i] for i in active_ji]
+                picks = _pick_sfx_by_category(active_cats)
                 last_synth: dict = {}
                 chosen_log: list = []
                 for wi, ((cat, fpath), off) in enumerate(
-                        zip(picks, whoosh_offsets)):
+                        zip(picks, active_offs)):
                     w_idx = aidx
                     aidx += 1
                     vol = _SFX_CAT_VOL.get(cat, 0.28)
@@ -1412,7 +1444,6 @@ def export_canvas_clip(
                         chosen_log.append((cat, f"synth#{tidx}"))
                     mix.append(f"[wh{wi}]")
                 # cho test/log biết ĐÃ chọn loại+file gì tại mỗi điểm nối
-                global _SFX_LAST_PICK
                 _SFX_LAST_PICK = chosen_log
         if len(mix) == 1:
             amap = mix[0]

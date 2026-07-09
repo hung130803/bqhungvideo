@@ -341,6 +341,53 @@ def _emotion_rule(ln: str) -> str:
 
 
 # ------------------------------------------------------------------
+# 🔊 NHÃN TIẾNG ĐỘNG (SFX) THEO CẢM XÚC — AI đạo diễn gắn cho MỖI part
+# ------------------------------------------------------------------
+# TẬP NHÃN CỐ ĐỊNH: khớp SFX_CATEGORIES của ffmpeg_utils + "none" (không chèn).
+# App (m1_highlight._join_categories -> ffmpeg_utils) đọc part["sfx"] và chèn
+# đúng loại tiếng tại ĐIỂM VÀO part đó. Nhãn lạ / thiếu -> "none".
+SFX_LABELS = ("none", "transition", "impact", "riser", "reveal", "pop",
+              "suspense", "comedy", "scratch", "sad", "drumroll")
+_SFX_LABEL_SET = frozenset(SFX_LABELS)
+# TRẦN mật độ: tối đa 1 tiếng / khoảng giây này (tránh dày đặc/lố nhạc nhọt).
+_SFX_MIN_GAP_S = 7.0
+
+
+def _sfx_rule() -> str:
+    """Khối chỉ dẫn AI GẮN NHÃN tiếng động theo CẢM XÚC cho mỗi part. Dùng
+    chung 2 đường prompt (1-span + đạo diễn). Nhấn: PHẦN LỚN để none, chỉ gắn
+    2-4 điểm/clip ở CHỖ THỰC SỰ HỢP — tránh lố."""
+    return (
+        "🔊 TIẾNG ĐỘNG THEO CẢM XÚC (bắt buộc — thêm field \"sfx\" cho MỖI "
+        "part): chọn ĐÚNG 1 nhãn trong tập cố định để app tự chèn tiếng động "
+        "ngắn ngay ĐẦU part đó, khớp cảm xúc/nhịp cảnh:\n"
+        "  • none — KHÔNG chèn tiếng (MẶC ĐỊNH cho ĐA SỐ part).\n"
+        "  • scratch — cú \"khựng\" BẤT NGỜ / plot-twist quay ngoắt (record "
+        "scratch).\n"
+        "  • comedy — khoảnh khắc HÀI / lầy / ngớ ngẩn (boing vui).\n"
+        "  • sad — đoạn BUỒN / hụt hẫng / tiếc nuối (nốt trầm buồn).\n"
+        "  • suspense — đoạn GÂY CẤN / hồi hộp / căng thẳng (drone trầm nền).\n"
+        "  • drumroll — NGAY TRƯỚC cao trào / màn hé lộ (trống dồn).\n"
+        "  • riser — build-up căng dần trước cú twist (khác drumroll: mượt "
+        "hơn).\n"
+        "  • impact — CÚ SỐC MẠNH / va chạm / con số gây choáng (boom).\n"
+        "  • reveal — lúc LỘ DIỆN kết quả / câu chốt cuối (ding).\n"
+        "  • pop — điểm nhấn nhẹ, vui tươi nhanh (pop/blip).\n"
+        "  • transition — CHUYỂN CẢNH thường, nhảy thời gian (whoosh nhẹ).\n"
+        "QUY TẮC GẮN (bắt buộc — vừa đủ, KHÔNG lạm dụng):\n"
+        "- GẮN CHÍNH XÁC 2-4 part có tiếng (KHÁC \"none\") trong cả clip — tại "
+        "ĐÚNG 2-4 khoảnh khắc ĐẮT NHẤT (twist bất ngờ, cú sốc, cao trào, câu "
+        "chốt, hoặc nhịp buồn/hài rõ rệt). ÍT hơn 2 -> clip chán; NHIỀU hơn 4 "
+        "-> nghe LỐ, rẻ tiền như nhạc chế.\n"
+        "- MỌI part còn lại BẮT BUỘC để \"sfx\": \"none\".\n"
+        "- Gắn ĐÚNG cảm xúc: cảnh buồn KHÔNG dùng comedy; cảnh hài KHÔNG dùng "
+        "sad; cú bất ngờ dùng scratch; trước cao trào dùng drumroll/riser; cú "
+        "sốc mạnh dùng impact; câu chốt cuối dùng reveal. Đừng gắn bừa cho có.\n"
+        "- 2 part LIỀN NHAU KHÔNG cùng gắn tiếng (để tai được thở); tiếng nên "
+        "rơi vào ĐẦU part quan trọng, cách nhau vài giây.\n")
+
+
+# ------------------------------------------------------------------
 # NGÔN NGỮ ĐẦU RA: tên tiếng Anh chuẩn + hậu kiểm "viết sai ngôn ngữ"
 # ------------------------------------------------------------------
 # Tên ngôn ngữ CHUẨN TIẾNG ANH cho prompt: model tuân lệnh "write in
@@ -696,11 +743,14 @@ def build_prompt(sentences: list, lang_name: str, style: str,
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
         "hiểu, KHÔNG phải lời đọc.\n"
+        + _sfx_rule()
         + _lang_remind(ln) +
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
         '{"context_summary": "...", "title": "...", "parts": '
         '[{"start": giây, "end": giây, "mode": "orig"|"narrate", '
-        '"text": "lời thuyết minh nếu narrate"}]}')
+        '"text": "lời thuyết minh nếu narrate", "sfx": "none"|"transition"|'
+        '"impact"|"riser"|"reveal"|"pop"|"suspense"|"comedy"|"scratch"|'
+        '"sad"|"drumroll"}]}')
 
 
 # ------------------------------------------------------------------
@@ -1290,10 +1340,73 @@ def _limit_role_changes(parts: list[dict],
     return out
 
 
+def _raw_sfx_labels(raw_parts) -> list[tuple[float, str]]:
+    """Rút (start, nhãn_sfx_hợp_lệ) từ parts THÔ của LLM — CHỈ nhãn KHÁC
+    "none" (nhãn thật AI muốn chèn). Dùng để tái gắn nhãn cho part sau khi
+    validate reshape (gộp/tách/đổi mode làm rớt key sfx). Hàm thuần."""
+    out: list[tuple[float, str]] = []
+    for p in _coerce_parts(raw_parts):
+        if not isinstance(p, dict):
+            continue
+        try:
+            s = float(p.get("start"))
+        except (TypeError, ValueError):
+            continue
+        lab = str(p.get("sfx") or "").strip().lower()
+        if lab in _SFX_LABEL_SET and lab != "none":
+            out.append((round(s, 2), lab))
+    return out
+
+
+def _apply_sfx_labels(parts: list[dict], raw_labels: list,
+                      min_gap: float = _SFX_MIN_GAP_S) -> list[dict]:
+    """Gắn nhãn "sfx" vào các part ĐÃ validate từ raw_labels (start, nhãn):
+    part nhận nhãn của raw-label có start GẦN start part đó nhất (trong 2.5s).
+    Sau đó ÉP MẬT ĐỘ: quét theo thời gian, chỉ GIỮ nhãn nếu cách nhãn được
+    giữ TRƯỚC đó >= min_gap giây (tránh dày đặc/lố). Part không nhận nhãn ->
+    "none". KHÔNG sửa list vào. Hàm thuần — unit test được."""
+    out = [dict(p) for p in parts]
+    used = [False] * len(raw_labels)
+    for p in out:
+        try:
+            ps = float(p["start"])
+        except (KeyError, TypeError, ValueError):
+            p["sfx"] = "none"
+            continue
+        best_j, best_d = -1, 2.5
+        for j, (rs, _lab) in enumerate(raw_labels):
+            if used[j]:
+                continue
+            d = abs(rs - ps)
+            if d < best_d:
+                best_j, best_d = j, d
+        if best_j >= 0:
+            used[best_j] = True
+            p["sfx"] = raw_labels[best_j][1]
+        else:
+            p["sfx"] = "none"
+    # ÉP MẬT ĐỘ: theo thứ tự thời gian, khử nhãn quá gần nhãn trước đã giữ.
+    last_kept = None
+    for p in sorted(out, key=lambda x: float(x.get("start", 0))):
+        if p.get("sfx", "none") == "none":
+            continue
+        try:
+            ps = float(p["start"])
+        except (KeyError, TypeError, ValueError):
+            p["sfx"] = "none"
+            continue
+        if last_kept is not None and ps - last_kept < min_gap:
+            p["sfx"] = "none"           # quá dày -> bỏ
+        else:
+            last_kept = ps
+    return out
+
+
 def validate_parts(parts, clip_start: float, clip_end: float,
                    min_part: float = 1.5,
                    sentences: Optional[list] = None,
-                   limit_changes: bool = True) -> list[dict]:
+                   limit_changes: bool = True,
+                   raw_parts=None) -> list[dict]:
     """Chuẩn hoá kịch bản LLM trả về -> list part SẠCH phủ kín clip.
 
     Tự sửa mọi lỗi thường gặp:
@@ -1357,9 +1470,13 @@ def validate_parts(parts, clip_start: float, clip_end: float,
                 and not (sentences and _is_copy_narrate(
                     orig_text, sentences, s, e))):
             otext = orig_text
+        # NHÃN TIẾNG ĐỘNG (sfx) AI gắn cho part -> giữ qua validate (sanitize +
+        # ép mật độ ở cuối). Nhãn lạ/thiếu -> "none".
+        raw_sfx = str(p.get("sfx") or "").strip().lower()
+        sfx = raw_sfx if raw_sfx in _SFX_LABEL_SET else "none"
         clean.append({"start": round(s, 2), "end": round(e, 2),
                       "mode": mode, "text": text if mode == "narrate" else "",
-                      "_otext": otext})
+                      "_otext": otext, "sfx": sfx})
 
     clean.sort(key=lambda x: (x["start"], x["end"]))
 
@@ -1399,6 +1516,11 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         merged = _limit_role_changes(merged)
     for p in merged:                    # _otext chỉ dùng nội bộ -> bỏ
         p.pop("_otext", None)
+    # 🔊 TÁI GẮN NHÃN SFX: sau reshape (gộp/tách/đổi mode) key sfx dễ rớt/lệch
+    # mốc -> gắn lại từ nhãn THÔ của LLM theo start GẦN NHẤT + ÉP MẬT ĐỘ (tối
+    # đa 1 tiếng / _SFX_MIN_GAP_S giây). raw_parts=None -> dùng chính parts vào.
+    merged = _apply_sfx_labels(
+        merged, _raw_sfx_labels(raw_parts if raw_parts is not None else parts))
     return merged
 
 
@@ -1638,12 +1760,15 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         f"- title: tiêu đề giật tít cho clip, viết bằng {ln}.\n"
         "- context_summary: 1 câu TÓM TẮT BỐI CẢNH (bước 1) — CHỈ để bạn "
         "hiểu, KHÔNG phải lời đọc.\n"
+        + _sfx_rule()
         + _lang_remind(ln) +
         "Trả về ĐÚNG JSON này, không thêm chữ:\n"
         '{"context_summary": "...", "title": "...", '
         '"windows": [[giây_bắt_đầu, giây_kết_thúc], ...], '
         '"parts": [{"start": giây, "end": giây, "mode": "orig"|"narrate", '
-        '"text": "lời thuyết minh nếu narrate"}]}\n'
+        '"text": "lời thuyết minh nếu narrate", "sfx": "none"|"transition"|'
+        '"impact"|"riser"|"reveal"|"pop"|"suspense"|"comedy"|"scratch"|'
+        '"sad"|"drumroll"}]}\n'
         '("windows" BẮT BUỘC là MẢNG CÁC CẶP SỐ [[s, e], ...] — ÍT NHẤT 2 '
         "khung — KHÔNG dùng object {\"start\": ...} cho windows.)")
 
