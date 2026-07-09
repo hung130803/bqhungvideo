@@ -24,7 +24,7 @@ Các part PHỦ KÍN [clip_start, clip_end] theo thứ tự thời gian.
 
 validate_parts() là hàm THUẦN (không LLM) tự sửa output hỏng: clamp vào phạm
 vi clip, bỏ part rác, mode lạ -> orig, chồng lấn -> cắt, khoảng hở -> chèn
-part orig, narrate rỗng/COPY transcript (kể cả FUZZY: trùng >60% từ với
+part orig, narrate rỗng/COPY transcript (kể cả KỂ LẠI: trùng cao TẬP từ với
 transcript trong đúng khoảng thời gian đó) -> orig; SỬA CẤU TRÚC chống
 ping-pong (_fix_structure + _limit_role_changes): narrate vụn kẹp giữa 2
 orig -> gộp vào orig, orig <3s -> gộp vào narrate kề, quá 2 cú bung/window
@@ -490,31 +490,59 @@ def _narrator_rules(ln: str, style: str, emotion: bool = False) -> str:
         "narrate — BÌNH LUẬN / CẢM XÚC / DỰ ĐOÁN / ĐẶT CÂU HỎI về chuyện. "
         "Đoạn tiếng gốc (orig) để NHÂN VẬT TỰ NÓI — lời narrate chỉ DẪN MỒI "
         "vào, KHÔNG nói hộ, KHÔNG thuật lại câu nhân vật.\n\n"
+        "NGUYÊN TẮC VÀNG — BẠN LÀ NGƯỜI BÌNH LUẬN ĐỨNG NGOÀI:\n"
+        "- Bạn KHÔNG thuật lại việc đang xảy ra trên màn hình — khán giả TỰ "
+        "THẤY hình + TỰ NGHE nhân vật nói ở đoạn tiếng gốc. Mô tả lại diễn "
+        "biến = THỪA và CHÁN.\n"
+        "- Thay vào đó, lời bạn phải THÊM tầng NGOÀI hình: CẢM XÚC / ĐÁNH GIÁ "
+        "/ DỰ ĐOÁN / CÂU HỎI ném khán giả / thông tin nền / HẬU QUẢ / cái giá "
+        "phải trả — thứ transcript KHÔNG nói ra.\n"
+        "- Đoạn tiếng GỐC để nhân vật + hình TỰ kể diễn biến; lời bạn chỉ "
+        "THÊM GÓC NHÌN, KHÔNG lặp lại diễn biến đó.\n\n"
         "CẤM TUYỆT ĐỐI trong lời narrate:\n"
+        "- CẤM MÔ TẢ LẠI hành động/sự việc đang diễn ra trên hình (khán giả "
+        "tự thấy) — kiểu \"anh ấy mở van và nghe tiếng xì\", \"cô ấy cầm dao "
+        "lên cắt\". Đó là THUYẾT MINH LẠI, không phải BÌNH LUẬN.\n"
         "- CẤM lặp lại, diễn giải lại, PARAPHRASE hay tóm tắt lại câu nhân "
         "vật VỪA nói hoặc SẮP nói trong transcript — người xem sắp nghe/vừa "
-        "nghe câu đó rồi, kể lại là thừa và chán. Đổi vài từ/đảo trật tự VẪN "
-        "là thuật lại -> CẤM.\n"
+        "nghe câu đó rồi. Đổi ĐẠI TỪ (tôi->anh ấy / I->he), đổi THÌ "
+        "(cắt->đã cắt / touched->touches), hay ĐẢO TRẬT TỰ VẪN là thuật lại "
+        "-> CẤM.\n"
         "- CẤM dùng lại NGUYÊN CỤM 3 từ trở lên có trong transcript (nhại "
         "cụm lời thoại).\n"
         "- CẤM kiểu tường thuật gián tiếp: \"anh ấy nói rằng...\", \"cô ấy "
         "bảo là...\", \"anh ta giải thích rằng...\".\n"
         # VÍ DỤ ✅/❌ theo ĐÚNG ngôn ngữ video (video Việt -> ví dụ Việt;
         # ngôn ngữ khác -> ví dụ tiếng Anh) — KHÔNG trộn 2 thứ tiếng để
-        # model không bắt chước nhầm ngôn ngữ của ví dụ.
+        # model không bắt chước nhầm ngôn ngữ của ví dụ. THÊM cặp EXPLAINER
+        # (nhân vật TỰ THUYẾT MINH) — lỗi thật: AI mô tả lại hành động họ nói.
         + ("VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
-           "  Transcript nhân vật: \"tôi bấm nhầm nút bán hết cổ phiếu\".\n"
-           "  ✅ ĐÚNG (bình luận góc ngoài): \"Gã này vừa mất cả gia tài "
+           "  ① Transcript nhân vật: \"tôi bấm nhầm nút bán hết cổ phiếu\".\n"
+           "    ✅ ĐÚNG (bình luận góc ngoài): \"Gã này vừa mất cả gia tài "
            "chỉ vì một cú click...\"\n"
-           "  ❌ SAI (thuật lại): \"Anh ấy nói anh ấy bấm nhầm nút bán hết "
-           "cổ phiếu.\"\n\n"
+           "    ❌ SAI (thuật lại): \"Anh ấy nói anh ấy bấm nhầm nút bán hết "
+           "cổ phiếu.\"\n"
+           "  ② (EXPLAINER — nhân vật tự thuyết minh) Transcript: \"vừa chạm "
+           "vào cái van là tôi nghe tiếng xì rất to\".\n"
+           "    ❌ SAI (mô tả lại việc trên hình): \"Anh ấy chạm vào van và "
+           "nghe tiếng xì lớn.\"\n"
+           "    ✅ ĐÚNG (bình luận từ ngoài): \"Và đây là khoảnh khắc mọi "
+           "thứ suýt nổ tung — thứ mà 9/10 người sẽ không dám thử.\"\n\n"
            if _is_vi_lang(ln) else
            "VÍ DỤ ĐÚNG/SAI (bám vào transcript, KHÔNG chép):\n"
-           "  Transcript: \"i accidentally sold all my shares\".\n"
-           "  ✅ RIGHT (outsider comment): \"One wrong click. His entire "
+           "  (1) Transcript: \"i accidentally sold all my shares\".\n"
+           "    ✅ RIGHT (outsider comment): \"One wrong click. His entire "
            "fortune — gone.\"\n"
-           "  ❌ WRONG (retelling): \"He says he accidentally sold all his "
-           "shares.\"\n\n") +
+           "    ❌ WRONG (retelling): \"He says he accidentally sold all his "
+           "shares.\"\n"
+           "  (2) (EXPLAINER — the person narrates their own action) "
+           "Transcript: \"the moment I touched the valve I heard a really "
+           "loud hiss\".\n"
+           "    ❌ WRONG (re-describing on-screen action): \"He touches the "
+           "valve and a loud hiss is heard.\"\n"
+           "    ✅ RIGHT (commentary from outside): \"This is the moment it "
+           "nearly blew up — something 9 out of 10 people would never dare "
+           "to try.\"\n\n") +
         "LỜI KỂ CỦA BẠN PHẢI:\n"
         "- Gọi nhân vật theo góc nhìn NGƯỜI NGOÀI: \"gã này\", \"cô gái "
         "ấy\", \"ông chú\", \"the guy\"... — bạn KHÔNG phải người trong "
@@ -704,11 +732,71 @@ def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
 # ~45-55% từ với transcript -> nghe như "đọc lại lời người kia". Lời KỂ sáng
 # tác thật (thêm cảm xúc/bình luận/góc ngoài) dùng từ vựng khác hẳn -> trùng
 # thấp (thường <30%), nên hạ ngưỡng vẫn KHÔNG loại nhầm câu sáng tác.
-_FUZZY_COPY_MAX = 0.45
+# SIẾT LẠI (v8): 0.45 -> chuyển sang so TẬP TỪ-NỘI-DUNG (order-independent,
+# chuẩn hoá đại từ ngôi + biến thể thì/số) với ngưỡng 0.55 — lỗi thật: LLM
+# "kể lại" lời nhân vật chỉ đổi đại từ (I->he) + thì (touched->touches) +
+# đảo trật tự thì lưới CŨ (đếm TỪ THÔ có thứ tự, không bỏ stopword) tính ~73%
+# nhưng CHỈ soi ĐÚNG window part -> khi LLM đặt narrate ở window KHÁC với câu
+# nó kể lại thì trượt (xem _copy_overlap_windows áp cả window KỀ).
+_FUZZY_COPY_MAX = 0.45          # (giữ cho tương thích test cũ — lưới thô)
+# Ngưỡng TẬP TỪ-NỘI-DUNG (bỏ stopword, chuẩn đại từ/thì): narrate trùng >=
+# tỉ lệ này TẬP từ-nội-dung với transcript window (VÀ window kề) -> KỂ LẠI.
+_CONTENT_OVERLAP_MAX = 0.55
 # n-gram CHẶN THEO Ý: narrate trùng >= số TỪ-NỘI-DUNG LIÊN TIẾP này với 1 cụm
 # trong transcript window -> coi là THUẬT LẠI lời nhân vật (dù tỉ lệ tổng thấp).
 # Bắt kiểu "anh ấy nói anh ấy bấm nhầm nút bán hết cổ phiếu" nhại nguyên cụm.
 _RETELL_NGRAM = 3
+
+# ------------------------------------------------------------------
+# CHUẨN HOÁ ĐẠI TỪ NGÔI + biến thể thì/số cho anti-copy ORDER-INDEPENDENT.
+# Lỗi thật: nhân vật TỰ THUYẾT MINH ("tôi/I" làm), AI kể lại đổi ngôi
+# (I->he, tôi->gã) + thì (touched->touches) + đảo trật tự -> lưới cũ trượt.
+# Gộp MỌI đại từ ngôi về 1 token chung "§p" (chủ ngữ/tân ngữ/sở hữu đều gộp
+# — chỉ cần biết "có 1 người" chứ không phân biệt ai) rồi so TẬP từ-nội-dung.
+# ------------------------------------------------------------------
+_PRON_CANON = "§p"
+_PRON_WORDS = frozenset((
+    # --- EN: chủ ngữ / tân ngữ / sở hữu / phản thân ---
+    "i", "me", "my", "mine", "myself",
+    "he", "him", "his", "himself",
+    "she", "her", "hers", "herself",
+    "we", "us", "our", "ours", "ourselves",
+    "they", "them", "their", "theirs", "themselves",
+    "you", "your", "yours", "yourself", "yourselves",
+    "it", "its", "itself",
+    # --- VI: các đại từ ngôi thường gặp (có/không dấu) ---
+    "tôi", "toi", "tao", "ta", "tớ", "to", "mình", "minh",
+    "anh", "chị", "chi", "em", "hắn", "han", "cô", "co",
+    "chú", "chu", "bác", "bac", "ông", "ong", "bà", "ba",
+    "nó", "no", "họ", "ho", "cậu", "cau", "gã", "ga", "y", "thị", "thi",
+))
+
+
+def _canon_word(w: str) -> str:
+    """Chuẩn hoá 1 từ cho so-TẬP anti-copy: đại từ ngôi -> token chung "§p";
+    cắt hậu tố thì/số EN thường (-ing/-ed/-es/-s) để "touches"~"touched"
+    ~"touch" khớp nhau (chặn AI đổi thì né lưới). Hàm thuần."""
+    if w in _PRON_WORDS:
+        return _PRON_CANON
+    for suf in ("ing", "ed", "es", "s"):
+        if len(w) - len(suf) >= 3 and w.endswith(suf):
+            return w[: -len(suf)]
+    return w
+
+
+def _content_pron_set(text: str) -> set:
+    """TẬP TỪ-NỘI-DUNG của text sau khi (a) chuẩn hoá đại từ ngôi -> "§p",
+    (b) cắt hậu tố thì/số EN, (c) BỎ các stopword còn lại. Đại từ ngôi được
+    GIỮ (dạng "§p") vì "một người làm X" là nội dung khớp giữa narrate kể lại
+    và transcript. Dùng cho so-TẬP ORDER-INDEPENDENT (đảo trật tự vẫn khớp)."""
+    out: set = set()
+    for w in _norm_for_copy(text).split():
+        c = _canon_word(w)
+        if c == _PRON_CANON:
+            out.add(c)
+        elif len(c) > 1 and c not in _STOPWORDS:
+            out.add(c)
+    return out
 
 
 def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
@@ -725,6 +813,24 @@ def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
         return 0.0
     hit = sum(1 for w in words if w in window_words)
     return hit / len(words)
+
+
+def _content_overlap_ratio(text: str, window_text: str) -> float:
+    """Tỉ lệ (0..1) TẬP TỪ-NỘI-DUNG của narrate trùng tập từ-nội-dung của
+    transcript window — ORDER-INDEPENDENT + chuẩn hoá đại từ ngôi + thì/số
+    (_content_pron_set). Đây là lưới CHÍNH bắt "kể lại" kiểu explainer: câu
+    narrate "The moment he touches the valve, a loud hiss is heard" vs
+    transcript "The moment I touched the valve I heard a really loud hiss"
+    -> tập nội dung {§p, moment, touch, valve, loud, hiss, hear} trùng ~100%.
+    Lời BÌNH LUẬN sáng tác (từ vựng ngoài: exploded, dare, people...) trùng
+    thấp. narrate < 4 từ-nội-dung -> 0.0 (trùng ngẫu nhiên). Hàm thuần."""
+    a = _content_pron_set(text)
+    if len(a) < 4 or not window_text:
+        return 0.0
+    b = _content_pron_set(window_text)
+    if not b:
+        return 0.0
+    return len(a & b) / len(a)
 
 
 def _window_words(sentences: list, start: float, end: float) -> set:
@@ -753,24 +859,39 @@ def _window_text(sentences: list, start: float, end: float) -> str:
 
 
 def _content_seq(text: str) -> list:
-    """Dãy TỪ-NỘI-DUNG (bỏ stopword vi+en, bỏ từ 1 ký tự) theo ĐÚNG thứ tự
-    xuất hiện — để dò n-gram liên tiếp trùng transcript."""
-    return [w for w in _norm_for_copy(text).split()
-            if len(w) > 1 and w not in _STOPWORDS]
+    """Dãy TỪ-NỘI-DUNG (đã CHUẨN HOÁ đại từ ngôi -> "§p" + cắt hậu tố thì/số,
+    bỏ stopword còn lại, bỏ từ 1 ký tự) theo ĐÚNG thứ tự xuất hiện — để dò
+    n-gram liên tiếp trùng transcript. Chuẩn hoá (_canon_word) giúp n-gram
+    khớp dù AI đổi thì (touched/touches) hoặc ngôi (I/he)."""
+    out = []
+    for w in _norm_for_copy(text).split():
+        c = _canon_word(w)
+        if c == _PRON_CANON or (len(c) > 1 and c not in _STOPWORDS):
+            out.append(c)
+    return out
 
 
 def _is_retelling(text: str, window_text: str, n: int = _RETELL_NGRAM) -> bool:
-    """narrate text có >= `n` TỪ-NỘI-DUNG LIÊN TIẾP trùng 1 cụm trong
-    transcript window không -> THUẬT LẠI (nhại nguyên cụm lời nhân vật).
+    """narrate có KỂ LẠI lời nhân vật không — 2 lưới (OR):
+      (1) TẬP TỪ-NỘI-DUNG (order-independent, chuẩn đại từ/thì) trùng
+          transcript window >= _CONTENT_OVERLAP_MAX (55%) -> KỂ LẠI. Bắt
+          kiểu explainer đổi ngôi + thì + đảo trật tự: "The moment he
+          touches the valve, a loud hiss is heard" vs transcript "The
+          moment I touched the valve I heard a really loud hiss".
+      (2) >= `n` TỪ-NỘI-DUNG LIÊN TIẾP trùng 1 cụm trong window (nhại nguyên
+          cụm) — cả sau chuẩn hoá đại từ/thì.
 
-    Bắt kiểu (b) sai: transcript "tôi bấm nhầm nút bán hết cổ phiếu" ->
-    narrate "anh ấy nói anh ấy bấm nhầm nút bán hết cổ phiếu" (cụm nội dung
-    'bấm nhầm nút bán hết cổ phiếu' trùng liên tiếp) -> LOẠI. Câu (a) sáng
-    tác "gã này vừa mất cả gia tài chỉ vì một cú click" KHÔNG có n-gram nội
-    dung liên tiếp nào trùng -> QUA. Hàm thuần — unit test được.
+    Câu (a) sáng tác "gã này vừa mất cả gia tài chỉ vì một cú click" trùng
+    tập THẤP + KHÔNG có n-gram liên tiếp -> QUA. Hàm thuần — unit test được.
 
-    Dùng _STOPWORDS (bỏ từ nối) trước khi ghép n-gram nên "anh ấy nói" (toàn
-    stopword/đại từ) không tính — chỉ cụm NỘI DUNG thật mới bị bắt."""
+    Dùng _canon_word + _STOPWORDS: "anh ấy nói" (toàn đại từ/stopword) thành
+    ["§p", "nói"] — chỉ cụm NỘI DUNG thật mới bị bắt."""
+    if not window_text:
+        return False
+    # (1) TẬP TỪ-NỘI-DUNG order-independent
+    if _content_overlap_ratio(text, window_text) >= _CONTENT_OVERLAP_MAX:
+        return True
+    # (2) n-gram TỪ-NỘI-DUNG liên tiếp (đã chuẩn hoá đại từ/thì)
     if n < 1:
         return False
     seq = _content_seq(text)
@@ -782,6 +903,36 @@ def _is_retelling(text: str, window_text: str, n: int = _RETELL_NGRAM) -> bool:
     win_grams = {" ".join(win[i:i + n]) for i in range(len(win) - n + 1)}
     for i in range(len(seq) - n + 1):
         if " ".join(seq[i:i + n]) in win_grams:
+            return True
+    return False
+
+
+# Nới CỬA SỔ anti-copy ra 2 bên part `_COPY_WIN_PAD` giây — LỖI THẬT: video
+# nhân vật TỰ THUYẾT MINH (explainer), AI đặt narrate ở part [12-16] nhưng
+# lại KỂ LẠI câu transcript nói ở [8-12] (part KHÁC). Lưới cũ chỉ soi ĐÚNG
+# [12,16] nên trượt. Soi cả câu transcript KỀ (±pad, phủ câu ngay trước/sau)
+# thì bắt được. pad ~6s = ~1 câu explainer 2 bên.
+_COPY_WIN_PAD = 6.0
+
+
+def _is_copy_narrate(text: str, sentences: list, start: float,
+                     end: float, pad: float = _COPY_WIN_PAD) -> bool:
+    """narrate `text` có KỂ LẠI / TRÙNG CAO transcript quanh [start,end]
+    không (soi CẢ câu KỀ ±pad — nhân vật explainer tự thuyết minh, AI kể lại
+    câu ở part sát bên) -> True = giữ tiếng gốc. Gộp 3 lưới:
+      - _fuzzy_copy_ratio (đếm từ THÔ) > _FUZZY_COPY_MAX (giữ lưới cũ);
+      - _is_retelling: TẬP từ-nội-dung order-independent (chuẩn đại từ/thì)
+        >= _CONTENT_OVERLAP_MAX HOẶC n-gram nội dung liên tiếp trùng.
+    Soi window HẸP (đúng [start,end]) TRƯỚC rồi window RỘNG (±pad) — window
+    rộng bắt câu kề, hẹp tránh phồng oan khi part dài. Hàm thuần — test được."""
+    for ws, we in ((start, end), (start - pad, end + pad)):
+        wtext = _window_text(sentences, ws, we)
+        if not wtext:
+            continue
+        if _fuzzy_copy_ratio(text, _window_words(sentences, ws, we)) \
+                > _FUZZY_COPY_MAX:
+            return True
+        if _is_retelling(text, wtext):
             return True
     return False
 
@@ -1149,8 +1300,9 @@ def validate_parts(parts, clip_start: float, clip_end: float,
       - part không phải dict / start-end không phải số / dài < min_part -> BỎ.
       - mode lạ -> "orig"; narrate mà không có text (rỗng) -> "orig".
       - narrate mà text CHÉP NGUYÊN VĂN transcript (AI lười copy) HOẶC trùng
-        FUZZY > 60% từ với transcript trong ĐÚNG khoảng thời gian part đó
-        (AI diễn giải lại lời nhân vật) -> "orig" (giữ tiếng gốc còn hơn AI
+        transcript trong khoảng part ĐÓ + câu KỀ (±_COPY_WIN_PAD) — bắt cả
+        kiểu KỂ LẠI đổi đại từ/thì/đảo trật tự (order-independent, chuẩn hoá
+        đại từ ngôi) qua _is_copy_narrate -> "orig" (giữ tiếng gốc còn hơn AI
         đọc lại). Cần `sentences` = [(start, end, text)] transcript để so.
       - clamp start/end vào [clip_start, clip_end].
       - chồng lấn -> cắt start part sau về end part trước (hết chỗ -> bỏ).
@@ -1192,12 +1344,8 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         if mode == "narrate" and _is_transcript_copy(text, transcript_norm):
             mode, text = "orig", ""    # AI chép transcript -> giữ tiếng gốc
         if (mode == "narrate" and sentences
-                and _fuzzy_copy_ratio(
-                    text, _window_words(sentences, s, e)) > _FUZZY_COPY_MAX):
-            mode, text = "orig", ""    # trùng FUZZY quá nhiều từ -> tiếng gốc
-        if (mode == "narrate" and sentences
-                and _is_retelling(text, _window_text(sentences, s, e))):
-            mode, text = "orig", ""    # nhại nguyên cụm (n-gram) -> tiếng gốc
+                and _is_copy_narrate(text, sentences, s, e)):
+            mode, text = "orig", ""    # kể lại / trùng cao -> giữ tiếng gốc
         # LƯU LỜI GỐC HỢP LỆ của part orig LLM trả kèm text (_otext): nếu
         # _fix_structure phải hạ bớt cú bung tiếng gốc thừa, part có lời
         # sạch (qua ĐỦ 3 lưới anti-copy) được chuyển narrate thay vì gộp.
@@ -1206,11 +1354,8 @@ def validate_parts(parts, clip_start: float, clip_end: float,
         orig_text = str(p.get("text") or "").strip()
         if (mode == "orig" and not was_narrate and orig_text
                 and not _is_transcript_copy(orig_text, transcript_norm)
-                and not (sentences and _fuzzy_copy_ratio(
-                    orig_text,
-                    _window_words(sentences, s, e)) > _FUZZY_COPY_MAX)
-                and not (sentences and _is_retelling(
-                    orig_text, _window_text(sentences, s, e)))):
+                and not (sentences and _is_copy_narrate(
+                    orig_text, sentences, s, e))):
             otext = orig_text
         clean.append({"start": round(s, 2), "end": round(e, 2),
                       "mode": mode, "text": text if mode == "narrate" else "",
@@ -1641,13 +1786,20 @@ def validate_parts_windows(parts, windows: list, sentences=None,
             for j, p in enumerate(sub):
                 mode = str(p.get("mode") or "").strip().lower()
                 text = str(p.get("text") or "")
+                # THA part ĐẦU của MỖI khung (j == 0): khung 1 -> HOOK, các
+                # khung sau -> CẦU NỐI. Cả hai theo THIẾT KẾ là BÌNH LUẬN từ
+                # ngoài (cảm xúc/twist/câu hỏi) nên có thể KHÔNG nhắc chi tiết
+                # cảnh — relevance 0 là BÌNH THƯỜNG, KHÔNG phải lạc đề. Lỗi
+                # thật: fix "bình luận đừng mô tả" làm hook sáng tác (vd "gã
+                # này tưởng mình cẩn thận, nhưng...") bị relevance hạ orig ->
+                # rụng hết narrate -> None -> fallback. Chỉ ép relevance các
+                # part narrate GIỮA khung (không phải hook/cầu nối).
                 if (mode == "narrate" and text.strip()
                         and not _is_relevant(text, near)
-                        and not (wi > 0 and j == 0)):
+                        and j != 0):
                     # 0 từ-nội-dung LIÊN QUAN transcript khung (và khung kề;
                     # NỚI: chấp nhận biến thể/đồng nghĩa cùng gốc qua prefix)
-                    # -> nghi LẠC ĐỀ/bịa -> hạ orig. Tha CẦU NỐI (part đầu
-                    # khung thứ 2 trở đi — lời bắc cầu được phép thoát cảnh).
+                    # -> nghi LẠC ĐỀ/bịa -> hạ orig.
                     p = dict(p, mode="orig", text="")
                 checked.append(p)
             sub = checked
@@ -1813,10 +1965,15 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                 return _enforce_script_lang(r2, lang_name, _lang_retry)
         return _enforce_script_lang(result, lang_name, _lang_retry)
     # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
+    # LỖI THẬT (explainer): LLM viết narrate KỂ LẠI lời nhân vật -> anti-copy
+    # hạ HẾT về orig -> _director_from_data trả None (err "parts hỏng"). Retry
+    # generic không đủ mạnh; đính THÊM _RETELL_RETRY_NOTE (bảo BÌNH LUẬN từ
+    # ngoài, đừng mô tả lại việc trên màn hình) để model sửa đúng gốc.
+    retell_hint = ("\n\n" + _RETELL_RETRY_NOTE) if "parts" in (err or "") else ""
     retry_prompt = (
         prompt + "\n\nLẦN TRƯỚC bạn đã trả kết quả KHÔNG DÙNG ĐƯỢC — lỗi: "
         + err + ".\nHãy SỬA ĐÚNG lỗi đó và trả lại DUY NHẤT 1 JSON object "
-        "đúng schema yêu cầu ở trên, không thêm chữ nào khác.")
+        "đúng schema yêu cầu ở trên, không thêm chữ nào khác." + retell_hint)
     try:
         data = llm.complete_json(retry_prompt, system=_SYSTEM)
     except llm.LLMError:
