@@ -524,8 +524,24 @@ class StudioPage(QWidget):
         from PyQt6.QtWidgets import QApplication
         from config import settings, Settings, update_env
         from app.ai import llm
-        dlg = QDialog(self); dlg.setWindowTitle("Cài đặt AI"); dlg.resize(500, 600)
-        lay = QVBoxLayout(dlg); lay.setSpacing(7)
+        dlg = QDialog(self); dlg.setWindowTitle("Cài đặt AI")
+        # NHIỀU mục (Gemini/Groq/file key/ElevenLabs/trạng thái key) -> nội dung
+        # DÀI hơn màn hình -> CUỘN được + cao vừa màn hình + nút Lưu GHIM dưới
+        # (trước đây tràn màn hình, che mất nút Lưu/Kiểm tra).
+        from PyQt6.QtWidgets import QScrollArea, QWidget
+        _outer = QVBoxLayout(dlg); _outer.setContentsMargins(0, 0, 0, 0)
+        _outer.setSpacing(0)
+        _scroll = QScrollArea(); _scroll.setWidgetResizable(True)
+        _scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        _outer.addWidget(_scroll, 1)
+        _content = QWidget(); _scroll.setWidget(_content)
+        lay = QVBoxLayout(_content); lay.setSpacing(7)
+        lay.setContentsMargins(14, 12, 14, 12)
+        try:
+            _sh = self.screen().availableGeometry().height()
+        except Exception:  # noqa: BLE001
+            _sh = 800
+        dlg.resize(530, min(680, max(420, int(_sh) - 90)))
         lay.addWidget(QLabel("Nguồn AI:"))
         src = QComboBox()
         src.addItem("Groq — mây (FREE, khôn, nhẹ — khuyên dùng)", "groq")
@@ -940,7 +956,10 @@ class StudioPage(QWidget):
                                 f"{wsrc.currentText().split('—')[0].strip()}")
             dlg.accept()
         sv.clicked.connect(do_save); row.addWidget(sv)
-        lay.addLayout(row)
+        # GHIM hàng nút NGOÀI vùng cuộn -> luôn thấy dù nội dung dài
+        _btnbar = QWidget(); _bl = QVBoxLayout(_btnbar)
+        _bl.setContentsMargins(14, 6, 14, 10); _bl.addLayout(row)
+        _outer.addWidget(_btnbar)
         dlg.exec()
 
     # ---- KHO VIDEO chung: <gốc>/Đã tải + <gốc>/Đã xuất/<tên video> ----
