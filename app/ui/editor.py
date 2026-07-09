@@ -170,11 +170,25 @@ def _wrap(text, fm, maxw):
     return out or [""]
 
 
-def _draw_text_path(p, path, color, outline_w, outline_color="#000000"):
+def _draw_text_path(p, path, color, outline_w, outline_color="#000000",
+                    preview=False):
     """Vẽ chữ: viền màu TRƯỚC (nếu có), tô màu chữ ĐÈ lên.
-    outline_w <= 0 -> KHÔNG viền (chỉ tô màu chữ)."""
-    if outline_w and outline_w >= 0.6:
-        pen = QPen(QColor(outline_color), outline_w)
+    outline_w <= 0 -> KHÔNG viền (chỉ tô màu chữ).
+
+    outline_w là bề dày viền (px) — TRÙNG semantics với lúc xuất (.ass Outline).
+
+    preview=True (chỉ khung XEM TRƯỚC, KHÔNG áp cho render_overlay_png xuất
+    thật): QPen vẽ NỬA trong / NỬA ngoài nét chữ nên phần LỘ RA chỉ ~½ bề dày
+    -> nhân đôi để viền trông DÀY đúng như mắt trông đợi + phủ hẳn ra ngoài như
+    .ass. Đồng thời ép bề dày TỐI THIỂU >=1px cho MỌI giá trị > 0 -> kéo mảnh
+    tí vẫn HIỆN, không bị 'nuốt' như ngưỡng 0.6px cũ (viền 0.25-0.5px im lặng
+    biến mất khiến user tưởng chỉnh không ăn). Xuất thật (preview=False) giữ
+    NGUYÊN hành vi cũ (ngưỡng >=0.6px, bề dày = outline_w) để PNG overlay không
+    đổi 1 pixel."""
+    draw = (outline_w > 0) if preview else (outline_w and outline_w >= 0.6)
+    if draw:
+        pen_w = max(1.0, outline_w * 2.0) if preview else outline_w
+        pen = QPen(QColor(outline_color), pen_w)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -466,11 +480,12 @@ class _VideoBox(QGraphicsItem):
 class _TextBox(QGraphicsItem):
     HS = 14
 
-    def __init__(self, lid, on_resize=None, on_guide=None):
+    def __init__(self, lid, on_resize=None, on_guide=None, on_select=None):
         super().__init__()
         self.lid = lid
         self.on_resize = on_resize
         self.on_guide = on_guide
+        self.on_select = on_select   # bấm chọn hộp -> cuộn panel phải tới nhóm
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable
                       | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
                       | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
@@ -542,7 +557,7 @@ class _TextBox(QGraphicsItem):
             tp.addText(x, y, f, ln)
         _draw_text_path(p, tp, self.d.get("color", "#FFFFFF"),
                         self.d.get("outline", 0.12) * self.px,
-                        self.d.get("outline_color", "#000000"))
+                        self.d.get("outline_color", "#000000"), preview=True)
         if self.isSelected():
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(QColor("#6E8BFF"), 1.5, Qt.PenStyle.DashLine))
@@ -569,6 +584,11 @@ class _TextBox(QGraphicsItem):
         return super().itemChange(change, value)
 
     def mousePressEvent(self, e):
+        # BẤM chọn hộp -> báo editor cuộn panel phải tới nhóm chỉnh của hộp này
+        # (làm TRƯỚC khi vào nhánh resize/drag để bấm đâu cũng nhảy; KHÔNG chặn
+        # sự kiện nên kéo-thả/resize vẫn chạy y như cũ).
+        if self.on_select:
+            self.on_select(self.lid)
         if self.isSelected() and self._handle().contains(e.pos()):
             self._resizing = True; self._sy = e.scenePos().y(); self._spx = self.px
             e.accept(); return
@@ -601,9 +621,11 @@ class _TextBox(QGraphicsItem):
 
 
 class EditorCanvas(QGraphicsView):
-    def __init__(self, on_resize=None):
+    def __init__(self, on_resize=None, on_select=None):
         super().__init__()
         self.on_resize = on_resize
+        # bấm chọn 1 hộp chữ -> editor cuộn panel phải tới nhóm chỉnh tương ứng
+        self.on_select = on_select
         # KHÔNG khóa cỡ: view GIÃN theo chỗ trống của dialog; khung 9:16 tự
         # phóng to bằng fitInView (tọa độ scene FW×FH giữ nguyên -> logic
         # kéo/thả, snap, lưu layout KHÔNG đổi).
@@ -655,13 +677,15 @@ class EditorCanvas(QGraphicsView):
             g.setParentItem(self.clip_root)
         self.texts: dict[int, _TextBox] = {}
         # ô PHỤ ĐỀ kéo-thả (chỉ để chọn VỊ TRÍ; không phải lớp chữ overlay)
-        self.cap_box = _TextBox(-99, on_guide=self._set_guides)
+        self.cap_box = _TextBox(-99, on_guide=self._set_guides,
+                                on_select=self._sel)
         self.cap_box.apply({"size": 0.045, "font": "Montserrat", "color": "#FFFF66",
                             "bg": True, "bg_color": "#000000", "radius": 30,
                             "nx": 0.5, "ny": 0.78}, "Phụ đề chạy chữ")
         self.cap_box.setParentItem(self.clip_root)
         # ô HOOK (câu giật tít vàng to ở ĐẦU clip) — chỉ để XEM TRƯỚC, ẩn mặc định
-        self.hook_box = _TextBox(-98, on_guide=self._set_guides)
+        self.hook_box = _TextBox(-98, on_guide=self._set_guides,
+                                 on_select=self._sel)
         self.hook_box.apply({"size": 0.072, "font": "Anton", "color": "#FFD83D",
                              "bg": True, "bg_color": "#000000", "radius": 30,
                              "bg_alpha": 0.45, "nx": 0.5, "ny": 0.10},
@@ -670,7 +694,8 @@ class EditorCanvas(QGraphicsView):
         self.hook_box.setParentItem(self.clip_root)
         # ô CHỮ AI KỂ (phụ đề đoạn AI thuyết minh — recap) kéo-thả chọn VỊ TRÍ
         # DỌC; chỉ XEM TRƯỚC, ẩn mặc định (chỉ hiện khi user bật ở nhóm Chữ AI kể)
-        self.narr_box = _TextBox(-97, on_guide=self._set_guides)
+        self.narr_box = _TextBox(-97, on_guide=self._set_guides,
+                                 on_select=self._sel)
         self.narr_box.apply({"size": 0.045, "font": "Montserrat",
                              "color": "#FFD966", "bg": True, "bg_color": "#000000",
                              "radius": 30, "nx": 0.5, "ny": 0.62},
@@ -758,6 +783,12 @@ class EditorCanvas(QGraphicsView):
         self.gv.setVisible(v)
         self.gh.setVisible(h)
 
+    def _sel(self, lid):
+        # cầu nối: mọi _TextBox gọi vào đây khi được bấm -> chuyển cho editor
+        # (đặt sau khi dialog gán self.on_select) để cuộn panel phải tới nhóm.
+        if self.on_select:
+            self.on_select(lid)
+
     def load_frame(self, path):
         pm = QPixmap(path)
         if pm.isNull():
@@ -786,7 +817,8 @@ class EditorCanvas(QGraphicsView):
     def upsert_text(self, lid, data, preview):
         box = self.texts.get(lid)
         if box is None:
-            box = _TextBox(lid, on_resize=self.on_resize, on_guide=self._set_guides)
+            box = _TextBox(lid, on_resize=self.on_resize, on_guide=self._set_guides,
+                           on_select=self._sel)
             box.setParentItem(self.clip_root); self.texts[lid] = box
         box.apply(data, preview)
 
@@ -1005,6 +1037,9 @@ class EditorDialog(QDialog):
         rcol = QVBoxLayout(); rcol.setSpacing(8)
         rcol.addWidget(rscroll, 1)
         main.addLayout(rcol)
+        self._rscroll = rscroll          # để cuộn tới nhóm khi bấm hộp preview
+        self._hl_widget = None           # widget đang được làm nổi (highlight tạm)
+        self._hl_qss = ""                # style gốc để trả lại sau ~1s
         self._sec_n = 0
 
         def _group(title, rgb):
@@ -1300,6 +1335,7 @@ class EditorDialog(QDialog):
         # Bố cục ĐỐI XỨNG với KHU 2 (Chữ AI đọc) bên dưới để dễ nhìn.
         # ============================================================
         gc, gc_box = _group("Phụ đề chạy chữ (lời gốc)", (251, 191, 36))
+        self._grp_cap = gc_box           # nhóm để cuộn tới khi bấm ô Phụ đề
         self.cap_chk = QCheckBox("Bật phụ đề — KÉO ô vàng trên khung để đặt chỗ")
         self.cap_chk.setChecked(True)
         self.cap_chk.toggled.connect(self.canvas.show_cap)
@@ -1388,6 +1424,7 @@ class EditorDialog(QDialog):
         # thường KHÔNG sinh đoạn narrate nên khu này KHÔNG ảnh hưởng.
         # ============================================================
         gn, gn_box = _group("Chữ AI đọc (thuyết minh)", (167, 139, 250))
+        self._grp_narr = gn_box          # nhóm để cuộn tới khi bấm ô Chữ AI kể
         self.narr_chk = QCheckBox(
             "Xem trước ô chữ AI kể — KÉO ô để đặt VỊ TRÍ DỌC")
         self.narr_chk.setToolTip(
@@ -1487,7 +1524,12 @@ class EditorDialog(QDialog):
         sc = QScrollArea(); sc.setWidgetResizable(True); sc.setWidget(host)
         sc.setStyleSheet("QScrollArea{border:none;}")
         gl.addWidget(sc, 1)
+        self._grp_layers = gl_box        # cả nhóm Lớp chữ
+        self._layer_scroll = sc          # cuộn nội bộ tới đúng _LayerRow
         right.setStretchFactor(gl_box, 1)   # nhóm Lớp chữ giãn chiếm phần thừa
+        # BẤM 1 hộp chữ trong khung preview -> cuộn panel phải tới nhóm chỉnh của
+        # nó + làm nổi ~1s. Gán sau khi mọi nhóm/tham chiếu đã dựng.
+        self.canvas.on_select = self._on_box_select
         self._reload_tmpl(select=self._current_name)
 
         # Nút dưới cùng
@@ -1722,6 +1764,71 @@ class EditorDialog(QDialog):
         row = self.rows.get(lid)
         if row:
             row.set_size_fraction(frac)
+
+    # ---- BẤM hộp preview -> nhảy tới nhóm chỉnh bên phải ----
+    def _on_box_select(self, lid):
+        """Hộp chữ trong khung preview được BẤM -> cuộn panel phải tới đúng nhóm
+        chỉnh + làm nổi ~1s. lid đặc biệt: -99 = Phụ đề (cap_box), -97 = Chữ AI
+        kể (narr_box), -98 = HOOK (thuộc nhóm Phụ đề); lid dương = 1 lớp chữ
+        (_LayerRow) trong nhóm Lớp chữ."""
+        target = None       # widget nhóm để cuộn rscroll tới
+        inner = None        # widget con trong scroll nội bộ (1 _LayerRow)
+        if lid == -99 or lid == -98:            # phụ đề gốc / hook -> nhóm Phụ đề
+            target = getattr(self, "_grp_cap", None)
+        elif lid == -97:                        # chữ AI kể -> nhóm Chữ AI đọc
+            target = getattr(self, "_grp_narr", None)
+        else:                                   # lớp chữ (Part/tiêu đề/cố định)
+            row = self.rows.get(lid)
+            if row is not None:
+                target = getattr(self, "_grp_layers", None)
+                inner = row
+        if target is None:
+            return
+        # cuộn panel phải chính tới NHÓM, rồi cuộn scroll nội bộ tới đúng _LayerRow
+        rs = getattr(self, "_rscroll", None)
+        if rs is not None:
+            rs.ensureWidgetVisible(target, 0, 0)
+        if inner is not None:
+            ls = getattr(self, "_layer_scroll", None)
+            if ls is not None:
+                ls.ensureWidgetVisible(inner, 0, 0)
+            self._flash_group(inner)
+        else:
+            self._flash_group(target)
+
+    def _flash_group(self, w):
+        """Làm nổi tạm widget (viền + nền sáng) ~1s rồi trả style cũ -> user thấy
+        rõ nhóm/hàng vừa nhảy tới. Dùng objectName riêng nên selector CHỈ áp cho
+        chính widget đó, KHÔNG lan xuống con. Chỉ 1 widget nổi 1 lúc."""
+        if w is None:
+            return
+        # khôi phục widget đang nổi trước đó (nếu bấm liên tiếp)
+        prev = getattr(self, "_hl_widget", None)
+        if prev is not None and prev is not w:
+            try:
+                prev.setStyleSheet(self._hl_qss)
+            except RuntimeError:
+                pass
+        self._hl_widget = w
+        self._hl_qss = w.styleSheet()
+        # gán objectName tạm (nếu chưa có) để selector nhắm ĐÚNG widget này
+        nm = w.objectName()
+        if not nm:
+            nm = f"_hl_{id(w)}"
+            w.setObjectName(nm)
+        w.setStyleSheet(
+            self._hl_qss
+            + f"\n#{nm}{{background:rgba(110,139,255,0.30);"
+              "border:2px solid #6E8BFF; border-radius:11px;}}")
+
+        def _restore():
+            if getattr(self, "_hl_widget", None) is w:
+                try:
+                    w.setStyleSheet(self._hl_qss)
+                except RuntimeError:
+                    pass
+                self._hl_widget = None
+        QTimer.singleShot(1000, _restore)
 
     # ---- Lồng tiếng AI ----
     def _dub_lang_ui(self):
