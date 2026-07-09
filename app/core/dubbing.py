@@ -2832,8 +2832,31 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             fcues = _clamp_cues_to_speech(fcues, speech_real)   # LỚP 1
             n["words"] = [[round(a + off, 3), round(b + off, 3), t]
                           for a, b, t in fcues]
-            # cờ cho caller (m1._recap_caption_cues): cue ĐÃ hậu kiểm —
-            # words rỗng nghĩa là XÓA HẾT (không fallback chia ký tự nữa).
+            # KHOẢNG CÓ TIẾNG THẬT của part (mép đo silencedetect) trên
+            # TIMELINE ĐẦU RA -> lưu cho caller fallback căn cụm khi words
+            # rỗng (KHÔNG bao giờ mất chữ). speech_real cùng gốc file part.
+            sp_lo = off + max(0.0, min(s[0] for s in speech_real))
+            sp_hi = off + min(d_final, max(s[1] for s in speech_real))
+            n["speech"] = [round(sp_lo, 3), round(max(sp_lo + 0.1, sp_hi), 3)]
+            # 🚫 KHÔNG ĐỂ PART CÓ TIẾNG MÀ MẤT CHỮ: clamp xóa hết cue (mốc ước
+            # lượng lệch khoảng nói dò được) NHƯNG part có text + có khoảng
+            # nói -> DỰNG LẠI cụm câu phân bố ĐỀU trên KHOẢNG CÓ TIẾNG đo
+            # thật (bỏ lặng đầu/cuối) rồi clamp lại. Thà căn xấp xỉ còn hơn
+            # mất phụ đề (lỗi user gặp thật khi Groq cạn key + silencedetect
+            # chia lệch). Vẫn qua clamp nên không phủ chữ ra ngoài tiếng.
+            if not n["words"] and str(n["text"] or "").strip():
+                sp0 = max(0.0, min(s[0] for s in speech_real))
+                sp1 = min(d_final, max(s[1] for s in speech_real))
+                rescue = _phrase_groups_even(n["text"], off + sp0,
+                                             max(0.1, sp1 - sp0))
+                rc = [[float(a) - off, float(b) - off, t]
+                      for a, b, t in rescue]
+                rc = _clamp_cues_to_speech(rc, speech_real)
+                n["words"] = [[round(a + off, 3), round(b + off, 3), t]
+                              for a, b, t in rc]
+            # cờ cho caller (m1._recap_caption_cues): cue ĐÃ hậu kiểm. Nếu
+            # VẪN rỗng ở đây (part gần như không tiếng) -> caller tự dựng cụm
+            # phủ [speech]/[start,end] (không mất chữ).
             n["clamped"] = True
             prog(0.65 + 0.25 * (i + 1) / len(narr), "Khớp thời gian...")
 

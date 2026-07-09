@@ -877,6 +877,19 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                                  f"⚠ Kịch bản {i + 1}: {sc['lang_warn']}")
             scripts.append(sc)
     if spans and not any(scripts):
+        # 429/hết hạn mức -> báo RÕ để user thêm key/đợi reset, KHÔNG xuất
+        # clip narration RÁC (không có đường tạo nội dung rác — script None
+        # thì clip không được lưu kèm recap; toàn bộ fail -> ném lỗi ở đây).
+        if any(llm.is_rate_limit_error(e) for e in errors):
+            raise RuntimeError(
+                "AI đã HẾT HẠN MỨC/lượt gọi (429) — không viết được kịch bản "
+                "thuyết minh. Hãy THÊM KEY khác trong 'Cài đặt AI' hoặc ĐỢI "
+                "reset hạn mức rồi thử lại.")
+        if any(llm.is_auth_error(e) for e in errors):
+            raise RuntimeError(
+                "Key AI SAI/HẾT HẠN (lỗi 401) — không viết được kịch bản "
+                "thuyết minh. Vào 'Cài đặt AI' dán lại key Groq/Gemini còn "
+                "hiệu lực rồi thử lại.")
         raise RuntimeError(
             "AI không viết được kịch bản thuyết minh cho clip nào"
             + (f" — lỗi: {errors[0][:200]}" if errors else

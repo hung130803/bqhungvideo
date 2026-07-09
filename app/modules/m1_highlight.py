@@ -1424,10 +1424,13 @@ def _recap_caption_cues(narr_events: list) -> list:
     - Event KHÔNG có "words" (giọng Gemini không trả word boundary, hoặc
       TTS lỗi event): FALLBACK chia câu theo SỐ KÝ TỰ như cũ.
     - Event có cờ "clamped" (build_recap_track ĐÃ hậu kiểm cứng cue theo
-      tiếng THẬT): words rỗng nghĩa là hậu kiểm XÓA HẾT (part không dò được
-      tiếng khớp chữ) -> KHÔNG fallback chia ký tự (thà không chữ còn hơn
-      chữ sai lúc); words có thì KHÔNG nới đuôi (+0.15s) / không giữ chữ
+      tiếng THẬT): words có thì KHÔNG nới đuôi (+0.15s) / không giữ chữ
       qua khoảng lặng >=0.18s — mép cue đã là mép tiếng đo thật.
+    - clamped + words RỖNG (hậu kiểm xóa hết / không dựng được cue) NHƯNG
+      part CÓ text + CÓ khoảng nói: KHÔNG bỏ chữ nữa (lỗi 'mất phụ đề') —
+      DỰNG cue câu-cụm phân bố ĐỀU trên KHOẢNG CÓ TIẾNG của part
+      ([speech_a, speech_b] build_recap_track đo được, lưu ở event; thiếu ->
+      [start, end]). Thà căn xấp xỉ còn hơn mất chữ.
 
     Trả [(start, end, text, kind)] đưa vào build_ass qua extra_cues;
     kind = "word" (chạy từng từ) | "sent" (hiện cả câu)."""
@@ -1439,8 +1442,6 @@ def _recap_caption_cues(narr_events: list) -> list:
         n_end = float(n["end"])
         words = n.get("words") or []
         clamped = bool(n.get("clamped"))
-        if clamped and not words:
-            continue        # hậu kiểm đã xóa hết cue -> part này không chữ
         if words:
             # WORD-LEVEL: từ hiện đúng lúc đọc, giữ tới từ kế (liền mạch,
             # không nhấp nháy); từ cuối/trước khoảng lặng tắt sớm (+0.15s).
@@ -1462,19 +1463,28 @@ def _recap_caption_cues(narr_events: list) -> list:
                 cues.append((round(a, 3), round(max(a + 0.05, end), 3),
                              wtxt, "word"))
             continue
-        # FALLBACK theo câu (giọng Gemini / không có word boundary)
+        # FALLBACK theo câu (Gemini/không word boundary HOẶC clamped mà cue bị
+        # xóa hết): chia câu-cụm theo SỐ KÝ TỰ, phân bố ĐỀU trên KHOẢNG CÓ
+        # TIẾNG THẬT của part. Ưu tiên [speech_a, speech_b] build_recap_track
+        # đo được (bỏ lặng đầu/cuối -> lệch nhỏ); thiếu -> [start, end] (end
+        # đã co về mép hết tiếng). Bảo đảm part CÓ text LUÔN có phụ đề.
+        sp = n.get("speech")
+        if isinstance(sp, (list, tuple)) and len(sp) >= 2:
+            t0, t1 = float(sp[0]), float(sp[1])
+        else:
+            t0, t1 = float(n["start"]), n_end
         sents = [s.strip() for s in re.split(r"(?<=[.!?…;])\s+", text)
                  if s.strip()]
         if not sents:
             sents = [text]
         total_chars = sum(len(s) for s in sents)
-        t = float(n["start"])
-        dur = n_end - t
+        t = t0
+        dur = t1 - t0
         if dur <= 0.1:
             continue
         for s in sents:
             d = dur * len(s) / max(1, total_chars)
-            cues.append((round(t, 3), round(min(t + d, n_end), 3), s, "sent"))
+            cues.append((round(t, 3), round(min(t + d, t1), 3), s, "sent"))
             t += d
     return cues
 
