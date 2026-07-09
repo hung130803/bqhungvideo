@@ -320,6 +320,79 @@ def mark_invalid(provider: str, key: str) -> None:
         st["note"] = "API key sai/không hợp lệ"
 
 
+def check_groq_key(key: str, timeout: float = 15.0) -> str:
+    """Kiểm tra 1 key Groq bằng call RẺ (KHÔNG tốn token): GET /models.
+
+    Trả về phân loại:
+      "ok"      -> 200: key SỐNG
+      "invalid" -> 401/403: key SAI/không hợp lệ
+      "limited" -> 429: hết hạn mức (tạm thời)
+      "error"   -> lỗi mạng/khác (timeout, DNS, 5xx...)
+    Dùng urllib (không thêm dependency). Không cập nhật sổ trạng thái RAM."""
+    import urllib.error
+    import urllib.request
+    key = (key or "").strip()
+    if not key:
+        return "invalid"
+    # User-Agent BẮT BUỘC: Groq sau Cloudflare, urllib không header trình
+    # duyệt bị chặn 403 code 1010 (KHÔNG phải key sai) -> báo nhầm mọi key.
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/models",
+        headers={"Authorization": f"Bearer {key}",
+                 "User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+        method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return "ok" if resp.status == 200 else "error"
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return "invalid"
+        if e.code == 429:
+            return "limited"
+        return "error"
+    except Exception:  # noqa: BLE001 — timeout, URLError (DNS/SSL), v.v.
+        return "error"
+
+
+def check_groq_keys(keys, progress=None, max_workers: int = 8,
+                    timeout: float = 15.0) -> dict:
+    """Kiểm tra HÀNG TRĂM key Groq SONG SONG (ThreadPool giới hạn).
+
+    keys: danh sách key. progress(done, total): gọi sau mỗi key xong (tùy chọn).
+    Trả về dict:
+      counts: {"ok","limited","invalid","error"} — số lượng mỗi loại
+      results: [(key, kind), ...] giữ thứ tự đầu vào
+      invalid: [key, ...] các key SAI (401/403) — để user xoá
+    Dùng để hiển thị tổng kết + danh sách key chết."""
+    from concurrent.futures import ThreadPoolExecutor
+    keys = [k.strip() for k in (keys or []) if k and k.strip()]
+    total = len(keys)
+    result_map: dict = {}
+    done = 0
+    counts = {"ok": 0, "limited": 0, "invalid": 0, "error": 0}
+    if not keys:
+        if progress:
+            progress(0, 0)
+        return {"counts": counts, "results": [], "invalid": []}
+    lock = threading.Lock()
+
+    def work(k):
+        return k, check_groq_key(k, timeout=timeout)
+
+    workers = max(1, min(int(max_workers or 1), total))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for k, kind in ex.map(work, keys):
+            with lock:
+                result_map[k] = kind
+                counts[kind] = counts.get(kind, 0) + 1
+                done += 1
+                if progress:
+                    progress(done, total)
+    results = [(k, result_map.get(k, "error")) for k in keys]
+    invalid = [k for k, kind in results if kind == "invalid"]
+    return {"counts": counts, "results": results, "invalid": invalid}
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
                temperature: float) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)

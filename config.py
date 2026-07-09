@@ -115,6 +115,12 @@ class Settings:
     # Whisper
     WHISPER_PROVIDER = _env("WHISPER_PROVIDER", "local").lower()  # local | groq
     GROQ_API_KEYS = _env("GROQ_API_KEYS")      # nhiều key, mỗi dòng/dấu phẩy 1 key
+    # File .txt chứa HÀNG TRĂM key Groq (mỗi dòng 1 key). App GỘP key ở ô dán
+    # (GROQ_API_KEYS) + key trong file này (dedup, giữ thứ tự). Tách file riêng
+    # vì .env 1 dòng = 1 khóa, không nhét được hàng trăm dòng.
+    GROQ_KEYS_FILE = _env("GROQ_KEYS_FILE")
+    # (tùy chọn) file key ElevenLabs — cùng cơ chế
+    ELEVENLABS_KEYS_FILE = _env("ELEVENLABS_KEYS_FILE")
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM (llama) FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ)
     GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
@@ -146,20 +152,50 @@ class Settings:
 
     @classmethod
     def llm_keys_for(cls, provider: str) -> list:
-        """DANH SÁCH key (để XOAY VÒNG khi hết quota). Tách theo dòng hoặc dấu phẩy."""
+        """DANH SÁCH key (để XOAY VÒNG khi hết quota). Tách theo dòng hoặc dấu phẩy.
+        Groq gộp thêm key từ GROQ_KEYS_FILE (hàng trăm key) qua groq_keys()."""
+        if provider == "groq":
+            return cls.groq_keys()
         raw = {
             "openai": cls.OPENAI_API_KEY,
             "gemini": cls.GEMINI_API_KEY,
             "deepseek": cls.DEEPSEEK_API_KEY,
-            "groq": cls.GROQ_API_KEYS,
             "ollama": "ollama",
         }.get(provider, "")
         return [k.strip() for k in raw.replace(",", "\n").splitlines() if k.strip()]
 
+    @staticmethod
+    def _read_keys_file(path: str) -> list:
+        """Đọc file .txt mỗi dòng 1 key: bỏ dòng trống + dòng comment (#).
+        File lỗi/không tồn tại -> trả [] (KHÔNG ném lỗi, app vẫn chạy bằng ô dán)."""
+        if not path:
+            return []
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return []
+        out = []
+        for ln in text.splitlines():
+            ln = ln.strip()
+            if ln and not ln.startswith("#"):
+                out.append(ln)
+        return out
+
     @classmethod
     def groq_keys(cls) -> list:
-        return [k.strip() for k in (cls.GROQ_API_KEYS or "").replace(",", "\n")
-                .splitlines() if k.strip()]
+        """DANH SÁCH key Groq (xoay vòng khi hết quota). GỘP key ở ô dán
+        (GROQ_API_KEYS, mỗi dòng/dấu phẩy 1 key) + key trong file GROQ_KEYS_FILE
+        (mỗi dòng 1 key, bỏ trống/comment). DEDUP giữ thứ tự xuất hiện. File
+        lỗi/không có -> chỉ dùng ô dán (không crash)."""
+        pasted = [k.strip() for k in (cls.GROQ_API_KEYS or "").replace(",", "\n")
+                  .splitlines() if k.strip()]
+        from_file = cls._read_keys_file(cls.GROQ_KEYS_FILE)
+        out, seen = [], set()
+        for k in pasted + from_file:
+            if k and k not in seen:
+                seen.add(k)
+                out.append(k)
+        return out
 
     @classmethod
     def elevenlabs_keys(cls) -> list:
@@ -168,9 +204,10 @@ class Settings:
         theo dòng hoặc dấu phẩy, bỏ trùng — giữ thứ tự xuất hiện."""
         raw = ((cls.ELEVENLABS_API_KEYS or "") + "\n" +
                (cls.ELEVENLABS_API_KEY or ""))
+        pasted = [k.strip() for k in raw.replace(",", "\n").splitlines() if k.strip()]
+        from_file = cls._read_keys_file(cls.ELEVENLABS_KEYS_FILE)
         out, seen = [], set()
-        for k in raw.replace(",", "\n").splitlines():
-            k = k.strip()
+        for k in pasted + from_file:
             if k and k not in seen:
                 seen.add(k)
                 out.append(k)

@@ -559,6 +559,154 @@ class StudioPage(QWidget):
         gkeys.setPlaceholderText("Để TRỐNG nếu chép lời bằng Máy")
         gkeys.setFixedHeight(50); lay.addWidget(gkeys)
 
+        # ----- TRỎ FILE KEY (mỗi dòng 1 key) — cho HÀNG TRĂM key -----
+        # Trạng thái đường dẫn file giữ trong 1 ô [list] để đóng closure sửa được.
+        gfile = [settings.GROQ_KEYS_FILE or ""]
+        gnote = QLabel("Dán vài key vào ô, hoặc trỏ file .txt cho HÀNG TRĂM key. "
+                       "App gộp cả hai.")
+        gnote.setWordWrap(True)
+        gnote.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        lay.addWidget(gnote)
+        gfrow = QHBoxLayout()
+        gfbtn = QPushButton("📄 Chọn file key (mỗi dòng 1 key)")
+        gfbtn.setProperty("ghost", True)
+        gfclear = QPushButton("Bỏ"); gfclear.setProperty("ghost", True)
+        gfrow.addWidget(gfbtn); gfrow.addWidget(gfclear); gfrow.addStretch(1)
+        lay.addLayout(gfrow)
+        gflbl = QLabel("")
+        gflbl.setWordWrap(True)
+        gflbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        gflbl.setStyleSheet(f"color:{TEXT}; font-size:11px;")
+        lay.addWidget(gflbl)
+
+        def _refresh_gfile():
+            p = gfile[0]
+            if p:
+                n = len(Settings._read_keys_file(p))
+                gflbl.setText(f"📄 {p}  ·  {n} key trong file")
+                gfclear.setEnabled(True)
+            else:
+                gflbl.setText("(chưa trỏ file — chỉ dùng key ở ô dán)")
+                gfclear.setEnabled(False)
+
+        def pick_gfile():
+            start = gfile[0] or str(getattr(settings, "DATA_DIR", "") or "")
+            fn, _ = QFileDialog.getOpenFileName(
+                dlg, "Chọn file key Groq (.txt — mỗi dòng 1 key)", start,
+                "Text (*.txt);;Tất cả (*.*)")
+            if fn:
+                gfile[0] = fn
+                _refresh_gfile()
+
+        def clear_gfile():
+            gfile[0] = ""
+            _refresh_gfile()
+
+        gfbtn.clicked.connect(pick_gfile)
+        gfclear.clicked.connect(clear_gfile)
+        _refresh_gfile()
+
+        # ----- NÚT "KIỂM TRA TẤT CẢ KEY GROQ" (sống/hết hạn/sai) -----
+        # Chạy THREAD NỀN + ThreadPool(8): test từng key bằng GET /models
+        # (KHÔNG tốn token). Tiến độ + tổng kết bắn về qua QTimer poll (không
+        # chặn UI). Gộp key ô dán + file để kiểm tra đúng tập đang dùng.
+        gckrow = QHBoxLayout()
+        gckbtn = QPushButton("Kiểm tra tất cả key Groq")
+        gckbtn.setProperty("ghost", True)
+        gckbtn.setToolTip("Test từng key sống/hết hạn/sai bằng call rẻ (không "
+                          "tốn token). Chạy song song, có tiến độ.")
+        gckrow.addWidget(gckbtn); gckrow.addStretch(1)
+        lay.addLayout(gckrow)
+        gckstat = QLabel("")
+        gckstat.setObjectName("groq_check_label")
+        gckstat.setWordWrap(True)
+        gckstat.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        gckstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        lay.addWidget(gckstat)
+        # nút xoá key chết khỏi ô dán (chỉ hiện khi có key 401)
+        gckdel = QPushButton("Xoá key chết khỏi ô dán")
+        gckdel.setProperty("ghost", True)
+        gckdel.setVisible(False)
+        lay.addWidget(gckdel)
+
+        def _keys_to_check():
+            # gộp ô dán + file (dedup giữ thứ tự) — giống config.groq_keys()
+            pasted = [k.strip() for k in gkeys.toPlainText()
+                      .replace(",", "\n").splitlines() if k.strip()]
+            from_file = Settings._read_keys_file(gfile[0])
+            out, seen = [], set()
+            for k in pasted + from_file:
+                if k and k not in seen:
+                    seen.add(k); out.append(k)
+            return out
+
+        def check_all_groq():
+            keys = _keys_to_check()
+            if not keys:
+                gckstat.setText("Chưa có key Groq nào — dán key hoặc trỏ file "
+                                "rồi bấm lại.")
+                return
+            gckbtn.setEnabled(False)
+            gckdel.setVisible(False)
+            # box chia sẻ giữa thread nền và poll (thread-safe đủ cho dict/list)
+            box = {"done": 0, "total": len(keys), "result": None, "err": None}
+            gckstat.setText(f"Đang kiểm tra 0/{box['total']}...")
+
+            def prog(done, total):
+                box["done"] = done
+
+            def bg():
+                try:
+                    box["result"] = llm.check_groq_keys(
+                        keys, progress=prog, max_workers=8)
+                except Exception as e:  # noqa: BLE001
+                    box["err"] = str(e)
+
+            threading.Thread(target=bg, daemon=True).start()
+            gcktimer = QTimer(dlg)
+
+            def poll():
+                if box["result"] is None and box["err"] is None:
+                    gckstat.setText(f"Đang kiểm tra {box['done']}/"
+                                    f"{box['total']}...")
+                    return
+                gcktimer.stop()
+                gckbtn.setEnabled(True)
+                if box["err"] is not None:
+                    gckstat.setText(f"⚠ Lỗi kiểm tra: {box['err']}")
+                    return
+                r = box["result"]
+                c = r["counts"]
+                summary = (f"✅ Sống: {c['ok']} · ⏳ Hết hạn mức: {c['limited']} "
+                           f"· ❌ Sai: {c['invalid']} · ⚠ Lỗi mạng: {c['error']}")
+                bad = r["invalid"]
+                if bad:
+                    masked = ", ".join("…" + k[-4:] for k in bad[:20])
+                    more = f" (+{len(bad) - 20} nữa)" if len(bad) > 20 else ""
+                    summary += f"\nKey sai: {masked}{more}"
+                    gckdel.setVisible(True)
+                    gckdel._bad = bad  # nhớ để xoá khi bấm
+                gckstat.setText(summary)
+
+            gcktimer.timeout.connect(poll)
+            gcktimer.start(250)
+
+        gckbtn.clicked.connect(check_all_groq)
+
+        def del_dead_keys():
+            bad = set(getattr(gckdel, "_bad", []) or [])
+            if not bad:
+                return
+            kept = [k.strip() for k in gkeys.toPlainText()
+                    .replace(",", "\n").splitlines()
+                    if k.strip() and k.strip() not in bad]
+            gkeys.setPlainText("\n".join(kept))
+            gckdel.setVisible(False)
+            gckstat.setText(f"Đã xoá {len(bad)} key sai khỏi ô dán. Bấm Lưu để "
+                            "áp. (Key sai trong FILE phải sửa trong file .txt.)")
+
+        gckdel.clicked.connect(del_dead_keys)
+
         # ----- ElevenLabs TTS (giọng lồng tiếng/thuyết minh CAO CẤP) -----
         # Tùy chọn — user tự cắm key. Có key -> nhóm giọng 🎧 ElevenLabs mở
         # khóa trong Cài đặt Reup + combo giọng lồng tiếng. Free 10k ký tự/
@@ -722,6 +870,7 @@ class StudioPage(QWidget):
             Settings.GEMINI_API_KEY = key.toPlainText().strip()
             Settings.GEMINI_MODEL = mdl.currentData()
             Settings.GROQ_API_KEYS = gkeys.toPlainText().strip()
+            Settings.GROQ_KEYS_FILE = gfile[0]
             Settings.ELEVENLABS_API_KEYS = elkeys.toPlainText().strip()
 
         def do_test():
@@ -784,6 +933,7 @@ class StudioPage(QWidget):
                         "GEMINI_MODEL": mdl.currentData(),
                         "WHISPER_PROVIDER": wsrc.currentData(),
                         "GROQ_API_KEYS": gkeys.toPlainText().strip(),
+                        "GROQ_KEYS_FILE": gfile[0],
                         "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip()})
             self._update_ai_status()
             self.status.setText(f"Đã lưu cài đặt AI: {src.currentText()} · nghe-chép "
