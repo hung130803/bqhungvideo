@@ -204,22 +204,40 @@ def _snap_parts(parts: list, edges: list, tol: float = _SNAP_TOL,
 # ------------------------------------------------------------------
 # 📚 CHIA CHƯƠNG: K clip thuyết minh độc lập (Part 1..K)
 # ------------------------------------------------------------------
-# Video ngắn hơn ngưỡng này (hoặc transcript quá mỏng) -> tự hạ còn 1 clip
-# (chia 3 chương cho video 2 phút chỉ ra clip vụn vô nghĩa).
-_MIN_DUR_PER_EXTRA_CLIP = 150.0     # 2.5 phút
-_MIN_SENTS_MULTI = 12
+# TÔN TRỌNG count user chọn — chỉ giảm khi THẬT SỰ không đủ nội dung.
+# Mỗi clip cần TỐI THIỂU: MIN_SENTS_PER_CLIP câu (đủ cho đạo diễn viết mạch
+# chuyện) + MIN_SEC_PER_CLIP giây (đủ dài để cắt ghép). max_feasible =
+# min(số_câu // MIN_SENTS_PER_CLIP, duration // MIN_SEC_PER_CLIP). count thực
+# tế = min(count_user, max(1, max_feasible)) -> video đủ dài/nhiều câu RA ĐỦ
+# count_user (kể cả 6-8); video ngắn -> rút hợp lý + LOG rõ.
+_MIN_SENTS_PER_CLIP = 4             # mỗi chương >= 4 câu (đạo diễn có cái viết)
+_MIN_SEC_PER_CLIP = 40.0           # mỗi chương >= 40s (đủ để cắt ghép cảnh)
+_MAX_RECAP_COUNT = 8               # trần cứng (khớp UI setRange 0-8)
 
 
 def _auto_recap_count(duration: float) -> int:
     """Số clip 'Tự động theo độ dài' (recap_count = 0, mặc định):
-    < 4 phút -> 1 clip; 4-12 phút -> 2; > 12 phút -> 3.
-    Hàm thuần — test được."""
+    < 4 phút -> 1 clip; 4-12 phút -> 2; 12-20 phút -> 3; > 20 phút -> 4.
+    Auto giữ KHIÊM TỐN (user muốn nhiều thì CHỌN TAY 1-8, luôn được tôn
+    trọng). Hàm thuần — test được."""
     d = float(duration or 0)
     if d < 240.0:
         return 1
     if d <= 720.0:
         return 2
-    return 3
+    if d <= 1200.0:
+        return 3
+    return 4
+
+
+def _max_feasible_count(duration: float, n_sents: int) -> int:
+    """SỐ CLIP TỐI ĐA video làm được (đủ nội dung cho mỗi chương): giới hạn
+    bởi CẢ số câu (>= _MIN_SENTS_PER_CLIP câu/clip) LẪN độ dài (>=
+    _MIN_SEC_PER_CLIP giây/clip). Trả >= 1 (luôn ra ít nhất 1 clip nếu có
+    chút nội dung). Hàm thuần — test được."""
+    by_sents = int(n_sents) // _MIN_SENTS_PER_CLIP
+    by_dur = int(float(duration or 0) // _MIN_SEC_PER_CLIP)
+    return max(1, min(by_sents, by_dur))
 
 
 def _win_bounds(preset: dict) -> tuple:
@@ -233,16 +251,17 @@ def _win_bounds(preset: dict) -> tuple:
 
 
 def _resolve_count(preset: dict, duration: float) -> int:
-    """recap_count trong preset -> số clip 1-3. 0/thiếu/hỏng = TỰ ĐỘNG theo
-    độ dài (mặc định mới — user vẫn chọn tay 1-3 trong ⚙ Cài đặt Reup).
-    Hàm thuần — test được."""
+    """recap_count trong preset -> số clip 1-8. 0/thiếu/hỏng = TỰ ĐỘNG theo
+    độ dài (mặc định — user chọn tay 1-8 trong ⚙ Cài đặt Reup, LUÔN được tôn
+    trọng ở đây; việc rút theo nội dung THẬT SỰ do generate_recap lo bằng
+    _max_feasible_count). Hàm thuần — test được."""
     try:
         c = int(preset.get("recap_count", 0))
     except (TypeError, ValueError):
         c = 0
     if c <= 0:
         c = _auto_recap_count(duration)
-    return max(1, min(3, c))
+    return max(1, min(_MAX_RECAP_COUNT, c))
 
 
 def _split_chapters(duration: float, edges: list, k: int,
@@ -290,16 +309,22 @@ def _count_sents(sentences: list, c0: float, c1: float) -> int:
 
 
 def _merge_sparse_chapters(chapters: list, sentences: list,
-                           min_sents: int = 3) -> list:
+                           min_sents: int = 3, min_keep: int = 1) -> list:
     """GỘP chương THƯA THOẠI (< min_sents câu) vào chương KỀ (ưu tiên chương
     kề THƯA hơn để cân bằng) — thay vì BỎ chương thưa (bỏ -> thiếu clip).
     Trả list chương [(c0,c1)] đã gộp, thứ tự thời gian giữ nguyên. Lặp tới
-    khi mọi chương đủ dày HOẶC chỉ còn 1 chương. Hàm thuần — test được."""
+    khi mọi chương đủ dày HOẶC chỉ còn min_keep chương.
+
+    min_keep: SỐ CHƯƠNG TỐI THIỂU cần GIỮ (= count user mong muốn) — DỪNG
+    gộp khi đã còn min_keep chương, kể cả vẫn còn chương thưa (ƯU TIÊN ra
+    đủ số clip; caller đã tính max_feasible nên tổng câu chia đủ). Hàm
+    thuần — test được."""
     chs = [(float(c0), float(c1)) for c0, c1 in (chapters or [])]
-    if len(chs) <= 1:
+    keep = max(1, int(min_keep))
+    if len(chs) <= keep:
         return chs
     changed = True
-    while changed and len(chs) > 1:
+    while changed and len(chs) > keep:
         changed = False
         for i, (c0, c1) in enumerate(chs):
             if _count_sents(sentences, c0, c1) >= min_sents:
@@ -564,8 +589,11 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     Reup (recap_min_sec/max_sec) — studio_page override 'Tùy chỉnh cắt'
     chung; thiếu -> lùi cut_min/cut_max cũ. recap_count = số clip thuyết
     minh: 0/thiếu = TỰ ĐỘNG
-    theo độ dài (<4 phút 1 clip, 4-12 phút 2, >12 phút 3 — mặc định), hoặc
-    chọn tay 1-3 — chia video thành K CHƯƠNG, mỗi chương 1 clip độc lập.
+    theo độ dài (<4 phút 1 clip, 4-12 phút 2, 12-20 phút 3, >20 phút 4 —
+    mặc định), hoặc chọn tay 1-8 (LUÔN được tôn trọng khi video đủ nội
+    dung; video ngắn/ít thoại thì rút về max_feasible = min(số_câu//4,
+    độ_dài//40s) và log rõ) — chia video thành K CHƯƠNG, mỗi chương 1 clip
+    độc lập.
     Kết quả: các dòng clips status='suggested' kèm signals.recap (kịch
     bản). Lỗi LLM -> ném lỗi rõ.
     """
@@ -629,11 +657,11 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             continue
 
     # ---- 0) 🎬 ĐẠO DIỄN MULTI-WINDOW THEO CHƯƠNG (mặc định): chia video
-    # thành K CHƯƠNG thời lượng ~bằng nhau (user chọn 1-3 trong ⚙ Cài đặt
-    # Reup, mặc định 2) rồi chạy đạo diễn RIÊNG từng chương -> K clip recap
-    # ĐỘC LẬP Part 1..K, mỗi clip có hook + mạch chuyện + kết RIÊNG của
-    # chương đó (sửa lỗi user 'chỉ làm được 1 video'). Video ngắn (<2.5
-    # phút) / transcript mỏng -> tự hạ còn 1 clip (không chia vụn).
+    # thành K CHƯƠNG theo mật độ thoại (user chọn 1-8 trong ⚙ Cài đặt Reup,
+    # LUÔN được tôn trọng khi đủ nội dung; mặc định auto theo độ dài) rồi
+    # chạy đạo diễn RIÊNG từng chương -> K clip recap ĐỘC LẬP Part 1..K, mỗi
+    # clip có hook + mạch chuyện + kết RIÊNG của chương đó. Video ngắn / ít
+    # thoại -> rút xuống max_feasible clip (không chia vụn) + LOG rõ.
     # Mọi chương hỏng hoặc LLM lỗi -> FALLBACK đường 1-span cũ bên dưới.
     prov = llm.active_provider()
     min_total = float(cfg.get("min_len") or 0) or 60.0
@@ -651,21 +679,28 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             sents_all.append((a, b, t))
     # duration DB có thể trống -> lấy mép câu cuối transcript làm độ dài
     dur_hint = duration or (sents_all[-1][1] if sents_all else 0.0)
-    count = _resolve_count(preset, dur_hint)   # 0 = tự động theo độ dài
-    if (duration < _MIN_DUR_PER_EXTRA_CLIP
-            or len(sents_all) < _MIN_SENTS_MULTI):
-        count = 1                       # video ngắn/thoại mỏng -> 1 clip
-    else:
-        # mỗi chương phải đủ dày (>=60s) để đạo diễn có cái mà cắt ghép
-        count = min(count, max(1, int(duration // 60.0)))
+    count_user = _resolve_count(preset, dur_hint)  # 1-8 (0 -> auto theo dài)
+    # 🚫 TÔN TRỌNG count user chọn — CHỈ giảm khi THẬT SỰ không đủ nội dung.
+    # BỎ ép cứng count=1 (<150s / <12 câu) cũ (nó chặn cả 6-8 clip video dài).
+    # max_feasible = min(số_câu//4, độ_dài//40s): video đủ dài + nhiều câu ->
+    # RA ĐỦ count_user (kể cả 6-8); video ngắn/ít thoại -> rút xuống hợp lý.
+    max_feasible = _max_feasible_count(dur_hint, len(sents_all))
+    count = min(count_user, max(1, max_feasible))
+    if count < count_user:              # LOG RÕ: video chỉ đủ M clip
+        ctx.progress(0.04,
+                     f"⚠ Bạn chọn {count_user} clip nhưng video chỉ đủ nội "
+                     f"dung cho {count} clip (mỗi clip cần ~{_MIN_SENTS_PER_CLIP}"
+                     f" câu + {_MIN_SEC_PER_CLIP:.0f}s) — tạo {count} clip.")
 
-    chapters = _split_chapters(duration, edges, count, sents_all)
-    # 🚫 SỬA LỖI 'số clip N -> ra ít hơn': chương THƯA THOẠI (<3 câu) KHÔNG
-    # bị bỏ trống nữa (bỏ -> thiếu clip). Chia đã theo mật độ câu nên hiếm
-    # khi còn chương thưa; nếu vẫn còn (đoạn video gần như không lời) -> GỘP
-    # vào chương KỀ để cả 2 gộp lại vẫn đủ câu, giữ đúng tinh thần "cố ra đủ
-    # N khi video đủ nội dung". Gộp xong count thực tế có thể < N -> log rõ.
-    chapters = _merge_sparse_chapters(chapters, sents_all, min_sents=3)
+    chapters = _split_chapters(dur_hint, edges, count, sents_all)
+    # 🚫 SỬA LỖI 'số clip N -> ra ít hơn': ƯU TIÊN GIỮ ĐỦ count chương.
+    # Chia đã theo mật độ câu nên MỖI chương thường >= _MIN_SENTS_PER_CLIP
+    # câu; CHỈ gộp chương QUÁ ít câu (< 2 = gần như không lời), và KHÔNG gộp
+    # xuống dưới count mong muốn khi tổng câu vẫn đủ chia (min_keep=count).
+    # -> video đủ nội dung ra ĐÚNG count (kể cả 6-8). Gộp xong < count ->
+    # log rõ (chỉ xảy ra khi có đoạn video thật sự trống thoại).
+    chapters = _merge_sparse_chapters(chapters, sents_all, min_sents=2,
+                                      min_keep=count)
     if len(chapters) < count:
         ctx.progress(0.05,
                      f"⚠ Video không đủ nội dung cho {count} clip — sau khi "
@@ -682,16 +717,29 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         ch_segs = [s for s in segs
                    if c0 - 0.01 <= (float(s.get("start", 0))
                                     + float(s.get("end", 0))) / 2 <= c1 + 0.01]
-        try:
-            sc = recap.write_director_script(
+        def _write_chapter():
+            return recap.write_director_script(
                 ch_sents, lang_name, style, c1,
                 min(min_total, max(30.0, 0.6 * (c1 - c0))),
                 min(max_total, c1 - c0), ratio=ratio,
                 listing=_condense_listing(ch_segs, c1 - c0),
                 win_min=win_lo, win_max=win_hi, emotion=emotion,
                 win_auto=win_auto)
+
+        try:
+            sc = _write_chapter()
         except llm.LLMError:
-            sc = None                  # chương lỗi -> bỏ riêng chương đó
+            sc = None
+        if not sc:
+            # 🔁 RETRY 1 LẦN chương lỗi (write_director_script đã tự retry
+            # lỗi PARSE; đây phủ thêm lỗi mạng/quota tạm thời + None) —
+            # tránh thiếu clip chỉ vì 1 cú gọi rớt. Vẫn lỗi -> bỏ chương.
+            ctx.progress(0.06 + 0.34 * ci / max(1, len(chapters)),
+                         f"Chương {ci + 1}: AI lỗi, thử lại 1 lần...")
+            try:
+                sc = _write_chapter()
+            except llm.LLMError:
+                sc = None
         if sc:
             ch_scripts.append((ci, c0, c1, sc))
             # LOG RÕ ĐƯỜNG ĐI: user nhìn queue biết ngay chương này dùng
@@ -780,12 +828,17 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             clip_ids.append(cid)
             used_ranges.extend(wlist)   # 🚫 clip sau né các khung này
         if clip_ids:
-            ctx.progress(1.0, f"AI [{prov}] dựng {len(clip_ids)} clip recap "
-                              f"theo {len(chapters)} chương "
-                              f"({recap.style_label(style)})")
+            # LOG THIẾU CLIP: 1+ chương AI lỗi/snap hỏng -> ra M/N clip.
+            short = ("" if len(clip_ids) >= count else
+                     f" (thiếu {count - len(clip_ids)}: chương AI lỗi hoặc "
+                     "kịch bản không hợp lệ)")
+            ctx.progress(1.0, f"AI [{prov}] dựng {len(clip_ids)}/{count} clip "
+                              f"recap theo {len(chapters)} chương "
+                              f"({recap.style_label(style)}){short}")
             return {"count": len(clip_ids), "clip_ids": clip_ids,
                     "scripts": len(clip_ids), "style": style,
-                    "llm_used": True, "chapters": len(chapters)}
+                    "llm_used": True, "chapters": len(chapters),
+                    "requested": count}
 
     # ---- 1) FALLBACK 1-SPAN: chọn các đoạn hay (đường chọn clip của auto) ----
     # LOG RÕ ĐƯỜNG ĐI: đạo diễn multi-window hỏng -> kịch bản 1 mạch dự phòng
