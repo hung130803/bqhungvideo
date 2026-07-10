@@ -2474,14 +2474,18 @@ def write_director_script(sentences: list, lang_name: str, style: str,
             from config import settings as _st
             if not getattr(_st, "AI_MULTIPASS", True):
                 return res
+            quality = str(getattr(_st, "RECAP_QUALITY", "balance") or
+                          "balance").strip().lower()
         except Exception:  # noqa: BLE001 - config lỗi -> giữ bản cũ, khỏi refine
             return res
-        # 💸 TIẾT KIỆM TOKEN/NGÀY: nhiều-pass (critic+refine) gửi lại prompt +
-        # transcript -> gấp ~2-3 lần token. Với transcript DÀI (video dài/chương
-        # lớn) dễ chạm HẠN MỨC TOKEN/NGÀY của Groq (per-day). Chỉ bật nhiều-pass
-        # khi listing đủ NGẮN; video dài -> 1-pass (chất lượng vẫn tốt) để reup
-        # CHẠY XONG thay vì hết lượt ngày giữa chừng.
-        if len(listing or "") > _MULTIPASS_MAX_LISTING:
+        # NÚT "Chất lượng kịch bản AI" (⚙ Cài đặt Reup):
+        #  save    -> luôn 1-pass (khỏi refine).
+        #  balance -> nhiều-pass CHỈ khi listing ngắn (video dài 1-pass để đỡ
+        #             chạm HẠN MỨC TOKEN/NGÀY Groq — critic+refine ~gấp 2-3 token).
+        #  max     -> nhiều-pass MỌI video (chất lượng cao nhất, tốn token nhất).
+        if quality == "save":
+            return res
+        if quality != "max" and len(listing or "") > _MULTIPASS_MAX_LISTING:
             return res
         return _refine_script(res, sentences, lang_name, style, min_total,
                               max_total, duration, win_max, emotion, ratio,

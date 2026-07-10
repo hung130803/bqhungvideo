@@ -193,6 +193,25 @@ class RecapSettingsDialog(QDialog):
         self.dim.valueChanged.connect(self._dim_changed)
         lay.addWidget(self.dim)
 
+        # ---- Chất lượng kịch bản AI (đánh đổi chất lượng vs token/ngày Groq) ----
+        lay.addWidget(QLabel(
+            "<b>Chất lượng kịch bản AI</b> — AI viết lời thuyết minh kỹ tới mức nào"))
+        self.quality = QComboBox()
+        for label, key in (
+                ("Cân bằng (khuyên dùng) — video dài tự tiết kiệm", "balance"),
+                ("Tối đa — AI mài kịch bản mọi video (tốn token nhất)", "max"),
+                ("Tiết kiệm — nhanh & ít token nhất (1 lượt)", "save")):
+            self.quality.addItem(label, key)
+        self.quality.setToolTip(
+            "Nhiều-pass = AI viết nháp -> tự chấm -> viết lại hay hơn (tốn "
+            "token gấp 2-3).\n"
+            "• Cân bằng: bật nhiều-pass cho video NGẮN, video DÀI dùng 1 lượt "
+            "để KHÔNG chạm hạn mức token/ngày Groq.\n"
+            "• Tối đa: nhiều-pass MỌI video — hay nhất nhưng video dài dễ HẾT "
+            "LƯỢT NGÀY (cần nhiều key từ nhiều nick).\n"
+            "• Tiết kiệm: luôn 1 lượt — nhanh, ít token, chất lượng vẫn tốt.")
+        lay.addWidget(self.quality)
+
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
         # ghi rõ "(Part)" để khỏi lẫn với "Số cảnh ghép" bên dưới
@@ -359,6 +378,13 @@ class RecapSettingsDialog(QDialog):
             dimv = 14
         self.dim.setValue(min(40, max(0, dimv)))
         self._dim_changed(self.dim.value())
+        try:                             # chất lượng kịch bản AI (từ config)
+            from config import settings as _cfg
+            _q = str(getattr(_cfg, "RECAP_QUALITY", "balance")
+                     or "balance").strip().lower()
+        except Exception:  # noqa: BLE001
+            _q = "balance"
+        self.quality.setCurrentIndex(max(0, self.quality.findData(_q)))
         try:                             # số clip: 0 = Tự động (mặc định)
             cnt = int(self._s.value("recap_count", 0))
         except (TypeError, ValueError):
@@ -395,6 +421,13 @@ class RecapSettingsDialog(QDialog):
         lmin, lmax = int(self.min_sec.value()), int(self.max_sec.value())
         self._s.setValue("recap_min_sec", lmin)
         self._s.setValue("recap_max_sec", max(lmin, lmax))  # ép Min<=Max giây
+        # Chất lượng kịch bản AI -> CONFIG (recap job đọc settings.RECAP_QUALITY
+        # LIVE, không qua QSettings) — update_env ghi .env + cập nhật Settings.
+        try:
+            from config import update_env
+            update_env({"RECAP_QUALITY": self.quality.currentData() or "balance"})
+        except Exception:  # noqa: BLE001 - không chặn lưu các mục khác
+            pass
         # (Chữ AI kể ĐÃ CHUYỂN sang Chỉnh mẫu — không lưu recap_narr_* nữa.)
         self.accept()
 

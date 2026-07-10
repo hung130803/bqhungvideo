@@ -141,6 +141,12 @@ class Settings:
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
     AI_MULTIPASS = _env_bool("AI_MULTIPASS", True)
+    # CHẤT LƯỢNG kịch bản AI reup (đánh đổi CHẤT LƯỢNG vs TOKEN/ngày Groq):
+    #   "save"    = luôn 1-pass (ít token nhất, nhanh nhất)
+    #   "balance" = nhiều-pass cho video NGẮN, 1-pass cho video DÀI (mặc định)
+    #   "max"     = nhiều-pass MỌI video (chất lượng cao nhất, tốn token nhất —
+    #               video dài dễ chạm HẠN MỨC TOKEN/NGÀY của Groq)
+    RECAP_QUALITY = _env("RECAP_QUALITY", "balance")
     WHISPER_MODEL = _env("WHISPER_MODEL")      # rỗng = auto theo phần cứng
     WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE") or None
     # Thiết bị chạy whisper: cpu | cuda. Rỗng = cpu (ổn định nhất).
