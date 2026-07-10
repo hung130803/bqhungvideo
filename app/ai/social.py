@@ -13,10 +13,25 @@ _SYSTEM = (
 )
 
 
+def _lang_label(language: str) -> str:
+    """Code whisper ('ja','th'...) -> tên ngôn ngữ CHUẨN TIẾNG ANH ('Japanese')
+    cho prompt: 'viết bằng JAPANESE' model tuân tốt hơn 'bằng JA' (code thô 2
+    chữ model dễ bỏ qua — video Nhật từng dính caption Anh). Rỗng -> trả rỗng
+    (giữ nhánh 'tự nhận diện' cũ); code lạ -> trả nguyên chuỗi như cũ."""
+    s = (language or "").strip()
+    if not s:
+        return ""
+    from app.ai.recap import lang_en_name
+    return lang_en_name(s)
+
+
 def write_post(title: str, transcript: str, language: str = "",
                channel: str = "") -> dict:
-    """Sinh caption đăng bài từ tiêu đề + lời thoại của clip. Ném LLMError nếu lỗi."""
-    lang = (language or "").strip()
+    """Sinh caption đăng bài từ tiêu đề + lời thoại của clip. Ném LLMError nếu lỗi.
+
+    Ngôn ngữ output: theo NGÔN NGỮ VIDEO (language = code whisper); rỗng ->
+    AI tự nhận diện từ lời thoại (chủ ý cũ, giữ nguyên)."""
+    lang = _lang_label(language)
     tx = (transcript or "").strip().replace("\n", " ")[:2500]
     # QUY TẮC NGÔN NGỮ: có language -> dùng nó; rỗng -> AI tự nhận diện từ CHÍNH
     # lời thoại. TUYỆT ĐỐI không đưa tên kênh lên đầu prompt như ngữ cảnh chung
@@ -75,7 +90,7 @@ def write_hashtags(title: str, transcript: str, language: str = "",
     """
     if not llm.is_configured():
         raise llm.LLMError("Chưa cấu hình LLM")
-    lang = (language or "").strip()
+    lang = _lang_label(language)
     tx = (transcript or "").strip().replace("\n", " ")[:2000]
     if lang:
         lang_rule = (f"- NGÔN NGỮ: viết hashtag BẰNG {lang.upper()} (đúng ngôn "

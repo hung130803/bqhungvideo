@@ -256,6 +256,9 @@ _SEL_SYSTEM = (
     "video). CHỈ trả JSON, không thêm bất kỳ chữ nào khác.")
 
 
+# Nhãn TIẾNG VIỆT của ngôn ngữ video cho prompt (đồng bộ danh sách code với
+# recap._LANG_EN/_LANG_ALIAS — đủ pt/ar/hi/it/nl/tr/pl/uk/ms/tl/lo/km/my).
+# Không nhận diện được -> _lang_name giữ fallback trả raw code như cũ.
 _LANG_NAMES = {
     "vi": "tiếng Việt", "vietnamese": "tiếng Việt",
     "en": "tiếng Anh", "english": "tiếng Anh",
@@ -263,8 +266,26 @@ _LANG_NAMES = {
     "ko": "tiếng Hàn", "korean": "tiếng Hàn",
     "zh": "tiếng Trung", "chinese": "tiếng Trung",
     "th": "tiếng Thái", "thai": "tiếng Thái",
-    "fr": "tiếng Pháp", "es": "tiếng Tây Ban Nha", "de": "tiếng Đức",
-    "ru": "tiếng Nga", "id": "tiếng Indonesia",
+    "fr": "tiếng Pháp", "french": "tiếng Pháp",
+    "es": "tiếng Tây Ban Nha", "spanish": "tiếng Tây Ban Nha",
+    "de": "tiếng Đức", "german": "tiếng Đức",
+    "ru": "tiếng Nga", "russian": "tiếng Nga",
+    "id": "tiếng Indonesia", "indonesian": "tiếng Indonesia",
+    "pt": "tiếng Bồ Đào Nha", "portuguese": "tiếng Bồ Đào Nha",
+    "ar": "tiếng Ả Rập", "arabic": "tiếng Ả Rập",
+    "hi": "tiếng Hindi", "hindi": "tiếng Hindi",
+    "it": "tiếng Ý", "italian": "tiếng Ý",
+    "nl": "tiếng Hà Lan", "dutch": "tiếng Hà Lan",
+    "tr": "tiếng Thổ Nhĩ Kỳ", "turkish": "tiếng Thổ Nhĩ Kỳ",
+    "pl": "tiếng Ba Lan", "polish": "tiếng Ba Lan",
+    "uk": "tiếng Ukraina", "ukrainian": "tiếng Ukraina",
+    "ms": "tiếng Mã Lai", "malay": "tiếng Mã Lai",
+    "tl": "tiếng Philippines (Tagalog)", "tagalog": "tiếng Philippines (Tagalog)",
+    "filipino": "tiếng Philippines (Tagalog)",
+    "lo": "tiếng Lào", "lao": "tiếng Lào",
+    "km": "tiếng Khmer", "khmer": "tiếng Khmer",
+    "my": "tiếng Miến Điện", "burmese": "tiếng Miến Điện",
+    "myanmar": "tiếng Miến Điện",
 }
 
 
@@ -1495,15 +1516,74 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
 # ============================================================
 # Xuất clip 9:16 face-track
 # ============================================================
+def _caption_tokens(text: str) -> list:
+    """Tách text thành token làm words GIẢ cho phụ đề chạy chữ, CJK-AWARE.
+
+    Câu Nhật/Trung/Thái/Lào/Khmer/Miến KHÔNG có dấu cách -> `.split()` trả CẢ
+    CÂU 1 token -> phụ đề hiện nguyên câu 1 lúc (lỗi đa ngôn ngữ). Dùng
+    recap._word_tokens (per-char CJK) rồi GHÉP CỤM 2-4 KÝ TỰ HIỂN THỊ/token
+    cho phụ đề đọc được (từng ký tự đơn quá vụn); dấu câu dính vào cụm kề,
+    không đứng riêng; cụm đuôi 1-2 ký tự gộp vào cụm trước nếu không vượt 4.
+    KHÔNG cắt cụm ngay TRƯỚC dấu kết hợp (Mn — nguyên âm/thanh điệu Thái/Lào/
+    Miến bám ký tự trước; cắt rời sẽ render vòng tròn chấm ◌) -> đếm độ dài
+    cụm theo KÝ TỰ HIỂN THỊ (bỏ Mn).
+    BẤT BIẾN: text KHÔNG có ký tự CJK -> trả Y HỆT text.split() (đường EN/VI
+    không đổi). Hàm thuần — unit test được."""
+    import unicodedata
+    from app.ai.recap import _has_cjk, _word_tokens
+    s = str(text or "").strip()
+    if not s:
+        return []
+    if not _has_cjk(s):
+        return s.split()                 # bất biến: non-CJK y hệt .split()
+
+    def _vis(chunk: str) -> int:         # số ký tự HIỂN THỊ (bỏ dấu kết hợp)
+        return sum(1 for ch in chunk
+                   if unicodedata.category(ch) != "Mn")
+
+    out, buf = [], ""
+    for t in _word_tokens(s):
+        if _has_cjk(t) and len(t) == 1:  # ký tự CJK đơn -> gom cụm 3 (2-4)
+            # đầy 3 ký tự hiển thị -> chốt cụm TRƯỚC khi thêm, trừ khi t là
+            # dấu kết hợp (phải bám ký tự trước, không được mở cụm mới)
+            if buf and _vis(buf) >= 3 and unicodedata.category(t) != "Mn":
+                out.append(buf)
+                buf = ""
+            buf += t
+        elif not any(ch.isalnum() for ch in t):
+            # token TOÀN dấu câu (、。!? "…") -> dính vào cụm đang gom/cụm
+            # trước, KHÔNG thành token riêng (phụ đề nháy 1 dấu câu rất xấu)
+            if buf:
+                buf += t
+            elif out:
+                out[-1] += t
+            else:
+                buf = t
+        else:                            # cụm latin/số -> giữ nguyên như split
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(t)
+    if buf:
+        # đuôi 1-2 ký tự: gộp vào cụm CJK trước nếu tổng <= 4 (đỡ token vụn)
+        if out and _has_cjk(out[-1]) and _vis(out[-1]) + _vis(buf) <= 4:
+            out[-1] += buf
+        else:
+            out.append(buf)
+    return out
+
+
 def _fake_words_from_segments(segments: list) -> list:
     """Transcript KHÔNG có mốc từng-từ (vd Groq không trả words) -> tạo words
     GIẢ: chia đều thời gian mỗi segment cho từng từ (giống cách làm cho lồng
-    tiếng). Phụ đề vẫn chạy chữ, chỉ kém khớp lời hơn whisper word-level."""
+    tiếng). Phụ đề vẫn chạy chữ, chỉ kém khớp lời hơn whisper word-level.
+    Token CJK-aware qua _caption_tokens (câu Nhật/Thái không dấu cách vẫn ra
+    cụm 2-4 ký tự thay vì nguyên câu); non-CJK y hệt .split() cũ."""
     out = []
     for d in segments or []:
         try:
             s, e = float(d["start"]), float(d["end"])
-            toks = (d.get("text") or "").split()
+            toks = _caption_tokens(d.get("text") or "")
         except (KeyError, TypeError, ValueError):
             continue
         if not toks or e <= s:
@@ -2149,7 +2229,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 # từ; mốc đã ở timeline ĐẦU RA nên segments = [[0, tổng]].
                 words = []
                 for d in dub_segs:
-                    toks = (d["text"] or "").split()
+                    # CJK-aware: bản dịch Nhật/Trung/Thái không có dấu cách
+                    # vẫn ra cụm 2-4 ký tự (non-CJK y hệt .split() cũ)
+                    toks = _caption_tokens(d["text"] or "")
                     if not toks:
                         continue
                     step = max(0.05, (d["end"] - d["start"]) / len(toks))
