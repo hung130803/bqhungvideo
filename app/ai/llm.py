@@ -627,39 +627,43 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     last = ""
     with guard:
-        # XOAY VÒNG key theo SỔ TRẠNG THÁI: key ready trước (đúng thứ tự
-        # settings), key limited còn cooldown xếp cuối (hết sớm nhất trước) —
-        # tất cả limited thì vẫn thử key sắp hồi trước thay vì fail luôn.
-        for key in pick_keys(provider, keys):
-            mark_used(provider, key)
-            try:
-                out = _call_once(provider, key, prompt, system, temperature)
-                mark_ok(provider, key)
-                return out
-            except LLMError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                last = str(e)
-                if is_rate_limit_error(last):
-                    mark_limited(provider, key, last)
-                    continue                   # key này hết lượt -> thử key tiếp
-                if is_auth_error(last):
-                    mark_invalid(provider, key)
-                    continue                   # KEY SAI -> bỏ qua, thử key khác
-                # lỗi KHÁC (mạng...) -> KHÔNG giết key, dừng luôn
-                raise LLMError(f"Gọi {provider} thất bại: {last}")
-        # tất cả key hết quota; chỉ 1 key -> chờ rồi thử lại 1 lần (free tier)
-        if len(keys) == 1 and is_rate_limit_error(last):
-            time.sleep(_RATE_WAIT)
-            mark_used(provider, keys[0])
-            try:
-                out = _call_once(provider, keys[0], prompt, system, temperature)
-                mark_ok(provider, keys[0])
-                return out
-            except Exception as e:  # noqa: BLE001
-                last = str(e)
-                if is_rate_limit_error(last):
-                    mark_limited(provider, keys[0], last)
+        # ĐỢI-THỬ-LẠI khi TẤT CẢ key kẹt token/phút (TPM/429): tối đa 3 vòng,
+        # mỗi vòng xoay hết key; hết vòng mà mọi key vừa 429 với reset NGẮN
+        # (cùng nick chung hạn mức/phút) -> ĐỢI key sắp hồi rồi thử lại thay vì
+        # fail (đỡ hiện "AI lỗi, thử lại" ở recap — chỉ là quá tải tạm thời).
+        for _round in range(3):
+            # XOAY VÒNG key theo SỔ TRẠNG THÁI: key ready trước (đúng thứ tự
+            # settings), key limited còn cooldown xếp cuối (hết sớm nhất trước).
+            for key in pick_keys(provider, keys):
+                mark_used(provider, key)
+                try:
+                    out = _call_once(provider, key, prompt, system, temperature)
+                    mark_ok(provider, key)
+                    return out
+                except LLMError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    last = str(e)
+                    if is_rate_limit_error(last):
+                        mark_limited(provider, key, last)
+                        continue               # key này hết lượt -> thử key tiếp
+                    if is_auth_error(last):
+                        mark_invalid(provider, key)
+                        continue               # KEY SAI -> bỏ qua, thử key khác
+                    # lỗi KHÁC (mạng...) -> KHÔNG giết key, dừng luôn
+                    raise LLMError(f"Gọi {provider} thất bại: {last}")
+            # hết vòng: mọi key vừa thử đều hết lượt/lỗi
+            if is_auth_error(last) or not is_rate_limit_error(last):
+                break
+            # 429: key sắp hồi trong ~ngắn (TPM/phút) -> đợi rồi thử lại vòng sau.
+            # Reset DÀI (hết lượt NGÀY) -> đợi vô ích, thoát báo lỗi.
+            wait = soonest_ready_wait(provider, keys)
+            if wait is None or wait <= 0:
+                wait = _RATE_WAIT
+            if _round < 2 and wait <= 45.0:
+                time.sleep(wait + 0.3)
+                continue
+            break
     # phân biệt lý do để user biết đường sửa
     if is_auth_error(last):
         raise LLMError(
