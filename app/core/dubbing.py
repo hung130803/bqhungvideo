@@ -2550,6 +2550,17 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     if total <= 0.2:
         raise ValueError("Clip không có đoạn nào để thuyết minh.")
     voice = (voice or "").strip() or default_voice(lang) or "en-US-JennyNeural"
+    # 🌐 GIỌNG PHẢI KHỚP NGÔN NGỮ VIDEO: kịch bản recap viết bằng ngôn ngữ
+    # video -> giọng đọc phải cùng ngôn ngữ. Nếu user lỡ đặt sẵn 1 giọng BẢN
+    # ĐỊA khác tiếng (vd giọng Việt cho video Nhật) -> tự đổi về giọng đúng
+    # tiếng. CHỈ sửa giọng edge BẢN ĐỊA đơn-ngôn-ngữ (dạng 'xx-YY-...'); GIỮ
+    # NGUYÊN giọng đa ngôn ngữ (Multilingual/đọc mọi tiếng), Gemini ('gemini:')
+    # và ElevenLabs ('el:'/id lạ) vì chúng đọc được mọi ngôn ngữ.
+    _want = norm_lang(lang)
+    _m = re.match(r"^([a-z]{2})-[A-Z]{2}-", voice or "")
+    if (_want and _m and "multilingual" not in (voice or "").lower()
+            and _m.group(1) != _want and default_voice(lang)):
+        voice = default_voice(lang)
 
     # Part narrate -> mốc đầu ra; part rơi ngoài clip/khung quá hẹp -> bỏ
     narr: list[dict] = []
