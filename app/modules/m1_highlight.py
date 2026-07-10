@@ -1214,12 +1214,24 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "title_en": c.get("title_en", ""), "hook": c.get("hook", ""),
                        "hook_seg": c.get("hook_seg"),
                        "dur": round(total, 1)}
+            # 🌐 TÊN CLIP THEO NGÔN NGỮ VIDEO: video KHÔNG phải tiếng Việt ->
+            # tên hiển thị = title_pub (đúng ngôn ngữ video); tiêu đề Việt chỉ
+            # dùng cho video tiếng Việt (user muốn tiêu đề Nhật cho video Nhật
+            # ở MỌI chỗ, kể cả danh sách clip trong app).
+            _t_show = c["title"]
+            _t_pub = str(c.get("title_en") or "").strip()
+            if _t_pub:
+                from app.ai import recap as _rec
+                _lg = _rec.resolve_lang(transcript.get("language", ""),
+                                        transcript.get("text", "") or "")
+                if not _rec._is_vi_lang(_lg):
+                    _t_show = _t_pub
             cid = db.insert(
                 """INSERT INTO clips (video_id, start_sec, end_sec, score, reason,
                                       title, transcript, signals, status)
                    VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
                 (video_id, segs[0][0], segs[-1][1], round(c["score"], 1),
-                 c["reason"], c["title"], "", db.dumps(signals)),
+                 c["reason"], _t_show, "", db.dumps(signals)),
             )
             clip_ids.append(cid)
         msg = (f"AI [{prov_name}] chọn {len(clip_ids)} clip"
@@ -1490,6 +1502,14 @@ def generate_mixed_cut(payload: dict, ctx: JobContext) -> dict:
     dur_total = sum(m["end"] - m["start"] for m in moments_out)
     best = max(chosen, key=lambda x: x["score"])
     title = best.get("title", "") or f"Mix {len(chosen)} khoảnh khắc hay"
+    # 🌐 video KHÔNG phải tiếng Việt -> tên clip = title_pub (đúng ngôn ngữ)
+    _t_pub = (best.get("title_pub", "") or "").strip()
+    if _t_pub:
+        from app.ai import recap as _rec
+        _lg = _rec.resolve_lang(transcript.get("language", ""),
+                                transcript.get("text", "") or "")
+        if not _rec._is_vi_lang(_lg):
+            title = _t_pub
     avg = round(sum(m["score"] for m in chosen) / len(chosen), 1)
 
     signals = {"mode": "mixed", "llm_used": use_llm,
