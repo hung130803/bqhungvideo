@@ -2161,7 +2161,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             for n in narr_events:
                 da, de = n.get("duck") or (n["start"], n["end"])
                 duck_ranges.append((float(da) / spd, float(de) / spd))
-        elif payload.get("dub_lang"):
+        elif payload.get("dub_lang") and payload.get("dub_enable"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
             # 🛡 CLIP THƯỜNG KHÔNG BỊ LỒNG TIẾNG OAN: lồng tiếng chỉ có nghĩa khi
