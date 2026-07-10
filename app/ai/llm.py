@@ -320,11 +320,15 @@ def mark_invalid(provider: str, key: str) -> None:
         st["note"] = "API key sai/không hợp lệ"
 
 
-def check_groq_key(key: str, timeout: float = 15.0) -> str:
-    """Kiểm tra 1 key Groq bằng call RẺ (KHÔNG tốn token): GET /models.
+def check_groq_key_valid(key: str, timeout: float = 15.0) -> str:
+    """Kiểm tra NHANH 1 key Groq CÓ HỢP LỆ không (KHÔNG tốn lượt): GET /models.
+
+    KHÔNG đọc được hạn mức thật (key hết lượt ngày VẪN trả 200 ở /models) —
+    chỉ dùng khi chỉ cần biết key đúng/sai nhanh. Muốn biết CÒN BAO NHIÊU
+    LƯỢT thật -> dùng check_groq_key().
 
     Trả về phân loại:
-      "ok"      -> 200: key SỐNG
+      "ok"      -> 200: key HỢP LỆ
       "invalid" -> 401/403: key SAI/không hợp lệ
       "limited" -> 429: hết hạn mức (tạm thời)
       "error"   -> lỗi mạng/khác (timeout, DNS, 5xx...)
@@ -354,26 +358,131 @@ def check_groq_key(key: str, timeout: float = 15.0) -> str:
         return "error"
 
 
-def check_groq_keys(keys, progress=None, max_workers: int = 8,
-                    timeout: float = 15.0) -> dict:
-    """Kiểm tra HÀNG TRĂM key Groq SONG SONG (ThreadPool giới hạn).
+# Model NHẸ để đọc hạn mức (chat completions trả header ratelimit đầy đủ).
+_GROQ_PROBE_MODEL = "llama-3.3-70b-versatile"
 
-    keys: danh sách key. progress(done, total): gọi sau mỗi key xong (tùy chọn).
+
+def _to_int(v):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def check_groq_key(key: str, timeout: float = 15.0) -> dict:
+    """Kiểm tra 1 key Groq + ĐỌC HẠN MỨC THẬT còn lại (tốn ~1 request/vài token).
+
+    CÁCH DUY NHẤT đọc remaining thật: gọi POST /chat/completions max_tokens=1
+    -> Groq trả các header x-ratelimit-*. (GET /models luôn 200 kể cả khi HẾT
+    LƯỢT ngày -> báo 'sống' SAI, nên KHÔNG dùng ở đây.)
+
     Trả về dict:
-      counts: {"ok","limited","invalid","error"} — số lượng mỗi loại
-      results: [(key, kind), ...] giữ thứ tự đầu vào
+      kind: "ok"        -> 200, còn lượt (remaining_requests > 0)
+            "exhausted" -> 200 nhưng remaining_requests <= 0, HOẶC 429 (hết lượt)
+            "invalid"   -> 401/403 (key sai/không hợp lệ)
+            "error"     -> lỗi mạng/khác (timeout, DNS, 5xx...)
+      remaining_requests / limit_requests / remaining_tokens / limit_tokens: int|None
+      reset_requests / reset_tokens: str|None (vd "1m26.4s")
+      note: mô tả ngắn (lý do lỗi/hết lượt) — hiển thị cho user
+    Dùng urllib (không thêm dependency). Không cập nhật sổ trạng thái RAM."""
+    import urllib.error
+    import urllib.request
+    out = {"kind": "error", "remaining_requests": None, "limit_requests": None,
+           "remaining_tokens": None, "limit_tokens": None,
+           "reset_requests": None, "reset_tokens": None, "note": ""}
+    key = (key or "").strip()
+    if not key:
+        out["kind"] = "invalid"
+        out["note"] = "key rỗng"
+        return out
+
+    def _read_headers(h):
+        out["limit_requests"] = _to_int(h.get("x-ratelimit-limit-requests"))
+        out["remaining_requests"] = _to_int(h.get("x-ratelimit-remaining-requests"))
+        out["limit_tokens"] = _to_int(h.get("x-ratelimit-limit-tokens"))
+        out["remaining_tokens"] = _to_int(h.get("x-ratelimit-remaining-tokens"))
+        out["reset_requests"] = h.get("x-ratelimit-reset-requests")
+        out["reset_tokens"] = h.get("x-ratelimit-reset-tokens")
+
+    body = json.dumps({
+        "model": _GROQ_PROBE_MODEL,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1,
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=body,
+        headers={"Authorization": f"Bearer {key}",
+                 "User-Agent": "Mozilla/5.0", "Content-Type": "application/json",
+                 "Accept": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            _read_headers(resp.headers)
+            rr = out["remaining_requests"]
+            if rr is not None and rr <= 0:
+                out["kind"] = "exhausted"
+                out["note"] = "hết lượt request hôm nay"
+            else:
+                out["kind"] = "ok"
+            return out
+    except urllib.error.HTTPError as e:
+        _read_headers(e.headers)
+        if e.code in (401, 403):
+            out["kind"] = "invalid"
+            out["note"] = f"key sai/không hợp lệ ({e.code})"
+        elif e.code == 429:
+            out["kind"] = "exhausted"
+            # reset time có thể nằm trong header hoặc body message
+            reset = out["reset_requests"] or out["reset_tokens"]
+            if not reset:
+                try:
+                    msg = e.read().decode("utf-8", "replace")
+                    wait = parse_retry_wait(msg)
+                    if wait:
+                        reset = f"{wait:.0f}s"
+                except Exception:  # noqa: BLE001
+                    pass
+            out["note"] = ("hết lượt (429)"
+                           + (f", thử lại sau {reset}" if reset else ""))
+        else:
+            out["kind"] = "error"
+            out["note"] = f"HTTP {e.code}"
+        return out
+    except Exception as e:  # noqa: BLE001 — timeout, URLError (DNS/SSL), v.v.
+        out["kind"] = "error"
+        out["note"] = str(e)[:120]
+        return out
+
+
+def check_groq_keys(keys, progress=None, max_workers: int = 6,
+                    timeout: float = 20.0) -> dict:
+    """Kiểm tra NHIỀU key Groq SONG SONG + ĐỌC HẠN MỨC THẬT (ThreadPool giới hạn).
+
+    Mỗi key tốn ~1 request qua check_groq_key() (chat call chậm hơn GET /models
+    nên giảm workers còn 6). keys: danh sách key. progress(done,total): gọi sau
+    mỗi key xong (tùy chọn).
+
+    LƯU Ý: Groq giới hạn theo TÀI KHOẢN, không theo key — nhiều key CÙNG 1 nick
+    dùng chung hạn mức -> remaining giống nhau (KHÔNG dedup, chỉ ghi chú).
+
+    Trả về dict:
+      counts: {"ok","exhausted","invalid","error"} — số lượng mỗi loại
+      results: [(key, info_dict), ...] giữ thứ tự đầu vào (info từ check_groq_key)
       invalid: [key, ...] các key SAI (401/403) — để user xoá
-    Dùng để hiển thị tổng kết + danh sách key chết."""
+      total_remaining_requests: TỔNG remaining_requests của các key SỐNG (kind=ok)
+    Dùng để hiển thị tổng kết + hạn mức từng key."""
     from concurrent.futures import ThreadPoolExecutor
     keys = [k.strip() for k in (keys or []) if k and k.strip()]
     total = len(keys)
     result_map: dict = {}
     done = 0
-    counts = {"ok": 0, "limited": 0, "invalid": 0, "error": 0}
+    counts = {"ok": 0, "exhausted": 0, "invalid": 0, "error": 0}
     if not keys:
         if progress:
             progress(0, 0)
-        return {"counts": counts, "results": [], "invalid": []}
+        return {"counts": counts, "results": [], "invalid": [],
+                "total_remaining_requests": 0}
     lock = threading.Lock()
 
     def work(k):
@@ -381,16 +490,21 @@ def check_groq_keys(keys, progress=None, max_workers: int = 8,
 
     workers = max(1, min(int(max_workers or 1), total))
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        for k, kind in ex.map(work, keys):
+        for k, info in ex.map(work, keys):
             with lock:
-                result_map[k] = kind
-                counts[kind] = counts.get(kind, 0) + 1
+                result_map[k] = info
+                counts[info["kind"]] = counts.get(info["kind"], 0) + 1
                 done += 1
                 if progress:
                     progress(done, total)
-    results = [(k, result_map.get(k, "error")) for k in keys]
-    invalid = [k for k, kind in results if kind == "invalid"]
-    return {"counts": counts, "results": results, "invalid": invalid}
+    default = {"kind": "error", "remaining_requests": None, "note": ""}
+    results = [(k, result_map.get(k, default)) for k in keys]
+    invalid = [k for k, info in results if info["kind"] == "invalid"]
+    total_remaining = sum(
+        (info.get("remaining_requests") or 0)
+        for _, info in results if info["kind"] == "ok")
+    return {"counts": counts, "results": results, "invalid": invalid,
+            "total_remaining_requests": total_remaining}
 
 
 def _call_once(provider: str, key: str, prompt: str, system: str,

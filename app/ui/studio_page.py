@@ -662,15 +662,25 @@ class StudioPage(QWidget):
         gfclear.clicked.connect(clear_gfile)
         _refresh_gfile()
 
-        # ----- NÚT "KIỂM TRA TẤT CẢ KEY GROQ" (sống/hết hạn/sai) -----
-        # Chạy THREAD NỀN + ThreadPool(8): test từng key bằng GET /models
-        # (KHÔNG tốn token). Tiến độ + tổng kết bắn về qua QTimer poll (không
-        # chặn UI). Gộp key ô dán + file để kiểm tra đúng tập đang dùng.
+        # ----- GIẢI THÍCH hạn mức theo TÀI KHOẢN (không theo key) -----
+        gwarn = QLabel(
+            "⚠ Groq giới hạn theo TÀI KHOẢN, KHÔNG theo key — nhiều key CÙNG 1 "
+            "nick dùng CHUNG hạn mức (không tăng). Muốn nhiều lượt hơn: tạo key "
+            "từ NHIỀU nick khác nhau. Hạn mức reset mỗi ngày.")
+        gwarn.setWordWrap(True)
+        gwarn.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        c_groq.addWidget(gwarn)
+
+        # ----- NÚT "KIỂM TRA TẤT CẢ KEY GROQ" (còn lượt/hết lượt/sai) -----
+        # Chạy THREAD NỀN + ThreadPool(6): mỗi key gọi POST /chat/completions
+        # max_tokens=1 -> ĐỌC HẠN MỨC THẬT còn lại (tốn ~1 lượt/key). Tiến độ +
+        # tổng kết bắn về qua QTimer poll (không chặn UI). Gộp key ô dán + file.
         gckrow = QHBoxLayout()
-        gckbtn = QPushButton("Kiểm tra tất cả key Groq")
+        gckbtn = QPushButton("Kiểm tra key + hạn mức (tốn ~1 lượt/key)")
         gckbtn.setProperty("ghost", True)
-        gckbtn.setToolTip("Test từng key sống/hết hạn/sai bằng call rẻ (không "
-                          "tốn token). Chạy song song, có tiến độ.")
+        gckbtn.setToolTip("Đọc HẠN MỨC THẬT còn lại của từng key (còn bao nhiêu "
+                          "request/token hôm nay) — phát hiện key HẾT LƯỢT dù "
+                          "vẫn hợp lệ. Tốn ~1 lượt/key. Chạy song song, có tiến độ.")
         gckrow.addWidget(gckbtn); gckrow.addStretch(1)
         c_groq.addLayout(gckrow)
         gckstat = QLabel("")
@@ -714,7 +724,7 @@ class StudioPage(QWidget):
             def bg():
                 try:
                     box["result"] = llm.check_groq_keys(
-                        keys, progress=prog, max_workers=8)
+                        keys, progress=prog, max_workers=6)
                 except Exception as e:  # noqa: BLE001
                     box["err"] = str(e)
 
@@ -733,13 +743,35 @@ class StudioPage(QWidget):
                     return
                 r = box["result"]
                 c = r["counts"]
-                summary = (f"✅ Sống: {c['ok']} · ⏳ Hết hạn mức: {c['limited']} "
-                           f"· ❌ Sai: {c['invalid']} · ⚠ Lỗi mạng: {c['error']}")
+                tot = r.get("total_remaining_requests", 0)
+                summary = (
+                    f"✅ Còn lượt: {c['ok']} · ⏳ Hết lượt hôm nay: "
+                    f"{c.get('exhausted', 0)} · ❌ Sai: {c['invalid']} · "
+                    f"⚠ Lỗi: {c['error']} · Tổng còn ~{tot} request")
+                # vài dòng chi tiết từng key kèm hạn mức còn lại
+                lines = []
+                for k, info in r.get("results", [])[:8]:
+                    tag = "…" + k[-5:]
+                    kind = info.get("kind")
+                    if kind == "ok":
+                        rr, lr = (info.get("remaining_requests"),
+                                  info.get("limit_requests"))
+                        detail = (f"còn {rr}/{lr} req" if rr is not None
+                                  and lr is not None else "còn lượt")
+                        lines.append(f"🟢 {tag}: {detail}")
+                    elif kind == "exhausted":
+                        lines.append(f"⏳ {tag}: {info.get('note') or 'hết lượt'}")
+                    elif kind == "invalid":
+                        lines.append(f"❌ {tag}: sai key")
+                    else:
+                        lines.append(f"⚠ {tag}: {info.get('note') or 'lỗi'}")
+                extra = (len(r.get("results", [])) - 8)
+                if extra > 0:
+                    lines.append(f"… (+{extra} key nữa)")
+                if lines:
+                    summary += "\n" + "\n".join(lines)
                 bad = r["invalid"]
                 if bad:
-                    masked = ", ".join("…" + k[-4:] for k in bad[:20])
-                    more = f" (+{len(bad) - 20} nữa)" if len(bad) > 20 else ""
-                    summary += f"\nKey sai: {masked}{more}"
                     gckdel.setVisible(True)
                     gckdel._bad = bad  # nhớ để xoá khi bấm
                 gckstat.setText(summary)
