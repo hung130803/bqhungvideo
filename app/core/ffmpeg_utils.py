@@ -1020,6 +1020,14 @@ def fit_src_video_rect(video_rect: tuple, src_w: int, src_h: int,
     tỉ lệ nguồn); cuối cùng nắn tâm tối thiểu để khung nằm TRỌN trong canvas
     -> video hiện đủ 100%, nền (blur/đen/trắng) lấp phần thừa.
 
+    GIỮ THU PHÓNG CỦA USER: scale_w > 1 nghĩa là user CHỦ ĐỘNG phóng to khối
+    video vượt bề ngang canvas (chấp nhận cắt 2 bên) — bề ngang KHÔNG phụ
+    thuộc tỉ lệ nguồn nên sw>1 chỉ có thể là ý user. Trường hợp này KHÔNG
+    thu nhỏ lại (trước đây k=min(...) kéo về 1.0 -> 'xuất không theo thu
+    phóng'). Chỉ khi sw<=1 (mẫu bình thường) mới thu khung cho nguồn quá
+    cao/rộng nằm trọn canvas như cũ. Nắn tâm chỉ áp theo TRỤC mà khung còn
+    lọt trong canvas (khung to hơn canvas thì giữ tâm user).
+
     Trả (cx, cy, scale_w) mới. src_w/src_h <= 0 -> trả nguyên (không đoán mò).
     """
     cx, cy, sw = (float(video_rect[0]), float(video_rect[1]),
@@ -1028,14 +1036,17 @@ def fit_src_video_rect(video_rect: tuple, src_w: int, src_h: int,
         return video_rect
     w_px = sw * out_w                      # bề ngang khung mẫu (pixel canvas)
     h_px = w_px * src_h / src_w            # cao theo TỈ LỆ NGUỒN (scale=vw:-2)
-    k = min(1.0, out_w / w_px, out_h / h_px)   # tràn -> thu cả khung, giữ tâm
-    w_px *= k
-    h_px *= k
-    # Nắn tâm TỐI THIỂU để khung nằm trọn trong canvas (tâm mẫu đặt lệch +
-    # khung mới cao/rộng hơn có thể lòi ra mép -> vẫn mất hình nếu giữ nguyên).
+    if sw <= 1.0:                          # mẫu thường -> giữ trọn hình như cũ
+        k = min(1.0, out_w / w_px, out_h / h_px)   # tràn -> thu cả khung
+        w_px *= k
+        h_px *= k
+    # Nắn tâm TỐI THIỂU để khung nằm trọn trong canvas — CHỈ theo trục khung
+    # còn lọt (nửa khung <= nửa canvas); khung phóng to quá canvas -> giữ tâm.
     hw, hh = w_px / (2 * out_w), h_px / (2 * out_h)
-    cx = min(max(cx, hw), 1.0 - hw)
-    cy = min(max(cy, hh), 1.0 - hh)
+    if hw <= 0.5:
+        cx = min(max(cx, hw), 1.0 - hw)
+    if hh <= 0.5:
+        cy = min(max(cy, hh), 1.0 - hh)
     return (round(cx, 4), round(cy, 4), round(w_px / out_w, 4))
 
 

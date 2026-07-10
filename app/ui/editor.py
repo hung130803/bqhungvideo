@@ -403,8 +403,14 @@ class _VideoBox(QGraphicsItem):
     def set_pixmap(self, pm):
         self.pm = pm
         if not pm.isNull():
+            # GIỮ TÂM khi tỉ lệ nguồn đổi: h đổi theo aspect mà x,y giữ nguyên
+            # thì TÂM khối trôi dọc -> video_rect lưu ra lệch vs mẫu (khối
+            # 'nhảy' chỗ). Tính lại pos để tâm đứng yên.
+            _cx = self.x() + self.w / 2
+            _cy = self.y() + self.h / 2
             self.aspect = pm.height() / pm.width()
             self.h = self.w * self.aspect
+            self.setPos(_cx - self.w / 2, _cy - self.h / 2)
             # thu nhỏ sẵn (≤3x bề rộng khung) -> vẽ nhanh mà vẫn NÉT khi
             # khung xem trước được phóng to trên màn rộng
             cap = int(FW * 3)
@@ -435,12 +441,20 @@ class _VideoBox(QGraphicsItem):
         cy = self.y() + self.h / 2
         w_px = self.w                      # bề ngang khung kéo (= scale*FW)
         h_px = w_px * self.aspect          # cao theo tỉ lệ NGUỒN
-        k = min(1.0, FW / w_px if w_px else 1.0, FH / h_px if h_px else 1.0)
-        w_px *= k
-        h_px *= k
+        # GIỮ THU PHÓNG user (khớp fit_src_video_rect): khung kéo RỘNG hơn
+        # canvas (scale>1) = user chủ động phóng to -> KHÔNG thu lại; chỉ
+        # khung thường (scale<=1) mới co cho nguồn quá cao nằm trọn canvas.
+        if w_px <= FW:
+            k = min(1.0, FW / w_px if w_px else 1.0,
+                    FH / h_px if h_px else 1.0)
+            w_px *= k
+            h_px *= k
         # nắn tâm tối thiểu để vùng video nằm TRỌN trong canvas (như export)
-        cx = min(max(cx, w_px / 2), FW - w_px / 2)
-        cy = min(max(cy, h_px / 2), FH - h_px / 2)
+        # — CHỈ theo trục còn lọt canvas; khung to hơn canvas -> giữ tâm user.
+        if w_px <= FW:
+            cx = min(max(cx, w_px / 2), FW - w_px / 2)
+        if h_px <= FH:
+            cy = min(max(cy, h_px / 2), FH - h_px / 2)
         # -> tọa độ trong hệ của item (trừ đi vị trí góc item)
         return (cx - w_px / 2 - self.x(), cy - h_px / 2 - self.y(), w_px, h_px)
 
@@ -500,11 +514,13 @@ class _VideoBox(QGraphicsItem):
 
     def mouseMoveEvent(self, e):
         if self._resizing:
-            cx, cy = self.x() + self.w / 2, self.y() + self.h / 2
+            # NEO GÓC TRÊN-TRÁI (x,y giữ nguyên): góc phải-dưới (chỗ tay cầm)
+            # chạy ĐÚNG theo chuột. Trước đây giữ TÂM -> mép phải chỉ đi 1/2
+            # tốc độ chuột, tay cầm trượt khỏi con trỏ càng kéo càng xa
+            # (cảm giác 'kéo cứ kiểu gì ấy'). Tỉ lệ vẫn khóa theo nguồn.
             self.w = max(40, self._sw + (e.scenePos().x() - self._sx))
             self.h = self.w * self.aspect
             self.prepareGeometryChange()
-            self.setPos(cx - self.w / 2, cy - self.h / 2)
             self.update(); return
         super().mouseMoveEvent(e)
 
@@ -1686,7 +1702,11 @@ class EditorDialog(QDialog):
             # cũ / preset bị đổi tên) -> KHÔNG im lặng giữ preset đang chọn
             # (đó là mầm 'chọn X ra Y'): về index 0 (preset mặc định đầu combo)
             # để trạng thái combo luôn PHẢN ÁNH ĐÚNG cái sẽ xuất.
-            _cp_name = layout.get("cap_preset", "Vàng nhảy (TikTok)")
+            # Mẫu THIẾU key cap_preset -> mặc định "Trắng đơn giản" = ĐÚNG cái
+            # đường xuất sẽ dùng (studio_page/m1 fallback "Trắng đơn giản").
+            # Trước đây editor hiện "Vàng nhảy (TikTok)" nhưng xuất lại trắng
+            # -> đúng triệu chứng 'chọn kiểu này ra kiểu khác'.
+            _cp_name = layout.get("cap_preset", "Trắng đơn giản")
             pi = self.cap_preset.findText(_cp_name)
             self.cap_preset.setCurrentIndex(pi if pi >= 0 else 0)
             self._capcolor = layout.get("cap_color", "") or ""

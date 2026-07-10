@@ -386,9 +386,11 @@ def build_ass(words: list, segments: list, out_path,
     if mode == "karaoke":
         secondary = _alpha_color(p.get("unsung", "#FFFFFF"), 0x64)
         # karaoke nhúng \kf theo TỪNG TỪ -> áp case trên TỪ trước khi dựng tag
-        # (không thể áp lên cả body vì lẫn tag). cap_case rỗng -> giữ nguyên.
-        kw_src = ([[a, b, apply_case(t, cap_case), si]
-                   for a, b, t, si in remapped] if cap_case else remapped)
+        # (không thể áp lên cả body vì lẫn tag). cap_case rỗng -> theo cờ
+        # 'upper' của preset (nếu có); không có nữa -> giữ nguyên.
+        _kcase = cap_case or ("upper" if p.get("upper") else "")
+        kw_src = ([[a, b, apply_case(t, _kcase), si]
+                   for a, b, t, si in remapped] if _kcase else remapped)
         cues = _karaoke_cues(kw_src)
         prefix = "{\\fad(60,40)}"               # cả cụm vào/ra mượt
     elif mode == "active":
@@ -550,10 +552,15 @@ def build_ass(words: list, segments: list, out_path,
         # case: cue gốc (orig_*) theo cap_case; cue AI kể (word/sent) theo
         # narr_case. narr_same=True -> AI kể render Style Default -> vẫn dùng
         # narr_case cho đúng lựa chọn phần "Chữ AI đọc".
-        _ecase = cap_case if kind.startswith("orig") else narr_case
+        # Fallback cờ 'upper': cue GỐC theo preset phụ đề (p); cue AI KỂ theo
+        # preset của CHÍNH NÓ (np — narr_same thì np=p). Trước đây luôn dùng p
+        # -> chọn kiểu AI kể có 'upper' không ra HOA, hoặc bị HOA oan theo kiểu
+        # phụ đề gốc (lỗi 'chọn kiểu này ra kiểu khác').
+        _is_orig = kind.startswith("orig")
+        _ecase = cap_case if _is_orig else narr_case
         if _ecase:
             et = apply_case(et, _ecase)
-        elif p.get("upper"):
+        elif (p if _is_orig else np).get("upper"):
             et = et.upper()
         if kind.startswith("orig"):
             # LỜI GỐC nhân vật -> Style Default (như clip thường)
@@ -587,6 +594,8 @@ def build_ass(words: list, segments: list, out_path,
                     wt = _esc(ww[2])
                     if cap_case:                 # kiểu chữ hoa cho phụ đề gốc
                         wt = apply_case(wt, cap_case)
+                    elif p.get("upper"):         # preset khai 'upper' -> HOA
+                        wt = wt.upper()
                     if j == i:                   # TỪ đang nói -> nhảy vàng (phồng nhẹ)
                         pop = ("\\t(0,90,\\fscx110\\fscy110)\\t(90,170,\\fscx100\\fscy100)"
                                if p.get("pop") else "")
@@ -645,6 +654,8 @@ def build_ass(words: list, segments: list, out_path,
             wtxt = _esc(txt)
             if cap_case:                        # phụ đề gốc word/group -> áp case
                 wtxt = apply_case(wtxt, cap_case)
+            elif p.get("upper"):                # preset khai 'upper' (vd Hồng nổi,
+                wtxt = wtxt.upper()             # Đậm bóng đổ) -> HOA như đã hứa
             body = prefix + wtxt
         lines.append(
             f"Dialogue: 0,{_fmt(a2)},{_fmt(b2)},Default,,0,0,0,,{body}\n")
