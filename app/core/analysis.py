@@ -89,12 +89,6 @@ def run_analysis(
 
     existing = analysis_status(video_id)
 
-    def step_progress(base: float, span: float):
-        def fn(p: float, msg: str):
-            if on_progress:
-                on_progress(base + span * p, msg)
-        return fn
-
     # CHẾ ĐỘ MÁY YẾU: chỉ chép lời (mây); bỏ dò cảnh/âm thanh/khuôn mặt (ngốn CPU).
     from config import settings as _st
     steps = STEPS
@@ -113,9 +107,18 @@ def run_analysis(
             continue
 
         _set(video_id, kind, "running")
+        # BƯỚC nào / trên TỔNG mấy bước — user thấy rõ "Phân tích 1/5" ở đầu
+        # message (khu tiến trình lớn hiện nguyên câu này).
+        _pfx = f"Phân tích {i + 1}/{n} · {label} — "
+
+        def _step_fn(base=base, span=span, pfx=_pfx):
+            def fn(p: float, msg: str):
+                if on_progress:
+                    on_progress(base + span * p, f"{pfx}{msg}" if msg else pfx)
+            return fn
+
         try:
-            data, engine = _run_one(video_id, kind, src, profile,
-                                    step_progress(base, span))
+            data, engine = _run_one(video_id, kind, src, profile, _step_fn())
             if data is None:  # bỏ qua êm (vd diarization không cấu hình)
                 _set(video_id, kind, "skipped")
             else:

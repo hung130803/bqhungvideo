@@ -2809,64 +2809,143 @@ class StudioPage(QWidget):
         self.thumbs_ready.emit()
 
     # ---- tiến độ job của video đang chọn (hiện NGAY vùng clip) ----
+    # màu + icon theo GIAI ĐOẠN của job (khớp queue_panel): phân tích/AI = tím,
+    # cắt/xuất video = xanh ngọc.
+    _PHASE_ANALYZE_COLOR = "#A78BFA"
+    _PHASE_EXPORT_COLOR = "#14B8A6"
+    _EXPORT_TYPES = {"m1_export_clip"}
+
+    @classmethod
+    def _job_phase(cls, jtype: str) -> tuple:
+        """(icon, tên-bước-mặc-định, màu) theo loại job — dùng khi message rỗng
+        và cho icon + màu của khối tiến trình lớn."""
+        if jtype in cls._EXPORT_TYPES:
+            return "✂", "Đang cắt & xuất clip 9:16", cls._PHASE_EXPORT_COLOR
+        if jtype == "auto_recap":
+            return "🎙", "Đang viết kịch bản thuyết minh", cls._PHASE_ANALYZE_COLOR
+        if jtype in ("auto_mixed", "m1_mixed_cut"):
+            return "🎬", "Đang ghép Mixed-Cut", cls._PHASE_EXPORT_COLOR
+        if jtype == "m1_highlights":
+            return "🔍", "Đang tìm & chọn đoạn hay", cls._PHASE_ANALYZE_COLOR
+        return "🔍", "Đang phân tích video", cls._PHASE_ANALYZE_COLOR
+
     def _job_progress_row(self, vid):
-        """Job đang CHẠY (ưu tiên) hoặc đang chờ của video: progress + message."""
+        """Job đang CHẠY (ưu tiên) hoặc đang chờ của video: type+progress+message.
+        Kèm 'others' = SỐ việc khác đang chạy/chờ trong hàng đợi (để hiện
+        'còn N việc trong hàng')."""
         if not vid:
             return None
         try:
-            return (db.query_one(
-                "SELECT progress, message, status FROM jobs WHERE video_id=? "
+            r = (db.query_one(
+                "SELECT type, progress, message, status FROM jobs WHERE video_id=? "
                 "AND status='running' ORDER BY id DESC LIMIT 1", (vid,))
                 or db.query_one(
-                "SELECT progress, message, status FROM jobs WHERE video_id=? "
+                "SELECT type, progress, message, status FROM jobs WHERE video_id=? "
                 "AND status='pending' ORDER BY id LIMIT 1", (vid,)))
+            if r is None:
+                return None
+            oth = db.query_one(
+                "SELECT COUNT(*) AS n FROM jobs WHERE status IN "
+                "('running','pending') AND (video_id IS NULL OR video_id<>?)",
+                (vid,))
+            return {"type": r["type"], "progress": r["progress"],
+                    "message": r["message"], "status": r["status"],
+                    "others": int(oth["n"]) if oth else 0}
         except Exception:  # noqa: BLE001
             return None
 
     def _job_progress_widget(self, compact=False):
-        """Thanh % + dòng trạng thái job. compact=True: dải nhỏ đầu danh sách
-        clip; False: to hơn, căn giữa trong empty-state."""
-        w = QWidget()
-        lay = QVBoxLayout(w); lay.setSpacing(4)
-        lay.setContentsMargins(12, 8 if compact else 0, 12, 8 if compact else 0)
+        """KHỐI TIẾN TRÌNH NỔI BẬT: icon + tên bước TO, thanh % dày, số % chữ
+        LỚN, và 'còn N việc trong hàng'. compact=True: dải gọn hơn ở đầu danh
+        sách clip (khi đã có clip); False: khối lớn giữa empty-state."""
+        w = QWidget(); w.setObjectName("jobProgBox")
+        w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        w.setStyleSheet(
+            f"#jobProgBox{{background:{BASE}; border:1px solid {BORDER}; "
+            f"border-radius:14px;}}")
+        lay = QVBoxLayout(w); lay.setSpacing(10)
+        m = 14 if compact else 22
+        lay.setContentsMargins(m + 4, m, m + 4, m)
+
+        # ---- hàng 1: icon + tên bước (TO, đậm) ----- căn trái để dễ đọc
+        head = QHBoxLayout(); head.setSpacing(10)
+        icon = QLabel("🔍")
+        icon.setStyleSheet("font-size:26px; background:transparent;")
+        head.addWidget(icon)
+        step = QLabel("Đang xử lý…")
+        step.setWordWrap(True)
+        step.setStyleSheet("font-size:18px; font-weight:700; background:transparent;")
+        step.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        head.addWidget(step, 1)
+        # số % CHỮ LỚN bên phải
+        pctlbl = QLabel("0%")
+        pctlbl.setStyleSheet("font-size:30px; font-weight:800; "
+                             "background:transparent;")
+        pctlbl.setAlignment(Qt.AlignmentFlag.AlignRight
+                            | Qt.AlignmentFlag.AlignVCenter)
+        head.addWidget(pctlbl)
+        lay.addLayout(head)
+
+        # ---- hàng 2: thanh % DÀY ----
         bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(0)
-        bar.setFixedHeight(14 if compact else 20)
-        bar.setTextVisible(True)
-        row = QHBoxLayout()
-        if compact:
-            row.addWidget(bar, 1)
-        else:
-            bar.setFixedWidth(520)
-            row.addStretch(1); row.addWidget(bar); row.addStretch(1)
-        lay.addLayout(row)
-        lbl = QLabel("Đang xử lý…")
-        lbl.setWordWrap(True)
-        lbl.setStyleSheet(f"color:{MUTED}; font-size:13px;")
-        if not compact:
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(lbl)
-        self._job_bar, self._job_lbl = bar, lbl
+        bar.setFixedHeight(18 if compact else 24)
+        bar.setTextVisible(False)     # số % đã hiện TO ở trên
+        lay.addWidget(bar)
+
+        # ---- hàng 3: dòng phụ 'còn N việc trong hàng' ----
+        sub = QLabel("")
+        sub.setStyleSheet(f"color:{MUTED}; font-size:12px; background:transparent;")
+        lay.addWidget(sub)
+
+        self._job_bar = bar
+        self._job_lbl = step
+        self._job_icon = icon
+        self._job_pct = pctlbl
+        self._job_sub = sub
         self._update_job_progress()   # điền giá trị ngay, khỏi chờ nhịp timer
         return w
 
     def _update_job_progress(self):
-        """Cập nhật thanh tiến độ theo NHỊP TIMER 1.5s sẵn có (gọi từ
+        """Cập nhật KHỐI TIẾN TRÌNH theo NHỊP TIMER 1.5s sẵn có (gọi từ
         _poll_done) — không tạo timer mới, không rebuild danh sách."""
         bar = getattr(self, "_job_bar", None)
-        lbl = getattr(self, "_job_lbl", None)
-        if bar is None or lbl is None:
+        step = getattr(self, "_job_lbl", None)
+        if bar is None or step is None:
             return
         r = self._job_progress_row(self.state.video_id)
         if not r:
             return
         try:
             pct = int(max(0.0, min(1.0, float(r["progress"] or 0))) * 100)
+            jtype = r["type"] or ""
+            icon, default_step, color = self._job_phase(jtype)
+            msg = (r["message"] or "").strip()
             if r["status"] == "pending":
-                msg = r["message"] or "Đang chờ đến lượt trong hàng đợi…"
+                # đang chờ: icon đồng hồ cát, nói rõ đang xếp hàng
+                icon = "⏳"
+                step_txt = msg or "Đang chờ đến lượt trong hàng đợi…"
+                color = WARN
             else:
-                msg = r["message"] or "Đang xử lý…"
+                step_txt = msg or default_step
             bar.setValue(pct)
-            lbl.setText(msg)
+            bar.setStyleSheet(
+                f"QProgressBar{{background:{SURFACE}; border:none; "
+                f"border-radius:6px;}} "
+                f"QProgressBar::chunk{{background:{color}; border-radius:6px;}}")
+            step.setText(step_txt)
+            ic = getattr(self, "_job_icon", None)
+            if ic is not None:
+                ic.setText(icon)
+            pl = getattr(self, "_job_pct", None)
+            if pl is not None:
+                pl.setText(f"{pct}%")
+                pl.setStyleSheet(f"color:{color}; font-size:30px; "
+                                 "font-weight:800; background:transparent;")
+            sub = getattr(self, "_job_sub", None)
+            if sub is not None:
+                n = int(r.get("others", 0) or 0)
+                sub.setText(f"⋯ còn {n} việc khác trong hàng đợi"
+                            if n > 0 else "")
         except RuntimeError:          # widget vừa bị gỡ khi rebuild danh sách
             self._job_bar = self._job_lbl = None
 

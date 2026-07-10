@@ -145,10 +145,11 @@ class QueuePanel(QWidget):
 
         # ---- font + BỀ NGANG CỐ ĐỊNH đo bằng font metrics (không bao giờ cụt) --
         self._name_font = QFont(self.font())
-        self._name_font.setPixelSize(13)
+        self._name_font.setPixelSize(15)          # to hơn cho dễ đọc tên bước
         self._name_font.setWeight(QFont.Weight.DemiBold)
         self._st_font = QFont(self.font())
-        self._st_font.setPixelSize(12)
+        self._st_font.setPixelSize(14)            # % + trạng thái rõ số, dễ nhìn
+        self._st_font.setWeight(QFont.Weight.DemiBold)
         fm = QFontMetrics(self._st_font)
         longest = [f"100% · {_RUN_ANALYZE}", f"100% · {_RUN_EXPORT}"]
         longest += [t for t, _ in _STATUS.values()]
@@ -364,7 +365,7 @@ class QueuePanel(QWidget):
     # ---- 1 dòng việc: [chấm] [tên co giãn] [thanh %] [trạng thái] [nút] ----
     def _make_row(self, j):
         w = QWidget()
-        w.setFixedHeight(30)            # dòng thấp, đều nhau, sát hợp lý
+        w.setFixedHeight(34)            # dòng cao hơn cho chữ to (15px) dễ đọc
         lay = QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
@@ -383,7 +384,7 @@ class QueuePanel(QWidget):
         lay.addWidget(name, 2)          # TÊN ăn PHẦN LỚN chỗ thừa, tự elide "…"
 
         bar = QProgressBar()
-        bar.setFixedHeight(10)          # thanh MẢNH, dịu mắt
+        bar.setFixedHeight(12)          # thanh vừa phải, rõ nhưng không lấn
         bar.setRange(0, 100)
         bar.setTextVisible(False)       # % hiện ở nhãn trạng thái (thanh quá mảnh)
         # bề ngang VỪA PHẢI: chia chỗ thừa với TÊN theo tỉ lệ 1:2, nở tới
