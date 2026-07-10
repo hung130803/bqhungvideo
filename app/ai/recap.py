@@ -764,6 +764,52 @@ def _norm_for_copy(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+# ------------------------------------------------------------------
+# TÁCH TỪ CJK-AWARE. Ngôn ngữ KHÔNG DÙNG DẤU CÁCH (Nhật/Trung/Thái/Hàn) ->
+# `.split()` coi CẢ CÂU là 1 "từ" -> _win_density tính ~0.3 token/giây <
+# _MIN_DENSITY (1.2) -> validate_windows loại SẠCH khung -> None -> fallback.
+# _word_tokens tách MỖI ký tự CJK thành 1 token riêng (mật độ Nhật ~2-3
+# token/giây, qua ngưỡng), NHƯNG giữ NGUYÊN phần latin/số theo khoảng trắng.
+# BẤT BIẾN: với text KHÔNG có ký tự CJK, _word_tokens(x) == x.split()
+# (test khẳng định) — đường EN/VI KHÔNG đổi hành vi.
+# ------------------------------------------------------------------
+# Dải ký tự CJK: hiragana+katakana (U+3040-30FF), kanji/CJK ext-A
+# (U+3400-4DBF) + CJK Unified (U+4E00-9FFF) + compat (U+F900-FAFF),
+# katakana nửa (U+FF66-FF9F), hangul (U+AC00-D7A3).
+_CJK_CHARS = (
+    "぀-ヿ"        # hiragana + katakana
+    "㐀-䶿"        # CJK Unified ext-A
+    "一-鿿"        # CJK Unified
+    "豈-﫿"        # CJK compat ideographs
+    "ｦ-ﾟ"        # halfwidth katakana
+    "가-힣"        # hangul syllables
+)
+_CJK_RE = re.compile("[" + _CJK_CHARS + "]")
+# Token: 1 KÝ TỰ CJK riêng lẻ, HOẶC 1 cụm không-phải-CJK-không-khoảng-trắng
+# (latin/số giữ nguyên như split theo dấu cách). Chuỗi con non-CJK giữa các
+# ký tự CJK cũng thành token riêng theo cụm — đúng ý "latin giữ theo cách".
+_CJK_TOKEN_RE = re.compile("[" + _CJK_CHARS + "]|[^\\s" + _CJK_CHARS + "]+")
+
+
+def _has_cjk(text: str) -> bool:
+    """Text có chứa ký tự CJK (Nhật/Trung/Hàn) không. Hàm thuần."""
+    return bool(_CJK_RE.search(str(text or "")))
+
+
+def _word_tokens(norm_text: str) -> list:
+    """Tách `norm_text` (đã qua _norm_for_copy) thành danh sách token cho
+    ĐẾM MẬT ĐỘ / SO-KHỚP TẬP-TỪ CJK-aware:
+      - ký tự CJK -> mỗi ký tự 1 token riêng (câu Nhật/Trung không có dấu
+        cách vẫn cho nhiều token -> mật độ đúng);
+      - phần latin/số giữ NGUYÊN theo khoảng trắng (như .split()).
+    BẤT BIẾN: nếu norm_text KHÔNG có ký tự CJK, trả về Y HỆT
+    `norm_text.split()`. Hàm thuần — unit test được."""
+    s = str(norm_text or "")
+    if not _CJK_RE.search(s):
+        return s.split()          # bất biến: đường non-CJK y hệt .split()
+    return _CJK_TOKEN_RE.findall(s)
+
+
 def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
     """Narrate text có phải CHÉP NGUYÊN VĂN transcript không (AI lười).
     Chỉ tính khi câu đủ dài (>= 4 từ và >= 15 ký tự sau chuẩn hoá) — câu quá
@@ -771,7 +817,10 @@ def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
     if not transcript_norm:
         return False
     t = _norm_for_copy(text)
-    if len(t) < 15 or len(t.split()) < 4:
+    # Guard độ dài: >= 4 TOKEN (CJK-aware — câu Nhật không dấu cách vẫn đếm
+    # đúng qua _word_tokens) VÀ >= 15 ký tự. Non-CJK: _word_tokens == split()
+    # nên hành vi Y CŨ.
+    if len(t) < 15 or len(_word_tokens(t)) < 4:
         return False
     return t in transcript_norm
 
@@ -974,7 +1023,16 @@ def _is_copy_narrate(text: str, sentences: list, start: float,
       - _is_retelling: TẬP từ-nội-dung order-independent (chuẩn đại từ/thì)
         >= _CONTENT_OVERLAP_MAX HOẶC n-gram nội dung liên tiếp trùng.
     Soi window HẸP (đúng [start,end]) TRƯỚC rồi window RỘNG (±pad) — window
-    rộng bắt câu kề, hẹp tránh phồng oan khi part dài. Hàm thuần — test được."""
+    rộng bắt câu kề, hẹp tránh phồng oan khi part dài. Hàm thuần — test được.
+
+    CJK (Nhật/Trung/Hàn): các lưới FUZZY (_fuzzy_copy_ratio) + N-GRAM nội dung
+    (_is_retelling) được HIỆU CHUẨN cho ngôn ngữ có dấu cách. Áp token-KÝ-TỰ
+    cho CJK sẽ BÁO NHẦM (kanji chung như 会社/気持ち trùng 3-gram) -> gut oan
+    thoại tốt. Nên với text CJK ta BỎ QUA 2 lưới này (coi như KHÔNG copy) —
+    lưới CHÉP NGUYÊN VĂN _is_transcript_copy (so chuỗi con, char-based, đúng
+    cho CJK) vẫn chạy RIÊNG ở validate_parts nên chép y nguyên vẫn bị bắt."""
+    if _has_cjk(text):
+        return False
     for ws, we in ((start, end), (start - pad, end + pad)):
         wtext = _window_text(sentences, ws, we)
         if not wtext:
@@ -1033,7 +1091,15 @@ def _is_relevant(text: str, near: set) -> bool:
       (b) chia sẻ PREFIX >= _RELEVANCE_PREFIX ký tự với 1 từ near (bắt biến
           thể/đồng nghĩa cùng gốc: 'bet'/'betting', 'cược'/'đặt cược').
     0 từ liên quan (kể cả nới prefix) = câu chung chung/bịa hẳn -> LOẠI.
-    Hàm thuần — unit test được."""
+    Hàm thuần — unit test được.
+
+    CJK (Nhật/Trung/Hàn): lưới prefix/trùng-token được hiệu chuẩn cho ngôn
+    ngữ CÓ dấu cách; token-ký-tự CJK trùng/không-trùng ngẫu nhiên nên dễ LOẠI
+    OAN lời kể tốt. Với text CJK -> coi như LIÊN QUAN (relevance đã có ràng
+    buộc GIAO THỜI GIAN ở tầng gọi: `near` là tập từ transcript đúng khung +
+    khung kề). Non-CJK: hành vi Y CŨ."""
+    if _has_cjk(text):
+        return True
     words = _content_words(text)
     if not words or not near:
         return False
@@ -1100,7 +1166,7 @@ def _win_density(sentences: list, start: float, end: float) -> float:
         ov = min(b, end) - max(a, start)
         if ov <= 0 or not t:
             continue
-        n = len(_norm_for_copy(t).split())
+        n = len(_word_tokens(_norm_for_copy(t)))   # CJK-aware (non-CJK y cũ)
         words += n * min(1.0, ov / max(0.001, b - a))
     return words / dur
 
@@ -1115,7 +1181,7 @@ def _cta_ratio(sentences: list, start: float, end: float) -> float:
                 continue
         except (TypeError, ValueError):
             continue
-        n = len(_norm_for_copy(t).split())
+        n = len(_word_tokens(_norm_for_copy(t)))   # CJK-aware (non-CJK y cũ)
         tot += n
         if _is_cta_text(t):
             cta += n
