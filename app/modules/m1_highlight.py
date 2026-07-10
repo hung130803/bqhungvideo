@@ -2214,13 +2214,43 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                     on_progress=lambda p, m="": ctx.progress(
                         0.05 + 0.10 * p, f"{pfx}lồng tiếng: {m}"))
         # PHỤ ĐỀ CHẠY CHỮ + HOOK giật tít. HOOK render ĐỘC LẬP với phụ đề: bật
-        # hook mà tắt phụ đề vẫn hiện hook; chữ hook = hook AI, KHÔNG có thì
-        # lùi về tiêu đề clip (title_en/title) để bật hook là luôn có chữ.
+        # hook mà tắt phụ đề vẫn hiện hook; chữ hook = hook AI -> title_pub ->
+        # tiêu đề clip. 🌐 CHỮ TRÊN VIDEO PHẢI ĐÚNG NGÔN NGỮ VIDEO: tiêu đề
+        # clip ("title") là TIẾNG VIỆT cho người dựng đọc — video KHÔNG phải
+        # tiếng Việt thì TUYỆT ĐỐI không đốt nó lên video (user báo video Nhật
+        # bị gắn tiêu đề Việt). Ứng viên trông-tiếng-Việt bị loại; hết ứng viên
+        # -> lùi về CÂU THOẠI ĐẦU của clip (đúng ngôn ngữ gốc), vẫn không có
+        # -> bỏ trống hook (thà không chữ còn hơn sai ngôn ngữ).
         ass_path = fonts_dir = None
         _cs0 = payload.get("cap_style") or {}
-        _hook_txt0 = ((signals.get("hook") or signals.get("title_en")
-                       or clip["title"] or "").strip()
-                      if _cs0.get("hook_on", True) else "")
+        _hook_txt0 = ""
+        if _cs0.get("hook_on", True):
+            from app.ai import recap as _rec
+            _tr0 = get_analysis(video_id, "transcript") or {}
+            _lang0 = _rec.resolve_lang(
+                _tr0.get("language", ""), _tr0.get("text", "") or "")
+            _vi_video = _rec._is_vi_lang(_lang0)
+            for _cand in (signals.get("hook"), signals.get("title_en"),
+                          clip["title"]):
+                _cand = str(_cand or "").strip()
+                if not _cand:
+                    continue
+                if not _vi_video and _rec.looks_vietnamese(_cand):
+                    continue           # video không phải Việt -> loại chữ Việt
+                _hook_txt0 = _cand
+                break
+            if not _hook_txt0:
+                # câu thoại ĐẦU trong phạm vi clip = hook đúng ngôn ngữ gốc
+                _c0, _c1 = float(clip["start_sec"]), float(clip["end_sec"])
+                for _sg in (_tr0.get("segments") or []):
+                    try:
+                        _a = float(_sg.get("start", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    _t = str(_sg.get("text") or "").strip()
+                    if _t and _c0 - 0.5 <= _a <= _c1:
+                        _hook_txt0 = _t[:60]
+                        break
         if payload.get("captions") or _hook_txt0:
             from app.core import captions
             from config import ROOT_DIR

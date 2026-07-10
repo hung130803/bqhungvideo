@@ -3430,8 +3430,23 @@ class StudioPage(QWidget):
                 continue
             sig = db.loads(c["signals"], {}) or {}
             vi = (c["title"] or "").strip()
-            en = ((sig.get("title_en") or vi)).strip()
-            label = en or vi or self._fixed_label()
+            en = (sig.get("title_en") or "").strip()
+            # 🌐 TÊN FILE THEO NGÔN NGỮ VIDEO: title_en (title_pub — đúng ngôn
+            # ngữ video) ưu tiên; THIẾU thì chỉ lùi về tiêu đề Việt khi video
+            # LÀ tiếng Việt — video Nhật/Anh... không gắn tên tiếng Việt nữa
+            # (user báo video Nhật ra file tên Việt). Không còn gì -> "Part N".
+            if not en:
+                try:
+                    from app.core.analysis import get_analysis as _ga
+                    from app.ai import recap as _rec
+                    _tr = _ga(video_id, "transcript") or {}
+                    _lg = _rec.resolve_lang(_tr.get("language", ""),
+                                            _tr.get("text", "") or "")
+                    if _rec._is_vi_lang(_lg) or not _rec.looks_vietnamese(vi):
+                        en = vi        # video Việt / tiêu đề không phải Việt
+                except Exception:  # noqa: BLE001 - lỗi tra cứu -> giữ vi như cũ
+                    en = vi
+            label = en or self._fixed_label()
             # tên gọn "Part 1 <tiêu đề> #tag1 #tag2" — hashtag CHUNG toàn video,
             # đúng ngôn ngữ nội dung. _safe_name ở export_clip giữ '#'/ký tự có dấu.
             out_name = f"Part {no} {label}".strip() + tags_str
