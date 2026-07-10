@@ -2320,6 +2320,11 @@ def _script_draft_digest(result: dict) -> str:
     return "\n".join(lines)
 
 
+# Ngưỡng độ dài listing (ký tự) tối đa còn bật nhiều-pass. Vượt -> 1-pass để
+# tiết kiệm TOKEN/NGÀY Groq (critic+refine gửi lại prompt ~gấp 2-3 lần token).
+_MULTIPASS_MAX_LISTING = 4000
+
+
 def _refine_script(result: dict, sentences: list, lang_name: str, style: str,
                    min_total: float, max_total: float, duration: float,
                    win_max: int, emotion: bool, ratio: float,
@@ -2470,6 +2475,13 @@ def write_director_script(sentences: list, lang_name: str, style: str,
             if not getattr(_st, "AI_MULTIPASS", True):
                 return res
         except Exception:  # noqa: BLE001 - config lỗi -> giữ bản cũ, khỏi refine
+            return res
+        # 💸 TIẾT KIỆM TOKEN/NGÀY: nhiều-pass (critic+refine) gửi lại prompt +
+        # transcript -> gấp ~2-3 lần token. Với transcript DÀI (video dài/chương
+        # lớn) dễ chạm HẠN MỨC TOKEN/NGÀY của Groq (per-day). Chỉ bật nhiều-pass
+        # khi listing đủ NGẮN; video dài -> 1-pass (chất lượng vẫn tốt) để reup
+        # CHẠY XONG thay vì hết lượt ngày giữa chừng.
+        if len(listing or "") > _MULTIPASS_MAX_LISTING:
             return res
         return _refine_script(res, sentences, lang_name, style, min_total,
                               max_total, duration, win_max, emotion, ratio,
