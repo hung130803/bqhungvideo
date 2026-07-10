@@ -2164,7 +2164,27 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         elif payload.get("dub_lang"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
-            if tr_dub.get("segments"):
+            # 🛡 CLIP THƯỜNG KHÔNG BỊ LỒNG TIẾNG OAN: lồng tiếng chỉ có nghĩa khi
+            # DỊCH sang ngôn ngữ KHÁC. Nếu ngôn ngữ đích TRÙNG ngôn ngữ gốc của
+            # video (vd video Nhật + mẫu lỡ để dub_lang=ja) -> KHÔNG dịch gì,
+            # chỉ tạo giọng AI đè + (nếu dub_mute) tắt hẳn tiếng gốc -> đúng
+            # triệu chứng "clip thường mất tiếng gốc, đọc giọng AI". Bỏ qua dub
+            # trong trường hợp này -> GIỮ NGUYÊN tiếng gốc. Dịch chéo ngôn ngữ
+            # (user CHỦ Ý) vẫn chạy bình thường.
+            # CHUẨN HÓA về TÊN ANH ("Japanese"/"English") trước khi so: Groq
+            # trả language dạng TÊN ("Japanese") còn dub_lang là MÃ ISO ("ja")
+            # -> so chuỗi thô sẽ HỤT (Japanese != ja). recap.lang_en_name map
+            # cả tên lẫn mã về cùng 1 chuẩn.
+            from app.ai import recap as _recap
+            _src_raw = (tr_dub.get("language") or "").strip()
+            _dub_raw = str(payload.get("dub_lang") or "").strip()
+            _src_lang = _recap.lang_en_name(_src_raw).strip().lower()
+            _dub_lang = _recap.lang_en_name(_dub_raw).strip().lower()
+            _same_lang = bool(_src_raw) and _src_lang == _dub_lang
+            if _same_lang:
+                ctx.progress(0.05, f"{pfx}bỏ lồng tiếng (đích trùng ngôn ngữ "
+                             "gốc) — giữ nguyên tiếng gốc")
+            if tr_dub.get("segments") and not _same_lang:
                 cdir = Path(vrow["assets_dir"]) / "_cache"
                 cdir.mkdir(parents=True, exist_ok=True)
                 dw = str(cdir / f"_dub_{clip_id}.wav")
