@@ -2493,8 +2493,9 @@ class StudioPage(QWidget):
         preset["recap_ratio"] = min(80, max(15, preset["recap_ratio"]))
         try:                            # số clip thuyết minh từ ⚙
             # 0 = "Tự động theo độ dài" (mặc định) — m2_recap tự tính theo
-            # duration; 1-3 = user chọn tay.
-            preset["recap_count"] = min(3, max(0, int(
+            # duration; 1-8 = user chọn tay (khớp dải spin 0-8 ở dialog Cài
+            # đặt Reup — trước đây kẹp min(3,..) chặn oan lựa chọn 4-8).
+            preset["recap_count"] = min(8, max(0, int(
                 self._settings.value("recap_count", 0))))
         except (TypeError, ValueError):
             preset["recap_count"] = 0

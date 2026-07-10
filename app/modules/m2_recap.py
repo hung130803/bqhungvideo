@@ -852,7 +852,14 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         def check_canceled(self):
             ctx.check_canceled()
 
-    clips, warns = _llm_select_clips(transcript, duration, _Sel(), scenes, cfg)
+    # 🚫 TÔN TRỌNG count user chọn Ở CẢ ĐƯỜNG DỰ PHÒNG: _llm_select_clips đọc
+    # cfg["count"] (không phải recap_count) — không truyền -> selector tự chọn
+    # 3-6 và có thể ra CHỈ 1 clip (đây là gốc lỗi "chọn 3 ra 1 clip 26s" khi
+    # đạo diễn multi-window hỏng hết chương). Đẩy count (đã clamp theo nội
+    # dung) sang selector để nó nhắm đúng số clip.
+    sel_cfg = {**cfg, "count": count}
+    clips, warns = _llm_select_clips(transcript, duration, _Sel(), scenes,
+                                     sel_cfg)
     if not clips:
         return {"count": 0, "clip_ids": [],
                 "note": "AI không chọn được đoạn nào đủ hay để thuyết minh."}
@@ -862,6 +869,12 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # hoặc mép câu transcript (±_SNAP_TOL) -> không mở/đóng clip giữa chừng
     # 1 câu nói.
     max_len = float(cfg.get("max_len") or 0) or _HARD_MAX
+    # 🔒 SÀN độ dài clip dự phòng (sửa lỗi 'ra 1 clip 26s'): đường này TRƯỚC
+    # đây chỉ cắt TRẦN max_len, KHÔNG ép SÀN min -> AI chọn đoạn 26s vẫn lọt
+    # nguyên. Nới mỗi span lên >= min_fb (bám mép câu, né span đã dùng, tới
+    # hết video). min_total lấy từ min_len user đặt (mặc định 60 như primary).
+    min_fb = min_total
+    dur_fb = duration or dur_hint       # DB duration=0 -> dùng mép câu cuối
     # clips đã sort theo thời gian; giữ mốc KẾT của span TRƯỚC để span sau
     # bắt đầu SAU nó + đệm (🚫 chống trùng cảnh: các span PHẢI rời nhau —
     # snap có thể kéo mép span sau lùi về trước mép span trước -> chồng).
@@ -886,6 +899,13 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
             continue                         # toàn bộ span trùng -> bỏ clip này
         ps, pe = max(pieces, key=lambda p: p[1] - p[0])
         pe = min(pe, ps + max_len, duration or pe)
+        # 🔒 NỚI lên SÀN min_fb nếu span quá ngắn (dùng chung _enforce_recap_len:
+        # nới CUỐI rồi ĐẦU, bám mép câu, né span_used + tới hết video). chapter
+        # = (0, dur_fb) để được nới tự do trong cả video. Cắt TRẦN max_len luôn.
+        enf = _enforce_recap_len([[ps, pe]], min_fb, max_len, edges,
+                                 (0.0, dur_fb), span_used, dur_fb)
+        if enf:
+            ps, pe = enf[0][0], enf[0][1]
         if pe - ps >= 10.0:
             spans.append((round(ps, 2), round(pe, 2), c))
             prev_end = pe
