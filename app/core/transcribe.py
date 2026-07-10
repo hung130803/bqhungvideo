@@ -460,33 +460,9 @@ def transcribe(
     # GPU tốt -> giữ local như cũ (nhanh, không phụ thuộc hạn mức).
     if provider != "groq" and device != "cuda" and settings.groq_keys():
         provider = "groq"
-    # ⚠ VIDEO DÀI + Groq: chép lời qua Groq đốt nhiều LƯỢT/TOKEN (mỗi 10 phút
-    # = 1 request audio lớn; free tier chỉ ~12k token/phút -> video dài rất dễ
-    # chạm hạn mức phút, phải xoay key/đợi). Máy có GPU + faster-whisper thì
-    # chép lời LOCAL nhanh + KHÔNG tốn hạn mức. GỢI Ý rõ (không đổi ngầm nếu
-    # user CỐ Ý chọn 'groq'); nếu Groq chỉ là AUTO-fallback (không do user đặt)
-    # thì DÙNG LOCAL luôn cho video dài.
-    # Chỉ đo độ dài khi ĐANG định dùng Groq (đường local GPU nhanh không cần
-    # tốn thêm 1 lần gọi ffprobe).
-    if provider == "groq" and is_available():
-        import os as _os
-        import shutil as _shutil
-        _fp = (_shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe")
-        _dur = _audio_duration(
-            audio_path, _fp, 0x0800_0000 if _os.name == "nt" else 0)
-        _long = _dur >= 600.0                   # >= 10 phút = "video dài"
-        _user_chose_groq = (settings.WHISPER_PROVIDER == "groq")
-        if _long and not _user_chose_groq:
-            # Groq chỉ là auto-fallback -> ưu tiên LOCAL cho video dài (free,
-            # không đốt hạn mức); Groq vẫn là lưới đỡ nếu local lỗi.
-            provider = "local"
-            if on_progress:
-                on_progress(0.0, "Video dài — chép lời bằng MÁY (miễn phí, "
-                                 "không tốn lượt Groq)...")
-        elif _long and on_progress:
-            on_progress(0.0, "⚠ Video dài chép lời qua Groq tốn NHIỀU lượt "
-                             "(dễ chạm hạn mức/phút) — cân nhắc chuyển "
-                             "'Nghe-chép' sang 'Máy này' trong Cài đặt AI.")
+    # (User có KEY GROQ VÔ HẠN -> KHÔNG né Groq theo độ dài nữa: dùng Groq
+    # thẳng cho chính xác + đồng nhất. Việc chia tải nhiều key + tự đợi/thử lại
+    # ở _transcribe_groq đủ để chạy mượt kể cả video dài.)
 
     # GROQ (mây) TRƯỚC — KHÔNG cần lib local. Máy yếu/không cài gì vẫn chép được.
     if provider == "groq" and settings.groq_keys():

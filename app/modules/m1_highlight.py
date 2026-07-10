@@ -804,6 +804,112 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     return refined, warns
 
 
+# ------------------------------------------------------------------
+# 🔁 NHIỀU-PASS CẮT CLIP (v8): sau khi có danh sách clip ứng viên, AI ĐỌC
+# LẠI toàn cảnh + CHẤM/CHỌN top viral, loại clip trùng/lê thê. FAIL-SAFE:
+# chỉ LỌC + SẮP XẾP LẠI (KHÔNG đổi start/end), keo rỗng/hỏng -> giữ nguyên;
+# lỗi bất kỳ -> giữ nguyên. Bù đủ want_n từ danh sách gốc nếu thiếu.
+# ------------------------------------------------------------------
+_REFINE_SEL_SYSTEM = (
+    "Bạn là giám khảo chọn clip viral cho TikTok/Reels/Shorts. Từ danh sách "
+    "clip ứng viên, chọn ra các clip TỐT NHẤT (hook mạnh, tự đủ, tiềm năng "
+    "viral, không trùng nhau). CHỈ trả JSON, không thêm chữ.")
+
+
+def _clip_digest(clips: list, segs: list) -> str:
+    """Tóm tắt từng clip cho critic đọc: index, mốc đầu-cuối, 1-2 câu mở đầu +
+    1 câu ở giữa/cao trào (lấy từ transcript segs theo thời gian)."""
+    def _sent_at(t0: float, t1: float, n: int = 1) -> str:
+        picked = []
+        for s in segs:
+            try:
+                a = float(s.get("start", 0))
+            except (TypeError, ValueError):
+                continue
+            if t0 - 0.5 <= a <= t1 + 0.5:
+                txt = str(s.get("text") or "").strip()
+                if txt:
+                    picked.append(txt)
+                if len(picked) >= n:
+                    break
+        return " ".join(picked)[:180]
+
+    lines = []
+    for i, c in enumerate(clips):
+        try:
+            cs = c["segments"][0][0]
+            ce = c["segments"][-1][1]
+        except (KeyError, IndexError, TypeError):
+            cs = ce = 0.0
+        mid = (cs + ce) / 2.0
+        opener = _sent_at(cs, cs + 12.0, 2)
+        climax = _sent_at(mid, ce, 1)
+        lines.append(
+            f"[{i}] {cs:.0f}-{ce:.0f}s | mở đầu: {opener} | cao trào: {climax}")
+    return "\n".join(lines)
+
+
+def _refine_clip_selection(clips: list, transcript: dict, language: str,
+                           want_n: int, min_len: float, max_len: float) -> list:
+    """NHIỀU-PASS: AI chấm + chọn top clip. Trả list ĐÃ LỌC + SẮP XẾP theo độ
+    hay (KHÔNG đổi start/end). Fail-safe: keep rỗng/không hợp lệ / lỗi -> trả
+    NGUYÊN `clips`. Bù đủ want_n từ danh sách gốc (thứ tự cũ) nếu thiếu.
+    Bounded: đúng 1 lần gọi LLM, KHÔNG lặp."""
+    try:
+        if not clips or len(clips) <= 1:
+            return clips
+        segs = (transcript or {}).get("segments", []) or []
+        lang_name = _lang_name(language)
+        auto = not (want_n and want_n > 0)   # want_n<=0 = AI tự quyết số clip
+        target_n = len(clips) if auto else want_n
+        digest = _clip_digest(clips, segs)
+        prompt = (
+            f"Video nói bằng {lang_name.upper()}. Dưới đây là {len(clips)} "
+            "clip ỨNG VIÊN (đã có mốc thời gian cố định, KHÔNG đổi được):\n"
+            f"{digest}\n\n"
+            "Hãy CHẤM & CHỌN theo tiêu chí:\n"
+            "- HOOK 3 giây đầu phải mạnh (gây tò mò/sốc ngay).\n"
+            "- Câu chuyện TỰ ĐỦ: xem KHÔNG cần biết bối cảnh trước đó.\n"
+            "- Tiềm năng VIRAL cao (cảm xúc, twist, cao trào, câu chốt đắt).\n"
+            "- KHÔNG lê thê/khoảng chết.\n"
+            "- 2 clip KHÔNG trùng nội dung (tránh nhàm + ăn bản quyền).\n"
+            f"Chọn tối đa {target_n} clip TỐT NHẤT. Trả DUY NHẤT 1 JSON: "
+            '{"keep":[index theo thứ tự TỐT->kém], "drop":[index yếu/trùng], '
+            '"reason":{"index":"lý do ngắn"}}')
+        data = llm.complete_json(prompt, system=_REFINE_SEL_SYSTEM)
+        keep_raw = None
+        if isinstance(data, dict):
+            keep_raw = data.get("keep")
+        if not isinstance(keep_raw, list):
+            return clips               # JSON không có keep hợp lệ -> giữ nguyên
+        # chỉ nhận index HỢP LỆ, dedup giữ thứ tự (thứ tự tốt->kém của AI)
+        seen: set = set()
+        order: list = []
+        for x in keep_raw:
+            try:
+                idx = int(x)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= idx < len(clips) and idx not in seen:
+                seen.add(idx)
+                order.append(idx)
+        if not order:
+            return clips               # keep rỗng/không hợp lệ -> giữ nguyên
+        picked = [clips[i] for i in order]
+        if auto:
+            return picked              # AI tự quyết số clip -> không bù/không cắt
+        # BÙ đủ want_n từ gốc (thứ tự cũ) nếu AI chọn thiếu
+        if len(picked) < target_n:
+            for i, c in enumerate(clips):
+                if i not in seen:
+                    picked.append(c)
+                    if len(picked) >= target_n:
+                        break
+        return picked[:target_n]
+    except Exception:  # noqa: BLE001 - bất kỳ lỗi nào -> fail-safe giữ nguyên
+        return clips
+
+
 def _vision_rescore(video_id: int, clips: list, ctx) -> list:
     """
     Chấm điểm bằng HÌNH ẢNH: trích 1 khung hình đại diện mỗi clip, cho model vision
@@ -1032,6 +1138,18 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     except llm.LLMError as e:  # gọi LLM lỗi thật -> báo rõ, vẫn lùi heuristic
         ai_clips = []
         llm_error = str(e)
+    # 🔁 NHIỀU-PASS: AI đọc lại toàn cảnh, chấm + chọn top viral, loại clip
+    # trùng/lê thê. FAIL-SAFE (chỉ lọc/sắp xếp, không đổi boundary; lỗi/keo
+    # rỗng -> giữ nguyên). Chạy TRƯỚC dedup cross-run (used_ranges) như cũ.
+    if ai_clips:
+        from config import settings as _st0
+        if getattr(_st0, "AI_MULTIPASS", True):
+            _want = int(cfg.get("count", 0) or 0)
+            ctx.progress(0.58, f"AI [{prov_name}] chấm & chọn clip tốt nhất...")
+            ai_clips = _refine_clip_selection(
+                ai_clips, transcript, (transcript or {}).get("language", ""),
+                _want, float(cfg.get("min_len", 60.0)),
+                float(cfg.get("max_len", 0.0) or 0.0))
     if ai_clips:
         from config import settings as _st
         # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript

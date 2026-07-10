@@ -65,6 +65,15 @@ def _env(key: str, default: str = "") -> str:
     return (os.getenv(key) or default).strip()
 
 
+def _env_bool(key: str, default: bool = False) -> bool:
+    """Đọc cờ bật/tắt từ .env: '1'/'true'/'yes'/'on' -> True (không phân
+    biệt hoa thường). Rỗng -> `default`."""
+    v = _env(key, "").lower()
+    if not v:
+        return default
+    return v in ("1", "true", "yes", "on")
+
+
 class Settings:
     """Đọc cấu hình từ .env. Giá trị rỗng = để resource manager tự quyết."""
 
@@ -124,6 +133,14 @@ class Settings:
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM (llama) FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ)
     GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+    # (tùy chọn) model Groq MẠNH HƠN cho các pass CHẤM/VIẾT LẠI chất lượng cao.
+    # Mặc định = GROQ_LLM_MODEL (không đổi hành vi); user tự trỏ model xịn hơn.
+    GROQ_LLM_MODEL_HQ = _env("GROQ_LLM_MODEL_HQ", "") or _env(
+        "GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+    # NHIỀU-PASS (mặc định BẬT): AI tự chấm bản nháp rồi viết lại tốt hơn cho
+    # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
+    # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
+    AI_MULTIPASS = _env_bool("AI_MULTIPASS", True)
     WHISPER_MODEL = _env("WHISPER_MODEL")      # rỗng = auto theo phần cứng
     WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE") or None
     # Thiết bị chạy whisper: cpu | cuda. Rỗng = cpu (ổn định nhất).

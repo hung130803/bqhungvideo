@@ -2017,6 +2017,129 @@ def _enforce_script_lang(result: Optional[dict], lang_name: str,
     return result
 
 
+# ------------------------------------------------------------------
+# 🔁 NHIỀU-PASS (v8): sau khi có kịch bản hợp lệ, AI TỰ CHẤM (critic) rồi
+# VIẾT LẠI (refine) 1 bản tốt hơn. FAIL-SAFE tuyệt đối: pass mới lỗi / không
+# validate / bị gut narrate -> QUAY VỀ bản nháp. Tối đa 1 critic + 1 refine
+# (bounded, KHÔNG lặp). Bật/tắt bằng settings.AI_MULTIPASS.
+# ------------------------------------------------------------------
+_CRITIC_SYSTEM = (
+    "Bạn là BIÊN TẬP VIÊN khó tính của kênh recap triệu view. Chấm kịch bản "
+    "thuyết minh NGHIÊM KHẮC, chỉ ra điểm yếu CỤ THỂ. Trả DUY NHẤT 1 JSON "
+    "object, không thêm chữ.")
+
+
+def _script_draft_digest(result: dict) -> str:
+    """Tóm tắt BẢN NHÁP cho critic đọc: title + từng part (mode, thời lượng,
+    lời narrate). Ngắn gọn, không phá schema."""
+    lines = [f"TIÊU ĐỀ: {result.get('title') or '(chưa có)'}"]
+    for i, p in enumerate(result.get("parts") or []):
+        try:
+            dur = float(p.get("end", 0)) - float(p.get("start", 0))
+        except (TypeError, ValueError):
+            dur = 0.0
+        mode = str(p.get("mode") or "orig")
+        if mode == "narrate":
+            lines.append(f"  [{i}] narrate {dur:.0f}s: {p.get('text') or ''}")
+        else:
+            lines.append(f"  [{i}] orig {dur:.0f}s (giữ tiếng gốc)")
+    return "\n".join(lines)
+
+
+def _refine_script(result: dict, sentences: list, lang_name: str, style: str,
+                   min_total: float, max_total: float, duration: float,
+                   win_max: int, emotion: bool, ratio: float,
+                   listing: str = "", win_min: int = 3,
+                   win_auto: bool = False) -> dict:
+    """NHIỀU-PASS: 1 critic + 1 refine trên bản `result` ĐÃ validate. Trả bản
+    REFINE chỉ khi nó validate OK VÀ giữ >= số narrate bản nháp; ngược lại
+    (kể cả LLM lỗi / JSON hỏng / critic hỏng) -> trả NGUYÊN bản nháp. Bounded:
+    tối đa 1 critic + 1 refine, KHÔNG lặp. Không bao giờ ném."""
+    try:
+        base_narr = sum(1 for p in result.get("parts") or []
+                        if p.get("mode") == "narrate")
+        if base_narr <= 0:
+            return result              # nháp không có narrate -> khỏi refine
+        if not listing:
+            listing = "\n".join(f"{a:.1f} {b:.1f} | {t}"
+                                for a, b, t in sentences)[:11000]
+        base_prompt = build_director_prompt(
+            listing, lang_name, style, duration, min_total, max_total,
+            ratio=ratio, win_min=win_min, win_max=win_max, emotion=emotion,
+            win_auto=win_auto)
+        digest = _script_draft_digest(result)
+
+        # ---- PASS 1: CHẤM (critic) ----
+        fix, weak = "", []
+        try:
+            critic_prompt = (
+                "BẢN NHÁP kịch bản thuyết minh (recap) cần chấm:\n"
+                f"{digest}\n\n"
+                "TÓM TẮT transcript video (mỗi dòng: giây | lời):\n"
+                f"{listing[:4000]}\n\n"
+                "CHẤM theo các tiêu chí (0-10 mỗi mục):\n"
+                "- hook: câu narrate ĐẦU có giữ chân người xem ngay không.\n"
+                "- emotion: sức nặng CẢM XÚC của lời kể.\n"
+                "- originality: TÍNH NGUYÊN BẢN — người kể BÌNH LUẬN từ NGOÀI, "
+                "KHÔNG thuật/chép lại lời nhân vật.\n"
+                "- pacing: nhịp lời kể có KHỚP thời lượng từng part không.\n"
+                f"- language: có viết ĐÚNG ngôn ngữ video ({lang_name}) không.\n"
+                "- coherence: mạch truyện mở-thân-kết có mạch lạc không; SFX "
+                "(nếu có) gắn hợp lý không.\n"
+                'Trả DUY NHẤT 1 JSON: {"scores":{"hook":0-10,"emotion":0-10,'
+                '"originality":0-10,"pacing":0-10,"language":0-10,'
+                '"coherence":0-10},"total":0-60,"weak":["..."],'
+                '"fix":"chỉ dẫn sửa cụ thể, ngắn gọn"}')
+            crit = llm.complete_json(critic_prompt, system=_CRITIC_SYSTEM,
+                                     provider=None)
+            if isinstance(crit, dict):
+                fix = str(crit.get("fix") or "").strip()
+                w = crit.get("weak")
+                if isinstance(w, list):
+                    weak = [str(x).strip() for x in w if str(x).strip()]
+        except (llm.LLMError, Exception):  # noqa: BLE001 - critic hỏng -> fix rỗng
+            fix, weak = "", []
+
+        # ---- PASS 2: VIẾT LẠI (refine) ----
+        note = ""
+        if fix or weak:
+            note = "\n\nMỘT BIÊN TẬP VIÊN ĐÃ CHẤM VÀ CHỈ RA ĐIỂM YẾU:\n"
+            if fix:
+                note += fix + "\n"
+            if weak:
+                note += "Điểm yếu: " + "; ".join(weak[:6]) + "\n"
+        import json as _json
+        draft_json = _json.dumps(
+            {"title": result.get("title", ""),
+             "windows": result.get("windows") or [],
+             "parts": result.get("parts") or []},
+            ensure_ascii=False)
+        refine_prompt = (
+            base_prompt
+            + "\n\nĐÂY LÀ BẢN NHÁP CỦA BẠN:\n" + draft_json
+            + note
+            + "\n\nHãy VIẾT LẠI 1 BẢN TỐT HƠN, sửa đúng các điểm yếu đó. "
+            "GIỮ NGUYÊN schema, GIỮ cùng windows (cùng các cặp [start,end]), "
+            f"GIỮ đúng ngôn ngữ ({lang_name.upper()}). Trả DUY NHẤT 1 JSON "
+            "object.")
+        try:
+            d2 = llm.complete_json(refine_prompt, system=_SYSTEM)
+        except (llm.LLMError, Exception):  # noqa: BLE001
+            return result
+        r2, _e2 = _director_from_data(d2, sentences, duration,
+                                      min_total, max_total, win_max)
+        r2 = _enforce_script_lang(r2, lang_name, lambda: None)
+        if not r2:
+            return result              # refine không validate -> giữ nháp
+        new_narr = sum(1 for p in r2.get("parts") or []
+                       if p.get("mode") == "narrate")
+        if new_narr < base_narr:
+            return result              # refine bị gut narrate -> giữ nháp
+        return r2
+    except Exception:  # noqa: BLE001 - bất kỳ lỗi nào -> fail-safe giữ nháp
+        return result
+
+
 def write_director_script(sentences: list, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
@@ -2062,6 +2185,23 @@ def write_director_script(sentences: list, lang_name: str, style: str,
             r3 = None
         return r3
 
+    def _maybe_refine(res):
+        """NHIỀU-PASS trên kịch bản HỢP LỆ (res != None). Tắt cờ / None ->
+        trả nguyên (caller fallback như cũ). Fail-safe: _refine_script tự
+        quay về bản nháp nếu pass mới lỗi/tệ hơn."""
+        if not res:
+            return res
+        try:
+            from config import settings as _st
+            if not getattr(_st, "AI_MULTIPASS", True):
+                return res
+        except Exception:  # noqa: BLE001 - config lỗi -> giữ bản cũ, khỏi refine
+            return res
+        return _refine_script(res, sentences, lang_name, style, min_total,
+                              max_total, duration, win_max, emotion, ratio,
+                              listing=listing, win_min=win_min,
+                              win_auto=win_auto)
+
     result, err = None, ""
     try:
         data = llm.complete_json(prompt, system=_SYSTEM)
@@ -2087,8 +2227,10 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                 r2 = None
             if r2 and sum(1 for p in r2["parts"]
                           if p["mode"] == "narrate") > kept:
-                return _enforce_script_lang(r2, lang_name, _lang_retry)
-        return _enforce_script_lang(result, lang_name, _lang_retry)
+                return _maybe_refine(
+                    _enforce_script_lang(r2, lang_name, _lang_retry))
+        return _maybe_refine(
+            _enforce_script_lang(result, lang_name, _lang_retry))
     # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
     # LỖI THẬT (explainer): LLM viết narrate KỂ LẠI lời nhân vật -> anti-copy
     # hạ HẾT về orig -> _director_from_data trả None (err "parts hỏng"). Retry
@@ -2105,7 +2247,7 @@ def write_director_script(sentences: list, lang_name: str, style: str,
         return None                     # retry vẫn hỏng -> caller fallback
     result, _err = _director_from_data(data, sentences, duration,
                                        min_total, max_total, win_max)
-    return _enforce_script_lang(result, lang_name, _lang_retry)
+    return _maybe_refine(_enforce_script_lang(result, lang_name, _lang_retry))
 
 
 def write_script(sentences: list, lang_name: str, style: str,
