@@ -431,6 +431,76 @@ def lang_en_name(code: str) -> str:
             else "the original spoken language of the video")
 
 
+def detect_lang_by_script(text: str) -> str:
+    """NHẬN DIỆN ngôn ngữ theo CHỮ VIẾT trong text -> mã ("ja"/"ko"/"zh"/"th"/
+    "ru"/"ar"/"hi"/"he") hoặc "" nếu là chữ Latin/không rõ. Dùng làm LƯỚI AN
+    TOÀN: nếu nhãn ngôn ngữ lưu bị SAI (vd whisper bị ép "en" nhưng chữ ra là
+    tiếng Nhật) thì cứ nhìn CHỮ mà ép đúng. Chữ Latin (en/vi/fr/de/es...) trả ""
+    vì không phân biệt được qua ký tự -> giữ nhãn gốc. Hàm thuần.
+
+    ja vs zh: có kana (hiragana/katakana) -> ja; chỉ có Hán tự -> zh."""
+    t = str(text or "")
+    if not t:
+        return ""
+    kana = hangul = han = thai = cyr = arab = deva = hebr = 0
+    letters = 0
+    for ch in t:
+        o = ord(ch)
+        if ch.isspace() or not ch.isalpha():
+            continue
+        letters += 1
+        if 0x3040 <= o <= 0x30FF or 0xFF66 <= o <= 0xFF9F:
+            kana += 1
+        elif 0xAC00 <= o <= 0xD7A3:
+            hangul += 1
+        elif (0x3400 <= o <= 0x4DBF or 0x4E00 <= o <= 0x9FFF
+              or 0xF900 <= o <= 0xFAFF):
+            han += 1
+        elif 0x0E00 <= o <= 0x0E7F:
+            thai += 1
+        elif 0x0400 <= o <= 0x04FF:
+            cyr += 1
+        elif 0x0600 <= o <= 0x06FF:
+            arab += 1
+        elif 0x0900 <= o <= 0x097F:
+            deva += 1
+        elif 0x0590 <= o <= 0x05FF:
+            hebr += 1
+    if letters <= 0:
+        return ""
+    # script phi-Latin CHIẾM ĐA SỐ đáng kể -> ép theo script đó
+    nonlatin = kana + hangul + han + thai + cyr + arab + deva + hebr
+    if nonlatin < 0.15 * letters:
+        return ""                       # chủ yếu Latin -> giữ nhãn gốc
+    if kana > 0:
+        return "ja"
+    for cnt, code in ((hangul, "ko"), (thai, "th"), (cyr, "ru"),
+                      (arab, "ar"), (deva, "hi"), (hebr, "he"), (han, "zh")):
+        if cnt and cnt == max(hangul, thai, cyr, arab, deva, hebr, han):
+            return code
+    return ""
+
+
+def resolve_lang(stored: str, text: str = "") -> str:
+    """Ngôn ngữ ĐÁNG TIN NHẤT cho recap/phụ đề: ưu tiên nhãn `stored` của
+    whisper; NHƯNG nếu CHỮ trong `text` là script phi-Latin (Nhật/Hàn/Thái/
+    Nga/Ả Rập...) mà nhãn lại rỗng HOẶC trỏ ngôn ngữ Latin (en/vi/fr...) thì
+    nhãn đó SAI -> ép theo CHỮ. (Sửa lỗi transcript cũ bị dán nhãn 'en' cho
+    video Nhật.) Hàm thuần."""
+    by_text = detect_lang_by_script(text)
+    if not by_text:
+        return stored or ""
+    s = str(stored or "").strip().lower()
+    s = _LANG_ALIAS.get(s, s)
+    # nhãn gốc CŨNG là script phi-Latin và khớp -> giữ; ngược lại (rỗng/Latin/
+    # khác script) -> tin CHỮ
+    if s in ("ja", "ko", "zh", "th", "ru", "ar", "hi", "he") and s == by_text:
+        return stored
+    if s in ("ja", "ko", "zh", "th", "ru", "ar", "hi", "he") and s != by_text:
+        return by_text            # nhãn phi-Latin nhưng khác chữ -> tin chữ
+    return by_text                # nhãn rỗng/Latin nhưng chữ phi-Latin -> ép chữ
+
+
 def _is_vi_lang(lang_name: str) -> bool:
     """lang_name (code/tên Anh/tên Việt) có phải TIẾNG VIỆT không."""
     s = str(lang_name or "").strip().lower()

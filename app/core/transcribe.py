@@ -429,6 +429,21 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _fix_lang(result: dict) -> dict:
+    """SỬA NHÃN NGÔN NGỮ theo CHỮ trong transcript: whisper đôi khi trả nhãn
+    sai (vd bị ép/hiểu nhầm là 'en' nhưng chữ ra là tiếng Nhật). recap.resolve_lang
+    nhìn script phi-Latin (kana/hangul/Thái/Cyrillic/Ả Rập/Devanagari) mà ép
+    đúng -> recap/lồng tiếng/phụ đề dùng đúng ngôn ngữ. Chữ Latin thì giữ nhãn
+    whisper. Lỗi -> trả nguyên result (không chặn chép lời)."""
+    try:
+        from app.ai import recap
+        result["language"] = recap.resolve_lang(
+            result.get("language", ""), result.get("text", ""))
+    except Exception:  # noqa: BLE001
+        pass
+    return result
+
+
 def transcribe(
     audio_path: str,
     model_name: str = "small",
@@ -448,13 +463,11 @@ def transcribe(
       }
     Ưu tiên stable-ts (căn từ chuẩn hơn); lỗi -> lùi faster-whisper.
     """
-    # NGÔN NGỮ: WHISPER_LANGUAGE chỉ là GỢI Ý cho whisper LOCAL (faster-whisper).
-    # KHÔNG áp cho đường GROQ: whisper-large-v3 TỰ NHẬN DIỆN rất tốt, còn ép sẵn
-    # 1 mã (vd stale "en" trong .env cũ) khiến Groq TRẢ VỀ language="en" cho MỌI
-    # video — kể cả video tiếng Nhật — làm recap/lồng tiếng/phụ đề tưởng là tiếng
-    # Anh (giọng Adam đọc tiếng Anh, sub tiếng Anh). Vì thế đường Groq LUÔN
-    # auto-detect (language=None); chỉ whisper local mới honor WHISPER_LANGUAGE.
-    local_language = language or settings.WHISPER_LANGUAGE
+    # NGÔN NGỮ: LUÔN TỰ NHẬN DIỆN (cả Groq lẫn whisper local) — KHÔNG ép theo
+    # WHISPER_LANGUAGE nữa. Trước đây stale "en" trong .env/cài đặt khiến MỌI
+    # video (kể cả tiếng Nhật) bị chép/dán nhãn tiếng Anh -> recap/lồng tiếng/
+    # phụ đề ra tiếng Anh. Whisper (Groq large-v3 + faster-whisper) tự nhận diện
+    # rất tốt; _fix_lang còn sửa nhãn theo CHỮ nếu whisper trả nhãn sai.
     provider = settings.WHISPER_PROVIDER
     # MÁY KHÁCH (bản .exe nhẹ): không có faster-whisper nhưng CÓ key Groq ->
     # tự dùng Groq, không bắt user phải biết đổi thêm 'Nguồn nghe-chép'.
@@ -474,7 +487,7 @@ def transcribe(
     if provider == "groq" and settings.groq_keys():
         try:
             # language=None -> Groq TỰ NHẬN DIỆN (không để stale "en" phá video Nhật)
-            return _transcribe_groq(audio_path, None, on_progress)
+            return _fix_lang(_transcribe_groq(audio_path, None, on_progress))
         except Exception as e:  # noqa: BLE001
             if not (is_available() or _stable_available()):
                 raise RuntimeError(f"Chép lời qua Groq lỗi: {e}")
@@ -487,8 +500,8 @@ def transcribe(
         )
     if _stable_available():
         try:
-            return _transcribe_stable(audio_path, model_name, device,
-                                      compute_type, local_language, on_progress)
+            return _fix_lang(_transcribe_stable(audio_path, model_name, device,
+                                                compute_type, None, on_progress))
         except Exception:  # noqa: BLE001 - stable-ts lỗi -> dùng faster-whisper thường
             # GIẢI PHÓNG model stable trước khi nạp model thường: không thì
             # 2 bản model cùng nằm trong RAM (x2 GB với model lớn).
@@ -497,7 +510,7 @@ def transcribe(
 
     segments_iter, info = model.transcribe(
         audio_path,
-        language=local_language,
+        language=None,          # TỰ NHẬN DIỆN (bỏ stale "en" phá video khác tiếng)
         word_timestamps=True,
         vad_filter=True,  # bỏ qua khoảng lặng -> nhanh + chính xác hơn
     )
@@ -521,10 +534,10 @@ def transcribe(
         if on_progress and total:
             on_progress(min(1.0, seg.end / total), "Đang chép lời...")
 
-    return {
-        "language": getattr(info, "language", local_language) or "",
+    return _fix_lang({
+        "language": getattr(info, "language", None) or "",
         "duration": total,
         "segments": segments,
         "words": words,
         "text": " ".join(full_text).strip(),
-    }
+    })

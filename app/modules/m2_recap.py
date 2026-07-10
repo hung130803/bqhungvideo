@@ -636,7 +636,13 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # Tên ngôn ngữ CHUẨN TIẾNG ANH ("English"/"Vietnamese") cho prompt —
     # tên kiểu "tiếng Anh" từng làm model viết kịch bản tiếng Việt cho
     # video EN (model tuân "write in English" tốt hơn hẳn).
-    lang_name = recap.lang_en_name(transcript.get("language", ""))
+    # NGÔN NGỮ ĐÁNG TIN: nhãn whisper CÓ THỂ SAI (transcript CŨ bị dán "en"
+    # cho video Nhật) -> resolve_lang nhìn CHỮ transcript mà ép đúng script
+    # phi-Latin (Nhật/Hàn/Thái/Nga/Ả Rập...). Text lấy từ transcript hoặc gộp segs.
+    _tr_text = transcript.get("text") or " ".join(
+        str(s.get("text", "")) for s in (transcript.get("segments") or []))
+    lang_name = recap.lang_en_name(
+        recap.resolve_lang(transcript.get("language", ""), _tr_text))
     edges = _sentence_edges(segs)          # mép câu -> snap mốc cắt
     tr_words = []                          # (ws, we) word-level nếu whisper trả
     for w in (transcript.get("words") or []):
