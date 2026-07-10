@@ -2504,6 +2504,16 @@ class StudioPage(QWidget):
             v = 115
         return min(200, max(80, v)) / 100.0
 
+    def _recap_dim(self) -> float:
+        """🔦 Mức 'Làm tối video khi AI kể' từ ⚙ Cài đặt Reup (QSettings
+        recap_dim 0-40%, mặc định 14) -> 0.0-0.40 cho export_canvas_clip
+        (chỉ áp cho clip recap; clip thường bỏ qua)."""
+        try:
+            v = int(self._settings.value("recap_dim", 14))
+        except (TypeError, ValueError):
+            v = 14
+        return min(40, max(0, v)) / 100.0
+
     def _auto_recap(self):
         """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
         if not self.state.video_id:
@@ -3494,6 +3504,8 @@ class StudioPage(QWidget):
                     self._settings.value("recap_emotion", True)).strip()
                 .lower() not in ("false", "0", "no", "off"),
                 recap_volume=self._recap_volume(),
+                # 🔦 làm tối hình khi AI kể (spotlight) — toàn cục từ ⚙
+                recap_dim=self._recap_dim(),
                 # (CHỮ AI ĐỌC giờ lấy từ MẪU qua cap_style, không còn ở ⚙)
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),

@@ -1100,6 +1100,19 @@ def export_canvas_clip(
                                         # cắt, nền lấp phần thừa. bg='fill'
                                         # (crop đầy khung) mâu thuẫn "không mất
                                         # hình" -> tự chuyển sang nền mờ.
+    dim_ranges: Optional[list] = None,  # 🔦 RECAP SPOTLIGHT: các khoảng (a,b)
+                                        # trên timeline ĐẦU RA (sau speed) —
+                                        # CÙNG hệ quy chiếu duck_ranges — mà
+                                        # KHỐI video content bị LÀM TỐI NHẸ
+                                        # (eq=brightness=-dim_amount) lúc AI
+                                        # đang KỂ. Áp TRƯỚC khi đốt phụ đề/
+                                        # overlay -> CHỮ vẫn sáng rõ. Đoạn giữ
+                                        # tiếng gốc (ngoài khoảng) sáng bình
+                                        # thường -> cảm giác "spotlight" khi AI
+                                        # nói. None/rỗng -> KHÔNG dim (bất biến
+                                        # clip thường + reup cũ).
+    dim_amount: float = 0.14,           # MỨC TỐI (0..0.5); brightness eq =
+                                        # -dim_amount. <=0 -> KHÔNG dim.
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -1197,6 +1210,17 @@ def export_canvas_clip(
     voice_vol = orig_vol
     if dub_on and not dub_mute_original and orig_vol >= 0.999 and not ducks:
         voice_vol = 0.12
+    # 🔦 SPOTLIGHT: mức tối (clamp 0..0.5) + các khoảng LÀM TỐI (đầu ra, sau
+    # speed — như duck). dim_amount<=0 hoặc không có khoảng hợp lệ -> tắt hẳn.
+    dim_amt = max(0.0, min(0.5, float(dim_amount if dim_amount is not None else 0.0)))
+    dims: list[tuple[float, float]] = []
+    for pair in (dim_ranges or []):
+        try:
+            a, b = float(pair[0]), float(pair[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if b - a > 0.05:
+            dims.append((max(0.0, a), b))
 
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
@@ -1274,6 +1298,20 @@ def export_canvas_clip(
             dub_idx = aidx
             aidx += 1
             cmd += ["-i", str(dub_path)]
+        # 🔦 SPOTLIGHT: LÀM TỐI NHẸ khối frame trong các khoảng AI KỂ — áp
+        # TRƯỚC khi đốt phụ đề (.ass)/overlay chữ nên CHỮ vẫn SÁNG rõ, chỉ
+        # HÌNH dịu xuống. dim_ranges dùng hệ quy chiếu timeline ĐẦU RA (sau
+        # speed) — CÙNG duck_ranges — nhưng eq đặt TRƯỚC setpts nên `t` ở
+        # đây là timeline TRƯỚC speed => nhân vspeed để đổi mốc đầu ra ->
+        # mốc nội bộ (khớp ĐÚNG khoảng duck âm thanh). eq=brightness nhận
+        # -1..1; dim_amt<=0.5 -> tối nhẹ, KHÔNG về đen (vẫn nhìn rõ).
+        if dims and dim_amt > 0.0005:
+            expr = "+".join(
+                f"between(t,{a * vspeed:.3f},{b * vspeed:.3f})"
+                for a, b in dims)
+            parts.append(f"{final}eq=brightness=-{dim_amt:.4f}:"
+                         f"enable='{expr}'[vdim]")
+            final = "[vdim]"
         if ass_path and os.path.exists(ass_path):
             ap = str(ass_path).replace("\\", "/").replace(":", "\\:")
             sub = f"subtitles='{ap}'"

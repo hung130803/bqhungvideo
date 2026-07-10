@@ -2119,6 +2119,16 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         dub_stretch = 1.0            # >1 ở chế độ "Khớp video": làm chậm đều clip
         duck_ranges = None           # 🎙 recap: các khoảng TẮT tiếng gốc (đầu ra)
         narr_events = None           # 🎙 recap: [{"start","end","text"}] thuyết minh
+        dim_ranges = None            # 🔦 recap: các đoạn AI KỂ -> làm tối nhẹ hình
+        # 🔦 Mức làm tối video khi AI kể (spotlight). Mặc định 0.14 (BẬT).
+        # payload["recap_dim"] (%/ratio từ ⚙ Cài đặt Reup) override; <=0 -> tắt.
+        try:
+            dim_amount = float(payload.get("recap_dim", 0.14))
+            if dim_amount > 1.0:     # nhận cả dạng phần trăm (vd 14 -> 0.14)
+                dim_amount = dim_amount / 100.0
+        except (TypeError, ValueError):
+            dim_amount = 0.14
+        dim_amount = max(0.0, min(0.5, dim_amount))
         if is_recap:
             # ---- 🎙 REUP THUYẾT MINH: TTS kịch bản -> track narration ----
             # (thay cho lồng tiếng dub thường; dub_lang của mẫu bị bỏ qua)
@@ -2161,6 +2171,13 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             for n in narr_events:
                 da, de = n.get("duck") or (n["start"], n["end"])
                 duck_ranges.append((float(da) / spd, float(de) / spd))
+            # 🔦 SPOTLIGHT: LÀM TỐI NHẸ hình đúng các ĐOẠN AI KỂ. Dùng
+            # start/end của part narrate (KHÔNG dùng "duck") -> khoảng ỔN
+            # ĐỊNH thị giác, không nhấp nháy theo từng câu nói. Cùng hệ quy
+            # chiếu timeline đầu ra (chia speed) như duck_ranges.
+            if dim_amount > 0.0005:
+                dim_ranges = [(float(n["start"]) / spd, float(n["end"]) / spd)
+                              for n in narr_events]
         elif payload.get("dub_lang") and payload.get("dub_enable"):
             from app.core import dubbing
             tr_dub = get_analysis(video_id, "transcript") or {}
@@ -2330,6 +2347,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,
             duck_ranges=duck_ranges,
+            # 🔦 SPOTLIGHT: làm tối nhẹ hình lúc AI kể (chỉ recap; clip
+            # thường dim_ranges=None -> KHÔNG dim). dim_amount đã gate ở trên.
+            dim_ranges=dim_ranges,
+            dim_amount=dim_amount,
             # recap: KHÔNG tắt hẳn tiếng gốc theo cờ dub_mute của mẫu — đoạn
             # orig phải giữ tiếng; duck_ranges đã HẠ nền đúng lúc AI nói.
             dub_mute_original=bool(payload.get("dub_mute")) and not is_recap,

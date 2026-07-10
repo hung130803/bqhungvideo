@@ -180,6 +180,19 @@ class RecapSettingsDialog(QDialog):
         self.volume.valueChanged.connect(self._volume_changed)
         lay.addWidget(self.volume)
 
+        # ---- 🔦 Làm tối video khi AI kể (spotlight) ----
+        self.dim_lbl = QLabel()
+        lay.addWidget(self.dim_lbl)
+        self.dim = QSlider(Qt.Orientation.Horizontal)
+        self.dim.setRange(0, 40)         # 0-40% (0 = tắt, mặc định 14%)
+        self.dim.setToolTip(
+            "Khi AI đang KỂ, làm TỐI NHẸ hình để giọng nổi bật (cảm giác "
+            "spotlight); đoạn giữ tiếng gốc thì sáng bình thường."
+            "\n0% = tắt (không làm tối) · 14% = khuyên dùng (dịu nhẹ, vẫn "
+            "nhìn rõ) · 40% = tối rõ. CHỮ phụ đề luôn giữ sáng.")
+        self.dim.valueChanged.connect(self._dim_changed)
+        lay.addWidget(self.dim)
+
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
         # ghi rõ "(Part)" để khỏi lẫn với "Số cảnh ghép" bên dưới
@@ -340,6 +353,12 @@ class RecapSettingsDialog(QDialog):
             vol = 115
         self.volume.setValue(min(200, max(80, vol)))
         self._volume_changed(self.volume.value())
+        try:                             # 🔦 làm tối khi AI kể (0-40%)
+            dimv = int(self._s.value("recap_dim", 14))
+        except (TypeError, ValueError):
+            dimv = 14
+        self.dim.setValue(min(40, max(0, dimv)))
+        self._dim_changed(self.dim.value())
         try:                             # số clip: 0 = Tự động (mặc định)
             cnt = int(self._s.value("recap_count", 0))
         except (TypeError, ValueError):
@@ -371,6 +390,7 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue("recap_pitch", self.pitch.currentData() or "normal")
         self._s.setValue("recap_emotion", bool(self.emotion.isChecked()))
         self._s.setValue("recap_volume", int(self.volume.value()))
+        self._s.setValue("recap_dim", int(self.dim.value()))
         self._s.setValue("recap_count", int(self.count.value()))
         lmin, lmax = int(self.min_sec.value()), int(self.max_sec.value())
         self._s.setValue("recap_min_sec", lmin)
@@ -442,6 +462,16 @@ class RecapSettingsDialog(QDialog):
         self.vol_lbl.setText(
             f"<b>Âm lượng giọng kể</b> — <b>{int(v)}%</b> so với mức tự cân "
             "theo tiếng gốc video (115% = khuyên dùng)")
+
+    def _dim_changed(self, v: int) -> None:
+        v = int(v)
+        note = ("tắt — hình sáng đều" if v == 0
+                else "khuyên dùng — dịu nhẹ" if v <= 18
+                else "tối rõ")
+        self.dim_lbl.setText(
+            f"<b>Làm tối video khi AI kể</b> — <b>{v}%</b> "
+            f"<span style='color:#8a8f98'>({note}; chữ phụ đề vẫn "
+            "sáng)</span>")
 
     # ------------------------------------------------------------------
     # Danh sách giọng (mạng) — nạp ở thread nền, poll bằng QTimer
