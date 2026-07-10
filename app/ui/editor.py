@@ -447,19 +447,24 @@ class _VideoBox(QGraphicsItem):
     def boundingRect(self):
         return QRectF(-2, -2, self.w + self.HS, self.h + self.HS)
 
+    def _video_rect(self):
+        """VÙNG video THỰC sẽ vẽ (và XUẤT): fit_src BẬT -> contain khớp export
+        (fit_src_video_rect); TẮT -> lấp đầy khung kéo. Trả QRectF theo hệ item."""
+        if self.fit_src:
+            vx, vy, vw, vh = self._fit_rect()
+            return QRectF(vx, vy, vw, vh)
+        return QRectF(0.0, 0.0, self.w, self.h)
+
     def _handle(self):
+        # góc PHẢI-DƯỚI của VÙNG VIDEO thực (khớp viền đang hiện) — 1 khung 1 tay
         s = self.HS
-        return QRectF(self.w - s / 2, self.h - s / 2, s, s)
+        r = self._video_rect()
+        return QRectF(r.right() - s / 2, r.bottom() - s / 2, s, s)
 
     def paint(self, p, opt, widget=None):
         src = self.disp if not self.disp.isNull() else self.pm
-        # VÙNG video THỰC: fit_src BẬT -> contain (co vừa canvas, khớp xuất);
-        # TẮT -> lấp đầy khung kéo (0,0,w,h) như cũ.
-        if self.fit_src:
-            vx, vy, vw, vh = self._fit_rect()
-        else:
-            vx, vy, vw, vh = 0.0, 0.0, self.w, self.h
-        vrect = QRectF(vx, vy, vw, vh)
+        sel = self.isSelected()
+        vrect = self._video_rect()
         if not src.isNull():
             # đang resize -> vẽ NHANH (fast), nghỉ tay -> mượt (smooth)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,
@@ -467,20 +472,19 @@ class _VideoBox(QGraphicsItem):
             p.drawPixmap(vrect, src, QRectF(src.rect()))
         else:
             p.fillRect(vrect, QColor("#333"))
-        sel = self.isSelected()
         p.setBrush(Qt.BrushStyle.NoBrush)
-        # fit_src BẬT: viền khối video ở vùng THỰC (nét liền mảnh) để user thấy
-        # rõ khung "giữ trọn hình" khác khung kéo; khung kéo vẽ mờ để còn nắm tay.
+        # MỘT KHUNG DUY NHẤT = viền quanh VÙNG VIDEO thực (đúng vùng xuất). Cả 2
+        # mode chỉ vẽ 1 viền, KHÔNG có khung chấm "vùng kéo" thứ 2 gây rối.
+        # fit_src BẬT + video nhỏ hơn khối kéo -> phần thừa tô mờ để user thấy
+        # "sẽ có viền" (giữ trọn hình), nhưng không vẽ đường viền thứ 2.
         if self.fit_src:
-            p.setPen(QPen(QColor("#6E8BFF"), 1, Qt.PenStyle.DotLine))
-            p.drawRect(QRectF(0, 0, self.w, self.h))   # khung KÉO (mờ, chấm)
-            p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
-                          Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
-            p.drawRect(vrect)                            # vùng VIDEO thực
-        else:
-            p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
-                          Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
-            p.drawRect(QRectF(0, 0, self.w, self.h))
+            drag = QRectF(0, 0, self.w, self.h)
+            path = QPainterPath(); path.addRect(drag)
+            inner = QPainterPath(); inner.addRect(vrect)
+            p.fillPath(path.subtracted(inner), QColor(0, 0, 0, 90))
+        p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
+                      Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
+        p.drawRect(vrect)
         if sel:
             p.setPen(QPen(QColor("#6E8BFF"), 1)); p.setBrush(QColor("white"))
             p.drawRect(self._handle())
@@ -1065,9 +1069,9 @@ class EditorDialog(QDialog):
         left = QVBoxLayout(); left.setSpacing(8)
         self.canvas = EditorCanvas(on_resize=self._on_resized)
         left.addWidget(self.canvas, 1)
-        hint = QLabel("Kéo <b>khối video</b> để dời/phóng to · kéo <b>góc chữ</b> để "
-                      "đổi cỡ · kéo <b>ô vàng</b> đặt chỗ phụ đề · kéo vào giữa có "
-                      "vạch căn.")
+        hint = QLabel("Kéo <b>khối video</b> để dời/phóng to · <b>góc</b> để đổi cỡ · "
+                      "bật <b>“giữ trọn hình”</b> = có viền, tắt = lấp đầy cắt bớt · "
+                      "kéo <b>ô vàng</b> đặt chỗ phụ đề · kéo vào giữa có vạch căn.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#9A9AA8; font-size:12px;")
         left.addWidget(hint)
