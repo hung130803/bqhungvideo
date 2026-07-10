@@ -222,46 +222,80 @@ def _g(o, k, d=0):
     return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
 
 
-def _groq_one(audio_path: str, language, keys: list) -> tuple:
+def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
+              on_wait=None) -> tuple:
     """Gửi 1 FILE cho Groq, xoay vòng key khi hết lượt. Trả (segs, words, lang, text).
 
     Dùng CHUNG sổ trạng thái key với app.ai.llm: key nào vừa 429 (kể cả do
     LLM chọn clip) thì bị xếp cuối, key ready lên trước; mọi lời gọi đều
-    mark_used/mark_ok/mark_limited để UI 'Cài đặt AI' hiện trạng thái sống."""
+    mark_used/mark_ok/mark_limited để UI 'Cài đặt AI' hiện trạng thái sống.
+
+    start_at: XOAY ĐIỂM BẮT ĐẦU danh sách key (chia tải khi chép lời SONG SONG
+    — mỗi cửa sổ bắt đầu ở 1 key khác nhau thay vì cả 3 đập vào key đầu, gây
+    429 chùm trong cùng phút). on_wait(sec): callback báo "đang đợi Groq hồi
+    X giây" khi TẤT CẢ key đều limited với reset NGẮN (TPM cùng nick) — đợi
+    rồi thử lại thay vì fail (video dài chép lời rất dễ chạm TPM).
+    """
+    import time as _time
     from openai import OpenAI
     from app.ai import llm
     last = ""
-    # ready trước, limited-sắp-hết-cooldown sau (không bao giờ rỗng nếu có key)
-    for key in llm.pick_keys("groq", keys):
-        llm.mark_used("groq", key)
-        try:
-            client = OpenAI(api_key=key,
-                            base_url="https://api.groq.com/openai/v1",
-                            timeout=180, max_retries=1)
-            with open(audio_path, "rb") as f:
-                r = client.audio.transcriptions.create(
-                    file=f, model=settings.GROQ_WHISPER_MODEL,
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment", "word"],
-                    language=language or None)
-            segs = [{"start": float(_g(s, "start", 0)), "end": float(_g(s, "end", 0)),
-                     "text": (_g(s, "text", "") or "").strip()}
-                    for s in (_g(r, "segments", None) or [])]
-            words = [{"start": float(_g(w, "start", 0)), "end": float(_g(w, "end", 0)),
-                      "word": (_g(w, "word", "") or "").strip()}
-                     for w in (_g(r, "words", None) or [])]
-            llm.mark_ok("groq", key)
-            return segs, words, (_g(r, "language", None) or language or ""), \
-                (_g(r, "text", "") or "")
-        except Exception as e:  # noqa: BLE001
-            last = str(e)
-            if llm.is_rate_limit_error(last):
-                llm.mark_limited("groq", key, last)
-                continue                       # key hết lượt -> xoay key kế
-            if llm.is_auth_error(last):
-                llm.mark_invalid("groq", key)
-                continue                       # KEY SAI -> bỏ qua, thử key khác
-            raise                              # lỗi khác (mạng...): KHÔNG giết oan key
+
+    def _order():
+        """Danh sách key ưu tiên, xoay start_at vòng (chỉ xoay phần READY để
+        chia tải song song; limited/invalid vẫn giữ cuối)."""
+        ordered = llm.pick_keys("groq", keys)
+        if start_at and ordered:
+            k = start_at % len(ordered)
+            ordered = ordered[k:] + ordered[:k]
+        return ordered
+
+    # tối đa 2 vòng: vòng 1 thử mọi key; nếu TẤT CẢ đều 429 với reset ngắn
+    # (TPM cùng nick), đợi hết cooldown ngắn nhất rồi thử lại vòng 2.
+    for _round in (1, 2):
+        for key in _order():
+            llm.mark_used("groq", key)
+            try:
+                client = OpenAI(api_key=key,
+                                base_url="https://api.groq.com/openai/v1",
+                                timeout=180, max_retries=1)
+                with open(audio_path, "rb") as f:
+                    r = client.audio.transcriptions.create(
+                        file=f, model=settings.GROQ_WHISPER_MODEL,
+                        response_format="verbose_json",
+                        timestamp_granularities=["segment", "word"],
+                        language=language or None)
+                segs = [{"start": float(_g(s, "start", 0)),
+                         "end": float(_g(s, "end", 0)),
+                         "text": (_g(s, "text", "") or "").strip()}
+                        for s in (_g(r, "segments", None) or [])]
+                words = [{"start": float(_g(w, "start", 0)),
+                          "end": float(_g(w, "end", 0)),
+                          "word": (_g(w, "word", "") or "").strip()}
+                         for w in (_g(r, "words", None) or [])]
+                llm.mark_ok("groq", key)
+                return segs, words, (_g(r, "language", None) or language or ""), \
+                    (_g(r, "text", "") or "")
+            except Exception as e:  # noqa: BLE001
+                last = str(e)
+                if llm.is_rate_limit_error(last):
+                    llm.mark_limited("groq", key, last)
+                    continue                   # key hết lượt -> xoay key kế
+                if llm.is_auth_error(last):
+                    llm.mark_invalid("groq", key)
+                    continue                   # KEY SAI -> bỏ qua, thử key khác
+                raise                          # lỗi khác (mạng...): KHÔNG giết oan key
+        # hết vòng: mọi key vừa thử đều limited. Nếu reset NGẮN (TPM/phút,
+        # <= 90s) -> ĐỢI hết cooldown ngắn nhất rồi thử lại (vòng 2). Reset
+        # dài (hết lượt ngày) thì đợi vô ích -> thoát báo lỗi.
+        if _round == 1 and not llm.is_auth_error(last):
+            wait = llm.soonest_ready_wait("groq", keys)
+            if wait is not None and 0 < wait <= 90.0:
+                if on_wait:
+                    on_wait(wait)
+                _time.sleep(wait + 0.5)
+                continue
+        break
     if llm.is_auth_error(last):
         raise RuntimeError(
             "Tất cả key Groq đều SAI/không hợp lệ — vào 'Cài đặt AI' kiểm tra "
@@ -337,11 +371,25 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
         if parts:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             done = 0
+            waiting = {"sec": 0.0}                # reset dài nhất đang đợi (log)
             if on_progress:
                 on_progress(0.1, f"Đang chép lời (Groq) 0/{n} phần...")
+
+            def _on_wait(sec):                    # 1 cửa sổ đang đợi TPM hồi
+                waiting["sec"] = max(waiting["sec"], sec)
+                if on_progress:
+                    on_progress(0.1 + 0.85 * done / n,
+                                f"Đang đợi Groq hồi hạn mức ~{int(sec)}s rồi "
+                                f"thử lại (đã xong {done}/{n} phần)...")
+            # CHIA TẢI: mỗi cửa sổ BẮT ĐẦU ở 1 key khác nhau (start_at=idx) —
+            # 3 cửa sổ song song không cùng đập vào key đầu gây 429 chùm trong
+            # cùng phút (Groq giới hạn theo phút). Kết quả ghép theo index nên
+            # thứ tự/offset không đổi.
+            idx_list = sorted(parts)
             with ThreadPoolExecutor(max_workers=min(3, len(parts))) as ex:
-                futs = {ex.submit(_groq_one, parts[i], language, keys): i
-                        for i in sorted(parts)}
+                futs = {ex.submit(_groq_one, parts[i], language, keys,
+                                  start_at=pos, on_wait=_on_wait): i
+                        for pos, i in enumerate(idx_list)}
                 for fut in as_completed(futs):
                     results[futs[fut]] = fut.result()   # lỗi -> nổi lên như cũ
                     done += 1
@@ -412,6 +460,34 @@ def transcribe(
     # GPU tốt -> giữ local như cũ (nhanh, không phụ thuộc hạn mức).
     if provider != "groq" and device != "cuda" and settings.groq_keys():
         provider = "groq"
+    # ⚠ VIDEO DÀI + Groq: chép lời qua Groq đốt nhiều LƯỢT/TOKEN (mỗi 10 phút
+    # = 1 request audio lớn; free tier chỉ ~12k token/phút -> video dài rất dễ
+    # chạm hạn mức phút, phải xoay key/đợi). Máy có GPU + faster-whisper thì
+    # chép lời LOCAL nhanh + KHÔNG tốn hạn mức. GỢI Ý rõ (không đổi ngầm nếu
+    # user CỐ Ý chọn 'groq'); nếu Groq chỉ là AUTO-fallback (không do user đặt)
+    # thì DÙNG LOCAL luôn cho video dài.
+    # Chỉ đo độ dài khi ĐANG định dùng Groq (đường local GPU nhanh không cần
+    # tốn thêm 1 lần gọi ffprobe).
+    if provider == "groq" and is_available():
+        import os as _os
+        import shutil as _shutil
+        _fp = (_shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe")
+        _dur = _audio_duration(
+            audio_path, _fp, 0x0800_0000 if _os.name == "nt" else 0)
+        _long = _dur >= 600.0                   # >= 10 phút = "video dài"
+        _user_chose_groq = (settings.WHISPER_PROVIDER == "groq")
+        if _long and not _user_chose_groq:
+            # Groq chỉ là auto-fallback -> ưu tiên LOCAL cho video dài (free,
+            # không đốt hạn mức); Groq vẫn là lưới đỡ nếu local lỗi.
+            provider = "local"
+            if on_progress:
+                on_progress(0.0, "Video dài — chép lời bằng MÁY (miễn phí, "
+                                 "không tốn lượt Groq)...")
+        elif _long and on_progress:
+            on_progress(0.0, "⚠ Video dài chép lời qua Groq tốn NHIỀU lượt "
+                             "(dễ chạm hạn mức/phút) — cân nhắc chuyển "
+                             "'Nghe-chép' sang 'Máy này' trong Cài đặt AI.")
+
     # GROQ (mây) TRƯỚC — KHÔNG cần lib local. Máy yếu/không cài gì vẫn chép được.
     if provider == "groq" and settings.groq_keys():
         try:

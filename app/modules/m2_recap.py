@@ -954,10 +954,19 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
         # clip narration RÁC (không có đường tạo nội dung rác — script None
         # thì clip không được lưu kèm recap; toàn bộ fail -> ném lỗi ở đây).
         if any(llm.is_rate_limit_error(e) for e in errors):
+            # phân biệt HẾT NGÀY (cần key nick khác) vs HẾT TOKEN/PHÚT (đợi ~giây)
+            kinds = {llm.classify_rate_limit(e) for e in errors}
+            if "day" in kinds:
+                raise RuntimeError(
+                    "AI đã HẾT LƯỢT NGÀY (429, per-day) — KHÔNG cứu bằng xoay "
+                    "key nếu các key CÙNG 1 tài khoản (Groq tính hạn mức theo "
+                    "TÀI KHOẢN, không theo key). Hãy THÊM KEY TỪ NICK KHÁC "
+                    "trong 'Cài đặt AI', hoặc đợi reset (mai) rồi thử lại.")
             raise RuntimeError(
-                "AI đã HẾT HẠN MỨC/lượt gọi (429) — không viết được kịch bản "
-                "thuyết minh. Hãy THÊM KEY khác trong 'Cài đặt AI' hoặc ĐỢI "
-                "reset hạn mức rồi thử lại.")
+                "AI chạm HẠN MỨC TOKEN/PHÚT (429, TPM — reset sau ~vài giây "
+                "tới 1 phút). Hệ thống đã tự đợi + xoay key nhưng vẫn quá tải. "
+                "Hãy thử lại sau chốc lát, hoặc THÊM KEY từ NICK KHÁC (10 key "
+                "cùng 1 nick dùng CHUNG hạn mức nên không tăng token/phút).")
         if any(llm.is_auth_error(e) for e in errors):
             raise RuntimeError(
                 "Key AI SAI/HẾT HẠN (lỗi 401) — không viết được kịch bản "

@@ -158,6 +158,30 @@ def pick_keys(provider: str, keys=None) -> list:
     return ready + [k for _, k in limited] + invalid
 
 
+def soonest_ready_wait(provider: str, keys=None):
+    """SỐ GIÂY tới khi có key ĐẦU TIÊN hồi (cooldown ngắn nhất trong các key
+    limited). Có key ready sẵn -> 0.0. KHÔNG key nào (rỗng) -> None. Dùng để
+    quyết định 'đợi TPM rồi thử lại' vs 'báo hết lượt' (reset dài = hết ngày).
+    """
+    if keys is None:
+        keys = settings.llm_keys_for(provider)
+    if not keys:
+        return None
+    now = time.time()
+    soonest = None
+    with _KEY_LOCK:
+        for k in keys:
+            st = _KEY_STATE.get((provider, k))
+            if st is None or not _is_limited(st, now):
+                if not (st is not None and _is_invalid(st)):
+                    return 0.0            # có key sẵn sàng ngay
+                continue                  # invalid -> bỏ qua
+            left = st.get("until", 0) - now
+            if soonest is None or left < soonest:
+                soonest = left
+    return soonest
+
+
 def key_status(provider: str) -> list:
     """Trạng thái từng key (đúng THỨ TỰ trong settings) cho UI — chỉ đọc RAM,
     KHÔNG gọi mạng. Mỗi phần tử: key_masked/state/wait_left/last_used_ago/
@@ -299,6 +323,39 @@ def is_rate_limit_error(msg: str) -> bool:
 
 
 _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
+
+
+def is_daily_limit_error(msg: str) -> bool:
+    """429 có phải HẾT LƯỢT NGÀY (per day / TPD / RPD) không — khác hết TOKEN/
+    PHÚT (TPM, reset vài giây). Hết ngày -> phải THÊM KEY NICK KHÁC/đợi mai;
+    hết phút -> chỉ cần đợi ~vài giây. Hàm thuần."""
+    m = (msg or "").lower()
+    return any(s in m for s in ("per day", "daily", "tpd", "rpd",
+                                "tokens per day", "requests per day",
+                                "per-day"))
+
+
+def classify_rate_limit(msg: str) -> str:
+    """Phân loại lỗi hạn mức để BÁO RÕ cho user:
+      "auth"  -> key sai/hết hạn (401)
+      "day"   -> hết lượt NGÀY (cần key nick khác / đợi mai)
+      "minute"-> hết TOKEN/PHÚT (TPM — chỉ đợi ~vài giây, tự thử lại)
+      "rate"  -> rate-limit chung không rõ chu kỳ
+      ""      -> không phải lỗi hạn mức
+    Hàm thuần — dùng cho thông báo UI."""
+    if is_auth_error(msg):
+        return "auth"
+    if not is_rate_limit_error(msg):
+        return ""
+    if is_daily_limit_error(msg):
+        return "day"
+    # có reset ngắn (<= 120s) trong message -> TPM (per-minute)
+    wait = parse_retry_wait(msg)
+    if wait is not None and wait <= 120.0:
+        return "minute"
+    if wait is not None and wait > 120.0:
+        return "day"        # reset dài = gần như hết ngày
+    return "rate"
 
 
 def is_auth_error(msg: str) -> bool:
