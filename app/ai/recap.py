@@ -399,7 +399,7 @@ _LANG_EN = {
     "de": "German", "ru": "Russian", "id": "Indonesian", "pt": "Portuguese",
     "hi": "Hindi", "ar": "Arabic", "it": "Italian", "nl": "Dutch",
     "tr": "Turkish", "pl": "Polish", "uk": "Ukrainian", "ms": "Malay",
-    "tl": "Filipino",
+    "tl": "Filipino", "lo": "Lao", "km": "Khmer", "my": "Burmese",
 }
 _LANG_ALIAS = {
     "vietnamese": "vi", "tiếng việt": "vi", "tieng viet": "vi",
@@ -409,6 +409,12 @@ _LANG_ALIAS = {
     "spanish": "es", "tiếng tây ban nha": "es", "german": "de",
     "tiếng đức": "de", "russian": "ru", "tiếng nga": "ru",
     "indonesian": "id", "tiếng indonesia": "id", "portuguese": "pt",
+    "italian": "it", "tiếng ý": "it", "arabic": "ar", "tiếng ả rập": "ar",
+    "hindi": "hi", "dutch": "nl", "tiếng hà lan": "nl",
+    "turkish": "tr", "tiếng thổ nhĩ kỳ": "tr", "polish": "pl",
+    "tiếng ba lan": "pl", "lao": "lo", "tiếng lào": "lo",
+    "khmer": "km", "tiếng khmer": "km", "burmese": "my", "myanmar": "my",
+    "tiếng miến điện": "my",
 }
 
 
@@ -758,9 +764,18 @@ def build_prompt(sentences: list, lang_name: str, style: str,
 # ------------------------------------------------------------------
 def _norm_for_copy(text: str) -> str:
     """Chuẩn hoá text để so 'copy nguyên văn': bỏ dấu câu/khoảng trắng thừa,
-    hạ chữ thường, chuẩn unicode (đủ bắt AI chép transcript đổi vài dấu phẩy)."""
+    hạ chữ thường, chuẩn unicode (đủ bắt AI chép transcript đổi vài dấu phẩy).
+
+    GIỮ DẤU KẾT HỢP (unicode Mn/Mc — virama/matra Devanagari, sara Thái,
+    dấu Khmer/Miến/Ả Rập): lưới cũ `[^\\w\\s]` coi chúng là "dấu câu" và
+    thay bằng KHOẢNG TRẮNG -> từ Hindi/Thái bị BĂM VỤN ("क्या" -> "क या")
+    -> stopword không khớp + mọi lời trùng mọi lời -> anti-copy gut oan
+    (lỗi thật với tiếng Hindi). Ký tự EN/VI/JA/latin đều isalnum -> đường
+    cũ GIỮ NGUYÊN từng byte (bất biến test khẳng định)."""
     t = unicodedata.normalize("NFC", str(text or "")).lower()
-    t = re.sub(r"[^\w\s]", " ", t, flags=re.UNICODE)
+    t = "".join(c if (c.isalnum() or c.isspace() or c == "_"
+                      or unicodedata.category(c) in ("Mn", "Mc"))
+                else " " for c in t)
     return re.sub(r"\s+", " ", t).strip()
 
 
@@ -773,9 +788,15 @@ def _norm_for_copy(text: str) -> str:
 # BẤT BIẾN: với text KHÔNG có ký tự CJK, _word_tokens(x) == x.split()
 # (test khẳng định) — đường EN/VI KHÔNG đổi hành vi.
 # ------------------------------------------------------------------
-# Dải ký tự CJK: hiragana+katakana (U+3040-30FF), kanji/CJK ext-A
-# (U+3400-4DBF) + CJK Unified (U+4E00-9FFF) + compat (U+F900-FAFF),
-# katakana nửa (U+FF66-FF9F), hangul (U+AC00-D7A3).
+# Dải ký tự CHỮ VIẾT KHÔNG DÙNG DẤU CÁCH giữa các từ (tên biến giữ
+# "_CJK_*" để không phá chỗ gọi — khái niệm đúng là "chữ viết không dấu
+# cách"): hiragana+katakana (U+3040-30FF), kanji/CJK ext-A (U+3400-4DBF)
+# + CJK Unified (U+4E00-9FFF) + compat (U+F900-FAFF), katakana nửa
+# (U+FF66-FF9F), hangul (U+AC00-D7A3 — tiếng Hàn CÓ dùng dấu cách nhưng
+# per-char chỉ làm density cao hơn, vô hại), Thái (U+0E00-0E7F), Lào
+# (U+0E80-0EFF), Miến Điện (U+1000-109F), Khmer (U+1780-17FF).
+# KHÔNG gồm latin/cyrillic/ả rập/devanagari — các tiếng đó dùng dấu
+# cách, giữ nguyên đường .split() (bất biến test khẳng định).
 _CJK_CHARS = (
     "぀-ヿ"        # hiragana + katakana
     "㐀-䶿"        # CJK Unified ext-A
@@ -783,6 +804,10 @@ _CJK_CHARS = (
     "豈-﫿"        # CJK compat ideographs
     "ｦ-ﾟ"        # halfwidth katakana
     "가-힣"        # hangul syllables
+    "฀-๿"        # Thái
+    "຀-໿"        # Lào
+    "က-႟"        # Miến Điện
+    "ក-៿"        # Khmer
 )
 _CJK_RE = re.compile("[" + _CJK_CHARS + "]")
 # Token: 1 KÝ TỰ CJK riêng lẻ, HOẶC 1 cụm không-phải-CJK-không-khoảng-trắng
@@ -906,8 +931,13 @@ def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
     Đây là lưới FUZZY bắt kiểu 'diễn giải lại lời nhân vật' (đổi vài từ,
     đảo trật tự) mà _is_transcript_copy (so nguyên văn) lọt: lời KỂ sáng
     tác thật sự (thêm cảm xúc/bình luận/góc nhìn ngoài) dùng từ vựng khác
-    hẳn transcript nên tỉ lệ trùng thấp."""
-    words = _norm_for_copy(text).split()
+    hẳn transcript nên tỉ lệ trùng thấp.
+
+    HINDI: bỏ hư từ Devanagari (_STOP_HI) trước khi đếm — câu Hindi ngắn
+    gần như toàn hư từ (का की में है...) nên đếm TỪ THÔ làm lời sáng tác
+    trùng ~100% -> gut oan (lỗi thật). Token Devanagari không đụng vi/en
+    -> đường EN/VI giữ Y CŨ (lưới thô cố tình đếm cả stopword vi/en)."""
+    words = [w for w in _norm_for_copy(text).split() if w not in _STOP_HI]
     if len(words) < 4 or not window_words:
         return 0.0
     hit = sum(1 for w in words if w in window_words)
@@ -1066,7 +1096,18 @@ _STOP_EN = set(
     "why how all any some more most other another into over under after "
     "before again once out up down off only own same too also about because "
     "while if else even still yet going go get got one two".split())
-_STOPWORDS = _STOP_VI | _STOP_EN
+# HINDI: hư từ Devanagari (hậu tố cách/trợ động từ/đại từ) — LỖI THẬT: câu
+# Hindi ngắn gần như toàn hư từ (का की के में है...), _STOPWORDS chỉ có
+# vi+en nên hư từ Hindi bị đếm là TỪ-NỘI-DUNG -> lời BÌNH LUẬN sáng tác
+# tiếng Hindi trùng >=55% "nội dung" với transcript -> _is_retelling gut
+# oan SẠCH narrate. Token Devanagari không đụng vi/en/ja -> thêm an toàn.
+_STOP_HI = set(
+    "का की के को से में ने पर और भी ही तो या है हैं था थी थे हो होगा होगी "
+    "होंगे हुआ हुई हुए कर करके रहा रही रहे गया गई गए यह वह इस उस ये वो जो "
+    "कि अब जब तब क्या कौन क्यों कैसे कहाँ नहीं मैं हम तुम आप वे मेरा मेरी "
+    "मेरे उसका उसकी उसके उनका उनकी उनके अपना अपनी अपने इसका इसकी इसके एक "
+    "दो कुछ सब बहुत लिए साथ बाद पहले फिर ओर तरह बात वाला वाली वाले".split())
+_STOPWORDS = _STOP_VI | _STOP_EN | _STOP_HI
 
 
 def _content_words(text: str) -> set:
@@ -1692,6 +1733,103 @@ def _narrate_count(raw_parts) -> int:
 
 
 # ------------------------------------------------------------------
+# 🔇 CỨU KỊCH BẢN "CÂM" — LỖI THẬT (thấy với TIẾNG HÀN trên llama-3.3/groq):
+# prompt đạo diễn ĐẦY ĐỦ làm model trả CẤU TRÚC đúng (windows/parts chuẩn
+# schema) nhưng bỏ TRỐNG MỌI chuỗi ("title": "", mọi "text": "") — retry
+# kèm chỉ trích / đổi cách ép ngôn ngữ đều KHÔNG chữa được (đã đo A/B).
+# Trong khi đó prompt NGẮN GỌN xin lời kể thì model viết tiếng Hàn bình
+# thường. => Khi phát hiện kịch bản câm: gọi 1 PASS PHỤ prompt TỐI GIẢN
+# chỉ xin lời kể cho TỪNG slot narrate rỗng, điền vào rồi validate lại
+# (anti-copy/relevance/ngôn ngữ vẫn soi đủ ở tầng validate — KHÔNG nới).
+# Bounded: đúng 1 lệnh gọi LLM mỗi lần cứu; lỗi -> trả None (fallback cũ).
+# ------------------------------------------------------------------
+def _bad_narrate_slots(parts_list: list, sentences: list) -> list:
+    """[(index, part)] các part narrate CẦN VIẾT LẠI: text RỖNG (kịch bản
+    câm) HOẶC text CHÉP/KỂ LẠI transcript (sẽ bị anti-copy hạ orig — lỗi
+    thật với TIẾNG Ả RẬP: llama lười, dán nguyên câu transcript làm lời
+    kể). Hàm thuần — dùng đúng các lưới anti-copy của validate."""
+    tn = " ".join(_norm_for_copy(t) for _a, _b, t in (sentences or []) if t)
+    out = []
+    for i, p in enumerate(parts_list):
+        if str(p.get("mode") or "").strip().lower() != "narrate":
+            continue
+        t = str(p.get("text") or "").strip()
+        if not t:
+            out.append((i, p))
+            continue
+        try:
+            s, e = float(p.get("start")), float(p.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if _is_transcript_copy(t, tn) or (
+                sentences and _is_copy_narrate(t, sentences, s, e)):
+            out.append((i, p))
+    return out
+
+
+def _fill_mute_narrates(data, sentences: list, lang_name: str,
+                        listing: str = ""):
+    """PASS PHỤ viết lời cho các part narrate HỎNG (text rỗng — kịch bản
+    câm; hoặc text chép/kể lại transcript — sẽ bị anti-copy gut): prompt
+    TỐI GIẢN (không khối ép ngôn ngữ dài — chính prompt dài làm model câm)
+    xin lời kể đúng ngôn ngữ cho từng slot. Lời mới vẫn qua ĐỦ các lưới
+    anti-copy/relevance ở validate sau đó — KHÔNG nới lỏng. Trả data MỚI
+    (copy, parts đã điền + title nếu thiếu); None nếu gọi LLM lỗi / không
+    điền được slot nào."""
+    if not isinstance(data, dict):
+        return None
+    ps = _coerce_parts(data.get("parts"))
+    slots = _bad_narrate_slots(ps, sentences)
+    if not slots:
+        return None
+    if not listing:
+        listing = "\n".join(f"{a:.1f} {b:.1f} | {t}"
+                            for a, b, t in (sentences or []))[:11000]
+    ln = str(lang_name or "").strip() \
+        or "the original spoken language of the video"
+    lines = []
+    for i, p in slots:
+        try:
+            s, e = float(p.get("start")), float(p.get("end"))
+        except (TypeError, ValueError):
+            continue
+        lines.append(f"- slot {i}: giây {s:.1f} -> {e:.1f} "
+                     f"(~{max(4, int((e - s) * 2.1))} từ)")
+    if not lines:
+        return None
+    prompt = (
+        f"Transcript video nói bằng {ln} (mỗi dòng: BẮT_ĐẦU KẾT_THÚC | lời "
+        f"nói):\n{listing}\n\n"
+        f"Bạn là người kể chuyện đứng NGOÀI video. Viết lời kể bằng {ln} "
+        "cho từng slot dưới đây (slot = khoảng thời gian trên video): 1-2 "
+        "câu NGẮN, bình luận/cảm xúc/câu hỏi về chuyện quanh mốc đó, KHÔNG "
+        "chép nguyên văn transcript, KHÔNG thuật lại lời nhân vật.\n"
+        + "\n".join(lines) + "\n\n"
+        f'Trả về DUY NHẤT JSON: {{"title": "tiêu đề {ln} giật tít", '
+        f'"texts": {{"<số slot>": "lời kể {ln}"}}}} — đủ MỌI slot, '
+        "text KHÔNG rỗng.")
+    try:
+        d2 = llm.complete_json(prompt, system=_SYSTEM)
+    except llm.LLMError:
+        return None
+    texts = d2.get("texts") if isinstance(d2, dict) else None
+    if not isinstance(texts, dict):
+        return None
+    filled = 0
+    for i, p in slots:
+        t = str(texts.get(str(i)) or texts.get(i) or "").strip()
+        if t:
+            p["text"] = t
+            filled += 1
+    if not filled:
+        return None
+    out = dict(data, parts=ps)
+    if not str(out.get("title") or "").strip() and isinstance(d2, dict):
+        out["title"] = str(d2.get("title") or "").strip()
+    return out
+
+
+# ------------------------------------------------------------------
 # 🎬 ĐẠO DIỄN MULTI-WINDOW (v4): LLM nhận TOÀN BỘ transcript, TỰ CHỌN
 # 3-6 KHUNG CẢNH rời nhau theo mạch chuyện + viết kịch bản CẦU NỐI
 # (kiểu recap phim). Windows hỏng -> caller fallback đường 1-span cũ.
@@ -2268,7 +2406,7 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                               listing=listing, win_min=win_min,
                               win_auto=win_auto)
 
-    result, err = None, ""
+    result, err, data = None, "", None
     try:
         data = llm.complete_json(prompt, system=_SYSTEM)
         result, err = _director_from_data(data, sentences, duration,
@@ -2278,6 +2416,18 @@ def write_director_script(sentences: list, lang_name: str, style: str,
             raise                       # lỗi mạng/key/quota -> caller quyết
         err = ("kết quả không phải JSON hợp lệ — trả DUY NHẤT 1 JSON object "
                "đúng schema, không thêm chữ/markdown")
+    # ---- CỨU KỊCH BẢN parts HỎNG vì narrate CÂM (mọi text rỗng — lỗi thật
+    # llama+tiếng Hàn) hoặc narrate CHÉP transcript bị anti-copy gut SẠCH
+    # (lỗi thật llama+tiếng Ả Rập) -> 1 pass phụ viết lời rồi validate lại
+    # (lưới anti-copy vẫn soi đủ trên lời mới — không nới) ----
+    if result is None and '"parts"' in (err or "") and isinstance(data, dict):
+        d_fill = _fill_mute_narrates(data, sentences, lang_name,
+                                     listing=listing)
+        if d_fill:
+            result, err = _director_from_data(d_fill, sentences, duration,
+                                              min_total, max_total, win_max)
+            if result:
+                data = d_fill
     # ---- ANTI-COPY SIẾT rụng quá nửa narrate (thuật lại) -> RETRY chỉ trích ----
     # (chỉ khi ĐÃ có result hợp lệ nhưng phần narrate bị hạ orig gần hết)
     if result and isinstance(data, dict):
@@ -2295,6 +2445,17 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                           if p["mode"] == "narrate") > kept:
                 return _maybe_refine(
                     _enforce_script_lang(r2, lang_name, _lang_retry))
+            # retry vẫn lười chép -> PASS PHỤ viết lại các narrate bị bắt
+            # chép (prompt tối giản, lời mới vẫn qua đủ lưới anti-copy)
+            d_rw = _fill_mute_narrates(data, sentences, lang_name,
+                                       listing=listing)
+            if d_rw:
+                r3, _e3 = _director_from_data(d_rw, sentences, duration,
+                                              min_total, max_total, win_max)
+                if r3 and sum(1 for p in r3["parts"]
+                              if p["mode"] == "narrate") > kept:
+                    return _maybe_refine(
+                        _enforce_script_lang(r3, lang_name, _lang_retry))
         return _maybe_refine(
             _enforce_script_lang(result, lang_name, _lang_retry))
     # ---- RETRY SỬA LỖI (1 lần): nói rõ lỗi để model tự sửa ----
@@ -2313,6 +2474,13 @@ def write_director_script(sentences: list, lang_name: str, style: str,
         return None                     # retry vẫn hỏng -> caller fallback
     result, _err = _director_from_data(data, sentences, duration,
                                        min_total, max_total, win_max)
+    # retry vẫn hỏng parts (câm/chép bị gut) -> cứu bằng pass phụ viết lời
+    if result is None and '"parts"' in (_err or "") and isinstance(data, dict):
+        d_fill = _fill_mute_narrates(data, sentences, lang_name,
+                                     listing=listing)
+        if d_fill:
+            result, _err = _director_from_data(d_fill, sentences, duration,
+                                               min_total, max_total, win_max)
     return _maybe_refine(_enforce_script_lang(result, lang_name, _lang_retry))
 
 

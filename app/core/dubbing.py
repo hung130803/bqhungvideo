@@ -128,6 +128,16 @@ VOICES: dict[str, list[tuple[str, str]]] = {
            ("Nam — Antonio", "pt-BR-AntonioNeural")],
     "fr": [("Nữ — Denise", "fr-FR-DeniseNeural"),
            ("Nam — Henri", "fr-FR-HenriNeural")],
+    "de": [("Nữ — Katja", "de-DE-KatjaNeural"),
+           ("Nam — Conrad", "de-DE-ConradNeural")],
+    "ru": [("Nữ — Svetlana", "ru-RU-SvetlanaNeural"),
+           ("Nam — Dmitry", "ru-RU-DmitryNeural")],
+    "it": [("Nữ — Elsa", "it-IT-ElsaNeural"),
+           ("Nam — Diego", "it-IT-DiegoNeural")],
+    "ar": [("Nữ — Zariyah", "ar-SA-ZariyahNeural"),
+           ("Nam — Hamed", "ar-SA-HamedNeural")],
+    "hi": [("Nữ — Swara", "hi-IN-SwaraNeural"),
+           ("Nam — Madhur", "hi-IN-MadhurNeural")],
 }
 
 # ---- GIỌNG HOT (được ưa dùng nhất, tự nhiên nhất) — ghim lên ĐẦU danh sách,
@@ -154,7 +164,14 @@ _HOT_VOICES = {
     "ko-KR-InJoonNeural", "ko-KR-SunHiNeural",
     "ja-JP-KeitaNeural", "ja-JP-NanamiNeural",
     "zh-CN-YunxiNeural", "zh-CN-XiaoxiaoNeural", "zh-CN-YunjianNeural",
-    "es-ES-AlvaroNeural", "pt-BR-AntonioNeural", "fr-FR-HenriNeural",
+    "es-ES-AlvaroNeural", "es-ES-ElviraNeural",
+    "pt-BR-AntonioNeural", "pt-BR-FranciscaNeural",
+    "fr-FR-HenriNeural", "fr-FR-DeniseNeural",
+    "de-DE-ConradNeural", "de-DE-KatjaNeural",
+    "ru-RU-DmitryNeural", "ru-RU-SvetlanaNeural",
+    "it-IT-DiegoNeural", "it-IT-ElsaNeural",
+    "ar-SA-HamedNeural", "ar-SA-ZariyahNeural",
+    "hi-IN-MadhurNeural", "hi-IN-SwaraNeural",
 }
 
 # ---- NHÓM "🔥 ĐỀ XUẤT — mượt & hot nhất" (curate TAY, có MÔ TẢ từng giọng)
@@ -502,7 +519,8 @@ _LOCALE_VI: dict[str, tuple[str, str]] = {
 }
 # Thứ tự nhóm ngôn ngữ trong combo (Việt trước, rồi các tiếng phổ biến)
 _GROUP_ORDER = ["vi", "en-US", "en-GB", "ja", "ko", "zh-CN", "zh", "th",
-                "id", "fr", "es", "pt-BR", "pt"]
+                "id", "fr", "es", "pt-BR", "pt", "de", "ru", "it", "hi",
+                "ar"]
 
 # Dòng thông báo khi CHƯA có key Gemini (voice_id rỗng -> UI disable) —
 # user vẫn biết nhóm giọng Gemini TỒN TẠI và cần gì để mở.
