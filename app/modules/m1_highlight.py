@@ -2073,6 +2073,12 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     vid_folder = _safe_name(Path(src).stem) or f"video_{video_id}"
     out_dir = base / vid_folder
     out_dir.mkdir(parents=True, exist_ok=True)
+    # 🔒 GHIM loại thư mục Explorer cho CẢ chuỗi (Đã xuất -> kênh -> video):
+    # Windows thấy video là tự đổi template làm RESET sắp xếp Date created
+    # user đã chọn — desktop.ini FolderType=Generic chặn việc đó.
+    from app.core.folderview import pin_folder_view
+    for _p in (base.parent, base, out_dir):
+        pin_folder_view(_p)
     part_no = int(payload.get("part_no", 0) or 0)
     # limit rộng hơn (120): out_name = "Part N <tiêu đề ~70> #tag #tag #tag" -> để
     # 70 sẽ cắt cụt hashtag. _safe_name vẫn bỏ ký tự cấm, GIỮ '#' + chữ có dấu/nhật.

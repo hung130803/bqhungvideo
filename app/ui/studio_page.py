@@ -1117,6 +1117,11 @@ class StudioPage(QWidget):
             self.status.setText(
                 "⚠ Kho video đã chọn không truy cập được (ổ đã rút?) — "
                 "tạm dùng kho mặc định. Chọn lại ở nút 'Kho video'.")
+        # 🔒 GHIM loại thư mục Explorer (FolderType=Generic): thêm kênh/clip
+        # mới không làm Windows đoán lại template -> user xếp Date created
+        # trong 'Đã xuất' KHÔNG bị reset nữa.
+        from app.core.folderview import pin_folder_view
+        pin_folder_view(d)
         return d
 
     def _dl_dir(self):
