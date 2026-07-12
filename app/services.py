@@ -308,6 +308,89 @@ def queue_counts() -> dict:
     return c
 
 
+# ---- Hoạt động theo KÊNH (nhãn cạnh combo Kênh + bảng "Tình hình các kênh") ----
+def channel_activity() -> dict:
+    """Tình hình job của TOÀN BỘ kênh trong 2 query GROUP BY (dùng
+    idx_jobs_project, KHÔNG query từng kênh — user chạy nhiều kênh cùng lúc).
+
+    Trả dict[project_id] = {
+        "running": n, "pending": n,
+        "failed_recent": n,        # job failed trong 24h qua
+        "exported": n,             # tổng clip đã xuất xong (m1_export_clip done)
+        "last_done": "YYYY-MM-DD HH:MM:SS" (UTC, như SQLite ghi) | None,
+        "last_done_type": type của job done gần nhất ("auto"/"m1_export_clip"...),
+    } — mọi project đều có mặt (kênh chưa có job = toàn 0/None).
+    """
+    from datetime import datetime, timedelta, timezone
+    # SQLite datetime('now') ghi UTC -> mốc 24h cũng phải tính bằng UTC
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
+              ).strftime("%Y-%m-%d %H:%M:%S")
+    act = {int(p["id"]): {"running": 0, "pending": 0, "failed_recent": 0,
+                          "exported": 0, "last_done": None,
+                          "last_done_type": ""}
+           for p in db.query("SELECT id FROM projects")}
+    for r in db.query(
+            "SELECT project_id AS pid, "
+            "SUM(status='running') AS running, "
+            "SUM(status='pending') AS pending, "
+            "SUM(status='failed' AND COALESCE(finished_at, created_at) >= ?) "
+            "  AS failed_recent, "
+            "SUM(status='done' AND type='m1_export_clip') AS exported "
+            "FROM jobs WHERE project_id IS NOT NULL GROUP BY project_id",
+            (cutoff,)):
+        a = act.get(int(r["pid"]))
+        if a is None:          # job của project vừa bị xóa (race) -> bỏ qua
+            continue
+        a["running"] = int(r["running"] or 0)
+        a["pending"] = int(r["pending"] or 0)
+        a["failed_recent"] = int(r["failed_recent"] or 0)
+        a["exported"] = int(r["exported"] or 0)
+    # MAX(finished_at) + bare column: SQLite ĐẢM BẢO cột trần (type) lấy từ
+    # đúng dòng đạt MAX -> biết luôn job done gần nhất là loại gì, khỏi query 2.
+    for r in db.query(
+            "SELECT project_id AS pid, MAX(finished_at) AS last_done, "
+            "type AS last_type FROM jobs "
+            "WHERE status='done' AND finished_at IS NOT NULL "
+            "AND project_id IS NOT NULL GROUP BY project_id"):
+        a = act.get(int(r["pid"]))
+        if a is not None:
+            a["last_done"] = r["last_done"]
+            a["last_done_type"] = r["last_type"] or ""
+    return act
+
+
+def rel_time_vi(iso_str, short: bool = False) -> str:
+    """'2026-07-12 08:00:00' (UTC — như SQLite datetime('now') ghi) -> chuỗi
+    tương đối tiếng Việt: 'vừa xong' (<90s), 'X phút trước' (<60ph),
+    'X giờ trước' (<24h), 'hôm qua', 'N ngày trước'. None/hỏng -> ''.
+    short=True: dạng gọn cho đuôi combo ('12ph', '3h', 'hôm qua')."""
+    from datetime import datetime, timezone
+    if not iso_str:
+        return ""
+    s = str(iso_str).strip().replace("T", " ")
+    s = s.split(".")[0].split("+")[0].strip()      # bỏ .ms / +tz nếu có
+    try:
+        t = datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc)
+    except ValueError:
+        return ""
+    sec = (datetime.now(timezone.utc) - t).total_seconds()
+    if sec < 0:                 # lệch đồng hồ nhẹ -> coi như vừa xong
+        sec = 0
+    if sec < 90:
+        return "vừa xong"
+    if sec < 3600:
+        m = int(sec // 60)
+        return f"{m}ph" if short else f"{m} phút trước"
+    if sec < 86400:
+        h = int(sec // 3600)
+        return f"{h}h" if short else f"{h} giờ trước"
+    d = int(sec // 86400)
+    if d == 1:
+        return "hôm qua"
+    return f"{d} ngày" if short else f"{d} ngày trước"
+
+
 # ---- Trạng thái phân tích ----
 def video_analyzed(video_id: int) -> bool:
     """True nếu video đã chạy xong lõi phân tích (mọi bước done/skipped)."""

@@ -90,6 +90,21 @@ class _SegBar(QWidget):
         p.end()
 
 
+class _ChanCombo(QComboBox):
+    """Combo Kênh: NGAY TRƯỚC khi mở dropdown gọi callback refresh đuôi trạng
+    thái từng kênh ('Tên · 🟢3 · ✅12ph') — userData (project_id) giữ nguyên."""
+    on_popup = None            # gán từ ngoài: callable không tham số
+
+    def showPopup(self):
+        cb = self.on_popup
+        if cb:
+            try:
+                cb()
+            except Exception:  # noqa: BLE001 - đuôi trạng thái lỗi không chặn mở
+                pass
+        super().showPopup()
+
+
 class StudioPage(QWidget):
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
@@ -127,7 +142,8 @@ class StudioPage(QWidget):
         # ===== Hàng 1: chọn KÊNH + VIDEO =====
         srcrow = QHBoxLayout(); srcrow.setSpacing(8)
         srcrow.addWidget(self._tag("Kênh"))
-        self.proj = QComboBox(); self.proj.setMinimumWidth(180)
+        self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
+        self.proj.on_popup = self._refresh_proj_marks
         self.proj.setToolTip("Mỗi kênh = 1 thư mục riêng. Clip xuất vào đúng thư mục "
                              "kênh.\nChuột phải để XÓA kênh.")
         self.proj.currentIndexChanged.connect(self._on_proj)
@@ -136,6 +152,11 @@ class StudioPage(QWidget):
         srcrow.addWidget(self.proj)
         np = QPushButton("+ Kênh"); np.setProperty("ghost", True)
         np.clicked.connect(self._new_proj); srcrow.addWidget(np)
+        dash = QPushButton("📊"); dash.setProperty("ghost", True)
+        dash.setFixedWidth(38)
+        dash.setToolTip("Tình hình các kênh: đang chạy / đợi / lỗi 24h / "
+                        "xong gần nhất / số clip đã xuất.")
+        dash.clicked.connect(self._channel_dashboard); srcrow.addWidget(dash)
         self.lib_btn = QPushButton("Kho video"); self.lib_btn.setProperty("ghost", True)
         self.lib_btn.clicked.connect(self._pick_lib_root); srcrow.addWidget(self.lib_btn)
         self._update_lib_tooltip()   # tooltip hiện ĐƯỜNG DẪN kho đang dùng
@@ -154,6 +175,11 @@ class StudioPage(QWidget):
         mgv.clicked.connect(self._manage_videos); srcrow.addWidget(mgv)
         plw.addWidget(self._sec_hdr("Nguồn video", num=1))
         plw.addLayout(srcrow)
+        # NHÃN hoạt động của KÊNH ĐANG CHỌN (user chạy nhiều kênh cùng lúc,
+        # cần biết kênh này đang chạy gì / vừa xong bao lâu ngay tại chỗ).
+        self.chan_lbl = QLabel("")
+        self.chan_lbl.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        plw.addWidget(self.chan_lbl)
 
         # ===== Hàng tải từ LINK YOUTUBE thẳng vào kênh =====
         ytrow = QHBoxLayout(); ytrow.setSpacing(8)
@@ -320,6 +346,8 @@ class StudioPage(QWidget):
         self.timer.timeout.connect(self._poll_done)     # job video đang chọn XONG -> báo ✓
         self.timer.timeout.connect(self._refresh_clips)
         self.timer.timeout.connect(self._check_auto_export)   # phân tích xong -> tự xuất
+        self._act_tick = 0     # nhãn kênh chỉ query mỗi 3 tick (~4.5s) cho nhẹ
+        self.timer.timeout.connect(self._poll_chan_activity)
         self.timer.start(1500)
         self._reload_projects()
         self._ensure_builtin_templates()      # tạo sẵn mẫu Pro nếu chưa có
@@ -497,7 +525,11 @@ class StudioPage(QWidget):
     # ---- kênh (project) / video ----
     def _reload_projects(self):
         self.proj.blockSignals(True); self.proj.clear()
+        # TÊN GỐC từng kênh (không đuôi trạng thái) — text item có thể mang đuôi
+        # '· 🟢3' nên MỌI chỗ cần tên kênh phải lấy từ đây/DB, ĐỪNG currentText()
+        self._proj_names = {}
         for p in services.list_projects():
+            self._proj_names[int(p["id"])] = p["name"]
             self.proj.addItem(p["name"], p["id"])
         self.proj.blockSignals(False)
         if self.proj.count():
@@ -509,7 +541,10 @@ class StudioPage(QWidget):
         pid = self.proj.currentData()
         if pid is None:
             return
-        name = self.proj.currentText()
+        # tên từ DB, KHÔNG currentText() — text combo có thể mang đuôi '· 🟢3'
+        row = db.query_one("SELECT name FROM projects WHERE id=?", (int(pid),))
+        name = (row["name"] if row
+                else getattr(self, "_proj_names", {}).get(int(pid), ""))
         if QMessageBox.question(
             self, "Xóa kênh",
             f"Xóa kênh “{name}” (cả video, clip, file đã xuất)? Không hoàn tác được."
@@ -1127,6 +1162,151 @@ class StudioPage(QWidget):
             return
         self.state.set_project(int(pid))
         self._reload_videos()
+        self._refresh_chan_label()      # nhãn hoạt động đổi NGAY theo kênh mới
+
+    # ---- hoạt động theo KÊNH (nhãn + đuôi combo + bảng tình hình) ----
+    def _chan_activity(self) -> dict:
+        try:
+            return services.channel_activity()
+        except Exception:  # noqa: BLE001 - nhãn phụ, lỗi không được sập app
+            return {}
+
+    def _poll_chan_activity(self):
+        """Móc vào timer 1.5s sẵn có nhưng CHỈ query mỗi 3 tick (~4.5s)."""
+        self._act_tick += 1
+        if self._act_tick % 3:
+            return
+        self._refresh_chan_label()
+
+    def _refresh_chan_label(self, act: dict | None = None):
+        """'🟢 đang chạy 3 · ⏳ đợi 2 · ✅ xong 12 phút trước' cho kênh hiện
+        tại — phần nào =0 thì ẩn; không có gì -> 'chưa có hoạt động'."""
+        pid = self.state.project_id
+        if not pid:
+            self.chan_lbl.setText("")
+            return
+        a = (act if act is not None else self._chan_activity()).get(int(pid))
+        if not a:
+            self.chan_lbl.setText("chưa có hoạt động")
+            return
+        parts = []
+        if a["running"]:
+            parts.append(f"🟢 đang chạy {a['running']}")
+        if a["pending"]:
+            parts.append(f"⏳ đợi {a['pending']}")
+        if a["failed_recent"]:
+            parts.append(f"🔴 lỗi {a['failed_recent']} (24h)")
+        if a["last_done"]:
+            parts.append(f"✅ xong {services.rel_time_vi(a['last_done'])}")
+        self.chan_lbl.setText(" · ".join(parts) or "chưa có hoạt động")
+
+    def _refresh_proj_marks(self):
+        """Gọi khi user MỞ dropdown Kênh: đổi TEXT từng item thành
+        'Tên · 🟢3 · ⏳2 · ✅12ph' (kênh im ắng -> chỉ tên). userData giữ
+        nguyên project_id nên chọn kênh không đổi hành vi."""
+        act = self._chan_activity()
+        names = getattr(self, "_proj_names", {})
+        self.proj.blockSignals(True)
+        try:
+            for i in range(self.proj.count()):
+                pid = self.proj.itemData(i)
+                if pid is None:
+                    continue
+                name = names.get(int(pid), self.proj.itemText(i))
+                a = act.get(int(pid))
+                parts = []
+                if a:
+                    if a["running"]:
+                        parts.append(f"🟢{a['running']}")
+                    if a["pending"]:
+                        parts.append(f"⏳{a['pending']}")
+                    if a["last_done"]:
+                        parts.append(
+                            "✅" + services.rel_time_vi(a["last_done"],
+                                                        short=True))
+                self.proj.setItemText(
+                    i, name + ((" · " + " · ".join(parts)) if parts else ""))
+        finally:
+            self.proj.blockSignals(False)
+
+    def _channel_dashboard(self):
+        """Bảng 'Tình hình các kênh': kênh đang chạy/mới xong lên đầu; nháy
+        đúp 1 dòng -> chuyển combo sang kênh đó."""
+        from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView,
+                                     QTableWidget, QTableWidgetItem)
+        dlg = QDialog(self); dlg.setWindowTitle("Tình hình các kênh")
+        dlg.resize(700, 420)
+        lay = QVBoxLayout(dlg); lay.setSpacing(8)
+        hd = QLabel("📊 Tình hình các kênh")
+        hd.setStyleSheet(f"color:{TEXT}; font-size:16px; font-weight:800;")
+        lay.addWidget(hd)
+        sub = QLabel("Nháy đúp 1 dòng để CHUYỂN sang kênh đó. Kênh đang chạy "
+                     "/ vừa xong mới nhất nằm trên cùng.")
+        sub.setWordWrap(True)
+        sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        lay.addWidget(sub)
+        tbl = QTableWidget(0, 6)
+        tbl.setHorizontalHeaderLabels(
+            ["Kênh", "Đang chạy", "Đợi", "Lỗi 24h", "Xong gần nhất", "Đã xuất"])
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        tbl.verticalHeader().setVisible(False)
+        hh = tbl.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for c in range(1, 6):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        lay.addWidget(tbl, 1)
+
+        def fill():
+            act = self._chan_activity()
+            rows = []
+            for p in services.list_projects():
+                a = act.get(int(p["id"])) or {
+                    "running": 0, "pending": 0, "failed_recent": 0,
+                    "exported": 0, "last_done": None, "last_done_type": ""}
+                rows.append((p["name"], int(p["id"]), a))
+            # đang chạy trước, rồi last_done mới nhất (chuỗi UTC so sánh
+            # lexicographic là đúng thứ tự thời gian), None xuống cuối
+            rows.sort(key=lambda r: (r[2]["running"] > 0,
+                                     r[2]["last_done"] or ""), reverse=True)
+            tbl.setRowCount(len(rows))
+            for i, (name, pid, a) in enumerate(rows):
+                it = QTableWidgetItem(name)
+                it.setData(Qt.ItemDataRole.UserRole, pid)
+                tbl.setItem(i, 0, it)
+                done_txt = services.rel_time_vi(a["last_done"]) or "—"
+                if a["last_done"] and a["last_done_type"]:
+                    done_txt += f" ({a['last_done_type']})"
+                cells = (f"🟢 {a['running']}" if a["running"] else "·",
+                         f"⏳ {a['pending']}" if a["pending"] else "·",
+                         (f"🔴 {a['failed_recent']}"
+                          if a["failed_recent"] else "·"),
+                         done_txt,
+                         str(a["exported"]) if a["exported"] else "·")
+                for c, txt in enumerate(cells, start=1):
+                    x = QTableWidgetItem(txt)
+                    x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    tbl.setItem(i, c, x)
+
+        def jump(row, _col):
+            it = tbl.item(row, 0)
+            pid = it.data(Qt.ItemDataRole.UserRole) if it else None
+            if pid is not None:
+                i = self.proj.findData(pid)
+                if i >= 0:
+                    self.proj.setCurrentIndex(i)   # -> _on_proj đổi kênh
+            dlg.accept()
+
+        tbl.cellDoubleClicked.connect(jump)
+        btns = QHBoxLayout(); btns.addStretch(1)
+        rf = QPushButton("Làm mới"); rf.setProperty("ghost", True)
+        rf.clicked.connect(fill); btns.addWidget(rf)
+        cl = QPushButton("Đóng"); cl.setProperty("primary", True)
+        cl.clicked.connect(dlg.accept); btns.addWidget(cl)
+        lay.addLayout(btns)
+        fill()
+        dlg.exec()
 
     def _video_status_marks(self) -> dict:
         """Đuôi trạng thái cho MỖI video trong combo — 2 query GỘP cho cả kênh
