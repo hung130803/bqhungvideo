@@ -217,6 +217,10 @@ class Database:
             if "export_dir" not in cols:   # thư mục lưu clip của kênh (user chọn)
                 self.conn().execute("ALTER TABLE projects ADD COLUMN export_dir TEXT")
                 self.conn().commit()
+            if "grp" not in cols:   # NHÓM kênh (quốc gia...); '' = chưa phân nhóm
+                self.conn().execute(
+                    "ALTER TABLE projects ADD COLUMN grp TEXT NOT NULL DEFAULT ''")
+                self.conn().commit()
         except Exception:  # noqa: BLE001
             pass
 

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS projects (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
     assets_dir    TEXT NOT NULL,          -- thư mục riêng chứa file của project
+    grp           TEXT NOT NULL DEFAULT '',  -- NHÓM kênh (quốc gia...); '' = chưa phân nhóm
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

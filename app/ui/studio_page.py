@@ -31,6 +31,9 @@ from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
 
+# userData ĐẶC BIỆT của dòng cuối combo Nhóm ("＋ Nhóm mới...") — không phải nhóm
+_NEW_GRP = "__new_group__"
+
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
 # ngay dưới. Vào "Chỉnh mẫu" để đổi vị trí/cỡ/màu; app tự điền khi xuất từng clip.
 _DEF_PART = {"text": "Part {n}", "size": 0.055, "font": "Montserrat", "color": "#FFFFFF",
@@ -140,8 +143,18 @@ class StudioPage(QWidget):
         plw = QVBoxLayout(panel); plw.setContentsMargins(16, 8, 16, 14); plw.setSpacing(8)
         root.addWidget(panel)
 
-        # ===== Hàng 1: chọn KÊNH + VIDEO =====
+        # ===== Hàng 1: chọn NHÓM + KÊNH + VIDEO =====
         srcrow = QHBoxLayout(); srcrow.setSpacing(8)
+        # combo NHÓM kênh (user reup hàng chục kênh nhiều quốc gia -> lọc
+        # combo Kênh theo nhóm cho đỡ dài). 'Tất cả' = hành vi cũ (mọi kênh).
+        srcrow.addWidget(self._tag("Nhóm"))
+        self.grp = QComboBox(); self.grp.setMinimumWidth(110)
+        self.grp.setToolTip("Lọc kênh theo NHÓM (quốc gia, chủ đề...).\n"
+                            "'Tất cả' = hiện mọi kênh (kể cả chưa phân nhóm).\n"
+                            "'＋ Nhóm mới...' tạo nhóm và gán kênh đang chọn vào.")
+        self._reload_groups(self._settings.value("chan_group", "") or "")
+        self.grp.currentIndexChanged.connect(self._on_grp)
+        srcrow.addWidget(self.grp)
         srcrow.addWidget(self._tag("Kênh"))
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
         self.proj.on_popup = self._refresh_proj_marks
@@ -531,18 +544,94 @@ class StudioPage(QWidget):
         lay.addLayout(rowb)
         dlg.exec()
 
+    # ---- NHÓM kênh (lọc combo Kênh theo projects.grp) ----
+    def _cur_group(self) -> str:
+        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả)."""
+        g = getattr(self, "grp", None)
+        if g is None:
+            return ""
+        d = g.currentData()
+        return d if isinstance(d, str) and d != _NEW_GRP else ""
+
+    def _reload_groups(self, select: str = ""):
+        """Nạp combo Nhóm: 'Tất cả'('') + nhóm distinct + '＋ Nhóm mới...'.
+        `select` = nhóm muốn chọn lại ('' hoặc không còn tồn tại -> Tất cả).
+        Ghi QSettings để mở app lại giữ nguyên nhóm đang lọc."""
+        self.grp.blockSignals(True)
+        self.grp.clear()
+        self.grp.addItem("Tất cả", "")
+        for g in services.list_groups():
+            self.grp.addItem(g, g)
+        self.grp.addItem("＋ Nhóm mới...", _NEW_GRP)
+        i = self.grp.findData(select) if select else 0
+        self.grp.setCurrentIndex(i if i > 0 else 0)
+        self.grp.blockSignals(False)
+        self._settings.setValue("chan_group", self._cur_group())
+
+    def _on_grp(self, _i):
+        d = self.grp.currentData()
+        if d == _NEW_GRP:
+            # trả combo về nhóm cũ TRƯỚC (không để combo đứng ở dòng lệnh)
+            prev = self._settings.value("chan_group", "") or ""
+            self._reload_groups(prev)
+            name, ok = QInputDialog.getText(
+                self, "Nhóm mới", "Tên nhóm (vd: Mỹ, Nhật, Hàn...):")
+            name = (name or "").strip()
+            if not ok or not name:
+                return
+            pid = self.proj.currentData()
+            if pid is not None:      # gán kênh ĐANG CHỌN vào nhóm mới
+                services.set_project_group(int(pid), name)
+            self._reload_groups(name)
+            if self.grp.findData(name) <= 0:
+                # nhóm TRỐNG (chưa có kênh nào) -> thêm tạm vào combo; '+ Kênh'
+                # lúc này sẽ tạo kênh vào nhóm (nhóm rỗng biến mất khi nạp lại)
+                self.grp.blockSignals(True)
+                self.grp.insertItem(self.grp.count() - 1, name, name)
+                self.grp.setCurrentIndex(self.grp.findData(name))
+                self.grp.blockSignals(False)
+                self._settings.setValue("chan_group", name)
+            self._reload_projects()
+            return
+        self._settings.setValue("chan_group", self._cur_group())
+        self._reload_projects()
+
+    def _select_project(self, pid) -> None:
+        """Chọn kênh `pid` trong combo Kênh. Nếu kênh KHÔNG thuộc nhóm đang
+        lọc (vd nhảy từ 📊 sang kênh nhóm khác) -> tự chuyển combo Nhóm về
+        nhóm của kênh đó để kênh hiện được — KHÔNG để combo trống/lệch."""
+        if pid is None:
+            return
+        i = self.proj.findData(pid)
+        if i < 0:
+            self._reload_groups(services.project_group(int(pid)))
+            self._reload_projects()
+            i = self.proj.findData(pid)
+        if i >= 0 and i != self.proj.currentIndex():
+            self.proj.setCurrentIndex(i)
+
     # ---- kênh (project) / video ----
     def _reload_projects(self):
+        grp = self._cur_group()
         self.proj.blockSignals(True); self.proj.clear()
         # TÊN GỐC từng kênh (không đuôi trạng thái) — text item có thể mang đuôi
         # '· 🟢3' nên MỌI chỗ cần tên kênh phải lấy từ đây/DB, ĐỪNG currentText()
         self._proj_names = {}
-        for p in services.list_projects():
+        for p in services.list_projects(grp or None):
             self._proj_names[int(p["id"])] = p["name"]
             self.proj.addItem(p["name"], p["id"])
         self.proj.blockSignals(False)
         if self.proj.count():
             self._on_proj(self.proj.currentIndex())
+        elif grp:
+            # nhóm đang lọc KHÔNG có kênh (nhóm mới trống) -> không popup tạo
+            # kênh; dọn trạng thái + gợi ý ('+ Kênh' bây giờ tạo vào nhóm này)
+            self.state.project_id = None
+            self.state.video_id = None
+            self.vid.blockSignals(True); self.vid.clear()
+            self.vid.blockSignals(False)
+            self._refresh_chan_label()
+            self.status.setText(f"Nhóm “{grp}” chưa có kênh — bấm + Kênh để thêm.")
         else:
             self._new_proj(first=True)
 
@@ -560,6 +649,7 @@ class StudioPage(QWidget):
         ) == QMessageBox.StandardButton.Yes:
             services.delete_project(int(pid), self.state.pool)
             self.state.project_id = None
+            self._reload_groups(self._cur_group())  # nhóm có thể vừa hết kênh
             self._reload_projects()
             self.status.setText(f"Đã xóa kênh “{name}”.")
 
@@ -1162,10 +1252,13 @@ class StudioPage(QWidget):
                 "File cũ ở kho trước KHÔNG tự chuyển sang.")
 
     def _new_proj(self, first=False):
+        grp = self._cur_group()          # kênh mới vào NHÓM đang lọc
+        hint = f" — vào nhóm “{grp}”" if grp else ""
         name, ok = QInputDialog.getText(self, "Kênh mới",
-                                        "Tên kênh (vd tên kênh TikTok):")
+                                        f"Tên kênh (vd tên kênh TikTok){hint}:")
         if ok and name.strip():
-            pid = services.create_project(name.strip())
+            pid = services.create_project(name.strip(), grp)
+            self._reload_groups(grp)     # nhóm trống tạm -> thành nhóm thật
             self._reload_projects()
             i = self.proj.findData(pid)
             if i >= 0:
@@ -1173,44 +1266,89 @@ class StudioPage(QWidget):
         elif first:
             pass
 
+    def _build_edit_proj_dialog(self, pid) -> QDialog | None:
+        """Dialog 'Sửa kênh' 2 trường: TÊN + NHÓM (combo gõ được -> tạo nhóm
+        mới ngay tại chỗ). Tách khỏi exec() để test offscreen thao tác được:
+        dlg._t = {name, grp, apply} — apply() ghi DB + cập nhật UI, trả True
+        nếu CÓ đổi (tên hoặc nhóm)."""
+        row = db.query_one("SELECT name, grp FROM projects WHERE id=?",
+                           (int(pid),))
+        if not row:
+            return None
+        old = row["name"]
+        old_grp = row["grp"] or ""
+        dlg = QDialog(self); dlg.setWindowTitle("Sửa kênh")
+        lay = QVBoxLayout(dlg); lay.setSpacing(8)
+        lay.addWidget(QLabel("Tên kênh:"))
+        name_ed = QLineEdit(old); lay.addWidget(name_ed)
+        lay.addWidget(QLabel("Nhóm (chọn có sẵn hoặc gõ tên nhóm MỚI;\n"
+                             "để trống = chưa phân nhóm):"))
+        grp_box = QComboBox(); grp_box.setEditable(True)
+        grp_box.addItem("")               # '' = chưa phân nhóm
+        for g in services.list_groups():
+            grp_box.addItem(g)
+        grp_box.setCurrentText(old_grp)
+        lay.addWidget(grp_box)
+        rowb = QHBoxLayout(); rowb.addStretch(1)
+        okb = QPushButton("Lưu"); okb.setProperty("primary", True)
+        okb.clicked.connect(dlg.accept); rowb.addWidget(okb)
+        cab = QPushButton("Hủy"); cab.setProperty("ghost", True)
+        cab.clicked.connect(dlg.reject); rowb.addWidget(cab)
+        lay.addLayout(rowb)
+        name_ed.setFocus()
+
+        def apply() -> bool:
+            name = (name_ed.text() or "").strip()
+            new_grp = (grp_box.currentText() or "").strip()
+            renamed = False
+            if name and name != old:
+                err = services.rename_project(int(pid), name)  # chặn rỗng/trùng
+                if err:
+                    QMessageBox.warning(self, "Không đổi được tên kênh", err)
+                    return False
+                renamed = True
+            moved = new_grp != old_grp
+            if moved:
+                services.set_project_group(int(pid), new_grp)
+            if not (renamed or moved):
+                return False
+            keep = self.proj.currentData()  # GIỮ kênh đang chọn sau reload
+            self._reload_groups(self._cur_group())  # nhóm có thể vừa thêm/mất
+            self._reload_projects()
+            self._select_project(keep)
+            if renamed:
+                self.status.setText(f"Đã đổi tên kênh “{old}” → “{name}”.")
+                # ĐƯỜNG XUẤT '<gốc>/Đã xuất/<Kênh>/...' dựng từ TÊN KÊNH lúc
+                # xuất -> báo rõ kẻo user đi tìm clip mới trong thư mục tên cũ.
+                QMessageBox.information(
+                    self, "Đã đổi tên kênh",
+                    f"Đã đổi “{old}” → “{name}”.\n\n"
+                    f"Clip xuất MỚI sẽ nằm trong thư mục:  Đã xuất\\{name}\\...\n"
+                    f"Thư mục cũ “Đã xuất\\{old}” (nếu có) vẫn giữ nguyên — "
+                    "file cũ KHÔNG tự chuyển sang.")
+            else:
+                self.status.setText(
+                    f"Đã chuyển kênh “{old}” vào nhóm "
+                    f"“{new_grp or 'Chưa phân nhóm'}”.")
+            return True
+
+        dlg._t = {"name": name_ed, "grp": grp_box, "apply": apply}
+        return dlg
+
     def _rename_proj(self, pid=None) -> bool:
-        """Sửa TÊN kênh (nút ✏ / chuột phải combo / chuột phải bảng 📊).
-        pid=None -> kênh đang chọn. Tên hiện tại lấy từ DB, KHÔNG currentText()
-        (text combo mang đuôi trạng thái '· 🟢3'). Trả True nếu ĐÃ đổi —
-        bảng 📊 dựa vào đó để vẽ lại."""
+        """Sửa kênh: TÊN + NHÓM (nút ✏ / chuột phải combo / chuột phải bảng
+        📊). pid=None -> kênh đang chọn. Tên hiện tại lấy từ DB, KHÔNG
+        currentText() (text combo mang đuôi trạng thái '· 🟢3'). Trả True
+        nếu ĐÃ đổi — bảng 📊 dựa vào đó để vẽ lại."""
         pid = self.proj.currentData() if pid is None else pid
         if pid is None:
             return False
-        row = db.query_one("SELECT name FROM projects WHERE id=?", (int(pid),))
-        if not row:
+        dlg = self._build_edit_proj_dialog(int(pid))
+        if dlg is None:
             return False
-        old = row["name"]
-        name, ok = QInputDialog.getText(
-            self, "Sửa tên kênh", "Tên kênh mới:", text=old)
-        if not ok:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return False
-        name = (name or "").strip()
-        if name == old:
-            return False
-        err = services.rename_project(int(pid), name)   # chặn rỗng/trùng tên
-        if err:
-            QMessageBox.warning(self, "Không đổi được tên kênh", err)
-            return False
-        keep = self.proj.currentData()     # GIỮ NGUYÊN kênh đang chọn sau reload
-        self._reload_projects()
-        i = self.proj.findData(keep)
-        if i >= 0:
-            self.proj.setCurrentIndex(i)
-        self.status.setText(f"Đã đổi tên kênh “{old}” → “{name}”.")
-        # ĐƯỜNG XUẤT '<gốc>/Đã xuất/<Kênh>/...' dựng từ TÊN KÊNH tại lúc xuất
-        # -> báo rõ kẻo user đi tìm clip mới trong thư mục tên cũ.
-        QMessageBox.information(
-            self, "Đã đổi tên kênh",
-            f"Đã đổi “{old}” → “{name}”.\n\n"
-            f"Clip xuất MỚI sẽ nằm trong thư mục:  Đã xuất\\{name}\\...\n"
-            f"Thư mục cũ “Đã xuất\\{old}” (nếu có) vẫn giữ nguyên — file cũ "
-            "KHÔNG tự chuyển sang.")
-        return True
+        return dlg._t["apply"]()
 
     def _on_proj(self, _i):
         pid = self.proj.currentData()
@@ -1357,9 +1495,16 @@ class StudioPage(QWidget):
         sub.setWordWrap(True)
         sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         l1.addWidget(sub)
+        # lọc bảng theo NHÓM kênh ('Tất cả' + nhóm distinct — nạp lại mỗi fill)
+        frow = QHBoxLayout(); frow.setSpacing(8)
+        gl = QLabel("Nhóm:"); gl.setStyleSheet(f"color:{MUTED};")
+        frow.addWidget(gl)
+        gflt = QComboBox(); gflt.setMinimumWidth(150)
+        frow.addWidget(gflt); frow.addStretch(1)
+        l1.addLayout(frow)
         tbl = _mk_table(
-            ["Kênh", "Video", "Đang chạy", "Đợi", "Lỗi 24h", "Clip đã tạo",
-             "Đã xuất", "Xong gần nhất"])
+            ["Kênh", "Nhóm", "Video", "Đang chạy", "Đợi", "Lỗi 24h",
+             "Clip đã tạo", "Đã xuất", "Xong gần nhất"])
         l1.addWidget(tbl, 1)
         stack.addWidget(pg1)
 
@@ -1385,23 +1530,41 @@ class StudioPage(QWidget):
         stack.addWidget(pg2)
 
         def fill():
+            # nạp lại combo lọc NHÓM (giữ lựa chọn cũ; nhóm có thể vừa đổi
+            # qua ✏ sửa kênh) — blockSignals để không gọi fill đệ quy
+            sel = gflt.currentData()
+            sel = sel if isinstance(sel, str) else ""
+            gflt.blockSignals(True); gflt.clear()
+            gflt.addItem("Tất cả", "")
+            for g in services.list_groups():
+                gflt.addItem(g, g)
+            gi = gflt.findData(sel)
+            gflt.setCurrentIndex(gi if gi > 0 else 0)
+            gflt.blockSignals(False)
+            flt = gflt.currentData() or ""
             act = self._chan_activity()
             rows = []
             for p in services.list_projects():
+                pg = p["grp"] or ""
+                if flt and pg != flt:
+                    continue
                 a = act.get(int(p["id"])) or {
                     "running": 0, "pending": 0, "failed_recent": 0,
                     "exported": 0, "videos": 0, "clips": 0,
                     "last_done": None, "last_done_type": ""}
-                rows.append((p["name"], int(p["id"]), a))
+                rows.append((p["name"], pg, int(p["id"]), a))
             # đang chạy trước, rồi last_done mới nhất (chuỗi UTC so sánh
             # lexicographic là đúng thứ tự thời gian), None xuống cuối
-            rows.sort(key=lambda r: (r[2]["running"] > 0,
-                                     r[2]["last_done"] or ""), reverse=True)
+            rows.sort(key=lambda r: (r[3]["running"] > 0,
+                                     r[3]["last_done"] or ""), reverse=True)
             tbl.setRowCount(len(rows))
-            for i, (name, pid, a) in enumerate(rows):
+            for i, (name, pg, pid, a) in enumerate(rows):
                 it = QTableWidgetItem(name)
                 it.setData(Qt.ItemDataRole.UserRole, pid)
                 tbl.setItem(i, 0, it)
+                gx = QTableWidgetItem(pg or "·")
+                gx.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                tbl.setItem(i, 1, gx)
                 done_txt = services.rel_time_vi(a["last_done"]) or "—"
                 if a["last_done"] and a["last_done_type"]:
                     done_txt += f" ({a['last_done_type']})"
@@ -1413,7 +1576,7 @@ class StudioPage(QWidget):
                          str(a.get("clips", 0)) if a.get("clips") else "·",
                          str(a["exported"]) if a["exported"] else "·",
                          done_txt)
-                for c, txt in enumerate(cells, start=1):
+                for c, txt in enumerate(cells, start=2):
                     x = QTableWidgetItem(txt)
                     x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     tbl.setItem(i, c, x)
@@ -1477,9 +1640,9 @@ class StudioPage(QWidget):
             pid = cur["pid"]
             if vid_id is None or pid is None:
                 return
-            i = self.proj.findData(pid)
-            if i >= 0 and i != self.proj.currentIndex():
-                self.proj.setCurrentIndex(i)     # -> _on_proj nạp video kênh mới
+            # kênh đích có thể KHÁC nhóm đang lọc -> _select_project tự chuyển
+            # combo Nhóm về nhóm của kênh đó (không để combo trống/lệch)
+            self._select_project(int(pid))       # -> _on_proj nạp video kênh mới
             j = self.vid.findData(vid_id)
             if j >= 0:
                 self.vid.setCurrentIndex(j)      # -> _on_vid chọn đúng video
@@ -1508,6 +1671,7 @@ class StudioPage(QWidget):
 
         tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         tbl.customContextMenuRequested.connect(chan_menu)
+        gflt.currentIndexChanged.connect(lambda _i: fill())
         tbl.cellDoubleClicked.connect(drill)
         vtbl.cellDoubleClicked.connect(jump_video)
         back.clicked.connect(go_back)
@@ -1522,7 +1686,8 @@ class StudioPage(QWidget):
         fill()
         # móc cho test offscreen thao tác từng bước (không ảnh hưởng chạy thật)
         dlg._t = {"tbl": tbl, "vtbl": vtbl, "stack": stack, "back": back,
-                  "fill": fill, "rename_row": rename_row, "hd2": hd2}
+                  "fill": fill, "rename_row": rename_row, "hd2": hd2,
+                  "gflt": gflt}
         return dlg
 
     def _video_activity(self) -> dict:
@@ -2742,9 +2907,38 @@ class StudioPage(QWidget):
         if self.proj.currentData() is not None:
             # lambda: triggered truyền checked=False -> đừng lọt vào tham số pid
             m.addAction("✏ Sửa tên kênh", lambda: self._rename_proj())
+            m.addAction("Chuyển nhóm...", lambda: self._move_group())
             m.addAction("Xóa kênh này", self._del_proj)
         m.addAction("Quản lý / Xóa nhiều kênh…", self._manage_projects)
         m.exec(self.proj.mapToGlobal(pos))
+
+    def _move_group(self, pid=None):
+        """Chuột phải combo Kênh -> 'Chuyển nhóm...': chọn nhóm có sẵn hoặc
+        gõ tên nhóm MỚI (getItem editable). Để trống = bỏ nhóm."""
+        pid = self.proj.currentData() if pid is None else pid
+        if pid is None:
+            return
+        cur = services.project_group(int(pid))
+        items = [""] + services.list_groups()
+        idx = items.index(cur) if cur in items else 0
+        g, ok = QInputDialog.getItem(
+            self, "Chuyển nhóm",
+            "Nhóm (chọn có sẵn hoặc gõ tên MỚI; để trống = bỏ nhóm):",
+            items, idx, True)
+        if not ok:
+            return
+        g = (g or "").strip()
+        if g == cur:
+            return
+        services.set_project_group(int(pid), g)
+        # ĐI THEO kênh sang nhóm mới ('' -> Tất cả) — kênh đang chọn phải
+        # luôn hiện được trong combo, không để trống/lệch
+        self._reload_groups(g)
+        self._reload_projects()
+        self._select_project(int(pid))
+        name = getattr(self, "_proj_names", {}).get(int(pid), "")
+        self.status.setText(f"Đã chuyển kênh “{name}” vào nhóm "
+                            f"“{g or 'Chưa phân nhóm'}”.")
 
     def _vid_menu(self, pos):
         m = QMenu(self)
@@ -2848,6 +3042,7 @@ class StudioPage(QWidget):
                 services.delete_project(int(pid), self.state.pool)
                 if self.state.project_id == int(pid):
                     self.state.project_id = None
+            self._reload_groups(self._cur_group())  # nhóm có thể vừa hết kênh
             self._reload_projects()
             return len(ids)
 

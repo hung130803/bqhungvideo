@@ -39,7 +39,7 @@ def _file_hash(path: str, chunk: int = 1 << 20) -> str:
 
 
 # ---- Project ----
-def create_project(name: str) -> int:
+def create_project(name: str, grp: str = "") -> int:
     assets = PROJECTS_DIR / f"{_slug(name)}"
     i = 1
     base = assets
@@ -48,13 +48,36 @@ def create_project(name: str) -> int:
         i += 1
     assets.mkdir(parents=True, exist_ok=True)
     return db.insert(
-        "INSERT INTO projects (name, assets_dir) VALUES (?,?)",
-        (name, str(assets)),
+        "INSERT INTO projects (name, assets_dir, grp) VALUES (?,?,?)",
+        (name, str(assets), (grp or "").strip()),
     )
 
 
-def list_projects() -> list:
-    return db.query("SELECT * FROM projects ORDER BY created_at DESC")
+def list_projects(grp: str | None = None) -> list:
+    """Danh sách kênh. grp=None -> TẤT CẢ (hành vi cũ);
+    grp='Tên nhóm' -> chỉ kênh thuộc nhóm đó ('' = chưa phân nhóm)."""
+    if grp is None:
+        return db.query("SELECT * FROM projects ORDER BY created_at DESC")
+    return db.query("SELECT * FROM projects WHERE grp=? ORDER BY created_at DESC",
+                    (grp,))
+
+
+def list_groups() -> list[str]:
+    """Tên NHÓM kênh distinct (bỏ rỗng = 'chưa phân nhóm'), sort a-z."""
+    rows = db.query("SELECT DISTINCT grp FROM projects "
+                    "WHERE grp IS NOT NULL AND grp<>'' ORDER BY grp")
+    return [r["grp"] for r in rows]
+
+
+def set_project_group(project_id: int, grp: str) -> None:
+    """Gán kênh vào NHÓM (''= bỏ nhóm). Nhóm tồn tại khi có kênh thuộc nó."""
+    db.execute("UPDATE projects SET grp=? WHERE id=?",
+               ((grp or "").strip(), int(project_id)))
+
+
+def project_group(project_id: int) -> str:
+    row = db.query_one("SELECT grp FROM projects WHERE id=?", (int(project_id),))
+    return (row["grp"] or "") if row else ""
 
 
 def rename_project(project_id: int, new_name: str) -> str:
