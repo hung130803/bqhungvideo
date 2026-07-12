@@ -1117,11 +1117,14 @@ class StudioPage(QWidget):
             self.status.setText(
                 "⚠ Kho video đã chọn không truy cập được (ổ đã rút?) — "
                 "tạm dùng kho mặc định. Chọn lại ở nút 'Kho video'.")
-        # 🔒 GHIM loại thư mục Explorer (FolderType=Generic): thêm kênh/clip
-        # mới không làm Windows đoán lại template -> user xếp Date created
-        # trong 'Đã xuất' KHÔNG bị reset nữa.
-        from app.core.folderview import pin_folder_view
-        pin_folder_view(d)
+        # 🧹 DỌN desktop.ini bản v1.62 từng tạo (đã GỠ tính năng ghim — user
+        # không muốn thấy file này) + bỏ cờ READONLY: chạy 1 lần mỗi phiên.
+        if not getattr(self, "_pins_cleaned", None):
+            self._pins_cleaned = set()
+        if str(d) not in self._pins_cleaned:
+            self._pins_cleaned.add(str(d))
+            from app.core.folderview import cleanup_folder_pins
+            cleanup_folder_pins(d)
         return d
 
     def _dl_dir(self):
@@ -4034,10 +4037,22 @@ class StudioPage(QWidget):
                 sub = target / stem
                 if sub.is_dir():
                     target = sub
+        # Thư mục có thể CHƯA tồn tại (chưa xuất clip nào) -> tạo rồi mở,
+        # đừng im lặng không làm gì (user tưởng nút hỏng).
+        try:
+            Path(target).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         try:
             os.startfile(str(target))  # noqa: S606
-        except Exception:  # noqa: BLE001
-            pass
+            self.status.setText(f"Đã mở: {target}")
+        except Exception:  # noqa: BLE001 - startfile lỗi -> thử explorer.exe
+            import subprocess
+            try:
+                subprocess.Popen(["explorer", str(target)])
+                self.status.setText(f"Đã mở: {target}")
+            except Exception:  # noqa: BLE001
+                self.status.setText(f"⚠ Không mở được thư mục: {target}")
 
     def _open_file(self, p):
         if p and os.path.isfile(p):

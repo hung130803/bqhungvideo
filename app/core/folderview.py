@@ -1,57 +1,64 @@
-"""GHIM 'loại thư mục' của Windows Explorer cho thư mục xuất.
+"""DỌN desktop.ini mà bản v1.62 từng tạo trong thư mục xuất.
 
-Bệnh Windows: thư mục chứa video/ảnh bị Explorer TỰ ĐOÁN LẠI "loại thư mục"
-(General items -> Videos...) mỗi khi nội dung thay đổi (thêm kênh/clip mới)
--> kiểu xem + SẮP XẾP user đã chọn (vd Date created) bị RESET về mặc định.
-User báo thật: xếp 'Đã xuất' theo Date created, cứ tạo kênh mới là mất.
-
-Chữa chuẩn tài liệu MS: ghi desktop.ini với FolderType=Generic (khoá template,
-Explorer thôi đoán lại) + đặt thuộc tính để Windows chịu đọc desktop.ini:
-  - desktop.ini: HIDDEN|SYSTEM (ẩn, không hiện trong Explorer)
-  - thư mục: READ_ONLY (Windows coi là 'thư mục có tuỳ biến' — KHÔNG cản
-    ghi/xoá file bên trong, chỉ là cờ đánh dấu).
-Sau đó user chỉnh sắp xếp 1 lần là Explorer NHỚ (không bị template reset).
-
-Chỉ chạy trên Windows; mọi lỗi nuốt im (tính năng phụ, không được cản xuất).
+v1.62 thử ghim 'loại thư mục' Explorer bằng desktop.ini (chống Windows reset
+sắp xếp Date created) — nhưng user thấy desktop.ini hiện trong mọi thư mục
+(máy bật 'hiện file hệ thống') + nghi làm nút Mở thư mục trượt. ĐÃ GỠ tính
+năng; module này chỉ còn nhiệm vụ DỌN SẠCH những gì đã tạo: xoá desktop.ini
+(đúng nội dung của app, không đụng ini của user/hệ thống) + bỏ cờ READONLY
+trên thư mục. Chạy im lặng, mọi lỗi nuốt (không cản luồng app).
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-_INI = "[ViewState]\r\nMode=\r\nVid=\r\nFolderType=Generic\r\n"
+_MARK = "FolderType=Generic"          # dấu nhận diện ini DO APP tạo
 
 _FILE_ATTRIBUTE_READONLY = 0x01
-_FILE_ATTRIBUTE_HIDDEN = 0x02
-_FILE_ATTRIBUTE_SYSTEM = 0x04
 
 
-def pin_folder_view(folder: str | Path) -> bool:
-    """Ghim loại thư mục = Generic cho `folder` (idempotent). True nếu đã ghim
-    (hoặc ghim từ trước), False nếu không phải Windows/lỗi."""
-    if os.name != "nt":
-        return False
+def _unpin_one(d: Path) -> None:
+    """Xoá desktop.ini của app (nếu có) + bỏ cờ READONLY trên `d`."""
     try:
-        d = Path(folder)
-        if not d.is_dir():
-            return False
-        ini = d / "desktop.ini"
-        if not ini.exists() or "FolderType=Generic" not in ini.read_text(
-                encoding="utf-8", errors="ignore"):
-            # desktop.ini cũ có thể đang HIDDEN|SYSTEM -> bỏ cờ mới ghi được
-            import ctypes
-            k32 = ctypes.windll.kernel32
-            if ini.exists():
-                k32.SetFileAttributesW(str(ini), 0x80)   # NORMAL
-            ini.write_text(_INI, encoding="utf-8")
-            k32.SetFileAttributesW(
-                str(ini), _FILE_ATTRIBUTE_HIDDEN | _FILE_ATTRIBUTE_SYSTEM)
-        # thư mục cần cờ READONLY để Explorer đọc desktop.ini (không cản ghi)
         import ctypes
         k32 = ctypes.windll.kernel32
+        ini = d / "desktop.ini"
+        if ini.is_file():
+            try:
+                txt = ini.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                txt = ""
+            # CHỈ xoá ini do app tạo (ngắn + đúng dấu hiệu) — không phá ini
+            # tuỳ biến của user/Windows (icon thư mục...).
+            if _MARK in txt and len(txt) < 200:
+                k32.SetFileAttributesW(str(ini), 0x80)   # NORMAL để xoá được
+                ini.unlink(missing_ok=True)
         attrs = k32.GetFileAttributesW(str(d))
-        if attrs != 0xFFFFFFFF and not (attrs & _FILE_ATTRIBUTE_READONLY):
-            k32.SetFileAttributesW(str(d), attrs | _FILE_ATTRIBUTE_READONLY)
-        return True
-    except Exception:  # noqa: BLE001 - tính năng phụ, không cản luồng xuất
-        return False
+        if attrs != 0xFFFFFFFF and (attrs & _FILE_ATTRIBUTE_READONLY):
+            k32.SetFileAttributesW(str(d), attrs & ~_FILE_ATTRIBUTE_READONLY)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def cleanup_folder_pins(root: str | Path, depth: int = 2) -> None:
+    """Dọn desktop.ini của app trong `root` + thư mục con tới `depth` cấp
+    (Đã xuất -> Kênh -> Video). Không phải Windows -> bỏ qua."""
+    if os.name != "nt":
+        return
+    try:
+        r = Path(root)
+        if not r.is_dir():
+            return
+        _unpin_one(r)
+        if depth <= 0:
+            return
+        for c1 in r.iterdir():
+            if not c1.is_dir():
+                continue
+            _unpin_one(c1)
+            if depth >= 2:
+                for c2 in c1.iterdir():
+                    if c2.is_dir():
+                        _unpin_one(c2)
+    except Exception:  # noqa: BLE001
+        pass
