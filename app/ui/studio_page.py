@@ -91,8 +91,9 @@ class _SegBar(QWidget):
 
 
 class _ChanCombo(QComboBox):
-    """Combo Kênh: NGAY TRƯỚC khi mở dropdown gọi callback refresh đuôi trạng
-    thái từng kênh ('Tên · 🟢3 · ✅12ph') — userData (project_id) giữ nguyên."""
+    """Combo có đuôi trạng thái (dùng cho cả Kênh lẫn Video): NGAY TRƯỚC khi
+    mở dropdown gọi callback refresh đuôi từng item ('Tên · 🟢3 · ✅12ph' /
+    'Tên.mp4 · 🟢 đang cắt') — userData (project_id/video_id) giữ nguyên."""
     on_popup = None            # gán từ ngoài: callable không tham số
 
     def showPopup(self):
@@ -162,7 +163,8 @@ class StudioPage(QWidget):
         self._update_lib_tooltip()   # tooltip hiện ĐƯỜNG DẪN kho đang dùng
         srcrow.addSpacing(16)
         srcrow.addWidget(self._tag("Video"))
-        self.vid = QComboBox(); self.vid.setMinimumWidth(200)
+        self.vid = _ChanCombo(); self.vid.setMinimumWidth(200)
+        self.vid.on_popup = self._refresh_vid_marks   # mở dropdown -> đuôi mới
         self.vid.setToolTip("Chuột phải để xóa video / quản lý xóa nhiều video.")
         self.vid.currentIndexChanged.connect(self._on_vid)
         self.vid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1172,33 +1174,41 @@ class StudioPage(QWidget):
             return {}
 
     def _poll_chan_activity(self):
-        """Móc vào timer 1.5s sẵn có nhưng CHỈ query mỗi 3 tick (~4.5s)."""
+        """Móc vào timer 1.5s sẵn có nhưng CHỈ query mỗi 3 tick (~4.5s) —
+        chung 1 bộ đếm cho cả channel_activity lẫn video_activity (nhãn
+        'Kênh: ... | Video này: ...'); dropdown đóng thì KHÔNG query thêm."""
         self._act_tick += 1
         if self._act_tick % 3:
             return
         self._refresh_chan_label()
 
     def _refresh_chan_label(self, act: dict | None = None):
-        """'🟢 đang chạy 3 · ⏳ đợi 2 · ✅ xong 12 phút trước' cho kênh hiện
-        tại — phần nào =0 thì ẩn; không có gì -> 'chưa có hoạt động'."""
+        """1 dòng gọn: 'Kênh: 🟢 đang chạy 3 · ⏳ đợi 2  |  Video này: 🟢 đang
+        cắt' — phần nào =0 thì ẩn; kênh im ắng -> 'chưa có hoạt động'; chưa
+        chọn video thì chỉ có vế Kênh (không tiền tố)."""
         pid = self.state.project_id
         if not pid:
             self.chan_lbl.setText("")
             return
         a = (act if act is not None else self._chan_activity()).get(int(pid))
-        if not a:
-            self.chan_lbl.setText("chưa có hoạt động")
-            return
         parts = []
-        if a["running"]:
-            parts.append(f"🟢 đang chạy {a['running']}")
-        if a["pending"]:
-            parts.append(f"⏳ đợi {a['pending']}")
-        if a["failed_recent"]:
-            parts.append(f"🔴 lỗi {a['failed_recent']} (24h)")
-        if a["last_done"]:
-            parts.append(f"✅ xong {services.rel_time_vi(a['last_done'])}")
-        self.chan_lbl.setText(" · ".join(parts) or "chưa có hoạt động")
+        if a:
+            if a["running"]:
+                parts.append(f"🟢 đang chạy {a['running']}")
+            if a["pending"]:
+                parts.append(f"⏳ đợi {a['pending']}")
+            if a["failed_recent"]:
+                parts.append(f"🔴 lỗi {a['failed_recent']} (24h)")
+            if a["last_done"]:
+                parts.append(f"✅ xong {services.rel_time_vi(a['last_done'])}")
+        chan_txt = " · ".join(parts) or "chưa có hoạt động"
+        vid = self.state.video_id
+        if vid:      # gộp vắn tắt VIDEO ĐANG CHỌN vào cùng dòng (không thêm nhãn)
+            va = self._video_activity().get(int(vid))
+            self.chan_lbl.setText(
+                f"Kênh: {chan_txt}  |  Video này: {self._vid_mark(va)}")
+        else:
+            self.chan_lbl.setText(chan_txt)
 
     def _refresh_proj_marks(self):
         """Gọi khi user MỞ dropdown Kênh: đổi TEXT từng item thành
@@ -1230,33 +1240,76 @@ class StudioPage(QWidget):
             self.proj.blockSignals(False)
 
     def _channel_dashboard(self):
-        """Bảng 'Tình hình các kênh': kênh đang chạy/mới xong lên đầu; nháy
-        đúp 1 dòng -> chuyển combo sang kênh đó."""
+        self._build_channel_dashboard().exec()
+
+    def _build_channel_dashboard(self) -> QDialog:
+        """Dialog 'Tình hình các kênh' 2 TRANG (QStackedWidget):
+        - Trang kênh: mỗi kênh 1 dòng, đang chạy/mới xong lên đầu; nháy đúp
+          1 kênh -> mở trang CHI TIẾT VIDEO của kênh đó (không đóng dialog).
+        - Trang video: mỗi video 1 dòng (chạy/đợi/clip/đã xuất/gần nhất);
+          nháy đúp 1 video -> chuyển app sang kênh + video đó rồi đóng;
+          nút '← Quay lại danh sách kênh' trở về trang kênh.
+        Tách khỏi exec() để test offscreen thao tác được từng bước."""
         from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView,
-                                     QTableWidget, QTableWidgetItem)
+                                     QStackedWidget, QTableWidget,
+                                     QTableWidgetItem)
         dlg = QDialog(self); dlg.setWindowTitle("Tình hình các kênh")
-        dlg.resize(700, 420)
+        dlg.resize(760, 440)
         lay = QVBoxLayout(dlg); lay.setSpacing(8)
+        stack = QStackedWidget(); lay.addWidget(stack, 1)
+        cur = {"pid": None, "name": ""}      # kênh đang xem ở trang video
+
+        def _mk_table(headers):
+            t = QTableWidget(0, len(headers))
+            t.setHorizontalHeaderLabels(headers)
+            t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            t.setSelectionBehavior(
+                QAbstractItemView.SelectionBehavior.SelectRows)
+            t.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+            t.verticalHeader().setVisible(False)
+            hh = t.horizontalHeader()
+            hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            for c in range(1, len(headers)):
+                hh.setSectionResizeMode(c,
+                                        QHeaderView.ResizeMode.ResizeToContents)
+            return t
+
+        # ===== Trang 1: DANH SÁCH KÊNH =====
+        pg1 = QWidget(); l1 = QVBoxLayout(pg1)
+        l1.setContentsMargins(0, 0, 0, 0); l1.setSpacing(8)
         hd = QLabel("📊 Tình hình các kênh")
         hd.setStyleSheet(f"color:{TEXT}; font-size:16px; font-weight:800;")
-        lay.addWidget(hd)
-        sub = QLabel("Nháy đúp 1 dòng để CHUYỂN sang kênh đó. Kênh đang chạy "
-                     "/ vừa xong mới nhất nằm trên cùng.")
+        l1.addWidget(hd)
+        sub = QLabel("Nháy đúp 1 kênh để xem CHI TIẾT TỪNG VIDEO của kênh đó. "
+                     "Kênh đang chạy / vừa xong mới nhất nằm trên cùng.")
         sub.setWordWrap(True)
         sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
-        lay.addWidget(sub)
-        tbl = QTableWidget(0, 6)
-        tbl.setHorizontalHeaderLabels(
+        l1.addWidget(sub)
+        tbl = _mk_table(
             ["Kênh", "Đang chạy", "Đợi", "Lỗi 24h", "Xong gần nhất", "Đã xuất"])
-        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        tbl.verticalHeader().setVisible(False)
-        hh = tbl.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for c in range(1, 6):
-            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
-        lay.addWidget(tbl, 1)
+        l1.addWidget(tbl, 1)
+        stack.addWidget(pg1)
+
+        # ===== Trang 2: VIDEO TRONG 1 KÊNH =====
+        pg2 = QWidget(); l2 = QVBoxLayout(pg2)
+        l2.setContentsMargins(0, 0, 0, 0); l2.setSpacing(8)
+        row2 = QHBoxLayout(); row2.setSpacing(8)
+        back = QPushButton("← Quay lại danh sách kênh")
+        back.setProperty("ghost", True)
+        row2.addWidget(back)
+        hd2 = QLabel("")
+        hd2.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        row2.addWidget(hd2, 1)
+        l2.addLayout(row2)
+        sub2 = QLabel("Nháy đúp 1 video để CHUYỂN app sang kênh + video đó. "
+                      "Video đang chạy / hoạt động mới nhất nằm trên cùng.")
+        sub2.setWordWrap(True)
+        sub2.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        l2.addWidget(sub2)
+        vtbl = _mk_table(["Video", "Đang chạy", "Đợi", "Clip đã tạo",
+                          "Đã xuất", "Hoạt động gần nhất"])
+        l2.addWidget(vtbl, 1)
+        stack.addWidget(pg2)
 
         def fill():
             act = self._chan_activity()
@@ -1289,49 +1342,141 @@ class StudioPage(QWidget):
                     x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     tbl.setItem(i, c, x)
 
-        def jump(row, _col):
+        def fill_videos(pid, name=""):
+            cur["pid"], cur["name"] = int(pid), name
+            hd2.setText(f"📊 Video trong kênh: {name}" if name
+                        else "📊 Video trong kênh")
+            try:
+                act = services.video_activity(int(pid))
+            except Exception:  # noqa: BLE001 - bảng phụ, lỗi không sập app
+                act = {}
+            rows = []
+            for v in services.list_videos(int(pid)):
+                a = act.get(int(v["id"])) or {
+                    "running": 0, "run_export": 0, "pending": 0,
+                    "failed_recent": 0, "clips": 0, "exported": 0,
+                    "last_done": None, "last_done_type": ""}
+                rows.append((Path(v["src_path"]).name, int(v["id"]), a))
+            rows.sort(key=lambda r: (r[2]["running"] > 0,
+                                     r[2]["last_done"] or ""), reverse=True)
+            vtbl.setRowCount(len(rows))
+            for i, (name_v, vid_id, a) in enumerate(rows):
+                it = QTableWidgetItem(name_v)
+                it.setData(Qt.ItemDataRole.UserRole, vid_id)
+                vtbl.setItem(i, 0, it)
+                run_txt = "·"
+                if a["running"]:
+                    run_txt = ("🟢 đang xuất" if a["run_export"]
+                               else "🟢 đang cắt")
+                done_txt = services.rel_time_vi(a["last_done"]) or "—"
+                if a["failed_recent"]:
+                    done_txt += f" · 🔴 lỗi {a['failed_recent']} (24h)"
+                cells = (run_txt,
+                         f"⏳ {a['pending']}" if a["pending"] else "·",
+                         str(a["clips"]) if a["clips"] else "·",
+                         str(a["exported"]) if a["exported"] else "·",
+                         done_txt)
+                for c, txt in enumerate(cells, start=1):
+                    x = QTableWidgetItem(txt)
+                    x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    vtbl.setItem(i, c, x)
+
+        def drill(row, _col):
+            """Nháy đúp 1 KÊNH -> trang chi tiết video của kênh đó."""
             it = tbl.item(row, 0)
             pid = it.data(Qt.ItemDataRole.UserRole) if it else None
-            if pid is not None:
-                i = self.proj.findData(pid)
-                if i >= 0:
-                    self.proj.setCurrentIndex(i)   # -> _on_proj đổi kênh
+            if pid is None:
+                return
+            fill_videos(int(pid), it.text())
+            stack.setCurrentIndex(1)
+
+        def jump_video(row, _col):
+            """Nháy đúp 1 VIDEO -> chuyển app sang kênh + video đó, đóng."""
+            it = vtbl.item(row, 0)
+            vid_id = it.data(Qt.ItemDataRole.UserRole) if it else None
+            pid = cur["pid"]
+            if vid_id is None or pid is None:
+                return
+            i = self.proj.findData(pid)
+            if i >= 0 and i != self.proj.currentIndex():
+                self.proj.setCurrentIndex(i)     # -> _on_proj nạp video kênh mới
+            j = self.vid.findData(vid_id)
+            if j >= 0:
+                self.vid.setCurrentIndex(j)      # -> _on_vid chọn đúng video
             dlg.accept()
 
-        tbl.cellDoubleClicked.connect(jump)
+        def go_back():
+            fill()                    # số liệu kênh có thể đổi trong lúc xem
+            stack.setCurrentIndex(0)
+
+        tbl.cellDoubleClicked.connect(drill)
+        vtbl.cellDoubleClicked.connect(jump_video)
+        back.clicked.connect(go_back)
         btns = QHBoxLayout(); btns.addStretch(1)
         rf = QPushButton("Làm mới"); rf.setProperty("ghost", True)
-        rf.clicked.connect(fill); btns.addWidget(rf)
+        rf.clicked.connect(lambda: (fill_videos(cur["pid"], cur["name"])
+                                    if stack.currentIndex() else fill()))
+        btns.addWidget(rf)
         cl = QPushButton("Đóng"); cl.setProperty("primary", True)
         cl.clicked.connect(dlg.accept); btns.addWidget(cl)
         lay.addLayout(btns)
         fill()
-        dlg.exec()
+        # móc cho test offscreen thao tác từng bước (không ảnh hưởng chạy thật)
+        dlg._t = {"tbl": tbl, "vtbl": vtbl, "stack": stack, "back": back}
+        return dlg
 
-    def _video_status_marks(self) -> dict:
-        """Đuôi trạng thái cho MỖI video trong combo — 2 query GỘP cho cả kênh
-        (không query từng video kẻo chậm khi nhiều video).
-        Ưu tiên: có clip -> '✂ N clip'; đang có job chạy -> '⏳ đang xử lý'."""
-        marks = {}
+    def _video_activity(self) -> dict:
+        """services.video_activity của kênh đang chọn — lỗi trả {} (nhãn phụ,
+        không được sập app)."""
         if not self.state.project_id:
-            return marks
+            return {}
         try:
-            for r in db.query(
-                    "SELECT c.video_id AS vid, COUNT(*) AS n FROM clips c "
-                    "JOIN videos v ON v.id = c.video_id "
-                    "WHERE v.project_id=? GROUP BY c.video_id",
-                    (self.state.project_id,)):
-                marks[r["vid"]] = f'  ✂ {r["n"]} clip'
-            for r in db.query(
-                    "SELECT DISTINCT video_id AS vid FROM jobs "
-                    "WHERE project_id=? AND video_id IS NOT NULL "
-                    "AND status IN ('pending','running')",
-                    (self.state.project_id,)):
-                if r["vid"] not in marks:
-                    marks[r["vid"]] = "  ⏳ đang xử lý"
+            return services.video_activity(int(self.state.project_id))
         except Exception:  # noqa: BLE001 - nhãn trạng thái lỗi không được sập app
-            pass
-        return marks
+            return {}
+
+    @staticmethod
+    def _vid_mark(a) -> str:
+        """Đuôi trạng thái 1 video từ dict video_activity: ưu tiên ĐANG chạy >
+        đợi > có clip (kèm bao lâu) > lỗi 24h > chưa làm gì."""
+        if not a:
+            return "chưa tạo clip"
+        if a["running"]:
+            return "🟢 đang xuất" if a["run_export"] else "🟢 đang cắt"
+        if a["pending"]:
+            return "⏳ đợi"
+        if a["clips"]:
+            parts = [f"✅ {a['clips']} clip"]
+            t = services.rel_time_vi(a["last_done"], short=True)
+            if t:
+                parts.append(t)
+            if a["failed_recent"]:
+                parts.append(f"🔴 lỗi {a['failed_recent']}")
+            return " · ".join(parts)
+        if a["failed_recent"]:
+            return f"🔴 lỗi {a['failed_recent']} (24h)"
+        return "chưa tạo clip"
+
+    def _refresh_vid_marks(self):
+        """Gọi khi user MỞ dropdown Video: đổi TEXT từng item thành
+        'Tên.mp4 · 🟢 đang cắt' / '· ✅ 4 clip · 12ph'... userData giữ nguyên
+        video_id nên chọn video không đổi hành vi. TÊN GỐC lấy từ _vid_names
+        (KHÔNG tách lại từ text — text đang mang đuôi)."""
+        act = self._video_activity()
+        names = getattr(self, "_vid_names", {})
+        self.vid.blockSignals(True)
+        try:
+            for i in range(self.vid.count()):
+                vid = self.vid.itemData(i)
+                if vid is None:
+                    continue
+                name = names.get(int(vid))
+                if not name:            # thiếu tên gốc (khó xảy ra) -> giữ text
+                    continue
+                self.vid.setItemText(
+                    i, f"{name} · {self._vid_mark(act.get(int(vid)))}")
+        finally:
+            self.vid.blockSignals(False)
 
     def _video_busy(self, vid) -> bool:
         """Video này ĐANG có job chạy/chờ (phân tích/cắt/xuất)? 1 query nhẹ."""
@@ -1350,11 +1495,17 @@ class StudioPage(QWidget):
         mất chỗ user đang làm việc. select_id: ép chọn video này (vd vừa tải)."""
         cur = select_id if select_id is not None else self.vid.currentData()
         self.vid.blockSignals(True); self.vid.clear()
+        # TÊN GỐC từng video (không đuôi trạng thái) — text item mang đuôi
+        # '· 🟢 đang cắt' nên MỌI chỗ cần tên video phải lấy từ đây/DB (src_path),
+        # ĐỪNG currentText() (bài học vụ tên kênh dính đuôi).
+        self._vid_names = {}
         if self.state.project_id:
-            marks = self._video_status_marks()   # trạng thái TỪNG video (query gộp)
+            act = self._video_activity()     # trạng thái TỪNG video (query gộp)
             for v in services.list_videos(self.state.project_id):
-                mark = marks.get(v["id"], "  · chưa tạo clip")
-                self.vid.addItem(f'{Path(v["src_path"]).name}{mark}', v["id"])
+                name = Path(v["src_path"]).name
+                self._vid_names[int(v["id"])] = name
+                self.vid.addItem(
+                    f'{name} · {self._vid_mark(act.get(int(v["id"])))}', v["id"])
         if cur is not None:
             i = self.vid.findData(cur)
             if i >= 0:
@@ -2470,6 +2621,7 @@ class StudioPage(QWidget):
         if vid is not None:
             self.state.set_video(int(vid))
             self._refresh_clips(force=True)
+            self._refresh_chan_label()   # vế 'Video này:' đổi NGAY theo video mới
 
     def _del_video(self):
         vid = self.state.video_id
@@ -2557,9 +2709,17 @@ class StudioPage(QWidget):
         if not vids:
             QMessageBox.information(self, "Chưa có video", "Kênh chưa có video nào.")
             return
-        rows = [(v["id"], Path(v["src_path"]).name
-                 + ("   (đã có clip)" if services.list_clips(v["id"]) else ""))
-                for v in vids]
+        # Trạng thái + hoạt động gần nhất từng video (1 lượt query gộp cho cả
+        # kênh — trước đây list_clips TỪNG video, kênh nhiều video bị chậm).
+        act = self._video_activity()
+        rows = []
+        for v in vids:
+            a = act.get(int(v["id"]))
+            txt = f'{Path(v["src_path"]).name}   ·  {self._vid_mark(a)}'
+            if a and a["last_done"] and (a["running"] or a["pending"]):
+                # đang chạy/đợi thì _vid_mark không kèm thời gian -> bổ sung
+                txt += f' · ✅ {services.rel_time_vi(a["last_done"])}'
+            rows.append((v["id"], txt))
 
         def do(ids):
             for vid in ids:

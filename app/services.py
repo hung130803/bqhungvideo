@@ -359,6 +359,74 @@ def channel_activity() -> dict:
     return act
 
 
+# ---- Hoạt động theo TỪNG VIDEO trong 1 kênh (đuôi combo Video + nhãn +
+# ---- bảng chi tiết video trong dialog "Tình hình các kênh") ----
+def video_activity(project_id: int) -> dict:
+    """Tình hình job/clip của TỪNG VIDEO trong kênh `project_id` — vài query
+    GROUP BY video_id GIỚI HẠN theo project_id (idx_jobs_project /
+    idx_clips_video), KHÔNG query từng video (kênh nhiều video vẫn nhẹ).
+
+    Trả dict[video_id] = {
+        "running": n,        # job đang chạy (mọi loại)
+        "run_export": n,     # trong đó job XUẤT clip đang chạy (phân biệt
+                             # 'đang cắt/phân tích' với 'đang xuất' trên UI)
+        "pending": n,
+        "failed_recent": n,  # job failed trong 24h qua
+        "clips": n,          # clip đã tạo (mọi status)
+        "exported": n,       # job xuất xong (m1_export_clip done)
+        "last_done": "YYYY-MM-DD HH:MM:SS" (UTC như SQLite ghi) | None,
+        "last_done_type": type của job done gần nhất,
+    } — MỌI video của kênh đều có mặt (video chưa làm gì = toàn 0/None).
+    """
+    from datetime import datetime, timedelta, timezone
+    # SQLite datetime('now') ghi UTC -> mốc 24h cũng phải tính bằng UTC
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
+              ).strftime("%Y-%m-%d %H:%M:%S")
+    act = {int(v["id"]): {"running": 0, "run_export": 0, "pending": 0,
+                          "failed_recent": 0, "clips": 0, "exported": 0,
+                          "last_done": None, "last_done_type": ""}
+           for v in db.query("SELECT id FROM videos WHERE project_id=?",
+                             (project_id,))}
+    for r in db.query(
+            "SELECT video_id AS vid, "
+            "SUM(status='running') AS running, "
+            "SUM(status='running' AND type='m1_export_clip') AS run_export, "
+            "SUM(status='pending') AS pending, "
+            "SUM(status='failed' AND COALESCE(finished_at, created_at) >= ?) "
+            "  AS failed_recent, "
+            "SUM(status='done' AND type='m1_export_clip') AS exported "
+            "FROM jobs WHERE project_id=? AND video_id IS NOT NULL "
+            "GROUP BY video_id", (cutoff, project_id)):
+        a = act.get(int(r["vid"]))
+        if a is None:          # job của video vừa bị xóa (race) -> bỏ qua
+            continue
+        a["running"] = int(r["running"] or 0)
+        a["run_export"] = int(r["run_export"] or 0)
+        a["pending"] = int(r["pending"] or 0)
+        a["failed_recent"] = int(r["failed_recent"] or 0)
+        a["exported"] = int(r["exported"] or 0)
+    # MAX(finished_at) + bare column: SQLite ĐẢM BẢO cột trần (type) lấy từ
+    # đúng dòng đạt MAX (giống channel_activity) -> biết loại job done gần nhất.
+    for r in db.query(
+            "SELECT video_id AS vid, MAX(finished_at) AS last_done, "
+            "type AS last_type FROM jobs "
+            "WHERE project_id=? AND video_id IS NOT NULL "
+            "AND status='done' AND finished_at IS NOT NULL "
+            "GROUP BY video_id", (project_id,)):
+        a = act.get(int(r["vid"]))
+        if a is not None:
+            a["last_done"] = r["last_done"]
+            a["last_done_type"] = r["last_type"] or ""
+    for r in db.query(
+            "SELECT c.video_id AS vid, COUNT(*) AS n FROM clips c "
+            "JOIN videos v ON v.id = c.video_id "
+            "WHERE v.project_id=? GROUP BY c.video_id", (project_id,)):
+        a = act.get(int(r["vid"]))
+        if a is not None:
+            a["clips"] = int(r["n"])
+    return act
+
+
 def rel_time_vi(iso_str, short: bool = False) -> str:
     """'2026-07-12 08:00:00' (UTC — như SQLite datetime('now') ghi) -> chuỗi
     tương đối tiếng Việt: 'vừa xong' (<90s), 'X phút trước' (<60ph),

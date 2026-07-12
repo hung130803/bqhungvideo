@@ -78,8 +78,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_dedup ON jobs(dedup_key);
--- UI poll mỗi 1.5s: _video_busy (video_id+status) + _video_status_marks
--- (project_id+status) — index để bảng jobs nhiều dòng lịch sử vẫn nhẹ tênh.
+-- UI poll mỗi 1.5s: _video_busy (video_id+status) + channel_activity /
+-- video_activity (project_id+status) — index để jobs nhiều dòng vẫn nhẹ tênh.
 CREATE INDEX IF NOT EXISTS idx_jobs_video ON jobs(video_id, status);
 CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id, status);
 
