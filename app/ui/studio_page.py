@@ -146,13 +146,20 @@ class StudioPage(QWidget):
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
         self.proj.on_popup = self._refresh_proj_marks
         self.proj.setToolTip("Mỗi kênh = 1 thư mục riêng. Clip xuất vào đúng thư mục "
-                             "kênh.\nChuột phải để XÓA kênh.")
+                             "kênh.\nChuột phải để SỬA TÊN / XÓA kênh.")
         self.proj.currentIndexChanged.connect(self._on_proj)
         self.proj.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.proj.customContextMenuRequested.connect(self._proj_menu)
         srcrow.addWidget(self.proj)
         np = QPushButton("+ Kênh"); np.setProperty("ghost", True)
         np.clicked.connect(self._new_proj); srcrow.addWidget(np)
+        ren = QPushButton("✏"); ren.setProperty("ghost", True)
+        ren.setFixedWidth(38)
+        ren.setToolTip("Sửa tên kênh đang chọn (tạo sai tên sửa lại được).\n"
+                       "Lưu ý: clip xuất MỚI sẽ vào thư mục theo tên mới.")
+        # lambda: clicked truyền checked=False -> đừng để lọt vào tham số pid
+        ren.clicked.connect(lambda: self._rename_proj())
+        srcrow.addWidget(ren)
         dash = QPushButton("📊"); dash.setProperty("ghost", True)
         dash.setFixedWidth(38)
         dash.setToolTip("Tình hình các kênh: đang chạy / đợi / lỗi 24h / "
@@ -1158,6 +1165,45 @@ class StudioPage(QWidget):
         elif first:
             pass
 
+    def _rename_proj(self, pid=None) -> bool:
+        """Sửa TÊN kênh (nút ✏ / chuột phải combo / chuột phải bảng 📊).
+        pid=None -> kênh đang chọn. Tên hiện tại lấy từ DB, KHÔNG currentText()
+        (text combo mang đuôi trạng thái '· 🟢3'). Trả True nếu ĐÃ đổi —
+        bảng 📊 dựa vào đó để vẽ lại."""
+        pid = self.proj.currentData() if pid is None else pid
+        if pid is None:
+            return False
+        row = db.query_one("SELECT name FROM projects WHERE id=?", (int(pid),))
+        if not row:
+            return False
+        old = row["name"]
+        name, ok = QInputDialog.getText(
+            self, "Sửa tên kênh", "Tên kênh mới:", text=old)
+        if not ok:
+            return False
+        name = (name or "").strip()
+        if name == old:
+            return False
+        err = services.rename_project(int(pid), name)   # chặn rỗng/trùng tên
+        if err:
+            QMessageBox.warning(self, "Không đổi được tên kênh", err)
+            return False
+        keep = self.proj.currentData()     # GIỮ NGUYÊN kênh đang chọn sau reload
+        self._reload_projects()
+        i = self.proj.findData(keep)
+        if i >= 0:
+            self.proj.setCurrentIndex(i)
+        self.status.setText(f"Đã đổi tên kênh “{old}” → “{name}”.")
+        # ĐƯỜNG XUẤT '<gốc>/Đã xuất/<Kênh>/...' dựng từ TÊN KÊNH tại lúc xuất
+        # -> báo rõ kẻo user đi tìm clip mới trong thư mục tên cũ.
+        QMessageBox.information(
+            self, "Đã đổi tên kênh",
+            f"Đã đổi “{old}” → “{name}”.\n\n"
+            f"Clip xuất MỚI sẽ nằm trong thư mục:  Đã xuất\\{name}\\...\n"
+            f"Thư mục cũ “Đã xuất\\{old}” (nếu có) vẫn giữ nguyên — file cũ "
+            "KHÔNG tự chuyển sang.")
+        return True
+
     def _on_proj(self, _i):
         pid = self.proj.currentData()
         if pid is None:
@@ -1254,7 +1300,7 @@ class StudioPage(QWidget):
                                      QStackedWidget, QTableWidget,
                                      QTableWidgetItem)
         dlg = QDialog(self); dlg.setWindowTitle("Tình hình các kênh")
-        dlg.resize(760, 440)
+        dlg.resize(880, 460)
         lay = QVBoxLayout(dlg); lay.setSpacing(8)
         stack = QStackedWidget(); lay.addWidget(stack, 1)
         cur = {"pid": None, "name": ""}      # kênh đang xem ở trang video
@@ -1267,7 +1313,24 @@ class StudioPage(QWidget):
                 QAbstractItemView.SelectionBehavior.SelectRows)
             t.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
             t.verticalHeader().setVisible(False)
+            # QSS TƯỜNG MINH cho bảng + THANH TIÊU ĐỀ CỘT: theme tối toàn cục
+            # không style QHeaderView -> Windows vẽ header nền SÁNG mặc định
+            # nhưng chữ vẫn ăn '* {color: TEXT}' (chữ sáng trên nền sáng =
+            # không đọc được). Chỉ định rõ nền tối / chữ sáng đồng bộ theme.
+            t.setStyleSheet(
+                f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
+                f" border-radius:8px; gridline-color:{BORDER};"
+                f" color:{TEXT}; }}"
+                f"QTableWidget::item {{ padding:3px 8px; }}"
+                f"QTableWidget::item:selected {{ background:{ACCENT};"
+                f" color:white; }}"
+                f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
+                f" padding:6px 8px; border:none;"
+                f" border-bottom:1px solid {BORDER}; font-weight:600; }}"
+                f"QTableCornerButton::section {{ background:{SURFACE};"
+                f" border:none; }}")
             hh = t.horizontalHeader()
+            # cột TÊN (0) co giãn hết chỗ trống, các cột SỐ ôm theo nội dung
             hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             for c in range(1, len(headers)):
                 hh.setSectionResizeMode(c,
@@ -1281,12 +1344,14 @@ class StudioPage(QWidget):
         hd.setStyleSheet(f"color:{TEXT}; font-size:16px; font-weight:800;")
         l1.addWidget(hd)
         sub = QLabel("Nháy đúp 1 kênh để xem CHI TIẾT TỪNG VIDEO của kênh đó. "
+                     "Chuột phải 1 kênh để ✏ sửa tên. "
                      "Kênh đang chạy / vừa xong mới nhất nằm trên cùng.")
         sub.setWordWrap(True)
         sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         l1.addWidget(sub)
         tbl = _mk_table(
-            ["Kênh", "Đang chạy", "Đợi", "Lỗi 24h", "Xong gần nhất", "Đã xuất"])
+            ["Kênh", "Video", "Đang chạy", "Đợi", "Lỗi 24h", "Clip đã tạo",
+             "Đã xuất", "Xong gần nhất"])
         l1.addWidget(tbl, 1)
         stack.addWidget(pg1)
 
@@ -1317,7 +1382,8 @@ class StudioPage(QWidget):
             for p in services.list_projects():
                 a = act.get(int(p["id"])) or {
                     "running": 0, "pending": 0, "failed_recent": 0,
-                    "exported": 0, "last_done": None, "last_done_type": ""}
+                    "exported": 0, "videos": 0, "clips": 0,
+                    "last_done": None, "last_done_type": ""}
                 rows.append((p["name"], int(p["id"]), a))
             # đang chạy trước, rồi last_done mới nhất (chuỗi UTC so sánh
             # lexicographic là đúng thứ tự thời gian), None xuống cuối
@@ -1331,12 +1397,14 @@ class StudioPage(QWidget):
                 done_txt = services.rel_time_vi(a["last_done"]) or "—"
                 if a["last_done"] and a["last_done_type"]:
                     done_txt += f" ({a['last_done_type']})"
-                cells = (f"🟢 {a['running']}" if a["running"] else "·",
+                cells = (str(a.get("videos", 0)) if a.get("videos") else "·",
+                         f"🟢 {a['running']}" if a["running"] else "·",
                          f"⏳ {a['pending']}" if a["pending"] else "·",
                          (f"🔴 {a['failed_recent']}"
                           if a["failed_recent"] else "·"),
-                         done_txt,
-                         str(a["exported"]) if a["exported"] else "·")
+                         str(a.get("clips", 0)) if a.get("clips") else "·",
+                         str(a["exported"]) if a["exported"] else "·",
+                         done_txt)
                 for c, txt in enumerate(cells, start=1):
                     x = QTableWidgetItem(txt)
                     x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1344,8 +1412,6 @@ class StudioPage(QWidget):
 
         def fill_videos(pid, name=""):
             cur["pid"], cur["name"] = int(pid), name
-            hd2.setText(f"📊 Video trong kênh: {name}" if name
-                        else "📊 Video trong kênh")
             try:
                 act = services.video_activity(int(pid))
             except Exception:  # noqa: BLE001 - bảng phụ, lỗi không sập app
@@ -1359,6 +1425,12 @@ class StudioPage(QWidget):
                 rows.append((Path(v["src_path"]).name, int(v["id"]), a))
             rows.sort(key=lambda r: (r[2]["running"] > 0,
                                      r[2]["last_done"] or ""), reverse=True)
+            # TỔNG ngay trên tiêu đề trang: 'Kênh X — N video · M clip · K đã
+            # xuất' -> nhìn 1 phát biết kênh này ra được bao nhiêu clip.
+            tot_c = sum(r[2]["clips"] for r in rows)
+            tot_e = sum(r[2]["exported"] for r in rows)
+            hd2.setText(f"📊 {name or 'Kênh'} — {len(rows)} video · "
+                        f"{tot_c} clip đã tạo · {tot_e} đã xuất")
             vtbl.setRowCount(len(rows))
             for i, (name_v, vid_id, a) in enumerate(rows):
                 it = QTableWidgetItem(name_v)
@@ -1409,6 +1481,25 @@ class StudioPage(QWidget):
             fill()                    # số liệu kênh có thể đổi trong lúc xem
             stack.setCurrentIndex(0)
 
+        def rename_row(row):
+            """✏ Sửa tên kênh ở dòng `row` (tái dùng _rename_proj) rồi vẽ lại
+            bảng cho tên mới hiện ngay."""
+            it = tbl.item(row, 0)
+            pid = it.data(Qt.ItemDataRole.UserRole) if it else None
+            if pid is not None and self._rename_proj(int(pid)):
+                fill()
+
+        def chan_menu(pos):
+            # pos của QAbstractScrollArea là tọa độ VIEWPORT (theo Qt docs)
+            row = tbl.indexAt(pos).row()
+            if row < 0:
+                return
+            m = QMenu(dlg)
+            m.addAction("✏ Sửa tên", lambda: rename_row(row))
+            m.exec(tbl.viewport().mapToGlobal(pos))
+
+        tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        tbl.customContextMenuRequested.connect(chan_menu)
         tbl.cellDoubleClicked.connect(drill)
         vtbl.cellDoubleClicked.connect(jump_video)
         back.clicked.connect(go_back)
@@ -1422,7 +1513,8 @@ class StudioPage(QWidget):
         lay.addLayout(btns)
         fill()
         # móc cho test offscreen thao tác từng bước (không ảnh hưởng chạy thật)
-        dlg._t = {"tbl": tbl, "vtbl": vtbl, "stack": stack, "back": back}
+        dlg._t = {"tbl": tbl, "vtbl": vtbl, "stack": stack, "back": back,
+                  "fill": fill, "rename_row": rename_row, "hd2": hd2}
         return dlg
 
     def _video_activity(self) -> dict:
@@ -2640,6 +2732,8 @@ class StudioPage(QWidget):
     def _proj_menu(self, pos):
         m = QMenu(self)
         if self.proj.currentData() is not None:
+            # lambda: triggered truyền checked=False -> đừng lọt vào tham số pid
+            m.addAction("✏ Sửa tên kênh", lambda: self._rename_proj())
             m.addAction("Xóa kênh này", self._del_proj)
         m.addAction("Quản lý / Xóa nhiều kênh…", self._manage_projects)
         m.exec(self.proj.mapToGlobal(pos))

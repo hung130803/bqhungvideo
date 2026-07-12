@@ -57,6 +57,27 @@ def list_projects() -> list:
     return db.query("SELECT * FROM projects ORDER BY created_at DESC")
 
 
+def rename_project(project_id: int, new_name: str) -> str:
+    """Đổi TÊN kênh (chỉ dòng DB — assets_dir giữ nguyên; thư mục 'Đã xuất/<tên
+    cũ>' cũng giữ nguyên vì đường xuất dựng từ TÊN lúc xuất -> clip MỚI sẽ vào
+    thư mục tên mới). Trả '' nếu OK, ngược lại là thông báo lỗi để UI hiện."""
+    name = (new_name or "").strip()
+    if not name:
+        return "Tên kênh không được để trống."
+    dup = db.query_one("SELECT id FROM projects WHERE name=? AND id<>?",
+                       (name, project_id))
+    if dup:
+        return f"Đã có kênh khác tên “{name}” — chọn tên khác."
+    cur = db.execute("UPDATE projects SET name=? WHERE id=?",
+                     (name, project_id))
+    try:
+        if not cur.rowcount:
+            return "Kênh này không còn tồn tại."
+    except Exception:  # noqa: BLE001 - rowcount lỗi hiếm -> coi như OK
+        pass
+    return ""
+
+
 # ---- Video ----
 def import_video(project_id: int, src_path: str) -> int:
     info = probe(src_path)
@@ -310,13 +331,15 @@ def queue_counts() -> dict:
 
 # ---- Hoạt động theo KÊNH (nhãn cạnh combo Kênh + bảng "Tình hình các kênh") ----
 def channel_activity() -> dict:
-    """Tình hình job của TOÀN BỘ kênh trong 2 query GROUP BY (dùng
+    """Tình hình job của TOÀN BỘ kênh trong vài query GROUP BY (dùng
     idx_jobs_project, KHÔNG query từng kênh — user chạy nhiều kênh cùng lúc).
 
     Trả dict[project_id] = {
         "running": n, "pending": n,
         "failed_recent": n,        # job failed trong 24h qua
         "exported": n,             # tổng clip đã xuất xong (m1_export_clip done)
+        "videos": n,               # tổng VIDEO trong kênh (COUNT videos)
+        "clips": n,                # tổng CLIP đã tạo (COUNT clips, mọi status)
         "last_done": "YYYY-MM-DD HH:MM:SS" (UTC, như SQLite ghi) | None,
         "last_done_type": type của job done gần nhất ("auto"/"m1_export_clip"...),
     } — mọi project đều có mặt (kênh chưa có job = toàn 0/None).
@@ -326,8 +349,8 @@ def channel_activity() -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
               ).strftime("%Y-%m-%d %H:%M:%S")
     act = {int(p["id"]): {"running": 0, "pending": 0, "failed_recent": 0,
-                          "exported": 0, "last_done": None,
-                          "last_done_type": ""}
+                          "exported": 0, "videos": 0, "clips": 0,
+                          "last_done": None, "last_done_type": ""}
            for p in db.query("SELECT id FROM projects")}
     for r in db.query(
             "SELECT project_id AS pid, "
@@ -356,6 +379,19 @@ def channel_activity() -> dict:
         if a is not None:
             a["last_done"] = r["last_done"]
             a["last_done_type"] = r["last_type"] or ""
+    # tổng VIDEO / tổng CLIP đã tạo từng kênh — bảng 📊 cần "1 kênh có bao
+    # nhiêu video, ra bao nhiêu clip" (mỗi cột 1 query GROUP BY, vẫn nhẹ)
+    for r in db.query("SELECT project_id AS pid, COUNT(*) AS n "
+                      "FROM videos GROUP BY project_id"):
+        a = act.get(int(r["pid"]))
+        if a is not None:
+            a["videos"] = int(r["n"])
+    for r in db.query(
+            "SELECT v.project_id AS pid, COUNT(*) AS n FROM clips c "
+            "JOIN videos v ON v.id = c.video_id GROUP BY v.project_id"):
+        a = act.get(int(r["pid"]))
+        if a is not None:
+            a["clips"] = int(r["n"])
     return act
 
 
