@@ -2000,7 +2000,8 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
                           max_total: float, ratio: float = 55,
                           win_min: int = 3, win_max: int = 6,
                           emotion: bool = False,
-                          win_auto: bool = False) -> str:
+                          win_auto: bool = False,
+                          listing_visual: str = "") -> str:
     """Prompt ĐẠO DIỄN: từ TOÀN BỘ transcript (đã rút gọn nếu dài), chọn
     các khung cảnh rời nhau + viết kịch bản parts có CẦU NỐI giữa các khung.
     ratio 15-80 (mặc định 30); <= 40 -> KHUÔN LOW-RATIO (AI nói ít, nhanh
@@ -2024,6 +2025,17 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         w_hi = max(w_lo, int(win_max))
     except (TypeError, ValueError):
         w_hi = max(w_lo, 6)
+    # 👁 VISION DIGEST (tùy chọn): AI đã "xem" khung hình khắp video -> chèn
+    # khối mô tả cảnh + điểm hành động để ĐẠO DIỄN chọn khung bằng cả MẮT
+    # (cảnh hành động ít thoại không bị bỏ sót). Rỗng -> prompt Y HỆT cũ.
+    vis_part, vis_rule = "", ""
+    if listing_visual:
+        vis_part = f"{listing_visual}\n\n"
+        vis_rule = (
+            "- KẾT HỢP LỜI THOẠI + HÌNH ẢNH: khối 'HÌNH ẢNH THEO MỐC' mô tả "
+            "cảnh trên màn hình tại từng giây kèm điểm hành động 0-10. Khung "
+            "có act>=7 (hành động/cao trào thị giác/khoảnh khắc sốc) RẤT "
+            "ĐÁNG CHỌN kể cả khi ít lời thoại — đừng chỉ dựa lời nói.\n")
     return (
         # KHỐI ÉP NGÔN NGỮ đặt TRƯỚC MỌI LUẬT (lỗi thật: video EN nhưng AI
         # viết kịch bản + tiêu đề tiếng Việt vì prompt toàn tiếng Việt).
@@ -2031,6 +2043,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         f"Đây là TOÀN BỘ transcript của một video dài {duration:.0f} giây, "
         f"nói bằng {ln} (mỗi dòng: GIÂY_BẮT_ĐẦU GIÂY_KẾT_THÚC | lời nói):\n"
         f"{listing}\n\n"
+        + vis_part +
         "VAI CỦA BẠN: ĐẠO DIỄN kiêm NGƯỜI KỂ CHUYỆN của kênh recap triệu "
         "view. Nhiệm vụ: CẮT GHÉP video thành 1 clip recap gồm NHIỀU KHUNG "
         "CẢNH rời nhau kể TRỌN câu chuyện (như recap phim), rồi viết lời kể "
@@ -2047,6 +2060,7 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
            "gian, KHÔNG chồng lấn, KHÔNG đảo đoạn.\n")
         + f"- Mỗi khung dài 8-40 giây; TỔNG các khung trong khoảng "
         f"{min_total:.0f}-{max_total:.0f} giây.\n"
+        + vis_rule +
         "- RẢI ĐỀU + ĐA DẠNG: các khung phủ ĐẦU / GIỮA / CUỐI mạch chuyện, "
         "nội dung KHÁC NHAU — ĐỪNG dồn nhiều khung vào cùng 1 cảnh/1 chỗ hay "
         "lặp lại cùng chủ đề.\n"
@@ -2516,7 +2530,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
                           listing: str = "", win_min: int = 3,
                           win_max: int = 6,
                           emotion: bool = False,
-                          win_auto: bool = False) -> Optional[dict]:
+                          win_auto: bool = False,
+                          listing_visual: str = "") -> Optional[dict]:
     """Gọi LLM đạo diễn trên TOÀN BỘ transcript -> {"title", "windows",
     "parts"} ĐÃ validate; None nếu windows/parts hỏng cả sau khi RETRY
     (caller fallback đường 1-span cũ).
@@ -2541,7 +2556,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     prompt = build_director_prompt(listing, lang_name, style, duration,
                                    min_total, max_total, ratio=ratio,
                                    win_min=win_min, win_max=win_max,
-                                   emotion=emotion, win_auto=win_auto)
+                                   emotion=emotion, win_auto=win_auto,
+                                   listing_visual=listing_visual)
 
     def _lang_retry():
         """Gọi lại LLM kèm chỉ trích SAI NGÔN NGỮ -> script validate/None."""

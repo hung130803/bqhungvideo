@@ -25,6 +25,7 @@ import tempfile
 from config import settings
 
 from app.ai import llm, recap
+from app.core import vision_digest as _vd
 from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import extract_frame
 from app.database import db
@@ -672,6 +673,14 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     prov = llm.active_provider()
     min_total = float(cfg.get("min_len") or 0) or 60.0
     max_total = float(cfg.get("max_len") or 0) or _HARD_MAX
+    # 👁 VISION DIGEST: AI xem khung hình khắp video 1 lần (cache theo video)
+    # -> đạo diễn chọn KHUNG CẢNH bằng cả mắt (khối 'HÌNH ẢNH THEO MỐC' trong
+    # prompt). Tắt/lỗi/LIGHT_MODE -> [] (prompt y hệt cũ, fail-safe).
+    v_digest: list = []
+    if _vd.vision_digest_enabled():
+        ctx.progress(0.04, "AI đang xem khung hình khắp video...")
+        v_digest = _vd.build_vision_digest(video_id, src_path, duration,
+                                           ctx=ctx)
     # min/max SỐ CẢNH ghép mỗi clip (win_auto=True -> AI tự chọn, bound rộng)
     win_lo, win_hi, win_auto = _win_bounds(preset)
     sents_all = []
@@ -730,7 +739,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
                 min(max_total, c1 - c0), ratio=ratio,
                 listing=_condense_listing(ch_segs, c1 - c0),
                 win_min=win_lo, win_max=win_hi, emotion=emotion,
-                win_auto=win_auto)
+                win_auto=win_auto,
+                # 👁 khối hình ảnh ĐÚNG khoảng chương này (rỗng -> prompt cũ)
+                listing_visual=_vd.format_digest_block(v_digest, c0, c1))
 
         try:
             sc = _write_chapter()
@@ -865,7 +876,7 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # dung) sang selector để nó nhắm đúng số clip.
     sel_cfg = {**cfg, "count": count}
     clips, warns = _llm_select_clips(transcript, duration, _Sel(), scenes,
-                                     sel_cfg)
+                                     sel_cfg, digest=v_digest)
     if not clips:
         return {"count": 0, "clip_ids": [],
                 "note": "AI không chọn được đoạn nào đủ hay để thuyết minh."}

@@ -23,6 +23,7 @@ from typing import Optional
 from app.ai import llm
 from app.ai import recap as _recap   # dùng chung pattern CTA/chào đa ngôn ngữ
 from app.core import face_track
+from app.core import vision_digest as _vd
 from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import (
     detect_black_crop, export_canvas_clip, export_stitched_clip,
@@ -345,12 +346,24 @@ def _target_len(min_len: float, max_len: float) -> float:
 def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video",
                    purpose: str = "", style: str = "",
                    min_len: float = 60.0, max_len: float = 0.0,
-                   count: int = 0) -> str:
+                   count: int = 0, visual_block: str = "") -> str:
     extra = ""
     if _PURPOSE_HINT.get(purpose):
         extra += "- " + _PURPOSE_HINT[purpose] + "\n"
     if _STYLE_HINT.get(style):
         extra += "- " + _STYLE_HINT[style] + "\n"
+    # 👁 VISION DIGEST: AI đã "xem" khung hình khắp video -> chèn khối mô tả
+    # cảnh + điểm hành động để chọn đoạn bằng CẢ MẮT (video ít thoại/nhiều
+    # hành động không bị bỏ sót). visual_block rỗng -> prompt Y HỆT cũ.
+    vis_part, vis_rule = "", ""
+    if visual_block:
+        vis_part = f"{visual_block}\n\n"
+        vis_rule = (
+            "- KẾT HỢP LỜI THOẠI + HÌNH ẢNH: khối 'HÌNH ẢNH THEO MỐC' mô tả "
+            "cảnh trên màn hình tại từng giây kèm điểm hành động 0-10. Đoạn "
+            "HÀNH ĐỘNG CAO (act>=7: rượt đuổi, va chạm, cao trào thị giác, "
+            "khoảnh khắc sốc) RẤT ĐÁNG CHỌN kể cả khi ÍT LỜI THOẠI — đừng "
+            "chỉ dựa vào lời nói.\n")
     how_many = (f"Chọn ĐÚNG {count} clip hay nhất" if count > 0
                 else "Chọn 3-6 clip hay nhất")
     if min_len and min_len > 0:                 # có Min/Max -> độ dài ĐA DẠNG
@@ -371,9 +384,10 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
     return (
         "Transcript (mỗi dòng: GIÂY_BẮT_ĐẦU GIÂY_KẾT_THÚC | lời nói):\n"
         f"{listing}\n\n"
+        + vis_part +
         f"Video này nói bằng {lang_name.upper()}.\n"
         f"{how_many} trong đoạn này. QUY TẮC:\n"
-        + extra +
+        + extra + vis_rule +
         "- ĐA DẠNG + RẢI ĐỀU: chọn các đoạn RẢI ĐỀU toàn video (đầu / giữa / "
         "cuối), nội dung KHÁC NHAU — ĐỪNG chọn nhiều đoạn cùng 1 cảnh/chủ đề "
         "hay dồn cụm 1 chỗ; ưu tiên các khoảnh khắc KHÁC nhau cho phong phú.\n"
@@ -575,7 +589,9 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
     for pair in (raw or []):
         try:
             s, e = float(pair[0]), float(pair[1])
-        except (ValueError, TypeError, IndexError):
+        except (ValueError, TypeError, IndexError, KeyError):
+            # KeyError: LLM trả list DICT ({"start":...}) thay vì cặp số —
+            # bỏ phần tử đó, đừng sập cả job vì 1 câu trả lời lệch dạng.
             continue
         s = max(span0, min(span1, s))
         e = max(span0, min(span1, e))
@@ -825,13 +841,31 @@ def _normalize_clip(r, duration: float, boundaries=None,
         return None
 
 
+def _chunk_span(listing: str) -> tuple:
+    """(t0, t1) của 1 chunk transcript ('bd kt | lời' mỗi dòng) — để lọc
+    digest đúng khoảng thời gian chunk. Không parse được -> (None, None)
+    (format_digest_block sẽ lấy toàn bộ). Hàm thuần."""
+    t0 = t1 = None
+    for ln in (listing or "").splitlines():
+        m = re.match(r"\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*\|", ln)
+        if not m:
+            continue
+        a, b = float(m.group(1)), float(m.group(2))
+        t0 = a if t0 is None else min(t0, a)
+        t1 = b if t1 is None else max(t1, b)
+    return t0, t1
+
+
 def _llm_select_clips(transcript: dict, duration: float, ctx=None,
-                      scenes: dict = None, cfg: dict = None) -> list:
+                      scenes: dict = None, cfg: dict = None,
+                      digest: list = None) -> list:
     """
     AI tự chọn các clip hay: CHIA transcript thành nhiều khúc, gọi LLM từng khúc
     (prompt gọn -> model local trả ổn định), rồi GỘP. Mỗi clip có thể gồm nhiều
     'segments' (ghép đoạn hay, bỏ đoạn thừa); đầu/cuối được SNAP vào ranh giới
     câu nói + cảnh thật của video gốc để cắt sạch. Trả list theo thứ tự thời gian.
+    digest: VISION DIGEST (app/core/vision_digest) — có thì chèn khối 'HÌNH ẢNH
+    THEO MỐC' của đúng khoảng chunk vào prompt; rỗng/None -> prompt Y HỆT cũ.
     """
     if not llm.is_configured():
         return [], []
@@ -854,10 +888,18 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             frac = ci / max(1, len(chunks))
             ctx.progress(0.30 + 0.25 * frac,
                          f"AI đọc & chọn đoạn hay (phần {ci + 1}/{len(chunks)})...")
+        vis_block = ""
+        if digest:                      # 👁 khối hình ảnh ĐÚNG khoảng chunk này
+            _t0, _t1 = _chunk_span(listing)
+            pad = 10.0                  # nới nhẹ 2 mép (frame giữa cảnh sát mép)
+            vis_block = _vd.format_digest_block(
+                digest,
+                None if _t0 is None else _t0 - pad,
+                None if _t1 is None else _t1 + pad)
         try:
             data = llm.complete_json(
                 _select_prompt(listing, lang_name, purpose, style, min_len,
-                               max_len, count),
+                               max_len, count, visual_block=vis_block),
                 system=_SEL_SYSTEM)
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
             errors.append(str(e))
@@ -943,9 +985,10 @@ _REFINE_SEL_SYSTEM = (
     "viral, không trùng nhau). CHỈ trả JSON, không thêm chữ.")
 
 
-def _clip_digest(clips: list, segs: list) -> str:
+def _clip_digest(clips: list, segs: list, vdigest: list = None) -> str:
     """Tóm tắt từng clip cho critic đọc: index, mốc đầu-cuối, 1-2 câu mở đầu +
-    1 câu ở giữa/cao trào (lấy từ transcript segs theo thời gian)."""
+    1 câu ở giữa/cao trào (lấy từ transcript segs theo thời gian). vdigest
+    (vision) có -> thêm tối đa 2 dòng 'hình: desc(act)' của khung trong clip."""
     def _sent_at(t0: float, t1: float, n: int = 1) -> str:
         picked = []
         for s in segs:
@@ -971,13 +1014,23 @@ def _clip_digest(clips: list, segs: list) -> str:
         mid = (cs + ce) / 2.0
         opener = _sent_at(cs, cs + 12.0, 2)
         climax = _sent_at(mid, ce, 1)
+        vis = ""
+        if vdigest:                     # 👁 vài dòng hình ảnh của đúng clip này
+            ent = [d for d in vdigest
+                   if cs <= float(d.get("t", -1)) <= ce][:2]
+            if ent:
+                vis = " | hình: " + "; ".join(
+                    f"{str(d.get('desc', ''))[:60]} (act {d.get('act', 0)})"
+                    for d in ent)
         lines.append(
-            f"[{i}] {cs:.0f}-{ce:.0f}s | mở đầu: {opener} | cao trào: {climax}")
+            f"[{i}] {cs:.0f}-{ce:.0f}s | mở đầu: {opener} | cao trào: {climax}"
+            + vis)
     return "\n".join(lines)
 
 
 def _refine_clip_selection(clips: list, transcript: dict, language: str,
-                           want_n: int, min_len: float, max_len: float) -> list:
+                           want_n: int, min_len: float, max_len: float,
+                           vdigest: list = None) -> list:
     """NHIỀU-PASS: AI chấm + chọn top clip. Trả list ĐÃ LỌC + SẮP XẾP theo độ
     hay (KHÔNG đổi start/end). Fail-safe: keep rỗng/không hợp lệ / lỗi -> trả
     NGUYÊN `clips`. Bù đủ want_n từ danh sách gốc (thứ tự cũ) nếu thiếu.
@@ -989,7 +1042,7 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
         lang_name = _lang_name(language)
         auto = not (want_n and want_n > 0)   # want_n<=0 = AI tự quyết số clip
         target_n = len(clips) if auto else want_n
-        digest = _clip_digest(clips, segs)
+        digest = _clip_digest(clips, segs, vdigest)
         prompt = (
             f"Video nói bằng {lang_name.upper()}. Dưới đây là {len(clips)} "
             "clip ỨNG VIÊN (đã có mốc thời gian cố định, KHÔNG đổi được):\n"
@@ -1040,10 +1093,32 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
         return clips
 
 
+def _digest_rescore(clips: list, vdigest: list) -> list:
+    """Chấm điểm hình ảnh TỪ VISION DIGEST (không gọi vision lần 2 — digest đã
+    xem cả video, KHÔNG chỉ 1 frame/clip như _vision_rescore cũ): vscore =
+    trung bình act (0-10) của các khung trong khoảng clip × 10, trộn 50/50
+    với điểm chữ (cùng công thức _vision_rescore). Clip không có khung nào
+    trong khoảng -> giữ nguyên điểm chữ. Hàm thuần — unit test được."""
+    for c in clips or []:
+        try:
+            cs, ce = c["segments"][0][0], c["segments"][-1][1]
+        except (KeyError, IndexError, TypeError):
+            continue
+        acts = [float(d.get("act", 0)) for d in vdigest or []
+                if cs <= float(d.get("t", -1)) <= ce]
+        if not acts:
+            continue
+        c["vscore"] = round(10.0 * sum(acts) / len(acts), 1)
+        c["score"] = round(0.5 * c["score"] + 0.5 * c["vscore"], 1)
+    return clips
+
+
 def _vision_rescore(video_id: int, clips: list, ctx) -> list:
     """
     Chấm điểm bằng HÌNH ẢNH: trích 1 khung hình đại diện mỗi clip, cho model vision
     (Qwen2.5-VL) xem rồi chấm 0-100, TRỘN với điểm chữ. Lỗi -> giữ nguyên điểm chữ.
+    CHỈ còn dùng khi KHÔNG có vision digest (đường cũ) — có digest thì
+    _digest_rescore thay thế, đỡ gọi vision trùng.
     """
     if not llm.vision_available() or not clips:
         return clips
@@ -1246,8 +1321,19 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     transcript = get_analysis(video_id, "transcript") or {}
     audio = get_analysis(video_id, "audio") or {}
     scenes = get_analysis(video_id, "scenes") or {}
-    vrow = db.query_one("SELECT duration FROM videos WHERE id=?", (video_id,))
+    vrow = db.query_one("SELECT duration, src_path FROM videos WHERE id=?",
+                        (video_id,))
     duration = float(vrow["duration"] or 0) if vrow else 0.0
+
+    # 👁 VISION DIGEST: AI xem khung hình KHẮP video 1 lần (cache theo video)
+    # -> prompt chọn đoạn có cả HÌNH ẢNH, không chỉ lời thoại. Gate USE_VISION
+    # + không LIGHT_MODE + provider vision; lỗi/tắt -> [] (chạy y như cũ).
+    digest: list = []
+    if _vd.vision_digest_enabled():
+        ctx.progress(0.20, "AI đang xem khung hình khắp video...")
+        digest = _vd.build_vision_digest(
+            video_id, (vrow["src_path"] or "") if vrow else "", duration,
+            ctx=ctx)
 
     # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: đọc các đoạn ĐÃ dùng của video này TRƯỚC
     # khi _delete_suggested (giữ được cả lần bấm trước còn treo suggested) ->
@@ -1264,7 +1350,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     ai_warns: list = []
     try:
         ai_clips, ai_warns = _llm_select_clips(transcript, duration, ctx,
-                                               scenes, cfg)
+                                               scenes, cfg, digest=digest)
     except llm.LLMError as e:  # gọi LLM lỗi thật -> báo rõ, vẫn lùi heuristic
         ai_clips = []
         llm_error = str(e)
@@ -1279,14 +1365,19 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             ai_clips = _refine_clip_selection(
                 ai_clips, transcript, (transcript or {}).get("language", ""),
                 _want, float(cfg.get("min_len", 60.0)),
-                float(cfg.get("max_len", 0.0) or 0.0))
+                float(cfg.get("max_len", 0.0) or 0.0), vdigest=digest)
     if ai_clips:
         from config import settings as _st
         # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript
         used_vision = llm.vision_available() and not getattr(_st, "LIGHT_MODE", True)
         if used_vision:
-            ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
-            ai_clips = _vision_rescore(video_id, ai_clips, ctx)
+            if digest:
+                # 👁 ĐÃ có vision digest (xem cả video) -> chấm bằng act của
+                # digest, KHÔNG gọi vision lần 2 (đỡ tốn lượt, không trùng).
+                ai_clips = _digest_rescore(ai_clips, digest)
+            else:
+                ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
+                ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
         # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: loại clip trùng >30% với đoạn đã dùng
         # ở lần trước. Dùng span [đầu..cuối] của clip (clip đã nới dài). Hết

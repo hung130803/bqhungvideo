@@ -711,6 +711,10 @@ def vision_available(provider: Optional[str] = None) -> bool:
         return bool(settings.OLLAMA_VL_MODEL) and _ollama_has(settings.OLLAMA_VL_MODEL)
     if provider == "gemini":
         return bool(settings.GEMINI_API_KEY)
+    if provider == "groq":
+        # Groq free có model vision (llama-4-scout) — chỉ cần key + model cấu hình
+        return bool(getattr(settings, "GROQ_VISION_MODEL", "")) \
+            and bool(settings.groq_keys())
     return False
 
 
@@ -731,6 +735,44 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
     used_key = ""                       # key đang dùng -> ghi sổ trạng thái
     try:
       with guard:
+        if provider == "groq":
+            # Groq: XOAY VÒNG key như complete_text (429 -> key kế, 401 -> bỏ)
+            from openai import OpenAI
+            keys = settings.groq_keys()
+            if not keys:
+                raise LLMError("Chưa cấu hình key Groq cho vision")
+            content = [{"type": "text", "text": prompt}]
+            for p in image_paths:
+                content.append({"type": "image_url", "image_url":
+                                {"url": f"data:image/jpeg;base64,{_b64(p)}"}})
+            msgs = ([{"role": "system", "content": system}] if system else []) \
+                + [{"role": "user", "content": content}]
+            last = ""
+            for key in pick_keys("groq", keys):
+                mark_used("groq", key)
+                try:
+                    client = OpenAI(api_key=key,
+                                    base_url="https://api.groq.com/openai/v1",
+                                    timeout=120, max_retries=1)
+                    resp = client.chat.completions.create(
+                        model=settings.GROQ_VISION_MODEL, messages=msgs,
+                        temperature=0.3, max_tokens=1200)
+                    mark_ok("groq", key)
+                    return _extract_json(resp.choices[0].message.content or "")
+                except (ValueError, json.JSONDecodeError) as e:
+                    raise LLMError(f"Vision groq trả về không phải JSON: {e}")
+                except Exception as e:  # noqa: BLE001
+                    last = str(e)
+                    if is_rate_limit_error(last):
+                        mark_limited("groq", key, last)
+                        continue         # key hết lượt -> thử key kế
+                    if is_auth_error(last):
+                        mark_invalid("groq", key)
+                        continue         # key sai -> bỏ qua
+                    raise LLMError(f"Vision groq lỗi: {last}")
+            raise LLMError(
+                f"Vision groq thất bại (hết lượt/lỗi tất cả key): {last}")
+
         if provider in ("ollama", "openai"):
             from openai import OpenAI
             if provider == "ollama":

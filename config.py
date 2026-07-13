@@ -137,6 +137,10 @@ class Settings:
     # Mặc định = GROQ_LLM_MODEL (không đổi hành vi); user tự trỏ model xịn hơn.
     GROQ_LLM_MODEL_HQ = _env("GROQ_LLM_MODEL_HQ", "") or _env(
         "GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+    # Model Groq NHÌN ĐƯỢC HÌNH (vision) — AI xem khung hình khi chọn đoạn.
+    # llama-4-scout free tier nhận ảnh (đã thử thật). Đặt rỗng để tắt vision Groq.
+    GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL",
+                             "meta-llama/llama-4-scout-17b-16e-instruct")
     # NHIỀU-PASS (mặc định BẬT): AI tự chấm bản nháp rồi viết lại tốt hơn cho
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
