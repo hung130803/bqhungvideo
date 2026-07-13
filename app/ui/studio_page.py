@@ -716,9 +716,10 @@ class StudioPage(QWidget):
                     "Chuyển. Nháy đúp 1 dòng để đổi nhanh nhóm dòng đó.")
         s2.setWordWrap(True); s2.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         right.addWidget(s2)
-        tbl = QTableWidget(0, 3)
+        tbl = QTableWidget(0, 4)
         self._mg_tbl = tbl
-        tbl.setHorizontalHeaderLabels(["", "Tên kênh", "Nhóm hiện tại"])
+        tbl.setHorizontalHeaderLabels(
+            ["", "Tên kênh", "Nhóm hiện tại", "Thư mục lưu"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
@@ -740,7 +741,18 @@ class StudioPage(QWidget):
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         right.addWidget(tbl, 1)
+
+        # hàng ĐẶT THƯ MỤC LƯU RIÊNG cho (các) kênh đã chọn
+        drow = QHBoxLayout(); drow.setSpacing(6)
+        drow.addWidget(self._tag("Thư mục lưu riêng:"))
+        setdir_b = QPushButton("📁 Đặt thư mục lưu...")
+        setdir_b.setProperty("ghost", True)
+        cleardir_b = QPushButton("Về mặc định")
+        cleardir_b.setProperty("ghost", True)
+        drow.addWidget(setdir_b); drow.addWidget(cleardir_b); drow.addStretch(1)
+        right.addLayout(drow)
 
         # hàng chuyển hàng loạt
         mrow = QHBoxLayout(); mrow.setSpacing(6)
@@ -799,6 +811,11 @@ class StudioPage(QWidget):
                 tbl.setItem(r, 1, nm)
                 g = (p["grp"] or "").strip()
                 tbl.setItem(r, 2, QTableWidgetItem(g or "· Chưa phân nhóm"))
+                ed = (p["export_dir"] or "").strip()
+                di = QTableWidgetItem(ed or "· mặc định (Đã xuất chung)")
+                if ed:
+                    di.setToolTip(ed)
+                tbl.setItem(r, 3, di)
 
         def refill():
             fill_groups()
@@ -879,6 +896,55 @@ class StudioPage(QWidget):
                 services.set_project_group(pid, g)
             refill()
 
+        def _checked_or_selected_ids():
+            """ID kênh: ưu tiên ô ĐÃ TÍCH; không tích nào -> dòng đang chọn."""
+            ids = []
+            for r in range(tbl.rowCount()):
+                c = tbl.item(r, 0)
+                if c and c.checkState() == Qt.CheckState.Checked:
+                    ids.append(int(c.data(Qt.ItemDataRole.UserRole)))
+            if not ids:
+                for r in {i.row() for i in tbl.selectedItems()}:
+                    it = tbl.item(r, 1)
+                    if it is not None:
+                        ids.append(int(it.data(Qt.ItemDataRole.UserRole)))
+            return ids
+
+        def set_export_dir():
+            ids = _checked_or_selected_ids()
+            if not ids:
+                QMessageBox.information(
+                    dlg, "Chưa chọn kênh",
+                    "Tích ô (hoặc chọn dòng) kênh cần đặt thư mục lưu trước.")
+                return
+            # gợi ý mở tại thư mục hiện có của kênh đầu tiên (nếu có)
+            cur0 = services.project_export_dir(ids[0])
+            d = QFileDialog.getExistingDirectory(
+                dlg, "Chọn THƯ MỤC LƯU RIÊNG cho kênh "
+                     "(clip cắt xong vào THẲNG đây)", cur0 or "")
+            if not d:
+                return
+            for pid in ids:
+                services.set_project_export_dir(pid, d)
+            fill_channels()
+            QMessageBox.information(
+                dlg, "Đã đặt thư mục lưu",
+                f"{len(ids)} kênh sẽ lưu clip THẲNG vào:\n{d}\n\n"
+                "(Không tạo thư mục con theo tên video.)")
+
+        def clear_export_dir():
+            ids = _checked_or_selected_ids()
+            if not ids:
+                QMessageBox.information(
+                    dlg, "Chưa chọn kênh",
+                    "Tích ô (hoặc chọn dòng) kênh cần đưa về mặc định trước.")
+                return
+            for pid in ids:
+                services.set_project_export_dir(pid, "")
+            fill_channels()
+            self.status.setText(
+                f"{len(ids)} kênh về mặc định (lưu vào 'Đã xuất' chung).")
+
         def dbl(row, _col):
             it = tbl.item(row, 1)
             if it is None:
@@ -905,6 +971,8 @@ class StudioPage(QWidget):
         ren_b.clicked.connect(rename_group)
         del_b.clicked.connect(del_group)
         move_b.clicked.connect(move_checked)
+        setdir_b.clicked.connect(set_export_dir)
+        cleardir_b.clicked.connect(clear_export_dir)
         refresh_b.clicked.connect(refill)
         close_b.clicked.connect(dlg.accept)
         tbl.cellDoubleClicked.connect(dbl)
@@ -3222,6 +3290,8 @@ class StudioPage(QWidget):
             # lambda: triggered truyền checked=False -> đừng lọt vào tham số pid
             m.addAction("✏ Sửa tên kênh", lambda: self._rename_proj())
             m.addAction("Chuyển nhóm...", lambda: self._move_group())
+            m.addAction("📁 Thư mục lưu riêng...",
+                        lambda: self._set_export_dir_for_current())
             m.addAction("Xóa kênh này", self._del_proj)
         m.addAction("Quản lý / Xóa nhiều kênh…", self._manage_projects)
         m.exec(self.proj.mapToGlobal(pos))
@@ -3253,6 +3323,28 @@ class StudioPage(QWidget):
         name = getattr(self, "_proj_names", {}).get(int(pid), "")
         self.status.setText(f"Đã chuyển kênh “{name}” vào nhóm "
                             f"“{g or 'Chưa phân nhóm'}”.")
+
+    def _set_export_dir_for_current(self, pid=None):
+        """Chuột phải combo Kênh -> '📁 Thư mục lưu riêng...': đặt thư mục lưu
+        cho kênh ĐANG CHỌN. Chọn hủy hộp thoại -> giữ nguyên; muốn về mặc định
+        thì dùng dialog 'Quản lý nhóm & kênh' (nút 'Về mặc định')."""
+        pid = self.proj.currentData() if pid is None else pid
+        if pid is None:
+            return
+        cur = services.project_export_dir(int(pid))
+        d = QFileDialog.getExistingDirectory(
+            self, "Chọn THƯ MỤC LƯU RIÊNG cho kênh này "
+                  "(clip cắt xong vào THẲNG đây, không tạo folder con)",
+            cur or "")
+        if not d:
+            return
+        services.set_project_export_dir(int(pid), d)
+        name = getattr(self, "_proj_names", {}).get(int(pid), "")
+        self.status.setText(f"Kênh “{name}” sẽ lưu clip vào: {d}")
+        QMessageBox.information(
+            self, "Đã đặt thư mục lưu",
+            f"Kênh “{name}” sẽ lưu clip THẲNG vào:\n{d}\n\n"
+            "(Không tạo thư mục con theo tên video.)")
 
     def _vid_menu(self, pos):
         m = QMenu(self)
@@ -4358,12 +4450,21 @@ class StudioPage(QWidget):
             return 0
         pid = vrow["project_id"] or self.state.project_id   # đúng KÊNH của video
         # KHO 'Đã xuất' / <tên KÊNH> / <tên video> -> không lẫn giữa các kênh
-        chrow = db.query_one("SELECT name FROM projects WHERE id=?", (pid,))
+        chrow = db.query_one("SELECT name, export_dir FROM projects WHERE id=?",
+                             (pid,))
         import re as _re
         chname = _re.sub(r'[<>:"/\\|?*]', "_",
                          ((chrow["name"] if chrow else "") or "Kenh"))
         chname = chname.strip().strip(". ") or "Kenh"   # bỏ chấm/cách cuối (Windows kỵ)
-        out_root = str(self._export_root() / chname)
+        # KÊNH CÓ THƯ MỤC LƯU RIÊNG -> xuất THẲNG vào đó (flat, KHÔNG nối <Kênh>
+        # cũng KHÔNG tạo folder con theo tên video). Không đặt -> giữ y cũ.
+        ch_export_dir = ((chrow["export_dir"] if chrow else "") or "").strip()
+        if ch_export_dir:
+            out_root = ch_export_dir
+            flat_export = True
+        else:
+            out_root = str(self._export_root() / chname)
+            flat_export = False
         vr = self.layout_tpl.get("video_rect")
         bg = self.layout_tpl.get("bg", "blur")
         tb = self.layout_tpl.get("trim_black", False)
@@ -4404,6 +4505,8 @@ class StudioPage(QWidget):
             jid = services.enqueue_export(
                 self.state.pool, c["id"], video_id, pid,
                 out_dir=out_root,   # <gốc>/Đã xuất/<KÊNH>/<video>/Part N.mp4
+                                    # HOẶC thư mục riêng của kênh (flat)
+                flat_export=flat_export,
                 video_rect=vr, bg=bg, trim_black=tb, part_no=no, out_name=out_name,
                 captions=bool(self.layout_tpl.get("captions", True)),
                 cap_style={
@@ -4526,16 +4629,23 @@ class StudioPage(QWidget):
         base = self._export_root()
         target = base
         import re
-        # mở thẳng folder KÊNH đang chọn nếu có (sạch tên GIỐNG _export_video)
+        # KÊNH CÓ THƯ MỤC LƯU RIÊNG -> mở THẲNG đó (flat: không nối <Kênh>/<video>).
+        ch_export_dir = ""
         if self.state.project_id:
-            chrow = db.query_one("SELECT name FROM projects WHERE id=?",
-                                 (self.state.project_id,))
-            ch = re.sub(r'[<>:"/\\|?*]', "_",
-                        ((chrow["name"] if chrow else "") or "Kenh"))
-            ch = ch.strip().strip(". ") or "Kenh"
-            if (base / ch).is_dir():
-                target = base / ch
-        if self.state.video_id:                     # có video -> vào sâu folder video
+            chrow = db.query_one(
+                "SELECT name, export_dir FROM projects WHERE id=?",
+                (self.state.project_id,))
+            ch_export_dir = ((chrow["export_dir"] if chrow else "") or "").strip()
+            if ch_export_dir:
+                target = Path(ch_export_dir)
+            else:
+                # mở thẳng folder KÊNH đang chọn nếu có (sạch tên GIỐNG _export_video)
+                ch = re.sub(r'[<>:"/\\|?*]', "_",
+                            ((chrow["name"] if chrow else "") or "Kenh"))
+                ch = ch.strip().strip(". ") or "Kenh"
+                if (base / ch).is_dir():
+                    target = base / ch
+        if not ch_export_dir and self.state.video_id:  # có video -> vào sâu folder video
             vrow = db.query_one("SELECT src_path FROM videos WHERE id=?",
                                 (self.state.video_id,))
             if vrow and vrow["src_path"]:

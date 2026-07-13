@@ -2067,12 +2067,22 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     src = vrow["src_path"]
     # MỖI VIDEO 1 FOLDER RIÊNG (tên theo video) trong KHO 'Đã xuất' chung -> gọn,
     # không lẫn. <kho>/Đã xuất/<tên video>/Part N <tiêu đề>.mp4
-    # Ưu tiên out_dir (kho chung) > export_dir của kênh (cũ) > assets/clips.
+    # Ưu tiên out_dir (kho chung/thư mục riêng của kênh) > export_dir DB (cũ)
+    # > assets/clips.
     base = Path(payload.get("out_dir") or vrow["export_dir"]
                 or (Path(vrow["assets_dir"]) / "clips"))
+    # flat=True (kênh có THƯ MỤC LƯU RIÊNG): Part vào THẲNG base, KHÔNG tạo
+    # folder con theo tên video (nhiều video chung 1 folder — chống trùng tên
+    # file bên dưới lo). flat=False: giữ như cũ (1 folder/video).
+    flat = bool(payload.get("flat"))
     vid_folder = _safe_name(Path(src).stem) or f"video_{video_id}"
-    out_dir = base / vid_folder
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = base if flat else (base / vid_folder)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # ổ rút / đường dẫn không truy cập được -> báo rõ để user biết
+        raise RuntimeError(
+            f"Thư mục lưu của kênh không truy cập được: {out_dir} ({e})")
     part_no = int(payload.get("part_no", 0) or 0)
     # limit rộng hơn (120): out_name = "Part N <tiêu đề ~70> #tag #tag #tag" -> để
     # 70 sẽ cắt cụt hashtag. _safe_name vẫn bỏ ký tự cấm, GIỮ '#' + chữ có dấu/nhật.

@@ -80,6 +80,21 @@ def project_group(project_id: int) -> str:
     return (row["grp"] or "") if row else ""
 
 
+def set_project_export_dir(project_id: int, path: str) -> None:
+    """Đặt THƯ MỤC LƯU RIÊNG cho 1 kênh (user tự chọn ổ/đường dẫn). path=''
+    -> BỎ riêng, kênh về mặc định chung ('Đã xuất/<Kênh>/<video>'). Khi có
+    path: mọi Part của kênh cắt xong vào THẲNG path (không tạo folder video)."""
+    db.execute("UPDATE projects SET export_dir=? WHERE id=?",
+               ((path or "").strip(), int(project_id)))
+
+
+def project_export_dir(project_id: int) -> str:
+    """Thư mục lưu riêng của kênh; '' = mặc định chung (Đã xuất/<Kênh>)."""
+    row = db.query_one("SELECT export_dir FROM projects WHERE id=?",
+                       (int(project_id),))
+    return (row["export_dir"] or "").strip() if row else ""
+
+
 def rename_group(old: str, new: str) -> str:
     """Đổi TÊN NHÓM: mọi kênh thuộc `old` chuyển sang `new` (new trùng nhóm
     sẵn có -> GỘP 2 nhóm, hợp lệ). Trả '' nếu OK, lỗi thì chuỗi thông báo."""
@@ -225,6 +240,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    fx_fade: bool = True, fx_whoosh: bool = True,
                    fx_sfx_dir: str = "", flip_h: bool = False,
                    fit_src: bool = False,
+                   flat_export: bool = False,
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
     'Xuất clip này' — user chủ động muốn file mới, vd đã lỡ xóa file cũ)."""
@@ -248,7 +264,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
               recap_voice, recap_pace, recap_pitch,
               round(float(recap_volume or 0), 3), bool(recap_emotion),
               round(float(recap_dim or 0), 3),
-              fx_fade, fx_whoosh, fx_sfx_dir, flip_h, fit_src)).encode()
+              fx_fade, fx_whoosh, fx_sfx_dir, flip_h, fit_src,
+              bool(flat_export))).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
@@ -269,7 +286,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "recap_pitch": recap_pitch, "recap_volume": recap_volume,
          "recap_emotion": recap_emotion, "recap_dim": recap_dim,
          "fx_fade": fx_fade, "fx_whoosh": fx_whoosh,
-         "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src},
+         "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src,
+         "flat": bool(flat_export)},
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",
