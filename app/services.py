@@ -80,6 +80,32 @@ def project_group(project_id: int) -> str:
     return (row["grp"] or "") if row else ""
 
 
+def rename_group(old: str, new: str) -> str:
+    """Đổi TÊN NHÓM: mọi kênh thuộc `old` chuyển sang `new` (new trùng nhóm
+    sẵn có -> GỘP 2 nhóm, hợp lệ). Trả '' nếu OK, lỗi thì chuỗi thông báo."""
+    old = (old or "").strip()
+    new = (new or "").strip()
+    if not old:
+        return "Chưa chọn nhóm để sửa."
+    if not new:
+        return "Tên nhóm mới không được để trống."
+    if new == old:
+        return ""
+    db.execute("UPDATE projects SET grp=? WHERE grp=?", (new, old))
+    return ""
+
+
+def dissolve_group(name: str) -> int:
+    """XOÁ NHÓM: các kênh trong nhóm về 'Chưa phân nhóm' (grp='') — KHÔNG xoá
+    kênh/video/clip nào. Trả số kênh đã gỡ khỏi nhóm."""
+    name = (name or "").strip()
+    if not name:
+        return 0
+    n = len(db.query("SELECT id FROM projects WHERE grp=?", (name,)))
+    db.execute("UPDATE projects SET grp='' WHERE grp=?", (name,))
+    return n
+
+
 def rename_project(project_id: int, new_name: str) -> str:
     """Đổi TÊN kênh (chỉ dòng DB — assets_dir giữ nguyên; thư mục 'Đã xuất/<tên
     cũ>' cũng giữ nguyên vì đường xuất dựng từ TÊN lúc xuất -> clip MỚI sẽ vào

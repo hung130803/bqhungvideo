@@ -615,28 +615,64 @@ class StudioPage(QWidget):
 
     def _grp_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
+        g = self._cur_group()
         m = QMenu(self)
-        act = m.addAction("🗑 Xoá nhóm đang chọn (nếu rỗng)")
-        act.setEnabled(bool(self._cur_group()))
-        act.triggered.connect(lambda: self._del_group())
+        a1 = m.addAction("✏ Sửa tên nhóm...")
+        a1.setEnabled(bool(g))
+        a1.triggered.connect(lambda: self._rename_group())
+        a2 = m.addAction("🗑 Xoá nhóm này...")
+        a2.setEnabled(bool(g))
+        a2.triggered.connect(lambda: self._del_group())
         m.exec(self.grp.mapToGlobal(pos))
 
+    def _rename_group(self):
+        """Đổi tên nhóm ĐANG CHỌN: mọi kênh trong nhóm đi theo tên mới; tên
+        mới trùng nhóm sẵn có -> GỘP 2 nhóm (hỏi trước)."""
+        old = self._cur_group()
+        if not old:
+            return
+        new, ok = QInputDialog.getText(
+            self, "Sửa tên nhóm", f"Tên mới cho nhóm “{old}”:", text=old)
+        new = (new or "").strip()
+        if not ok or not new or new == old:
+            return
+        if new in set(services.list_groups()) | set(self._extra_groups()):
+            if QMessageBox.question(
+                self, "Gộp nhóm",
+                f"Nhóm “{new}” đã tồn tại — GỘP mọi kênh của “{old}” vào "
+                f"“{new}”?") != QMessageBox.StandardButton.Yes:
+                return
+        err = services.rename_group(old, new)
+        if err:
+            QMessageBox.warning(self, "Không đổi được", err)
+            return
+        # cập nhật danh sách nhóm rỗng đã lưu (old -> new)
+        self._save_extra_groups(
+            [new if x == old else x for x in self._extra_groups()])
+        self._reload_groups(new)
+        self._reload_projects()
+        self.status.setText(f"Đã đổi nhóm “{old}” → “{new}”.")
+
     def _del_group(self):
-        """Chuột phải ô Nhóm: xoá nhóm ĐANG CHỌN nếu nhóm RỖNG (không có
-        kênh). Nhóm có kênh -> báo (chuyển kênh đi trước)."""
+        """Xoá nhóm ĐANG CHỌN theo ý muốn: kênh trong nhóm KHÔNG mất — chỉ về
+        'Chưa phân nhóm' (hiện ở 'Tất cả'). Hỏi xác nhận nếu nhóm còn kênh."""
         g = self._cur_group()
         if not g:
             return
-        if services.list_projects(g):
-            QMessageBox.information(
-                self, "Nhóm còn kênh",
-                f"Nhóm “{g}” vẫn còn kênh — chuyển các kênh sang nhóm khác "
-                "(chuột phải kênh → Chuyển nhóm) rồi mới xoá được.")
+        n = len(services.list_projects(g))
+        if n and QMessageBox.question(
+            self, "Xoá nhóm",
+            f"Nhóm “{g}” đang có {n} kênh. Xoá nhóm sẽ đưa {n} kênh về "
+            "'Chưa phân nhóm' (KHÔNG xoá kênh/video/clip nào). Tiếp tục?"
+        ) != QMessageBox.StandardButton.Yes:
             return
+        services.dissolve_group(g)
         self._save_extra_groups([x for x in self._extra_groups() if x != g])
         self._reload_groups("")
         self._reload_projects()
-        self.status.setText(f"Đã xoá nhóm rỗng “{g}”.")
+        self.status.setText(
+            f"Đã xoá nhóm “{g}”" + (f" — {n} kênh về 'Chưa phân nhóm'."
+                                    if n else "."))
 
     def _select_project(self, pid) -> None:
         """Chọn kênh `pid` trong combo Kênh. Nếu kênh KHÔNG thuộc nhóm đang
