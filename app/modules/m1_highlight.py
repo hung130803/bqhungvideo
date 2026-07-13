@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.ai import llm
+from app.ai import recap as _recap   # dùng chung pattern CTA/chào đa ngôn ngữ
 from app.core import face_track
 from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import (
@@ -377,6 +378,13 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         "cuối), nội dung KHÁC NHAU — ĐỪNG chọn nhiều đoạn cùng 1 cảnh/chủ đề "
         "hay dồn cụm 1 chỗ; ưu tiên các khoảnh khắc KHÁC nhau cho phong phú.\n"
         "- Ưu tiên cảnh ĐỈNH ĐIỂM/cao trào, có hook ở đầu, giữ chân người xem.\n"
+        "- TUYỆT ĐỐI TRÁNH RÁC KÊNH (bất kể ngôn ngữ): intro chào kênh/trailer "
+        "nhá hàng mở đầu video, đoạn kêu gọi subscribe/like/bấm chuông/link mô "
+        "tả/sponsor/quảng cáo, lời chào tạm biệt cuối video (\"thanks for "
+        "watching\", \"see you in the next video\", \"チャンネル登録\", \"ご視聴"
+        "ありがとう\", \"đăng ký kênh\"...). KHÔNG lấy các câu đó vào clip, càng "
+        "KHÔNG đặt chúng ở ĐẦU hoặc CUỐI clip — clip phải mở bằng nội dung "
+        "chuyện thật và kết ở câu chốt chuyện; hệ thống sẽ tự cắt bỏ đoạn rác.\n"
         "- Mỗi clip là MỘT câu chuyện/cao trào TRỌN VẸN: lấy đủ phần dẫn dắt + cao "
         "trào + chốt, KHÔNG cắt cụt giữa chừng.\n"
         + len_rule +
@@ -453,6 +461,86 @@ def _clip_sentences(segments: list, segs: list) -> list:
     return out
 
 
+# ------------------------------------------------------------------
+# 🚮 NÉ RÁC KÊNH cho đường CẮT THƯỜNG (m1): intro chào kênh / trailer /
+# outro kêu subscribe / sponsor. Dùng CHUNG pattern đa ngôn ngữ với recap
+# (_is_cta_text + _is_greeting_text). NGUYÊN TẮC FAIL-SAFE: mọi lọc chỉ
+# chạy khi vẫn còn clip hợp lệ; clip duy nhất / video toàn CTA -> giữ như
+# cũ (không phá pipeline đang chạy).
+# ------------------------------------------------------------------
+_EDGE_TRIM_MAX_SENT = 3     # tối đa số câu rác được snap bỏ ở MỖI mép clip
+
+
+def _is_junk_sentence(text: str) -> bool:
+    """Câu là RÁC KÊNH: kêu gọi subscribe/like/sponsor (CTA) hoặc lời chào
+    mở kênh (greeting) — đa ngôn ngữ. Hàm thuần."""
+    return _recap._is_cta_text(text) or _recap._is_greeting_text(text)
+
+
+def _junk_ratio(segments: list, segs: list) -> float:
+    """Tỉ lệ (0..1) số TỪ thuộc câu CTA/chào kênh trong các câu transcript
+    giao với `segments` của clip (CJK-aware). Hàm thuần."""
+    tot = junk = 0
+    for _st, _en, t in _clip_sentences(segments, segs):
+        if not t:
+            continue
+        n = len(_recap._word_tokens(_recap._norm_for_copy(t)))
+        tot += n
+        if _is_junk_sentence(t):
+            junk += n
+    return (junk / tot) if tot else 0.0
+
+
+def _trim_junk_edges(segments: list, segs: list, min_len: float = 0.0) -> list:
+    """SNAP mép clip bỏ câu CTA/chào kênh ở ĐẦU/CUỐI clip: câu ĐẦU là rác
+    -> dịch start qua hết câu đó; câu CUỐI là rác -> rút end về trước câu
+    đó (tối đa _EDGE_TRIM_MAX_SENT câu mỗi mép). CHỈ cắt khi tổng còn lại
+    >= min_len - 2s (min_len=0 -> sàn 15s); không đủ -> GIỮ NGUYÊN mép đó
+    (đừng phá clip — fail-safe). Luôn trả list KHÔNG rỗng. Hàm thuần."""
+    if not segments or not segs:
+        return segments
+    floor = (min_len - 2.0) if (min_len and min_len > 0) else 15.0
+    cur = [[float(s), float(e)] for s, e in segments]
+    cur.sort(key=lambda x: x[0])
+
+    def _total(ss):
+        return sum(e - s for s, e in ss)
+
+    def _clean(ss):                     # bỏ khúc teo (<1s) sau khi dịch mép
+        return [[round(s, 2), round(e, 2)] for s, e in ss if e - s >= 1.0]
+
+    for _ in range(_EDGE_TRIM_MAX_SENT):            # ---- mép ĐẦU ----
+        sents = _clip_sentences(cur, segs)
+        if not sents:
+            break
+        st, en, txt = sents[0]
+        # câu rác phải GIAO khúc ĐẦU của clip (không phải khúc sau)
+        if (not txt or not _is_junk_sentence(txt)
+                or st >= cur[0][1] - 0.01 or en <= cur[0][0] + 0.01):
+            break
+        cand = [list(s) for s in cur]
+        cand[0][0] = max(cand[0][0], en)            # dịch start qua câu rác
+        cand = _clean(cand)
+        if not cand or _total(cand) < floor:
+            break                                   # cắt nữa là phá -> thôi
+        cur = cand
+    for _ in range(_EDGE_TRIM_MAX_SENT):            # ---- mép CUỐI ----
+        sents = _clip_sentences(cur, segs)
+        if not sents:
+            break
+        st, en, txt = sents[-1]
+        if (not txt or not _is_junk_sentence(txt)
+                or st >= cur[-1][1] - 0.01 or en <= cur[-1][0] + 0.01):
+            break
+        cand = [list(s) for s in cur]
+        cand[-1][1] = min(cand[-1][1], st)          # rút end về trước câu rác
+        cand = _clean(cand)
+        if not cand or _total(cand) < floor:
+            break
+        cur = cand
+    return [[round(s, 2), round(e, 2)] for s, e in cur]
+
+
 def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
                  min_len: float = 0.0) -> dict:
     """
@@ -470,7 +558,9 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
         "Hãy CẮT GỌN clip này cho cô đọng, hấp dẫn LIÊN TỤC:\n"
         "- GIỮ phần hay: mở đầu hút (hook), cao trào, câu chốt, cảm xúc mạnh. "
         "ĐƯỢC giữ khoảng lặng nếu nó tạo kịch tính/hồi hộp.\n"
-        "- BỎ: câu lan man, lặp lại, dài dòng, lạc đề, mở đầu/kết thúc thừa.\n"
+        "- BỎ: câu lan man, lặp lại, dài dòng, lạc đề, mở đầu/kết thúc thừa; "
+        "lời chào kênh/kêu gọi subscribe/like/link mô tả/sponsor (mọi ngôn "
+        "ngữ) — nhất là khi nó nằm ở đầu/cuối clip.\n"
         "- CHỈ bỏ câu THẬT SỰ thừa — GIỮ độ dài gần như hiện tại, ĐỪNG cắt "
         "ngắn clip đi nhiều (không rút xuống dưới ~85% độ dài đang có).\n"
         '- Cắt vào ranh giới câu trọn vẹn.\n'
@@ -554,6 +644,10 @@ def _extend_to_target(segments: list, segs: list, target: float,
             continue
         gap = st - cur_end
         if gap > hard_gap:                  # gap CỰC lớn -> dừng (đổi cảnh hẳn)
+            break
+        # 🚮 câu chạm tới là CTA/chào kênh (outro "subscribe...") -> DỪNG nới,
+        # đừng nuốt đoạn rác vào clip (thiếu độ dài đã có _enforce_len lo).
+        if _is_junk_sentence(str(s.get("text") or "")):
             break
         if gap <= gap_stop:
             add = en - cur_end              # gap nhỏ/vừa -> kéo dài đoạn hiện tại
@@ -778,12 +872,24 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             clip = _normalize_clip(r, duration, boundaries, min_len, max_len,
                                    segs)
             if clip:
+                # 🚮 SNAP mép: câu đầu/cuối clip là CTA/chào kênh -> dịch mép
+                # bỏ câu đó (giữ >= min_len; không đủ thì giữ nguyên mép).
+                clip["segments"] = _trim_junk_edges(clip["segments"], segs,
+                                                    min_len)
                 all_clips.append(clip)
 
     if not all_clips:
         if errors:  # LLM có cấu hình nhưng gọi lỗi -> để generate_highlights báo rõ
             raise llm.LLMError(errors[0])
         return [], []
+
+    # 🚮 LOẠI clip TOÀN rác kênh (>30% từ là CTA/chào — như validate_windows
+    # bên reup). FAIL-SAFE: lọc mà hết sạch (clip duy nhất toàn CTA / video
+    # toàn CTA) -> giữ như cũ, không phá pipeline.
+    _clean = [c for c in all_clips
+              if _junk_ratio(c["segments"], segs) <= _recap._CTA_MAX]
+    if _clean:
+        all_clips = _clean
 
     # Khử TRÙNG NỘI DUNG: giữ clip điểm cao trước, BỎ clip nào ĐÈ LÊN clip đã
     # giữ. So theo TOÀN KHOẢNG [đầu..cuối] chứ không chỉ điểm bắt đầu — vì clip
@@ -893,6 +999,9 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
             "- Câu chuyện TỰ ĐỦ: xem KHÔNG cần biết bối cảnh trước đó.\n"
             "- Tiềm năng VIRAL cao (cảm xúc, twist, cao trào, câu chốt đắt).\n"
             "- KHÔNG lê thê/khoảng chết.\n"
+            "- KHÔNG dính RÁC KÊNH: intro chào kênh/trailer mở đầu, kêu gọi "
+            "subscribe/like/link mô tả/sponsor, lời tạm biệt cuối video — "
+            "clip mở đầu hay kết thúc bằng mấy đoạn đó phải xếp KÉM/drop.\n"
             "- 2 clip KHÔNG trùng nội dung (tránh nhàm + ăn bản quyền).\n"
             f"Chọn tối đa {target_n} clip TỐT NHẤT. Trả DUY NHẤT 1 JSON: "
             '{"keep":[index theo thứ tự TỐT->kém], "drop":[index yếu/trùng], '
@@ -1199,11 +1308,16 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         _bnd = _natural_boundaries(transcript, scenes)
         _min = float(cfg.get("min_len", 60.0))
         _max = float(cfg.get("max_len", 0.0) or 0.0)
+        _tsegs = (transcript or {}).get("segments", []) or []
         _len_notes: list = []
         clip_ids = []
         for c in ai_clips:
             segs, _note = _enforce_len(c["segments"], _min, _max, duration,
                                        _bnd)
+            # 🚮 nới min (_enforce_len) có thể nuốt lại outro/intro theo THỜI
+            # GIAN -> snap mép bỏ câu CTA/chào lần CUỐI (chỉ cắt khi vẫn giữ
+            # được >= min_len - 2s, không thì giữ nguyên — fail-safe).
+            segs = _trim_junk_edges(segs, _tsegs, _min)
             c["segments"] = segs
             if _note:
                 _len_notes.append(_note)
@@ -1345,6 +1459,20 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
             exhausted_note = ("video này đã tạo nhiều clip, các đoạn mới có thể "
                               "trùng phần đã dùng")
 
+    # 🚮 NÉ RÁC ĐẦU/CUỐI VIDEO: ứng viên CHẠM 3% đầu (intro) / 3% cuối (outro)
+    # mà >30% từ là câu CTA/chào kênh -> loại. KHÔNG loại theo vị trí đơn
+    # thuần (nội dung hay ở đầu video vẫn giữ). FAIL-SAFE: lọc hết -> giữ cũ.
+    tsegs = (transcript or {}).get("segments", []) or []
+    if duration > 0 and tsegs:
+        _head, _tail = 0.03 * duration, 0.97 * duration
+        _no_junk = [
+            c for c in candidates
+            if not ((c["start"] <= _head or c["end"] >= _tail)
+                    and _junk_ratio([[c["start"], c["end"]]], tsegs)
+                    > _recap._CTA_MAX)]
+        if _no_junk:
+            candidates = _no_junk
+
     count = int(cfg.get("count", 0) or 0)
     limit = count if count > 0 else 12
     limit = min(limit, cfg["max_candidates"])
@@ -1366,6 +1494,8 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
         # max, không bám mép câu). Sửa lỗi 'đặt min 60 ra 46'.
         seg, _ = _enforce_len([[c["start"], c["end"]]], min_len, max_len,
                               duration, _bnd)
+        # 🚮 snap mép bỏ câu CTA/chào kênh dính ở đầu/cuối (fail-safe giữ min)
+        seg = _trim_junk_edges(seg, tsegs, min_len)
         c_start, c_end = seg[0][0], seg[-1][1]
         a_s = _audio_score(audio, c_start, c_end)
         s_s = _scene_score(scenes, c_start, c_end)

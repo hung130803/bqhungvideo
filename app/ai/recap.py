@@ -1226,24 +1226,43 @@ def _is_relevant(text: str, near: set) -> bool:
 
 # ------------------------------------------------------------------
 # HARD-FILTER khung cảnh RÁC: intro/outro/kêu subscribe/màn hình chữ.
-#  - _CTA_PATTERNS: lời chào/cảm ơn/kêu gọi (EN + VI) — window mà >30% từ
-#    thuộc câu dạng này -> loại (outro/intro kênh).
+#  - _CTA_PATTERNS: lời chào/cảm ơn/kêu gọi — ĐA NGÔN NGỮ (EN/VI/JA/KO/ZH/
+#    ES/PT/FR/DE/RU — kênh Mỹ + Nhật là chính) — window mà >30% từ thuộc
+#    câu dạng này -> loại (outro/intro kênh).
+#  - _GREETING_PATTERNS + _is_greeting_text: câu CHÀO MỞ KÊNH (what's up
+#    guys / welcome back / みなさんこんにちは...) — dùng để SNAP mép clip
+#    (đường cắt thường m1) né intro; tách riêng khỏi CTA vì lời chào ĐẦU
+#    video không phải "kêu gọi" nhưng vẫn là rác mở clip.
 #  - _MIN_DENSITY: mật độ lời thoại tối thiểu (từ/giây) — đoạn màn hình chữ
 #    /nhạc không lời rất thưa lời -> loại (trừ khi là window duy nhất).
-# Regex chạy trên text đã _norm_for_copy (chữ thường, bỏ dấu câu).
+# Regex chạy trên text đã _norm_for_copy (chữ thường, bỏ dấu câu, dấu
+# gạch/nháy thành khoảng trắng: "abonnez-vous" -> "abonnez vous").
+# NGUYÊN TẮC CHỐNG BẮT OAN: tiếng có DẤU CÁCH (latin/cyrillic) dùng \b +
+# cụm từ (KHÔNG bắt từ đơn đa nghĩa: "like", "登録" xe cộ, "관심"...);
+# CJK không dấu cách -> so CHUỖI CON nhưng chọn cụm ĐẶC THÙ kênh
+# (チャンネル登録, 高評価, 概要欄...) thay vì từ thường (好き, 見る...).
 # ------------------------------------------------------------------
 _CTA_PATTERNS = [re.compile(p, re.UNICODE) for p in (
     # --- EN ---
-    r"thanks?\s+(?:you\s+)?(?:so\s+much\s+)?(?:all\s+)?for\s+watching",
-    r"\bsubscribe\b", r"\bunsubscribe\b",
+    r"thanks?\s+(?:\S+\s+){0,4}?for\s+watching",
+    r"\bsubscribe\b", r"\bunsubscribe\b", r"\bsubscribing\b",
     r"hit\s+the\s+(?:like|bell|subscribe)",
-    r"smash\s+th(?:at|e)\s+like",
+    r"smash\s+th(?:at|e)\s+(?:like|subscribe)",
     r"like\s+and\s+(?:share|subscribe)", r"like\s+comment",
-    r"see\s+you\s+(?:in\s+the\s+|guys\s+)?next",
+    r"leave\s+a\s+(?:like|comment)\b", r"drop\s+a\s+like\b",
+    r"see\s+you\s+(?:all\s+|guys\s+)?(?:in\s+the\s+)?next",
     r"link\s+in\s+(?:the\s+)?(?:bio|description)",
-    r"\bsponsored?\b", r"\bsponsors?\b",
+    r"links?\s+(?:down\s+)?below\b", r"in\s+the\s+description\s+below",
+    r"\bsponsored?\b", r"\bsponsors?\b", r"brought\s+to\s+you\s+by",
     r"welcome\s+back\s+to\s+(?:the\s+|my\s+)?channel",
-    r"don\s?t\s+forget\s+to\s+(?:like|subscribe)",
+    r"don\s?t\s+forget\s+to\s+(?:like|subscribe|follow|comment|hit|smash)",
+    r"notification\s+bell", r"(?:hit|ring|tap)\s+th(?:at|e)\s+bell",
+    r"turn\s+on\s+(?:post\s+|the\s+)?notifications?\b",
+    r"use\s+(?:my|the)\s+code\b",
+    r"(?:promo|discount|coupon)\s+code",
+    r"\bpatreon\b", r"\bgiveaway\b", r"\bmerch\b",
+    r"follow\s+me\s+on\b", r"check\s+out\s+my\b",
+    r"if\s+you\s+enjoyed\s+(?:this|the)\s+video",
     # --- VI ---
     r"đăng\s+ký\s+kênh", r"(?:nhấn|bấm|ấn)\s+(?:nút\s+)?đăng\s+ký",
     r"(?:nhấn|bật|bấm)\s+(?:cái\s+)?chuông",
@@ -1253,15 +1272,82 @@ _CTA_PATTERNS = [re.compile(p, re.UNICODE) for p in (
     r"chào\s+mừng\s+(?:\S+\s+){0,4}?(?:quay\s+trở\s+lại|đến\s+với\s+kênh)",
     r"video\s+(?:lần\s+)?(?:sau|tiếp\s+theo|kế\s+tiếp)",
     r"tài\s+trợ", r"quảng\s+cáo",
+    # --- JA (CJK: so chuỗi con, cụm đặc thù kênh) ---
+    r"チャンネル登録", r"登録(?:お願い|よろしく|ボタン)",
+    r"高評価", r"グッドボタン", r"いいねボタン",
+    r"通知(?:オン|設定|ボタン)", r"ベルマーク",
+    r"概要欄", r"スパチャ", r"メンバーシップ",
+    r"ご?視聴(?:ありがとう|いただき)", r"次の動画で",
+    # --- KO ---
+    r"구독\s*(?:과\s*)?좋아요", r"좋아요\s*(?:와\s*)?구독",
+    r"구독\s*(?:버튼|부탁|눌러)", r"알림\s*설정",
+    r"시청해\s*주셔서\s*감사", r"다음\s*영상에서",
+    # --- ZH (giản + phồn) ---
+    r"订阅", r"訂閱", r"点赞", r"點讚", r"一键三连",
+    r"感谢观看", r"感謝觀看", r"下[期个個]视频", r"下[期个個]影片",
+    r"记得关注", r"点个关注", r"关注我的频道",
+    # --- ES ---
+    r"\bsuscr[ií]b", r"dale\s+(?:al\s+)?like", r"gracias\s+por\s+ver",
+    r"activa\s+la\s+campanita",
+    r"(?:link|enlace)\s+en\s+la\s+descripci[oó]n",
+    r"nos\s+vemos\s+en\s+(?:el\s+)?pr[oó]ximo",
+    # --- PT ---
+    r"\bse\s+inscrev", r"\binscrevam?\s+se\b", r"deixa\s+o\s+like",
+    r"obrigad[oa]\s+por\s+assistir", r"ativa\s+o\s+sininho",
+    r"link\s+na\s+descri[cç][aã]o", r"at[eé]\s+o\s+pr[oó]ximo\s+v[ií]deo",
+    # --- FR ---
+    r"abonnez\s+vous", r"abonne\s+toi", r"vous\s+abonner",
+    r"pouce\s+bleu", r"lien\s+en\s+description", r"petite\s+cloche",
+    r"merci\s+d\s+avoir\s+regard[eé]", r"la\s+prochaine\s+vid[eé]o",
+    # --- DE ---
+    r"\babonnier", r"daumen\s+hoch", r"glocke\s+aktivier",
+    r"danke\s+f[uü]rs?\s+zuschauen", r"bis\s+zum\s+n[aä]chsten\s+video",
+    r"link\s+in\s+der\s+beschreibung",
+    # --- RU ---
+    r"подписывайтесь", r"подпишись", r"подписаться\s+на\s+канал",
+    r"(?:ставь|поставь)(?:те)?\s+лайк", r"колокольчик",
+    r"спасибо\s+за\s+просмотр", r"в\s+следующем\s+видео",
+    r"ссылка\s+в\s+описании",
+)]
+# Câu CHÀO MỞ KÊNH (intro) — tách riêng CTA: dùng cho SNAP mép clip m1.
+_GREETING_PATTERNS = [re.compile(p, re.UNICODE) for p in (
+    # --- EN ---
+    r"what\s?s\s+up\s+guys", r"what\s+is\s+up\s+guys",
+    r"welcome\s+back\b", r"welcome\s+to\s+(?:the\s+|my\s+)?(?:channel|video)",
+    r"hey\s+(?:guys|everyone|everybody|y\s?all)\b",
+    r"\bhi\s+guys\b", r"hello\s+(?:everyone|everybody|guys)\b",
+    r"in\s+today\s?s\s+video",
+    # --- VI ---
+    r"xin\s+chào\s+(?:tất\s+cả\s+)?(?:các\s+bạn|anh\s+em|mọi\s+người)",
+    r"chào\s+mừng\s+các\s+bạn",
+    # --- JA ---
+    r"(?:みな|皆)さん\s*こんにちは", r"どうも\s*(?:みな|皆)さん",
+    r"今日の動画", r"今回の動画",
+    # --- KO / ZH ---
+    r"안녕하세요\s*여러분", r"여러분\s*안녕하세요", r"大家好",
+    # --- ES / FR / DE / RU ---
+    r"hola\s+a\s+todos", r"bienvenidos\s+al?\b",
+    r"salut\s+[aà]\s+tous", r"bonjour\s+[aà]\s+tous",
+    r"hallo\s+(?:leute|zusammen)", r"willkommen\s+zur[uü]ck",
+    r"всем\s+привет", r"привет\s+всем",
 )]
 _MIN_DENSITY = 1.2     # từ/giây trung bình tối thiểu của 1 window
 _CTA_MAX = 0.30        # >30% từ trong window là lời chào/kêu gọi -> loại
 
 
 def _is_cta_text(text: str) -> bool:
-    """Câu transcript có phải lời chào/cảm ơn/kêu subscribe/sponsor không."""
+    """Câu transcript có phải lời chào/cảm ơn/kêu subscribe/sponsor không
+    (đa ngôn ngữ EN/VI/JA/KO/ZH/ES/PT/FR/DE/RU). Hàm thuần."""
     t = _norm_for_copy(text)
     return bool(t) and any(p.search(t) for p in _CTA_PATTERNS)
+
+
+def _is_greeting_text(text: str) -> bool:
+    """Câu có phải lời CHÀO MỞ KÊNH (intro: what's up guys / welcome back /
+    みなさんこんにちは / xin chào các bạn...) không — dùng SNAP mép clip né
+    intro (đường cắt thường m1). Hàm thuần."""
+    t = _norm_for_copy(text)
+    return bool(t) and any(p.search(t) for p in _GREETING_PATTERNS)
 
 
 def _win_density(sentences: list, start: float, end: float) -> float:
@@ -1969,18 +2055,23 @@ def build_director_prompt(listing: str, lang_name: str, style: str,
         "- Chỉ lấy khoảnh khắc ĐẮT (kịch tính, twist, cảm xúc mạnh, câu "
         "chốt) — mạnh dạn BỎ hẳn đoạn nhàm/lặp ở giữa; người xem sẽ được "
         "lời kể của bạn nối mạch.\n"
-        "- NÉ RÁC ĐẦU/CUỐI: CẤM lấy ~15 giây ĐẦU video (intro kênh/màn "
-        "hình chữ/nhạc hiệu) và ~20 giây CUỐI (outro/credits/kêu gọi đăng "
-        "ký) — trừ khi transcript cho thấy ở đó có nội dung chuyện THẬT SỰ "
-        "đắt.\n"
+        "- NÉ RÁC ĐẦU/CUỐI: CẤM lấy ~15 giây ĐẦU video (intro kênh/TRAILER "
+        "nhá hàng/màn hình chữ/nhạc hiệu) và ~20 giây CUỐI (outro/credits/"
+        "kêu gọi đăng ký/lời tạm biệt) — trừ khi transcript cho thấy ở đó "
+        "có nội dung chuyện THẬT SỰ đắt.\n"
         "- CẤM chọn khung mà lời thoại chủ yếu là chào/cảm ơn/kêu gọi/"
-        "quảng cáo — các kiểu: \"thanks for watching\", \"subscribe\", "
-        "\"like and share\", \"see you in the next video\", \"link in "
-        "description\", \"đăng ký kênh\", \"nhấn chuông\", \"like và "
+        "quảng cáo — BẤT KỂ NGÔN NGỮ, các kiểu: \"thanks for watching\", "
+        "\"subscribe\", \"like and share\", \"see you in the next video\", "
+        "\"link in description\", \"チャンネル登録\", \"高評価\", \"ご視聴あり"
+        "がとうございました\", \"đăng ký kênh\", \"nhấn chuông\", \"like và "
         "share\", \"cảm ơn các bạn đã xem\", \"hẹn gặp lại\", \"ủng hộ "
         "kênh\", sponsor/tài trợ... Khung như vậy (hoặc khung gần như "
         "KHÔNG có lời thoại — nhạc nền, chữ trên màn hình) sẽ bị hệ thống "
-        "LOẠI BỎ.\n\n"
+        "LOẠI BỎ.\n"
+        "- ĐẶC BIỆT: khung ĐẦU TIÊN và khung CUỐI CÙNG (mở/kết clip) TUYỆT "
+        "ĐỐI không được chứa mấy câu chào/kêu gọi đó — mở clip phải vào "
+        "chuyện ngay, kết clip dừng ở câu chốt của CHUYỆN (không phải lời "
+        "tạm biệt của video gốc).\n\n"
         "BƯỚC 2 — VIẾT KỊCH BẢN parts phủ lên các khung đó (orig = giữ "
         "tiếng gốc / narrate = bạn kể, video tắt tiếng):\n"
         + _structure_rules(per_window=True, ratio=pct) +
