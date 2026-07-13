@@ -2245,7 +2245,7 @@ class StudioPage(QWidget):
                 # file OneDrive online-only/USB rút/đang khóa -> OSError; lỗi
                 # khác cũng phải bắt: thread nền chết im lặng sẽ kẹt _import_busy
                 try:
-                    services.import_video(pid, f)
+                    res["last_vid"] = services.import_video(pid, f)
                     res["ok"] += 1
                 except Exception as e:  # noqa: BLE001
                     res["fails"].append(f"{Path(f).name}: {e}")
@@ -2264,7 +2264,8 @@ class StudioPage(QWidget):
             self._import_busy = False
             ok, fails = res["ok"], res["fails"]
             if ok:
-                self._reload_videos()
+                # TỰ NHẢY sang video VỪA THÊM (file cuối) — user khỏi bấm tay
+                self._reload_videos(select_id=res.get("last_vid"))
                 self.status.setText(f"Đã thêm {ok} video vào kênh.")
             if fails:
                 QMessageBox.warning(
@@ -3017,7 +3018,8 @@ class StudioPage(QWidget):
                                                 self._cut_preset())
                     self._track_auto(jid, vid)
                 self._batch_ok = getattr(self, "_batch_ok", 0) + 1
-                self._reload_videos()
+                # TỰ NHẢY sang video vừa tải xong — user khỏi bấm tay
+                self._reload_videos(select_id=vid)
             except Exception as e:  # noqa: BLE001
                 self._batch_fails = getattr(self, "_batch_fails", [])
                 self._batch_fails.append((url, f"import lỗi: {e}"))
