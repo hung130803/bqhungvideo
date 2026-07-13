@@ -31,11 +31,6 @@ from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
 
-# userData ĐẶC BIỆT các dòng LỆNH trong combo Nhóm (không phải tên nhóm thật)
-_NEW_GRP = "__new_group__"
-_EDIT_GRP = "__edit_group__"
-_DEL_GRP = "__del_group__"
-
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
 # ngay dưới. Vào "Chỉnh mẫu" để đổi vị trí/cỡ/màu; app tự điền khi xuất từng clip.
 _DEF_PART = {"text": "Part {n}", "size": 0.055, "font": "Montserrat", "color": "#FFFFFF",
@@ -153,15 +148,19 @@ class StudioPage(QWidget):
         self.grp = QComboBox(); self.grp.setMinimumWidth(110)
         self.grp.setToolTip("Lọc kênh theo NHÓM (quốc gia, chủ đề...).\n"
                             "'Tất cả' = hiện mọi kênh (kể cả chưa phân nhóm).\n"
-                            "'＋ Nhóm mới...' tạo NHÓM RỖNG (không đụng kênh "
-                            "nào) — tạo bao nhiêu nhóm cũng được.\n"
-                            "Đưa kênh vào nhóm: nút ✏ hoặc chuột phải kênh → "
-                            "'Chuyển nhóm...'. Chuột phải Ô NÀY để xoá nhóm rỗng.")
+                            "Tạo / sửa / xoá nhóm và chuyển KÊNH sang nhóm khác "
+                            "(hàng loạt): bấm nút ⚙ Quản lý nhóm bên cạnh.")
         self._reload_groups(self._settings.value("chan_group", "") or "")
         self.grp.currentIndexChanged.connect(self._on_grp)
         self.grp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grp.customContextMenuRequested.connect(self._grp_menu)
         srcrow.addWidget(self.grp)
+        gman = QPushButton("⚙"); gman.setProperty("ghost", True)
+        gman.setFixedWidth(38)
+        gman.setToolTip("Quản lý nhóm & kênh: thêm/sửa/xoá nhóm, chuyển nhiều "
+                        "kênh sang nhóm khác cùng lúc.")
+        gman.clicked.connect(self._manage_groups)
+        srcrow.addWidget(gman)
         srcrow.addWidget(self._tag("Kênh"))
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
         self.proj.on_popup = self._refresh_proj_marks
@@ -552,15 +551,13 @@ class StudioPage(QWidget):
         dlg.exec()
 
     # ---- NHÓM kênh (lọc combo Kênh theo projects.grp) ----
-    _GRP_CMDS = (_NEW_GRP, _EDIT_GRP, _DEL_GRP)
-
     def _cur_group(self) -> str:
-        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả). Dòng LỆNH -> ''."""
+        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả)."""
         g = getattr(self, "grp", None)
         if g is None:
             return ""
         d = g.currentData()
-        return d if isinstance(d, str) and d not in self._GRP_CMDS else ""
+        return d if isinstance(d, str) else ""
 
     def _extra_groups(self) -> list:
         """Nhóm user TỰ TẠO còn RỖNG (chưa có kênh) — lưu QSettings để không
@@ -578,61 +575,25 @@ class StudioPage(QWidget):
             "chan_groups_extra", json.dumps(sorted(set(lst)), ensure_ascii=False))
 
     def _reload_groups(self, select: str = ""):
-        """Nạp combo Nhóm: 'Tất cả'('') + nhóm (DB ∪ nhóm rỗng đã tạo) +
-        '＋ Nhóm mới...'. `select` = nhóm muốn chọn lại ('' -> Tất cả).
-        Ghi QSettings để mở app lại giữ nguyên nhóm đang lọc."""
+        """Nạp combo Nhóm CHỈ ĐỂ LỌC: 'Tất cả'('') + nhóm (DB ∪ nhóm rỗng đã
+        tạo). KHÔNG còn dòng lệnh (＋/✏/🗑) — mọi thao tác quản lý nhóm chuyển
+        sang dialog '⚙ Quản lý nhóm'. `select` = nhóm muốn chọn lại; nếu nhóm
+        đó còn tồn tại thì GIỮ (không ép về Tất cả). Ghi QSettings để mở app
+        lại vào đúng nhóm cũ."""
         self.grp.blockSignals(True)
         self.grp.clear()
         self.grp.addItem("Tất cả", "")
         names = sorted(set(services.list_groups()) | set(self._extra_groups()))
         for g in names:
             self.grp.addItem(g, g)
-        self.grp.insertSeparator(self.grp.count())
-        self.grp.addItem("＋ Nhóm mới...", _NEW_GRP)
-        # 2 dòng LỆNH quản lý nhóm ĐANG CHỌN — hiện thẳng trong danh sách xổ
-        # xuống cho dễ thấy (chỉ có tác dụng khi đang chọn 1 nhóm cụ thể).
-        self.grp.addItem("✏ Sửa tên nhóm đang chọn...", _EDIT_GRP)
-        self.grp.addItem("🗑 Xoá nhóm đang chọn...", _DEL_GRP)
         i = self.grp.findData(select) if select else 0
         self.grp.setCurrentIndex(i if i > 0 else 0)
         self.grp.blockSignals(False)
         self._settings.setValue("chan_group", self._cur_group())
 
     def _on_grp(self, _i):
-        d = self.grp.currentData()
-        if d in (_EDIT_GRP, _DEL_GRP):
-            # trả combo về nhóm đang chọn trước đó rồi thao tác trên nhóm đó
-            prev = self._settings.value("chan_group", "") or ""
-            self._reload_groups(prev)
-            if not prev:
-                self.status.setText(
-                    "Hãy chọn 1 NHÓM cụ thể (không phải 'Tất cả') rồi mới "
-                    "Sửa tên / Xoá nhóm.")
-                return
-            if d == _EDIT_GRP:
-                self._rename_group()
-            else:
-                self._del_group()
-            return
-        if d == _NEW_GRP:
-            # trả combo về nhóm cũ TRƯỚC (không để combo đứng ở dòng lệnh)
-            prev = self._settings.value("chan_group", "") or ""
-            self._reload_groups(prev)
-            name, ok = QInputDialog.getText(
-                self, "Nhóm mới", "Tên nhóm (vd: Mỹ, Nhật, Hàn...):")
-            name = (name or "").strip()
-            if not ok or not name:
-                return
-            # TẠO NHÓM RỖNG — KHÔNG tự chuyển kênh nào vào (trước đây bốc kênh
-            # đang chọn ném vào nhóm mới -> nhóm cũ hết kênh biến mất, tưởng
-            # 'chỉ tạo được 1 nhóm'). Muốn đưa kênh vào: ✏ hoặc 'Chuyển nhóm'.
-            self._save_extra_groups(self._extra_groups() + [name])
-            self._reload_groups(name)
-            self._reload_projects()
-            self.status.setText(
-                f"Đã tạo nhóm “{name}” — bấm + Kênh để thêm kênh mới, hoặc "
-                "chuột phải kênh cũ → 'Chuyển nhóm...' để đưa vào nhóm này.")
-            return
+        # dropdown giờ CHỈ lọc — không còn dòng lệnh. Lưu nhóm đang chọn để
+        # mở app lại giữ nguyên + nạp lại danh sách kênh theo nhóm.
         self._settings.setValue("chan_group", self._cur_group())
         self._reload_projects()
 
@@ -696,6 +657,258 @@ class StudioPage(QWidget):
         self.status.setText(
             f"Đã xoá nhóm “{g}”" + (f" — {n} kênh về 'Chưa phân nhóm'."
                                     if n else "."))
+
+    # ---- Dialog QUẢN LÝ NHÓM & KÊNH (⚙ cạnh combo Nhóm) ----
+    def _all_group_names(self) -> list:
+        """Tên nhóm: DB (nhóm có kênh) ∪ nhóm rỗng đã tạo (QSettings), sort."""
+        return sorted(set(services.list_groups()) | set(self._extra_groups()))
+
+    def _manage_groups(self):
+        """Mở dialog quản lý; đóng xong -> nạp lại combo Nhóm + kênh (giữ nhóm
+        đang chọn nếu còn)."""
+        keep = self._cur_group()
+        self._build_manage_groups().exec()
+        # nhóm đang chọn có thể vừa bị đổi tên/xoá -> chỉ giữ nếu còn
+        if keep and keep not in self._all_group_names():
+            keep = ""
+        self._reload_groups(keep)
+        self._reload_projects()
+
+    def _build_manage_groups(self) -> QDialog:
+        """QDialog 'Quản lý nhóm & kênh' — 2 khu:
+        - KHU NHÓM: QListWidget các nhóm + [＋ Thêm] [✏ Sửa tên] [🗑 Xoá].
+        - KHU KÊNH: QTableWidget [☑ | Tên kênh | Nhóm hiện tại] chọn nhiều dòng,
+          dưới cùng chuyển các kênh đã tích vào 1 nhóm (hoặc 'Chưa phân nhóm').
+        Tách khỏi exec() để test offscreen thao tác từng bước."""
+        from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView,
+                                     QTableWidget, QTableWidgetItem)
+        dlg = QDialog(self); dlg.setWindowTitle("Quản lý nhóm & kênh")
+        dlg.resize(720, 520)
+        self._mg_dlg = dlg                    # giữ ref cho test offscreen
+        root = QHBoxLayout(dlg); root.setSpacing(12)
+        root.setContentsMargins(14, 14, 14, 14)
+
+        # ===== KHU 1: NHÓM =====
+        left = QVBoxLayout(); left.setSpacing(8)
+        h1 = QLabel("Nhóm")
+        h1.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        left.addWidget(h1)
+        s1 = QLabel("Nhóm để phân loại kênh (quốc gia, chủ đề...).")
+        s1.setWordWrap(True); s1.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        left.addWidget(s1)
+        glist = QListWidget(); glist.setMinimumWidth(220)
+        self._mg_glist = glist
+        left.addWidget(glist, 1)
+        brow = QHBoxLayout(); brow.setSpacing(6)
+        add_b = QPushButton("＋ Thêm nhóm"); add_b.setProperty("ghost", True)
+        ren_b = QPushButton("✏ Sửa tên"); ren_b.setProperty("ghost", True)
+        del_b = QPushButton("🗑 Xoá"); del_b.setProperty("ghost", True)
+        brow.addWidget(add_b); brow.addWidget(ren_b); brow.addWidget(del_b)
+        left.addLayout(brow)
+        root.addLayout(left, 0)
+
+        # ===== KHU 2: KÊNH =====
+        right = QVBoxLayout(); right.setSpacing(8)
+        h2 = QLabel("Kênh")
+        h2.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        right.addWidget(h2)
+        s2 = QLabel("Tích ô các kênh cần chuyển, chọn nhóm đích bên dưới rồi bấm "
+                    "Chuyển. Nháy đúp 1 dòng để đổi nhanh nhóm dòng đó.")
+        s2.setWordWrap(True); s2.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        right.addWidget(s2)
+        tbl = QTableWidget(0, 3)
+        self._mg_tbl = tbl
+        tbl.setHorizontalHeaderLabels(["", "Tên kênh", "Nhóm hiện tại"])
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setStyleSheet(
+            f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
+            f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
+            f"QTableWidget::item {{ padding:3px 8px; }}"
+            f"QTableWidget::item:selected {{ background:{ACCENT};"
+            f" color:white; }}"
+            f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
+            f" padding:6px 8px; border:none;"
+            f" border-bottom:1px solid {BORDER}; font-weight:600; }}"
+            f"QTableCornerButton::section {{ background:{SURFACE};"
+            f" border:none; }}")
+        hh = tbl.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        right.addWidget(tbl, 1)
+
+        # hàng chuyển hàng loạt
+        mrow = QHBoxLayout(); mrow.setSpacing(6)
+        mrow.addWidget(self._tag("Chuyển các kênh đã chọn vào:"))
+        dest = QComboBox(); dest.setMinimumWidth(160)
+        self._mg_dest = dest
+        mrow.addWidget(dest, 1)
+        move_b = QPushButton("Chuyển"); move_b.setProperty("primary", True)
+        mrow.addWidget(move_b)
+        right.addLayout(mrow)
+        # nút dưới cùng
+        frow = QHBoxLayout()
+        refresh_b = QPushButton("Làm mới"); refresh_b.setProperty("ghost", True)
+        frow.addWidget(refresh_b); frow.addStretch(1)
+        close_b = QPushButton("Đóng"); close_b.setProperty("ghost", True)
+        frow.addWidget(close_b)
+        right.addLayout(frow)
+        root.addLayout(right, 1)
+
+        # ---- nạp dữ liệu ----
+        def fill_groups(select: str = None):
+            if select is None:
+                cur = glist.currentItem()
+                select = cur.text() if cur else None
+            glist.blockSignals(True); glist.clear()
+            for g in self._all_group_names():
+                glist.addItem(g)
+            glist.blockSignals(False)
+            if select is not None:
+                for i in range(glist.count()):
+                    if glist.item(i).text() == select:
+                        glist.setCurrentRow(i); break
+            # combo nhóm đích: '(Chưa phân nhóm)' + các nhóm
+            keep = dest.currentData()
+            dest.blockSignals(True); dest.clear()
+            dest.addItem("(Chưa phân nhóm)", "")
+            for g in self._all_group_names():
+                dest.addItem(g, g)
+            di = dest.findData(keep) if isinstance(keep, str) else -1
+            dest.setCurrentIndex(di if di > 0 else 0)
+            dest.blockSignals(False)
+
+        def fill_channels():
+            projs = services.list_projects()          # TẤT CẢ kênh
+            tbl.setRowCount(len(projs))
+            for r, p in enumerate(projs):
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable
+                             | Qt.ItemFlag.ItemIsEnabled
+                             | Qt.ItemFlag.ItemIsSelectable)
+                chk.setCheckState(Qt.CheckState.Unchecked)
+                chk.setData(Qt.ItemDataRole.UserRole, int(p["id"]))
+                tbl.setItem(r, 0, chk)
+                nm = QTableWidgetItem(p["name"])
+                nm.setData(Qt.ItemDataRole.UserRole, int(p["id"]))
+                tbl.setItem(r, 1, nm)
+                g = (p["grp"] or "").strip()
+                tbl.setItem(r, 2, QTableWidgetItem(g or "· Chưa phân nhóm"))
+
+        def refill():
+            fill_groups()
+            fill_channels()
+
+        refill()
+
+        # ---- KHU NHÓM: thêm / sửa / xoá ----
+        def add_group():
+            name, ok = QInputDialog.getText(
+                dlg, "Thêm nhóm", "Tên nhóm mới (vd: Mỹ, Nhật, Hàn...):")
+            name = (name or "").strip()
+            if not ok or not name:
+                return
+            if name in self._all_group_names():
+                QMessageBox.information(dlg, "Đã có", f"Nhóm “{name}” đã tồn tại.")
+                return
+            # nhóm RỖNG -> lưu QSettings (chưa có kênh nào)
+            self._save_extra_groups(self._extra_groups() + [name])
+            fill_groups(name)
+
+        def rename_group():
+            it = glist.currentItem()
+            if it is None:
+                QMessageBox.information(dlg, "Chưa chọn", "Chọn 1 nhóm để sửa tên.")
+                return
+            old = it.text()
+            new, ok = QInputDialog.getText(
+                dlg, "Sửa tên nhóm", f"Tên mới cho nhóm “{old}”:", text=old)
+            new = (new or "").strip()
+            if not ok or not new or new == old:
+                return
+            if new in self._all_group_names():
+                if QMessageBox.question(
+                    dlg, "Gộp nhóm",
+                    f"Nhóm “{new}” đã tồn tại — GỘP mọi kênh của “{old}” vào "
+                    f"“{new}”?") != QMessageBox.StandardButton.Yes:
+                    return
+            err = services.rename_group(old, new)
+            if err:
+                QMessageBox.warning(dlg, "Không đổi được", err)
+                return
+            self._save_extra_groups(
+                [new if x == old else x for x in self._extra_groups()])
+            refill(); fill_groups(new)
+
+        def del_group():
+            it = glist.currentItem()
+            if it is None:
+                QMessageBox.information(dlg, "Chưa chọn", "Chọn 1 nhóm để xoá.")
+                return
+            g = it.text()
+            n = len(services.list_projects(g))
+            if n and QMessageBox.question(
+                dlg, "Xoá nhóm",
+                f"Nhóm “{g}” đang có {n} kênh. Xoá nhóm sẽ đưa {n} kênh về "
+                "'Chưa phân nhóm' (KHÔNG xoá kênh/video/clip nào). Tiếp tục?"
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            services.dissolve_group(g)
+            self._save_extra_groups([x for x in self._extra_groups() if x != g])
+            refill()
+
+        # ---- KHU KÊNH: chuyển hàng loạt / nháy đúp ----
+        def move_checked():
+            g = dest.currentData()
+            g = g if isinstance(g, str) else ""
+            ids = []
+            for r in range(tbl.rowCount()):
+                c = tbl.item(r, 0)
+                if c and c.checkState() == Qt.CheckState.Checked:
+                    ids.append(int(c.data(Qt.ItemDataRole.UserRole)))
+            if not ids:
+                QMessageBox.information(
+                    dlg, "Chưa chọn kênh", "Tích ô các kênh cần chuyển trước.")
+                return
+            for pid in ids:
+                services.set_project_group(pid, g)
+            refill()
+
+        def dbl(row, _col):
+            it = tbl.item(row, 1)
+            if it is None:
+                return
+            pid = int(it.data(Qt.ItemDataRole.UserRole))
+            cur = services.project_group(pid)
+            items = ["(Chưa phân nhóm)"] + self._all_group_names()
+            cur_lbl = cur if cur else "(Chưa phân nhóm)"
+            idx = items.index(cur_lbl) if cur_lbl in items else 0
+            g, ok = QInputDialog.getItem(
+                dlg, "Chuyển nhóm",
+                "Nhóm (chọn có sẵn hoặc gõ tên MỚI):", items, idx, True)
+            if not ok:
+                return
+            g = (g or "").strip()
+            if g == "(Chưa phân nhóm)":
+                g = ""
+            if g == (cur or ""):
+                return
+            services.set_project_group(pid, g)
+            refill()
+
+        add_b.clicked.connect(add_group)
+        ren_b.clicked.connect(rename_group)
+        del_b.clicked.connect(del_group)
+        move_b.clicked.connect(move_checked)
+        refresh_b.clicked.connect(refill)
+        close_b.clicked.connect(dlg.accept)
+        tbl.cellDoubleClicked.connect(dbl)
+        return dlg
 
     def _select_project(self, pid) -> None:
         """Chọn kênh `pid` trong combo Kênh. Nếu kênh KHÔNG thuộc nhóm đang
