@@ -3496,26 +3496,47 @@ class StudioPage(QWidget):
 
     # ---- tạo clip ----
     def _track_auto(self, job_id, video_id):
-        """Nếu BẬT tự-động-xuất: ghi nhớ job phân tích này để xong thì tự xuất."""
+        """Nếu BẬT tự-động-xuất: ghi nhớ job phân tích này để xong thì tự xuất.
+        🔒 CHỐT MẪU: chụp lại MẪU ĐANG CHỌN lúc bấm (deepcopy) gắn với job —
+        phân tích xong dù user đã đổi sang mẫu khác, video này VẪN xuất bằng
+        đúng mẫu lúc bấm (không ăn nhầm mẫu mới)."""
         if job_id and self.auto_export_chk.isChecked():
             self._pending_export[job_id] = video_id
+            if not hasattr(self, "_auto_tpl"):
+                self._auto_tpl = {}
+            self._auto_tpl[job_id] = copy.deepcopy(self.layout_tpl)
 
     def _check_auto_export(self):
-        """Định kỳ: job phân tích nào XONG -> tự xuất hết clip của video đó."""
+        """Định kỳ: job phân tích nào XONG -> tự xuất hết clip của video đó
+        bằng ĐÚNG MẪU đã chốt lúc bấm (không phải mẫu hiện tại)."""
         if not self._pending_export:
             return
+        auto_tpl = getattr(self, "_auto_tpl", {})
         ready, total = 0, 0
         for jid in list(self._pending_export):
             st = services.job_state(jid)
             if st == "done":
                 vid = self._pending_export.pop(jid)
+                tpl_snap = auto_tpl.pop(jid, None)
                 try:
-                    total += self._export_video(vid)
+                    if tpl_snap is not None:
+                        # tạm dùng MẪU ĐÃ CHỐT của job này để build payload
+                        # (mọi self.layout_tpl.get trong _export_video/_render_png
+                        # /_pick_bgm... đọc snapshot); khôi phục mẫu hiện tại sau.
+                        saved = self.layout_tpl
+                        self.layout_tpl = tpl_snap
+                        try:
+                            total += self._export_video(vid)
+                        finally:
+                            self.layout_tpl = saved
+                    else:
+                        total += self._export_video(vid)
                     ready += 1
                 except Exception:  # noqa: BLE001
                     pass
             elif st in ("failed", "canceled", "skipped", ""):
                 self._pending_export.pop(jid, None)   # lỗi/mất -> thôi, không xuất
+                auto_tpl.pop(jid, None)
         if ready:
             self.status.setText(
                 f"Phân tích xong {ready} video — đang TỰ ĐỘNG xuất {total} clip "
