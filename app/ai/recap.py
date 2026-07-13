@@ -1233,6 +1233,9 @@ def _is_relevant(text: str, near: set) -> bool:
 #    guys / welcome back / みなさんこんにちは...) — dùng để SNAP mép clip
 #    (đường cắt thường m1) né intro; tách riêng khỏi CTA vì lời chào ĐẦU
 #    video không phải "kêu gọi" nhưng vẫn là rác mở clip.
+#  - _PROMO_PATTERNS + _is_promo_text: RÁC MỀM (sponsor/tự quảng bá/
+#    housekeeping) — m1._is_junk_sentence gộp CẢ BA loại; reup (_cta_ratio)
+#    vẫn chỉ đếm CTA như cũ.
 #  - _MIN_DENSITY: mật độ lời thoại tối thiểu (từ/giây) — đoạn màn hình chữ
 #    /nhạc không lời rất thưa lời -> loại (trừ khi là window duy nhất).
 # Regex chạy trên text đã _norm_for_copy (chữ thường, bỏ dấu câu, dấu
@@ -1331,6 +1334,73 @@ _GREETING_PATTERNS = [re.compile(p, re.UNICODE) for p in (
     r"hallo\s+(?:leute|zusammen)", r"willkommen\s+zur[uü]ck",
     r"всем\s+привет", r"привет\s+всем",
 )]
+# RÁC MỀM (promo/housekeeping) — KHÔNG phải CTA trực tiếp nhưng vẫn là đoạn
+# thừa với người xem clip: đọc quảng cáo sponsor (bắt CẤU TRÚC câu, KHÔNG
+# hardcode tên hãng), tự quảng bá kênh phụ/video trước, khoe mốc subscriber,
+# giveaway, cảm ơn patron, mid-roll "before we continue, make sure...".
+# Tách khỏi _CTA_PATTERNS để reup (_cta_ratio) giữ ngưỡng cũ; m1
+# (_is_junk_sentence) gộp CẢ BA loại (CTA + greeting + promo).
+# Nguyên tắc chống bắt oan Y HỆT trên: latin dùng \b + CỤM ("I sponsored my
+# friend's team" / "my patron saint" / "last video game" KHÔNG được dính);
+# CJK so chuỗi con nhưng chọn cụm ĐẶC THÙ kênh (前回の動画, 案件, 恰饭...).
+_PROMO_PATTERNS = [re.compile(p, re.UNICODE) for p in (
+    # --- EN: đọc quảng cáo sponsor / ad read ---
+    r"sponsored\s+by\b",
+    r"today\s?s\s+(?:video\s+)?sponsor",
+    r"(?:this|the)\s+(?:video|episode)\s+is\s+(?:brought|sponsored)",
+    r"for\s+sponsoring\b",
+    r"\bsponsors?\s+of\s+(?:this|today)\b",
+    r"\bad\s+break\b",
+    r"quick\s+word\s+from\s+(?:our|the)\s+sponsor",
+    # --- EN: mid-roll housekeeping ("before we continue, make sure...") ---
+    r"before\s+we\s+(?:continue|get\s+started|start|jump|dive)"
+    r"(?:\s+\w+){0,4}?\s+make\s+sure",
+    r"real\s+quick\s+before\b",
+    # --- EN: tự quảng bá / housekeeping kênh ---
+    r"(?:my|our)\s+second\s+channel", r"my\s+other\s+channel",
+    r"(?:my|our)\s+(?:last|previous)\s+video\b(?!\s*game)",
+    r"(?:in|from)\s+(?:the\s+|my\s+|our\s+)?(?:last|previous)\s+video\b(?!\s*game)",
+    r"previous\s+video\b(?!\s*game)",
+    r"if\s+you\s+missed\s+(?:the\s+|my\s+|our\s+)?(?:last|previous)\s+"
+    r"(?:video|episode|stream|one)",
+    r"in\s+case\s+you\s+missed\s+it",
+    r"(?:we|i|the\s+channel)\s+(?:just\s+)?(?:hit|reached|crossed)\s+"
+    r"(?:\S+\s+){0,3}?(?:subscribers|subs)\b",
+    r"\d+\s*(?:k|thousand|million)?\s*subscriber\s+special",
+    r"(?:subscriber|channel)\s+milestone",
+    r"road\s+to\s+(?:\S+\s+){0,2}?(?:subs|subscribers)",
+    r"giveaway\s+winners?\b", r"shout\s?outs?\s+to\b",
+    r"thank\s+you\s+to\s+(?:all\s+)?(?:my|our)\s+patrons",
+    r"(?:my|our)\s+patrons\b",
+    r"join\s+(?:my|our|the)\s+discord",
+    # --- VI ---
+    r"video\s+trước\b", r"kênh\s+phụ\b", r"nhà\s+tài\s+trợ",
+    # --- JA (CJK: so chuỗi con, cụm đặc thù kênh) ---
+    r"スポンサー", r"提供でお送り", r"案件",
+    r"プロモーション(?:を)?含", r"前回の動画",
+    r"別チャンネル", r"サブチャンネル",
+    r"登録者\s?\d+\s?万人", r"銀の盾", r"本編に入る前に",
+    # --- KO ---
+    r"스폰서", r"협찬", r"유료\s*광고", r"지난\s*영상",
+    r"구독자\s*\d+\s*만",
+    # --- ZH (giản + phồn) ---
+    r"赞助", r"贊助", r"恰饭", r"上[期个個]视频", r"上[期个個]影片",
+    r"粉丝破", r"粉絲破",
+    # --- ES ---
+    r"patrocinad", r"el\s+patrocinador", r"v[ií]deo\s+anterior",
+    r"segundo\s+canal", r"mi\s+otro\s+canal",
+    r"ganador(?:es)?\s+del\s+sorteo",
+    # --- FR ---
+    r"sponsoris[eé]", r"en\s+partenariat\s+avec",
+    r"vid[eé]o\s+pr[eé]c[eé]dente",
+    r"ma\s+(?:seconde|deuxi[eè]me)\s+cha[iî]ne",
+    # --- DE ---
+    r"gesponsert", r"enth[aä]lt\s+werbung", r"im\s+letzten\s+video",
+    r"zweiten?\s+kanal", r"mein\s+anderer\s+kanal",
+    # --- RU ---
+    r"\bспонсор", r"промокод", r"в\s+прошлом\s+видео",
+    r"второй\s+канал",
+)]
 _MIN_DENSITY = 1.2     # từ/giây trung bình tối thiểu của 1 window
 _CTA_MAX = 0.30        # >30% từ trong window là lời chào/kêu gọi -> loại
 
@@ -1348,6 +1418,16 @@ def _is_greeting_text(text: str) -> bool:
     intro (đường cắt thường m1). Hàm thuần."""
     t = _norm_for_copy(text)
     return bool(t) and any(p.search(t) for p in _GREETING_PATTERNS)
+
+
+def _is_promo_text(text: str) -> bool:
+    """Câu có phải RÁC MỀM (promo/housekeeping) không: đọc quảng cáo sponsor,
+    tự quảng bá kênh phụ/video trước, khoe mốc subscriber, giveaway, cảm ơn
+    patron, mid-roll "before we continue make sure..." — đa ngôn ngữ
+    EN/VI/JA/KO/ZH/ES/FR/DE/RU. Dùng cho _is_junk_sentence bên m1 (gộp cả
+    CTA + greeting + promo). Hàm thuần."""
+    t = _norm_for_copy(text)
+    return bool(t) and any(p.search(t) for p in _PROMO_PATTERNS)
 
 
 def _win_density(sentences: list, start: float, end: float) -> float:

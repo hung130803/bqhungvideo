@@ -399,6 +399,11 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         "ありがとう\", \"đăng ký kênh\"...). KHÔNG lấy các câu đó vào clip, càng "
         "KHÔNG đặt chúng ở ĐẦU hoặc CUỐI clip — clip phải mở bằng nội dung "
         "chuyện thật và kết ở câu chốt chuyện; hệ thống sẽ tự cắt bỏ đoạn rác.\n"
+        "- CŨNG TRÁNH RÁC MỀM: đoạn đọc quảng cáo sponsor (\"this video is "
+        "sponsored by...\", \"案件\"), khoe mốc subscriber/milestone, nhắc "
+        "video trước/kênh phụ, giveaway, cảm ơn patron, mid-roll \"before we "
+        "continue, make sure...\", nói lan man không có nội dung — đều là "
+        "rác, KHÔNG lấy vào clip.\n"
         "- Mỗi clip là MỘT câu chuyện/cao trào TRỌN VẸN: lấy đủ phần dẫn dắt + cao "
         "trào + chốt, KHÔNG cắt cụt giữa chừng.\n"
         + len_rule +
@@ -477,23 +482,27 @@ def _clip_sentences(segments: list, segs: list) -> list:
 
 # ------------------------------------------------------------------
 # 🚮 NÉ RÁC KÊNH cho đường CẮT THƯỜNG (m1): intro chào kênh / trailer /
-# outro kêu subscribe / sponsor. Dùng CHUNG pattern đa ngôn ngữ với recap
-# (_is_cta_text + _is_greeting_text). NGUYÊN TẮC FAIL-SAFE: mọi lọc chỉ
-# chạy khi vẫn còn clip hợp lệ; clip duy nhất / video toàn CTA -> giữ như
-# cũ (không phá pipeline đang chạy).
+# outro kêu subscribe / sponsor / RÁC MỀM (đọc quảng cáo sponsor, khoe mốc
+# subscriber, nhắc video trước, giveaway, cảm ơn patron). Dùng CHUNG pattern
+# đa ngôn ngữ với recap (_is_cta_text + _is_greeting_text + _is_promo_text).
+# NGUYÊN TẮC FAIL-SAFE: mọi lọc chỉ chạy khi vẫn còn clip hợp lệ; clip duy
+# nhất / video toàn CTA -> giữ như cũ (không phá pipeline đang chạy).
 # ------------------------------------------------------------------
 _EDGE_TRIM_MAX_SENT = 3     # tối đa số câu rác được snap bỏ ở MỖI mép clip
 
 
 def _is_junk_sentence(text: str) -> bool:
-    """Câu là RÁC KÊNH: kêu gọi subscribe/like/sponsor (CTA) hoặc lời chào
-    mở kênh (greeting) — đa ngôn ngữ. Hàm thuần."""
-    return _recap._is_cta_text(text) or _recap._is_greeting_text(text)
+    """Câu là RÁC KÊNH: kêu gọi subscribe/like/sponsor (CTA), lời chào mở
+    kênh (greeting), hoặc RÁC MỀM promo/housekeeping (đọc quảng cáo sponsor,
+    khoe mốc subscriber, nhắc video trước/kênh phụ, giveaway, cảm ơn patron)
+    — đa ngôn ngữ. Hàm thuần."""
+    return (_recap._is_cta_text(text) or _recap._is_greeting_text(text)
+            or _recap._is_promo_text(text))
 
 
 def _junk_ratio(segments: list, segs: list) -> float:
-    """Tỉ lệ (0..1) số TỪ thuộc câu CTA/chào kênh trong các câu transcript
-    giao với `segments` của clip (CJK-aware). Hàm thuần."""
+    """Tỉ lệ (0..1) số TỪ thuộc câu CTA/chào kênh/promo trong các câu
+    transcript giao với `segments` của clip (CJK-aware). Hàm thuần."""
     tot = junk = 0
     for _st, _en, t in _clip_sentences(segments, segs):
         if not t:
@@ -574,7 +583,8 @@ def _refine_clip(clip: dict, segs: list, duration: float, boundaries=None,
         "ĐƯỢC giữ khoảng lặng nếu nó tạo kịch tính/hồi hộp.\n"
         "- BỎ: câu lan man, lặp lại, dài dòng, lạc đề, mở đầu/kết thúc thừa; "
         "lời chào kênh/kêu gọi subscribe/like/link mô tả/sponsor (mọi ngôn "
-        "ngữ) — nhất là khi nó nằm ở đầu/cuối clip.\n"
+        "ngữ); đoạn đọc quảng cáo sponsor, khoe mốc subscriber, nhắc video "
+        "trước, giveaway, cảm ơn patron — nhất là khi nó nằm ở đầu/cuối clip.\n"
         "- CHỈ bỏ câu THẬT SỰ thừa — GIỮ độ dài gần như hiện tại, ĐỪNG cắt "
         "ngắn clip đi nhiều (không rút xuống dưới ~85% độ dài đang có).\n"
         '- Cắt vào ranh giới câu trọn vẹn.\n'
@@ -1028,6 +1038,29 @@ def _clip_digest(clips: list, segs: list, vdigest: list = None) -> str:
     return "\n".join(lines)
 
 
+def _parse_unusable(data, n: int) -> set:
+    """Đọc trường 'usable' từ JSON critic -> tập index KHÔNG đáng đăng
+    (usable=false). FAIL-SAFE: dạng lạ / index sai -> bỏ qua; TẤT CẢ clip
+    đều false -> trả set rỗng (giữ như cũ, đừng trắng tay). Hàm thuần."""
+    raw = data.get("usable") if isinstance(data, dict) else None
+    if not isinstance(raw, dict):
+        return set()
+    bad: set = set()
+    for k, v in raw.items():
+        try:
+            idx = int(k)
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= idx < n):
+            continue
+        if v is False or (isinstance(v, str)
+                          and v.strip().lower() in ("false", "no", "0")):
+            bad.add(idx)
+    if len(bad) >= n:                  # tất cả false -> fail-safe giữ như cũ
+        return set()
+    return bad
+
+
 def _refine_clip_selection(clips: list, transcript: dict, language: str,
                            want_n: int, min_len: float, max_len: float,
                            vdigest: list = None) -> list:
@@ -1055,9 +1088,14 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
             "- KHÔNG dính RÁC KÊNH: intro chào kênh/trailer mở đầu, kêu gọi "
             "subscribe/like/link mô tả/sponsor, lời tạm biệt cuối video — "
             "clip mở đầu hay kết thúc bằng mấy đoạn đó phải xếp KÉM/drop.\n"
+            "- KHÔNG dính RÁC MỀM: đoạn đọc quảng cáo sponsor, khoe mốc "
+            "subscriber, nhắc video trước, giveaway, cảm ơn patron, nói lan "
+            "man không có nội dung — clip dính mấy đoạn đó đánh usable=false.\n"
             "- 2 clip KHÔNG trùng nội dung (tránh nhàm + ăn bản quyền).\n"
             f"Chọn tối đa {target_n} clip TỐT NHẤT. Trả DUY NHẤT 1 JSON: "
             '{"keep":[index theo thứ tự TỐT->kém], "drop":[index yếu/trùng], '
+            '"usable":{"index":true/false — clip có ĐÁNG ĐĂNG không (false '
+            'nếu dính quảng cáo/rác/lan man không dùng được)}, '
             '"reason":{"index":"lý do ngắn"}}')
         data = llm.complete_json(prompt, system=_REFINE_SEL_SYSTEM)
         keep_raw = None
@@ -1078,19 +1116,47 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
                 order.append(idx)
         if not order:
             return clips               # keep rỗng/không hợp lệ -> giữ nguyên
+        # 🚮 usable=false (clip dính quảng cáo/rác/lan man) -> DROP khi còn
+        # clip khác thay; tất cả false / drop hết -> giữ order như cũ.
+        unusable = _parse_unusable(data, len(clips))
+        if unusable:
+            filt = [i for i in order if i not in unusable]
+            if filt:                   # còn clip thay thế -> mới dám drop
+                order = filt
         picked = [clips[i] for i in order]
         if auto:
             return picked              # AI tự quyết số clip -> không bù/không cắt
-        # BÙ đủ want_n từ gốc (thứ tự cũ) nếu AI chọn thiếu
+        # BÙ đủ want_n từ gốc (thứ tự cũ) nếu AI chọn thiếu — ưu tiên clip
+        # KHÔNG bị đánh usable=false; vẫn thiếu mới đụng tới clip unusable.
         if len(picked) < target_n:
-            for i, c in enumerate(clips):
-                if i not in seen:
+            for skip_bad in (True, False):
+                for i, c in enumerate(clips):
+                    if i in seen or (skip_bad and i in unusable):
+                        continue
+                    if not skip_bad and i not in unusable:
+                        continue       # vòng 2 chỉ bù clip unusable còn lại
                     picked.append(c)
+                    seen.add(i)
                     if len(picked) >= target_n:
                         break
+                if len(picked) >= target_n:
+                    break
         return picked[:target_n]
     except Exception:  # noqa: BLE001 - bất kỳ lỗi nào -> fail-safe giữ nguyên
         return clips
+
+
+def _apply_quality_floor(clips: list, floor: float) -> tuple[list, int]:
+    """SÀN CHẤT LƯỢNG: bỏ clip score < floor — "mọi đoạn thừa phải bỏ, CHỈ
+    lấy đoạn hay dùng được". FAIL-SAFE: <2 clip hoặc floor<=0 -> giữ nguyên;
+    tất cả dưới sàn -> vẫn GIỮ 1 clip điểm cao nhất (đừng trắng tay).
+    Trả (clips_giữ, số_clip_bị_bỏ). Hàm thuần — unit test được."""
+    if not clips or len(clips) < 2 or not floor or floor <= 0:
+        return clips, 0
+    kept = [c for c in clips if float(c.get("score", 0)) >= floor]
+    if not kept:
+        kept = [max(clips, key=lambda c: float(c.get("score", 0)))]
+    return kept, len(clips) - len(kept)
 
 
 def _digest_rescore(clips: list, vdigest: list) -> list:
@@ -1379,6 +1445,18 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
                 ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
+        # 🚪 SÀN CHẤT LƯỢNG (QUALITY_FLOOR, mặc định 55; 0=tắt): sau chọn +
+        # chấm (điểm đã trộn vision nếu có), bỏ clip điểm thấp — chỉ giữ
+        # đoạn đáng dùng. Fail-safe trong helper: luôn giữ >=1 clip cao nhất.
+        _floor = 0.0
+        try:
+            _floor = float(getattr(_st, "QUALITY_FLOOR", 55) or 0)
+        except (TypeError, ValueError):
+            _floor = 55.0
+        ai_clips, _n_low = _apply_quality_floor(ai_clips, _floor)
+        if _n_low:
+            ctx.progress(0.62, f"bỏ {_n_low} clip điểm thấp (<{int(_floor)}) "
+                               "— chỉ giữ đoạn đáng dùng")
         # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: loại clip trùng >30% với đoạn đã dùng
         # ở lần trước. Dùng span [đầu..cuối] của clip (clip đã nới dài). Hết
         # sạch (video đã dùng gần hết) -> giữ clip ít trùng nhất + log.

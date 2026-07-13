@@ -74,6 +74,16 @@ def _env_bool(key: str, default: bool = False) -> bool:
     return v in ("1", "true", "yes", "on")
 
 
+def _env_int(key: str, default: int = 0) -> int:
+    """Đọc số nguyên từ .env. Rỗng/không phải số -> `default` (không sập app
+    vì user gõ nhầm chữ vào .env)."""
+    v = _env(key, "")
+    try:
+        return int(float(v)) if v else default
+    except ValueError:
+        return default
+
+
 class Settings:
     """Đọc cấu hình từ .env. Giá trị rỗng = để resource manager tự quyết."""
 
@@ -145,6 +155,10 @@ class Settings:
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
     AI_MULTIPASS = _env_bool("AI_MULTIPASS", True)
+    # SÀN CHẤT LƯỢNG clip AI cắt (0-100): sau khi AI chọn + chấm điểm, clip
+    # có score DƯỚI sàn bị BỎ — "chỉ giữ đoạn đáng dùng". Luôn giữ ít nhất
+    # 1 clip điểm cao nhất (không bao giờ trắng tay). Đặt 0 để tắt.
+    QUALITY_FLOOR = _env_int("QUALITY_FLOOR", 55)
     # CHẤT LƯỢNG kịch bản AI reup (đánh đổi CHẤT LƯỢNG vs TOKEN/ngày Groq):
     #   "save"    = luôn 1-pass (ít token nhất, nhanh nhất)
     #   "balance" = nhiều-pass cho video NGẮN, 1-pass cho video DÀI (mặc định)
