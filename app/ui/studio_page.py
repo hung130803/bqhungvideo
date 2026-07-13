@@ -151,9 +151,14 @@ class StudioPage(QWidget):
         self.grp = QComboBox(); self.grp.setMinimumWidth(110)
         self.grp.setToolTip("Lọc kênh theo NHÓM (quốc gia, chủ đề...).\n"
                             "'Tất cả' = hiện mọi kênh (kể cả chưa phân nhóm).\n"
-                            "'＋ Nhóm mới...' tạo nhóm và gán kênh đang chọn vào.")
+                            "'＋ Nhóm mới...' tạo NHÓM RỖNG (không đụng kênh "
+                            "nào) — tạo bao nhiêu nhóm cũng được.\n"
+                            "Đưa kênh vào nhóm: nút ✏ hoặc chuột phải kênh → "
+                            "'Chuyển nhóm...'. Chuột phải Ô NÀY để xoá nhóm rỗng.")
         self._reload_groups(self._settings.value("chan_group", "") or "")
         self.grp.currentIndexChanged.connect(self._on_grp)
+        self.grp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grp.customContextMenuRequested.connect(self._grp_menu)
         srcrow.addWidget(self.grp)
         srcrow.addWidget(self._tag("Kênh"))
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
@@ -553,14 +558,30 @@ class StudioPage(QWidget):
         d = g.currentData()
         return d if isinstance(d, str) and d != _NEW_GRP else ""
 
+    def _extra_groups(self) -> list:
+        """Nhóm user TỰ TẠO còn RỖNG (chưa có kênh) — lưu QSettings để không
+        biến mất khi nạp lại (nhóm có kênh thì tự có mặt qua DB)."""
+        import json
+        try:
+            v = json.loads(self._settings.value("chan_groups_extra", "") or "[]")
+            return [str(x) for x in v if str(x).strip()]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _save_extra_groups(self, lst) -> None:
+        import json
+        self._settings.setValue(
+            "chan_groups_extra", json.dumps(sorted(set(lst)), ensure_ascii=False))
+
     def _reload_groups(self, select: str = ""):
-        """Nạp combo Nhóm: 'Tất cả'('') + nhóm distinct + '＋ Nhóm mới...'.
-        `select` = nhóm muốn chọn lại ('' hoặc không còn tồn tại -> Tất cả).
+        """Nạp combo Nhóm: 'Tất cả'('') + nhóm (DB ∪ nhóm rỗng đã tạo) +
+        '＋ Nhóm mới...'. `select` = nhóm muốn chọn lại ('' -> Tất cả).
         Ghi QSettings để mở app lại giữ nguyên nhóm đang lọc."""
         self.grp.blockSignals(True)
         self.grp.clear()
         self.grp.addItem("Tất cả", "")
-        for g in services.list_groups():
+        names = sorted(set(services.list_groups()) | set(self._extra_groups()))
+        for g in names:
             self.grp.addItem(g, g)
         self.grp.addItem("＋ Nhóm mới...", _NEW_GRP)
         i = self.grp.findData(select) if select else 0
@@ -579,22 +600,43 @@ class StudioPage(QWidget):
             name = (name or "").strip()
             if not ok or not name:
                 return
-            pid = self.proj.currentData()
-            if pid is not None:      # gán kênh ĐANG CHỌN vào nhóm mới
-                services.set_project_group(int(pid), name)
+            # TẠO NHÓM RỖNG — KHÔNG tự chuyển kênh nào vào (trước đây bốc kênh
+            # đang chọn ném vào nhóm mới -> nhóm cũ hết kênh biến mất, tưởng
+            # 'chỉ tạo được 1 nhóm'). Muốn đưa kênh vào: ✏ hoặc 'Chuyển nhóm'.
+            self._save_extra_groups(self._extra_groups() + [name])
             self._reload_groups(name)
-            if self.grp.findData(name) <= 0:
-                # nhóm TRỐNG (chưa có kênh nào) -> thêm tạm vào combo; '+ Kênh'
-                # lúc này sẽ tạo kênh vào nhóm (nhóm rỗng biến mất khi nạp lại)
-                self.grp.blockSignals(True)
-                self.grp.insertItem(self.grp.count() - 1, name, name)
-                self.grp.setCurrentIndex(self.grp.findData(name))
-                self.grp.blockSignals(False)
-                self._settings.setValue("chan_group", name)
             self._reload_projects()
+            self.status.setText(
+                f"Đã tạo nhóm “{name}” — bấm + Kênh để thêm kênh mới, hoặc "
+                "chuột phải kênh cũ → 'Chuyển nhóm...' để đưa vào nhóm này.")
             return
         self._settings.setValue("chan_group", self._cur_group())
         self._reload_projects()
+
+    def _grp_menu(self, pos):
+        from PyQt6.QtWidgets import QMenu
+        m = QMenu(self)
+        act = m.addAction("🗑 Xoá nhóm đang chọn (nếu rỗng)")
+        act.setEnabled(bool(self._cur_group()))
+        act.triggered.connect(lambda: self._del_group())
+        m.exec(self.grp.mapToGlobal(pos))
+
+    def _del_group(self):
+        """Chuột phải ô Nhóm: xoá nhóm ĐANG CHỌN nếu nhóm RỖNG (không có
+        kênh). Nhóm có kênh -> báo (chuyển kênh đi trước)."""
+        g = self._cur_group()
+        if not g:
+            return
+        if services.list_projects(g):
+            QMessageBox.information(
+                self, "Nhóm còn kênh",
+                f"Nhóm “{g}” vẫn còn kênh — chuyển các kênh sang nhóm khác "
+                "(chuột phải kênh → Chuyển nhóm) rồi mới xoá được.")
+            return
+        self._save_extra_groups([x for x in self._extra_groups() if x != g])
+        self._reload_groups("")
+        self._reload_projects()
+        self.status.setText(f"Đã xoá nhóm rỗng “{g}”.")
 
     def _select_project(self, pid) -> None:
         """Chọn kênh `pid` trong combo Kênh. Nếu kênh KHÔNG thuộc nhóm đang
