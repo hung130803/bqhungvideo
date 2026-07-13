@@ -31,8 +31,10 @@ from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
 
-# userData ĐẶC BIỆT của dòng cuối combo Nhóm ("＋ Nhóm mới...") — không phải nhóm
+# userData ĐẶC BIỆT các dòng LỆNH trong combo Nhóm (không phải tên nhóm thật)
 _NEW_GRP = "__new_group__"
+_EDIT_GRP = "__edit_group__"
+_DEL_GRP = "__del_group__"
 
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
 # ngay dưới. Vào "Chỉnh mẫu" để đổi vị trí/cỡ/màu; app tự điền khi xuất từng clip.
@@ -550,13 +552,15 @@ class StudioPage(QWidget):
         dlg.exec()
 
     # ---- NHÓM kênh (lọc combo Kênh theo projects.grp) ----
+    _GRP_CMDS = (_NEW_GRP, _EDIT_GRP, _DEL_GRP)
+
     def _cur_group(self) -> str:
-        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả)."""
+        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả). Dòng LỆNH -> ''."""
         g = getattr(self, "grp", None)
         if g is None:
             return ""
         d = g.currentData()
-        return d if isinstance(d, str) and d != _NEW_GRP else ""
+        return d if isinstance(d, str) and d not in self._GRP_CMDS else ""
 
     def _extra_groups(self) -> list:
         """Nhóm user TỰ TẠO còn RỖNG (chưa có kênh) — lưu QSettings để không
@@ -583,7 +587,12 @@ class StudioPage(QWidget):
         names = sorted(set(services.list_groups()) | set(self._extra_groups()))
         for g in names:
             self.grp.addItem(g, g)
+        self.grp.insertSeparator(self.grp.count())
         self.grp.addItem("＋ Nhóm mới...", _NEW_GRP)
+        # 2 dòng LỆNH quản lý nhóm ĐANG CHỌN — hiện thẳng trong danh sách xổ
+        # xuống cho dễ thấy (chỉ có tác dụng khi đang chọn 1 nhóm cụ thể).
+        self.grp.addItem("✏ Sửa tên nhóm đang chọn...", _EDIT_GRP)
+        self.grp.addItem("🗑 Xoá nhóm đang chọn...", _DEL_GRP)
         i = self.grp.findData(select) if select else 0
         self.grp.setCurrentIndex(i if i > 0 else 0)
         self.grp.blockSignals(False)
@@ -591,6 +600,20 @@ class StudioPage(QWidget):
 
     def _on_grp(self, _i):
         d = self.grp.currentData()
+        if d in (_EDIT_GRP, _DEL_GRP):
+            # trả combo về nhóm đang chọn trước đó rồi thao tác trên nhóm đó
+            prev = self._settings.value("chan_group", "") or ""
+            self._reload_groups(prev)
+            if not prev:
+                self.status.setText(
+                    "Hãy chọn 1 NHÓM cụ thể (không phải 'Tất cả') rồi mới "
+                    "Sửa tên / Xoá nhóm.")
+                return
+            if d == _EDIT_GRP:
+                self._rename_group()
+            else:
+                self._del_group()
+            return
         if d == _NEW_GRP:
             # trả combo về nhóm cũ TRƯỚC (không để combo đứng ở dòng lệnh)
             prev = self._settings.value("chan_group", "") or ""
