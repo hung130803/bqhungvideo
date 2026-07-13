@@ -143,13 +143,17 @@ class StudioPage(QWidget):
         # ===== Hàng 1: chọn NHÓM + KÊNH + VIDEO =====
         srcrow = QHBoxLayout(); srcrow.setSpacing(8)
         # combo NHÓM kênh (user reup hàng chục kênh nhiều quốc gia -> lọc
-        # combo Kênh theo nhóm cho đỡ dài). 'Tất cả' = hành vi cũ (mọi kênh).
+        # combo Kênh theo nhóm cho đỡ dài). Kênh chưa nhóm ở 'Chưa phân nhóm'.
         srcrow.addWidget(self._tag("Nhóm"))
         self.grp = QComboBox(); self.grp.setMinimumWidth(110)
         self.grp.setToolTip("Lọc kênh theo NHÓM (quốc gia, chủ đề...).\n"
-                            "'Tất cả' = hiện mọi kênh (kể cả chưa phân nhóm).\n"
+                            "Kênh chưa gán nhóm hiện ở mục 'Chưa phân nhóm'.\n"
                             "Tạo / sửa / xoá nhóm và chuyển KÊNH sang nhóm khác "
                             "(hàng loạt): bấm nút ⚙ Quản lý nhóm bên cạnh.")
+        # DỒN kênh chưa nhóm vào 'Mỹ' 1 LẦN (bỏ 'Tất cả' -> mọi kênh phải nằm
+        # trong 1 nhóm; các dự án làm dở grp='' gom về 'Mỹ'). Chạy TRƯỚC
+        # _reload_groups để combo nạp ngay danh sách đúng.
+        self._migrate_default_group()
         self._reload_groups(self._settings.value("chan_group", "") or "")
         self.grp.currentIndexChanged.connect(self._on_grp)
         self.grp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -551,8 +555,32 @@ class StudioPage(QWidget):
         dlg.exec()
 
     # ---- NHÓM kênh (lọc combo Kênh theo projects.grp) ----
+    def _migrate_default_group(self) -> None:
+        """MIGRATION 1 LẦN (guard QSettings 'grp_default_done'): mọi kênh đang
+        grp='' (dự án làm dở, chưa phân nhóm) -> gom vào nhóm 'Mỹ' + thêm 'Mỹ'
+        vào nhóm rỗng đã lưu. Đặt cờ để KHÔNG chạy lại — nếu về sau user cố ý
+        gỡ 1 kênh khỏi nhóm (grp='') thì nó ở lại 'Chưa phân nhóm', không bị
+        kéo về 'Mỹ' nữa. DB TRỐNG (chưa kênh nào) vẫn set cờ + thêm 'Mỹ' để
+        khi tạo kênh đầu có nhóm sẵn."""
+        try:
+            done = str(self._settings.value("grp_default_done", "")).strip()
+        except Exception:  # noqa: BLE001
+            done = ""
+        if done in ("1", "true", "True", "yes"):
+            return
+        try:
+            rows = db.query("SELECT id FROM projects WHERE grp='' OR grp IS NULL")
+            for r in rows:
+                services.set_project_group(int(r["id"]), "Mỹ")
+            # 'Mỹ' luôn có mặt trong combo kể cả khi DB trống (nhóm rỗng đã tạo)
+            self._save_extra_groups(self._extra_groups() + ["Mỹ"])
+        except Exception:  # noqa: BLE001 - DB lỗi hiếm -> đừng chặn mở app
+            return
+        self._settings.setValue("grp_default_done", "1")
+
     def _cur_group(self) -> str:
-        """Nhóm đang lọc ở combo Nhóm ('' = Tất cả)."""
+        """Nhóm đang chọn ở combo Nhóm. Item 'Chưa phân nhóm' mang data=''
+        -> trả '' (list_projects('') = kênh chưa nhóm). Không còn 'Tất cả'."""
         g = getattr(self, "grp", None)
         if g is None:
             return ""
@@ -575,19 +603,26 @@ class StudioPage(QWidget):
             "chan_groups_extra", json.dumps(sorted(set(lst)), ensure_ascii=False))
 
     def _reload_groups(self, select: str = ""):
-        """Nạp combo Nhóm CHỈ ĐỂ LỌC: 'Tất cả'('') + nhóm (DB ∪ nhóm rỗng đã
-        tạo). KHÔNG còn dòng lệnh (＋/✏/🗑) — mọi thao tác quản lý nhóm chuyển
-        sang dialog '⚙ Quản lý nhóm'. `select` = nhóm muốn chọn lại; nếu nhóm
-        đó còn tồn tại thì GIỮ (không ép về Tất cả). Ghi QSettings để mở app
-        lại vào đúng nhóm cũ."""
+        """Nạp combo Nhóm CHỈ ĐỂ LỌC — KHÔNG còn 'Tất cả' (thừa) và KHÔNG dòng
+        lệnh (＋/✏/🗑, đã chuyển sang dialog '⚙ Quản lý nhóm'). Danh sách =
+        các nhóm (DB ∪ nhóm rỗng đã tạo), sort a-z.
+        CHỐNG TÀNG HÌNH: nếu CÒN kênh grp='' (vd user vừa dissolve 1 nhóm) ->
+        chèn item 'Chưa phân nhóm' (data='') ở ĐẦU để kênh đó vẫn thấy được;
+        hết kênh '' thì KHÔNG hiện item này.
+        CHỌN MẶC ĐỊNH: `select` nếu CÒN tồn tại; không thì item ĐẦU tiên (không
+        còn 'Tất cả' để rơi về). Ghi QSettings để mở app lại vào đúng nhóm."""
         self.grp.blockSignals(True)
         self.grp.clear()
-        self.grp.addItem("Tất cả", "")
+        has_ungrouped = bool(services.list_projects(""))
+        if has_ungrouped:
+            self.grp.addItem("Chưa phân nhóm", "")
         names = sorted(set(services.list_groups()) | set(self._extra_groups()))
         for g in names:
             self.grp.addItem(g, g)
-        i = self.grp.findData(select) if select else 0
-        self.grp.setCurrentIndex(i if i > 0 else 0)
+        # select='' chỉ khớp item 'Chưa phân nhóm' (nếu có); nhóm tên khớp theo
+        # data. Không tìm thấy -> item đầu tiên (index 0).
+        i = self.grp.findData(select)
+        self.grp.setCurrentIndex(i if i >= 0 else 0)
         self.grp.blockSignals(False)
         self._settings.setValue("chan_group", self._cur_group())
 
@@ -639,7 +674,8 @@ class StudioPage(QWidget):
 
     def _del_group(self):
         """Xoá nhóm ĐANG CHỌN theo ý muốn: kênh trong nhóm KHÔNG mất — chỉ về
-        'Chưa phân nhóm' (hiện ở 'Tất cả'). Hỏi xác nhận nếu nhóm còn kênh."""
+        'Chưa phân nhóm' (item cùng tên xuất hiện ở đầu combo). Hỏi xác nhận
+        nếu nhóm còn kênh."""
         g = self._cur_group()
         if not g:
             return
@@ -3315,7 +3351,7 @@ class StudioPage(QWidget):
         if g == cur:
             return
         services.set_project_group(int(pid), g)
-        # ĐI THEO kênh sang nhóm mới ('' -> Tất cả) — kênh đang chọn phải
+        # ĐI THEO kênh sang nhóm mới ('' -> 'Chưa phân nhóm') — kênh đang chọn phải
         # luôn hiện được trong combo, không để trống/lệch
         self._reload_groups(g)
         self._reload_projects()
@@ -3606,12 +3642,18 @@ class StudioPage(QWidget):
         preset["recap_emotion"] = str(
             self._settings.value("recap_emotion", True)).strip().lower() \
             not in ("false", "0", "no", "off")
-        services.enqueue_auto_recap(self.state.pool, self.state.video_id,
-                                    self.state.project_id, preset)
+        jid = services.enqueue_auto_recap(self.state.pool, self.state.video_id,
+                                          self.state.project_id, preset)
+        # BẬT "Phân tích xong tự động xuất" -> reup xong TỰ xuất luôn (clip
+        # recap mang signals.recap -> _export_video xuất bình thường). Trước
+        # đây nhánh reup KHÔNG track nên bật ô mà reup vẫn không tự xuất.
+        if jid:
+            self._track_auto(jid, self.state.video_id)
+        extra = " → xong TỰ xuất" if self.auto_export_chk.isChecked() else ""
         self.status.setText(
             "🎙 Đang phân tích & viết kịch bản thuyết minh "
-            f"({self.recap_style.currentText()})... clip sẽ hiện trong danh "
-            "sách khi xong (xem tiến trình dưới).")
+            f"({self.recap_style.currentText()}){extra}... clip sẽ hiện trong "
+            "danh sách khi xong (xem tiến trình dưới).")
 
     def _auto_all(self):
         """Đưa MỌI video chưa có clip trong kênh vào hàng đợi (chạy song song)."""
