@@ -219,16 +219,41 @@ def _classify_nvenc_error(log: str) -> str:
     return ""
 
 
+_DRIVER_VER_CACHE: str | None = None
+
+
+def _gpu_driver_version() -> str:
+    """Phiên bản driver NVIDIA (vd '610.62') qua nvidia-smi; '' nếu không có
+    GPU/nvidia-smi. Cache theo tiến trình (gọi 1 lần lúc mở app)."""
+    global _DRIVER_VER_CACHE
+    if _DRIVER_VER_CACHE is not None:
+        return _DRIVER_VER_CACHE
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version",
+             "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=(0x0800_0000 if os.name == "nt" else 0))
+        _DRIVER_VER_CACHE = (r.stdout or "").strip().splitlines()[0].strip() \
+            if r.returncode == 0 and (r.stdout or "").strip() else ""
+    except Exception:  # noqa: BLE001 - không có nvidia-smi/treo -> coi như ''
+        _DRIVER_VER_CACHE = ""
+    return _DRIVER_VER_CACHE
+
+
 def _nvenc_cache_key() -> str:
-    """Nhận diện binary ffmpeg đang dùng: đường dẫn + mtime + size — đổi
-    ffmpeg (cập nhật app/driver kèm binary mới) là test lại NVENC."""
+    """Nhận diện MÔI TRƯỜNG encode: binary ffmpeg (path+mtime+size) + PHIÊN
+    BẢN DRIVER NVIDIA. User cập nhật driver (ffmpeg không đổi) -> key đổi ->
+    test lại NVENC NGAY, không phải chờ hết hạn cache 7 ngày (lỗi thật: user
+    lên driver 610 nhưng app vẫn nhớ 'NVENC hỏng' từ thời driver 560)."""
     import shutil
     p = shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
+    drv = _gpu_driver_version()
     try:
         st = os.stat(p)
-        return f"{p}|{int(st.st_mtime)}|{st.st_size}"
+        return f"{p}|{int(st.st_mtime)}|{st.st_size}|drv={drv}"
     except OSError:
-        return str(p)
+        return f"{p}|drv={drv}"
 
 
 def _nvenc_works_cached() -> bool:
@@ -278,7 +303,10 @@ def _nvenc_works() -> tuple[bool, str]:
     được thật; note = lý do dễ hiểu khi KHÔNG chạy được (driver cũ...)."""
     cmd = [
         settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error",
-        "-f", "lavfi", "-i", "testsrc=size=128x128:rate=1",
+        # 256x256: NVENC có KÍCH THƯỚC TỐI THIỂU (~145px tùy đời card/driver)
+        # — 128x128 từng FAIL OAN "Frame Dimension less than minimum" trên
+        # driver 610 + RTX 3060 dù NVENC hoàn toàn khỏe ở cỡ thật.
+        "-f", "lavfi", "-i", "testsrc=size=256x256:rate=1",
         # testsrc mặc định rgb24 -> vài bản ffmpeg từ chối đưa thẳng vào NVENC;
         # ép yuv420p để test không FAIL OAN (false negative) vì pixel format.
         "-frames:v", "1", "-pix_fmt", "yuv420p",
