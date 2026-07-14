@@ -1769,12 +1769,21 @@ class StudioPage(QWidget):
             return False
         return dlg._t["apply"]()
 
+    def _last_vid_key(self, pid) -> str:
+        return f"last_vid_{int(pid)}"
+
     def _on_proj(self, _i):
         pid = self.proj.currentData()
         if pid is None:
             return
         self.state.set_project(int(pid))
-        self._reload_videos()
+        # NHẢY tới VIDEO THAO TÁC GẦN NHẤT của kênh này (nhớ ở QSettings), thay
+        # vì luôn về video đầu — kênh nào cũng mở đúng chỗ đang làm dở.
+        try:
+            last = int(self._settings.value(self._last_vid_key(pid), 0) or 0)
+        except (TypeError, ValueError):
+            last = 0
+        self._reload_videos(select_id=last or None)
         self._refresh_chan_label()      # nhãn hoạt động đổi NGAY theo kênh mới
 
     # ---- hoạt động theo KÊNH (nhãn + đuôi combo + bảng tình hình) ----
@@ -3309,6 +3318,10 @@ class StudioPage(QWidget):
         vid = self.vid.currentData()
         if vid is not None:
             self.state.set_video(int(vid))
+            # NHỚ video đang chọn theo KÊNH -> lần sau quay lại kênh mở đúng đây
+            if self.state.project_id:
+                self._settings.setValue(
+                    self._last_vid_key(self.state.project_id), int(vid))
             self._refresh_clips(force=True)
             self._refresh_chan_label()   # vế 'Video này:' đổi NGAY theo video mới
 
