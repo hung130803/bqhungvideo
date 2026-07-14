@@ -2627,7 +2627,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             _sig_hook["title_en"] = (signals.get("hook")
                                      or signals.get("title_en") or "")
             _hook_txt0 = resolve_pub_title(
-                _tr0, _sig_hook, clip.get("title", ""),
+                _tr0, _sig_hook, (clip["title"] or ""),
                 clip["start_sec"], clip["end_sec"])
         if payload.get("captions") or _hook_txt0:
             from app.core import captions
