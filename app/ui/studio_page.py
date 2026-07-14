@@ -4586,7 +4586,7 @@ class StudioPage(QWidget):
         # NGÔN NGỮ video: tra 1 LẦN cho CẢ video (transcript word-level có thể
         # nặng vài MB — trước đây parse lại cho TỪNG clip ngay trên UI thread
         # -> góp phần làm app khựng lúc bấm xuất/tự-xuất hàng loạt).
-        _vid_is_vi = None       # None = chưa tra; True/False = kết quả; 'err' = lỗi
+        _vid_tr = None          # transcript video (tra 1 LẦN, cache cho mọi clip)
         n = 0
         jids = []
         # Xuất 1 clip cụ thể ('Xuất lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
@@ -4598,24 +4598,21 @@ class StudioPage(QWidget):
                 continue
             sig = db.loads(c["signals"], {}) or {}
             vi = (c["title"] or "").strip()
+            # 🌐 TIÊU ĐỀ ĐỐT LÊN VIDEO + TÊN FILE theo NGÔN NGỮ VIDEO:
+            # resolve_pub_title lo trọn — title_pub/hook AI -> tiêu đề Việt
+            # (chỉ khi video Việt/không-trông-Việt) -> CÂU THOẠI ĐẦU sạch của
+            # clip (đúng ngôn ngữ gốc). Nhờ vậy video Hàn/Nhật KHÔNG còn chỉ
+            # hiện mỗi 'Part' (lớp {title} rỗng) hay gắn tên tiếng Việt.
             en = (sig.get("title_en") or "").strip()
-            # 🌐 TÊN FILE THEO NGÔN NGỮ VIDEO: title_en (title_pub — đúng ngôn
-            # ngữ video) ưu tiên; THIẾU thì chỉ lùi về tiêu đề Việt khi video
-            # LÀ tiếng Việt — video Nhật/Anh... không gắn tên tiếng Việt nữa
-            # (user báo video Nhật ra file tên Việt). Không còn gì -> "Part N".
             if not en:
                 try:
-                    from app.ai import recap as _rec
-                    if _vid_is_vi is None:
+                    from app.modules import m1_highlight as _m1
+                    if _vid_tr is None:
                         from app.core.analysis import get_analysis as _ga
-                        _tr = _ga(video_id, "transcript") or {}
-                        _vid_is_vi = _rec._is_vi_lang(_rec.resolve_lang(
-                            _tr.get("language", ""), _tr.get("text", "") or ""))
-                    if _vid_is_vi is True or not _rec.looks_vietnamese(vi):
-                        en = vi        # video Việt / tiêu đề không phải Việt
-                except Exception:  # noqa: BLE001 - lỗi tra cứu -> giữ vi như cũ
-                    _vid_is_vi = "err"
-                if _vid_is_vi == "err":
+                        _vid_tr = _ga(video_id, "transcript") or {}
+                    en = _m1.resolve_pub_title(
+                        _vid_tr, sig, vi, c["start_sec"], c["end_sec"])
+                except Exception:  # noqa: BLE001 - lỗi tra cứu -> giữ như cũ
                     en = vi
             label = en or self._fixed_label()
             # tên gọn "Part 1 <tiêu đề> #tag1 #tag2" — hashtag CHUNG toàn video,

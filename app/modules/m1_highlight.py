@@ -480,6 +480,70 @@ def _clip_sentences(segments: list, segs: list) -> list:
     return out
 
 
+def _first_clean_line(transcript: dict, start_sec, end_sec,
+                      vi_video: bool, limit: int = 60) -> str:
+    """Câu THOẠI ĐẦU (đúng ngôn ngữ gốc) trong khoảng [start_sec, end_sec]
+    của clip, dùng làm HOOK/tiêu đề khi LLM không trả (title_pub/hook rỗng).
+    - BỎ câu rác kênh (CTA/chào/promo) -> lấy câu kế.
+    - Video KHÔNG phải tiếng Việt -> BỎ câu trông-tiếng-Việt (né sai ngôn ngữ).
+    - Cắt gọn ~limit ký tự nhưng KHÔNG cắt giữa từ (lùi về khoảng trắng gần
+      nhất; chữ CJK không có khoảng trắng -> cắt cứng theo ký tự).
+    Trả '' nếu không có câu thoại hợp lệ nào. Hàm thuần (transcript = dict
+    'segments'); an toàn khi thiếu mốc."""
+    try:
+        c0, c1 = float(start_sec), float(end_sec)
+    except (TypeError, ValueError):
+        return ""
+    for _sg in (transcript.get("segments") or []):
+        try:
+            _a = float(_sg.get("start", 0))
+        except (TypeError, ValueError):
+            continue
+        if not (c0 - 0.5 <= _a <= c1):
+            continue
+        _t = str(_sg.get("text") or "").strip()
+        if not _t:
+            continue
+        if _is_junk_sentence(_t):
+            continue                       # câu rác kênh -> thử câu kế
+        if not vi_video and _recap.looks_vietnamese(_t):
+            continue                       # video không phải Việt -> né chữ Việt
+        if len(_t) <= limit:
+            return _t
+        # cắt gọn KHÔNG giữa từ: lùi về khoảng trắng gần nhất trong ngưỡng
+        cut = _t[:limit]
+        sp = cut.rfind(" ")
+        if sp >= limit // 2:               # có khoảng trắng hợp lý -> cắt ở đó
+            return cut[:sp].rstrip()
+        return cut.rstrip()                # CJK / không có space -> cắt cứng
+    return ""
+
+
+def resolve_pub_title(transcript: dict, signals: dict, clip_title_vi: str,
+                      start_sec, end_sec) -> str:
+    """TIÊU ĐỀ ĐỐT LÊN VIDEO (đúng ngôn ngữ video) — dùng CHUNG cho lớp chữ
+    overlay ({title}) và hook libass, đảm bảo KHÔNG rỗng khi clip có thoại.
+    Thứ tự: title_pub(title_en) -> hook -> tiêu đề Việt (CHỈ khi video Việt
+    hoặc chuỗi không trông-Việt) -> CÂU THOẠI ĐẦU sạch của clip. Video KHÔNG
+    phải Việt thì loại mọi ứng viên trông-tiếng-Việt (né lỗi 'video Hàn/Nhật
+    gắn tiêu đề Việt' / 'chỉ hiện Part'). Trả '' chỉ khi hết mọi nguồn.
+    transcript = dict analysis 'transcript' (có 'language','text','segments').
+    Hàm thuần — unit test được."""
+    tr = transcript or {}
+    lang = _recap.resolve_lang(tr.get("language", ""), tr.get("text", "") or "")
+    vi_video = _recap._is_vi_lang(lang)
+    for cand in (signals.get("title_en"), signals.get("title_pub"),
+                 signals.get("hook"), clip_title_vi):
+        cand = str(cand or "").strip()
+        if not cand:
+            continue
+        if not vi_video and _recap.looks_vietnamese(cand):
+            continue               # video không phải Việt -> loại chữ Việt
+        return cand
+    # hết ứng viên LLM -> câu thoại ĐẦU sạch của clip (đúng ngôn ngữ gốc)
+    return _first_clean_line(tr, start_sec, end_sec, vi_video)
+
+
 # ------------------------------------------------------------------
 # 🚮 NÉ RÁC KÊNH cho đường CẮT THƯỜNG (m1): intro chào kênh / trailer /
 # outro kêu subscribe / sponsor / RÁC MỀM (đọc quảng cáo sponsor, khoe mốc
@@ -2554,32 +2618,17 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         _cs0 = payload.get("cap_style") or {}
         _hook_txt0 = ""
         if _cs0.get("hook_on", True):
-            from app.ai import recap as _rec
+            # HOOK giật tít = TIÊU ĐỀ đốt lên video (đúng ngôn ngữ video),
+            # dùng CHUNG resolve_pub_title với lớp chữ overlay -> KHÔNG bao giờ
+            # vừa rỗng vừa mất chữ khi clip có thoại (fix video Hàn/Nhật chỉ
+            # hiện 'Part'). Ưu tiên hook AI trước cho hook (câu ngắn giật gân).
             _tr0 = get_analysis(video_id, "transcript") or {}
-            _lang0 = _rec.resolve_lang(
-                _tr0.get("language", ""), _tr0.get("text", "") or "")
-            _vi_video = _rec._is_vi_lang(_lang0)
-            for _cand in (signals.get("hook"), signals.get("title_en"),
-                          clip["title"]):
-                _cand = str(_cand or "").strip()
-                if not _cand:
-                    continue
-                if not _vi_video and _rec.looks_vietnamese(_cand):
-                    continue           # video không phải Việt -> loại chữ Việt
-                _hook_txt0 = _cand
-                break
-            if not _hook_txt0:
-                # câu thoại ĐẦU trong phạm vi clip = hook đúng ngôn ngữ gốc
-                _c0, _c1 = float(clip["start_sec"]), float(clip["end_sec"])
-                for _sg in (_tr0.get("segments") or []):
-                    try:
-                        _a = float(_sg.get("start", 0))
-                    except (TypeError, ValueError):
-                        continue
-                    _t = str(_sg.get("text") or "").strip()
-                    if _t and _c0 - 0.5 <= _a <= _c1:
-                        _hook_txt0 = _t[:60]
-                        break
+            _sig_hook = dict(signals)
+            _sig_hook["title_en"] = (signals.get("hook")
+                                     or signals.get("title_en") or "")
+            _hook_txt0 = resolve_pub_title(
+                _tr0, _sig_hook, clip.get("title", ""),
+                clip["start_sec"], clip["end_sec"])
         if payload.get("captions") or _hook_txt0:
             from app.core import captions
             from config import ROOT_DIR
