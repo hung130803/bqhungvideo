@@ -187,6 +187,36 @@ def detect_encoder() -> str:
 
 _ENCODER_CACHE: Optional[str] = None
 _NVENC_CACHE_DAYS = 7
+# LÝ DO NVENC không dùng được (chuỗi tiếng Việt cho UI); '' = dùng được/chưa rõ.
+# Quan trọng nhất: driver NVIDIA CŨ hơn bản ffmpeg yêu cầu (vd ffmpeg 2025 đòi
+# driver >=570) — máy CÓ GPU tốt mà xuất vẫn chậm bằng CPU, user không hề biết.
+_NVENC_NOTE: str = ""
+
+
+def nvenc_note() -> str:
+    """Lý do NVENC không dùng được (cho UI hiện gợi ý). Chỉ có nghĩa SAU khi
+    detect_encoder() đã chạy (app gọi lúc khởi động qua resource_manager)."""
+    return _NVENC_NOTE
+
+
+def _classify_nvenc_error(log: str) -> str:
+    """Đọc stderr ffmpeg khi test/encode NVENC lỗi -> câu giải thích + cách sửa."""
+    low = (log or "").lower()
+    if ("minimum required nvidia driver" in low
+            or "required nvenc api version" in low):
+        # bắt kèm số driver yêu cầu nếu có (vd "570.0 or newer")
+        import re as _re
+        m = _re.search(r"driver for nvenc is\s*([0-9.]+)", low)
+        need = m.group(1) if m else "570"
+        return (f"Driver NVIDIA đang cũ — cần bản ≥ {need} để encode GPU. "
+                "Cập nhật driver (NVIDIA App/GeForce) rồi mở lại app: xuất "
+                "video sẽ nhanh gấp nhiều lần và máy không còn nặng.")
+    if "cannot load nvcuda" in low or "no nvidia" in low:
+        return ""      # không có GPU NVIDIA -> không cần note (CPU là đúng)
+    if low.strip():
+        return ("GPU NVIDIA có nhưng NVENC lỗi khi encode — app tự dùng CPU. "
+                "Thử cập nhật driver NVIDIA nếu muốn xuất nhanh bằng GPU.")
+    return ""
 
 
 def _nvenc_cache_key() -> str:
@@ -211,6 +241,7 @@ def _nvenc_works_cached() -> bool:
     đây (detect_encoder trả thẳng) nên đổi setting không cần xóa cache."""
     import time
     from config import DATA_DIR
+    global _NVENC_NOTE
     cf = Path(DATA_DIR) / "_cache" / "nvenc_check.json"
     key = _nvenc_cache_key()
     try:
@@ -218,29 +249,33 @@ def _nvenc_works_cached() -> bool:
         if (d.get("ffmpeg") == key and isinstance(d.get("ok"), bool)
                 and 0 <= time.time() - float(d.get("ts", 0))
                 < _NVENC_CACHE_DAYS * 86400):
+            _NVENC_NOTE = str(d.get("note") or "")
             return d["ok"]
     except (OSError, ValueError, TypeError):
         pass
-    ok = _nvenc_works()
-    _save_nvenc_cache(ok)
+    ok, note = _nvenc_works()
+    _NVENC_NOTE = note
+    _save_nvenc_cache(ok, note)
     return ok
 
 
-def _save_nvenc_cache(ok: bool) -> None:
+def _save_nvenc_cache(ok: bool, note: str = "") -> None:
     import time
     from config import DATA_DIR
     cf = Path(DATA_DIR) / "_cache" / "nvenc_check.json"
     try:
         cf.parent.mkdir(parents=True, exist_ok=True)
         cf.write_text(json.dumps({"ok": ok, "ts": time.time(),
-                                  "ffmpeg": _nvenc_cache_key()}),
+                                  "ffmpeg": _nvenc_cache_key(),
+                                  "note": note}),
                       encoding="utf-8")
     except OSError:
         pass
 
 
-def _nvenc_works() -> bool:
-    """Encode thử 1 frame bằng h264_nvenc. True nếu chạy được thật."""
+def _nvenc_works() -> tuple[bool, str]:
+    """Encode thử 1 frame bằng h264_nvenc. Trả (ok, note): ok=True nếu chạy
+    được thật; note = lý do dễ hiểu khi KHÔNG chạy được (driver cũ...)."""
     cmd = [
         settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error",
         "-f", "lavfi", "-i", "testsrc=size=128x128:rate=1",
@@ -250,11 +285,14 @@ def _nvenc_works() -> bool:
         "-c:v", "h264_nvenc", "-f", "null", "-",
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True,
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
                            creationflags=_CREATE_NO_WINDOW, timeout=20)
-        return r.returncode == 0
+        if r.returncode == 0:
+            return True, ""
+        return False, _classify_nvenc_error(r.stderr or r.stdout or "")
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return False
+        return False, ""
 
 
 def ffmpeg_available() -> bool:
@@ -335,7 +373,11 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     """Tham số encode theo encoder + mức chất lượng."""
     if encoder == "h264_nvenc":
         cq = "19" if quality == "high" else "23"
-        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq]
+        # -pix_fmt yuv420p: nguồn 10-bit/4:4:4 (video tải chất lượng cao) sẽ làm
+        # NVENC từ chối -> rơi oan về libx264 encode LẠI từ đầu; ép 420p (chuẩn
+        # phát hành shorts) để NVENC ăn được mọi nguồn.
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq,
+                "-pix_fmt", "yuv420p"]
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
     # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
     crf = "20" if quality == "high" else "23"
@@ -818,10 +860,14 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
             return
         last_log = "\n".join(tail[-6:])
         if enc == "h264_nvenc":
-            global _ENCODER_CACHE
+            global _ENCODER_CACHE, _NVENC_NOTE
             _ENCODER_CACHE = "libx264"
-            _save_nvenc_cache(False)   # NVENC hỏng thật -> sửa luôn cache file
-                                       # (không đợi 7 ngày mới test lại)
+            # NVENC hỏng thật -> sửa luôn cache file (không đợi 7 ngày mới test
+            # lại) + ghi LÝ DO (driver cũ...) để UI gợi ý user cách sửa. Soi
+            # TOÀN BỘ tail (14 dòng): dòng "minimum required Nvidia driver"
+            # nằm TRƯỚC chuỗi lỗi cuối nên last_log (6 dòng chót) không thấy.
+            _NVENC_NOTE = _classify_nvenc_error("\n".join(tail))
+            _save_nvenc_cache(False, _NVENC_NOTE)
     _cleanup_dst(dst)
     raise RuntimeError(f"ffmpeg không {what}. Log cuối:\n" + (last_log or "(trống)"))
 

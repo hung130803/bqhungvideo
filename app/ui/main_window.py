@@ -186,6 +186,25 @@ class MainWindow(QMainWindow):
         self.cb_eco.toggled.connect(self._set_eco)
         v.addWidget(self.cb_eco)
 
+        # --- Dòng trạng thái ENCODER (GPU/CPU) + cảnh báo driver cũ ---
+        # Máy có RTX mà driver cũ hơn bản ffmpeg yêu cầu -> NVENC bị tắt ngầm,
+        # xuất chậm bằng CPU và user không biết vì sao. Hiện rõ + cách sửa.
+        try:
+            from app.core.ffmpeg_utils import detect_encoder, nvenc_note
+            _enc = detect_encoder()          # đã cache lúc khởi động, không chậm
+            enc_lbl = QLabel("Xuất video: GPU (NVENC) ⚡" if _enc == "h264_nvenc"
+                             else "Xuất video: CPU (libx264)")
+            enc_lbl.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+            v.addWidget(enc_lbl)
+            _note = nvenc_note()
+            if _enc != "h264_nvenc" and _note:
+                warn = QLabel("⚠ " + _note)
+                warn.setWordWrap(True)
+                warn.setStyleSheet("color:#F59E0B; font-size:11px;")
+                v.addWidget(warn)
+        except Exception:  # noqa: BLE001 - nhãn phụ, không được cản mở app
+            pass
+
         v.addStretch(1)
 
         # --- Tài khoản đang đăng nhập ---

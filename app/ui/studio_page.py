@@ -3513,8 +3513,10 @@ class StudioPage(QWidget):
             return
         auto_tpl = getattr(self, "_auto_tpl", {})
         ready, total = 0, 0
+        # 1 query GỘP cho mọi job đang theo dõi (thay vì N query mỗi 1.5s)
+        states = services.job_states(list(self._pending_export))
         for jid in list(self._pending_export):
-            st = services.job_state(jid)
+            st = states.get(jid, "")
             if st == "done":
                 vid = self._pending_export.pop(jid)
                 tpl_snap = auto_tpl.pop(jid, None)
@@ -4471,7 +4473,13 @@ class StudioPage(QWidget):
         try:
             from app.ai import llm as _llm, social
             from app.core.analysis import get_analysis
-            if _llm.is_configured():
+            # ƯU TIÊN hashtag đã được JOB PHÂN TÍCH sinh sẵn (worker, chạy nền):
+            # đọc DB tức thì -> KHÔNG gọi LLM trên UI thread (trước đây gọi mạng
+            # ngay trong timer 1.5s lúc tự-xuất -> app đơ vài giây đúng lúc đang
+            # encode). Thiếu (video cũ/heuristic) mới lùi về gọi LLM như cũ.
+            pre = get_analysis(video_id, "hashtags") or {}
+            tags = [t for t in (pre.get("tags") or []) if t]
+            if not tags and _llm.is_configured():
                 tr = get_analysis(video_id, "transcript") or {}
                 lang = tr.get("language", "") or ""
                 # tiêu đề tổng + lời thoại: gom transcript các clip (đại diện video)
@@ -4487,8 +4495,6 @@ class StudioPage(QWidget):
                     text = " ".join(s.get("text", "")
                                     for s in tr.get("segments", []))
                 tags = social.write_hashtags(title, text, lang, max_tags=4)
-            else:
-                tags = []
         except Exception:  # noqa: BLE001 - lỗi/không key -> bỏ hashtag, không sập
             tags = []
         # _safe_name sẽ chạy trên toàn out_name ở export_clip; ở đây chỉ ghép
@@ -4536,6 +4542,10 @@ class StudioPage(QWidget):
         vpx = self._video_px_for(vrow)
         # HASHTAG chung cho MỌI Part của video (sinh 1 lần, cache theo video_id)
         tags_str = self._video_hashtags(video_id, clips)
+        # NGÔN NGỮ video: tra 1 LẦN cho CẢ video (transcript word-level có thể
+        # nặng vài MB — trước đây parse lại cho TỪNG clip ngay trên UI thread
+        # -> góp phần làm app khựng lúc bấm xuất/tự-xuất hàng loạt).
+        _vid_is_vi = None       # None = chưa tra; True/False = kết quả; 'err' = lỗi
         n = 0
         jids = []
         # Xuất 1 clip cụ thể ('Xuất lại'/'Xuất clip này') = user CHỦ ĐỘNG muốn
@@ -4554,14 +4564,17 @@ class StudioPage(QWidget):
             # (user báo video Nhật ra file tên Việt). Không còn gì -> "Part N".
             if not en:
                 try:
-                    from app.core.analysis import get_analysis as _ga
                     from app.ai import recap as _rec
-                    _tr = _ga(video_id, "transcript") or {}
-                    _lg = _rec.resolve_lang(_tr.get("language", ""),
-                                            _tr.get("text", "") or "")
-                    if _rec._is_vi_lang(_lg) or not _rec.looks_vietnamese(vi):
+                    if _vid_is_vi is None:
+                        from app.core.analysis import get_analysis as _ga
+                        _tr = _ga(video_id, "transcript") or {}
+                        _vid_is_vi = _rec._is_vi_lang(_rec.resolve_lang(
+                            _tr.get("language", ""), _tr.get("text", "") or ""))
+                    if _vid_is_vi is True or not _rec.looks_vietnamese(vi):
                         en = vi        # video Việt / tiêu đề không phải Việt
                 except Exception:  # noqa: BLE001 - lỗi tra cứu -> giữ vi như cũ
+                    _vid_is_vi = "err"
+                if _vid_is_vi == "err":
                     en = vi
             label = en or self._fixed_label()
             # tên gọn "Part 1 <tiêu đề> #tag1 #tag2" — hashtag CHUNG toàn video,

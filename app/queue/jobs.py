@@ -118,6 +118,41 @@ def _analyze(payload: dict, ctx: JobContext) -> dict:
     return {"video_id": video_id, "status": analysis_status(video_id)}
 
 
+def _precompute_hashtags(video_id: int) -> None:
+    """Sinh sẵn 3-4 hashtag tên file cho video NGAY TRONG WORKER (sau khi cắt
+    clip xong) và cache vào bảng analysis (kind='hashtags').
+
+    Trước đây hashtag chỉ sinh LÚC XUẤT, trên UI THREAD (studio_page.
+    _video_hashtags gọi LLM mạng 1-10s) — đúng lúc tự-xuất kích hoạt từ timer
+    -> app đơ. Giờ worker làm trước, UI chỉ đọc DB (tức thì). Cùng 1 lời gọi
+    social.write_hashtags như cũ — KHÔNG đổi prompt/chất lượng. Lỗi/không key
+    -> bỏ qua im lặng (UI tự lo fallback như trước)."""
+    try:
+        from app.ai import llm, social
+        if not llm.is_configured():
+            return
+        from app.core.analysis import _set, get_analysis
+        if get_analysis(video_id, "hashtags"):
+            return                       # đã có (video cắt lại) -> khỏi tốn LLM
+        from app.database import db as _db
+        clips = _db.query(
+            "SELECT title, transcript FROM clips WHERE video_id=? "
+            "ORDER BY start_sec", (video_id,))
+        tr = get_analysis(video_id, "transcript") or {}
+        title = next(((c["title"] or "").strip() for c in clips
+                      if (c["title"] or "").strip()), "")
+        text = " ".join((c["transcript"] or "").strip() for c in clips
+                        if (c["transcript"] or "").strip())
+        if not text.strip():
+            text = " ".join(s.get("text", "") for s in tr.get("segments", []))
+        tags = social.write_hashtags(title, text,
+                                     tr.get("language", "") or "", max_tags=4)
+        if tags:
+            _set(video_id, "hashtags", "done", {"tags": tags})
+    except Exception:  # noqa: BLE001 - tiện ích phụ, không được làm hỏng job
+        pass
+
+
 def _auto(payload: dict, ctx: JobContext) -> dict:
     """Tạo clip tự động: phân tích (nếu chưa) -> tìm highlight, 1 thanh tiến trình."""
     from app.modules.m1_highlight import generate_highlights
@@ -139,6 +174,8 @@ def _auto(payload: dict, ctx: JobContext) -> dict:
 
     res = generate_highlights(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    # Hashtag tên file: sinh sẵn ở WORKER để UI không phải gọi LLM (đỡ đơ)
+    _precompute_hashtags(video_id)
     return {"video_id": video_id, **res}
 
 
@@ -163,6 +200,7 @@ def _auto_mixed(payload: dict, ctx: JobContext) -> dict:
 
     res = generate_mixed_cut(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    _precompute_hashtags(video_id)   # sinh sẵn hashtag ở worker (đỡ đơ UI)
     return {"video_id": video_id, **res}
 
 
@@ -188,6 +226,7 @@ def _auto_recap(payload: dict, ctx: JobContext) -> dict:
 
     res = generate_recap(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    _precompute_hashtags(video_id)   # sinh sẵn hashtag ở worker (đỡ đơ UI)
     return {"video_id": video_id, **res}
 
 

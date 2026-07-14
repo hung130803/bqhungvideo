@@ -131,6 +131,13 @@ def suggest_profile(hw: HardwareInfo) -> ResourceProfile:
     else:
         p.encoder = "libx264"
         notes.append("Encode bằng libx264 (CPU).")
+        # Máy CÓ GPU NVIDIA mà NVENC không dùng được -> nói RÕ lý do + cách sửa
+        # (thường gặp: driver cũ hơn bản ffmpeg yêu cầu — cập nhật là xuất
+        # nhanh gấp nhiều lần). detect_encoder() đã chạy ở detect_hardware.
+        if hw.has_cuda:
+            from app.core.ffmpeg_utils import nvenc_note
+            if nvenc_note():
+                notes.append("⚠ " + nvenc_note())
 
     # ---- Số luồng SONG SONG (tách 2 khâu) ----
     # GPU lane = luồng AI/phân tích; CPU lane = luồng cắt/xuất video (libx264).

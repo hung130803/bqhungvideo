@@ -347,6 +347,18 @@ def job_state(job_id: int) -> str:
     return row["status"] if row else ""
 
 
+def job_states(job_ids) -> dict:
+    """{job_id: status} cho NHIỀU job trong 1 query — timer UI theo dõi hàng
+    chục job chờ tự-xuất mà query từng cái mỗi 1.5s thì phí. Job không còn
+    trong DB sẽ VẮNG MẶT trong dict (caller coi như '')."""
+    ids = [int(j) for j in (job_ids or []) if j]
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    rows = db.query(f"SELECT id, status FROM jobs WHERE id IN ({marks})", ids)
+    return {int(r["id"]): r["status"] for r in rows}
+
+
 def list_jobs(limit: int = 100) -> list:
     # kèm tên KÊNH + đường dẫn video để thanh tiến trình hiện rõ việc nào của ai
     return db.query(
