@@ -723,7 +723,8 @@ class StudioPage(QWidget):
           dưới cùng chuyển các kênh đã tích vào 1 nhóm (hoặc 'Chưa phân nhóm').
         Tách khỏi exec() để test offscreen thao tác từng bước."""
         from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView,
-                                     QTableWidget, QTableWidgetItem)
+                                     QListWidgetItem, QTableWidget,
+                                     QTableWidgetItem)
         dlg = QDialog(self); dlg.setWindowTitle("Quản lý nhóm & kênh")
         dlg.resize(720, 520)
         self._mg_dlg = dlg                    # giữ ref cho test offscreen
@@ -735,7 +736,7 @@ class StudioPage(QWidget):
         h1 = QLabel("Nhóm")
         h1.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
         left.addWidget(h1)
-        s1 = QLabel("Nhóm để phân loại kênh (quốc gia, chủ đề...).")
+        s1 = QLabel("Bấm 1 nhóm để xem CÁC KÊNH trong nhóm đó ở bảng bên phải.")
         s1.setWordWrap(True); s1.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         left.addWidget(s1)
         glist = QListWidget(); glist.setMinimumWidth(220)
@@ -814,19 +815,50 @@ class StudioPage(QWidget):
         right.addLayout(frow)
         root.addLayout(right, 1)
 
+        # dữ liệu (UserRole) của item trong glist để LỌC bảng kênh:
+        #   ALL='\x00all' -> mọi kênh; '' -> kênh chưa phân nhóm; else = tên nhóm.
+        ALL = "\x00all"
+
+        def _cur_filter():
+            """Khoá lọc theo item đang chọn ở danh sách Nhóm. Không chọn gì ->
+            ALL (hiện mọi kênh)."""
+            it = glist.currentItem()
+            if it is None:
+                return ALL
+            d = it.data(Qt.ItemDataRole.UserRole)
+            return d if isinstance(d, str) else ALL
+
+        def _cur_real_group():
+            """Tên NHÓM THẬT đang chọn (để sửa tên/xoá) — item 'Tất cả kênh' và
+            'Chưa phân nhóm' KHÔNG phải nhóm thật -> trả None."""
+            f = _cur_filter()
+            return f if (f not in (ALL, "")) else None
+
         # ---- nạp dữ liệu ----
         def fill_groups(select: str = None):
+            # `select`: giữ lựa chọn theo KHOÁ LỌC (ALL/''/tên nhóm). None -> giữ
+            # nguyên item đang chọn.
             if select is None:
-                cur = glist.currentItem()
-                select = cur.text() if cur else None
+                select = _cur_filter()
             glist.blockSignals(True); glist.clear()
+            it_all = QListWidgetItem("▪ Tất cả kênh")
+            it_all.setData(Qt.ItemDataRole.UserRole, ALL)
+            glist.addItem(it_all)
+            if services.list_projects(""):        # còn kênh chưa phân nhóm
+                it_un = QListWidgetItem("· Chưa phân nhóm")
+                it_un.setData(Qt.ItemDataRole.UserRole, "")
+                glist.addItem(it_un)
             for g in self._all_group_names():
-                glist.addItem(g)
+                it = QListWidgetItem(g)
+                it.setData(Qt.ItemDataRole.UserRole, g)
+                glist.addItem(it)
+            # chọn lại đúng item theo khoá lọc; không còn -> 'Tất cả kênh' (row 0)
+            row = 0
+            for i in range(glist.count()):
+                if glist.item(i).data(Qt.ItemDataRole.UserRole) == select:
+                    row = i; break
+            glist.setCurrentRow(row)
             glist.blockSignals(False)
-            if select is not None:
-                for i in range(glist.count()):
-                    if glist.item(i).text() == select:
-                        glist.setCurrentRow(i); break
             # combo nhóm đích: '(Chưa phân nhóm)' + các nhóm
             keep = dest.currentData()
             dest.blockSignals(True); dest.clear()
@@ -838,7 +870,11 @@ class StudioPage(QWidget):
             dest.blockSignals(False)
 
         def fill_channels():
-            projs = services.list_projects()          # TẤT CẢ kênh
+            f = _cur_filter()
+            if f == ALL:
+                projs = services.list_projects()      # mọi kênh
+            else:
+                projs = services.list_projects(f)     # ''=chưa nhóm / tên nhóm
             tbl.setRowCount(len(projs))
             for r, p in enumerate(projs):
                 chk = QTableWidgetItem()
@@ -880,11 +916,13 @@ class StudioPage(QWidget):
             fill_groups(name)
 
         def rename_group():
-            it = glist.currentItem()
-            if it is None:
-                QMessageBox.information(dlg, "Chưa chọn", "Chọn 1 nhóm để sửa tên.")
+            old = _cur_real_group()
+            if not old:
+                QMessageBox.information(
+                    dlg, "Chưa chọn nhóm",
+                    "Chọn 1 NHÓM (không phải 'Tất cả kênh'/'Chưa phân nhóm') "
+                    "để sửa tên.")
                 return
-            old = it.text()
             new, ok = QInputDialog.getText(
                 dlg, "Sửa tên nhóm", f"Tên mới cho nhóm “{old}”:", text=old)
             new = (new or "").strip()
@@ -905,11 +943,13 @@ class StudioPage(QWidget):
             refill(); fill_groups(new)
 
         def del_group():
-            it = glist.currentItem()
-            if it is None:
-                QMessageBox.information(dlg, "Chưa chọn", "Chọn 1 nhóm để xoá.")
+            g = _cur_real_group()
+            if not g:
+                QMessageBox.information(
+                    dlg, "Chưa chọn nhóm",
+                    "Chọn 1 NHÓM (không phải 'Tất cả kênh'/'Chưa phân nhóm') "
+                    "để xoá.")
                 return
-            g = it.text()
             n = len(services.list_projects(g))
             if n and QMessageBox.question(
                 dlg, "Xoá nhóm",
@@ -1009,6 +1049,9 @@ class StudioPage(QWidget):
             services.set_project_group(pid, g)
             refill()
 
+        # BẤM 1 NHÓM -> bảng kênh bên phải LỌC theo nhóm đó (bấm phần nào hiện
+        # phần đó). 'Tất cả kênh' = mọi kênh; 'Chưa phân nhóm' = kênh chưa gán.
+        glist.currentRowChanged.connect(lambda _r: fill_channels())
         add_b.clicked.connect(add_group)
         ren_b.clicked.connect(rename_group)
         del_b.clicked.connect(del_group)
