@@ -1035,9 +1035,10 @@ class StudioPage(QWidget):
         # TÊN GỐC từng kênh (không đuôi trạng thái) — text item có thể mang đuôi
         # '· 🟢3' nên MỌI chỗ cần tên kênh phải lấy từ đây/DB, ĐỪNG currentText()
         self._proj_names = {}
-        for p in services.list_projects(grp or None):
-            self._proj_names[int(p["id"])] = p["name"]
-            self.proj.addItem(p["name"], p["id"])
+        for idx, p in enumerate(services.list_projects(grp or None), 1):
+            self._proj_names[int(p["id"])] = p["name"]  # TÊN GỐC (không số/đuôi)
+            # STT ở đầu cho dễ đếm/quản lý khi nhiều kênh (chỉ hiển thị)
+            self.proj.addItem(f"{idx}. {p['name']}", p["id"])
         self.proj.blockSignals(False)
         if self.proj.count():
             self._on_proj(self.proj.currentIndex())
@@ -1845,7 +1846,8 @@ class StudioPage(QWidget):
                             "✅" + services.rel_time_vi(a["last_done"],
                                                         short=True))
                 self.proj.setItemText(
-                    i, name + ((" · " + " · ".join(parts)) if parts else ""))
+                    i, f"{i + 1}. " + name
+                    + ((" · " + " · ".join(parts)) if parts else ""))
         finally:
             self.proj.blockSignals(False)
 
@@ -2157,7 +2159,7 @@ class StudioPage(QWidget):
                 if not name:            # thiếu tên gốc (khó xảy ra) -> giữ text
                     continue
                 self.vid.setItemText(
-                    i, f"{name} · {self._vid_mark(act.get(int(vid)))}")
+                    i, f"{i + 1}. {name} · {self._vid_mark(act.get(int(vid)))}")
         finally:
             self.vid.blockSignals(False)
 
@@ -2184,11 +2186,13 @@ class StudioPage(QWidget):
         self._vid_names = {}
         if self.state.project_id:
             act = self._video_activity()     # trạng thái TỪNG video (query gộp)
-            for v in services.list_videos(self.state.project_id):
+            for idx, v in enumerate(
+                    services.list_videos(self.state.project_id), 1):
                 name = Path(v["src_path"]).name
-                self._vid_names[int(v["id"])] = name
+                self._vid_names[int(v["id"])] = name  # tên gốc (không STT/đuôi)
                 self.vid.addItem(
-                    f'{name} · {self._vid_mark(act.get(int(v["id"])))}', v["id"])
+                    f'{idx}. {name} · {self._vid_mark(act.get(int(v["id"])))}',
+                    v["id"])
         if cur is not None:
             i = self.vid.findData(cur)
             if i >= 0:
