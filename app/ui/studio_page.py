@@ -174,6 +174,12 @@ class StudioPage(QWidget):
         self.proj.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.proj.customContextMenuRequested.connect(self._proj_menu)
         srcrow.addWidget(self.proj)
+        cpy = QPushButton("📋"); cpy.setProperty("ghost", True)
+        cpy.setFixedWidth(38)
+        cpy.setToolTip("Copy TÊN kênh đang chọn ra clipboard (để dán tìm "
+                       "video ngoài) — KHÔNG mở dropdown, không đổi lựa chọn.")
+        cpy.clicked.connect(lambda: self._copy_channel_name())
+        srcrow.addWidget(cpy)
         np = QPushButton("+ Kênh"); np.setProperty("ghost", True)
         np.clicked.connect(self._new_proj); srcrow.addWidget(np)
         ren = QPushButton("✏"); ren.setProperty("ghost", True)
@@ -1768,6 +1774,24 @@ class StudioPage(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return False
         return dlg._t["apply"]()
+
+    def _copy_channel_name(self):
+        """Copy TÊN GỐC kênh đang chọn ra clipboard (KHÔNG kèm số thứ tự/đuôi
+        trạng thái). Không đụng dropdown/lựa chọn — user dán tên đi tìm video."""
+        pid = self.proj.currentData()
+        if pid is None:
+            self.status.setText("Chưa chọn kênh để copy tên.")
+            return
+        # tên GỐC từ DB (an toàn nhất) -> _proj_names -> cùng lắm bỏ 'N. '+đuôi
+        row = db.query_one("SELECT name FROM projects WHERE id=?", (int(pid),))
+        name = ((row["name"] if row else "")
+                or getattr(self, "_proj_names", {}).get(int(pid), "")).strip()
+        if not name:
+            self.status.setText("Không lấy được tên kênh.")
+            return
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(name)
+        self.status.setText(f"📋 Đã copy tên kênh: {name} — dán (Ctrl+V) để tìm.")
 
     def _last_vid_key(self, pid) -> str:
         return f"last_vid_{int(pid)}"
