@@ -390,6 +390,18 @@ class WorkerPool:
                 "WHERE id=?",
                 (db.dumps(result) if result is not None else None, job_id),
             )
+            # GHI HOẠT ĐỘNG GẦN NHẤT thẳng vào kênh/video (bền vững, không mất
+            # khi 'Xóa lịch sử' xoá job done). Nhãn dùng chính type job.
+            jr = db.query_one(
+                "SELECT project_id, video_id FROM jobs WHERE id=?", (job_id,))
+            if jr and jr["video_id"] is not None:
+                db.execute(
+                    "UPDATE videos SET last_done_at=datetime('now'), "
+                    "last_done_type=? WHERE id=?", (job_type, jr["video_id"]))
+            if jr and jr["project_id"] is not None:
+                db.execute(
+                    "UPDATE projects SET last_done_at=datetime('now'), "
+                    "last_done_type=? WHERE id=?", (job_type, jr["project_id"]))
         except CanceledError:
             db.execute(
                 "UPDATE jobs SET status='canceled', message='Đã hủy', "

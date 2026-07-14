@@ -221,6 +221,45 @@ class Database:
                 self.conn().execute(
                     "ALTER TABLE projects ADD COLUMN grp TEXT NOT NULL DEFAULT ''")
                 self.conn().commit()
+            # HOẠT ĐỘNG GẦN NHẤT ghi thẳng vào kênh/video (KHÔNG suy ra từ bảng
+            # jobs nữa) — 'Xóa lịch sử' xoá job done thì thời điểm 'xong gần
+            # nhất' vẫn còn, không bị reset sang ngày hôm sau.
+            vcols = [r[1] for r in
+                     self.conn().execute("PRAGMA table_info(videos)").fetchall()]
+            need_backfill = False
+            for tbl, tcols in (("projects", cols), ("videos", vcols)):
+                if "last_done_at" not in tcols:
+                    self.conn().execute(
+                        f"ALTER TABLE {tbl} ADD COLUMN last_done_at TEXT")
+                    self.conn().execute(
+                        f"ALTER TABLE {tbl} ADD COLUMN last_done_type TEXT")
+                    self.conn().commit()
+                    need_backfill = True
+            if need_backfill:      # 1 LẦN: điền từ job done sẵn có (giữ lịch sử)
+                self.conn().execute(
+                    "UPDATE videos SET "
+                    "last_done_at=(SELECT MAX(finished_at) FROM jobs j "
+                    "  WHERE j.video_id=videos.id AND j.status='done' "
+                    "  AND j.finished_at IS NOT NULL), "
+                    "last_done_type=(SELECT j.type FROM jobs j "
+                    "  WHERE j.video_id=videos.id AND j.status='done' "
+                    "  AND j.finished_at IS NOT NULL "
+                    "  ORDER BY j.finished_at DESC LIMIT 1) "
+                    "WHERE EXISTS (SELECT 1 FROM jobs j WHERE j.video_id=videos.id "
+                    "  AND j.status='done' AND j.finished_at IS NOT NULL)")
+                self.conn().execute(
+                    "UPDATE projects SET "
+                    "last_done_at=(SELECT MAX(finished_at) FROM jobs j "
+                    "  WHERE j.project_id=projects.id AND j.status='done' "
+                    "  AND j.finished_at IS NOT NULL), "
+                    "last_done_type=(SELECT j.type FROM jobs j "
+                    "  WHERE j.project_id=projects.id AND j.status='done' "
+                    "  AND j.finished_at IS NOT NULL "
+                    "  ORDER BY j.finished_at DESC LIMIT 1) "
+                    "WHERE EXISTS (SELECT 1 FROM jobs j "
+                    "  WHERE j.project_id=projects.id AND j.status='done' "
+                    "  AND j.finished_at IS NOT NULL)")
+                self.conn().commit()
         except Exception:  # noqa: BLE001
             pass
 

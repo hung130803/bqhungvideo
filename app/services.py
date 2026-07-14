@@ -427,17 +427,20 @@ def channel_activity() -> dict:
     # SQLite datetime('now') ghi UTC -> mốc 24h cũng phải tính bằng UTC
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
               ).strftime("%Y-%m-%d %H:%M:%S")
+    # last_done ĐỌC THẲNG từ kênh (bền vững qua 'Xóa lịch sử'), KHÔNG suy ra
+    # từ bảng jobs nữa.
     act = {int(p["id"]): {"running": 0, "pending": 0, "failed_recent": 0,
                           "exported": 0, "videos": 0, "clips": 0,
-                          "last_done": None, "last_done_type": ""}
-           for p in db.query("SELECT id FROM projects")}
+                          "last_done": p["last_done_at"],
+                          "last_done_type": p["last_done_type"] or ""}
+           for p in db.query(
+               "SELECT id, last_done_at, last_done_type FROM projects")}
     for r in db.query(
             "SELECT project_id AS pid, "
             "SUM(status='running') AS running, "
             "SUM(status='pending') AS pending, "
             "SUM(status='failed' AND COALESCE(finished_at, created_at) >= ?) "
-            "  AS failed_recent, "
-            "SUM(status='done' AND type='m1_export_clip') AS exported "
+            "  AS failed_recent "
             "FROM jobs WHERE project_id IS NOT NULL GROUP BY project_id",
             (cutoff,)):
         a = act.get(int(r["pid"]))
@@ -446,31 +449,23 @@ def channel_activity() -> dict:
         a["running"] = int(r["running"] or 0)
         a["pending"] = int(r["pending"] or 0)
         a["failed_recent"] = int(r["failed_recent"] or 0)
-        a["exported"] = int(r["exported"] or 0)
-    # MAX(finished_at) + bare column: SQLite ĐẢM BẢO cột trần (type) lấy từ
-    # đúng dòng đạt MAX -> biết luôn job done gần nhất là loại gì, khỏi query 2.
-    for r in db.query(
-            "SELECT project_id AS pid, MAX(finished_at) AS last_done, "
-            "type AS last_type FROM jobs "
-            "WHERE status='done' AND finished_at IS NOT NULL "
-            "AND project_id IS NOT NULL GROUP BY project_id"):
-        a = act.get(int(r["pid"]))
-        if a is not None:
-            a["last_done"] = r["last_done"]
-            a["last_done_type"] = r["last_type"] or ""
-    # tổng VIDEO / tổng CLIP đã tạo từng kênh — bảng 📊 cần "1 kênh có bao
-    # nhiêu video, ra bao nhiêu clip" (mỗi cột 1 query GROUP BY, vẫn nhẹ)
+    # tổng VIDEO / tổng CLIP đã tạo / CLIP ĐÃ XUẤT từng kênh — đếm từ bảng
+    # clips (export_path) chứ KHÔNG từ jobs, nên 'Xóa lịch sử' không làm mất
+    # số 'Đã xuất'. (mỗi cột 1 query GROUP BY, vẫn nhẹ)
     for r in db.query("SELECT project_id AS pid, COUNT(*) AS n "
                       "FROM videos GROUP BY project_id"):
         a = act.get(int(r["pid"]))
         if a is not None:
             a["videos"] = int(r["n"])
     for r in db.query(
-            "SELECT v.project_id AS pid, COUNT(*) AS n FROM clips c "
-            "JOIN videos v ON v.id = c.video_id GROUP BY v.project_id"):
+            "SELECT v.project_id AS pid, COUNT(*) AS n, "
+            "SUM(c.export_path IS NOT NULL AND c.export_path<>'') AS exported "
+            "FROM clips c JOIN videos v ON v.id = c.video_id "
+            "GROUP BY v.project_id"):
         a = act.get(int(r["pid"]))
         if a is not None:
             a["clips"] = int(r["n"])
+            a["exported"] = int(r["exported"] or 0)
     return act
 
 
@@ -497,19 +492,21 @@ def video_activity(project_id: int) -> dict:
     # SQLite datetime('now') ghi UTC -> mốc 24h cũng phải tính bằng UTC
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
               ).strftime("%Y-%m-%d %H:%M:%S")
+    # last_done ĐỌC THẲNG từ video (bền vững qua 'Xóa lịch sử').
     act = {int(v["id"]): {"running": 0, "run_export": 0, "pending": 0,
                           "failed_recent": 0, "clips": 0, "exported": 0,
-                          "last_done": None, "last_done_type": ""}
-           for v in db.query("SELECT id FROM videos WHERE project_id=?",
-                             (project_id,))}
+                          "last_done": v["last_done_at"],
+                          "last_done_type": v["last_done_type"] or ""}
+           for v in db.query(
+               "SELECT id, last_done_at, last_done_type FROM videos "
+               "WHERE project_id=?", (project_id,))}
     for r in db.query(
             "SELECT video_id AS vid, "
             "SUM(status='running') AS running, "
             "SUM(status='running' AND type='m1_export_clip') AS run_export, "
             "SUM(status='pending') AS pending, "
             "SUM(status='failed' AND COALESCE(finished_at, created_at) >= ?) "
-            "  AS failed_recent, "
-            "SUM(status='done' AND type='m1_export_clip') AS exported "
+            "  AS failed_recent "
             "FROM jobs WHERE project_id=? AND video_id IS NOT NULL "
             "GROUP BY video_id", (cutoff, project_id)):
         a = act.get(int(r["vid"]))
@@ -519,26 +516,17 @@ def video_activity(project_id: int) -> dict:
         a["run_export"] = int(r["run_export"] or 0)
         a["pending"] = int(r["pending"] or 0)
         a["failed_recent"] = int(r["failed_recent"] or 0)
-        a["exported"] = int(r["exported"] or 0)
-    # MAX(finished_at) + bare column: SQLite ĐẢM BẢO cột trần (type) lấy từ
-    # đúng dòng đạt MAX (giống channel_activity) -> biết loại job done gần nhất.
+    # clip đã tạo + clip ĐÃ XUẤT (export_path) đếm từ bảng clips -> 'Đã xuất'
+    # không mất khi 'Xóa lịch sử'.
     for r in db.query(
-            "SELECT video_id AS vid, MAX(finished_at) AS last_done, "
-            "type AS last_type FROM jobs "
-            "WHERE project_id=? AND video_id IS NOT NULL "
-            "AND status='done' AND finished_at IS NOT NULL "
-            "GROUP BY video_id", (project_id,)):
-        a = act.get(int(r["vid"]))
-        if a is not None:
-            a["last_done"] = r["last_done"]
-            a["last_done_type"] = r["last_type"] or ""
-    for r in db.query(
-            "SELECT c.video_id AS vid, COUNT(*) AS n FROM clips c "
-            "JOIN videos v ON v.id = c.video_id "
+            "SELECT c.video_id AS vid, COUNT(*) AS n, "
+            "SUM(c.export_path IS NOT NULL AND c.export_path<>'') AS exported "
+            "FROM clips c JOIN videos v ON v.id = c.video_id "
             "WHERE v.project_id=? GROUP BY c.video_id", (project_id,)):
         a = act.get(int(r["vid"]))
         if a is not None:
             a["clips"] = int(r["n"])
+            a["exported"] = int(r["exported"] or 0)
     return act
 
 

@@ -1921,9 +1921,15 @@ class StudioPage(QWidget):
                         parts.append(
                             "✅" + services.rel_time_vi(a["last_done"],
                                                         short=True))
+                # TÊN QUÁ DÀI che mất phần trạng thái (🟢/⏳/✅) -> cắt gọn tên,
+                # thêm '…', GIỮ phần trạng thái luôn hiện. Có trạng thái thì cắt
+                # ngắn hơn (nhường chỗ); không thì cho tên dài hơn.
+                cap = 20 if parts else 34
+                nm = (name[:cap - 1] + "…") if len(name) > cap else name
                 self.proj.setItemText(
-                    i, f"{i + 1}. " + name
+                    i, f"{i + 1}. " + nm
                     + ((" · " + " · ".join(parts)) if parts else ""))
+                self.proj.setItemData(i, name, Qt.ItemDataRole.ToolTipRole)
         finally:
             self.proj.blockSignals(False)
 
