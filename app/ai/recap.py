@@ -111,6 +111,18 @@ _STYLE_EX = {
     },
 }
 
+def _creative_model() -> Optional[str]:
+    """Model Groq chuyên VIẾT LÁCH (kimi-k2) cho các pass viết kịch bản —
+    văn sáng tạo + CJK tốt hơn model suy luận. Chỉ tác dụng khi provider là
+    groq (llm.complete_json bỏ qua với provider khác); lỗi config -> None
+    (dùng model mặc định, không bao giờ chặn pipeline)."""
+    try:
+        from config import settings as _st
+        return getattr(_st, "GROQ_LLM_MODEL_CREATIVE", None) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 _SYSTEM = (
     "Bạn là NGƯỜI KỂ CHUYỆN (narrator) của một kênh video triệu view. Bạn "
     "đứng NGOÀI video, kể về nhân vật và sự việc trong video cho khán giả "
@@ -2045,7 +2057,8 @@ def _fill_mute_narrates(data, sentences: list, lang_name: str,
         f'"texts": {{"<số slot>": "lời kể {ln}"}}}} — đủ MỌI slot, '
         "text KHÔNG rỗng.")
     try:
-        d2 = llm.complete_json(prompt, system=_SYSTEM)
+        d2 = llm.complete_json(prompt, system=_SYSTEM,
+                               model=_creative_model())
     except llm.LLMError:
         return None
     texts = d2.get("texts") if isinstance(d2, dict) else None
@@ -2587,7 +2600,8 @@ def _refine_script(result: dict, sentences: list, lang_name: str, style: str,
             f"GIỮ đúng ngôn ngữ ({lang_name.upper()}). Trả DUY NHẤT 1 JSON "
             "object.")
         try:
-            d2 = llm.complete_json(refine_prompt, system=_SYSTEM)
+            d2 = llm.complete_json(refine_prompt, system=_SYSTEM,
+                                   model=_creative_model())
         except (llm.LLMError, Exception):  # noqa: BLE001
             return result
         r2, _e2 = _director_from_data(d2, sentences, duration,
@@ -2644,7 +2658,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
         try:
             d3 = llm.complete_json(
                 prompt + "\n\n" + _WRONG_LANG_NOTE.format(
-                    ln=lang_name.upper()), system=_SYSTEM)
+                    ln=lang_name.upper()), system=_SYSTEM,
+                model=_creative_model())
             r3, _e3 = _director_from_data(d3, sentences, duration,
                                           min_total, max_total, win_max)
         except llm.LLMError:
@@ -2681,7 +2696,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
 
     result, err, data = None, "", None
     try:
-        data = llm.complete_json(prompt, system=_SYSTEM)
+        data = llm.complete_json(prompt, system=_SYSTEM,
+                                 model=_creative_model())
         result, err = _director_from_data(data, sentences, duration,
                                           min_total, max_total, win_max)
     except llm.LLMError as e:
@@ -2709,7 +2725,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
         if want >= 2 and kept < max(1, _ANTICOPY_RETRY_KEEP * want):
             try:
                 d2 = llm.complete_json(prompt + "\n\n" + _RETELL_RETRY_NOTE,
-                                       system=_SYSTEM)
+                                       system=_SYSTEM,
+                                       model=_creative_model())
                 r2, _e2 = _director_from_data(d2, sentences, duration,
                                               min_total, max_total, win_max)
             except llm.LLMError:
@@ -2742,7 +2759,8 @@ def write_director_script(sentences: list, lang_name: str, style: str,
         + err + ".\nHãy SỬA ĐÚNG lỗi đó và trả lại DUY NHẤT 1 JSON object "
         "đúng schema yêu cầu ở trên, không thêm chữ nào khác." + retell_hint)
     try:
-        data = llm.complete_json(retry_prompt, system=_SYSTEM)
+        data = llm.complete_json(retry_prompt, system=_SYSTEM,
+                                 model=_creative_model())
     except llm.LLMError:
         return None                     # retry vẫn hỏng -> caller fallback
     result, _err = _director_from_data(data, sentences, duration,
@@ -2794,7 +2812,8 @@ def write_script(sentences: list, lang_name: str, style: str,
                                   emotion=emotion)
                 if prompt != base_prompt:   # giữ chỉ trích retry ở cuối
                     p2 += prompt[len(base_prompt):]
-            data = llm.complete_json(p2, system=_SYSTEM)
+            data = llm.complete_json(p2, system=_SYSTEM,
+                                      model=_creative_model())
         if isinstance(data, list):      # model trả thẳng mảng parts
             data = {"parts": data}
         return data if isinstance(data, dict) else None

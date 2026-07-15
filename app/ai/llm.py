@@ -461,28 +461,54 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
         out["reset_requests"] = h.get("x-ratelimit-reset-requests")
         out["reset_tokens"] = h.get("x-ratelimit-reset-tokens")
 
-    body = json.dumps({
-        "model": _GROQ_PROBE_MODEL,
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 1,
-    }).encode()
-    req = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=body,
-        headers={"Authorization": f"Bearer {key}",
-                 "User-Agent": "Mozilla/5.0", "Content-Type": "application/json",
-                 "Accept": "application/json"},
-        method="POST")
+    # DÒ bằng MODEL CHÍNH (hạn mức Groq tính THEO MODEL -> số remaining hiện
+    # cho user khớp model đang dùng thật). Model bị gỡ/đổi tên (400/404) ->
+    # dò lại bằng model dự phòng, không báo lỗi oan.
+    probe_models = [settings.GROQ_LLM_MODEL,
+                    getattr(settings, "GROQ_LLM_FALLBACK", "")
+                    or _GROQ_PROBE_MODEL]
+
+    def _probe(model_id):
+        body = json.dumps({
+            "model": model_id,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "User-Agent": "Mozilla/5.0",
+                     "Content-Type": "application/json",
+                     "Accept": "application/json"},
+            method="POST")
+        return urllib.request.urlopen(req, timeout=timeout)
+
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            _read_headers(resp.headers)
-            rr = out["remaining_requests"]
-            if rr is not None and rr <= 0:
-                out["kind"] = "exhausted"
-                out["note"] = "hết lượt request hôm nay"
-            else:
-                out["kind"] = "ok"
-            return out
+        last_http = None
+        for i, pm in enumerate(probe_models):
+            if not pm:
+                continue
+            try:
+                with _probe(pm) as resp:
+                    _read_headers(resp.headers)
+                    rr = out["remaining_requests"]
+                    if rr is not None and rr <= 0:
+                        out["kind"] = "exhausted"
+                        out["note"] = "hết lượt request hôm nay"
+                    else:
+                        out["kind"] = "ok"
+                    return out
+            except urllib.error.HTTPError as e:
+                # 400/404 = model không tồn tại -> thử model dự phòng;
+                # mã khác (401/403/429...) xử ngay bên dưới.
+                if e.code in (400, 404) and i + 1 < len(probe_models):
+                    last_http = e
+                    continue
+                raise
+        if last_http is not None:
+            raise last_http
+        raise RuntimeError("không có model để dò")
     except urllib.error.HTTPError as e:
         _read_headers(e.headers)
         if e.code in (401, 403):
@@ -564,8 +590,23 @@ def check_groq_keys(keys, progress=None, max_workers: int = 6,
             "total_remaining_requests": total_remaining}
 
 
+# Model Groq bị phát hiện "không tồn tại/đã gỡ" trong phiên này -> né, dùng
+# fallback ngay (đỡ tốn 1 request lỗi mỗi lần). Groq thi thoảng đổi tên/gỡ
+# model — máy khách tự cập nhật KHÔNG được chết vì chuyện đó.
+_GROQ_DEAD_MODELS: set = set()
+
+
+def _is_model_missing_error(msg: str) -> bool:
+    """Lỗi do MODEL không tồn tại/bị gỡ (khác lỗi key/quota/mạng)."""
+    m = (msg or "").lower()
+    return any(s in m for s in (
+        "model_not_found", "model not found", "does not exist",
+        "decommissioned", "model_decommissioned", "unknown model",
+        "invalid model", "no longer supported", "has been deprecated"))
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
-               temperature: float) -> str:
+               temperature: float, model: Optional[str] = None) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
     if provider in ("openai", "deepseek", "ollama", "groq"):
         from openai import OpenAI
@@ -573,8 +614,12 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         if provider == "deepseek":
             base_url, model = "https://api.deepseek.com", settings.DEEPSEEK_MODEL
         elif provider == "groq":
-            base_url, model = ("https://api.groq.com/openai/v1",
-                               settings.GROQ_LLM_MODEL)
+            base_url = "https://api.groq.com/openai/v1"
+            model = model or settings.GROQ_LLM_MODEL
+            fb = getattr(settings, "GROQ_LLM_FALLBACK",
+                         "llama-3.3-70b-versatile")
+            if model in _GROQ_DEAD_MODELS and fb:
+                model = fb
         elif provider == "ollama":
             base_url, model = settings.OLLAMA_BASE_URL, settings.OLLAMA_MODEL
             # QUAN TRỌNG: Ollama mặc định num_ctx=2048 -> prompt transcript dài bị
@@ -590,9 +635,25 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         # KHÔNG giới hạn token cứng: JSON chọn clip có thể dài, cắt cụt -> hỏng kết quả
-        resp = client.chat.completions.create(
-            model=model, messages=msgs, temperature=temperature, extra_body=extra,
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=model, messages=msgs, temperature=temperature,
+                extra_body=extra,
+            )
+        except Exception as e:  # noqa: BLE001
+            # Groq gỡ/đổi tên model -> RƠI VỀ fallback NGAY trong lệnh gọi này
+            # (nhớ trong phiên để các lệnh sau đi thẳng fallback). Lỗi khác
+            # (key/quota/mạng) ném lại cho complete_text xử như cũ.
+            fb = getattr(settings, "GROQ_LLM_FALLBACK", "")
+            if (provider == "groq" and fb and model != fb
+                    and _is_model_missing_error(str(e))):
+                _GROQ_DEAD_MODELS.add(model)
+                resp = client.chat.completions.create(
+                    model=fb, messages=msgs, temperature=temperature,
+                    extra_body=extra,
+                )
+            else:
+                raise
         return resp.choices[0].message.content or ""
 
     if provider == "gemini":
@@ -617,7 +678,10 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
 
 
 def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
-                  provider: Optional[str] = None) -> str:
+                  provider: Optional[str] = None,
+                  model: Optional[str] = None) -> str:
+    """`model`: đè model CHỈ với provider groq (vd kimi-k2 cho pass viết
+    kịch bản); provider khác bỏ qua — an toàn khi user chọn gemini/ollama."""
     provider = provider or active_provider()
     keys = settings.llm_keys_for(provider)
     if not keys:
@@ -637,7 +701,8 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             for key in pick_keys(provider, keys):
                 mark_used(provider, key)
                 try:
-                    out = _call_once(provider, key, prompt, system, temperature)
+                    out = _call_once(provider, key, prompt, system,
+                                     temperature, model=model)
                     mark_ok(provider, key)
                     return out
                 except LLMError:
@@ -672,9 +737,12 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     raise LLMError(f"Gọi {provider} thất bại (hết lượt/lỗi tất cả key): {last}")
 
 
-def complete_json(prompt: str, system: str = "", provider: Optional[str] = None):
-    """Gọi LLM và parse JSON. Ném LLMError nếu không parse được."""
-    raw = complete_text(prompt, system=system, temperature=0.3, provider=provider)
+def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
+                  model: Optional[str] = None):
+    """Gọi LLM và parse JSON. Ném LLMError nếu không parse được.
+    `model`: đè model chỉ với groq (xem complete_text)."""
+    raw = complete_text(prompt, system=system, temperature=0.3,
+                        provider=provider, model=model)
     try:
         return _extract_json(raw)
     except (ValueError, json.JSONDecodeError) as e:
