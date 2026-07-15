@@ -112,10 +112,11 @@ _STYLE_EX = {
 }
 
 def _creative_model() -> Optional[str]:
-    """Model Groq chuyên VIẾT LÁCH (kimi-k2) cho các pass viết kịch bản —
-    văn sáng tạo + CJK tốt hơn model suy luận. Chỉ tác dụng khi provider là
-    groq (llm.complete_json bỏ qua với provider khác); lỗi config -> None
-    (dùng model mặc định, không bao giờ chặn pipeline)."""
+    """Model Groq RIÊNG cho các pass VIẾT kịch bản (GROQ_LLM_MODEL_CREATIVE).
+    Mặc định rỗng -> None = dùng model chính; user trỏ model viết lách khác
+    qua env khi Groq có lựa hay hơn. Chỉ tác dụng khi provider là groq
+    (llm.complete_json bỏ qua với provider khác); lỗi config -> None
+    (không bao giờ chặn pipeline)."""
     try:
         from config import settings as _st
         return getattr(_st, "GROQ_LLM_MODEL_CREATIVE", None) or None

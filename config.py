@@ -142,18 +142,18 @@ class Settings:
     ELEVENLABS_KEYS_FILE = _env("ELEVENLABS_KEYS_FILE")
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ).
-    # PHÂN VAI 2 MODEL (đều free trên Groq, thông minh hơn llama-3.3-70b):
-    #  - GROQ_LLM_MODEL (openai/gpt-oss-120b): SUY LUẬN — chọn đoạn hay, chấm
-    #    điểm, đạo diễn, phê bình. Model reasoning 120B của OpenAI, thắng
-    #    llama-3.3-70b ở hầu hết benchmark mà trên Groq còn chạy nhanh hơn.
-    #  - GROQ_LLM_MODEL_CREATIVE (moonshotai/kimi-k2-instruct): VIẾT LÁCH —
-    #    kịch bản thuyết minh reup. Kimi K2 mạnh về văn sáng tạo + CJK
-    #    (Nhật/Hàn/Trung) — đúng chỗ llama hay "câm" tiếng Hàn.
+    # MODEL CHÍNH = openai/gpt-oss-120b: model mở 120B của OpenAI, có
+    # reasoning — thắng llama-3.3-70b cũ ở hầu hết benchmark, trên Groq chạy
+    # còn nhanh hơn (MoE). Chính Groq khi gỡ kimi-k2 khỏi free tier (3/2026)
+    # cũng khuyên chuyển sang model này -> lựa free thông minh nhất hiện có.
+    # GROQ_LLM_MODEL_CREATIVE: model RIÊNG cho các pass VIẾT kịch bản reup —
+    # mặc định RỖNG = dùng chung model chính (kimi-k2 từng là lựa viết lách
+    # nhưng Groq đã gỡ khỏi free); Groq thêm model viết hay hơn thì user chỉ
+    # cần đặt env này, khỏi chờ bản mới.
     # Model nào lỗi "không tồn tại" (Groq gỡ/đổi tên) -> app TỰ RƠI VỀ
     # GROQ_LLM_FALLBACK trong phiên đó, không bao giờ chết ở máy khách.
     GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
-    GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE",
-                                   "moonshotai/kimi-k2-instruct")
+    GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE", "")
     GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "llama-3.3-70b-versatile")
     # (tùy chọn) model Groq MẠNH HƠN cho các pass CHẤM/VIẾT LẠI chất lượng cao.
     # Mặc định = GROQ_LLM_MODEL (không đổi hành vi); user tự trỏ model xịn hơn.
