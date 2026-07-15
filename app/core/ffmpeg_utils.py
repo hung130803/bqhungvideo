@@ -219,6 +219,35 @@ def _classify_nvenc_error(log: str) -> str:
     return ""
 
 
+# Chữ ký lỗi TẦM MÔI TRƯỜNG (driver/thư viện NVIDIA) — mọi input đều hỏng,
+# đáng ghi cache file. Khác lỗi encoder MỨC INPUT (1 video dị) và khác hẳn
+# lỗi KHÔNG liên quan NVENC (filter graph, file nguồn...).
+_NVENC_ENV_SIGNS = (
+    "minimum required nvidia driver", "required nvenc api version",
+    "cannot load nvcuda", "failed loading nvenc",
+    "no nvenc capable devices", "no capable devices",
+    "cuda_error", "cuda error", "no nvidia devices",
+)
+
+
+def _looks_nvenc_env_failure(log: str) -> bool:
+    """Lỗi driver/thư viện NVIDIA (dính cả máy) -> đáng ghi cache file."""
+    low = (log or "").lower()
+    return any(s in low for s in _NVENC_ENV_SIGNS)
+
+
+def _looks_nvenc_failure(log: str) -> bool:
+    """Log ffmpeg có THẬT SỰ chỉ ra lỗi từ NVENC không?
+
+    Nhận diện bằng dòng log CỦA CHÍNH component encoder `[h264_nvenc @ 0x..]`
+    (bracket đứng NGAY trước tên — dòng `[vost#0:0/h264_nvenc @..]` là task
+    wrapper, báo lỗi CHUNG cho cả lỗi filter phía trước, KHÔNG tính) hoặc các
+    chữ ký driver/thư viện. Lỗi filter graph/input ('Error reinitializing
+    filters', 'Invalid argument' từ [fc#/[Parsed_...) -> False."""
+    low = (log or "").lower()
+    return "[h264_nvenc @" in low or _looks_nvenc_env_failure(low)
+
+
 _DRIVER_VER_CACHE: str | None = None
 
 
@@ -243,17 +272,23 @@ def _gpu_driver_version() -> str:
 
 def _nvenc_cache_key() -> str:
     """Nhận diện MÔI TRƯỜNG encode: binary ffmpeg (path+mtime+size) + PHIÊN
-    BẢN DRIVER NVIDIA. User cập nhật driver (ffmpeg không đổi) -> key đổi ->
-    test lại NVENC NGAY, không phải chờ hết hạn cache 7 ngày (lỗi thật: user
-    lên driver 610 nhưng app vẫn nhớ 'NVENC hỏng' từ thời driver 560)."""
+    BẢN DRIVER NVIDIA + PHIÊN BẢN APP. User cập nhật driver (ffmpeg không
+    đổi) -> key đổi -> test lại NVENC NGAY, không phải chờ hết hạn cache 7
+    ngày (lỗi thật: user lên driver 610 nhưng app vẫn nhớ 'NVENC hỏng' từ
+    thời driver 560). Phiên bản app trong key: máy từng bị ghi OAN 'NVENC
+    hỏng' (bug đổ lỗi nhầm bản cũ) được test lại NGAY lần đầu mở bản mới."""
     import shutil
     p = shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
     drv = _gpu_driver_version()
     try:
+        from app.version import __version__ as _appv
+    except Exception:  # noqa: BLE001
+        _appv = ""
+    try:
         st = os.stat(p)
-        return f"{p}|{int(st.st_mtime)}|{st.st_size}|drv={drv}"
+        return f"{p}|{int(st.st_mtime)}|{st.st_size}|drv={drv}|app={_appv}"
     except OSError:
-        return f"{p}|drv={drv}"
+        return f"{p}|drv={drv}|app={_appv}"
 
 
 def _nvenc_works_cached() -> bool:
@@ -271,9 +306,13 @@ def _nvenc_works_cached() -> bool:
     key = _nvenc_cache_key()
     try:
         d = json.loads(cf.read_text(encoding="utf-8"))
+        # ok=True tin 7 ngày; ok=False CHỈ TIN 1 NGÀY — bản cũ từng ghi oan
+        # 'NVENC hỏng' khi export lỗi vì lý do khác -> máy dính cache đó bị
+        # CPU-encode cả tuần. Giờ hôm sau mở app là test lại, GPU tự hồi.
+        ttl_days = _NVENC_CACHE_DAYS if d.get("ok") else 1
         if (d.get("ffmpeg") == key and isinstance(d.get("ok"), bool)
                 and 0 <= time.time() - float(d.get("ts", 0))
-                < _NVENC_CACHE_DAYS * 86400):
+                < ttl_days * 86400):
             _NVENC_NOTE = str(d.get("note") or "")
             return d["ok"]
     except (OSError, ValueError, TypeError):
@@ -888,14 +927,22 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
             return
         last_log = "\n".join(tail[-6:])
         if enc == "h264_nvenc":
-            global _ENCODER_CACHE, _NVENC_NOTE
-            _ENCODER_CACHE = "libx264"
-            # NVENC hỏng thật -> sửa luôn cache file (không đợi 7 ngày mới test
-            # lại) + ghi LÝ DO (driver cũ...) để UI gợi ý user cách sửa. Soi
-            # TOÀN BỘ tail (14 dòng): dòng "minimum required Nvidia driver"
-            # nằm TRƯỚC chuỗi lỗi cuối nên last_log (6 dòng chót) không thấy.
-            _NVENC_NOTE = _classify_nvenc_error("\n".join(tail))
-            _save_nvenc_cache(False, _NVENC_NOTE)
+            # CHỈ đổ lỗi NVENC khi log THẬT SỰ chỉ ra lỗi NVENC/driver.
+            # LỖI THẬT (máy user): export hỏng vì lý do KHÁC (filter graph,
+            # file nguồn hỏng, đường dẫn...) nhưng nhánh này vẫn ghi
+            # ok=false vào cache -> MỌI export sau rơi về CPU libx264 suốt
+            # 7 ngày -> "xuất chậm hẳn + máy đơ dù bật tiết kiệm" trong khi
+            # GPU hoàn toàn khỏe. (vẫn THỬ libx264 cho lượt này — vô hại.)
+            full = "\n".join(tail)
+            if _looks_nvenc_failure(full):
+                global _ENCODER_CACHE, _NVENC_NOTE
+                _ENCODER_CACHE = "libx264"     # phiên này khỏi thử NVENC nữa
+                _NVENC_NOTE = _classify_nvenc_error(full)
+                # Chỉ GHI CACHE FILE (dính qua các lần mở app) khi lỗi tầm
+                # DRIVER/THƯ VIỆN (mọi input đều sẽ hỏng). Lỗi encoder mức
+                # input (1 video dị) -> chỉ hạ trong phiên, mở app lại thử lại.
+                if _looks_nvenc_env_failure(full):
+                    _save_nvenc_cache(False, _NVENC_NOTE)
     _cleanup_dst(dst)
     raise RuntimeError(f"ffmpeg không {what}. Log cuối:\n" + (last_log or "(trống)"))
 
