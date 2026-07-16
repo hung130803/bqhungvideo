@@ -1053,21 +1053,22 @@ def export_stitched_clip(
     # ghép chỉ hình.
     has_audio = probe(src).has_audio
 
-    parts, labels = [], []
+    # MỖI ĐOẠN = 1 INPUT seek riêng (như export_canvas_clip): 1 input + trim
+    # fan-out làm frame các đoạn SAU xếp hàng chờ ở concat -> RAM ffmpeg phình
+    # không giới hạn (đo 19.6GB) khi encoder chậm hơn decoder.
+    parts, labels, seg_in = [], [], []
     for i, m in enumerate(moments):
         s, e = m["start"], m["end"]
         cx = float(m.get("cx", 0.5))
-        # LẬT GƯƠNG: hflip ngay sau trim (TRƯỚC reframe/concat/overlay) -> chỉ
-        # hình soi gương, overlay chữ + phụ đề chồng sau nên KHÔNG ngược.
+        seg_in += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
+        # LẬT GƯƠNG: hflip TRƯỚC reframe/concat/overlay -> chỉ hình soi
+        # gương, overlay chữ + phụ đề chồng sau nên KHÔNG ngược.
         flip_f = "hflip," if flip_h else ""
-        parts.append(
-            f"[0:v]trim=start={s:.3f}:end={e:.3f},{flip_f}"
-            f"setpts=PTS-STARTPTS[pv{i}]")
+        parts.append(f"[{i}:v]{flip_f}setpts=PTS-STARTPTS[pv{i}]")
         parts.append(reframe_chain(mode, cx, out_w, out_h, zoom,
                                    f"pv{i}", f"v{i}", str(i)))
         if has_audio:
-            parts.append(
-                f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+            parts.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
             labels.append(f"[v{i}][a{i}]")
         else:
             labels.append(f"[v{i}]")
@@ -1079,13 +1080,13 @@ def export_stitched_clip(
     parts.append("".join(labels) + f"concat=n={n}:v=1:a={a_flag}{vout}"
                  + ("[a]" if has_audio else ""))
     if use_png:
-        parts.append("[vcat][1:v]overlay=0:0[v]")
+        parts.append(f"[vcat][{n}:v]overlay=0:0[v]")
     elif has_text:
         parts.append(_text_chain(text_overlays, out_h, "vcat", "v"))
     fc = ";".join(parts)
 
     def build(enc: str) -> list[str]:
-        cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts(), "-i", str(src)]
+        cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts(), *seg_in]
         if use_png:
             cmd += ["-i", str(overlay_png)]
         cmd += ["-filter_complex", fc, "-map", "[v]"]
@@ -1357,20 +1358,34 @@ def export_canvas_clip(
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
         parts = []
+        # Các input phụ (màu nền/overlay/nhạc/dub) đánh số sau input video.
+        vin = 1
         if multi:
-            cmd += ["-i", str(src)]
-            labs = ""
-            for i, (s, e) in enumerate(segs):
-                parts.append(f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS[sv{i}]")
-                if use_voice:
+            # GHÉP NHIỀU ĐOẠN: VIDEO đi 1 NHÁNH select DUY NHẤT (không trim
+            # fan-out + concat). LỖI THẬT (đo được): kiểu cũ decode chạy trước
+            # encoder, FRAME VIDEO (~3MB/khung) các đoạn SAU xếp hàng ở concat
+            # chờ tới lượt -> RAM ffmpeg phình KHÔNG GIỚI HẠN (19.6GB với 5
+            # đoạn/video 10 phút = đúng ca "máy đơ RAM 97%" khi encode rơi về
+            # CPU). select loại frame ngoài đoạn NGAY tại chỗ -> RAM phẳng.
+            # (đã thử N input -ss riêng: ffmpeg vẫn đọc song song cả N ->
+            # 8.3GB — vẫn hỏng, nên chốt select.)
+            # AUDIO giữ atrim+concat: aselect trên bản ffmpeg đóng gói KHÔNG
+            # lọc (đo thật: video select chuẩn 602 frame, aselect trả nguyên
+            # 60s) — và frame audio bé (~150s ≈ 53MB) nên concat vô hại.
+            # gte*lt (nửa hở [s,e)) thay between (đóng 2 đầu) để khỏi dư 1
+            # frame mỗi đoạn -> khớp atrim, không lệch tiếng-hình dồn dần.
+            last_end = max(e for _s, e in segs)
+            cmd += ["-t", f"{last_end:.3f}", "-i", str(src)]
+            expr = "+".join(f"(gte(t,{s:.3f})*lt(t,{e:.3f}))"
+                            for s, e in segs)
+            parts.append(f"[0:v]select='{expr}',setpts=N/FRAME_RATE/TB[cvid]")
+            if use_voice:
+                labs = ""
+                for i, (s, e) in enumerate(segs):
                     parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},"
                                  f"asetpts=PTS-STARTPTS[sa{i}]")
-                    labs += f"[sv{i}][sa{i}]"
-                else:
-                    labs += f"[sv{i}]"
-            a_flag = 1 if use_voice else 0
-            parts.append(f"{labs}concat=n={len(segs)}:v=1:a={a_flag}[cvid]"
-                         + ("[caud]" if use_voice else ""))
+                    labs += f"[sa{i}]"
+                parts.append(f"{labs}concat=n={len(segs)}:v=0:a=1[caud]")
             content, aud, aud_map = "[cvid]", "[caud]", "[caud]"
         else:
             s, e = segs[0]
@@ -1390,7 +1405,7 @@ def export_canvas_clip(
             parts.append(f"{vsrc}scale={out_w}:{out_h}:"
                          f"force_original_aspect_ratio=increase,"
                          f"crop={out_w}:{out_h},setsar=1[vv]")
-            nextidx = 1
+            nextidx = vin
         elif bg == "blur":
             # NHẸ: blur trên ảnh THU NHỎ 1/4 rồi phóng to -> rẻ ~16 lần, nhìn y hệt.
             bw, bh = max(2, out_w // 4), max(2, out_h // 4)
@@ -1402,16 +1417,16 @@ def export_canvas_clip(
             parts.append(f"[fv]scale={vw}:-2:flags=lanczos,setsar=1[fg]")
             parts.append(f"[base][fg]overlay=x='{cx:.4f}*W-w/2':"
                          f"y='{cy:.4f}*H-h/2'[vv]")
-            nextidx = 1
+            nextidx = vin
         else:
             col = "white" if bg == "white" else "black"
             cmd += ["-f", "lavfi", "-t", f"{total:.3f}",
                     "-i", f"color=c={col}:s={out_w}x{out_h}:r=30"]
-            parts.append("[1:v]setsar=1[base]")
+            parts.append(f"[{vin}:v]setsar=1[base]")
             parts.append(f"{vsrc}scale={vw}:-2:flags=lanczos,setsar=1[fg]")
             parts.append(f"[base][fg]overlay=x='{cx:.4f}*W-w/2':"
                          f"y='{cy:.4f}*H-h/2'[vv]")
-            nextidx = 2
+            nextidx = vin + 1
         final = "[vv]"
         if use_png:
             cmd += ["-i", str(overlay_png)]
