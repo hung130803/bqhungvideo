@@ -605,6 +605,15 @@ def _is_model_missing_error(msg: str) -> bool:
         "invalid model", "no longer supported", "has been deprecated"))
 
 
+def _is_model_unfit_error(msg: str) -> bool:
+    """Lỗi do MODEL không KHAM NỔI request này trên tier hiện tại (413
+    request too large — hạn mức token/request của model thấp hơn prompt).
+    Đổi key vô ích; RƠI VỀ fallback (hạn mức rộng hơn) là đúng."""
+    m = (msg or "").lower()
+    return "request too large" in m or "error code: 413" in m \
+        or "reduce your message size" in m
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
                temperature: float, model: Optional[str] = None) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
@@ -635,6 +644,7 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         # KHÔNG giới hạn token cứng: JSON chọn clip có thể dài, cắt cụt -> hỏng kết quả
+        fb = getattr(settings, "GROQ_LLM_FALLBACK", "")
         try:
             resp = client.chat.completions.create(
                 model=model, messages=msgs, temperature=temperature,
@@ -642,19 +652,34 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             )
         except Exception as e:  # noqa: BLE001
             # Groq gỡ/đổi tên model -> RƠI VỀ fallback NGAY trong lệnh gọi này
-            # (nhớ trong phiên để các lệnh sau đi thẳng fallback). Lỗi khác
-            # (key/quota/mạng) ném lại cho complete_text xử như cũ.
-            fb = getattr(settings, "GROQ_LLM_FALLBACK", "")
-            if (provider == "groq" and fb and model != fb
-                    and _is_model_missing_error(str(e))):
-                _GROQ_DEAD_MODELS.add(model)
+            # (nhớ trong phiên để các lệnh sau đi thẳng fallback). 413 request
+            # too large (model không kham nổi prompt dài trên tier free —
+            # LỖI THẬT với gpt-oss-120b) -> fallback CHO LỆNH NÀY, không memo
+            # (prompt ngắn vẫn dùng model chính được). Lỗi khác (key/quota/
+            # mạng) ném lại cho complete_text xử như cũ.
+            if provider == "groq" and fb and model != fb:
+                if _is_model_missing_error(str(e)):
+                    _GROQ_DEAD_MODELS.add(model)
+                elif not _is_model_unfit_error(str(e)):
+                    raise
                 resp = client.chat.completions.create(
                     model=fb, messages=msgs, temperature=temperature,
                     extra_body=extra,
                 )
             else:
                 raise
-        return resp.choices[0].message.content or ""
+        out = resp.choices[0].message.content or ""
+        # CONTENT RỖNG (model reasoning "nghĩ" hết chỗ output — LỖI THẬT của
+        # gpt-oss-120b với prompt dài): thử lại 1 lần bằng fallback thay vì
+        # trả "" cho parser JSON fail mù mờ. Model nào cũng có thể dính ->
+        # lưới này giữ pipeline sống với MỌI model user tự cấu hình.
+        if (not out.strip() and provider == "groq" and fb and model != fb):
+            resp = client.chat.completions.create(
+                model=fb, messages=msgs, temperature=temperature,
+                extra_body=extra,
+            )
+            out = resp.choices[0].message.content or ""
+        return out
 
     if provider == "gemini":
         import google.generativeai as genai

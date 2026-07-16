@@ -142,17 +142,18 @@ class Settings:
     ELEVENLABS_KEYS_FILE = _env("ELEVENLABS_KEYS_FILE")
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ).
-    # MODEL CHÍNH = openai/gpt-oss-120b: model mở 120B của OpenAI, có
-    # reasoning — thắng llama-3.3-70b cũ ở hầu hết benchmark, trên Groq chạy
-    # còn nhanh hơn (MoE). Chính Groq khi gỡ kimi-k2 khỏi free tier (3/2026)
-    # cũng khuyên chuyển sang model này -> lựa free thông minh nhất hiện có.
+    # MODEL CHÍNH mặc định = llama-3.3-70b-versatile. ĐÃ THỬ nâng lên
+    # openai/gpt-oss-120b (v1.85) và ĐO THẬT trên tier free: prompt đạo
+    # diễn/chọn đoạn dài của app bị Groq chặn 413 "Request too large"
+    # (hạn mức token/request của gpt-oss free thấp hơn llama), content
+    # hay trả RỖNG (reasoning nuốt hết output) -> phân tích lỗi, reup mất
+    # tiếng. -> Mặc định quay về llama (chạy ổn định nhiều tháng);
+    # gpt-oss-120b vẫn dùng được cho tài khoản TRẢ PHÍ qua env này.
     # GROQ_LLM_MODEL_CREATIVE: model RIÊNG cho các pass VIẾT kịch bản reup —
-    # mặc định RỖNG = dùng chung model chính (kimi-k2 từng là lựa viết lách
-    # nhưng Groq đã gỡ khỏi free); Groq thêm model viết hay hơn thì user chỉ
-    # cần đặt env này, khỏi chờ bản mới.
-    # Model nào lỗi "không tồn tại" (Groq gỡ/đổi tên) -> app TỰ RƠI VỀ
-    # GROQ_LLM_FALLBACK trong phiên đó, không bao giờ chết ở máy khách.
-    GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
+    # mặc định RỖNG = dùng chung model chính.
+    # Model lỗi "không tồn tại"/413/content rỗng -> app TỰ RƠI VỀ
+    # GROQ_LLM_FALLBACK ngay trong lệnh gọi, không bao giờ chết ở máy khách.
+    GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
     GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE", "")
     GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "llama-3.3-70b-versatile")
     # (tùy chọn) model Groq MẠNH HƠN cho các pass CHẤM/VIẾT LẠI chất lượng cao.
