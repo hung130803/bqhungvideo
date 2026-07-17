@@ -889,6 +889,12 @@ def _cleanup_dst(dst) -> None:
         pass
 
 
+def _cleanup_paths(paths) -> None:
+    """Xóa NHIỀU file tạm best-effort (file đoạn mezzanine, list concat...)."""
+    for p in paths or []:
+        _cleanup_dst(p)
+
+
 def _run_with_fallback(build_cmd, encoder: str, total: float,
                        on_progress, what: str, dst=None) -> None:
     """Chạy ffmpeg với encoder; nếu NVENC lỗi -> thử libx264. Ném lỗi kèm log.
@@ -1172,6 +1178,64 @@ def fit_src_video_rect(video_rect: tuple, src_w: int, src_h: int,
     return (round(cx, 4), round(cy, 4), round(w_px / out_w, 4))
 
 
+def _extract_segments_to_temp(src, segs: list, encoder: str,
+                              on_progress=None) -> tuple[str, list]:
+    """PHA 1 của ghép nhiều đoạn: TÁCH từng đoạn ra FILE TẠM (.mkv, mezzanine
+    chất lượng cao) rồi trả (đường_dẫn_file_danh_sách_concat, [file_tạm]).
+
+    VÌ SAO 2 PHA (bài học 2 lỗi thật):
+    - 1 lệnh trim+concat: decoder chạy trước encoder -> frame các đoạn sau
+      xếp hàng ở concat, RAM phình 19.6GB (máy đơ cứng, RAM 97%).
+    - 1 nhánh select (bản vá RAM v1.87): frame LUÔN ra theo dòng thời gian
+      GỐC, nhưng hook-first xếp đoạn KHÔNG theo thứ tự thời gian + audio đi
+      atrim theo THỨ TỰ DANH SÁCH -> hình một đằng tiếng một đằng, caption
+      lệch hết (lỗi user báo).
+    2 pha: mỗi đoạn 1 lệnh -ss/-t riêng (RAM phẳng, tiếng-hình cắt CÙNG NHAU
+    nên khớp tuyệt đối), concat demuxer nối THEO THỨ TỰ DANH SÁCH (hook-first
+    đúng), ép CFR đều nhau (nguồn VFR YouTube không còn trôi lệch).
+    Mezzanine cq/crf 16 + pha cuối crf 20 -> mất chất không nhận ra được.
+    Caller PHẢI dọn các file trả về (kể cả khi lỗi/hủy)."""
+    import tempfile
+    import uuid
+    info = probe(src)
+    fps = info.fps if 10.0 <= (info.fps or 0) <= 120.0 else 30.0
+    tdir = tempfile.gettempdir()
+    tag = uuid.uuid4().hex[:8]
+    temps: list = []
+    n = len(segs)
+    for i, (s, e) in enumerate(segs):
+        seg_path = os.path.join(tdir, f"_seg_{tag}_{i}.mkv")
+        temps.append(seg_path)
+
+        def _build_seg(enc: str, _s=s, _e=e, _p=seg_path) -> list[str]:
+            c = [settings.FFMPEG_PATH, "-y",
+                 "-ss", f"{_s:.3f}", "-t", f"{_e - _s:.3f}", "-i", str(src)]
+            if enc == "h264_nvenc":
+                c += ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
+                      "-cq", "16", "-pix_fmt", "yuv420p"]
+            else:
+                c += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+                      "-threads", str(encode_threads())]
+            # CFR đồng nhất mọi đoạn (concat demuxer cần cùng thông số) + PCM
+            # 48k stereo (không mất chất tiếng qua 2 pha, đồng nhất layout).
+            c += ["-r", f"{fps:g}", "-fps_mode:v", "cfr"]
+            if info.has_audio:
+                c += ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"]
+            c += [_p]
+            return c
+
+        if on_progress:
+            on_progress((i / max(1, n)) * 0.999)
+        _run_with_fallback(_build_seg, encoder, e - s, None,
+                           f"tách được đoạn {i + 1}/{n}", dst=seg_path)
+    lst = os.path.join(tdir, f"_seg_{tag}_list.txt")
+    with open(lst, "w", encoding="utf-8") as f:
+        f.write("ffconcat version 1.0\n")
+        for p in temps:
+            f.write("file '" + p.replace("\\", "/") + "'\n")
+    return lst, temps
+
+
 def export_canvas_clip(
     src: str | Path,
     dst: str | Path,
@@ -1355,42 +1419,34 @@ def export_canvas_clip(
         if b - a > 0.05:
             dims.append((max(0.0, a), b))
 
+    # ---- GHÉP NHIỀU ĐOẠN = 2 PHA (xem _extract_segments_to_temp): pha 1
+    # tách từng đoạn ra file tạm (RAM phẳng, tiếng-hình cắt CÙNG NHAU, giữ
+    # ĐÚNG THỨ TỰ danh sách kể cả hook-first, ép CFR chống nguồn VFR trôi);
+    # pha 2 nối bằng concat demuxer -> vào graph như 1 input LIỀN MẠCH.
+    _seg_list = ""
+    _seg_temps: list = []
+    if multi:
+        if on_progress:
+            on_progress(0.01)
+        try:
+            _seg_list, _seg_temps = _extract_segments_to_temp(
+                src, segs,
+                encoder, lambda p: on_progress and on_progress(p * 0.35))
+        except Exception:
+            _cleanup_paths(_seg_temps)
+            raise
+
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
         parts = []
         # Các input phụ (màu nền/overlay/nhạc/dub) đánh số sau input video.
         vin = 1
         if multi:
-            # GHÉP NHIỀU ĐOẠN: VIDEO đi 1 NHÁNH select DUY NHẤT (không trim
-            # fan-out + concat). LỖI THẬT (đo được): kiểu cũ decode chạy trước
-            # encoder, FRAME VIDEO (~3MB/khung) các đoạn SAU xếp hàng ở concat
-            # chờ tới lượt -> RAM ffmpeg phình KHÔNG GIỚI HẠN (19.6GB với 5
-            # đoạn/video 10 phút = đúng ca "máy đơ RAM 97%" khi encode rơi về
-            # CPU). select loại frame ngoài đoạn NGAY tại chỗ -> RAM phẳng.
-            # (đã thử N input -ss riêng: ffmpeg vẫn đọc song song cả N ->
-            # 8.3GB — vẫn hỏng, nên chốt select.)
-            # AUDIO giữ atrim+concat: aselect trên bản ffmpeg đóng gói KHÔNG
-            # lọc (đo thật: video select chuẩn 602 frame, aselect trả nguyên
-            # 60s) — và frame audio bé (~150s ≈ 53MB) nên concat vô hại.
-            # gte*lt (nửa hở [s,e)) thay between (đóng 2 đầu) để khỏi dư 1
-            # frame mỗi đoạn -> khớp atrim, không lệch tiếng-hình dồn dần.
-            last_end = max(e for _s, e in segs)
-            cmd += ["-t", f"{last_end:.3f}", "-i", str(src)]
-            expr = "+".join(f"(gte(t,{s:.3f})*lt(t,{e:.3f}))"
-                            for s, e in segs)
-            parts.append(f"[0:v]select='{expr}',setpts=N/FRAME_RATE/TB[cvid]")
-            if use_voice:
-                labs = ""
-                for i, (s, e) in enumerate(segs):
-                    parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},"
-                                 f"asetpts=PTS-STARTPTS[sa{i}]")
-                    labs += f"[sa{i}]"
-                parts.append(f"{labs}concat=n={len(segs)}:v=0:a=1[caud]")
-            content, aud, aud_map = "[cvid]", "[caud]", "[caud]"
+            cmd += ["-f", "concat", "-safe", "0", "-i", _seg_list]
         else:
             s, e = segs[0]
             cmd += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
-            content, aud, aud_map = "[0:v]", "[0:a]", "0:a?"
+        content, aud, aud_map = "[0:v]", "[0:a]", "0:a?"
         # LẬT GƯƠNG: hflip áp lên KHỐI video content SỚM NHẤT (ngay sau khi lấy
         # content, TRƯỚC pre_crop/reframe/overlay PNG/phụ đề/fade). Nhờ vậy chỉ
         # HÌNH bị soi gương; overlay chữ + phụ đề .ass chồng SAU nên KHÔNG ngược.
@@ -1647,6 +1703,14 @@ def export_canvas_clip(
     # ffmpeg log 'time=' là thời gian OUTPUT -> tổng thời lượng ra = total/vspeed
     # (vspeed=speed/dub_stretch); dùng total gốc sẽ làm thanh % kẹt rồi nhảy vọt.
     out_total = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
-    _run_with_fallback(build, encoder, out_total, on_progress, "xuất được clip",
-                       dst=dst)
+    # multi: pha tách đã chiếm 0..0.35 thanh % -> pha cuối chạy 0.35..1.0
+    _prog = (None if on_progress is None else
+             ((lambda p: on_progress(0.35 + 0.65 * p)) if multi
+              else on_progress))
+    try:
+        _run_with_fallback(build, encoder, out_total, _prog,
+                           "xuất được clip", dst=dst)
+    finally:
+        # dọn file đoạn tạm + file danh sách MỌI trường hợp (xong/lỗi/hủy)
+        _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))
     return True
