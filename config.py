@@ -156,6 +156,12 @@ class Settings:
     GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
     GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE", "")
     GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "llama-3.3-70b-versatile")
+    # Model THÔNG MINH NHẤT cho các lệnh NGẮN, chất lượng quyết định bộ mặt
+    # kênh: ĐÁNH BÓNG TIÊU ĐỀ (đúng ngôn ngữ video, giật tít) + hashtag.
+    # gpt-oss-120b trên tier free CHẠY TỐT với prompt ngắn (đã test thật —
+    # chỉ prompt đạo diễn dài mới bị 413); lỗi gì đã có lưới rơi về
+    # GROQ_LLM_FALLBACK trong llm._call_once. Đặt rỗng để tắt (dùng model chính).
+    GROQ_LLM_MODEL_SMART = _env("GROQ_LLM_MODEL_SMART", "openai/gpt-oss-120b")
     # (tùy chọn) model Groq MẠNH HƠN cho các pass CHẤM/VIẾT LẠI chất lượng cao.
     # Mặc định = GROQ_LLM_MODEL (không đổi hành vi); user tự trỏ model xịn hơn.
     GROQ_LLM_MODEL_HQ = _env("GROQ_LLM_MODEL_HQ", "") or _env(

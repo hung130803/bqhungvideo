@@ -7,6 +7,16 @@ from __future__ import annotations
 
 from app.ai import llm
 
+def _smart_model():
+    """Model Groq thông minh nhất cho prompt NGẮN (tiêu đề/caption/hashtag) —
+    xem config.GROQ_LLM_MODEL_SMART; rỗng/lỗi -> None = model chính."""
+    try:
+        from config import settings as _st
+        return getattr(_st, "GROQ_LLM_MODEL_SMART", None) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 _SYSTEM = (
     "Bạn là chuyên gia content ngắn (TikTok/Reels/Shorts) chuyên viết caption "
     "triệu view. Trả về JSON THUẦN, không thêm chữ nào khác."
@@ -61,7 +71,7 @@ def write_post(title: str, transcript: str, language: str = "",
         "Trả về ĐÚNG JSON: {\"title\":\"...\",\"caption\":\"...\","
         "\"hashtags\":[\"#...\",\"#...\"]}"
     )
-    data = llm.complete_json(prompt, system=_SYSTEM)
+    data = llm.complete_json(prompt, system=_SYSTEM, model=_smart_model())
     if isinstance(data, list):
         data = data[0] if data and isinstance(data[0], dict) else {}
     if not isinstance(data, dict):
@@ -108,7 +118,7 @@ def write_hashtags(title: str, transcript: str, language: str = "",
         "- Mỗi hashtag 1 từ/cụm liền không dấu cách, bắt đầu bằng #.\n"
         "Trả về ĐÚNG JSON: {\"hashtags\":[\"#...\",\"#...\"]}"
     )
-    data = llm.complete_json(prompt, system=_SYSTEM)
+    data = llm.complete_json(prompt, system=_SYSTEM, model=_smart_model())
     if isinstance(data, list):
         data = data[0] if data and isinstance(data[0], dict) else {}
     if not isinstance(data, dict):

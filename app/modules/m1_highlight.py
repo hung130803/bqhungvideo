@@ -1210,6 +1210,95 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
         return clips
 
 
+def _smart_model():
+    """Model Groq THÔNG MINH NHẤT cho lệnh NGẮN (đánh bóng tiêu đề/hashtag).
+    Chỉ tác dụng với provider groq (llm bỏ qua với provider khác); lỗi
+    config/rỗng -> None = dùng model chính. Lưới 413/content-rỗng trong
+    llm._call_once tự rơi về fallback nếu model này trục trặc."""
+    try:
+        from config import settings as _st
+        return getattr(_st, "GROQ_LLM_MODEL_SMART", None) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _title_lang_ok(title: str, want_code: str) -> bool:
+    """Tiêu đề `title` có ĐÚNG THỨ TIẾNG video không (theo CHỮ VIẾT).
+
+    want_code = mã script của video ("ja"/"ko"/"zh"/"th"/"ru"/"ar"/...) hoặc
+    "" nếu video dùng chữ Latin (en/vi/fr...). Video phi-Latin -> tiêu đề
+    PHẢI cùng script; video Latin -> tiêu đề KHÔNG được lòi script phi-Latin.
+    Hàm thuần — unit test được."""
+    from app.ai.recap import detect_lang_by_script
+    t = (title or "").strip()
+    if not t:
+        return False
+    got = detect_lang_by_script(t)
+    return got == (want_code or "")
+
+
+def _polish_titles(ai_clips: list, transcript: dict, ctx=None) -> int:
+    """ĐÁNH BÓNG TIÊU ĐỀ XUẤT BẢN (title_en) bằng model thông minh nhất
+    (GROQ_LLM_MODEL_SMART — prompt NGẮN nên gpt-oss-120b free chạy tốt):
+    viết lại giật tít hơn, BẮT BUỘC đúng ngôn ngữ video; clip thiếu title_en
+    (lỗi cũ tiêu đề Hàn trống) được VIẾT MỚI từ lời thoại.
+
+    Hậu kiểm TỪNG tiêu đề bằng _title_lang_ok (soi CHỮ VIẾT) — sai thứ
+    tiếng/rỗng -> GIỮ tiêu đề cũ. Mọi lỗi (LLM/parse/mạng) -> giữ nguyên
+    hết, KHÔNG bao giờ làm hỏng flow. Trả số tiêu đề đã thay."""
+    if not ai_clips:
+        return 0
+    try:
+        from app.ai import llm
+        from app.ai.recap import (detect_lang_by_script, lang_en_name,
+                                  resolve_lang)
+        if not llm.is_configured():
+            return 0
+        lang = resolve_lang(transcript.get("language", ""),
+                            transcript.get("text", "") or "")
+        lang_name = lang_en_name(lang)
+        want = detect_lang_by_script(transcript.get("text", "") or "")
+        tsegs = (transcript or {}).get("segments", []) or []
+
+        def _excerpt(c) -> str:
+            s0, e0 = c["segments"][0][0], c["segments"][-1][1]
+            out = []
+            for sg in tsegs:
+                if sg.get("end", 0) > s0 and sg.get("start", 0) < e0:
+                    out.append((sg.get("text") or "").strip())
+                if sum(len(x) for x in out) > 110:
+                    break
+            return " ".join(out)[:130]
+
+        lines = []
+        for i, c in enumerate(ai_clips[:10], 1):
+            cur = str(c.get("title_en") or "").strip()
+            lines.append(f'{i}. thoại: "{_excerpt(c)}" | tiêu đề hiện tại: '
+                         f'"{cur or "(chưa có)"}"')
+        prompt = (
+            f"Video nói bằng {lang_name.upper()}. Các clip ngắn cắt từ video:\n"
+            + "\n".join(lines) + "\n\n"
+            f"Viết lại tiêu đề GIẬT TÍT (viral, gây tò mò, <=60 ký tự) cho "
+            f"TỪNG clip, BẮT BUỘC viết bằng {lang_name.upper()} — đúng ngôn "
+            "ngữ lời thoại, TUYỆT ĐỐI không dùng ngôn ngữ khác, không dịch. "
+            'Trả DUY NHẤT 1 JSON: {"titles": {"1": "...", "2": "..."}}')
+        data = llm.complete_json(
+            prompt, system="Bạn là chuyên gia đặt tiêu đề video viral.",
+            model=_smart_model())
+        titles = data.get("titles") if isinstance(data, dict) else None
+        if not isinstance(titles, dict):
+            return 0
+        n = 0
+        for i, c in enumerate(ai_clips[:10], 1):
+            t = str(titles.get(str(i)) or titles.get(i) or "").strip()
+            if t and _title_lang_ok(t, want):
+                c["title_en"] = t
+                n += 1
+        return n
+    except Exception:  # noqa: BLE001 - đánh bóng là tùy chọn, lỗi -> giữ cũ
+        return 0
+
+
 def _apply_quality_floor(clips: list, floor: float) -> tuple[list, int]:
     """SÀN CHẤT LƯỢNG: bỏ clip score < floor — "mọi đoạn thừa phải bỏ, CHỈ
     lấy đoạn hay dùng được". FAIL-SAFE: <2 clip hoặc floor<=0 -> giữ nguyên;
@@ -1534,6 +1623,13 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 exhausted_note = ("video này đã tạo nhiều clip, các đoạn mới có "
                                   "thể trùng phần đã dùng")
         _delete_suggested(video_id)
+        # ✨ ĐÁNH BÓNG TIÊU ĐỀ bằng model thông minh nhất (prompt ngắn —
+        # gpt-oss-120b free chạy tốt): giật tít hơn + BẮT BUỘC đúng ngôn ngữ
+        # video (hậu kiểm chữ viết, sai thứ tiếng -> giữ bản cũ). Lỗi gì
+        # cũng không chặn flow.
+        _n_pol = _polish_titles(ai_clips, transcript, ctx)
+        if _n_pol:
+            ctx.progress(0.66, f"✨ đánh bóng {_n_pol} tiêu đề (model thông minh)")
         # 🔒 RÀO CHẮN CUỐI: MỌI clip PHẢI lọt [min_len, max_len]. Chạy SAU tất
         # cả bước AI (chọn + refine + dedup) — sửa lỗi 'đặt min 60 mà ra 46s'
         # (extend_to_target bị gap chặn, refine cắt gọn...). Không nới nổi ->
