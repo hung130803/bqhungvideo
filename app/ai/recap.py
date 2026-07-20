@@ -494,14 +494,44 @@ def detect_lang_by_script(text: str) -> str:
     return ""
 
 
+# Từ CHỨC NĂNG tiếng Anh (mạo từ/đại từ/trợ động từ...) — lời nói Anh thật
+# chiếm ~30-45% các từ này; Pháp/Đức/Tây Ban Nha/Māori/Việt đều < ~10%.
+_EN_STOPS = frozenset((
+    "the", "and", "you", "that", "this", "not", "with", "for", "have",
+    "was", "are", "but", "what", "all", "just", "your", "like", "know",
+    "get", "going", "gonna", "yeah", "okay", "right", "out", "about",
+    "she", "her", "him", "his", "they", "them", "then", "when", "how",
+    "who", "can", "will", "would", "been", "from", "one", "because",
+    "really", "think", "want", "time", "now", "got", "here", "there",
+    "were", "did", "let", "see", "come", "back", "good", "well", "it's",
+    "i'm", "don't", "that's", "we're", "he's", "she's", "you're"))
+
+
+def _looks_english(text: str) -> bool:
+    """Lời thoại chữ Latin có PHẢI TIẾNG ANH không (mật độ từ chức năng Anh).
+    Hàm thuần — dùng vá nhãn whisper đoán bừa (video Anh ồn ào hay bị dán
+    'mi'/'cy'/'nn'...)."""
+    words = re.findall(r"[a-zA-Z']+", str(text or "").lower())
+    if len(words) < 25:
+        return False              # quá ngắn -> không đủ tin, giữ nhãn gốc
+    hits = sum(1 for w in words if w in _EN_STOPS)
+    return hits / len(words) >= 0.22
+
+
 def resolve_lang(stored: str, text: str = "") -> str:
     """Ngôn ngữ ĐÁNG TIN NHẤT cho recap/phụ đề: ưu tiên nhãn `stored` của
     whisper; NHƯNG nếu CHỮ trong `text` là script phi-Latin (Nhật/Hàn/Thái/
     Nga/Ả Rập...) mà nhãn lại rỗng HOẶC trỏ ngôn ngữ Latin (en/vi/fr...) thì
     nhãn đó SAI -> ép theo CHỮ. (Sửa lỗi transcript cũ bị dán nhãn 'en' cho
-    video Nhật.) Hàm thuần."""
+    video Nhật.) Chữ Latin: nhãn KHÁC 'en' nhưng lời thoại dày đặc từ chức
+    năng TIẾNG ANH -> nhãn đoán bừa (lỗi thật: video đấu vật tiếng Anh bị
+    whisper dán 'mi' Māori -> AI đặt tiêu đề Māori) -> ép 'en'. Hàm thuần."""
     by_text = detect_lang_by_script(text)
     if not by_text:
+        s0 = str(stored or "").strip().lower()
+        s0 = _LANG_ALIAS.get(s0, s0)
+        if s0 and s0 != "en" and _looks_english(text):
+            return "en"
         return stored or ""
     s = str(stored or "").strip().lower()
     s = _LANG_ALIAS.get(s, s)

@@ -4571,7 +4571,11 @@ class StudioPage(QWidget):
             tags = [t for t in (pre.get("tags") or []) if t]
             if not tags and _llm.is_configured():
                 tr = get_analysis(video_id, "transcript") or {}
-                lang = tr.get("language", "") or ""
+                # nhãn whisper có thể đoán bừa ('mi' cho video Anh) ->
+                # resolve theo CHỮ + từ chức năng Anh trước khi bảo AI viết
+                from app.ai.recap import resolve_lang as _rl
+                lang = _rl(tr.get("language", "") or "",
+                           tr.get("text", "") or "")
                 # tiêu đề tổng + lời thoại: gom transcript các clip (đại diện video)
                 title = ""
                 text = ""
