@@ -4567,15 +4567,19 @@ class StudioPage(QWidget):
             # đọc DB tức thì -> KHÔNG gọi LLM trên UI thread (trước đây gọi mạng
             # ngay trong timer 1.5s lúc tự-xuất -> app đơ vài giây đúng lúc đang
             # encode). Thiếu (video cũ/heuristic) mới lùi về gọi LLM như cũ.
+            tr = get_analysis(video_id, "transcript") or {}
+            # nhãn whisper có thể đoán bừa ('mi' cho video Anh) -> resolve
+            # theo CHỮ + từ chức năng Anh trước khi dùng/bảo AI viết
+            from app.ai.recap import resolve_lang as _rl
+            lang = _rl(tr.get("language", "") or "",
+                       tr.get("text", "") or "")
             pre = get_analysis(video_id, "hashtags") or {}
             tags = [t for t in (pre.get("tags") or []) if t]
+            # hashtag sinh sẵn nhưng SAI ngôn ngữ (bản cũ không lưu 'lang' /
+            # video từng dán nhãn bừa) -> BỎ cache, sinh lại đúng tiếng
+            if tags and str(pre.get("lang") or "") != lang:
+                tags = []
             if not tags and _llm.is_configured():
-                tr = get_analysis(video_id, "transcript") or {}
-                # nhãn whisper có thể đoán bừa ('mi' cho video Anh) ->
-                # resolve theo CHỮ + từ chức năng Anh trước khi bảo AI viết
-                from app.ai.recap import resolve_lang as _rl
-                lang = _rl(tr.get("language", "") or "",
-                           tr.get("text", "") or "")
                 # tiêu đề tổng + lời thoại: gom transcript các clip (đại diện video)
                 title = ""
                 text = ""

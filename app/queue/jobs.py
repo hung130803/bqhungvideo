@@ -129,11 +129,10 @@ def _precompute_hashtags(video_id: int) -> None:
     -> bỏ qua im lặng (UI tự lo fallback như trước)."""
     try:
         from app.ai import llm, social
+        from app.ai.recap import resolve_lang
         if not llm.is_configured():
             return
         from app.core.analysis import _set, get_analysis
-        if get_analysis(video_id, "hashtags"):
-            return                       # đã có (video cắt lại) -> khỏi tốn LLM
         from app.database import db as _db
         clips = _db.query(
             "SELECT title, transcript FROM clips WHERE video_id=? "
@@ -145,10 +144,18 @@ def _precompute_hashtags(video_id: int) -> None:
                         if (c["transcript"] or "").strip())
         if not text.strip():
             text = " ".join(s.get("text", "") for s in tr.get("segments", []))
-        tags = social.write_hashtags(title, text,
-                                     tr.get("language", "") or "", max_tags=4)
+        # NHÃN whisper có thể đoán bừa ('mi' Māori cho video Anh) -> resolve
+        # theo lời thoại TRƯỚC khi bảo AI viết (lỗi thật: hashtag Māori).
+        lang = resolve_lang(tr.get("language", "") or "", text)
+        pre = get_analysis(video_id, "hashtags") or {}
+        if pre.get("tags"):
+            # đã có VÀ sinh với ĐÚNG ngôn ngữ -> khỏi tốn LLM. Bản cũ không
+            # lưu 'lang' / lang khác (video từng dán nhãn sai) -> SINH LẠI.
+            if str(pre.get("lang") or "") == lang:
+                return
+        tags = social.write_hashtags(title, text, lang, max_tags=4)
         if tags:
-            _set(video_id, "hashtags", "done", {"tags": tags})
+            _set(video_id, "hashtags", "done", {"tags": tags, "lang": lang})
     except Exception:  # noqa: BLE001 - tiện ích phụ, không được làm hỏng job
         pass
 
