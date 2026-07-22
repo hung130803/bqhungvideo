@@ -119,6 +119,12 @@ class StudioPage(QWidget):
         self._thumb_busy = False
         self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
         self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
+        # 🤖 DÂY CHUYỀN (INTEGRATION.md): theo dõi job cắt + job xuất của
+        # từng video dây chuyền để XÓA GỐC an toàn khi đủ Part.
+        self._pipe_cut = {}           # cut_job_id -> ctx
+        self._pipe_by_vid = {}        # video_id -> ctx (chờ hook xuất)
+        self._pipe_exports = {}       # video_id -> {"jobs": set, "ctx": ctx}
+        self._pipe_report = []        # dòng báo cáo lần chạy gần nhất
         self._hashtag_cache = {}      # video_id -> " #a #b" (sinh 1 lần/video)
         self._settings = QSettings("AIContentStudio", "studio")
         self.thumbs_ready.connect(self._rebuild_rows)
@@ -384,6 +390,7 @@ class StudioPage(QWidget):
         self.timer.timeout.connect(self._poll_done)     # job video đang chọn XONG -> báo ✓
         self.timer.timeout.connect(self._refresh_clips)
         self.timer.timeout.connect(self._check_auto_export)   # phân tích xong -> tự xuất
+        self.timer.timeout.connect(self._pipe_poll)            # 🤖 dây chuyền: dõi cắt/xuất
         self._act_tick = 0     # nhãn kênh chỉ query mỗi 3 tick (~4.5s) cho nhẹ
         self.timer.timeout.connect(self._poll_chan_activity)
         self.timer.start(1500)
@@ -3627,8 +3634,10 @@ class StudioPage(QWidget):
                     else:
                         total += self._export_video(vid)
                     ready += 1
-                except Exception:  # noqa: BLE001
-                    pass
+                    # 🤖 video dây chuyền: ghi nhận các job xuất để dõi xong
+                    self._pipe_on_exported(vid)
+                except Exception as e:  # noqa: BLE001
+                    self._pipe_on_export_failed(vid, str(e))
             elif st in ("failed", "canceled", "skipped", ""):
                 self._pending_export.pop(jid, None)   # lỗi/mất -> thôi, không xuất
                 auto_tpl.pop(jid, None)
@@ -3636,6 +3645,228 @@ class StudioPage(QWidget):
             self.status.setText(
                 f"Phân tích xong {ready} video — đang TỰ ĐỘNG xuất {total} clip "
                 "vào thư mục kênh (đúng thứ tự Part)...")
+
+
+    # ================= 🤖 DÂY CHUYỀN (INTEGRATION.md) =================
+    def _pipe_root(self) -> str:
+        """Thư mục TRUNG CHUYỂN gốc (tool tải thả video vào <gốc>/<Kênh>)."""
+        return str(self._settings.value("pipe_root", "") or "")
+
+    def _pipe_log(self, line: str) -> None:
+        """Ghi 1 dòng vào báo cáo lần chạy + nhật ký ngày (logs/pipeline_*)."""
+        from datetime import datetime
+        stamp = datetime.now().strftime("%H:%M:%S")
+        self._pipe_report.append(f"[{stamp}] {line}")
+        try:
+            from config import DATA_DIR
+            d = DATA_DIR / "logs"
+            d.mkdir(parents=True, exist_ok=True)
+            fn = d / f"pipeline_{datetime.now():%Y%m%d}.log"
+            with open(fn, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now():%H:%M:%S}] {line}" + "\n")
+        except OSError:
+            pass
+
+    def _pipe_run(self):
+        """▶ CHẠY DÂY CHUYỀN (chạy khi bấm — không tự chạy nền): quét thư mục
+        trung chuyển của mọi kênh bật dây chuyền -> mỗi kênh nhận tối đa
+        pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
+        -> đủ Part thì XÓA video gốc. Trả số video đã nhận lần này."""
+        from app.core import pipeline as P
+        root = self._pipe_root()
+        if not root:
+            self.status.setText("⚠ Chưa chọn thư mục trung chuyển dây chuyền "
+                                "(nút 🤖 → Cài đặt).")
+            return 0
+        n_stale = P.expire_stale_taken()
+        if n_stale:
+            self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
+        chans = db.query(
+            "SELECT id, name, pipe_on, pipe_src, pipe_mode, pipe_daily "
+            "FROM projects WHERE pipe_on=1 ORDER BY name")
+        if not chans:
+            self.status.setText("⚠ Chưa kênh nào bật dây chuyền "
+                                "(chuột phải kênh → 🤖 Dây chuyền).")
+            return 0
+        plans = P.plan_run(root, chans)
+        mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
+        taken = 0
+        for it in plans:
+            if it.note:
+                self._pipe_log(f"⏭ {it.name}: {it.note}")
+            if it.busy:
+                self._pipe_log(f"⏳ {it.name}: {it.busy} file đang tải dở — chờ")
+            for fname, why in it.skips:
+                self._pipe_log(f"⏭ {it.name}: {fname} — {why}")
+            got = 0                      # nhận THÀNH CÔNG kênh này lần chạy
+            for path in it.files:
+                if got >= it.quota:
+                    self._pipe_log(f"⏭ {it.name}: {path.name} — quá hạn mức "
+                                   "hôm nay — chờ ngày mai")
+                    continue
+                if self._pipe_take(it.project_id, it.name,
+                                   mode_by_pid.get(it.project_id, "auto"),
+                                   path):
+                    got += 1     # file hỏng KHÔNG nuốt suất — tự thử file kế
+            taken += got
+        self._pipe_log(f"tổng nhận {taken} video từ {len(plans)} kênh")
+        self.status.setText(
+            f"🤖 Dây chuyền: nhận {taken} video — đang phân tích/cắt, xong sẽ "
+            "tự xuất và xóa video gốc. Theo dõi ở Tiến trình.")
+        return taken
+
+    def _pipe_take(self, pid: int, name: str, mode: str, path) -> bool:
+        """Nhận 1 file vào dây chuyền: soi ffprobe -> nhập -> ghi sổ -> đưa
+        vào cắt (auto/recap) + chốt mẫu hiện tại. Trả True nếu đã nhận."""
+        from app.core import pipeline as P
+        from app.core.ffmpeg_utils import probe
+        from app.services import _file_hash
+        try:
+            info = probe(str(path))
+        except Exception:  # noqa: BLE001
+            info = None
+        if not info or (info.duration or 0) <= 0.5:
+            P.mark_bad(pid, path.name, "file hỏng/không đọc được (ffprobe)")
+            dst = P.quarantine(path)
+            self._pipe_log(f"🔴 {name}: {path.name} HỎNG — chuyển "
+                           f"{'_Loi' if dst else 'THẤT BẠI (file kẹt)'}")
+            return False
+        try:
+            fh = _file_hash(str(path))
+            vid = services.import_video(pid, str(path))
+            entry = P.take_file(pid, path.name, fh)
+        except Exception as e:  # noqa: BLE001
+            self._pipe_log(f"🔴 {name}: {path.name} không nhập được — {e}")
+            return False
+        ctx = {"entry": entry, "vid": vid, "path": str(path), "pid": pid,
+               "name": name, "file": path.name, "mode": mode}
+        try:
+            if mode == "recap":
+                jid = services.enqueue_auto_recap(
+                    self.state.pool, vid, pid, self._recap_preset())
+            else:
+                jid = services.enqueue_auto(self.state.pool, vid, pid,
+                                            self._cut_preset())
+        except Exception as e:  # noqa: BLE001
+            P.mark_error(entry, f"không tạo được job: {e}")
+            self._pipe_log(f"🔴 {name}: {path.name} không tạo được job — {e}")
+            return False
+        if not jid:
+            P.mark_error(entry, "job trùng đang chạy — bỏ lượt này")
+            self._pipe_log(f"⏭ {name}: {path.name} — video đang có job chạy")
+            return False
+        self._pipe_cut[jid] = ctx
+        self._pipe_by_vid[vid] = ctx
+        # CHỐT MẪU hiện tại cho video này + ép TỰ XUẤT khi cắt xong (không
+        # phụ thuộc ô 'Phân tích xong tự động xuất')
+        self._pending_export[jid] = vid
+        if not hasattr(self, "_auto_tpl"):
+            self._auto_tpl = {}
+        self._auto_tpl[jid] = copy.deepcopy(self.layout_tpl)
+        self._pipe_log(f"▶ {name}: nhận '{path.name}' ({mode}) — bắt đầu cắt")
+        return True
+
+    def _pipe_on_exported(self, vid: int) -> None:
+        """Hook từ _check_auto_export: video dây chuyền vừa được đưa vào
+        XUẤT -> ghi lại danh sách job xuất để dõi 'đủ Part' mới xóa gốc."""
+        ctx = self._pipe_by_vid.pop(vid, None)
+        if ctx is None:
+            return
+        jids = list(getattr(self, "_last_export_jids", []) or [])
+        self._pipe_exports[vid] = {"jobs": set(jids), "ctx": ctx}
+        if not jids:
+            # không có job xuất mới: hoặc mọi Part đã xuất y hệt trước đó
+            # (smart-skip) hoặc AI không tạo được clip -> phân xử ngay
+            self._pipe_poll_exports(force_vid=vid)
+
+    def _pipe_on_export_failed(self, vid: int, err: str) -> None:
+        """Hook từ _check_auto_export: build payload xuất LỖI (mẫu hỏng...)."""
+        from app.core import pipeline as P
+        ctx = self._pipe_by_vid.pop(vid, None)
+        if ctx is None:
+            return
+        P.mark_error(ctx["entry"], f"lỗi dựng lệnh xuất: {err}")
+        self._pipe_quarantine_ctx(ctx, f"lỗi dựng lệnh xuất: {err}")
+
+    def _pipe_quarantine_ctx(self, ctx: dict, why: str) -> None:
+        from app.core import pipeline as P
+        p = Path(ctx["path"])
+        dst = P.quarantine(p) if p.exists() else None
+        self._pipe_log(f"🔴 {ctx['name']}: {ctx['file']} — {why}"
+                       + (" (đã chuyển _Loi)" if dst else ""))
+
+    def _pipe_poll(self) -> None:
+        """Tick 1.5s: (1) job CẮT dây chuyền lỗi -> báo + _Loi; (2) mọi job
+        XUẤT của video xong -> kiểm Part rồi XÓA video gốc. Bọc chống sập."""
+        try:
+            self._pipe_poll_cut()
+            self._pipe_poll_exports()
+        except Exception:  # noqa: BLE001 - poll phụ, không được sập app
+            pass
+
+    def _pipe_poll_cut(self) -> None:
+        from app.core import pipeline as P
+        if not self._pipe_cut:
+            return
+        states = services.job_states(list(self._pipe_cut))
+        for jid in list(self._pipe_cut):
+            st = states.get(jid, "")
+            if st == "done":
+                self._pipe_cut.pop(jid)      # xuất do _check_auto_export lo
+            elif st in ("failed", "canceled", "skipped", ""):
+                ctx = self._pipe_cut.pop(jid)
+                self._pipe_by_vid.pop(ctx["vid"], None)
+                self._pending_export.pop(jid, None)
+                getattr(self, "_auto_tpl", {}).pop(jid, None)
+                err = db.query_one("SELECT error FROM jobs WHERE id=?", (jid,))
+                why = (err["error"] if err and err["error"] else st) or "lỗi"
+                P.mark_error(ctx["entry"], f"cắt lỗi: {why}")
+                self._pipe_quarantine_ctx(ctx, f"cắt lỗi: {str(why)[:120]}")
+
+    def _pipe_poll_exports(self, force_vid=None) -> None:
+        from app.core import pipeline as P
+        vids = [force_vid] if force_vid is not None             else list(self._pipe_exports)
+        for vid in vids:
+            ent = self._pipe_exports.get(vid)
+            if ent is None:
+                continue
+            jobs = ent["jobs"]
+            if jobs:
+                states = services.job_states(list(jobs))
+                if any(states.get(j, "") in ("pending", "running")
+                       for j in jobs):
+                    continue                     # còn job đang chạy -> đợi
+                bad = [j for j in jobs
+                       if states.get(j, "") in ("failed", "canceled", "")]
+            else:
+                bad = []
+            ctx = self._pipe_exports.pop(vid)["ctx"]
+            # ĐẾM PART THẬT: clip có export_path tồn tại trên đĩa
+            clips = db.query(
+                "SELECT export_path FROM clips WHERE video_id=? "
+                "AND export_path IS NOT NULL AND export_path<>''", (vid,))
+            parts = [c["export_path"] for c in clips
+                     if c["export_path"] and os.path.exists(c["export_path"])]
+            if bad or not parts:
+                why = (f"{len(bad)} job xuất lỗi" if bad
+                       else "không có Part nào được xuất")
+                P.mark_error(ctx["entry"], why)
+                self._pipe_quarantine_ctx(ctx, why)
+                continue
+            # ĐỦ PART -> XÓA VIDEO GỐC (INTEGRATION.md mục 4). Gốc không bao
+            # giờ được chép vào thư mục xuất nên chỉ cần xóa file trung chuyển.
+            src = Path(ctx["path"])
+            try:
+                src.unlink(missing_ok=True)
+                gone = True
+            except OSError:
+                gone = False
+            P.mark_done(ctx["entry"], video_id=vid,
+                        note=f"{len(parts)} part")
+            self._pipe_log(
+                f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part"
+                + (" — đã xóa video gốc" if gone
+                   else " — ⚠ CHƯA xóa được gốc (file kẹt), xóa tay giúp"))
 
     def _auto(self):
         if not (self.state.project_id and self.state.video_id):
@@ -3711,14 +3942,9 @@ class StudioPage(QWidget):
             v = 14
         return min(40, max(0, v)) / 100.0
 
-    def _auto_recap(self):
-        """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
-        if not self.state.video_id:
-            QMessageBox.information(self, "Chưa chọn video",
-                                    "Thêm/chọn 1 video trước đã.")
-            return
-        if not self._require_ai():
-            return
+    def _recap_preset(self) -> dict:
+        """Preset Reup thuyết minh từ ⚙ Cài đặt Reup (dùng chung cho nút
+        🎙 Reup và 🤖 dây chuyền — 1 nguồn sự thật)."""
         preset = self._cut_preset()
         preset["recap_style"] = self.recap_style.currentData() or "story"
         try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
@@ -3760,6 +3986,17 @@ class StudioPage(QWidget):
         preset["recap_emotion"] = str(
             self._settings.value("recap_emotion", True)).strip().lower() \
             not in ("false", "0", "no", "off")
+        return preset
+
+    def _auto_recap(self):
+        """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
+        if not self.state.video_id:
+            QMessageBox.information(self, "Chưa chọn video",
+                                    "Thêm/chọn 1 video trước đã.")
+            return
+        if not self._require_ai():
+            return
+        preset = self._recap_preset()
         jid = services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                           self.state.project_id, preset)
         # BẬT "Phân tích xong tự động xuất" -> reup xong TỰ xuất luôn (clip
@@ -4769,6 +5006,8 @@ class StudioPage(QWidget):
             self.status.setText(
                 "Các clip này đã xuất trước đó (không đổi gì) — không tạo job "
                 "mới. Muốn xuất lại 1 clip: bấm 'Xuất lại' ở clip đó.")
+        # 🤖 dây chuyền đọc danh sách job xuất của video vừa gọi (cùng tick)
+        self._last_export_jids = list(jids)
         return len(jids)
 
     def _export_all(self):

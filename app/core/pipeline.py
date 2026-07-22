@@ -124,6 +124,32 @@ def mark_dup(project_id: int, file_name: str, file_hash: str, note: str) -> None
         (project_id, file_name, file_hash, note))
 
 
+def mark_bad(project_id: int, file_name: str, note: str) -> None:
+    """File HỎNG từ đầu (ffprobe không đọc được) — ghi sổ 'bad', KHÔNG tốn
+    suất ngày (taken_today không đếm 'bad'; file đã quarantine khỏi thư mục
+    nên không lặp lại được)."""
+    db.execute(
+        "INSERT INTO pipeline_files(project_id, file_name, status, note, "
+        "done_at) VALUES(?,?, 'bad', ?, datetime('now'))",
+        (project_id, file_name, note[:500]))
+
+
+def expire_stale_taken(hours: int = 12) -> int:
+    """Entry 'taken' treo quá `hours` giờ (app tắt giữa chừng/kẹt) -> chuyển
+    'error' để file (nếu còn trong thư mục) được NHẬN LẠI ở lần chạy sau.
+    Trả số entry đã chuyển."""
+    cur = db.execute(
+        "UPDATE pipeline_files SET status='error', "
+        "note=COALESCE(note,'') || ' [gián đoạn - app tắt giữa chừng?]', "
+        "done_at=datetime('now') "
+        "WHERE status='taken' AND taken_at < datetime('now', ?)",
+        (f"-{int(hours)} hours",))
+    try:
+        return cur.rowcount or 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def mark_done(entry_id: int, video_id: int | None = None,
               note: str = "") -> None:
     db.execute(
@@ -152,7 +178,12 @@ class PlanItem:
     project_id: int
     name: str
     src_dir: str
-    files: list = field(default_factory=list)      # [Path] sẽ xử lý lần này
+    files: list = field(default_factory=list)      # [Path] ỨNG VIÊN theo thứ tự
+                                                   # (cũ trước) — CHƯA cắt theo
+                                                   # hạn mức; runner đếm số nhận
+                                                   # THÀNH CÔNG so với `quota`
+                                                   # (file hỏng không nuốt suất)
+    quota: int = 0                                 # còn được nhận mấy video hôm nay
     skips: list = field(default_factory=list)      # [(tên_file, lý_do)]
     busy: int = 0                                  # file đang tải dở
     note: str = ""                                 # lý do kênh bị bỏ qua hẳn
@@ -181,14 +212,11 @@ def plan_channel(project_id: int, name: str, root: str,
         return it
     ready, busy = scan_dir(d, now)
     it.busy = len(busy)
-    quota = max(0, int(pipe_daily or 1) - taken_today(project_id))
-    if quota <= 0 and ready:
+    it.quota = max(0, int(pipe_daily or 1) - taken_today(project_id))
+    if it.quota <= 0 and ready:
         it.note = "hôm nay đã đủ hạn mức — file chờ ngày mai"
+        return it
     for p in ready:
-        if len(it.files) >= quota:
-            if quota > 0:
-                it.skips.append((p.name, "quá hạn mức hôm nay — chờ ngày mai"))
-            continue
         try:
             fh = hash_fn(str(p))
         except OSError as e:
@@ -201,7 +229,7 @@ def plan_channel(project_id: int, name: str, root: str,
             it.skips.append(
                 (p.name, f"TRÙNG video đã làm ngày {old['d']} — bỏ qua"))
             continue
-        it.files.append(p)
+        it.files.append(p)          # ứng viên — runner áp quota khi nhận
     return it
 
 
