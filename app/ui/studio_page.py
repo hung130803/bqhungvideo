@@ -284,6 +284,14 @@ class StudioPage(QWidget):
             "kể/tỉ lệ/nhịp chỉnh ở nút ⚙ bên cạnh.")
         self.recap_btn.clicked.connect(self._auto_recap)
         actrow.addWidget(self.recap_btn)
+        pipe_btn = QPushButton("🤖 Dây chuyền")
+        pipe_btn.setProperty("ghost", True)
+        pipe_btn.setToolTip(
+            "DÂY CHUYỀN TỰ ĐỘNG (nối tool tải): quét thư mục trung chuyển của\n"
+            "từng kênh, mỗi kênh nhận 1-2 video/ngày, tự cắt/reup + xuất Part\n"
+            "vào thư mục kênh rồi XÓA video gốc. Chạy khi bấm — không tự chạy.")
+        pipe_btn.clicked.connect(self._pipeline_dialog)
+        actrow.addWidget(pipe_btn)
         from app.ai.recap import STYLES as _RECAP_STYLES
         self.recap_style = QComboBox()
         self.recap_style.setToolTip("Phong cách thuyết minh cho nút 🎙 Reup.")
@@ -3648,6 +3656,200 @@ class StudioPage(QWidget):
 
 
     # ================= 🤖 DÂY CHUYỀN (INTEGRATION.md) =================
+
+    def _pipeline_dialog(self):
+        """🤖 Trung tâm DÂY CHUYỀN: chọn thư mục trung chuyển, bật/cấu hình
+        từng kênh (chế độ cắt, video/ngày), chạy + xem báo cáo — 1 màn hình
+        quản được 50 kênh (INTEGRATION.md)."""
+        from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
+                                     QHBoxLayout, QHeaderView, QLabel,
+                                     QPlainTextEdit, QPushButton, QSpinBox,
+                                     QTableWidget, QTableWidgetItem,
+                                     QVBoxLayout)
+        from app.core import pipeline as P
+        dlg = QDialog(self)
+        dlg.setWindowTitle("🤖 Dây chuyền tự động")
+        dlg.resize(980, 640)
+        self._pipe_dlg = dlg                      # cho test offscreen
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(8)
+
+        # --- hàng 1: thư mục trung chuyển + nút chạy ---
+        top = QHBoxLayout(); top.setSpacing(8)
+        top.addWidget(self._tag("Thư mục trung chuyển:"))
+        root_lb = QLabel(self._pipe_root() or "(chưa chọn — bấm 📂)")
+        root_lb.setStyleSheet(f"color:{TEXT};")
+        top.addWidget(root_lb, 1)
+        pick = QPushButton("📂 Chọn..."); pick.setProperty("ghost", True)
+        top.addWidget(pick)
+        run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
+        top.addWidget(run_b)
+        lay.addLayout(top)
+        hint = QLabel("Tool tải thả video vào <thư mục trung chuyển>\\<Tên kênh>. "
+                      "Mỗi kênh nhận tối đa N video/ngày, cắt xong tự xuất Part vào "
+                      "thư mục kênh rồi XÓA video gốc; file hỏng vào _Loi.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        lay.addWidget(hint)
+
+        # --- bảng kênh ---
+        tbl = QTableWidget(0, 6)
+        self._pipe_tbl = tbl
+        tbl.setHorizontalHeaderLabels(
+            ["Bật", "Kênh", "Chế độ", "Video/ngày", "Hôm nay", "Nhận lần cuối"])
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setStyleSheet(
+            f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
+            f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
+            f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
+            f" padding:6px 8px; border:none;"
+            f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
+        hh = tbl.horizontalHeader()
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for col in (0, 2, 3, 4, 5):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        lay.addWidget(tbl, 2)
+
+        # --- báo cáo ---
+        lay.addWidget(self._tag("Báo cáo lần chạy (nhật ký đầy đủ: logs/pipeline_*.log):"))
+        rep = QPlainTextEdit(); rep.setReadOnly(True)
+        rep.setStyleSheet(f"background:{BASE}; color:{TEXT}; border:1px solid "
+                          f"{BORDER}; border-radius:8px; font-size:12px;")
+        self._pipe_rep_box = rep
+        lay.addWidget(rep, 1)
+
+        def refresh_report():
+            rep.setPlainText("\n".join(self._pipe_report[-400:]))
+            sb = rep.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
+        def fill():
+            rows = db.query(
+                "SELECT id, name, pipe_on, pipe_mode, pipe_daily "
+                "FROM projects ORDER BY name")
+            tbl.setRowCount(len(rows))
+            from datetime import datetime
+            for i, r in enumerate(rows):
+                pid = int(r["id"])
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable
+                             | Qt.ItemFlag.ItemIsEnabled)
+                chk.setCheckState(Qt.CheckState.Checked if r["pipe_on"]
+                                  else Qt.CheckState.Unchecked)
+                chk.setData(Qt.ItemDataRole.UserRole, pid)
+                tbl.setItem(i, 0, chk)
+                tbl.setItem(i, 1, QTableWidgetItem(r["name"]))
+                cb = QComboBox()
+                cb.addItem("Tạo clip thường", "auto")
+                cb.addItem("Reup thuyết minh", "recap")
+                cb.setCurrentIndex(1 if (r["pipe_mode"] or "auto") == "recap"
+                                   else 0)
+                cb.currentIndexChanged.connect(
+                    lambda _x, p=pid, c=cb: db.execute(
+                        "UPDATE projects SET pipe_mode=? WHERE id=?",
+                        (c.currentData(), p)))
+                tbl.setCellWidget(i, 2, cb)
+                sp = QSpinBox(); sp.setRange(1, 3)
+                sp.setValue(int(r["pipe_daily"] or 1))
+                sp.valueChanged.connect(
+                    lambda v, p=pid: db.execute(
+                        "UPDATE projects SET pipe_daily=? WHERE id=?", (v, p)))
+                tbl.setCellWidget(i, 3, sp)
+                today = db.query_one(
+                    "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
+                    " SUM(status='taken') AS t FROM pipeline_files WHERE "
+                    "project_id=? AND date(taken_at,'localtime')="
+                    "date('now','localtime')", (pid,))
+                cell = "·"
+                if today and (today["d"] or today["e"] or today["t"]):
+                    bits = []
+                    if today["d"]:
+                        bits.append(f"✅{today['d']}")
+                    if today["t"]:
+                        bits.append(f"⏳{today['t']}")
+                    if today["e"]:
+                        bits.append(f"🔴{today['e']}")
+                    cell = " ".join(bits)
+                it4 = QTableWidgetItem(cell)
+                it4.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                tbl.setItem(i, 4, it4)
+                # NGUỒN CẠN: N ngày kênh không nhận được video mới
+                last = P.last_intake_at(pid)
+                txt = "chưa từng"
+                if last:
+                    try:
+                        d0 = datetime.strptime(last[:10], "%Y-%m-%d").date()
+                        nd = (datetime.now().date() - d0).days
+                        txt = ("hôm nay" if nd <= 0 else
+                               f"{nd} ngày trước" + (" ⚠ NGUỒN CẠN?"
+                                                     if nd >= 3 else ""))
+                    except ValueError:
+                        txt = last
+                it5 = QTableWidgetItem(txt)
+                if "⚠" in txt:
+                    from PyQt6.QtGui import QColor
+                    it5.setForeground(QColor("#f38ba8"))
+                tbl.setItem(i, 5, it5)
+
+        def on_check(item):
+            if item.column() != 0:
+                return
+            pid = item.data(Qt.ItemDataRole.UserRole)
+            if pid is None:
+                return
+            on = 1 if item.checkState() == Qt.CheckState.Checked else 0
+            db.execute("UPDATE projects SET pipe_on=? WHERE id=?", (on, pid))
+        tbl.itemChanged.connect(on_check)
+
+        def do_pick():
+            d = QFileDialog.getExistingDirectory(
+                dlg, "Chọn THƯ MỤC TRUNG CHUYỂN (tool tải thả video vào "
+                     "<đây>\\<Tên kênh>)", self._pipe_root() or "")
+            if d:
+                self._settings.setValue("pipe_root", d)
+                root_lb.setText(d)
+        pick.clicked.connect(do_pick)
+
+        def do_run():
+            # PRE-CHECK trước khi chạy: key AI + ElevenLabs cho kênh reup
+            from app.ai import llm as _llm
+            if not _llm.is_configured():
+                self._pipe_log("🔴 CHẶN CHẠY: chưa có key AI (Cài đặt AI)")
+                refresh_report()
+                return
+            n_recap = db.query_one(
+                "SELECT COUNT(*) AS n FROM projects WHERE pipe_on=1 "
+                "AND pipe_mode='recap'")
+            rv = str(self._settings.value("recap_voice", "") or "")
+            if n_recap and int(n_recap["n"]) and rv.startswith("el:"):
+                try:
+                    from app.core.dubbing import eleven_quota
+                    from config import settings as _st
+                    keys = _st.eleven_keys() if hasattr(_st, "eleven_keys")                         else []
+                    q = eleven_quota(keys[0]) if keys else None
+                    left = (q or {}).get("remaining")
+                    if q is not None and isinstance(left, int) and left < 2000:
+                        self._pipe_log(f"⚠ ElevenLabs còn ~{left} credit — "
+                                       "kênh Reup có thể lỗi giữa chừng")
+                except Exception:  # noqa: BLE001 - check phụ, lỗi bỏ qua
+                    pass
+            self._pipe_run()
+            fill()
+            refresh_report()
+        run_b.clicked.connect(do_run)
+
+        fill()
+        refresh_report()
+        # bảng + báo cáo tự tươi trong lúc dây chuyền chạy nền
+        from PyQt6.QtCore import QTimer as _QT
+        t = _QT(dlg); t.timeout.connect(refresh_report)
+        t.timeout.connect(lambda: None if tbl.hasFocus() else fill())
+        t.start(2000)
+        dlg._t = t
+        dlg.exec()
+
     def _pipe_root(self) -> str:
         """Thư mục TRUNG CHUYỂN gốc (tool tải thả video vào <gốc>/<Kênh>)."""
         return str(self._settings.value("pipe_root", "") or "")
