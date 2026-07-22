@@ -1681,8 +1681,11 @@ class StudioPage(QWidget):
             self._pins_cleaned = set()
         if str(d) not in self._pins_cleaned:
             self._pins_cleaned.add(str(d))
-            from app.core.folderview import cleanup_folder_pins
-            cleanup_folder_pins(d)
+            try:
+                from app.core.folderview import cleanup_folder_pins
+                cleanup_folder_pins(d)
+            except Exception:  # noqa: BLE001 - dọn desktop.ini là phụ, lỗi
+                pass           # (quyền/ổ mạng) không được sập nút thường
         return d
 
     def _dl_dir(self):
@@ -4796,6 +4799,15 @@ class StudioPage(QWidget):
                                     "để tạo clip cho cả kênh trước.")
 
     def _open_dir(self):
+        """Bọc CHỐNG SẬP cho nút 'Mở thư mục': lỗi bất ngờ (DB/đường dẫn/
+        Explorer) -> báo dòng trạng thái, KHÔNG được làm thoát app (lỗi thật
+        user báo 'ấn mở thư mục cái là app tự out')."""
+        try:
+            self._open_dir_impl()
+        except Exception as e:  # noqa: BLE001
+            self.status.setText(f"⚠ Không mở được thư mục: {str(e)[:120]}")
+
+    def _open_dir_impl(self):
         # mở KHO 'Đã xuất' (theo thư mục gốc hiện tại). Nếu đang chọn video ->
         # mở thẳng thư mục con của video đó. Tên folder phải làm sạch Y HỆT lúc
         # xuất (_export_video + m1_highlight._safe_name) kẻo mở trượt sang cha.

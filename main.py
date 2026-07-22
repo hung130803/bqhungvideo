@@ -87,6 +87,53 @@ def main() -> int:
     from app.ui.theme import apply_theme
     apply_theme(qapp)
 
+    # ---- LƯỚI CHỐNG SẬP TOÀN CỤC: PyQt6 mặc định ABORT cả app khi 1 slot
+    # (nút bấm/timer) ném exception chưa bắt -> user thấy "bấm cái là app tự
+    # thoát" mà không dấu vết (exe windowed nuốt stderr, WER không ghi).
+    # Đặt sys.excepthook TÙY BIẾN: PyQt sẽ gọi hook này và KHÔNG abort nữa —
+    # app sống tiếp, lỗi được GHI FILE logs/error.log + hiện hộp thoại cho
+    # user chụp gửi dev. Luồng nền cũng ghi log (không hiện hộp thoại). ----
+    import threading
+    import traceback
+    from datetime import datetime
+
+    def _log_crash(text: str) -> None:
+        try:
+            logd = DATA_DIR / "logs"
+            logd.mkdir(parents=True, exist_ok=True)
+            with open(logd / "error.log", "a", encoding="utf-8") as f:
+                f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} =====\n")
+                f.write(text)
+        except OSError:
+            pass
+
+    def _global_excepthook(tp, val, tb):
+        text = "".join(traceback.format_exception(tp, val, tb))
+        _log_crash(text)
+        try:
+            print(text, file=sys.__stderr__)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if threading.current_thread() is threading.main_thread():
+                from PyQt6.QtWidgets import QMessageBox
+                tail = "\n".join(text.strip().splitlines()[-6:])
+                QMessageBox.warning(
+                    None, "Có lỗi xảy ra (app vẫn chạy tiếp)",
+                    "Thao tác vừa rồi gặp lỗi — app KHÔNG thoát, cứ dùng "
+                    "tiếp.\nLỗi đã ghi vào logs/error.log (gửi dev để sửa "
+                    "tận gốc).\n\n" + tail)
+        except Exception:  # noqa: BLE001 - hộp thoại lỗi không được gây lỗi
+            pass
+
+    sys.excepthook = _global_excepthook
+
+    def _thread_hook(args):
+        _log_crash("".join(traceback.format_exception(
+            args.exc_type, args.exc_value, args.exc_traceback)))
+
+    threading.excepthook = _thread_hook
+
     state = AppState()
 
     # ---- ĐĂNG NHẬP: chỉ bắt buộc KHI đã cấu hình máy chủ tài khoản (Supabase).
