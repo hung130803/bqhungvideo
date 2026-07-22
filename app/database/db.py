@@ -221,6 +221,36 @@ class Database:
                 self.conn().execute(
                     "ALTER TABLE projects ADD COLUMN grp TEXT NOT NULL DEFAULT ''")
                 self.conn().commit()
+            # 🤖 DÂY CHUYỀN (INTEGRATION.md): cấu hình theo kênh + sổ file
+            # đã-xử-lý (chống trùng + hạn mức ngày, độc lập file còn/mất).
+            if "pipe_on" not in cols:
+                for ddl in (
+                    "ALTER TABLE projects ADD COLUMN pipe_on INTEGER NOT NULL DEFAULT 0",
+                    "ALTER TABLE projects ADD COLUMN pipe_src TEXT",          # thư mục trung chuyển riêng ('' = <gốc>\\<Tên kênh>)
+                    "ALTER TABLE projects ADD COLUMN pipe_mode TEXT NOT NULL DEFAULT 'auto'",   # auto|recap
+                    "ALTER TABLE projects ADD COLUMN pipe_daily INTEGER NOT NULL DEFAULT 1",    # video/ngày (1-2)
+                ):
+                    self.conn().execute(ddl)
+                self.conn().commit()
+            self.conn().execute(
+                """CREATE TABLE IF NOT EXISTS pipeline_files (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       project_id INTEGER NOT NULL,
+                       file_name TEXT NOT NULL,
+                       file_hash TEXT,
+                       status TEXT NOT NULL,        -- taken|done|error|dup
+                       video_id INTEGER,
+                       note TEXT,
+                       taken_at TEXT NOT NULL DEFAULT (datetime('now')),
+                       done_at TEXT
+                   )""")
+            self.conn().execute(
+                "CREATE INDEX IF NOT EXISTS idx_pipefiles_proj "
+                "ON pipeline_files(project_id, status)")
+            self.conn().execute(
+                "CREATE INDEX IF NOT EXISTS idx_pipefiles_hash "
+                "ON pipeline_files(project_id, file_hash)")
+            self.conn().commit()
             # HOẠT ĐỘNG GẦN NHẤT ghi thẳng vào kênh/video (KHÔNG suy ra từ bảng
             # jobs nữa) — 'Xóa lịch sử' xoá job done thì thời điểm 'xong gần
             # nhất' vẫn còn, không bị reset sang ngày hôm sau.
