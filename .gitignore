@@ -46,3 +46,9 @@ _dist*/
 _venv_client/
 bin_audit/
 _hooks_test/
+
+# build local
+bin/
+.venv-build/
+_perf/
+_tts_voices.json
