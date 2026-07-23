@@ -62,8 +62,13 @@ Theo dõi kênh nguồn          Quét thư mục trung chuyển        Quét th
 
 - `pipe_on` (bật dây chuyền cho kênh), `pipe_src` (thư mục trung chuyển
   của kênh; mặc định `<gốc>\<Tên kênh>`), `pipe_mode` ("auto" = Tạo clip
-  thường | "recap" = Reup thuyết minh), `pipe_daily` (1-2).
+  thường | "recap" = Reup thuyết minh), `pipe_daily` (1-2), `grp` (nhóm).
 - Thư mục xuất Part dùng cấu hình sẵn có (export_dir của kênh).
+- **Chạy THEO NHÓM:** hộp 🤖 Dây chuyền có bộ lọc nhóm; "▶ Chạy dây chuyền"
+  chỉ xử lý kênh của NHÓM đang chọn (chọn "Tất cả nhóm" = mọi kênh bật).
+  Nhóm ở tool cắt (`grp`) là để GOM/CHẠY THEO ĐỢT — **không ảnh hưởng
+  thư mục handoff** (thư mục vẫn là `<gốc>\<Tên kênh>` theo mục 1). Nhóm
+  của tool cắt độc lập với nhóm bên tool tải; user tự gán trong bảng.
 
 ## 7. Báo cáo & cảnh báo (tool cắt)
 
