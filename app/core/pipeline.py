@@ -199,13 +199,17 @@ def resolve_src_dir(root: str, name: str, pipe_src: str | None) -> Path:
 def plan_channel(project_id: int, name: str, root: str,
                  pipe_src: str | None, pipe_daily: int,
                  now: float | None = None,
-                 hash_fn=None) -> PlanItem:
-    """QUÉT 1 kênh -> PlanItem: chọn tối đa (pipe_daily - đã_nhận_hôm_nay)
-    file sẵn sàng, cũ nhất trước; phần còn lại ghi lý do vào skips.
-    KHÔNG side-effect file; chỉ đọc sổ. hash_fn để test cắm hash giả."""
+                 hash_fn=None, export_dir: str | None = None) -> PlanItem:
+    """QUÉT 1 kênh -> PlanItem. Thư mục LẤY video (ưu tiên):
+    pipe_src (chọn riêng) > export_dir ("Thư mục lưu" của kênh — 1 thư mục
+    dùng chung input+output theo yêu cầu) > <root>\\<Tên kênh>. Clip cắt xong
+    xuất vào thư mục con 'Clip' bên trong nên KHÔNG bị quét lại (scan_dir chỉ
+    đọc tầng trên). KHÔNG side-effect file; chỉ đọc sổ."""
     from app.services import _file_hash
     hash_fn = hash_fn or _file_hash
-    d = resolve_src_dir(root, name, pipe_src)
+    # export_dir đóng vai NGUỒN nếu không đặt pipe_src riêng (mô hình 1 thư mục).
+    src_override = (pipe_src or "").strip() or (export_dir or "").strip()
+    d = resolve_src_dir(root, name, src_override)
     it = PlanItem(project_id=project_id, name=name, src_dir=str(d))
     if not d.is_dir():
         it.note = "thư mục trung chuyển chưa tồn tại"
@@ -249,9 +253,14 @@ def plan_run(root: str, channels: list, now: float | None = None,
     for c in channels:
         if not c["pipe_on"]:
             continue
+        # export_dir có thể vắng trong hàng query cũ → lấy an toàn.
+        try:
+            ed = c["export_dir"]
+        except (KeyError, IndexError):
+            ed = None
         out.append(plan_channel(int(c["id"]), c["name"], root,
                                 c["pipe_src"], int(c["pipe_daily"] or 1),
-                                now=now, hash_fn=hash_fn))
+                                now=now, hash_fn=hash_fn, export_dir=ed))
     return out
 
 

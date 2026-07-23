@@ -3777,8 +3777,8 @@ class StudioPage(QWidget):
 
         def fill():
             rows = db.query(
-                "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src "
-                "FROM projects ORDER BY grp, name")
+                "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src, "
+                "export_dir FROM projects ORDER BY grp, name")
             all_groups = sorted({(r["grp"] or "") for r in rows},
                                  key=lambda s: (s == "", s.lower()))
             sync_group_combo(all_groups)
@@ -3870,15 +3870,22 @@ class StudioPage(QWidget):
                 # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
                 custom = bool((r["pipe_src"] or "").strip())
-                sd = str(P.resolve_src_dir(root, r["name"], r["pipe_src"]))
+                exp = (r["export_dir"] or "").strip()
+                # Nguồn ưu tiên: pipe_src riêng > Thư mục lưu của kênh > mặc định.
+                src_ov = (r["pipe_src"] or "").strip() or exp
+                sd = str(P.resolve_src_dir(root, r["name"], src_ov))
+                from_exp = (not custom) and bool(exp)
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
                 lb = QLabel(sd)
                 lb.setStyleSheet(
-                    f"color:{'#a6e3a1' if custom else MUTED}; font-size:11px;")
+                    f"color:{'#a6e3a1' if (custom or from_exp) else MUTED}; font-size:11px;")
                 lb.setToolTip(
                     ("📁 Thư mục RIÊNG bạn đã chọn cho kênh này:\n" if custom
-                     else "📁 Mặc định = <trung chuyển>\\<tên kênh>:\n") + sd)
+                     else "📁 = Thư mục lưu của kênh (đặt ở Quản lý nhóm & kênh); "
+                          "clip cắt xong vào thư mục con 'Clip', xoá video gốc:\n"
+                          if from_exp
+                          else "📁 Mặc định = <trung chuyển>\\<tên kênh>:\n") + sd)
                 fl.addWidget(lb, 1)
                 setb = QPushButton("📂"); setb.setFixedWidth(30)
                 setb.setToolTip("CHỌN thư mục lấy video riêng cho kênh này "
@@ -4020,13 +4027,14 @@ class StudioPage(QWidget):
         # pipe_daily=0 (ép) = KHÔNG giới hạn ngày: có video là xử lý hết.
         if sel is None or sel == "__ALL__":
             chans = db.query(
-                "SELECT id, name, pipe_on, pipe_src, pipe_mode, 0 AS pipe_daily "
-                "FROM projects WHERE pipe_on=1 ORDER BY grp, name")
+                "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
+                "0 AS pipe_daily FROM projects WHERE pipe_on=1 ORDER BY grp, name")
             self._pipe_log("▶ Chạy dây chuyền — TẤT CẢ nhóm")
         else:
             chans = db.query(
-                "SELECT id, name, pipe_on, pipe_src, pipe_mode, 0 AS pipe_daily "
-                "FROM projects WHERE pipe_on=1 AND grp=? ORDER BY name", (sel,))
+                "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
+                "0 AS pipe_daily FROM projects WHERE pipe_on=1 AND grp=? "
+                "ORDER BY name", (sel,))
             self._pipe_log(f"▶ Chạy dây chuyền — nhóm \"{sel or 'Chưa phân nhóm'}\"")
         if not chans:
             gtxt = ("" if sel is None or sel == "__ALL__"
@@ -5214,8 +5222,12 @@ class StudioPage(QWidget):
         # KÊNH CÓ THƯ MỤC LƯU RIÊNG -> xuất THẲNG vào đó (flat, KHÔNG nối <Kênh>
         # cũng KHÔNG tạo folder con theo tên video). Không đặt -> giữ y cũ.
         ch_export_dir = ((chrow["export_dir"] if chrow else "") or "").strip()
+        # Video DÂY CHUYỀN: nguồn đọc = chính export_dir (1 thư mục) → clip
+        # PHẢI vào thư mục con 'Clip' để KHÔNG bị quét lại thành nguồn.
+        is_pipe = video_id in getattr(self, "_pipe_by_vid", {})
         if ch_export_dir:
-            out_root = ch_export_dir
+            out_root = (str(Path(ch_export_dir) / "Clip") if is_pipe
+                        else ch_export_dir)
             flat_export = True
         else:
             out_root = str(self._export_root() / chname)

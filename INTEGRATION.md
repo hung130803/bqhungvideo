@@ -69,6 +69,13 @@ Theo dõi kênh nguồn          Quét thư mục trung chuyển        Quét th
   Nhóm ở tool cắt (`grp`) là để GOM/CHẠY THEO ĐỢT — **không ảnh hưởng
   thư mục handoff** (thư mục vẫn là `<gốc>\<Tên kênh>` theo mục 1). Nhóm
   của tool cắt độc lập với nhóm bên tool tải; user tự gán trong bảng.
+- **1 THƯ MỤC/KÊNH (mặc định mới, ưu tiên hơn `<gốc>\<Tên kênh>`):** kênh
+  đặt "Thư mục lưu" (export_dir) thì đó VỪA là nơi LẤY video (tool tải thả
+  video vào) VỪA là nơi xuất — clip cắt xong vào thư mục con `<F>\Clip`
+  (scan chỉ đọc tầng trên → KHÔNG cắt lại clip), video gốc XÓA sau khi đủ
+  Part. `pipe_src` (chọn tay) vẫn ưu tiên cao nhất. KHÔNG giới hạn video/
+  ngày — có video là xử lý hết. Bảng có nút Bật/Tắt tất cả + combo/ô số
+  chống cuộn nhầm (NoWheel).
 
 ## 7. Báo cáo & cảnh báo (tool cắt)
 
