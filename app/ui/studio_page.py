@@ -4138,8 +4138,24 @@ class StudioPage(QWidget):
         if not chans:
             gtxt = ("" if sel is None or sel == "__ALL__"
                     else f' trong nhóm "{sel or "Chưa phân nhóm"}"')
-            self.status.setText(f"⚠ Chưa kênh nào bật dây chuyền{gtxt} "
-                                "(bật cột 'Bật' trong hộp 🤖 Dây chuyền).")
+            # Nhóm đang chọn RỖNG kênh-bật — nhưng nhóm KHÁC có thể còn kênh bật.
+            # Chỉ thẳng để user khỏi tưởng "bấm không chạy" (bẫy hay gặp khi
+            # kênh nằm ở nhóm khác nhóm đang lọc).
+            others = db.query(
+                "SELECT COALESCE(NULLIF(grp,''),'') AS g, COUNT(*) AS n "
+                "FROM projects WHERE pipe_on=1 GROUP BY g ORDER BY n DESC")
+            hint = ""
+            if others:
+                names = ", ".join(f'"{o["g"] or "Chưa phân nhóm"}" ({o["n"]})'
+                                  for o in others)
+                hint = (f" 👉 Kênh ĐANG BẬT nằm ở nhóm khác: {names}. Đổi ô "
+                        "\"Nhóm\" sang đó rồi bấm Chạy.")
+            msg = (f"⚠ Không có kênh nào BẬT dây chuyền{gtxt}.{hint}"
+                   if others else
+                   f"⚠ Chưa kênh nào bật dây chuyền{gtxt} "
+                   "(tích cột 'Bật' trong bảng).")
+            self._pipe_log(msg)
+            self.status.setText(msg[:200])
             return 0
         plans = P.plan_run(root, chans)
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
