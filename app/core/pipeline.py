@@ -212,10 +212,17 @@ def plan_channel(project_id: int, name: str, root: str,
         return it
     ready, busy = scan_dir(d, now)
     it.busy = len(busy)
-    it.quota = max(0, int(pipe_daily or 1) - taken_today(project_id))
-    if it.quota <= 0 and ready:
-        it.note = "hôm nay đã đủ hạn mức — file chờ ngày mai"
-        return it
+    # KHÔNG giới hạn ngày: có bao nhiêu video sẵn sàng thì xử lý HẾT bấy
+    # nhiêu (theo yêu cầu — bỏ hạn mức pipe_daily). pipe_daily > 0 vẫn được
+    # tôn trọng nếu ai đó cố tình đặt; mặc định 0 = không giới hạn.
+    daily = int(pipe_daily or 0)
+    if daily > 0:
+        it.quota = max(0, daily - taken_today(project_id))
+        if it.quota <= 0 and ready:
+            it.note = "hôm nay đã đủ hạn mức — file chờ ngày mai"
+            return it
+    else:
+        it.quota = len(ready)  # không giới hạn — làm hết file trong folder
     for p in ready:
         try:
             fh = hash_fn(str(p))

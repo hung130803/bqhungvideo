@@ -3696,20 +3696,22 @@ class StudioPage(QWidget):
         hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         lay.addWidget(hint)
 
-        # --- hàng 2: LỌC NHÓM (chạy dây chuyền theo TỪNG nhóm) ---
+        # --- hàng 2: LỌC NHÓM + BẬT/TẮT TẤT CẢ (khỏi tích từng kênh) ---
         grow = QHBoxLayout(); grow.setSpacing(8)
         grow.addWidget(self._tag("Nhóm:"))
         grp_cb = QComboBox()
         self._pipe_grp_cb = grp_cb
         grow.addWidget(grp_cb, 1)
-        grow.addStretch(1)
+        all_on = QPushButton("✓ Bật tất cả"); all_on.setProperty("ghost", True)
+        all_off = QPushButton("✕ Tắt tất cả"); all_off.setProperty("ghost", True)
+        grow.addWidget(all_on); grow.addWidget(all_off)
         lay.addLayout(grow)
 
-        # --- bảng kênh ---
-        tbl = QTableWidget(0, 8)
+        # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
+        tbl = QTableWidget(0, 7)
         self._pipe_tbl = tbl
         tbl.setHorizontalHeaderLabels(
-            ["Bật", "Kênh", "Nhóm", "Chế độ", "Video/ngày",
+            ["Bật", "Kênh", "Nhóm", "Chế độ",
              "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
@@ -3721,8 +3723,8 @@ class StudioPage(QWidget):
             f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
-        for col in (0, 2, 3, 4, 5, 6):
+        hh.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        for col in (0, 2, 3, 4, 5):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(tbl, 2)
 
@@ -3838,19 +3840,13 @@ class StudioPage(QWidget):
                         "UPDATE projects SET pipe_mode=? WHERE id=?",
                         (c.currentData(), p)))
                 tbl.setCellWidget(i, 3, cb)
-                sp = QSpinBox(); sp.setRange(1, 3)
-                sp.setValue(int(r["pipe_daily"] or 1))
-                sp.valueChanged.connect(
-                    lambda v, p=pid: db.execute(
-                        "UPDATE projects SET pipe_daily=? WHERE id=?", (v, p)))
-                tbl.setCellWidget(i, 4, sp)
                 # ĐÃ CẮT (tổng mọi ngày) — số video kênh này đã cắt xong.
                 dn = db.query_one(
                     "SELECT COUNT(*) AS n FROM pipeline_files WHERE "
                     "project_id=? AND status='done'", (pid,))
                 it_done = QTableWidgetItem(str(dn["n"] if dn else 0))
                 it_done.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(i, 5, it_done)
+                tbl.setItem(i, 4, it_done)
                 # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
                 today = db.query_one(
                     "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
@@ -3869,7 +3865,7 @@ class StudioPage(QWidget):
                     cell = " ".join(bits)
                 it6 = QTableWidgetItem(cell)
                 it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(i, 6, it6)
+                tbl.setItem(i, 5, it6)
                 # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
                 # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
@@ -3923,6 +3919,17 @@ class StudioPage(QWidget):
             on = 1 if item.checkState() == Qt.CheckState.Checked else 0
             db.execute("UPDATE projects SET pipe_on=? WHERE id=?", (on, pid))
         tbl.itemChanged.connect(on_check)
+
+        def set_all(on: int):
+            # Bật/tắt dây chuyền cho MỌI kênh của nhóm đang chọn (khỏi tích
+            # từng cái). Nhóm nào đang lọc thì chỉ ảnh hưởng nhóm đó.
+            g = cur_group()
+            if g is None:
+                return
+            db.execute("UPDATE projects SET pipe_on=? WHERE grp=?", (on, g or ""))
+            fill()
+        all_on.clicked.connect(lambda: set_all(1))
+        all_off.clicked.connect(lambda: set_all(0))
 
         def do_pick():
             d = QFileDialog.getExistingDirectory(
@@ -4010,14 +4017,15 @@ class StudioPage(QWidget):
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
         # CHẠY THEO NHÓM ĐANG CHỌN: chỉ kênh nhóm đó (None = tất cả nhóm).
         sel = self._settings.value("pipe_grp_sel", "__ALL__")
+        # pipe_daily=0 (ép) = KHÔNG giới hạn ngày: có video là xử lý hết.
         if sel is None or sel == "__ALL__":
             chans = db.query(
-                "SELECT id, name, pipe_on, pipe_src, pipe_mode, pipe_daily "
+                "SELECT id, name, pipe_on, pipe_src, pipe_mode, 0 AS pipe_daily "
                 "FROM projects WHERE pipe_on=1 ORDER BY grp, name")
             self._pipe_log("▶ Chạy dây chuyền — TẤT CẢ nhóm")
         else:
             chans = db.query(
-                "SELECT id, name, pipe_on, pipe_src, pipe_mode, pipe_daily "
+                "SELECT id, name, pipe_on, pipe_src, pipe_mode, 0 AS pipe_daily "
                 "FROM projects WHERE pipe_on=1 AND grp=? ORDER BY name", (sel,))
             self._pipe_log(f"▶ Chạy dây chuyền — nhóm \"{sel or 'Chưa phân nhóm'}\"")
         if not chans:
