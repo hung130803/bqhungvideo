@@ -4017,6 +4017,11 @@ class StudioPage(QWidget):
             if pid is None:
                 return
             on = 1 if item.checkState() == Qt.CheckState.Checked else 0
+            # CHỈ ghi khi thật sự đổi -> khỏi ghi thừa mỗi lần bảng dựng lại
+            # (itemChanged bắn cả lúc fill() dựng lại checkbox).
+            cur = db.query_one("SELECT pipe_on FROM projects WHERE id=?", (pid,))
+            if cur is not None and int(cur["pipe_on"] or 0) == on:
+                return
             db.execute("UPDATE projects SET pipe_on=? WHERE id=?", (on, pid))
         tbl.itemChanged.connect(on_check)
 
@@ -4091,9 +4096,12 @@ class StudioPage(QWidget):
         from PyQt6.QtWidgets import QApplication as _QApp
 
         def _tbl_busy():
-            # ĐANG thao tác trong bảng? (con trỏ đang ở 1 ô/combo/nút CON của
-            # bảng). Nếu có thì KHÔNG dựng lại bảng — tránh xoá combo nhóm/ô
-            # đang gõ giữa chừng (báo cáo vẫn tự tươi bình thường).
+            # ĐANG thao tác trong bảng? -> KHÔNG dựng lại bảng (tránh đóng
+            # dropdown/xoá ô đang thao tác giữa chừng; báo cáo vẫn tự tươi).
+            # (1) đang mở 1 popup (dropdown combo Nhóm/Chế độ) -> bận.
+            if _QApp.activePopupWidget() is not None:
+                return True
+            # (2) con trỏ đang ở 1 ô/combo/nút CON của bảng -> bận.
             fw = _QApp.focusWidget()
             while fw is not None:
                 if fw is tbl:
