@@ -3945,55 +3945,40 @@ class StudioPage(QWidget):
                 # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
                 # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
-                custom = bool((r["pipe_src"] or "").strip())
                 exp = (r["export_dir"] or "").strip()
-                # Nguồn ưu tiên: pipe_src riêng > Thư mục lưu của kênh > (fallback root cũ).
+                # Thư mục LẤY video = "Thư mục lưu" (export_dir) của kênh — đặt
+                # Ở PHẦN QUẢN LÝ KÊNH. Bảng dây chuyền chỉ ĂN THEO, KHÔNG chọn
+                # lại ở đây (pipe_src cũ nếu lỡ có vẫn được tôn trọng làm ưu tiên).
                 src_ov = (r["pipe_src"] or "").strip() or exp
                 no_folder = (not src_ov) and (not (root or "").strip())
                 sd = ("" if no_folder
                       else str(P.resolve_src_dir(root, r["name"], src_ov)))
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
-                lb = QLabel("⚠ Chưa đặt — bấm nút Chọn" if no_folder else sd)
+                lb = QLabel("⚠ Chưa có Thư mục lưu — đặt ở phần Kênh"
+                            if no_folder else sd)
                 lb.setStyleSheet(
                     "color:{}; font-size:11px;".format(
-                        "#f9e2af" if no_folder
-                        else ("#a6e3a1" if src_ov else MUTED)))
+                        "#f9e2af" if no_folder else "#a6e3a1"))
                 lb.setToolTip(
-                    "⚠ Kênh CHƯA đặt thư mục lấy video — bấm 📂 chọn thư mục "
-                    "(nơi tool tải bỏ video vào)."
+                    "⚠ Kênh chưa có 'Thư mục lưu'. Đặt nó ở phần quản lý kênh "
+                    "(nơi tool tải bỏ video vào) — bảng này tự ăn theo."
                     if no_folder else
-                    ("📁 Thư mục RIÊNG bạn đã chọn cho kênh này:\n" + sd if custom
-                     else "📁 = Thư mục của kênh; clip cắt xong xuất thẳng vào "
-                          "đây (tên 'Part N'), xoá video gốc:\n" + sd))
+                    "📁 Thư mục lưu của kênh (đặt ở phần Kênh). Tool tải bỏ video "
+                    "vào đây; clip cắt xong xuất thẳng vào đây (tên 'Part N'), "
+                    "rồi xoá video gốc:\n" + sd)
                 fl.addWidget(lb, 1)
-                # Nút hành động dùng CHỮ (không phụ thuộc emoji — máy nào cũng
-                # đọc được; trước dùng icon 📂↺↗🔄 nên máy thiếu font emoji ra
-                # ô vuông trống). Vẫn có tooltip giải thích chi tiết.
-                setb = QPushButton("Chọn"); setb.setProperty("ghost", True)
-                setb.setToolTip("CHỌN thư mục lấy video riêng cho kênh này "
-                                "(trỏ vào đúng thư mục tool tải đã lưu)")
-                setb.clicked.connect(
-                    lambda _c, p=pid, nm=r["name"], cur=sd: (
-                        (lambda d: (db.execute(
-                            "UPDATE projects SET pipe_src=? WHERE id=?", (d, p)),
-                            fill()) if d else None)(
-                            QFileDialog.getExistingDirectory(
-                                dlg, f"Chọn thư mục LẤY video cho kênh: {nm}", cur))))
-                fl.addWidget(setb)
-                if custom:
-                    rb = QPushButton("Mặc định"); rb.setProperty("ghost", True)
-                    rb.setToolTip("Về mặc định (<trung chuyển>\\<tên kênh>)")
-                    rb.clicked.connect(lambda _c, p=pid: (db.execute(
-                        "UPDATE projects SET pipe_src='' WHERE id=?", (p,)), fill()))
-                    fl.addWidget(rb)
+                # Nút CHỮ (không phụ thuộc emoji). Đã BỎ nút Chọn/Mặc định —
+                # thư mục đặt bên phần kênh, bảng chỉ ăn theo.
                 ob = QPushButton("Mở"); ob.setProperty("ghost", True)
                 ob.setToolTip("Mở thư mục này trong Windows Explorer")
                 ob.clicked.connect(lambda _c, p=sd: open_dir(p))
                 fl.addWidget(ob)
                 rdo = QPushButton("Cắt lại"); rdo.setProperty("ghost", True)
-                rdo.setToolTip("LÀM LẠI kênh này: xoá sổ đã-làm → video bỏ lại "
-                               "vào thư mục sẽ được cắt lại (không xoá file)")
+                rdo.setToolTip("CẮT LẠI kênh này NGAY: xoá sổ đã-làm rồi quét + "
+                               "cắt lại video còn trong thư mục. (Video gốc đã bị "
+                               "xoá sau lần cắt trước thì phải bỏ video vào lại "
+                               "thư mục rồi mới cắt lại được.)")
                 rdo.clicked.connect(
                     lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
                 fl.addWidget(rdo)
@@ -4184,18 +4169,45 @@ class StudioPage(QWidget):
         return taken
 
     def _pipe_redo_one(self, pid: int, name: str, refresh=None) -> None:
-        """🔄 LÀM LẠI 1 kênh: xoá sổ đã-làm (KHÔNG xoá file) → video bỏ lại
-        vào thư mục sẽ được nhận/cắt lại ở lần ▶ chạy sau."""
+        """🔄 CẮT LẠI 1 kênh: xoá sổ đã-làm rồi QUÉT + CẮT LẠI NGAY video còn
+        trong thư mục (không chờ bấm ▶ Chạy). Nếu thư mục trống (video gốc đã
+        bị xoá sau lần cắt trước) → báo RÕ để user bỏ video vào lại."""
         from app.core import pipeline as P
         from PyQt6.QtWidgets import QMessageBox
         if QMessageBox.question(
-                self, "Làm lại kênh",
-                f'Cho phép LÀM LẠI kênh "{name}"?\nXoá sổ đã-làm (KHÔNG xoá '
-                "file trên đĩa) — video bỏ lại vào thư mục sẽ được cắt lại.\n"
-                "Bộ đếm 'Đã cắt' về 0.") != QMessageBox.StandardButton.Yes:
+                self, "Cắt lại kênh",
+                f'CẮT LẠI kênh "{name}"?\nSẽ xoá sổ đã-làm rồi quét + cắt lại '
+                "NGAY video còn trong thư mục.\n\nLƯU Ý: video gốc đã bị XOÁ sau "
+                "lần cắt trước, nên chỉ cắt lại được nếu trong thư mục vẫn còn "
+                "video gốc (chưa cắt). Bộ đếm 'Part đã cắt' về 0."
+                ) != QMessageBox.StandardButton.Yes:
             return
         n = P.reset_channel(pid)
-        self._pipe_log(f"🔄 Làm lại kênh \"{name}\": xoá sổ {n} lượt")
+        self._pipe_log(f"🔄 Cắt lại \"{name}\": xoá sổ {n} lượt — quét lại thư mục…")
+        # QUÉT + CẮT NGAY kênh này (pipe_daily=0 = không giới hạn).
+        row = db.query_one(
+            "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
+            "0 AS pipe_daily FROM projects WHERE id=?", (pid,))
+        took = 0
+        if row and row["pipe_on"]:
+            mode = row["pipe_mode"] or "auto"
+            for it in P.plan_run(self._pipe_root(), [row]):
+                if it.note:
+                    self._pipe_log(f"⏭ {name}: {it.note}")
+                for path in it.files:
+                    if self._pipe_take(pid, name, mode, path):
+                        took += 1
+        if took:
+            self._pipe_log(f"▶ Cắt lại \"{name}\": nhận {took} video — đang cắt, "
+                           "xong sẽ tự xuất Part vào thư mục.")
+            self.status.setText(f"🤖 Cắt lại \"{name}\": {took} video — theo dõi "
+                                "ở Tiến trình.")
+        else:
+            self._pipe_log(
+                f"⚠ Cắt lại \"{name}\": THƯ MỤC KHÔNG CÓ VIDEO GỐC để cắt "
+                "(video gốc đã bị xoá sau khi cắt xong, hoặc kênh chưa bật / "
+                "chưa đặt thư mục). Muốn cắt lại: bỏ video gốc vào thư mục rồi "
+                "bấm 'Cắt lại' lần nữa.")
         if refresh:
             refresh()
 
