@@ -3676,25 +3676,19 @@ class StudioPage(QWidget):
         lay.setContentsMargins(14, 14, 14, 14)
         lay.setSpacing(8)
 
-        # --- hàng 1: thư mục trung chuyển + nút chạy ---
+        # --- hàng 1: hướng dẫn + nút chạy (BỎ "thư mục trung chuyển" chung —
+        #     mỗi kênh tự đặt Thư mục lấy video riêng ở cột bên phải) ---
         top = QHBoxLayout(); top.setSpacing(8)
-        top.addWidget(self._tag("Thư mục trung chuyển:"))
-        root_lb = QLabel(self._pipe_root() or "(chưa chọn — bấm 📂)")
-        root_lb.setStyleSheet(f"color:{TEXT};")
-        top.addWidget(root_lb, 1)
-        pick = QPushButton("📂 Chọn..."); pick.setProperty("ghost", True)
-        top.addWidget(pick)
+        hint = QLabel("Mỗi kênh đặt THƯ MỤC LẤY VIDEO riêng ở cột phải (nút 📂) — "
+                      "tool tải bỏ video vào đó. ▶ Chạy: lấy video trong thư mục "
+                      "mỗi kênh → cắt → xuất Part THẲNG vào đó → XÓA video gốc "
+                      "(file hỏng vào _Loi). Chỉ chạy NHÓM đang chọn.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        top.addWidget(hint, 1)
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
-        hint = QLabel("Tool tải thả video vào <thư mục trung chuyển>\\<Tên kênh>. "
-                      "Mỗi kênh nhận tối đa N video/ngày, cắt xong tự xuất Part vào "
-                      "thư mục kênh rồi XÓA video gốc; file hỏng vào _Loi. "
-                      "▶ Chạy dây chuyền chỉ chạy NHÓM đang chọn ở trên — muốn "
-                      "nhóm khác thì đổi nhóm rồi bấm chạy lại.")
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
-        lay.addWidget(hint)
 
         # --- hàng 2: LỌC NHÓM + BẬT/TẮT TẤT CẢ (khỏi tích từng kênh) ---
         grow = QHBoxLayout(); grow.setSpacing(8)
@@ -3874,21 +3868,25 @@ class StudioPage(QWidget):
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
                 custom = bool((r["pipe_src"] or "").strip())
                 exp = (r["export_dir"] or "").strip()
-                # Nguồn ưu tiên: pipe_src riêng > Thư mục lưu của kênh > mặc định.
+                # Nguồn ưu tiên: pipe_src riêng > Thư mục lưu của kênh > (fallback root cũ).
                 src_ov = (r["pipe_src"] or "").strip() or exp
-                sd = str(P.resolve_src_dir(root, r["name"], src_ov))
-                from_exp = (not custom) and bool(exp)
+                no_folder = (not src_ov) and (not (root or "").strip())
+                sd = ("" if no_folder
+                      else str(P.resolve_src_dir(root, r["name"], src_ov)))
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
-                lb = QLabel(sd)
+                lb = QLabel("⚠ Chưa đặt — bấm 📂" if no_folder else sd)
                 lb.setStyleSheet(
-                    f"color:{'#a6e3a1' if (custom or from_exp) else MUTED}; font-size:11px;")
+                    "color:{}; font-size:11px;".format(
+                        "#f9e2af" if no_folder
+                        else ("#a6e3a1" if src_ov else MUTED)))
                 lb.setToolTip(
-                    ("📁 Thư mục RIÊNG bạn đã chọn cho kênh này:\n" if custom
-                     else "📁 = Thư mục lưu của kênh (đặt ở Quản lý nhóm & kênh); "
-                          "clip cắt xong vào thư mục con 'Clip', xoá video gốc:\n"
-                          if from_exp
-                          else "📁 Mặc định = <trung chuyển>\\<tên kênh>:\n") + sd)
+                    "⚠ Kênh CHƯA đặt thư mục lấy video — bấm 📂 chọn thư mục "
+                    "(nơi tool tải bỏ video vào)."
+                    if no_folder else
+                    ("📁 Thư mục RIÊNG bạn đã chọn cho kênh này:\n" + sd if custom
+                     else "📁 = Thư mục của kênh; clip cắt xong xuất thẳng vào "
+                          "đây (tên 'Part N'), xoá video gốc:\n" + sd))
                 fl.addWidget(lb, 1)
                 setb = QPushButton("📂"); setb.setFixedWidth(30)
                 setb.setToolTip("CHỌN thư mục lấy video riêng cho kênh này "
@@ -3969,15 +3967,6 @@ class StudioPage(QWidget):
             fill()
         redo_grp.clicked.connect(redo_group)
 
-        def do_pick():
-            d = QFileDialog.getExistingDirectory(
-                dlg, "Chọn THƯ MỤC TRUNG CHUYỂN (tool tải thả video vào "
-                     "<đây>\\<Tên kênh>)", self._pipe_root() or "")
-            if d:
-                self._settings.setValue("pipe_root", d)
-                root_lb.setText(d)
-        pick.clicked.connect(do_pick)
-
         def do_run():
             # Chốt NHÓM đang chọn để _pipe_run chạy đúng nhóm đó.
             g = grp_cb.currentData()
@@ -4045,11 +4034,9 @@ class StudioPage(QWidget):
         pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
         -> đủ Part thì XÓA video gốc. Trả số video đã nhận lần này."""
         from app.core import pipeline as P
+        # Không còn "thư mục trung chuyển" chung — mỗi kênh tự đặt thư mục
+        # riêng (export_dir/pipe_src). root chỉ là fallback cũ (thường rỗng).
         root = self._pipe_root()
-        if not root:
-            self.status.setText("⚠ Chưa chọn thư mục trung chuyển dây chuyền "
-                                "(nút 🤖 → Cài đặt).")
-            return 0
         n_stale = P.expire_stale_taken()
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")

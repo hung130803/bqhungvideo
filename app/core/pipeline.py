@@ -230,10 +230,14 @@ def plan_channel(project_id: int, name: str, root: str,
     hash_fn = hash_fn or _file_hash
     # export_dir đóng vai NGUỒN nếu không đặt pipe_src riêng (mô hình 1 thư mục).
     src_override = (pipe_src or "").strip() or (export_dir or "").strip()
+    it = PlanItem(project_id=project_id, name=name, src_dir="")
+    if not src_override and not (root or "").strip():
+        it.note = "CHƯA đặt thư mục lấy video — bấm 📂 ở cột Thư mục"
+        return it
     d = resolve_src_dir(root, name, src_override)
-    it = PlanItem(project_id=project_id, name=name, src_dir=str(d))
+    it.src_dir = str(d)
     if not d.is_dir():
-        it.note = "thư mục trung chuyển chưa tồn tại"
+        it.note = "thư mục lấy video chưa tồn tại"
         return it
     ready, busy = scan_dir(d, now)
     it.busy = len(busy)
