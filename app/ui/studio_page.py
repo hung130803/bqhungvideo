@@ -3665,7 +3665,7 @@ class StudioPage(QWidget):
                                      QHBoxLayout, QHeaderView, QLabel,
                                      QPlainTextEdit, QPushButton, QSpinBox,
                                      QTableWidget, QTableWidgetItem,
-                                     QVBoxLayout)
+                                     QVBoxLayout, QWidget)
         from app.core import pipeline as P
         dlg = QDialog(self)
         dlg.setWindowTitle("🤖 Dây chuyền tự động")
@@ -3705,10 +3705,11 @@ class StudioPage(QWidget):
         lay.addLayout(grow)
 
         # --- bảng kênh ---
-        tbl = QTableWidget(0, 7)
+        tbl = QTableWidget(0, 8)
         self._pipe_tbl = tbl
         tbl.setHorizontalHeaderLabels(
-            ["Bật", "Kênh", "Nhóm", "Chế độ", "Video/ngày", "Hôm nay", "Nhận lần cuối"])
+            ["Bật", "Kênh", "Nhóm", "Chế độ", "Video/ngày",
+             "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         tbl.setStyleSheet(
@@ -3719,6 +3720,7 @@ class StudioPage(QWidget):
             f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
         for col in (0, 2, 3, 4, 5, 6):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(tbl, 2)
@@ -3736,43 +3738,52 @@ class StudioPage(QWidget):
             sb = rep.verticalScrollBar()
             sb.setValue(sb.maximum())
 
-        # Nhóm đang chọn để LỌC + CHẠY (None = tất cả nhóm). Nhớ qua lần mở sau.
+        # Nhóm đang chọn để LỌC + CHẠY (theo TỪNG nhóm, không có "tất cả").
+        # "" = Chưa phân nhóm; "Mỹ"… Nhớ qua lần mở sau.
         def cur_group():
-            g = grp_cb.currentData()
-            return g  # None = tất cả; "" = Chưa phân nhóm; "Mỹ"…
+            return grp_cb.currentData()
         self._pipe_cur_group = cur_group
 
         def sync_group_combo(all_groups):
             # Dựng lại danh sách nhóm mà GIỮ lựa chọn hiện tại (chặn tín hiệu
-            # để không tự gọi fill() đệ quy).
-            want = self._settings.value("pipe_grp_sel", "__ALL__")
+            # để không tự gọi fill() đệ quy). KHÔNG có mục "tất cả" — dây
+            # chuyền chạy theo TỪNG nhóm (Mỹ / Hàn…).
+            want = self._settings.value("pipe_grp_sel", None)
             grp_cb.blockSignals(True)
             grp_cb.clear()
-            grp_cb.addItem("🏷 Tất cả nhóm", None)
             for g in all_groups:
                 grp_cb.addItem(g or "Chưa phân nhóm", g)
-            # khôi phục lựa chọn
             idx = 0
             for k in range(grp_cb.count()):
-                d = grp_cb.itemData(k)
-                key = "__ALL__" if d is None else d
-                if key == want:
+                if grp_cb.itemData(k) == want:
                     idx = k
                     break
-            grp_cb.setCurrentIndex(idx)
+            if grp_cb.count():
+                grp_cb.setCurrentIndex(idx)
             grp_cb.blockSignals(False)
+
+        def open_dir(path: str):
+            import os
+            try:
+                if path and os.path.isdir(path):
+                    os.startfile(path)  # noqa: S606 - mở thư mục cho user
+                else:
+                    self._pipe_log(f"⚠ Thư mục chưa tồn tại: {path or '(trống)'}")
+            except OSError:
+                pass
 
         def fill():
             rows = db.query(
-                "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily "
+                "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src "
                 "FROM projects ORDER BY grp, name")
             all_groups = sorted({(r["grp"] or "") for r in rows},
                                  key=lambda s: (s == "", s.lower()))
             sync_group_combo(all_groups)
             sel = cur_group()
-            view = [r for r in rows if sel is None or (r["grp"] or "") == sel]
+            view = [r for r in rows if (r["grp"] or "") == (sel or "")] if sel is not None else []
             tbl.setRowCount(len(view))
             from datetime import datetime
+            root = self._pipe_root()
             for i, r in enumerate(view):
                 pid = int(r["id"])
                 chk = QTableWidgetItem()
@@ -3782,7 +3793,29 @@ class StudioPage(QWidget):
                                   else Qt.CheckState.Unchecked)
                 chk.setData(Qt.ItemDataRole.UserRole, pid)
                 tbl.setItem(i, 0, chk)
-                tbl.setItem(i, 1, QTableWidgetItem(r["name"]))
+                # Tên + cảnh báo NGUỒN CẠN (gộp vào tooltip cho gọn cột).
+                last = P.last_intake_at(pid)
+                warn = ""
+                tip = "Kênh: " + r["name"]
+                if last:
+                    try:
+                        d0 = datetime.strptime(last[:10], "%Y-%m-%d").date()
+                        nd = (datetime.now().date() - d0).days
+                        if nd >= 3:
+                            warn = "⚠ "
+                            tip = (f"⚠ NGUỒN CẠN? {nd} ngày không có video mới "
+                                   f"— kiểm tra tool tải / đổi key.")
+                        else:
+                            tip = ("nhận video: hôm nay" if nd <= 0
+                                   else f"nhận video: {nd} ngày trước")
+                    except ValueError:
+                        pass
+                itn = QTableWidgetItem(warn + r["name"])
+                itn.setToolTip(tip)
+                if warn:
+                    from PyQt6.QtGui import QColor
+                    itn.setForeground(QColor("#f38ba8"))
+                tbl.setItem(i, 1, itn)
                 # Cột NHÓM — sửa được (gõ nhóm mới hoặc chọn nhóm có sẵn).
                 gcb = QComboBox(); gcb.setEditable(True)
                 gcb.addItem("")
@@ -3810,6 +3843,14 @@ class StudioPage(QWidget):
                     lambda v, p=pid: db.execute(
                         "UPDATE projects SET pipe_daily=? WHERE id=?", (v, p)))
                 tbl.setCellWidget(i, 4, sp)
+                # ĐÃ CẮT (tổng mọi ngày) — số video kênh này đã cắt xong.
+                dn = db.query_one(
+                    "SELECT COUNT(*) AS n FROM pipeline_files WHERE "
+                    "project_id=? AND status='done'", (pid,))
+                it_done = QTableWidgetItem(str(dn["n"] if dn else 0))
+                it_done.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                tbl.setItem(i, 5, it_done)
+                # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
                 today = db.query_one(
                     "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
                     " SUM(status='taken') AS t FROM pipeline_files WHERE "
@@ -3825,30 +3866,27 @@ class StudioPage(QWidget):
                     if today["e"]:
                         bits.append(f"🔴{today['e']}")
                     cell = " ".join(bits)
-                it4 = QTableWidgetItem(cell)
-                it4.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(i, 5, it4)
-                # NGUỒN CẠN: N ngày kênh không nhận được video mới
-                last = P.last_intake_at(pid)
-                txt = "chưa từng"
-                if last:
-                    try:
-                        d0 = datetime.strptime(last[:10], "%Y-%m-%d").date()
-                        nd = (datetime.now().date() - d0).days
-                        txt = ("hôm nay" if nd <= 0 else
-                               f"{nd} ngày trước" + (" ⚠ NGUỒN CẠN?"
-                                                     if nd >= 3 else ""))
-                    except ValueError:
-                        txt = last
-                it5 = QTableWidgetItem(txt)
-                if "⚠" in txt:
-                    from PyQt6.QtGui import QColor
-                    it5.setForeground(QColor("#f38ba8"))
-                tbl.setItem(i, 6, it5)
+                it6 = QTableWidgetItem(cell)
+                it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                tbl.setItem(i, 6, it6)
+                # THƯ MỤC lấy video (nguồn trung chuyển) + nút mở.
+                sd = str(P.resolve_src_dir(root, r["name"], r["pipe_src"]))
+                fw = QWidget(); fl = QHBoxLayout(fw)
+                fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
+                lb = QLabel(sd); lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+                lb.setToolTip(sd); lb.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse)
+                fl.addWidget(lb, 1)
+                ob = QPushButton("📁"); ob.setFixedWidth(30)
+                ob.setToolTip("Mở thư mục này")
+                ob.clicked.connect(lambda _c, p=sd: open_dir(p))
+                fl.addWidget(ob)
+                tbl.setCellWidget(i, 7, fw)
 
         def on_group_change():
             g = grp_cb.currentData()
-            self._settings.setValue("pipe_grp_sel", "__ALL__" if g is None else g)
+            if g is not None:
+                self._settings.setValue("pipe_grp_sel", g)
             fill()
         grp_cb.currentIndexChanged.connect(on_group_change)
 
@@ -3872,6 +3910,10 @@ class StudioPage(QWidget):
         pick.clicked.connect(do_pick)
 
         def do_run():
+            # Chốt NHÓM đang chọn để _pipe_run chạy đúng nhóm đó.
+            g = grp_cb.currentData()
+            if g is not None:
+                self._settings.setValue("pipe_grp_sel", g)
             # PRE-CHECK trước khi chạy: key AI + ElevenLabs cho kênh reup
             from app.ai import llm as _llm
             if not _llm.is_configured():

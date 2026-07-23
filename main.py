@@ -69,6 +69,10 @@ def main() -> int:
     qapp = QApplication(sys.argv)
     qapp.setApplicationName("BQ Hung Video")
 
+    # Chặn cuộn chuột vô tình đổi giá trị ComboBox/ô Số (lỗi Qt mặc định).
+    from app.ui.wheelguard import install as _install_wheelguard
+    _install_wheelguard(qapp)
+
     # ---- CHỐNG MỞ 2 APP: 2 instance cùng đọc/ghi studio.db sẽ tranh job
     # (1 job chạy 2 lần, gọi AI đôi, clip ghi đè lẫn nhau). ----
     from PyQt6.QtCore import QLockFile
