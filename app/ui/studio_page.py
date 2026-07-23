@@ -3876,25 +3876,42 @@ class StudioPage(QWidget):
                     from PyQt6.QtGui import QColor
                     itn.setForeground(QColor("#f38ba8"))
                 tbl.setItem(i, 1, itn)
-                # Cột NHÓM — sửa được (gõ nhóm mới hoặc chọn nhóm có sẵn).
-                gcb = NoWheelComboBox(); gcb.setEditable(True)
-                gcb.addItem("")
+                # Cột NHÓM — DROPDOWN CHỌN (KHÔNG gõ tự do): tránh render xấu
+                # (ô nhập editable) + tránh gõ/cuộn nhầm làm MẤT nhóm. Gồm các
+                # nhóm hiện có + "(Chưa phân nhóm)" + "➕ Nhóm mới…" để tạo nhóm.
+                gcb = NoWheelComboBox()
+                gcb.addItem("(Chưa phân nhóm)", "")
                 for g in all_groups:
                     if g:
-                        gcb.addItem(g)
-                gcb.setCurrentText(r["grp"] or "")
-                # LƯU nhóm CHỈ khi user chủ động: chọn từ danh sách (activated)
-                # hoặc gõ xong rời ô (editingFinished). TUYỆT ĐỐI không dùng
-                # currentTextChanged — tín hiệu đó bắn cả khi dựng lại bảng,
-                # cuộn chuột, gõ dở... từng làm MẤT nhóm về rỗng. Có so với giá
-                # trị cũ nên rời ô mà không đổi thì không ghi.
-                def _save_grp(p=pid, c=gcb, old=(r["grp"] or "")):
-                    nv = c.currentText().strip()
-                    if nv != old:
-                        db.execute(
-                            "UPDATE projects SET grp=? WHERE id=?", (nv, p))
-                gcb.activated.connect(lambda _i, f=_save_grp: f())
-                gcb.lineEdit().editingFinished.connect(_save_grp)
+                        gcb.addItem(g, g)
+                cur_grp = r["grp"] or ""
+                if cur_grp and gcb.findData(cur_grp) < 0:
+                    gcb.addItem(cur_grp, cur_grp)   # nhóm hiện tại luôn có mặt
+                gcb.addItem("➕ Nhóm mới…", "__NEW__")
+                ci = gcb.findData(cur_grp)
+                gcb.setCurrentIndex(ci if ci >= 0 else 0)
+
+                def _on_grp(_i, p=pid, c=gcb, old=cur_grp):
+                    # CHỈ chạy khi user CHỦ ĐỘNG chọn (activated). Đổi nhóm ->
+                    # lưu + dựng lại bảng (deferred để không xoá combo đang phát
+                    # tín hiệu). "➕ Nhóm mới…" -> hỏi tên rồi gán.
+                    from PyQt6.QtCore import QTimer as _QT2
+                    from PyQt6.QtWidgets import QInputDialog
+                    d = c.currentData()
+                    if d == "__NEW__":
+                        name, ok = QInputDialog.getText(
+                            dlg, "Nhóm mới", "Tên nhóm (vd: hàn, mỹ, nhật):")
+                        name = (name or "").strip()
+                        if ok and name:
+                            db.execute("UPDATE projects SET grp=? WHERE id=?",
+                                       (name, p))
+                        _QT2.singleShot(0, fill)     # dựng lại (kể cả khi huỷ)
+                        return
+                    if d != old:
+                        db.execute("UPDATE projects SET grp=? WHERE id=?",
+                                   (d, p))
+                        _QT2.singleShot(0, fill)
+                gcb.activated.connect(_on_grp)
                 tbl.setCellWidget(i, 2, gcb)
                 cb = NoWheelComboBox()
                 cb.addItem("Tạo clip thường", "auto")
