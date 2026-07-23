@@ -3869,15 +3869,38 @@ class StudioPage(QWidget):
                 it6 = QTableWidgetItem(cell)
                 it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 tbl.setItem(i, 6, it6)
-                # THƯ MỤC lấy video (nguồn trung chuyển) + nút mở.
+                # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
+                # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
+                # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
+                custom = bool((r["pipe_src"] or "").strip())
                 sd = str(P.resolve_src_dir(root, r["name"], r["pipe_src"]))
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
-                lb = QLabel(sd); lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
-                lb.setToolTip(sd); lb.setTextInteractionFlags(
-                    Qt.TextInteractionFlag.TextSelectableByMouse)
+                lb = QLabel(sd)
+                lb.setStyleSheet(
+                    f"color:{'#a6e3a1' if custom else MUTED}; font-size:11px;")
+                lb.setToolTip(
+                    ("📁 Thư mục RIÊNG bạn đã chọn cho kênh này:\n" if custom
+                     else "📁 Mặc định = <trung chuyển>\\<tên kênh>:\n") + sd)
                 fl.addWidget(lb, 1)
-                ob = QPushButton("📁"); ob.setFixedWidth(30)
+                setb = QPushButton("📂"); setb.setFixedWidth(30)
+                setb.setToolTip("CHỌN thư mục lấy video riêng cho kênh này "
+                                "(trỏ vào đúng thư mục tool tải đã lưu)")
+                setb.clicked.connect(
+                    lambda _c, p=pid, nm=r["name"], cur=sd: (
+                        (lambda d: (db.execute(
+                            "UPDATE projects SET pipe_src=? WHERE id=?", (d, p)),
+                            fill()) if d else None)(
+                            QFileDialog.getExistingDirectory(
+                                dlg, f"Chọn thư mục LẤY video cho kênh: {nm}", cur))))
+                fl.addWidget(setb)
+                if custom:
+                    rb = QPushButton("↺"); rb.setFixedWidth(26)
+                    rb.setToolTip("Về mặc định (<trung chuyển>\\<tên kênh>)")
+                    rb.clicked.connect(lambda _c, p=pid: (db.execute(
+                        "UPDATE projects SET pipe_src='' WHERE id=?", (p,)), fill()))
+                    fl.addWidget(rb)
+                ob = QPushButton("↗"); ob.setFixedWidth(26)
                 ob.setToolTip("Mở thư mục này")
                 ob.clicked.connect(lambda _c, p=sd: open_dir(p))
                 fl.addWidget(ob)
