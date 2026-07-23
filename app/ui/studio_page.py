@@ -1954,6 +1954,48 @@ class StudioPage(QWidget):
     def _channel_dashboard(self):
         self._build_channel_dashboard().exec()
 
+    def _pipe_today_stats(self) -> dict:
+        """pid -> {'v','p','e','run'}: hôm nay (giờ máy) kênh này CẮT XONG mấy
+        video ('v'), xuất tổng mấy Part ('p'), lỗi ('e'), đang làm ('run').
+        1 truy vấn gộp nên nhẹ dù nhiều kênh."""
+        out: dict = {}
+        try:
+            rows = db.query(
+                "SELECT project_id AS pid, "
+                "SUM(status='done' AND date(done_at,'localtime')="
+                "date('now','localtime')) AS v, "
+                "COALESCE(SUM(CASE WHEN status='done' AND "
+                "date(done_at,'localtime')=date('now','localtime') "
+                "THEN CAST(note AS INTEGER) ELSE 0 END),0) AS p, "
+                "SUM(status='error' AND date(done_at,'localtime')="
+                "date('now','localtime')) AS e, "
+                "SUM(status='taken' AND date(taken_at,'localtime')="
+                "date('now','localtime')) AS run "
+                "FROM pipeline_files GROUP BY project_id")
+        except Exception:  # noqa: BLE001
+            return out
+        for r in rows:
+            out[int(r["pid"])] = {"v": r["v"] or 0, "p": r["p"] or 0,
+                                  "e": r["e"] or 0, "run": r["run"] or 0}
+        return out
+
+    def _pipe_waiting_count(self, pipe_src, export_dir) -> int:
+        """Số video GỐC đang CHỜ cắt trong thư mục kênh (sẵn sàng, chưa xử lý).
+        Quét đĩa 1 lần khi mở bảng — lỗi/không có thư mục -> 0."""
+        from pathlib import Path
+        from app.core import pipeline as P
+        src = (pipe_src or "").strip() or (export_dir or "").strip()
+        if not src:
+            return 0
+        d = Path(src)
+        if not d.is_dir():
+            return 0
+        try:
+            ready, _ = P.scan_dir(d)
+            return len(ready)
+        except Exception:  # noqa: BLE001
+            return 0
+
     def _build_channel_dashboard(self) -> QDialog:
         """Dialog 'Tình hình các kênh' 2 TRANG (QStackedWidget):
         - Trang kênh: mỗi kênh 1 dòng, đang chạy/mới xong lên đầu; nháy đúp
@@ -1962,7 +2004,7 @@ class StudioPage(QWidget):
           nháy đúp 1 video -> chuyển app sang kênh + video đó rồi đóng;
           nút '← Quay lại danh sách kênh' trở về trang kênh.
         Tách khỏi exec() để test offscreen thao tác được từng bước."""
-        from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView,
+        from PyQt6.QtWidgets import (QAbstractItemView, QHeaderView, QLineEdit,
                                      QStackedWidget, QTableWidget,
                                      QTableWidgetItem)
         dlg = QDialog(self); dlg.setWindowTitle("Tình hình các kênh")
@@ -1970,6 +2012,9 @@ class StudioPage(QWidget):
         lay = QVBoxLayout(dlg); lay.setSpacing(8)
         stack = QStackedWidget(); lay.addWidget(stack, 1)
         cur = {"pid": None, "name": ""}      # kênh đang xem ở trang video
+        # cache SỐ VIDEO CHỜ (quét đĩa) theo pid — chỉ quét 1 lần/lần mở, đổi
+        # lọc/gõ tìm KHÔNG quét lại (tránh lag khi nhiều kênh). "Làm mới" xoá.
+        wait_cache: dict = {}
 
         def _mk_table(headers):
             t = QTableWidget(0, len(headers))
@@ -2020,11 +2065,33 @@ class StudioPage(QWidget):
         gl = QLabel("Nhóm:"); gl.setStyleSheet(f"color:{MUTED};")
         frow.addWidget(gl)
         gflt = QComboBox(); gflt.setMinimumWidth(150)
-        frow.addWidget(gflt); frow.addStretch(1)
+        frow.addWidget(gflt)
+        sl = QLabel("Lọc:"); sl.setStyleSheet(f"color:{MUTED};")
+        frow.addWidget(sl)
+        sflt = QComboBox(); sflt.setMinimumWidth(170)
+        for _t, _d in (("Tất cả", ""), ("✅ Đã làm hôm nay", "done_today"),
+                       ("• CHƯA làm hôm nay", "idle_today"),
+                       ("⏳ Có video chờ cắt", "waiting"),
+                       ("🔴 Có lỗi 24h", "err"),
+                       ("🟢 Đang chạy", "running")):
+            sflt.addItem(_t, _d)
+        frow.addWidget(sflt)
+        # ô tìm nhanh theo tên kênh
+        srch = QLineEdit(); srch.setPlaceholderText("🔎 Tìm kênh…")
+        srch.setClearButtonEnabled(True); srch.setMaximumWidth(200)
+        frow.addWidget(srch)
+        frow.addStretch(1)
         l1.addLayout(frow)
+        # DÒNG TỔNG KẾT (rollup theo nhóm đang lọc) — nhìn 1 phát biết hôm nay.
+        summ = QLabel("")
+        summ.setStyleSheet(f"color:{TEXT}; font-size:13px; font-weight:700;"
+                           f" padding:4px 2px;")
+        summ.setWordWrap(True)
+        l1.addWidget(summ)
         tbl = _mk_table(
-            ["Kênh", "Nhóm", "Video", "Đang chạy", "Đợi", "Lỗi 24h",
-             "Clip đã tạo", "Đã xuất", "Xong gần nhất"])
+            ["Kênh", "Nhóm", "HN: Video", "HN: Part", "Chờ",
+             "Đang chạy", "Đợi", "Lỗi 24h", "Clip đã tạo", "Đã xuất",
+             "Xong gần nhất"])
         l1.addWidget(tbl, 1)
         stack.addWidget(pg1)
 
@@ -2062,33 +2129,86 @@ class StudioPage(QWidget):
             gflt.setCurrentIndex(gi if gi > 0 else 0)
             gflt.blockSignals(False)
             flt = gflt.currentData() or ""
+            status = sflt.currentData() or ""
+            q = (srch.text() or "").strip().lower()
             act = self._chan_activity()
-            rows = []
+            today = self._pipe_today_stats()
+            folders = {int(r["id"]): (r["pipe_src"], r["export_dir"])
+                       for r in db.query(
+                           "SELECT id, pipe_src, export_dir FROM projects")}
+            _empty = {"running": 0, "pending": 0, "failed_recent": 0,
+                      "exported": 0, "videos": 0, "clips": 0,
+                      "last_done": None, "last_done_type": ""}
+            _t0 = {"v": 0, "p": 0, "e": 0, "run": 0}
+            # SCOPE = nhóm + tìm (dòng tổng kết tính trên scope này, không phụ
+            # thuộc bộ lọc trạng thái). Mỗi phần tử kèm số liệu để lọc/hiện.
+            scope = []
             for p in services.list_projects():
                 pg = p["grp"] or ""
                 if flt and pg != flt:
                     continue
-                a = act.get(int(p["id"])) or {
-                    "running": 0, "pending": 0, "failed_recent": 0,
-                    "exported": 0, "videos": 0, "clips": 0,
-                    "last_done": None, "last_done_type": ""}
-                rows.append((p["name"], pg, int(p["id"]), a))
-            # đang chạy trước, rồi last_done mới nhất (chuỗi UTC so sánh
-            # lexicographic là đúng thứ tự thời gian), None xuống cuối
-            rows.sort(key=lambda r: (r[3]["running"] > 0,
-                                     r[3]["last_done"] or ""), reverse=True)
+                if q and q not in (p["name"] or "").lower():
+                    continue
+                pid = int(p["id"])
+                a = act.get(pid) or dict(_empty)
+                td = today.get(pid) or dict(_t0)
+                if pid not in wait_cache:
+                    ps, ed = folders.get(pid, (None, None))
+                    wait_cache[pid] = self._pipe_waiting_count(ps, ed)
+                wait = wait_cache[pid]
+                did_today = bool(td["v"] or td["run"] or td["e"])
+                scope.append({"name": p["name"], "grp": pg, "pid": pid,
+                              "a": a, "td": td, "wait": wait,
+                              "did": did_today})
+            # ---- DÒNG TỔNG KẾT (rollup theo scope) ----
+            tv = sum(r["td"]["v"] for r in scope)
+            tp = sum(r["td"]["p"] for r in scope)
+            te = sum(r["td"]["e"] for r in scope)
+            n_did = sum(1 for r in scope if r["did"])
+            n_idle = len(scope) - n_did
+            wch = [r for r in scope if r["wait"] > 0]
+            wtot = sum(r["wait"] for r in wch)
+            gname = flt or "Tất cả nhóm"
+            summ.setText(
+                f"📊 {gname} · {len(scope)} kênh   |   HÔM NAY: ✅ {tv} video → "
+                f"✂ {tp} Part" + (f" · 🔴 {te} lỗi" if te else "")
+                + f"   |   {n_did} kênh đã làm, {n_idle} chưa làm"
+                + (f"   |   ⏳ {wtot} video CHỜ cắt ({len(wch)} kênh)"
+                   if wtot else "   |   ⏳ không có video chờ"))
+            # ---- LỌC TRẠNG THÁI ----
+            def keep(r):
+                if status == "done_today":
+                    return r["did"]
+                if status == "idle_today":
+                    return not r["did"]
+                if status == "waiting":
+                    return r["wait"] > 0
+                if status == "err":
+                    return r["a"]["failed_recent"] > 0
+                if status == "running":
+                    return r["a"]["running"] > 0
+                return True
+            rows = [r for r in scope if keep(r)]
+            # sắp: đang chạy > có video chờ > đã làm hôm nay > mới xong gần nhất
+            rows.sort(key=lambda r: (r["a"]["running"] > 0, r["wait"] > 0,
+                                     r["did"], r["a"]["last_done"] or ""),
+                      reverse=True)
             tbl.setRowCount(len(rows))
-            for i, (name, pg, pid, a) in enumerate(rows):
-                it = QTableWidgetItem(name)
-                it.setData(Qt.ItemDataRole.UserRole, pid)
+            from PyQt6.QtGui import QColor
+            for i, r in enumerate(rows):
+                a, td = r["a"], r["td"]
+                it = QTableWidgetItem(r["name"])
+                it.setData(Qt.ItemDataRole.UserRole, r["pid"])
                 tbl.setItem(i, 0, it)
-                gx = QTableWidgetItem(pg or "·")
+                gx = QTableWidgetItem(r["grp"] or "·")
                 gx.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 tbl.setItem(i, 1, gx)
                 done_txt = services.rel_time_vi(a["last_done"]) or "—"
                 if a["last_done"] and a["last_done_type"]:
                     done_txt += f" ({a['last_done_type']})"
-                cells = (str(a.get("videos", 0)) if a.get("videos") else "·",
+                cells = (f"✅ {td['v']}" if td["v"] else "·",
+                         f"✂ {td['p']}" if td["p"] else "·",
+                         f"⏳ {r['wait']}" if r["wait"] else "·",
                          f"🟢 {a['running']}" if a["running"] else "·",
                          f"⏳ {a['pending']}" if a["pending"] else "·",
                          (f"🔴 {a['failed_recent']}"
@@ -2099,6 +2219,15 @@ class StudioPage(QWidget):
                 for c, txt in enumerate(cells, start=2):
                     x = QTableWidgetItem(txt)
                     x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # tô màu: HN Video/Part xanh lá; Chờ vàng; lỗi đỏ
+                    if c == 2 and td["v"]:
+                        x.setForeground(QColor("#a6e3a1"))
+                    elif c == 3 and td["p"]:
+                        x.setForeground(QColor("#a6e3a1"))
+                    elif c == 4 and r["wait"]:
+                        x.setForeground(QColor("#f9e2af"))
+                    elif c == 7 and a["failed_recent"]:
+                        x.setForeground(QColor("#f38ba8"))
                     tbl.setItem(i, c, x)
 
         def fill_videos(pid, name=""):
@@ -2192,13 +2321,16 @@ class StudioPage(QWidget):
         tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         tbl.customContextMenuRequested.connect(chan_menu)
         gflt.currentIndexChanged.connect(lambda _i: fill())
+        sflt.currentIndexChanged.connect(lambda _i: fill())
+        srch.textChanged.connect(lambda _t: fill())
         tbl.cellDoubleClicked.connect(drill)
         vtbl.cellDoubleClicked.connect(jump_video)
         back.clicked.connect(go_back)
         btns = QHBoxLayout(); btns.addStretch(1)
         rf = QPushButton("Làm mới"); rf.setProperty("ghost", True)
         rf.clicked.connect(lambda: (fill_videos(cur["pid"], cur["name"])
-                                    if stack.currentIndex() else fill()))
+                                    if stack.currentIndex()
+                                    else (wait_cache.clear(), fill())))
         btns.addWidget(rf)
         cl = QPushButton("Đóng"); cl.setProperty("primary", True)
         cl.clicked.connect(dlg.accept); btns.addWidget(cl)
@@ -2207,7 +2339,7 @@ class StudioPage(QWidget):
         # móc cho test offscreen thao tác từng bước (không ảnh hưởng chạy thật)
         dlg._t = {"tbl": tbl, "vtbl": vtbl, "stack": stack, "back": back,
                   "fill": fill, "rename_row": rename_row, "hd2": hd2,
-                  "gflt": gflt}
+                  "gflt": gflt, "sflt": sflt, "srch": srch, "summ": summ}
         return dlg
 
     def _video_activity(self) -> dict:
