@@ -4142,6 +4142,7 @@ class StudioPage(QWidget):
         from app.core import pipeline as P
         # Không còn "thư mục trung chuyển" chung — mỗi kênh tự đặt thư mục
         # riêng (export_dir/pipe_src). root chỉ là fallback cũ (thường rỗng).
+        self._pipe_focus_target = None   # video ĐẦU TIÊN nhận -> đưa ra màn chính
         root = self._pipe_root()
         n_stale = P.expire_stale_taken()
         if n_stale:
@@ -4207,6 +4208,10 @@ class StudioPage(QWidget):
         self.status.setText(
             f"🤖 Dây chuyền: nhận {taken} video — đang phân tích/cắt, xong sẽ "
             "tự xuất và xóa video gốc. Theo dõi ở Tiến trình.")
+        # ĐƯA MÀN HÌNH CHÍNH về video đầu tiên vừa nhận -> đóng hộp Dây chuyền
+        # là thấy tên video trên + tiến trình + Part ở khung giữa (như làm tay).
+        if self._pipe_focus_target:
+            self._pipe_focus(*self._pipe_focus_target)
         return taken
 
     def _pipe_redo_one(self, pid: int, name: str, refresh=None) -> None:
@@ -4225,6 +4230,7 @@ class StudioPage(QWidget):
             return
         n = P.reset_channel(pid)
         self._pipe_log(f"🔄 Cắt lại \"{name}\": xoá sổ {n} lượt — quét lại thư mục…")
+        self._pipe_focus_target = None
         # QUÉT + CẮT NGAY kênh này (pipe_daily=0 = không giới hạn).
         row = db.query_one(
             "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
@@ -4249,8 +4255,23 @@ class StudioPage(QWidget):
                 "(video gốc đã bị xoá sau khi cắt xong, hoặc kênh chưa bật / "
                 "chưa đặt thư mục). Muốn cắt lại: bỏ video gốc vào thư mục rồi "
                 "bấm 'Cắt lại' lần nữa.")
+        if self._pipe_focus_target:
+            self._pipe_focus(*self._pipe_focus_target)
         if refresh:
             refresh()
+
+    def _pipe_focus(self, pid: int, vid: int) -> None:
+        """Đưa MÀN HÌNH CHÍNH về video dây chuyền vừa nhận: chọn đúng kênh +
+        video -> tên video hiện ở trên, khung GIỮA hiện thanh tiến trình
+        cắt/xuất + các Part hiện dần theo thứ tự (GIỐNG bấm 'Tạo clip' tay).
+        Kênh khác nhóm đang lọc thì _select_project tự đổi nhóm để hiện ra."""
+        try:
+            self._select_project(int(pid))
+            self._reload_videos(select_id=int(vid))
+            self._refresh_chan_label()
+            self._refresh_clips(force=True)
+        except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
+            pass
 
     def _pipe_take(self, pid: int, name: str, mode: str, path) -> bool:
         """Nhận 1 file vào dây chuyền: soi ffprobe -> nhập -> ghi sổ -> đưa
@@ -4275,6 +4296,10 @@ class StudioPage(QWidget):
         except Exception as e:  # noqa: BLE001
             self._pipe_log(f"🔴 {name}: {path.name} không nhập được — {e}")
             return False
+        # Video ĐẦU TIÊN nhận trong lần chạy này -> nhớ để đưa ra màn hình chính
+        # (hiện tên + tiến trình + Part ở khung giữa, như luồng bấm 'Tạo clip').
+        if getattr(self, "_pipe_focus_target", None) is None:
+            self._pipe_focus_target = (int(pid), int(vid))
         ctx = {"entry": entry, "vid": vid, "path": str(path), "pid": pid,
                "name": name, "file": path.name, "mode": mode}
         try:
