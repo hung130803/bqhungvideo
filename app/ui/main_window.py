@@ -28,6 +28,15 @@ class MainWindow(QMainWindow):
 
     def __init__(self, state: AppState):
         super().__init__()
+        # Chặn cuộn chuột vô tình đổi giá trị combo/ô số/slider (lỗi Qt mặc
+        # định). Cài ở đây để CHẮC CHẮN áp dụng dù app khởi động bằng entry
+        # nào (idempotent — gọi nhiều lần không sao).
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from app.ui.wheelguard import install as _wg
+            _wg(QApplication.instance())
+        except Exception:  # noqa: BLE001 - chặn cuộn là phụ, lỗi thì bỏ qua
+            pass
         self.state = state
         self.setWindowTitle(f"BQ Hung Video v{__version__}")
         self.resize(1240, 840)
