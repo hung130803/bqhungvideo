@@ -17,7 +17,27 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtWidgets import (QAbstractScrollArea, QAbstractSpinBox, QApplication,
-                             QComboBox, QSlider)
+                             QComboBox, QSlider, QSpinBox)
+
+
+# --- Widget TỰ CHẶN cuộn (chắc chắn 100%, không phụ thuộc bộ lọc toàn cục):
+#     Qt LUÔN gọi wheelEvent của lớp con. Dùng cho các ô hay bị cuộn nhầm. ---
+class NoWheelComboBox(QComboBox):
+    """ComboBox: chỉ đổi giá trị bằng cuộn KHI đã bấm chọn (có focus)."""
+    def wheelEvent(self, e):  # noqa: N802
+        if self.hasFocus():
+            super().wheelEvent(e)
+        else:
+            e.ignore()  # nhường cuộn cho vùng cuộn cha
+
+
+class NoWheelSpinBox(QSpinBox):
+    """SpinBox: cuộn không đổi giá trị khi chưa focus; vẫn bấm ▲▼ / gõ số."""
+    def wheelEvent(self, e):  # noqa: N802
+        if self.hasFocus():
+            super().wheelEvent(e)
+        else:
+            e.ignore()
 
 # Các loại widget "giá trị" cần chặn cuộn-vô-tình.
 _VALUE_WIDGETS = (QComboBox, QAbstractSpinBox, QSlider)

@@ -3667,6 +3667,7 @@ class StudioPage(QWidget):
                                      QTableWidget, QTableWidgetItem,
                                      QVBoxLayout, QWidget)
         from app.core import pipeline as P
+        from app.ui.wheelguard import NoWheelComboBox, NoWheelSpinBox
         dlg = QDialog(self)
         dlg.setWindowTitle("🤖 Dây chuyền tự động")
         dlg.resize(980, 640)
@@ -3817,7 +3818,7 @@ class StudioPage(QWidget):
                     itn.setForeground(QColor("#f38ba8"))
                 tbl.setItem(i, 1, itn)
                 # Cột NHÓM — sửa được (gõ nhóm mới hoặc chọn nhóm có sẵn).
-                gcb = QComboBox(); gcb.setEditable(True)
+                gcb = NoWheelComboBox(); gcb.setEditable(True)
                 gcb.addItem("")
                 for g in all_groups:
                     if g:
@@ -3827,7 +3828,7 @@ class StudioPage(QWidget):
                     lambda t, p=pid: db.execute(
                         "UPDATE projects SET grp=? WHERE id=?", (t.strip(), p)))
                 tbl.setCellWidget(i, 2, gcb)
-                cb = QComboBox()
+                cb = NoWheelComboBox()
                 cb.addItem("Tạo clip thường", "auto")
                 cb.addItem("Reup thuyết minh", "recap")
                 cb.setCurrentIndex(1 if (r["pipe_mode"] or "auto") == "recap"
