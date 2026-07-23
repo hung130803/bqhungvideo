@@ -3945,7 +3945,7 @@ class StudioPage(QWidget):
                       else str(P.resolve_src_dir(root, r["name"], src_ov)))
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
-                lb = QLabel("⚠ Chưa đặt — bấm 📂" if no_folder else sd)
+                lb = QLabel("⚠ Chưa đặt — bấm nút Chọn" if no_folder else sd)
                 lb.setStyleSheet(
                     "color:{}; font-size:11px;".format(
                         "#f9e2af" if no_folder
@@ -3958,7 +3958,10 @@ class StudioPage(QWidget):
                      else "📁 = Thư mục của kênh; clip cắt xong xuất thẳng vào "
                           "đây (tên 'Part N'), xoá video gốc:\n" + sd))
                 fl.addWidget(lb, 1)
-                setb = QPushButton("📂"); setb.setFixedWidth(30)
+                # Nút hành động dùng CHỮ (không phụ thuộc emoji — máy nào cũng
+                # đọc được; trước dùng icon 📂↺↗🔄 nên máy thiếu font emoji ra
+                # ô vuông trống). Vẫn có tooltip giải thích chi tiết.
+                setb = QPushButton("Chọn"); setb.setProperty("ghost", True)
                 setb.setToolTip("CHỌN thư mục lấy video riêng cho kênh này "
                                 "(trỏ vào đúng thư mục tool tải đã lưu)")
                 setb.clicked.connect(
@@ -3970,16 +3973,16 @@ class StudioPage(QWidget):
                                 dlg, f"Chọn thư mục LẤY video cho kênh: {nm}", cur))))
                 fl.addWidget(setb)
                 if custom:
-                    rb = QPushButton("↺"); rb.setFixedWidth(26)
+                    rb = QPushButton("Mặc định"); rb.setProperty("ghost", True)
                     rb.setToolTip("Về mặc định (<trung chuyển>\\<tên kênh>)")
                     rb.clicked.connect(lambda _c, p=pid: (db.execute(
                         "UPDATE projects SET pipe_src='' WHERE id=?", (p,)), fill()))
                     fl.addWidget(rb)
-                ob = QPushButton("↗"); ob.setFixedWidth(26)
-                ob.setToolTip("Mở thư mục này")
+                ob = QPushButton("Mở"); ob.setProperty("ghost", True)
+                ob.setToolTip("Mở thư mục này trong Windows Explorer")
                 ob.clicked.connect(lambda _c, p=sd: open_dir(p))
                 fl.addWidget(ob)
-                rdo = QPushButton("🔄"); rdo.setFixedWidth(26)
+                rdo = QPushButton("Cắt lại"); rdo.setProperty("ghost", True)
                 rdo.setToolTip("LÀM LẠI kênh này: xoá sổ đã-làm → video bỏ lại "
                                "vào thư mục sẽ được cắt lại (không xoá file)")
                 rdo.clicked.connect(
