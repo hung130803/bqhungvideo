@@ -2167,9 +2167,9 @@ class StudioPage(QWidget):
                     return r["a"]["failed_recent"] > 0 or r["td"]["e"] > 0
                 return True
             rows = [r for r in scope if keep(r)]
-            # sắp: có làm trong kỳ trước, rồi xong mới nhất; giữ thứ tự STT phụ
-            rows.sort(key=lambda r: (r["td"]["v"] > 0,
-                                     r["a"]["last_done"] or ""), reverse=True)
+            # SẮP theo đúng STT (1,2,3…) — dễ đối chiếu với dropdown Kênh, khỏi
+            # lệch 1,3,2. (Thông tin "mới xong" xem ở cột Xong gần nhất.)
+            rows.sort(key=lambda r: seq.get(r["pid"], 1 << 30))
             tbl.setRowCount(len(rows))
             from PyQt6.QtGui import QColor
             for i, r in enumerate(rows):
@@ -3938,6 +3938,9 @@ class StudioPage(QWidget):
             # "1. 123 · 2. sa…" bên trang chính — dễ đối chiếu/quản lý.
             pipe_seq = {int(p["id"]): i for i, p
                         in enumerate(services.list_projects(sel or None), 1)}
+            # SẮP DÒNG theo đúng STT (1,2,3…) — không để lệch 1,3,2 do xếp
+            # theo tên; đọc số thứ tự chạy dọc cho dễ quản lý.
+            view = sorted(view, key=lambda r: pipe_seq.get(int(r["id"]), 1 << 30))
             # TỔNG QUAN nhóm (rẻ: 1 truy vấn gộp; không phụ thuộc ô tìm).
             n_all = len(grp_rows)
             n_on = sum(1 for r in grp_rows if r["pipe_on"])
