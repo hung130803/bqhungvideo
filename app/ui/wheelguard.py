@@ -65,13 +65,35 @@ def _scroll_area(w):
 
 
 class _WheelGuard(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Cờ chống ĐỆ QUY: sendEvent bên dưới lại đi qua chính filter này;
+        # thiếu cờ -> gửi lặp vô hạn -> tràn stack -> APP SẬP TỨC THÌ
+        # (đúng ca: cuộn khi dropdown Kênh đang mở).
+        self._resending = False
+
     def eventFilter(self, obj, ev):  # noqa: N802 (Qt signature)
         if ev.type() == QEvent.Type.Wheel:
+            if self._resending:          # event do chính mình gửi lại -> cho qua
+                return False
             target = _value_ancestor(obj)
             if target is not None and not target.hasFocus():
+                # POPUP của combo đang MỞ -> user đang cuộn DANH SÁCH lựa chọn:
+                # để Qt xử lý tự nhiên (cuộn list, không đổi giá trị). Trước
+                # đây nuốt + gửi lại vào chính list -> đệ quy vô hạn -> crash.
+                if isinstance(target, QComboBox):
+                    view = target.view()
+                    if view is not None and view.isVisible():
+                        return False
                 sa = _scroll_area(obj)
-                if sa is not None:
-                    QApplication.sendEvent(sa.viewport(), ev)
+                # CHỈ chuyển cú cuộn cho vùng cuộn NGOÀI target (vùng cuộn nằm
+                # trong target -> gửi lại là tự bắn vào chân -> đệ quy).
+                if sa is not None and not target.isAncestorOf(sa):
+                    self._resending = True
+                    try:
+                        QApplication.sendEvent(sa.viewport(), ev)
+                    finally:
+                        self._resending = False
                 return True  # NUỐT: không cho đổi giá trị
         return False
 
