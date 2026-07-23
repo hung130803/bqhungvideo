@@ -3726,7 +3726,7 @@ class StudioPage(QWidget):
         self._pipe_tbl = tbl
         tbl.setHorizontalHeaderLabels(
             ["Bật", "Kênh", "Nhóm", "Chế độ",
-             "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
+             "Part đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         tbl.setStyleSheet(
@@ -3827,14 +3827,20 @@ class StudioPage(QWidget):
             if gids:
                 ph = ",".join("?" * len(gids))
                 dt = db.query_one(
-                    f"SELECT COUNT(*) AS n FROM pipeline_files WHERE "
-                    f"status='done' AND project_id IN ({ph})", tuple(gids))
+                    f"SELECT COUNT(*) AS n, "
+                    f"COALESCE(SUM(CAST(note AS INTEGER)),0) AS p "
+                    f"FROM pipeline_files WHERE status='done' "
+                    f"AND project_id IN ({ph})", tuple(gids))
                 done_total = (dt["n"] if dt else 0) or 0
+                parts_total = (dt["p"] if dt else 0) or 0
+            else:
+                parts_total = 0
             gname = ("(chưa chọn nhóm)" if sel is None
                      else (sel or "Chưa phân nhóm"))
             more = f"  ·  🔎 {len(view)}/{n_all} khớp" if q else ""
             ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
-                       f"  ·  ✂ {done_total} video đã cắt tổng{more}")
+                       f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
+                       f"{more}")
             tbl.setRowCount(len(view))
             from datetime import datetime
             root = self._pipe_root()
@@ -3891,12 +3897,22 @@ class StudioPage(QWidget):
                         "UPDATE projects SET pipe_mode=? WHERE id=?",
                         (c.currentData(), p)))
                 tbl.setCellWidget(i, 3, cb)
-                # ĐÃ CẮT (tổng mọi ngày) — số video kênh này đã cắt xong.
+                # PART ĐÃ CẮT (tổng mọi ngày): cột 'note' lưu "N part" mỗi video
+                # xong -> CAST lấy số Part; COUNT(*) = số video gốc đã xử lý.
+                # Hiện SỐ PART (clip xuất ra — đúng cái user quan tâm để đăng),
+                # tooltip ghi rõ có mấy video gốc để khỏi nhầm.
                 dn = db.query_one(
-                    "SELECT COUNT(*) AS n FROM pipeline_files WHERE "
-                    "project_id=? AND status='done'", (pid,))
-                it_done = QTableWidgetItem(str(dn["n"] if dn else 0))
+                    "SELECT COUNT(*) AS n, "
+                    "COALESCE(SUM(CAST(note AS INTEGER)),0) AS p "
+                    "FROM pipeline_files WHERE project_id=? AND status='done'",
+                    (pid,))
+                nvid = (dn["n"] if dn else 0) or 0
+                nparts = (dn["p"] if dn else 0) or 0
+                it_done = QTableWidgetItem(str(nparts))
                 it_done.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                it_done.setToolTip(
+                    f"{nvid} video gốc đã cắt xong → xuất ra {nparts} Part "
+                    "(clip để đăng). 1 video thường ra nhiều Part.")
                 tbl.setItem(i, 4, it_done)
                 # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
                 today = db.query_one(
