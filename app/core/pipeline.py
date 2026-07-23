@@ -232,7 +232,7 @@ def plan_channel(project_id: int, name: str, root: str,
     src_override = (pipe_src or "").strip() or (export_dir or "").strip()
     it = PlanItem(project_id=project_id, name=name, src_dir="")
     if not src_override and not (root or "").strip():
-        it.note = "CHƯA đặt thư mục lấy video — bấm 📂 ở cột Thư mục"
+        it.note = "CHƯA đặt Thư mục lưu cho kênh (đặt ở phần Kênh)"
         return it
     d = resolve_src_dir(root, name, src_override)
     it.src_dir = str(d)
@@ -241,6 +241,13 @@ def plan_channel(project_id: int, name: str, root: str,
         return it
     ready, busy = scan_dir(d, now)
     it.busy = len(busy)
+    # KHÔNG có video sẵn sàng + KHÔNG có file đang tải dở -> báo RÕ lý do
+    # (nếu không, _pipe_run im lặng, user tưởng "chạy không lên gì"). Case hay
+    # gặp nhất: video gốc đã cắt xong & bị xoá, thư mục chỉ còn file Part.
+    if not ready and not busy:
+        it.note = ("không có video mới để cắt — thư mục trống, hoặc video gốc "
+                   "đã cắt xong & bị xoá (chỉ còn file Part đã xuất)")
+        return it
     # KHÔNG giới hạn ngày: có bao nhiêu video sẵn sàng thì xử lý HẾT bấy
     # nhiêu (theo yêu cầu — bỏ hạn mức pipe_daily). pipe_daily > 0 vẫn được
     # tôn trọng nếu ai đó cố tình đặt; mặc định 0 = không giới hạn.
