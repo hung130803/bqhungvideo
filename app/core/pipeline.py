@@ -9,6 +9,7 @@ chỉ đọc; ghi sổ do tầng chạy gọi (take_file/mark_done/mark_error).
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,9 @@ from app.database.db import db
 
 # Đuôi video hoàn chỉnh chấp nhận (khớp INTEGRATION.md mục 2)
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".m4v"}
+# Clip do tool XUẤT ra tên "Part 1 …", "Part 2 …" — scan bỏ qua để không
+# cắt lại (xuất Part thẳng vào thư mục kênh, chung với video gốc).
+_PART_RE = re.compile(r"(?i)^part\s*\d")
 # Đuôi file TẠM của trình tải (đang tải dở) — tuyệt đối không đụng
 TMP_SUFFIXES = (".part", ".ytdl", ".tmp", ".crdownload", ".aria2", ".frag")
 # File phải "đứng yên" ít nhất chừng này giây (mtime) mới được coi là tải xong
@@ -71,6 +75,11 @@ def scan_dir(d: Path, now: float | None = None) -> tuple[list[Path], list[Path]]
         if not p.is_file() or p.suffix.lower() not in VIDEO_EXTS:
             continue
         if is_tmp_file(p.name):
+            continue
+        # BỎ QUA clip DO CHÍNH TOOL XUẤT (tên "Part N …") — xuất Part thẳng
+        # vào thư mục kênh, nếu quét lại sẽ cắt vòng vô hạn. yt-dlp/nguồn
+        # gần như không đặt tên video gốc bắt đầu bằng "Part <số>".
+        if _PART_RE.match(p.name):
             continue
         try:
             st = p.stat()
@@ -144,6 +153,18 @@ def expire_stale_taken(hours: int = 12) -> int:
         "done_at=datetime('now') "
         "WHERE status='taken' AND taken_at < datetime('now', ?)",
         (f"-{int(hours)} hours",))
+    try:
+        return cur.rowcount or 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def reset_channel(project_id: int) -> int:
+    """CHO PHÉP LÀM LẠI kênh: xoá sổ đã-xử-lý (pipeline_files) của kênh →
+    mọi video (kể cả video đã làm mà user bỏ lại vào folder) được NHẬN LẠI ở
+    lần chạy sau. KHÔNG đụng file trên đĩa. Trả số dòng sổ đã xoá."""
+    cur = db.execute("DELETE FROM pipeline_files WHERE project_id=?",
+                     (project_id,))
     try:
         return cur.rowcount or 0
     except Exception:  # noqa: BLE001

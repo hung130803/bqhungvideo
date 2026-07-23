@@ -3704,7 +3704,10 @@ class StudioPage(QWidget):
         grow.addWidget(grp_cb, 1)
         all_on = QPushButton("✓ Bật tất cả"); all_on.setProperty("ghost", True)
         all_off = QPushButton("✕ Tắt tất cả"); all_off.setProperty("ghost", True)
-        grow.addWidget(all_on); grow.addWidget(all_off)
+        redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setProperty("ghost", True)
+        redo_grp.setToolTip("Xoá sổ đã-làm của MỌI kênh nhóm này → video bỏ lại "
+                            "vào thư mục sẽ được cắt lại (không xoá file).")
+        grow.addWidget(all_on); grow.addWidget(all_off); grow.addWidget(redo_grp)
         lay.addLayout(grow)
 
         # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
@@ -3908,7 +3911,13 @@ class StudioPage(QWidget):
                 ob.setToolTip("Mở thư mục này")
                 ob.clicked.connect(lambda _c, p=sd: open_dir(p))
                 fl.addWidget(ob)
-                tbl.setCellWidget(i, 7, fw)
+                rdo = QPushButton("🔄"); rdo.setFixedWidth(26)
+                rdo.setToolTip("LÀM LẠI kênh này: xoá sổ đã-làm → video bỏ lại "
+                               "vào thư mục sẽ được cắt lại (không xoá file)")
+                rdo.clicked.connect(
+                    lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
+                fl.addWidget(rdo)
+                tbl.setCellWidget(i, 6, fw)
 
         def on_group_change():
             g = grp_cb.currentData()
@@ -3937,6 +3946,28 @@ class StudioPage(QWidget):
             fill()
         all_on.clicked.connect(lambda: set_all(1))
         all_off.clicked.connect(lambda: set_all(0))
+
+        def redo_group():
+            from app.core import pipeline as P
+            from PyQt6.QtWidgets import QMessageBox
+            g = cur_group()
+            if g is None:
+                return
+            rows = db.query("SELECT id, name FROM projects WHERE grp=?", (g or "",))
+            if not rows:
+                return
+            if QMessageBox.question(
+                    dlg, "Làm lại cả nhóm",
+                    f'Cho phép LÀM LẠI {len(rows)} kênh nhóm '
+                    f'"{g or "Chưa phân nhóm"}"?\nXoá sổ đã-làm (KHÔNG xoá file) '
+                    "— video bỏ lại vào thư mục sẽ được cắt lại.\nBộ đếm 'Đã cắt' "
+                    "về 0.") != QMessageBox.StandardButton.Yes:
+                return
+            tot = sum(P.reset_channel(int(r["id"])) for r in rows)
+            self._pipe_log(f"🔄 Làm lại nhóm \"{g or 'Chưa phân nhóm'}\": "
+                           f"xoá sổ {tot} lượt của {len(rows)} kênh")
+            fill()
+        redo_grp.clicked.connect(redo_group)
 
         def do_pick():
             d = QFileDialog.getExistingDirectory(
@@ -4068,6 +4099,22 @@ class StudioPage(QWidget):
             f"🤖 Dây chuyền: nhận {taken} video — đang phân tích/cắt, xong sẽ "
             "tự xuất và xóa video gốc. Theo dõi ở Tiến trình.")
         return taken
+
+    def _pipe_redo_one(self, pid: int, name: str, refresh=None) -> None:
+        """🔄 LÀM LẠI 1 kênh: xoá sổ đã-làm (KHÔNG xoá file) → video bỏ lại
+        vào thư mục sẽ được nhận/cắt lại ở lần ▶ chạy sau."""
+        from app.core import pipeline as P
+        from PyQt6.QtWidgets import QMessageBox
+        if QMessageBox.question(
+                self, "Làm lại kênh",
+                f'Cho phép LÀM LẠI kênh "{name}"?\nXoá sổ đã-làm (KHÔNG xoá '
+                "file trên đĩa) — video bỏ lại vào thư mục sẽ được cắt lại.\n"
+                "Bộ đếm 'Đã cắt' về 0.") != QMessageBox.StandardButton.Yes:
+            return
+        n = P.reset_channel(pid)
+        self._pipe_log(f"🔄 Làm lại kênh \"{name}\": xoá sổ {n} lượt")
+        if refresh:
+            refresh()
 
     def _pipe_take(self, pid: int, name: str, mode: str, path) -> bool:
         """Nhận 1 file vào dây chuyền: soi ffprobe -> nhập -> ghi sổ -> đưa
@@ -5222,12 +5269,10 @@ class StudioPage(QWidget):
         # KÊNH CÓ THƯ MỤC LƯU RIÊNG -> xuất THẲNG vào đó (flat, KHÔNG nối <Kênh>
         # cũng KHÔNG tạo folder con theo tên video). Không đặt -> giữ y cũ.
         ch_export_dir = ((chrow["export_dir"] if chrow else "") or "").strip()
-        # Video DÂY CHUYỀN: nguồn đọc = chính export_dir (1 thư mục) → clip
-        # PHẢI vào thư mục con 'Clip' để KHÔNG bị quét lại thành nguồn.
-        is_pipe = video_id in getattr(self, "_pipe_by_vid", {})
+        # Kênh có "Thư mục lưu" → xuất Part THẲNG vào đó (kể cả video dây
+        # chuyền). Part đặt tên "Part N …" nên scan_dir bỏ qua → không cắt lại.
         if ch_export_dir:
-            out_root = (str(Path(ch_export_dir) / "Clip") if is_pipe
-                        else ch_export_dir)
+            out_root = ch_export_dir
             flat_export = True
         else:
             out_root = str(self._export_root() / chname)
