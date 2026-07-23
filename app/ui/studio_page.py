@@ -3696,6 +3696,15 @@ class StudioPage(QWidget):
         grp_cb = QComboBox()
         self._pipe_grp_cb = grp_cb
         grow.addWidget(grp_cb, 1)
+        # 🔎 TÌM KÊNH trong nhóm (hữu ích khi có 50-300 kênh) — lọc bảng ngay.
+        from PyQt6.QtWidgets import QLineEdit as _QLE
+        search = _QLE(); search.setPlaceholderText("🔎 Tìm kênh trong nhóm…")
+        search.setClearButtonEnabled(True); search.setMaximumWidth(240)
+        search.setStyleSheet(f"QLineEdit{{background:{BASE};color:{TEXT};"
+                             f"border:1px solid {BORDER};border-radius:6px;"
+                             f"padding:4px 8px;}}")
+        self._pipe_search = search
+        grow.addWidget(search)
         all_on = QPushButton("✓ Bật tất cả"); all_on.setProperty("ghost", True)
         all_off = QPushButton("✕ Tắt tất cả"); all_off.setProperty("ghost", True)
         redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setProperty("ghost", True)
@@ -3703,6 +3712,14 @@ class StudioPage(QWidget):
                             "vào thư mục sẽ được cắt lại (không xoá file).")
         grow.addWidget(all_on); grow.addWidget(all_off); grow.addWidget(redo_grp)
         lay.addLayout(grow)
+
+        # --- dải TỔNG QUAN nhóm (đếm nhanh: bao nhiêu kênh / đang bật / đã cắt
+        #     — nhìn phát biết ngay tình hình nhóm, không phải nhẩm bằng mắt) ---
+        ov = QLabel("")
+        ov.setStyleSheet(f"color:{TEXT}; font-size:12px; padding:2px 2px;"
+                         f"border-bottom:1px solid {BORDER};")
+        self._pipe_ov = ov
+        lay.addWidget(ov)
 
         # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
         tbl = QTableWidget(0, 7)
@@ -3725,8 +3742,13 @@ class StudioPage(QWidget):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(tbl, 2)
 
-        # --- báo cáo ---
-        lay.addWidget(self._tag("Báo cáo lần chạy (nhật ký đầy đủ: logs/pipeline_*.log):"))
+        # --- báo cáo (tiêu đề + nút Xoá + Mở thư mục log) ---
+        rhead = QHBoxLayout(); rhead.setSpacing(6)
+        rhead.addWidget(self._tag("Báo cáo lần chạy (log đầy đủ: logs/pipeline_*.log):"), 1)
+        open_log_b = QPushButton("📂 Mở thư mục log"); open_log_b.setProperty("ghost", True)
+        clr_b = QPushButton("🗑 Xoá báo cáo"); clr_b.setProperty("ghost", True)
+        rhead.addWidget(open_log_b); rhead.addWidget(clr_b)
+        lay.addLayout(rhead)
         rep = QPlainTextEdit(); rep.setReadOnly(True)
         rep.setStyleSheet(f"background:{BASE}; color:{TEXT}; border:1px solid "
                           f"{BORDER}; border-radius:8px; font-size:12px;")
@@ -3772,6 +3794,18 @@ class StudioPage(QWidget):
             except OSError:
                 pass
 
+        def clear_report():
+            self._pipe_report.clear()
+            rep.setPlainText("")
+        clr_b.clicked.connect(clear_report)
+
+        def open_log_dir():
+            from config import DATA_DIR
+            d = DATA_DIR / "logs"
+            d.mkdir(parents=True, exist_ok=True)
+            open_dir(str(d))
+        open_log_b.clicked.connect(open_log_dir)
+
         def fill():
             rows = db.query(
                 "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src, "
@@ -3780,7 +3814,27 @@ class StudioPage(QWidget):
                                  key=lambda s: (s == "", s.lower()))
             sync_group_combo(all_groups)
             sel = cur_group()
-            view = [r for r in rows if (r["grp"] or "") == (sel or "")] if sel is not None else []
+            grp_rows = ([r for r in rows if (r["grp"] or "") == (sel or "")]
+                        if sel is not None else [])
+            q = (search.text() or "").strip().lower()
+            view = ([r for r in grp_rows if q in (r["name"] or "").lower()]
+                    if q else grp_rows)
+            # TỔNG QUAN nhóm (rẻ: 1 truy vấn gộp; không phụ thuộc ô tìm).
+            n_all = len(grp_rows)
+            n_on = sum(1 for r in grp_rows if r["pipe_on"])
+            done_total = 0
+            gids = [int(r["id"]) for r in grp_rows]
+            if gids:
+                ph = ",".join("?" * len(gids))
+                dt = db.query_one(
+                    f"SELECT COUNT(*) AS n FROM pipeline_files WHERE "
+                    f"status='done' AND project_id IN ({ph})", tuple(gids))
+                done_total = (dt["n"] if dt else 0) or 0
+            gname = ("(chưa chọn nhóm)" if sel is None
+                     else (sel or "Chưa phân nhóm"))
+            more = f"  ·  🔎 {len(view)}/{n_all} khớp" if q else ""
+            ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
+                       f"  ·  ✂ {done_total} video đã cắt tổng{more}")
             tbl.setRowCount(len(view))
             from datetime import datetime
             root = self._pipe_root()
@@ -3923,6 +3977,8 @@ class StudioPage(QWidget):
                 self._settings.setValue("pipe_grp_sel", g)
             fill()
         grp_cb.currentIndexChanged.connect(on_group_change)
+        # Gõ tới đâu lọc bảng tới đó (ô tìm giữ nguyên focus, không bị dựng lại).
+        search.textChanged.connect(lambda: fill())
 
         def on_check(item):
             if item.column() != 0:
