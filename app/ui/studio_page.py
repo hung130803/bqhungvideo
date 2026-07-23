@@ -3883,9 +3883,18 @@ class StudioPage(QWidget):
                     if g:
                         gcb.addItem(g)
                 gcb.setCurrentText(r["grp"] or "")
-                gcb.currentTextChanged.connect(
-                    lambda t, p=pid: db.execute(
-                        "UPDATE projects SET grp=? WHERE id=?", (t.strip(), p)))
+                # LƯU nhóm CHỈ khi user chủ động: chọn từ danh sách (activated)
+                # hoặc gõ xong rời ô (editingFinished). TUYỆT ĐỐI không dùng
+                # currentTextChanged — tín hiệu đó bắn cả khi dựng lại bảng,
+                # cuộn chuột, gõ dở... từng làm MẤT nhóm về rỗng. Có so với giá
+                # trị cũ nên rời ô mà không đổi thì không ghi.
+                def _save_grp(p=pid, c=gcb, old=(r["grp"] or "")):
+                    nv = c.currentText().strip()
+                    if nv != old:
+                        db.execute(
+                            "UPDATE projects SET grp=? WHERE id=?", (nv, p))
+                gcb.activated.connect(lambda _i, f=_save_grp: f())
+                gcb.lineEdit().editingFinished.connect(_save_grp)
                 tbl.setCellWidget(i, 2, gcb)
                 cb = NoWheelComboBox()
                 cb.addItem("Tạo clip thường", "auto")
@@ -4077,9 +4086,21 @@ class StudioPage(QWidget):
         fill()
         refresh_report()
         # bảng + báo cáo tự tươi trong lúc dây chuyền chạy nền
+        from PyQt6.QtWidgets import QApplication as _QApp
+
+        def _tbl_busy():
+            # ĐANG thao tác trong bảng? (con trỏ đang ở 1 ô/combo/nút CON của
+            # bảng). Nếu có thì KHÔNG dựng lại bảng — tránh xoá combo nhóm/ô
+            # đang gõ giữa chừng (báo cáo vẫn tự tươi bình thường).
+            fw = _QApp.focusWidget()
+            while fw is not None:
+                if fw is tbl:
+                    return True
+                fw = fw.parentWidget() if hasattr(fw, "parentWidget") else None
+            return False
         from PyQt6.QtCore import QTimer as _QT
         t = _QT(dlg); t.timeout.connect(refresh_report)
-        t.timeout.connect(lambda: None if tbl.hasFocus() else fill())
+        t.timeout.connect(lambda: None if _tbl_busy() else fill())
         t.start(2000)
         dlg._t = t
         dlg.exec()
