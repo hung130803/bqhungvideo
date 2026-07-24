@@ -31,7 +31,7 @@ _TYPE_TAG = {"auto": "🔍 Phân tích", "analyze": "🔍 Phân tích",
              "auto_recap": "🎙 Thuyết minh",
              "m1_highlights": "🔍 Tìm clip", "m1_export_clip": "✂ Xuất"}
 _STATUS = {"running": ("Đang chạy", ACCENT), "pending": ("Đang chờ", MUTED),
-           "done": ("✓ Hoàn tất", SUCCESS), "failed": ("✕ Lỗi · bấm xem", DANGER),
+           "done": ("✅ Xong", SUCCESS), "failed": ("✕ Lỗi · bấm xem", DANGER),
            "canceled": ("Đã hủy", MUTED), "skipped": ("Bỏ qua", MUTED)}
 # MÀU THANH theo GIAI ĐOẠN: phân tích/AI = TÍM; cắt/xuất video = XANH NGỌC.
 _PHASE_ANALYZE = "#A78BFA"      # phân tích + AI chọn clip
@@ -328,10 +328,13 @@ class QueuePanel(QWidget):
     # ---- vòng cập nhật ----
     def refresh(self):
         self._update_chips()            # bảng đếm dùng CHUNG nhịp poll này
-        jobs = services.list_jobs(limit=60)
+        # Lấy RỘNG hơn + giữ NHIỀU job xong hơn: chạy 100 kênh xuất Part liên
+        # tục, giới hạn 20 làm job "✅ Xong" bị đẩy mất → user tưởng chưa xong.
+        # Chip tổng (✅ N xong) vẫn là con số chốt; danh sách giữ 80 mục gần nhất.
+        jobs = services.list_jobs(limit=200)
         active = [j for j in jobs if j["status"] in ("running", "pending")]
         recent = [j for j in jobs
-                  if j["status"] in ("done", "failed", "canceled", "skipped")][:20]
+                  if j["status"] in ("done", "failed", "canceled", "skipped")][:80]
         show = active + recent
         sig = [(j["id"], j["status"]) for j in show]
         if sig != self._sig:            # tập việc/trạng thái đổi -> dựng lại bố cục

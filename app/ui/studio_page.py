@@ -4467,7 +4467,11 @@ class StudioPage(QWidget):
             return 0
         plans = P.plan_run(root, chans)
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
-        taken = 0
+        # Gom DANH SÁCH file cần nhận (log skip/note/busy ngay). KHÔNG nhận
+        # đồng loạt ở đây: mỗi file phải probe (ffprobe) ~0.3-0.5s — 100 kênh
+        # nhận 1 lượt sẽ TREO giao diện vài chục giây. Thay vào đó nhận TỪNG
+        # FILE qua QTimer (nhường event loop giữa mỗi file → UI mượt).
+        worklist: list = []
         for it in plans:
             if it.note:
                 self._pipe_log(f"⏭ {it.name}: {it.note}")
@@ -4475,26 +4479,54 @@ class StudioPage(QWidget):
                 self._pipe_log(f"⏳ {it.name}: {it.busy} file đang tải dở — chờ")
             for fname, why in it.skips:
                 self._pipe_log(f"⏭ {it.name}: {fname} — {why}")
-            got = 0                      # nhận THÀNH CÔNG kênh này lần chạy
-            for path in it.files:
-                if got >= it.quota:
+            for k, path in enumerate(it.files):
+                if k >= it.quota:
                     self._pipe_log(f"⏭ {it.name}: {path.name} — quá hạn mức "
                                    "hôm nay — chờ ngày mai")
                     continue
-                if self._pipe_take(it.project_id, it.name,
-                                   mode_by_pid.get(it.project_id, "auto"),
-                                   path):
-                    got += 1     # file hỏng KHÔNG nuốt suất — tự thử file kế
-            taken += got
-        self._pipe_log(f"tổng nhận {taken} video từ {len(plans)} kênh")
+                worklist.append((it.project_id, it.name,
+                                 mode_by_pid.get(it.project_id, "auto"), path))
+        if not worklist:
+            self._pipe_log(f"không nhận video nào từ {len(plans)} kênh")
+            self.status.setText("🤖 Dây chuyền: không có video mới để nhận.")
+            return 0
+        self._pipe_intake_q = worklist
+        self._pipe_intake_taken = 0
+        self._pipe_intake_total = len(worklist)
+        self._pipe_intake_nchan = len(plans)
+        self._pipe_log(f"nhận dần {len(worklist)} video từ {len(plans)} kênh "
+                       "(từng cái — không treo giao diện)…")
         self.status.setText(
-            f"🤖 Dây chuyền: nhận {taken} video — đang phân tích/cắt, xong sẽ "
-            "tự xuất và xóa video gốc. Theo dõi ở Tiến trình.")
-        # ĐƯA MÀN HÌNH CHÍNH về video đầu tiên vừa nhận -> đóng hộp Dây chuyền
-        # là thấy tên video trên + tiến trình + Part ở khung giữa (như làm tay).
-        if self._pipe_focus_target:
-            self._pipe_focus(*self._pipe_focus_target)
-        return taken
+            f"🤖 Dây chuyền: đang nhận {len(worklist)} video (từng cái, không "
+            "treo máy) — sẽ tự phân tích/cắt/xuất và dọn gốc vào Thùng rác.")
+        self._pipe_intake_step()
+        return 0
+
+    def _pipe_intake_step(self) -> None:
+        """Nhận 1 video mỗi nhịp QTimer rồi nhường event loop → chạy 100 kênh
+        KHÔNG treo giao diện. Xong danh sách thì tổng kết + đưa video đầu ra
+        màn chính."""
+        from PyQt6.QtCore import QTimer
+        q = getattr(self, "_pipe_intake_q", None)
+        if not q:
+            taken = getattr(self, "_pipe_intake_taken", 0)
+            total = getattr(self, "_pipe_intake_total", 0)
+            self._pipe_log(f"tổng nhận {taken}/{total} video từ "
+                           f"{getattr(self, '_pipe_intake_nchan', 0)} kênh")
+            self.status.setText(
+                f"🤖 Dây chuyền: đã nhận {taken} video — đang phân tích/cắt, "
+                "xong tự xuất Part + dọn gốc vào Thùng rác. Theo dõi ở Tiến trình.")
+            if getattr(self, "_pipe_focus_target", None):
+                self._pipe_focus(*self._pipe_focus_target)
+            return
+        pid, name, mode, path = q.pop(0)
+        try:
+            if self._pipe_take(pid, name, mode, path):
+                self._pipe_intake_taken = getattr(self, "_pipe_intake_taken", 0) + 1
+        except Exception as e:  # noqa: BLE001 - 1 file lỗi không chặn cả loạt
+            self._pipe_log(f"🔴 {name}: {getattr(path, 'name', path)} lỗi nhận — {e}")
+        # Nhường event loop rồi làm file kế → UI vẽ lại, không treo.
+        QTimer.singleShot(0, self._pipe_intake_step)
 
     def _pipe_redo_one(self, pid: int, name: str, refresh=None) -> None:
         """🔄 CẮT LẠI 1 kênh: xoá sổ đã-làm rồi QUÉT + CẮT LẠI NGAY video còn
