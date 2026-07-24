@@ -23,21 +23,18 @@ from PyQt6.QtWidgets import (QAbstractScrollArea, QAbstractSpinBox, QApplication
 # --- Widget TỰ CHẶN cuộn (chắc chắn 100%, không phụ thuộc bộ lọc toàn cục):
 #     Qt LUÔN gọi wheelEvent của lớp con. Dùng cho các ô hay bị cuộn nhầm. ---
 class NoWheelComboBox(QComboBox):
-    """ComboBox: chỉ đổi giá trị bằng cuộn KHI đã bấm chọn (có focus)."""
+    """ComboBox: LĂN CHUỘT KHÔNG BAO GIỜ đổi giá trị (kể cả đang focus) — chỉ
+    đổi bằng CLICK hoặc phím. Trước đây còn ngoại lệ hasFocus(): sau khi bấm
+    chọn 1 dòng, combo giữ focus; cuộn xuống xem dòng khác mà con trỏ lướt qua
+    combo -> value nhảy lung tung. User yêu cầu 'khoá cuộn' hẳn."""
     def wheelEvent(self, e):  # noqa: N802
-        if self.hasFocus():
-            super().wheelEvent(e)
-        else:
-            e.ignore()  # nhường cuộn cho vùng cuộn cha
+        e.ignore()  # nuốt: nhường cuộn cho vùng cuộn cha, KHÔNG đổi giá trị
 
 
 class NoWheelSpinBox(QSpinBox):
-    """SpinBox: cuộn không đổi giá trị khi chưa focus; vẫn bấm ▲▼ / gõ số."""
+    """SpinBox: cuộn KHÔNG đổi giá trị (kể cả đang focus); vẫn bấm ▲▼ / gõ số."""
     def wheelEvent(self, e):  # noqa: N802
-        if self.hasFocus():
-            super().wheelEvent(e)
-        else:
-            e.ignore()
+        e.ignore()
 
 # Các loại widget "giá trị" cần chặn cuộn-vô-tình.
 _VALUE_WIDGETS = (QComboBox, QAbstractSpinBox, QSlider)
@@ -77,7 +74,13 @@ class _WheelGuard(QObject):
             if self._resending:          # event do chính mình gửi lại -> cho qua
                 return False
             target = _value_ancestor(obj)
-            if target is not None and not target.hasFocus():
+            # Combo & ô Số: KHOÁ cuộn HẲN (kể cả đang focus) — user yêu cầu chỉ
+            # đổi bằng click/phím. QSlider: chỉ khoá khi CHƯA focus (kéo/cuộn
+            # slider có chủ đích thì cho phép).
+            block = target is not None and (
+                isinstance(target, (QComboBox, QAbstractSpinBox))
+                or not target.hasFocus())
+            if block:
                 # POPUP của combo đang MỞ -> user đang cuộn DANH SÁCH lựa chọn:
                 # để Qt xử lý tự nhiên (cuộn list, không đổi giá trị). Trước
                 # đây nuốt + gửi lại vào chính list -> đệ quy vô hạn -> crash.
