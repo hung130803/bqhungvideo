@@ -117,6 +117,10 @@ class StudioPage(QWidget):
         self.state = state
         self.layout_tpl = copy.deepcopy(DEFAULT_LAYOUT)
         self._thumb_busy = False
+        # TRUE khi đang mở hộp thoại chọn file/thư mục (native) từ CỬA SỔ CHÍNH.
+        # _poll_tick bỏ nhịp lúc này -> không dựng lại UI / popup cướp focus làm
+        # hộp "Chọn thư mục lưu" nháy rồi tự tắt. Xem _busy_dialog().
+        self._modal_busy = False
         # Clip nào TẠO ẢNH THU NHỎ THẤT BẠI (vd video gốc đã bị xoá/dọn) -> nhớ
         # để KHÔNG thử lại vô hạn. Nếu không, _rebuild_rows lần nào cũng thấy
         # "thiếu ảnh" -> spawn thread -> lỗi -> emit -> dựng lại -> lặp mãi
@@ -401,12 +405,11 @@ class StudioPage(QWidget):
         root.addWidget(sc, 1)
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self._poll_done)     # job video đang chọn XONG -> báo ✓
-        self.timer.timeout.connect(self._refresh_clips)
-        self.timer.timeout.connect(self._check_auto_export)   # phân tích xong -> tự xuất
-        self.timer.timeout.connect(self._pipe_poll)            # 🤖 dây chuyền: dõi cắt/xuất
         self._act_tick = 0     # nhãn kênh chỉ query mỗi 3 tick (~4.5s) cho nhẹ
-        self.timer.timeout.connect(self._poll_chan_activity)
+        # Gom mọi việc poll vào 1 nhịp -> có CHỐT chặn khi đang có hộp thoại
+        # (xem _poll_tick): tránh nhịp 1.5s dựng lại UI / bật popup cướp focus
+        # làm hộp "Chọn thư mục lưu" nháy rồi tự tắt.
+        self.timer.timeout.connect(self._poll_tick)
         self.timer.start(1500)
         self._reload_projects()
         self._ensure_builtin_templates()      # tạo sẵn mẫu Pro nếu chưa có
@@ -1022,7 +1025,8 @@ class StudioPage(QWidget):
                 return
             # gợi ý mở tại thư mục hiện có của kênh đầu tiên (nếu có)
             cur0 = services.project_export_dir(ids[0])
-            d = QFileDialog.getExistingDirectory(
+            d = self._busy_dialog(
+                QFileDialog.getExistingDirectory,
                 dlg, "Chọn THƯ MỤC LƯU RIÊNG cho kênh "
                      "(clip cắt xong vào THẲNG đây)", cur0 or "")
             if not d:
@@ -1270,7 +1274,8 @@ class StudioPage(QWidget):
 
         def pick_gfile():
             start = gfile[0] or str(getattr(settings, "DATA_DIR", "") or "")
-            fn, _ = QFileDialog.getOpenFileName(
+            fn, _ = self._busy_dialog(
+                QFileDialog.getOpenFileName,
                 dlg, "Chọn file key Groq (.txt — mỗi dòng 1 key)", start,
                 "Text (*.txt);;Tất cả (*.*)")
             if fn:
@@ -1728,7 +1733,8 @@ class StudioPage(QWidget):
     def _pick_lib_root(self):
         """Chọn THƯ MỤC GỐC chung (chứa 'Đã tải' và 'Đã xuất')."""
         cur = str(self._lib_root())
-        d = QFileDialog.getExistingDirectory(
+        d = self._busy_dialog(
+            QFileDialog.getExistingDirectory,
             self, "Chọn KHO VIDEO gốc (sẽ tự tạo 'Đã tải' và 'Đã xuất' bên trong)",
             cur)
         if d:
@@ -1883,6 +1889,37 @@ class StudioPage(QWidget):
             return services.channel_activity()
         except Exception:  # noqa: BLE001 - nhãn phụ, lỗi không được sập app
             return {}
+
+    def _poll_tick(self):
+        """1 nhịp poll (1.5s). BỎ QUA khi đang có hộp thoại chọn file/thư mục
+        hoặc bất kỳ hộp thoại MODAL nào đang mở — nếu poll chạy, nó dựng lại
+        danh sách clip / bật popup (vd _pipe_poll hỏi xác nhận) sẽ CƯỚP FOCUS
+        khiến hộp 'Chọn thư mục lưu' vừa hiện đã tự tắt (đúng lỗi user báo)."""
+        from PyQt6.QtWidgets import QApplication
+        if self._modal_busy or QApplication.activeModalWidget() is not None:
+            return
+        # Thứ tự như cũ: báo xong ✓ -> làm mới clip -> tự xuất -> dõi dây chuyền
+        # -> hoạt động kênh. Lỗi 1 việc không được chặn các việc sau.
+        for fn in (self._poll_done, self._refresh_clips, self._check_auto_export,
+                   self._pipe_poll, self._poll_chan_activity):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - 1 poll lỗi không làm chết nhịp
+                pass
+
+    def _busy_dialog(self, fn, *args, **kwargs):
+        """Chạy 1 hộp thoại chọn file/thư mục (native) an toàn: DỪNG timer +
+        bật cờ _modal_busy để nhịp poll không cướp focus làm hộp tự tắt. Luôn
+        khôi phục timer dù có lỗi."""
+        was_active = self.timer.isActive()
+        self._modal_busy = True
+        self.timer.stop()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            self._modal_busy = False
+            if was_active:
+                self.timer.start(1500)
 
     def _poll_chan_activity(self):
         """Móc vào timer 1.5s sẵn có nhưng CHỈ query mỗi 3 tick (~4.5s) —
@@ -2433,7 +2470,8 @@ class StudioPage(QWidget):
             QMessageBox.information(self, "Chưa có kênh", "Tạo kênh trước.")
             return
         start = str(self._dl_dir()) if self._dl_dir().is_dir() else ""
-        files, _ = QFileDialog.getOpenFileNames(
+        files, _ = self._busy_dialog(
+            QFileDialog.getOpenFileNames,
             self, "Chọn video (chọn nhiều cùng lúc được)", start,
             "Video (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.ts)")
         self._import_paths(files)
@@ -2779,7 +2817,8 @@ class StudioPage(QWidget):
 
         def do_load_file():
             from PyQt6.QtWidgets import QFileDialog
-            path, _ = QFileDialog.getOpenFileName(
+            path, _ = self._busy_dialog(
+                QFileDialog.getOpenFileName,
                 dlg, "Chọn file cookies.txt", "",
                 "Cookie/Text (*.txt *.cookies);;Tất cả (*.*)")
             if not path:
@@ -3599,7 +3638,8 @@ class StudioPage(QWidget):
         if pid is None:
             return
         cur = services.project_export_dir(int(pid))
-        d = QFileDialog.getExistingDirectory(
+        d = self._busy_dialog(
+            QFileDialog.getExistingDirectory,
             self, "Chọn THƯ MỤC LƯU RIÊNG cho kênh này "
                   "(clip cắt xong vào THẲNG đây, không tạo folder con)",
             cur or "")
@@ -4413,8 +4453,9 @@ class StudioPage(QWidget):
             refill_days()
 
         def pick_dir():
-            d = QFileDialog.getExistingDirectory(dlg, "Chọn thư mục Thùng rác",
-                                                 self._pipe_recycle_dir() or "")
+            d = self._busy_dialog(
+                QFileDialog.getExistingDirectory, dlg, "Chọn thư mục Thùng rác",
+                self._pipe_recycle_dir() or "")
             if d:
                 self._settings.setValue("pipe_recycle_dir", d)
                 path_lb.setText(d)
