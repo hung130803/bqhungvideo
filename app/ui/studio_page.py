@@ -5736,6 +5736,30 @@ class StudioPage(QWidget):
             "WHERE v.id=?", (video_id,))
         if not vrow:
             return 0
+        # CHẶN TRƯỚC KHI CHẠY FFMPEG: video GỐC đã bị dọn (cắt xong -> xoá /
+        # chuyển Thùng rác) -> ffmpeg sẽ báo "No such file" khó hiểu. Báo RÕ +
+        # hướng dẫn khôi phục thay vì để lỗi kỹ thuật. (Chỉ chặn khi user CHỦ
+        # ĐỘNG xuất lại 1 clip — luồng dây chuyền tự-xuất thì gốc còn nguyên.)
+        src_p = ((vrow["src_path"] or "").strip())
+        if src_p and not os.path.exists(src_p):
+            base = os.path.basename(src_p)
+            self.status.setText(
+                f"⚠ Không xuất được: VIDEO GỐC đã bị dọn sau khi cắt xong "
+                f"({base}). Khôi phục từ 🗑 Thùng rác (trong 🤖 Dây chuyền) "
+                "rồi xuất lại — hoặc chép video gốc vào lại thư mục.")
+            if only_clip_id:     # user bấm Xuất/Xuất lại 1 Part -> hiện hộp rõ
+                try:
+                    QMessageBox.warning(
+                        self, "Video gốc đã bị dọn",
+                        "Không xuất lại được vì VIDEO GỐC không còn ở ổ đĩa "
+                        f"(đã bị dọn sau khi cắt xong):\n\n{src_p}\n\n"
+                        "Cách khắc phục:\n"
+                        "• Mở 🤖 Dây chuyền → 🗑 Thùng rác → Khôi phục video "
+                        "này (bản v1.96.0+ có Thùng rác), rồi xuất lại;\n"
+                        "• Hoặc chép video gốc vào lại thư mục kênh rồi cắt lại.")
+                except Exception:  # noqa: BLE001
+                    pass
+            return 0
         pid = vrow["project_id"] or self.state.project_id   # đúng KÊNH của video
         # KHO 'Đã xuất' / <tên KÊNH> / <tên video> -> không lẫn giữa các kênh
         chrow = db.query_one("SELECT name, export_dir FROM projects WHERE id=?",
