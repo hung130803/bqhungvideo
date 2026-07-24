@@ -3820,7 +3820,7 @@ class StudioPage(QWidget):
         # --- hàng 2: LỌC NHÓM + BẬT/TẮT TẤT CẢ (khỏi tích từng kênh) ---
         grow = QHBoxLayout(); grow.setSpacing(8)
         grow.addWidget(self._tag("Nhóm:"))
-        grp_cb = QComboBox()
+        grp_cb = NoWheelComboBox()   # khoá cuộn đổi nhóm ngoài ý muốn
         self._pipe_grp_cb = grp_cb
         grow.addWidget(grp_cb, 1)
         # 🔎 TÌM KÊNH trong nhóm (hữu ích khi có 50-300 kênh) — lọc bảng ngay.
@@ -3982,6 +3982,7 @@ class StudioPage(QWidget):
             from datetime import datetime
             root = self._pipe_root()
             pend_sum = 0   # tổng video "Chờ cắt" của các dòng đang hiện
+            pend_ch = 0    # số KÊNH còn video chờ cắt (để giải thích tổng)
             for i, r in enumerate(view):
                 pid = int(r["id"])
                 chk = QTableWidgetItem()
@@ -4131,6 +4132,8 @@ class StudioPage(QWidget):
                     else:
                         pend_txt = "0"
                 pend_sum += n_ready
+                if n_ready > 0:
+                    pend_ch += 1
                 it_pend = QTableWidgetItem(pend_txt)
                 it_pend.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 it_pend.setForeground(_QC("#a6e3a1" if n_ready > 0 else MUTED))
@@ -4173,7 +4176,19 @@ class StudioPage(QWidget):
                 tbl.setCellWidget(i, 7, fw)
             # Gắn TỔNG video chờ cắt vào dòng thống kê → user thấy cả nhóm còn
             # bao nhiêu video sẽ được cắt khi bấm ▶ (khớp cột "Chờ cắt").
-            ov.setText(ov.text() + f"  ·  ⏳ {pend_sum} video chờ cắt")
+            # GHI RÕ ở BAO NHIÊU KÊNH: tránh khó hiểu khi vài dòng đầu = 0 nhưng
+            # tổng vẫn lớn (video nằm rải ở các kênh phải cuộn xuống mới thấy).
+            if pend_ch:
+                ov.setText(ov.text()
+                           + f"  ·  ⏳ {pend_sum} video chờ cắt (ở {pend_ch} kênh)")
+                ov.setToolTip(
+                    f"Cả nhóm còn {pend_sum} video GỐC nằm trong thư mục của "
+                    f"{pend_ch} kênh, chưa cắt. Cuộn bảng để thấy từng kênh ở "
+                    "cột 'Chờ cắt'. Bấm ▶ Chạy dây chuyền sẽ cắt HẾT. Nếu dòng "
+                    "đầu = 0 mà tổng vẫn lớn → video nằm ở kênh phía dưới.")
+            else:
+                ov.setText(ov.text() + "  ·  ⏳ 0 video chờ cắt")
+                ov.setToolTip("Không kênh nào còn video gốc chờ cắt trong nhóm này.")
 
         def on_group_change():
             g = grp_cb.currentData()
@@ -4181,8 +4196,14 @@ class StudioPage(QWidget):
                 self._settings.setValue("pipe_grp_sel", g)
             fill()
         grp_cb.currentIndexChanged.connect(on_group_change)
-        # Gõ tới đâu lọc bảng tới đó (ô tìm giữ nguyên focus, không bị dựng lại).
-        search.textChanged.connect(lambda: fill())
+        # Gõ tìm kênh: KHÔNG dựng lại bảng mỗi phím (49 kênh -> quét thư mục +
+        # dựng lại combo mỗi ký tự = ĐƠ GIẬT). Debounce 280ms: gõ xong mới lọc.
+        from PyQt6.QtCore import QTimer as _QTsrch
+        _srch_timer = _QTsrch(dlg)
+        _srch_timer.setSingleShot(True)
+        _srch_timer.setInterval(280)
+        _srch_timer.timeout.connect(fill)
+        search.textChanged.connect(lambda _t: _srch_timer.start())
 
         def on_check(item):
             if item.column() != 0:
