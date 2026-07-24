@@ -117,6 +117,12 @@ class StudioPage(QWidget):
         self.state = state
         self.layout_tpl = copy.deepcopy(DEFAULT_LAYOUT)
         self._thumb_busy = False
+        # Clip nào TẠO ẢNH THU NHỎ THẤT BẠI (vd video gốc đã bị xoá/dọn) -> nhớ
+        # để KHÔNG thử lại vô hạn. Nếu không, _rebuild_rows lần nào cũng thấy
+        # "thiếu ảnh" -> spawn thread -> lỗi -> emit -> dựng lại -> lặp mãi
+        # (biểu hiện: khu giữa NHÁY ĐEN liên tục + ngốn CPU, nuốt cả cập nhật
+        # sau khi Xóa). force refresh (đổi video / Cắt lại) sẽ xoá để thử lại.
+        self._thumb_failed = set()
         self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
         self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
         # 🤖 DÂY CHUYỀN (INTEGRATION.md): theo dõi job cắt + job xuất của
@@ -5106,6 +5112,8 @@ class StudioPage(QWidget):
 
     def _refresh_clips(self, force=False):
         vid = self.state.video_id
+        if force:
+            self._thumb_failed = set()   # cho thử tạo lại ảnh (đổi video/Cắt lại/khôi phục)
         clips = services.list_clips(vid) if vid else []
         busy = self._video_busy(vid)      # để empty-state đổi khi job chạy/xong
         if not force and getattr(self, "_n", -1) == len(clips) \
@@ -5144,7 +5152,8 @@ class StudioPage(QWidget):
                                        self._clip_row(c, vrow, i + 1))
             if vrow:
                 tp = Path(services.cache_dir(vrow["assets_dir"])) / f"_thumb_{c['id']}.jpg"
-                if not tp.exists():
+                # BỎ QUA clip từng tạo ảnh THẤT BẠI -> không dựng-lại vô hạn.
+                if not tp.exists() and c["id"] not in self._thumb_failed:
                     missing.append(dict(c))
         # tạo thumbnail còn thiếu CHẠY NGẦM (không chặn giao diện)
         if missing and vrow and not self._thumb_busy:
@@ -5166,6 +5175,10 @@ class StudioPage(QWidget):
                 extract_frame(vrow["src_path"], t, tp, width=232)
             except Exception:  # noqa: BLE001
                 pass
+            # Nếu vẫn KHÔNG có ảnh (nguồn đã bị xoá/hỏng) -> đánh dấu THẤT BẠI
+            # để _rebuild_rows không dựng-lại vô hạn (gây "nháy đen" + treo).
+            if not tp.exists():
+                self._thumb_failed.add(c["id"])
         self._thumb_busy = False
         self.thumbs_ready.emit()
 
