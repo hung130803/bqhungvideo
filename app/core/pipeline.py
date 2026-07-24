@@ -9,6 +9,7 @@ chỉ đọc; ghi sổ do tầng chạy gọi (take_file/mark_done/mark_error).
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -317,6 +318,142 @@ def quarantine(path: Path) -> Path | None:
             dst = dst_dir / f"{path.stem}_{i}{path.suffix}"
             i += 1
         path.rename(dst)
+        return dst
+    except OSError:
+        return None
+
+
+# ------------------------------------------------------ THÙNG RÁC theo ngày --
+# Thay vì XOÁ THẲNG video gốc sau khi cắt xong, chuyển vào thùng rác của user
+# (tự chọn thư mục) theo cấu trúc <thùng rác>/<YYYY-MM-DD>/<Tên kênh>/<file>
+# để có thể KHÔI PHỤC về đúng thư mục kênh nếu phân tích lỗi. Không cần DB —
+# đường dẫn tự mã hoá ngày + kênh; khôi phục = chuyển về resolve_src_dir(kênh).
+RECYCLE_DIRNAME = "_DaXoa"
+
+
+def _today_str() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _unique_in(dst_dir: Path, name: str) -> Path:
+    """Đường dẫn KHÔNG đè file cũ: thêm _1, _2… nếu trùng tên."""
+    stem, suffix = Path(name).stem, Path(name).suffix
+    dst = dst_dir / name
+    i = 1
+    while dst.exists():
+        dst = dst_dir / f"{stem}_{i}{suffix}"
+        i += 1
+    return dst
+
+
+def _move_with_retry(src: Path, dst: Path, tries: int = 5) -> bool:
+    """Chuyển file, THỬ LẠI vài lần: trên Windows ffmpeg/handle vừa xong còn
+    giữ khoá file chốc lát → rename ngay bị 'file đang dùng'. Chờ tăng dần."""
+    for k in range(tries):
+        try:
+            src.rename(dst)
+            return True
+        except OSError:
+            # khác ổ đĩa → rename thất bại vĩnh viễn: thử copy+xoá
+            try:
+                import shutil
+                shutil.move(str(src), str(dst))
+                return True
+            except OSError:
+                pass
+            time.sleep(0.4 * (k + 1))
+    return False
+
+
+def _delete_with_retry(path: Path, tries: int = 5) -> bool:
+    """Xoá file, THỬ LẠI vài lần (chống file kẹt do handle chưa nhả)."""
+    for k in range(tries):
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError:
+            time.sleep(0.4 * (k + 1))
+    return not path.exists()
+
+
+def recycle_source(path: Path, channel: str, recycle_root: str,
+                   day: str | None = None) -> Path | None:
+    """Chuyển video gốc (đã cắt xong) vào THÙNG RÁC theo ngày. Trả đường dẫn
+    mới, hoặc None nếu thất bại (caller sẽ báo 'file kẹt')."""
+    root = (recycle_root or "").strip()
+    if not root:
+        return None
+    try:
+        dst_dir = Path(root) / (day or _today_str()) / (channel or "_")
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = _unique_in(dst_dir, path.name)
+        return dst if _move_with_retry(path, dst) else None
+    except OSError:
+        return None
+
+
+def delete_or_recycle(path: Path, channel: str,
+                      recycle_root: str) -> tuple[str, Path | None]:
+    """Sau khi cắt xong: có THÙNG RÁC (recycle_root) -> CHUYỂN VÀO đó theo
+    ngày (khôi phục được); không thì XOÁ HẲN (đều thử-lại chống file kẹt).
+    Trả ('recycled'|'deleted'|'stuck', đường_dẫn_mới_hoặc_None)."""
+    if (recycle_root or "").strip():
+        dst = recycle_source(path, channel, recycle_root)
+        if dst:
+            return ("recycled", dst)
+        # thùng rác lỗi (khác ổ/kẹt) -> KHÔNG xoá hẳn để khỏi mất video; báo kẹt
+        return ("stuck", None)
+    return ("deleted", None) if _delete_with_retry(path) else ("stuck", None)
+
+
+def list_recycled_days(recycle_root: str) -> list[str]:
+    """Danh sách NGÀY (YYYY-MM-DD) có video trong thùng rác, mới nhất trước."""
+    root = (recycle_root or "").strip()
+    if not root or not Path(root).is_dir():
+        return []
+    days = [p.name for p in Path(root).iterdir()
+            if p.is_dir() and re.match(r"^\d{4}-\d{2}-\d{2}$", p.name)]
+    return sorted(days, reverse=True)
+
+
+def list_recycled(recycle_root: str, day: str) -> list[dict]:
+    """Video trong thùng rác của 1 ngày: [{channel, name, path, size}]."""
+    root = (recycle_root or "").strip()
+    out: list[dict] = []
+    base = Path(root) / day if root else None
+    if not base or not base.is_dir():
+        return out
+    for chdir in sorted(base.iterdir()):
+        if not chdir.is_dir():
+            continue
+        for f in sorted(chdir.iterdir()):
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTS:
+                try:
+                    sz = f.stat().st_size
+                except OSError:
+                    sz = 0
+                out.append({"channel": chdir.name, "name": f.name,
+                            "path": str(f), "size": sz})
+    return out
+
+
+def restore_recycled(recycled_path: str, dest_dir: str) -> Path | None:
+    """KHÔI PHỤC 1 video từ thùng rác về thư mục kênh (dest_dir). Trả đường
+    dẫn mới, hoặc None nếu lỗi. mtime đặt về HIỆN TẠI để scan_dir coi là mới
+    (ổn định) và cắt lại được ngay."""
+    try:
+        src = Path(recycled_path)
+        dd = Path(dest_dir)
+        dd.mkdir(parents=True, exist_ok=True)
+        dst = _unique_in(dd, src.name)
+        if not _move_with_retry(src, dst):
+            return None
+        now = time.time()
+        try:
+            os.utime(dst, (now, now))
+        except OSError:
+            pass
         return dst
     except OSError:
         return None

@@ -3801,6 +3801,12 @@ class StudioPage(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         top.addWidget(hint, 1)
+        bin_b = QPushButton("🗑 Thùng rác / Khôi phục"); bin_b.setProperty("ghost", True)
+        bin_b.setToolTip("Video gốc sau khi cắt xong được chuyển vào THÙNG RÁC "
+                         "theo ngày (thay vì xoá hẳn) — mở đây để chọn thư mục "
+                         "thùng rác và KHÔI PHỤC video về đúng kênh khi cần.")
+        bin_b.clicked.connect(self._pipe_recycle_dialog)
+        top.addWidget(bin_b)
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
@@ -4281,6 +4287,120 @@ class StudioPage(QWidget):
         """Thư mục TRUNG CHUYỂN gốc (tool tải thả video vào <gốc>/<Kênh>)."""
         return str(self._settings.value("pipe_root", "") or "")
 
+    def _pipe_recycle_dir(self) -> str:
+        """THÙNG RÁC dây chuyền (user chọn): video gốc cắt xong chuyển vào đây
+        theo ngày, khôi phục được. Rỗng = xoá hẳn (hành vi cũ)."""
+        return str(self._settings.value("pipe_recycle_dir", "") or "")
+
+    def _pipe_restore_dest(self, channel: str) -> str:
+        """Thư mục KÊNH để khôi phục video về (đúng nơi tool tải/cắt đọc)."""
+        from app.core import pipeline as P
+        row = db.query_one(
+            "SELECT pipe_src, export_dir FROM projects WHERE name=?", (channel,))
+        root = self._pipe_root()
+        if row:
+            src_ov = (row["pipe_src"] or "").strip() or (row["export_dir"] or "").strip()
+            return str(P.resolve_src_dir(root, channel, src_ov))
+        return str(Path(root) / channel) if root else ""
+
+    def _pipe_recycle_dialog(self):
+        """🗑 THÙNG RÁC: chọn thư mục thùng rác + xem video đã dọn theo NGÀY +
+        KHÔI PHỤC 1 video / cả ngày về đúng thư mục kênh (để cắt lại)."""
+        from app.core import pipeline as P
+        from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog,
+                                     QHBoxLayout, QLabel, QMessageBox,
+                                     QPushButton, QTableWidget, QTableWidgetItem,
+                                     QAbstractItemView, QHeaderView, QVBoxLayout)
+        dlg = QDialog(self); dlg.setWindowTitle("🗑 Thùng rác dây chuyền — Khôi phục")
+        dlg.resize(760, 520); self._recycle_dlg = dlg
+        lay = QVBoxLayout(dlg); lay.setContentsMargins(14, 14, 14, 14); lay.setSpacing(8)
+        # hàng thư mục thùng rác + đổi
+        row1 = QHBoxLayout(); row1.setSpacing(8)
+        row1.addWidget(self._tag("Thư mục thùng rác:"))
+        path_lb = QLabel(self._pipe_recycle_dir() or "(chưa chọn — video đang bị XOÁ HẲN)")
+        path_lb.setStyleSheet(f"color:{'#a6e3a1' if self._pipe_recycle_dir() else '#f9e2af'};"
+                              f"font-size:12px;")
+        row1.addWidget(path_lb, 1)
+        pick_b = QPushButton("📂 Chọn/đổi thư mục"); pick_b.setProperty("ghost", True)
+        row1.addWidget(pick_b); lay.addLayout(row1)
+        hint = QLabel("Từ nay video gốc cắt xong sẽ CHUYỂN vào đây theo ngày "
+                      "(thay vì xoá). Chọn ngày rồi Khôi phục để đưa video về "
+                      "đúng thư mục kênh (mtime làm mới → cắt lại được ngay).")
+        hint.setWordWrap(True); hint.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        lay.addWidget(hint)
+        # hàng chọn ngày
+        row2 = QHBoxLayout(); row2.setSpacing(8)
+        row2.addWidget(self._tag("Ngày:"))
+        day_cb = QComboBox(); row2.addWidget(day_cb, 1)
+        rest_all = QPushButton("↩ Khôi phục CẢ NGÀY"); rest_all.setProperty("ghost", True)
+        row2.addWidget(rest_all); lay.addLayout(row2)
+        # bảng video
+        tbl = QTableWidget(0, 3)
+        tbl.setHorizontalHeaderLabels(["Kênh", "Video", ""])
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        lay.addWidget(tbl, 1)
+
+        def refill_days():
+            day_cb.blockSignals(True); day_cb.clear()
+            for d in P.list_recycled_days(self._pipe_recycle_dir()):
+                day_cb.addItem(d, d)
+            day_cb.blockSignals(False)
+            refill_list()
+
+        def refill_list():
+            tbl.setRowCount(0)
+            rec = self._pipe_recycle_dir(); day = day_cb.currentData()
+            if not rec or not day:
+                return
+            items = P.list_recycled(rec, day)
+            tbl.setRowCount(len(items))
+            for i, it in enumerate(items):
+                tbl.setItem(i, 0, QTableWidgetItem(it["channel"]))
+                mb = it["size"] / 1048576
+                tbl.setItem(i, 1, QTableWidgetItem(f"{it['name']}  ({mb:.0f} MB)"))
+                rb = QPushButton("↩ Khôi phục"); rb.setProperty("ghost", True)
+                rb.clicked.connect(lambda _c, it=it: do_restore([it]))
+                tbl.setCellWidget(i, 2, rb)
+
+        def do_restore(items):
+            done = 0; fail = 0
+            for it in items:
+                dest = self._pipe_restore_dest(it["channel"])
+                if not dest:
+                    fail += 1; continue
+                if P.restore_recycled(it["path"], dest):
+                    done += 1
+                    self._pipe_log(f"↩ Khôi phục '{it['name']}' → {it['channel']}")
+                else:
+                    fail += 1
+            QMessageBox.information(
+                dlg, "Khôi phục",
+                f"Đã khôi phục {done} video" + (f", {fail} lỗi" if fail else "")
+                + ".\nMở lại 🤖 Dây chuyền để thấy chúng ở cột 'Chờ cắt'.")
+            refill_days()
+
+        def pick_dir():
+            d = QFileDialog.getExistingDirectory(dlg, "Chọn thư mục Thùng rác",
+                                                 self._pipe_recycle_dir() or "")
+            if d:
+                self._settings.setValue("pipe_recycle_dir", d)
+                path_lb.setText(d)
+                path_lb.setStyleSheet("color:#a6e3a1;font-size:12px;")
+                refill_days()
+
+        def restore_all():
+            rec = self._pipe_recycle_dir(); day = day_cb.currentData()
+            if rec and day:
+                do_restore(P.list_recycled(rec, day))
+
+        pick_b.clicked.connect(pick_dir)
+        day_cb.currentIndexChanged.connect(refill_list)
+        rest_all.clicked.connect(restore_all)
+        refill_days()
+        dlg.exec()
+
     def _pipe_log(self, line: str) -> None:
         """Ghi 1 dòng vào báo cáo lần chạy + nhật ký ngày (logs/pipeline_*)."""
         from datetime import datetime
@@ -4577,20 +4697,23 @@ class StudioPage(QWidget):
                 P.mark_error(ctx["entry"], why)
                 self._pipe_quarantine_ctx(ctx, why)
                 continue
-            # ĐỦ PART -> XÓA VIDEO GỐC (INTEGRATION.md mục 4). Gốc không bao
-            # giờ được chép vào thư mục xuất nên chỉ cần xóa file trung chuyển.
+            # ĐỦ PART -> dọn VIDEO GỐC (INTEGRATION.md mục 4). Có THÙNG RÁC
+            # (Cài đặt dây chuyền) -> CHUYỂN vào đó theo ngày (khôi phục được);
+            # không thì XOÁ HẲN. Đều THỬ LẠI chống file kẹt (Windows handle chưa
+            # nhả). Gốc không bao giờ chép vào thư mục xuất nên chỉ cần dọn file
+            # trung chuyển.
             src = Path(ctx["path"])
-            try:
-                src.unlink(missing_ok=True)
-                gone = True
-            except OSError:
-                gone = False
+            action, dst = P.delete_or_recycle(
+                src, ctx["name"], self._pipe_recycle_dir())
             P.mark_done(ctx["entry"], video_id=vid,
                         note=f"{len(parts)} part")
+            tail = {
+                "recycled": " — đã chuyển video gốc vào Thùng rác (khôi phục được)",
+                "deleted": " — đã xoá video gốc",
+                "stuck": " — ⚠ CHƯA dọn được gốc (file kẹt), sẽ tự thử lại lượt sau",
+            }.get(action, "")
             self._pipe_log(
-                f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part"
-                + (" — đã xóa video gốc" if gone
-                   else " — ⚠ CHƯA xóa được gốc (file kẹt), xóa tay giúp"))
+                f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part" + tail)
 
     def _auto(self):
         if not (self.state.project_id and self.state.video_id):
