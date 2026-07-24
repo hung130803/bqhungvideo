@@ -3912,6 +3912,10 @@ class StudioPage(QWidget):
                     break
             if grp_cb.count():
                 grp_cb.setCurrentIndex(idx)
+                # LƯU lại nhóm thực-sự-đang-hiện: setCurrentIndex chạy với
+                # signals bị chặn (không gọi on_group_change) nên setting có thể
+                # lệch combo. Ghi ngay để ▶ Chạy / bảng luôn cùng 1 nhóm.
+                self._settings.setValue("pipe_grp_sel", grp_cb.itemData(idx))
             grp_cb.blockSignals(False)
 
         def open_dir(path: str):
@@ -4443,6 +4447,25 @@ class StudioPage(QWidget):
         except OSError:
             pass
 
+    def _pipe_selected_group(self):
+        """Nhóm để ▶ Chạy dây chuyền — LẤY TỪ COMBO ĐANG HIỆN, không đọc setting
+        đã lưu.
+
+        LỖI cũ (user báo "ấn 1 nhóm mà nó chạy tất cả kênh mọi nhóm"):
+        sync_group_combo dựng lại combo với signals BỊ CHẶN nên on_group_change
+        KHÔNG chạy -> setting 'pipe_grp_sel' có thể còn '__ALL__'/giá trị cũ
+        trong khi combo đang hiện 'Mỹ'. _pipe_run đọc setting -> chạy MỌI nhóm.
+
+        Bảng KHÔNG có mục "tất cả" nên combo luôn trỏ 1 nhóm cụ thể; "" = nhóm
+        "Chưa phân nhóm" (vẫn hợp lệ). Chỉ khi combo chưa dựng mới lùi về
+        setting (gần như không xảy ra)."""
+        cb = getattr(self, "_pipe_grp_cb", None)
+        if cb is not None and cb.count():
+            sel = cb.currentData()                 # nguồn sự thật
+            self._settings.setValue("pipe_grp_sel", sel)   # đồng bộ lại
+            return sel
+        return self._settings.value("pipe_grp_sel", "__ALL__")
+
     def _pipe_run(self):
         """▶ CHẠY DÂY CHUYỀN (chạy khi bấm — không tự chạy nền): quét thư mục
         trung chuyển của mọi kênh bật dây chuyền -> mỗi kênh nhận tối đa
@@ -4456,8 +4479,8 @@ class StudioPage(QWidget):
         n_stale = P.expire_stale_taken()
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
-        # CHẠY THEO NHÓM ĐANG CHỌN: chỉ kênh nhóm đó (None = tất cả nhóm).
-        sel = self._settings.value("pipe_grp_sel", "__ALL__")
+        # CHẠY ĐÚNG NHÓM ĐANG HIỆN trên combo (xem _pipe_selected_group).
+        sel = self._pipe_selected_group()
         # pipe_daily=0 (ép) = KHÔNG giới hạn ngày: có video là xử lý hết.
         if sel is None or sel == "__ALL__":
             chans = db.query(
