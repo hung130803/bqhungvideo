@@ -248,17 +248,20 @@ def plan_channel(project_id: int, name: str, root: str,
         it.note = ("không có video mới để cắt — thư mục trống, hoặc video gốc "
                    "đã cắt xong & bị xoá (chỉ còn file Part đã xuất)")
         return it
-    # KHÔNG giới hạn ngày: có bao nhiêu video sẵn sàng thì xử lý HẾT bấy
-    # nhiêu (theo yêu cầu — bỏ hạn mức pipe_daily). pipe_daily > 0 vẫn được
-    # tôn trọng nếu ai đó cố tình đặt; mặc định 0 = không giới hạn.
+    # CẮT HẾT: có bao nhiêu video sẵn sàng trong thư mục thì xử lý HẾT bấy
+    # nhiêu — khớp 100% cột "Chờ cắt" trên UI (kênh 2 video cắt 2, 3 cắt 3).
+    # UI đã BỎ cột "video/ngày" nên KHÔNG áp hạn mức nữa. (pipe_daily cũ trong
+    # DB mặc định 1 từng khiến chỉ cắt 1 video/ngày — đó là lý do trước đây
+    # thấy thiếu; nay bỏ hẳn giới hạn.) Chỉ cap khi ai đó CỐ đặt >=2 (không có
+    # UI nên gần như không xảy ra).
     daily = int(pipe_daily or 0)
-    if daily > 0:
+    if daily >= 2:
         it.quota = max(0, daily - taken_today(project_id))
         if it.quota <= 0 and ready:
             it.note = "hôm nay đã đủ hạn mức — file chờ ngày mai"
             return it
     else:
-        it.quota = len(ready)  # không giới hạn — làm hết file trong folder
+        it.quota = len(ready)  # 0/1 (mặc định) = KHÔNG giới hạn — làm hết folder
     for p in ready:
         try:
             fh = hash_fn(str(p))
