@@ -532,6 +532,38 @@ def collect_junk(src_dir: Path, channel: str = "") -> dict[str, list[Path]]:
     return out
 
 
+def collect_wipe(src_dir: Path, channel: str = "") -> dict[str, list[Path]]:
+    """XOÁ SẠCH thư mục kênh: MỌI file ở TẦNG TRÊN (video gốc + clip Part N +
+    rác) + toàn bộ _Loi và Thùng rác của kênh này.
+
+    Dùng khi đã đăng hết Part lên kênh và muốn giải phóng ổ đĩa.
+    KHÔNG đệ quy vào thư mục con khác của user (ảnh/tài liệu riêng vẫn còn) —
+    quy tắc dễ đoán, khỏi xoá oan đồ không liên quan."""
+    out: dict[str, list[Path]] = {g: [] for g in JUNK_GROUPS}
+    if not src_dir or not src_dir.is_dir():
+        return out
+    try:
+        for p in src_dir.iterdir():
+            try:
+                if p.is_file():
+                    out["tmp"].append(p)   # 'tmp' = mọi file tầng trên khi WIPE
+            except OSError:
+                continue
+    except OSError:
+        pass
+    out["err"] = _files_under(err_dir_for(src_dir))
+    rec_root = src_dir.parent / RECYCLE_DIRNAME
+    name = channel or src_dir.name
+    if rec_root.is_dir():
+        try:
+            for day in rec_root.iterdir():
+                if day.is_dir():
+                    out["recycle"].extend(_files_under(day / name))
+        except OSError:
+            pass
+    return out
+
+
 def junk_summary(groups: dict[str, list[Path]]) -> dict[str, tuple[int, int]]:
     """{nhóm: (số_file, tổng_byte)} để hiện trong hộp xác nhận."""
     res: dict[str, tuple[int, int]] = {}

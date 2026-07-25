@@ -4512,7 +4512,7 @@ class StudioPage(QWidget):
           • Video gốc + clip 'Part N' KHÔNG BAO GIỜ bị đụng (xem collect_junk).
         """
         from PyQt6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
-                                     QLabel, QMessageBox, QVBoxLayout)
+                                     QLabel, QLineEdit, QMessageBox, QVBoxLayout)
         from app.core import pipeline as P
         sel = self._pipe_selected_group()
         rows = db.query(
@@ -4524,25 +4524,37 @@ class StudioPage(QWidget):
                 "Nhóm này chưa kênh nào TÍCH ✓ ở cột 'Bật'. "
                 "Tích kênh muốn dọn rồi bấm lại.")
             return
-        # QUÉT (chưa xoá) — gom theo nhóm.
+        # QUÉT (chưa xoá) — gom theo nhóm, cho CẢ 2 chế độ để đổi tick là có số.
         root = self._pipe_root()
-        groups: dict[str, list] = {g: [] for g in P.JUNK_GROUPS}
-        n_ch = 0
+        dirs: list[tuple] = []
         for r in rows:
             src_ov = (r["pipe_src"] or "").strip() or (r["export_dir"] or "").strip()
             if not src_ov and not (root or "").strip():
                 continue
             d = P.resolve_src_dir(root, r["name"], src_ov)
-            if not d.is_dir():
-                continue
-            n_ch += 1
-            for g, paths in P.collect_junk(d, r["name"]).items():
-                groups[g].extend(paths)
+            if d.is_dir():
+                dirs.append((d, r["name"]))
+        n_ch = len(dirs)
+
+        def scan(wipe: bool) -> dict:
+            g: dict[str, list] = {k: [] for k in P.JUNK_GROUPS}
+            fn = P.collect_wipe if wipe else P.collect_junk
+            for d, nm in dirs:
+                for k, paths in fn(d, nm).items():
+                    g[k].extend(paths)
+            return g
+
+        groups = scan(False)
+        groups_wipe = scan(True)
         s = P.junk_summary(groups)
-        if not any(cnt for cnt, _ in s.values()):
+        s_wipe = P.junk_summary(groups_wipe)
+        # Chỉ báo "sạch" khi KHÔNG còn gì để xoá ở CẢ 2 chế độ — nếu không có
+        # rác nhưng còn video/Part thì vẫn phải mở hộp thoại để dùng XOÁ SẠCH.
+        if not any(cnt for cnt, _ in s_wipe.values()):
             QMessageBox.information(
                 self, "Sạch rồi",
-                f"Đã quét {n_ch} kênh đang tích ✓ — KHÔNG có file rác nào.")
+                f"Đã quét {n_ch} kênh đang tích ✓ — thư mục trống, "
+                "không có gì để xoá.")
             return
         # HỘP XÁC NHẬN: nói rõ mất gì, cho chọn 2 nhóm nguy hiểm.
         dlg = QDialog(self)
@@ -4577,23 +4589,70 @@ class StudioPage(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{MUTED}; font-size:11px;")
         v.addWidget(note)
+
+        # ---- CHẾ ĐỘ XOÁ SẠCH (nguy hiểm nhất): cả video gốc + clip Part ----
+        tot_w = sum(c for c, _ in s_wipe.values())
+        byte_w = sum(b for _, b in s_wipe.values())
+        chk_wipe = QCheckBox(
+            f"☠ XOÁ SẠCH thư mục kênh — CẢ video gốc + clip Part: "
+            f"{tot_w} file ({self._fmt_mb(byte_w)})")
+        chk_wipe.setStyleSheet("color:#f38ba8; font-weight:600;")
+        chk_wipe.setToolTip(
+            "Dùng khi ĐÃ ĐĂNG hết Part lên kênh và muốn giải phóng ổ đĩa.\n"
+            "XOÁ HẾT mọi file ở thư mục kênh (video gốc, clip Part, rác) + _Loi "
+            "+ Thùng rác.\nKHÔNG lấy lại được. Thư mục con riêng của anh vẫn còn.")
+        v.addWidget(chk_wipe)
+        warn = QLabel()
+        warn.setWordWrap(True)
+        warn.setStyleSheet("color:#f38ba8; font-size:11px;")
+        v.addWidget(warn)
+        typed = QLineEdit()
+        typed.setPlaceholderText("Gõ XOA để cho phép xoá sạch")
+        typed.setVisible(False)
+        v.addWidget(typed)
+
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Yes
                               | QDialogButtonBox.StandardButton.No)
-        bb.button(QDialogButtonBox.StandardButton.Yes).setText("Xoá")
+        btn_yes = bb.button(QDialogButtonBox.StandardButton.Yes)
+        btn_yes.setText("Xoá")
         bb.button(QDialogButtonBox.StandardButton.No).setText("Huỷ")
         bb.accepted.connect(dlg.accept)
         bb.rejected.connect(dlg.reject)
         v.addWidget(bb)
+
+        def sync_wipe():
+            """Bật XOÁ SẠCH -> ẩn 2 ô lẻ (đã gồm hết), CHẶN nút Xoá tới khi gõ
+            đúng chữ XOA (chống bấm nhầm mất sạch video)."""
+            on = chk_wipe.isChecked()
+            chk_err.setVisible(not on)
+            chk_rec.setVisible(not on)
+            typed.setVisible(on)
+            warn.setText(
+                "⚠ MẤT SẠCH video của các kênh đang tích — gõ <b>XOA</b> để xác nhận."
+                if on else "")
+            btn_yes.setEnabled((not on) or typed.text().strip().upper() == "XOA")
+        chk_wipe.toggled.connect(sync_wipe)
+        typed.textChanged.connect(sync_wipe)
+        sync_wipe()
+
         if self._busy_dialog(dlg.exec) != QDialog.DialogCode.Accepted:
             return
-        # XOÁ đúng những nhóm được chọn.
-        targets = list(groups["tmp"])
-        if chk_err.isChecked():
-            targets += groups["err"]
-        if chk_rec.isChecked():
-            targets += groups["recycle"]
+        # XOÁ đúng chế độ / nhóm được chọn.
+        if chk_wipe.isChecked():
+            if typed.text().strip().upper() != "XOA":
+                return                      # chốt cuối, không xoá
+            targets = (groups_wipe["tmp"] + groups_wipe["err"]
+                       + groups_wipe["recycle"])
+        else:
+            targets = list(groups["tmp"])
+            if chk_err.isChecked():
+                targets += groups["err"]
+            if chk_rec.isChecked():
+                targets += groups["recycle"]
         ok, bad = P.delete_junk(targets)
-        msg = f"Đã xoá {ok} file rác từ {n_ch} kênh."
+        msg = (f"Đã XOÁ SẠCH {ok} file từ {n_ch} kênh."
+               if chk_wipe.isChecked()
+               else f"Đã xoá {ok} file rác từ {n_ch} kênh.")
         if bad:
             msg += f" {bad} file đang bị khoá (mở bởi app khác) — thử lại sau."
         self._pipe_log("🧹 " + msg)
