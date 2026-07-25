@@ -393,18 +393,50 @@ def recycle_source(path: Path, channel: str, recycle_root: str,
         return None
 
 
+def _is_safe_recycle_root(root: str) -> bool:
+    """Thùng rác phải là nơi BỀN. Nằm trong thư mục TEMP (Windows tự dọn) ->
+    KHÔNG an toàn (video 'recycle' vào đó bị xoá mất). Hàm thuần để test."""
+    import tempfile
+    low = (root or "").replace("/", "\\").lower().rstrip("\\")
+    if not low:
+        return False
+    tmp = tempfile.gettempdir().replace("/", "\\").lower().rstrip("\\")
+    return not (low == tmp or low.startswith(tmp + "\\")
+                or "\\temp\\" in (low + "\\") or "\\tmp\\" in (low + "\\"))
+
+
+def _local_recycle(path: Path, channel: str, day: str | None = None) -> Path | None:
+    """THÙNG RÁC NỘI BỘ (dự phòng) cạnh thư mục kênh — CÙNG Ổ nên chắc chắn,
+    khôi phục được: <gốc>\\_DaXoa\\<ngày>\\<Tên kênh>\\<file>."""
+    try:
+        base = path.parent.parent / RECYCLE_DIRNAME / (day or _today_str()) \
+            / (channel or path.parent.name or "_")
+        base.mkdir(parents=True, exist_ok=True)
+        dst = _unique_in(base, path.name)
+        return dst if _move_with_retry(path, dst) else None
+    except OSError:
+        return None
+
+
 def delete_or_recycle(path: Path, channel: str,
                       recycle_root: str) -> tuple[str, Path | None]:
-    """Sau khi cắt xong: có THÙNG RÁC (recycle_root) -> CHUYỂN VÀO đó theo
-    ngày (khôi phục được); không thì XOÁ HẲN (đều thử-lại chống file kẹt).
-    Trả ('recycled'|'deleted'|'stuck', đường_dẫn_mới_hoặc_None)."""
-    if (recycle_root or "").strip():
-        dst = recycle_source(path, channel, recycle_root)
+    """Sau khi cắt xong: dọn video GỐC AN TOÀN — KHÔNG BAO GIỜ xoá hẳn.
+      1) Có THÙNG RÁC user chọn + BỀN (không phải Temp) -> chuyển vào đó theo ngày.
+      2) Không có / không bền / move hỏng -> chuyển vào THÙNG RÁC NỘI BỘ `_DaXoa`
+         cạnh thư mục kênh (cùng ổ) — vẫn khôi phục được.
+      3) Kẹt hẳn (file đang khoá) -> 'stuck', giữ nguyên gốc, thử lại lượt sau.
+    Trả ('recycled'|'stuck', đường_dẫn_mới_hoặc_None)."""
+    root = (recycle_root or "").strip()
+    if root and _is_safe_recycle_root(root):
+        dst = recycle_source(path, channel, root)
         if dst:
             return ("recycled", dst)
-        # thùng rác lỗi (khác ổ/kẹt) -> KHÔNG xoá hẳn để khỏi mất video; báo kẹt
-        return ("stuck", None)
-    return ("deleted", None) if _delete_with_retry(path) else ("stuck", None)
+    # Dự phòng: thùng rác nội bộ cùng ổ (không đặt / Temp / move hỏng đều rơi
+    # về đây) -> TUYỆT ĐỐI không xoá hẳn video.
+    dst = _local_recycle(path, channel)
+    if dst:
+        return ("recycled", dst)
+    return ("stuck", None)
 
 
 def list_recycled_days(recycle_root: str) -> list[str]:

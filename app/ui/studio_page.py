@@ -4780,7 +4780,18 @@ class StudioPage(QWidget):
             st = states.get(jid, "")
             if st == "done":
                 self._pipe_cut.pop(jid)      # xuất do _check_auto_export lo
-            elif st in ("failed", "canceled", "skipped", ""):
+            elif st in ("canceled", "skipped"):
+                # HUỶ (Huỷ tất cả) hoặc BỎ QUA (trùng) — KHÔNG phải lỗi:
+                # GIỮ NGUYÊN video gốc trong thư mục (lần chạy sau cắt lại),
+                # KHÔNG chuyển _Loi, KHÔNG xoá. Chỉ gỡ theo dõi.
+                ctx = self._pipe_cut.pop(jid)
+                self._pipe_by_vid.pop(ctx["vid"], None)
+                self._pending_export.pop(jid, None)
+                getattr(self, "_auto_tpl", {}).pop(jid, None)
+                self._pipe_log(
+                    f"⏹ {ctx['name']}: {ctx['file']} — đã huỷ, GIỮ NGUYÊN "
+                    "video gốc.")
+            elif st in ("failed", ""):
                 ctx = self._pipe_cut.pop(jid)
                 self._pipe_by_vid.pop(ctx["vid"], None)
                 self._pending_export.pop(jid, None)
@@ -4803,11 +4814,19 @@ class StudioPage(QWidget):
                 if any(states.get(j, "") in ("pending", "running")
                        for j in jobs):
                     continue                     # còn job đang chạy -> đợi
-                bad = [j for j in jobs
-                       if states.get(j, "") in ("failed", "canceled", "")]
+                # HUỶ (user bấm Huỷ tất cả) KHÁC LỖI: huỷ -> giữ nguyên gốc,
+                # KHÔNG chuyển _Loi / KHÔNG xoá. Chỉ 'failed'/rỗng mới là lỗi.
+                canceled = [j for j in jobs if states.get(j, "") == "canceled"]
+                bad = [j for j in jobs if states.get(j, "") in ("failed", "")]
             else:
+                canceled = []
                 bad = []
             ctx = self._pipe_exports.pop(vid)["ctx"]
+            if canceled:
+                self._pipe_log(
+                    f"⏹ {ctx['name']}: '{ctx['file']}' — đã huỷ, GIỮ NGUYÊN "
+                    "video gốc (lần chạy sau cắt lại).")
+                continue
             # ĐẾM PART THẬT: clip có export_path tồn tại trên đĩa
             clips = db.query(
                 "SELECT export_path FROM clips WHERE video_id=? "
