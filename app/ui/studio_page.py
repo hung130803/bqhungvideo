@@ -3853,6 +3853,14 @@ class StudioPage(QWidget):
                          "thùng rác và KHÔI PHỤC video về đúng kênh khi cần.")
         bin_b.clicked.connect(self._pipe_recycle_dialog)
         top.addWidget(bin_b)
+        clean_b = QPushButton("🧹 Dọn file rác"); clean_b.setProperty("ghost", True)
+        clean_b.setToolTip(
+            "DỌN file rác trong thư mục của các kênh ĐANG TÍCH ✓ (nhóm đang "
+            "chọn): mảnh tải dở, file 0 byte, và tuỳ chọn xoá _Loi / Thùng rác.\n"
+            "LUÔN hỏi xác nhận + nói rõ mất bao nhiêu file, bao nhiêu MB.\n"
+            "KHÔNG BAO GIỜ đụng video gốc hay clip 'Part N' đã xuất.")
+        clean_b.clicked.connect(self._pipe_clean_junk_dialog)
+        top.addWidget(clean_b)
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
@@ -4487,6 +4495,109 @@ class StudioPage(QWidget):
                 f.write(f"[{datetime.now():%H:%M:%S}] {line}" + "\n")
         except OSError:
             pass
+
+    @staticmethod
+    def _fmt_mb(n: int) -> str:
+        return f"{n / (1024 * 1024):.1f} MB" if n else "0 MB"
+
+    def _pipe_clean_junk_dialog(self) -> None:
+        """🧹 DỌN FILE RÁC cho các kênh ĐANG TÍCH ✓ của nhóm đang chọn.
+
+        AN TOÀN LÀ SỐ 1 (đây là xoá dữ liệu, không hoàn lại được):
+          • Quét trước, KHÔNG xoá gì cho tới khi user bấm Yes.
+          • Hộp xác nhận nói RÕ từng nhóm: bao nhiêu file, bao nhiêu MB.
+          • Mảnh tải dở / file 0 byte: xoá mặc định (rác thật).
+          • _Loi (video cắt lỗi) và Thùng rác (gốc đã cắt) là VIDEO THẬT ->
+            phải TỰ TÍCH thêm mới xoá, mặc định KHÔNG xoá.
+          • Video gốc + clip 'Part N' KHÔNG BAO GIỜ bị đụng (xem collect_junk).
+        """
+        from PyQt6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
+                                     QLabel, QMessageBox, QVBoxLayout)
+        from app.core import pipeline as P
+        sel = self._pipe_selected_group()
+        rows = db.query(
+            "SELECT id, name, pipe_src, export_dir FROM projects "
+            "WHERE pipe_on=1 AND grp=? ORDER BY name", (sel or "",))
+        if not rows:
+            QMessageBox.information(
+                self, "Chưa có kênh nào bật",
+                "Nhóm này chưa kênh nào TÍCH ✓ ở cột 'Bật'. "
+                "Tích kênh muốn dọn rồi bấm lại.")
+            return
+        # QUÉT (chưa xoá) — gom theo nhóm.
+        root = self._pipe_root()
+        groups: dict[str, list] = {g: [] for g in P.JUNK_GROUPS}
+        n_ch = 0
+        for r in rows:
+            src_ov = (r["pipe_src"] or "").strip() or (r["export_dir"] or "").strip()
+            if not src_ov and not (root or "").strip():
+                continue
+            d = P.resolve_src_dir(root, r["name"], src_ov)
+            if not d.is_dir():
+                continue
+            n_ch += 1
+            for g, paths in P.collect_junk(d, r["name"]).items():
+                groups[g].extend(paths)
+        s = P.junk_summary(groups)
+        if not any(cnt for cnt, _ in s.values()):
+            QMessageBox.information(
+                self, "Sạch rồi",
+                f"Đã quét {n_ch} kênh đang tích ✓ — KHÔNG có file rác nào.")
+            return
+        # HỘP XÁC NHẬN: nói rõ mất gì, cho chọn 2 nhóm nguy hiểm.
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Chắc chắn xoá?")
+        v = QVBoxLayout(dlg)
+        head = QLabel(
+            f"Đã quét <b>{n_ch}</b> kênh đang tích ✓ của nhóm "
+            f"\"<b>{sel or 'Chưa phân nhóm'}</b>\".<br>"
+            "Xoá là <b>KHÔNG lấy lại được</b> — xem kỹ rồi mới bấm Xoá.")
+        head.setWordWrap(True)
+        v.addWidget(head)
+        c_tmp, c_err, c_rec = s["tmp"], s["err"], s["recycle"]
+        v.addWidget(QLabel(
+            f"🧹 <b>Mảnh tải dở / file 0 byte</b>: {c_tmp[0]} file "
+            f"({self._fmt_mb(c_tmp[1])}) — rác thật, sẽ xoá."))
+        chk_err = QCheckBox(
+            f"Xoá cả _Loi (video CẮT LỖI): {c_err[0]} file "
+            f"({self._fmt_mb(c_err[1])})")
+        chk_err.setToolTip("Đây là VIDEO THẬT bị lỗi khi cắt. Xoá là mất video. "
+                           "Chỉ tích khi chắc không cần cắt lại.")
+        chk_rec = QCheckBox(
+            f"Xoá cả Thùng rác (gốc ĐÃ CẮT xong): {c_rec[0]} file "
+            f"({self._fmt_mb(c_rec[1])})")
+        chk_rec.setToolTip("Đây là video gốc đã cắt xong, đang giữ để KHÔI PHỤC. "
+                           "Xoá là hết khôi phục được.")
+        chk_err.setEnabled(c_err[0] > 0)
+        chk_rec.setEnabled(c_rec[0] > 0)
+        v.addWidget(chk_err)
+        v.addWidget(chk_rec)
+        note = QLabel("Video gốc chưa cắt và clip “Part N” đã xuất "
+                      "<b>KHÔNG bị đụng</b>.")
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        v.addWidget(note)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Yes
+                              | QDialogButtonBox.StandardButton.No)
+        bb.button(QDialogButtonBox.StandardButton.Yes).setText("Xoá")
+        bb.button(QDialogButtonBox.StandardButton.No).setText("Huỷ")
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        if self._busy_dialog(dlg.exec) != QDialog.DialogCode.Accepted:
+            return
+        # XOÁ đúng những nhóm được chọn.
+        targets = list(groups["tmp"])
+        if chk_err.isChecked():
+            targets += groups["err"]
+        if chk_rec.isChecked():
+            targets += groups["recycle"]
+        ok, bad = P.delete_junk(targets)
+        msg = f"Đã xoá {ok} file rác từ {n_ch} kênh."
+        if bad:
+            msg += f" {bad} file đang bị khoá (mở bởi app khác) — thử lại sau."
+        self._pipe_log("🧹 " + msg)
+        QMessageBox.information(self, "Dọn xong", msg)
 
     def _pipe_selected_group(self):
         """Nhóm để ▶ Chạy dây chuyền — LẤY TỪ COMBO ĐANG HIỆN, không đọc setting
