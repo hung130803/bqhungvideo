@@ -4661,7 +4661,14 @@ class StudioPage(QWidget):
         lay.addWidget(hint)
         # hàng chọn ngày
         row2 = QHBoxLayout(); row2.setSpacing(8)
-        row2.addWidget(self._tag("Ngày:"))
+        # CHỌN LOẠI: video đã cắt xong (theo ngày) hay FILE LỖI (_Loi).
+        # Cả 2 giờ nằm chung thư mục anh Hùng chọn, nên cùng một màn Khôi phục.
+        kind_cb = NoWheelComboBox()
+        kind_cb.addItem("🗑 Đã cắt xong (theo ngày)", "bin")
+        kind_cb.addItem("🔴 File lỗi (_Loi)", "err")
+        row2.addWidget(kind_cb)
+        day_lb = self._tag("Ngày:")
+        row2.addWidget(day_lb)
         day_cb = QComboBox(); row2.addWidget(day_cb, 1)
         rest_all = QPushButton("↩ Khôi phục CẢ NGÀY"); rest_all.setProperty("ghost", True)
         row2.addWidget(rest_all); lay.addLayout(row2)
@@ -4674,6 +4681,14 @@ class StudioPage(QWidget):
         lay.addWidget(tbl, 1)
 
         def refill_days():
+            err = kind_cb.currentData() == "err"
+            day_lb.setVisible(not err)
+            day_cb.setVisible(not err)
+            rest_all.setText("↩ Khôi phục HẾT file lỗi" if err
+                             else "↩ Khôi phục CẢ NGÀY")
+            if err:
+                refill_list()
+                return
             day_cb.blockSignals(True); day_cb.clear()
             for d in P.list_recycled_days(self._pipe_recycle_dir(),
                                           self._pipe_src_dirs()):
@@ -4683,11 +4698,16 @@ class StudioPage(QWidget):
 
         def refill_list():
             tbl.setRowCount(0)
-            day = day_cb.currentData()
-            if not day:
-                return
-            items = P.list_recycled(self._pipe_recycle_dir(), day,
-                                    self._pipe_src_dirs())
+            if kind_cb.currentData() == "err":
+                # FILE LỖI không xếp theo ngày -> liệt kê hết.
+                items = P.list_errors(self._pipe_recycle_dir(),
+                                      self._pipe_src_dirs())
+            else:
+                day = day_cb.currentData()
+                if not day:
+                    return
+                items = P.list_recycled(self._pipe_recycle_dir(), day,
+                                        self._pipe_src_dirs())
             tbl.setRowCount(len(items))
             for i, it in enumerate(items):
                 tbl.setItem(i, 0, QTableWidgetItem(it["channel"]))
@@ -4726,12 +4746,17 @@ class StudioPage(QWidget):
                 refill_days()
 
         def restore_all():
+            if kind_cb.currentData() == "err":
+                do_restore(P.list_errors(self._pipe_recycle_dir(),
+                                         self._pipe_src_dirs()))
+                return
             day = day_cb.currentData()
             if day:
                 do_restore(P.list_recycled(self._pipe_recycle_dir(), day,
                                            self._pipe_src_dirs()))
 
         pick_b.clicked.connect(pick_dir)
+        kind_cb.currentIndexChanged.connect(refill_days)
         day_cb.currentIndexChanged.connect(refill_list)
         rest_all.clicked.connect(restore_all)
         refill_days()
@@ -5186,7 +5211,9 @@ class StudioPage(QWidget):
     def _pipe_quarantine_ctx(self, ctx: dict, why: str) -> None:
         from app.core import pipeline as P
         p = Path(ctx["path"])
-        dst = P.quarantine(p) if p.exists() else None
+        # GOM VỀ THƯ MỤC ANH HÙNG CHỌN (nếu có + bền) thay vì rải `_Loi`
+        # cạnh từng nhóm kênh.
+        dst = P.quarantine(p, self._pipe_recycle_dir()) if p.exists() else None
         self._pipe_log(f"🔴 {ctx['name']}: {ctx['file']} — {why}"
                        + (" (đã chuyển _Loi)" if dst else ""))
 
