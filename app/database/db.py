@@ -232,6 +232,15 @@ class Database:
                 ):
                     self.conn().execute(ddl)
                 self.conn().commit()
+                cols.extend(["pipe_on", "pipe_src", "pipe_mode", "pipe_daily"])
+            # ẨN KÊNH KHỎI DÂY CHUYỀN: kênh tạm không muốn cắt nữa nhưng vẫn
+            # giữ để sau bật lại. Khác hẳn pipe_on: 'Bật tất cả' KHÔNG kéo kênh
+            # đã ẩn về, nên không phải bỏ tích lại từng cái sau mỗi lần bật.
+            if "pipe_hidden" not in cols:
+                self.conn().execute(
+                    "ALTER TABLE projects ADD COLUMN pipe_hidden "
+                    "INTEGER NOT NULL DEFAULT 0")
+                self.conn().commit()
             self.conn().execute(
                 """CREATE TABLE IF NOT EXISTS pipeline_files (
                        id INTEGER PRIMARY KEY AUTOINCREMENT,
