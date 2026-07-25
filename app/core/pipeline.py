@@ -470,6 +470,94 @@ def list_recycled(recycle_root: str, day: str) -> list[dict]:
     return out
 
 
+# --------------------------------------------------------- DỌN FILE RÁC ------
+# Chia 3 NHÓM riêng biệt, KHÔNG gộp — hộp xác nhận phải nói rõ mất cái gì:
+#   tmp     = mảnh tải dở / file tạm / file 0 byte  -> rác thật, xoá vô hại
+#   err     = video trong _Loi (cắt lỗi)            -> VẪN LÀ VIDEO, phải hỏi
+#   recycle = video trong _DaXoa (đã cắt xong)      -> VẪN LÀ VIDEO, phải hỏi
+JUNK_GROUPS = ("tmp", "err", "recycle")
+
+
+def _files_under(d: Path) -> list[Path]:
+    """Mọi file trong thư mục (đệ quy, bỏ lỗi truy cập)."""
+    out: list[Path] = []
+    try:
+        for p in d.rglob("*"):
+            try:
+                if p.is_file():
+                    out.append(p)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return out
+
+
+def collect_junk(src_dir: Path, channel: str = "") -> dict[str, list[Path]]:
+    """QUÉT (không xoá) file rác liên quan 1 thư mục kênh -> {nhóm: [path]}.
+
+    TUYỆT ĐỐI KHÔNG bao giờ đưa video gốc còn dùng được hay clip 'Part N' đã
+    xuất vào danh sách. Nhóm 'tmp' chỉ gồm: file tạm/mảnh (is_tmp_file) và
+    file 0 BYTE (tải hỏng) NGAY TRONG thư mục kênh (không đệ quy để khỏi đụng
+    thư mục con của user)."""
+    out: dict[str, list[Path]] = {g: [] for g in JUNK_GROUPS}
+    if not src_dir or not src_dir.is_dir():
+        return out
+    # 1) tmp: mảnh tải dở + file 0 byte (tầng trên của thư mục kênh)
+    try:
+        for p in src_dir.iterdir():
+            try:
+                if not p.is_file():
+                    continue
+                if is_tmp_file(p.name):
+                    out["tmp"].append(p)
+                elif p.stat().st_size == 0:
+                    out["tmp"].append(p)     # file rỗng = tải hỏng
+            except OSError:
+                continue
+    except OSError:
+        pass
+    # 2) err: _Loi/<Kênh> — video cắt lỗi (là VIDEO, phải hỏi trước khi xoá)
+    out["err"] = _files_under(err_dir_for(src_dir))
+    # 3) recycle: _DaXoa/<ngày>/<Kênh> — gốc đã cắt xong, đang giữ để khôi phục
+    rec_root = src_dir.parent / RECYCLE_DIRNAME
+    name = channel or src_dir.name
+    if rec_root.is_dir():
+        try:
+            for day in rec_root.iterdir():
+                if day.is_dir():
+                    out["recycle"].extend(_files_under(day / name))
+        except OSError:
+            pass
+    return out
+
+
+def junk_summary(groups: dict[str, list[Path]]) -> dict[str, tuple[int, int]]:
+    """{nhóm: (số_file, tổng_byte)} để hiện trong hộp xác nhận."""
+    res: dict[str, tuple[int, int]] = {}
+    for g, paths in groups.items():
+        total = 0
+        for p in paths:
+            try:
+                total += p.stat().st_size
+            except OSError:
+                continue
+        res[g] = (len(paths), total)
+    return res
+
+
+def delete_junk(paths: list[Path]) -> tuple[int, int]:
+    """Xoá danh sách file -> (đã_xoá, thất_bại). Có thử-lại chống file kẹt."""
+    ok = 0
+    bad = 0
+    for p in paths:
+        if _delete_with_retry(p):
+            ok += 1
+        else:
+            bad += 1
+    return ok, bad
+
+
 def restore_recycled(recycled_path: str, dest_dir: str) -> Path | None:
     """KHÔI PHỤC 1 video từ thùng rác về thư mục kênh (dest_dir). Trả đường
     dẫn mới, hoặc None nếu lỗi. mtime đặt về HIỆN TẠI để scan_dir coi là mới
