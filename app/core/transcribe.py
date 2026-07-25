@@ -222,6 +222,27 @@ def _g(o, k, d=0):
     return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
 
 
+#: Lỗi TẠM THỜI phía Groq — máy chủ họ chớp nhoáng, KHÔNG phải key sai cũng
+#: không phải hết lượt. Phải thử lại ngay, đừng bỏ cả video.
+#:
+#: LỖI THẬT (anh Hùng 2026-07-25): "Error code: 500 - Internal Server Error"
+#: rơi vào nhánh `raise` nên chết ngay lần đầu → video bị coi là cắt lỗi và
+#: chuyển vào `_Loi`, dù chỉ cần thử lại sau 1 giây là được.
+_GROQ_TRANSIENT = (
+    "error code: 500", "error code: 502", "error code: 503", "error code: 504",
+    "internal server error", "bad gateway", "service unavailable",
+    "gateway timeout", "overloaded", "timed out", "timeout",
+    "connection reset", "connection aborted", "connection error",
+    "remote end closed", "temporarily",
+)
+
+
+def _groq_transient(msg: str) -> bool:
+    """True nếu lỗi Groq thuộc loại nên THỬ LẠI NGAY (hàm thuần, để test)."""
+    m = (msg or "").lower()
+    return any(k in m for k in _GROQ_TRANSIENT)
+
+
 def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
               on_wait=None) -> tuple:
     """Gửi 1 FILE cho Groq, xoay vòng key khi hết lượt. Trả (segs, words, lang, text).
@@ -252,8 +273,11 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
 
     # tối đa 2 vòng: vòng 1 thử mọi key; nếu TẤT CẢ đều 429 với reset ngắn
     # (TPM cùng nick), đợi hết cooldown ngắn nhất rồi thử lại vòng 2.
+    groq_tries: dict = {}      # key -> số lần đã thử lại vì lỗi tạm thời
     for _round in (1, 2):
-        for key in _order():
+        pending = list(_order())
+        while pending:
+            key = pending.pop(0)
             llm.mark_used("groq", key)
             try:
                 client = OpenAI(api_key=key,
@@ -284,7 +308,21 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                 if llm.is_auth_error(last):
                     llm.mark_invalid("groq", key)
                     continue                   # KEY SAI -> bỏ qua, thử key khác
-                raise                          # lỗi khác (mạng...): KHÔNG giết oan key
+                if _groq_transient(last):
+                    # LỖI PHÍA GROQ (500/502/503, timeout, mạng chớp): thử lại
+                    # NGAY trên CHÍNH key này — nghỉ 1s rồi 3s. Trước đây rơi
+                    # thẳng vào `raise` nên cả video bị coi là cắt lỗi và đẩy
+                    # vào `_Loi`, dù chỉ cần thử lại 1 giây sau là xong.
+                    tried = groq_tries.get(key, 0)
+                    if tried < 2:
+                        groq_tries[key] = tried + 1
+                        if on_wait:
+                            on_wait(1.0 + 2.0 * tried)
+                        _time.sleep(1.0 + 2.0 * tried)
+                        pending.insert(0, key)   # thử lại NGAY chính key này
+                        continue
+                    continue                   # hết lượt thử -> sang key khác
+                raise                          # lỗi khác: KHÔNG giết oan key
         # hết vòng: mọi key vừa thử đều limited. Nếu reset NGẮN (TPM/phút,
         # <= 90s) -> ĐỢI hết cooldown ngắn nhất rồi thử lại (vòng 2). Reset
         # dài (hết lượt ngày) thì đợi vô ích -> thoát báo lỗi.
