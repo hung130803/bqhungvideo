@@ -185,6 +185,16 @@ def mark_error(entry_id: int, note: str) -> None:
         "done_at=datetime('now') WHERE id=?", (note[:500], entry_id))
 
 
+def unmark_taken(entry_id: int) -> None:
+    """XOÁ SỔ lượt nhận của 1 file để lượt chạy sau nhận LẠI nó.
+
+    Dùng khi cắt lỗi TẠM THỜI (Groq 500, mạng chớp…): video vẫn tốt, vẫn nằm ở
+    thư mục kênh, chỉ cần thử lại. Nếu để nguyên dòng 'taken' thì bộ chống-trùng
+    coi như đã làm rồi và KHÔNG BAO GIỜ nhận lại — video nằm chết ở đó.
+    """
+    db.execute("DELETE FROM pipeline_files WHERE id=?", (entry_id,))
+
+
 def last_intake_at(project_id: int) -> str | None:
     """Lần cuối kênh NHẬN được file (cảnh báo nguồn cạn — mục 7)."""
     r = db.query_one(
@@ -439,28 +449,112 @@ def delete_or_recycle(path: Path, channel: str,
     return ("stuck", None)
 
 
-def list_recycled_days(recycle_root: str) -> list[str]:
-    """Danh sách NGÀY (YYYY-MM-DD) có video trong thùng rác, mới nhất trước."""
+#: Dấu hiệu lỗi TẠM THỜI — không phải video hỏng, chỉ là dịch vụ ngoài chớp
+#: nhoáng. Video như thế PHẢI giữ nguyên để lượt sau cắt lại, KHÔNG được đẩy
+#: vào `_Loi`.
+#:
+#: LỖI THẬT ĐÃ GẶP (anh Hùng 2026-07-25): "Chép lời qua Groq lỗi: Error code:
+#: 500 - Internal Server Error" → video bị chuyển `_Loi` luôn, không thử lại,
+#: dù bản thân video hoàn toàn tốt. Groq 500 là lỗi PHÍA HỌ, 5 phút sau chạy
+#: lại là được.
+_TRANSIENT_MARKS = (
+    "error code: 500", "error code: 502", "error code: 503", "error code: 504",
+    "error code: 429", "internal server error", "bad gateway",
+    "service unavailable", "gateway timeout", "rate limit", "too many requests",
+    "timed out", "timeout", "connection", "temporarily", "try again",
+    "quota", "overloaded", "unavailable",
+)
+
+
+def is_transient_error(msg: str) -> bool:
+    """True nếu thông báo lỗi là loại TẠM THỜI (nên thử lại, đừng bỏ vào _Loi).
+
+    Hàm THUẦN để unit-test. Cố ý BAO DUNG: thà thử lại một video hỏng thật
+    (lượt sau lại lỗi, tốn ít thời gian) còn hơn quẳng một video TỐT vào `_Loi`
+    rồi anh Hùng phải đi mò khôi phục.
+    """
+    m = (msg or "").lower()
+    return any(k in m for k in _TRANSIENT_MARKS)
+
+
+def recycle_roots(recycle_root: str, src_dirs: list[str] | None = None) -> list[Path]:
+    """MỌI nơi video gốc có thể đang nằm — MỘT NGUỒN SỰ THẬT cho màn Khôi phục.
+
+    LỖI THẬT ĐÃ GẶP (anh Hùng: "thùng rác k hoạt động à sao k thấy video nào"):
+    `delete_or_recycle` từ chối thùng rác nằm trong Temp và chuyển video vào
+    THÙNG RÁC NỘI BỘ `_DaXoa` cạnh thư mục kênh, nhưng màn Khôi phục lại CHỈ
+    đọc đúng đường dẫn user cấu hình → thấy TRỐNG dù 62 video đang nằm an toàn
+    ở `_DaXoa`. Người ghi và người đọc nhìn hai nơi khác nhau.
+
+    Nay gom lại: thùng rác user chọn (nếu bền) + `_DaXoa` của mọi thư mục kênh.
+    """
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def add(p: Path) -> None:
+        try:
+            k = str(p.resolve()).lower()
+        except OSError:
+            k = str(p).lower()
+        if k not in seen and p.is_dir():
+            seen.add(k)
+            out.append(p)
+
     root = (recycle_root or "").strip()
-    if not root or not Path(root).is_dir():
-        return []
-    days = [p.name for p in Path(root).iterdir()
-            if p.is_dir() and re.match(r"^\d{4}-\d{2}-\d{2}$", p.name)]
+    if root and _is_safe_recycle_root(root):
+        add(Path(root))
+    # `_local_recycle` đặt ở <cha của thư mục kênh>/_DaXoa — dùng ĐÚNG công
+    # thức đó để đọc, không đoán.
+    for d in (src_dirs or []):
+        s = (d or "").strip()
+        if s:
+            add(Path(s).parent / RECYCLE_DIRNAME)
+    return out
+
+
+def list_recycled_days(recycle_root: str,
+                       src_dirs: list[str] | None = None) -> list[str]:
+    """Danh sách NGÀY (YYYY-MM-DD) có video trong thùng rác, mới nhất trước.
+    Gộp mọi nơi (xem `recycle_roots`)."""
+    days: set[str] = set()
+    for base in recycle_roots(recycle_root, src_dirs):
+        try:
+            for p in base.iterdir():
+                if p.is_dir() and re.match(r"^\d{4}-\d{2}-\d{2}$", p.name):
+                    days.add(p.name)
+        except OSError:
+            continue
     return sorted(days, reverse=True)
 
 
-def list_recycled(recycle_root: str, day: str) -> list[dict]:
-    """Video trong thùng rác của 1 ngày: [{channel, name, path, size}]."""
-    root = (recycle_root or "").strip()
+def list_recycled(recycle_root: str, day: str,
+                  src_dirs: list[str] | None = None) -> list[dict]:
+    """Video trong thùng rác của 1 ngày: [{channel, name, path, size}].
+    Gộp mọi nơi (xem `recycle_roots`); khử trùng theo đường dẫn thật."""
     out: list[dict] = []
-    base = Path(root) / day if root else None
-    if not base or not base.is_dir():
-        return out
-    for chdir in sorted(base.iterdir()):
-        if not chdir.is_dir():
+    seen: set[str] = set()
+    for root in recycle_roots(recycle_root, src_dirs):
+        base = root / day
+        if not base.is_dir():
             continue
-        for f in sorted(chdir.iterdir()):
-            if f.is_file() and f.suffix.lower() in VIDEO_EXTS:
+        try:
+            chdirs = sorted(base.iterdir())
+        except OSError:
+            continue
+        for chdir in chdirs:
+            if not chdir.is_dir():
+                continue
+            try:
+                files = sorted(chdir.iterdir())
+            except OSError:
+                continue
+            for f in files:
+                if not (f.is_file() and f.suffix.lower() in VIDEO_EXTS):
+                    continue
+                key = str(f).lower()
+                if key in seen:
+                    continue
+                seen.add(key)
                 try:
                     sz = f.stat().st_size
                 except OSError:

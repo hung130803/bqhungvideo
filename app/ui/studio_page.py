@@ -4591,6 +4591,23 @@ class StudioPage(QWidget):
         theo ngày, khôi phục được. Rỗng = xoá hẳn (hành vi cũ)."""
         return str(self._settings.value("pipe_recycle_dir", "") or "")
 
+    def _pipe_src_dirs(self) -> list[str]:
+        """Thư mục LẤY VIDEO của mọi kênh (mọi nhóm) — dùng để biết thùng rác
+        nội bộ `_DaXoa` nằm ở đâu. Lấy CẢ nhóm khác: video có thể đã bị dọn từ
+        nhóm khác, màn Khôi phục phải thấy hết chứ không phụ thuộc nhóm đang lọc."""
+        from app.core import pipeline as P
+        root = self._pipe_root()
+        out: list[str] = []
+        for r in db.query("SELECT name, pipe_src, export_dir FROM projects"):
+            ov = ((r["pipe_src"] or "").strip() or (r["export_dir"] or "").strip())
+            if not ov and not (root or "").strip():
+                continue
+            try:
+                out.append(str(P.resolve_src_dir(root, r["name"], ov)))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
     def _pipe_restore_dest(self, channel: str) -> str:
         """Thư mục KÊNH để khôi phục video về (đúng nơi tool tải/cắt đọc)."""
         from app.core import pipeline as P
@@ -4616,9 +4633,24 @@ class StudioPage(QWidget):
         # hàng thư mục thùng rác + đổi
         row1 = QHBoxLayout(); row1.setSpacing(8)
         row1.addWidget(self._tag("Thư mục thùng rác:"))
-        path_lb = QLabel(self._pipe_recycle_dir() or "(chưa chọn — video đang bị XOÁ HẲN)")
-        path_lb.setStyleSheet(f"color:{'#a6e3a1' if self._pipe_recycle_dir() else '#f9e2af'};"
-                              f"font-size:12px;")
+        # NÓI THẬT nơi video ĐANG NẰM, không phải nơi user từng chọn: nếu thùng
+        # rác cấu hình nằm trong Temp (không bền) thì lõi đã chuyển video vào
+        # `_DaXoa` cạnh thư mục kênh — hiện sai chỗ là tưởng mất video.
+        def where_txt() -> tuple[str, str]:
+            cfg = self._pipe_recycle_dir()
+            roots = P.recycle_roots(cfg, self._pipe_src_dirs())
+            if cfg and not P._is_safe_recycle_root(cfg):
+                return (f"⚠ Bỏ qua thư mục đã chọn (nằm trong Temp — Windows tự "
+                        f"dọn, sẽ MẤT video). Video đang ở: "
+                        + (str(roots[0]) if roots else "(chưa có)"), "#f9e2af")
+            if roots:
+                extra = f"  (+{len(roots) - 1} nơi khác)" if len(roots) > 1 else ""
+                return (str(roots[0]) + extra, "#a6e3a1")
+            return ("Chưa có video nào trong thùng rác.", "#f9e2af")
+        _wt, _wc = where_txt()
+        path_lb = QLabel(_wt)
+        path_lb.setWordWrap(True)
+        path_lb.setStyleSheet(f"color:{_wc};font-size:12px;")
         row1.addWidget(path_lb, 1)
         pick_b = QPushButton("📂 Chọn/đổi thư mục"); pick_b.setProperty("ghost", True)
         row1.addWidget(pick_b); lay.addLayout(row1)
@@ -4643,17 +4675,19 @@ class StudioPage(QWidget):
 
         def refill_days():
             day_cb.blockSignals(True); day_cb.clear()
-            for d in P.list_recycled_days(self._pipe_recycle_dir()):
+            for d in P.list_recycled_days(self._pipe_recycle_dir(),
+                                          self._pipe_src_dirs()):
                 day_cb.addItem(d, d)
             day_cb.blockSignals(False)
             refill_list()
 
         def refill_list():
             tbl.setRowCount(0)
-            rec = self._pipe_recycle_dir(); day = day_cb.currentData()
-            if not rec or not day:
+            day = day_cb.currentData()
+            if not day:
                 return
-            items = P.list_recycled(rec, day)
+            items = P.list_recycled(self._pipe_recycle_dir(), day,
+                                    self._pipe_src_dirs())
             tbl.setRowCount(len(items))
             for i, it in enumerate(items):
                 tbl.setItem(i, 0, QTableWidgetItem(it["channel"]))
@@ -4686,14 +4720,16 @@ class StudioPage(QWidget):
                 self._pipe_recycle_dir() or "")
             if d:
                 self._settings.setValue("pipe_recycle_dir", d)
-                path_lb.setText(d)
-                path_lb.setStyleSheet("color:#a6e3a1;font-size:12px;")
+                t, c = where_txt()
+                path_lb.setText(t)
+                path_lb.setStyleSheet(f"color:{c};font-size:12px;")
                 refill_days()
 
         def restore_all():
-            rec = self._pipe_recycle_dir(); day = day_cb.currentData()
-            if rec and day:
-                do_restore(P.list_recycled(rec, day))
+            day = day_cb.currentData()
+            if day:
+                do_restore(P.list_recycled(self._pipe_recycle_dir(), day,
+                                           self._pipe_src_dirs()))
 
         pick_b.clicked.connect(pick_dir)
         day_cb.currentIndexChanged.connect(refill_list)
@@ -5190,8 +5226,17 @@ class StudioPage(QWidget):
                 getattr(self, "_auto_tpl", {}).pop(jid, None)
                 err = db.query_one("SELECT error FROM jobs WHERE id=?", (jid,))
                 why = (err["error"] if err and err["error"] else st) or "lỗi"
-                P.mark_error(ctx["entry"], f"cắt lỗi: {why}")
-                self._pipe_quarantine_ctx(ctx, f"cắt lỗi: {str(why)[:120]}")
+                if P.is_transient_error(str(why)):
+                    # LỖI TẠM THỜI (Groq 500, mạng, hết lượt…) — video KHÔNG
+                    # hỏng. Xoá sổ "đã nhận" để lượt chạy sau nhận lại và cắt
+                    # tiếp; GIỮ NGUYÊN video gốc tại thư mục kênh.
+                    P.unmark_taken(ctx["entry"])
+                    self._pipe_log(
+                        f"⏳ {ctx['name']}: {ctx['file']} — lỗi TẠM THỜI, GIỮ "
+                        f"NGUYÊN video để chạy lại: {str(why)[:120]}")
+                else:
+                    P.mark_error(ctx["entry"], f"cắt lỗi: {why}")
+                    self._pipe_quarantine_ctx(ctx, f"cắt lỗi: {str(why)[:120]}")
 
     def _pipe_poll_exports(self, force_vid=None) -> None:
         from app.core import pipeline as P
