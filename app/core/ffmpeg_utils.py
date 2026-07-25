@@ -395,11 +395,49 @@ def extract_frame(src: str | Path, t: float, dst: str | Path,
 
 def extract_audio_wav(src: str | Path, dst: str | Path, sr: int = 16000) -> bool:
     """Tách audio mono 16k cho whisper/librosa. Trả về True nếu thành công."""
+    return extract_audio_wav_why(src, dst, sr)[0]
+
+
+def extract_audio_wav_why(src: str | Path, dst: str | Path,
+                          sr: int = 16000) -> tuple[bool, str]:
+    """Như `extract_audio_wav` nhưng TRẢ KÈM LÝ DO khi thất bại.
+
+    VÌ SAO CẦN (lỗi thật anh Hùng gặp 2026-07-25): app chỉ báo "Tách audio thất
+    bại (ffmpeg?)" — đổ lỗi cho ffmpeg — trong khi nguyên nhân thật là video gốc
+    đã bị chuyển vào `_Loi` sau lần cắt lỗi trước nên KHÔNG CÒN ở đường dẫn cũ.
+    Anh đi tìm sai hướng (tưởng video hỏng / quá dài), mất cả buổi. Kèm được
+    dòng cuối của ffmpeg là biết ngay hỏng ở đâu.
+    """
+    p = Path(src)
+    if not p.exists():
+        return (False, f"KHÔNG TÌM THẤY video gốc: {src}")
+    try:
+        if p.stat().st_size == 0:
+            return (False, f"video gốc RỖNG 0 byte: {src}")
+    except OSError:
+        pass
+    tail: list[str] = []
+
+    def keep(line: str) -> None:
+        s = (line or "").strip()
+        if s:
+            tail.append(s)
+            if len(tail) > 6:          # giữ vài dòng cuối là đủ chẩn đoán
+                tail.pop(0)
     cmd = [
         settings.FFMPEG_PATH, "-y", "-i", str(src),
         "-vn", "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(dst),
     ]
-    return _run(cmd) == 0
+    rc = _run(cmd, keep)
+    if rc == 0:
+        return (True, "")
+    why = " | ".join(tail[-3:]) or f"ffmpeg trả mã {rc}"
+    low = why.lower()
+    if "no space" in low or "disk full" in low:
+        why = "Ổ ĐĨA HẾT CHỖ khi ghi audio tạm — dọn ổ đĩa rồi cắt lại."
+    elif "does not contain any stream" in low:
+        why = f"Video KHÔNG CÓ TIẾNG nên không tách được audio. ({why})"
+    return (False, why)
 
 
 # ---- NGÂN SÁCH CPU TOÀN CỤC cho encode ----

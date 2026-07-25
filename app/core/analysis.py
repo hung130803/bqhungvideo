@@ -151,8 +151,18 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
     def ensure_audio() -> str:
         wav = _project_audio_path(video_id)
         if not wav.exists():
-            if not extract_audio_wav(src, wav):
-                raise RuntimeError("Tách audio thất bại (ffmpeg?).")
+            from app.core.ffmpeg_utils import extract_audio_wav_why
+            ok, why = extract_audio_wav_why(src, wav)
+            if not ok:
+                # NÓI ĐÚNG NGUYÊN NHÂN, đừng đổ cho ffmpeg. Thường gặp nhất là
+                # video gốc đã bị chuyển vào `_Loi` sau lần cắt lỗi trước, nên
+                # bấm "Cắt lại" là tìm ở đường dẫn cũ → không thấy file.
+                if "KHÔNG TÌM THẤY" in why:
+                    raise RuntimeError(
+                        f"{why}\n\nVideo gốc có thể đã bị chuyển vào thư mục "
+                        "_Loi (sau lần cắt lỗi trước) hoặc vào Thùng rác. "
+                        "Chuyển video về lại thư mục kênh rồi bấm Cắt lại.")
+                raise RuntimeError(f"Tách audio thất bại: {why}")
         return str(wav)
 
     if kind == "transcript":
