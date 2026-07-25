@@ -316,11 +316,25 @@ def err_dir_for(src_dir: Path) -> Path:
     return src_dir.parent / ERR_DIRNAME / src_dir.name
 
 
-def quarantine(path: Path) -> Path | None:
-    """Chuyển file hỏng/lỗi sang thư mục _Loi (không xóa oan). Trả đường dẫn
-    mới hoặc None nếu chuyển thất bại (file kẹt) — caller ghi báo cáo."""
+def quarantine(path: Path, recycle_root: str = "") -> Path | None:
+    """Chuyển file hỏng/lỗi sang thư mục `_Loi` (không xóa oan). Trả đường dẫn
+    mới hoặc None nếu chuyển thất bại (file kẹt) — caller ghi báo cáo.
+
+    GOM VỀ MỘT CHỖ (yêu cầu anh Hùng: "cho vào chung cái thư mục tôi chọn kia
+    đi ra nhiều để làm gì đâu"): nếu đã chọn thư mục Thùng rác và nó BỀN (không
+    nằm trong Temp) thì đặt ở `<thư mục đã chọn>/_Loi/<Tên kênh>` — cùng một
+    gốc với video đã cắt xong, khỏi rải `_Loi` cạnh từng nhóm kênh.
+    Chưa chọn / chọn vào Temp thì vẫn về `_Loi` cạnh thư mục kênh như cũ.
+
+    Giữ NGUYÊN cấu trúc `_Loi/<Tên kênh>` (không thêm lớp ngày) để 167 file lỗi
+    đang có trên máy vẫn liệt kê và khôi phục được, không phải di chuyển gì.
+    """
     try:
-        dst_dir = err_dir_for(path.parent)
+        root = (recycle_root or "").strip()
+        if root and _is_safe_recycle_root(root):
+            dst_dir = Path(root) / ERR_DIRNAME / path.parent.name
+        else:
+            dst_dir = err_dir_for(path.parent)
         dst_dir.mkdir(parents=True, exist_ok=True)
         dst = dst_dir / path.name
         i = 1
@@ -331,6 +345,65 @@ def quarantine(path: Path) -> Path | None:
         return dst
     except OSError:
         return None
+
+
+def err_roots(recycle_root: str, src_dirs: list[str] | None = None) -> list[Path]:
+    """MỌI thư mục `_Loi` có thể chứa file lỗi — thư mục đã chọn + cạnh từng
+    thư mục kênh (để file lỗi cũ vẫn thấy sau khi đổi chỗ)."""
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def add(p: Path) -> None:
+        try:
+            k = str(p.resolve()).lower()
+        except OSError:
+            k = str(p).lower()
+        if k not in seen and p.is_dir():
+            seen.add(k)
+            out.append(p)
+
+    root = (recycle_root or "").strip()
+    if root and _is_safe_recycle_root(root):
+        add(Path(root) / ERR_DIRNAME)
+    for d in (src_dirs or []):
+        s = (d or "").strip()
+        if s:
+            add(Path(s).parent / ERR_DIRNAME)
+    return out
+
+
+def list_errors(recycle_root: str,
+                src_dirs: list[str] | None = None) -> list[dict]:
+    """File LỖI đang nằm trong các thư mục `_Loi`: [{channel, name, path, size}].
+    Khử trùng theo đường dẫn thật; sắp theo kênh rồi tên file."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for root in err_roots(recycle_root, src_dirs):
+        try:
+            chdirs = sorted(root.iterdir())
+        except OSError:
+            continue
+        for chdir in chdirs:
+            if not chdir.is_dir():
+                continue
+            try:
+                files = sorted(chdir.iterdir())
+            except OSError:
+                continue
+            for f in files:
+                if not (f.is_file() and f.suffix.lower() in VIDEO_EXTS):
+                    continue
+                key = str(f).lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    sz = f.stat().st_size
+                except OSError:
+                    sz = 0
+                out.append({"channel": chdir.name, "name": f.name,
+                            "path": str(f), "size": sz})
+    return out
 
 
 # ------------------------------------------------------ THÙNG RÁC theo ngày --
