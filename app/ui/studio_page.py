@@ -3881,11 +3881,19 @@ class StudioPage(QWidget):
         self._pipe_search = search
         grow.addWidget(search)
         all_on = QPushButton("✓ Bật tất cả"); all_on.setProperty("ghost", True)
+        all_on.setToolTip("Bật dây chuyền cho mọi kênh nhóm này — TRỪ kênh đã ẩn.")
         all_off = QPushButton("✕ Tắt tất cả"); all_off.setProperty("ghost", True)
+        # KHO KÊNH ĐÃ ẨN: chỗ để kênh tạm không muốn cắt. 'Bật tất cả' không kéo
+        # chúng về, nên không phải bỏ tích lại từng cái sau mỗi lần bật.
+        hid_b = QPushButton("🚫 Kênh đã ẩn"); hid_b.setProperty("ghost", True)
+        hid_b.setToolTip("Kênh đã ẩn KHÔNG chạy dây chuyền và KHÔNG bị 'Bật tất "
+                         "cả' bật lại.\nBấm để xem / bỏ ẩn.\n\nCách ẩn: chọn "
+                         "dòng trong bảng → bấm chuột phải → Ẩn khỏi dây chuyền.")
         redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setProperty("ghost", True)
         redo_grp.setToolTip("Xoá sổ đã-làm của MỌI kênh nhóm này → video bỏ lại "
                             "vào thư mục sẽ được cắt lại (không xoá file).")
-        grow.addWidget(all_on); grow.addWidget(all_off); grow.addWidget(redo_grp)
+        grow.addWidget(all_on); grow.addWidget(all_off)
+        grow.addWidget(hid_b); grow.addWidget(redo_grp)
         lay.addLayout(grow)
 
         # --- dải TỔNG QUAN nhóm (đếm nhanh: bao nhiêu kênh / đang bật / đã cắt
@@ -3907,6 +3915,10 @@ class StudioPage(QWidget):
              "Part đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
+        # Chọn NHIỀU DÒNG để ẩn một lượt (Ctrl/Shift click) + menu chuột phải.
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         tbl.setStyleSheet(
             f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
             f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
@@ -3991,13 +4003,21 @@ class StudioPage(QWidget):
         def fill():
             rows = db.query(
                 "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src, "
-                "export_dir FROM projects ORDER BY grp, name")
+                "export_dir, pipe_hidden FROM projects ORDER BY grp, name")
             all_groups = sorted({(r["grp"] or "") for r in rows},
                                  key=lambda s: (s == "", s.lower()))
             sync_group_combo(all_groups)
             sel = cur_group()
-            grp_rows = ([r for r in rows if (r["grp"] or "") == (sel or "")]
-                        if sel is not None else [])
+            # KÊNH ĐÃ ẨN không hiện trong bảng — chúng nằm trong kho riêng
+            # (nút 🚫). Nhờ vậy 'Bật tất cả' + các số tổng quan chỉ nói về kênh
+            # đang thật sự tham gia dây chuyền.
+            in_grp = ([r for r in rows if (r["grp"] or "") == (sel or "")]
+                      if sel is not None else [])
+            n_hidden_grp = sum(1 for r in in_grp if r["pipe_hidden"])
+            n_hidden_all = sum(1 for r in rows if r["pipe_hidden"])
+            hid_b.setText(f"🚫 Kênh đã ẩn ({n_hidden_all})"
+                          if n_hidden_all else "🚫 Kênh đã ẩn")
+            grp_rows = [r for r in in_grp if not r["pipe_hidden"]]
             q = (search.text() or "").strip().lower()
             view = ([r for r in grp_rows if q in (r["name"] or "").lower()]
                     if q else grp_rows)
@@ -4027,7 +4047,9 @@ class StudioPage(QWidget):
             gname = ("(chưa chọn nhóm)" if sel is None
                      else (sel or "Chưa phân nhóm"))
             more = f"  ·  🔎 {len(view)}/{n_all} khớp" if q else ""
+            hid_txt = f"  ·  🚫 {n_hidden_grp} đã ẩn" if n_hidden_grp else ""
             ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
+                       f"{hid_txt}"
                        f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
                        f"{more}")
             tbl.setRowCount(len(view))
@@ -4275,13 +4297,131 @@ class StudioPage(QWidget):
         def set_all(on: int):
             # Bật/tắt dây chuyền cho MỌI kênh của nhóm đang chọn (khỏi tích
             # từng cái). Nhóm nào đang lọc thì chỉ ảnh hưởng nhóm đó.
+            # BỎ QUA KÊNH ĐÃ ẨN — đây là toàn bộ lý do có tính năng ẩn: anh Hùng
+            # không phải bỏ tích lại từng kênh sau mỗi lần bấm 'Bật tất cả'.
             g = cur_group()
             if g is None:
                 return
-            db.execute("UPDATE projects SET pipe_on=? WHERE grp=?", (on, g or ""))
+            db.execute("UPDATE projects SET pipe_on=? "
+                       "WHERE grp=? AND pipe_hidden=0", (on, g or ""))
             fill()
         all_on.clicked.connect(lambda: set_all(1))
         all_off.clicked.connect(lambda: set_all(0))
+
+        def set_hidden(pids: list[int], hidden: int) -> None:
+            """Ẩn / bỏ ẩn danh sách kênh. Ẩn thì TẮT dây chuyền luôn cho khỏi
+            còn kênh nào 'đang bật' mà lại vô hình — nhìn số là tin được."""
+            if not pids:
+                return
+            ph = ",".join("?" * len(pids))
+            if hidden:
+                db.execute(
+                    f"UPDATE projects SET pipe_hidden=1, pipe_on=0 "
+                    f"WHERE id IN ({ph})", tuple(pids))
+            else:
+                db.execute(f"UPDATE projects SET pipe_hidden=0 "
+                           f"WHERE id IN ({ph})", tuple(pids))
+
+        def sel_pids() -> list[int]:
+            """id các kênh đang được chọn trong bảng (theo dòng, khử trùng)."""
+            out, seen = [], set()
+            for idx in tbl.selectedIndexes():
+                it = tbl.item(idx.row(), 0)
+                pid = it.data(Qt.ItemDataRole.UserRole) if it else None
+                if pid is not None and pid not in seen:
+                    seen.add(pid)
+                    out.append(int(pid))
+            return out
+
+        def tbl_menu(pos):
+            from PyQt6.QtWidgets import QMenu, QMessageBox
+            pids = sel_pids()
+            if not pids:
+                # Chưa chọn gì mà bấm phải -> lấy đúng dòng dưới con trỏ.
+                it = tbl.itemAt(pos)
+                if it is None:
+                    return
+                c0 = tbl.item(it.row(), 0)
+                pid = c0.data(Qt.ItemDataRole.UserRole) if c0 else None
+                if pid is None:
+                    return
+                pids = [int(pid)]
+            names = [str((db.query_one("SELECT name FROM projects WHERE id=?",
+                                       (p,)) or {"name": p})["name"])
+                     for p in pids]
+            m = QMenu(dlg)
+            act_hide = m.addAction(f"🚫 Ẩn khỏi dây chuyền ({len(pids)} kênh)")
+            chosen = m.exec(tbl.viewport().mapToGlobal(pos))
+            if chosen is not act_hide:
+                return
+            ds = ", ".join(names[:6]) + (" …" if len(names) > 6 else "")
+            if QMessageBox.question(
+                    dlg, "Ẩn khỏi dây chuyền",
+                    f"Ẩn {len(pids)} kênh khỏi dây chuyền?\n\n{ds}\n\n"
+                    "• Sẽ TẮT dây chuyền và biến khỏi bảng này.\n"
+                    "• 'Bật tất cả' KHÔNG bật lại chúng nữa.\n"
+                    "• KHÔNG xoá kênh, KHÔNG xoá video — bỏ ẩn lúc nào cũng "
+                    "được ở nút 🚫 Kênh đã ẩn."
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            set_hidden(pids, 1)
+            self._pipe_log(f"🚫 Đã ẩn {len(pids)} kênh khỏi dây chuyền: {ds}")
+            fill()
+        tbl.customContextMenuRequested.connect(tbl_menu)
+
+        def hidden_dialog():
+            """Kho KÊNH ĐÃ ẨN: xem + bỏ ẩn (chọn nhiều dòng được)."""
+            from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
+                                         QListWidget, QListWidgetItem,
+                                         QPushButton, QLabel, QMessageBox)
+            d2 = QDialog(dlg); d2.setWindowTitle("🚫 Kênh đã ẩn khỏi dây chuyền")
+            d2.resize(560, 460)
+            v = QVBoxLayout(d2); v.setSpacing(8)
+            v.addWidget(QLabel(
+                "Kênh ở đây KHÔNG chạy dây chuyền và KHÔNG bị “Bật tất cả” bật "
+                "lại.\nChọn dòng (giữ Ctrl để chọn nhiều) rồi bấm ↩ Bỏ ẩn để "
+                "đưa về bảng dây chuyền."))
+            lst = QListWidget()
+            lst.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+            v.addWidget(lst, 1)
+            row = QHBoxLayout()
+            info = QLabel(""); row.addWidget(info, 1)
+            un_b = QPushButton("↩ Bỏ ẩn"); un_b.setProperty("primary", True)
+            close_b = QPushButton("Đóng"); close_b.setProperty("ghost", True)
+            row.addWidget(un_b); row.addWidget(close_b)
+            v.addLayout(row)
+
+            def load():
+                lst.clear()
+                rs = db.query("SELECT id, name, grp FROM projects "
+                              "WHERE pipe_hidden=1 ORDER BY grp, name")
+                for r in rs:
+                    g = r["grp"] or "Chưa phân nhóm"
+                    it = QListWidgetItem(f"{r['name']}      —  nhóm: {g}")
+                    it.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
+                    lst.addItem(it)
+                info.setText(f"{len(rs)} kênh đang ẩn" if rs
+                             else "Không có kênh nào đang ẩn.")
+                un_b.setEnabled(bool(rs))
+            load()
+
+            def unhide():
+                pids = [it.data(Qt.ItemDataRole.UserRole)
+                        for it in lst.selectedItems()]
+                if not pids:
+                    QMessageBox.information(
+                        d2, "Chưa chọn", "Chọn ít nhất 1 kênh để bỏ ẩn.")
+                    return
+                set_hidden([int(p) for p in pids], 0)
+                self._pipe_log(f"↩ Đã bỏ ẩn {len(pids)} kênh — về bảng dây "
+                               "chuyền (đang TẮT, tự tích lại khi muốn chạy)")
+                load()
+                fill()
+            un_b.clicked.connect(unhide)
+            close_b.clicked.connect(d2.reject)
+            self._busy_dialog(d2.exec)
+            fill()
+        hid_b.clicked.connect(hidden_dialog)
 
         def redo_group():
             from app.core import pipeline as P
@@ -4289,7 +4429,8 @@ class StudioPage(QWidget):
             g = cur_group()
             if g is None:
                 return
-            rows = db.query("SELECT id, name FROM projects WHERE grp=?", (g or "",))
+            rows = db.query("SELECT id, name FROM projects "
+                            "WHERE grp=? AND pipe_hidden=0", (g or "",))
             if not rows:
                 return
             if QMessageBox.question(
@@ -4305,15 +4446,94 @@ class StudioPage(QWidget):
             fill()
         redo_grp.clicked.connect(redo_group)
 
+        def confirm_run() -> bool:
+            """HỎI TRƯỚC KHI CHẠY — chống bấm nhầm nút ▶.
+
+            Nói rõ: nhóm nào, bao nhiêu kênh đang bật, bao nhiêu video sẽ bị
+            cắt. Bấm nhầm mà chạy 127 video thì mất cả buổi mới huỷ xong."""
+            from PyQt6.QtWidgets import QMessageBox
+            g = cur_group()
+            gname = ("MỌI nhóm" if g is None
+                     else f'nhóm "{g or "Chưa phân nhóm"}"')
+            cols = "id, name, pipe_src, export_dir"
+            if g is None:
+                rs = db.query(f"SELECT {cols} FROM projects "
+                              "WHERE pipe_on=1 AND pipe_hidden=0 ORDER BY name")
+            else:
+                rs = db.query(f"SELECT {cols} FROM projects WHERE pipe_on=1 "
+                              "AND pipe_hidden=0 AND grp=? ORDER BY name",
+                              (g or "",))
+            if not rs:
+                QMessageBox.information(
+                    self, "Chưa có kênh nào bật",
+                    f"Không có kênh nào đang bật ở {gname}.\n\n"
+                    "Tích cột 'Bật' cho kênh muốn chạy, hoặc bấm ✓ Bật tất cả.")
+                return False
+            # Đếm video CHỜ CẮT bằng ĐÚNG công thức cột "Chờ cắt" của bảng
+            # (resolve_src_dir + scan_dir) để hai con số không bao giờ lệch nhau.
+            from pathlib import Path as _Pth
+            root = self._pipe_root()
+            n_vid, n_ch_co = 0, 0
+            for r in rs:
+                src_ov = ((r["pipe_src"] or "").strip()
+                          or (r["export_dir"] or "").strip())
+                if (not src_ov) and (not (root or "").strip()):
+                    continue
+                k = 0
+                try:
+                    d_src = _Pth(str(P.resolve_src_dir(root, r["name"], src_ov)))
+                    if d_src.is_dir():
+                        k = len(P.scan_dir(d_src)[0])
+                except OSError:
+                    k = 0
+                if k:
+                    n_ch_co += 1
+                n_vid += k
+            names = ", ".join(str(r["name"]) for r in rs[:6])
+            if len(rs) > 6:
+                names += f" … (+{len(rs) - 6} kênh)"
+            if n_vid:
+                line2 = (f"➜ Sẽ cắt <b>{n_vid} video</b> (ở {n_ch_co} kênh có "
+                         f"video chờ).")
+            else:
+                line2 = ("➜ Hiện <b>KHÔNG có video nào chờ cắt</b> — chạy cũng "
+                         "chỉ quét rồi kết thúc.")
+            box = QMessageBox(self)
+            box.setWindowTitle("Xác nhận chạy dây chuyền")
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setTextFormat(Qt.TextFormat.RichText)
+            box.setText(
+                f"Chạy dây chuyền cho <b>{len(rs)} kênh</b> ở {gname}?<br><br>"
+                f"{line2}<br><br><span style='color:#9aa4b2'>{names}</span>")
+            box.setInformativeText(
+                "Mỗi video gốc sẽ được cắt → xuất Part → XOÁ video gốc "
+                "(vào thùng rác, khôi phục được).")
+            yes = box.addButton("▶ Chạy ngay", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Huỷ", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(yes)      # Enter = chạy, Esc = huỷ
+            # Ghi nhận quyết định bằng TÍN HIỆU của nút, không dùng
+            # clickedButton(): đóng hộp bằng Esc / tắt cửa sổ thì clickedButton()
+            # không đáng tin, mà mặc định phải là KHÔNG CHẠY.
+            agreed = {"v": False}
+            yes.clicked.connect(lambda: agreed.__setitem__("v", True))
+            self._busy_dialog(box.exec)
+            return agreed["v"]
+
         def do_run():
             # Chốt NHÓM đang chọn để _pipe_run chạy đúng nhóm đó.
             g = grp_cb.currentData()
             if g is not None:
                 self._settings.setValue("pipe_grp_sel", g)
-            # PRE-CHECK trước khi chạy: key AI + ElevenLabs cho kênh reup
+            # PRE-CHECK trước khi chạy: key AI + ElevenLabs cho kênh reup.
+            # ĐẶT TRƯỚC hộp xác nhận — đừng hỏi "chạy 3 kênh?" rồi mới báo
+            # "chặn vì thiếu key"; hỏi xong mà không chạy được là khó chịu.
             from app.ai import llm as _llm
             if not _llm.is_configured():
                 self._pipe_log("🔴 CHẶN CHẠY: chưa có key AI (Cài đặt AI)")
+                refresh_report()
+                return
+            if not confirm_run():
+                self._pipe_log("↩ Đã HUỶ ở hộp xác nhận — không chạy gì.")
                 refresh_report()
                 return
             n_recap = db.query_one(
@@ -4517,7 +4737,7 @@ class StudioPage(QWidget):
         sel = self._pipe_selected_group()
         rows = db.query(
             "SELECT id, name, pipe_src, export_dir FROM projects "
-            "WHERE pipe_on=1 AND grp=? ORDER BY name", (sel or "",))
+            "WHERE pipe_on=1 AND pipe_hidden=0 AND grp=? ORDER BY name", (sel or "",))
         if not rows:
             QMessageBox.information(
                 self, "Chưa có kênh nào bật",
@@ -4696,12 +4916,14 @@ class StudioPage(QWidget):
         if sel is None or sel == "__ALL__":
             chans = db.query(
                 "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
-                "0 AS pipe_daily FROM projects WHERE pipe_on=1 ORDER BY grp, name")
+                "0 AS pipe_daily FROM projects "
+                "WHERE pipe_on=1 AND pipe_hidden=0 ORDER BY grp, name")
             self._pipe_log("▶ Chạy dây chuyền — TẤT CẢ nhóm")
         else:
             chans = db.query(
                 "SELECT id, name, pipe_on, pipe_src, pipe_mode, export_dir, "
-                "0 AS pipe_daily FROM projects WHERE pipe_on=1 AND grp=? "
+                "0 AS pipe_daily FROM projects "
+                "WHERE pipe_on=1 AND pipe_hidden=0 AND grp=? "
                 "ORDER BY name", (sel,))
             self._pipe_log(f"▶ Chạy dây chuyền — nhóm \"{sel or 'Chưa phân nhóm'}\"")
         if not chans:
@@ -4712,7 +4934,7 @@ class StudioPage(QWidget):
             # kênh nằm ở nhóm khác nhóm đang lọc).
             others = db.query(
                 "SELECT COALESCE(NULLIF(grp,''),'') AS g, COUNT(*) AS n "
-                "FROM projects WHERE pipe_on=1 GROUP BY g ORDER BY n DESC")
+                "FROM projects WHERE pipe_on=1 AND pipe_hidden=0 GROUP BY g ORDER BY n DESC")
             hint = ""
             if others:
                 names = ", ".join(f'"{o["g"] or "Chưa phân nhóm"}" ({o["n"]})'
