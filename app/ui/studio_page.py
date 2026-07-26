@@ -5058,7 +5058,10 @@ class StudioPage(QWidget):
         # tích lại từ đầu — đốt lại lượt Groq đã tốn.
         self._pipe_resume_taken()
         self._pipe_retry_stuck()      # gốc kẹt lượt trước -> thử dọn lại THẬT
-        n_stale = P.expire_stale_taken()
+        # BỎ QUA dòng đang được dõi: sau khi hồi phục qua đêm, taken_at vẫn là
+        # HÔM QUA nên nếu không loại ra thì việc đang chạy bị đổi sang 'error'.
+        n_stale = P.expire_stale_taken(
+            dang_dung=self._pipe_entries_in_flight())
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
         # CHẠY ĐÚNG NHÓM ĐANG HIỆN trên combo (xem _pipe_selected_group).
@@ -5441,6 +5444,18 @@ class StudioPage(QWidget):
                 + (" Mẫu đã chốt lúc bấm mất theo bộ nhớ nên dùng mẫu HIỆN TẠI."
                    if noi_lai else ""))
         return noi_lai
+
+    def _pipe_entries_in_flight(self) -> set:
+        """id dòng sổ ĐANG được dây chuyền theo dõi (chờ cắt / chờ xuất / đang
+        xuất). expire_stale_taken phải bỏ qua chúng — xem chú thích ở đó."""
+        ra: set = set()
+        for ctx in list(getattr(self, "_pipe_cut", {}).values()):
+            ra.add(ctx["entry"])
+        for ctx in list(getattr(self, "_pipe_by_vid", {}).values()):
+            ra.add(ctx["entry"])
+        for ent in list(getattr(self, "_pipe_exports", {}).values()):
+            ra.add(ent["ctx"]["entry"])
+        return ra
 
     def _pipe_paths_in_flight(self) -> set:
         """Đường dẫn video ĐANG trong dây chuyền: chờ nhận, đang cắt, chờ hook

@@ -529,6 +529,46 @@ kiem(MARK_STUCK not in (sach_dau["note"] or ""),
      "dọn xong thì BỎ dấu [GỐC KẸT] khỏi sổ",
      f"note vẫn là {sach_dau['note']!r}")
 
+# ═══ CA 11: TẮT hôm nay, MAI mở lại (quá 12 giờ) — phải chạy tiếp ═══
+# Câu anh Hùng hỏi 27/07: "đang cắt đang phân tích tôi tắt, mai làm tiếp có
+# chạy tiếp không?". Điểm hở: expire_stale_taken(hours=12) đổi dòng 'taken' cũ
+# hơn 12 giờ sang 'error' — mà sau khi hồi phục qua đêm, taken_at VẪN LÀ HÔM
+# QUA, nên nó đổi luôn cả việc ĐANG ĐƯỢC DÕI: báo cáo sai và file có thể bị
+# nhận lại, cắt lần hai, đốt thêm lượt AI. ĐO ĐƯỢC: 3/3 dòng bị đổi sai.
+print("\n══ CA 11: tắt hôm nay, mai mở lại (quá 12 giờ) ══")
+don_sach()
+lam_kenh("Q0", "Mỹ", 3)
+pg = dung_trang()
+st_q.setValue("pipe_grp_sel", "Mỹ")
+st_q.sync()
+pg._pipe_run()
+bom_nhip(30)
+cut = dict(pg._pipe_cut)
+js = list(cut)
+db.execute("UPDATE jobs SET status='done', progress=100 WHERE id=?", (js[0],))
+db.execute("INSERT INTO clips(video_id, start_sec, end_sec, score, title, "
+           "status) VALUES(?,0.0,0.5,0.9,'C','ready')", (cut[js[0]]["vid"],))
+db.execute("UPDATE jobs SET status='canceled' WHERE id=?", (js[1],))
+# TẮT APP + tua 13 giờ
+db.execute("UPDATE pipeline_files SET taken_at=datetime('now','-13 hours') "
+           "WHERE status='taken'")
+pg2 = dung_trang()                      # mở lại app hôm sau
+n = pg2._pipe_resume_taken()
+kiem(n == 3, "mở lại app hôm sau NỐI TIẾP đủ 3 video dở",
+     f"chỉ nối {n}/3")
+pg2._pipe_run()                         # bấm ▶ Chạy -> gọi expire_stale_taken
+bom_nhip(20)
+n_taken = db.query("SELECT COUNT(*) n FROM pipeline_files "
+                   "WHERE status='taken'")[0]["n"]
+n_err = db.query("SELECT COUNT(*) n FROM pipeline_files "
+                 "WHERE status='error'")[0]["n"]
+ctx = so_ctx_dang_theo_doi(pg2)
+kiem(n_err == 0,
+     "việc đang hồi phục KHÔNG bị đổi sang 'error' dù taken_at là hôm qua",
+     f"{n_err} dòng bị đổi oan -> báo cáo sai + có thể cắt lần hai")
+kiem(n_taken == ctx, "bất biến vàng vẫn giữ sau khi qua đêm",
+     f"taken={n_taken} nhưng dõi {ctx} ctx")
+
 # ───────────────────────── kết ─────────────────────────
 for k, v in _saved.items():
     if v is None:

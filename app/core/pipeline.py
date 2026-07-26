@@ -165,16 +165,32 @@ def mark_bad(project_id: int, file_name: str, note: str) -> None:
         (project_id, file_name, note[:500]))
 
 
-def expire_stale_taken(hours: int = 12) -> int:
+def expire_stale_taken(hours: int = 12, dang_dung=None) -> int:
     """Entry 'taken' treo quá `hours` giờ (app tắt giữa chừng/kẹt) -> chuyển
     'error' để file (nếu còn trong thư mục) được NHẬN LẠI ở lần chạy sau.
-    Trả số entry đã chuyển."""
+    Trả số entry đã chuyển.
+
+    `dang_dung`: id các dòng ĐANG được dây chuyền theo dõi -> BỎ QUA, không đổi.
+
+    LỖI THẬT (đo được 2026-07-27, đúng cảnh anh Hùng hỏi "tắt máy mai làm tiếp
+    có chạy tiếp không"): tắt app hôm nay, mai mở lại thì _pipe_resume_taken
+    nối tiếp đủ video — nhưng dòng sổ vẫn mang taken_at của HÔM QUA, nên khi
+    bấm ▶ Chạy hàm này đổi CẢ CÁC DÒNG ĐANG ĐƯỢC DÕI sang 'error': báo cáo sai
+    ("dọn N lượt nhận treo") và dòng 'error' không còn chặn nhận lại nữa nên
+    file có thể bị NHẬN LẠI, cắt lần hai, đốt thêm lượt AI.
+    """
+    ids = [int(i) for i in (dang_dung or []) if i]
+    loai = ""
+    tham: list = [f"-{int(hours)} hours"]
+    if ids:
+        loai = " AND id NOT IN (" + ",".join("?" * len(ids)) + ")"
+        tham.extend(ids)
     cur = db.execute(
         "UPDATE pipeline_files SET status='error', "
         "note=COALESCE(note,'') || ' [gián đoạn - app tắt giữa chừng?]', "
         "done_at=datetime('now') "
-        "WHERE status='taken' AND taken_at < datetime('now', ?)",
-        (f"-{int(hours)} hours",))
+        "WHERE status='taken' AND taken_at < datetime('now', ?)" + loai,
+        tuple(tham))
     try:
         return cur.rowcount or 0
     except Exception:  # noqa: BLE001
