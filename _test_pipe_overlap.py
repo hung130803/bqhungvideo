@@ -487,6 +487,46 @@ kiem(con == 0,
      "gốc đã dọn trước đó -> ĐÓNG SỔ, không để kẹt 'taken' mãi",
      f"còn {con} dòng kẹt 'taken'")
 
+# ═══ CA 10: gốc KẸT (Windows giữ file) phải được THỬ DỌN LẠI thật ═══
+# Log thật của anh Hùng 26/07 có dòng "⚠ CHƯA dọn được gốc (file kẹt), sẽ tự
+# thử lại lượt sau" — nhưng mark_done chạy vô điều kiện nên seen_before thấy
+# 'done' và KHÔNG BAO GIỜ nhận lại: video gốc nằm trong thư mục kênh mãi mãi.
+print("\n══ CA 10: video gốc bị kẹt -> phải tự dọn lại được ══")
+don_sach()
+lam_kenh("K0", "Mỹ", 1)
+pg = dung_trang()
+st_q.setValue("pipe_grp_sel", "Mỹ")
+st_q.sync()
+pg._pipe_run()
+bom_nhip(20)
+ctx = list(pg._pipe_cut.values())[0]
+p_goc = Path(ctx["path"])
+
+from app.ui.studio_page import MARK_STUCK  # noqa: E402
+
+# Giả lập đúng hiện trường: Part đã xuất xong, sổ 'done' + dấu GỐC KẸT, gốc còn
+P.mark_done(ctx["entry"], video_id=ctx["vid"], note="3 part" + MARK_STUCK)
+kiem(p_goc.exists(), "dựng được hiện trường: gốc còn nằm trong thư mục kênh",
+     "gốc đã biến mất, ca test vô nghĩa")
+# Lượt sau KHÔNG nhận lại (đúng — Part đã xuất rồi, không cắt lại)
+pg2 = dung_trang()
+pg2._pipe_run()
+bom_nhip(10)
+nhan_lai = db.query("SELECT COUNT(*) n FROM pipeline_files "
+                    "WHERE status='taken'")[0]["n"]
+kiem(nhan_lai == 0, "không cắt lại video đã xuất Part (không đốt lượt AI)",
+     f"lại nhận {nhan_lai} video nữa")
+# ...NHƯNG gốc PHẢI được dọn (đây là chỗ trước đây hứa suông)
+con = p_goc.exists()
+sach_dau = db.query_one("SELECT note FROM pipeline_files WHERE id=?",
+                        (ctx["entry"],))
+kiem(not con,
+     "gốc kẹt ĐÃ ĐƯỢC DỌN ở lượt sau (không còn nằm lại vĩnh viễn)",
+     f"gốc vẫn còn: {p_goc}")
+kiem(MARK_STUCK not in (sach_dau["note"] or ""),
+     "dọn xong thì BỎ dấu [GỐC KẸT] khỏi sổ",
+     f"note vẫn là {sach_dau['note']!r}")
+
 # ───────────────────────── kết ─────────────────────────
 for k, v in _saved.items():
     if v is None:

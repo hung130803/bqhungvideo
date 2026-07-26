@@ -31,6 +31,11 @@ from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
 
+#: Dấu ghi trong note của sổ dây chuyền: cắt/xuất XONG nhưng CHƯA dọn được
+#: video gốc (Windows còn giữ handle). _pipe_retry_stuck() dò dấu này để thử
+#: dọn lại — dấu nằm trong DB nên sống qua cả lần khởi động lại app.
+MARK_STUCK = " [GỐC KẸT]"
+
 # Mẫu MẶC ĐỊNH: sẵn 2 lớp chữ TỰ ĐỘNG — "Part n" (trên) + tiêu đề AI ({title})
 # ngay dưới. Vào "Chỉnh mẫu" để đổi vị trí/cỡ/màu; app tự điền khi xuất từng clip.
 _DEF_PART = {"text": "Part {n}", "size": 0.055, "font": "Montserrat", "color": "#FFFFFF",
@@ -5034,6 +5039,7 @@ class StudioPage(QWidget):
         # nối tiếp (xuất Part + dọn gốc) chứ không bị đổi sang 'error' rồi phân
         # tích lại từ đầu — đốt lại lượt Groq đã tốn.
         self._pipe_resume_taken()
+        self._pipe_retry_stuck()      # gốc kẹt lượt trước -> thử dọn lại THẬT
         n_stale = P.expire_stale_taken()
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
@@ -5261,12 +5267,57 @@ class StudioPage(QWidget):
         và cũng không được làm user hoảng nếu chẳng có gì cần hồi phục."""
         try:
             n = self._pipe_resume_taken()
+            self._pipe_retry_stuck()  # gốc kẹt phiên trước -> thử dọn lại THẬT
         except Exception:  # noqa: BLE001
             return
         if n:
             self.status.setText(
                 f"🔧 Đã nối tiếp {n} video còn dở của lần chạy trước — sẽ tự "
                 "xuất Part rồi dọn video gốc. Xem 🤖 Dây chuyền để theo dõi.")
+
+    def _pipe_retry_stuck(self) -> int:
+        """THỬ DỌN LẠI video gốc bị kẹt ở lượt trước. Trả số video vừa dọn được.
+
+        Video cắt xong nhưng Windows còn giữ handle -> delete_or_recycle trả
+        'stuck'. Sổ vẫn mark_done (đúng: Part đã xuất xong) kèm dấu MARK_STUCK.
+        Hàm này dò dấu đó, thử dọn lại, dọn được thì bỏ dấu.
+        """
+        from app.core import pipeline as P
+        try:
+            rows = db.query(
+                "SELECT f.id, f.file_name, f.note, p.name AS chan, p.pipe_src, "
+                "       p.export_dir FROM pipeline_files f "
+                "JOIN projects p ON p.id = f.project_id "
+                "WHERE f.status='done' AND f.note LIKE ?", (f"%{MARK_STUCK}%",))
+        except Exception:  # noqa: BLE001
+            return 0
+        if not rows:
+            return 0
+        root = self._pipe_root()
+        xong = 0
+        for r in rows:
+            try:
+                d = P.resolve_src_dir(root, r["chan"],
+                                      (r["pipe_src"] or "").strip()
+                                      or (r["export_dir"] or "").strip())
+                p = Path(str(d)) / str(r["file_name"])
+                sach = (r["note"] or "").replace(MARK_STUCK, "")
+                if not p.exists():          # ai đó dọn tay rồi -> chỉ bỏ dấu
+                    db.execute("UPDATE pipeline_files SET note=? WHERE id=?",
+                               (sach, r["id"]))
+                    continue
+                action, _ = P.delete_or_recycle(p, r["chan"],
+                                                self._pipe_recycle_dir())
+                if action != "stuck":
+                    db.execute("UPDATE pipeline_files SET note=? WHERE id=?",
+                               (sach, r["id"]))
+                    xong += 1
+            except Exception:  # noqa: BLE001 - 1 file lỗi không chặn cả loạt
+                continue
+        if xong:
+            self._pipe_log(f"🧹 đã dọn được {xong} video gốc từng bị kẹt ở "
+                           "lượt trước (giờ Windows đã nhả file).")
+        return xong
 
     def _pipe_resume_taken(self) -> int:
         """HỒI PHỤC dây chuyền sau khi app tắt/khởi động lại (kể cả tự cập nhật
@@ -5602,12 +5653,23 @@ class StudioPage(QWidget):
             src = Path(ctx["path"])
             action, dst = P.delete_or_recycle(
                 src, ctx["name"], self._pipe_recycle_dir())
-            P.mark_done(ctx["entry"], video_id=vid,
-                        note=f"{len(parts)} part")
+            # GHI DẤU "gốc còn kẹt" vào sổ để LẦN SAU THỬ DỌN LẠI THẬT.
+            #
+            # LỖI THẬT (anh Hùng 2026-07-26, thấy trong log): dòng
+            # "⚠ CHƯA dọn được gốc (file kẹt), sẽ tự thử lại lượt sau" là LỜI
+            # HỨA SAI — mark_done chạy vô điều kiện nên seen_before thấy
+            # status='done', plan_channel coi là trùng và KHÔNG BAO GIỜ nhận
+            # lại → video gốc nằm trong thư mục kênh vĩnh viễn, không ai dọn.
+            # Nay dấu này được _pipe_retry_stuck() (chạy đầu mỗi lượt + khi mở
+            # app) dùng để thử dọn lại — dấu nằm trong DB nên sống qua khởi
+            # động lại.
+            note = f"{len(parts)} part" + (MARK_STUCK if action == "stuck" else "")
+            P.mark_done(ctx["entry"], video_id=vid, note=note)
             tail = {
                 "recycled": " — đã chuyển video gốc vào Thùng rác (khôi phục được)",
                 "deleted": " — đã xoá video gốc",
-                "stuck": " — ⚠ CHƯA dọn được gốc (file kẹt), sẽ tự thử lại lượt sau",
+                "stuck": " — ⚠ CHƯA dọn được gốc (file kẹt), sẽ TỰ THỬ DỌN LẠI "
+                         "khi mở app / chạy lượt sau",
             }.get(action, "")
             self._pipe_log(
                 f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part" + tail)
