@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core import auth
+from app.ui.appsettings import app_settings
 from app.ui.theme import ACCENT, BORDER, DANGER, MUTED, SUCCESS, TEXT
 
 
@@ -95,7 +96,7 @@ class LoginDialog(QDialog):
         self.user = None
         self.role = None
         self.password = None
-        self._s = QSettings("AIContentStudio", "studio")
+        self._s = app_settings()
         self.setWindowTitle("BQ Hung Video — Đăng nhập")
         self.setModal(True)
         self.resize(420, 300)

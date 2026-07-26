@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from app import services
 from app.core.ffmpeg_utils import extract_frame
 from app.database import db
+from app.ui.appsettings import app_settings
 from app.ui.editor import EditorDialog, render_overlay_png
 from app.ui.state import AppState
 from app.ui.theme import (
@@ -141,7 +142,7 @@ class StudioPage(QWidget):
         self._pipe_exports = {}       # video_id -> {"jobs": set, "ctx": ctx}
         self._pipe_report = []        # dòng báo cáo lần chạy gần nhất
         self._hashtag_cache = {}      # video_id -> " #a #b" (sinh 1 lần/video)
-        self._settings = QSettings("AIContentStudio", "studio")
+        self._settings = app_settings()
         self.thumbs_ready.connect(self._rebuild_rows)
         self.setAcceptDrops(True)        # KÉO-THẢ video vào app
 
@@ -2575,7 +2576,7 @@ class StudioPage(QWidget):
                 dst = self._cookie_profile_path("Mặc định")
                 dst.write_text(old.read_text(encoding="utf-8", errors="ignore"),
                                encoding="utf-8")
-                QSettings("AIContentStudio", "studio").setValue(
+                app_settings().setValue(
                     "yt_cookie_active", "Mặc định")
         except Exception:  # noqa: BLE001
             pass
@@ -2583,7 +2584,7 @@ class StudioPage(QWidget):
     def _cookie_args(self):
         """Arg cookie cho yt-dlp: hồ sơ đang chọn > trình duyệt (user chọn rõ)
         > file cũ (bản trước)."""
-        st = QSettings("AIContentStudio", "studio")
+        st = app_settings()
         name = st.value("yt_cookie_active", "")
         if name:
             p = self._cookie_profile_path(name)
@@ -2671,7 +2672,7 @@ class StudioPage(QWidget):
 
     def _active_cookie_health(self):
         """Sức khỏe cookie của hồ sơ đang chọn (không có hồ sơ -> empty)."""
-        st = QSettings("AIContentStudio", "studio")
+        st = app_settings()
         name = st.value("yt_cookie_active", "")
         if not name:
             return "empty", "Chưa có cookie đăng nhập"
@@ -2715,7 +2716,7 @@ class StudioPage(QWidget):
     def _youtube_cookie(self):
         from PyQt6.QtWidgets import QInputDialog
         self._migrate_old_cookie()
-        st = QSettings("AIContentStudio", "studio")
+        st = app_settings()
         dlg = QDialog(self); dlg.setWindowTitle("Cookie YouTube (chống đòi đăng nhập)")
         dlg.resize(640, 600)
         v = QVBoxLayout(dlg)
@@ -4092,10 +4093,27 @@ class StudioPage(QWidget):
                      else (sel or "Chưa phân nhóm"))
             more = f"  ·  🔎 {len(view)}/{n_all} khớp" if q else ""
             hid_txt = f"  ·  🚫 {n_hidden_grp} đã ẩn" if n_hidden_grp else ""
+            # CẢNH BÁO NHÌN THẤY NGAY khi thư mục cấu hình nằm trong Temp
+            # (Windows tự dọn). Trước đây app im lặng rơi về `_DaXoa` nên cấu
+            # hình sai cứ nằm đó mà không ai biết — đúng lỗi đã xảy ra
+            # 2026-07-26 (một tiến trình test bỏ lại đường dẫn %TEMP% trong
+            # pipe_root/pipe_recycle_dir của máy anh Hùng).
+            canh = []
+            _root_cfg = (self._pipe_root() or "").strip()
+            if _root_cfg and not P._is_safe_recycle_root(_root_cfg):
+                canh.append("Thư mục trung chuyển")
+            _rac_cfg = (self._pipe_recycle_dir() or "").strip()
+            if _rac_cfg and not P._is_safe_recycle_root(_rac_cfg):
+                canh.append("Thùng rác")
+            canh_txt = ("<br><span style='color:#E5A50A'>⚠ " + " và ".join(canh)
+                        + " đang trỏ vào thư mục TẠM của Windows — hãy chọn lại "
+                        "(🗑 Thùng rác → 📂 Chọn/đổi thư mục). Video KHÔNG mất: "
+                        "app tự dọn vào <b>_DaXoa</b> cạnh thư mục kênh.</span>"
+                        if canh else "")
             ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
                        f"{hid_txt}"
                        f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
-                       f"{more}")
+                       f"{more}{canh_txt}")
             tbl.setRowCount(len(view))
             from datetime import datetime
             root = self._pipe_root()

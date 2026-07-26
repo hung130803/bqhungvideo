@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.queue.resource_manager import HARDWARE, PROFILE
+from app.ui.appsettings import app_settings
 from app.ui.queue_panel import QueuePanel
 from app.ui.state import AppState
 from app.ui.studio_page import StudioPage
@@ -248,18 +249,18 @@ class MainWindow(QMainWindow):
             self, "Đăng xuất",
             "Xoá mật khẩu đã lưu và thoát app? Lần sau mở sẽ phải đăng nhập lại."
         ) == QMessageBox.StandardButton.Yes:
-            QSettings("AIContentStudio", "studio").remove("save_pass")
+            app_settings().remove("save_pass")
             # close() -> closeEvent chạy (dừng worker + giết tiến trình con);
             # quit() thẳng sẽ để ffmpeg/phân tích thành mồ côi.
             self.close()
 
     def _set_ai(self, v):
         self.state.pool.set_limits(max_gpu=v)
-        QSettings("AIContentStudio", "studio").setValue("ai_workers", v)
+        app_settings().setValue("ai_workers", v)
 
     def _set_cut(self, v):
         self.state.pool.set_limits(max_cpu=v)
-        QSettings("AIContentStudio", "studio").setValue("cut_workers", v)
+        app_settings().setValue("cut_workers", v)
 
     def _set_eco(self, on: bool):
         # Lưu .env (tiến trình con phân tích cũng đọc được) + áp NGAY vào

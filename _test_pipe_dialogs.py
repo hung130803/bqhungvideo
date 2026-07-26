@@ -20,6 +20,7 @@ T = Path(tempfile.mkdtemp(prefix="pipe_dlg_"))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
+os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 sys.path.insert(0, r"D:\claude\ai-content-studio")
 
 FFMPEG = Path(r"D:\claude\ai-content-studio\bin\ffmpeg.exe")
@@ -29,9 +30,10 @@ import app.queue.jobs  # noqa: F401,E402 - handler + cv2 TRƯỚC Qt
 from PyQt6.QtCore import QSettings  # noqa: E402
 from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog,  # noqa: E402
                              QInputDialog, QMenu, QMessageBox)
+from app.ui.appsettings import app_settings  # noqa: E402
 
 qapp = QApplication(sys.argv)
-st_q = QSettings("AIContentStudio", "studio")
+st_q = app_settings()
 _saved = {k: st_q.value(k) for k in
           ("pipe_root", "chan_group", "chan_groups_extra", "pipe_grp_sel",
            "pipe_recycle_dir")}

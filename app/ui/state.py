@@ -7,6 +7,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.queue.resource_manager import PROFILE, profile_dict
+from app.ui.appsettings import app_settings
 from app.queue.worker import WorkerPool
 
 
@@ -19,7 +20,7 @@ class AppState(QObject):
         super().__init__()
         self.profile = profile_dict(PROFILE)
         from PyQt6.QtCore import QSettings
-        s = QSettings("AIContentStudio", "studio")
+        s = app_settings()
 
         def _w(key, default):
             try:

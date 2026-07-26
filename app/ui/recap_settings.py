@@ -56,6 +56,7 @@ import threading
 import uuid
 
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
+from app.ui.appsettings import app_settings
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,
@@ -92,7 +93,7 @@ class RecapSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Cài đặt Reup thuyết minh")
         self.setMinimumWidth(460)
-        self._s = QSettings("AIContentStudio", "studio")
+        self._s = app_settings()
         self._demo_ready.connect(self._play_demo)
 
         lay = QVBoxLayout(self)

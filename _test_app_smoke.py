@@ -21,6 +21,7 @@ T = Path(tempfile.mkdtemp(prefix="app_smoke_"))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
+os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 sys.path.insert(0, r"D:\claude\ai-content-studio")
 
 FFMPEG = Path(r"D:\claude\ai-content-studio\bin\ffmpeg.exe")
@@ -33,9 +34,10 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog,  # noqa: E40
                              QComboBox, QDialog, QFileDialog, QInputDialog,
                              QMenu, QMessageBox, QPushButton, QSpinBox,
                              QToolButton, QWidget)
+from app.ui.appsettings import app_settings  # noqa: E402
 
 qapp = QApplication(sys.argv)
-st_q = QSettings("AIContentStudio", "studio")
+st_q = app_settings()
 _KEYS = ("pipe_root", "chan_group", "chan_groups_extra", "pipe_grp_sel",
          "pipe_recycle_dir", "last_template")
 _saved = {k: st_q.value(k) for k in _KEYS}

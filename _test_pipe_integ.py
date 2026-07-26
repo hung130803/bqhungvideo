@@ -14,6 +14,7 @@ T = Path(tempfile.mkdtemp(prefix="pipe_integ_run_"))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
+os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 os.environ["WHISPER_PROVIDER"] = "groq"
 sys.path.insert(0, r"D:\claude\ai-content-studio")
 
@@ -29,9 +30,10 @@ import app.queue.jobs  # noqa: F401 - handler + cv2 TRƯỚC Qt (thứ tự main
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
+from app.ui.appsettings import app_settings
 
 app = QApplication(sys.argv)
-st_q = QSettings("AIContentStudio", "studio")
+st_q = app_settings()
 _saved = {k: st_q.value(k) for k in ("pipe_root", "chan_group",
                                      "chan_groups_extra")}
 st_q.setValue("pipe_root", str(root))
