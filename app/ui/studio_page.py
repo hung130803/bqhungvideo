@@ -411,6 +411,10 @@ class StudioPage(QWidget):
         # làm hộp "Chọn thư mục lưu" nháy rồi tự tắt.
         self.timer.timeout.connect(self._poll_tick)
         self.timer.start(1500)
+        # TỰ HỒI PHỤC dây chuyền dở của phiên trước (app tắt / TỰ CẬP NHẬT rồi
+        # tự mở lại). Hoãn 4s: chờ pool + UI dựng xong, và không làm chậm lúc
+        # mở app. Xem _pipe_resume_taken.
+        QTimer.singleShot(4000, self._pipe_resume_auto)
         self._reload_projects()
         self._ensure_builtin_templates()      # tạo sẵn mẫu Pro nếu chưa có
         self._populate_templates(self._settings.value("last_template", "") or "")
@@ -3780,6 +3784,22 @@ class StudioPage(QWidget):
         bằng ĐÚNG MẪU đã chốt lúc bấm (không phải mẫu hiện tại)."""
         if not self._pending_export:
             return
+        # CHỐNG TÁI NHẬP: _export_video gọi QApplication.processEvents() giữa
+        # các clip (để UI đỡ đơ) → nhịp poll 1.5s có thể chen vào và chạy lại
+        # HÀM NÀY khi hàm chưa xong. Lần chen ngang đó pop mất jid mà vòng
+        # ngoài đang giữ trong `states` → `_pending_export.pop(jid)` nổ
+        # KeyError → thoát khỏi _check_auto_export VÀ khiến _poll_tick bỏ luôn
+        # _pipe_poll của nhịp đó (nó bọc except trần). Chỉ 1 lượt xuất được
+        # chạy tại một thời điểm là đủ và đúng.
+        if getattr(self, "_auto_export_busy", False):
+            return
+        self._auto_export_busy = True
+        try:
+            self._check_auto_export_inner()
+        finally:
+            self._auto_export_busy = False
+
+    def _check_auto_export_inner(self):
         auto_tpl = getattr(self, "_auto_tpl", {})
         ready, total = 0, 0
         # 1 query GỘP cho mọi job đang theo dõi (thay vì N query mỗi 1.5s)
@@ -3787,7 +3807,11 @@ class StudioPage(QWidget):
         for jid in list(self._pending_export):
             st = states.get(jid, "")
             if st == "done":
-                vid = self._pending_export.pop(jid)
+                # pop(jid, None): vòng lặp dùng ảnh chụp `states`, dòng sổ có
+                # thể đã bị đường khác (vd _pipe_poll_cut) gỡ giữa lúc chạy.
+                vid = self._pending_export.pop(jid, None)
+                if vid is None:
+                    continue
                 tpl_snap = auto_tpl.pop(jid, None)
                 try:
                     if tpl_snap is not None:
@@ -3803,8 +3827,15 @@ class StudioPage(QWidget):
                     else:
                         total += self._export_video(vid)
                     ready += 1
-                    # 🤖 video dây chuyền: ghi nhận các job xuất để dõi xong
-                    self._pipe_on_exported(vid)
+                    # 🤖 video dây chuyền: ghi nhận các job xuất để dõi xong.
+                    # Lấy danh sách job NGAY tại đây rồi TRUYỀN THẲNG — không
+                    # để _pipe_on_exported đọc lại biến dùng chung
+                    # _last_export_jids: lượt xuất khác (bấm tay, hoặc lời gọi
+                    # chen ngang) có thể ghi đè biến đó -> gán SAI job cho
+                    # video -> _pipe_exports dõi bộ job không bao giờ khớp =
+                    # đứng im.
+                    self._pipe_on_exported(
+                        vid, list(getattr(self, "_last_export_jids", []) or []))
                 except Exception as e:  # noqa: BLE001
                     self._pipe_on_export_failed(vid, str(e))
             elif st in ("failed", "canceled", "skipped", ""):
@@ -3861,6 +3892,14 @@ class StudioPage(QWidget):
             "KHÔNG BAO GIỜ đụng video gốc hay clip 'Part N' đã xuất.")
         clean_b.clicked.connect(self._pipe_clean_junk_dialog)
         top.addWidget(clean_b)
+        cuu_b = QPushButton("🔧 Cứu video kẹt"); cuu_b.setProperty("ghost", True)
+        cuu_b.setToolTip(
+            "NỐI TIẾP những video còn dở của lần chạy trước (app tắt/tự cập "
+            "nhật giữa lúc đang chạy): video nào phân tích xong rồi thì XUẤT "
+            "PART + DỌN GỐC ngay, KHÔNG phân tích lại (không tốn thêm lượt AI).\n"
+            "App tự làm việc này mỗi lần mở — nút này để anh chủ động chạy ngay.")
+        cuu_b.clicked.connect(self._pipe_resume_dialog)
+        top.addWidget(cuu_b)
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
@@ -4473,7 +4512,10 @@ class StudioPage(QWidget):
             # (resolve_src_dir + scan_dir) để hai con số không bao giờ lệch nhau.
             from pathlib import Path as _Pth
             root = self._pipe_root()
-            n_vid, n_ch_co = 0, 0
+            # TRỪ video ĐANG chạy ở lượt trước: _pipe_run bỏ qua chúng, nếu
+            # đếm cả vào thì hộp thoại báo "12 video" mà thực chỉ cắt 3.
+            dang_bay = self._pipe_paths_in_flight()
+            n_vid, n_ch_co, n_bay = 0, 0, 0
             for r in rs:
                 src_ov = ((r["pipe_src"] or "").strip()
                           or (r["export_dir"] or "").strip())
@@ -4483,7 +4525,15 @@ class StudioPage(QWidget):
                 try:
                     d_src = _Pth(str(P.resolve_src_dir(root, r["name"], src_ov)))
                     if d_src.is_dir():
-                        k = len(P.scan_dir(d_src)[0])
+                        for p_sn in P.scan_dir(d_src)[0]:
+                            try:
+                                kh = os.path.normcase(os.path.abspath(str(p_sn)))
+                            except OSError:
+                                kh = str(p_sn)
+                            if kh in dang_bay:
+                                n_bay += 1
+                            else:
+                                k += 1
                 except OSError:
                     k = 0
                 if k:
@@ -4492,9 +4542,15 @@ class StudioPage(QWidget):
             names = ", ".join(str(r["name"]) for r in rs[:6])
             if len(rs) > 6:
                 names += f" … (+{len(rs) - 6} kênh)"
+            bay_txt = (f"<br>⏳ Bỏ qua <b>{n_bay} video</b> đang chạy dở ở lượt "
+                       "trước (không cắt lại)." if n_bay else "")
             if n_vid:
                 line2 = (f"➜ Sẽ cắt <b>{n_vid} video</b> (ở {n_ch_co} kênh có "
-                         f"video chờ).")
+                         f"video chờ).{bay_txt}")
+            elif n_bay:
+                line2 = ("➜ <b>KHÔNG có video MỚI nào để cắt</b> — cả "
+                         f"{n_bay} video trong thư mục đang chạy dở ở lượt "
+                         "trước, chờ nó xong là xuất Part.")
             else:
                 line2 = ("➜ Hiện <b>KHÔNG có video nào chờ cắt</b> — chạy cũng "
                          "chỉ quét rồi kết thúc.")
@@ -4968,6 +5024,10 @@ class StudioPage(QWidget):
         # riêng (export_dir/pipe_src). root chỉ là fallback cũ (thường rỗng).
         self._pipe_focus_target = None   # video ĐẦU TIÊN nhận -> đưa ra màn chính
         root = self._pipe_root()
+        # HỒI PHỤC TRƯỚC expire_stale_taken: video dở của phiên trước phải được
+        # nối tiếp (xuất Part + dọn gốc) chứ không bị đổi sang 'error' rồi phân
+        # tích lại từ đầu — đốt lại lượt Groq đã tốn.
+        self._pipe_resume_taken()
         n_stale = P.expire_stale_taken()
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
@@ -5016,6 +5076,7 @@ class StudioPage(QWidget):
         # nhận 1 lượt sẽ TREO giao diện vài chục giây. Thay vào đó nhận TỪNG
         # FILE qua QTimer (nhường event loop giữa mỗi file → UI mượt).
         worklist: list = []
+        dang_bay = self._pipe_paths_in_flight()
         for it in plans:
             if it.note:
                 self._pipe_log(f"⏭ {it.name}: {it.note}")
@@ -5028,12 +5089,47 @@ class StudioPage(QWidget):
                     self._pipe_log(f"⏭ {it.name}: {path.name} — quá hạn mức "
                                    "hôm nay — chờ ngày mai")
                     continue
+                # Chốt 1/2 chống NHẬN 2 LẦN khi chồng lượt: file đang chờ nhận
+                # hoặc đang cắt/xuất ở lượt trước thì bỏ qua ngay (đỡ ffprobe).
+                # Chốt 2/2 nằm trong _pipe_take (theo jid/vid) — xem chú thích
+                # ở đó. plan_channel không biết việc này vì nó chỉ soi sổ DB,
+                # còn file lượt trước CHƯA KỊP NHẬN thì chưa có trong sổ.
+                try:
+                    khoa = os.path.normcase(os.path.abspath(str(path)))
+                except OSError:
+                    khoa = str(path)
+                if khoa in dang_bay:
+                    self._pipe_log(f"⏭ {it.name}: {path.name} — ĐANG chạy "
+                                   "trong dây chuyền (lượt trước chưa xong)")
+                    continue
+                dang_bay.add(khoa)
                 worklist.append((it.project_id, it.name,
                                  mode_by_pid.get(it.project_id, "auto"), path))
         if not worklist:
             self._pipe_log(f"không nhận video nào từ {len(plans)} kênh")
             self.status.setText("🤖 Dây chuyền: không có video mới để nhận.")
             return 0
+        # NỐI THÊM vào hàng đợi đang chạy, KHÔNG ghi đè.
+        #
+        # LỖI THẬT (anh Hùng 2026-07-25): đang chạy nhóm "Mỹ" (50 kênh) mà bấm
+        # chạy tiếp nhóm "Mỹ mới" thì lệnh `self._pipe_intake_q = worklist` XOÁ
+        # SẠCH những video còn lại của lượt trước → chúng lặng lẽ biến mất khỏi
+        # lượt chạy. Tệ hơn: lời gọi `_pipe_intake_step()` thứ hai tạo THÊM một
+        # vòng QTimer nữa, hai vòng cùng pop một danh sách → bộ đếm loạn, log
+        # "tổng nhận X/Y" sai bét.
+        dang_chay = bool(getattr(self, "_pipe_intake_q", None))
+        if dang_chay:
+            self._pipe_intake_q.extend(worklist)
+            self._pipe_intake_total = getattr(self, "_pipe_intake_total", 0) + len(worklist)
+            self._pipe_intake_nchan = getattr(self, "_pipe_intake_nchan", 0) + len(plans)
+            self._pipe_log(
+                f"➕ nối thêm {len(worklist)} video từ {len(plans)} kênh vào "
+                f"lượt ĐANG CHẠY (còn {len(self._pipe_intake_q)} video trong "
+                "hàng đợi) — không cắt ngang lượt trước.")
+            self.status.setText(
+                f"🤖 Dây chuyền: đã nối thêm {len(worklist)} video — tổng còn "
+                f"{len(self._pipe_intake_q)} video chờ nhận.")
+            return 0        # KHÔNG gọi _pipe_intake_step: vòng cũ vẫn đang chạy
         self._pipe_intake_q = worklist
         self._pipe_intake_taken = 0
         self._pipe_intake_total = len(worklist)
@@ -5131,6 +5227,168 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
             pass
 
+    def _pipe_resume_dialog(self) -> None:
+        """Nút 🔧 Cứu video kẹt — bấm tay, báo rõ kết quả bằng số."""
+        from PyQt6.QtWidgets import QMessageBox
+        from app.core import pipeline as P
+        try:
+            cho = len(P.list_taken())
+        except Exception:  # noqa: BLE001
+            cho = 0
+        if not cho:
+            QMessageBox.information(
+                self, "Không có video kẹt",
+                "Không có video nào đang dở giữa đường — dây chuyền sạch.")
+            return
+        n = self._pipe_resume_taken()
+        con = len(P.list_taken())
+        QMessageBox.information(
+            self, "Đã cứu video kẹt",
+            f"Có <b>{cho}</b> video đang dở.<br><br>"
+            f"➜ Đã nối tiếp <b>{n}</b> video — sẽ tự xuất Part rồi dọn video "
+            f"gốc vào Thùng rác (KHÔNG phân tích lại, không tốn thêm lượt AI)."
+            f"<br>➜ Còn <b>{con}</b> dòng chờ (đang được dõi hoặc vừa đóng sổ)."
+            "<br><br>Theo dõi ở khung nhật ký bên dưới và tab Tiến trình.")
+
+    def _pipe_resume_auto(self) -> None:
+        """Hồi phục TỰ ĐỘNG 4s sau khi mở app — bọc kín, lỗi không được sập app
+        và cũng không được làm user hoảng nếu chẳng có gì cần hồi phục."""
+        try:
+            n = self._pipe_resume_taken()
+        except Exception:  # noqa: BLE001
+            return
+        if n:
+            self.status.setText(
+                f"🔧 Đã nối tiếp {n} video còn dở của lần chạy trước — sẽ tự "
+                "xuất Part rồi dọn video gốc. Xem 🤖 Dây chuyền để theo dõi.")
+
+    def _pipe_resume_taken(self) -> int:
+        """HỒI PHỤC dây chuyền sau khi app tắt/khởi động lại (kể cả tự cập nhật
+        rồi tự mở lại). Trả số video đã nối lại.
+
+        LỖI THẬT (anh Hùng 2026-07-26): sổ theo dõi dây chuyền (_pipe_cut,
+        _pipe_by_vid, _pipe_exports, _pending_export) chỉ nằm trong BỘ NHỚ. App
+        khởi động lại là mất sạch, dòng sổ DB kẹt 'taken' và KHÔNG CÓ GÌ hồi
+        phục — video phân tích xong cũng không ai xuất, gốc không ai dọn, không
+        một dòng báo nào. Đo từ nhật ký của anh: 72 video nhận, 4 xong, 68 nằm
+        im (app khởi động lại lúc 09:53). Trước đây chỉ có expire_stale_taken
+        sau 12 TIẾNG đổi sang 'error' để lượt sau PHÂN TÍCH LẠI TỪ ĐẦU — đốt
+        lại toàn bộ lượt Groq đã tốn.
+
+        Cách làm: chỉ NỐI LẠI ctx vào đúng các sổ mà nhịp poll đang dùng, rồi
+        để chính bộ máy cũ (đã test) lo xuất + dọn gốc. Không viết đường xử lý
+        song song — thêm đường là thêm chỗ lệch nhau.
+        """
+        from app.core import pipeline as P
+        try:
+            rows = P.list_taken()
+        except Exception as e:  # noqa: BLE001 - hồi phục lỗi không được sập app
+            self._pipe_log(f"⚠ không đọc được sổ để hồi phục: {e}")
+            return 0
+        if not rows:
+            return 0
+        root = self._pipe_root()
+        dang_bay = self._pipe_paths_in_flight()
+        noi_lai = don_so = xep_lai = 0
+        for r in rows:
+            try:
+                d_src = P.resolve_src_dir(root, r["chan"],
+                                          (r["pipe_src"] or "").strip()
+                                          or (r["export_dir"] or "").strip())
+                p = Path(str(d_src)) / str(r["file_name"])
+                khoa = os.path.normcase(os.path.abspath(str(p)))
+                if khoa in dang_bay:
+                    continue                  # đang được dõi rồi, không đụng
+                if not p.exists():
+                    # Gốc KHÔNG còn trong thư mục kênh: đã dọn vào Thùng rác /
+                    # _Loi ở lượt trước, chỉ thiếu dòng ghi. Đóng sổ để nó
+                    # không kẹt 'taken' và không chặn bộ chống-trùng.
+                    P.mark_done(r["id"], note="hồi phục: gốc đã được dọn trước đó")
+                    don_so += 1
+                    continue
+                vrow = db.query_one(
+                    "SELECT id FROM videos WHERE project_id=? AND file_hash=?",
+                    (r["project_id"], r["file_hash"]))
+                if not vrow:
+                    # Chưa kịp nhập video -> xoá dòng sổ để lượt sau nhận LẠI
+                    # từ đầu (chưa tốn lượt AI nào nên không mất gì).
+                    P.unmark_taken(r["id"])
+                    xep_lai += 1
+                    continue
+                vid = int(vrow["id"])
+                mode = (r["pipe_mode"] or "auto")
+                ctx = {"entry": r["id"], "vid": vid, "path": str(p),
+                       "pid": int(r["project_id"]), "name": r["chan"],
+                       "file": r["file_name"], "mode": mode}
+                jrow = db.query_one(
+                    "SELECT id, status FROM jobs WHERE video_id=? AND type IN "
+                    "('auto','auto_recap') ORDER BY id DESC LIMIT 1", (vid,))
+                st = (jrow["status"] if jrow else "") or ""
+                if jrow and st in ("done", "pending", "running"):
+                    jid = int(jrow["id"])
+                else:
+                    # Job phân tích mất/lỗi/huỷ -> xếp lại job MỚI (video đã
+                    # nhập rồi nên không phải nhận lại từ thư mục).
+                    try:
+                        if mode == "recap":
+                            jid = services.enqueue_auto_recap(
+                                self.state.pool, vid, int(r["project_id"]),
+                                self._recap_preset())
+                        else:
+                            jid = services.enqueue_auto(
+                                self.state.pool, vid, int(r["project_id"]),
+                                self._cut_preset())
+                    except Exception as e:  # noqa: BLE001
+                        P.mark_error(r["id"], f"hồi phục không xếp được job: {e}")
+                        continue
+                    if not jid:
+                        continue
+                    jid = int(jid)
+                if jid in self._pipe_cut or vid in self._pipe_by_vid:
+                    continue                  # đã nối ở dòng sổ khác cùng video
+                # Nối vào ĐÚNG các sổ nhịp poll đang đọc. Mẫu đã chốt lúc bấm
+                # đã mất theo bộ nhớ -> dùng mẫu HIỆN TẠI (nói rõ trong log).
+                self._pipe_cut[jid] = ctx
+                self._pipe_by_vid[vid] = ctx
+                self._pending_export[jid] = vid
+                if not hasattr(self, "_auto_tpl"):
+                    self._auto_tpl = {}
+                self._auto_tpl[jid] = copy.deepcopy(self.layout_tpl)
+                dang_bay.add(khoa)
+                noi_lai += 1
+            except Exception as e:  # noqa: BLE001 - 1 dòng lỗi không chặn cả loạt
+                self._pipe_log(f"⚠ hồi phục '{r.get('file_name')}' lỗi — {e}")
+        if noi_lai or don_so or xep_lai:
+            self._pipe_log(
+                f"🔧 HỒI PHỤC sau khi mở lại app: nối tiếp {noi_lai} video "
+                f"(xuất Part + dọn gốc, KHÔNG phân tích lại), đóng sổ "
+                f"{don_so} video đã dọn trước đó, cho nhận lại {xep_lai} video."
+                + (" Mẫu đã chốt lúc bấm mất theo bộ nhớ nên dùng mẫu HIỆN TẠI."
+                   if noi_lai else ""))
+        return noi_lai
+
+    def _pipe_paths_in_flight(self) -> set:
+        """Đường dẫn video ĐANG trong dây chuyền: chờ nhận, đang cắt, chờ hook
+        xuất, đang xuất. Dùng để lượt chạy sau KHÔNG nhận lại file mà lượt
+        trước đang làm (xem chú thích lỗi trong _pipe_take)."""
+        ra: set = set()
+
+        def them(p) -> None:
+            try:
+                ra.add(os.path.normcase(os.path.abspath(str(p))))
+            except OSError:
+                ra.add(str(p))
+
+        for item in list(getattr(self, "_pipe_intake_q", None) or []):
+            them(item[3])                       # (pid, name, mode, path)
+        for ctx in list(getattr(self, "_pipe_cut", {}).values()):
+            them(ctx["path"])
+        for ctx in list(getattr(self, "_pipe_by_vid", {}).values()):
+            them(ctx["path"])
+        for ent in list(getattr(self, "_pipe_exports", {}).values()):
+            them(ent["ctx"]["path"])
+        return ra
+
     def _pipe_take(self, pid: int, name: str, mode: str, path) -> bool:
         """Nhận 1 file vào dây chuyền: soi ffprobe -> nhập -> ghi sổ -> đưa
         vào cắt (auto/recap) + chốt mẫu hiện tại. Trả True nếu đã nhận."""
@@ -5175,6 +5433,27 @@ class StudioPage(QWidget):
             P.mark_error(entry, "job trùng đang chạy — bỏ lượt này")
             self._pipe_log(f"⏭ {name}: {path.name} — video đang có job chạy")
             return False
+        # ⛔ FILE NÀY ĐÃ ĐANG CHẠY TRONG DÂY CHUYỀN -> KHÔNG ghi đè sổ theo dõi.
+        #
+        # LỖI THẬT (anh Hùng 2026-07-26 — "có phân tích nhưng không xuất gì,
+        # đứng im luôn, nhóm cũ cũng bị"): _pipe_run quét TOÀN BỘ danh sách
+        # ngay từ đầu, nên lượt chạy sau vẫn thấy file mà lượt trước CHƯA KỊP
+        # NHẬN (file còn nguyên trên đĩa, chưa có trong sổ pipeline_files) ->
+        # cùng 1 file bị nhận 2 lần -> import_video trả CÙNG vid -> enqueue trả
+        # CÙNG jid (job cũ còn pending/running) -> 3 dòng dưới GHI ĐÈ ctx của
+        # lượt trước -> ctx cũ MỒ CÔI: job chạy xong chỉ 1 ctx được xuất, ctx
+        # mồ côi không ai xuất, không ai báo lỗi, dòng sổ kẹt 'taken' vĩnh viễn
+        # nên lượt sau cũng không nhận lại. ĐO ĐƯỢC: _test_pipe_overlap.py CA1
+        # — 8 file trên đĩa nhưng 11 dòng 'taken', chỉ 8 ctx được dõi.
+        #
+        # Xử lý: xoá dòng sổ vừa ghi (lượt nhận này coi như không xảy ra) và
+        # GIỮ NGUYÊN ctx cũ đang phụ trách file — nó vẫn xuất/dọn bình thường.
+        if jid in self._pipe_cut or vid in self._pipe_by_vid \
+                or vid in self._pipe_exports:
+            P.unmark_taken(entry)
+            self._pipe_log(f"⏭ {name}: {path.name} — ĐANG chạy trong dây "
+                           "chuyền (lượt trước chưa xong), bỏ lượt nhận này")
+            return False
         self._pipe_cut[jid] = ctx
         self._pipe_by_vid[vid] = ctx
         # CHỐT MẪU hiện tại cho video này + ép TỰ XUẤT khi cắt xong (không
@@ -5186,13 +5465,19 @@ class StudioPage(QWidget):
         self._pipe_log(f"▶ {name}: nhận '{path.name}' ({mode}) — bắt đầu cắt")
         return True
 
-    def _pipe_on_exported(self, vid: int) -> None:
+    def _pipe_on_exported(self, vid: int, jids=None) -> None:
         """Hook từ _check_auto_export: video dây chuyền vừa được đưa vào
-        XUẤT -> ghi lại danh sách job xuất để dõi 'đủ Part' mới xóa gốc."""
+        XUẤT -> ghi lại danh sách job xuất để dõi 'đủ Part' mới xóa gốc.
+
+        `jids`: job xuất CỦA CHÍNH video này, do người gọi lấy ngay sau
+        _export_video. Để None chỉ vì tương thích ngược (lùi về biến dùng
+        chung) — đường dây chuyền luôn truyền thẳng."""
         ctx = self._pipe_by_vid.pop(vid, None)
         if ctx is None:
             return
-        jids = list(getattr(self, "_last_export_jids", []) or [])
+        if jids is None:
+            jids = list(getattr(self, "_last_export_jids", []) or [])
+        jids = list(jids)
         self._pipe_exports[vid] = {"jobs": set(jids), "ctx": ctx}
         if not jids:
             # không có job xuất mới: hoặc mọi Part đã xuất y hệt trước đó
