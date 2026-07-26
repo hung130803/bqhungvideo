@@ -343,10 +343,30 @@ class WorkerPool:
         return self._lane_limit(needs_gpu) - running
 
     def _dispatch_once(self) -> None:
-        rows = db.query(
-            "SELECT id, type, payload, needs_gpu FROM jobs WHERE status='pending' "
-            "ORDER BY priority DESC, created_at ASC LIMIT 50"
-        )
+        """Xếp job chờ vào 2 LÀN RIÊNG: GPU (phân tích) và CPU (cắt/xuất).
+
+        LỖI THẬT (anh Hùng 2026-07-26 — màn Tiến trình hiện "1 phân tích ·
+        0 đang cắt · 72 đợi" dù Luồng cắt = 2): trước đây chỉ MỘT query
+        `ORDER BY priority DESC ... LIMIT 50` cho CẢ HAI làn. Job phân tích có
+        priority=10, job xuất priority=3 — nên khi ≥50 job phân tích đang chờ
+        thì 50 dòng lấy về TOÀN LÀ phân tích, job xuất KHÔNG BAO GIỜ lọt vào
+        cửa sổ → làn CPU đứng im, video phân tích xong mà không ai cắt. Chạy
+        2 nhóm cùng lúc là chạm ngưỡng này ngay (72 > 50).
+
+        Nay MỖI LÀN có cửa sổ 50 dòng RIÊNG nên một làn bị ngập không thể làm
+        làn kia chết đói. Trong từng làn vẫn giữ đúng thứ tự ưu tiên như cũ.
+        """
+        for lane_gpu in (True, False):
+            if self._capacity(lane_gpu) <= 0:
+                continue                    # làn đang đầy -> khỏi truy vấn
+            rows = db.query(
+                "SELECT id, type, payload, needs_gpu FROM jobs "
+                "WHERE status='pending' AND needs_gpu=? "
+                "ORDER BY priority DESC, created_at ASC LIMIT 50",
+                (1 if lane_gpu else 0,))
+            self._dispatch_rows(rows, lane_gpu)
+
+    def _dispatch_rows(self, rows, lane_gpu: bool) -> None:
         for r in rows:
             jid = int(r["id"])
             with self._lock:
@@ -354,7 +374,7 @@ class WorkerPool:
                     continue
             needs_gpu = bool(r["needs_gpu"])
             if self._capacity(needs_gpu) <= 0:
-                continue
+                break                       # làn vừa đầy -> dừng, sang làn kia
             with self._lock:
                 self._inflight.add(jid)
                 self._inflight_gpu[jid] = needs_gpu
