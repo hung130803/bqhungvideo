@@ -12,8 +12,13 @@
      dùng tên đã import ở hàm khác sẽ nổ NameError CHỈ KHI bấm nút —
      `compileall` và import-module đều KHÔNG bắt được (lỗi thật v2.5.0: bấm
      🗑 Thùng rác nổ `NameError: NoWheelComboBox`, đã ra tới máy user).
-  2. `_test_pipe_dialogs.py` → mở MỌI hộp thoại + bấm MỌI nút.
-  3. `_test_pipe_overlap.py` → 9 ca chồng lượt + hồi phục sau khởi động lại.
+  2. `_test_app_smoke.py` → dựng cửa sổ chính THẬT, đổi mọi combo/spin, **bấm
+     mọi nút ở mọi trang + mọi hộp thoại** (66 nút), chạy 40 nhịp poll.
+     Nó TỰ KIỂM bản vá của chính nó trước khi chạy — nếu QColorDialog/
+     QFileDialog chưa bị vô hiệu thì dừng ngay (exit 2), vì hộp thoại thật sẽ
+     treo test và làm tưởng app crash.
+  3. `_test_pipe_dialogs.py` → mở MỌI hộp thoại dây chuyền + bấm MỌI nút.
+  4. `_test_pipe_overlap.py` → 10 ca chồng lượt / hồi phục / gốc kẹt.
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước
