@@ -127,6 +127,27 @@ def take_file(project_id: int, file_name: str, file_hash: str) -> int:
         "VALUES(?,?,?, 'taken')", (project_id, file_name, file_hash))
 
 
+def list_taken() -> list[dict]:
+    """Mọi dòng sổ đang 'taken' (đã nhận, CHƯA có kết cuộc) kèm cấu hình kênh.
+
+    Dùng để HỒI PHỤC dây chuyền sau khi app tắt/khởi động lại — kể cả khi app
+    TỰ CẬP NHẬT rồi tự mở lại. Sổ theo dõi của dây chuyền nằm trong BỘ NHỚ nên
+    tắt app là mất sạch, còn các dòng này kẹt 'taken' vĩnh viễn: không ai xuất
+    Part, không ai dọn video gốc, không một dòng báo lỗi nào.
+
+    LỖI THẬT (anh Hùng 2026-07-26, đo từ nhật ký của anh): 09:22 chạy nhóm "Mỹ"
+    nhận 46 video, 09:33 chạy nhóm "Mỹ mới 1" nhận thêm 26, app khởi động lại
+    lúc 09:53 → 72 video nhận mà chỉ 4 xong, 68 video nằm im, gốc còn nguyên
+    trong thư mục kênh. Xem _pipe_resume_taken trong studio_page.py.
+    """
+    rows = db.query(
+        "SELECT f.id, f.project_id, f.file_name, f.file_hash, f.taken_at, "
+        "       p.name AS chan, p.pipe_src, p.export_dir, p.pipe_mode "
+        "FROM pipeline_files f JOIN projects p ON p.id = f.project_id "
+        "WHERE f.status='taken' ORDER BY f.id")
+    return [dict(r) for r in rows]
+
+
 def mark_dup(project_id: int, file_name: str, file_hash: str, note: str) -> None:
     db.execute(
         "INSERT INTO pipeline_files(project_id, file_name, file_hash, status, "

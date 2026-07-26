@@ -47,14 +47,13 @@ dur = float(subprocess.run(
      "-of", "csv=p=0", str(src)], capture_output=True, text=True).stdout)
 print(f"video nguon: {dur:.0f}s co loi noi that")
 
-# file HỎNG để test quarantine + file tốt thứ 2 để test hạn mức
+# file HỎNG để test quarantine (-> _Loi)
 bad = chdir / "hong.mp4"
 bad.write_bytes(b"RAC" * 5000)
 os.utime(bad, (old_t - 60, old_t - 60))         # mtime cũ hơn -> bị nhặt TRƯỚC
-extra = chdir / "du_han_muc.mp4"
-import shutil
-shutil.copy(src, extra)
-os.utime(extra, (old_t + 30, old_t + 30))
+# BỎ ca "quá hạn mức": UI đã BỎ HẲN cột "video/ngày", plan_channel giờ cắt HẾT
+# video sẵn sàng trong thư mục (xem chú thích trong plan_channel). Giữ ca cũ là
+# test đòi một hành vi mà sản phẩm đã cố ý loại bỏ.
 
 # ---- 2. app offscreen + kênh dây chuyền ----
 # đăng ký handler TRƯỚC khi đụng Qt (main.py thật cùng thứ tự — cv2 trong
@@ -67,19 +66,27 @@ from PyQt6.QtWidgets import QApplication
 app = QApplication(sys.argv)
 st_q = QSettings("AIContentStudio", "studio")
 _saved = {k: st_q.value(k) for k in ("pipe_root", "chan_group",
-                                     "chan_groups_extra")}
+                                     "chan_groups_extra", "pipe_grp_sel")}
 st_q.setValue("pipe_root", str(root))
 st_q.setValue("chan_group", "Mỹ")
 st_q.setValue("chan_groups_extra", "[]")
+# CHỐT nhóm để chạy + SYNC: QSettings là registry DÙNG CHUNG với app thật, và
+# instance khác (self._settings trong StudioPage) KHÔNG thấy giá trị vừa ghi nếu
+# chưa sync. Trước đây test ăn may giá trị 'pipe_grp_sel' còn sót lại nên có
+# lần chạy sai nhóm ("Mỹ mới 1") rồi FAIL oan.
+st_q.setValue("pipe_grp_sel", "Mỹ")
+st_q.sync()
 
 from app.database.db import db
 
-out_dir = T / "xuat" / "Kênh Test"
-out_dir.mkdir(parents=True)
+# MÔ HÌNH 1 THƯ MỤC (đúng cách anh Hùng dùng, xem plan_channel): thư mục kênh
+# vừa là NGUỒN vừa là chỗ xuất Part. Trước đây test khai export_dir sang chỗ
+# khác nên app đi tìm video ở đó -> "thư mục trống" -> FAIL oan.
+out_dir = chdir
 pid = db.execute(
-    "INSERT INTO projects(name, assets_dir, grp, export_dir, pipe_on, "
-    "pipe_mode, pipe_daily) VALUES('Kênh Test', ?, 'Mỹ', ?, 1, 'auto', 1)",
-    (str(T / "assets"), str(out_dir))).lastrowid
+    "INSERT INTO projects(name, assets_dir, grp, export_dir, pipe_src, pipe_on, "
+    "pipe_mode, pipe_daily) VALUES('Kênh Test', ?, 'Mỹ', ?, ?, 1, 'auto', 0)",
+    (str(T / "assets"), str(out_dir), str(chdir))).lastrowid
 
 from app.ui.state import AppState
 from app.ui.studio_page import StudioPage
@@ -117,19 +124,17 @@ for r in db.query("SELECT file_name,status,note FROM pipeline_files"):
     print(dict(r))
 print("sandbox:", T)
 print("so cai:", final)
-parts = sorted(out_dir.glob("*.mp4"))
+parts = sorted(out_dir.glob("Part *.mp4"))   # Part xuất thẳng vào thư mục kênh
 print(f"part xuat ra: {len(parts)} -> {[p.name for p in parts][:5]}")
 print("goc da xoa:", not src.exists())
 print("hong vao _Loi:", (root / "_Loi" / "Kênh Test" / "hong.mp4").exists())
-print("du_han_muc con nguyen (cho ngay mai):", extra.exists())
 rep = "\n".join(pg._pipe_report)
 print("--- bao cao ---")
 print(rep)
 
 ok = (final and final["status"] == "done" and len(parts) >= 1
       and not src.exists()
-      and (root / "_Loi" / "Kênh Test" / "hong.mp4").exists()
-      and extra.exists())
+      and (root / "_Loi" / "Kênh Test" / "hong.mp4").exists())
 print("TONG:", "PASS" if ok else "FAIL")
 
 for k, v in _saved.items():
