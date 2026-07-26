@@ -4683,6 +4683,12 @@ class StudioPage(QWidget):
                                      QHBoxLayout, QLabel, QMessageBox,
                                      QPushButton, QTableWidget, QTableWidgetItem,
                                      QAbstractItemView, QHeaderView, QVBoxLayout)
+        # PHẢI import ở ĐÂY: các import trong file này là CỤC BỘ TỪNG HÀM, nên
+        # NoWheelComboBox import trong _pipeline_dialog KHÔNG dùng được ở hàm
+        # khác. Thiếu dòng này = NameError ngay khi bấm 🗑 Thùng rác (lỗi thật
+        # anh Hùng gặp ở v2.5.0). Xem _test_pipe_dialogs.py — test mở MỌI hộp
+        # thoại để lỗi loại này không bao giờ ra bản phát hành nữa.
+        from app.ui.wheelguard import NoWheelComboBox
         dlg = QDialog(self); dlg.setWindowTitle("🗑 Thùng rác dây chuyền — Khôi phục")
         dlg.resize(760, 520); self._recycle_dlg = dlg
         lay = QVBoxLayout(dlg); lay.setContentsMargins(14, 14, 14, 14); lay.setSpacing(8)
