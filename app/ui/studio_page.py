@@ -1382,10 +1382,13 @@ class StudioPage(QWidget):
                 r = box["result"]
                 c = r["counts"]
                 tot = r.get("total_remaining_requests", 0)
+                # "Kẹt" thay vì "hết lượt hôm nay": exhausted giờ gồm cả kẹt
+                # TỪNG MODEL (đánh bóng/kịch bản) và cạn token — dò đủ mọi
+                # model app dùng, hết cảnh "hết giới hạn mà vẫn xanh".
                 summary = (
-                    f"✅ Còn lượt: {c['ok']} · ⏳ Hết lượt hôm nay: "
+                    f"✅ Còn lượt: {c['ok']} · ⏳ Kẹt/hết lượt: "
                     f"{c.get('exhausted', 0)} · ❌ Sai: {c['invalid']} · "
-                    f"⚠ Lỗi: {c['error']} · Tổng còn ~{tot} request")
+                    f"⚠ Lỗi: {c['error']} · Tổng còn ~{tot} request (model chính)")
                 # vài dòng chi tiết từng key kèm hạn mức còn lại
                 lines = []
                 for k, info in r.get("results", [])[:8]:

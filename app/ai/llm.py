@@ -325,6 +325,24 @@ def is_rate_limit_error(msg: str) -> bool:
 _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
 
 
+def is_transient_error(msg: str) -> bool:
+    """Lỗi THOÁNG QUA (mạng/timeout/5xx phía server) — thử lại là hết, KHÔNG
+    phải lỗi key hay hết lượt.
+
+    VÌ SAO CẦN (bug anh Hùng 28/07: "key còn rất nhiều mà thỉnh thoảng vẫn
+    'Cắt cơ bản'"): complete_text gặp lỗi KHÔNG-phải-429 là dừng ngay lập tức
+    → 1 cú timeout (máy đang tải 5 luồng + xuất 5 clip, mạng nghẹt là thường)
+    làm cả lượt phân tích rơi về heuristic dù mọi key vẫn sống. Chuỗi lỗi của
+    SDK openai: "Connection error.", "Request timed out.", 5xx của Groq."""
+    m = (msg or "").lower()
+    return any(s in m for s in (
+        "timeout", "timed out", "connection", "connect",
+        "temporarily unavailable", "service unavailable",
+        "internal server error", "bad gateway", "gateway timeout",
+        "error code: 5", "remote end closed", "incomplete read",
+        "reset by peer", "aborted", "eof occurred", "ssl"))
+
+
 def is_daily_limit_error(msg: str) -> bool:
     """429 có phải HẾT LƯỢT NGÀY (per day / TPD / RPD) không — khác hết TOKEN/
     PHÚT (TPM, reset vài giây). Hết ngày -> phải THÊM KEY NICK KHÁC/đợi mai;
@@ -461,12 +479,19 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
         out["reset_requests"] = h.get("x-ratelimit-reset-requests")
         out["reset_tokens"] = h.get("x-ratelimit-reset-tokens")
 
-    # DÒ bằng MODEL CHÍNH (hạn mức Groq tính THEO MODEL -> số remaining hiện
-    # cho user khớp model đang dùng thật). Model bị gỡ/đổi tên (400/404) ->
-    # dò lại bằng model dự phòng, không báo lỗi oan.
-    probe_models = [settings.GROQ_LLM_MODEL,
-                    getattr(settings, "GROQ_LLM_FALLBACK", "")
-                    or _GROQ_PROBE_MODEL]
+    # DÒ MỌI MODEL APP DÙNG THẬT — hạn mức Groq tính RIÊNG THEO TỪNG MODEL.
+    # Bug anh Hùng 28/07: chỉ dò model chính -> key ĐÃ CHẾT ở model đánh bóng
+    # tiêu đề (SMART) / viết kịch bản (CREATIVE) mà nút Kiểm tra vẫn xanh hết,
+    # "dùng như hết giới hạn rồi mà không thấy báo gì".
+    probe_models: list = []
+    for _m in (settings.GROQ_LLM_MODEL,
+               getattr(settings, "GROQ_LLM_MODEL_SMART", ""),
+               getattr(settings, "GROQ_LLM_MODEL_CREATIVE", ""),
+               getattr(settings, "GROQ_LLM_MODEL_HQ", ""),
+               getattr(settings, "GROQ_LLM_FALLBACK", "") or _GROQ_PROBE_MODEL):
+        _m = (_m or "").strip()
+        if _m and _m not in probe_models:
+            probe_models.append(_m)
 
     def _probe(model_id):
         body = json.dumps({
@@ -484,58 +509,73 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
             method="POST")
         return urllib.request.urlopen(req, timeout=timeout)
 
-    try:
-        last_http = None
-        for i, pm in enumerate(probe_models):
-            if not pm:
-                continue
-            try:
-                with _probe(pm) as resp:
+    def _short(mid: str) -> str:
+        # "openai/gpt-oss-120b" -> "gpt-oss-120b" cho dòng báo gọn
+        return mid.rsplit("/", 1)[-1]
+
+    dead: list = []           # "model: lý do" — model nào kẹt/hết lượt
+    ok_any = False
+    got_headers = False
+    for pm in probe_models:
+        try:
+            with _probe(pm) as resp:
+                if not got_headers:   # số hiển thị = model CHÍNH (dò đầu tiên)
                     _read_headers(resp.headers)
-                    rr = out["remaining_requests"]
-                    if rr is not None and rr <= 0:
-                        out["kind"] = "exhausted"
-                        out["note"] = "hết lượt request hôm nay"
-                    else:
-                        out["kind"] = "ok"
-                    return out
-            except urllib.error.HTTPError as e:
-                # 400/404 = model không tồn tại -> thử model dự phòng;
-                # mã khác (401/403/429...) xử ngay bên dưới.
-                if e.code in (400, 404) and i + 1 < len(probe_models):
-                    last_http = e
-                    continue
-                raise
-        if last_http is not None:
-            raise last_http
-        raise RuntimeError("không có model để dò")
-    except urllib.error.HTTPError as e:
-        _read_headers(e.headers)
-        if e.code in (401, 403):
-            out["kind"] = "invalid"
-            out["note"] = f"key sai/không hợp lệ ({e.code})"
-        elif e.code == 429:
-            out["kind"] = "exhausted"
-            # reset time có thể nằm trong header hoặc body message
-            reset = out["reset_requests"] or out["reset_tokens"]
-            if not reset:
-                try:
-                    msg = e.read().decode("utf-8", "replace")
-                    wait = parse_retry_wait(msg)
-                    if wait:
-                        reset = f"{wait:.0f}s"
-                except Exception:  # noqa: BLE001
-                    pass
-            out["note"] = ("hết lượt (429)"
-                           + (f", thử lại sau {reset}" if reset else ""))
-        else:
-            out["kind"] = "error"
-            out["note"] = f"HTTP {e.code}"
-        return out
-    except Exception as e:  # noqa: BLE001 — timeout, URLError (DNS/SSL), v.v.
+                    got_headers = True
+                rr = _to_int(resp.headers.get("x-ratelimit-remaining-requests"))
+                rt = _to_int(resp.headers.get("x-ratelimit-remaining-tokens"))
+                if rr is not None and rr <= 0:
+                    dead.append(f"{_short(pm)}: hết request hôm nay")
+                elif rt is not None and rt <= 0:
+                    # TOKEN cạn cũng là kẹt thật (bug cũ: chỉ nhìn request
+                    # nên token về 0 vẫn báo xanh) — nhưng token/PHÚT tự hồi.
+                    reset = resp.headers.get("x-ratelimit-reset-tokens") or ""
+                    dead.append(f"{_short(pm)}: cạn token"
+                                + (f" (hồi sau {reset})" if reset else ""))
+                else:
+                    ok_any = True
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                out["kind"] = "invalid"
+                out["note"] = f"key sai/không hợp lệ ({e.code})"
+                return out
+            if e.code in (400, 404):
+                continue        # model bị gỡ/đổi tên — không kết tội key
+            if e.code == 429:
+                if not got_headers:
+                    _read_headers(e.headers)
+                    got_headers = True
+                reset = (e.headers.get("x-ratelimit-reset-requests")
+                         or e.headers.get("x-ratelimit-reset-tokens"))
+                if not reset:
+                    try:
+                        wait = parse_retry_wait(
+                            e.read().decode("utf-8", "replace"))
+                        if wait:
+                            reset = f"{wait:.0f}s"
+                    except Exception:  # noqa: BLE001
+                        pass
+                dead.append(f"{_short(pm)}: hết lượt (429)"
+                            + (f", hồi sau {reset}" if reset else ""))
+                continue
+            dead.append(f"{_short(pm)}: HTTP {e.code}")
+        except Exception as e:  # noqa: BLE001 — timeout/DNS: các model sau
+            out["kind"] = "error"       # cũng sẽ lỗi y vậy, dừng sớm cho nhanh
+            out["note"] = str(e)[:120]
+            return out
+
+    if dead:
+        # CÓ model kẹt là phải BÁO — dù model chính còn lượt, vì các pass
+        # đánh bóng/kịch bản dùng model kẹt đó sẽ lỗi thật khi chạy.
+        out["kind"] = "exhausted"
+        out["note"] = ("; ".join(dead[:4])
+                       + (" — model còn lại vẫn chạy được" if ok_any else ""))
+    elif ok_any:
+        out["kind"] = "ok"
+    else:
         out["kind"] = "error"
-        out["note"] = str(e)[:120]
-        return out
+        out["note"] = "không dò được model nào (model trong cấu hình bị gỡ?)"
+    return out
 
 
 def check_groq_keys(keys, progress=None, max_workers: int = 6,
@@ -740,10 +780,18 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                     if is_auth_error(last):
                         mark_invalid(provider, key)
                         continue               # KEY SAI -> bỏ qua, thử key khác
-                    # lỗi KHÁC (mạng...) -> KHÔNG giết key, dừng luôn
+                    if is_transient_error(last):
+                        # MẠNG/5XX THOÁNG QUA: không giết key, thử key khác
+                        # (kết nối mới) + còn vòng ngoài. Trước đây dừng ngay
+                        # → 1 cú timeout là cả video rơi về "Cắt cơ bản" dù
+                        # key còn đầy (bug anh Hùng 28/07).
+                        time.sleep(1.0)
+                        continue
+                    # lỗi KHÁC (không nhận diện được) -> dừng luôn, báo rõ
                     raise LLMError(f"Gọi {provider} thất bại: {last}")
-            # hết vòng: mọi key vừa thử đều hết lượt/lỗi
-            if is_auth_error(last) or not is_rate_limit_error(last):
+            # hết vòng: mọi key vừa thử đều hết lượt / lỗi thoáng qua
+            if is_auth_error(last) or not (is_rate_limit_error(last)
+                                           or is_transient_error(last)):
                 break
             # 429: key sắp hồi trong ~ngắn (TPM/phút) -> đợi rồi thử lại vòng sau.
             # Reset DÀI (hết lượt NGÀY) -> đợi vô ích, thoát báo lỗi.
@@ -765,13 +813,28 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
 def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
                   model: Optional[str] = None):
     """Gọi LLM và parse JSON. Ném LLMError nếu không parse được.
-    `model`: đè model chỉ với groq (xem complete_text)."""
-    raw = complete_text(prompt, system=system, temperature=0.3,
-                        provider=provider, model=model)
-    try:
-        return _extract_json(raw)
-    except (ValueError, json.JSONDecodeError) as e:
-        raise LLMError(f"LLM trả về không phải JSON hợp lệ: {e}\n---\n{raw[:500]}")
+    `model`: đè model chỉ với groq (xem complete_text).
+
+    JSON HỎNG THÌ GỌI LẠI (tối đa 3 lần): model free thỉnh thoảng nhả JSON
+    cụt/lẫn chữ — trước đây ném LLMError NGAY, xuyên qua mọi lớp xoay key,
+    làm cả video rơi về "Cắt cơ bản" dù key còn đầy (bug anh Hùng 28/07).
+    Lần gọi lại kèm nhắc "chỉ trả JSON" — lỗi kiểu này gọi lại gần như luôn
+    hết. Key Groq của user gần vô hạn, ưu tiên CHẤT LƯỢNG (xem MEMORY)."""
+    last_exc: Optional[LLMError] = None
+    sys_now = system
+    for _attempt in range(3):
+        raw = complete_text(prompt, system=sys_now, temperature=0.3,
+                            provider=provider, model=model)
+        try:
+            return _extract_json(raw)
+        except (ValueError, json.JSONDecodeError) as e:
+            last_exc = LLMError(
+                f"LLM trả về không phải JSON hợp lệ: {e}\n---\n{raw[:500]}")
+            # nhắc CỨNG cho lần sau — model đã trả rác 1 lần rồi
+            sys_now = (system + "\n\nQUAN TRỌNG: CHỈ trả về đúng MỘT khối "
+                       "JSON hợp lệ. KHÔNG chữ dẫn, KHÔNG markdown, KHÔNG "
+                       "giải thích, KHÔNG cắt cụt.")
+    raise last_exc
 
 
 _OLLAMA_MODELS_CACHE = None
