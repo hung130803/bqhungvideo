@@ -1403,7 +1403,8 @@ class StudioPage(QWidget):
                     elif kind == "exhausted":
                         lines.append(f"⏳ {tag}: {info.get('note') or 'hết lượt'}")
                     elif kind == "invalid":
-                        lines.append(f"❌ {tag}: sai key")
+                        # note phân biệt "key sai" vs "tài khoản bị Groq KHOÁ"
+                        lines.append(f"❌ {tag}: {info.get('note') or 'sai key'}")
                     else:
                         lines.append(f"⚠ {tag}: {info.get('note') or 'lỗi'}")
                 extra = (len(r.get("results", [])) - 8)

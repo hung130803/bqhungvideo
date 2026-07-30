@@ -224,6 +224,86 @@ finally:
     for n, v in _orig_cfg.items():
         setattr(settings, n, v)
 
+# ---------- 8. KEY BỊ GROQ KHOÁ (org restricted, mã 400) ----------
+print("== 8. key bi Groq KHOA (organization restricted) ==")
+ORG_MSG = ("Error code: 400 - {'error': {'message': 'Organization has been "
+           "restricted. Please reach out to support', 'type': 'invalid_request_error'}}")
+check("nhan dien org restricted", llm.is_org_restricted(ORG_MSG))
+check("khong nham voi 429", not llm.is_org_restricted("Error code: 429 rate limit"))
+check("khong nham voi model go", not llm.is_org_restricted("model_not_found abc"))
+
+# 8a. runtime: key DAU bi khoa -> mark_invalid + nhay key ke, van ra ket qua
+calls["n"] = 0
+
+
+def _fake_call_banned_first(provider, key, prompt, system, temperature, model=None):
+    calls["n"] += 1
+    if key == "key_bi_ban":
+        raise RuntimeError(ORG_MSG)
+    return "song nho key 2"
+
+
+try:
+    settings.llm_keys_for = lambda p: ["key_bi_ban", "key_song"]
+    llm._call_once = _fake_call_banned_first
+    out = llm.complete_text("hi", provider="groq")
+    check("key ban khong giet ca luot", out == "song nho key 2",
+          f"goi {calls['n']} lan")
+    # key bi ban phai bi danh dau invalid -> lan sau xep CUOI vong xoay
+    order = llm.pick_keys("groq", ["key_bi_ban", "key_song"])
+    check("key ban xep cuoi vong xoay", order[-1] == "key_bi_ban", str(order))
+finally:
+    llm._call_once = _orig_call
+    settings.llm_keys_for = _orig_keys
+
+# 8b. TAT CA key deu bi khoa -> bao loi ngay, khong ngoi doi vo ich
+calls["n"] = 0
+
+
+def _fake_call_all_banned(provider, key, prompt, system, temperature, model=None):
+    calls["n"] += 1
+    raise RuntimeError(ORG_MSG)
+
+
+try:
+    settings.llm_keys_for = lambda p: ["ban1", "ban2"]
+    llm._call_once = _fake_call_all_banned
+    import time as _t
+    t0 = _t.time()
+    try:
+        llm.complete_text("hi", provider="groq")
+        check("phai nem LLMError", False)
+    except llm.LLMError:
+        check("nem LLMError dung", True)
+    check("khong ngoi doi 7s vo ich", _t.time() - t0 < 5.0,
+          f"{_t.time()-t0:.1f}s")
+finally:
+    llm._call_once = _orig_call
+    settings.llm_keys_for = _orig_keys
+
+# 8c. checker: 400 kem body org-restricted -> invalid + note KHOA
+try:
+    settings.GROQ_LLM_MODEL = "m-main"
+    settings.GROQ_LLM_MODEL_SMART = ""
+    settings.GROQ_LLM_MODEL_CREATIVE = ""
+    settings.GROQ_LLM_MODEL_HQ = ""
+    settings.GROQ_LLM_FALLBACK = ""
+
+    def _fake_urlopen_org(req, timeout=None):
+        h = Message()
+        raise urllib.error.HTTPError(
+            "https://api.groq.com", 400, "err", h,
+            io.BytesIO(b'{"error":{"message":"Organization has been restricted."}}'))
+
+    urllib.request.urlopen = _fake_urlopen_org
+    r = llm.check_groq_key("gsk_test")
+    check("checker: 400 org -> invalid", r["kind"] == "invalid", r["note"])
+    check("checker: note noi bi KHOA", "KHOÁ" in (r["note"] or ""), r["note"])
+finally:
+    urllib.request.urlopen = _orig_urlopen
+    for n, v in _orig_cfg.items():
+        setattr(settings, n, v)
+
 # ---------- 6. GROQ THẬT (có key mới chạy): complete_json ra dict ----------
 print("== 6. Groq that (smoke) ==")
 real_keys = settings.llm_keys_for("groq")

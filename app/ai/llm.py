@@ -325,6 +325,21 @@ def is_rate_limit_error(msg: str) -> bool:
 _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
 
 
+def is_org_restricted(msg: str) -> bool:
+    """Tài khoản Groq của key bị Groq KHOÁ ('Organization has been
+    restricted') — mã 400, KHÔNG phải 401/429 nên cả nhánh auth lẫn
+    rate-limit đều không bắt được.
+
+    VÌ SAO NGUY HIỂM (đo thật 30/07: 2/27 key của anh Hùng dính): key khoá
+    đứng ĐẦU vòng xoay thì mọi lượt gọi chết ngay tại nó (lỗi 'lạ' -> dừng
+    luôn) dù 25 key sau còn sống — nguồn 'Cắt cơ bản' hàng loạt. Phải coi
+    như KEY HỎNG VĨNH VIỄN: mark_invalid + nhảy key kế TỨC THÌ."""
+    m = (msg or "").lower()
+    return "organization has been restricted" in m \
+        or "organization_restricted" in m \
+        or ("organization" in m and "restricted" in m)
+
+
 def is_transient_error(msg: str) -> bool:
     """Lỗi THOÁNG QUA (mạng/timeout/5xx phía server) — thử lại là hết, KHÔNG
     phải lỗi key hay hết lượt.
@@ -540,6 +555,18 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
                 out["note"] = f"key sai/không hợp lệ ({e.code})"
                 return out
             if e.code in (400, 404):
+                # 400 có 2 nghĩa: model bị gỡ (bỏ qua model) HOẶC tài khoản
+                # bị Groq KHOÁ ('Organization has been restricted' — đo thật
+                # 30/07: 2/27 key anh Hùng dính mà check cũ báo mù mờ).
+                try:
+                    body = e.read().decode("utf-8", "replace")
+                except Exception:  # noqa: BLE001
+                    body = ""
+                if is_org_restricted(body):
+                    out["kind"] = "invalid"
+                    out["note"] = ("tài khoản Groq bị KHOÁ (organization "
+                                   "restricted) — xoá key này, không cứu được")
+                    return out
                 continue        # model bị gỡ/đổi tên — không kết tội key
             if e.code == 429:
                 if not got_headers:
@@ -763,6 +790,11 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
         for _round in range(3):
             # XOAY VÒNG key theo SỔ TRẠNG THÁI: key ready trước (đúng thứ tự
             # settings), key limited còn cooldown xếp cuối (hết sớm nhất trước).
+            # saw_retryable: vòng này CÓ lỗi kiểu chờ-được (429/mạng) không —
+            # quyết định đợi-thử-lại hay bỏ cuộc. Dựa vào `last` (lỗi CUỐI)
+            # là sai khi key cuối cùng là key bị Groq khoá: last=khoá -> tưởng
+            # hết đường dù các key trước chỉ đang cooldown ngắn.
+            saw_retryable = False
             for key in pick_keys(provider, keys):
                 mark_used(provider, key)
                 try:
@@ -776,7 +808,14 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                     last = str(e)
                     if is_rate_limit_error(last):
                         mark_limited(provider, key, last)
+                        saw_retryable = True
                         continue               # key này hết lượt -> thử key tiếp
+                    if is_org_restricted(last):
+                        # TÀI KHOẢN bị Groq KHOÁ (400) -> loại key vĩnh viễn
+                        # khỏi vòng xoay, nhảy key kế NGAY — không cho 1 key
+                        # ban giết cả lượt phân tích khi 25 key sau còn sống.
+                        mark_invalid(provider, key)
+                        continue
                     if is_auth_error(last):
                         mark_invalid(provider, key)
                         continue               # KEY SAI -> bỏ qua, thử key khác
@@ -786,12 +825,13 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                         # → 1 cú timeout là cả video rơi về "Cắt cơ bản" dù
                         # key còn đầy (bug anh Hùng 28/07).
                         time.sleep(1.0)
+                        saw_retryable = True
                         continue
                     # lỗi KHÁC (không nhận diện được) -> dừng luôn, báo rõ
                     raise LLMError(f"Gọi {provider} thất bại: {last}")
-            # hết vòng: mọi key vừa thử đều hết lượt / lỗi thoáng qua
-            if is_auth_error(last) or not (is_rate_limit_error(last)
-                                           or is_transient_error(last)):
+            # hết vòng: không có lỗi nào kiểu chờ-được (chỉ key sai/bị khoá)
+            # -> đợi cũng vô ích, thoát báo luôn.
+            if not saw_retryable:
                 break
             # 429: key sắp hồi trong ~ngắn (TPM/phút) -> đợi rồi thử lại vòng sau.
             # Reset DÀI (hết lượt NGÀY) -> đợi vô ích, thoát báo lỗi.
