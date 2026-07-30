@@ -32,7 +32,10 @@
      `jobs.cancel_req`; hồi phục dây chuyền phải trả dòng sổ cho job huỷ).
   8. `_test_ai_gate.py` → video dây chuyền ra "Cắt cơ bản" phải THỬ LẠI 1 lần
      rồi mới xuất; lần 2 vẫn cơ bản thì đóng dấu `[CƠ BẢN]` vào sổ.
-  9. `_test_chan_search.py` → ô Kênh gõ-để-tìm không phá `_on_proj`.
+  9. `_test_chan_search.py` → ô 🔎 LỌC kênh: combo Kênh phải GIỮ NGUYÊN là
+     danh sách bấm mở (v2.6.10 tôi biến nó thành ô-gõ editable => anh Hùng mất
+     danh sách + không thấy tên kênh: "này k mở được"). Bất biến: lọc KHÔNG
+     ĐƯỢC đổi kênh đang làm; kênh đang chọn luôn còn trong danh sách.
   10. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
      30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
      đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
