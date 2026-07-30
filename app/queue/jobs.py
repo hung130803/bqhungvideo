@@ -136,6 +136,7 @@ def _precompute_hashtags(video_id: int) -> None:
         from app.database import db as _db
         clips = _db.query(
             "SELECT title, transcript FROM clips WHERE video_id=? "
+            "AND status<>'archived' "   # đừng lấy tiêu đề 'Clip' của lần cũ
             "ORDER BY start_sec", (video_id,))
         tr = get_analysis(video_id, "transcript") or {}
         title = next(((c["title"] or "").strip() for c in clips

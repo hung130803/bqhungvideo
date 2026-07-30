@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -1551,6 +1552,59 @@ def _filter_used_candidates(cands: list, used: list, keyfn=None,
     return ranked, True
 
 
+def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
+    """Gọi `fn()`; nếu chết vì HẾT LƯỢT (mọi key đang cooldown) thì ĐỢI key
+    hồi rồi gọi lại — trong ngân sách thời gian — thay vì buông xuôi.
+
+    LỖI THẬT (anh Hùng 30/07, ảnh đối chứng 2 lần cùng 1 video): chạy DÂY
+    CHUYỀN ra 'Cắt cơ bản (chưa qua AI)' nhưng bấm TAY 'Tạo clip' lại ra AI
+    ngon. Vì dây chuyền chạy 3 luồng AI song song → nuốt lượt rất nhanh →
+    có lúc CẢ 27 key cùng cooldown; complete_text chỉ chịu đợi ≤45s rồi ném
+    LLMError → generate_highlights rơi về heuristic. Vài phút sau bấm tay
+    thì key đã hồi nên 'tự nhiên hết lỗi'. Van thử-lại-1-lần (v2.6.9) cũng
+    bó tay vì lần 2 gọi NGAY khi key còn đỏ.
+
+    Nguyên tắc: phân tích 1 video vốn mất 5-10 phút, đợi thêm vài phút để có
+    clip AI vẫn RẺ hơn nhiều so với xuất clip cơ bản rồi phải làm lại. Đợi
+    theo `soonest_ready_wait` (cooldown ngắn nhất), ngủ từng nhịp 5s có kiểm
+    HUỶ (bấm Huỷ là dừng ngay, không treo). Hết ngân sách (mặc định 15 phút,
+    chỉnh bằng AI_QUOTA_WAIT_SEC) hoặc lỗi KHÔNG phải hết-lượt → ném lại như
+    cũ (fallback heuristic + cảnh báo vẫn là lưới cuối)."""
+    if budget is None:
+        from config import settings as _st_q   # import cục bộ như cả file này
+        try:
+            budget = float(getattr(_st_q, "AI_QUOTA_WAIT_SEC", 900) or 0)
+        except (TypeError, ValueError):
+            budget = 900.0
+    da_doi = 0.0
+    while True:
+        try:
+            return fn()
+        except llm.LLMError as e:
+            msg = str(e)
+            if not llm.is_rate_limit_error(msg):
+                raise                       # key sai/bị khoá/mạng chết hẳn
+            wait = llm.soonest_ready_wait(provider)
+            if wait is None:
+                raise                       # không có key nào để mà đợi
+            wait = max(5.0, min(float(wait) + 1.0, 300.0))
+            if da_doi + wait > budget:
+                raise                       # cooldown dài (hết lượt NGÀY) -> chịu
+            moc = time.time() + wait
+            while True:
+                con = moc - time.time()
+                if con <= 0:
+                    break
+                if ctx is not None:
+                    ctx.check_canceled()    # bấm Huỷ là thoát ngay tại đây
+                    ctx.progress(
+                        0.32,
+                        f"⏳ mọi key AI đang hồi lượt — đợi {int(con)}s rồi "
+                        "phân tích tiếp (KHÔNG cắt cơ bản)...")
+                time.sleep(min(5.0, max(0.05, con)))
+            da_doi += wait
+
+
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     """
     Bước "tìm highlight" — được job 'auto' (jobs.py) gọi sau khi phân tích.
@@ -1592,9 +1646,12 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     llm_error = ""
     ai_warns: list = []
     try:
-        ai_clips, ai_warns = _llm_select_clips(transcript, duration, ctx,
-                                               scenes, cfg, digest=digest)
-    except llm.LLMError as e:  # gọi LLM lỗi thật -> báo rõ, vẫn lùi heuristic
+        # ⏳ hết lượt tạm thời -> ĐỢI key hồi rồi gọi lại (xem _call_waiting_quota)
+        ai_clips, ai_warns = _call_waiting_quota(
+            lambda: _llm_select_clips(transcript, duration, ctx, scenes, cfg,
+                                      digest=digest),
+            ctx, prov)
+    except llm.LLMError as e:  # lỗi thật/đợi quá ngân sách -> báo rõ, lùi heuristic
         ai_clips = []
         llm_error = str(e)
     # 🔁 NHIỀU-PASS: AI đọc lại toàn cảnh, chấm + chọn top viral, loại clip

@@ -42,7 +42,13 @@
      lỗi 30/07: đặt 3 part ra 7-8 part + lẫn clip "Cắt cơ bản" không tiêu đề.
      Kèm canh main.py không lấy `sys.stdout.flush` ngoài try (bản .exe
      windowed có stdout=None -> hộp lỗi mỗi lần tắt app).
-  11. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
+  11. `_test_quota_wait.py` → HẾT LƯỢT thì ĐỢI, KHÔNG cắt cơ bản: dây
+     chuyền 3 luồng AI nuốt lượt → có lúc cả 27 key cùng cooldown →
+     complete_text bỏ cuộc ≤45s → heuristic (bấm tay vài phút sau lại chạy —
+     ảnh đối chứng 30/07). `m1._call_waiting_quota` đợi theo
+     soonest_ready_wait (ngân sách AI_QUOTA_WAIT_SEC=15ph), ngủ nhịp 5s có
+     kiểm HUỶ; lỗi khác/hết ngân sách mới rơi heuristic.
+  12. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
      30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
      đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
      phát hiện malformed → `corrupt_live=True` → trả rỗng NGAY (đo: 6.000 truy

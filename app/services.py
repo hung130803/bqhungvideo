@@ -467,6 +467,7 @@ def channel_activity() -> dict:
             "SELECT v.project_id AS pid, COUNT(*) AS n, "
             "SUM(c.export_path IS NOT NULL AND c.export_path<>'') AS exported "
             "FROM clips c JOIN videos v ON v.id = c.video_id "
+            "WHERE c.status<>'archived' "   # kho lưu trữ không tính vào đuôi combo
             "GROUP BY v.project_id"):
         a = act.get(int(r["pid"]))
         if a is not None:
@@ -528,7 +529,8 @@ def video_activity(project_id: int) -> dict:
             "SELECT c.video_id AS vid, COUNT(*) AS n, "
             "SUM(c.export_path IS NOT NULL AND c.export_path<>'') AS exported "
             "FROM clips c JOIN videos v ON v.id = c.video_id "
-            "WHERE v.project_id=? GROUP BY c.video_id", (project_id,)):
+            "WHERE v.project_id=? AND c.status<>'archived' "
+            "GROUP BY c.video_id", (project_id,)):
         a = act.get(int(r["vid"]))
         if a is not None:
             a["clips"] = int(r["n"])
