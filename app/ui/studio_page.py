@@ -5861,9 +5861,12 @@ class StudioPage(QWidget):
                     f"⏹ {ctx['name']}: '{ctx['file']}' — đã huỷ, GIỮ NGUYÊN "
                     "video gốc (lần chạy sau cắt lại).")
                 continue
-            # ĐẾM PART THẬT: clip có export_path tồn tại trên đĩa
+            # ĐẾM PART THẬT: clip có export_path tồn tại trên đĩa. Bỏ
+            # 'archived' (part của LẦN PHÂN TÍCH TRƯỚC) — không thì lượt này
+            # tưởng đã đủ part rồi dọn video gốc oan.
             clips = db.query(
                 "SELECT export_path FROM clips WHERE video_id=? "
+                "AND status<>'archived' "
                 "AND export_path IS NOT NULL AND export_path<>''", (vid,))
             parts = [c["export_path"] for c in clips
                      if c["export_path"] and os.path.exists(c["export_path"])]

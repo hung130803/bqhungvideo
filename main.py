@@ -193,8 +193,20 @@ def main() -> int:
     from app.ui.appsettings import app_settings
     from app.ui.shutdown import set_closing
     set_closing()
-    for _buoc in (state.stop, app_settings().sync,
-                  sys.stdout.flush, sys.stderr.flush):
+    def _xa_dem():
+        """Xả đệm stdout/stderr NẾU CÓ.
+
+        LỖI THẬT v2.6.11 (anh Hùng 30/07 — hộp 'Có lỗi xảy ra' mỗi lần TẮT
+        APP): bản .exe dựng windowed (không console) có sys.stdout/stderr là
+        None. Code cũ viết `sys.stdout.flush` NGAY TRONG tuple nên thuộc tính
+        bị lấy TRƯỚC khi vào try -> AttributeError 'NoneType' … 'flush' rơi ra
+        ngoài mọi except. Bọc thành hàm = chỉ chạm khi đã ở trong try, và
+        kiểm None trước."""
+        for _f in (sys.stdout, sys.stderr):
+            if _f is not None:
+                _f.flush()
+
+    for _buoc in (state.stop, app_settings().sync, _xa_dem):
         try:
             _buoc()
         except Exception:  # noqa: BLE001 - dọn lỗi không được chặn thoát

@@ -36,7 +36,13 @@
      danh sách bấm mở (v2.6.10 tôi biến nó thành ô-gõ editable => anh Hùng mất
      danh sách + không thấy tên kênh: "này k mở được"). Bất biến: lọc KHÔNG
      ĐƯỢC đổi kênh đang làm; kênh đang chọn luôn còn trong danh sách.
-  10. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
+  10. `_test_reanalyze_clean.py` → PHÂN TÍCH LẠI phải ra ĐÚNG số part user
+     đặt: clip lần trước ĐÃ XUẤT phải vào kho `status='archived'` (không xoá,
+     giữ export_path + tính là "đoạn đã dùng"), `list_clips` bỏ archived. Gốc
+     lỗi 30/07: đặt 3 part ra 7-8 part + lẫn clip "Cắt cơ bản" không tiêu đề.
+     Kèm canh main.py không lấy `sys.stdout.flush` ngoài try (bản .exe
+     windowed có stdout=None -> hộp lỗi mỗi lần tắt app).
+  11. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
      30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
      đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
      phát hiện malformed → `corrupt_live=True` → trả rỗng NGAY (đo: 6.000 truy

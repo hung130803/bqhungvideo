@@ -298,8 +298,14 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
 # ---- Truy vấn cho UI ----
 def list_clips(video_id: int) -> list:
     # Theo thứ tự THỜI GIAN (đoạn đầu -> cuối) để Part 1,2,3 đúng thứ tự.
+    # BỎ clip 'archived' = kết quả các LẦN PHÂN TÍCH TRƯỚC (đã xuất, đã lưu
+    # kho). Hàm này quyết định CẢ danh sách hiện lên, số Part, VÀ những gì
+    # "Xuất cả kênh"/tự-xuất sẽ xuất — để lọt clip cũ vào là user đặt 3 part
+    # mà ra 7-8 part, lẫn cả clip "Cắt cơ bản" không tiêu đề của lần trước
+    # (lỗi thật anh Hùng 30/07). Xem m1_highlight._delete_suggested.
     return db.query(
-        "SELECT * FROM clips WHERE video_id=? ORDER BY start_sec, id",
+        "SELECT * FROM clips WHERE video_id=? AND status<>'archived' "
+        "ORDER BY start_sec, id",
         (video_id,),
     )
 

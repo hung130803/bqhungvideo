@@ -1400,9 +1400,23 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
 
 
 def _delete_suggested(video_id: int) -> None:
-    """Xóa clip gợi ý cũ TRỪ clip đang có job xuất chờ/chạy — nếu xóa, job xuất
-    sẽ 'Không tìm thấy clip' và fail khó hiểu (race khi user bấm Tạo clip lại
-    ngay lúc đang xuất)."""
+    """Dọn sạch KẾT QUẢ LẦN TRƯỚC của video này, để lần phân tích MỚI ra đúng
+    số clip user đặt.
+
+    LỖI THẬT (anh Hùng 30/07): "để 3 part mà nó cắt ra 7-8 part", "video cũ
+    phân tích lại vẫn hiện Cắt cơ bản, tiêu đề thì không có". GỐC: hàm này chỉ
+    XOÁ clip còn 'suggested'. Clip nào ĐÃ XUẤT thì status='exported' nên SỐNG
+    SÓT, mà `services.list_clips` lấy MỌI clip của video → danh sách = clip cũ
+    (heuristic, tên "Clip", điểm 50) + clip mới của AI. Part đánh số theo vị
+    trí trong danh sách nên 3 clip mới thành Part 4,5,6…; "Xuất cả kênh" cũng
+    xuất luôn cả đám cũ ⇒ 7-8 part.
+
+    Nay: clip cũ ĐÃ XUẤT được CHUYỂN VÀO KHO LƯU TRỮ (status='archived') —
+    KHÔNG xoá dòng, KHÔNG đụng file trên đĩa (giữ export_path để còn dò lịch
+    sử + chống trùng đoạn qua các lần cắt), nhưng không hiện trong danh sách
+    và không bị xuất lại. Clip đang có job xuất chờ/chạy thì để nguyên (xoá là
+    job xuất báo 'Không tìm thấy clip' và fail khó hiểu).
+    """
     keep: set = set()
     for j in db.query(
             "SELECT payload FROM jobs WHERE type='m1_export_clip' "
@@ -1416,9 +1430,16 @@ def _delete_suggested(video_id: int) -> None:
         db.execute(
             f"DELETE FROM clips WHERE video_id=? AND status='suggested' "
             f"AND id NOT IN ({ph})", (video_id, *keep))
+        db.execute(
+            f"UPDATE clips SET status='archived' WHERE video_id=? "
+            f"AND status IN ('exported','done') AND id NOT IN ({ph})",
+            (video_id, *keep))
     else:
         db.execute("DELETE FROM clips WHERE video_id=? AND status='suggested'",
                    (video_id,))
+        db.execute(
+            "UPDATE clips SET status='archived' WHERE video_id=? "
+            "AND status IN ('exported','done')", (video_id,))
 
 
 # ============================================================
@@ -1429,7 +1450,10 @@ def _delete_suggested(video_id: int) -> None:
 # video này đang ở trạng thái suggested/exported/done (kể cả lần bấm trước còn
 # treo suggested) -> bấm Tạo clip / Reup lần sau ra đoạn KHÁC.
 _USED_OVERLAP = 0.30
-_USED_STATUSES = ("suggested", "exported", "done")
+# 'archived' = clip lần trước đã xuất, đã rời danh sách nhưng VẪN tính là
+# "đoạn đã dùng" — nếu bỏ, lần cắt sau lại chọn đúng đoạn cũ (trùng clip đã
+# đăng). Xem _delete_suggested.
+_USED_STATUSES = ("suggested", "exported", "done", "archived")
 
 
 def _clip_used_ranges(signals: dict, start: float, end: float) -> list:
