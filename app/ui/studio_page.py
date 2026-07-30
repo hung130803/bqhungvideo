@@ -3809,6 +3809,21 @@ class StudioPage(QWidget):
         finally:
             self._auto_export_busy = False
 
+    def _video_cut_basic(self, vid: int) -> bool:
+        """Video này vừa được cắt kiểu CƠ BẢN (chưa qua AI) phải không? Đọc
+        cờ llm_used trong signals của các clip 'suggested' — nguồn sự thật
+        duy nhất (đúng cái nhãn 'Cắt cơ bản (chưa qua AI)' trên card clip)."""
+        rows = db.query(
+            "SELECT signals FROM clips WHERE video_id=? AND "
+            "status='suggested' ORDER BY id DESC LIMIT 5", (vid,))
+        if not rows:
+            return False            # không có clip = lỗi kiểu khác, không phải cơ bản
+        for r in rows:
+            sig = db.loads(r["signals"], {}) or {}
+            if sig.get("llm_used"):
+                return False
+        return True
+
     def _check_auto_export_inner(self):
         auto_tpl = getattr(self, "_auto_tpl", {})
         ready, total = 0, 0
@@ -3823,6 +3838,47 @@ class StudioPage(QWidget):
                 if vid is None:
                     continue
                 tpl_snap = auto_tpl.pop(jid, None)
+                # 🔍 VAN KIỂM SOÁT AI (anh Hùng 30/07: "cắt lỗi ra không biết
+                # cái nào"): video DÂY CHUYỀN mà lượt phân tích rơi về CƠ BẢN
+                # -> THỬ PHÂN TÍCH LẠI đúng 1 lần (AI đã lì hơn từ v2.6.6,
+                # gọi lại thường ăn); vẫn cơ bản lần 2 -> xuất để không tắc
+                # dây chuyền nhưng BÁO RÕ + đánh dấu [CƠ BẢN] vào sổ/báo cáo.
+                ctx_pipe = self._pipe_by_vid.get(vid) \
+                    if hasattr(self, "_pipe_by_vid") else None
+                if ctx_pipe is not None and self._video_cut_basic(vid):
+                    n_lan = db.query_one(
+                        "SELECT COUNT(*) AS n FROM jobs WHERE video_id=? AND "
+                        "type IN ('auto','auto_recap')", (vid,))["n"]
+                    if n_lan < 2:
+                        try:
+                            if ctx_pipe.get("mode") == "recap":
+                                new_jid = services.enqueue_auto_recap(
+                                    self.state.pool, vid, ctx_pipe["pid"],
+                                    self._recap_preset())
+                            else:
+                                new_jid = services.enqueue_auto(
+                                    self.state.pool, vid, ctx_pipe["pid"],
+                                    self._cut_preset())
+                        except Exception:  # noqa: BLE001
+                            new_jid = None
+                        if new_jid:
+                            new_jid = int(new_jid)
+                            self._pipe_cut.pop(jid, None)
+                            self._pipe_cut[new_jid] = ctx_pipe
+                            self._pending_export[new_jid] = vid
+                            if tpl_snap is not None:
+                                auto_tpl[new_jid] = tpl_snap
+                            self._pipe_log(
+                                f"🔁 {ctx_pipe['name']}: {ctx_pipe['file']} — "
+                                "AI lỗi nên ra cắt CƠ BẢN, tự PHÂN TÍCH LẠI "
+                                "bằng AI (1 lần) rồi mới xuất...")
+                            continue
+                    ctx_pipe["basic"] = True     # xuất cơ bản -> dấu vào sổ
+                    self._pipe_log(
+                        f"⚠ {ctx_pipe['name']}: {ctx_pipe['file']} — vẫn cắt "
+                        "CƠ BẢN sau 2 lần phân tích (AI lỗi kéo dài). Xuất để "
+                        "không tắc dây chuyền — soát lại key/mạng ở Cài đặt AI; "
+                        "video này bị đánh dấu [CƠ BẢN] trong báo cáo.")
                 try:
                     if tpl_snap is not None:
                         # tạm dùng MẪU ĐÃ CHỐT của job này để build payload
@@ -5731,7 +5787,9 @@ class StudioPage(QWidget):
             # Nay dấu này được _pipe_retry_stuck() (chạy đầu mỗi lượt + khi mở
             # app) dùng để thử dọn lại — dấu nằm trong DB nên sống qua khởi
             # động lại.
-            note = f"{len(parts)} part" + (MARK_STUCK if action == "stuck" else "")
+            note = (f"{len(parts)} part"
+                    + (" [CƠ BẢN]" if ctx.get("basic") else "")
+                    + (MARK_STUCK if action == "stuck" else ""))
             P.mark_done(ctx["entry"], video_id=vid, note=note)
             tail = {
                 "recycled": " — đã chuyển video gốc vào Thùng rác (khôi phục được)",
