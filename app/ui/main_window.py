@@ -270,6 +270,14 @@ class MainWindow(QMainWindow):
         self.state.pool._notify()      # đánh thức dispatcher áp giới hạn mới
 
     def closeEvent(self, event):
+        # ĐẦU TIÊN bật cờ ĐANG ĐÓNG: 19 luồng nền (ảnh thu nhỏ/tải/TTS) phải im
+        # lặng dừng, KHÔNG emit vào widget đang bị Qt phá — đó là gốc crash
+        # 0xc0000005 mà WER ghi 8 lần (xem app/ui/shutdown.py).
+        try:
+            from app.ui.shutdown import set_closing
+            set_closing()
+        except Exception:  # noqa: BLE001
+            pass
         # dừng worker + GIẾT tiến trình con (ffmpeg/phân tích) để không mồ côi
         try:
             from app.core.ffmpeg_utils import terminate_all_children

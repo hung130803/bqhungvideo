@@ -3244,10 +3244,14 @@ class StudioPage(QWidget):
                             "(tải xong sẽ TỰ ② phân tích & cắt)")
 
         def work():
+            from app.ui.shutdown import safe_emit
             pot = self._potoken()
             path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
                                         extra_args=extra_args)
-            self.dl_done.emit(path, err)
+            # safe_emit: user đóng app giữa lúc đang tải -> closeEvent giết
+            # yt-dlp, luồng này tỉnh lại đúng lúc Qt đang phá widget; emit
+            # thẳng = access violation (crash 0xc0000005). Xem shutdown.py.
+            safe_emit(lambda: self.dl_done.emit(path, err))
         threading.Thread(target=work, daemon=True).start()
 
     @staticmethod
@@ -3314,16 +3318,25 @@ class StudioPage(QWidget):
 
         def work():
             import time
+            from app.ui.shutdown import is_closing, safe_emit
             pot = self._potoken()
             for k, url in enumerate(urls, 1):
-                self.dl_progress.emit(f"① Tải video {k}/{n}...")
+                if is_closing():
+                    return                 # app đang đóng -> dừng loạt tải
+                safe_emit(lambda: self.dl_progress.emit(
+                    f"① Tải video {k}/{n}..."))
                 path, err = self._run_ytdlp(url, exe, dl, ff_dir, cookie_args, pot,
                                             prefix=f"({k}/{n}) ")
-                self.dl_one.emit(path, err, url)
+                if not safe_emit(lambda: self.dl_one.emit(path, err, url)):
+                    return                 # app đang đóng -> dừng cả loạt
                 if k < n:                  # GIÃN NHỊP giữa các video -> đỡ bị chặn
-                    self.dl_progress.emit(f"Nghỉ chút trước video {k + 1}/{n} "
-                                          "(tránh YouTube chặn)...")
-                    time.sleep(5)
+                    safe_emit(lambda: self.dl_progress.emit(
+                        f"Nghỉ chút trước video {k + 1}/{n} "
+                        "(tránh YouTube chặn)..."))
+                    for _ in range(50):    # ngủ 5s NHƯNG thoát ngay khi đóng app
+                        if is_closing():
+                            return
+                        time.sleep(0.1)
         threading.Thread(target=work, daemon=True).start()
 
     def _on_batch_one(self, path, err, url=""):
@@ -4880,6 +4893,7 @@ class StudioPage(QWidget):
         lay.addWidget(tbl, 1)
 
         def refill_days():
+            cache.clear()          # đổi loại/khôi phục xong -> quét đĩa lại
             err = kind_cb.currentData() == "err"
             day_lb.setVisible(not err)
             day_cb.setVisible(not err)
@@ -4895,20 +4909,30 @@ class StudioPage(QWidget):
             day_cb.blockSignals(False)
             refill_list()
 
+        cache = {}          # (loại, ngày) -> danh sách đã quét đĩa 1 LẦN
+
         def cac_muc():
             """Danh sách mục ĐANG HIỆN = nguồn (loại + ngày) đã LỌC theo ô
             tìm. Cả bảng lẫn nút 'Khôi phục CẢ NGÀY' dùng CHUNG hàm này —
-            không bao giờ lệch giữa cái thấy và cái được khôi phục."""
-            if kind_cb.currentData() == "err":
-                # FILE LỖI không xếp theo ngày -> liệt kê hết.
-                items = P.list_errors(self._pipe_recycle_dir(),
-                                      self._pipe_src_dirs())
-            else:
-                day = day_cb.currentData()
-                if not day:
+            không bao giờ lệch giữa cái thấy và cái được khôi phục.
+
+            ĐO ĐƯỢC (máy anh Hùng, 148 thư mục kênh): 1 lần quét đĩa =
+            113 ms. Gõ 5 chữ mà quét lại mỗi ký tự = hơn nửa giây đứng
+            hình. Nên: quét ĐĨA 1 lần cho mỗi (loại, ngày) rồi LỌC TRONG
+            RAM (0 ms). Đổi ngày/loại/khôi phục mới quét lại."""
+            khoa = (kind_cb.currentData(), day_cb.currentData())
+            if khoa not in cache:
+                if khoa[0] == "err":
+                    # FILE LỖI không xếp theo ngày -> liệt kê hết.
+                    cache[khoa] = P.list_errors(self._pipe_recycle_dir(),
+                                                self._pipe_src_dirs())
+                elif not khoa[1]:
                     return []
-                items = P.list_recycled(self._pipe_recycle_dir(), day,
-                                        self._pipe_src_dirs())
+                else:
+                    cache[khoa] = P.list_recycled(
+                        self._pipe_recycle_dir(), khoa[1],
+                        self._pipe_src_dirs())
+            items = cache[khoa]
             tu = (tim_ed.text() or "").strip().casefold()
             if tu:
                 items = [it for it in items
@@ -6282,7 +6306,16 @@ class StudioPage(QWidget):
                              daemon=True).start()
 
     def _bg_thumbs(self, clips, vrow):
+        # NGHI PHẠM SỐ 1 của crash 0xc0000005 (WER 8 lần, 28-30/07/2026):
+        # luồng này chạy sau MỖI lần dựng lại danh sách clip, mỗi clip 1 tiến
+        # trình ffmpeg (tới 30s) nên rất hay còn sống lúc user đóng app — rồi
+        # chạm `self` (StudioPage) đã bị Qt xoá. error.log 24/07 có đúng chứng
+        # cứ: "wrapped C/C++ object of type StudioPage has been deleted".
+        # Nay: thoát ngay khi app đóng / trang bị xoá, và emit qua safe_emit.
+        from app.ui.shutdown import alive, safe_emit
         for c in clips:
+            if not alive(self):
+                return                    # đóng app / trang đã xoá -> im lặng thoát
             tp = Path(services.cache_dir(vrow["assets_dir"])) / f"_thumb_{c['id']}.jpg"
             if tp.exists():
                 continue
@@ -6299,7 +6332,7 @@ class StudioPage(QWidget):
             if not tp.exists():
                 self._thumb_failed.add(c["id"])
         self._thumb_busy = False
-        self.thumbs_ready.emit()
+        safe_emit(lambda: self.thumbs_ready.emit())
 
     # ---- tiến độ job của video đang chọn (hiện NGAY vùng clip) ----
     # màu + icon theo GIAI ĐOẠN của job (khớp queue_panel): phân tích/AI = tím,

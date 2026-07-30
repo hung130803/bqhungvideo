@@ -22,7 +22,12 @@
   5. `_test_lane_starve.py` → làn CẮT không bị làn PHÂN TÍCH bỏ đói. Bộ điều
      phối lấy job theo TỪNG LÀN riêng; gộp 1 query `LIMIT 50` là job xuất
      (priority 3) chết đói khi ≥50 job phân tích (priority 10) đang chờ.
-  6. `_test_cancel_persist.py` → HUỶ LÀ HUỶ: bấm Huỷ lúc job đang chạy rồi
+  6. `_test_shutdown_safety.py` → LUỒNG NỀN KHÔNG ĐƯỢC LÀM SẬP APP: mọi emit
+     từ thread phải qua `shutdown.safe_emit`, closeEvent bật `set_closing()`
+     TRƯỚC khi phá widget, main.py thoát bằng `os._exit` (không finalize
+     interpreter khi luồng daemon còn chạy) + bật faulthandler ghi
+     `logs/crash_native.txt`. Gốc: crash 0xc0000005 8 lần 28-30/07/2026.
+  7. `_test_cancel_persist.py` → HUỶ LÀ HUỶ: bấm Huỷ lúc job đang chạy rồi
      tắt app/cập nhật, mở lại KHÔNG được tự chạy lại (cờ huỷ phải bền
      `jobs.cancel_req`; hồi phục dây chuyền phải trả dòng sổ cho job huỷ).
   7. `_test_ai_gate.py` → video dây chuyền ra "Cắt cơ bản" phải THỬ LẠI 1 lần

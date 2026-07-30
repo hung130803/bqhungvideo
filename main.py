@@ -101,6 +101,24 @@ def main() -> int:
     import traceback
     from datetime import datetime
 
+    # ---- BẮT CRASH NATIVE (thứ sys.excepthook KHÔNG bắt được): WER trên máy
+    # anh Hùng ghi 8 lần `0xc0000005` trong python312.dll ngày 28-30/07/2026 mà
+    # logs/error.log TRỐNG — vì access violation không đi qua excepthook.
+    # faulthandler ghi stack MỌI LUỒNG vào logs/crash_native.txt ngay khoảnh
+    # khắc chết => lần sau crash là biết đích danh dòng code. PHẢI giữ tham
+    # chiếu file (file bị đóng = faulthandler mất chỗ ghi). ----
+    try:
+        import faulthandler
+        _logd = DATA_DIR / "logs"
+        _logd.mkdir(parents=True, exist_ok=True)
+        qapp._crash_file = open(_logd / "crash_native.txt", "a",
+                                encoding="utf-8", buffering=1)
+        qapp._crash_file.write(
+            f"\n===== mở app {datetime.now():%Y-%m-%d %H:%M:%S} =====\n")
+        faulthandler.enable(file=qapp._crash_file, all_threads=True)
+    except (OSError, ImportError, ValueError):
+        pass
+
     def _log_crash(text: str) -> None:
         try:
             logd = DATA_DIR / "logs"
@@ -162,7 +180,26 @@ def main() -> int:
     from PyQt6.QtCore import QTimer
     QTimer.singleShot(800, state.start)
 
-    return qapp.exec()
+    rc = qapp.exec()
+
+    # ---- THOÁT SẠCH: KHÔNG finalize interpreter khi luồng daemon còn chạy ----
+    # Đây là gốc crash 0xc0000005 (giải thích đầy đủ trong app/ui/shutdown.py):
+    # app có 19 luồng nền daemon (ảnh thu nhỏ/tải YouTube/TTS/kiểm key). Khi
+    # đóng app, CPython finalize trong khi chúng còn chạy bytecode -> chạm vùng
+    # nhớ đã giải phóng -> access violation, KHÔNG có traceback Python.
+    # Không thể join (mỗi luồng 30-120s ffmpeg, user phải ngồi đợi). Cách chuẩn:
+    # dọn TAY thứ cần bền (worker pool + QSettings) rồi os._exit() — OS thu hồi
+    # luồng daemon tức thì, bỏ qua finalize => hết hẳn cửa sổ đua.
+    from app.ui.appsettings import app_settings
+    from app.ui.shutdown import set_closing
+    set_closing()
+    for _buoc in (state.stop, app_settings().sync,
+                  sys.stdout.flush, sys.stderr.flush):
+        try:
+            _buoc()
+        except Exception:  # noqa: BLE001 - dọn lỗi không được chặn thoát
+            pass
+    os._exit(rc)
 
 
 if __name__ == "__main__":
