@@ -27,6 +27,12 @@ class Database:
         # True nếu phải rơi vào DB tạm trong RAM (không lưu qua phiên + TIẾN TRÌNH
         # CON không chia sẻ được -> phân tích sẽ fail). UI dùng cờ này để cảnh báo.
         self.in_memory = False
+        # ⚡ NGẮT MẠCH khi DB VỠ GIỮA LÚC ĐANG CHẠY (đo thật trên máy anh Hùng
+        # 30/07: studio.db malformed -> app thử lại mỗi query -> ĐỌC ĐĨA
+        # 24,7 MB/s + 6.176 lệnh/s + 50% CPU lúc ĐỨNG YÊN = app đơ toàn diện).
+        # Vỡ rồi thì mọi query sau TRẢ RỖNG NGAY, KHÔNG đụng đĩa nữa.
+        self.corrupt_live = False       # UI đọc để báo user + dừng poll
+        self._corrupt_note = ""
         self.init_schema()
         # Chốt path THỰC vào biến môi trường để MỌI tiến trình con (phân tích)
         # spawn sau (jobs.py truyền env=dict(os.environ)) mở ĐÚNG file này —
@@ -50,6 +56,14 @@ class Database:
                 c.execute("PRAGMA journal_mode = WAL;")
                 c.execute("PRAGMA foreign_keys = ON;")
                 c.execute("PRAGMA busy_timeout = 30000;")
+                # WAL gọn + ghi nhanh: autocheckpoint 256 trang (~1 MB) thay
+                # vì mặc định 1000 (~4 MB). WAL càng phình thì MỖI truy vấn
+                # càng phải quét nhiều (đo thật: WAL 4,5 MB trên máy anh Hùng
+                # đi kèm bão đọc đĩa). synchronous=NORMAL an toàn với WAL và
+                # bớt fsync -> UI mượt hơn khi hàng đợi ghi liên tục.
+                c.execute("PRAGMA wal_autocheckpoint = 256;")
+                c.execute("PRAGMA synchronous = NORMAL;")
+                c.execute("PRAGMA temp_store = MEMORY;")
             except Exception:      # DB hỏng -> ĐÓNG ngay (nhả file để quarantine
                 c.close()          # đổi tên/xóa được), rồi ném lên cho init_schema
                 raise
@@ -312,17 +326,58 @@ class Database:
         except Exception:  # noqa: BLE001
             pass
 
+    # ---- NGẮT MẠCH khi DB vỡ giữa lúc chạy ----
+    @staticmethod
+    def _is_corrupt_err(e: BaseException) -> bool:
+        m = str(e).lower()
+        return ("malformed" in m or "not a database" in m
+                or "file is encrypted" in m)
+
+    def _mark_corrupt(self, e: BaseException) -> None:
+        """Ghi nhận DB VỠ: từ giờ mọi truy vấn trả rỗng NGAY (không đụng đĩa)
+        → hết bão I/O làm app đơ. Chỉ khởi động lại app mới chữa được (lúc mở,
+        init_schema sao lưu file vỡ rồi tạo DB mới)."""
+        if not self.corrupt_live:
+            self.corrupt_live = True
+            self._corrupt_note = str(e)[:200]
+            print("[db] ⛔ DB VỠ giữa lúc chạy — ngắt mạch truy vấn để app "
+                  f"không đơ. Khởi động lại app để tự chữa. ({self._corrupt_note})")
+
     # ---- helper cơ bản ----
     def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
-        cur = self.conn().execute(sql, tuple(params))
-        self.conn().commit()
-        return cur
+        if self.corrupt_live:
+            raise sqlite3.DatabaseError(
+                "DB đang hỏng — đã ngắt mạch. Khởi động lại app để tự chữa.")
+        try:
+            cur = self.conn().execute(sql, tuple(params))
+            self.conn().commit()
+            return cur
+        except sqlite3.DatabaseError as e:
+            if self._is_corrupt_err(e):
+                self._mark_corrupt(e)
+            raise
 
     def query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
-        return self.conn().execute(sql, tuple(params)).fetchall()
+        if self.corrupt_live:
+            return []               # trả rỗng, KHÔNG đọc đĩa (chống bão I/O)
+        try:
+            return self.conn().execute(sql, tuple(params)).fetchall()
+        except sqlite3.DatabaseError as e:
+            if self._is_corrupt_err(e):
+                self._mark_corrupt(e)
+                return []
+            raise
 
     def query_one(self, sql: str, params: Iterable[Any] = ()) -> Optional[sqlite3.Row]:
-        return self.conn().execute(sql, tuple(params)).fetchone()
+        if self.corrupt_live:
+            return None
+        try:
+            return self.conn().execute(sql, tuple(params)).fetchone()
+        except sqlite3.DatabaseError as e:
+            if self._is_corrupt_err(e):
+                self._mark_corrupt(e)
+                return None
+            raise
 
     def insert(self, sql: str, params: Iterable[Any] = ()) -> int:
         cur = self.execute(sql, params)

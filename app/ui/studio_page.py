@@ -111,6 +111,36 @@ class _ChanCombo(QComboBox):
                 pass
         super().showPopup()
 
+    def make_searchable(self, placeholder: str = "🔎 Gõ tên để tìm…") -> None:
+        """Cho GÕ ĐỂ TÌM ngay trong combo (anh Hùng 30/07: "dò từng kênh mệt
+        quá"). Editable + completer khớp CHỨA-CHUỖI không phân biệt hoa/thường
+        — chọn từ gợi ý là đổi kênh như thường (currentData vẫn trả đúng pid,
+        nên _on_proj không đổi gì). NoInsert: gõ bừa KHÔNG tạo item rác; gõ
+        không khớp rồi rời ô -> tự trả về tên kênh đang chọn (không kẹt chữ
+        lạ trong ô làm tưởng đã đổi kênh)."""
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QCompleter
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        le = self.lineEdit()
+        if le is not None:
+            le.setPlaceholderText(placeholder)
+            le.setClearButtonEnabled(True)
+        comp = QCompleter(self.model(), self)
+        comp.setCaseSensitivity(_Qt.CaseSensitivity.CaseInsensitive)
+        comp.setFilterMode(_Qt.MatchFlag.MatchContains)
+        comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.setCompleter(comp)
+
+        def _restore():
+            # rời ô mà chữ đang gõ KHÔNG trùng item nào -> khôi phục tên kênh
+            # đang chọn (tránh ô hiện chữ lạ trong khi kênh thật không đổi).
+            i = self.currentIndex()
+            if i >= 0 and le is not None and le.text() != self.itemText(i):
+                le.setText(self.itemText(i))
+        if le is not None:
+            le.editingFinished.connect(_restore)
+
 
 class StudioPage(QWidget):
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
@@ -190,8 +220,10 @@ class StudioPage(QWidget):
         srcrow.addWidget(self._tag("Kênh"))
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
         self.proj.on_popup = self._refresh_proj_marks
+        self.proj.make_searchable("🔎 Gõ tên kênh để tìm…")
         self.proj.setToolTip("Mỗi kênh = 1 thư mục riêng. Clip xuất vào đúng thư mục "
-                             "kênh.\nChuột phải để SỬA TÊN / XÓA kênh.")
+                             "kênh.\nGÕ TÊN để tìm nhanh (khỏi cuộn dò).\n"
+                             "Chuột phải để SỬA TÊN / XÓA kênh.")
         self.proj.currentIndexChanged.connect(self._on_proj)
         self.proj.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.proj.customContextMenuRequested.connect(self._proj_menu)
@@ -1911,6 +1943,19 @@ class StudioPage(QWidget):
         khiến hộp 'Chọn thư mục lưu' vừa hiện đã tự tắt (đúng lỗi user báo)."""
         from PyQt6.QtWidgets import QApplication
         if self._modal_busy or QApplication.activeModalWidget() is not None:
+            return
+        # ⛔ DB VỠ giữa lúc chạy: DỪNG POLL + báo user 1 lần. Không dừng thì
+        # mỗi nhịp lại nã hàng loạt query vào DB hỏng — đo thật trên máy anh
+        # Hùng 30/07: 24,7 MB/s đọc đĩa + 50% CPU lúc app đứng yên = đơ đặc.
+        if getattr(db, "corrupt_live", False):
+            self.timer.stop()
+            if not getattr(self, "_warned_corrupt", False):
+                self._warned_corrupt = True
+                self.status.setText(
+                    "⛔ Cơ sở dữ liệu bị hỏng (thường do ổ đĩa đầy lúc đang "
+                    "ghi). Đã DỪNG cập nhật để app không bị đơ. Hãy TẮT rồi "
+                    "MỞ LẠI app — lúc mở, app tự sao lưu file hỏng và tạo mới. "
+                    "Video/clip trên đĩa KHÔNG mất.")
             return
         # Thứ tự như cũ: báo xong ✓ -> làm mới clip -> tự xuất -> dõi dây chuyền
         # -> hoạt động kênh. Lỗi 1 việc không được chặn các việc sau.
@@ -4763,7 +4808,8 @@ class StudioPage(QWidget):
         KHÔI PHỤC 1 video / cả ngày về đúng thư mục kênh (để cắt lại)."""
         from app.core import pipeline as P
         from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog,
-                                     QHBoxLayout, QLabel, QMessageBox,
+                                     QHBoxLayout, QLabel, QLineEdit,
+                                     QMessageBox,
                                      QPushButton, QTableWidget, QTableWidgetItem,
                                      QAbstractItemView, QHeaderView, QVBoxLayout)
         # PHẢI import ở ĐÂY: các import trong file này là CỤC BỘ TỪNG HÀM, nên
@@ -4817,6 +4863,14 @@ class StudioPage(QWidget):
         day_cb = QComboBox(); row2.addWidget(day_cb, 1)
         rest_all = QPushButton("↩ Khôi phục CẢ NGÀY"); rest_all.setProperty("ghost", True)
         row2.addWidget(rest_all); lay.addLayout(row2)
+        # 🔎 TÌM KIẾM (anh Hùng 30/07: "dò từng kênh mệt quá"): gõ là lọc
+        # ngay theo tên KÊNH hoặc tên VIDEO — không phân biệt hoa thường.
+        # "Khôi phục CẢ NGÀY" khi đang lọc chỉ khôi phục ĐÚNG phần đang hiện
+        # (khỏi trúng nhầm kênh khác); nút đổi chữ cho nói thật.
+        tim_ed = QLineEdit()
+        tim_ed.setPlaceholderText("🔎 Gõ tên kênh / tên video để lọc...")
+        tim_ed.setClearButtonEnabled(True)
+        lay.addWidget(tim_ed)
         # bảng video
         tbl = QTableWidget(0, 3)
         tbl.setHorizontalHeaderLabels(["Kênh", "Video", ""])
@@ -4841,8 +4895,10 @@ class StudioPage(QWidget):
             day_cb.blockSignals(False)
             refill_list()
 
-        def refill_list():
-            tbl.setRowCount(0)
+        def cac_muc():
+            """Danh sách mục ĐANG HIỆN = nguồn (loại + ngày) đã LỌC theo ô
+            tìm. Cả bảng lẫn nút 'Khôi phục CẢ NGÀY' dùng CHUNG hàm này —
+            không bao giờ lệch giữa cái thấy và cái được khôi phục."""
             if kind_cb.currentData() == "err":
                 # FILE LỖI không xếp theo ngày -> liệt kê hết.
                 items = P.list_errors(self._pipe_recycle_dir(),
@@ -4850,9 +4906,19 @@ class StudioPage(QWidget):
             else:
                 day = day_cb.currentData()
                 if not day:
-                    return
+                    return []
                 items = P.list_recycled(self._pipe_recycle_dir(), day,
                                         self._pipe_src_dirs())
+            tu = (tim_ed.text() or "").strip().casefold()
+            if tu:
+                items = [it for it in items
+                         if tu in (it["channel"] or "").casefold()
+                         or tu in (it["name"] or "").casefold()]
+            return items
+
+        def refill_list():
+            tbl.setRowCount(0)
+            items = cac_muc()
             tbl.setRowCount(len(items))
             for i, it in enumerate(items):
                 tbl.setItem(i, 0, QTableWidgetItem(it["channel"]))
@@ -4861,6 +4927,14 @@ class StudioPage(QWidget):
                 rb = QPushButton("↩ Khôi phục"); rb.setProperty("ghost", True)
                 rb.clicked.connect(lambda _c, it=it: do_restore([it]))
                 tbl.setCellWidget(i, 2, rb)
+            # nút khôi-phục-hết nói thật đang lọc hay không
+            loc = bool((tim_ed.text() or "").strip())
+            if kind_cb.currentData() == "err":
+                rest_all.setText("↩ Khôi phục ĐANG LỌC" if loc
+                                 else "↩ Khôi phục HẾT file lỗi")
+            else:
+                rest_all.setText("↩ Khôi phục ĐANG LỌC" if loc
+                                 else "↩ Khôi phục CẢ NGÀY")
 
         def do_restore(items):
             done = 0; fail = 0
@@ -4891,18 +4965,16 @@ class StudioPage(QWidget):
                 refill_days()
 
         def restore_all():
-            if kind_cb.currentData() == "err":
-                do_restore(P.list_errors(self._pipe_recycle_dir(),
-                                         self._pipe_src_dirs()))
-                return
-            day = day_cb.currentData()
-            if day:
-                do_restore(P.list_recycled(self._pipe_recycle_dir(), day,
-                                           self._pipe_src_dirs()))
+            # KHÔI PHỤC ĐÚNG CÁI ĐANG THẤY: cùng danh sách với bảng (đã lọc
+            # theo ô tìm) — đang lọc "Kênh A" thì chỉ khôi phục Kênh A.
+            items = cac_muc()
+            if items:
+                do_restore(items)
 
         pick_b.clicked.connect(pick_dir)
         kind_cb.currentIndexChanged.connect(refill_days)
         day_cb.currentIndexChanged.connect(refill_list)
+        tim_ed.textChanged.connect(refill_list)
         rest_all.clicked.connect(restore_all)
         refill_days()
         dlg.exec()

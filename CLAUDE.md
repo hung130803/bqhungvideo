@@ -25,6 +25,14 @@
   6. `_test_cancel_persist.py` → HUỶ LÀ HUỶ: bấm Huỷ lúc job đang chạy rồi
      tắt app/cập nhật, mở lại KHÔNG được tự chạy lại (cờ huỷ phải bền
      `jobs.cancel_req`; hồi phục dây chuyền phải trả dòng sổ cho job huỷ).
+  7. `_test_ai_gate.py` → video dây chuyền ra "Cắt cơ bản" phải THỬ LẠI 1 lần
+     rồi mới xuất; lần 2 vẫn cơ bản thì đóng dấu `[CƠ BẢN]` vào sổ.
+  8. `_test_chan_search.py` → ô Kênh gõ-để-tìm không phá `_on_proj`.
+  9. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
+     30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
+     đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
+     phát hiện malformed → `corrupt_live=True` → trả rỗng NGAY (đo: 6.000 truy
+     vấn = 0 ms), UI dừng poll + báo "khởi động lại app để tự chữa".
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước
