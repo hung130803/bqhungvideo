@@ -1719,15 +1719,24 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         _min = float(cfg.get("min_len", 60.0))
         _max = float(cfg.get("max_len", 0.0) or 0.0)
         _tsegs = (transcript or {}).get("segments", []) or []
+        # 🔒 CHỐT CỨNG SỐ PART = count user đặt (anh Hùng 30/07: đặt 3 mà ra
+        # 5-6). Mọi bước trên ĐÁNG LẼ đã cắt về count, nhưng fail-safe của
+        # _refine_clip_selection (JSON hỏng -> giữ NGUYÊN danh sách) có thể để
+        # lọt nhiều hơn. Đây là rào chắn cuối, đặt cạnh rào độ dài. count<=0 =
+        # 'AI tự quyết' -> không cắt.
+        _want = int(cfg.get("count", 0) or 0)
+        if _want > 0 and len(ai_clips) > _want:
+            ai_clips = ai_clips[:_want]
         _len_notes: list = []
         clip_ids = []
         for c in ai_clips:
-            segs, _note = _enforce_len(c["segments"], _min, _max, duration,
-                                       _bnd)
-            # 🚮 nới min (_enforce_len) có thể nuốt lại outro/intro theo THỜI
-            # GIAN -> snap mép bỏ câu CTA/chào lần CUỐI (chỉ cắt khi vẫn giữ
-            # được >= min_len - 2s, không thì giữ nguyên — fail-safe).
-            segs = _trim_junk_edges(segs, _tsegs, _min)
+            # 🚮 CẮT MÉP CTA/chào TRƯỚC, rồi mới ÉP ĐỘ DÀI — thứ tự này sống
+            # còn (anh Hùng 30/07: đặt 60-80s mà ra dưới 60s). Trước đây trim
+            # chạy SAU _enforce_len nên enforce vừa nới lên 60s xong thì trim
+            # cắt tụt xuống ~58s (floor min-2) hoặc nuốt cả 1 câu -> lọt sàn.
+            # Nay _enforce_len là NGƯỜI NÓI CUỐI về độ dài -> luôn >= min_len.
+            segs = _trim_junk_edges(c["segments"], _tsegs, _min)
+            segs, _note = _enforce_len(segs, _min, _max, duration, _bnd)
             c["segments"] = segs
             if _note:
                 _len_notes.append(_note)
@@ -1899,13 +1908,12 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     _delete_suggested(video_id)
     clip_ids = []
     for c in candidates:
-        # 🔒 RÀO CHẮN CUỐI: clip PHẢI lọt [min_len, max_len] (nới nếu < min,
-        # cắt nếu > max). Thay _ensure_min_duration cũ (chỉ lo min, không cắt
-        # max, không bám mép câu). Sửa lỗi 'đặt min 60 ra 46'.
-        seg, _ = _enforce_len([[c["start"], c["end"]]], min_len, max_len,
-                              duration, _bnd)
-        # 🚮 snap mép bỏ câu CTA/chào kênh dính ở đầu/cuối (fail-safe giữ min)
-        seg = _trim_junk_edges(seg, tsegs, min_len)
+        # 🚮 CẮT MÉP CTA/chào TRƯỚC, 🔒 RÀO CHẮN ĐỘ DÀI SAU CÙNG (cùng thứ tự
+        # với đường AI — anh Hùng 30/07: đặt 60-80s ra dưới 60s vì trim chạy
+        # sau enforce, cắt tụt xuống dưới min). _enforce_len là người nói cuối
+        # -> clip luôn >= min_len (nới nếu <min, cắt nếu >max).
+        seg = _trim_junk_edges([[c["start"], c["end"]]], tsegs, min_len)
+        seg, _ = _enforce_len(seg, min_len, max_len, duration, _bnd)
         c_start, c_end = seg[0][0], seg[-1][1]
         a_s = _audio_score(audio, c_start, c_end)
         s_s = _scene_score(scenes, c_start, c_end)

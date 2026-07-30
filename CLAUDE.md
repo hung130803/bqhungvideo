@@ -48,7 +48,14 @@
      ảnh đối chứng 30/07). `m1._call_waiting_quota` đợi theo
      soonest_ready_wait (ngân sách AI_QUOTA_WAIT_SEC=15ph), ngủ nhịp 5s có
      kiểm HUỶ; lỗi khác/hết ngân sách mới rơi heuristic.
-  12. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
+  12. `_test_clip_count_len.py` → ĐÚNG SỐ PART + ĐÚNG ĐỘ DÀI: (A) chốt cứng
+     `ai_clips = ai_clips[:count]` trước vòng lưu — fail-safe refine (JSON hỏng
+     giữ nguyên list) từng để lọt 5-6 part khi đặt 3. (B) trong vòng lưu, gọi
+     `_trim_junk_edges` TRƯỚC rồi `_enforce_len` SAU (cả đường AI lẫn
+     heuristic) — trước đây enforce nới lên 60s xong trim cắt tụt <60s. enforce
+     phải là NGƯỜI NÓI CUỐI về độ dài. Gốc 30/07: đặt 60-80s/3part ra 5-6 part
+     dưới 60s.
+  13. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
      30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
      đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
      phát hiện malformed → `corrupt_live=True` → trả rỗng NGAY (đo: 6.000 truy
