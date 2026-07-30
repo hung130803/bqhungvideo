@@ -183,6 +183,15 @@ class WorkerPool:
         # (ThreadPoolExecutor join thread non-daemon lúc interpreter shutdown).
         with self._lock:
             self._canceled.update(self._inflight)
+        # Job đang 'Đang hủy...' (cancel_req=1) phải CHỐT 'canceled' trước —
+        # đưa nó về 'pending' như job thường là mở app lại nó TỰ CHẠY LẠI
+        # dù user đã bấm Huỷ (bug anh Hùng 30/07: huỷ xong tắt app/cập nhật,
+        # vào lại thấy job huỷ tự chạy).
+        db.execute(
+            "UPDATE jobs SET status='canceled', message='Đã hủy', "
+            "finished_at=datetime('now') "
+            "WHERE status='running' AND cancel_req=1"
+        )
         db.execute(
             "UPDATE jobs SET status='pending', progress=0, "
             "message='Tạm dừng do tắt app' WHERE status='running'"
@@ -213,6 +222,13 @@ class WorkerPool:
 
     # ---- crash recovery ----
     def _recover_crashed(self) -> None:
+        # Job user ĐÃ BẤM HUỶ (cancel_req=1) mà app tắt/crash trước khi kịp
+        # chốt -> 'canceled', TUYỆT ĐỐI không đưa lại hàng đợi (huỷ là huỷ).
+        db.execute(
+            "UPDATE jobs SET status='canceled', message='Đã hủy', "
+            "finished_at=datetime('now') "
+            "WHERE status='running' AND cancel_req=1"
+        )
         # Job dở mà CHƯA hết lượt -> đưa lại hàng đợi chạy tiếp.
         db.execute(
             "UPDATE jobs SET status='pending', progress=0, "
@@ -278,9 +294,12 @@ class WorkerPool:
             "UPDATE jobs SET status='canceled', message='Đã hủy' "
             "WHERE id=? AND status='pending'", (job_id,),
         )
-        # đang chạy -> báo 'Đang hủy...' để UI phản hồi tức thì
+        # đang chạy -> báo 'Đang hủy...' + GHI Ý ĐỊNH HUỶ BỀN vào DB.
+        # cancel_req=1 để stop()/khôi phục sau restart biết job này ĐÃ bị huỷ
+        # — cờ RAM (_canceled) chết theo app, chỉ mình nó thì tắt app/cập nhật
+        # đúng lúc 'Đang hủy...' là job hồi sinh chạy lại (bug anh Hùng 30/07).
         db.execute(
-            "UPDATE jobs SET message='Đang hủy...' "
+            "UPDATE jobs SET message='Đang hủy...', cancel_req=1 "
             "WHERE id=? AND status='running'", (job_id,),
         )
         self._notify()
@@ -299,15 +318,18 @@ class WorkerPool:
             "WHERE status='pending'"
         )
         db.execute(
-            "UPDATE jobs SET message='Đang hủy...' WHERE status='running'"
+            "UPDATE jobs SET message='Đang hủy...', cancel_req=1 "
+            "WHERE status='running'"
         )
         self._notify()
 
     def retry(self, job_id: int) -> None:
         self._canceled.discard(job_id)
+        # cancel_req=0: user CHỦ ĐỘNG chạy lại — xoá ý định huỷ cũ, nếu không
+        # lần tắt app kế tiếp lại chuyển nó thành 'canceled' oan.
         db.execute(
             "UPDATE jobs SET status='pending', attempts=0, error=NULL, "
-            "progress=0, message='Đưa lại hàng đợi' "
+            "progress=0, cancel_req=0, message='Đưa lại hàng đợi' "
             "WHERE id=? AND status IN ('failed','canceled')", (job_id,),
         )
         self._notify()

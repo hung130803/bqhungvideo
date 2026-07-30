@@ -22,6 +22,9 @@
   5. `_test_lane_starve.py` → làn CẮT không bị làn PHÂN TÍCH bỏ đói. Bộ điều
      phối lấy job theo TỪNG LÀN riêng; gộp 1 query `LIMIT 50` là job xuất
      (priority 3) chết đói khi ≥50 job phân tích (priority 10) đang chờ.
+  6. `_test_cancel_persist.py` → HUỶ LÀ HUỶ: bấm Huỷ lúc job đang chạy rồi
+     tắt app/cập nhật, mở lại KHÔNG được tự chạy lại (cờ huỷ phải bền
+     `jobs.cancel_req`; hồi phục dây chuyền phải trả dòng sổ cho job huỷ).
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước

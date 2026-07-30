@@ -299,6 +299,16 @@ class Database:
                     "  WHERE j.project_id=projects.id AND j.status='done' "
                     "  AND j.finished_at IS NOT NULL)")
                 self.conn().commit()
+            # Ý ĐỊNH HUỶ ghi BỀN vào DB (bug anh Hùng 30/07: bấm Huỷ job đang
+            # chạy rồi tắt app/cập nhật -> cờ huỷ chỉ ở RAM chết theo app, dòng
+            # 'running' bị khôi phục thành 'pending' -> job huỷ TỰ CHẠY LẠI).
+            jcols = [r[1] for r in
+                     self.conn().execute("PRAGMA table_info(jobs)").fetchall()]
+            if "cancel_req" not in jcols:
+                self.conn().execute(
+                    "ALTER TABLE jobs ADD COLUMN cancel_req "
+                    "INTEGER NOT NULL DEFAULT 0")
+                self.conn().commit()
         except Exception:  # noqa: BLE001
             pass
 

@@ -5406,10 +5406,35 @@ class StudioPage(QWidget):
                     "SELECT id, status FROM jobs WHERE video_id=? AND type IN "
                     "('auto','auto_recap') ORDER BY id DESC LIMIT 1", (vid,))
                 st = (jrow["status"] if jrow else "") or ""
+                if st in ("canceled", "skipped"):
+                    # USER ĐÃ BẤM HUỶ rồi mới tắt app (bug anh Hùng 30/07:
+                    # hồi phục xếp lại job mới -> job huỷ TỰ CHẠY LẠI).
+                    # Huỷ là huỷ: trả dòng sổ (lượt CHẠY TAY sau vẫn nhận
+                    # lại được — giống hệt cách poll xử lý huỷ khi app sống),
+                    # GIỮ NGUYÊN video gốc, KHÔNG tự chạy.
+                    P.unmark_taken(r["id"])
+                    self._pipe_log(
+                        f"⏹ {r['chan']}: {r['file_name']} — đã HUỶ trước khi "
+                        "tắt app, không tự chạy lại (gốc giữ nguyên).")
+                    continue
                 if jrow and st in ("done", "pending", "running"):
                     jid = int(jrow["id"])
+                    # ĐÃ phân tích xong nhưng user huỷ các job XUẤT rồi tắt
+                    # app -> cũng là huỷ, đừng nối lại kẻo tự xuất lại.
+                    if st == "done":
+                        exrow = db.query_one(
+                            "SELECT status FROM jobs WHERE video_id=? AND "
+                            "type='m1_export_clip' ORDER BY id DESC LIMIT 1",
+                            (vid,))
+                        if exrow and (exrow["status"] or "") == "canceled":
+                            P.unmark_taken(r["id"])
+                            self._pipe_log(
+                                f"⏹ {r['chan']}: {r['file_name']} — job xuất "
+                                "đã HUỶ trước khi tắt app, không tự xuất lại "
+                                "(gốc giữ nguyên).")
+                            continue
                 else:
-                    # Job phân tích mất/lỗi/huỷ -> xếp lại job MỚI (video đã
+                    # Job phân tích mất/lỗi -> xếp lại job MỚI (video đã
                     # nhập rồi nên không phải nhận lại từ thư mục).
                     try:
                         if mode == "recap":
@@ -5617,11 +5642,14 @@ class StudioPage(QWidget):
             elif st in ("canceled", "skipped"):
                 # HUỶ (Huỷ tất cả) hoặc BỎ QUA (trùng) — KHÔNG phải lỗi:
                 # GIỮ NGUYÊN video gốc trong thư mục (lần chạy sau cắt lại),
-                # KHÔNG chuyển _Loi, KHÔNG xoá. Chỉ gỡ theo dõi.
+                # KHÔNG chuyển _Loi, KHÔNG xoá. Gỡ theo dõi + TRẢ DÒNG SỔ —
+                # để dòng kẹt 'taken' là hồi phục sau restart tưởng việc dở
+                # rồi tự chạy lại (bug anh Hùng 30/07).
                 ctx = self._pipe_cut.pop(jid)
                 self._pipe_by_vid.pop(ctx["vid"], None)
                 self._pending_export.pop(jid, None)
                 getattr(self, "_auto_tpl", {}).pop(jid, None)
+                P.unmark_taken(ctx["entry"])
                 self._pipe_log(
                     f"⏹ {ctx['name']}: {ctx['file']} — đã huỷ, GIỮ NGUYÊN "
                     "video gốc.")
@@ -5666,6 +5694,9 @@ class StudioPage(QWidget):
                 bad = []
             ctx = self._pipe_exports.pop(vid)["ctx"]
             if canceled:
+                # Trả dòng sổ như nhánh huỷ bên _pipe_poll_cut — kẹt 'taken'
+                # là hồi phục sau restart tự xuất lại dù user đã huỷ.
+                P.unmark_taken(ctx["entry"])
                 self._pipe_log(
                     f"⏹ {ctx['name']}: '{ctx['file']}' — đã huỷ, GIỮ NGUYÊN "
                     "video gốc (lần chạy sau cắt lại).")

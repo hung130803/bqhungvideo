@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     dedup_key     TEXT,
     result        TEXT,                   -- JSON kết quả khi xong
     error         TEXT,
+    -- Ý ĐỊNH HUỶ (bền qua restart): user bấm Huỷ lúc job đang chạy thì cờ này
+    -- =1; tắt app/khôi phục thấy running+cancel_req=1 -> 'canceled', KHÔNG
+    -- được đưa lại 'pending' (bug: job đã huỷ tự chạy lại sau khi mở app).
+    cancel_req    INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     started_at    TEXT,
     finished_at   TEXT

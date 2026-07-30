@@ -554,10 +554,13 @@ db.execute("UPDATE pipeline_files SET taken_at=datetime('now','-13 hours') "
            "WHERE status='taken'")
 pg2 = dung_trang()                      # mở lại app hôm sau
 n = pg2._pipe_resume_taken()
-kiem(n == 3, "mở lại app hôm sau NỐI TIẾP đủ 3 video dở",
-     f"chỉ nối {n}/3")
+# v2.6.8 (anh Hùng 30/07: "ấn huỷ rồi mà mở lại nó tự chạy"): video user ĐÃ
+# HUỶ (js[1]) KHÔNG được tự chạy lại — chỉ nối 2 video dở thật (done chờ
+# xuất + pending). Video huỷ được TRẢ SỔ, gốc giữ nguyên, chờ user tự chạy.
+kiem(n == 2, "mở lại app hôm sau NỐI TIẾP đủ 2 video DỞ THẬT "
+     "(video đã HUỶ không tự chạy lại)", f"nối {n}, kỳ vọng 2")
 pg2._pipe_run()                         # bấm ▶ Chạy -> gọi expire_stale_taken
-bom_nhip(20)
+bom_nhip(30)                            # video huỷ được NHẬN LẠI ở lượt chạy TAY này
 n_taken = db.query("SELECT COUNT(*) n FROM pipeline_files "
                    "WHERE status='taken'")[0]["n"]
 n_err = db.query("SELECT COUNT(*) n FROM pipeline_files "
@@ -568,6 +571,8 @@ kiem(n_err == 0,
      f"{n_err} dòng bị đổi oan -> báo cáo sai + có thể cắt lần hai")
 kiem(n_taken == ctx, "bất biến vàng vẫn giữ sau khi qua đêm",
      f"taken={n_taken} nhưng dõi {ctx} ctx")
+kiem(n_taken == 3, "video huỷ được nhận LẠI khi user CHỦ ĐỘNG bấm ▶ Chạy",
+     f"taken={n_taken}, kỳ vọng 3 (2 nối + 1 nhận lại)")
 
 # ───────────────────────── kết ─────────────────────────
 for k, v in _saved.items():
