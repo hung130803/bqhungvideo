@@ -1168,25 +1168,62 @@ class StudioPage(QWidget):
                 return cu
             except RuntimeError:
                 pass          # widget cũ đã bị Qt xoá -> dựng lại bên dưới
-        pop = QFrame(self, Qt.WindowType.Popup)
+        # ⚠ KHÔNG dùng Qt.WindowType.Popup: Qt tự ĐÓNG popup ngay khi mất focus
+        # -> anh Hùng 31/07: "đang mở phần kênh, sang trình duyệt rồi quay lại
+        # thì nó đóng mất". Dùng Tool + Frameless: là cửa sổ con ĐI THEO app
+        # (thu nhỏ app thì ẩn cùng, mở lại thì hiện lại) và KHÔNG tự đóng.
+        # Đóng bằng: chọn 1 kênh · nút ✕ · phím Esc.
+        from PyQt6.QtGui import QKeySequence, QShortcut
+        from PyQt6.QtWidgets import QHBoxLayout as _QHB, QPushButton as _QPB
+        pop = QFrame(self, Qt.WindowType.Tool
+                     | Qt.WindowType.FramelessWindowHint)
         pop.setObjectName("chanPick")
+        pop.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         pop.setStyleSheet(
             f"#chanPick{{background:{BASE};border:1px solid {BORDER};"
             f"border-radius:10px;}}")
         lay = QVBoxLayout(pop)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
+        hrow = _QHB(); hrow.setSpacing(6)
         ed = QLineEdit()
         ed.setPlaceholderText("🔎 Gõ tên kênh để tìm (mọi nhóm)…")
         ed.setClearButtonEnabled(True)
-        lay.addWidget(ed)
+        hrow.addWidget(ed, 1)
+        xb = _QPB("✕"); xb.setProperty("ghost", True); xb.setFixedWidth(30)
+        xb.setToolTip("Đóng danh sách (hoặc bấm Esc)")
+        xb.clicked.connect(pop.close)
+        hrow.addWidget(xb)
+        lay.addLayout(hrow)
         lst = QListWidget()
         lst.setAlternatingRowColors(False)
         lay.addWidget(lst, 1)
+        QShortcut(QKeySequence("Esc"), pop, pop.close)
         self._chan_pop, self._chan_pop_ed, self._chan_pop_lst = pop, ed, lst
 
+        def them_dong(nhan: str, pid, ten_goc: str) -> None:
+            """1 dòng = [nhãn kênh] + [📋 copy TÊN GỐC kênh đó] (anh Hùng
+            31/07). Nút copy là widget CON của dòng nên bấm nó KHÔNG chọn kênh
+            (click bị nút ăn) — copy xong danh sách vẫn mở để làm tiếp."""
+            it = QListWidgetItem()
+            it.setData(Qt.ItemDataRole.UserRole, int(pid))
+            it.setData(Qt.ItemDataRole.UserRole + 1, ten_goc)
+            w = QWidget()
+            h = _QHB(w); h.setContentsMargins(6, 1, 2, 1); h.setSpacing(6)
+            lb = QLabel(nhan)
+            lb.setStyleSheet("background:transparent;")
+            h.addWidget(lb, 1)
+            cp = _QPB("📋"); cp.setProperty("ghost", True)
+            cp.setFixedWidth(30)
+            cp.setToolTip(f"Copy tên kênh: {ten_goc}")
+            cp.clicked.connect(lambda _c=False, t=ten_goc: self._copy_chan_text(t))
+            h.addWidget(cp)
+            it.setSizeHint(w.sizeHint())
+            lst.addItem(it)
+            lst.setItemWidget(it, w)
+
         def fill(q: str = "") -> None:
-            lst.clear()
+            lst.clear()          # xoá luôn widget con của từng dòng (Qt sở hữu)
             act = self._chan_activity()
             grp_now = self._cur_group()
             if (q or "").strip():
@@ -1195,9 +1232,8 @@ class StudioPage(QWidget):
                     nhan = r["name"]
                     if (r["grp"] or "") != (grp_now or ""):
                         nhan += f"   · nhóm {r['grp'] or 'Chưa phân nhóm'}"
-                    it = QListWidgetItem(nhan + self._chan_suffix(act, r["id"]))
-                    it.setData(Qt.ItemDataRole.UserRole, r["id"])
-                    lst.addItem(it)
+                    them_dong(nhan + self._chan_suffix(act, r["id"]),
+                              r["id"], r["name"])
                 if not rows:
                     lst.addItem(QListWidgetItem("(không có kênh nào khớp)"))
             else:
@@ -1208,10 +1244,8 @@ class StudioPage(QWidget):
                         continue
                     ten = getattr(self, "_proj_names", {}).get(
                         int(pid), self.proj.itemText(i))
-                    it = QListWidgetItem(f"{i + 1}. {ten}"
-                                         + self._chan_suffix(act, pid))
-                    it.setData(Qt.ItemDataRole.UserRole, int(pid))
-                    lst.addItem(it)
+                    them_dong(f"{i + 1}. {ten}" + self._chan_suffix(act, pid),
+                              int(pid), ten)
             if lst.count():
                 lst.setCurrentRow(0)
 
@@ -1231,11 +1265,22 @@ class StudioPage(QWidget):
         self._chan_pop_fill = fill      # để lần mở sau DÙNG LẠI popup này
         fill("")
         # đặt ngay dưới combo, rộng thoải mái để đọc tên dài + tên nhóm
-        pop.resize(max(self.proj.width(), 460), 360)
+        pop.resize(max(self.proj.width(), 520), 380)
         pop.move(self.proj.mapToGlobal(QPoint(0, self.proj.height() + 2)))
         pop.show()
+        pop.raise_()
         ed.setFocus()
         return pop
+
+    def _copy_chan_text(self, ten: str) -> None:
+        """Copy tên kênh ra clipboard + báo ở dòng trạng thái. KHÔNG đóng danh
+        sách, KHÔNG đổi kênh đang chọn (anh Hùng chỉ muốn lấy cái tên)."""
+        from PyQt6.QtWidgets import QApplication
+        t = (ten or "").strip()
+        if not t:
+            return
+        QApplication.clipboard().setText(t)
+        self.status.setText(f"📋 Đã copy tên kênh: {t}")
 
     def _chan_suffix(self, act: dict, pid) -> str:
         """Đuôi trạng thái 1 kênh (' · ⏳2 · ✅12h') — dùng chung cho combo lẫn

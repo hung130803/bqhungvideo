@@ -39,6 +39,13 @@
      [ô tìm + danh sách] (`_open_chan_picker`); gõ -> `services.search_channels`
      tìm TRÊN MỌI NHÓM, nhãn ghi "· nhóm X"; chọn kênh nhóm khác thì
      `_select_project` tự đổi nhóm. Enter = chọn dòng đầu.
+     v2.6.21: popup KHÔNG được dùng kiểu `Qt.WindowType.Popup` — kiểu đó Qt
+     TỰ ĐÓNG khi mất focus (anh Hùng: sang trình duyệt rồi quay lại là mất
+     danh sách). Phải là `Tool | FramelessWindowHint` (đi theo app, không tự
+     đóng), đóng bằng chọn kênh / nút ✕ / Esc. LƯU Ý KHI TEST: `Qt.Tool =
+     Popup | Dialog` nên bit Popup LUÔN có — phải so KIỂU
+     `flags & WindowType_Mask`, đừng so bit. Mỗi dòng có nút 📋 copy TÊN GỐC
+     (không kèm STT/đuôi trạng thái), bấm copy KHÔNG đổi kênh + KHÔNG đóng.
   10. `_test_reanalyze_clean.py` → PHÂN TÍCH LẠI phải ra ĐÚNG số part user
      đặt: clip lần trước ĐÃ XUẤT phải vào kho `status='archived'` (không xoá,
      giữ export_path + tính là "đoạn đã dùng"), `list_clips` bỏ archived. Gốc
