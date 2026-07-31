@@ -4615,7 +4615,12 @@ class StudioPage(QWidget):
                 # chung 1 mẫu -> clip trông giống nhau). '(mẫu đang chọn)' =
                 # ăn theo mẫu trên trang chính như CŨ, không phá gì.
                 tcb = NoWheelComboBox()
-                tcb.addItem("(mẫu đang chọn)", "")
+                # NHÃN PHẢI NÓI RÕ MẪU SẼ DÙNG THẬT: anh Hùng 31/07 nhìn
+                # "(mẫu đang chọn)" tưởng kênh CHƯA có mẫu ("nó toàn chưa
+                # chọn") nên định bấm tay gần 200 kênh — thực ra chúng đang
+                # dùng đúng mẫu ở trang chính.
+                _mc = (self.tmpl_box.currentData() or "").strip()
+                tcb.addItem(f"(mẫu đang chọn: {_mc or 'Mặc định'})", "")
                 for _t in services.list_templates():
                     tcb.addItem(_t["name"], _t["name"])
                 _tcur = (r["tpl_name"] or "").strip() if "tpl_name" in r.keys() \
@@ -4629,8 +4634,9 @@ class StudioPage(QWidget):
                 tcb.setToolTip(
                     "MẪU RIÊNG cho kênh này (khung, chữ, phụ đề, logo…).\n"
                     "Đặt mẫu khác nhau cho từng kênh -> clip không bị trông "
-                    "giống nhau hàng loạt.\n'(mẫu đang chọn)' = dùng mẫu ở "
-                    "trang chính như cũ.")
+                    "giống nhau hàng loạt.\n'(mẫu đang chọn: …)' = ăn theo mẫu "
+                    "trên trang chính như cũ.\nMuốn gán 1 lượt cho MỌI kênh: "
+                    "bấm tiêu đề cột 'Mẫu' (hoặc menu 🔧 Sửa/làm lại).")
 
                 def _on_tpl(_i, p=pid, c=tcb):
                     services.set_project_template(p, c.currentData() or "")
@@ -4770,12 +4776,21 @@ class StudioPage(QWidget):
                 ov.setText(ov.text() + "  ·  ⏳ 0 video chờ cắt")
                 ov.setToolTip("Không kênh nào còn video gốc chờ cắt trong nhóm này.")
 
+        self._pipe_fill = fill        # để gán mẫu hàng loạt dựng lại bảng ngay
+
         def on_group_change():
             g = grp_cb.currentData()
             if g is not None:
                 self._settings.setValue("pipe_grp_sel", g)
             fill()
         grp_cb.currentIndexChanged.connect(on_group_change)
+        # BẤM TIÊU ĐỀ CỘT "Mẫu" = gán 1 mẫu cho mọi kênh đang hiện (khỏi bấm
+        # từng kênh khi có ~200 kênh). Không thêm nút mới cho khỏi rối hàng nút.
+        _hh = tbl.horizontalHeader()
+        _hh.setToolTip("Bấm tiêu đề cột 'Mẫu' để gán 1 mẫu cho MỌI kênh đang "
+                       "hiện trong bảng.")
+        _hh.sectionClicked.connect(
+            lambda c: self._pipe_bulk_tpl() if c == 4 else None)
         # Gõ tìm kênh: KHÔNG dựng lại bảng mỗi phím (49 kênh -> quét thư mục +
         # dựng lại combo mỗi ký tự = ĐƠ GIẬT). Debounce 280ms: gõ xong mới lọc.
         from PyQt6.QtCore import QTimer as _QTsrch
@@ -5789,6 +5804,11 @@ class StudioPage(QWidget):
         a1.setToolTip("Video đã phân tích xong nhưng chưa xuất Part -> xuất "
                       "tiếp + dọn gốc, KHÔNG phân tích lại.")
         a1.triggered.connect(self._pipe_resume_dialog)
+        a0 = m.addAction("🎨 Gán 1 mẫu cho MỌI kênh đang hiện…")
+        a0.setToolTip("Khỏi bấm từng kênh (gần 200 kênh): chọn 1 mẫu -> áp cho "
+                      "tất cả kênh đang hiện trong bảng (theo nhóm + ô tìm).")
+        a0.triggered.connect(self._pipe_bulk_tpl)
+        m.addSeparator()
         a2 = m.addAction("🔁 Phân tích lại video 'Cắt cơ bản' (mọi kênh)…")
         a2.setToolTip("Quét mọi kênh tìm video lỡ ra clip chưa qua AI, khôi "
                       "phục gốc nếu đã xoá, rồi phân tích lại bằng AI.")
@@ -5810,6 +5830,74 @@ class StudioPage(QWidget):
                      "Ẩn khỏi dây chuyền.")
         a.triggered.connect(lambda: self._pipe_hid_b.click())
         m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _pipe_rows_pid(self) -> list:
+        """(pid, tên) của MỌI kênh ĐANG HIỆN trong bảng dây chuyền.
+
+        Đọc từ BẢNG (không query lại DB) nên tự tôn trọng nhóm đang chọn + ô
+        tìm kênh — đúng quy tắc 'nút làm tất cả chỉ đụng phần ĐANG LỌC'."""
+        tbl = getattr(self, "_pipe_tbl", None)
+        if tbl is None:
+            return []
+        ra = []
+        for r in range(tbl.rowCount()):
+            it = tbl.item(r, 0)
+            if it is None:
+                continue
+            pid = it.data(Qt.ItemDataRole.UserRole)
+            if pid is None:
+                continue
+            nm = tbl.item(r, 1).text() if tbl.item(r, 1) is not None else ""
+            ra.append((int(pid), nm))
+        return ra
+
+    def _pipe_apply_tpl_all(self, ten: str) -> int:
+        """Gán mẫu `ten` ('' = ăn theo mẫu trang chính) cho MỌI kênh đang hiện.
+        Trả số kênh đã đổi. Tách riêng khỏi phần hỏi-đáp để test được."""
+        n = 0
+        for pid, _nm in self._pipe_rows_pid():
+            try:
+                services.set_project_template(pid, ten)
+                n += 1
+            except Exception:  # noqa: BLE001 - 1 kênh lỗi không chặn cả loạt
+                continue
+        return n
+
+    def _pipe_bulk_tpl(self) -> None:
+        """🎨 GÁN 1 MẪU CHO MỌI KÊNH ĐANG HIỆN (anh Hùng 31/07: "giờ tôi bấm
+        từng kênh thì chết, gần 200 kênh cơ") — 1 lần chọn thay ~200 cú bấm."""
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        ds = self._pipe_rows_pid()
+        if not ds:
+            QMessageBox.information(
+                self, "Không có kênh",
+                "Bảng đang không hiện kênh nào (đổi nhóm hoặc xoá ô tìm kênh).")
+            return
+        THEO_CHINH = "(mẫu đang chọn ở trang chính)"
+        chon = [THEO_CHINH] + [t["name"] for t in services.list_templates()]
+        cur = (self.tmpl_box.currentData() or "").strip()
+        i0 = chon.index(cur) if cur in chon else 0
+        ten, ok = QInputDialog.getItem(
+            self, "Gán mẫu cho nhiều kênh",
+            f"Áp 1 mẫu cho {len(ds)} kênh ĐANG HIỆN trong bảng\n"
+            f"(theo nhóm đang chọn + ô tìm kênh):", chon, i0, False)
+        if not ok or not ten:
+            return
+        dat = "" if ten == THEO_CHINH else ten
+        if QMessageBox.question(
+                self, "Xác nhận",
+                f"Đặt mẫu «{ten}» cho {len(ds)} kênh?\n\n"
+                "Chỉ đổi MẪU, không đụng video/clip nào. Job đang chạy giữ "
+                "nguyên mẫu đã chốt.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes) != QMessageBox.StandardButton.Yes:
+            return
+        n = self._pipe_apply_tpl_all(dat)
+        fill = getattr(self, "_pipe_fill", None)
+        if callable(fill):
+            fill()                       # bảng hiện lại mẫu mới ngay
+        QMessageBox.information(self, "Đã gán mẫu",
+                                f"Đã đặt mẫu «{ten}» cho {n} kênh.")
 
     def _reanalyze_basic_dialog(self) -> None:
         """🔁 QUÉT MỌI KÊNH tìm video lỡ 'Cắt cơ bản' rồi phân tích lại bằng

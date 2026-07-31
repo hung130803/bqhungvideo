@@ -139,7 +139,11 @@ kiem(tbl.horizontalHeaderItem(4).text() == "Mẫu",
 cb4 = tbl.cellWidget(0, 4)
 kiem(cb4 is not None, "dòng đầu có ô chọn mẫu")
 tens = [cb4.itemText(i) for i in range(cb4.count())]
-kiem("(mẫu đang chọn)" in tens, "có lựa chọn '(mẫu đang chọn)'", str(tens))
+kiem(any(t.startswith("(mẫu đang chọn") for t in tens),
+     "có lựa chọn '(mẫu đang chọn: …)'", str(tens))
+kiem(cb4.itemData(0) == "" and cb4.itemText(0).startswith("(mẫu đang chọn:"),
+     "nhãn NÓI RÕ tên mẫu sẽ dùng thật (anh Hùng tưởng 'chưa chọn' nên định "
+     "bấm tay 200 kênh)", cb4.itemText(0))
 kiem(any("XANH" in t for t in tens), "liệt kê mẫu đang có", str(tens))
 # chọn mẫu -> lưu vào DB
 pid0 = None
@@ -174,6 +178,96 @@ for r in range(tbl.rowCount()):
         found = "⚠" in cbx.itemText(cbx.findData("Mẫu KHÔNG TỒN TẠI"))
         break
 kiem(bool(found), "mẫu đã xoá hiện kèm ⚠ để user biết mà sửa")
+
+print("== 10. GÁN 1 MẪU CHO MỌI KÊNH ĐANG HIỆN (khỏi bấm ~200 kênh) ==")
+# anh Hùng 31/07: "giờ tôi bấm từng kênh thì chết gần 200 kênh cơ nó toàn chưa
+# chọn" -> phải có đường 1-lần-chọn cho cả bảng, và CHỈ đụng phần ĐANG LỌC.
+for _t in ("KenhD", "KenhE"):
+    pids[_t] = db.execute(
+        "INSERT INTO projects(name,assets_dir,grp,pipe_on) VALUES(?,?,'Mỹ',1)",
+        (_t, os.path.join(T, _t))).lastrowid
+services.set_project_template(pids["KenhD"], "")
+services.set_project_template(pids["KenhE"], "")
+pg._pipeline_dialog()
+qapp.processEvents()
+ds = pg._pipe_rows_pid()
+kiem(len(ds) >= 5, f"đọc được {len(ds)} kênh ĐANG HIỆN từ bảng", str(ds))
+n = pg._pipe_apply_tpl_all("Mẫu XANH")
+kiem(n == len(ds), f"gán 1 lượt cho đúng {len(ds)} kênh", str(n))
+kiem(all(services.project_template_name(p) == "Mẫu XANH" for p, _ in ds),
+     "MỌI kênh trong bảng nhận mẫu mới (1 lần chọn thay ~200 cú bấm)")
+kiem((pg._tpl_for_project(pids["KenhD"]) or {}).get("dau") == "XANH",
+     "kênh vừa gán hàng loạt CẮT bằng đúng mẫu đó")
+
+# CHỈ ĐỤNG PHẦN ĐANG LỌC: gõ ô tìm -> bảng còn 1 kênh -> gán chỉ đổi kênh đó
+pg._pipe_search.setText("KenhD")
+pg._pipe_fill()
+qapp.processEvents()
+ds2 = pg._pipe_rows_pid()
+kiem(len(ds2) == 1 and ds2[0][0] == pids["KenhD"],
+     "ô tìm kênh lọc bảng còn đúng 1 kênh", str(ds2))
+pg._pipe_apply_tpl_all("")            # '' = ăn theo mẫu trang chính
+kiem(services.project_template_name(pids["KenhD"]) == "",
+     "kênh ĐANG LỌC được đổi")
+kiem(services.project_template_name(pids["KenhE"]) == "Mẫu XANH",
+     "kênh KHÔNG hiện (bị lọc ra) KHÔNG bị đụng")
+pg._pipe_search.setText("")
+pg._pipe_fill()
+qapp.processEvents()
+
+print("== 11. đường vào phải TỒN TẠI: menu 🔧 + bấm tiêu đề cột Mẫu ==")
+from PyQt6.QtWidgets import QMenu as _QM, QPushButton as _QPB2  # noqa: E402
+_muc = []
+_goc_exec = _QM.exec
+_QM.exec = lambda self, *a, **k: _muc.extend(
+    [x.text() for x in self.actions() if x.text()])
+try:
+    pg._pipe_menu_fix(_QPB2(pg))
+finally:
+    _QM.exec = _goc_exec
+kiem(any("mẫu cho MỌI kênh" in m for m in _muc),
+     "menu 'Sửa/làm lại' có mục gán mẫu hàng loạt", str(_muc))
+_hh = pg._pipe_tbl.horizontalHeader()
+_truoc = services.project_template_name(pids["KenhE"])
+from PyQt6.QtWidgets import QInputDialog as _QID  # noqa: E402
+_QID.getItem = staticmethod(lambda *a, **k: ("Mẫu XANH", False))   # user HUỶ
+_hh.sectionClicked.emit(4)
+qapp.processEvents()
+kiem(services.project_template_name(pids["KenhE"]) == _truoc,
+     "bấm tiêu đề cột Mẫu -> user bấm Huỷ thì KHÔNG đổi gì")
+_hh.sectionClicked.emit(1)             # cột khác: không được mở gì
+kiem(True, "bấm tiêu đề cột khác không nổ")
+
+print("== 12. ĐƯỜNG THẬT: user chọn mẫu + bấm Đồng ý (có dựng lại bảng) ==")
+from PyQt6.QtWidgets import QMessageBox as _QMB  # noqa: E402
+_QMB.question = staticmethod(lambda *a, **k: _QMB.StandardButton.Yes)
+_QMB.information = staticmethod(lambda *a, **k: None)
+_QID.getItem = staticmethod(lambda *a, **k: ("Mẫu ĐỎ", True))
+_hh.sectionClicked.emit(4)
+qapp.processEvents()
+_ds3 = pg._pipe_rows_pid()
+kiem(len(_ds3) >= 5, f"bảng dựng lại xong vẫn đủ {len(_ds3)} kênh", str(len(_ds3)))
+kiem(all(services.project_template_name(p) == "Mẫu ĐỎ" for p, _ in _ds3),
+     "MỌI kênh đang hiện nhận 'Mẫu ĐỎ' sau khi bấm Đồng ý")
+_cb0 = pg._pipe_tbl.cellWidget(0, 4)
+kiem(_cb0 is not None and _cb0.currentData() == "Mẫu ĐỎ",
+     "bảng HIỆN NGAY mẫu mới (không phải mở lại hộp mới thấy)",
+     repr(_cb0.currentData() if _cb0 else None))
+# huỷ giữa đường (user chọn nhưng bấm No ở hộp xác nhận) -> không đổi
+_QMB.question = staticmethod(lambda *a, **k: _QMB.StandardButton.No)
+_QID.getItem = staticmethod(lambda *a, **k: ("Mẫu XANH", True))
+_hh.sectionClicked.emit(4)
+qapp.processEvents()
+kiem(all(services.project_template_name(p) == "Mẫu ĐỎ" for p, _ in _ds3),
+     "bấm KHÔNG ở hộp xác nhận -> giữ nguyên mẫu cũ")
+# '(mẫu đang chọn ở trang chính)' -> bỏ gán cho cả loạt
+_QMB.question = staticmethod(lambda *a, **k: _QMB.StandardButton.Yes)
+_QID.getItem = staticmethod(
+    lambda *a, **k: ("(mẫu đang chọn ở trang chính)", True))
+_hh.sectionClicked.emit(4)
+qapp.processEvents()
+kiem(all(services.project_template_name(p) == "" for p, _ in _ds3),
+     "chọn '(mẫu đang chọn ở trang chính)' -> BỎ gán cho cả loạt (về như cũ)")
 
 print()
 if FAIL:
