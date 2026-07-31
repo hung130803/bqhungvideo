@@ -20,10 +20,12 @@ sys.path.insert(0, r"D:\claude\ai-content-studio")
 
 import app.queue.jobs  # noqa: F401,E402
 from PyQt6.QtCore import QEvent, Qt  # noqa: E402
-from PyQt6.QtWidgets import (QApplication, QLineEdit,  # noqa: E402
-                             QListWidget, QPushButton)
+from PyQt6.QtWidgets import (QApplication, QLabel,  # noqa: E402
+                             QLineEdit, QListWidget, QPushButton)
 
 qapp = QApplication(sys.argv)
+from app.ui.theme import QSS as _QSS  # noqa: E402
+qapp.setStyleSheet(_QSS)      # ⚠ BẮT BUỘC: lỗi dòng-trống chỉ hiện khi có QSS
 from app.database.db import db  # noqa: E402
 from app import services  # noqa: E402
 from app.ui.state import AppState  # noqa: E402
@@ -246,6 +248,66 @@ kiem(_cp0.width() >= 40 and "color" in (_cp0.styleSheet() or ""),
      "nút Copy đủ rộng + có màu chữ rõ (không chìm vào nền)",
      f"w={_cp0.width()} style={(_cp0.styleSheet() or '')[:40]}")
 pop.close()
+
+
+print("== 15. DÒNG PHẢI CÓ NỘI DUNG THẬT (soi pixel, có QSS chung) ==")
+from PyQt6.QtGui import QImage as _QImg, QPainter as _QP
+pop = pg._open_chan_picker(); qapp.processEvents()
+lst = pg._chan_pop_lst
+pop.resize(520, 380); qapp.processEvents()
+r0 = lst.visualItemRect(lst.item(0))
+kiem(r0.height() >= 24, f"dòng cao >= 24px (đo {r0.height()}px) — QSS chung "
+     "từng bóp còn ~0 làm dòng trống trơn", str(r0.height()))
+w0 = lst.itemWidget(lst.item(0))
+kiem(w0 is not None and w0.height() >= 20,
+     f"widget của dòng cao >= 20px (đo {w0.height() if w0 else 0}px)")
+lb0 = [x for x in w0.findChildren(QLabel)][0]
+kiem(lb0.text().strip() != "", "nhãn dòng CÓ CHỮ", repr(lb0.text()))
+kiem(lb0.width() >= 60, f"nhãn đủ rộng để đọc (đo {lb0.width()}px)")
+# VẼ THẬT ra ảnh rồi đếm pixel khác nền -> chứng minh có chữ/nút hiện ra
+img = _QImg(lst.viewport().size(), _QImg.Format.Format_ARGB32)
+img.fill(0)
+pnt = _QP(img); lst.viewport().render(pnt); pnt.end()
+mau = {}
+for y in range(0, min(r0.bottom() + 1, img.height()), 2):
+    for x in range(0, min(img.width(), 400), 2):
+        mau[img.pixel(x, y)] = mau.get(img.pixel(x, y), 0) + 1
+kiem(len(mau) >= 3, f"vùng dòng đầu có >= 3 màu khác nhau (đo {len(mau)}) — "
+     "tức CÓ chữ + nút được vẽ, không phải ô trống", str(len(mau)))
+pop.close()
+
+print("== 16. BẤM RA NGOÀI (bất cứ đâu trong app) -> đóng ==")
+from PyQt6.QtCore import QEvent as _QE, QPointF as _QPtF
+from PyQt6.QtGui import QMouseEvent as _QME
+pop = pg._open_chan_picker(); qapp.processEvents()
+kiem(pop.isVisible(), "danh sách đang mở")
+
+
+def _bam(w):
+    ev = _QME(_QE.Type.MouseButtonPress, _QPtF(3.0, 3.0),
+              Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+              Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(w, ev)
+    qapp.processEvents()
+
+
+_bam(pg.status)                      # bấm vào dòng trạng thái (ngoài popup)
+kiem(not pop.isVisible(), "bấm ra vùng khác trong app -> danh sách ĐÓNG")
+
+print("== 17. bấm TRONG danh sách thì KHÔNG đóng ==")
+pop = pg._open_chan_picker(); qapp.processEvents()
+_bam(pg._chan_pop_ed)                # bấm vào ô tìm (bên trong popup)
+kiem(pop.isVisible(), "bấm vào ô tìm bên trong -> VẪN mở")
+_bam(pg._chan_pop_lst.viewport())
+kiem(pop.isVisible(), "bấm vào vùng danh sách -> VẪN mở")
+
+print("== 18. bấm lại combo Kênh khi đang mở -> đóng (bật/tắt) ==")
+kiem(pop.isVisible(), "đang mở trước khi bấm combo")
+pg.proj.showPopup(); qapp.processEvents()
+kiem(not pg._chan_pop.isVisible(), "bấm combo lần 2 -> đóng, không mở lại ngay")
+pg.proj.showPopup(); qapp.processEvents()
+kiem(pg._chan_pop.isVisible(), "bấm combo lần 3 -> mở lại")
+pg._chan_pop.close()
 
 print()
 if FAIL:

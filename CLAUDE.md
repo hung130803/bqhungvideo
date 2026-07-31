@@ -50,6 +50,16 @@
      thiếu glyph 📋/✕ nên nút ra Ô ĐEN trơ ("xấu quá tự nhiên có cái ô đen").
      Dùng "Copy" / "Đóng" + style rõ (viền + chữ màu accent). Cổng test 9 có ca
      quét mọi QPushButton trong popup, thấy emoji dễ-thiếu-font là FAIL.
+     v2.6.23 — 2 BÀI HỌC LỚN:
+     (a) **TEST UI PHẢI ÁP QSS THẬT** `qapp.setStyleSheet(theme.QSS)`. QSS chung
+     có `QListWidget::item{padding:9px 10px;margin:2px}` — với dòng dùng
+     `setItemWidget` nó BÓP widget con còn ~0 => DÒNG TRỐNG TRƠN trên máy user
+     mà test không QSS vẫn PASS (lỗi thật v2.6.22). Nay cổng 9 áp QSS + SOI
+     PIXEL (render viewport ra QImage, đếm màu trong dòng đầu >= 3) + kiểm
+     chiều cao dòng/nhãn. Dòng phải tự đặt `setSizeHint(QSize(10, >=32))`.
+     (b) Đóng danh sách = nút Đóng · Esc · BẤM RA NGOÀI bất cứ đâu trong app
+     (event filter MouseButtonPress trên QApplication; bỏ qua cú bấm vào chính
+     combo — combo tự bật/tắt). Cửa sổ vẫn KHÔNG tự đóng khi app mất focus.
   10. `_test_reanalyze_clean.py` → PHÂN TÍCH LẠI phải ra ĐÚNG số part user
      đặt: clip lần trước ĐÃ XUẤT phải vào kho `status='archived'` (không xoá,
      giữ export_path + tính là "đoạn đã dùng"), `list_clips` bỏ archived. Gốc

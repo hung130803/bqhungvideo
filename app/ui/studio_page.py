@@ -1157,6 +1157,12 @@ class StudioPage(QWidget):
         # vừa làm; 300 lần đổi kênh/ngày là 300 widget rác). Dựng 1 lần rồi
         # tái sử dụng: hết rò rỉ + mở nhanh hơn.
         cu = getattr(self, "_chan_pop", None)
+        # BẤM LẠI vào combo khi danh sách ĐANG MỞ -> đóng (bật/tắt như dropdown
+        # thường). Không có nhánh này thì bộ lọc click-ra-ngoài đóng rồi
+        # showPopup mở lại ngay = tưởng bấm không ăn.
+        if cu is not None and cu.isVisible():
+            cu.close()
+            return cu
         if cu is not None and getattr(self, "_chan_pop_fill", None) is not None:
             try:
                 self._chan_pop_ed.clear()          # về trạng thái mới mở
@@ -1205,6 +1211,17 @@ class StudioPage(QWidget):
         lay.addLayout(hrow)
         lst = QListWidget()
         lst.setAlternatingRowColors(False)
+        # ⚠ QSS CHUNG của app có `QListWidget::item{padding:9px 10px;margin:2px}`
+        # — với dòng dùng setItemWidget, padding đó BÓP widget con gần như bằng
+        # 0 => dòng TRỐNG TRƠN (lỗi thật v2.6.22 anh Hùng gặp: "chả hiểu bạn
+        # làm gì lỗi luôn rồi à"). Phải ghi đè padding/margin cho ĐÚNG danh
+        # sách này + đặt sizeHint chiều cao rõ ràng ở them_dong().
+        lst.setStyleSheet(
+            f"QListWidget{{background:{BASE};border:1px solid {BORDER};"
+            f"border-radius:8px;color:{TEXT};}}"
+            f"QListWidget::item{{padding:0px;margin:1px;border-radius:6px;}}"
+            f"QListWidget::item:hover{{background:{SURFACE};}}"
+            f"QListWidget::item:selected{{background:{SURFACE};}}")
         lay.addWidget(lst, 1)
         QShortcut(QKeySequence("Esc"), pop, pop.close)
         self._chan_pop, self._chan_pop_ed, self._chan_pop_lst = pop, ed, lst
@@ -1235,7 +1252,11 @@ class StudioPage(QWidget):
             cp.setToolTip(f"Copy tên kênh: {ten_goc}")
             cp.clicked.connect(lambda _c=False, t=ten_goc: self._copy_chan_text(t))
             h.addWidget(cp)
-            it.setSizeHint(w.sizeHint())
+            # CHIỀU CAO RÕ RÀNG: đừng tin sizeHint() của widget chưa hiện (có
+            # lúc trả gần 0 -> dòng trống). Lấy max(cao thật, 32px).
+            from PyQt6.QtCore import QSize as _QSz
+            _h = max(32, w.sizeHint().height())
+            it.setSizeHint(_QSz(10, _h))
             lst.addItem(it)
             lst.setItemWidget(it, w)
 
@@ -1280,6 +1301,37 @@ class StudioPage(QWidget):
         lst.itemClicked.connect(chon)
         lst.itemActivated.connect(chon)
         self._chan_pop_fill = fill      # để lần mở sau DÙNG LẠI popup này
+
+        # ĐÓNG KHI BẤM RA NGOÀI (anh Hùng 31/07: "1 là bấm Đóng, 2 là bấm ra
+        # ngoài bất cứ vị trí nào trong app"). Cửa sổ Tool KHÔNG tự đóng (đó là
+        # điều anh Hùng muốn khi sang app khác), nên phải tự bắt cú bấm: lọc
+        # MouseButtonPress toàn app -> bấm vào widget KHÔNG thuộc popup thì
+        # đóng. BỎ QUA cú bấm vào chính combo Kênh (nó tự bật/tắt ở trên).
+        from PyQt6.QtCore import QEvent, QObject as _QObj
+
+        class _BamRaNgoai(_QObj):
+            def __init__(self, page, popup):
+                super().__init__(popup)
+                self.page, self.popup = page, popup
+
+            def eventFilter(self, obj, ev):   # noqa: N802 - API Qt
+                try:
+                    if (ev.type() == QEvent.Type.MouseButtonPress
+                            and self.popup.isVisible()
+                            and isinstance(obj, QWidget)):
+                        cb = self.page.proj
+                        if obj is cb or cb.isAncestorOf(obj):
+                            return False       # combo tự lo bật/tắt
+                        if obj is not self.popup \
+                                and not self.popup.isAncestorOf(obj):
+                            self.popup.close()
+                except RuntimeError:
+                    pass                       # widget đã bị xoá -> bỏ qua
+                return False                   # KHÔNG chặn sự kiện của app
+
+        from PyQt6.QtWidgets import QApplication as _QApp
+        self._chan_pop_filter = _BamRaNgoai(self, pop)
+        _QApp.instance().installEventFilter(self._chan_pop_filter)
         fill("")
         # đặt ngay dưới combo, rộng thoải mái để đọc tên dài + tên nhóm
         pop.resize(max(self.proj.width(), 520), 380)
