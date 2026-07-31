@@ -148,6 +148,42 @@ for k, v in _saved.items():
         st_q.setValue(k, v)
 st_q.sync()
 print("\n" + "=" * 62)
+# ═══ GỌN HOÁ hàng nút (v2.6.19, anh Hùng 31/07 "nhiều phần thừa quá") ═══
+# BẤT BIẾN: gom nút vào menu KHÔNG được làm mất chức năng nào.
+print("\n══ GỌN HOÁ: 3 menu gom phải mở được + đủ mục ══")
+from PyQt6.QtWidgets import QMenu as _QMenu, QPushButton as _QPB
+_neo = _QPB(pg)
+
+
+def _muc_menu(fn):
+    """Mở menu bằng fn(anchor) nhưng CHẶN exec (modal) -> đọc danh sách mục."""
+    ra = []
+    _goc = _QMenu.exec
+
+    def _fake(self, *a, **k):
+        ra.extend([a.text() for a in self.actions() if a.text()])
+        return None
+    _QMenu.exec = _fake
+    try:
+        fn(_neo)
+    finally:
+        _QMenu.exec = _goc
+    return ra
+
+
+for _ten, _fn, _can in (
+        ("🗑 Kho video & dọn dẹp", pg._pipe_menu_kho, ["Thùng rác", "Dọn file rác"]),
+        ("🔧 Sửa & làm lại", pg._pipe_menu_fix,
+         ["Cứu video kẹt", "Cắt cơ bản", "Làm lại cả nhóm"]),
+        ("⋮ thêm", pg._pipe_menu_more, ["kênh đã ẩn"])):
+    _m = _muc_menu(_fn)
+    _thieu = [c for c in _can if not any(c.lower() in x.lower() for x in _m)]
+    if _thieu:
+        FAIL.append(f"menu '{_ten}' THIẾU mục {_thieu} — chỉ có {_m}")
+        print(f"  ✗ menu '{_ten}' thiếu {_thieu}")
+    else:
+        print(f"  ✓ menu '{_ten}' đủ mục ({len(_m)} mục)")
+
 if FAIL:
     print(f"❌ {len(FAIL)} LỖI:")
     for f in FAIL:

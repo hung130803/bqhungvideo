@@ -4097,20 +4097,30 @@ class StudioPage(QWidget):
 
         # --- hàng 1: hướng dẫn + nút chạy (BỎ "thư mục trung chuyển" chung —
         #     mỗi kênh tự đặt Thư mục lấy video riêng ở cột bên phải) ---
+        # GỌN HOÁ (anh Hùng 31/07: "nhiều phần thừa quá... tích hợp sao cho
+        # thông minh dễ dùng"): 11 nút -> 5. Việc HAY DÙNG ở ngoài (Dọn file
+        # rác — anh Hùng chọn, + Chạy dây chuyền); việc thi thoảng gom vào 2
+        # menu theo Ý ĐỊNH của user, KHÔNG cắt bớt chức năng nào.
         top = QHBoxLayout(); top.setSpacing(8)
-        hint = QLabel("Mỗi kênh đặt THƯ MỤC LẤY VIDEO riêng ở cột phải (nút 📂) — "
-                      "tool tải bỏ video vào đó. ▶ Chạy: lấy video trong thư mục "
-                      "mỗi kênh → cắt → xuất Part THẲNG vào đó → XÓA video gốc "
-                      "(file hỏng vào _Loi). Chỉ chạy NHÓM đang chọn.")
+        hint = QLabel("▶ Chạy: lấy video ở thư mục mỗi kênh → cắt → xuất Part "
+                      "vào đó → dọn gốc vào Thùng rác. Chỉ chạy NHÓM đang chọn.")
         hint.setWordWrap(True)
+        hint.setToolTip(
+            "Mỗi kênh đặt THƯ MỤC LẤY VIDEO riêng ở cột phải (nút 📂) — tool "
+            "tải bỏ video vào đó.\n▶ Chạy dây chuyền: quét thư mục từng kênh "
+            "đang tích ✓ → nhập video → cắt (AI) → xuất Part THẲNG vào thư mục "
+            "kênh → chuyển video gốc vào Thùng rác (khôi phục được; file hỏng "
+            "vào _Loi).\nChỉ chạy các kênh trong NHÓM đang chọn.")
         hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         top.addWidget(hint, 1)
-        bin_b = QPushButton("🗑 Thùng rác / Khôi phục"); bin_b.setProperty("ghost", True)
-        bin_b.setToolTip("Video gốc sau khi cắt xong được chuyển vào THÙNG RÁC "
-                         "theo ngày (thay vì xoá hẳn) — mở đây để chọn thư mục "
-                         "thùng rác và KHÔI PHỤC video về đúng kênh khi cần.")
-        bin_b.clicked.connect(self._pipe_recycle_dialog)
-        top.addWidget(bin_b)
+
+        kho_b = QPushButton("🗑 Kho video & dọn dẹp ▾")
+        kho_b.setProperty("ghost", True)
+        kho_b.setToolTip("Thùng rác / khôi phục video đã cắt xong · file lỗi "
+                         "(_Loi) · dọn file rác trong thư mục kênh.")
+        kho_b.clicked.connect(lambda: self._pipe_menu_kho(kho_b))
+        top.addWidget(kho_b)
+
         clean_b = QPushButton("🧹 Dọn file rác"); clean_b.setProperty("ghost", True)
         clean_b.setToolTip(
             "DỌN file rác trong thư mục của các kênh ĐANG TÍCH ✓ (nhóm đang "
@@ -4119,23 +4129,13 @@ class StudioPage(QWidget):
             "KHÔNG BAO GIỜ đụng video gốc hay clip 'Part N' đã xuất.")
         clean_b.clicked.connect(self._pipe_clean_junk_dialog)
         top.addWidget(clean_b)
-        cuu_b = QPushButton("🔧 Cứu video kẹt"); cuu_b.setProperty("ghost", True)
-        cuu_b.setToolTip(
-            "NỐI TIẾP những video còn dở của lần chạy trước (app tắt/tự cập "
-            "nhật giữa lúc đang chạy): video nào phân tích xong rồi thì XUẤT "
-            "PART + DỌN GỐC ngay, KHÔNG phân tích lại (không tốn thêm lượt AI).\n"
-            "App tự làm việc này mỗi lần mở — nút này để anh chủ động chạy ngay.")
-        cuu_b.clicked.connect(self._pipe_resume_dialog)
-        top.addWidget(cuu_b)
-        redo_b = QPushButton("🔁 Phân tích lại (Cắt cơ bản)")
-        redo_b.setProperty("ghost", True)
-        redo_b.setToolTip(
-            "QUÉT MỌI KÊNH tìm video lỡ ra 'Cắt cơ bản (chưa qua AI)' rồi PHÂN "
-            "TÍCH LẠI BẰNG AI. Video đã xuất+xoá thì tự KHÔI PHỤC gốc từ Thùng "
-            "rác trước. Clip cũ giữ nguyên trên đĩa (chỉ cất kho). Có xác nhận "
-            "kèm số lượng trước khi chạy.")
-        redo_b.clicked.connect(self._reanalyze_basic_dialog)
-        top.addWidget(redo_b)
+
+        fix_b = QPushButton("🔧 Sửa & làm lại ▾"); fix_b.setProperty("ghost", True)
+        fix_b.setToolTip("Cứu video kẹt lượt trước · phân tích lại video lỡ ra "
+                         "'Cắt cơ bản' · bắt cả nhóm cắt lại.")
+        fix_b.clicked.connect(lambda: self._pipe_menu_fix(fix_b))
+        top.addWidget(fix_b)
+
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
@@ -4155,20 +4155,32 @@ class StudioPage(QWidget):
                              f"padding:4px 8px;}}")
         self._pipe_search = search
         grow.addWidget(search)
-        all_on = QPushButton("✓ Bật tất cả"); all_on.setProperty("ghost", True)
-        all_on.setToolTip("Bật dây chuyền cho mọi kênh nhóm này — TRỪ kênh đã ẩn.")
-        all_off = QPushButton("✕ Tắt tất cả"); all_off.setProperty("ghost", True)
-        # KHO KÊNH ĐÃ ẨN: chỗ để kênh tạm không muốn cắt. 'Bật tất cả' không kéo
-        # chúng về, nên không phải bỏ tích lại từng cái sau mỗi lần bật.
-        hid_b = QPushButton("🚫 Kênh đã ẩn"); hid_b.setProperty("ghost", True)
-        hid_b.setToolTip("Kênh đã ẩn KHÔNG chạy dây chuyền và KHÔNG bị 'Bật tất "
-                         "cả' bật lại.\nBấm để xem / bỏ ẩn.\n\nCách ẩn: chọn "
-                         "dòng trong bảng → bấm chuột phải → Ẩn khỏi dây chuyền.")
-        redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setProperty("ghost", True)
-        redo_grp.setToolTip("Xoá sổ đã-làm của MỌI kênh nhóm này → video bỏ lại "
-                            "vào thư mục sẽ được cắt lại (không xoá file).")
+        # 1 Ô TÍCH thay 2 nút "Bật tất cả"/"Tắt tất cả" — tích = bật hết, bỏ
+        # tích = tắt hết (đúng thói quen bảng tính). KHÔNG kéo kênh đã ẩn về.
+        from PyQt6.QtWidgets import QCheckBox as _QCB
+        all_chk = _QCB("Bật hết")
+        all_chk.setToolTip("Tích = bật dây chuyền cho MỌI kênh nhóm này (TRỪ "
+                           "kênh đã ẩn).\nBỏ tích = tắt hết.")
+        grow.addWidget(all_chk)
+        # 2 nút cũ vẫn tồn tại (vô hình) để lối gọi/handler + test cũ không đổi
+        all_on = QPushButton("✓ Bật tất cả"); all_on.setVisible(False)
+        all_off = QPushButton("✕ Tắt tất cả"); all_off.setVisible(False)
         grow.addWidget(all_on); grow.addWidget(all_off)
+        hid_b = QPushButton("🚫 Kênh đã ẩn"); hid_b.setVisible(False)
+        redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setVisible(False)
         grow.addWidget(hid_b); grow.addWidget(redo_grp)
+        # ⋮ THÊM: việc ít dùng (kho kênh đã ẩn) — khỏi chiếm chỗ hàng nút.
+        more_b = QPushButton("⋮"); more_b.setProperty("ghost", True)
+        more_b.setFixedWidth(32)
+        more_b.setToolTip("Thêm: kho kênh đã ẩn.")
+        self._pipe_hid_b, self._pipe_redo_grp_b = hid_b, redo_grp
+
+        def _bat_het(v):
+            (all_on if v else all_off).click()
+
+        all_chk.toggled.connect(_bat_het)
+        more_b.clicked.connect(lambda: self._pipe_menu_more(more_b))
+        grow.addWidget(more_b)
         lay.addLayout(grow)
 
         # --- dải TỔNG QUAN nhóm (đếm nhanh: bao nhiêu kênh / đang bật / đã cắt
@@ -4176,6 +4188,8 @@ class StudioPage(QWidget):
         ov = QLabel("")
         ov.setStyleSheet(f"color:{TEXT}; font-size:12px; padding:2px 2px;"
                          f"border-bottom:1px solid {BORDER};")
+        ov.setOpenExternalLinks(False)      # link 'fix' xử lý TRONG app
+        ov.linkActivated.connect(lambda _h: self._pipe_recycle_dialog())
         self._pipe_ov = ov
         lay.addWidget(ov)
 
@@ -4185,9 +4199,12 @@ class StudioPage(QWidget):
         # Cột "Chờ cắt" (mới): số video ĐANG NẰM trong thư mục kênh, sẵn sàng
         # cắt — để user THẤY TRƯỚC khi chạy (kênh 2 video hiện 2, không có = 0),
         # và ▶ Chạy sẽ cắt ĐÚNG bấy nhiêu (lõi không giới hạn) → khớp thống kê.
+        # Tiêu đề NGẮN (gọn bề ngang, ý nghĩa đầy đủ nằm ở tooltip từng ô).
+        # 2 cột số GIỮ RIÊNG vì khác nghĩa: "Chờ" = video đang nằm trong thư
+        # mục chờ cắt · "Đã cắt" = số Part đã xuất ra.
         tbl.setHorizontalHeaderLabels(
-            ["Bật", "Kênh", "Nhóm", "Chế độ", "Chờ cắt",
-             "Part đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
+            ["✓", "Kênh", "Nhóm", "Chế độ", "Chờ",
+             "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         # Chọn NHIỀU DÒNG để ẩn một lượt (Ctrl/Shift click) + menu chuột phải.
@@ -4335,11 +4352,13 @@ class StudioPage(QWidget):
             _rac_cfg = (self._pipe_recycle_dir() or "").strip()
             if _rac_cfg and not P._is_safe_recycle_root(_rac_cfg):
                 canh.append("Thùng rác")
+            # SỬA NGAY TẠI CHỖ: cảnh báo cũ bắt user tự mò 2 bước (mở Thùng rác
+            # rồi tìm nút Chọn thư mục). Nay có LINK bấm thẳng vào việc cần làm.
             canh_txt = ("<br><span style='color:#E5A50A'>⚠ " + " và ".join(canh)
-                        + " đang trỏ vào thư mục TẠM của Windows — hãy chọn lại "
-                        "(🗑 Thùng rác → 📂 Chọn/đổi thư mục). Video KHÔNG mất: "
-                        "app tự dọn vào <b>_DaXoa</b> cạnh thư mục kênh.</span>"
-                        if canh else "")
+                        + " đang trỏ vào thư mục TẠM của Windows. Video KHÔNG "
+                        "mất (app tự dọn vào <b>_DaXoa</b> cạnh thư mục kênh) — "
+                        "<a href='fix' style='color:#89B4FA'>📂 chọn thư mục "
+                        "khác ngay</a></span>" if canh else "")
             ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
                        f"{hid_txt}"
                        f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
@@ -5527,6 +5546,48 @@ class StudioPage(QWidget):
             self._refresh_clips(force=True)
         except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
             pass
+
+    def _pipe_menu_kho(self, anchor) -> None:
+        """Menu 🗑 KHO VIDEO & DỌN DẸP — gom việc liên quan tới FILE trên đĩa.
+        (anh Hùng 31/07: "nhiều phần thừa quá, tích hợp cho dễ dùng" — 11 nút
+        trên hàng đầu xuống 5. Không bỏ chức năng nào, chỉ gom theo Ý ĐỊNH.)"""
+        from PyQt6.QtWidgets import QMenu
+        m = QMenu(self)
+        m.addAction("🗑 Thùng rác / Khôi phục video đã cắt…",
+                    self._pipe_recycle_dialog)
+        m.addAction("🧹 Dọn file rác trong thư mục kênh…",
+                    self._pipe_clean_junk_dialog)
+        m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _pipe_menu_fix(self, anchor) -> None:
+        """Menu 🔧 SỬA & LÀM LẠI — gom việc chữa/làm lại lượt chạy trước."""
+        from PyQt6.QtWidgets import QMenu
+        m = QMenu(self)
+        a1 = m.addAction("🔧 Cứu video kẹt (lượt trước bỏ dở)…")
+        a1.setToolTip("Video đã phân tích xong nhưng chưa xuất Part -> xuất "
+                      "tiếp + dọn gốc, KHÔNG phân tích lại.")
+        a1.triggered.connect(self._pipe_resume_dialog)
+        a2 = m.addAction("🔁 Phân tích lại video 'Cắt cơ bản' (mọi kênh)…")
+        a2.setToolTip("Quét mọi kênh tìm video lỡ ra clip chưa qua AI, khôi "
+                      "phục gốc nếu đã xoá, rồi phân tích lại bằng AI.")
+        a2.triggered.connect(self._reanalyze_basic_dialog)
+        m.addSeparator()
+        a3 = m.addAction("🔄 Làm lại cả nhóm này…")
+        a3.setToolTip("Xoá sổ đã-làm của MỌI kênh nhóm này -> video bỏ lại vào "
+                      "thư mục sẽ được cắt lại (KHÔNG xoá file nào).")
+        a3.triggered.connect(lambda: self._pipe_redo_grp_b.click())
+        m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _pipe_menu_more(self, anchor) -> None:
+        """Menu ⋮ — việc ít dùng, không đáng chiếm chỗ hàng nút."""
+        from PyQt6.QtWidgets import QMenu
+        m = QMenu(self)
+        a = m.addAction("🚫 Kho kênh đã ẩn…")
+        a.setToolTip("Kênh đã ẩn KHÔNG chạy dây chuyền và KHÔNG bị 'Bật hết' "
+                     "bật lại.\nCách ẩn: chọn dòng trong bảng → chuột phải → "
+                     "Ẩn khỏi dây chuyền.")
+        a.triggered.connect(lambda: self._pipe_hid_b.click())
+        m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def _reanalyze_basic_dialog(self) -> None:
         """🔁 QUÉT MỌI KÊNH tìm video lỡ 'Cắt cơ bản' rồi phân tích lại bằng
