@@ -180,6 +180,27 @@ def main() -> int:
     from PyQt6.QtCore import QTimer
     QTimer.singleShot(800, state.start)
 
+    # ---- TỰ DỌN RÁC ĐĨA (đo 31/07/2026: ổ C còn 5,7/926 GB, %TEMP% 11,6 GB) --
+    # Rác lớn nhất KHÔNG phải do app ghi thẳng: yt-dlp bản onefile giải nén
+    # ~22 MB vào %TEMP%\_MEIxxxx mỗi lần chạy và chỉ dọn khi thoát êm — bị huỷ
+    # tải/đóng app là bỏ lại (339 thư mục = 4,69 GB). Cộng _seg_*.mkv 1,71 GB
+    # (mảnh ghép đoạn, finally không chạy vì app thoát bằng os._exit).
+    # Ổ ĐẦY = DB ghi dở -> vỡ + job lỗi, nên đây không phải việc phụ.
+    # Chạy ở LUỒNG NỀN sau 5s: quét thư mục là I/O, không làm chậm lúc mở app.
+    def _don_rac():
+        try:
+            from app.core.tempsweep import don_temp_ytdlp, quet_tat
+            from config import DATA_DIR as _DD
+            don_temp_ytdlp(_DD)
+            n, mb = quet_tat(_DD)
+            if n:
+                print(f"[dọn rác] xoá {n} mục / {mb:.0f} MB")
+        except Exception:  # noqa: BLE001 - dọn rác KHÔNG được làm app chết
+            pass
+
+    QTimer.singleShot(5000, lambda: __import__("threading").Thread(
+        target=_don_rac, daemon=True, name="don-rac-dia").start())
+
     rc = qapp.exec()
 
     # ---- THOÁT SẠCH: KHÔNG finalize interpreter khi luồng daemon còn chạy ----
@@ -206,7 +227,19 @@ def main() -> int:
             if _f is not None:
                 _f.flush()
 
-    for _buoc in (state.stop, app_settings().sync, _xa_dem):
+    def _gon_db():
+        """GẤP SỔ DB TRƯỚC KHI THOÁT (checkpoint WAL).
+
+        Đo trên máy anh Hùng 31/07: studio.db 80 KB nhưng studio.db-wal 1,78 MB
+        và file chính KHÔNG được cập nhật từ 06/07 — vì app luôn thoát bằng
+        os._exit() nên connection không đóng êm, WAL không bao giờ được gấp vào
+        DB. Hệ quả: mọi truy vấn phải quét thêm WAL (đúng cái đi kèm bão đọc
+        đĩa đã đo 30/07), và công cụ ngoài đọc file chính thì thấy dữ liệu cũ /
+        báo hỏng. TRUNCATE = gấp xong xoá rỗng WAL."""
+        from app.database.db import db
+        db.gap_wal()
+
+    for _buoc in (state.stop, _gon_db, app_settings().sync, _xa_dem):
         try:
             _buoc()
         except Exception:  # noqa: BLE001 - dọn lỗi không được chặn thoát

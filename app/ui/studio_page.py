@@ -3309,12 +3309,28 @@ class StudioPage(QWidget):
 
         def run_once(cmd):
             t0 = _time.time()
+            # RÁC yt-dlp: bản .exe của yt-dlp là PyInstaller onefile — mỗi lần
+            # chạy nó tự giải nén ~22 MB vào %TEMP%\_MEIxxxx và CHỈ dọn khi
+            # thoát êm. Bị tắt/huỷ giữa đường (đóng app, huỷ tải) là bỏ lại cả
+            # khối. Đo trên máy anh Hùng 31/07: 339 thư mục = 4,69 GB.
+            # -> Trỏ TEMP của TIẾN TRÌNH CON vào thư mục riêng của app, rác nằm
+            # gọn 1 chỗ và `tempsweep` xoá sạch mỗi lần mở app.
+            _env = None
+            try:
+                from app.core.tempsweep import temp_rieng_cho_ytdlp
+                from config import DATA_DIR as _DD
+                _tmp_yt = temp_rieng_cho_ytdlp(_DD)
+                if _tmp_yt:
+                    _env = dict(os.environ)
+                    _env["TEMP"] = _env["TMP"] = _tmp_yt
+            except Exception:  # noqa: BLE001 - không đặt được thì chạy như cũ
+                _env = None
             try:
                 # 0x40 = IDLE_PRIORITY_CLASS: tải/ghép chạy dài -> luôn nhường
                 # app khác, máy không giật (tải là I/O mạng nên không chậm đi).
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace",
+                    text=True, encoding="utf-8", errors="replace", env=_env,
                     creationflags=0x0800_0000 | 0x0000_0040)
             except Exception as e:  # noqa: BLE001
                 return "", str(e)[:200]

@@ -129,6 +129,23 @@
      dùng chung 1 tiến trình) còn `subprocess.run` thì bị chính guard nuốt (đo
      ra -1). Guard cũng tự dọn `%TEMP%` của lần chạy trước (đo lần đầu: 189 thư
      mục / 158 MB rác trên ổ C từng đầy 100%) và ép stdout utf-8.
+  18. `_test_don_rac.py` → **APP PHẢI TỰ DỌN RÁC ĐĨA + GẤP WAL KHI THOÁT**.
+     Đo thật 31/07/2026 (ổ C còn 3,19/926 GB): `%TEMP%` 11,6 GB, trong đó
+     `_MEI*` **4,69 GB / 339 mục** — KHÔNG phải app ghi mà là **yt-dlp bản
+     onefile** tự giải nén ~22 MB mỗi lần chạy, chỉ dọn khi thoát êm; huỷ
+     tải/đóng app là bỏ lại. Cộng `_seg_*.mkv` **1,71 GB** (mảnh ghép đoạn,
+     `finally` không chạy vì app thoát bằng `os._exit`). Dọn xong: 10,94 GB
+     (+7,75 GB). Nay `app/core/tempsweep.py` chạy ở luồng nền 5s sau khi mở
+     app; yt-dlp con được truyền `env` với TEMP trỏ vào `DATA_DIR/_ytdlp_temp`
+     nên rác gom 1 chỗ. BẤT BIẾN: chỉ xoá tên khớp danh sách, BỎ QUA mọi thứ
+     mới hơn 2h (đang tải/đang xuất), bỏ qua `sys._MEIPASS` của chính mình, bị
+     khoá thì im lặng, KHÔNG BAO GIỜ ném lỗi. Giữ 3 bản `studio_*.db`, log 14
+     ngày, `error.log` ≤ 2 MB (giữ ĐUÔI).
+     Kèm `db.gap_wal()` gọi trong bước thoát: `os._exit` khiến SQLite không bao
+     giờ checkpoint → đo thật studio.db 80 KB / WAL 1,78 MB tồn từ 06/07, sao
+     lưu file .db thiếu WAL thì **chỉ có 93/201 dòng** (máy anh Hùng báo
+     'malformed' khi đọc từ ngoài). Cách kiểm ĐÚNG: copy riêng file .db (không
+     kèm -wal) rồi đếm dòng.
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước

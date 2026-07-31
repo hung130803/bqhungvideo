@@ -353,6 +353,29 @@ class Database:
             print("[db] ⛔ DB VỠ giữa lúc chạy — ngắt mạch truy vấn để app "
                   f"không đơ. Khởi động lại app để tự chữa. ({self._corrupt_note})")
 
+    # ---- gấp sổ WAL trước khi thoát ----
+    def gap_wal(self) -> int:
+        """Gấp WAL vào file DB rồi xoá rỗng WAL. Trả số MB WAL đã gấp.
+
+        VÌ SAO CẦN: app thoát bằng `os._exit()` (bắt buộc — xem shutdown.py),
+        nên connection KHÔNG đóng êm và SQLite không tự checkpoint. Đo thật máy
+        anh Hùng 31/07: studio.db-wal 1,78 MB tồn từ 06/07, file DB chính không
+        đổi suốt 3 tuần → mỗi truy vấn phải quét thêm cả WAL (đi kèm bão đọc
+        đĩa đã đo 30/07), và đọc file DB từ ngoài thì báo 'malformed' vì thiếu
+        WAL. Gọi ở bước thoát, KHÔNG được ném lỗi (đang tắt app)."""
+        if self.corrupt_live or self.in_memory or self.path == ":memory:":
+            return 0
+        try:
+            w = Path(self.path + "-wal")
+            mb = (w.stat().st_size / 1048576.0) if w.exists() else 0.0
+        except OSError:
+            mb = 0.0
+        try:
+            self.conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:  # noqa: BLE001 - đang tắt app, đừng làm ồn
+            return 0
+        return int(mb)
+
     # ---- helper cơ bản ----
     def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
         if self.corrupt_live:
