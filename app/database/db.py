@@ -255,6 +255,16 @@ class Database:
                     "ALTER TABLE projects ADD COLUMN pipe_hidden "
                     "INTEGER NOT NULL DEFAULT 0")
                 self.conn().commit()
+                cols.append("pipe_hidden")
+            # MẪU RIÊNG THEO KÊNH (anh Hùng 31/07: 100 kênh dùng 1 mẫu -> clip
+            # trông giống nhau, dễ bị coi là spam). '' = dùng mẫu đang chọn
+            # trên trang chính như cũ (không phá hành vi cũ).
+            if "tpl_name" not in cols:
+                self.conn().execute(
+                    "ALTER TABLE projects ADD COLUMN tpl_name TEXT NOT NULL "
+                    "DEFAULT ''")
+                self.conn().commit()
+                cols.append("tpl_name")
             self.conn().execute(
                 """CREATE TABLE IF NOT EXISTS pipeline_files (
                        id INTEGER PRIMARY KEY AUTOINCREMENT,

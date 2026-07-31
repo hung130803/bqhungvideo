@@ -404,6 +404,34 @@ def delete_template(name: str) -> None:
     db.execute("DELETE FROM presets WHERE name=? AND module='m1'", (name,))
 
 
+# ---- MẪU RIÊNG THEO KÊNH (anh Hùng 31/07) ----
+def set_project_template(project_id: int, name: str) -> None:
+    """Gán mẫu cho 1 kênh. name='' = dùng mẫu đang chọn trên trang chính."""
+    db.execute("UPDATE projects SET tpl_name=? WHERE id=?",
+               ((name or "").strip(), int(project_id)))
+
+
+def project_template_name(project_id) -> str:
+    """Tên mẫu đã gán cho kênh ('' nếu chưa gán). Không ném lỗi."""
+    try:
+        r = db.query_one("SELECT tpl_name FROM projects WHERE id=?",
+                         (int(project_id),))
+    except (TypeError, ValueError):
+        return ""
+    return ((r["tpl_name"] if r else "") or "").strip()
+
+
+def project_template(project_id) -> Optional[dict]:
+    """MẪU (dict) của kênh, hoặc None nếu kênh chưa gán / mẫu đã bị xoá.
+
+    Trả None -> caller dùng mẫu đang chọn như CŨ. Nhờ vậy xoá mẫu đi thì dây
+    chuyền vẫn chạy (chỉ mất phần riêng), KHÔNG bao giờ chết vì thiếu mẫu."""
+    ten = project_template_name(project_id)
+    if not ten:
+        return None
+    return get_template(ten)
+
+
 def clear_finished_jobs() -> int:
     """Xóa lịch sử job ĐÃ XONG/lỗi/hủy khỏi danh sách tiến trình. GIỮ việc đang
     chạy/chờ. Trả số dòng đã xóa."""

@@ -3593,7 +3593,7 @@ class StudioPage(QWidget):
                 if self._require_ai_after_dl():
                     jid = services.enqueue_auto(self.state.pool, vid, pid,
                                                 self._cut_preset())
-                    self._track_auto(jid, vid)
+                    self._track_auto(jid, vid, pid)
                 self._batch_ok = getattr(self, "_batch_ok", 0) + 1
                 # TỰ NHẢY sang video vừa tải xong — user khỏi bấm tay
                 self._reload_videos(select_id=vid)
@@ -3714,7 +3714,7 @@ class StudioPage(QWidget):
             return
         # TỰ ĐỘNG phân tích luôn (dán link -> tải -> phân tích -> tự xuất nếu bật)
         jid = services.enqueue_auto(self.state.pool, vid, pid, self._cut_preset())
-        self._track_auto(jid, vid)
+        self._track_auto(jid, vid, pid)
         extra = " → xong TỰ XUẤT" if self.auto_export_chk.isChecked() else ""
         self.status.setText(
             f"✓ ① Tải xong → ② Đang phân tích & cắt clip (xem % ở khu Tiến "
@@ -4077,16 +4077,32 @@ class StudioPage(QWidget):
                             rows, do)
 
     # ---- tạo clip ----
-    def _track_auto(self, job_id, video_id):
+    def _tpl_for_project(self, pid) -> dict:
+        """MẪU dùng cho kênh `pid`: mẫu RIÊNG của kênh nếu đã gán, không thì
+        mẫu đang chọn trên trang chính (hành vi cũ).
+
+        (anh Hùng 31/07: 100 kênh dùng chung 1 mẫu -> clip trông giống nhau.)
+        Mẫu bị xoá / kênh chưa gán / pid None -> lùi về mẫu hiện tại, KHÔNG
+        bao giờ để dây chuyền chết vì thiếu mẫu."""
+        if pid is not None:
+            try:
+                tpl = services.project_template(pid)
+            except Exception:  # noqa: BLE001 - thiếu mẫu không được chặn cắt
+                tpl = None
+            if isinstance(tpl, dict) and tpl:
+                return copy.deepcopy(tpl)
+        return copy.deepcopy(self.layout_tpl)
+
+    def _track_auto(self, job_id, video_id, pid=None):
         """Nếu BẬT tự-động-xuất: ghi nhớ job phân tích này để xong thì tự xuất.
-        🔒 CHỐT MẪU: chụp lại MẪU ĐANG CHỌN lúc bấm (deepcopy) gắn với job —
-        phân tích xong dù user đã đổi sang mẫu khác, video này VẪN xuất bằng
-        đúng mẫu lúc bấm (không ăn nhầm mẫu mới)."""
+        🔒 CHỐT MẪU: chụp lại mẫu (deepcopy) gắn với job — phân tích xong dù
+        user đã đổi mẫu khác, video này VẪN xuất bằng đúng mẫu lúc bấm.
+        pid != None -> ưu tiên MẪU RIÊNG CỦA KÊNH đó (xem _tpl_for_project)."""
         if job_id and self.auto_export_chk.isChecked():
             self._pending_export[job_id] = video_id
             if not hasattr(self, "_auto_tpl"):
                 self._auto_tpl = {}
-            self._auto_tpl[job_id] = copy.deepcopy(self.layout_tpl)
+            self._auto_tpl[job_id] = self._tpl_for_project(pid)
 
     def _check_auto_export(self):
         """Định kỳ: job phân tích nào XONG -> tự xuất hết clip của video đó
@@ -4332,7 +4348,7 @@ class StudioPage(QWidget):
         lay.addWidget(ov)
 
         # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
-        tbl = QTableWidget(0, 8)
+        tbl = QTableWidget(0, 9)   # +1: cột Mẫu riêng theo kênh
         self._pipe_tbl = tbl
         # Cột "Chờ cắt" (mới): số video ĐANG NẰM trong thư mục kênh, sẵn sàng
         # cắt — để user THẤY TRƯỚC khi chạy (kênh 2 video hiện 2, không có = 0),
@@ -4341,7 +4357,7 @@ class StudioPage(QWidget):
         # 2 cột số GIỮ RIÊNG vì khác nghĩa: "Chờ" = video đang nằm trong thư
         # mục chờ cắt · "Đã cắt" = số Part đã xuất ra.
         tbl.setHorizontalHeaderLabels(
-            ["✓", "Kênh", "Nhóm", "Chế độ", "Chờ",
+            ["✓", "Kênh", "Nhóm", "Chế độ", "Mẫu", "Chờ",
              "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
@@ -4357,8 +4373,8 @@ class StudioPage(QWidget):
             f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
-        for col in (0, 2, 3, 4, 5, 6):
+        hh.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+        for col in (0, 2, 3, 4, 5, 6, 7):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(tbl, 2)
 
@@ -4433,7 +4449,8 @@ class StudioPage(QWidget):
         def fill():
             rows = db.query(
                 "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src, "
-                "export_dir, pipe_hidden FROM projects ORDER BY grp, name")
+                "export_dir, pipe_hidden, tpl_name FROM projects "
+                "ORDER BY grp, name")
             all_groups = sorted({(r["grp"] or "") for r in rows},
                                  key=lambda s: (s == "", s.lower()))
             sync_group_combo(all_groups)
@@ -4594,6 +4611,31 @@ class StudioPage(QWidget):
                         "UPDATE projects SET pipe_mode=? WHERE id=?",
                         (c.currentData(), p)))
                 tbl.setCellWidget(i, 3, cb)
+                # ---- MẪU RIÊNG THEO KÊNH (anh Hùng 31/07: 100 kênh dùng
+                # chung 1 mẫu -> clip trông giống nhau). '(mẫu đang chọn)' =
+                # ăn theo mẫu trên trang chính như CŨ, không phá gì.
+                tcb = NoWheelComboBox()
+                tcb.addItem("(mẫu đang chọn)", "")
+                for _t in services.list_templates():
+                    tcb.addItem(_t["name"], _t["name"])
+                _tcur = (r["tpl_name"] or "").strip() if "tpl_name" in r.keys() \
+                    else ""
+                if _tcur and tcb.findData(_tcur) < 0:
+                    # mẫu đã bị XOÁ nhưng kênh còn trỏ tới -> vẫn hiện để user
+                    # thấy mà sửa, kèm dấu ⚠ (lúc cắt tự lùi về mẫu đang chọn).
+                    tcb.addItem(f"⚠ {_tcur} (đã xoá)", _tcur)
+                _ti = tcb.findData(_tcur)
+                tcb.setCurrentIndex(_ti if _ti >= 0 else 0)
+                tcb.setToolTip(
+                    "MẪU RIÊNG cho kênh này (khung, chữ, phụ đề, logo…).\n"
+                    "Đặt mẫu khác nhau cho từng kênh -> clip không bị trông "
+                    "giống nhau hàng loạt.\n'(mẫu đang chọn)' = dùng mẫu ở "
+                    "trang chính như cũ.")
+
+                def _on_tpl(_i, p=pid, c=tcb):
+                    services.set_project_template(p, c.currentData() or "")
+                tcb.activated.connect(_on_tpl)
+                tbl.setCellWidget(i, 4, tcb)
                 # PART ĐÃ CẮT (tổng mọi ngày): cột 'note' lưu "N part" mỗi video
                 # xong -> CAST lấy số Part; COUNT(*) = số video gốc đã xử lý.
                 # Hiện SỐ PART (clip xuất ra — đúng cái user quan tâm để đăng),
@@ -4610,7 +4652,7 @@ class StudioPage(QWidget):
                 it_done.setToolTip(
                     f"{nvid} video gốc đã cắt xong → xuất ra {nparts} Part "
                     "(clip để đăng). 1 video thường ra nhiều Part.")
-                tbl.setItem(i, 5, it_done)
+                tbl.setItem(i, 6, it_done)
                 # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
                 today = db.query_one(
                     "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
@@ -4629,7 +4671,7 @@ class StudioPage(QWidget):
                     cell = " ".join(bits)
                 it6 = QTableWidgetItem(cell)
                 it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(i, 6, it6)
+                tbl.setItem(i, 7, it6)
                 # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
                 # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
@@ -4673,7 +4715,7 @@ class StudioPage(QWidget):
                     "cho ra nhiều Part). 0 = thư mục trống / đã cắt hết."
                     if n_ready else
                     "Chưa có video nào chờ cắt (thư mục trống hoặc đã cắt xong).")
-                tbl.setItem(i, 4, it_pend)
+                tbl.setItem(i, 5, it_pend)
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
                 lb = QLabel("⚠ Chưa có Thư mục lưu — đặt ở phần Kênh"
@@ -4703,13 +4745,13 @@ class StudioPage(QWidget):
                 rdo.clicked.connect(
                     lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
                 fl.addWidget(rdo)
-                tbl.setCellWidget(i, 7, fw)
+                tbl.setCellWidget(i, 8, fw)
             # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
             # setUpdatesEnabled(False) ở đầu vòng).
             _hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
             _hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            _hh.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
-            for _c in (0, 2, 3, 4, 5, 6):
+            _hh.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+            for _c in (0, 2, 3, 4, 5, 6, 7):
                 _hh.setSectionResizeMode(_c, QHeaderView.ResizeMode.ResizeToContents)
             tbl.setUpdatesEnabled(True)
             # Gắn TỔNG video chờ cắt vào dòng thống kê → user thấy cả nhóm còn
@@ -5853,7 +5895,7 @@ class StudioPage(QWidget):
                 jid = services.enqueue_auto(self.state.pool, v["video_id"],
                                             v["project_id"], preset)
                 if jid:
-                    self._track_auto(jid, v["video_id"])
+                    self._track_auto(jid, v["video_id"], v["project_id"])
                     n_job += 1
             except Exception as e:  # noqa: BLE001
                 self._pipe_log(f"⚠ phân tích lại '{v['channel']}' lỗi: {e}")
@@ -6066,7 +6108,7 @@ class StudioPage(QWidget):
                 self._pending_export[jid] = vid
                 if not hasattr(self, "_auto_tpl"):
                     self._auto_tpl = {}
-                self._auto_tpl[jid] = copy.deepcopy(self.layout_tpl)
+                self._auto_tpl[jid] = self._tpl_for_project(int(r["project_id"]))
                 dang_bay.add(khoa)
                 noi_lai += 1
             except Exception as e:  # noqa: BLE001 - 1 dòng lỗi không chặn cả loạt
@@ -6186,7 +6228,7 @@ class StudioPage(QWidget):
         self._pending_export[jid] = vid
         if not hasattr(self, "_auto_tpl"):
             self._auto_tpl = {}
-        self._auto_tpl[jid] = copy.deepcopy(self.layout_tpl)
+        self._auto_tpl[jid] = self._tpl_for_project(pid)   # MẪU RIÊNG của kênh
         self._pipe_log(f"▶ {name}: nhận '{path.name}' ({mode}) — bắt đầu cắt")
         return True
 
