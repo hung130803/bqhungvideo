@@ -32,10 +32,13 @@
      `jobs.cancel_req`; hồi phục dây chuyền phải trả dòng sổ cho job huỷ).
   8. `_test_ai_gate.py` → video dây chuyền ra "Cắt cơ bản" phải THỬ LẠI 1 lần
      rồi mới xuất; lần 2 vẫn cơ bản thì đóng dấu `[CƠ BẢN]` vào sổ.
-  9. `_test_chan_search.py` → ô 🔎 LỌC kênh: combo Kênh phải GIỮ NGUYÊN là
-     danh sách bấm mở (v2.6.10 tôi biến nó thành ô-gõ editable => anh Hùng mất
-     danh sách + không thấy tên kênh: "này k mở được"). Bất biến: lọc KHÔNG
-     ĐƯỢC đổi kênh đang làm; kênh đang chọn luôn còn trong danh sách.
+  9. `_test_chan_search.py` → TÌM KÊNH, đã sai 2 lần, đừng lặp: v2.6.10 biến
+     combo thành ô-gõ => mất danh sách bấm mở ("này k mở được"); v2.6.12 tách ô
+     "Lọc kênh" rời => chỉ lọc TRONG NHÓM đang chọn nên gõ tên kênh nhóm khác
+     không ra ("có hoạt động đâu"). ĐÚNG (v2.6.18): bấm combo -> popup
+     [ô tìm + danh sách] (`_open_chan_picker`); gõ -> `services.search_channels`
+     tìm TRÊN MỌI NHÓM, nhãn ghi "· nhóm X"; chọn kênh nhóm khác thì
+     `_select_project` tự đổi nhóm. Enter = chọn dòng đầu.
   10. `_test_reanalyze_clean.py` → PHÂN TÍCH LẠI phải ra ĐÚNG số part user
      đặt: clip lần trước ĐÃ XUẤT phải vào kho `status='archived'` (không xoá,
      giữ export_path + tính là "đoạn đã dùng"), `list_clips` bỏ archived. Gốc

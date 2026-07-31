@@ -101,8 +101,18 @@ class _ChanCombo(QComboBox):
     mở dropdown gọi callback refresh đuôi từng item ('Tên · 🟢3 · ✅12ph' /
     'Tên.mp4 · 🟢 đang cắt') — userData (project_id/video_id) giữ nguyên."""
     on_popup = None            # gán từ ngoài: callable không tham số
+    picker = None              # gán từ ngoài: mở POPUP TÌM KIẾM thay danh sách thường
 
     def showPopup(self):
+        # Có `picker` -> mở danh-sách-có-ô-tìm của mình (xem
+        # StudioPage._open_chan_picker), KHÔNG mở popup mặc định. Nó tự tính
+        # đuôi trạng thái nên khỏi gọi on_popup (đỡ 1 query).
+        if callable(self.picker):
+            try:
+                self.picker()
+                return
+            except Exception:  # noqa: BLE001 - lỗi popup tìm -> lùi về danh sách thường
+                pass
         cb = self.on_popup
         if cb:
             try:
@@ -188,26 +198,16 @@ class StudioPage(QWidget):
         gman.clicked.connect(self._manage_groups)
         srcrow.addWidget(gman)
         srcrow.addWidget(self._tag("Kênh"))
-        # Ô LỌC KÊNH — RIÊNG, không nhập vào combo (anh Hùng 30/07: bản trước
-        # tôi biến combo thành ô gõ => MẤT danh sách bấm mở + không thấy tên
-        # kênh đang chọn. Nay: combo giữ nguyên là DANH SÁCH bấm mở được, ô
-        # này chỉ LỌC bớt kênh hiện trong danh sách.)
-        from PyQt6.QtWidgets import QLineEdit as _QLE0
-        self.proj_filter = _QLE0()
-        self.proj_filter.setPlaceholderText("🔎 Lọc kênh")
-        self.proj_filter.setClearButtonEnabled(True)
-        self.proj_filter.setFixedWidth(120)
-        self.proj_filter.setToolTip(
-            "Gõ để LỌC danh sách kênh (300 kênh khỏi cuộn dò).\n"
-            "Danh sách bên phải chỉ còn kênh khớp — bấm vào để chọn.\n"
-            "Kênh ĐANG CHỌN luôn được giữ trong danh sách. Xoá chữ = hiện lại hết.")
-        self.proj_filter.textChanged.connect(self._apply_proj_filter)
-        srcrow.addWidget(self.proj_filter)
         self.proj = _ChanCombo(); self.proj.setMinimumWidth(180)
         self.proj.on_popup = self._refresh_proj_marks
+        # BẤM vào combo -> mở DANH SÁCH CÓ Ô TÌM NGAY TRÊN ĐẦU (xem
+        # _open_chan_picker). Đúng cái anh Hùng cần: "thêm phần tìm kiếm vào
+        # cái phần các kênh kìa, ở đầu có mục tìm kiếm".
+        self.proj.picker = self._open_chan_picker
         self.proj.setToolTip("Mỗi kênh = 1 thư mục riêng. Clip xuất vào đúng thư mục "
-                             "kênh.\nBấm để MỞ DANH SÁCH; ô 🔎 bên cạnh để lọc bớt "
-                             "khi có nhiều kênh.\nChuột phải để SỬA TÊN / XÓA kênh.")
+                             "kênh.\nBẤM để mở danh sách — có Ô TÌM ngay trên đầu, "
+                             "gõ tên là ra (tìm cả kênh ở NHÓM KHÁC).\n"
+                             "Chuột phải để SỬA TÊN / XÓA kênh.")
         self.proj.currentIndexChanged.connect(self._on_proj)
         self.proj.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.proj.customContextMenuRequested.connect(self._proj_menu)
@@ -1129,41 +1129,119 @@ class StudioPage(QWidget):
             self.proj.setCurrentIndex(i)
 
     # ---- kênh (project) / video ----
-    def _apply_proj_filter(self):
-        """Ô 🔎 đổi chữ -> dựng lại DANH SÁCH kênh chỉ còn kênh khớp.
+    def _open_chan_picker(self):
+        """DANH SÁCH KÊNH có Ô TÌM ngay trên đầu — thay popup mặc định của
+        combo Kênh.
 
-        BẤT BIẾN QUAN TRỌNG: lọc TUYỆT ĐỐI KHÔNG được đổi kênh đang chọn (đang
-        làm dở kênh A, gõ lọc mà nhảy sang kênh B là mất việc + xuất sai thư
-        mục). Nên: kênh đang chọn LUÔN có trong danh sách dù không khớp chữ,
-        và chọn lại đúng nó với signal bị chặn -> _on_proj KHÔNG chạy.
+        Đường đi tới đây (3 lần sửa, ghi lại để đừng lặp): v2.6.10 tôi biến
+        combo thành ô-gõ => anh Hùng MẤT danh sách bấm mở ("này k mở được").
+        v2.6.12 tách ô lọc RIÊNG bên cạnh => vẫn sai vì nó chỉ lọc TRONG NHÓM
+        đang chọn, gõ tên kênh ở nhóm khác không ra ("có hoạt động đâu").
+        NAY: bấm combo mở popup gồm [ô tìm] + [danh sách]; gõ là tìm TRÊN MỌI
+        NHÓM (services.search_channels), chọn kênh nhóm khác thì tự đổi nhóm
+        theo (_select_project). Chưa gõ gì -> hiện đúng danh sách nhóm hiện
+        tại kèm đuôi trạng thái như cũ.
         """
-        pid_cu = self.state.project_id
-        self._reload_projects(keep_pid=pid_cu)
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
+                                     QListWidgetItem, QVBoxLayout)
+        pop = QFrame(self, Qt.WindowType.Popup)
+        pop.setObjectName("chanPick")
+        pop.setStyleSheet(
+            f"#chanPick{{background:{BASE};border:1px solid {BORDER};"
+            f"border-radius:10px;}}")
+        lay = QVBoxLayout(pop)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(6)
+        ed = QLineEdit()
+        ed.setPlaceholderText("🔎 Gõ tên kênh để tìm (mọi nhóm)…")
+        ed.setClearButtonEnabled(True)
+        lay.addWidget(ed)
+        lst = QListWidget()
+        lst.setAlternatingRowColors(False)
+        lay.addWidget(lst, 1)
+        self._chan_pop, self._chan_pop_ed, self._chan_pop_lst = pop, ed, lst
 
-    def _reload_projects(self, keep_pid=None):
+        def fill(q: str = "") -> None:
+            lst.clear()
+            act = self._chan_activity()
+            grp_now = self._cur_group()
+            if (q or "").strip():
+                rows = services.search_channels(q)
+                for r in rows:
+                    nhan = r["name"]
+                    if (r["grp"] or "") != (grp_now or ""):
+                        nhan += f"   · nhóm {r['grp'] or 'Chưa phân nhóm'}"
+                    it = QListWidgetItem(nhan + self._chan_suffix(act, r["id"]))
+                    it.setData(Qt.ItemDataRole.UserRole, r["id"])
+                    lst.addItem(it)
+                if not rows:
+                    lst.addItem(QListWidgetItem("(không có kênh nào khớp)"))
+            else:
+                # chưa gõ: đúng danh sách NHÓM HIỆN TẠI, số thứ tự như combo
+                for i in range(self.proj.count()):
+                    pid = self.proj.itemData(i)
+                    if pid is None:
+                        continue
+                    ten = getattr(self, "_proj_names", {}).get(
+                        int(pid), self.proj.itemText(i))
+                    it = QListWidgetItem(f"{i + 1}. {ten}"
+                                         + self._chan_suffix(act, pid))
+                    it.setData(Qt.ItemDataRole.UserRole, int(pid))
+                    lst.addItem(it)
+            if lst.count():
+                lst.setCurrentRow(0)
+
+        def chon(item=None) -> None:
+            it = item or lst.currentItem()
+            if it is None:
+                return
+            pid = it.data(Qt.ItemDataRole.UserRole)
+            pop.close()
+            if pid is not None:
+                self._select_project(int(pid))   # tự đổi NHÓM nếu kênh khác nhóm
+
+        ed.textChanged.connect(fill)
+        ed.returnPressed.connect(lambda: chon())
+        lst.itemClicked.connect(chon)
+        lst.itemActivated.connect(chon)
+        fill("")
+        # đặt ngay dưới combo, rộng thoải mái để đọc tên dài + tên nhóm
+        pop.resize(max(self.proj.width(), 460), 360)
+        pop.move(self.proj.mapToGlobal(QPoint(0, self.proj.height() + 2)))
+        pop.show()
+        ed.setFocus()
+        return pop
+
+    def _chan_suffix(self, act: dict, pid) -> str:
+        """Đuôi trạng thái 1 kênh (' · ⏳2 · ✅12h') — dùng chung cho combo lẫn
+        popup tìm kênh để 2 nơi không bao giờ hiện lệch nhau."""
+        try:
+            a = act.get(int(pid))
+        except (TypeError, ValueError):
+            return ""
+        if not a:
+            return ""
+        parts = []
+        if a.get("running"):
+            parts.append(f"🟢{a['running']}")
+        if a.get("pending"):
+            parts.append(f"⏳{a['pending']}")
+        if a.get("last_done"):
+            parts.append("✅" + services.rel_time_vi(a["last_done"], short=True))
+        return ("  · " + " · ".join(parts)) if parts else ""
+
+    def _reload_projects(self):
         grp = self._cur_group()
-        loc = (self.proj_filter.text() or "").strip().casefold() \
-            if hasattr(self, "proj_filter") else ""
         self.proj.blockSignals(True); self.proj.clear()
         # TÊN GỐC từng kênh (không đuôi trạng thái) — text item có thể mang đuôi
         # '· 🟢3' nên MỌI chỗ cần tên kênh phải lấy từ đây/DB, ĐỪNG currentText()
         self._proj_names = {}
-        i_keep = -1
         for idx, p in enumerate(services.list_projects(grp or None), 1):
             self._proj_names[int(p["id"])] = p["name"]  # TÊN GỐC (không số/đuôi)
-            la_dang_chon = keep_pid is not None and int(p["id"]) == int(keep_pid)
-            if loc and loc not in (p["name"] or "").casefold() \
-                    and not la_dang_chon:
-                continue            # không khớp ô lọc -> ẩn (trừ kênh đang chọn)
             # STT ở đầu cho dễ đếm/quản lý khi nhiều kênh (chỉ hiển thị)
             self.proj.addItem(f"{idx}. {p['name']}", p["id"])
-            if la_dang_chon:
-                i_keep = self.proj.count() - 1
-        if i_keep >= 0:
-            self.proj.setCurrentIndex(i_keep)     # giữ nguyên kênh đang làm
         self.proj.blockSignals(False)
-        if keep_pid is not None and i_keep >= 0:
-            return                  # CHỈ lọc danh sách — không nạp lại video
         if self.proj.count():
             self._on_proj(self.proj.currentIndex())
         elif grp:

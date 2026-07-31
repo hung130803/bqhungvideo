@@ -168,6 +168,31 @@ def list_videos(project_id: int) -> list:
                     (project_id,))
 
 
+def search_channels(q: str, limit: int = 300) -> list:
+    """TÌM KÊNH THEO TÊN TRÊN MỌI NHÓM (anh Hùng 31/07: "phần lọc kênh có hoạt
+    động đâu" — vì ô lọc cũ chỉ lọc TRONG NHÓM đang chọn, gõ tên kênh ở nhóm
+    khác là không ra gì, tưởng hỏng).
+
+    Trả [{id, name, grp}] — khớp CHỨA-chuỗi, không phân biệt hoa/thường; kênh
+    có tên bắt đầu bằng chuỗi tìm được xếp TRƯỚC (gõ 'cam' thì 'camX' lên đầu,
+    'Bodycam' sau). q rỗng -> [] (caller tự hiện danh sách nhóm hiện tại).
+    Hàm thuần đọc DB — test được."""
+    tu = (q or "").strip().casefold()
+    if not tu:
+        return []
+    rows = db.query("SELECT id, name, grp FROM projects ORDER BY grp, name")
+    dau, giua = [], []
+    for r in rows:
+        ten = (r["name"] or "").casefold()
+        if ten.startswith(tu):
+            dau.append(r)
+        elif tu in ten:
+            giua.append(r)
+    ra = [{"id": int(r["id"]), "name": r["name"] or "", "grp": r["grp"] or ""}
+          for r in (dau + giua)]
+    return ra[:limit]
+
+
 def find_basic_cut_videos(grp: str | None = None) -> list:
     """QUÉT mọi kênh (hoặc 1 nhóm) tìm video mà clip HIỆN CÓ đều là 'Cắt cơ
     bản' (llm_used=False) — tức lỡ ra clip KHÔNG qua AI (anh Hùng 30/07: nhiều
