@@ -60,7 +60,15 @@
      có clip hiện (không archived) mà KHÔNG clip nào llm_used=True; cờ exists
      phân biệt còn-gốc / đã-xoá. `pipeline.index_recycled`: chỉ mục Thùng rác
      theo tên file để khôi phục video đã xoá. Nút ở dialog 🤖 Dây chuyền.
-  14. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
+  14. `_test_ui_smooth.py` → MƯỢT + KHÔNG ĐỨNG IM. (A) `_poll_tick` chỉ được
+     dừng HẲN khi `_modal_busy` (hộp chọn file native); khi có QDialog modal
+     (vd 🤖 Dây chuyền mở bằng exec) vẫn PHẢI chạy `_check_auto_export` +
+     `_pipe_poll` — ĐO TRƯỚC SỬA: 0/2 nhịp => "bấm chạy mà không chạy, phải X
+     dialog nó mới chạy". (B) 1 clip đổi trạng thái -> `_rows_in_place` thay
+     ĐÚNG dòng đó, giữ nguyên widget thanh tiến trình (trước: đập cả danh sách
+     9,1ms + bar bị xoá/tạo lại => "mất rồi lại có"). Ngân sách: poll < 30ms
+     với 100 kênh (đo 0,59ms).
+  15. `_test_db_corrupt_guard.py` → **DB VỠ KHÔNG ĐƯỢC LÀM APP ĐƠ**. Đo thật
      30/07 trên máy user: studio.db malformed nhưng không ai ngắt → app đọc
      đĩa **24,7 MB/s + 6.176 lệnh/s + ~50% CPU lúc ĐỨNG YÊN**. Nay `db.query`
      phát hiện malformed → `corrupt_live=True` → trả rỗng NGAY (đo: 6.000 truy

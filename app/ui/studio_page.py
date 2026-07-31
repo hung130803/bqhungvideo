@@ -1950,8 +1950,21 @@ class StudioPage(QWidget):
         danh sách clip / bật popup (vd _pipe_poll hỏi xác nhận) sẽ CƯỚP FOCUS
         khiến hộp 'Chọn thư mục lưu' vừa hiện đã tự tắt (đúng lỗi user báo)."""
         from PyQt6.QtWidgets import QApplication
-        if self._modal_busy or QApplication.activeModalWidget() is not None:
+        # HỘP THOẠI CHỌN FILE/THƯ MỤC (native, qua _busy_dialog): DỪNG HẲN —
+        # poll dựng lại UI sẽ CƯỚP FOCUS làm hộp vừa hiện đã tự tắt.
+        if self._modal_busy:
             return
+        # HỘP THOẠI Qt (vd 🤖 Dây chuyền mở bằng exec): CHỈ ngừng phần VẼ LẠI
+        # trang chính (đang bị dialog che, vẽ vô ích), NHƯNG PHẢI CHẠY TIẾP
+        # "máy" của dây chuyền.
+        #
+        # LỖI THẬT (anh Hùng 31/07: "bấm chạy mà nó không chạy luôn, phải X
+        # cái kia nó mới bắt đầu chạy"): trước đây thấy BẤT KỲ modal nào là
+        # return NGAY -> suốt lúc dialog Dây chuyền mở, _check_auto_export
+        # (tự xuất clip sau khi phân tích xong) và _pipe_poll (dõi job xuất,
+        # dọn gốc) KHÔNG chạy nhịp nào. ĐO ĐƯỢC: 0/2 nhịp. Phân tích vẫn chạy
+        # ngầm nên user thấy "đứng im", đóng dialog mới thấy nó chạy ào ào.
+        chi_may = QApplication.activeModalWidget() is not None
         # ⛔ DB VỠ giữa lúc chạy: DỪNG POLL + báo user 1 lần. Không dừng thì
         # mỗi nhịp lại nã hàng loạt query vào DB hỏng — đo thật trên máy anh
         # Hùng 30/07: 24,7 MB/s đọc đĩa + 50% CPU lúc app đứng yên = đơ đặc.
@@ -1967,8 +1980,12 @@ class StudioPage(QWidget):
             return
         # Thứ tự như cũ: báo xong ✓ -> làm mới clip -> tự xuất -> dõi dây chuyền
         # -> hoạt động kênh. Lỗi 1 việc không được chặn các việc sau.
-        for fn in (self._poll_done, self._refresh_clips, self._check_auto_export,
-                   self._pipe_poll, self._poll_chan_activity):
+        # MÁY (phải chạy dù có dialog): _check_auto_export + _pipe_poll.
+        # VẼ (bỏ khi dialog che): _poll_done, _refresh_clips, _poll_chan_activity.
+        viec = ((self._check_auto_export, self._pipe_poll) if chi_may else
+                (self._poll_done, self._refresh_clips, self._check_auto_export,
+                 self._pipe_poll, self._poll_chan_activity))
+        for fn in viec:
             try:
                 fn()
             except Exception:  # noqa: BLE001 - 1 poll lỗi không làm chết nhịp
@@ -6380,11 +6397,16 @@ class StudioPage(QWidget):
             self._thumb_failed = set()   # cho thử tạo lại ảnh (đổi video/Cắt lại/khôi phục)
         clips = services.list_clips(vid) if vid else []
         busy = self._video_busy(vid)      # để empty-state đổi khi job chạy/xong
+        st_cu = getattr(self, "_st", {})
+        doi = {c["id"] for c in clips if st_cu.get(c["id"]) != c["status"]}
         if not force and getattr(self, "_n", -1) == len(clips) \
-                and getattr(self, "_busy", None) == busy \
-                and all(getattr(self, "_st", {}).get(c["id"]) == c["status"]
-                        for c in clips):
+                and getattr(self, "_busy", None) == busy and not doi:
             return
+        # CHỈ vài clip đổi trạng thái (đang xuất: suggested->exported), số clip
+        # và cờ busy y nguyên -> cập nhật TẠI CHỖ, không đập cả danh sách
+        # (giữ thanh tiến trình, hết nhấp nháy — xem _rows_in_place).
+        tai_cho = (not force and getattr(self, "_n", -1) == len(clips)
+                   and getattr(self, "_busy", None) == busy and bool(doi))
         self._n = len(clips)
         self._busy = busy
         self._st = {c["id"]: c["status"] for c in clips}
@@ -6392,12 +6414,48 @@ class StudioPage(QWidget):
         self._cur_vrow = db.query_one(
             "SELECT v.src_path, p.assets_dir FROM videos v "
             "JOIN projects p ON p.id=v.project_id WHERE v.id=?", (vid,)) if vid else None
-        self._rebuild_rows()
+        self._rebuild_rows(doi if tai_cho else None)
 
-    def _rebuild_rows(self):
+    def _rows_in_place(self, clips, vrow, doi: set) -> bool:
+        """CẬP NHẬT TẠI CHỖ: chỉ thay những DÒNG CLIP vừa đổi trạng thái, giữ
+        nguyên mọi widget khác (nhất là THANH TIẾN TRÌNH).
+
+        LỖI THẬT (anh Hùng 31/07: "thanh tiến trình mất rồi lại có, chuyển
+        động cực kỳ chậm delay"): mỗi lần 1 clip đổi trạng thái (đang xuất thì
+        liên tục suggested->exported), _rebuild_rows ĐẬP HẾT danh sách rồi dựng
+        lại — đo được 9,1 ms/lần + thanh tiến trình bị XOÁ và tạo mới nên nhấp
+        nháy mất-hiện. Nay chỉ dòng nào đổi mới dựng lại.
+
+        Trả True nếu làm được tại chỗ; False -> caller dựng lại toàn bộ."""
+        so_do = getattr(self, "_row_w", None)
+        if not so_do or not doi:
+            return False
+        if set(so_do) != {c["id"] for c in clips}:
+            return False                  # tập clip thay đổi -> phải dựng lại
+        for i, c in enumerate(clips):
+            if c["id"] not in doi:
+                continue
+            cu = so_do.get(c["id"])
+            if cu is None:
+                return False
+            idx = self.list_box.indexOf(cu)
+            if idx < 0:
+                return False              # widget đã bị gỡ -> dựng lại cho chắc
+            self.list_box.takeAt(idx)
+            cu.setParent(None)
+            moi = self._clip_row(c, vrow, i + 1)
+            self.list_box.insertWidget(idx, moi)
+            so_do[c["id"]] = moi
+        return True
+
+    def _rebuild_rows(self, doi: set = None):
         clips = getattr(self, "_cur_clips", [])
         vrow = getattr(self, "_cur_vrow", None)
+        # ⚡ ĐƯỜNG NHANH: chỉ vài clip đổi trạng thái -> thay đúng dòng đó
+        if doi and self._rows_in_place(clips, vrow, doi):
+            return
         self._job_bar = self._job_lbl = None   # widget cũ sắp bị gỡ khỏi list
+        self._row_w = {}
         while self.list_box.count() > 1:
             w = self.list_box.takeAt(0).widget()
             if w:
@@ -6412,8 +6470,9 @@ class StudioPage(QWidget):
             self.list_box.insertWidget(0, self._job_progress_widget(compact=True))
         missing = []
         for i, c in enumerate(clips):
-            self.list_box.insertWidget(self.list_box.count() - 1,
-                                       self._clip_row(c, vrow, i + 1))
+            _w = self._clip_row(c, vrow, i + 1)
+            self._row_w[c["id"]] = _w        # sổ dòng -> cho đường nhanh sau này
+            self.list_box.insertWidget(self.list_box.count() - 1, _w)
             if vrow:
                 tp = Path(services.cache_dir(vrow["assets_dir"])) / f"_thumb_{c['id']}.jpg"
                 # BỎ QUA clip từng tạo ảnh THẤT BẠI -> không dựng-lại vô hạn.
