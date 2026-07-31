@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
@@ -143,6 +144,12 @@ class StudioPage(QWidget):
         # (biểu hiện: khu giữa NHÁY ĐEN liên tục + ngốn CPU, nuốt cả cập nhật
         # sau khi Xóa). force refresh (đổi video / Cắt lại) sẽ xoá để thử lại.
         self._thumb_failed = set()
+        # ĐỆM QUÉT THƯ MỤC (đo thật 31/07 bằng profiler: mở hộp Dây chuyền 47
+        # kênh = 327ms, trong đó scan_dir 47 lần = 102ms / 1.927 lệnh stat).
+        # Bảng còn dựng lại mỗi lần bấm ô tích / gõ ô tìm -> quét lại 47 thư
+        # mục. Máy anh Hùng ổ C bị SSMATool cày nên mỗi lần quét đắt hơn nhiều
+        # => đệm 10s: mở hộp/tích/gõ liên tục chỉ quét 1 lượt.
+        self._scan_cache: dict = {}
         self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
         self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
         # 🤖 DÂY CHUYỀN (INTEGRATION.md): theo dõi job cắt + job xuất của
@@ -1145,6 +1152,22 @@ class StudioPage(QWidget):
         from PyQt6.QtCore import QPoint
         from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
                                      QListWidgetItem, QVBoxLayout)
+        # DÙNG LẠI popup cũ nếu còn (đo thật: mở/đóng 30 lần tạo 30 QFrame
+        # sống dai trên StudioPage — rò rỉ widget của chính bản v2.6.18 tôi
+        # vừa làm; 300 lần đổi kênh/ngày là 300 widget rác). Dựng 1 lần rồi
+        # tái sử dụng: hết rò rỉ + mở nhanh hơn.
+        cu = getattr(self, "_chan_pop", None)
+        if cu is not None and getattr(self, "_chan_pop_fill", None) is not None:
+            try:
+                self._chan_pop_ed.clear()          # về trạng thái mới mở
+                self._chan_pop_fill("")
+                cu.resize(max(self.proj.width(), 460), 360)
+                cu.move(self.proj.mapToGlobal(QPoint(0, self.proj.height() + 2)))
+                cu.show()
+                self._chan_pop_ed.setFocus()
+                return cu
+            except RuntimeError:
+                pass          # widget cũ đã bị Qt xoá -> dựng lại bên dưới
         pop = QFrame(self, Qt.WindowType.Popup)
         pop.setObjectName("chanPick")
         pop.setStyleSheet(
@@ -1205,6 +1228,7 @@ class StudioPage(QWidget):
         ed.returnPressed.connect(lambda: chon())
         lst.itemClicked.connect(chon)
         lst.itemActivated.connect(chon)
+        self._chan_pop_fill = fill      # để lần mở sau DÙNG LẠI popup này
         fill("")
         # đặt ngay dưới combo, rộng thoải mái để đọc tên dài + tên nhóm
         pop.resize(max(self.proj.width(), 460), 360)
@@ -4363,6 +4387,13 @@ class StudioPage(QWidget):
                        f"{hid_txt}"
                        f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
                        f"{more}{canh_txt}")
+            # ⚡ TẮT VẼ + TẮT SẮP CỘT trong lúc dựng ~235 widget của 47 dòng:
+            # để bật thì Qt vẽ lại + tính lại bề rộng cột SAU MỖI Ô -> đo thật
+            # 231ms mở hộp với 47 kênh (trong đó quét đĩa chỉ 57ms, còn lại là
+            # vẽ). Bật lại 1 lần ở cuối = vẽ 1 lượt.
+            tbl.setUpdatesEnabled(False)
+            _hh = tbl.horizontalHeader()
+            _hh.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
             tbl.setRowCount(len(view))
             from datetime import datetime
             root = self._pipe_root()
@@ -4507,7 +4538,7 @@ class StudioPage(QWidget):
                     d_src = _Pth(sd)
                     if d_src.is_dir():
                         try:
-                            rdy, bsy = P.scan_dir(d_src)
+                            rdy, bsy = self._scan_cached(d_src)
                             n_ready = len(rdy)
                             pend_txt = str(n_ready)
                             if bsy:
@@ -4559,6 +4590,14 @@ class StudioPage(QWidget):
                     lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
                 fl.addWidget(rdo)
                 tbl.setCellWidget(i, 7, fw)
+            # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
+            # setUpdatesEnabled(False) ở đầu vòng).
+            _hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            _hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            _hh.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+            for _c in (0, 2, 3, 4, 5, 6):
+                _hh.setSectionResizeMode(_c, QHeaderView.ResizeMode.ResizeToContents)
+            tbl.setUpdatesEnabled(True)
             # Gắn TỔNG video chờ cắt vào dòng thống kê → user thấy cả nhóm còn
             # bao nhiêu video sẽ được cắt khi bấm ▶ (khớp cột "Chờ cắt").
             # GHI RÕ ở BAO NHIÊU KÊNH: tránh khó hiểu khi vài dòng đầu = 0 nhưng
@@ -5092,6 +5131,7 @@ class StudioPage(QWidget):
                                  else "↩ Khôi phục CẢ NGÀY")
 
         def do_restore(items):
+            self._scan_cache_clear()  # vừa đưa video về thư mục kênh
             done = 0; fail = 0
             for it in items:
                 dest = self._pipe_restore_dest(it["channel"])
@@ -5336,6 +5376,7 @@ class StudioPage(QWidget):
         pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
         -> đủ Part thì XÓA video gốc. Trả số video đã nhận lần này."""
         from app.core import pipeline as P
+        self._scan_cache_clear()      # chạy thật -> KHÔNG dùng số liệu đệm
         # Không còn "thư mục trung chuyển" chung — mỗi kênh tự đặt thư mục
         # riêng (export_dir/pipe_src). root chỉ là fallback cũ (thường rỗng).
         self._pipe_focus_target = None   # video ĐẦU TIÊN nhận -> đưa ra màn chính
@@ -5493,6 +5534,7 @@ class StudioPage(QWidget):
         trong thư mục (không chờ bấm ▶ Chạy). Nếu thư mục trống (video gốc đã
         bị xoá sau lần cắt trước) → báo RÕ để user bỏ video vào lại."""
         from app.core import pipeline as P
+        self._scan_cache_clear()      # vừa đổi sổ -> quét lại thư mục thật
         from PyQt6.QtWidgets import QMessageBox
         if QMessageBox.question(
                 self, "Cắt lại kênh",
@@ -5546,6 +5588,30 @@ class StudioPage(QWidget):
             self._refresh_clips(force=True)
         except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
             pass
+
+    def _scan_cached(self, d, ttl: float = 10.0):
+        """`pipeline.scan_dir` CÓ ĐỆM 10 giây (xem chú thích ở _scan_cache).
+
+        Bảng dây chuyền dựng lại mỗi lần bấm ô tích / gõ ô tìm / đổi nhóm —
+        mỗi lần là 47 lượt quét thư mục (đo: 102ms / 1.927 lệnh stat trên ổ
+        rảnh; ổ đang bị cày thì đắt hơn nhiều). Đệm 10s để mấy thao tác liên
+        tiếp chỉ quét 1 lượt, nhưng vẫn đủ tươi: user bỏ video mới vào thư mục
+        thì chậm nhất 10s là thấy, và ▶ Chạy LUÔN xoá đệm nên không bao giờ
+        chạy theo số liệu cũ."""
+        key = os.path.normcase(str(d))
+        hit = self._scan_cache.get(key)
+        now = time.time()
+        if hit is not None and now - hit[0] < ttl:
+            return hit[1]
+        from app.core import pipeline as P
+        val = P.scan_dir(d)
+        self._scan_cache[key] = (now, val)
+        return val
+
+    def _scan_cache_clear(self) -> None:
+        """Xoá đệm quét — gọi TRƯỚC mọi việc phải đọc số liệu THẬT (▶ Chạy,
+        Cắt lại, khôi phục video từ Thùng rác)."""
+        self._scan_cache.clear()
 
     def _pipe_menu_kho(self, anchor) -> None:
         """Menu 🗑 KHO VIDEO & DỌN DẸP — gom việc liên quan tới FILE trên đĩa.
