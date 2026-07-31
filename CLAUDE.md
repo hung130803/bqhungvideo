@@ -46,6 +46,10 @@
      Popup | Dialog` nên bit Popup LUÔN có — phải so KIỂU
      `flags & WindowType_Mask`, đừng so bit. Mỗi dòng có nút 📋 copy TÊN GỐC
      (không kèm STT/đuôi trạng thái), bấm copy KHÔNG đổi kênh + KHÔNG đóng.
+     v2.6.22: **NÚT TRONG POPUP PHẢI LÀ CHỮ, KHÔNG EMOJI** — máy anh Hùng
+     thiếu glyph 📋/✕ nên nút ra Ô ĐEN trơ ("xấu quá tự nhiên có cái ô đen").
+     Dùng "Copy" / "Đóng" + style rõ (viền + chữ màu accent). Cổng test 9 có ca
+     quét mọi QPushButton trong popup, thấy emoji dễ-thiếu-font là FAIL.
   10. `_test_reanalyze_clean.py` → PHÂN TÍCH LẠI phải ra ĐÚNG số part user
      đặt: clip lần trước ĐÃ XUẤT phải vào kho `status='archived'` (không xoá,
      giữ export_path + tính là "đoạn đã dùng"), `list_clips` bỏ archived. Gốc

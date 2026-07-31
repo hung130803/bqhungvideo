@@ -170,10 +170,10 @@ from PyQt6.QtGui import QKeySequence as _KS, QShortcut as _SC
 sc = [c for c in pop.findChildren(_SC)
       if c.key() == _KS("Esc")]
 kiem(bool(sc), "có phím tắt Esc để đóng")
-xb = [b for b in pop.findChildren(QPushButton) if b.text() == "✕"]
-kiem(len(xb) == 1, "có đúng 1 nút ✕ để đóng", str(len(xb)))
+xb = [b for b in pop.findChildren(QPushButton) if b.text() == "Đóng"]
+kiem(len(xb) == 1, "có đúng 1 nút Đóng (CHỮ)", str(len(xb)))
 xb[0].click(); qapp.processEvents()
-kiem(not pop.isVisible(), "bấm ✕ -> popup đóng")
+kiem(not pop.isVisible(), "bấm Đóng -> popup đóng")
 
 print("== 10. NÚT COPY tên kênh ở TỪNG dòng ==")
 pop = pg._open_chan_picker(); qapp.processEvents()
@@ -182,12 +182,12 @@ n_row = lst.count()
 kiem(n_row >= 2, f"có {n_row} dòng kênh (nhóm hiện tại)")
 w0 = lst.itemWidget(lst.item(0))
 kiem(w0 is not None, "dòng đầu có widget riêng (nhãn + nút copy)")
-cps = [b for b in w0.findChildren(QPushButton) if b.text() == "📋"]
-kiem(len(cps) == 1, "mỗi dòng có ĐÚNG 1 nút 📋 copy", str(len(cps)))
+cps = [b for b in w0.findChildren(QPushButton) if b.text() == "Copy"]
+kiem(len(cps) == 1, "mỗi dòng có ĐÚNG 1 nút Copy (CHỮ, không emoji)", str(len(cps)))
 thieu = [i for i in range(n_row)
          if not [b for b in (lst.itemWidget(lst.item(i)) or w0).findChildren(
-             QPushButton) if b.text() == "📋"]]
-kiem(not thieu, "MỌI dòng đều có nút copy", f"dòng thiếu: {thieu}")
+             QPushButton) if b.text() == "Copy"]]
+kiem(not thieu, "MỌI dòng đều có nút Copy", f"dòng thiếu: {thieu}")
 
 print("== 11. bấm copy: đúng TÊN GỐC, không đổi kênh, không đóng ==")
 QApplication.clipboard().clear()
@@ -210,7 +210,7 @@ kiem(lst.count() == n_truoc, "danh sách không bị dựng lại")
 print("== 12. copy ở dòng tìm được (kênh nhóm khác) ==")
 pg._chan_pop_ed.setText("pepe"); qapp.processEvents()
 w = lst.itemWidget(lst.item(0))
-cp = [b for b in w.findChildren(QPushButton) if b.text() == "📋"][0]
+cp = [b for b in w.findChildren(QPushButton) if b.text() == "Copy"][0]
 QApplication.clipboard().clear(); cp.click(); qapp.processEvents()
 kiem(QApplication.clipboard().text() == "Pepe's Towing Service",
      "copy đúng tên kênh ở nhóm khác (không kèm '· nhóm Mỹ mới')",
@@ -229,6 +229,23 @@ gc.collect(); qapp.processEvents()
 n_pop = len([w for w in pg.findChildren(_QF) if w.objectName() == "chanPick"])
 kiem(n_pop <= 2, f"30 lần mở/đóng -> chỉ {n_pop} popup (dùng lại, không rò rỉ)",
      str(n_pop))
+
+
+print("== 14. nút trong popup KHÔNG được dùng emoji (máy thiếu glyph = ô đen) ==")
+pop = pg._open_chan_picker(); qapp.processEvents()
+_emoji_xau = ("📋", "✕", "❌", "🗑", "📄", "⧉")
+_nut = [b.text() for b in pop.findChildren(QPushButton)]
+_co_emoji = [t for t in _nut if any(e in t for e in _emoji_xau)]
+kiem(not _co_emoji, "mọi nút trong popup là CHỮ, không emoji dễ thiếu font",
+     f"còn emoji: {_co_emoji}")
+kiem("Copy" in _nut and "Đóng" in _nut,
+     "có nút 'Copy' + 'Đóng' bằng chữ", str(sorted(set(_nut))))
+_w0 = pg._chan_pop_lst.itemWidget(pg._chan_pop_lst.item(0))
+_cp0 = [b for b in _w0.findChildren(QPushButton) if b.text() == "Copy"][0]
+kiem(_cp0.width() >= 40 and "color" in (_cp0.styleSheet() or ""),
+     "nút Copy đủ rộng + có màu chữ rõ (không chìm vào nền)",
+     f"w={_cp0.width()} style={(_cp0.styleSheet() or '')[:40]}")
+pop.close()
 
 print()
 if FAIL:

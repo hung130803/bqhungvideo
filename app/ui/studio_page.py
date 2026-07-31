@@ -1190,8 +1190,16 @@ class StudioPage(QWidget):
         ed.setPlaceholderText("🔎 Gõ tên kênh để tìm (mọi nhóm)…")
         ed.setClearButtonEnabled(True)
         hrow.addWidget(ed, 1)
-        xb = _QPB("✕"); xb.setProperty("ghost", True); xb.setFixedWidth(30)
+        # NÚT CHỮ, KHÔNG emoji: máy anh Hùng thiếu glyph 📋/✕ nên nút ra Ô ĐEN
+        # trơ ("xấu quá tự nhiên có cái ô đen"). Bài học đã có trong file này
+        # ("Nút CHỮ (không phụ thuộc emoji)") — nay áp cho cả popup tìm kênh.
+        xb = _QPB("Đóng"); xb.setFixedWidth(58)
         xb.setToolTip("Đóng danh sách (hoặc bấm Esc)")
+        xb.setStyleSheet(
+            f"QPushButton{{background:{SURFACE};color:{MUTED};"
+            f"border:1px solid {BORDER};border-radius:6px;padding:3px 6px;"
+            f"font-size:12px;}}"
+            f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}")
         xb.clicked.connect(pop.close)
         hrow.addWidget(xb)
         lay.addLayout(hrow)
@@ -1213,8 +1221,17 @@ class StudioPage(QWidget):
             lb = QLabel(nhan)
             lb.setStyleSheet("background:transparent;")
             h.addWidget(lb, 1)
-            cp = _QPB("📋"); cp.setProperty("ghost", True)
-            cp.setFixedWidth(30)
+            # NÚT CHỮ "Copy" — thấy rõ, không phụ thuộc font emoji (xem chú
+            # thích ở nút Đóng). Viền + chữ sáng để nổi trên dòng tối.
+            cp = _QPB("Copy")
+            cp.setFixedWidth(56)
+            cp.setCursor(Qt.CursorShape.PointingHandCursor)
+            cp.setStyleSheet(
+                f"QPushButton{{background:{SURFACE};color:{ACCENT};"
+                f"border:1px solid {BORDER};border-radius:6px;"
+                f"padding:2px 6px;font-size:12px;}}"
+                f"QPushButton:hover{{background:{ACCENT};color:#0B1220;"
+                f"border-color:{ACCENT};}}")
             cp.setToolTip(f"Copy tên kênh: {ten_goc}")
             cp.clicked.connect(lambda _c=False, t=ten_goc: self._copy_chan_text(t))
             h.addWidget(cp)
