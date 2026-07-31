@@ -146,6 +146,28 @@
      lưu file .db thiếu WAL thì **chỉ có 93/201 dòng** (máy anh Hùng báo
      'malformed' khi đọc từ ngoài). Cách kiểm ĐÚNG: copy riêng file .db (không
      kèm -wal) rồi đếm dòng.
+  19. `_test_tpl_export_path.py` → **MẪU THEO KÊNH PHẢI ĐÚNG TỚI PAYLOAD
+     ffmpeg, quy mô 200 KÊNH**. Cổng 16 chỉ kiểm tới `_tpl_for_project` (cửa
+     "chốt mẫu"); cổng này chặn `services.enqueue_export` và đọc
+     `cap_style["font"]` — đúng thứ ffmpeg vẽ. 4 LỖI THẬT tìm được 31/07/2026
+     khi anh Hùng yêu cầu rà lại ("chạy hàng loạt 200 kênh, đừng để lỗi đến lúc
+     xuất"):
+     (a) mẫu-theo-kênh CHỈ áp ở đường dây chuyền tự động (caller tự đổi
+     `self.layout_tpl`); **bấm tay 'Xuất video này' / 'Xuất cả kênh' / xuất lại
+     1 Part vẫn ăn mẫu TRANG CHÍNH** → kênh đã gán vẫn ra clip sai mẫu.
+     (b) đổi `layout_tpl` ở CALLER nên lượt xuất chen ngang (vòng lặp sự kiện
+     lồng) trộn mẫu giữa 2 kênh.
+     (c) mẫu đã gán bị XOÁ/đổi tên → âm thầm lùi mẫu, không một dòng báo.
+     (d) `save_template` KHÔNG cắt khoảng trắng còn `set_project_template` thì
+     CÓ → mẫu tên ' mẫu A ' gán thành 'mẫu A' → tra không thấy → rơi mẫu chính.
+     SỬA GỐC: việc chọn mẫu nằm TRONG `_export_video(video_id, only_clip_id,
+     tpl=None)` — cửa duy nhất mọi đường xuất đi qua; `tpl` != None = mẫu ĐÃ
+     CHỐT lúc xếp job; thân cũ đổi tên `_export_video_inner`. Thêm
+     `_canh_bao_mau_mat` (báo 1 lần/kênh vào status + báo cáo dây chuyền);
+     `get_template`/`delete_template` so `TRIM(name)=TRIM(?)` để mẫu cũ lưu kèm
+     khoảng trắng vẫn tra ra. LƯU Ý: stub `_export_video` trong test khác PHẢI
+     nhận `tpl=None`, thiếu là lượt xuất nổ TypeError. Ngân sách đo: 200 kênh
+     xuất loạt < 20s (đo 0,0s), mở hộp dây chuyền 212 dòng < 4s (đo 1,5s).
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước

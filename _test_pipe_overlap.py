@@ -328,12 +328,17 @@ goc_export = pg._export_video
 chen = {"n": 0}
 
 
-def _export_chen_ngang(vid, only_clip_id=None):
-    """Bắt chước processEvents: lần xuất ĐẦU TIÊN gọi lại _check_auto_export."""
+def _export_chen_ngang(vid, only_clip_id=None, tpl=None):
+    """Bắt chước processEvents: lần xuất ĐẦU TIÊN gọi lại _check_auto_export.
+
+    PHẢI nhận cả `tpl` — v2.6.27 đưa việc chốt MẪU THEO KÊNH vào chính
+    `_export_video(vid, tpl=...)`. Stub thiếu tham số này thì lượt xuất nổ
+    TypeError, app báo qua `_pipe_on_export_failed` (không âm thầm) nhưng test
+    lại tưởng dây chuyền hỏng."""
     if chen["n"] == 0:
         chen["n"] = 1
         pg._check_auto_export()          # ← nhịp poll chen vào GIỮA lúc xuất
-    return goc_export(vid, only_clip_id)
+    return goc_export(vid, only_clip_id, tpl=tpl)
 
 
 pg._export_video = _export_chen_ngang

@@ -4107,7 +4107,44 @@ class StudioPage(QWidget):
                 tpl = None
             if isinstance(tpl, dict) and tpl:
                 return copy.deepcopy(tpl)
+            # ĐÃ GÁN mẫu nhưng mẫu KHÔNG CÒN (bị xoá/đổi tên) -> vẫn xuất được
+            # nhưng PHẢI NÓI RA. Âm thầm lùi mẫu = 200 kênh ra clip sai mẫu mà
+            # anh Hùng chỉ biết lúc mở file lên xem (đúng cái anh sợ nhất).
+            # Mỗi tên mẫu chỉ báo 1 lần/phiên -> không spam 200 dòng.
+            self._canh_bao_mau_mat(pid)
         return copy.deepcopy(self.layout_tpl)
+
+    def _canh_bao_mau_mat(self, pid) -> None:
+        """Báo 1 lần cho mỗi (kênh, mẫu) khi mẫu đã gán không còn tồn tại."""
+        try:
+            ten = services.project_template_name(pid)
+        except Exception:  # noqa: BLE001
+            return
+        if not ten:
+            return                       # chưa gán -> đúng như cũ, không báo
+        if not hasattr(self, "_da_bao_mau_mat"):
+            self._da_bao_mau_mat = set()
+        khoa = (pid, ten)
+        if khoa in self._da_bao_mau_mat:
+            return
+        self._da_bao_mau_mat.add(khoa)
+        try:
+            r = db.query_one("SELECT name FROM projects WHERE id=?", (pid,))
+            kenh = (r["name"] if r else "") or f"kênh #{pid}"
+        except Exception:  # noqa: BLE001
+            kenh = f"kênh #{pid}"
+        loi = (f"⚠ Kênh '{kenh}' gán mẫu «{ten}» nhưng mẫu này KHÔNG CÒN "
+               "(đã xoá/đổi tên) — tạm xuất bằng mẫu đang chọn. Vào 🤖 Dây "
+               "chuyền, cột 'Mẫu' để chọn lại.")
+        try:
+            self.status.setText(loi)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if hasattr(self, "_pipe_report"):
+                self._pipe_log(loi)      # vào BÁO CÁO lần chạy -> soi lại được
+        except Exception:  # noqa: BLE001
+            pass
 
     def _track_auto(self, job_id, video_id, pid=None):
         """Nếu BẬT tự-động-xuất: ghi nhớ job phân tích này để xong thì tự xuất.
@@ -4211,18 +4248,11 @@ class StudioPage(QWidget):
                         "không tắc dây chuyền — soát lại key/mạng ở Cài đặt AI; "
                         "video này bị đánh dấu [CƠ BẢN] trong báo cáo.")
                 try:
-                    if tpl_snap is not None:
-                        # tạm dùng MẪU ĐÃ CHỐT của job này để build payload
-                        # (mọi self.layout_tpl.get trong _export_video/_render_png
-                        # /_pick_bgm... đọc snapshot); khôi phục mẫu hiện tại sau.
-                        saved = self.layout_tpl
-                        self.layout_tpl = tpl_snap
-                        try:
-                            total += self._export_video(vid)
-                        finally:
-                            self.layout_tpl = saved
-                    else:
-                        total += self._export_video(vid)
+                    # MẪU ĐÃ CHỐT lúc xếp job -> truyền thẳng vào _export_video
+                    # (chính hàm đó lo đổi/khôi phục self.layout_tpl). Không
+                    # còn tự đổi ở đây: đổi ở 2 nơi từng là chỗ dễ trộn mẫu khi
+                    # có lượt xuất chen ngang.
+                    total += self._export_video(vid, tpl=tpl_snap)
                     ready += 1
                     # 🤖 video dây chuyền: ghi nhận các job xuất để dõi xong.
                     # Lấy danh sách job NGAY tại đây rồi TRUYỀN THẲNG — không
@@ -7530,7 +7560,40 @@ class StudioPage(QWidget):
         self._hashtag_cache[video_id] = tags_str
         return tags_str
 
-    def _export_video(self, video_id, only_clip_id=None):
+    def _export_video(self, video_id, only_clip_id=None, tpl=None):
+        """CHỐT MẪU ĐÚNG KÊNH rồi mới xuất — cửa DUY NHẤT cho mọi đường xuất.
+
+        LỖI THẬT tìm được 31/07/2026 khi rà lại theo yêu cầu anh Hùng ("chạy
+        hàng loạt 200 kênh, đừng để lỗi đến lúc xuất"): mẫu-theo-kênh CHỈ được
+        áp ở đường DÂY CHUYỀN TỰ ĐỘNG (nơi caller tự đổi `self.layout_tpl`).
+        Bấm tay 'Xuất video này' / 'Xuất cả kênh' / xuất lại 1 Part thì vẫn ăn
+        mẫu đang chọn ở TRANG CHÍNH -> kênh đã gán mẫu riêng vẫn ra clip sai
+        mẫu, mà chỉ biết khi mở file lên xem.
+
+        Nay việc chọn mẫu nằm Ở ĐÂY (mọi đường đều gọi hàm này) nên không
+        đường nào lọt được:
+          * `tpl` != None -> MẪU ĐÃ CHỐT lúc xếp job (đổi mẫu sau KHÔNG ảnh
+            hưởng job đang chờ xuất — bất biến của cổng 16);
+          * `tpl` = None  -> tra mẫu theo KÊNH CỦA VIDEO (chưa gán thì rơi về
+            mẫu trang chính, y như cũ).
+        Đổi `self.layout_tpl` là ĐỔI BIẾN DÙNG CHUNG nên phải try/finally trả
+        lại; lồng nhau vẫn đúng vì mỗi lượt trả về giá trị của lượt ngoài."""
+        tpl_dung = tpl if isinstance(tpl, dict) and tpl else None
+        if tpl_dung is None:
+            _vr = db.query_one("SELECT project_id FROM videos WHERE id=?",
+                               (video_id,))
+            _pid = (_vr["project_id"] if _vr else None) or self.state.project_id
+            tpl_dung = self._tpl_for_project(_pid)
+        if not tpl_dung:
+            return self._export_video_inner(video_id, only_clip_id)
+        _luu = self.layout_tpl
+        self.layout_tpl = tpl_dung
+        try:
+            return self._export_video_inner(video_id, only_clip_id)
+        finally:
+            self.layout_tpl = _luu
+
+    def _export_video_inner(self, video_id, only_clip_id=None):
         """
         Xuất clip của 1 video THEO ĐÚNG THỨ TỰ: Part = vị trí trong danh sách
         clip (sắp theo thời gian). part_no gán cố định nên dù chạy đa luồng/hàng

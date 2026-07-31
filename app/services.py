@@ -383,11 +383,16 @@ def list_clips(video_id: int) -> list:
 
 # ---- Mẫu (template/preset) cho Module 1 ----
 def save_template(name: str, data: dict) -> None:
-    """Lưu/ghi đè mẫu theo tên (khung + các lớp chữ)."""
+    """Lưu/ghi đè mẫu theo tên (khung + các lớp chữ).
+
+    CẮT khoảng trắng đầu/cuối. LỖI THẬT 31/07/2026 (rà lại mẫu-theo-kênh):
+    `set_project_template` CÓ cắt tên khi gán cho kênh, còn hàm này thì KHÔNG —
+    lưu mẫu tên ' mẫu A ' rồi gán cho kênh thành 'mẫu A' -> tra không thấy ->
+    kênh âm thầm rơi về mẫu trang chính, clip ra sai mẫu mà không ai biết."""
     db.execute(
         "INSERT INTO presets (name, module, data) VALUES (?, 'm1', ?) "
         "ON CONFLICT(name) DO UPDATE SET data=excluded.data",
-        (name, db.dumps(data)),
+        ((name or "").strip(), db.dumps(data)),
     )
 
 
@@ -396,12 +401,17 @@ def list_templates() -> list:
 
 
 def get_template(name: str) -> Optional[dict]:
-    row = db.query_one("SELECT data FROM presets WHERE name=? AND module='m1'", (name,))
+    # TRIM CẢ 2 ĐẦU: mẫu CŨ đã lưu kèm khoảng trắng (từ trước bản vá
+    # save_template) vẫn tra ra được -> không bắt user gán lại mẫu cho từng kênh.
+    row = db.query_one(
+        "SELECT data FROM presets WHERE TRIM(name)=TRIM(?) AND module='m1'",
+        (name,))
     return db.loads(row["data"]) if row else None
 
 
 def delete_template(name: str) -> None:
-    db.execute("DELETE FROM presets WHERE name=? AND module='m1'", (name,))
+    db.execute("DELETE FROM presets WHERE TRIM(name)=TRIM(?) AND module='m1'",
+               (name,))
 
 
 # ---- MẪU RIÊNG THEO KÊNH (anh Hùng 31/07) ----
