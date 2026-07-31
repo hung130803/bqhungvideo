@@ -103,6 +103,24 @@
      tên trong DB + hiện ⚠ trong ô chọn để user sửa); `_tpl_for_project` luôn
      trả BẢN SAO (sửa nó không hỏng mẫu app); job đã chốt mẫu thì đổi mẫu sau
      KHÔNG ảnh hưởng. Bảng dây chuyền 9 cột — cột 4 = "Mẫu".
+  17. `_test_no_popup.py` + `_test_guard.py` → **TEST KHÔNG ĐƯỢC ĐỤNG MÁY
+     USER**. Lỗi thật 31/07/2026 (anh Hùng: "sao mỗi lần tôi yêu cầu bạn làm
+     hay hỏi gì cái thư mục kia đều nhảy lên là sao thế rất nhiều lần" + ảnh
+     Explorer `%TEMP%\pipe_dlg_xxxx\logs`): `_test_pipe_dialogs.py` bấm MỌI nút
+     hộp 🤖 Dây chuyền, trong đó nút "📂 Mở thư mục log" gọi `os.startfile` mà
+     file test đó KHÔNG vá — `_test_app_smoke.py` có vá nhưng vá RIÊNG nên test
+     khác không thừa hưởng. Nay MỌI test dựng UI/bấm nút PHẢI
+     `import _test_guard` (cổng 17 quét tĩnh, thiếu là FAIL). Guard chặn
+     os.startfile · webbrowser · QDesktopServices · Popen/run khi lệnh là
+     explorer/start/cmd/powershell/ffplay…, nhưng CHO QUA ffmpeg (quy tắc sắt:
+     thành phần thật). 2 BẪY ĐÃ SẬP, đừng lặp: (a) guard KHÔNG được tự import
+     PyQt6 lúc nạp — repo cần cv2 (app.queue.jobs) nạp TRƯỚC Qt, nên vá
+     QDesktopServices phải hoãn tới `tu_kiem()`; (b) đo "có cửa sổ bật lên
+     không" phải đếm CỬA SỔ qua COM `Shell.Application` và gọi bằng
+     `_test_guard.chay_that` — đếm tiến trình explorer.exe là kiểm hớ (Windows
+     dùng chung 1 tiến trình) còn `subprocess.run` thì bị chính guard nuốt (đo
+     ra -1). Guard cũng tự dọn `%TEMP%` của lần chạy trước (đo lần đầu: 189 thư
+     mục / 158 MB rác trên ổ C từng đầy 100%) và ép stdout utf-8.
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước

@@ -23,6 +23,7 @@ os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 sys.path.insert(0, r"D:\claude\ai-content-studio")
+import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 FFMPEG = Path(r"D:\claude\ai-content-studio\bin\ffmpeg.exe")
 
@@ -137,43 +138,13 @@ def _tu_kiem() -> None:
     print("  ✓ tự kiểm: mọi hộp thoại chặn-người-dùng đã bị vô hiệu")
 
 
-# đừng mở File Explorer / trình phát khi bấm "Mở thư mục"
-import webbrowser  # noqa: E402
-
-webbrowser.open = lambda *a, **k: True
-
 from app.ui.main_window import MainWindow  # noqa: E402
 
-# CHẶN mở cửa sổ ngoài — vá SAU khi import xong: asyncio.windows_utils kế thừa
-# subprocess.Popen ở tầng import, vá trước sẽ làm hỏng cả cây import
-# (TypeError: function() argument 'code' must be code, not str).
-os.startfile = lambda *a, **k: None          # type: ignore[attr-defined]
-_goc_popen = subprocess.Popen
-
-
-class _PopenGia:
-    """Đứng thế Popen: không mở explorer.exe/ffplay nhưng vẫn có API cơ bản."""
-
-    def __init__(self, *a, **k):
-        self.pid = 0
-        self.returncode = 0
-
-    def poll(self):
-        return 0
-
-    def wait(self, timeout=None):
-        return 0
-
-    def kill(self):
-        pass
-
-    terminate = kill
-
-    def communicate(self, *a, **k):
-        return (b"", b"")
-
-
-subprocess.Popen = _PopenGia   # type: ignore[misc,assignment]
+# CHẶN mở cửa sổ ngoài (Explorer/trình phát/link) — nay dùng CANH CỔNG CHUNG
+# `_test_guard` để MỌI test đều được che, không phải mỗi file vá riêng: lỗi
+# 31/07/2026 là _test_pipe_dialogs.py thiếu bản vá này nên bấm "📂 Mở thư mục
+# log" là Explorer nhảy lên màn hình anh Hùng mỗi lần chạy cổng test.
+_test_guard.tu_kiem()
 
 state = AppState()
 win = MainWindow(state)

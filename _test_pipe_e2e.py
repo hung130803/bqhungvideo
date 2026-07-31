@@ -13,6 +13,7 @@ os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 os.environ["WHISPER_PROVIDER"] = "groq"          # chép lời nhanh bằng key sống
 sys.path.insert(0, r"D:\claude\ai-content-studio")
+import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 # ---- 1. dựng video CÓ LỜI NÓI THẬT (edge-tts) ~100s ----
 import asyncio

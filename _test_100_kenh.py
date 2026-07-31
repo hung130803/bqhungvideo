@@ -15,6 +15,7 @@ os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry
 sys.path.insert(0, r"D:\claude\ai-content-studio")
+import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 FFMPEG = Path(r"D:\claude\ai-content-studio\bin\ffmpeg.exe")
 N_KENH = int(os.environ.get("N_KENH", "100"))

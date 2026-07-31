@@ -22,6 +22,7 @@ os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 sys.path.insert(0, r"D:\claude\ai-content-studio")
+import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 FFMPEG = Path(r"D:\claude\ai-content-studio\bin\ffmpeg.exe")
 
@@ -92,6 +93,9 @@ QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: ("", ""))
 QInputDialog.getText = staticmethod(lambda *a, **k: ("", False))
 QInputDialog.getItem = staticmethod(lambda *a, **k: ("", False))
 QMenu.exec = lambda self, *a, **k: None
+# CANH CỔNG: nút "📂 Mở thư mục log" trong hộp Dây chuyền gọi os.startfile ->
+# TRƯỚC v2.6.25 mỗi lần chạy test là 1 cửa sổ Explorer nhảy lên máy anh Hùng.
+_test_guard.tu_kiem()
 
 state = AppState()
 pg = StudioPage(state)

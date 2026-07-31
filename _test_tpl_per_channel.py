@@ -15,6 +15,7 @@ os.environ["BQ_DB_PATH"] = os.path.join(T, "t.db")
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "s.ini")
 sys.path.insert(0, r"D:\claude\ai-content-studio")
+import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 import app.queue.jobs  # noqa: F401,E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
