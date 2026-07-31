@@ -4032,6 +4032,15 @@ class StudioPage(QWidget):
             "App tự làm việc này mỗi lần mở — nút này để anh chủ động chạy ngay.")
         cuu_b.clicked.connect(self._pipe_resume_dialog)
         top.addWidget(cuu_b)
+        redo_b = QPushButton("🔁 Phân tích lại (Cắt cơ bản)")
+        redo_b.setProperty("ghost", True)
+        redo_b.setToolTip(
+            "QUÉT MỌI KÊNH tìm video lỡ ra 'Cắt cơ bản (chưa qua AI)' rồi PHÂN "
+            "TÍCH LẠI BẰNG AI. Video đã xuất+xoá thì tự KHÔI PHỤC gốc từ Thùng "
+            "rác trước. Clip cũ giữ nguyên trên đĩa (chỉ cất kho). Có xác nhận "
+            "kèm số lượng trước khi chạy.")
+        redo_b.clicked.connect(self._reanalyze_basic_dialog)
+        top.addWidget(redo_b)
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
         top.addWidget(run_b)
         lay.addLayout(top)
@@ -5423,6 +5432,107 @@ class StudioPage(QWidget):
             self._refresh_clips(force=True)
         except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
             pass
+
+    def _reanalyze_basic_dialog(self) -> None:
+        """🔁 QUÉT MỌI KÊNH tìm video lỡ 'Cắt cơ bản' rồi phân tích lại bằng
+        AI (anh Hùng 30/07: "nhiều kênh bị AI không phân tích, tự dò hết 100
+        kênh làm cho tôi; cái nào xoá rồi tìm phần khôi phục phân tích lại").
+
+        Video còn gốc -> enqueue_auto (v2.6.15: xoá suggested cũ, cất kho clip
+        đã xuất, cắt lại đúng số part/độ dài, ĐỢI key hồi không rơi heuristic).
+        Video đã xuất+xoá -> tìm trong Thùng rác theo TÊN FILE, khôi phục về
+        thư mục kênh rồi mới enqueue. Không tìm thấy -> liệt kê, không làm."""
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+        from app.core import pipeline as P
+        if not self._require_ai():
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            found = services.find_basic_cut_videos(None)     # None = MỌI nhóm
+        except Exception as e:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Lỗi quét", f"Không quét được: {e}")
+            return
+        con_goc = [v for v in found if v["exists"]]
+        da_xoa = [v for v in found if not v["exists"]]
+        # tra Thùng rác cho đám đã xoá (1 lần lập chỉ mục, tra theo tên file)
+        idx = {}
+        if da_xoa:
+            try:
+                idx = P.index_recycled(self._pipe_recycle_dir(),
+                                       self._pipe_src_dirs())
+            except Exception:  # noqa: BLE001
+                idx = {}
+        khoi_phuc, mat_han = [], []
+        for v in da_xoa:
+            ten = os.path.basename(v["src_path"] or "").lower()
+            if ten and ten in idx:
+                v["_rec"] = idx[ten]
+                khoi_phuc.append(v)
+            else:
+                mat_han.append(v)
+        QApplication.restoreOverrideCursor()
+
+        tong = len(con_goc) + len(khoi_phuc)
+        if not found:
+            QMessageBox.information(
+                self, "Không có video Cắt cơ bản",
+                "Quét mọi kênh: KHÔNG có video nào bị 'Cắt cơ bản'. "
+                "Mọi clip đều đã qua AI. 👍")
+            return
+        msg = (
+            f"Quét MỌI KÊNH tìm thấy <b>{len(found)}</b> video lỡ ra "
+            f"<b>Cắt cơ bản</b> (chưa qua AI):<br><br>"
+            f"✅ <b>{len(con_goc)}</b> video CÒN gốc → phân tích lại ngay.<br>"
+            f"♻ <b>{len(khoi_phuc)}</b> video đã xoá, TÌM THẤY trong Thùng rác "
+            f"→ khôi phục gốc rồi phân tích lại.<br>"
+            f"⚠ <b>{len(mat_han)}</b> video đã xoá, KHÔNG thấy trong Thùng rác "
+            f"→ bỏ qua (cần tải lại).<br><br>"
+            f"➜ Sẽ đưa <b>{tong}</b> video vào hàng đợi phân tích AI (chạy song "
+            f"song, xong tự hiện clip mới). Clip cũ GIỮ NGUYÊN trên đĩa, chỉ "
+            f"cất vào kho lưu trữ.<br><br>Tiến hành?")
+        if QMessageBox.question(self, "🔁 Phân tích lại bằng AI", msg) \
+                != QMessageBox.StandardButton.Yes:
+            return
+
+        # KHÔI PHỤC gốc (đã xoá) TRƯỚC — rồi gộp với đám còn gốc để enqueue
+        n_rec = 0
+        for v in khoi_phuc:
+            dest = os.path.dirname(v["src_path"]) \
+                or self._pipe_restore_dest(v["channel"])
+            new = P.restore_recycled(v["_rec"], dest)
+            if new:
+                # src_path video có thể lệch tên (unique hoá) -> cập nhật DB
+                db.execute("UPDATE videos SET src_path=? WHERE id=?",
+                           (str(new), v["video_id"]))
+                con_goc.append(v)
+                n_rec += 1
+            else:
+                mat_han.append(v)
+        # ENQUEUE phân tích lại (preset HIỆN TẠI của trang)
+        preset = self._cut_preset()
+        n_job = 0
+        for v in con_goc:
+            try:
+                jid = services.enqueue_auto(self.state.pool, v["video_id"],
+                                            v["project_id"], preset)
+                if jid:
+                    self._track_auto(jid, v["video_id"])
+                    n_job += 1
+            except Exception as e:  # noqa: BLE001
+                self._pipe_log(f"⚠ phân tích lại '{v['channel']}' lỗi: {e}")
+        self._pipe_log(
+            f"🔁 Phân tích lại Cắt-cơ-bản: {n_job} video vào hàng đợi AI "
+            f"(khôi phục {n_rec} video từ Thùng rác, {len(mat_han)} không tìm "
+            f"thấy gốc).")
+        QMessageBox.information(
+            self, "Đã đưa vào hàng đợi",
+            f"➜ <b>{n_job}</b> video đang phân tích lại bằng AI (chạy song "
+            f"song).<br>➜ Khôi phục <b>{n_rec}</b> video gốc từ Thùng rác."
+            + (f"<br>➜ <b>{len(mat_han)}</b> video đã xoá không tìm thấy gốc "
+               "— cần tải lại nếu muốn làm." if mat_han else "")
+            + "<br><br>Xem tiến độ ở tab <b>Tiến trình</b>. Xong sẽ tự hiện "
+            "clip AI mới (đúng số part + độ dài cài đặt).")
 
     def _pipe_resume_dialog(self) -> None:
         """Nút 🔧 Cứu video kẹt — bấm tay, báo rõ kết quả bằng số."""

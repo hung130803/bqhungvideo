@@ -8,6 +8,7 @@ Pipeline điển hình:
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 from pathlib import Path
@@ -165,6 +166,51 @@ def import_video(project_id: int, src_path: str) -> int:
 def list_videos(project_id: int) -> list:
     return db.query("SELECT * FROM videos WHERE project_id=? ORDER BY id",
                     (project_id,))
+
+
+def find_basic_cut_videos(grp: str | None = None) -> list:
+    """QUÉT mọi kênh (hoặc 1 nhóm) tìm video mà clip HIỆN CÓ đều là 'Cắt cơ
+    bản' (llm_used=False) — tức lỡ ra clip KHÔNG qua AI (anh Hùng 30/07: nhiều
+    kênh bị thế do bug hết-lượt-rơi-heuristic, đã sửa từ v2.6.14). Trả list
+    dict đã sắp theo kênh:
+      {video_id, project_id, channel, src_path, exists}
+    exists=False -> video gốc đã bị dọn (xuất xong xoá) -> cần khôi phục từ
+    Thùng rác trước khi phân tích lại. Hàm CHỈ ĐỌC (không đổi gì) — test được.
+
+    Định nghĩa 'cắt cơ bản': video có >=1 clip đang hiện (status<>'archived')
+    và KHÔNG clip nào có signals.llm_used=True. Clip 'archived' (kết quả lần
+    cũ đã xuất, đã cất kho từ v2.6.13) KHÔNG tính — nếu tính, video từng làm
+    lại bằng Aic vẫn bị coi là cơ bản."""
+    where = ""
+    params: list = []
+    if grp is not None:
+        where = "AND p.grp=? "
+        params = [grp]
+    rows = db.query(
+        "SELECT c.video_id AS vid, c.signals AS sig, v.project_id AS pid, "
+        "v.src_path AS src, p.name AS chan, p.id AS pid2 "
+        "FROM clips c JOIN videos v ON v.id=c.video_id "
+        "JOIN projects p ON p.id=v.project_id "
+        f"WHERE c.status<>'archived' {where}"
+        "ORDER BY p.name, c.video_id", tuple(params))
+    by_vid: dict = {}
+    for r in rows:
+        d = by_vid.setdefault(int(r["vid"]), {
+            "project_id": int(r["pid"]), "channel": r["chan"] or "",
+            "src_path": r["src"] or "", "ai": False, "order": len(by_vid)})
+        sig = db.loads(r["sig"], {}) or {}
+        if sig.get("llm_used"):
+            d["ai"] = True
+    out = []
+    for vid, d in sorted(by_vid.items(), key=lambda kv: kv[1]["order"]):
+        if d["ai"]:
+            continue                       # đã có clip AI -> bỏ qua
+        src = d["src_path"]
+        out.append({
+            "video_id": vid, "project_id": d["project_id"],
+            "channel": d["channel"], "src_path": src,
+            "exists": bool(src) and os.path.exists(src)})
+    return out
 
 
 # ---- Enqueue (qua worker pool) ----

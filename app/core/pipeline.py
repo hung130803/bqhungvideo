@@ -794,6 +794,40 @@ def delete_junk(paths: list[Path]) -> tuple[int, int]:
     return ok, bad
 
 
+def index_recycled(recycle_root: str,
+                   src_dirs: list[str] | None = None) -> dict:
+    """CHỈ MỤC mọi video trong Thùng rác (cả _Loi) theo TÊN FILE để tra nhanh
+    khi 'phân tích lại video đã xoá' (anh Hùng 30/07). Trả dict:
+      key = tên file (chữ thường)  ->  đường dẫn thật (str)
+    Trùng tên giữa các ngày/kênh -> giữ bản MỚI NHẤT (mtime lớn nhất) vì đó
+    nhiều khả năng là lần dọn gần đây. Chỉ đọc, không di chuyển gì."""
+    idx: dict = {}
+    mtimes: dict = {}
+
+    def _ghi(f: Path) -> None:
+        try:
+            if not (f.is_file() and f.suffix.lower() in VIDEO_EXTS):
+                return
+            m = f.stat().st_mtime
+        except OSError:
+            return
+        k = f.name.lower()
+        if k not in idx or m > mtimes.get(k, 0):
+            idx[k] = str(f)
+            mtimes[k] = m
+
+    for root in recycle_roots(recycle_root, src_dirs):
+        try:
+            for f in root.rglob("*"):
+                _ghi(f)
+        except OSError:
+            continue
+    # video lỗi trong _Loi cũng là nguồn khôi phục hợp lệ
+    for it in list_errors(recycle_root, src_dirs):
+        _ghi(Path(it["path"]))
+    return idx
+
+
 def restore_recycled(recycled_path: str, dest_dir: str) -> Path | None:
     """KHÔI PHỤC 1 video từ thùng rác về thư mục kênh (dest_dir). Trả đường
     dẫn mới, hoặc None nếu lỗi. mtime đặt về HIỆN TẠI để scan_dir coi là mới
