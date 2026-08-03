@@ -197,6 +197,16 @@ def main() -> int:
                 print(f"[dọn rác] xoá {n} mục / {mb:.0f} MB")
         except Exception:  # noqa: BLE001 - dọn rác KHÔNG được làm app chết
             pass
+        # BẢO DƯỠNG DB: bản chép lời chiếm 378 KB/video và GIỮ MÃI -> ~13 GB/năm
+        # ở nhịp 100 video/ngày (đo 02/08). Chỉ dọn video ĐÃ MẤT GỐC + xong quá
+        # 30 ngày (xem dbmaint: video còn gốc vẫn xuất lại được nên PHẢI giữ).
+        try:
+            from app.core.dbmaint import bao_duong
+            ln = bao_duong(30.0)
+            if ln:
+                print(ln)
+        except Exception:  # noqa: BLE001
+            pass
 
     QTimer.singleShot(5000, lambda: __import__("threading").Thread(
         target=_don_rac, daemon=True, name="don-rac-dia").start())
