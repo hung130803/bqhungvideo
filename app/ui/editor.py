@@ -219,7 +219,9 @@ def _caption_box_data(preset_name, *, size, font, ny, color="", outline="",
     # màu chữ
     if color:
         col = color
-    elif p.get("mode") == "active":
+    elif p.get("mode") in ("active", "hlbox"):
+        # active/hlbox: chữ nền là màu 'rest' (trắng); màu nhấn chỉ ở TỪ đang nói
+        # (hlbox = ô nền sáng) nên preview tĩnh thể hiện màu chữ nền cho đúng.
         col = p.get("rest", "#FFFFFF")
     else:
         col = p.get("color", "#FFFFFF")
@@ -244,6 +246,15 @@ def _caption_box_data(preset_name, *, size, font, ny, color="", outline="",
     if is_box:
         d.update({"bg": True, "bg_color": p.get("box_color", "#000000"),
                   "bg_alpha": 0.9, "radius": 12, "padx": 0.5, "pady": 0.35})
+    elif p.get("mode") == "hlbox":
+        # 'Ô sáng chạy từ': 6 kiểu chỉ khác MÀU Ô, mà ô chỉ hiện lúc phát video
+        # -> nếu xem trước để trống thì cả 6 kiểu HIỆN GIỐNG HỆT NHAU, user gán
+        # mẫu cho 200 kênh không biết mình chọn vàng hay đỏ. Vẽ 1 miếng nền màu
+        # ô đầu bảng để phân biệt được ngay (thật thì ô chỉ ôm 1 từ).
+        d.update({"bg": True,
+                  "bg_color": (p.get("hl_palette") or ["#FFE23D"])[0],
+                  "bg_alpha": 0.95, "radius": 14, "padx": 0.35, "pady": 0.28,
+                  "color": p.get("box_text", "#0B0B0B") if not color else col})
     else:
         d["bg"] = False
     return d
@@ -2226,8 +2237,9 @@ class EditorDialog(QDialog):
         if self._capcolor:
             return self._capcolor
         p = CAPTION_PRESETS.get(self.cap_preset.currentText()) or {}
-        # kiểu 'cả câu' phần lớn chữ TRẮNG (chỉ từ đang nói vàng) -> preview trắng
-        if p.get("mode") == "active":
+        # kiểu 'cả câu' phần lớn chữ TRẮNG (chỉ từ đang nói vàng / có ô nền sáng)
+        # -> preview trắng
+        if p.get("mode") in ("active", "hlbox"):
             return p.get("rest", "#FFFFFF")
         return p.get("color", "#FFFFFF")
 
@@ -2252,7 +2264,7 @@ class EditorDialog(QDialog):
         if name == NARR_SAME_LABEL:
             return self._cap_eff_color()
         p = CAPTION_PRESETS.get(name) or {}
-        if p.get("mode") == "active":
+        if p.get("mode") in ("active", "hlbox"):
             return p.get("rest", "#FFFFFF")
         return p.get("color", _NARR_COLOR_DEFAULT)
 

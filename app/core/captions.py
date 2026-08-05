@@ -188,6 +188,24 @@ def _esc(text: str) -> str:
                 .replace("\n", " ").strip())
 
 
+def _chi_dau_cau(t: str) -> bool:
+    """Chuỗi CHỈ có dấu câu/khoảng trắng (whisper hay tách ra ',' '.' '…' riêng).
+    Dùng để KHÔNG chiếu ô nền sáng lên một dấu phẩy (nhìn rất vô nghĩa)."""
+    return not any(c.isalnum() for c in (t or ""))
+
+
+def _co_cjk(t: str) -> bool:
+    """Có chữ Nhật/Trung/Hàn? -> nối các cụm KHÔNG chèn dấu cách (những thứ
+    tiếng này không dùng dấu cách; chèn vào là ra 'これは 誰も語 らなか った')."""
+    for c in t or "":
+        o = ord(c)
+        if (0x3040 <= o <= 0x30FF or 0x3400 <= o <= 0x4DBF
+                or 0x4E00 <= o <= 0x9FFF or 0xAC00 <= o <= 0xD7AF
+                or 0xF900 <= o <= 0xFAFF):
+            return True
+    return False
+
+
 def _ass_color(hexv: str) -> str:
     """#RRGGBB -> &H00BBGGRR (ASS dùng BGR)."""
     h = (hexv or "#FFFFFF").lstrip("#")
@@ -285,7 +303,55 @@ CAPTION_PRESETS = {
     "Cụm chữ viền neon": {"mode": "group", "color": "#FFFFFF",
                           "outline": "#19E3FF", "ow": 0.12, "shadow": 6,
                           "glow": "#19E3FF"},
+    # ---- CẢ CÂU, TỪ ĐANG NÓI ĐỔI MÀU — kiểu CapCut "chữ trắng viền đen dày,
+    # 1 từ ĐỎ" (anh Hùng gửi ảnh mẫu 05/08/2026). Khác 2 kiểu 'active' cũ ở:
+    # viền DÀY hơn (0.16 vs 0.12) + chữ HOA + màu nhấn nóng -> đọc được trên
+    # mọi nền, đúng cái nhìn "sạch mà mạnh" của CapCut.
+    "Cả câu, từ đang nói ĐỎ (CapCut)": {
+        "mode": "active", "color": "#FF2020", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
+        "upper": True},
+    "Cả câu, từ đang nói CAM (CapCut)": {
+        "mode": "active", "color": "#FF8A00", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
+        "upper": True},
+    "Cả câu, từ đang nói XANH LÁ (CapCut)": {
+        "mode": "active", "color": "#39FF14", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
+        "upper": True},
+    # ---- Ô NỀN SÁNG CHẠY THEO TỪ ĐANG NÓI (kiểu Submagic/Hormozi) ----
+    # Cả cụm hiện sẵn (trắng viền đen); TỪ đang nói được bọc 1 Ô NỀN màu, ô này
+    # NHẢY sang từ kế theo mốc lời -> mắt bị kéo theo từng chữ. hl_palette =
+    # danh sách màu ô; nhiều màu -> mỗi từ 1 màu (đa dạng, đỡ nhàm 200 kênh).
+    "Ô sáng chạy từ (đa màu)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#0B0B0B",
+        "hl_palette": ["#FFE23D", "#16E0FF", "#39FF14", "#FF2D95", "#FF8A00",
+                       "#B36BFF"]},
+    "Ô sáng chạy từ (vàng)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#0B0B0B", "hl_palette": ["#FFE23D"]},
+    "Ô sáng chạy từ (xanh neon)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#00201A", "hl_palette": ["#16E0FF"]},
+    "Ô sáng chạy từ (xanh lá)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#06210A", "hl_palette": ["#39FF14"]},
+    "Ô sáng chạy từ (hồng)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#FFFFFF", "hl_palette": ["#FF2D95"]},
+    "Ô sáng chạy từ (đỏ)": {
+        "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
+        "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
+        "upper": True, "box_text": "#FFFFFF", "hl_palette": ["#FF2E2E"]},
 }
+#: Màu ô mặc định khi preset khai mode 'hlbox' mà thiếu hl_palette.
+HL_PALETTE = ["#FFE23D", "#16E0FF", "#39FF14", "#FF2D95", "#FF8A00", "#B36BFF"]
 DEFAULT_PRESET = "Vàng nhảy (TikTok)"
 # Mục ĐẦU combo "Kiểu chạy chữ" của khu CHỮ AI ĐỌC: dùng Y HỆT phụ đề gốc
 # (Style Default) — tương đương narr_same=True cũ. Chọn 1 preset khác -> đoạn
@@ -393,7 +459,7 @@ def build_ass(words: list, segments: list, out_path,
                    for a, b, t, si in remapped] if _kcase else remapped)
         cues = _karaoke_cues(kw_src)
         prefix = "{\\fad(60,40)}"               # cả cụm vào/ra mượt
-    elif mode == "active":
+    elif mode in ("active", "hlbox"):
         secondary = "&H000000FF"
         cues = []                               # vẽ riêng bên dưới (mỗi từ 1 dòng)
         prefix = ""
@@ -432,7 +498,12 @@ def build_ass(words: list, segments: list, out_path,
     if narr_color:
         narr_primary = _ass_color(narr_color)
     elif not narr_same:
-        narr_primary = _ass_color(np.get("color", "#FFFFFF"))
+        # kiểu 'ô sáng chạy từ' khai color=trắng (chữ nền trắng) -> nếu lấy
+        # nguyên thì chữ AI kể ra TRẮNG, lẫn hẳn với lời gốc. Lấy màu ô đầu
+        # bảng làm màu nhấn để vẫn phân biệt được lời AI.
+        narr_primary = _ass_color(
+            (np.get("hl_palette") or [np.get("color", "#FFFFFF")])[0]
+            if np.get("mode") == "hlbox" else np.get("color", "#FFFFFF"))
     else:
         narr_accent = p.get("glow") or "#FFD966"
         if _ass_color(narr_accent) == primary:
@@ -578,6 +649,104 @@ def build_ass(words: list, segments: list, out_path,
         extra_lines.append(
             f"Dialogue: 0,{_fmt(max(0.0, ea))},{_fmt(eb)},{style_name},,"
             f"0,0,0,,{pre}{et}\n")
+    # ---- KIỂU 'Ô NỀN SÁNG CHẠY THEO TỪ ĐANG NÓI' (Submagic) ----
+    # Mỗi từ sinh 2 dòng: LỚP 0 = miếng ô nền (chữ tô ĐẶC cùng màu viền dày ->
+    # thành viên thuốc bo góc ôm chữ), LỚP 1 = CHỮ vẽ đè lên. Vì sao phải 2 lớp:
+    # bản đầu nhúng ô GIỮA DÒNG chung với chữ thì viền đen của từ BÊN CẠNH vẽ
+    # đè lên ô (libass gộp mọi viền của 1 dòng vào cùng 1 lớp) -> ô bị "chặt"
+    # phẳng một cạnh, và cỡ chữ lớn thì 2 từ dính liền nhau (đo 05/08/2026).
+    # Hai lớp có CÙNG chữ/cỡ/lề nên bố cục y hệt -> ô luôn nằm đúng sau từ.
+    if mode == "hlbox":
+        # màu chữ nền: user chọn trong Chỉnh mẫu (color) ĐƯỢC ƯU TIÊN — bản đầu
+        # bỏ qua `color` nên "chọn màu ra màu khác" (lỗi cũ 110 tái diễn).
+        rest_c = _ass_color(color or p.get("rest", "#FFFFFF"))
+        _pal = [c for c in (p.get("hl_palette") or HL_PALETTE) if str(c).strip()]
+        pal = [_ass_color(c) for c in _pal] or [_ass_color("#FFE23D")]
+        box_txt = _ass_color(p.get("box_text", "#0B0B0B"))
+        # bề dày ô PHẢI dày hơn viền chữ (ow), không thì user kéo "độ dày viền"
+        # lên 0,2-0,3 là viền đen nuốt hết ô, chữ thành cục đen (đo 05/08/2026).
+        bord_box = max(6, int(size * 0.17), ow + max(4, int(size * 0.05)))
+        pop = ("\\t(0,80,\\fscy105)\\t(80,160,\\fscy100)"
+               if p.get("pop") else "")   # CHỈ phồng dọc: phồng ngang làm cả
+        #                                   khối chữ xuống dòng lại trong 160ms
+        an = "{\\alpha&HFF&}"            # từ không được chiếu -> ẩn ở lớp ô
+        ev = []            # [start, end, first, last, body_ô, body_chữ]
+        gi = 0                                   # số thứ tự từ trong CẢ clip
+        for ch in _chunks(remapped, max_words=3):   # cụm 3 từ: cụm 5 từ + chữ
+            cend = ch[-1][1] + 0.25                 # HOA hay tràn 3-4 dòng
+            n = len(ch)
+            chu_ch, cjk_ch = [], []
+            for ww in ch:                        # chữ hiển thị của cả cụm
+                wt = _esc(ww[2])
+                if cap_case:
+                    wt = apply_case(wt, cap_case)
+                elif p.get("upper"):
+                    wt = wt.upper()
+                chu_ch.append(wt)
+                cjk_ch.append(_co_cjk(wt))
+            for i, w in enumerate(ch):
+                gi_tu = gi + i
+                if _chi_dau_cau(chu_ch[i]):
+                    continue     # KHÔNG chiếu ô lên dấu câu đứng lẻ (","/"...")
+                wa = max(0.0, w[0] + delay)
+                we = ((ch[i + 1][0] + delay) if i + 1 < n else (cend + delay))
+                col = pal[gi_tu % len(pal)]      # màu theo THỨ TỰ TỪ cả clip ->
+                #                                  1 từ = 1 màu ở mọi dòng
+                o, chu = [], []
+                for j, wt in enumerate(chu_ch):
+                    if j == i:
+                        o.append(f"{{\\alpha&H00&\\1c{col}\\3c{col}"
+                                 f"\\bord{bord_box}\\shad0\\blur0.7{pop}}}{wt}")
+                        chu.append(f"{{\\1c{box_txt}\\bord0\\shad0{pop}}}{wt}"
+                                   f"{{\\1c{rest_c}\\bord{ow}\\shad{shadow}"
+                                   "\\fscy100}")
+                    else:
+                        o.append(an + wt)
+                        chu.append(wt)
+                # CJK (Nhật/Trung/Hàn) không có dấu cách -> nối liền, đừng chèn
+                # khoảng trắng lạ giữa các cụm ký tự.
+                def _noi(ps):
+                    ra = ps[0]
+                    for k in range(1, len(ps)):
+                        ra += ("" if (cjk_ch[k] and cjk_ch[k - 1]) else " ") + ps[k]
+                    return ra
+                ev.append([wa, we, i == 0, i == n - 1, _noi(o), _noi(chu)])
+            gi += n
+        ev.sort(key=lambda e: e[0])
+        # 1) ép không chồng nhau  2) GOM từ nói quá dày + LẤP LỖ: bản đầu chỉ
+        # "bỏ dòng < 60ms" nên transcript nói nhanh mất 4-6% chữ, còn bản chép
+        # lời không có mốc từng-từ (recap/lồng tiếng, bước 0,05s) thì mất gần
+        # hết chữ (đo: 1/20 dòng). Nay giữ ô ở từ trước lâu hơn thay vì bỏ.
+        for k in range(len(ev) - 1):
+            if ev[k][1] > ev[k + 1][0]:
+                ev[k][1] = ev[k + 1][0]
+        gon, i = [], 0
+        while i < len(ev):
+            cur = ev[i]
+            j = i + 1
+            while j < len(ev) and ev[j][0] - cur[0] < 0.12:
+                cur[3] = cur[3] or ev[j][3]      # giữ cờ 'cuối cụm' để có fade
+                j += 1
+            if j < len(ev) and ev[j][0] - cur[1] < 0.35:
+                cur[1] = ev[j][0]                # lấp lỗ -> không nhấp nháy
+            cur[1] = max(cur[1], cur[0] + 0.08)  # delay âm không làm co về 0
+            gon.append(cur)
+            i = j
+        for wa, we, first, last, b_o, b_chu in gon:
+            if we <= min_start:
+                continue
+            wa = max(wa, min_start)
+            if we - wa < 0.06:
+                continue
+            fad = "\\fad(80,0)" if first else ("\\fad(0,90)" if last else "")
+            lines.append(f"Dialogue: 0,{_fmt(wa)},{_fmt(we)},Default,,0,0,0,,"
+                         f"{{{fad}}}{b_o}\n")
+            lines.append(f"Dialogue: 1,{_fmt(wa)},{_fmt(we)},Default,,0,0,0,,"
+                         f"{{{fad}\\1c{rest_c}}}{b_chu}\n")
+        lines.extend(extra_lines)
+        Path(out_path).write_text("".join(lines), encoding="utf-8")
+        return True
+
     # ---- KIỂU 'CẢ CÂU, TỪ ĐANG NÓI VÀNG' ----
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))

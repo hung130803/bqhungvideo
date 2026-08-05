@@ -853,8 +853,13 @@ def _sfx_library() -> dict:
     for cat in SFX_CATEGORIES:
         d = base / cat
         try:
+            # NHẬN CẢ ĐỊNH DẠNG NÉN: kho tải về (CC0) lưu Opus 32k mono —
+            # đo 05/08/2026: 1,7 KB/file so với 37,2 KB/file của WAV (nhẹ 21
+            # lần) nên mở kho 4-5 lần mà bản cài vẫn NHỎ HƠN. Chỉ tìm .wav là
+            # tải kho về xong app KHÔNG THẤY file nào (lỗi im lặng).
             files = sorted(str(p) for p in d.iterdir()
-                           if p.is_file() and p.suffix.lower() == ".wav")
+                           if p.is_file() and p.suffix.lower() in
+                           (".wav", ".opus", ".ogg", ".mp3", ".m4a"))
         except OSError:
             files = []
         lib[cat] = files

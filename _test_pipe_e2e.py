@@ -12,6 +12,23 @@ os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 os.environ["WHISPER_PROVIDER"] = "groq"          # chép lời nhanh bằng key sống
+# LỖI CỦA BỘ TEST (bắt được 05/08/2026): key Groq nằm trong `<DATA_DIR>\.env`
+# (config.py:46 `load_dotenv(DATA_DIR / ".env")`), mà test lại trỏ BQ_DATA_DIR
+# vào thư mục TẠM -> sandbox có 0 key -> transcribe() lùi về whisper MÁY ->
+# tải model faster-whisper large-v3 ~3 GB vào sandbox rỗng -> job 'transcript'
+# chạy quá 420s -> cổng báo FAIL oan (đo: job kẹt 'running', thư mục
+# models--Systran--faster-whisper-large-v3 vừa được tạo). Nay CHUYỀN key qua
+# BIẾN MÔI TRƯỜNG của tiến trình test (không ghi ra file nào — đúng luật key).
+_env_that = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BQHungVideo" / ".env"
+if _env_that.exists():
+    for _ln in _env_that.read_text(encoding="utf-8", errors="replace").splitlines():
+        _k, _, _v = _ln.partition("=")
+        _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+        if _k in ("GROQ_API_KEYS", "GROQ_KEYS_FILE") and _v:
+            os.environ.setdefault(_k, _v)
+print("key Groq cho sandbox:",
+      len([x for x in os.environ.get("GROQ_API_KEYS", "").replace(",", "\n")
+           .splitlines() if x.strip()]), "(0 = sẽ tụt về whisper máy, RẤT CHẬM)")
 sys.path.insert(0, r"D:\claude\ai-content-studio")
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
@@ -90,6 +107,16 @@ pid = db.execute(
     "INSERT INTO projects(name, assets_dir, grp, export_dir, pipe_src, pipe_on, "
     "pipe_mode, pipe_daily) VALUES('Kênh Test', ?, 'Mỹ', ?, ?, 1, 'auto', 0)",
     (str(T / "assets"), str(out_dir), str(chdir))).lastrowid
+
+# KIỂU PHỤ ĐỀ cho kênh: đặt BQ_E2E_PRESET="Ô sáng chạy từ (đa màu)" để chạy
+# đúng cảnh sản xuất với mẫu-theo-kênh (mặc định: mẫu chung như trước).
+_pre = os.environ.get("BQ_E2E_PRESET", "").strip()
+if _pre:
+    from app import services as _sv
+    _sv.save_template("mau e2e", {"cap_on": True, "cap_preset": _pre,
+                                  "cap_ny": 0.70, "cap_size": 0.052})
+    _sv.set_project_template(pid, "mau e2e")
+    print(f"mau cua kenh: 'mau e2e' -> kieu phu de '{_pre}'")
 
 from app.ui.state import AppState
 from app.ui.studio_page import StudioPage
