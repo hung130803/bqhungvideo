@@ -308,14 +308,17 @@ CAPTION_PRESETS = {
     # viền DÀY hơn (0.16 vs 0.12) + chữ HOA + màu nhấn nóng -> đọc được trên
     # mọi nền, đúng cái nhìn "sạch mà mạnh" của CapCut.
     "Cả câu, từ đang nói ĐỎ (CapCut)": {
+        "reveal": 1,  # từ chưa nói MỜ 30%
         "mode": "active", "color": "#FF2020", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
         "upper": True},
     "Cả câu, từ đang nói CAM (CapCut)": {
+        "reveal": 1,
         "mode": "active", "color": "#FF8A00", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
         "upper": True},
     "Cả câu, từ đang nói XANH LÁ (CapCut)": {
+        "reveal": 1,
         "mode": "active", "color": "#39FF14", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.16, "shadow": 3, "pop": True,
         "upper": True},
@@ -324,28 +327,34 @@ CAPTION_PRESETS = {
     # NHẢY sang từ kế theo mốc lời -> mắt bị kéo theo từng chữ. hl_palette =
     # danh sách màu ô; nhiều màu -> mỗi từ 1 màu (đa dạng, đỡ nhàm 200 kênh).
     "Ô sáng chạy từ (đa màu)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#0B0B0B",
         "hl_palette": ["#FFE23D", "#16E0FF", "#39FF14", "#FF2D95", "#FF8A00",
                        "#B36BFF"]},
     "Ô sáng chạy từ (vàng)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#0B0B0B", "hl_palette": ["#FFE23D"]},
     "Ô sáng chạy từ (xanh neon)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#00201A", "hl_palette": ["#16E0FF"]},
     "Ô sáng chạy từ (xanh lá)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#06210A", "hl_palette": ["#39FF14"]},
     "Ô sáng chạy từ (hồng)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#FFFFFF", "hl_palette": ["#FF2D95"]},
     "Ô sáng chạy từ (đỏ)": {
+        "reveal": 2,  # chữ chưa nói thì CHƯA hiện
         "mode": "hlbox", "color": "#FFFFFF", "rest": "#FFFFFF",
         "outline": "#000000", "ow": 0.13, "shadow": 2, "pop": True,
         "upper": True, "box_text": "#FFFFFF", "hl_palette": ["#FF2E2E"]},
@@ -670,6 +679,13 @@ def build_ass(words: list, segments: list, out_path,
                if p.get("pop") else "")   # CHỈ phồng dọc: phồng ngang làm cả
         #                                   khối chữ xuống dòng lại trong 160ms
         an = "{\\alpha&HFF&}"            # từ không được chiếu -> ẩn ở lớp ô
+        # CHỮ CHƯA NÓI (anh Hùng 06/08/2026: "chữ hiện trước khi nói"). Đo thật:
+        # kiểu hiện-cả-cụm bày sẵn cả cụm ngay từ từ ĐẦU TIÊN nên từ cuối hiện
+        # TRƯỚC TIẾNG tới 1,44s. reveal: 0 = hiện hết (như cũ) · 1 = từ chưa nói
+        # MỜ ~30% · 2 = ẨN hẳn (sớm 0,00s). Dùng \alpha nên KHÔNG đổi bề rộng
+        # chữ -> chỗ đứng của chữ y nguyên, không giật layout.
+        _reveal = int(p.get("reveal", 0) or 0)
+        _mo, _an_chu = "{\\alpha&HB4&}", "{\\alpha&HFF&}"
         ev = []            # [start, end, first, last, body_ô, body_chữ]
         gi = 0                                   # số thứ tự từ trong CẢ clip
         for ch in _chunks(remapped, max_words=3):   # cụm 3 từ: cụm 5 từ + chữ
@@ -702,7 +718,11 @@ def build_ass(words: list, segments: list, out_path,
                                    "\\fscy100}")
                     else:
                         o.append(an + wt)
-                        chu.append(wt)
+                        if _reveal and j > i:      # từ CHƯA được nói tới
+                            chu.append((_an_chu if _reveal >= 2 else _mo)
+                                       + wt + "{\\alpha&H00&}")
+                        else:
+                            chu.append(wt)
                 # CJK (Nhật/Trung/Hàn) không có dấu cách -> nối liền, đừng chèn
                 # khoảng trắng lạ giữa các cụm ký tự.
                 def _noi(ps):
@@ -751,6 +771,8 @@ def build_ass(words: list, segments: list, out_path,
     if mode == "active":
         rest_c = _ass_color(p.get("rest", "#FFFFFF"))
         act_c = primary                          # màu từ đang nói (vàng)
+        _reveal = int(p.get("reveal", 0) or 0)   # xem chú thích ở nhánh hlbox
+        _mo, _an_chu = "{\\alpha&HB4&}", "{\\alpha&HFF&}"
         ev = []                                  # (start, end, is_first, is_last, body)
         for ch in _chunks(remapped):
             cend = ch[-1][1] + 0.25
@@ -769,6 +791,9 @@ def build_ass(words: list, segments: list, out_path,
                         pop = ("\\t(0,90,\\fscx110\\fscy110)\\t(90,170,\\fscx100\\fscy100)"
                                if p.get("pop") else "")
                         parts.append(f"{{\\1c{act_c}{pop}}}{wt}{{\\1c{rest_c}}}")
+                    elif _reveal and j > i:      # từ CHƯA được nói tới
+                        parts.append((_an_chu if _reveal >= 2 else _mo) + wt
+                                     + "{\\alpha&H00&}")
                     else:
                         parts.append(wt)
                 ev.append([wa, we, i == 0, i == n - 1, " ".join(parts)])

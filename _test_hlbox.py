@@ -237,8 +237,14 @@ open(cu_py, "wb").write(r.stdout)
 spec = importlib.util.spec_from_file_location("captions_cu", cu_py)
 CU = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(CU)
+# BẤT BIẾN chỉ áp cho các kiểu CŨ (có TRƯỚC đợt ô sáng/CapCut). 9 kiểu MỚI
+# (6 "Ô sáng chạy từ" + 3 "CapCut") CÓ đổi đầu ra là CÓ CHỦ ĐÍCH: 06/08/2026
+# thêm "chữ chưa nói thì chưa hiện" (reveal) để hết cảnh chữ hiện trước tiếng
+# 1,44s. Kiểu anh Hùng đang chạy sản xuất thì TUYỆT ĐỐI không được đổi.
+_MOI = {t for t, p in CU.CAPTION_PRESETS.items()
+        if p.get("mode") == "hlbox" or "(CapCut)" in t}
 khac = []
-for ten in CU.CAPTION_PRESETS:
+for ten in [t for t in CU.CAPTION_PRESETS if t not in _MOI]:
     for kw in ({}, {"cap_case": "upper", "hook": "GIẬT TÍT", "hook_dur": 1.5},
                {"color": "#00FF88", "cap_ow": 0.2, "delay": -0.1},
                {"extra_cues": [(0.4, 1.2, "ai kể", "word"),
@@ -248,7 +254,7 @@ for ten in CU.CAPTION_PRESETS:
         _, b, _, _, _ = dung(ten, n=9, mod=CU, **kw)
         if a != b:
             khac.append(f"{ten}/{list(kw)[:2]}")
-kiem(not khac, f"{len(CU.CAPTION_PRESETS)} preset cũ × 4 bộ tham số: "
+kiem(not khac, f"{len(CU.CAPTION_PRESETS) - len(_MOI)} preset CŨ × 4 bộ tham số: "
                f"KHÔNG đổi 1 byte", str(khac[:5]))
 
 print("\n══ 13. C3': hlbox làm 'Chữ AI đọc' -> vẫn phân biệt được lời AI ══")
