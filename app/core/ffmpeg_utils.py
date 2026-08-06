@@ -838,6 +838,13 @@ _SFX_LIB_CACHE: Optional[dict] = None
 # (đường thư viện/tổng hợp — KHÔNG gồm đường thư mục user). Dùng cho test/log
 # kiểm ngữ cảnh chọn đúng. list[(category, filename_or_synth)].
 _SFX_LAST_PICK: list = []
+#: Tiếng động đã dùng GẦN ĐÂY (xuyên các lượt xuất). LỖI THẬT từ log máy anh
+#: Hùng 06/08/2026: Part 1 và Part 2 của CÙNG video đều ra
+#: `reveal/k_interfacesounds_confirmation_003.opus` — vì chống-lặp cũ chỉ nhớ
+#: TRONG MỘT lượt gọi, mỗi Part là 1 lượt riêng nên bốc lại từ đầu. Kho 184 file
+#: mà nghe mãi 1 tiếng. Nay nhớ N file gần nhất theo TỪNG NHÓM.
+_SFX_GAN_DAY: dict = {}
+_SFX_NHO = 6
 
 
 def _sfx_library() -> dict:
@@ -886,9 +893,17 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None) -> list:
             out.append((cat, None))
             continue
         prev = last_by_cat.get(cat)
-        choices = [f for f in files if f != prev] or files
+        # loại cả file vừa dùng trong lượt này VÀ N file gần đây của các lượt
+        # TRƯỚC (chống trùng tiếng giữa các Part — xem _SFX_GAN_DAY).
+        _gd = _SFX_GAN_DAY.get(cat) or []
+        choices = [f for f in files if f != prev and f not in _gd]
+        if not choices:
+            choices = [f for f in files if f != prev] or files
         pick = rng.choice(choices)
         last_by_cat[cat] = pick
+        _q = _SFX_GAN_DAY.setdefault(cat, [])
+        _q.append(pick)
+        del _q[:-_SFX_NHO]
         out.append((cat, pick))
     return out
 
