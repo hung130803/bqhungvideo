@@ -2376,6 +2376,48 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
     return cats
 
 
+def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx) -> None:
+    """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
+
+    Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
+    file tiếng động ffmpeg vừa chọn (`ffmpeg_utils._SFX_LAST_PICK`) — không đoán
+    lại từ mẫu, vì mục đích là để đối chiếu khi thấy "chọn X ra Y".
+    """
+    from datetime import datetime
+
+    from app.core import ffmpeg_utils as _fu
+    from config import DATA_DIR
+
+    _cs = payload.get("cap_style") or {}
+    cap = (_cs.get("preset") or "(mặc định)") if ass_path else "TẮT"
+    ten_mau = _cs.get("_mau") or "(không rõ)"
+    # tiếng động: ffmpeg ghi lại từng điểm nối đã chèn gì
+    tieng = []
+    for cat, f in (getattr(_fu, "_SFX_LAST_PICK", None) or []):
+        import os as _os
+        tieng.append(f"{cat}/{_os.path.basename(str(f)) if f else 'tự-sinh'}")
+    if not tieng:
+        tieng = ["KHÔNG có (clip 1 đoạn hoặc đã tắt tiếng chuyển đoạn)"]
+    hieu_ung = []
+    if payload.get("fx_fade", True):
+        hieu_ung.append("fade 0,35s")
+    if flip_h:
+        hieu_ung.append("lật gương")
+    if float(payload.get("speed", 1.0) or 1.0) != 1.0:
+        hieu_ung.append(f"tốc độ x{float(payload['speed']):.2f}")
+    if payload.get("bgm_path"):
+        hieu_ung.append("nhạc nền")
+    hieu_ung.append(f"nền {bg}")
+    dong = (f"   ↳ {pfx.strip() or 'Part'} công thức: mẫu «{ten_mau}» · "
+            f"phụ đề «{cap}» · tiếng động: {', '.join(tieng)} · "
+            f"hiệu ứng hình: {', '.join(hieu_ung)}")
+    d = DATA_DIR / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / f"pipeline_{datetime.now():%Y%m%d}.log", "a",
+              encoding="utf-8") as f:
+        f.write(f"[{datetime.now():%H:%M:%S}] {dong}\n")
+
+
 def _join_categories(segs: list, recap_parts: list | None,
                      is_recap: bool, signals: dict | None = None) -> list:
     """NGỮ CẢNH cho MỖI điểm nối giữa các đoạn segs (len = len(segs)-1) ->
@@ -2958,6 +3000,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             fit_src=bool(payload.get("fit_src")),
             on_progress=on_prog,
         )
+        _cthuc = (ass_path, join_cats, bg)    # ghi log ở CUỐI hàm (1 chỗ duy nhất)
         # (wav lồng tiếng + .ass tạm được caller export_clip dọn qua `temps`)
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),
                         "captions": bool(ass_path),
@@ -2999,6 +3042,20 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         )
         result_extra = {"mode": mode}
 
+    # ---- MINH BẠCH: ghi ĐÚNG những gì vừa áp cho Part này vào nhật ký dây
+    # chuyền. Lý do (anh Hùng 06/08/2026): "hiệu ứng chữ khi xuất ra nó ra 1
+    # kiểu khác mấy cái kiểu mới tôi mới thêm, với không biết nó đã thêm hiệu
+    # ứng video nào hay hiệu ứng âm thanh nào cả". Nguyên nhân hay gặp nhất:
+    # KÊNH ĐÃ GÁN MẪU RIÊNG nên lựa chọn ở trang chính bị bỏ qua — không ghi
+    # tên mẫu ra thì không có cách nào biết.
+    # ĐẶT Ở CUỐI HÀM, NGOÀI mọi nhánh: bản đầu tôi đặt trong nhánh "có mẫu
+    # khung" nên mẫu KHÔNG có video_rect (đi nhánh 'clip đơn') là mất log —
+    # đúng ca của cổng e2e, và im lặng vì đã bọc try/except.
+    try:
+        _a, _jc, _bg = locals().get("_cthuc", (None, [], "-"))
+        _ghi_cong_thuc(payload, _a, _jc, flip_h, _bg, pfx)
+    except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
+        pass
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",
         (str(out_path), clip_id),

@@ -7584,7 +7584,19 @@ class StudioPage(QWidget):
                                (video_id,))
             _pid = (_vr["project_id"] if _vr else None) or self.state.project_id
             tpl_dung = self._tpl_for_project(_pid)
+            # TÊN mẫu đang dùng -> ghi vào nhật ký từng Part (minh bạch). Anh
+            # Hùng 06/08/2026: "hiệu ứng chữ khi xuất ra nó ra 1 kiểu khác mấy
+            # cái kiểu mới tôi mới thêm" — nguyên nhân hay gặp nhất là KÊNH ĐÃ
+            # GÁN MẪU RIÊNG nên lựa chọn ở trang chính bị bỏ qua; không ghi tên
+            # mẫu ra thì không cách nào biết.
+            try:
+                self._ten_mau_hien = services.project_template_name(_pid) or ""
+            except Exception:  # noqa: BLE001
+                self._ten_mau_hien = ""
+        else:
+            self._ten_mau_hien = "(mẫu đã chốt lúc xếp job)"
         if not tpl_dung:
+            self._ten_mau_hien = "(mẫu đang chọn ở trang chính)"
             return self._export_video_inner(video_id, only_clip_id)
         _luu = self.layout_tpl
         self.layout_tpl = tpl_dung
@@ -7711,6 +7723,10 @@ class StudioPage(QWidget):
                     "ny": self.layout_tpl.get("cap_ny", 0.78),
                     "preset": self.layout_tpl.get("cap_preset",
                                                   "Trắng đơn giản"),
+                    # tên MẪU đang áp — đi kèm để m1 ghi vào nhật ký từng Part
+                    # (đi trong cap_style nên KHÔNG phải đổi chữ ký services /
+                    # không đụng hash chống trùng job).
+                    "_mau": getattr(self, "_ten_mau_hien", "") or "",
                     "delay": self.layout_tpl.get("cap_delay", 0.12),
                     "hook_on": self.layout_tpl.get("cap_hook", False),
                     "hook_dur": self.layout_tpl.get("cap_hook_dur", 6.0),
