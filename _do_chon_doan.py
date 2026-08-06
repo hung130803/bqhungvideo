@@ -51,7 +51,10 @@ def _dur(p: str) -> float:
 
 def chep_loi(p: str) -> dict:
     """Chép lời qua Groq, CACHE theo tên file (lượt sau dùng lại -> so công bằng)."""
-    key = CACHE / (str(abs(hash(p)))[:12] + ".json")
+    # hash() của Python NGẪU NHIÊN mỗi tiến trình (PYTHONHASHSEED)
+    # -> cache không bao giờ dùng lại được, cứ chép lời lại từ đầu.
+    import hashlib
+    key = CACHE / (hashlib.md5(p.encode("utf-8")).hexdigest()[:12] + ".json")
     if key.exists():
         return json.loads(key.read_text(encoding="utf-8"))
     wav = CACHE / "tmp.wav"

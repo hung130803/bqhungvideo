@@ -142,13 +142,20 @@ class Settings:
     ELEVENLABS_KEYS_FILE = _env("ELEVENLABS_KEYS_FILE")
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ).
-    # MODEL CHÍNH mặc định = llama-3.3-70b-versatile. ĐÃ THỬ nâng lên
-    # openai/gpt-oss-120b (v1.85) và ĐO THẬT trên tier free: prompt đạo
-    # diễn/chọn đoạn dài của app bị Groq chặn 413 "Request too large"
-    # (hạn mức token/request của gpt-oss free thấp hơn llama), content
-    # hay trả RỖNG (reasoning nuốt hết output) -> phân tích lỗi, reup mất
-    # tiếng. -> Mặc định quay về llama (chạy ổn định nhiều tháng);
-    # gpt-oss-120b vẫn dùng được cho tài khoản TRẢ PHÍ qua env này.
+    # MODEL CHÍNH mặc định = llama-3.3-70b-versatile.
+    # ĐO LẠI 06/08/2026 (`_do_model_manh.py` + `_do_so_model.py`, 3 video THẬT,
+    # trọng tài chấm MÙ) — ghi chú cũ "gpt-oss-120b bị 413 / trả rỗng" CHỈ ĐÚNG
+    # với prompt REUP (dài). Với khâu CHỌN ĐOẠN thì SAI:
+    #   prompt chọn đoạn thật chỉ ~8.400 ký tự (~2.100 token) vì transcript đã
+    #   được CHIA KHÚC -> gpt-oss-120b chạy TỐT: 0 lỗi 413, 0 khúc trả rỗng.
+    #   CHẤT LƯỢNG: llama 52,2 điểm vs gpt-oss 53,3 điểm (+1,1 = trong sai số),
+    #   gpt-oss chậm hơn 23s/3 video.
+    #   ĐIỀU QUAN TRỌNG HƠN ĐIỂM: llama ghép 2-7 ĐOẠN mỗi clip (bỏ phần nhạt ở
+    #   giữa rồi nối phần hay) còn gpt-oss gần như chỉ lấy 1 KHỐI LIỀN (8/9
+    #   clip = 1 đoạn) và còn ăn cả intro (11,7s) lẫn outro (998-1062s).
+    # => GIỮ llama làm mặc định cho khâu cắt. Muốn thử model khác: đặt
+    #    SELECT_MODEL trong .env (không phải đổi GROQ_LLM_MODEL, tránh ảnh
+    #    hưởng khâu reup vốn thật sự bị 413).
     # GROQ_LLM_MODEL_CREATIVE: model RIÊNG cho các pass VIẾT kịch bản reup —
     # mặc định RỖNG = dùng chung model chính.
     # Model lỗi "không tồn tại"/413/content rỗng -> app TỰ RƠI VỀ
@@ -204,6 +211,14 @@ class Settings:
     #: đang bật) — lấy trung vị 3 góc nhìn, rẻ và ổn định hơn.
     #: (prompt CHỌN ĐOẠN cũng KHÔNG đổi model được: gpt-oss-120b -> lỗi 413.)
     JUDGE_MODEL = _env("JUDGE_MODEL", "")
+    #: model cho khâu CHỌN ĐOẠN (quyết định quan trọng nhất của cả tool).
+    #: ĐO 06/08/2026 — ghi chú cũ "prompt chọn đoạn 413 nên không đổi được
+    #: model" là SAI: transcript đã được CHIA KHÚC (_chunk_transcript) nên
+    #: prompt thật chỉ ~8.400 ký tự (~2.100 token), model nào cũng nhận:
+    #:   llama-3.3-70b (cũ)  -> 6,7s, ra 3 clip
+    #:   openai/gpt-oss-120b -> 7,3s, ra 3 clip   <-- MẠNH NHẤT trên Groq
+    #: Rỗng = dùng GROQ_LLM_MODEL như cũ.
+    SELECT_MODEL = _env("SELECT_MODEL", "")
     QUALITY_FLOOR = _env_int("QUALITY_FLOOR", 55)
     # CHẤT LƯỢNG kịch bản AI reup (đánh đổi CHẤT LƯỢNG vs TOKEN/ngày Groq):
     #   "save"    = luôn 1-pass (ít token nhất, nhanh nhất)

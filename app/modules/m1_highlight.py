@@ -975,11 +975,16 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                 None if _t0 is None else _t0 - pad,
                 None if _t1 is None else _t1 + pad)
         try:
+            # MODEL cho khâu CHỌN ĐOẠN: đây là quyết định QUAN TRỌNG NHẤT
+            # của cả tool nên cho phép trỏ sang model MẠNH hơn (xem
+            # config.SELECT_MODEL — đã đo là nhận nổi prompt, không 413).
+            from config import settings as _st_sel
+            _md_sel = str(getattr(_st_sel, "SELECT_MODEL", "") or "")
             data = llm.complete_json(
                 _select_prompt(listing, lang_name, purpose, style, min_len,
                                max_len, count, visual_block=vis_block,
                                nghe_xem=nghe_xem),
-                system=_SEL_SYSTEM)
+                system=_SEL_SYSTEM, model=_md_sel or None)
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
             errors.append(str(e))
             continue

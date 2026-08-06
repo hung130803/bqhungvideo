@@ -496,6 +496,33 @@ def list_jobs(limit: int = 100) -> list:
     )
 
 
+_JOB_COT = ("SELECT j.*, p.name AS chan_name, v.src_path AS vid_path FROM jobs j "
+            "LEFT JOIN projects p ON p.id = j.project_id "
+            "LEFT JOIN videos v ON v.id = j.video_id ")
+
+
+def list_jobs_top(n_chay: int = 24, n_xong: int = 12) -> tuple:
+    """(việc ĐANG CHẠY/CHỜ, việc VỪA XONG/LỖI) — mỗi bên lấy ĐÚNG số cần vẽ.
+
+    Vì sao tách 2 query (đo 06/08/2026, cảnh 200 kênh): bản cũ lấy CHUNG
+    `list_jobs(limit=200)` rồi mới chia. Khi có 300 việc đang chạy/chờ thì 200
+    dòng bị chiếm hết bởi việc đang chạy -> **danh sách MẤT SẠCH việc "✅ Xong"**
+    (user tưởng chưa xong cái nào). Lấy riêng thì bên nào cũng đủ, mà còn nhẹ
+    hơn: chỉ đọc đúng số dòng sẽ vẽ thay vì 200 dòng rồi bỏ 164."""
+    chay = db.query(
+        _JOB_COT + "WHERE j.status IN ('running','pending') ORDER BY "
+        "CASE j.status WHEN 'running' THEN 0 ELSE 1 END, j.id DESC LIMIT ?",
+        (max(1, int(n_chay)),))
+    # việc LỖI xếp TRƯỚC: danh sách bị cắt trần nên nếu xếp thuần theo id thì
+    # hàng chục việc "✅ Xong" đẩy việc LỖI ra khỏi bảng -> user không thấy để
+    # bấm "Thử lại". Lỗi mới là thứ cần nhìn nhất.
+    xong = db.query(
+        _JOB_COT + "WHERE j.status IN ('done','failed','canceled','skipped') "
+        "ORDER BY CASE j.status WHEN 'failed' THEN 0 ELSE 1 END, j.id DESC "
+        "LIMIT ?", (max(1, int(n_xong)),))
+    return chay, xong
+
+
 def queue_counts() -> dict:
     """Đếm job cho BẢNG ĐẾM TRẠNG THÁI khu Tiến trình (1 query GROUP BY nhẹ,
     có idx_jobs_status).

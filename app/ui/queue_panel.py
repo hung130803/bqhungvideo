@@ -41,6 +41,12 @@ _EXPORT_TYPES = {"m1_export_clip"}
 _RUN_ANALYZE = "Đang phân tích"
 _RUN_EXPORT = "Đang cắt"
 _NARROW_PX = 520                # dưới cỡ này: trạng thái rút gọn "45%" / "✕ Lỗi"
+#: TRẦN SỐ DÒNG vẽ trong bảng hàng đợi. Vì sao phải có (đo 06/08/2026, cảnh
+#: 200 kênh / 900 job): vẽ 200 dòng -> 1 nhịp 246 ms trên nhịp 400 ms = 61%
+#: thời gian máy chỉ để vẽ lại. Số TỔNG đã hiện ở các ô đếm phía trên nên
+#: không mất thông tin; phần dư gộp thành 1 dòng "…còn N việc".
+_MAX_CHAY = 24                  # việc đang chạy / đang chờ
+_MAX_XONG = 12                  # việc đã xong / lỗi gần nhất
 # màu phân biệt KÊNH (mỗi kênh 1 màu cố định theo id)
 _PALETTE = ["#4F7DFF", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
             "#A78BFA", "#EF4444", "#14B8A6", "#F97316", "#8B5CF6"]
@@ -330,19 +336,94 @@ class QueuePanel(QWidget):
         self._update_chips()            # bảng đếm dùng CHUNG nhịp poll này
         # Lấy RỘNG hơn + giữ NHIỀU job xong hơn: chạy 100 kênh xuất Part liên
         # tục, giới hạn 20 làm job "✅ Xong" bị đẩy mất → user tưởng chưa xong.
-        # Chip tổng (✅ N xong) vẫn là con số chốt; danh sách giữ 80 mục gần nhất.
-        jobs = services.list_jobs(limit=200)
-        active = [j for j in jobs if j["status"] in ("running", "pending")]
-        recent = [j for j in jobs
-                  if j["status"] in ("done", "failed", "canceled", "skipped")][:80]
-        show = active + recent
+        # Chip tổng (✅ N xong) vẫn là con số chốt.
+        # ── TRẦN SỐ DÒNG VẼ (đo 06/08/2026 khi anh Hùng báo "chạy hàng trăm
+        # kênh cực kỳ đơ"): vẽ 200 dòng thì 1 nhịp mất 246 ms, mà nhịp là
+        # 400 ms -> 61% thời gian máy chỉ để vẽ lại danh sách job. Không ai
+        # đọc nổi 200 dòng; số TỔNG đã có ở các ô đếm. Chỉ vẽ phần user thực sự
+        # nhìn, phần dư gộp thành 1 dòng "…còn N việc". Lấy 2 query RIÊNG để
+        # việc "✅ Xong" không bị việc đang chạy chiếm hết chỗ (xem
+        # services.list_jobs_top).
+        active, recent = services.list_jobs_top(_MAX_CHAY, _MAX_XONG)
+        _c = self._counts or {}
+        _tong_chay = sum(int(_c.get(k, 0) or 0)
+                         for k in ("analyzing", "exporting", "waiting"))
+        n_an = max(0, _tong_chay - len(active))
+        show = list(active) + list(recent)
+        # ── NHỊP THÍCH ỨNG: ít việc -> 400 ms cho mượt mắt; nhiều việc -> giãn
+        # ra, vì lúc đó mỗi nhịp tốn nhiều hơn mà user cũng chỉ cần thấy xu thế.
+        nhip = 400 if len(show) <= 40 else 900
+        if self.timer.isActive() and self.timer.interval() != nhip:
+            self.timer.setInterval(nhip)
         sig = [(j["id"], j["status"]) for j in show]
-        if sig != self._sig:            # tập việc/trạng thái đổi -> dựng lại bố cục
-            self._rebuild(show)
+        if sig != self._sig:            # tập việc/trạng thái đổi
+            # CẬP NHẬT SAI KHÁC, KHÔNG đập cả danh sách. Bản cũ gọi _clear()
+            # rồi dựng lại MỌI dòng (200 dòng ≈ 1.200 widget) -> đúng thứ làm
+            # đơ. Cùng lỗi đã sửa cho danh sách clip ở studio_page
+            # (_rows_in_place), lần này ở bảng hàng đợi.
+            self._cap_nhat_sai_khac(show)
             self._sig = sig
-        else:                           # chỉ % / thông báo đổi -> cập nhật tại chỗ (mượt)
+        else:                           # chỉ % / thông báo đổi -> tại chỗ (mượt)
             for j in show:
                 self._update(j)
+        self._dong_con_lai(n_an)
+
+    def _cap_nhat_sai_khac(self, show) -> None:
+        """Thêm/bớt/xếp lại ĐÚNG dòng thay đổi; dòng cũ còn dùng thì GIỮ NGUYÊN
+        widget (không tạo lại thanh tiến trình -> không nhấp nháy, không đơ)."""
+        if not show:
+            self._clear()
+            self.empty = QLabel("Chưa có việc nào đang chạy.")
+            self.empty.setStyleSheet(f"color:{MUTED}; font-size:14px;")
+            self.lay.addWidget(self.empty)
+            self.lay.addStretch(1)
+            return
+        if getattr(self, "empty", None) is not None:
+            self.empty.setParent(None)
+            self.empty = None
+            while self.lay.count():             # bỏ stretch cũ
+                it = self.lay.takeAt(0)
+                if it.widget():
+                    it.widget().setParent(None)
+        con = {j["id"] for j in show}
+        for jid in [k for k in self._rows if k not in con]:
+            row = self._rows.pop(jid)
+            self.lay.removeWidget(row["w"])
+            row["w"].setParent(None)           # hết việc -> bỏ đúng dòng đó
+        for i, j in enumerate(show):
+            row = self._rows.get(j["id"])
+            if row is None:
+                row = self._make_row(j)
+                self._rows[j["id"]] = row
+                self.lay.insertWidget(i, row["w"])
+            else:
+                self._wire_btn(row["btn"], j)   # trạng thái đổi -> đổi nút
+                self._update(j, row)
+                if self.lay.indexOf(row["w"]) != i:
+                    self.lay.removeWidget(row["w"])
+                    self.lay.insertWidget(i, row["w"])
+        if self.lay.itemAt(self.lay.count() - 1) is not None \
+                and self.lay.itemAt(self.lay.count() - 1).widget() is not None:
+            self.lay.addStretch(1)              # chỉ thêm khi chưa có
+
+    def _dong_con_lai(self, n_an: int) -> None:
+        """1 dòng chữ cuối: "…còn N việc nữa không hiện ở đây" — để user biết
+        danh sách bị cắt trần chứ không tưởng app bỏ mất việc."""
+        lb = getattr(self, "_lb_con", None)
+        if not n_an:
+            if lb is not None:
+                lb.setParent(None)
+                self._lb_con = None
+            return
+        txt = (f"… còn {n_an} việc nữa (xem số tổng ở các ô đếm phía trên) — "
+               "ẩn bớt để app không bị đơ")
+        if lb is None:
+            lb = QLabel(txt)
+            lb.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+            self._lb_con = lb
+            self.lay.addWidget(lb)
+        else:
+            lb.setText(txt)
 
     def _clear(self):
         while self.lay.count():
