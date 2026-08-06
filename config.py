@@ -179,6 +179,11 @@ class Settings:
     # 1 clip điểm cao nhất (không bao giờ trắng tay). Đặt 0 để tắt.
     #: HỘI ĐỒNG 3 TRỌNG TÀI chấm clip (3 góc nhìn, lấy trung vị) — 1 trọng tài
     #: duy nhất từng chấm lệch/parse hỏng (đo 06/08/2026). 0 = 1 trọng tài.
+    #: BẬT AI XEM HÌNH cho khâu chọn đoạn mà KHÔNG phải tắt LIGHT_MODE (tắt
+    #: LIGHT_MODE sẽ bật luôn faces/mediapipe rất nặng và vô dụng với luồng
+    #: dùng mẫu khung). Mặc định TẮT — phải ĐO chi phí (số ảnh + lượt Groq +
+    #: giây/video) trước khi bật cho 300 kênh.
+    VISION_CUT = _env("VISION_CUT", "0") == "1"
     JUDGE_PANEL = _env("JUDGE_PANEL", "1") == "1"
     #: model cho khâu CHẤM (prompt ngắn -> dùng được model suy luận; prompt CHỌN
     #: ĐOẠN thì KHÔNG đổi được, đã thử gpt-oss-120b -> lỗi 413). Rỗng = mặc định.

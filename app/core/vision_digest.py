@@ -48,6 +48,13 @@ def vision_digest_enabled() -> bool:
     quyết định có hiện progress 'AI đang xem khung hình' hay không."""
     if not getattr(settings, "USE_VISION", False):
         return False
+    # VISION_CUT: bật AI XEM HÌNH cho khâu CHỌN ĐOẠN mà KHÔNG phải tắt
+    # LIGHT_MODE. Vì sao tách (anh Hùng 06/08/2026 muốn "AI xem hình để hiểu
+    # video ASMR/hành động"): LIGHT_MODE là cờ MÁY YẾU, tắt nó sẽ bật LUÔN
+    # faces/scenes/audio (mediapipe rất nặng, và luồng của anh Hùng dùng mẫu
+    # khung nên faces vô dụng). Nay xem-hình có công tắc RIÊNG.
+    if getattr(settings, "VISION_CUT", False):
+        return llm.vision_available()
     if getattr(settings, "LIGHT_MODE", True):
         return False
     return llm.vision_available()
