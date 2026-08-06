@@ -31,6 +31,7 @@ from app.core.ffmpeg_utils import (
     export_vertical_clip, extract_frame,
 )
 from app.database import db
+from app.ai import chon_doan as _cd_mod
 from app.queue.worker import CanceledError, JobContext, register_handler
 
 # ---- tham số mặc định (preset có thể override) ----
@@ -347,7 +348,8 @@ def _target_len(min_len: float, max_len: float) -> float:
 def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video",
                    purpose: str = "", style: str = "",
                    min_len: float = 60.0, max_len: float = 0.0,
-                   count: int = 0, visual_block: str = "") -> str:
+                   count: int = 0, visual_block: str = "",
+                   nghe_xem: str = "") -> str:
     extra = ""
     if _PURPOSE_HINT.get(purpose):
         extra += "- " + _PURPOSE_HINT[purpose] + "\n"
@@ -388,7 +390,7 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         + vis_part +
         f"Video này nói bằng {lang_name.upper()}.\n"
         f"{how_many} trong đoạn này. QUY TẮC:\n"
-        + extra + vis_rule +
+        + extra + vis_rule + (nghe_xem or "") +
         "- ĐA DẠNG + RẢI ĐỀU: chọn các đoạn RẢI ĐỀU toàn video (đầu / giữa / "
         "cuối), nội dung KHÁC NHAU — ĐỪNG chọn nhiều đoạn cùng 1 cảnh/chủ đề "
         "hay dồn cụm 1 chỗ; ưu tiên các khoảnh khắc KHÁC nhau cho phong phú.\n"
@@ -933,7 +935,8 @@ def _chunk_span(listing: str) -> tuple:
 
 def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                       scenes: dict = None, cfg: dict = None,
-                      digest: list = None) -> list:
+                      digest: list = None,
+                      nghe_xem: str = "") -> list:
     """
     AI tự chọn các clip hay: CHIA transcript thành nhiều khúc, gọi LLM từng khúc
     (prompt gọn -> model local trả ổn định), rồi GỘP. Mỗi clip có thể gồm nhiều
@@ -974,7 +977,8 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         try:
             data = llm.complete_json(
                 _select_prompt(listing, lang_name, purpose, style, min_len,
-                               max_len, count, visual_block=vis_block),
+                               max_len, count, visual_block=vis_block,
+                               nghe_xem=nghe_xem),
                 system=_SEL_SYSTEM)
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
             errors.append(str(e))
@@ -1637,6 +1641,30 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # loại/phạt ứng viên trùng để lần này ra đoạn KHÁC.
     used_ranges = load_used_ranges(video_id)
 
+    # ---- 👂👁 CHO AI NGHE + THẤY (yêu cầu anh Hùng 06/08/2026) ----
+    # Đo thật trên 3 video của anh: AI chỉ đọc CHỮ nên đoạn "gào khóc" và đoạn
+    # "nói đều đều" nhìn y như nhau -> chọn đoạn nhạt; và đoạn KHÔNG AI NÓI GÌ
+    # mà hành động mạnh (đánh nhau/rượt/va chạm) bị bỏ sạch.
+    # Rẻ: dùng ffmpeg (astats + scdet), KHÔNG cần librosa/mediapipe/model
+    # vision, KHÔNG phải mở cờ LIGHT_MODE. Đo: video 1.062s -> nghe 8,7s;
+    # video 1.118s -> xem 16s (so với ~3,7 phút/video hiện tại).
+    _nl = _cd = []
+    _khoi_nghe_xem = ""
+    _src_path = ((vrow["src_path"] or "") if vrow else "")
+    from config import settings as _stt
+    if getattr(_stt, "DEEP_SENSE", True) and _src_path and os.path.exists(_src_path):
+        try:
+            ctx.progress(0.24, "Đang NGHE tiếng + XEM chuyển động để tìm cao trào...")
+            _nl = _cd_mod.nang_luong(_src_path, _stt.FFMPEG_PATH)
+            _cd = _cd_mod.chuyen_dong(_src_path, _stt.FFMPEG_PATH)
+            _khoi_nghe_xem = (
+                _cd_mod.khoi_prompt_nghe(_cd_mod.cua_so_cang(_nl), duration)
+                + _cd_mod.khoi_prompt_hanh_dong(
+                    _cd_mod.cua_so_dong_khong_loi(_cd, transcript, duration)))
+        except Exception:  # noqa: BLE001 - nghe/xem lỗi thì cắt như cũ
+            _nl = _cd = []
+            _khoi_nghe_xem = ""
+
     # ---- Ưu tiên: AI tự chọn clip + segments ----
     llm.reset_usage()                 # đếm token Gemini riêng cho video này
     prov = llm.active_provider()
@@ -1649,7 +1677,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         # ⏳ hết lượt tạm thời -> ĐỢI key hồi rồi gọi lại (xem _call_waiting_quota)
         ai_clips, ai_warns = _call_waiting_quota(
             lambda: _llm_select_clips(transcript, duration, ctx, scenes, cfg,
-                                      digest=digest),
+                                      digest=digest,
+                                      nghe_xem=_khoi_nghe_xem),
             ctx, prov)
     except llm.LLMError as e:  # lỗi thật/đợi quá ngân sách -> báo rõ, lùi heuristic
         ai_clips = []
@@ -1679,15 +1708,64 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 ctx.progress(0.6, f"AI [{prov_name}] đang XEM hình ảnh từng đoạn...")
                 ai_clips = _vision_rescore(video_id, ai_clips, ctx)
             ai_clips.sort(key=lambda c: c["segments"][0][0])  # giữ thứ tự thời gian
+        # ⚖ TRỌNG TÀI CHẤM MÙ — đo thật 06/08/2026 trên 3 video của anh Hùng:
+        # AI TỰ CHẤM cho 9/9 clip **85-95 điểm** nên sàn 55 loại được **0 clip**
+        # (sàn chỉ là hình thức). Lượt LLM RIÊNG, chỉ thấy LỜI THOẠI, không biết
+        # clip nào từng được chấm cao -> điểm mới có nghĩa để lọc. Lỗi/không
+        # parse được -> GIỮ điểm tự chấm (không bao giờ làm hỏng lượt cắt).
+        _da_cham_mu = False
+        if getattr(_st, "BLIND_JUDGE", True) and len(ai_clips) > 1:
+            try:
+                ctx.progress(0.60, "Trọng tài AI đang chấm MÙ từng đoạn...")
+                _cham = _cd_mod.cham_mu(ai_clips, transcript, llm.complete_text)
+                for _i, _c in enumerate(ai_clips):
+                    if _i in _cham:
+                        _c["score_tu_cham"] = _c.get("score", 0)
+                        _c["score"] = _cham[_i]["score"]
+                        _c["reason"] = (_cham[_i]["vi_sao"]
+                                        or _c.get("reason", ""))
+                if _cham:
+                    _da_cham_mu = True
+                    ai_warns.append("trọng tài chấm: " + ", ".join(
+                        str(int(v["score"])) for v in _cham.values()))
+            except Exception:  # noqa: BLE001 - chấm lỗi -> giữ điểm tự chấm
+                pass
+        # 🚪 BỎ CLIP NẰM HẲN TRONG INTRO / OUTRO (đo: clip đầu của 1 video bắt
+        # đầu ở 0,6 giây -> ăn nguyên đoạn mở đầu kênh).
+        try:
+            ai_clips, _bo_io = _cd_mod.loc_intro_outro(ai_clips, duration)
+            for _c0, _ly in _bo_io:
+                ai_warns.append(f"bỏ 1 clip vì {_ly}")
+        except Exception:  # noqa: BLE001
+            pass
+        # 🎣 HOOK THEO TIẾNG: mốc hook lấy từ ĐỈNH ÂM LƯỢNG THẬT trong clip
+        # (không tin mốc AI đoán từ chữ) -> bảo đảm mấy giây đầu có cao trào.
+        if _nl:
+            for _c in ai_clips:
+                try:
+                    _hs = _cd_mod.hook_theo_tieng(_c, _nl)
+                    if _hs:
+                        _c["hook_seg"] = _hs
+                except Exception:  # noqa: BLE001
+                    continue
         # 🚪 SÀN CHẤT LƯỢNG (QUALITY_FLOOR, mặc định 55; 0=tắt): sau chọn +
         # chấm (điểm đã trộn vision nếu có), bỏ clip điểm thấp — chỉ giữ
         # đoạn đáng dùng. Fail-safe trong helper: luôn giữ >=1 clip cao nhất.
-        _floor = 0.0
-        try:
-            _floor = float(getattr(_st, "QUALITY_FLOOR", 55) or 0)
-        except (TypeError, ValueError):
-            _floor = 55.0
-        ai_clips, _n_low = _apply_quality_floor(ai_clips, _floor)
+        if _da_cham_mu:
+            # Điểm trọng tài (40-60) KHÁC THANG với điểm AI tự chấm (85-95) nên
+            # KHÔNG dùng sàn số cứng 55 — sẽ loại oan 7/9 clip (đo 06/08/2026).
+            ai_clips, _bo_san = _cd_mod.san_thich_ung(ai_clips)
+            _n_low = len(_bo_san)
+            for _c1, _ly1 in _bo_san:
+                ai_warns.append(f"bỏ 1 clip: {_ly1}")
+            _floor = 0.0
+        else:
+            _floor = 0.0
+            try:
+                _floor = float(getattr(_st, "QUALITY_FLOOR", 55) or 0)
+            except (TypeError, ValueError):
+                _floor = 55.0
+            ai_clips, _n_low = _apply_quality_floor(ai_clips, _floor)
         if _n_low:
             ctx.progress(0.62, f"bỏ {_n_low} clip điểm thấp (<{int(_floor)}) "
                                "— chỉ giữ đoạn đáng dùng")
