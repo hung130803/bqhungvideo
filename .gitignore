@@ -53,3 +53,4 @@ bin/
 _perf/
 _tts_voices.json
 _tmp_*.py
+_do_chon_cache/

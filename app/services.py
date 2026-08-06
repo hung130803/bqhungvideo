@@ -388,11 +388,20 @@ def save_template(name: str, data: dict) -> None:
     CẮT khoảng trắng đầu/cuối. LỖI THẬT 31/07/2026 (rà lại mẫu-theo-kênh):
     `set_project_template` CÓ cắt tên khi gán cho kênh, còn hàm này thì KHÔNG —
     lưu mẫu tên ' mẫu A ' rồi gán cho kênh thành 'mẫu A' -> tra không thấy ->
-    kênh âm thầm rơi về mẫu trang chính, clip ra sai mẫu mà không ai biết."""
+    kênh âm thầm rơi về mẫu trang chính, clip ra sai mẫu mà không ai biết.
+
+    GỠ mọi khoá `_` TẠM trước khi lưu (hiện có `_ten_mau` — dấu tên mẫu do
+    `_tpl_for_project` đóng vào BẢN SAO để ghi nhật ký). Lý do: lúc xuất,
+    `self.layout_tpl` mang bản sao có dấu; user mở Chỉnh mẫu rồi Lưu ngay lúc
+    đó là dấu bị ghi vào mẫu TRÊN ĐĨA — mẫu của kênh A đi lang thang trong mẫu
+    dùng chung. Dấu là thứ TẠM, đừng để nó sống lâu hơn 1 lượt xuất.
+    (cổng 28 bắt được 06/08/2026)"""
+    sach = {k: v for k, v in (data or {}).items()
+            if not str(k).startswith("_")}
     db.execute(
         "INSERT INTO presets (name, module, data) VALUES (?, 'm1', ?) "
         "ON CONFLICT(name) DO UPDATE SET data=excluded.data",
-        ((name or "").strip(), db.dumps(data)),
+        ((name or "").strip(), db.dumps(sach)),
     )
 
 

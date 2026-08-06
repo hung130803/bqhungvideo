@@ -267,6 +267,30 @@
      v2.6.22**: `QPushButton("📋")` ở thanh trên + `"✕ Tắt tất cả"`.
      LƯU Ý: chỉ soi NHÃN NÚT, đừng soi cả file — emoji trong dòng ghi chú thì
      user không thấy (bản đầu của cổng này FAIL oan vì thế).
+  28. `_test_lien_thong.py` → **LIÊN THÔNG: 2 bản vá ĐÚNG cộng lại có thể ra
+     SAI.** Cổng 25/26/27 kiểm từng tính năng; cổng này đi tìm chỗ chúng phá
+     nhau. Viết nó ra **4 LỖI THẬT** (06/08/2026):
+     (a) `LLMTooLarge` mang lời lỗi CÓ chứa `rate_limit_exceeded` -> vòng
+     ĐỢI-HẾT-LƯỢT `m1._call_waiting_quota` tưởng hết lượt và **đợi thật tới 15
+     PHÚT/video** cho yêu cầu không bao giờ thành công. Nay chặn `LLMTooLarge` +
+     `is_too_large_error` TRƯỚC nhánh đợi (đo: 0ms thay vì đợi).
+     (b) đường **CHÉP LỜI** (mọi video đều đi qua) cũng `mark_limited` khi gặp
+     413 -> đốt key. Nay ném `LLMTooLarge`; nơi gọi vẫn `except Exception` nên
+     tụt về whisper MÁY, video KHÔNG vào `_Loi`.
+     (c) `save_template` LƯU CẢ dấu tạm `_ten_mau` vào mẫu trên đĩa (lúc xuất,
+     `layout_tpl` mang bản sao có dấu; user mở Chỉnh mẫu + Lưu là dấu đi theo).
+     Nay gỡ mọi khoá bắt đầu bằng `_` trước khi lưu.
+     (d) `bo_khoi_suy_nghi` cắt ở MỌI chỗ có `<think>` -> mô tả khung hình chứa
+     đúng chữ đó bị **chặt đôi JSON**. Nay chỉ coi là khối nghĩ khi nó nằm
+     TRƯỚC mọi dấu mở JSON.
+     Còn kiểm: nâng cấp DB trên **300 kênh / 1.800 clip / 207 mẫu** (0 dòng mất,
+     0ms, mở app 4 lần chỉ 1 chỉ mục) · Huỷ giữa lúc AI xem hình phải nổi
+     `CanceledError` (không bị `except Exception` nuốt) · 5 mẫu JSON của model
+     CŨ vẫn bóc đúng · 429 THẬT vẫn phải đợi rồi thử lại (không sửa quá tay).
+     BẪY KHI VIẾT CỔNG NÀY: `soonest_ready_wait` CHỈ xét key có trong
+     `settings`, nên muốn dựng bẫy "mọi key đang cooldown" phải đặt
+     `GROQ_API_KEYS` (key GIẢ cũng được, cổng không gọi mạng) — key bịa ngoài
+     settings thì hàm trả None và test PASS oan.
 - Model suy luận cho khâu CHẤM: **ĐÃ ĐO, ĐỪNG DÙNG** (`_do_trongtai.py`):
   llama-3.3-70b xếp đúng 3/3 lượt, 1,2 giây; qwen3.6-27b **0/3 lượt**, 19,5
   giây (tiêu hết max_tokens cho khối `<think>`). Muốn chấm chắc tay thì dùng

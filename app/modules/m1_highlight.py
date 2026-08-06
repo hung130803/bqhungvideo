@@ -1587,10 +1587,17 @@ def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
     while True:
         try:
             return fn()
+        except llm.LLMTooLarge:
+            # YÊU CẦU QUÁ LỚN (413) — ĐỢI LÀ VÔ NGHĨA: mọi key cùng hạn mức, đợi
+            # 15 phút rồi gửi lại đúng cái prompt đó thì vẫn 413. Mà lời lỗi của
+            # Groq có chứa 'rate_limit_exceeded' nên nhánh dưới sẽ tưởng là hết
+            # lượt và ĐỢI THẬT (treo dây chuyền tới 15 phút/video). Phải chặn
+            # TRƯỚC. Xem llm.is_too_large_error.
+            raise
         except llm.LLMError as e:
             msg = str(e)
-            if not llm.is_rate_limit_error(msg):
-                raise                       # key sai/bị khoá/mạng chết hẳn
+            if llm.is_too_large_error(msg) or not llm.is_rate_limit_error(msg):
+                raise                       # quá lớn / key sai / mạng chết hẳn
             wait = llm.soonest_ready_wait(provider)
             if wait is None:
                 raise                       # không có key nào để mà đợi

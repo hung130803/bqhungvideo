@@ -298,9 +298,17 @@ def bo_khoi_suy_nghi(text: str) -> str:
     t = (text or "").strip()
     if "</think>" in t:
         return t.rsplit("</think>", 1)[1].strip()
-    if "<think>" in t:
-        return t.split("<think>", 1)[0].strip()
-    return t
+    i = t.find("<think>")
+    if i < 0:
+        return t
+    # THIẾU thẻ đóng. Chỉ được coi là "khối nghĩ" khi nó nằm TRƯỚC mọi dấu mở
+    # JSON. LỖI THẬT (cổng 28 bắt 06/08/2026): bản đầu cắt ở MỌI chỗ có
+    # '<think>' -> mô tả khung hình chứa đúng chữ đó thì JSON bị chặt đôi
+    # ('[{"i":0,"desc":"x <think>…' -> chuỗi hở -> mất cả batch).
+    dau = min([p for p in (t.find("["), t.find("{")) if p >= 0] or [-1])
+    if dau >= 0 and dau < i:
+        return t                    # '<think>' nằm TRONG dữ liệu -> ĐỪNG đụng
+    return ""                       # nghĩ dở dang -> coi như CHƯA có đáp án
 
 
 def _extract_json(text: str):

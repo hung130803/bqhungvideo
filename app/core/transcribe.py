@@ -302,6 +302,15 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                     (_g(r, "text", "") or "")
             except Exception as e:  # noqa: BLE001
                 last = str(e)
+                if llm.is_too_large_error(last):
+                    # 413 "Request too large" (đoạn tiếng gửi lên quá dài cho
+                    # hạn mức token/phút). Groq gắn kèm `rate_limit_exceeded`
+                    # nên nhánh dưới sẽ coi là HẾT LƯỢT và khoá key 120s —
+                    # lần lượt CẢ 38 key, dù key nào cũng cùng hạn mức. Đây là
+                    # lỗi CỦA YÊU CẦU: nổi lên để caller chia nhỏ đoạn tiếng.
+                    # (xem llm.is_too_large_error — đo 06/08/2026)
+                    raise llm.LLMTooLarge(f"Chép lời: đoạn tiếng quá lớn cho "
+                                          f"hạn mức token/phút: {last}")
                 if llm.is_rate_limit_error(last):
                     llm.mark_limited("groq", key, last)
                     continue                   # key hết lượt -> xoay key kế
