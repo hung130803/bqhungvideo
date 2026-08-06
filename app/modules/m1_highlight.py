@@ -1754,7 +1754,10 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         if _da_cham_mu:
             # Điểm trọng tài (40-60) KHÁC THANG với điểm AI tự chấm (85-95) nên
             # KHÔNG dùng sàn số cứng 55 — sẽ loại oan 7/9 clip (đo 06/08/2026).
-            ai_clips, _bo_san = _cd_mod.san_thich_ung(ai_clips)
+            # TUÂN THỦ SỐ PART USER ĐẶT: có count -> giữ đủ count clip tốt
+            # nhất (chỉ bỏ clip DỞ HẲN); không đặt -> lọc theo tương quan.
+            ai_clips, _bo_san = _cd_mod.san_thich_ung(
+                ai_clips, so_part=int(cfg.get("count", 0) or 0))
             _n_low = len(_bo_san)
             for _c1, _ly1 in _bo_san:
                 ai_warns.append(f"bỏ 1 clip: {_ly1}")

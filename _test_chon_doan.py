@@ -114,6 +114,25 @@ kiem(CD.san_thich_ung([])[0] == [], "danh sách rỗng -> không nổ")
 giu, _ = CD.san_thich_ung([clip(0, 60, 0), clip(1, 2, 0)])
 kiem(len(giu) == 2, "điểm toàn 0 -> giữ nguyên (không lọc bừa)")
 
+print("\n══ 3b. TUÂN THỦ SỐ PART USER ĐẶT (anh Hùng: đặt 3 thì phải ra 3) ══")
+g, b = CD.san_thich_ung([clip(0, 60, 80), clip(100, 160, 45),
+                         clip(200, 260, 40)], so_part=3)
+kiem(len(g) == 3 and not b, f"đặt 3 part, điểm 80/45/40 -> ra ĐỦ 3 (ra {len(g)})")
+g, b = CD.san_thich_ung([clip(0, 60, 50), clip(100, 160, 90),
+                         clip(200, 260, 70), clip(300, 360, 60)], so_part=2)
+kiem(len(g) == 2, f"đặt 2 part, có 4 ứng viên -> ra ĐÚNG 2 (ra {len(g)})")
+kiem(sorted(float(c["score"]) for c in g) == [70.0, 90.0],
+     "2 clip giữ lại là 2 clip ĐIỂM CAO NHẤT (90, 70)")
+kiem(any("vượt số Part" in l for _c, l in b),
+     "clip dư ghi rõ lý do 'vượt số Part'", str(b))
+g, b = CD.san_thich_ung([clip(0, 60, 55)], so_part=3)
+kiem(len(g) == 1, "video ngắn chỉ có 1 đoạn mà đặt 3 -> ra 1 (không nổ)")
+g, b = CD.san_thich_ung([clip(0, 60, 70), clip(100, 160, 5)], so_part=3)
+kiem(len(g) == 1 and len(b) == 1,
+     "đoạn RÁC (5 điểm) vẫn bị bỏ dù chưa đủ số part")
+g, _ = CD.san_thich_ung([clip(0, 60, 80), clip(100, 160, 40)])
+kiem(len(g) == 1, "KHÔNG đặt số part -> vẫn lọc theo tương quan (như trước)")
+
 print("\n══ 4. LỌC INTRO / OUTRO ══")
 giu, bo = CD.san_thich_ung([clip(0, 60, 70)])
 giu2, bo2 = CD.loc_intro_outro([clip(1, 20), clip(300, 380), clip(980, 999)],

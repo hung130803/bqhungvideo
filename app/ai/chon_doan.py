@@ -248,7 +248,7 @@ def hook_theo_tieng(clip: dict, nl: list[float],
 
 
 def san_thich_ung(clips: list, ty_le: float = 0.72, san_rac: float = 28.0,
-                  giu_it_nhat: int = 1) -> tuple[list, list]:
+                  giu_it_nhat: int = 1, so_part: int = 0) -> tuple[list, list]:
     """SÀN TỰ THÍCH ỨNG: giữ clip đủ tốt **so với clip hay nhất CÙNG video**.
 
     VÌ SAO KHÔNG DÙNG SÀN SỐ CỨNG (đo thật 06/08/2026): trọng tài chấm mù cho
@@ -256,8 +256,12 @@ def san_thich_ung(clips: list, ty_le: float = 0.72, san_rac: float = 28.0,
     -> 7/9 clip bị loại oan, mỗi video còn 1 Part. HAI THANG KHÔNG CÙNG ĐƠN VỊ.
 
     Nay lọc theo TƯƠNG QUAN: clip nào < `ty_le` × điểm-clip-đầu-bảng thì bỏ
-    (kém hơn hẳn), cộng thêm 1 sàn rác tuyệt đối cho đoạn dở hẳn. Video có 3
-    đoạn ngang nhau -> giữ đủ 3; video chỉ có 1 đoạn đáng -> tự bớt còn 1.
+    (kém hơn hẳn), cộng thêm 1 sàn rác tuyệt đối cho đoạn dở hẳn.
+
+    ƯU TIÊN SỐ PART USER ĐẶT (anh Hùng 06/08/2026: "nếu 3 part thì phải 3 part,
+    không hơn; video ngắn quá không đủ thì 1-2 cũng được"): `so_part` > 0 ->
+    LUÔN giữ đủ `so_part` clip TỐT NHẤT nếu có sẵn, chỉ bỏ clip DỞ HẲN (dưới
+    `san_rac`). Thiếu ứng viên (video ngắn) thì ra bao nhiêu giữ bấy nhiêu.
     Trả (giữ, [(clip, lý_do)])."""
     if not clips:
         return clips, []
@@ -265,14 +269,27 @@ def san_thich_ung(clips: list, ty_le: float = 0.72, san_rac: float = 28.0,
     top = max(diem) if diem else 0.0
     if top <= 0:
         return clips, []
-    nguong = max(san_rac, top * ty_le)
+    # user đặt SỐ PART -> chỉ lọc RÁC, không lọc tương quan (không được ra ít
+    # Part hơn yêu cầu chỉ vì đoạn này hơi kém đoạn kia)
+    nguong = san_rac if so_part > 0 else max(san_rac, top * ty_le)
     giu, bo = [], []
     for c, d in zip(clips, diem):
         if d >= nguong:
             giu.append(c)
         else:
-            bo.append((c, f"điểm {d:.0f} < ngưỡng {nguong:.0f} "
-                          f"(kém hơn hẳn đoạn hay nhất {top:.0f})"))
+            bo.append((c, f"điểm {d:.0f} < ngưỡng {nguong:.0f}"
+                          + ("" if so_part > 0 else
+                             f" (kém hơn hẳn đoạn hay nhất {top:.0f})")))
+    if so_part > 0 and len(giu) > so_part:
+        # giữ ĐÚNG so_part clip điểm cao nhất, phần dư ghi rõ lý do
+        thu = sorted(zip(giu, [float(c.get("score", 0) or 0) for c in giu]),
+                     key=lambda x: -x[1])
+        du = [c for c, _ in thu[so_part:]]
+        giu = [c for c, _ in thu[:so_part]]
+        bo += [(c, f"vượt số Part đã đặt ({so_part})") for c in du]
+    # KHÔNG nâng `giu_it_nhat` theo so_part: cứu-nguy sẽ KÉO LẠI cả đoạn RÁC
+    # cho "đủ part" (cổng 24 bắt: đoạn 5 điểm bị lôi về khi đặt 3 part). Thiếu
+    # part vì video không có đủ đoạn dùng được là ĐÚNG — thà 1-2 Part sạch.
     if len(giu) < giu_it_nhat:                      # đừng trắng tay
         thu = sorted(zip(clips, diem), key=lambda x: -x[1])[:giu_it_nhat]
         giu = [c for c, _ in thu]

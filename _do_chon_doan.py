@@ -114,7 +114,7 @@ def chay(ten_ban: str) -> dict:
             clips, bo = CD.loc_intro_outro(clips, dur)
             for _c, ly in bo:
                 print(f"    BỎ 1 clip vì {ly}")
-            clips, bo2 = CD.san_thich_ung(clips)
+            clips, bo2 = CD.san_thich_ung(clips, so_part=int(CFG.get('count', 0) or 0))
             for _c, ly in bo2:
                 print(f"    BỎ 1 clip: {ly}")
             if nl:
