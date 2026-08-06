@@ -283,6 +283,29 @@ class Database:
             self.conn().execute(
                 "CREATE INDEX IF NOT EXISTS idx_pipefiles_hash "
                 "ON pipeline_files(project_id, file_hash)")
+            # 👍/👎 GU CỦA CHỦ KÊNH: anh Hùng bấm thích/không-thích trên từng
+            # clip, AI đọc lại các ví dụ đó khi chọn đoạn cho CHÍNH kênh đó
+            # (few-shot). Không tốn thêm lượt API, chỉ dài prompt thêm vài dòng.
+            # Lưu TÓM TẮT (tiêu đề + 1 câu thoại) thay vì id clip: clip bị xoá
+            # hay phân tích lại thì bài học vẫn còn.
+            self.conn().execute(
+                """CREATE TABLE IF NOT EXISTS clip_gu (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       project_id INTEGER NOT NULL,
+                       clip_id INTEGER,
+                       vote INTEGER NOT NULL,       -- 1 = thích, -1 = không
+                       title TEXT NOT NULL DEFAULT '',
+                       thoai TEXT NOT NULL DEFAULT '',
+                       dai REAL NOT NULL DEFAULT 0,
+                       n_seg INTEGER NOT NULL DEFAULT 0,
+                       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                   )""")
+            self.conn().execute(
+                "CREATE INDEX IF NOT EXISTS idx_clipgu_proj "
+                "ON clip_gu(project_id, vote)")
+            self.conn().execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_clipgu_clip "
+                "ON clip_gu(clip_id)")
             self.conn().commit()
             # HOẠT ĐỘNG GẦN NHẤT ghi thẳng vào kênh/video (KHÔNG suy ra từ bảng
             # jobs nữa) — 'Xóa lịch sử' xoá job done thì thời điểm 'xong gần

@@ -26,10 +26,21 @@ from app.core.analysis import get_analysis
 from app.core.ffmpeg_utils import extract_frame
 
 VD_KIND = "vision_digest"   # kind trong bảng analysis (cache)
-_CAP = 24                   # trần số frame / video (video dài lấy thưa hơn)
-_BATCH = 6                  # số ảnh / 1 lời gọi vision (đỡ tốn request)
+#: trần số frame/video. 24 -> 12 sau khi ĐO 06/08/2026: model vision Groq chỉ
+#: nhận 3 ảnh/lượt và giới hạn 8.000 token/phút, nên 24 khung = 8 lượt gọi =
+#: gần 3 phút ngân sách token cho 1 video. 12 khung vẫn phủ khắp video.
+_CAP = 12
+#: số ảnh/lượt. ĐO THẬT 06/08/2026 với qwen3.6-27b, ảnh 384px (~796 token/ảnh
+#: theo hoá đơn, nhưng hạn mức token/phút tính ~2.410/ảnh):
+#:    1 ảnh -> ĐẠT (1,6s) · 2 ảnh -> ĐẠT (1,2s) · 3 ảnh -> 413 "Requested 8632
+#:    > Limit 8000". Model cũng chỉ nhận tối đa 3 ảnh (400). Nên chốt 2.
+_BATCH = 2
 _STEP = 20.0                # fallback không có scenes: ~mỗi 20s 1 frame
-_FRAME_W = 480              # ảnh nhỏ (jpg) — đỡ tốn token vision
+_FRAME_W = 384              # ảnh nhỏ (jpg) — đỡ tốn token vision
+#: lý do lượt xây digest gần nhất trả rỗng (để nhật ký/bộ đo nói được SỰ THẬT
+#: thay vì im lặng ra 0 mốc — đúng bẫy đã sập: model 404 mà app không hé nửa
+#: lời). Chỉ để đọc, không ai được dựa vào nó để quyết định.
+LOI_CUOI = ""
 _DESC_MAX = 90              # cắt desc dài (model lắm lời) — giữ prompt gọn
 
 _VISION_PROMPT = (
@@ -42,12 +53,16 @@ _VISION_PROMPT = (
     "action/impact/emotion 7-10}. Return ONLY the JSON array, no prose.")
 
 
-def vision_digest_enabled() -> bool:
+def vision_digest_enabled(bat_buoc: bool = False) -> bool:
     """Có nên xây digest không: USE_VISION bật + KHÔNG LIGHT_MODE (máy yếu
     bỏ qua như cũ) + provider hiện tại nhìn được hình. Hàm rẻ, gọi trước để
     quyết định có hiện progress 'AI đang xem khung hình' hay không."""
     if not getattr(settings, "USE_VISION", False):
         return False
+    # bat_buoc: gọi từ ca KHÔNG CÒN CĂN CỨ NÀO KHÁC (video không lời nói) —
+    # lúc đó hình là tất cả những gì AI có, nên bật kể cả khi VISION_CUT tắt.
+    if bat_buoc:
+        return llm.vision_available()
     # VISION_CUT: bật AI XEM HÌNH cho khâu CHỌN ĐOẠN mà KHÔNG phải tắt
     # LIGHT_MODE. Vì sao tách (anh Hùng 06/08/2026 muốn "AI xem hình để hiểu
     # video ASMR/hành động"): LIGHT_MODE là cờ MÁY YẾU, tắt nó sẽ bật LUÔN
@@ -135,8 +150,44 @@ def _describe_batch(paths: list) -> list:
     return data if isinstance(data, list) else []
 
 
+def _sua_i(rows: list, batch: list, path: str) -> list:
+    """Gửi LẺ 1 ảnh thì model trả i=0; đổi lại thành chỉ số THẬT của ảnh đó
+    trong batch, nếu không mô tả sẽ bị gán cho sai mốc giây."""
+    idx = next((k for k, (_t, p) in enumerate(batch) if p == path), None)
+    if idx is None:
+        return []
+    ra = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            r = dict(r)
+            r["i"] = idx
+            ra.append(r)
+    return ra
+
+
+def _ghi_loi(video_id, ly_do: str) -> None:
+    """Ghi 1 dòng vào `logs/vision_<ngày>.log` khi AI XEM HÌNH ra 0 mốc.
+
+    Vì sao phải có: khâu này fail-safe tuyệt đối (lỗi -> [] -> chọn đoạn chạy
+    như cũ) nên KHÔNG có gì hiện ra ngoài. Đúng cái đã che mất chuyện model
+    vision bị Groq gỡ suốt (404 mọi lượt). Ghi nhật ký = lần sau tra 10 giây."""
+    try:
+        from datetime import datetime
+
+        from config import DATA_DIR
+        d = DATA_DIR / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"vision_{datetime.now():%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] video {video_id} — AI xem "
+                    f"hình KHÔNG ra mốc nào · model="
+                    f"{getattr(settings, 'GROQ_VISION_MODEL', '?')} · {ly_do}\n")
+    except Exception:  # noqa: BLE001 - ghi nhật ký không bao giờ được chặn việc
+        pass
+
+
 def build_vision_digest(video_id: int, src_path: str, duration: float,
-                        ctx=None) -> list:
+                        ctx=None, bat_buoc: bool = False) -> list:
     """Xây (hoặc đọc cache) VISION DIGEST cho 1 video.
 
     - Gate: vision_digest_enabled() (USE_VISION + không LIGHT_MODE + provider
@@ -147,7 +198,10 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
     - Lỗi từng batch -> bỏ batch đó (digest thiếu vẫn hơn không); TOÀN BỘ lỗi
       -> trả [] và KHÔNG cache (lần sau thử lại). ctx: progress + check hủy.
     """
-    if not vision_digest_enabled():
+    global LOI_CUOI
+    LOI_CUOI = ""
+    if not vision_digest_enabled(bat_buoc):
+        LOI_CUOI = "tắt (USE_VISION/VISION_CUT/không có key vision)"
         return []
     cached = get_analysis(video_id, VD_KIND)
     if isinstance(cached, list):
@@ -180,8 +234,26 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                                  f"({bi // _BATCH + 1}/{n_batch})...")
                 batch = frames[bi:bi + _BATCH]
                 try:
-                    rows = _describe_batch([p for _, p in batch])
-                except Exception:  # noqa: BLE001 - batch lỗi -> bỏ riêng batch
+                    try:
+                        rows = _describe_batch([p for _, p in batch])
+                    except llm.LLMTooLarge:
+                        # HẠN MỨC token/phút của tài khoản Groq có thể siết bất
+                        # cứ lúc nào (đo 8.000/phút hôm nay, mai Groq đổi là
+                        # chuyện của họ). Thay vì mất cả batch -> gửi TỪNG ẢNH.
+                        # Không phạt key nào (xem llm.is_too_large_error).
+                        rows = []
+                        for _t1, _p1 in batch:
+                            try:
+                                rows += _sua_i(_describe_batch([_p1]),
+                                               batch, _p1)
+                            except Exception as e2:  # noqa: BLE001
+                                LOI_CUOI = f"{type(e2).__name__}: {str(e2)[:200]}"
+                except Exception as e:  # noqa: BLE001 - batch lỗi -> bỏ batch đó
+                    # GHI LẠI lý do. BẪY ĐÃ SẬP 06/08/2026: model vision cấu
+                    # hình sẵn (llama-4-scout) bị Groq gỡ -> 404 mọi batch ->
+                    # digest rỗng, mà app không báo gì nên tưởng "AI có xem
+                    # hình rồi, chỉ là không thấy gì đáng kể".
+                    LOI_CUOI = f"{type(e).__name__}: {str(e)[:200]}"
                     continue
                 for r in rows or []:
                     try:
@@ -196,8 +268,12 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                                        "act": max(0, min(10, act))})
     except CanceledError:               # user bấm Hủy -> nổi lên cho worker
         raise
-    except Exception:  # noqa: BLE001 - lỗi khác (ffmpeg/IO...) -> êm, chạy như cũ
+    except Exception as e:  # noqa: BLE001 - lỗi khác (ffmpeg/IO...) -> êm như cũ
+        LOI_CUOI = f"{type(e).__name__}: {str(e)[:200]}"
+        _ghi_loi(video_id, LOI_CUOI)
         return []
+    if not digest and LOI_CUOI:
+        _ghi_loi(video_id, LOI_CUOI)
     digest.sort(key=lambda d: d["t"])
     if digest:                    # chỉ cache khi CÓ dữ liệu (lỗi tạm -> thử lại)
         try:

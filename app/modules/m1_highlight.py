@@ -1373,10 +1373,13 @@ def _vision_rescore(video_id: int, clips: list, ctx) -> list:
         "#0, #1, ...). Chấm điểm tiềm năng VIRAL 0-100 dựa trên HÌNH ẢNH: hành "
         "động/cao trào, biểu cảm, độ hút mắt, bố cục. Trả JSON THUẦN: "
         '[{"index":0,"vscore":0-100}]')
-    for b in range(0, len(frames), 4):  # batch 4 ảnh/lần
+    # số ảnh/lượt do PROVIDER quyết (Groq chỉ nhận 3 — gửi 4 là 400 và mất
+    # TRẮNG cả batch vì except bên dưới bỏ qua êm; đo 06/08/2026).
+    _nb = max(1, llm.vision_max_images())
+    for b in range(0, len(frames), _nb):
         if ctx is not None:             # nhạy nút Hủy giữa các lượt gọi vision
             ctx.check_canceled()
-        batch = frames[b:b + 4]
+        batch = frames[b:b + _nb]
         try:
             data = llm.complete_vision_json(prompt_tpl, [fp for _, fp in batch])
         except Exception:  # noqa: BLE001 - lỗi vision không làm sập; giữ điểm chữ
@@ -1629,12 +1632,32 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # 👁 VISION DIGEST: AI xem khung hình KHẮP video 1 lần (cache theo video)
     # -> prompt chọn đoạn có cả HÌNH ẢNH, không chỉ lời thoại. Gate USE_VISION
     # + không LIGHT_MODE + provider vision; lỗi/tắt -> [] (chạy y như cũ).
+    # 🔇 VIDEO KHÔNG CÓ LỜI NÓI (ASMR/nhạc/tiếng động): Whisper BỊA CHỮ (đo thật
+    # 06/08/2026: 40s tiếng ồn -> Groq trả "Thank you." + gán English). Chữ bịa
+    # chảy vào chọn đoạn/tiêu đề/hashtag/phụ đề -> "mô tả linh tinh" như anh
+    # Hùng nói. Nay PHÁT HIỆN rồi BỎ transcript khỏi việc chọn đoạn, chuyển sang
+    # chọn bằng TIẾNG + HÌNH (đã có), và ĐÁNH DẤU để KHÔNG đốt phụ đề rác.
+    # PHẢI ĐO TRƯỚC khối vision ngay dưới: video không lời thì HÌNH là căn cứ
+    # DUY NHẤT còn lại -> đáng bỏ 3-4 phút xem hình, dù công tắc VISION_CUT tắt.
+    _khong_loi = False
+    try:
+        _co, _vs, _mds = _cd_mod.co_loi_noi_that(transcript, duration)
+        if not _co:
+            _khong_loi = True
+            ctx.progress(0.22, f"Video KHÔNG có lời nói ({_vs}) — chọn đoạn "
+                               f"bằng TIẾNG + HÌNH, bỏ chữ bịa")
+    except Exception:  # noqa: BLE001
+        pass
+
     digest: list = []
-    if _vd.vision_digest_enabled():
-        ctx.progress(0.20, "AI đang xem khung hình khắp video...")
+    if _vd.vision_digest_enabled() or _khong_loi:
+        ctx.progress(0.20, "AI đang xem khung hình khắp video..."
+                     if not _khong_loi else
+                     "Video không lời — AI XEM HÌNH để hiểu nội dung "
+                     "(chậm hơn, ~3 phút)...")
         digest = _vd.build_vision_digest(
             video_id, (vrow["src_path"] or "") if vrow else "", duration,
-            ctx=ctx)
+            ctx=ctx, bat_buoc=_khong_loi)
 
     # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: đọc các đoạn ĐÃ dùng của video này TRƯỚC
     # khi _delete_suggested (giữ được cả lần bấm trước còn treo suggested) ->
@@ -1650,20 +1673,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # video 1.118s -> xem 16s (so với ~3,7 phút/video hiện tại).
     _nl = _cd = []
     _khoi_nghe_xem = ""
-    # 🔇 VIDEO KHÔNG CÓ LỜI NÓI (ASMR/nhạc/tiếng động): Whisper BỊA CHỮ (đo thật
-    # 06/08/2026: 40s tiếng ồn -> Groq trả "Thank you." + gán English). Chữ bịa
-    # chảy vào chọn đoạn/tiêu đề/hashtag/phụ đề -> "mô tả linh tinh" như anh
-    # Hùng nói. Nay PHÁT HIỆN rồi BỎ transcript khỏi việc chọn đoạn, chuyển sang
-    # chọn bằng TIẾNG + HÌNH (đã có), và ĐÁNH DẤU để KHÔNG đốt phụ đề rác.
-    _khong_loi = False
-    try:
-        _co, _vs, _mds = _cd_mod.co_loi_noi_that(transcript, duration)
-        if not _co:
-            _khong_loi = True
-            ctx.progress(0.22, f"Video KHÔNG có lời nói ({_vs}) — chọn đoạn "
-                               f"bằng TIẾNG + HÌNH, bỏ chữ bịa")
-    except Exception:  # noqa: BLE001
-        pass
+    # (_khong_loi đã đo Ở TRÊN, trước khối vision — đừng đo lại ở đây)
     _src_path = ((vrow["src_path"] or "") if vrow else "")
     from config import settings as _stt
     if getattr(_stt, "DEEP_SENSE", True) and _src_path and os.path.exists(_src_path):
@@ -1678,6 +1688,17 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         except Exception:  # noqa: BLE001 - nghe/xem lỗi thì cắt như cũ
             _nl = _cd = []
             _khoi_nghe_xem = ""
+    # 👍/👎 GU CHỦ KÊNH: ví dụ THẬT anh Hùng đã tự tay đánh giá trên KÊNH NÀY.
+    # Đi kèm khối nghe/xem nên KHÔNG phải đổi chữ ký hàm nào. Chưa đánh giá clip
+    # nào -> khối rỗng -> prompt y hệt cũ.
+    try:
+        from app import services as _sv
+        _prow = db.query_one("SELECT project_id FROM videos WHERE id=?",
+                             (video_id,))
+        _khoi_nghe_xem += _cd_mod.khoi_prompt_gu(
+            _sv.gu_cua_kenh(_prow["project_id"] if _prow else None))
+    except Exception:  # noqa: BLE001 - thiếu gu không được chặn việc cắt
+        pass
 
     # ---- Ưu tiên: AI tự chọn clip + segments ----
     llm.reset_usage()                 # đếm token Gemini riêng cho video này
@@ -2431,6 +2452,39 @@ def _seg_index_containing(segs: list, a: float, b: float) -> int:
     return best_i
 
 
+def _loai_theo_khoang_nhay(segs: list, i: int) -> str:
+    """Loại tiếng cho điểm nối thứ `i` suy từ **NỘI DUNG** điểm nối đó: khoảng
+    NHẢY trên timeline GỐC giữa cuối đoạn i và đầu đoạn i+1.
+
+    LỖI THẬT (nhật ký anh Hùng 06/08/2026, `Part 1` và `Part 2` cùng ra
+    `reveal/...confirmation_003.opus`): trước đây MỌI điểm nối không-cao-trào
+    ra 'transition' và điểm nối CUỐI luôn ra 'reveal' — clip 2 đoạn chỉ có ĐÚNG
+    1 điểm nối nên nó vừa là đầu vừa là cuối => **mọi Part đều tiếng "ding"**.
+    Nay nghe theo chỗ nối thật sự là gì:
+
+      - nhảy NGƯỢC thời gian (hook-first đã đưa cao trào lên đầu) -> 'impact':
+        cắt phũ giữa 2 mạch, cần cú nhấn mới không thấy cụt.
+      - gần như LIỀN MẠCH (<= 1,2s, chỉ bỏ mấy giây thừa) -> 'pop': whoosh/ding
+        ở đây là lố vì hình gần như không đổi.
+      - đoạn KẾ rất ngắn (< 2,5s = câu chốt/punchline) -> 'impact'.
+      - còn lại (nhảy xa = đổi bối cảnh) -> 'transition' (whoosh/gió) như cũ.
+
+    Hàm thuần, không đọc signals — unit test được."""
+    try:
+        het = float(segs[i][1])
+        bat, het_ke = float(segs[i + 1][0]), float(segs[i + 1][1])
+    except (IndexError, TypeError, ValueError):
+        return "transition"
+    nhay = bat - het
+    if nhay < -0.05:
+        return "impact"
+    if nhay <= 1.2:
+        return "pop"
+    if (het_ke - bat) < 2.5:
+        return "impact"
+    return "transition"
+
+
 def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
     """NGỮ CẢNH CẤU TRÚC cho clip THƯỜNG / Mixed (KHÔNG có nhãn cảm xúc của AI).
     Suy loại tiếng theo VỊ TRÍ điểm nối so với khoảnh khắc cao trào ĐÃ BIẾT
@@ -2439,24 +2493,32 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
       - Điểm nối NGAY TRƯỚC / VÀO đoạn chứa hook_time (cao trào clip) -> 'impact'
         HOẶC 'riser' (chọn ngẫu nhiên -> tạo nhấn/hồi hộp).
       - Mixed-Cut: điểm nối VÀO đoạn (moment) điểm CAO NHẤT -> 'impact'.
-      - Điểm nối CUỐI (vào đoạn kết clip) -> 'reveal' (ding chốt nhẹ).
-      - Còn lại -> 'transition' (whoosh/gió) như cũ.
+      - Điểm nối CUỐI (vào đoạn kết clip) -> 'reveal' (ding chốt nhẹ) — CHỈ khi
+        clip có >= 3 đoạn và nền chỗ đó là 'transition' (xem (b) trong thân).
+      - Còn lại -> theo NỘI DUNG chỗ nối (_loai_theo_khoang_nhay).
 
     Ưu tiên: nếu 1 điểm nối vừa là cao trào vừa là điểm cuối -> giữ cao trào
     (impact/riser) vì nhấn mạnh hơn chốt. hook_time đọc từ signals["hook_seg"]
     (mốc TIMELINE GỐC do AI chọn ở _normalize_clip); moment điểm cao nhất đọc
-    từ signals["moments"][*]["score"]. Không có ngữ cảnh -> toàn 'transition'
-    (+ reveal cuối). Hàm thuần (chỉ đọc segs/signals) — unit test được."""
+    từ signals["moments"][*]["score"]. Không có ngữ cảnh -> vẫn ra loại theo
+    khoảng nhảy. Hàm thuần (chỉ đọc segs/signals) — unit test được."""
     import random as _r
     rng = _r.Random(seed) if seed is not None else _r
     n_join = max(0, len(segs) - 1)
     if n_join == 0:
         return []
-    cats = ["transition"] * n_join
-    # (a) điểm nối CUỐI -> reveal (chốt nhẹ) — đặt trước, cao trào ghi đè sau.
-    cats[-1] = "reveal"
+    # (a) NỀN: loại theo NỘI DUNG từng điểm nối (khoảng nhảy) — xem
+    # _loai_theo_khoang_nhay. Trước đây nền là 'transition' cho tất cả.
+    cats = [_loai_theo_khoang_nhay(segs, i) for i in range(n_join)]
+    # (b) điểm nối CUỐI -> reveal (ding chốt nhẹ) NHƯNG:
+    #   - phải có >= 2 điểm nối, tức đoạn KẾT khác đoạn MỞ. Clip 2 đoạn chỉ có
+    #     1 điểm nối -> nó KHÔNG phải "chốt", đừng dán ding (lỗi thật 06/08);
+    #   - chỉ thay khi nền là 'transition' (chung chung). Nền đã nói rõ tính
+    #     chất chỗ nối (impact/pop) thì giữ, ding chồng vào là sai tính chất.
+    if n_join >= 2 and cats[-1] == "transition":
+        cats[-1] = "reveal"
 
-    # (b) đoạn CAO TRÀO cần được nhấn ở điểm nối VÀO nó (join index = seg_idx-1).
+    # (c) đoạn CAO TRÀO cần được nhấn ở điểm nối VÀO nó (join index = seg_idx-1).
     climax_seg = -1
     sig = signals if isinstance(signals, dict) else {}
     moments = sig.get("moments") or []

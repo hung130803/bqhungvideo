@@ -195,6 +195,50 @@ def khoi_prompt_hanh_dong(khoang: list) -> str:
             "có thoại hay, hãy GỘP chúng thành 1 clip.")
 
 
+def khoi_prompt_gu(gu: dict, max_chars: int = 900) -> str:
+    """Khối "GU CHỦ KÊNH" cho prompt chọn đoạn, dựng từ 👍/👎 anh Hùng đã bấm.
+
+    Vì sao (anh Hùng 06/08/2026: "nhiều đoạn nó lấy hài quá không cần thiết"):
+    thang điểm chung mãi cho ra gu chung. Ví dụ THẬT của chính kênh đó là cách
+    rẻ nhất để AI hiểu "hay" theo nghĩa của anh — không tốn thêm lượt API, chỉ
+    dài prompt vài dòng.
+
+    KHÔNG có đánh giá nào -> trả "" (prompt Y HỆT cũ, không đổi hành vi gì).
+    Hàm thuần — unit test được."""
+    if not isinstance(gu, dict):
+        return ""
+    th = [d for d in (gu.get("thich") or []) if isinstance(d, dict)]
+    kh = [d for d in (gu.get("khong") or []) if isinstance(d, dict)]
+    if not th and not kh:
+        return ""
+
+    def _dong(d: dict) -> str:
+        t = " ".join(str(d.get("title") or "").split())[:80]
+        m = " ".join(str(d.get("thoai") or "").split())[:90]
+        dai = float(d.get("dai") or 0)
+        ns = int(d.get("n_seg") or 0)
+        p = f'  - "{t or "(không tiêu đề)"}"'
+        if dai > 0:
+            p += f" ({dai:.0f}s, {ns} đoạn)" if ns else f" ({dai:.0f}s)"
+        if m:
+            p += f" — {m}"
+        return p
+
+    out = ("\n\nGU CỦA CHỦ KÊNH (chính chủ đã tự tay đánh giá clip cũ của kênh "
+           "NÀY — đây là tiêu chuẩn CAO NHẤT, quan trọng hơn cảm nhận chung "
+           "của bạn):")
+    if th:
+        out += "\n✓ CHỦ KÊNH THÍCH kiểu đoạn như thế này — hãy tìm đoạn tương tự:"
+        for d in th:
+            out += "\n" + _dong(d)
+    if kh:
+        out += ("\n✗ CHỦ KÊNH KHÔNG THÍCH kiểu đoạn như thế này — TRÁNH, dù bạn "
+                "thấy nó hay:")
+        for d in kh:
+            out += "\n" + _dong(d)
+    return out[:max_chars]
+
+
 #: câu Whisper HAY BỊA khi không có lời nói (các ngôn ngữ hay gặp)
 RAC_BIA = (
     "thank you", "thanks for watching", "subscribe", "subtitles by",
@@ -455,6 +499,14 @@ def cham_mu(clips: list, transcript: dict, complete_text,
                    else complete_text(_p2)) or ""
         except Exception:  # noqa: BLE001
             continue
+        # BỎ khối <think> TRƯỚC khi dò dấu ngoặc: model suy luận nháp đầy
+        # '[' ']' nên regex dưới bắt nhầm bản nháp (đo 06/08/2026: chấm bằng
+        # qwen3.6 hỏng parse 3/3 lượt dù model trả lời đúng).
+        try:
+            from app.ai.llm import bo_khoi_suy_nghi as _bks
+            raw = _bks(raw)
+        except Exception:  # noqa: BLE001 - không có hàm thì cứ parse như cũ
+            pass
         m = re.search(r"\[.*\]", raw, re.S)
         if not m:
             continue

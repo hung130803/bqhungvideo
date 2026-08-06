@@ -219,6 +219,58 @@
      LƯU Ý khi Groq lỗi thật: app tụt về whisper máy — chậm hơn hàng chục lần
      chứ không báo lỗi, nên nghi "dây chuyền chậm" thì kiểm key TRƯỚC (dùng SDK
      OpenAI, đừng dùng urllib: Cloudflare trả 403 error 1010 vì User-Agent).
+  23. `_test_sfx_kho.py` → kho tiếng động 184 file / 330 KB, kêu ĐÚNG mốc.
+  24. `_test_chon_doan.py` → AI NGHE + XEM + trọng tài chấm mù + hội đồng 3 góc
+     nhìn + sàn thích ứng + đúng số Part + video KHÔNG LỜI.
+  25. `_test_tieng_va_mau.py` → **TIẾNG ĐỘNG THEO NỘI DUNG CHỖ NỐI + TÊN MẪU
+     THẬT.** 2 lỗi thật từ nhật ký anh Hùng 06/08/2026 (Part 1 và Part 2 cùng
+     ra `reveal/…confirmation_003.opus`):
+     (a) luật cũ "điểm nối CUỐI = reveal" mà clip 2 ĐOẠN chỉ có ĐÚNG 1 điểm nối
+     -> điểm nối đó vừa đầu vừa cuối -> **mọi Part đều tiếng "ding"**. Nay
+     `_loai_theo_khoang_nhay` suy theo NỘI DUNG chỗ nối: nhảy NGƯỢC thời gian
+     (hook-first) -> impact · gần liền mạch ≤1,2s -> pop · đoạn kế <2,5s (câu
+     chốt) -> impact · còn lại -> transition; reveal CHỈ khi ≥2 điểm nối VÀ nền
+     là 'transition'. Đo: 6 Part clip-2-đoạn ra 3 loại (trước: 1 loại).
+     (b) nhật ký ghi `mẫu «(mẫu đã chốt lúc xếp job)»` = vô dụng. Nay
+     `_tpl_for_project` ĐÓNG DẤU `_ten_mau` vào bản sao mẫu -> mẫu CHỤP lúc xếp
+     job vẫn ghi tên thật (dây chuyền chụp mẫu rồi xuất sau hàng phút, đọc lại
+     tên ở lúc xuất là đọc mẫu kênh KHÁC).
+  26. `_test_xem_hinh.py` → **AI XEM HÌNH + 413 KHÔNG ĐƯỢC ĐỐT KEY.** 3 lỗi
+     thật 06/08/2026:
+     (a) `meta-llama/llama-4-scout…` **Groq ĐÃ GỠ** -> 404 mọi lượt -> digest 0
+     mốc mà app im lặng (fail-safe che mất). Hỏi `/models` rồi thử ảnh thật
+     từng model: chỉ còn **`qwen/qwen3.6-27b`** nhìn được. Nó là model SUY LUẬN
+     -> phải `reasoning_effort="none"` (đo: 527 -> 104 token trả về, mô tả vẫn
+     đúng) + `llm.bo_khoi_suy_nghi` bỏ khối `<think>` trước khi dò dấu ngoặc.
+     (b) Groq trả **413** "Request too large … tokens per minute" KÈM
+     `code: rate_limit_exceeded` -> `is_rate_limit_error` khớp -> `mark_limited`
+     khoá key 120s. **1 yêu cầu quá to = đốt sạch 38 key = cả dây chuyền cắt
+     đứng.** Nay `is_too_large_error` + `LLMTooLarge`: KHÔNG phạt key, caller tự
+     THU NHỎ (vision gửi lẻ từng ảnh). Bẫy này có từ trước, không riêng vision
+     (gpt-oss-120b prompt chọn đoạn cũng 413).
+     (c) model chỉ nhận **3 ảnh/lượt** (400) mà app gửi 6 và 4 -> mất trắng cả
+     batch. Nay chia theo `llm.vision_max_images()`; vision_digest dùng 2
+     (đo: 1 ảnh ĐẠT · 2 ĐẠT · 3 -> 413 "Requested 8632 > Limit 8000").
+     **Số đo phải nhớ:** 12 khung/video · 384px · ~796 token/ảnh (hạn mức tính
+     ~2.410/ảnh) · **219 giây/video** · digest 12/12 mốc, mô tả đúng ("Chef
+     shouts excitedly with arm raised" act=8). VISION_CUT vẫn mặc định TẮT vì
+     3,7 phút/video là nhiều với 300 kênh — NHƯNG video **KHÔNG CÓ LỜI NÓI** thì
+     m1 TỰ BẬT (`bat_buoc=True`): lúc đó hình là căn cứ duy nhất còn lại.
+     Digest rỗng -> ghi `logs/vision_<ngày>.log` nêu lý do + tên model.
+  27. `_test_hoc_gu.py` → **AI HỌC GU CHỦ KÊNH** (nút Hay/Nhạt trên thẻ clip ->
+     bảng `clip_gu` -> `chon_doan.khoi_prompt_gu` đưa ví dụ vào prompt của KÊNH
+     ĐÓ). Bất biến: chưa đánh giá -> prompt Y HỆT cũ; gu kênh A KHÔNG rò sang
+     kênh B; bấm lại -> GHI ĐÈ (UNIQUE theo clip_id); clip bị xoá -> bài học
+     VẪN CÒN (lưu tóm tắt tiêu đề/thoại/độ dài/số đoạn, không lưu id); khối
+     prompt chặn trần 900 ký tự (prompt chọn đoạn đã sát mức 413). Cổng này
+     quét MỌI nhãn nút tìm emoji dễ thiếu font và **đã lôi ra 2 nút sót từ
+     v2.6.22**: `QPushButton("📋")` ở thanh trên + `"✕ Tắt tất cả"`.
+     LƯU Ý: chỉ soi NHÃN NÚT, đừng soi cả file — emoji trong dòng ghi chú thì
+     user không thấy (bản đầu của cổng này FAIL oan vì thế).
+- Model suy luận cho khâu CHẤM: **ĐÃ ĐO, ĐỪNG DÙNG** (`_do_trongtai.py`):
+  llama-3.3-70b xếp đúng 3/3 lượt, 1,2 giây; qwen3.6-27b **0/3 lượt**, 19,5
+  giây (tiêu hết max_tokens cho khối `<think>`). Muốn chấm chắc tay thì dùng
+  HỘI ĐỒNG 3 TRỌNG TÀI (`JUDGE_PANEL=1`, đang bật).
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước

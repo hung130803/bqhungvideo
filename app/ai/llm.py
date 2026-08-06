@@ -286,9 +286,26 @@ def is_configured(provider: Optional[str] = None) -> bool:
     return bool(settings.llm_key_for(provider))
 
 
+def bo_khoi_suy_nghi(text: str) -> str:
+    """Bỏ khối SUY NGHĨ `<think>…</think>` của model suy luận, trả phần đáp án.
+
+    Vì sao cần (đo 06/08/2026): mọi chỗ bóc JSON trong repo đều dò dấu ngoặc
+    (`re.search(r"\\[.*\\]")` / find('[')), mà khối suy nghĩ đầy '[' ']' của bản
+    NHÁP -> bắt nhầm bản nháp. Đo thật: đặt khâu chấm sang qwen3.6 (model suy
+    luận duy nhất còn trên Groq) thì **3/3 lượt parse hỏng** dù model trả lời
+    đúng. Thẻ thiếu đóng (model bị cắt vì hết max_tokens) cũng phải chịu được:
+    coi như CHƯA có đáp án -> trả rỗng, đừng lấy bản nháp."""
+    t = (text or "").strip()
+    if "</think>" in t:
+        return t.rsplit("</think>", 1)[1].strip()
+    if "<think>" in t:
+        return t.split("<think>", 1)[0].strip()
+    return t
+
+
 def _extract_json(text: str):
     """Bóc JSON ra khỏi câu trả lời (phòng khi model bọc trong ```json hoặc thêm chữ)."""
-    text = text.strip()
+    text = bo_khoi_suy_nghi(text)
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
@@ -323,6 +340,26 @@ def is_rate_limit_error(msg: str) -> bool:
 
 
 _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
+
+
+class LLMTooLarge(LLMError):
+    """YÊU CẦU QUÁ LỚN cho hạn mức token/phút — KHÔNG phải key hết lượt."""
+
+
+def is_too_large_error(msg: str) -> bool:
+    """Lỗi 413 'Request too large … please reduce your message size'.
+
+    LỖI THẬT tìm được 06/08/2026 khi bật AI XEM HÌNH: Groq trả 413 kèm
+    `'code': 'rate_limit_exceeded'` nên `is_rate_limit_error` khớp -> app coi
+    là KEY HẾT LƯỢT -> `mark_limited` khoá key 120 giây (parse_retry_wait
+    không ra số nên rơi mặc định). Gửi 1 yêu cầu quá to = **đốt sạch cả 38
+    key trong 2 phút**, cả dây chuyền cắt đứng theo, mà nguyên nhân chả liên
+    quan gì tới lượt còn hay hết. Đây là lỗi CỦA YÊU CẦU (mọi key đều giới hạn
+    y nhau) -> phải THU NHỎ yêu cầu, tuyệt đối đừng phạt key.
+    (Đã ghi trong config.py: prompt chọn đoạn với gpt-oss-120b cũng ra 413 —
+    tức bẫy này đã có sẵn từ trước, không riêng gì vision.)"""
+    m = (msg or "").lower()
+    return ("413" in m and "too large" in m) or "reduce your message size" in m
 
 
 def is_org_restricted(msg: str) -> bool:
@@ -806,6 +843,13 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                     raise
                 except Exception as e:  # noqa: BLE001
                     last = str(e)
+                    if is_too_large_error(last):
+                        # KHÔNG phạt key, KHÔNG thử key khác (mọi key cùng hạn
+                        # mức) — nổi lên để caller thu nhỏ prompt. Xem
+                        # is_too_large_error: trước đây rơi vào nhánh dưới và
+                        # khoá lần lượt CẢ 38 key trong 120s.
+                        raise LLMTooLarge(f"Yêu cầu quá lớn cho hạn mức "
+                                          f"token/phút: {last}")
                     if is_rate_limit_error(last):
                         mark_limited(provider, key, last)
                         saw_retryable = True
@@ -908,10 +952,26 @@ def vision_available(provider: Optional[str] = None) -> bool:
     if provider == "gemini":
         return bool(settings.GEMINI_API_KEY)
     if provider == "groq":
-        # Groq free có model vision (llama-4-scout) — chỉ cần key + model cấu hình
+        # Groq: chỉ cần key + model cấu hình. LƯU Ý (đo 06/08/2026): hàm này
+        # KHÔNG chứng minh model còn sống — llama-4-scout đã bị Groq gỡ và trả
+        # 404 trong khi hàm vẫn báo True, nên "AI xem hình" ra 0 mốc mà im
+        # lặng. Muốn biết chắc thì gọi thật 1 lần (xem _do_vision_buoc.py).
         return bool(getattr(settings, "GROQ_VISION_MODEL", "")) \
             and bool(settings.groq_keys())
     return False
+
+
+def vision_max_images(provider: Optional[str] = None) -> int:
+    """SỐ ẢNH TỐI ĐA gửi được trong MỘT lời gọi vision.
+
+    Đo thật 06/08/2026: `qwen/qwen3.6-27b` (model vision duy nhất còn sống trên
+    Groq) trả 400 "Too many images provided. This model supports up to 3
+    images" khi gửi 4 ảnh. Gửi quá là MẤT TRẮNG cả batch (caller nào cũng
+    `except: continue`) nên phải chia batch theo số này, đừng đoán."""
+    provider = provider or active_provider()
+    if provider == "groq":
+        return 3
+    return 8
 
 
 def _b64(path: str) -> str:
@@ -950,15 +1010,42 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                     client = OpenAI(api_key=key,
                                     base_url="https://api.groq.com/openai/v1",
                                     timeout=120, max_retries=1)
-                    resp = client.chat.completions.create(
-                        model=settings.GROQ_VISION_MODEL, messages=msgs,
-                        temperature=0.3, max_tokens=1200)
+                    # TẮT PHẦN "SUY NGHĨ": model vision còn sống trên Groq
+                    # (qwen3.6) là model SUY LUẬN, mặc định nó viết cả khối
+                    # <think> dài trước khi ra JSON. ĐO 06/08/2026 với 2 ảnh:
+                    #   có nghĩ  -> 527 token trả về, 1,5s
+                    #   không    -> 104 token trả về, 1,0s  (mô tả VẪN ĐÚNG)
+                    # Ít token = ít cạn hạn mức 8.000 token/PHÚT của Groq = cả
+                    # dây chuyền không phải ngồi chờ. Mô tả cảnh không cần suy
+                    # luận nhiều bước nên tắt là đúng việc.
+                    _kw = {"model": settings.GROQ_VISION_MODEL,
+                           "messages": msgs, "temperature": 0.3,
+                           "max_tokens": 900}
+                    try:
+                        resp = client.chat.completions.create(
+                            reasoning_effort="none", **_kw)
+                    except Exception as e_re:  # noqa: BLE001
+                        # model KHÁC không nhận tham số này (Groq trả 400
+                        # "`reasoning_effort` must be one of…") -> gọi lại
+                        # kiểu thường, đừng để user đổi model là chết vision.
+                        if "reasoning_effort" not in str(e_re):
+                            raise
+                        resp = client.chat.completions.create(
+                            max_tokens=2600,
+                            **{k: v for k, v in _kw.items()
+                               if k != "max_tokens"})
                     mark_ok("groq", key)
                     return _extract_json(resp.choices[0].message.content or "")
                 except (ValueError, json.JSONDecodeError) as e:
                     raise LLMError(f"Vision groq trả về không phải JSON: {e}")
                 except Exception as e:  # noqa: BLE001
                     last = str(e)
+                    if is_too_large_error(last):
+                        # gửi quá nhiều/quá to -> caller giảm số ảnh. ĐỪNG phạt
+                        # key: đây là lối đã đốt sạch 38 key (xem
+                        # is_too_large_error).
+                        raise LLMTooLarge(f"Vision: yêu cầu quá lớn cho hạn "
+                                          f"mức token/phút: {last}")
                     if is_rate_limit_error(last):
                         mark_limited("groq", key, last)
                         continue         # key hết lượt -> thử key kế
@@ -1021,7 +1108,10 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
     except LLMError:
         raise
     except Exception as e:  # noqa: BLE001
-        # chỉ đánh dấu limited khi ĐÚNG là rate-limit (lỗi mạng thì tha key)
+        # chỉ đánh dấu limited khi ĐÚNG là rate-limit (lỗi mạng thì tha key;
+        # 413 'quá lớn' cũng THA — xem is_too_large_error)
+        if is_too_large_error(str(e)):
+            raise LLMTooLarge(f"Vision {provider}: yêu cầu quá lớn: {e}")
         if used_key and is_rate_limit_error(str(e)):
             mark_limited(provider, used_key, str(e))
         raise LLMError(f"Vision {provider} lỗi: {e}")

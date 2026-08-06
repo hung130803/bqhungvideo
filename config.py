@@ -167,9 +167,14 @@ class Settings:
     GROQ_LLM_MODEL_HQ = _env("GROQ_LLM_MODEL_HQ", "") or _env(
         "GROQ_LLM_MODEL", "openai/gpt-oss-120b")
     # Model Groq NHÌN ĐƯỢC HÌNH (vision) — AI xem khung hình khi chọn đoạn.
-    # llama-4-scout free tier nhận ảnh (đã thử thật). Đặt rỗng để tắt vision Groq.
-    GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL",
-                             "meta-llama/llama-4-scout-17b-16e-instruct")
+    # ĐO 06/08/2026 (hỏi thẳng /models của Groq rồi thử ảnh thật từng model):
+    # `meta-llama/llama-4-scout…` và `…maverick…` ĐÃ BỊ GỠ -> 404; compound và
+    # llama-3.3-70b KHÔNG nhận ảnh (400 "content must be a string"); model duy
+    # nhất còn nhìn được là `qwen/qwen3.6-27b` (mô tả đúng cảnh bodycam thật).
+    # Nó là model SUY LUẬN nên trả kèm khối <think> — llm._extract_json đã bóc.
+    # Giới hạn cứng: 3 ảnh/lượt (xem llm.vision_max_images).
+    # Đặt rỗng để tắt vision Groq.
+    GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
     # NHIỀU-PASS (mặc định BẬT): AI tự chấm bản nháp rồi viết lại tốt hơn cho
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
@@ -185,8 +190,19 @@ class Settings:
     #: giây/video) trước khi bật cho 300 kênh.
     VISION_CUT = _env("VISION_CUT", "0") == "1"
     JUDGE_PANEL = _env("JUDGE_PANEL", "1") == "1"
-    #: model cho khâu CHẤM (prompt ngắn -> dùng được model suy luận; prompt CHỌN
-    #: ĐOẠN thì KHÔNG đổi được, đã thử gpt-oss-120b -> lỗi 413). Rỗng = mặc định.
+    #: model cho khâu CHẤM. **ĐỂ RỖNG — đã ĐO, model suy luận KHÔNG hơn.**
+    #: Đo 06/08/2026 (bộ đo `_do_trongtai.py`: 3 clip biết trước thứ tự hay/dở
+    #: A cao trào > B thường > C intro rác, 3 lượt mỗi model):
+    #:   llama-3.3-70b (mặc định) -> xếp ĐÚNG 3/3 lượt, 80-85 / 20-40 / 0-10,
+    #:                               1,2 giây/lượt
+    #:   qwen/qwen3.6-27b (SUY LUẬN) -> 0/3 lượt (không ra nổi đáp án), 19,5
+    #:                               giây/lượt = chậm 16 LẦN
+    #: Vì sao hỏng: nó tiêu gần hết max_tokens cho khối <think> nên câu trả lời
+    #: bị cắt giữa lúc đang nghĩ. Muốn dùng thì phải nới max_tokens rất rộng ->
+    #: càng chậm + càng cạn hạn mức, mà độ chính xác thì đã đầy điểm sẵn.
+    #: Muốn chấm CHẮC TAY hơn thì dùng HỘI ĐỒNG 3 TRỌNG TÀI (JUDGE_PANEL=1,
+    #: đang bật) — lấy trung vị 3 góc nhìn, rẻ và ổn định hơn.
+    #: (prompt CHỌN ĐOẠN cũng KHÔNG đổi model được: gpt-oss-120b -> lỗi 413.)
     JUDGE_MODEL = _env("JUDGE_MODEL", "")
     QUALITY_FLOOR = _env_int("QUALITY_FLOOR", 55)
     # CHẤT LƯỢNG kịch bản AI reup (đánh đổi CHẤT LƯỢNG vs TOKEN/ngày Groq):

@@ -219,8 +219,12 @@ class StudioPage(QWidget):
         self.proj.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.proj.customContextMenuRequested.connect(self._proj_menu)
         srcrow.addWidget(self.proj)
-        cpy = QPushButton("📋"); cpy.setProperty("ghost", True)
-        cpy.setFixedWidth(38)
+        # NHÃN CHỮ, KHÔNG EMOJI: máy anh Hùng thiếu glyph 📋 nên nút ra Ô ĐEN
+        # ("xấu quá tự nhiên có cái ô đen" — v2.6.22). Nút trong popup đã sửa
+        # hồi đó, nhưng nút NÀY ở thanh trên cùng bị bỏ sót tới 06/08/2026
+        # (cổng 27 quét mọi nhãn nút mới lôi ra).
+        cpy = QPushButton("Copy"); cpy.setProperty("ghost", True)
+        cpy.setFixedWidth(52)
         cpy.setToolTip("Copy TÊN kênh đang chọn ra clipboard (để dán tìm "
                        "video ngoài) — KHÔNG mở dropdown, không đổi lựa chọn.")
         cpy.clicked.connect(lambda: self._copy_channel_name())
@@ -1349,7 +1353,7 @@ class StudioPage(QWidget):
         if not t:
             return
         QApplication.clipboard().setText(t)
-        self.status.setText(f"📋 Đã copy tên kênh: {t}")
+        self.status.setText(f"Đã copy tên kênh: {t}")
 
     def _chan_suffix(self, act: dict, pid) -> str:
         """Đuôi trạng thái 1 kênh (' · ⏳2 · ✅12h') — dùng chung cho combo lẫn
@@ -2134,7 +2138,7 @@ class StudioPage(QWidget):
             return
         from PyQt6.QtWidgets import QApplication
         QApplication.clipboard().setText(name)
-        self.status.setText(f"📋 Đã copy tên kênh: {name} — dán (Ctrl+V) để tìm.")
+        self.status.setText(f"Đã copy tên kênh: {name} — dán (Ctrl+V) để tìm.")
 
     def _last_vid_key(self, pid) -> str:
         return f"last_vid_{int(pid)}"
@@ -4106,13 +4110,37 @@ class StudioPage(QWidget):
             except Exception:  # noqa: BLE001 - thiếu mẫu không được chặn cắt
                 tpl = None
             if isinstance(tpl, dict) and tpl:
-                return copy.deepcopy(tpl)
+                _t = copy.deepcopy(tpl)
+                # ĐÓNG DẤU TÊN MẪU vào chính bản sao (không chỉ vào biến của
+                # trang) — vì dây chuyền CHỤP mẫu lúc xếp job rồi mới xuất sau
+                # đó hàng phút; đọc lại tên ở lúc xuất là đọc mẫu của kênh KHÁC.
+                # Trước đây nhật ký ghi "(mẫu đã chốt lúc xếp job)" nên không
+                # đối chiếu được "chọn X ra Y" (anh Hùng 06/08/2026).
+                _t["_ten_mau"] = self._ten_mau_cua_kenh(pid)
+                return _t
             # ĐÃ GÁN mẫu nhưng mẫu KHÔNG CÒN (bị xoá/đổi tên) -> vẫn xuất được
             # nhưng PHẢI NÓI RA. Âm thầm lùi mẫu = 200 kênh ra clip sai mẫu mà
             # anh Hùng chỉ biết lúc mở file lên xem (đúng cái anh sợ nhất).
             # Mỗi tên mẫu chỉ báo 1 lần/phiên -> không spam 200 dòng.
             self._canh_bao_mau_mat(pid)
-        return copy.deepcopy(self.layout_tpl)
+        _t = copy.deepcopy(self.layout_tpl)
+        _t["_ten_mau"] = self._ten_mau_trang_chinh()
+        return _t
+
+    def _ten_mau_cua_kenh(self, pid) -> str:
+        """TÊN mẫu riêng đã gán cho kênh `pid` ("" nếu chưa gán/lỗi)."""
+        try:
+            return str(services.project_template_name(pid) or "")
+        except Exception:  # noqa: BLE001 - chỉ để ghi nhật ký, không chặn xuất
+            return ""
+
+    def _ten_mau_trang_chinh(self) -> str:
+        """TÊN mẫu đang chọn ở combo trang chính (rỗng = mẫu mặc định)."""
+        try:
+            ten = str(self.tmpl_box.currentData() or "")
+        except Exception:  # noqa: BLE001 - test có thể chưa dựng combo
+            ten = ""
+        return ten or "Mặc định (không mẫu)"
 
     def _canh_bao_mau_mat(self, pid) -> None:
         """Báo 1 lần cho mỗi (kênh, mẫu) khi mẫu đã gán không còn tồn tại."""
@@ -4364,7 +4392,7 @@ class StudioPage(QWidget):
         grow.addWidget(all_chk)
         # 2 nút cũ vẫn tồn tại (vô hình) để lối gọi/handler + test cũ không đổi
         all_on = QPushButton("✓ Bật tất cả"); all_on.setVisible(False)
-        all_off = QPushButton("✕ Tắt tất cả"); all_off.setVisible(False)
+        all_off = QPushButton("Tắt tất cả"); all_off.setVisible(False)
         grow.addWidget(all_on); grow.addWidget(all_off)
         hid_b = QPushButton("🚫 Kênh đã ẩn"); hid_b.setVisible(False)
         redo_grp = QPushButton("🔄 Làm lại cả nhóm"); redo_grp.setVisible(False)
@@ -7359,6 +7387,27 @@ class StudioPage(QWidget):
                        "này — copy dán thẳng lên TikTok/Reels/Shorts.")
         cap.clicked.connect(lambda _, cc=c: self._write_caption(cc))
         lay.addWidget(cap)
+        # 👍/👎 DẠY GU CHO AI. NÚT PHẢI LÀ CHỮ, KHÔNG EMOJI: máy anh Hùng thiếu
+        # glyph nên emoji ra Ô ĐEN (lỗi thật v2.6.22, đã ghi ở cổng 9).
+        _v = 0
+        try:
+            _v = services.gu_clip(c["id"])
+        except Exception:  # noqa: BLE001 - thiếu bảng gu không được chặn UI
+            _v = 0
+        for _nhan, _val, _tip in (
+                ("Hay", 1, "Dạy AI: đoạn NÀY hay — lần sau cắt kênh này AI sẽ "
+                           "tìm đoạn tương tự (đưa vào prompt làm ví dụ mẫu)."),
+                ("Nhạt", -1, "Dạy AI: đoạn NÀY nhạt/không cần — lần sau AI "
+                             "tránh kiểu đoạn này cho kênh này.")):
+            b = QPushButton(_nhan)
+            b.setFixedWidth(52)
+            b.setFixedHeight(28)
+            b.setProperty("primary" if _v == _val else "ghost", True)
+            b.setToolTip(_tip + ("  [ĐANG CHỌN — bấm lại để bỏ]"
+                                 if _v == _val else ""))
+            b.clicked.connect(lambda _, cid=c["id"], val=_val, cu=_v:
+                              self._dat_gu(cid, 0 if cu == val else val))
+            lay.addWidget(b)
         if c["status"] == "exported" and c["export_path"]:
             mo = QPushButton("Mở"); mo.setFixedWidth(56); mo.setProperty("ghost", True)
             mo.setFixedHeight(28)
@@ -7613,6 +7662,33 @@ class StudioPage(QWidget):
         self._hashtag_cache[video_id] = tags_str
         return tags_str
 
+    def _dat_gu(self, clip_id, vote) -> None:
+        """Bấm Hay/Nhạt trên 1 clip -> ghi gu cho KÊNH rồi dựng lại dòng đó.
+
+        Mục đích (anh Hùng 06/08/2026 "nhiều đoạn nó lấy hài quá k cần thiết"):
+        AI đọc lại các ví dụ này khi chọn đoạn cho chính kênh đó. Chỉ ghi DB,
+        KHÔNG gọi AI -> bấm bao nhiêu cũng không tốn lượt."""
+        try:
+            services.dat_gu_clip(int(clip_id), int(vote))
+        except Exception as e:  # noqa: BLE001
+            self.status.setText(f"Không ghi được đánh giá: {e}")
+            return
+        n = 0
+        try:
+            _g = services.gu_cua_kenh(self.state.project_id)
+            n = len(_g.get("thich") or []) + len(_g.get("khong") or [])
+        except Exception:  # noqa: BLE001
+            pass
+        self.status.setText(
+            ("Đã bỏ đánh giá clip này." if int(vote) == 0 else
+             f"Đã dạy AI: đoạn này {'HAY' if int(vote) > 0 else 'NHẠT'}. ")
+            + (f"Kênh này đang có {n} ví dụ — lần cắt sau AI dùng làm mẫu."
+               if n else ""))
+        try:
+            self._refresh_clips()
+        except Exception:  # noqa: BLE001 - không dựng lại được thì thôi
+            pass
+
     def _export_video(self, video_id, only_clip_id=None, tpl=None):
         """CHỐT MẪU ĐÚNG KÊNH rồi mới xuất — cửa DUY NHẤT cho mọi đường xuất.
 
@@ -7637,19 +7713,17 @@ class StudioPage(QWidget):
                                (video_id,))
             _pid = (_vr["project_id"] if _vr else None) or self.state.project_id
             tpl_dung = self._tpl_for_project(_pid)
-            # TÊN mẫu đang dùng -> ghi vào nhật ký từng Part (minh bạch). Anh
-            # Hùng 06/08/2026: "hiệu ứng chữ khi xuất ra nó ra 1 kiểu khác mấy
-            # cái kiểu mới tôi mới thêm" — nguyên nhân hay gặp nhất là KÊNH ĐÃ
-            # GÁN MẪU RIÊNG nên lựa chọn ở trang chính bị bỏ qua; không ghi tên
-            # mẫu ra thì không cách nào biết.
-            try:
-                self._ten_mau_hien = services.project_template_name(_pid) or ""
-            except Exception:  # noqa: BLE001
-                self._ten_mau_hien = ""
-        else:
-            self._ten_mau_hien = "(mẫu đã chốt lúc xếp job)"
+        # TÊN mẫu đang dùng -> ghi vào nhật ký từng Part (minh bạch). Anh
+        # Hùng 06/08/2026: "hiệu ứng chữ khi xuất ra nó ra 1 kiểu khác mấy
+        # cái kiểu mới tôi mới thêm" — nguyên nhân hay gặp nhất là KÊNH ĐÃ
+        # GÁN MẪU RIÊNG nên lựa chọn ở trang chính bị bỏ qua; không ghi tên
+        # mẫu ra thì không cách nào biết. Tên đi THEO bản sao mẫu (`_ten_mau`,
+        # do _tpl_for_project đóng dấu) nên mẫu CHỤP lúc xếp job cũng ghi đúng
+        # tên — trước đây chỉ ghi "(mẫu đã chốt lúc xếp job)" = vô dụng.
+        self._ten_mau_hien = str(
+            (tpl_dung or {}).get("_ten_mau")
+            or (self._ten_mau_trang_chinh() if not tpl_dung else "(không rõ)"))
         if not tpl_dung:
-            self._ten_mau_hien = "(mẫu đang chọn ở trang chính)"
             return self._export_video_inner(video_id, only_clip_id)
         _luu = self.layout_tpl
         self.layout_tpl = tpl_dung

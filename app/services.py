@@ -845,3 +845,66 @@ def delete_project(project_id: int, pool: Optional[WorkerPool] = None) -> None:
             shutil.rmtree(pdir, ignore_errors=True)
         except OSError:
             pass
+
+
+# ══════════════ 👍/👎 GU CỦA CHỦ KÊNH (AI học sở thích) ══════════════
+# Anh Hùng 06/08/2026: "AI cắt nhiều đoạn lấy hài quá không cần thiết". Chấm
+# điểm bằng thang chung thì mãi ra gu chung; nay ghi lại chính lựa chọn của anh
+# rồi ĐƯA VÀO PROMPT của kênh đó làm ví dụ mẫu. Rẻ: không thêm lượt API.
+def dat_gu_clip(clip_id: int, vote: int) -> None:
+    """Ghi 👍 (vote=1) / 👎 (vote=-1) cho 1 clip; vote=0 = BỎ đánh giá.
+
+    Lưu kèm TÓM TẮT (tiêu đề + câu thoại đầu + độ dài + số đoạn) để bài học
+    sống sót khi clip bị xoá/phân tích lại. Bấm lại thì GHI ĐÈ (chỉ mục UNIQUE
+    theo clip_id) — không nhân bản ý kiến.
+    """
+    cid = int(clip_id)
+    if int(vote) == 0:
+        db.execute("DELETE FROM clip_gu WHERE clip_id=?", (cid,))
+        return
+    r = db.query_one(
+        "SELECT c.title, c.signals, c.transcript, c.reason, c.start_sec, "
+        "c.end_sec, v.project_id FROM clips c JOIN videos v ON v.id=c.video_id "
+        "WHERE c.id=?", (cid,))
+    if not r:
+        return
+    sig = db.loads(r["signals"], {}) or {}
+    segs = sig.get("segments") or []
+    # ưu tiên LỜI THOẠI THẬT trong đoạn — dạy gu tốt hơn là lấy câu AI tự biện
+    # luận; không có thoại (video ASMR) thì mới dùng `reason`.
+    thoai = " ".join(str(r["transcript"] or r["reason"] or "").split())[:180]
+    dai = max(0.0, float(r["end_sec"] or 0) - float(r["start_sec"] or 0))
+    db.execute(
+        "INSERT INTO clip_gu(project_id,clip_id,vote,title,thoai,dai,n_seg) "
+        "VALUES(?,?,?,?,?,?,?) ON CONFLICT(clip_id) DO UPDATE SET "
+        "vote=excluded.vote, title=excluded.title, thoai=excluded.thoai, "
+        "dai=excluded.dai, n_seg=excluded.n_seg, "
+        "created_at=datetime('now')",
+        (int(r["project_id"] or 0), cid, 1 if int(vote) > 0 else -1,
+         str(r["title"] or "")[:160], thoai, dai, len(segs)))
+
+
+def gu_clip(clip_id: int) -> int:
+    """👍=1 / 👎=-1 / chưa đánh giá=0 (để UI tô nút đang chọn)."""
+    r = db.query_one("SELECT vote FROM clip_gu WHERE clip_id=?", (int(clip_id),))
+    return int(r["vote"]) if r else 0
+
+
+def gu_cua_kenh(project_id, gioi_han: int = 6) -> dict:
+    """Ví dụ 👍/👎 GẦN NHẤT của kênh -> {"thich": [...], "khong": [...]}.
+
+    Lấy MỚI NHẤT vì gu đổi theo thời gian; giới hạn số ví dụ để prompt không
+    phình (prompt chọn đoạn đã sát mức 413 với model lớn — xem config.py)."""
+    ra = {"thich": [], "khong": []}
+    if project_id is None:
+        return ra
+    for v, khoa in ((1, "thich"), (-1, "khong")):
+        for r in db.query(
+                "SELECT title, thoai, dai, n_seg FROM clip_gu WHERE "
+                "project_id=? AND vote=? ORDER BY id DESC LIMIT ?",
+                (int(project_id), v, int(gioi_han))):
+            ra[khoa].append({"title": str(r["title"] or ""),
+                             "thoai": str(r["thoai"] or ""),
+                             "dai": float(r["dai"] or 0),
+                             "n_seg": int(r["n_seg"] or 0)})
+    return ra
