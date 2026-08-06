@@ -6879,9 +6879,14 @@ class StudioPage(QWidget):
         if not ten_mau:
             return
         try:
-            rows = db.query("SELECT name, tpl_name FROM projects "
-                            "WHERE COALESCE(TRIM(tpl_name),'') <> '' "
-                            "AND TRIM(tpl_name) <> TRIM(?)", (ten_mau,)) or []
+            # LẤY CẢ id: bản đầu chỉ lấy `name` rồi tra lại id THEO TÊN — 2 kênh
+            # TRÙNG TÊN là gán mẫu cho kênh SAI (hơn 200 kênh, tên kênh nguồn
+            # trùng nhau là chuyện thường).
+            rows = db.query(
+                "SELECT id, name, COALESCE(grp,'') AS grp, tpl_name FROM "
+                "projects WHERE COALESCE(TRIM(tpl_name),'') <> '' "
+                "AND TRIM(tpl_name) <> TRIM(?) ORDER BY grp, name",
+                (ten_mau,)) or []
         except Exception:  # noqa: BLE001 - DB vỡ thì thôi, không chặn Lưu
             return
         if not rows:
@@ -6895,29 +6900,155 @@ class StudioPage(QWidget):
             f"<b>{len(rows)} kênh</b> đang gán mẫu RIÊNG ({ten_ke}…) nên clip "
             f"của các kênh đó <b>KHÔNG dùng</b> mẫu «{ten_mau}» vừa lưu.<br><br>"
             "Đây là lý do hay gặp nhất khi thấy “chọn kiểu này mà xuất ra kiểu "
-            "khác”.")
-        b_gan = m.addButton(f"Gán «{ten_mau}» cho {len(rows)} kênh đó",
+            "khác”.<br><br>"
+            "• <b>Chọn từng kênh…</b> — tích đúng kênh/nhóm muốn đổi, còn lại "
+            "GIỮ NGUYÊN (an toàn nhất).<br>"
+            f"• <b>Gán cho cả {len(rows)} kênh</b> — đổi hết.<br>"
+            "• <b>Để nguyên</b> — không đụng kênh nào.")
+        b_chon = m.addButton("Chọn từng kênh…",
+                             QMessageBox.ButtonRole.ActionRole)
+        b_gan = m.addButton(f"Gán cho cả {len(rows)} kênh",
                             QMessageBox.ButtonRole.AcceptRole)
-        m.addButton("Để nguyên", QMessageBox.ButtonRole.RejectRole)
+        b_thoi = m.addButton("Để nguyên", QMessageBox.ButtonRole.RejectRole)
+        m.setDefaultButton(b_chon)          # đường AN TOÀN làm mặc định
         m.exec()
-        if m.clickedButton() is not b_gan:
+        bam = m.clickedButton()
+        if bam is b_thoi or bam is None:
             return
+        if bam is b_chon:
+            self._chon_kenh_gan_mau(ten_mau, rows)
+            return
+        self._gan_mau_cho_pid(ten_mau, [int(r["id"]) for r in rows])
+
+    def _gan_mau_cho_pid(self, ten_mau: str, pids: list) -> None:
+        """Gán mẫu cho ĐÚNG các kênh có id trong `pids` (không tra theo tên nên
+        kênh trùng tên vẫn đúng). Báo số đã gán + dựng lại bảng dây chuyền."""
         n = 0
-        for r in rows:
+        for pid in pids:
             try:
-                pid = db.query_one("SELECT id FROM projects WHERE name=?",
-                                   (r["name"],))
-                if pid:
-                    services.set_project_template(int(pid["id"]), ten_mau)
-                    n += 1
-            except Exception:  # noqa: BLE001
+                services.set_project_template(int(pid), ten_mau)
+                n += 1
+            except Exception:  # noqa: BLE001 - 1 kênh lỗi không chặn cả loạt
                 continue
-        self.status.setText(f"Đã gán mẫu «{ten_mau}» cho {n} kênh.")
+        self.status.setText(f"Đã gán mẫu «{ten_mau}» cho {n} kênh. Kênh KHÔNG "
+                            f"chọn vẫn giữ mẫu cũ.")
         if hasattr(self, "_pipe_fill"):
             try:
                 self._pipe_fill()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _chon_kenh_gan_mau(self, ten_mau: str, rows: list) -> None:
+        """TÍCH Ô chọn ĐÚNG kênh muốn đổi sang mẫu `ten_mau`.
+
+        Vì sao phải có (anh Hùng 06/08/2026: "những nhóm tôi k muốn thay cái mẫu
+        đó thì làm như nào"): hộp cảnh báo bản đầu chỉ có GÁN-HẾT / ĐỂ-NGUYÊN.
+        Hơn 200 kênh chia nhiều nhóm thì gán hết là phá mẫu của nhóm khác, mà để
+        nguyên thì phải vào sửa tay từng kênh.
+
+        Có Ô TÌM (gõ tên kênh / tên nhóm / tên mẫu đang dùng) và 2 nút chọn
+        nhanh CHỈ ĐỤNG PHẦN ĐANG HIỆN — đúng quy tắc đã chốt ở bảng dây chuyền:
+        gõ tên nhóm rồi bấm 'Chọn hết đang hiện' là gán cho cả nhóm đó, nhóm
+        khác không bị đụng. Mặc định KHÔNG tích gì; bấm Đổi mà chưa tích thì app
+        hỏi lại chứ không âm thầm làm gì."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Chọn kênh để đổi sang mẫu «{ten_mau}»")
+        dlg.resize(700, 560)
+        lay = QVBoxLayout(dlg)
+        _lb = QLabel(
+            f"Tích ô những kênh muốn dùng mẫu <b>«{ten_mau}»</b>. Kênh KHÔNG "
+            "tích giữ nguyên mẫu đang có.<br>Gõ vào ô tìm để lọc theo <b>tên "
+            "kênh</b>, <b>nhóm</b> hoặc <b>mẫu đang dùng</b>, rồi bấm “Chọn hết "
+            "đang hiện”.")
+        _lb.setWordWrap(True)
+        lay.addWidget(_lb)
+        oti = QLineEdit()
+        oti.setPlaceholderText("Tìm: tên kênh / nhóm / mẫu đang dùng…")
+        lay.addWidget(oti)
+        lst = QListWidget()
+        for r in rows:
+            cu = (r["tpl_name"] or "").strip()
+            grp = (r["grp"] or "").strip() or "(không nhóm)"
+            it = QListWidgetItem(f"{r['name']}   ·   nhóm {grp}   ·   "
+                                 f"đang dùng «{cu}»")
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Unchecked)
+            it.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
+            it.setData(Qt.ItemDataRole.UserRole + 1,
+                       f"{r['name']} {grp} {cu}".lower())
+            lst.addItem(it)
+        lay.addWidget(lst, 1)
+        nhan = QLabel("")
+        lay.addWidget(nhan)
+
+        def _dem(hien=None):
+            tick = sum(1 for i in range(lst.count())
+                       if lst.item(i).checkState() == Qt.CheckState.Checked)
+            if hien is None:
+                hien = sum(1 for i in range(lst.count())
+                           if not lst.item(i).isHidden())
+            nhan.setText(f"Đang hiện <b>{hien}</b>/{lst.count()} kênh · đã tích "
+                         f"<b>{tick}</b> kênh")
+
+        def _loc():
+            t = oti.text().strip().lower()
+            hien = 0
+            for i in range(lst.count()):
+                it = lst.item(i)
+                khop = (not t) or t in str(
+                    it.data(Qt.ItemDataRole.UserRole + 1) or "")
+                it.setHidden(not khop)
+                hien += 1 if khop else 0
+            _dem(hien)
+
+        oti.textChanged.connect(_loc)
+        lst.itemChanged.connect(lambda _: _dem())
+
+        def _tich_dang_hien(bat: bool):
+            # CHỈ đụng dòng ĐANG HIỆN (đang lọc) -> nhóm bị lọc ra không bị đổi
+            for i in range(lst.count()):
+                it = lst.item(i)
+                if not it.isHidden():
+                    it.setCheckState(Qt.CheckState.Checked if bat
+                                     else Qt.CheckState.Unchecked)
+            _dem()
+
+        def _ok():
+            pids = [lst.item(i).data(Qt.ItemDataRole.UserRole)
+                    for i in range(lst.count())
+                    if lst.item(i).checkState() == Qt.CheckState.Checked]
+            if not pids:
+                QMessageBox.information(
+                    dlg, "Chưa tích kênh nào",
+                    "Hãy TÍCH ô các kênh muốn đổi mẫu, hoặc bấm Đóng để giữ "
+                    "nguyên tất cả.")
+                return
+            if QMessageBox.question(
+                    dlg, "Xác nhận",
+                    f"Đổi {len(pids)} kênh đã tích sang mẫu «{ten_mau}»?\n"
+                    f"{lst.count() - len(pids)} kênh còn lại GIỮ NGUYÊN mẫu cũ."
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            dlg.accept()
+            self._gan_mau_cho_pid(ten_mau, pids)
+
+        rowb = QHBoxLayout()
+        b1 = QPushButton("Chọn hết đang hiện"); b1.setProperty("ghost", True)
+        b1.setToolTip("Tích mọi kênh ĐANG HIỆN (theo ô tìm). Kênh bị lọc ra "
+                      "KHÔNG bị đụng.")
+        b1.clicked.connect(lambda: _tich_dang_hien(True))
+        b2 = QPushButton("Bỏ tích đang hiện"); b2.setProperty("ghost", True)
+        b2.clicked.connect(lambda: _tich_dang_hien(False))
+        rowb.addWidget(b1); rowb.addWidget(b2); rowb.addStretch(1)
+        b3 = QPushButton("Đổi mẫu cho kênh đã tích")
+        b3.setProperty("primary", True)
+        b3.clicked.connect(_ok)
+        b4 = QPushButton("Đóng (giữ nguyên hết)"); b4.setProperty("ghost", True)
+        b4.clicked.connect(dlg.reject)
+        rowb.addWidget(b3); rowb.addWidget(b4)
+        lay.addLayout(rowb)
+        _dem()
+        dlg.exec()
 
     # ---- chọn / nhớ mẫu (hiện ngoài màn chính) ----
     def _populate_templates(self, select_name: str = ""):

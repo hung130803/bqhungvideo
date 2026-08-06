@@ -291,6 +291,23 @@
      `settings`, nên muốn dựng bẫy "mọi key đang cooldown" phải đặt
      `GROQ_API_KEYS` (key GIẢ cũng được, cổng không gọi mạng) — key bịa ngoài
      settings thì hàm trả None và test PASS oan.
+  29. `_test_chon_kenh_mau.py` → **SAU KHI LƯU MẪU: đổi ĐÚNG kênh muốn đổi.**
+     Anh Hùng 06/08/2026 (ảnh hộp "19 kênh đang gán mẫu RIÊNG…"): "những nhóm
+     tôi k muốn thay cái mẫu đó thì làm như nào". Hộp bản đầu chỉ có GÁN-HẾT /
+     ĐỂ-NGUYÊN -> 200 kênh nhiều nhóm thì gán hết là phá mẫu nhóm khác. Nay có
+     đường thứ 3 `_chon_kenh_gan_mau`: TÍCH Ô từng kênh, mỗi dòng ghi
+     `tên · nhóm · mẫu đang dùng`, có Ô TÌM (tên kênh/nhóm/mẫu) + 2 nút chọn
+     nhanh **CHỈ ĐỤNG PHẦN ĐANG LỌC** (gõ tên nhóm -> "Chọn hết đang hiện" =
+     gán cả nhóm đó, nhóm khác nguyên). Mặc định KHÔNG tích gì; nút MẶC ĐỊNH của
+     hộp cảnh báo là "Chọn từng kênh…" nên bấm Enter KHÔNG đổi hết.
+     LỖI THẬT trong bản đầu: nó tra id kênh **THEO TÊN**
+     (`SELECT id FROM projects WHERE name=?`) -> 2 kênh TRÙNG TÊN khác nhóm là
+     gán mẫu cho kênh SAI. Nay query lấy luôn `id`. Ca test bắt buộc: 2 kênh
+     trùng tên khác nhóm, chỉ 1 cái được đổi.
+     LƯU Ý KHI TEST: dựng StudioPage bằng `__new__` PHẢI gọi
+     `QWidget.__init__(sp)`, thiếu là `QMessageBox(self)` nổ "super-class
+     __init__ never called"; và vá `QMessageBox.exec` để tự gán `clickedButton`
+     mới mô phỏng được "user bấm nút nào".
 - Model suy luận cho khâu CHẤM: **ĐÃ ĐO, ĐỪNG DÙNG** (`_do_trongtai.py`):
   llama-3.3-70b xếp đúng 3/3 lượt, 1,2 giây; qwen3.6-27b **0/3 lượt**, 19,5
   giây (tiêu hết max_tokens cho khối `<think>`). Muốn chấm chắc tay thì dùng
