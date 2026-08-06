@@ -6837,6 +6837,59 @@ class StudioPage(QWidget):
             self.layout_tpl = dlg.layout_result
         self.status.setText(f"Đã lưu & đang dùng mẫu: {name or 'Mặc định'}. "
                             "Bấm Tải để xuất theo mẫu này.")
+        self._canh_bao_mau_khong_ap(name)
+
+    def _canh_bao_mau_khong_ap(self, ten_mau: str) -> None:
+        """Sau khi Lưu mẫu: nếu các kênh đang gán MẪU KHÁC thì nói NGAY + cho
+        gán 1 nhát.
+
+        LỖI TRẢI NGHIỆM THẬT (anh Hùng 06/08/2026): "hiệu ứng chữ khi xuất ra nó
+        ra 1 kiểu khác mấy cái kiểu mới tôi mới thêm". Không phải app chọn sai —
+        mẫu-theo-kênh (`projects.tpl_name`) GHI ĐÈ mẫu đang chọn ở trang chính,
+        nên sửa mẫu A rồi lưu mà kênh gán mẫu B thì clip vẫn ra theo B. Trước
+        đây app IM LẶNG chuyện này -> user tưởng tool lỗi."""
+        if not ten_mau:
+            return
+        try:
+            rows = db.query("SELECT name, tpl_name FROM projects "
+                            "WHERE COALESCE(TRIM(tpl_name),'') <> '' "
+                            "AND TRIM(tpl_name) <> TRIM(?)", (ten_mau,)) or []
+        except Exception:  # noqa: BLE001 - DB vỡ thì thôi, không chặn Lưu
+            return
+        if not rows:
+            return
+        ten_ke = ", ".join(f"«{(r['tpl_name'] or '').strip()}»"
+                           for r in rows[:3])
+        m = QMessageBox(self)
+        m.setWindowTitle("Mẫu vừa lưu CHƯA áp cho các kênh đó")
+        m.setIcon(QMessageBox.Icon.Warning)
+        m.setText(
+            f"<b>{len(rows)} kênh</b> đang gán mẫu RIÊNG ({ten_ke}…) nên clip "
+            f"của các kênh đó <b>KHÔNG dùng</b> mẫu «{ten_mau}» vừa lưu.<br><br>"
+            "Đây là lý do hay gặp nhất khi thấy “chọn kiểu này mà xuất ra kiểu "
+            "khác”.")
+        b_gan = m.addButton(f"Gán «{ten_mau}» cho {len(rows)} kênh đó",
+                            QMessageBox.ButtonRole.AcceptRole)
+        m.addButton("Để nguyên", QMessageBox.ButtonRole.RejectRole)
+        m.exec()
+        if m.clickedButton() is not b_gan:
+            return
+        n = 0
+        for r in rows:
+            try:
+                pid = db.query_one("SELECT id FROM projects WHERE name=?",
+                                   (r["name"],))
+                if pid:
+                    services.set_project_template(int(pid["id"]), ten_mau)
+                    n += 1
+            except Exception:  # noqa: BLE001
+                continue
+        self.status.setText(f"Đã gán mẫu «{ten_mau}» cho {n} kênh.")
+        if hasattr(self, "_pipe_fill"):
+            try:
+                self._pipe_fill()
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- chọn / nhớ mẫu (hiện ngoài màn chính) ----
     def _populate_templates(self, select_name: str = ""):

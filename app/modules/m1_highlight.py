@@ -2390,6 +2390,12 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx) -> None:
 
     _cs = payload.get("cap_style") or {}
     cap = (_cs.get("preset") or "(mặc định)") if ass_path else "TẮT"
+    if not ass_path and payload.get("captions"):
+        # BẪY THẬT (cổng e2e 06/08/2026): mẫu KHÔNG có khung video (video_rect)
+        # -> đường xuất đi nhánh 'clip đơn', nhánh đó KHÔNG đốt phụ đề. Bật phụ
+        # đề trong mẫu mà clip ra không chữ, và trước đây app im lặng.
+        cap = ("TẮT ⚠ MẪU THIẾU KHUNG VIDEO nên KHÔNG đốt được phụ đề — "
+               "mở Chỉnh mẫu, kéo khối video rồi Lưu lại")
     ten_mau = _cs.get("_mau") or "(không rõ)"
     # tiếng động: ffmpeg ghi lại từng điểm nối đã chèn gì
     tieng = []
