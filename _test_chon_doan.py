@@ -133,6 +133,30 @@ kiem(len(g) == 1 and len(b) == 1,
 g, _ = CD.san_thich_ung([clip(0, 60, 80), clip(100, 160, 40)])
 kiem(len(g) == 1, "KHÔNG đặt số part -> vẫn lọc theo tương quan (như trước)")
 
+print("\n══ 3c. VIDEO KHÔNG CÓ LỜI NÓI (ASMR — Whisper BỊA chữ) ══")
+# ĐO THẬT 06/08/2026: 40s tiếng ồn thuần -> Groq trả "Thank you." + gán English
+tr_bia = {"segments": [{"start": 0, "end": 30, "text": "Thank you."},
+                       {"start": 30, "end": 40, "text": "."}],
+          "words": [{"start": 0, "end": 1, "word": "Thank"},
+                    {"start": 1, "end": 2, "word": "you"},
+                    {"start": 30, "end": 30.2, "word": "."}]}
+co, vs, mds = CD.co_loi_noi_that(tr_bia, 40.0)
+kiem(not co, f"ca ASMR thật -> KHÔNG có lời nói ({mds:.2f} từ/giây)", vs[:50])
+tr_that = {"segments": [{"start": 0, "end": 20,
+                         "text": "she screamed at him and then walked away"}],
+           "words": [{"start": i * 0.4, "end": i * 0.4 + 0.3, "word": f"w{i}"}
+                     for i in range(48)]}
+co2, _v2, mds2 = CD.co_loi_noi_that(tr_that, 20.0)
+kiem(co2, f"người nói THẬT -> nhận đúng là CÓ lời ({mds2:.2f} từ/giây)")
+kiem(not CD.co_loi_noi_that({"segments": [], "words": []}, 30.0)[0],
+     "chép lời RỖNG -> không có lời nói")
+kiem(not CD.co_loi_noi_that(
+    {"segments": [{"start": 0, "end": 60,
+                   "text": "Thanks for watching! Please subscribe"}],
+     "words": [{"start": i, "end": i + 0.3, "word": "x"} for i in range(45)]},
+    60.0)[0], "nội dung chỉ gồm câu Whisper hay BỊA -> không có lời nói")
+kiem(CD.co_loi_noi_that(tr_that, 0.0)[0], "duration 0 -> coi như CÓ lời (an toàn)")
+
 print("\n══ 4. LỌC INTRO / OUTRO ══")
 giu, bo = CD.san_thich_ung([clip(0, 60, 70)])
 giu2, bo2 = CD.loc_intro_outro([clip(1, 20), clip(300, 380), clip(980, 999)],

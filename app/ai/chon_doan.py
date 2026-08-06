@@ -195,6 +195,50 @@ def khoi_prompt_hanh_dong(khoang: list) -> str:
             "có thoại hay, hãy GỘP chúng thành 1 clip.")
 
 
+#: câu Whisper HAY BỊA khi không có lời nói (các ngôn ngữ hay gặp)
+RAC_BIA = (
+    "thank you", "thanks for watching", "subscribe", "subtitles by",
+    "amara.org", "please subscribe", "bye bye", "music", "applause",
+    "字幕", "ご視聴", "チャンネル登録", "감사합니다", "구독",
+    "cảm ơn", "đăng ký kênh", "phụ đề",
+)
+
+
+def co_loi_noi_that(transcript: dict, tong_giay: float,
+                    tu_moi_giay: float = 0.5) -> tuple[bool, str, float]:
+    """Video này CÓ LỜI NÓI THẬT không? -> (có/không, lý do, số từ mỗi giây).
+
+    VÌ SAO (anh Hùng 06/08/2026: "video ASMR không nói gì mà nó tự phân tích ra
+    tiếng gì, ngôn ngữ nào lạ, mô tả thì linh tinh"). ĐO THẬT: cho Groq nghe 40
+    giây TIẾNG ỒN THUẦN -> trả về **"Thank you."** + gán ngôn ngữ **English**.
+    Đây là lỗi kinh điển của Whisper: gặp im lặng/nhạc/tiếng động là BỊA CHỮ.
+    Chữ bịa chảy tiếp vào: chọn đoạn · tiêu đề · hashtag · và ĐỐT LÊN VIDEO
+    thành phụ đề rác.
+
+    Nhận diện rẻ (không thêm lượt API): MẬT ĐỘ TỪ. Người nói thật ~2-3 từ/giây;
+    ví dụ trên chỉ **0,075 từ/giây**. KHÔNG dùng "tổng thời lượng từ" vì mốc câu
+    bịa trải rộng 30 giây nên trông như 38,9% có lời (sai hoàn toàn)."""
+    segs = (transcript or {}).get("segments") or []
+    words = (transcript or {}).get("words") or []
+    if tong_giay <= 0:
+        return True, "", 0.0
+    mds = (len(words) / tong_giay) if words else 0.0
+    chu = " ".join(str(s.get("text", "")) for s in segs).lower()
+    sach = "".join(c if (c.isalnum() or c.isspace()) else " " for c in chu)
+    sach = " ".join(sach.split())
+    if not sach:
+        return False, "chép lời RỖNG (không có chữ nào)", mds
+    if mds < tu_moi_giay:
+        return False, (f"mật độ từ chỉ {mds:.2f} từ/giây (người nói thật ~2-3) "
+                       f"-> gần như chắc chắn KHÔNG có lời nói"), mds
+    con = sach
+    for r in RAC_BIA:
+        con = con.replace(r, " ")
+    if len(con.split()) <= max(2, len(sach.split()) // 10):
+        return False, "nội dung chỉ gồm câu Whisper hay bịa (thank you/…)", mds
+    return True, "", mds
+
+
 def _pct(x: float, tong: float) -> float:
     return (x / tong) if tong > 0 else 0.0
 

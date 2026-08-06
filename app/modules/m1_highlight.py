@@ -1650,6 +1650,20 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # video 1.118s -> xem 16s (so với ~3,7 phút/video hiện tại).
     _nl = _cd = []
     _khoi_nghe_xem = ""
+    # 🔇 VIDEO KHÔNG CÓ LỜI NÓI (ASMR/nhạc/tiếng động): Whisper BỊA CHỮ (đo thật
+    # 06/08/2026: 40s tiếng ồn -> Groq trả "Thank you." + gán English). Chữ bịa
+    # chảy vào chọn đoạn/tiêu đề/hashtag/phụ đề -> "mô tả linh tinh" như anh
+    # Hùng nói. Nay PHÁT HIỆN rồi BỎ transcript khỏi việc chọn đoạn, chuyển sang
+    # chọn bằng TIẾNG + HÌNH (đã có), và ĐÁNH DẤU để KHÔNG đốt phụ đề rác.
+    _khong_loi = False
+    try:
+        _co, _vs, _mds = _cd_mod.co_loi_noi_that(transcript, duration)
+        if not _co:
+            _khong_loi = True
+            ctx.progress(0.22, f"Video KHÔNG có lời nói ({_vs}) — chọn đoạn "
+                               f"bằng TIẾNG + HÌNH, bỏ chữ bịa")
+    except Exception:  # noqa: BLE001
+        pass
     _src_path = ((vrow["src_path"] or "") if vrow else "")
     from config import settings as _stt
     if getattr(_stt, "DEEP_SENSE", True) and _src_path and os.path.exists(_src_path):
@@ -1676,9 +1690,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     try:
         # ⏳ hết lượt tạm thời -> ĐỢI key hồi rồi gọi lại (xem _call_waiting_quota)
         ai_clips, ai_warns = _call_waiting_quota(
-            lambda: _llm_select_clips(transcript, duration, ctx, scenes, cfg,
-                                      digest=digest,
-                                      nghe_xem=_khoi_nghe_xem),
+            lambda: _llm_select_clips(
+                ({"segments": [], "words": [], "language": ""} if _khong_loi
+                 else transcript),
+                duration, ctx, scenes, cfg, digest=digest,
+                nghe_xem=_khoi_nghe_xem),
             ctx, prov)
     except llm.LLMError as e:  # lỗi thật/đợi quá ngân sách -> báo rõ, lùi heuristic
         ai_clips = []
@@ -1738,6 +1754,9 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 ai_warns.append(f"bỏ 1 clip vì {_ly}")
         except Exception:  # noqa: BLE001
             pass
+        if _khong_loi:                 # video ASMR/nhạc -> KHÔNG đốt phụ đề rác
+            for _c in ai_clips:
+                _c["khong_loi"] = True
         # 🎣 HOOK THEO TIẾNG: mốc hook lấy từ ĐỈNH ÂM LƯỢNG THẬT trong clip
         # (không tin mốc AI đoán từ chữ) -> bảo đảm mấy giây đầu có cao trào.
         if _nl:
@@ -2930,6 +2949,15 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # -> bỏ trống hook (thà không chữ còn hơn sai ngôn ngữ).
         ass_path = fonts_dir = None
         _cs0 = payload.get("cap_style") or {}
+        if signals.get("khong_loi"):
+            # VIDEO KHÔNG CÓ LỜI NÓI: bản chép lời là chữ Whisper BỊA (đo thật
+            # 06/08/2026: 40s tiếng ồn -> "Thank you." + gán English). Đốt lên
+            # video là ra phụ đề rác + tiêu đề linh tinh -> TẮT phụ đề & hook.
+            _cs0 = dict(_cs0)
+            _cs0["hook_on"] = False
+            payload = dict(payload)
+            payload["captions"] = False
+            payload["cap_style"] = _cs0
         _hook_txt0 = ""
         if _cs0.get("hook_on", True):
             # HOOK giật tít = TIÊU ĐỀ đốt lên video (đúng ngôn ngữ video),
