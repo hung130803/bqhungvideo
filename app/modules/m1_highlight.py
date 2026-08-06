@@ -1732,8 +1732,19 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         _da_cham_mu = False
         if getattr(_st, "BLIND_JUDGE", True) and len(ai_clips) > 1:
             try:
-                ctx.progress(0.60, "Trọng tài AI đang chấm MÙ từng đoạn...")
-                _cham = _cd_mod.cham_mu(ai_clips, transcript, llm.complete_text)
+                # HỘI ĐỒNG 3 TRỌNG TÀI (3 góc nhìn, lấy TRUNG VỊ) + cho phép
+                # dùng model BIẾT SUY LUẬN cho khâu chấm (prompt chấm NGẮN nên
+                # không bị 413 như prompt chọn đoạn). JUDGE_PANEL=0 -> 1 trọng
+                # tài như v2.8.x; JUDGE_MODEL rỗng -> model mặc định.
+                _md = str(getattr(_st, "JUDGE_MODEL", "") or "")
+                if getattr(_st, "JUDGE_PANEL", True):
+                    ctx.progress(0.60, "Hội đồng 3 trọng tài AI đang chấm MÙ...")
+                    _cham = _cd_mod.cham_hoi_dong(ai_clips, transcript,
+                                                  llm.complete_text, model=_md)
+                else:
+                    ctx.progress(0.60, "Trọng tài AI đang chấm MÙ từng đoạn...")
+                    _cham = _cd_mod.cham_mu(ai_clips, transcript,
+                                            llm.complete_text, model=_md)
                 for _i, _c in enumerate(ai_clips):
                     if _i in _cham:
                         _c["score_tu_cham"] = _c.get("score", 0)

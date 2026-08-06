@@ -375,7 +375,57 @@ def _tom_tat_clip(clips: list, transcript: dict, max_ky_tu: int = 900) -> list:
     return ra
 
 
-def cham_mu(clips: list, transcript: dict, complete_text) -> dict[int, dict]:
+#: 3 GÓC NHÌN cho hội đồng trọng tài — mỗi ông chấm 1 kiểu khác nhau, lấy
+#: TRUNG VỊ. Vì sao: 1 trọng tài duy nhất có video trả sai định dạng / chấm lệch
+#: (đo 06/08/2026: cùng bộ clip, lượt này 42/50/60, lượt sau 90/90/92 do parse
+#: hỏng). 3 góc nhìn + trung vị thì 1 ông lệch KHÔNG kéo được kết quả.
+GOC_NHIN = (
+    ("người xem lần đầu",
+     "Bạn là NGƯỜI XEM BÌNH THƯỜNG đang lướt, chưa biết gì về video này."),
+    ("biên tập khó tính",
+     "Bạn là BIÊN TẬP KHÓ TÍNH của kênh video ngắn, đã xem hàng nghìn clip."),
+    ("người chỉ xem 3 giây đầu",
+     "Bạn CHỈ xem 3 GIÂY ĐẦU rồi quyết định lướt hay ở lại. Chấm gần như hoàn "
+     "toàn theo sức níu của mở đầu."),
+)
+
+
+def _trung_vi(xs: list) -> float:
+    xs = sorted(xs)
+    n = len(xs)
+    if not n:
+        return 0.0
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
+
+
+def cham_hoi_dong(clips: list, transcript: dict, complete_text,
+                  model: str = "") -> dict[int, dict]:
+    """HỘI ĐỒNG 3 TRỌNG TÀI chấm mù, lấy TRUNG VỊ điểm.
+
+    `model`: tên model đè (dùng model BIẾT SUY LUẬN cho khâu chấm — prompt chấm
+    NGẮN nên không bị lỗi 413 như prompt chọn đoạn; xem ghi chú `config.py` về
+    gpt-oss-120b). Rỗng -> model mặc định.
+
+    Ông nào lỗi/parse hỏng thì BỎ phiếu ông đó; còn >=1 phiếu vẫn ra kết quả;
+    không ông nào trả được -> {} để caller giữ điểm cũ (không bao giờ vỡ)."""
+    phieu: dict[int, list] = {}
+    ly_do: dict[int, str] = {}
+    for ten, vai in GOC_NHIN:
+        r = cham_mu(clips, transcript, complete_text, vai_tro=vai, model=model)
+        for i, v in r.items():
+            phieu.setdefault(i, []).append(float(v["score"]))
+            if v.get("vi_sao") and i not in ly_do:
+                ly_do[i] = v["vi_sao"]
+    if not phieu:
+        return {}
+    return {i: {"score": round(_trung_vi(ds), 1),
+                "vi_sao": ly_do.get(i, ""),
+                "so_phieu": len(ds)}
+            for i, ds in phieu.items()}
+
+
+def cham_mu(clips: list, transcript: dict, complete_text,
+            vai_tro: str = "", model: str = "") -> dict[int, dict]:
     """TRỌNG TÀI: 1 lượt LLM chấm MÙ từng clip theo `THANG`.
 
     `complete_text(prompt) -> str` truyền từ ngoài (dùng đúng bộ xoay key của
@@ -384,8 +434,8 @@ def cham_mu(clips: list, transcript: dict, complete_text) -> dict[int, dict]:
     tt = _tom_tat_clip(clips, transcript)
     if not tt:
         return {}
-    pr = ("Bạn là BIÊN TẬP KHÓ TÍNH của kênh video ngắn. Dưới đây là các đoạn "
-          "ứng viên (chỉ có LỜI THOẠI). " + THANG +
+    pr = ((vai_tro or "Bạn là BIÊN TẬP KHÓ TÍNH của kênh video ngắn.")
+          + " Dưới đây là các đoạn ứng viên (chỉ có LỜI THOẠI). " + THANG +
           "\nTrả về DUY NHẤT JSON: "
           '[{"index":số,"score":0-100,"vi_sao":"1 câu ngắn tiếng Việt"}]\n\n' +
           "\n\n".join(f"[{d['index']}] {d['loi'] or '(không có thoại)'}"
@@ -396,10 +446,13 @@ def cham_mu(clips: list, transcript: dict, complete_text) -> dict[int, dict]:
     arr = None
     for _lan in (1, 2):
         try:
-            raw = complete_text(pr if _lan == 1 else
-                                pr + "\n\nCHÚ Ý: chỉ in DUY NHẤT mảng JSON, "
-                                     "không thêm chữ nào khác, không markdown.")
-            raw = raw or ""
+            _p2 = (pr if _lan == 1 else
+                   pr + "\n\nCHÚ Ý: chỉ in DUY NHẤT mảng JSON, không thêm chữ "
+                        "nào khác, không markdown.")
+            # `model`: dùng model BIẾT SUY LUẬN cho khâu CHẤM (prompt chấm NGẮN
+            # nên không bị lỗi 413 như prompt chọn đoạn — xem config.py).
+            raw = (complete_text(_p2, model=model) if model
+                   else complete_text(_p2)) or ""
         except Exception:  # noqa: BLE001
             continue
         m = re.search(r"\[.*\]", raw, re.S)

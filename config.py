@@ -177,6 +177,12 @@ class Settings:
     # SÀN CHẤT LƯỢNG clip AI cắt (0-100): sau khi AI chọn + chấm điểm, clip
     # có score DƯỚI sàn bị BỎ — "chỉ giữ đoạn đáng dùng". Luôn giữ ít nhất
     # 1 clip điểm cao nhất (không bao giờ trắng tay). Đặt 0 để tắt.
+    #: HỘI ĐỒNG 3 TRỌNG TÀI chấm clip (3 góc nhìn, lấy trung vị) — 1 trọng tài
+    #: duy nhất từng chấm lệch/parse hỏng (đo 06/08/2026). 0 = 1 trọng tài.
+    JUDGE_PANEL = _env("JUDGE_PANEL", "1") == "1"
+    #: model cho khâu CHẤM (prompt ngắn -> dùng được model suy luận; prompt CHỌN
+    #: ĐOẠN thì KHÔNG đổi được, đã thử gpt-oss-120b -> lỗi 413). Rỗng = mặc định.
+    JUDGE_MODEL = _env("JUDGE_MODEL", "")
     QUALITY_FLOOR = _env_int("QUALITY_FLOOR", 55)
     # CHẤT LƯỢNG kịch bản AI reup (đánh đổi CHẤT LƯỢNG vs TOKEN/ngày Groq):
     #   "save"    = luôn 1-pass (ít token nhất, nhanh nhất)

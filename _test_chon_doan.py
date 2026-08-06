@@ -205,6 +205,49 @@ kiem(CD.cham_mu(cl, tr, lambda p: '[{"index":9,"score":50}]') == {},
      "index lạ -> bỏ qua, không nổ")
 kiem(CD.cham_mu([], tr, lambda p: "[]") == {}, "không clip -> {}")
 
+print("\n══ 5b. HỘI ĐỒNG 3 TRỌNG TÀI (trung vị — 1 ông lệch không kéo được) ══")
+_lan = {"n": 0}
+
+
+def _ba_ong(p, **kw):
+    _lan["n"] += 1
+    return ('[{"index":0,"score":%d,"vi_sao":"ok"}]'
+            % {1: 80, 2: 70, 3: 10}[_lan["n"]])     # ông 3 chấm LỆCH hẳn
+
+
+r = CD.cham_hoi_dong(cl, tr, _ba_ong)
+kiem(_lan["n"] == 3, f"gọi ĐÚNG 3 góc nhìn (gọi {_lan['n']})")
+kiem(r.get(0, {}).get("score") == 70.0,
+     f"trung vị 80/70/10 = 70 -> ông lệch KHÔNG kéo được ({r.get(0)})")
+kiem(r.get(0, {}).get("so_phieu") == 3, "ghi rõ 3 phiếu")
+_l2 = {"n": 0}
+
+
+def _hong_2(p, **kw):
+    _l2["n"] += 1
+    return "rác" if _l2["n"] <= 4 else '[{"index":0,"score":55}]'
+
+
+r2 = CD.cham_hoi_dong(cl, tr, _hong_2)
+kiem(r2.get(0, {}).get("score") == 55.0,
+     f"2 ông hỏng, 1 ông được -> vẫn ra kết quả ({r2.get(0)})")
+kiem(CD.cham_hoi_dong(cl, tr, lambda p, **k: "rác") == {},
+     "cả 3 ông hỏng -> {} (caller giữ điểm cũ)")
+kiem(CD._trung_vi([]) == 0.0 and CD._trung_vi([5, 1, 3]) == 3,
+     "trung vị tính đúng, list rỗng không nổ")
+kiem(len(CD.GOC_NHIN) == 3, "có đúng 3 góc nhìn khác nhau")
+_mm = {}
+
+
+def _bat_model(p, model=None):
+    _mm["m"] = model
+    return '[{"index":0,"score":60}]'
+
+
+CD.cham_mu(cl, tr, _bat_model, model="model-suy-luan-X")
+kiem(_mm.get("m") == "model-suy-luan-X",
+     f"truyền được MODEL riêng cho khâu chấm ({_mm.get('m')})")
+
 print("\n══ 6. HOOK theo tiếng luôn NẰM TRONG clip ══")
 nl2 = [0.1] * 100
 nl2[70:73] = [0.9, 0.95, 0.9]      # đỉnh ở giây 70-73
