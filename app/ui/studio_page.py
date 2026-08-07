@@ -8256,6 +8256,10 @@ class StudioPage(QWidget):
                 # (CHỮ AI ĐỌC giờ lấy từ MẪU qua cap_style, không còn ở ⚙)
                 fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
                 fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
+                # CHUYỂN CẢNH chỗ ghép đoạn (xfade) — theo MẪU. Mẫu cũ chưa có
+                # khoá này -> 'nhe' (mặc định BẬT mức nhẹ như đã chốt).
+                chuyen_canh=str(self.layout_tpl.get("chuyen_canh", "nhe")
+                                or "tat"),
                 fx_sfx_dir=self._pick_sfx_dir(),
                 flip_h=bool(self.layout_tpl.get("flip_h", False)),
                 fit_src=bool(self.layout_tpl.get("fit_src", False)),

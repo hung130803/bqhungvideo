@@ -3345,6 +3345,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             dub_stretch=dub_stretch,
             fx_fade=bool(payload.get("fx_fade", True)),
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
+            # CHUYỂN CẢNH ở chỗ ghép đoạn: kiểu tự suy theo NỘI DUNG chỗ nối
+            # (xem ffmpeg_utils.chon_chuyen_canh) — KHÔNG bốc thăm. Job cũ
+            # (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
+            chuyen_canh=str(payload.get("chuyen_canh", "nhe") or "tat"),
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,
             flip_h=flip_h,

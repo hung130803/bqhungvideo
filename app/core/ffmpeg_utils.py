@@ -474,6 +474,36 @@ def encode_threads() -> int:
     return max(1, budget // _max_encode_jobs())
 
 
+def decode_threads() -> int:
+    """Số luồng GIẢI MÃ — `-threads N` đặt **TRƯỚC `-i`** (đặt SAU `-i` thì
+    ffmpeg hiểu là luồng ENCODE; sai chỗ là im lặng, không báo lỗi).
+
+    CHỖ HỞ ĐÃ BỊT: trước đây KHÔNG chỗ nào trong app đặt `-threads` trước `-i`
+    -> giải mã ăn mặc định `-threads 0` ≈ 17 luồng/lệnh, dư 12-14 luồng/lệnh.
+
+    VÌ SAO CHỌN 4 (đo thật pha 1 `_build_seg` — bước DUY NHẤT không có filter
+    nên GIẢI-MÃ-BOUND, tức chỗ duy nhất siết luồng CÓ THỂ làm chậm thật, và
+    đúng là chỗ lần thử trước thất bại; video Nhật thật, lặp 3 lấy trung vị,
+    máy 24 nhân rảnh 6,6%):
+        nvenc  không giới hạn : 0,76s · 1,89 CPU-giây · 61 luồng
+        nvenc  + giải mã 4    : 0,75s · 1,67 CPU-giây · 49 luồng  (wall 0,99x)
+        nvenc  + giải mã 2    : 0,78s · 1,50 CPU-giây · 47 luồng  (wall 1,03x)
+        nvenc  + giải mã 1    : 0,99s · 1,17 CPU-giây · 45 luồng  (wall 1,30x)
+        libx264 hiện tại      : 0,78s · 4,97 CPU-giây · 48 luồng
+        libx264 giải mã+enc 4 : 0,84s · 4,34 CPU-giây · 27 luồng  (wall 1,08x)
+        libx264 giải mã+enc 2 : 1,16s · 3,23 CPU-giây · 19 luồng  (wall 1,49x)
+        libx264 giải mã+enc 1 : 1,99s · 2,64 CPU-giây · 12 luồng  (wall 2,55x)
+    -> 4 là mức cuối cùng còn MIỄN PHÍ về thời gian. **1 thì chậm THẬT** (nvenc
+    +30%, libx264 +155%) — đừng hạ xuống 1 dù thấy cột luồng đẹp hơn.
+
+    ĐÍNH CHÍNH kết luận cũ *"chặn luồng làm chậm 3,4 lần (61,2s -> 208,3s)"*:
+    NHIỄU, KHÔNG THẬT. Mốc 61,2s đo lúc app chạy 96,7% CPU; đo lại đúng cấu
+    hình đó trên máy rảnh ra 7,04s (phồng ~9 lần).
+    """
+    cores = os.cpu_count() or 4
+    return max(1, min(2 if settings.ECO_MODE else 4, cores))
+
+
 def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     """Tham số encode theo encoder + mức chất lượng."""
     if encoder == "h264_nvenc":
@@ -481,8 +511,12 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
         # -pix_fmt yuv420p: nguồn 10-bit/4:4:4 (video tải chất lượng cao) sẽ làm
         # NVENC từ chối -> rơi oan về libx264 encode LẠI từ đầu; ép 420p (chuẩn
         # phát hành shorts) để NVENC ăn được mọi nguồn.
+        # `-threads` trên nhánh nvenc: TRƯỚC ĐÂY KHÔNG CÓ NÚM NÀO. Đo pha 2
+        # (concat+blur+overlay+đốt .ass): thêm `-threads 4` hạ 58 -> 46 luồng,
+        # wall 1,00x, và log ffmpeg VẪN ghi `h264_nvenc` -> KHÔNG rớt về CPU
+        # (đúng điều lần thử trước nghi mà không ai ghi log lại để biết).
         return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq,
-                "-pix_fmt", "yuv420p"]
+                "-pix_fmt", "yuv420p", "-threads", str(encode_threads())]
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
     # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
     crf = "20" if quality == "high" else "23"
@@ -493,10 +527,22 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
 
 
 def _global_enc_opts() -> list[str]:
-    """Tùy chọn TOÀN CỤC đặt ngay sau 'ffmpeg -y' cho lệnh export dùng
-    -filter_complex: giới hạn luồng của filter graph (mặc định ffmpeg lấy HẾT
-    số nhân cho MỖI graph -> nhiều job song song đẻ hàng trăm thread)."""
-    return ["-filter_complex_threads", str(encode_threads())]
+    """Tùy chọn TOÀN CỤC đặt ngay sau 'ffmpeg -y' và **TRƯỚC MỌI `-i`**.
+
+    3 núm, mỗi núm bịt 1 chỗ hở khác nhau:
+      - `-filter_complex_threads`: luồng của filter graph (đã có từ trước).
+      - `-filter_threads`: luồng của filter graph ĐƠN (`-vf`/`-af`). CHỖ HỞ:
+        trước đây thiếu hẳn núm này.
+      - `-threads` (vì nằm TRƯỚC `-i` nên ffmpeg hiểu là luồng GIẢI MÃ):
+        CHỖ HỞ NẶNG NHẤT — không chỗ nào trong app đặt nó, giải mã ăn mặc định
+        `-threads 0` ≈ 17 luồng/lệnh. Xem `decode_threads()` để biết vì sao 4.
+
+    THỨ TỰ QUAN TRỌNG: hàm này PHẢI được nối vào cmd TRƯỚC các `-i`. Ai đổi chỗ
+    thành sau `-i` là biến `-threads` thành núm ENCODE (im lặng, không lỗi).
+    """
+    return ["-filter_complex_threads", str(encode_threads()),
+            "-filter_threads", str(encode_threads()),
+            "-threads", str(decode_threads())]
 
 
 # Font hỗ trợ (tên hiển thị -> file trong thư mục Fonts của Windows)
@@ -1293,8 +1339,180 @@ def fit_src_video_rect(video_rect: tuple, src_w: int, src_h: int,
     return (round(cx, 4), round(cy, 4), round(w_px / out_w, 4))
 
 
+# ==================== CHUYỂN CẢNH Ở CHỖ GHÉP ĐOẠN (xfade) ====================
+# VÌ SAO CHỌN xfade chứ không phải hiệu ứng filter (flicker/zoom/glitch/film):
+# 0 file tải về, 0 rủi ro bản quyền, **KHÔNG sửa màu nên không thể loè**, và nó
+# chữa đúng chỗ đang **cắt cụt khô khốc** giữa 2 đoạn.
+#
+# 58 kiểu của filter `xfade` (bỏ 'custom' vì cần biểu thức riêng). Giữ danh sách
+# ở đây để cổng test đối chiếu được với `ffmpeg -h filter=xfade` của bản đang
+# đóng gói — máy khách dùng ĐÚNG ffmpeg trong `bin/`, nhưng ai đổi bản ffmpeg mà
+# kiểu bị gỡ thì phải FAIL to, KHÔNG được im lặng ra clip cắt khô.
+XFADE_KIEU: tuple = (
+    "fade", "wipeleft", "wiperight", "wipeup", "wipedown",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "circlecrop", "rectcrop", "distance", "fadeblack", "fadewhite", "radial",
+    "smoothleft", "smoothright", "smoothup", "smoothdown",
+    "circleopen", "circleclose", "vertopen", "vertclose",
+    "horzopen", "horzclose", "dissolve", "pixelize",
+    "diagtl", "diagtr", "diagbl", "diagbr",
+    "hlslice", "hrslice", "vuslice", "vdslice",
+    "hblur", "fadegrays", "wipetl", "wipetr", "wipebl", "wipebr",
+    "squeezeh", "squeezev", "zoomin", "fadefast", "fadeslow",
+    "hlwind", "hrwind", "vuwind", "vdwind",
+    "coverleft", "coverright", "coverup", "coverdown",
+    "revealleft", "revealright", "revealup", "revealdown",
+)
+
+# 4 MỨC cho ô chọn trong Chỉnh mẫu. "tat" = đường cũ Y NGUYÊN (bất biến sống
+# còn: preset cũ phải ra file giống hệt `main`).
+CHUYEN_CANH_MUC: tuple = ("tat", "nhe", "vua", "manh")
+CHUYEN_CANH_NHAN: dict = {
+    "tat": "Tắt (cắt thẳng như cũ)",
+    "nhe": "Nhẹ (mờ dần — khuyên dùng)",
+    "vua": "Vừa (mờ + trượt nhẹ)",
+    "manh": "Mạnh (trượt / mở khép rõ)",
+}
+
+# LUẬT CHỌN KIỂU — KHÔNG RANDOM. Dùng lại ĐÚNG khuôn đã chạy tốt cho TIẾNG ĐỘNG
+# (`m1_highlight._loai_theo_khoang_nhay`): suy theo **NỘI DUNG chỗ nối**, không
+# bốc thăm. Lý do phải thế: luật cũ của tiếng động làm MỌI Part một tiếng "ding"
+# — đúng cái anh Hùng sợ ("thêm ngẫu nhiên k hợp cảnh k hợp logic gì cả").
+#   nguoc  : nhảy NGƯỢC thời gian (hook-first đưa cao trào lên đầu) -> cắt phũ
+#            giữa 2 mạch, cần chuyển DỨT KHOÁT.
+#   lien   : gần liền mạch (<= 1,2s, chỉ bỏ mấy giây thừa) -> hình gần như
+#            không đổi, phải MỀM, hiệu ứng rõ ở đây là lố.
+#   chot   : đoạn KẾ rất ngắn (< 2,5s = câu chốt/punchline) -> nhấn.
+#   xa     : nhảy xa = đổi bối cảnh -> chuyển trung tính.
+# Mỗi (mức, loại) cho 2 kiểu; chọn theo CHỈ SỐ điểm nối (i % 2) -> cùng 1 video
+# KHÔNG lặp một kiểu ở mọi chỗ nối, mà vẫn TIỀN ĐỊNH (test lại được, không phụ
+# thuộc seed).
+_XF_LUAT: dict = {
+    "nhe": {"nguoc": ("fadeblack", "fade"), "lien": ("dissolve", "fade"),
+            "chot": ("fadewhite", "fade"), "xa": ("fade", "dissolve")},
+    "vua": {"nguoc": ("fadeblack", "wipeleft"), "lien": ("dissolve", "smoothleft"),
+            "chot": ("fadewhite", "circleclose"), "xa": ("fade", "smoothright")},
+    "manh": {"nguoc": ("slideleft", "wipeleft"), "lien": ("smoothleft", "smoothright"),
+             "chot": ("circleclose", "squeezev"), "xa": ("slideup", "horzclose")},
+}
+# Thời lượng (giây) theo loại chỗ nối × mức. Khoảng cho phép 0,25-0,4s như đã
+# chốt; ngắn hơn 0,2s thì mắt không kịp thấy, dài hơn 0,4s là "chậm như slide".
+_XF_DAI: dict = {
+    "nhe": {"nguoc": 0.25, "lien": 0.30, "chot": 0.30, "xa": 0.25},
+    "vua": {"nguoc": 0.25, "lien": 0.30, "chot": 0.35, "xa": 0.30},
+    "manh": {"nguoc": 0.30, "lien": 0.35, "chot": 0.40, "xa": 0.35},
+}
+
+
+def _loai_cho_noi(segs: list, i: int) -> str:
+    """Loại chỗ nối thứ i suy từ NỘI DUNG (y khuôn `_loai_theo_khoang_nhay`).
+    Hàm thuần — test được, không đọc settings."""
+    try:
+        het = float(segs[i][1])
+        bat, het_ke = float(segs[i + 1][0]), float(segs[i + 1][1])
+    except (IndexError, TypeError, ValueError):
+        return "xa"
+    nhay = bat - het
+    if nhay < -0.05:
+        return "nguoc"
+    if nhay <= 1.2:
+        return "lien"
+    if (het_ke - bat) < 2.5:
+        return "chot"
+    return "xa"
+
+
+def chon_chuyen_canh(segs: list, muc: str = "nhe") -> list:
+    """[(kiểu_xfade, thời_lượng_giây)] cho TỪNG chỗ nối, suy theo nội dung.
+
+    Trả [] khi: mức 'tat'/rỗng/lạ, hoặc clip chỉ 1 đoạn (không có chỗ nối).
+    Hàm THUẦN (không đọc settings, không gọi ffmpeg) -> unit test được.
+    """
+    m = str(muc or "").strip().lower()
+    if m not in _XF_LUAT or len(segs or []) < 2:
+        return []
+    ra: list = []
+    for i in range(len(segs) - 1):
+        loai = _loai_cho_noi(segs, i)
+        cap = _XF_LUAT[m][loai]
+        ra.append((cap[i % len(cap)], float(_XF_DAI[m][loai])))
+    return ra
+
+
+def _bu_xfade(segs: list, chuyen: list, dur_nguon: float) -> list:
+    """Số giây PHẢI LẤY THÊM ở CUỐI mỗi đoạn để xfade KHÔNG làm clip ngắn đi.
+
+    ĐÂY LÀ CHỖ DỄ SẬP NHẤT CỦA VIỆC NÀY. `xfade` ĂN BỚT `d` giây ở mỗi chỗ nối:
+    output = dài(A) + dài(B) - d. Không bù thì clip NGẮN đi (n-1)*d giây, mà
+    phụ đề `.ass` và mốc tiếng động đã dựng theo timeline "các đoạn nối thẳng"
+    -> **LỆCH HẾT** từ chỗ nối đầu tiên trở đi (0,3s × 3 chỗ nối = lệch 0,9s).
+
+    CÁCH BÙ (giữ timeline BẤT BIẾN, không phải sửa .ass): lấy THÊM đúng `d` giây
+    phim ở SAU đoạn A, rồi đặt `offset = dài_gốc(A)`. Khi đó:
+      - t < a          : khung của A (y như nối thẳng)
+      - a <= t < a+d   : A (phần lấy thêm) hoà với B[0..d] — chỗ chuyển cảnh
+      - t >= a+d       : B[t-a]  (y như nối thẳng)
+    Tổng = a + b, và MỌI khung của B rơi ĐÚNG mốc cũ -> lệch phụ đề = 0 về mặt
+    toán học (đo thật vẫn phải làm, xem cổng `_test_chuyen_canh.py`).
+
+    Hết phim thì không có gì mà lấy thêm: THU NGẮN d còn đúng phần còn lại;
+    dưới 0,08s thì trả 0 = chỗ nối đó CẮT THẲNG như cũ (thà cụt 1 chỗ còn hơn
+    lệch tiếng-hình cả clip). KHÔNG lùi đầu đoạn B để bù — làm thế là dịch nội
+    dung B sớm lên, đúng kiểu lỗi "hình một đằng tiếng một đằng" của v1.87.
+    """
+    ra: list = []
+    for i, (_k, d) in enumerate(chuyen or []):
+        try:
+            het = float(segs[i][1])
+        except (IndexError, TypeError, ValueError):
+            ra.append(0.0)
+            continue
+        con = max(0.0, float(dur_nguon or 0.0) - het)
+        d2 = min(float(d), con) if dur_nguon else float(d)
+        ra.append(round(d2, 3) if d2 >= 0.08 else 0.0)
+    return ra
+
+
+def _graph_xfade(n: int, chuyen: list, bu: list, dai_goc: list,
+                 co_tieng: bool) -> tuple[str, str, str]:
+    """Filter graph nối n đoạn bằng xfade (+ acrossfade cho tiếng).
+
+    Trả (graph, nhãn_video, nhãn_tiếng|""). offset TÍCH LUỸ theo ĐỘ DÀI GỐC
+    (không cộng phần bù) — xem `_bu_xfade` để biết vì sao đúng.
+    Chỗ nối có bù = 0 -> dùng `concat` (cắt thẳng) để không ăn bớt thời lượng.
+    settb/setpts: mọi đoạn phải cùng timebase và bắt đầu từ 0, nếu không xfade
+    tính offset trên PTS gốc -> chuyển cảnh nổ ra sai chỗ (hoặc mất hẳn).
+    """
+    p: list = []
+    for i in range(n):
+        p.append(f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[v{i}]")
+        if co_tieng:
+            p.append(f"[{i}:a]asetpts=N/SR/TB[a{i}]")
+    vcur, acur = "[v0]", "[a0]"
+    moc = 0.0
+    for i in range(n - 1):
+        moc += float(dai_goc[i])
+        d = float(bu[i]) if i < len(bu) else 0.0
+        vo, ao = f"[xv{i}]", f"[xa{i}]"
+        if d >= 0.08:
+            kieu = str(chuyen[i][0])
+            p.append(f"{vcur}[v{i + 1}]xfade=transition={kieu}:"
+                     f"duration={d:.3f}:offset={moc:.3f}{vo}")
+            if co_tieng:
+                p.append(f"{acur}[a{i + 1}]acrossfade=d={d:.3f}:"
+                         f"c1=tri:c2=tri{ao}")
+        else:
+            p.append(f"{vcur}[v{i + 1}]concat=n=2:v=1:a=0{vo}")
+            if co_tieng:
+                p.append(f"{acur}[a{i + 1}]concat=n=2:v=0:a=1{ao}")
+        vcur, acur = vo, ao
+    return ";".join(p), vcur, (acur if co_tieng else "")
+
+
 def _extract_segments_to_temp(src, segs: list, encoder: str,
-                              on_progress=None) -> tuple[str, list]:
+                              on_progress=None,
+                              chuyen_canh: Optional[list] = None
+                              ) -> tuple[str, list]:
     """PHA 1 của ghép nhiều đoạn: TÁCH từng đoạn ra FILE TẠM (.mkv, mezzanine
     chất lượng cao) rồi trả (đường_dẫn_file_danh_sách_concat, [file_tạm]).
 
@@ -1309,7 +1527,17 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     nên khớp tuyệt đối), concat demuxer nối THEO THỨ TỰ DANH SÁCH (hook-first
     đúng), ép CFR đều nhau (nguồn VFR YouTube không còn trôi lệch).
     Mezzanine cq/crf 16 + pha cuối crf 20 -> mất chất không nhận ra được.
-    Caller PHẢI dọn các file trả về (kể cả khi lỗi/hủy)."""
+    Caller PHẢI dọn các file trả về (kể cả khi lỗi/hủy).
+
+    chuyen_canh (MỚI — CHUYỂN CẢNH xfade): [(kiểu, giây)] cho từng chỗ nối.
+    Rỗng/None -> đường CŨ Y NGUYÊN (bất biến sống còn: preset cũ ra file giống
+    hệt `main`). Có -> thêm PHA 1.5: lấy THÊM `d` giây ở cuối mỗi đoạn (xem
+    `_bu_xfade`) rồi nối n đoạn thành 1 file mezzanine DUY NHẤT bằng
+    xfade + acrossfade; danh sách concat trả về chỉ còn 1 dòng nên PHA 2 (graph
+    khủng: nền mờ + overlay + đốt .ass + fade + tiếng động) KHÔNG PHẢI SỬA GÌ.
+    Đổi lấy 1 lượt encode mezzanine nữa — chấp nhận, vì gộp xfade vào graph pha
+    2 phải đánh số lại toàn bộ input (nền màu/overlay/nhạc/dub) trong hàm 400
+    dòng đang gánh cả sản xuất 200-300 kênh."""
     import tempfile
     import uuid
     info = probe(src)
@@ -1318,16 +1546,32 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     tag = uuid.uuid4().hex[:8]
     temps: list = []
     n = len(segs)
+    dai_goc = [float(e) - float(s) for s, e in segs]
+    xf = list(chuyen_canh or [])[:max(0, n - 1)]
+    bu = _bu_xfade(segs, xf, float(info.duration or 0.0)) if xf else []
     for i, (s, e) in enumerate(segs):
         seg_path = os.path.join(tdir, f"_seg_{tag}_{i}.mkv")
         temps.append(seg_path)
+        # LẤY THÊM `bu[i]` giây ở CUỐI đoạn i để xfade có cái mà hoà mà KHÔNG
+        # ăn bớt thời lượng clip -> phụ đề/tiếng động không lệch. Đoạn cuối
+        # không có chỗ nối sau nó nên bu = 0.
+        e = e + (bu[i] if i < len(bu) else 0.0)
 
         def _build_seg(enc: str, _s=s, _e=e, _p=seg_path) -> list[str]:
-            c = [settings.FFMPEG_PATH, "-y",
+            # `-threads` TRƯỚC `-i` = luồng GIẢI MÃ. Pha 1 không có filter nên
+            # nó GIẢI-MÃ-BOUND: đây là chỗ DUY NHẤT siết luồng có thể làm chậm
+            # thật, và đúng là chỗ lần thử trước thất bại. Đã đo riêng (xem
+            # `decode_threads`): mức 4 giữ nguyên wall (0,99x) mà hạ 61 -> 49
+            # luồng; mức 1 mới chậm thật (nvenc +30%, libx264 +155%).
+            c = [settings.FFMPEG_PATH, "-y", "-threads", str(decode_threads()),
                  "-ss", f"{_s:.3f}", "-t", f"{_e - _s:.3f}", "-i", str(src)]
             if enc == "h264_nvenc":
                 c += ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
-                      "-cq", "16", "-pix_fmt", "yuv420p"]
+                      "-cq", "16", "-pix_fmt", "yuv420p",
+                      # nhánh nvenc trước đây TRẮNG TRƠN, không núm nào. Đo:
+                      # `-threads 4` sau `-i` hạ 61 -> 37 luồng, wall 1,00x,
+                      # log vẫn `h264_nvenc` (KHÔNG rớt về CPU).
+                      "-threads", str(encode_threads())]
             else:
                 c += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
                       "-threads", str(encode_threads())]
@@ -1343,10 +1587,43 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
             on_progress((i / max(1, n)) * 0.999)
         _run_with_fallback(_build_seg, encoder, e - s, None,
                            f"tách được đoạn {i + 1}/{n}", dst=seg_path)
+    noi = temps
+    if xf and any(d >= 0.08 for d in bu):
+        # ---- PHA 1.5: CHUYỂN CẢNH. Nối n mezzanine thành 1 mezzanine.
+        gop = os.path.join(tdir, f"_seg_{tag}_xf.mkv")
+        temps.append(gop)
+        graph, vlab, alab = _graph_xfade(n, xf, bu, dai_goc, info.has_audio)
+
+        def _build_xf(enc: str, _g=graph, _v=vlab, _a=alab,
+                      _o=gop) -> list[str]:
+            c = [settings.FFMPEG_PATH, "-y",
+                 "-filter_complex_threads", str(encode_threads()),
+                 "-threads", str(decode_threads())]
+            for p in noi:
+                c += ["-i", p]
+            c += ["-filter_complex", _g, "-map", _v]
+            if _a:
+                c += ["-map", _a]
+            if enc == "h264_nvenc":
+                c += ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
+                      "-cq", "16", "-pix_fmt", "yuv420p",
+                      "-threads", str(encode_threads())]
+            else:
+                c += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+                      "-threads", str(encode_threads())]
+            c += ["-r", f"{fps:g}", "-fps_mode:v", "cfr"]
+            if info.has_audio:
+                c += ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"]
+            c += [_o]
+            return c
+
+        _run_with_fallback(_build_xf, encoder, sum(dai_goc), None,
+                           f"nối {n} đoạn có chuyển cảnh", dst=gop)
+        noi = [gop]
     lst = os.path.join(tdir, f"_seg_{tag}_list.txt")
     with open(lst, "w", encoding="utf-8") as f:
         f.write("ffconcat version 1.0\n")
-        for p in temps:
+        for p in noi:
             f.write("file '" + p.replace("\\", "/") + "'\n")
     return lst, temps
 
@@ -1425,6 +1702,12 @@ def export_canvas_clip(
                                         # clip thường + reup cũ).
     dim_amount: float = 0.14,           # MỨC TỐI (0..0.5); brightness eq =
                                         # -dim_amount. <=0 -> KHÔNG dim.
+    chuyen_canh: object = "",            # CHUYỂN CẢNH ở chỗ ghép đoạn (xfade):
+                                        # "" / "tat" -> đường CŨ Y NGUYÊN;
+                                        # "nhe"/"vua"/"manh" -> tự chọn kiểu
+                                        # theo NỘI DUNG chỗ nối
+                                        # (`chon_chuyen_canh`); hoặc truyền
+                                        # thẳng [(kiểu, giây)] (dùng cho test).
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -1542,13 +1825,22 @@ def export_canvas_clip(
     # pha 2 nối bằng concat demuxer -> vào graph như 1 input LIỀN MẠCH.
     _seg_list = ""
     _seg_temps: list = []
+    # CHUYỂN CẢNH: nhận MỨC (chuỗi) -> tự suy kiểu theo nội dung chỗ nối, hoặc
+    # nhận thẳng danh sách [(kiểu, giây)] (test). Sai kiểu/mức lạ -> [] = TẮT.
+    _xf: list = []
+    if multi:
+        if isinstance(chuyen_canh, str):
+            _xf = chon_chuyen_canh(segs, chuyen_canh)
+        elif isinstance(chuyen_canh, (list, tuple)):
+            _xf = [(str(k), float(d)) for k, d in chuyen_canh]
     if multi:
         if on_progress:
             on_progress(0.01)
         try:
             _seg_list, _seg_temps = _extract_segments_to_temp(
                 src, segs,
-                encoder, lambda p: on_progress and on_progress(p * 0.35))
+                encoder, lambda p: on_progress and on_progress(p * 0.35),
+                chuyen_canh=_xf)
         except Exception:
             _cleanup_paths(_seg_temps)
             raise

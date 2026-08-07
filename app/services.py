@@ -309,6 +309,11 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    recap_pitch: str = "", recap_volume: float = 1.15,
                    recap_emotion: bool = True, recap_dim: float = 0.14,
                    fx_fade: bool = True, fx_whoosh: bool = True,
+                   # CHUYỂN CẢNH ở chỗ ghép đoạn (xfade): tat|nhe|vua|manh.
+                   # Phải vào `extra` (sig dedup) — đổi mức là clip KHÁC hẳn,
+                   # không vào sig thì bấm xuất lại bị smart-skip, user tưởng
+                   # "chọn rồi mà không thấy đổi".
+                   chuyen_canh: str = "nhe",
                    fx_sfx_dir: str = "", flip_h: bool = False,
                    fit_src: bool = False,
                    flat_export: bool = False,
@@ -336,6 +341,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
               round(float(recap_volume or 0), 3), bool(recap_emotion),
               round(float(recap_dim or 0), 3),
               fx_fade, fx_whoosh, fx_sfx_dir, flip_h, fit_src,
+              str(chuyen_canh or ""),
               bool(flat_export))).encode()
     ).hexdigest()[:12]
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
@@ -357,6 +363,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "recap_pitch": recap_pitch, "recap_volume": recap_volume,
          "recap_emotion": recap_emotion, "recap_dim": recap_dim,
          "fx_fade": fx_fade, "fx_whoosh": fx_whoosh,
+         "chuyen_canh": chuyen_canh,
          "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src,
          "flat": bool(flat_export)},
         project_id=project_id, video_id=video_id,

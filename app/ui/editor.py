@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from app import services
 from app.core.captions import CAPTION_PRESETS, NARR_SAME_LABEL, apply_case
+from app.core.ffmpeg_utils import CHUYEN_CANH_MUC, CHUYEN_CANH_NHAN
 from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
 
 # Cache danh sách giọng lồng tiếng ĐẦY ĐỦ theo ngôn ngữ (nạp 1 lần/phiên app;
@@ -1251,6 +1252,29 @@ class EditorDialog(QDialog):
             "nhiên 1 tiếng, không lặp liên tiếp nên nghe đa dạng. Chọn thư "
             "mục tiếng động riêng ở dưới -> ưu tiên dùng file của bạn.")
         gb.addWidget(self.fx_whoosh_chk)
+        # CHUYỂN CẢNH ở CHỖ GHÉP ĐOẠN (xfade thuần ffmpeg — 0 file tải về, 0 rủi
+        # ro bản quyền, KHÔNG sửa màu nên không thể loè hình). Chữa đúng chỗ
+        # hiện đang CẮT CỤT KHÔ KHỐC giữa 2 đoạn.
+        # NHÃN KHÔNG DÙNG EMOJI: máy anh Hùng thiếu glyph nên emoji ra Ô ĐEN
+        # ("xấu quá tự nhiên có cái ô đen" — v2.6.22, cổng 9 + 27 canh việc này).
+        xrow = QHBoxLayout()
+        xrow.addWidget(QLabel("Chuyển cảnh chỗ ghép đoạn:"))
+        self.xfade_cb = _NoWheelCombo()
+        for _m in CHUYEN_CANH_MUC:
+            self.xfade_cb.addItem(CHUYEN_CANH_NHAN[_m], _m)
+        self.xfade_cb.setCurrentIndex(1)          # mặc định BẬT mức 'nhe'
+        self.xfade_cb.setToolTip(
+            "Chỗ nối giữa 2 đoạn hiện đang CẮT THẲNG, nhìn cụt và khô. Bật mục "
+            "này thì app hoà mờ (xfade) tại đúng chỗ nối.\n"
+            "KIỂU do app tự chọn theo NỘI DUNG chỗ nối, KHÔNG bốc thăm: chỗ "
+            "nhảy NGƯỢC thời gian (hook-first) -> chuyển dứt khoát; chỗ gần "
+            "liền mạch -> hoà mềm; trước câu chốt -> nhấn; còn lại -> mờ dần. "
+            "Cùng 1 video KHÔNG lặp một kiểu ở mọi chỗ nối.\n"
+            "Thời lượng 0,25-0,4s. Thời lượng clip, phụ đề và tiếng động KHÔNG "
+            "bị lệch (app lấy thêm đúng số giây phim mà hiệu ứng ăn vào).\n"
+            "TẮT = ra file y hệt bản cũ.")
+        xrow.addWidget(self.xfade_cb, 1)
+        gb.addLayout(xrow)
         # LẬT GƯƠNG (mirror trái-phải) để NÉ content-ID khi reup. Chỉ lật HÌNH;
         # chữ tiêu đề/Part + phụ đề chồng SAU nên vẫn đọc bình thường.
         self.flip_h_chk = QCheckBox("Lật gương video (né bản quyền)")
@@ -1746,6 +1770,12 @@ class EditorDialog(QDialog):
             self.hook_first_chk.setChecked(bool(layout.get("hook_first")))
             self.fx_fade_chk.setChecked(bool(layout.get("fx_fade", True)))
             self.fx_whoosh_chk.setChecked(bool(layout.get("fx_whoosh", True)))
+            # Mẫu CŨ chưa có khoá 'chuyen_canh' -> 'nhe' (mặc định BẬT nhẹ).
+            # findData trả -1 với mức lạ -> giữ ô đang chọn, KHÔNG nhảy về Tắt.
+            _xi = self.xfade_cb.findData(
+                str(layout.get("chuyen_canh", "nhe") or "tat"))
+            if _xi >= 0:
+                self.xfade_cb.setCurrentIndex(_xi)
             self.flip_h_chk.setChecked(bool(layout.get("flip_h", False)))
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
@@ -2529,6 +2559,7 @@ class EditorDialog(QDialog):
         lay["hook_first"] = self.hook_first_chk.isChecked()
         lay["fx_fade"] = self.fx_fade_chk.isChecked()
         lay["fx_whoosh"] = self.fx_whoosh_chk.isChecked()
+        lay["chuyen_canh"] = self.xfade_cb.currentData() or "tat"
         lay["fx_sfx_dir"] = self._fx_sfx_dir
         lay["flip_h"] = self.flip_h_chk.isChecked()
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
