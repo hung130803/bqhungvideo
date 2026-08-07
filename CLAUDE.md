@@ -308,6 +308,51 @@
      `QWidget.__init__(sp)`, thiếu là `QMessageBox(self)` nổ "super-class
      __init__ never called"; và vá `QMessageBox.exec` để tự gán `clickedButton`
      mới mô phỏng được "user bấm nút nào".
+  30-35. `_test_muot_tram_kenh.py` · `_test_nut_khong_cut.py` ·
+     `_test_luoi_an_toan.py` · `_test_lo_hong_v212.py` ·
+     `_test_moc_ngoai_phim.py` · `_test_va_lo_sub.py` (mỗi file tự ghi số cổng +
+     lý do ở docstring — đọc ở đó).
+  36. `_test_chuyen_canh.py` → **CHUYỂN CẢNH CHỖ GHÉP ĐOẠN (xfade) + CỬA CHỜ
+     ffmpeg.** 53 ca, chạy ffmpeg + video Nhật THẬT. 4 thứ nó canh:
+     (a) **`xfade` ĂN BỚT thời lượng** — `out = dài(A)+dài(B)-d` — mà phụ đề
+     `.ass` + mốc tiếng động dựng theo timeline "nối THẲNG" nên không bù là lệch
+     `(n-1)×d` (clip 4 đoạn = **0,9 s**), đúng loại lỗi v1.87 "hình một đằng
+     tiếng một đằng". Cách chữa (`ffmpeg_utils._bu_xfade`): LẤY THÊM đúng `d`
+     giây phim ở cuối đoạn trước rồi đặt `offset = độ_dài_GỐC` -> mọi khung của
+     đoạn sau rơi ĐÚNG mốc cũ, **KHÔNG phải sửa `.ass`**. Cổng ĐO THẬT: lệch độ
+     dài 0 ms · lệch hình −33 ms · lệch tiếng 0,0 ms (tương quan chéo sóng
+     8 kHz) · phụ đề ở cùng mốc 75.006 px vs 75.045 px. Kiểm cả **hook-first
+     (NGƯỢC thời gian)** và **nguồn VFR**.
+     (b) **CỬA CHỜ BỊ XOÁ MÀ KHÔNG AI BIẾT** — đã xảy ra thật 07/08/2026: một
+     lượt sửa khác ghi đè `_run`, cửa chờ biến mất, app vẫn chạy, test vẫn xanh,
+     chỉ SỐ ĐO tố giác (10 lượt ra 397 luồng thay vì 44). Nay có ca **quét
+     tĩnh**: `_run` phải chứa `_xin_cho_ffmpeg`.
+     (c) **KIỂU xfade bị gỡ khỏi ffmpeg** -> phải FAIL TO, không im lặng ra clip
+     cắt khô. Cổng so danh sách 58 kiểu với `ffmpeg -h filter=xfade` của `bin/`.
+     (d) **BẤT BIẾN**: chuyển cảnh TẮT phải ra file GIỐNG `main` — nạp
+     `git show main:app/core/ffmpeg_utils.py` thành module riêng rồi xuất song
+     song, đo **PSNR 99 dB** ở 5 mốc.
+     **2 BẪY ĐO ĐÃ SẬP, ĐỪNG LẶP:** mốc cắt phải ở **CẢNH SÁNG** (nguồn Nhật ở
+     giây 20 sáng TB chỉ **3,3/255** = gần đen -> ca đếm pixel ra 0,69% và FAIL
+     OAN vì cả 2 bản đều đen; đổi sang mốc 100/200/300s thì ra 57-83%); ngưỡng
+     đếm pixel phải **THEO TỈ LỆ** (khung phim đã có vùng gần trắng nên khung
+     KHÔNG chữ vẫn đếm 4.634 px -> ngưỡng cứng 1.500 px FAIL OAN).
+- **CỬA CHỜ ffmpeg (`so_ffmpeg_song_song`)**: số lệnh ffmpeg chạy CÙNG LÚC do
+  app tự đo theo máy, **độc lập với "số làn" user đặt**. Ngân sách: tổng luồng
+  ffmpeg ≤ 2× số nhân, chia cho SÀN luồng mỗi tiến trình (nvenc 40, CPU 30) ->
+  24 nhân ra **1**, trần 4, `ECO_MODE` -> 1. `BQ_FFMPEG_SLOTS=<N>` ép cứng để đo
+  / gỡ rối máy user. Số đo 10 lượt song song trên 24 nhân + RTX 3060:
+  **592 luồng (24,7× nhân) -> 44 luồng (1,83×)**, CPU-giây 263,85 -> 209,48,
+  trễ vòng lặp UI trung vị **13,2 ms** (đỉnh 44,5 ms). SIẾT NÚM LUỒNG KHÔNG ĐỦ:
+  bịt hết núm mà không có cửa chờ vẫn 397 luồng, vì 1 ffmpeg + NVENC có **SÀN
+  ~36-40 luồng**. Cũng đo được **N=4 KHÔNG nhanh hơn N=3** (37,85 vs 37,71 s) ->
+  nút cổ chai là GPU, đừng nới trần.
+- **`-threads` TRƯỚC `-i` là luồng GIẢI MÃ, SAU `-i` là luồng ENCODE** — đặt sai
+  chỗ thì ffmpeg im lặng, không báo lỗi. `decode_threads()` = 4 (ECO 2). Đo pha 1
+  (`_build_seg`, bước duy nhất không có filter nên GIẢI-MÃ-BOUND): mức 4 giữ
+  nguyên wall (0,99×) mà hạ 61 -> 49 luồng; **mức 1 chậm THẬT** (nvenc +30%,
+  libx264 +155%) — đừng hạ về 1 dù cột luồng đẹp hơn. Kết luận cũ *"chặn luồng
+  làm chậm 3,4 lần"* là **NHIỄU**: mốc đó đo lúc app chạy 96,7% CPU.
 - Model suy luận cho khâu CHẤM: **ĐÃ ĐO, ĐỪNG DÙNG** (`_do_trongtai.py`):
   llama-3.3-70b xếp đúng 3/3 lượt, 1,2 giây; qwen3.6-27b **0/3 lượt**, 19,5
   giây (tiêu hết max_tokens cho khối `<think>`). Muốn chấm chắc tay thì dùng
