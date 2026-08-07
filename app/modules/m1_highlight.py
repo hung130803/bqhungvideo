@@ -949,7 +949,10 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         return [], []
     segs = (transcript or {}).get("segments", [])
     if not segs:
-        return [], []
+        # Cũng là nhánh im lặng cũ: chép lời RỖNG -> AI không có gì để đọc.
+        return [], ["chép lời RỖNG (0 câu) nên AI không có nội dung để chọn "
+                    "đoạn — video không tiếng, hoặc bước chép lời đã thất bại"]
+    _tho = [0, 0]         # [số đoạn AI đề xuất, số đoạn bị loại vì độ dài]
     cfg = cfg or {}
     min_len = float(cfg.get("min_len", 60.0))
     max_len = float(cfg.get("max_len", 0.0) or 0.0)
@@ -995,8 +998,11 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         else:               # JSON scalar (chuỗi/số/null) -> chunk này không có clip
             rows = []
         for r in rows or []:
+            _tho[0] += 1               # AI đã ĐỀ XUẤT bao nhiêu đoạn (thô)
             clip = _normalize_clip(r, duration, boundaries, min_len, max_len,
                                    segs)
+            if not clip:
+                _tho[1] += 1           # bị _normalize_clip loại (thường vì Min/Max)
             if clip:
                 # 🚮 SNAP mép: câu đầu/cuối clip là CTA/chào kênh -> dịch mép
                 # bỏ câu đó (giữ >= min_len; không đủ thì giữ nguyên mép).
@@ -1007,7 +1013,18 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     if not all_clips:
         if errors:  # LLM có cấu hình nhưng gọi lỗi -> để generate_highlights báo rõ
             raise llm.LLMError(errors[0])
-        return [], []
+        # NHÁNH IM LẶNG (anh Hùng 07/08/2026: "toàn cắt cơ bản" mà không lỗi
+        # nào): AI TRẢ LỜI BÌNH THƯỜNG nhưng mọi đoạn bị _normalize_clip loại —
+        # gần như luôn vì không đạt Min/Max độ dài đang đặt. Trước đây trả rỗng
+        # trơn nên cả nhật ký lẫn thẻ clip không một chữ, tôi phải ĐOÁN nhiều
+        # ngày. Nay nói thẳng SỐ ĐO để anh biết chỉnh Min/Max hay là lỗi thật.
+        if _tho[0]:
+            return [], [f"AI đề xuất {_tho[0]} đoạn nhưng bị loại HẾT "
+                        f"({_tho[1]} đoạn không đạt độ dài Min={min_len:.0f}s"
+                        + (f"/Max={max_len:.0f}s" if max_len else "")
+                        + ") — hãy giảm Min hoặc tăng Max trong Tuỳ chỉnh cắt"]
+        return [], ["AI trả lời nhưng KHÔNG đề xuất đoạn nào (0 đoạn) — "
+                    "nội dung có thể quá đều/không có cao trào rõ"]
 
     # 🚮 LOẠI clip TOÀN rác kênh (>30% từ là CTA/chào — như validate_windows
     # bên reup). FAIL-SAFE: lọc mà hết sạch (clip duy nhất toàn CTA / video
@@ -1965,8 +1982,9 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         # thẻ clip không một chữ giải thích -> tôi mất mấy ngày ĐOÁN, trong khi
         # `ai_warns` đã ghi sẵn từng clip bị bỏ vì sao rồi BỊ NÉM ĐI ở đây.
         if ai_warns:
-            note = ("⚠ AI CÓ chọn đoạn nhưng bị lọc HẾT nên phải cắt kiểu CƠ "
-                    "BẢN. Lý do: " + "; ".join(str(w) for w in ai_warns[:6]))
+            note = ("⚠ AI có chạy nhưng KHÔNG dùng được đoạn nào nên phải cắt "
+                    "kiểu CƠ BẢN. Lý do: "
+                    + "; ".join(str(w) for w in ai_warns[:6]))
         else:
             note = ("⚠ AI chạy xong nhưng KHÔNG trả về đoạn nào dùng được nên "
                     "cắt kiểu CƠ BẢN. Thường vì: video quá ngắn cho số Part "
