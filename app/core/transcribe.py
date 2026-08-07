@@ -362,6 +362,134 @@ def _audio_duration(path: str, ff_probe: str, flags: int) -> float:
         return 0.0
 
 
+VA_LO_MIN = 2.0          # khoảng trống >= 2s mới xét (dưới mức này là nghỉ hơi)
+VA_LO_TOI_DA = 8         # trần số lỗ vá / video — không đội thời gian + hạn mức
+VA_LO_DEM = 0.30         # đệm mỗi đầu để không cắt cụt từ
+
+
+def _co_giong_nguoi(audio_path: str, a: float, b: float) -> bool:
+    """Khoảng [a,b] có TIẾNG NGƯỜI NÓI không? (không phải nhạc/tiếng động).
+
+    BÀI HỌC 07/08/2026: bản đầu tôi dùng `silencedetect` làm thước đo rồi kết
+    luận "phụ đề chỉ phủ 83%". SAI — video máy xúc thì tiếng động cơ cũng là
+    "không im lặng". Nay lọc DẢI TẦN GIỌNG NGƯỜI (300-3400Hz) trước rồi mới đo
+    to/nhỏ: tiếng động cơ/nhạc nền nằm phần lớn ngoài dải này nên bị hạ xuống.
+    """
+    import re
+    import subprocess
+    _NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
+    # KHÔNG dùng `-v error`: astats in kết quả ở mức INFO, hạ mức log là NUỐT
+    # luôn số đo -> hàm này trả False MỌI LÚC -> vá lỗ không bao giờ chạy mà
+    # cũng không báo lỗi. Đúng bẫy `volumedetect` đã sập một lần trước đây.
+    r = subprocess.run(
+        [settings.FFMPEG_PATH, "-hide_banner", "-nostats", "-ss", f"{a:.3f}",
+         "-t", f"{b - a:.3f}", "-i", audio_path,
+         # 3 TẦNG (đo 07/08/2026): 1 tầng quá thoải, tiếng ù máy 80Hz chỉ tụt
+         # còn -44 dB nên vẫn bị coi là giọng người. 3 tầng -> -67 dB.
+         "-af", "highpass=f=300:poles=2,highpass=f=300:poles=2,"
+                "lowpass=f=3400:poles=2,astats=metadata=1:reset=0",
+         "-f", "null", "-"],
+        capture_output=True, text=True, creationflags=_NO_WINDOW)
+    m = re.findall(r"RMS level dB:\s*(-?[\d.]+|-?inf)", r.stderr or "")
+    if not m:
+        return False
+    try:
+        rms = max(float(x) for x in m if x not in ("-inf", "inf"))
+    except ValueError:
+        return False
+    # NGƯỠNG -55 dB — chọn theo SỐ ĐO, không phỏng đoán (sau 3 tầng lọc):
+    #   giọng người -27 · giọng NHỎ (-25dB) -51 · ù máy -67 · nhạc 9kHz -73
+    # -55 nằm giữa giọng-nhỏ và ù-máy: giữ được giọng nhỏ, loại tiếng động.
+    return rms > -55.0
+
+
+def va_lo_chep_loi(audio_path: str, segs: list, words: list, lang: str,
+                   on_progress=None) -> tuple:
+    """VÁ LỖ: chép lại RIÊNG những khoảng bị bỏ sót rồi ghép vào transcript.
+
+    VÌ SAO (anh Hùng 07/08/2026: "nhiều đoạn nó nói mà k có sub luôn, bên
+    capcut gần như hoàn hảo"): ĐO THẬT trên video 600s — chép cả file thì
+    khoảng 300,4-311,9s KHÔNG có câu nào, nhưng CẮT RIÊNG đúng đoạn đó gửi lại
+    Groq thì ra "I got that in pretty well.". Cùng tiếng, cùng model: gửi cả
+    khối 10 phút thì whisper nuốt mất chỗ giọng nhỏ/lẫn nhạc. CapCut hơn ở chỗ
+    nó nhận dạng theo TỪNG CHỖ CÓ GIỌNG, nên mình làm thêm lượt vá này.
+
+    FAIL-SAFE tuyệt đối: mọi lỗi ở đây đều nuốt và trả lại transcript GỐC —
+    thà thiếu vài dòng còn hơn hỏng cả bản chép lời.
+    Trả (segments, words, số_lỗ_vá_được).
+    """
+    import os
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    _NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
+    if not segs:
+        return segs, words, 0
+    try:
+        lo = []
+        for i in range(len(segs) - 1):
+            a, b = float(segs[i]["end"]), float(segs[i + 1]["start"])
+            if b - a >= VA_LO_MIN:
+                lo.append((a, b))
+        lo.sort(key=lambda x: x[1] - x[0], reverse=True)
+        lo = lo[:VA_LO_TOI_DA]
+        if not lo:
+            return segs, words, 0
+        keys = settings.groq_keys()
+        if not keys:
+            return segs, words, 0
+        them_s: list = []
+        them_w: list = []
+        n_va = 0
+        work = tempfile.mkdtemp(prefix="valo_")
+        try:
+            for k, (a, b) in enumerate(lo):
+                if not _co_giong_nguoi(audio_path, a, b):
+                    continue
+                if on_progress:
+                    on_progress(0.97, f"Chép lại chỗ bị sót {k + 1}/{len(lo)}…")
+                a2, b2 = max(0.0, a - VA_LO_DEM), b + VA_LO_DEM
+                p = os.path.join(work, f"lo{k}.m4a")
+                subprocess.run(
+                    [settings.FFMPEG_PATH, "-v", "error", "-y",
+                     "-ss", f"{a2:.3f}", "-t", f"{b2 - a2:.3f}", "-i", audio_path,
+                     "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac",
+                     "-b:a", "48k", p],
+                    creationflags=_NO_WINDOW)
+                if not os.path.exists(p) or os.path.getsize(p) < 800:
+                    continue
+                s2, w2, _lg2, _tx2 = _groq_one(p, _ma_iso(lang), keys)
+                # chỉ nhận câu CÓ CHỮ THẬT và NẰM TRONG lỗ (đệm có thể lấn sang
+                # câu kề -> nhận vào là ra phụ đề TRÙNG, tệ hơn thiếu)
+                got = False
+                for s in s2 or []:
+                    t = re.sub(r"[\s.,!?…、。]+", "", str(s.get("text", "")))
+                    if len(t) < 2:
+                        continue
+                    ss, se = a2 + float(s["start"]), a2 + float(s["end"])
+                    if se <= a + 0.05 or ss >= b - 0.05:
+                        continue
+                    them_s.append({**s, "start": max(ss, a), "end": min(se, b),
+                                   "text": s.get("text", "")})
+                    got = True
+                if got:
+                    n_va += 1
+                    for w in w2 or []:
+                        ws, we = a2 + float(w["start"]), a2 + float(w["end"])
+                        if a <= ws < b:
+                            them_w.append({**w, "start": ws, "end": min(we, b)})
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        if not them_s:
+            return segs, words, 0
+        segs = sorted(segs + them_s, key=lambda s: float(s["start"]))
+        words = sorted((words or []) + them_w, key=lambda w: float(w["start"]))
+        return segs, words, n_va
+    except Exception:  # noqa: BLE001 — vá lỗ HỎNG thì giữ nguyên bản gốc
+        return segs, words, 0
+
+
 def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     """Nghe-chép qua GROQ (mây, FREE). Cắt audio thành CỬA SỔ CHÍNH XÁC 10 phút
     (-ss i*600 -t 600) rồi nén mp3 nhẹ -> dưới giới hạn 25MB + mốc giờ KHÔNG lệch
@@ -501,8 +629,13 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             raise RuntimeError(
                 f"Nén/cắt audio thất bại ở phần {failed_windows} (tổng {n} "
                 "phần) — transcript sẽ thiếu nội dung nên đã dừng. Thử lại sau.")
+        all_segs, all_words, _va = va_lo_chep_loi(
+            audio_path, all_segs, all_words, lang, on_progress)
+        if _va:
+            full = [s["text"] for s in all_segs]
         if on_progress:
-            on_progress(1.0, "Chép lời xong (Groq)")
+            on_progress(1.0, "Chép lời xong (Groq)"
+                        + (f" · vá thêm {_va} chỗ bị sót" if _va else ""))
         return {"language": lang,
                 "duration": all_segs[-1]["end"] if all_segs else 0.0,
                 "segments": all_segs, "words": all_words,
