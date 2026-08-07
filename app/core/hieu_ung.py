@@ -38,7 +38,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -239,6 +239,18 @@ class HieuUng:
     dai: float = 0.45           # thời lượng ưa dùng (giây) — trong [DAI_MIN, DAI_MAX]
     hop: tuple = ("caotrao",)   # loại điểm nhấn phù hợp
     can_font: bool = False
+    #: DỜI CHỖ pixel (zoom/rung/glitch/méo) chứ KHÔNG pha lại màu. Với loại này,
+    #: đo lệch U/V TỪNG PIXEL là SAI: da vẫn đúng màu, chỉ nằm chỗ khác. Cổng 37
+    #: đổi sang kiểm PHÂN BỐ chroma (trung bình + độ lệch chuẩn U/V phải giữ) —
+    #: đó mới là "không đổi màu da". Loại KHÔNG dời chỗ thì kiểm cả từng pixel
+    #: (bắt được desaturate: `bw0r` đẩy U,V về 128, trung bình chỉ lệch 2,8 mà
+    #: từng pixel lệch cả chục).
+    doi_cho: bool = False
+    #: ngưỡng "THẤY ĐƯỢC": % pixel |dY|>12 ở giữa cửa sổ. Chữ (đếm ngược) chiếm
+    #: ít DIỆN TÍCH nhưng mắt thấy ngay -> hạ ngưỡng diện tích, bù bằng ngưỡng
+    #: `manh` (% pixel |dY|>60). Cùng bài học cổng 21: ngưỡng phải theo BẢN CHẤT.
+    nguong_thay: float = 8.0
+    nguong_manh: float = 1.0
     ghi_chu: str = ""
 
     def chuoi(self, dam: float, a: float, b: float, W: int, H: int,
@@ -283,20 +295,26 @@ _dk(HieuUng(
     # d=1 + s=WxH: mỗi khung vào ra đúng 1 khung, kích thước ra CỐ ĐỊNH.
     "zoompan=z='if(between(it,{a},{b}),{p1},1)':d=1:"
     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS}",
-    ts=((1.06, 1.16),), dai=0.40, hop=("caotrao", "chot", "noi")))
+    ts=((1.06, 1.16),), dai=0.40, hop=("caotrao", "chot", "noi"),
+    doi_cho=True))
 _dk(HieuUng(
     "zoom_day", "Zoom đẩy chậm", "Zoom In", "thuan",
     "zoompan=z='if(between(it,{a},{b}),1+({p1}-1)*(it-{a})/({b}-{a}),1)':d=1:"
     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS}",
-    ts=((1.06, 1.16),), dai=0.70, hop=("ke", "caotrao")))
+    ts=((1.06, 1.16),), dai=0.70, hop=("ke", "caotrao"), doi_cho=True))
 _dk(HieuUng(
     "rung_lac", "Rung lắc", "Spin & Shake", "thuan",
-    # crop pan được theo t (w/h thì KHÔNG — chốt ở config_input) rồi scale lại
-    # đúng khung ra. Ngoài cửa sổ [a,b] biên độ = 0 nên khung y nguyên.
-    "crop=w=iw-{p2}:h=ih-{p2}:"
-    "x='{p3}+{p1}*sin(30*t)*between(t,{a},{b})':"
-    "y='{p3}+{p1}*cos(24*t)*between(t,{a},{b})',scale={W}x{H}",
-    ts=((5, 14), (36, 36), (18, 18)), dai=0.45, hop=("caotrao", "dong")))
+    # BẢN ĐẦU DÙNG `crop`+`scale` VÀ ĐÃ SAI (cổng 37 bắt): crop 36 px rồi
+    # scale lại làm khung ĐỔI CẢ NGOÀI cửa sổ -> đo **18,7% pixel khác** ở giây
+    # 0,40 (ngoài [a,b]) = hiệu ứng RÒ ra toàn clip, đúng cái luật 1 cấm.
+    # `crop` KHÔNG có timeline nên `enable` không gate được nó.
+    # ĐÚNG: zoompan — ngoài cửa sổ zoom=1 VÀ biên độ nhân `between()` = 0 nên
+    # x = iw/2 - iw/2 + 0 = 0 -> khung Y NGUYÊN.
+    "zoompan=z='if(between(it,{a},{b}),1.05,1)':d=1:"
+    "x='iw/2-(iw/zoom/2)+{p1}*sin(37*it)*between(it,{a},{b})':"
+    "y='ih/2-(ih/zoom/2)+{p1}*cos(29*it)*between(it,{a},{b})':"
+    "s={W}x{H}:fps={FPS}",
+    ts=((6, 16), ), dai=0.45, hop=("caotrao", "dong"), doi_cho=True))
 _dk(HieuUng(
     "loe_sang", "Loé sáng", "Flash", "thuan",
     "eq=brightness={p1}:contrast={p2}{en}",
@@ -311,10 +329,9 @@ _dk(HieuUng(
     # đo thật ra 0,0% pixel đổi (hiệu ứng KHÔNG xảy ra) mà ffmpeg vẫn mã 0.
     "eq=brightness='{p1}*sin(3.14159*9*t)':eval=frame{en}",
     ts=((0.10, 0.24), ), dai=0.50, hop=("caotrao", "chot")))
-_dk(HieuUng(
-    "net_gat", "Nét gắt", "Sharpen", "thuan",
-    "unsharp=5:5:{p1}:5:5:0.0{en}",
-    ts=((1.2, 2.6), ), dai=0.40, hop=("caotrao", "dong")))
+# ĐÃ BỎ "Nét gắt" (`unsharp`): đo ở trần 5,0 (biên độ tối đa của filter) vẫn
+# chỉ 6,3% pixel đổi -> anh Hùng KHÔNG THẤY. Làm nét là chỉnh màu, không phải
+# hiệu ứng. Đừng thêm lại mà không đo.
 _dk(HieuUng(
     "tuong_phan", "Tăng tương phản", "Contrast Punch", "thuan",
     "eq=contrast={p1}:saturation=1.0{en}",
@@ -324,31 +341,34 @@ _dk(HieuUng(
 _dk(HieuUng(
     "o_vuong", "Ô vuông vỡ", "Pixel Glitch", "thuan",
     "pixelize=w={p1}:h={p1}:mode=avg{en}",
-    ts=((22, 52), ), dai=0.32, hop=("dong", "noi")))
+    ts=((22, 52), ), dai=0.32, hop=("dong", "noi"), doi_cho=True))
 _dk(HieuUng(
     "xao_dong", "Xáo dòng ngang", "Glitch Scrub", "thuan",
     "shufflepixels=direction=inverse:mode=horizontal:width={p1}:height={p1}{en}",
-    ts=((24, 56), ), dai=0.30, hop=("dong",)))
-_dk(HieuUng(
-    "lech_rgb", "Lệch màu RGB", "Chroma Glitch", "thuan",
-    "rgbashift=rh=-{p1}:bh={p1}{en}",
-    ts=((4, 11), ), dai=0.30, hop=("dong", "caotrao")))
+    ts=((24, 56), ), dai=0.30, hop=("dong",), doi_cho=True))
+# LUẬT 3 ĐÃ TỰ BỎ "Lệch màu RGB" (`rgbashift`): nó SINH RA viền màu mới nên
+# phân bố chroma phồng **U +7,16 · V +12,04** (trần 3,0) — đúng loại "đổi màu"
+# anh Hùng từ chối. Mà nó cũng chỉ đổi 5,6% pixel SÁNG. Glitch đã có 3 kiểu khác.
 _dk(HieuUng(
     "glitch_khoi", "Glitch khối", "Polygon Glitch", "frei0r",
-    _f0r("glitch0r", "{p1}|0.28|{p2}|n"), module="glitch0r",
-    ts=((0.28, 0.62), (0.30, 0.60)), dai=0.35, hop=("dong", "caotrao")))
+    # tham số 4 là "Color glitching INTENSITY" (số thực) chứ KHÔNG phải bool ->
+    # truyền `n` làm ffmpeg FAIL cả lệnh (cổng 37 bắt). 0 = không đổi màu.
+    _f0r("glitch0r", "{p1}|0.28|{p2}|0"), module="glitch0r",
+    ts=((0.28, 0.62), (0.30, 0.60)), dai=0.35, hop=("dong", "caotrao"),
+    doi_cho=True))
 _dk(HieuUng(
     "lech_bang", "Lệch băng cũ (VHS)", "Glitch Scrub", "frei0r",
     _f0r("nosync0r", "{p1}"), module="nosync0r",
-    ts=((0.04, 0.14), ), dai=0.40, hop=("dong", "noi")))
+    ts=((0.04, 0.14), ), dai=0.40, hop=("dong", "noi"), doi_cho=True))
 _dk(HieuUng(
     "dong_quet", "Dòng quét màn hình", "Scanline", "frei0r",
     _f0r("scanline0r", "{p1}|0.35"), module="scanline0r",
     ts=((0.25, 0.55), ), dai=0.45, hop=("dong", "ke")))
 _dk(HieuUng(
     "nhieu_analog", "Nhiễu băng analog", "Filmstrip Noise", "frei0r",
+    # mức 0,75 đo ra |dU| 6,5 / |dV| 7,1 = LOÈ MÀU (luật 3) -> trần còn 0,32.
     _f0r("ntsc", "{p1}|n|y"), module="ntsc",
-    ts=((0.30, 0.75), ), dai=0.50, hop=("ke", "dong")))
+    ts=((0.08, 0.16), ), dai=0.50, hop=("ke", "dong"), doi_cho=True))
 
 # ---- NHÓM 3: PHIM / KHÍ CHẤT (hợp tài liệu-drama Nhật) ----
 _dk(HieuUng(
@@ -365,12 +385,13 @@ _dk(HieuUng(
     ts=((0.25, 0.60), ), dai=0.60, hop=("ke", "tinh")))
 _dk(HieuUng(
     "hat_nhieu", "Hạt nhiễu tài liệu", "Filmstrip Noise", "thuan",
-    "noise=alls={p1}:allf=t+u{en}",
-    ts=((16, 34), ), dai=0.50, hop=("ke", "tinh")))
-_dk(HieuUng(
-    "rung_phim", "Rung phim nhựa", "Gate Weave", "frei0r",
-    _f0r("gateweave", "0.9|{p1}|{p1}"), module="gateweave",
-    ts=((0.5, 1.0), ), dai=0.70, hop=("ke", "tinh")))
+    # `alls` rắc nhiễu vào CẢ mặt màu -> đo |dU| 7,2 / |dV| 10,7 = LOÈ MÀU.
+    # `c0s` chỉ rắc vào mặt SÁNG (plane 0) — cũng đúng bản chất hạt phim thật.
+    "noise=c0s={p1}:c0f=t+u{en}",
+    ts=((16, 40), ), dai=0.50, hop=("ke", "tinh")))
+# ĐÃ BỎ "Rung phim nhựa" (frei0r `gateweave`): mức trần `1|1|1` đo ra **0,1%**
+# pixel đổi. Hiệu ứng thật của nó là xê dịch dưới 1 pixel — đúng bản chất "gate
+# weave" nhưng vô hình trên khung dọc 1080x1920. Muốn rung thì dùng "Rung lắc".
 _dk(HieuUng(
     "toi_vien", "Tối viền ống kính", "Vignette", "thuan",
     "vignette=a='{p1}'{en}",
@@ -378,25 +399,37 @@ _dk(HieuUng(
 _dk(HieuUng(
     "vien_phim", "Viền đen kiểu phim", "Cinema Bars", "frei0r",
     _f0r("letterb0xed", "{p1}|y"), module="letterb0xed",
-    ts=((0.05, 0.13), ), dai=0.70, hop=("ke", "chot")))
+    ts=((0.05, 0.13), ), dai=0.70, hop=("ke", "chot"), doi_cho=True))
 _dk(HieuUng(
     "mo_net", "Mờ nét nhanh", "Focus Pull", "thuan",
+    # sigma 12 do o 540x960 ra 9,7% nhung o 1080x1920 chi 5,4% (ban kinh mo la
+    # SO PIXEL TUYET DOI, khung to gap doi thi mo tuong doi nho di 1 nua).
+    # gblur khong nhan bieu thuc theo ih -> noi tran len 26 cho khung doc 1080.
     "gblur=sigma={p1}{en}",
-    ts=((4, 12), ), dai=0.35, hop=("noi", "chot")))
+    ts=((10, 26), ), dai=0.35, hop=("noi", "chot")))
 _dk(HieuUng(
     "mo_vuong", "Mờ khối", "Blur Burst", "frei0r",
     _f0r("squareblur", "{p1}"), module="squareblur",
     ts=((0.10, 0.28), ), dai=0.35, hop=("noi",)))
 
 # ---- NHÓM 4: CHUYỂN ĐỘNG / VỆT ----
-_dk(HieuUng(
-    "vet_mo", "Vệt đuôi chuyển động", "Motion Trail", "thuan",
-    "lagfun=decay={p1}{en}",
-    ts=((0.80, 0.94), ), dai=0.45, hop=("dong", "caotrao")))
-_dk(HieuUng(
-    "bong_xoay", "Bóng chồng xoáy", "Zoom Split", "frei0r",
-    _f0r("vertigo", "{p1}|1.02"), module="vertigo",
-    ts=((0.012, 0.035), ), dai=0.50, hop=("caotrao", "dong")))
+# ĐÃ THỬ 5 CÁCH CHO "VỆT ĐUÔI CHUYỂN ĐỘNG", KHÔNG CÁCH NÀO QUA ĐƯỢC — ghi lại
+# để phiên sau đừng thử lại:
+#   `lagfun=decay=0.94`  -> 0,0% pixel đổi. Filter giữ trạng thái giữa các khung,
+#                           bị `enable` bật/tắt là mất trạng thái nên không kịp
+#                           tạo vệt.
+#   `tmix` / `tblend`    -> 0,0% VÀ **DỜI THỜI GIAN** (đệm N khung mới ra) nên
+#                           khung ở cùng mốc là nội dung KHÁC -> đo `tmix` ra
+#                           dU=-34 dV=-65: tưởng loè màu, thật ra là LỆCH GIỜ.
+#   `aech0r`/`delay0r`/`nervous` (frei0r) -> 0,0%.
+#   `baltan` (frei0r)    -> 94,5% pixel đổi (thấy rất rõ) NHƯNG trộn khung làm
+#                           PHẲNG chroma: phân bố U -3,08 V -3,16, vượt trần 3,0
+#                           -> **LUẬT 3 TỰ BỎ**. Plugin không có tham số để hạ.
+# LUAT 3 DA TU BO "Bong chong xoay" (frei0r `vertigo`): tron khung voi ban
+# zoom+quay nen lam PHANG chroma -> phan bo U -2,83 V -3,10, vuot tran 3,0. Da
+# thu ha tran tham so tu 0,035 ve 0,022, so do KHONG doi (muc tron nam trong
+# ruot plugin, khong co num). Cung benh voi `baltan`: moi hieu ung TRON KHUNG
+# deu lam phang chroma -> dung thu them kieu nay.
 _dk(HieuUng(
     "vien_net", "Viền sáng nét", "Neon Flow", "thuan",
     "edgedetect=mode=colormix:high={p1}{en}",
@@ -405,25 +438,26 @@ _dk(HieuUng(
 _dk(HieuUng(
     "meo_kinh", "Méo ống kính", "Lens Warp", "frei0r",
     _f0r("lenscorrection", "0.5|0.5|{p1}|0.5|0.5"), module="lenscorrection",
-    ts=((0.545, 0.60), ), dai=0.45, hop=("caotrao", "dong")))
+    ts=((0.545, 0.60), ), dai=0.45, hop=("caotrao", "dong"), doi_cho=True))
 _dk(HieuUng(
     "song_meo", "Sóng méo mặt nước", "Wave Warp", "frei0r",
     _f0r("distort0r", "{p1}|0.32|n|0.5"), module="distort0r",
-    ts=((0.010, 0.030), ), dai=0.50, hop=("dong", "ke")))
+    ts=((0.02, 0.06), ), dai=0.50, hop=("dong", "ke"), doi_cho=True))
 _dk(HieuUng(
     "dem_nguoc", "Đếm ngược 3-2-1", "Countdown 3", "thuan",
     # 3 drawtext, mỗi số 1/3 cửa sổ. Không dùng emoji/ký tự lạ (máy anh Hùng
     # từng ra Ô ĐEN vì thiếu glyph) — chỉ chữ số.
-    "drawtext=fontfile='{FONT}':text='3':fontsize=h/5:fontcolor=white@{p1}:"
+    "drawtext=fontfile='{FONT}':text='3':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
     ":enable='between(t,{a},{a}+0.30)',"
-    "drawtext=fontfile='{FONT}':text='2':fontsize=h/5:fontcolor=white@{p1}:"
+    "drawtext=fontfile='{FONT}':text='2':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
     ":enable='between(t,{a}+0.30,{a}+0.60)',"
-    "drawtext=fontfile='{FONT}':text='1':fontsize=h/5:fontcolor=white@{p1}:"
+    "drawtext=fontfile='{FONT}':text='1':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
     ":enable='between(t,{a}+0.60,{b})'",
-    ts=((0.55, 0.95), ), dai=0.80, hop=("noi",), can_font=True))
+    ts=((0.55, 0.95), ), dai=0.80, hop=("noi",), can_font=True,
+    nguong_thay=2.0, nguong_manh=0.8))
 
 
 # ------------------------------------------------------ HIỆU ỨNG DÙNG ĐƯỢC
@@ -434,7 +468,8 @@ _dk(HieuUng(
 #: `tmix` dU=-34,1 dV=-65,5 (nặng nhất). Chúng KHÔNG có trong KHO.
 LOAI_DOI_MAU: tuple = ("colortap", "saturat0r", "colorize", "hueshift0r",
                        "tint0r", "bw0r", "luminance", "threshold0r",
-                       "emboss", "colorhalftone", "sigmoidaltransfer", "tmix")
+                       "emboss", "colorhalftone", "sigmoidaltransfer", "tmix",
+                       "rgbashift", "baltan", "vertigo", "sobel", "cartoon")
 
 
 def dung_duoc(co_font: bool = True) -> list[str]:
@@ -589,18 +624,18 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
 
 #: Ứng viên theo LOẠI điểm — thứ tự = ưu tiên. Cảnh TĨNH chỉ có mood.
 _UV_THEO_LOAI: dict = {
-    "caotrao": ("zoom_nhoi", "rung_lac", "loe_sang", "nhay_sang", "net_gat",
-                "bong_xoay", "tuong_phan", "meo_kinh", "vet_mo"),
-    "dong": ("glitch_khoi", "lech_rgb", "o_vuong", "xao_dong", "lech_bang",
-             "vien_net", "vet_mo", "dong_quet", "song_meo"),
+    "caotrao": ("zoom_nhoi", "rung_lac", "loe_sang", "nhay_sang",
+                "tuong_phan", "meo_kinh"),
+    "dong": ("glitch_khoi", "o_vuong", "xao_dong", "lech_bang",
+             "vien_net", "dong_quet", "song_meo"),
     "tinh": ("quang_sang", "hat_phim", "toi_vien", "sang_diu", "nhieu_analog",
-             "hat_nhieu", "rung_phim", "vien_phim"),
+             "hat_nhieu", "vien_phim"),
     "chot": ("sup_toi", "nhay_sang", "toi_vien", "quang_sang", "zoom_nhoi",
              "vien_phim"),
     "noi": ("mo_net", "loe_sang", "o_vuong", "mo_vuong", "lech_bang",
             "zoom_nhoi", "dem_nguoc"),
     "ke": ("quang_sang", "hat_phim", "nhieu_analog", "dong_quet", "toi_vien",
-           "zoom_day", "hat_nhieu", "rung_phim", "tuong_phan"),
+           "zoom_day", "hat_nhieu", "tuong_phan"),
 }
 
 
