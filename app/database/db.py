@@ -399,6 +399,44 @@ class Database:
             return 0
         return int(mb)
 
+    def gap_wal_dinh_ky(self, nguong_mb: float = 0.4) -> float:
+        """Gấp WAL NGAY TRONG LÚC ĐANG CHẠY khi nó vượt `nguong_mb`.
+
+        VÌ SAO PHẢI CÓ, dù đã có gap_wal() lúc thoát (đo trên máy anh Hùng
+        07/08/2026): `studio.db` **không được ghi từ 06/07** trong khi
+        `studio.db-wal` phình **1,07 MB và vẫn đang ghi** — tức suốt MỘT THÁNG
+        không có lần thoát êm nào (app chết bằng access violation / bị tắt
+        cứng), nên gap_wal() lúc thoát KHÔNG BAO GIỜ chạy. Hệ quả:
+          - mọi dữ liệu 1 tháng (kênh/clip/job) chỉ nằm trong WAL -> mất/lệch
+            WAL là MẤT SẠCH, mà file .db chính thì vô dụng;
+          - mỗi truy vấn phải quét thêm cả WAL -> càng chạy càng chậm.
+        `wal_autocheckpoint` không cứu được vì app luôn có luồng đang đọc
+        (6 worker + poll giao diện) nên checkpoint bị hoãn vô hạn.
+
+        Gọi ĐƯỢC từ luồng nền (mỗi luồng có connection riêng theo
+        threading.local nên không giữ ảnh chụp của luồng giao diện). Thử PASSIVE
+        trước (không chặn ai), rồi TRUNCATE để trả lại chỗ. KHÔNG BAO GIỜ ném
+        lỗi. Trả số MB đã gấp (0 = chưa tới ngưỡng / không gấp được)."""
+        if self.corrupt_live or self.in_memory or self.path == ":memory:":
+            return 0.0
+        try:
+            w = Path(self.path + "-wal")
+            mb = (w.stat().st_size / 1048576.0) if w.exists() else 0.0
+        except OSError:
+            return 0.0
+        if mb < float(nguong_mb):
+            return 0.0
+        try:
+            self.conn().execute("PRAGMA wal_checkpoint(PASSIVE)")
+            self.conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:  # noqa: BLE001 - có luồng đang ghi -> lần sau gấp
+            return 0.0
+        try:
+            con = (w.stat().st_size / 1048576.0) if w.exists() else 0.0
+        except OSError:
+            con = 0.0
+        return max(0.0, mb - con)
+
     # ---- helper cơ bản ----
     def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
         if self.corrupt_live:

@@ -325,8 +325,12 @@ if w is not None:
 else:
     _u = Path(REPO, "app", "ui", "studio_page.py").read_text(
         encoding="utf-8", errors="replace")
-    ok("b.setFixedWidth(52)" in _u,
-       "8a nút Hay/Nhạt đặt bề rộng cố định nhỏ (52px) — không đẩy tràn hàng")
+    # ĐÃ ĐỔI 07/08/2026: bản đầu đặt CỨNG 52px và ĐÓ CHÍNH LÀ LỖI — ảnh anh
+    # Hùng cho thấy nút ra "Hav"/"Nha" vì máy anh font to hơn máy dev. Nay bề
+    # rộng đo theo fontMetrics lúc chạy (`_vua_chu`); cổng 31
+    # `_test_nut_khong_cut.py` canh riêng chuyện cụt chữ ở 3 cỡ font.
+    ok("_vua_chu(" in _u and "b.setFixedWidth(52)" not in _u,
+       "8a nút Hay/Nhạt đo bề rộng THEO FONT, không còn số cứng 52px")
     ok(_u.count('b.setFixedHeight(28)') >= 1,
        "8b nút mới cùng chiều cao 28px với nút cũ (không lệch hàng)")
 

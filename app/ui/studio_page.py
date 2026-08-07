@@ -2230,9 +2230,34 @@ class StudioPage(QWidget):
         chung 1 bộ đếm cho cả channel_activity lẫn video_activity (nhãn
         'Kênh: ... | Video này: ...'); dropdown đóng thì KHÔNG query thêm."""
         self._act_tick += 1
+        # GẤP SỔ TẠM (WAL) mỗi ~2 phút, ở LUỒNG NỀN. Xem db.gap_wal_dinh_ky:
+        # đo trên máy anh Hùng 07/08 — studio.db không được ghi từ 06/07 trong
+        # khi WAL phình 1,07 MB, vì app chưa lần nào thoát êm nên bước gấp lúc
+        # thoát không bao giờ chạy. Mất WAL = mất dữ liệu cả tháng.
+        if self._act_tick % 80 == 0:
+            import threading as _th
+            _th.Thread(target=self._gap_wal_nen, daemon=True).start()
         if self._act_tick % 3:
             return
         self._refresh_chan_label()
+
+    def _gap_wal_nen(self) -> None:
+        """Chạy ở luồng nền: gấp WAL nếu nó đã phình. Không được ném lỗi."""
+        try:
+            mb = db.gap_wal_dinh_ky()
+            if mb >= 0.4:
+                from datetime import datetime
+
+                from config import DATA_DIR
+                d = DATA_DIR / "logs"
+                d.mkdir(parents=True, exist_ok=True)
+                with open(d / f"pipeline_{datetime.now():%Y%m%d}.log", "a",
+                          encoding="utf-8") as f:
+                    f.write(f"[{datetime.now():%H:%M:%S}] 💾 đã gấp sổ tạm "
+                            f"(WAL) {mb:.1f} MB vào cơ sở dữ liệu chính — "
+                            f"tắt app đột ngột cũng không mất việc đã làm\n")
+        except Exception:  # noqa: BLE001 - việc phụ, không được làm sập app
+            pass
 
     def _refresh_chan_label(self, act: dict | None = None):
         """1 dòng gọn: 'Kênh: 🟢 đang chạy 3 · ⏳ đợi 2  |  Video này: 🟢 đang
@@ -4466,7 +4491,14 @@ class StudioPage(QWidget):
         lay.addWidget(rep, 1)
 
         def refresh_report():
-            rep.setPlainText("\n".join(self._pipe_report[-400:]))
+            # CHỈ ghi lại khi báo cáo THẬT SỰ đổi. setPlainText 400 dòng mỗi
+            # nhịp là dựng lại toàn bộ khối chữ + kéo thanh cuộn -> tốn vô ích
+            # khi dây chuyền im (đo 06/08/2026 lúc anh Hùng báo "đơ lắm").
+            _txt = "\n".join(self._pipe_report[-400:])
+            if getattr(self, "_pipe_rep_cache", None) == _txt:
+                return
+            self._pipe_rep_cache = _txt
+            rep.setPlainText(_txt)
             sb = rep.verticalScrollBar()
             sb.setValue(sb.maximum())
 
@@ -5188,8 +5220,37 @@ class StudioPage(QWidget):
                 fw = fw.parentWidget() if hasattr(fw, "parentWidget") else None
             return False
         from PyQt6.QtCore import QTimer as _QT
-        t = _QT(dlg); t.timeout.connect(refresh_report)
-        t.timeout.connect(lambda: None if _tbl_busy() else fill())
+
+        # ── DỰNG LẠI BẢNG: THƯA thôi, và chỉ khi SỐ LIỆU ĐỔI ─────────────
+        # LỖI THẬT (anh Hùng 06/08/2026 "chạy hàng trăm kênh cực kỳ đơ"): nhịp
+        # này 2 GIÂY mà mỗi nhịp gọi fill() dựng lại CẢ BẢNG. Cổng 19 đã đo:
+        # bảng 212 dòng mất **1,37 giây** để dựng -> mở hộp Dây chuyền ra là máy
+        # dựng bảng gần như liên tục (~70% thời gian), giao diện đứng.
+        # Nay: tối thiểu 8 giây/lần, và bỏ qua nếu số liệu y như lần trước
+        # (báo cáo vẫn cập nhật 2 giây/lần vì nó rẻ — xem refresh_report).
+        _nhip = {"n": 0}
+
+        def _fill_thua():
+            if _tbl_busy():
+                return                      # user đang gõ/bấm trong bảng
+            _nhip["n"] += 1
+            if _nhip["n"] % 4:              # 2s * 4 = 8s
+                return
+            try:
+                _c = services.queue_counts() or {}
+                _sig = (len(self._pipe_report),
+                        tuple(sorted((str(k), int(v or 0))
+                                     for k, v in _c.items())))
+            except Exception:  # noqa: BLE001
+                _sig = None
+            if _sig is not None and getattr(self, "_pipe_tbl_sig", None) == _sig:
+                return                      # không có gì đổi -> khỏi dựng lại
+            self._pipe_tbl_sig = _sig
+            fill()
+
+        t = _QT(dlg)
+        t.timeout.connect(refresh_report)
+        t.timeout.connect(_fill_thua)
         t.start(2000)
         dlg._t = t
         dlg.exec()
@@ -7507,12 +7568,30 @@ class StudioPage(QWidget):
         sc.setToolTip("Điểm tiềm năng viral (0–100) — AI chấm theo nội dung + hình ảnh")
         lay.addWidget(sc)
 
-        pv = QPushButton("Xem & sửa"); pv.setFixedWidth(92); pv.setProperty("ghost", True)
+        def _vua_chu(btn, *nhan):
+            """ĐẶT BỀ RỘNG NÚT THEO FONT THẬT LÚC CHẠY, không đặt số cứng.
+
+            LỖI THẬT (ảnh anh Hùng gửi 06/08/2026): nút "Hay"/"Nhạt" hiện ra
+            "Hav"/"Nha" — tôi đặt cứng 52px, mà ĐO với QSS thật thì "Hay" cần
+            69px và "Nhạt" cần 82px; máy anh Hùng font còn to hơn máy dev nên
+            các nút cũ (Caption đặt 78px trong khi cần 121px) cũng đã sát mép.
+            Số cứng KHÔNG BAO GIỜ đúng cho mọi máy/mọi DPI -> phải đo
+            fontMetrics + cộng padding của QSS. Truyền THÊM các nhãn khác mà
+            nút này có thể mang (vd "Xuất"/"Xuất lại") để đổi chữ không cụt."""
+            btn.ensurePolished()
+            fm = btn.fontMetrics()
+            rong = max(fm.horizontalAdvance(str(t)) for t in nhan) + 30
+            btn.setFixedWidth(max(56, rong))
+            return btn
+
+        pv = _vua_chu(QPushButton("Xem & sửa"), "Xem & sửa")
+        pv.setProperty("ghost", True)
         pv.setFixedHeight(28)
         pv.setToolTip("Phát video, chỉnh tốc độ, cắt tay đầu/cuối rồi xuất.")
         pv.clicked.connect(lambda _, cc=c, n=part_no: self._review_clip(cc, n))
         lay.addWidget(pv)
-        cap = QPushButton("Caption"); cap.setFixedWidth(78); cap.setProperty("ghost", True)
+        cap = _vua_chu(QPushButton("Caption"), "Caption")
+        cap.setProperty("ghost", True)
         cap.setFixedHeight(28)
         cap.setToolTip("AI viết TIÊU ĐỀ + CAPTION + HASHTAG đăng bài cho clip "
                        "này — copy dán thẳng lên TikTok/Reels/Shorts.")
@@ -7530,8 +7609,8 @@ class StudioPage(QWidget):
                            "tìm đoạn tương tự (đưa vào prompt làm ví dụ mẫu)."),
                 ("Nhạt", -1, "Dạy AI: đoạn NÀY nhạt/không cần — lần sau AI "
                              "tránh kiểu đoạn này cho kênh này.")):
-            b = QPushButton(_nhan)
-            b.setFixedWidth(52)
+            # 2 nút CÙNG bề rộng (đo cả 2 nhãn) -> thẳng hàng, không cụt chữ
+            b = _vua_chu(QPushButton(_nhan), "Hay", "Nhạt")
             b.setFixedHeight(28)
             b.setProperty("primary" if _v == _val else "ghost", True)
             b.setToolTip(_tip + ("  [ĐANG CHỌN — bấm lại để bỏ]"
@@ -7540,7 +7619,8 @@ class StudioPage(QWidget):
                               self._dat_gu(cid, 0 if cu == val else val))
             lay.addWidget(b)
         if c["status"] == "exported" and c["export_path"]:
-            mo = QPushButton("Mở"); mo.setFixedWidth(56); mo.setProperty("ghost", True)
+            mo = _vua_chu(QPushButton("Mở"), "Mở")
+            mo.setProperty("ghost", True)
             mo.setFixedHeight(28)
             mo.setToolTip("Phát file clip đã xuất.")
             mo.clicked.connect(lambda _, p=c["export_path"]: self._open_file(p))
@@ -7548,13 +7628,16 @@ class StudioPage(QWidget):
             label = "Xuất lại"
         else:
             label = "Xuất"
-        dl = QPushButton(label); dl.setFixedWidth(80); dl.setProperty("primary", True)
+        # đo CẢ 2 nhãn: clip xuất xong đổi chữ thành "Xuất lại" mà nút không nở
+        dl = _vua_chu(QPushButton(label), "Xuất", "Xuất lại")
+        dl.setProperty("primary", True)
         dl.setFixedHeight(32)
         dl.setToolTip("Xuất clip này ra file MP4 (Kho video > Đã xuất).")
         dl.clicked.connect(
             lambda _, cid=c["id"]: self._export_video(self.state.video_id, cid))
         lay.addWidget(dl)
-        rm = QPushButton("Xóa"); rm.setFixedWidth(52); rm.setProperty("danger", True)
+        rm = _vua_chu(QPushButton("Xóa"), "Xóa")
+        rm.setProperty("danger", True)
         rm.setFixedHeight(28)
         rm.clicked.connect(lambda _, cid=c["id"]: self._del_clip(cid))
         lay.addWidget(rm)

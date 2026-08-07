@@ -307,9 +307,23 @@ class QueuePanel(QWidget):
             f"{c['analyzing']} video đang phân tích")
         self.chip_export["w"].setToolTip(
             f"{c['exporting']} clip đang cắt/xuất (mỗi Part là 1 clip)")
+        # GIẢI THÍCH CON SỐ 'đợi' + ƯỚC THỜI GIAN.
+        # Anh Hùng 07/08/2026: "trc tôi chạy có 200 chờ mà tự nhiên con số tự
+        # tăng k biết ở đâu lên 450". Không phải lỗi: MỖI video phân tích xong
+        # sinh thêm ~3 việc XUẤT PART, nên số 'đợi' phải tăng khi phân tích đang
+        # xong dần (đo nhật ký thật 06/08: 138 video nhận -> 449 việc chờ). Cái
+        # sai là app không nói ra, để user tưởng nó hỏng.
+        _wa, _we = int(c.get("wait_analyze", 0)), int(c.get("wait_export", 0))
+        _ch = max(1, int(c.get("analyzing", 0)) + int(c.get("exporting", 0)))
+        # nhịp thật đo được: phân tích ~2,5 phút/video · xuất ~1,2 phút/Part
+        _phut = (_wa * 2.5 + _we * 1.2) / _ch
+        _uoc = (f"~{_phut/60:.1f} giờ" if _phut >= 90 else f"~{_phut:.0f} phút")
         self.chip_wait["w"].setToolTip(
-            f"Đang đợi {c['waiting']} việc — đợi phân tích "
-            f"{c['wait_analyze']} · đợi cắt {c['wait_export']}")
+            f"Đang đợi {c['waiting']} việc — đợi phân tích {_wa} · đợi cắt "
+            f"{_we}\n\nSỐ NÀY TĂNG LÀ BÌNH THƯỜNG: mỗi video phân tích xong "
+            f"sinh thêm ~3 việc XUẤT PART.\nƯớc còn {_uoc} với "
+            f"{_ch} việc chạy song song (tăng 'Luồng AI'/'Luồng cắt' ở cột "
+            f"trái để nhanh hơn).")
         self.chip_done["w"].setToolTip(
             f"{c['done']} việc hoàn tất hôm nay")
         self.chip_fail["w"].setToolTip(

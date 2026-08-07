@@ -433,8 +433,35 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             # cùng phút (Groq giới hạn theo phút). Kết quả ghép theo index nên
             # thứ tự/offset không đổi.
             idx_list = sorted(parts)
-            with ThreadPoolExecutor(max_workers=min(3, len(parts))) as ex:
-                futs = {ex.submit(_groq_one, parts[i], language, keys,
+            # ── KHOÁ NGÔN NGỮ THEO KHÚC ĐẦU ───────────────────────────────
+            # LỖI THẬT (anh Hùng 07/08/2026, kênh Nhật): "video nhật sub nhật nó
+            # trộn lẫn lộn cả tiếng anh". Vì `language` truyền vào là None (để
+            # Groq tự nhận diện), mà video dài bị chia THÀNH TỪNG KHÚC 10 PHÚT
+            # và MỖI KHÚC TỰ ĐOÁN NGÔN NGỮ RIÊNG. Khúc nào tiếng nhỏ/khó nghe là
+            # Groq đoán 'en' rồi DỊCH luôn khúc đó sang tiếng Anh -> phụ đề nửa
+            # Nhật nửa Anh, không cách nào dùng được.
+            # Nay: chép khúc ĐẦU trước (1 lượt), lấy ngôn ngữ của nó (có
+            # resolve_lang soi chữ để không tin nhãn sai), rồi ÉP ngôn ngữ đó
+            # cho MỌI khúc còn lại -> cả video 1 ngôn ngữ duy nhất.
+            _lang_ep = language
+            if not _lang_ep and len(idx_list) > 1:
+                _i0 = idx_list[0]
+                results[_i0] = _groq_one(parts[_i0], None, keys, start_at=0,
+                                         on_wait=_on_wait)
+                done += 1
+                _lg0, _txt0 = results[_i0][2], results[_i0][3]
+                try:
+                    from app.ai import recap as _rc
+                    _lang_ep = _rc.resolve_lang(_lg0 or "", _txt0 or "") or _lg0
+                except Exception:  # noqa: BLE001
+                    _lang_ep = _lg0
+                idx_list = idx_list[1:]
+                if on_progress:
+                    on_progress(0.1 + 0.85 * done / n,
+                                f"Chép lời (Groq) 1/{n} phần — đã khoá ngôn ngữ "
+                                f"«{_lang_ep or 'tự nhận diện'}» cho cả video")
+            with ThreadPoolExecutor(max_workers=min(3, max(1, len(idx_list)))) as ex:
+                futs = {ex.submit(_groq_one, parts[i], _lang_ep, keys,
                                   start_at=pos, on_wait=_on_wait): i
                         for pos, i in enumerate(idx_list)}
                 for fut in as_completed(futs):
