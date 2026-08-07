@@ -310,13 +310,17 @@ class StudioPage(QWidget):
         self.pick_btn.setProperty("ghost", True); self.pick_btn.setMinimumHeight(32)
         self.pick_btn.setToolTip("Tích chọn nhiều video cụ thể để tạo clip cùng lúc.")
         self.pick_btn.clicked.connect(self._pick_videos); actrow.addWidget(self.pick_btn)
-        self.mixed_btn = QPushButton("Mixed-Cut")
-        self.mixed_btn.setProperty("ghost", True); self.mixed_btn.setMinimumHeight(32)
-        self.mixed_btn.setToolTip(
-            "Ghép các KHOẢNH KHẮC hay nhất KHẮP video thành 1 clip dài (~1-2 "
-            "phút) — kiểu 'best moments'. Khác 'Tạo clip' (mỗi clip 1 câu chuyện).")
-        self.mixed_btn.clicked.connect(self._auto_mixed)
-        actrow.addWidget(self.mixed_btn)
+        # ĐÃ BỎ nút "Mixed-Cut" (anh Hùng 07/08/2026: *"cái mixed-cut bỏ đi tôi
+        # thấy k cần thiết ở tool của tôi"*). CHỈ bỏ LỐI VÀO UI — mã xuất
+        # (`ffmpeg_utils.export_stitched_clip`, `m1_highlight.generate_mixed_cut`,
+        # job `auto_mixed`, nhãn ở `queue_panel`) GIỮ NGUYÊN để clip Mixed-Cut CŨ
+        # bấm "Xuất lại" vẫn chạy và job đang nằm hàng đợi vẫn xong được.
+        # ĐÃ KIỂM TRƯỚC KHI BỎ (chỉ ĐỌC bản SAO, không sửa DB của user): 6 file
+        # .db thật trên máy này (studio.db bản đóng gói + 3 bản sao lưu +
+        # bqhung.db + studio.db dev 5,4 MB) -> 9 clip, **0 clip có
+        # `mode=mixed`/`moments`**, 0 job `*mixed*`, 0 mẫu chứa khoá mixed.
+        # Nhưng DB 200-300 kênh của anh Hùng KHÔNG nằm trên máy này -> vẫn đi
+        # đường AN TOÀN: giữ mã, chỉ bỏ nút.
         # 🎙 REUP THUYẾT MINH: AI viết kịch bản thuyết minh xen kẽ tiếng gốc
         self.recap_btn = QPushButton("🎙 Reup thuyết minh")
         self.recap_btn.setProperty("ghost", True); self.recap_btn.setMinimumHeight(32)
@@ -6790,18 +6794,9 @@ class StudioPage(QWidget):
         self.status.setText(f"② Đang phân tích & cắt clip{extra}... "
                             "(xem % ở khu Tiến trình dưới — xong TỰ hiện ở đây)")
 
-    def _auto_mixed(self):
-        """Mixed-Cut: ghép các khoảnh khắc hay nhất khắp video thành 1 clip."""
-        if not self.state.video_id:
-            QMessageBox.information(self, "Chưa chọn video",
-                                    "Thêm/chọn 1 video trước đã.")
-            return
-        if not self._require_ai():
-            return
-        services.enqueue_auto_mixed(self.state.pool, self.state.video_id,
-                                    self.state.project_id, self._cut_preset())
-        self.status.setText("Đang phân tích & ghép Mixed-Cut... clip sẽ hiện "
-                            "trong danh sách khi xong (xem tiến trình dưới).")
+    # `_auto_mixed` (xếp job Mixed-Cut MỚI) ĐÃ BỎ cùng cái nút ở trên. KHÔNG
+    # xoá `services.enqueue_auto_mixed` / job `auto_mixed` / `generate_mixed_cut`
+    # / `export_stitched_clip`: đó là đường clip CŨ đi qua khi bấm "Xuất lại".
 
     def _recap_settings(self):
         """⚙ mở 'Cài đặt Reup thuyết minh' rồi ĐỒNG BỘ lại combo phong cách

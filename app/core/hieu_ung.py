@@ -254,7 +254,7 @@ class HieuUng:
     ghi_chu: str = ""
 
     def chuoi(self, dam: float, a: float, b: float, W: int, H: int,
-              fps: int = 30, font: str = "") -> str:
+              fps: float = 30, font: str = "") -> str:
         d = max(0.0, min(DAM_MAX, float(dam))) / DAM_MAX      # 0..1
         s = self.mau
         for i, (lo, hi) in enumerate(self.ts, start=1):
@@ -262,7 +262,9 @@ class HieuUng:
         s = (s.replace("{en}", f":enable='between(t,{a:.3f},{b:.3f})'")
               .replace("{a}", f"{a:.3f}").replace("{b}", f"{b:.3f}")
               .replace("{W}", str(W)).replace("{H}", str(H))
-              .replace("{FPS}", str(fps))
+              # `%g` chứ không `str()`: nguồn 29,97 fps ra
+              # "29.970029970029973" -> zoompan bắt lỗi cú pháp video_rate.
+              .replace("{FPS}", f"{float(fps):g}")
               .replace("{FONT}", font.replace("\\", "/").replace(":", "\\:")))
         return s
 
@@ -673,12 +675,36 @@ def _vi_sao(loai: str, g: int, nl: list, cd: list, moc: list,
 
 
 # ------------------------------------------------------- DỰNG CHUỖI FILTER
-def chuoi_filter(chon: list, W: int, H: int, fps: int = 30,
+def font_mac_dinh(goi_y: str = "") -> str:
+    """1 FILE font .ttf/.otf để `drawtext` dùng (hiệu ứng "Đếm ngược 3-2-1").
+
+    `drawtext` cần ĐƯỜNG DẪN FILE, không nhận thư mục — truyền thư mục là
+    ffmpeg FAIL cả lệnh. `goi_y` có thể là file hoặc thư mục (app truyền
+    `fonts_dir`); không tìm được file nào -> "" và `chuoi_filter` TỰ BỎ hiệu ứng
+    cần font (KHÔNG nổ lỗi trên máy nhân viên thiếu font).
+    """
+    if goi_y and os.path.isfile(goi_y):
+        return goi_y
+    for d in [x for x in (goi_y, str(_root() / "app" / "assets" / "fonts")) if x]:
+        try:
+            if not os.path.isdir(d):
+                continue
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith((".ttf", ".otf")):
+                    return os.path.join(d, f)
+        except OSError:
+            continue
+    return ""
+
+
+def chuoi_filter(chon: list, W: int, H: int, fps: float = 30,
                  font: str = "") -> str:
     """Nối các hiệu ứng đã chọn thành 1 chuỗi filter (dấu phẩy).
 
     Rỗng -> "" (caller BỎ HẲN, đường cũ y nguyên — bất biến sống còn).
+    `font` nhận cả FILE và THƯ MỤC (tự tìm ra file — xem `font_mac_dinh`).
     """
+    font = font_mac_dinh(font) if font else ""
     out = []
     for c in chon or []:
         h = KHO.get(str(c.get("khoa", "")))
@@ -705,13 +731,36 @@ def bang_ghi_chu(chon: list) -> str:
 
 
 # --------------------------------------------------------- ĐO NHỊP CLIP
-def do_nhip(path: str, ffmpeg: str = "") -> tuple[list, list]:
+def duong_filter(p: str) -> str:
+    r"""Đường dẫn Windows -> dạng NHÉT ĐƯỢC vào chuỗi filter của ffmpeg.
+
+    **LỖI THẬT tìm ra 08/08/2026 — im lặng nên đã che mất cả tính năng:**
+    `metadata=print:file='C:/…/v.txt'` bị ffmpeg **báo vỡ cú pháp** ("Error
+    parsing filterchain … Invalid argument") vì dấu `:` của ổ `C:` là dấu ngăn
+    tham số — dấu nháy đơn KHÔNG cứu được. Hậu quả: `do_nhip` LUÔN trả
+    `([], [])` trên Windows -> `chon_hieu_ung` mất hết số đo tiếng/động và tụt
+    về đường chọn THEO CẤU TRÚC. Nhìn vào bản demo thì vẫn "có hiệu ứng", chỉ
+    dòng "vì sao" là thiếu số — đúng kiểu bẫy `0,03 CPU-giây` của việc này.
+    Phải escape `:` thành `\:` (đo lại: 22 dòng YAVG thay vì 0).
+    """
+    return str(p).replace("\\", "/").replace(":", "\\:")
+
+
+
+def do_nhip(path: str, ffmpeg: str = "",
+            dau_vao: Optional[list] = None) -> tuple[list, list]:
     """Đo mức ÂM + mức ĐỘNG từng giây của 1 FILE (timeline = timeline file).
 
     1 LỆNH ffmpeg, 1 lượt giải mã, 2 nhánh filter (audio astats + video
     tblend/signalstats) — rẻ hơn 2 lệnh. Dùng ĐÚNG khuôn `chon_doan.nang_luong`
     / `chon_doan.chuyen_dong` để số liệu so được với khâu chọn đoạn.
     Lỗi/không có tiếng -> trả ([], []) và caller vẫn chọn được theo CẤU TRÚC.
+
+    `dau_vao`: THAY chỗ `-i <path>` bằng danh sách tham số đầu vào của caller —
+    dùng để đo ĐÚNG timeline ĐẦU RA mà không phải xuất file trung gian:
+      nhiều đoạn: ["-f","concat","-safe","0","-i", <file danh sách>]
+      một đoạn  : ["-ss", s, "-t", e-s, "-i", <nguồn>]
+    Không truyền -> đo cả file `path` như cũ.
     """
     import re
     import tempfile
@@ -720,17 +769,18 @@ def do_nhip(path: str, ffmpeg: str = "") -> tuple[list, list]:
     fa, fv = os.path.join(td, "a.txt"), os.path.join(td, "v.txt")
     ga = (f"[0:a]aresample=16000,asetnsamples=n=16000,"
           f"astats=metadata=1:reset=1,ametadata=print:"
-          f"key=lavfi.astats.Overall.RMS_level:file='{fa.replace(chr(92), '/')}'"
+          f"key=lavfi.astats.Overall.RMS_level:file='{duong_filter(fa)}'"
           f"[ao]")
     gv = (f"[0:v]fps=4,scale=160:-2,format=gray,tblend=all_mode=difference,"
           f"signalstats,metadata=print:key=lavfi.signalstats.YAVG:"
-          f"file='{fv.replace(chr(92), '/')}'[vo]")
+          f"file='{duong_filter(fv)}'[vo]")
     nl: list = []
     cd: list = []
+    vao = [str(x) for x in (dau_vao or ["-i", str(path)])]
     for graph, maps in ((gv + ";" + ga, ["-map", "[vo]", "-map", "[ao]"]),
                         (gv, ["-map", "[vo]"])):
         cmd = [ff, "-y", "-hide_banner", "-nostats", "-v", "error",
-               "-i", str(path), "-filter_complex", graph, *maps,
+               *vao, "-filter_complex", graph, *maps,
                "-f", "null", os.devnull]
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=600,

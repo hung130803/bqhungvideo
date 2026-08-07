@@ -1823,6 +1823,16 @@ def export_canvas_clip(
                                         # clip thường + reup cũ).
     dim_amount: float = 0.14,           # MỨC TỐI (0..0.5); brightness eq =
                                         # -dim_amount. <=0 -> KHÔNG dim.
+    hieu_ung: object = "",               # HIỆU ỨNG THẤY ĐƯỢC ở ĐIỂM NHẤN:
+                                        # "" / "tat" -> đường CŨ Y NGUYÊN;
+                                        # "nhe"/"vua"/"manh" -> AI tự chọn theo
+                                        # CẢNH (`hieu_ung.chon_hieu_ung`, đo
+                                        # tiếng + chuyển động của chính clip);
+                                        # hoặc truyền thẳng list
+                                        # [{bat,het,khoa,dam}] (dùng cho test/demo)
+    hieu_ung_log: Optional[list] = None,  # LIST CỦA CALLER: hàm ghi vào đây các
+                                        # hiệu ứng ĐÃ CHỌN (để log/ghi chú
+                                        # "giây thứ mấy -> hiệu ứng gì -> vì sao")
     chuyen_canh: object = "",            # CHUYỂN CẢNH ở chỗ ghép đoạn (xfade):
                                         # "" / "tat" -> đường CŨ Y NGUYÊN;
                                         # "nhe"/"vua"/"manh" -> tự chọn kiểu
@@ -1970,6 +1980,42 @@ def export_canvas_clip(
             _cleanup_paths(_seg_temps)
             raise
 
+    # ---- HIỆU ỨNG THẤY ĐƯỢC ở ĐIỂM NHẤN (kho `app/core/hieu_ung.py`) ----
+    # "" / "tat" -> KHÔNG một dòng filter nào thêm vào => đường CŨ Y NGUYÊN
+    # (bất biến sống còn: bật-tắt phải ra file GIỐNG HỆT `main`).
+    # Mức ("nhe"/"vua"/"manh") -> ĐO nhịp của CHÍNH clip sắp xuất (mức âm + mức
+    # chuyển động từng giây, 1 lệnh ffmpeg 160px) rồi `chon_hieu_ung` suy ra
+    # điểm nhấn — TIỀN ĐỊNH, KHÔNG bốc thăm. Đo trên ĐÚNG timeline đầu ra:
+    # nhiều đoạn thì đo file danh sách concat (đã ghép, đã hook-first), một
+    # đoạn thì đo đúng khoảng [s,e] của nguồn.
+    _hu: list = []
+    _hu_fps = _info.fps if 10.0 <= (_info.fps or 0) <= 120.0 else 30.0
+    try:
+        from app.core import hieu_ung as _HU
+        # ffmpeg con thừa hưởng os.environ -> đặt FREI0R_PATH ở đây là đủ cho cả
+        # đường list-truyền-thẳng (test/demo) lẫn đường tự chọn theo mức.
+        _HU.dat_frei0r_path()
+        if isinstance(hieu_ung, (list, tuple)):
+            _hu = [dict(x) for x in hieu_ung]
+        elif str(hieu_ung or "").strip().lower() in ("nhe", "vua", "manh"):
+            if multi and _seg_list:
+                _vao = ["-f", "concat", "-safe", "0", "-i", _seg_list]
+            else:
+                _s0, _e0 = segs[0]
+                _vao = ["-ss", f"{_s0:.3f}", "-t", f"{_e0 - _s0:.3f}",
+                        "-i", str(src)]
+            _nl, _cd = _HU.do_nhip("", ffmpeg=settings.FFMPEG_PATH,
+                                   dau_vao=_vao)
+            # mốc chỗ nối trên timeline ĐẦU RA (xfade đã bù nên mốc KHÔNG đổi)
+            _moc = [sum(e - s for s, e in segs[:i + 1])
+                    for i in range(len(segs) - 1)]
+            _hu = _HU.chon_hieu_ung(total, str(hieu_ung).strip().lower(),
+                                    nl=_nl, cd=_cd, moc_noi=_moc)
+        if _hu and hieu_ung_log is not None:
+            hieu_ung_log.extend(_hu)
+    except Exception:      # noqa: BLE001 — hiệu ứng KHÔNG được làm chết lượt xuất
+        _hu = []
+
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
         parts = []
@@ -2049,6 +2095,25 @@ def export_canvas_clip(
             parts.append(f"{final}eq=brightness=-{dim_amt:.4f}:"
                          f"enable='{expr}'[vdim]")
             final = "[vdim]"
+        # HIỆU ỨNG ĐIỂM NHẤN — đặt TRƯỚC khi đốt .ass/overlay chữ nên hình có
+        # hiệu ứng mà CHỮ vẫn nét (y như spotlight ở trên). Mốc chọn ở timeline
+        # ĐẦU RA, còn `t` ở đây là timeline TRƯỚC setpts => nhân vspeed (cùng
+        # cách quy đổi với dim_ranges/duck_ranges).
+        # `fps` truyền vào phải là fps THẬT của nguồn: `zoompan` sinh lại mốc
+        # thời gian theo `fps`, đặt 30 cho nguồn 29,97 là clip tự co 0,1% ->
+        # lệch tiếng-hình. Mezzanine pha 1 cũng ép CFR bằng đúng fps này.
+        if _hu:
+            _hu_t = [dict(c, bat=float(c["bat"]) * vspeed,
+                          het=float(c["het"]) * vspeed) for c in _hu]
+            try:
+                from app.core import hieu_ung as _HU2
+                _ch = _HU2.chuoi_filter(_hu_t, out_w, out_h, _hu_fps,
+                                        str(fonts_dir or ""))
+            except Exception:  # noqa: BLE001
+                _ch = ""
+            if _ch:
+                parts.append(f"{final}{_ch}[vhu]")
+                final = "[vhu]"
         if ass_path and os.path.exists(ass_path):
             ap = str(ass_path).replace("\\", "/").replace(":", "\\:")
             sub = f"subtitles='{ap}'"

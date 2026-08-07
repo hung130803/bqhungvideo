@@ -222,8 +222,10 @@ print(f"  đã đổi {n_cb} combo + mọi spin")
 # 2) bấm mọi nút trên cửa sổ chính. BỎ QUA nút đăng xuất (đóng app) và các nút
 #    chạy việc nặng thật (đã có test riêng cho chúng).
 print("\n── 2. bấm mọi nút trên cửa sổ chính ──")
+# "Mixed-Cut" đã GỠ khỏi danh sách này: nút đó KHÔNG còn trong UI (bỏ 07/08/2026
+# theo yêu cầu anh Hùng). Để tên lại thì vô hại nhưng dễ tưởng app vẫn có nút.
 BO_QUA_CHINH = ("Đăng xuất", "Tạo clip", "Tất cả video", "Chọn nhiều",
-                "Mixed-Cut", "Reup thuyết minh", "Xuất cả kênh",
+                "Reup thuyết minh", "Xuất cả kênh",
                 "Xuất video này", "Tải về", "Tải nhiều", "Xuất", "Cắt lại")
 n = quet(win, "màn chính", BO_QUA_CHINH)
 print(f"  đã bấm {n} nút")
