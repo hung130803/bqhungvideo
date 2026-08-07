@@ -1702,12 +1702,16 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
         temps.append(gop)
         graph, vlab, alab = _graph_xfade(n, xf, bu, dai_goc, info.has_audio)
 
-        def _build_xf(enc: str, _g=graph, _v=vlab, _a=alab,
-                      _o=gop) -> list[str]:
+        # `_in=list(noi)` CHỐT ngay danh sách input vào tham số mặc định: dưới
+        # đây `noi` bị gán lại thành [gop], mà `_run_with_fallback` có thể gọi
+        # build LẦN 2 (lùi nvenc -> libx264). Đọc biến ngoài là lần 2 dựng lệnh
+        # với input = chính file output.
+        def _build_xf(enc: str, _g=graph, _v=vlab, _a=alab, _o=gop,
+                      _in=list(noi)) -> list[str]:
             c = [settings.FFMPEG_PATH, "-y",
                  "-filter_complex_threads", str(encode_threads()),
                  "-threads", str(decode_threads())]
-            for p in noi:
+            for p in _in:
                 c += ["-i", p]
             c += ["-filter_complex", _g, "-map", _v]
             if _a:
