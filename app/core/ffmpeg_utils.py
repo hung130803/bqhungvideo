@@ -953,6 +953,48 @@ def _cleanup_paths(paths) -> None:
         _cleanup_dst(p)
 
 
+# Dấu hiệu NGUYÊN NHÂN trong log ffmpeg. ffmpeg in nguyên nhân ở ĐẦU rồi mới in
+# một tràng HỆ QUẢ, nên chỉ giữ "6 dòng cuối" là che mất đúng dòng cần đọc — hộp
+# lỗi anh Hùng gửi 07/08/2026 toàn hệ quả ("Could not open encoder before EOF",
+# "Conversion failed!"), không một chữ nào nói vì sao.
+_TU_LOI = ("Error", "error", "Invalid", "invalid", "No such file", "Impossible",
+           "Output file is empty", "not found", "moov atom", "Permission denied",
+           "Unable to", "Unrecognized", "does not contain", "Cannot")
+
+
+def _cat_theo_do_dai_that(segs: list, dur: float, src) -> list:
+    """KẸP mọi mốc cắt vào [0, độ_dài_THẬT_của_file] trước khi gọi ffmpeg.
+
+    VÌ SAO: độ dài trong DB lấy lúc NHẬP video; nếu file tải thiếu (mạng đứt)
+    hoặc bị thay bằng bản ngắn hơn thì Part cuối có mốc vượt phim -> ffmpeg ra
+    0 khung. Kẹp lại thì clip vẫn xuất được (ngắn hơn) thay vì mất cả Part.
+    Quy tắc chung của repo: KHÔNG đọc được độ dài thì GIỮ NGUYÊN, đừng phán.
+    """
+    if not dur or dur <= 0:
+        return segs
+    ra: list = []
+    for s, e in segs:
+        s2, e2 = max(0.0, min(float(s), dur)), max(0.0, min(float(e), dur))
+        if e2 - s2 >= 0.30:          # dưới 0,3s thì không còn là đoạn phim
+            ra.append((s2, e2))
+    if not ra:
+        raise RuntimeError(
+            f"Mọi mốc cắt đều nằm ngoài phim: video gốc chỉ dài {dur:.1f}s "
+            f"nhưng đoạn cần cắt bắt đầu ở {min(s for s, _ in segs):.1f}s. "
+            "Video gốc tải thiếu hoặc đã bị thay — tải lại rồi phân tích lại.")
+    return ra
+
+
+def _gom_log(loi: list, tail: list) -> str:
+    """Ghép DÒNG NGUYÊN NHÂN (đầu log) + vài dòng cuối, bỏ trùng, giữ thứ tự."""
+    ra: list = []
+    for ln in list(loi) + list(tail[-4:]):
+        ln = (ln or "").rstrip()
+        if ln and ln not in ra:
+            ra.append(ln)
+    return "\n".join(ra[:10])
+
+
 def _run_with_fallback(build_cmd, encoder: str, total: float,
                        on_progress, what: str, dst=None) -> None:
     """Chạy ffmpeg với encoder; nếu NVENC lỗi -> thử libx264. Ném lỗi kèm log.
@@ -968,11 +1010,19 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
         if _SHUTDOWN.is_set():
             break
         tail: list[str] = []
+        dau: dict = {"rong": False, "loi": []}
 
         def _line(line: str) -> None:
             tail.append(line)
-            if len(tail) > 14:
+            if len(tail) > 40:
                 tail.pop(0)
+            # ĐO 07/08/2026: `-ss` vượt độ dài THẬT của file -> ffmpeg TRẢ MÃ 0
+            # kèm output 0 KiB. Không bắt ở đây thì app tưởng XUẤT XONG, ghi
+            # clip rỗng vào thư mục thành phẩm rồi XOÁ VIDEO GỐC = mất trắng.
+            if "Output file is empty" in line:
+                dau["rong"] = True
+            if len(dau["loi"]) < 6 and any(k in line for k in _TU_LOI):
+                dau["loi"].append(line)
             if on_progress and "time=" in line:
                 try:
                     t = line.split("time=")[1].split(" ")[0]
@@ -987,9 +1037,16 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
         except Exception:          # CanceledError (bấm Hủy) hoặc lỗi khác
             _cleanup_dst(dst)
             raise
-        if code == 0:
+        if code == 0 and not dau["rong"]:
             return
-        last_log = "\n".join(tail[-6:])
+        if dau["rong"]:
+            # Đổi encoder KHÔNG chữa được: rỗng là vì mốc cắt nằm ngoài phim.
+            _cleanup_dst(dst)
+            raise RuntimeError(
+                f"ffmpeg không {what}: file ra RỖNG (0 khung hình). Mốc cắt "
+                "nằm NGOÀI độ dài thật của video gốc — video gốc tải thiếu "
+                "hoặc đã bị thay. Hãy tải lại video rồi phân tích lại.")
+        last_log = _gom_log(dau["loi"], tail)
         if enc == "h264_nvenc":
             # CHỈ đổ lỗi NVENC khi log THẬT SỰ chỉ ra lỗi NVENC/driver.
             # LỖI THẬT (máy user): export hỏng vì lý do KHÁC (filter graph,
@@ -1386,11 +1443,13 @@ def export_canvas_clip(
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
     encoder = encoder or detect_encoder()
-    multi = len(segs) > 1
-    total = sum(e - s for s, e in segs)
     # Video KHÔNG có tiếng -> mọi filter [0:a] sẽ fail; xuất chỉ hình.
     _info = probe(src)
     has_audio = _info.has_audio
+    # KẸP mốc vào độ dài THẬT trước khi tính total/multi (xem hàm để biết vì sao)
+    segs = _cat_theo_do_dai_that(segs, float(_info.duration or 0.0), src)
+    multi = len(segs) > 1
+    total = sum(e - s for s, e in segs)
     dub_on = bool(dub_path and os.path.exists(str(dub_path)))
     # Tắt hẳn tiếng gốc khi lồng tiếng -> KHÔNG concat/lọc audio gốc luôn
     # (concat ra [caud] mà không dùng sẽ làm ffmpeg fail "unconnected output").

@@ -1957,7 +1957,21 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 "hơn). Dán key Groq trong Cài đặt AI để AI chọn đoạn hay + đa "
                 "dạng hơn.")
     else:
-        note = ""
+        # LỖI THẬT 07/08/2026 — anh Hùng: "nó vẫn k tự phân tích AI kìa toàn cắt
+        # cơ bản tôi ấn lại tạo clip từng kênh với phân tích lại video vẫn bị".
+        # Key sống 38/38, chép lời chạy tốt, KHÔNG ngoại lệ nào -> lọt vào ĐÚNG
+        # nhánh này: AI CÓ chạy và CÓ trả clip, nhưng bộ lọc phía sau (trùng
+        # đoạn đã dùng / độ dài / trọng tài) gạt HẾT. Note RỖNG nên nhật ký lẫn
+        # thẻ clip không một chữ giải thích -> tôi mất mấy ngày ĐOÁN, trong khi
+        # `ai_warns` đã ghi sẵn từng clip bị bỏ vì sao rồi BỊ NÉM ĐI ở đây.
+        if ai_warns:
+            note = ("⚠ AI CÓ chọn đoạn nhưng bị lọc HẾT nên phải cắt kiểu CƠ "
+                    "BẢN. Lý do: " + "; ".join(str(w) for w in ai_warns[:6]))
+        else:
+            note = ("⚠ AI chạy xong nhưng KHÔNG trả về đoạn nào dùng được nên "
+                    "cắt kiểu CƠ BẢN. Thường vì: video quá ngắn cho số Part "
+                    "đang đặt, hoặc video đã dùng gần hết (đoạn mới đều trùng "
+                    "đoạn đã cắt), hoặc AI trả dữ liệu sai định dạng.")
     return _generate_heuristic(video_id, cfg, transcript, audio, scenes,
                                duration, ctx, note=note, used_ranges=used_ranges)
 
