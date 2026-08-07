@@ -5854,7 +5854,35 @@ class StudioPage(QWidget):
             self._pipe_log(msg)
             self.status.setText(msg[:200])
             return 0
-        plans = P.plan_run(root, chans)
+        # ── QUÉT THƯ MỤC KÊNH: chia lô, NHẢ GIAO DIỆN giữa các lô ──────────
+        # LỖI THẬT (ảnh anh Hùng 07/08/2026: tiêu đề hộp thành "Dây chuyền tự
+        # động (Not Responding)" ngay sau khi bấm Chạy với 58 kênh, ~1 phút mới
+        # đỡ): `P.plan_run` quét TẤT CẢ thư mục kênh trong MỘT nhịp trên luồng
+        # giao diện — mỗi kênh phải `iterdir()` + `stat()` từng file + 1 query
+        # sổ ngày. 58 kênh trên ổ D là hàng chục giây không pump event nào ->
+        # Windows đóng dấu "Not Responding". (Phần NHẬN video sau đó đã chia nhỏ
+        # từ trước, nhưng khâu QUÉT thì chưa.)
+        # Nay tự lặp từng kênh, mỗi 4 kênh nhả event loop 1 lần + cập nhật dòng
+        # tiến độ, nên hộp luôn "sống" và anh Hùng thấy nó đang chạy tới đâu.
+        from PyQt6.QtWidgets import QApplication as _QApp
+        _bat = [c for c in chans if c["pipe_on"]]
+        plans = []
+        for _i, _c in enumerate(_bat):
+            try:
+                _ed = _c["export_dir"]
+            except (KeyError, IndexError):
+                _ed = None
+            try:
+                plans.append(P.plan_channel(
+                    int(_c["id"]), _c["name"], root, _c["pipe_src"],
+                    int(_c["pipe_daily"] or 1), export_dir=_ed))
+            except Exception as _e:  # noqa: BLE001 - 1 kênh lỗi không chặn loạt
+                self._pipe_log(f"⚠ {_c['name']}: quét thư mục lỗi — {_e}")
+            if (_i + 1) % 4 == 0 or _i + 1 == len(_bat):
+                self.status.setText(
+                    f"🤖 Đang quét thư mục kênh {_i + 1}/{len(_bat)}… "
+                    "(giao diện vẫn dùng được)")
+                _QApp.processEvents()
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
         # Gom DANH SÁCH file cần nhận (log skip/note/busy ngay). KHÔNG nhận
         # đồng loạt ở đây: mỗi file phải probe (ffprobe) ~0.3-0.5s — 100 kênh
