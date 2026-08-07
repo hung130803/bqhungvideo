@@ -443,7 +443,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             # Nay: chép khúc ĐẦU trước (1 lượt), lấy ngôn ngữ của nó (có
             # resolve_lang soi chữ để không tin nhãn sai), rồi ÉP ngôn ngữ đó
             # cho MỌI khúc còn lại -> cả video 1 ngôn ngữ duy nhất.
-            _lang_ep = language
+            _lang_ep = _ma_iso(language)
             if not _lang_ep and len(idx_list) > 1:
                 _i0 = idx_list[0]
                 results[_i0] = _groq_one(parts[_i0], None, keys, start_at=0,
@@ -455,6 +455,14 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                     _lang_ep = _rc.resolve_lang(_lg0 or "", _txt0 or "") or _lg0
                 except Exception:  # noqa: BLE001
                     _lang_ep = _lg0
+                # ⚠ PHẢI ĐỔI VỀ MÃ ISO. LỖI THẬT tôi gây ra ở v2.11.1 (anh Hùng
+                # 07/08/2026 "kênh nào phân tích cũng bị… k có AI phân tích"):
+                # Groq TRẢ VỀ tên đầy đủ ("English"/"Japanese") nhưng tham số
+                # GỬI LÊN chỉ nhận mã ISO ("en"/"ja") -> ném nguyên tên vào là
+                # 400 "unsupported language: English" -> CHẾT cả bước chép lời
+                # -> tụt về whisper máy -> mọi video >10 phút ra "Cắt cơ bản".
+                # Không nhận ra được thì THÀ tự nhận diện như cũ còn hơn chết.
+                _lang_ep = _ma_iso(_lang_ep)
                 idx_list = idx_list[1:]
                 if on_progress:
                     on_progress(0.1 + 0.85 * done / n,
@@ -501,6 +509,47 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                 "text": " ".join(t for t in full if t).strip()}
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+#: MÃ ISO Groq/Whisper NHẬN cho tham số `language` (lấy từ chính lời báo lỗi
+#: 400 "Language must be one of: [...]"). Ném tên đầy đủ vào là 400 -> chết cả
+#: bước chép lời (lỗi thật v2.11.1, xem _ma_iso).
+_ISO_OK = frozenset("""mg de tr vi uk th lv be nn ca he et sd tl da km zh te kn
+br gl yo tg tk no oc gu mt haw ba jv ro mi cy sw es ru ja ar bg ml pl it ms ta
+mn af ur lt bn is ne bs si sn fr id hi hr am yi uz ln ko fi el sl en pt nl sv
+cs hu fa ka az kk hy sq mk my lo sa ps bo tt so su nb la eu pa as fo ht ha sk
+ka""".split())
+#: tên đầy đủ Groq HAY TRẢ VỀ -> mã ISO
+_TEN_ISO = {
+    "english": "en", "japanese": "ja", "vietnamese": "vi", "korean": "ko",
+    "chinese": "zh", "mandarin": "zh", "thai": "th", "spanish": "es",
+    "portuguese": "pt", "french": "fr", "german": "de", "russian": "ru",
+    "indonesian": "id", "hindi": "hi", "arabic": "ar", "italian": "it",
+    "dutch": "nl", "turkish": "tr", "polish": "pl", "filipino": "tl",
+    "tagalog": "tl", "malay": "ms", "swedish": "sv", "ukrainian": "uk",
+}
+
+
+def _ma_iso(lg):
+    """Đổi nhãn ngôn ngữ về MÃ ISO mà Groq nhận; không nhận ra -> None.
+
+    LỖI THẬT (v2.11.1, anh Hùng 07/08/2026 "kênh nào phân tích cũng bị"): bản vá
+    khoá-ngôn-ngữ lấy nhãn Groq TRẢ VỀ ("English") ném lại làm tham số
+    `language`, mà tham số đó chỉ nhận MÃ ("en") -> 400 "unsupported language:
+    English" -> cả bước chép lời chết -> tụt whisper máy -> MỌI video trên 10
+    phút ra "Cắt cơ bản (chưa qua AI)".
+    Trả None khi không chắc: tự nhận diện lại còn hơn làm chết cả lượt."""
+    s = str(lg or "").strip().lower()
+    if not s:
+        return None
+    if s in _ISO_OK:
+        return s
+    s2 = _TEN_ISO.get(s)
+    if s2:
+        return s2
+    if len(s) > 2 and s[:2] in _ISO_OK and ("-" in s or "_" in s):
+        return s[:2]                      # "en-US" -> "en"
+    return None
 
 
 def _fix_lang(result: dict) -> dict:

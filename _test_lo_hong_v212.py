@@ -75,8 +75,15 @@ def _gia_groq_one(audio_path, language, keys, start_at=0, on_wait=None):
     """Giả lập Groq: khúc ĐẦU trả 'ja', các khúc sau (nếu ĐƯỢC TỰ ĐOÁN) trả
     'en' — đúng cảnh gây lỗi thật của anh Hùng. Ghi lại language nhận được."""
     _goi.append(language)
-    lg = "ja" if language is None and len(_goi) == 1 else (language or "en")
-    txt = "押入れの隙間から見られてる" if lg == "ja" else "I was watching TV"
+    # TRẢ VỀ TÊN ĐẦY ĐỦ — ĐÚNG NHƯ GROQ THẬT LÀM ("Japanese", không phải "ja").
+    # Bản đầu của cổng này trả "ja" (mã) nên KHÔNG bắt được lỗi thật: bản vá
+    # ném nguyên tên vào tham số `language` -> Groq 400 "unsupported language:
+    # English" -> chết cả bước chép lời -> MỌI video >10 phút ra "Cắt cơ bản".
+    # Đây đúng cái bẫy "mock che bug" mà quy tắc của repo cấm.
+    lg = "Japanese" if language is None and len(_goi) == 1 else (language or "en")
+    txt = ("押入れの隙間から見られてる"
+           if str(lg).lower().startswith(("ja", "japanese"))
+           else "I was watching TV")
     segs = [{"start": 0.0, "end": 5.0, "text": txt}]
     words = [{"start": 0.0, "end": 1.0, "word": txt[:4]}]
     return segs, words, lg, txt
@@ -93,14 +100,25 @@ ok(_goi and _goi[0] is None,
    "A2 khúc ĐẦU vẫn để TỰ NHẬN DIỆN (không ép sai ngôn ngữ)", f"{_goi[0]!r}")
 _sau = _goi[1:]
 ok(bool(_sau) and all(x == "ja" for x in _sau),
-   "A3 mọi khúc SAU bị ÉP đúng ngôn ngữ khúc đầu ('ja') — ĐÂY LÀ BẢN VÁ",
+   "A3 mọi khúc SAU bị ÉP đúng ngôn ngữ khúc đầu — và phải là MÃ ISO 'ja', "
+   "KHÔNG được là tên 'Japanese' (ném tên vào là Groq 400, chết cả lượt)",
    f"{_sau}")
+ok(all(TR._ma_iso(x) == x for x in _sau if x),
+   "A3b ngôn ngữ ép vào là mã Groq NHẬN (qua _ma_iso)", f"{_sau}")
+ok(TR._ma_iso("English") == "en" and TR._ma_iso("Japanese") == "ja"
+   and TR._ma_iso("en-US") == "en" and TR._ma_iso("???") is None,
+   "A3c _ma_iso đổi đúng tên->mã, không nhận ra thì trả None (tự nhận diện "
+   "lại còn hơn làm chết cả lượt)")
 _van = " ".join(s["text"] for s in (kq.get("segments") or []))
 ok("I was watching TV" not in _van,
    "A4 KHÔNG còn câu tiếng Anh lẫn vào bản chép lời tiếng Nhật",
    _van[:70])
-ok((kq.get("language") or "") == "ja", "A5 nhãn ngôn ngữ cả video = 'ja'",
-   f"{kq.get('language')!r}")
+# Nhãn LƯU LẠI có thể là tên đầy đủ ("Japanese") — đó là hành vi CÓ TỪ TRƯỚC
+# (Groq luôn trả tên), `_fix_lang`/`_lang_name` phía sau vẫn hiểu. Điều PHẢI
+# đúng là: CẢ VIDEO chỉ có MỘT ngôn ngữ, và nó là tiếng Nhật.
+ok(TR._ma_iso(kq.get("language")) == "ja",
+   "A5 nhãn ngôn ngữ cả video quy về đúng 'ja' (tên hay mã đều được)",
+   f"{kq.get('language')!r} -> {TR._ma_iso(kq.get('language'))!r}")
 # ĐỐI CHỨNG ÂM: bỏ bản vá (ép language=None cho mọi khúc) thì PHẢI lẫn tiếng Anh
 _goi.clear()
 TR._groq_one = _gia_groq_one
