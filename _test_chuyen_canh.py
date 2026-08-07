@@ -475,7 +475,9 @@ def ca_vfr(src: Path) -> None:
 
 
 def ca_kieu_sai(src: Path) -> None:
-    print("\n[CA 7] KIỂU xfade SAI phải FAIL TO, không im lặng ra clip cụt")
+    print("\n[CA 7] KIỂU xfade SAI phải FAIL TO + KHÔNG BỎ LẠI RÁC")
+    tmp = Path(tempfile.gettempdir())
+    truoc = {p.name for p in tmp.glob("_seg_*")}
     dst = _SB / "sai.mp4"
     ok, e = xuat(src, dst, [(60.0, 66.0), (20.0, 26.0)],
                  [("kieu_khong_ton_tai", 0.3)])
@@ -484,6 +486,16 @@ def ca_kieu_sai(src: Path) -> None:
     bao("kiểu lạ -> KHÔNG để lại file thành phẩm hỏng",
         not dst.exists() or dst.stat().st_size == 0,
         "không có file" if not dst.exists() else f"{dst.stat().st_size} byte")
+    # RÒ RÁC THẬT (có từ `main`): pha 1 lỗi giữa đường -> caller gọi
+    # `_cleanup_paths(_seg_temps)` mà `_seg_temps` còn RỖNG (phép gán chưa chạy)
+    # -> mảnh `.mkv` nằm lại vĩnh viễn. Đo 07/08/2026: 0,53 GB `_seg_*` trong
+    # %TEMP%; cùng loại rác 1,71 GB phải dọn tay hôm 31/07 khi ổ C đầy 100%.
+    sot = sorted({p.name for p in tmp.glob("_seg_*")} - truoc)
+    mb = sum((tmp / s).stat().st_size for s in sot
+             if (tmp / s).exists()) / 1e6
+    bao("xuất LỖI vẫn dọn hết mảnh `_seg_*` (không phình %TEMP%)",
+        not sot, f"còn sót {len(sot)} file / {mb:.1f} MB: {sot[:4]}"
+        if sot else "0 file sót")
 
 
 def ca_bat_bien(src: Path) -> None:

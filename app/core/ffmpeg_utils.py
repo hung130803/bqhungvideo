@@ -1615,7 +1615,8 @@ def _graph_xfade(n: int, chuyen: list, bu: list, dai_goc: list,
 
 def _extract_segments_to_temp(src, segs: list, encoder: str,
                               on_progress=None,
-                              chuyen_canh: Optional[list] = None
+                              chuyen_canh: Optional[list] = None,
+                              temps_out: Optional[list] = None
                               ) -> tuple[str, list]:
     """PHA 1 của ghép nhiều đoạn: TÁCH từng đoạn ra FILE TẠM (.mkv, mezzanine
     chất lượng cao) rồi trả (đường_dẫn_file_danh_sách_concat, [file_tạm]).
@@ -1641,14 +1642,22 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     khủng: nền mờ + overlay + đốt .ass + fade + tiếng động) KHÔNG PHẢI SỬA GÌ.
     Đổi lấy 1 lượt encode mezzanine nữa — chấp nhận, vì gộp xfade vào graph pha
     2 phải đánh số lại toàn bộ input (nền màu/overlay/nhạc/dub) trong hàm 400
-    dòng đang gánh cả sản xuất 200-300 kênh."""
+    dòng đang gánh cả sản xuất 200-300 kênh.
+
+    temps_out: LIST CỦA CALLER — hàm append từng file tạm vào đó NGAY khi tạo.
+    RÒ RÁC THẬT (có từ bản `main`; đo 07/08/2026 còn **0,53 GB `_seg_*`** trong
+    `%TEMP%`): caller bọc `try/except` rồi gọi `_cleanup_paths(_seg_temps)`,
+    nhưng khi hàm này NÉM LỖI thì phép gán `_seg_list, _seg_temps = ...` CHƯA
+    CHẠY nên `_seg_temps` vẫn RỖNG -> mọi mảnh đã tách nằm lại VĨNH VIỄN. Chuyển
+    cảnh làm nó nặng thêm vì pha 1.5 là một chỗ ném lỗi MỚI. Đúng loại rác
+    1,71 GB phải dọn tay hôm 31/07 khi ổ C đầy 100%."""
     import tempfile
     import uuid
     info = probe(src)
     fps = info.fps if 10.0 <= (info.fps or 0) <= 120.0 else 30.0
     tdir = tempfile.gettempdir()
     tag = uuid.uuid4().hex[:8]
-    temps: list = []
+    temps: list = temps_out if temps_out is not None else []
     n = len(segs)
     dai_goc = [float(e) - float(s) for s, e in segs]
     xf = list(chuyen_canh or [])[:max(0, n - 1)]
@@ -1949,10 +1958,14 @@ def export_canvas_clip(
         if on_progress:
             on_progress(0.01)
         try:
+            # temps_out=_seg_temps: hàm append MẢNH VÀO ĐÂY ngay khi tạo. Trước
+            # đây chỉ nhận qua giá trị TRẢ VỀ, mà lỗi giữa đường thì phép gán
+            # chưa chạy -> `_seg_temps` rỗng -> dọn 0 file, rác nằm lại vĩnh
+            # viễn (đo: 0,53 GB `_seg_*` trong %TEMP%).
             _seg_list, _seg_temps = _extract_segments_to_temp(
                 src, segs,
                 encoder, lambda p: on_progress and on_progress(p * 0.35),
-                chuyen_canh=_xf)
+                chuyen_canh=_xf, temps_out=_seg_temps)
         except Exception:
             _cleanup_paths(_seg_temps)
             raise

@@ -395,6 +395,18 @@ file · **BẤT BIẾN: chuyển cảnh TẮT so với `main` ra PSNR 99 dB ở 
   KHÔNG có chữ vẫn đếm 4.634 px → ngưỡng cứng 1.500 px FAIL OAN. Đúng: chữ phải
   làm số px trắng **gấp > 4 lần**, và bản BẬT phải khớp bản TẮT ở CÙNG mốc.
 
+## RÒ RÁC ĐĨA — TÌM RA VÀ ĐÃ SỬA (có từ bản `main`, không phải lỗi mới)
+Xuất LỖI GIỮA PHA 1 thì mảnh `.mkv` đã tách **nằm lại vĩnh viễn**: caller bọc
+`try/except` rồi gọi `_cleanup_paths(_seg_temps)`, nhưng khi
+`_extract_segments_to_temp` NÉM LỖI thì phép gán `_seg_list, _seg_temps = ...`
+**chưa chạy** nên `_seg_temps` vẫn RỖNG → dọn 0 file. Chuyển cảnh làm nó nặng
+thêm vì pha 1.5 là chỗ ném lỗi MỚI.
+- **Đo thật:** sau các lượt đo/test hôm nay `%TEMP%` còn **48 file `_seg_*` /
+  0,53 GB**. Đúng loại rác **1,71 GB** phải dọn tay hôm 31/07 khi ổ C đầy 100%.
+- **Sửa:** `_extract_segments_to_temp(..., temps_out=<list của caller>)` —
+  append từng mảnh vào list của caller NGAY khi tạo, nên lỗi ở bất kỳ đoạn nào
+  vẫn dọn được hết. Cổng 36 có ca canh: xuất LỖI xong `%TEMP%` phải sạch.
+
 ## NÚM MỚI CHO NGƯỜI DÙNG / GỠ RỐI
 - `BQ_FFMPEG_SLOTS=<N>` — ép số lệnh ffmpeg chạy cùng lúc (1..16). Dùng để đo và
   để chữa máy user mà không phải phát hành bản mới.
