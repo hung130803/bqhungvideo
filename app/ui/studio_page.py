@@ -3934,7 +3934,31 @@ class StudioPage(QWidget):
 
         rowb = QHBoxLayout()
         sv = QPushButton("Lưu cắt"); sv.setProperty("ghost", True)
-        rowb.addWidget(sv); rowb.addStretch(1)
+        rowb.addWidget(sv)
+        # ── DẠY GU CHO AI, đặt ĐÚNG LÚC: vừa xem clip xong mới có ý kiến ──
+        # Trước đây 2 nút này nằm ngay trên thẻ clip -> anh Hùng 07/08/2026:
+        # "cái hay nhạt kia để làm gì thừa quá". Đúng: ở ngoài đó hàng đã 5 nút
+        # mà user còn CHƯA XEM clip nên chẳng có gì để dạy. Trong hộp này thì
+        # vừa xem xong — bấm là đúng lúc, và hàng nút ngoài kia gọn lại.
+        _vg = 0
+        try:
+            _vg = services.gu_clip(c["id"])
+        except Exception:  # noqa: BLE001 - thiếu bảng gu không được chặn UI
+            _vg = 0
+        for _nhan, _val, _tip in (
+                ("Đoạn này HAY", 1,
+                 "Dạy AI: lần sau cắt kênh này, tìm đoạn giống kiểu này."),
+                ("Đoạn này NHẠT", -1,
+                 "Dạy AI: lần sau tránh kiểu đoạn này cho kênh này.")):
+            _b = QPushButton(_nhan)
+            _b.setFixedHeight(28)
+            _b.setProperty("primary" if _vg == _val else "ghost", True)
+            _b.setToolTip(_tip + ("  [ĐANG CHỌN — bấm lại để bỏ]"
+                                  if _vg == _val else ""))
+            _b.clicked.connect(lambda _, cid=c["id"], val=_val, cu=_vg:
+                               self._dat_gu(cid, 0 if cu == val else val))
+            rowb.addWidget(_b)
+        rowb.addStretch(1)
         xb = QPushButton("Xuất clip này"); xb.setProperty("primary", True)
         rowb.addWidget(xb)
         cb = QPushButton("Đóng"); cb.setProperty("ghost", True); rowb.addWidget(cb)
@@ -7691,27 +7715,11 @@ class StudioPage(QWidget):
                        "này — copy dán thẳng lên TikTok/Reels/Shorts.")
         cap.clicked.connect(lambda _, cc=c: self._write_caption(cc))
         lay.addWidget(cap)
-        # 👍/👎 DẠY GU CHO AI. NÚT PHẢI LÀ CHỮ, KHÔNG EMOJI: máy anh Hùng thiếu
-        # glyph nên emoji ra Ô ĐEN (lỗi thật v2.6.22, đã ghi ở cổng 9).
-        _v = 0
-        try:
-            _v = services.gu_clip(c["id"])
-        except Exception:  # noqa: BLE001 - thiếu bảng gu không được chặn UI
-            _v = 0
-        for _nhan, _val, _tip in (
-                ("Hay", 1, "Dạy AI: đoạn NÀY hay — lần sau cắt kênh này AI sẽ "
-                           "tìm đoạn tương tự (đưa vào prompt làm ví dụ mẫu)."),
-                ("Nhạt", -1, "Dạy AI: đoạn NÀY nhạt/không cần — lần sau AI "
-                             "tránh kiểu đoạn này cho kênh này.")):
-            # 2 nút CÙNG bề rộng (đo cả 2 nhãn) -> thẳng hàng, không cụt chữ
-            b = _vua_chu(QPushButton(_nhan), "Hay", "Nhạt")
-            b.setFixedHeight(28)
-            b.setProperty("primary" if _v == _val else "ghost", True)
-            b.setToolTip(_tip + ("  [ĐANG CHỌN — bấm lại để bỏ]"
-                                 if _v == _val else ""))
-            b.clicked.connect(lambda _, cid=c["id"], val=_val, cu=_v:
-                              self._dat_gu(cid, 0 if cu == val else val))
-            lay.addWidget(b)
+        # (2 nút Hay/Nhạt ĐÃ CHUYỂN vào hộp "Xem & sửa" — anh Hùng 07/08/2026:
+        # "cái hay nhạt kia để làm gì thừa quá". Hàng nút đã có 5 nút, thêm 2
+        # nút nữa là chật mà lúc chỉ NHÌN danh sách thì cũng chưa xem clip nên
+        # chưa có ý kiến gì để dạy AI. Đặt trong hộp xem lại là ĐÚNG LÚC: vừa
+        # xem xong, thấy hay/nhạt thì bấm ngay.)
         if c["status"] == "exported" and c["export_path"]:
             mo = _vua_chu(QPushButton("Mở"), "Mở")
             mo.setProperty("ghost", True)

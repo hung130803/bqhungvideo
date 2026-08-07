@@ -195,6 +195,77 @@ def khoi_prompt_hanh_dong(khoang: list) -> str:
             "có thoại hay, hãy GỘP chúng thành 1 clip.")
 
 
+def _giay_trung(a_segs: list, b_segs: list) -> float:
+    """Tổng số GIÂY mà 2 clip dùng CHUNG cùng một đoạn phim gốc. Hàm thuần."""
+    tong = 0.0
+    for a in a_segs or []:
+        try:
+            a0, a1 = float(a[0]), float(a[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        for b in b_segs or []:
+            try:
+                b0, b1 = float(b[0]), float(b[1])
+            except (IndexError, TypeError, ValueError):
+                continue
+            tong += max(0.0, min(a1, b1) - max(a0, b0))
+    return tong
+
+
+def bo_trung_nhau(clips: list, ty_le: float = 0.15) -> tuple:
+    """BỎ clip TRÙNG ĐOẠN với clip ĐIỂM CAO HƠN. Trả (giữ, [(clip, lý do)]).
+
+    LỖI THẬT (chính bộ đo `_do_chon_doan.py` của tôi phơi ra, anh Hùng 07/08/2026
+    yêu cầu "cắt ghép các đoạn hợp lý với nhau nhưng k được trùng"): 1 video ra
+    Part1 `173,0-259,9s` và Part2 `244,6-315,8s` -> **DÙNG CHUNG 15,3 GIÂY**.
+    Người xem 2 Part liền nhau sẽ thấy y hệt một đoạn -> mất uy tín kênh.
+    Vì sao lọt: chốt khử trùng cũ (`_dedupe_windows`) CHỈ áp cho cửa sổ ứng viên
+    heuristic, mà còn cho phép trùng tới 55%; clip do AI chọn thì KHÔNG ai kiểm
+    trùng lẫn nhau — chỉ có `used_ranges` chống trùng với LẦN CHẠY TRƯỚC.
+
+    So theo TỪNG ĐOẠN (không phải khoảng đầu-cuối): clip ghép nhiều đoạn có thể
+    trải rộng nhưng thực ra không chồng nhau. Giữ clip ĐIỂM CAO, bỏ clip điểm
+    thấp nếu phần dùng chung > `ty_le` × độ dài clip NGẮN HƠN. Hàm thuần."""
+    if not clips:
+        return [], []
+
+    def _dai(c):
+        """Tổng độ dài THẬT của clip (cộng từng đoạn). Đoạn rác -> bỏ qua chứ
+        KHÔNG nổ: dữ liệu tới đây từ JSON của AI nên phải chịu được mọi thứ."""
+        t = 0.0
+        for s in (c.get("segments") or []):
+            if not isinstance(s, (list, tuple)) or len(s) < 2:
+                continue
+            try:
+                t += max(0.0, float(s[1]) - float(s[0]))
+            except (TypeError, ValueError):
+                continue
+        return t
+
+    thu_tu = sorted(range(len(clips)),
+                    key=lambda i: -float(clips[i].get("score", 0) or 0))
+    giu_i: list = []
+    bo: list = []
+    for i in thu_tu:
+        c = clips[i]
+        cs, cd = c.get("segments") or [], _dai(c)
+        va = None
+        for j in giu_i:
+            d = clips[j]
+            tr = _giay_trung(cs, d.get("segments") or [])
+            ngan = min(cd, _dai(d)) or 1.0
+            if tr > ty_le * ngan:
+                va = (tr, d, tr / ngan)
+                break
+        if va is None:
+            giu_i.append(i)
+        else:
+            bo.append((c, f"trùng {va[0]:.0f}s ({va[2]*100:.0f}%) với clip "
+                          f"«{str(va[1].get('title') or '')[:40]}» điểm cao hơn"))
+    giu_i.sort()                     # trả lại THỨ TỰ THỜI GIAN như đầu vào
+    return [clips[i] for i in giu_i], bo
+
+
 def khoi_prompt_gu(gu: dict, max_chars: int = 900) -> str:
     """Khối "GU CHỦ KÊNH" cho prompt chọn đoạn, dựng từ 👍/👎 anh Hùng đã bấm.
 

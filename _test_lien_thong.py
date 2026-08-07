@@ -330,7 +330,7 @@ else:
     # rộng đo theo fontMetrics lúc chạy (`_vua_chu`); cổng 31
     # `_test_nut_khong_cut.py` canh riêng chuyện cụt chữ ở 3 cỡ font.
     ok("_vua_chu(" in _u and "b.setFixedWidth(52)" not in _u,
-       "8a nút Hay/Nhạt đo bề rộng THEO FONT, không còn số cứng 52px")
+       "8a nút thẻ clip đo bề rộng THEO FONT, không còn số cứng 52px")
     ok(_u.count('b.setFixedHeight(28)') >= 1,
        "8b nút mới cùng chiều cao 28px với nút cũ (không lệch hàng)")
 

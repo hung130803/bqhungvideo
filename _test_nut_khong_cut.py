@@ -120,15 +120,15 @@ ok(bool(_xl) and _xl[0].width() >= _can_xl + 8,
 ok(any(b.text() == "Mở" for b in w2.findChildren(QPushButton)),
    "2b clip đã xuất thì có nút 'Mở'")
 
-print("\n=== 3. Hay/Nhạt: 2 nút CÙNG bề rộng (thẳng hàng) ===")
-_hn = [b for b in w2.findChildren(QPushButton) if b.text() in ("Hay", "Nhạt")]
-ok(len(_hn) == 2, "3a có đủ 2 nút Hay/Nhạt", str([b.text() for b in _hn]))
-ok(len(_hn) == 2 and _hn[0].width() == _hn[1].width(),
-   "3b 2 nút bằng nhau", str([b.width() for b in _hn]))
-_can_nhat = _hn[0].fontMetrics().horizontalAdvance("Nhạt") if _hn else 0
-ok(bool(_hn) and all(b.width() >= _can_nhat + 8 for b in _hn),
-   "3c đủ rộng cho chữ DÀI HƠN trong 2 chữ ('Nhạt')",
-   f"{[b.width() for b in _hn]}px cho chữ {_can_nhat}px")
+print("\n=== 3. Hàng nút thẻ clip phải GỌN (không nhồi nút không cần) ===")
+# ĐỔI 07/08/2026: 2 nút Hay/Nhạt ĐÃ CHUYỂN vào hộp "Xem & sửa" (anh Hùng: "cái
+# hay nhạt kia để làm gì thừa quá"). Thẻ clip chỉ giữ nút THẬT SỰ cần khi đang
+# lướt danh sách; việc dạy gu để lúc đã xem clip mới hỏi.
+_nut2 = [b.text() for b in w2.findChildren(QPushButton) if b.text()]
+ok("Hay" not in _nut2 and "Nhạt" not in _nut2,
+   "3a thẻ clip KHÔNG còn 2 nút Hay/Nhạt", str(_nut2))
+ok(len(_nut2) <= 5, "3b hàng nút gọn (<= 5 nút)", f"{len(_nut2)} nút: {_nut2}")
+_hn = [b for b in w2.findChildren(QPushButton) if b.text()]
 
 print("\n=== 4. KHÔNG còn số px CỨNG cho nút thẻ clip (chống tái phát) ===")
 _src = Path(REPO, "app", "ui", "studio_page.py").read_text(

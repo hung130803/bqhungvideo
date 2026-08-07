@@ -224,6 +224,57 @@ ok(not _qua_nho,
 _tong_kb = sum(p.stat().st_size for p in _kho.rglob("*") if p.is_file()) / 1024
 ok(_tong_kb <= 400, "E4 chuẩn âm KHÔNG làm phình kho", f"{_tong_kb:.0f} KB")
 
+# ══════════════ F. CÁC PART KHÔNG ĐƯỢC TRÙNG ĐOẠN NHAU ══════════════
+print("\n=== F. Các Part của cùng 1 video KHÔNG được dùng chung đoạn phim ===")
+# LỖI THẬT do chính bộ đo `_do_chon_doan.py` phơi ra: 1 video ra Part1
+# 173,0-259,9s và Part2 244,6-315,8s -> DÙNG CHUNG 15,3 GIÂY. Chốt khử trùng cũ
+# chỉ áp cho cửa sổ ứng viên heuristic (còn cho phép trùng tới 55%), và
+# used_ranges chỉ chống trùng với LẦN CHẠY TRƯỚC.
+from app.ai import chon_doan as _CD  # noqa: E402
+
+_ca = [
+    {"title": "Part1", "score": 45, "segments": [[173.0, 259.9]]},
+    {"title": "Part2", "score": 60, "segments": [[244.6, 315.8]]},
+    {"title": "Part3", "score": 50, "segments": [[605.1, 780.4]]},
+]
+_giu, _bo = _CD.bo_trung_nhau(_ca)
+ok(len(_giu) == 2 and len(_bo) == 1,
+   "F1 đúng cảnh thật: bỏ 1 clip trùng 15,3s, giữ 2",
+   f"giữ {[c['title'] for c in _giu]} · bỏ {[c['title'] for c, _ in _bo]}")
+ok(_bo and _bo[0][0]["title"] == "Part1",
+   "F2 giữ clip ĐIỂM CAO (Part2=60), bỏ clip điểm thấp (Part1=45)")
+ok(_giu and [c["title"] for c in _giu] == ["Part2", "Part3"],
+   "F3 trả lại theo THỨ TỰ THỜI GIAN", str([c["title"] for c in _giu]))
+_xa = [{"title": "A", "score": 50, "segments": [[10.0, 70.0]]},
+       {"title": "B", "score": 50, "segments": [[200.0, 260.0]]}]
+ok(len(_CD.bo_trung_nhau(_xa)[0]) == 2,
+   "F4 clip KHÔNG trùng thì giữ đủ (không lọc quá tay)")
+_nhe = [{"title": "A", "score": 60, "segments": [[10.0, 70.0]]},
+        {"title": "B", "score": 50, "segments": [[66.0, 130.0]]}]
+ok(len(_CD.bo_trung_nhau(_nhe)[0]) == 2,
+   "F5 chồng nhẹ 4s (<15%) vẫn giữ — cắt sát nhau là bình thường")
+_ghep = [{"title": "A", "score": 60, "segments": [[10.0, 40.0], [300.0, 330.0]]},
+         {"title": "B", "score": 50, "segments": [[100.0, 160.0]]}]
+ok(len(_CD.bo_trung_nhau(_ghep)[0]) == 2,
+   "F6 clip GHÉP nhiều đoạn trải rộng nhưng không chồng -> giữ (so theo TỪNG "
+   "đoạn, không so khoảng đầu-cuối)")
+ok(_CD.bo_trung_nhau([]) == ([], []), "F7 rỗng -> không nổ")
+_rac = [{"title": "A", "score": 1, "segments": [["x", None]]},
+        {"title": "B", "score": 2, "segments": None}]
+try:
+    _CD.bo_trung_nhau(_rac)
+    ok(True, "F8 đầu vào rác -> không nổ")
+except Exception as _e:  # noqa: BLE001
+    ok(False, "F8 đầu vào rác -> không nổ", f"{type(_e).__name__}: {_e}")
+_msrc = Path(REPO, "app", "modules", "m1_highlight.py").read_text(
+    encoding="utf-8", errors="replace")
+ok("bo_trung_nhau(ai_clips)" in _msrc,
+   "F9 đã nối vào đường cắt thật của m1 (nếu không thì vô dụng)")
+ok(_msrc.find("bo_trung_nhau(ai_clips)")
+   < _msrc.find("ai_clips, used_ranges,"),
+   "F10 lọc trùng-giữa-Part chạy TRƯỚC lọc trùng-với-lần-trước "
+   "(ngược lại thì clip tốt bị lần trước loại oan)")
+
 print(f"\n{'=' * 62}\nĐẠT {OK} · SAI {len(LOI)}")
 if LOI:
     for x in LOI:

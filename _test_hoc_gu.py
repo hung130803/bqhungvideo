@@ -137,8 +137,19 @@ ok("khoi_prompt_gu" in _src, "7a m1 có gọi khối gu")
 ok("gu_cua_kenh" in _src, "7b m1 lấy gu THEO KÊNH của video")
 _ui = Path(REPO, "app", "ui", "studio_page.py").read_text(
     encoding="utf-8", errors="replace")
-ok('QPushButton(_nhan)' in _ui and '("Hay", 1' in _ui and '("Nhạt", -1' in _ui,
-   "7c thẻ clip có 2 nút Hay/Nhạt")
+# ĐÃ CHUYỂN 07/08/2026: 2 nút không còn ở thẻ clip (anh Hùng: "cái hay nhạt kia
+# để làm gì thừa quá" — hàng đã 5 nút mà lúc chỉ nhìn danh sách thì user chưa
+# xem clip nên chưa có ý kiến gì để dạy). Nay nằm trong hộp "Xem & sửa", đúng
+# lúc vừa xem xong.
+_i_rv = _ui.find("def _review_clip")
+_i_end = _ui.find("\n    def ", _i_rv + 10)
+_than_rv = _ui[_i_rv:_i_end if _i_end > 0 else len(_ui)]
+ok('("Đoạn này HAY", 1' in _than_rv and '("Đoạn này NHẠT", -1' in _than_rv,
+   "7c 2 nút dạy gu nằm TRONG hộp 'Xem & sửa' (đúng lúc vừa xem clip)")
+_i_row = _ui.find("def _clip_row")
+_than_row = _ui[_i_row:_ui.find("def _thumb", _i_row)]
+ok('("Hay", 1' not in _than_row,
+   "7c2 thẻ clip KHÔNG còn 2 nút đó nữa (hàng nút gọn lại)")
 # chỉ được soi NHÃN NÚT, không soi ghi chú: emoji trong comment thì user không
 # thấy. (Bản đầu của cổng này soi cả file -> FAIL oan vì dòng ghi chú.)
 _dong_nut = [ln for ln in _ui.splitlines()

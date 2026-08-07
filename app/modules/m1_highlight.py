@@ -1835,6 +1835,20 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         if _n_low:
             ctx.progress(0.62, f"bỏ {_n_low} clip điểm thấp (<{int(_floor)}) "
                                "— chỉ giữ đoạn đáng dùng")
+        # 🚫 CHỐNG TRÙNG GIỮA CÁC PART CỦA CHÍNH LƯỢT NÀY (anh Hùng 07/08/2026:
+        # "cắt ghép các đoạn hợp lý với nhau nhưng k được trùng").
+        # LỖI THẬT bộ đo phơi ra: Part1 173,0-259,9s và Part2 244,6-315,8s dùng
+        # chung 15,3 GIÂY -> 2 Part có cùng một đoạn. Chốt cũ chỉ chống trùng
+        # với LẦN CHẠY TRƯỚC (used_ranges) chứ không kiểm các Part với nhau.
+        try:
+            ai_clips, _bo_tr = _cd_mod.bo_trung_nhau(ai_clips)
+            for _c, _ly in _bo_tr:
+                ai_warns.append(f"bỏ 1 clip: {_ly}")
+            if _bo_tr:
+                ctx.progress(0.63, f"bỏ {len(_bo_tr)} clip TRÙNG ĐOẠN với Part "
+                                   "khác — các Part không còn giống nhau")
+        except Exception:  # noqa: BLE001 - lỗi lọc không được chặn cả lượt cắt
+            pass
         # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: loại clip trùng >30% với đoạn đã dùng
         # ở lần trước. Dùng span [đầu..cuối] của clip (clip đã nới dài). Hết
         # sạch (video đã dùng gần hết) -> giữ clip ít trùng nhất + log.
