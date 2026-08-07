@@ -96,6 +96,88 @@ file trong `D:\hieu-ung-demo\overlays` (không rõ nguồn).
 phần máy đang bỏ không. Nhưng **phải ĐO** chi phí thật trước khi hứa (bẫy đã sập
 2 lần: hiệu ứng báo 0,03 CPU-giây thực ra lỗi filter).
 
+## ANH HÙNG CHỐT THÊM 07/08/2026 (cuối phiên)
+
+### A. BỎ Mixed-Cut
+Nguyên văn: *"cái mixed-cut bỏ đi tôi thấy k cần thiết ở tool của tôi"*.
+- Bỏ **lối vào UI** (nút "Mixed-Cut" ở `studio_page.py`) — đây là việc an toàn nhất.
+- **TRƯỚC KHI XOÁ MÃ**: kiểm xem có kênh nào đang dùng không
+  (`SELECT ... FROM projects/clips` có cấu hình mixed-cut / `export_stitched_clip`).
+  **Nếu CÓ kênh đang dùng thì CHỈ ẩn nút, ĐỪNG xoá mã** — anh Hùng chạy 200-300
+  kênh sản xuất, xoá đường xuất mà có kênh đang dùng là clip cũ "Xuất lại" sẽ nổ.
+- Nhờ bỏ Mixed-Cut mà **việc "chuyển cảnh cho Mixed-Cut" trong danh sách CHƯA
+  LÀM được GẠCH BỎ** — không cần làm nữa.
+- Cổng test liên quan phải cập nhật, không để FAIL oan.
+
+### B. Làm nốt các nguồn hiệu ứng còn lại
+Nguyên văn: *"hiệu ứng tôi thấy bạn bảo lấy bn cái ở đâu nx mà, làm hết chưa,
+làm đi"*. Anh nhắc 3 nguồn tôi đã hứa — phải làm **hết**, mỗi nguồn **đếm ra số
+THẬT** rồi báo:
+1. **frei0r** — đã cài 13 plugin, chốt 25 hiệu ứng. **XONG.**
+2. **`xfade_opencl` + kernel `gl-transitions`** (MIT, ~80 kiểu) — **CHƯA LÀM.**
+   Chạy trên **GPU** → đúng chỗ máy anh Hùng bỏ không (CPU 96,7% / GPU 11,3%).
+3. **`libplacebo` + shader GLSL** — **CHƯA LÀM.** Cũng GPU.
+Cả 2 nhóm GPU phải: đo chi phí thật · fallback ÊM khi máy không có OpenCL/Vulkan
+(máy nhân viên) · ghi nguồn + giấy phép vào `app/assets/hieu_ung/NGUON_GIAY_PHEP.md`.
+
+**Bảng mẫu `D:\hieu-ung-demo-v3\00_BANG_MAU_TAT_CA_HIEU_UNG.mp4` là ưu tiên số 1** —
+anh Hùng đã hỏi 5 lần, và anh không xem được số đo, chỉ xem được clip.
+
+## LỖI ANH HÙNG BÁO Ở BẢNG MẪU v3 — SỬA NGAY (07/08/2026)
+Anh gửi ảnh `00_BANG_MAU_TAT_CA_HIEU_UNG.mp4` đang phát, nguyên văn: *"nó bị
+phóng to à, với tuỳ cái, cái nào cần thì hiện thôi hiểu k, với AI chọn sao phù
+hợp nhé"*.
+
+### Lỗi 1 — CHỮ NHÃN BỊ CẮT MẤT HAI ĐẦU
+Ảnh cho thấy nhãn `...ỐC – KHÔNG HIỆU ỨNG (ô để so sá...` — **mất chữ đầu và
+chữ cuối**. Nhãn dài hơn bề rộng khung 1080 nên tràn ra ngoài.
+**SỬA**: `drawtext` phải TỰ CO cỡ chữ theo độ dài nhãn, hoặc xuống 2 dòng, hoặc
+cắt ngắn tên. **Cấm để tràn.** Cách kiểm: render khung có nhãn rồi **đếm pixel
+chữ ở cột 0-8 và cột (w-8)-w** — có chữ sát mép = FAIL. Đây đúng bài học "nút
+cụt chữ Hav/Nha" (cổng 31): **số px cứng KHÔNG BAO GIỜ đúng**, phải đo
+`fontMetrics`/`textfile` lúc chạy.
+
+### Lỗi 2 — HÌNH BỊ PHÓNG TO
+Nội dung trong khung bị blow-up, mất khung cảnh. Nghi: dựng bảng mẫu bằng
+`scale`+`crop` kiểu `force_original_aspect_ratio=increase` (cắt để lấp đầy) trên
+nguồn 16:9 → phóng to cắt mất hai bên. **SỬA**: bảng mẫu phải cho thấy **TOÀN
+khung** (`decrease` + `pad`), vì mục đích là để anh Hùng ĐÁNH GIÁ hiệu ứng, không
+phải clip thành phẩm. Ghi rõ trong ghi chú là "khung xem, không phải khung xuất".
+
+### Lỗi 3 (yêu cầu, không phải bug) — CHỈ HIỆN KHI CẦN
+*"tuỳ cái, cái nào cần thì hiện thôi"* — khẳng định lại **4 luật chống loè** đã
+chốt, và phải **CHỨNG MINH bằng số** trong báo cáo:
+- Hiệu ứng chỉ **0,3–0,8s** ở ĐIỂM NHẤN, tuyệt đối **KHÔNG phủ toàn clip**
+- Mỗi clip **tối đa 2-3 điểm**
+- **Cảnh TĨNH → KHÔNG đụng gì** (đo `chuyen_dong` thấp thì bỏ qua)
+- Đoạn không có cao trào (`nang_luong` phẳng) → **KHÔNG thêm gì**
+Trong `_ghi_chu.txt` phải ghi rõ: clip dài bao nhiêu giây, **tổng số giây CÓ hiệu
+ứng** là bao nhiêu, tỉ lệ %. Nếu tỉ lệ > 10% thời lượng clip là **SAI thiết kế**,
+phải giảm.
+
+### Lỗi 3.5 — TÔI TỰ TÌM RA khi soi lại bản vừa xuất (08/08/2026): `%` NUỐT CẢ DÒNG
+Sửa xong 2 lỗi trên, tôi trích khung bản v3 vừa render ra XEM lại thì thấy **cả
+25 ô mất hẳn dòng nhãn thứ 2** (`14/25 · CapCut: Film Radiance · đổi 100% khung
+hình`), chỉ ô GỐC (nhãn `0/25`, không có `%`) là còn.
+
+**Nguyên nhân**: `drawtext` mặc định chạy `expansion=normal`, coi `%` là mở đầu
+hàm `%{...}`; gặp `%` trơ nó **bỏ SẠCH chuỗi và VẪN trả rc=0**. Đo thật cùng một
+chuỗi: mặc định **0 px** vs `expansion=none` **11.744 px**; riêng `'100%'` 0 px
+vs 1.512 px. **Chữa: `expansion=none`.**
+
+**Cổng cũ PASS OAN** vì nó chỉ đếm pixel TỔNG của cả khối nhãn — dòng 1 còn nên
+tổng > 0 nên báo "26/26 ĐẠT". Nay `_canh_nhan` đếm pixel **TỪNG DÒNG**, dòng nào
+0 px là FAIL. Đây đúng loại lỗi "app vẫn chạy, test vẫn xanh, chỉ số đo tố giác".
+
+**App THẬT không dính**: `ffmpeg_utils._esc_drawtext` đã escape `%` -> `\%` từ
+trước; hiệu ứng `dem_nguoc` chỉ vẽ chữ số. Lỗi khu trú trong script bảng mẫu.
+
+### Lỗi 4 (yêu cầu) — AI CHỌN PHẢI PHÙ HỢP
+*"AI chọn sao phù hợp nhé"*. Bảng "giây thứ mấy → hiệu ứng gì → VÌ SAO" trong
+`_ghi_chu.txt` là bằng chứng duy nhất anh Hùng đọc được. Mỗi dòng phải nêu **CĂN
+CỨ SỐ**, ví dụ: `giây 41,2 · zoom nhồi · vì RMS đạt đỉnh 0,82 (nền 0,31) +
+chuyển động 7,4/10`. **Không được ghi lý do chung chung** kiểu "cảnh hay".
+
 ## SỐ ĐO CƠ SỞ (máy rảnh 10-14%)
 Xuất thật · video Nhật thật · 2 đoạn hook-first · nền mờ · đốt .ass · 1080×1920 ·
 h264_nvenc · 24 nhân. Nguồn: `「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4`
