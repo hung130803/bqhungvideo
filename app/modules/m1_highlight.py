@@ -1559,6 +1559,27 @@ def _overlap_frac(s: float, e: float, used: list) -> float:
     return min(1.0, covered / span)
 
 
+def _ten_tu_file(video_id) -> str:
+    """TÊN CLIP lấy từ tên file video gốc (dùng khi AI không đặt được tên).
+
+    Dọn các đuôi rác của file tải về (mã độ phân giải, ' - YouTube', đuôi id
+    ngoặc) rồi chặn trần độ dài để thẻ clip không tràn. Lỗi thì trả "" để nơi
+    gọi lùi về "Clip" — không bao giờ làm vỡ lượt cắt vì chuyện đặt tên.
+    """
+    try:
+        r = db.query_one("SELECT src_path FROM videos WHERE id=?", (video_id,))
+        ten = os.path.splitext(os.path.basename((r or {})["src_path"] or ""))[0]
+    except Exception:  # noqa: BLE001
+        return ""
+    ten = re.sub(r"\s*[-–]\s*YouTube\s*$", "", ten, flags=re.I)
+    ten = re.sub(r"\s*\[[0-9a-zA-Z_-]{8,}\]\s*$", "", ten)   # [videoID]
+    ten = re.sub(r"\s*\(?\b(1080|720|2160|480)p\b\)?", "", ten, flags=re.I)
+    ten = re.sub(r"[\s_]+", " ", ten).strip(" -_.")
+    if len(ten) > 90:
+        ten = ten[:90].rstrip() + "…"
+    return ten
+
+
 def _filter_used_candidates(cands: list, used: list, keyfn=None,
                             thr: float = _USED_OVERLAP) -> tuple[list, bool]:
     """Loại ứng viên trùng > thr với `used`. keyfn(c) -> (start, end).
@@ -2072,6 +2093,11 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     # mà >30% từ là câu CTA/chào kênh -> loại. KHÔNG loại theo vị trí đơn
     # thuần (nội dung hay ở đầu video vẫn giữ). FAIL-SAFE: lọc hết -> giữ cũ.
     tsegs = (transcript or {}).get("segments", []) or []
+    # TIÊU ĐỀ khi cắt cơ bản: trước đây ĐÓNG CỨNG chữ "Clip" nên 3 thẻ đều ghi
+    # trơ "Clip", không biết là video nào (anh Hùng 07/08/2026: "ít ra tiêu đề
+    # cx phải có ... hay ăn theo tên video"). Video KHÔNG TIẾNG thì không có
+    # lời để đặt tên -> ăn theo TÊN FILE GỐC là chỗ dựa duy nhất còn lại.
+    _ten_co_ban = _ten_tu_file(video_id)
     if duration > 0 and tsegs:
         _head, _tail = 0.03 * duration, 0.97 * duration
         _no_junk = [
@@ -2116,7 +2142,8 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
                                   title, transcript, signals, status)
                VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
             (video_id, c_start, c_end, round(final, 1),
-             "Năng lượng/chuyển cảnh nổi bật.", "Clip", c["text"], db.dumps(signals)),
+             "Năng lượng/chuyển cảnh nổi bật.", _ten_co_ban or "Clip",
+             c["text"], db.dumps(signals)),
         )
         clip_ids.append(cid)
     msg = note or f"Đề xuất {len(clip_ids)} clip (cắt cơ bản)"
