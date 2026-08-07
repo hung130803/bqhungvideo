@@ -83,9 +83,113 @@ def terminate_all_children() -> None:
             pass
 
 
+# ================= CỬA CHỜ: SỐ LỆNH ffmpeg CHẠY CÙNG LÚC =================
+# VÌ SAO PHẢI CÓ (đo thật 07/08/2026, máy 24 nhân + RTX 3060, máy rảnh 6-14%):
+#   1 lượt xuất  ->  7,04s ·  22,33 CPU-giây ·  61 luồng ( 2,54x số nhân)
+#   10 lượt      -> 49,07s · 263,85 CPU-giây · 592 luồng (24,70x số nhân!)
+# 10 lượt tốn 263,85 CPU-giây, song song hoàn hảo chỉ cần 223,3 -> +18% CPU
+# ĐỐT VÔ ÍCH vì giành luồng. Máy "đơ khi xuất hàng loạt" là vì đây.
+#
+# VÌ SAO SIẾT NÚM LUỒNG KHÔNG ĐỦ (đo sau khi đã bịt hết núm ở bản này): 10 lượt
+# còn 397 luồng = 16,5x số nhân. 1 tiến trình ffmpeg + NVENC có SÀN ~36-40 luồng,
+# siết `-threads`/`-filter_threads` hết cỡ cũng không xuống dưới.
+# **Chỉ giảm SỐ TIẾN TRÌNH mới đạt mốc "tổng luồng <= 2x số nhân".**
+#
+# Cửa này ĐỘC LẬP với "số làn" user đặt: user đặt 10 làn thì hàng chờ vẫn nhận
+# 10 việc song song (tải/chép lời/AI vẫn chạy bình thường), nhưng chỉ N lệnh
+# ffmpeg được chạy cùng lúc, số còn lại ĐỢI TỚI LƯỢT tại đây.
+_GATE_COND = _threading.Condition()
+_GATE_DANG = 0                  # số lệnh ffmpeg ĐANG chạy (đang giữ chỗ)
+# SÀN LUỒNG đo được của 1 tiến trình ffmpeg — dùng để chia ngân sách "tổng
+# luồng <= 2x số nhân" thành SỐ TIẾN TRÌNH. nvenc nặng hơn vì kéo pool CUDA.
+_SAN_LUONG_NVENC = 40           # đo: 36 (pha 2 siết hết) .. 49 (pha 1)
+_SAN_LUONG_CPU = 30             # đo: 27 (libx264 giải mã 4 + encode 4)
+
+
+def so_ffmpeg_song_song() -> int:
+    """SỐ LỆNH ffmpeg được phép chạy CÙNG LÚC — TỰ ĐO THEO MÁY.
+
+    Ngân sách: tổng luồng ffmpeg <= 2x số nhân logic (mốc chốt 07/08/2026, thay
+    mốc 1,5x cũ vì SÀN luồng mỗi tiến trình làm nó bất khả thi). Chia ngân sách
+    đó cho SÀN luồng mỗi tiến trình -> ra số tiến trình:
+      - 24 nhân + NVENC -> (2*24)//40 = 1
+      - 64 nhân + NVENC -> 3
+      -  8 nhân, CPU    -> 1   (máy nhân viên yếu)
+    Trần 4: hơn nữa thì GPU/đĩa thành nút cổ chai chứ không nhanh thêm.
+
+    `BQ_FFMPEG_SLOTS` (biến môi trường) ép cứng con số — dùng để ĐO từng mức và
+    gỡ rối trên máy user mà không phải phát hành bản mới.
+    """
+    ep = os.environ.get("BQ_FFMPEG_SLOTS", "").strip()
+    if ep:
+        try:
+            return max(1, min(16, int(ep)))
+        except ValueError:
+            pass
+    if settings.ECO_MODE:
+        return 1               # "Tiết kiệm máy" = 1 lệnh ffmpeg, không hơn
+    cores = os.cpu_count() or 4
+    # KHÔNG gọi detect_encoder() ở đây: nó có thể spawn ffmpeg thử NVENC, mà hàm
+    # này chạy TRONG cửa chờ -> tự khoá mình. Chỉ đọc cache / ý user.
+    dung_gpu = (_ENCODER_CACHE == "h264_nvenc"
+                or settings.VIDEO_ENCODER == "nvenc")
+    san = _SAN_LUONG_NVENC if dung_gpu else _SAN_LUONG_CPU
+    return max(1, min(4, (2 * cores) // san))
+
+
+def _xin_cho_ffmpeg() -> bool:
+    """Giữ 1 chỗ trong cửa chờ. True = đã giữ (caller PHẢI trả chỗ ở finally).
+
+    Đợi theo NHỊP 0,25s chứ không chặn vô hạn, vì mỗi nhịp phải kiểm lại:
+      - job bị bấm Hủy -> ném CanceledError NGAY (đừng để user bấm Hủy mà việc
+        vẫn xếp hàng đợi tới lượt rồi mới chạy);
+      - đang đóng app -> trả False và ĐI LUÔN (treo ở đây là treo bước thoát
+        app; caller đã tự chặn spawn bằng _SHUTDOWN);
+      - trần đã đổi (user bật "Tiết kiệm máy" giữa lượt) -> đọc lại mỗi nhịp.
+    """
+    global _GATE_DANG
+    while True:
+        if _SHUTDOWN.is_set():
+            return False
+        with _GATE_COND:
+            if _GATE_DANG < so_ffmpeg_song_song():
+                _GATE_DANG += 1
+                return True
+            _GATE_COND.wait(0.25)
+        _raise_if_job_canceled()
+
+
+def _tra_cho_ffmpeg() -> None:
+    global _GATE_DANG
+    with _GATE_COND:
+        _GATE_DANG = max(0, _GATE_DANG - 1)
+        _GATE_COND.notify()
+
+
+def dang_chay_ffmpeg() -> int:
+    """Số lệnh ffmpeg đang giữ chỗ (cho test/đo)."""
+    with _GATE_COND:
+        return _GATE_DANG
+
+
 def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int:
-    """Chạy lệnh, đẩy stderr (ffmpeg log) qua callback nếu cần."""
+    """Chạy 1 lệnh ffmpeg QUA CỬA CHỜ (xem `so_ffmpeg_song_song`).
+
+    ĐỪNG spawn ffmpeg bằng subprocess trực tiếp ở chỗ khác: đi vòng qua cửa này
+    là quay lại đúng cảnh 592 luồng / 24,7x số nhân.
+    """
     _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
+    co_cho = _xin_cho_ffmpeg()
+    try:
+        return _run_khong_cho(cmd, on_line)
+    finally:
+        if co_cho:
+            _tra_cho_ffmpeg()
+
+
+def _run_khong_cho(cmd: list[str],
+                   on_line: Optional[Callable[[str], None]] = None) -> int:
+    """Thân cũ của `_run` — KHÔNG qua cửa chờ. Đừng gọi trực tiếp."""
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -1587,7 +1691,11 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
             on_progress((i / max(1, n)) * 0.999)
         _run_with_fallback(_build_seg, encoder, e - s, None,
                            f"tách được đoạn {i + 1}/{n}", dst=seg_path)
-    noi = temps
+    # BẢN SAO, KHÔNG phải tham chiếu. LỖI THẬT (cổng 36 bắt được ngay lượt đầu):
+    # để `noi = temps` thì `temps.append(gop)` ở dưới sửa LUÔN `noi` -> file GỘP
+    # (chưa tồn tại) bị đưa vào làm INPUT thứ n+1 -> ffmpeg:
+    # "Error opening input file _seg_xxx_xf.mkv: No such file or directory".
+    noi = list(temps)
     if xf and any(d >= 0.08 for d in bu):
         # ---- PHA 1.5: CHUYỂN CẢNH. Nối n mezzanine thành 1 mezzanine.
         gop = os.path.join(tdir, f"_seg_{tag}_xf.mkv")
