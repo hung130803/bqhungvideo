@@ -2237,9 +2237,66 @@ class StudioPage(QWidget):
         if self._act_tick % 80 == 0:
             import threading as _th
             _th.Thread(target=self._gap_wal_nen, daemon=True).start()
+        # LƯỚI AN TOÀN mỗi ~60s: video có clip mà không ai xuất -> xuất tiếp.
+        # Xem _quet_bo_sot_xuat (sổ theo dõi chỉ ở RAM nên tắt đột ngột là mất).
+        if self._act_tick % 40 == 0:
+            try:
+                self._quet_bo_sot_xuat()
+            except Exception:  # noqa: BLE001 - việc phụ, không được sập app
+                pass
         if self._act_tick % 3:
             return
         self._refresh_chan_label()
+
+    def _quet_bo_sot_xuat(self) -> int:
+        """LƯỚI AN TOÀN: tìm video ĐÃ CÓ CLIP mà KHÔNG AI ĐỊNH XUẤT, rồi xuất.
+
+        Anh Hùng 07/08/2026: "tự out ra vào lại nó k tự xuất ra nữa".
+        Sổ theo dõi (`_pending_export`) chỉ nằm trong BỘ NHỚ. `_pipe_resume_taken`
+        có hồi phục lúc mở app, nhưng nó chạy ĐÚNG MỘT LẦN và vẫn hụt các ca:
+          - user bấm "Xóa lịch sử" -> job phân tích bị xoá -> hồi phục không
+            thấy job nên xếp job phân tích MỚI (đốt lại lượt Groq) thay vì xuất;
+          - app chết NGAY LÚC đang xuất -> mất sổ, mà hồi phục đã chạy xong rồi;
+          - clip tạo bằng tay (không qua dây chuyền) thì không có dòng sổ nào.
+        Nên phải QUÉT ĐỊNH KỲ theo ĐÚNG SỰ THẬT TRONG DB thay vì tin bộ nhớ:
+        video còn dòng sổ 'taken' + CÓ clip 'suggested' + KHÔNG có job phân
+        tích/xuất nào đang chờ-chạy + CHƯA từng bị HUỶ xuất  ->  xuất ngay.
+
+        Huỷ vẫn là huỷ (có job xuất 'canceled' thì bỏ qua) — đúng bất biến của
+        cổng 7. Mỗi lượt chỉ lấy tối đa 10 video để không dội hàng đợi."""
+        try:
+            rows = db.query(
+                "SELECT v.id AS vid, v.project_id AS pid FROM videos v "
+                "JOIN pipeline_files pf ON pf.video_id = v.id "
+                "  AND pf.status = 'taken' "
+                "WHERE EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id "
+                "              AND c.status = 'suggested') "
+                "  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.video_id = v.id "
+                "        AND j.status IN ('pending','running')) "
+                "  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.video_id = v.id "
+                "        AND j.type = 'm1_export_clip' "
+                "        AND j.status IN ('canceled','skipped')) "
+                "GROUP BY v.id LIMIT 10") or []
+        except Exception:  # noqa: BLE001 - DB bận/vỡ -> lần sau quét lại
+            return 0
+        n = 0
+        for r in rows:
+            vid = int(r["vid"])
+            if vid in getattr(self, "_pending_export", {}).values():
+                continue                      # đang có sổ dõi rồi
+            try:
+                so = self._export_video(vid, tpl=self._tpl_for_project(r["pid"]))
+            except Exception as e:  # noqa: BLE001 - 1 video lỗi không chặn loạt
+                self._pipe_log(f"⚠ lưới an toàn: video {vid} xuất lỗi — {e}")
+                continue
+            if so:
+                n += 1
+        if n:
+            self._pipe_log(
+                f"🛟 LƯỚI AN TOÀN: {n} video đã phân tích xong nhưng không ai "
+                "xuất (do app tắt đột ngột / xoá lịch sử job) — đã cho xuất "
+                "Part tiếp.")
+        return n
 
     def _gap_wal_nen(self) -> None:
         """Chạy ở luồng nền: gấp WAL nếu nó đã phình. Không được ném lỗi."""
@@ -5231,6 +5288,21 @@ class StudioPage(QWidget):
         _nhip = {"n": 0}
 
         def _fill_thua():
+            # CHỐNG TÁI NHẬP + CHỐNG CHẠY KHI HỘP ĐANG ĐÓNG.
+            # Đây là ứng viên số 1 cho lỗi `access violation` đã ghi trong
+            # logs/crash_native.txt (luồng giao diện đang ở refresh_report lúc
+            # app chết): `_export_video` có gọi QApplication.processEvents()
+            # (xem ghi chú ~dòng 4275), nên NGAY GIỮA lúc fill() đang dựng 200
+            # dòng widget, hẹn giờ 2 giây này bắn tiếp -> fill() lồng vào chính
+            # nó, hoặc user bấm ✕ đóng hộp -> widget bị xoá dưới chân vòng lặp
+            # đang vẽ -> C++ chạm bộ nhớ đã giải phóng = app tắt không báo.
+            if getattr(self, "_pipe_dang_fill", False):
+                return
+            try:
+                if not dlg.isVisible():
+                    return
+            except RuntimeError:            # hộp đã bị xoá
+                return
             if _tbl_busy():
                 return                      # user đang gõ/bấm trong bảng
             _nhip["n"] += 1
@@ -5246,14 +5318,36 @@ class StudioPage(QWidget):
             if _sig is not None and getattr(self, "_pipe_tbl_sig", None) == _sig:
                 return                      # không có gì đổi -> khỏi dựng lại
             self._pipe_tbl_sig = _sig
-            fill()
+            self._pipe_dang_fill = True
+            try:
+                fill()
+            except RuntimeError:            # widget bị xoá giữa lúc dựng
+                pass
+            finally:
+                self._pipe_dang_fill = False
+
+        def _bao_cao_an_toan():
+            try:
+                if dlg.isVisible():
+                    refresh_report()
+            except RuntimeError:            # hộp đã đóng -> thôi
+                pass
 
         t = _QT(dlg)
-        t.timeout.connect(refresh_report)
+        t.timeout.connect(_bao_cao_an_toan)
         t.timeout.connect(_fill_thua)
+        # DỪNG HẲN hẹn giờ NGAY khi hộp đóng: hẹn giờ là con của dlg nên sẽ bị
+        # xoá theo, NHƯNG nếu nó bắn đúng lúc hộp đang đóng thì code còn chạy
+        # trên widget đã bị C++ giải phóng -> access violation (đúng lỗi trong
+        # crash_native.txt). Ngắt trước cho chắc.
+        try:
+            dlg.finished.connect(lambda _=0: t.stop())
+        except Exception:  # noqa: BLE001
+            pass
         t.start(2000)
         dlg._t = t
         dlg.exec()
+        t.stop()
 
     def _pipe_root(self) -> str:
         """Thư mục TRUNG CHUYỂN gốc (tool tải thả video vào <gốc>/<Kênh>)."""
