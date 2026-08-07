@@ -948,10 +948,18 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     if not llm.is_configured():
         return [], []
     segs = (transcript or {}).get("segments", [])
+    if not segs and not (digest or nghe_xem):
+        # Không lời VÀ cũng không có căn cứ HÌNH/TIẾNG -> thật sự không có gì.
+        return [], ["chép lời RỖNG (0 câu) và không có dữ liệu hình/tiếng nên "
+                    "AI không có căn cứ nào để chọn đoạn"]
     if not segs:
-        # Cũng là nhánh im lặng cũ: chép lời RỖNG -> AI không có gì để đọc.
-        return [], ["chép lời RỖNG (0 câu) nên AI không có nội dung để chọn "
-                    "đoạn — video không tiếng, hoặc bước chép lời đã thất bại"]
+        # VIDEO KHÔNG LỜI (anh Hùng 07/08/2026: "chỉ những video k nói mới bị
+        # cắt cơ bản thôi"). ĐÂY LÀ LỖI THẬT: m1 phát hiện không lời -> TỰ BẬT
+        # xem hình (bỏ 219 giây/video theo số đo) + dựng khối NGHE+XEM, rồi
+        # truyền transcript RỖNG vào đây... và dòng chặn cũ `if not segs` NÉM
+        # SẠCH cả hai. Bỏ 3-4 phút xem hình xong không dùng gì, rơi cắt cơ bản.
+        # Nay đi tiếp bằng HÌNH + TIẾNG — đúng căn cứ duy nhất còn lại.
+        return _chon_doan_khong_loi(duration, ctx, scenes, cfg, digest, nghe_xem)
     _tho = [0, 0]         # [số đoạn AI đề xuất, số đoạn bị loại vì độ dài]
     cfg = cfg or {}
     min_len = float(cfg.get("min_len", 60.0))
@@ -1557,6 +1565,78 @@ def _overlap_frac(s: float, e: float, used: list) -> float:
             covered += b - cur_e
             cur_e = b
     return min(1.0, covered / span)
+
+
+def _chon_doan_khong_loi(duration: float, ctx, scenes, cfg: dict,
+                         digest: list, nghe_xem: str) -> tuple:
+    """AI chọn đoạn cho VIDEO KHÔNG CÓ LỜI NÓI — căn cứ là HÌNH + TIẾNG.
+
+    Anh Hùng 07/08/2026: "chỉ những video k nói mới bị cắt cơ bản thôi". Đúng, và
+    đây là lỗi thật: m1 phát hiện video không lời thì TỰ BẬT xem hình (đo 219
+    giây/video) rồi truyền transcript RỖNG vào `_llm_select_clips`, mà dòng đầu
+    của hàm đó chặn `if not segs: return []` -> ném sạch toàn bộ công xem hình,
+    rơi về cắt cơ bản. Nay dùng đúng dữ liệu đã bỏ công lấy.
+
+    FAIL-SAFE: lỗi/JSON hỏng -> trả rỗng kèm LÝ DO để nơi gọi ghi vào nhật ký
+    rồi lùi heuristic như cũ (không bao giờ làm vỡ lượt cắt).
+    """
+    if not (digest or nghe_xem):
+        return [], ["video không lời và không có dữ liệu hình/tiếng"]
+    count = int((cfg or {}).get("count", 0) or 0) or 3
+    min_len = float((cfg or {}).get("min_len", 60.0))
+    max_len = float((cfg or {}).get("max_len", 0.0) or 0.0)
+    try:
+        from app.ai import chon_doan as _cd
+        kh_h = _cd.khoi_prompt_hinh(digest) if hasattr(_cd, "khoi_prompt_hinh") else ""
+    except Exception:  # noqa: BLE001
+        kh_h = ""
+    if not kh_h and digest:
+        kh_h = "HÌNH ẢNH THEO MỐC:\n" + "\n".join(
+            f"- {float(d.get('t', 0)):.0f}s: {str(d.get('mo_ta', d.get('desc', '')))[:110]}"
+            for d in digest[:14])
+    prompt = (
+        f"Video dài {duration:.0f} giây, KHÔNG CÓ LỜI NÓI (chỉ hình + tiếng "
+        f"động/nhạc). Hãy chọn {count} đoạn ĐÁNG XEM NHẤT dựa HOÀN TOÀN vào "
+        "hình ảnh và năng lượng tiếng.\n\n"
+        + (kh_h + "\n\n" if kh_h else "") + (nghe_xem or "")
+        + f"\n\nMỗi đoạn dài {min_len:.0f}"
+        + (f"-{max_len:.0f}" if max_len else "+") + " giây, KHÔNG trùng nhau, "
+        "rải đều video. Ưu tiên: hành động mạnh, thay đổi đột ngột, khoảnh khắc "
+        "bất ngờ. TRẢ VỀ ĐÚNG JSON, không giải thích:\n"
+        '[{"start": <giây>, "end": <giây>, "score": <0-100>, '
+        '"reason": "<vì sao đáng xem, tiếng Việt>", "title": "<tiêu đề ngắn>"}]')
+    try:
+        rows = llm.complete_json(
+            prompt, system="Bạn là đạo diễn dựng clip viral. Chỉ trả JSON.")
+    except Exception as e:  # noqa: BLE001
+        return [], [f"AI xem hình chọn đoạn lỗi: {str(e)[:90]}"]
+    if isinstance(rows, dict):
+        rows = rows.get("clips") or rows.get("items") or []
+    if not isinstance(rows, list) or not rows:
+        return [], ["AI xem hình không trả về đoạn nào (video quá đều?)"]
+    # Không lời -> transcript rỗng, nên ranh giới chỉ lấy từ MỐC CẢNH thật.
+    _bnd = _natural_boundaries({}, scenes or {})
+    out: list = []
+    for r in rows[:count]:
+        try:
+            s, e = float(r.get("start", 0)), float(r.get("end", 0))
+        except (TypeError, ValueError):
+            continue
+        if e - s < 1.0:
+            continue
+        seg, _ = _enforce_len([[max(0.0, s), min(e, duration)]],
+                              min_len, max_len, duration, _bnd)
+        out.append({
+            "segments": seg, "start": seg[0][0], "end": seg[-1][1],
+            "score": float(r.get("score", 80) or 80),
+            "reason": str(r.get("reason", "") or "Hình ảnh nổi bật")[:200],
+            "title": str(r.get("title", "") or "")[:200],
+            "llm_used": True, "xem_hinh": True,
+        })
+    if not out:
+        return [], ["AI xem hình trả đoạn nhưng không đoạn nào dùng được"]
+    out.sort(key=lambda c: c["start"])
+    return out, [f"chọn đoạn bằng XEM HÌNH ({len(out)} đoạn, video không lời)"]
 
 
 def _ten_tu_file(video_id) -> str:
