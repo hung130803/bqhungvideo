@@ -419,9 +419,21 @@ def b1_log_that() -> None:
         k > 100, f"{k} khung · {dt:.1f}s · {out.stat().st_size // 1024} KB")
     bao("`hieu_ung_log` có điểm nhấn (không rỗng)", len(hu) > 0,
         f"{len(hu)} điểm: " + ", ".join(str(c.get("khoa")) for c in hu))
-    bao("`tieng_dong_log` có đúng 2 điểm nối (3 đoạn = 2 chỗ nối)",
-        len(td) == 2, f"{len(td)} điểm: "
-        + ", ".join(f"{t['giay']}s/{t['loai']}" for t in td))
+    # 08/08/2026 — ĐỔI KỲ VỌNG (MẠNH HƠN, không phải nới): tiếng động nay chèn
+    # ở CẢ ĐIỂM NHẤN HÌNH chứ không chỉ điểm nối. Anh Hùng xem clip thật và
+    # nói *"có hiệu ứng mà không có âm thanh"* — đo ra ĐÚNG 0,0 dB ở mốc điểm
+    # nhấn (cổng 44). Nên ở đây kiểm ĐỦ CẢ HAI VAI, không kiểm mỗi con số 2.
+    _noi = [t for t in td if t.get("vai") == "nối"]
+    _nhan = [t for t in td if t.get("vai") == "điểm nhấn"]
+    bao("`tieng_dong_log` có đúng 2 điểm NỐI (3 đoạn = 2 chỗ nối)",
+        len(_noi) == 2, f"{len(_noi)} nối / {len(td)} tổng: "
+        + ", ".join(f"{t['giay']}s/{t.get('vai')}/{t['loai']}" for t in td))
+    _xa = [c for c in hu
+           if all(abs(float(c["bat"]) - float(t["giay"])) >= 0.8 for t in _noi)]
+    bao("MỖI điểm nhấn hình (không trùng chỗ nối) đều CÓ tiếng đi kèm",
+        len(_nhan) == len(_xa),
+        f"{len(_nhan)} tiếng / {len(_xa)} điểm nhấn: "
+        + ", ".join(f"{c['bat']}s {c['khoa']}" for c in _xa))
     bao("mỗi hiệu ứng có LÝ DO KÈM SỐ (không chung chung)",
         bool(hu) and all(len(str(c.get("vi_sao", ""))) > 10
                          and any(ch.isdigit() for ch in str(c.get("vi_sao", "")))
@@ -436,8 +448,8 @@ def b1_log_that() -> None:
     fu.export_canvas_clip(src, _SB / "b1b_out.mp4", [(2.0, 6.0)],
                           (0.5, 0.45, 0.98), bg="blur", out_w=540, out_h=960,
                           encoder="libx264", tieng_dong_log=td2)
-    bao("lượt 1 ĐOẠN -> log riêng của nó RỖNG, KHÔNG dính lượt trước",
-        td2 == [] and len(td) == 2,
+    bao("lượt 1 ĐOẠN + KHÔNG hiệu ứng -> log riêng của nó RỖNG, KHÔNG dính "
+        "lượt trước", td2 == [] and len(td) >= 2,
         f"lượt A {len(td)} điểm · lượt B {len(td2)} điểm")
     return hu, td
 
@@ -594,19 +606,32 @@ def c1_quet_tinh() -> None:
         encoding="utf-8", errors="replace")
     bao("đường PHÂN TÍCH cũng gắn/gỡ hàm báo",
         an.count("dat_bao_cho") >= 2, f"{an.count('dat_bao_cho')} chỗ")
-    # ĐO TRƯỚC/SAU so với mốc: bản mốc KHÔNG có đường báo nào
+    # ĐO TRƯỚC/SAU: bản TRƯỚC KHI có tính năng thì KHÔNG có đường báo nào.
+    #
+    # SỬA 08/08/2026 — CỔNG NÀY ĐÃ TỰ HỎNG SAU KHI GỘP VÀO `main`: mốc đối
+    # chứng cứng là `main`, mà tính năng "đang đợi lượt" ĐÃ NẰM TRONG `main`
+    # từ commit 8f41aea -> phép "đo TRƯỚC" luôn thấy tính năng và FAIL vĩnh
+    # viễn (mặt trái của bẫy PASS-OAN-sau-merge trong CLAUDE.md: cùng gốc bệnh
+    # "so với chính mình"). ĐÚNG: tìm ĐÚNG commit ĐƯA VÀO rồi lấy CHA của nó —
+    # mốc đó chắc chắn là "bản trước khi sửa", không phụ thuộc merge sau này.
     moc = os.environ.get("BQ_MOC_REF", "main")
-    r = subprocess.run(["git", "-C", str(REPO), "show",
-                        f"{moc}:app/core/ffmpeg_utils.py"],
-                       capture_output=True, creationflags=_NOWIN, timeout=60)
-    cu = (r.stdout or b"").decode("utf-8", errors="replace")
-    if r.returncode != 0 or len(cu) < 5000:
-        bao(f"lấy được ffmpeg_utils.py của `{moc}` để đối chứng", False,
-            f"git rc={r.returncode} · {len(cu)} ký tự")
+    r = subprocess.run(
+        ["git", "-C", str(REPO), "log", "--format=%H", "--reverse",
+         "-S", "dat_bao_cho", "--", "app/core/ffmpeg_utils.py"],
+        capture_output=True, creationflags=_NOWIN, timeout=120)
+    dua_vao = (r.stdout or b"").decode().split()
+    truoc = f"{dua_vao[0]}^" if dua_vao else moc
+    r2 = subprocess.run(["git", "-C", str(REPO), "show",
+                         f"{truoc}:app/core/ffmpeg_utils.py"],
+                        capture_output=True, creationflags=_NOWIN, timeout=60)
+    cu = (r2.stdout or b"").decode("utf-8", errors="replace")
+    if r2.returncode != 0 or len(cu) < 5000:
+        bao(f"lấy được ffmpeg_utils.py của `{truoc}` để đối chứng", False,
+            f"git rc={r2.returncode} · {len(cu)} ký tự")
         return
-    bao(f"CHỐNG PASS OAN: bản `{moc}` phải KHÁC nhánh này", cu != src,
-        f"mốc {len(cu)} ký tự vs nay {len(src)} ký tự")
-    bao(f"ĐO TRƯỚC: bản `{moc}` đợi slot mà KHÔNG báo một chữ nào",
+    bao(f"CHỐNG PASS OAN: bản mốc `{truoc[:12]}` phải KHÁC nhánh này",
+        cu != src, f"mốc {len(cu)} ký tự vs nay {len(src)} ký tự")
+    bao(f"ĐO TRƯỚC: bản `{truoc[:12]}` đợi slot mà KHÔNG báo một chữ nào",
         "dat_bao_cho" not in cu and "đang đợi lượt" not in cu,
         "0 đường báo (đúng triệu chứng 'đứng im 3-4 phút')")
 

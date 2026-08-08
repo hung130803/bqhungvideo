@@ -377,6 +377,22 @@ def _f0r(mod: str, params: str = "") -> str:
     return s + "{en}"
 
 
+#: === KHUÔN "ÊM VÀO — ÊM RA" (nửa hình sin trong cửa sổ) ===
+#: `enable=` bật/tắt filter PHÁT MỘT: khung 59 chưa có gì, khung 60 đã đủ biên
+#: độ. Đo thật 08/08/2026 trên clip của anh Hùng (1080x1920, 30 fps): đúng khung
+#: bật và khung tắt có 1 khung lệch **> 45% độ sáng** so với khung liền trước —
+#: mắt thấy là "cụp một cái rồi hiện lại", đúng cái anh Hùng chê *"hiệu ứng lỏ
+#: quá"*. Nhân biên độ với `_SONG` thì ở HAI MÉP cửa sổ biên độ = 0 nên khung
+#: đầu/cuối GIỐNG HỆT bản không hiệu ứng (đo `vignette=a='0'` -> **0,00% pixel
+#: đổi**), giữa cửa sổ mới đạt đỉnh. Cùng cách các bộ dựng chuyên nghiệp làm
+#: (ease-in/ease-out), và nó cũng chính là thứ cho phép hạ "độ đậm cảm nhận"
+#: mà KHÔNG hạ độ đậm đỉnh — tức không phải nới trần `DAM_MAX`.
+#: BẮT BUỘC đi kèm `eval=frame`: thiếu nó `eq`/`vignette` chỉ tính biểu thức 1
+#: LẦN lúc init -> đo ra 0,0% pixel đổi mà ffmpeg vẫn mã 0 (bẫy cũ của
+#: `nhay_sang`).
+_SONG = "sin(3.14159*(t-{a})/({b}-{a}))"
+
+
 #: Khuôn filter cho nhóm **SHADER GPU** (`libplacebo` + `.hook` tự viết).
 #:
 #: === VÌ SAO PHẢI CẮT MẢNH CHỨ KHÔNG DÙNG `enable` ===
@@ -459,25 +475,54 @@ _dk(HieuUng(
     ts=((6, 16), ), dai=0.45, hop=("caotrao", "dong"), doi_cho=True))
 _dk(HieuUng(
     "loe_sang", "Loé sáng", "Flash", "thuan",
-    "eq=brightness={p1}:contrast={p2}{en}",
-    ts=((0.10, 0.26), (1.02, 1.10)), dai=0.30, hop=("caotrao", "noi", "chot")))
+    # ÊM VÀO ÊM RA (xem `_SONG`): bản cũ `brightness={p1}` bật phát một -> khung
+    # bật lệch 99,99% pixel so với khung liền trước. Nay biên độ chạy theo nửa
+    # hình sin: mép cửa sổ = ảnh gốc, giữa cửa sổ mới loé đủ.
+    # `{p2}` nay là ĐỘ CỘNG THÊM của contrast (cũ là giá trị tuyệt đối 1,02-1,10)
+    # để nhân được với sóng — 1 + p2*sóng.
+    "eq=brightness='{p1}*" + _SONG + "':contrast='1+{p2}*" + _SONG +
+    "':eval=frame{en}",
+    ts=((0.10, 0.26), (0.02, 0.10)), dai=0.30,
+    hop=("caotrao", "noi", "chot")))
 _dk(HieuUng(
     "sup_toi", "Sụp tối", "Flicker Blackout", "thuan",
-    "eq=brightness=-{p1}{en}",
-    ts=((0.14, 0.34), ), dai=0.35, hop=("chot", "noi")))
+    # ===== LỖI THẬT anh Hùng XEM CLIP THẤY 08/08/2026 =====
+    # *"ví dụ zoom nhồi gì đó thấy nó TỐI ĐEN không thấy gì rồi lại hiện"*.
+    # Bản cũ `eq=brightness=-{p1}` là phép TRỪ THẲNG trên thang 0..1: cảnh có độ
+    # sáng trung bình 0,27 (đo thật 69/255) trừ 0,34 ra **ÂM** -> ffmpeg kẹp về
+    # 0 = **KHUNG ĐEN TUYỆT ĐỐI**. Đo trên clip thật: khung ngay mốc bật
+    # YAVG = **0,0/255**, rồi 18 khung tiếp theo chỉ **17,7/255** trong khi bản
+    # gốc là 96,8 (= **18%**) — tức 0,6 giây MẤT HÌNH. Ở mức "nhẹ" (dam 0,12)
+    # vẫn ra 10/255, vẫn là mất hình. Đây là LỖI, không phải thẩm mỹ.
+    # ĐÚNG: nhân (không phải trừ). `eq` tính out = (in-0,5)*contrast + 0,5 +
+    # brightness, nên đặt contrast = k và brightness = 0,5*(k-1) cho ra ĐÚNG
+    # out = k*in — tối đi theo TỈ LỆ nên cảnh tối cỡ nào cũng KHÔNG về 0.
+    # k = 1 - p1*sóng: mép cửa sổ k=1 (ảnh gốc), giữa cửa sổ k thấp nhất 0,45.
+    # Đo lại: thấp nhất 41/93 = 44% độ sáng gốc, KHÔNG khung nào đen.
+    "eq=contrast='1-{p1}*" + _SONG + "':brightness='-0.5*{p1}*" + _SONG +
+    "':eval=frame{en}",
+    ts=((0.30, 0.55), ), dai=0.35, hop=("chot", "noi")))
 _dk(HieuUng(
     "nhay_sang", "Nháy sáng liên tục", "Flickery Shots", "thuan",
     # eval=frame BẮT BUỘC: mặc định `eq` chỉ tính biểu thức 1 LẦN lúc init ->
     # đo thật ra 0,0% pixel đổi (hiệu ứng KHÔNG xảy ra) mà ffmpeg vẫn mã 0.
-    "eq=brightness='{p1}*sin(3.14159*9*t)':eval=frame{en}",
+    # 2 SỬA 08/08/2026: (a) `sin` chạy CẢ ÂM nên nửa số nháy là nháy **TỐI** —
+    # đo thấp nhất 38/97 = 39% độ sáng gốc, góp phần vào cảm giác "tối đen";
+    # nay `abs(sin(...))` -> chỉ nháy SÁNG. (b) nhân `_SONG` để vào/ra êm và
+    # mốc pha tính từ `{a}` chứ không từ `t=0` (mốc tuyệt đối làm pha nháy phụ
+    # thuộc chỗ đặt điểm nhấn -> khung bật có thể rơi đúng đỉnh = giật).
+    "eq=brightness='{p1}*abs(sin(3.14159*9*(t-{a})))*" + _SONG +
+    "':eval=frame{en}",
     ts=((0.10, 0.24), ), dai=0.50, hop=("caotrao", "chot")))
 # ĐÃ BỎ "Nét gắt" (`unsharp`): đo ở trần 5,0 (biên độ tối đa của filter) vẫn
 # chỉ 6,3% pixel đổi -> anh Hùng KHÔNG THẤY. Làm nét là chỉnh màu, không phải
 # hiệu ứng. Đừng thêm lại mà không đo.
 _dk(HieuUng(
     "tuong_phan", "Tăng tương phản", "Contrast Punch", "thuan",
-    "eq=contrast={p1}:saturation=1.0{en}",
-    ts=((1.18, 1.55), ), dai=0.40, hop=("caotrao", "ke")))
+    # ÊM VÀO ÊM RA — `{p1}` nay là ĐỘ CỘNG THÊM (cũ là contrast tuyệt đối
+    # 1,18-1,55, không nhân được với sóng). 1 + p1*sóng, đỉnh 1,55 y như cũ.
+    "eq=contrast='1+{p1}*" + _SONG + "':saturation=1.0:eval=frame{en}",
+    ts=((0.18, 0.55), ), dai=0.40, hop=("caotrao", "ke")))
 
 # ---- NHÓM 2: GLITCH / VỠ HÌNH (cảnh ĐỘNG) ----
 _dk(HieuUng(
@@ -517,10 +562,13 @@ _dk(HieuUng(
     "quang_sang", "Quầng sáng phim", "Film Radiance", "frei0r",
     _f0r("glow", "{p1}"), module="glow",
     ts=((0.16, 0.42), ), dai=0.60, hop=("ke", "chot", "tinh")))
-_dk(HieuUng(
-    "sang_diu", "Sáng dịu vùng chói", "Light Haze", "frei0r",
-    _f0r("softglow", "{p1}|0.55|0.5|0.5"), module="softglow",
-    ts=((0.20, 0.45), ), dai=0.60, hop=("ke", "tinh")))
+# ĐÃ GỠ "Sáng dịu vùng chói" (frei0r `softglow`) — 08/08/2026, ĐO TRÊN CLIP THẬT:
+# tên là "sáng dịu" nhưng nó LÀM TỐI. Độ sáng trung bình cửa sổ tụt còn **29-33%**
+# bản gốc (19,8/69,3) và khung ngay mốc bật là một cú **TỐI SÂU** — đúng loại
+# "tối đen rồi lại hiện" anh Hùng chê. Đã quét tham số (`0.45|0.55`, `0.45|0.90`,
+# `0.20|0.55`): CẢ BA đều tối như nhau -> không phải chỉnh sai, là plugin làm vậy.
+# "Quầng sáng phim" (`quang_sang`, frei0r `glow`) mới là kiểu SÁNG thật: đo
+# 142,3/96,8 = sáng hơn gốc, 98,22% pixel đổi. Đừng thêm lại `softglow`.
 _dk(HieuUng(
     "hat_phim", "Hạt phim", "Film Grain", "frei0r",
     _f0r("filmgrain", "{p1}"), module="filmgrain",
@@ -536,7 +584,9 @@ _dk(HieuUng(
 # weave" nhưng vô hình trên khung dọc 1080x1920. Muốn rung thì dùng "Rung lắc".
 _dk(HieuUng(
     "toi_vien", "Tối viền ống kính", "Vignette", "thuan",
-    "vignette=a='{p1}'{en}",
+    # ÊM VÀO ÊM RA. `a=0` = KHÔNG tối một chút nào (đo: 0,00% pixel đổi), nên
+    # nhân sóng là mép cửa sổ trùng khít ảnh gốc. `eval=frame` bắt buộc.
+    "vignette=a='{p1}*" + _SONG + "':eval=frame{en}",
     ts=((0.70, 1.05), ), dai=0.70, hop=("ke", "tinh", "chot")))
 _dk(HieuUng(
     "vien_phim", "Viền đen kiểu phim", "Cinema Bars", "frei0r",
@@ -624,28 +674,31 @@ _dk(HieuUng(
 # ĐỐI CHỨNG BẮT BUỘC: `libplacebo` KHÔNG shader vs gốc = PSNR 52,23 dB,
 # dU -0,03 dV -0,03, 0,0% pixel -> bản thân `libplacebo` KHÔNG đổi màu, nên
 # mọi con số trên là của SHADER chứ không phải của cái ống dẫn.
-_dk(HieuUng(
-    "sh_net_hon", "Nét gắt (GPU)", "Sharpen", "shader", _SH_MAU,
-    shader="net_hon.hook", ts=((0.75, 1.00), ), dai=0.35,
-    hop=("caotrao", "dong"), doi_cho=True,
-    ghi_chu="KHÔNG có bản CPU: `unsharp` đã bị loại vì ở trần 5,0 chỉ đổi "
-            "6,3% pixel. Bản shader đo 12,58% -> THẤY ĐƯỢC."))
+# ĐÃ GỠ 3 SHADER — 08/08/2026, ĐO LẠI TRÊN CLIP THẬT CỦA ANH HÙNG (1080x1920,
+# `aa` = 1,00 = đậm nhất, cửa sổ 0,60 s). Bảng số ở trên đo trên nguồn KHÁC
+# (phim tài liệu Nhật nhiều chi tiết); nguồn thật hôm nay ra:
+#   sh_net_hon    **1,87%**  (bảng cũ ghi 12,58%)   -> KHÔNG THẤY
+#   sh_quang_sang **0,47%**  (bảng cũ ghi 22,99%)   -> KHÔNG THẤY
+#   sh_mo_net     **2,16%**  (bảng cũ ghi 11,51%)   -> KHÔNG THẤY
+# Ngưỡng "THẤY ĐƯỢC" là 8% (`nguong_thay`), sàn tối thiểu 3%. Đã thử CỨU
+# `net_hon`: nới bán kính 1,8 -> 3,2 px, 4 -> 8 điểm lấy mẫu, cường độ 1,9 ->
+# 3,2 (`_thu_net.hook`) chỉ lên **6,00%** — vẫn dưới ngưỡng. Lý do gốc: cả 3 đều
+# là phép LÂN CẬN vài PIXEL (mờ 2,2 px · nét 1,8 px · quầng sáng nhỏ) mà khung
+# dọc 1080x1920 thì vài pixel là vô hình — cùng bài học `mo_net` bản CPU (sigma
+# 12 thấy rõ ở 540x960, chỉ 5,4% ở 1080x1920 vì bán kính là SỐ PIXEL TUYỆT ĐỐI).
+# 2 trong 3 kiểu này chỉ là BẢN SAO GPU của kiểu CPU đang chạy tốt:
+#   quang_sang (frei0r glow)  = **98,22%**   ·  mo_net (gblur 26) = **13,79%**
+# nên gỡ đi KHÔNG mất tính năng nào, chỉ bớt 3 dòng khoe suông trong nhật ký.
+# Anh Hùng: *"thà ít mà đẹp còn hơn nhiều mà lỏ"*. ĐỪNG THÊM LẠI mà không đo
+# trên clip 1080x1920 THẬT.
 _dk(HieuUng(
     "sh_hat_phim", "Hạt phim (GPU)", "Film Grain", "shader", _SH_MAU,
     shader="hat_phim.hook", ts=((0.45, 0.70), ), dai=0.60,
     hop=("ke", "tinh")))
 _dk(HieuUng(
-    "sh_quang_sang", "Quầng sáng phim (GPU)", "Film Radiance", "shader",
-    _SH_MAU, shader="quang_sang.hook", ts=((0.55, 0.95), ), dai=0.60,
-    hop=("ke", "chot", "tinh")))
-_dk(HieuUng(
     "sh_toi_vien", "Tối viền ống kính (GPU)", "Vignette", "shader", _SH_MAU,
     shader="toi_vien.hook", ts=((0.50, 0.90), ), dai=0.70,
     hop=("ke", "tinh", "chot")))
-_dk(HieuUng(
-    "sh_mo_net", "Mờ nét nhanh (GPU)", "Focus Pull", "shader", _SH_MAU,
-    shader="mo_net.hook", ts=((0.75, 1.00), ), dai=0.35,
-    hop=("noi", "chot"), doi_cho=True))
 _dk(HieuUng(
     "sh_tuong_phan", "Tăng tương phản (GPU)", "Contrast Punch", "shader",
     _SH_MAU, shader="tuong_phan.hook", ts=((0.80, 1.00), ), dai=0.40,
@@ -833,7 +886,8 @@ def _diem_hap_dan(nl: list, cd: list) -> list[tuple[int, float]]:
 def chon_hieu_ung(tong_giay: float, muc: str = "vua",
                   nl: Optional[list] = None, cd: Optional[list] = None,
                   moc_noi: Optional[list] = None,
-                  co_the_dung: Optional[list] = None) -> list[dict]:
+                  co_the_dung: Optional[list] = None,
+                  hook: bool = False) -> list[dict]:
     """AI CHỌN HIỆU ỨNG THEO CẢNH — TIỀN ĐỊNH, KHÔNG RANDOM.
 
     Trả [{bat, het, khoa, dam, loai, vi_sao}] trên timeline ĐẦU RA (giây).
@@ -880,6 +934,33 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     ra: list[dict] = []
     da_dung: list[str] = []
     da_dung_loai: list[str] = []
+
+    # ---- HOOK MỞ ĐẦU (anh Hùng 08/08/2026: *"phần hook mở đầu cứ thêm sao cho
+    # phù hợp gây ấn tượng"*). App đã đưa 2-3 giây CAO TRÀO nhất lên đầu clip
+    # (hook-first) nhưng điểm nhấn thì vẫn chọn theo số đo -> giây 0 hầu như
+    # KHÔNG BAO GIỜ trúng (`_diem_hap_dan` cần một giây VỌT LÊN so với các giây
+    # xung quanh, mà giây đầu không có "trước" để so). Kết quả: đoạn đắt nhất
+    # của clip lại là đoạn trần trụi nhất.
+    # Nay: hook-first -> ĐẶT SẴN 1 điểm ở giây 0,12, kiểu lấy từ hàng "hook"
+    # (mạnh + có tiếng đắt). Vẫn ăn cùng NGÂN SÁCH 10% và cùng trần độ đậm
+    # `DAM_MAX` -> không nới luật nào. Clip PHẲNG cũng vẫn được hook: chỗ này là
+    # sự kiện CÓ THẬT (app vừa BÊ đoạn cao trào lên đầu), không phải suy đoán.
+    if hook and float(tong_giay) >= 3.0 and n_diem > 0:
+        k_hook = _chon_kieu("hook", dung, [], 0)
+        if k_hook:
+            dai_h = min(HOOK_DAI, max(DAI_MIN, KHO[k_hook].dai))
+            if dai_h <= ngan_sach + 1e-6:
+                ra.append({"bat": HOOK_BAT,
+                           "het": round(HOOK_BAT + dai_h, 3),
+                           "khoa": k_hook, "dam": dam, "loai": "hook",
+                           "vi_sao": "HOOK mở đầu: app vừa đưa đoạn cao trào "
+                                     "nhất lên đầu clip -> nhấn ngay giây "
+                                     f"{_so(HOOK_BAT)} cho 2 giây đầu giữ "
+                                     "người xem (kèm tiếng động cùng nhịp)"})
+                ngan_sach -= dai_h
+                da_dung.append(k_hook)
+                da_dung_loai.append("hook")
+
     for g in uv:
         if len(ra) >= n_diem or ngan_sach < DAI_MIN:
             break
@@ -947,21 +1028,35 @@ def loc_theo_font(chon: list, co_font: bool) -> list:
 #: 7 kiểu thì 5 là frei0r -> chỉ còn 2, mà 1 clip tối đa 3 điểm và CẤM lặp kiểu
 #: -> điểm thứ 3 bị BỎ. Thêm 4 shader vào là "tinh" có 6 kiểu chạy được.
 _UV_THEO_LOAI: dict = {
-    "caotrao": ("zoom_nhoi", "rung_lac", "sh_net_hon", "loe_sang",
-                "nhay_sang", "tuong_phan", "meo_kinh", "sh_tuong_phan"),
-    "dong": ("glitch_khoi", "o_vuong", "sh_net_hon", "xao_dong", "lech_bang",
+    # (đã bỏ `sh_net_hon`/`sh_quang_sang`/`sh_mo_net`/`sang_diu` khỏi mọi hàng —
+    #  4 kiểu đó đã GỠ khỏi KHO 08/08/2026 vì đo ra không thấy / làm tối hình)
+    # `sh_tuong_phan` đứng hàng 3 (chỗ `sh_net_hon` vừa bị gỡ để lại): `_chon_kieu`
+    # chỉ với tới `moi[0..2]`, đặt cuối danh sách là "nối cho có" — cổng 41 canh.
+    "caotrao": ("zoom_nhoi", "rung_lac", "sh_tuong_phan", "loe_sang",
+                "nhay_sang", "tuong_phan", "meo_kinh"),
+    "dong": ("glitch_khoi", "o_vuong", "xao_dong", "lech_bang",
              "vien_net", "dong_quet", "song_meo"),
-    "tinh": ("quang_sang", "hat_phim", "sh_toi_vien", "toi_vien", "sang_diu",
-             "sh_hat_phim", "nhieu_analog", "hat_nhieu", "vien_phim",
-             "sh_quang_sang"),
+    "tinh": ("quang_sang", "hat_phim", "sh_toi_vien", "toi_vien",
+             "sh_hat_phim", "nhieu_analog", "hat_nhieu", "vien_phim"),
     "chot": ("sup_toi", "nhay_sang", "sh_toi_vien", "toi_vien", "quang_sang",
-             "zoom_nhoi", "vien_phim", "sh_mo_net"),
-    "noi": ("mo_net", "loe_sang", "sh_mo_net", "o_vuong", "mo_vuong",
+             "zoom_nhoi", "vien_phim"),
+    "noi": ("mo_net", "loe_sang", "o_vuong", "mo_vuong",
             "lech_bang", "zoom_nhoi", "dem_nguoc"),
     "ke": ("quang_sang", "hat_phim", "sh_hat_phim", "nhieu_analog",
            "dong_quet", "toi_vien", "zoom_day", "hat_nhieu", "tuong_phan",
-           "sh_quang_sang", "sh_tuong_phan"),
+           "sh_tuong_phan"),
+    # HOOK MỞ ĐẦU (2 giây đầu quyết định người xem ở lại hay lướt). Chỉ những
+    # kiểu ĐO RA MẠNH NHẤT và có tiếng đi kèm đắt: zoom nhồi (impact), loé sáng
+    # (reveal), tương phản (impact), rung lắc (impact). KHÔNG dùng kiểu "mood"
+    # (hạt phim / tối viền) — mở clip bằng hạt phim thì chẳng ai dừng lại.
+    "hook": ("zoom_nhoi", "loe_sang", "tuong_phan", "rung_lac", "nhay_sang"),
 }
+#: HOOK: điểm nhấn mở đầu đặt ở giây này (không đặt 0,00 — `fx_fade` đang fade
+#: vào 0,35 s đầu nên biên độ ở giây 0 bị nhân với hình đang tối, phí).
+HOOK_BAT = 0.12
+#: HOOK: dài tối đa của điểm nhấn mở đầu — phải NGẮN, xong trước khi câu đầu
+#: tiên kết thúc, nếu không nó thành "phủ clip" (luật 1).
+HOOK_DAI = 0.45
 
 
 def _chon_kieu(loai: str, dung: list, da_dung: list, i: int) -> str:
@@ -983,7 +1078,7 @@ def _chon_kieu(loai: str, dung: list, da_dung: list, i: int) -> str:
 _LOAI_NHAN = {"caotrao": "cao trào (tiếng vọt lên)",
               "dong": "cảnh động mạnh", "tinh": "cảnh tĩnh",
               "chot": "câu chốt cuối clip", "noi": "chỗ ghép đoạn",
-              "ke": "đang kể đều"}
+              "ke": "đang kể đều", "hook": "hook mở đầu"}
 
 
 def _so(x: float, n: int = 2) -> str:
