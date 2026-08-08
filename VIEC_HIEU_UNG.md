@@ -1477,3 +1477,118 @@ phát hành ~620 MB.)
 - **Chưa đo trên máy nhân viên yếu THẬT** — công thức tự hạ N về 1 ở máy ≤ 8
   nhân là **tính toán**, chưa phải số đo.
 - **KHÔNG tự bump version / tag / push / merge `main`** — chờ anh duyệt.
+
+---
+---
+# LƯỢT 08/08/2026 (đêm) — VIỆC A ĐÃ XONG: 6 SHADER `libplacebo` **ĐÃ NỐI**
+
+Mục 7 của lượt trước ghi *"6 shader `libplacebo`: VẪN CHƯA NỐI"* với lý do
+`libplacebo` không có timeline `enable`. Lượt này **nối xong**, kèm số đo.
+
+## 1. Cái kẹt cũ và cách gỡ
+`libplacebo` đúng là **không có** `enable` (`ffmpeg -h filter=libplacebo` không
+in dòng "supports timeline"). Nhưng KHÔNG cần nó phải có: **cắt đúng cửa sổ
+điểm nhấn ra rồi chỉ đẩy mảnh đó lên GPU**, xong `concat` nối lại — y hệt kiến
+trúc "cắt mảnh" mà `_tach_va_noi_manh` đã dùng cho chuyển cảnh.
+
+Đã thử **cả hai** cách, trên clip THẬT 24 s / 1080x1920 / 722 khung, đo **ĐAN
+XEN A,B,C,D × 4 vòng** (máy luôn có app tải chạy nền — đo liền mạch đã sai 2
+lần), lấy TRUNG VỊ:
+
+| cách dựng | khung ra | wall | CPU-giây | so với "không hiệu ứng" |
+|---|---|---|---|---|
+| A không hiệu ứng | 722 | 2,50 s | 37,40 | 1,00× |
+| B hiệu ứng CPU `eq=contrast` | 722 | 2,50 s | 37,88 | 1,00× |
+| C `split`+`overlay`, shader chạy CẢ CLIP | 722 | 5,45 s | 52,78 | **2,18×** wall · 1,41× CPU |
+| **D `trim` CHỈ cửa sổ + `concat`** | 722 | 2,91 s | 37,80 | **1,16×** wall · **1,01× CPU** |
+
+-> chọn **D**. Phần dư 0,16× là **phí MỞ thiết bị Vulkan (~0,4 s/lệnh, CỐ
+ĐỊNH)**, không tăng theo độ dài clip. CPU-giây **1,01×** mới là con số đáng kể:
+10 làn chạy song song thì nhóm này gần như **không ăn thêm máy**.
+
+Bất biến đo được: số khung **722/722** và độ dài **24,066667 s y hệt** -> `.ass`
+và mốc tiếng động **không phải sửa một dòng nào**.
+
+## 2. Số đo 6 shader (clip thật 1080x1920, cửa sổ [1,00 · 1,50])
+`aa` = alpha trên nhánh shader = **núm ĐỘ ĐẬM** (luật 2). Shader viết cứng
+cường độ trong `.hook`, `colorchannelmixer=aa` là núm duy nhất — và nó đủ:
+
+| shader | %pixel đổi ở aa 0,60 / 0,80 / 1,00 | dU | dV |
+|---|---|---|---|
+| hat_phim | 22,37 / 39,42 / 50,81 | −0,15…−0,08 | −0,34…−0,24 |
+| mo_net | 6,44 / 9,10 / 11,51 | −0,11…−0,10 | −0,32…−0,27 |
+| net_hon | 7,34 / 10,16 / 12,58 | −0,05…0,01 | −0,35…−0,29 |
+| quang_sang | 18,31 / 21,87 / 22,99 | −1,31…−0,80 | −0,91…−0,58 |
+| toi_vien | 18,92 / 23,73 / 27,55 | 0,16…0,30 | −0,49…−0,37 |
+| tuong_phan | 0,38 / 6,59 / 17,62 | −0,99…−0,61 | −0,13…−0,05 |
+
+NGOÀI cửa sổ: **0,00 % pixel lệch · PSNR 53,69 dB** ở CẢ 18 lượt -> không rò.
+Lệch màu lớn nhất **1,31** (trần luật 3 là 3,0) -> không loè.
+**ĐỐI CHỨNG bắt buộc:** `libplacebo` KHÔNG shader vs gốc = PSNR **52,23 dB**,
+dU −0,03 dV −0,03 -> bản thân cái ống dẫn không đổi màu, mọi số trên là của
+SHADER.
+
+`sh_net_hon` là **kiểu MỚI**, không có bản CPU: `unsharp` đã bị loại từ trước vì
+ở trần 5,0 chỉ đổi **6,3 %** pixel (anh Hùng không thấy). Bản shader **12,58 %**.
+
+## 3. HAI BẪY MỚI (cả hai IM LẶNG — ghi lại kẻo lặp)
+**(a) `blend` bật NGƯỢC.** Dựng `[shader][gốc]blend=all_opacity=…:enable=…` thì
+lúc `enable=0` filter cho qua đầu vào **THỨ NHẤT** = bản CÓ shader -> hiệu ứng
+phủ **TOÀN CLIP** còn trong cửa sổ lại **nhạt đi**. Đo: ngoài cửa sổ **34,45 %**
+pixel lệch, trong cửa sổ **4,29 %** — đúng ngược. rc=0, đủ 92 khung, không một
+dòng lỗi. -> dùng `overlay` (cho qua đầu vào NỀN khi tắt) hoặc `trim`.
+
+**(b) Shader biên dịch được nhưng CHẠY không được thì libplacebo TỰ TẮT nó.**
+`.hook` có `//!HOOK` đúng mà thân GLSL hỏng -> in *"Failed executing hook,
+disabling"* rồi **cho qua khung NGUYÊN VẸN**: `rc=0`, **92/92 khung**, file bình
+thường, **không hiệu ứng nào**. Đây là bẫy "thành công giả" thứ 3 của việc này
+(sau 2 bẫy `xfade_opencl`) và **ĐẾM KHUNG KHÔNG BẮT ĐƯỢC** — cửa dò cũ
+`co_libplacebo()` chỉ xem rc + số khung nên sẽ báo `True` trong khi mọi shader
+đều không chạy, app vẫn chọn shader và ghi vào nhật ký, còn clip thì trơn.
+Chữa: **`_shader_chay_that()`** — đẩy nền **TRẮNG TUYỀN** qua `toi_vien.hook`
+rồi đo **dải sáng** trong khung: chạy = **107** · bị tắt = **1** · không shader
+= **1** (ngưỡng 40, rất rộng). Không cần bản đối chứng.
+(Ngược lại `.hook` sai CÚ PHÁP hoặc đường dẫn hỏng thì **FAIL TO**: "Failed
+parsing custom shader!" / "Permission denied", rc≠0, 0 khung.)
+
+## 4. Nối vào ở đâu
+- `hieu_ung.py`: 6 mục KHO mới nhóm `"shader"` (`sh_*`) dùng khuôn `_SH_MAU`
+  (`split=3` -> `trim` -> `hwupload`/`libplacebo`/`hwdownload` -> `concat`),
+  `{i}` đánh nhãn riêng từng hiệu ứng (2 shader trong 1 clip mà trùng nhãn là
+  ffmpeg báo "Duplicate output pad" rồi chết cả lượt xuất).
+- `co_shader()` = `BQ_SHADER != 0` **và** `hieu_ung_gpu.co_libplacebo()` **và**
+  còn file `.hook`. `dung_duoc()` tự loại nhóm shader khi thiếu bất cứ cái nào.
+- `can_vulkan(chon)` -> `ffmpeg_utils.build()` **chỉ** thêm
+  `-init_hw_device vulkan=vk -filter_hw_device vk` khi bộ hiệu ứng THẬT SỰ có
+  shader -> mức "tat" ra lệnh **không khác một ký tự** (cổng 36 đo lại PSNR
+  **99 dB** ở 5/5 mốc).
+- Lượt xuất có shader mà ffmpeg chết -> `bo_shader()` rồi xuất LẠI **đúng 1
+  lần** không shader; nhật ký cũng bỏ shader (không khoe cái không có trong
+  file). HUỶ thì ném tiếp, không lùi.
+- Vị trí trong `_UV_THEO_LOAI`: đặt ở **hàng 2-3**, không phải cuối. `_chon_kieu`
+  lấy `moi[i % len(moi)]` với `i` ∈ {0,1,2} nên đặt cuối danh sách = "nối cho
+  có", máy có frei0r sẽ **không bao giờ** dùng tới. Điểm nhấn ĐẦU vẫn giữ kiểu
+  cũ. Cái được lớn nhất là ở **máy nhân viên không frei0r**: danh sách "tinh"
+  vốn 7 kiểu thì 5 là frei0r -> còn 2, mà 1 clip tối đa 3 điểm và CẤM lặp kiểu
+  -> điểm thứ 3 bị BỎ; thêm shader thì "tinh" có 6 kiểu chạy được.
+
+## 5. Cổng chặn
+`_test_shader.py` (cổng 41) — **64 ca, 0 FAIL**, ffmpeg + video Nhật THẬT, mọi
+phép so render **x264 `-qp 0` (LOSSLESS)** để không lẫn nhiễu rate-control.
+Có ca quét tĩnh chặn 3 kiểu thoái hoá: đổi khuôn về cách C (đắt gấp đôi), mở
+Vulkan không điều kiện, và **file `.hook` đóng gói mà không mã nào gọi tới**
+(đúng cái bệnh cổng này chữa).
+
+Chạy lại toàn bộ: **36 (65 OK) · 37 (40 OK) · 38 (49 OK) · 39 (8 OK) · 41 (64
+OK)**, 0 FAIL.
+
+## 6. CHƯA LÀM ĐƯỢC (nói thẳng)
+- **Rò mảnh `_seg_*` khi lượt xuất LỖI/HUỶ** — có sẵn từ `main`, **không phải
+  của lượt này**: đo đối chứng cùng nguồn cùng lệnh, `main` sót 4 file/26,2 MB,
+  nhánh này sót 4 file/26,2 MB; đo ĐAN XEN 4 vòng mỗi bên ở ca chạy BÌNH THƯỜNG
+  thì **0 sót cả hai**. Gốc: `_cleanup_paths` xoá best-effort, file còn bị KHOÁ
+  (`PermissionError`) lúc dọn nên trượt. Cổng 36 CA 7 và cổng 38 E5 cùng bắt
+  được nó khi máy đang tải nặng.
+- **Chưa đo trên máy KHÔNG có Vulkan THẬT** — đường lùi êm mới chỉ kiểm bằng
+  monkeypatch (`_CO["vulkan"]=False`) và `BQ_SHADER=0` trên máy CÓ Vulkan.
+- **Chưa build lại `.exe`**, chưa bump version, chưa merge `main`.

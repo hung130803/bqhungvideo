@@ -135,6 +135,24 @@ def thu_muc_shader() -> str:
     return str(p) if p.is_dir() else ""
 
 
+def duong_shader(ten: str) -> str:
+    """Đường dẫn TUYỆT ĐỐI của 1 shader `.hook` (rỗng nếu không có file).
+
+    Nhận cả `"hat_phim"` lẫn `"hat_phim.hook"` lẫn đường dẫn đầy đủ. Không có
+    file -> "" và `hieu_ung.dung_duoc()` TỰ LOẠI hiệu ứng đó (máy nhân viên
+    thiếu tài nguyên thì im lặng bớt hiệu ứng, KHÔNG nổ lỗi).
+    """
+    if not ten:
+        return ""
+    if os.path.isfile(ten):
+        return str(ten)
+    d = thu_muc_shader()
+    if not d:
+        return ""
+    p = os.path.join(d, ten if ten.endswith(".hook") else f"{ten}.hook")
+    return p if os.path.isfile(p) else ""
+
+
 def duong_filter(p: str) -> str:
     r"""Đường dẫn Windows -> dạng nhét được vào chuỗi filter (`C:` -> `C\:`).
 
@@ -264,6 +282,9 @@ def _do_vulkan() -> bool:
         # ĐẾM KHUNG, không chỉ xem rc+size — cùng lý do ở `co_opencl`.
         # (libplacebo GIỮ ĐÚNG PTS, đo 30/30 khung, nên không cần `setpts`.)
         ok = (rc == 0 and os.path.exists(out) and _dem_khung(out) >= 5)
+        # ... NHƯNG ĐẾM KHUNG VẪN CHƯA ĐỦ, xem `_shader_chay_that()`.
+        if ok:
+            ok = _shader_chay_that()
         try:
             import shutil
             shutil.rmtree(td, ignore_errors=True)
@@ -271,6 +292,57 @@ def _do_vulkan() -> bool:
             pass
     _CO["vulkan"] = ok
     return ok
+
+
+def _shader_chay_that() -> bool:
+    r"""Shader có THẬT SỰ đổi được pixel trên máy này không.
+
+    === BẪY "THÀNH CÔNG GIẢ" THỨ HAI, ĐO ĐƯỢC 08/08/2026 ===
+    File `.hook` có `//!HOOK` đúng nhưng thân GLSL biên dịch KHÔNG được (GPU
+    cũ, thiếu `shaderc`, driver phần mềm…) thì libplacebo in **"Failed
+    executing hook, disabling"** rồi **CHO QUA KHUNG NGUYÊN VẸN**:
+    `rc=0`, file đủ **92/92 khung**, kích thước bình thường. Bản kiểm chỉ
+    `rc + đếm khung` sẽ báo `co_libplacebo()=True` trong khi mọi shader đều
+    **KHÔNG chạy** -> app chọn hiệu ứng shader, ghi vào nhật ký, mà **clip ra
+    KHÔNG có hiệu ứng nào**. Đúng họ lỗi "nhật ký khoe hiệu ứng không tồn tại"
+    (LỖI 5) và họ "0,03 CPU-giây" — cửa dò báo nhầm thì tệ hơn là tắt hẳn.
+    (Ngược lại, `.hook` SAI CÚ PHÁP hoặc đường dẫn hỏng thì FAIL TO: đo được
+    "Failed parsing custom shader!" / "Permission denied", rc != 0, 0 khung.
+    Chỉ ca "biên dịch được nhưng chạy không được" mới im lặng.)
+
+    CÁCH ĐO — không cần bản đối chứng: đẩy **nền TRẮNG TUYỀN** qua
+    `toi_vien.hook` (tối viền). Shader chạy -> góc bị tối đi -> dải sáng
+    trong khung DOÃNG ra. Shader bị tắt -> khung vẫn trắng đều.
+    Đo thật trên máy này: **chạy = 107** (min 148/max 255) · **bị tắt = 1**
+    (min 254/max 255) · **không shader = 1**. Ngưỡng 40 nằm giữa, rất rộng.
+    """
+    sh = os.path.join(thu_muc_shader(), "toi_vien.hook")
+    if not os.path.isfile(sh):
+        return False
+    td = tempfile.mkdtemp(prefix="_lpprobe_")
+    raw = os.path.join(td, "p.raw")
+    try:
+        rc, _log = _chay([
+            "-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk",
+            "-f", "lavfi", "-i", "color=c=white:s=64x64:r=30:d=0.2",
+            "-filter_complex",
+            f"[0:v]format=yuv420p,hwupload[x];"
+            f"[x]libplacebo=custom_shader_path='{duong_filter(sh)}'[o];"
+            f"[o]hwdownload,format=yuv420p,format=gray[v]",
+            "-map", "[v]", "-frames:v", "2", "-f", "rawvideo", raw])
+        if rc != 0 or not os.path.exists(raw):
+            return False
+        with open(raw, "rb") as f:
+            b = f.read()
+        return bool(b) and (max(b) - min(b)) > 40
+    except Exception:                                        # noqa: BLE001
+        return False
+    finally:
+        try:
+            import shutil
+            shutil.rmtree(td, ignore_errors=True)
+        except Exception:                                    # noqa: BLE001
+            pass
 
 
 # =====================================================================

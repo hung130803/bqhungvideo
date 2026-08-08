@@ -316,9 +316,12 @@ class HieuUng:
     khoa: str
     ten: str                    # tên TIẾNG VIỆT cho anh Hùng
     capcut: str                 # tên trong bảng Effects của CapCut
-    nhom: str                   # "thuan" | "frei0r"
+    nhom: str                   # "thuan" | "frei0r" | "shader"
     mau: str
     module: str = ""            # module frei0r cần (rỗng = filter thuần ffmpeg)
+    #: file `.hook` trong `app/assets/hieu_ung/shaders/` (nhóm "shader" mới).
+    #: Có giá trị = hiệu ứng chạy trên GPU qua `libplacebo`, cần Vulkan.
+    shader: str = ""
     # tham số: mỗi phần tử (min, max) — nội suy theo dam 0..DAM_MAX/DAM_MAX
     ts: tuple = ()
     dai: float = 0.45           # thời lượng ưa dùng (giây) — trong [DAI_MIN, DAI_MAX]
@@ -339,9 +342,16 @@ class HieuUng:
     ghi_chu: str = ""
 
     def chuoi(self, dam: float, a: float, b: float, W: int, H: int,
-              fps: float = 30, font: str = "") -> str:
+              fps: float = 30, font: str = "", i: int = 0) -> str:
         d = max(0.0, min(DAM_MAX, float(dam))) / DAM_MAX      # 0..1
         s = self.mau
+        # `{i}` = SỐ THỨ TỰ hiệu ứng trong clip -> tên nhãn `[q0a]`, `[q1a]`…
+        # KHÔNG có nó thì 2 hiệu ứng shader trong cùng 1 clip dùng TRÙNG nhãn và
+        # ffmpeg báo "Duplicate output pad" rồi chết cả lượt xuất.
+        s = s.replace("{i}", str(int(i)))
+        if self.shader:
+            from app.core import hieu_ung_gpu as _HG
+            s = s.replace("{SH}", _HG.duong_filter(_HG.duong_shader(self.shader)))
         for i, (lo, hi) in enumerate(self.ts, start=1):
             s = s.replace("{p%d}" % i, f"{lo + (hi - lo) * d:g}")
         # LỖI 4 (rà ra 08/08/2026): mốc chia cửa sổ phải TÍNH THEO cửa sổ, không
@@ -365,6 +375,45 @@ def _f0r(mod: str, params: str = "") -> str:
     if params:
         s += f":filter_params={params}"
     return s + "{en}"
+
+
+#: Khuôn filter cho nhóm **SHADER GPU** (`libplacebo` + `.hook` tự viết).
+#:
+#: === VÌ SAO PHẢI CẮT MẢNH CHỨ KHÔNG DÙNG `enable` ===
+#: `libplacebo` **KHÔNG có timeline `enable`** (`ffmpeg -h filter=libplacebo`
+#: không in dòng "supports timeline") -> áp là áp TOÀN CLIP, trái luật 1. Đây
+#: đúng là lý do 6 shader nằm không từ 08/08/2026.
+#:
+#: 2 CÁCH VÒNG QUA, ĐÃ ĐO CẢ HAI TRÊN CLIP THẬT 24s/1080x1920/722 khung:
+#:   (C) `split` -> nhánh shader chạy CẢ CLIP -> `overlay` CÓ `enable`.
+#:       Cổng thời gian ĐÚNG (đo: ngoài cửa sổ 0,00% pixel lệch) nhưng
+#:       **2,18x wall · 1,41x CPU-giây** — mọi khung đều phải lên/xuống GPU cho
+#:       0,45 giây hiệu ứng. **LOẠI**: mặc định đang 1,98x, không được đắt thêm.
+#:   (D) cắt ĐÚNG cửa sổ bằng `trim`, CHỈ mảnh đó lên GPU, `concat` nối lại.
+#:       **1,16x wall · 1,01x CPU-giây** (CPU-giây mới là cái đắt khi 10 làn
+#:       chạy cùng lúc — phần dư 0,16x là phí MỞ THIẾT BỊ Vulkan, cố định
+#:       ~0,4 giây/lệnh chứ không theo độ dài clip). **CHỌN CÁCH NÀY.**
+#:       Cùng kiến trúc "cắt mảnh rồi concat" mà `_tach_va_noi_manh` đã dùng.
+#:
+#: BẤT BIẾN ĐÃ ĐO (đừng đổi khuôn mà không đo lại): số khung RA = số khung VÀO
+#: (722/722) và độ dài **24,066667s y hệt** — `trim` + `setpts=PTS-STARTPTS` +
+#: `concat` giữ nguyên mốc, nên `.ass` và mốc tiếng động KHÔNG phải sửa.
+#: Ca `bat=0` (cửa sổ ở NGAY ĐẦU clip) làm mảnh đầu RỖNG — đã đo riêng: vẫn
+#: 722 khung, `concat` bỏ qua nhánh rỗng, KHÔNG treo.
+#:
+#: `{p1}` = alpha 0..1 = ĐỘ ĐẬM (luật 2). Shader viết cứng cường độ trong file
+#: `.hook`, không có núm; `colorchannelmixer=aa` là núm duy nhất — và nó đủ:
+#: đo `tuong_phan` ở aa 0,60 / 0,80 / 1,00 ra 0,38% / 6,59% / 17,62% pixel đổi.
+_SH_MAU = (
+    "split=3[q{i}a][q{i}b][q{i}c];"
+    "[q{i}a]trim=end={a},setpts=PTS-STARTPTS[q{i}d];"
+    "[q{i}b]trim=start={a}:end={b},setpts=PTS-STARTPTS,"
+    "hwupload,libplacebo=custom_shader_path='{SH}',"
+    "hwdownload,format=yuv420p,format=yuva420p,"
+    "colorchannelmixer=aa={p1},format=yuv420p[q{i}e];"
+    "[q{i}c]trim=start={b},setpts=PTS-STARTPTS[q{i}f];"
+    "[q{i}d][q{i}e][q{i}f]concat=n=3:v=1:a=0"
+)
 
 
 # LOẠI ĐIỂM NHẤN (dùng cho luật chọn):
@@ -552,6 +601,56 @@ _dk(HieuUng(
     ts=((0.55, 0.95), ), dai=0.80, hop=("noi",), can_font=True,
     nguong_thay=2.0, nguong_manh=0.8))
 
+# ---- NHÓM 5: SHADER GLSL CHẠY TRÊN **GPU** (`libplacebo` + Vulkan) ----
+# 6 file `.hook` TỰ VIẾT nằm sẵn trong `app/assets/hieu_ung/shaders/` từ
+# 08/08/2026 nhưng **CHƯA nối vào đường xuất** (hồ sơ ghi rõ: `libplacebo`
+# không có timeline `enable`). Nay nối được nhờ khuôn `_SH_MAU` ở trên.
+#
+# SỐ ĐO (clip THẬT 1080x1920, cửa sổ [1,00 · 1,50], `aa` = 0,60/0,80/1,00 —
+# xem `_do_shader.py`). Cột "%pixel" = % pixel |dY|>12 GIỮA cửa sổ; dU/dV là
+# lệch màu trung bình (luật 3: phải < 3,0):
+#   hat_phim    22,37 / 39,42 / 50,81 %   dU -0,15..-0,08  dV -0,34..-0,24
+#   mo_net       6,44 /  9,10 / 11,51 %   dU -0,11..-0,10  dV -0,32..-0,27
+#   net_hon      7,34 / 10,16 / 12,58 %   dU -0,05.. 0,01  dV -0,35..-0,29
+#   quang_sang  18,31 / 21,87 / 22,99 %   dU -1,31..-0,80  dV -0,91..-0,58
+#   toi_vien    18,92 / 23,73 / 27,55 %   dU  0,16.. 0,30  dV -0,49..-0,37
+#   tuong_phan   0,38 /  6,59 / 17,62 %   dU -0,99..-0,61  dV -0,13..-0,05
+# -> `ts` (dải alpha) dưới đây chọn theo BẢNG NÀY: mức 'nhe' (dam 0,12 -> d
+# 0,48) vẫn phải vượt `nguong_thay` = 8%, mức 'manh' (d 1,0) không được quá
+# tay. `tuong_phan` dốc nhất nên dải hẹp 0,80-1,00; `hat_phim` mạnh nhất nên
+# dải thấp 0,45-0,70.
+# NGOÀI cửa sổ đo được **0,00% pixel lệch · PSNR 53,69 dB** ở CẢ 18 lượt ->
+# KHÔNG rò ra ngoài điểm nhấn (luật 1).
+# ĐỐI CHỨNG BẮT BUỘC: `libplacebo` KHÔNG shader vs gốc = PSNR 52,23 dB,
+# dU -0,03 dV -0,03, 0,0% pixel -> bản thân `libplacebo` KHÔNG đổi màu, nên
+# mọi con số trên là của SHADER chứ không phải của cái ống dẫn.
+_dk(HieuUng(
+    "sh_net_hon", "Nét gắt (GPU)", "Sharpen", "shader", _SH_MAU,
+    shader="net_hon.hook", ts=((0.75, 1.00), ), dai=0.35,
+    hop=("caotrao", "dong"), doi_cho=True,
+    ghi_chu="KHÔNG có bản CPU: `unsharp` đã bị loại vì ở trần 5,0 chỉ đổi "
+            "6,3% pixel. Bản shader đo 12,58% -> THẤY ĐƯỢC."))
+_dk(HieuUng(
+    "sh_hat_phim", "Hạt phim (GPU)", "Film Grain", "shader", _SH_MAU,
+    shader="hat_phim.hook", ts=((0.45, 0.70), ), dai=0.60,
+    hop=("ke", "tinh")))
+_dk(HieuUng(
+    "sh_quang_sang", "Quầng sáng phim (GPU)", "Film Radiance", "shader",
+    _SH_MAU, shader="quang_sang.hook", ts=((0.55, 0.95), ), dai=0.60,
+    hop=("ke", "chot", "tinh")))
+_dk(HieuUng(
+    "sh_toi_vien", "Tối viền ống kính (GPU)", "Vignette", "shader", _SH_MAU,
+    shader="toi_vien.hook", ts=((0.50, 0.90), ), dai=0.70,
+    hop=("ke", "tinh", "chot")))
+_dk(HieuUng(
+    "sh_mo_net", "Mờ nét nhanh (GPU)", "Focus Pull", "shader", _SH_MAU,
+    shader="mo_net.hook", ts=((0.75, 1.00), ), dai=0.35,
+    hop=("noi", "chot"), doi_cho=True))
+_dk(HieuUng(
+    "sh_tuong_phan", "Tăng tương phản (GPU)", "Contrast Punch", "shader",
+    _SH_MAU, shader="tuong_phan.hook", ts=((0.80, 1.00), ), dai=0.40,
+    hop=("caotrao", "ke")))
+
 
 # ------------------------------------------------------ HIỆU ỨNG DÙNG ĐƯỢC
 #: Hiệu ứng ĐO RA lệch màu >= UV_MAX -> KHÔNG BAO GIỜ tự chọn (luật 3). Danh
@@ -565,16 +664,80 @@ LOAI_DOI_MAU: tuple = ("colortap", "saturat0r", "colorize", "hueshift0r",
                        "rgbashift", "baltan", "vertigo", "sobel", "cartoon")
 
 
+def co_shader() -> bool:
+    """Máy này chạy được nhóm SHADER GPU hay không — KHÔNG BAO GIỜ ném lỗi.
+
+    3 cửa, thiếu bất cứ cái nào là nhóm shader TỰ TẮT và app chạy y như cũ:
+      1. `BQ_SHADER=0` — công tắc tay để anh Hùng/tôi tắt nhóm này khi gỡ rối
+         mà không phải sửa mã (cùng kiểu `BQ_XFADE_NOI_CA_CLIP`).
+      2. `hieu_ung_gpu.co_libplacebo()` — nó RENDER THẬT rồi **ĐẾM KHUNG**, chứ
+         không chỉ hỏi "ffmpeg có filter không". Máy nhân viên không có Vulkan
+         -> False.
+      3. còn file `.hook` trên đĩa (bản đóng gói thiếu tài nguyên -> tự bỏ).
+    Kết quả của (2) đã được `hieu_ung_gpu` cache sẵn nên gọi nhiều lần không tốn.
+    """
+    if str(os.environ.get("BQ_SHADER", "")).strip() == "0":
+        return False
+    try:
+        from app.core import hieu_ung_gpu as _HG
+        return bool(_HG.co_libplacebo())
+    except Exception:  # noqa: BLE001 — thiếu module không được chặn lượt xuất
+        return False
+
+
 def dung_duoc(co_font: bool = True) -> list[str]:
-    """Khoá các hiệu ứng CHẠY ĐƯỢC trên máy này (đã kiểm frei0r thật)."""
+    """Khoá các hiệu ứng CHẠY ĐƯỢC trên máy này (đã kiểm frei0r/Vulkan thật)."""
     ra = []
+    sh_ok = None
     for k, h in KHO.items():
         if h.can_font and not co_font:
             continue
         if h.module and not module_co(h.module):
             continue
+        if h.shader:
+            # hỏi Vulkan ĐÚNG 1 LẦN cho cả vòng (mỗi lần dò là 1 lệnh ffmpeg)
+            if sh_ok is None:
+                sh_ok = co_shader()
+            if not sh_ok or not _co_file_shader(h.shader):
+                continue
         ra.append(k)
     return ra
+
+
+def _co_file_shader(ten: str) -> bool:
+    try:
+        from app.core import hieu_ung_gpu as _HG
+        return bool(_HG.duong_shader(ten))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def can_vulkan(chon: list) -> bool:
+    """Bộ hiệu ứng đã chọn CÓ cần mở thiết bị Vulkan hay không.
+
+    Caller (`ffmpeg_utils`) phải hỏi hàm này để quyết định có thêm
+    `-init_hw_device vulkan=vk -filter_hw_device vk` vào lệnh hay không.
+    **Chỉ thêm khi THẬT SỰ cần** — đó là cách giữ BẤT BIẾN SỐNG CÒN: mức "tat"
+    (và mọi bộ chọn không có shader) ra lệnh ffmpeg KHÔNG khác một ký tự nào so
+    với bản cũ, nên file xuất ra giống hệt.
+    """
+    for c in chon or []:
+        h = KHO.get(str(c.get("khoa", "")))
+        if h is not None and h.shader:
+            return True
+    return False
+
+
+def bo_shader(chon: list) -> list:
+    """Bỏ các hiệu ứng nhóm shader khỏi bộ đã chọn (dùng khi GPU lỗi giữa chừng).
+
+    `ffmpeg_utils` gọi hàm này để LÙI ÊM: lượt xuất có shader mà ffmpeg chết
+    (driver Vulkan hỏng, GPU đang bận, máy ảo…) thì xuất LẠI bằng đúng bộ hiệu
+    ứng đó trừ shader, thay vì để cả clip FAIL. Cùng cách `_tach_va_noi_manh`
+    lùi từ GPU về CPU.
+    """
+    return [c for c in (chon or [])
+            if not getattr(KHO.get(str(c.get("khoa", ""))), "shader", "")]
 
 
 def thong_ke() -> dict:
@@ -585,7 +748,9 @@ def thong_ke() -> dict:
         "dung_duoc": len(dd),
         "thuan": sum(1 for k in dd if KHO[k].nhom == "thuan"),
         "frei0r": sum(1 for k in dd if KHO[k].nhom == "frei0r"),
+        "shader": sum(1 for k in dd if KHO[k].nhom == "shader"),
         "co_frei0r": co_frei0r(),
+        "co_shader": co_shader(),
     }
 
 
@@ -771,19 +936,31 @@ def loc_theo_font(chon: list, co_font: bool) -> list:
 
 
 #: Ứng viên theo LOẠI điểm — thứ tự = ưu tiên. Cảnh TĨNH chỉ có mood.
+#:
+#: NHÓM SHADER GPU (`sh_*`) ĐẶT Ở ĐÂU VÀ VÌ SAO: `_chon_kieu` lấy
+#: `moi[i % len(moi)]` với `i` = số điểm ĐÃ chọn (0,1,2) -> chỉ 3 vị trí ĐẦU
+#: của danh sách CÒN LẠI là tới được. Đặt shader ở CUỐI danh sách = nối vào cho
+#: có, máy nào có frei0r thì KHÔNG BAO GIỜ dùng tới (đúng cái bẫy "đóng gói rồi
+#: mà chưa nối"). Vì vậy đặt ở **vị trí 2-3**: điểm nhấn ĐẦU TIÊN vẫn giữ
+#: nguyên kiểu cũ, các điểm sau mới có cơ hội ra shader.
+#: Cái được ở máy NHÂN VIÊN (không frei0r) còn lớn hơn: danh sách "tinh" vốn
+#: 7 kiểu thì 5 là frei0r -> chỉ còn 2, mà 1 clip tối đa 3 điểm và CẤM lặp kiểu
+#: -> điểm thứ 3 bị BỎ. Thêm 4 shader vào là "tinh" có 6 kiểu chạy được.
 _UV_THEO_LOAI: dict = {
-    "caotrao": ("zoom_nhoi", "rung_lac", "loe_sang", "nhay_sang",
-                "tuong_phan", "meo_kinh"),
-    "dong": ("glitch_khoi", "o_vuong", "xao_dong", "lech_bang",
+    "caotrao": ("zoom_nhoi", "rung_lac", "sh_net_hon", "loe_sang",
+                "nhay_sang", "tuong_phan", "meo_kinh", "sh_tuong_phan"),
+    "dong": ("glitch_khoi", "o_vuong", "sh_net_hon", "xao_dong", "lech_bang",
              "vien_net", "dong_quet", "song_meo"),
-    "tinh": ("quang_sang", "hat_phim", "toi_vien", "sang_diu", "nhieu_analog",
-             "hat_nhieu", "vien_phim"),
-    "chot": ("sup_toi", "nhay_sang", "toi_vien", "quang_sang", "zoom_nhoi",
-             "vien_phim"),
-    "noi": ("mo_net", "loe_sang", "o_vuong", "mo_vuong", "lech_bang",
-            "zoom_nhoi", "dem_nguoc"),
-    "ke": ("quang_sang", "hat_phim", "nhieu_analog", "dong_quet", "toi_vien",
-           "zoom_day", "hat_nhieu", "tuong_phan"),
+    "tinh": ("quang_sang", "hat_phim", "sh_toi_vien", "toi_vien", "sang_diu",
+             "sh_hat_phim", "nhieu_analog", "hat_nhieu", "vien_phim",
+             "sh_quang_sang"),
+    "chot": ("sup_toi", "nhay_sang", "sh_toi_vien", "toi_vien", "quang_sang",
+             "zoom_nhoi", "vien_phim", "sh_mo_net"),
+    "noi": ("mo_net", "loe_sang", "sh_mo_net", "o_vuong", "mo_vuong",
+            "lech_bang", "zoom_nhoi", "dem_nguoc"),
+    "ke": ("quang_sang", "hat_phim", "sh_hat_phim", "nhieu_analog",
+           "dong_quet", "toi_vien", "zoom_day", "hat_nhieu", "tuong_phan",
+           "sh_quang_sang", "sh_tuong_phan"),
 }
 
 
@@ -910,8 +1087,16 @@ def chuoi_filter(chon: list, W: int, H: int, fps: float = 30,
             continue
         if h.can_font and not font:
             continue
+        # thiếu file `.hook` (bản đóng gói hụt tài nguyên) -> BỎ hiệu ứng đó,
+        # KHÔNG dựng chuỗi có `custom_shader_path=''` rồi để ffmpeg chết cả lượt
+        if h.shader and not _co_file_shader(h.shader):
+            continue
+        # `len(out)` chứ không phải chỉ số vòng lặp: nhãn phải đánh theo hiệu
+        # ứng THỰC SỰ được dựng, nếu không 2 shader có thể nhận cùng một số khi
+        # có hiệu ứng bị bỏ ở giữa -> "Duplicate output pad" -> chết lượt xuất.
         out.append(h.chuoi(float(c.get("dam", MUC_DAM["vua"])),
-                           float(c["bat"]), float(c["het"]), W, H, fps, font))
+                           float(c["bat"]), float(c["het"]), W, H, fps, font,
+                           i=len(out)))
     return ",".join(out)
 
 

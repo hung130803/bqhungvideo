@@ -128,7 +128,11 @@ cài xong là mất sạch hiệu ứng mà app vẫn chạy bình thường nê
 
 ## 9. Chưa làm được — nói thẳng
 
-1. **6 shader libplacebo** chưa nối vào (đã đóng gói sẵn, chưa dùng)
+1. ~~**6 shader libplacebo** chưa nối vào~~ — **ĐÃ NỐI** (08/08/2026). Kho hiệu
+   ứng lên **31 kiểu**, trong đó "Nét gắt (GPU)" là kiểu hoàn toàn mới. Chúng
+   chạy trên **card màn hình** nên gần như không ăn thêm CPU (đo **1,01×
+   CPU-giây**; thời gian xuất +16% và chỉ ở clip THẬT SỰ dùng shader). Máy nhân
+   viên không có card thì app **tự bỏ nhóm này**, không báo lỗi, không chậm đi.
 2. **Chi phí hiệu ứng 1,98× thời gian thực**, mục tiêu đặt ra là 1,4× — chậm hơn dự tính
 3. **Số luồng 2,67× số nhân**, mục tiêu 2× — chưa đạt trần mong muốn
 4. **Chưa test trên máy nhân viên thật**, mới chỉ giả lập máy 2–4 nhân

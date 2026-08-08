@@ -376,9 +376,41 @@
      **KHÔNG CÓ trên máy (ghi thẳng, không bịa):** video tiếng **Trung · Thái ·
      Ả Rập · Do Thái** — đã quét toàn bộ `D:\` + `C:\Users\Admin`. Với các nhóm
      đó cổng chỉ kiểm được điều 3 và 5 (không cần tiếng thật).
+  41. `_test_shader.py` → **6 SHADER `libplacebo` — ĐÃ NỐI VÀO ĐƯỜNG XUẤT**
+     (trước 08/08/2026 chúng nằm trong bản `.exe` mà **không một dòng mã nào
+     gọi tới**). Kẹt cũ: `libplacebo` **không có timeline `enable`** nên áp là
+     áp TOÀN CLIP, trái luật chống loè số 1. **Chữa: cắt ĐÚNG cửa sổ điểm nhấn
+     bằng `trim`, chỉ mảnh đó lên GPU, `concat` nối lại** (`hieu_ung._SH_MAU`)
+     — cùng kiến trúc "cắt mảnh" của `_tach_va_noi_manh`. Đã đo cả 2 cách trên
+     clip THẬT 24s/1080x1920/722 khung: `split`+`overlay` cả clip **2,18×
+     wall · 1,41× CPU-giây** (LOẠI) · `trim`+`concat` **1,16× wall · 1,01×
+     CPU-giây** (ĐANG DÙNG; phần dư là phí MỞ thiết bị Vulkan ~0,4s/lệnh, cố
+     định, không theo độ dài clip). Số khung + độ dài **giữ nguyên tuyệt đối**
+     (722/722 · 24,066667s) nên `.ass` và mốc tiếng động không phải sửa.
+     Kho hiệu ứng **25 -> 31**; `sh_net_hon` là kiểu MỚI (bản CPU `unsharp` đã
+     bị loại vì ở trần chỉ đổi 6,3% pixel, bản shader đo **12,58%**).
+     **BẪY "THÀNH CÔNG GIẢ" THỨ 2 (mới, khác 2 bẫy `xfade_opencl`):** `.hook`
+     có `//!HOOK` đúng mà thân GLSL chạy không được thì libplacebo in *"Failed
+     executing hook, **disabling**"* rồi **CHO QUA KHUNG NGUYÊN VẸN** — `rc=0`,
+     đủ 92/92 khung, file bình thường, **không hiệu ứng nào**. Đếm khung KHÔNG
+     bắt được. Vì vậy `co_libplacebo()` gọi thêm **`_shader_chay_that()`**: đẩy
+     nền TRẮNG qua `toi_vien.hook` rồi đo DẢI SÁNG — chạy = **107**, bị tắt =
+     **1** (ngưỡng 40). Ngược lại `.hook` sai CÚ PHÁP / đường dẫn hỏng thì FAIL
+     TO (rc != 0, 0 khung) — chỉ ca "biên dịch được nhưng chạy không được" mới
+     im lặng. **BẪY `blend`:** `[shader][gốc]blend=…:enable=…` lúc `enable=0`
+     cho qua đầu vào **THỨ NHẤT** = bản CÓ shader -> hiệu ứng phủ TOÀN CLIP còn
+     trong cửa sổ lại nhạt (đo: ngoài **34,45%**, trong **4,29%** — đúng
+     ngược), rc=0 im lặng. Dùng `overlay`/`trim`, đừng dùng `blend`.
 - **NHÓM HIỆU ỨNG CHẠY TRÊN GPU (`app/core/hieu_ung_gpu.py`)**: `xfade_opencl` +
   kernel gl-transitions (MIT) **21 kiểu ĐO ĐẠT** · `libplacebo` + shader GLSL tự
-  viết **6/6 ĐẠT**. **2 bẫy của `xfade_opencl`, cả hai IM LẶNG (rc=0):**
+  viết **6/6 ĐẠT và ĐÃ NỐI vào đường xuất** (xem cổng 41). Nhóm shader chỉ bật
+  khi `hieu_ung.co_shader()` = True (`BQ_SHADER=0` tắt tay); `ffmpeg_utils` chỉ
+  thêm `-init_hw_device vulkan=vk` khi `hieu_ung.can_vulkan(<bộ đã chọn>)` =
+  True, nên mức "tat" ra lệnh ffmpeg **không khác một ký tự nào** so với bản cũ
+  (cổng 36 đo lại PSNR **99 dB** ở 5/5 mốc). Lượt xuất có shader mà ffmpeg chết
+  -> `hieu_ung.bo_shader()` rồi xuất LẠI 1 lần không shader (lùi êm, nhật ký
+  cũng bỏ shader để không khoe cái không có trong file).
+  **2 bẫy của `xfade_opencl`, cả hai IM LẶNG (rc=0):**
   (a) nó trả PTS rác `AV_NOPTS` (in ra `pts_time:-600479950316066`) -> muxer bỏ
   hết khung -> **file ra 0 KHUNG dù có kích thước**; ai "chữa" bằng `fps=` sau
   `hwdownload` thì ffmpeg **sinh khung vô tận — đo 19,1 GB RSS + 364 CPU-giây
