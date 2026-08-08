@@ -1066,6 +1066,28 @@ không phải của app: app không cần cv2 để xuất clip (đã chứng mi
 | **+ Bản đóng gói** | `.exe` build lại: sfx **43→185**, hieu_ung **0→26** file · dung lượng **615,6 → 620,3 MB (+0,8%)** · chạy thử OK | **ĐẠT** (12/12) |
 | **+ Rác đĩa** | `_seg_*` / `_MEI*` / `_nhip_*` = **0** trước và sau; DB +772 KB cho 7 video | **ĐẠT** |
 
+## CỬA CHẶN — ĐÃ CHẠY LẠI TOÀN BỘ, 0 FAIL
+
+**Venv DEV: 22/22 cổng ĐẠT** (tổng 4,9 phút) · **venv KHÁCH `.venv-build`:
+15/15 cổng ĐẠT** (0,9 phút) · `pyflakes app config.py main.py` = **0 "undefined
+name"**.
+
+| cổng | dev | khách | ghi chú |
+|---|---|---|---|
+| 2 smoke toàn app (66 nút) · 3 hộp thoại dây chuyền | ĐẠT | (cần cv2) | |
+| 5 làn cắt không bị bỏ đói | ĐẠT | ĐẠT | |
+| 6 luồng nền không làm sập app · 7 **HUỶ là HUỶ** · 8 thử lại AI | ĐẠT | ĐẠT | cổng 7 = **hồi phục sau khi tắt app** |
+| 14 mượt · 17 + 17b không đụng máy user · 18 dọn rác + gấp WAL | ĐẠT | ĐẠT | |
+| 23 kho tiếng động (184 file) · 30 trăm kênh · 34 · 35 | ĐẠT | ĐẠT | |
+| 24 AI nghe/xem/trọng tài · 25 tiếng động chỗ nối · 28 liên thông | ĐẠT | (cần cv2) | 3 cổng đi qua đúng 2 hàm vừa sửa núm luồng |
+| **36 chuyển cảnh xfade** | **64 OK · 0 FAIL** | (cần cv2) | PSNR **99 dB** ở 5/5 mốc · VFR lệch tiếng **0,0 ms** · phụ đề không lệch |
+| **37 ca biên đường xuất** | **35 OK · 0 FAIL** | ĐẠT | +4 ca mới (CA 7 siết luồng lệnh đo) |
+| **38 hiệu ứng điểm nhấn + AI chọn** | ĐẠT | (cần cv2) | |
+| **39 bản đóng gói (MỚI)** | **12 · 0 FAIL** | ĐẠT | |
+| chồng lượt / hồi phục dây chuyền | ĐẠT | ĐẠT | |
+
+**Rác `%TEMP%` sau CẢ BỘ: +4 file / +0,4 MB** (bộ cổng từng để lại **887,7 MB**).
+
 ## CÓ NÊN PHÁT HÀNH KHÔNG?
 
 **NÊN — nhưng phải phát hành, vì bản đang chạy trên máy nhân viên đang THIẾU
