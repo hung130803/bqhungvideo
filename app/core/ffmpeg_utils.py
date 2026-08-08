@@ -528,8 +528,18 @@ def extract_audio_wav_why(src: str | Path, dst: str | Path,
             tail.append(s)
             if len(tail) > 6:          # giữ vài dòng cuối là đủ chẩn đoán
                 tail.pop(0)
+    # SIẾT LUỒNG GIẢI MÃ (`-threads` PHẢI đứng TRƯỚC `-i`, sau `-i` là ENCODE).
+    # LỖI THẬT đo được khi TỔNG RÀ SOÁT 08/08/2026 (`_ra_luong_toan_may.py` soi
+    # MỌI ffmpeg trên máy trong lúc dây chuyền chạy): lệnh NÀY **một mình ăn
+    # 132 luồng = 5,50× số nhân** — nhiều hơn cả lệnh XUẤT (81) — và tạo đỉnh
+    # lớn nhất của cả lượt (156 luồng khi chạy cùng lệnh đo). Nó đứng NGOÀI cửa
+    # chờ ffmpeg và KHÔNG dùng `_global_enc_opts()` nên chưa từng bị siết.
+    # Việc thật của nó rất nhẹ (giải mã rồi ghi PCM 16 kHz MỘT kênh — không
+    # encode, không filter) nên mức 4 là quá đủ. Cùng công thức với
+    # `chon_doan._num_luong()` để chỉ có một quy tắc về luồng lệnh-ngoài-cửa-chờ.
+    _dt = str(min(4, max(1, (os.cpu_count() or 4) // 2)))
     cmd = [
-        settings.FFMPEG_PATH, "-y", "-i", str(src),
+        settings.FFMPEG_PATH, "-y", "-threads", _dt, "-i", str(src),
         "-vn", "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(dst),
     ]
     rc = _run(cmd, keep)

@@ -398,17 +398,45 @@ def ca_lenh_do_phai_siet_luong() -> None:
                                   "def chuyen_dong"),
         "hieu_ung.do_nhip": (REPO / "app" / "core" / "hieu_ung.py",
                              "def do_nhip"),
+        # TÁCH TIẾNG cho chép lời: đo được **132 luồng = 5,50× nhân** — đỉnh
+        # lớn nhất của cả lượt dây chuyền, còn hơn cả lệnh XUẤT (81).
+        "ffmpeg_utils.extract_audio_wav_why":
+            (REPO / "app" / "core" / "ffmpeg_utils.py",
+             "def extract_audio_wav_why"),
     }
     for ten, (f, moc) in can.items():
         src = f.read_text(encoding="utf-8", errors="replace")
         i = src.find(moc)
         than = src[i:i + 3500] if i >= 0 else ""
-        co_null = "-f\", \"null" in than or '"-f", "null"' in than
         co_threads = "-threads" in than or "_num_luong()" in than
-        bao(f"{ten}: lệnh đo có siết luồng giải mã",
-            bool(than) and co_null and co_threads,
-            f"tìm thấy hàm={bool(than)} · có `-f null`={co_null} · "
-            f"có `-threads`={co_threads}")
+        bao(f"{ten}: lệnh NGOÀI cửa chờ có siết luồng giải mã",
+            bool(than) and co_threads,
+            f"tìm thấy hàm={bool(than)} · có `-threads`={co_threads}")
+        # `-threads` PHẢI đứng TRƯỚC `-i` (sau `-i` là luồng ENCODE — đặt sai
+        # chỗ thì ffmpeg IM LẶNG, không báo lỗi, luồng giải mã vẫn mặc định 0).
+        # BẪY CỦA CHÍNH PHÉP ĐO NÀY (đã FAIL OAN 1 lần): docstring của
+        # `do_nhip` có ví dụ `["-ss", s, "-t", e-s, "-i", <nguồn>]` nên `"-i"`
+        # xuất hiện ở vị trí 682 — TRƯỚC lệnh thật. Phải CẮT BỎ DOCSTRING rồi
+        # mới so vị trí.
+        # BẪY CỦA CHÍNH PHÉP ĐO NÀY — đã FAIL OAN 2 lần, ghi lại cho rõ:
+        #  (a) docstring `do_nhip` có ví dụ `["-ss", s, "-t", …, "-i", <nguồn>]`
+        #      -> `"-i"` xuất hiện TRƯỚC lệnh thật;
+        #  (b) `do_nhip` gán `vao = [… or ["-i", str(path)]]` ở dòng RIÊNG rồi
+        #      mới nhét `*vao` vào lệnh -> so vị trí trên CẢ THÂN HÀM vẫn sai.
+        # => chỉ so bên trong ĐÚNG DANH SÁCH LỆNH chứa `-threads`.
+        _lenh = ""
+        _p = than.find('"-threads"')
+        if _p > 0:
+            _mo = than.rfind("[", 0, _p)       # đầu list literal của lệnh
+            _dong = than.find("]", _p)         # cuối list literal
+            if _mo >= 0 and _dong > _mo:
+                _lenh = than[_mo:_dong]
+        i_t, i_i = _lenh.find('"-threads"'), _lenh.find('"-i"')
+        bao(f"{ten}: `-threads` đứng TRƯỚC `-i` trong CHÍNH lệnh",
+            ("_num_luong()" in than and '"-threads"' not in than)
+            or (i_t >= 0 and (i_i < 0 or i_t < i_i)),
+            f"trong lệnh: -threads={i_t} · -i={i_i} "
+            f"({'không có -i rời, dùng *vao' if i_i < 0 else 'có -i rời'})")
 
     # ĐO THẬT: chạy `chuyen_dong` trên nguồn tự sinh, đếm đỉnh luồng
     src = dung_nguon("do_luong.mp4", 12.0, True)
