@@ -814,6 +814,38 @@ def _so(x: float, n: int = 2) -> str:
     return f"{x:.{n}f}".replace(".", ",")
 
 
+#: Dưới mức này thì TRUNG VỊ coi như bằng 0 — chia cho nó là ra số vô nghĩa.
+_TV_TOI_THIEU = 1e-6
+
+
+def _so_lan(x: float, tv: float) -> str:
+    """`N,Nx trung vị` — CHỈ khi trung vị CÓ NGHĨA, không thì nói thẳng "nền ~0".
+
+    LỖI THẬT (lượt kiểm ĐỘC LẬP 08/08/2026, lôi ra từ NHẬT KÝ DÂY CHUYỀN của
+    `_test_pipe_integ` chạy trên video THẬT — không phải giả định):
+
+        giây 14,0 · Xáo dòng ngang · cảnh động mạnh —
+        RMS 0,05 = **49274701,3x trung vị**; động 10,0/10 = 513,9x trung vị
+
+    Nguyên nhân: `tv = _tv(nl) or 1e-9`. Khi **hơn NỬA số giây im lặng** — video
+    KHÔNG TIẾNG, hoặc clip có khoảng lặng dài (phỏng vấn / vlog Nhật rất hay
+    gặp) — trung vị RMS ra **đúng 0,0**, `or` thay bằng `1e-9`, và
+    0,05 / 1e-9 = 50 triệu.
+
+    Vì sao KHÔNG phải chuyện nhỏ: dòng này là **bằng chứng DUY NHẤT anh Hùng đọc
+    được** để tin "AI chọn có căn cứ SỐ" (anh chốt 07/08/2026: *"AI chọn sao phù
+    hợp nhé"*, cấm ghi chung chung). Một con số 49 triệu lần làm hỏng cả dòng —
+    người đọc chỉ thấy app tính sai.
+
+    Sửa CHỈ Ở CHỖ IN RA: `chon_hieu_ung`/`loai_diem` KHÔNG đổi một dòng nào. Đã
+    đo 4 ca biên (cảnh tĩnh đều · tĩnh + 1 giây động · >50% giây im · video
+    không tiếng): loại điểm chọn ra vẫn ĐÚNG, chỉ dòng chữ là sai.
+    """
+    if tv <= _TV_TOI_THIEU:
+        return "nền ~0"
+    return f"{_so(x / tv, 1)}x trung vị"
+
+
 def _vi_sao(khoa: str, loai: str, g: int, nl: list, cd: list, moc: list,
             tong: float) -> str:
     """Dòng LÝ DO KÈM SỐ. Cấm ghi chung chung kiểu "cảnh hay" (anh Hùng chốt).
@@ -825,11 +857,11 @@ def _vi_sao(khoa: str, loai: str, g: int, nl: list, cd: list, moc: list,
     h = KHO.get(khoa)
     ch = []
     if nl and g < len(nl):
-        tv = _tv(nl) or 1e-9
-        ch.append(f"RMS {_so(nl[g])} = {_so(nl[g] / tv, 1)}x trung vị")
+        # `_so_lan`: trung vị ~0 (hơn nửa số giây im lặng) thì KHÔNG bịa tỉ lệ.
+        # Xem docstring `_so_lan` — con số 49.274.701,3x đo được từ nhật ký THẬT.
+        ch.append(f"RMS {_so(nl[g])} = {_so_lan(nl[g], _tv(nl))}")
     if cd and g < len(cd):
-        tv = _tv(cd) or 1e-9
-        ch.append(f"động {_so(cd[g] * 10, 1)}/10 = {_so(cd[g] / tv, 1)}x trung vị")
+        ch.append(f"động {_so(cd[g] * 10, 1)}/10 = {_so_lan(cd[g], _tv(cd))}")
     if loai == "noi" and moc:
         gan = min(moc, key=lambda x: abs(x - g))
         ch.append(f"sát mốc ghép {_so(gan, 1)}s")

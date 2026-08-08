@@ -538,6 +538,25 @@ def ca_bat_bien(src: Path) -> None:
         bao("lấy được ffmpeg_utils.py của main", False,
             f"git rc={r.returncode} · {len(out)} ký tự")
         return
+    # ---- CHỐNG PASS OAN: bản `main` PHẢI KHÁC nhánh này ------------------
+    # LỖI THẬT (lượt kiểm ĐỘC LẬP 08/08/2026): giữa lượt kiểm, một tiến trình
+    # KHÁC chạy `git checkout main` + `git merge hieu-ung-video` (fast-forward)
+    # -> `main` trỏ ĐÚNG commit của nhánh. Từ đó `git show main:...` trả về
+    # CHÍNH file đang test: phép so thành "so nó với chính nó" và **PSNR luôn
+    # 99 dB mãi mãi** — cổng vẫn xanh trong khi bất biến SỐNG CÒN (200-300 kênh
+    # đang chạy preset cũ) KHÔNG còn được kiểm một chút nào.
+    # Đúng loại "app vẫn chạy, test vẫn xanh, chỉ SỐ ĐO tố giác" đã ghi ở đầu
+    # `VIEC_HIEU_UNG.md`. Vì vậy phải TỰ KIỂM đối chứng trước khi tin kết quả.
+    _nay = (REPO / "app" / "core" / "ffmpeg_utils.py").read_text(
+        encoding="utf-8", errors="replace")
+    if out.strip() == _nay.strip():
+        bao("bản `main` phải KHÁC nhánh này (chống so-với-chính-mình)", False,
+            "`git show main:app/core/ffmpeg_utils.py` TRÙNG file đang test -> "
+            "`main` đã bị merge/fast-forward tới nhánh này, phép so BẤT BIẾN "
+            "vô nghĩa. Chạy `git branch -f main origin/main` rồi kiểm lại.")
+        return
+    bao("bản `main` KHÁC nhánh này (đối chứng hợp lệ)", True,
+        f"main {len(out)} ký tự · nhánh {len(_nay)} ký tự")
     fmain = _SB / "fu_main.py"
     fmain.write_text(out, encoding="utf-8")
     spec = importlib.util.spec_from_file_location("fu_main", str(fmain))

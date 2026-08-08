@@ -239,18 +239,35 @@ def ca_a3(src: str) -> None:
             ("ngoài: " + ", ".join(f"{c['khoa']} {c['bat']:.2f}-{c['het']:.2f}"
                                    for c in ngoai)) if ngoai else
             f"{len(log)} điểm, điểm cuối {max((c['het'] for c in log), default=0):.2f}s")
-        kem = []
+        kem, so = [], []
         for c in log:
-            t = (float(c["bat"]) + float(c["het"])) / 2.0
-            x, y = khung(o, t, 540, 960), khung(base, t, 540, 960)
-            if x is None or y is None:
-                kem.append(f"{c['khoa']}@{t:.2f}s KHÔNG trích được khung")
+            # ĐO ĐỈNH TRÊN NHIỀU KHUNG TRONG CỬA SỔ, KHÔNG phải 1 khung giữa.
+            # LỖI CỦA CHÍNH CỔNG NÀY (lượt kiểm độc lập 08/08/2026): ca
+            # `speed 0.8` FAIL với `glitch_khoi@15.18s chỉ 0,26%` trong khi
+            # ĐỈNH cả cửa sổ lên tới hàng chục %. `glitch0r` / `nhay_sang` /
+            # `nhieu_bang` là hiệu ứng DAO ĐỘNG THEO THỜI GIAN — khung giữa có
+            # thể rơi đúng nhịp "im". Bẫy này đã ghi trong `VIEC_HIEU_UNG.md`
+            # và đã chữa cho ca A2, nhưng A3 CÒN SÓT -> cổng FAIL OAN, đổ oan
+            # cho app. Cổng đo sai thì số của nó không dùng được.
+            a, b = float(c["bat"]), float(c["het"])
+            dinh, moc_dinh = -1.0, a
+            for k in range(5):
+                t = a + (b - a) * (0.1 + 0.2 * k)
+                x, y = khung(o, t, 540, 960), khung(base, t, 540, 960)
+                if x is None or y is None:
+                    continue
+                pct = float((np.abs(x[0] - y[0]) > 12).mean()) * 100
+                if pct > dinh:
+                    dinh, moc_dinh = pct, t
+            if dinh < 0:
+                kem.append(f"{c['khoa']}@{a:.2f}s KHÔNG trích được khung nào")
                 continue
-            pct = float((np.abs(x[0] - y[0]) > 12).mean()) * 100
-            if pct < 2.0:
-                kem.append(f"{c['khoa']}@{t:.2f}s chỉ {pct:.2f}%")
+            so.append(f"{c['khoa']} đỉnh {dinh:.1f}%@{moc_dinh:.2f}s")
+            if dinh < 2.0:
+                kem.append(f"{c['khoa']} đỉnh CẢ cửa sổ chỉ {dinh:.2f}%")
         bao(f"speed {sp}: hiệu ứng THẬT SỰ hiện trên khung ra", not kem,
-            "; ".join(kem) if kem else f"{len(log)}/{len(log)} điểm đổi > 2% pixel")
+            "; ".join(kem) if kem else
+            f"{len(log)}/{len(log)} điểm đổi > 2% pixel · " + " · ".join(so))
 
 
 # =====================================================================
@@ -388,6 +405,46 @@ def ca_b(src_list: list) -> None:
     bao("mỗi điểm có LÝ DO KÈM SỐ (cấm 'cảnh hay')", not thieu,
         "; ".join(thieu) if thieu else
         " || ".join(c["vi_sao"] for c in ch))
+
+    # B5b LÝ DO KHÔNG ĐƯỢC RA SỐ VÔ NGHĨA KHI TRUNG VỊ = 0
+    # -----------------------------------------------------------------
+    # LỖI THẬT (lượt kiểm ĐỘC LẬP 08/08/2026): lôi ra từ NHẬT KÝ DÂY CHUYỀN của
+    # `_test_pipe_integ` chạy trên video THẬT —
+    #   `giây 14,0 · Xáo dòng ngang · cảnh động mạnh —
+    #    RMS 0,05 = 49274701,3x trung vị`
+    # `_vi_sao` chia cho `_tv(nl) or 1e-9`; khi HƠN NỬA số giây im lặng (video
+    # KHÔNG TIẾNG, hoặc clip có khoảng lặng dài — phỏng vấn / vlog Nhật rất hay
+    # gặp) thì trung vị ra ĐÚNG 0,0 -> 0,05 / 1e-9 = 50 triệu.
+    # Đây là dòng DUY NHẤT anh Hùng đọc để tin "AI chọn có căn cứ SỐ" nên số rác
+    # ở đây = mất sạch giá trị. Cổng canh: mọi tỉ lệ in ra phải < 1.000x.
+    for ten, _nl, _cd in (
+        (">50% giây im lặng",
+         [0.0] * 16 + [0.05, 0.03, 0.02, 0.10] + [0.0] * 8,
+         [0.02] * 14 + [1.0, 0.3, 0.2, 0.46] + [0.001] * 10),
+        ("video KHÔNG TIẾNG",
+         [0.0] * 28,
+         [0.02] * 14 + [1.0, 0.3, 0.2, 0.46] + [0.001] * 10),
+        ("hình ĐỨNG IM hơn nửa clip",
+         [0.02] * 14 + [0.4] * 4 + [0.02] * 10,
+         [0.0] * 16 + [0.9, 0.3, 0.2, 0.5] + [0.0] * 8),
+    ):
+        ch3 = HU.chon_hieu_ung(28.0, "manh", nl=_nl, cd=_cd, moc_noi=[6.0],
+                               co_the_dung=list(HU.KHO.keys()))
+        xau = []
+        for c in ch3:
+            for phan in str(c.get("vi_sao", "")).split(";"):
+                if "x trung vị" not in phan:
+                    continue
+                try:
+                    val = float(phan.split("=")[-1].strip()
+                                .replace("x trung vị", "").replace(",", "."))
+                except ValueError:
+                    continue
+                if val >= 1000.0:
+                    xau.append(phan.strip())
+        bao(f"lý do KHÔNG ra tỉ lệ vô nghĩa — ca «{ten}»", not xau,
+            ("; ".join(xau)[:150] if xau else
+             (" || ".join(c["vi_sao"] for c in ch3)[:150] or "(0 điểm)")))
 
 
 # =====================================================================
