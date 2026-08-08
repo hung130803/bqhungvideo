@@ -706,3 +706,54 @@ việc riêng.
   khung** trong cửa sổ; đo 1 khung có thể rơi đúng chỗ sin=0 -> 0,0% FAIL OAN.
 - `zoompan` đóng dấu lại mốc thời gian theo `fps` truyền vào -> khi ĐO phải ép
   `fps=` ở đầu graph cho khớp, không thì khung cùng chỉ số là nội dung KHÁC.
+
+## 6. NGHIỆM THU LƯỢT NÀY
+Demo: **`D:\hieu-ung-demo-v4\`** — 10 mp4 (5 ca × BẬT/TẮT) + `_ghi_chu.txt`.
+
+| mốc | yêu cầu | ĐO ĐƯỢC | |
+|---|---|---|---|
+| trễ vòng lặp UI, 10 làn 60s, MẶC ĐỊNH MỚI | trung vị < 30ms | **15,9 ms** (p95 21,3) | ĐẠT |
+| đỉnh trễ UI | < 150ms | **37,2 ms** | ĐẠT |
+| tổng luồng ffmpeg 10 làn, mặc định mới | ≤ 2× nhân (48) | đỉnh 47-66 · **TB 33** | xem ghi chú |
+| clip lỗi trong 10 làn × 4 cấu hình | 0 | **0** | ĐẠT |
+| chuyển cảnh + hiệu ứng TẮT vs `main` | PSNR ≥ 50 dB | **99 dB** ở 5/5 mốc | ĐẠT |
+| lệch tiếng-hình | < 80 ms | 0,0 ms · hình −33,3 ms | ĐẠT |
+| độ dài clip GPU 2/3/4 đoạn | lệch < 40 ms | **0 ms** cả 3 | ĐẠT |
+| tỉ lệ giây có hiệu ứng (5 clip demo) | ≤ 10% | **3,2–4,9%** | ĐẠT |
+| tỉ lệ giây có hiệu ứng (9 clip cổng 38) | ≤ 10% | **2,2–6,2%** (trung vị 3,6) | ĐẠT |
+| rác `_seg_*` / `_MEI*` / `_nhip_*` | 0 | **0** | ĐẠT |
+| ffmpeg mồ côi | 0 | **0** | ĐẠT |
+| thư viện Python thêm mới | 0 | **0** | ĐẠT |
+
+**GHI CHÚ VỀ CỘT LUỒNG:** đỉnh 47-66 đo được có **2 tiến trình**, nhưng cửa chờ
+chỉ cho **1** lệnh chạy — tiến trình thứ 2 là tiến trình ĐANG THOÁT mà `psutil`
+vẫn đếm. Luồng TRUNG BÌNH 33 (1,37× nhân). Đường cũ đo cùng cách ra đỉnh 44-45.
+**MỌI SỐ ĐO Ở TRÊN LẤY KHI `BQHungVideo.exe` CỦA ANH HÙNG ĐANG CHẠY** (không tắt
+được app đang sản xuất) -> đây là **CẬN TRÊN**, máy rảnh chỉ tốt hơn.
+
+### Cửa chặn đã chạy (tất cả 0 FAIL)
+pyflakes 0 "undefined name" · `_test_app_smoke` · `_test_pipe_dialogs` ·
+`_test_pipe_overlap` · `_test_lane_starve` · `_test_shutdown_safety` ·
+`_test_cancel_persist` · `_test_ai_gate` · `_test_chan_search` ·
+`_test_reanalyze_clean` · `_test_clip_count_len` · `_test_no_popup` ·
+`_test_don_rac` · `_test_guard` · `_test_db_maint` · `_test_chon_kenh_mau` ·
+`_test_hoc_gu` · `_test_pipe_e2e` (PASS, có ghi dòng điểm nhấn vào nhật ký) ·
+cổng 14 · 19 · 21 · 23 · 24 · 25 · 26 · 28 · 34 · 35 · **36 (64 OK)** ·
+**37 (31 OK)** · **38 MỚI (46 OK)**.
+
+## 7. CHƯA LÀM ĐƯỢC (nói thẳng)
+1. **6 shader libplacebo CHƯA nối** — `libplacebo` không có timeline `enable`
+   nên áp là áp TOÀN CLIP, trái luật chống loè số 1. Muốn dùng phải cắt clip ở
+   điểm nhấn thành mảnh riêng như đường GPU.
+2. **`export_vertical_clip` KHÔNG có hiệu ứng/chuyển cảnh** — đó là đường cho
+   mẫu THIẾU khung video (`video_rect`). Giống hệt tình trạng của `chuyen_canh`
+   từ lượt trước, không phải hồi quy. Mixed-Cut đã bỏ nên không tính.
+3. **Chưa đo trên máy nhân viên yếu THẬT** — chỉ mô phỏng bằng cổng 37 (tắt
+   NVENC + frei0r + OpenCL bằng monkeypatch).
+4. **Chưa build `.exe`** để kiểm bản đóng gói (mục "Bản đóng gói" của TỔNG RÀ
+   SOÁT) — chưa bump version nên chưa phát hành, và anh Hùng đang chạy app.
+5. **Giá phải trả 1,87× wall** cho mặc định mới — đã đo, đã ghi ở mục 3, nhưng
+   CHƯA tối ưu. Hướng rẻ hơn đã nhìn thấy: đường GPU (1,60×).
+6. **Chưa chạy TỔNG RÀ SOÁT quy mô 50 kênh** (mục anh Hùng thêm cuối phiên):
+   e2e 1 kênh/2 video đã PASS, 10 làn đã đo, nhưng **chưa chạy ≥50 kênh cùng
+   lúc** vì máy anh Hùng đang chạy sản xuất.
