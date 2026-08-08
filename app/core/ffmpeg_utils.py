@@ -1152,13 +1152,40 @@ def _sfx_library() -> dict:
     return lib
 
 
-def _pick_sfx_by_category(cats: list, seed: Optional[int] = None) -> list:
+def _hop_muc(path: str, dich_db: float, tran_db: float) -> bool:
+    """File này có KÊU ĐƯỢC tới mức `dich_db` mà không bị gọt nát không?
+
+    2 điều kiện, cả hai lấy từ bảng đo sẵn nên tra 0 ms:
+      * kéo nổi tới đích: `đích − rms50 <= _SFX_GAIN_MAX` (file quá nhỏ thì
+        gain bị kẹp -> ra tiếng lí nhí = đúng cái nhấp nháy phải diệt);
+      * hệ số đỉnh ngắn hạn vừa chỗ trống tới trần (+ `_SFX_CREST_DU` dB còn
+        gọt được): file crest 20 dB chơi ở đích -11 dBFS thì `alimiter` phải
+        gọt 11 dB -> mất ~8 dB độ to, nghe hụt hẳn so với file bên cạnh.
+    Hàm thuần (chỉ đọc bảng) — test được."""
+    _m, mx, st = _muc_sfx3(path)
+    if dich_db - st > _SFX_GAIN_MAX:
+        return False
+    if _moc_dinh_sfx(path) > _SFX_DICH_TOI_DA:
+        return False            # vào quá chậm -> không đánh dấu được điểm nhấn
+    return (mx - st) <= (tran_db - dich_db) + _SFX_CREST_DU
+
+
+def _pick_sfx_by_category(cats: list, seed: Optional[int] = None,
+                          muc: Optional[tuple] = None) -> list:
     """Với MỖI category trong `cats` (theo thứ tự điểm nối), chọn NGẪU NHIÊN 1
     file .wav trong category đó từ thư viện đóng gói, KHÔNG lặp file 2 lần LIÊN
     TIẾP CÙNG loại (đa dạng). Category không có file (thiếu thư viện) -> trả
     None ở vị trí đó (caller lùi bộ tổng hợp). Trả list cùng độ dài `cats`:
     mỗi phần tử là (category, path) hoặc (category, None). Hàm thuần (chỉ đọc
-    thư viện đã cache) — test được."""
+    thư viện đã cache) — test được.
+
+    `muc = (nền, mức_lời, trần_lớp)` (dBFS) -> LỌC TRƯỚC những file không kêu
+    nổi tới mức cần cho CHÍNH clip này (`_hop_muc`). Đây là chỗ chữa "nhấp
+    nháy": trước đây bốc trúng file quá nhỏ / hệ số đỉnh quá lớn là mốc đó câm,
+    chạy 5 lượt cổng 44 thì hỏng 1. VẪN NGẪU NHIÊN trong số file hợp mức (kho
+    184 file, lọc xong còn hàng chục) — anh Hùng cần 3 Part không kêu giống
+    hệt nhau. Lọc mà rỗng -> lùi về danh sách đầy đủ (thà kêu nhỏ còn hơn câm).
+    """
     import random as _r
     rng = _r.Random(seed) if seed is not None else _r
     lib = _sfx_library()
@@ -1167,6 +1194,10 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None) -> list:
     for cat in cats:
         cat = cat if cat in SFX_CATEGORIES else "transition"
         files = lib.get(cat) or []
+        if files and muc:
+            _d = dich_sfx_dB(cat, muc[0], muc[1])
+            _hop = [f for f in files if _hop_muc(f, _d, muc[2])]
+            files = _hop or files
         if not files:
             out.append((cat, None))
             continue
@@ -1210,8 +1241,56 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None) -> list:
 # rồi kẹp lại để không vỡ tiếng (đỉnh file + gain <= -1 dBFS). CHENH = 8 dB nằm
 # giữa dải anh Hùng yêu cầu (6-10 dB). Kèm DUCKING: hạ tiếng gốc ~5 dB đúng lúc
 # tiếng động kêu (cửa sổ 0,45 s, vào/ra êm) -> nghe rõ mà KHÔNG đè giọng nói.
-#: Tiếng động phải cao hơn NỀN của chính clip bao nhiêu dB.
+# ---------------------------------------------------------------------------
+# SỬA 08/08/2026 — LƯỢT KIỂM ĐỘC LẬP ĐO TRÊN CLIP THẬT THÌ BẢN v2.18.0 HỎNG.
+# Đo 5 mốc trên clip 16 s (bật tiếng động so bản tắt): **+0,6 / −1,1 / −0,0 /
+# −1,6 / +2,4 dB** -> 2/5 mốc còn NHỎ ĐI. Ba nguyên nhân, đều đã đo:
+#
+#  (1) **NỀN đo bằng `mean_volume` CẢ CLIP.** Với clip ồn (xe tải nổ máy) thì
+#      `mean_volume` CHÍNH LÀ mức lời, không phải nền: đo được -15,7 dBFS trong
+#      khi nền thật (bpv20 đường bao RMS) là -26 .. -36. "Đích = nền + 8 dB"
+#      lấy trên số đó ra một cái đích cao vô lý (-7,7 dBFS mean) mà không lớp
+#      tiếng nào với tới -> vế kẹp đỉnh luôn thắng. Nay đo bằng BÁCH PHÂN VỊ
+#      của đường bao RMS 50 ms (`_do_muc_clip`): bpv20 = nền · bpv90 = MỨC LỜI.
+#
+#  (2) **CHUẨN HOÁ THEO `mean_volume` CỦA FILE.** Kho là tiếng NGẮN có đuôi
+#      ngân: mean cả file bị đuôi và khoảng lặng kéo xuống, nên cùng một hệ số
+#      mà file này kêu to file kia mất hút (= "nhấp nháy", cổng 44 chạy 5 lượt
+#      FAIL 1). Nay chuẩn hoá theo **ĐỈNH RMS 50 ms** (mục thứ 3 của
+#      `muc_do.json`) — đúng thước tai người nghe và đúng thước cổng đo.
+#      Đo lại 8 file trải crest 1,5..16,6 dB: lệch so đích **-0,4..+0,7 dB**
+#      (trước: trải hàng chục dB).
+#
+#  (3) **KẸP ĐỈNH RIÊNG TỪNG LỚP.** "Đỉnh lớp <= -1 dBFS" khoá độ to của mọi
+#      file có hệ số đỉnh lớn: kho có crest ngắn hạn trung vị **11,2 dB** nên
+#      kẹp đỉnh giữ RMS lớp mãi ở -12 dBFS trở xuống. Nay KHÔNG kẹp gain nữa
+#      mà HẠN ĐỈNH bằng `alimiter` (giữ nguyên độ to, chỉ gọt đỉnh) và đặt
+#      thêm một `alimiter` **SAU KHI TRỘN** để bảo đảm đỉnh cuối <= -1 dBFS —
+#      cần thiết vì nguồn thật đo được đỉnh **0,0 dBFS** (video "Parker and
+#      Chester"), tức không kẹp lớp nào cứu được, phải gọt ở chỗ trộn.
+#      `alimiter` đặt `latency=1` -> TRỄ ĐÚNG 0,0 ms (đo: không có thì 0,98 ms).
+#      Cả hai `alimiter` CHỈ có mặt khi thật sự chèn tiếng động, nên mức "tat"
+#      ra lệnh ffmpeg không khác một ký tự nào (bất biến sống còn).
+#
+#: Tiếng động phải cao hơn NỀN (bpv20) của chính clip bao nhiêu dB.
 SFX_TREN_NEN_DB = 8.0
+#: SÀN theo MỨC LỜI (bpv90): clip ồn thì "nền + 8" vẫn chìm dưới lời, nên tiếng
+#: động phải được kéo lên ít nhất ngang lời + ngần này dB mới nghe thấy.
+_SFX_TREN_LOI_DB = 1.0
+#: TRẦN theo MỨC LỜI: anh Hùng chốt "đỉnh SFX không quá ~1,5x mức lời" =
+#: +3,5 dB. Đây là vế CHỐNG ÁT LỜI, đứng sau cả bù nhóm.
+_SFX_TRAN_LOI_DB = 3.5
+#: Suy ra khi thiếu số đo: đỉnh RMS 50 ms ~ mean + 6 dB · mức lời ~ nền + 12 dB.
+#: (chỉ dùng cho lối gọi cũ 4 tham số / bảng `muc_do.json` bản 2 cột.)
+_SFX_ST_SUY_RA, _SFX_LOI_SUY_RA = 6.0, 12.0
+#: LỖI THẦM LẶNG ĐO ĐƯỢC 08/08/2026 — **MẤT ĐÚNG 3,0 dB Ở MỌI TIẾNG ĐỘNG**.
+#: Kho là file MONO; `amix` ra stereo nên ffmpeg tự chèn phép đổi bố cục kênh,
+#: mà luật đổi mono->stereo của ffmpeg nhân 1/căn2 cho mỗi bên (-3,01 dB). App
+#: tính hệ số theo mức đo được của file rồi bị lấy mất 3 dB không một dòng báo:
+#: đo trên clip thật, lớp tiếng động luôn thấp hơn đích **-2,7 .. -3,1 dB**.
+#: `pan` với toán tử `<` (KHÔNG chuẩn hoá lại) đưa mono ra cả 2 bên ở nguyên
+#: mức, và để nguyên file stereo (đo: mono +3,0 dB · stereo 0,0 dB).
+_SFX_PAN_GIU_MUC = "pan=stereo|FL<FL+FC|FR<FR+FC"
 #: Bù theo NHÓM (dB, cộng vào mốc trên). Thay cho bảng `_SFX_CAT_VOL` cũ: bảng
 #: cũ là hệ số TUYỆT ĐỐI nên không biết file to hay nhỏ; bảng này là ĐỘ LỆCH
 #: TƯƠNG ĐỐI nên giữ đúng "tính cách" từng nhóm mà vẫn chuẩn hoá được.
@@ -1220,13 +1299,51 @@ _SFX_CAT_DB = {
     "transition": 0.0, "pop": 0.0, "comedy": +0.5,
     "reveal": -1.5, "suspense": -3.0, "sad": -2.5,
 }
-#: Mức đỉnh tối đa cho phép của 1 lớp tiếng động (dBFS) — chừa 1 dB không vỡ.
-_SFX_DINH_TRAN_DB = -1.0
+#: Trần ĐỈNH của MỘT lớp tiếng động (dBFS) — nay do `alimiter` giữ, KHÔNG kẹp
+#: gain nữa. Chừa chỗ để cộng với tiếng gốc mà lớp hạn cuối không phải gọt sâu.
+_SFX_DINH_TRAN_DB = -2.0
+#: Trần ĐỈNH SAU KHI TRỘN (dBFS) — bảo đảm không méo dù nguồn đã sát 0 dBFS.
+#: -1,6 chứ không phải -1,0: AAC là mã hoá CÓ MẤT, sóng giải mã ra VỌT LÊN trên
+#: mức đã mã hoá (đo: hạn -1,0 -> file .mp4 giải ra **-0,45 dBFS**). Chừa 0,6 dB
+#: cho phần vọt đó thì đỉnh ĐỌC ĐƯỢC TỪ FILE mới thật sự <= -1 dBFS.
+_SFX_TRAN_TRON_DB = -2.0
 #: Kẹp hệ số (dB) để một file lỗi/quá nhỏ không bị kéo lên thành tiếng ồn.
 _SFX_GAIN_MIN, _SFX_GAIN_MAX = -30.0, 15.0
+#: Hệ số đỉnh ngắn hạn (max − rms50) tối đa còn "gọt được": file vượt mức này
+#: mà bị nén cho vừa trần thì mất quá nhiều độ to -> lúc bốc file thì TRÁNH nó
+#: (vẫn ngẫu nhiên trong số còn lại — anh Hùng cần 3 Part không kêu giống nhau).
+#: Đo: để 6,0 dB thì clip ỒN vẫn bốc trúng file crest 11 dB, `alimiter` gọt mất
+#: ~5 dB -> lớp tiếng động thấp hơn đích 6,4 dB. Để 3,0 thì clip ồn chỉ dùng
+#: tiếng ĐẶC (whoosh/drone), clip yên vẫn dùng được cả kho — đúng nghề trộn
+#: tiếng: mix dày thì phải chọn tiếng dày, không chọn cú click nhọn.
+_SFX_CREST_DU = 3.0
+#: DÓNG CÚ VA VÀO ĐÚNG MỐC: đẩy tiếng động sớm lên đúng bằng "giây xảy ra
+#: đỉnh" để chỗ TO NHẤT của nó rơi vào đúng giây điểm nhấn. Kho có 18/184 file
+#: vào chậm hơn mức này (trung vị 0,10 s · bpv90 0,35 s · max 0,60 s) — số đó
+#: bị loại khỏi điểm nhấn vì đẩy sớm hơn 0,35 s là nghe thành "tiếng của cảnh
+#: trước", không còn đánh dấu gì.
+_SFX_DICH_TOI_DA = 0.35
 #: DUCKING: hạ tiếng gốc bao nhiêu dB lúc tiếng động kêu, trong bao lâu, và
-#: bắt đầu sớm hơn tiếng động bao nhiêu (đón đầu cho mượt).
-_SFX_DUCK_DB, _SFX_DUCK_DAI, _SFX_DUCK_SOM = 5.0, 0.45, 0.06
+#: bắt đầu sớm hơn tiếng động bao nhiêu.
+#: SỬA 08/08/2026 — **DUCKING LÀ THỦ PHẠM CHÍNH của "mốc còn NHỎ ĐI"**. Bản cũ
+#: 5,0 dB / 0,45 s / sớm 0,06 s: bướu nửa hình sin SÂU NHẤT ở GIỮA bướu, tức
+#: **0,225 s SAU mốc** — nhưng cửa sổ tai/máy đo nghe cú va là ±0,175 s QUANH
+#: mốc, nên trong đúng cửa sổ đó tiếng gốc bị hạ 5 dB mà cú va chưa kịp bù
+#: (đo YÊN@1,20s: **-2,5 dB**, tức bật tiếng động lên thì chỗ đó NHỎ ĐI).
+#: Nay `_SFX_DUCK_SOM` ÂM = bắt đầu **SAU** mốc 0,15 s: **cú va tự nó phải
+#: xuyên qua**, ducking chỉ dọn chỗ cho phần NGÂN phía sau. Nhờ vậy cửa sổ đo
+#: gần như không dính ducking mà tiếng động vẫn có chỗ thở.
+#: -0,22 chứ không phải -0,15: cửa sổ tai nghe cú va là ±0,175 s quanh mốc, để
+#: ducking chạm vào rìa cửa sổ đó là mốc lại tụt (đo YÊN@1,20s: -0,6 dB, hỏng
+#: 1/5 lượt). Bướu phải nằm HẲN ngoài cửa sổ.
+_SFX_DUCK_DB, _SFX_DUCK_DAI, _SFX_DUCK_SOM = 3.0, 0.35, -0.22
+#: Lớp tiếng động được phép có ĐỈNH cao hơn mức RMS đích bao nhiêu dB. Đây là
+#: cái quyết định lớp hạn đỉnh CUỐI phải gọt nhiều hay ít: clip YÊN có đích
+#: -16,6 dBFS mà vẫn cho lớp đội đỉnh tới -2 dBFS thì cộng với tiếng gốc
+#: (-4,9) ra +2,4 dBFS -> limiter phải gọt 4,4 dB, gọt đúng vào mốc điểm nhấn.
+#: Cho 10 dB là vừa: kho có crest ngắn hạn trung vị 11,2 dB nên gần như không
+#: mất độ to, mà đỉnh lớp hạ theo đích -> clip yên thì limiter gần như im.
+_SFX_CREST_CHO = 10.0
 #: 2 tiếng động gần nhau hơn mức này -> BỎ cái sau (tránh "rào rào").
 _SFX_CACH_MIN = 0.80
 #: Mức nền GIẢ ĐỊNH (dBFS) khi clip không có tiếng gốc để đo.
@@ -1295,10 +1412,13 @@ def _sfx_bang_muc() -> dict:
     return _SFX_MUC_BANG
 
 
-def _muc_sfx(path: str) -> tuple[float, float]:
-    """(mean_dB, max_dB) của 1 file tiếng động. Ưu tiên BẢNG đóng gói (0 ms);
-    không có thì đo sống 1 lần rồi nhớ. Đo hỏng -> (-12, -3) là mức trung bình
-    của kho, chấp nhận được và KHÔNG bao giờ ném lỗi."""
+def _muc_sfx3(path: str) -> tuple[float, float, float]:
+    """(mean_dB, max_dB, **đỉnh RMS 50 ms**) của 1 file tiếng động.
+
+    Mục thứ 3 là cái QUYẾT ĐỊNH độ to nghe được và là cái app chuẩn hoá theo
+    (xem khối `SFX_TREN_NEN_DB`). Bảng `muc_do.json` bản CŨ chỉ có 2 cột ->
+    suy ra `mean + _SFX_ST_SUY_RA` để bản cài cũ vẫn chạy được, không nổ.
+    Ưu tiên BẢNG đóng gói (0 ms); không có thì đo sống 1 lần rồi nhớ."""
     p = str(path)
     if p in _SFX_MUC_DO:
         return _SFX_MUC_DO[p]
@@ -1309,12 +1429,42 @@ def _muc_sfx(path: str) -> tuple[float, float]:
         key = ""
     v = _sfx_bang_muc().get(key)
     if isinstance(v, (list, tuple)) and len(v) >= 2:
-        kq = (float(v[0]), float(v[1]))
-        _SFX_MUC_DO[p] = kq
-        return kq
-    kq = _do_muc_file(p) or (-12.0, -3.0)
+        st = (float(v[2]) if len(v) >= 3
+              else float(v[0]) + _SFX_ST_SUY_RA)
+        kq = (float(v[0]), float(v[1]), st)
+    else:
+        d = _do_muc_file(p) or (-12.0, -3.0)
+        kq = (d[0], d[1], d[0] + _SFX_ST_SUY_RA)
     _SFX_MUC_DO[p] = kq
     return kq
+
+
+def _muc_sfx(path: str) -> tuple[float, float]:
+    """(mean_dB, max_dB) — giữ cho lối gọi cũ."""
+    m, x, _s = _muc_sfx3(path)
+    return (m, x)
+
+
+def _moc_dinh_sfx(path: str) -> float:
+    """GIÂY xảy ra đỉnh RMS 50 ms của file (0,0 nếu bảng chưa có cột 4).
+
+    VÌ SAO PHẢI BIẾT: kho có tiếng **VÀO CHẬM** — `ding_soft_04_v2.opus` đỉnh
+    rơi **0,60 s SAU** lúc bắt đầu. Chèn nó đúng giây điểm nhấn thì trong cửa
+    sổ tai nghe cú va (±0,175 s) nó chỉ có **-28,3 dBFS** thay vì -20,1 = hụt
+    **8,2 dB**, tức điểm nhấn coi như KHÔNG có tiếng dù nhật ký ghi là có.
+    Đây là 1 trong 2 nguồn làm cổng 44 nhấp nháy (chạy 5 lượt hỏng 2)."""
+    try:
+        key = Path(str(path)).resolve().relative_to(
+            _assets_sfx_dir().resolve()).as_posix()
+    except (ValueError, OSError):
+        return 0.0
+    v = _sfx_bang_muc().get(key)
+    if isinstance(v, (list, tuple)) and len(v) >= 4:
+        try:
+            return max(0.0, float(v[3]))
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
 
 
 def _doc_volumedetect(txt: str) -> Optional[tuple[float, float]]:
@@ -1361,33 +1511,132 @@ def _muc_nen_dB(dau_vao: list) -> Optional[float]:
     THANH, `-threads 1`, đo 60 s clip hết ~0,2 s. Bắt nó xếp hàng sau các lệnh
     encode nặng thì mỗi lượt xuất đội thêm hàng chục giây vô ích.
     """
+    kq = _do_muc_clip(dau_vao)
+    return None if kq is None else kq["mean"]
+
+
+def _bpv(xs: list, q: float) -> float:
+    y = sorted(xs)
+    return y[min(len(y) - 1, int(len(y) * q))] if y else 0.0
+
+
+def _do_muc_clip(dau_vao: list) -> Optional[dict]:
+    """MỌI số đo mức của tiếng nguồn trên ĐÚNG timeline sắp xuất — MỘT lượt.
+
+    Trả `{"nen", "giua", "loi", "dinh", "mean"}` (dBFS):
+      * `nen`  = bpv20 đường bao RMS 50 ms — **NỀN THẬT**. `mean_volume` (bản
+        cũ) KHÔNG phải nền: clip ồn đo mean -15,7 dBFS trong khi nền là -26 ..
+        -36 và -15,7 chính là mức LỜI. Lấy mean làm nền là tự đặt cho tiếng
+        động một cái đích cao vô lý rồi vế kẹp đỉnh nuốt sạch.
+      * `loi`  = bpv90 — MỨC LỜI NÓI, cái mà tiếng động phải "đấu" và không
+        được vượt quá ~1,5 lần.
+      * `dinh` = `max_volume` — để tính còn bao nhiêu chỗ trống tới trần.
+
+    Đường bao lấy bằng `asetnsamples` + `astats` chạy TRONG ffmpeg (C), Python
+    chỉ sắp xếp ~1.200 số cho clip 60 s. `volumedetect` đặt TRƯỚC `aresample`
+    nên `dinh` là đỉnh thật ở 48 kHz, không phải đỉnh sau khi hạ tần số.
+
+    CỐ Ý KHÔNG qua cửa chờ ffmpeg (như `do_nhip`): chỉ giải mã ÂM THANH,
+    `-threads 1`, đo 60 s clip hết ~0,2 s. Bắt nó xếp hàng sau các lệnh encode
+    nặng thì mỗi lượt xuất đội thêm hàng chục giây vô ích.
+    """
     try:
         r = subprocess.run(
             [settings.FFMPEG_PATH, "-hide_banner", "-v", "info", "-nostdin",
              "-threads", "1", *[str(x) for x in dau_vao], "-vn",
-             "-af", "volumedetect", "-f", "null", "-"],
+             "-af", "volumedetect,aresample=8000,"
+                    "aformat=channel_layouts=mono,asetnsamples=n=400,"
+                    "astats=metadata=1:reset=1,ametadata=print:"
+                    "key=lavfi.astats.Overall.RMS_level:file=-",
+             "-f", "null", "-"],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", creationflags=_CREATE_NO_WINDOW, timeout=180)
-        kq = _doc_volumedetect(r.stderr or "")
-        return None if kq is None else kq[0]
     except (OSError, subprocess.TimeoutExpired):
         return None
+    vd = _doc_volumedetect(r.stderr or "")
+    bao = []
+    for ln in (r.stdout or "").splitlines():
+        if "RMS_level=" in ln:
+            try:
+                v = float(ln.split("=", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            if v > -200.0:              # -inf = cửa sổ im lặng tuyệt đối
+                bao.append(v)
+    if not bao and vd is None:
+        return None
+    if not bao:
+        # không dựng được đường bao -> lùi về mean cho cả 3 mốc (bản cũ)
+        return {"nen": vd[0], "giua": vd[0], "loi": vd[0],
+                "dinh": vd[1], "mean": vd[0]}
+    return {"nen": _bpv(bao, 0.20), "giua": _bpv(bao, 0.50),
+            "loi": _bpv(bao, 0.90),
+            "dinh": (vd[1] if vd else max(bao)),
+            "mean": (vd[0] if vd else _bpv(bao, 0.50))}
 
 
-def tinh_gain_sfx(cat: str, mean_db: float, max_db: float,
-                  nen_db: float) -> float:
+def dich_sfx_dB(cat: str, nen_db: float, loi_db: Optional[float] = None
+                ) -> float:
+    """ĐỈNH RMS 50 ms mà lớp tiếng động PHẢI đạt (dBFS) — hàm thuần.
+
+    Hai vế, lấy vế CAO hơn rồi mới chặn trần:
+      * `nền + SFX_TREN_NEN_DB`  — clip yên: nổi hẳn lên khỏi nền.
+      * `lời + _SFX_TREN_LOI_DB` — clip ỒN: nền thấp nhưng LỜI to, bám theo nền
+        thì tiếng động chìm nghỉm dưới lời (đúng lỗi anh Hùng nghe thấy).
+      * trần `lời + _SFX_TRAN_LOI_DB` (~1,5x mức lời) — CHỐNG ÁT LỜI, đứng
+        SAU bù nhóm nên nhóm "impact" cũng không được phép vượt.
+    """
+    if loi_db is None:
+        loi_db = float(nen_db) + _SFX_LOI_SUY_RA
+    bu = _SFX_CAT_DB.get(str(cat), 0.0)
+    dich = max(float(nen_db) + SFX_TREN_NEN_DB,
+               float(loi_db) + _SFX_TREN_LOI_DB) + bu
+    return min(dich, float(loi_db) + _SFX_TRAN_LOI_DB)
+
+
+def tinh_gain_sfx(cat: str, mean_db: float, max_db: float, nen_db: float,
+                  st_db: Optional[float] = None,
+                  loi_db: Optional[float] = None) -> float:
     """HỆ SỐ NHÂN (tuyến tính) cho 1 lớp tiếng động — HÀM THUẦN, test được.
 
-    Đích = nền clip + `SFX_TREN_NEN_DB` + bù nhóm. Kẹp 2 đầu:
-      * đỉnh sau khi nhân không vượt `_SFX_DINH_TRAN_DB` (không vỡ tiếng);
-      * gain nằm trong [`_SFX_GAIN_MIN`, `_SFX_GAIN_MAX`] (file hỏng/quá nhỏ
-        không bị kéo lên thành tiếng ồn nền).
+    `gain = đích − ĐỈNH RMS 50 ms của file`, kẹp trong [`_SFX_GAIN_MIN`,
+    `_SFX_GAIN_MAX`] để file hỏng/quá nhỏ không bị kéo thành tiếng ồn.
+
+    KHÔNG còn vế "kẹp đỉnh <= -1 dBFS" — chính vế đó khoá độ to của 74% kho
+    khi clip ồn (đo: thiếu trung vị 8,9 dB, tối đa 21,8 dB so với đích). Việc
+    giữ đỉnh nay là của `alimiter` ở nhánh SFX + `alimiter` sau khi trộn:
+    limiter GỌT ĐỈNH mà GIỮ độ to, còn kẹp gain thì hạ cả hai.
+
+    `st_db`/`loi_db` thiếu -> suy ra từ `mean_db`/`nen_db` (lối gọi 4 tham số
+    cũ vẫn chạy, chỉ kém chính xác hơn).
     """
-    dich = float(nen_db) + SFX_TREN_NEN_DB + _SFX_CAT_DB.get(str(cat), 0.0)
-    g = dich - float(mean_db)
-    g = min(g, _SFX_DINH_TRAN_DB - float(max_db))
+    if st_db is None:
+        st_db = float(mean_db) + _SFX_ST_SUY_RA
+    g = dich_sfx_dB(cat, nen_db, loi_db) - float(st_db)
     g = max(_SFX_GAIN_MIN, min(_SFX_GAIN_MAX, g))
     return 10.0 ** (g / 20.0)
+
+
+def _lin(db_: float) -> float:
+    return 10.0 ** (float(db_) / 20.0)
+
+
+def _han_dinh(tran_db: float, nha: int = 40) -> str:
+    """Chuỗi `alimiter` GỌT ĐỈNH về `tran_db` dBFS mà KHÔNG đổi độ to.
+
+    3 tuỳ chọn bắt buộc, mỗi cái bịt một cái bẫy ĐO ĐƯỢC:
+      * `level=0`  — mặc định `level=true` là TỰ NÂNG mức lên sát trần (đo:
+        +3,1 dB cho tín hiệu đang ở -44 dB). Bật nó là app tự ý làm to clip.
+      * `latency=1` — bù đúng phần trễ nhìn trước. Đo: không có thì lệch
+        **0,98 ms**, có thì **0,0 ms**. Tiếng lệch hình là lỗi loại v1.87.
+      * `attack=1` — cú va ngắn 0,17 s, tấn công 5 ms mặc định là gọt hụt.
+
+    `nha` (release) NGẮN ở lớp trộn cuối: cửa sổ đo/nghe là 50 ms, nhả 40 ms
+    nghĩa là gọt xong còn ghì gần trọn cửa sổ đó -> chính mốc điểm nhấn bị kéo
+    xuống. Nhả 10 ms thì gọt đúng cái đỉnh rồi buông ngay.
+    """
+    return (f"alimiter=limit={min(1.0, max(0.0625, _lin(tran_db))):.4f}"
+            f":level=0:latency=1:attack=1:release={int(nha)}")
 
 
 def _bieu_thuc_duck(mocs: list) -> str:
@@ -2925,6 +3174,8 @@ def export_canvas_clip(
     # (`dub_mute_original`, hoặc user kéo tiếng gốc gần 0) -> đo tiếng GỐC là
     # đo thứ khán giả KHÔNG nghe, ra hệ số sai hẳn. Lúc đó đo chính file dub.
     _nen_db = _SFX_NEN_MAC_DINH
+    _loi_db = _SFX_NEN_MAC_DINH + _SFX_LOI_SUY_RA
+    _dinh_goc = -6.0
     _con_goc = bool(has_audio and use_voice and voice_vol > 0.05)
     _vao_a: list = []
     if _sfx_diem and _con_goc:
@@ -2937,15 +3188,43 @@ def export_canvas_clip(
     elif _sfx_diem and dub_on:
         _vao_a = ["-i", str(dub_path)]
     if _vao_a:
-        _m = _muc_nen_dB(_vao_a)
-        if _m is not None and -70.0 < _m < 0.0:
+        _mc = _do_muc_clip(_vao_a)
+        if _mc is not None and -70.0 < _mc["nen"] < 0.0:
             # tiếng gốc còn bị nhân `voice_vol` trong graph -> nền THẬT ở đầu ra
             # thấp hơn chỗ đo đúng bấy nhiêu dB. Không tính bù là tiếng động
             # thành nhỏ so với lời khi user kéo thanh "âm lượng tiếng gốc".
             # (đường DUB thì file dub vào mix ở mức 1,0 -> không bù.)
             _bu = (20.0 * math.log10(max(voice_vol, 0.001))
                    if _con_goc else 0.0)
-            _nen_db = _m + _bu
+            _nen_db = _mc["nen"] + _bu
+            _loi_db = _mc["loi"] + _bu
+            _dinh_goc = _mc["dinh"] + _bu
+    # TRẦN ĐỈNH CỦA MỘT LỚP tiếng động — bám theo ĐÍCH của chính clip này chứ
+    # không cố định. Clip yên có đích thấp; nếu vẫn cho lớp đội đỉnh tới
+    # -2 dBFS thì cộng với tiếng gốc là vượt trần, và lớp hạn đỉnh cuối gọt
+    # đúng vào giây điểm nhấn (đo: mốc tụt -0,6 dB). Hạ trần lớp theo đích thì
+    # limiter gần như không phải làm gì mà độ to KHÔNG đổi.
+    _tran_lop = max(-20.0, min(_SFX_DINH_TRAN_DB,
+                               dich_sfx_dB("impact", _nen_db, _loi_db)
+                               + _SFX_CREST_CHO))
+    #: (nền, mức lời, trần lớp) — truyền cho `_pick_sfx_by_category` để nó chỉ
+    #: bốc file KÊU NỔI tới mức clip này cần, và cho `tinh_gain_sfx`.
+    _muc_ba = (_nen_db, _loi_db, _tran_lop)
+    # TRẦN CỦA LỚP HẠN ĐỈNH CUỐI — **BÁM THEO ĐỈNH CỦA CHÍNH NGUỒN**.
+    # Nguồn của anh Hùng có bản master VƯỢT 0 dBFS (đo "Parker and Chester":
+    # bản TẮT tiếng động xuất ra đỉnh **+0,51 dBFS**, tức app đang ra file MÉO
+    # SẴN). Nếu cứ hạ cứng về -2 dBFS thì lớp hạn đỉnh gọt luôn cả TIẾNG GỐC ở
+    # những chỗ nguồn đang to — nên đúng mốc điểm nhấn, bản BẬT lại THẤP HƠN
+    # bản TẮT (đo: -0,9 dB, cổng 44 hỏng 2/5 lượt). Quy tắc:
+    #   * bình thường (nguồn <= -1,5 dBFS): trần = `_SFX_TRAN_TRON_DB` (-2),
+    #     file xuất ra đỉnh <= -1 dBFS đúng yêu cầu;
+    #   * nguồn ĐÃ nóng hơn thế: trần bám đỉnh nguồn, LUÔN thấp hơn nó 1,2 dB
+    #     -> bản có tiếng động **không bao giờ méo hơn bản không có**, mà cũng
+    #     không bị làm nhỏ đi vô cớ.
+    # 1,2 dB chứ không phải 0,6: AAC là mã hoá CÓ MẤT nên sóng giải ra VỌT LÊN
+    # trên mức đã mã hoá ~0,5-0,9 dB. Để 0,6 thì đo được bản BẬT **+0,54 và
+    # +0,74 dBFS** so với bản TẮT +0,51 — tức nhỉnh HƠN bản gốc, hỏng 2/5 lượt.
+    _tran_tron = max(_SFX_TRAN_TRON_DB, min(-0.2, _dinh_goc - 1.2))
 
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
@@ -3194,7 +3473,8 @@ def export_canvas_clip(
                 # file trong đúng nhóm (không lặp liên tiếp cùng nhóm). Nhóm
                 # THIẾU file (bản cũ chưa có thư viện) -> ƯU TIÊN 3: lùi bộ
                 # tiếng TỔNG HỢP hợp loại (cũng tránh lặp liên tiếp).
-                picks = _pick_sfx_by_category(active_cats) if n_joint else []
+                picks = (_pick_sfx_by_category(active_cats, muc=_muc_ba)
+                         if n_joint else [])
             _tu_user = bool(sfx_files)
             last_synth: dict = {}
             chosen_log: list = []
@@ -3205,15 +3485,25 @@ def export_canvas_clip(
                 if fpath:
                     # === CHUẨN HOÁ THEO SỐ ĐO (thay hệ số cứng `_SFX_CAT_VOL`)
                     # Bản cũ nhân cứng 0,24-0,42 cho mọi file trong khi kho trải
-                    # 26,5 dB -> đo ra tiếng động chỉ nhô +0,7 dB trên nền =
-                    # KHÔNG NGHE THẤY. Nay: gain = (nền + 8 dB + bù nhóm) - mean
-                    # của CHÍNH file đó, kẹp để đỉnh <= -1 dBFS.
-                    _mean, _max = _muc_sfx(str(fpath))
-                    vol = tinh_gain_sfx(cat, _mean, _max, _nen_db)
-                    d_ms = max(0, int(round(off * 1000)))
+                    # 26,5 dB -> tiếng động chỉ nhô +0,7 dB trên nền = KHÔNG
+                    # NGHE THẤY. Bản v2.18.0 chuẩn hoá theo `mean` của file rồi
+                    # KẸP GAIN cho đỉnh <= -1 dBFS -> clip ồn thì vế kẹp thắng
+                    # 74% số file (thiếu trung vị 8,9 dB). NAY: chuẩn hoá theo
+                    # **đỉnh RMS 50 ms** và gọt đỉnh bằng `alimiter` (giữ độ to).
+                    _mean, _max, _st = _muc_sfx3(str(fpath))
+                    vol = tinh_gain_sfx(cat, _mean, _max, _nen_db,
+                                        st_db=_st, loi_db=_loi_db)
+                    # DÓNG CHỖ TO NHẤT của tiếng vào ĐÚNG giây điểm nhấn: đẩy
+                    # sớm lên bằng "giây xảy ra đỉnh" của chính file đó. Không
+                    # dóng thì tiếng vào chậm (ding/sparkle) kêu SAU cú va nên
+                    # không đánh dấu gì — xem `_moc_dinh_sfx`.
+                    _dich = min(_SFX_DICH_TOI_DA, _moc_dinh_sfx(str(fpath)))
+                    d_ms = max(0, int(round((off - _dich) * 1000)))
                     cmd += ["-i", str(fpath)]
                     parts.append(
-                        f"[{w_idx}:a]aresample=48000,volume={vol:.4f},"
+                        f"[{w_idx}:a]aresample=48000,{_SFX_PAN_GIU_MUC},"
+                        f"volume={vol:.4f},"
+                        f"{_han_dinh(_tran_lop)},"
                         f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
                         f"asetpts=PTS-STARTPTS[wh{wi}]")
                     chosen_log.append((cat, os.path.basename(str(fpath))))
@@ -3232,7 +3522,8 @@ def export_canvas_clip(
                     tidx = _pick_synth_for_category(
                         cat, last_synth.get(cat), _rnd)
                     last_synth[cat] = tidx
-                    vol = tinh_gain_sfx(cat, -14.0, -6.0, _nen_db)
+                    vol = tinh_gain_sfx(cat, -14.0, -6.0, _nen_db,
+                                        st_db=-10.0, loi_db=_loi_db)
                     in_args, branch = _fx_synth_branch(
                         tidx, off, vol, w_idx, f"wh{wi}")
                     cmd += in_args
@@ -3253,6 +3544,16 @@ def export_canvas_clip(
             parts.append("".join(mix) + f"amix=inputs={len(mix)}:"
                          f"duration=first:normalize=0[aout]")
             amap = "[aout]"
+        # ---- HẠN ĐỈNH SAU KHI TRỘN — chỗ DUY NHẤT bảo đảm KHÔNG MÉO ----
+        # `amix normalize=0` là phép CỘNG: nguồn thật đo được đỉnh **0,0 dBFS**
+        # (video "Parker and Chester"), cộng thêm bất kỳ lớp nào cũng vượt trần
+        # -> không một cách kẹp lớp riêng nào cứu được, phải gọt ở đây.
+        # CHỈ thêm khi thật sự có tiếng động: mọi đường khác (kể cả mức "tat")
+        # giữ nguyên `[aout]` -> chuỗi filter KHÔNG khác một ký tự nào so với
+        # bản cũ (bất biến sống còn, cổng 36 đo PSNR).
+        if whoosh_on and amap and amap.startswith("["):
+            parts.append(f"{amap}{_han_dinh(_tran_tron, nha=10)}[alim]")
+            amap = "[alim]"
         # amap còn None + không voice -> video câm, chỉ xuất hình
         cmd += ["-filter_complex", ";".join(parts), "-map", final]
         if amap:
