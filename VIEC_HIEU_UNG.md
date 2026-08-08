@@ -1065,3 +1065,50 @@ không phải của app: app không cần cv2 để xuất clip (đã chứng mi
 | **+ Máy nhân viên** | venv khách (không cv2/torch): app nạp được · thiếu frei0r → 25→14 · thiếu OpenCL → 21/21 có đường lùi · thiếu NVENC → clip đúng 12,000s, còn tiếng | **ĐẠT** (11/11) |
 | **+ Bản đóng gói** | `.exe` build lại: sfx **43→185**, hieu_ung **0→26** file · dung lượng **615,6 → 620,3 MB (+0,8%)** · chạy thử OK | **ĐẠT** (12/12) |
 | **+ Rác đĩa** | `_seg_*` / `_MEI*` / `_nhip_*` = **0** trước và sau; DB +772 KB cho 7 video | **ĐẠT** |
+
+## CÓ NÊN PHÁT HÀNH KHÔNG?
+
+**NÊN — nhưng phải phát hành, vì bản đang chạy trên máy nhân viên đang THIẾU
+tài nguyên.** Lý do, xếp theo mức quan trọng:
+
+1. **Bản `.exe` hiện hành của nhân viên đang hỏng thầm lặng.** Nó thiếu
+   **142/185 file tiếng động** và **toàn bộ 26 file `hieu_ung`** → mất 25 hiệu
+   ứng frei0r, mất 21 chuyển cảnh GPU, **và không kèm giấy phép GPL/LGPL của
+   frei0r**. App không báo một dòng lỗi nào nên không ai biết. Chỉ riêng việc
+   này đã đủ lý do phát hành, và **mục giấy phép còn là rủi ro pháp lý** với
+   người chạy 200-300 kênh kiếm tiền.
+2. **3 lỗi tìm được đều đã sửa và đều có ca canh** (cổng 39 mới, cổng 37 thêm
+   CA 7) — không sửa suông.
+3. **Số đo nghiệm thu đều đạt** trên cả 2 quy mô (7 kênh e2e thật và 50 kênh ·
+   10 làn): 0 clip lỗi, UI 13,7-15,4 ms, luồng 1,46× nhân, RAM ≤ 1,79 GB,
+   0 ffmpeg mồ côi, 0 rác đĩa.
+4. **Máy nhân viên đã kiểm THẬT** trên venv khách + giả lập thiếu NVENC/frei0r/
+   OpenCL cùng lúc — vẫn xuất đúng, không nổ.
+
+**Điều kiện kèm theo — đọc trước khi bấm phát hành:**
+- **Anh Hùng phải chốt chuyện cửa chờ ffmpeg** (mục KHÔNG ĐẠT ở trên): giữ
+  `N=1` thì máy êm nhưng job thứ 50 đợi 15,4 phút và máy bỏ không 85%; muốn
+  nhanh thì đặt `BQ_FFMPEG_SLOTS=2..3` và **chấp nhận luồng vượt mốc 2× nhân**.
+  Tôi **không tự đổi** vì đó là quyết định anh đã chốt.
+- Mặc định **`nhe` cho mẫu cũ vẫn giữ nguyên** → 200-300 kênh sẽ có chuyển cảnh
+  + hiệu ứng điểm nhấn ngay khi cập nhật, giá **1,87× wall** (đã đo lượt trước,
+  chưa tối ưu). Nếu anh muốn giữ y như cũ thì đổi mặc định về `tat` ở 3 chỗ đã
+  ghi ở lượt trước.
+- **KHÔNG tự bump version / tag / push / merge vào `main`** — chờ anh duyệt.
+
+## CÒN CHƯA LÀM (nói thẳng)
+1. **Cửa chờ ffmpeg N=1 gây đợi 15,4 phút** — đã đo, đã nêu đánh đổi, **chưa
+   sửa** vì cần anh Hùng chọn.
+2. **`-hwaccel cuda` cho lệnh đo** (30,0 CPU-giây, −87%) — đã đo là ăn đứt,
+   **chưa bật** vì cần cửa dò + đường lùi cho máy không có NVIDIA (`d3d11va`
+   đo ra **tệ hơn cả bản gốc**).
+3. **6 shader libplacebo vẫn chưa nối** (lý do kỹ thuật cũ: không có timeline
+   `enable`).
+4. **`export_vertical_clip` vẫn không có hiệu ứng/chuyển cảnh** — tình trạng cũ,
+   không phải hồi quy.
+5. **Giá 1,87× wall của mặc định mới** vẫn chưa tối ưu; hướng rẻ hơn đã nhìn
+   thấy là đường GPU (1,60×).
+6. **Chưa đo trên máy nhân viên YẾU THẬT** (2-4 nhân, không NVIDIA) — mới giả
+   lập bằng monkeypatch trên máy 24 nhân.
+7. `_test_pipe_integ.py` vẫn fail vì thiếu file nguồn — **lỗi có sẵn**, không
+   nằm trong danh sách cổng chặn.
