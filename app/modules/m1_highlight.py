@@ -2715,7 +2715,7 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
 
 
 def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
-                   hu_log: list | None = None) -> None:
+                   hu_log: list | None = None, duong: str = "canvas") -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
@@ -2760,7 +2760,17 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
     # "cảnh hay"). `hu_log` là danh sách hiệu ứng THẬT SỰ vào file — đã lọc theo
     # font ở `export_canvas_clip`, nên nhật ký không bao giờ khoe hiệu ứng ma.
     muc_hu = str(payload.get("hieu_ung", "nhe") or "tat")
-    if muc_hu in ("", "tat"):
+    if duong == "don":
+        # ĐỪNG IM LẶNG (anh Hùng 08/08/2026). Mẫu THIẾU `video_rect` -> đường
+        # xuất rơi vào nhánh 'clip đơn' (`export_vertical_clip`), nhánh đó
+        # KHÔNG có chuyển cảnh, KHÔNG có hiệu ứng điểm nhấn, KHÔNG đốt phụ đề.
+        # Đây là tình trạng CŨ (không phải hồi quy) nhưng trước nay app không
+        # nói một dòng nào nên user tưởng hiệu ứng hỏng.
+        dong += (" · ⚠ MẪU THIẾU KHUNG VIDEO (video_rect) nên Part này đi "
+                 "nhánh 'clip đơn': KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm "
+                 "nhấn, KHÔNG đốt phụ đề — mở Chỉnh mẫu, kéo khối video rồi "
+                 "Lưu lại")
+    elif muc_hu in ("", "tat"):
         dong += " · điểm nhấn: TẮT"
     elif not hu_log:
         dong += (f" · điểm nhấn ({muc_hu}): KHÔNG điểm nào — clip phẳng "
@@ -3420,7 +3430,13 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             flip_h=flip_h,
             on_progress=on_prog,
         )
-        result_extra = {"mode": mode}
+        # ĐỪNG IM LẶNG: nhánh này KHÔNG có chuyển cảnh / hiệu ứng điểm nhấn /
+        # phụ đề. Cờ đi kèm kết quả để lối gọi (báo cáo dây chuyền) đọc được;
+        # dòng chữ đầy đủ do `_ghi_cong_thuc(duong='don')` ghi vào nhật ký.
+        result_extra = {"mode": mode, "duong": "don",
+                        "canh_bao": ("mẫu thiếu khung video (video_rect) -> "
+                                     "KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm "
+                                     "nhấn, KHÔNG phụ đề")}
 
     # ---- MINH BẠCH: ghi ĐÚNG những gì vừa áp cho Part này vào nhật ký dây
     # chuyền. Lý do (anh Hùng 06/08/2026): "hiệu ứng chữ khi xuất ra nó ra 1
@@ -3434,7 +3450,11 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     try:
         _a, _jc, _bg = locals().get("_cthuc", (None, [], "-"))
         _ghi_cong_thuc(payload, _a, _jc, flip_h, _bg, pfx,
-                       locals().get("_hu_log") or [])
+                       locals().get("_hu_log") or [],
+                       duong=str((result_extra or {}).get("duong") or
+                                 ("mixed" if (result_extra or {}).get("mixed")
+                                  and not (result_extra or {}).get("canvas")
+                                  else "canvas")))
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
         pass
     db.execute(

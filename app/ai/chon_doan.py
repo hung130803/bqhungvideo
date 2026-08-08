@@ -398,7 +398,19 @@ def co_loi_noi_that(transcript: dict, tong_giay: float,
     con = sach
     for r in RAC_BIA:
         con = con.replace(r, " ")
-    if len(con.split()) <= max(2, len(sach.split()) // 10):
+    # ĐẾM TỪ PHẢI CJK-AWARE — LỖI THẬT tìm được 08/08/2026 khi làm cổng 40.
+    # `.split()` coi CẢ CÂU Nhật/Trung là 1 "từ" (không có dấu cách), nên video
+    # Nhật có ÍT ĐOẠN (short 8-60s: whisper trả 1-2 đoạn) ra 1-2 token, rơi
+    # thẳng vào ngưỡng `max(2, ...)` -> bị gán nhầm "chỉ gồm câu Whisper bịa".
+    # Hậu quả trong app: `_khong_loi=True` -> BỎ transcript khỏi việc chọn đoạn,
+    # ép đi đường XEM HÌNH (~3-4 phút/video) và **KHÔNG đốt phụ đề** -> clip
+    # Nhật ngắn ra không có chữ. Đo trước khi sửa (mật độ 2,00 từ/giây = nói
+    # rõ ràng): Nhật 1 đoạn -> False · Nhật 2 đoạn -> False · Trung 1 đoạn ->
+    # False; trong khi Anh/Việt/Hàn 1 đoạn -> True. BẤT BIẾN: `_word_tokens`
+    # trả Y HỆT `.split()` khi text không có ký tự CJK -> đường EN/VI/KO không
+    # đổi một chút nào.
+    from app.ai.recap import _word_tokens as _wt
+    if len(_wt(con)) <= max(2, len(_wt(sach)) // 10):
         return False, "nội dung chỉ gồm câu Whisper hay bịa (thank you/…)", mds
     return True, "", mds
 
