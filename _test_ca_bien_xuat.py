@@ -376,6 +376,74 @@ def ca_doan_ke_ngan_hon_chuyen_canh() -> None:
         f"sót {sorted(rac_seg() - truoc)[:4]}")
 
 
+def ca_lenh_do_phai_siet_luong() -> None:
+    """MỌI lệnh ffmpeg NGOÀI CỬA CHỜ đều phải tự siết luồng.
+
+    LỖI THẬT (tổng rà soát 08/08/2026): lượt e2e cả dây chuyền đo **203 luồng
+    ffmpeg = 8,46× số nhân**, phá mốc "≤ 2× nhân" của anh Hùng. Cửa chờ
+    (`_xin_cho_ffmpeg`) chỉ quản đường XUẤT; 3 lệnh ĐO của pha PHÂN TÍCH
+    (`chon_doan.nang_luong`, `chon_doan.chuyen_dong`, `hieu_ung.do_nhip`) **cố ý
+    đứng ngoài cửa chờ** — lệnh đo mà xin chỗ sẽ tự khoá lẫn với lệnh xuất đang
+    giữ chỗ. Nên chúng PHẢI tự siết. `chuyen_dong` khi đó không núm nào: **một
+    mình 70 luồng (2,92× nhân)**, ngốn ~13,5 nhân, cướp CPU của làn xuất.
+
+    Ca này QUÉT TĨNH mã nguồn: lệnh nào có `-f null` (tức lệnh đo) mà thiếu
+    `-threads` là FAIL. Rẻ, chạy 0,0s, và bắt đúng lúc ai đó thêm lệnh đo mới.
+    """
+    print("\n[CA 7] lệnh ĐO (ngoài cửa chờ) phải tự siết luồng")
+    can = {
+        "chon_doan.nang_luong": (REPO / "app" / "ai" / "chon_doan.py",
+                                 "def nang_luong"),
+        "chon_doan.chuyen_dong": (REPO / "app" / "ai" / "chon_doan.py",
+                                  "def chuyen_dong"),
+        "hieu_ung.do_nhip": (REPO / "app" / "core" / "hieu_ung.py",
+                             "def do_nhip"),
+    }
+    for ten, (f, moc) in can.items():
+        src = f.read_text(encoding="utf-8", errors="replace")
+        i = src.find(moc)
+        than = src[i:i + 3500] if i >= 0 else ""
+        co_null = "-f\", \"null" in than or '"-f", "null"' in than
+        co_threads = "-threads" in than or "_num_luong()" in than
+        bao(f"{ten}: lệnh đo có siết luồng giải mã",
+            bool(than) and co_null and co_threads,
+            f"tìm thấy hàm={bool(than)} · có `-f null`={co_null} · "
+            f"có `-threads`={co_threads}")
+
+    # ĐO THẬT: chạy `chuyen_dong` trên nguồn tự sinh, đếm đỉnh luồng
+    src = dung_nguon("do_luong.mp4", 12.0, True)
+    from app.ai import chon_doan as CD
+    dinh = [0]
+    stop = threading.Event()
+
+    def _soi() -> None:
+        me = psutil.Process()
+        while not stop.is_set():
+            t = 0
+            try:
+                for c in me.children(recursive=True):
+                    try:
+                        if "ffmpeg" in (c.name() or "").lower():
+                            t += c.num_threads()   # theo TÊN, không theo cmdline
+                    except psutil.Error:
+                        pass
+            except psutil.Error:
+                pass
+            dinh[0] = max(dinh[0], t)
+            time.sleep(0.03)
+
+    th = threading.Thread(target=_soi, daemon=True)
+    th.start()
+    CD.chuyen_dong(str(src), FF)
+    CD.nang_luong(str(src), FF)
+    stop.set()
+    th.join(timeout=2)
+    nhan_ = os.cpu_count() or 1
+    bao("ĐO THẬT: 1 lệnh đo ≤ 2× số nhân (trước khi sửa: 70 = 2,92×)",
+        0 < dinh[0] <= 2 * nhan_,
+        f"đỉnh {dinh[0]} luồng = {dinh[0]/nhan_:.2f}× nhân (trần {2*nhan_})")
+
+
 def _dai_luong(p, loai: str) -> float:
     """Độ dài LUỒNG hình/tiếng (giây) — ĐẾM THẬT, không đọc tag `duration`.
 
@@ -412,6 +480,7 @@ def main() -> int:
     ca_may_nhan_vien()
     ca_mot_doan_va_ngoai_phim()
     ca_doan_ke_ngan_hon_chuyen_canh()
+    ca_lenh_do_phai_siet_luong()
 
     print("\n[TỔNG] rò rác đĩa + rò tiến trình sau TOÀN BỘ cổng")
     sot = sorted(rac_seg() - rac0)

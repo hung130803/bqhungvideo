@@ -27,6 +27,55 @@ import sys
 _NO_WIN = 0x08000000 if sys.platform == "win32" else 0
 #: cửa sổ đo năng lượng (giây). 1,0s đủ mịn để bắt tiếng gào/đập mà rẻ.
 CUA_SO = 1.0
+
+
+def _num_luong() -> list[str]:
+    """Núm luồng cho 2 LỆNH ĐO dưới đây (`-threads` TRƯỚC `-i` = luồng GIẢI MÃ).
+
+    LỖI THẬT tìm ra khi TỔNG RÀ SOÁT 08/08/2026: lượt e2e cả dây chuyền đo được
+    **203 luồng ffmpeg (8,46× số nhân)**, phá mốc anh Hùng chốt là "≤ 2× nhân".
+    Truy ra thủ phạm: `chuyen_dong` gọi `subprocess.run` TRẦN, không núm nào —
+    **một mình nó 70 luồng (2,92× nhân)** và ngốn ~13,5 nhân suốt lúc chạy, cướp
+    CPU của làn XUẤT đang chạy song song. (`hieu_ung.do_nhip` đã siết từ trước;
+    `nang_luong` 24 luồng.) 2 lệnh này **CỐ Ý không qua cửa chờ ffmpeg** (lệnh
+    ĐO mà xin chỗ sẽ tự khoá lẫn với lệnh xuất đang giữ chỗ) nên cửa chờ không
+    cứu được — phải siết núm tại chỗ.
+
+    SỐ ĐO A/B (`_ra_ab_chuyen_dong.py`, nguồn Nhật thật 653s/60fps/263 MB, máy
+    24 nhân, **đan xen** 3 vòng — dãy số khít, không nhiễu):
+        HIỆN TẠI (không núm) : 17,06s · **229,3 CPU-giây** · **70 luồng (2,92×)** ❌
+        giải mã 4            : 28,60s · **102,2 CPU-giây** · 22 luồng (0,92×) ✅
+        giải mã 2            : 47,83s ·  89,3 CPU-giây · 14 luồng (0,58×) ✅
+        giải mã 1            : 80,71s ·  83,4 CPU-giây ·  9 luồng (0,38×) ✅
+        GPU cuda + giải mã 4 : 52,92s ·  **30,0 CPU-giây** · 25 luồng (1,04×)
+
+    VÌ SAO CHỌN 4 chứ không phải "cứ để nhanh": đây là bước THUẦN GIẢI MÃ nên
+    siết luồng ĐẮT THẬT về wall (+66%) — khác hẳn đường xuất (nút cổ chai là
+    NVENC nên siết luồng gần như miễn phí). Nhưng ở quy mô 200-300 kênh thì
+    **CPU-giây mới là thứ khan hiếm**: 229 CPU-giây/video × 300 video/ngày =
+    19 giờ-nhân/ngày chỉ để đo chuyển động; hạ còn 8,4 giờ-nhân. Và trong lúc
+    nó ăn 13,5 nhân thì làn XUẤT chạy song song bị đói CPU. Dùng đúng
+    `decode_threads()` (=4, ECO=2) — cùng mức repo đã đo là "mức cuối cùng còn
+    miễn phí" cho đường xuất, nên chỉ có MỘT nguồn sự thật về luồng giải mã.
+
+    VÌ SAO **KHÔNG** dùng thẳng `decode_threads()` (nó hạ về 2 khi ECO_MODE bật,
+    mà ECO_MODE **mặc định BẬT**): đo lại cả pha phân tích trên nguồn Nhật
+    6.394s cho thấy mức 2 làm `chuyen_dong` **82,4s -> 198,1s (2,4×)**, trong
+    khi phần luồng tiết kiệm thêm là KHÔNG ĐÁNG (0,92× -> 0,58× số nhân — cả
+    hai đều đã nằm gọn trong ngân sách 2×). ECO_MODE có lý ở đường XUẤT (nút cổ
+    chai là NVENC nên siết luồng gần như miễn phí) nhưng ở bước THUẦN GIẢI MÃ
+    này thì nó chỉ đổi rất nhiều thời gian lấy rất ít luồng. Nên mức ở đây tính
+    theo SỐ NHÂN, chặn trần 4: máy 24 nhân -> 4; máy nhân viên 4 nhân -> 2;
+    máy 2 nhân -> 1 (không bao giờ quá 1× số nhân).
+
+    HƯỚNG RẺ HƠN NỮA, ĐÃ ĐO NHƯNG CHƯA DÙNG: `-hwaccel cuda` cho **30,0
+    CPU-giây (−87%)** — máy anh Hùng GPU chỉ 11,3% nên gần như miễn phí. Chưa
+    bật vì cần đường lùi cho máy nhân viên KHÔNG có NVIDIA (`d3d11va` đo ra
+    **tệ hơn cả bản gốc**: 146,7s · 158,4 CPU-giây), tức phải thêm cửa dò +
+    fallback — việc riêng, đừng gộp vào lượt này.
+    """
+    n = str(min(4, max(1, (os.cpu_count() or 4) // 2)))
+    return ["-threads", n, "-filter_threads", n]
 #: mốc "đoạn căng": to hơn trung bình bao nhiêu lần (theo biên độ, không phải dB)
 NGUONG_CANG = 1.6
 
@@ -38,7 +87,7 @@ def nang_luong(src: str, ffmpeg: str, tong_giay: float = 0.0) -> list[float]:
     giải mã hình (`-vn`) nên rẻ. Lỗi -> [] (caller tự bỏ qua phần 'nghe')."""
     try:
         r = subprocess.run(
-            [ffmpeg, "-hide_banner", "-nostats", "-i", src, "-vn",
+            [ffmpeg, "-hide_banner", "-nostats", *_num_luong(), "-i", src, "-vn",
              "-af", f"aresample=16000,asetnsamples=n={int(16000 * CUA_SO)},"
                     f"astats=metadata=1:reset=1,"
                     f"ametadata=print:key=lavfi.astats.Overall.RMS_level:"
@@ -111,7 +160,7 @@ def chuyen_dong(src: str, ffmpeg: str, fps: float = 4.0) -> list[float]:
     mediapipe. Lỗi -> [] (caller bỏ qua phần 'xem')."""
     try:
         r = subprocess.run(
-            [ffmpeg, "-hide_banner", "-nostats", "-i", src, "-an",
+            [ffmpeg, "-hide_banner", "-nostats", *_num_luong(), "-i", src, "-an",
              "-vf", f"fps={fps},scale=160:-2,format=gray,"
                     f"tblend=all_mode=difference,signalstats,"
                     f"metadata=print:key=lavfi.signalstats.YAVG:file=-",
