@@ -23,6 +23,8 @@ from PyQt6.QtWidgets import (
 from app import services
 from app.core.captions import CAPTION_PRESETS, NARR_SAME_LABEL, apply_case
 from app.core.ffmpeg_utils import CHUYEN_CANH_MUC, CHUYEN_CANH_NHAN
+from app.core.hieu_ung import MUC as HIEU_UNG_MUC
+from app.core.hieu_ung import MUC_NHAN as HIEU_UNG_NHAN
 from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
 
 # Cache danh sách giọng lồng tiếng ĐẦY ĐỦ theo ngôn ngữ (nạp 1 lần/phiên app;
@@ -1275,6 +1277,33 @@ class EditorDialog(QDialog):
             "TẮT = ra file y hệt bản cũ.")
         xrow.addWidget(self.xfade_cb, 1)
         gb.addLayout(xrow)
+        # HIỆU ỨNG ĐIỂM NHẤN (kho `app/core/hieu_ung.py` — 25 kiểu đã ĐO ĐẠT:
+        # thuần ffmpeg + frei0r mã nguồn mở). Khác chuyển cảnh ở chỗ: chuyển
+        # cảnh chỉ có ở CHỖ NỐI, còn cái này nhấn vào ĐIỂM ĐÁNG NHẤN trong lòng
+        # clip (cao trào tiếng, cảnh động, câu chốt) — AI TỰ CHỌN theo số đo của
+        # chính clip, KHÔNG bốc thăm, KHÔNG cần user chọn tay.
+        hrow = QHBoxLayout()
+        hrow.addWidget(QLabel("Hiệu ứng điểm nhấn:"))
+        self.hieu_ung_cb = _NoWheelCombo()
+        for _m in HIEU_UNG_MUC:
+            self.hieu_ung_cb.addItem(HIEU_UNG_NHAN[_m], _m)
+        self.hieu_ung_cb.setCurrentIndex(1)        # mặc định BẬT mức 'nhe'
+        self.hieu_ung_cb.setToolTip(
+            "App tự tìm ĐIỂM ĐÁNG NHẤN trong clip rồi thêm hiệu ứng 0,3-0,8 "
+            "giây ở đúng chỗ đó (zoom nhồi, rung lắc, loé sáng, glitch, quầng "
+            "sáng phim, đếm ngược 3-2-1...).\n"
+            "AI TỰ QUYẾT theo SỐ ĐO của chính clip, bạn không phải chọn tay:\n"
+            "  · tiếng vọt lên (RMS cao hơn trung vị) -> nhấn mạnh (zoom/rung)\n"
+            "  · hình đổi nhiều -> glitch nhẹ\n"
+            "  · CẢNH TĨNH (hình gần đứng) -> KHÔNG đụng hiệu ứng động, chỉ "
+            "mood rất kín (quầng sáng / hạt phim / tối viền)\n"
+            "  · đoạn đọc đều, không cao trào -> KHÔNG thêm gì\n"
+            "4 luật chống loè: tối đa 3 điểm/clip · mỗi điểm 0,3-0,8s · tổng "
+            "số giây có hiệu ứng KHÔNG quá 10% thời lượng clip · không đổi màu "
+            "da (lệch U/V < 3).\n"
+            "Cùng 1 clip KHÔNG lặp một kiểu. TẮT = ra file y hệt bản cũ.")
+        hrow.addWidget(self.hieu_ung_cb, 1)
+        gb.addLayout(hrow)
         # LẬT GƯƠNG (mirror trái-phải) để NÉ content-ID khi reup. Chỉ lật HÌNH;
         # chữ tiêu đề/Part + phụ đề chồng SAU nên vẫn đọc bình thường.
         self.flip_h_chk = QCheckBox("Lật gương video (né bản quyền)")
@@ -1776,6 +1805,14 @@ class EditorDialog(QDialog):
                 str(layout.get("chuyen_canh", "nhe") or "tat"))
             if _xi >= 0:
                 self.xfade_cb.setCurrentIndex(_xi)
+            # Mẫu CŨ chưa có khoá 'hieu_ung' -> 'nhe' (anh Hùng chốt 08/08/2026:
+            # "kệ nó đi, k bỏ vậy") => 200-300 kênh đang chạy sẽ CÓ hiệu ứng
+            # điểm nhấn ngay khi cập nhật. Muốn tắt hết thì đổi 3 chỗ mặc định:
+            # đây, `studio_page._export_video_inner`, `m1_highlight`.
+            _hi = self.hieu_ung_cb.findData(
+                str(layout.get("hieu_ung", "nhe") or "tat"))
+            if _hi >= 0:
+                self.hieu_ung_cb.setCurrentIndex(_hi)
             self.flip_h_chk.setChecked(bool(layout.get("flip_h", False)))
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
@@ -2560,6 +2597,7 @@ class EditorDialog(QDialog):
         lay["fx_fade"] = self.fx_fade_chk.isChecked()
         lay["fx_whoosh"] = self.fx_whoosh_chk.isChecked()
         lay["chuyen_canh"] = self.xfade_cb.currentData() or "tat"
+        lay["hieu_ung"] = self.hieu_ung_cb.currentData() or "tat"
         lay["fx_sfx_dir"] = self._fx_sfx_dir
         lay["flip_h"] = self.flip_h_chk.isChecked()
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"

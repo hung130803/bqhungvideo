@@ -8255,6 +8255,11 @@ class StudioPage(QWidget):
                 # khoá này -> 'nhe' (mặc định BẬT mức nhẹ như đã chốt).
                 chuyen_canh=str(self.layout_tpl.get("chuyen_canh", "nhe")
                                 or "tat"),
+                # HIỆU ỨNG ĐIỂM NHẤN — theo MẪU, cùng đường với chuyển cảnh.
+                # `self.layout_tpl` ở đây là mẫu ĐÃ CHỐT do `_export_video`
+                # (cửa DUY NHẤT mọi đường xuất đi qua — cổng 19) đặt vào, nên
+                # bấm tay / xuất cả kênh / dây chuyền đều ăn ĐÚNG mẫu của kênh.
+                hieu_ung=str(self.layout_tpl.get("hieu_ung", "nhe") or "tat"),
                 fx_sfx_dir=self._pick_sfx_dir(),
                 flip_h=bool(self.layout_tpl.get("flip_h", False)),
                 fit_src=bool(self.layout_tpl.get("fit_src", False)),

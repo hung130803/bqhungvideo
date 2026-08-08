@@ -59,11 +59,14 @@ TY_LE_MAX = 0.10
 #: `sine` phẳng tuyệt đối ra 1,00. Ngưỡng 1,35 nằm giữa, không đụng video thật.
 PHANG = 1.35
 
+#: 4 mức cho ô chọn trong Chỉnh mẫu. NHÃN KHÔNG DÙNG EMOJI — máy anh Hùng thiếu
+#: glyph nên emoji ra Ô ĐEN ("xấu quá tự nhiên có cái ô đen", v2.6.22; cổng 9 và
+#: 27 quét mọi nhãn nút để bắt việc này).
 MUC: tuple = ("tat", "nhe", "vua", "manh")
 MUC_NHAN: dict = {
     "tat": "Tắt (không hiệu ứng)",
-    "nhe": "Nhẹ (chỉ 1-2 điểm, rất kín)",
-    "vua": "Vừa (khuyên dùng)",
+    "nhe": "Nhẹ (mặc định — 1-2 điểm, rất kín)",
+    "vua": "Vừa (tối đa 3 điểm, đậm hơn)",
     "manh": "Mạnh (thấy rõ nhất)",
 }
 # Độ đậm theo mức — TẤT CẢ <= DAM_MAX (luật 2). "manh" = 25%, đúng trần.

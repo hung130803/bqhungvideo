@@ -424,6 +424,78 @@ def _psnr(s: str) -> float:
     return 0.0
 
 
+# =====================================================================
+#  D — NỐI VÀO APP: núm trong Chỉnh mẫu -> mẫu -> payload -> ffmpeg
+# =====================================================================
+def ca_d() -> None:
+    print("\n== D. nối vào app (mẫu -> payload -> ffmpeg) ==")
+    # D1: núm trong Chỉnh mẫu — dựng hộp THẬT
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from app.ui.editor import EditorDialog
+        QApplication.instance() or QApplication([])
+        khung = str(_SB / "frame.png")
+        subprocess.run([FF, "-y", "-v", "error", "-f", "lavfi", "-i",
+                        "color=c=gray:s=540x960:d=0.1", "-frames:v", "1",
+                        khung], capture_output=True, creationflags=_NOWIN)
+        dlg = EditorDialog(khung, layout=None, parent=None, current_name="")
+        cb = dlg.hieu_ung_cb
+        data = [cb.itemData(i) for i in range(cb.count())]
+        nhan = [cb.itemText(i) for i in range(cb.count())]
+        bao("Chỉnh mẫu có ô 'Hiệu ứng điểm nhấn' đủ 4 mức",
+            data == ["tat", "nhe", "vua", "manh"], f"{data}")
+        bao("mặc định là 'nhe' (BẬT mức nhẹ)", cb.currentData() == "nhe",
+            f"{cb.currentData()!r} · nhãn {cb.currentText()!r}")
+        # NHÃN KHÔNG EMOJI (máy anh Hùng thiếu glyph -> Ô ĐEN, v2.6.22)
+        xau = [t for t in nhan
+               if any(ord(c) > 0x2000 and not (0x2010 <= ord(c) <= 0x2027)
+                      and ord(c) not in (0x2014, 0x2013)
+                      and not (0x1E00 <= ord(c) <= 0x1EFF) for c in t)]
+        bao("nhãn KHÔNG dùng emoji dễ thiếu font", not xau, f"{nhan}")
+        # mẫu CŨ (không có khoá) -> 'nhe'; mẫu đặt 'tat' -> 'tat'
+        dlg._apply_layout({"video_rect": (0.5, 0.5, 1.0)})
+        cu = dlg.hieu_ung_cb.currentData()
+        dlg._apply_layout({"video_rect": (0.5, 0.5, 1.0), "hieu_ung": "manh"})
+        moi = dlg.hieu_ung_cb.currentData()
+        bao("mẫu CŨ thiếu khoá -> 'nhe'; mẫu có khoá -> đúng khoá",
+            cu == "nhe" and moi == "manh", f"cũ {cu!r} · có khoá {moi!r}")
+        lay = dlg._collect_layout()
+        bao("Lưu mẫu ghi được khoá 'hieu_ung'",
+            lay.get("hieu_ung") == "manh", f"{lay.get('hieu_ung')!r}")
+        dlg.deleteLater()
+    except Exception as e:  # noqa: BLE001
+        bao("dựng được hộp Chỉnh mẫu", False, repr(e))
+
+    # D2: quét TĨNH 3 mắt xích còn lại (thiếu 1 mắt là anh Hùng bấm không tới)
+    sp = (REPO / "app" / "ui" / "studio_page.py").read_text(encoding="utf-8")
+    sv = (REPO / "app" / "services.py").read_text(encoding="utf-8")
+    m1 = (REPO / "app" / "modules" / "m1_highlight.py").read_text(
+        encoding="utf-8")
+    bao("studio_page truyền hieu_ung TỪ MẪU vào enqueue_export",
+        'hieu_ung=str(self.layout_tpl.get("hieu_ung"' in sp,
+        "cửa duy nhất `_export_video` đặt layout_tpl -> bấm tay / xuất cả kênh "
+        "/ dây chuyền đều ăn đúng mẫu kênh (cổng 19)")
+    bao("services.enqueue_export có tham số + đưa vào payload + vào sig",
+        "hieu_ung: str = " in sv and '"hieu_ung": hieu_ung' in sv
+        and 'str(hieu_ung or "")' in sv,
+        "đổi mức -> sig đổi -> KHÔNG bị smart-skip")
+    bao("m1_highlight truyền payload['hieu_ung'] xuống export_canvas_clip",
+        'hieu_ung=str(payload.get("hieu_ung"' in m1 and "hieu_ung_log=" in m1,
+        "kèm hieu_ung_log để nhật ký ghi LÝ DO KÈM SỐ")
+
+    # D3: sig dedup PHẢI đổi khi đổi mức (không thì bấm xuất lại không ra file)
+    import hashlib
+    def _sig(muc: str) -> str:
+        return hashlib.sha1(repr((None, None, "", "", "", False, "", 0.15,
+                                  1.0, "", "", False, "natural", "", "", "",
+                                  1.15, True, 0.14, True, True, "", False,
+                                  False, "nhe", muc, False)).encode()
+                            ).hexdigest()[:12]
+    bao("mức khác nhau -> sig dedup khác nhau",
+        len({_sig(m) for m in ("tat", "nhe", "vua", "manh")}) == 4,
+        f"{[_sig(m) for m in ('tat', 'nhe', 'vua', 'manh')]}")
+
+
 def main() -> None:
     ds = _nguon_nhat.liet_ke()[:3]
     if not ds:
@@ -441,6 +513,7 @@ def main() -> None:
     ca_a5()
     ca_b(ds)
     ca_c(ds[0])
+    ca_d()
     print("\n" + "=" * 62)
     print(f"ĐẠT {len(_OK)} · SAI {len(_LOI)}")
     if _LOI:
