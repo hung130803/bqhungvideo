@@ -909,6 +909,56 @@ mô 300 video/ngày là **19 giờ-nhân/ngày → 8,4 giờ-nhân/ngày** chỉ
 chuyển động. **Cổng 37 thêm CA 7**: quét tĩnh (lệnh có `-f null` mà thiếu
 `-threads` = FAIL) + đo thật đỉnh luồng ≤ 2× nhân.
 
+### LỖI 2b — `-threads` đặt MỘT LẦN trước cụm `-i` chỉ siết được đầu vào ĐẦU TIÊN
+Sửa xong LỖI 2, đo lại **cả dây chuyền** vẫn ra **397 luồng (16,54× nhân)** →
+còn nguồn khác. Viết `_ra_luong_toan_may.py` (soi **MỌI** tiến trình tên
+`ffmpeg` **trên cả máy** — không chỉ con của mình, vì `_run_analyze` chạy
+ffmpeg ở tiến trình **CHÁU** — và **dán nhãn theo dòng lệnh**). Bảng ra ngay:
+
+| lệnh | đỉnh luồng | |
+|---|---|---|
+| **pha 1.5 nối n đoạn có chuyển cảnh** | **133 = 5,54× nhân** | thủ phạm |
+| xuất: đốt `.ass` (pha 2) | 90 | |
+| đo: xem chuyển động (đã sửa ở LỖI 2) | 22 | ✅ |
+| đo: nghe astats (đã sửa) | 24 | ✅ |
+
+Lệnh thủ phạm **CÓ** `-threads 1` trên dòng lệnh mà vẫn 133 luồng, vì
+**`-threads` là tuỳ chọn THEO TỪNG ĐẦU VÀO**: ffmpeg áp nó cho `-i` ngay sau
+rồi "tiêu" mất. Bản cũ đặt **một lần** trước cả cụm 6 `-i` và ghi chú là "áp
+cho TỪNG đầu vào" — **SAI**; chỉ đầu vào đầu tiên bị siết, 5 cái còn lại vẫn
+`-threads 0`. Khớp y phép tính: 5 × ~25 luồng mặc định + filter + encode ≈ 133.
+
+**Sửa:** LẶP `-threads <n>` trước **TỪNG** `-i` (2 chỗ dùng nhiều đầu vào:
+`_build_xf` pha 1.5 và `export_stitched_clip`). Ngân sách vẫn chia đều nên
+tổng luồng giải mã không đổi so với lệnh 1 đầu vào. Pha 2 của
+`export_canvas_clip` **không dính** vì chỉ có MỘT đầu vào video thật.
+**Không hồi quy:** cổng 36 chạy lại **64 OK / 0 FAIL**, bất biến "chuyển cảnh
+TẮT ra file GIỐNG HỆT `main`" vẫn **PSNR 99,0 dB ở 5/5 mốc**.
+
+### KẾT QUẢ SAU 3 LẦN SỬA LUỒNG — đo lại trên CÙNG lượt e2e
+| lượt đo | đỉnh luồng ffmpeg | so số nhân |
+|---|---|---|
+| ban đầu (trước mọi bản vá) | **397** | **16,54×** ❌ |
+| sau khi siết `chuyen_dong` + `nang_luong` | 203 | 8,46× ❌ |
+| **sau khi lặp `-threads` từng `-i` + siết tách tiếng** | **104** | **4,33×** |
+
+Lệnh pha 1.5 **biến mất hẳn** khỏi bảng đỉnh. Đỉnh mới là
+`XUẤT: đốt .ass = 80 + CHÉP LỜI: tách tiếng = 24`.
+
+**VẪN CHƯA ĐẠT mốc ≤ 2× nhân (48) — nói thẳng.** Phần dư còn lại nằm ở **chính
+lệnh XUẤT pha 2 (80-81 luồng = 3,38× nhân)**, và nó bị chi phối bởi **SÀN
+~36-40 luồng của NVENC** mà repo đã đo từ trước — đúng cái sàn buộc cửa chờ
+phải về N=1. Muốn xuống nữa thì phải đụng vào graph pha 2 (400 dòng đang gánh
+sản xuất 200-300 kênh) hoặc bỏ NVENC — **cả hai đều KHÔNG nên làm trong lượt
+này**. Đáng chú ý: dù 4,33× nhân, **trễ UI vẫn 15,2 ms / đỉnh 72,2 ms** — anh
+Hùng KHÔNG cảm thấy giật.
+
+### LỖI 2c — `extract_audio_wav_why` (tách tiếng cho chép lời) không siết luồng
+Cùng lượt soi: lệnh này đứng NGOÀI cửa chờ và **không** dùng
+`_global_enc_opts()` nên chưa từng bị siết. Việc thật của nó rất nhẹ (giải mã
+rồi ghi PCM 16 kHz **một** kênh — không encode, không filter). Đã thêm
+`-threads N` **trước** `-i`, cùng công thức `min(4, nhân//2)`.
+
 ### LỖI 3 — Cột `analysis.engine` NÓI DỐI (suýt làm tôi kết luận sai)
 `analysis._run_one` đóng cứng `f"faster-whisper:{model}"` cho MỌI lượt chép
 lời. Nhưng `transcribe()` **tự lùi về whisper MÁY khi Groq lỗi, không báo một
@@ -1061,6 +1111,7 @@ không phải của app: app không cần cv2 để xuất clip (đã chứng mi
 | **3b. Có làn nào bị bỏ đói?** | job XUẤT chạy sau **0,06 giây** dù **59 job phân tích đang ngập** hàng chờ | **ĐẠT** |
 | **4. Xử lý AI oke chưa?** | **7/7 ra clip AI · 0 rơi "Cắt cơ bản"**; video KHÔNG LỜI nhận đúng (0,034 từ/giây) → đi đường **XEM HÌNH**; **38/38 key Groq sống**; nhật ký ghi lý do kèm SỐ, 6 kiểu hiệu ứng khác nhau trên 8 Part | **ĐẠT** |
 | **5. Có nghẽn không?** | không làn đói · không khoá DB · 0 ffmpeg mồ côi · 0 rác `_seg_*`/`_MEI*`/`_nhip_*` · WAL tự gấp — **NHƯNG job xuất cuối đợi 925 giây (15,4 phút)** | **KHÔNG ĐẠT** (mốc >10 phút) |
+| **3c. Luồng ffmpeg của CẢ dây chuyền** (phân tích + xuất cùng lúc) | **397 → 104 luồng (16,54× → 4,33× nhân)** sau 3 bản vá; phần dư là sàn NVENC của lệnh xuất (80) | **KHÔNG ĐẠT** mốc 2× — nhưng UI vẫn 15,2 ms |
 | **+ Hồi phục sau khi tắt app** | cổng 7 `_test_cancel_persist` + `_test_pipe_overlap` — xem mục cửa chặn | xem bảng cổng |
 | **+ Máy nhân viên** | venv khách (không cv2/torch): app nạp được · thiếu frei0r → 25→14 · thiếu OpenCL → 21/21 có đường lùi · thiếu NVENC → clip đúng 12,000s, còn tiếng | **ĐẠT** (11/11) |
 | **+ Bản đóng gói** | `.exe` build lại: sfx **43→185**, hieu_ung **0→26** file · dung lượng **615,6 → 620,3 MB (+0,8%)** · chạy thử OK | **ĐẠT** (12/12) |
@@ -1121,6 +1172,12 @@ tài nguyên.** Lý do, xếp theo mức quan trọng:
 ## CÒN CHƯA LÀM (nói thẳng)
 1. **Cửa chờ ffmpeg N=1 gây đợi 15,4 phút** — đã đo, đã nêu đánh đổi, **chưa
    sửa** vì cần anh Hùng chọn.
+1b. **Luồng CẢ dây chuyền vẫn 4,33× nhân** (mốc 2×). Đã hạ được từ 16,54× bằng
+   3 bản vá; phần dư 80 luồng là **chính lệnh xuất pha 2**, bị chi phối bởi sàn
+   ~36-40 luồng của NVENC. Hạ tiếp phải đụng graph pha 2 (400 dòng đang gánh
+   200-300 kênh) — **cố ý không làm trong lượt này**. Lưu ý mốc "44 luồng
+   (1,83×)" của lượt trước chỉ đo **đường XUẤT đơn độc**, không có pha phân
+   tích chạy cùng, nên không so trực tiếp được với 4,33× ở đây.
 2. **`-hwaccel cuda` cho lệnh đo** (30,0 CPU-giây, −87%) — đã đo là ăn đứt,
    **chưa bật** vì cần cửa dò + đường lùi cho máy không có NVIDIA (`d3d11va`
    đo ra **tệ hơn cả bản gốc**).
