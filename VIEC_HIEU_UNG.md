@@ -1,5 +1,40 @@
 # VIỆC: chuyển cảnh ở chỗ ghép đoạn + chữa quá tải luồng
 
+---
+
+## ⭐ BƯỚC CUỐI BẮT BUỘC — TỔNG RÀ SOÁT (anh Hùng chốt 08/08/2026)
+
+Nguyên văn: *"khi nào xong tất cả mọi thứ tôi yêu cầu, bạn kiểm tra rà soát lại
+hết các phần đã làm tích hợp xem chạy đã mượt mà chưa, chạy nhiều kênh nhiều
+luồng đã được chưa, xử lý AI đã oke chưa, có bị nghẽn hay bị lỗi gì k nhé. Chậm
+mà chắc nhé. Bạn có thể tự chạy nhé, nào xong tự chạy."*
+
+**Làm SAU KHI xong mọi việc khác. TỰ CHẠY, không cần hỏi lại anh Hùng.**
+Đây là lượt chạy **CẢ HỆ THỐNG như thật**, không phải chạy lại từng cổng lẻ.
+
+### 5 câu hỏi phải trả lời BẰNG SỐ
+| # | Câu hỏi của anh Hùng | Cách chứng minh |
+|---|---|---|
+| 1 | **Tích hợp có chạy không?** | Chạy **e2e THẬT** qua app: quét nguồn → nhập → phân tích AI → cắt → xuất → xoá gốc. Ít nhất **5 video Nhật thật**, đủ cả ca có lời / không lời / hook-first / VFR. Đếm: bao nhiêu ra clip tốt, bao nhiêu lỗi. Mốc: **0 lỗi**. |
+| 2 | **Chạy mượt chưa?** | Đo **trễ vòng lặp UI** liên tục ≥120 giây trong lúc dây chuyền chạy: trung vị **<30ms**, đỉnh **<150ms**. Kèm CPU + RAM đỉnh. |
+| 3 | **Nhiều kênh nhiều luồng được chưa?** | **≥50 kênh** trong hàng chờ + **10 làn**. Đo: tổng luồng ffmpeg **≤2× nhân**, RAM đỉnh, có kênh nào bị **bỏ đói** không (làn cắt vs làn phân tích — bài học cổng 5 `_test_lane_starve`). |
+| 4 | **Xử lý AI oke chưa?** | Trên ≥5 video: **bao nhiêu video ra clip AI, bao nhiêu rơi "Cắt cơ bản"** và **VÌ SAO** (đọc lý do trong nhật ký — v2.13.4 đã ghi). Kiểm luôn: video **không lời** phải ra clip bằng XEM HÌNH (v2.15.0), không rơi cơ bản. Đếm lượt Groq + số key còn sống. |
+| 5 | **Có nghẽn không?** | Tìm **điểm nghẽn**: hàng chờ có job nào đợi > 10 phút? Làn nào đói? DB có bị khoá? `%TEMP%` có phình? ffmpeg mồ côi? WAL có gấp không? |
+
+### Phải kiểm thêm (chỗ đã từng hỏng, đừng bỏ)
+- **Hồi phục sau khi tắt app giữa chừng**: đang chạy 20 job → tắt app → mở lại → **không được tự chạy lại job đã HUỶ**, và sổ dây chuyền phải dựng lại được (cổng 7 + `_test_pipe_overlap`).
+- **DB**: `studio.db` có gấp WAL khi thoát không? Dung lượng DB tăng bao nhiêu sau 5 video?
+- **Đĩa**: đo `%TEMP%` + thư mục xuất **trước/sau**. Rác `_seg_*` / `_MEI*` = **0**.
+- **Máy nhân viên**: chạy lại toàn bộ trên venv khách (`requirements-build.txt`), giả lập thiếu NVENC + frei0r + OpenCL.
+- **Bản đóng gói**: build `.exe` bằng `.venv-build` (KHÔNG dùng `.venv`) rồi **kiểm ngày sửa .exe + đếm file trong `_internal/app/assets/`** — bẫy 06/08: `dist/` còn bản cũ mà tưởng đã build.
+
+### Kết luận báo cáo phải có
+Một bảng **"Câu hỏi của anh Hùng → Số đo → ĐẠT/KHÔNG"**, và nếu có mục KHÔNG
+ĐẠT thì **nói thẳng, đừng che, đừng gộp vào chỗ khác cho đẹp bảng**.
+
+---
+
+
 > Hồ sơ việc cho nhánh `hieu-ung-video`. **Đọc file này TRƯỚC khi làm.**
 > Mọi số đo dưới đây đã đo THẬT ngày 07/08/2026 — **đừng đo lại**, dùng luôn.
 > Đọc `CLAUDE.md` để biết 35 cổng chặn + quy tắc sắt của repo.
@@ -585,3 +620,89 @@ lỗi sau (đã rà ra, CHƯA sửa vì chưa ai chạm tới được):**
 `pyflakes app config.py main.py` 0 "undefined name" · `_test_app_smoke.py` ·
 `_test_pipe_dialogs.py` · cổng 14 · 19 · 21 · 23 · 24 · 25 · 26 · 28 · 34 · 35 ·
 36 (61 OK) · **37 MỚI** (31 OK).
+
+---
+---
+# LƯỢT 08/08/2026 (chiều) — SỬA 5 LỖI · NỐI VÀO APP · AI CHỌN THÔNG MINH
+Commit: `534c442` (5 lỗi + cổng 38) · `9cb687f` (nối vào app) · `60e312f`
+(21 chuyển cảnh GPU) · `1a5465c` (demo v4 + đo giá).
+Anh Hùng chốt: *"kệ nó đi, k bỏ vậy, nhưng làm xem đầy đủ các phần tôi bảo, với
+AI lựa chọn hiệu ứng thông minh phù hợp cho tôi nhé"*.
+
+## 1. 5 LỖI — 4 CÓ THẬT, 1 KHÔNG TÁI HIỆN ĐƯỢC
+| # | lỗi | TRƯỚC | SAU |
+|---|---|---|---|
+| 1 | `zoompan` nhận fps sai khi nền Đen/Trắng | clip **2,400s** (đáng ra 2,000) | 2,000s ở cả 4 kiểu nền |
+| 2 | `vien_net` đổi màu TOÀN CLIP | ghi là dU 1,27 / dV 1,56 | **KHÔNG tái hiện** — xem dưới |
+| 3 | nhân `vspeed` sai chiều | điểm ở giây 9,00-9,70 của clip **8,03s** = không bao giờ chạy | mọi điểm nằm trong clip, đổi 12,4% -> **63,2%** pixel ở đúng mốc |
+| 4 | `dem_nguoc` mất số "1" | `between(t,0.60,0.56)` = rỗng | 23.019 / 22.298 / **12.560 px** (render thật) |
+| 5 | nhật ký khoe hiệu ứng không tồn tại | có | log = đúng cái vào file |
+
+**LỖI 2 — ĐÍNH CHÍNH, ĐỪNG TIN CON SỐ CŨ.** Đo lại bằng **rawvideo (KHÔNG qua
+encoder)** trên đúng khuôn graph thật: `vien_net` ra **|dU| 0,022 · |dV| 0,054 ·
+0,07% pixel Y** ở khung NGOÀI cửa sổ — **Y HỆT `quang_sang`(glow) và mọi hiệu ứng
+frei0r khác**, vì đó là nhiễu đổi hệ màu yuv<->rgb chung, không phải rò hiệu ứng.
+Con số 1,27/1,56 cũ đo qua mp4/nvenc nên dính nhiễu rate-control. **GIỮ hiệu ứng**
+(anh Hùng: không bỏ cái nào) và thay bằng ca canh CẢ 25 KIỂU.
+Đối chứng để biết ngưỡng: lỗi rò CÓ THẬT (`rung_lac` bản `crop`+`scale`) từng đo
+**18,7%** pixel. Trần cổng đặt ở 1,0 (U/V) và 3% — nằm giữa 0,05 và 18,7.
+Nếu muốn tuyệt đối 0,000: `sobel=planes=1` / `edgedetect=mode=canny:planes=y`
+chạy thẳng trong YUV (đo 0,000/0,000/0,00%) nhưng đổi tới **99% pixel** trong cửa
+sổ = xoá mất khung cảnh, nên KHÔNG dùng.
+
+## 2. ĐÃ NỐI VÀO APP — anh Hùng bấm tới được rồi
+`editor.py` (ô "Hiệu ứng điểm nhấn", 4 mức, **nhãn không emoji**) -> khoá mẫu
+`hieu_ung` -> `studio_page` (qua `self.layout_tpl` mà **`_export_video` cửa duy
+nhất** đặt vào — cổng 19) -> `services.enqueue_export` (payload **+ sig dedup**)
+-> `m1_highlight` -> `export_canvas_clip` + `hieu_ung_log` -> nhật ký dây chuyền.
+
+**MẶC ĐỊNH `nhe` CHO MẪU CŨ** => **200-300 kênh sẽ CÓ hiệu ứng điểm nhấn NGAY
+khi cập nhật.** Muốn tắt hết thì đổi 3 chỗ: `editor._apply_layout`,
+`studio_page._export_video_inner`, `m1_highlight`.
+
+## 3. GIÁ PHẢI TRẢ (3 đoạn = 24s · 1080x1920 · nvenc · máy rảnh 9,5% · lặp 3)
+| ca | wall | CPU-giây | so TẮT |
+|---|---|---|---|
+| TẮT hết (đường cũ) | 5,56s | 20,56 | — |
+| chỉ chuyển cảnh 'nhe' | 8,51s | 36,69 | 1,53x |
+| chỉ điểm nhấn 'nhe' | 7,44s | 29,25 | 1,34x |
+| chỉ điểm nhấn 'vua' | 7,96s | 33,52 | 1,43x |
+| chỉ điểm nhấn 'manh' | 7,89s | 34,62 | 1,42x |
+| **MẶC ĐỊNH MỚI (nhe+nhe)** | **10,38s** | **47,36** | **1,87x** |
+| manh+manh (GPU) | 8,92s | 33,16 | 1,60x |
+
+**PHÁT HIỆN:** mức 'manh' + GPU **RẺ HƠN** mức mặc định (1,60x vs 1,87x wall) vì
+đường GPU cắt 2n-1 mảnh rồi concat, **KHÔNG encode lại TOÀN CLIP** ở pha 1.5 như
+đường `xfade` CPU. Muốn hạ giá mặc định thì hướng đi là đó.
+
+## 4. NHÓM GPU — ĐÃ NỐI (21 chuyển cảnh), SHADER THÌ CHƯA
+Mức 'manh' + máy có OpenCL -> dùng kernel gl-transitions. `nhe`/`vua` giữ CPU
+nên 200-300 kênh không đổi hành vi. Kiến trúc: **2n-1 mảnh + concat demuxer**
+(`_tach_va_noi_gpu`) vì `xfade_opencl` KHÔNG nối cả clip được (bẫy 2 `hwupload`).
+Fallback 3 lớp: thiếu OpenCL -> `GPU_LUI_VE` đổi sang kiểu CPU · GPU hỏng giữa
+chừng -> dọn mảnh rồi làm lại bằng CPU · **HUỶ thì ném tiếp, không lùi**.
+
+**LỖI THẬT tìm được khi làm:** đếm bằng GIÂY thì mỗi mảnh làm tròn LÊN trọn khung
+mà concat demuxer CỘNG DỒN -> clip 3 đoạn ra **17,067s thay vì 17,000s**; 4 đoạn
+sẽ +7 khung = 0,117s = **vượt mốc lệch 80 ms**. Chữa: chốt SỐ KHUNG từng mảnh
+(`-frames:v` + `-t` đầu ra). Đo lại 2/3/4 đoạn đều lệch **0 ms**.
+
+**6 SHADER libplacebo: CHƯA NỐI.** Lý do kỹ thuật, không phải quên: `libplacebo`
+**không có timeline `enable`** và cần `hwupload`/`hwdownload` -> áp là áp **TOÀN
+CLIP**, trái luật chống loè số 1 (hiệu ứng chỉ 0,3-0,8s ở điểm nhấn). Muốn dùng
+phải cắt clip ở điểm nhấn thành mảnh riêng như đường GPU — làm được, nhưng là
+việc riêng.
+
+## 5. BẪY MỚI (đừng lặp)
+- `QApplication.instance() or QApplication([])` **đứng trơ, không giữ biến** ->
+  Python thu hồi QApplication -> chết **0xC0000409** lúc dựng QDialog, KHÔNG
+  traceback, `faulthandler` cũng không bắt được, `*>` của PowerShell mất SẠCH
+  output nên rất dễ tưởng "test treo".
+- Dựng Qt trong CÙNG tiến trình đã chạy ffmpeg-OpenCL cũng chết 0xC0000409 ->
+  phần UI của cổng 38 chạy ở **tiến trình riêng**.
+- Đo chuyển cảnh phải đo ở **[a, a+d]** (phép bù lấy thêm phim ở CUỐI đoạn A),
+  KHÔNG phải [a-d, a] -> đo trước mốc ra 0,0% và FAIL OAN.
+- Hiệu ứng dao động (`nhay_sang`, sin 4,5 lần/giây) phải đo **ĐỈNH trên mọi
+  khung** trong cửa sổ; đo 1 khung có thể rơi đúng chỗ sin=0 -> 0,0% FAIL OAN.
+- `zoompan` đóng dấu lại mốc thời gian theo `fps` truyền vào -> khi ĐO phải ép
+  `fps=` ở đầu graph cho khớp, không thì khung cùng chỉ số là nội dung KHÁC.

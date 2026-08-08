@@ -339,8 +339,19 @@ def ca_ham_thuan() -> None:
             len(set(kieus)) >= 2, str(kieus))
         bao(f"mức '{m}': thời lượng trong 0,25-0,40s",
             all(0.25 <= d <= 0.40 for d in dais), str(dais))
-        bao(f"mức '{m}': kiểu đều thuộc 58 kiểu ffmpeg",
-            all(k in fu.XFADE_KIEU for k in kieus), str(kieus))
+        # Mức 'manh' được phép dùng KERNEL GPU (kho gl-transitions, MIT) khi máy
+        # có OpenCL — kiểu GPU KHÔNG nằm trong 58 kiểu của `xfade`. Máy thiếu
+        # OpenCL thì `chon_chuyen_canh` đã tự đổi về kiểu CPU (`GPU_LUI_VE`) nên
+        # ca này phải đúng ở CẢ HAI loại máy.
+        from app.core import hieu_ung_gpu as _HG
+        bao(f"mức '{m}': kiểu đều CÓ THẬT (58 kiểu xfade hoặc kernel GPU)",
+            all(k in fu.XFADE_KIEU or k in _HG.KHO_GPU for k in kieus),
+            str(kieus))
+        _gpu_k = [k for k in kieus if k in _HG.KHO_GPU]
+        bao(f"mức '{m}': mọi kiểu GPU đều có đường LÙI về CPU",
+            all(fu.GPU_LUI_VE.get(k) in fu.XFADE_KIEU for k in _gpu_k),
+            str([f"{k}->{fu.GPU_LUI_VE.get(k, '-')}" for k in _gpu_k])
+            if _gpu_k else "(mức này không dùng GPU)")
     bao("chọn kiểu TIỀN ĐỊNH (gọi 2 lần ra y nhau, không bốc thăm)",
         fu.chon_chuyen_canh(segs, "vua") == fu.chon_chuyen_canh(segs, "vua"),
         str(fu.chon_chuyen_canh(segs, "vua")))

@@ -86,7 +86,11 @@ def main() -> int:
                     str(src), str(f),
                     [(60.0, 70.0), (20.0, 30.0)],     # NGƯỢC = hook-first
                     (0.5, 0.42, 0.98), bg="blur", out_w=1080, out_h=1920,
-                    ass_path=str(ass), fx_fade=True, fx_whoosh=True)
+                    ass_path=str(ass), fx_fade=True, fx_whoosh=True,
+                    # MẶC ĐỊNH MỚI cũng phải chịu được tải nặng: đặt
+                    # BQ_DO_XF/BQ_DO_HU để so "đường cũ" với "mặc định mới".
+                    chuyen_canh=os.environ.get("BQ_DO_XF", ""),
+                    hieu_ung=os.environ.get("BQ_DO_HU", ""))
                 xong["n"] += 1
             except Exception as e:                        # noqa: BLE001
                 xong["loi"].append(f"{i}.{k}: {type(e).__name__}: {e}"[:120])
