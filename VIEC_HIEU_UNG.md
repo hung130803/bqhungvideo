@@ -1012,3 +1012,41 @@ luồng/tiến trình nvenc, ngân sách 2×24=48). Hệ quả đo được ở 
 chia cho 40 = 1 tiến trình. Muốn thông lượng thì phải nới mốc luồng.
 **Đề xuất: anh Hùng chọn**, tôi KHÔNG tự đổi mặc định vì N=1 là quyết định anh
 đã chốt. Núm sẵn có: `BQ_FFMPEG_SLOTS=<N>` (không cần phát hành bản mới).
+
+## MÁY NHÂN VIÊN + BẢN ĐÓNG GÓI
+
+### Build `.exe` — ĐÃ LÀM (lượt trước còn nợ)
+`.venv-build\Scripts\python.exe -m PyInstaller BQHungVideo.spec --noconfirm --clean`
+(**KHÔNG** dùng `.venv` — bẫy 06/08). Kiểm bằng **cổng 39: 12 ĐẠT / 0 FAIL**:
+
+| kiểm | bản 22/07 (cũ) | bản mới 08/08 12:17 |
+|---|---|---|
+| ngày sửa `.exe` | 22/07 (cũ hơn mã 17 ngày) | **08/08 12:17, MỚI HƠN mã nguồn** |
+| `assets/sfx` | **43/185 file** (thiếu 142 tiếng động!) | **185/185** |
+| `assets/fonts` | 12/12 | 12/12 |
+| `assets/hieu_ung` | **0/26** (mất sạch) | **26/26** (frei0r 18 file) |
+
+**Dung lượng — KHÔNG PHÌNH:** 615,6 MB → **620,3 MB (+4,7 MB = +0,8%)** mà lại
+ĐỦ tài nguyên. (Build tay chưa dọn ra 727,0 MB; chênh 106,7 MB là
+`googleapiclient/discovery_cache/documents` 97,7 MB + `PyQt6/Qt6/translations`
+9,0 MB — `release.yml` **có** bước xoá 2 thư mục này, build tay thì không.)
+
+**Chạy thử `.exe` thật** (sandbox): `BQHungVideo.exe --analyze 999999` nạp trọn
+bundle, tạo DB, báo đúng "Không tìm thấy video id=999999", exit 1, **không crash**.
+
+### Chạy trên VENV KHÁCH + giả lập máy yếu (`_ra_may_nhanvien.py`) — 11 ĐẠT / 0 FAIL
+Chạy bằng `.venv-build` = đúng bộ `requirements-build.txt` mà `.exe` gói.
+
+| kiểm | kết quả |
+|---|---|
+| venv khách đúng là bộ rút gọn | thiếu `cv2` + `torch` + `mediapipe` + `faster_whisper` |
+| app **nạp được** khi thiếu cv2 | **ĐƯỢC** (jobs + ffmpeg_utils + hieu_ung + studio_page + main) |
+| thiếu **frei0r** | kho hiệu ứng tự co **25 → 14**, không nổ, nêu được lý do |
+| thiếu **OpenCL + Vulkan** | nhóm GPU trả **[]**, **21/21 kiểu đều có đường lùi** xfade CPU |
+| thiếu **NVENC** + 0 frei0r + 0 GPU **cùng lúc**, mức `manh`+`manh` | clip **đúng 12,000s · 360 khung thật · 10.506 KB · CÒN TIẾNG** |
+| rác `_seg_*`/`_nhip_*` · ffmpeg mồ côi | **0 · 0** |
+
+**LƯU Ý VỀ VENV KHÁCH:** 2 cổng đếm pixel (36 `_test_chuyen_canh`, 38
+`_test_hieu_ung_ai`) **không chạy được** ở venv khách vì cần `cv2` — mà
+`requirements-build.txt` **cố ý** không gói opencv. Đó là giới hạn của BỘ TEST,
+không phải của app: app không cần cv2 để xuất clip (đã chứng minh ở bảng trên).
