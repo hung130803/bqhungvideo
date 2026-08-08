@@ -68,6 +68,12 @@ TIEN_TO = (
     "gia_hu_", "do5loi_", "_nhip_", "_gpuchk_", "_lpchk_", "_vn_", "_vien_",
     # cổng 42 + script đo rò mảnh `_seg_*` (cũng xuất video thật)
     "racbao_", "do_roseg_", "probe_hu",
+    # cổng 43/44 + script đo hiệu ứng/tiếng động (xuất video 1080x1920 THẬT).
+    # Lượt nào bị giết giữa chừng (Ctrl-C, pipeline PowerShell cắt sớm, crash
+    # native) thì `finally` KHÔNG chạy -> thư mục nằm lại. Đo thật 08/08/2026:
+    # 10 thư mục sót = 1,3 MB — nhỏ, nhưng đúng cái bệnh đã làm ổ C đầy 100%.
+    "test_hu_khung_", "test_tieng_hu_", "_dohu_", "_tienghu_", "_dotieng_",
+    "_dothu_", "_dochiphi_",
 )
 
 
