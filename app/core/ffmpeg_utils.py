@@ -102,20 +102,37 @@ _GATE_COND = _threading.Condition()
 _GATE_DANG = 0                  # số lệnh ffmpeg ĐANG chạy (đang giữ chỗ)
 # SÀN LUỒNG đo được của 1 tiến trình ffmpeg — dùng để chia ngân sách "tổng
 # luồng <= 2x số nhân" thành SỐ TIẾN TRÌNH. nvenc nặng hơn vì kéo pool CUDA.
+# SÀN luồng đo được của 1 tiến trình ffmpeg (tư liệu — công thức CŨ chia ngân
+# sách luồng cho 2 số này; nay chia theo SỐ NHÂN, xem `so_ffmpeg_song_song`).
 _SAN_LUONG_NVENC = 40           # đo: 36 (pha 2 siết hết) .. 49 (pha 1)
 _SAN_LUONG_CPU = 30             # đo: 27 (libx264 giải mã 4 + encode 4)
+# SỐ NHÂN dành cho MỖI lệnh ffmpeg — công thức chia chỗ từ 08/08/2026.
+# Đo thật ở N=1 trên 24 nhân: 1 lệnh xuất chỉ ăn ~1,37 nhân CPU thật (NVENC gánh
+# phần nặng), nên chia 8 nhân/lệnh là còn RẤT rộng tay; mức đó cho đúng N=3 trên
+# máy anh Hùng. Đường CPU (libx264) tự ăn hết nhân nên phải chia thưa hơn.
+_NHAN_MOI_LENH_NVENC = 8
+_NHAN_MOI_LENH_CPU = 12
 
 
 def so_ffmpeg_song_song() -> int:
     """SỐ LỆNH ffmpeg được phép chạy CÙNG LÚC — TỰ ĐO THEO MÁY.
 
-    Ngân sách: tổng luồng ffmpeg <= 2x số nhân logic (mốc chốt 07/08/2026, thay
-    mốc 1,5x cũ vì SÀN luồng mỗi tiến trình làm nó bất khả thi). Chia ngân sách
-    đó cho SÀN luồng mỗi tiến trình -> ra số tiến trình:
-      - 24 nhân + NVENC -> (2*24)//40 = 1
-      - 64 nhân + NVENC -> 3
-      -  8 nhân, CPU    -> 1   (máy nhân viên yếu)
-    Trần 4: hơn nữa thì GPU/đĩa thành nút cổ chai chứ không nhanh thêm.
+    ĐỔI CÁCH CHIA 08/08/2026 — anh Hùng chốt "ƯU TIÊN THÔNG LƯỢNG, chịu máy hơi
+    nặng". Công thức CŨ chia theo NGÂN SÁCH LUỒNG (tổng luồng <= 2x số nhân,
+    chia cho SÀN ~40 luồng/tiến trình) ra N=1 trên máy 24 nhân. Số đo ở N=1
+    (50 kênh / 10 làn, 08/08/2026):
+      - luồng ffmpeg đỉnh 35 = 1,46x nhân · trễ UI 13,7 ms  -> RẤT êm
+      - NHƯNG CPU cả máy chỉ dùng **14,3%** (1,37/24 nhân, bỏ không 85%) và
+        job thứ 50 đợi **15,4 phút** -> vượt mốc "nghẽn > 10 phút" của chính anh.
+    Mốc "<= 2x nhân" và "dùng hết máy" LOẠI TRỪ NHAU vì 1 tiến trình ffmpeg +
+    NVENC có SÀN ~36-40 luồng: 48 luồng ngân sách / 40 = 1 tiến trình. Anh Hùng
+    chọn thông lượng -> nay chia theo SỐ NHÂN, không theo ngân sách luồng:
+      - 24 nhân + NVENC -> 24//8  = **3**   (máy anh Hùng)
+      - 16 nhân + NVENC -> 2 ·  8 nhân -> 1 ·  4 nhân -> 1  (máy nhân viên)
+      - 24 nhân, CPU    -> 24//12 = 2      (libx264 tự ăn hết nhân, chia thưa)
+    Trần vẫn 4: ĐO ĐƯỢC N=4 KHÔNG nhanh hơn N=3 (37,85 vs 37,71 s) mà +32%
+    luồng, +12% CPU-giây -> nút cổ chai là GPU. ĐỪNG nới trần.
+    `ECO_MODE` ("Tiết kiệm máy") vẫn kéo về 1.
 
     `BQ_FFMPEG_SLOTS` (biến môi trường) ép cứng con số — dùng để ĐO từng mức và
     gỡ rối trên máy user mà không phải phát hành bản mới.
@@ -133,8 +150,8 @@ def so_ffmpeg_song_song() -> int:
     # này chạy TRONG cửa chờ -> tự khoá mình. Chỉ đọc cache / ý user.
     dung_gpu = (_ENCODER_CACHE == "h264_nvenc"
                 or settings.VIDEO_ENCODER == "nvenc")
-    san = _SAN_LUONG_NVENC if dung_gpu else _SAN_LUONG_CPU
-    return max(1, min(4, (2 * cores) // san))
+    moi = _NHAN_MOI_LENH_NVENC if dung_gpu else _NHAN_MOI_LENH_CPU
+    return max(1, min(4, cores // moi))
 
 
 def _xin_cho_ffmpeg() -> bool:
