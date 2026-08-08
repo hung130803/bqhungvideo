@@ -1341,7 +1341,12 @@ def export_stitched_clip(
     for i, m in enumerate(moments):
         s, e = m["start"], m["end"]
         cx = float(m.get("cx", 0.5))
-        seg_in += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
+        # `-threads` phải LẶP trước TỪNG `-i` (ffmpeg "tiêu" nó cho đúng đầu
+        # vào ngay sau đó) — xem chú thích dài ở `_build_xf` của pha 1.5, nơi
+        # lỗi này đo được **133 luồng = 5,54× nhân**. Ở đây n đầu vào đều là
+        # CÙNG một file nguồn nên chia đều ngân sách giải mã.
+        seg_in += ["-threads", str(max(1, decode_threads() // max(1, len(moments)))),
+                   "-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
         # LẬT GƯƠNG: hflip TRƯỚC reframe/concat/overlay -> chỉ hình soi
         # gương, overlay chữ + phụ đề chồng sau nên KHÔNG ngược.
         flip_f = "hflip," if flip_h else ""
@@ -1949,16 +1954,24 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
         # với input = chính file output.
         def _build_xf(enc: str, _g=graph, _v=vlab, _a=alab, _o=gop,
                       _in=list(noi)) -> list[str]:
-            # `-threads` TRƯỚC `-i` áp cho **TỪNG** đầu vào, mà pha 1.5 có n đầu
-            # vào -> tổng = n x decode_threads(). ĐO THẬT 10 làn: clip 2 đoạn
-            # làm đỉnh luồng 44 -> **61 (2,54x nhân)**, phá mốc "<= 2x nhân".
-            # Chia cho số đầu vào thì ngân sách giải mã giữ nguyên như 1 lệnh.
+            # `-threads` là tuỳ chọn THEO TỪNG ĐẦU VÀO: ffmpeg chỉ áp nó cho
+            # `-i` NGAY SAU nó rồi "tiêu" mất. Bản trước đặt **một lần** trước
+            # cả cụm `-i` và ghi chú là "áp cho TỪNG đầu vào" — **SAI**, chỉ
+            # đầu vào ĐẦU TIÊN bị siết, n-1 đầu vào còn lại vẫn `-threads 0`.
+            #
+            # ĐO THẬT khi TỔNG RÀ SOÁT 08/08/2026 (`_ra_luong_toan_may.py` soi
+            # MỌI ffmpeg trên máy): đúng lệnh này với **6 đầu vào** ăn **133
+            # luồng = 5,54× số nhân** dù dòng lệnh có `-threads 1` — khớp y
+            # phép tính 5 đầu vào × ~25 luồng mặc định + filter + encode.
+            # Đây là ĐỈNH LỚN NHẤT của cả lượt dây chuyền.
+            #
+            # Chữa: LẶP `-threads` trước TỪNG `-i`. Ngân sách vẫn chia đều nên
+            # tổng luồng giải mã không đổi so với lệnh 1 đầu vào.
             _dt = max(1, decode_threads() // max(1, len(_in)))
             c = [settings.FFMPEG_PATH, "-y",
-                 "-filter_complex_threads", str(min(4, encode_threads())),
-                 "-threads", str(_dt)]
+                 "-filter_complex_threads", str(min(4, encode_threads()))]
             for p in _in:
-                c += ["-i", p]
+                c += ["-threads", str(_dt), "-i", p]
             c += ["-filter_complex", _g, "-map", _v]
             if _a:
                 c += ["-map", _a]
