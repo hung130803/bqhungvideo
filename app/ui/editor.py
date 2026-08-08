@@ -356,7 +356,12 @@ def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
     # ---- LOGO KÊNH (watermark): logo={"path","pos","size","opacity"} ----
     # pos: tl|tr|bl|br; size: % chiều rộng khung (0..1); opacity 0..1
     if logo and logo.get("path"):
-        lp = QPixmap(str(logo["path"]))
+        # QImage chứ KHÔNG QPixmap: hàm này nay còn được gọi Ở LUỒNG NỀN (job
+        # xuất dựng lại ảnh chữ khi file _ovl_ đã mất — xem
+        # m1_highlight._dung_lai_anh_chu). QPixmap chỉ dùng được ở luồng GUI;
+        # QImage an toàn mọi luồng và cho ra ĐÚNG cùng kết quả (cùng phép thu
+        # nhỏ SmoothTransformation, cùng vị trí).
+        lp = QImage(str(logo["path"]))
         if not lp.isNull():
             lw = max(24, int(float(logo.get("size", 0.14)) * out_w))
             lp = lp.scaledToWidth(lw, Qt.TransformationMode.SmoothTransformation)
@@ -365,7 +370,7 @@ def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
             x = m if "l" in pos else out_w - m - lp.width()
             y = m if "t" in pos else out_h - m - lp.height()
             p.setOpacity(max(0.05, min(1.0, float(logo.get("opacity", 0.9)))))
-            p.drawPixmap(x, y, lp)
+            p.drawImage(x, y, lp)
             p.setOpacity(1.0)
             drawn = True
     p.end()
