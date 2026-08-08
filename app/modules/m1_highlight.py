@@ -26,6 +26,7 @@ from app.ai import recap as _recap   # dùng chung pattern CTA/chào đa ngôn n
 from app.core import face_track
 from app.core import vision_digest as _vd
 from app.core.analysis import get_analysis
+from app.core import ffmpeg_utils as _fu_bao   # cửa chờ: gắn hàm báo "đang đợi lượt"
 from app.core.ffmpeg_utils import (
     detect_black_crop, export_canvas_clip, export_stitched_clip,
     export_vertical_clip, extract_frame,
@@ -2787,6 +2788,52 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
                     f"{c.get('vi_sao', c.get('khoa', '?'))}\n")
 
 
+def _luu_da_ap(clip_id: int, hu_log: list, td_log: list, muc: str,
+               duong: str = "") -> None:
+    """Lưu vào `clips.signals['da_ap']` HIỆU ỨNG + TIẾNG ĐỘNG vừa đưa vào file.
+
+    Anh Hùng 08/08/2026: *"làm sao để biết có thêm hiệu ứng hay âm thanh gì k"*.
+    Thẻ clip trang chính đọc khoá này để hiện "3 hiệu ứng · 2 tiếng động" và
+    bấm ra xem chi tiết (giây nào · kiểu gì · LÝ DO KÈM SỐ).
+
+    KHÔNG SINH SỐ MỚI: chép nguyên `hieu_ung_log` / `tieng_dong_log` mà
+    `export_canvas_clip` vừa trả về — đúng thứ nằm trong file .mp4.
+    `duong='don'` = mẫu thiếu khung video nên Part đi nhánh 'clip đơn' (KHÔNG
+    hiệu ứng, KHÔNG chuyển cảnh, KHÔNG phụ đề) -> ghi thẳng cảnh báo đó vào thẻ,
+    đừng để user tưởng "app quên bật".
+    """
+    row = db.query_one("SELECT signals FROM clips WHERE id=?", (clip_id,))
+    if not row:
+        return
+    sig = db.loads(row["signals"], {}) or {}
+    sig["da_ap"] = {
+        "muc": str(muc or "tat"),
+        "duong": str(duong or ""),
+        "luc": time.time(),
+        "hieu_ung": [{"giay": round(float(c.get("bat", 0.0)), 2),
+                      "dai": round(float(c.get("het", 0.0))
+                                   - float(c.get("bat", 0.0)), 2),
+                      "khoa": str(c.get("khoa", "")),
+                      "ten": _ten_hieu_ung(str(c.get("khoa", ""))),
+                      "loai": str(c.get("loai", "")),
+                      "vi_sao": str(c.get("vi_sao", ""))}
+                     for c in (hu_log or [])],
+        "tieng_dong": [dict(t) for t in (td_log or [])],
+    }
+    db.execute("UPDATE clips SET signals=? WHERE id=?",
+               (db.dumps(sig), clip_id))
+
+
+def _ten_hieu_ung(khoa: str) -> str:
+    """Tên TIẾNG VIỆT của hiệu ứng (kho `app/core/hieu_ung.py`); lạ -> giữ khoá."""
+    try:
+        from app.core.hieu_ung import KHO
+        h = KHO.get(str(khoa))
+        return str(getattr(h, "ten", "") or khoa)
+    except Exception:  # noqa: BLE001
+        return str(khoa)
+
+
 def _join_categories(segs: list, recap_parts: list | None,
                      is_recap: bool, signals: dict | None = None) -> list:
     """NGỮ CẢNH cho MỖI điểm nối giữa các đoạn segs (len = len(segs)-1) ->
@@ -2984,7 +3031,12 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
     ovl = str(payload.get("overlay_png") or "")
     ovl_tmp = ovl if os.path.basename(ovl).startswith("_ovl_") else ""
     try:
-        result = _export_clip_impl(payload, ctx, temps)
+        try:
+            result = _export_clip_impl(payload, ctx, temps)
+        finally:
+            # GỠ hàm báo "đang đợi lượt" khỏi THREAD này. Worker dùng lại thread
+            # cho job khác — quên gỡ là job sau ghi tiến trình vào job cũ.
+            _fu_bao.dat_bao_cho(None)
     except CanceledError:
         _cleanup_files(temps + [ovl_tmp])
         raise
@@ -3072,8 +3124,23 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
 
     pfx = f"Part {part_no} — " if part_no > 0 else ""   # cho user biết đang xuất Part nào
 
+    # % HIỆN TẠI giữ ở đây để câu "đang đợi lượt" không kéo tụt thanh về 0.
+    _p_gio = [0.15]
+
     def on_prog(p: float):
-        ctx.progress(0.15 + 0.8 * p, f"{pfx}đang cắt + chèn chữ + xuất 9:16...")
+        _p_gio[0] = 0.15 + 0.8 * p
+        ctx.progress(_p_gio[0], f"{pfx}đang cắt + chèn chữ + xuất 9:16...")
+
+    def _bao_cho(msg: str) -> None:
+        """CỬA CHỜ ffmpeg gọi vào đây khi lượt xuất đang XẾP HÀNG.
+
+        Anh Hùng 08/08/2026: *"xuất đến 1 ngưỡng r đứng im k báo gì cả, phải
+        3 4 phút k hiện 1%"*. Lúc đợi chỗ thì chưa có ffmpeg nào in `time=` nên
+        thanh % KHÔNG nhích và cũng KHÔNG đổi chữ -> nhìn y như treo."""
+        ctx.progress(_p_gio[0], f"{pfx}{msg}")
+
+    # Gắn theo THREAD (worker chạy mỗi job 1 thread); `export_clip` gỡ ở finally.
+    _fu_bao.dat_bao_cho(_bao_cho)
 
     if video_rect:
         # ---- Mô hình CapCut: nền + khối video (ghép các khúc hay) ----
@@ -3350,6 +3417,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # HIỆU ỨNG ĐIỂM NHẤN: ffmpeg ghi vào list này cái nó THẬT SỰ đưa vào
         # file (kèm lý do + số đo) -> nhật ký dây chuyền in ra cho anh Hùng đọc.
         _hu_log: list = []
+        # TIẾNG ĐỘNG ở từng điểm nối — LIST RIÊNG của lượt này (đừng đọc biến
+        # toàn cục `_SFX_LAST_PICK`: 3 làn xuất song song thì nó là của clip nào
+        # xong sau cùng).
+        _td_log: list = []
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -3382,6 +3453,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             # Job cũ (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
             hieu_ung=str(payload.get("hieu_ung", "nhe") or "tat"),
             hieu_ung_log=_hu_log,
+            tieng_dong_log=_td_log,
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,
             flip_h=flip_h,
@@ -3456,6 +3528,20 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                                   and not (result_extra or {}).get("canvas")
                                   else "canvas")))
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
+        pass
+    # ---- CHO ANH HÙNG NHÌN THẤY: lưu ĐÚNG hiệu ứng + tiếng động vừa ĐƯA VÀO
+    # FILE vào `clips.signals` để thẻ clip ở trang chính hiện được nhãn
+    # "3 hiệu ứng · 2 tiếng động" + bấm ra xem chi tiết. Anh Hùng 08/08/2026:
+    # *"làm sao để biết có thêm hiệu ứng hay âm thanh gì k"* — trước nay chỉ
+    # nhật ký mới biết, mà nhật ký thì phải mở file log mới đọc được.
+    # KHÔNG tính lại gì cả: `_hu_log` là danh sách ffmpeg THẬT SỰ dùng (đã lọc
+    # theo font), `_td_log` là file tiếng động THẬT SỰ chèn.
+    try:
+        _luu_da_ap(clip_id, locals().get("_hu_log") or [],
+                   locals().get("_td_log") or [],
+                   str(payload.get("hieu_ung", "nhe") or "tat"),
+                   str((result_extra or {}).get("duong") or ""))
+    except Exception:  # noqa: BLE001 - ghi chú không được phép làm vỡ xuất
         pass
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",

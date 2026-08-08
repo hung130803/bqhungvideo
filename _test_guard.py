@@ -66,6 +66,8 @@ TIEN_TO = (
     # rác đã làm ổ C đầy 100% hôm 31/07 — phải có tên ở đây mới dọn được.
     "test_hu_ai_", "test_cabien_", "test_xfade_", "do_ui_", "demo_v4_",
     "gia_hu_", "do5loi_", "_nhip_", "_gpuchk_", "_lpchk_", "_vn_", "_vien_",
+    # cổng 42 + script đo rò mảnh `_seg_*` (cũng xuất video thật)
+    "racbao_", "do_roseg_", "probe_hu",
 )
 
 

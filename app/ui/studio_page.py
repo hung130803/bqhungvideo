@@ -7694,6 +7694,21 @@ class StudioPage(QWidget):
         sub = QLabel(f'{_dur(total)}{seg_note} · {c["reason"] or ""}'[:100])
         sub.setStyleSheet(f"color:{MUTED}; font-size:13px; border:none;")
         info.addWidget(_shrinkable(sub))
+        # ---- ĐÃ THÊM HIỆU ỨNG / TIẾNG ĐỘNG GÌ? (anh Hùng 08/08/2026: "làm sao
+        # để biết có thêm hiệu ứng hay âm thanh gì k"). Trước nay chỉ nhật ký
+        # mới biết. Nhãn KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ô đen).
+        fx = self._nhan_hieu_ung(sig)
+        if fx:
+            chu, mau, tip = fx
+            fx_lbl = QLabel(f"<a href='#' style='color:{mau}; "
+                            f"text-decoration:underline;'>{chu}</a>")
+            fx_lbl.setStyleSheet(f"color:{mau}; font-size:11px; "
+                                 "font-weight:700; border:none;")
+            fx_lbl.setToolTip(tip)
+            fx_lbl.setOpenExternalLinks(False)   # KHÔNG mở trình duyệt máy user
+            fx_lbl.linkActivated.connect(
+                lambda _=None, cc=c, n=part_no: self._xem_hieu_ung(cc, n))
+            info.addWidget(_shrinkable(fx_lbl))
         if len(segs) > 1:                 # CHO THẤY AI giữ/bỏ đoạn nào
             info.addWidget(_SegBar(segs))
         lay.addLayout(info, 1)
@@ -7767,6 +7782,84 @@ class StudioPage(QWidget):
         rm.clicked.connect(lambda _, cid=c["id"]: self._del_clip(cid))
         lay.addWidget(rm)
         return w
+
+    # ---- HIỆU ỨNG / TIẾNG ĐỘNG ĐÃ ĐƯA VÀO FILE ----------------------------
+    @staticmethod
+    def _nhan_hieu_ung(sig):
+        """(chữ, màu, tooltip) cho nhãn trên thẻ clip; None = KHÔNG hiện nhãn.
+
+        CHỈ đọc `signals['da_ap']` — số do `export_canvas_clip` trả về lúc xuất,
+        tức ĐÚNG cái nằm trong file .mp4. Clip CHƯA XUẤT (hoặc xuất bằng bản app
+        cũ) thì chưa có dữ liệu -> KHÔNG hiện nhãn, KHÔNG đoán bừa.
+        KHÔNG DÙNG EMOJI: máy anh Hùng thiếu glyph, emoji ra ô đen (cổng 9, 27).
+        """
+        da = (sig or {}).get("da_ap")
+        if not isinstance(da, dict):
+            return None
+        hu = da.get("hieu_ung") or []
+        td = da.get("tieng_dong") or []
+        if str(da.get("duong") or "") == "don":
+            return ("không hiệu ứng — mẫu thiếu khung video", WARN,
+                    "Mẫu của kênh này chưa có khung video nên Part đi nhánh "
+                    "'clip đơn': KHÔNG hiệu ứng, KHÔNG chuyển cảnh, KHÔNG phụ "
+                    "đề. Mở Chỉnh mẫu, kéo khối video rồi Lưu lại.")
+        p1 = f"{len(hu)} hiệu ứng" if hu else "không hiệu ứng"
+        p2 = f"{len(td)} tiếng động" if td else "không tiếng động"
+        mau = ACCENT if (hu or td) else MUTED
+        return (f"{p1} · {p2}", mau,
+                "Bấm để xem đặt ở giây nào, kiểu gì, vì sao (kèm số đo).")
+
+    def _xem_hieu_ung(self, c, part_no=1):
+        """Hộp CHI TIẾT hiệu ứng + tiếng động của 1 clip — chỉ hiện số ĐÃ CÓ."""
+        sig = db.loads(c["signals"], {}) or {}
+        da = sig.get("da_ap") or {}
+        hu = da.get("hieu_ung") or []
+        td = da.get("tieng_dong") or []
+        dong = [f"PART {part_no} — {c['title'] or 'Clip'}", ""]
+        if str(da.get("duong") or "") == "don":
+            dong += ["CẢNH BÁO: mẫu của kênh này CHƯA có khung video "
+                     "(video_rect) nên Part đi nhánh 'clip đơn':",
+                     "  KHÔNG hiệu ứng điểm nhấn · KHÔNG chuyển cảnh · "
+                     "KHÔNG đốt phụ đề.",
+                     "  Mở 'Chỉnh mẫu', kéo khối video vào khung rồi Lưu lại.",
+                     ""]
+        muc = str(da.get("muc") or "tat")
+        ten_muc = {"tat": "TẮT", "": "TẮT", "nhe": "nhẹ", "vua": "vừa",
+                   "manh": "mạnh"}.get(muc, muc)
+        dong.append(f"HIỆU ỨNG ĐIỂM NHẤN (mức {ten_muc}): {len(hu)} điểm")
+        if not hu:
+            dong.append("  (không điểm nào — clip phẳng, không có cao trào "
+                        "đủ nổi so với trung vị)")
+        for h in hu:
+            dong.append(
+                f"  · giây {float(h.get('giay', 0)):.1f} "
+                f"(dài {float(h.get('dai', 0)):.2f}s) — "
+                f"{h.get('ten') or h.get('khoa') or '?'}")
+            if h.get("vi_sao"):
+                dong.append(f"      vì sao: {h['vi_sao']}")
+        dong += ["", f"TIẾNG ĐỘNG CHỖ NỐI ĐOẠN: {len(td)} điểm"]
+        if not td:
+            dong.append("  (không có — clip 1 đoạn, hoặc đã tắt tiếng "
+                        "chuyển đoạn)")
+        for t in td:
+            dong.append(
+                f"  · giây {float(t.get('giay', 0)):.1f} — loại "
+                f"{t.get('loai', '?')} — {t.get('ten', '?')} "
+                f"({t.get('nguon', '')})")
+        d = QDialog(self)
+        d.setWindowTitle("Clip này có hiệu ứng / tiếng động gì?")
+        d.resize(620, 460)
+        lay = QVBoxLayout(d)
+        box = QPlainTextEdit("\n".join(dong))
+        box.setReadOnly(True)
+        lay.addWidget(box)
+        hang = QHBoxLayout()
+        hang.addStretch(1)
+        dong_nut = QPushButton("Đóng")
+        dong_nut.clicked.connect(d.accept)
+        hang.addWidget(dong_nut)
+        lay.addLayout(hang)
+        d.exec()
 
     def _thumb(self, c, sig, vrow):
         """Trả QPixmap thumbnail từ CACHE (đã tạo). Chưa có -> None (tạo ngầm sau)."""

@@ -158,6 +158,18 @@ def quet_data_dir(data_dir: Path) -> tuple[int, int]:
 def quet_tat(data_dir: Path | None = None, gio_min: float = 1.0) -> tuple[int, float]:
     """Dọn hết. Trả (số mục, số MB). KHÔNG bao giờ ném lỗi ra ngoài."""
     n = byte = 0
+    # MẢNH `_seg_*` MỒ CÔI của lần chạy TRƯỚC — dọn NGAY, không đợi đủ 2 giờ.
+    # Luật 2 giờ dưới đây là để tránh đụng lượt xuất ĐANG chạy; nay tên mảnh có
+    # đóng dấu PID nên biết chắc chủ nó đã chết hay chưa (`don_seg_mo_coi`).
+    # Máy anh Hùng tự cập nhật + tắt app giữa chừng liên tục, `os._exit` khiến
+    # `finally` không chạy -> đợi 2 giờ là để rác nằm lại cả buổi.
+    try:
+        from app.core.ffmpeg_utils import don_seg_mo_coi
+        a, b = don_seg_mo_coi()
+        n += a
+        byte += b
+    except Exception:  # noqa: BLE001 - dọn rác không được làm app chết
+        pass
     try:
         a, b = quet_temp(gio_min)
         n += a
