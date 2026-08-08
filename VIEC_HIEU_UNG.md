@@ -1381,3 +1381,23 @@ Quét thêm: `hieu_ung.py` và `chon_chuyen_canh`/`_loai_cho_noi` **không có**
 nên không dùng làm mẫu lời nói). Vì vậy 3 nhóm Trung/Thái/Ả Rập **chỉ kiểm được
 điều 3 và 5** (không cần tiếng thật). Muốn phủ nốt thì cần anh Hùng cho **1-2
 video thật mỗi thứ tiếng**.
+
+## 7. VIỆC A — 6 shader `libplacebo`: **VẪN CHƯA NỐI** (nói thẳng, kèm lý do)
+Không phải quên. `libplacebo` **không có timeline `enable`** và cần
+`hwupload`/`hwdownload`, nên áp là áp **TOÀN CLIP** — trái luật chống loè số 1
+(hiệu ứng chỉ 0,3-0,8 s ở điểm nhấn).
+
+Lượt này tôi đã dựng xong đúng công cụ cần cho nó (`_tach_va_noi_manh`, kiến
+trúc 2n−1) **nhưng nó giải bài KHÁC**: nó cắt ở **chỗ NỐI GIỮA CÁC ĐOẠN** (pha
+1, trên phim gốc), còn hiệu ứng điểm nhấn nằm **BÊN TRONG một đoạn, trên
+timeline ĐẦU RA** (sau pha 2: nền mờ + overlay + đốt `.ass` + tốc độ). Muốn cắt
+mảnh ở điểm nhấn thì phải cắt **clip đã xuất**, mà cắt ở khung bất kỳ thì
+**không stream-copy được** → phải encode lại cả 3 mảnh = **thêm một lượt encode
+toàn clip**, tức đi ngược hẳn việc C vừa làm (bỏ một lượt encode toàn clip để hạ
+giá 15%). Đổi lại chỉ được thêm **6 hiệu ứng** trên kho **đã có 25 frei0r + 21
+chuyển cảnh GPU**.
+
+→ **Khuyến nghị: để lượt sau**, và chỉ làm nếu anh Hùng xem 6 shader đó rồi nói
+là cần. Cách rẻ hơn nếu vẫn muốn: gắn shader vào **pha 1.5** (mảnh mezzanine
+đang có sẵn ở chỗ nối) thay vì điểm nhấn — lúc đó nó thành **chuyển cảnh** chứ
+không phải điểm nhấn.

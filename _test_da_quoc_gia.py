@@ -240,16 +240,34 @@ def main() -> int:
     # ───────────────────────────────────────────────────────────────────
     print("\n══ 0. QUÉT TĨNH: `.split()` đếm từ + so TÊN ngôn ngữ thay vì MÃ ══")
     import inspect
-    # (a) mã MỚI (hiệu ứng · chuyển cảnh · GPU) không được đếm từ bằng .split()
-    for mod, ten in ((hieu_ung, "hieu_ung.py"),):
-        ma = inspect.getsource(mod)
-        xau = [ln for ln in ma.splitlines()
-               if ".split()" in ln and ("len(" in ln or "từ" in ln.lower())]
-        kiem(not xau, f"{ten}: KHÔNG đếm từ bằng `.split()`",
+    # (a) mã MỚI (hiệu ứng · chuyển cảnh · GPU · bảng mẫu) KHÔNG được đếm từ /
+    # đo mật độ chữ bằng `.split()` — với CJK là đếm sai gần hết.
+    for f_ma in (REPO / "app" / "core" / "hieu_ung.py",
+                 REPO / "app" / "core" / "hieu_ung_gpu.py",
+                 REPO / "_do_hieu_ung_bang.py"):
+        if not f_ma.exists():
+            bo_qua(f"quét tĩnh {f_ma.name}", "không có file")
+            continue
+        xau = [ln for ln in f_ma.read_text(encoding="utf-8",
+                                           errors="replace").splitlines()
+               if ".split()" in ln and ("len(" in ln or "mật độ" in ln.lower()
+                                        or "đếm từ" in ln.lower())]
+        kiem(not xau, f"{f_ma.name}: KHÔNG đếm từ bằng `.split()`",
              "; ".join(x.strip()[:70] for x in xau))
     ma_fu = inspect.getsource(fu.chon_chuyen_canh) + inspect.getsource(
-        fu._loai_cho_noi)
+        fu._loai_cho_noi) + inspect.getsource(fu._tach_va_noi_manh)
     kiem(".split()" not in ma_fu, "chuyển cảnh: KHÔNG đếm từ bằng `.split()`")
+    # (a2) mã MỚI cũng KHÔNG được đọc CHỮ/NGÔN NGỮ để chọn hiệu ứng
+    for f_ma in (REPO / "app" / "core" / "hieu_ung.py",
+                 REPO / "app" / "core" / "hieu_ung_gpu.py"):
+        if not f_ma.exists():
+            continue
+        t = f_ma.read_text(encoding="utf-8", errors="replace")
+        xau = [ln for ln in t.splitlines()
+               if ('"language"' in ln or "'language'" in ln
+                   or 'get("lang"' in ln or "transcript" in ln)]
+        kiem(not xau, f"{f_ma.name}: KHÔNG đọc ngôn ngữ/transcript",
+             "; ".join(x.strip()[:70] for x in xau))
     # (b) hàm đếm-từ dùng chung phải CJK-aware
     kiem(len(RC._word_tokens("今日はすごい")) > 1,
          "`_word_tokens` tách được câu Nhật không dấu cách",

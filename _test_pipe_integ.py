@@ -80,7 +80,9 @@ def _tim_nguon(dich: Path) -> str:
             # PHẢI ĐỦ DÀI: bản gốc của test dùng video YouTube 10 PHÚT. Video
             # dưới ~4 phút không đủ chỗ cho 3 Part >= 60s -> dây chuyền chạy
             # xong mà "không có Part nào được xuất" (đã đo: nguồn 88,8s ra 0 Part).
-            if not (240 <= _do_dai(p) <= 1500):
+            # Trần 700s: bước PHÂN TÍCH (cảnh + mặt + chép lời) tỉ lệ thuận với
+            # độ dài; nguồn 1.062s đo thật ăn hết hạn 540s mà chưa xong.
+            if not (240 <= _do_dai(p) <= 700):
                 continue
             shutil.copy(p, dich)
             return f"video THẬT trên máy: {p}"
@@ -92,6 +94,22 @@ os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
 os.environ["WHISPER_PROVIDER"] = "groq"
+# KEY GROQ PHẢI CHUYỀN VÀO SANDBOX — bài học cổng 22, và cổng này đang dính:
+# `config.py` nạp `.env` từ `DATA_DIR`, mà `BQ_DATA_DIR` trỏ vào thư mục TẠM ->
+# sandbox 0 key -> `transcribe()` lùi về whisper MÁY và `llm.is_configured()`
+# False -> AI chọn đoạn KHÔNG chạy -> **0 clip -> 0 Part** rồi báo "không có
+# Part nào được xuất". Đo thật 08/08/2026: cột `analysis.engine` ghi
+# `stable-ts:large-v3` (không phải `groq:...`) — đúng dấu vết của lỗi này.
+# Đọc `.env` THẬT rồi chuyền qua BIẾN MÔI TRƯỜNG, KHÔNG ghi ra file nào.
+_env_that = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
+             / "BQHungVideo" / ".env")
+if _env_that.exists():
+    for _ln in _env_that.read_text(encoding="utf-8",
+                                   errors="replace").splitlines():
+        _k, _, _v = _ln.partition("=")
+        _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+        if _k in ("GROQ_API_KEYS", "GROQ_KEYS_FILE") and _v:
+            os.environ.setdefault(_k, _v)
 sys.path.insert(0, r"D:\claude\ai-content-studio")
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
@@ -99,6 +117,9 @@ root = T / "daychuyen"
 chdir = root / "Kênh Integ"
 chdir.mkdir(parents=True)
 src = chdir / "video_that.mp4"
+_nk = len([x for x in os.environ.get("GROQ_API_KEYS", "").replace(",", "\n")
+           .splitlines() if x.strip()])
+print(f"[key Groq] {_nk} key (0 = tụt whisper MÁY, AI chọn đoạn KHÔNG chạy)")
 print("[nguồn]", _tim_nguon(src))
 if not src.exists() or src.stat().st_size == 0:
     print("BO QUA: khong dung duoc video nguon nao (khong co file dat tay, "
@@ -146,7 +167,7 @@ pg = StudioPage(state)
 n = pg._pipe_run()
 print(f"nhan {n} video (video YouTube THAT 10 phut)")
 
-deadline = time.time() + 540
+deadline = time.time() + 900   # 540s không đủ cho video thật ~10 phút
 final = None
 while time.time() < deadline:
     app.processEvents()
