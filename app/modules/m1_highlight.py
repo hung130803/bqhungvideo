@@ -2716,12 +2716,24 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
 
 
 def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
-                   hu_log: list | None = None, duong: str = "canvas") -> None:
+                   hu_log: list | None = None, duong: str = "canvas",
+                   td_log: list | None = None) -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
-    file tiếng động ffmpeg vừa chọn (`ffmpeg_utils._SFX_LAST_PICK`) — không đoán
-    lại từ mẫu, vì mục đích là để đối chiếu khi thấy "chọn X ra Y".
+    tiếng động của **CHÍNH LƯỢT NÀY** (`td_log`) — không đoán lại từ mẫu, vì
+    mục đích là để đối chiếu khi thấy "chọn X ra Y".
+
+    **LỖI THẬT (lượt kiểm ĐỘC LẬP 08/08/2026):** hàm này đọc biến TOÀN CỤC
+    `ffmpeg_utils._SFX_LAST_PICK`. Chính file này đã ghi ở chỗ gọi
+    `export_canvas_clip` rằng *"đừng đọc biến toàn cục `_SFX_LAST_PICK`: 3 làn
+    xuất song song thì nó là của clip nào xong sau cùng"* — và đó đúng là lý do
+    `tieng_dong_log` được thêm ở v2.17. Thẻ clip (`_luu_da_ap`) đã dùng list
+    riêng, nhưng NHẬT KÝ DÂY CHUYỀN — thứ anh Hùng mở ra đọc khi nghi "sao Part
+    này không có tiếng" — thì vẫn đọc biến toàn cục. Máy anh Hùng chạy **3 chỗ
+    ffmpeg song song** (24 nhân + NVENC), nên dòng nhật ký của Part A có thể là
+    tiếng của Part B. Nay ưu tiên `td_log`; chỉ khi caller không truyền mới lùi
+    về biến toàn cục (giữ tương thích cho lối gọi cũ).
     """
     from datetime import datetime
 
@@ -2737,11 +2749,17 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
         cap = ("TẮT ⚠ MẪU THIẾU KHUNG VIDEO nên KHÔNG đốt được phụ đề — "
                "mở Chỉnh mẫu, kéo khối video rồi Lưu lại")
     ten_mau = _cs.get("_mau") or "(không rõ)"
-    # tiếng động: ffmpeg ghi lại từng điểm nối đã chèn gì
+    # tiếng động: ffmpeg ghi lại từng mốc đã chèn gì — LIST RIÊNG của lượt này
+    import os as _os
     tieng = []
-    for cat, f in (getattr(_fu, "_SFX_LAST_PICK", None) or []):
-        import os as _os
-        tieng.append(f"{cat}/{_os.path.basename(str(f)) if f else 'tự-sinh'}")
+    if td_log is not None:
+        for x in (td_log or []):
+            tieng.append(f"{x.get('giay')}s {x.get('vai') or ''}/"
+                         f"{x.get('loai')}/{_os.path.basename(str(x.get('ten')))}"
+                         f" {x.get('db', 0):+.1f}dB")
+    else:                       # lối gọi cũ không truyền -> lùi biến toàn cục
+        for cat, f in (getattr(_fu, "_SFX_LAST_PICK", None) or []):
+            tieng.append(f"{cat}/{_os.path.basename(str(f)) if f else 'tự-sinh'}")
     if not tieng:
         tieng = ["KHÔNG có (clip 1 đoạn hoặc đã tắt tiếng chuyển đoạn)"]
     hieu_ung = []
@@ -3621,7 +3639,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                        duong=str((result_extra or {}).get("duong") or
                                  ("mixed" if (result_extra or {}).get("mixed")
                                   and not (result_extra or {}).get("canvas")
-                                  else "canvas")))
+                                  else "canvas")),
+                       # TIẾNG ĐỘNG của CHÍNH lượt này — không đọc biến toàn
+                       # cục (3 làn xuất song song là đọc nhầm clip khác).
+                       td_log=locals().get("_td_log") or [])
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
         pass
     # ---- CHO ANH HÙNG NHÌN THẤY: lưu ĐÚNG hiệu ứng + tiếng động vừa ĐƯA VÀO

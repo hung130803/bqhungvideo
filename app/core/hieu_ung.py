@@ -58,6 +58,9 @@ TY_LE_MAX = 0.10
 #: Đo trên 3 video Nhật thật: dải động tiếng 2,1-6,4 · hình 1,9-4,8; nguồn
 #: `sine` phẳng tuyệt đối ra 1,00. Ngưỡng 1,35 nằm giữa, không đụng video thật.
 PHANG = 1.35
+#: SỐ ĐO NHỊP phải phủ ít nhất bấy nhiêu phần thời lượng mới được coi là "ĐO
+#: ĐƯỢC" (xem `do_du`). Cái phanh cho lỗi ÂM THẦM "đo cụt -> 0 điểm nhấn".
+DO_PHU_TOI_THIEU = 0.70
 
 #: 4 mức cho ô chọn trong Chỉnh mẫu. NHÃN KHÔNG DÙNG EMOJI — máy anh Hùng thiếu
 #: glyph nên emoji ra Ô ĐEN ("xấu quá tự nhiên có cái ô đen", v2.6.22; cổng 9 và
@@ -859,6 +862,38 @@ def dai_dong(xs: list) -> float:
         return 0.0
     tv = _tv(ys)
     return (max(ys) / tv) if tv > 1e-9 else 0.0
+
+
+def do_du(nl: list, cd: list, giay: float) -> bool:
+    """SỐ ĐO NHỊP có PHỦ ĐỦ clip không? Hàm THUẦN — test được.
+
+    === VÌ SAO PHẢI CÓ (lượt kiểm ĐỘC LẬP 08/08/2026) ===
+    `do_nhip` trả 1 giá trị/giây. Khi nó chỉ đo được MẤY GIÂY ĐẦU mà vẫn trả
+    danh sách (không lỗi, không ngoại lệ), `chon_hieu_ung` coi đó là số đo THẬT
+    của cả clip:
+      * mấy giây đầu tình cờ ĐỀU  -> `dai_dong` = 1,00 < `PHANG` -> **0 ĐIỂM
+        NHẤN**, clip trần trụi, KHÔNG một dòng báo;
+      * mấy giây đầu có biến động -> mọi điểm nhấn DỒN vào đầu clip, phần sau
+        (kể cả câu chốt) trắng trơn.
+    ĐO THẬT trên chính hàm `chon_hieu_ung` (clip 16 s, 3 cao trào ở giây 7/11/14,
+    mức "vua", cùng bộ kiểu dùng được):
+        đo ĐỦ 16/16 giây -> **3** điểm (7,0 · 11,0 · 14,0)
+        đo cụt  8/16 giây -> 3 điểm nhưng DỒN HẾT vào 0,0 · 3,0 · 7,0
+        đo cụt  4/16 giây -> **0 điểm**
+        KHÔNG đo được ([]) -> **3** điểm (6,0 · 11,0 · 14,0) — đường CẤU TRÚC
+    Tức "đo cụt" TỆ HƠN "không đo được", mà lại là trường hợp DUY NHẤT không ai
+    phát hiện ra. Đây đúng là lỗi đã xảy ra thật hôm 08/08/2026 (mảnh mezzanine
+    lệch `pix_fmt` -> ffmpeg dựng lại filter graph -> `metadata=print:file=`
+    GHI ĐÈ -> chỉ còn 4 giây trên 16 -> 0 điểm nhấn trên MỌI máy không NVENC).
+    Bản vá hôm đó bịt đúng MỘT nguyên nhân (`-pix_fmt yuv420p`); còn CÁI DÒ thì
+    chưa có — nên bất kỳ lý do nào khác làm dựng lại graph (đổi độ phân giải /
+    SAR / fps giữa các mảnh, đĩa đầy, file đo bị khoá) đều tái diễn y hệt, im
+    lặng. Hàm này là cái dò đó: đo cụt -> caller vứt số đo, đi đường CẤU TRÚC
+    (đường đã được kiểm kỹ, vẫn ra đủ điểm nhấn).
+    """
+    ky_vong = max(1.0, float(giay or 0.0))
+    n = max(len(nl or []), len(cd or []))
+    return n >= DO_PHU_TOI_THIEU * ky_vong
 
 
 def _diem_hap_dan(nl: list, cd: list) -> list[tuple[int, float]]:
