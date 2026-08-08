@@ -205,7 +205,11 @@ def ca_b(src: str) -> None:
     goc_tr, goc_ng1, goc_ng2 = (khung(src, BAT + 0.15), khung(src, 0.60),
                                 khung(src, 5.20))
     sh = [k for k, h in HU.KHO.items() if h.shader]
-    bao("đủ 6 shader trong kho", len(sh) == 6, f"{len(sh)}: {sorted(sh)}")
+    # 08/08/2026: kho còn **3** shader. `sh_net_hon`/`sh_quang_sang`/
+    # `sh_mo_net` đã GỠ — đo lại trên clip 1080x1920 THẬT chỉ đổi 1,87% /
+    # 0,47% / 2,16% pixel (ngưỡng thấy được 8%, sàn 3%); 2 trong 3 lại là bản
+    # sao GPU của kiểu CPU đang chạy tốt. Xem cổng 43 (`_test_hieu_ung_khung`).
+    bao("đủ 3 shader trong kho", len(sh) == 3, f"{len(sh)}: {sorted(sh)}")
     for k in sorted(sh):
         h = HU.KHO[k]
         het = BAT + max(HU.DAI_MIN, min(HU.DAI_MAX, h.dai))
@@ -246,12 +250,12 @@ def ca_b(src: str) -> None:
 def ca_c(src: str) -> None:
     print("\n[CA C] BẤT BIẾN: không shader -> KHÔNG mở Vulkan, chuỗi y như cũ")
     cpu = [{"bat": 1.0, "het": 1.4, "khoa": "zoom_nhoi", "dam": 0.18}]
-    gpu = [{"bat": 1.0, "het": 1.4, "khoa": "sh_net_hon", "dam": 0.18}]
+    gpu = [{"bat": 1.0, "het": 1.4, "khoa": "sh_hat_phim", "dam": 0.18}]
     bao("`can_vulkan([])` = False (mức Tắt)", HU.can_vulkan([]) is False, "[]")
     bao("`can_vulkan` bộ TOÀN hiệu ứng CPU = False",
         HU.can_vulkan(cpu) is False, "zoom_nhoi")
     bao("`can_vulkan` bộ CÓ shader = True", HU.can_vulkan(gpu) is True,
-        "sh_net_hon")
+        "sh_hat_phim")
     bao("`bo_shader` giữ CPU, bỏ đúng shader",
         [c["khoa"] for c in HU.bo_shader(cpu + gpu)] == ["zoom_nhoi"],
         f"{[c['khoa'] for c in HU.bo_shader(cpu + gpu)]}")
@@ -465,7 +469,7 @@ def ca_h() -> None:
     trong_kho = {h.shader for h in HU.KHO.values() if h.shader}
     bao("MỌI file .hook đóng gói đều được kho hiệu ứng dùng "
         "(không còn tài nguyên mồ côi)",
-        tren_dia == trong_kho and len(tren_dia) == 6,
+        tren_dia == trong_kho and len(tren_dia) == 3,
         f"đĩa {len(tren_dia)} · kho {len(trong_kho)} · "
         f"thừa {sorted(tren_dia - trong_kho)} · thiếu "
         f"{sorted(trong_kho - tren_dia)}")
@@ -480,13 +484,13 @@ def ca_h() -> None:
     kho_uv = {k for v in HU._UV_THEO_LOAI.values() for k in v}
     thieu = {k for k, h in HU.KHO.items() if h.shader} - kho_uv
     bao("mọi shader đều có mặt trong luật chọn `_UV_THEO_LOAI`",
-        not thieu, f"thiếu {sorted(thieu)}" if thieu else "đủ 6")
+        not thieu, f"thiếu {sorted(thieu)}" if thieu else "đủ 3")
     # và phải nằm ở 3 VỊ TRÍ ĐẦU của ít nhất 1 loại điểm (xem `_chon_kieu`:
     # chỉ `moi[0..2]` tới được) — đặt cuối danh sách = nối cho có, không dùng
     toi_duoc = {k for v in HU._UV_THEO_LOAI.values() for k in v[:3]
                 if k.startswith("sh_")}
     bao("shader nằm ở vị trí AI thật sự chọn tới (3 vị trí đầu)",
-        len(toi_duoc) >= 4, f"{len(toi_duoc)}/6 tới được: {sorted(toi_duoc)}")
+        len(toi_duoc) >= 3, f"{len(toi_duoc)}/3 tới được: {sorted(toi_duoc)}")
 
 
 # =====================================================================

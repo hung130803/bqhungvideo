@@ -1,0 +1,738 @@
+{
+"comedy/blip_happy_03.opus": [
+-9.8,
+-2.9
+],
+"comedy/blip_happy_03_v2.opus": [
+-9.8,
+-3.0
+],
+"comedy/blip_happy_03_v3.opus": [
+-9.8,
+-2.9
+],
+"comedy/boing_01.opus": [
+-8.2,
+-3.5
+],
+"comedy/boing_01_v2.opus": [
+-7.5,
+-1.7
+],
+"comedy/boing_01_v3.opus": [
+-8.2,
+-3.5
+],
+"comedy/boing_hi_04.opus": [
+-7.1,
+-3.0
+],
+"comedy/boing_hi_04_v2.opus": [
+-8.6,
+-3.6
+],
+"comedy/boing_hi_04_v3.opus": [
+-7.0,
+-2.6
+],
+"comedy/spring_02.opus": [
+-8.7,
+-2.6
+],
+"comedy/spring_02_v2.opus": [
+-8.2,
+-1.3
+],
+"comedy/spring_02_v3.opus": [
+-6.8,
+0.0
+],
+"drumroll/roll_01.opus": [
+-18.4,
+-2.4
+],
+"drumroll/roll_01_v2.opus": [
+-17.0,
+-1.2
+],
+"drumroll/roll_01_v3.opus": [
+-17.8,
+-1.7
+],
+"drumroll/roll_01_v4.opus": [
+-18.5,
+-1.2
+],
+"drumroll/roll_01_v5.opus": [
+-18.1,
+-1.7
+],
+"drumroll/roll_fast_02.opus": [
+-19.8,
+-3.5
+],
+"drumroll/roll_fast_02_v2.opus": [
+-18.1,
+-1.0
+],
+"drumroll/roll_fast_02_v3.opus": [
+-18.6,
+-2.3
+],
+"drumroll/roll_fast_02_v4.opus": [
+-16.4,
+-0.9
+],
+"drumroll/roll_fast_02_v5.opus": [
+-19.0,
+-3.5
+],
+"impact/boom_deep_05.opus": [
+-9.0,
+-3.0
+],
+"impact/boom_low_01.opus": [
+-8.4,
+-3.0
+],
+"impact/hit_mid_02.opus": [
+-18.3,
+-2.1
+],
+"impact/k_impactsounds_impactBell_heavy_000.opus": [
+-16.6,
+-0.0
+],
+"impact/k_impactsounds_impactBell_heavy_001.opus": [
+-14.3,
+-0.1
+],
+"impact/k_impactsounds_impactBell_heavy_002.opus": [
+-21.1,
+-0.2
+],
+"impact/k_impactsounds_impactBell_heavy_003.opus": [
+-21.9,
+-0.8
+],
+"impact/k_impactsounds_impactBell_heavy_004.opus": [
+-20.6,
+-0.4
+],
+"impact/k_impactsounds_impactGeneric_light_000.opus": [
+-18.6,
+-0.0
+],
+"impact/k_impactsounds_impactGeneric_light_001.opus": [
+-17.9,
+-0.0
+],
+"impact/k_impactsounds_impactGeneric_light_002.opus": [
+-19.2,
+-0.1
+],
+"impact/k_impactsounds_impactGeneric_light_003.opus": [
+-18.4,
+-0.0
+],
+"impact/k_impactsounds_impactGeneric_light_004.opus": [
+-18.4,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_heavy_000.opus": [
+-20.1,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_heavy_001.opus": [
+-23.1,
+-0.5
+],
+"impact/k_impactsounds_impactGlass_heavy_002.opus": [
+-20.9,
+-0.2
+],
+"impact/k_impactsounds_impactGlass_heavy_003.opus": [
+-17.9,
+-0.4
+],
+"impact/k_impactsounds_impactGlass_heavy_004.opus": [
+-22.0,
+-0.1
+],
+"impact/k_impactsounds_impactGlass_light_000.opus": [
+-19.4,
+-0.2
+],
+"impact/k_impactsounds_impactGlass_light_001.opus": [
+-18.9,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_light_002.opus": [
+-17.7,
+-0.1
+],
+"impact/k_impactsounds_impactGlass_light_003.opus": [
+-18.5,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_light_004.opus": [
+-18.3,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_medium_000.opus": [
+-22.9,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_medium_001.opus": [
+-22.8,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_medium_002.opus": [
+-23.4,
+-0.1
+],
+"impact/k_impactsounds_impactGlass_medium_003.opus": [
+-23.0,
+-0.0
+],
+"impact/k_impactsounds_impactGlass_medium_004.opus": [
+-21.9,
+-0.0
+],
+"impact/k_impactsounds_impactMetal_heavy_000.opus": [
+-18.3,
+-0.0
+],
+"impact/k_impactsounds_impactMetal_heavy_001.opus": [
+-21.5,
+-0.1
+],
+"impact/k_impactsounds_impactMetal_heavy_002.opus": [
+-16.2,
+-0.0
+],
+"impact/k_impactsounds_impactMetal_heavy_003.opus": [
+-19.0,
+-0.0
+],
+"impact/k_impactsounds_impactMetal_heavy_004.opus": [
+-17.1,
+-0.0
+],
+"impact/punch_04.opus": [
+-21.0,
+-3.1
+],
+"impact/thud_03.opus": [
+-10.2,
+-2.8
+],
+"pop/blip_03.opus": [
+-17.6,
+-2.8
+],
+"pop/click_02.opus": [
+-19.1,
+-2.9
+],
+"pop/k_uiaudio_click1.opus": [
+-22.2,
+-1.1
+],
+"pop/k_uiaudio_click2.opus": [
+-14.3,
+0.0
+],
+"pop/k_uiaudio_click3.opus": [
+-26.2,
+-0.1
+],
+"pop/k_uiaudio_mouseclick1.opus": [
+-22.5,
+-2.1
+],
+"pop/k_uiaudio_switch1.opus": [
+-26.7,
+0.0
+],
+"pop/k_uiaudio_switch10.opus": [
+-26.5,
+-0.0
+],
+"pop/k_uiaudio_switch11.opus": [
+-24.4,
+0.0
+],
+"pop/k_uiaudio_switch12.opus": [
+-19.5,
+-0.0
+],
+"pop/k_uiaudio_switch15.opus": [
+-24.8,
+-0.0
+],
+"pop/k_uiaudio_switch16.opus": [
+-21.6,
+0.0
+],
+"pop/k_uiaudio_switch17.opus": [
+-26.4,
+0.0
+],
+"pop/k_uiaudio_switch18.opus": [
+-24.6,
+0.0
+],
+"pop/k_uiaudio_switch19.opus": [
+-26.0,
+0.0
+],
+"pop/k_uiaudio_switch2.opus": [
+-28.3,
+-1.3
+],
+"pop/k_uiaudio_switch20.opus": [
+-27.3,
+0.0
+],
+"pop/k_uiaudio_switch21.opus": [
+-27.8,
+-0.0
+],
+"pop/k_uiaudio_switch22.opus": [
+-24.1,
+-0.0
+],
+"pop/k_uiaudio_switch23.opus": [
+-22.7,
+0.0
+],
+"pop/k_uiaudio_switch24.opus": [
+-24.8,
+0.0
+],
+"pop/k_uiaudio_switch25.opus": [
+-25.8,
+0.0
+],
+"pop/k_uiaudio_switch26.opus": [
+-25.4,
+-0.0
+],
+"pop/k_uiaudio_switch27.opus": [
+-24.3,
+0.0
+],
+"pop/k_uiaudio_switch28.opus": [
+-23.5,
+-0.0
+],
+"pop/k_uiaudio_switch29.opus": [
+-29.8,
+-1.6
+],
+"pop/k_uiaudio_switch3.opus": [
+-27.1,
+-0.0
+],
+"pop/k_uiaudio_switch30.opus": [
+-25.0,
+0.0
+],
+"pop/k_uiaudio_switch31.opus": [
+-25.6,
+0.0
+],
+"pop/k_uiaudio_switch32.opus": [
+-24.5,
+0.0
+],
+"pop/k_uiaudio_switch33.opus": [
+-27.5,
+-1.0
+],
+"pop/k_uiaudio_switch34.opus": [
+-29.5,
+-1.0
+],
+"pop/pop_01.opus": [
+-16.6,
+-3.0
+],
+"pop/pop_hi_04.opus": [
+-16.8,
+-2.9
+],
+"reveal/bell_02.opus": [
+-9.9,
+-2.9
+],
+"reveal/bell_02_v2.opus": [
+-9.9,
+-1.3
+],
+"reveal/ding_hi_01.opus": [
+-9.6,
+-3.9
+],
+"reveal/ding_hi_01_v2.opus": [
+-11.0,
+-3.1
+],
+"reveal/ding_soft_04.opus": [
+-9.5,
+-3.3
+],
+"reveal/ding_soft_04_v2.opus": [
+-10.6,
+-2.7
+],
+"reveal/k_interfacesounds_confirmation_001.opus": [
+-11.4,
+-1.1
+],
+"reveal/k_interfacesounds_confirmation_002.opus": [
+-14.6,
+-0.8
+],
+"reveal/k_interfacesounds_confirmation_003.opus": [
+-14.9,
+-0.6
+],
+"reveal/k_interfacesounds_confirmation_004.opus": [
+-11.7,
+-0.8
+],
+"reveal/k_interfacesounds_question_001.opus": [
+-11.8,
+-0.9
+],
+"reveal/k_interfacesounds_question_002.opus": [
+-10.0,
+-0.9
+],
+"reveal/k_interfacesounds_question_003.opus": [
+-10.0,
+-1.4
+],
+"reveal/k_interfacesounds_question_004.opus": [
+-10.0,
+-1.0
+],
+"reveal/sparkle_03.opus": [
+-14.9,
+-2.8
+],
+"reveal/sparkle_03_v2.opus": [
+-15.1,
+-3.0
+],
+"riser/riser_fast_05.opus": [
+-3.9,
+0.0
+],
+"riser/riser_fast_05_v2.opus": [
+-6.8,
+0.0
+],
+"riser/riser_fast_05_v3.opus": [
+-5.6,
+0.0
+],
+"riser/riser_hi_03.opus": [
+-3.7,
+0.0
+],
+"riser/riser_hi_03_v2.opus": [
+-6.5,
+0.0
+],
+"riser/riser_hi_03_v3.opus": [
+-7.2,
+0.0
+],
+"riser/riser_soft_01.opus": [
+-7.9,
+-2.5
+],
+"riser/riser_soft_01_v2.opus": [
+-6.9,
+-1.0
+],
+"riser/riser_soft_01_v3.opus": [
+-4.0,
+0.0
+],
+"riser/riser_tense_02.opus": [
+-6.8,
+-0.1
+],
+"riser/riser_tense_02_v2.opus": [
+-7.3,
+-1.5
+],
+"riser/riser_tense_02_v3.opus": [
+-3.6,
+0.0
+],
+"riser/riser_wide_04.opus": [
+-6.6,
+-1.1
+],
+"riser/riser_wide_04_v2.opus": [
+-6.2,
+-0.8
+],
+"riser/riser_wide_04_v3.opus": [
+-3.3,
+0.0
+],
+"sad/note_deep_03.opus": [
+-10.8,
+-3.0
+],
+"sad/note_deep_03_v2.opus": [
+-8.7,
+-0.8
+],
+"sad/note_deep_03_v3.opus": [
+-9.7,
+-1.6
+],
+"sad/note_deep_03_v4.opus": [
+-8.4,
+-0.9
+],
+"sad/note_low_01.opus": [
+-11.3,
+-2.9
+],
+"sad/note_low_01_v2.opus": [
+-9.5,
+-0.9
+],
+"sad/note_low_01_v3.opus": [
+-12.1,
+-3.4
+],
+"sad/note_soft_02.opus": [
+-11.0,
+-3.0
+],
+"sad/note_soft_02_v2.opus": [
+-8.9,
+-0.9
+],
+"sad/note_soft_02_v3.opus": [
+-10.0,
+-2.0
+],
+"scratch/k_interfacesounds_error_001.opus": [
+-16.9,
+0.0
+],
+"scratch/k_interfacesounds_error_002.opus": [
+-16.7,
+0.0
+],
+"scratch/k_interfacesounds_error_003.opus": [
+-17.9,
+0.0
+],
+"scratch/k_interfacesounds_error_004.opus": [
+-13.9,
+-0.0
+],
+"scratch/k_interfacesounds_error_005.opus": [
+-18.8,
+-1.4
+],
+"scratch/k_interfacesounds_error_006.opus": [
+-18.1,
+-1.6
+],
+"scratch/k_interfacesounds_error_007.opus": [
+-13.3,
+0.0
+],
+"scratch/k_interfacesounds_error_008.opus": [
+-20.7,
+-0.9
+],
+"scratch/k_interfacesounds_scratch_001.opus": [
+-14.1,
+-1.1
+],
+"scratch/k_interfacesounds_scratch_002.opus": [
+-14.3,
+-2.4
+],
+"scratch/k_interfacesounds_scratch_003.opus": [
+-20.3,
+-1.0
+],
+"scratch/k_interfacesounds_scratch_004.opus": [
+-22.4,
+-2.5
+],
+"scratch/k_interfacesounds_scratch_005.opus": [
+-17.4,
+-2.1
+],
+"scratch/scratch_01.opus": [
+-19.2,
+-3.3
+],
+"scratch/scratch_fast_02.opus": [
+-21.4,
+-3.7
+],
+"scratch/scratch_low_03.opus": [
+-18.1,
+-3.7
+],
+"suspense/drone_deep_03.opus": [
+-10.5,
+-1.9
+],
+"suspense/drone_deep_03_v2.opus": [
+-9.2,
+-0.9
+],
+"suspense/drone_deep_03_v3.opus": [
+-9.7,
+-1.3
+],
+"suspense/drone_hum_04.opus": [
+-11.8,
+-2.7
+],
+"suspense/drone_hum_04_v2.opus": [
+-9.8,
+-0.8
+],
+"suspense/drone_hum_04_v3.opus": [
+-10.5,
+-1.1
+],
+"suspense/drone_low_01.opus": [
+-11.6,
+-3.0
+],
+"suspense/drone_low_01_v2.opus": [
+-9.3,
+-0.9
+],
+"suspense/drone_low_01_v3.opus": [
+-10.0,
+-1.2
+],
+"suspense/drone_tense_02.opus": [
+-11.2,
+-2.0
+],
+"suspense/drone_tense_02_v2.opus": [
+-9.8,
+-0.8
+],
+"suspense/drone_tense_02_v3.opus": [
+-10.2,
+-0.9
+],
+"transition/air_soft_05.opus": [
+-16.3,
+-3.7
+],
+"transition/air_soft_05_v2.opus": [
+-16.9,
+-3.6
+],
+"transition/air_soft_05_v3.opus": [
+-16.2,
+-3.1
+],
+"transition/swoosh_air_03.opus": [
+-19.9,
+-3.9
+],
+"transition/swoosh_air_03_v2.opus": [
+-18.6,
+-3.4
+],
+"transition/swoosh_air_03_v3.opus": [
+-20.2,
+-4.7
+],
+"transition/swoosh_hi_07.opus": [
+-17.9,
+-4.3
+],
+"transition/swoosh_hi_07_v2.opus": [
+-18.2,
+-3.2
+],
+"transition/swoosh_hi_07_v3.opus": [
+-19.2,
+-5.2
+],
+"transition/tick_click_09.opus": [
+-21.1,
+-3.4
+],
+"transition/tick_click_09_v2.opus": [
+-21.0,
+-3.1
+],
+"transition/tick_click_09_v3.opus": [
+-22.1,
+-3.5
+],
+"transition/tick_soft_06.opus": [
+-18.5,
+-2.9
+],
+"transition/tick_soft_06_v2.opus": [
+-15.6,
+-3.6
+],
+"transition/tick_soft_06_v3.opus": [
+-18.7,
+-3.0
+],
+"transition/whoosh_down_02.opus": [
+-18.2,
+-4.1
+],
+"transition/whoosh_down_02_v2.opus": [
+-18.6,
+-3.6
+],
+"transition/whoosh_down_02_v3.opus": [
+-19.2,
+-3.1
+],
+"transition/whoosh_low_08.opus": [
+-18.1,
+-3.7
+],
+"transition/whoosh_low_08_v2.opus": [
+-18.4,
+-3.7
+],
+"transition/whoosh_mid_04.opus": [
+-20.0,
+-2.7
+],
+"transition/whoosh_mid_04_v2.opus": [
+-19.2,
+-3.4
+],
+"transition/whoosh_up_01.opus": [
+-18.6,
+-3.3
+],
+"transition/whoosh_up_01_v2.opus": [
+-19.2,
+-3.9
+]
+}

@@ -8,6 +8,7 @@ xuất file tạm thừa. Hàm export_vertical_clip cắt + crop bám mặt + sc
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import time
@@ -1089,12 +1090,13 @@ def _fx_synth_branch(type_idx: int, at_sec: float, vol: float, in_idx: int,
 SFX_CATEGORIES = ("transition", "impact", "riser", "reveal", "pop",
                   "suspense", "comedy", "scratch", "sad", "drumroll")
 
-# Âm lượng trộn theo LOẠI (áp lên file .wav lúc mix trong export). impact/riser
-# to hơn transition chút (khoảnh khắc mạnh); reveal/ding nhẹ — không lố.
-# suspense/sad NHỎ (làm nền dưới giọng, không lấn); comedy VỪA (phải nghe rõ
-# cái vui); scratch RÕ (cú "khựng" bất ngờ phải nổi bật); drumroll VỪA-to (dồn
-# trước cao trào). Loại lạ -> 0.28 (an toàn như transition).
-_SFX_CAT_VOL = {
+# ĐÃ BỎ DÙNG 08/08/2026 — GIỮ LẠI LÀM MỐC ĐỐI CHỨNG, ĐỪNG DÙNG LẠI.
+# Âm lượng trộn theo LOẠI: hệ số TUYỆT ĐỐI nhân thẳng vào file. Sai ở chỗ nó
+# không biết file to hay nhỏ, mà 184 file trong kho trải **26,5 dB** mức nghe
+# được (-3,3 .. -29,8 dB). Đo trên clip thật: tiếng ở điểm nối chỉ nhô hơn nền
+# **+0,7 dB** = anh Hùng "không nghe được gì cả". Thay bằng `tinh_gain_sfx`
+# (chuẩn hoá theo mean của CHÍNH file + nền của CHÍNH clip) + `_SFX_CAT_DB`.
+_SFX_CAT_VOL_CU = {
     "transition": 0.28, "impact": 0.42, "riser": 0.38,
     "reveal": 0.24, "pop": 0.30,
     "suspense": 0.20, "comedy": 0.34, "scratch": 0.40,
@@ -1182,6 +1184,229 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None) -> list:
         del _q[:-_SFX_NHO]
         out.append((cat, pick))
     return out
+
+
+# ================= TIẾNG ĐỘNG PHẢI **NGHE ĐƯỢC** — ĐO BẰNG dB ===============
+# Anh Hùng xem clip thật 08/08/2026: *"âm thanh hiệu ứng hay gì ấy thậm chí còn
+# không nghe được gì cả luôn"* · *"có hiệu ứng mà không có âm thanh cứ sao sao"*.
+# ĐO RA ĐÚNG 2 LỖI (`_do_tieng.py`, clip THẬT 10 s, 2 đoạn, 2 điểm nhấn):
+#
+#  (1) ĐIỂM NHẤN HÌNH **KHÔNG HỀ CÓ TIẾNG**. Bật/tắt tiếng động, đỉnh RMS quanh
+#      giây 1,20 và 7,20 lệch **0,0 dB / -0,2 dB** = không một mẫu âm nào được
+#      trộn. Đúng vậy: bản cũ chỉ chèn tiếng ở ĐIỂM NỐI đoạn (`whoosh_offsets`),
+#      mà điểm nối do CẮT GHÉP quyết định, chẳng liên quan gì tới điểm nhấn hình.
+#      Clip 1 đoạn thì KHÔNG có tiếng nào, dù có 3 hiệu ứng.
+#
+#  (2) TIẾNG Ở ĐIỂM NỐI **QUÁ NHỎ**: bật lên chỉ nhô hơn bản tắt **+0,7 dB**
+#      (nền clip -23,6 dB, đỉnh -19,3 -> -18,6 dB). Tai người coi ~1 dB là
+#      "không đổi gì". Vì sao: bản cũ nhân CỨNG `volume` theo NHÓM (0,24-0,42)
+#      trong khi mức NGHE ĐƯỢC (mean_volume) của 184 file trong kho trải
+#      **26,5 dB** (-3,3 .. -29,8 dB — xem `tools/do_muc_sfx.py`). Cùng một
+#      nhóm, file này nghe rõ, file kia mất hút; và không hệ số cố định nào
+#      đúng cho mọi clip vì tiếng GỐC mỗi clip mỗi khác.
+#
+# CÁCH CHỮA (đo được, không chỉnh mò): tính hệ số theo SỐ ĐO của cả hai đầu —
+#   gain_dB = (nền_clip + CHENH + bù_theo_nhóm) - mean_của_file
+# rồi kẹp lại để không vỡ tiếng (đỉnh file + gain <= -1 dBFS). CHENH = 8 dB nằm
+# giữa dải anh Hùng yêu cầu (6-10 dB). Kèm DUCKING: hạ tiếng gốc ~5 dB đúng lúc
+# tiếng động kêu (cửa sổ 0,45 s, vào/ra êm) -> nghe rõ mà KHÔNG đè giọng nói.
+#: Tiếng động phải cao hơn NỀN của chính clip bao nhiêu dB.
+SFX_TREN_NEN_DB = 8.0
+#: Bù theo NHÓM (dB, cộng vào mốc trên). Thay cho bảng `_SFX_CAT_VOL` cũ: bảng
+#: cũ là hệ số TUYỆT ĐỐI nên không biết file to hay nhỏ; bảng này là ĐỘ LỆCH
+#: TƯƠNG ĐỐI nên giữ đúng "tính cách" từng nhóm mà vẫn chuẩn hoá được.
+_SFX_CAT_DB = {
+    "impact": +2.0, "riser": +1.0, "drumroll": +1.0, "scratch": +1.5,
+    "transition": 0.0, "pop": 0.0, "comedy": +0.5,
+    "reveal": -1.5, "suspense": -3.0, "sad": -2.5,
+}
+#: Mức đỉnh tối đa cho phép của 1 lớp tiếng động (dBFS) — chừa 1 dB không vỡ.
+_SFX_DINH_TRAN_DB = -1.0
+#: Kẹp hệ số (dB) để một file lỗi/quá nhỏ không bị kéo lên thành tiếng ồn.
+_SFX_GAIN_MIN, _SFX_GAIN_MAX = -30.0, 15.0
+#: DUCKING: hạ tiếng gốc bao nhiêu dB lúc tiếng động kêu, trong bao lâu, và
+#: bắt đầu sớm hơn tiếng động bao nhiêu (đón đầu cho mượt).
+_SFX_DUCK_DB, _SFX_DUCK_DAI, _SFX_DUCK_SOM = 5.0, 0.45, 0.06
+#: 2 tiếng động gần nhau hơn mức này -> BỎ cái sau (tránh "rào rào").
+_SFX_CACH_MIN = 0.80
+#: Mức nền GIẢ ĐỊNH (dBFS) khi clip không có tiếng gốc để đo.
+_SFX_NEN_MAC_DINH = -26.0
+
+#: LOẠI TIẾNG THEO **KIỂU HIỆU ỨNG HÌNH** (anh Hùng: *"zoom/rung -> impact; loé
+#: sáng -> reveal/riser; glitch -> scratch; chuyển đoạn -> transition; cảnh hài
+#: -> comedy"*). Khoá là khoá trong `hieu_ung.KHO`.
+_SFX_THEO_HIEU_UNG = {
+    # dời chỗ / va đập
+    "zoom_nhoi": "impact", "rung_lac": "impact", "meo_kinh": "impact",
+    "zoom_day": "riser", "song_meo": "suspense",
+    # sáng / lộ ra
+    "loe_sang": "reveal", "quang_sang": "reveal", "nhay_sang": "riser",
+    "tuong_phan": "impact", "sh_tuong_phan": "impact",
+    # tối / nén
+    "sup_toi": "suspense", "toi_vien": "suspense", "sh_toi_vien": "suspense",
+    "vien_phim": "suspense",
+    # vỡ hình / nhiễu
+    "o_vuong": "scratch", "xao_dong": "scratch", "glitch_khoi": "scratch",
+    "lech_bang": "scratch", "dong_quet": "scratch", "nhieu_analog": "scratch",
+    "vien_net": "scratch",
+    # phim / hạt / mờ
+    "hat_phim": "transition", "hat_nhieu": "transition",
+    "sh_hat_phim": "transition", "mo_net": "pop", "mo_vuong": "pop",
+    # chữ
+    "dem_nguoc": "drumroll",
+}
+
+
+def _la_hook_first(segs: list) -> bool:
+    """Clip này có phải kiểu HOOK-FIRST (đoạn cao trào được BÊ LÊN ĐẦU)?
+
+    Dấu hiệu chắc chắn, không phải đoán: đoạn đầu bắt đầu MUỘN HƠN đoạn sau
+    trên timeline GỐC — tức app đã nhảy NGƯỢC thời gian. Cùng dấu hiệu mà
+    `m1._loai_theo_khoang_nhay` dùng để chọn tiếng cho chỗ nối. Hàm thuần."""
+    try:
+        return (len(segs) >= 2
+                and float(segs[0][0]) > float(segs[1][0]) + 0.05)
+    except (TypeError, ValueError, IndexError):
+        return False
+
+
+def loai_sfx_theo_hieu_ung(khoa: str) -> str:
+    """Kiểu hiệu ứng HÌNH -> nhóm tiếng động đi kèm. Kiểu lạ -> 'impact'
+    (điểm nhấn thì phải có cú nhấn, không được im). Hàm thuần."""
+    return _SFX_THEO_HIEU_UNG.get(str(khoa or ""), "impact")
+
+
+_SFX_MUC_BANG: Optional[dict] = None
+_SFX_MUC_DO: dict = {}          # cache mức đo SỐNG (file ngoài kho / bảng thiếu)
+
+
+def _sfx_bang_muc() -> dict:
+    """Bảng mức âm kho tiếng động (`app/assets/sfx/muc_do.json`), cache 1 lần.
+    Thiếu file -> {} và `_muc_sfx` tự đo sống (chậm hơn nhưng vẫn đúng)."""
+    global _SFX_MUC_BANG
+    if _SFX_MUC_BANG is not None:
+        return _SFX_MUC_BANG
+    try:
+        import json
+        p = _assets_sfx_dir() / "muc_do.json"
+        _SFX_MUC_BANG = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:      # noqa: BLE001 — thiếu bảng KHÔNG được làm chết xuất
+        _SFX_MUC_BANG = {}
+    return _SFX_MUC_BANG
+
+
+def _muc_sfx(path: str) -> tuple[float, float]:
+    """(mean_dB, max_dB) của 1 file tiếng động. Ưu tiên BẢNG đóng gói (0 ms);
+    không có thì đo sống 1 lần rồi nhớ. Đo hỏng -> (-12, -3) là mức trung bình
+    của kho, chấp nhận được và KHÔNG bao giờ ném lỗi."""
+    p = str(path)
+    if p in _SFX_MUC_DO:
+        return _SFX_MUC_DO[p]
+    try:
+        key = Path(p).resolve().relative_to(
+            _assets_sfx_dir().resolve()).as_posix()
+    except (ValueError, OSError):
+        key = ""
+    v = _sfx_bang_muc().get(key)
+    if isinstance(v, (list, tuple)) and len(v) >= 2:
+        kq = (float(v[0]), float(v[1]))
+        _SFX_MUC_DO[p] = kq
+        return kq
+    kq = _do_muc_file(p) or (-12.0, -3.0)
+    _SFX_MUC_DO[p] = kq
+    return kq
+
+
+def _doc_volumedetect(txt: str) -> Optional[tuple[float, float]]:
+    """Bóc (mean_dB, max_dB) từ log `volumedetect`. Hàm thuần — test được."""
+    mean = mx = None
+    for ln in (txt or "").splitlines():
+        if "mean_volume:" in ln:
+            try:
+                mean = float(ln.split("mean_volume:")[1].split("dB")[0])
+            except (ValueError, IndexError):
+                pass
+        elif "max_volume:" in ln:
+            try:
+                mx = float(ln.split("max_volume:")[1].split("dB")[0])
+            except (ValueError, IndexError):
+                pass
+    if mean is None or mx is None:
+        return None
+    return (mean, mx)
+
+
+def _do_muc_file(path: str) -> Optional[tuple[float, float]]:
+    """Đo (mean, max) dB của 1 file âm bằng ffmpeg. None nếu không đo được."""
+    try:
+        r = subprocess.run(
+            [settings.FFMPEG_PATH, "-hide_banner", "-v", "info", "-nostdin",
+             "-threads", "1", "-i", str(path), "-vn", "-af", "volumedetect",
+             "-f", "null", "-"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", creationflags=_CREATE_NO_WINDOW, timeout=60)
+        return _doc_volumedetect(r.stderr or "")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _muc_nen_dB(dau_vao: list) -> Optional[float]:
+    """Mức NỀN (mean_volume dBFS) của tiếng nguồn trên ĐÚNG timeline sắp xuất.
+
+    `dau_vao` = danh sách token input của caller (`-f concat -i list` hoặc
+    `-ss/-t -i src`) — cùng khuôn `hieu_ung.do_nhip` dùng, nên đo đúng phần
+    phim được giữ lại chứ không phải cả file gốc.
+
+    CỐ Ý KHÔNG qua cửa chờ ffmpeg (như `do_nhip`): lệnh này chỉ giải mã ÂM
+    THANH, `-threads 1`, đo 60 s clip hết ~0,2 s. Bắt nó xếp hàng sau các lệnh
+    encode nặng thì mỗi lượt xuất đội thêm hàng chục giây vô ích.
+    """
+    try:
+        r = subprocess.run(
+            [settings.FFMPEG_PATH, "-hide_banner", "-v", "info", "-nostdin",
+             "-threads", "1", *[str(x) for x in dau_vao], "-vn",
+             "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", creationflags=_CREATE_NO_WINDOW, timeout=180)
+        kq = _doc_volumedetect(r.stderr or "")
+        return None if kq is None else kq[0]
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def tinh_gain_sfx(cat: str, mean_db: float, max_db: float,
+                  nen_db: float) -> float:
+    """HỆ SỐ NHÂN (tuyến tính) cho 1 lớp tiếng động — HÀM THUẦN, test được.
+
+    Đích = nền clip + `SFX_TREN_NEN_DB` + bù nhóm. Kẹp 2 đầu:
+      * đỉnh sau khi nhân không vượt `_SFX_DINH_TRAN_DB` (không vỡ tiếng);
+      * gain nằm trong [`_SFX_GAIN_MIN`, `_SFX_GAIN_MAX`] (file hỏng/quá nhỏ
+        không bị kéo lên thành tiếng ồn nền).
+    """
+    dich = float(nen_db) + SFX_TREN_NEN_DB + _SFX_CAT_DB.get(str(cat), 0.0)
+    g = dich - float(mean_db)
+    g = min(g, _SFX_DINH_TRAN_DB - float(max_db))
+    g = max(_SFX_GAIN_MIN, min(_SFX_GAIN_MAX, g))
+    return 10.0 ** (g / 20.0)
+
+
+def _bieu_thuc_duck(mocs: list) -> str:
+    """Biểu thức `volume` hạ tiếng gốc quanh MỖI mốc tiếng động — VÀO/RA ÊM.
+
+    Mỗi mốc là một bướu nửa hình sin dài `_SFX_DUCK_DAI` (bắt đầu sớm
+    `_SFX_DUCK_SOM`): ở 2 mép bướu = 0 nên âm lượng đúng bằng 1,0 -> KHÔNG có
+    cú "cụp" (bậc thang trong `volume` nghe thành tiếng bụp). `min(1,...)` chặn
+    trường hợp 2 bướu chồng nhau. Hàm thuần — test được."""
+    if not mocs:
+        return ""
+    d = 1.0 - 10.0 ** (-_SFX_DUCK_DB / 20.0)
+    bu = []
+    for g in mocs:
+        a = max(0.0, float(g) - _SFX_DUCK_SOM)
+        b = a + _SFX_DUCK_DAI
+        bu.append(f"between(t,{a:.3f},{b:.3f})*"
+                  f"sin(3.14159*(t-{a:.3f})/{_SFX_DUCK_DAI:.3f})")
+    return f"volume='1-{d:.3f}*min(1,{'+'.join(bu)})':eval=frame"
 
 
 def _sfx_file_ok(path: str) -> bool:
@@ -2643,7 +2868,8 @@ def export_canvas_clip(
             _hu = _HU.chon_hieu_ung(_out_dur, str(hieu_ung).strip().lower(),
                                     nl=_nl, cd=_cd, moc_noi=_moc,
                                     co_the_dung=_HU.dung_duoc(
-                                        co_font=bool(_font)))
+                                        co_font=bool(_font)),
+                                    hook=_la_hook_first(segs))
         _hu = _HU.loc_theo_font(_hu, bool(_font))
         if _hu and hieu_ung_log is not None:
             hieu_ung_log.extend(_hu)
@@ -2661,6 +2887,56 @@ def export_canvas_clip(
             return False
 
     _can_vk = _can_vk_now()
+
+    # ---- MỖI ĐIỂM NHẤN HÌNH PHẢI CÓ TIẾNG ĐI KÈM (xem khối `SFX_TREN_NEN_DB`)
+    # Gộp 2 nguồn mốc thành MỘT danh sách rồi mới dựng lớp tiếng:
+    #   * ĐIỂM NỐI đoạn — như cũ, loại theo `join_cats` (kể cả "none" = bỏ).
+    #   * ĐIỂM NHẤN hiệu ứng — MỚI: loại suy từ KIỂU hiệu ứng
+    #     (`loai_sfx_theo_hieu_ung`). Đây là chỗ bịt lỗi anh Hùng nêu: đo bản cũ
+    #     ra ĐÚNG 0,0 dB chênh lệch ở mốc điểm nhấn = không có tiếng nào.
+    # Mốc nào cách mốc đã nhận < `_SFX_CACH_MIN` thì BỎ (điểm nối thường trùng
+    # điểm nhấn — 2 tiếng chồng nhau nghe thành "rào rào", đúng loại loè).
+    _sfx_diem: list = []            # [(giây, nhóm, "nối"|"điểm nhấn")]
+    if fx_whoosh:
+        for _i, _off in enumerate(whoosh_offsets):
+            if join_cats[_i] != "none":
+                _sfx_diem.append((float(_off), join_cats[_i], "nối"))
+        for _c in (_hu or []):
+            _g = float(_c.get("bat", 0.0))
+            if any(abs(_g - x[0]) < _SFX_CACH_MIN for x in _sfx_diem):
+                continue
+            _sfx_diem.append(
+                (_g, loai_sfx_theo_hieu_ung(_c.get("khoa", "")), "điểm nhấn"))
+        _sfx_diem = [x for x in sorted(_sfx_diem) if 0.0 <= x[0] < _out_dur]
+
+    # MỨC NỀN của chính clip này — để tính hệ số cho tiếng động (xem
+    # `tinh_gain_sfx`). Chỉ đo khi THẬT SỰ sắp chèn tiếng: clip không có điểm
+    # nào thì không tốn một ms nào.
+    # NGHE THẤY CÁI GÌ thì lấy CÁI ĐÓ làm nền: lồng tiếng AI đè tiếng gốc
+    # (`dub_mute_original`, hoặc user kéo tiếng gốc gần 0) -> đo tiếng GỐC là
+    # đo thứ khán giả KHÔNG nghe, ra hệ số sai hẳn. Lúc đó đo chính file dub.
+    _nen_db = _SFX_NEN_MAC_DINH
+    _con_goc = bool(has_audio and use_voice and voice_vol > 0.05)
+    _vao_a: list = []
+    if _sfx_diem and _con_goc:
+        if multi and _seg_list:
+            _vao_a = ["-f", "concat", "-safe", "0", "-i", _seg_list]
+        else:
+            _s0, _e0 = segs[0]
+            _vao_a = ["-ss", f"{_s0:.3f}", "-t", f"{_e0 - _s0:.3f}",
+                      "-i", str(src)]
+    elif _sfx_diem and dub_on:
+        _vao_a = ["-i", str(dub_path)]
+    if _vao_a:
+        _m = _muc_nen_dB(_vao_a)
+        if _m is not None and -70.0 < _m < 0.0:
+            # tiếng gốc còn bị nhân `voice_vol` trong graph -> nền THẬT ở đầu ra
+            # thấp hơn chỗ đo đúng bấy nhiêu dB. Không tính bù là tiếng động
+            # thành nhỏ so với lời khi user kéo thanh "âm lượng tiếng gốc".
+            # (đường DUB thì file dub vào mix ở mức 1,0 -> không bù.)
+            _bu = (20.0 * math.log10(max(voice_vol, 0.001))
+                   if _con_goc else 0.0)
+            _nen_db = _m + _bu
 
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
@@ -2811,7 +3087,8 @@ def export_canvas_clip(
         # Whoosh chuyển đoạn -> cũng là 1 lớp cần TRỘN vào tiếng gốc (nếu có)
         # nên phải tính vào need_mix để tiếng gốc đi qua [vce] chứ không map thẳng
         # (map thẳng sẽ để [caud] treo + whoosh nuốt mất tiếng gốc).
-        whoosh_on = bool(fx_whoosh and multi and whoosh_offsets)
+        # `_sfx_diem` GỘP điểm nối + điểm nhấn hiệu ứng (tính ngoài `build`).
+        whoosh_on = bool(fx_whoosh and _sfx_diem)
         # voice_vol==0 -> tiếng gốc câm hẳn: BỎ khỏi mix (như dub_mute) để amix
         # không thừa 1 nhánh im lặng làm loãng các lớp khác.
         include_voice = use_voice and voice_vol > 0.0005
@@ -2820,6 +3097,14 @@ def export_canvas_clip(
             apply_vol = abs(voice_vol - 1.0) > 0.001
             if apply_vol:
                 vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
+            # DUCKING theo TIẾNG ĐỘNG: hạ tiếng gốc ~5 dB đúng lúc tiếng động
+            # kêu (vào/ra êm — xem `_bieu_thuc_duck`). Nhờ nó tiếng động nghe
+            # RÕ mà không phải kéo to lên đè giọng nói. Không có điểm nào ->
+            # KHÔNG thêm filter nào (đường cũ y nguyên).
+            if whoosh_on:
+                _dk = _bieu_thuc_duck([g for g, _c, _n in _sfx_diem])
+                if _dk:
+                    vf.append(_dk)
             if ducks:
                 # 🎙 RECAP: HẠ tiếng gốc xuống _DUCK_LEVEL (nền văng vẳng ~12%
                 # — video 'sống' như kênh recap thật, KHÔNG câm tuyệt đối)
@@ -2862,14 +3147,10 @@ def export_canvas_clip(
         # DUY NHẤT (video câm) -> thêm 1 nền im lặng dài đủ clip trước để amix
         # duration=first không cắt cụt output.
         if whoosh_on:
-            # ĐIỂM NỐI có nhãn "none" (AI chỉ định KHÔNG chèn) -> BỎ QUA hẳn ở
-            # MỌI đường (user dir + thư viện) để tôn trọng ý đồ AI: index các
-            # điểm nối THỰC SỰ chèn tiếng. Tính TRƯỚC nền im lặng để KHÔNG thêm
-            # nền thừa khi MỌI điểm nối đều "none" (video câm -> vẫn câm).
-            active_ji = [i for i in range(len(whoosh_offsets))
-                         if join_cats[i] != "none"]
-            n_joint = len(active_ji)
-            # reset log điểm-nối MỖI lần export (mọi "none" -> danh sách rỗng).
+            # `_sfx_diem` đã lọc "none" (AI chỉ định KHÔNG chèn) và đã gộp
+            # ĐIỂM NỐI + ĐIỂM NHẤN HÌNH ở ngoài `build`.
+            n_joint = len(_sfx_diem)
+            # reset log MỖI lần export (mọi điểm "none" -> danh sách rỗng).
             # `build()` có thể chạy LẦN 2 (lùi nvenc -> libx264) nên phải gán
             # lại từ đầu, không được cộng dồn.
             global _SFX_LAST_PICK
@@ -2886,81 +3167,77 @@ def export_canvas_clip(
                 parts.append(f"[{sil_idx}:a]asetpts=PTS-STARTPTS[wbed]")
                 mix.append("[wbed]")
             import random as _rnd
+            active_cats = [c for _g, c, _n in _sfx_diem]
+            active_offs = [g for g, _c, _n in _sfx_diem]
+            active_vais = [n for _g, _c, n in _sfx_diem]
             # ƯU TIÊN 1 — THƯ MỤC tiếng động của USER (giữ tính năng cũ): có file
-            # hợp lệ -> mỗi điểm nối lấy NGẪU NHIÊN 1 file (không phân loại ngữ
-            # cảnh vì file user tùy ý). random.sample tránh trùng khi đủ.
+            # hợp lệ -> mỗi mốc lấy NGẪU NHIÊN 1 file (không phân loại ngữ cảnh
+            # vì file user tùy ý). random.sample tránh trùng khi đủ.
             sfx_files = _list_sfx_files(fx_sfx_dir) if n_joint else []
             if sfx_files:
                 if len(sfx_files) >= n_joint:
                     picked = _rnd.sample(sfx_files, n_joint)
                 else:
                     picked = [_rnd.choice(sfx_files) for _ in range(n_joint)]
-                for wi, (ji, fpath) in enumerate(zip(active_ji, picked)):
-                    off = whoosh_offsets[ji]
-                    s_idx = aidx
-                    aidx += 1
-                    cmd += ["-i", str(fpath)]
+                picks = list(zip(active_cats, picked))
+            else:
+                # ƯU TIÊN 2 — THƯ VIỆN ĐÓNG GÓI theo NGỮ CẢNH. Mỗi mốc chọn 1
+                # file trong đúng nhóm (không lặp liên tiếp cùng nhóm). Nhóm
+                # THIẾU file (bản cũ chưa có thư viện) -> ƯU TIÊN 3: lùi bộ
+                # tiếng TỔNG HỢP hợp loại (cũng tránh lặp liên tiếp).
+                picks = _pick_sfx_by_category(active_cats) if n_joint else []
+            _tu_user = bool(sfx_files)
+            last_synth: dict = {}
+            chosen_log: list = []
+            for wi, ((cat, fpath), off, vai) in enumerate(
+                    zip(picks, active_offs, active_vais)):
+                w_idx = aidx
+                aidx += 1
+                if fpath:
+                    # === CHUẨN HOÁ THEO SỐ ĐO (thay hệ số cứng `_SFX_CAT_VOL`)
+                    # Bản cũ nhân cứng 0,24-0,42 cho mọi file trong khi kho trải
+                    # 26,5 dB -> đo ra tiếng động chỉ nhô +0,7 dB trên nền =
+                    # KHÔNG NGHE THẤY. Nay: gain = (nền + 8 dB + bù nhóm) - mean
+                    # của CHÍNH file đó, kẹp để đỉnh <= -1 dBFS.
+                    _mean, _max = _muc_sfx(str(fpath))
+                    vol = tinh_gain_sfx(cat, _mean, _max, _nen_db)
                     d_ms = max(0, int(round(off * 1000)))
-                    # cắt về out_dur SAU adelay để không kéo dài clip; volume nhỏ.
+                    cmd += ["-i", str(fpath)]
                     parts.append(
-                        f"[{s_idx}:a]aresample=48000,volume=0.3,"
+                        f"[{w_idx}:a]aresample=48000,volume={vol:.4f},"
                         f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
                         f"asetpts=PTS-STARTPTS[wh{wi}]")
-                    mix.append(f"[wh{wi}]")
+                    chosen_log.append((cat, os.path.basename(str(fpath))))
                     if tieng_dong_log is not None:
                         tieng_dong_log.append(
-                            {"giay": round(float(off), 2),
-                             "loai": join_cats[ji],
+                            {"giay": round(float(off), 2), "loai": cat,
                              "ten": os.path.basename(str(fpath)),
-                             "nguon": "thư mục của bạn"})
-            elif n_joint:
-                # ƯU TIÊN 2 — THƯ VIỆN ĐÓNG GÓI theo NGỮ CẢNH (join_cats). Mỗi
-                # điểm nối chọn 1 file trong đúng category (không lặp liên tiếp
-                # cùng loại). Category THIẾU file (bản cũ chưa có thư viện) ->
-                # ƯU TIÊN 3: lùi bộ tiếng TỔNG HỢP hợp loại (_pick_synth_for_
-                # category, cũng tránh lặp liên tiếp). Ghi lại loại đã chọn để
-                # caller/log kiểm được (SFX_LAST_PICK).
-                active_cats = [join_cats[i] for i in active_ji]
-                active_offs = [whoosh_offsets[i] for i in active_ji]
-                picks = _pick_sfx_by_category(active_cats)
-                last_synth: dict = {}
-                chosen_log: list = []
-                for wi, ((cat, fpath), off) in enumerate(
-                        zip(picks, active_offs)):
-                    w_idx = aidx
-                    aidx += 1
-                    vol = _SFX_CAT_VOL.get(cat, 0.28)
-                    if fpath:
-                        d_ms = max(0, int(round(off * 1000)))
-                        cmd += ["-i", str(fpath)]
-                        parts.append(
-                            f"[{w_idx}:a]aresample=48000,volume={vol:.3f},"
-                            f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
-                            f"asetpts=PTS-STARTPTS[wh{wi}]")
-                        chosen_log.append((cat, os.path.basename(fpath)))
-                        if tieng_dong_log is not None:
-                            tieng_dong_log.append(
-                                {"giay": round(float(off), 2), "loai": cat,
-                                 "ten": os.path.basename(fpath),
-                                 "nguon": "kho tiếng động của app"})
-                    else:
-                        # thiếu thư viện -> tiếng tổng hợp hợp loại
-                        tidx = _pick_synth_for_category(
-                            cat, last_synth.get(cat), _rnd)
-                        last_synth[cat] = tidx
-                        in_args, branch = _fx_synth_branch(
-                            tidx, off, vol, w_idx, f"wh{wi}")
-                        cmd += in_args
-                        parts.append(branch)
-                        chosen_log.append((cat, f"synth#{tidx}"))
-                        if tieng_dong_log is not None:
-                            tieng_dong_log.append(
-                                {"giay": round(float(off), 2), "loai": cat,
-                                 "ten": f"tự sinh #{tidx}",
-                                 "nguon": "ffmpeg tự sinh"})
-                    mix.append(f"[wh{wi}]")
-                # cho test/log biết ĐÃ chọn loại+file gì tại mỗi điểm nối
-                _SFX_LAST_PICK = chosen_log
+                             "vai": vai,
+                             "db": round(20.0 * math.log10(max(vol, 1e-6)), 1),
+                             "nguon": ("thư mục của bạn" if _tu_user
+                                       else "kho tiếng động của app")})
+                else:
+                    # thiếu thư viện -> tiếng tổng hợp hợp loại. Bộ tổng hợp
+                    # sinh bằng lavfi nên biên độ đã biết (~ -6 dBFS đỉnh):
+                    # quy về cùng đích bằng cách coi mean ~ -14 dB.
+                    tidx = _pick_synth_for_category(
+                        cat, last_synth.get(cat), _rnd)
+                    last_synth[cat] = tidx
+                    vol = tinh_gain_sfx(cat, -14.0, -6.0, _nen_db)
+                    in_args, branch = _fx_synth_branch(
+                        tidx, off, vol, w_idx, f"wh{wi}")
+                    cmd += in_args
+                    parts.append(branch)
+                    chosen_log.append((cat, f"synth#{tidx}"))
+                    if tieng_dong_log is not None:
+                        tieng_dong_log.append(
+                            {"giay": round(float(off), 2), "loai": cat,
+                             "ten": f"tự sinh #{tidx}", "vai": vai,
+                             "db": round(20.0 * math.log10(max(vol, 1e-6)), 1),
+                             "nguon": "ffmpeg tự sinh"})
+                mix.append(f"[wh{wi}]")
+            # cho test/log biết ĐÃ chọn loại+file gì tại mỗi mốc
+            _SFX_LAST_PICK = chosen_log
         if len(mix) == 1:
             amap = mix[0]
         elif len(mix) >= 2:
@@ -3012,6 +3289,12 @@ def export_canvas_clip(
             if hieu_ung_log is not None:
                 del hieu_ung_log[:]
                 hieu_ung_log.extend(_hu)
+            # bỏ luôn TIẾNG của những điểm nhấn vừa bị gỡ — nhật ký khoe tiếng
+            # cho một hiệu ứng KHÔNG có trong file là đúng kiểu "một đằng một
+            # nẻo" đã sập ở LỖI 5. Điểm NỐI thì giữ nguyên (không liên quan GPU).
+            _con = {round(float(c.get("bat", 0.0)), 3) for c in (_hu or [])}
+            _sfx_diem = [x for x in _sfx_diem
+                         if x[2] == "nối" or round(x[0], 3) in _con]
             _run_with_fallback(build, encoder, out_total, _prog,
                                "xuất được clip", dst=dst)
     finally:
