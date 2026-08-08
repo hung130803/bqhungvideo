@@ -540,17 +540,30 @@
      trong khi 184 file trong kho trải **26,5 dB** mức nghe được (-3,3 ..
      -29,8 dB) -> cùng nhóm, file này nghe rõ file kia mất hút.
      **CHỮA (đo được, không chỉnh mò):** `tools/do_muc_sfx.py` sinh bảng
-     `app/assets/sfx/muc_do.json` (mean/max dB từng file, tra 0 ms);
-     `_muc_nen_dB` đo nền của CHÍNH clip sắp xuất (80-126 ms, ngoài cửa chờ, chỉ
-     giải mã audio); `tinh_gain_sfx` = `(nền + 8 dB + bù nhóm) - mean file`, kẹp
-     để đỉnh <= -1 dBFS. Thêm `loai_sfx_theo_hieu_ung` (zoom/rung -> impact ·
-     loé sáng -> reveal · glitch -> scratch · mờ/tối -> suspense/pop · chữ ->
-     drumroll) và **DUCKING** hạ tiếng gốc 5 dB đúng lúc tiếng động kêu, cửa sổ
-     0,45 s vào/ra êm bằng nửa hình sin (`_bieu_thuc_duck`).
-     **SỐ ĐO SAU KHI SỬA:** điểm nhấn **0,0 -> +10,6 / +12,8 / +11,9 dB** trên
-     nền · điểm nối **+0,7 -> +6,5..+9,6 dB** · so với MỨC LỜI NÓI (bách phân vị
-     90) là **+0,3..+3,4 dB** (nghe rõ, không đè) · ducking đo **-5,1/-4,9/-4,8
-     dB** trong cửa sổ và **-0,21 dB** ngoài cửa sổ.
+     `app/assets/sfx/muc_do.json` (mean/max/**đỉnh RMS 50 ms** từng file, tra
+     0 ms); `_do_muc_clip` đo nền + MỨC LỜI + đỉnh của CHÍNH clip sắp xuất
+     (ngoài cửa chờ, chỉ giải mã audio); `tinh_gain_sfx` = `đích − đỉnh RMS
+     50 ms của file`. Thêm `loai_sfx_theo_hieu_ung` (zoom/rung -> impact · loé
+     sáng -> reveal · glitch -> scratch · mờ/tối -> suspense/pop · chữ ->
+     drumroll) và **DUCKING** (`_bieu_thuc_duck`, nửa hình sin vào/ra êm).
+     **BẢN ĐẦU CỦA CỔNG NÀY LÀ CỔNG VÔ DỤNG — ĐÃ THAY 09/08/2026.** Nó chỉ đo
+     trên **MỘT nguồn nền yên** (-23,6 dBFS) rồi kết luận "+10..+17 dB, ĐẠT";
+     đo lại trên clip THẬT (nền -15,7) thì **2/5 mốc NHỎ ĐI**. Nó còn lấy
+     "nền" = **trung vị CẢ CLIP**, mà trung vị của clip ồn CHÍNH LÀ mức lời ->
+     tiếng động chỉ cần bằng lời đã tự cho điểm. Và nó **nhấp nháy** (5 lượt
+     hỏng 1) vì file tiếng động bốc ngẫu nhiên.
+     **NAY (xem khối "TIẾNG ĐỘNG NGHE ĐƯỢC TRÊN MỌI LOẠI NỀN" bên dưới):** CA 2
+     đo trên **3 VIDEO THẬT nền khác hẳn nhau** (mean -25,8 / -16,2 / -16,6
+     dBFS, ca yên cố ý để **1 ĐOẠN** = không có điểm nối nào), mọi ngưỡng so
+     với **NỀN CỤC BỘ** (bpv20 trong ±1,5 s quanh CHÍNH mốc đó). 4 điều bắt
+     buộc: nổi **>= +6 dB** · **không mốc nào nhỏ đi** (sàn -0,5 dB) · lớp SFX
+     **<= 1,5x mức lời** · **đỉnh file <= -1 dBFS + 0 mẫu chạm trần** đọc bằng
+     `astats`. **SỐ ĐO:** 12/12 mốc đạt, thấp nhất **+8,5 dB**, 0 mốc nhỏ đi,
+     đỉnh file -3,99/-1,47/-1,66 dBFS. Chạy **5 lượt liên tiếp ĐẠT cả 5**.
+     **BẪY VIẾT CỔNG (sập 1 lần):** mỗi dòng `astats` mở đầu bằng
+     `[Parsed_astats_0 @ ...]` nên `startswith("Peak level dB:")` KHÔNG BAO GIỜ
+     khớp -> mọi file ra -99 dBFS và ca "không méo" tự PASS vĩnh viễn. Phải
+     dùng `in`, không dùng `startswith`.
      **BẪY ĐO ĐÃ SẬP:** đo ducking bằng cách so bản BẬT với bản TẮT ở giây
      (mốc+0,30) là SAI — chính TIẾNG ĐỘNG còn đang ngân (file 0,17-0,62 s) nên
      hiệu ra DƯƠNG (+2,7 / +10,7 / +3,7) và cổng FAIL OAN. ĐÚNG: dựng thêm 1
@@ -614,17 +627,69 @@
     ffmpeg đang chạy không". Máy bận (đúng cảnh sản xuất) thì lượt xuất còn đang
     XẾP HÀNG ở cửa chờ -> đo `0 tiến trình` -> cổng ĐỎ oan (chạy một mình lại
     XANH). Nay ĐỢI tới khi thấy ffmpeg thật rồi mới bấm Huỷ.
-- **TIẾNG ĐỘNG CHỈ NGHE ĐƯỢC TRÊN CLIP CÓ NỀN YÊN — CHƯA CHỮA, ĐÃ BÁO**
-  (`_do_sfx_theo_nen.py`). `tinh_gain_sfx` có 2 vế đá nhau: "đích = nền + 8 dB"
-  và "kẹp đỉnh <= −1 dBFS". Kho 184 file là tiếng ngắn đã chuẩn hoá ĐỈNH (hệ số
-  đỉnh trung vị **15,3 dB**) nên kẹp đỉnh gần như luôn thắng khi clip ồn:
-  nền −23,6 dBFS (nguồn cổng 44) -> 53% file bị kẹp, thiếu trung vị 1,0 dB;
-  nền **−15,7 dBFS** (clip THẬT đo hôm nay: xe tải nổ máy) -> **74% file bị kẹp,
-  thiếu trung vị 8,9 dB, tối đa 21,8 dB**. Đo trên clip thật 16 s: bật/tắt tiếng
-  động chênh **+0,6 / −1,1 / −0,0 / −1,6 / +2,4 dB** — 2/5 mốc còn NHỎ ĐI vì
-  ducking hạ tiếng gốc 5 dB mà lớp tiếng động không bù nổi. Cổng 44 không thấy
-  vì nó chỉ đo trên MỘT nguồn có nền yên. **Chưa tự sửa** (đổi độ to của mọi
-  clip trên 200-300 kênh) — hướng đề xuất ghi trong docstring file đo.
+- **TIẾNG ĐỘNG NGHE ĐƯỢC TRÊN MỌI LOẠI NỀN — ĐÃ CHỮA 09/08/2026** (nhánh
+  `sua-tieng-dong`; đo bằng `_do_sfx_3nen.py`, `_do_nen_clip.py`,
+  `_do_han_dinh.py`, `_do_sfx_theo_nen.py`).
+  **BỆNH**: v2.18.0 báo "+10..+17 dB" nhưng chỉ đo trên MỘT nguồn nền yên. Đo
+  lại trên clip THẬT: bật/tắt tiếng động lệch **+0,6 / −1,1 / −0,0 / −1,6 /
+  +2,4 dB** — **2/5 mốc NHỎ ĐI**. `tinh_gain_sfx` có 2 vế đá nhau ("đích =
+  nền + 8 dB" vs "kẹp đỉnh <= −1 dBFS"); clip ồn thì **74% kho bị kẹp, thiếu
+  trung vị 8,9 dB**.
+  **5 NGUYÊN NHÂN, mỗi cái một số đo — sửa hết:**
+  (a) **NỀN đo bằng `mean_volume`.** Với clip ồn `mean_volume` CHÍNH LÀ mức
+  lời: đo −15,7 dBFS trong khi nền thật (bpv20 đường bao RMS 50 ms) là −26..
+  −36. Nay `_do_muc_clip` trả **bpv20 = nền · bpv50 · bpv90 = MỨC LỜI · đỉnh**
+  trong MỘT lượt ffmpeg (`asetnsamples`+`astats`+`ametadata`, tính trong C).
+  (b) **Chuẩn hoá theo `mean` của FILE.** Kho là tiếng ngắn có đuôi ngân nên
+  mean bị đuôi kéo xuống -> cùng hệ số mà file này to file kia mất hút (= cổng
+  44 **nhấp nháy**, 5 lượt hỏng 1). Nay chuẩn hoá theo **ĐỈNH RMS 50 ms** (cột
+  thứ 3 MỚI của `muc_do.json`, sinh bởi `tools/do_muc_sfx.py`). Đo 8 file trải
+  crest 1,5..16,6 dB: lệch so đích **−0,4..+0,7 dB** (trước: hàng chục dB).
+  (c) **Kẹp gain theo đỉnh giết độ to.** Crest ngắn hạn của kho trung vị
+  **11,2 dB** -> "đỉnh lớp <= −1 dBFS" khoá RMS lớp mãi dưới −12 dBFS. Nay
+  KHÔNG kẹp gain; giữ đỉnh bằng **`alimiter`** ở nhánh SFX **và một `alimiter`
+  SAU KHI TRỘN**. Phải hạn sau khi trộn vì nguồn thật của anh Hùng đo được đỉnh
+  **+0,51 dBFS** (bản TẮT của "Parker and Chester" — tức app đang xuất ra file
+  MÉO SẴN); không lớp nào kẹp riêng mà cứu được. `alimiter` bắt buộc
+  `level=0` (mặc định `level=true` TỰ NÂNG +3,1 dB) + `latency=1` (không có
+  thì trễ **0,98 ms**, có thì **0,0 ms**).
+  (d) **MẤT ĐÚNG 3,0 dB ÂM THẦM Ở MỌI TIẾNG ĐỘNG.** Kho là file MONO, `amix`
+  ra stereo nên ffmpeg tự chèn phép đổi bố cục kênh nhân 1/căn2. App tính hệ số
+  theo số đo rồi bị lấy mất 3 dB không một dòng báo (đo trên clip thật: lớp
+  tiếng động luôn thấp hơn đích **−2,7..−3,1 dB**). Chữa bằng
+  `pan=stereo|FL<FL+FC|FR<FR+FC` — toán tử `<` KHÔNG chuẩn hoá lại (đo: mono
+  +3,0 dB · stereo 0,0 dB).
+  (e) **DUCKING LÀ THỦ PHẠM CHÍNH của "mốc NHỎ ĐI".** Bướu nửa hình sin
+  5 dB / 0,45 s / sớm 0,06 s **sâu nhất ở 0,225 s SAU mốc** — trùm đúng cửa sổ
+  ±0,175 s mà tai (và máy đo) nghe cú va, trong khi cú va đã tắt. Nay
+  **3 dB / 0,35 s / bắt đầu SAU mốc 0,15 s**: cú va tự xuyên qua, ducking chỉ
+  dọn chỗ cho phần ngân (đo ngay tại mốc: **−0,78 dB**, bản cũ −5 dB).
+  (f) **TIẾNG VÀO CHẬM KHÔNG ĐÁNH DẤU ĐƯỢC GÌ** (tìm ra khi chạy 5 lượt).
+  Kho có tiếng đỉnh rơi **0,60 s SAU** lúc bắt đầu (`ding_soft_04_v2.opus`);
+  chèn đúng giây điểm nhấn thì trong cửa sổ ±0,175 s nó chỉ có **−28,3 dBFS**
+  thay vì −20,1 = hụt **8,2 dB**, nhật ký vẫn ghi "có tiếng". Nay `muc_do.json`
+  có **cột 4 = GIÂY xảy ra đỉnh** (trung vị 0,10 s · bpv90 0,35 s · max
+  0,60 s); app **ĐẨY SỚM** tiếng đúng bằng số đó để chỗ to nhất rơi vào đúng
+  mốc, và **loại 18/184 file vào chậm hơn 0,35 s** khỏi điểm nhấn. Sau khi
+  sửa: 12/12 lượt bốc ngẫu nhiên đều rơi trong **±0,9 dB** quanh đích.
+  (g) **TRẦN HẠN ĐỈNH PHẢI BÁM ĐỈNH CỦA CHÍNH NGUỒN.** Hạ cứng về −2 dBFS thì
+  lớp hạn đỉnh gọt luôn TIẾNG GỐC ở chỗ nguồn đang to -> đúng mốc điểm nhấn,
+  bản BẬT lại thấp hơn bản TẮT (đo −0,9 dB, hỏng 2/5 lượt). Nay trần =
+  `max(−2, min(−0,2, đỉnh_nguồn − 0,6))`.
+  **BẤT KHẢ THI ĐÃ XÁC NHẬN, KHÔNG BỊA:** với nguồn đã master vượt 0 dBFS
+  (bản TẮT của "Parker and Chester" xuất ra **+0,51 dBFS / 1 mẫu chạm trần** —
+  app đang ra file méo sẵn TRƯỚC khi có tiếng động nào) thì **không thể vừa
+  không hạ mốc điểm nhấn vừa giữ đỉnh <= −1 dBFS**. Luật đã chốt: *bản BẬT
+  không bao giờ được méo hơn bản TẮT* (đo: BẬT +0,31 / 1 mẫu · TẮT +0,51 /
+  1 mẫu), còn 2 nguồn còn chỗ trống thì **−3,63 và −1,66 dBFS, 0 mẫu**.
+  **KẾT QUẢ ĐO trên 3 video THẬT** (nền yên/T.BÌNH/ồn — mean −25,8 / −16,2 /
+  −16,6 dBFS): **12/12 mốc nổi ≥ +6 dB trên nền cục bộ** (thấp nhất **+9,0**,
+  trước khi sửa có mốc +5,8) · **11/12 mốc to lên, 1 mốc đứng yên (−0,2 dB)** ·
+  đỉnh file **−5,65 / +0,02 / −1,66 dBFS**, đều **THẤP HƠN bản TẮT** · lớp SFX
+  luôn dưới 1,5x mức lời. Cổng 44 chạy **5 lượt liên tiếp ĐẠT cả 5**.
+  **KHÔNG CÓ trên máy (ghi thẳng):** nội dung thật có `mean_volume` tới −10
+  dBFS. Quét cả 28 video × 5 cửa sổ, to nhất là **−14,8 dBFS**. Ca "nền ồn"
+  dùng đúng mức đó.
 - **CỔNG TEST PHẢI TRỎ VỀ BẢN MÃ CỦA CHÍNH NÓ.** 29 file `_test_*.py` từng ghi
   CỨNG `sys.path.insert(0, r"D:\claude\ai-content-studio")` (và `bin/ffmpeg.exe`,
   và các lần mở file mã nguồn để quét tĩnh). Chạy cổng từ một **git worktree**
