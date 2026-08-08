@@ -1139,6 +1139,16 @@ name"**.
 
 **Rác `%TEMP%` sau CẢ BỘ: +4 file / +0,4 MB** (bộ cổng từng để lại **887,7 MB**).
 
+**LƯỢT CHẠY CUỐI (sau bản vá `-threads` đa-đầu-vào): 22/22 ĐẠT.** Đáng nói:
+lượt áp chót ra **21/22** và cổng FAIL duy nhất là **cổng 39** với đúng lý do
+nó sinh ra — `.exe` 12:17 **cũ hơn** mã nguồn 13:13 vì tôi sửa `ffmpeg_utils.py`
+SAU khi build. Build lại rồi thì 12/12. **Đây chính là bẫy 06/08 mà cổng 39
+được viết để chặn, và nó đã chặn thật.**
+
+**Dọn dẹp sau lượt đo:** đã xoá **6,67 GB / 70 thư mục sandbox** của chính các
+phép đo trong lượt này. Kiểm cuối: `_seg_*` = 0 · `_MEI*` = 0 · `_nhip_*` = 0 ·
+ffmpeg mồ côi = 0 · ổ C còn **350 GB**.
+
 ## CÓ NÊN PHÁT HÀNH KHÔNG?
 
 **NÊN — nhưng phải phát hành, vì bản đang chạy trên máy nhân viên đang THIẾU
