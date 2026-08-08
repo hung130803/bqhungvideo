@@ -256,6 +256,24 @@ con_taken = db.query_one(
 kiem(con_taken == 0, "poll huỷ (app sống): dòng sổ được trả ngay",
      f"còn {con_taken}")
 
+# 2e. HUỶ ≠ LỖI — FILE GỐC KHÔNG ĐƯỢC ĐỔI CHỖ.
+#
+# LỖ HỔNG CỦA CHÍNH CỔNG NÀY (lượt kiểm ĐỘC LẬP 08/08/2026): tới đây cổng mới
+# chỉ kiểm DÒNG SỔ. PHÉP THỬ PHÁ: giữ nguyên `unmark_taken` nhưng thêm
+# `self._pipe_quarantine_ctx(...)` vào NHÁNH HUỶ của `_pipe_poll_cut` — tức
+# video của anh Hùng bị đẩy vào `_Loi` mỗi lần bấm Huỷ — thì
+# `_test_cancel_persist.py`, `_test_pipe_overlap.py` và `_test_luoi_an_toan.py`
+# **CẢ BA VẪN XANH (mã 0)**. Bất biến "huỷ ≠ lỗi, KHÔNG đổi tên/chỗ file gốc"
+# chỉ nằm trong lời ghi chú chứ không ai canh. Ca này canh nó.
+_loi_dirs = [p for p in T.rglob("_Loi") if p.is_dir()]
+_con_file = [q.name for p in _loi_dirs for q in p.rglob("*.mp4")]
+kiem((src / "video4.mp4").exists(),
+     "poll huỷ: video gốc VẪN NẰM trong thư mục kênh",
+     f"đang có {[p.name for p in src.glob('*.mp4')]}")
+kiem(not _con_file,
+     "poll huỷ: KHÔNG file nào bị đẩy vào `_Loi` (huỷ ≠ lỗi)",
+     f"thấy {_con_file} trong {[str(d) for d in _loi_dirs]}")
+
 print()
 if FAIL:
     print(f"KẾT QUẢ: {len(FAIL)} FAIL -> {FAIL}")

@@ -75,6 +75,26 @@ BAT, HET = 1.60, 2.20        # cửa sổ hiệu ứng chung cho mọi kiểu
 NG_DEN, NG_TOI = 0.05, 0.35
 NG_CHAY, NG_RO = 3.0, 1.0
 
+#: HIỆU ỨNG PHẢI ĐI ĐÚNG CHIỀU — ngưỡng `sáng đáy|đỉnh / gốc` trong cửa sổ.
+#:
+#: === VÌ SAO PHẢI CÓ (lượt kiểm ĐỘC LẬP 08/08/2026 — cổng này ĐÃ PASS OAN) ===
+#: Cổng chỉ hỏi "có tối quá không · có đen không · có đổi >= 3% không · có rò
+#: không". Nó KHÔNG hỏi "đổi theo CHIỀU NÀO". PHÉP THỬ PHÁ: bỏ `eval=frame` ở
+#: `sup_toi` (đúng cái bẫy mã nguồn ghi là BẮT BUỘC) -> `eq` chỉ tính biểu thức
+#: MỘT LẦN lúc init, gặp `t=0` nên sóng ra ÂM -> "Sụp tối" **LÀM SÁNG THÊM
+#: 43%**: tỉ lệ sáng đáy **0,409 -> 1,434**. Cổng vẫn in "ĐẠT 14 · HỎNG 0" và
+#: trả mã 0. Hiệu ứng làm NGƯỢC HẲN việc của nó mà không ai biết.
+#: Bảng dưới chốt CHIỀU cho các kiểu ăn vào độ sáng — thứ mắt anh Hùng nhìn ra
+#: ngay còn cổng thì không.
+CHIEU = {
+    # khoá: (trần trên, sàn dưới) của tỉ lệ sáng trong cửa sổ
+    "sup_toi": (0.90, NG_TOI),      # TỐI đi: <= 0,90 (mà không dưới 0,35)
+    "toi_vien": (0.90, NG_TOI),     # tối 4 góc
+    "sh_toi_vien": (0.99, NG_TOI),
+    "loe_sang": (99.0, 1.00),       # SÁNG lên: đỉnh không được dưới bản gốc
+    "nhay_sang": (99.0, 0.95),      # nháy SÁNG (đã bỏ nửa chu kỳ âm)
+}
+
 _LOI: list[str] = []
 _OK: list[str] = []
 
@@ -215,9 +235,13 @@ def quet_mot(k: str, src: str, td: str, n_goc: int, font: str) -> dict:
     trong = max((dd[i] for i in trong_i), default=-1.0)
     ngoai = max((dd[i] for i in ngoai_i), default=0.0)
     ty = min((s1[i] / s0[i]) for i in trong_i if s0[i] > 5) if trong_i else 1.0
+    # ĐỈNH sáng trong cửa sổ — cần cho kiểu LÀM SÁNG (`loe_sang`, `nhay_sang`):
+    # chúng chỉ sáng ở GIỮA cửa sổ nên `min` không nói được gì về chiều.
+    ty_max = (max((s1[i] / s0[i]) for i in trong_i if s0[i] > 5)
+              if trong_i else 1.0)
     so = {"khung": n, "trong": round(trong, 2), "ngoai": round(ngoai, 2),
           "den": den[:5], "toi": toi[:5], "ty_sang": round(ty, 3),
-          "ghi": ""}
+          "ty_dinh": round(ty_max, 3), "ghi": ""}
     if n != n_goc:
         so["kq"] = "LỆCH-KHUNG"
     elif den:
@@ -230,6 +254,15 @@ def quet_mot(k: str, src: str, td: str, n_goc: int, font: str) -> dict:
         so["kq"] = "RÒ-NGOÀI"
     else:
         so["kq"] = "ĐẠT"
+    # CHIỀU (xem bảng `CHIEU`): kiểu ăn vào độ sáng phải đi ĐÚNG hướng. Kiểu
+    # TỐI xét đáy (`ty_sang`), kiểu SÁNG xét đỉnh (`ty_dinh`).
+    if k in CHIEU and so["kq"] == "ĐẠT":
+        tren, duoi = CHIEU[k]
+        do_ = ty if tren <= 1.0 else ty_max
+        if not (duoi <= do_ <= tren):
+            so["kq"] = "SAI-CHIỀU"
+            so["ghi"] = (f"tỉ lệ sáng {do_:.3f} ngoài khoảng "
+                         f"[{duoi}..{tren}] — hiệu ứng đi NGƯỢC việc của nó")
     return so
 
 
@@ -336,21 +369,29 @@ def main() -> int:
             so = quet_mot(k, src, td, n_goc, font)
             bang.append((k, HU.KHO[k].ten, so))
             print(f"    {k:<16}{so['kq']:<12} trong {so.get('trong',-1):6.2f}%"
-                  f" · ngoài {so.get('ngoai',-1):5.2f}% · sáng nhỏ nhất/gốc "
-                  f"{so.get('ty_sang',-1)} {so.get('ghi','')}")
+                  f" · ngoài {so.get('ngoai',-1):5.2f}% · sáng đáy/đỉnh so gốc "
+                  f"{so.get('ty_sang',-1)}/{so.get('ty_dinh',-1)} "
+                  f"{so.get('ghi','')}")
         xau = [(k, t, s) for k, t, s in bang if s["kq"] not in ("ĐẠT",)]
         bao(f"cả {len(bang)} kiểu trong kho ĐẠT (không đen / không chết / "
-            f"không rò)", not xau,
+            f"không rò / KHÔNG SAI CHIỀU)", not xau,
             "; ".join(f"{k}={s['kq']} {s.get('ghi','')}" for k, _t, s in xau)
             if xau else f"{len(bang)}/{len(bang)} ĐẠT")
         # bảng cho anh Hùng đọc
         print(f"\n  {'khoá':<16}{'tên':<26}{'kết quả':<12}{'%trong':>8}"
-              f"{'%ngoài':>8}{'sáng/gốc':>10}")
-        print("  " + "-" * 78)
+              f"{'%ngoài':>8}{'sáng đáy':>10}{'sáng đỉnh':>11}")
+        print("  " + "-" * 88)
+        _tra = {kk: ss for kk, _t, ss in bang}
         for k, t, s in bang:
             print(f"  {k:<16}{t[:25]:<26}{s['kq']:<12}"
                   f"{s.get('trong',-1):>8.2f}{s.get('ngoai',-1):>8.2f}"
-                  f"{s.get('ty_sang',-1):>10}")
+                  f"{s.get('ty_sang',-1):>10}{s.get('ty_dinh',-1):>11}")
+        # bộ dò CHIỀU phải THỰC SỰ có việc để làm (không thì lại là con dấu)
+        bao("mọi kiểu bị canh CHIỀU đều có mặt trong kho + đo được số",
+            all(k in _tra and _tra[k].get("ty_sang") is not None
+                for k in CHIEU),
+            " · ".join(f"{k}={_tra[k].get('ty_sang')}/{_tra[k].get('ty_dinh')}"
+                       for k in CHIEU if k in _tra))
 
         ca_duong_xuat_that(src, td)
 
