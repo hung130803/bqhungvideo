@@ -2364,8 +2364,28 @@ def export_canvas_clip(
     except Exception:      # noqa: BLE001 — hiệu ứng KHÔNG được làm chết lượt xuất
         _hu = []
 
+    # Có hiệu ứng nhóm SHADER trong bộ đã chọn không -> quyết định việc mở
+    # thiết bị Vulkan trong `build`. Để NGOÀI `build` vì `build` chạy lại cho
+    # từng encoder (nvenc -> libx264) và nhánh LÙI ÊM bên dưới sửa `_hu`.
+    def _can_vk_now() -> bool:
+        try:
+            from app.core import hieu_ung as _HU3
+            return bool(_HU3.can_vulkan(_hu))
+        except Exception:  # noqa: BLE001
+            return False
+
+    _can_vk = _can_vk_now()
+
     def build(enc: str) -> list[str]:
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
+        # THIẾT BỊ VULKAN cho nhóm hiệu ứng SHADER (`libplacebo`). CHỈ thêm khi
+        # bộ hiệu ứng đã chọn THẬT SỰ có shader — đó là cách giữ BẤT BIẾN SỐNG
+        # CÒN: mức "tat" (và mọi bộ không shader) ra lệnh ffmpeg KHÔNG khác một
+        # ký tự nào so với bản `main`, nên file xuất giống hệt (đo PSNR 99 dB ở
+        # cổng 36). Máy không có Vulkan thì `hieu_ung.dung_duoc()` đã loại hết
+        # shader từ bước CHỌN nên nhánh này không bao giờ chạy tới.
+        if _can_vk:
+            cmd += ["-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk"]
         parts = []
         # Các input phụ (màu nền/overlay/nhạc/dub) đánh số sau input video.
         vin = 1
@@ -2657,8 +2677,37 @@ def export_canvas_clip(
              ((lambda p: on_progress(0.35 + 0.65 * p)) if multi
               else on_progress))
     try:
-        _run_with_fallback(build, encoder, out_total, _prog,
-                           "xuất được clip", dst=dst)
+        try:
+            from app.queue.worker import CanceledError as _Huy
+        except Exception:                # noqa: BLE001
+            _Huy = ()                    # không nạp được -> không bắt nhầm ai
+        try:
+            _run_with_fallback(build, encoder, out_total, _prog,
+                               "xuất được clip", dst=dst)
+        except _Huy:
+            raise                        # HUỶ là HUỶ — không được "lùi êm"
+        except Exception:                # noqa: BLE001
+            # LÙI ÊM KHI GPU HỎNG GIỮA CHỪNG. `hieu_ung.dung_duoc()` đã dò
+            # Vulkan bằng một lượt render THẬT lúc chọn hiệu ứng, nhưng giữa
+            # lúc xuất thì driver vẫn có thể chết / GPU bị lượt khác chiếm /
+            # máy ảo mất thiết bị. Khi ấy thà xuất clip KHÔNG có 1-2 điểm nhấn
+            # còn hơn để cả clip FAIL — đúng cách `_tach_va_noi_manh` lùi từ
+            # GPU về CPU. Chỉ thử LẠI ĐÚNG 1 LẦN và chỉ khi lượt vừa rồi CÓ
+            # shader, nên lỗi thật (hết đĩa, mốc cắt ngoài phim…) vẫn nổ TO
+            # ngay lần đầu chứ không bị nuốt.
+            if not _can_vk:
+                raise
+            try:
+                from app.core import hieu_ung as _HU4
+                _hu = _HU4.bo_shader(_hu)
+            except Exception:            # noqa: BLE001
+                _hu = []
+            _can_vk = False
+            if hieu_ung_log is not None:
+                del hieu_ung_log[:]
+                hieu_ung_log.extend(_hu)
+            _run_with_fallback(build, encoder, out_total, _prog,
+                               "xuất được clip", dst=dst)
     finally:
         # dọn file đoạn tạm + file danh sách MỌI trường hợp (xong/lỗi/hủy)
         _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))

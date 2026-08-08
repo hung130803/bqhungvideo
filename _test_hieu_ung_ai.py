@@ -156,8 +156,14 @@ _W2, _H2 = 270, 480
 def _raw(ten: str, src: str, hieu: str):
     g = _GRAPH_NEN + (f";[vv]{hieu}[vo]" if hieu else "")
     p = str(_SB / (ten + ".raw"))
+    # NHÓM SHADER GPU (`libplacebo`) cần MỞ THIẾT BỊ VULKAN trên dòng lệnh —
+    # đúng như `ffmpeg_utils.build()` làm khi `hieu_ung.can_vulkan()` = True.
+    # Thiếu 2 tham số này thì ffmpeg báo "A hardware device reference is
+    # required to upload frames to" và cả 6 shader ra "lệnh lỗi" (FAIL OAN).
+    vk = (["-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk"]
+          if "libplacebo" in hieu else [])
     r = subprocess.run(
-        [FF, "-y", "-v", "error", "-ss", "100", "-t", "2.0", "-i", src,
+        [FF, "-y", "-v", "error", *vk, "-ss", "100", "-t", "2.0", "-i", src,
          "-an", "-filter_complex", g, "-map", "[vo]" if hieu else "[vv]",
          "-pix_fmt", "yuv444p", "-r", "30", "-fps_mode:v", "cfr",
          "-f", "rawvideo", p], capture_output=True, text=True,
