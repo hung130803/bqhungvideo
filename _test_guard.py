@@ -60,6 +60,12 @@ TIEN_TO = (
     "k100_", "lane_", "pipe_dlg_", "pipe_e2e_", "pipe_integ_run_",
     "pipe_overlap_", "quota_wait_", "reanalyze_", "reanalyze_basic_",
     "shutdown_safe_", "tpl_chan_", "ui_smooth_", "nopopup_",
+    # Cổng 36/37/38 + script đo hiệu ứng XUẤT VIDEO THẬT nên rác NẶNG. Đo thật
+    # 08/08/2026: 18 thư mục `test_hu_ai_*` = **839,6 MB** nằm lại, vì mấy lượt
+    # chạy chết native (0xC0000409) không chạy được khối `finally`. Đúng loại
+    # rác đã làm ổ C đầy 100% hôm 31/07 — phải có tên ở đây mới dọn được.
+    "test_hu_ai_", "test_cabien_", "test_xfade_", "do_ui_", "demo_v4_",
+    "gia_hu_", "do5loi_", "_nhip_", "_gpuchk_", "_lpchk_", "_vn_", "_vien_",
 )
 
 

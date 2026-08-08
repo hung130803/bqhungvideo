@@ -181,7 +181,16 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
             compute_type=profile.get("compute_type", "int8"),
             on_progress=prog,
         )
-        return data, f"faster-whisper:{model}"
+        # GHI ĐÚNG NƠI ĐÃ CHÉP LỜI. Trước đây dòng này đóng cứng
+        # `f"faster-whisper:{model}"` cho MỌI lượt — kể cả lượt đi Groq (mây).
+        # Đó là lời nói dối tai hại: `transcribe()` **tự lùi về whisper MÁY khi
+        # Groq lỗi, KHÔNG báo một dòng nào** (CLAUDE.md cổng 22, "chậm hơn hàng
+        # chục lần"), và cột `analysis.engine` là chỗ DUY NHẤT nhìn ra được
+        # chuyện đó. Cột nói sai thì lời khuyên "nghi dây chuyền chậm thì kiểm
+        # key TRƯỚC" không làm được. Đo thật 08/08/2026: cả 7 video của lượt
+        # tổng rà soát ghi 'faster-whisper:large-v3' trong khi THỰC TẾ chép
+        # bằng Groq — suýt kết luận sai là "app đang tụt về whisper máy".
+        return data, (data.get("engine") or f"faster-whisper:{model}")
 
     if kind == "diarization":
         if not diarization.is_available():

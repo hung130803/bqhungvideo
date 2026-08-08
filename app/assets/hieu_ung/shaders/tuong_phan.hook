@@ -1,0 +1,11 @@
+// TANG TUONG PHAN kieu dien anh — TU VIET (cong thuc toan, 0 tai ve).
+// Chay tren GPU qua `libplacebo` (Vulkan). Chi keo TUONG PHAN quanh muc giua,
+// KHONG doi sac -> U/V gan nhu khong lech (luat chong loe cua viec nay).
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC tang tuong phan dien anh (tu viet)
+vec4 hook() {
+    vec4 c = HOOKED_tex(HOOKED_pos);
+    vec3 o = clamp((c.rgb - 0.5) * 1.18 + 0.5, 0.0, 1.0);
+    return vec4(o, c.a);
+}

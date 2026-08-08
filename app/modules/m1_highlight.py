@@ -2714,7 +2714,8 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
     return cats
 
 
-def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx) -> None:
+def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
+                   hu_log: list | None = None, duong: str = "canvas") -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
@@ -2755,11 +2756,35 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx) -> None:
     dong = (f"   ↳ {pfx.strip() or 'Part'} công thức: mẫu «{ten_mau}» · "
             f"phụ đề «{cap}» · tiếng động: {', '.join(tieng)} · "
             f"hiệu ứng hình: {', '.join(hieu_ung)}")
+    # ĐIỂM NHẤN: mỗi điểm ghi LÝ DO KÈM SỐ (anh Hùng: cấm ghi chung chung kiểu
+    # "cảnh hay"). `hu_log` là danh sách hiệu ứng THẬT SỰ vào file — đã lọc theo
+    # font ở `export_canvas_clip`, nên nhật ký không bao giờ khoe hiệu ứng ma.
+    muc_hu = str(payload.get("hieu_ung", "nhe") or "tat")
+    if duong == "don":
+        # ĐỪNG IM LẶNG (anh Hùng 08/08/2026). Mẫu THIẾU `video_rect` -> đường
+        # xuất rơi vào nhánh 'clip đơn' (`export_vertical_clip`), nhánh đó
+        # KHÔNG có chuyển cảnh, KHÔNG có hiệu ứng điểm nhấn, KHÔNG đốt phụ đề.
+        # Đây là tình trạng CŨ (không phải hồi quy) nhưng trước nay app không
+        # nói một dòng nào nên user tưởng hiệu ứng hỏng.
+        dong += (" · ⚠ MẪU THIẾU KHUNG VIDEO (video_rect) nên Part này đi "
+                 "nhánh 'clip đơn': KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm "
+                 "nhấn, KHÔNG đốt phụ đề — mở Chỉnh mẫu, kéo khối video rồi "
+                 "Lưu lại")
+    elif muc_hu in ("", "tat"):
+        dong += " · điểm nhấn: TẮT"
+    elif not hu_log:
+        dong += (f" · điểm nhấn ({muc_hu}): KHÔNG điểm nào — clip phẳng "
+                 f"(không có cao trào đủ nổi so với trung vị)")
+    else:
+        dong += f" · điểm nhấn ({muc_hu}) {len(hu_log)}:"
     d = DATA_DIR / "logs"
     d.mkdir(parents=True, exist_ok=True)
     with open(d / f"pipeline_{datetime.now():%Y%m%d}.log", "a",
               encoding="utf-8") as f:
         f.write(f"[{datetime.now():%H:%M:%S}] {dong}\n")
+        for c in (hu_log or []):
+            f.write(f"[{datetime.now():%H:%M:%S}]        · "
+                    f"{c.get('vi_sao', c.get('khoa', '?'))}\n")
 
 
 def _join_categories(segs: list, recap_parts: list | None,
@@ -3322,6 +3347,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # (orig climax -> impact, kết -> reveal, mở mạch kể -> riser); clip
         # thường/Mixed -> transition. Thư viện SFX đóng gói chọn đúng loại.
         join_cats = _join_categories(segs, recap_parts, is_recap, signals)
+        # HIỆU ỨNG ĐIỂM NHẤN: ffmpeg ghi vào list này cái nó THẬT SỰ đưa vào
+        # file (kèm lý do + số đo) -> nhật ký dây chuyền in ra cho anh Hùng đọc.
+        _hu_log: list = []
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -3345,6 +3373,15 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             dub_stretch=dub_stretch,
             fx_fade=bool(payload.get("fx_fade", True)),
             fx_whoosh=bool(payload.get("fx_whoosh", True)),
+            # CHUYỂN CẢNH ở chỗ ghép đoạn: kiểu tự suy theo NỘI DUNG chỗ nối
+            # (xem ffmpeg_utils.chon_chuyen_canh) — KHÔNG bốc thăm. Job cũ
+            # (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
+            chuyen_canh=str(payload.get("chuyen_canh", "nhe") or "tat"),
+            # HIỆU ỨNG ĐIỂM NHẤN: AI tự chọn theo SỐ ĐO của chính clip (kho
+            # `app/core/hieu_ung.py`) — KHÔNG bốc thăm, KHÔNG thêm lượt LLM.
+            # Job cũ (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
+            hieu_ung=str(payload.get("hieu_ung", "nhe") or "tat"),
+            hieu_ung_log=_hu_log,
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,
             flip_h=flip_h,
@@ -3393,7 +3430,13 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             flip_h=flip_h,
             on_progress=on_prog,
         )
-        result_extra = {"mode": mode}
+        # ĐỪNG IM LẶNG: nhánh này KHÔNG có chuyển cảnh / hiệu ứng điểm nhấn /
+        # phụ đề. Cờ đi kèm kết quả để lối gọi (báo cáo dây chuyền) đọc được;
+        # dòng chữ đầy đủ do `_ghi_cong_thuc(duong='don')` ghi vào nhật ký.
+        result_extra = {"mode": mode, "duong": "don",
+                        "canh_bao": ("mẫu thiếu khung video (video_rect) -> "
+                                     "KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm "
+                                     "nhấn, KHÔNG phụ đề")}
 
     # ---- MINH BẠCH: ghi ĐÚNG những gì vừa áp cho Part này vào nhật ký dây
     # chuyền. Lý do (anh Hùng 06/08/2026): "hiệu ứng chữ khi xuất ra nó ra 1
@@ -3406,7 +3449,12 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     # đúng ca của cổng e2e, và im lặng vì đã bọc try/except.
     try:
         _a, _jc, _bg = locals().get("_cthuc", (None, [], "-"))
-        _ghi_cong_thuc(payload, _a, _jc, flip_h, _bg, pfx)
+        _ghi_cong_thuc(payload, _a, _jc, flip_h, _bg, pfx,
+                       locals().get("_hu_log") or [],
+                       duong=str((result_extra or {}).get("duong") or
+                                 ("mixed" if (result_extra or {}).get("mixed")
+                                  and not (result_extra or {}).get("canvas")
+                                  else "canvas")))
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
         pass
     db.execute(

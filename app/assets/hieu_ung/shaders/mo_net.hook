@@ -1,0 +1,18 @@
+// MO NET (focus pull) — TU VIET. Trung binh 12 diem quanh -> mo mem.
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC mo net mem (tu viet)
+vec4 hook() {
+    vec4 c = HOOKED_tex(HOOKED_pos);
+    vec2 p = HOOKED_pt * 2.2;
+    vec3 s = c.rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2( p.x, 0.0)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2(-p.x, 0.0)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2( 0.0, p.y)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2( 0.0,-p.y)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2( p.x, p.y)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2(-p.x, p.y)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2( p.x,-p.y)).rgb;
+    s += HOOKED_tex(HOOKED_pos + vec2(-p.x,-p.y)).rgb;
+    return vec4(s / 9.0, c.a);
+}
