@@ -1,4 +1,0 @@
-﻿[PASS] _test_chon_doan.py  0.7s
-       ✓ truyền được MODEL riêng cho khâu chấm (model-suy-luan-X) |  | ══ 6. HOOK theo tiếng luôn NẰM TRONG clip ══ |   ✓ hook lấy đúng đỉnh trong đoạn 2: [70.0, 73.0] |   ✓ không có audio -> None |   ✓ clip rỗng -> None |  | KẾT QUẢ: TẤT CẢ ĐẠT — AI nghe/xem đúng, trọng tài không bao giờ làm vỡ lượt cắt, sàn không trắng tay
-[PASS] _test_lien_thong.py  5.7s
-       ✅ 10 nhóm 'transition': có trong bộ xuất + có file thật — 24 file |   ✅ 10 nhóm 'reveal': có trong bộ xuất + có file thật — 16 file |   ✅ 10 nhóm 'riser': có trong bộ xuất + có file thật — 15 file |   ✅ 10f loại do m1 sinh ra KHÔNG bị ffmpeg đổi thầm sang mặc định — ['impact'] |  | ============================================================== | ĐẠT 37 · SAI 0 | ✅ CỔNG 28 ĐẠT — các luồng khớp nhau, 413 không treo/không đốt key
