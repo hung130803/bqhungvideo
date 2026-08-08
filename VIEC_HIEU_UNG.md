@@ -2,6 +2,93 @@
 
 ---
 
+## 🌏 ĐA QUỐC GIA — anh Hùng chốt 08/08/2026, CỔNG BẮT BUỘC
+Nguyên văn: *"đảm bảo test đủ kiểu nhé, AI phải hiểu hết các loại nội dung đa
+quốc gia nhé, k đc lỗi, thêm hiệu ứng âm thanh hợp lý bất chấp mọi nội dung quốc
+gia, test kỹ đó nhé"*.
+
+### VÌ SAO ĐÂY LÀ CHỖ NGUY HIỂM NHẤT — 2 lỗi thật đã xảy ra
+1. **v2.11.1 (hồi quy tôi gây ra)**: khoá ngôn ngữ truyền **TÊN** ngôn ngữ
+   ("English") vào tham số chỉ nhận **MÃ ISO** → `400 unsupported language` →
+   chép lời chết → **MỌI video > 10 phút thành "Cắt cơ bản"**. Đã chữa bằng
+   `_ma_iso()`.
+2. **CJK không có dấu cách**: mọi chỗ dùng `.split()` để đếm từ đều **đếm sai
+   gần hết** với tiếng Nhật/Trung. Đã phải làm `_word_tokens` + `_has_cjk`
+   (việc #124-128). **Bẫy này còn sống**: bất cứ mã mới nào đếm từ bằng
+   `.split()` là tái phát.
+
+### PHẢI TEST — tối thiểu 6 nhóm ngôn ngữ, VIDEO THẬT
+Kho video thật ở `C:\Users\Admin\Downloads\thùng rác` (kênh anh Hùng đang chạy).
+Nếu thiếu nhóm nào thì **ghi rõ là thiếu**, đừng bịa.
+
+| Nhóm | Đặc thù phải canh |
+|---|---|
+| **Nhật** (chính) | CJK không dấu cách · dọc/ngang · chữ cỡ lớn |
+| **Trung** | CJK · phồn/giản thể |
+| **Hàn** | Hangul · khoảng cách khác Nhật/Trung |
+| **Anh** | mốc từng-từ đầy đủ (ca dễ nhất — dùng làm đối chứng) |
+| **Việt** | dấu thanh chồng — dễ **cắt đáy khung** khi cỡ chữ lớn |
+| **Ả Rập / Do Thái** (nếu có) | **viết PHẢI→TRÁI** — `libass` phải bật `fribidi` (build đã có `--enable-libfribidi`), kiểm thứ tự chữ trên khung THẬT |
+| **Thái** | không dấu cách + dấu chồng tầng |
+| **KHÔNG LỜI** | phải đi đường XEM HÌNH (v2.15.0), không rơi cắt cơ bản |
+
+### 5 điều phải chứng minh cho TỪNG nhóm (đo, không đoán)
+1. **Chép lời ra chữ đúng ngôn ngữ** — `language` trả về khớp, số câu > 0.
+2. **AI chọn đoạn CHẠY** — ra clip có `llm_used=True`, **không** rơi "Cắt cơ bản".
+   Rơi thì phải **ghi lý do** (v2.13.4 đã có).
+3. **Phụ đề vẽ ĐÚNG** — render khung THẬT + **đếm pixel**, không tin `rc=0`.
+   Ca Việt phải kiểm **không cắt đáy khung** (bài học `ny ≤ 0,80`).
+4. **HIỆU ỨNG ÂM THANH hợp lý bất chấp quốc gia** — anh Hùng nhấn riêng ý này.
+   `_loai_theo_khoang_nhay` chọn tiếng động theo **NỘI DUNG CHỖ NỐI** (nhảy
+   ngược thời gian / gần liền mạch / câu chốt), **KHÔNG theo ngôn ngữ** → về lý
+   thuyết là trung lập. **Phải CHỨNG MINH bằng số**: với mỗi nhóm, xuất ≥3 Part
+   và kiểm **không phải Part nào cũng cùng một tiếng** (đúng lỗi cũ: mọi Part
+   đều "ding"). Đo mức to nhỏ tiếng động so với tiếng gốc — **không được át
+   lời** ở ngôn ngữ nào (đo RMS trước/sau).
+5. **Hiệu ứng HÌNH cũng phải trung lập** — luật chọn dựa trên `nang_luong` +
+   `chuyen_dong`, **không** dựa vào chữ. Kiểm: cùng một video, đổi nhãn ngôn ngữ
+   → **kết quả chọn hiệu ứng phải Y HỆT**.
+
+### QUÉT TĨNH bắt buộc
+`grep` toàn repo tìm `.split()` dùng để **đếm từ / đo mật độ chữ** trong mã mới
+(hiệu ứng, chuyển cảnh, bảng mẫu). Có là **FAIL** — phải dùng `_word_tokens`.
+Cũng tìm chỗ nào so sánh **tên ngôn ngữ** thay vì **mã ISO**.
+
+---
+
+## 🔴 4 VIỆC CÒN SÓT — anh Hùng bắt được 08/08/2026
+Nguyên văn: *"bạn bảo mấy cái này chưa làm đc thì cho vào tiến trình chạy chưa"*.
+Anh soi lại danh sách "CHƯA làm được" 7 mục và phát hiện **tôi chỉ giao 3/7**
+(máy nhân viên · build .exe · tổng rà soát). **4 mục dưới đây CHƯA ai làm:**
+
+### A. 6 shader `libplacebo` CHƯA nối vào app
+Kẹt vì `libplacebo` **không có timeline `enable`** → áp là áp **TOÀN clip**, trái
+luật chống loè (hiệu ứng chỉ 0,3-0,8s ở điểm nhấn). **Cách chữa đã nhìn thấy:**
+cắt mảnh riêng rồi concat — **y hệt đường `xfade_opencl` đã làm được** (kiến trúc
+2n−1 mảnh). Xong phải đo: lệch độ dài **0 ms** · U/V **< 3** · render khung thật
++ đếm pixel.
+
+### B. `export_vertical_clip` không có hiệu ứng/chuyển cảnh
+Vì mẫu thiếu `video_rect`. **Là tình trạng CŨ, không phải hồi quy** — nhưng nghĩa
+là kênh nào đi đường này thì **không có hiệu ứng gì cả**, mà app **im lặng**.
+Phải: (1) đếm có bao nhiêu kênh/clip THẬT đi đường này (đọc DB thật, **CHỈ ĐỌC**)
+· (2) nếu có kênh dùng thì nối hiệu ứng vào, hoặc **ít nhất báo rõ trong UI /
+nhật ký** để anh Hùng biết mẫu đó không có hiệu ứng — **đừng im lặng**.
+
+### C. Tối ưu giá **1,87× wall**
+Bật hiệu ứng làm xuất chậm 1,87× (5,56s → 10,38s cho clip 24s). Với 200-300 kênh
+đây là chi phí lớn. **Hướng rẻ hơn ĐÃ ĐO ĐƯỢC:** mức `manh` dùng GPU chỉ **1,60×**
+vì không phải encode lại toàn clip. Áp cùng kiến trúc đó cho `nhe`/`vua`.
+**Mốc: ≤ 1,4×** (ngân sách đã chốt từ đầu). Không đạt thì **báo số, đừng lờ**.
+
+### D. `_test_pipe_integ.py` đang FAIL
+Fail vì thiếu file nguồn đặt tay ở `%TEMP%`. **Lỗi có sẵn**, không nằm trong danh
+sách cổng chặn `CLAUDE.md`. Nhưng để nguyên thì lần sau ai chạy cũng tưởng hỏng
+thật. Sửa: tự sinh nguồn bằng `lavfi` (như cổng 37 làm), **hoặc** skip có in dòng
+lý do rõ ràng. **Đừng để FAIL trơ.**
+
+---
+
 ## ⭐ BƯỚC CUỐI BẮT BUỘC — TỔNG RÀ SOÁT (anh Hùng chốt 08/08/2026)
 
 Nguyên văn: *"khi nào xong tất cả mọi thứ tôi yêu cầu, bạn kiểm tra rà soát lại
@@ -757,3 +844,91 @@ cổng 14 · 19 · 21 · 23 · 24 · 25 · 26 · 28 · 34 · 35 · **36 (64 OK)*
 6. **Chưa chạy TỔNG RÀ SOÁT quy mô 50 kênh** (mục anh Hùng thêm cuối phiên):
    e2e 1 kênh/2 video đã PASS, 10 làn đã đo, nhưng **chưa chạy ≥50 kênh cùng
    lúc** vì máy anh Hùng đang chạy sản xuất.
+
+---
+---
+# LƯỢT 08/08/2026 (tối) — ⭐ TỔNG RÀ SOÁT: 3 LỖI THẬT LÒI RA
+
+> Đây là lượt "chạy CẢ HỆ THỐNG như thật" ở đầu file. Bộ công cụ mới:
+> `_ra_e2e.py` · `_ra_50kenh.py` · `_ra_may_nhanvien.py` · `_ra_cong.py` ·
+> `_ra_luong_phan_tich.py` · `_ra_ab_chuyen_dong.py` · `_ra_key_groq.py`.
+> Mọi script đều sandbox `BQ_DB_PATH`+`BQ_DATA_DIR`+`BQ_QSETTINGS_INI` và
+> `import _test_guard` → KHÔNG đụng DB / cài đặt / Explorer của anh Hùng.
+
+## ĐIỀU KIỆN ĐO
+Máy 24 nhân · RTX 3060 · CPU nền 10-14% · 0 ffmpeg lạ · ổ C còn 342 GB.
+`BQHungVideo.exe` của anh Hùng ĐANG MỞ nhưng **đo được 0,05% CPU và 0 tiến
+trình ffmpeg con** → coi là máy rảnh; đã ghi rõ vì `_may_ranh()` vẫn cảnh báo.
+Nguồn: **7 video Nhật THẬT** (`C:\Users\Admin\Downloads\thùng rác`), soi trước
+bằng `_ra_probe.py` để phủ đủ ca: **VFR ×2 · CFR 25/29,97/59,94 fps · 2–14
+phút · 1 ca KHÔNG LỜI** (hình Nhật thật, tiếng thay bằng im lặng). Mỗi video 1
+KÊNH riêng → 7 kênh chạy cùng lúc.
+
+## ⚠ 3 LỖI THẬT TÌM ĐƯỢC (đã sửa, mỗi lỗi có ca canh)
+
+### LỖI 1 — Bản PHÁT HÀNH quên `app/assets/hieu_ung` (nặng nhất)
+`.github/workflows/release.yml` (**chính là bản máy nhân viên tự cập nhật**)
+khai `--add-data` cho `fonts` + `sfx` nhưng **bỏ sót `hieu_ung`**.
+`BQHungVideo.spec` sót y hệt, và nó bị `.gitignore` nên **sửa mỗi spec là
+KHÔNG cứu được máy nhân viên**. Hậu quả trên `.exe`, app **không báo một dòng
+lỗi nào** (mọi đường đều "lùi êm"):
+- `hieu_ung/frei0r/` mất → kho hiệu ứng **25 → 14**
+- `gl_transitions.cl` mất → **21 chuyển cảnh GPU biến mất** (mức `manh` lặng
+  lẽ lùi về CPU)
+- `shaders/` mất → 6 shader không dùng được
+- **`NGUON_GIAY_PHEP.md` mất → không kèm giấy phép GPL/LGPL của frei0r**
+Máy anh Hùng chạy từ NGUỒN nên đủ hiệu ứng → không ai phát hiện ra.
+**Cổng 39 `_test_dong_goi.py`** (mới): CA A quét tĩnh **cả 2 cửa** đóng gói ·
+CA B đếm file thật trong `dist/_internal/app/assets` + so ngày sửa `.exe` với
+mã nguồn (đúng bẫy 06/08 "dist/ còn bản cũ mà tưởng đã build").
+
+### LỖI 2 — Lệnh ĐO của pha phân tích không siết luồng: 1 lệnh ăn 70 luồng
+Lượt e2e đo tổng **203 luồng ffmpeg = 8,46× số nhân**, phá mốc "≤ 2× nhân".
+Mốc cũ 44 luồng (1,83×) chỉ đo đường **XUẤT**; lượt này đo **cả pha PHÂN TÍCH**
+nên lỗi mới lộ. Truy ra: `chon_doan.chuyen_dong` gọi `subprocess.run` TRẦN,
+**một mình 70 luồng (2,92× nhân)**, ngốn ~13,5 nhân → cướp CPU của làn XUẤT.
+3 lệnh đo **cố ý đứng ngoài cửa chờ** (lệnh đo mà xin chỗ sẽ tự khoá lẫn với
+lệnh xuất đang giữ chỗ) nên cửa chờ không cứu được — phải siết núm tại chỗ.
+
+A/B **đan xen** 3 vòng (nguồn Nhật 653s/60fps/263 MB; dãy số khít, không nhiễu):
+
+| cấu hình | wall | CPU-giây | đỉnh luồng | |
+|---|---|---|---|---|
+| HIỆN TẠI (không núm) | 17,06s | **229,3** | **70 (2,92×)** | ❌ |
+| **giải mã 4** | 28,60s | **102,2** | **22 (0,92×)** | ✅ chọn |
+| giải mã 2 | 47,83s | 89,3 | 14 (0,58×) | ✅ nhưng chậm 2,8× |
+| giải mã 1 | 80,71s | 83,4 | 9 (0,38×) | ✅ nhưng chậm 4,7× |
+| GPU `cuda` + giải mã 4 | 52,92s | **30,0** | 25 (1,04×) | chưa dùng |
+| GPU `d3d11va` + giải mã 4 | 146,70s | 158,4 | 41 | **tệ hơn bản gốc** |
+
+Chọn mức **theo SỐ NHÂN, trần 4** (24 nhân→4 · 4 nhân→2 · 2 nhân→1), **KHÔNG**
+dùng thẳng `decode_threads()` vì nó hạ về 2 khi `ECO_MODE` bật (mặc định BẬT)
+mà mức 2 làm `chuyen_dong` **82,4s → 198,1s (2,4×)** đổi lấy phần luồng không
+đáng. Đo lại: **70 → 22 luồng**, `chuyen_dong` +37%. CPU-giây giảm ~56% — ở quy
+mô 300 video/ngày là **19 giờ-nhân/ngày → 8,4 giờ-nhân/ngày** chỉ riêng bước đo
+chuyển động. **Cổng 37 thêm CA 7**: quét tĩnh (lệnh có `-f null` mà thiếu
+`-threads` = FAIL) + đo thật đỉnh luồng ≤ 2× nhân.
+
+### LỖI 3 — Cột `analysis.engine` NÓI DỐI (suýt làm tôi kết luận sai)
+`analysis._run_one` đóng cứng `f"faster-whisper:{model}"` cho MỌI lượt chép
+lời. Nhưng `transcribe()` **tự lùi về whisper MÁY khi Groq lỗi, không báo một
+dòng nào** (CLAUDE.md cổng 22: "chậm hơn hàng chục lần"), và cột này là chỗ
+DUY NHẤT nhìn ra được. Đo thật: cả 7 video ghi `faster-whisper:large-v3` trong
+khi **38/38 key Groq còn sống** và gọi thẳng `_transcribe_groq` ra 35 đoạn bình
+thường → **tôi mất một lượt điều tra vì cột này**. Nay mỗi đường tự khai
+`engine` (`groq:whisper-large-v3` / `stable-ts:<model>` /
+`faster-whisper:<model>`). Đo lại: báo đúng `groq:whisper-large-v3` → **xác
+nhận lượt e2e THỰC SỰ chạy Groq, không hề tụt về whisper máy.**
+
+## KHÔNG PHẢI LỖI — 1 ca suýt báo oan, ghi lại để đừng lặp
+Trích khung 8 Part vừa xuất thấy **hộp tiêu đề ra Ô VUÔNG TRẮNG (tofu)** ở
+**cả 8/8** — giống hệt lỗi "ô đen" máy anh Hùng từng gặp. Đo phân định bằng
+`_ra_tieu_de.py`: cùng hàm `editor.render_overlay_png`, cùng chữ, cùng font
+Montserrat →
+- nền tảng Qt `windows` (**như app thật**): chữ Nhật + Latin render **ĐÚNG**
+- nền tảng `offscreen` (**như test**): chữ Nhật ra **TOFU**
+
+→ **tạo tác của bộ test**, không phải lỗi app: `QT_QPA_PLATFORM=offscreen`
+thiếu đường lùi font CJK của Windows. **Hệ quả phải nhớ: mọi test headless
+KHÔNG bao giờ soi được chữ trên clip xuất ra** — muốn canh chữ tiêu đề phải
+render ở nền tảng `windows`.

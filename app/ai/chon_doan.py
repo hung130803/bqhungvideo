@@ -54,9 +54,9 @@ def _num_luong() -> list[str]:
     NVENC nên siết luồng gần như miễn phí). Nhưng ở quy mô 200-300 kênh thì
     **CPU-giây mới là thứ khan hiếm**: 229 CPU-giây/video × 300 video/ngày =
     19 giờ-nhân/ngày chỉ để đo chuyển động; hạ còn 8,4 giờ-nhân. Và trong lúc
-    nó ăn 13,5 nhân thì làn XUẤT chạy song song bị đói CPU. Dùng đúng
-    `decode_threads()` (=4, ECO=2) — cùng mức repo đã đo là "mức cuối cùng còn
-    miễn phí" cho đường xuất, nên chỉ có MỘT nguồn sự thật về luồng giải mã.
+    nó ăn 13,5 nhân thì làn XUẤT chạy song song bị đói CPU. Mức 4 cũng đúng
+    bằng mức `decode_threads()` đã đo là "mức cuối cùng còn miễn phí" cho đường
+    xuất, nên hai đường nhất quán với nhau.
 
     VÌ SAO **KHÔNG** dùng thẳng `decode_threads()` (nó hạ về 2 khi ECO_MODE bật,
     mà ECO_MODE **mặc định BẬT**): đo lại cả pha phân tích trên nguồn Nhật

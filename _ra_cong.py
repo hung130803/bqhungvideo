@@ -42,15 +42,22 @@ CHUNG = [
     ("23 kho tiếng động kêu đúng mốc", "_test_sfx_kho.py", 300),
     ("34 mốc ngoài phim", "_test_moc_ngoai_phim.py", 420),
     ("35 vá lỗ phụ đề", "_test_va_lo_sub.py", 420),
-    ("37 CA BIÊN đường xuất (máy nhân viên)", "_test_ca_bien_xuat.py", 1500),
-    ("-- chồng lượt / hồi phục dây chuyền", "_test_pipe_overlap.py", 600),
+    ("30 chạy hàng trăm kênh phải mượt", "_test_muot_tram_kenh.py", 600),
+    ("37 CA BIÊN đường xuất (máy nhân viên)", "_test_ca_bien_xuat.py", 1800),
+    ("39 BẢN ĐÓNG GÓI đủ tài nguyên", "_test_dong_goi.py", 300),
+    ("-- chồng lượt / hồi phục dây chuyền", "_test_pipe_overlap.py", 900),
 ]
 # Cổng cần venv DEV (cv2 để đếm pixel, PyQt6 dựng UI đầy đủ, Groq…).
+# ƯU TIÊN: 24/25/28 đi thẳng qua `chon_doan.nang_luong` + `chuyen_dong` —
+# đúng 2 hàm vừa sửa núm luồng, nên PHẢI chạy lại.
 CHI_DEV = [
+    ("24 AI nghe + xem + trọng tài chấm mù", "_test_chon_doan.py", 1800),
+    ("25 tiếng động theo chỗ nối + tên mẫu", "_test_tieng_va_mau.py", 1200),
+    ("28 LIÊN THÔNG (2 bản vá đúng -> sai)", "_test_lien_thong.py", 1800),
     ("2  smoke toàn app (66 nút)", "_test_app_smoke.py", 900),
     ("3  mọi hộp thoại dây chuyền", "_test_pipe_dialogs.py", 600),
-    ("36 CHUYỂN CẢNH xfade + cửa chờ", "_test_chuyen_canh.py", 2400),
-    ("38 HIỆU ỨNG điểm nhấn + AI chọn", "_test_hieu_ung_ai.py", 2400),
+    ("36 CHUYỂN CẢNH xfade + cửa chờ", "_test_chuyen_canh.py", 2700),
+    ("38 HIỆU ỨNG điểm nhấn + AI chọn", "_test_hieu_ung_ai.py", 2700),
 ]
 
 
