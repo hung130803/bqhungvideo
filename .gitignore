@@ -54,3 +54,10 @@ _perf/
 _tts_voices.json
 _tmp_*.py
 _do_chon_cache/
+
+# Rác của lượt kiểm (video/log/ảnh — TUYỆT ĐỐI không commit, 135 MB/lượt)
+_clip_that/
+_ketqua_log/
+_kiem_ketqua*.json
+_ket_*.txt
+_mut_*.txt
