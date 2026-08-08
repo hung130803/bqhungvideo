@@ -431,14 +431,25 @@ def ca_d() -> None:
     print("\n== D. nối vào app (mẫu -> payload -> ffmpeg) ==")
     # D1: núm trong Chỉnh mẫu — dựng hộp THẬT
     try:
+        # cv2 PHẢI nạp TRƯỚC PyQt6 (bài học cổng 17: repo cần cv2 nạp trước Qt).
+        # Nạp ngược lại thì Python chết **0xC0000409** ngay lúc dựng QApplication
+        # — im lặng, không traceback, rất dễ tưởng "test treo".
+        import cv2  # noqa: F401
         from PyQt6.QtWidgets import QApplication
         from app.ui.editor import EditorDialog
-        QApplication.instance() or QApplication([])
+        # PHẢI GIỮ THAM CHIẾU PYTHON tới QApplication. Bỏ biến đi cho "gọn"
+        # (`QApplication.instance() or QApplication([])` đứng trơ) là Python
+        # thu hồi đối tượng -> chết **0xC0000409** ngay lúc dựng QDialog, KHÔNG
+        # traceback, faulthandler cũng không bắt được.
+        _app = QApplication.instance() or QApplication([])
+        assert _app is not None
         khung = str(_SB / "frame.png")
         subprocess.run([FF, "-y", "-v", "error", "-f", "lavfi", "-i",
                         "color=c=gray:s=540x960:d=0.1", "-frames:v", "1",
                         khung], capture_output=True, creationflags=_NOWIN)
+        print("   (dựng hộp Chỉnh mẫu…)", flush=True)
         dlg = EditorDialog(khung, layout=None, parent=None, current_name="")
+        print("   (dựng xong)", flush=True)
         cb = dlg.hieu_ung_cb
         data = [cb.itemData(i) for i in range(cb.count())]
         nhan = [cb.itemText(i) for i in range(cb.count())]
@@ -496,11 +507,88 @@ def ca_d() -> None:
         f"{[_sig(m) for m in ('tat', 'nhe', 'vua', 'manh')]}")
 
 
-def main() -> None:
+# =====================================================================
+#  E — NHÓM GPU: 21 chuyển cảnh OpenCL + fallback ÊM
+# =====================================================================
+def _rac_seg() -> int:
+    import glob
+    return len(glob.glob(os.path.join(tempfile.gettempdir(), "_seg_*")))
+
+
+def ca_e(src: str) -> None:
+    print("\n== E. 21 chuyển cảnh GPU + fallback êm ==")
+    from app.core import hieu_ung_gpu as HG
+    gpu = fu.co_chuyen_canh_gpu()
+    bao("máy này dùng được nhóm GPU", True,
+        f"{len(gpu)}/{len(HG.KHO_GPU)} kernel · OpenCL {HG.co_opencl()} · "
+        f"libplacebo/Vulkan {HG.co_libplacebo()} · shader {len(HG.shader_co())}")
+    segs3 = [(100.0, 108.0), (60.0, 66.0), (200.0, 203.0)]
+    segs4 = [(100.0, 105.0), (50.0, 54.0), (200.0, 203.0), (300.0, 304.0)]
+    # E1: mức 'manh' PHẢI ra kernel GPU; 'nhe'/'vua' vẫn CPU (không đổi hành vi
+    # của 200-300 kênh đang chạy)
+    k_manh = [k for k, _d in fu.chon_chuyen_canh(segs3, "manh")]
+    k_vua = [k for k, _d in fu.chon_chuyen_canh(segs3, "vua")]
+    bao("mức 'manh' dùng kernel GPU, 'vua'/'nhe' giữ nguyên CPU",
+        all(k.startswith("gl_") for k in k_manh)
+        and not any(k.startswith("gl_") for k in k_vua),
+        f"manh {k_manh} · vua {k_vua}")
+    bao("cùng 1 clip KHÔNG lặp một kernel GPU ở mọi chỗ nối",
+        len(set(k_manh)) == len(k_manh), f"{k_manh}")
+    # E2: xuất THẬT — độ dài phải KHỚP TUYỆT ĐỐI đường cắt thẳng
+    r0 = _rac_seg()
+    for segs in (segs3, segs4):
+        tong = sum(e - s for s, e in segs)
+        o = str(_SB / f"e_{len(segs)}.mp4")
+        xuat(o, src, segs, bg="blur", chuyen_canh="manh", hieu_ung="")
+        d = dai(o)
+        bao(f"GPU {len(segs)} đoạn: độ dài lệch < 40 ms", abs(d - tong) < 0.04,
+            f"{d:.3f}s vs {tong:.3f}s (lệch {abs(d - tong) * 1000:.0f} ms)")
+    # E3: chuyển cảnh CÓ XẢY RA THẬT ở chỗ nối (đếm pixel, không tin rc=0)
+    o_gpu, o_tat = str(_SB / "e_gpu.mp4"), str(_SB / "e_tat.mp4")
+    xuat(o_gpu, src, segs3, bg="blur", chuyen_canh="manh", hieu_ung="")
+    xuat(o_tat, src, segs3, bg="blur", chuyen_canh="tat", hieu_ung="")
+    # Chỗ nối 1 ở giây 8,0. Phép bù `_bu_xfade` đặt vùng hoà vào **[8,00; 8,30]**
+    # (LẤY THÊM phim ở cuối đoạn A, offset = độ dài GỐC của A) chứ KHÔNG phải
+    # [7,70; 8,00) — đo trước mốc là ra 0,0% và FAIL OAN.
+    moc = 8.15
+    a, b = khung(o_gpu, moc, 540, 960), khung(o_tat, moc, 540, 960)
+    pct = (float((np.abs(a[0] - b[0]) > 12).mean()) * 100
+           if a is not None and b is not None else -1.0)
+    bao("chuyển cảnh GPU CÓ xảy ra ở chỗ nối (không phải cắt khô)",
+        pct > 10.0, f"{pct:.1f}% pixel khác bản cắt thẳng ở giây {moc}")
+    # E4: MÁY NHÂN VIÊN không có OpenCL -> LÙI ÊM về xfade CPU
+    _cu = fu.co_chuyen_canh_gpu
+    fu.co_chuyen_canh_gpu = lambda: []          # type: ignore
+    try:
+        k = [x for x, _d in fu.chon_chuyen_canh(segs3, "manh")]
+        o = str(_SB / "e_nogpu.mp4")
+        xuat(o, src, segs3, bg="blur", chuyen_canh="manh", hieu_ung="")
+        d = dai(o)
+        bao("thiếu OpenCL -> tự đổi sang kiểu CPU, vẫn xuất đúng",
+            not any(x.startswith("gl_") for x in k)
+            and abs(d - 17.0) < 0.04, f"kiểu {k} · độ dài {d:.3f}s")
+    finally:
+        fu.co_chuyen_canh_gpu = _cu             # type: ignore
+    # E5: GPU HỎNG GIỮA CHỪNG -> lùi êm, không rác, không mất chuyển cảnh
+    _ker = HG.duong_kernel
+    HG.duong_kernel = lambda: ""                # type: ignore
+    try:
+        o = str(_SB / "e_hong.mp4")
+        ok = xuat(o, src, segs3, bg="blur", chuyen_canh="manh", hieu_ung="")
+        d = dai(o)
+        bao("kernel GPU hỏng -> lùi về CPU, clip vẫn đúng",
+            bool(ok) and abs(d - 17.0) < 0.04, f"độ dài {d:.3f}s")
+    finally:
+        HG.duong_kernel = _ker                  # type: ignore
+    bao("không để lại rác _seg_* sau cả 5 ca GPU", _rac_seg() <= r0,
+        f"trước {r0} · sau {_rac_seg()}")
+
+
+def main() -> int:
     ds = _nguon_nhat.liet_ke()[:3]
     if not ds:
         print("KHÔNG tìm thấy video Nhật thật -> DỪNG (quy tắc sắt: thành phần thật)")
-        sys.exit(2)
+        return 2
     print(f"[nguồn] {len(ds)} video Nhật thật · encoder {fu.detect_encoder()}")
     for p in ds:
         print("   ", os.path.basename(p)[:70])
@@ -513,20 +601,50 @@ def main() -> None:
     ca_a5()
     ca_b(ds)
     ca_c(ds[0])
-    ca_d()
+    ca_e(ds[1] if len(ds) > 1 else ds[0])
+    # ca_d dựng QApplication -> CHẠY Ở TIẾN TRÌNH RIÊNG. Dựng Qt trong CÙNG
+    # tiến trình đã chạy nhóm GPU/ffmpeg-OpenCL làm Python chết
+    # **0xC0000409 (fail-fast)**, đổi thứ tự kiểu gì cũng chết, và bản redirect
+    # ra file mất SẠCH output nên rất dễ tưởng "test treo".
+    print("\n== D. nối vào app (chạy ở tiến trình RIÊNG — Qt + OpenCL đá nhau) ==")
+    r = subprocess.run([sys.executable, "-u", str(REPO / "_test_hieu_ung_ai.py"),
+                        "--ui"], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
+                       creationflags=_NOWIN)
+    for d in (r.stdout or "").splitlines():
+        if d.startswith("  ["):
+            print(d)
+            (_OK if d.startswith("  [OK ]") else _LOI).append(d.strip())
+    if r.returncode != 0 and not (r.stdout or "").strip():
+        bao("chạy được phần UI ở tiến trình riêng", False,
+            f"mã {r.returncode}: {(r.stderr or '')[-200:]}")
     print("\n" + "=" * 62)
     print(f"ĐẠT {len(_OK)} · SAI {len(_LOI)}")
     if _LOI:
         for x in _LOI:
             print("  SAI:", x)
         print("CỔNG 38 KHÔNG ĐẠT")
-        sys.exit(1)
-    print("CỔNG 38 ĐẠT — 5 lỗi đã bịt, AI chọn giữ đúng 6 bất biến")
+        return 1
+    print("CỔNG 38 ĐẠT — 5 lỗi đã bịt, AI chọn thông minh giữ đủ bất biến, "
+          "nhóm GPU nối được + lùi êm")
+    return 0
 
 
 if __name__ == "__main__":
+    _ma = 1
     try:
-        main()
+        _ma = (0 if (ca_d() or not _LOI) else 1) if "--ui" in sys.argv \
+            else main()
     finally:
         import shutil
         shutil.rmtree(_SB, ignore_errors=True)
+        for _s in (sys.stdout, sys.stderr):
+            try:
+                _s.flush()
+            except (ValueError, OSError):
+                pass
+    # THOÁT BẰNG `os._exit`: tiến trình này vừa dựng QApplication vừa mở thiết
+    # bị OpenCL -> finalize interpreter làm Python chết **0xC0000409** ngay sau
+    # dòng kết quả, và bản `*>` của PowerShell mất SẠCH output. Đúng bài học
+    # `_test_shutdown_safety` (main.py cũng thoát bằng os._exit).
+    os._exit(_ma)

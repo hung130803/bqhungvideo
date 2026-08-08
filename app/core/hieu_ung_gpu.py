@@ -322,7 +322,8 @@ def thong_ke() -> dict:
 #  DỰNG LỆNH: chuyển cảnh GPU cho ĐÚNG VÙNG CHỒNG
 # =====================================================================
 def lenh_vung_chong(vao_a: str, vao_b: str, ra: str, kieu: str, d: float,
-                    enc: Optional[list] = None, fps: float = 0.0) -> list:
+                    enc: Optional[list] = None, fps: float = 0.0,
+                    am: bool = False) -> list:
     """Args ffmpeg dựng ĐÚNG `d` giây chuyển cảnh GPU từ 2 file dài đúng `d`.
 
     Vì sao chỉ làm vùng chồng chứ không cả clip: **bẫy #1** ở docstring module
@@ -346,10 +347,17 @@ def lenh_vung_chong(vao_a: str, vao_b: str, ra: str, kieu: str, d: float,
              f"source='{duong_filter(ker)}':kernel={kieu}:"
              f"duration={d:.3f}:offset=0[o];"
              f"[o]{VE_LAI_MOC}[v]")
+    # `am=True`: mảnh chuyển cảnh phải MANG THEO TIẾNG, nếu không thì đường
+    # ghép-3-mảnh ra clip **mất tiếng đúng chỗ nối** (concat demuxer đòi mọi
+    # mảnh cùng số luồng). `acrossfade` c1/c2=tri y hệt nhánh CPU `_graph_xfade`
+    # nên tiếng ở chỗ nối nghe giống nhau dù hình chạy GPU hay CPU.
+    if am:
+        graph += f";[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a]"
     tran = (["-frames:v", str(int(d * fps) + 3)] if fps > 0 else [])
     return ["-init_hw_device", "opencl=ocl", "-filter_hw_device", "ocl",
             "-i", str(vao_a), "-i", str(vao_b),
-            "-filter_complex", graph, "-map", "[v]", *tran,
+            "-filter_complex", graph, "-map", "[v]",
+            *(["-map", "[a]"] if am else []), *tran,
             *(enc or ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
                       "-pix_fmt", "yuv420p"]), str(ra)]
 

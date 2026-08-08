@@ -1535,11 +1535,20 @@ def chon_chuyen_canh(segs: list, muc: str = "nhe") -> list:
     m = str(muc or "").strip().lower()
     if m not in _XF_LUAT or len(segs or []) < 2:
         return []
+    # Mức 'manh' + máy CÓ OpenCL -> dùng kho kernel GPU (21 kiểu gl-transitions,
+    # MIT). Máy nhân viên thiếu OpenCL -> `gpu` rỗng -> đường CPU y như cũ,
+    # KHÔNG một dòng lỗi (fallback ÊM, cổng 37 có ca này).
+    gpu = set(co_chuyen_canh_gpu()) if m == "manh" else set()
     ra: list = []
     for i in range(len(segs) - 1):
         loai = _loai_cho_noi(segs, i)
         cap = _XF_LUAT[m][loai]
-        ra.append((cap[i % len(cap)], float(_XF_DAI[m][loai])))
+        kieu = cap[i % len(cap)]
+        if gpu:
+            cap_g = [k for k in _XF_GPU[loai] if k in gpu]
+            if cap_g:
+                kieu = cap_g[i % len(cap_g)]
+        ra.append((kieu, float(_XF_DAI[m][loai])))
     return ra
 
 
@@ -1634,6 +1643,165 @@ def _graph_xfade(n: int, chuyen: list, bu: list, dai_goc: list,
     return ";".join(p), vcur, (acur if co_tieng else "")
 
 
+#: Kiểu chuyển cảnh GPU thay cho kiểu CPU nào (dùng khi máy KHÔNG có OpenCL ->
+#: LÙI ÊM về `xfade` CPU, KHÔNG một dòng lỗi). Ánh xạ theo CÁI MẮT THẤY, không
+#: theo tên: `gl_gon_song` (gợn sóng lan) gần `dissolve` nhất, `gl_gat_trai`
+#: (gạt mềm) gần `slideleft`…
+GPU_LUI_VE: dict = {
+    "gl_crosswarp": "dissolve", "gl_gat_trai": "slideleft",
+    "gl_gat_len": "slideup", "gl_gat_cheo_meo": "smoothleft",
+    "gl_gio": "hlwind", "gl_gon_song": "dissolve",
+    "gl_vo_o": "pixelize", "gl_luoi_vuong": "diagtl",
+    "gl_quat_quay": "radial", "gl_gach_cheo": "diagtl",
+    "gl_nhoe_mo": "hblur", "gl_xoay_tron": "circleclose",
+    "gl_bien_hinh": "dissolve", "gl_soc_doc": "vertopen",
+    "gl_o_ngau": "pixelize", "gl_giot_nuoc": "circleopen",
+    "gl_kim_dong_ho": "radial", "gl_vong_mo": "hblur",
+    "gl_chong_chong": "radial", "gl_troi_mem": "smoothright",
+    "gl_giat_khoi": "pixelize",
+}
+#: Ở mức 'manh' — và CHỈ mức đó — mỗi loại chỗ nối được phép dùng 2 kernel GPU.
+#: Vì sao chỉ 'manh': đây là mức anh Hùng chọn khi muốn "thấy rõ nhất", và nhóm
+#: GPU tốn **2n lệnh ffmpeg/clip** thay vì n+1 (đo: GPU KHÔNG rẻ hơn CPU,
+#: 1,03x CPU-giây) nên không đáng ép lên mức mặc định của 200-300 kênh.
+_XF_GPU: dict = {
+    "nguoc": ("gl_giat_khoi", "gl_gat_trai"),
+    "lien": ("gl_crosswarp", "gl_gon_song"),
+    "chot": ("gl_xoay_tron", "gl_giot_nuoc"),
+    "xa": ("gl_troi_mem", "gl_quat_quay"),
+}
+
+
+def co_chuyen_canh_gpu() -> list:
+    """Khoá chuyển cảnh GPU dùng được trên máy này (rỗng = tự lùi về CPU)."""
+    try:
+        from app.core import hieu_ung_gpu as _HG
+        return _HG.dung_duoc()
+    except Exception:      # noqa: BLE001 — thiếu module không được làm chết xuất
+        return []
+
+
+def _enc_mezz(enc: str) -> list:
+    """Tham số encoder của mảnh mezzanine — DÙNG CHUNG cho mọi mảnh.
+
+    `concat` demuxer đòi mọi mảnh CÙNG thông số; mảnh thân và mảnh chuyển cảnh
+    GPU phải ra từ đúng một bộ tham số này, lệch một cái là ffmpeg im lặng bỏ
+    mảnh hoặc ra clip giật.
+    """
+    if enc == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
+                "-cq", "16", "-pix_fmt", "yuv420p",
+                "-threads", str(encode_threads())]
+    return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+            "-threads", str(encode_threads())]
+
+
+def _tach_va_noi_gpu(src, segs: list, xf: list, bu: list, encoder: str,
+                     fps: float, co_tieng: bool, tdir: str, tag: str,
+                     temps: list, on_progress=None) -> list:
+    """PHA 1 + 1.5 CHẠY TRÊN GPU — trả danh sách mảnh theo ĐÚNG thứ tự nối.
+
+    KHÁC đường CPU ở CHỖ NÀO: đường CPU tách n mezzanine rồi nối bằng 1 lệnh
+    `xfade`. `xfade_opencl` **không nối cả clip được** (bẫy #1 trong docstring
+    `hieu_ung_gpu`: 2 `hwupload` = 2 ngữ cảnh khung -> ffmpeg chết ngay khi hết
+    chuyển cảnh và ra clip CỤT TRONG IM LẶNG), nên ở đây cắt thành **2n-1 mảnh**
+    rồi để `concat` demuxer nối:
+
+        thân_0 · chuyển_0 · thân_1 · chuyển_1 · thân_2 …
+
+    trong đó (dùng lại đúng phép bù của `_bu_xfade`, timeline BẤT BIẾN):
+      thân_j    = src[ s_j + bu[j-1] .. e_j ]      (bỏ `bu[j-1]` giây đã bị
+                                                    chuyển cảnh trước ăn mất)
+      chuyển_i  = GPU( src[e_i .. e_i+bu[i]] , src[s_{i+1} .. s_{i+1}+bu[i]] )
+    Tổng = Σ(e_j − s_j) — **đúng bằng đường cắt thẳng**, nên `.ass` và mốc
+    tiếng động KHÔNG phải sửa một dòng nào.
+
+    SỐ LỆNH ffmpeg = **2n−1** (CPU là n+1): clip 2 đoạn 3 vs 3, 3 đoạn 5 vs 4.
+    Ném lỗi -> caller LÙI ÊM về `xfade` CPU (`GPU_LUI_VE`).
+    """
+    from app.core import hieu_ung_gpu as _HG
+    ker = _HG.duong_kernel()
+    if not ker:
+        raise RuntimeError("thiếu gl_transitions.cl")
+    dv = _HG.dau_vao(fps)
+    n = len(segs)
+    ra: list = []
+    # ĐẾM BẰNG SỐ KHUNG, KHÔNG bằng giây. Mỗi mảnh riêng lẻ bị làm tròn LÊN
+    # trọn khung, mà `concat` demuxer thì CỘNG DỒN: đo thật clip 3 đoạn ra
+    # **17,067s thay vì 17,000s** (+4 khung). 4 đoạn sẽ là +7 khung = 0,117s,
+    # VƯỢT mốc lệch tiếng-hình 80 ms. Chốt số khung từng mảnh thì tổng khung =
+    # tổng khung của đường cắt thẳng -> lệch 0.
+    nd = [int(round(float(b) * fps)) for b in bu]
+    for j, (s, e) in enumerate(segs):
+        n_truoc = nd[j - 1] if j > 0 else 0
+        ss = s + n_truoc / fps
+        nb = int(round((float(e) - float(s)) * fps)) - n_truoc
+        if nb < 1:
+            raise RuntimeError(f"thân đoạn {j + 1} còn {nb} khung")
+        than = os.path.join(tdir, f"_seg_{tag}_b{j}.mkv")
+        temps.append(than)
+
+        def _b(enc: str, _s=ss, _n=nb, _p=than) -> list:
+            c = [settings.FFMPEG_PATH, "-y", "-threads", str(decode_threads()),
+                 "-ss", f"{_s:.3f}", "-t", f"{_n / fps + 1.0 / fps:.6f}",
+                 "-i", str(src)]
+            c += _enc_mezz(enc) + ["-r", f"{fps:g}", "-fps_mode:v", "cfr",
+                                   "-frames:v", str(_n),
+                                   "-t", f"{_n / fps:.6f}"]
+            if co_tieng:
+                c += ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"]
+            return c + [_p]
+
+        if on_progress:
+            on_progress((j / max(1, n)) * 0.999)
+        _run_with_fallback(_b, encoder, nb / fps, None,
+                           f"tách thân đoạn {j + 1}/{n} (GPU)", dst=than)
+        ra.append(than)
+        if j >= n - 1:
+            break
+        d = nd[j] / fps                 # đúng số khung, không phải giây tròn
+        kieu = str(xf[j][0])
+        cv = os.path.join(tdir, f"_seg_{tag}_g{j}.mkv")
+        temps.append(cv)
+        graph = (f"[0:v]{dv},hwupload[a];[1:v]{dv},hwupload[b];"
+                 f"[a][b]xfade_opencl=transition=custom:"
+                 f"source='{_HG.duong_filter(ker)}':kernel={kieu}:"
+                 f"duration={d:.3f}:offset=0[o];[o]{_HG.VE_LAI_MOC}[v]")
+        if co_tieng:
+            graph += f";[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[ao]"
+
+        def _g(enc: str, _a=e, _b=segs[j + 1][0], _d=d, _n=nd[j], _g=graph,
+               _p=cv) -> list:
+            c = [settings.FFMPEG_PATH, "-y",
+                 "-init_hw_device", "opencl=ocl", "-filter_hw_device", "ocl",
+                 "-ss", f"{_a:.3f}", "-t", f"{_d + 1.0 / fps:.6f}",
+                 "-i", str(src),
+                 "-ss", f"{_b:.3f}", "-t", f"{_d + 1.0 / fps:.6f}",
+                 "-i", str(src),
+                 "-filter_complex", _g, "-map", "[v]"]
+            if co_tieng:
+                c += ["-map", "[ao]"]
+            # `-frames:v` + `-t` ở ĐẦU RA chốt mảnh ĐÚNG SỐ KHUNG. Trước đây
+            # chỉ có `-frames:v int(d*fps)+3` thì 3 khung dư thành ĐỘ DÀI THẬT
+            # (đo: clip 3 đoạn 17,067s thay vì 17,000s). `-frames:v` vẫn là
+            # PHANH CUỐI cho tai nạn "sinh khung vô tận, 19 GB RAM".
+            c += ["-frames:v", str(_n), "-t", f"{_d:.6f}"]
+            c += _enc_mezz(enc) + ["-r", f"{fps:g}", "-fps_mode:v", "cfr"]
+            if co_tieng:
+                c += ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"]
+            return c + [_p]
+
+        _run_with_fallback(_g, encoder, d, None,
+                           f"chuyển cảnh GPU {kieu} ({j + 1}/{n - 1})", dst=cv)
+        # `co_opencl()` đã đếm khung lúc dò máy, nhưng mảnh THẬT vẫn phải kiểm:
+        # `xfade_opencl` từng ra file CÓ KÍCH THƯỚC mà **0 KHUNG** (rc=0, im
+        # lặng). 0 khung ở đây = clip mất hẳn chỗ nối -> thà lùi về CPU.
+        if _HG._dem_khung(cv) < 1:
+            raise RuntimeError(f"mảnh chuyển cảnh GPU {kieu} ra 0 khung")
+        ra.append(cv)
+    return ra
+
+
 def _extract_segments_to_temp(src, segs: list, encoder: str,
                               on_progress=None,
                               chuyen_canh: Optional[list] = None,
@@ -1683,6 +1851,36 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     dai_goc = [float(e) - float(s) for s, e in segs]
     xf = list(chuyen_canh or [])[:max(0, n - 1)]
     bu = _bu_xfade(segs, xf, float(info.duration or 0.0)) if xf else []
+    # ---- NHÓM GPU (21 kernel gl-transitions, MIT). Máy nhân viên thiếu OpenCL
+    # -> `co_chuyen_canh_gpu()` rỗng -> ĐỔI kiểu GPU sang kiểu CPU tương đương
+    # và đi đường cũ. KHÔNG một dòng lỗi, KHÔNG mất chuyển cảnh.
+    co_gpu = any(str(k).startswith("gl_") for k, _d in xf)
+    if co_gpu and not co_chuyen_canh_gpu():
+        xf = [(GPU_LUI_VE.get(str(k), str(k)), d) for k, d in xf]
+        co_gpu = False
+    if co_gpu and any(d >= 0.08 for d in bu):
+        try:
+            noi_gpu = _tach_va_noi_gpu(src, segs, xf, bu, encoder, fps,
+                                       bool(info.has_audio), tdir, tag, temps,
+                                       on_progress)
+            lst = os.path.join(tdir, f"_seg_{tag}_list.txt")
+            with open(lst, "w", encoding="utf-8") as f:
+                f.write("ffconcat version 1.0\n")
+                for p in noi_gpu:
+                    f.write("file '" + p.replace("\\", "/") + "'\n")
+            return lst, temps
+        except Exception as e:      # noqa: BLE001 — GPU hỏng KHÔNG được làm
+            # chết lượt xuất: dọn mảnh GPU rồi làm lại bằng CPU. Mảnh đã tạo
+            # nằm trong `temps` (list của caller) nên vẫn được dọn dù có gì.
+            # HUỶ (`CanceledError`) thì PHẢI ném tiếp — lùi về CPU lúc user vừa
+            # bấm Huỷ là chạy thêm cả một lượt xuất nữa (cổng 37 ca "huỷ giữa
+            # lúc xuất"). So theo TÊN LỚP vì worker import vòng.
+            if type(e).__name__ == "CanceledError":
+                raise
+            print(f"[hieu-ung] chuyển cảnh GPU hỏng ({e}) -> lùi xfade CPU")
+            _cleanup_paths(list(temps))
+            del temps[:]
+            xf = [(GPU_LUI_VE.get(str(k), str(k)), d) for k, d in xf]
     for i, (s, e) in enumerate(segs):
         seg_path = os.path.join(tdir, f"_seg_{tag}_{i}.mkv")
         temps.append(seg_path)
