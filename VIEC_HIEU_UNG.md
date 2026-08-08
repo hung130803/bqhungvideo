@@ -1401,3 +1401,30 @@ chuyển cảnh GPU**.
 là cần. Cách rẻ hơn nếu vẫn muốn: gắn shader vào **pha 1.5** (mảnh mezzanine
 đang có sẵn ở chỗ nối) thay vì điểm nhấn — lúc đó nó thành **chuyển cảnh** chứ
 không phải điểm nhấn.
+
+## 8. CÒN CHƯA LÀM — nói thẳng, không che
+1. **6 shader `libplacebo` vẫn CHƯA nối** — lý do kỹ thuật ở mục 7, không phải
+   quên. Kho hiệu ứng hiện có **25 frei0r + 58 xfade CPU + 21 xfade GPU**.
+2. **Giá mặc định 1,98× wall — CHƯA đạt mốc ≤ 1,4×.** Đã hạ được từ **2,30×**
+   (−15% wall, −26% CPU-giây) bằng kiến trúc 2n−1. Phần dư là **hiệu ứng ĐIỂM
+   NHẤN pha 2** (một mình 1,61×). Hạ tiếp phải sửa graph pha 2 — 400 dòng đang
+   gánh 200-300 kênh, **cố ý không đụng trong lượt này**.
+3. **Luồng ffmpeg ở N=3 là 2,67× số nhân** — vượt mốc cũ "≤ 2× nhân". Đây là
+   **cái giá anh Hùng đã đồng ý trả** để lấy thông lượng; mốc anh cảm nhận được
+   (trễ UI) vẫn 13,7 ms / đỉnh 50,3 ms.
+4. **KHÔNG có video thật tiếng Trung · Thái · Ả Rập · Do Thái** trên máy → 3
+   nhóm đó mới kiểm được 2/5 điều. Cần anh Hùng cấp 1-2 video mỗi thứ tiếng.
+5. **Chưa đo trên máy nhân viên YẾU THẬT** (2-4 nhân, không NVIDIA) — vẫn chỉ
+   giả lập bằng monkeypatch (cổng 37) trên máy 24 nhân. Công thức mới tự hạ
+   N về 1 ở máy ≤ 8 nhân, nhưng đó là **tính toán, chưa phải số đo**.
+6. **Chưa build lại `.exe`** trong lượt này (chưa bump version, chưa phát hành).
+   Cổng 39 vẫn canh, nhưng `.exe` trong `dist/` là bản 08/08 **trước** các bản
+   vá hôm nay → **phải build lại trước khi phát hành**.
+7. **`-hwaccel cuda` cho lệnh ĐO** (đã đo −87% CPU-giây) vẫn chưa bật — cần cửa
+   dò + đường lùi cho máy không có NVIDIA (`d3d11va` đo ra tệ hơn bản gốc).
+
+### Kết quả cuối cùng của cổng `_test_pipe_integ.py`: **PASS**
+`38 key` · `analysis.transcript = groq:whisper-large-v3` (không tụt whisper máy)
+· `job auto done` + **2 job `m1_export_clip` done** · `pipeline_files.status =
+done ("2 part")` · **2 Part xuất ra** · gốc đã dọn. Từ **FAIL trơ
+(FileNotFoundError)** → **PASS có số**.
