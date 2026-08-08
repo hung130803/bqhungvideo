@@ -1,0 +1,14 @@
+// HAT PHIM (film grain) — TU VIET.
+// BIEN DO 0,22 chu khong 0,085: do that o ban dau chi 0,8% pixel lech >12
+// (mat KHONG thay). Do lai sau khi tang: xem _ket_gpu.json. Nhieu CUNG MUC cho ca 3 kenh mau nen chi
+// them hat, KHONG lam lech sac (bai hoc tim.mp4: lech V=142 -> tim ca khung).
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC hat phim (tu viet)
+vec4 hook() {
+    vec4 c = HOOKED_tex(HOOKED_pos);
+    vec2 q = HOOKED_pos * HOOKED_size;
+    float n = fract(sin(dot(q, vec2(12.9898, 78.233))) * 43758.5453);
+    float g = (n - 0.5) * 0.22;
+    return vec4(clamp(c.rgb + vec3(g), 0.0, 1.0), c.a);
+}

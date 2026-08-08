@@ -33,7 +33,6 @@ nguồn VFR. Mọi ca FAIL đều in SỐ ĐO.
 from __future__ import annotations
 
 import os
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -91,6 +90,16 @@ def dai_video(p: Path) -> float:
         return float(out.strip().splitlines()[0])
     except (ValueError, IndexError):
         return -1.0
+
+
+def so_khung(p: Path) -> int:
+    """Số khung ĐỌC ĐƯỢC (0 nếu hỏng). Dùng cho ca GPU: 0 khung và khung VÔ TẬN
+    đều là bệnh thật đã đo được của `xfade_opencl`."""
+    rc, out = _chay([FP, "-v", "error", "-select_streams", "v:0",
+                     "-count_frames", "-show_entries", "stream=nb_read_frames",
+                     "-of", "csv=p=0", str(p)])
+    s = (out or "").strip().splitlines()
+    return int(s[0]) if s and s[0].strip().isdigit() else 0
 
 
 def khung(p: Path, t: float, dst: Path) -> bool:
@@ -559,6 +568,97 @@ def ca_bat_bien(src: Path) -> None:
         f"PSNR các mốc = {ps} dB (thấp nhất {min(ps) if ps else '?'})")
 
 
+def ca_gpu_fallback() -> None:
+    """NHÓM GPU: máy KHÔNG kham được thì TỰ TẮT, tuyệt đối không nổ lỗi.
+
+    Máy nhân viên có thể không có OpenCL / không có Vulkan / không GPU rời. Cửa
+    duy nhất caller cần là `dung_duoc()` — nó phải trả **[]** chứ không được ném.
+
+    Kèm 2 ca QUÉT TĨNH canh đúng 2 tai nạn ĐÃ ĐO của nhóm này (08/08/2026):
+      · `VE_LAI_MOC` phải có `setpts=` và **KHÔNG được có `fps=`**. `xfade_opencl`
+        trả PTS rác (AV_NOPTS, in ra `-600479950316066`); ai "chữa" bằng `fps=`
+        thì ffmpeg sinh khung vô tận -> đo thật **19,1 GB RSS + 364 CPU-giây
+        trong 9 phút** rồi phải giết tay.
+      · `dau_vao()` phải có `settb=` — thiếu nó thì chuyển cảnh chạy xong trong
+        ĐÚNG 1 khung (đo: khung giữa giống đoạn B 100%, tức nhìn ra là cắt khô).
+    """
+    print("\n[CA 9] NHÓM GPU (xfade_opencl / libplacebo): fallback ÊM + 2 phanh")
+    from app.core import hieu_ung_gpu as GPU
+
+    bao("`VE_LAI_MOC` có `setpts=` (chống PTS rác -> 0 khung)",
+        "setpts=" in GPU.VE_LAI_MOC, GPU.VE_LAI_MOC)
+    bao("`VE_LAI_MOC` KHÔNG có `fps=` (chống sinh khung vô tận / 19 GB RAM)",
+        "fps=" not in GPU.VE_LAI_MOC, GPU.VE_LAI_MOC)
+    bao("`dau_vao()` có `settb=` (chống chuyển cảnh xong trong 1 khung)",
+        "settb=" in GPU.dau_vao(30), GPU.dau_vao(30))
+
+    # kiểu lạ phải NÉM LỖI (như đường CPU), không im lặng
+    try:
+        GPU.lenh_vung_chong("a.mp4", "b.mp4", "o.mp4", "khong_co_kieu_nay", 0.3)
+        bao("kiểu GPU lạ -> ném lỗi", False, "KHÔNG ném — sẽ ra clip cắt khô")
+    except (ValueError, RuntimeError) as e:
+        bao("kiểu GPU lạ -> ném lỗi", True, f"{type(e).__name__}: {e}"[:90])
+
+    # GIẢ máy nhân viên: không có file kernel -> tự tắt, KHÔNG ném
+    goc = GPU.duong_kernel
+    try:
+        GPU.duong_kernel = lambda: ""            # type: ignore[assignment]
+        GPU._CO.pop("opencl", None)
+        ds = GPU.dung_duoc(do_lai=True)
+        bao("máy THIẾU kernel -> `dung_duoc()` = [] (tự tắt, không nổ)",
+            ds == [], f"trả {ds!r}")
+    except Exception as e:                                   # noqa: BLE001
+        bao("máy THIẾU kernel -> `dung_duoc()` = [] (tự tắt, không nổ)", False,
+            f"NÉM {type(e).__name__}: {e}")
+    finally:
+        GPU.duong_kernel = goc                   # type: ignore[assignment]
+        GPU._CO.pop("opencl", None)
+
+    # GIẢ máy nhân viên: ffmpeg không chạy được -> tự tắt, KHÔNG ném
+    goc_ff = GPU._ffmpeg
+    try:
+        GPU._ffmpeg = lambda: str(_SB / "khong_co_ffmpeg.exe")  # type: ignore
+        GPU._CO.clear()
+        bao("ffmpeg HỎNG -> `co_opencl()`/`co_libplacebo()` = False, không nổ",
+            (GPU.co_opencl(do_lai=True) is False)
+            and (GPU.co_libplacebo(do_lai=True) is False), "cả hai False")
+    except Exception as e:                                   # noqa: BLE001
+        bao("ffmpeg HỎNG -> `co_opencl()`/`co_libplacebo()` = False, không nổ",
+            False, f"NÉM {type(e).__name__}: {e}")
+    finally:
+        GPU._ffmpeg = goc_ff                     # type: ignore[assignment]
+        GPU._CO.clear()
+
+    # Máy NÀY có OpenCL thì render thật 1 chuyển cảnh và ĐẾM KHUNG (0 khung và
+    # khung vô tận đều là bệnh đã gặp; `-frames:v` trong lệnh là phanh cứng).
+    if GPU.co_opencl(do_lai=True):
+        d, fps = 0.30, 30
+        vao = []
+        for i, mau in enumerate(("testsrc2", "smptebars")):
+            p = _SB / f"gpu_in{i}.mp4"
+            subprocess.run(
+                [FF, "-y", "-hide_banner", "-v", "error", "-f", "lavfi", "-i",
+                 f"{mau}=s=320x180:r={fps}:d={d}", "-c:v", "libx264",
+                 "-pix_fmt", "yuv420p", str(p)],
+                capture_output=True, timeout=120, creationflags=_NOWIN)
+            vao.append(str(p))
+        out = _SB / "gpu_out.mp4"
+        kieu = next(iter(GPU.KHO_GPU))
+        r = subprocess.run(
+            [FF, "-y", "-hide_banner", "-v", "error",
+             *GPU.lenh_vung_chong(vao[0], vao[1], str(out), kieu, d, fps=fps)],
+            capture_output=True, text=True, errors="replace", timeout=180,
+            creationflags=_NOWIN)
+        n = int(so_khung(out)) if out.exists() else 0
+        ky = int(round(d * fps))
+        bao(f"render thật `{kieu}` ra ĐÚNG {ky} khung (không 0, không vô tận)",
+            r.returncode == 0 and n == ky,
+            f"rc={r.returncode} · {n} khung (kỳ vọng {ky})")
+    else:
+        bao("máy này không có OpenCL -> nhóm GPU tự tắt (đúng thiết kế)",
+            GPU.dung_duoc(do_lai=True) == [], "dung_duoc() = []")
+
+
 def main() -> int:
     _test_guard.tu_kiem()
     print("=" * 74)
@@ -571,6 +671,7 @@ def main() -> int:
 
     ca_cua_cho()
     ca_ham_thuan()
+    ca_gpu_fallback()
 
     vids = [p for p in (THUNG.rglob("*.mp4") if THUNG.exists() else [])
             if p.stat().st_size > 5_000_000

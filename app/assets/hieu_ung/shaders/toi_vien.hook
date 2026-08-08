@@ -1,0 +1,12 @@
+// TOI VIEN ONG KINH (vignette) — TU VIET. Nhan do sang theo khoang cach tu tam,
+// khong dung bang mau nen KHONG the loe mau.
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC toi vien ong kinh (tu viet)
+vec4 hook() {
+    vec4 c = HOOKED_tex(HOOKED_pos);
+    vec2 d = HOOKED_pos - vec2(0.5);
+    float r = length(d) * 1.414;                 // 0 o tam, ~1 o goc
+    float k = 1.0 - 0.42 * smoothstep(0.55, 1.0, r);
+    return vec4(c.rgb * k, c.a);
+}

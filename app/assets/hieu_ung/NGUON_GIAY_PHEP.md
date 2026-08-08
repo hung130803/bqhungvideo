@@ -45,10 +45,62 @@ nạp. Đo thật 07/08/2026: để cạnh plugin → **63/159** nạp được;
 `ffmpeg.exe` → **87/159**. `hieu_ung.bao_dam_runtime()` tự chép; chép không được
 thì app **tự tắt** 2 hiệu ứng cần chúng (`nosync0r`, `scanline0r`), KHÔNG nổ lỗi.
 
-## 2. gl-transitions — CHƯA kèm file nào
-Kho kernel chuyển cảnh https://github.com/gl-transitions/gl-transitions, giấy
-phép **MIT**. Nếu sau này chuyển kernel sang `xfade_opencl` thì **phải chép kèm
-đoạn giấy phép MIT + tên tác giả từng kernel** vào đây.
+## 2. gl-transitions — thư mục gốc, file `gl_transitions.cl`
+
+| | |
+|---|---|
+| Dự án | **gl-transitions** — kho chuyển cảnh GLSL mã nguồn mở |
+| Nguồn | https://github.com/gl-transitions/gl-transitions |
+| Giấy phép | **MIT** (xem nguyên văn bên dưới) |
+| Cách dùng | Công thức GLSL được **viết lại tay sang OpenCL C** cho filter `xfade_opencl` của ffmpeg (`transition=custom:source=…:kernel=…`). Không chép nhị phân, không tải file lúc chạy |
+| Chạy ở đâu | **GPU** (OpenCL). Máy không có OpenCL -> `hieu_ung_gpu.dung_duoc()` trả `[]`, app dùng `xfade` CPU như cũ, KHÔNG một dòng lỗi |
+
+### 21 kernel ĐANG DÙNG + tác giả gốc (số ĐO THẬT, không phải đếm tên)
+Đã render bằng GPU thật, đếm pixel từng khung, đo U/V — xem `_do_gpu_chuyen_canh.py`
+→ `_ket_gpu.json`. **21/21 ĐẠT.**
+
+`crosswarp` (Eke Péter) · `directional` ×2 (gre) · `directionalwarp` (pschroen)
+· `wind` (gre) · `ripple` (gre) · `pixelize` (gre) · `squareswire` (gre)
+· `radial` (Xaychru) · `crosshatch` (pthrasher) · `crossblur` · `rotate`
+· `morph` · `verticalstripes` · `randomsquares` · `waterdrop` · `angular`
+· `radialblur` · `pinwheel` · `swap` · `glitchmemories` (Gunnar Roth)
+
+**3 kernel viết rồi nhưng KHÔNG đưa vào kho** (mã còn trong `.cl` để đối chiếu):
+`polka dots curtain` — khung giữa đã giống đoạn sau 94,4%, nhìn ra là cắt khô;
+`simplezoom` — lệch màu U+3,3 V−3,6 (trần U/V < 3); `fadecolor` — lệch màu
+U−21,7 V−43,3. **Không ship cái không đo được.**
+
+### Nguyên văn giấy phép MIT của gl-transitions
+```
+The MIT License (MIT)
+
+Copyright (c) 2017 Gaetan Renaudeau (gre) and gl-transitions contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## 2b. Shader GLSL cho `libplacebo` — thư mục `shaders/`
+**TỰ VIẾT 100%**, không lấy từ đâu: 6 file `.hook` (`hat_phim` · `mo_net` ·
+`net_hon` · `quang_sang` · `toi_vien` · `tuong_phan`) là công thức toán đặt
+trong khuôn `//!HOOK` của mpv — 0 file tải về, 0 rủi ro bản quyền, tổng **3,7 KB**.
+Chạy trên **GPU** qua Vulkan. Máy không có Vulkan -> `shader_co()` trả `[]`,
+app bỏ qua, KHÔNG nổ lỗi. Đo thật: **6/6 ĐẠT**, 30/30 khung, lệch U/V < 0,5.
 
 ## 3. KHÔNG DÙNG — 6 file trong `D:\hieu-ung-demo\overlays`
 AV1, tải từ đâu về **không rõ nguồn** → **cấm ship**. Anh Hùng cho phép dùng

@@ -1,0 +1,15 @@
+// NET HON (unsharp) — TU VIET.
+// MUC 1,9 + ban kinh 1,8px: muc 0,85/1px do that chi 0,4% pixel lech >12. Tru phan mo di khoi anh goc -> canh net hon.
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC net hon (tu viet)
+vec4 hook() {
+    vec4 c = HOOKED_tex(HOOKED_pos);
+    vec2 p = HOOKED_pt * 1.8;
+    vec3 m = HOOKED_tex(HOOKED_pos + vec2( p.x, 0.0)).rgb
+           + HOOKED_tex(HOOKED_pos + vec2(-p.x, 0.0)).rgb
+           + HOOKED_tex(HOOKED_pos + vec2( 0.0, p.y)).rgb
+           + HOOKED_tex(HOOKED_pos + vec2( 0.0,-p.y)).rgb;
+    m *= 0.25;
+    return vec4(clamp(c.rgb + (c.rgb - m) * 1.9, 0.0, 1.0), c.a);
+}
