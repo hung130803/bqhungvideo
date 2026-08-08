@@ -1309,3 +1309,75 @@ Sửa thêm 2 chỗ khiến nó không bao giờ chạy tới nơi:
 - thiếu `pipe_src` → `pipeline.plan_channel` coi `export_dir` là NGUỒN (mô hình
   "1 thư mục dùng chung") nên đi quét thư mục **XUẤT** (rỗng);
 - không in BẰNG CHỨNG khi 0 Part → nay in `analysis`/`jobs`/`clips` + log.
+
+## 6. 🌏 ĐA QUỐC GIA — CỔNG 40 `_test_da_quoc_gia.py`: **0 HỎNG**
+Video **THẬT** của anh Hùng, chép lời bằng **Groq THẬT** (`groq:whisper-large-v3`
+xác nhận ở cả 4 nhóm — không nhóm nào tụt về whisper máy).
+
+| nhóm | 1 chép lời | 2 AI chọn đoạn | 3 phụ đề | 4 tiếng động | 5 hiệu ứng trung lập |
+|---|---|---|---|---|---|
+| **Nhật** | ĐẠT `ja` · 77 câu · 513 từ · 2,14 từ/giây | ĐẠT `llm_used=True`, 2 clip | ĐẠT | ĐẠT | ĐẠT |
+| **Hàn** | ĐẠT `Korean`→`ko` · 24 câu · 235 từ · 2,20 | ĐẠT, 2 clip | ĐẠT 4.568 px | ĐẠT | ĐẠT |
+| **Anh** | ĐẠT `English`→`en` · 113 câu · 462 từ · 1,93 | ĐẠT, 1 clip 5 đoạn | ĐẠT 6.658 px | ĐẠT | ĐẠT |
+| **Việt** | ĐẠT `Vietnamese`→`vi` · 18 câu · 221 từ · 3,75 | ĐẠT, 2 clip | ĐẠT 4.193 px | ĐẠT | ĐẠT |
+| **Trung** | **THIẾU video thật** | **THIẾU** | ĐẠT 3.575 px | **THIẾU** | ĐẠT |
+| **Thái** | **THIẾU video thật** | **THIẾU** | ĐẠT 792 px | **THIẾU** | ĐẠT |
+| **Ả Rập** | **THIẾU video thật** | **THIẾU** | ĐẠT 2.608 px | **THIẾU** | ĐẠT |
+
+**Groq trả TÊN ngôn ngữ ("Korean"/"English"/"Vietnamese"), không phải mã** —
+đúng cái đã giết v2.11.1. `_ma_iso` đổi đúng ở cả 3 ca; cổng canh luôn.
+
+### Điều 4 — TIẾNG ĐỘNG hợp lý BẤT CHẤP QUỐC GIA (số đo)
+Mỗi nhóm ≥ 3 Part. **Không nhóm nào có mọi Part cùng một tiếng:**
+- Nhật: `pop/pop_hi_04` · `pop/blip_03` · `impact/hit_mid_02`
+- Hàn: `transition/swoosh_hi_07_v2` · `transition/whoosh_low_08` · `impact/impactBell_heavy_001`
+- Anh: Part 1 có 5 đoạn → 4 chỗ nối, ra **4 tiếng khác nhau**
+  (`transition/whoosh_mid_04` · `transition/tick_soft_06` · `pop/switch33` ·
+  `reveal/confirmation_004`) · Part 2 `impact/impactMetal_heavy_000` · Part 3 `pop/switch17`
+- Việt: `pop/switch11` · `pop/switch2` · `impact/impactGlass_heavy_004`
+
+**Tiếng động KHÔNG át lời** (RMS đỉnh cửa sổ 0,25 s / RMS nền cả clip, trần 12×):
+Nhật **3,4 · 3,1 · 5,7** · Hàn **1,9 · 1,8 · 1,6** · Anh **2,1 · 1,6 · 1,7** ·
+Việt **1,7 · 1,7 · 1,5**. Không ngôn ngữ nào bị lấn.
+
+### Điều 5 — HIỆU ỨNG HÌNH TRUNG LẬP (chứng minh 2 lớp)
+- **Chữ ký hàm**: `chon_hieu_ung(tong_giay, muc, nl, cd, moc_noi, co_the_dung)`
+  và `chon_chuyen_canh(segs, muc)` **không nhận ngôn ngữ, không nhận chữ**.
+- **Hành vi**: cùng số đo, đổi nhãn `ja/zh/ko/en/vi/th/ar/"Japanese"/rỗng` →
+  kết quả **Y HỆT** ở cả 9 nhãn. Và cùng 1 clip không lặp một kiểu chuyển cảnh
+  (`fadeblack · smoothleft · fadewhite`).
+
+### Điều 3 — PHỤ ĐỀ: render khung THẬT 1080×1920, đếm pixel **TỪNG DÒNG**
+7 hệ chữ đều vẽ ra chữ, **không cắt đáy khung**, **không tràn mép trái/phải**
+(0 px ở 6 cột sát mép): Nhật 4.751 · Hàn 4.416 · Anh 7.667 · **Việt 2.334
+(dòng cuối 1.624/1.919 với `ny=0,80` — dấu thanh chồng KHÔNG bị cắt)** ·
+Trung 3.575 · Thái 792 · Ả Rập 2.608.
+
+### QUÉT TĨNH — 1 LỖI THẬT TÌM RA VÀ ĐÃ SỬA
+`app/ai/chon_doan.py:401` `co_loi_noi_that` chặn "chỉ gồm câu Whisper bịa" bằng
+`len(con.split()) <= max(2, len(sach.split())//10)`. Câu **Nhật/Trung không có
+dấu cách** → cả câu ra **1 token** → video **short 1-2 đoạn** rơi thẳng vào
+ngưỡng. Đo trước khi sửa (mật độ **2,00 từ/giây** = nói rõ ràng):
+
+| ca | trước | sau |
+|---|---|---|
+| Nhật 1 đoạn · Nhật 2 đoạn · Trung 1 đoạn | **KHÔNG LỜI (SAI)** | CÓ LỜI ✅ |
+| Anh · Việt · Hàn 1 đoạn | CÓ LỜI | CÓ LỜI (không đổi) |
+| rác `thank you` · mật độ 0,03 từ/giây | KHÔNG LỜI | KHÔNG LỜI (giữ) |
+
+**Hậu quả nếu không sửa:** `_khong_loi=True` → app **BỎ transcript** khỏi việc
+chọn đoạn, ép đi đường **XEM HÌNH (~3-4 phút/video)** và **KHÔNG đốt phụ đề** →
+clip Nhật ngắn ra **không có chữ**. Kho `video nhật` của anh Hùng có **183 video
+8-51 giây** → đây là đòn trúng thật, không phải giả định.
+Chữa bằng `recap._word_tokens` (CJK-aware). **Bất biến**: text không CJK thì
+`_word_tokens(x) == x.split()` → đường Anh/Việt/Hàn **không đổi một chút nào**.
+Quét thêm: `hieu_ung.py` và `chon_chuyen_canh`/`_loai_cho_noi` **không có**
+`.split()` đếm từ; `_ma_iso` đổi đúng TÊN→MÃ và trả `None` khi không chắc.
+
+### THIẾU — nói thẳng, không bịa
+Đã quét **toàn bộ `D:\` + `C:\Users\Admin`** theo hệ chữ trong TÊN FILE:
+**1.841 file Hàn · 307 Nhật · hàng nghìn Latin (Anh/Việt) · 0 Trung · 0 Thái ·
+0 Ả Rập · 0 Do Thái** (chỉ có **1 file NHẠC** Ả Rập trong kho SFX, là bài hát
+nên không dùng làm mẫu lời nói). Vì vậy 3 nhóm Trung/Thái/Ả Rập **chỉ kiểm được
+điều 3 và 5** (không cần tiếng thật). Muốn phủ nốt thì cần anh Hùng cho **1-2
+video thật mỗi thứ tiếng**.
