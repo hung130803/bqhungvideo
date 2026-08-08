@@ -50,13 +50,19 @@ def main() -> int:
     ap.add_argument("--luot", type=int, default=10)
     ap.add_argument("--giay", type=float, default=60.0)
     ap.add_argument("--nhip", type=int, default=50, help="nhịp QTimer (ms)")
+    ap.add_argument("--du-may-ban", action="store_true",
+                    help="đo DÙ máy đang bận — chỉ dùng khi app của anh Hùng "
+                         "đang chạy sản xuất và không tắt được; số ra là CẬN "
+                         "TRÊN (máy rảnh chỉ tốt hơn), phải GHI RÕ trong báo cáo")
     a = ap.parse_args()
-
     ok, vi = _may_ranh()
     print(f"[máy] {vi}")
-    if not ok:
+    if not ok and not a.du_may_ban:
         print("DỪNG: máy đang bận -> số trễ sẽ sai.")
         return 2
+    if not ok:
+        print("!! ĐO DÙ MÁY BẬN (--du-may-ban): số dưới đây là CẬN TRÊN, "
+              "máy rảnh chỉ tốt hơn. KHÔNG được so với lần đo máy rảnh.")
     vids = tim_video_nhat(1)
     if not vids:
         print("DỪNG: không có video Nhật.")

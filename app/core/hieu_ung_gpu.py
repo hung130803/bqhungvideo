@@ -81,6 +81,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -110,6 +111,12 @@ def dau_vao(fps: float = 30.0) -> str:
     return f"{CHUAN_HOA},fps={f:g},settb=1/{f:g}"
 
 _CO: dict = {}          # cache phát hiện: {"opencl": bool, "vulkan": bool}
+#: KHOÁ cho bước dò máy. Không có nó thì 10 làn cùng khởi động sẽ **cùng lúc**
+#: chạy 10 lệnh dò `xfade_opencl` (mỗi lệnh render thật) — đo 10 làn ở mức
+#: 'manh': **10 tiến trình ffmpeg / 122 luồng = 5,08x số nhân**, phá mốc
+#: "<= 2x nhân". Cache `_CO` chỉ cứu từ lần thứ 2 trở đi, không cứu được cơn
+#: dồn ở lần đầu. Có khoá thì đúng 1 lệnh dò chạy, 9 làn kia đọc cache.
+_KHOA_DO = threading.Lock()
 _CNW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -194,6 +201,13 @@ def co_opencl(do_lai: bool = False) -> bool:
     """
     if "opencl" in _CO and not do_lai:
         return _CO["opencl"]
+    with _KHOA_DO:              # xem `_KHOA_DO`: 10 làn cùng dò = 122 luồng
+        if "opencl" in _CO and not do_lai:
+            return _CO["opencl"]
+        return _do_opencl()
+
+
+def _do_opencl() -> bool:
     ok = False
     ker = duong_kernel()
     if ker:
@@ -226,6 +240,13 @@ def co_libplacebo(do_lai: bool = False) -> bool:
     """Máy này chạy được `libplacebo` + shader GLSL tự viết hay không (Vulkan)."""
     if "vulkan" in _CO and not do_lai:
         return _CO["vulkan"]
+    with _KHOA_DO:              # xem `_KHOA_DO`
+        if "vulkan" in _CO and not do_lai:
+            return _CO["vulkan"]
+        return _do_vulkan()
+
+
+def _do_vulkan() -> bool:
     ok = False
     sh = os.path.join(thu_muc_shader(), "tuong_phan.hook")
     if os.path.isfile(sh):

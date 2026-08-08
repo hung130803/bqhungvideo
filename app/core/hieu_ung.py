@@ -204,7 +204,7 @@ def ly_do_khong_co_frei0r() -> str:
 _MOD_CACHE: dict = {}
 
 
-def _chay_ffmpeg(cmd: list, giay: int) -> int:
+def _chay_ffmpeg(cmd: list, giay: int, qua_cua_cho: bool = False) -> int:
     """Chạy 1 lệnh ffmpeg phụ (thử plugin / đo nhịp) — CÓ VÀO SỔ TIẾN TRÌNH.
 
     **VÌ SAO PHẢI VÀO SỔ (lỗi rà ra 08/08/2026):** 2 chỗ trong file này trước đây
@@ -214,11 +214,25 @@ def _chay_ffmpeg(cmd: list, giay: int) -> int:
     video không tiếng) và `dung_duoc()` thử tới 11 module frei0r, nên cửa sổ rò
     không hề nhỏ.
 
-    Cố ý KHÔNG đi qua `ffmpeg_utils._run`: những lệnh này là lệnh ĐO/THỬ, đi qua
-    cửa chờ sẽ tự khoá lẫn với lệnh xuất đang giữ chỗ. Chỉ cần vào sổ để bị giết
-    đúng lúc. Không bao giờ ném lỗi ra ngoài.
+    `qua_cua_cho`: XIN CHỖ trong cửa chờ ffmpeg trước khi chạy.
+      · `do_nhip` PHẢI xin (True) — đo thật 10 làn: nó chạy SONG SONG với lệnh
+        xuất nên đỉnh luồng vọt **45 -> 58**, và ở mức 'manh' có lúc **10 tiến
+        trình** đo cùng lúc (78 luồng = 3,25x nhân), phá mốc "<= 2x nhân".
+        An toàn vì `export_canvas_clip` gọi nó khi KHÔNG giữ chỗ nào (mỗi
+        `_run_with_fallback` tự xin/trả chỗ trong 1 lệnh).
+      · `_thu_module` thì KHÔNG (False): nó có thể bị gọi từ UI/từ trong lượt
+        xuất đang giữ chỗ -> xin chỗ ở đó là TỰ KHOÁ. Nó cũng chỉ là 1 khung
+        64x64, không đáng kể về luồng.
+    Không bao giờ ném lỗi ra ngoài.
     """
     p = None
+    cho = False
+    if qua_cua_cho:
+        try:
+            from app.core import ffmpeg_utils as _fu0
+            cho = bool(_fu0._xin_cho_ffmpeg())
+        except Exception:  # noqa: BLE001 — cửa chờ hỏng không được chặn phép đo
+            cho = False
     try:
         p = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -246,11 +260,31 @@ def _chay_ffmpeg(cmd: list, giay: int) -> int:
                 _fu.unregister_proc(p)
             except Exception:  # noqa: BLE001
                 pass
+        if cho:
+            try:
+                from app.core import ffmpeg_utils as _fu1
+                _fu1._tra_cho_ffmpeg()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+#: KHOÁ cho bước THỬ PLUGIN. Không có nó thì 10 làn cùng khởi động sẽ CÙNG LÚC
+#: thử 11 module frei0r (mỗi module 1 lệnh ffmpeg) — các lệnh này CỐ Ý không qua
+#: cửa chờ (xem `_chay_ffmpeg`) nên tổng luồng vọt lên. Cùng bệnh với
+#: `hieu_ung_gpu._KHOA_DO`: cache chỉ cứu từ lần 2, không cứu cơn dồn lần đầu.
+_KHOA_MOD = __import__("threading").Lock()
 
 
 def _thu_module(ten: str) -> bool:
     if ten in _MOD_CACHE:
         return _MOD_CACHE[ten]
+    with _KHOA_MOD:
+        if ten in _MOD_CACHE:
+            return _MOD_CACHE[ten]
+        return _thu_module_that(ten)
+
+
+def _thu_module_that(ten: str) -> bool:
     cmd = [_ffmpeg(), "-hide_banner", "-nostats", "-v", "error",
            "-f", "lavfi", "-i", "color=c=gray:s=64x64:d=0.04",
            "-vf", f"frei0r=filter_name={ten}", "-frames:v", "1",
@@ -923,12 +957,20 @@ def do_nhip(path: str, ffmpeg: str = "",
     vao = [str(x) for x in (dau_vao or ["-i", str(path)])]
     for graph, maps in ((gv + ";" + ga, ["-map", "[vo]", "-map", "[ao]"]),
                         (gv, ["-map", "[vo]"])):
+        # SIẾT LUỒNG CHO LỆNH ĐO (đo thật 08/08/2026, 10 làn): lệnh này **CỐ Ý
+        # KHÔNG qua cửa chờ ffmpeg** (xem `_chay_ffmpeg`) nên 10 làn có thể sinh
+        # nhiều lệnh đo CÙNG LÚC. Để mặc định `-threads 0` thì mỗi lệnh ăn ~17
+        # luồng giải mã + luồng filter -> tổng luồng ffmpeg vọt lên **115
+        # (4,79x số nhân)**, phá mốc "<= 2x nhân". Việc ở đây bé tí (fps=4,
+        # rộng 160 px) nên 1 luồng là đủ, KHÔNG chậm đi.
         cmd = [ff, "-y", "-hide_banner", "-nostats", "-v", "error",
+               "-threads", "1", "-filter_threads", "1",
+               "-filter_complex_threads", "1",
                *vao, "-filter_complex", graph, *maps,
                "-f", "null", os.devnull]
         # `_chay_ffmpeg`: VÀO SỔ tiến trình để đóng app giết được (xem docstring
         # của nó). Lệnh này giải mã CẢ clip nên là chỗ rò ffmpeg mồ côi nặng nhất.
-        if _chay_ffmpeg(cmd, 600) == 0:
+        if _chay_ffmpeg(cmd, 600, qua_cua_cho=True) == 0:
             break                       # có tiếng -> xong; không thì thử nhánh 2
     try:
         if os.path.exists(fa):

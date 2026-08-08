@@ -1772,8 +1772,11 @@ def _tach_va_noi_gpu(src, segs: list, xf: list, bu: list, encoder: str,
 
         def _g(enc: str, _a=e, _b=segs[j + 1][0], _d=d, _n=nd[j], _g=graph,
                _p=cv) -> list:
+            # 2 đầu vào -> chia đôi ngân sách giải mã (xem `_build_xf`)
             c = [settings.FFMPEG_PATH, "-y",
                  "-init_hw_device", "opencl=ocl", "-filter_hw_device", "ocl",
+                 "-threads", str(max(1, decode_threads() // 2)),
+                 "-filter_complex_threads", str(min(4, encode_threads())),
                  "-ss", f"{_a:.3f}", "-t", f"{_d + 1.0 / fps:.6f}",
                  "-i", str(src),
                  "-ss", f"{_b:.3f}", "-t", f"{_d + 1.0 / fps:.6f}",
@@ -1936,9 +1939,14 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
         # với input = chính file output.
         def _build_xf(enc: str, _g=graph, _v=vlab, _a=alab, _o=gop,
                       _in=list(noi)) -> list[str]:
+            # `-threads` TRƯỚC `-i` áp cho **TỪNG** đầu vào, mà pha 1.5 có n đầu
+            # vào -> tổng = n x decode_threads(). ĐO THẬT 10 làn: clip 2 đoạn
+            # làm đỉnh luồng 44 -> **61 (2,54x nhân)**, phá mốc "<= 2x nhân".
+            # Chia cho số đầu vào thì ngân sách giải mã giữ nguyên như 1 lệnh.
+            _dt = max(1, decode_threads() // max(1, len(_in)))
             c = [settings.FFMPEG_PATH, "-y",
-                 "-filter_complex_threads", str(encode_threads()),
-                 "-threads", str(decode_threads())]
+                 "-filter_complex_threads", str(min(4, encode_threads())),
+                 "-threads", str(_dt)]
             for p in _in:
                 c += ["-i", p]
             c += ["-filter_complex", _g, "-map", _v]
