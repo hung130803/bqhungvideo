@@ -356,6 +356,26 @@
      'str' object has no attribute 'is_dir'`, suýt báo nhầm là lỗi app. Và phải
      xoá CẢ 2 chỗ nhớ `_F0R_OK` + `_MOD_CACHE`, không thì đọc kết quả lần đo
      trước rồi PASS OAN.
+  38. `_test_hieu_ung_ai.py` → hiệu ứng điểm nhấn + AI chọn theo SỐ ĐO.
+  39. `_test_dong_goi.py` → BẢN ĐÓNG GÓI đủ tài nguyên (bẫy `.exe` cũ hơn mã).
+  40. `_test_da_quoc_gia.py` → **ĐA QUỐC GIA: AI phải hiểu MỌI loại nội dung.**
+     Video THẬT của anh Hùng theo nhóm ngôn ngữ (Nhật `video nhật dài` · Hàn
+     `video hàn` · Anh `video mỹ` · Việt `video viêt`), chép lời bằng **Groq
+     THẬT**. Mỗi nhóm chứng minh 5 điều: (1) `language` khớp MÃ ISO + số câu > 0
+     (2) `generate_highlights` ra `llm_used=True`, KHÔNG rơi "Cắt cơ bản"
+     (3) phụ đề render khung THẬT + đếm pixel **TỪNG DÒNG** + không cắt đáy /
+     không tràn mép (4) >= 3 Part, **không phải Part nào cũng cùng một tiếng**,
+     và tiếng động KHÔNG át lời (RMS đỉnh 0,25s <= 12× RMS nền) (5) đổi NHÃN
+     ngôn ngữ -> `chon_hieu_ung` + `chon_chuyen_canh` ra **Y HỆT**.
+     **LỖI THẬT cổng này tìm ra:** `chon_doan.co_loi_noi_that` đếm từ bằng
+     `.split()` -> câu Nhật/Trung KHÔNG CÓ DẤU CÁCH ra 1 token -> video short
+     1-2 đoạn bị gán nhầm **KHÔNG LỜI** -> app bỏ transcript, ép XEM HÌNH
+     (~3-4 phút/video) và **KHÔNG đốt phụ đề**. Đo (mật độ 2,00 từ/giây): Nhật
+     1 đoạn / Nhật 2 đoạn / Trung 1 đoạn đều SAI; Anh/Việt/Hàn đúng. Chữa bằng
+     `recap._word_tokens` (CJK-aware, bất biến `== .split()` khi không có CJK).
+     **KHÔNG CÓ trên máy (ghi thẳng, không bịa):** video tiếng **Trung · Thái ·
+     Ả Rập · Do Thái** — đã quét toàn bộ `D:\` + `C:\Users\Admin`. Với các nhóm
+     đó cổng chỉ kiểm được điều 3 và 5 (không cần tiếng thật).
 - **NHÓM HIỆU ỨNG CHẠY TRÊN GPU (`app/core/hieu_ung_gpu.py`)**: `xfade_opencl` +
   kernel gl-transitions (MIT) **21 kiểu ĐO ĐẠT** · `libplacebo` + shader GLSL tự
   viết **6/6 ĐẠT**. **2 bẫy của `xfade_opencl`, cả hai IM LẶNG (rc=0):**
@@ -373,15 +393,36 @@
   (phí mở thiết bị OpenCL 0,094 CPU-giây/lệnh, cố định). Giá trị của nhóm GPU là
   **thêm 21 kiểu chuyển cảnh**, không phải tiết kiệm CPU.
 - **CỬA CHỜ ffmpeg (`so_ffmpeg_song_song`)**: số lệnh ffmpeg chạy CÙNG LÚC do
-  app tự đo theo máy, **độc lập với "số làn" user đặt**. Ngân sách: tổng luồng
-  ffmpeg ≤ 2× số nhân, chia cho SÀN luồng mỗi tiến trình (nvenc 40, CPU 30) ->
-  24 nhân ra **1**, trần 4, `ECO_MODE` -> 1. `BQ_FFMPEG_SLOTS=<N>` ép cứng để đo
-  / gỡ rối máy user. Số đo 10 lượt song song trên 24 nhân + RTX 3060:
-  **592 luồng (24,7× nhân) -> 44 luồng (1,83×)**, CPU-giây 263,85 -> 209,48,
-  trễ vòng lặp UI trung vị **13,2 ms** (đỉnh 44,5 ms). SIẾT NÚM LUỒNG KHÔNG ĐỦ:
-  bịt hết núm mà không có cửa chờ vẫn 397 luồng, vì 1 ffmpeg + NVENC có **SÀN
-  ~36-40 luồng**. Cũng đo được **N=4 KHÔNG nhanh hơn N=3** (37,85 vs 37,71 s) ->
-  nút cổ chai là GPU, đừng nới trần.
+  app tự đo theo máy, **độc lập với "số làn" user đặt**. **08/08/2026 anh Hùng
+  chốt ƯU TIÊN THÔNG LƯỢNG** -> chia theo **SỐ NHÂN** (NVENC 8 nhân/lệnh, CPU
+  12 nhân/lệnh), trần 4, `ECO_MODE` -> 1: **24 nhân + NVENC ra 3** · 16 -> 2 ·
+  8 -> 1 · 4 -> 1. `BQ_FFMPEG_SLOTS=<N>` ép cứng để đo / gỡ rối máy user.
+  Công thức CŨ (ngân sách "tổng luồng ≤ 2× nhân" chia cho SÀN ~40 luồng/tiến
+  trình) ra N=1 — êm nhưng **máy bỏ không 85%** và job thứ 50 đợi 15,4 phút.
+  2 mốc đó LOẠI TRỪ NHAU. Đo 50 kênh / 10 làn / 110 job (máy rảnh 12,7%):
+
+  | | N=1 | N=3 |
+  |---|---|---|
+  | xong 50 clip | 1088s (18,1 ph) | **429s (7,1 ph)** |
+  | CPU cả máy TB | 14,3% | **29,5%** |
+  | CPU-giây ffmpeg | 1492 | 1511 (**+1,3%** — không đốt thêm) |
+  | luồng đỉnh | 35 (1,46×) | 64 (**2,67×** — đã chấp nhận vượt mốc 2×) |
+  | trễ UI trung vị / đỉnh | 13,7 / 37,3 ms | **13,7 / 50,3 ms** |
+  | job cuối đợi | 925s (15,4 ph) | **367s (6,1 ph)** |
+  | RAM cây đỉnh | 0,49 GB | 1,24 GB |
+
+  SIẾT NÚM LUỒNG KHÔNG ĐỦ: bịt hết núm mà không có cửa chờ vẫn 397 luồng, vì 1
+  ffmpeg + NVENC có **SÀN ~36-40 luồng**. Cũng đo được **N=4 KHÔNG nhanh hơn
+  N=3** (37,85 vs 37,71 s) -> nút cổ chai là GPU, **đừng nới trần**.
+- **CHUYỂN CẢNH DÙNG KIẾN TRÚC "2n−1 MẢNH" cho MỌI mức** (`_tach_va_noi_manh`):
+  chỉ encode lại **cửa sổ chuyển cảnh 0,25-0,4s** rồi `concat` demuxer nối,
+  thay vì nối n mezzanine bằng 1 lệnh `xfade` (= encode lại TOÀN CLIP). A/B cùng
+  máy cùng script (3 đoạn 24s, nvenc, lặp 3): mặc định `nhe+nhe` **2,30× ->
+  1,98× wall**, CPU-giây **44,48 -> 32,77 (−26%)**; riêng chuyển cảnh 1,65× ->
+  **1,32×**. **Vẫn CHƯA đạt mốc ≤ 1,4×** — phần dư là hiệu ứng ĐIỂM NHẤN ở pha 2
+  (một mình 1,61×). `BQ_XFADE_NOI_CA_CLIP=1` ép về đường cũ để đo A/B / gỡ rối.
+  **BẪY**: đi đường cũ thì PHẢI đổi kiểu GPU `gl_*` -> kiểu CPU (`GPU_LUI_VE`),
+  bỏ sót là ffmpeg báo "Not yet implemented in FFmpeg" rồi chết cả lượt xuất.
 - **`-threads` TRƯỚC `-i` là luồng GIẢI MÃ, SAU `-i` là luồng ENCODE** — đặt sai
   chỗ thì ffmpeg im lặng, không báo lỗi. `decode_threads()` = 4 (ECO 2). Đo pha 1
   (`_build_seg`, bước duy nhất không có filter nên GIẢI-MÃ-BOUND): mức 4 giữ

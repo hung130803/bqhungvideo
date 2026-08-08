@@ -58,6 +58,8 @@ CHI_DEV = [
     ("3  mọi hộp thoại dây chuyền", "_test_pipe_dialogs.py", 600),
     ("36 CHUYỂN CẢNH xfade + cửa chờ", "_test_chuyen_canh.py", 2700),
     ("38 HIỆU ỨNG điểm nhấn + AI chọn", "_test_hieu_ung_ai.py", 2700),
+    # Cổng 40 gọi Groq THẬT trên video THẬT của 4 nhóm ngôn ngữ -> chậm nhất bộ.
+    ("40 ĐA QUỐC GIA (Nhật/Hàn/Anh/Việt)", "_test_da_quoc_gia.py", 3600),
 ]
 
 

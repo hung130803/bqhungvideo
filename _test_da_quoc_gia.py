@@ -317,6 +317,37 @@ def main() -> int:
          f"{[k for k, _ in goc_cc]}")
 
     # ───────────────────────────────────────────────────────────────────
+    print("\n══ 0c2. MẪU CŨ (không có khoá) -> MẶC ĐỊNH 'nhe' ở MỌI CỬA ══")
+    # Anh Hùng 08/08/2026 chốt: *"Giữ BẬT Nhẹ — như tôi đã chốt"*. 200-300 kênh
+    # đang chạy mẫu CŨ (JSON không có khoá `hieu_ung`/`chuyen_canh`) nên mặc
+    # định ở MỌI cửa phải ra 'nhe'. 4 cửa (bỏ sót 1 cửa là kênh mất hiệu ứng
+    # hoặc ngược lại, bật lúc user tưởng đã tắt):
+    cua = [
+        ("Chỉnh mẫu (editor._apply_layout)", REPO / "app" / "ui" / "editor.py",
+         ('layout.get("chuyen_canh", "nhe")', 'layout.get("hieu_ung", "nhe")')),
+        ("bấm tay (studio_page._export_video_inner)",
+         REPO / "app" / "ui" / "studio_page.py",
+         ('self.layout_tpl.get("chuyen_canh", "nhe")',
+          'self.layout_tpl.get("hieu_ung", "nhe")')),
+        ("job xuất (m1_highlight)", REPO / "app" / "modules" / "m1_highlight.py",
+         ('payload.get("chuyen_canh", "nhe")', 'payload.get("hieu_ung", "nhe")')),
+    ]
+    for ten, f, cans in cua:
+        ma = f.read_text(encoding="utf-8", errors="replace")
+        for c in cans:
+            kiem(c in ma, f"mặc định 'nhe' — {ten}: `{c.split('(')[-1]}`",
+                 "KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'")
+    # hành vi thật: payload KHÔNG có khoá -> chuỗi truyền xuống ffmpeg là 'nhe'
+    kiem(str({}.get("hieu_ung", "nhe") or "tat") == "nhe"
+         and str({}.get("chuyen_canh", "nhe") or "tat") == "nhe",
+         "mẫu cũ (dict rỗng) -> 'nhe' cho cả 2 khoá")
+    kiem(str({"hieu_ung": ""}.get("hieu_ung", "nhe") or "tat") == "tat",
+         "user chọn TẮT (chuỗi rỗng) -> 'tat', KHÔNG bị ép về 'nhe'")
+    kiem(bool(fu.chon_chuyen_canh(segs, "nhe"))
+         and fu.chon_chuyen_canh(segs, "tat") == [],
+         "'nhe' CÓ chuyển cảnh · 'tat' trả rỗng (đường cũ y nguyên)")
+
+    # ───────────────────────────────────────────────────────────────────
     print("\n══ 0d. PHỤ ĐỀ VẼ ĐÚNG cho MỌI hệ chữ (điều 3) ══")
     # Render khung THẬT bằng libass rồi ĐẾM PIXEL TỪNG DÒNG. Nhóm nào không có
     # video thật vẫn kiểm được ở đây (chỉ cần CHỮ, không cần tiếng).
@@ -534,10 +565,17 @@ def main() -> int:
         tong_ket[nhom]["4"] = d4a and d4b
 
         # ---- ĐIỀU 3 (trên chữ THẬT của chính video này) ----
+        # Lấy từ GIỮA transcript, KHÔNG lấy 3 câu đầu: đầu video hay là nhạc
+        # hiệu/intro nên whisper dễ trả chữ tiếng Anh (đã thấy thật ở nguồn
+        # Nhật) -> mẫu chữ không đại diện cho ngôn ngữ video.
+        _sg_all = tr.get("segments") or []
+        _gi = max(0, len(_sg_all) // 2)
         chu_that = " ".join(str(s.get("text", ""))
-                            for s in (tr.get("segments") or [])[:3]).strip()
+                            for s in _sg_all[_gi:_gi + 3]).strip()
         if chu_that:
-            wds = (tr.get("words") or [])[:14]
+            _w_all = tr.get("words") or []
+            _wi = max(0, len(_w_all) // 2)
+            wds = _w_all[_wi:_wi + 14]
             wds = [{"word": str(w.get("word", "")),
                     "start": float(w.get("start", 0)),
                     "end": float(w.get("end", 0))} for w in wds

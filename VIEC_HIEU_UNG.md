@@ -1201,3 +1201,111 @@ tài nguyên.** Lý do, xếp theo mức quan trọng:
    lập bằng monkeypatch trên máy 24 nhân.
 7. `_test_pipe_integ.py` vẫn fail vì thiếu file nguồn — **lỗi có sẵn**, không
    nằm trong danh sách cổng chặn.
+
+---
+---
+# LƯỢT 08/08/2026 (đêm) — 2 QUYẾT ĐỊNH + ĐA QUỐC GIA + 4 VIỆC SÓT
+
+> Anh Hùng chốt 2 quyết định: (1) **ưu tiên THÔNG LƯỢNG**, chịu máy hơi nặng;
+> (2) **GIỮ mặc định `nhe`** cho mẫu cũ. Cộng cổng 40 ĐA QUỐC GIA và 4 việc sót
+> (A shader libplacebo · B `export_vertical_clip` · C giá 1,87× · D pipe_integ).
+
+## 1. QUYẾT ĐỊNH 1 — CỬA CHỜ ffmpeg N=1 → **N=3**
+
+`so_ffmpeg_song_song()` ĐỔI CÁCH CHIA: bỏ "ngân sách tổng luồng ≤ 2× nhân chia
+cho SÀN ~40 luồng/tiến trình" (luôn ra 1 trên máy 24 nhân), chuyển sang chia
+theo **SỐ NHÂN**: NVENC **8 nhân/lệnh**, CPU **12 nhân/lệnh**, trần **4**.
+- 24 nhân + NVENC → **3** (máy anh Hùng) · 16 → 2 · 8 → 1 · 4 → 1 (máy nhân viên)
+- `ECO_MODE` vẫn → **1** · `BQ_FFMPEG_SLOTS=<N>` vẫn ép cứng được
+- **Trần vẫn 4**, KHÔNG nới: đã đo N=4 KHÔNG nhanh hơn N=3 (37,85 vs 37,71 s).
+- Máy anh Hùng có `ECO_MODE=0` trong `.env` thật → **thật sự nhận N=3**.
+
+### Đo lại 50 kênh · 10 làn · 110 job (máy rảnh 12,7%, 0 ffmpeg lạ)
+| mốc | N=1 (cũ) | **N=3 (mới)** | |
+|---|---|---|---|
+| xong 50/50 clip | 1.088 s (18,1 ph) | **429 s (7,1 ph)** | nhanh **2,54×** |
+| **CPU cả máy dùng** | 14,3% | **29,5%** (đỉnh 44,5%) | gấp **2,06×** |
+| CPU-giây ffmpeg | 1.492 | **1.511** | **+1,3%** — KHÔNG đốt thêm |
+| tổng luồng ffmpeg | đỉnh 35 (1,46×) | **đỉnh 64 (2,67×)** · TB 51,7 | vượt mốc 2× — anh đã đồng ý |
+| **trễ UI trung vị** | 13,7 ms | **13,7 ms** | KHÔNG ĐỔI ✅ |
+| **trễ UI đỉnh** | 37,3 ms | **50,3 ms** (p95 24,2) | mốc <150 ms ✅ |
+| **job cuối đợi** | 925 s (15,4 ph) ❌ | **367 s (6,1 ph)** ✅ | HẾT NGHẼN (mốc 10 ph) |
+| RAM cây đỉnh | 0,49 GB | 1,24 GB | |
+| clip 0-byte · job lỗi · ffmpeg mồ côi | 0 | **0 · 0 · 0** | ✅ |
+| làn cắt bị bỏ đói? | không | **không** — job xuất chạy sau **0,067 s** dù 59 job phân tích đang chờ | ✅ |
+
+**Điểm quan trọng nhất: CPU-giây gần như KHÔNG đổi (+1,3%) mà thời gian giảm
+61%.** Nghĩa là N=3 KHÔNG đốt thêm CPU vì giành luồng — nó chỉ dùng phần máy
+đang bỏ không. Và **mốc "máy không đơ" KHÔNG vỡ**: trung vị vẫn 13,7 ms.
+
+## 2. QUYẾT ĐỊNH 2 — GIỮ mặc định `nhe` cho mẫu cũ (KHÔNG đổi gì)
+Xác nhận lại bằng cổng 40 mục 0c2 — quét cả **3 cửa** đọc mẫu:
+`editor._apply_layout` · `studio_page._export_video_inner` · `m1_highlight`
+(job xuất), cả 2 khoá `chuyen_canh` và `hieu_ung` đều `get(..., "nhe")`.
+Kèm ca hành vi: mẫu rỗng → `'nhe'`; user chọn TẮT (chuỗi rỗng) → `'tat'`, KHÔNG
+bị ép về `nhe`; `'tat'` → `chon_chuyen_canh` trả rỗng = đường cũ y nguyên.
+→ **200-300 kênh sẽ CÓ chuyển cảnh + hiệu ứng điểm nhấn ngay khi cập nhật**,
+giá **1,98× wall** (đo lại hôm nay trên máy rảnh; con số 1,87× cũ đo lúc app
+anh Hùng đang chạy). Sau bản vá việc C thì giá này đã là **bản RẺ hơn 15%**.
+
+## 3. VIỆC C — GIÁ PHẢI TRẢ: kiến trúc "2n−1 mảnh" cho MỌI mức
+Đường CŨ nối n mezzanine bằng **1 lệnh `xfade`** = **encode lại TOÀN CLIP** thêm
+một lượt ở pha 1.5. Nhóm GPU (`manh`) vốn đã cắt **2n−1 mảnh** nên chỉ encode
+lại **cửa sổ chuyển cảnh 0,25-0,4 giây** — đó mới là lý do `manh` rẻ hơn mặc
+định, không phải vì "chạy GPU". Nay tổng quát hoá thành `_tach_va_noi_manh(...,
+dung_gpu)` và dùng cho cả `nhe`/`vua`.
+
+**A/B cùng máy, cùng script, máy rảnh 10-11%** (3 đoạn 24s · 1080×1920 · nvenc ·
+lặp 3 lấy trung vị). `BQ_XFADE_NOI_CA_CLIP=1` ép về đường CŨ:
+
+| ca | CŨ (nối cả clip) | **MỚI (2n−1 mảnh)** | |
+|---|---|---|---|
+| TẮT hết (đối chứng) | 5,70 s / 20,06 | 5,64 s / 20,39 | khớp — đối chứng sạch |
+| chỉ chuyển cảnh `nhe` | 9,43 s (1,65×) / 35,89 | **7,43 s (1,32×) / 23,58** | wall −21% · CPU −34% |
+| **MẶC ĐỊNH `nhe+nhe`** | 13,13 s (2,30×) / 44,48 | **11,20 s (1,98×) / 32,77** | wall −15% · CPU **−26%** |
+| `manh+manh` (GPU) | 12,71 s (2,23×) / 43,36 | **10,38 s (1,84×) / 30,91** | wall −18% · CPU −29% |
+
+Script đo **đan xen từng lượt** (CŨ/MỚI/CŨ/MỚI…) ra cùng kết luận:
+wall **0,85×**, CPU-giây **0,72×** — 2 phương pháp độc lập khớp nhau.
+
+**CHƯA ĐẠT mốc ≤ 1,4× — nói thẳng.** Phần dư nằm ở **HIỆU ỨNG ĐIỂM NHẤN pha 2**
+(một mình đã **1,61×**), không phải chuyển cảnh (nay chỉ còn 1,32×). Muốn hạ
+tiếp phải đụng vào graph pha 2 — 400 dòng đang gánh sản xuất 200-300 kênh.
+
+**LỖI TÔI TỰ GÂY RA VÀ ĐÃ SỬA NGAY:** khi đi đường CŨ phải đổi kiểu GPU (`gl_*`)
+sang kiểu CPU tương đương (`GPU_LUI_VE`); bỏ sót là ffmpeg báo `Not yet
+implemented in FFmpeg, patches welcome` rồi **chết cả lượt xuất**. Cờ
+`BQ_XFADE_NOI_CA_CLIP` lôi nó ra ngay lượt đo đầu.
+
+**Không hồi quy:** cổng 36 **64 OK / 0 FAIL** (gồm bất biến "chuyển cảnh TẮT ra
+file GIỐNG HỆT `main`" — PSNR 99 dB ở 5/5 mốc, lệch độ dài 0 ms) · cổng 37
+**40 OK / 0 FAIL**. Smoke riêng trên nguồn `lavfi` 2/3/4 đoạn × `tat/nhe/vua`:
+lệch độ dài **0 ms**, đúng số khung, rác `_seg_*` = **0**.
+
+## 4. VIỆC B — `export_vertical_clip`: ĐẾM THẬT rồi mới quyết
+Đọc DB THẬT (`D:\claude\ai-content-studio\studio.db`, **chỉ đọc**, copy kèm
+`-wal` rồi mở bản sao):
+
+| | số đo |
+|---|---|
+| mẫu (`presets`) **CÓ** `video_rect` | **3/3** |
+| mẫu **THIẾU** `video_rect` | **0** |
+| kênh gán mẫu thiếu `video_rect` | **0** |
+
+→ **KHÔNG kênh nào đang đi đường `export_vertical_clip`** nên không cần nối
+hiệu ứng vào đó. Nhưng **đừng im lặng**: nay Part đi nhánh đó ghi hẳn một dòng
+vào nhật ký dây chuyền — *"⚠ MẪU THIẾU KHUNG VIDEO (video_rect) nên Part này đi
+nhánh 'clip đơn': KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm nhấn, KHÔNG đốt phụ đề
+— mở Chỉnh mẫu, kéo khối video rồi Lưu lại"* — kèm cờ `result_extra["canh_bao"]`
+để báo cáo dây chuyền đọc được. (Trước đây chỉ cảnh báo về **phụ đề**, và chỉ
+khi user có bật phụ đề.)
+
+## 5. VIỆC D — `_test_pipe_integ.py` không còn FAIL TRƠ
+Lỗi cũ: `shutil.copy(SRC_REAL, ...)` với đường dẫn ĐẶT TAY ở `%TEMP%` →
+`FileNotFoundError` trên mọi máy → ai chạy cũng tưởng dây chuyền hỏng thật.
+Nay **3 đường lấy nguồn**, luôn IN RA đường nào được dùng:
+file đặt tay → **video THẬT trên máy** (240-1500 s, 20-600 MB) → tự sinh `lavfi`.
+Sửa thêm 2 chỗ khiến nó không bao giờ chạy tới nơi:
+- thiếu `pipe_src` → `pipeline.plan_channel` coi `export_dir` là NGUỒN (mô hình
+  "1 thư mục dùng chung") nên đi quét thư mục **XUẤT** (rỗng);
+- không in BẰNG CHỨNG khi 0 Part → nay in `analysis`/`jobs`/`clips` + log.
