@@ -151,8 +151,16 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
     def ensure_audio() -> str:
         wav = _project_audio_path(video_id)
         if not wav.exists():
+            from app.core import ffmpeg_utils as _fu
             from app.core.ffmpeg_utils import extract_audio_wav_why
-            ok, why = extract_audio_wav_why(src, wav)
+            # ĐANG ĐỢI LƯỢT THÌ PHẢI NÓI: tách audio đi qua CỬA CHỜ ffmpeg
+            # (3 chỗ trên máy 24 nhân) nên có lúc đứng im vài phút. Gắn hàm báo
+            # theo THREAD; gỡ trong finally kẻo thread worker dùng lại báo nhầm.
+            _fu.dat_bao_cho(lambda m: prog(0.02, m) if prog else None)
+            try:
+                ok, why = extract_audio_wav_why(src, wav)
+            finally:
+                _fu.dat_bao_cho(None)
             if not ok:
                 # NÓI ĐÚNG NGUYÊN NHÂN, đừng đổ cho ffmpeg. Thường gặp nhất là
                 # video gốc đã bị chuyển vào `_Loi` sau lần cắt lỗi trước, nên

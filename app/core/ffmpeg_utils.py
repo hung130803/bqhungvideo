@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -154,7 +155,66 @@ def so_ffmpeg_song_song() -> int:
     return max(1, min(4, cores // moi))
 
 
-def _xin_cho_ffmpeg() -> bool:
+# ================= ĐANG ĐỢI LƯỢT THÌ PHẢI NÓI =================
+# ANH HÙNG BÁO 08/08/2026: *"xuất đến 1 ngưỡng r đứng im k báo gì cả, phải 3 4
+# phút k hiện 1%"*. ĐO RA GỐC: `_run` xin chỗ ở cửa chờ TRƯỚC khi spawn ffmpeg.
+# Lúc đang đợi thì CHƯA CÓ tiến trình nào in dòng `time=`, mà `_run_with_fallback`
+# chỉ nhích % khi thấy `time=` -> thanh đứng nguyên VÀ không một chữ nào đổi.
+# Máy 24 nhân + NVENC chỉ có 3 chỗ, mà đường PHÂN TÍCH (`extract_audio_wav_why`)
+# cũng qua đúng cửa này -> 3 làn AI + 3 làn cắt = 6 việc tranh 3 chỗ.
+#
+# Cách nối: THEO THREAD (worker chạy mỗi job 1 thread). Job gắn hàm báo bằng
+# `dat_bao_cho()`, cửa chờ gọi nó mỗi ~0,5s với câu "đang đợi lượt (N việc
+# trước)". Không truyền tham số xuyên 8 tầng hàm, không đụng chữ ký cũ.
+_TLS = _threading.local()
+
+
+def dat_bao_cho(cb: Optional[Callable[[str], None]]) -> None:
+    """Gắn hàm BÁO TRẠNG THÁI cho thread hiện tại (None = gỡ). Gọi trong
+    `finally` để gỡ, nếu không thread worker dùng lại sẽ báo nhầm việc cũ."""
+    _TLS.bao = cb
+
+
+def _bao_cho(msg: str) -> None:
+    cb = getattr(_TLS, "bao", None)
+    if cb is None:
+        return
+    try:
+        cb(msg)
+    except Exception as e:      # noqa: BLE001 - hàm báo hỏng KHÔNG được làm
+        # chết lượt xuất. NHƯNG Huỷ thì PHẢI nổi lên (ctx.progress tự kiểm huỷ).
+        if type(e).__name__ == "CanceledError":
+            raise
+
+
+# ---- ƯU TIÊN trong cửa chờ ----
+# XUẤT được ưu tiên hơn PHÂN TÍCH vì XUẤT là việc anh Hùng ĐANG NHÌN thanh %,
+# còn tách audio chạy nền. NHƯNG ưu tiên trần trụi = bỏ đói chiều ngược lại
+# (đúng lỗi "làn cắt chết đói vì LIMIT 50" đã sập một lần), nên có VAN CHỐNG
+# ĐÓI: chờ quá `_DOI_TOI_DA` giây thì việc phân tích được NÂNG ngang hàng xuất,
+# và trong cùng hàng thì FIFO theo số thứ tự -> nó chắc chắn tới lượt.
+UT_XUAT = 0
+UT_PHAN_TICH = 1
+_DOI_TOI_DA = 20.0          # giây; test hạ xuống để đo nhanh
+_GATE_STT = 0               # số thứ tự vào hàng (FIFO trong cùng mức ưu tiên)
+_GATE_HANG: dict = {}       # stt -> [ưu_tiên, lúc_vào_hàng]
+
+
+def _khoa_xep(stt: int, bay_gio: float) -> tuple:
+    ut, luc = _GATE_HANG[stt]
+    if bay_gio - luc >= _DOI_TOI_DA:
+        ut = UT_XUAT        # chờ quá lâu -> nâng hạng, KHÔNG BAO GIỜ chết đói
+    return (ut, stt)
+
+
+def _so_truoc(stt: int, bay_gio: float) -> int:
+    """Số việc đứng TRƯỚC mình = đang chạy + đang đợi mà xếp trên mình."""
+    ta = _khoa_xep(stt, bay_gio)
+    return _GATE_DANG + sum(1 for k in _GATE_HANG
+                            if _khoa_xep(k, bay_gio) < ta)
+
+
+def _xin_cho_ffmpeg(uu_tien: int = UT_XUAT) -> bool:
     """Giữ 1 chỗ trong cửa chờ. True = đã giữ (caller PHẢI trả chỗ ở finally).
 
     Đợi theo NHỊP 0,25s chứ không chặn vô hạn, vì mỗi nhịp phải kiểm lại:
@@ -162,25 +222,54 @@ def _xin_cho_ffmpeg() -> bool:
         vẫn xếp hàng đợi tới lượt rồi mới chạy);
       - đang đóng app -> trả False và ĐI LUÔN (treo ở đây là treo bước thoát
         app; caller đã tự chặn spawn bằng _SHUTDOWN);
-      - trần đã đổi (user bật "Tiết kiệm máy" giữa lượt) -> đọc lại mỗi nhịp.
+      - trần đã đổi (user bật "Tiết kiệm máy" giữa lượt) -> đọc lại mỗi nhịp;
+      - BÁO CHO USER còn mấy việc đứng trước (xem `dat_bao_cho`).
     """
-    global _GATE_DANG
-    while True:
-        if _SHUTDOWN.is_set():
-            return False
+    global _GATE_DANG, _GATE_STT
+    with _GATE_COND:
+        _GATE_STT += 1
+        stt = _GATE_STT
+        _GATE_HANG[stt] = [int(uu_tien), time.time()]
+    da_bao = False
+    lan_bao = 0.0
+    try:
+        while True:
+            if _SHUTDOWN.is_set():
+                return False
+            with _GATE_COND:
+                bay_gio = time.time()
+                # tới lượt = còn chỗ VÀ mình đang xếp đầu hàng
+                if (_GATE_DANG < so_ffmpeg_song_song()
+                        and _khoa_xep(stt, bay_gio) == min(
+                            _khoa_xep(k, bay_gio) for k in _GATE_HANG)):
+                    _GATE_DANG += 1
+                    _GATE_HANG.pop(stt, None)
+                    _GATE_COND.notify_all()
+                    if da_bao:
+                        _bao_cho("đã tới lượt — đang chạy ffmpeg...")
+                    return True
+                truoc = _so_truoc(stt, bay_gio)
+                _GATE_COND.wait(0.25)
+            _raise_if_job_canceled()
+            # BÁO mỗi ~0,5s (đủ để thanh trạng thái sống, không nghẽn DB)
+            if time.time() - lan_bao >= 0.5:
+                lan_bao = time.time()
+                da_bao = True
+                _bao_cho(f"đang đợi lượt ffmpeg ({truoc} việc trước)"
+                         if truoc > 0 else "đang đợi lượt ffmpeg...")
+    finally:
         with _GATE_COND:
-            if _GATE_DANG < so_ffmpeg_song_song():
-                _GATE_DANG += 1
-                return True
-            _GATE_COND.wait(0.25)
-        _raise_if_job_canceled()
+            _GATE_HANG.pop(stt, None)
+            _GATE_COND.notify_all()
 
 
 def _tra_cho_ffmpeg() -> None:
     global _GATE_DANG
     with _GATE_COND:
         _GATE_DANG = max(0, _GATE_DANG - 1)
-        _GATE_COND.notify()
+        # notify_all (không phải notify): có ƯU TIÊN nên người được đánh thức
+        # ngẫu nhiên có thể KHÔNG phải người xếp đầu hàng -> chỗ trống nằm không.
+        _GATE_COND.notify_all()
 
 
 def dang_chay_ffmpeg() -> int:
@@ -189,14 +278,21 @@ def dang_chay_ffmpeg() -> int:
         return _GATE_DANG
 
 
-def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int:
+def dang_doi_ffmpeg() -> int:
+    """Số việc đang XẾP HÀNG chờ chỗ (cho test/đo)."""
+    with _GATE_COND:
+        return len(_GATE_HANG)
+
+
+def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None,
+         uu_tien: int = UT_XUAT) -> int:
     """Chạy 1 lệnh ffmpeg QUA CỬA CHỜ (xem `so_ffmpeg_song_song`).
 
     ĐỪNG spawn ffmpeg bằng subprocess trực tiếp ở chỗ khác: đi vòng qua cửa này
     là quay lại đúng cảnh 592 luồng / 24,7x số nhân.
     """
     _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
-    co_cho = _xin_cho_ffmpeg()
+    co_cho = _xin_cho_ffmpeg(uu_tien)
     try:
         return _run_khong_cho(cmd, on_line)
     finally:
@@ -559,7 +655,10 @@ def extract_audio_wav_why(src: str | Path, dst: str | Path,
         settings.FFMPEG_PATH, "-y", "-threads", _dt, "-i", str(src),
         "-vn", "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(dst),
     ]
-    rc = _run(cmd, keep)
+    # ƯU TIÊN THẤP: tách audio chạy NỀN, còn XUẤT là việc anh Hùng đang nhìn
+    # thanh %. Có van chống đói (`_DOI_TOI_DA`) nên lệnh này không bao giờ bị
+    # bỏ quên — quá 20s chờ là được nâng ngang hàng với xuất.
+    rc = _run(cmd, keep, uu_tien=UT_PHAN_TICH)
     if rc == 0:
         return (True, "")
     why = " | ".join(tail[-3:]) or f"ffmpeg trả mã {rc}"
@@ -1114,20 +1213,172 @@ def _list_sfx_files(sfx_dir: Optional[str]) -> list[str]:
     return [p for p in cands if _sfx_file_ok(p)]
 
 
-def _cleanup_dst(dst) -> None:
-    """Xóa file output dở dang (mp4 hỏng) khi xuất lỗi/hủy — best-effort."""
+# ================= DỌN FILE TẠM: PHẢI XOÁ ĐƯỢC, KHÔNG "BEST-EFFORT" =========
+# ĐO THẬT 08/08/2026 (`_do_ro_seg.py`, ffmpeg thật): xuất LỖI trong lúc mảnh còn
+# bị Windows khoá 2 giây (đúng cảnh ffmpeg vừa bị kill) để lại **6 file `_seg_*`
+# / 8,9 MB** nằm vĩnh viễn trong %TEMP% — bản cũ `unlink` 1 phát rồi `except
+# OSError: pass`, PermissionError bị nuốt IM LẶNG. Đây là đúng loại rác đã làm
+# ổ C đầy 100% hôm 31/07 (1,71 GB `_seg_*` phải dọn tay).
+#
+# 3 LỚP, phải có ĐỦ CẢ 3 (thiếu lớp nào là rác vẫn tồn):
+#   1. THỬ LẠI có chờ: Windows nhả handle sau vài trăm ms, tổng ~2,1 s là đủ.
+#   2. SỔ NỢ `_RAC_TON`: xoá vẫn không được -> GHI SỔ, lượt xuất sau dọn hộ
+#      (đừng để mất dấu — mất dấu là không ai dọn nữa).
+#   3. QUÉT MỒ CÔI lúc mở app: app thoát bằng `os._exit` nên `finally` KHÔNG
+#      chạy -> mảnh của lần chạy trước phải có người nhặt (xem `don_seg_mo_coi`).
+_XOA_CHO = (0.0, 0.15, 0.35, 0.6, 1.0)      # tổng chờ ~2,1 s
+_RAC_TON: set = set()                        # file chưa xoá được -> dọn lại sau
+_RAC_LOCK = _threading.Lock()
+
+
+def _thu_xoa(p: str) -> bool:
+    """Xoá 1 file, THỬ LẠI theo `_XOA_CHO` khi bị KHOÁ. True = không còn file."""
+    q = Path(p)
+    for i, cho in enumerate(_XOA_CHO):
+        if cho:
+            time.sleep(cho)
+        try:
+            q.unlink(missing_ok=True)
+            return True
+        except PermissionError:
+            # ffmpeg vừa bị kill -> handle chưa nhả. Chờ nhịp sau rồi thử lại.
+            if not q.exists():
+                return True
+            continue
+        except OSError:
+            # lỗi KHÁC (đường dẫn hỏng, là thư mục...) -> thử lại vô ích
+            return not q.exists()
+    return not q.exists()
+
+
+def _cleanup_dst(dst) -> bool:
+    """Xoá file output dở dang / mảnh tạm. True = đã sạch.
+
+    KHÔNG còn "best-effort im lặng": xoá không được thì GHI SỔ `_RAC_TON` để
+    `don_rac_ton()` (đầu mỗi lượt xuất) và `don_seg_mo_coi()` (lúc mở app) còn
+    đường nhặt lại. Chỉ chờ khi file THẬT SỰ còn đó -> đường xuất bình thường
+    (file không tồn tại) vẫn trả về tức thì, không chậm đi một ms nào.
+    """
     if not dst:
-        return
+        return True
+    p = str(dst)
     try:
-        Path(dst).unlink(missing_ok=True)
+        if not Path(p).exists():
+            return True
     except OSError:
-        pass
+        return True
+    if _thu_xoa(p):
+        with _RAC_LOCK:
+            _RAC_TON.discard(p)
+        return True
+    with _RAC_LOCK:
+        _RAC_TON.add(p)
+    return False
 
 
-def _cleanup_paths(paths) -> None:
-    """Xóa NHIỀU file tạm best-effort (file đoạn mezzanine, list concat...)."""
+def _cleanup_paths(paths) -> list:
+    """Xoá NHIỀU file tạm. TRẢ VỀ danh sách CHƯA xoá được (rỗng = sạch).
+
+    Giá trị trả về là bắt buộc phải dùng ở chỗ nào có `del temps[:]`: bản cũ
+    xoá sổ vô điều kiện nên file khoá được coi như đã dọn -> mất dấu vĩnh viễn.
+    """
+    con: list = []
     for p in paths or []:
-        _cleanup_dst(p)
+        if p and not _cleanup_dst(p):
+            con.append(p)
+    return con
+
+
+def don_rac_ton() -> int:
+    """Dọn lại các file tạm lần trước xoá không được. Trả số file đã sạch."""
+    with _RAC_LOCK:
+        ds = list(_RAC_TON)
+    n = 0
+    for p in ds:
+        try:
+            if not Path(p).exists():
+                with _RAC_LOCK:
+                    _RAC_TON.discard(p)
+                n += 1
+                continue
+            Path(p).unlink(missing_ok=True)
+        except OSError:
+            continue
+        with _RAC_LOCK:
+            _RAC_TON.discard(p)
+        n += 1
+    return n
+
+
+def rac_ton() -> list:
+    """Sổ nợ hiện tại (cho test/đo)."""
+    with _RAC_LOCK:
+        return sorted(_RAC_TON)
+
+
+# --- TÊN MẢNH TẠM CÓ ĐÓNG DẤU PID: `_seg_p<pid>h<6 hex>_...` -----------------
+# Nhờ dấu PID mà lúc mở app phân biệt được "mảnh của lượt xuất ĐANG chạy" (phải
+# để yên) với "mảnh của lần chạy trước đã chết" (dọn ngay), thay vì phải đoán
+# theo tuổi file 2 giờ như `tempsweep`. Máy anh Hùng tự cập nhật + tắt app giữa
+# chừng liên tục nên "đợi 2 giờ" là để rác nằm lại cả buổi.
+import re as _re
+_MAU_TAG = _re.compile(r"^_seg_p(\d+)h[0-9a-f]{6}_")
+
+
+def _tag_moi() -> str:
+    import uuid
+    return f"p{os.getpid()}h{uuid.uuid4().hex[:6]}"
+
+
+def _pid_con_song(pid: int) -> bool:
+    """PID còn sống? Không chắc chắn -> trả True (quy tắc repo: nghi ngờ thì GIỮ)."""
+    if pid == os.getpid():
+        return True
+    try:
+        import psutil
+        return bool(psutil.pid_exists(pid))
+    except Exception:  # noqa: BLE001 - thiếu psutil -> không dám phán
+        return True
+
+
+def don_seg_mo_coi(thu_muc: Optional[str] = None) -> tuple[int, int]:
+    """Dọn mảnh `_seg_*` MỒ CÔI của các lần chạy TRƯỚC. Trả (số file, số byte).
+
+    AN TOÀN (đừng nới lỏng — %TEMP% có thể có file của user):
+      * CHỈ trong thư mục tạm, CHỈ tên khớp `_seg_p<pid>h<6 hex>_` (mẫu do
+        chính app đặt) — file `_seg_*` tên khác (bản app cũ) để `tempsweep`
+        dọn theo tuổi 2 giờ, không đụng ở đây.
+      * PID còn sống (kể cả CHÍNH MÌNH) -> BỎ QUA: đó là lượt xuất đang chạy.
+      * Không đọc được PID / thiếu psutil -> BỎ QUA.
+      * Bị khoá -> im lặng bỏ qua, KHÔNG BAO GIỜ ném lỗi ra ngoài.
+    """
+    import tempfile
+    goc = Path(thu_muc or tempfile.gettempdir())
+    n = byte = 0
+    try:
+        ds = list(goc.glob("_seg_*"))
+    except OSError:
+        return (0, 0)
+    for p in ds:
+        m = _MAU_TAG.match(p.name)
+        if not m:
+            continue
+        try:
+            pid = int(m.group(1))
+        except ValueError:
+            continue
+        if _pid_con_song(pid):
+            continue
+        try:
+            if not p.is_file():
+                continue
+            sz = p.stat().st_size
+            p.unlink()
+        except OSError:
+            continue
+        n += 1
+        byte += sz
+    return (n, byte)
 
 
 # Dấu hiệu NGUYÊN NHÂN trong log ffmpeg. ffmpeg in nguyên nhân ở ĐẦU rồi mới in
@@ -1719,12 +1970,28 @@ def _enc_mezz(enc: str) -> list:
     `concat` demuxer đòi mọi mảnh CÙNG thông số; mảnh thân và mảnh chuyển cảnh
     GPU phải ra từ đúng một bộ tham số này, lệch một cái là ffmpeg im lặng bỏ
     mảnh hoặc ra clip giật.
+
+    **LỖI THẬT ĐO ĐƯỢC 08/08/2026 (có từ bản `main`, KHÔNG phải hồi quy):**
+    nhánh `libx264` THIẾU `-pix_fmt yuv420p` trong khi nhánh nvenc có. Mảnh
+    THÂN vào từ file nên ra `yuv420p`, còn mảnh CHUYỂN CẢNH đi qua
+    `filter_complex` (`xfade`) thì x264 tự chọn **`yuv444p`**:
+        pix_fmt các mảnh = [yuv420p, **yuv444p**, yuv420p, **yuv444p**, yuv420p]
+    Lệch pix_fmt giữa các file làm ffmpeg **DỰNG LẠI filter graph** ở mỗi mảnh,
+    mà `metadata=print:file=` MỞ LẠI FILE Ở CHẾ ĐỘ GHI ĐÈ mỗi lần dựng lại ->
+    `hieu_ung.do_nhip` chỉ còn số đo của MẢNH CUỐI: **4 giây trên 16** -> dải
+    động phẳng -> `chon_hieu_ung` trả **0 ĐIỂM NHẤN**. Đo cùng clip, cùng máy:
+        libx264      -> đo được  4s/16s -> **0** điểm nhấn
+        h264_nvenc   -> đo được 16s/16s -> **3** điểm nhấn
+    Nghĩa là MÁY NHÂN VIÊN (không NVENC) và mọi lượt NVENC lùi về CPU đều
+    **mất sạch hiệu ứng điểm nhấn mà không một dòng báo** — đúng câu anh Hùng
+    hỏi *"làm sao để biết có thêm hiệu ứng hay âm thanh gì k"*.
     """
     if enc == "h264_nvenc":
         return ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
                 "-cq", "16", "-pix_fmt", "yuv420p",
                 "-threads", str(encode_threads())]
     return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+            "-pix_fmt", "yuv420p",       # BẮT BUỘC: xem docstring
             "-threads", str(encode_threads())]
 
 
@@ -1899,11 +2166,12 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     cảnh làm nó nặng thêm vì pha 1.5 là một chỗ ném lỗi MỚI. Đúng loại rác
     1,71 GB phải dọn tay hôm 31/07 khi ổ C đầy 100%."""
     import tempfile
-    import uuid
     info = probe(src)
     fps = info.fps if 10.0 <= (info.fps or 0) <= 120.0 else 30.0
     tdir = tempfile.gettempdir()
-    tag = uuid.uuid4().hex[:8]
+    # TÊN CÓ ĐÓNG DẤU PID (`_tag_moi`) -> lúc mở app phân biệt được mảnh của lượt
+    # ĐANG chạy với mảnh mồ côi của lần chạy trước (`don_seg_mo_coi`).
+    tag = _tag_moi()
     temps: list = temps_out if temps_out is not None else []
     n = len(segs)
     dai_goc = [float(e) - float(s) for s, e in segs]
@@ -1948,6 +2216,7 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
                 f.write("ffconcat version 1.0\n")
                 for p in manh:
                     f.write("file '" + p.replace("\\", "/") + "'\n")
+            temps.append(lst)     # vào SỔ luôn: caller dọn 1 chỗ, không sót
             return lst, temps
         except Exception as e:      # noqa: BLE001 — hỏng KHÔNG được làm chết
             # lượt xuất: dọn mảnh rồi làm lại bằng đường nối-cả-clip. Mảnh đã
@@ -1958,8 +2227,13 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
             if type(e).__name__ == "CanceledError":
                 raise
             print(f"[hieu-ung] chuyển cảnh 2n-1 hỏng ({e}) -> lùi nối cả clip")
-            _cleanup_paths(list(temps))
+            # GIỮ LẠI trong sổ những mảnh CHƯA xoá được (đang bị Windows khoá
+            # vì ffmpeg vừa chết). Bản cũ `del temps[:]` vô điều kiện -> mảnh
+            # khoá bị xoá khỏi sổ nên caller KHÔNG CÒN ĐƯỜNG NÀO dọn, rác nằm
+            # lại vĩnh viễn (đo `_do_ro_seg.py`: 6 file / 8,9 MB một lượt).
+            con = _cleanup_paths(list(temps))
             del temps[:]
+            temps.extend(con)
     # Đường "nối cả clip" chạy bằng filter `xfade` THƯỜNG -> kiểu GPU (`gl_*`)
     # PHẢI đổi sang kiểu CPU tương đương trước khi vào. BỎ SÓT chỗ này là ffmpeg
     # báo `Not yet implemented in FFmpeg, patches welcome` rồi CHẾT cả lượt xuất
@@ -2064,6 +2338,7 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
         f.write("ffconcat version 1.0\n")
         for p in noi:
             f.write("file '" + p.replace("\\", "/") + "'\n")
+    temps.append(lst)             # vào SỔ luôn: caller dọn 1 chỗ, không sót
     return lst, temps
 
 
@@ -2151,6 +2426,14 @@ def export_canvas_clip(
     hieu_ung_log: Optional[list] = None,  # LIST CỦA CALLER: hàm ghi vào đây các
                                         # hiệu ứng ĐÃ CHỌN (để log/ghi chú
                                         # "giây thứ mấy -> hiệu ứng gì -> vì sao")
+    tieng_dong_log: Optional[list] = None,  # LIST CỦA CALLER: TIẾNG ĐỘNG đã chèn
+                                        # ở từng điểm nối [{giay, loai, ten,
+                                        # nguon}]. Cùng dữ liệu với biến toàn
+                                        # cục `_SFX_LAST_PICK` nhưng TRẢ RIÊNG
+                                        # cho từng lượt — 3 làn xuất chạy song
+                                        # song thì biến toàn cục là của lượt
+                                        # nào xong sau cùng, đọc ra là số của
+                                        # clip KHÁC.
     chuyen_canh: object = "",            # CHUYỂN CẢNH ở chỗ ghép đoạn (xfade):
                                         # "" / "tat" -> đường CŨ Y NGUYÊN;
                                         # "nhe"/"vua"/"manh" -> tự chọn kiểu
@@ -2171,6 +2454,9 @@ def export_canvas_clip(
     trước setpts nên tự khớp. Kết hợp với `speed` (user tua nhanh) qua 1 hệ số
     video hiệu dụng = speed/dub_stretch (vẫn DUY NHẤT 1 lệnh ffmpeg).
     """
+    # SỔ NỢ: mảnh của lượt trước xoá không được (file còn khoá lúc đó) — nhặt
+    # lại ở đây, chỗ rẻ nhất và chắc chắn có người đi qua. Sổ rỗng -> 0 ms.
+    don_rac_ton()
     segs = [(float(s), float(e)) for s, e in (segments or []) if e > s]
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
@@ -2583,9 +2869,13 @@ def export_canvas_clip(
             active_ji = [i for i in range(len(whoosh_offsets))
                          if join_cats[i] != "none"]
             n_joint = len(active_ji)
-            # reset log điểm-nối MỖI lần export (mọi "none" -> danh sách rỗng)
+            # reset log điểm-nối MỖI lần export (mọi "none" -> danh sách rỗng).
+            # `build()` có thể chạy LẦN 2 (lùi nvenc -> libx264) nên phải gán
+            # lại từ đầu, không được cộng dồn.
             global _SFX_LAST_PICK
             _SFX_LAST_PICK = []
+            if tieng_dong_log is not None:
+                del tieng_dong_log[:]
             base_had_audio = len(mix) > 0 or (amap is not None)
             if not base_had_audio and n_joint:
                 # nền im lặng đủ dài để giữ độ dài + làm nhánh 'first' của amix
@@ -2617,6 +2907,12 @@ def export_canvas_clip(
                         f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
                         f"asetpts=PTS-STARTPTS[wh{wi}]")
                     mix.append(f"[wh{wi}]")
+                    if tieng_dong_log is not None:
+                        tieng_dong_log.append(
+                            {"giay": round(float(off), 2),
+                             "loai": join_cats[ji],
+                             "ten": os.path.basename(str(fpath)),
+                             "nguon": "thư mục của bạn"})
             elif n_joint:
                 # ƯU TIÊN 2 — THƯ VIỆN ĐÓNG GÓI theo NGỮ CẢNH (join_cats). Mỗi
                 # điểm nối chọn 1 file trong đúng category (không lặp liên tiếp
@@ -2642,6 +2938,11 @@ def export_canvas_clip(
                             f"adelay={d_ms}|{d_ms},atrim=0:{out_dur:.3f},"
                             f"asetpts=PTS-STARTPTS[wh{wi}]")
                         chosen_log.append((cat, os.path.basename(fpath)))
+                        if tieng_dong_log is not None:
+                            tieng_dong_log.append(
+                                {"giay": round(float(off), 2), "loai": cat,
+                                 "ten": os.path.basename(fpath),
+                                 "nguon": "kho tiếng động của app"})
                     else:
                         # thiếu thư viện -> tiếng tổng hợp hợp loại
                         tidx = _pick_synth_for_category(
@@ -2652,6 +2953,11 @@ def export_canvas_clip(
                         cmd += in_args
                         parts.append(branch)
                         chosen_log.append((cat, f"synth#{tidx}"))
+                        if tieng_dong_log is not None:
+                            tieng_dong_log.append(
+                                {"giay": round(float(off), 2), "loai": cat,
+                                 "ten": f"tự sinh #{tidx}",
+                                 "nguon": "ffmpeg tự sinh"})
                     mix.append(f"[wh{wi}]")
                 # cho test/log biết ĐÃ chọn loại+file gì tại mỗi điểm nối
                 _SFX_LAST_PICK = chosen_log
@@ -2709,6 +3015,9 @@ def export_canvas_clip(
             _run_with_fallback(build, encoder, out_total, _prog,
                                "xuất được clip", dst=dst)
     finally:
-        # dọn file đoạn tạm + file danh sách MỌI trường hợp (xong/lỗi/hủy)
+        # dọn file đoạn tạm + file danh sách MỌI trường hợp (xong/lỗi/hủy).
+        # `_cleanup_paths` nay THỬ LẠI ~2,1s khi file còn bị khoá (ffmpeg vừa bị
+        # kill) và ghi SỔ NỢ cái nào vẫn không xoá được -> `don_rac_ton()` ở
+        # lượt xuất sau nhặt nốt. Trước đây nuốt PermissionError im lặng.
         _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))
     return True
