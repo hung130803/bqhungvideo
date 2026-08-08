@@ -932,3 +932,83 @@ Montserrat →
 thiếu đường lùi font CJK của Windows. **Hệ quả phải nhớ: mọi test headless
 KHÔNG bao giờ soi được chữ trên clip xuất ra** — muốn canh chữ tiêu đề phải
 render ở nền tảng `windows`.
+
+## SỐ ĐO — 5 CÂU HỎI CỦA ANH HÙNG
+
+### Câu 1 — TÍCH HỢP CÓ CHẠY KHÔNG (`_ra_e2e.py`, 7 video Nhật thật / 7 kênh)
+Quét nguồn → nhận → chép lời → phân tích AI → cắt → xuất → dọn gốc, **508 giây
+(8,5 phút)** cho cả 7 kênh.
+
+| | số đo |
+|---|---|
+| video nhận / xong | **7/7 · `done` 7 · lỗi 0** |
+| Part xuất ra | **8** (0 Part 0-byte) |
+| gốc chưa dọn | **0** (đều vào Thùng rác — khôi phục được, KHÔNG xoá hẳn) |
+| job thất bại | **0** (`auto` 7 done · `m1_export_clip` 8 done) |
+| ffmpeg mồ côi | **0** |
+| rác `_seg_*` / `_MEI*` / `_nhip_*` | **0 → 0** |
+| DB tăng | 4 KB → **776 KB** (≈110 KB/video) · WAL tự gấp 5 lần trong lượt |
+
+### Câu 2 — CHẠY MƯỢT CHƯA
+Đo **liên tục 405 giây / 8.101 nhịp** trong lúc dây chuyền chạy:
+
+| mốc | yêu cầu | đo được | |
+|---|---|---|---|
+| trễ vòng lặp UI trung vị | < 30 ms | **15,4 ms** | ĐẠT |
+| p95 | — | 23,4 ms | |
+| đỉnh | < 150 ms | **66,6 ms** | ĐẠT |
+| CPU cả máy | — | TB 29,8% · đỉnh 93,4% | |
+| RAM cây tiến trình đỉnh | — | **1,79 GB** | |
+
+### Câu 3 — NHIỀU KÊNH NHIỀU LUỒNG (`_ra_50kenh.py`: 50 kênh · 10 làn · 110 job)
+Nhồi thêm **60 job phân tích priority 10** vào làn GPU để tái hiện đúng bẫy
+"LIMIT 50" (cổng 5). **50/50 clip xong trong 1.088 giây (18,1 phút), 0 lỗi.**
+
+| mốc | yêu cầu | đo được | |
+|---|---|---|---|
+| tổng luồng ffmpeg | ≤ 2× nhân (48) | **đỉnh 35 = 1,46×** · TB 23,0 | ĐẠT |
+| trễ UI trung vị / đỉnh | < 30 / < 150 ms | **13,7 ms / 37,3 ms** (17.381 nhịp) | ĐẠT |
+| RAM cây đỉnh | — | **0,49 GB** | |
+| clip 0-byte · job thất bại · ffmpeg mồ côi | 0 | **0 · 0 · 0** | ĐẠT |
+| **làn cắt có bị bỏ đói không** | không | job XUẤT đầu tiên chạy sau **0,06 giây** dù **59 job phân tích đang chờ** | ĐẠT |
+| job đợi > 10 phút | không | **`ra_xuat` đợi lâu nhất 925 giây (15,4 phút)** | **KHÔNG ĐẠT** |
+
+### Câu 4 — XỬ LÝ AI (trên 7 video Nhật thật)
+
+| | số đo |
+|---|---|
+| video ra clip **AI** | **7/7** |
+| video rơi **"Cắt cơ bản"** | **0** |
+| video KHÔNG LỜI | phát hiện đúng (**0,034 từ/giây**, ngưỡng 0,5) → tự bật **XEM HÌNH**, ra clip AI, **không** rơi cơ bản |
+| key Groq | **38/38 SỐNG**, 0 key bị khoá |
+| engine chép lời THỰC | `groq:whisper-large-v3` (sau khi sửa LỖI 3) |
+
+Nhật ký ghi **lý do kèm số** cho từng điểm nhấn và **không lặp một kiểu**, ví dụ:
+`giây 31,0 · Ô vuông vỡ · cảnh động mạnh — RMS 0,02 = 0,9x trung vị; động
+10,0/10 = 9,2x trung vị` · `giây 49,0 · Zoom nhồi · cao trào (tiếng vọt lên) —
+RMS 0,19 = 7,3x trung vị`. 6 kiểu khác nhau xuất hiện trên 8 Part; tiếng động
+cũng đổi theo chỗ nối (whoosh / impact / riser / tick / air).
+
+### Câu 5 — CÓ NGHẼN KHÔNG
+| chỗ hay nghẽn | kết quả |
+|---|---|
+| làn nào bị bỏ đói | **KHÔNG** — làn cắt chạy sau 0,06s dù làn phân tích ngập 59 job |
+| DB có bị khoá | **KHÔNG** — 0 lỗi `database is locked`, WAL tự gấp |
+| `%TEMP%` phình | rác `_seg_*`/`_MEI*`/`_nhip_*` = **0** (phần tăng là sandbox cố ý giữ lại để soi) |
+| ffmpeg mồ côi | **0** ở cả 2 lượt đo |
+| **job đợi quá lâu** | **CÓ: 925 giây.** Xem mục dưới — không phải kẹt, mà là **hàng chờ ffmpeg N=1** |
+
+## ⚠ ĐIỂM KHÔNG ĐẠT — NÓI THẲNG: CỬA CHỜ ffmpeg N=1 LÀM NGHẼN HÀNG
+`so_ffmpeg_song_song()` ra **1** trên máy 24 nhân (đúng công thức: sàn ~40
+luồng/tiến trình nvenc, ngân sách 2×24=48). Hệ quả đo được ở 50 kênh:
+- luồng đẹp (**1,46× nhân**), UI mượt (13,7 ms), RAM 0,49 GB — **nhưng**
+- **CPU cả máy chỉ dùng TB 14,3%** (1.492 CPU-giây / 1.088 giây = **1,37 nhân
+  trên máy 24 nhân**) → **máy bỏ không ~85%**
+- 10 làn user đặt thực chất **xếp hàng sau 1 cửa ffmpeg** → job thứ 50 đợi
+  **15,4 phút**, vượt mốc "> 10 phút = nghẽn" của chính anh Hùng.
+
+**Đây là ĐÁNH ĐỔI, không phải hỏng.** Mốc "≤ 2× số nhân" và "dùng hết máy" là
+**loại trừ nhau** vì 1 tiến trình ffmpeg + NVENC có SÀN ~36-40 luồng: 24 nhân
+chia cho 40 = 1 tiến trình. Muốn thông lượng thì phải nới mốc luồng.
+**Đề xuất: anh Hùng chọn**, tôi KHÔNG tự đổi mặc định vì N=1 là quyết định anh
+đã chốt. Núm sẵn có: `BQ_FFMPEG_SLOTS=<N>` (không cần phát hành bản mới).
