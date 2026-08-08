@@ -41,6 +41,16 @@ jobs:
           Copy-Item $fp.FullName bin/ffprobe.exe
           Get-ChildItem bin
 
+      # LƯU Ý (lỗi thật 08/08/2026): CHÍNH KHỐI `--add-data` DƯỚI ĐÂY là thứ
+      # quyết định máy nhân viên có tài nguyên gì — `BQHungVideo.spec` bị
+      # .gitignore nên KHÔNG dự phần vào bản phát hành. Sót 1 dòng ở đây là
+      # TÍNH NĂNG BIẾN MẤT LẶNG LẼ, app không báo một dòng lỗi nào:
+      # `app/assets/hieu_ung` từng bị bỏ sót -> bản .exe mất 25 hiệu ứng
+      # frei0r (kho co còn 14), mất 21 chuyển cảnh GPU (thiếu
+      # gl_transitions.cl), mất 6 shader, và mất luôn NGUON_GIAY_PHEP.md —
+      # file ghi nguồn + GIẤY PHÉP GPL/LGPL của frei0r, bắt buộc phải kèm.
+      # Cổng `_test_dong_goi.py` quét file này, thêm tài nguyên mới mà quên
+      # khai là FAIL.
       - name: Đóng gói (PyInstaller)
         run: >
           pyinstaller --noconfirm --windowed --name "BQHungVideo"
@@ -55,6 +65,7 @@ jobs:
           --add-data "app/database/schema.sql;app/database"
           --add-data "app/assets/fonts;app/assets/fonts"
           --add-data "app/assets/sfx;app/assets/sfx"
+          --add-data "app/assets/hieu_ung;app/assets/hieu_ung"
           --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
           --add-data ".env.example;."
           --add-binary "bin/ffmpeg.exe;."
