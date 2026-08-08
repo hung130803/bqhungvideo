@@ -565,6 +565,66 @@
      Vì sao phải đặt sẵn: `_diem_hap_dan` cần một giây VỌT LÊN so với giây
      trước, mà giây 0 không có "trước" để so -> đoạn đắt nhất clip lại trần
      trụi nhất. Vẫn ăn cùng ngân sách 10% và trần `DAM_MAX` — đo 8,6%/10%.
+  45. `_test_kiem_218.py` → **3 LỖI ÂM THẦM của LƯỢT KIỂM ĐỘC LẬP v2.18.0**
+     (08/08/2026). Tất cả đều "app vẫn chạy, cổng vẫn xanh, chỉ SỐ ĐO tố giác".
+     (a) **ĐO NHỊP BỊ CỤT -> MẤT SẠCH ĐIỂM NHẤN, IM LẶNG.** `do_nhip` trả 1 giá
+     trị/giây và KHÔNG báo lỗi khi chỉ đo được mấy giây đầu; `chon_hieu_ung`
+     coi đó là số đo THẬT của cả clip. Đo trên chính hàm (clip 16 s, cao trào
+     giây 7/11/14, mức "vua"): đo ĐỦ 16/16 -> **3 điểm** (7,0·11,0·14,0) · đo
+     cụt 8/16 -> 3 điểm nhưng DỒN vào 0,0·3,0·7,0 · đo cụt 4/16 -> **0 điểm** ·
+     KHÔNG đo được -> **3 điểm** (đường CẤU TRÚC). Tức **đo cụt TỆ HƠN không
+     đo**. Tái hiện end-to-end bằng danh sách concat lệch thông số: cùng
+     `pix_fmt` -> nl=16/cd=16; **lệch pix_fmt 420→444 -> nl=8/cd=8**; **lệch
+     KÍCH THƯỚC 540x960→480x854 -> nl=8/cd=8** (bản vá `-pix_fmt yuv420p` hôm
+     08/08 chỉ bịt nguyên nhân THỨ NHẤT). Nay `hieu_ung.do_du(nl, cd, giây)`
+     (phủ >= 70%) + `export_canvas_clip` vứt số đo cụt -> đi đường CẤU TRÚC.
+     Kiểm KHÔNG kêu oan: 3 hình dạng clip thật (16s/10s/7s) đều nl=cd=int(dur),
+     `do_du=True`, số điểm nhấn 3/2/1 KHÔNG đổi.
+     (b) **NHẬT KÝ DÂY CHUYỀN ĐỌC TIẾNG ĐỘNG CỦA CLIP KHÁC.**
+     `m1_highlight._ghi_cong_thuc` đọc biến TOÀN CỤC `_SFX_LAST_PICK`, đúng cái
+     mà chính file đó đã ghi "đừng đọc — 3 làn xuất song song thì nó là của clip
+     nào xong sau cùng". Thẻ clip (`_luu_da_ap`) đã dùng `tieng_dong_log` riêng
+     từ v2.17 nhưng NHẬT KÝ thì bị sót. Máy anh Hùng chạy **3 chỗ ffmpeg song
+     song** -> dòng của Part A có thể là tiếng của Part B. Nay truyền `td_log`.
+     (c) `captions.build_ass(size=…)` là **PIXEL**; truyền tỉ lệ (0,055) thì
+     .ass ghi `Fontsize: 0.055` -> chữ dưới 1 điểm ảnh = **KHÔNG THẤY GÌ** mà
+     hàm vẫn trả True + ffmpeg rc=0 + đủ khung. `m1` quy đổi `int(csize*out_h)`;
+     ca này chốt quy ước để lối gọi mới không sập lại.
+- **2 CỔNG PASS OAN ĐÃ CHỨNG MINH BẰNG PHÉP THỬ PHÁ (08/08/2026)** — sửa xong,
+  đừng để tái diễn:
+  * `_test_hlbox.py` mục 12 so với `git show **HEAD**:app/core/captions.py`. Cây
+    làm việc sạch thì HEAD = chính file đang chạy -> "so nó với chính nó", câu
+    "18 preset CŨ … KHÔNG đổi 1 byte" ĐÚNG VĨNH VIỄN. Thử phá: đổi màu preset CŨ
+    "Trắng đơn giản" `#FFFFFF -> #FF00FF` rồi **COMMIT** -> cổng vẫn "TẤT CẢ
+    ĐẠT", mã 0. Nay mốc = CHA của commit đưa `hlbox` vào (`git log -S`) + chốt
+    chặn "bản mốc phải KHÁC bản đang test"; thử phá lại -> **FAIL đúng 1 mục**.
+  * `_test_hieu_ung_khung.py` chỉ hỏi "có đen / có tối quá / có đổi >= 3% / có
+    rò", KHÔNG hỏi **CHIỀU**. Thử phá: bỏ `eval=frame` ở `sup_toi` -> "Sụp tối"
+    **LÀM SÁNG THÊM 43%** (tỉ lệ sáng đáy **0,409 -> 1,434**) mà cổng vẫn "ĐẠT
+    14 · HỎNG 0". Nay có bảng `CHIEU` + cột `sáng đỉnh`; thử phá lại -> trạng
+    thái **SAI-CHIỀU**, mã 1.
+  * `_test_cancel_persist.py` chỉ canh **DÒNG SỔ**, không canh FILE. Thử phá:
+    giữ `unmark_taken` nhưng thêm `_pipe_quarantine_ctx` vào NHÁNH HUỶ (tức
+    video của anh Hùng bị đẩy vào `_Loi` mỗi lần bấm Huỷ) -> `_test_cancel_
+    persist.py` + `_test_pipe_overlap.py` + `_test_luoi_an_toan.py` **CẢ BA VẪN
+    XANH**. Bất biến "huỷ ≠ lỗi, KHÔNG đổi tên/chỗ file gốc" chỉ nằm trong lời
+    ghi chú. Nay có ca 2e (video gốc còn trong thư mục kênh + `_Loi` rỗng);
+    thử phá lại -> **2 FAIL**.
+  * `_test_ca_bien_xuat.py` CA 2 lấy MỘT mẫu ở `sleep(1.2)` rồi hỏi "lúc huỷ có
+    ffmpeg đang chạy không". Máy bận (đúng cảnh sản xuất) thì lượt xuất còn đang
+    XẾP HÀNG ở cửa chờ -> đo `0 tiến trình` -> cổng ĐỎ oan (chạy một mình lại
+    XANH). Nay ĐỢI tới khi thấy ffmpeg thật rồi mới bấm Huỷ.
+- **TIẾNG ĐỘNG CHỈ NGHE ĐƯỢC TRÊN CLIP CÓ NỀN YÊN — CHƯA CHỮA, ĐÃ BÁO**
+  (`_do_sfx_theo_nen.py`). `tinh_gain_sfx` có 2 vế đá nhau: "đích = nền + 8 dB"
+  và "kẹp đỉnh <= −1 dBFS". Kho 184 file là tiếng ngắn đã chuẩn hoá ĐỈNH (hệ số
+  đỉnh trung vị **15,3 dB**) nên kẹp đỉnh gần như luôn thắng khi clip ồn:
+  nền −23,6 dBFS (nguồn cổng 44) -> 53% file bị kẹp, thiếu trung vị 1,0 dB;
+  nền **−15,7 dBFS** (clip THẬT đo hôm nay: xe tải nổ máy) -> **74% file bị kẹp,
+  thiếu trung vị 8,9 dB, tối đa 21,8 dB**. Đo trên clip thật 16 s: bật/tắt tiếng
+  động chênh **+0,6 / −1,1 / −0,0 / −1,6 / +2,4 dB** — 2/5 mốc còn NHỎ ĐI vì
+  ducking hạ tiếng gốc 5 dB mà lớp tiếng động không bù nổi. Cổng 44 không thấy
+  vì nó chỉ đo trên MỘT nguồn có nền yên. **Chưa tự sửa** (đổi độ to của mọi
+  clip trên 200-300 kênh) — hướng đề xuất ghi trong docstring file đo.
 - **CỔNG TEST PHẢI TRỎ VỀ BẢN MÃ CỦA CHÍNH NÓ.** 29 file `_test_*.py` từng ghi
   CỨNG `sys.path.insert(0, r"D:\claude\ai-content-studio")` (và `bin/ffmpeg.exe`,
   và các lần mở file mã nguồn để quét tĩnh). Chạy cổng từ một **git worktree**

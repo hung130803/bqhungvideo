@@ -230,10 +230,42 @@ ho = [round(mo[i + 1][0] - mo[i][1], 3) for i in range(len(mo) - 1)
       if mo[i + 1][0] - mo[i][1] > 0.001]
 kiem(not ho, f"không có LỖ giữa các cặp (lỗ: {ho})")
 
-print("\n══ 12. BẤT BIẾN: 18 preset CŨ ra file GIỐNG TỪNG BYTE bản HEAD ══")
+# ═══════════════════════════════════════════════════════════════════════════
+# 12. BẤT BIẾN — MỐC ĐỐI CHỨNG PHẢI KHÁC BẢN ĐANG TEST
+#
+# LỖI THẬT (lượt kiểm ĐỘC LẬP 08/08/2026): mốc cũ là `HEAD`, mà `HEAD` chính là
+# commit đang test -> khi cây làm việc SẠCH (mọi bản sửa đã commit) thì
+# `git show HEAD:app/core/captions.py` trả về **CHÍNH FILE ĐANG CHẠY**: phép so
+# thành "so nó với chính nó" và câu "18 preset CŨ × 4 bộ tham số: KHÔNG đổi 1
+# byte" LUÔN ĐÚNG, vĩnh viễn. PHÉP THỬ PHÁ ĐÃ LÀM: đổi màu preset CŨ "Trắng đơn
+# giản" #FFFFFF -> #FF00FF (kiểu anh Hùng đang chạy sản xuất 200-300 kênh),
+# COMMIT, chạy lại -> cổng vẫn in "TẤT CẢ ĐẠT — … preset cũ y nguyên", mã 0.
+#
+# ĐÚNG: mốc = CHA của commit ĐƯA `hlbox` VÀO — chắc chắn là "bản trước khi sửa"
+# và KHÔNG phụ thuộc việc sau này gộp/đổi nhánh (cùng cách `_test_rac_va_bao.py`
+# làm). `BQ_MOC_REF` ép tay được. Kèm chốt chặn "so-với-chính-mình" ngay dưới,
+# nên trỏ vào bản trùng vẫn FAIL.
+# ═══════════════════════════════════════════════════════════════════════════
+_moc = os.environ.get("BQ_MOC_REF", "")
+if not _moc:
+    _r = subprocess.run(["git", "-C", REPO, "log", "--format=%H", "--reverse",
+                         "-S", "hlbox", "--", "app/core/captions.py"],
+                        capture_output=True)
+    _ds = (_r.stdout or b"").decode().split()
+    _moc = f"{_ds[0]}^" if _ds else "HEAD"
+print(f"\n══ 12. BẤT BIẾN: 18 preset CŨ ra file GIỐNG TỪNG BYTE bản "
+      f"`{_moc[:12]}` ══")
 cu_py = os.path.join(T, "captions_cu.py")
-r = subprocess.run(["git", "-C", REPO, "show", "HEAD:app/core/captions.py"],
+r = subprocess.run(["git", "-C", REPO, "show", f"{_moc}:app/core/captions.py"],
                    capture_output=True)
+_nay_src = open(os.path.join(REPO, "app", "core", "captions.py"), "rb").read()
+kiem(r.returncode == 0 and len(r.stdout) > 3000,
+     f"lấy được captions.py của mốc `{_moc[:12]}`",
+     f"rc={r.returncode} · {len(r.stdout)} byte")
+kiem(r.stdout.strip() != _nay_src.strip(),
+     "CHỐNG PASS OAN: bản mốc phải KHÁC bản đang test",
+     f"mốc {len(r.stdout)} byte vs nay {len(_nay_src)} byte — TRÙNG NHAU thì "
+     f"phép so bất biến là VÔ NGHĨA (đặt BQ_MOC_REF)")
 open(cu_py, "wb").write(r.stdout)
 spec = importlib.util.spec_from_file_location("captions_cu", cu_py)
 CU = importlib.util.module_from_spec(spec)

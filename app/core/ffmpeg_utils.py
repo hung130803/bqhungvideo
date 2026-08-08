@@ -2854,6 +2854,15 @@ def export_canvas_clip(
                         "-i", str(src)]
             _nl, _cd = _HU.do_nhip("", ffmpeg=settings.FFMPEG_PATH,
                                    dau_vao=_vao)
+            # ĐO CỤT = ĐO SAI — VỨT, ĐI ĐƯỜNG CẤU TRÚC (xem `hieu_ung.do_du`).
+            # `do_nhip` có thể trả về một danh sách NGẮN mà không hề báo lỗi
+            # (file `metadata=print` bị GHI ĐÈ khi ffmpeg dựng lại filter graph
+            # giữa các mảnh concat — đúng lỗi 08/08/2026 làm máy KHÔNG NVENC ra
+            # 0 điểm nhấn). Đo thật trên `chon_hieu_ung`: đo cụt 4/16 giây ->
+            # **0 điểm nhấn**, trong khi KHÔNG đo được -> vẫn **3 điểm**. Tức
+            # thà không đo còn hơn đo cụt.
+            if not _HU.do_du(_nl, _cd, _out_dur * vspeed):
+                _nl, _cd = [], []
             # `do_nhip` đo trên timeline NỘI BỘ (1 giá trị / giây). Đổi sang
             # timeline ĐẦU RA: giây thứ i của clip ra = giây i*vspeed của trong.
             if abs(vspeed - 1.0) > 0.001:

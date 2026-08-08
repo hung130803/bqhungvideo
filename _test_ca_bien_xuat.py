@@ -167,8 +167,22 @@ def ca_huy_giua_chung() -> None:
 
     t = threading.Thread(target=chay, daemon=True)
     t.start()
-    time.sleep(1.2)                    # để nó vào giữa pha 1
-    dang = dem_ffmpeg()
+    # ĐỢI CHO TỚI KHI THẤY ffmpeg THẬT rồi mới bấm Huỷ — KHÔNG lấy MỘT mẫu ở
+    # giây 1,2.
+    # LỖI CỦA CHÍNH CỔNG NÀY (lượt kiểm độc lập 08/08/2026): bản cũ
+    # `time.sleep(1.2)` rồi đếm 1 phát. Máy anh Hùng LUÔN có việc chạy nền, và
+    # `export_canvas_clip` phải XIN CHỖ ở cửa chờ ffmpeg trước khi spawn — nên
+    # ở giây 1,2 lượt xuất có thể vẫn đang XẾP HÀNG. Đo thật trong lượt chạy cả
+    # bộ: `0 tiến trình (nền 0)` -> cổng ĐỎ trong khi HUỶ hoàn toàn đúng (4 ca
+    # còn lại đều OK); chạy lại một mình thì `1 tiến trình` -> XANH. Cổng nhấp
+    # nháy theo tải máy là cổng không tin được.
+    dang, _t0 = 0, time.time()
+    while time.time() - _t0 < 30.0:
+        dang = max(dang, dem_ffmpeg())
+        if dang > truoc_ff:
+            break
+        time.sleep(0.2)
+    time.sleep(0.4)                    # để nó vào giữa pha 1 rồi mới huỷ
     co_huy.set()                       # BẤM HUỶ
     t.join(timeout=90)
     W.current_job_canceled = goc       # type: ignore[assignment]
