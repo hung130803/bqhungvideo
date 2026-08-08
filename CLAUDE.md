@@ -337,6 +337,41 @@
      OAN vì cả 2 bản đều đen; đổi sang mốc 100/200/300s thì ra 57-83%); ngưỡng
      đếm pixel phải **THEO TỈ LỆ** (khung phim đã có vùng gần trắng nên khung
      KHÔNG chữ vẫn đếm 4.634 px -> ngưỡng cứng 1.500 px FAIL OAN).
+  37. `_test_ca_bien_xuat.py` → **CA BIÊN CỦA ĐƯỜNG XUẤT** (cổng 36 canh ca
+     thường, cổng này đi tìm chỗ VỠ ở ca xấu — 200-300 kênh thì ca xấu chắc
+     chắn gặp). 23 ca, ffmpeg thật, nguồn tự sinh bằng `lavfi` nên không phụ
+     thuộc file trên máy: **video KHÔNG TIẾNG** (`_graph_xfade` chỉ thêm
+     `acrossfade` khi `co_tieng` — sai nhánh là clip câm nổ giữa dây chuyền) ·
+     **HUỶ giữa lúc xuất** (phải ném `CanceledError` + dọn hết `_seg_*` + không
+     để file đích dở + **không bỏ lại ffmpeg mồ côi**) · **không ghi được đĩa**
+     (mô phỏng hết đĩa: phải FAIL TO, lời lỗi có log để đọc, không để file 0
+     byte) · **máy nhân viên** thiếu NVENC + frei0r + OpenCL (đo: kho hiệu ứng
+     tự co **25 → 14**, nhóm GPU trả `[]`, vẫn xuất đúng 12,000s) · **clip 1
+     đoạn** và **đoạn CHẠM MÉP phim** khi chuyển cảnh đang BẬT.
+     **BẪY ĐẾM TIẾN TRÌNH:** lọc `ffmpeg` theo **cmdline** sẽ đếm CHÍNH LỆNH
+     KIỂM (mã nguồn có chữ 'ffmpeg') -> luôn báo "đang chạy"; đã báo sai 4 lần.
+     Phải lọc theo `p.name()` (hoặc `Get-Process ffmpeg`).
+     **BẪY VIẾT CỔNG NÀY (sập 1 lần):** stub `thu_muc_frei0r` phải trả **Path**
+     chứ không phải `str` (hàm thật trả Path) — trả `""` ra `AttributeError:
+     'str' object has no attribute 'is_dir'`, suýt báo nhầm là lỗi app. Và phải
+     xoá CẢ 2 chỗ nhớ `_F0R_OK` + `_MOD_CACHE`, không thì đọc kết quả lần đo
+     trước rồi PASS OAN.
+- **NHÓM HIỆU ỨNG CHẠY TRÊN GPU (`app/core/hieu_ung_gpu.py`)**: `xfade_opencl` +
+  kernel gl-transitions (MIT) **21 kiểu ĐO ĐẠT** · `libplacebo` + shader GLSL tự
+  viết **6/6 ĐẠT**. **2 bẫy của `xfade_opencl`, cả hai IM LẶNG (rc=0):**
+  (a) nó trả PTS rác `AV_NOPTS` (in ra `pts_time:-600479950316066`) -> muxer bỏ
+  hết khung -> **file ra 0 KHUNG dù có kích thước**; ai "chữa" bằng `fps=` sau
+  `hwdownload` thì ffmpeg **sinh khung vô tận — đo 19,1 GB RSS + 364 CPU-giây
+  trong 9 phút, phải giết tay**. Chữa: `setpts=N/FR/TB` (KHÔNG dùng
+  `PTS-STARTPTS`, nó mất khung: 6/8 · 7/9 · 11/15).
+  (b) nó quy đổi `duration` theo timebase KHUNG-HÌNH trong khi mp4 mang
+  `1/15360` -> lệch 512 lần -> chuyển cảnh xong trong 1 khung (kiểu DỰNG SẴN của
+  ffmpeg cũng dính, không phải kernel sai). Chữa: `settb=1/<fps>` trước
+  `hwupload`. **`co_opencl()` phải ĐẾM KHUNG, không chỉ xem rc + kích thước file**
+  — cửa fallback báo nhầm thì máy user bật nhóm GPU hỏng.
+  **GPU KHÔNG rẻ hơn CPU ở quy mô này:** CPU-giây 0,484 vs 0,469 = **1,03×**
+  (phí mở thiết bị OpenCL 0,094 CPU-giây/lệnh, cố định). Giá trị của nhóm GPU là
+  **thêm 21 kiểu chuyển cảnh**, không phải tiết kiệm CPU.
 - **CỬA CHỜ ffmpeg (`so_ffmpeg_song_song`)**: số lệnh ffmpeg chạy CÙNG LÚC do
   app tự đo theo máy, **độc lập với "số làn" user đặt**. Ngân sách: tổng luồng
   ffmpeg ≤ 2× số nhân, chia cho SÀN luồng mỗi tiến trình (nvenc 40, CPU 30) ->
