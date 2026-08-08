@@ -192,6 +192,50 @@ def ly_do_khong_co_frei0r() -> str:
 _MOD_CACHE: dict = {}
 
 
+def _chay_ffmpeg(cmd: list, giay: int) -> int:
+    """Chạy 1 lệnh ffmpeg phụ (thử plugin / đo nhịp) — CÓ VÀO SỔ TIẾN TRÌNH.
+
+    **VÌ SAO PHẢI VÀO SỔ (lỗi rà ra 08/08/2026):** 2 chỗ trong file này trước đây
+    gọi thẳng `subprocess.run`, tức KHÔNG qua `ffmpeg_utils.register_proc` ->
+    `terminate_all_children()` lúc đóng app **không giết nổi** -> tắt app để lại
+    **ffmpeg mồ côi** chạy tiếp. `do_nhip` giải mã TOÀN BỘ clip (tới 2 lệnh khi
+    video không tiếng) và `dung_duoc()` thử tới 11 module frei0r, nên cửa sổ rò
+    không hề nhỏ.
+
+    Cố ý KHÔNG đi qua `ffmpeg_utils._run`: những lệnh này là lệnh ĐO/THỬ, đi qua
+    cửa chờ sẽ tự khoá lẫn với lệnh xuất đang giữ chỗ. Chỉ cần vào sổ để bị giết
+    đúng lúc. Không bao giờ ném lỗi ra ngoài.
+    """
+    p = None
+    try:
+        p = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            from app.core import ffmpeg_utils as _fu
+            _fu.register_proc(p)
+        except Exception:  # noqa: BLE001 - vào sổ hỏng không được làm vỡ phép đo
+            pass
+        p.communicate(timeout=giay)
+        return int(p.returncode)
+    except Exception:  # noqa: BLE001
+        try:
+            if p is not None:
+                p.kill()
+                p.communicate(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+        return -1
+    finally:
+        if p is not None:
+            try:
+                from app.core import ffmpeg_utils as _fu
+                _fu.unregister_proc(p)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _thu_module(ten: str) -> bool:
     if ten in _MOD_CACHE:
         return _MOD_CACHE[ten]
@@ -199,13 +243,7 @@ def _thu_module(ten: str) -> bool:
            "-f", "lavfi", "-i", "color=c=gray:s=64x64:d=0.04",
            "-vf", f"frei0r=filter_name={ten}", "-frames:v", "1",
            "-f", "null", os.devnull]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
-                           errors="replace",
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        ok = p.returncode == 0
-    except Exception:  # noqa: BLE001
-        ok = False
+    ok = _chay_ffmpeg(cmd, 30) == 0
     _MOD_CACHE[ten] = ok
     return ok
 
@@ -782,13 +820,9 @@ def do_nhip(path: str, ffmpeg: str = "",
         cmd = [ff, "-y", "-hide_banner", "-nostats", "-v", "error",
                *vao, "-filter_complex", graph, *maps,
                "-f", "null", os.devnull]
-        try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                               errors="replace",
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except Exception:  # noqa: BLE001
-            break
-        if p.returncode == 0:
+        # `_chay_ffmpeg`: VÀO SỔ tiến trình để đóng app giết được (xem docstring
+        # của nó). Lệnh này giải mã CẢ clip nên là chỗ rò ffmpeg mồ côi nặng nhất.
+        if _chay_ffmpeg(cmd, 600) == 0:
             break                       # có tiếng -> xong; không thì thử nhánh 2
     try:
         if os.path.exists(fa):

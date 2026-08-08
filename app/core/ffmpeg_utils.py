@@ -1563,16 +1563,37 @@ def _bu_xfade(segs: list, chuyen: list, dur_nguon: float) -> list:
     dưới 0,08s thì trả 0 = chỗ nối đó CẮT THẲNG như cũ (thà cụt 1 chỗ còn hơn
     lệch tiếng-hình cả clip). KHÔNG lùi đầu đoạn B để bù — làm thế là dịch nội
     dung B sớm lên, đúng kiểu lỗi "hình một đằng tiếng một đằng" của v1.87.
+
+    **KẸP THEO ĐỘ DÀI ĐOẠN KẾ — LỖI THẬT ĐÃ ĐO 08/08/2026, đừng gỡ.** `xfade`
+    (hình) và `acrossfade` (tiếng) xử lý "đoạn B NGẮN HƠN d" **KHÁC NHAU**: hình
+    ra đúng `a+b`, còn tiếng ra `a+d`. Đo thật (A gốc 2,0s, đã bù):
+
+    | B dài | d    | hình ra | tiếng ra | lệch |
+    |-------|------|---------|----------|------|
+    | 0,20  | 0,40 | 2,200   | 2,400    | **200 ms** |
+    | 0,20  | 0,30 | 2,200   | 2,300    | **100 ms** |
+    | 0,30  | 0,40 | 2,300   | 2,400    | **100 ms** |
+    | 0,30  | 0,30 | 2,300   | 2,300    | 0 ms |
+
+    Mốc cho phép là **80 ms**. Ca này app TỰ ĐẨY MÌNH VÀO: `_loai_cho_noi` gọi
+    một chỗ nối là `'chot'` **đúng khi đoạn kế < 2,5s**, mà `_XF_DAI` cho
+    `'chot'` thời lượng DÀI NHẤT (vua 0,35s · manh 0,40s); còn
+    `_cat_theo_do_dai_that` cho đoạn ngắn tới **0,30s** (Part cuối bị kẹp vào mép
+    phim). Mức mặc định `'nhe'` vừa đúng 0,30 nên thoát, `'vua'`/`'manh'` thì
+    KHÔNG. Vì vậy `d` phải <= độ dài ĐOẠN KẾ.
     """
     ra: list = []
+    segs = list(segs or [])
     for i, (_k, d) in enumerate(chuyen or []):
         try:
             het = float(segs[i][1])
+            dai_ke = float(segs[i + 1][1]) - float(segs[i + 1][0])
         except (IndexError, TypeError, ValueError):
             ra.append(0.0)
             continue
         con = max(0.0, float(dur_nguon or 0.0) - het)
         d2 = min(float(d), con) if dur_nguon else float(d)
+        d2 = min(d2, max(0.0, dai_ke))          # <= độ dài ĐOẠN KẾ
         ra.append(round(d2, 3) if d2 >= 0.08 else 0.0)
     return ra
 

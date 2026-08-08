@@ -505,3 +505,83 @@ thêm vì pha 1.5 là chỗ ném lỗi MỚI.
 4. **Chưa đo trên máy nhân viên yếu thật** (chỉ mô phỏng bằng công thức + ca test
    ECO_MODE). `requirements-build.txt` KHÔNG thêm thư viện nào — cổng 36 chỉ dùng
    `numpy`/`cv2` đã có sẵn.
+
+---
+---
+# LƯỢT 08/08/2026 — sửa bảng mẫu · 2 nguồn GPU · RÀ SOÁT LỖI
+Commit: `589b57f` (bảng mẫu) · `9033421` (GPU) · `34c15c9` (cổng 37) · lượt này.
+
+## 1. BẢNG MẪU v3 — 3 lỗi đã sửa (2 anh Hùng báo + 1 tôi tự tìm)
+Xem mục "LỖI ANH HÙNG BÁO Ở BẢNG MẪU v3" ở trên. Lỗi thứ 3 (`%` nuốt cả dòng)
+đáng nhớ nhất: **cổng kiểm đếm pixel TỔNG nên PASS OAN 26/26 trong khi 25 ô mất
+hẳn dòng nhãn 2.** Nay đếm pixel TỪNG DÒNG.
+
+## 2. NHÓM GPU — 21 chuyển cảnh + 6 shader, và 2 bẫy suýt ship
+Chi tiết ở docstring `app/core/hieu_ung_gpu.py` và `CLAUDE.md`. Tóm tắt số:
+`xfade_opencl` **21/21 ĐẠT** · `libplacebo` **6/6 ĐẠT** · **CPU-giây 1,03× so
+CPU** (GPU KHÔNG rẻ hơn ở quy mô 0,3-0,5s; giá trị nằm ở 21 kiểu MỚI).
+Tai nạn đáng nhớ: chữa PTS rác bằng `fps=` làm ffmpeg **sinh khung vô tận, 19,1
+GB RSS + 364 CPU-giây trong 9 phút**, phải giết tay.
+
+## 3. LỖI THẬT ĐANG CHẠY TRONG SẢN XUẤT — ĐÃ SỬA
+**`_bu_xfade` không kẹp `d` theo độ dài ĐOẠN KẾ.** `xfade` (hình) và
+`acrossfade` (tiếng) xử lý ca "đoạn B ngắn hơn `d`" KHÁC NHAU:
+
+| B dài | d | hình ra | tiếng ra | lệch |
+|---|---|---|---|---|
+| 0,20 | 0,40 | 2,200 | 2,400 | **200 ms** |
+| 0,20 | 0,30 | 2,200 | 2,300 | **100 ms** |
+| 0,30 | 0,40 | 2,300 | 2,400 | **100 ms** |
+| 0,30 | 0,30 | 2,300 | 2,300 | 0 ms |
+
+Mốc cho phép 80 ms. App **TỰ ĐẨY MÌNH VÀO**: `_loai_cho_noi` gọi chỗ nối là
+`'chot'` đúng khi đoạn kế < 2,5s, mà `'chot'` có `d` DÀI NHẤT (vua 0,35 · manh
+0,40); `_cat_theo_do_dai_that` cho đoạn ngắn tới 0,30s (Part cuối kẹp vào mép
+phim). Mức mặc định `'nhe'` vừa đúng 0,30 nên thoát — **`'vua'`/`'manh'` thì
+KHÔNG**. Sửa: `d = min(d, độ_dài_đoạn_kế)`. Đo lại: lệch **23 ms**. Cổng 37 ca 6.
+
+**Rò tiến trình ffmpeg mồ côi:** `do_nhip` và `_thu_module` trong `hieu_ung.py`
+gọi thẳng `subprocess.run`, KHÔNG qua `register_proc` -> `terminate_all_children()`
+lúc đóng app không giết nổi. `do_nhip` giải mã CẢ clip (tới 2 lệnh khi video
+không tiếng), `dung_duoc()` thử 11 module frei0r. Nay cả 2 đi qua `_chay_ffmpeg`
+(vào sổ tiến trình). **Cố ý KHÔNG qua cửa chờ** — lệnh ĐO mà xin chỗ sẽ tự khoá
+lẫn với lệnh xuất đang giữ chỗ.
+
+## 4. HIỆU ỨNG ĐIỂM NHẤN CHƯA NỐI VÀO APP — và 5 lỗi phải sửa TRƯỚC KHI nối
+`export_canvas_clip` CÓ tham số `hieu_ung` (mặc định `""` = đường cũ y nguyên),
+nhưng **không có núm trong Chỉnh mẫu, không có khoá mẫu, `m1_highlight` không
+truyền, `services.enqueue_export` không có** -> anh Hùng **KHÔNG bấm tới được**.
+Đúng thiết kế cho tới khi anh xem bảng mẫu và duyệt. **Trước khi nối phải sửa 5
+lỗi sau (đã rà ra, CHƯA sửa vì chưa ai chạm tới được):**
+1. **`zoompan` nhận `fps` SAI khi nền Đen/Trắng.** Nền `color=…:r=30` là đầu vào
+   CHÍNH của `overlay` nên luồng vào `zoompan` chạy 30 fps, trong khi app truyền
+   fps NGUỒN. Nguồn 25 fps -> clip 2,00s ra **2,40s** (hình dài hơn tiếng 20%).
+2. **`vien_net` (`edgedetect=mode=colormix`) đổi màu TOÀN CLIP.** Filter chỉ nhận
+   GBRP nên ffmpeg chèn `auto_scale` cho MỌI khung, kể cả khung `enable` đang
+   TẮT: đo dU 1,27 / dV 1,56 ở khung NGOÀI cửa sổ (24 hiệu ứng kia = 0,00).
+3. **`_hu_t` nhân `vspeed` SAI CHIỀU.** Mốc sinh trên timeline TRƯỚC tốc độ, phải
+   **CHIA** `vspeed` (như `whoosh_offsets` đang làm) chứ không nhân. `speed=1,25`,
+   clip 60s: điểm ở giây 48 thành `enable='between(t,60.0,60.6)'` -> KHÔNG BAO
+   GIỜ CHẠY.
+4. **`dem_nguoc` gắn cứng mốc 0,30/0,60** trong khi cửa sổ co theo `vspeed` ->
+   `vspeed=0,7` thì số "1" không bao giờ hiện.
+5. **`hieu_ung_log` ghi hiệu ứng mà `chuoi_filter` sẽ VỨT** khi máy thiếu font
+   (`chon_hieu_ung` gọi `dung_duoc()` với `co_font=True` mặc định) -> nhật ký
+   khoe hiệu ứng không tồn tại, mất 1 suất trong tối đa 3 điểm nhấn.
+
+## 5. SỐ ĐO NGHIỆM THU LƯỢT NÀY (máy 24 nhân, RTX 3060, rảnh 13,8%)
+| mốc | yêu cầu | ĐO ĐƯỢC | |
+|---|---|---|---|
+| trễ vòng lặp UI, 10 làn 60s | trung vị < 30ms | **16,2 ms** (p95 20,6) | ĐẠT |
+| đỉnh trễ UI | < 150ms | **28,0 ms** | ĐẠT |
+| tổng luồng ffmpeg 10 làn | ≤ 2× nhân (48) | **44 (1,83×)** | ĐẠT |
+| clip lỗi trong 20 lượt | 0 | **0** | ĐẠT |
+| chuyển cảnh TẮT vs `main` | PSNR ≥ 50 dB | **99 dB** ở 5/5 mốc | ĐẠT |
+| lệch tiếng-hình | < 80 ms | 0,0 ms (thường) · 23 ms (đoạn kế 0,31s) | ĐẠT |
+| rác `_seg_*` sau toàn bộ test | 0 | **0 file** | ĐẠT |
+| ffmpeg mồ côi sau huỷ | 0 | **0** | ĐẠT |
+
+## 6. CỬA CHẶN ĐÃ CHẠY LƯỢT NÀY (tất cả 0 FAIL)
+`pyflakes app config.py main.py` 0 "undefined name" · `_test_app_smoke.py` ·
+`_test_pipe_dialogs.py` · cổng 14 · 19 · 21 · 23 · 24 · 25 · 26 · 28 · 34 · 35 ·
+36 (61 OK) · **37 MỚI** (31 OK).

@@ -7,11 +7,15 @@ tắc. Hai đường trong file này tính trên GPU nên dùng đúng phần m�
 
 ## BẤT BIẾN SỐNG CÒN — FALLBACK PHẢI ÊM
 Máy nhân viên có thể **không có OpenCL / không có Vulkan / không có GPU rời**.
-Mọi hàm ở đây:
-  - **KHÔNG BAO GIỜ ném lỗi** ra ngoài;
-  - `dung_duoc()` trả **[]** khi máy không kham được -> caller (app) tự dùng
-    `xfade` CPU như cũ, người dùng không thấy một dòng lỗi nào;
-  - phát hiện chỉ chạy **1 lần** rồi cache (mỗi lần thử tốn ~0,3 s).
+  - **Nhóm PHÁT HIỆN** (`co_opencl`, `co_libplacebo`, `dung_duoc`, `shader_co`,
+    `thong_ke`) **KHÔNG BAO GIỜ ném lỗi**; máy không kham được thì `dung_duoc()`
+    trả **[]** -> caller (app) tự dùng `xfade` CPU như cũ, người dùng không thấy
+    một dòng lỗi nào. Phát hiện chạy **1 lần** rồi cache (mỗi lần thử ~0,3 s).
+  - **Nhóm DỰNG LỆNH** (`lenh_vung_chong`, `lenh_shader`) thì **CỐ Ý NÉM LỖI**
+    khi kiểu không có trong kho hoặc thiếu file kernel/shader — đúng như đường
+    `xfade` CPU: thà FAIL TO còn hơn im lặng ra clip cắt khô (cổng 36 có ca canh
+    đúng điều này). **Caller BẮT BUỘC hỏi `dung_duoc()` TRƯỚC**; hỏi rồi thì
+    không bao giờ chạm tới nhánh ném lỗi.
 
 ## BẪY SỐ 0 — NẶNG NHẤT: `xfade_opencl` TRẢ MỐC THỜI GIAN RÁC
 `xfade_opencl` (build `bin/ffmpeg.exe` hiện tại) gắn **AV_NOPTS_VALUE** lên khung

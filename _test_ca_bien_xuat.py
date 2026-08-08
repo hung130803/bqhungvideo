@@ -326,6 +326,77 @@ def ca_mot_doan_va_ngoai_phim() -> None:
         f"sót {sorted(rac_seg() - truoc)[:4]}")
 
 
+def ca_doan_ke_ngan_hon_chuyen_canh() -> None:
+    """ĐOẠN KẾ NGẮN HƠN thời lượng chuyển cảnh -> tiếng dài hơn hình.
+
+    LỖI THẬT tìm được 08/08/2026 khi rà lại (đang chạy trong sản xuất, mức
+    'vua'/'manh'): `xfade` (hình) và `acrossfade` (tiếng) xử lý ca "đoạn B ngắn
+    hơn `d`" KHÁC NHAU — hình ra `a+b`, tiếng ra `a+d`. Đo trước khi sửa:
+    B 0,20s + d 0,40s -> lệch **200 ms** (mốc cho phép 80 ms).
+
+    App TỰ ĐẨY MÌNH VÀO ca này: `_loai_cho_noi` gọi chỗ nối là 'chot' đúng khi
+    đoạn kế < 2,5s, mà 'chot' lại có `d` DÀI NHẤT; `_cat_theo_do_dai_that` cho
+    đoạn ngắn tới 0,30s (Part cuối bị kẹp vào mép phim).
+    """
+    print("\n[CA 6] ĐOẠN KẾ NGẮN HƠN thời lượng chuyển cảnh")
+    # (a) hàm thuần: `d` phải bị kẹp về <= độ dài đoạn kế
+    for muc, ke, tran in (("manh", 0.20, 0.20), ("manh", 0.30, 0.30),
+                          ("vua", 0.25, 0.25), ("nhe", 3.0, 0.40)):
+        segs = [(10.0, 20.0), (30.0, 30.0 + ke)]
+        xf = fu.chon_chuyen_canh(segs, muc)
+        bu = fu._bu_xfade(segs, xf, 600.0)
+        bao(f"mức '{muc}', đoạn kế {ke}s -> phần bù <= {tran}s",
+            bool(bu) and bu[0] <= tran + 1e-6,
+            f"kiểu {xf[0][0]} d={xf[0][1]} -> bù {bu[0]}")
+
+    # (b) XUẤT THẬT: đoạn cuối 0,30s, mức 'manh' -> lệch tiếng-hình < 80ms
+    src = dung_nguon("ngan_ke.mp4", 40.0, tieng=True)
+    out = _SB / "doan_ke_ngan.mp4"
+    # đoạn kế 0,31s — vừa TRÊN sàn 0,30s của `_cat_theo_do_dai_that`, và NGẮN
+    # hơn d=0,40s của mức 'manh'. (Đúng 0,30s thì sai số dấu phẩy động làm
+    # `e-s = 0,2999...` < 0,30 nên đoạn bị LOẠI, ca thử mất ý nghĩa.)
+    segs = [(25.0, 33.0), (2.0, 2.31)]
+    truoc = rac_seg()
+    try:
+        fu.export_canvas_clip(src, out, segs, (0.5, 0.45, 0.98), bg="blur",
+                              out_w=540, out_h=960, encoder="libx264",
+                              chuyen_canh="manh")
+        e = ""
+    except Exception as ex:                                  # noqa: BLE001
+        e = f"{type(ex).__name__}: {ex}"
+    dv = _dai_luong(out, "v:0") if out.exists() else -1.0
+    da = _dai_luong(out, "a:0") if out.exists() else -1.0
+    bao("xuất được clip có đoạn kế 0,31s ở mức 'manh'", not e, e[:100] or "ok")
+    bao("lệch TIẾNG-HÌNH < 80ms (trước khi sửa: 90-200ms)",
+        dv > 0 and da > 0 and abs(dv - da) * 1000 < 80,
+        f"hình {dv:.3f}s · tiếng {da:.3f}s · lệch {abs(dv - da) * 1000:.0f}ms")
+    bao("độ dài clip = tổng đoạn (8,31s), chuyển cảnh không ăn bớt",
+        dv > 0 and abs(dv - 8.31) < 0.08, f"{dv:.3f}s (kỳ vọng 8,310s)")
+    bao("ca đoạn kế ngắn: KHÔNG rò mảnh `_seg_*`", not (rac_seg() - truoc),
+        f"sót {sorted(rac_seg() - truoc)[:4]}")
+
+
+def _dai_luong(p, loai: str) -> float:
+    """Độ dài LUỒNG hình/tiếng (giây) — ĐẾM THẬT, không đọc tag `duration`.
+
+    LỖI ĐO đã sập 1 lần: Matroska/mp4 có thể KHÔNG ghi `stream=duration` cho
+    từng luồng -> ffprobe trả rỗng -> hàm trả -1 ở MỌI ca và bảng ra "lệch 0ms"
+    cho tất cả, trông y như không có lỗi.
+    """
+    r = subprocess.run([FP, "-v", "error", "-select_streams", loai,
+                        "-show_entries", "packet=pts_time,duration_time",
+                        "-of", "csv=p=0", str(p)], capture_output=True,
+                       text=True, creationflags=_NOWIN, timeout=120)
+    dong = [x for x in (r.stdout or "").strip().splitlines() if "," in x]
+    if not dong:
+        return -1.0
+    try:
+        a, b = dong[-1].split(",")[:2]
+        return float(a) + float(b)
+    except ValueError:
+        return -1.0
+
+
 def main() -> int:
     _test_guard.tu_kiem()
     print("=" * 74)
@@ -340,6 +411,7 @@ def main() -> int:
     ca_khong_ghi_duoc()
     ca_may_nhan_vien()
     ca_mot_doan_va_ngoai_phim()
+    ca_doan_ke_ngan_hon_chuyen_canh()
 
     print("\n[TỔNG] rò rác đĩa + rò tiến trình sau TOÀN BỘ cổng")
     sot = sorted(rac_seg() - rac0)
