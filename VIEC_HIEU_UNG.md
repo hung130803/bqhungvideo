@@ -1050,3 +1050,18 @@ Chạy bằng `.venv-build` = đúng bộ `requirements-build.txt` mà `.exe` g�
 `_test_hieu_ung_ai`) **không chạy được** ở venv khách vì cần `cv2` — mà
 `requirements-build.txt` **cố ý** không gói opencv. Đó là giới hạn của BỘ TEST,
 không phải của app: app không cần cv2 để xuất clip (đã chứng minh ở bảng trên).
+
+## ⭐ BẢNG TỔNG KẾT CHO ANH HÙNG
+
+| Câu hỏi của anh Hùng | Số đo | ĐẠT/KHÔNG |
+|---|---|---|
+| **1. Tích hợp có chạy không?** | 7/7 video Nhật thật qua trọn dây chuyền · **0 lỗi** · 8 Part · 0 Part 0-byte · 0 gốc sót · 0 job thất bại | **ĐẠT** |
+| **2. Chạy mượt chưa?** | trễ UI trung vị **15,4 ms** (mốc <30) · đỉnh **66,6 ms** (mốc <150) · đo liên tục 405 giây · RAM đỉnh 1,79 GB | **ĐẠT** |
+| **3a. Nhiều kênh nhiều luồng?** | 50 kênh · 10 làn · 110 job → **50/50 clip, 0 lỗi**; luồng ffmpeg đỉnh **35 = 1,46× nhân** (mốc ≤48) · UI **13,7 ms** · RAM 0,49 GB | **ĐẠT** |
+| **3b. Có làn nào bị bỏ đói?** | job XUẤT chạy sau **0,06 giây** dù **59 job phân tích đang ngập** hàng chờ | **ĐẠT** |
+| **4. Xử lý AI oke chưa?** | **7/7 ra clip AI · 0 rơi "Cắt cơ bản"**; video KHÔNG LỜI nhận đúng (0,034 từ/giây) → đi đường **XEM HÌNH**; **38/38 key Groq sống**; nhật ký ghi lý do kèm SỐ, 6 kiểu hiệu ứng khác nhau trên 8 Part | **ĐẠT** |
+| **5. Có nghẽn không?** | không làn đói · không khoá DB · 0 ffmpeg mồ côi · 0 rác `_seg_*`/`_MEI*`/`_nhip_*` · WAL tự gấp — **NHƯNG job xuất cuối đợi 925 giây (15,4 phút)** | **KHÔNG ĐẠT** (mốc >10 phút) |
+| **+ Hồi phục sau khi tắt app** | cổng 7 `_test_cancel_persist` + `_test_pipe_overlap` — xem mục cửa chặn | xem bảng cổng |
+| **+ Máy nhân viên** | venv khách (không cv2/torch): app nạp được · thiếu frei0r → 25→14 · thiếu OpenCL → 21/21 có đường lùi · thiếu NVENC → clip đúng 12,000s, còn tiếng | **ĐẠT** (11/11) |
+| **+ Bản đóng gói** | `.exe` build lại: sfx **43→185**, hieu_ung **0→26** file · dung lượng **615,6 → 620,3 MB (+0,8%)** · chạy thử OK | **ĐẠT** (12/12) |
+| **+ Rác đĩa** | `_seg_*` / `_MEI*` / `_nhip_*` = **0** trước và sau; DB +772 KB cho 7 video | **ĐẠT** |
