@@ -214,6 +214,7 @@ def _transcribe_stable(audio_path, model_name, device, compute_type, language,
     return {
         "language": getattr(r, "language", None) or language or "",
         "duration": total, "segments": segments, "words": words,
+        "engine": f"stable-ts:{model_name}",   # xem chú thích ở nhánh Groq
         "text": " ".join(full).strip(),
     }
 
@@ -639,6 +640,10 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
         return {"language": lang,
                 "duration": all_segs[-1]["end"] if all_segs else 0.0,
                 "segments": all_segs, "words": all_words,
+                # AI ĐÃ CHÉP BẰNG GÌ — xem `analysis._run_one`: cột
+                # `analysis.engine` từng đóng cứng "faster-whisper:<model>" nên
+                # KHÔNG BAO GIỜ biết được lượt đó đi Groq hay tụt về máy.
+                "engine": "groq:whisper-large-v3",
                 "text": " ".join(t for t in full if t).strip()}
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -795,5 +800,6 @@ def transcribe(
         "duration": total,
         "segments": segments,
         "words": words,
+        "engine": f"faster-whisper:{model_name}",   # xem chú thích ở nhánh Groq
         "text": " ".join(full_text).strip(),
     })

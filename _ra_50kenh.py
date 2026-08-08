@@ -102,8 +102,8 @@ def main() -> int:
             "INSERT INTO projects(name, assets_dir, grp) VALUES(?,?,'Nhật')",
             (f"Kênh {i+1:03d}", str(_SB / "assets"))).lastrowid
         vid = db.execute(
-            "INSERT INTO videos(project_id, title, src_path, duration) "
-            "VALUES(?,?,?,?)", (pid, f"video {i+1}", str(src), 300.0)).lastrowid
+            "INSERT INTO videos(project_id, src_path, duration) "
+            "VALUES(?,?,?)", (pid, str(src), 300.0)).lastrowid
         cid = db.execute(
             "INSERT INTO clips(video_id, start_sec, end_sec, score, title, "
             "status, signals) VALUES(?,?,?,?,?,'suggested','{}')",
