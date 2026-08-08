@@ -41,6 +41,10 @@ RAC_TEMP: tuple[tuple[str, bool, float, str], ...] = (
     ("recap_*", True, 2.0, "giọng đọc reup"),
     ("dub_*", True, 2.0, "giọng thuyết minh"),
     ("bqvid_*", None, 2.0, "file tạm xuất clip"),
+    # Ảnh lớp chữ (tiêu đề + huy hiệu Part) do Qt vẽ sẵn. Lượt xuất bị ngắt mà
+    # job không bao giờ chạy lại thì file này nằm lại (~15-35 KB/lượt). Chờ đủ
+    # 2 giờ mới dọn: job xếp hàng vẫn cần đúng file này để dựng lại lớp chữ.
+    ("_ovl_*", None, 2.0, "ảnh lớp chữ tiêu đề/Part"),
     ("bq_dbcopy*", True, 2.0, "bản sao DB để kiểm tra"),
 )
 
