@@ -1,0 +1,31 @@
+{
+ "wall_s": 660.1,
+ "nhan": 0,
+ "done": 3,
+ "loi": 0,
+ "part": 6,
+ "part_0byte": 0,
+ "goc_con": 3,
+ "ui_tv": 15.2,
+ "ui_p95": 23.9,
+ "ui_dinh": 72.2,
+ "cpu_tb": 22.4,
+ "cpu_dinh": 56.7,
+ "ram_dinh_gb": 1.97,
+ "luong_dinh": 104,
+ "luong_tb": 46.6,
+ "tien_trinh_dinh": 2,
+ "nhan_x": 4.33,
+ "video_ai": 6,
+ "video_co_ban": 0,
+ "job": {
+  "auto/done": 6,
+  "m1_export_clip/done": 6,
+  "m1_export_clip/canceled": 1,
+  "m1_export_clip/pending": 3
+ },
+ "ffmpeg_mo_coi": 0,
+ "db_kb_truoc": 4,
+ "db_kb_sau": 720,
+ "sandbox": "C:\\Users\\Admin\\AppData\\Local\\Temp\\ra_e2e_ycnu17ym"
+}

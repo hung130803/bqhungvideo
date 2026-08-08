@@ -452,6 +452,47 @@
      **ĐÚNG LUẬT** ("clip phẳng không thêm gì ngớ ngẩn") -> tưởng app hỏng. Phải
      dựng nguồn có cao trào thật (`nguon_dong`: nền 0,04 + 2 cú nổ 1,0 -> dải
      động 24,8×, ngưỡng `hieu_ung.PHANG` = 1,35).
+  42. `_test_tieu_de_part.py` → **HỘP TIÊU ĐỀ + HUY HIỆU "PART N" PHẢI CÓ THẬT
+     TRONG FILE XUẤT.** Anh Hùng 08/08/2026: *"tôi có cái phần tiêu đề đỏ part
+     các kiểu kia mà xuất k có"* — xem trước có, file xuất chỉ còn phụ đề.
+     **ĐO TRÊN CHÍNH FILE CỦA ANH HÙNG** (tỉ lệ điểm ảnh ĐỎ, video 'GOING BACK
+     TO OUR OLD HOUSE', mẫu «test AI»): Part 3 xuất 17:44 TRƯỚC khi tắt app =
+     **11,584%**; app mở lại 17:59:29; Part 2 (18:01) và Part 1 (18:03) chạy
+     LẠI = **0,000%**. GỐC = 3 dòng ở 3 file **mâu thuẫn nhau**:
+     (a) `m1_highlight.export_clip` `except CanceledError:` dọn luôn ảnh lớp
+     chữ `_ovl_<cid>.png` — coi tắt-app là "huỷ hẳn";
+     (b) `worker.WorkerPool.stop()` `UPDATE jobs SET status='pending' WHERE
+     status='running'` — coi tắt-app là "tạm dừng, mở app chạy tiếp";
+     (c) `ffmpeg_utils.export_canvas_clip`
+     `use_png = bool(overlay_png and os.path.exists(overlay_png))` — thiếu file
+     thì **bỏ overlay IM LẶNG**: rc=0, đủ khung, mp4 hoàn hảo, không một dòng
+     báo. Đây là chỗ nuốt cuối cùng, và **đếm khung KHÔNG bắt được**.
+     CHỮA: `_user_da_huy` (chỉ user bấm Huỷ, `jobs.cancel_req=1`, mới dọn ảnh)
+     + `_dung_lai_anh_chu` DỰNG LẠI ảnh từ **đơn thuốc `ovl_spec`** đi trong
+     payload (`services.enqueue_export`, `studio_page._ovl_spec`) — `ovl_spec`
+     **KHÔNG vào hash chống trùng**, nếu không 200-300 kênh xuất lại từ đầu.
+     `render_overlay_png` vẽ logo bằng **QImage** (QPixmap không dùng được ở
+     luồng nền). Nhật ký dây chuyền nay có mục **`lớp chữ: CÓ / dựng lại /
+     ⚠ KHÔNG CÓ`** — trước đây không hề nhắc tới lớp chữ nên không cách nào
+     biết Part nào thiếu. Đo: hộp tiêu đề **11,692% -> 0,000% -> 11,692%**,
+     huy hiệu Part **5,825% -> 0,000% -> 5,825%**.
+     **2 BẪY ĐO ĐÃ SẬP khi viết cổng này:** (1) nguồn `testsrc2` **tự có ô đỏ**
+     nên bản KHÔNG lớp chữ vẫn đếm 2,387% — phải dùng màu phẳng không đỏ
+     (`color=c=0x1E6F5C`) thì mới ra 0,000% sạch; (2) ảnh lớp chữ phải vẽ
+     **ĐÚNG CỠ KHUNG XUẤT** — `overlay=0:0` KHÔNG co giãn, nên ảnh 1080x1920
+     chồng lên khung 540x960 là **cắt mất huy hiệu Part** ở ny=0,77 -> ca "tiêu
+     đề rỗng" FAIL OAN. (App thật luôn 1080x1920 cả hai đầu nên khớp.)
+     Ca bắt buộc: tiếng Việt có dấu · `%` · `:` · `'` · `\` và `"` · tiêu đề
+     300 ký tự · tiêu đề RỖNG (mất hộp tiêu đề là đúng, **nhưng huy hiệu Part
+     phải còn**).
+- **CỔNG TEST PHẢI TRỎ VỀ BẢN MÃ CỦA CHÍNH NÓ.** 29 file `_test_*.py` từng ghi
+  CỨNG `sys.path.insert(0, r"D:\claude\ai-content-studio")` (và `bin/ffmpeg.exe`,
+  và các lần mở file mã nguồn để quét tĩnh). Chạy cổng từ một **git worktree**
+  là đang kiểm **BẢN MÃ KHÁC** — nhánh đang sửa không hề được kiểm mà cổng vẫn
+  XANH. Đo thật 08/08/2026: 8 cổng dây chuyền đều PASS trong khi chúng nạp
+  `app/` từ repo chính, không đụng gì tới bản vá đang làm. Nay dùng
+  `str(Path(__file__).resolve().parent)`. Viết cổng mới thì **đừng bao giờ ghi
+  cứng đường repo**.
 - **NHÓM HIỆU ỨNG CHẠY TRÊN GPU (`app/core/hieu_ung_gpu.py`)**: `xfade_opencl` +
   kernel gl-transitions (MIT) **21 kiểu ĐO ĐẠT** · `libplacebo` + shader GLSL tự
   viết **6/6 ĐẠT và ĐÃ NỐI vào đường xuất** (xem cổng 41). Nhóm shader chỉ bật

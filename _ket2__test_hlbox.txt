@@ -1,0 +1,104 @@
+﻿
+══ 1. Preset khai đúng ══
+  ✓ Ô sáng chạy từ (đa màu): mode=hlbox + có hl_palette
+  ✓ Ô sáng chạy từ (vàng): mode=hlbox + có hl_palette
+  ✓ Ô sáng chạy từ (xanh neon): mode=hlbox + có hl_palette
+  ✓ Ô sáng chạy từ (xanh lá): mode=hlbox + có hl_palette
+  ✓ Ô sáng chạy từ (hồng): mode=hlbox + có hl_palette
+  ✓ Ô sáng chạy từ (đỏ): mode=hlbox + có hl_palette
+  ✓ 'đa màu' >= 5 màu
+
+══ 2. Cấu trúc 2 LỚP: ô ở dưới, chữ ở trên, cùng mốc ══
+  ✓ 9 từ -> 9 cặp / 18 dòng (ra 9 cặp / 18 dòng)
+  ✓ mọi cặp: ô đặc + đúng vị trí + ẩn từ khác + 2 lớp cùng chữ
+  ✓ chữ trong ô KHÔNG viền dày (không thì chữ bệt trên ô)
+
+══ 3. Màu: đa màu · 1 màu · cùng từ cùng màu ══
+  ✓ 'đa màu': 6 màu/9 từ
+  ✓ Ô sáng chạy từ (vàng): đúng 1 màu ô
+  ✓ Ô sáng chạy từ (xanh neon): đúng 1 màu ô
+  ✓ Ô sáng chạy từ (xanh lá): đúng 1 màu ô
+  ✓ Ô sáng chạy từ (hồng): đúng 1 màu ô
+  ✓ Ô sáng chạy từ (đỏ): đúng 1 màu ô
+  ✓ trong 1 cụm mỗi từ giữ NGUYÊN 1 màu (không nhấp nháy)
+
+══ 4. B1: user kéo 'độ dày viền' to -> ô KHÔNG bị viền nuốt ══
+  ✓ cap_ow=0.0: ô dày 16 > viền chữ 0
+  ✓ cap_ow=0.1: ô dày 16 > viền chữ 0
+  ✓ cap_ow=0.17: ô dày 20 > viền chữ 0
+  ✓ cap_ow=0.2: ô dày 23 > viền chữ 0
+  ✓ cap_ow=0.3: ô dày 33 > viền chữ 0
+
+══ 5. B2: 'Màu chữ' user chọn phải ĂN vào phụ đề ══
+  ✓ color=#00FF88 -> mã màu có trong file .ass
+  ✓ không đặt color -> KHÔNG bị nhuộm oan
+
+══ 6. C4: lời nói NHANH / không có mốc từng-từ -> không mất chữ ══
+  ✓ bước 0,05s (chép lời không có mốc từ): 7 cặp, chữ hiện 0.98s / 1.00s tiếng nói
+  ✓ bước 0,03s (dày bất thường): 5 cặp, chữ hiện 0.56s / 0.60s tiếng nói
+  ✓ bước 0,36s (bình thường): 20 cặp, chữ hiện 7.42s / 7.20s tiếng nói
+
+══ 7. C5: delay ÂM không làm mất dòng ══
+  ✓ delay=0.0: đủ 5 cặp (ra 5)
+  ✓ delay=-0.15: đủ 5 cặp (ra 5)
+  ✓ delay=-0.3: đủ 5 cặp (ra 5)
+  ✓ delay=0.2: đủ 5 cặp (ra 5)
+
+══ 8. C8: KHÔNG chiếu ô lên dấu câu lẻ, chữ vẫn hiện ══
+  ✓ 3 token (1 là dấu phẩy) -> 2 ô (ra 2)
+  ✓ không ô nào bọc dấu phẩy
+  ✓ dấu phẩy VẪN hiện trong chữ
+
+══ 9. C9: Nhật/Trung không bị chèn dấu cách ══
+  ✓ CJK nối liền: 'これは誰も語らな'
+  ✓ tiếng Việt/Anh VẪN có dấu cách (không phá)
+
+══ 10. C10: phồng chữ KHÔNG làm đổi bề ngang (đỡ xuống dòng lại) ══
+  ✓ không dùng \fscx (phồng ngang) trong kiểu ô
+  ✓ vẫn có phồng dọc nhẹ khi từ được chiếu
+
+══ 11. Mốc: không chồng, không lỗ, end>start ══
+  ✓ mọi cặp end > start
+  ✓ không cặp nào chồng cặp kế (không 2 ô sáng cùng lúc)
+  ✓ không có LỖ giữa các cặp (lỗ: [])
+
+══ 12. BẤT BIẾN: 18 preset CŨ ra file GIỐNG TỪNG BYTE bản HEAD ══
+  ✓ 18 preset CŨ × 4 bộ tham số: KHÔNG đổi 1 byte
+
+══ 13. C3': hlbox làm 'Chữ AI đọc' -> vẫn phân biệt được lời AI ══
+  ✓ màu chữ Narrate KHÔNG bị ra trắng: &H00952DFF
+  ✓ cue AI kể vẫn ra đúng 1 dòng Narrate
+
+══ 14. Đường RECAP (words rỗng, chỉ extra_cues) — không nổ ══
+  ✓ recap: 2 dòng, không nổ (LƯU Ý: đường recap KHÔNG có ô nền — đã báo anh Hùng)
+
+══ 15. Ca biên ══
+  ✓ 1 từ -> 1 cặp
+  ✓ 2 từ -> 2 cặp
+  ✓ 15 từ -> 15 cặp
+  ✓ 40 từ -> 40 cặp
+  ✓ không từ nào -> False
+  ✓ dữ liệu bẩn (mốc lùi/trùng/40 ký tự/emoji/rỗng) -> không nổ
+  ✓ có HOOK: 6 cặp + 1 dòng Hook
+  ✓ 1 đoạn liền: đủ cặp
+  ✓ hook-first (đoạn ngược thời gian): 5 cặp, không chồng mốc
+
+══ 16. B3: RENDER THẬT — chữ KHÔNG tràn đáy khung, ô đúng màu ══
+  ✓ từ #1 'này': mảng màu #16E0FF = 2999 px (cần >= 1140)
+  ✓ từ #1: không lẫn màu từ khác (0 px)
+  ✓ từ #2 'không': mảng màu #39FF14 = 4776 px (cần >= 1900)
+  ✓ từ #2: không lẫn màu từ khác (0 px)
+  ✓ từ #4 'dám': mảng màu #FF8A00 = 3077 px (cần >= 1140)
+  ✓ từ #4: không lẫn màu từ khác (0 px)
+  ✓ ô DI CHUYỂN theo từ ([143, 111] px)
+  ✓ cỡ 4.0% ny 0.78: Ô SÁNG hết ở hàng 790 / kiểu cũ 829 (khung 960) — không tệ hơn kiểu cũ
+  ✓ cỡ 5.2% ny 0.78: Ô SÁNG hết ở hàng 803 / kiểu cũ 853 (khung 960) — không tệ hơn kiểu cũ
+  ✓ cỡ 6.5% ny 0.78: Ô SÁNG hết ở hàng 817 / kiểu cũ 941 (khung 960) — không tệ hơn kiểu cũ
+  ✓ cỡ 6.5% ny 0.88: Ô SÁNG hết ở hàng 913 / kiểu cũ 959 (khung 960) — không tệ hơn kiểu cũ
+
+══ 17. ĐI QUA HÀM XUẤT CLIP THẬT của app ══
+  ✓ xuất clip thật: 253 KB
+  ✓ clip XUẤT RA có ô đúng màu #39FF14 (4744 px)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — ô nền 2 lớp chạy đúng theo từ, đa màu, không mất chữ, không tràn khung, preset cũ y nguyên
+

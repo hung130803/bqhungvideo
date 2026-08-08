@@ -27,7 +27,11 @@ os.environ["TEMP"] = os.environ["TMP"] = str(TMPD)   # %TEMP% giả -> an toàn
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "s.ini")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 from app.core import tempsweep as TS  # noqa: E402
@@ -153,7 +157,7 @@ rac_moi.mkdir()
 n5, b5 = TS.don_temp_ytdlp(T)
 kiem(not rac_cu.exists() and rac_moi.exists(),
      "dọn cây tạm yt-dlp: xoá cũ, giữ mới (đang tải)")
-kiem("env=_env" in (Path(r"D:\claude\ai-content-studio\app\ui\studio_page.py")
+kiem("env=_env" in (Path(str(Path(__file__).resolve().parent / 'app' / 'ui' / 'studio_page.py'))
                     .read_text(encoding="utf-8")),
      "lệnh yt-dlp được truyền env riêng (rác không rơi vào %TEMP% chung)")
 

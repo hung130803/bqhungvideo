@@ -1,0 +1,47 @@
+﻿
+══ 1. CHẠY HÀNG LOẠT 200 KÊNH — mỗi payload đúng mẫu của kênh mình ══
+  (dựng 200 kênh + 200 mẫu + 200 video trong 0.1s)
+  ✓ xuất đủ 200 clip (ra 200)
+  ✓ cả 200 payload mang ĐÚNG mẫu của kênh mình
+  ✓ xuất loạt 200 kênh trong 0.0s (< 20s)
+  ✓ mẫu trang chính được TRẢ NGUYÊN sau loạt xuất
+  ✓ sổ mẫu-đã-chốt được dọn sạch, không phình RAM (còn 0)
+
+══ 2. BẤM TAY: 'Xuất video này' phải theo mẫu CỦA KÊNH ══
+  ✓ bấm tay xuất -> dùng mẫu RIÊNG của kênh (không phải mẫu trang chính)
+  ✓ bấm tay xong mẫu trang chính vẫn nguyên
+
+══ 3. Kênh CHƯA gán -> mẫu trang chính (hành vi CŨ, không phá) ══
+  ✓ kênh chưa gán -> ăn mẫu đang chọn ở trang chính
+
+══ 4. Job ĐÃ CHỐT mẫu: đổi mẫu giữa lúc chạy KHÔNG lệch ══
+  ✓ job đã chốt vẫn xuất bằng FONT3 (không nhận mẫu đổi sau)
+
+══ 5. Mẫu bị XOÁ giữa loạt -> lùi mẫu chính + PHẢI ghi cảnh báo ══
+  ✓ mẫu đã xoá -> lùi mẫu trang chính, vẫn xuất được
+  ✓ có CẢNH BÁO nêu tên mẫu đã xoá (không âm thầm ra clip sai)
+
+══ 6. XUẤT LỒNG NHAU không được trộn mẫu giữa 2 kênh ══
+  ✓ video NGOÀI giữ FONT1 dù bị chen ngang
+  ✓ video CHEN NGANG dùng FONT2 của kênh nó
+  ✓ sau lồng nhau, mẫu trang chính vẫn nguyên (không rò)
+
+══ 7. Xuất cả kênh: mỗi video theo mẫu của KÊNH nó ══
+  ✓ mọi video của kênh dùng cùng mẫu kênh đó
+
+══ 8. TÊN MẪU LẠ (dấu, emoji, dài, khoảng trắng) vẫn phải đúng ══
+  ✓ tên mẫu lạ #0 (Mẫu chữ vàng — viề…) vẫn ra đúng font
+  ✓ tên mẫu lạ #1 (mẫu 😀 emoji…) vẫn ra đúng font
+  ✓ tên mẫu lạ #2 (mẫu thừa khoảng tr…) vẫn ra đúng font
+  ✓ tên mẫu lạ #3 (MẪUMẪUMẪUMẪUMẪUMẪU…) vẫn ra đúng font
+
+══ 8b. ĐỔI TÊN mẫu (xoá + lưu tên mới) -> báo rõ, không ra clip sai ══
+  ✓ mẫu bị đổi tên -> lùi mẫu trang chính (không lấy bừa mẫu khác)
+  ✓ báo rõ tên mẫu đã mất + tên kênh
+
+══ 9. MỞ HỘP DÂY CHUYỀN với 200 kênh — ngân sách < 4s ══
+  ✓ mở hộp 212 dòng trong 1383ms (< 4s)
+  ✓ ô chọn mẫu liệt kê đủ mẫu (có 207)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — mẫu theo kênh đúng tới payload ffmpeg, 200 kênh
+

@@ -1,0 +1,48 @@
+{
+ "luong_dinh": 64,
+ "luong_tb": 39.388888888888886,
+ "luong_dinh_theo_pha": {
+  "tach_doan": 64,
+  "dung_khung": 32
+ },
+ "luong_dinh_1_proc": {
+  "tach_doan": 64,
+  "dung_khung": 32
+ },
+ "cpu_giay_theo_pha": {
+  "tach_doan": 12.0,
+  "dung_khung": 18.2
+ },
+ "cpu_giay_tong": 30.2,
+ "n_proc": 3,
+ "enc_dem": {
+  "h264_nvenc": 3,
+  "libx264": 0
+ },
+ "n_hwdec": 3,
+ "cpu_he_tb": 25.4,
+ "cpu_he_dinh": 62.8,
+ "nvenc_tb": 73.9,
+ "nvenc_dinh": 100.0,
+ "nhan": "moi",
+ "lanes": 1,
+ "n_seg": 2,
+ "do_dai": 60.0,
+ "tuong_giay": 11.0,
+ "luot": [
+  {
+   "lane": 0,
+   "giay": 11.0,
+   "kb": 57849,
+   "loi": ""
+  }
+ ],
+ "nhan_hieu": {
+  "w": 1920,
+  "h": 1080,
+  "fps": 30.0,
+  "codec": "h264",
+  "co_tieng": true,
+  "dur": 611.660045
+ }
+}

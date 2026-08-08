@@ -1,0 +1,40 @@
+﻿===== 10 LUOT (lap 2), BQ_FFMPEG_SLOTS=1 =====
+[máy] CPU 9.1% [13.0, 13.0, 8.8, 6.5, 4.4]
+[nguồn] 「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4… 1920x1080 30fps 6394s audio=True
+[encoder] h264_nvenc · _encode_budget=14 encode_threads=7 nhân=24 ECO=(mặc định)
+  lần 1: wall 42.2s · CPU 257.05s · đỉnh 403 luồng (16.79x nhân) · TB 285.8 · 10 tiến trình · RSS 4.58GB · out 116503KB
+  lần 2: wall 38.68s · CPU 246.25s · đỉnh 391 luồng (16.29x nhân) · TB 284.4 · 10 tiến trình · RSS 4.08GB · out 116502KB
+
+=== TRUNG VỊ 2 lần, 10 lượt song song ===
+  wall         = 40.44
+  cpu_giay     = 251.65
+  dinh_luong   = 397.0
+  tb_luong     = 285.1
+  qua_tai      = 16.54
+===== 10 LUOT (lap 2), BQ_FFMPEG_SLOTS=2 =====
+[máy] CPU 6.3% [6.9, 5.9, 6.6, 5.4, 6.6]
+[nguồn] 「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4… 1920x1080 30fps 6394s audio=True
+[encoder] h264_nvenc · _encode_budget=14 encode_threads=7 nhân=24 ECO=(mặc định)
+  lần 1: wall 39.79s · CPU 246.8s · đỉnh 399 luồng (16.62x nhân) · TB 303.3 · 10 tiến trình · RSS 4.6GB · out 116503KB
+  lần 2: wall 37.18s · CPU 247.69s · đỉnh 402 luồng (16.75x nhân) · TB 343.7 · 10 tiến trình · RSS 5.2GB · out 116500KB
+
+=== TRUNG VỊ 2 lần, 10 lượt song song ===
+  wall         = 38.485
+  cpu_giay     = 247.245
+  dinh_luong   = 400.5
+  tb_luong     = 323.5
+  qua_tai      = 16.685000000000002
+===== 10 LUOT (lap 2), BQ_FFMPEG_SLOTS=3 =====
+[máy] CPU 4.7% [3.6, 3.3, 7.1, 4.2, 5.2]
+[nguồn] 「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4… 1920x1080 30fps 6394s audio=True
+[encoder] h264_nvenc · _encode_budget=14 encode_threads=7 nhân=24 ECO=(mặc định)
+  lần 1: wall 38.42s · CPU 246.34s · đỉnh 396 luồng (16.5x nhân) · TB 302.3 · 10 tiến trình · RSS 3.06GB · out 116501KB
+  lần 2: wall 37.69s · CPU 247.19s · đỉnh 397 luồng (16.54x nhân) · TB 295.6 · 10 tiến trình · RSS 4.27GB · out 116504KB
+
+=== TRUNG VỊ 2 lần, 10 lượt song song ===
+  wall         = 38.055
+  cpu_giay     = 246.765
+  dinh_luong   = 396.5
+  tb_luong     = 298.95000000000005
+  qua_tai      = 16.52
+===== 10 LUOT (lap 2), BQ_FFMPEG_SLOTS=4 =====

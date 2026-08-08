@@ -1,0 +1,26 @@
+﻿== dựng cảnh: lần trước cắt CƠ BẢN 5 part, đã xuất hết ==
+  ✓ trước khi phân tích lại: 5 clip cũ
+
+== L2+L3: phân tích LẠI (AI ra đúng 3 clip) ==
+  ✓ danh sách CHỈ còn 3 clip mới (user đặt 3 part)
+  ✓ MỌI clip trong danh sách đều do AI phân tích
+  ✓ clip nào cũng CÓ tiêu đề (hết cảnh tên trơ 'Clip')
+  ✓ không còn clip cũ nào lọt vào danh sách
+
+== KHÔNG MẤT DỮ LIỆU: clip cũ chỉ vào kho, còn nguyên dòng + file ==
+  ✓ 5 clip cũ nằm trong kho 'archived' (KHÔNG bị xoá)
+  ✓ đường dẫn file đã xuất của clip cũ vẫn còn (dò lịch sử)
+
+== CHỐNG TRÙNG vẫn hoạt động: đoạn cũ vẫn tính là ĐÃ DÙNG ==
+  ✓ 'archived' nằm trong danh sách trạng thái ĐÃ DÙNG
+  ✓ load_used_ranges thấy đủ đoạn đã dùng lần trước (lần cắt sau không chọn lại đoạn đã đăng)
+
+== job xuất ĐANG CHẠY thì clip không bị đụng (chống race) ==
+  ✓ clip đang có job xuất chạy KHÔNG bị đưa vào kho
+
+== L1: tắt app khi stdout/stderr = None (bản .exe windowed) ==
+  ✓ main.py KHÔNG còn lấy .flush ngay trong tuple (ngoài try)
+  ✓ xả đệm với stdout=None KHÔNG ném lỗi (hết hộp 'Có lỗi xảy ra')
+
+KẾT QUẢ: TẤT CẢ ĐẠT — phân tích lại ra ĐÚNG số part, toàn AI, có tiêu đề
+

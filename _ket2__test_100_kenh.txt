@@ -1,0 +1,32 @@
+﻿
+══ Dựng 100 kênh, mỗi kênh 1 video thật ══
+   xong trong 4.6s
+
+══ 1. Bấm ▶ Chạy dây chuyền (100 kênh) ══
+   (hàm này chạy trên LUỒNG GIAO DIỆN — lâu quá là app đứng)
+   _pipe_run: 104 ms — xếp 99 video vào hàng đợi
+  ✓ bấm ▶ Chạy không treo giao diện quá 10s (100 kênh)
+  ✓ xếp đủ 100 video vào hàng đợi
+
+══ 2. Nhận hết 100 video (từng cái qua QTimer) ══
+   nhận 100 video trong 6.8s (68 ms/video) · nhịp lâu nhất 149 ms
+   job tạo ra: 100 · ctx đang dõi: 100
+  ✓ nhận đủ 100 video
+  ✓ bất biến vàng: số dòng 'taken' = số ctx đang dõi
+  ✓ không nhịp nào chiếm giao diện quá 1s
+
+══ 3. Điều phối job khi có 100 job chờ ══
+   _check_auto_export: 61 ms — tạo 1 job xuất
+  ✓ video phân tích xong TẠO ĐƯỢC job xuất
+   điều phối: 3 phân tích + 1 xuất đang chạy
+  ✓ job XUẤT được chạy dù có 99 job phân tích chờ (ngưỡng 50 cũ)
+
+══ 4. Dựng bảng dây chuyền 100 dòng ══
+   mở hộp + dựng bảng: 236 ms
+  ✓ mở hộp Dây chuyền với 100 kênh dưới 15s
+
+================================================================
+TÓM TẮT 100 KÊNH: ▶Chạy 104ms · nhận 6.8s · nhịp lâu nhất 149ms · mở bảng 236ms
+✅ TẤT CẢ ĐẠT
+================================================================
+

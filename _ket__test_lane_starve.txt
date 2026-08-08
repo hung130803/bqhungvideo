@@ -1,0 +1,25 @@
+
+══ Làn CẮT có bị làn PHÂN TÍCH bỏ đói không? ══
+   (Luồng AI = 1, Luồng cắt = 2 — đúng cấu hình trên máy anh Hùng)
+    10 job phân tích chờ + 1 job xuất  ->  xếp 1 phân tích, 1 xuất
+  ✓ job XUẤT được chạy khi có 10 job phân tích đang chờ
+    49 job phân tích chờ + 1 job xuất  ->  xếp 1 phân tích, 1 xuất
+  ✓ job XUẤT được chạy khi có 49 job phân tích đang chờ
+    50 job phân tích chờ + 1 job xuất  ->  xếp 1 phân tích, 1 xuất
+  ✓ job XUẤT được chạy khi có 50 job phân tích đang chờ
+    72 job phân tích chờ + 1 job xuất  ->  xếp 1 phân tích, 1 xuất
+  ✓ job XUẤT được chạy khi có 72 job phân tích đang chờ
+   200 job phân tích chờ + 1 job xuất  ->  xếp 1 phân tích, 1 xuất
+  ✓ job XUẤT được chạy khi có 200 job phân tích đang chờ
+
+══ Không được vượt hạn mức từng làn ══
+   Tiết kiệm máy TẮT -> xếp 1 phân tích, 2 xuất
+  ✓ Tiết kiệm máy TẮT : làn phân tích 1 job
+  ✓ Tiết kiệm máy TẮT : làn cắt 2 job
+   Tiết kiệm máy BẬT -> xếp 1 phân tích, 1 xuất
+  ✓ Tiết kiệm máy BẬT : làn phân tích 1 job
+  ✓ Tiết kiệm máy BẬT : làn cắt 1 job
+
+==============================================================
+✅ TẤT CẢ ĐẠT — làn cắt không bao giờ bị bỏ đói
+==============================================================

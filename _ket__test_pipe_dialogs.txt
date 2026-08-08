@@ -1,0 +1,34 @@
+  ✓ canh cổng: cấm mở cửa sổ ngoài (đã chặn 0 cú)
+
+══ SMOKE: mở từng hộp thoại (bắt lỗi ngay khi bấm) ══
+  ✓ 🤖 Dây chuyền tự động
+  ✓ 🗑 Thùng rác / Khôi phục
+  ✓ 🧹 Dọn file rác
+  ✓ 🔧 Cứu video kẹt
+  ✓ Quản lý nhóm & kênh
+  ✓ Quản lý video
+  ✓ Quản lý kênh
+  ✓ Sửa tên/cấu hình kênh
+
+══ SMOKE: bấm mọi nút trong hộp Dây chuyền ══
+  ✓ nút '🗑 Kho video & dọn dẹp ▾'
+  ✓ nút '🧹 Dọn file rác'
+  ✓ nút '🔧 Sửa & làm lại ▾'
+  ✓ nút '✓ Bật tất cả'
+  ✓ nút 'Tắt tất cả'
+  ✓ nút '🚫 Kênh đã ẩn'
+  ✓ nút '🔄 Làm lại cả nhóm'
+  ✓ nút '⋮'
+  ✓ nút 'Mở'
+  ✓ nút 'Cắt lại'
+  ✓ nút '📂 Mở thư mục log'
+  ✓ nút '🗑 Xoá báo cáo'
+
+==============================================================
+
+══ GỌN HOÁ: 3 menu gom phải mở được + đủ mục ══
+  ✓ menu '🗑 Kho video & dọn dẹp' đủ mục (2 mục)
+  ✓ menu '🔧 Sửa & làm lại' đủ mục (4 mục)
+  ✓ menu '⋮ thêm' đủ mục (1 mục)
+✅ MỌI HỘP THOẠI + NÚT MỞ ĐƯỢC, KHÔNG LỖI
+==============================================================

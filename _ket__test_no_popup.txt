@@ -1,0 +1,41 @@
+
+══ A. Mọi test dựng UI phải import _test_guard ══
+  ✓ _test_100_kenh.py có canh cổng
+  ✓ _test_ai_gate.py có canh cổng
+  ✓ _test_app_smoke.py có canh cổng
+  ✓ _test_cancel_persist.py có canh cổng
+  ✓ _test_chan_search.py có canh cổng
+  ✓ _test_chon_kenh_mau.py có canh cổng
+  ✓ _test_hoc_gu.py có canh cổng
+  ✓ _test_lien_thong.py có canh cổng
+  ✓ _test_luoi_an_toan.py có canh cổng
+  ✓ _test_nut_khong_cut.py có canh cổng
+  ✓ _test_pipe_dialogs.py có canh cổng
+  ✓ _test_pipe_e2e.py có canh cổng
+  ✓ _test_pipe_integ.py có canh cổng
+  ✓ _test_pipe_overlap.py có canh cổng
+  ✓ _test_shutdown_safety.py có canh cổng
+  ✓ _test_tieng_va_mau.py có canh cổng
+  ✓ _test_tpl_export_path.py có canh cổng
+  ✓ _test_tpl_per_channel.py có canh cổng
+  ✓ _test_ui_smooth.py có canh cổng
+  ✓ quét được 19 test dựng UI
+
+══ C. Canh cổng che đủ cửa, nhưng KHÔNG cản ffmpeg ══
+  ✓ os.startfile bị chặn (trả None)
+  ✓ cú mở cửa sổ được GHI LẠI để kiểm đếm
+  ✓ Popen(explorer) bị nuốt, không sinh tiến trình
+  ✓ chặn đủ 3 đường: Popen · run · webbrowser
+  ✓ ffmpeg VẪN chạy thật qua canh cổng
+  ✓ Popen(ffmpeg) vẫn chạy thật (chỉ chặn lệnh mở cửa sổ)
+
+══ B. Bấm mọi nút hộp 🤖 Dây chuyền -> KHÔNG cửa sổ nào bật ══
+  ✓ hộp Dây chuyền có 13 nút để bấm
+  ✓ bấm '📂 Mở thư mục log' -> ĐÃ BỊ CHẶN (trước đây Explorer nhảy lên)
+  ✓ số CỬA SỔ Explorer không tăng (1 -> 1)
+
+══ C2. Tự dọn thư mục tạm test cũ (ổ C từng đầy 100%) ══
+  ✓ xoá được rác cũ hơn 1 giờ (1 thư mục / 0.0 MB)
+  ✓ KHÔNG xoá thư mục của lần chạy ĐANG diễn ra
+
+KẾT QUẢ: TẤT CẢ ĐẠT — test không mở cửa sổ nào trên máy user (chặn 5 cú), ffmpeg vẫn chạy thật

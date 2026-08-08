@@ -1,0 +1,30 @@
+{
+ "nhan": 24,
+ "dinh": 22,
+ "dinh_x": 0.92,
+ "dinh_luc": "đo (-f null):22",
+ "theo_lenh": {
+  "NGHE astats": {
+   "tb": 8.6,
+   "dinh": 12
+  },
+  "đo (-f null)": {
+   "tb": 19.8,
+   "dinh": 22
+  }
+ },
+ "buoc": [
+  {
+   "ten": "NGHE nang_luong (astats)",
+   "giay": 4.6
+  },
+  {
+   "ten": "XEM chuyen_dong (scdet)",
+   "giay": 112.9
+  },
+  {
+   "ten": "do_nhip (hiệu ứng)",
+   "giay": 341.3
+  }
+ ]
+}

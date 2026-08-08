@@ -1,0 +1,23 @@
+﻿== 1. hết lượt tạm thời -> đợi key hồi -> thành công ==
+  ✓ trả đúng kết quả AI sau khi đợi
+  ✓ gọi lại đúng 3 lần (2 fail + 1 ăn)
+  ✓ progress nói rõ đang đợi, không cắt cơ bản
+  ✓ đợi theo cooldown thật (không treo dài)
+== 2. lỗi khác (key sai/mạng chết) -> ném ngay ==
+  ✓ ném ngay lần đầu, không retry vô ích
+== 3. cooldown dài hơn ngân sách -> ném (heuristic là lưới cuối) ==
+  ✓ ném LLMError khi đợi vô vọng
+  ✓ không ngồi đợi giây nào khi biết vô vọng
+== 4. bấm Huỷ giữa lúc đợi -> dừng ngay ==
+  ✓ CanceledError xuyên ra ngoài (job dừng ngay)
+  ✓ không đợi hết 30s cooldown mới chịu dừng
+== 5. không còn key nào để đợi -> ném ngay ==
+  ✓ ném ngay khi không có key
+== 5b. budget mặc định (đọc settings) không nổ ==
+  ✓ chạy đường budget mặc định (settings) ra đúng kết quả
+== 6. đuôi combo/kho không đếm clip 'archived' ==
+  ✓ đuôi kênh: 1 clip (bỏ archived)
+  ✓ đuôi video: 1 clip (bỏ archived)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — hết lượt thì ĐỢI, không cắt cơ bản
+

@@ -1,0 +1,142 @@
+{
+ "gốc (fct=7, cpu decode)": [
+  {
+   "ma": 0,
+   "giay": 11.2,
+   "luong_dinh": 54,
+   "cpu_giay": 49.9
+  },
+  {
+   "ma": 0,
+   "giay": 11.3,
+   "luong_dinh": 55,
+   "cpu_giay": 49.6
+  }
+ ],
+ "gpu decode, fct=1": [
+  {
+   "ma": 0,
+   "giay": 29.8,
+   "luong_dinh": 30,
+   "cpu_giay": 35.9
+  },
+  {
+   "ma": 0,
+   "giay": 29.5,
+   "luong_dinh": 31,
+   "cpu_giay": 36.0
+  }
+ ],
+ "gpu decode, fct=2": [
+  {
+   "ma": 0,
+   "giay": 17.8,
+   "luong_dinh": 34,
+   "cpu_giay": 36.5
+  },
+  {
+   "ma": 0,
+   "giay": 18.7,
+   "luong_dinh": 34,
+   "cpu_giay": 38.7
+  }
+ ],
+ "gpu decode, fct=4": [
+  {
+   "ma": 0,
+   "giay": 12.3,
+   "luong_dinh": 42,
+   "cpu_giay": 40.4
+  },
+  {
+   "ma": 0,
+   "giay": 12.1,
+   "luong_dinh": 42,
+   "cpu_giay": 40.0
+  }
+ ],
+ "gpu decode, fct=8": [
+  {
+   "ma": 0,
+   "giay": 11.2,
+   "luong_dinh": 59,
+   "cpu_giay": 42.2
+  },
+  {
+   "ma": 0,
+   "giay": 11.2,
+   "luong_dinh": 58,
+   "cpu_giay": 42.1
+  }
+ ],
+ "gpu decode, fct=16": [
+  {
+   "ma": 0,
+   "giay": 11.4,
+   "luong_dinh": 90,
+   "cpu_giay": 47.5
+  },
+  {
+   "ma": 0,
+   "giay": 11.2,
+   "luong_dinh": 90,
+   "cpu_giay": 44.6
+  }
+ ],
+ "gpu, fct=4, dec_thr=2": [
+  {
+   "ma": 0,
+   "giay": 12.1,
+   "luong_dinh": 28,
+   "cpu_giay": 40.0
+  },
+  {
+   "ma": 0,
+   "giay": 13.7,
+   "luong_dinh": 28,
+   "cpu_giay": 42.0
+  }
+ ],
+ "↑ nội suy bicubic": [
+  {
+   "ma": 0,
+   "giay": 11.1,
+   "luong_dinh": 42,
+   "cpu_giay": 35.5
+  },
+  {
+   "ma": 0,
+   "giay": 16.5,
+   "luong_dinh": 42,
+   "cpu_giay": 38.4
+  }
+ ],
+ "↑ bỏ làm mờ nền": [
+  {
+   "ma": 0,
+   "giay": 11.3,
+   "luong_dinh": 42,
+   "cpu_giay": 39.6
+  },
+  {
+   "ma": 0,
+   "giay": 13.2,
+   "luong_dinh": 43,
+   "cpu_giay": 43.8
+  }
+ ],
+ "↑ bỏ phụ đề .ass": [
+  {
+   "ma": 4294967274,
+   "giay": 0.1,
+   "luong_dinh": 1,
+   "cpu_giay": 0.1
+  },
+  {
+   "ma": 4294967274,
+   "giay": 0.1,
+   "luong_dinh": 1,
+   "cpu_giay": 0.0
+  }
+ ]
+}

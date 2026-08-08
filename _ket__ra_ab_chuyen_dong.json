@@ -1,0 +1,44 @@
+{
+ "HIỆN TẠI (không núm)": {
+  "wall": 17.21,
+  "cpu_giay": 231.66,
+  "luong": 70,
+  "nhan_x": 2.92,
+  "so_goc": 1.0
+ },
+ "giải mã 4": {
+  "wall": 28.26,
+  "cpu_giay": 101.32,
+  "luong": 22,
+  "nhan_x": 0.92,
+  "so_goc": 1.64
+ },
+ "giải mã 2": {
+  "wall": 48.06,
+  "cpu_giay": 88.72,
+  "luong": 14,
+  "nhan_x": 0.58,
+  "so_goc": 2.79
+ },
+ "giải mã 1": {
+  "wall": 81.02,
+  "cpu_giay": 83.52,
+  "luong": 9,
+  "nhan_x": 0.38,
+  "so_goc": 4.71
+ },
+ "GPU cuda + giải mã 4": {
+  "wall": 52.95,
+  "cpu_giay": 30.03,
+  "luong": 26,
+  "nhan_x": 1.08,
+  "so_goc": 3.08
+ },
+ "GPU d3d11va + giải mã 4": {
+  "wall": 146.33,
+  "cpu_giay": 158.78,
+  "luong": 41,
+  "nhan_x": 1.71,
+  "so_goc": 8.51
+ }
+}

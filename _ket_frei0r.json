@@ -1,0 +1,1484 @@
+[
+ {
+  "ten_module": "3dflippo",
+  "nap": false,
+  "rc": 3221225477,
+  "ten": "3dflippo",
+  "tac_gia": "c.e. prelz AS FLUIDO <fluido@fluido.as>",
+  "giai_thich": "Frame rotation in 3d-space",
+  "color_model": "packed32",
+  "so_tham_so": 11,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "B",
+  "nap": true,
+  "rc": 0,
+  "ten": "B",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Extracts Blue from Image",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "G",
+  "nap": true,
+  "rc": 0,
+  "ten": "G",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Extracts Green from Image",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "IIRblur",
+  "nap": true,
+  "rc": 0,
+  "ten": "IIR blur",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Three types of fast IIR blurring",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "R",
+  "nap": true,
+  "rc": 0,
+  "ten": "R",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Extracts Red from Image",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "RGB",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 00000268b16b2440] Error initializing filters"
+ },
+ {
+  "ten_module": "addition",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000020369b19840] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "addition_alpha",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000017e6ffffac0] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "aech0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "aech0r",
+  "tac_gia": "d-j-a-y & vloop",
+  "giai_thich": "analog video echo",
+  "color_model": "bgra8888",
+  "so_tham_so": 6,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "alpha0ps_alpha0ps",
+  "nap": true,
+  "rc": 0,
+  "ten": "alpha0ps",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Display and manipulation of the alpha channel",
+  "color_model": "rgba8888",
+  "so_tham_so": 6,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "alpha0ps_alphagrad",
+  "nap": true,
+  "rc": 0,
+  "ten": "alphagrad",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Fills alpha channel with a gradient",
+  "color_model": "rgba8888",
+  "so_tham_so": 6,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "alpha0ps_alphaspot",
+  "nap": true,
+  "rc": 0,
+  "ten": "alphaspot",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Draws simple shapes into the alpha channel",
+  "color_model": "rgba8888",
+  "so_tham_so": 10,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "alphaatop",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001c3ffd10e80] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "alphain",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000025ddefe2780] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "alphainjection",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000018c6d5df140] Error initializing filters"
+ },
+ {
+  "ten_module": "alphaout",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001cdc6907440] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "alphaover",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002385565f780] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "alphaxor",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001e85d2003c0] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "balanc0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "White Balance",
+  "tac_gia": "Dan Dennedy",
+  "giai_thich": "Adjust the white balance / color temperature",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "baltan",
+  "nap": true,
+  "rc": 0,
+  "ten": "Baltan",
+  "tac_gia": "Kentaro, Jaromil",
+  "giai_thich": "delayed alpha smoothed blit of time",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "bgsubtract0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "BgSubtract0r",
+  "tac_gia": "Samuel Mimram",
+  "giai_thich": "Bluescreen the background of a static video.",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "blend",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000165f998f200] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "bluescreen0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "bluescreen0r",
+  "tac_gia": "Hedde Bosman",
+  "giai_thich": "Color to alpha (blit SRCALPHA)",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "brightness",
+  "nap": true,
+  "rc": 0,
+  "ten": "Brightness",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Adjusts the brightness of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "burn",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000272ccc8e040] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "bw0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "bw0r",
+  "tac_gia": "coma@gephex.org",
+  "giai_thich": "Turns image black/white.",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "c0rners",
+  "nap": true,
+  "rc": 0,
+  "ten": "c0rners",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Four corners geometry engine",
+  "color_model": "rgba8888",
+  "so_tham_so": 15,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "cairoaffineblend",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001e84b5f0c00] Could not find module 'cairoaffineblend'."
+ },
+ {
+  "ten_module": "cairoblend",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001a11b0bf240] Could not find module 'cairoblend'."
+ },
+ {
+  "ten_module": "cairogradient",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000020d720ae780] Could not find module 'cairogradient'."
+ },
+ {
+  "ten_module": "cairoimagegrid",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000028e62ee7fc0] Could not find module 'cairoimagegrid'."
+ },
+ {
+  "ten_module": "cartoon",
+  "nap": true,
+  "rc": 0,
+  "ten": "Cartoon",
+  "tac_gia": "Dries Pruimboom, Jaromil",
+  "giai_thich": "Cartoonify video, do a form of edge detect",
+  "color_model": "bgra8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "cluster",
+  "nap": true,
+  "rc": 0,
+  "ten": "K-Means Clustering",
+  "tac_gia": "binarymillenium",
+  "giai_thich": "Clusters of a source image by color and spatial distance",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "colgate",
+  "nap": true,
+  "rc": 0,
+  "ten": "White Balance (LMS space)",
+  "tac_gia": "Steinar H. Gunderson",
+  "giai_thich": "Do simple color correction, in a physically meaningful way",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "color_only",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000247d7f8f680] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "coloradj_RGB",
+  "nap": true,
+  "rc": 0,
+  "ten": "coloradj_RGB",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Simple color adjustment",
+  "color_model": "rgba8888",
+  "so_tham_so": 7,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "colordistance",
+  "nap": true,
+  "rc": 0,
+  "ten": "Color Distance",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Calculates the distance between the selected color and the current pixel and uses that value as new pixel value",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "colorhalftone",
+  "nap": true,
+  "rc": 0,
+  "ten": "colorhalftone",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Filters image to resemble a halftone print in which tones are represented as variable sized dots",
+  "color_model": "rgba8888",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "colorize",
+  "nap": true,
+  "rc": 0,
+  "ten": "colorize",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Colorizes image to selected hue, saturation and lightness",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "colortap",
+  "nap": true,
+  "rc": 0,
+  "ten": "colortap",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Applies a pre-made color effect to image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "composition",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000002c0c641f9c0] Error initializing filters"
+ },
+ {
+  "ten_module": "contrast0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Contrast0r",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Adjusts the contrast of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "curves",
+  "nap": true,
+  "rc": 0,
+  "ten": "Curves",
+  "tac_gia": "Maksim Golovkin, Till Theato",
+  "giai_thich": "Adjust luminance or color channel intensity with curve level mapping",
+  "color_model": "rgba8888",
+  "so_tham_so": 16,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "d90stairsteppingfix",
+  "nap": true,
+  "rc": 0,
+  "ten": "Nikon D90 Stairstepping fix",
+  "tac_gia": "Simon A. Eugster (Granjow)",
+  "giai_thich": "Removes the Stairstepping from Nikon D90 videos (720p only) by interpolation",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "darken",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002146c23e480] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "defish0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Defish0r",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Non rectilinear lens mappings",
+  "color_model": "rgba8888",
+  "so_tham_so": 11,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "delay0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "delay0r",
+  "tac_gia": "Martin Bayer",
+  "giai_thich": "video delay",
+  "color_model": "bgra8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "delaygrab",
+  "nap": true,
+  "rc": 0,
+  "ten": "Delaygrab",
+  "tac_gia": "Bill Spinhover, Andreas Schiffler, Jaromil",
+  "giai_thich": "delayed frame blitting mapped on a time bitmap",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "denoise_hqdn3d",
+  "nap": true,
+  "rc": 0,
+  "ten": "hqdn3d",
+  "tac_gia": "Marko Cebokli, Daniel Moreno",
+  "giai_thich": "High quality 3D denoiser from Mplayer",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "difference",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000207dcafffc0] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "distort0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Distort0r",
+  "tac_gia": "Gephex crew",
+  "giai_thich": "Plasma",
+  "color_model": "packed32",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "dither",
+  "nap": true,
+  "rc": 0,
+  "ten": "dither",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Dithers the image and reduces the number of available colors",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "divide",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002b99706ee40] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "dodge",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000025f84e5f040] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "edgeglow",
+  "nap": true,
+  "rc": 0,
+  "ten": "Edgeglow",
+  "tac_gia": "Salsaman",
+  "giai_thich": "Edgeglow filter",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "elastic_scale",
+  "nap": true,
+  "rc": 0,
+  "ten": "Elastic scale filter",
+  "tac_gia": "Matthias Schnoell",
+  "giai_thich": "This is a frei0r filter which allows one to scale video footage non-linearly.",
+  "color_model": "rgba8888",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "emboss",
+  "nap": true,
+  "rc": 0,
+  "ten": "emboss",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Creates embossed relief image of source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "equaliz0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Equaliz0r",
+  "tac_gia": "Jean-Sebastien Senecal (Drone)",
+  "giai_thich": "Equalizes the intensity histograms",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "euclid_eraser",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000017ae74cee00] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "facebl0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002944ffaea00] Could not find module 'facebl0r'."
+ },
+ {
+  "ten_module": "facedetect",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001ef4df9d680] Could not find module 'facedetect'."
+ },
+ {
+  "ten_module": "filmgrain",
+  "nap": true,
+  "rc": 0,
+  "ten": "Film Grain",
+  "tac_gia": "esmane",
+  "giai_thich": "Adds film-like grain and softens the picture.",
+  "color_model": "rgba8888",
+  "so_tham_so": 7,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "flippo",
+  "nap": true,
+  "rc": 0,
+  "ten": "Flippo",
+  "tac_gia": "Carlo Emilio, Jean-Sebastien Senecal",
+  "giai_thich": "Flipping in x and y axis",
+  "color_model": "packed32",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "gamma",
+  "nap": true,
+  "rc": 0,
+  "ten": "Gamma",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Adjusts the gamma value of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "gateweave",
+  "nap": true,
+  "rc": 0,
+  "ten": "Gate Weave",
+  "tac_gia": "esmane",
+  "giai_thich": "Randomly moves frame around to simulate film gate weave.",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "glitch0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Glitch0r",
+  "tac_gia": "IDENT Software",
+  "giai_thich": "Adds glitches and block shifting",
+  "color_model": "rgba8888",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "glow",
+  "nap": true,
+  "rc": 0,
+  "ten": "Glow",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Creates a Glamorous Glow",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "grain_extract",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000016d3f53a8c0] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "grain_merge",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000020f63b11840] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "hardlight",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002056ed1fc00] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "hue",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000195a0c99f00] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "hueshift0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Hueshift0r",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Shifts the hue of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "invert0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Invert0r",
+  "tac_gia": "Gephex crew",
+  "giai_thich": "Inverts all colors of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "ising0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000017b7f4f8d00] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "kaleid0sc0pe",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000027ec0ccca00] Could not find module 'kaleid0sc0pe'."
+ },
+ {
+  "ten_module": "keyspillm0pup",
+  "nap": true,
+  "rc": 0,
+  "ten": "keyspillm0pup",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Reduces the visibility of key color spill in chroma keying",
+  "color_model": "rgba8888",
+  "so_tham_so": 13,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "lenscorrection",
+  "nap": true,
+  "rc": 0,
+  "ten": "Lens Correction",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Allows compensation of lens distortion",
+  "color_model": "rgba8888",
+  "so_tham_so": 5,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "letterb0xed",
+  "nap": true,
+  "rc": 0,
+  "ten": "LetterB0xed",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Adds Black Borders at top and bottom for Cinema Look",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "levels",
+  "nap": true,
+  "rc": 0,
+  "ten": "Levels",
+  "tac_gia": "Maksim Golovkin",
+  "giai_thich": "Adjust luminance or color channel intensity",
+  "color_model": "rgba8888",
+  "so_tham_so": 8,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "lighten",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002330bede940] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "lightgraffiti",
+  "nap": true,
+  "rc": 0,
+  "ten": "Light Graffiti",
+  "tac_gia": "Simon A. Eugster (Granjow)",
+  "giai_thich": "Creates light graffitis from a video by keeping the brightest spots.",
+  "color_model": "rgba8888",
+  "so_tham_so": 16,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "lissajous0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001dff72afbc0] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "luminance",
+  "nap": true,
+  "rc": 0,
+  "ten": "Luminance",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Creates a luminance map of the image",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "mask0mate",
+  "nap": true,
+  "rc": 0,
+  "ten": "Mask0Mate",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Creates an square alpha-channel mask",
+  "color_model": "rgba8888",
+  "so_tham_so": 6,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "measure_pr0be",
+  "nap": true,
+  "rc": 0,
+  "ten": "pr0be",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Measure video values",
+  "color_model": "rgba8888",
+  "so_tham_so": 8,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "measure_pr0file",
+  "nap": true,
+  "rc": 0,
+  "ten": "pr0file",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "2D video oscilloscope",
+  "color_model": "rgba8888",
+  "so_tham_so": 21,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "medians",
+  "nap": true,
+  "rc": 0,
+  "ten": "Medians",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Implements several median-type filters",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "mirr0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001e2bef2e2c0] Could not find module 'mirr0r'."
+ },
+ {
+  "ten_module": "multiply",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000024c67f325c0] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "ndvi",
+  "nap": true,
+  "rc": 0,
+  "ten": "NDVI filter",
+  "tac_gia": "Brian Matherly",
+  "giai_thich": "This filter creates a false image from a visible + infrared source.",
+  "color_model": "rgba8888",
+  "so_tham_so": 10,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "nervous",
+  "nap": true,
+  "rc": 0,
+  "ten": "Nervous",
+  "tac_gia": "Tannenbaum, Kentaro, Jaromil",
+  "giai_thich": "flushes frames in time in a nervous way",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "nois0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001f2c4538f00] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "normaliz0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Normaliz0r",
+  "tac_gia": "Chungzuwalla (chungzuwalla@rling.com)",
+  "giai_thich": "Normalize (aka histogram stretch, contrast stretch)",
+  "color_model": "rgba8888",
+  "so_tham_so": 5,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "nosync0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "nosync0r",
+  "tac_gia": "Martin Bayer",
+  "giai_thich": "broken tv",
+  "color_model": "bgra8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "ntsc",
+  "nap": true,
+  "rc": 0,
+  "ten": "NTSC",
+  "tac_gia": "EMMIR, esmane",
+  "giai_thich": "Simulates NTSC analog video.",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "onecol0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000211b31bf880] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "overlay",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000203fe7b1080] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "partik0l",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002058bf3e140] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "perspective",
+  "nap": true,
+  "rc": 0,
+  "ten": "Perspective",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Distorts the image for a pseudo perspective",
+  "color_model": "rgba8888",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "pixeliz0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "pixeliz0r",
+  "tac_gia": "Gephex crew",
+  "giai_thich": "Pixelize input image.",
+  "color_model": "packed32",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "pixs0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "pixs0r",
+  "tac_gia": "xsbee",
+  "giai_thich": "Glitch image shifting rows to and fro",
+  "color_model": "packed32",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "plasma",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001404e930900] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "posterize",
+  "nap": true,
+  "rc": 0,
+  "ten": "posterize",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Posterizes image by reducing the number of colors used in image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "premultiply",
+  "nap": true,
+  "rc": 0,
+  "ten": "Premultiply or Unpremultiply",
+  "tac_gia": "Dan Dennedy",
+  "giai_thich": "Multiply (or divide) each color component by the pixel's alpha value",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "primaries",
+  "nap": true,
+  "rc": 0,
+  "ten": "primaries",
+  "tac_gia": "Hedde Bosman",
+  "giai_thich": "Reduce image to primary colors",
+  "color_model": "bgra8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "rgbnoise",
+  "nap": true,
+  "rc": 0,
+  "ten": "rgbnoise",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Adds RGB noise to image.",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "rgbparade",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000294aa7df0c0] Could not find module 'rgbparade'."
+ },
+ {
+  "ten_module": "rgbsplit0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "rgbsplit0r",
+  "tac_gia": "IDENT Software",
+  "giai_thich": "RGB splitting and shifting",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "saturat0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Saturat0r",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Adjusts the saturation of a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "saturation",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001ceac037300] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "scale0tilt",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000021f68449bc0] Could not find module 'scale0tilt'."
+ },
+ {
+  "ten_module": "scanline0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "scanline0r",
+  "tac_gia": "Martin Bayer",
+  "giai_thich": "interlaced dark lines",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "screen",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001d54c3de480] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "select0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "select0r",
+  "tac_gia": "Marko Cebokli",
+  "giai_thich": "Color based alpha selection",
+  "color_model": "rgba8888",
+  "so_tham_so": 10,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "sharpness",
+  "nap": true,
+  "rc": 0,
+  "ten": "Sharpness",
+  "tac_gia": "Marko Cebokli, Remi Guyomarch",
+  "giai_thich": "Unsharp masking (port from Mplayer)",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "sigmoidaltransfer",
+  "nap": true,
+  "rc": 0,
+  "ten": "sigmoidaltransfer",
+  "tac_gia": "Janne Liljeblad & Cynthia",
+  "giai_thich": "Desaturates image and creates a particular look that could be called Stamp, Newspaper or Photocopy",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "sleid0r_push-down",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000029250410e40] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_push-left",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001d7bab7f140] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_push-right",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000022f3aabd1c0] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_push-up",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000014ca487ef00] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_slide-down",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001e50fd8ec80] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_slide-left",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000015407fb0500] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_slide-right",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001d8f3245a00] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_slide-up",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001ae772f2400] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-barn-door-h",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 00000151d0de6940] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-barn-door-v",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000022fdecefb00] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-circle",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000017f5d70f080] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-down",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000002148803f6c0] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-left",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000029622933380] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-rect",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001e00b255c80] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-right",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000029fe536eb80] Error initializing filters"
+ },
+ {
+  "ten_module": "sleid0r_wipe-up",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 0000027325cad600] Error initializing filters"
+ },
+ {
+  "ten_module": "sobel",
+  "nap": true,
+  "rc": 0,
+  "ten": "Sobel",
+  "tac_gia": "Jean-Sebastien Senecal (Drone)",
+  "giai_thich": "Sobel filter",
+  "color_model": "rgba8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "softglow",
+  "nap": true,
+  "rc": 0,
+  "ten": "softglow",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Does softglow effect on highlights",
+  "color_model": "rgba8888",
+  "so_tham_so": 4,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "softlight",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000220d547f040] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "sopsat",
+  "nap": true,
+  "rc": 0,
+  "ten": "SOP/Sat",
+  "tac_gia": "Simon A. Eugster (Granjow)",
+  "giai_thich": "Slope/Offset/Power and Saturation color corrections according to the ASC CDL (Color Decision List)",
+  "color_model": "rgba8888",
+  "so_tham_so": 13,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "spillsupress",
+  "nap": true,
+  "rc": 0,
+  "ten": "spillsupress",
+  "tac_gia": "Janne Liljeblad",
+  "giai_thich": "Remove green or blue spill light from subjects shot in front of green or blue screen",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "squareblur",
+  "nap": true,
+  "rc": 0,
+  "ten": "Squareblur",
+  "tac_gia": "Drone",
+  "giai_thich": "Variable-size square blur",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "subtract",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000021f8dfd7780] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "tehroxx0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "TehRoxx0r",
+  "tac_gia": "Coma",
+  "giai_thich": "Something videowall-ish",
+  "color_model": "packed32",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "test_pat_B",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002729748a300] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "test_pat_C",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002795fae0a40] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "test_pat_G",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001d5fd970400] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "test_pat_I",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 00000205b85ffd80] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "test_pat_L",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001747af3b4c0] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "test_pat_R",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000002d01da30100] Invalid type 'source' for this plugin"
+ },
+ {
+  "ten_module": "three_point_balance",
+  "nap": true,
+  "rc": 0,
+  "ten": "3 point color balance",
+  "tac_gia": "Maksim Golovkin",
+  "giai_thich": "Adjust color balance with 3 color points",
+  "color_model": "rgba8888",
+  "so_tham_so": 5,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "threelay0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "threelay0r",
+  "tac_gia": "Hedde Bosman",
+  "giai_thich": "dynamic 3 level thresholding",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "threshold0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Threshold0r",
+  "tac_gia": "Jean-Sebastien Senecal",
+  "giai_thich": "Thresholds a source image",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "timeout",
+  "nap": true,
+  "rc": 0,
+  "ten": "Timeout indicator",
+  "tac_gia": "Simon A. Eugster",
+  "giai_thich": "Timeout indicators e.g. for slides.",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "tint0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Tint0r",
+  "tac_gia": "Maksim Golovkin & Cynthia",
+  "giai_thich": "Tint a source image with specified colors",
+  "color_model": "bgra8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "transparency",
+  "nap": true,
+  "rc": 0,
+  "ten": "Transparency",
+  "tac_gia": "Richard Spindler",
+  "giai_thich": "Tunes the alpha channel.",
+  "color_model": "rgba8888",
+  "so_tham_so": 1,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "twolay0r",
+  "nap": true,
+  "rc": 0,
+  "ten": "Twolay0r",
+  "tac_gia": "Martin Bayer",
+  "giai_thich": "dynamic thresholding",
+  "color_model": "bgra8888",
+  "so_tham_so": 0,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "uvmap",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[AVFilterGraph @ 000001ebf1804e00] Error initializing filters"
+ },
+ {
+  "ten_module": "value",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 0000027197e98100] Invalid type 'mixer2' for this plugin"
+ },
+ {
+  "ten_module": "vectorscope",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001342b819800] Could not find module 'vectorscope'."
+ },
+ {
+  "ten_module": "vertigo",
+  "nap": true,
+  "rc": 0,
+  "ten": "Vertigo",
+  "tac_gia": "Fukuchi Kentarou",
+  "giai_thich": "alpha blending with zoomed and rotated images",
+  "color_model": "rgba8888",
+  "so_tham_so": 2,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "vignette",
+  "nap": true,
+  "rc": 0,
+  "ten": "Vignette",
+  "tac_gia": "Simon A. Eugster (Granjow)",
+  "giai_thich": "Lens vignetting effect, applies natural vignetting",
+  "color_model": "rgba8888",
+  "so_tham_so": 3,
+  "tham_so": [],
+  "la_src": false
+ },
+ {
+  "ten_module": "xfade0r",
+  "nap": false,
+  "rc": 4294967274,
+  "loi": "[Parsed_frei0r_0 @ 000001f7d1961c00] Invalid type 'mixer2' for this plugin"
+ }
+]

@@ -20,7 +20,11 @@ from pathlib import Path
 T = Path(tempfile.mkdtemp(prefix="dbguard_"))
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.database.db import Database  # noqa: E402
 

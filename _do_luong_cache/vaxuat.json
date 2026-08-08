@@ -1,0 +1,102 @@
+{
+ "A. app HIỆN TẠI (idle)": [
+  {
+   "ma": 0,
+   "giay": 14.5,
+   "luong_dinh": 56,
+   "cpu_giay": 53.9
+  },
+  {
+   "ma": 0,
+   "giay": 13.6,
+   "luong_dinh": 56,
+   "cpu_giay": 54.5
+  },
+  {
+   "ma": 0,
+   "giay": 11.8,
+   "luong_dinh": 56,
+   "cpu_giay": 50.6
+  }
+ ],
+ "B. chỉ đổi ưu tiên": [
+  {
+   "ma": 0,
+   "giay": 12.8,
+   "luong_dinh": 56,
+   "cpu_giay": 54.2
+  },
+  {
+   "ma": 0,
+   "giay": 15.0,
+   "luong_dinh": 56,
+   "cpu_giay": 53.6
+  },
+  {
+   "ma": 0,
+   "giay": 11.6,
+   "luong_dinh": 56,
+   "cpu_giay": 51.7
+  }
+ ],
+ "C. B + giải mã GPU": [
+  {
+   "ma": 0,
+   "giay": 12.1,
+   "luong_dinh": 56,
+   "cpu_giay": 44.7
+  },
+  {
+   "ma": 0,
+   "giay": 14.2,
+   "luong_dinh": 56,
+   "cpu_giay": 46.6
+  },
+  {
+   "ma": 0,
+   "giay": 11.3,
+   "luong_dinh": 57,
+   "cpu_giay": 43.6
+  }
+ ],
+ "D. C + chặn luồng 2/4": [
+  {
+   "ma": 0,
+   "giay": 13.6,
+   "luong_dinh": 30,
+   "cpu_giay": 43.0
+  },
+  {
+   "ma": 0,
+   "giay": 14.8,
+   "luong_dinh": 30,
+   "cpu_giay": 41.4
+  },
+  {
+   "ma": 0,
+   "giay": 12.4,
+   "luong_dinh": 30,
+   "cpu_giay": 41.1
+  }
+ ],
+ "E. B + chặn luồng 2/4": [
+  {
+   "ma": 0,
+   "giay": 13.0,
+   "luong_dinh": 30,
+   "cpu_giay": 53.6
+  },
+  {
+   "ma": 0,
+   "giay": 12.4,
+   "luong_dinh": 30,
+   "cpu_giay": 50.3
+  },
+  {
+   "ma": 0,
+   "giay": 12.2,
+   "luong_dinh": 30,
+   "cpu_giay": 47.8
+  }
+ ]
+}

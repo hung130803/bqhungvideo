@@ -1,0 +1,303 @@
+diff --git a/app/core/ffmpeg_utils.py b/app/core/ffmpeg_utils.py
+index 4503e66..a2d8aa7 100644
+--- a/app/core/ffmpeg_utils.py
++++ b/app/core/ffmpeg_utils.py
+@@ -18,9 +18,35 @@ from config import settings
+ 
+ # Cờ giấu cửa sổ console đen trên Windows khi gọi subprocess
+ _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
+-# Ưu tiên IDLE cho tác vụ NẶNG (encode/phân tích dài): Windows LUÔN nhường mọi
+-# app khác trước -> máy KHÔNG đơ khi đang xuất; máy rảnh thì encode vẫn full tốc.
+-# (Tác vụ ngắn probe/demo giữ nguyên ưu tiên thường — xong trong vài giây.)
++
++# ---- ĐỘ ƯU TIÊN ffmpeg: ĐÃ ĐO LẠI 07/08/2026, KẾT LUẬN CŨ LÀ SAI ----
++# Bản cũ chạy ffmpeg ở IDLE_PRIORITY_CLASS (0x40) với ý tốt "nhường mọi app
++# khác -> máy không đơ khi xuất". ĐO THẬT trên máy anh Hùng (24 nhân, có
++# prodown tải video chạy nền như cảnh sản xuất), CÙNG 1 lệnh dựng khung 60s,
++# đan xen 4 vòng lấy trung vị:
++#     idle            50,8 CPU-giây · 11,2s
++#     dưới trung bình 50,4 CPU-giây · 11,1s
++#     TRUNG BÌNH      34,4 CPU-giây ·  7,0s   <-- rẻ hơn 32%, nhanh hơn 37%
++# Vì sao ngược đời: 1 lệnh xuất đẻ ~54 luồng ffmpeg. Ở ưu tiên THẤP HƠN mọi
++# thứ khác, luồng đang GIỮ KHOÁ bị Windows cắt ngang, 53 luồng còn lại quay
++# vòng chờ -> đốt CPU không ra sản phẩm. Hạ ưu tiên KHÔNG làm máy nhẹ đi, nó
++# làm app chiếm máy LÂU HƠN 60% với công việc y hệt.
++# => Cách "nhường máy" ĐÚNG là dùng ÍT NHÂN HƠN (chặn số luồng, xem
++#    _luong_moi_lenh) chứ không phải hạ ưu tiên. Đặt BQ_FFMPEG_PRIORITY=idle
++#    để quay lại hành vi cũ nếu cần đối chứng.
++_PRIORITY_CLASS = {
++    "idle": 0x00000040, "below": 0x00004000, "normal": 0x00000020,
++}
++
++
++def _uu_tien_co() -> int:
++    """Cờ creationflags độ ưu tiên cho ffmpeg NẶNG (encode/lọc hình)."""
++    if not hasattr(subprocess, "STARTUPINFO"):      # không phải Windows
++        return 0
++    ten = str(os.environ.get("BQ_FFMPEG_PRIORITY", "normal")).strip().lower()
++    return _PRIORITY_CLASS.get(ten, _PRIORITY_CLASS["normal"])
++
++
+ _IDLE_PRIORITY = 0x00000040 if hasattr(subprocess, "STARTUPINFO") else 0
+ 
+ 
+@@ -83,9 +109,109 @@ def terminate_all_children() -> None:
+             pass
+ 
+ 
++# ================= CỬA CHỜ: SỐ LỆNH ffmpeg CHẠY CÙNG LÚC =================
++# VÌ SAO PHẢI CÓ (đo thật 07/08/2026, máy 24 nhân + RTX 3060, máy rảnh 10-14%):
++#   1 lượt xuất  -> 7,04s ·  22,33 CPU-giây ·  61 luồng (2,54x số nhân)
++#   10 lượt      -> 49,07s · 263,85 CPU-giây · 592 luồng (24,7x số nhân!)
++# 10 lượt tốn 263,85 CPU-giây, song song hoàn hảo chỉ cần 223,3 -> +18% CPU
++# ĐỐT VÔ ÍCH vì giành luồng. Máy "đơ khi xuất hàng loạt" là vì đây.
++#
++# VÌ SAO SIẾT NÚM LUỒNG KHÔNG ĐỦ (đo): 1 tiến trình ffmpeg + NVENC có SÀN ~36
++# luồng — siết `-threads`/`-filter_threads` hết cỡ cũng không xuống dưới (36
++# luồng ở ca `fct=2 + giải mã 2`). 10 tiến trình × 36 = 360 luồng vẫn 15x số
++# nhân. **Chỉ giảm SỐ TIẾN TRÌNH mới đạt mốc.**
++#
++# Cửa này ĐỘC LẬP với "số làn" user đặt: user đặt 10 làn thì hàng chờ vẫn nhận
++# 10 việc song song (tải/chép lời/AI vẫn chạy), nhưng chỉ N lệnh ffmpeg được
++# chạy cùng lúc, số còn lại ĐỢI TỚI LƯỢT tại đây.
++_GATE_COND = _threading.Condition()
++_GATE_DANG = 0                  # số lệnh ffmpeg ĐANG chạy (đang giữ chỗ)
++# SÀN LUỒNG đo được của 1 tiến trình ffmpeg — dùng để chia ngân sách "tổng
++# luồng <= 2x số nhân" thành SỐ TIẾN TRÌNH. nvenc nặng hơn vì kéo pool CUDA.
++_SAN_LUONG_NVENC = 40           # đo: 36 (pha 2 siết hết) .. 49 (pha 1)
++_SAN_LUONG_CPU = 30             # đo: 27 (libx264 giải mã 4 + encode 4)
++
++
++def so_ffmpeg_song_song() -> int:
++    """SỐ LỆNH ffmpeg được phép chạy CÙNG LÚC — TỰ ĐO THEO MÁY.
++
++    Ngân sách: tổng luồng ffmpeg <= 2x số nhân logic (mốc chốt 07/08/2026, thay
++    mốc 1,5x cũ vì SÀN luồng mỗi tiến trình làm nó bất khả thi). Chia ngân sách
++    đó cho SÀN luồng mỗi tiến trình -> ra số tiến trình:
++      - 24 nhân + NVENC -> (2*24)//40 = 1
++      - 64 nhân + NVENC -> 3
++      -  8 nhân, CPU    -> 1   (máy nhân viên yếu)
++    Trần 4: hơn nữa thì GPU/đĩa thành nút cổ chai chứ không nhanh thêm.
++
++    `BQ_FFMPEG_SLOTS` (biến môi trường) ép cứng con số — dùng để ĐO từng mức và
++    gỡ rối trên máy user mà không phải phát hành bản mới.
++    """
++    ep = os.environ.get("BQ_FFMPEG_SLOTS", "").strip()
++    if ep:
++        try:
++            return max(1, min(16, int(ep)))
++        except ValueError:
++            pass
++    if settings.ECO_MODE:
++        return 1               # "Tiết kiệm máy" = 1 lệnh ffmpeg, không hơn
++    cores = os.cpu_count() or 4
++    # KHÔNG gọi detect_encoder() ở đây: nó có thể spawn ffmpeg thử NVENC, mà
++    # hàm này chạy TRONG cửa chờ -> tự khoá mình. Chỉ đọc cache / ý user.
++    dung_gpu = (_ENCODER_CACHE == "h264_nvenc"
++                or settings.VIDEO_ENCODER == "nvenc")
++    san = _SAN_LUONG_NVENC if dung_gpu else _SAN_LUONG_CPU
++    return max(1, min(4, (2 * cores) // san))
++
++
++def _xin_cho_ffmpeg() -> bool:
++    """Giữ 1 chỗ trong cửa chờ. True = đã giữ (caller PHẢI trả chỗ ở finally).
++
++    Đợi theo NHỊP 0,25s chứ không chặn vô hạn, vì mỗi nhịp phải kiểm lại:
++      - job bị bấm Hủy -> ném CanceledError NGAY (đừng để bấm Hủy mà vẫn xếp
++        hàng đợi tới lượt rồi mới chạy);
++      - đang đóng app -> trả False và ĐI LUÔN (treo ở đây là treo bước thoát
++        app; caller đã tự chặn spawn bằng _SHUTDOWN);
++      - trần đã đổi (user bật "Tiết kiệm máy" giữa lượt) -> đọc lại mỗi nhịp.
++    """
++    global _GATE_DANG
++    while True:
++        if _SHUTDOWN.is_set():
++            return False
++        with _GATE_COND:
++            if _GATE_DANG < so_ffmpeg_song_song():
++                _GATE_DANG += 1
++                return True
++            _GATE_COND.wait(0.25)
++        _raise_if_job_canceled()
++
++
++def _tra_cho_ffmpeg() -> None:
++    global _GATE_DANG
++    with _GATE_COND:
++        _GATE_DANG = max(0, _GATE_DANG - 1)
++        _GATE_COND.notify()
++
++
++def dang_chay_ffmpeg() -> int:
++    """Số lệnh ffmpeg đang giữ chỗ (cho test/đo)."""
++    with _GATE_COND:
++        return _GATE_DANG
++
++
+ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int:
+-    """Chạy lệnh, đẩy stderr (ffmpeg log) qua callback nếu cần."""
++    """Chạy lệnh ffmpeg QUA CỬA CHỜ (xem so_ffmpeg_song_song)."""
+     _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
++    co_cho = _xin_cho_ffmpeg()
++    try:
++        return _run_khong_cho(cmd, on_line)
++    finally:
++        if co_cho:
++            _tra_cho_ffmpeg()
++
++
++def _run_khong_cho(cmd: list[str],
++                   on_line: Optional[Callable[[str], None]] = None) -> int:
++    """Thân cũ của `_run` — KHÔNG qua cửa chờ. Đừng gọi trực tiếp."""
+     proc = subprocess.Popen(
+         cmd,
+         stdout=subprocess.PIPE,
+@@ -93,7 +219,7 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None) -> int
+         universal_newlines=True,
+         encoding="utf-8",
+         errors="replace",
+-        creationflags=_CREATE_NO_WINDOW | _IDLE_PRIORITY,
++        creationflags=_CREATE_NO_WINDOW | _uu_tien_co(),
+     )
+     # register_proc: vào _ACTIVE_PROCS (dọn khi tắt app) + gắn vào JOB đang chạy
+     # (nút Hủy job kill NGAY tiến trình này thay vì đợi nó chạy xong).
+@@ -465,15 +591,110 @@ def _max_encode_jobs() -> int:
+     return 2
+ 
+ 
++# TRẦN LUỒNG MỖI LỆNH ffmpeg — ĐO 07/08/2026 (quét _do_quet_luong.py, cùng
++# lệnh dựng khung 60s, giải mã GPU, đan xen 2 vòng):
++#     luồng filter   1 ->  36,0 CPU-giây · 29,6s tường ·  30 luồng
++#                    2 ->  37,6           · 18,2       ·  34
++#                    4 ->  40,2           · 12,2       ·  42
++#                    8 ->  42,2           · 11,2       ·  58
++#                   16 ->  46,0           · 11,3       ·  90
++# Quá 4 là LỖ THUẦN: thêm luồng, thêm CPU, KHÔNG nhanh thêm (11,2 vs 12,2s).
++# Nên chặn trần 4. Nhiều làn cắt cùng lúc -> chia nhỏ tiếp (10 làn -> 1 luồng/
++# lệnh: mỗi clip lâu hơn nhưng TỔNG CPU thấp nhất và không vỡ bộ điều phối).
++_TRAN_LUONG = 4
++
++
+ def encode_threads() -> int:
+-    """Số luồng -threads cho MỖI ffmpeg encode = ngân_sách // số job song song.
+-    Tiết kiệm máy: chỉ 1 job nhưng cũng chỉ dùng ~1/2 ngân sách -> nhẹ hẳn."""
++    """Số luồng -threads cho MỖI ffmpeg ENCODE (libx264) = ngân_sách // số job
++    song song. GIỮ NGUYÊN công thức cũ: đây là khâu mã hoá của máy KHÔNG GPU,
++    chặn nó lại là máy nhân viên xuất chậm hẳn (trần 4 chỉ đúng cho khâu LỌC —
++    xem _luong_loc)."""
+     budget = _encode_budget()
+     if settings.ECO_MODE:
+         return max(1, budget // 2)
+     return max(1, budget // _max_encode_jobs())
+ 
+ 
++def _luong_loc() -> int:
++    """Số luồng cho khâu LỌC HÌNH + GIẢI MÃ (không phải mã hoá). Chặn trần
++    _TRAN_LUONG vì quá 4 là lỗ thuần (bảng đo ở trên). Đây là cách "nhường
++    máy" ĐÚNG — dùng ít nhân hơn — thay cho cách cũ là hạ ưu tiên tiến trình
++    (xem ghi chú ở _uu_tien_co)."""
++    return max(1, min(_TRAN_LUONG, encode_threads()))
++
++
++def _hwaccel_args(enc: str) -> list[str]:
++    """Tham số GIẢI MÃ BẰNG GPU (NVDEC) — đặt TRƯỚC `-i` mới có tác dụng.
++
++    ĐO 07/08/2026: lệnh dựng khung 60s 1080p -> 1080x1920 nền mờ + phụ đề,
++    giải mã CPU 49,8 CPU-giây · giải mã GPU 41,4 -> RẺ 17%. NVDEC là khối
++    silicon RIÊNG, không tranh với NVENC (đo: 12 phiên encode song song vẫn
++    chạy trên RTX 3060 driver 610.62).
++    CHỈ bật khi lượt này encode bằng h264_nvenc — đó là bằng chứng CUDA sống
++    trên máy này. Máy nhân viên không có NVIDIA -> encoder là libx264 ->
++    KHÔNG thêm cờ nào, hành vi y như cũ.
++    Đặt BQ_NO_HWDEC=1 để tắt (đối chứng / máy có driver dị).
++    """
++    if enc != "h264_nvenc" or os.environ.get("BQ_NO_HWDEC") == "1":
++        return []
++    return ["-hwaccel", "cuda"]
++
++
++def _dat_input_opts(cmd: list[str], enc: str, hwdec: bool = True) -> list[str]:
++    """Chèn tham số ĐẦU VÀO (giải mã GPU + trần luồng giải mã) cho INPUT VIDEO.
++
++    BẪY ĐÃ SẬP 07/08/2026 (đừng lặp): đặt `-threads` SAU `-i` là tham số của
++    ENCODER chứ không phải bộ giải mã — lần thử trước làm thời gian xuất tăng
++    61,2s -> 208,3s (chậm 3,4 lần) rồi phải revert. `-threads`/`-hwaccel` chỉ
++    đổi bộ GIẢI MÃ khi đứng TRƯỚC đúng cái `-i` mà nó áp vào.
++
++    CHỈ áp cho input ĐẦU TIÊN = video nguồn (chỗ duy nhất giải mã tốn CPU).
++    Các input sau là tiếng động .opus / nhạc / ảnh PNG / `-f lavfi` — rẻ, mà
++    thêm `-hwaccel` vào đó chỉ tổ khởi tạo CUDA thừa nhiều lần.
++
++    hwdec=False cho PHA TÁCH ĐOẠN: mỗi CONTEXT CUDA đẻ ~20 luồng, mà pha đó
++    chỉ giải mã 30 giây nên không bù lại được. ĐO 07/08/2026 (1 đoạn 30s):
++        `-threads 4`         49 luồng · 5,4 CPU-giây · 1,7s
++        thêm `-hwaccel cuda` 76 luồng · 6,8 CPU-giây · 2,8s   <-- lỗ mọi mặt
++    (Pha DỰNG KHUNG thì ngược lại: 60 giây hình + nền mờ nên NVDEC lãi rõ,
++    54 -> 32 luồng và rẻ hơn nhiều.)
++    """
++    if "-i" not in cmd:
++        return list(cmd)
++    i = cmd.index("-i")
++    them = (_hwaccel_args(enc) if hwdec else []) + ["-threads",
++                                                    str(_luong_loc())]
++    return cmd[:i] + them + cmd[i:]
++
++
++def decode_threads() -> int:
++    """Số luồng GIẢI MÃ — `-threads N` đặt **TRƯỚC `-i`** (đây là điểm khác biệt:
++    đặt SAU `-i` thì ffmpeg hiểu là luồng ENCODE).
++
++    CHỖ HỞ ĐÃ BỊT: trước đây KHÔNG chỗ nào đặt `-threads` trước `-i` -> giải mã
++    ăn mặc định `-threads 0` = ~17 luồng/lệnh, dư 12-14 luồng mỗi lệnh.
++
++    VÌ SAO CHỌN 4 (đo thật pha 1 `_build_seg`, video Nhật thật, lặp 3 lấy trung
++    vị, máy 24 nhân rảnh 6,6%) — pha 1 là bước DUY NHẤT không có filter nên nó
++    GIẢI-MÃ-BOUND, tức là chỗ duy nhất siết luồng CÓ THỂ làm chậm thật:
++        nvenc    không giới hạn : 0,76s · 1,89 CPU-giây · 61 luồng
++        nvenc    + giải mã 4    : 0,75s · 1,67 CPU-giây · 49 luồng  (wall 0,99x)
++        nvenc    + giải mã 2    : 0,78s · 1,50 CPU-giây · 47 luồng  (wall 1,03x)
++        nvenc    + giải mã 1    : 0,99s · 1,17 CPU-giây · 45 luồng  (wall 1,30x)
++        libx264  hiện tại       : 0,78s · 4,97 CPU-giây · 48 luồng
++        libx264  giải mã+enc 4  : 0,84s · 4,34 CPU-giây · 27 luồng  (wall 1,08x)
++        libx264  giải mã+enc 2  : 1,16s · 3,23 CPU-giây · 19 luồng  (wall 1,49x)
++        libx264  giải mã+enc 1  : 1,99s · 2,64 CPU-giây · 12 luồng  (wall 2,55x)
++    -> 4 là mức cuối cùng còn MIỄN PHÍ về thời gian. **1 thì chậm thật** (nvenc
++    +30%, libx264 +155%) — đừng hạ xuống 1 dù thấy luồng đẹp hơn.
++    ĐÍNH CHÍNH: kết luận cũ "chặn luồng làm chậm 3,4 lần (61,2s -> 208,3s)" là
++    NHIỄU — mốc 61,2s đo lúc app chạy 96,7% CPU; đo lại đúng cấu hình đó trên
++    máy rảnh ra 7,04s (phồng ~9 lần).
++    """
++    cores = os.cpu_count() or 4
++    return max(1, min(2 if settings.ECO_MODE else 4, cores))
++
++
+ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
+     """Tham số encode theo encoder + mức chất lượng."""
+     if encoder == "h264_nvenc":
+@@ -496,7 +717,7 @@ def _global_enc_opts() -> list[str]:
+     """Tùy chọn TOÀN CỤC đặt ngay sau 'ffmpeg -y' cho lệnh export dùng
+     -filter_complex: giới hạn luồng của filter graph (mặc định ffmpeg lấy HẾT
+     số nhân cho MỖI graph -> nhiều job song song đẻ hàng trăm thread)."""
+-    return ["-filter_complex_threads", str(encode_threads())]
++    return ["-filter_complex_threads", str(_luong_loc())]
+ 
+ 
+ # Font hỗ trợ (tên hiển thị -> file trong thư mục Fonts của Windows)
+@@ -1337,7 +1558,7 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
+             if info.has_audio:
+                 c += ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"]
+             c += [_p]
+-            return c
++            return _dat_input_opts(c, enc, hwdec=False)
+ 
+         if on_progress:
+             on_progress((i / max(1, n)) * 0.999)
+@@ -1815,7 +2036,7 @@ def export_canvas_clip(
+             cmd += ["-map", amap]
+         cmd += [*_enc_args(enc, "high"), "-c:a", "aac", "-b:a", "160k",
+                 "-movflags", "+faststart", str(dst)]
+-        return cmd
++        return _dat_input_opts(cmd, enc)
+ 
+     # ffmpeg log 'time=' là thời gian OUTPUT -> tổng thời lượng ra = total/vspeed
+     # (vspeed=speed/dub_stretch); dùng total gốc sẽ làm thanh % kẹt rồi nhảy vọt.

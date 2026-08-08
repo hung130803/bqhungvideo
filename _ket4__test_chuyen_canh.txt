@@ -1,0 +1,101 @@
+﻿  ✓ canh cổng: cấm mở cửa sổ ngoài (đã chặn 0 cú)
+==========================================================================
+CỔNG 36 — CHUYỂN CẢNH CHỖ GHÉP ĐOẠN (xfade) + CỬA CHỜ ffmpeg
+==========================================================================
+[ffmpeg] ffmpeg
+[nhân] 24 · encoder h264_nvenc · trần ffmpeg song song 3 · giải mã 4 luồng
+
+[CA 1] CỬA CHỜ: số lệnh ffmpeg chạy cùng lúc
+  [OK ] `_run` đi qua cửa chờ (quét tĩnh): có `_xin_cho_ffmpeg`
+  [OK ] trần tự đo theo máy nằm trong 1..4: 3 (nhân=24)
+  [OK ] BQ_FFMPEG_SLOTS ép được trần: 3 (đặt 3)
+  [OK ] 12 việc song song KHÔNG vượt trần: đỉnh 3/3 · wall 1.04s (12 việc × 0,25s / 3 chỗ ≈ 1,0s)
+  [OK ] hết việc thì trả hết chỗ: còn giữ 0 chỗ
+  [OK ] Tiết kiệm máy -> trần 1: 1
+  [OK ] Tiết kiệm máy -> giải mã 2 luồng: 2
+  [OK ] đóng app -> cửa chờ nhả ngay, không treo: trả False sau 0.0ms
+
+[CA 2] NÚM LUỒNG + LUẬT CHỌN KIỂU (hàm thuần)
+  [OK ] `-threads` (giải mã) có trong tuỳ chọn toàn cục: -filter_complex_threads 7 -filter_threads 7 -threads 4
+  [OK ] `-filter_threads` có trong tuỳ chọn toàn cục: -filter_complex_threads 7 -filter_threads 7 -threads 4
+  [OK ] giải mã KHÔNG bị hạ về 1 (đo: 1 luồng chậm 30-155%): decode_threads=4
+  [OK ] nhánh nvenc có núm `-threads`: -pix_fmt yuv420p -threads 7
+  [OK ] 58 kiểu xfade đều CÓ trong ffmpeg của bin/: 58 kiểu, thiếu: không
+  [OK ] loại chỗ nối suy đúng theo nội dung: ['nguoc', 'lien', 'xa']
+  [OK ] mức 'tat' -> KHÔNG chuyển cảnh (bất biến preset cũ): [] cho 'tat' và ''
+  [OK ] 1 đoạn -> KHÔNG chuyển cảnh: []
+  [OK ] mức 'nhe': không lặp MỘT kiểu ở mọi chỗ nối: ['fadeblack', 'fade', 'fade']
+  [OK ] mức 'nhe': thời lượng trong 0,25-0,40s: [0.25, 0.3, 0.25]
+  [OK ] mức 'nhe': kiểu đều CÓ THẬT (58 kiểu xfade hoặc kernel GPU): ['fadeblack', 'fade', 'fade']
+  [OK ] mức 'nhe': mọi kiểu GPU đều có đường LÙI về CPU: (mức này không dùng GPU)
+  [OK ] mức 'vua': không lặp MỘT kiểu ở mọi chỗ nối: ['fadeblack', 'smoothleft', 'fade']
+  [OK ] mức 'vua': thời lượng trong 0,25-0,40s: [0.25, 0.3, 0.3]
+  [OK ] mức 'vua': kiểu đều CÓ THẬT (58 kiểu xfade hoặc kernel GPU): ['fadeblack', 'smoothleft', 'fade']
+  [OK ] mức 'vua': mọi kiểu GPU đều có đường LÙI về CPU: (mức này không dùng GPU)
+  [OK ] mức 'manh': không lặp MỘT kiểu ở mọi chỗ nối: ['gl_giat_khoi', 'gl_gon_song', 'gl_troi_mem']
+  [OK ] mức 'manh': thời lượng trong 0,25-0,40s: [0.3, 0.35, 0.35]
+  [OK ] mức 'manh': kiểu đều CÓ THẬT (58 kiểu xfade hoặc kernel GPU): ['gl_giat_khoi', 'gl_gon_song', 'gl_troi_mem']
+  [OK ] mức 'manh': mọi kiểu GPU đều có đường LÙI về CPU: ['gl_giat_khoi->pixelize', 'gl_gon_song->dissolve', 'gl_troi_mem->smoothright']
+  [OK ] chọn kiểu TIỀN ĐỊNH (gọi 2 lần ra y nhau, không bốc thăm): [('fadeblack', 0.25), ('smoothleft', 0.3), ('fade', 0.3)]
+  [OK ] HẾT PHIM -> thu ngắn phần bù, không đòi phim không có: bù=[0.1, 0.3, 0.3] với phim dài 70,1s (đoạn 1 hết ở 70,0s)
+  [OK ] bù < 0,08s -> chỗ nối đó CẮT THẲNG (0.0), không xfade hỏng: [0.0, 0.3, 0.3]
+
+[CA 9] NHÓM GPU (xfade_opencl / libplacebo): fallback ÊM + 2 phanh
+  [OK ] `VE_LAI_MOC` có `setpts=` (chống PTS rác -> 0 khung): hwdownload,format=yuv420p,setpts=N/FR/TB
+  [OK ] `VE_LAI_MOC` KHÔNG có `fps=` (chống sinh khung vô tận / 19 GB RAM): hwdownload,format=yuv420p,setpts=N/FR/TB
+  [OK ] `dau_vao()` có `settb=` (chống chuyển cảnh xong trong 1 khung): format=yuv420p,setsar=1,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709,fps=30,settb=1/30
+  [OK ] kiểu GPU lạ -> ném lỗi: ValueError: kiểu chuyển cảnh GPU không có trong kho: 'khong_co_kieu_nay'
+  [OK ] máy THIẾU kernel -> `dung_duoc()` = [] (tự tắt, không nổ): trả []
+  [OK ] ffmpeg HỎNG -> `co_opencl()`/`co_libplacebo()` = False, không nổ: cả hai False
+  [OK ] render thật `gl_crosswarp` ra ĐÚNG 9 khung (không 0, không vô tận): rc=0 · 9 khung (kỳ vọng 9)
+
+[nguồn] 「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4
+
+[CA 3/4] RENDER THẬT — hookfirst2 (2 đoạn, mức 'vua')
+  [OK ] hookfirst2: xuất được bản TẮT chuyển cảnh: wall 4.68s
+  [OK ] hookfirst2: xuất được bản CÓ chuyển cảnh ['fadeblack']: wall 5.54s (+0.86s cho pha 1.5)
+  [OK ] hookfirst2: ĐỘ DÀI không đổi (xfade không ăn bớt thời lượng): tắt 20.000s · bật 20.000s · lệch 0ms (nếu KHÔNG bù sẽ hụt 250ms)
+  [OK ] hookfirst2: CHUYỂN CẢNH CÓ XẢY RA ở chỗ nối 1 (đếm pixel): 82.82% pixel khác bản cắt thẳng tại mốc 10.12s (cần >= 8%)
+  [OK ] hookfirst2: 'fadeblack' làm TỐI thật ở giữa vệt: sáng TB bật 14.8 vs tắt 81.8
+  [OK ] hookfirst2: LỆCH HÌNH sau chỗ nối cuối < 80ms: -33.3ms (khớp còn 0.0% khác) ở mốc 19.00s · không bù thì phải lệch 250ms
+  [OK ] hookfirst2: LỆCH TIẾNG sau chỗ nối cuối < 80ms: 0.0ms (tương quan chéo sóng 8kHz)
+
+[CA 3/4] RENDER THẬT — baDoan (3 đoạn, mức 'manh')
+  [OK ] baDoan: xuất được bản TẮT chuyển cảnh: wall 5.91s
+  [OK ] baDoan: xuất được bản CÓ chuyển cảnh ['gl_giat_khoi', 'gl_quat_quay']: wall 10.26s (+4.35s cho pha 1.5)
+  [OK ] baDoan: ĐỘ DÀI không đổi (xfade không ăn bớt thời lượng): tắt 22.000s · bật 22.000s · lệch 0ms (nếu KHÔNG bù sẽ hụt 650ms)
+  [OK ] baDoan: CHUYỂN CẢNH CÓ XẢY RA ở chỗ nối 1 (đếm pixel): 19.72% pixel khác bản cắt thẳng tại mốc 8.15s (cần >= 8%)
+  [OK ] baDoan: LỆCH HÌNH sau chỗ nối cuối < 80ms: -33.3ms (khớp còn 0.0% khác) ở mốc 21.00s · không bù thì phải lệch 650ms
+  [OK ] baDoan: LỆCH TIẾNG sau chỗ nối cuối < 80ms: 0.0ms (tương quan chéo sóng 8kHz)
+
+[CA 5] LỆCH PHỤ ĐỀ — chữ phải hiện ĐÚNG mốc dù có chuyển cảnh
+  [OK ] xuất được clip có phụ đề (cả bản TẮT và bản CÓ chuyển cảnh): ok
+  [OK ] chữ HIỆN tại đúng mốc (bản có chuyển cảnh): 75022 px trắng ở 21.00s vs 5542 px ở 20.20s (cần gấp > 4 lần)
+  [OK ] PHỤ ĐỀ KHÔNG LỆCH: bản có chuyển cảnh khớp bản TẮT ở CÙNG mốc: tại mốc: bật 75022 / tắt 75045 · trước mốc: bật 5542 / tắt 5621 · nếu lệch thì chữ đã nhảy sớm 550ms và 2 số ở CÙNG mốc phải chênh hẳn
+
+[CA 6] NGUỒN VFR (khung hình không đều) + hook-first
+  [OK ] dựng được nguồn VFR để thử: rc=0 
+    [VFR] dài 60.02s · 30/1,30/1,709
+  [OK ] VFR: xuất được cả 2 bản:  
+  [OK ] VFR: độ dài không đổi: tắt 20.000s · bật 19.967s
+  [OK ] VFR: LỆCH HÌNH < 80ms: -33.3ms (khớp 0.0% khác)
+  [OK ] VFR: LỆCH TIẾNG < 80ms: -34.0ms
+
+[CA 7] KIỂU xfade SAI phải FAIL TO + KHÔNG BỎ LẠI RÁC
+[hieu-ung] chuyển cảnh 2n-1 hỏng (ffmpeg không chuyển cảnh CPU kieu_khong_ton_tai (1/1). Log cuối:
+[fc#0 @ 000002acd8d88640] Error applying option 'transition' to filter 'xfade': Not yet implemented in FFmpeg, patches welcome
+Error : Not yet implemented in FFmpeg, patches welcome
+  libswresample   6.  2.100 /  6.  2.100
+[Parsed_xfade_6 @ 000002acd8d8e040] const_values array too small for transition) -> lùi nối cả clip
+  [OK ] kiểu lạ -> ném lỗi, KHÔNG trả file êm: RuntimeError: ffmpeg không nối 2 đoạn có chuyển cảnh. Log cuối:
+[fc#0 @ 0000027fce5be200] Error applying option 'transition' to filter 'xfade': Not yet implemen
+  [OK ] kiểu lạ -> KHÔNG để lại file thành phẩm hỏng: không có file
+  [OK ] xuất LỖI vẫn dọn hết mảnh `_seg_*` (không phình %TEMP%): 0 file sót
+
+[CA 8] BẤT BIẾN: chuyển cảnh TẮT == bản `main` (PSNR >= 50 dB)
+  [OK ] bản `main` KHÁC nhánh này (đối chứng hợp lệ): main 83591 ký tự · nhánh 127408 ký tự
+  [OK ] độ dài giống main: main 20.000s · nhánh 20.000s
+  [OK ] PSNR >= 50 dB ở mọi mốc kiểm (preset cũ KHÔNG bị đổi hình): PSNR các mốc = [99.0, 99.0, 99.0, 99.0, 99.0] dB (thấp nhất 99.0)
+
+==========================================================================
+KẾT QUẢ: 65 OK · 0 FAIL

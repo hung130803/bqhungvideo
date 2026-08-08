@@ -1,0 +1,34 @@
+﻿
+=== 1. Lưới quét ĐÚNG video bị bỏ sót ===
+  OK  1a video CÓ clip mà không job nào -> ĐƯỢC xuất tiếp
+  OK  1b video bị 'Xóa lịch sử' job -> ĐƯỢC xuất (không phân tích lại)
+  OK  1c đúng 2 video được xuất - n=2 · [1, 2]
+
+=== 2. HUỶ VẪN LÀ HUỶ + không xen ngang việc đang chạy ===
+  OK  2a video user ĐÃ HUỶ xuất -> TUYỆT ĐỐI không tự xuất lại (bất biến cổng 7)
+  OK  2b đang có job xuất chạy -> không xen ngang
+  OK  2c đang phân tích -> chưa tới lượt xuất
+  OK  2d clip đã xuất rồi -> không xuất lại
+  OK  2e video KHÔNG thuộc dây chuyền -> lưới không đụng (tránh xuất bừa)
+
+=== 3. Chạy lại lưới KHÔNG được xuất trùng ===
+  OK  3a lượt sau: đã có job xuất -> lưới im, không xuất trùng - n=0
+
+=== 4. Đang có sổ dõi trong bộ nhớ -> lưới không đụng ===
+  OK  4a video đang được sổ RAM dõi -> lưới bỏ qua
+
+=== 5. Có báo cho user biết (không âm thầm) ===
+  OK  5a ghi 1 dòng nhật ký nêu rõ lý do - 🛟 LƯỚI AN TOÀN: 1 video đã phân tích xong nhưng không ai xuất (do app tắt đột ngột / xoá lịch sử job) — đã cho
+
+=== 6. DB lỗi / bảng thiếu -> không được sập ===
+  OK  6a thiếu bảng -> trả 0, không nổ - n=0
+
+=== 7. Được móc vào nhịp poll (nếu không thì vô dụng) ===
+  OK  7a có lời gọi trong nhịp poll (trước cả định nghĩa hàm)
+  OK  7b quét mỗi ~60 giây
+  OK  7c vẫn giữ việc gấp sổ tạm WAL cùng nhịp
+
+==============================================================
+ĐẠT 15 · SAI 0
+CỔNG 32 ĐẠT — không còn video nằm im sau khi app tắt đột ngột
+

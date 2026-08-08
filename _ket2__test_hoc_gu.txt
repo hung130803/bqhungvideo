@@ -1,0 +1,49 @@
+﻿
+=== 1. khối prompt: CHƯA có đánh giá -> KHÔNG đổi prompt ===
+  ✅ 1a gu rỗng -> chuỗi rỗng
+  ✅ 1b 2 danh sách rỗng -> chuỗi rỗng
+  ✅ 1c đầu vào rác -> chuỗi rỗng, không nổ
+
+=== 2. khối prompt: có đánh giá -> nêu ĐÚNG 2 phía ===
+  ✅ 2a nêu ví dụ THÍCH
+  ✅ 2b nêu ví dụ KHÔNG THÍCH
+  ✅ 2c nêu độ dài + số đoạn (AI bắt chước được)
+  ✅ 2d khối bị chặn trần độ dài (prompt chọn đoạn đã sát 413) — 392 ký tự
+  ✅ 2e 20 ví dụ dài -> vẫn không phình prompt — 900 ký tự
+
+=== 3. ghi/đọc gu trên DB THẬT ===
+  ✅ 3a đọc lại đúng 1 / -1
+  ✅ 3b clip chưa đánh giá -> 0
+  ✅ 3c kênh A có đúng 1 thích + 1 không — {'thich': [{'title': 'Cãi nhau to ở cửa hàng', 'thoai': 'You lied to my face, I heard the whole thing', 'dai': 72.0, 'n_seg': 2}], 'khong': [{'title': 'Chào kênh kêu đăng ký', 'thoai': 'You lied to my face, I heard the whole thing', 'dai': 40.0, 'n_seg': 1}]}
+  ✅ 3d lưu đúng số đoạn + độ dài từ clip thật — n_seg=2 dai=72.0
+
+=== 4. KHÔNG rò gu giữa các kênh (300 kênh dùng chung app) ===
+  ✅ 4a kênh B KHÔNG thấy gu của kênh A — {'thich': [], 'khong': []}
+  ✅ 4b kênh B -> prompt y hệt cũ
+  ✅ 4c đánh giá ở kênh B không cộng dồn vào kênh A
+
+=== 5. bấm lại -> GHI ĐÈ, không nhân bản ===
+  ✅ 5a đổi Hay -> Nhạt
+  ✅ 5b vẫn chỉ 1 dòng cho clip đó (không nhân bản) — 1 dòng
+  ✅ 5c bấm lại nút đang chọn -> BỎ đánh giá
+
+=== 6. clip bị XOÁ -> bài học vẫn còn ===
+  ✅ 6a xoá clip rồi vẫn giữ bài học (lưu tóm tắt, không lưu id) — {'thich': [], 'khong': [{'title': 'Chào kênh kêu đăng ký', 'thoai': 'You lied to my face, I heard the whole thing', 'dai': 40.0, 'n_seg': 1}]}
+  ✅ 6b clip không tồn tại -> bỏ qua êm
+
+=== 7. NỐI VÀO PROMPT chọn đoạn (đường thật của m1) ===
+  ✅ 7a m1 có gọi khối gu
+  ✅ 7b m1 lấy gu THEO KÊNH của video
+  ✅ 7c 2 nút dạy gu nằm TRONG hộp 'Xem & sửa' (đúng lúc vừa xem clip)
+  ✅ 7c2 thẻ clip KHÔNG còn 2 nút đó nữa (hàng nút gọn lại)
+  ✅ 7d nhãn nút KHÔNG dùng emoji dễ thiếu font (máy anh Hùng ra ô đen) — []
+
+=== 8. UI THẬT: bấm nút Hay trên thẻ clip ===
+  ✅ 8a bấm Hay -> ghi được gu
+  ✅ 8b báo cho user biết đã dạy + đang có bao nhiêu ví dụ — Đã dạy AI: đoạn này HAY. Kênh này đang có 2 ví dụ — lần cắt sau AI dùng làm mẫu.
+  ✅ 8c bấm lại -> bỏ đánh giá + báo rõ
+
+============================================================
+ĐẠT 28 · SAI 0
+✅ CỔNG 27 ĐẠT — AI học gu chủ kênh, không rò giữa kênh
+

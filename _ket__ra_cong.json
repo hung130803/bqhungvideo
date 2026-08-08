@@ -1,0 +1,193 @@
+{
+ "cong": [
+  {
+   "ten": "24 AI nghe + xem + trọng tài chấm mù",
+   "file": "_test_chon_doan.py",
+   "rc": 0,
+   "giay": 1.1,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — AI nghe/xem đúng, trọng tài không bao giờ làm vỡ lượ"
+  },
+  {
+   "ten": "25 tiếng động theo chỗ nối + tên mẫu",
+   "file": "_test_tieng_va_mau.py",
+   "rc": 0,
+   "giay": 0.7,
+   "dat": true,
+   "tom": "✅ CỔNG 25 ĐẠT — tiếng động theo nội dung chỗ nối + tên mẫu thật"
+  },
+  {
+   "ten": "28 LIÊN THÔNG (2 bản vá đúng -> sai)",
+   "file": "_test_lien_thong.py",
+   "rc": 0,
+   "giay": 5.6,
+   "dat": true,
+   "tom": "✅ CỔNG 28 ĐẠT — các luồng khớp nhau, 413 không treo/không đốt key"
+  },
+  {
+   "ten": "2  smoke toàn app (66 nút)",
+   "file": "_test_app_smoke.py",
+   "rc": 0,
+   "giay": 1.2,
+   "dat": true,
+   "tom": "✅ KHÔNG LỖI: mọi trang, mọi nút, mọi hộp thoại, 40 nhịp poll"
+  },
+  {
+   "ten": "3  mọi hộp thoại dây chuyền",
+   "file": "_test_pipe_dialogs.py",
+   "rc": 0,
+   "giay": 0.8,
+   "dat": true,
+   "tom": "✅ MỌI HỘP THOẠI + NÚT MỞ ĐƯỢC, KHÔNG LỖI"
+  },
+  {
+   "ten": "36 CHUYỂN CẢNH xfade + cửa chờ",
+   "file": "_test_chuyen_canh.py",
+   "rc": 0,
+   "giay": 82.8,
+   "dat": true,
+   "tom": "KẾT QUẢ: 64 OK · 0 FAIL"
+  },
+  {
+   "ten": "38 HIỆU ỨNG điểm nhấn + AI chọn",
+   "file": "_test_hieu_ung_ai.py",
+   "rc": 0,
+   "giay": 140.5,
+   "dat": true,
+   "tom": "CỔNG 38 ĐẠT — 5 lỗi đã bịt, AI chọn thông minh giữ đủ bất biến, nhóm GPU n"
+  },
+  {
+   "ten": "40 ĐA QUỐC GIA (Nhật/Hàn/Anh/Việt)",
+   "file": "_test_da_quoc_gia.py",
+   "rc": 0,
+   "giay": 326.9,
+   "dat": true,
+   "tom": "arab            THIẾU       THIẾU        ĐẠT         THIẾU          ĐẠT"
+  },
+  {
+   "ten": "5  làn cắt không bị bỏ đói",
+   "file": "_test_lane_starve.py",
+   "rc": 0,
+   "giay": 0.1,
+   "dat": true,
+   "tom": "✅ TẤT CẢ ĐẠT — làn cắt không bao giờ bị bỏ đói"
+  },
+  {
+   "ten": "6  luồng nền không làm sập app",
+   "file": "_test_shutdown_safety.py",
+   "rc": 0,
+   "giay": 0.6,
+   "dat": true,
+   "tom": ""
+  },
+  {
+   "ten": "7  HUỶ là HUỶ (không tự chạy lại)",
+   "file": "_test_cancel_persist.py",
+   "rc": 0,
+   "giay": 2.5,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — huỷ là huỷ, tắt app mở lại không tự chạy"
+  },
+  {
+   "ten": "8  video 'Cắt cơ bản' phải thử lại AI",
+   "file": "_test_ai_gate.py",
+   "rc": 0,
+   "giay": 1.7,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — nhìn được video nào qua AI, video nào không"
+  },
+  {
+   "ten": "14 mượt + không đứng im",
+   "file": "_test_ui_smooth.py",
+   "rc": 0,
+   "giay": 1.1,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — dialog mở vẫn chạy, danh sách không nhấp nháy"
+  },
+  {
+   "ten": "17 test không đụng máy user",
+   "file": "_test_no_popup.py",
+   "rc": 0,
+   "giay": 2.1,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — test không mở cửa sổ nào trên máy user (chặn 5 cú), "
+  },
+  {
+   "ten": "17b guard tự kiểm",
+   "file": "_test_guard.py",
+   "rc": 0,
+   "giay": 0.1,
+   "dat": true,
+   "tom": ""
+  },
+  {
+   "ten": "18 tự dọn rác đĩa + gấp WAL",
+   "file": "_test_don_rac.py",
+   "rc": 0,
+   "giay": 0.2,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — app tự dọn rác đúng thứ của mình, gấp WAL khi thoát"
+  },
+  {
+   "ten": "23 kho tiếng động kêu đúng mốc",
+   "file": "_test_sfx_kho.py",
+   "rc": 0,
+   "giay": 9.4,
+   "dat": true,
+   "tom": "KẾT QUẢ: TẤT CẢ ĐẠT — kho 184 file / 328 KB, tiếng động kêu thật đúng mốc"
+  },
+  {
+   "ten": "34 mốc ngoài phim",
+   "file": "_test_moc_ngoai_phim.py",
+   "rc": 0,
+   "giay": 1.4,
+   "dat": true,
+   "tom": "CỔNG 34 ĐẠT — mốc ngoài phim: kẹp lại được thì xuất, không thì báo rõ"
+  },
+  {
+   "ten": "35 vá lỗ phụ đề",
+   "file": "_test_va_lo_sub.py",
+   "rc": 0,
+   "giay": 0.5,
+   "dat": true,
+   "tom": "CỔNG 35 ĐẠT — vá lỗ lấy lại chữ sót, không phá bản chép lời đang tốt"
+  },
+  {
+   "ten": "30 chạy hàng trăm kênh phải mượt",
+   "file": "_test_muot_tram_kenh.py",
+   "rc": 0,
+   "giay": 0.8,
+   "dat": true,
+   "tom": "✅ CỔNG 30 ĐẠT — chạy hàng trăm kênh, giao diện còn trong ngân sách"
+  },
+  {
+   "ten": "37 CA BIÊN đường xuất (máy nhân viên)",
+   "file": "_test_ca_bien_xuat.py",
+   "rc": 0,
+   "giay": 17.0,
+   "dat": true,
+   "tom": "KẾT QUẢ: 40 OK · 0 FAIL"
+  },
+  {
+   "ten": "39 BẢN ĐÓNG GÓI đủ tài nguyên",
+   "file": "_test_dong_goi.py",
+   "rc": 0,
+   "giay": 0.1,
+   "dat": true,
+   "tom": "ĐẠT 12 · FAIL 0"
+  },
+  {
+   "ten": "-- chồng lượt / hồi phục dây chuyền",
+   "file": "_test_pipe_overlap.py",
+   "rc": 0,
+   "giay": 13.8,
+   "dat": true,
+   "tom": "✅ TẤT CẢ ĐẠT"
+  }
+ ],
+ "dat": 23,
+ "tong": 23,
+ "rac_truoc_mb": 0.5,
+ "rac_sau_mb": 1.0,
+ "python": "D:\\claude\\ai-content-studio\\.venv\\Scripts\\python.exe"
+}

@@ -1,0 +1,108 @@
+{
+ "luong_dinh": 374,
+ "luong_tb": 227.8819538670285,
+ "luong_dinh_theo_pha": {
+  "probe": 4,
+  "tach_doan": 303,
+  "dung_khung": 374
+ },
+ "luong_dinh_1_proc": {
+  "probe": 4,
+  "tach_doan": 32,
+  "dung_khung": 43
+ },
+ "cpu_giay_theo_pha": {
+  "probe": 0.1,
+  "tach_doan": 219.8,
+  "dung_khung": 694.6
+ },
+ "cpu_giay_tong": 914.5,
+ "n_proc": 32,
+ "enc_dem": {
+  "h264_nvenc": 30,
+  "libx264": 0
+ },
+ "n_hwdec": 0,
+ "tre_tb": 8.9,
+ "tre_dinh": 92.7,
+ "tre_p95": 28.2,
+ "cpu_he_tb": 46.5,
+ "cpu_he_dinh": 68.5,
+ "nvenc_tb": 70.8,
+ "nvenc_dinh": 100.0,
+ "nhan": "cu10",
+ "lanes": 10,
+ "n_seg": 2,
+ "do_dai": 60.0,
+ "tuong_giay": 147.4,
+ "luot": [
+  {
+   "lane": 2,
+   "giay": 97.7,
+   "kb": 97626,
+   "loi": ""
+  },
+  {
+   "lane": 1,
+   "giay": 105.0,
+   "kb": 66846,
+   "loi": ""
+  },
+  {
+   "lane": 0,
+   "giay": 105.4,
+   "kb": 63176,
+   "loi": ""
+  },
+  {
+   "lane": 7,
+   "giay": 104.6,
+   "kb": 52284,
+   "loi": ""
+  },
+  {
+   "lane": 8,
+   "giay": 106.5,
+   "kb": 95120,
+   "loi": ""
+  },
+  {
+   "lane": 3,
+   "giay": 109.1,
+   "kb": 18182,
+   "loi": ""
+  },
+  {
+   "lane": 4,
+   "giay": 120.7,
+   "kb": 70750,
+   "loi": ""
+  },
+  {
+   "lane": 6,
+   "giay": 121.0,
+   "kb": 89996,
+   "loi": ""
+  },
+  {
+   "lane": 5,
+   "giay": 146.4,
+   "kb": 175151,
+   "loi": ""
+  },
+  {
+   "lane": 9,
+   "giay": 146.0,
+   "kb": 234685,
+   "loi": ""
+  }
+ ],
+ "nhan_hieu": {
+  "w": 1920,
+  "h": 1080,
+  "fps": 30.0,
+  "codec": "h264",
+  "co_tieng": true,
+  "dur": 611.660045
+ }
+}

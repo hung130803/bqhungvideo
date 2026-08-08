@@ -1,0 +1,77 @@
+﻿  ✓ dọn rác test cũ: 3 thư mục / 371.9 MB ở %TEMP%
+[nguồn] 3 video Nhật thật · encoder h264_nvenc
+    【カルマ降臨】YouTubeから消えた男カルマと鳥貴族で1位から10位当てるまで帰れ10！！！.mp4
+    「実録」不倫ハシゴ中に現場突撃！不倫相手全員集合！.mp4
+    大量のもやしで無限もやしを作る.mp4
+[frei0r] True · kho 25 · dùng được 25
+
+== A1. zoompan + fps luồng vào (nền Đen/Trắng) ==
+  [OK ] nền black + zoom_nhoi giữ đúng độ dài: 2.000s (mong đợi 2,000 ±0,05)
+  [OK ] nền white + zoom_nhoi giữ đúng độ dài: 2.000s (mong đợi 2,000 ±0,05)
+  [OK ] nền blur + zoom_nhoi giữ đúng độ dài: 2.000s (mong đợi 2,000 ±0,05)
+  [OK ] nền fill + zoom_nhoi giữ đúng độ dài: 2.000s (mong đợi 2,000 ±0,05)
+
+== A2. hiệu ứng chỉ ở TRONG cửa sổ (đo rawvideo, KHÔNG encoder) ==
+  [OK ] 25 hiệu ứng KHÔNG rò ra ngoài cửa sổ: |dU|,|dV| < 1,0 và < 3% pixel Y ở khung ngoài — tất cả
+  [OK ] 25 hiệu ứng THẤY ĐƯỢC trong cửa sổ: đạt ngưỡng % pixel Y đổi của từng kiểu
+
+== A3. tăng tốc: điểm nhấn phải NẰM TRONG clip và THẤY ĐƯỢC ==
+  [OK ] speed 1.25: AI chọn được ít nhất 1 điểm: 3 điểm trên clip ra 24.04s
+  [OK ] speed 1.25: mọi điểm nằm trong clip 24.04s: 3 điểm, điểm cuối 10.35s
+  [OK ] speed 1.25: hiệu ứng THẬT SỰ hiện trên khung ra: 3/3 điểm đổi > 2% pixel · xao_dong đỉnh 71.4%@0.27s · vien_net đỉnh 98.2%@7.17s · glitch_khoi đỉnh 52.3%@10.31s
+  [OK ] speed 0.8: AI chọn được ít nhất 1 điểm: 3 điểm trên clip ra 37.54s
+  [OK ] speed 0.8: mọi điểm nằm trong clip 37.54s: 3 điểm, điểm cuối 30.30s
+  [OK ] speed 0.8: hiệu ứng THẬT SỰ hiện trên khung ra: 3/3 điểm đổi > 2% pixel · vien_net đỉnh 97.3%@3.04s · glitch_khoi đỉnh 55.7%@15.31s · xao_dong đỉnh 72.0%@30.09s
+
+== A4. đếm ngược 3-2-1 — số '1' phải hiện ==
+  [OK ] cửa sổ 3 chữ số luôn khác rỗng ở mọi vspeed: 0,7 / 1,0 / 1,5 đều đủ 3 số
+  [OK ] render thật: cả 3 số đều vẽ ra pixel: số 3 @1.10s = 23019 px · số 2 @1.37s = 22298 px · số 1 @1.65s = 12560 px
+
+== A5. thiếu font -> không được khoe hiệu ứng không tồn tại ==
+  [OK ] dung_duoc(co_font=False) không bao giờ lọt hiệu ứng cần font: kho có 1 kiểu cần font (['dem_nguoc']); chọn ra ['mo_net', 'o_vuong', 'toi_vien']
+  [OK ] loc_theo_font khớp đúng số filter chuoi_filter dựng ra: log 2 -> 1 mục; chuỗi có drawtext: False
+
+== B. bất biến của AI chọn ==
+  [OK ] TIỀN ĐỊNH: cùng input ra cùng output (3 lượt): ['lech_bang', 'mo_net', 'o_vuong']
+  [OK ] KHÔNG lặp một kiểu trong cùng 1 clip: 9 clip thật, 0 lần lặp
+  [OK ] KHÔNG đặt hiệu ứng ĐỘNG vào cảnh TĨNH: cảnh 'tinh' chỉ nhận nhóm mood (quầng sáng/hạt phim/tối viền)
+  [OK ] tỉ lệ giây có hiệu ứng <= 10% thời lượng: 9 clip: 2.2%–6.2% (trung vị 3.6%)
+  [OK ] năng lượng PHẲNG -> KHÔNG thêm gì: 0 điểm (dải động tiếng 1.00 · hình 1.00 < ngưỡng 1.35)
+  [OK ] PHẲNG nhưng CÓ chỗ nối -> chỉ nhấn ĐÚNG chỗ nối: ['mo_net@15.0']
+  [OK ] mỗi điểm có LÝ DO KÈM SỐ (cấm 'cảnh hay'): giây 12,0 · Glitch khối · cảnh động mạnh — RMS 0,18 = 1,2x trung vị; động 10,0/10 = 1,9x trung vị || giây 24,0 · Viền sáng nét · cảnh động mạnh — RMS 0,18 = 1,2x trung vị; động 9,8/10 = 1,8x trung vị || giây 31,0 · Xáo dòng ngang · cảnh động mạnh — RMS 0,20 = 1,3x trung vị; động 10,0/10 = 1,9x trung vị
+  [OK ] lý do KHÔNG ra tỉ lệ vô nghĩa — ca «>50% giây im lặng»: giây 0,0 · Dòng quét màn hình · đang kể đều — RMS 0,00 = nền ~0; động 0,2/10 = 1,0x trung vị || giây 16,0 · Ô vuông vỡ · cảnh động mạnh — RMS 0,05 = n
+  [OK ] lý do KHÔNG ra tỉ lệ vô nghĩa — ca «video KHÔNG TIẾNG»: giây 0,0 · Nhiễu băng analog · đang kể đều — RMS 0,00 = nền ~0; động 0,2/10 = 1,0x trung vị || giây 14,0 · Glitch khối · cảnh động mạnh — RMS 0,00 = n
+  [OK ] lý do KHÔNG ra tỉ lệ vô nghĩa — ca «hình ĐỨNG IM hơn nửa clip»: giây 0,0 · Sáng dịu vùng chói · cảnh tĩnh — RMS 0,02 = 1,0x trung vị; động 0,0/10 = nền ~0 || giây 16,0 · Zoom nhồi (giật vào) · cao trào (tiếng vọt l
+
+== C. hiệu ứng TẮT = đường cũ y nguyên ==
+  [OK ] mức '' -> 0 hiệu ứng: 0 điểm
+  [OK ] mức 'tat' -> 0 hiệu ứng: 0 điểm
+  [OK ] mức None -> 0 hiệu ứng: 0 điểm
+  [OK ] chuoi_filter([]) trả chuỗi rỗng: ''
+  [OK ] 'tat' và '' ra file giống hệt nhau: [Parsed_psnr_0 @ 000001634d084ec0] PSNR y:inf u:inf v:inf average:inf min:inf max:inf
+
+== E. 21 chuyển cảnh GPU + fallback êm ==
+  [OK ] máy này dùng được nhóm GPU: 21/21 kernel · OpenCL True · libplacebo/Vulkan True · shader 6
+  [OK ] mức 'manh' dùng kernel GPU, 'vua'/'nhe' giữ nguyên CPU: manh ['gl_giat_khoi', 'gl_quat_quay'] · vua ['fadeblack', 'smoothright']
+  [OK ] cùng 1 clip KHÔNG lặp một kernel GPU ở mọi chỗ nối: ['gl_giat_khoi', 'gl_quat_quay']
+  [OK ] GPU 3 đoạn: độ dài lệch < 40 ms: 17.000s vs 17.000s (lệch 0 ms)
+  [OK ] GPU 4 đoạn: độ dài lệch < 40 ms: 16.000s vs 16.000s (lệch 0 ms)
+  [OK ] chuyển cảnh GPU CÓ xảy ra ở chỗ nối (không phải cắt khô): 18.4% pixel khác bản cắt thẳng ở giây 8.15
+  [OK ] thiếu OpenCL -> tự đổi sang kiểu CPU, vẫn xuất đúng: kiểu ['slideleft', 'horzclose'] · độ dài 17.000s
+  [OK ] kernel GPU hỏng -> lùi về CPU, clip vẫn đúng: độ dài 17.000s
+  [OK ] không để lại rác _seg_* sau cả 5 ca GPU: trước 0 · sau 0
+
+== D. nối vào app (chạy ở tiến trình RIÊNG — Qt + OpenCL đá nhau) ==
+  [OK ] Chỉnh mẫu có ô 'Hiệu ứng điểm nhấn' đủ 4 mức: ['tat', 'nhe', 'vua', 'manh']
+  [OK ] mặc định là 'nhe' (BẬT mức nhẹ): 'nhe' · nhãn 'Nhẹ (mặc định — 1-2 điểm, rất kín)'
+  [OK ] nhãn KHÔNG dùng emoji dễ thiếu font: ['Tắt (không hiệu ứng)', 'Nhẹ (mặc định — 1-2 điểm, rất kín)', 'Vừa (tối đa 3 điểm, đậm hơn)', 'Mạnh (thấy rõ nhất)']
+  [OK ] mẫu CŨ thiếu khoá -> 'nhe'; mẫu có khoá -> đúng khoá: cũ 'nhe' · có khoá 'manh'
+  [OK ] Lưu mẫu ghi được khoá 'hieu_ung': 'manh'
+  [OK ] studio_page truyền hieu_ung TỪ MẪU vào enqueue_export: cửa duy nhất `_export_video` đặt layout_tpl -> bấm tay / xuất cả kênh / dây chuyền đều ăn đúng mẫu kênh (cổng 19)
+  [OK ] services.enqueue_export có tham số + đưa vào payload + vào sig: đổi mức -> sig đổi -> KHÔNG bị smart-skip
+  [OK ] m1_highlight truyền payload['hieu_ung'] xuống export_canvas_clip: kèm hieu_ung_log để nhật ký ghi LÝ DO KÈM SỐ
+  [OK ] mức khác nhau -> sig dedup khác nhau: ['80cd90197bcf', 'e22874b7b7e9', 'e277e8ee5dcd', '4f69113db76a']
+
+==============================================================
+ĐẠT 49 · SAI 0
+CỔNG 38 ĐẠT — 5 lỗi đã bịt, AI chọn thông minh giữ đủ bất biến, nhóm GPU nối được + lùi êm

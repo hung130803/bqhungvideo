@@ -2754,8 +2754,23 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
     if payload.get("bgm_path"):
         hieu_ung.append("nhạc nền")
     hieu_ung.append(f"nền {bg}")
+    # LỚP CHỮ (hộp tiêu đề + huy hiệu Part) — phải ghi ra, vì đây đúng thứ đã
+    # âm thầm biến mất khỏi file xuất (anh Hùng 08/08/2026: "tôi có cái phần
+    # tiêu đề đỏ part các kiểu kia mà xuất k có"). Nhật ký cũ không hề nhắc tới
+    # lớp chữ nên không có cách nào biết Part nào có, Part nào không.
+    _tt = str(payload.get("_ovl_tinh_trang") or "")
+    if _tt == "MẤT":
+        lop_chu = ("⚠ KHÔNG CÓ — ảnh lớp chữ đã mất và KHÔNG dựng lại được "
+                   "(clip này thiếu hộp tiêu đề + huy hiệu Part)")
+    elif _tt == "dựng lại":
+        lop_chu = "CÓ (ảnh đã mất, đã tự dựng lại)"
+    elif payload.get("overlay_png"):
+        lop_chu = "CÓ"
+    else:
+        lop_chu = "không có trong mẫu"
     dong = (f"   ↳ {pfx.strip() or 'Part'} công thức: mẫu «{ten_mau}» · "
-            f"phụ đề «{cap}» · tiếng động: {', '.join(tieng)} · "
+            f"phụ đề «{cap}» · lớp chữ: {lop_chu} · "
+            f"tiếng động: {', '.join(tieng)} · "
             f"hiệu ứng hình: {', '.join(hieu_ung)}")
     # ĐIỂM NHẤN: mỗi điểm ghi LÝ DO KÈM SỐ (anh Hùng: cấm ghi chung chung kiểu
     # "cảnh hay"). `hu_log` là danh sách hiệu ứng THẬT SỰ vào file — đã lọc theo
@@ -3016,6 +3031,56 @@ def _cleanup_files(paths) -> None:
             pass
 
 
+def _user_da_huy(job_id) -> bool:
+    """True = user THẬT SỰ bấm Huỷ job này (cờ bền `jobs.cancel_req`).
+
+    False = huỷ do TẮT APP/cập nhật — job sẽ được đưa lại hàng đợi và CHẠY LẠI,
+    nên mọi thứ lượt sau còn cần (ảnh lớp chữ `_ovl_`) phải GIỮ. Đọc lỗi/không
+    có dòng -> coi như KHÔNG phải user huỷ (quy tắc chung của repo: không xác
+    định được thì GIỮ).
+    """
+    try:
+        row = db.query_one("SELECT cancel_req FROM jobs WHERE id=?", (job_id,))
+        return bool(row and row["cancel_req"])
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _dung_lai_anh_chu(payload: dict, ovl: str) -> str:
+    """DỰNG LẠI ảnh lớp chữ (`_ovl_*.png`) từ ĐƠN THUỐC trong payload.
+
+    Vì sao cần: ảnh lớp chữ do UI vẽ SẴN lúc xếp job rồi để trong `_cache`. Nó
+    có thể KHÔNG còn ở lúc job chạy (tắt app giữa chừng, user dọn `_cache`,
+    job cũ chạy lại...). `export_canvas_clip` gặp file thiếu là bỏ overlay IM
+    LẶNG -> clip mất hộp tiêu đề + huy hiệu Part mà không ai biết.
+
+    Chạy Ở LUỒNG NỀN nên chỉ dùng QImage/QPainter (an toàn mọi luồng);
+    `render_overlay_png` đã đổi logo sang QImage cho đúng chỗ này.
+    Trả đường dẫn ảnh dựng được, hoặc "" nếu không dựng được.
+    """
+    spec = payload.get("ovl_spec") or {}
+    if not isinstance(spec, dict):
+        return ""
+    if not (spec.get("layers") or spec.get("logo")):
+        return ""          # mẫu vốn KHÔNG có lớp chữ -> không có gì để dựng
+    try:
+        from app.ui.editor import render_overlay_png
+        Path(ovl).parent.mkdir(parents=True, exist_ok=True)
+        vpx = spec.get("video_px")
+        ok = render_overlay_png(
+            spec.get("layers") or [], int(spec.get("part_no") or 0),
+            int(payload.get("out_w", DEFAULTS["out_w"])),
+            int(payload.get("out_h", DEFAULTS["out_h"])),
+            ovl, spec.get("title") or "", spec.get("title_vi") or "",
+            tuple(vpx) if vpx else None,
+            logo=spec.get("logo") or None,
+            part_case=spec.get("part_case") or "",
+            hook_case=spec.get("hook_case") or "")
+        return ovl if (ok and os.path.exists(ovl)) else ""
+    except Exception:  # noqa: BLE001 - dựng lại hỏng KHÔNG được làm chết xuất
+        return ""
+
+
 def export_clip(payload: dict, ctx: JobContext) -> dict:
     """Handler job 'm1_export_clip' — bọc dọn FILE TẠM quanh _export_clip_impl.
 
@@ -3038,7 +3103,22 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
             # cho job khác — quên gỡ là job sau ghi tiến trình vào job cũ.
             _fu_bao.dat_bao_cho(None)
     except CanceledError:
-        _cleanup_files(temps + [ovl_tmp])
+        # HUỶ CÓ HAI LOẠI, TRƯỚC ĐÂY GỘP LÀM MỘT -> MẤT HỘP TIÊU ĐỀ + PART.
+        #   (a) user bấm Huỷ  -> `jobs.cancel_req=1`, job CHỐT 'canceled', không
+        #       bao giờ chạy lại  => dọn ảnh chữ là đúng.
+        #   (b) TẮT APP / tự cập nhật -> `WorkerPool.stop()` báo huỷ cho job
+        #       đang chạy RỒI đưa nó về 'pending' ("Tạm dừng do tắt app"), mở
+        #       app lên là CHẠY LẠI. Xoá ảnh chữ ở đây thì lượt chạy lại không
+        #       còn `_ovl_<cid>.png`, mà `export_canvas_clip` bỏ qua overlay
+        #       IM LẶNG (rc=0, đủ khung, file đẹp) -> clip ra KHÔNG hộp tiêu đề
+        #       đỏ, KHÔNG huy hiệu "Part N", không một dòng báo lỗi.
+        # ĐO THẬT trên máy anh Hùng 08/08/2026 (video 'GOING BACK TO OUR OLD
+        # HOUSE', mẫu «test AI»): Part 3 xuất 17:44 TRƯỚC khi tắt app -> 11,58%
+        # điểm ảnh đỏ; app mở lại 17:59:29; Part 2 (18:01) và Part 1 (18:03)
+        # chạy lại -> 0,000% điểm ảnh đỏ.
+        _cleanup_files(temps)
+        if _user_da_huy(ctx.job_id):
+            _cleanup_files([ovl_tmp])
         raise
     except Exception:
         _cleanup_files(temps)
@@ -3119,6 +3199,21 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     bg = payload.get("bg", "blur")              # blur|black|white
     text_overlays = payload.get("text_overlays") or []  # fallback drawtext
     overlay_png = payload.get("overlay_png")    # ảnh lớp chữ render từ UI
+    # ẢNH LỚP CHỮ CÓ THỂ ĐÃ MẤT (tắt app giữa lượt xuất rồi mở lại, user dọn
+    # `_cache`, job cũ chạy lại...). Trước đây rơi thẳng vào
+    # `export_canvas_clip` -> `use_png = ... and os.path.exists(...)` = False
+    # -> BỎ overlay IM LẶNG: clip ra không hộp tiêu đề đỏ, không huy hiệu
+    # "Part N", rc=0, đủ khung, không một dòng báo. Nay DỰNG LẠI từ đơn thuốc
+    # trong payload; dựng không được thì ĐÁNH DẤU để ghi vào nhật ký (đừng im).
+    _ovl_tinh_trang = ""
+    if overlay_png and not os.path.exists(str(overlay_png)):
+        _lam_lai = _dung_lai_anh_chu(payload, str(overlay_png))
+        if _lam_lai:
+            overlay_png = _lam_lai
+            _ovl_tinh_trang = "dựng lại"
+        elif payload.get("ovl_spec"):
+            _ovl_tinh_trang = "MẤT"
+    payload["_ovl_tinh_trang"] = _ovl_tinh_trang
     flip_h = bool(payload.get("flip_h"))        # LẬT GƯƠNG ngang (né content-ID)
     signals = db.loads(clip["signals"], {}) or {}
 

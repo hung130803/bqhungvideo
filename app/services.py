@@ -294,6 +294,12 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    project_id: int, out_w: int = 1080, out_h: int = 1920,
                    mode: str = "face", zoom: float = 1.0,
                    crop_rect=None, text_overlays=None, overlay_png=None,
+                   # ĐƠN THUỐC vẽ lại lớp chữ (layers/tiêu đề/part/logo...).
+                   # KHÔNG đưa vào `extra` (hash chống trùng): nội dung ảnh đã
+                   # được `ovl` (cỡ + mtime của file PNG) đại diện rồi; thêm
+                   # vào đây là ĐỔI dedup_key của MỌI clip cũ -> 200-300 kênh
+                   # xuất lại từ đầu.
+                   ovl_spec=None,
                    video_rect=None, bg: str = "blur",
                    trim_black: bool = False, part_no: int = 0,
                    out_name: str = "", captions: bool = False,
@@ -356,6 +362,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
          "mode": mode, "zoom": zoom, "crop_rect": crop_rect,
          "text_overlays": text_overlays or [], "overlay_png": overlay_png,
+         "ovl_spec": ovl_spec or {},
          "video_rect": video_rect, "bg": bg, "trim_black": trim_black,
          "part_no": part_no, "out_name": out_name, "captions": captions,
          "cap_style": cap_style or {}, "blur_amt": blur_amt,

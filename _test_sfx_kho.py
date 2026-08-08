@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 import tempfile
 
 T = tempfile.mkdtemp(prefix="sfxkho_")
@@ -30,7 +31,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = os.path.join(T, "t.db")
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "s.ini")
-REPO = r"D:\claude\ai-content-studio"
+REPO = str(Path(__file__).resolve().parent)
 sys.path.insert(0, REPO)
 import _test_guard  # noqa: E402,F401
 

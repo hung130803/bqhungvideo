@@ -1,0 +1,34 @@
+
+══ 1. Kho: đủ nhóm · đủ đa dạng · đủ nhẹ ══
+  ✓ cả 10 nhóm đều có file
+  ✓ kho có 184 file (cần >= 150)
+  ✓ 10 nhóm có >= 3 file (cần >= 8)
+     comedy 12 · drumroll 10 · impact 35 · pop 34 · reveal 16 · riser 15 · sad 10 · scratch 16 · suspense 12 · transition 24
+  ✓ toàn kho = 328 KB (trần 700 KB · WAV cũ 1 598 KB)
+     định dạng: 184 opus · 0 wav
+
+══ 2. ffmpeg ĐỌC ĐƯỢC mọi file trong kho ══
+  ✓ 184/184 file đọc được (tổng 75s tiếng động)
+
+══ 3. Chọn theo ngữ cảnh: đúng nhóm, không lặp liên tiếp ══
+  ✓ trả đúng thứ tự nhóm yêu cầu
+  ✓ nhóm nào cũng ra file (không rơi về tổng hợp)
+  ✓ 3 lần 'transition' ra 3 file KHÁC nhau
+  ✓ nhóm lạ -> lùi 'transition', không nổ
+
+══ 4. XUẤT CLIP THẬT: tiếng động phải NGHE ĐƯỢC đúng mốc ══
+  ✓ dựng video nguồn 24s
+  ✓ xuất clip KHÔNG tiếng động
+     KHÔNG tiếng động: RMS quanh mốc ghép = -24.1 dB · đỉnh -20.8 dB
+  ✓ xuất clip CÓ tiếng động
+     CÓ tiếng động: RMS quanh mốc ghép = -23.7 dB · đỉnh -8.4 dB
+  ✓ bật tiếng động -> ĐỈNH quanh mốc tăng +12.4 dB (RMS trung bình +0.40 dB — tiếng ngắn nên RMS gần như không đổi, phải đo đỉnh)
+  ✓ đỉnh -8.4 dB <= 0 (không làm vỡ tiếng gốc)
+  ✓ đã dùng FILE trong kho, không phải tiếng tổng hợp: [('impact', 'k_impactsounds_impactGlass_heavy_004.opus')]
+  ✓ file dùng là file kho thật (k_impactsounds_impactGlass_heavy_004.opus)
+
+══ 5. Kho user riêng (fx_sfx_dir) vẫn hoạt động ══
+  ✓ đọc được thư mục tiếng động của user
+  ✓ không đặt thư mục -> rỗng, không nổ
+
+KẾT QUẢ: TẤT CẢ ĐẠT — kho 184 file / 328 KB, tiếng động kêu thật đúng mốc

@@ -7990,11 +7990,16 @@ class StudioPage(QWidget):
                 return t
         return ""
 
-    def _render_png(self, part_no, title="", cid=0, title_vi="", video_px=None,
-                    project_id=None):
-        layers = self.layout_tpl.get("layers", [])
-        pid = project_id or self.state.project_id
-        # LOGO kênh (nếu mẫu có) — vẽ cùng PNG lớp chữ
+    def _ovl_spec(self, part_no, title="", title_vi="", video_px=None):
+        """ĐƠN THUỐC vẽ lớp chữ — đủ để DỰNG LẠI ảnh chữ lúc xuất, không cần UI.
+
+        Vì sao phải có (lỗi thật 08/08/2026): ảnh `_ovl_<cid>.png` do UI vẽ sẵn
+        rồi để trong `_cache`; tắt app giữa lượt xuất là `export_clip` dọn mất
+        nó, lượt chạy lại sau khi mở app không còn ảnh và `export_canvas_clip`
+        bỏ overlay IM LẶNG -> clip ra không hộp tiêu đề đỏ, không huy hiệu
+        "Part N". Có đơn thuốc trong payload thì job tự dựng lại được.
+        """
+        layers = self.layout_tpl.get("layers", []) or []
         logo = None
         lp = self.layout_tpl.get("logo_path", "")
         if lp and os.path.exists(lp):
@@ -8002,18 +8007,27 @@ class StudioPage(QWidget):
                     "pos": self.layout_tpl.get("logo_pos", "tr"),
                     "size": float(self.layout_tpl.get("logo_size", 0.14)),
                     "opacity": float(self.layout_tpl.get("logo_op", 0.9))}
-        if (not layers and not logo) or not pid:
+        return {"layers": layers, "logo": logo, "part_no": int(part_no or 0),
+                "title": title or "", "title_vi": title_vi or "",
+                "video_px": (list(video_px) if video_px else None),
+                "part_case": self.layout_tpl.get("part_case", "") or "",
+                "hook_case": self.layout_tpl.get("hook_case", "") or ""}
+
+    def _render_png(self, part_no, title="", cid=0, title_vi="", video_px=None,
+                    project_id=None):
+        spec = self._ovl_spec(part_no, title, title_vi, video_px)
+        pid = project_id or self.state.project_id
+        if (not spec["layers"] and not spec["logo"]) or not pid:
             return None
         # mỗi clip 1 PNG riêng (theo cid) vì tiêu đề khác nhau — để trong _cache
         png = os.path.join(services.project_cache_dir(pid),
                            f"_ovl_{cid or part_no}.png")
         return (png if render_overlay_png(
-            layers, part_no, 1080, 1920, png, title, title_vi, video_px,
-            logo=logo,
+            spec["layers"], part_no, 1080, 1920, png, title, title_vi, video_px,
+            logo=spec["logo"],
             # KIỂU CHỮ HOA lớp overlay (từ mẫu): Part -> part_case; tiêu đề/
             # hook/cố định -> hook_case.
-            part_case=self.layout_tpl.get("part_case", "") or "",
-            hook_case=self.layout_tpl.get("hook_case", "") or "")
+            part_case=spec["part_case"], hook_case=spec["hook_case"])
                 else None)
 
     _MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
@@ -8357,6 +8371,10 @@ class StudioPage(QWidget):
                 flip_h=bool(self.layout_tpl.get("flip_h", False)),
                 fit_src=bool(self.layout_tpl.get("fit_src", False)),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
+                # ĐƠN THUỐC lớp chữ đi CÙNG job: ảnh `_ovl_` có mất thì job tự
+                # dựng lại được (tắt app giữa lượt xuất / user dọn _cache).
+                # KHÔNG vào hash chống trùng -> clip cũ không bị xuất lại.
+                ovl_spec=self._ovl_spec(no, en, vi, vpx),
                 force=force_one)
             if jid:
                 jids.append(jid)

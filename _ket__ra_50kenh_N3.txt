@@ -1,0 +1,25 @@
+﻿[máy] CPU 12.7% [13.4, 12.9, 12.3, 12.4, 12.5]
+[encoder] h264_nvenc · trần ffmpeg song song 3 · giải mã 4 luồng · nhân 24
+[cấu hình] 50 kênh · 10 làn cắt · 60 job phân tích nhồi vào làn GPU
+
+dựng xong 50 kênh / 50 clip
+xếp 110 job vào hàng chờ (60 phân tích priority 10 + 50 xuất priority 3)
+
+============================================================================
+XONG 50/50 clip trong 429s (7.1 phút)
+============================================================================
+  luồng ffmpeg      đỉnh 64 (2.67× nhân) · TB 51.7 · đỉnh 4 tiến trình
+  trễ vòng lặp UI   trung vị 13.7ms · p95 24.2ms · đỉnh 50.3ms (6831 nhịp)
+  RAM cây đỉnh      1.24 GB
+  CPU cả máy        TB 29.5% · đỉnh 44.5%
+  CPU-giây ffmpeg   1511.0
+  clip 0-byte       0
+  ffmpeg mồ côi     0
+  đợi lâu nhất 'ra_phantich': 127s 
+  đợi lâu nhất 'ra_xuat': 367s 
+  job THẤT BẠI: 0
+
+  LÀN ĐÓI? job XUẤT đầu tiên chạy sau 0.06747698783874512s, lúc đó còn 59 job phân tích ĐANG CHỜ
+     -> KHÔNG đói (làn cắt chạy dù làn phân tích ngập)
+
+[đã ghi] _ket__ra_50kenh.json

@@ -8,10 +8,15 @@
 #      trim TRƯỚC, enforce là NGƯỜI NÓI CUỐI -> clip luôn >= min_len.
 import os
 import sys
+from pathlib import Path
 import tempfile
 
 os.environ["BQ_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.modules import m1_highlight as M1  # noqa: E402
 
@@ -97,7 +102,7 @@ kiem(len(sau2) == 2, "có ít hơn count -> giữ nguyên (không bịa thêm)",
 # ── A2. kiểm code THẬT có 2 rào (chốt count + đảo thứ tự trim/enforce) ──
 print("== A2. code thật có đủ 2 rào ==")
 import io  # noqa: E402
-src = io.open(r"D:\claude\ai-content-studio\app\modules\m1_highlight.py",
+src = io.open(str(Path(__file__).resolve().parent / 'app' / 'modules' / 'm1_highlight.py'),
               encoding="utf-8").read()
 kiem("if _want > 0 and len(ai_clips) > _want:" in src,
      "đường AI: có chốt cứng số part = count")

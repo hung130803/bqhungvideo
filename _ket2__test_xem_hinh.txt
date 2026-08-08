@@ -1,0 +1,36 @@
+﻿
+=== 1. 413 KHÔNG ĐƯỢC coi là 'key hết lượt' ===
+  ✅ 1a nhận ra lỗi 413 'yêu cầu quá lớn'
+  ✅ 1b 429 thật KHÔNG bị nhận nhầm là 413
+  ✅ 1c 429 thật vẫn là hết lượt (giữ nguyên)
+  ✅ 1d mark_limited vẫn hoạt động (không phá cơ chế cũ) — cooldown 120s
+
+=== 2. giới hạn ẢNH/LƯỢT phải khớp thực tế đo được ===
+  ✅ 2a Groq: 3 ảnh/lượt (đo 400 'supports up to 3 images')
+  ✅ 2b batch của vision_digest KHÔNG vượt giới hạn — _BATCH=2 <= 3
+  ✅ 2c m1 KHÔNG còn batch cứng 4 ảnh (gửi 4 là mất trắng cả batch)
+  ✅ 2d m1 chia batch theo giới hạn provider
+
+=== 3. model SUY LUẬN trả kèm <think> vẫn bóc được JSON ===
+  ✅ 3a bỏ khối <think>, lấy đúng JSON sau nó — [{'i': 0, 'desc': 'a man runs', 'act': 8}]
+  ✅ 3b <think> bị cắt giữa -> không lấy bản nháp (ném lỗi, hợp lệ)
+  ✅ 3c JSON thường KHÔNG bị bản vá làm hỏng (bất biến)
+
+=== 4. gửi LẺ 1 ảnh phải gán đúng mốc giây ===
+  ✅ 4a i=0 của lượt lẻ -> đổi thành chỉ số THẬT trong batch
+  ✅ 4b ảnh không thuộc batch -> bỏ, không gán mốc bừa
+
+=== 5. digest RỖNG phải GHI NHẬT KÝ (không im lặng) ===
+  ✅ 5a có dòng nhật ký nêu LÝ DO thật — [15:31:48] video 123 — AI xem hình KHÔNG ra mốc nào · model=qwen/qwen3.6-27b · LLMError: model_not_found 404
+  ✅ 5b nhật ký nêu TÊN MODEL (để biết ngay model bị gỡ)
+
+=== 6. LƯỢT GỌI VISION THẬT (Groq) ===
+  ✅ 6a trích được 2 khung hình bằng ffmpeg thật
+  ✅ 6b model qwen/qwen3.6-27b MÔ TẢ được hình — 2 dòng / 1.6s
+  ✅ 6c mô tả có nội dung thật — A person sits in the back seat of a car looking at a phone. A bald driver with a beard drives the car while ta
+  ✅ 6d điểm hành động trong khoảng 0-10 — [3, 4]
+
+============================================================
+ĐẠT 19 · SAI 0
+✅ CỔNG 26 ĐẠT — AI xem hình chạy được, lỗi 413 không đốt key
+

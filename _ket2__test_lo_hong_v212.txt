@@ -1,0 +1,55 @@
+﻿
+=== A. Chép lời video DÀI: mọi khúc phải DÙNG 1 NGÔN NGỮ ===
+  OK  A0 dựng được audio thật 25 phút bằng ffmpeg - 185 KB
+  OK  A1 video 25 phút được chia >= 3 khúc - 3 khúc
+  OK  A2 khúc ĐẦU vẫn để TỰ NHẬN DIỆN (không ép sai ngôn ngữ) - None
+  OK  A3 mọi khúc SAU bị ÉP đúng ngôn ngữ khúc đầu — và phải là MÃ ISO 'ja', KHÔNG được là tên 'Japanese' (ném tên vào là Groq 400, chết cả lượt) - ['ja', 'ja']
+  OK  A3b ngôn ngữ ép vào là mã Groq NHẬN (qua _ma_iso) - ['ja', 'ja']
+  OK  A3c _ma_iso đổi đúng tên->mã, không nhận ra thì trả None (tự nhận diện lại còn hơn làm chết cả lượt)
+  OK  A4 KHÔNG còn câu tiếng Anh lẫn vào bản chép lời tiếng Nhật - 押入れの隙間から見られてる 押入れの隙間から見られてる 押入れの隙間から見られてる
+  OK  A5 nhãn ngôn ngữ cả video quy về đúng 'ja' (tên hay mã đều được) - 'Japanese' -> 'ja'
+  OK  A6 ĐỐI CHỨNG: nếu để mỗi khúc tự đoán thì CÓ lẫn tiếng Anh (chứng minh cổng này canh đúng chỗ) - ['押入れの隙間から見られてる', 'I was watching TV', 'I was watching TV']
+
+=== B. Gấp sổ tạm (WAL) ngay lúc đang chạy ===
+  OK  B1 dựng được cảnh WAL phình - 0.78 MB
+  OK  B2 gấp được WAL vào file chính - gấp 0.78 MB · còn 0.00 MB
+  OK  B3 copy RIÊNG file .db (KHÔNG kèm -wal) vẫn đủ dữ liệu -> tắt đột ngột không mất việc - 4000 video trong file chính
+  OK  B4 WAL còn nhỏ -> không gấp nữa (không tốn công vô ích)
+  OK  B5 ngưỡng cao -> bỏ qua êm, không nổ
+
+=== C. Hộp Dây chuyền: dựng bảng THƯA + chống tái nhập ===
+  OK  C1 có cờ chống TÁI NHẬP khi dựng bảng (processEvents bắn xen giữa)
+  OK  C2 DỪNG HẲN hẹn giờ ngay khi hộp đóng (chặn access violation)
+  OK  C3 bỏ qua nếu hộp không còn hiện
+  OK  C4 bảng chỉ dựng lại mỗi 8 giây (2s × 4), không phải mỗi 2 giây
+  OK  C5 báo cáo chỉ ghi lại khi chữ THẬT SỰ đổi
+  OK  C6 bọc RuntimeError quanh lúc dựng bảng (widget bị xoá giữa lúc vẽ)
+
+=== D. Ô 'đợi' giải thích con số + ước thời gian còn lại ===
+  OK  D1 nói rõ số 'đợi' tăng là bình thường (mỗi video sinh ~3 việc xuất)
+  OK  D2 có ƯỚC THỜI GIAN còn lại -  ~33 phút với 3 việc chạy song song (tăn
+  OK  D3 chỉ cho user cách chạy nhanh hơn (tăng luồng)
+  OK  D4 tách đúng số: chờ phân tích vs chờ cắt - Đang đợi 60 việc — đợi phân tích 20 · đợi cắt 40
+
+=== E. Kho tiếng động: không được có file nghe gần như không thấy ===
+  OK  E1 đo được đỉnh của cả kho - 184 file
+  OK  E2 độ lệch to/nhỏ cả kho <= 8 dB (trước chuẩn hoá: 19,9 dB) - 5.2 dB · nhỏ nhất -5.2 dB (transition/swoosh_hi_07_v3.opus)
+  OK  E3 KHÔNG còn file nào dưới -12 dB (trước: 17 file) - 0 file
+  OK  E4 chuẩn âm KHÔNG làm phình kho - 329 KB
+
+=== F. Các Part của cùng 1 video KHÔNG được dùng chung đoạn phim ===
+  OK  F1 đúng cảnh thật: bỏ 1 clip trùng 15,3s, giữ 2 - giữ ['Part2', 'Part3'] · bỏ ['Part1']
+  OK  F2 giữ clip ĐIỂM CAO (Part2=60), bỏ clip điểm thấp (Part1=45)
+  OK  F3 trả lại theo THỨ TỰ THỜI GIAN - ['Part2', 'Part3']
+  OK  F4 clip KHÔNG trùng thì giữ đủ (không lọc quá tay)
+  OK  F5 chồng nhẹ 4s (<15%) vẫn giữ — cắt sát nhau là bình thường
+  OK  F6 clip GHÉP nhiều đoạn trải rộng nhưng không chồng -> giữ (so theo TỪNG đoạn, không so khoảng đầu-cuối)
+  OK  F7 rỗng -> không nổ
+  OK  F8 đầu vào rác -> không nổ
+  OK  F9 đã nối vào đường cắt thật của m1 (nếu không thì vô dụng)
+  OK  F10 lọc trùng-giữa-Part chạy TRƯỚC lọc trùng-với-lần-trước (ngược lại thì clip tốt bị lần trước loại oan)
+
+==============================================================
+ĐẠT 38 · SAI 0
+CỔNG 33 ĐẠT — 4 bản vá v2.11.1/v2.12.0 đã có cổng canh
+

@@ -1,0 +1,167 @@
+[sandbox] C:\Users\Admin\AppData\Local\Temp\daquocgia_03mjh0rn
+[key Groq] 38 key
+[encoder] h264_nvenc · cửa chờ ffmpeg 3 · nhân 24
+
+══ 0. QUÉT TĨNH: `.split()` đếm từ + so TÊN ngôn ngữ thay vì MÃ ══
+  ĐẠT   hieu_ung.py: KHÔNG đếm từ bằng `.split()`
+  ĐẠT   hieu_ung_gpu.py: KHÔNG đếm từ bằng `.split()`
+  ĐẠT   _do_hieu_ung_bang.py: KHÔNG đếm từ bằng `.split()`
+  ĐẠT   chuyển cảnh: KHÔNG đếm từ bằng `.split()`
+  ĐẠT   hieu_ung.py: KHÔNG đọc ngôn ngữ/transcript
+  ĐẠT   hieu_ung_gpu.py: KHÔNG đọc ngôn ngữ/transcript
+  ĐẠT   `_word_tokens` tách được câu Nhật không dấu cách   << 6 token
+  ĐẠT   BẤT BIẾN: text non-CJK -> `_word_tokens` == `.split()`
+  ĐẠT   `co_loi_noi_that` đếm từ CJK-aware (không `.split()`)   << vẫn dùng .split() -> video Nhật/Trung ít đoạn bị gán nhầm KHÔNG LỜI
+  ĐẠT   `_ma_iso` đổi TÊN -> MÃ ISO (lỗi v2.11.1)   << English->en Japanese->ja
+  ĐẠT   `_ma_iso` không chắc -> None (tự nhận diện lại còn hơn chết cả lượt)
+  ĐẠT   mã ISO `zh` (trung) được Groq chấp nhận
+  ĐẠT   mã ISO `th` (thai) được Groq chấp nhận
+  ĐẠT   mã ISO `ar` (arab) được Groq chấp nhận
+
+══ 0b. ĐẾM TỪ CJK — ca đã gây LỖI THẬT (short 1-2 đoạn) ══
+  ĐẠT   Nhật: transcript 1 ĐOẠN -> nhận ĐÚNG là CÓ LỜI
+  ĐẠT   Trung: transcript 1 ĐOẠN -> nhận ĐÚNG là CÓ LỜI
+  ĐẠT   Hàn: transcript 1 ĐOẠN -> nhận ĐÚNG là CÓ LỜI
+  ĐẠT   Anh: transcript 1 ĐOẠN -> nhận ĐÚNG là CÓ LỜI
+  ĐẠT   Việt: transcript 1 ĐOẠN -> nhận ĐÚNG là CÓ LỜI
+  ĐẠT   BẤT BIẾN: rác 'thank you' vẫn bị bắt là KHÔNG lời
+  ĐẠT   BẤT BIẾN: mật độ từ quá thấp vẫn bị bắt
+
+══ 0c. HIỆU ỨNG HÌNH + CHUYỂN CẢNH: TRUNG LẬP NGÔN NGỮ (điều 5) ══
+  ĐẠT   `chon_hieu_ung` KHÔNG nhận ngôn ngữ/chữ (trung lập từ chữ ký)   << tong_giay, muc, nl, cd, moc_noi, co_the_dung
+  ĐẠT   `chon_chuyen_canh` KHÔNG nhận ngôn ngữ/chữ   << segs, muc
+  ĐẠT   nhãn ngôn ngữ 'ja' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'zh' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'ko' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'en' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'vi' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'th' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'ar' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ 'Japanese' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   nhãn ngôn ngữ '(rỗng)' -> chọn hiệu ứng/chuyển cảnh Y HỆT
+  ĐẠT   cùng 1 clip KHÔNG lặp một kiểu chuyển cảnh ở mọi chỗ nối   << ['fadeblack', 'smoothleft', 'fadewhite']
+
+══ 0c2. MẪU CŨ (không có khoá) -> MẶC ĐỊNH 'nhe' ở MỌI CỬA ══
+  ĐẠT   mặc định 'nhe' — Chỉnh mẫu (editor._apply_layout): `"chuyen_canh", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mặc định 'nhe' — Chỉnh mẫu (editor._apply_layout): `"hieu_ung", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mặc định 'nhe' — bấm tay (studio_page._export_video_inner): `"chuyen_canh", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mặc định 'nhe' — bấm tay (studio_page._export_video_inner): `"hieu_ung", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mặc định 'nhe' — job xuất (m1_highlight): `"chuyen_canh", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mặc định 'nhe' — job xuất (m1_highlight): `"hieu_ung", "nhe")`   << KHÔNG thấy -> mẫu cũ sẽ ra mức khác 'nhe'
+  ĐẠT   mẫu cũ (dict rỗng) -> 'nhe' cho cả 2 khoá
+  ĐẠT   user chọn TẮT (chuỗi rỗng) -> 'tat', KHÔNG bị ép về 'nhe'
+  ĐẠT   'nhe' CÓ chuyển cảnh · 'tat' trả rỗng (đường cũ y nguyên)
+
+══ 0d. PHỤ ĐỀ VẼ ĐÚNG cho MỌI hệ chữ (điều 3) ══
+  ĐẠT   [nhat] phụ đề CÓ chữ trên khung thật   << 4751 px sáng
+  ĐẠT   [nhat] KHÔNG cắt đáy khung   << dòng chữ cuối 1587/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [nhat] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [han] phụ đề CÓ chữ trên khung thật   << 4416 px sáng
+  ĐẠT   [han] KHÔNG cắt đáy khung   << dòng chữ cuối 1588/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [han] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [anh] phụ đề CÓ chữ trên khung thật   << 7667 px sáng
+  ĐẠT   [anh] KHÔNG cắt đáy khung   << dòng chữ cuối 1584/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [anh] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [viet] phụ đề CÓ chữ trên khung thật   << 2334 px sáng
+  ĐẠT   [viet] KHÔNG cắt đáy khung   << dòng chữ cuối 1624/1919 · ny=0.8 (bài học ny <= 0,80)
+  ĐẠT   [viet] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [trung] phụ đề CÓ chữ trên khung thật   << 3575 px sáng
+  ĐẠT   [trung] KHÔNG cắt đáy khung   << dòng chữ cuối 1586/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [trung] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [thai] phụ đề CÓ chữ trên khung thật   << 792 px sáng
+  ĐẠT   [thai] KHÔNG cắt đáy khung   << dòng chữ cuối 1597/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [thai] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  ĐẠT   [arab] phụ đề CÓ chữ trên khung thật   << 2608 px sáng
+  ĐẠT   [arab] KHÔNG cắt đáy khung   << dòng chữ cuối 1568/1919 · ny=0.78 (bài học ny <= 0,80)
+  ĐẠT   [arab] chữ KHÔNG tràn mép trái/phải   << trái 0 px · phải 0 px
+  THIẾU nhóm TRUNG: chép lời + AI chọn đoạn   << KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số
+  THIẾU nhóm THAI: chép lời + AI chọn đoạn   << KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số
+  THIẾU nhóm ARAB: chép lời + AI chọn đoạn   << KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số
+
+══ NHÓM NHAT (mong đợi mã ISO 'ja') ══
+  nguồn: 暗夜でなぜか削除された動画.mp4 · 681.0s
+  ĐẠT   [nhat] ĐIỀU 1 — chép lời ĐÚNG ngôn ngữ   << ra 'ja' (mong 'ja') · 65 câu · 507 từ
+        engine THỰC: groq:whisper-large-v3 · 65 câu · 507 mốc từ · mật độ 2.11 từ/giây
+  ĐẠT   [nhat] chạy Groq THẬT (không tụt whisper máy)   << groq:whisper-large-v3
+  ĐẠT   [nhat] app nhận ĐÚNG là video CÓ LỜI   <<  (mật độ 2.11)
+  ĐẠT   [nhat] ĐIỀU 2 — AI chọn đoạn CHẠY (không 'Cắt cơ bản')   << llm_used=True count=1 · AI [Groq (mây)] chọn 1 clip — CẢNH BÁO: trọng tài chấm: 40, 60; bỏ 1 clip: trùng 12s (24%) với clip «Cảnh Báo 
+        1 clip: 69-126s
+        Part 1 (AI): 2 đoạn · tiếng động [('transition', 'swoosh_hi_07_v3.opus')]
+        Part 2 (bù·ngược): 2 đoạn · tiếng động [('impact', 'punch_04.opus')]
+        Part 3 (bù·liền): 2 đoạn · tiếng động [('pop', 'k_uiaudio_switch34.opus')]
+  ĐẠT   [nhat] xuất đủ 3 Part   << 3 Part
+  ĐẠT   [nhat] ĐIỀU 4a — KHÔNG phải Part nào cũng CÙNG một tiếng   << loại {('impact',), ('pop',), ('transition',)} · file {('swoosh_hi_07_v3.opus',), ('k_uiaudio_switch34.opus',), ('punch_04.opus',)}
+  ĐẠT   [nhat] tiếng động KHÔNG át lời (nhat_part1.mp4)   << RMS nền 0.0502 · đỉnh 0,25s 0.2703 = 5.4× (trần 12×)
+  ĐẠT   [nhat] tiếng động KHÔNG át lời (nhat_part2.mp4)   << RMS nền 0.0042 · đỉnh 0,25s 0.0235 = 5.7× (trần 12×)
+  ĐẠT   [nhat] tiếng động KHÔNG át lời (nhat_part3.mp4)   << RMS nền 0.0014 · đỉnh 0,25s 0.0055 = 3.9× (trần 12×)
+  ĐẠT   [nhat] ĐIỀU 3 — phụ đề LỜI THẬT vẽ ra chữ   << 2098 px · chữ: これ介護部屋に続いてます さっきの続いてる部屋 これは
+
+══ NHÓM HAN (mong đợi mã ISO 'ko') ══
+  nguồn: Part 1 모기 박멸 실험 #모기 #장구벌레 #독가스 #살충제.mp4 · 106.8s
+  ĐẠT   [han] ĐIỀU 1 — chép lời ĐÚNG ngôn ngữ   << ra 'Korean' (mong 'ko') · 24 câu · 235 từ
+        engine THỰC: groq:whisper-large-v3 · 24 câu · 235 mốc từ · mật độ 2.20 từ/giây
+  ĐẠT   [han] chạy Groq THẬT (không tụt whisper máy)   << groq:whisper-large-v3
+  ĐẠT   [han] app nhận ĐÚNG là video CÓ LỜI   <<  (mật độ 2.20)
+  ĐẠT   [han] ĐIỀU 2 — AI chọn đoạn CHẠY (không 'Cắt cơ bản')   << llm_used=True count=2 · AI [Groq (mây)] chọn 2 clip — CẢNH BÁO: trọng tài chấm: 40, 60
+        2 clip: 0-29s · 46-79s
+        Part 1 (AI): 2 đoạn · tiếng động [('transition', 'swoosh_air_03_v3.opus')]
+        Part 2 (AI): 2 đoạn · tiếng động [('pop', 'blip_03.opus')]
+        Part 3 (bù·ngược): 2 đoạn · tiếng động [('impact', 'boom_low_01.opus')]
+  ĐẠT   [han] xuất đủ 3 Part   << 3 Part
+  ĐẠT   [han] ĐIỀU 4a — KHÔNG phải Part nào cũng CÙNG một tiếng   << loại {('impact',), ('pop',), ('transition',)} · file {('blip_03.opus',), ('swoosh_air_03_v3.opus',), ('boom_low_01.opus',)}
+  ĐẠT   [han] tiếng động KHÔNG át lời (han_part1.mp4)   << RMS nền 0.0475 · đỉnh 0,25s 0.0944 = 2.0× (trần 12×)
+  ĐẠT   [han] tiếng động KHÔNG át lời (han_part2.mp4)   << RMS nền 0.0512 · đỉnh 0,25s 0.1019 = 2.0× (trần 12×)
+  ĐẠT   [han] tiếng động KHÔNG át lời (han_part3.mp4)   << RMS nền 0.0570 · đỉnh 0,25s 0.1373 = 2.4× (trần 12×)
+  ĐẠT   [han] ĐIỀU 3 — phụ đề LỜI THẬT vẽ ra chữ   << 8213 px · chữ: 빌게이츠와 구글은 유전자 조작 기술을 이용해서 인도적 멸종까지 추진을 하
+
+══ NHÓM ANH (mong đợi mã ISO 'en') ══
+  nguồn: Pro 176 Right Arm  Western Idaho Arm Wrestling Championship.mp4 · 874.9s
+  ĐẠT   [anh] ĐIỀU 1 — chép lời ĐÚNG ngôn ngữ   << ra 'English' (mong 'en') · 112 câu · 462 từ
+        engine THỰC: groq:whisper-large-v3 · 112 câu · 462 mốc từ · mật độ 1.93 từ/giây
+  ĐẠT   [anh] chạy Groq THẬT (không tụt whisper máy)   << groq:whisper-large-v3
+  ĐẠT   [anh] app nhận ĐÚNG là video CÓ LỜI   <<  (mật độ 1.93)
+  ĐẠT   [anh] ĐIỀU 2 — AI chọn đoạn CHẠY (không 'Cắt cơ bản')   << llm_used=True count=2 · AI [Groq (mây)] chọn 2 clip — CẢNH BÁO: trọng tài chấm: 30, 50
+        2 clip: 100-153s · 38-100s
+        Part 1 (AI): 3 đoạn · tiếng động [('transition', 'whoosh_low_08.opus'), ('reveal', 'bell_02_v2.opus')]
+        Part 2 (AI): 3 đoạn · tiếng động [('transition', 'air_soft_05.opus'), ('reveal', 'sparkle_03.opus')]
+        Part 3 (bù·ngược): 2 đoạn · tiếng động [('impact', 'k_impactsounds_impactGlass_medium_003.opus')]
+  ĐẠT   [anh] xuất đủ 3 Part   << 3 Part
+  ĐẠT   [anh] ĐIỀU 4a — KHÔNG phải Part nào cũng CÙNG một tiếng   << loại {('impact',), ('transition', 'reveal')} · file {('k_impactsounds_impactGlass_medium_003.opus',), ('air_soft_05.opus', 'sparkle_03.opus'), ('whoosh_low_08.opus', 'bell_02_v2.opus')}
+  ĐẠT   [anh] tiếng động KHÔNG át lời (anh_part1.mp4)   << RMS nền 0.1240 · đỉnh 0,25s 0.2107 = 1.7× (trần 12×)
+  ĐẠT   [anh] tiếng động KHÔNG át lời (anh_part2.mp4)   << RMS nền 0.1290 · đỉnh 0,25s 0.2515 = 1.9× (trần 12×)
+  ĐẠT   [anh] tiếng động KHÔNG át lời (anh_part3.mp4)   << RMS nền 0.3327 · đỉnh 0,25s 0.5293 = 1.6× (trần 12×)
+  ĐẠT   [anh] ĐIỀU 3 — phụ đề LỜI THẬT vẽ ra chữ   << 4401 px · chữ: Take a good grip, guys. All right, get y
+
+══ NHÓM VIET (mong đợi mã ISO 'vi') ══
+  nguồn: Bí quyết nông nghiệp bạn cần biết.mp4 · 58.9s
+  ĐẠT   [viet] ĐIỀU 1 — chép lời ĐÚNG ngôn ngữ   << ra 'Vietnamese' (mong 'vi') · 18 câu · 221 từ
+        engine THỰC: groq:whisper-large-v3 · 18 câu · 221 mốc từ · mật độ 3.75 từ/giây
+  ĐẠT   [viet] chạy Groq THẬT (không tụt whisper máy)   << groq:whisper-large-v3
+  ĐẠT   [viet] app nhận ĐÚNG là video CÓ LỜI   <<  (mật độ 3.75)
+  ĐẠT   [viet] ĐIỀU 2 — AI chọn đoạn CHẠY (không 'Cắt cơ bản')   << llm_used=True count=2 · AI [Groq (mây)] chọn 2 clip — CẢNH BÁO: trọng tài chấm: 45, 50
+        2 clip: 44-59s · 0-23s
+        Part 1 (AI): 2 đoạn · tiếng động [('pop', 'k_uiaudio_switch32.opus')]
+        Part 2 (AI): 2 đoạn · tiếng động [('pop', 'k_uiaudio_switch23.opus')]
+        Part 3 (bù·ngược): 2 đoạn · tiếng động [('impact', 'k_impactsounds_impactGlass_light_000.opus')]
+  ĐẠT   [viet] xuất đủ 3 Part   << 3 Part
+  ĐẠT   [viet] ĐIỀU 4a — KHÔNG phải Part nào cũng CÙNG một tiếng   << loại {('impact',), ('pop',)} · file {('k_uiaudio_switch32.opus',), ('k_impactsounds_impactGlass_light_000.opus',), ('k_uiaudio_switch23.opus',)}
+  ĐẠT   [viet] tiếng động KHÔNG át lời (viet_part1.mp4)   << RMS nền 0.2248 · đỉnh 0,25s 0.3773 = 1.7× (trần 12×)
+  ĐẠT   [viet] tiếng động KHÔNG át lời (viet_part2.mp4)   << RMS nền 0.2126 · đỉnh 0,25s 0.3523 = 1.7× (trần 12×)
+  ĐẠT   [viet] tiếng động KHÔNG át lời (viet_part3.mp4)   << RMS nền 0.2151 · đỉnh 0,25s 0.3201 = 1.5× (trần 12×)
+  ĐẠT   [viet] ĐIỀU 3 — phụ đề LỜI THẬT vẽ ra chữ   << 2434 px · chữ: Nếu trồng cà tím, bạn phải biết cách tiề
+
+══ BẢNG ĐA QUỐC GIA — mỗi nhóm × 5 điều ══
+  nhóm       1 chép lời   2 AI chọn   3 phụ đề  4 tiếng động  5 trung lập
+  nhat              ĐẠT         ĐẠT        ĐẠT           ĐẠT          ĐẠT
+  han               ĐẠT         ĐẠT        ĐẠT           ĐẠT          ĐẠT
+  anh               ĐẠT         ĐẠT        ĐẠT           ĐẠT          ĐẠT
+  viet              ĐẠT         ĐẠT        ĐẠT           ĐẠT          ĐẠT
+  trung           THIẾU       THIẾU        ĐẠT         THIẾU          ĐẠT
+  thai            THIẾU       THIẾU        ĐẠT         THIẾU          ĐẠT
+  arab            THIẾU       THIẾU        ĐẠT         THIẾU          ĐẠT
+
+==========================================================================
+CỔNG 40 ĐA QUỐC GIA: 0 HỎNG · 3 THIẾU
+  THIẾU: nhóm TRUNG: chép lời + AI chọn đoạn — KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số
+  THIẾU: nhóm THAI: chép lời + AI chọn đoạn — KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số
+  THIẾU: nhóm ARAB: chép lời + AI chọn đoạn — KHÔNG có video thật nào trên máy (đã quét D:\ + C:\Users\Admin) — không bịa số

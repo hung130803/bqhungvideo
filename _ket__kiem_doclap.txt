@@ -1,0 +1,44 @@
+﻿==========================================================================
+LƯỢT KIỂM ĐỘC LẬP — bất biến · tên file xấu · mẫu cũ
+==========================================================================
+nguồn: 【生活保護】居住支援した相談者がお礼に来てくれた2週間後に自殺をしてしまいました。.mp4  (98 MB)
+       C:\Users\Admin\Downloads\thùng rác\2026-08-06\NPO法人生活支援機構ALL
+  [OK ] nạp được ffmpeg_utils.py của `main` (module riêng): 83591 ký tự
+
+[A] BẤT BIẾN SỐNG CÒN — TẮT hết vs `main` (2 đoạn + 3 đoạn hook-first)
+  [OK ] 2 đoạn hook-first: độ dài GIỐNG main: main 20.087s · nhánh 20.087s · lệch 0.0 ms  (xuất 2 bản mất 7.4s)
+  [OK ] 2 đoạn hook-first: SỐ KHUNG giống main: main 602 khung · nhánh 602 khung
+  [OK ] 2 đoạn hook-first: PSNR >= 50 dB ở 5 mốc: [99.0, 99.0, 99.0, 99.0, 99.0] dB (mốc [1.0, 5.0, 9.0, 13.0, 18.0])
+  [OK ] 2 đoạn hook-first: TIẾNG giống main (md5 PCM 8kHz): main '043face3398e4fee' rms 0.15223 · nhánh '043face3398e4fee' rms 0.15223
+       (md5 cả file: main f0502353cbc6 · nhánh f0502353cbc6 · TRÙNG)
+  [OK ] 3 đoạn hook-first: độ dài GIỐNG main: main 24.124s · nhánh 24.124s · lệch 0.0 ms  (xuất 2 bản mất 8.6s)
+  [OK ] 3 đoạn hook-first: SỐ KHUNG giống main: main 723 khung · nhánh 723 khung
+  [OK ] 3 đoạn hook-first: PSNR >= 50 dB ở 5 mốc: [99.0, 99.0, 99.0, 99.0, 99.0] dB (mốc [1.2, 6.0, 10.8, 15.6, 21.6])
+  [OK ] 3 đoạn hook-first: TIẾNG giống main (md5 PCM 8kHz): main '940a8756a802184a' rms 0.08025 · nhánh '940a8756a802184a' rms 0.08025
+       (md5 cả file: main 84886bde10c6 · nhánh 84886bde10c6 · TRÙNG)
+
+[B] TÊN FILE XẤU (Nhật · dấu Việt · % · nháy đơn · [] · ,;&)
+  [OK ] tên «【日本語】不倫ハシゴ - Part 1 現場突撃…» ra clip đúng: 16166 KB · 12.012s (mong 12,000s)
+  [OK ] tên «Tiếng Việt có dấu - Part 2 c…» ra clip đúng: 16166 KB · 12.012s (mong 12,000s)
+  [OK ] tên «Giam gia 100% - Part 3…» ra clip đúng: 16166 KB · 12.012s (mong 12,000s)
+  [OK ] tên «It's a trap - Part 4 [test]…» ra clip đúng: 16166 KB · 12.012s (mong 12,000s)
+  [OK ] tên «co,dau;phay - Part 5 - 50%25…» ra clip đúng: 16166 KB · 12.012s (mong 12,000s)
+
+[C] MẪU CŨ -> 'nhe' · user chọn TẮT -> 'tat' (3 cửa đọc mẫu)
+  [OK ] studio_page._export_video_inner: khoá `chuyen_canh` mặc định 'nhe': CÓ
+  [OK ] studio_page._export_video_inner: khoá `hieu_ung` mặc định 'nhe': CÓ
+  [OK ] m1_highlight (job xuất): khoá `chuyen_canh` mặc định 'nhe': CÓ
+  [OK ] m1_highlight (job xuất): khoá `hieu_ung` mặc định 'nhe': CÓ
+  [OK ] editor._apply_layout: khoá `chuyen_canh` mặc định 'nhe': CÓ
+  [OK ] editor._apply_layout: khoá `hieu_ung` mặc định 'nhe': CÓ
+  [OK ] mẫu CŨ (thiếu cả 2 khoá) -> ('nhe','nhe'): ra ('nhe', 'nhe')
+  [OK ] user chọn TẮT -> 'tat', KHÔNG bị ép về 'nhe': 'tat'
+  [OK ] khoá RỖNG (mẫu lưu chuỗi rỗng) -> 'tat': 'tat'
+  [OK ] 'tat' -> chon_chuyen_canh trả [] (đường CŨ y nguyên): []
+  [OK ] 'nhe' -> có chuyển cảnh cho clip 2 đoạn: [('fade', 0.25)]
+  [OK ] clip 1 ĐOẠN -> [] dù mức 'manh' (không có chỗ nối): []
+  [OK ] KHÔNG bỏ lại mảnh `_seg_*` ở %TEMP%: 0 file
+
+==========================================================================
+ĐẠT 27 · FAIL 0
+==========================================================================

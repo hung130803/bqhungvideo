@@ -11,6 +11,7 @@
 #      + bật faulthandler ghi logs/crash_native.txt.
 import os
 import sys
+from pathlib import Path
 import tempfile
 
 T = tempfile.mkdtemp(prefix="shutdown_safe_")
@@ -18,7 +19,11 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = os.path.join(T, "t.db")
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "settings.ini")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 import app.queue.jobs  # noqa: F401,E402
@@ -92,7 +97,7 @@ except Exception as e:  # noqa: BLE001
     kiem(False, "_bg_thumbs: đang đóng -> không ném", repr(e))
 
 print("== 3. main.py: thoát os._exit + faulthandler ==")
-src = open(r"D:\claude\ai-content-studio\main.py", encoding="utf-8").read()
+src = open(str(Path(__file__).resolve().parent / 'main.py'), encoding="utf-8").read()
 kiem("faulthandler.enable(" in src, "main.py BẬT faulthandler")
 kiem("crash_native.txt" in src, "ghi vào logs/crash_native.txt")
 kiem("os._exit(rc)" in src, "thoát bằng os._exit (không finalize interpreter)")
@@ -101,14 +106,14 @@ kiem(src.index("set_closing()") < src.index("os._exit(rc)"),
 kiem("state.stop" in src.split("rc = qapp.exec()")[1],
      "vẫn dừng worker pool trước khi thoát")
 
-mw = open(r"D:\claude\ai-content-studio\app\ui\main_window.py",
+mw = open(str(Path(__file__).resolve().parent / 'app' / 'ui' / 'main_window.py'),
           encoding="utf-8").read()
 i_set = mw.index("set_closing()")
 i_kill = mw.index("terminate_all_children()")
 kiem(i_set < i_kill,
      "closeEvent: bật cờ đóng TRƯỚC khi giết tiến trình con", f"{i_set}>{i_kill}")
 
-sp = open(r"D:\claude\ai-content-studio\app\ui\studio_page.py",
+sp = open(str(Path(__file__).resolve().parent / 'app' / 'ui' / 'studio_page.py'),
           encoding="utf-8").read()
 kiem(sp.count("safe_emit(") >= 5,
      "mọi emit từ luồng nền đã bọc safe_emit", f"{sp.count('safe_emit(')} chỗ")

@@ -1,0 +1,18 @@
+﻿[PASS] _test_app_smoke.py  3.2s
+     ── 5. chạy nhịp poll 40 lần ── |   xong |  | ================================================================== | ✅ KHÔNG LỖI: mọi trang, mọi nút, mọi hộp thoại, 40 nhịp poll | ==================================================================
+[PASS] _test_pipe_dialogs.py  0.8s
+     ══ GỌN HOÁ: 3 menu gom phải mở được + đủ mục ══ |   ✓ menu '🗑 Kho video & dọn dẹp' đủ mục (2 mục) |   ✓ menu '🔧 Sửa & làm lại' đủ mục (4 mục) |   ✓ menu '⋮ thêm' đủ mục (1 mục) | ✅ MỌI HỘP THOẠI + NÚT MỞ ĐƯỢC, KHÔNG LỖI | ==============================================================
+[PASS] _test_no_popup.py  2.2s
+      | ══ C2. Tự dọn thư mục tạm test cũ (ổ C từng đầy 100%) ══ |   ✓ xoá được rác cũ hơn 1 giờ (1 thư mục / 0.0 MB) |   ✓ KHÔNG xoá thư mục của lần chạy ĐANG diễn ra |  | KẾT QUẢ: TẤT CẢ ĐẠT — test không mở cửa sổ nào trên máy user (chặn 5 cú), ffmpeg vẫn chạy thật
+[PASS] _test_tieng_va_mau.py  0.6s
+       ✅ B5 dòng CÔNG THỨC trong nhật ký chứa TÊN MẪU thật — [21:28:47]    ↳ Part 1 công thức: mẫu «Mẫu Kênh B» · phụ đề «Ô sáng chạy từ (đa màu)» · tiếng động: KHÔNG có (clip 1 đoạn hoặc đã  |   ✅ B5b không còn tên mẫu giả trong nhật ký |  | ============================================================ | ĐẠT 25 · SAI 0 | ✅ CỔNG 25 ĐẠT — tiếng động theo nội dung chỗ nối + tên mẫu thật
+[PASS] _test_moc_ngoai_phim.py  1.3s
+       OK  6c chặn trần 10 dòng (không dội cả trang log vào mặt user) |   OK  6d danh sách từ khoá lỗi có cả ca file rỗng |  | ============================================================== | ĐẠT 24 · SAI 0 | CỔNG 34 ĐẠT — mốc ngoài phim: kẹp lại được thì xuất, không thì báo rõ
+[PASS] _test_va_lo_sub.py  0.5s
+       OK  5c ghép xong SẮP LẠI theo thời gian |   OK  5d bỏ câu rác 1 ký tự ('.', 'I') — whisper hay bịa khi nghe tiếng động |  | ============================================================== | ĐẠT 16 · SAI 0 | CỔNG 35 ĐẠT — vá lỗ lấy lại chữ sót, không phá bản chép lời đang tốt
+[PASS] _test_ui_smooth.py  1.2s
+       ✓ thêm clip -> danh sách có 4 dòng | == 5. ngân sách 1 nhịp poll với 100 kênh == |      (_poll_tick: 0.52 ms/nhịp) |   ✓ 1 nhịp poll < 30ms (đo 0.52ms) — UI không thể là nguồn đơ |  | KẾT QUẢ: TẤT CẢ ĐẠT — dialog mở vẫn chạy, danh sách không nhấp nháy
+[PASS] _test_sfx_kho.py  10.4s
+      | ══ 5. Kho user riêng (fx_sfx_dir) vẫn hoạt động ══ |   ✓ đọc được thư mục tiếng động của user |   ✓ không đặt thư mục -> rỗng, không nổ |  | KẾT QUẢ: TẤT CẢ ĐẠT — kho 184 file / 328 KB, tiếng động kêu thật đúng mốc
+[PASS] _test_hlbox.py  3.7s
+      | ══ 17. ĐI QUA HÀM XUẤT CLIP THẬT của app ══ |   ✓ xuất clip thật: 253 KB |   ✓ clip XUẤT RA có ô đúng màu #39FF14 (4744 px) |  | KẾT QUẢ: TẤT CẢ ĐẠT — ô nền 2 lớp chạy đúng theo từ, đa màu, không mất chữ, không tràn khung, preset cũ y nguyên

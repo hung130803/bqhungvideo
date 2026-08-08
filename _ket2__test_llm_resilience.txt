@@ -1,0 +1,51 @@
+﻿== 1. is_transient_error ==
+  [OK ] transient: 'Connection error.'
+  [OK ] transient: 'Request timed out.'
+  [OK ] transient: 'Error code: 502 - Bad Gateway'
+  [OK ] transient: 'Error code: 503'
+  [OK ] transient: 'EOF occurred in violation of protocol (s'
+  [OK ] transient: "('Connection aborted.', RemoteDisconnect"
+  [OK ] KHONG transient: 'Error code: 429 - rate limit reached'
+  [OK ] KHONG transient: 'invalid api key'
+  [OK ] KHONG transient: 'Error code: 413 - request too large'
+  [OK ] KHONG transient: 'LLM trả về không phải JSON hợp lệ'
+  [OK ] KHONG transient: ''
+  [OK ] 429 van la rate-limit
+== 2. complete_text thu lai khi mang chap chon ==
+  [OK ] tra ve ket qua sau 1 cu timeout — goi 2 lan
+  [OK ] goi dung 2 lan (key 2 cuu)
+== 3. loi la van dung ngay (khong lap vo tan) ==
+  [OK ] nem LLMError dung
+  [OK ] chi goi 1 lan (khong retry loi la) — goi 1 lan
+== 4. complete_json goi lai khi JSON hong ==
+  [OK ] parse duoc sau khi goi lai — goi 2 lan
+  [OK ] goi dung 2 lan
+  [OK ] lan 2 co nhac CHI tra JSON
+  [OK ] lan 2 giu system goc
+== 5. JSON hong ca 3 lan -> LLMError ==
+  [OK ] nem LLMError dung
+  [OK ] goi dung 3 lan roi thoi — goi 3 lan
+== 7. check_groq_key do du moi model ==
+  [OK ] moi model song -> ok
+  [OK ] smart 429 -> exhausted — m-smart: hết lượt (429), hồi sau 12m — model còn lại vẫn chạy được
+  [OK ] note neu ten m-smart — m-smart: hết lượt (429), hồi sau 12m — model còn lại vẫn chạy được
+  [OK ] note noi model khac van chay
+  [OK ] can token -> exhausted — m-main: cạn token (hồi sau 8s) — model còn lại vẫn chạy được
+  [OK ] note noi can token
+  [OK ] 401 -> invalid — key sai/không hợp lệ (401)
+  [OK ] 404 model go -> van ok
+== 8. key bi Groq KHOA (organization restricted) ==
+  [OK ] nhan dien org restricted
+  [OK ] khong nham voi 429
+  [OK ] khong nham voi model go
+  [OK ] key ban khong giet ca luot — goi 2 lan
+  [OK ] key ban xep cuoi vong xoay — ['key_song', 'key_bi_ban']
+  [OK ] nem LLMError dung
+  [OK ] khong ngoi doi 7s vo ich — 0.0s
+  [OK ] checker: 400 org -> invalid — tài khoản Groq bị KHOÁ (organization restricted) — xoá key này, không cứu được
+  [OK ] checker: note noi bi KHOA — tài khoản Groq bị KHOÁ (organization restricted) — xoá key này, không cứu được
+== 6. Groq that (smoke) ==
+  [OK ] Groq that tra JSON parse duoc
+
+KET QUA: TAT CA PASS
+

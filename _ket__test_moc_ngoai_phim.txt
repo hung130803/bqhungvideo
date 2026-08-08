@@ -1,0 +1,43 @@
+
+nguồn thử: 136570 byte · dài 10.00s
+  OK  0 dựng được video nguồn 10 giây - 10.00s
+
+=== 1. Mốc VƯỢT HẾT phim -> báo lỗi RÕ, không để lại file rỗng ===
+  OK  1a có báo lỗi (không im lặng coi như xong) - RuntimeError
+  OK  1b lời lỗi nói ĐÚNG nguyên nhân cho người dùng - Mọi mốc cắt đều nằm ngoài phim: video gốc chỉ dài 10.0s nhưng đoạn cần cắt bắt đầu ở 20.0s
+  OK  1c lời lỗi có SỐ ĐO thật (dài phim / mốc cắt) - Mọi mốc cắt đều nằm ngoài phim: video gốc chỉ dài 10.0s nhưng đoạn cần cắt bắt đầu ở 20.0s
+  OK  1d KHÔNG để lại file clip rỗng trong thư mục - -1 byte
+
+=== 2. Mốc VƯỢT MỘT PHẦN -> vẫn xuất được (kẹp lại), không mất Part ===
+  OK  2a xuất THÀNH CÔNG thay vì chết cả Part
+  OK  2b clip ra có nội dung THẬT (không 0 byte) - 57794 byte
+  OK  2c độ dài đúng phần còn nằm trong phim (~2s) - 2.00s
+  OK  2d clip ra CÓ tiếng (encoder tiếng mở được)
+
+=== 3. BẤT BIẾN: đoạn nằm TRỌN trong phim không bị bản vá đụng ===
+  OK  3a clip thường vẫn xuất tốt - 102455 byte
+  OK  3b độ dài giữ nguyên 4s - 4.00s
+  OK  3c GHÉP 2 đoạn (2 pha) vẫn xuất tốt - 144466 byte
+
+=== 4. Hàm kẹp mốc: từng ca riêng lẻ ===
+  OK  4a trong phim -> giữ y nguyên
+  OK  4b vượt một phần -> kẹp về mép phim
+  OK  4c KHÔNG đọc được độ dài -> GIỮ NGUYÊN (quy tắc: không rõ thì giữ)
+  OK  4d phần còn lại < 0,3s -> báo lỗi (0,05s không là đoạn phim)
+  OK  4e nhiều đoạn: bỏ đoạn ngoài, giữ đoạn trong - [(1.0, 3.0)]
+
+=== 5. ĐỐI CHỨNG ÂM: chứng minh lỗi CŨ có thật và nay bị bắt ===
+  OK  5a ĐO LẠI: ffmpeg tua quá phim vẫn TRẢ MÃ 0 (nên chỉ xem mã thoát là mù) - mã 0
+  OK  5b log CÓ dấu hiệu 'Output file is empty' để bắt
+  OK  5c dấu hiệu nằm trên MỘT dòng (khớp cách _run_with_fallback dò)
+
+=== 6. Hộp lỗi phải NÓI NGUYÊN NHÂN, không chỉ hệ quả ===
+  OK  6a giữ được DÒNG NGUYÊN NHÂN (đầu log) - [in#0] Error opening input: No such file or directory
+frame=
+  OK  6b vẫn giữ dòng cuối để đối chiếu
+  OK  6c chặn trần 10 dòng (không dội cả trang log vào mặt user)
+  OK  6d danh sách từ khoá lỗi có cả ca file rỗng
+
+==============================================================
+ĐẠT 24 · SAI 0
+CỔNG 34 ĐẠT — mốc ngoài phim: kẹp lại được thì xuất, không thì báo rõ

@@ -1,0 +1,35 @@
+﻿== 1. DB lành: chạy bình thường ==
+  ✓ query đọc được dữ liệu
+  ✓ cờ corrupt_live = False khi DB lành
+
+== 2. nhận diện chuỗi lỗi VỠ (không nhầm lỗi khác) ==
+  ✓ nhận VỠ: 'database disk image is malformed'
+  ✓ nhận VỠ: 'file is not a database'
+  ✓ nhận VỠ: 'file is encrypted or is not a database'
+  ✓ KHÔNG nhầm: 'database is locked'
+  ✓ KHÔNG nhầm: 'disk I/O error'
+  ✓ KHÔNG nhầm: 'no such table: x'
+
+== 3. DB VỠ GIỮA LÚC CHẠY -> ngắt mạch ==
+[db] ⛔ DB VỠ giữa lúc chạy — ngắt mạch truy vấn để app không đơ. Khởi động lại app để tự chữa. (file is not a database)
+  ✓ query trên DB vỡ trả RỖNG (không ném lỗi ra UI)
+  ✓ cờ corrupt_live = True (UI dừng poll được)
+
+== 4. sau khi ngắt mạch: KHÔNG đụng đĩa nữa (chống bão I/O) ==
+  ✓ 6.000 truy vấn sau ngắt mạch chỉ 0 ms (đáng lẽ bão I/O)
+  ✓ query_one trả None khi đã ngắt mạch
+
+== 5. execute (ghi) ném lỗi RÕ, không âm thầm mất dữ liệu ==
+  ✓ execute ném lỗi có hướng dẫn khởi động lại
+
+== 6. mở app LẦN SAU trên file vỡ -> tự sao lưu + tạo DB mới ==
+  ✓ DB mới dùng được ngay (cờ vỡ = False)
+  ✓ ghi/đọc lại bình thường
+  ✓ file vỡ được SAO LƯU (không xoá vĩnh viễn)
+
+== 7. PRAGMA tối ưu độ mượt có hiệu lực ==
+  ✓ wal_autocheckpoint = 256 (WAL không phình)
+  ✓ synchronous = NORMAL (1) — bớt fsync, UI mượt
+
+KẾT QUẢ: TẤT CẢ ĐẠT — DB vỡ không còn làm app đơ
+

@@ -1,0 +1,27 @@
+﻿
+=== 1. Mọi nút trên thẻ clip phải ĐỦ RỘNG cho chữ của nó ===
+  OK  1 font mặc định: không nút nào cụt chữ - 4 nút đều đủ rộng
+  OK  1 font to 13px: không nút nào cụt chữ - 4 nút đều đủ rộng
+  OK  1 font rất to 16px (máy DPI cao): không nút nào cụt chữ - 4 nút đều đủ rộng
+
+=== 2. Nút ĐỔI CHỮ (Xuất -> Xuất lại) vẫn không cụt ===
+  OK  2a nút 'Xuất lại' đủ rộng - 134px cho chữ 104px
+  OK  2b clip đã xuất thì có nút 'Mở'
+
+=== 3. Hàng nút thẻ clip phải GỌN (không nhồi nút không cần) ===
+  OK  3a thẻ clip KHÔNG còn 2 nút Hay/Nhạt - ['Xem & sửa', 'Caption', 'Mở', 'Xuất lại', 'Xóa']
+  OK  3b hàng nút gọn (<= 5 nút) - 5 nút: ['Xem & sửa', 'Caption', 'Mở', 'Xuất lại', 'Xóa']
+
+=== 4. KHÔNG còn số px CỨNG cho nút thẻ clip (chống tái phát) ===
+  OK  4a trong _clip_row không còn setFixedWidth cứng cho nút - []
+  OK  4b dùng _vua_chu (đo font lúc chạy)
+
+=== 5. SOI PIXEL + ĐỐI CHỨNG ÂM (cổng có bắt được lỗi cũ không?) ===
+  OK  5a nút có >= 3 màu (nền + chữ + viền) = chữ vẽ ra THẬT - 28 màu
+  OK  5b ĐỐI CHỨNG: bề rộng cứng 52px BỊ bắt là cụt (cổng có tác dụng thật) - 52px < chữ 52px + mép
+  OK  5c cách MỚI (đo font + padding) thì đủ rộng - 82px
+
+==============================================================
+ĐẠT 12 · SAI 0
+CỔNG 31 ĐẠT — nút trên thẻ clip không cụt chữ ở mọi cỡ font
+

@@ -1,0 +1,50 @@
+
+══ 1. CHỈ xoá đúng tên · đúng tuổi · không đụng thứ của người khác ══
+  ✓ xoá _MEI cũ (rác yt-dlp)
+  ✓ GIỮ _MEI mới (<2h — có thể đang tải)
+  ✓ xoá _seg_ cũ
+  ✓ GIỮ _seg_ mới (đang xuất clip)
+  ✓ KHÔNG đụng file không khớp mẫu (video của user)
+  ✓ KHÔNG đụng cookie
+  ✓ đếm đúng: 2 mục / 14000 byte
+
+══ 2. KHÔNG xoá _MEI của CHÍNH tiến trình đang chạy ══
+  ✓ giữ nguyên thư mục _MEI của tiến trình này
+
+══ 3. File đang bị KHOÁ -> bỏ qua, không ném lỗi ══
+  ✓ quét xong không nổ dù file bị khoá
+  ✓ file đang khoá vẫn còn (không phá tiến trình khác)
+  ✓ nhả khoá rồi thì lần quét sau xoá được
+
+══ 4. DATA_DIR: giữ 3 bản DB mới nhất · log 14 ngày · error.log không phình ══
+  ✓ giữ đúng 3 bản DB cũ (còn 3)
+  ✓ giữ bản MỚI NHẤT
+  ✓ xoá bản cũ nhất
+  ✓ xoá bản quarantine quá hạn
+  ✓ xoá log quá 14 ngày
+  ✓ GIỮ log gần đây (còn để tra lỗi)
+  ✓ cắt error.log phình (1048605 byte)
+  ✓ giữ ĐUÔI error.log (lỗi mới nhất còn đọc được)
+
+══ 5. Không bao giờ làm app chết ══
+  ✓ thư mục không tồn tại -> im lặng, không ném lỗi
+  ✓ thiếu biến TEMP -> vẫn không nổ
+
+══ 6. Thư mục tạm RIÊNG cho yt-dlp (rác gom 1 chỗ) ══
+  ✓ tạo được thư mục tạm riêng
+  ✓ nằm trong DATA_DIR của app
+  ✓ dọn cây tạm yt-dlp: xoá cũ, giữ mới (đang tải)
+  ✓ lệnh yt-dlp được truyền env riêng (rác không rơi vào %TEMP% chung)
+
+══ 7. THOÁT APP PHẢI GẤP WAL — kiểm bằng đọc từ NGOÀI ══
+  ✓ trước khi gấp: WAL 1054752 byte
+  ✓ gấp WAL xong -> WAL rỗng (còn 0 byte)
+  ✓ dữ liệu còn nguyên sau khi gấp
+  ✓ đọc từ NGOÀI thấy đủ 201 dòng (trước khi gấp: 88)
+
+══ 8. gap_wal không được nổ ở mọi trạng thái ══
+  ✓ DB đã ngắt mạch -> trả 0, không đụng đĩa
+  ✓ DB RAM -> trả 0
+  ✓ gọi 2 lần liên tiếp vẫn trả số
+
+KẾT QUẢ: TẤT CẢ ĐẠT — app tự dọn rác đúng thứ của mình, gấp WAL khi thoát

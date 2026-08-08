@@ -1,0 +1,66 @@
+  ✓ canh cổng: cấm mở cửa sổ ngoài (đã chặn 0 cú)
+==========================================================================
+CỔNG 37 — CA BIÊN CỦA ĐƯỜNG XUẤT (chuyển cảnh + hiệu ứng)
+==========================================================================
+[máy] 24 nhân · encoder h264_nvenc · ffmpeg đang chạy 0 · rác `_seg_*` trong %TEMP% 0
+
+[CA 1] VIDEO KHÔNG CÓ TIẾNG + chuyển cảnh BẬT
+  [OK ] dựng được nguồn CÂM: 2952 KB · có tiếng = False
+  [OK ] clip CÂM mức 'tat' xuất được, dài đúng 12s: lỗi=không · dài 12.000s
+  [OK ] clip CÂM mức 'vua' xuất được, dài đúng 12s: lỗi=không · dài 12.000s
+  [OK ] clip CÂM: KHÔNG rò mảnh `_seg_*`: sót []
+
+[CA 2] HUỶ GIỮA LÚC XUẤT
+  [OK ] lúc huỷ có ffmpeg đang chạy thật (phép đo có ý nghĩa): 1 tiến trình (nền 0)
+  [OK ] huỷ -> ném CanceledError (không trả về êm như đã xuất xong): CanceledError
+  [OK ] huỷ -> KHÔNG để lại file đích dở: không có file
+  [OK ] huỷ -> DỌN SẠCH mảnh `_seg_*` (không phình %TEMP%): 0 file sót
+  [OK ] huỷ -> KHÔNG bỏ lại ffmpeg mồ côi: trước 0 · sau 0
+
+[CA 3] KHÔNG GHI ĐƯỢC ĐĨA (mô phỏng hết đĩa)
+  [OK ] ghi đích lỗi -> NÉM LỖI, không im lặng báo xong: RuntimeError: ffmpeg không xuất được clip. Log cuối:
+[out#0/mp4 @ 000002d97824acc0] Error opening output C:\Users\Admin\AppD
+  [OK ] ghi đích lỗi -> lời lỗi có log ffmpeg để anh Hùng đọc được: 362 ký tự
+  [OK ] ghi đích lỗi -> DỌN SẠCH mảnh `_seg_*`: 0 file sót
+
+[CA 4] MÁY NHÂN VIÊN: thiếu NVENC + frei0r + OpenCL
+  [OK ] thiếu frei0r -> kho hiệu ứng CO LẠI mà vẫn dùng được (không nổ): 25 -> 14 hiệu ứng (chỉ còn nhóm thuần ffmpeg)
+  [OK ] thiếu frei0r -> `co_frei0r()` False + nêu được LÝ DO: khong co plugin trong C:\Users\Admin\AppData\Local\Temp\test_cabien_26556\khong_co_frei0r
+  [OK ] thiếu OpenCL -> nhóm chuyển cảnh GPU tắt hẳn (không nổ): dung_duoc() = []
+  [OK ] KHÔNG NVENC (libx264) + chuyển cảnh + hiệu ứng -> vẫn xuất đúng 12s: lỗi=không · dài 12.000s · 0 điểm hiệu ứng
+  [OK ] máy nhân viên: KHÔNG rò mảnh `_seg_*`: sót []
+  [OK ] cửa chờ trên máy yếu vẫn >= 1 chỗ (không tự khoá chết): 3 chỗ
+
+[CA 5] CLIP 1 ĐOẠN + MỐC NGOÀI PHIM, chuyển cảnh đang BẬT
+  [OK ] 1 đoạn + chuyển cảnh BẬT -> xuất bình thường (không chỗ nối nào): lỗi=không · dài 10.000s
+  [OK ] đoạn CHẠM MÉP phim + chuyển cảnh -> vẫn ra đúng 12,9s, không nổ: lỗi=không · dài 12.900s (kỳ vọng 12,9s)
+  [OK ] 2 ca trên: KHÔNG rò mảnh `_seg_*`: sót []
+
+[CA 6] ĐOẠN KẾ NGẮN HƠN thời lượng chuyển cảnh
+  [OK ] mức 'manh', đoạn kế 0.2s -> phần bù <= 0.2s: kiểu gl_xoay_tron d=0.4 -> bù 0.2
+  [OK ] mức 'manh', đoạn kế 0.3s -> phần bù <= 0.3s: kiểu gl_xoay_tron d=0.4 -> bù 0.3
+  [OK ] mức 'vua', đoạn kế 0.25s -> phần bù <= 0.25s: kiểu fadewhite d=0.35 -> bù 0.25
+  [OK ] mức 'nhe', đoạn kế 3.0s -> phần bù <= 0.4s: kiểu fade d=0.25 -> bù 0.25
+[hieu-ung] chuyển cảnh 2n-1 hỏng (thân đoạn 2 còn 0 khung) -> lùi nối cả clip
+  [OK ] xuất được clip có đoạn kế 0,31s ở mức 'manh': ok
+  [OK ] lệch TIẾNG-HÌNH < 80ms (trước khi sửa: 90-200ms): hình 8.333s · tiếng 8.310s · lệch 23ms
+  [OK ] độ dài clip = tổng đoạn (8,31s), chuyển cảnh không ăn bớt: 8.333s (kỳ vọng 8,310s)
+  [OK ] ca đoạn kế ngắn: KHÔNG rò mảnh `_seg_*`: sót []
+
+[CA 7] lệnh ĐO (ngoài cửa chờ) phải tự siết luồng
+  [OK ] chon_doan.nang_luong: lệnh NGOÀI cửa chờ có siết luồng giải mã: tìm thấy hàm=True · có `-threads`=True
+  [OK ] chon_doan.nang_luong: `-threads` đứng TRƯỚC `-i` trong CHÍNH lệnh: trong lệnh: -threads=-1 · -i=-1 (không có -i rời, dùng *vao)
+  [OK ] chon_doan.chuyen_dong: lệnh NGOÀI cửa chờ có siết luồng giải mã: tìm thấy hàm=True · có `-threads`=True
+  [OK ] chon_doan.chuyen_dong: `-threads` đứng TRƯỚC `-i` trong CHÍNH lệnh: trong lệnh: -threads=-1 · -i=-1 (không có -i rời, dùng *vao)
+  [OK ] hieu_ung.do_nhip: lệnh NGOÀI cửa chờ có siết luồng giải mã: tìm thấy hàm=True · có `-threads`=True
+  [OK ] hieu_ung.do_nhip: `-threads` đứng TRƯỚC `-i` trong CHÍNH lệnh: trong lệnh: -threads=69 · -i=-1 (không có -i rời, dùng *vao)
+  [OK ] ffmpeg_utils.extract_audio_wav_why: lệnh NGOÀI cửa chờ có siết luồng giải mã: tìm thấy hàm=True · có `-threads`=True
+  [OK ] ffmpeg_utils.extract_audio_wav_why: `-threads` đứng TRƯỚC `-i` trong CHÍNH lệnh: trong lệnh: -threads=38 · -i=55 (có -i rời)
+  [OK ] ĐO THẬT: 1 lệnh đo ≤ 2× số nhân (trước khi sửa: 70 = 2,92×): đỉnh 22 luồng = 0.92× nhân (trần 48)
+
+[TỔNG] rò rác đĩa + rò tiến trình sau TOÀN BỘ cổng
+  [OK ] TỔNG: %TEMP% không phình thêm mảnh `_seg_*`: 0 file sót
+  [OK ] TỔNG: không bỏ lại ffmpeg mồ côi: trước 0 · sau 0
+
+==========================================================================
+KẾT QUẢ: 40 OK · 0 FAIL

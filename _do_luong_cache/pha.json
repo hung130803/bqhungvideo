@@ -1,0 +1,106 @@
+[
+ {
+  "ten": "goc",
+  "ma": 0,
+  "giay": 7.8,
+  "luong_dinh": 54,
+  "luong_tb": 52,
+  "cpu_giay": 38.5
+ },
+ {
+  "ten": "khong_ass",
+  "ma": 0,
+  "giay": 7.2,
+  "luong_dinh": 54,
+  "luong_tb": 52,
+  "cpu_giay": 39.3
+ },
+ {
+  "ten": "khong_blur",
+  "ma": 0,
+  "giay": 7.1,
+  "luong_dinh": 54,
+  "luong_tb": 52,
+  "cpu_giay": 34.9
+ },
+ {
+  "ten": "chi_giai_ma",
+  "ma": 0,
+  "giay": 1.9,
+  "luong_dinh": 58,
+  "luong_tb": 53,
+  "cpu_giay": 14.8
+ },
+ {
+  "ten": "nvdec",
+  "ma": 0,
+  "giay": 8.2,
+  "luong_dinh": 54,
+  "luong_tb": 52,
+  "cpu_giay": 27.6
+ },
+ {
+  "ten": "decode_threads_2",
+  "ma": 0,
+  "giay": 8.0,
+  "luong_dinh": 40,
+  "luong_tb": 39,
+  "cpu_giay": 33.8
+ },
+ {
+  "ten": "decode_threads_4",
+  "ma": 0,
+  "giay": 8.1,
+  "luong_dinh": 42,
+  "luong_tb": 41,
+  "cpu_giay": 38.9
+ },
+ {
+  "ten": "decode_threads_8",
+  "ma": 0,
+  "giay": 9.0,
+  "luong_dinh": 47,
+  "luong_tb": 46,
+  "cpu_giay": 41.0
+ },
+ {
+  "ten": "filter_threads_2",
+  "ma": 0,
+  "giay": 9.3,
+  "luong_dinh": 34,
+  "luong_tb": 33,
+  "cpu_giay": 27.8
+ },
+ {
+  "ten": "filter_threads_4",
+  "ma": 0,
+  "giay": 8.9,
+  "luong_dinh": 42,
+  "luong_tb": 41,
+  "cpu_giay": 33.2
+ },
+ {
+  "ten": "tach_goc",
+  "ma": 0,
+  "giay": 1.5,
+  "luong_dinh": 61,
+  "luong_tb": 53,
+  "cpu_giay": 5.5
+ },
+ {
+  "ten": "tach_decode_4",
+  "ma": 0,
+  "giay": 1.7,
+  "luong_dinh": 49,
+  "luong_tb": 45,
+  "cpu_giay": 5.4
+ },
+ {
+  "ten": "tach_nvdec",
+  "ma": 0,
+  "giay": 2.8,
+  "luong_dinh": 76,
+  "luong_tb": 65,
+  "cpu_giay": 6.8
+ }
+]

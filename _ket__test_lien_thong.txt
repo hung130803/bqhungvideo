@@ -1,0 +1,65 @@
+
+=== 1. Nâng cấp DB: 300 kênh / 1.800 clip / 207 mẫu ===
+    dựng xong {'projects': 300, 'videos': 600, 'clips': 1800, 'presets': 207} trong 0.0s
+  ✅ 1a đã giả lập được DB CŨ (chưa có bảng clip_gu)
+  ✅ 1b nâng cấp KHÔNG mất dòng nào — trước {'projects': 300, 'videos': 600, 'clips': 1800, 'presets': 207} · sau {'projects': 300, 'videos': 600, 'clips': 1800, 'presets': 207}
+  ✅ 1c bảng clip_gu được dựng lại
+  ✅ 1d nâng cấp nhanh (không làm app khởi động lâu) — 0ms
+  ✅ 1e mở app 4 lần -> chỉ 1 chỉ mục (bước nâng cấp lặp lại được) — 1
+  ✅ 1f đọc gu của 1 kênh vẫn nhanh với DB 300 kênh — 0.0ms
+
+=== 2. `_ten_mau` là dấu TẠM, không được lưu vào mẫu ===
+  ✅ 2a bản sao CÓ dấu tên (để ghi nhật ký)
+  ✅ 2b lưu mẫu -> dấu tạm bị GỠ, mẫu trên đĩa vẫn sạch — ['cap_preset', 'video_rect']
+  ✅ 2c nội dung mẫu không bị hỏng khi gỡ dấu
+
+=== 3. 413 không treo dây chuyền, không đốt key ===
+    (key đang cooldown -> nhánh đợi sẽ chờ 0.0s nếu không chặn)
+  ✅ 3a 413 -> BÁO NGAY, không đợi 15 phút dù có key đang cooldown — 0ms (nhánh đợi sẽ là 0.0s)
+  ✅ 3b 413 gói trong LLMError thường cũng KHÔNG bị đợi — 0ms
+    (đã khoá 2 key, chờ ngắn nhất 1.0s)
+  ✅ 3c 429 THẬT vẫn đợi rồi thử lại (không phá tính năng cũ) — gọi 2 lần / 5.0s
+
+=== 4. 413 ở đường CHÉP LỜI (mọi video đều đi qua) ===
+  ✅ 4a nhánh 413 đặt TRƯỚC nhánh hết-lượt (nếu sau thì vô tác dụng)
+  ✅ 4b chép lời ném LLMTooLarge, không mark_limited
+  ✅ 4c nơi gọi vẫn bắt mọi lỗi -> lùi chép lời bằng MÁY, video không vào _Loi
+
+=== 5. Bấm Huỷ giữa lúc AI xem hình ===
+  ✅ 5a file không tồn tại -> trả rỗng êm (không nổ)
+  ✅ 5b `except CanceledError` đặt TRƯỚC `except Exception` (không nuốt lệnh Huỷ)
+
+=== 6. Đổi model vision khác -> không được chết vì reasoning_effort ===
+  ✅ 6a có dùng reasoning_effort=none
+  ✅ 6b có đường gọi LẠI khi model không nhận tham số đó
+  ✅ 6c đường dự phòng nới max_tokens (model suy luận cần chỗ nghĩ)
+
+=== 7. Bất biến: JSON của model CŨ vẫn bóc đúng ===
+  ✅ 7 mảng thuần -> vẫn bóc đúng list — [{'start': 10, 'end': 70, 'title': 'a'}]
+  ✅ 7 bọc ```json -> vẫn bóc đúng dict — {'clips': [{'start': 1, 'end': 2}]}
+  ✅ 7 có chữ dẫn trước -> vẫn bóc đúng list — [{'index': 0, 'score': 80}]
+  ✅ 7 object recap -> vẫn bóc đúng dict — {'parts': [{'mode': 'orig', 'start': 1, 'end': 2}]}
+  ✅ 7 chữ '<think>' NẰM TRONG dữ liệu -> vẫn bóc đúng list — [{'i': 0, 'desc': 'x <think> trong chuỗi', 'act': 3}]
+  ✅ 7 model suy luận: có khối nghĩ đóng đủ -> vẫn bóc đúng list — [{'i': 0, 'desc': 'ok', 'act': 9}]
+
+=== 8. Thẻ clip có 2 nút mới mà không tràn hàng ===
+    (không dựng được thẻ trực tiếp: RuntimeError) -> đo qua nhãn
+  ✅ 8a nút thẻ clip đo bề rộng THEO FONT, không còn số cứng 52px
+  ✅ 8b nút mới cùng chiều cao 28px với nút cũ (không lệch hàng)
+
+=== 9. Luồng THẬT: bấm Nhạt -> prompt lần cắt sau CÓ ví dụ ===
+  ✅ 9a gu vào được khối prompt — 300 ký tự
+  ✅ 9b khối gu được cộng vào TRƯỚC lúc gọi AI chọn đoạn (nếu sau thì vô dụng)
+  ✅ 9c kênh khác vẫn prompt y hệt cũ (không rò gu)
+
+=== 10. Loại tiếng mới phải chạy được tới ffmpeg ===
+  ✅ 10 nhóm 'impact': có trong bộ xuất + có file thật — 35 file
+  ✅ 10 nhóm 'pop': có trong bộ xuất + có file thật — 34 file
+  ✅ 10 nhóm 'transition': có trong bộ xuất + có file thật — 24 file
+  ✅ 10 nhóm 'reveal': có trong bộ xuất + có file thật — 16 file
+  ✅ 10 nhóm 'riser': có trong bộ xuất + có file thật — 15 file
+  ✅ 10f loại do m1 sinh ra KHÔNG bị ffmpeg đổi thầm sang mặc định — ['impact']
+
+==============================================================
+ĐẠT 37 · SAI 0
+✅ CỔNG 28 ĐẠT — các luồng khớp nhau, 413 không treo/không đốt key

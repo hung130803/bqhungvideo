@@ -1,0 +1,50 @@
+[
+ {
+  "ma": 0,
+  "giay": 20.7,
+  "luong_dinh": 56,
+  "cpu_giay": 53.1,
+  "uu_tien": "idle (app đang dùng)",
+  "tai": 0
+ },
+ {
+  "ma": 0,
+  "giay": 21.5,
+  "luong_dinh": 56,
+  "cpu_giay": 52.6,
+  "uu_tien": "duoi trung binh",
+  "tai": 0
+ },
+ {
+  "ma": 0,
+  "giay": 17.0,
+  "luong_dinh": 56,
+  "cpu_giay": 34.2,
+  "uu_tien": "trung binh",
+  "tai": 0
+ },
+ {
+  "ma": 0,
+  "giay": 20.9,
+  "luong_dinh": 56,
+  "cpu_giay": 52.9,
+  "uu_tien": "idle (app đang dùng)",
+  "tai": 8
+ },
+ {
+  "ma": 0,
+  "giay": 16.2,
+  "luong_dinh": 56,
+  "cpu_giay": 54.3,
+  "uu_tien": "duoi trung binh",
+  "tai": 8
+ },
+ {
+  "ma": 0,
+  "giay": 11.2,
+  "luong_dinh": 56,
+  "cpu_giay": 37.7,
+  "uu_tien": "trung binh",
+  "tai": 8
+ }
+]

@@ -1,0 +1,23 @@
+﻿key Groq cho sandbox: 38 (0 = sẽ tụt về whisper máy, RẤT CHẬM)
+video nguon: 77s co loi noi that
+nhan 0 video (mong doi 1: file tot; hong->_Loi; du->skip han muc)
+=== JOBS ===
+#1 auto         done     1.00 Hoàn tất | 
+#2 m1_export_clip done     1.00 Hoàn tất | 
+=== SO ===
+{'file_name': 'hong.mp4', 'status': 'bad', 'note': 'file hỏng/không đọc được (ffprobe)'}
+{'file_name': 'video_nguon.mp4', 'status': 'done', 'note': '1 part'}
+sandbox: C:\Users\Admin\AppData\Local\Temp\pipe_e2e_uj9196n9
+so cai: {'status': 'done', 'note': '1 part'}
+part xuat ra: 1 -> ['Part 1 Watch Files Vanish Instantly – The Future of Content! #AIEditing #AutoVideo #ContentAutomation #FutureOfContent.mp4']
+goc da xoa: True
+hong vao _Loi: True
+--- bao cao ---
+[15:32:48] ▶ Chạy dây chuyền — nhóm "Mỹ"
+[15:32:48] nhận dần 2 video từ 1 kênh (từng cái — không treo giao diện)…
+[15:32:48] 🔴 Kênh Test: hong.mp4 HỎNG — chuyển _Loi
+[15:32:48] ▶ Kênh Test: nhận 'video_nguon.mp4' (auto) — bắt đầu cắt
+[15:32:49] tổng nhận 1/2 video từ 1 kênh
+[15:33:13] ✅ Kênh Test: 'video_nguon.mp4' xong 1 Part — đã chuyển video gốc vào Thùng rác (khôi phục được)
+TONG: PASS
+

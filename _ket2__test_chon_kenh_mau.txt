@@ -1,0 +1,50 @@
+﻿
+=== 1. Hộp cảnh báo phải có ĐỦ 3 đường ===
+  ✅ 1a hộp cảnh báo bật lên khi có kênh gán mẫu khác
+  ✅ 1b có nút 'Chọn từng kênh…'
+  ✅ 1c có nút 'Gán cho cả N kênh'
+  ✅ 1d có nút 'Để nguyên'
+  ✅ 1e nút MẶC ĐỊNH là đường AN TOÀN (bấm Enter không đổi hết)
+  ✅ 1f nêu đúng SỐ kênh đang gán mẫu khác — 16 kênh
+  ✅ 1g lời hộp thoại GIẢI THÍCH cả 3 đường (user không phải đoán)
+
+=== 2. 'Để nguyên' -> KHÔNG đụng kênh nào ===
+  ✅ 2a bấm 'Để nguyên' -> 0 kênh bị đổi — 0 kênh
+
+=== 3. 'Gán cho cả N kênh' -> đổi hết, đúng id (kênh TRÙNG TÊN) ===
+  ✅ 3a đổi đủ mọi kênh — 16/16
+  ✅ 3b CẢ HAI kênh trùng tên đều đổi (bản cũ tra theo tên -> gán sai/thiếu)
+
+=== 4. 'Chọn từng kênh…' -> chỉ đổi kênh ĐÃ TÍCH ===
+  ✅ 4a hộp chọn kênh bật lên
+  ✅ 4b liệt kê đủ kênh đang gán mẫu khác — 16 dòng
+  ✅ 4c mặc định KHÔNG tích gì (an toàn)
+  ✅ 4d có Ô TÌM (200 kênh phải gõ-lọc được)
+  ✅ 4e mỗi dòng ghi rõ NHÓM + MẪU ĐANG DÙNG — Prison Doc   ·   nhóm Mỹ   ·   đang dùng «Chữ kiểu mới»
+
+=== 5. Lọc theo NHÓM rồi 'Chọn hết đang hiện' ===
+  ✅ 5a gõ 'việt' -> chỉ hiện 7 kênh nhóm Việt — 7 dòng
+  ✅ 5b chỉ tích ĐÚNG phần đang hiện, nhóm Mỹ KHÔNG bị tích — tích 7 = hiện 7
+  ✅ 5c xoá ô tìm -> vẫn đúng 7 kênh được tích — 7
+
+=== 6. Áp dụng -> ĐÚNG 7 kênh đổi, phần còn lại NGUYÊN ===
+  ✅ 6a đúng 7 kênh đổi sang mẫu mới — 7 kênh
+  ✅ 6b 9 kênh nhóm Mỹ GIỮ NGUYÊN mẫu «Chữ kiểu mới»
+  ✅ 6c 2 kênh TRÙNG TÊN: chỉ kênh nhóm Việt đổi, kênh nhóm Mỹ nguyên (bản cũ tra theo tên sẽ sai chỗ này)
+  ✅ 6d báo rõ cho user là kênh không chọn vẫn giữ mẫu cũ — Đã gán mẫu «chữ mới eng» cho 7 kênh. Kênh KHÔNG chọn vẫn giữ mẫu cũ.
+
+=== 7. Không tích gì / bấm Đóng -> KHÔNG đổi ===
+  ✅ 7a chưa tích mà bấm Đổi -> KHÔNG đổi kênh nào — 0 kênh
+  ✅ 7b bấm Đóng -> giữ nguyên tất cả
+
+=== 8. Không có kênh nào gán mẫu khác -> KHÔNG quấy user ===
+  ✅ 8a mọi kênh đã dùng mẫu đó -> không bật hộp thoại
+  ✅ 8b tên mẫu rỗng -> không bật hộp thoại
+
+=== 9. Nhãn nút không dùng emoji dễ thiếu font ===
+  ✅ 9a nút trong hộp chọn kênh đều là CHỮ — []
+
+============================================================
+ĐẠT 27 · SAI 0
+✅ CỔNG 29 ĐẠT — chọn đúng kênh/nhóm để đổi mẫu, không đổi bừa
+

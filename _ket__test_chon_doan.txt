@@ -1,0 +1,77 @@
+  ✓ dọn rác test cũ: 3 thư mục / 6761.8 MB ở %TEMP%
+
+══ 1. NGHE: đo năng lượng + bắt khoảng ồn ══
+  ✓ đo được 21 cửa sổ 1 giây
+  ✓ bắt được 1 khoảng ồn hơn hẳn
+  ✓ khoảng ồn đúng chỗ 8-12s (ra 8-12s, gấp 4.8×)
+  ✓ audio rỗng -> không nổ, trả rỗng
+  ✓ audio PHẲNG -> không bịa khoảng ồn
+  ✓ dựng được khối prompt NGHE
+  ✓ không có khoảng -> khối rỗng
+  ✓ file không tồn tại -> trả rỗng, không nổ
+
+══ 2. XEM: đo chuyển động + đoạn KHÔNG LỜI mà động mạnh ══
+  ✓ đo được 20 giây độ động
+  ✓ phân biệt được TĨNH (0.000) vs ĐỘNG (0.182)
+  ✓ bắt được 1 khoảng động-không-lời
+  ✓ vùng ĐÃ CÓ LỜI NÓI -> không tính là đoạn không-lời
+  ✓ không hình -> rỗng
+  ✓ dựng được khối prompt XEM
+
+══ 3. SÀN TỰ THÍCH ỨNG (2 thang điểm khác đơn vị) ══
+  ✓ 3 đoạn NGANG điểm -> giữ đủ 3 (ra 3)
+  ✓ 1 đoạn trội -> bỏ đoạn kém hơn hẳn
+  ✓ toàn đoạn dở -> vẫn giữ >= 1 (không trắng tay)
+  ✓ danh sách rỗng -> không nổ
+  ✓ điểm toàn 0 -> giữ nguyên (không lọc bừa)
+
+══ 3b. TUÂN THỦ SỐ PART USER ĐẶT (anh Hùng: đặt 3 thì phải ra 3) ══
+  ✓ đặt 3 part, điểm 80/45/40 -> ra ĐỦ 3 (ra 3)
+  ✓ đặt 2 part, có 4 ứng viên -> ra ĐÚNG 2 (ra 2)
+  ✓ 2 clip giữ lại là 2 clip ĐIỂM CAO NHẤT (90, 70)
+  ✓ clip dư ghi rõ lý do 'vượt số Part'
+  ✓ video ngắn chỉ có 1 đoạn mà đặt 3 -> ra 1 (không nổ)
+  ✓ đoạn RÁC (5 điểm) vẫn bị bỏ dù chưa đủ số part
+  ✓ KHÔNG đặt số part -> vẫn lọc theo tương quan (như trước)
+
+══ 3c. VIDEO KHÔNG CÓ LỜI NÓI (ASMR — Whisper BỊA chữ) ══
+  ✓ ca ASMR thật -> KHÔNG có lời nói (0.07 từ/giây)
+  ✓ người nói THẬT -> nhận đúng là CÓ lời (2.40 từ/giây)
+  ✓ chép lời RỖNG -> không có lời nói
+  ✓ nội dung chỉ gồm câu Whisper hay BỊA -> không có lời nói
+  ✓ duration 0 -> coi như CÓ lời (an toàn)
+
+══ 4. LỌC INTRO / OUTRO ══
+  ✓ bỏ clip trong intro + outro, giữ clip giữa (giữ 1)
+  ✓ lý do bỏ ghi rõ intro/outro
+  ✓ clip VẮT QUA vùng đầu -> KHÔNG bị cắt oan
+  ✓ chỉ có 1 clip nằm trong intro -> vẫn giữ (đừng trắng tay)
+  ✓ rỗng -> không nổ
+  ✓ duration 0 -> giữ nguyên
+
+══ 5. TRỌNG TÀI: lỗi kiểu gì cũng KHÔNG được làm vỡ lượt cắt ══
+  ✓ chấm đúng -> trả điểm mới
+  ✓ LLM lỗi -> {} (caller giữ điểm cũ)
+  ✓ trả rác không JSON -> {}
+  ✓ JSON hỏng -> {}
+  ✓ trả None -> {}
+  ✓ lượt 1 hỏng -> THỬ LẠI lượt 2 và ăn (gọi 2 lượt)
+  ✓ index lạ -> bỏ qua, không nổ
+  ✓ không clip -> {}
+
+══ 5b. HỘI ĐỒNG 3 TRỌNG TÀI (trung vị — 1 ông lệch không kéo được) ══
+  ✓ gọi ĐÚNG 3 góc nhìn (gọi 3)
+  ✓ trung vị 80/70/10 = 70 -> ông lệch KHÔNG kéo được ({'score': 70.0, 'vi_sao': 'ok', 'so_phieu': 3})
+  ✓ ghi rõ 3 phiếu
+  ✓ 2 ông hỏng, 1 ông được -> vẫn ra kết quả ({'score': 55.0, 'vi_sao': '', 'so_phieu': 1})
+  ✓ cả 3 ông hỏng -> {} (caller giữ điểm cũ)
+  ✓ trung vị tính đúng, list rỗng không nổ
+  ✓ có đúng 3 góc nhìn khác nhau
+  ✓ truyền được MODEL riêng cho khâu chấm (model-suy-luan-X)
+
+══ 6. HOOK theo tiếng luôn NẰM TRONG clip ══
+  ✓ hook lấy đúng đỉnh trong đoạn 2: [70.0, 73.0]
+  ✓ không có audio -> None
+  ✓ clip rỗng -> None
+
+KẾT QUẢ: TẤT CẢ ĐẠT — AI nghe/xem đúng, trọng tài không bao giờ làm vỡ lượt cắt, sàn không trắng tay

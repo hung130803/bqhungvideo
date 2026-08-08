@@ -110,7 +110,11 @@ if _env_that.exists():
         _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
         if _k in ("GROQ_API_KEYS", "GROQ_KEYS_FILE") and _v:
             os.environ.setdefault(_k, _v)
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 root = T / "daychuyen"

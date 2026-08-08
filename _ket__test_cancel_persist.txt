@@ -1,0 +1,22 @@
+
+══ 1. WorkerPool: cancel_req bền vào DB ══
+  ✓ huỷ job pending -> canceled ngay
+  ✓ huỷ job running -> cancel_req=1 (chờ job tự thoát)
+  ✓ tắt app: job ĐANG HUỶ -> canceled (không hồi sinh)
+  ✓ tắt app: job thường -> pending (chạy tiếp lần sau)
+  ✓ khôi phục sau crash: job ĐANG HUỶ -> canceled
+  ✓ khôi phục sau crash: job thường -> pending
+  ✓ Thử lại job huỷ -> pending + cancel_req=0
+
+══ 2. Dây chuyền: huỷ + tắt app -> mở lại KHÔNG tự chạy ══
+  ✓ dựng cảnh: 1 video đã nhận + 1 job phân tích
+  ✓ mở lại app: KHÔNG xếp job mới cho video đã huỷ
+  ✓ không nối lại ctx nào
+  ✓ dòng sổ được trả (hết kẹt 'taken')
+  ✓ video gốc GIỮ NGUYÊN trong thư mục kênh
+  ✓ dựng cảnh 2b: video2 đã nhận
+  ✓ xuất đã huỷ + tắt app -> mở lại KHÔNG tự xuất lại
+  ✓ đối chứng: việc DỞ thật (pending) vẫn được nối lại
+  ✓ poll huỷ (app sống): dòng sổ được trả ngay
+
+KẾT QUẢ: TẤT CẢ ĐẠT — huỷ là huỷ, tắt app mở lại không tự chạy
