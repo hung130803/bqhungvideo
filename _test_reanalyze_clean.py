@@ -13,6 +13,7 @@
 # cả đám cũ => 7-8 part.
 import os
 import sys
+from pathlib import Path
 import tempfile
 
 T = tempfile.mkdtemp(prefix="reanalyze_")
@@ -20,7 +21,11 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = os.path.join(T, "t.db")
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "settings.ini")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.database.db import db  # noqa: E402
 from app import services  # noqa: E402
@@ -102,7 +107,7 @@ kiem(st == "exported", "clip đang có job xuất chạy KHÔNG bị đưa vào 
 # ═══ L1: main.py xả đệm khi stdout=None (bản .exe không console) ═══
 print("\n== L1: tắt app khi stdout/stderr = None (bản .exe windowed) ==")
 import io  # noqa: E402
-src = io.open(r"D:\claude\ai-content-studio\main.py", encoding="utf-8").read()
+src = io.open(str(Path(__file__).resolve().parent / 'main.py'), encoding="utf-8").read()
 kiem("sys.stdout.flush," not in src and "sys.stderr.flush)" not in src,
      "main.py KHÔNG còn lấy .flush ngay trong tuple (ngoài try)")
 ns = {"sys": type("S", (), {"stdout": None, "stderr": None})()}

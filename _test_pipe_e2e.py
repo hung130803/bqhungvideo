@@ -29,7 +29,11 @@ if _env_that.exists():
 print("key Groq cho sandbox:",
       len([x for x in os.environ.get("GROQ_API_KEYS", "").replace(",", "\n")
            .splitlines() if x.strip()]), "(0 = sẽ tụt về whisper máy, RẤT CHẬM)")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 # ---- 1. dựng video CÓ LỜI NÓI THẬT (edge-tts) ~100s ----

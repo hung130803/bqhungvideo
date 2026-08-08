@@ -23,6 +23,7 @@ BẤT BIẾN CANH Ở ĐÂY:
 """
 import os
 import sys
+from pathlib import Path
 import tempfile
 import time
 
@@ -31,7 +32,11 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = os.path.join(T, "t.db")
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "s.ini")
-sys.path.insert(0, r"D:\claude\ai-content-studio")
+# CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
+# Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
+# đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
+# xanh (đúng loại PASS OAN đã cắn repo này nhiều lần).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
 
 from app.database.db import db  # noqa: E402

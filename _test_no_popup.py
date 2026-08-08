@@ -34,7 +34,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "s.ini")
-REPO = Path(r"D:\claude\ai-content-studio")
+REPO = Path(str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(REPO))
 
 FFMPEG = REPO / "bin" / "ffmpeg.exe"
