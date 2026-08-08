@@ -530,12 +530,17 @@ def ca_bat_bien(src: Path) -> None:
     import importlib.util
     # CHỈ lấy stdout: `git show` hay in kèm cảnh báo "LF will be replaced by
     # CRLF" ra stderr; trộn vào là file .py mở đầu bằng chữ 'warning:' -> nạp nổ.
+    # Mốc đối chứng đổi được: SAU KHI gộp vào `main` thì `main` CHÍNH LÀ nhánh
+    # này, muốn đo bất biến phải trỏ về mốc TRƯỚC khi gộp (`origin/main`).
+    # Đây KHÔNG phải cửa lách: chốt chặn "so-với-chính-mình" ngay dưới so NỘI
+    # DUNG, nên trỏ vào bản trùng vẫn FAIL y như cũ.
+    _moc = os.environ.get("BQ_MOC_REF", "main")
     r = subprocess.run(["git", "-C", str(REPO), "show",
-                        "main:app/core/ffmpeg_utils.py"],
+                        f"{_moc}:app/core/ffmpeg_utils.py"],
                        capture_output=True, creationflags=_NOWIN, timeout=60)
     out = (r.stdout or b"").decode("utf-8", errors="replace")
     if r.returncode != 0 or len(out) < 5000:
-        bao("lấy được ffmpeg_utils.py của main", False,
+        bao(f"lấy được ffmpeg_utils.py của {_moc}", False,
             f"git rc={r.returncode} · {len(out)} ký tự")
         return
     # ---- CHỐNG PASS OAN: bản `main` PHẢI KHÁC nhánh này ------------------
