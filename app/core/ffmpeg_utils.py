@@ -2010,12 +2010,31 @@ def export_canvas_clip(
     # nhiều đoạn thì đo file danh sách concat (đã ghép, đã hook-first), một
     # đoạn thì đo đúng khoảng [s,e] của nguồn.
     _hu: list = []
+    # `fps` cho `zoompan` phải là fps của LUỒNG ĐI VÀO NÓ, KHÔNG phải fps NGUỒN.
+    # LỖI 1 (đo thật 08/08/2026): nền Đen/Trắng dựng bằng `color=…:r=30` và nó
+    # là input CHÍNH của `overlay` -> luồng ra 30 fps. Truyền fps nguồn 25 thì
+    # `zoompan` đóng dấu lại mốc thời gian theo 25 -> 30 khung/giây bị kéo dài
+    # thành 1,2 giây => **clip DÀI HƠN 20%** (đo: 2,000s -> 2,400s), hình dài
+    # hơn tiếng. Nền mờ/fill thì luồng vẫn là hình gốc nên giữ fps nguồn (mọi
+    # mezzanine pha 1 đã ép CFR bằng đúng fps này).
     _hu_fps = _info.fps if 10.0 <= (_info.fps or 0) <= 120.0 else 30.0
+    if bg not in ("blur", "fill"):
+        _hu_fps = 30.0
+    # Timeline ĐẦU RA (sau speed) — CÙNG hệ quy chiếu duck_ranges/dim_ranges/
+    # whoosh_offsets. LỖI 3: trước đây mốc được sinh trên timeline NỘI BỘ (chưa
+    # speed) rồi lại NHÂN vspeed lúc dựng filter như thể nó là mốc đầu ra ->
+    # điểm rơi ra NGOÀI clip. Đo thật: clip nội bộ 10s, speed 1,25 -> ra 8,03s
+    # mà điểm thứ 3 nằm ở giây 9,00-9,70 = KHÔNG BAO GIỜ CHẠY.
+    _out_dur = total / vspeed if abs(vspeed - 1.0) > 0.001 else total
     try:
         from app.core import hieu_ung as _HU
         # ffmpeg con thừa hưởng os.environ -> đặt FREI0R_PATH ở đây là đủ cho cả
         # đường list-truyền-thẳng (test/demo) lẫn đường tự chọn theo mức.
         _HU.dat_frei0r_path()
+        # LỖI 5: font phải biết TRƯỚC khi chọn. `chuoi_filter` tự bỏ hiệu ứng
+        # cần font khi máy thiếu font -> nếu để nó chọn rồi mới bỏ thì nhật ký
+        # khoe hiệu ứng KHÔNG có trong file, và điểm nhấn đó mất trắng 1 suất.
+        _font = _HU.font_mac_dinh(str(fonts_dir or ""))
         if isinstance(hieu_ung, (list, tuple)):
             _hu = [dict(x) for x in hieu_ung]
         elif str(hieu_ung or "").strip().lower() in ("nhe", "vua", "manh"):
@@ -2027,11 +2046,22 @@ def export_canvas_clip(
                         "-i", str(src)]
             _nl, _cd = _HU.do_nhip("", ffmpeg=settings.FFMPEG_PATH,
                                    dau_vao=_vao)
+            # `do_nhip` đo trên timeline NỘI BỘ (1 giá trị / giây). Đổi sang
+            # timeline ĐẦU RA: giây thứ i của clip ra = giây i*vspeed của trong.
+            if abs(vspeed - 1.0) > 0.001:
+                _n = max(1, int(_out_dur))
+                _nl = [_nl[min(len(_nl) - 1, int(i * vspeed))]
+                       for i in range(_n)] if _nl else []
+                _cd = [_cd[min(len(_cd) - 1, int(i * vspeed))]
+                       for i in range(_n)] if _cd else []
             # mốc chỗ nối trên timeline ĐẦU RA (xfade đã bù nên mốc KHÔNG đổi)
-            _moc = [sum(e - s for s, e in segs[:i + 1])
+            _moc = [sum(e - s for s, e in segs[:i + 1]) / vspeed
                     for i in range(len(segs) - 1)]
-            _hu = _HU.chon_hieu_ung(total, str(hieu_ung).strip().lower(),
-                                    nl=_nl, cd=_cd, moc_noi=_moc)
+            _hu = _HU.chon_hieu_ung(_out_dur, str(hieu_ung).strip().lower(),
+                                    nl=_nl, cd=_cd, moc_noi=_moc,
+                                    co_the_dung=_HU.dung_duoc(
+                                        co_font=bool(_font)))
+        _hu = _HU.loc_theo_font(_hu, bool(_font))
         if _hu and hieu_ung_log is not None:
             hieu_ung_log.extend(_hu)
     except Exception:      # noqa: BLE001 — hiệu ứng KHÔNG được làm chết lượt xuất
@@ -2117,19 +2147,21 @@ def export_canvas_clip(
                          f"enable='{expr}'[vdim]")
             final = "[vdim]"
         # HIỆU ỨNG ĐIỂM NHẤN — đặt TRƯỚC khi đốt .ass/overlay chữ nên hình có
-        # hiệu ứng mà CHỮ vẫn nét (y như spotlight ở trên). Mốc chọn ở timeline
-        # ĐẦU RA, còn `t` ở đây là timeline TRƯỚC setpts => nhân vspeed (cùng
-        # cách quy đổi với dim_ranges/duck_ranges).
-        # `fps` truyền vào phải là fps THẬT của nguồn: `zoompan` sinh lại mốc
-        # thời gian theo `fps`, đặt 30 cho nguồn 29,97 là clip tự co 0,1% ->
-        # lệch tiếng-hình. Mezzanine pha 1 cũng ép CFR bằng đúng fps này.
+        # hiệu ứng mà CHỮ vẫn nét (y như spotlight ở trên). Mốc `_hu` ở timeline
+        # ĐẦU RA (xem chỗ chọn ở trên), còn `t` ở đây là timeline TRƯỚC setpts
+        # => nhân vspeed (cùng cách quy đổi với dim_ranges/duck_ranges).
+        # `fps` truyền vào là fps của LUỒNG ĐI VÀO zoompan (`_hu_fps`, đã tính ở
+        # trên theo `bg`) — đặt sai là clip dài/ngắn hơn tiếng, xem LỖI 1.
         if _hu:
             _hu_t = [dict(c, bat=float(c["bat"]) * vspeed,
                           het=float(c["het"]) * vspeed) for c in _hu]
             try:
                 from app.core import hieu_ung as _HU2
-                _ch = _HU2.chuoi_filter(_hu_t, out_w, out_h, _hu_fps,
-                                        str(fonts_dir or ""))
+                # truyền FONT ĐÃ TRA (`_font`), KHÔNG truyền `fonts_dir` thô:
+                # `chuoi_filter("")` bỏ luôn bước tự tìm font nên hiệu ứng cần
+                # font bị VỨT trong khi chỗ chọn ở trên lại thấy có font ->
+                # nhật ký một đằng, file một nẻo (đúng LỖI 5 vừa bịt).
+                _ch = _HU2.chuoi_filter(_hu_t, out_w, out_h, _hu_fps, _font)
             except Exception:  # noqa: BLE001
                 _ch = ""
             if _ch:

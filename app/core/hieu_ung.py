@@ -49,6 +49,15 @@ DAM_MAX = 0.25          # luật 2: độ đậm tối đa (thang riêng từng 
 UV_MAX = 3.0            # luật 3: lệch U/V cho phép (đơn vị 0..255)
 DIEM_MAX = 3            # luật 4: số điểm nhấn tối đa mỗi clip
 CACH_MIN = 2.5          # 2 điểm nhấn phải cách nhau ít nhất (giây)
+#: luật 5 (anh Hùng 08/08/2026 — "tuỳ cái, cái nào cần thì hiện thôi"): TỔNG số
+#: giây CÓ hiệu ứng không được quá 10% thời lượng clip. Đây là cái phanh CUỐI:
+#: dù 3 điểm nhấn đều hợp lệ, clip 12 giây (trần 1,2s) chỉ nhận được 2 điểm.
+TY_LE_MAX = 0.10
+#: DẢI ĐỘNG tối thiểu để coi là "clip CÓ cao trào". max/trung vị dưới mức này
+#: nghĩa là clip PHẲNG (đọc đều, không va chạm) -> KHÔNG thêm gì ngoài chỗ nối.
+#: Đo trên 3 video Nhật thật: dải động tiếng 2,1-6,4 · hình 1,9-4,8; nguồn
+#: `sine` phẳng tuyệt đối ra 1,00. Ngưỡng 1,35 nằm giữa, không đụng video thật.
+PHANG = 1.35
 
 MUC: tuple = ("tat", "nhe", "vua", "manh")
 MUC_NHAN: dict = {
@@ -265,6 +274,7 @@ class HieuUng:
       {a}{b}-> mốc bắt/kết (dùng cho zoompan/crop — KHÔNG có timeline)
       {W}{H}{FPS} -> khung ra
       {p1}..-> tham số đã nội suy theo `dam`
+      {t1}{t2}-> mốc 1/3 và 2/3 cửa sổ (đếm ngược 3-2-1 — xem LỖI 4 dưới)
     """
     khoa: str
     ten: str                    # tên TIẾNG VIỆT cho anh Hùng
@@ -297,8 +307,14 @@ class HieuUng:
         s = self.mau
         for i, (lo, hi) in enumerate(self.ts, start=1):
             s = s.replace("{p%d}" % i, f"{lo + (hi - lo) * d:g}")
+        # LỖI 4 (rà ra 08/08/2026): mốc chia cửa sổ phải TÍNH THEO cửa sổ, không
+        # gắn cứng 0,30/0,60. Cửa sổ co theo `vspeed` (clip tua nhanh/chậm), nên
+        # `{a}+0.60` với cửa sổ 0,56s ra `between(t,0.60,0.56)` — bắt đầu SAU khi
+        # kết thúc => số "1" KHÔNG BAO GIỜ HIỆN mà ffmpeg vẫn rc=0.
+        t1, t2 = a + (b - a) / 3.0, a + (b - a) * 2.0 / 3.0
         s = (s.replace("{en}", f":enable='between(t,{a:.3f},{b:.3f})'")
               .replace("{a}", f"{a:.3f}").replace("{b}", f"{b:.3f}")
+              .replace("{t1}", f"{t1:.3f}").replace("{t2}", f"{t2:.3f}")
               .replace("{W}", str(W)).replace("{H}", str(H))
               # `%g` chứ không `str()`: nguồn 29,97 fps ra
               # "29.970029970029973" -> zoompan bắt lỗi cú pháp video_rate.
@@ -489,13 +505,13 @@ _dk(HieuUng(
     # từng ra Ô ĐEN vì thiếu glyph) — chỉ chữ số.
     "drawtext=fontfile='{FONT}':text='3':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
-    ":enable='between(t,{a},{a}+0.30)',"
+    ":enable='between(t,{a},{t1})',"
     "drawtext=fontfile='{FONT}':text='2':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
-    ":enable='between(t,{a}+0.30,{a}+0.60)',"
+    ":enable='between(t,{t1},{t2})',"
     "drawtext=fontfile='{FONT}':text='1':fontsize=h/3.2:fontcolor=white@{p1}:"
     "borderw=4:bordercolor=black@{p1}:x=(w-text_w)/2:y=(h-text_h)/2"
-    ":enable='between(t,{a}+0.60,{b})'",
+    ":enable='between(t,{t2},{b})'",
     ts=((0.55, 0.95), ), dai=0.80, hop=("noi",), can_font=True,
     nguong_thay=2.0, nguong_manh=0.8))
 
@@ -576,6 +592,20 @@ def loai_diem(giay: int, nl: list, cd: list, moc_noi: list,
     return "ke"
 
 
+def dai_dong(xs: list) -> float:
+    """DẢI ĐỘNG của 1 dãy số đo = đỉnh / trung vị. 1,0 = phẳng tuyệt đối.
+
+    Dùng để trả lời câu hỏi "clip này CÓ cao trào không". Ngưỡng cứng kiểu
+    "RMS > 0,5" thì video êm không bao giờ có cao trào còn video ồn thì chỗ nào
+    cũng cao trào — bài học đã ghi ở `loai_diem`.
+    """
+    ys = [float(x) for x in (xs or []) if x is not None]
+    if len(ys) < 3:
+        return 0.0
+    tv = _tv(ys)
+    return (max(ys) / tv) if tv > 1e-9 else 0.0
+
+
 def _diem_hap_dan(nl: list, cd: list) -> list[tuple[int, float]]:
     """Giây nào ĐÁNG đặt hiệu ứng nhất -> [(giây, điểm)] giảm dần.
 
@@ -636,15 +666,31 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
         uv.append(max(0, int(float(tong_giay)) - 2))
         uv.append(int(float(tong_giay) * 0.28))
 
+    # ---- LUẬT "KHÔNG THÊM GÌ Ở ĐOẠN PHẲNG" (anh Hùng: "cái nào cần thì hiện
+    # thôi"). Clip đọc đều, không va chạm -> dải động ~1,0: mọi giây đều như
+    # nhau nên KHÔNG có giây nào đáng gọi là điểm nhấn. Vẫn cho phép điểm ở CHỖ
+    # NỐI (đó là điểm nhấn về CẤU TRÚC, không cần cao trào để biện minh).
+    dd_nl, dd_cd = dai_dong(nl), dai_dong(cd)
+    phang = bool(nl or cd) and dd_nl < PHANG and dd_cd < PHANG
+
+    # trần TỔNG số giây có hiệu ứng (luật 5)
+    ngan_sach = float(tong_giay) * TY_LE_MAX
     ra: list[dict] = []
     da_dung: list[str] = []
+    da_dung_loai: list[str] = []
     for g in uv:
-        if len(ra) >= n_diem:
+        if len(ra) >= n_diem or ngan_sach < DAI_MIN:
             break
         g = int(max(0, min(int(float(tong_giay)) - 1, g)))
         if any(abs(g - r["bat"]) < CACH_MIN for r in ra):
             continue
         loai = loai_diem(g, nl, cd, moc, float(tong_giay))
+        # PHẲNG -> CHỈ nhận điểm ở CHỖ NỐI. Chỗ nối là sự kiện CÓ THẬT (app vừa
+        # cắt ghép ở đó); còn "chot" chỉ suy từ VỊ TRÍ (3 giây cuối) nên nó
+        # không phải bằng chứng gì — clip đọc đều mà vẫn nháy ở cuối là đúng
+        # kiểu "thêm vào ngớ ngẩn" anh Hùng chê.
+        if phang and loai != "noi":
+            continue
         chon = _chon_kieu(loai, dung, da_dung, len(ra))
         if not chon:
             continue
@@ -652,14 +698,39 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
         dai = max(DAI_MIN, min(DAI_MAX, h.dai))
         bat = float(g)
         het = min(float(tong_giay) - 0.05, bat + dai)
-        if het - bat < DAI_MIN:
+        if het - bat < DAI_MIN or (het - bat) > ngan_sach + 1e-6:
             continue
         ra.append({"bat": round(bat, 3), "het": round(het, 3), "khoa": chon,
                    "dam": dam, "loai": loai,
-                   "vi_sao": _vi_sao(loai, g, nl, cd, moc, float(tong_giay))})
+                   "vi_sao": _vi_sao(chon, loai, g, nl, cd, moc,
+                                     float(tong_giay))})
+        ngan_sach -= (het - bat)
         da_dung.append(chon)
+        da_dung_loai.append(loai)
     ra.sort(key=lambda r: r["bat"])
     return ra
+
+
+def ty_le_co_hieu_ung(chon: list, tong_giay: float) -> float:
+    """% thời lượng clip CÓ hiệu ứng (luật 5: phải <= 10%). Dùng cho ghi chú."""
+    if not chon or float(tong_giay or 0) <= 0:
+        return 0.0
+    return sum(float(c["het"]) - float(c["bat"])
+               for c in chon) / float(tong_giay) * 100.0
+
+
+def loc_theo_font(chon: list, co_font: bool) -> list:
+    """Bỏ các hiệu ứng CẦN FONT khi máy không có font — LỖI 5.
+
+    `chuoi_filter` vẫn tự bỏ chúng khi dựng chuỗi, nhưng nếu caller ghi nhật ký
+    TRƯỚC bước đó thì nhật ký khoe hiệu ứng **không hề tồn tại trong file**, và
+    hiệu ứng bị bỏ đã ĂN MẤT 1 suất trong tối đa 3 điểm nhấn. Lọc TẠI ĐÂY để
+    nhật ký và file luôn khớp nhau.
+    """
+    if co_font:
+        return list(chon or [])
+    return [c for c in (chon or [])
+            if not getattr(KHO.get(str(c.get("khoa", ""))), "can_font", False)]
 
 
 #: Ứng viên theo LOẠI điểm — thứ tự = ưu tiên. Cảnh TĨNH chỉ có mood.
@@ -680,15 +751,19 @@ _UV_THEO_LOAI: dict = {
 
 
 def _chon_kieu(loai: str, dung: list, da_dung: list, i: int) -> str:
-    """Kiểu cho loại điểm này, ƯU TIÊN kiểu CHƯA dùng trong clip (không lặp)."""
+    """Kiểu cho loại điểm này — TUYỆT ĐỐI không lặp kiểu đã dùng trong clip.
+
+    Trước đây hết kiểu mới thì QUAY LẠI dùng kiểu cũ (`uv[i % len(uv)]`) -> một
+    clip có thể ra 2 điểm CÙNG một hiệu ứng, đúng cái anh Hùng chê ở tiếng động
+    ("mọi Part một tiếng ding"). Nay hết kiểu mới thì BỎ điểm đó — thà ít điểm
+    hơn là lặp.
+    """
     uv = [k for k in _UV_THEO_LOAI.get(loai, ()) if k in dung]
-    if not uv:
-        return ""
     moi = [k for k in uv if k not in da_dung]
-    if moi:
-        # xoay theo chỉ số điểm -> 2 clip khác nhau không ra y hệt một bộ
-        return moi[i % len(moi)]
-    return uv[i % len(uv)]
+    if not moi:
+        return ""
+    # xoay theo chỉ số điểm -> 2 clip khác nhau không ra y hệt một bộ
+    return moi[i % len(moi)]
 
 
 _LOAI_NHAN = {"caotrao": "cao trào (tiếng vọt lên)",
@@ -697,19 +772,35 @@ _LOAI_NHAN = {"caotrao": "cao trào (tiếng vọt lên)",
               "ke": "đang kể đều"}
 
 
-def _vi_sao(loai: str, g: int, nl: list, cd: list, moc: list,
+def _so(x: float, n: int = 2) -> str:
+    """Số kiểu VIỆT NAM (dấu phẩy thập phân) — anh Hùng đọc bảng ghi chú."""
+    return f"{x:.{n}f}".replace(".", ",")
+
+
+def _vi_sao(khoa: str, loai: str, g: int, nl: list, cd: list, moc: list,
             tong: float) -> str:
-    s = _LOAI_NHAN.get(loai, loai)
+    """Dòng LÝ DO KÈM SỐ. Cấm ghi chung chung kiểu "cảnh hay" (anh Hùng chốt).
+
+    Khuôn: `giây 41,2 · zoom nhồi · cao trào — RMS 0,82 = 4,0x trung vị;
+    động 7,4/10`. Mọi con số ở đây đọc từ chính clip đang xuất, không phải
+    hằng số bịa.
+    """
+    h = KHO.get(khoa)
     ch = []
     if nl and g < len(nl):
         tv = _tv(nl) or 1e-9
-        ch.append(f"âm {nl[g]:.3f} = {nl[g] / tv:.1f}x trung vị")
+        ch.append(f"RMS {_so(nl[g])} = {_so(nl[g] / tv, 1)}x trung vị")
     if cd and g < len(cd):
         tv = _tv(cd) or 1e-9
-        ch.append(f"động {cd[g]:.3f} = {cd[g] / tv:.1f}x trung vị")
-    if loai == "noi":
-        ch.append("sát mốc ghép " + ", ".join(f"{x:.1f}s" for x in moc))
-    return f"giây {g}: {s}" + (" — " + "; ".join(ch) if ch else "")
+        ch.append(f"động {_so(cd[g] * 10, 1)}/10 = {_so(cd[g] / tv, 1)}x trung vị")
+    if loai == "noi" and moc:
+        gan = min(moc, key=lambda x: abs(x - g))
+        ch.append(f"sát mốc ghép {_so(gan, 1)}s")
+    if loai == "chot":
+        ch.append(f"cách hết clip {_so(max(0.0, tong - g), 1)}s")
+    return (f"giây {_so(float(g), 1)} · {h.ten if h else khoa} · "
+            f"{_LOAI_NHAN.get(loai, loai)}"
+            + (" — " + "; ".join(ch) if ch else ""))
 
 
 # ------------------------------------------------------- DỰNG CHUỖI FILTER
@@ -755,16 +846,28 @@ def chuoi_filter(chon: list, W: int, H: int, fps: float = 30,
     return ",".join(out)
 
 
-def bang_ghi_chu(chon: list) -> str:
-    """Bảng 'giây thứ mấy -> hiệu ứng gì -> vì sao' (tiếng Việt) cho anh Hùng."""
+def bang_ghi_chu(chon: list, tong_giay: float = 0.0) -> str:
+    """Bảng 'giây thứ mấy -> hiệu ứng gì -> VÌ SAO (số)' cho anh Hùng đọc.
+
+    Có `tong_giay` thì in thêm dòng TỈ LỆ % thời lượng có hiệu ứng — con số anh
+    Hùng yêu cầu để tự kiểm "không loè" (trần 10%).
+    """
     if not chon:
-        return "(không có hiệu ứng nào)"
-    d = ["giây     | hiệu ứng                  | CapCut            | vì sao chọn",
-         "-" * 100]
+        return "(không có hiệu ứng nào — clip phẳng hoặc mức Tắt)"
+    d = ["giây          | hiệu ứng                  | CapCut            | VÌ SAO (số đo của chính clip này)",
+         "-" * 128]
     for c in chon:
         h = KHO.get(c["khoa"])
-        d.append(f"{c['bat']:6.2f}-{c['het']:5.2f} | {(h.ten if h else c['khoa']):<25} "
+        d.append(f"{c['bat']:6.2f}-{c['het']:6.2f} | "
+                 f"{(h.ten if h else c['khoa']):<25} "
                  f"| {(h.capcut if h else ''):<17} | {c.get('vi_sao', '')}")
+    tong_hu = sum(float(c["het"]) - float(c["bat"]) for c in chon)
+    if tong_giay and float(tong_giay) > 0:
+        d.append("-" * 128)
+        d.append(f"clip {_so(float(tong_giay))}s · tổng giây CÓ hiệu ứng "
+                 f"{_so(tong_hu)}s · tỉ lệ "
+                 f"{_so(ty_le_co_hieu_ung(chon, tong_giay), 1)}% "
+                 f"(trần {int(TY_LE_MAX * 100)}%)")
     return "\n".join(d)
 
 
