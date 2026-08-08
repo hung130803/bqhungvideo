@@ -1428,3 +1428,52 @@ không phải điểm nhấn.
 · `job auto done` + **2 job `m1_export_clip` done** · `pipeline_files.status =
 done ("2 part")` · **2 Part xuất ra** · gốc đã dọn. Từ **FAIL trơ
 (FileNotFoundError)** → **PASS có số**.
+
+## 9. CỬA CHẶN — CHẠY LẠI TOÀN BỘ: **23/23 ĐẠT · 0 FAIL** (11,3 phút)
+`pyflakes app config.py main.py` = **0 "undefined name"**.
+
+| cổng | giây | kết quả |
+|---|---|---|
+| 24 AI nghe/xem/trọng tài · 25 tiếng động chỗ nối · 28 liên thông | 0,9 · 0,7 · 5,6 | ĐẠT |
+| 2 smoke toàn app (66 nút) · 3 mọi hộp thoại dây chuyền | 1,4 · 0,9 | ĐẠT |
+| **36 chuyển cảnh xfade + cửa chờ** | 91,1 | **64 OK · 0 FAIL** (PSNR **99 dB** 5/5 mốc · lệch 0 ms) |
+| **38 hiệu ứng điểm nhấn + AI chọn** | 145,3 | **46 ĐẠT · 0 SAI** (kèm ca "mẫu CŨ thiếu khoá → `nhe`") |
+| **40 ĐA QUỐC GIA (MỚI)** | 377,2 | **0 HỎNG · 3 THIẾU** (Trung/Thái/Ả Rập không có video) |
+| 5 làn không đói · 6 luồng nền · 7 HUỶ là HUỶ · 8 thử lại AI | 0,1–2,5 | ĐẠT |
+| 14 mượt · 17 + 17b không đụng máy user · 18 dọn rác + gấp WAL | 0,1–2,1 | ĐẠT |
+| 23 kho tiếng động (184 file) · 34 · 35 · 30 trăm kênh | 0,5–9,6 | ĐẠT |
+| **37 ca biên đường xuất** | 17,5 | **40 OK · 0 FAIL** |
+| **39 bản đóng gói** | 0,1 | **12 ĐẠT · 0 FAIL** |
+| chồng lượt / hồi phục dây chuyền | 13,9 | ĐẠT |
+
+**Rác `%TEMP%` sau CẢ BỘ: +4 file / +0,4 MB.** Kiểm cuối: `_seg_*` = **0** ·
+`_MEI*` = **0** · `_nhip_*` = **0** · **ffmpeg mồ côi = 0** · ổ C còn **339 GB**.
+
+### Bản đóng gói — ĐÃ BUILD LẠI sau các bản vá hôm nay
+`.venv-build\Scripts\python.exe -m PyInstaller BQHungVideo.spec --noconfirm --clean`
+→ `.exe` **08/08 14:57**, **MỚI HƠN** mã nguồn (08/08 14:34) · `assets/sfx`
+**185/185** · `assets/fonts` **12/12** · `assets/hieu_ung` **26/26**.
+(Build tay chưa dọn ra 727 MB; `release.yml` có bước xoá
+`googleapiclient/discovery_cache/documents` + `PyQt6/Qt6/translations` nên bản
+phát hành ~620 MB.)
+
+## 10. CÓ NÊN PHÁT HÀNH KHÔNG?
+**NÊN — và nên phát hành SỚM**, vì lượt này sửa **lỗi đang cắn vào sản xuất**:
+1. **Lỗi `.split()` đếm từ CJK** làm video **Nhật/Trung NGẮN** bị gán nhầm
+   "không có lời" → mất phụ đề + tốn ~3-4 phút xem hình mỗi video. Kho
+   `video nhật` của anh Hùng có **183 video 8-51 giây**.
+2. **Thông lượng gấp 2,54×** ở đúng quy mô anh chạy (50 kênh · 10 làn) mà
+   **CPU-giây gần như không đổi (+1,3%)** và **trễ UI không đổi (13,7 ms)**.
+   Job cuối hết đợi 15,4 phút → còn 6,1 phút.
+3. **Giá hiệu ứng rẻ hơn 15% wall / 26% CPU-giây** — nhân với 200-300 kênh/ngày.
+4. **23/23 cổng ĐẠT**, gồm bất biến "preset cũ/hiệu ứng TẮT ra file GIỐNG HỆT
+   `main`" (PSNR 99 dB) và cổng 40 mới.
+
+**Điều kiện kèm theo:**
+- Luồng ffmpeg nay **2,67× số nhân** (mốc cũ là ≤2×). Đây là **đánh đổi anh Hùng
+  đã chọn**. Máy nào thấy nặng: đặt `BQ_FFMPEG_SLOTS=1` hoặc bật "Tiết kiệm máy"
+  — **không cần phát hành bản mới**.
+- Mặc định **`nhe` giữ nguyên** → 200-300 kênh có hiệu ứng ngay khi cập nhật.
+- **Chưa đo trên máy nhân viên yếu THẬT** — công thức tự hạ N về 1 ở máy ≤ 8
+  nhân là **tính toán**, chưa phải số đo.
+- **KHÔNG tự bump version / tag / push / merge `main`** — chờ anh duyệt.
