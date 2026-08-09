@@ -678,17 +678,36 @@ def ca_gpu_fallback() -> None:
                 capture_output=True, timeout=120, creationflags=_NOWIN)
             vao.append(str(p))
         out = _SB / "gpu_out.mp4"
-        kieu = next(iter(GPU.KHO_GPU))
-        r = subprocess.run(
-            [FF, "-y", "-hide_banner", "-v", "error",
-             *GPU.lenh_vung_chong(vao[0], vao[1], str(out), kieu, d, fps=fps)],
-            capture_output=True, text=True, errors="replace", timeout=180,
-            creationflags=_NOWIN)
-        n = int(so_khung(out)) if out.exists() else 0
         ky = int(round(d * fps))
-        bao(f"render thật `{kieu}` ra ĐÚNG {ky} khung (không 0, không vô tận)",
-            r.returncode == 0 and n == ky,
-            f"rc={r.returncode} · {n} khung (kỳ vọng {ky})")
+        # QUÉT **MỌI** KERNEL, không phải mỗi cái đầu tiên (sửa 09/08/2026 khi
+        # kho GPU 21 -> 31 kiểu). Bắt buộc vì OpenCL biên dịch **CẢ FILE `.cl`
+        # một lượt**: MỘT kernel mới sai cú pháp là hỏng TOÀN BỘ nhóm ->
+        # `co_opencl()` trả False -> nhóm GPU biến mất **IM LẶNG** (đúng bệnh
+        # "kho tự co 25 -> 14" đã ghi ở cổng 37). Kiểm 1 kiểu thì lỗi nằm ở 10
+        # kiểu mới không bao giờ lộ ra. Nguồn 320x180 / 9 khung nên cả 31 kiểu
+        # chỉ tốn vài chục giây.
+        xau_gpu: list = []
+        for kieu in GPU.KHO_GPU:
+            r = subprocess.run(
+                [FF, "-y", "-hide_banner", "-v", "error",
+                 *GPU.lenh_vung_chong(vao[0], vao[1], str(out), kieu, d,
+                                      fps=fps)],
+                capture_output=True, text=True, errors="replace", timeout=180,
+                creationflags=_NOWIN)
+            n = int(so_khung(out)) if out.exists() else 0
+            if r.returncode != 0 or n != ky:
+                loi = ((r.stderr or "").strip().splitlines() or [""])[-1][:70]
+                xau_gpu.append(f"{kieu}: rc={r.returncode} · {n}/{ky} khung"
+                               + (f" · {loi}" if r.returncode != 0 else ""))
+            try:
+                out.unlink()
+            except OSError:
+                pass
+        bao(f"render THẬT cả {len(GPU.KHO_GPU)} kernel GPU, kiểu nào cũng ra "
+            f"ĐÚNG {ky} khung (không 0, không vô tận)",
+            not xau_gpu,
+            "; ".join(xau_gpu[:3]) if xau_gpu else
+            f"{len(GPU.KHO_GPU)}/{len(GPU.KHO_GPU)} kiểu · {ky} khung")
     else:
         bao("máy này không có OpenCL -> nhóm GPU tự tắt (đúng thiết kế)",
             GPU.dung_duoc(do_lai=True) == [], "dung_duoc() = []")

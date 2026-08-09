@@ -698,8 +698,40 @@
   `app/` từ repo chính, không đụng gì tới bản vá đang làm. Nay dùng
   `str(Path(__file__).resolve().parent)`. Viết cổng mới thì **đừng bao giờ ghi
   cứng đường repo**.
+- **MỞ RỘNG KHO 09/08/2026 — điểm nhấn 27 -> 43 kiểu · chuyển cảnh GPU 21 -> 31**
+  (nhánh `mo-rong-kho`; thước đo `_do_kho_moi.py`, 7 cổng, ở ĐÚNG 1080x1920).
+  **16 kiểu điểm nhấn MỚI, tất cả là filter CÓ SẴN của ffmpeg = 0 byte tài
+  nguyên**: `xien_hinh`(shear) · `phoi_canh`(perspective) · `nghieng_may`+
+  `rung_xoay`(rotate) · `zoom_lui` · `luot_ngang`/`luot_doc`(whip pan) ·
+  `meo_kinh_tt`(lenscorrection THUẦN, khác plugin frei0r cùng tên) ·
+  `xao_khoi`/`xao_doc`(shufflepixels block/vertical) · `doi_o`(swaprect) ·
+  `truot_hinh`(scroll) · `bac_sang`(posterize) · `mo_huong`(tmix) ·
+  `mo_khoi_tt`(avgblur), cộng **1 frei0r MỚI** `xe_dong` (`pixs0r.dll`,
+  19.408 byte, cùng gói MSYS2/GPL đã kèm).
+  **CỔNG 43 chạy lại TOÀN KHO: ĐẠT 15 · HỎNG 0 — 43/43 kiểu ĐẠT**, thấy được
+  **6,04 – 100%** điểm ảnh, rò ngoài cửa sổ ≤ 0,73%, không kiểu nào ra khung
+  đen. 16 kiểu mới đo được **11,86 – 79,05%**.
+  **KIỂU THAM SỐ frei0r phải DÒ, KHÔNG ĐOÁN** (`_do_f0r_thamso.py`):
+  `frei0r=filter_params=` nhận 4 mã hoá khác nhau — `0.85`(double) · `y`/`n`
+  (bool) · `0.1/0.2/0.3`(màu) · `0.25/0.75`(vị trí). Đưa sai kiểu là ffmpeg
+  **chết cả lệnh**, mà ffmpeg KHÔNG in bảng tham số ra ở bất kỳ mức log nào ->
+  phải "đầu độc" từng chỉ số rồi đọc tên trong lời lỗi.
+  **10 KERNEL CHUYỂN CẢNH GPU MỚI** (gl-transitions, MIT, viết lại tay sang
+  OpenCL): `gl_xoay_loc` · `gl_zoom_nhoe` · `gl_mat_ruoi` · `gl_soc_manh` ·
+  `gl_cot_roi` · `gl_mo_mang` · `gl_o_gach` · `gl_to_ong` · `gl_kinh_van_hoa` ·
+  `gl_song_buom`. **ĐO: 31/31 kernel render thật ra ĐÚNG 9/9 khung, 0 hỏng.**
+  **VÌ SAO PHẢI QUÉT CẢ 31 CHỨ KHÔNG 1 (cổng 36 CA 9 đã sửa):** OpenCL biên
+  dịch **CẢ FILE `.cl` một lượt** — một kernel mới sai cú pháp là hỏng TOÀN BỘ
+  nhóm, `co_opencl()` trả False, nhóm GPU biến mất **IM LẶNG** (đúng bệnh "kho
+  tự co 25 -> 14" ở cổng 37). Bản cũ chỉ render `next(iter(KHO_GPU))` nên lỗi
+  nằm ở 10 kernel mới sẽ không bao giờ lộ ra.
+  **`.spec` KHÔNG phải sửa**: nó đã khai cả thư mục `app/assets/hieu_ung`, nên
+  `pixs0r.dll` và `gl_transitions.cl` tự vào bản .exe (đã kiểm, không suy đoán).
+  **ANH HÙNG ĐÃ CHỐT: KHÔNG quét hết ~120 plugin frei0r** — phần lớn loè loẹt,
+  chỉ lấy vài cái tốt.
 - **NHÓM HIỆU ỨNG CHẠY TRÊN GPU (`app/core/hieu_ung_gpu.py`)**: `xfade_opencl` +
-  kernel gl-transitions (MIT) **21 kiểu ĐO ĐẠT** · `libplacebo` + shader GLSL tự
+  kernel gl-transitions (MIT) **31 kiểu ĐO ĐẠT** (21 + 10 thêm 09/08/2026) ·
+  `libplacebo` + shader GLSL tự
   viết **6/6 ĐẠT và ĐÃ NỐI vào đường xuất** (xem cổng 41). Nhóm shader chỉ bật
   khi `hieu_ung.co_shader()` = True (`BQ_SHADER=0` tắt tay); `ffmpeg_utils` chỉ
   thêm `-init_hw_device vulkan=vk` khi `hieu_ung.can_vulkan(<bộ đã chọn>)` =
