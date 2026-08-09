@@ -690,6 +690,91 @@
   **KHÔNG CÓ trên máy (ghi thẳng):** nội dung thật có `mean_volume` tới −10
   dBFS. Quét cả 28 video × 5 cửa sổ, to nhất là **−14,8 dBFS**. Ca "nền ồn"
   dùng đúng mức đó.
+- **TIẾNG ĐỘNG BỊ *LỜI NÓI* CHE — ĐÃ CHỮA 09/08/2026** (nhánh `sfx-che-boi-loi`;
+  đo bằng `_do_che_loi.py`, mốc đối chứng `BQ_MOC_TRUOC=7b1da35` = v2.19.0).
+  **BỆNH**: anh Hùng chạy v2.19.0 vẫn chê *"âm thanh hiệu ứng nhỏ quá, dùng mà
+  không nghe thấy luôn, **nói át rồi hay sao**"* — và anh ấy **đoán đúng**.
+  v2.19.0 đo "NỔI TRÊN NỀN CỤC BỘ" (bpv20 = lúc IM LẶNG) nên 12/12 mốc đều
+  ≥ +6 dB, cổng xanh, tai vẫn không nghe. **Tai không nghe so với nền, tai nghe
+  so với THỨ ĐANG PHÁT CÙNG LÚC** — mốc rơi vào lúc đang nói thì thứ đó là
+  GIỌNG NÓI, cao hơn nền 10-20 dB.
+  **3 THƯỚC, phải phân biệt** (`_do_che_loi.py`): `NOI` = đỉnh(BẬT) − nền cục bộ
+  (thước CŨ) · `SMR` = đỉnh(lớp SFX) − đỉnh(bản TẮT) · **`D_CHE` = dải nghe được
+  to thêm bao nhiêu dB TẠI MỐC, so với THỨ ĐANG CHE** (bản TẮT đã bị ducking hạ
+  — KHÔNG so với nguồn chưa hạ, xem bên dưới). Đo theo **5 DẢI TẦN**
+  `<300 · 300-1k · 1k-2,4k · 2,4k-4k · >4k`, không chỉ RMS tổng: cộng 2 nguồn
+  không tương quan thì dải to thêm `10log10(1+10^(SMR/10))` -> SMR −6 dB = +1,0
+  dB (đúng ngưỡng vừa phân biệt) · SMR 0 = +3,0 dB (nghe rõ). Quy ước:
+  **RÕ ≥ 3 dB · mờ ≥ 1 dB · KHÔNG < 1 dB** ở dải tốt nhất.
+  **SỐ ĐO 13 mốc / 3 video THẬT** (nền yên −37,0 / T.BÌNH −21,8 / ồn −22,3 dBFS):
+
+  | | ĐANG NÓI (9 mốc) | KHOẢNG LẶNG (4 mốc) |
+  |---|---|---|
+  | v2.19.0 · D_CHE trung vị / thấp nhất | +3,6 / **−1,5** dB | +26,3 / +9,7 dB |
+  | v2.19.0 · nghe được | RÕ 5 · mờ 1 · **KHÔNG 3** | RÕ 4 |
+  | NAY · D_CHE trung vị / thấp nhất | **+10,6 / +3,3** dB | **+31,0** / +5,6 dB |
+  | NAY · nghe được | **RÕ 9 · mờ 0 · KHÔNG 0** | RÕ 4 |
+
+  **5 NGUYÊN NHÂN, mỗi cái một số đo:**
+  (a) **ĐÍCH TÍNH TỪ BÁCH PHÂN VỊ CỦA CẢ CLIP.** Mức lời CỤC BỘ tại mốc cao hơn
+  bpv90 cả clip tới **+5,2 dB** (ca YEN: lời cả clip −19,6 nhưng tại mốc −14,4)
+  trong khi đích bị trần `bpv90 + 3,5` khoá -> **đích thua giọng nói ngay từ
+  công thức**. Nay `muc_tai_moc`/`nen_tai_moc`/`la_moc_dang_noi`: SÀN =
+  `lời_cục_bộ + _SFX_TREN_LOI_MOC_DB` (1,5 dB), TRẦN vẫn "1,5× mức lời" nhưng
+  lấy `max(lời_clip, lời_cục_bộ)` — bất biến CHỐNG ÁT LỜI giữ nguyên ý nghĩa,
+  chỉ thôi tự khoá mình. Phân loại mốc: cục bộ hơn nền cục bộ ≥ `_SFX_DANG_NOI_DB`
+  = 7 dB thì là ĐANG NÓI (đo: ca lặng +0,6..+6,2 · ca nói +7,6..+26,0 — 7 dB
+  tách sạch 2 nhóm).
+  (b) **TRẦN 1,5× MỨC LỜI KHÔNG PHẢI THỦ PHẠM — ĐỪNG NỚI NÓ.** Đã thử đẩy
+  `_SFX_TREN_LOI_MOC_DB` lên +3: nguồn của anh Hùng có bản đỉnh −2,45 dBFS nên
+  `alimiter` SAU KHI TRỘN gọt đúng vào cú va (lớp SFX mất **7 dB**, SMR tụt về
+  **−6,3 dB** = TỆ HƠN lúc chưa sửa). Thủ phạm là cái ĐÍCH lấy theo cả clip, mốc
+  (a). **DỌN CHỖ RẺ HƠN KÉO TO.**
+  (c) **DUCKING ĐẶT SAI CHỖ Ở CA ĐANG NÓI.** v2.19.0 đẩy bướu ra SAU mốc (để cổng
+  hết báo "mốc nhỏ đi") -> đúng lúc cú va đánh xuống thì giọng vẫn to hết cỡ.
+  Nay tách 2 ca: mốc KHOẢNG LẶNG giữ nguyên bướu-sau-mốc v2.19.0 (đang tốt,
+  +7,5 dB) · mốc ĐANG NÓI dùng `_SFX_DUCK_DB_NOI=6,0` / `_SFX_DUCK_DAI_NOI=0,45`
+  / `_SFX_DUCK_SOM_NOI=0,225` = **đỉnh bướu rơi ĐÚNG vào mốc**, giọng đã hạ trọn
+  6 dB trước khi cú va tới (cổng đo 4,2 dB ngay tại mốc). Sớm 0,10 s thì nguồn
+  NÓNG vẫn hỏng 3/4 mốc — chưa đủ chỗ.
+  (d) **CHỌN TIẾNG LỆCH DẢI TẦN VỚI GIỌNG** (`do_sang_sfx`, cột 6 `muc_do.json`):
+  độ sáng = năng lượng trên 4 kHz so toàn dải; giọng dồn 300-3400 Hz nên tiếng
+  sáng "được nghe không mất tiền". **A/B SẠCH ép đúng 1 file** (cùng clip ỒN,
+  cùng mốc đang nói 4,40 s, cùng hệ số): `impactGlass_light` sáng −23,2 ->
+  **D_CHE +9,6** · `impactGlass_medium_003` sáng −32,6 -> **+4,2** ·
+  `boom_deep_05` sáng −56,3 -> **−0,5 = KHÔNG NGHE RA**. Tức sáng hơn 12 dB
+  = nghe rõ hơn **5,4 dB** mà KHÔNG tốn thêm một dB độ to nào. Cửa
+  `_SFX_SANG_DU=10` giữ 7/20 file nhóm `impact` (đủ để 3 Part không kêu giống
+  nhau); cửa 8 dB còn 5 file (bắt đầu lặp), 15 dB nhận lại 16/20 = gần như
+  không lọc. Ưu tiên TƯƠNG ĐỐI theo nhóm, không ngưỡng cứng — nhóm `impact`
+  không có file nào ≥ −12 dB.
+  (e) **LOA ĐIỆN THOẠI KHÔNG PHÁT ĐƯỢC DƯỚI 300 Hz** (`hut_qua_loa`, cột 5).
+  Kho 184 file có **51 file hụt quá 6 dB**, tệ nhất `impact/boom_deep_05.opus`
+  hụt **44,7 dB** — trên máy đo "to đúng đích", trên điện thoại **CÂM**. Dấu
+  hiệu trong bảng đo: dải `<300` vọt **+22..+38 dB** còn mọi dải từ 300 Hz trở
+  lên KHÔNG đổi. `_SFX_LOA_HUT_MAX=−6` loại 51 file, còn 133 để bốc.
+  Kèm `_SFX_LOP_DUOI_TRON=3,0` (lớp SFX phải nằm dưới trần bản trộn 3 dB —
+  `alimiter` gọt SỚM ở nhánh SFX thì rẻ, để lớp hạn CUỐI gọt thì nó hạ CẢ giọng
+  nói đúng vào giây điểm nhấn) và `_SFX_TRAN_TRON_DB` −2,0 -> **−3,0** (đích cao
+  hơn = limiter gọt sâu hơn = phần VỌT của AAC nở theo; đo ngay lúc chưa sửa:
+  clip YÊN ra **+0,41 dBFS / 1 mẫu chạm trần** trong khi bản TẮT −4,84 / 0 mẫu,
+  tức **bản BẬT MÉO HƠN bản TẮT** — phá đúng luật đã chốt).
+  **BẪY ĐO ĐÃ SẬP KHI LÀM VIỆC NÀY (bản đầu của `_do_che_loi.py` sai):** thước
+  "che lời" phải so với **THỨ ĐANG CHE**, tức bản TẮT **ĐÃ BỊ DUCKING HẠ**,
+  không so với nguồn chưa hạ. So nhầm thì chính 6 dB ducking bị tính thành
+  "tiếng động nhỏ đi" -> ca ĐANG NÓI ra `D_LOA` trung vị +5,5 dB trong khi thứ
+  tai thật sự nghe là **+10,6 dB**. Bảng vẫn in cả 2 cột (`D_LOA` = so nguồn
+  chưa hạ · `D_CHE` = so thứ đang che) để không ai lẫn lại.
+  **KHÔNG MÉO HƠN BẢN TẮT** (đo cùng lượt): YEN **−3,01** dBFS / 0 mẫu (TẮT
+  −4,84 / 0) · TBINH **−0,48** / 0 mẫu (TẮT **+0,11 / 1 mẫu** — nguồn đã master
+  vượt 0 dBFS, đúng ca BẤT KHẢ THI đã ghi ở trên) · ON **−2,30** / 0 (TẮT
+  −2,45 / 0). **KHÔNG ÁT LỜI**: ngoài cửa sổ mốc, dải giọng 300-4 kHz đổi nhiều
+  nhất **+0,27 / +0,14 / +0,29 dB** trên 3 clip.
+  **ĐÃ CÂN NHẮC RỒI BỎ, ghi thẳng để đừng ai làm lại:** *dời điểm nhấn sang chỗ
+  KHÔNG có lời*. Điểm nhấn HÌNH do `chon_hieu_ung` đặt theo cao trào CHUYỂN
+  ĐỘNG; dời nó đi vài trăm ms để né giọng nói là **bỏ đúng cái khung đáng nhấn**
+  và làm hình-tiếng lệch nhau — đắt hơn hẳn 3 cách (c)(d)(e) vốn đã đưa 3 mốc
+  "KHÔNG NGHE RA" về 0.
 - **CỔNG TEST PHẢI TRỎ VỀ BẢN MÃ CỦA CHÍNH NÓ.** 29 file `_test_*.py` từng ghi
   CỨNG `sys.path.insert(0, r"D:\claude\ai-content-studio")` (và `bin/ffmpeg.exe`,
   và các lần mở file mã nguồn để quét tĩnh). Chạy cổng từ một **git worktree**
