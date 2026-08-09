@@ -153,7 +153,15 @@ _dk(Luat(
          "oven", "recipe", "grill", "barbecue", "beach", "desert", "summer",
          "pool", "sand", "sweating", "nau an", "can bep", "dau bep",
          "chao ran", "lo nuong", "cong thuc", "bai bien", "be boi",
-         "sa mac")))
+         "sa mac"),
+    bien=(("tuyet_roi", ("snowfall", "snowflake", "snowflakes", "snowman",
+                         "bong tuyet", "tuyet roi")),
+          ("tuyet_bui", ("wind", "windy", "gust", "breeze", "gio thoi",
+                         "gio lanh")),
+          ("tuyet_bao", ("blizzard", "storm", "heavy snow", "ski", "skiing",
+                         "snowboard", "bao tuyet", "truot tuyet")),
+          ("tuyet_tinh_the", ("icicle", "frozen lake", "crystal", "frost",
+                              "frosty", "bang tuyet", "pha le")))))
 _dk(Luat(
     "trai_tim", "tinh_cam",
     manh=("wedding", "bride", "groom", "marriage", "kiss", "kissing", "hug",
@@ -170,7 +178,20 @@ _dk(Luat(
          "match", "race", "goal", "referee", "workout", "gym", "danh nhau",
          "chay mau", "vet mau", "sung dan", "tai nan", "dam tang",
          "chien tranh", "canh sat",
-         "thi dau", "ban thang", "trong tai", "tap gym")))
+         "thi dau", "ban thang", "trong tai", "tap gym"),
+    bien=(("trai_tim", ("couple", "romantic", "love", "cuddle", "tender",
+                        "cap doi", "tinh yeu", "yeu thuong")),
+          ("trai_tim_nho", ("baby", "newborn", "toddler", "infant", "puppy",
+                            "kitten", "em be", "tre so sinh", "cun con",
+                            "meo con")),
+          # tim VỠ chỉ bật khi có bằng chứng "tan vỡ" — không thì cảnh cưới lại
+          # ra tim vỡ. Đây là biến thể có gợi ý riêng chặt nhất bảng.
+          ("trai_tim_vo", ("breakup", "heartbroken", "crying", "tears",
+                           "goodbye", "farewell", "chia tay", "tan vo",
+                           "nuoc mat", "tam biet")),
+          ("canh_hoa", ("wedding", "bride", "groom", "marriage", "proposal",
+                        "engagement", "flowers", "dam cuoi", "co dau",
+                        "chu re", "cau hon", "bo hoa")))))
 _dk(Luat(
     "lap_lanh", "vui",
     manh=("sparkle", "sparkling", "glitter", "jewelry", "diamond", "ring",
@@ -182,7 +203,16 @@ _dk(Luat(
          "lung linh"),
     cam=("fight", "blood", "accident", "funeral", "war", "mud", "garbage",
          "crash", "danh nhau", "chay mau", "tai nan", "dam tang",
-         "chien tranh", "bun dat", "bai rac")))
+         "chien tranh", "bun dat", "bai rac"),
+    bien=(("lap_lanh", ("magic", "magical", "transformation", "surprise",
+                        "phep thuat", "bat ngo")),
+          ("lap_lanh_bui", ("makeup", "glitter", "sparkling", "trang diem",
+                            "lap lanh")),
+          ("lap_lanh_sao", ("princess", "stars", "crystal", "wow", "shiny",
+                            "ngoi sao", "pha le", "lung linh")),
+          ("lap_lanh_vang", ("jewelry", "diamond", "ring", "gold", "silver",
+                             "kim cuong", "trang suc", "nhan cuoi",
+                             "sang trong")))))
 _dk(Luat(
     "confetti", "vui",
     manh=("birthday", "cake", "candles", "party", "celebration",
@@ -196,7 +226,15 @@ _dk(Luat(
     cam=("funeral", "crying", "sad", "accident", "hospital", "war",
          "protest", "fight", "blood", "dam tang", "khoc", "tai nan",
          "benh vien", "chien tranh", "bieu tinh", "danh nhau",
-         "chay mau")))
+         "chay mau"),
+    bien=(("confetti", ("confetti", "party", "celebration", "celebrating",
+                        "tiec", "an mung")),
+          ("confetti_dai", ("graduation", "award", "prize", "anniversary",
+                            "tot nghiep", "giai thuong", "khai truong")),
+          ("confetti_no", ("trophy", "champion", "winner", "victory",
+                           "vo dich", "chien thang")),
+          ("bong_bay", ("birthday", "cake", "candles", "balloons", "new year",
+                        "sinh nhat", "banh kem", "bong bay", "nam moi")))))
 _dk(Luat(
     "mua_roi", "buon",
     manh=("rain", "raining", "rainy", "downpour", "umbrella", "storm",
@@ -209,7 +247,15 @@ _dk(Luat(
          "tam biet", "trong vang"),
     cam=("birthday", "party", "celebration", "confetti", "wedding",
          "comedy", "desert", "kitchen", "cooking", "sinh nhat", "tiec",
-         "an mung", "dam cuoi", "hai huoc", "sa mac", "nau an", "bep")))
+         "an mung", "dam cuoi", "hai huoc", "sa mac", "nau an", "bep"),
+    bien=(("mua_roi", ("rain", "raining", "rainy", "troi mua", "con mua",
+                       "duoi mua")),
+          ("mua_rao", ("downpour", "storm", "thunderstorm", "monsoon",
+                       "mua rao", "con bao")),
+          ("mua_bui", ("drizzle", "sad", "alone", "lonely", "noi buon",
+                       "co don", "mot minh")),
+          ("giot_kinh", ("window", "umbrella", "grey sky", "dark clouds",
+                         "cua so", "cay du", "may den")))))
 _dk(Luat(
     "dom_bokeh", "dem",
     manh=("night", "nighttime", "city lights", "neon", "streetlights",
@@ -220,7 +266,15 @@ _dk(Luat(
     phu=("dark", "evening", "glowing", "skyline", "blurred lights",
          "troi toi", "buoi toi", "len den", "duong chan troi"),
     cam=("daylight", "midday", "noon", "sunny", "beach", "ban ngay",
-         "giua trua", "nang gat", "bai bien")))
+         "giua trua", "nang gat", "bai bien"),
+    bien=(("dom_bokeh", ("bokeh", "blurred lights", "city lights", "skyline",
+                         "den duong", "duong chan troi")),
+          ("bokeh_nho", ("nightclub", "concert", "stage lights", "hoa nhac",
+                         "san khau")),
+          ("den_nhap_nhay", ("christmas lights", "lantern", "candlelight",
+                             "neon", "den giang sinh", "den long", "anh nen",
+                             "den neon")),
+          ("phao_hoa", ("fireworks", "phao hoa")))))
 _dk(Luat(
     "tan_lua", "lua",
     manh=("fire", "flames", "burning", "bonfire", "campfire", "explosion",
@@ -232,7 +286,14 @@ _dk(Luat(
     cam=("snow", "ice", "rain", "underwater", "swimming", "winter",
          "hospital", "baby", "tuyet roi", "bong tuyet", "troi mua",
          "con mua", "duoi nuoc", "boi loi", "mua dong", "benh vien",
-         "em be")))
+         "em be"),
+    bien=(("tan_lua", ("embers", "campfire", "bonfire", "torch", "lua trai",
+                       "than hong", "dot lua")),
+          ("tan_lua_day", ("explosion", "blast", "volcano", "forge",
+                           "welding", "vu no", "nui lua", "han xi",
+                           "dam chay")),
+          ("khoi_bay", ("smoke", "ash", "heat", "fireplace", "khoi lua",
+                        "tro tan", "lo suoi")))))
 _dk(Luat(
     "tia_sang", "hoai_niem",
     manh=("sunset", "sunrise", "golden hour", "lens flare", "flashback",
@@ -243,7 +304,14 @@ _dk(Luat(
          "summer evening", "ky niem", "anh sang am", "nguoc sang",
          "mo mang"),
     cam=("screen recording", "spreadsheet", "chart", "horror", "dark room",
-         "quay man hinh", "bang tinh", "bieu do", "kinh di", "phong toi")))
+         "quay man hinh", "bang tinh", "bieu do", "kinh di", "phong toi"),
+    bien=(("tia_sang", ("lens flare", "flashback", "nostalgic", "hoi tuong",
+                        "ngay xua")),
+          ("tia_sang_doc", ("vintage", "retro", "film camera", "old photo",
+                            "co dien", "may anh phim", "anh cu")),
+          ("nang_xuyen", ("sunset", "sunrise", "golden hour", "summer evening",
+                          "soft light", "hoang hon", "binh minh",
+                          "nang chieu")))))
 _dk(Luat(
     "bui_phim", "hoai_niem",
     manh=("black and white", "archive footage", "vintage film", "old movie",
@@ -254,7 +322,14 @@ _dk(Luat(
          "dusty", "cu ky", "qua khu", "ba noi", "ong noi", "la thu",
          "nhat ky", "bui bam", "ngay truoc"),
     cam=("modern", "futuristic", "gaming", "smartphone screen", "unboxing",
-         "neon", "hien dai", "tuong lai", "khui hop")))
+         "neon", "hien dai", "tuong lai", "khui hop"),
+    bien=(("bui_phim", ("grainy", "old movie", "archive footage",
+                        "vintage film", "phim cu", "tu lieu")),
+          ("xuoc_phim", ("black and white", "historical", "war archive",
+                         "den trang", "lich su")),
+          ("bui_bay", ("museum", "ancestor", "letter", "diary", "dusty",
+                       "bao tang", "to tien", "la thu", "nhat ky",
+                       "bui bam")))))
 _dk(Luat(
     "la_roi", "thien_nhien",
     manh=("autumn", "fall leaves", "falling leaves", "maple", "foliage",
@@ -263,7 +338,85 @@ _dk(Luat(
           "duong rung"),
     phu=("nature", "outdoor", "wind", "trees", "park", "peaceful", "birds",
          "thien nhien", "ngoai troi", "gio thoi", "cay coi", "cong vien",
-         "yen binh", "chim hot")),
+         "yen binh", "chim hot"),
+    bien=(("la_roi", ("autumn", "fall leaves", "falling leaves", "maple",
+                      "mua thu", "la roi", "la vang")),
+          ("la_bay", ("wind", "hiking trail", "countryside", "gio thoi",
+                      "duong rung", "nong thon")),
+          ("la_kim_tuyen", ("foliage", "orchard", "forest", "park",
+                            "rung cay", "vuon cay", "cong vien")))))
+
+# ---- 4 CẢNH MỚI (09/08/2026). Điều kiện để được thêm một CẢNH mới (không phải
+# biến thể): từ khoá phải ĐẶC TRƯNG tới mức khó nhầm sang cảnh khác, và phải có
+# danh sách CẤM đủ mạnh. Cảnh nào chỉ nhận ra được bằng từ chung chung
+# ("food", "travel", "sport") thì KHÔNG thêm — thà không có còn hơn thêm bừa.
+_dk(Luat(
+    "duoi_nuoc", "nuoc",
+    manh=("underwater", "diving", "scuba", "snorkeling", "aquarium",
+          "fish tank", "swimming pool", "swimming", "waterfall",
+          "coral reef", "duoi nuoc", "lan bien", "be ca", "be boi",
+          "boi loi", "thac nuoc", "san ho"),
+    phu=("water", "sea", "ocean", "wave", "waves", "bubbles", "boat",
+         "nuoc bien", "song bien", "bot nuoc", "dai duong", "con thuyen"),
+    cam=("desert", "fire", "flames", "kitchen", "cooking", "snow",
+         "sa mac", "lua chay", "nau an", "can bep", "tuyet roi"),
+    bien=(("bong_bong", ("bubbles", "aquarium", "fish tank", "be ca",
+                         "bot khi")),
+          ("bot_nuoc", ("waterfall", "wave", "waves", "diving", "scuba",
+                        "thac nuoc", "song bien", "lan bien")),
+          ("song_nuoc", ("swimming pool", "swimming", "coral reef",
+                         "be boi", "mat nuoc", "boi loi")))))
+_dk(Luat(
+    "ma_quai", "bi_an",
+    manh=("halloween", "ghost", "haunted", "horror", "scary", "spooky",
+          "pumpkin", "graveyard", "cemetery", "zombie", "witch", "creepy",
+          "ma quy", "kinh di", "ghe ron", "nghia trang", "ma am"),
+    phu=("dark", "fog", "mist", "midnight", "abandoned", "mystery",
+         "toi tam", "suong mu", "nua dem", "hoang tan", "bo hoang"),
+    cam=("birthday", "wedding", "baby", "comedy", "cooking", "kitchen",
+         "beach", "sinh nhat", "dam cuoi", "em be", "hai huoc", "nau an",
+         "can bep", "bai bien"),
+    bien=(("suong_mo", ("fog", "mist", "forest", "abandoned", "suong mu",
+                        "bo hoang")),
+          ("dom_ma", ("ghost", "haunted", "witch", "ma am", "linh hon")),
+          ("tan_tro", ("zombie", "ruins", "burned", "graveyard", "tro tan",
+                       "tan the", "hoang tan")))))
+_dk(Luat(
+    "tien_bac", "tien",
+    # "to tien" KHÔNG được dùng ở đây: bỏ dấu thì `tờ tiền` và `tổ tiên` ra
+    # CÙNG một chuỗi — đúng cái bẫy `tuyết`/`tuyệt vời` đã ghi.
+    manh=("money", "cash", "banknote", "dollar", "dollars", "wallet",
+          "jackpot", "lottery", "payday", "gold bar", "treasure",
+          "millionaire", "tien mat", "tien giay", "vi tien", "trung so",
+          "xo so", "luong thang", "vang mieng", "kho bau", "ty phu"),
+    phu=("shopping", "price", "expensive", "business", "bank", "invest",
+         "luxury", "mua sam", "gia tien", "dat tien", "kinh doanh",
+         "ngan hang", "dau tu", "giam gia"),
+    cam=("funeral", "hospital", "war", "accident", "protest", "dam tang",
+         "benh vien", "chien tranh", "tai nan", "bieu tinh"),
+    bien=(("tien_roi", ("cash", "banknote", "dollar", "dollars", "lottery",
+                        "jackpot", "tien mat", "tien giay", "trung so")),
+          ("xu_vang", ("coin", "coins", "treasure", "gold bar", "dong xu",
+                       "kho bau", "vang mieng")),
+          ("lap_lanh_vang", ("luxury", "millionaire", "expensive",
+                             "giau co", "sang trong", "ty phu")))))
+_dk(Luat(
+    "cong_nghe", "so",
+    manh=("computer", "laptop", "coding", "programming", "software",
+          "robot", "robotics", "artificial intelligence", "hologram",
+          "circuit board", "server room", "video game", "screen recording",
+          "may tinh", "lap trinh", "phan mem", "tri tue nhan tao",
+          "man hinh may tinh", "choi game"),
+    phu=("screen", "keyboard", "data", "digital", "technology", "futuristic",
+         "man hinh", "ban phim", "du lieu", "cong nghe", "tuong lai"),
+    cam=("nature", "forest", "beach", "cooking", "kitchen", "baby",
+         "wedding", "snow", "thien nhien", "rung cay", "bai bien",
+         "nau an", "can bep", "em be", "dam cuoi"),
+    bien=(("hat_so", ("artificial intelligence", "data", "hologram",
+                      "server room", "robot", "tri tue nhan tao",
+                      "du lieu")),
+          ("luoi_so", ("screen recording", "video game", "circuit board",
+                       "man hinh", "choi game")))),
 )
 
 

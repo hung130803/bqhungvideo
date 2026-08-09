@@ -701,12 +701,19 @@ def ca_quet_tinh() -> None:
     bao("lớp phủ + hook + điểm nhấn: 18 tổ hợp đều KHÔNG chồng cửa sổ, "
         "không quá 3 điểm, không vượt trần 10%", not xau,
         "; ".join(xau[:3]) if xau else "18/18 tổ hợp sạch")
+    # TỪ 09/08/2026 bảng luật là **CẢNH**, mỗi cảnh có nhiều BIẾN THỂ nhìn ->
+    # phải so với `moi_kieu()` (gộp cả biến thể), KHÔNG so với `LUAT` (tên cảnh
+    # có thể không còn là tên một kiểu trong kho).
     bao("mọi khoá trong bảng luật khớp cảnh đều CÓ THẬT trong kho",
-        set(LP.LUAT) <= set(HU.KHO),
-        f"thừa: {sorted(set(LP.LUAT) - set(HU.KHO))}")
+        LP.moi_kieu() <= set(HU.KHO),
+        f"thừa: {sorted(LP.moi_kieu() - set(HU.KHO))}")
     bao("mọi kiểu lớp phủ đều CÓ luật khớp cảnh (không kiểu nào chết vô dụng)",
-        set(HU.LOP_PHU) <= set(LP.LUAT),
-        f"thiếu luật: {sorted(set(HU.LOP_PHU) - set(LP.LUAT))}")
+        set(HU.LOP_PHU) <= LP.moi_kieu(),
+        f"thiếu luật: {sorted(set(HU.LOP_PHU) - LP.moi_kieu())}")
+    bao(f"{len(LP.LUAT)} CẢNH · {len(LP.moi_kieu())} kiểu lớp phủ · mỗi cảnh "
+        f"nhiều biến thể (đa dạng mà không thêm cơ hội nhận nhầm)",
+        all(len(l._re_bien) >= 2 for l in LP.LUAT.values()),
+        "; ".join(f"{k}:{len(l._re_bien)}" for k, l in LP.LUAT.items()))
     thua = {k: sorted(set(l.manh) & set(l.cam)) for k, l in LP.LUAT.items()
             if set(l.manh) & set(l.cam)}
     bao("không luật nào vừa CẤM vừa NHẬN cùng một từ khoá", not thua, str(thua))

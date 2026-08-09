@@ -972,6 +972,395 @@ _dk(HieuUng(
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="mùa thu/ngoài trời/thiên nhiên"))
 
+# ---- BIẾN THỂ NHÌN CỦA CÙNG MỘT CẢNH (09/08/2026) ----
+# Anh Hùng: *"càng nhiều kiểu càng tốt, 100 kiểu cũng được, NHƯNG AI phải hiểu
+# ngữ cảnh, thêm hợp lý, không thêm bừa bãi làm video chất lượng thấp đi"*.
+# **CÁCH MỞ RỘNG ĐÚNG — đã chốt:** thêm BIẾN THỂ trong CÙNG một cảnh, KHÔNG bịa
+# thêm ngữ cảnh không nhận ra được. Lý do là số học: mỗi ngữ cảnh mới là một cơ
+# hội NHẬN NHẦM (bảng từ khoá phải đoán "cảnh này là gì"), còn biến thể thì dùng
+# LẠI đúng bằng chứng đã được chấm đạt ngưỡng — rủi ro thêm bằng 0, mà 3 Part
+# của một video không còn kêu giống hệt nhau.
+# Vì thế mọi kiểu dưới đây đều là MỘT trong 4 phép biến đổi của khuôn đã đo
+# (`_lp` + `_luoi`), không phải cơ chế mới: cỡ ô · tốc độ rơi · HÌNH hạt · MÀU.
+_dk(HieuUng(
+    "tuyet_bui", "Tuyết bụi bay ngang", "Snow Dust", "lop_phu",
+    # bụi tuyết mịn: ô NHỎ (nhiều hạt), rơi chậm nhưng LẮC MẠNH -> mắt đọc ra là
+    # gió thổi ngang chứ không phải "rơi".
+    _lp(_luoi(11, 0.9, lac=0.55)
+        + f"st(8,0.15*ld(1)+0.10*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.4,0,1)"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="lạnh/gió tuyết — biến thể của cảnh «tuyet_roi»"))
+_dk(HieuUng(
+    "tuyet_bao", "Bão tuyết dày", "Blizzard", "lop_phu",
+    # bão: ô nhỏ + rơi RẤT nhanh + lắc -> vệt hơi kéo dài, dày đặc.
+    _lp(_luoi(13, 6.5, lac=0.30)
+        + f"st(8,0.16*ld(1)+0.12*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1-abs(ld(9))/(ld(8)*1.15),0,1)"
+          "*clip(1-abs(ld(0))/(ld(8)*1.75),0,1)"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="bão tuyết/trượt tuyết — biến thể của cảnh «tuyet_roi»"))
+_dk(HieuUng(
+    "tuyet_tinh_the", "Tinh thể tuyết lấp lánh", "Snow Crystals", "lop_phu",
+    # bông TO, rơi rất chậm, có nhấp nháy nhẹ (sàn 0,60 — tắt hẳn thì nửa số hạt
+    # biến mất và diện tích tụt dưới ngưỡng THẤY ĐƯỢC).
+    _lp(_luoi(30, 1.0, lac=0.14)
+        + f"st(8,0.19*ld(1)+0.10*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.60+0.40*max(0,sin(4.8*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*ld(3)*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.8,0,1)"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="tuyết ngược sáng — biến thể của cảnh «tuyet_roi»"))
+_dk(HieuUng(
+    "trai_tim_nho", "Tim nhỏ bay dày", "Small Hearts", "lop_phu",
+    _lp(_luoi(16, 3.0, len_tren=True, lac=0.16)
+        + "st(8,0.21*ld(1));st(9,ld(9)/ld(8));st(0,-ld(0)/ld(8));"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(pow(ld(9)*ld(9)+ld(0)*ld(0)-1,3)-ld(9)*ld(9)*pow(ld(0),3),0)",
+        nen="color=c=0xFFE2E8"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="tình cảm/em bé — biến thể của cảnh «trai_tim»"))
+_dk(HieuUng(
+    "trai_tim_vo", "Tim vỡ rơi xuống", "Broken Hearts", "lop_phu",
+    # CÙNG hình tim nhưng RƠI XUỐNG và bị **xẻ đôi** bằng một khe dọc (nhân với
+    # `gt(abs(dx), 0,10)`) -> đọc ra ngay là "tan vỡ". Đây là biến thể có GỢI Ý
+    # RIÊNG mạnh nhất nhóm: chỉ bật khi lời/hình nói tới chia tay.
+    _lp(_luoi(22, 2.0, lac=0.20)
+        + "st(8,0.22*ld(1));st(9,ld(9)/ld(8));st(0,-ld(0)/ld(8));"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(pow(ld(9)*ld(9)+ld(0)*ld(0)-1,3)-ld(9)*ld(9)*pow(ld(0),3),0)"
+          "*gt(abs(ld(9)-0.16*ld(0)),0.11)",
+        nen="color=c=0xFFE2E8"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="chia tay/tan vỡ — biến thể của cảnh «trai_tim»"))
+_dk(HieuUng(
+    "canh_hoa", "Cánh hoa rơi", "Flower Petals", "lop_phu",
+    # cánh hoa = ELLIPSE quay chậm như lá nhưng nhỏ hơn, hồng nhạt, rơi lững lờ.
+    _lp(_luoi(20, 1.4, lac=0.26)
+        + f"st(8,1.6*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.15*ld(1)),"
+          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.26*ld(1))),0,1)",
+        nen="color=c=0xFFE6EC"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="cưới/lãng mạn — biến thể của cảnh «trai_tim»"))
+_dk(HieuUng(
+    "lap_lanh_bui", "Bụi kim tuyến", "Glitter Dust", "lop_phu",
+    _lp(_luoi(10, 0.35)
+        + f"st(8,0.32*ld(1)*(0.70+0.6*{_bam_lai(53.7, 0.117)}));"
+        + f"st(3,0.50+0.50*max(0,sin(9.0*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)"
+        "*clip(2.2-2.2*pow(abs(ld(9))/ld(8),0.5)"
+        "-2.2*pow(abs(ld(0))/ld(8),0.5),0,1)"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="lung linh/trang điểm — biến thể của cảnh «lap_lanh»"))
+_dk(HieuUng(
+    "lap_lanh_sao", "Sao lấp lánh to", "Big Sparkles", "lop_phu",
+    _lp(_luoi(36, 0.30)
+        + f"st(8,0.62*ld(1)*(0.72+0.55*{_bam_lai(53.7, 0.117)}));"
+        + f"st(3,0.55+0.45*max(0,sin(5.0*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)"
+        "*clip(2.6-2.6*pow(abs(ld(9))/ld(8),0.42)"
+        "-2.6*pow(abs(ld(0))/ld(8),0.42),0,1)"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="phép thuật/biến hình — biến thể của cảnh «lap_lanh»"))
+_dk(HieuUng(
+    "lap_lanh_vang", "Ánh vàng lấp lánh", "Gold Sparkle", "lop_phu",
+    _lp(_luoi(19, 0.50)
+        + f"st(8,0.46*ld(1)*(0.70+0.6*{_bam_lai(53.7, 0.117)}));"
+        + f"st(3,0.55+0.45*max(0,sin(6.6*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)"
+        "*clip(2.2-2.2*pow(abs(ld(9))/ld(8),0.5)"
+        "-2.2*pow(abs(ld(0))/ld(8),0.5),0,1)",
+        nen="color=c=0xFFF3D6"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="trang sức/kim cương — biến thể của cảnh «lap_lanh»"))
+_dk(HieuUng(
+    "confetti_dai", "Dải giấy dài", "Streamers", "lop_phu",
+    # dải giấy = hình chữ nhật DÀI, quay chậm hơn confetti.
+    _lp(_luoi(26, 2.0, lac=0.24)
+        + f"st(8,2.4*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.075*ld(1))),"
+          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.42*ld(1)))),1)",
+        nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
+            ":n=4:seed=11:speed=0.02"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="tiệc/ăn mừng — biến thể của cảnh «confetti»"))
+_dk(HieuUng(
+    "confetti_no", "Confetti bắn lên", "Confetti Burst", "lop_phu",
+    _lp(_luoi(18, 4.2, len_tren=True, lac=0.22)
+        + f"st(8,5.4*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.15*ld(1))),"
+          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.24*ld(1)))),1)",
+        nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
+            ":n=4:seed=23:speed=0.02"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="vô địch/giải thưởng — biến thể của cảnh «confetti»"))
+_dk(HieuUng(
+    "bong_bay", "Bóng bay lên", "Balloons", "lop_phu",
+    # bóng = ĐĨA hơi dẹt đứng, bay LÊN chậm, ô to nên thưa.
+    _lp(_luoi(34, 1.3, len_tren=True, lac=0.10)
+        + f"st(8,0.30*ld(1)+0.08*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1.6-1.6*hypot(ld(9)/ld(8),ld(0)/(1.20*ld(8))),0,1)",
+        nen="gradients=c0=0xFFB4B4:c1=0xFFF4B4:c2=0xB4E4FF:c3=0xD8B4FF"
+            ":n=4:seed=31:speed=0.02"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="sinh nhật/bóng bay — biến thể của cảnh «confetti»"))
+_dk(HieuUng(
+    "mua_rao", "Mưa rào dày", "Heavy Rain", "lop_phu",
+    _lp("st(1,10);st(2,floor((X+0.42*Y)/ld(1)));"
+        f"st(3,0.85+0.5*{_bam('ld(2)', '0', 12.9898, 0.0)});"
+        "st(4,Y-T*ld(1)*22.0*ld(3)+40000);st(5,floor(ld(4)/ld(1)));"
+        f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+        f"st(7,{_bam_lai(97.13, 0.371)});"
+        "st(9,mod(X+0.42*Y,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6)));"
+        "st(0,mod(ld(4),ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(7)));"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-abs(ld(9))/(0.16*ld(1)),0,1)"
+        "*clip(1-abs(ld(0))/(0.50*ld(1)),0,1)",
+        nen="color=c=0xE6F0FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="bão/mưa to — biến thể của cảnh «mua_roi»"))
+_dk(HieuUng(
+    "mua_bui", "Mưa bụi lất phất", "Drizzle", "lop_phu",
+    _lp("st(1,9);st(2,floor((X+0.16*Y)/ld(1)));"
+        f"st(3,0.80+0.5*{_bam('ld(2)', '0', 12.9898, 0.0)});"
+        "st(4,Y-T*ld(1)*7.0*ld(3)+40000);st(5,floor(ld(4)/ld(1)));"
+        f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+        f"st(7,{_bam_lai(97.13, 0.371)});"
+        "st(9,mod(X+0.16*Y,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6)));"
+        "st(0,mod(ld(4),ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(7)));"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-abs(ld(9))/(0.17*ld(1)),0,1)"
+        "*clip(1-abs(ld(0))/(0.33*ld(1)),0,1)",
+        nen="color=c=0xE6F0FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="buồn/lất phất — biến thể của cảnh «mua_roi»"))
+_dk(HieuUng(
+    "giot_kinh", "Giọt nước trên kính", "Rain On Glass", "lop_phu",
+    # giọt ĐỌNG: gần như đứng yên (rơi 0,18) -> mắt đọc ra là nước bám mặt kính.
+    _lp(_luoi(23, 0.18)
+        + f"st(8,0.21*ld(1)+0.13*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1.5-1.5*hypot(ld(9)/ld(8),ld(0)/(1.35*ld(8))),0,1)",
+        nen="color=c=0xEAF2FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="mưa ngoài cửa sổ — biến thể của cảnh «mua_roi»"))
+_dk(HieuUng(
+    "bokeh_nho", "Đốm bokeh nhỏ dày", "Small Bokeh", "lop_phu",
+    _lp(_luoi(20, 0.35)
+        + f"st(8,0.20*ld(1)+0.12*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "st(3,hypot(ld(9),ld(0)));"
+        + "255*{p1}*" + _LP_SONG + "*(0.55*clip(1-ld(3)/ld(8),0,1)"
+        "+0.45*clip(1-abs(ld(3)-0.86*ld(8))/(0.24*ld(8)),0,1))"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="phố đêm/quán — biến thể của cảnh «dom_bokeh»"))
+_dk(HieuUng(
+    "den_nhap_nhay", "Đèn nhấp nháy", "Twinkling Lights", "lop_phu",
+    _lp(_luoi(26, 0.20)
+        + f"st(8,0.17*ld(1)+0.10*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.35+0.65*max(0,sin(7.8*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*ld(3)*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.6,0,1)",
+        nen="color=c=0xFFF6E0"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="đèn giáng sinh/đèn lồng — biến thể của cảnh «dom_bokeh»"))
+_dk(HieuUng(
+    "phao_hoa", "Tia pháo hoa", "Firework Sparks", "lop_phu",
+    # tia pháo hoa = hạt nhỏ bay LÊN nhanh, đuôi kéo dài theo trục đứng.
+    _lp(_luoi(14, 5.0, len_tren=True, lac=0.12)
+        + f"st(8,0.14*ld(1)+0.09*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.50+0.50*max(0,sin(8.5*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)"
+        "*clip(1-abs(ld(9))/(ld(8)*1.1),0,1)"
+        "*clip(1-abs(ld(0))/(ld(8)*2.2),0,1)",
+        nen="color=c=0xFFF2D8"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="pháo hoa/lễ hội — biến thể của cảnh «dom_bokeh»"))
+_dk(HieuUng(
+    "tan_lua_day", "Tàn lửa dày", "Heavy Embers", "lop_phu",
+    _lp(_luoi(11, 4.0, len_tren=True, lac=0.22)
+        + f"st(8,0.15*ld(1)+0.11*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.45+0.55*max(0,sin(9.5*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*ld(3)*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.3,0,1)",
+        nen="color=c=0xFFEBCD"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="đám cháy/lò rèn — biến thể của cảnh «tan_lua»"))
+_dk(HieuUng(
+    "khoi_bay", "Khói mỏng bay lên", "Drifting Smoke", "lop_phu",
+    # khói = mảng TO, mềm, độ đục thấp; ô rất to nên chỉ vài mảng trôi lên.
+    _lp(_luoi(56, 0.55, len_tren=True, lac=0.20)
+        + f"st(8,0.40*ld(1)+0.16*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1.0-hypot(ld(9)/ld(8),ld(0)/(1.5*ld(8))),0,1)",
+        nen="color=c=0xF2F2F2"),
+    ts=((0.30, 0.50), ), dai=0.80, hop=(),
+    ghi_chu="khói/hơi nóng — biến thể của cảnh «tan_lua»"))
+_dk(HieuUng(
+    "tia_sang_doc", "Vệt sáng dọc quét", "Vertical Light Leak", "lop_phu",
+    _lp("255*{p1}*" + _LP_SONG + "*clip(1-abs(X/W-(0.08+0.92*T/{d}))*6.5,0,1)",
+        nen="color=c=0xFFF0DC"),
+    ts=((0.18, 0.30), ), dai=0.70, hop=(),
+    ghi_chu="hoài niệm/hoàng hôn — biến thể của cảnh «tia_sang»"))
+_dk(HieuUng(
+    "nang_xuyen", "Nắng xuyên nhiều tia", "God Rays", "lop_phu",
+    # nhiều dải song song, cùng nghiêng, quét chậm: `mod` trên trục chéo cho ra
+    # dãy tia đều nhau mà không cần lưới băm.
+    _lp("st(1,mod((X*0.42+Y*0.62)/W*6.0-0.55*T/{d},1));"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-abs(ld(1)-0.5)*4.6,0,1)",
+        nen="color=c=0xFFF4E2"),
+    ts=((0.20, 0.34), ), dai=0.80, hop=(),
+    ghi_chu="nắng chiều/rừng cây — biến thể của cảnh «tia_sang»"))
+_dk(HieuUng(
+    "xuoc_phim", "Xước dọc phim nhựa", "Film Scratches", "lop_phu",
+    # xước = vạch DỌC chạy suốt khung, đổi chỗ mỗi khung (như bụi phim).
+    _lp("st(3,floor(T*24));st(1,17);st(2,floor(X/ld(1)));"
+        f"st(5,ld(2)+ld(3)*61);"
+        f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+        f"st(7,{_bam_lai(97.13, 0.371)});"
+        "st(9,mod(X,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6)));"
+        + "255*{p1}*" + _LP_SONG
+        + f"*gt({_bam_lai(19.7, 0.443)},0.62)"
+        "*clip(1-abs(ld(9))/1.9,0,1)"
+        "*clip(1-abs(Y/H-ld(7))*2.4,0,1)"),
+    ts=((0.55, 0.90), ), dai=0.70, hop=(),
+    ghi_chu="phim cũ/tư liệu — biến thể của cảnh «bui_phim»"))
+_dk(HieuUng(
+    "bui_bay", "Bụi lơ lửng trong nắng", "Floating Dust", "lop_phu",
+    # KHÁC `bui_phim`: hạt KHÔNG đổi chỗ mỗi khung mà trôi rất chậm -> đúng cảm
+    # giác bụi trong luồng sáng, không phải nhiễu phim.
+    _lp(_luoi(15, 0.22, lac=0.30)
+        + f"st(8,0.13*ld(1)+0.09*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.55+0.45*max(0,sin(3.6*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*ld(3)*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.5,0,1)",
+        nen="color=c=0xFFF6E8"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="ký ức/căn phòng cũ — biến thể của cảnh «bui_phim»"))
+_dk(HieuUng(
+    "la_bay", "Lá bay theo gió", "Leaves In Wind", "lop_phu",
+    _lp(_luoi(21, 1.1, lac=0.62)
+        + f"st(8,3.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.17*ld(1)),"
+          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.29*ld(1))),0,1)",
+        nen="color=c=0xFFEDD2"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="gió thổi/đường rừng — biến thể của cảnh «la_roi»"))
+_dk(HieuUng(
+    "la_kim_tuyen", "Lá vàng lấp lánh", "Golden Foliage", "lop_phu",
+    _lp(_luoi(27, 1.5, lac=0.24)
+        + f"st(8,1.2*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.60+0.40*max(0,sin(5.6*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)"
+        "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.20*ld(1)),"
+          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.33*ld(1))),0,1)",
+        nen="color=c=0xFFF0D8"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="mùa thu ngược sáng — biến thể của cảnh «la_roi»"))
+# ---- 4 CẢNH MỚI. Chỉ nhận cảnh nào digest mô tả bằng từ RẤT khó nhầm (nước,
+# ma quái, tiền, màn hình/công nghệ) — mỗi cảnh mới là một cơ hội nhận nhầm nên
+# chỉ thêm khi từ khoá đủ đặc trưng, xem bảng luật `lop_phu.py`.
+_dk(HieuUng(
+    "bong_bong", "Bong bóng nổi lên", "Bubbles", "lop_phu",
+    # bong bóng = VÒNG (viền sáng, ruột trong) bay lên, lắc nhẹ.
+    _lp(_luoi(24, 1.5, len_tren=True, lac=0.18)
+        + f"st(8,0.19*ld(1)+0.12*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "st(3,hypot(ld(9),ld(0)));"
+        + "255*{p1}*" + _LP_SONG + "*(0.24*clip(1-ld(3)/ld(8),0,1)"
+        "+0.76*clip(1-abs(ld(3)-0.82*ld(8))/(0.26*ld(8)),0,1))",
+        nen="color=c=0xE8F6FF"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="dưới nước/bể bơi/bể cá"))
+_dk(HieuUng(
+    "bot_nuoc", "Bọt nước li ti", "Fine Bubbles", "lop_phu",
+    _lp(_luoi(11, 3.4, len_tren=True, lac=0.26)
+        + f"st(8,0.16*ld(1)+0.09*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.3,0,1)",
+        nen="color=c=0xEAF7FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="lặn/sóng/thác nước"))
+_dk(HieuUng(
+    "song_nuoc", "Vân sáng mặt nước", "Water Caustics", "lop_phu",
+    # vân nước = 2 sóng sin chéo nhau, không dùng lưới băm -> rẻ nhất nhóm.
+    _lp("st(1,sin(X/W*17.0+2.3*T)+sin(Y/H*21.0-1.7*T)"
+        "+sin((X/W+Y/H)*13.0+3.1*T));"
+        + "255*{p1}*" + _LP_SONG + "*clip((ld(1)-1.35)/0.85,0,1)",
+        nen="color=c=0xF0FAFF"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="hồ bơi/biển/dưới nước"))
+_dk(HieuUng(
+    "suong_mo", "Sương mù trôi", "Drifting Fog", "lop_phu",
+    _lp(_luoi(64, 0.30, lac=0.55)
+        + f"st(8,0.42*ld(1)+0.18*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1.0-hypot(ld(9)/(1.6*ld(8)),ld(0)/ld(8)),0,1)",
+        nen="color=c=0xF0F0F4"),
+    ts=((0.32, 0.52), ), dai=0.80, hop=(),
+    ghi_chu="kinh dị/halloween/rừng đêm"))
+_dk(HieuUng(
+    "dom_ma", "Đốm ma lơ lửng", "Ghost Orbs", "lop_phu",
+    _lp(_luoi(38, 0.28, lac=0.34)
+        + f"st(8,0.20*ld(1)+0.12*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.40+0.60*max(0,sin(3.2*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "st(4,hypot(ld(9),ld(0)));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)*(0.62*clip(1-ld(4)/ld(8),0,1)"
+        "+0.38*clip(1-ld(4)/(2.1*ld(8)),0,1))",
+        nen="color=c=0xEDF2EA"),
+    ts=((0.50, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="ma quái/bí ẩn/nghĩa trang"))
+_dk(HieuUng(
+    "tan_tro", "Tàn tro rơi", "Falling Ash", "lop_phu",
+    _lp(_luoi(16, 1.0, lac=0.34)
+        + f"st(8,0.13*ld(1)+0.10*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.4,0,1)",
+        nen="color=c=0xF0EEEA"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="tro tàn/tận thế/hoang tàn"))
+_dk(HieuUng(
+    "tien_roi", "Tiền rơi", "Money Rain", "lop_phu",
+    _lp(_luoi(28, 2.4, lac=0.20)
+        + f"st(8,3.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.30*ld(1))),"
+          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.15*ld(1)))),1)",
+        nen="color=c=0xE6F4E2"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="tiền/mua sắm/trúng thưởng"))
+_dk(HieuUng(
+    "xu_vang", "Đồng xu vàng rơi", "Gold Coins", "lop_phu",
+    _lp(_luoi(25, 2.6, lac=0.14)
+        + f"st(8,0.22*ld(1)+0.08*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,abs(cos(3.4*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(1.5-1.5*hypot(ld(9)/(ld(8)*(0.30+0.70*ld(3))),ld(0)/ld(8)),0,1)",
+        nen="color=c=0xFFF2CC"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="vàng/kho báu/giàu có"))
+_dk(HieuUng(
+    "hat_so", "Hạt dữ liệu bay lên", "Data Particles", "lop_phu",
+    _lp(_luoi(17, 2.2, len_tren=True, lac=0.10)
+        + f"st(8,0.19*ld(1)+0.08*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(max(abs(ld(9)),abs(ld(0)))/ld(8),1)",
+        nen="color=c=0xE4F6FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="công nghệ/AI/lập trình"))
+_dk(HieuUng(
+    "luoi_so", "Lưới số quét ngang", "Digital Grid", "lop_phu",
+    # lưới = 2 chùm vạch vuông góc, quét chậm; không lưới băm nên rất rẻ.
+    _lp("st(1,mod(X/W*22.0+0.5*T/{d},1));st(2,mod(Y/H*38.0-0.9*T/{d},1));"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(max(1-abs(ld(1)-0.5)*13.0,1-abs(ld(2)-0.5)*13.0),0,1)",
+        nen="color=c=0xE4F6FF"),
+    ts=((0.42, 0.68), ), dai=0.80, hop=(),
+    ghi_chu="màn hình/game/dữ liệu"))
+
 #: Khoá của nhóm lớp phủ — `lop_phu.py` và cổng 46 đọc từ đây, KHÔNG chép tay
 #: (chép tay là kiểu sai "gỡ khỏi kho mà bảng chọn vẫn trỏ tới").
 LOP_PHU: tuple = tuple(k for k, h in KHO.items() if h.nhom == "lop_phu")
