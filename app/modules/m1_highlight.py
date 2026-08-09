@@ -1877,6 +1877,20 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         from config import settings as _st
         # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript
         used_vision = llm.vision_available() and not getattr(_st, "LIGHT_MODE", True)
+        # Ô XEM HÌNH CỦA KÊNH cũng phải với tới ĐƯỜNG CHẤM ĐIỂM này, không chỉ
+        # đường dựng digest. `_vision_rescore` bên dưới GỌI VISION THÊM và chỉ
+        # bị chặn bởi LIGHT_MODE — máy tắt LIGHT_MODE mà kênh chọn TẮT thì nó
+        # vẫn bắn, tức lựa chọn của anh Hùng bị rò đúng một cửa (cùng loại lỗi
+        # (a) của cổng 19). Kênh CHƯA ĐỤNG (None) -> giữ nguyên dòng trên.
+        _xh_kenh = _vd.xem_hinh_kenh(video_id)
+        if _xh_kenh is False:
+            used_vision = False
+        elif _xh_kenh is True:
+            # Kênh BẬT: chấm bằng digest ĐÃ CÓ (0 lượt gọi thêm). KHÔNG có
+            # digest = app vừa CỐ Ý bỏ qua (nguồn quá ngắn / Groq 503) -> đừng
+            # vòng ra cửa sau `_vision_rescore` mà tiêu đúng số lượt vừa tiết
+            # kiệm.
+            used_vision = bool(digest) and llm.vision_available()
         if used_vision:
             if digest:
                 # 👁 ĐÃ có vision digest (xem cả video) -> chấm bằng act của

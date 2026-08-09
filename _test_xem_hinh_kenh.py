@@ -328,6 +328,84 @@ VD.build_vision_digest(_v_quen, SRC, 170.0)      # gọi Y HỆT kiểu cũ, kh�
 ok(GOI["n"] == 0,
    "4e gọi kiểu CŨ (không truyền gì) vẫn tôn trọng kênh TẮT", f"{GOI['n']} lượt")
 
+# ---- CỬA THỨ HAI: `_vision_rescore` (chấm điểm từng đoạn bằng hình) ----
+# Nó chỉ bị chặn bởi LIGHT_MODE. Máy TẮT LIGHT_MODE mà kênh chọn TẮT thì nó vẫn
+# bắn -> lựa chọn của anh Hùng rò đúng một cửa (loại lỗi (a) của cổng 19).
+_goc_lm = getattr(settings, "LIGHT_MODE", True)
+settings.LIGHT_MODE = False
+_clip_gia = [{"score": 70.0, "segments": [[10.0, 40.0]]},
+             {"score": 60.0, "segments": [[60.0, 90.0]]}]
+GOI["n"] = 0
+M1._vision_rescore(_lam_video(p_tat), [dict(c) for c in _clip_gia], None)
+_n_ham = GOI["n"]
+_nhanh = inspect.getsource(M1.generate_highlights)
+ok(_n_ham > 0,
+   "4f (bối cảnh) `_vision_rescore` THẬT SỰ gọi vision khi LIGHT_MODE tắt — "
+   "nên đây là cửa thứ hai có thật, không phải lo hão", f"{_n_ham} lượt")
+ok("_xh_kenh = _vd.xem_hinh_kenh(video_id)" in _nhanh
+   and "used_vision = False" in _nhanh,
+   "4g `generate_highlights` chặn cửa đó bằng ô của kênh")
+# ĐO KẾT QUẢ: chạy generate_highlights thật, đếm lượt vision cửa-thứ-hai
+_goc_text2 = llm.complete_text
+
+
+def _text_chet2(*a, **k):
+    raise llm.LLMError("mang chet (co y)")
+
+
+def _chep_loi_gia(n_cau=60):
+    """Bản chép lời CÓ LỜI THẬT. PHẢI có `words`: `co_loi_noi_that` tính MẬT ĐỘ
+    TỪ bằng `len(words)/giây`, thiếu `words` là mật độ 0,00 -> app gán 'video
+    KHÔNG có lời' -> `bat_buoc=True` -> xem hình bật BẤT KỂ ô của kênh, và cổng
+    đo ra 5 lượt rồi kết luận oan là bản vá rò. (Đã sập đúng một lượt.)"""
+    ss, ws = [], []
+    for i in range(n_cau):
+        t = i * 2.8
+        ss.append({"start": t, "end": t + 2.6,
+                   "text": f"Cau {i} ke chuyen bat ngo xay ra hom qua."})
+        for k, w in enumerate(("Cau", str(i), "ke", "chuyen", "bat", "ngo",
+                               "xay", "ra", "hom", "qua")):
+            ws.append({"start": t + k * 0.25, "end": t + k * 0.25 + 0.22,
+                       "word": w})
+    return {"language": "vi", "text": " ".join(s["text"] for s in ss),
+            "segments": ss, "words": ws}
+
+
+def _dung_gh(pid):
+    v = _lam_video(pid)
+    from app.core.analysis import _set as _sa
+    _sa(v, "transcript", "done", _chep_loi_gia(), engine="test")
+    return v
+
+
+class _Ctx0:
+    def progress(self, p, m=""):
+        pass
+
+    def check_canceled(self):
+        return False
+
+
+llm.complete_text = llm.complete_json = _text_chet2
+GOI["n"] = 0
+M1.generate_highlights({"video_id": _dung_gh(p_tat),
+                        "preset": {"count": 2, "min_len": 15.0,
+                                   "max_len": 45.0}}, _Ctx0())
+_n_tat_lm = GOI["n"]
+GOI["n"] = 0
+M1.generate_highlights({"video_id": _dung_gh(p_null),
+                        "preset": {"count": 2, "min_len": 15.0,
+                                   "max_len": 45.0}}, _Ctx0())
+_n_null_lm = GOI["n"]
+llm.complete_text, llm.complete_json = _goc_text2, _goc_text2
+settings.LIGHT_MODE = _goc_lm
+ok(_n_tat_lm == 0,
+   "4h ĐO THẬT (LIGHT_MODE tắt): kênh chọn TẮT -> 0 lượt vision ở CẢ HAI cửa",
+   f"{_n_tat_lm} lượt")
+ok(_n_null_lm > 0,
+   "4h' cùng cảnh đó, kênh CHƯA ĐỤNG vẫn chạy cửa thứ hai y như v2.21.0 "
+   "(không sửa quá tay)", f"{_n_null_lm} lượt")
+
 # ══════════════════════════════════════════════════════════════════════
 print("\n=== CA 6. Nguồn quá ngắn (< 8 mốc) -> BỎ QUA + ghi nhật ký ===")
 ok(VD.MOC_TOI_THIEU == 8, "6a ngưỡng là HẰNG SỐ đặt tên rõ, dễ chỉnh",
@@ -467,15 +545,7 @@ llm.complete_vision_json = _luon_503
 from app.core.analysis import _set as set_analysis  # noqa: E402
 
 _v_clip = _lam_video(p_bat)
-_words = []
-_sents = []
-for _i in range(60):
-    _t = _i * 2.8
-    _sents.append({"start": _t, "end": _t + 2.6,
-                   "text": f"Cau noi thu {_i} ke ve chuyen bat ngo xay ra."})
-set_analysis(_v_clip, "transcript", "done",
-             {"language": "vi", "text": " ".join(s["text"] for s in _sents),
-              "segments": _sents, "words": _words}, engine="test")
+set_analysis(_v_clip, "transcript", "done", _chep_loi_gia(), engine="test")
 _goc_text = llm.complete_text
 
 
