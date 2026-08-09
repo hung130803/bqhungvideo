@@ -332,6 +332,17 @@
      (d) **BẤT BIẾN**: chuyển cảnh TẮT phải ra file GIỐNG `main` — nạp
      `git show main:app/core/ffmpeg_utils.py` thành module riêng rồi xuất song
      song, đo **PSNR 99 dB** ở 5 mốc.
+     **CHỐT CHỐNG-PASS-OAN CỦA CA 8 PHẢI TÁCH 2 NGUYÊN NHÂN "hai bản TRÙNG
+     NHAU" (sửa 09/08/2026):** bản đầu FAIL bất cứ khi nào bản mốc trùng file
+     đang test, nên **mọi nhánh KHÔNG động tới `ffmpeg_utils.py` đều ĐỎ OAN
+     VĨNH VIỄN** (đo: nhánh `xem-hinh-theo-kenh` ra 62 OK · 1 FAIL) — mà cổng
+     đỏ oan thì người ta bỏ qua nó, nguy hiểm hơn hẳn (bài học cổng 41 và 47).
+     Dấu hiệu tách đúng là **"HEAD có phải TỔ TIÊN của mốc không"**:
+     TRÙNG + HEAD là tổ tiên = mốc ĐÃ CHỨA commit của nhánh -> FAIL như cũ ·
+     TRÙNG + HEAD KHÔNG phải tổ tiên = nhánh đơn giản không sửa file đó ->
+     **bất biến ĐÚNG DO XÂY DỰNG**, vẫn chạy tiếp phép đo PSNR. Thử phá
+     (`BQ_MOC_REF=HEAD`) -> vẫn **62 OK · 1 FAIL**; chạy thật
+     (`BQ_MOC_REF=378230e`) -> **65 OK · 0 FAIL**, PSNR 99,0 dB × 5 mốc.
      **2 BẪY ĐO ĐÃ SẬP, ĐỪNG LẶP:** mốc cắt phải ở **CẢNH SÁNG** (nguồn Nhật ở
      giây 20 sáng TB chỉ **3,3/255** = gần đen -> ca đếm pixel ra 0,69% và FAIL
      OAN vì cả 2 bản đều đen; đổi sang mốc 100/200/300s thì ra 57-83%); ngưỡng
