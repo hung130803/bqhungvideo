@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -132,8 +133,35 @@ def _dai(p: Path) -> float:
         return 0.0
 
 
-def tim_video(thus, gmin: float, gmax: float, mb_max: float = 400.0):
-    """Video THẬT đầu tiên lọt [gmin,gmax] giây và <= mb_max MB."""
+#: DẤU HIỆU ĐỘC LẬP để biết một file CÓ ĐÚNG là tiếng đó không — **CHỮ VIẾT
+#: trong TÊN FILE**. Phải độc lập với `transcribe()`: chọn nguồn bằng chính kết
+#: quả chép lời rồi đi assert kết quả đó là con dấu (bẫy "chọn nguồn cho tới khi
+#: assert xanh" đã ghi ở cổng 41).
+#: **VÌ SAO CẦN — LỖI THẬT 09/08/2026:** `tim_video` xếp theo KÍCH THƯỚC, mà
+#: prodown tải liên tục vào đúng các thư mục này -> "file to nhất" đổi theo từng
+#: giờ. Lượt kiểm sau khi gộp v2.20.0 bốc trúng **`Part 1 Thank You Sorry The
+#: Shocking Reveal Inside!`** — nằm trong `video nhật dài` nhưng là video TIẾNG
+#: ANH -> `transcribe()` trả `English`, mật độ **0,09 từ/giây** -> cổng báo 3
+#: HỎNG cho nhóm `nhat` trong khi APP KHÔNG HỀ SAI (lượt gộp không đụng một
+#: dòng nào của `transcribe`/`recap`/`chon_doan`). Đúng bệnh "nguồn đổi giữa 2
+#: lượt" mà cổng 41 đã phải chữa bằng `_nguon_shader.py`. Thư mục đó có 28 video
+#: tên tiếng Nhật thật — chỉ là không cái nào TO NHẤT.
+CHU_NGON_NGU = {
+    # kana + kanji
+    "nhat": re.compile(r"[぀-ヿ一-鿿]"),
+    # hangul
+    "han": re.compile(r"[가-힯ᄀ-ᇿ]"),
+    # chữ cái riêng của quốc ngữ (tên file YouTube giữ nguyên dấu)
+    "viet": re.compile(r"[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩị"
+                       r"òóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]", re.I),
+    "anh": None,       # tên tiếng Anh không có chữ riêng để nhận ra
+}
+
+
+def tim_video(thus, gmin: float, gmax: float, mb_max: float = 400.0,
+              chu=None):
+    """Video THẬT đầu tiên lọt [gmin,gmax] giây, <= mb_max MB, và — nếu có
+    `chu` — TÊN FILE phải mang CHỮ VIẾT của thứ tiếng đó."""
     for t in thus:
         d = Path(t)
         if not d.is_dir():
@@ -144,8 +172,11 @@ def tim_video(thus, gmin: float, gmax: float, mb_max: float = 400.0):
                 mb = p.stat().st_size / 1048576
             except OSError:
                 continue
-            if 1.0 <= mb <= mb_max:
-                ung.append((-mb, p))       # to nhất trước = dài nhất, thường
+            if not (1.0 <= mb <= mb_max):
+                continue
+            if chu is not None and not chu.search(p.name):
+                continue
+            ung.append((-mb, p))       # to nhất trước = dài nhất, thường
         ung.sort()
         for _m, p in ung[:40]:
             g = _dai(p)
@@ -459,9 +490,16 @@ def main() -> int:
             continue
         iso, thus, gmin, gmax = KHO[nhom]
         print(f"\n══ NHÓM {nhom.upper()} (mong đợi mã ISO '{iso}') ══")
-        src, giay = tim_video(thus, gmin, gmax)
+        _chu = CHU_NGON_NGU.get(nhom)
+        src, giay = tim_video(thus, gmin, gmax, chu=_chu)
         if not src:
-            bo_qua(f"nhóm {nhom}", f"không tìm thấy video {gmin}-{gmax}s")
+            # THIẾU chứ không HỎNG: máy KHÔNG có video đúng thứ tiếng đó thì đây
+            # là thiếu DỮ LIỆU ĐO, không phải app sai. Ghi thẳng ra, đừng bịa số.
+            bo_qua(f"nhóm {nhom}",
+                   f"không tìm thấy video {gmin}-{gmax}s"
+                   + (" có TÊN mang chữ viết của thứ tiếng này (thư mục có "
+                      "file, nhưng toàn tên tiếng khác — prodown tải lẫn vào)"
+                      if _chu is not None else ""))
             continue
         print(f"  nguồn: {src.name[:70]} · {giay:.1f}s")
         tong_ket[nhom] = {}
