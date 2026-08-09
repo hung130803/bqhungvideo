@@ -832,6 +832,15 @@
      nếu không thì lặp đúng lỗi (a) của cổng 19 (mẫu-theo-kênh chỉ áp ở dây
      chuyền, bấm tay vẫn ăn cấu hình trang chính). Cổng có ca **quét tĩnh bằng
      `tokenize`**: không file nào được gọi thẳng `vision_digest_enabled()`.
+     **CÓ HAI CỬA VISION, KHÔNG PHẢI MỘT** (rà soát mới lôi ra): ngoài
+     `build_vision_digest` còn `m1._vision_rescore` (chấm điểm TỪNG ĐOẠN bằng
+     hình) — nó **chỉ bị chặn bởi `LIGHT_MODE`**, nên máy tắt `LIGHT_MODE` mà
+     kênh chọn TẮT thì nó **vẫn bắn**. Nay `generate_highlights` chặn bằng ô của
+     kênh: `False` -> `used_vision=False` · `True` -> chỉ bật khi **ĐÃ CÓ
+     digest** (không có = app vừa cố ý bỏ qua vì nguồn ngắn/503, đừng vòng ra
+     cửa sau tiêu đúng số lượt vừa tiết kiệm) · `None` -> y hệt v2.21.0.
+     Đo thật (LIGHT_MODE tắt, `generate_highlights` thật): kênh TẮT **0 lượt**
+     vision ở CẢ HAI cửa · kênh CHƯA ĐỤNG **5 lượt** (không sửa quá tay).
      **2 CHỐT TIẾT KIỆM (đo mới có, đừng chỉnh mò):**
      (a) `MOC_TOI_THIEU = 8` — dù kênh BẬT, `len(pick_frame_times())` < 8 thì
      BỎ QUA + ghi `logs/vision_<ngày>.log`. Số mốc app tính ra khớp đúng bộ
@@ -856,12 +865,15 @@
      dùng `main`** — sau gộp nó trùng mã đang test, PASS OAN), kèm chốt "bản
      mốc phải KHÁC bản đang test". **THỬ PHÁ** (bỏ nhánh `kenh is True/False`):
      cổng FAIL đúng **9 mục** -> không phải con dấu.
-     **BẪY ĐÃ SẬP KHI VIẾT CỔNG NÀY (2 cái):** (1) quét tĩnh bằng `in` chuỗi ->
+     **BẪY ĐÃ SẬP KHI VIẾT CỔNG NÀY (3 cái):** (1) quét tĩnh bằng `in` chuỗi ->
      chính DÒNG GHI CHÚ giải thích bản vá bị kể là vi phạm (đỏ oan, y hệt cổng
      47) — phải `tokenize` bỏ COMMENT+STRING, kèm ca TỰ KIỂM BỘ DÒ; (2)
      `time.monotonic()` trên Windows nhảy ~15 ms nên `_ChotQuaTai(han_giay=0)`
      đo ra `da_ton()=0.0` và `0 > 0` là False -> ca "quá giờ" FAIL OAN; phải
-     đẩy lùi `chot.moc` để giả lập thời gian đã trôi.
+     đẩy lùi `chot.moc` để giả lập thời gian đã trôi; (3) **bản chép lời giả
+     thiếu khoá `words`** -> `co_loi_noi_that` tính mật độ `len(words)/giây` ra
+     **0,00** -> app gán "video KHÔNG có lời" -> `bat_buoc=True` -> xem hình bật
+     BẤT KỂ ô của kênh -> cổng đo ra 5 lượt và suýt kết luận oan là bản vá rò.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
