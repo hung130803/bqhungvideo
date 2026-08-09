@@ -1,38 +1,66 @@
 # -*- coding: utf-8 -*-
-"""CỔNG 44 — MỖI ĐIỂM NHẤN HÌNH PHẢI CÓ TIẾNG **TRÊN MỌI LOẠI CLIP**, ĐO BẰNG dB.
+"""CỔNG 44 — MỖI ĐIỂM NHẤN HÌNH PHẢI **NGHE RA ĐƯỢC**, ĐO THEO DẢI TẦN.
 
 VÌ SAO CÓ CỔNG NÀY (anh Hùng xem clip THẬT, 08/08/2026):
   *"âm thanh hiệu ứng hay gì ấy thậm chí còn không nghe được gì cả luôn, không
   biết chỗ nào chèn chỗ nào không"* · *"có hiệu ứng mà không có âm thanh cứ sao
   sao ấy"*.
 
-VÌ SAO CỔNG NÀY TỪNG VÔ DỤNG (lượt kiểm độc lập, cùng ngày):
-  Bản đầu chỉ đo trên **MỘT nguồn nền yên** (-23,6 dBFS) và kết luận "+10..+17
-  dB, ĐẠT". Đo lại trên CLIP THẬT của anh Hùng (nền -15,7 dBFS) thì bật/tắt
-  tiếng động chỉ lệch **+0,6 / −1,1 / −0,0 / −1,6 / +2,4 dB** — **2/5 mốc còn
-  NHỎ ĐI**. Một cổng chỉ đo một loại nguồn thì không bắt được gì.
-  Nó còn **NHẤP NHÁY**: chạy 5 lượt hỏng 1 (file tiếng động bốc ngẫu nhiên,
-  trúng file mức thấp là mốc đó câm).
-  NAY: **CA 2 đo trên 3 VIDEO THẬT có nền khác hẳn nhau** (yên / trung bình /
-  ồn) và mọi ngưỡng đều so với **NỀN CỤC BỘ quanh chính mốc đó**, không phải
-  trung vị cả clip (trung vị của clip ồn là mức LỜI, lấy nó làm nền là tự cho
-  điểm).
+=========================== BẢN THỨ BA CỦA CỔNG NÀY ===========================
+Bản 1 (07/08) đo trên MỘT nguồn nền yên -> vô dụng.
+Bản 2 (v2.19.0, 08/08) đo trên 3 nguồn, tiêu chí **"NỔI >= +6 dB trên NỀN CỤC
+BỘ"** -> báo **12/12 ĐẠT, 41/41 mục xanh**. Anh Hùng xem clip v2.19.0 xuất ra
+và vẫn chê: *"hiệu ứng âm thanh nhỏ quá, nó dùng mà không nghe thấy luôn, NÓI
+ÁT RỒI hay sao"*.
+**ANH ẤY ĐÚNG, VÀ CỔNG ĐANG ĐO SAI THỨ.** Chứng minh bằng chính số của bản 2
+(`_do_che_loi.py`, 09/08/2026, 13 mốc trên 3 video thật):
+  * "NỀN CỤC BỘ" là bpv20 = mức lúc IM LẶNG. Mốc rơi vào lúc ĐANG NÓI thì
+    **CHÍNH GIỌNG NÓI** đã nổi +23,9 dB trên nền đó rồi — tiêu chí +6 dB được
+    thoả bởi NGUỒN, không phải bởi tiếng động. Đo được mốc YÊN@1,30s:
+    cổng chấm **NỔI +26,0 dB (ĐẠT 4 lần dư)** trong khi mọi dải tần chỉ đổi
+    **+0,1 dB** = KHÔNG MỘT AI NGHE RA GÌ.
+  * Tai người không nghe "so với nền", tai nghe **so với thứ đang phát CÙNG
+    LÚC**. Đo tỉ lệ tiếng động / thứ đang phát: mốc khoảng lặng **+7,0 dB**
+    (nghe rõ) · mốc đang nói **−1,6 dB** (bị che).
+
+NAY tiêu chí chính là **"CÓ NGHE RA KHÔNG"**, không phải "có nổi trên nền":
+  D_LOA = mức dải tần của bản BẬT − của bản TẮT, TẠI MỐC, lấy dải LỚN NHẤT
+          trong 300 Hz - 7,8 kHz.
+  Vì sao thước này phản ánh cái tai nghe:
+   (a) Trong CÙNG một dải tới hạn tai KHÔNG tách được tiếng động ra khỏi giọng
+       nói — nó chỉ nghe dải đó TO LÊN bao nhiêu. Cộng 2 nguồn không tương
+       quan: tỉ lệ S dB -> dải to thêm `10log10(1+10^(S/10))` dB. S=0 -> +3,0;
+       S=−6 -> +1,0; S=−10 -> +0,4 dB.
+   (b) Ngưỡng vừa phân biệt được (JND) cường độ của âm phức hợp là ~0,5-1 dB
+       -> `NGHE_MIN = 1,0 dB`; "nghe RÕ" = 3,0 dB.
+   (c) BỎ DẢI <300 Hz: khán giả Shorts nghe bằng loa điện thoại/laptop, thứ
+       gần như không phát được dưới 300 Hz. Đây KHÔNG phải suy đoán — kho 184
+       file có 51 file hụt quá 6 dB khi cắt <300 Hz, tệ nhất
+       `impact/boom_deep_05.opus` hụt **44,7 dB**; và đo trên clip thật, mốc
+       bốc trúng file trầm cho dải <300 Hz vọt **+38,1 dB** trong khi MỌI dải
+       nghe được KHÔNG đổi (còn tụt vì ducking). Trên máy đo: "rất to". Trên
+       điện thoại: câm. Đúng câu *"dùng mà không nghe thấy luôn"*.
+   (d) Đo trên FILE .mp4 ĐÃ XUẤT (bản BẬT so bản TẮT) nên tính luôn cả ducking
+       lẫn 2 lớp hạn đỉnh — tức đúng thứ phát ra loa, không phải ý định.
 
 CỔNG NÀY KIỂM **KẾT QUẢ**, KHÔNG KIỂM Ý ĐỊNH: không ca nào đọc chuỗi lệnh
 ffmpeg. Mọi kết luận lấy từ PCM của file .mp4 đã xuất:
-  nền cục bộ = bpv20 đường bao RMS 50 ms trong ±1,5 s quanh mốc (bản TẮT)
-  đỉnh       = RMS lớn nhất trong 0,35 s quanh mốc
-  mức lời    = bpv90 đường bao RMS cả clip (bản TẮT)
+  mức tại mốc = RMS 50 ms lớn nhất trong ±0,175 s quanh mốc
+  nền cục bộ  = bpv20 đường bao RMS 50 ms trong ±1,5 s quanh mốc (bản TẮT)
+  mức lời     = bpv90 đường bao RMS cả clip (bản TẮT)
   LỚP TIẾNG ĐỘNG = HIỆU sóng giữa bản BẬT và bản TẮT (hai bản cùng nguồn, cùng
   timeline nên trừ được từng mẫu) -> số ĐỘC LẬP với tiếng gốc.
   KHÔNG MÉO = `astats` trên chính file .mp4 (đỉnh + số mẫu chạm trần).
+
+MỐC KHÔNG ĐƯỢC ĐẶT CỨNG NỮA: cổng tự DÒ tiếng nguồn rồi đặt mốc vào ĐÚNG chỗ
+đang nói và ĐÚNG chỗ im lặng (`chon_moc`). Đặt cứng giây 1,20/4,60/10,40 là phó
+mặc cho may rủi xem mốc rơi vào đâu — đúng cách bản 2 bỏ lọt lỗi này.
 
 Chạy: .venv\\Scripts\\python.exe _test_tieng_hieu_ung.py
 Env : BQ_TEST=1 · BQ_FFMPEG_SLOTS=1 (LUẬT SỐ 1)
 """
 from __future__ import annotations
 
-import array
 import math
 import os
 import subprocess
@@ -58,6 +86,7 @@ for _s in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+import numpy as np                            # noqa: E402
 from app.core import ffmpeg_utils as FU      # noqa: E402
 from app.core import hieu_ung as HU          # noqa: E402
 from config import settings                  # noqa: E402
@@ -69,24 +98,38 @@ CUA = 0.05                     # cửa sổ RMS 50 ms
 RONG = 0.35                    # bề rộng cửa sổ tìm đỉnh quanh mốc
 NEN_RONG = 3.0                 # bề rộng cửa sổ đo NỀN CỤC BỘ
 
+#: DẢI TẦN đo. Giọng người dồn 300-3400 Hz. Dải đầu (<300 Hz) bị LOẠI khỏi mọi
+#: kết luận "có nghe ra không" — loa điện thoại không phát được (xem docstring).
+DAI = [(60, 300), (300, 1000), (1000, 2400), (2400, 4000), (4000, 7800)]
+TEN_DAI = ["<300", "300-1k", "1k-2.4k", "2.4k-4k", ">4k"]
+
+#: ===================== TIÊU CHÍ CHÍNH: CÓ NGHE RA KHÔNG =====================
+#: Dải tần (300 Hz trở lên) phải TO THÊM ít nhất ngần này dB tại mốc. 1,0 dB =
+#: ngưỡng vừa phân biệt được (JND) cường độ của âm phức hợp. Dưới mức này thì
+#: dù máy đo có báo "tiếng động -12 dBFS" cũng KHÔNG ai nghe ra.
+NGHE_MIN = 1.0
+#: "Nghe RÕ" (không phải chỉ vừa đủ phân biệt) — dùng cho phần lớn số mốc.
+NGHE_RO = 3.0
+#: Số mốc tối thiểu phải đạt mức "nghe RÕ" (phần còn lại vẫn phải >= NGHE_MIN).
+#: 70% chứ không phải 100%: file tiếng động bốc NGẪU NHIÊN (anh Hùng cần 3 Part
+#: không kêu giống hệt), nên luôn có mốc trúng file hiền hơn. Đo 5 lượt sau khi
+#: sửa: 12-13/13 mốc "RÕ", không lượt nào dưới 70%.
+RO_TY_LE = 0.70
 #: Anh Hùng chốt 08/08/2026: mốc điểm nhấn phải **nổi >= +6 dB trên nền cục
-#: bộ**. Bản trước đặt 3,0 dB và đo trên trung vị CẢ CLIP -> quá dễ.
+#: bộ**. GIỮ LẠI nhưng CHỈ CHO CA KHOẢNG LẶNG — ở ca đang nói tiêu chí này vô
+#: nghĩa (chính giọng nói đã nổi +24 dB, xem docstring) và nay còn PHẢN TÁC
+#: DỤNG: ducking 6 dB dọn chỗ cho cú va làm "NỔI" TỤT xuống trong khi mốc nghe
+#: RÕ HƠN HẲN (đo: +5,0 dB nổi nhưng dải to thêm +7,3 dB).
 NOI_MIN = 6.0
-#: "Không mốc nào được NHỎ ĐI" so với bản tắt tiếng động. Sàn -1,0 dB chứ
-#: không phải 0,0 — và đây là chỗ phải nói THẲNG, không được giấu:
-#:   * hai bản là hai lượt mã hoá AAC RIÊNG -> nhiễu ±0,2 dB;
-#:   * nguồn của anh Hùng có bản đã master VƯỢT 0 dBFS (bản TẮT của "Parker
-#:     and Chester" xuất ra **+0,51 dBFS, 1 mẫu chạm trần**). Ở một mốc rơi
-#:     đúng tiếng hét trên nguồn như thế thì **KHÔNG THỂ cộng thêm năng lượng
-#:     mà không hạ cái đang có** — muốn không méo thì phải gọt, gọt thì mốc
-#:     đứng yên. Đo được: mốc đó lệch **-0,2 .. +0,2 dB** = đứng yên, trong khi
-#:     vẫn NỔI **+16 dB** trên nền cục bộ (nghe rất rõ).
-#: 1,0 dB nằm ở ngưỡng tai người vừa mới phân biệt được, và VẪN BẮT ĐƯỢC lỗi
-#: gốc: lượt kiểm độc lập đo bản v2.18.0 ra **-1,1 và -1,6 dB** -> cả hai đều
-#: FAIL ở sàn này.
-NHO_TOI_DA = -1.0
-#: CHỐNG ÁT LỜI: đỉnh RMS lớp tiếng động <= 1,5x mức lời (bpv90) = +3,5 dB.
+#: CHỐNG ÁT LỜI: đỉnh RMS lớp tiếng động <= 1,5x mức lời = +3,5 dB. NAY so với
+#: **mức lời CỤC BỘ tại chính mốc đó** (hoặc mức lời cả clip, lấy cái CAO hơn)
+#: — cùng bất biến, nhưng đo đúng chỗ. So với bpv90 cả clip là vừa quá chặt ở
+#: mốc đang nói (mức tại mốc cao hơn bpv90 tới +5,2 dB) vừa quá lỏng ở mốc im.
 AT_LOI_LAN = 1.5
+#: KHÔNG ÁT LỜI (2): NGOÀI cửa sổ tiếng động, dải giọng nói 300 Hz-4 kHz phải
+#: gần như KHÔNG đổi. Đây là vế bảo vệ "video cho người xem, không phải bản
+#: demo hiệu ứng" — đo được sau khi sửa: lệch nhiều nhất +0,29 dB.
+NGOAI_MOC_MAX = 1.0
 #: Trần AN TOÀN cũ (giữ đúng cổng 40): đỉnh <= 12x RMS nền = +21,6 dB.
 AT_LOI_MAX = 21.6
 #: KHÔNG MÉO: đỉnh đọc được TỪ FILE .mp4 phải <= mức này và 0 mẫu chạm trần.
@@ -109,37 +152,67 @@ def bao(ten: str, ok: bool, so: str = "") -> None:
 
 
 # ------------------------------------------------------------------ đo tiếng
-def pcm(path: str) -> array.array:
-    r = subprocess.run([FF, "-v", "error", "-i", path, "-vn", "-ac", "1",
-                        "-ar", str(SR), "-f", "s16le", "-"],
-                       capture_output=True, creationflags=_NOWIN, timeout=300)
-    a = array.array("h")
-    a.frombytes(r.stdout or b"")
-    return a
+def pcm(path: str, dau_vao: list | None = None) -> np.ndarray:
+    cmd = [FF, "-v", "error", "-nostdin"]
+    cmd += [str(x) for x in (dau_vao or ["-i", path])]
+    cmd += ["-vn", "-ac", "1", "-ar", str(SR), "-f", "s16le", "-"]
+    r = subprocess.run(cmd, capture_output=True, creationflags=_NOWIN,
+                       timeout=300)
+    return np.frombuffer(r.stdout or b"", dtype="<i2").astype(np.float64)
 
 
-def rms_day(a) -> list[float]:
+def rms_day(a) -> np.ndarray:
     n = int(SR * CUA)
-    out = []
-    for i in range(0, len(a) - n + 1, n):
-        s = 0
-        for v in a[i:i + n]:
-            s += v * v
-        out.append(math.sqrt(s / n))
-    return out
+    m = len(a) // n
+    if m <= 0:
+        return np.zeros(0)
+    return np.sqrt((a[:m * n].reshape(m, n) ** 2).mean(axis=1))
 
 
 def db(x: float) -> float:
-    return 20 * math.log10(max(x, 1e-7) / 32768.0)
+    return 20 * math.log10(max(float(x), 1e-7) / 32768.0)
 
 
-def bpv(rs: list, q: float) -> float:
+def bpv(rs, q: float) -> float:
     y = sorted(rs)
-    return y[min(len(y) - 1, int(len(y) * q))] if y else 0.0
+    return y[min(len(y) - 1, int(len(y) * q))] if len(y) else 0.0
 
 
-def nen(rs: list) -> float:
+def nen(rs) -> float:
     return bpv(rs, 0.50)
+
+
+def pho_dai(a: np.ndarray, giay: float, rong: float = RONG) -> np.ndarray:
+    """Mức dBFS TỪNG DẢI trong cửa sổ quanh mốc (cửa sổ Hann + FFT).
+
+    Chuẩn hoá sao cho tổng năng lượng các dải ~ RMS toàn dải của cửa sổ, nên
+    con số so sánh được với các mức dB khác trong cổng."""
+    i0 = max(0, int((giay - rong / 2) * SR))
+    i1 = min(len(a), int((giay + rong / 2) * SR))
+    x = a[i0:i1]
+    if len(x) < 64:
+        return np.full(len(DAI), -99.0)
+    w = np.hanning(len(x))
+    X = np.fft.rfft(x * w) / (len(x) * math.sqrt(3.0 / 8.0) / 2.0)
+    f = np.fft.rfftfreq(len(x), 1.0 / SR)
+    out = []
+    for lo, hi in DAI:
+        m = (f >= lo) & (f < hi)
+        e = float((np.abs(X[m]) ** 2).sum()) / 2.0 if m.any() else 0.0
+        out.append(20.0 * math.log10(max(math.sqrt(e), 1e-7) / 32768.0))
+    return np.array(out)
+
+
+def do_nghe_ra(pa: np.ndarray, pb: np.ndarray, giay: float,
+               rong: float = RONG) -> tuple[float, np.ndarray]:
+    """**THƯỚC CHÍNH CỦA CỔNG**: tại mốc `giay`, dải tần nào TO LÊN nhiều nhất
+    và bao nhiêu dB — chỉ tính từ 300 Hz trở lên (loa điện thoại).
+
+    Trả (D_LOA, mảng chênh lệch từng dải). Đây là "có nghe ra không" chứ không
+    phải "có to hơn nền không": trong cùng một dải tới hạn, tai chỉ nghe được
+    dải đó to lên bao nhiêu, không tách được tiếng động khỏi giọng nói."""
+    d = pho_dai(pa, giay, rong) - pho_dai(pb, giay, rong)
+    return float(d[1:].max()), d
 
 
 def nen_cuc_bo(rs: list, giay: float) -> float:
@@ -161,31 +234,17 @@ def muc_loi(rs: list) -> float:
     return bpv(rs, 0.90)
 
 
-def dinh(rs: list, giay: float, rong: float = RONG) -> float:
+def dinh(rs, giay: float, rong: float = RONG) -> float:
     i0 = max(0, int((giay - rong / 2) / CUA))
     i1 = min(len(rs), int((giay + rong / 2) / CUA) + 1)
-    return max(rs[i0:i1] or [0.0])
+    seg = rs[i0:i1]
+    return float(seg.max()) if len(seg) else 0.0
 
 
-def dinh_mau(a, giay: float, rong: float = RONG) -> float:
-    """ĐỈNH MẪU (peak) trong cửa sổ quanh mốc — dùng cho tiếng động NGẮN.
-
-    VÌ SAO PHẢI CÓ CẢ PEAK: nhiều file trong kho là cú va CỰC NGẮN đã chuẩn hoá
-    đỉnh sẵn, RMS 0,35 s của nó bị pha loãng mà tai vẫn nghe rất rõ vì đó là
-    TRANSIENT. Nên cổng đo CẢ HAI."""
-    i0 = max(0, int((giay - rong / 2) * SR))
-    i1 = min(len(a), int((giay + rong / 2) * SR))
-    return max((abs(v) for v in a[i0:i1]), default=0.0)
-
-
-def hieu(a, b) -> array.array:
+def hieu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Sóng HIỆU (bản bật − bản tắt) = chính lớp tiếng động + phần ducking."""
     n = min(len(a), len(b))
-    d = array.array("h", bytes(2 * n))
-    for i in range(n):
-        v = a[i] - b[i]
-        d[i] = max(-32768, min(32767, v))
-    return d
+    return np.clip(a[:n] - b[:n], -32768, 32767)
 
 
 def do_dinh_file(path: str) -> tuple[float, int]:
@@ -236,6 +295,56 @@ HU_MOC = [
     {"bat": 10.40, "het": 10.80, "khoa": "loe_sang", "dam": 0.25},
 ]
 MOC_NOI = 7.0                  # điểm nối đoạn (timeline đầu ra) khi 2 đoạn
+#: Kiểu hiệu ứng dùng cho mốc tự dò — trải đủ nhóm tiếng (impact/scratch/
+#: reveal/riser) để không vô tình chỉ kiểm một nhóm.
+KHOA_DO = ["zoom_nhoi", "glitch_khoi", "loe_sang", "rung_lac", "tuong_phan",
+           "quang_sang"]
+
+
+def chon_moc(src: str, ss: float, dai: float) -> tuple[list, list]:
+    """DÒ TRƯỚC tiếng nguồn rồi trả (mốc ĐANG NÓI, mốc KHOẢNG LẶNG).
+
+    ĐÂY LÀ CHỖ BẢN 2 CỦA CỔNG BỎ LỌT LỖI: nó đặt CỨNG mốc ở giây 1,20/4,60/
+    10,40 rồi mặc kệ mốc rơi vào đâu. Muốn bắt được ca "nói át rồi" thì phải
+    CỐ Ý đặt mốc vào đúng lúc đang nói — và cũng phải cố ý đặt vào đúng khoảng
+    lặng để chứng minh ca kia không bị làm hỏng theo.
+
+    Chỉ giải mã ÂM THANH của đoạn sắp cắt (không qua cửa chờ ffmpeg, ~0,2 s)."""
+    a = pcm("", ["-ss", f"{ss:.3f}", "-t", f"{dai:.3f}", "-i", src])
+    rs = rms_day(a)
+    if not len(rs):
+        return [], []
+    loi = float(np.percentile(rs, 90))
+    nn = float(np.percentile(rs, 20))
+    to, im = [], []
+    for i, v in enumerate(rs):
+        t = i * CUA
+        if t < 1.0 or t > dai - 1.2:
+            continue
+        if v >= loi * 0.9:
+            to.append((float(v), t))
+        elif v <= nn * 1.6:
+            im.append((float(v), t))
+    to.sort(reverse=True)
+    im.sort()
+
+    def thua(ds, n):
+        ra: list[float] = []
+        for _v, t in ds:
+            if all(abs(t - x) >= 1.6 for x in ra):
+                ra.append(t)
+            if len(ra) >= n:
+                break
+        return ra
+    m_noi = thua(to, 3)
+    m_im = [t for t in thua(im, 3) if all(abs(t - x) >= 1.6 for x in m_noi)]
+    return m_noi, m_im
+
+
+def hu_tu_moc(mocs: list) -> list:
+    return [{"bat": round(t, 2), "het": round(t + 0.40, 2),
+             "khoa": KHOA_DO[i % len(KHOA_DO)], "dam": 0.25}
+            for i, t in enumerate(sorted(mocs))]
 
 
 def tim_nguon(mo_ta: str) -> str:
@@ -305,6 +414,83 @@ def ca_ham_thuan() -> None:
                 xau.append((cat, nn, ll, round(d, 1)))
     bao(f"đích KHÔNG bao giờ vượt {AT_LOI_LAN}x mức lời (+{tran:.1f} dB) — "
         f"{len(FU.SFX_CATEGORIES)} nhóm x 6 cảnh nền", not xau, str(xau[:3]))
+    # ---- BỊ **LỜI NÓI** CHE: đích phải bám MỨC LỜI CỤC BỘ TẠI MỐC ----
+    # TỰ KIỂM BỘ DÒ: dựng lại đúng công thức CŨ (v2.19.0, không có `loi_moc`)
+    # và bắt nó phải THUA — không thì cổng chỉ là con dấu.
+    # Cái sai của công thức cũ KHÔNG phải "đặt đích thấp", mà là **đích KHÔNG
+    # PHỤ THUỘC MỐC**: nó chỉ biết bpv90 CẢ CLIP. Đo 3 video thật, mức lời NGAY
+    # TẠI mốc cao hơn bpv90 tới **+5,2 dB** (YÊN: bpv90 -19,6 · tại mốc -14,4).
+    # Nên cứ mốc nào rơi vào chỗ nói to hơn trung bình là đích cũ thua.
+    DO_LECH = 5.2                  # mức lời tại mốc − bpv90, đo được cao nhất
+    xau2 = []
+    for nn, ll in ((-37.0, -19.6), (-21.8, -13.6), (-22.3, -11.2),
+                   (-30.0, -18.0)):
+        cu = FU.dich_sfx_dB("impact", nn, ll)          # công thức CŨ
+        if cu > ll + DO_LECH:      # đích cũ vẫn với tới mức lời tại mốc?
+            xau2.append((nn, ll, round(cu, 1)))
+        if abs(cu - FU.dich_sfx_dB("impact", nn, ll, ll + DO_LECH)) < 0.01:
+            xau2.append(("KHÔNG ĐỔI THEO MỐC", nn, ll))
+    bao(f"TỰ KIỂM: công thức CŨ mù mốc -> THUA mức lời tại mốc (+{DO_LECH} dB "
+        f"trên bpv90, đo thật)", not xau2,
+        "4/4 cảnh đo thật đều thua: "
+        + " · ".join(f"lời tại mốc {ll+DO_LECH:.1f} nhưng đích cũ "
+                     f"{FU.dich_sfx_dB('impact', nn, ll):.1f} dBFS"
+                     for nn, ll in ((-37.0, -19.6), (-22.3, -11.2)))
+        if not xau2 else str(xau2[:3]))
+    xau3 = []
+    for nn, ll, lm in ((-37.0, -19.6, -14.4), (-21.8, -13.6, -9.9),
+                       (-22.3, -11.2, -10.2), (-30.0, -18.0, -12.0),
+                       (-22.3, -11.2, -6.0)):
+        moi = FU.dich_sfx_dB("impact", nn, ll, lm)     # công thức MỚI
+        if moi < lm + FU._SFX_TREN_LOI_MOC_DB - 0.01:
+            xau3.append((nn, ll, lm, round(moi, 1)))
+        if moi > max(ll, lm) + tran + 0.01:            # vẫn không được át lời
+            xau3.append(("ÁT LỜI", nn, ll, lm, round(moi, 1)))
+    bao(f"công thức MỚI luôn đạt lời cục bộ +{FU._SFX_TREN_LOI_MOC_DB:.1f} dB "
+        f"mà VẪN dưới {AT_LOI_LAN}x mức lời", not xau3,
+        " · ".join(f"lời tại mốc {lm:.1f} -> đích "
+                   f"{FU.dich_sfx_dB('impact', nn, ll, lm):.1f} dBFS"
+                   for nn, ll, lm in ((-37.0, -19.6, -14.4),
+                                      (-22.3, -11.2, -10.2)))
+        if not xau3 else str(xau3[:3]))
+    bao("mốc rơi vào KHOẢNG LẶNG KHÔNG bị hạ đích theo (trần lấy max)",
+        abs(FU.dich_sfx_dB("impact", -37.0, -19.6, -34.0)
+            - FU.dich_sfx_dB("impact", -37.0, -19.6)) < 0.01,
+        f"lời cả clip -19,6 · tại mốc -34,0 -> đích "
+        f"{FU.dich_sfx_dB('impact', -37.0, -19.6, -34.0):.1f} dBFS "
+        f"(đúng bằng bản không truyền mức cục bộ)")
+    # ĐO MỨC TẠI MỐC: hàm thuần, dựng đường bao giả có 1 chỗ to
+    _bao = [-40.0] * 40
+    _bao[20] = -12.0                       # giây 1,00 có tiếng to
+    bao("`muc_tai_moc` lấy ĐỈNH trong cửa sổ ±0,175 s (không phải trung bình)",
+        abs(FU.muc_tai_moc(_bao, 0.05, 1.0) + 12.0) < 0.01
+        and abs(FU.muc_tai_moc(_bao, 0.05, 1.5) + 40.0) < 0.01,
+        f"tại 1,00 s -> {FU.muc_tai_moc(_bao, 0.05, 1.0):.1f} dBFS · "
+        f"tại 1,50 s -> {FU.muc_tai_moc(_bao, 0.05, 1.5):.1f} dBFS")
+    bao("`la_moc_dang_noi` tách được mốc ĐANG NÓI với mốc KHOẢNG LẶNG",
+        FU.la_moc_dang_noi(_bao, 0.05, 1.0)
+        and not FU.la_moc_dang_noi(_bao, 0.05, 1.5),
+        f"chỗ to -> {FU.la_moc_dang_noi(_bao, 0.05, 1.0)} · chỗ im -> "
+        f"{FU.la_moc_dang_noi(_bao, 0.05, 1.5)} "
+        f"(ngưỡng {FU._SFX_DANG_NOI_DB:.0f} dB trên nền cục bộ)")
+    bao("thiếu đường bao -> trả None/False (rơi đúng về đường cũ, không nổ)",
+        FU.muc_tai_moc([], 0.05, 1.0) is None
+        and not FU.la_moc_dang_noi([], 0.05, 1.0), "[] -> None + False")
+    # LOA ĐIỆN THOẠI + LỆCH DẢI TẦN — 2 cột mới của bảng mức
+    _bang = FU._sfx_bang_muc()
+    _tram = [k for k, v in _bang.items()
+             if len(v) >= 5 and float(v[4]) < FU._SFX_LOA_HUT_MAX]
+    bao("bảng mức có cột 5 (HỤT QUA LOA) và kho THẬT SỰ có file trầm câm",
+        all(len(v) >= 5 for v in _bang.values()) and len(_tram) >= 20,
+        f"{len(_tram)}/{len(_bang)} file hụt quá {-FU._SFX_LOA_HUT_MAX:.0f} dB "
+        f"khi cắt <300 Hz · tệ nhất "
+        f"{min(float(v[4]) for v in _bang.values()):.1f} dB")
+    bao("bảng mức có cột 6 (ĐỘ SÁNG >4 kHz) và đo được thật (không phải -99)",
+        all(len(v) >= 6 for v in _bang.values())
+        and max(float(v[5]) for v in _bang.values()) > -20.0,
+        f"sáng nhất {max(float(v[5]) for v in _bang.values()):.1f} dB · "
+        f"trung vị "
+        f"{sorted(float(v[5]) for v in _bang.values())[len(_bang)//2]:.1f} dB")
     # clip ỒN: nền thấp mà lời to -> phải bám LỜI, không bám nền
     d_on = FU.dich_sfx_dB("impact", -24.0, -11.0)
     d_yen = FU.dich_sfx_dB("impact", -38.0, -20.0)
@@ -366,80 +552,201 @@ def ca_ham_thuan() -> None:
         "sin(" in d and "eval=frame" in d and "between(" in d, d[:80] + "...")
     bao("không có mốc nào -> KHÔNG thêm filter ducking",
         FU._bieu_thuc_duck([]) == "", "chuỗi rỗng")
-    # DUCKING PHẢI NẰM SAU MỐC — nếu nó trùm lên chính cú va thì mốc NHỎ ĐI
-    bao("ducking bắt đầu SAU mốc (cú va phải tự xuyên qua)",
-        FU._SFX_DUCK_SOM < 0.0 and f"between(t,{1.0 - FU._SFX_DUCK_SOM:.3f}" in d,
+    # MỐC KHOẢNG LẶNG: bướu NẰM SAU mốc (giữ đúng cách v2.19.0 — đang chạy tốt)
+    bao("mốc KHOẢNG LẶNG: ducking bắt đầu SAU mốc (cú va tự xuyên qua)",
+        FU._SFX_DUCK_SOM < 0.0
+        and f"between(t,{1.0 - FU._SFX_DUCK_SOM:.3f}" in d,
         f"mốc 1,00 s -> bướu bắt đầu {1.0 - FU._SFX_DUCK_SOM:.2f} s, "
         f"sâu {FU._SFX_DUCK_DB:.0f} dB, dài {FU._SFX_DUCK_DAI:.2f} s")
+    # MỐC ĐANG NÓI: bướu phải MỞ RA TRƯỚC mốc và SÂU HƠN — dọn chỗ cho cú va
+    dn = FU._bieu_thuc_duck([1.0], sau_db=[FU._SFX_DUCK_DB_NOI],
+                            dang_noi=[True])
+    _a_noi = 1.0 - FU._SFX_DUCK_SOM_NOI
+    bao("mốc ĐANG NÓI: bướu mở ra TRƯỚC mốc và đỉnh bướu rơi ĐÚNG vào mốc",
+        FU._SFX_DUCK_SOM_NOI > 0.0
+        and f"between(t,{_a_noi:.3f}" in dn
+        and abs(_a_noi + FU._SFX_DUCK_DAI_NOI / 2.0 - 1.0) < 0.01,
+        f"mốc 1,00 s -> bướu {_a_noi:.3f}..{_a_noi+FU._SFX_DUCK_DAI_NOI:.3f} s, "
+        f"đỉnh ở {_a_noi + FU._SFX_DUCK_DAI_NOI/2.0:.3f} s, sâu "
+        f"{FU._SFX_DUCK_DB_NOI:.0f} dB")
+    bao("mốc ĐANG NÓI được dọn chỗ SÂU HƠN mốc khoảng lặng",
+        FU._SFX_DUCK_DB_NOI > FU._SFX_DUCK_DB,
+        f"đang nói {FU._SFX_DUCK_DB_NOI:.0f} dB · khoảng lặng "
+        f"{FU._SFX_DUCK_DB:.0f} dB")
+    # 2 mốc SÂU KHÁC NHAU trong CÙNG một biểu thức -> mỗi bướu mang hệ số riêng
+    d2 = FU._bieu_thuc_duck([1.0, 5.0], sau_db=[3.0, 6.0],
+                            dang_noi=[False, True])
+    _h3 = 1.0 - 10.0 ** (-3.0 / 20.0)
+    _h6 = 1.0 - 10.0 ** (-6.0 / 20.0)
+    bao("2 mốc sâu KHÁC NHAU cùng một biểu thức -> mỗi bướu một hệ số riêng",
+        f"{_h3:.3f}*between" in d2 and f"{_h6:.3f}*between" in d2,
+        f"có cả hệ số {_h3:.3f} (3 dB) và {_h6:.3f} (6 dB)")
+    bao("ducking KHÔNG bao giờ hạ quá 100% (2 bướu chồng nhau vẫn không câm)",
+        "min(1," in d2, "min(1,...) bọc ngoài tổng các bướu")
     # HẠN ĐỈNH: 3 tuỳ chọn bắt buộc, thiếu cái nào cũng là một lỗi ÂM THẦM
     h = FU._han_dinh(-2.0)
     bao("chuỗi hạn đỉnh có `level=0` (không tự nâng) + `latency=1` (0 ms trễ)",
         "level=0" in h and "latency=1" in h and "alimiter" in h, h)
 
 
-def ca_ba_nen(td: str) -> None:
-    """CA CHÍNH — 3 VIDEO THẬT NỀN KHÁC NHAU. Đây là ca mà bản cổng cũ THIẾU."""
-    print(f"\n[CA 2] BA MỨC NỀN — mọi mốc phải nổi >= {NOI_MIN:+.0f} dB trên "
-          f"NỀN CỤC BỘ và KHÔNG mốc nào nhỏ đi")
-    tong_xau, tong_nho, tong_at, tong_meo, n_moc = [], [], [], [], 0
-    for ten, mo_ta, ss, n_seg in BA_NEN:
-        src = tim_nguon(mo_ta)
-        segs = ([(ss, ss + 13.0)] if n_seg == 1
-                else [(ss, ss + MOC_NOI), (ss + 30.0, ss + 30.0 + 6.0)])
-        d = os.path.join(td, ten.replace(" ", "_").replace("Ề", "E")
-                         .replace("Ì", "I").replace("Ồ", "O"))
-        os.makedirs(d, exist_ok=True)
-        a, b = os.path.join(d, "on.mp4"), os.path.join(d, "off.mp4")
-        log = xuat(src, a, segs, [dict(c) for c in HU_MOC], True,
-                   cats=["impact"])
-        xuat(src, b, segs, [dict(c) for c in HU_MOC], False, cats=["impact"])
-        pa, pb = pcm(a), pcm(b)
-        ra, rb = rms_day(pa), rms_day(pb)
-        rl = rms_day(hieu(pa, pb))
-        l_db = db(muc_loi(rb))
-        mocs = sorted([float(c["bat"]) for c in HU_MOC]
-                      + ([MOC_NOI] if n_seg > 1 else []))
-        pk, cham = do_dinh_file(a)
-        pk_t, cham_t = do_dinh_file(b)
-        print(f"    --- {ten} ({n_seg} đoạn) · {Path(src).name[:34]} · "
-              f"mức lời {l_db:.1f} dBFS · đỉnh file BẬT {pk:+.2f} ({cham} mẫu "
-              f"chạm trần) / TẮT {pk_t:+.2f} ({cham_t} mẫu) ---")
-        for g in mocs:
-            n_db = db(nen_cuc_bo(rb, g))
-            on, off = db(dinh(ra, g)), db(dinh(rb, g))
-            lop = db(dinh(rl, g))
-            noi, dl = on - n_db, on - off
-            n_moc += 1
-            c = "  " if (noi >= NOI_MIN and dl >= NHO_TOI_DA) else "!!"
-            print(f"    {c} {g:5.2f}s nền {n_db:6.1f} · BẬT {on:6.1f} · TẮT "
-                  f"{off:6.1f} · NỔI {noi:+5.1f} · Δ {dl:+5.1f} · lớp SFX "
-                  f"{lop:6.1f} dBFS")
-            if noi < NOI_MIN:
-                tong_xau.append(f"{ten}@{g:.2f}s {noi:+.1f}")
-            if dl < NHO_TOI_DA:
-                tong_nho.append(f"{ten}@{g:.2f}s {dl:+.1f}")
-            if lop > l_db + 20 * math.log10(AT_LOI_LAN) + 2.0:
-                tong_at.append(f"{ten}@{g:.2f}s lớp {lop:.1f} vs lời {l_db:.1f}")
-        sach = (pk <= TRAN_DINH_DB and cham == 0)
-        khong_te_hon = (pk <= pk_t + 0.01 and cham <= cham_t)
-        if not (sach or (pk_t > TRAN_DINH_DB and khong_te_hon)):
-            tong_meo.append(f"{ten} BẬT {pk:+.2f} dBFS/{cham} mẫu vs TẮT "
-                            f"{pk_t:+.2f}/{cham_t} mẫu")
-        if not log:
-            tong_xau.append(f"{ten}: KHÔNG có tiếng động nào")
-    bao(f"mọi mốc NỔI >= {NOI_MIN:+.0f} dB trên nền cục bộ ({n_moc} mốc / "
-        f"3 mức nền)", not tong_xau, "; ".join(tong_xau) or f"{n_moc}/{n_moc} đạt")
-    bao("KHÔNG mốc nào NHỎ ĐI so với bản tắt tiếng động",
-        not tong_nho, "; ".join(tong_nho) or f"{n_moc}/{n_moc} không tụt")
-    bao(f"tiếng động KHÔNG ÁT LỜI (lớp SFX <= {AT_LOI_LAN}x mức lời)",
-        not tong_at, "; ".join(tong_at) or "cả 3 nền đều dưới trần")
+def do_mot_clip(ten: str, src: str, ss: float, dai: float, td: str,
+                voice_vol: float = 1.0) -> dict:
+    """Xuất BẬT/TẮT với mốc TỰ DÒ (đang nói + khoảng lặng) rồi đo từng mốc.
+
+    Trả dict gom mọi vi phạm — caller quyết định báo mục nào."""
+    m_noi, m_im = chon_moc(src, ss, dai)
+    if not m_noi or not m_im:
+        raise RuntimeError(f"{ten}: đoạn này không đủ cả chỗ nói lẫn chỗ im "
+                           f"({len(m_noi)} nói / {len(m_im)} im)")
+    ca_theo_moc = {round(t, 2): "ĐANG NÓI" for t in m_noi}
+    ca_theo_moc.update({round(t, 2): "KHOẢNG LẶNG" for t in m_im})
+    hu = hu_tu_moc(m_noi + m_im)
+    d = os.path.join(td, ten)
+    os.makedirs(d, exist_ok=True)
+    a, b = os.path.join(d, "on.mp4"), os.path.join(d, "off.mp4")
+    segs = [(ss, ss + dai)]
+    log = xuat(src, a, segs, [dict(c) for c in hu], True, orig_vol=voice_vol)
+    xuat(src, b, segs, [dict(c) for c in hu], False, orig_vol=voice_vol)
+    pa, pb = pcm(a), pcm(b)
+    n = min(len(pa), len(pb))
+    pa, pb = pa[:n], pb[:n]
+    ra, rb = rms_day(pa), rms_day(pb)
+    rl = rms_day(hieu(pa, pb))
+    l_db = db(muc_loi(rb))
+    pk, cham = do_dinh_file(a)
+    pk_t, cham_t = do_dinh_file(b)
+    print(f"    --- {ten} · {Path(src).name[:30]} · mức lời {l_db:.1f} dBFS · "
+          f"{len(log)} tiếng · đỉnh BẬT {pk:+.2f} ({cham} mẫu) / TẮT "
+          f"{pk_t:+.2f} ({cham_t} mẫu) ---")
+    print(f"      {'mốc':>6} {'ca':<12} {'nền':>6} {'TẮT':>6} {'BẬT':>6} "
+          f"{'NỔI':>6} {'SFX':>6} | " + " ".join(f"{x:>7}" for x in TEN_DAI)
+          + "  D_LOA nghe?")
+    kq: dict = {"cam": [], "at": [], "meo": [], "noi_thap": [], "moc": [],
+                "loi_db": l_db}
+    for g in sorted(ca_theo_moc):
+        ca = ca_theo_moc[g]
+        n_db = db(nen_cuc_bo(rb, g))
+        on, off = db(dinh(ra, g)), db(dinh(rb, g))
+        lop = db(dinh(rl, g))
+        dloa, dd = do_nghe_ra(pa, pb, g)
+        nghe = "RÕ" if dloa >= NGHE_RO else ("mờ" if dloa >= NGHE_MIN
+                                             else "KHÔNG")
+        c = "  " if dloa >= NGHE_MIN else "!!"
+        print(f"    {c} {g:5.2f}s {ca:<12} {n_db:6.1f} {off:6.1f} {on:6.1f} "
+              f"{on - n_db:+6.1f} {lop:6.1f} | "
+              + " ".join(f"{v:+7.1f}" for v in dd)
+              + f" {dloa:+6.1f} {nghe}")
+        kq["moc"].append({"giay": g, "ca": ca, "dloa": dloa, "nghe": nghe})
+        if dloa < NGHE_MIN:
+            kq["cam"].append(f"{ten}@{g:.2f}s [{ca}] dải to thêm "
+                             f"{dloa:+.1f} dB")
+        # CHỐNG ÁT LỜI — so với mức lời CỤC BỘ tại mốc (hoặc cả clip, cái CAO
+        # hơn): lớp tiếng động không được vượt 1,5x. +2,0 dB dung sai đo vì lớp
+        # SFX tách bằng phép trừ sóng nên dính cả nhiễu lượng tử AAC.
+        _tran = max(l_db, off) + 20 * math.log10(AT_LOI_LAN) + 2.0
+        if lop > _tran:
+            kq["at"].append(f"{ten}@{g:.2f}s lớp {lop:.1f} > trần {_tran:.1f}")
+        if ca == "KHOẢNG LẶNG" and (on - n_db) < NOI_MIN:
+            kq["noi_thap"].append(f"{ten}@{g:.2f}s {on - n_db:+.1f} dB")
+    # ---- KHÔNG ÁT LỜI (2): NGOÀI cửa sổ tiếng động, giọng nói giữ nguyên ----
+    ngoai = []
+    for i in range(len(rb)):
+        t = i * CUA
+        if any(abs(t - g) < 2.0 for g in ca_theo_moc):
+            continue
+        if rb[i] < 300:                      # bỏ chỗ im (nhiễu lượng tử AAC)
+            continue
+        ngoai.append(float((pho_dai(pa, t, 0.10)
+                            - pho_dai(pb, t, 0.10))[1:4].max()))
+    kq["ngoai"] = (max(ngoai) if ngoai else 0.0)
+    kq["n_ngoai"] = len(ngoai)
+    if ngoai and max(ngoai) > NGOAI_MOC_MAX:
+        kq["at"].append(f"{ten}: NGOÀI mốc dải giọng đổi {max(ngoai):+.2f} dB")
+    print(f"      [không át lời] ngoài mốc, dải giọng 300-4k đổi nhiều nhất "
+          f"{kq['ngoai']:+.2f} dB ({kq['n_ngoai']} cửa sổ)")
+    sach = (pk <= TRAN_DINH_DB and cham == 0)
+    khong_te_hon = (pk <= pk_t + 0.01 and cham <= cham_t)
+    if not (sach or (pk_t > TRAN_DINH_DB and khong_te_hon)):
+        kq["meo"].append(f"{ten} BẬT {pk:+.2f} dBFS/{cham} mẫu vs TẮT "
+                         f"{pk_t:+.2f}/{cham_t} mẫu")
+    if not log:
+        kq["cam"].append(f"{ten}: KHÔNG có tiếng động nào")
+    return kq
+
+
+def _gom(ket: list) -> None:
+    """Báo cáo chung cho CA 2 và CA 3 — TÁCH RIÊNG 2 ca."""
+    moc = [m for k in ket for m in k["moc"]]
+    xau = [x for k in ket for x in k["cam"]]
+    at = [x for k in ket for x in k["at"]]
+    meo = [x for k in ket for x in k["meo"]]
+    nt = [x for k in ket for x in k["noi_thap"]]
+    for ca in ("ĐANG NÓI", "KHOẢNG LẶNG"):
+        g = [m for m in moc if m["ca"] == ca]
+        if not g:
+            continue
+        n_ro = sum(1 for m in g if m["nghe"] == "RÕ")
+        print(f"      >> ca {ca:<12}: {len(g)} mốc · RÕ {n_ro} · mờ "
+              f"{sum(1 for m in g if m['nghe'] == 'mờ')} · KHÔNG "
+              f"{sum(1 for m in g if m['nghe'] == 'KHÔNG')} · D_LOA "
+              f"{min(m['dloa'] for m in g):+.1f} .. "
+              f"{max(m['dloa'] for m in g):+.1f} dB")
+    n_ro = sum(1 for m in moc if m["nghe"] == "RÕ")
+    bao(f"MỌI mốc NGHE RA ĐƯỢC (dải 300 Hz+ to thêm >= {NGHE_MIN:.0f} dB) — "
+        f"{len(moc)} mốc, cả ca ĐANG NÓI lẫn ca KHOẢNG LẶNG",
+        not xau, "; ".join(xau) or f"{len(moc)}/{len(moc)} đạt · thấp nhất "
+        f"{min(m['dloa'] for m in moc):+.1f} dB")
+    bao(f"phần lớn mốc nghe RÕ (>= {NGHE_RO:.0f} dB, tối thiểu "
+        f"{RO_TY_LE*100:.0f}% số mốc)",
+        bool(moc) and n_ro >= RO_TY_LE * len(moc),
+        f"{n_ro}/{len(moc)} mốc RÕ ({100.0*n_ro/max(1,len(moc)):.0f}%)")
+    bao(f"tiếng động KHÔNG ÁT LỜI (lớp SFX <= {AT_LOI_LAN}x mức lời tại mốc · "
+        f"ngoài mốc dải giọng đổi <= {NGOAI_MOC_MAX:.1f} dB)",
+        not at, "; ".join(at) or
+        f"ngoài mốc đổi nhiều nhất {max(k['ngoai'] for k in ket):+.2f} dB")
+    bao(f"mốc KHOẢNG LẶNG vẫn NỔI >= {NOI_MIN:+.0f} dB trên nền cục bộ "
+        f"(giữ đúng bất biến v2.19.0)", not nt, "; ".join(nt) or "đạt hết")
     bao(f"KHÔNG MÉO: đỉnh file <= {TRAN_DINH_DB:.0f} dBFS + 0 mẫu chạm trần "
         f"(nguồn đã méo sẵn -> BẬT phải không tệ hơn TẮT)",
-        not tong_meo, "; ".join(tong_meo) or "cả 3 file đạt")
+        not meo, "; ".join(meo) or f"{len(ket)}/{len(ket)} file đạt")
+
+
+def ca_ba_nen(td: str) -> None:
+    """CA CHÍNH — 3 VIDEO THẬT NỀN KHÁC NHAU, mốc TỰ DÒ vào đúng chỗ đang nói
+    và đúng chỗ im lặng. Đây là ca bắt được lỗi "nói át rồi"."""
+    print(f"\n[CA 2] BA MỨC NỀN x (mốc ĐANG NÓI + mốc KHOẢNG LẶNG) — mọi mốc "
+          f"phải NGHE RA ĐƯỢC (dải 300 Hz+ to thêm >= {NGHE_MIN:.0f} dB)")
+    ket = []
+    for ten, mo_ta, ss, _n_seg in BA_NEN:
+        ket.append(do_mot_clip(ten.replace(" ", "_").replace("Ề", "E")
+                               .replace("Ì", "I").replace("Ồ", "O"),
+                               tim_nguon(mo_ta), ss, 13.0, td))
+    _gom(ket)
+
+
+def ca_giong_to_nho(td: str) -> None:
+    """GIỌNG TO vs GIỌNG NHỎ — cùng một nguồn, chỉ khác mức lời.
+
+    Vì sao phải có: đích tiếng động bám MỨC LỜI, nên nếu chỗ nào tính thiếu bù
+    `voice_vol` thì clip giọng nhỏ sẽ có tiếng động to lố (hoặc ngược lại) mà
+    ca "3 mức nền" không thấy — cả 3 nguồn đó đều để `voice_vol=1,0`."""
+    print("\n[CA 3] GIỌNG TO (lời ~-12 dBFS) vs GIỌNG NHỎ — đích phải bám lời")
+    ket = []
+    ket.append(do_mot_clip("giong_TO", tim_nguon(BA_NEN[2][1]), 300.0, 13.0,
+                           td, voice_vol=1.0))
+    ket.append(do_mot_clip("giong_NHO", tim_nguon(BA_NEN[0][1]), 240.0, 13.0,
+                           td, voice_vol=0.25))
+    to, nho = ket[0]["loi_db"], ket[1]["loi_db"]
+    bao("2 ca THẬT SỰ khác mức lời (không thì ca này vô nghĩa)",
+        to - nho >= 10.0, f"giọng TO {to:.1f} dBFS · giọng NHỎ {nho:.1f} dBFS "
+        f"· cách {to - nho:.1f} dB")
+    bao("giọng TO đạt mức lời ~-12 dBFS (đúng ca anh Hùng nêu)",
+        to >= -15.0, f"{to:.1f} dBFS")
+    _gom(ket)
 
 
 def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
-    print("\n[CA 3] MỖI ĐIỂM NHẤN HÌNH CÓ TIẾNG ĐI KÈM (clip 1 ĐOẠN — không có "
+    print("\n[CA 4] MỖI ĐIỂM NHẤN HÌNH CÓ TIẾNG ĐI KÈM (clip 1 ĐOẠN — không có "
           "điểm nối nào)")
     segs = [(240.0, 250.0)]
     hu = [{"bat": 1.20, "het": 1.60, "khoa": "zoom_nhoi", "dam": 0.25},
@@ -492,7 +799,7 @@ def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
 
 
 def ca_ducking(src: str, td: str) -> None:
-    print("\n[CA 4] DUCKING: có thật, êm, và KHÔNG trùm lên chính cú va")
+    print("\n[CA 5] DUCKING: có thật, êm, và KHÔNG trùm lên chính cú va")
     segs = [(240.0, 245.0), (260.0, 265.0)]        # điểm nối ở 5,00 s
     hu = [{"bat": 1.20, "het": 1.60, "khoa": "zoom_nhoi", "dam": 0.25},
           {"bat": 7.60, "het": 8.00, "khoa": "o_vuong", "dam": 0.25}]
@@ -555,7 +862,7 @@ def ca_ducking(src: str, td: str) -> None:
 
 
 def ca_tat_la_tat(src: str, td: str) -> None:
-    print("\n[CA 5] TẮT LÀ TẮT: fx_whoosh=False -> KHÔNG một mẫu âm nào thêm")
+    print("\n[CA 6] TẮT LÀ TẮT: fx_whoosh=False -> KHÔNG một mẫu âm nào thêm")
     segs = [(240.0, 244.0), (260.0, 264.0)]
     hu = [{"bat": 1.20, "het": 1.60, "khoa": "zoom_nhoi", "dam": 0.25}]
     a = os.path.join(td, "t_off1.mp4")
@@ -568,7 +875,7 @@ def ca_tat_la_tat(src: str, td: str) -> None:
     bao("2 lượt xuất TẮT tiếng ra sóng GIỐNG NHAU (không có gì ngẫu nhiên)",
         max((db(x) for x in d), default=-99) < -55,
         f"hiệu lớn nhất {max((db(x) for x in d), default=-99):.1f} dBFS")
-    print("\n[CA 6] MỌI ĐIỂM NỐI 'none' -> KHÔNG chèn (tôn trọng ý đồ AI)")
+    print("\n[CA 7] MỌI ĐIỂM NỐI 'none' -> KHÔNG chèn (tôn trọng ý đồ AI)")
     c = os.path.join(td, "t_none.mp4")
     ln = xuat(src, c, segs, "tat", True, cats=["none"])
     bao("join_categories=['none'] + hiệu ứng tắt -> 0 tiếng", not ln,
@@ -576,7 +883,7 @@ def ca_tat_la_tat(src: str, td: str) -> None:
 
 
 def ca_hook(src: str, td: str) -> None:
-    print("\n[CA 7] HOOK MỞ ĐẦU: 2 giây đầu phải CÓ điểm nhấn + CÓ tiếng")
+    print("\n[CA 8] HOOK MỞ ĐẦU: 2 giây đầu phải CÓ điểm nhấn + CÓ tiếng")
     # hook-first = đoạn đầu nằm SAU đoạn sau trên timeline gốc (nhảy ngược)
     hook_segs = [(300.0, 303.0), (240.0, 250.0)]
     thuong_segs = [(240.0, 250.0), (300.0, 303.0)]
@@ -633,6 +940,7 @@ def main() -> int:
         print(f"  [nguồn phụ] {Path(src).name[:56]}")
         ca_ham_thuan()
         ca_ba_nen(td)
+        ca_giong_to_nho(td)
         ca_diem_nhan_co_tieng(src, td)
         ca_ducking(src, td)
         ca_tat_la_tat(src, td)
