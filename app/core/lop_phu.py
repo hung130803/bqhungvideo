@@ -72,9 +72,19 @@ class Luat:
     manh: tuple = ()
     phu: tuple = ()
     cam: tuple = ()
+    #: BIẾN THỂ NHÌN của CÙNG MỘT CẢNH — `((khoá_hiệu_ứng, (gợi ý…)), …)`.
+    #: Anh Hùng 09/08/2026: *"càng nhiều kiểu càng tốt, 100 kiểu cũng được,
+    #: nhưng đảm bảo AI hiểu ngữ cảnh, thêm vào hợp lý, không thêm bừa bãi"*.
+    #: Cách mở rộng ĐÚNG là thêm BIẾN THỂ trong cùng ngữ cảnh (tuyết bụi bay
+    #: ngang · bông rơi chậm · bão tuyết dày), KHÔNG bịa thêm ngữ cảnh không
+    #: nhận ra được — vì mỗi ngữ cảnh mới là một cơ hội nhận NHẦM, còn biến thể
+    #: thì dùng LẠI đúng bằng chứng đã đủ mạnh của cảnh đó.
+    #: Rỗng -> `((khoa, ()),)`, tức hành xử Y HỆT bản 10 kiểu.
+    bien: tuple = ()
     _re_manh: list = field(default_factory=list, repr=False)
     _re_phu: list = field(default_factory=list, repr=False)
     _re_cam: list = field(default_factory=list, repr=False)
+    _re_bien: list = field(default_factory=list, repr=False)
 
 
 def _khong_dau(s: str) -> str:
@@ -104,8 +114,21 @@ def _dk(l: Luat) -> Luat:
     l._re_manh = [_bien(t) for t in l.manh]
     l._re_phu = [_bien(t) for t in l.phu]
     l._re_cam = [_bien(t) for t in l.cam]
+    l._re_bien = [(k, [_bien(t) for t in (goi or ())])
+                  for k, goi in (l.bien or ((l.khoa, ()),))]
     LUAT[l.khoa] = l
     return l
+
+
+def moi_kieu() -> set:
+    """MỌI khoá hiệu ứng mà bảng luật có thể chọn ra (gồm cả biến thể).
+
+    Cổng 46 canh `hieu_ung.LOP_PHU <= moi_kieu()`: kiểu nằm trong kho mà không
+    luật nào với tới được là **kiểu chết** — nó vào bản .exe, ăn chỗ, mà không
+    bao giờ hiện ra clip nào. Đó đúng là bệnh 6 shader "nằm trong .exe mà không
+    một dòng mã nào gọi tới" đã ghi ở cổng 41.
+    """
+    return {k for l in LUAT.values() for k, _g in l._re_bien}
 
 
 LUAT: dict = {}
@@ -293,6 +316,56 @@ def _so(x: float, n: int = 2) -> str:
     return f"{x:.{n}f}".replace(".", ",")
 
 
+def _van(s: str) -> int:
+    """Số nguyên ỔN ĐỊNH từ một chuỗi — **KHÔNG dùng `hash()`**.
+
+    `hash()` của Python băm chuỗi kèm `PYTHONHASHSEED` NGẪU NHIÊN mỗi tiến
+    trình, nên cùng một clip xuất lại (hoặc xuất ở làn khác) sẽ ra biến thể
+    KHÁC. Với 3 làn xuất song song thì đó là "mỗi Part một kiểu ngẫu nhiên",
+    không tra lại được — đúng loại lỗi `_SFX_LAST_PICK`. `crc32` là hàm thuần,
+    cùng chuỗi luôn ra cùng số, ở mọi máy.
+    """
+    import zlib
+    return int(zlib.crc32(str(s).encode("utf-8", "replace")))
+
+
+def _chon_bien(l: Luat, digest: list, loi: str, dung: set,
+               kho: dict) -> tuple:
+    """Cảnh đã khớp -> chọn 1 BIẾN THỂ NHÌN. Trả `(khoá, lý do)`.
+
+    Hai đường, theo đúng thứ tự:
+      1. **GỢI Ý RIÊNG** — biến thể nào có từ khoá riêng khớp thì lấy nó
+         ("blizzard" -> bão tuyết dày, chứ không phải bông rơi lững lờ). Mốc
+         digest tính 2, từ trong lời tính 1: hình là bằng chứng chắc hơn lời.
+      2. **RẢI ĐỀU TIỀN ĐỊNH** — không biến thể nào được gợi ý riêng thì chia
+         theo `crc32` của CHÍNH bằng chứng (mô tả digest + lời). Cùng một clip
+         luôn ra cùng biến thể (xuất lại không đổi), nhưng clip khác nội dung
+         thì ra biến thể khác -> 3 Part của một video không giống hệt nhau,
+         mà vẫn KHÔNG hề "chọn bừa": cảnh đã được chấm đạt ngưỡng ở trên rồi,
+         đây chỉ là chọn CÁCH VẼ trong cùng một cảnh.
+
+    Biến thể không có trong kho / bị máy nhân viên loại (`dung`) thì bỏ qua —
+    cùng lối lùi êm của nhóm shader.
+    """
+    ung = [(k, ps) for k, ps in l._re_bien if k in dung and k in kho]
+    if not ung:
+        return "", "không biến thể nào của cảnh này dùng được trên máy này"
+    diem = []
+    for k, ps in ung:
+        n = (2 * _dem_moc(digest, ps)[0] + _dem_tu(loi, ps)) if ps else 0
+        diem.append((n, k))
+    cao = max(n for n, _k in diem)
+    dau = sorted(k for n, k in diem if n == cao)
+    if cao > 0 and len(dau) == 1:
+        return dau[0], f"biến thể theo gợi ý riêng ({cao} bằng chứng)"
+    if len(dau) == 1:
+        return dau[0], "cảnh chỉ có 1 biến thể"
+    van = _van(" ".join(str(d.get("desc", "")) for d in digest or []) + "|"
+               + str(loi))
+    return (dau[van % len(dau)],
+            f"biến thể rải đều theo nội dung ({len(dau)} kiểu cùng cảnh)")
+
+
 def chon_lop_phu(digest: list, loi: str, tong_giay: float,
                  muc: str = "vua", co_the_dung: Optional[list] = None,
                  tranh: Optional[list] = None,
@@ -327,8 +400,11 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
     dung = set(co_the_dung if co_the_dung is not None else HU.dung_duoc())
     loi_n = _khong_dau(loi or "")
     bang = []
-    for k, l in LUAT.items():
-        if k not in dung or k not in HU.KHO:
+    for _k, l in LUAT.items():
+        # LUẬT LÀ CẢNH, không phải kiểu: chỉ cần MỘT biến thể còn dùng được thì
+        # cảnh đó vẫn xét. Lọc theo chính khoá luật là sai từ lúc có biến thể —
+        # tên cảnh có thể không còn là tên một kiểu trong kho.
+        if not any(k2 in dung and k2 in HU.KHO for k2, _g in l._re_bien):
             continue
         d = _diem(l, digest, loi_n)
         if d is not None:
@@ -356,7 +432,12 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
                     f"{nhi['khoa']} {_so(nhi['tin'])} sát nhau (cách "
                     f"{_so(nhat['tin'] - nhi['tin'])} < {_so(CACH_BIET)}) "
                     f"-> KHÔNG đoán, không thêm gì")
-    h = HU.KHO[nhat["khoa"]]
+    kieu, ly_do_bien = _chon_bien(LUAT[nhat["khoa"]], digest, loi_n, dung,
+                                  HU.KHO)
+    if not kieu:
+        return [], (f"{nhat['khoa']} khớp cảnh ({_so(nhat['tin'])}) nhưng "
+                    f"{ly_do_bien}")
+    h = HU.KHO[kieu]
     dai = max(HU.DAI_MIN, min(HU.DAI_MAX, h.dai))
     con = float(tong_giay) * HU.TY_LE_MAX if ngan_sach is None \
         else float(ngan_sach)
@@ -376,15 +457,16 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
             return [], (f"{nhat['khoa']} khớp cảnh nhưng giây {_so(bat, 1)} "
                         f"nằm sát điểm nhấn đã có ({_so(float(g), 1)}s, cách "
                         f"< {_so(HU.CACH_MIN, 1)}s) -> không chồng")
-    vi_sao = (f"giây {_so(bat, 1)} · {h.ten} · KHỚP NỘI DUNG — tự tin "
+    vi_sao = (f"giây {_so(bat, 1)} · {h.ten} · cảnh «{nhat['khoa']}» · "
+              f"{ly_do_bien} · KHỚP NỘI DUNG — tự tin "
               f"{_so(nhat['tin'])}/1,00 (ngưỡng {_so(NGUONG_TIN)}): "
               f"{nhat['dm']} mốc hình khớp mạnh, {nhat['dp']} mốc phụ, "
               f"{nhat['tm']} từ mạnh trong lời"
               + (f'; cảnh: "{str(moc[0].get("desc", ""))[:60]}"' if moc else ""))
     LY_DO_CUOI = vi_sao
     return ([{"bat": round(bat, 3), "het": round(bat + dai, 3),
-              "khoa": nhat["khoa"], "dam": HU.MUC_DAM[m], "loai": "lop_phu",
-              "vi_sao": vi_sao}], vi_sao)
+              "khoa": kieu, "canh": nhat["khoa"], "dam": HU.MUC_DAM[m],
+              "loai": "lop_phu", "vi_sao": vi_sao}], vi_sao)
 
 
 def ghi_nhat_ky(ly_do: str, ten_clip: str = "") -> None:
