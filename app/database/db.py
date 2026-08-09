@@ -306,6 +306,36 @@ class Database:
             self.conn().execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_clipgu_clip "
                 "ON clip_gu(clip_id)")
+            # 📊 SỐ LIỆU THẬT TỪ TIKTOK / YOUTUBE (`app/ai/so_lieu.py`).
+            # 👍/👎 ở trên là ý kiến CHỦ QUAN của anh Hùng; bảng này là thứ KHÁN
+            # GIẢ đã thật sự làm — clip nào bao nhiêu view, xem trung bình bao
+            # nhiêu giây. App **KHÔNG tự lấy được** (không có API, không đăng
+            # nhập kênh của anh Hùng), nên đây chỉ là ĐƯỜNG NHẬN: anh xuất
+            # CSV/JSON từ trang thống kê rồi nhập vào.
+            # Khoá theo TÊN FILE chứ không theo `clip_id`: file đã đăng lên
+            # TikTok rồi thì trong DB clip có thể đã `archived`/bị xoá, còn tên
+            # file thì anh Hùng vẫn giữ. Nhập lại cùng tên -> GHI ĐÈ.
+            self.conn().execute(
+                """CREATE TABLE IF NOT EXISTS clip_so_lieu (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       project_id INTEGER NOT NULL DEFAULT 0,
+                       clip_id INTEGER,
+                       ten_file TEXT NOT NULL,
+                       view INTEGER NOT NULL DEFAULT 0,
+                       xem_tb REAL NOT NULL DEFAULT 0,  -- giây xem trung bình
+                       dai REAL NOT NULL DEFAULT 0,     -- thời lượng clip (s)
+                       tieu_de TEXT NOT NULL DEFAULT '',
+                       thoai TEXT NOT NULL DEFAULT '',
+                       n_seg INTEGER NOT NULL DEFAULT 0,
+                       nguon TEXT NOT NULL DEFAULT '',  -- tiktok / youtube …
+                       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                   )""")
+            self.conn().execute(
+                "CREATE INDEX IF NOT EXISTS idx_csl_proj "
+                "ON clip_so_lieu(project_id, view)")
+            self.conn().execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_csl_file "
+                "ON clip_so_lieu(project_id, ten_file)")
             self.conn().commit()
             # HOẠT ĐỘNG GẦN NHẤT ghi thẳng vào kênh/video (KHÔNG suy ra từ bảng
             # jobs nữa) — 'Xóa lịch sử' xoá job done thì thời điểm 'xong gần

@@ -1826,9 +1826,15 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         from app import services as _sv
         _prow = db.query_one("SELECT project_id FROM videos WHERE id=?",
                              (video_id,))
-        _khoi_nghe_xem += _cd_mod.khoi_prompt_gu(
-            _sv.gu_cua_kenh(_prow["project_id"] if _prow else None))
-    except Exception:  # noqa: BLE001 - thiếu gu không được chặn việc cắt
+        _pid_gu = _prow["project_id"] if _prow else None
+        _khoi_nghe_xem += _cd_mod.khoi_prompt_gu(_sv.gu_cua_kenh(_pid_gu))
+        # 📊 SỐ LIỆU THẬT (view / tỉ lệ xem hết) — chỉ có khi anh Hùng đã NHẬP
+        # file xuất từ TikTok/YouTube. App không tự lấy được (không API, không
+        # đăng nhập kênh). CHƯA NHẬP -> khối rỗng -> prompt Y HỆT hiện tại.
+        from app.ai import so_lieu as _sl_mod
+        _khoi_nghe_xem += _sl_mod.khoi_prompt_so_lieu(
+            _sl_mod.so_lieu_cua_kenh(_pid_gu, db))
+    except Exception:  # noqa: BLE001 - thiếu gu/số liệu không được chặn việc cắt
         pass
 
     # ---- Ưu tiên: AI tự chọn clip + segments ----

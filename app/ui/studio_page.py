@@ -6114,7 +6114,60 @@ class StudioPage(QWidget):
                      "bật lại.\nCách ẩn: chọn dòng trong bảng → chuột phải → "
                      "Ẩn khỏi dây chuyền.")
         a.triggered.connect(lambda: self._pipe_hid_b.click())
+        a2 = m.addAction("Nhập số liệu view thật (CSV/JSON)…")
+        a2.setToolTip("App KHÔNG tự lấy được view. Xuất file từ TikTok "
+                      "Studio / YouTube Studio rồi nhập vào đây — AI sẽ học "
+                      "clip nào thật sự giữ chân người xem.")
+        a2.triggered.connect(self._nhap_so_lieu_dialog)
         m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _nhap_so_lieu_dialog(self) -> None:
+        """📊 NHẬP SỐ LIỆU VIEW THẬT cho kênh ĐANG CHỌN.
+
+        Anh Hùng 09/08/2026 muốn AI học theo SỐ THẬT chứ không chỉ theo 👍/👎.
+        App không có API và không đăng nhập được kênh của anh, nên chỉ dựng
+        ĐƯỜNG NHẬN. Nhãn nút KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ra ô đen,
+        bài học v2.6.22).
+        """
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+        from app.ai import so_lieu as _sl
+        pid = getattr(getattr(self, "state", None), "project_id", None)
+        if not pid:
+            QMessageBox.information(self, "Nhập số liệu",
+                                    "Hãy chọn một kênh trước đã.")
+            return
+        n_co = _sl.so_lieu_cua_kenh(pid, db).get("n", 0)
+        h = QMessageBox(self)
+        h.setWindowTitle("Nhập số liệu view thật")
+        h.setText(_sl.huong_dan()
+                  + f"\n\nKênh này hiện có {n_co} clip đã có số liệu.")
+        h.setStandardButtons(QMessageBox.StandardButton.Open
+                             | QMessageBox.StandardButton.Cancel)
+        h.button(QMessageBox.StandardButton.Open).setText("Chọn file…")
+        h.button(QMessageBox.StandardButton.Cancel).setText("Đóng")
+        if h.exec() != QMessageBox.StandardButton.Open:
+            return
+        p, _f = QFileDialog.getOpenFileName(
+            self, "Chọn file số liệu xuất từ TikTok/YouTube", "",
+            "Bảng số liệu (*.csv *.tsv *.json);;Tất cả (*.*)")
+        if not p:
+            return
+        try:
+            n, ly = services.nhap_so_lieu(p, int(pid))
+        except Exception as e:  # noqa: BLE001 - nhập lỗi KHÔNG được làm sập app
+            n, ly = 0, f"lỗi: {type(e).__name__}: {str(e)[:120]}"
+        if n <= 0:
+            QMessageBox.warning(self, "Nhập số liệu",
+                                f"Không nhập được dòng nào.\n\n{ly}")
+            return
+        tong = _sl.so_lieu_cua_kenh(pid, db).get("n", 0)
+        them = ("" if tong >= _sl.TOI_THIEU else
+                f"\n\nCần ít nhất {_sl.TOI_THIEU} clip có số liệu thì AI mới "
+                f"dùng (đang có {tong}); dưới mức đó prompt giữ nguyên như cũ.")
+        QMessageBox.information(
+            self, "Nhập số liệu",
+            f"{ly}.\nKênh này nay có {tong} clip có số liệu." + them)
 
     def _pipe_rows_pid(self) -> list:
         """(pid, tên) của MỌI kênh ĐANG HIỆN trong bảng dây chuyền.

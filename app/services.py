@@ -945,6 +945,23 @@ def gu_clip(clip_id: int) -> int:
     return int(r["vote"]) if r else 0
 
 
+def nhap_so_lieu(duong_dan: str, project_id: int, nguon: str = "") -> tuple:
+    """📊 NHẬP FILE SỐ LIỆU THẬT (CSV/JSON xuất từ TikTok/YouTube).
+
+    Trả `(số dòng đã nhập, lý do)`. App **KHÔNG tự lấy được** view (không có
+    API, không đăng nhập được kênh của anh Hùng) nên đây là cửa duy nhất.
+    Định dạng file: xem `app.ai.so_lieu.huong_dan()`.
+    """
+    from app.ai import so_lieu as _sl
+    return _sl.nhap_vao_db(duong_dan, int(project_id), db, nguon=nguon)
+
+
+def so_lieu_kenh(project_id) -> dict:
+    """Số liệu thật của kênh -> `{"tot": [...], "te": [...], "n": tổng}`."""
+    from app.ai import so_lieu as _sl
+    return _sl.so_lieu_cua_kenh(project_id, db)
+
+
 def gu_cua_kenh(project_id, gioi_han: int = 6) -> dict:
     """Ví dụ 👍/👎 GẦN NHẤT của kênh -> {"thich": [...], "khong": [...]}.
 
