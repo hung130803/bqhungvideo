@@ -1238,16 +1238,22 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None,
             files = _hop or [f for f in files
                              if _moc_dinh_sfx(f) <= _SFX_DICH_TOI_DA] or files
         # ---- LỌC 3: LỆCH DẢI TẦN, **chỉ ở mốc rơi vào lúc ĐANG NÓI** ----
-        # Chỗ có giọng nói thì lấy nửa SÁNG NHẤT (nhiều năng lượng trên 4 kHz —
-        # xem `do_sang_sfx`): dải đó giọng nói gần như trống nên tiếng động
-        # nghe rõ mà KHÔNG phải to thêm. Ưu tiên TƯƠNG ĐỐI chứ không ngưỡng
-        # cứng vì nhóm `impact` (hay dùng nhất) không có file nào thật sáng.
+        # Chỗ có giọng nói thì chỉ lấy những file SÁNG NHẤT NHÓM (nhiều năng
+        # lượng trên 4 kHz — xem `do_sang_sfx`): dải đó giọng nói gần như trống
+        # nên tiếng động nghe rõ mà KHÔNG phải to thêm. Ưu tiên TƯƠNG ĐỐI (cách
+        # file sáng nhất NHÓM `_SFX_SANG_DU` dB) chứ không ngưỡng cứng: nhóm
+        # `impact` (hay dùng nhất) không có file nào thật sáng, đặt ngưỡng cứng
+        # là nhóm đó rỗng rồi lùi về cả kho = mất trắng bộ lọc.
         # Mốc rơi vào khoảng lặng KHÔNG lọc: không có gì che thì tiếng trầm hay
         # sáng đều nghe rõ, giữ nguyên độ đa dạng của kho.
         if (noi_mocs and _i < len(noi_mocs) and noi_mocs[_i]
                 and len(files) > 3):
-            files = sorted(files, key=do_sang_sfx,
-                           reverse=True)[:max(3, len(files) // 2)]
+            _sx = sorted(files, key=do_sang_sfx, reverse=True)
+            _nguong = do_sang_sfx(_sx[0]) - _SFX_SANG_DU
+            _sang = [f for f in _sx if do_sang_sfx(f) >= _nguong]
+            # ÍT NHẤT 3 file để còn ngẫu nhiên được (anh Hùng cần 3 Part không
+            # kêu giống hệt nhau) — nhóm nào sáng đều thì lấy đúng 3 sáng nhất.
+            files = _sang if len(_sang) >= 3 else _sx[:3]
         if not files:
             out.append((cat, None))
             continue
@@ -1416,6 +1422,21 @@ _SFX_CREST_DU = 3.0
 #: ngẫu nhiên. −6 chứ không phải −3 vì −3 chỉ còn 120 file mà chẳng thêm gì —
 #: hụt 6 dB vẫn nghe rõ, hụt 18 dB thì không.
 _SFX_LOA_HUT_MAX = -6.0
+#: CÁCH FILE SÁNG NHẤT NHÓM bao nhiêu dB thì còn được bốc **ở mốc ĐANG NÓI**
+#: (xem `do_sang_sfx`). A/B SẠCH (`_do_che_loi.py BQ_SO_FILE=...`): cùng clip
+#: ỒN, cùng mốc đang nói 4,40 s, cùng hệ số — chỉ ép khác đúng 1 file, đo
+#: D_CHE = dải nghe được nổi lên khỏi THỨ ĐANG CHE bao nhiêu dB:
+#:   `impactGlass_light_001`  sáng −23,2 -> **+9,6 dB**
+#:   `impactGlass_medium_003` sáng −32,6 -> **+4,2 dB**
+#:   `impactGlass_medium_000` sáng −35,7 -> **+4,3 dB**
+#:   `boom_deep_05`           sáng −56,3 -> **−0,5 dB = KHÔNG NGHE RA**
+#: Tức trong CÙNG một nhóm, file sáng hơn 12 dB nghe rõ hơn **5,4 dB** mà
+#: không tốn thêm một dB độ to nào — đúng hướng "chọn tiếng LỆCH DẢI TẦN với
+#: giọng nói". Sáng nhất nhóm `impact` (sau bộ lọc loa) là −23,2 nên cửa 10 dB
+#: giữ 7/20 file: đủ để 3 Part không kêu giống hệt nhau, mà đã kéo kỳ vọng lên
+#: phía +9,6. Cửa 8 dB còn 5 file (bắt đầu lặp tiếng), cửa 15 dB nhận lại
+#: 16/20 = gần như không lọc.
+_SFX_SANG_DU = 10.0
 #: DÓNG CÚ VA VÀO ĐÚNG MỐC: đẩy tiếng động sớm lên đúng bằng "giây xảy ra
 #: đỉnh" để chỗ TO NHẤT của nó rơi vào đúng giây điểm nhấn. Kho có 18/184 file
 #: vào chậm hơn mức này (trung vị 0,10 s · bpv90 0,35 s · max 0,60 s) — số đó
