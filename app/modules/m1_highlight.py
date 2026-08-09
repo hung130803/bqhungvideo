@@ -3589,6 +3589,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             _noi_dung = {
                 "digest": get_analysis(video_id, _vd.VD_KIND) or [],
                 "loi": _LP0.loi_theo_doan(_tr_lp, segs),
+                # BẢN CHÉP LỜI ĐẦY ĐỦ (còn mốc từng câu) — nguồn của đường ĐOÁN
+                # CẢNH BẰNG LỜI, chỉ dùng khi KHÔNG có vision_digest. `loi` ở
+                # trên đã bị ép thành MỘT chuỗi nên không dựng mốc được nữa.
+                "transcript": _tr_lp,
             }
         except Exception:  # noqa: BLE001 — không có nội dung thì bỏ nhóm này
             _noi_dung = {}

@@ -201,7 +201,8 @@ def main() -> int:
     n_bat = 0
     for nhom, ten, tr in lay:
         ds = [{"t": float(c.get("start") or 0), "desc": str(c.get("text") or ""),
-               "act": 5} for c in (tr or {}).get("segments") or []]
+               "act": 5, "loi": True}
+              for c in (tr or {}).get("segments") or []]
         chon, ly = LP.chon_lop_phu(ds, "", 60.0, "vua")
         dau = "*** BẬT" if chon else "   bỏ  "
         if chon:
@@ -226,17 +227,38 @@ def main() -> int:
         ("trời lạnh mà ấm áp", "ma_quai", "ma ám"),
         ("có điện rồi", "tia_sang", "cổ điển"),
     ]
+    n_cu = n_moi = 0
     for cau, canh, y in BAY:
-        t = LP._khong_dau(cau)
         l = LP.LUAT[canh]
-        hit = [tu for r, tu in zip(l._re_manh, l.manh) if r.search(t)]
-        hitp = [tu for r, tu in zip(l._re_phu, l.phu) if r.search(t)]
-        hitc = [tu for r, tu in zip(l._re_cam, l.cam) if r.search(t)]
-        co = hit or hitp or hitc
-        print(f"  {'NHẦM ' if co else 'sạch '} «{cau}» -> {canh} "
-              f"(ý muốn: {y}) {'MẠNH' + str(hit) if hit else ''}"
-              f"{' phụ' + str(hitp) if hitp else ''}"
-              f"{' CẤM' + str(hitc) if hitc else ''}")
+        t_cu, t_moi = LP._khong_dau(cau), LP._ha(cau)
+        cu = [tu for r, tu in zip(l._re_manh, l.manh) if r.search(t_cu)]
+        moi = [tu for rs, tu in zip(l._rd_manh, l.manh)
+               if any(x.search(t_moi) for x in rs)]
+        n_cu += bool(cu)
+        n_moi += bool(moi)
+        print(f"  CŨ {'NHẦM' if cu else 'sạch'} · NAY "
+              f"{'NHẦM' if moi else 'sạch'}   «{cau}» -> {canh} "
+              f"(ý muốn: {y}){' ' + str(cu) if cu else ''}")
+    print(f"\n  [số đo] bẫy bắn NHẦM: bảng BỎ DẤU {n_cu}/{len(BAY)} · "
+          f"bảng CÓ DẤU {n_moi}/{len(BAY)}")
+
+    # ── 4. CÂU TIẾNG VIỆT ĐÚNG NGHĨA vẫn phải khớp (không sửa quá tay)
+    print("\n══ 4. CÂU ĐÚNG NGHĨA VẪN PHẢI KHỚP (chống sửa quá tay) ══")
+    THAT = [("ngoài trời tuyết rơi trắng xoá", "tuyet_roi"),
+            ("hôm nay là đám cưới của cô dâu", "trai_tim"),
+            ("chúc mừng sinh nhật, bánh kem đây", "confetti"),
+            ("trời mưa suốt cả buổi chiều", "mua_roi"),
+            ("lá vàng rơi đầy sân mùa thu", "la_roi"),
+            ("ngọn lửa cháy rực trong lò sưởi", "tan_lua"),
+            ("nghĩa trang lúc nửa đêm rất ghê rợn", "ma_quai")]
+    n_ok = 0
+    for cau, canh in THAT:
+        l = LP.LUAT[canh]
+        moi = [tu for rs, tu in zip(l._rd_manh, l.manh)
+               if any(x.search(LP._ha(cau)) for x in rs)]
+        n_ok += bool(moi)
+        print(f"  {'khớp' if moi else 'MẤT'}  «{cau}» -> {canh} {moi}")
+    print(f"\n  [số đo] câu đúng nghĩa còn khớp: {n_ok}/{len(THAT)}")
     return 0
 
 

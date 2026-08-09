@@ -85,22 +85,174 @@ class Luat:
     _re_phu: list = field(default_factory=list, repr=False)
     _re_cam: list = field(default_factory=list, repr=False)
     _re_bien: list = field(default_factory=list, repr=False)
+    #: bản dò trên text CÒN DẤU — dùng cho LỜI THOẠI (xem `_DAU_VN`).
+    _rd_manh: list = field(default_factory=list, repr=False)
+    _rd_phu: list = field(default_factory=list, repr=False)
+    _rd_cam: list = field(default_factory=list, repr=False)
+    _rd_bien: list = field(default_factory=list, repr=False)
 
 
 def _khong_dau(s: str) -> str:
     """Bỏ dấu tiếng Việt + hạ chữ thường: 'Tuyết Rơi' -> 'tuyet roi'.
 
-    Bản chép lời của anh Hùng có dấu, còn bảng từ khoá viết KHÔNG dấu cho gọn và
-    để khớp được cả khi Groq trả thiếu dấu. `đ` không phải chữ có dấu tổ hợp nên
-    phải thay tay.
+    DÙNG CHO **MÔ TẢ DIGEST** (đường XEM HÌNH). Mô tả digest là tiếng Anh do
+    model sinh ra nên bỏ dấu ở đây gần như chỉ là hạ chữ thường. `đ` không phải
+    chữ có dấu tổ hợp nên phải thay tay.
+
+    **KHÔNG DÙNG CHO LỜI THOẠI** — xem `_ha` và `_DAU_VN` để biết vì sao.
     """
     s = str(s or "").lower().replace("đ", "d")
     s = unicodedata.normalize("NFD", s)
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
+def _ha(s: str) -> str:
+    """Hạ chữ thường nhưng **GIỮ NGUYÊN DẤU** — dùng cho LỜI THOẠI."""
+    return str(s or "").lower()
+
+
+#: Lớp chữ "trong một từ" của tiếng Việt CÓ DẤU. `[a-z0-9]` không đủ: chữ có
+#: dấu nằm ngoài a-z nên `(?![a-z0-9])` coi ngay sau `lạ` là hết từ và `lạnh`
+#: khớp được cả trong `lạnh`… — thực ra vẫn đúng ở đây, nhưng để biên từ có
+#: nghĩa với tiếng Việt thì phải kể cả chữ có dấu vào lớp.
+_CHU = ("a-z0-9àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩị"
+        "òóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ")
+
+#: ========================= BẢNG DẤU (bẫy đã ĐO ĐƯỢC) =========================
+#: Bảng luật bên dưới viết từ khoá tiếng Việt **KHÔNG DẤU** — đúng cho đường XEM
+#: HÌNH (mô tả digest là tiếng Anh). Nhưng đường LỜI THOẠI đọc CHỮ THẬT của
+#: video, mà bỏ dấu tiếng Việt thì hai từ khác nghĩa hẳn nhập làm một.
+#: **ĐO THẬT 09/08/2026 (`_do_lop_phu_loi.py`) — 9 bẫy, tất cả là từ khoá MẠNH
+#: (chỉ cần 2 cái là đủ bật lớp phủ):**
+#:     "thế là **rồi**"  -> `la roi`  (lá rơi)  -> lá rụng mùa thu
+#:     "rất **tiếc**"    -> `tiec`    (tiệc)    -> confetti ăn mừng
+#:     "**anh cứ** làm"  -> `anh cu`  (ảnh cũ)  -> tia sáng hoài niệm
+#:     "**anh nên** đi"  -> `anh nen` (ánh nến) -> đốm bokeh đêm
+#:     "**nằm mơ** thấy" -> `nam mo`  (nấm mồ)  -> mưa rơi
+#:     "**có đâu** mà lo"-> `co dau`  (cô dâu)  -> trái tim
+#:     "**lịch sự** lắm" -> `lich su` (lịch sử) -> bụi phim
+#:     "mà **ấm** áp"    -> `ma am`   (ma ám)   -> ma quái
+#:     "**có điện** rồi" -> `co dien` (cổ điển) -> tia sáng
+#: (3 bẫy anh Hùng nêu đích danh — `tuyết`/`tuyệt vời`, `mưa`/`mùa đông`,
+#: `máu`/`màu sắc` — đo ra là ĐÃ SẠCH SẴN vì từ khoá là CỤM 2 CHỮ; cổng vẫn giữ
+#: đủ 3 ca đó để lần sau ai thêm từ khoá 1 chữ `tuyet`/`mua`/`mau` là biết ngay.)
+#:
+#: CÁCH CHỮA: đường LỜI dò dạng **CÓ DẤU**. Khoá = dạng không dấu trong bảng
+#: luật, giá trị = các cách viết CÓ DẤU chấp nhận được (nhiều cách vì chính tả
+#: tiếng Việt có biến thể: "hòa nhạc"/"hoà nhạc", "kỷ niệm"/"kỉ niệm").
+#: Từ khoá KHÔNG có trong bảng này (tiếng Anh, tiếng Nhật, tiếng Hàn) được dò
+#: NGUYÊN VĂN — tiếng Anh không có dấu nên không đổi gì.
+#: **GIỚI HẠN GHI THẲNG:** nếu Groq trả bản chép lời tiếng Việt **mất hết dấu**
+#: thì không cách nào phân biệt `lá rơi` với `là rồi` — lúc đó đường lời mất tác
+#: dụng (từ khoá có dấu không khớp text không dấu). Đó là hướng AN TOÀN: thà
+#: không thêm còn hơn thêm bừa.
+_DAU_VN: dict = {
+    "an mung": ("ăn mừng",), "anh cu": ("ảnh cũ",), "anh nen": ("ánh nến",),
+    "anh sang am": ("ánh sáng ấm",), "ba noi": ("bà nội",),
+    "bai bien": ("bãi biển",), "bai rac": ("bãi rác",), "ban dem": ("ban đêm",),
+    "ban ngay": ("ban ngày",), "ban phim": ("bàn phím",),
+    "ban thang": ("bàn thắng",), "bang tinh": ("bảng tính",),
+    "bang tuyet": ("băng tuyết",), "banh kem": ("bánh kem",),
+    "bao tang": ("bảo tàng",), "bao tuyet": ("bão tuyết",),
+    "bat ngo": ("bất ngờ",), "be boi": ("bể bơi",), "be ca": ("bể cá",),
+    "benh vien": ("bệnh viện",), "bep": ("bếp",), "bieu do": ("biểu đồ",),
+    "bieu tinh": ("biểu tình",), "binh minh": ("bình minh",),
+    "bo hoa": ("bó hoa",), "bo hoang": ("bỏ hoang",), "bo me": ("bố mẹ",),
+    "boi loi": ("bơi lội",), "bong bay": ("bóng bay",),
+    "bong tuyet": ("bông tuyết",), "bot khi": ("bọt khí",),
+    "bot nuoc": ("bọt nước",), "bui bam": ("bụi bặm",), "bun dat": ("bùn đất",),
+    "buoi toi": ("buổi tối",), "can bep": ("căn bếp",),
+    "canh sat": ("cảnh sát",), "cap doi": ("cặp đôi",), "cau hon": ("cầu hôn",),
+    "cay coi": ("cây cối",), "cay du": ("cây dù",), "cha me": ("cha mẹ",),
+    "chao ran": ("chảo rán",), "chay mau": ("chảy máu",),
+    "chia tay": ("chia tay",), "chien thang": ("chiến thắng",),
+    "chien tranh": ("chiến tranh",), "chim hot": ("chim hót",),
+    "choi game": ("chơi game",), "chu re": ("chú rể",),
+    "chuc mung": ("chúc mừng",), "co dau": ("cô dâu",), "co dien": ("cổ điển",),
+    "co don": ("cô đơn",), "con bao": ("cơn bão",), "con mua": ("cơn mưa",),
+    "con thuyen": ("con thuyền",), "cong nghe": ("công nghệ",),
+    "cong thuc": ("công thức",), "cong vien": ("công viên",),
+    "cu ky": ("cũ kỹ",), "cua so": ("cửa sổ",), "cun con": ("cún con",),
+    "cung nhau": ("cùng nhau",), "dai duong": ("đại dương",),
+    "dam chay": ("đám cháy",), "dam cuoi": ("đám cưới",),
+    "dam dong": ("đám đông",), "dam tang": ("đám tang",),
+    "danh nhau": ("đánh nhau",), "dat tien": ("đắt tiền",),
+    "dau bep": ("đầu bếp",), "dau tu": ("đầu tư",), "den duong": ("đèn đường",),
+    "den giang sinh": ("đèn giáng sinh",), "den long": ("đèn lồng",),
+    "den neon": ("đèn neon",), "den trang": ("đen trắng",),
+    "dong xu": ("đồng xu",), "dot lua": ("đốt lửa",), "du lieu": ("dữ liệu",),
+    "duoi mua": ("dưới mưa",), "duoi nuoc": ("dưới nước",),
+    "duong chan troi": ("đường chân trời",), "duong rung": ("đường rừng",),
+    "em be": ("em bé",), "gang tay": ("găng tay",), "ghe ron": ("ghê rợn",),
+    "gia dinh": ("gia đình",), "gia ret": ("giá rét",), "gia tien": ("giá tiền",),
+    "giai thuong": ("giải thưởng",), "giam gia": ("giảm giá",),
+    "giau co": ("giàu có",), "gio lanh": ("gió lạnh",), "gio thoi": ("gió thổi",),
+    "giua trua": ("giữa trưa",), "hai huoc": ("hài hước",), "han xi": ("hàn xì",),
+    "hien dai": ("hiện đại",), "hoa nhac": ("hòa nhạc", "hoà nhạc"),
+    "hoang hon": ("hoàng hôn",), "hoang tan": ("hoang tàn",),
+    "hoi tuong": ("hồi tưởng",), "hon nhau": ("hôn nhau",),
+    "khai truong": ("khai trương",), "khan quang": ("khăn quàng",),
+    "kho bau": ("kho báu",), "khoc": ("khóc",), "khoi lua": ("khói lửa",),
+    "khui hop": ("khui hộp",), "kim cuong": ("kim cương",),
+    "kinh di": ("kinh dị",), "kinh doanh": ("kinh doanh",),
+    "ky niem": ("kỷ niệm",), "ky uc": ("ký ức",),
+    "la roi": ("lá rơi",), "la thu": ("lá thư",), "la vang": ("lá vàng",),
+    "lan bien": ("lặn biển",), "lanh": ("lạnh",), "lantern": ("lantern",),
+    "lap lanh": ("lấp lánh",), "lap trinh": ("lập trình",),
+    "len den": ("lên đèn",), "lich su": ("lịch sử",), "linh hon": ("linh hồn",),
+    "lo nuong": ("lò nướng",), "lo suoi": ("lò sưởi",),
+    "long lay": ("lộng lẫy",), "lua chay": ("lửa cháy",),
+    "lua trai": ("lửa trại",), "lung linh": ("lung linh",),
+    "luong thang": ("lương tháng",), "ma am": ("ma ám",),
+    "ma quy": ("ma quỷ",), "man hinh": ("màn hình",),
+    "man hinh may tinh": ("màn hình máy tính",), "mat nuoc": ("mặt nước",),
+    "may anh phim": ("máy ảnh phim",), "may den": ("mây đen",),
+    "may tinh": ("máy tính",), "me con": ("mẹ con",), "meo con": ("mèo con",),
+    "mo mang": ("mơ màng",), "mot minh": ("một mình",), "mua dong": ("mùa đông",),
+    "mua rao": ("mưa rào",), "mua sam": ("mua sắm",), "mua thu": ("mùa thu",),
+    "nam mo": ("nấm mồ",), "nam moi": ("năm mới",), "nang chieu": ("nắng chiều",),
+    "nang gat": ("nắng gắt",), "nau an": ("nấu ăn",), "ngan hang": ("ngân hàng",),
+    "ngay truoc": ("ngày trước",), "ngay xua": ("ngày xưa",),
+    "nghia trang": ("nghĩa trang",), "ngoai troi": ("ngoài trời",),
+    "ngoi sao": ("ngôi sao",), "ngon lua": ("ngọn lửa",),
+    "nguoc sang": ("ngược sáng",), "nhan cuoi": ("nhẫn cưới",),
+    "nhat ky": ("nhật ký",), "nhay mua": ("nhảy múa",),
+    "noi buon": ("nỗi buồn",), "nong thon": ("nông thôn",),
+    "nua dem": ("nửa đêm",), "nui lua": ("núi lửa",), "nui tuyet": ("núi tuyết",),
+    "nuoc bien": ("nước biển",), "nuoc mat": ("nước mắt",),
+    "om nhau": ("ôm nhau",), "ong noi": ("ông nội",), "pha le": ("pha lê",),
+    "phan mem": ("phần mềm",), "phao hoa": ("pháo hoa",),
+    "phep thuat": ("phép thuật",), "phim cu": ("phim cũ",),
+    "phong toi": ("phòng tối",), "phu tuyet": ("phủ tuyết",),
+    "qua khu": ("quá khứ",), "qua tang": ("quà tặng",),
+    "quay man hinh": ("quay màn hình",), "ret": ("rét",),
+    "rong lua": ("rồng lửa",), "rung cay": ("rừng cây",), "sa mac": ("sa mạc",),
+    "san ho": ("san hô",), "san khau": ("sân khấu",), "sang trong": ("sang trọng",),
+    "sinh nhat": ("sinh nhật",), "song bien": ("sóng biển",),
+    "sung dan": ("súng đạn",), "suong mu": ("sương mù",), "tai nan": ("tai nạn",),
+    "tam biet": ("tạm biệt",), "tan the": ("tận thế",), "tan vo": ("tan vỡ",),
+    "tap gym": ("tập gym",), "thac nuoc": ("thác nước",),
+    "than hong": ("than hồng",), "thi dau": ("thi đấu",),
+    "thien nhien": ("thiên nhiên",), "tia lua": ("tia lửa",), "tiec": ("tiệc",),
+    "tien giay": ("tiền giấy",), "tien mat": ("tiền mặt",),
+    "tinh yeu": ("tình yêu",), "to tien": ("tổ tiên",), "toi tam": ("tối tăm",),
+    "tot nghiep": ("tốt nghiệp",), "trang diem": ("trang điểm",),
+    "trang suc": ("trang sức",), "tre so sinh": ("trẻ sơ sinh",),
+    "tri tue nhan tao": ("trí tuệ nhân tạo",), "tro tan": ("tro tàn",),
+    "troi lanh": ("trời lạnh",), "troi mua": ("trời mưa",),
+    "troi toi": ("trời tối",), "trong tai": ("trọng tài",),
+    "trong vang": ("trống vắng",), "trung so": ("trúng số",),
+    "truot tuyet": ("trượt tuyết",), "tu lieu": ("tư liệu",),
+    "tuong lai": ("tương lai",), "tuyet roi": ("tuyết rơi",),
+    "tuyet trang": ("tuyết trắng",), "ty phu": ("tỷ phú",),
+    "vang mieng": ("vàng miếng",), "vet mau": ("vết máu",),
+    "vi tien": ("ví tiền",), "vo dich": ("vô địch",), "vo tay": ("vỗ tay",),
+    "vu no": ("vụ nổ",), "vui": ("vui",), "vuon cay": ("vườn cây",),
+    "xo so": ("xổ số",), "yen binh": ("yên bình",), "yeu thuong": ("yêu thương",),
+}
+
 def _bien(tu: str) -> re.Pattern:
-    """Từ khoá -> mẫu dò có RÀNG BUỘC BIÊN TỪ.
+    """Từ khoá -> mẫu dò có RÀNG BUỘC BIÊN TỪ, trên text **ĐÃ BỎ DẤU**.
 
     Bắt buộc, không phải cho đẹp: dò chuỗi con thì `ice` khớp "pol**ice**",
     "serv**ice**", "n**ice**" -> tuyết rơi trên video cảnh sát. Đã thử trên
@@ -110,14 +262,43 @@ def _bien(tu: str) -> re.Pattern:
                       + r"(?![a-z0-9])")
 
 
+def _bien_dau(tu: str) -> list:
+    """Từ khoá -> các mẫu dò trên text **CÒN NGUYÊN DẤU** (đường LỜI THOẠI).
+
+    Từ khoá tiếng Việt lấy dạng có dấu ở `_DAU_VN`; từ khoá tiếng Anh/Nhật/Hàn
+    dò nguyên văn. Biên từ tính theo `_CHU` (kể cả chữ Việt có dấu) — CJK không
+    nằm trong lớp đó nên "雪" vẫn khớp giữa "大雪が", đúng ý (tiếng Nhật/Hàn
+    không có dấu cách giữa từ).
+    """
+    return [re.compile(f"(?<![{_CHU}])" + re.escape(x) + f"(?![{_CHU}])")
+            for x in _DAU_VN.get(_khong_dau(tu), (_ha(tu),))]
+
+
 def _dk(l: Luat) -> Luat:
     l._re_manh = [_bien(t) for t in l.manh]
     l._re_phu = [_bien(t) for t in l.phu]
     l._re_cam = [_bien(t) for t in l.cam]
     l._re_bien = [(k, [_bien(t) for t in (goi or ())])
                   for k, goi in (l.bien or ((l.khoa, ()),))]
+    l._rd_manh = [_bien_dau(t) for t in l.manh]
+    l._rd_phu = [_bien_dau(t) for t in l.phu]
+    l._rd_cam = [_bien_dau(t) for t in l.cam]
+    l._rd_bien = [(k, [_bien_dau(t) for t in (goi or ())])
+                  for k, goi in (l.bien or ((l.khoa, ()),))]
     LUAT[l.khoa] = l
     return l
+
+
+def _co(t: str, mau: list) -> bool:
+    """`mau` = danh sách MẪU (mỗi từ khoá 1 mẫu) HOẶC danh sách NHÓM mẫu (mỗi
+    từ khoá nhiều cách viết có dấu). Khớp bất kỳ = True."""
+    for r in mau:
+        if isinstance(r, list):
+            if any(x.search(t) for x in r):
+                return True
+        elif r.search(t):
+            return True
+    return False
 
 
 def moi_kieu() -> set:
@@ -421,23 +602,35 @@ _dk(Luat(
 
 
 # -------------------------------------------------------------- CHẤM ĐIỂM
-def _dem_moc(digest: list, mau: list) -> tuple[int, list]:
+def _dem_moc(digest: list, mau: list, mau_dau: list) -> tuple[int, list]:
     """Đếm SỐ MỐC digest có ít nhất 1 từ khoá khớp -> (số mốc, [mốc đã khớp]).
 
     Đếm theo MỐC chứ không theo số lần chữ xuất hiện: một mô tả nhắc "snow"
     ba lần vẫn chỉ là MỘT khung hình, không phải bằng chứng mạnh gấp ba.
+
+    Mốc gắn cờ `loi=True` (do `digest_tu_loi` sinh, `desc` là CÂU NÓI THẬT) thì
+    dò bằng bộ mẫu **CÓ DẤU**; mốc xem hình (`desc` là mô tả tiếng Anh của model)
+    dò bằng bộ mẫu bỏ dấu như cũ. Nhờ vậy một danh sách TRỘN cả hai nguồn vẫn
+    chấm đúng từng mốc theo đúng thứ tiếng của nó.
     """
     ra = []
     for d in digest or []:
-        t = _khong_dau(d.get("desc", ""))
-        if any(r.search(t) for r in mau):
+        if d.get("loi"):
+            t, m = _ha(d.get("desc", "")), mau_dau
+        else:
+            t, m = _khong_dau(d.get("desc", "")), mau
+        if _co(t, m):
             ra.append(d)
     return len(ra), ra
 
 
 def _dem_tu(loi: str, mau: list) -> int:
-    """Số từ khoá KHÁC NHAU khớp trong lời (không phải tổng số lần)."""
-    return sum(1 for r in mau if r.search(loi))
+    """Số từ khoá KHÁC NHAU khớp trong lời (không phải tổng số lần).
+
+    `loi` LUÔN là text CÒN DẤU và `mau` LUÔN là bộ mẫu có dấu — lời thoại là
+    chữ thật của video, bỏ dấu ở đây là mở đúng 9 cái bẫy đã đo (xem `_DAU_VN`).
+    """
+    return sum(1 for r in mau if any(x.search(loi) for x in r))
 
 
 def _diem(l: Luat, digest: list, loi: str) -> Optional[dict]:
@@ -447,16 +640,18 @@ def _diem(l: Luat, digest: list, loi: str) -> Optional[dict]:
     từ MẠNH trong lời 1,5 (trần 2) · từ PHỤ trong lời 0,5 (trần 2).
     Trần riêng của nhóm PHỤ = 0,7*3 + 0,5*2 = 3,1 điểm thô = 0,52 < NGUONG_TIN
     -> **bối cảnh một mình KHÔNG BAO GIỜ đủ**, đúng chủ ý.
+
+    `loi` là text CÒN DẤU (xem `_ha`).
     """
-    if any(r.search(loi) for r in l._re_cam):
+    if _dem_tu(loi, l._rd_cam):
         return None
-    n_cam_hinh, _ = _dem_moc(digest, l._re_cam)
+    n_cam_hinh, _ = _dem_moc(digest, l._re_cam, l._rd_cam)
     if n_cam_hinh:
         return None
-    dm, moc_manh = _dem_moc(digest, l._re_manh)
-    dp, moc_phu = _dem_moc(digest, l._re_phu)
-    tm = _dem_tu(loi, l._re_manh)
-    tp = _dem_tu(loi, l._re_phu)
+    dm, moc_manh = _dem_moc(digest, l._re_manh, l._rd_manh)
+    dp, moc_phu = _dem_moc(digest, l._re_phu, l._rd_phu)
+    tm = _dem_tu(loi, l._rd_manh)
+    tp = _dem_tu(loi, l._rd_phu)
     tho = 2.0 * min(2, dm) + 0.7 * min(3, dp) + 1.5 * min(2, tm) \
         + 0.5 * min(2, tp)
     return {"khoa": l.khoa, "ho": l.ho, "tho": tho,
@@ -500,12 +695,14 @@ def _chon_bien(l: Luat, digest: list, loi: str, dung: set,
     Biến thể không có trong kho / bị máy nhân viên loại (`dung`) thì bỏ qua —
     cùng lối lùi êm của nhóm shader.
     """
-    ung = [(k, ps) for k, ps in l._re_bien if k in dung and k in kho]
+    _pd = dict(l._rd_bien)
+    ung = [(k, ps, _pd.get(k) or []) for k, ps in l._re_bien
+           if k in dung and k in kho]
     if not ung:
         return "", "không biến thể nào của cảnh này dùng được trên máy này"
     diem = []
-    for k, ps in ung:
-        n = (2 * _dem_moc(digest, ps)[0] + _dem_tu(loi, ps)) if ps else 0
+    for k, ps, pd in ung:
+        n = (2 * _dem_moc(digest, ps, pd)[0] + _dem_tu(loi, pd)) if ps else 0
         diem.append((n, k))
     cao = max(n for n, _k in diem)
     dau = sorted(k for n, k in diem if n == cao)
@@ -545,13 +742,18 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
     if float(tong_giay or 0) < 2.0:
         return [], "clip quá ngắn (<2s)"
     if not digest:
-        # ĐÂY LÀ ĐƯỜNG RA HAY GẶP NHẤT và nó ĐÚNG: `VISION_CUT` mặc định TẮT
-        # (3,7 phút/video là quá đắt cho 300 kênh), nên phần lớn clip không có
-        # digest. Luật đã chốt: KHÔNG bật vision chỉ để chọn hiệu ứng.
-        return [], ("không có vision_digest cho clip này -> bỏ qua nhóm lớp phủ "
-                    "(không bật AI xem hình chỉ để chọn hiệu ứng)")
+        # Không CÒN là đường ra hay gặp nhất: từ v2.21.0 caller tự dựng mốc từ
+        # LỜI THOẠI khi không có vision_digest (xem `digest_tu_loi`). Tới đây
+        # nghĩa là không có CẢ HAI — video không lời và không xem hình.
+        return [], ("không có vision_digest và cũng không có lời thoại nào cho "
+                    "clip này -> bỏ qua nhóm lớp phủ (không bật AI xem hình "
+                    "chỉ để chọn hiệu ứng)")
     dung = set(co_the_dung if co_the_dung is not None else HU.dung_duoc())
-    loi_n = _khong_dau(loi or "")
+    loi_n = _ha(loi or "")
+    # NGUỒN của các mốc, chỉ để VIẾT NHẬT KÝ cho đúng chữ: đọc "2 mốc hình mạnh"
+    # trong khi thật ra là 2 CÂU NÓI thì lần sau không ai tra lại được.
+    _n_loi = sum(1 for d in digest or [] if d.get("loi"))
+    _mn = "mốc lời" if _n_loi and _n_loi == len(digest) else "mốc hình"
     bang = []
     for _k, l in LUAT.items():
         # LUẬT LÀ CẢNH, không phải kiểu: chỉ cần MỘT biến thể còn dùng được thì
@@ -571,12 +773,12 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
         # nào trong bảng (phỏng vấn, mở hộp, giảng bài…). Nói thẳng ra thế, đừng
         # in "kiểu hợp nhất là tuyet_roi 0,00" — đọc lên tưởng app suýt bật
         # tuyết cho video phỏng vấn.
-        return [], ("không mốc hình nào và không từ nào trong lời khớp bảng "
+        return [], (f"không {_mn} nào và không từ nào trong lời khớp bảng "
                     "cảnh -> KHÔNG thêm lớp phủ")
     if nhat["tin"] < NGUONG_TIN:
         return [], (f"kiểu hợp nhất là {nhat['khoa']} nhưng độ tự tin chỉ "
                     f"{_so(nhat['tin'])} < ngưỡng {_so(NGUONG_TIN)} "
-                    f"({nhat['dm']} mốc hình mạnh · {nhat['dp']} mốc phụ · "
+                    f"({nhat['dm']} {_mn} mạnh · {nhat['dp']} mốc phụ · "
                     f"{nhat['tm']} từ mạnh trong lời) -> KHÔNG thêm gì")
     nhi = next((d for d in bang[1:] if d["ho"] != nhat["ho"]), None)
     if nhi and nhi["tin"] >= NGUONG_TIN \
@@ -611,9 +813,10 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
                         f"nằm sát điểm nhấn đã có ({_so(float(g), 1)}s, cách "
                         f"< {_so(HU.CACH_MIN, 1)}s) -> không chồng")
     vi_sao = (f"giây {_so(bat, 1)} · {h.ten} · cảnh «{nhat['khoa']}» · "
+              f"nguồn {'LỜI THOẠI' if _mn == 'mốc lời' else 'XEM HÌNH'} · "
               f"{ly_do_bien} · KHỚP NỘI DUNG — tự tin "
               f"{_so(nhat['tin'])}/1,00 (ngưỡng {_so(NGUONG_TIN)}): "
-              f"{nhat['dm']} mốc hình khớp mạnh, {nhat['dp']} mốc phụ, "
+              f"{nhat['dm']} {_mn} khớp mạnh, {nhat['dp']} mốc phụ, "
               f"{nhat['tm']} từ mạnh trong lời"
               + (f'; cảnh: "{str(moc[0].get("desc", ""))[:60]}"' if moc else ""))
     LY_DO_CUOI = vi_sao
@@ -689,10 +892,59 @@ def loc_digest_theo_doan(digest: list, segs: list, vspeed: float = 1.0) -> list:
             if e <= s:
                 continue
             if s <= t <= e:
-                ra.append({"t": round((acc + (t - s)) / max(0.01, vspeed), 3),
-                           "desc": str(d.get("desc") or ""),
-                           "act": int(d.get("act", 0) or 0)})
+                x = {"t": round((acc + (t - s)) / max(0.01, vspeed), 3),
+                     "desc": str(d.get("desc") or ""),
+                     "act": int(d.get("act", 0) or 0)}
+                if d.get("loi"):
+                    # cờ NGUỒN phải đi theo mốc: `_dem_moc` chọn bộ mẫu CÓ DẤU
+                    # hay bỏ dấu theo đúng cờ này. Rơi cờ ở đây là lời thoại
+                    # tiếng Việt bị dò bằng bảng bỏ dấu -> mở lại 9 cái bẫy.
+                    x["loi"] = True
+                ra.append(x)
                 break
             acc += (e - s)
     ra.sort(key=lambda d: d["t"])
     return ra
+
+
+def digest_tu_loi(transcript: dict, segs: list, vspeed: float = 1.0,
+                  tran: int = 400) -> list:
+    """ĐOÁN CẢNH BẰNG **LỜI THOẠI** — mỗi CÂU chép lời thành 1 mốc. Hàm THUẦN.
+
+    VÌ SAO CÓ (anh Hùng 09/08/2026): anh cắt clip trên v2.20.0 và **không thấy
+    tuyết/trái tim nào**. Nhật ký `lop_phu_*.log` ghi *"không có vision_digest
+    cho clip này -> bỏ qua nhóm lớp phủ"*. Đúng thiết kế, nhưng `VISION_CUT` mặc
+    định TẮT nên **46 kiểu lớp phủ gần như không bao giờ xuất hiện**.
+
+    Bản chép lời thì LÚC NÀO CŨNG CÓ SẴN (mọi video đều qua bước chép lời để
+    đốt phụ đề) -> đường này **không tốn thêm một giây nào, không thêm một lượt
+    LLM nào**. Xem hình vẫn ƯU TIÊN khi có: caller chỉ gọi hàm này khi
+    `vision_digest` rỗng.
+
+    Trả ĐÚNG cấu trúc mốc digest `[{'t', 'desc', 'act', 'loi': True}]` trên
+    timeline **ĐẦU RA** — nhờ vậy `chon_lop_phu` không phải biết gì về nguồn,
+    và mọi chốt chặn (`NGUONG_TIN` 0,55 · nhóm PHỤ trần 0,52 · danh sách CẤM ·
+    hai họ sát nhau = bỏ) áp Y NGUYÊN.
+
+    Cờ `loi=True` là thứ bắt `_dem_moc` dò bằng bộ mẫu **CÓ DẤU** — bắt buộc,
+    xem `_DAU_VN` (9 bẫy đã đo).
+
+    `act` để 5 ở MỌI mốc, cố ý: `act` chỉ dùng để chọn CHỖ ĐẶT lớp phủ, và
+    `sorted` của Python ổn định -> đặt vào mốc khớp SỚM NHẤT. Bịa ra "độ sôi
+    động" từ chữ là đoán bừa, mà đoán bừa là thứ nhóm này tồn tại để tránh.
+    """
+    ss = [(float(s), float(e)) for s, e in (segs or []) if float(e) > float(s)]
+    if not ss:
+        return []
+    tho = []
+    for c in (transcript or {}).get("segments") or []:
+        try:
+            a = float(c.get("start"))
+        except (TypeError, ValueError):
+            continue          # câu KHÔNG MỐC -> bỏ (không biết rơi vào đoạn nào)
+        t = str(c.get("text") or "").strip()
+        if t:
+            tho.append({"t": a, "desc": t, "act": 5, "loi": True})
+        if len(tho) >= tran:
+            break
+    return loc_digest_theo_doan(tho, ss, vspeed)
