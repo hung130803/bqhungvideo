@@ -430,6 +430,18 @@ ok(20.0 <= VD.VISION_HAN_GIAY <= 40.0 and VD.VISION_503_TOI_DA >= 1,
    "7i' hai ngưỡng là HẰNG SỐ đặt tên rõ, dễ chỉnh",
    f"VISION_HAN_GIAY={VD.VISION_HAN_GIAY} · "
    f"VISION_503_TOI_DA={VD.VISION_503_TOI_DA}")
+# NHÁNH SONG SONG cũng phải chốt: việc ĐẾM 503 nằm TRONG `_mot_batch` (một chỗ
+# cho cả hai nhánh) chứ không ở vòng lặp — để ở vòng lặp thì nhánh song song
+# chỉ đếm SAU KHI mọi lượt đã bắn xong, tức chốt vô tác dụng.
+llm.complete_vision_json = _luon_503
+settings.VISION_SONG_SONG = 6
+GOI["n"] = 0
+d_ss = VD.build_vision_digest(_lam_video(p_bat), SRC, 170.0)
+_n_ss = GOI["n"]
+settings.VISION_SONG_SONG = 1
+ok(d_ss == [] and _n_ss <= _n_batch_du,
+   "7i'' chạy SONG SONG cũng đếm 503 và không quá số lượt của bản tuần tự",
+   f"{_n_ss}/{_n_batch_du} lượt")
 # và digest CỤT không được đóng dấu vào cache (Groq quá tải là chuyện 5 phút)
 _v_cut = _lam_video(p_bat)
 

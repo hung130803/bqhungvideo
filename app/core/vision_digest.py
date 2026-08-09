@@ -256,6 +256,7 @@ class _ChotQuaTai:
     BỎ QUA (không gọi mạng thêm một lượt nào) và caller ghi nhật ký."""
 
     def __init__(self, han_giay: float = None, so_503: int = None):
+        import threading
         import time as _t
         self._t = _t
         self.moc = _t.monotonic()
@@ -263,13 +264,16 @@ class _ChotQuaTai:
         self.tran_503 = int(VISION_503_TOI_DA if so_503 is None else so_503)
         self.n_503 = 0
         self.ly_do = ""
+        # `VISION_SONG_SONG > 1` -> nhiều luồng cùng đếm. Khoá cho rẻ và chắc.
+        self._khoa = threading.Lock()
 
     def da_ton(self) -> float:
         return self._t.monotonic() - self.moc
 
     def ghi_loi(self, err: str) -> None:
         if err and la_loi_qua_tai(err):
-            self.n_503 += 1
+            with self._khoa:
+                self.n_503 += 1
 
     def nen_dung(self) -> bool:
         if self.n_503 >= self.tran_503:
@@ -292,14 +296,23 @@ def _mot_batch(batch: list, key_dau: int = 0, chot=None) -> tuple:
     đoạn mã — hai nhánh khác nhau là hai chỗ để lệch nhau âm thầm.
     Lỗi -> `([], lý do)`: mất 1 batch vẫn hơn mất cả digest.
     `chot`: sổ quá tải — đã chốt rồi thì KHÔNG gọi mạng nữa (nhánh song song
-    submit cả loạt một lượt, chặn ở đây mới thật sự cắt được).
+    submit cả loạt một lượt, chặn ở đây mới thật sự cắt được). Việc ĐẾM 503
+    cũng nằm ở đây, MỘT chỗ cho cả hai nhánh (đếm ở vòng lặp thì nhánh song
+    song đếm muộn hơn nhánh tuần tự — đúng kiểu lệch âm thầm mà hàm này sinh
+    ra để tránh).
     """
     from app.queue.worker import CanceledError
     if chot is not None and chot.nen_dung():
         return [], ""
+
+    def _xong(rows, loi):
+        if chot is not None:
+            chot.ghi_loi(loi)
+        return rows, loi
+
     try:
         try:
-            return _describe_batch([p for _, p in batch], key_dau), ""
+            return _xong(_describe_batch([p for _, p in batch], key_dau), "")
         except llm.LLMTooLarge:
             # HẠN MỨC token/phút của tài khoản Groq có thể siết bất cứ lúc nào
             # (đo 8.000/phút hôm nay, mai Groq đổi là chuyện của họ). Thay vì
@@ -311,14 +324,14 @@ def _mot_batch(batch: list, key_dau: int = 0, chot=None) -> tuple:
                     rows += _sua_i(_describe_batch([_p1], key_dau), batch, _p1)
                 except Exception as e2:  # noqa: BLE001
                     loi = f"{type(e2).__name__}: {str(e2)[:200]}"
-            return rows, loi
+            return _xong(rows, loi)
     except CanceledError:
         raise
     except Exception as e:  # noqa: BLE001 - batch lỗi -> bỏ batch đó
         # GHI LẠI lý do. BẪY ĐÃ SẬP 06/08/2026: model vision cấu hình sẵn
         # (llama-4-scout) bị Groq gỡ -> 404 mọi batch -> digest rỗng, mà app
         # không báo gì nên tưởng "AI có xem hình rồi, chỉ là không thấy gì".
-        return [], f"{type(e).__name__}: {str(e)[:200]}"
+        return _xong([], f"{type(e).__name__}: {str(e)[:200]}")
 
 
 def _gom(digest: list, batch: list, rows) -> None:
@@ -441,8 +454,7 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                                      f"({bi + 1}/{n_batch})...")
                     rows, err = _mot_batch(batch, bi, chot)
                     if err:
-                        LOI_CUOI = err
-                        chot.ghi_loi(err)
+                        LOI_CUOI = err     # đếm 503 nằm TRONG _mot_batch
                     _gom(digest, batch, rows)
             else:
                 if ctx is not None and hasattr(ctx, "check_canceled"):
@@ -461,8 +473,7 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                                       list(enumerate(lo))))
                 for (rows, err), batch in zip(ket, lo):
                     if err:
-                        LOI_CUOI = err
-                        chot.ghi_loi(err)
+                        LOI_CUOI = err     # đếm 503 nằm TRONG _mot_batch
                     _gom(digest, batch, rows)
                 chot.nen_dung()          # để `ly_do` có chữ cho nhật ký
                 if ctx is not None and hasattr(ctx, "check_canceled"):
