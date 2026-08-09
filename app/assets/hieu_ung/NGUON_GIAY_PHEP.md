@@ -15,15 +15,30 @@
 | Giấy phép | **GPL-2.0-or-later** cho phần lớn plugin; một số plugin LGPL. Xem `frei0r/COPYING` |
 | Vì sao dùng được | `bin/ffmpeg.exe` (bản BtbN `ffmpeg-master-latest-win64-gpl`) đã build với `--enable-gpl --enable-version3 --enable-frei0r`, tức bản ffmpeg này **đã là GPL**. App gọi ffmpeg qua **tiến trình riêng** (`subprocess`), không liên kết thư viện vào mã Python |
 
-### Plugin ĐANG kèm (13 file, 253 KB)
-`distort0r` · `filmgrain` · `gateweave` · `glitch0r` · `glow` · `lenscorrection`
-· `letterb0xed` · `nosync0r` · `ntsc` · `scanline0r` · `softglow` · `squareblur`
-· `vertigo`
+### Plugin ĐANG kèm (12 file, 239 KB)
+`distort0r` · `filmgrain` · `glitch0r` · `glow` · `lenscorrection`
+· `letterb0xed` · `nosync0r` · `ntsc` · `pixs0r` · `scanline0r` · `softglow`
+· `squareblur`
+
+`pixs0r` là file THÊM 09/08/2026 (**19.408 byte**), cùng gói MSYS2 2.5.0, cùng
+giấy phép GPL-2.0-or-later. Nó là plugin C thuần, KHÔNG cần thêm DLL runtime
+nào ngoài 3 cái đã có. Dùng cho hiệu ứng `xe_dong` ("Xé dòng ngang") — xem
+NHÓM 6 trong `app/core/hieu_ung.py`.
 
 Gói MSYS2 có **159 file .dll**; ffmpeg nạp được **87** trong số đó với tư cách
 filter 1 đầu vào (số ĐO THẬT, xem `_do_frei0r_quet.py` → `_ket_frei0r.json`).
-Repo chỉ kèm 13 cái ĐANG DÙNG để không phình dung lượng — muốn thêm thì chép
+Repo chỉ kèm 12 cái ĐANG DÙNG để không phình dung lượng — muốn thêm thì chép
 thêm .dll vào `frei0r/` rồi khai báo trong `app/core/hieu_ung.py`.
+
+**KIỂU THAM SỐ phải DÒ, không đoán** (`_do_f0r_thamso.py`): `frei0r=
+filter_params=` nhận 4 mã hoá khác nhau — `0.85` (double) · `y`/`n` (bool) ·
+`0.1/0.2/0.3` (màu) · `0.25/0.75` (vị trí). Đưa sai kiểu là ffmpeg **chết cả
+lệnh** chứ không bỏ qua. ffmpeg KHÔNG in bảng tham số ra ở bất kỳ mức log nào,
+nên phải dò bằng cách "đầu độc" từng chỉ số rồi đọc tên trong lời lỗi.
+Đã dò được 09/08/2026: `pixs0r` = `<double>|<double>|<double>|<double>` ·
+`flippo` = `y|n` · `pixeliz0r` = `<d>|<d>|n` · `c0rners` = 8 double + bool ở
+chỉ số 8 và 12 · `defish0r` = bool ở chỉ số 1 và 8 · `normaliz0r` = 2 MÀU rồi
+3 double · `perspective` = 4 VỊ TRÍ · `IIRblur` = `<d>|<d>|n`.
 
 Vì sao 159 → 87: **26** plugin kiểu `mixer2` (chế độ hoà 2 lớp: `addition`,
 `multiply`, `screen`…) và **16** plugin `sleid0r_*` (chuyển cảnh 2 đầu vào) —
@@ -134,3 +149,12 @@ Mọi hiệu ứng thuần ffmpeg trong `hieu_ung.py` (`zoompan`, `crop`, `eq`, 
 `pixelize`, `vignette`, `gblur`, `unsharp`, `lagfun`, `edgedetect`,
 `shufflepixels`, `rgbashift`, `drawtext`) là **công thức toán**, 0 file tải về,
 0 rủi ro bản quyền, 0 phình dung lượng.
+
+MỞ RỘNG KHO 09/08/2026 thêm **15 kiểu nữa cùng loại này** — cũng chỉ là công
+thức, cũng 0 byte tài nguyên: `shear` · `perspective` · `rotate` ·
+`lenscorrection` (bản THUẦN của ffmpeg, khác plugin frei0r cùng tên) ·
+`shufflepixels` (chế độ `block` và `vertical`) · `swaprect` · `scroll` ·
+`lutyuv` · `dblur` · `boxblur`, cộng 4 quỹ đạo `zoompan` mới (kéo lùi, lướt
+ngang, lướt dọc, và zoom+`rotate` ghép đôi).
+Đây là chỗ ĐÁNG GIÁ NHẤT của cả lượt: chúng chạy trên **MÁY NHÂN VIÊN** (không
+frei0r · không Vulkan · không OpenCL) mà không thêm một byte nào vào gói cài.
