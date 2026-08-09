@@ -720,6 +720,99 @@
      `trai_tim_nho`, ca "cảnh đêm" ra `den_nhap_nhay` đều ĐÚNG HƠN). Đổi lại,
      mệnh đề "tuyết không rơi trên video nấu ăn" phải chặn **CẢ HỌ** 4 biến thể,
      chặn mỗi `tuyet_roi` là để lọt `tuyet_bao`/`tuyet_bui`.
+  47. `_test_hook_to_mo.py` → **HOOK CHỌN THEO TÒ MÒ, KHÔNG THEO TIẾNG TO**
+     (`app/ai/hook_to_mo.py`). v2.20.0 `_pick_hook_seg` dò cửa sổ 2,5 s có
+     `_audio_score` lớn nhất = chọn theo ĐỘ ỒN. Nay chấm từng CÂU chép lời (đã
+     có sẵn: 0 giây mạng, 0 lượt LLM) theo 5 nhóm tín hiệu "để lại câu hỏi /
+     thông tin dở dang", trừ điểm câu chào hỏi. Đếm token bằng
+     `recap._word_tokens` (CJK không có dấu cách). **ĐO A/B trên 8 VIDEO THẬT
+     4 thứ tiếng, chép lời Groq THẬT:** hook CŨ rơi vào chỗ **KHÔNG MỘT CHỮ
+     NÀO** 1/8 video · hook MỚI chọn được 4/8 · tò mò cao hơn CŨ **4**, bằng 0,
+     **thấp hơn 0**. Câu "và rồi … phát hiện ra" 4 thứ tiếng đều 0,797; câu
+     "xin chào các bạn" đều 0,000 (ngưỡng 0,34). BẤT BIẾN: video KHÔNG LỜI ->
+     `_pick_hook_seg` ra Y HỆT cửa sổ cao trào tiếng cũ.
+     **3 LỖI CỦA CHÍNH CỔNG (không phải lỗi app) đã sửa:** unpack sai bộ 3 của
+     `KHO` · lấy đúng `so//nhóm` video nên 1 video bị loại là ĐỎ OAN (nay lấy
+     dư +2/nhóm và **ĐAN XEN theo vòng**, không thì 2 nhóm đầu chiếm hết suất
+     và ca "phủ 4 ngôn ngữ" hỏng oan) · quét tĩnh lọc bằng `startswith("#")`
+     nên chính dòng ghi chú *"CẤM `.split()`"* bị kể là vi phạm -> ĐỎ OAN vĩnh
+     viễn; nay `_ma_that()` dùng `tokenize` bỏ COMMENT+STRING, kèm 2 ca TỰ KIỂM
+     BỘ DÒ.
+  48. `_test_lop_phu_loi.py` → **LỚP PHỦ ĐOÁN CẢNH BẰNG LỜI THOẠI.** Anh Hùng
+     cắt trên v2.20.0 **không thấy tuyết/trái tim nào**: `VISION_CUT` mặc định
+     TẮT nên `vision_digest` rỗng -> nhật ký ghi *"không có vision_digest ->
+     bỏ qua nhóm lớp phủ"* -> **46 kiểu gần như không bao giờ xuất hiện**. Nay
+     `lop_phu.digest_tu_loi()` biến MỖI CÂU chép lời thành 1 mốc digest trên
+     timeline ĐẦU RA (cờ `loi=True`); `ffmpeg_utils` chỉ gọi khi digest RỖNG ->
+     **XEM HÌNH VẪN ƯU TIÊN**. KHÔNG truyền kèm `loi` -> không đếm MỘT bằng
+     chứng HAI lần; bậc thang giữ nguyên ý nghĩa: phải **2 CÂU** nói tới cảnh
+     đó (2×2,0/6,0 = 0,667 > 0,55). Chốt chặn giữ nguyên: `NGUONG_TIN` 0,55 ·
+     nhóm PHỤ trần 0,52 · danh sách CẤM · 2 họ sát nhau = bỏ · tối đa 1/clip.
+     **BẪY BỎ DẤU — ĐO RA 9 CÁI, TẤT CẢ LÀ TỪ KHOÁ MẠNH** (`_do_lop_phu_loi.py`,
+     corpus lời thật): `thế là **rồi**`→`la roi` · `rất **tiếc**`→`tiec` ·
+     `**anh cứ**`→`anh cu` · `**anh nên**`→`anh nen` · `**nằm mơ**`→`nam mo` ·
+     `**có đâu**`→`co dau` · `**lịch sự**`→`lich su` · `mà **ấm**`→`ma am` ·
+     `**có điện**`→`co dien`. (3 bẫy anh Hùng nêu đích danh — `tuyết`/`tuyệt
+     vời`, `mưa`/`mùa đông`, `máu`/`màu sắc` — đo ra là **ĐÃ SẠCH SẴN** vì từ
+     khoá là CỤM 2 CHỮ; cổng vẫn giữ đủ 3 ca đó.) **CHỮA:** `_DAU_VN` (241 từ
+     khoá tiếng Việt dạng CÓ DẤU) + `_bien_dau`/`_rd_*` — đường LỜI dò trên
+     text CÒN DẤU, đường XEM HÌNH giữ y nguyên bảng bỏ dấu (mô tả digest là
+     tiếng Anh). Sửa luôn 1 **BUG CŨ** của đường xem hình: tham số `loi` trước
+     đây cũng dò bằng bảng BỎ DẤU. Đo: bẫy bắn nhầm **9/16 -> 0/16**, câu đúng
+     nghĩa còn khớp **13/13**.
+     **TIẾNG NHẬT / HÀN** (`_CJK`, 14 cảnh × mạnh/phụ/CẤM). Luật sắt: CJK KHÔNG
+     CÓ DẤU CÁCH nên từ khoá NGẮN khớp BÊN TRONG từ dài -> **tối thiểu 2 ký
+     tự**. 4 bẫy đã canh sẵn: `火` trong 火曜日 (thứ Ba) · `불` trong 불편/불가능
+     (bất tiện) · `눈` tiếng Hàn vừa là TUYẾT vừa là MẮT · `비` vừa là MƯA vừa
+     là tiền tố so sánh.
+     **CA BẮT BUỘC ĐO TRÊN FILE XUẤT THẬT** (ffmpeg thật, clip 10 s): clip nói
+     "tuyết rơi" x2 -> lớp phủ **21,66%** điểm ảnh · clip nói **"TUYỆT VỜI"**
+     x2 -> **0,00%**.
+     **2 LỖI CỦA CHÍNH CỔNG đã sửa:** clip 2,6 s thì ngân sách 10% chỉ 0,26 s <
+     `DAI_MIN` 0,8 s nên MỌI lớp phủ bị "nhường điểm nhấn" -> đo ra 0,00% ở CẢ
+     HAI ca, suýt kết luận oan là đường lời không chạy (nay clip 10 s); câu chép
+     lời phải nằm TRONG đoạn cắt.
+  49. `_test_mach_lac.py` → **XEM LẠI BẢN GHÉP CÓ MẠCH LẠC KHÔNG**
+     (`app/ai/mach_lac.py`). App chọn 3 đoạn hay rồi ghép và tới v2.20.0 **chưa
+     bao giờ xem lại bản ghép**. Nay 1 lượt LLM NGẮN/Part đọc LỜI THOẠI của
+     chính các đoạn đã chọn (chỉ dùng `vision_digest` nếu CACHE đã có — không
+     bao giờ tự bật AI xem hình), trả `{mach_lac, thu_tu, bo, vi_sao}` -> đổi
+     thứ tự / bỏ 1 đoạn. Gọi **TRƯỚC** `_trim_junk_edges`/`_enforce_len` để
+     `_enforce_len` vẫn là NGƯỜI NÓI CUỐI về độ dài (bài học cổng 12). Công tắc
+     `settings.HAU_KIEM_GHEP`.
+     **FAIL-SAFE là điều kiện tiên quyết:** đo 10 kiểu hỏng (mạng chết · hết
+     lượt · JSON rác · `thu_tu` thiếu/lặp số · `bo` ngoài phạm vi · chuỗi rỗng ·
+     prose · `null` · lỗi lạ) -> **10/10 GIỮ NGUYÊN** lựa chọn ban đầu.
+     `LLMTooLarge` NỔI LÊN NGUYÊN VẸN, đo được **0/38 key bị khoá** (cổng 28).
+     Chốt an toàn: không bao giờ còn < 2 đoạn · không tụt dưới Min người dùng
+     đặt · `mach_lac >= 6` thì KHÔNG ĐỘNG VÀO.
+     **LỖI THẬT CỔNG NÀY LÔI RA — đúng loại "chỉ số đo tố giác":** prompt bản
+     đầu chỉ ghi `"mach_lac": 0-10` mà **KHÔNG NÓI CHIỀU CỦA THANG**, nên model
+     chấm ĐỘ LỦNG CỦNG chứ không phải độ mạch lạc. Đo bằng Groq THẬT: bản XUÔI
+     (1-2-3) -> **0/10** lý do *"Mạch chuyện rõ ràng và logic"*; bản ĐẢO LỘN
+     (3-1-2) -> **8/10** lý do *"thứ tự thời gian không logic"* — ngược hoàn
+     toàn, và vì 8 ≥ ngưỡng nên đề nghị SỬA ĐÚNG của nó bị bỏ đi. Nay prompt
+     ghi rõ *"10 = RẤT MẠCH LẠC … 0 = RỜI RẠC, càng cao càng tốt"*. Đo lại:
+     XUÔI **10/10** · ĐẢO LỘN **2/10** -> tự đổi về 1-2-0 (đúng thời gian).
+     **QUY TẮC CHUNG rút ra: mọi thang điểm đưa cho LLM phải nói rõ CHIỀU.**
+  50. `_test_so_lieu.py` → **KHUNG NHẬN SỐ LIỆU VIEW THẬT** (`app/ai/so_lieu.py`
+     + bảng `clip_so_lieu`). **NÓI THẲNG: app KHÔNG tự lấy được view** (không
+     API, không đăng nhập được kênh anh Hùng) — chỉ dựng ĐƯỜNG NHẬN. Đọc
+     CSV/TSV/JSON, tự đoán bảng mã (utf-8/16/cp1258) + dấu phân cách, đọc được
+     `1.2K` `88K` `1,234` `1.234.567` `0:21` `1:02:03`, tên cột tiếng Việt LẪN
+     tiếng Anh. Khoá theo **TÊN FILE** chứ không theo `clip_id` (clip cũ có thể
+     đã archived/xoá, tên file thì còn); nhập lại = GHI ĐÈ.
+     Xếp hạng theo **TỈ LỆ XEM HẾT** trước, view thô sau — đo: clip **2.400
+     view xem hết 79%** đứng TRÊN clip **12.000 view xem 14%**.
+     **BẤT BIẾN**: chưa nhập -> khối prompt `""` -> prompt Y HỆT hiện tại.
+     **SÀN**: dưới `TOI_THIEU`=6 clip thì ghi vào DB nhưng KHÔNG dạy AI (2 điểm
+     dữ liệu là nhiễu). **KHÔNG BAO GIỜ NÉM LỖI**: 8 kiểu file xấu đều trả
+     `([], lý do)`. Cửa nhập ở menu ⋮ hộp Dây chuyền, nhãn KHÔNG EMOJI.
+     **ANH HÙNG CẦN XUẤT GÌ:** TikTok *Studio sáng tạo → Phân tích → Nội dung →
+     Tải xuống dữ liệu*; YouTube *Studio → Số liệu phân tích → Nâng cao → Xuất
+     → CSV*. File cần 3 cột: tên file clip · số lượt xem · thời lượng xem trung
+     bình (giây hoặc `0:21`). Có thêm cột thời lượng clip thì tính được tỉ lệ
+     xem hết.
 - **2 CỔNG PASS OAN ĐÃ CHỨNG MINH BẰNG PHÉP THỬ PHÁ (08/08/2026)** — sửa xong,
   đừng để tái diễn:
   * `_test_hlbox.py` mục 12 so với `git show **HEAD**:app/core/captions.py`. Cây

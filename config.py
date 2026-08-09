@@ -203,14 +203,28 @@ class Settings:
     #: ban đầu. Đặt `HAU_KIEM_GHEP=0` để tắt hẳn (chạy y như v2.20.0).
     HAU_KIEM_GHEP = _env("HAU_KIEM_GHEP", "1") == "1"
     #: SỐ LƯỢT AI XEM HÌNH CHẠY SONG SONG (mỗi lượt một key Groq khác nhau).
-    #: ĐO 09/08/2026 (`_do_vision_219.py`, video thật, 38 key): **98,7% của
-    #: 219 giây là ĐỢI MẠNG TUẦN TỰ**, trích khung chỉ 1,3%. Cùng 4 lượt:
-    #: tuần tự 107,80 giây · song song mỗi lượt một key **39,20 giây = 2,75x**.
-    #: Suy ra 1 video đầy đủ (12 khung / 6 lượt): 185,7 -> 41,7 giây = **4,45x**.
-    #: Đáng chú ý: lượt tuần tự mất 40-45 giây KHÔNG phải model nghĩ lâu mà là
-    #: HÀNG ĐỢI của chính key đó — đổi key là thoát (3/4 lượt song song xong
-    #: trong 0,9 giây). Đặt 1 để quay về hành vi tuần tự cũ.
-    VISION_SONG_SONG = int(_env("VISION_SONG_SONG", "6") or 6)
+    #: **MẶC ĐỊNH 1 = TUẦN TỰ, Y HỆT v2.20.0 — vì ĐO RA SONG SONG KHÔNG CHẮC
+    #: NHANH HƠN.** Ghi thẳng số, không tô hồng:
+    #:
+    #: 1) `_do_vision_219.py` (video thật, 38 key) tách 219 giây ra:
+    #:      trích khung (ffmpeg)  1,45 giây = **1,3%**
+    #:      đợi API (tuần tự)   107,80 giây = **98,7%**
+    #:    -> nút thắt đúng là ĐỢI MẠNG, không phải CPU máy. Lượt đo ĐẦU TIÊN
+    #:    cho song song 39,20 giây (**2,75x**) và trông rất hứa hẹn.
+    #: 2) NHƯNG đo lại bằng `_do_vision_ss.py` trên ĐÚNG `build_vision_digest`,
+    #:    **6 lượt mỗi mức, ĐAN XEN** (máy anh Hùng luôn có prodown chạy nền):
+    #:      tuần tự  : trung vị **45,23** giây (min 5,54 · max 100,53)
+    #:      song song: trung vị **40,05** giây (min 19,48 · max 75,34)
+    #:      = 1,13x, mà **hai khoảng min-max CHỒNG NHAU** -> KHÔNG kết luận được.
+    #:    Lý do: chính Groq trả về rất thất thường — CÙNG một lượt tuần tự đo
+    #:    được 5,54 giây rồi 100,53 giây. Song song chỉ bỏ được phép CỘNG, không
+    #:    bỏ được cái ĐUÔI: `max(4 lượt)` gần bằng `tổng(4 lượt)` khi một lượt
+    #:    chiếm hết. Số 2,75x của lần đo đầu là MAY, không lặp lại được.
+    #: KẾT LUẬN THẲNG: **bật AI xem hình cho MỌI clip vẫn KHÔNG khả thi** —
+    #: ~40 giây/video ở cả hai mức, đuôi tới 100 giây, nhân 300 kênh là quá đắt.
+    #: Mã song song vẫn giữ (đã đo: KHÔNG mất mốc nào, 7/7 cả 6 lượt) để bật
+    #: bằng `VISION_SONG_SONG=6` khi Groq đổi hành vi — nhưng KHÔNG bật sẵn.
+    VISION_SONG_SONG = int(_env("VISION_SONG_SONG", "1") or 1)
     JUDGE_PANEL = _env("JUDGE_PANEL", "1") == "1"
     #: model cho khâu CHẤM. **ĐỂ RỖNG — đã ĐO, model suy luận KHÔNG hơn.**
     #: Đo 06/08/2026 (bộ đo `_do_trongtai.py`: 3 clip biết trước thứ tự hay/dở
