@@ -551,6 +551,36 @@ def ca_bat_bien(src: str, td: str) -> None:
         finally:
             sys.modules.pop("_hu_moc", None)
         cu = set(mod.KHO)
+        # ---- MỐC THỨ HAI cho phép BẤT BIẾN SAU KHI GỘP (09/08/2026) ----
+        # `v2.19.0` KHÔNG còn trả lời được câu "lớp phủ có đụng đường cũ không":
+        # nhánh MỞ RỘNG KHO gộp cùng lượt đã **CỐ Ý** đổi `chon_hieu_ung` (thêm
+        # `xoay` = vân tay clip + 16 kiểu mới vào `_UV_THEO_LOAI`) nên 15/18 tổ
+        # hợp lệch — lệch ĐÚNG, do nhánh KHÁC, không phải lỗi của lớp phủ. Muốn
+        # tách bạch "ai làm đổi" thì mốc phải là bản ĐÃ CÓ kho mở rộng mà CHƯA
+        # CÓ lớp phủ = `494a541` (đỉnh nhánh `mo-rong-kho`, đã là tổ tiên của
+        # `main`). KHÔNG phải nới cổng: vẫn là bản mã KHÁC, vẫn có chốt chặn
+        # "phải khác bản đang test" — chỉ là hỏi ĐÚNG câu hỏi.
+        moc_kho = os.environ.get("BQ_MOC_KHO", "494a541")
+        r2 = subprocess.run(["git", "show", f"{moc_kho}:app/core/hieu_ung.py"],
+                            cwd=str(REPO), capture_output=True,
+                            creationflags=_NOWIN, timeout=90)
+        ma2 = (r2.stdout or b"").decode("utf-8", "replace")
+        bao(f"mốc bất biến `{moc_kho}` (CÓ kho mở rộng, CHƯA có lớp phủ) lấy "
+            "được và KHÁC bản đang test",
+            bool(ma2) and ma2 != hien, f"{len(ma2)} vs {len(hien)} ký tự")
+        mod2 = mod
+        if ma2 and ma2 != hien:
+            import types as _t2
+            mod2 = _t2.ModuleType("_hu_moc2")
+            mod2.__dict__["__file__"] = str(REPO / "app" / "core"
+                                            / "hieu_ung.py")
+            sys.modules["_hu_moc2"] = mod2
+            try:
+                exec(compile(ma2, "_hu_moc2", "exec"),   # noqa: S102
+                     mod2.__dict__)
+            finally:
+                sys.modules.pop("_hu_moc2", None)
+        cu2 = set(mod2.KHO)
         bo = [{"nl": [0.1] * 16, "cd": [0.2] * 16, "moc": [4.0]},
               {"nl": [0.1, 0.9, 0.1, 0.1, 0.8, 0.1, 0.1, 0.1, 0.7, 0.1,
                       0.1, 0.1, 0.9, 0.1, 0.2, 0.1],
@@ -562,13 +592,14 @@ def ca_bat_bien(src: str, td: str) -> None:
             for hk in (False, True):
                 for i, t in enumerate(bo):
                     kw = dict(nl=t["nl"], cd=t["cd"], moc_noi=t["moc"],
-                              co_the_dung=sorted(cu), hook=hk)
-                    x = mod.chon_hieu_ung(16.0, muc, **kw)
+                              co_the_dung=sorted(cu2), hook=hk)
+                    x = mod2.chon_hieu_ung(16.0, muc, **kw)
                     y = HU.chon_hieu_ung(16.0, muc, **kw)
                     if x != y:
-                        lech.append(f"{muc}/hook={hk}/bộ{i}")
-        bao("`chon_hieu_ung` KHÔNG `dat_truoc` trả Y HỆT bản mốc v2.19.0 "
-            "(18 tổ hợp)", not lech, "; ".join(lech) if lech else
+                        lech.append(f"{muc}/hook={hk}/bộ{i}: {x} != {y}")
+        bao(f"`chon_hieu_ung` KHÔNG `dat_truoc` trả Y HỆT mốc `{moc_kho}` "
+            "(18 tổ hợp) — thêm nhóm lớp phủ KHÔNG đụng đường cũ",
+            not lech, "; ".join(lech)[:200] if lech else
             "18/18 tổ hợp giống từng ký tự")
         bao("kho CŨ vẫn còn nguyên trong kho MỚI (không gỡ nhầm kiểu nào)",
             cu <= set(HU.KHO), f"thiếu: {sorted(cu - set(HU.KHO))}")
