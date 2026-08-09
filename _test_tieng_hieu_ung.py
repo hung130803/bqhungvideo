@@ -965,28 +965,76 @@ def ca_ducking(src: str, td: str) -> None:
     xuat(src, c, segs, hu, True, cats=["impact"], fx_sfx_dir=im)
     rc_ = rms_day(pcm(c))
     rb = rms_day(pb)
-    giam, tai_moc = [], []
-    for g in moc:
-        a0 = g - FU._SFX_DUCK_SOM
-        i0 = max(0, int(a0 / CUA))
-        i1 = min(len(rc_), len(rb), int((a0 + FU._SFX_DUCK_DAI) / CUA) + 1)
+    # ---- MỖI MỐC MỘT KIỂU DUCKING — PHẢI ĐO ĐÚNG CỬA SỔ CỦA KIỂU ĐÓ ----
+    # BẪY ĐÃ SẬP (bản trước của ca này, 09/08/2026): dùng cửa sổ của ca KHOẢNG
+    # LẶNG (bắt đầu SAU mốc 0,22 s) để đo mốc ĐANG NÓI (bướu TRÙM mốc, tắt ở
+    # mốc+0,225 s) -> đo trúng chỗ bướu đã tắt, ra **−0,1 dB** rồi kết luận
+    # "KHÔNG có ducking" trong khi ducking đang hạ **5,9 dB**. Cửa sổ phải lấy
+    # từ chính cờ `noi` APP ghi ra nhật ký, cổng KHÔNG được đoán.
+    _noi = {round(float(x["giay"]), 2): bool(x.get("noi"))
+            for x in (log or [])}
+    bao("nhật ký ghi RÕ mốc nào rơi vào lúc ĐANG NÓI (cổng không phải đoán)",
+        len(_noi) == len(moc) and all("noi" in x for x in (log or [])),
+        " · ".join(f"{g:.2f}s {'NÓI' if _noi.get(round(g, 2)) else 'lặng'}"
+                   for g in moc))
+
+    def _cua(g: float) -> tuple:
+        """(đầu cửa sổ, độ dài, ĐỘ SÂU ĐÃ CHỐT) của bướu ducking tại mốc `g`."""
+        if _noi.get(round(g, 2)):
+            return (g - FU._SFX_DUCK_SOM_NOI, FU._SFX_DUCK_DAI_NOI,
+                    FU._SFX_DUCK_DB_NOI)
+        return (g - FU._SFX_DUCK_SOM, FU._SFX_DUCK_DAI, FU._SFX_DUCK_DB)
+
+    def _min_trong(t0: float, t1: float):
+        i0 = max(0, int(t0 / CUA))
+        i1 = min(len(rc_), len(rb), int(t1 / CUA) + 1)
         xs = [db(rc_[i]) - db(rb[i]) for i in range(i0, i1) if rb[i] > 30]
-        if xs:
-            giam.append(min(xs))
-        # CỬA SỔ CỦA CHÍNH CÚ VA (±RONG/2) phải gần như KHÔNG bị hạ
-        j0 = max(0, int((g - RONG / 2) / CUA))
-        j1 = min(len(rc_), len(rb), int((g + RONG / 2) / CUA) + 1)
-        ys = [db(rc_[i]) - db(rb[i]) for i in range(j0, j1) if rb[i] > 30]
-        if ys:
-            tai_moc.append(min(ys))
-    bao("CÓ ducking THẬT: tiếng gốc bị hạ trong cửa sổ tiếng động "
-        f"(đặt {FU._SFX_DUCK_DB:.0f} dB)",
-        bool(giam) and max(giam) <= -1.0,
-        " · ".join(f"{x:+.1f} dB" for x in giam) or "không đo được")
-    bao("ducking KHÔNG trùm lên CỬA SỔ CỦA CÚ VA (gốc lỗi 'mốc nhỏ đi')",
-        bool(tai_moc) and min(tai_moc) > -1.5,
-        "hạ nhiều nhất ngay tại mốc "
-        f"{min(tai_moc or [0]):+.2f} dB (bản cũ: -5 dB)")
+        return min(xs) if xs else None
+
+    co, qua, lang_moc, noi_moc, mep = [], [], [], [], []
+    for g in moc:
+        a0, dai_, sau = _cua(g)
+        v = _min_trong(a0, a0 + dai_)
+        if v is None:
+            continue
+        co.append((g, v))
+        if v < -(sau + 1.5):        # hạ SÂU HƠN mức đã chốt = ăn mất tiếng gốc
+            qua.append(f"{g:.2f}s hạ {v:+.1f} dB > mức chốt {sau:.0f} dB")
+        for t in (a0, a0 + dai_):   # hai MÉP bướu phải ~0 (êm vào - êm ra)
+            e = _min_trong(t - 0.05, t + 0.05)
+            if e is not None:
+                mep.append(e)
+        cv = _min_trong(g - RONG / 2, g + RONG / 2)   # cửa sổ CHÍNH CÚ VA
+        if cv is not None:
+            (noi_moc if _noi.get(round(g, 2)) else lang_moc).append((g, cv))
+    bao("MỌI mốc đều có ducking THẬT trong ĐÚNG cửa sổ của kiểu mốc đó "
+        f"(lặng {FU._SFX_DUCK_DB:.0f} dB sau mốc · nói "
+        f"{FU._SFX_DUCK_DB_NOI:.0f} dB trùm mốc)",
+        bool(co) and max(v for _g, v in co) <= -1.0,
+        " · ".join(f"{g:.2f}s{'N' if _noi.get(round(g, 2)) else 'L'} {v:+.1f}"
+                   for g, v in co) or "không đo được")
+    bao("ducking KHÔNG hạ SÂU HƠN mức đã chốt (không ăn mất tiếng gốc)",
+        not qua, "; ".join(qua) or
+        f"sâu nhất {min([v for _g, v in co] or [0]):+.2f} dB")
+    # Mốc KHOẢNG LẶNG: bất biến CŨ giữ nguyên — không có gì che thì đừng đụng
+    # vào cú va (đây đúng là gốc lỗi "mốc nhỏ đi" của v2.18.0).
+    bao("mốc KHOẢNG LẶNG: ducking KHÔNG trùm lên cửa sổ cú va "
+        "(giữ bất biến v2.19.0)",
+        all(v > -1.5 for _g, v in lang_moc),
+        " · ".join(f"{g:.2f}s {v:+.2f}" for g, v in lang_moc) or "không có mốc")
+    # Mốc ĐANG NÓI: NGƯỢC LẠI — bướu PHẢI trùm mốc. Không trùm thì lúc cú va
+    # đánh xuống giọng nói vẫn còn nguyên, tiếng động lại bị che (đúng lời anh
+    # Hùng *"nói át rồi hay sao"*). Đòi hạ ÍT NHẤT 70% mức đã chốt.
+    _can = -0.7 * FU._SFX_DUCK_DB_NOI
+    bao("mốc ĐANG NÓI: ducking đã hạ TRỌN giọng nói TRƯỚC khi cú va đánh "
+        f"xuống ({-_can:.1f} dB ngay tại mốc)",
+        bool(noi_moc) and all(v <= _can for _g, v in noi_moc),
+        " · ".join(f"{g:.2f}s {v:+.2f}" for g, v in noi_moc)
+        or "clip này không có mốc ĐANG NÓI nào")
+    bao("bướu ducking VÀO/RA ÊM: hai mép cửa sổ gần như không hạ "
+        "(không bậc thang -> không nghe thành tiếng 'bụp')",
+        not mep or min(mep) > -1.2,
+        f"mép hạ nhiều nhất {min(mep or [0]):+.2f} dB ({len(mep)} mép)")
     ngoai = [db(rc_[i]) - db(rb[i]) for i in range(min(len(rc_), len(rb)))
              if rb[i] > 30 and all(abs(i * CUA - g) > 1.2 for g in moc)]
     bao("ducking KHÔNG rò ra ngoài cửa sổ (tiếng gốc giữ nguyên)",

@@ -3862,6 +3862,14 @@ def export_canvas_clip(
                             {"giay": round(float(off), 2), "loai": cat,
                              "ten": os.path.basename(str(fpath)),
                              "vai": vai,
+                             # MỐC NÀY CÓ RƠI VÀO LÚC ĐANG NÓI KHÔNG — quyết
+                             # định CẢ đích độ to LẪN kiểu ducking (nông/sau
+                             # mốc vs sâu/trùm mốc). Không ghi ra thì cổng đo
+                             # ducking phải ĐOÁN cửa sổ, và nó đã đoán sai một
+                             # lần (đo bằng cửa sổ của ca khoảng lặng trên mốc
+                             # đang nói -> ra −0,1 dB rồi kết luận "không có
+                             # ducking" trong khi ducking đang hạ 5,9 dB).
+                             "noi": bool(_noi_moc[wi]),
                              "db": round(20.0 * math.log10(max(vol, 1e-6)), 1),
                              "nguon": ("thư mục của bạn" if _tu_user
                                        else "kho tiếng động của app")})
@@ -3884,6 +3892,7 @@ def export_canvas_clip(
                         tieng_dong_log.append(
                             {"giay": round(float(off), 2), "loai": cat,
                              "ten": f"tự sinh #{tidx}", "vai": vai,
+                             "noi": bool(_noi_moc[wi]),
                              "db": round(20.0 * math.log10(max(vol, 1e-6)), 1),
                              "nguon": "ffmpeg tự sinh"})
                 mix.append(f"[wh{wi}]")
