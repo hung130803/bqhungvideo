@@ -45,7 +45,10 @@ os.environ["BQ_QSETTINGS_INI"] = os.path.join(T, "s.ini")
 # nên đây đủ để mở cửa vision; mọi lượt gọi thật đều bị thay bằng bộ đếm bên
 # dưới. (Bẫy của cổng 28: key bịa NGOÀI settings thì các hàm tra sổ key trả
 # None và cổng PASS OAN — nên phải đặt qua ENV để settings đọc được.)
-os.environ["GROQ_API_KEYS"] = ",".join(f"gsk_test{i:02d}" + "z" * 20
+# KHÔNG viết TIỀN TỐ KEY GROQ vào mã: cửa chặn phát hành quét tiền tố đó trong
+# `git diff` và phải ra 0 (cổng 49 đã dọn một lượt, đừng gieo lại).
+# `groq_keys()` không lọc theo tiền tố nên chuỗi bất kỳ cũng chạy được.
+os.environ["GROQ_API_KEYS"] = ",".join(f"KEY-GIA-{i:02d}" + "z" * 20
                                        for i in range(4))
 REPO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO)
