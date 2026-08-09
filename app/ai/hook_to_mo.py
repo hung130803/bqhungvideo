@@ -47,18 +47,26 @@ _DO_DANG = (
     "that's when", "thats when", "turns out", "turned out", "little did",
     "next thing", "the moment", "right before", "just as", "as soon as",
     "what happened next", "and suddenly", "and that's when",
+    "not only", "however", "the reason", "the problem is", "which is why",
+    "that's why", "thats why", "here's the thing", "heres the thing",
+    "here's why", "what nobody", "what they don't", "what they dont",
     # Việt (CÓ DẤU)
     "và rồi", "rồi thì", "cho đến khi", "đến khi", "hoá ra", "hóa ra",
     "thì ra là", "ngay lúc đó", "ngay khi", "trước khi", "sau đó thì",
     "chuyện gì xảy ra", "và bất ngờ", "nhưng rồi",
+    "tuy nhiên", "thế nhưng", "không những", "không chỉ", "lý do là",
+    "vấn đề là", "điều đáng nói", "đáng nói là", "chính vì thế mà",
     # Nhật
     "そしたら", "そして", "ところが", "その時", "その瞬間", "実は",
     "すると", "しかし", "だが", "その後", "ついに", "とうとう",
+    "だけでなく", "しかも", "ということは", "問題は", "理由は",
+    "ところで", "それどころか",
     # Hàn
     "그런데", "그러다", "그때", "그 순간", "알고 보니", "사실은",
     "결국", "그리고 나서", "하지만",
+    "뿐만 아니라", "심지어", "문제는", "이유는", "그래서 결국",
     # Trung (đi kèm, không phải nhóm bắt buộc)
-    "然后", "结果", "没想到", "突然间", "直到",
+    "然后", "结果", "没想到", "突然间", "直到", "不仅",
 )
 
 # (2) PHÁT HIỆN / TIẾT LỘ — "anh ta phát hiện ra…"
@@ -95,8 +103,13 @@ _BAT_NGO = (
     "lần đầu tiên", "lần cuối", "tệ nhất", "tuyệt nhất", "điên rồ",
     "không thể tin", "sốc", "kinh khủng",
     "突然", "いきなり", "初めて", "まさか", "信じられない", "衝撃",
-    "誰も", "一番",
-    "갑자기", "처음", "설마", "믿을 수 없", "충격", "아무도", "제일",
+    # KHÔNG nhận `一番` / `제일` / "the most": so-sánh-nhất là từ RẤT thường
+    # trong lời nói hằng ngày ("một cách dễ nhất", "ngon nhất") và tự nó không
+    # hứa hẹn gì — đo trên 16 video thật, nó kéo câu "楽だからですね一番"
+    # (= "vì như thế là dễ nhất") lên làm hook.
+    "誰も", "びっくり", "驚", "なんと", "とんでもない", "ヤバい",
+    "갑자기", "처음", "설마", "믿을 수 없", "충격", "아무도",
+    "놀랍", "안타깝게도", "대박", "엄청난",
     "居然", "竟然", "第一次", "震惊",
 )
 
@@ -202,7 +215,11 @@ def cham_cau(text: str, giay: float = 0.0) -> tuple:
         if trung:
             # Một nhóm chỉ ăn điểm MỘT LẦN (câu nhắc 3 lần "why" không tò mò
             # gấp 3); nhóm thứ hai trở đi cộng dồn với hệ số giảm dần.
-            diem += w * (0.35 if not ly else 0.18)
+            # Hệ số 0,42 ĐO RA trên 16 video thật 4 thứ tiếng: mức 0,35 làm
+            # câu chỉ có MỘT dấu hiệu mạnh ("まさかまさかの収納スペース",
+            # "There's nobody else to blame") ra đúng 0,317 — trượt ngưỡng
+            # 0,34 trong gang tấc dù đó chính là câu đáng làm hook.
+            diem += w * (0.42 if not ly else 0.18)
             ly.append(f"{ten} «{trung[0]}»")
 
     # Câu KHÔNG kết thúc bằng dấu kết -> đang nói dở, đúng thứ ta cần.
