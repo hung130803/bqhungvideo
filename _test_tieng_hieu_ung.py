@@ -1000,10 +1000,28 @@ def ca_ducking(src: str, td: str) -> None:
         co.append((g, v))
         if v < -(sau + 1.5):        # hạ SÂU HƠN mức đã chốt = ăn mất tiếng gốc
             qua.append(f"{g:.2f}s hạ {v:+.1f} dB > mức chốt {sau:.0f} dB")
-        for t in (a0, a0 + dai_):   # hai MÉP bướu phải ~0 (êm vào - êm ra)
-            e = _min_trong(t - 0.05, t + 0.05)
-            if e is not None:
-                mep.append(e)
+        # ÊM = KHÔNG BẬC THANG. Đo bằng BƯỚC NHẢY giữa 2 cửa sổ 50 ms LIỀN
+        # NHAU trong bướu, không phải bằng "mép có gần 0 không".
+        # BẢN ĐẦU CỦA MỤC NÀY SAI VÀ ĐÃ FAIL OAN (đo −2,09 dB): nó lấy
+        # `min` trong ±0,05 s quanh mép, tức thò 0,05 s VÀO TRONG bướu — mà
+        # nửa hình sin 6 dB / 0,45 s ở 0,05 s đã xuống đúng
+        # 6*sin(pi*0,05/0,45) = **2,05 dB**. Tức nó đang đo độ DỐC rồi gọi
+        # đó là bậc thang; mọi đường cong êm đều "hỏng".
+        # Thước đúng: nửa hình sin có bước nhảy lớn nhất =
+        # `sâu * pi * 0,05 / dài` = **0,35×sâu** (nói) / **0,45×sâu** (lặng),
+        # còn bậc thang (bật/tắt phát một) = **1,00×sâu**. Ngưỡng 0,75×sâu
+        # tách hẳn hai loại.
+        truoc = None
+        i0e, i1e = max(0, int(a0 / CUA)), min(len(rc_), len(rb),
+                                              int((a0 + dai_) / CUA) + 1)
+        for i in range(i0e, i1e):
+            if rb[i] <= 30:
+                truoc = None
+                continue
+            cur = db(rc_[i]) - db(rb[i])
+            if truoc is not None:
+                mep.append((abs(cur - truoc), sau, g))
+            truoc = cur
         cv = _min_trong(g - RONG / 2, g + RONG / 2)   # cửa sổ CHÍNH CÚ VA
         if cv is not None:
             (noi_moc if _noi.get(round(g, 2)) else lang_moc).append((g, cv))
@@ -1031,10 +1049,14 @@ def ca_ducking(src: str, td: str) -> None:
         bool(noi_moc) and all(v <= _can for _g, v in noi_moc),
         " · ".join(f"{g:.2f}s {v:+.2f}" for g, v in noi_moc)
         or "clip này không có mốc ĐANG NÓI nào")
-    bao("bướu ducking VÀO/RA ÊM: hai mép cửa sổ gần như không hạ "
-        "(không bậc thang -> không nghe thành tiếng 'bụp')",
-        not mep or min(mep) > -1.2,
-        f"mép hạ nhiều nhất {min(mep or [0]):+.2f} dB ({len(mep)} mép)")
+    _xau_mep = [f"{g:.2f}s nhảy {b:.2f} dB (sâu {s:.0f})"
+                for b, s, g in mep if b > 0.75 * s]
+    bao("bướu ducking VÀO/RA ÊM: KHÔNG bậc thang — bước nhảy giữa 2 cửa sổ "
+        "50 ms liền nhau <= 0,75x độ sâu (nửa hình sin ~0,35-0,45x, "
+        "bật/tắt phát một = 1,00x)",
+        not _xau_mep, "; ".join(_xau_mep) or
+        f"nhảy lớn nhất {max((b for b, _s, _g in mep), default=0.0):.2f} dB / "
+        f"{len(mep)} cặp cửa sổ")
     ngoai = [db(rc_[i]) - db(rb[i]) for i in range(min(len(rc_), len(rb)))
              if rb[i] > 30 and all(abs(i * CUA - g) > 1.2 for g in moc)]
     bao("ducking KHÔNG rò ra ngoài cửa sổ (tiếng gốc giữ nguyên)",
