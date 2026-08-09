@@ -24,24 +24,38 @@ và vẫn chê: *"hiệu ứng âm thanh nhỏ quá, nó dùng mà không nghe t
     (nghe rõ) · mốc đang nói **−1,6 dB** (bị che).
 
 NAY tiêu chí chính là **"CÓ NGHE RA KHÔNG"**, không phải "có nổi trên nền":
-  D_LOA = mức dải tần của bản BẬT − của bản TẮT, TẠI MỐC, lấy dải LỚN NHẤT
+  D_CHE = mức dải tần của bản BẬT − của bản **CHE**, TẠI MỐC, lấy dải LỚN NHẤT
           trong 300 Hz - 7,8 kHz.
+  Bản CHE = xuất y hệt bản BẬT (ducking chạy, cùng mốc, cùng độ sâu) nhưng file
+  tiếng động là một file gần IM LẶNG (−66 dBFS) -> đó ĐÚNG là **thứ đang che**
+  tiếng động ở lượt thật.
   Vì sao thước này phản ánh cái tai nghe:
    (a) Trong CÙNG một dải tới hạn tai KHÔNG tách được tiếng động ra khỏi giọng
-       nói — nó chỉ nghe dải đó TO LÊN bao nhiêu. Cộng 2 nguồn không tương
-       quan: tỉ lệ S dB -> dải to thêm `10log10(1+10^(S/10))` dB. S=0 -> +3,0;
-       S=−6 -> +1,0; S=−10 -> +0,4 dB.
+       nói — nó chỉ nghe dải đó TO LÊN bao nhiêu SO VỚI THỨ ĐANG CHE. Cộng 2
+       nguồn không tương quan: tỉ lệ tín-hiệu/che S dB -> dải to thêm
+       `10log10(1+10^(S/10))` dB. S=0 -> +3,0; S=−6 -> +1,0; S=−10 -> +0,4 dB.
+       Nên `D_CHE >= 1 dB` ⟺ `SMR >= −6 dB` = ĐÚNG NGƯỠNG CHE.
    (b) Ngưỡng vừa phân biệt được (JND) cường độ của âm phức hợp là ~0,5-1 dB
-       -> `NGHE_MIN = 1,0 dB`; "nghe RÕ" = 3,0 dB.
+       -> `NGHE_MIN = 1,0 dB`; "nghe RÕ" = 3,0 dB (SMR 0 dB).
    (c) BỎ DẢI <300 Hz: khán giả Shorts nghe bằng loa điện thoại/laptop, thứ
        gần như không phát được dưới 300 Hz. Đây KHÔNG phải suy đoán — kho 184
        file có 51 file hụt quá 6 dB khi cắt <300 Hz, tệ nhất
-       `impact/boom_deep_05.opus` hụt **44,7 dB**; và đo trên clip thật, mốc
-       bốc trúng file trầm cho dải <300 Hz vọt **+38,1 dB** trong khi MỌI dải
-       nghe được KHÔNG đổi (còn tụt vì ducking). Trên máy đo: "rất to". Trên
-       điện thoại: câm. Đúng câu *"dùng mà không nghe thấy luôn"*.
-   (d) Đo trên FILE .mp4 ĐÃ XUẤT (bản BẬT so bản TẮT) nên tính luôn cả ducking
-       lẫn 2 lớp hạn đỉnh — tức đúng thứ phát ra loa, không phải ý định.
+       `impact/boom_deep_05.opus` hụt **44,7 dB**; ép đúng file đó vào một mốc
+       đang nói thì D_CHE ra **−0,5 dB = KHÔNG NGHE RA** trong khi dải <300 Hz
+       vọt lên. Trên máy đo: "rất to". Trên điện thoại: câm. Đúng câu *"dùng mà
+       không nghe thấy luôn"*.
+   (d) Đo trên FILE .mp4 ĐÃ XUẤT nên tính luôn cả ducking lẫn 2 lớp hạn đỉnh —
+       tức đúng thứ phát ra loa, không phải ý định.
+
+**BẪY THƯỚC ĐO ĐÃ SẬP 1 LẦN (09/08/2026) — ĐỪNG LẶP:** bản đầu của cổng này
+lấy MỐC là bản **TẮT** (tiếng gốc CHƯA hạ), tức hỏi "chỗ này có TO LÊN không".
+Ducking thì CỐ Ý hạ tiếng gốc để dọn chỗ, nên một bản trộn ĐÚNG NGHỀ — hạ giọng
+6 dB rồi đặt tiếng động ngang mức giọng đã hạ — cho tổng dải **THẤP HƠN** bản
+TẮT 3 dB và bị chấm "KHÔNG NGHE RA". Đo thật trên clip ỒN, mốc 4,40 s: so với
+bản TẮT ra **−1,5 dB** (chấm hỏng) trong khi so với bản CHE ra **+4,2 dB**
+(nghe rõ). Cùng một file .mp4, hai kết luận ngược nhau — khác nhau đúng ở chỗ
+lấy gì làm "thứ đang che". D_LOA (so bản TẮT) vẫn được TÍNH VÀ IN để thấy mốc
+có bị thành cái hố không, nhưng nó KHÔNG phải tiêu chí đạt/hỏng.
 
 CỔNG NÀY KIỂM **KẾT QUẢ**, KHÔNG KIỂM Ý ĐỊNH: không ca nào đọc chuỗi lệnh
 ffmpeg. Mọi kết luận lấy từ PCM của file .mp4 đã xuất:
@@ -104,9 +118,10 @@ DAI = [(60, 300), (300, 1000), (1000, 2400), (2400, 4000), (4000, 7800)]
 TEN_DAI = ["<300", "300-1k", "1k-2.4k", "2.4k-4k", ">4k"]
 
 #: ===================== TIÊU CHÍ CHÍNH: CÓ NGHE RA KHÔNG =====================
-#: Dải tần (300 Hz trở lên) phải TO THÊM ít nhất ngần này dB tại mốc. 1,0 dB =
-#: ngưỡng vừa phân biệt được (JND) cường độ của âm phức hợp. Dưới mức này thì
-#: dù máy đo có báo "tiếng động -12 dBFS" cũng KHÔNG ai nghe ra.
+#: Dải tần (300 Hz trở lên) phải NỔI LÊN KHỎI THỨ ĐANG CHE ít nhất ngần này dB
+#: tại mốc. 1,0 dB = ngưỡng vừa phân biệt được (JND) cường độ của âm phức hợp,
+#: và cũng ĐÚNG BẰNG tỉ lệ tín-hiệu/che −6 dB. Dưới mức này thì dù máy đo có
+#: báo "tiếng động -12 dBFS" cũng KHÔNG ai nghe ra.
 NGHE_MIN = 1.0
 #: "Nghe RÕ" (không phải chỉ vừa đủ phân biệt) — dùng cho phần lớn số mốc.
 NGHE_RO = 3.0
@@ -130,6 +145,13 @@ AT_LOI_LAN = 1.5
 #: gần như KHÔNG đổi. Đây là vế bảo vệ "video cho người xem, không phải bản
 #: demo hiệu ứng" — đo được sau khi sửa: lệch nhiều nhất +0,29 dB.
 NGOAI_MOC_MAX = 1.0
+#: KHÔNG ĐƯỢC THÀNH CÁI HỐ: ducking dọn chỗ cho tiếng động, nhưng NGAY TẠI MỐC
+#: dải giọng nói không được TỤT so với bản TẮT quá ngần này dB — nếu tụt sâu mà
+#: tiếng động không lấp lại thì khán giả chỉ nghe thấy giọng bị hụt một cái,
+#: tệ hơn là không làm gì. Đặt bằng đúng độ sâu ducking ở mốc đang nói
+#: (`_SFX_DUCK_DB_NOI` = 6 dB) + 1,5 dB dung sai đo (phổ FFT cửa sổ 0,35 s có
+#: cả phần ngân của âm tiết bên cạnh). Đo sau khi sửa: sâu nhất −5,2 dB.
+HUT_MOC_MAX = -7.5
 #: Trần AN TOÀN cũ (giữ đúng cổng 40): đỉnh <= 12x RMS nền = +21,6 dB.
 AT_LOI_MAX = 21.6
 #: KHÔNG MÉO: đỉnh đọc được TỪ FILE .mp4 phải <= mức này và 0 mẫu chạm trần.
@@ -205,12 +227,18 @@ def pho_dai(a: np.ndarray, giay: float, rong: float = RONG) -> np.ndarray:
 
 def do_nghe_ra(pa: np.ndarray, pb: np.ndarray, giay: float,
                rong: float = RONG) -> tuple[float, np.ndarray]:
-    """**THƯỚC CHÍNH CỦA CỔNG**: tại mốc `giay`, dải tần nào TO LÊN nhiều nhất
-    và bao nhiêu dB — chỉ tính từ 300 Hz trở lên (loa điện thoại).
+    """**THƯỚC CHÍNH CỦA CỔNG**: tại mốc `giay`, dải tần nào NỔI LÊN KHỎI THỨ
+    ĐANG CHE nhiều nhất và bao nhiêu dB — chỉ tính từ 300 Hz trở lên (loa điện
+    thoại).
 
-    Trả (D_LOA, mảng chênh lệch từng dải). Đây là "có nghe ra không" chứ không
+    `pa` = bản BẬT · `pb` = **THỨ ĐANG CHE** (bản CHE: ducking chạy y hệt, file
+    tiếng động im lặng). Truyền bản TẮT vào đây là ra D_LOA — con số THAM KHẢO,
+    không phải tiêu chí (xem "BẪY THƯỚC ĐO" ở đầu file).
+
+    Trả (D_CHE, mảng chênh lệch từng dải). Đây là "có nghe ra không" chứ không
     phải "có to hơn nền không": trong cùng một dải tới hạn, tai chỉ nghe được
-    dải đó to lên bao nhiêu, không tách được tiếng động khỏi giọng nói."""
+    dải đó to lên bao nhiêu so với thứ đang che, không tách được tiếng động
+    khỏi giọng nói."""
     d = pho_dai(pa, giay, rong) - pho_dai(pb, giay, rong)
     return float(d[1:].max()), d
 
@@ -589,9 +617,29 @@ def ca_ham_thuan() -> None:
         "level=0" in h and "latency=1" in h and "alimiter" in h, h)
 
 
+def thu_muc_im(td: str) -> str:
+    """Thư mục chứa ĐÚNG 1 file tiếng động gần IM LẶNG (−66 dBFS).
+
+    Xuất với `fx_sfx_dir` trỏ vào đây thì ducking chạy Y HỆT lượt thật (cùng
+    mốc, cùng độ sâu, cùng lớp hạn đỉnh) còn lớp tiếng động thì không nghe
+    thấy -> file ra chính là **THỨ ĐANG CHE**. Không có bản này thì không cách
+    nào tách "dải tụt vì ducking" khỏi "tiếng động quá nhỏ" — và đó đúng là chỗ
+    bản đầu của cổng chấm hỏng oan (xem "BẪY THƯỚC ĐO" ở đầu file). Cùng mẹo mà
+    CA 5 đã dùng để đo DUCKING THUẦN."""
+    d = os.path.join(td, "_sfx_im")
+    os.makedirs(d, exist_ok=True)
+    f = os.path.join(d, "im.wav")
+    if not os.path.exists(f):
+        subprocess.run([FF, "-y", "-v", "error", "-f", "lavfi", "-i",
+                        "sine=f=1000:d=0.30", "-af", "volume=0.0005",
+                        "-ac", "2", "-ar", "48000", f],
+                       capture_output=True, creationflags=_NOWIN, timeout=120)
+    return d
+
+
 def do_mot_clip(ten: str, src: str, ss: float, dai: float, td: str,
                 voice_vol: float = 1.0) -> dict:
-    """Xuất BẬT/TẮT với mốc TỰ DÒ (đang nói + khoảng lặng) rồi đo từng mốc.
+    """Xuất BẬT / TẮT / CHE với mốc TỰ DÒ (đang nói + khoảng lặng) rồi đo.
 
     Trả dict gom mọi vi phạm — caller quyết định báo mục nào."""
     m_noi, m_im = chon_moc(src, ss, dai)
@@ -604,12 +652,16 @@ def do_mot_clip(ten: str, src: str, ss: float, dai: float, td: str,
     d = os.path.join(td, ten)
     os.makedirs(d, exist_ok=True)
     a, b = os.path.join(d, "on.mp4"), os.path.join(d, "off.mp4")
+    ch = os.path.join(d, "che.mp4")
     segs = [(ss, ss + dai)]
     log = xuat(src, a, segs, [dict(c) for c in hu], True, orig_vol=voice_vol)
     xuat(src, b, segs, [dict(c) for c in hu], False, orig_vol=voice_vol)
+    xuat(src, ch, segs, [dict(c) for c in hu], True, orig_vol=voice_vol,
+         fx_sfx_dir=thu_muc_im(td))
     pa, pb = pcm(a), pcm(b)
     n = min(len(pa), len(pb))
     pa, pb = pa[:n], pb[:n]
+    pm = pcm(ch)[:n]
     ra, rb = rms_day(pa), rms_day(pb)
     rl = rms_day(hieu(pa, pb))
     l_db = db(muc_loi(rb))
@@ -620,26 +672,35 @@ def do_mot_clip(ten: str, src: str, ss: float, dai: float, td: str,
           f"{pk_t:+.2f} ({cham_t} mẫu) ---")
     print(f"      {'mốc':>6} {'ca':<12} {'nền':>6} {'TẮT':>6} {'BẬT':>6} "
           f"{'NỔI':>6} {'SFX':>6} | " + " ".join(f"{x:>7}" for x in TEN_DAI)
-          + "  D_LOA nghe?")
+          + "  D_LOA  D_CHE nghe?")
     kq: dict = {"cam": [], "at": [], "meo": [], "noi_thap": [], "moc": [],
-                "loi_db": l_db}
+                "loi_db": l_db, "hut": 0.0}
     for g in sorted(ca_theo_moc):
         ca = ca_theo_moc[g]
         n_db = db(nen_cuc_bo(rb, g))
         on, off = db(dinh(ra, g)), db(dinh(rb, g))
         lop = db(dinh(rl, g))
-        dloa, dd = do_nghe_ra(pa, pb, g)
-        nghe = "RÕ" if dloa >= NGHE_RO else ("mờ" if dloa >= NGHE_MIN
+        dche, dd = do_nghe_ra(pa, pm, g)     # so với THỨ ĐANG CHE  <- tiêu chí
+        dloa, dd_tat = do_nghe_ra(pa, pb, g)  # so với nguồn CHƯA hạ <- tham khảo
+        nghe = "RÕ" if dche >= NGHE_RO else ("mờ" if dche >= NGHE_MIN
                                              else "KHÔNG")
-        c = "  " if dloa >= NGHE_MIN else "!!"
+        c = "  " if dche >= NGHE_MIN else "!!"
         print(f"    {c} {g:5.2f}s {ca:<12} {n_db:6.1f} {off:6.1f} {on:6.1f} "
               f"{on - n_db:+6.1f} {lop:6.1f} | "
               + " ".join(f"{v:+7.1f}" for v in dd)
-              + f" {dloa:+6.1f} {nghe}")
-        kq["moc"].append({"giay": g, "ca": ca, "dloa": dloa, "nghe": nghe})
-        if dloa < NGHE_MIN:
-            kq["cam"].append(f"{ten}@{g:.2f}s [{ca}] dải to thêm "
-                             f"{dloa:+.1f} dB")
+              + f" {dloa:+6.1f} {dche:+6.1f} {nghe}")
+        kq["moc"].append({"giay": g, "ca": ca, "dloa": dloa, "dche": dche,
+                          "nghe": nghe})
+        if dche < NGHE_MIN:
+            kq["cam"].append(f"{ten}@{g:.2f}s [{ca}] nổi khỏi thứ đang che "
+                             f"{dche:+.1f} dB")
+        # KHÔNG ĐƯỢC THÀNH CÁI HỐ: ducking hạ giọng mà tiếng động không lấp
+        # lại thì khán giả chỉ nghe "hụt một cái" — tệ hơn không làm gì.
+        _hut = float(dd_tat[1:4].min())
+        kq["hut"] = min(kq["hut"], _hut)
+        if _hut < HUT_MOC_MAX:
+            kq["at"].append(f"{ten}@{g:.2f}s [{ca}] dải giọng TỤT {_hut:+.1f} "
+                            f"dB so bản TẮT (trần {HUT_MOC_MAX:+.1f})")
         # CHỐNG ÁT LỜI — so với mức lời CỤC BỘ tại mốc (hoặc cả clip, cái CAO
         # hơn): lớp tiếng động không được vượt 1,5x. +2,0 dB dung sai đo vì lớp
         # SFX tách bằng phép trừ sóng nên dính cả nhiễu lượng tử AAC.
@@ -688,22 +749,26 @@ def _gom(ket: list) -> None:
         n_ro = sum(1 for m in g if m["nghe"] == "RÕ")
         print(f"      >> ca {ca:<12}: {len(g)} mốc · RÕ {n_ro} · mờ "
               f"{sum(1 for m in g if m['nghe'] == 'mờ')} · KHÔNG "
-              f"{sum(1 for m in g if m['nghe'] == 'KHÔNG')} · D_LOA "
+              f"{sum(1 for m in g if m['nghe'] == 'KHÔNG')} · D_CHE "
+              f"{min(m['dche'] for m in g):+.1f} .. "
+              f"{max(m['dche'] for m in g):+.1f} dB (D_LOA "
               f"{min(m['dloa'] for m in g):+.1f} .. "
-              f"{max(m['dloa'] for m in g):+.1f} dB")
+              f"{max(m['dloa'] for m in g):+.1f})")
     n_ro = sum(1 for m in moc if m["nghe"] == "RÕ")
-    bao(f"MỌI mốc NGHE RA ĐƯỢC (dải 300 Hz+ to thêm >= {NGHE_MIN:.0f} dB) — "
-        f"{len(moc)} mốc, cả ca ĐANG NÓI lẫn ca KHOẢNG LẶNG",
+    bao(f"MỌI mốc NGHE RA ĐƯỢC (dải 300 Hz+ nổi khỏi THỨ ĐANG CHE >= "
+        f"{NGHE_MIN:.0f} dB) — {len(moc)} mốc, cả ca ĐANG NÓI lẫn KHOẢNG LẶNG",
         not xau, "; ".join(xau) or f"{len(moc)}/{len(moc)} đạt · thấp nhất "
-        f"{min(m['dloa'] for m in moc):+.1f} dB")
+        f"{min(m['dche'] for m in moc):+.1f} dB")
     bao(f"phần lớn mốc nghe RÕ (>= {NGHE_RO:.0f} dB, tối thiểu "
         f"{RO_TY_LE*100:.0f}% số mốc)",
         bool(moc) and n_ro >= RO_TY_LE * len(moc),
         f"{n_ro}/{len(moc)} mốc RÕ ({100.0*n_ro/max(1,len(moc)):.0f}%)")
-    bao(f"tiếng động KHÔNG ÁT LỜI (lớp SFX <= {AT_LOI_LAN}x mức lời tại mốc · "
-        f"ngoài mốc dải giọng đổi <= {NGOAI_MOC_MAX:.1f} dB)",
+    bao(f"tiếng động KHÔNG ÁT LỜI, cũng KHÔNG thành CÁI HỐ (lớp SFX <= "
+        f"{AT_LOI_LAN}x mức lời tại mốc · ngoài mốc dải giọng đổi <= "
+        f"{NGOAI_MOC_MAX:.1f} dB · tại mốc không tụt quá {-HUT_MOC_MAX:.1f} dB)",
         not at, "; ".join(at) or
-        f"ngoài mốc đổi nhiều nhất {max(k['ngoai'] for k in ket):+.2f} dB")
+        f"ngoài mốc đổi nhiều nhất {max(k['ngoai'] for k in ket):+.2f} dB · "
+        f"tại mốc tụt sâu nhất {min(k['hut'] for k in ket):+.2f} dB")
     bao(f"mốc KHOẢNG LẶNG vẫn NỔI >= {NOI_MIN:+.0f} dB trên nền cục bộ "
         f"(giữ đúng bất biến v2.19.0)", not nt, "; ".join(nt) or "đạt hết")
     bao(f"KHÔNG MÉO: đỉnh file <= {TRAN_DINH_DB:.0f} dBFS + 0 mẫu chạm trần "
@@ -715,7 +780,8 @@ def ca_ba_nen(td: str) -> None:
     """CA CHÍNH — 3 VIDEO THẬT NỀN KHÁC NHAU, mốc TỰ DÒ vào đúng chỗ đang nói
     và đúng chỗ im lặng. Đây là ca bắt được lỗi "nói át rồi"."""
     print(f"\n[CA 2] BA MỨC NỀN x (mốc ĐANG NÓI + mốc KHOẢNG LẶNG) — mọi mốc "
-          f"phải NGHE RA ĐƯỢC (dải 300 Hz+ to thêm >= {NGHE_MIN:.0f} dB)")
+          f"phải NGHE RA ĐƯỢC (dải 300 Hz+ nổi khỏi THỨ ĐANG CHE >= "
+          f"{NGHE_MIN:.0f} dB)")
     ket = []
     for ten, mo_ta, ss, _n_seg in BA_NEN:
         ket.append(do_mot_clip(ten.replace(" ", "_").replace("Ề", "E")
@@ -743,6 +809,73 @@ def ca_giong_to_nho(td: str) -> None:
     bao("giọng TO đạt mức lời ~-12 dBFS (đúng ca anh Hùng nêu)",
         to >= -15.0, f"{to:.1f} dBFS")
     _gom(ket)
+
+
+def ca_tu_kiem_bo_do(td: str) -> None:
+    """TỰ KIỂM BỘ DÒ — cổng phải BIẾT KÊU, không thì nó chỉ là con dấu.
+
+    Ép ĐÚNG 1 file tiếng động vào cùng một mốc ĐANG NÓI, cùng clip, cùng hệ số
+    (thay `_sfx_library`, đường dẫn vẫn trong kho nên `muc_do.json` tra được —
+    trỏ `fx_sfx_dir` ra ngoài kho thì `_muc_sfx3` lùi về số suy ra, hệ số lệch
+    và phép so mất nghĩa):
+      * file SÁNG, không hụt qua loa -> cổng phải chấm NGHE RA;
+      * file TRẦM `boom_deep_05` (hụt **44,7 dB** khi cắt <300 Hz) -> cổng phải
+        chấm **KHÔNG NGHE RA**.
+    Đây đúng ca anh Hùng gặp: trên máy đo nó "to đúng đích", trên điện thoại nó
+    câm. Bản trước của cổng chấm ca này ĐẠT."""
+    print("\n[CA 3B] TỰ KIỂM BỘ DÒ: ép file TRẦM vào mốc đang nói -> cổng phải "
+          "chấm KHÔNG NGHE RA")
+    ten, mo_ta, ss = "tu_kiem", BA_NEN[2][1], 300.0
+    src = tim_nguon(mo_ta)
+    m_noi, _m_im = chon_moc(src, ss, 13.0)
+    if not m_noi:
+        bao("tìm được mốc ĐANG NÓI để ép file", False, "không có mốc nào")
+        return
+    g = sorted(m_noi)[0]
+    hu = [{"bat": round(g, 2), "het": round(g + 0.40, 2),
+           "khoa": "zoom_nhoi", "dam": 0.25}]
+    segs = [(ss, ss + 13.0)]
+    d = os.path.join(td, ten)
+    os.makedirs(d, exist_ok=True)
+    b, ch = os.path.join(d, "off.mp4"), os.path.join(d, "che.mp4")
+    xuat(src, b, segs, [dict(x) for x in hu], False)
+    xuat(src, ch, segs, [dict(x) for x in hu], True,
+         fx_sfx_dir=thu_muc_im(td))
+    pb, pm = pcm(b), pcm(ch)
+    n = min(len(pb), len(pm))
+    goc = FU._sfx_library()
+    ra = {}
+    try:
+        for nhan, key in (("SÁNG", "impact/k_impactsounds_impactGlass_light_"
+                                   "001.opus"),
+                          ("TRẦM", "impact/boom_deep_05.opus")):
+            f = str(FU._assets_sfx_dir() / key)
+            if not os.path.exists(f):
+                bao(f"kho có file {key}", False, "không thấy file")
+                return
+            FU._SFX_LIB_CACHE = dict(goc, impact=[f])
+            a = os.path.join(d, f"on_{nhan}.mp4")
+            xuat(src, a, segs, [dict(x) for x in hu], True)
+            dche, _dd = do_nghe_ra(pcm(a)[:n], pm[:n], g)
+            dloa, _d2 = do_nghe_ra(pcm(a)[:n], pb[:n], g)
+            ra[nhan] = dche
+            print(f"      {nhan:<5} {os.path.basename(f):<38} sáng "
+                  f"{FU.do_sang_sfx(f):+6.1f} · hụt-loa "
+                  f"{FU.hut_qua_loa(f):+6.1f} -> D_CHE {dche:+5.1f} dB · "
+                  f"D_LOA {dloa:+5.1f} dB")
+    finally:
+        FU._SFX_LIB_CACHE = goc
+    bao("file SÁNG (không hụt qua loa điện thoại) -> NGHE RA ĐƯỢC",
+        ra.get("SÁNG", -99) >= NGHE_RO,
+        f"D_CHE {ra.get('SÁNG', -99):+.1f} dB (cần >= {NGHE_RO:.0f})")
+    bao("file TRẦM (hụt 44,7 dB qua loa) -> cổng KÊU 'KHÔNG NGHE RA' "
+        "(chứng minh cổng biết chấm hỏng)",
+        ra.get("TRẦM", 99) < NGHE_MIN,
+        f"D_CHE {ra.get('TRẦM', 99):+.1f} dB (phải < {NGHE_MIN:.0f})")
+    bao("cùng mốc, cùng hệ số — chỉ khác file: chênh nhau rõ rệt",
+        ra.get("SÁNG", -99) - ra.get("TRẦM", 99) >= 5.0,
+        f"SÁNG {ra.get('SÁNG', 0):+.1f} vs TRẦM {ra.get('TRẦM', 0):+.1f} = "
+        f"cách {ra.get('SÁNG', 0) - ra.get('TRẦM', 0):+.1f} dB")
 
 
 def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
@@ -941,6 +1074,7 @@ def main() -> int:
         ca_ham_thuan()
         ca_ba_nen(td)
         ca_giong_to_nho(td)
+        ca_tu_kiem_bo_do(td)
         ca_diem_nhan_co_tieng(src, td)
         ca_ducking(src, td)
         ca_tat_la_tat(src, td)
