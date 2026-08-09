@@ -70,6 +70,19 @@ def _dur(s):
     return f"{s // 60}:{s % 60:02d}"
 
 
+def _XH_MD_NHAN() -> str:
+    """'BẬT'/'TẮT' — MẶC ĐỊNH TOÀN CỤC của AI xem hình (`settings.VISION_CUT`).
+
+    Phải hiện ra nhãn chứ không ghi "(mặc định)" trơn: bài học cổng 16 v2.6.25
+    (anh Hùng nhìn "(mẫu đang chọn)" tưởng gần 200 kênh CHƯA chọn gì). Đọc mỗi
+    lần gọi vì mặc định có thể đổi trong phiên (Cài đặt / .env)."""
+    try:
+        from config import settings as _stx
+        return "BẬT" if getattr(_stx, "VISION_CUT", False) else "TẮT"
+    except Exception:  # noqa: BLE001 - nhãn không bao giờ được làm sập bảng
+        return "TẮT"
+
+
 class _SegBar(QWidget):
     """Thanh nhỏ cho THẤY AI giữ đoạn nào (xanh) / bỏ đoạn nào (khoảng trống)."""
 
@@ -4532,7 +4545,7 @@ class StudioPage(QWidget):
         lay.addWidget(ov)
 
         # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
-        tbl = QTableWidget(0, 9)   # +1: cột Mẫu riêng theo kênh
+        tbl = QTableWidget(0, 10)  # +1 Mẫu riêng · +1 AI xem hình theo kênh
         self._pipe_tbl = tbl
         # Cột "Chờ cắt" (mới): số video ĐANG NẰM trong thư mục kênh, sẵn sàng
         # cắt — để user THẤY TRƯỚC khi chạy (kênh 2 video hiện 2, không có = 0),
@@ -4540,8 +4553,11 @@ class StudioPage(QWidget):
         # Tiêu đề NGẮN (gọn bề ngang, ý nghĩa đầy đủ nằm ở tooltip từng ô).
         # 2 cột số GIỮ RIÊNG vì khác nghĩa: "Chờ" = video đang nằm trong thư
         # mục chờ cắt · "Đã cắt" = số Part đã xuất ra.
+        # Cột "AI xem hình" (MỚI 09/08/2026): bật/tắt AI XEM KHUNG HÌNH cho
+        # TỪNG kênh. Nhãn CHỮ THUẦN, không emoji (máy anh Hùng thiếu glyph ->
+        # ô đen, đã sập ở v2.6.22).
         tbl.setHorizontalHeaderLabels(
-            ["✓", "Kênh", "Nhóm", "Chế độ", "Mẫu", "Chờ",
+            ["✓", "Kênh", "Nhóm", "Chế độ", "Mẫu", "AI xem hình", "Chờ",
              "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
@@ -4557,8 +4573,8 @@ class StudioPage(QWidget):
             f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
-        for col in (0, 2, 3, 4, 5, 6, 7):
+        hh.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+        for col in (0, 2, 3, 4, 5, 6, 7, 8):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(tbl, 2)
 
@@ -4640,7 +4656,7 @@ class StudioPage(QWidget):
         def fill():
             rows = db.query(
                 "SELECT id, name, grp, pipe_on, pipe_mode, pipe_daily, pipe_src, "
-                "export_dir, pipe_hidden, tpl_name FROM projects "
+                "export_dir, pipe_hidden, tpl_name, xem_hinh FROM projects "
                 "ORDER BY grp, name")
             all_groups = sorted({(r["grp"] or "") for r in rows},
                                  key=lambda s: (s == "", s.lower()))
@@ -4833,6 +4849,42 @@ class StudioPage(QWidget):
                     services.set_project_template(p, c.currentData() or "")
                 tcb.activated.connect(_on_tpl)
                 tbl.setCellWidget(i, 4, tcb)
+                # ---- AI XEM HÌNH RIÊNG THEO KÊNH (anh Hùng 09/08/2026:
+                # "cứ thêm phần bật tuỳ chỉnh từng kênh đã, tôi test xem sao,
+                # nếu oke thì mặc định tất cả"). BA lựa chọn, không phải hai —
+                # xem `services.set_project_vision`.
+                # Nhãn mục đầu phải NÓI RÕ mặc định đang là gì (bài học cổng 16
+                # v2.6.25a: ghi "(mặc định)" trơn thì user tưởng kênh chưa chọn
+                # rồi đi bấm tay gần 200 kênh).
+                vcb = NoWheelComboBox()
+                vcb.addItem(f"(mặc định: {_XH_MD_NHAN()})", "")
+                vcb.addItem("BẬT xem hình", "1")
+                vcb.addItem("TẮT xem hình", "0")
+                _vcur = ""
+                try:
+                    _vraw = r["xem_hinh"] if "xem_hinh" in r.keys() else None
+                    if _vraw is not None and _vraw != "":
+                        _vcur = "1" if int(_vraw) else "0"
+                except (KeyError, TypeError, ValueError):
+                    _vcur = ""
+                _vi = vcb.findData(_vcur)
+                vcb.setCurrentIndex(_vi if _vi >= 0 else 0)
+                vcb.setToolTip(
+                    "AI XEM KHUNG HÌNH cho kênh này (ngoài đọc lời thoại, AI "
+                    "còn nhìn ~12 khung rải khắp video rồi mới chọn đoạn).\n"
+                    "Đo A/B 60 lượt thật: video ĐỦ DÀI thì lựa chọn ĐỔI THẬT "
+                    "(chồng lấn 6,8% và 23,4%); video ~53 giây chọn Y HỆT nên "
+                    "app tự bỏ qua.\nGiá: +1,6 đến +10,6 giây/video.\n"
+                    "'(mặc định: …)' = đi theo cài đặt chung của app như cũ.\n"
+                    "Muốn đặt 1 lượt cho MỌI kênh đang hiện: bấm tiêu đề cột "
+                    "'AI xem hình' (hoặc menu 🔧 Sửa & làm lại).")
+
+                def _on_xh(_i, p=pid, c=vcb):
+                    d = c.currentData()
+                    services.set_project_vision(
+                        p, None if not d else (d == "1"))
+                vcb.activated.connect(_on_xh)
+                tbl.setCellWidget(i, 5, vcb)
                 # PART ĐÃ CẮT (tổng mọi ngày): cột 'note' lưu "N part" mỗi video
                 # xong -> CAST lấy số Part; COUNT(*) = số video gốc đã xử lý.
                 # Hiện SỐ PART (clip xuất ra — đúng cái user quan tâm để đăng),
@@ -4849,7 +4901,7 @@ class StudioPage(QWidget):
                 it_done.setToolTip(
                     f"{nvid} video gốc đã cắt xong → xuất ra {nparts} Part "
                     "(clip để đăng). 1 video thường ra nhiều Part.")
-                tbl.setItem(i, 6, it_done)
+                tbl.setItem(i, 7, it_done)
                 # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
                 today = db.query_one(
                     "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
@@ -4868,7 +4920,7 @@ class StudioPage(QWidget):
                     cell = " ".join(bits)
                 it6 = QTableWidgetItem(cell)
                 it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(i, 7, it6)
+                tbl.setItem(i, 8, it6)
                 # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
                 # mặc định = <trung chuyển>\<tên kênh>; có thể CHỌN RIÊNG cho
                 # từng kênh (pipe_src) để trỏ thẳng vào thư mục tool tải đã lưu.
@@ -4912,7 +4964,7 @@ class StudioPage(QWidget):
                     "cho ra nhiều Part). 0 = thư mục trống / đã cắt hết."
                     if n_ready else
                     "Chưa có video nào chờ cắt (thư mục trống hoặc đã cắt xong).")
-                tbl.setItem(i, 5, it_pend)
+                tbl.setItem(i, 6, it_pend)
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
                 lb = QLabel("⚠ Chưa có Thư mục lưu — đặt ở phần Kênh"
@@ -4942,13 +4994,13 @@ class StudioPage(QWidget):
                 rdo.clicked.connect(
                     lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
                 fl.addWidget(rdo)
-                tbl.setCellWidget(i, 8, fw)
+                tbl.setCellWidget(i, 9, fw)
             # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
             # setUpdatesEnabled(False) ở đầu vòng).
             _hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
             _hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            _hh.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
-            for _c in (0, 2, 3, 4, 5, 6, 7):
+            _hh.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+            for _c in (0, 2, 3, 4, 5, 6, 7, 8):
                 _hh.setSectionResizeMode(_c, QHeaderView.ResizeMode.ResizeToContents)
             tbl.setUpdatesEnabled(True)
             # Gắn TỔNG video chờ cắt vào dòng thống kê → user thấy cả nhóm còn
@@ -4978,10 +5030,12 @@ class StudioPage(QWidget):
         # BẤM TIÊU ĐỀ CỘT "Mẫu" = gán 1 mẫu cho mọi kênh đang hiện (khỏi bấm
         # từng kênh khi có ~200 kênh). Không thêm nút mới cho khỏi rối hàng nút.
         _hh = tbl.horizontalHeader()
-        _hh.setToolTip("Bấm tiêu đề cột 'Mẫu' để gán 1 mẫu cho MỌI kênh đang "
+        _hh.setToolTip("Bấm tiêu đề cột 'Mẫu' để gán 1 mẫu — hoặc tiêu đề cột "
+                       "'AI xem hình' để bật/tắt xem hình — cho MỌI kênh đang "
                        "hiện trong bảng.")
         _hh.sectionClicked.connect(
-            lambda c: self._pipe_bulk_tpl() if c == 4 else None)
+            lambda c: self._pipe_bulk_tpl() if c == 4
+            else (self._pipe_bulk_xem_hinh() if c == 5 else None))
         # Gõ tìm kênh: KHÔNG dựng lại bảng mỗi phím (49 kênh -> quét thư mục +
         # dựng lại combo mỗi ký tự = ĐƠ GIẬT). Debounce 280ms: gõ xong mới lọc.
         from PyQt6.QtCore import QTimer as _QTsrch
@@ -6093,6 +6147,11 @@ class StudioPage(QWidget):
         a0.setToolTip("Khỏi bấm từng kênh (gần 200 kênh): chọn 1 mẫu -> áp cho "
                       "tất cả kênh đang hiện trong bảng (theo nhóm + ô tìm).")
         a0.triggered.connect(self._pipe_bulk_tpl)
+        # Nhãn CHỮ THUẦN (không emoji): máy anh Hùng thiếu glyph -> ô đen.
+        a0b = m.addAction("Bật/tắt AI xem hình cho MỌI kênh đang hiện…")
+        a0b.setToolTip("AI nhìn ~12 khung rải khắp video rồi mới chọn đoạn. "
+                       "Chỉ đụng kênh ĐANG HIỆN trong bảng (theo nhóm + ô tìm).")
+        a0b.triggered.connect(self._pipe_bulk_xem_hinh)
         m.addSeparator()
         a2 = m.addAction("🔁 Phân tích lại video 'Cắt cơ bản' (mọi kênh)…")
         a2.setToolTip("Quét mọi kênh tìm video lỡ ra clip chưa qua AI, khôi "
@@ -6188,6 +6247,57 @@ class StudioPage(QWidget):
             nm = tbl.item(r, 1).text() if tbl.item(r, 1) is not None else ""
             ra.append((int(pid), nm))
         return ra
+
+    # ---- AI XEM HÌNH RIÊNG THEO KÊNH (anh Hùng 09/08/2026) ----
+    def _pipe_apply_xem_hinh_all(self, gt) -> int:
+        """Đặt AI XEM HÌNH (`gt`: True/False/None) cho MỌI kênh ĐANG HIỆN.
+
+        Lấy pid từ BẢNG (`_pipe_rows_pid`) chứ KHÔNG query lại DB -> tự tôn
+        trọng nhóm đang chọn + ô tìm kênh, đúng luật "nút làm tất cả chỉ đụng
+        phần ĐANG LỌC". Cũng vì thế 2 kênh TRÙNG TÊN khác nhóm không lẫn nhau
+        (lỗi thật của cổng 29: tra id THEO TÊN). Trả số kênh đã đổi."""
+        n = 0
+        for pid, _nm in self._pipe_rows_pid():
+            try:
+                services.set_project_vision(pid, gt)
+                n += 1
+            except Exception:  # noqa: BLE001 - 1 kênh lỗi không chặn cả loạt
+                continue
+        return n
+
+    def _pipe_bulk_xem_hinh(self) -> None:
+        """Đặt AI XEM HÌNH 1 LƯỢT cho mọi kênh đang hiện (gần 300 kênh thì bấm
+        từng cái là không làm nổi). Nhãn CHỮ THUẦN, không emoji."""
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        ds = self._pipe_rows_pid()
+        if not ds:
+            QMessageBox.information(
+                self, "Không có kênh",
+                "Bảng đang không hiện kênh nào (đổi nhóm hoặc xoá ô tìm kênh).")
+            return
+        THEO_MD = f"Theo mặc định app ({_XH_MD_NHAN()})"
+        BAT, TAT = "BẬT AI xem hình", "TẮT AI xem hình"
+        ten, okp = QInputDialog.getItem(
+            self, "AI xem hình cho mọi kênh đang hiện",
+            f"Áp cho {len(ds)} kênh ĐANG HIỆN trong bảng (theo nhóm + ô tìm):",
+            [THEO_MD, BAT, TAT], 0, False)
+        if not okp or not ten:
+            return
+        gt = None if ten == THEO_MD else (ten == BAT)
+        if QMessageBox.question(
+                self, "Xác nhận",
+                f"Đặt «{ten}» cho {len(ds)} kênh?\n\n"
+                "Chỉ đổi CÁCH CHỌN ĐOẠN của lần cắt sau, không đụng video/clip "
+                "nào. Video KHÔNG có lời nói vẫn tự xem hình như cũ.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes) != QMessageBox.StandardButton.Yes:
+            return
+        n = self._pipe_apply_xem_hinh_all(gt)
+        fill = getattr(self, "_pipe_fill", None)
+        if callable(fill):
+            fill()                       # bảng hiện lại lựa chọn mới ngay
+        QMessageBox.information(self, "Đã đặt AI xem hình",
+                                f"Đã đặt «{ten}» cho {n} kênh.")
 
     def _pipe_apply_tpl_all(self, ten: str) -> int:
         """Gán mẫu `ten` ('' = ăn theo mẫu trang chính) cho MỌI kênh đang hiện.
