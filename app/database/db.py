@@ -265,6 +265,21 @@ class Database:
                     "DEFAULT ''")
                 self.conn().commit()
                 cols.append("tpl_name")
+            # AI XEM HÌNH RIÊNG THEO KÊNH (anh Hùng 09/08/2026: "cứ thêm phần
+            # bật tuỳ chỉnh từng kênh đã, tôi test xem sao, nếu oke thì mặc
+            # định tất cả"). BA trạng thái, KHÔNG phải hai:
+            #   NULL = kênh CHƯA đụng tới -> đi theo MẶC ĐỊNH APP (settings.
+            #          VISION_CUT, hiện TẮT). Sau này đổi mặc định toàn cục thì
+            #          gần 300 kênh chưa đụng tự đi theo, không phải sửa DB.
+            #   1    = kênh BẬT riêng  ·  0 = kênh TẮT riêng (đè cả mặc định).
+            # Vì vậy cột KHÔNG được khai NOT NULL DEFAULT 0 — làm thế là ép mọi
+            # kênh cũ vào trạng thái "đã chọn TẮT" và mất luôn đường đổi mặc
+            # định toàn cục (đúng bẫy mà `tpl_name`='' né được nhờ ''-là-NULL).
+            if "xem_hinh" not in cols:
+                self.conn().execute(
+                    "ALTER TABLE projects ADD COLUMN xem_hinh INTEGER")
+                self.conn().commit()
+                cols.append("xem_hinh")
             self.conn().execute(
                 """CREATE TABLE IF NOT EXISTS pipeline_files (
                        id INTEGER PRIMARY KEY AUTOINCREMENT,

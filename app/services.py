@@ -459,6 +459,44 @@ def project_template_name(project_id) -> str:
     return ((r["tpl_name"] if r else "") or "").strip()
 
 
+# ---- AI XEM HÌNH RIÊNG THEO KÊNH (anh Hùng 09/08/2026) ----
+#: giá trị hợp lệ của `projects.xem_hinh`. Dùng None chứ KHÔNG dùng '' hay -1:
+#: SQLite NULL là thứ duy nhất phân biệt được "chưa ai đụng tới" với "user đã
+#: chủ động chọn TẮT" — mà phân biệt đó chính là điều kiện để sau này đổi mặc
+#: định toàn cục (bật cho tất cả) mà không giẫm lên lựa chọn của anh Hùng.
+def set_project_vision(project_id: int, bat) -> None:
+    """Đặt AI XEM HÌNH cho 1 kênh.
+
+    `bat`: True/1 = BẬT · False/0 = TẮT · None = XOÁ lựa chọn riêng (kênh đi
+    theo mặc định app như chưa từng đụng tới)."""
+    v = None if bat is None else (1 if bat else 0)
+    db.execute("UPDATE projects SET xem_hinh=? WHERE id=?",
+               (v, int(project_id)))
+
+
+def project_vision(project_id) -> Optional[bool]:
+    """AI XEM HÌNH của kênh: True = bật riêng · False = tắt riêng ·
+    **None = kênh chưa đụng tới -> theo mặc định app**. KHÔNG BAO GIỜ ném lỗi
+    (DB cũ chưa có cột / DB vỡ -> None = y như cũ)."""
+    try:
+        r = db.query_one("SELECT xem_hinh FROM projects WHERE id=?",
+                         (int(project_id),))
+    except (TypeError, ValueError):
+        return None
+    if not r:
+        return None
+    try:
+        v = r["xem_hinh"]
+    except (KeyError, IndexError):
+        return None
+    if v is None or v == "":
+        return None
+    try:
+        return bool(int(v))
+    except (TypeError, ValueError):
+        return None
+
+
 def project_template(project_id) -> Optional[dict]:
     """MẪU (dict) của kênh, hoặc None nếu kênh chưa gán / mẫu đã bị xoá.
 

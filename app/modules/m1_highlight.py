@@ -1781,7 +1781,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         pass
 
     digest: list = []
-    if _vd.vision_digest_enabled() or _khong_loi:
+    # `nen_xem_hinh` = gate CÓ tính Ô BẬT RIÊNG CỦA KÊNH (`projects.xem_hinh`).
+    # Kênh chưa đụng tới (NULL) -> trả đúng thứ `vision_digest_enabled()` trả ở
+    # v2.21.0. `build_vision_digest` tự tra lại ô đó nên đây chỉ quyết định có
+    # HIỆN dòng tiến trình hay không, không phải cửa duy nhất.
+    if _vd.nen_xem_hinh(video_id) or _khong_loi:
         ctx.progress(0.20, "AI đang xem khung hình khắp video..."
                      if not _khong_loi else
                      "Video không lời — AI XEM HÌNH để hiểu nội dung "

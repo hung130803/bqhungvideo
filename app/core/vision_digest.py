@@ -43,6 +43,27 @@ _FRAME_W = 384              # ảnh nhỏ (jpg) — đỡ tốn token vision
 LOI_CUOI = ""
 _DESC_MAX = 90              # cắt desc dài (model lắm lời) — giữ prompt gọn
 
+#: ---- SỐ MỐC HÌNH TỐI THIỂU ĐỂ XEM HÌNH CÓ NGHĨA ----
+#: ĐO A/B 60 lượt thật 09/08/2026 (6 video × 5 vòng × 2 bên, cùng máy, đan xen):
+#:   video 728 s (12 mốc) -> lựa chọn chồng lấn chỉ **6,8%**  (p=0,024)
+#:   video 150 s ( 8 mốc) -> chồng lấn **23,4%**              (p=0,008)
+#:   video  53 s ( 3 mốc) -> chồng lấn **100%** = chọn Y HỆT bản không xem hình
+#: Tức dấu hiệu KHÔNG phải "video nói nhiều/ít" (hiệu ứng mạnh NHẤT lại ở video
+#: mật độ lời cao nhất 4,25 từ/giây) mà là **SỐ MỐC HÌNH**: dưới ngưỡng này thì
+#: digest quá thưa để đổi được lựa chọn, tiền và giây bỏ ra là bỏ không.
+#: Nguồn ~53 s chỉ được 3 mốc vì app rải ~20 s/khung (xem `_STEP`, `_CAP`).
+MOC_TOI_THIEU = 8
+
+#: ---- CHỐT CHẶN GROQ QUÁ TẢI (503 'over capacity') ----
+#: ĐO 09/08/2026: 1 video trong bộ A/B dính 503 CẢ 5/5 vòng -> **+244 giây**,
+#: trong khi 5 video còn lại chỉ +1,6 .. +10,6 giây. 503 KHÔNG khớp
+#: `is_rate_limit_error` nên không đốt key (đúng) — nhưng cũng vì thế app cứ
+#: thử tiếp hết batch này tới batch khác và mất hàng phút cho thứ chắc chắn
+#: hỏng. Quá ngần này giây HOẶC quá ngần này lượt 503 -> BỎ XEM HÌNH cho video
+#: đó, đi tiếp bằng chép lời (fail-safe đã có sẵn), ghi lý do vào nhật ký.
+VISION_HAN_GIAY = 28.0
+VISION_503_TOI_DA = 2
+
 _VISION_PROMPT = (
     "You are analyzing frames sampled from ONE video (in order). For EACH "
     "image, return a JSON array item: {\"i\": image index starting at 0, "
@@ -53,16 +74,53 @@ _VISION_PROMPT = (
     "action/impact/emotion 7-10}. Return ONLY the JSON array, no prose.")
 
 
-def vision_digest_enabled(bat_buoc: bool = False) -> bool:
+def xem_hinh_kenh(video_id) -> "bool | None":
+    """AI XEM HÌNH của KÊNH chứa video này: True/False/**None = chưa đặt**.
+
+    Vì sao tra ở ĐÂY chứ không bắt mỗi nơi gọi tự truyền xuống: cổng 19 đã ghi
+    lỗi thật (a) — mẫu-riêng-theo-kênh chỉ được áp ở đường DÂY CHUYỀN tự động
+    vì caller phải tự đổi biến, nên "Xuất video này"/"Xuất cả kênh" bấm tay vẫn
+    ăn cấu hình trang chính. Đặt việc tra cứu vào CỬA DUY NHẤT mà mọi đường
+    phân tích đều đi qua thì không đường nào bỏ sót được.
+
+    KHÔNG BAO GIỜ NÉM: DB cũ chưa có cột / DB vỡ / video mồ côi -> None (y hệt
+    hành vi v2.21.0)."""
+    try:
+        from app.database.db import db as _db
+        r = _db.query_one("SELECT project_id FROM videos WHERE id=?",
+                          (int(video_id),))
+        if not r:
+            return None
+        from app import services as _sv
+        return _sv.project_vision(r["project_id"])
+    except Exception:  # noqa: BLE001 - tra không ra -> theo mặc định app
+        return None
+
+
+def vision_digest_enabled(bat_buoc: bool = False, kenh=None) -> bool:
     """Có nên xây digest không: USE_VISION bật + KHÔNG LIGHT_MODE (máy yếu
     bỏ qua như cũ) + provider hiện tại nhìn được hình. Hàm rẻ, gọi trước để
-    quyết định có hiện progress 'AI đang xem khung hình' hay không."""
+    quyết định có hiện progress 'AI đang xem khung hình' hay không.
+
+    `kenh`: lựa chọn RIÊNG của kênh (`projects.xem_hinh`) — True = bật ·
+    False = tắt · **None = kênh chưa đụng tới -> đi đúng đường v2.21.0**.
+    """
     if not getattr(settings, "USE_VISION", False):
         return False
     # bat_buoc: gọi từ ca KHÔNG CÒN CĂN CỨ NÀO KHÁC (video không lời nói) —
     # lúc đó hình là tất cả những gì AI có, nên bật kể cả khi VISION_CUT tắt.
+    # Đứng TRƯỚC ô của kênh: anh Hùng chốt "video KHÔNG có lời vẫn tự bật như
+    # hiện nay, không phụ thuộc ô này".
     if bat_buoc:
         return llm.vision_available()
+    # Ô BẬT RIÊNG THEO KÊNH (anh Hùng 09/08/2026: "cứ thêm phần bật tuỳ chỉnh
+    # từng kênh đã, tôi test xem sao"). Kênh đã chọn thì tiếng nói của kênh là
+    # cuối cùng — đè cả VISION_CUT lẫn LIGHT_MODE.
+    if kenh is True:
+        return llm.vision_available()
+    if kenh is False:
+        return False
+    # kenh None (gần 300 kênh chưa đụng tới) -> TỪ ĐÂY XUỐNG Y HỆT v2.21.0.
     # VISION_CUT: bật AI XEM HÌNH cho khâu CHỌN ĐOẠN mà KHÔNG phải tắt
     # LIGHT_MODE. Vì sao tách (anh Hùng 06/08/2026 muốn "AI xem hình để hiểu
     # video ASMR/hành động"): LIGHT_MODE là cờ MÁY YẾU, tắt nó sẽ bật LUÔN
@@ -73,6 +131,13 @@ def vision_digest_enabled(bat_buoc: bool = False) -> bool:
     if getattr(settings, "LIGHT_MODE", True):
         return False
     return llm.vision_available()
+
+
+def nen_xem_hinh(video_id, bat_buoc: bool = False) -> bool:
+    """`vision_digest_enabled` CÓ tính ô bật riêng của kênh chứa video này.
+    Dùng ở nơi cần biết TRƯỚC (để hiện dòng tiến trình) — `build_vision_digest`
+    tự tra lại nên nơi gọi quên hàm này cũng không lọt."""
+    return vision_digest_enabled(bat_buoc, xem_hinh_kenh(video_id))
 
 
 def pick_frame_times(duration: float, cut_points=None,
@@ -168,14 +233,70 @@ def _sua_i(rows: list, batch: list, path: str) -> list:
     return ra
 
 
-def _mot_batch(batch: list, key_dau: int = 0) -> tuple:
+def la_loi_qua_tai(msg: str) -> bool:
+    """Lỗi Groq **QUÁ TẢI** (503 'over capacity' / 'service unavailable').
+
+    Phân biệt rạch ròi với 3 loại đã có: 429 = key hết lượt (phạt key, đợi) ·
+    413 = yêu cầu quá to (thu nhỏ, KHÔNG phạt key) · 503 = **máy chủ họ đang
+    quá tải** — không phải lỗi của key, không phải lỗi của yêu cầu, và đợi
+    trong cùng một lượt cắt cũng chẳng giúp gì. Hàm thuần."""
+    m = (msg or "").lower()
+    if "413" in m or "too large" in m:
+        return False            # 413 có đường xử lý RIÊNG (thu nhỏ), đừng lẫn
+    return any(s in m for s in ("503", "over capacity", "overloaded",
+                               "service unavailable", "service_unavailable",
+                               "temporarily unavailable"))
+
+
+class _ChotQuaTai:
+    """Sổ theo dõi 'video này có đáng xem hình tiếp không'.
+
+    Giữ mốc bắt đầu + số lượt 503. Quá `VISION_HAN_GIAY` giây HOẶC quá
+    `VISION_503_TOI_DA` lượt 503 -> `nen_dung()` = True, mọi batch còn lại bị
+    BỎ QUA (không gọi mạng thêm một lượt nào) và caller ghi nhật ký."""
+
+    def __init__(self, han_giay: float = None, so_503: int = None):
+        import time as _t
+        self._t = _t
+        self.moc = _t.monotonic()
+        self.han = float(VISION_HAN_GIAY if han_giay is None else han_giay)
+        self.tran_503 = int(VISION_503_TOI_DA if so_503 is None else so_503)
+        self.n_503 = 0
+        self.ly_do = ""
+
+    def da_ton(self) -> float:
+        return self._t.monotonic() - self.moc
+
+    def ghi_loi(self, err: str) -> None:
+        if err and la_loi_qua_tai(err):
+            self.n_503 += 1
+
+    def nen_dung(self) -> bool:
+        if self.n_503 >= self.tran_503:
+            self.ly_do = (f"Groq QUÁ TẢI (503) {self.n_503} lượt >= "
+                          f"{self.tran_503} — bỏ xem hình cho video này, đi "
+                          f"tiếp bằng chép lời")
+            return True
+        d = self.da_ton()
+        if d > self.han:
+            self.ly_do = (f"xem hình quá {self.han:.0f}s (đã {d:.1f}s) — bỏ "
+                          f"phần còn lại, đi tiếp bằng chép lời")
+            return True
+        return False
+
+
+def _mot_batch(batch: list, key_dau: int = 0, chot=None) -> tuple:
     """MỘT lượt vision -> `(rows, lời_lỗi)`. **KHÔNG BAO GIỜ NÉM** (trừ Huỷ).
 
     Tách ra khỏi vòng lặp để chạy được cả TUẦN TỰ lẫn SONG SONG bằng đúng một
     đoạn mã — hai nhánh khác nhau là hai chỗ để lệch nhau âm thầm.
     Lỗi -> `([], lý do)`: mất 1 batch vẫn hơn mất cả digest.
+    `chot`: sổ quá tải — đã chốt rồi thì KHÔNG gọi mạng nữa (nhánh song song
+    submit cả loạt một lượt, chặn ở đây mới thật sự cắt được).
     """
     from app.queue.worker import CanceledError
+    if chot is not None and chot.nen_dung():
+        return [], ""
     try:
         try:
             return _describe_batch([p for _, p in batch], key_dau), ""
@@ -214,8 +335,9 @@ def _gom(digest: list, batch: list, rows) -> None:
                            "act": max(0, min(10, act))})
 
 
-def _ghi_loi(video_id, ly_do: str) -> None:
-    """Ghi 1 dòng vào `logs/vision_<ngày>.log` khi AI XEM HÌNH ra 0 mốc.
+def _ghi_loi(video_id, ly_do: str, dau: str = "KHÔNG ra mốc nào") -> None:
+    """Ghi 1 dòng vào `logs/vision_<ngày>.log` khi AI XEM HÌNH ra 0 mốc **hoặc
+    bị BỎ QUA có chủ đích** (nguồn quá ngắn / Groq quá tải).
 
     Vì sao phải có: khâu này fail-safe tuyệt đối (lỗi -> [] -> chọn đoạn chạy
     như cũ) nên KHÔNG có gì hiện ra ngoài. Đúng cái đã che mất chuyện model
@@ -229,28 +351,37 @@ def _ghi_loi(video_id, ly_do: str) -> None:
         with open(d / f"vision_{datetime.now():%Y%m%d}.log", "a",
                   encoding="utf-8") as f:
             f.write(f"[{datetime.now():%H:%M:%S}] video {video_id} — AI xem "
-                    f"hình KHÔNG ra mốc nào · model="
+                    f"hình {dau} · model="
                     f"{getattr(settings, 'GROQ_VISION_MODEL', '?')} · {ly_do}\n")
     except Exception:  # noqa: BLE001 - ghi nhật ký không bao giờ được chặn việc
         pass
 
 
+_TU_TRA = object()      # sentinel: 'chưa biết ô của kênh -> tự tra từ video_id'
+
+
 def build_vision_digest(video_id: int, src_path: str, duration: float,
-                        ctx=None, bat_buoc: bool = False) -> list:
+                        ctx=None, bat_buoc: bool = False, kenh=_TU_TRA) -> list:
     """Xây (hoặc đọc cache) VISION DIGEST cho 1 video.
 
-    - Gate: vision_digest_enabled() (USE_VISION + không LIGHT_MODE + provider
-      vision) — không đạt -> [] (mọi thứ chạy như cũ).
+    - Gate: vision_digest_enabled() (USE_VISION + Ô CỦA KÊNH + không LIGHT_MODE
+      + provider vision) — không đạt -> [] (mọi thứ chạy như cũ). `kenh` bỏ
+      trống = TỰ TRA từ `video_id` (cửa duy nhất, không đường nào lọt).
     - CACHE: analysis kind='vision_digest' — có rồi trả luôn, KHÔNG gọi vision.
     - Trích <=_CAP frame (ưu tiên giữa cảnh theo scenes, fallback đều ~20s),
       jpg nhỏ ~480px vào thư mục TẠM (tự dọn), gọi vision BATCH _BATCH ảnh/lần.
+    - Dưới `MOC_TOI_THIEU` mốc -> BỎ QUA (đo: chọn Y HỆT bản không xem hình).
+    - Groq 503 quá tải / quá `VISION_HAN_GIAY` giây -> bỏ phần còn lại.
     - Lỗi từng batch -> bỏ batch đó (digest thiếu vẫn hơn không); TOÀN BỘ lỗi
       -> trả [] và KHÔNG cache (lần sau thử lại). ctx: progress + check hủy.
     """
     global LOI_CUOI
     LOI_CUOI = ""
-    if not vision_digest_enabled(bat_buoc):
-        LOI_CUOI = "tắt (USE_VISION/VISION_CUT/không có key vision)"
+    if kenh is _TU_TRA:
+        # bat_buoc thắng mọi ô -> khỏi tốn 1 lượt tra DB.
+        kenh = None if bat_buoc else xem_hinh_kenh(video_id)
+    if not vision_digest_enabled(bat_buoc, kenh):
+        LOI_CUOI = "tắt (USE_VISION/ô của kênh/VISION_CUT/không có key vision)"
         return []
     cached = get_analysis(video_id, VD_KIND)
     if isinstance(cached, list):
@@ -262,7 +393,19 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
     times = pick_frame_times(duration, scenes.get("cut_points"))
     if not times:
         return []
+    # ---- BỎ QUA KHI VÔ ÍCH: nguồn quá ngắn -> quá ít mốc hình ----
+    # Đo A/B 60 lượt: dưới MOC_TOI_THIEU mốc thì lựa chọn TRÙNG 100% với bản
+    # không xem hình. Bỏ ở đây = tiết kiệm mà KHÔNG mất gì. `bat_buoc` (video
+    # KHÔNG có lời nói) được đi tiếp: lúc đó hình là căn cứ DUY NHẤT còn lại,
+    # 3 mốc vẫn hơn không có gì.
+    if not bat_buoc and len(times) < MOC_TOI_THIEU:
+        LOI_CUOI = (f"BỎ QUA: nguồn {float(duration or 0):.0f}s chỉ ước lượng "
+                    f"{len(times)} mốc hình < {MOC_TOI_THIEU} — đo A/B cho "
+                    f"thấy dưới ngưỡng này AI chọn Y HỆT bản không xem hình")
+        _ghi_loi(video_id, LOI_CUOI, dau="BỊ BỎ QUA (không tốn lượt nào)")
+        return []
     from app.queue.worker import CanceledError
+    chot = _ChotQuaTai()
     digest: list = []
     try:
         with tempfile.TemporaryDirectory(prefix="vdg_") as td:
@@ -288,13 +431,18 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                 for bi, batch in enumerate(lo):
                     if ctx is not None and hasattr(ctx, "check_canceled"):
                         ctx.check_canceled()
+                    # CHỐT QUÁ TẢI/QUÁ GIỜ: kiểm TRƯỚC khi bỏ tiền cho batch
+                    # kế. Đo thật: 1 video dính 503 cả 5/5 vòng tốn +244 giây.
+                    if chot.nen_dung():
+                        break
                     if ctx is not None and hasattr(ctx, "progress"):
                         ctx.progress(0.22 + 0.06 * bi / max(1, n_batch),
                                      f"AI xem khung hình khắp video "
                                      f"({bi + 1}/{n_batch})...")
-                    rows, err = _mot_batch(batch, bi)
+                    rows, err = _mot_batch(batch, bi, chot)
                     if err:
                         LOI_CUOI = err
+                        chot.ghi_loi(err)
                     _gom(digest, batch, rows)
             else:
                 if ctx is not None and hasattr(ctx, "check_canceled"):
@@ -309,12 +457,14 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                     # `bi` vừa là thứ tự lượt vừa là MỐC XUẤT PHÁT trong vòng
                     # xoay key -> mỗi lượt bắt đầu ở một key khác nhau, không
                     # chen vào cùng một hàng đợi (đo: 40-45s -> 0,9s cho 3/4).
-                    ket = list(ex.map(lambda t: _mot_batch(t[1], t[0]),
+                    ket = list(ex.map(lambda t: _mot_batch(t[1], t[0], chot),
                                       list(enumerate(lo))))
                 for (rows, err), batch in zip(ket, lo):
                     if err:
                         LOI_CUOI = err
+                        chot.ghi_loi(err)
                     _gom(digest, batch, rows)
+                chot.nen_dung()          # để `ly_do` có chữ cho nhật ký
                 if ctx is not None and hasattr(ctx, "check_canceled"):
                     ctx.check_canceled()   # bấm Huỷ lúc đang đợi -> nổi lên đây
     except CanceledError:               # user bấm Hủy -> nổi lên cho worker
@@ -323,9 +473,20 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
         LOI_CUOI = f"{type(e).__name__}: {str(e)[:200]}"
         _ghi_loi(video_id, LOI_CUOI)
         return []
-    if not digest and LOI_CUOI:
+    if chot.ly_do:
+        # CẮT NGANG có chủ đích -> phải ghi sổ dù có nhặt được vài mốc, nếu
+        # không thì "digest thiếu một nửa" lại là một chuyện im lặng nữa.
+        LOI_CUOI = chot.ly_do
+        _ghi_loi(video_id, chot.ly_do,
+                 dau=f"BỊ CẮT NGANG ({len(digest)} mốc nhặt được)")
+    elif not digest and LOI_CUOI:
         _ghi_loi(video_id, LOI_CUOI)
     digest.sort(key=lambda d: d["t"])
+    if digest and chot.ly_do:
+        # BỊ CẮT NGANG -> DÙNG cho lượt này nhưng KHÔNG ĐÓNG DẤU vào cache:
+        # Groq quá tải là chuyện của 5 phút, đóng dấu digest cụt là video đó
+        # mang bản cụt VĨNH VIỄN (cache theo video, không hết hạn).
+        return digest
     if digest:                    # chỉ cache khi CÓ dữ liệu (lỗi tạm -> thử lại)
         try:
             _save_analysis(video_id, VD_KIND, "done", data=digest,

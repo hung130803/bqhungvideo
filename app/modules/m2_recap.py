@@ -677,7 +677,10 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     # -> đạo diễn chọn KHUNG CẢNH bằng cả mắt (khối 'HÌNH ẢNH THEO MỐC' trong
     # prompt). Tắt/lỗi/LIGHT_MODE -> [] (prompt y hệt cũ, fail-safe).
     v_digest: list = []
-    if _vd.vision_digest_enabled():
+    # `nen_xem_hinh`: gate CÓ tính ô bật riêng của KÊNH (`projects.xem_hinh`).
+    # Đường REUP cũng phải theo ô đó — cổng 19 lỗi (a) là bài học "áp mỗi ở
+    # dây chuyền, đường khác vẫn ăn cấu hình chung".
+    if _vd.nen_xem_hinh(video_id):
         ctx.progress(0.04, "AI đang xem khung hình khắp video...")
         v_digest = _vd.build_vision_digest(video_id, src_path, duration,
                                            ctx=ctx)
