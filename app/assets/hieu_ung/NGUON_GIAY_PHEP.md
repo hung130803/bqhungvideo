@@ -106,6 +106,29 @@ app bỏ qua, KHÔNG nổ lỗi. Đo thật: **6/6 ĐẠT**, 30/30 khung, lệch
 AV1, tải từ đâu về **không rõ nguồn** → **cấm ship**. Anh Hùng cho phép dùng
 không tạo ra quyền nếu file là của người khác. Một khiếu nại là dính cả cụm kênh.
 
+## 3b. NHÓM LỚP PHỦ HẠT (tuyết · trái tim · confetti…) — **0 BYTE tài nguyên**
+
+Thêm 09/08/2026. Anh Hùng yêu cầu *"tuyết rơi, trái tim bay, với rất nhiều kiểu
+khác"* nhưng đã chốt trước đó *"không được làm app quá nhiều dung lượng"* (gói
+đang 228 MB), và mục 3 ngay trên đây đã cấm 6 file overlay không rõ nguồn.
+
+**Nên 10 kiểu lớp phủ được SINH BẰNG ffmpeg, không một file nào:**
+`color` (nền màu hạt) + `geq` (biểu thức toán vẽ mặt nạ hạt) + `alphamerge` +
+`scale` + `overlay`, cắt đúng cửa sổ bằng `trim`/`concat`. Riêng confetti lấy
+màu từ `gradients` (nguồn dựng sẵn của ffmpeg, `seed` cố định).
+
+| | |
+|---|---|
+| Dung lượng thêm vào gói | **0 byte** — đo bằng `git diff --stat`: chỉ có file `.py` |
+| `.spec` / `release.yml` | **KHÔNG phải sửa** — nhóm này không đọc `app/assets/*` |
+| Rủi ro bản quyền | **0** — công thức toán tự viết, không tải, không chép của ai |
+| Máy thiếu GPU/frei0r | vẫn chạy: toàn filter lõi của ffmpeg, không Vulkan, không OpenCL, không plugin ngoài |
+
+Kỹ thuật "băm bằng `mod(sin(x)*43758.5453,1)`" và "lưới ô — mỗi ô một hạt" là
+**thủ pháp phổ thông của giới shader**, không phải mã của một dự án cụ thể nào;
+ở đây viết lại bằng cú pháp biểu thức của ffmpeg. Số đo từng kiểu: xem cổng 46
+(`_test_lop_phu.py`) và `_do_lop_phu.py`.
+
 ## 4. Tài sản TỰ SINH
 Mọi hiệu ứng thuần ffmpeg trong `hieu_ung.py` (`zoompan`, `crop`, `eq`, `noise`,
 `pixelize`, `vignette`, `gblur`, `unsharp`, `lagfun`, `edgedetect`,

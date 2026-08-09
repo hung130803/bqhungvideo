@@ -3193,6 +3193,14 @@ def export_canvas_clip(
     hieu_ung_log: Optional[list] = None,  # LIST CỦA CALLER: hàm ghi vào đây các
                                         # hiệu ứng ĐÃ CHỌN (để log/ghi chú
                                         # "giây thứ mấy -> hiệu ứng gì -> vì sao")
+    noi_dung: Optional[dict] = None,     # NỘI DUNG CẢNH cho nhóm LỚP PHỦ HẠT:
+                                        # {"digest": [{'t','desc','act'}] mốc
+                                        # AI XEM HÌNH trên timeline NGUỒN (đọc
+                                        # CACHE, KHÔNG gọi LLM), "loi": chép
+                                        # lời của chính đoạn này}. None/thiếu
+                                        # digest -> nhóm lớp phủ TỰ BỎ QUA
+                                        # (xem `lop_phu.chon_lop_phu`) và mọi
+                                        # thứ chạy y hệt bản cũ.
     tieng_dong_log: Optional[list] = None,  # LIST CỦA CALLER: TIẾNG ĐỘNG đã chèn
                                         # ở từng điểm nối [{giay, loai, ten,
                                         # nguon}]. Cùng dữ liệu với biến toàn
@@ -3416,11 +3424,29 @@ def export_canvas_clip(
             # mốc chỗ nối trên timeline ĐẦU RA (xfade đã bù nên mốc KHÔNG đổi)
             _moc = [sum(e - s for s, e in segs[:i + 1]) / vspeed
                     for i in range(len(segs) - 1)]
+            _dung_kieu = _HU.dung_duoc(co_font=bool(_font))
+            # ---- LỚP PHỦ HẠT CHỌN THEO NỘI DUNG (`app/core/lop_phu.py`) ----
+            # Chạy TRƯỚC `chon_hieu_ung` rồi đưa vào bằng `dat_truoc`: bằng
+            # chứng NỘI DUNG mạnh hơn số đo tiếng/hình, nên nó được đặt chỗ
+            # trước, phần còn lại của ngân sách 10% mới chia cho điểm nhấn.
+            # Không digest / không khớp / nội dung pha tạp -> `[]` + một dòng lý
+            # do vào `logs/lop_phu_<ngày>.log`. KHÔNG gọi LLM ở đây, chỉ đọc.
+            _lp_chon: list = []
+            try:
+                from app.core import lop_phu as _LP
+                _lp_chon, _lp_ly = _LP.chon_lop_phu(
+                    _LP.loc_digest_theo_doan(
+                        (noi_dung or {}).get("digest") or [], segs, vspeed),
+                    str((noi_dung or {}).get("loi") or ""), _out_dur,
+                    str(hieu_ung).strip().lower(), co_the_dung=_dung_kieu)
+                _LP.ghi_nhat_ky(_lp_ly, os.path.basename(str(dst)))
+            except Exception:  # noqa: BLE001 — lớp phủ KHÔNG được chặn lượt xuất
+                _lp_chon = []
             _hu = _HU.chon_hieu_ung(_out_dur, str(hieu_ung).strip().lower(),
                                     nl=_nl, cd=_cd, moc_noi=_moc,
-                                    co_the_dung=_HU.dung_duoc(
-                                        co_font=bool(_font)),
-                                    hook=_la_hook_first(segs))
+                                    co_the_dung=_dung_kieu,
+                                    hook=_la_hook_first(segs),
+                                    dat_truoc=_lp_chon)
         _hu = _HU.loc_theo_font(_hu, bool(_font))
         if _hu and hieu_ung_log is not None:
             hieu_ung_log.extend(_hu)
