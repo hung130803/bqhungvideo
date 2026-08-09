@@ -46,6 +46,7 @@ Env : BQ_TEST=1 · PYTHONIOENCODING=utf-8 · BQ_FFMPEG_SLOTS=1 (LUẬT SỐ 1)
 """
 from __future__ import annotations
 
+import inspect
 import os
 import re
 import subprocess
@@ -370,26 +371,42 @@ def ca_khop_canh() -> None:
     print("\n[CA 2] KHỚP CẢNH — 8 ca nội dung (hàm thuần, không ffmpeg)")
     dung = list(HU.KHO)
     xau = []
+    # TỪ 09/08/2026: chấm theo **CẢNH** (`canh`), không theo KIỂU (`khoa`) —
+    # mỗi cảnh nay có 2-4 biến thể nhìn, ra biến thể nào cũng ĐÚNG miễn là đúng
+    # cảnh. Chấm theo `khoa` là ép app phải luôn ra đúng một biến thể, tức là
+    # cấm chính cái đa dạng mà việc này sinh ra (ca "em bé" ra `trai_tim_nho`
+    # và ca "cảnh đêm" ra `den_nhap_nhay` đều là câu trả lời ĐÚNG HƠN).
     for ten, (dg, loi, cho, cam) in CA_NOI_DUNG.items():
         ra, ly = LP.chon_lop_phu(dg, loi, 20.0, "vua", co_the_dung=dung)
-        got = ra[0]["khoa"] if ra else ""
-        ok = (got == cho) and (got not in cam)
+        got = ra[0].get("canh", "") if ra else ""
+        kieu = ra[0]["khoa"] if ra else ""
+        ok = (got == cho) and (got not in cam) and (kieu not in cam)
         if not ok:
-            xau.append(f"{ten}: ra '{got or '(không)'}' mong '{cho or '(không)'}'")
-        print(f"    {ten:<12}-> {(got or '(KHÔNG THÊM)'):<12} "
-              f"{'OK ' if ok else 'SAI'} | {ly[:74]}")
+            xau.append(f"{ten}: ra cảnh '{got or '(không)'}' "
+                       f"(kiểu '{kieu or '-'}') mong '{cho or '(không)'}'")
+        print(f"    {ten:<12}-> cảnh {(got or '(KHÔNG THÊM)'):<11}"
+              f"kiểu {(kieu or '-'):<15}{'OK ' if ok else 'SAI'} | {ly[:52]}")
     bao("8/8 ca nội dung chọn ĐÚNG (hoặc đúng-là-không-thêm)", not xau,
         "; ".join(xau) if xau else f"{len(CA_NOI_DUNG)}/{len(CA_NOI_DUNG)} ca")
     # 2 mệnh đề anh Hùng nêu ĐÍCH DANH — kiểm RIÊNG, không núp trong vòng lặp
     dg, loi, _c, _x = CA_NOI_DUNG["nấu ăn"]
     r, _ = LP.chon_lop_phu(dg, loi, 20.0, "manh", co_the_dung=dung)
-    bao("TUYẾT KHÔNG RƠI trên video NẤU ĂN (kể cả mức 'manh')",
-        not any(x["khoa"] == "tuyet_roi" for x in r),
+    # Chặn CẢ HỌ, không chỉ đúng một khoá: có biến thể rồi thì "không rơi tuyết"
+    # phải nghĩa là KHÔNG kiểu nào của cảnh «tuyet_roi», chứ chặn mỗi
+    # `tuyet_roi` là để lọt `tuyet_bao`/`tuyet_bui`.
+    _ho_tuyet = {k for k, _g in LP.LUAT["tuyet_roi"]._re_bien}
+    _ho_tim = {k for k, _g in LP.LUAT["trai_tim"]._re_bien}
+    bao(f"TUYẾT KHÔNG RƠI trên video NẤU ĂN (cả {len(_ho_tuyet)} biến thể, "
+        f"kể cả mức 'manh')",
+        not any(x["khoa"] in _ho_tuyet or x.get("canh") == "tuyet_roi"
+                for x in r),
         f"ra: {[x['khoa'] for x in r] or 'không thêm gì'}")
     dg, loi, _c, _x = CA_NOI_DUNG["thể thao"]
     r, _ = LP.chon_lop_phu(dg, loi, 20.0, "manh", co_the_dung=dung)
-    bao("TRÁI TIM KHÔNG BAY trên video THỂ THAO (kể cả mức 'manh')",
-        not any(x["khoa"] == "trai_tim" for x in r),
+    bao(f"TRÁI TIM KHÔNG BAY trên video THỂ THAO (cả {len(_ho_tim)} biến thể, "
+        f"kể cả mức 'manh')",
+        not any(x["khoa"] in _ho_tim or x.get("canh") == "trai_tim"
+                for x in r),
         f"ra: {[x['khoa'] for x in r] or 'không thêm gì'}")
     # KHÔNG DIGEST -> BỎ QUA HẲN, kể cả khi LỜI khớp rõ mồn một (luật "không
     # bật AI xem hình chỉ để chọn hiệu ứng").
@@ -425,6 +442,49 @@ def ca_khop_canh() -> None:
     r, ly = LP.chon_lop_phu(dg, loi, 5.0, "vua", co_the_dung=dung)
     bao("clip 5s (ngân sách 0,50s < 0,80s) -> lớp phủ tự nhường", not r,
         ly[:96])
+    # ---- BIẾN THỂ: cùng CẢNH, khác GỢI Ý -> khác kiểu; cùng đầu vào -> LẶP LẠI
+    # Cố ý KHÔNG dùng lại digest ca "tuyết" ở trên: ở đó chữ "snowfall" và
+    # "snowflakes" là gợi ý riêng của CHÍNH biến thể gốc `tuyet_roi` nên nó
+    # thắng đúng luật. Muốn kiểm "gợi ý riêng lái được biến thể" thì bằng chứng
+    # phải nghiêng hẳn về biến thể KHÁC.
+    dgb = _dg((1, "A man snowboards down the hill", 7),
+              (5, "Blizzard wind over the snow covered slope", 8),
+              (9, "Skiing fast through deep snow", 7))
+    dgc = _dg((1, "An icicle hangs over the frozen lake", 6),
+              (5, "Ice crystals on the frozen lake surface", 7),
+              (9, "A snowy valley covered in frost", 5))
+    rb, _ = LP.chon_lop_phu(dgb, "troi tuyet roi", 20.0, "vua",
+                            co_the_dung=dung)
+    rc, _ = LP.chon_lop_phu(dgc, "troi tuyet roi", 20.0, "vua",
+                            co_the_dung=dung)
+    bao("cùng CẢNH «tuyet_roi», gợi ý khác -> BIẾN THỂ khác "
+        "(bão tuyết vs tinh thể)",
+        bool(rb) and bool(rc) and rb[0]["khoa"] != rc[0]["khoa"]
+        and rb[0]["canh"] == rc[0]["canh"] == "tuyet_roi",
+        f"{rb[0]['khoa'] if rb else '-'} vs {rc[0]['khoa'] if rc else '-'}")
+    # TIỀN ĐỊNH: `_van` dùng crc32 chứ KHÔNG dùng `hash()` (hash băm kèm
+    # PYTHONHASHSEED ngẫu nhiên -> mỗi làn xuất một biến thể, không tra lại được)
+    lap = {LP.chon_lop_phu(dgb, "troi tuyet roi", 20.0, "vua",
+                           co_the_dung=dung)[0][0]["khoa"] for _ in range(20)}
+    bao("chọn biến thể là TIỀN ĐỊNH: 20 lượt ra cùng một kiểu", len(lap) == 1,
+        str(sorted(lap)))
+    # Bỏ phần chú thích trước khi quét: chính docstring của `_van` có chữ
+    # "hash()" (nó đang GIẢI THÍCH vì sao không dùng) -> quét cả file thì cổng
+    # FAIL OAN, đúng bài học cổng 27 "chỉ soi NHÃN NÚT, đừng soi cả file".
+    _than = inspect.getsource(LP._van).split('"""')[-1]
+    bao("`_van` KHÔNG dùng `hash()` (PYTHONHASHSEED ngẫu nhiên mỗi tiến trình)",
+        "zlib.crc32" in _than and "hash(" not in _than,
+        _than.strip().replace("\n", " ")[:60])
+    # BIẾN THỂ BỊ LOẠI TRÊN MÁY NHÂN VIÊN -> vẫn ra biến thể KHÁC cùng cảnh,
+    # không phải "không thêm gì" (lùi êm, giống nhóm shader).
+    con = [k for k in dung if k != rb[0]["khoa"]]
+    rd, lyd = LP.chon_lop_phu(dgb, "troi tuyet roi", 20.0, "vua",
+                              co_the_dung=con)
+    bao("biến thể bị loại khỏi máy -> LÙI sang biến thể khác cùng cảnh, "
+        "không mất lớp phủ",
+        bool(rd) and rd[0]["canh"] == "tuyet_roi"
+        and rd[0]["khoa"] != rb[0]["khoa"],
+        f"{rb[0]['khoa']} -> {rd[0]['khoa'] if rd else '(mất)'} | {lyd[:40]}")
     # CHÉP LỜI phải lấy đúng đoạn
     tr = {"segments": [{"start": 1, "end": 4, "text": "trong doan"},
                        {"start": 40, "end": 44, "text": "ngoai doan"}]}
@@ -731,6 +791,23 @@ def ca_quet_tinh() -> None:
     bao("`_LP_SONG` dùng đúng khuôn nửa hình sin như `hieu_ung._SONG`",
         "sin(3.14159*" in HU._LP_SONG and "sin(3.14159*" in HU._SONG,
         f"{HU._LP_SONG}")
+    # GHI ĐÈ Ô NHỚ `geq` = LỖI IM LẶNG. `_quay` giữ cos ở `ld(3)` và sin ở
+    # `ld(5)`; kiểu nào gọi `_quay` rồi còn `st(3,`/`st(5,` nữa là hạt xoay theo
+    # nhầm đại lượng — ffmpeg vẫn rc=0, đủ khung, chỉ số đo tố giác. Đã sập 1
+    # lần với `la_kim_tuyen` (vừa xoay vừa nhấp nháy), nay nhấp nháy để `ld(4)`.
+    de = []
+    for k in HU.LOP_PHU:
+        m = HU.KHO[k].mau
+        if "st(3,cos(ld(8)))" not in m:
+            continue
+        sau = m.split("st(5,sin(ld(8)));", 1)[-1]
+        if "st(3," in sau or "st(5," in sau:
+            de.append(k)
+    bao("kiểu có XOAY không kiểu nào ghi đè `ld(3)`/`ld(5)` sau khi `_quay` "
+        "đã cất cos/sin vào đó", not de,
+        f"ghi đè: {de}" if de else
+        f"{sum(1 for k in HU.LOP_PHU if 'st(3,cos(ld(8)))' in HU.KHO[k].mau)}"
+        f" kiểu xoay, 0 kiểu ghi đè")
 
 
 def main() -> int:

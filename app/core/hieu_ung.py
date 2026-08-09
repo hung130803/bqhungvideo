@@ -807,6 +807,23 @@ def _bam_lai(k: float, c: float) -> str:
     return f"mod(ld(6)*{k}+{c},1)"
 
 
+def _quay(k: float) -> str:
+    """Góc quay của hạt + **tính SẴN cos/sin một lần** (`ld(3)`, `ld(5)`).
+
+    ĐO ĐƯỢC, không phải tối ưu mò: viết thẳng ra thì mỗi toạ độ xoay cần
+    `dx*cos(g)+dy*sin(g)` và `dy*cos(g)-dx*sin(g)` = **4 phép lượng giác cho
+    MỖI ĐIỂM ẢNH**, và `geq` chạy trên từng điểm. Cổng 46 CA 5 (đo CPU-giây
+    trên `export_canvas_clip` thật, 3 lượt đan xen lấy trung vị) bắt được:
+    nhóm có xoay tốn **+5,5..6,5 CPU-giây/clip** trong khi trung vị cả nhóm là
+    **4,89** — `canh_hoa` 6,27 và `tan_lua_day` 6,52 vượt trần 6,0.
+    Tính trước còn **2** phép. `ld(3)` (tốc độ riêng của cột) và `ld(5)` (chỉ số
+    hàng) đã dùng xong trong `_luoi` nên mượn lại được — không tốn ô nhớ mới,
+    nhưng ĐỪNG đổi thứ tự: `st(8,…)` phải đọc `ld(3)` TRƯỚC khi ghi đè nó.
+    """
+    return (f"st(8,{k}*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+            "st(3,cos(ld(8)));st(5,sin(ld(8)));")
+
+
 def _lp(mat_na: str, nen: str = "color=c=white") -> str:
     """Khuôn filter cho 1 kiểu LỚP PHỦ.
 
@@ -885,10 +902,10 @@ _dk(HieuUng(
     # màu PHẤN (đối nhau trên vòng màu nên trung bình gần trung tính) — `seed`
     # PHẢI cố định, mặc định `seed=-1` là ngẫu nhiên mỗi lượt xuất.
     _lp(_luoi(21, 2.8, lac=0.18)
-        + f"st(8,4.2*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(4.2)
         + "255*{p1}*" + _LP_SONG
-        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.13*ld(1))),"
-          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.26*ld(1)))),1)",
+        + "*lte(max(abs((ld(9)*ld(3)+ld(0)*ld(5))/(0.13*ld(1))),"
+          "abs((ld(0)*ld(3)-ld(9)*ld(5))/(0.26*ld(1)))),1)",
         nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
             ":n=4:seed=7:speed=0.02"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
@@ -964,10 +981,10 @@ _dk(HieuUng(
     # lá = ELLIPSE quay chậm, rơi chậm hơn confetti và lắc nhiều hơn. Màu vàng
     # nhạt (255,232,190) — lá cam đậm vượt trần lệch màu y như tàn lửa.
     _lp(_luoi(24, 1.6, lac=0.22)
-        + f"st(8,2.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(2.0)
         + "255*{p1}*" + _LP_SONG
-        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.18*ld(1)),"
-          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.31*ld(1))),0,1)",
+        + "*clip(2.0-2.0*hypot((ld(9)*ld(3)+ld(0)*ld(5))/(0.18*ld(1)),"
+          "(ld(0)*ld(3)-ld(9)*ld(5))/(0.31*ld(1))),0,1)",
         nen="color=c=0xFFEDD2"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="mùa thu/ngoài trời/thiên nhiên"))
@@ -1038,10 +1055,10 @@ _dk(HieuUng(
     "canh_hoa", "Cánh hoa rơi", "Flower Petals", "lop_phu",
     # cánh hoa = ELLIPSE quay chậm như lá nhưng nhỏ hơn, hồng nhạt, rơi lững lờ.
     _lp(_luoi(20, 1.4, lac=0.26)
-        + f"st(8,1.6*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(1.6)
         + "255*{p1}*" + _LP_SONG
-        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.15*ld(1)),"
-          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.26*ld(1))),0,1)",
+        + "*clip(2.0-2.0*hypot((ld(9)*ld(3)+ld(0)*ld(5))/(0.15*ld(1)),"
+          "(ld(0)*ld(3)-ld(9)*ld(5))/(0.26*ld(1))),0,1)",
         nen="color=c=0xFFE6EC"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="cưới/lãng mạn — biến thể của cảnh «trai_tim»"))
@@ -1083,10 +1100,10 @@ _dk(HieuUng(
     "confetti_dai", "Dải giấy dài", "Streamers", "lop_phu",
     # dải giấy = hình chữ nhật DÀI, quay chậm hơn confetti.
     _lp(_luoi(26, 2.0, lac=0.24)
-        + f"st(8,2.4*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(2.4)
         + "255*{p1}*" + _LP_SONG
-        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.075*ld(1))),"
-          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.42*ld(1)))),1)",
+        + "*lte(max(abs((ld(9)*ld(3)+ld(0)*ld(5))/(0.075*ld(1))),"
+          "abs((ld(0)*ld(3)-ld(9)*ld(5))/(0.42*ld(1)))),1)",
         nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
             ":n=4:seed=11:speed=0.02"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
@@ -1094,10 +1111,10 @@ _dk(HieuUng(
 _dk(HieuUng(
     "confetti_no", "Confetti bắn lên", "Confetti Burst", "lop_phu",
     _lp(_luoi(18, 4.2, len_tren=True, lac=0.22)
-        + f"st(8,5.4*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(5.4)
         + "255*{p1}*" + _LP_SONG
-        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.15*ld(1))),"
-          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.24*ld(1)))),1)",
+        + "*lte(max(abs((ld(9)*ld(3)+ld(0)*ld(5))/(0.15*ld(1))),"
+          "abs((ld(0)*ld(3)-ld(9)*ld(5))/(0.24*ld(1)))),1)",
         nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
             ":n=4:seed=23:speed=0.02"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
@@ -1269,21 +1286,25 @@ _dk(HieuUng(
     # 0,21x0,35 ô = +49% diện tích) và bớt lắc (0,62 -> 0,48, lắc quá mạnh làm
     # lá tràn sang ô bên cạnh rồi chồng lên nhau).
     _lp(_luoi(21, 1.1, lac=0.48)
-        + f"st(8,3.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(3.0)
         + "255*{p1}*" + _LP_SONG
-        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.21*ld(1)),"
-          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.35*ld(1))),0,1)",
+        + "*clip(2.0-2.0*hypot((ld(9)*ld(3)+ld(0)*ld(5))/(0.21*ld(1)),"
+          "(ld(0)*ld(3)-ld(9)*ld(5))/(0.35*ld(1))),0,1)",
         nen="color=c=0xFFEDD2"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="gió thổi/đường rừng — biến thể của cảnh «la_roi»"))
 _dk(HieuUng(
     "la_kim_tuyen", "Lá vàng lấp lánh", "Golden Foliage", "lop_phu",
+    # KIỂU DUY NHẤT vừa XOAY vừa NHẤP NHÁY -> hệ số nhấp nháy phải để ở `ld(4)`,
+    # KHÔNG để ở `ld(3)`: `_quay` đã dùng `ld(3)` giữ `cos(góc)`. Ghi đè nó là
+    # hạt xoay theo… nhịp nhấp nháy — ffmpeg vẫn rc=0, đủ khung, không một dòng
+    # báo; chỉ SỐ ĐO tố giác (diện tích 12,38% -> 13,27% ngay khi vừa tối ưu).
     _lp(_luoi(27, 1.5, lac=0.24)
-        + f"st(8,1.2*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
-        + f"st(3,0.60+0.40*max(0,sin(5.6*T+6.283*{_bam_lai(31.9, 0.613)})));"
-        + "255*{p1}*" + _LP_SONG + "*ld(3)"
-        "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.20*ld(1)),"
-          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.33*ld(1))),0,1)",
+        + _quay(1.2)
+        + f"st(4,0.60+0.40*max(0,sin(5.6*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(4)"
+        "*clip(2.0-2.0*hypot((ld(9)*ld(3)+ld(0)*ld(5))/(0.20*ld(1)),"
+          "(ld(0)*ld(3)-ld(9)*ld(5))/(0.33*ld(1))),0,1)",
         nen="color=c=0xFFF0D8"),
     ts=((0.55, 0.90), ), dai=0.80, hop=(),
     ghi_chu="mùa thu ngược sáng — biến thể của cảnh «la_roi»"))
@@ -1360,10 +1381,10 @@ _dk(HieuUng(
 _dk(HieuUng(
     "tien_roi", "Tiền rơi", "Money Rain", "lop_phu",
     _lp(_luoi(28, 2.4, lac=0.20)
-        + f"st(8,3.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + _quay(3.0)
         + "255*{p1}*" + _LP_SONG
-        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.30*ld(1))),"
-          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.15*ld(1)))),1)",
+        + "*lte(max(abs((ld(9)*ld(3)+ld(0)*ld(5))/(0.30*ld(1))),"
+          "abs((ld(0)*ld(3)-ld(9)*ld(5))/(0.15*ld(1)))),1)",
         nen="color=c=0xE6F4E2"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="tiền/mua sắm/trúng thưởng"))
