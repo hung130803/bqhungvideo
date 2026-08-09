@@ -603,6 +603,67 @@
      .ass ghi `Fontsize: 0.055` -> chữ dưới 1 điểm ảnh = **KHÔNG THẤY GÌ** mà
      hàm vẫn trả True + ffmpeg rc=0 + đủ khung. `m1` quy đổi `int(csize*out_h)`;
      ca này chốt quy ước để lối gọi mới không sập lại.
+  46. `_test_lop_phu.py` → **NHÓM LỚP PHỦ HẠT + CHỌN THEO NỘI DUNG CẢNH**
+     (09/08/2026). Anh Hùng: *"tuyết rơi, trái tim bay, với rất nhiều kiểu khác
+     thêm vào — **nhưng phải hợp lý, tuỳ cảnh mới chọn chứ không chọn bừa
+     bãi**"*. 27 kiểu cũ đều là CHỈNH MÀU/NÉT/NHIỄU; đây là nhóm đầu tiên
+     **chồng VẬT THỂ** lên hình, và cũng là nhóm đầu tiên MANG NGHĨA — nên phải
+     có cửa chọn riêng.
+     **KIẾN TRÚC (3 quyết định, mỗi cái có số):**
+     (a) **SINH 100% BẰNG ffmpeg, 0 BYTE tài nguyên** (`color`+`geq`+
+     `alphamerge`+`scale`+`overlay`; confetti lấy màu từ `gradients`). Vì vậy
+     `.spec` và `release.yml` **KHÔNG phải sửa** — khác hẳn bẫy cũ "quên khai
+     `app/assets/hieu_ung` nên .exe mất sạch hiệu ứng". Mục 3 của
+     `NGUON_GIAY_PHEP.md` đã cấm 6 file overlay không rõ nguồn; đường này né
+     hẳn chuyện bản quyền.
+     (b) **CẮT ĐÚNG CỬA SỔ RỒI `concat`** (cùng khuôn `_SH_MAU` của nhóm
+     shader). Đo riêng phần kiến trúc: `split/trim/concat` RỖNG tốn **−0,27
+     CPU-giây** (tức không tốn gì), `eq` cũ **+0,56**, còn `geq` sinh hạt là chỗ
+     đắt thật.
+     (c) **MÀU HẰNG + CHỈ ALPHA ĐỔI**: `geq` chỉ tính 1 mặt phẳng (rẻ hơn ~4
+     lần) và phóng to không ra viền bẩn.
+     **CHỌN THEO NỘI DUNG (`app/core/lop_phu.py`) — phần khó nhất:**
+     Nguồn hiểu nội dung là 2 thứ CÓ SẴN: `vision_digest` (đọc CACHE, **KHÔNG
+     gọi thêm LLM** — đo thật 219 giây/video, nhân 300 kênh là không dùng được)
+     và **chép lời của chính đoạn đó** (`loi_theo_doan`, không lấy cả video).
+     Mốc digest được `loc_digest_theo_doan` đổi sang timeline ĐẦU RA và **bỏ mốc
+     rơi ngoài đoạn cắt** — không lọc thì mốc "snowy mountain" ở phút 12 vẫn bật
+     tuyết cho clip cắt ở phút 2. Chấm điểm theo **SỐ MỐC** (không phải số lần
+     chữ), từ khoá PHỤ một mình trần 3,1/6,0 nên **không bao giờ đủ** ngưỡng
+     0,55; mỗi kiểu có danh sách **CẤM** (bếp/nấu ăn cấm tuyết; thi đấu/trọng
+     tài/bàn thắng cấm trái tim); hai kiểu KHÁC HỌ điểm sát nhau = nội dung pha
+     tạp -> **KHÔNG thêm gì**. Không digest -> bỏ qua nhóm, ghi
+     `logs/lop_phu_<ngày>.log`.
+     **BẤT BIẾN SỐNG CÒN: KHÔNG kiểu lớp phủ nào có mặt trong
+     `hieu_ung._UV_THEO_LOAI`** — đường chọn theo SỐ ĐO không được với tới nó,
+     nếu không thì một giây tiếng vọt lên là tuyết rơi trong bếp. Cổng quét tĩnh
+     bảng đó + chạy 200 bộ số đo bắt `chon_hieu_ung` không đẻ ra lớp phủ lần
+     nào. Lớp phủ vào qua tham số MỚI `chon_hieu_ung(dat_truoc=...)`, nên vẫn ăn
+     chung ngân sách `TY_LE_MAX` 10% + trần `DIEM_MAX` + luật `CACH_MIN`.
+     **3 BẪY ĐO ĐÃ SẬP KHI VIẾT CỔNG NÀY:**
+     · **đo RÒ bằng file nén mất dữ liệu**: `-crf 18` tự nó làm **0,157%** điểm
+       ảnh ngoài cửa sổ lệch >12 — không phân biệt nổi với rò thật. `-qp 0` ra
+       đúng **0,0000%**.
+     · **đo LỆCH MÀU bằng `blend=difference` rồi lấy UAVG**: đó là lệch từng
+       điểm ảnh, che 18% khung bằng hạt TRẮNG cho ra **11,6** mà không hề "tím
+       cả khung". Thước ĐÚNG (cũng là thước đã loại `rgbashift` U+7,16 và
+       `baltan` U−3,08) là **PHÂN BỐ CHROMA cả khung**: UAVG/VAVG/SATAVG trước
+       so với sau. Đo lại: cao nhất **dU 2,27** (lá rơi), còn lại < 1,4.
+     · **mẫu số của phép đo chi phí**: lấy "bản không lớp phủ" = một lượt mã hoá
+       trần (0,32 s) thì phí cố định đọc thành **2,27x**; mẫu số đúng là
+       `export_canvas_clip` mức "tat". Và phải **ĐAN XEN + TRUNG VỊ** — đo liền
+       mạch ra "lớp phủ NHANH HƠN bản tắt (0,52x)", chuyện không thể xảy ra.
+     **SỐ ĐO CHỐT:** 10/10 kiểu ĐẠT · thấy được **9,7 – 27,6%** điểm ảnh · rò
+     ngoài cửa sổ **0,0000%** · hai mép cửa sổ **0,0000%** (bao nửa hình sin
+     `_LP_SONG` chia cho `d − 1/fps` nên khung đầu VÀ khung cuối đều đúng 0) ·
+     lệch màu **dU ≤ 2,27 · dV ≤ 1,37** (trần 3,0) · chi phí thêm **+1,8 đến
+     +4,7 CPU-giây/clip** và là **HẰNG SỐ** (clip 2,6s/10s/20s đều +4,4-4,7 ->
+     1,90x / 1,26x / 1,12x) vì `geq` chỉ chạy trong cửa sổ 0,8 giây.
+     **`geq` + `st()/ld()` chạy đa luồng lát cắt có TIỀN ĐỊNH không?** ĐÃ ĐO:
+     2 lượt dựng + 1 lượt `-filter_threads 1` ra **YMAX = 0** (giống từng điểm
+     ảnh). Cổng giữ ca này vì bản ffmpeg sau đổi hành vi là ra hạt nhấp nháy mà
+     không ai biết. Cùng ca đó canh luôn **`gradients` phải có `seed`** — mặc
+     định `seed=-1` là NGẪU NHIÊN mỗi lượt xuất.
 - **2 CỔNG PASS OAN ĐÃ CHỨNG MINH BẰNG PHÉP THỬ PHÁ (08/08/2026)** — sửa xong,
   đừng để tái diễn:
   * `_test_hlbox.py` mục 12 so với `git show **HEAD**:app/core/captions.py`. Cây

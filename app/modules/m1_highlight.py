@@ -3534,6 +3534,20 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # toàn cục `_SFX_LAST_PICK`: 3 làn xuất song song thì nó là của clip nào
         # xong sau cùng).
         _td_log: list = []
+        # NỘI DUNG CẢNH cho nhóm LỚP PHỦ HẠT (tuyết/tim/confetti…): chỉ ĐỌC
+        # CACHE `vision_digest` + chép lời CỦA CHÍNH các đoạn này. Tuyệt đối
+        # KHÔNG gọi `build_vision_digest` ở đây — nó có thể bắn LLM (đo thật
+        # 219 giây/video), mà đây là bước XUẤT, chạy cho MỌI clip của 300 kênh.
+        # Không có cache -> `noi_dung['digest']` rỗng -> lớp phủ tự bỏ qua.
+        try:
+            from app.core import lop_phu as _LP0
+            _tr_lp = get_analysis(video_id, "transcript") or {}
+            _noi_dung = {
+                "digest": get_analysis(video_id, _vd.VD_KIND) or [],
+                "loi": _LP0.loi_theo_doan(_tr_lp, segs),
+            }
+        except Exception:  # noqa: BLE001 — không có nội dung thì bỏ nhóm này
+            _noi_dung = {}
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -3566,6 +3580,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             # Job cũ (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
             hieu_ung=str(payload.get("hieu_ung", "nhe") or "tat"),
             hieu_ung_log=_hu_log,
+            # LỚP PHỦ HẠT chọn theo NỘI DUNG cảnh (xem app/core/lop_phu.py).
+            noi_dung=_noi_dung,
             tieng_dong_log=_td_log,
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,

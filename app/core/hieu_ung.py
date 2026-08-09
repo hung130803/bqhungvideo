@@ -362,7 +362,12 @@ class HieuUng:
         # `{a}+0.60` với cửa sổ 0,56s ra `between(t,0.60,0.56)` — bắt đầu SAU khi
         # kết thúc => số "1" KHÔNG BAO GIỜ HIỆN mà ffmpeg vẫn rc=0.
         t1, t2 = a + (b - a) / 3.0, a + (b - a) * 2.0 / 3.0
+        # `{d}` = ĐỘ DÀI cửa sổ. Nhóm LỚP PHỦ cần nó vì lớp hạt là một NGUỒN
+        # ffmpeg riêng (`color=…:d=…`) chứ không phải filter chạy trên hình —
+        # nguồn phải biết mình sống bao lâu, và biểu thức bao hình sin trong
+        # `geq` tính theo `T/d` (T của nguồn bắt đầu lại từ 0 sau `trim`).
         s = (s.replace("{en}", f":enable='between(t,{a:.3f},{b:.3f})'")
+              .replace("{d}", f"{max(0.05, b - a):.3f}")
               .replace("{a}", f"{a:.3f}").replace("{b}", f"{b:.3f}")
               .replace("{t1}", f"{t1:.3f}").replace("{t2}", f"{t2:.3f}")
               .replace("{W}", str(W)).replace("{H}", str(H))
@@ -708,6 +713,270 @@ _dk(HieuUng(
     hop=("caotrao", "ke")))
 
 
+# ---- NHÓM 6: LỚP PHỦ HẠT (chồng VẬT THỂ lên hình) ----
+# Anh Hùng 09/08/2026: *"kiểu hiệu ứng tuyết rơi, trái tim bay, với rất nhiều
+# kiểu khác thêm vào — NHƯNG PHẢI HỢP LÝ, TUỲ CẢNH MỚI CHỌN chứ không chọn bừa
+# bãi"*. 27 kiểu cũ đều là CHỈNH MÀU/ĐỘ NÉT/NHIỄU; đây là nhóm đầu tiên chồng
+# VẬT THỂ lên hình.
+#
+# === 3 QUYẾT ĐỊNH KIẾN TRÚC, mỗi cái có lý do đo được ===
+# (1) **SINH 100% BẰNG ffmpeg, KHÔNG MỘT FILE NÀO.** Anh Hùng đã chốt *"không
+#     được làm app quá nhiều dung lượng"* (gói đang 228 MB). Lớp hạt là
+#     `color` + `geq` -> **0 byte tài nguyên thêm**, và `.spec` /
+#     `release.yml` KHÔNG phải sửa (thư mục `app/assets/hieu_ung` từng bị bỏ
+#     sót khỏi .exe làm nhân viên mất sạch hiệu ứng — nay không đụng tới nó).
+#     Cũng vì thế KHÔNG có chuyện vướng bản quyền: không lấy asset của ai.
+# (2) **CẮT ĐÚNG CỬA SỔ RỒI `concat`** — y hệt `_SH_MAU`. `overlay` CÓ timeline
+#     `enable` nhưng cái ĐẮT là `geq`: để nó chạy cả clip thì mọi khung đều
+#     phải sinh hạt cho 0,45 giây dùng tới. Cắt mảnh -> `geq` chỉ chạy trong
+#     cửa sổ, và ngoài cửa sổ là ĐÚNG khung gốc đi thẳng qua `trim` nên **0,00%
+#     pixel đổi** (luật 1) chứ không phải "gần 0".
+# (3) **MÀU HẰNG + CHỈ ALPHA THAY ĐỔI** (`alphamerge`), rồi mới `scale` lên
+#     khung ra. 2 cái lợi ĐO ĐƯỢC: `geq` chỉ tính **1 mặt phẳng** thay vì 4
+#     (rẻ hơn ~4 lần) và phép phóng to KHÔNG sinh viền bẩn — nội suy giữa
+#     "trắng đục" và "trắng trong suốt" vẫn ra trắng, còn nếu nền là
+#     `black@0` thì mép hạt bị xám lại.
+#     Lớp hạt sinh ở **270x480** rồi phóng lên khung ra: rẻ hơn 16 lần so với
+#     sinh thẳng 1080x1920, và mép hạt được phép nội suy làm mềm (đúng cái
+#     trông tự nhiên). Hạt to theo khung nên clip 540x960 hay 1080x1920 đều ra
+#     cùng một TỈ LỆ phủ.
+#
+# === VÌ SAO KHÔNG CÓ KIỂU NÀO Ở `_UV_THEO_LOAI` ===
+# Đây là điều kiện SỐNG CÒN của cả việc này: bảng đó là đường chọn theo SỐ ĐO
+# (tiếng to / hình động). Nếu nhét lớp phủ vào đó thì tuyết sẽ rơi trên video
+# nấu ăn ngay khi có một giây tiếng vọt lên. Nhóm này CHỈ được chọn qua
+# `app/core/lop_phu.py` (khớp NỘI DUNG cảnh) — không khớp thì KHÔNG THÊM.
+#
+# === BẪY ĐÃ ĐO, ĐỪNG LẶP ===
+# * `geq` dùng `st()/ld()` mà filter lại chạy đa luồng lát cắt -> nghi ngờ đua
+#   trạng thái. **ĐÃ ĐO**: dựng 2 lượt + 1 lượt `-filter_threads 1`, so từng
+#   khung ra **YMAX = 0** cả hai cặp (giống từng điểm ảnh). Cổng 46 giữ lại ca
+#   này để bản ffmpeg sau đổi hành vi thì cổng đỏ chứ không ra hạt nhấp nháy.
+# * `gradients` mặc định `seed=-1` = **NGẪU NHIÊN MỖI LƯỢT** -> confetti sẽ đổi
+#   màu mỗi lần xuất và cổng nhấp nháy. PHẢI đặt `seed` cố định.
+# * Hạt màu bão hoà là đường thẳng tới lỗi cũ anh Hùng đã TỪ CHỐI ("tim bay"
+#   phủ lệch hồng V=142 làm tím cả khung). Nên mọi màu hạt ở đây đều là
+#   **màu NHẠT gần trắng**: lệch U/V trung bình cả khung phải < `UV_MAX` = 3,0
+#   ngay cả trên nguồn `testsrc2` (ô màu bão hoà 100% — khắc nghiệt hơn phim
+#   thật). Ai đổi màu đậm hơn thì cổng 46 sẽ đỏ.
+#: LƯỚI sinh hạt (phóng lên khung ra bằng `scale`). Cạnh ô của từng kiểu tính
+#: THEO lưới này, mà độ phủ = pi*r²/S² nên thu lưới lại KHÔNG đổi tỉ lệ phủ —
+#: chỉ đổi chi phí. ĐO THẬT (đường xuất thật, 3 lượt ĐAN XEN, lấy trung vị):
+#: lưới 270x480 + 4 `sin`/điểm ảnh tốn **+5,25 CPU-giây**/clip cho
+#: `tuyet_roi`; 216x384 + 2 `sin` (xem `_bam_lai`) còn ÍT HƠN HẲN. Nhỏ hơn
+#: nữa thì mép hạt nhoè khi phóng lên 1080x1920.
+_LP_GW, _LP_GH = 216, 384
+#: nửa hình sin theo `T` của CHÍNH nguồn hạt — CÙNG MỘT ĐƯỜNG CONG với `_SONG`
+#: của nhóm cũ, chỉ khác hệ quy chiếu: `_SONG` chạy trên `t` của cả clip
+#: (`(t-a)/(b-a)`), còn ở đây `trim`+`setpts=PTS-STARTPTS` đã kéo mốc về 0 nên
+#: `T/d` LÀ chính đại lượng đó. (Không dùng lại được nguyên văn chuỗi `_SONG`:
+#: biến thời gian trong `geq` là `T` viết HOA, `t` thường không tồn tại.)
+#:
+#: VÌ SAO MẪU SỐ LÀ `{d}-1/{FPS}` CHỨ KHÔNG PHẢI `{d}`: khung CUỐI của cửa sổ
+#: nằm ở `T = d - 1/fps`, nên `sin(pi*T/d)` ở đó còn **0,13** biên độ — hạt vẫn
+#: hiện, mắt đọc ra là "tắt phụt". Chia cho `d-1/fps` thì khung đầu VÀ khung
+#: cuối đều đúng `sin(0)=sin(pi)=0` -> cả hai mép **0,00% điểm ảnh đổi**, đo
+#: được, không phải nói suông. `geq` tự kẹp giá trị âm về 0 nên thừa một khung
+#: cũng không sao.
+_LP_SONG = "sin(3.14159*T/({d}-1/{FPS}))"
+
+
+def _bam(a: str, b: str, k1: float, k2: float) -> str:
+    """Hàm BĂM tiền định trong biểu thức ffmpeg -> số 0..1 ổn định theo (a,b).
+
+    KHÔNG dùng `random()` của ffmpeg: nó đổi trạng thái mỗi lần gọi nên ra
+    NHIỄU theo từng điểm ảnh, không phải "mỗi hạt một chỗ" — hạt sẽ nhấp nháy
+    loạn thay vì rơi. `mod(sin(...)*43758.5453,1)` là hàm băm quen thuộc của
+    dân shader: cùng ô thì cùng số, khác ô thì khác, và LẶP LẠI ĐƯỢC.
+    """
+    return f"mod(sin(({a})*{k1}+({b})*{k2})*43758.5453,1)"
+
+
+def _bam_lai(k: float, c: float) -> str:
+    """Số 0..1 thứ HAI (thứ ba…) của cùng một ô — KHÔNG tốn thêm `sin`.
+
+    `sin` là phép đắt nhất trong biểu thức `geq` và nó chạy TỪNG ĐIỂM ẢNH. Bản
+    đầu gọi `_bam` 4-5 lần mỗi kiểu (chỗ đứng x, chỗ đứng y, cỡ hạt, pha nhấp
+    nháy) -> ĐO ĐƯỢC **+5,25 CPU-giây**/clip trên đường xuất thật, trong khi
+    chính kiến trúc cắt mảnh `split/trim/concat` chỉ tốn **−0,27** (tức không
+    tốn gì) và một hiệu ứng `eq` cũ tốn **+0,56**. Băm LẠI từ `ld(6)` (đã tính
+    rồi) bằng nhân-lấy-phần-lẻ cho ra dãy vẫn rải đều, vẫn TIỀN ĐỊNH, chi phí
+    gần bằng 0. Dân shader gọi là "hash stretching": có tương quan nhẹ với số
+    gốc nhưng mắt không đọc ra trên một cửa sổ 0,8 giây.
+    """
+    return f"mod(ld(6)*{k}+{c},1)"
+
+
+def _lp(mat_na: str, nen: str = "color=c=white") -> str:
+    """Khuôn filter cho 1 kiểu LỚP PHỦ.
+
+    `mat_na`: biểu thức `geq` trả 0..255 = ĐỘ ĐỤC của lớp hạt tại điểm đó.
+    `nen`   : nguồn MÀU của hạt (mặc định trắng; confetti dùng `gradients`).
+    Xem khối ghi chú của nhóm để biết vì sao cắt mảnh + alphamerge + scale.
+    """
+    g = f"{_LP_GW}x{_LP_GH}"
+    return (
+        "split=3[lp{i}a][lp{i}b][lp{i}c];"
+        "[lp{i}a]trim=end={a},setpts=PTS-STARTPTS[lp{i}d];"
+        "[lp{i}b]trim=start={a}:end={b},setpts=PTS-STARTPTS[lp{i}m];"
+        + nen + ":s=" + g + ":r={FPS}:d={d},format=rgba[lp{i}n];"
+        "color=c=black:s=" + g + ":r={FPS}:d={d},format=gray,"
+        "geq=lum='" + mat_na + "'[lp{i}k];"
+        "[lp{i}n][lp{i}k]alphamerge,scale={W}:{H}:flags=bicubic[lp{i}g];"
+        "[lp{i}m][lp{i}g]overlay=0:0:eof_action=pass,format=yuv420p[lp{i}e];"
+        "[lp{i}c]trim=start={b},setpts=PTS-STARTPTS[lp{i}f];"
+        "[lp{i}d][lp{i}e][lp{i}f]concat=n=3:v=1:a=0"
+    )
+
+
+#: Ô LƯỚI: mỗi ô đúng 1 hạt, chỗ đứng trong ô do hàm băm quyết định. Rẻ hơn
+#: "tổng N hạt" hàng chục lần (biểu thức không phụ thuộc số hạt) mà mắt vẫn đọc
+#: ra là ngẫu nhiên vì mỗi ô lệch một kiểu.
+#:   ld(1)=cạnh ô · ld(2)=cột · ld(3)=tốc độ riêng của cột · ld(4)=Y đã trôi
+#:   ld(5)=hàng · ld(6),ld(7)=chỗ đứng trong ô · ld(8)=cỡ hạt · ld(9),ld(0)=lệch
+#: `+20000`: `mod`/`floor` trên số ÂM cho kết quả khó lường -> đẩy hẳn sang
+#: dương trước khi chia ô (cửa sổ dài nhất 0,8 s nên không bao giờ chạm mốc đó).
+def _luoi(s: float, roi: float, len_tren: bool = False, lac: float = 0.0) -> str:
+    dau = "+" if len_tren else "-"
+    return (f"st(1,{s});st(2,floor(X/ld(1)));"
+            f"st(3,0.55+0.9*{_bam('ld(2)', '0', 12.9898, 0.0)});"
+            f"st(4,Y{dau}T*ld(1)*{roi}*ld(3)+20000);"
+            "st(5,floor(ld(4)/ld(1)));"
+            f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+            f"st(7,{_bam_lai(97.13, 0.371)});"
+            "st(9,mod(X,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6))"
+            + (f"+{lac}*ld(1)*sin(2.6*T+ld(2))" if lac else "") + ");"
+            "st(0,mod(ld(4),ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(7)));")
+
+
+_dk(HieuUng(
+    "tuyet_roi", "Tuyết rơi", "Snow", "lop_phu",
+    _lp(_luoi(18, 3.2, lac=0.10)
+        + f"st(8,0.12*ld(1)+0.13*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.6,0,1)"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="lạnh/mùa đông/tuyết — KHÔNG bao giờ tự chọn theo số đo"))
+_dk(HieuUng(
+    "trai_tim", "Trái tim bay", "Love Hearts", "lop_phu",
+    # màu hồng RẤT NHẠT (255,226,232): lệch V chỉ +14 so với xám trung tính.
+    # Hồng đậm (255,170,190) lệch V +41 -> đúng cái anh Hùng đã từ chối.
+    _lp(_luoi(24, 2.2, len_tren=True, lac=0.12)
+        + "st(8,0.20*ld(1));st(9,ld(9)/ld(8));st(0,-ld(0)/ld(8));"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(pow(ld(9)*ld(9)+ld(0)*ld(0)-1,3)-ld(9)*ld(9)*pow(ld(0),3),0)",
+        nen="color=c=0xFFE2E8"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="tình cảm/em bé/thú cưng/cưới"))
+_dk(HieuUng(
+    "lap_lanh", "Lấp lánh", "Sparkle", "lop_phu",
+    # sao 4 cánh = siêu-ellipse mũ 0,5; nhấp nháy theo pha riêng từng ô nhưng
+    # KHÔNG bao giờ tắt hẳn (sàn 0,40) — tắt hẳn thì nửa số hạt biến mất và
+    # diện tích đo tụt xuống dưới ngưỡng THẤY ĐƯỢC.
+    _lp(_luoi(21, 0.45)
+        + f"st(8,0.50*ld(1)*(0.70+0.6*{_bam_lai(53.7, 0.117)}));"
+        + f"st(3,0.55+0.45*max(0,sin(6.2*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG + "*ld(3)*clip(2.2-2.2*pow(abs(ld(9))/ld(8),0.5)"
+        "-2.2*pow(abs(ld(0))/ld(8),0.5),0,1)"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="lung linh/đẹp/bất ngờ/ăn mừng"))
+_dk(HieuUng(
+    "confetti", "Confetti giấy màu", "Confetti", "lop_phu",
+    # mảnh giấy = hình chữ nhật QUAY theo thời gian. Màu lấy từ `gradients` 4
+    # màu PHẤN (đối nhau trên vòng màu nên trung bình gần trung tính) — `seed`
+    # PHẢI cố định, mặc định `seed=-1` là ngẫu nhiên mỗi lượt xuất.
+    _lp(_luoi(21, 2.8, lac=0.18)
+        + f"st(8,4.2*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*lte(max(abs((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.13*ld(1))),"
+          "abs((ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.26*ld(1)))),1)",
+        nen="gradients=c0=0xFF9E9E:c1=0xFFF0A0:c2=0x9EE8FF:c3=0xCFA8FF"
+            ":n=4:seed=7:speed=0.02"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="ăn mừng/thắng/sinh nhật/khai trương"))
+_dk(HieuUng(
+    "mua_roi", "Mưa rơi", "Rain", "lop_phu",
+    # vệt mưa = hạt DẸT theo trục đứng, rơi nhanh gấp 4 lần tuyết và NGHIÊNG
+    # (dùng X+0,3*Y làm trục ngang) — mưa thẳng đứng trông như song sắt.
+    _lp("st(1,14);st(2,floor((X+0.30*Y)/ld(1)));"
+        f"st(3,0.85+0.5*{_bam('ld(2)', '0', 12.9898, 0.0)});"
+        "st(4,Y-T*ld(1)*15.0*ld(3)+40000);st(5,floor(ld(4)/ld(1)));"
+        f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+        f"st(7,{_bam_lai(97.13, 0.371)});"
+        "st(9,mod(X+0.30*Y,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6)));"
+        "st(0,mod(ld(4),ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(7)));"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-abs(ld(9))/(0.13*ld(1)),0,1)"
+        "*clip(1-abs(ld(0))/(0.46*ld(1)),0,1)",
+        nen="color=c=0xE6F0FF"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="buồn/chia tay/mưa/ướt"))
+_dk(HieuUng(
+    "dom_bokeh", "Đốm sáng bokeh", "Bokeh Lights", "lop_phu",
+    # đốm ống kính = ĐĨA mờ + VIỀN sáng hơn ruột (đúng bokeh thật của ống kính
+    # gương). Ô to (64) + trôi rất chậm -> cảm giác chiều sâu, không phải "hạt".
+    _lp(_luoi(42, 0.5)
+        + f"st(8,0.16*ld(1)+0.14*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "st(3,hypot(ld(9),ld(0)));"
+        + "255*{p1}*" + _LP_SONG + "*(0.55*clip(1-ld(3)/ld(8),0,1)"
+        "+0.45*clip(1-abs(ld(3)-0.86*ld(8))/(0.22*ld(8)),0,1))"),
+    ts=((0.50, 0.80), ), dai=0.80, hop=(),
+    ghi_chu="cảnh đêm/đèn/thành phố/quán"))
+_dk(HieuUng(
+    "tan_lua", "Tàn lửa bay lên", "Embers", "lop_phu",
+    # tàn lửa: hạt NHỎ bay LÊN, lắc ngang, nhấp nháy. Màu vàng-trắng nhạt
+    # (255,235,205) chứ không cam (255,140,40): cam lệch U -69 / V +66, phủ 8%
+    # là đã vượt trần UV_MAX.
+    _lp(_luoi(15, 2.6, len_tren=True, lac=0.16)
+        + f"st(8,0.12*ld(1)+0.13*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(3,0.45+0.55*max(0,sin(7.5*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + "255*{p1}*" + _LP_SONG
+        + "*ld(3)*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.4,0,1)",
+        nen="color=c=0xFFEBCD"),
+    ts=((0.55, 0.90), ), dai=0.80, hop=(),
+    ghi_chu="lửa/nổ/hành động/bếp lửa"))
+_dk(HieuUng(
+    "tia_sang", "Tia sáng loé (light leak)", "Light Leak", "lop_phu",
+    # KHÔNG phải hạt: một DẢI sáng chéo quét ngang khung (rò sáng máy phim).
+    # Biểu thức rẻ nhất nhóm (không lưới, không băm). `W`,`H` trần trụi ở đây là
+    # cỡ LƯỚI HẠT của geq (270x480), KHÔNG phải `{W}`/`{H}` khung ra.
+    _lp("255*{p1}*" + _LP_SONG + "*clip(1-abs((X*0.55+Y*0.62)"
+        "/(0.55*W+0.62*H)-(0.10+0.90*T/{d}))*5.0,0,1)",
+        nen="color=c=0xFFF0DC"),
+    ts=((0.18, 0.30), ), dai=0.70, hop=(),
+    ghi_chu="cảnh đêm/đèn/hoài niệm/hoàng hôn"))
+_dk(HieuUng(
+    "bui_phim", "Bụi phim nhựa", "Film Dust", "lop_phu",
+    # bụi + xước: chỉ ~30% số ô có hạt, và hạt ĐỔI CHỖ MỖI KHUNG (ld(4) mang cả
+    # chỉ số khung) -> đúng cảm giác phim cũ.
+    _lp("st(1,11);st(2,floor(X/ld(1)));st(3,floor(T*24));"
+        "st(4,Y+20000);st(5,floor(ld(4)/ld(1))+ld(3)*37);"
+        f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
+        f"st(7,{_bam_lai(97.13, 0.371)});"
+        "st(9,mod(X,ld(1))-(0.1*ld(1)+0.8*ld(1)*ld(6)));"
+        "st(0,mod(ld(4),ld(1))-(0.1*ld(1)+0.8*ld(1)*ld(7)));"
+        f"st(8,0.14*ld(1)+0.20*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + f"*gt({_bam_lai(19.7, 0.443)},0.50)"
+        "*clip(1-(hypot(ld(9),ld(0))-ld(8))/1.2,0,1)"),
+    ts=((0.55, 0.90), ), dai=0.70, hop=(),
+    ghi_chu="hoài niệm/phim cũ/buồn"))
+_dk(HieuUng(
+    "la_roi", "Lá rơi", "Falling Leaves", "lop_phu",
+    # lá = ELLIPSE quay chậm, rơi chậm hơn confetti và lắc nhiều hơn. Màu vàng
+    # nhạt (255,232,190) — lá cam đậm vượt trần lệch màu y như tàn lửa.
+    _lp(_luoi(24, 1.6, lac=0.22)
+        + f"st(8,2.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
+        + "255*{p1}*" + _LP_SONG
+        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.18*ld(1)),"
+          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.31*ld(1))),0,1)",
+        nen="color=c=0xFFEDD2"),
+    ts=((0.55, 0.85), ), dai=0.80, hop=(),
+    ghi_chu="mùa thu/ngoài trời/thiên nhiên"))
+
+#: Khoá của nhóm lớp phủ — `lop_phu.py` và cổng 46 đọc từ đây, KHÔNG chép tay
+#: (chép tay là kiểu sai "gỡ khỏi kho mà bảng chọn vẫn trỏ tới").
+LOP_PHU: tuple = tuple(k for k, h in KHO.items() if h.nhom == "lop_phu")
+
+
 # ------------------------------------------------------ HIỆU ỨNG DÙNG ĐƯỢC
 #: Hiệu ứng ĐO RA lệch màu >= UV_MAX -> KHÔNG BAO GIỜ tự chọn (luật 3). Danh
 #: sách này là KẾT QUẢ ĐO của cổng 37 (`_test_hieu_ung.py`), không phải đoán:
@@ -805,6 +1074,7 @@ def thong_ke() -> dict:
         "thuan": sum(1 for k in dd if KHO[k].nhom == "thuan"),
         "frei0r": sum(1 for k in dd if KHO[k].nhom == "frei0r"),
         "shader": sum(1 for k in dd if KHO[k].nhom == "shader"),
+        "lop_phu": sum(1 for k in dd if KHO[k].nhom == "lop_phu"),
         "co_frei0r": co_frei0r(),
         "co_shader": co_shader(),
     }
@@ -922,7 +1192,8 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
                   nl: Optional[list] = None, cd: Optional[list] = None,
                   moc_noi: Optional[list] = None,
                   co_the_dung: Optional[list] = None,
-                  hook: bool = False) -> list[dict]:
+                  hook: bool = False,
+                  dat_truoc: Optional[list] = None) -> list[dict]:
     """AI CHỌN HIỆU ỨNG THEO CẢNH — TIỀN ĐỊNH, KHÔNG RANDOM.
 
     Trả [{bat, het, khoa, dam, loai, vi_sao}] trên timeline ĐẦU RA (giây).
@@ -970,6 +1241,27 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     da_dung: list[str] = []
     da_dung_loai: list[str] = []
 
+    # ---- ĐẶT TRƯỚC: điểm đã được quyết định NGOÀI hàm này, bằng bằng chứng
+    # mạnh hơn số đo. Hiện chỉ có nhóm LỚP PHỦ HẠT (`app/core/lop_phu.py`, khớp
+    # NỘI DUNG cảnh qua vision_digest + chép lời). Vì sao nhận ở ĐÂY chứ không
+    # ghép ở caller: ngân sách 10% (`TY_LE_MAX`), trần `DIEM_MAX`, luật cách
+    # nhau `CACH_MIN` và luật KHÔNG LẶP KIỂU phải được tính MỘT chỗ. Ghép sau
+    # là đường thẳng tới clip 4 điểm nhấn / 14% thời lượng có hiệu ứng.
+    # `dat_truoc=None` -> vòng lặp không chạy -> hàm ra Y HỆT bản cũ.
+    for c in (dat_truoc or []):
+        if len(ra) >= n_diem:
+            break
+        try:
+            dai_p = float(c["het"]) - float(c["bat"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if dai_p <= 0 or dai_p > ngan_sach + 1e-6:
+            continue
+        ra.append(dict(c))
+        ngan_sach -= dai_p
+        da_dung.append(str(c.get("khoa", "")))
+        da_dung_loai.append(str(c.get("loai", "")))
+
     # ---- HOOK MỞ ĐẦU (anh Hùng 08/08/2026: *"phần hook mở đầu cứ thêm sao cho
     # phù hợp gây ấn tượng"*). App đã đưa 2-3 giây CAO TRÀO nhất lên đầu clip
     # (hook-first) nhưng điểm nhấn thì vẫn chọn theo số đo -> giây 0 hầu như
@@ -980,8 +1272,14 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     # (mạnh + có tiếng đắt). Vẫn ăn cùng NGÂN SÁCH 10% và cùng trần độ đậm
     # `DAM_MAX` -> không nới luật nào. Clip PHẲNG cũng vẫn được hook: chỗ này là
     # sự kiện CÓ THẬT (app vừa BÊ đoạn cao trào lên đầu), không phải suy đoán.
-    if hook and float(tong_giay) >= 3.0 and n_diem > 0:
-        k_hook = _chon_kieu("hook", dung, [], 0)
+    # `len(ra) < n_diem` + luật CÁCH NHAU: có `dat_truoc` (lớp phủ) rồi thì hook
+    # phải nhường nếu nó rơi sát chỗ đã đặt. Thiếu 2 điều kiện này là hai hiệu
+    # ứng CHỒNG CỬA SỔ lên nhau — biên độ cộng dồn, đúng loại loè mà luật 4 và
+    # `CACH_MIN` sinh ra để chặn. (Vòng chọn theo số đo bên dưới đã có luật này
+    # từ trước; riêng khối hook thì chưa, vì trước đây nó luôn là điểm ĐẦU TIÊN.)
+    if hook and float(tong_giay) >= 3.0 and len(ra) < n_diem \
+            and not any(abs(HOOK_BAT - float(r["bat"])) < CACH_MIN for r in ra):
+        k_hook = _chon_kieu("hook", dung, da_dung, 0)
         if k_hook:
             dai_h = min(HOOK_DAI, max(DAI_MIN, KHO[k_hook].dai))
             if dai_h <= ngan_sach + 1e-6:
