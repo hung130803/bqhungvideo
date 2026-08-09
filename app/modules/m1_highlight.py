@@ -1826,9 +1826,15 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         from app import services as _sv
         _prow = db.query_one("SELECT project_id FROM videos WHERE id=?",
                              (video_id,))
-        _khoi_nghe_xem += _cd_mod.khoi_prompt_gu(
-            _sv.gu_cua_kenh(_prow["project_id"] if _prow else None))
-    except Exception:  # noqa: BLE001 - thiếu gu không được chặn việc cắt
+        _pid_gu = _prow["project_id"] if _prow else None
+        _khoi_nghe_xem += _cd_mod.khoi_prompt_gu(_sv.gu_cua_kenh(_pid_gu))
+        # 📊 SỐ LIỆU THẬT (view / tỉ lệ xem hết) — chỉ có khi anh Hùng đã NHẬP
+        # file xuất từ TikTok/YouTube. App không tự lấy được (không API, không
+        # đăng nhập kênh). CHƯA NHẬP -> khối rỗng -> prompt Y HỆT hiện tại.
+        from app.ai import so_lieu as _sl_mod
+        _khoi_nghe_xem += _sl_mod.khoi_prompt_so_lieu(
+            _sl_mod.so_lieu_cua_kenh(_pid_gu, db))
+    except Exception:  # noqa: BLE001 - thiếu gu/số liệu không được chặn việc cắt
         pass
 
     # ---- Ưu tiên: AI tự chọn clip + segments ----
@@ -2004,6 +2010,51 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         _want = int(cfg.get("count", 0) or 0)
         if _want > 0 and len(ai_clips) > _want:
             ai_clips = ai_clips[:_want]
+        # ---- 🔎 HẬU KIỂM BẢN GHÉP (app/ai/mach_lac.py) ----
+        # App chọn 3 đoạn hay rồi ghép, và tới v2.20.0 **chưa bao giờ xem lại
+        # bản ghép**. Ba đoạn hay riêng lẻ vẫn có thể rời rạc. Đây là lượt đọc
+        # LỜI THOẠI của chính các đoạn đã chọn (rẻ — chữ đã có sẵn), chỉ dùng
+        # `vision_digest` nếu CACHE đã có (không bao giờ tự bật AI xem hình).
+        # Đặt ở ĐÂY, TRƯỚC `_trim_junk_edges`/`_enforce_len`, để `_enforce_len`
+        # vẫn là NGƯỜI NÓI CUỐI về độ dài (bài học cổng 12).
+        # FAIL-SAFE: mọi lỗi -> GIỮ NGUYÊN lựa chọn ban đầu.
+        if getattr(_st, "HAU_KIEM_GHEP", True):
+            try:
+                from app.ai import mach_lac as _ml_mod
+                _dg_ml = get_analysis(video_id, _vd.VD_KIND) or []
+                ctx.progress(0.67, "🔎 xem lại bản ghép có mạch lạc không...")
+                for _ci, _c in enumerate(ai_clips):
+                    _sg = _c.get("segments") or []
+                    if len(_sg) < _ml_mod.DOAN_TOI_THIEU:
+                        continue
+                    try:
+                        # GỌI THẲNG `complete_text`, **KHÔNG** bọc
+                        # `_call_waiting_quota`. Vòng đợi-hết-lượt là dành cho
+                        # khâu CHỌN ĐOẠN (đợi vài phút để có clip AI vẫn rẻ hơn
+                        # xuất clip cơ bản rồi làm lại). Hậu kiểm thì NGƯỢC LẠI:
+                        # nó là thứ THÊM VÀO, fail-safe của nó là "giữ nguyên
+                        # lựa chọn ban đầu" — không tốn gì. Bọc vòng đợi vào đây
+                        # là biến một khâu tuỳ chọn thành **15 PHÚT/Part** khi
+                        # cả 38 key đang cooldown; 3 Part x 300 kênh thì đứng cả
+                        # dây chuyền. Hết lượt -> ném -> `hau_kiem` bắt -> GIỮ
+                        # NGUYÊN, đúng yêu cầu.
+                        _sg2, _ly = _ml_mod.hau_kiem(
+                            _sg, transcript, llm.complete_text,
+                            digest=_dg_ml,
+                            min_giay=float(cfg.get("min_len", 0.0) or 0.0),
+                            model=str(getattr(_st, "JUDGE_MODEL", "") or ""))
+                    except Exception as _e_ml:  # noqa: BLE001
+                        _sg2 = _sg
+                        _ly = (f"hậu kiểm lỗi ({type(_e_ml).__name__}) -> "
+                               "GIỮ NGUYÊN lựa chọn ban đầu")
+                    if _sg2 is not _sg and _sg2 != _sg:
+                        _c["segments"] = _sg2
+                        _c["mach_lac"] = _ly
+                        ai_warns.append(f"Part {_ci + 1} sửa mạch: {_ly[:70]}")
+                    _ml_mod.ghi_nhat_ky(
+                        _ly, f"video {video_id} · Part {_ci + 1}")
+            except Exception:  # noqa: BLE001 - hậu kiểm KHÔNG được chặn lượt cắt
+                pass
         _len_notes: list = []
         clip_ids = []
         for c in ai_clips:
@@ -3009,10 +3060,54 @@ def _recap_orig_caption_cues(recap_parts: list, segs: list,
     return cues
 
 
-def _pick_hook_seg(video_id: int, signals: dict, segs: list):
-    """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
-    Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
-    Trả None nếu không tìm được / hook đã nằm ngay đầu clip (tránh lặp)."""
+def _ghi_hook_log(video_id, ket: dict) -> None:
+    """1 dòng vào `logs/hook_<ngày>.log` — IN RA CÂU ĐƯỢC CHỌN.
+
+    Vì sao phải ghi: hook là thứ người xem thấy ĐẦU TIÊN, nhưng nó nằm sâu
+    trong đường xuất; không ghi thì "sao clip mở đầu bằng câu này" là câu
+    không tra được. KHÔNG BAO GIỜ ném lỗi.
+    """
+    try:
+        from datetime import datetime
+
+        from config import DATA_DIR
+        d = DATA_DIR / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"hook_{datetime.now():%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] video {video_id} — "
+                    f"{ket.get('vi_sao', '')} | giây "
+                    f"{ket['seg'][0]}-{ket['seg'][1]} | "
+                    f"CÂU: {str(ket.get('cau', ''))[:160]}\n")
+    except Exception:  # noqa: BLE001 — nhật ký không bao giờ chặn việc
+        pass
+
+
+def _pick_hook_seg(video_id: int, signals: dict, segs: list,
+                   transcript: dict = None):
+    """Chọn 2-4s để 'nhá hàng' lên đầu clip (hook-first).
+
+    THỨ TỰ ƯU TIÊN (v2.21.0):
+      1. **TÒ MÒ** — chấm từng CÂU chép lời (`hook_to_mo`), lấy câu để lại câu
+         hỏi / thông tin dở dang. Chỗ ỒN NHẤT không phải chỗ giữ chân người
+         xem; chép lời đã có sẵn nên đường này tốn 0 giây, 0 lượt LLM.
+      2. mốc AI đã chọn (`signals['hook_seg']`) — đường cũ.
+      3. cửa sổ 2,5 s có `_audio_score` lớn nhất — đường cũ.
+    Trả None nếu không tìm được / hook đã nằm ngay đầu clip (tránh lặp).
+
+    BẤT BIẾN: bước 1 hỏng / video KHÔNG LỜI -> rơi thẳng xuống 2 và 3 y như
+    bản cũ, không được vỡ.
+    """
+    try:
+        from app.ai.hook_to_mo import chon_hook_to_mo
+        tr = transcript if transcript is not None else \
+            get_analysis(video_id, "transcript")
+        ket = chon_hook_to_mo(tr, segs)
+        if ket:
+            _ghi_hook_log(video_id, ket)
+            return ket["seg"]
+    except Exception:  # noqa: BLE001 — hook tò mò hỏng KHÔNG được chặn xuất
+        pass
     hs = signals.get("hook_seg")
     try:
         if isinstance(hs, (list, tuple)) and len(hs) >= 2:
@@ -3545,6 +3640,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             _noi_dung = {
                 "digest": get_analysis(video_id, _vd.VD_KIND) or [],
                 "loi": _LP0.loi_theo_doan(_tr_lp, segs),
+                # BẢN CHÉP LỜI ĐẦY ĐỦ (còn mốc từng câu) — nguồn của đường ĐOÁN
+                # CẢNH BẰNG LỜI, chỉ dùng khi KHÔNG có vision_digest. `loi` ở
+                # trên đã bị ép thành MỘT chuỗi nên không dựng mốc được nữa.
+                "transcript": _tr_lp,
             }
         except Exception:  # noqa: BLE001 — không có nội dung thì bỏ nhóm này
             _noi_dung = {}

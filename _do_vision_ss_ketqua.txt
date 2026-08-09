@@ -1,0 +1,24 @@
+[sandbox] C:\Users\Admin\AppData\Local\Temp\dovss_4bnoem2b
+[key Groq] 38 key · model=qwen/qwen3.6-27b
+[nguồn] Part 1 When a Hurricane Hits Your Heart—Who’s Really to Blam · 126,2 giây · 12 khung / 6 lượt
+  lượt 1 · VISION_SONG_SONG=1: 5,54 giây · 7 mốc
+  lượt 1 · VISION_SONG_SONG=6: 41,52 giây · 7 mốc
+       ví dụ mốc: 9s act1, 27s act2, 45s act3, 63s act3, 81s act3, 99s act1
+       mốc tăng dần: True · 7 mốc khác nhau / 7
+  lượt 2 · VISION_SONG_SONG=1: 45,99 giây · 7 mốc
+  lượt 2 · VISION_SONG_SONG=6: 38,59 giây · 7 mốc
+  lượt 3 · VISION_SONG_SONG=1: 45,16 giây · 7 mốc
+  lượt 3 · VISION_SONG_SONG=6: 75,34 giây · 7 mốc
+  lượt 4 · VISION_SONG_SONG=1: 8,74 giây · 7 mốc
+  lượt 4 · VISION_SONG_SONG=6: 38,57 giây · 7 mốc
+  lượt 5 · VISION_SONG_SONG=1: 45,30 giây · 7 mốc
+  lượt 5 · VISION_SONG_SONG=6: 44,89 giây · 7 mốc
+  lượt 6 · VISION_SONG_SONG=1: 100,53 giây · 7 mốc
+  lượt 6 · VISION_SONG_SONG=6: 19,48 giây · 7 mốc
+
+════════════════════════════════════════════════════════════════════
+  TUẦN TỰ (VISION_SONG_SONG=1) : trung vị 45,23 giây · min 5,54 · max 100,53 · [7, 7, 7, 7, 7, 7] mốc
+  SONG SONG (=6)               : trung vị 40,05 giây · min 19,48 · max 75,34 · [7, 7, 7, 7, 7, 7] mốc
+  NHANH HƠN 1,13x  (6 lượt mỗi mức, ĐAN XEN)
+  Hai khoảng min-max CHỒNG NHAU: True  -> KHÔNG kết luận được mức nào nhanh hơn
+  Số mốc KHÔNG ít đi: True (song song min 7 vs tuần tự min 7)

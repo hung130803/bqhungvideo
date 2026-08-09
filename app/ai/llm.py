@@ -989,10 +989,19 @@ def _b64(path: str) -> str:
 
 
 def complete_vision_json(prompt: str, image_paths: list, system: str = "",
-                         provider: Optional[str] = None):
+                         provider: Optional[str] = None, key_dau: int = 0):
     """
     Gửi NHIỀU ẢNH + text cho model vision -> JSON. Dùng để chấm viral theo khung hình.
     Hỗ trợ ollama (qwen2.5vl) và gemini. Ném LLMError nếu lỗi.
+
+    `key_dau`: **BẮT ĐẦU XOAY TỪ KEY THỨ MẤY** (chỉ có nghĩa với groq). Mặc
+    định 0 = hành xử Y HỆT bản cũ. Vì sao cần (ĐO 09/08/2026,
+    `_do_vision_219.py`): gọi nhiều lượt SONG SONG mà lượt nào cũng bắt đầu từ
+    key[0] thì chúng chen vào ĐÚNG MỘT hàng đợi — đo được 40-45 giây/lượt. Cho
+    mỗi lượt một mốc xuất phát KHÁC NHAU thì 3/4 lượt xong trong 0,9 giây.
+    **KHÔNG ghim CỨNG một key**: vẫn đi hết vòng `pick_keys` kể từ mốc đó, nên
+    key hết lượt/sai vẫn lùi sang key kế đúng như cũ và `mark_limited` giữ
+    nguyên ý nghĩa.
     """
     provider = provider or active_provider()
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
@@ -1012,7 +1021,11 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             msgs = ([{"role": "system", "content": system}] if system else []) \
                 + [{"role": "user", "content": content}]
             last = ""
-            for key in pick_keys("groq", keys):
+            _vong = pick_keys("groq", keys)
+            if key_dau and _vong:
+                _i = int(key_dau) % len(_vong)
+                _vong = _vong[_i:] + _vong[:_i]
+            for key in _vong:
                 mark_used("groq", key)
                 try:
                     client = OpenAI(api_key=key,

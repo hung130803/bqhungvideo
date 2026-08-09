@@ -138,10 +138,13 @@ def format_digest_block(digest: list, t0: float = None, t1: float = None,
     return out if out != head else ""
 
 
-def _describe_batch(paths: list) -> list:
+def _describe_batch(paths: list, key_dau: int = 0) -> list:
     """Gọi vision 1 batch ảnh -> [{'i','desc','act'}] (i là index TRONG batch).
-    Ném lỗi cho caller quyết (caller bỏ batch lỗi, giữ batch khác)."""
-    data = llm.complete_vision_json(_VISION_PROMPT, paths)
+    Ném lỗi cho caller quyết (caller bỏ batch lỗi, giữ batch khác).
+
+    `key_dau`: mốc xuất phát trong vòng xoay key — để các lượt chạy SONG SONG
+    không chen vào cùng một hàng đợi (xem `llm.complete_vision_json`)."""
+    data = llm.complete_vision_json(_VISION_PROMPT, paths, key_dau=key_dau)
     if isinstance(data, dict):          # model bọc {"frames":[...]} / {"items":...}
         for k in ("frames", "items", "results", "images"):
             if isinstance(data.get(k), list):
@@ -163,6 +166,52 @@ def _sua_i(rows: list, batch: list, path: str) -> list:
             r["i"] = idx
             ra.append(r)
     return ra
+
+
+def _mot_batch(batch: list, key_dau: int = 0) -> tuple:
+    """MỘT lượt vision -> `(rows, lời_lỗi)`. **KHÔNG BAO GIỜ NÉM** (trừ Huỷ).
+
+    Tách ra khỏi vòng lặp để chạy được cả TUẦN TỰ lẫn SONG SONG bằng đúng một
+    đoạn mã — hai nhánh khác nhau là hai chỗ để lệch nhau âm thầm.
+    Lỗi -> `([], lý do)`: mất 1 batch vẫn hơn mất cả digest.
+    """
+    from app.queue.worker import CanceledError
+    try:
+        try:
+            return _describe_batch([p for _, p in batch], key_dau), ""
+        except llm.LLMTooLarge:
+            # HẠN MỨC token/phút của tài khoản Groq có thể siết bất cứ lúc nào
+            # (đo 8.000/phút hôm nay, mai Groq đổi là chuyện của họ). Thay vì
+            # mất cả batch -> gửi TỪNG ẢNH. Không phạt key nào (xem
+            # llm.is_too_large_error).
+            rows, loi = [], ""
+            for _t1, _p1 in batch:
+                try:
+                    rows += _sua_i(_describe_batch([_p1], key_dau), batch, _p1)
+                except Exception as e2:  # noqa: BLE001
+                    loi = f"{type(e2).__name__}: {str(e2)[:200]}"
+            return rows, loi
+    except CanceledError:
+        raise
+    except Exception as e:  # noqa: BLE001 - batch lỗi -> bỏ batch đó
+        # GHI LẠI lý do. BẪY ĐÃ SẬP 06/08/2026: model vision cấu hình sẵn
+        # (llama-4-scout) bị Groq gỡ -> 404 mọi batch -> digest rỗng, mà app
+        # không báo gì nên tưởng "AI có xem hình rồi, chỉ là không thấy gì".
+        return [], f"{type(e).__name__}: {str(e)[:200]}"
+
+
+def _gom(digest: list, batch: list, rows) -> None:
+    """Nhặt mô tả hợp lệ của 1 batch vào `digest` (gán ĐÚNG mốc giây)."""
+    for r in rows or []:
+        try:
+            i = int(r.get("i", r.get("index")))
+            desc = str(r.get("desc") or "").strip()
+            act = int(round(float(r.get("act", 0))))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if 0 <= i < len(batch) and desc:
+            digest.append({"t": batch[i][0], "desc": desc[:_DESC_MAX],
+                           "act": max(0, min(10, act))})
 
 
 def _ghi_loi(video_id, ly_do: str) -> None:
@@ -224,48 +273,50 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                 fp = os.path.join(td, f"f{k:03d}.jpg")
                 if extract_frame(src_path, t, fp, width=_FRAME_W):
                     frames.append((t, fp))
-            n_batch = (len(frames) + _BATCH - 1) // _BATCH
-            for bi in range(0, len(frames), _BATCH):
+            lo = [frames[i:i + _BATCH] for i in range(0, len(frames), _BATCH)]
+            n_batch = len(lo)
+            # SỐ LƯỢT CHẠY CÙNG LÚC. ĐO 09/08/2026 (`_do_vision_219.py`):
+            # **98,7% của 219 giây là ĐỢI MẠNG TUẦN TỰ**, trích khung chỉ 1,3%
+            # -> đây đúng là chỗ để song song, và nó KHÔNG tốn thêm CPU máy anh
+            # Hùng (chỉ là ổ cắm mạng). `VISION_SONG_SONG=1` -> đường cũ.
+            try:
+                _ss = int(getattr(settings, "VISION_SONG_SONG", 6) or 1)
+            except (TypeError, ValueError):
+                _ss = 1
+            _ss = max(1, min(_ss, n_batch))
+            if _ss <= 1:
+                for bi, batch in enumerate(lo):
+                    if ctx is not None and hasattr(ctx, "check_canceled"):
+                        ctx.check_canceled()
+                    if ctx is not None and hasattr(ctx, "progress"):
+                        ctx.progress(0.22 + 0.06 * bi / max(1, n_batch),
+                                     f"AI xem khung hình khắp video "
+                                     f"({bi + 1}/{n_batch})...")
+                    rows, err = _mot_batch(batch, bi)
+                    if err:
+                        LOI_CUOI = err
+                    _gom(digest, batch, rows)
+            else:
                 if ctx is not None and hasattr(ctx, "check_canceled"):
-                    ctx.check_canceled()
+                    ctx.check_canceled()   # HUỶ: kiểm TRƯỚC khi thả luồng
                 if ctx is not None and hasattr(ctx, "progress"):
-                    ctx.progress(0.22 + 0.06 * (bi // _BATCH) / max(1, n_batch),
-                                 f"AI xem khung hình khắp video "
-                                 f"({bi // _BATCH + 1}/{n_batch})...")
-                batch = frames[bi:bi + _BATCH]
-                try:
-                    try:
-                        rows = _describe_batch([p for _, p in batch])
-                    except llm.LLMTooLarge:
-                        # HẠN MỨC token/phút của tài khoản Groq có thể siết bất
-                        # cứ lúc nào (đo 8.000/phút hôm nay, mai Groq đổi là
-                        # chuyện của họ). Thay vì mất cả batch -> gửi TỪNG ẢNH.
-                        # Không phạt key nào (xem llm.is_too_large_error).
-                        rows = []
-                        for _t1, _p1 in batch:
-                            try:
-                                rows += _sua_i(_describe_batch([_p1]),
-                                               batch, _p1)
-                            except Exception as e2:  # noqa: BLE001
-                                LOI_CUOI = f"{type(e2).__name__}: {str(e2)[:200]}"
-                except Exception as e:  # noqa: BLE001 - batch lỗi -> bỏ batch đó
-                    # GHI LẠI lý do. BẪY ĐÃ SẬP 06/08/2026: model vision cấu
-                    # hình sẵn (llama-4-scout) bị Groq gỡ -> 404 mọi batch ->
-                    # digest rỗng, mà app không báo gì nên tưởng "AI có xem
-                    # hình rồi, chỉ là không thấy gì đáng kể".
-                    LOI_CUOI = f"{type(e).__name__}: {str(e)[:200]}"
-                    continue
-                for r in rows or []:
-                    try:
-                        i = int(r.get("i", r.get("index")))
-                        desc = str(r.get("desc") or "").strip()
-                        act = int(round(float(r.get("act", 0))))
-                    except (TypeError, ValueError):
-                        continue
-                    if 0 <= i < len(batch) and desc:
-                        digest.append({"t": batch[i][0],
-                                       "desc": desc[:_DESC_MAX],
-                                       "act": max(0, min(10, act))})
+                    ctx.progress(0.22, f"AI xem khung hình khắp video "
+                                       f"({n_batch} lượt song song, mỗi lượt "
+                                       f"một key)...")
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=_ss,
+                                        thread_name_prefix="vdg") as ex:
+                    # `bi` vừa là thứ tự lượt vừa là MỐC XUẤT PHÁT trong vòng
+                    # xoay key -> mỗi lượt bắt đầu ở một key khác nhau, không
+                    # chen vào cùng một hàng đợi (đo: 40-45s -> 0,9s cho 3/4).
+                    ket = list(ex.map(lambda t: _mot_batch(t[1], t[0]),
+                                      list(enumerate(lo))))
+                for (rows, err), batch in zip(ket, lo):
+                    if err:
+                        LOI_CUOI = err
+                    _gom(digest, batch, rows)
+                if ctx is not None and hasattr(ctx, "check_canceled"):
+                    ctx.check_canceled()   # bấm Huỷ lúc đang đợi -> nổi lên đây
     except CanceledError:               # user bấm Hủy -> nổi lên cho worker
         raise
     except Exception as e:  # noqa: BLE001 - lỗi khác (ffmpeg/IO...) -> êm như cũ

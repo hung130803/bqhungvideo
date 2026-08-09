@@ -3197,10 +3197,13 @@ def export_canvas_clip(
                                         # {"digest": [{'t','desc','act'}] mốc
                                         # AI XEM HÌNH trên timeline NGUỒN (đọc
                                         # CACHE, KHÔNG gọi LLM), "loi": chép
-                                        # lời của chính đoạn này}. None/thiếu
-                                        # digest -> nhóm lớp phủ TỰ BỎ QUA
-                                        # (xem `lop_phu.chon_lop_phu`) và mọi
-                                        # thứ chạy y hệt bản cũ.
+                                        # lời của chính đoạn này, "transcript":
+                                        # bản chép lời ĐẦY ĐỦ (có mốc từng câu)
+                                        # để dựng đường ĐOÁN CẢNH BẰNG LỜI khi
+                                        # KHÔNG có digest}. Thiếu cả hai ->
+                                        # nhóm lớp phủ TỰ BỎ QUA (xem
+                                        # `lop_phu.chon_lop_phu`) và mọi thứ
+                                        # chạy y hệt bản cũ.
     tieng_dong_log: Optional[list] = None,  # LIST CỦA CALLER: TIẾNG ĐỘNG đã chèn
                                         # ở từng điểm nối [{giay, loai, ten,
                                         # nguon}]. Cùng dữ liệu với biến toàn
@@ -3434,10 +3437,25 @@ def export_canvas_clip(
             _lp_chon: list = []
             try:
                 from app.core import lop_phu as _LP
+                _lp_moc = _LP.loc_digest_theo_doan(
+                    (noi_dung or {}).get("digest") or [], segs, vspeed)
+                _lp_loi = str((noi_dung or {}).get("loi") or "")
+                if not _lp_moc:
+                    # ---- ĐƯỜNG THỨ HAI: ĐOÁN CẢNH BẰNG **LỜI THOẠI** ----
+                    # `VISION_CUT` mặc định TẮT (đo 219 giây/video) nên hầu hết
+                    # clip KHÔNG có digest -> trước v2.21.0 nhóm lớp phủ gần như
+                    # không bao giờ chạy ("không thấy tuyết/trái tim nào").
+                    # Chép lời thì clip nào cũng có sẵn, 0 giây thêm, 0 lượt LLM.
+                    # XEM HÌNH VẪN ƯU TIÊN: chỉ vào đây khi digest RỖNG.
+                    _lp_moc = _LP.digest_tu_loi(
+                        (noi_dung or {}).get("transcript") or {}, segs, vspeed)
+                    # và KHÔNG đưa `loi` vào nữa: mốc đã DỰNG TỪ chính lời đó,
+                    # tính cả hai là ĐẾM MỘT BẰNG CHỨNG HAI LẦN -> một câu nhắc
+                    # "trời mưa" tự nó qua ngưỡng. Để rỗng thì bậc thang giữ
+                    # nguyên ý nghĩa: phải **2 CÂU** nói tới cảnh đó.
+                    _lp_loi = ""
                 _lp_chon, _lp_ly = _LP.chon_lop_phu(
-                    _LP.loc_digest_theo_doan(
-                        (noi_dung or {}).get("digest") or [], segs, vspeed),
-                    str((noi_dung or {}).get("loi") or ""), _out_dur,
+                    _lp_moc, _lp_loi, _out_dur,
                     str(hieu_ung).strip().lower(), co_the_dung=_dung_kieu)
                 _LP.ghi_nhat_ky(_lp_ly, os.path.basename(str(dst)))
             except Exception:  # noqa: BLE001 — lớp phủ KHÔNG được chặn lượt xuất
