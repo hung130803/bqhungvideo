@@ -89,6 +89,27 @@ def bo_qua(nhan: str, ly_do: str) -> None:
     BOQUA.append(f"{nhan} — {ly_do}")
 
 
+def _ma_that(src: str, mau: str) -> list:
+    """Các dòng **MÃ CHẠY ĐƯỢC** có chứa `mau` — bỏ COMMENT và mọi CHUỖI.
+
+    Vì sao không lọc bằng `startswith('#')`: ghi chú thụt lề, ghi chú ĐUÔI DÒNG
+    và docstring đều lọt, nên chính câu *"CẤM `.split()`"* trong tài liệu bị kể
+    là vi phạm. `tokenize` cho biết đúng loại từng token.
+    """
+    import io
+    import tokenize
+    dong = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type in (tokenize.COMMENT, tokenize.STRING):
+                continue
+            dong.setdefault(tok.start[0], []).append(tok.string)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return [f"KHÔNG PHÂN TÍCH ĐƯỢC {mau}"]
+    return ["".join(v).strip() for _n, v in sorted(dong.items())
+            if mau in "".join(v)]
+
+
 #: nhóm -> ([thư mục], CHỮ VIẾT phải có trong TÊN FILE, giây tối thiểu).
 #: Dấu hiệu ngôn ngữ lấy từ TÊN FILE — phải ĐỘC LẬP với `transcribe()`, nếu
 #: không thì "chọn nguồn bằng chính kết quả đang đi assert" (bẫy cổng 40/41).
@@ -115,27 +136,33 @@ def _dai(p: Path) -> float:
         return 0.0
 
 
-def chon_nguon(nhom: str, so: int, gmin=90.0, gmax=1800.0) -> list:
+def chon_nguon(nhom: str, so: int, gmax=1800.0) -> list:
     """`so` video của nhóm, xếp theo **BĂM SHA1 CỦA TÊN** (ổn định giữa các
-    lượt dù prodown vẫn đang tải vào cùng thư mục — bài học cổng 41)."""
+    lượt dù prodown vẫn đang tải vào cùng thư mục — bài học cổng 41).
+
+    `KHO[nhom]` = (DANH SÁCH thư mục, mẫu CHỮ VIẾT trong tên file, giây tối
+    thiểu). Lọc theo CHỮ VIẾT là dấu hiệu ĐỘC LẬP với `transcribe` (bài học
+    cổng 40: prodown tải lẫn video tiếng Anh vào thư mục 'video nhật dài').
+    """
     import re
-    d, chu = KHO[nhom]
-    p = Path(d)
-    if not p.is_dir():
-        return []
+    ds, chu, gmin = KHO[nhom]
     rx = re.compile(chu, re.I) if chu else None
     ung = []
-    for f in p.rglob("*.mp4"):
-        try:
-            mb = f.stat().st_size / 1048576
-        except OSError:
+    for d in ds:
+        p = Path(d)
+        if not p.is_dir():
             continue
-        if not (2.0 <= mb <= 300.0):
-            continue
-        if rx is not None and not rx.search(f.name):
-            continue
-        ung.append((hashlib.sha1(f.name.encode("utf-8",
-                                               "replace")).hexdigest(), f))
+        for f in p.rglob("*.mp4"):
+            try:
+                mb = f.stat().st_size / 1048576
+            except OSError:
+                continue
+            if not (2.0 <= mb <= 300.0):
+                continue
+            if rx is not None and not rx.search(f.name):
+                continue
+            ung.append((hashlib.sha1(f.name.encode("utf-8",
+                                                   "replace")).hexdigest(), f))
     ung.sort()
     ra = []
     for _h, f in ung:
@@ -273,10 +300,19 @@ def main() -> int:
             if x.strip() and Path(x.strip()).exists():
                 nguon.append(("ép", Path(x.strip()), _dai(Path(x.strip()))))
     else:
-        moi = max(2, a.so // len(KHO))
-        for nhom in KHO:
-            for f, g in chon_nguon(nhom, moi):
-                nguon.append((nhom, f, g))
+        # LẤY DƯ: video thật hay bị loại giữa chừng (tách audio hỏng, chép lời
+        # ra < 4 câu — vlog nhạc nền). Lấy đúng `so // nhóm` thì chỉ cần MỘT
+        # video bị loại là cổng ĐỎ oan vì thiếu mẫu, không phải vì app sai.
+        moi = max(2, a.so // len(KHO)) + 2
+        theo_nhom = {n: chon_nguon(n, moi) for n in KHO}
+        # ĐAN XEN theo vòng, KHÔNG nối đuôi từng nhóm: vòng lấy mẫu bên dưới
+        # dừng ngay khi đủ `--so`, nên nối đuôi thì 2 nhóm đầu chiếm hết suất và
+        # ca "phủ >= 4 nhóm ngôn ngữ" HỎNG OAN dù trên đĩa có đủ cả 4 thứ tiếng.
+        for i in range(moi):
+            for nhom in KHO:
+                if i < len(theo_nhom[nhom]):
+                    f, g = theo_nhom[nhom][i]
+                    nguon.append((nhom, f, g))
     if len(nguon) < a.so:
         bo_qua(f"CA 2 đủ {a.so} video", f"chỉ tìm được {len(nguon)}")
 
@@ -440,11 +476,22 @@ def main() -> int:
     # ───────────────────────────────────────────── CA 5: QUÉT TĨNH
     print("\n══ CA 5. QUÉT TĨNH ══")
     src = (REPO / "app" / "ai" / "hook_to_mo.py").read_text(encoding="utf-8")
-    xau = [ln.strip() for ln in src.splitlines()
-           if ".split()" in ln and not ln.strip().startswith("#")
-           and "bất biến" not in ln.lower()]
+    # QUÉT **MÃ THẬT**, không quét chữ trong ghi chú. Bản đầu của cổng này lọc
+    # bằng `startswith("#")` nên chính dòng ghi chú *"CẤM .split()"* bị kể là vi
+    # phạm -> cổng ĐỎ OAN vĩnh viễn (đúng bài học cổng 27: soi cả file thì bắt
+    # nhầm thứ user không thấy). `tokenize` bỏ COMMENT + STRING (gồm docstring)
+    # nên chỉ còn mã chạy được.
+    xau = _ma_that(src, ".split()")
     kiem(not xau, "CA5 hook_to_mo KHÔNG đếm token bằng `.split()`",
          "; ".join(x[:60] for x in xau))
+    # TỰ KIỂM BỘ DÒ: bộ dò phải KÊU khi mã thật có `.split()`, không thì cổng
+    # này chỉ là con dấu (bài học cổng 43 "tự kiểm bộ dò").
+    kiem(bool(_ma_that("x = 1  # .split()\ns = 'a .split() b'\nn = t.split()",
+                       ".split()")),
+         "CA5 bộ dò tĩnh CÓ kêu khi mã thật dùng `.split()`")
+    kiem(not _ma_that("# chỉ ghi chú .split()\ns = 'chuỗi .split()'",
+                      ".split()"),
+         "CA5 bộ dò tĩnh KHÔNG kêu với ghi chú/chuỗi")
     kiem("_word_tokens" in src, "CA5 hook_to_mo DÙNG recap._word_tokens")
     kiem("unicodedata" not in src and "normalize('NFD'" not in src
          and 'normalize("NFD"' not in src,
