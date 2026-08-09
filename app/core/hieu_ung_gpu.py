@@ -392,6 +392,21 @@ KHO_GPU: dict = {h.khoa: h for h in (
     ChuyenCanhGPU("gl_chong_chong", "Chong chóng quay", "Pinwheel", "pinwheel"),
     ChuyenCanhGPU("gl_troi_mem", "Trôi mềm sang bên", "Smooth Slide", "swap"),
     ChuyenCanhGPU("gl_giat_khoi", "Giật khối glitch", "Glitch", "glitchmemories"),
+    # ---- MỞ RỘNG KHO 09/08/2026: 10 kernel nữa, cũng gl-transitions (MIT),
+    # cũng viết lại tay sang OpenCL. Đo bằng `_do_gpu_chuyen_canh.py` trên
+    # 2 đoạn phim THẬT 1080x1920: khung GIỮA phải khác CẢ đoạn đi lẫn đoạn đến
+    # >= 8% điểm ảnh (không thì nhìn ra là cắt khô), lệch U/V < 3,0, đủ khung.
+    # Tên tiếng Việt ghi theo cái MẮT THẤY sau khi render, không theo tên gốc.
+    ChuyenCanhGPU("gl_xoay_loc", "Xoáy lốc giữa khung", "Swirl", "Swirl · Sergey Kosarevsky"),
+    ChuyenCanhGPU("gl_zoom_nhoe", "Zoom nhoè lao tới", "Zoom Blur", "CrossZoom · rectalogic"),
+    ChuyenCanhGPU("gl_mat_ruoi", "Mắt ruồi gợn sóng", "Fly Eye", "flyeye · gre"),
+    ChuyenCanhGPU("gl_soc_manh", "Sọc mảnh quét ngang", "Window Slice", "windowslice · gre"),
+    ChuyenCanhGPU("gl_cot_roi", "Cột rơi xuống", "Doom Melt", "DoomScreenTransition · Zeh Fernando"),
+    ChuyenCanhGPU("gl_mo_mang", "Mơ màng gợn nhẹ", "Dreamy", "Dreamy · mikolalysenko"),
+    ChuyenCanhGPU("gl_o_gach", "Ô gạch xoay", "Mosaic", "Mosaic · Xaychru"),
+    ChuyenCanhGPU("gl_to_ong", "Tổ ong vỡ ra", "Hexagon", "hexagonalize · Fernando Kuteken"),
+    ChuyenCanhGPU("gl_kinh_van_hoa", "Kính vạn hoa", "Kaleidoscope", "kaleidoscope · nwoeanhinnogaehr"),
+    ChuyenCanhGPU("gl_song_buom", "Sóng cánh bướm", "Butterfly", "ButterflyWaveScrawler · mandubian"),
 )}
 
 

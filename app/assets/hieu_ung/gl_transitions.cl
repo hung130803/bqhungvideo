@@ -402,6 +402,214 @@ __kernel void gl_giat_khoi(__write_only image2d_t dst,
         mix(g(src1, b, dim), g(src2, b, dim), pr).z, 1.0f));
 }
 
+/* ==================================================================
+ * MỞ RỘNG KHO 09/08/2026 — 10 kernel nữa, chuyển tay từ gl-transitions
+ * ==================================================================
+ * Vẫn nguồn https://github.com/gl-transitions/gl-transitions (MIT), vẫn VIẾT
+ * LẠI TAY sang OpenCL C, không chép nhị phân. Mỗi kernel ghi TÊN GỐC + TÁC GIẢ.
+ *
+ * BỎ `colorSeparation` Ở 2 KERNEL CÓ NÓ (`flyeye`, `ButterflyWaveScrawler`):
+ * bản gốc lấy R/G/B ở 3 TOẠ ĐỘ LỆCH NHAU để ra viền cầu vồng — đúng thứ luật 3
+ * cấm (`rgbashift` đã bị bỏ vì phồng chroma U +7,16 · V +12,04, và anh Hùng đã
+ * chê "video tím loè loẹt"). Đặt colorSeparation = 0 thì cả 3 kênh đọc CÙNG một
+ * toạ độ: hình vẫn méo đúng như gốc mà không sinh ra màu mới.
+ */
+
+/* 26 Swirl — XOÁY LỐC giữa khung rồi trả về (Sergey Kosarevsky, MIT)  */
+__kernel void gl_xoay_loc(__write_only image2d_t dst,
+                          __read_only image2d_t src1,
+                          __read_only image2d_t src2, float progress)
+{
+    VAO
+    float2 c = uv - (float2)(0.5f, 0.5f);
+    float dis = length(c);
+    if (dis < 1.0f) {
+        float pc = 1.0f - dis;
+        float A = (pr <= 0.5f) ? mix(0.0f, 1.0f, pr / 0.5f)
+                               : mix(1.0f, 0.0f, (pr - 0.5f) / 0.5f);
+        float th = pc * pc * A * 8.0f * 3.14159265f;
+        float s = sin(th), co = cos(th);
+        c = (float2)(c.x * co - c.y * s, c.x * s + c.y * co);
+    }
+    c += (float2)(0.5f, 0.5f);
+    write_imagef(dst, ip, mix(g(src1, c, dim), g(src2, c, dim), pr));
+}
+
+/* 27 CrossZoom — ZOOM NHOÈ LAO TỚI (rectalogic, MIT). 41 vòng x 2 lượt
+ *    đọc/điểm — đúng loại việc GPU làm rẻ mà CPU làm đắt.             */
+__kernel void gl_zoom_nhoe(__write_only image2d_t dst,
+                           __read_only image2d_t src1,
+                           __read_only image2d_t src2, float progress)
+{
+    VAO
+    float2 tam = (float2)(0.25f + 0.5f * pr, 0.5f);
+    float tt = pr / 0.5f;                       /* exponential easeInOut */
+    float hoa = (pr <= 0.0f) ? 0.0f
+              : (pr >= 1.0f) ? 1.0f
+              : (tt < 1.0f) ? 0.5f * pow(2.0f, 10.0f * (tt - 1.0f))
+                            : 0.5f * (2.0f - pow(2.0f, -10.0f * (tt - 1.0f)));
+    /* sinusoidal easeInOut cho ĐỘ MẠNH vệt zoom (strength gốc = 0,4) */
+    float manh = -0.2f * (cos(3.14159265f * pr / 0.5f) - 1.0f);
+    float4 mau = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    float tong = 0.0f;
+    float2 toi = tam - uv;
+    float lech = rnd(uv * 100.0f);
+    for (int i = 0; i <= 40; i++) {
+        float pc = ((float)i + lech) / 40.0f;
+        float w = 4.0f * (pc - pc * pc);
+        float2 q = uv + toi * pc * manh;
+        mau += mix(g(src1, q, dim), g(src2, q, dim), hoa) * w;
+        tong += w;
+    }
+    write_imagef(dst, ip, mau / max(tong, 1e-4f));
+}
+
+/* 28 flyeye — MẮT RUỒI (gre, MIT). colorSeparation = 0, xem đầu khối. */
+__kernel void gl_mat_ruoi(__write_only image2d_t dst,
+                          __read_only image2d_t src1,
+                          __read_only image2d_t src2, float progress)
+{
+    VAO
+    float nghich = 1.0f - pr;
+    float2 d = 0.04f * (float2)(cos(50.0f * uv.x), sin(50.0f * uv.y));
+    write_imagef(dst, ip, g(src2, uv + nghich * d, dim) * pr
+                        + g(src1, uv + pr * d, dim) * nghich);
+}
+
+/* 29 windowslice — SỌC MẢNH quét ngang (gre, MIT)                     */
+__kernel void gl_soc_manh(__write_only image2d_t dst,
+                          __read_only image2d_t src1,
+                          __read_only image2d_t src2, float progress)
+{
+    VAO
+    float p2 = ss(-0.5f, 0.0f, uv.x - pr * 1.5f);
+    float s = step(p2, fr1(10.0f * uv.x));
+    write_imagef(dst, ip, mix(g(src1, uv, dim), g(src2, uv, dim), s));
+}
+
+/* 30 DoomScreenTransition — CỘT RƠI XUỐNG kiểu game Doom
+ *    (Zeh Fernando, MIT). 30 cột, mỗi cột rơi một nhịp khác nhau.     */
+__kernel void gl_cot_roi(__write_only image2d_t dst,
+                         __read_only image2d_t src1,
+                         __read_only image2d_t src2, float progress)
+{
+    VAO
+    float so_cot = 30.0f;
+    float cot = floor(uv.x * so_cot);
+    float fn = cot * 0.5f * 0.1f * so_cot;
+    float song = cos(fn * 0.5f) * cos(fn * 0.13f) * sin((fn + 10.0f) * 0.3f)
+                 / 2.0f + 0.5f;
+    float nn = fr1(fmod(cot * 67123.313f, 12.0f)
+                   * sin(cot * 10.3f) * cos(cot));
+    float pha = pr * (1.0f + mix(song, nn, 0.1f) * 2.0f);
+    write_imagef(dst, ip, (pha + uv.y < 1.0f)
+                 ? g(src1, (float2)(uv.x, uv.y + pha), dim)
+                 : g(src2, uv, dim));
+}
+
+/* 31 Dreamy — MƠ MÀNG, ảnh gợn lên xuống (mikolalysenko, MIT)         */
+__kernel void gl_mo_mang(__write_only image2d_t dst,
+                         __read_only image2d_t src1,
+                         __read_only image2d_t src2, float progress)
+{
+    VAO
+    float n = 1.0f - pr;
+    float d1 = 0.03f * pr * cos(10.0f * (pr + uv.x));
+    float d2 = 0.03f * n * cos(10.0f * (n + uv.x));
+    write_imagef(dst, ip, mix(g(src1, uv + (float2)(0.0f, d1), dim),
+                              g(src2, uv + (float2)(0.0f, d2), dim), pr));
+}
+
+/* 32 Mosaic — Ô GẠCH XOAY rồi dồn về ô đích (Xaychru, MIT)            */
+__kernel void gl_o_gach(__write_only image2d_t dst,
+                        __read_only image2d_t src1,
+                        __read_only image2d_t src2, float progress)
+{
+    VAO
+    float ex = 2.0f, ey = -1.0f;
+    float2 p = uv - 0.5f;
+    float rpr = pr * 2.0f - 1.0f;
+    p *= fabs(-(rpr * rpr * 2.0f) + 3.0f);
+    float ci = -cos(pr * 3.14159265f) / 2.0f + 0.5f;
+    p += mix((float2)(0.5f, 0.5f), (float2)(ex + 0.5f, ey + 0.5f), ci * ci);
+    float2 mp = fr2(p);
+    float2 sn = floor(p);
+    bool cuoi = ((int)sn.x == (int)ex) && ((int)sn.y == (int)ey);
+    if (!cuoi) {
+        float ang = (float)((int)(rnd(sn) * 4.0f)) * 0.5f * 3.14159265f;
+        float s = sin(ang), c = cos(ang);
+        float2 q = mp - 0.5f;
+        mp = (float2)(0.5f, 0.5f) + (float2)(q.x * c - q.y * s,
+                                             q.x * s + q.y * c);
+    }
+    write_imagef(dst, ip, (cuoi || rnd(sn - 1.0f) > 0.5f) ? g(src2, mp, dim)
+                                                          : g(src1, mp, dim));
+}
+
+/* 33 hexagonalize — TỔ ONG: vỡ thành lục giác rồi liền lại
+ *    (Fernando Kuteken, MIT). Toạ độ lục giác trục q/r/s.             */
+__kernel void gl_to_ong(__write_only image2d_t dst,
+                        __read_only image2d_t src1,
+                        __read_only image2d_t src2, float progress)
+{
+    VAO
+    float ty = (float)dim.x / (float)dim.y;
+    float d = ceil(2.0f * min(pr, 1.0f - pr) * 50.0f) / 50.0f;
+    float2 p = uv;
+    if (d > 0.0f) {
+        float sz = (sqrt(3.0f) / 3.0f) * d / 20.0f;
+        float2 t = ((float2)(uv.x, uv.y / ty) - 0.5f) / sz;
+        float q = (sqrt(3.0f) / 3.0f) * t.x + (-1.0f / 3.0f) * t.y;
+        float r = (2.0f / 3.0f) * t.y;
+        float s = -q - r;
+        float rq = floor(q + 0.5f), rr = floor(r + 0.5f), rs = floor(s + 0.5f);
+        float dq = fabs(rq - q), dr = fabs(rr - r), ds = fabs(rs - s);
+        if (dq > dr && dq > ds)      rq = -rr - rs;
+        else if (dr > ds)            rr = -rq - rs;
+        p = (float2)((sqrt(3.0f) * rq + (sqrt(3.0f) / 2.0f) * rr) * sz + 0.5f,
+                     ((3.0f / 2.0f) * rr * sz + 0.5f) * ty);
+    }
+    write_imagef(dst, ip, mix(g(src1, p, dim), g(src2, p, dim), pr));
+}
+
+/* 34 kaleidoscope — KÍNH VẠN HOA (nwoeanhinnogaehr, MIT)              */
+__kernel void gl_kinh_van_hoa(__write_only image2d_t dst,
+                              __read_only image2d_t src1,
+                              __read_only image2d_t src2, float progress)
+{
+    VAO
+    float2 q = uv;
+    float t = pow(pr, 1.5f);
+    float2 p = uv - 0.5f;
+    for (int i = 0; i < 7; i++) {
+        p = (float2)(sin(t) * p.x + cos(t) * p.y,
+                     sin(t) * p.y - cos(t) * p.x);
+        t += 1.0f;
+        p = fabs(fmod(p, (float2)(2.0f, 2.0f)) - 1.0f);
+    }
+    write_imagef(dst, ip,
+                 mix(mix(g(src1, q, dim), g(src2, q, dim), pr),
+                     mix(g(src1, p, dim), g(src2, p, dim), pr),
+                     1.0f - 2.0f * fabs(pr - 0.5f)));
+}
+
+/* 35 ButterflyWaveScrawler — SÓNG CÁNH BƯỚM (mandubian, MIT).
+ *    colorSeparation = 0, xem đầu khối.                               */
+__kernel void gl_song_buom(__write_only image2d_t dst,
+                           __read_only image2d_t src1,
+                           __read_only image2d_t src2, float progress)
+{
+    VAO
+    float nghich = 1.0f - pr;
+    float2 o = uv * sin(pr) - (float2)(0.5f, 0.5f);
+    float dl = max(length(o), 1e-5f);
+    float th = acos(clamp(o.x / dl, -1.0f, 1.0f)) * 30.0f;
+    float dp = (exp(cos(th)) - 2.0f * cos(4.0f * th)
+                + pow(sin((2.0f * th - 3.14159265f) / 24.0f), 5.0f)) / 10.0f;
+    write_imagef(dst, ip, g(src2, uv + nghich * dp, dim) * pr
+                        + g(src1, uv + pr * dp, dim) * nghich);
+}
+
 /* CA KIỂM CHIỀU — KHÔNG phải hiệu ứng: nửa trên = ảnh ĐI, nửa dưới = ảnh ĐẾN
  * khi progress=1. Dùng để CHỨNG MINH chiều `progress` chứ không đoán.        */
 __kernel void kiem_chieu(__write_only image2d_t dst,

@@ -707,6 +707,181 @@ _dk(HieuUng(
     _SH_MAU, shader="tuong_phan.hook", ts=((0.80, 1.00), ), dai=0.40,
     hop=("caotrao", "ke")))
 
+# ---- NHÓM 6: MỞ RỘNG KHO 09/08/2026 ----
+# Anh Hùng: *"tôi muốn đa dạng, càng nhiều kiểu càng nhiều loại càng tốt —
+# nhưng đảm bảo thêm vào hợp lý chứ không phải thêm bừa bãi lỗi hết"*.
+#
+# MỌI kiểu dưới đây đã qua 7 CỔNG đo ở ĐÚNG 1080x1920 trên video THẬT
+# (`_do_kho_moi.py` -> `_ket_kho_moi.json`): thấy được >= 8% điểm ảnh · đúng
+# chiều sáng đã KHAI TRƯỚC · |dU|,|dV| < 3,0 · không khung nào dưới 35% sáng gốc
+# · ngoài cửa sổ 0,00% · ffprobe ĐẾM KHUNG THẬT đủ · chi phí đo bằng CPU-giây.
+#
+# 15/16 kiểu là **filter CÓ SẴN trong ffmpeg** — cố ý: chúng tốn **0 MB** gói
+# cài và chạy được trên MÁY NHÂN VIÊN (không frei0r · không Vulkan · không
+# OpenCL), đúng chỗ kho cũ mỏng nhất. Trước lượt này máy nhân viên chỉ còn 14/27
+# kiểu; nay được thêm 15 kiểu nữa mà không thêm một byte tài nguyên nào.
+#
+# === VÌ SAO CÓ KIỂU KHÔNG NHÂN `_SONG` (êm vào — êm ra) ===
+# `_SONG` cần filter nhận BIỂU THỨC THEO `t`. Đã tra `ffmpeg -h filter=` từng
+# cái: `rotate.a` · `zoompan.z/x/y` · `lutyuv.y` · `swaprect.*` nhận biểu thức
+# (-> có `_SONG`); còn `shear.shx` · `dblur.radius` · `scroll.horizontal` ·
+# `boxblur.lr` · `shufflepixels.width` · `lenscorrection.k1` khai kiểu
+# <float>/<int> nên chỉ bật/tắt được bằng `enable`. Với nhóm sau, cú bật DỨT
+# KHOÁT chính là hiệu ứng (glitch/vỡ hình/mờ) — cùng tiền lệ đã đo đạt của
+# `o_vuong` (pixelize) · `xao_dong` (shufflepixels) · `mo_net` (gblur).
+# ĐỪNG "chữa" bằng `split`+`blend`: cổng 41 đã đo cách đó **2,18x wall** và
+# `blend` lúc `enable=0` còn cho qua nhánh CÓ hiệu ứng (loè ngược, rc=0 im lặng).
+
+# --- 6a. HÌNH HỌC / CHUYỂN ĐỘNG MÁY (dời chỗ điểm ảnh, KHÔNG pha lại màu) ---
+_dk(HieuUng(
+    "xien_hinh", "Xô nghiêng khung", "Shear", "thuan",
+    # `shear` tô nền ĐEN vào phần trống -> phải PHÓNG TO TRƯỚC cho phủ kín, nếu
+    # không là 2 nêm đen ở mép (đúng loại lỗi `sup_toi` đã gây ra). Hệ số 1,85:
+    # xô ngang shx đẩy đi shx*H = shx*1920 px, so với W=1080 là 1,78*shx -> 1,85
+    # là dư an toàn. Đo ở shx 0,10: 42,57% điểm ảnh · ngoài 0,00% · sáng
+    # 0,97..0,99 · dU -0,04 dV -0,07.
+    "zoompan=z='if(between(it,{a},{b}),1+1.85*{p1},1)':d=1:"
+    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
+    "shear=shx={p1}:shy={p2}:c=black{en}",
+    ts=((0.055, 0.110), (0.022, 0.044)), dai=0.35,
+    hop=("dong", "caotrao"), doi_cho=True))
+_dk(HieuUng(
+    "phoi_canh", "Lệch phối cảnh", "3D Rotate", "thuan",
+    # `sense=source`: khai một TỨ GIÁC NẰM TRONG ảnh rồi kéo căng ra cả khung ->
+    # KHÔNG có mép đen nào (khác `sense=destination` là đẩy góc ra ngoài = đen).
+    # Đo ở p1 0,16: 30,26% · ngoài 0,00% · sáng 1,03..1,04 · dU 0,01 dV 0,02.
+    "perspective=x0='{p1}*W':y0='0.02*H':x1='W-0.02*W':y1=0:"
+    "x2='0.02*W':y2=H:x3='W-{p1}*W':y3='H-0.02*H':sense=source{en}",
+    ts=((0.075, 0.160), ), dai=0.40, hop=("dong", "ke"), doi_cho=True))
+_dk(HieuUng(
+    "nghieng_may", "Nghiêng máy quay", "Tilt", "thuan",
+    # QUAY (khác `rung_lac` là TỊNH TIẾN). Góc khuyết ở 4 mép phải che bằng
+    # zoom: cần (W cos+H sin)/W = 1+1,78*góc -> hệ số 2,4 là dư. Cả zoom lẫn góc
+    # đều nhân NỬA HÌNH SIN nên hai mép cửa sổ trùng khít ảnh gốc (êm vào êm ra)
+    # và lúc góc lớn nhất thì zoom cũng lớn nhất -> không bao giờ hở đen.
+    # Đo ở góc 0,045 rad: 28,53% · ngoài 0,00% · sáng 0,99..1,00.
+    "zoompan=z='if(between(it,{a},{b}),"
+    "1+2.4*{p1}*sin(3.14159*(it-{a})/({b}-{a})),1)':d=1:"
+    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
+    "rotate=a='{p1}*" + _SONG + "':c=black{en}",
+    ts=((0.022, 0.045), ), dai=0.60, hop=("ke", "tinh", "chot")))
+_dk(HieuUng(
+    "rung_xoay", "Rung xoay máy", "Shake Rotate", "thuan",
+    # Cùng bộ máy `nghieng_may` nhưng góc DAO ĐỘNG 31 rad/s -> rung theo trục
+    # xoay, khác hẳn `rung_lac` (xê dịch x/y). zoom lấy hệ số 3,6 (dư cho biên
+    # độ góc lớn nhất). Đo ở 0,035 rad: 35,18% · ngoài 0,00% · sáng 0,99..1,02.
+    "zoompan=z='if(between(it,{a},{b}),1+3.6*{p1},1)':d=1:"
+    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
+    "rotate=a='{p1}*sin(31*(t-{a}))*" + _SONG + "':c=black{en}",
+    ts=((0.017, 0.035), ), dai=0.40, hop=("caotrao", "dong"), doi_cho=True))
+_dk(HieuUng(
+    "zoom_lui", "Zoom kéo lùi", "Zoom Out", "thuan",
+    # Ngược chiều `zoom_day`/`zoom_nhoi` (kho cũ chỉ có zoom VÀO). Bắt đầu ở
+    # `{p1}` rồi trả về 1 -> cảm giác "lùi ra nhìn toàn cảnh", hợp câu chốt.
+    "zoompan=z='if(between(it,{a},{b}),"
+    "{p1}-({p1}-1)*(it-{a})/({b}-{a}),1)':d=1:"
+    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS}",
+    ts=((1.06, 1.16), ), dai=0.70, hop=("chot", "ke"), doi_cho=True))
+_dk(HieuUng(
+    "luot_ngang", "Lướt ngang", "Whip Pan", "thuan",
+    # Biên độ tính THEO PHẦN LỀ CÒN LẠI `(iw-iw/zoom)/2` nhân `{p1}` <= 1 -> ảnh
+    # KHÔNG BAO GIỜ chạm mép (zoompan tự kẹp x, kẹp là cú "dính mép" nhìn ra
+    # ngay). Nửa hình sin -> đi rồi về, êm vào êm ra.
+    "zoompan=z='if(between(it,{a},{b}),1.22,1)':d=1:"
+    "x='iw/2-(iw/zoom/2)+{p1}*(iw-iw/zoom)/2*"
+    "sin(3.14159*(it-{a})/({b}-{a}))*between(it,{a},{b})':"
+    "y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS}",
+    ts=((0.55, 1.00), ), dai=0.35, hop=("caotrao", "noi"), doi_cho=True))
+_dk(HieuUng(
+    "luot_doc", "Lướt dọc", "Whip Pan Up", "thuan",
+    "zoompan=z='if(between(it,{a},{b}),1.22,1)':d=1:"
+    "x='iw/2-(iw/zoom/2)':"
+    "y='ih/2-(ih/zoom/2)+{p1}*(ih-ih/zoom)/2*"
+    "sin(3.14159*(it-{a})/({b}-{a}))*between(it,{a},{b})':"
+    "s={W}x{H}:fps={FPS}",
+    ts=((0.55, 1.00), ), dai=0.35, hop=("noi", "dong"), doi_cho=True))
+_dk(HieuUng(
+    "meo_kinh_tt", "Méo ống kính (thuần)", "Lens Warp", "thuan",
+    # BẢN THUẦN của `meo_kinh` (frei0r `lenscorrection`). Vì sao đáng có CẢ HAI:
+    # máy nhân viên KHÔNG có frei0r -> `meo_kinh` bị `dung_duoc()` loại, hàng
+    # "caotrao"/"dong" mất một kiểu. Bản này không cần .dll nào.
+    # `fc=black@0` = điểm ảnh không ánh xạ được thì TRONG SUỐT chứ không ĐEN.
+    # Đo ở k1 -0,28: 32,66% · ngoài 0,00% · sáng 0,98..1,06 · dU -0,12.
+    "lenscorrection=cx=0.5:cy=0.5:k1={p1}:k2=0:i=bilinear:fc=black@0{en}",
+    ts=((-0.13, -0.28), ), dai=0.40, hop=("caotrao", "dong"), doi_cho=True))
+
+# --- 6b. GLITCH / VỠ HÌNH (cảnh ĐỘNG) ---
+_dk(HieuUng(
+    "xao_khoi", "Xáo khối vuông", "Block Glitch", "thuan",
+    # `xao_dong` cũ là `mode=horizontal` (xáo theo DÒNG). `block` xáo theo Ô
+    # VUÔNG -> nhìn ra là "vỡ khối" chứ không phải "rách dòng", khác hẳn mắt.
+    # Đo ở 40 px: 78,81% · ngoài 0,00% · sáng 1,00..1,00 · dU 0,01 dV 0,01.
+    "shufflepixels=direction=inverse:mode=block:width={p1}:height={p1}{en}",
+    ts=((24, 40), ), dai=0.30, hop=("dong", "caotrao"), doi_cho=True))
+_dk(HieuUng(
+    "xao_doc", "Xáo cột dọc", "Vertical Glitch", "thuan",
+    "shufflepixels=direction=inverse:mode=vertical:width={p1}:height={p1}{en}",
+    ts=((26, 44), ), dai=0.30, hop=("dong", ), doi_cho=True))
+_dk(HieuUng(
+    "doi_o", "Đổi chỗ ô hình", "Swap Blocks", "thuan",
+    # Tráo 2 khối chữ nhật -> "sai khung hình" kiểu lỗi truyền. `w/h/x/y` của
+    # `swaprect` là BIỂU THỨC nên độ cao khối co giãn được theo mức đậm.
+    "swaprect=w=w/2:h='h*{p1}':x1=0:y1='h*{p1}':x2=w/2:y2='h*{p1}'{en}",
+    ts=((0.18, 0.34), ), dai=0.30, hop=("dong", "noi"), doi_cho=True))
+_dk(HieuUng(
+    "truot_hinh", "Trượt cuộn hình", "Roll Glitch", "thuan",
+    # `scroll` cuộn VÒNG (phần chạy ra khỏi mép quay lại mép kia) -> đúng cái
+    # "mất đồng bộ dọc" của TV cũ. Không tô đen chỗ nào nên không có ca khung
+    # đen. Đo ở 0,02: 67,70% · ngoài 0,00% · sáng 1,00..1,00.
+    "scroll=horizontal={p1}:vertical=0{en}",
+    ts=((0.009, 0.020), ), dai=0.30, hop=("dong", "noi"), doi_cho=True))
+_dk(HieuUng(
+    "bac_sang", "Giảm bậc sáng", "Posterize", "thuan",
+    # `lutyuv` CHỈ đụng mặt Y -> về mặt CẤU TRÚC không thể đổi màu (đo ra đúng
+    # vậy: dU 0,01 dV 0,00 — thấp nhất trong cả lượt đo). Đây là cách lấy được
+    # cái nhìn "poster" mà KHÔNG dính luật 3, khác hẳn `posterize` của frei0r
+    # (giảm bậc CẢ 3 kênh -> đổi màu).
+    # SÀN 28 KHÔNG PHẢI CHỌN BỪA: sai số giảm bậc rải đều trong [-b/2, +b/2],
+    # nên bậc `b` < 24 thì KHÔNG MỘT ĐIỂM ẢNH NÀO lệch quá 12 -> ngưỡng "thấy
+    # được" (|dY| > 12) đo ra **0,00%**. Đã đo đúng vết đó: dải (16..30) ở mức
+    # 'nhe' cho bậc 22,7 -> **0,36%** (rớt), dải (28..40) cho bậc 33,8 -> đạt.
+    "lutyuv=y='trunc(val/{p1})*{p1}+{p1}/2'{en}",
+    ts=((28, 40), ), dai=0.35, hop=("dong", "ke")))
+
+# --- 6c. MỜ / VỆT (chỗ nối · cảnh tĩnh) ---
+_dk(HieuUng(
+    "mo_huong", "Mờ vệt chuyển động", "Motion Blur", "thuan",
+    # === ĐÂY LÀ CÁI "VỆT ĐUÔI CHUYỂN ĐỘNG" MÀ 5 CÁCH TRƯỚC ĐỀU HỎNG ===
+    # Ghi chú NHÓM 4 ở trên liệt kê 5 cách đã thử và loại: `lagfun` 0,0% ·
+    # `tmix`/`tblend` 0,0% + DỜI THỜI GIAN · `aech0r`/`delay0r`/`nervous` 0,0% ·
+    # `baltan` làm PHẲNG chroma (U -3,08 V -3,16, vượt trần). Điểm chung: cả 5
+    # đều TRỘN KHUNG THEO THỜI GIAN, mà trộn khung thì chroma phẳng đi.
+    # `dblur` mờ theo HƯỚNG TRONG MỘT KHUNG (không đụng khung khác) nên:
+    # không dời thời gian · không phẳng chroma (đo dU -0,08 dV 0,01) · vẫn ra
+    # đúng cái vệt. Đo ở bán kính 28: 12,22% điểm ảnh · ngoài 0,00%.
+    "dblur=angle=15:radius={p1}:planes=1{en}",
+    ts=((20, 34), ), dai=0.35, hop=("dong", "noi")))
+_dk(HieuUng(
+    "mo_khoi_tt", "Mờ khối (thuần)", "Blur Burst", "thuan",
+    # BẢN THUẦN của `mo_vuong` (frei0r `squareblur`) — máy nhân viên không có
+    # frei0r thì hàng "noi" chỉ còn `mo_net`+`loe_sang`+`o_vuong`, quá mỏng cho
+    # 3 điểm nhấn KHÔNG LẶP KIỂU. `chroma_radius=0`+`chroma_power=0`: chỉ mờ mặt
+    # Y, mặt màu giữ nguyên -> đo dU 0,00 dV 0,00.
+    "boxblur=luma_radius={p1}:luma_power=2:"
+    "chroma_radius=0:chroma_power=0{en}",
+    ts=((13, 22), ), dai=0.35, hop=("noi", "tinh")))
+
+# --- 6d. frei0r MỚI (chỉ 1 kiểu — xem báo cáo: hầu hết plugin frei0r hoặc
+#      TRÙNG một filter có sẵn tốt hơn, hoặc rớt cổng) ---
+_dk(HieuUng(
+    "xe_dong", "Xé dòng ngang", "Tear Glitch", "frei0r",
+    # `pixs0r` = "Glitch image shifting rows to and fro": đẩy TỪNG DÒNG sang
+    # trái/phải ngẫu nhiên -> vết "xé" ngang. Khác `lech_bang` (nosync0r, lệch
+    # cả khối) và khác `xao_dong` (đảo chỗ dòng, không đẩy).
+    # Đo ở 0,8: 70,01% điểm ảnh · ngoài 0,00% · sáng 0,98..0,98 · dU -0,01.
+    _f0r("pixs0r", "{p1}|0.5|0.5|0.5"), module="pixs0r",
+    ts=((0.45, 0.80), ), dai=0.30, hop=("dong", "caotrao"), doi_cho=True))
+
 
 # ------------------------------------------------------ HIỆU ỨNG DÙNG ĐƯỢC
 #: Hiệu ứng ĐO RA lệch màu >= UV_MAX -> KHÔNG BAO GIỜ tự chọn (luật 3). Danh
@@ -969,6 +1144,10 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     ra: list[dict] = []
     da_dung: list[str] = []
     da_dung_loai: list[str] = []
+    #: ĐIỂM BẮT ĐẦU xoay vòng trong `_chon_kieu` — suy từ CHÍNH số đo của clip.
+    #: Không có nó thì mọi clip của 200-300 kênh dùng chung 3 kiểu đầu mỗi hàng
+    #: và kho có bao nhiêu kiểu cũng vô nghĩa (xem docstring `_chon_kieu`).
+    xoay = van_tay_clip(tong_giay, nl, cd, moc)
 
     # ---- HOOK MỞ ĐẦU (anh Hùng 08/08/2026: *"phần hook mở đầu cứ thêm sao cho
     # phù hợp gây ấn tượng"*). App đã đưa 2-3 giây CAO TRÀO nhất lên đầu clip
@@ -981,7 +1160,7 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     # `DAM_MAX` -> không nới luật nào. Clip PHẲNG cũng vẫn được hook: chỗ này là
     # sự kiện CÓ THẬT (app vừa BÊ đoạn cao trào lên đầu), không phải suy đoán.
     if hook and float(tong_giay) >= 3.0 and n_diem > 0:
-        k_hook = _chon_kieu("hook", dung, [], 0)
+        k_hook = _chon_kieu("hook", dung, [], 0, xoay)
         if k_hook:
             dai_h = min(HOOK_DAI, max(DAI_MIN, KHO[k_hook].dai))
             if dai_h <= ngan_sach + 1e-6:
@@ -1009,7 +1188,7 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
         # kiểu "thêm vào ngớ ngẩn" anh Hùng chê.
         if phang and loai != "noi":
             continue
-        chon = _chon_kieu(loai, dung, da_dung, len(ra))
+        chon = _chon_kieu(loai, dung, da_dung, len(ra), xoay)
         if not chon:
             continue
         h = KHO[chon]
@@ -1068,23 +1247,35 @@ _UV_THEO_LOAI: dict = {
     # `sh_tuong_phan` đứng hàng 3 (chỗ `sh_net_hon` vừa bị gỡ để lại): `_chon_kieu`
     # chỉ với tới `moi[0..2]`, đặt cuối danh sách là "nối cho có" — cổng 41 canh.
     "caotrao": ("zoom_nhoi", "rung_lac", "sh_tuong_phan", "loe_sang",
-                "nhay_sang", "tuong_phan", "meo_kinh"),
+                "nhay_sang", "tuong_phan", "meo_kinh",
+                # + MỞ RỘNG KHO 09/08/2026 (đã qua 7 cổng, xem NHÓM 6)
+                "rung_xoay", "luot_ngang", "meo_kinh_tt", "xien_hinh",
+                "xao_khoi", "xe_dong"),
     "dong": ("glitch_khoi", "o_vuong", "xao_dong", "lech_bang",
-             "vien_net", "dong_quet", "song_meo"),
+             "vien_net", "dong_quet", "song_meo",
+             "xao_khoi", "xao_doc", "doi_o", "truot_hinh", "xe_dong",
+             "xien_hinh", "phoi_canh", "rung_xoay", "meo_kinh_tt",
+             "bac_sang", "mo_huong", "luot_doc"),
     "tinh": ("quang_sang", "hat_phim", "sh_toi_vien", "toi_vien",
-             "sh_hat_phim", "nhieu_analog", "hat_nhieu", "vien_phim"),
+             "sh_hat_phim", "nhieu_analog", "hat_nhieu", "vien_phim",
+             "nghieng_may", "mo_khoi_tt"),
     "chot": ("sup_toi", "nhay_sang", "sh_toi_vien", "toi_vien", "quang_sang",
-             "zoom_nhoi", "vien_phim"),
+             "zoom_nhoi", "vien_phim",
+             "zoom_lui", "nghieng_may"),
     "noi": ("mo_net", "loe_sang", "o_vuong", "mo_vuong",
-            "lech_bang", "zoom_nhoi", "dem_nguoc"),
+            "lech_bang", "zoom_nhoi", "dem_nguoc",
+            "mo_khoi_tt", "mo_huong", "doi_o", "truot_hinh", "luot_ngang",
+            "luot_doc"),
     "ke": ("quang_sang", "hat_phim", "sh_hat_phim", "nhieu_analog",
            "dong_quet", "toi_vien", "zoom_day", "hat_nhieu", "tuong_phan",
-           "sh_tuong_phan"),
+           "sh_tuong_phan",
+           "nghieng_may", "zoom_lui", "phoi_canh", "bac_sang"),
     # HOOK MỞ ĐẦU (2 giây đầu quyết định người xem ở lại hay lướt). Chỉ những
     # kiểu ĐO RA MẠNH NHẤT và có tiếng đi kèm đắt: zoom nhồi (impact), loé sáng
     # (reveal), tương phản (impact), rung lắc (impact). KHÔNG dùng kiểu "mood"
     # (hạt phim / tối viền) — mở clip bằng hạt phim thì chẳng ai dừng lại.
-    "hook": ("zoom_nhoi", "loe_sang", "tuong_phan", "rung_lac", "nhay_sang"),
+    "hook": ("zoom_nhoi", "loe_sang", "tuong_phan", "rung_lac", "nhay_sang",
+             "luot_ngang", "rung_xoay", "xao_khoi"),
 }
 #: HOOK: điểm nhấn mở đầu đặt ở giây này (không đặt 0,00 — `fx_fade` đang fade
 #: vào 0,35 s đầu nên biên độ ở giây 0 bị nhân với hình đang tối, phí).
@@ -1094,20 +1285,70 @@ HOOK_BAT = 0.12
 HOOK_DAI = 0.45
 
 
-def _chon_kieu(loai: str, dung: list, da_dung: list, i: int) -> str:
+def van_tay_clip(tong_giay: float, nl: Optional[list] = None,
+                 cd: Optional[list] = None,
+                 moc: Optional[list] = None) -> int:
+    """VÂN TAY của clip — số nguyên suy từ CHÍNH SỐ ĐO của clip, không random.
+
+    Dùng làm ĐIỂM BẮT ĐẦU xoay vòng trong `_chon_kieu`. Xem docstring hàm đó để
+    biết vì sao phải có. Tính bằng số học thuần (KHÔNG dùng `hash()` của chuỗi:
+    `PYTHONHASHSEED` ngẫu nhiên hoá nó theo từng lần chạy -> cùng một clip xuất
+    lại ra hiệu ứng KHÁC, phá bất biến "TIỀN ĐỊNH" mà cổng 38 canh).
+
+    Cùng clip -> cùng số -> cùng bộ hiệu ứng (xuất lại/chạy lại giống hệt).
+    Đổi NHÃN ngôn ngữ không đụng `nl`/`cd`/`tong_giay` nên cổng 40 ("đổi nhãn
+    ngôn ngữ -> `chon_hieu_ung` ra Y HỆT") vẫn đúng.
+    """
+    s = int(round(float(tong_giay or 0.0) * 100))
+    for i, x in enumerate(nl or []):
+        try:
+            s += int(round(float(x) * 1000)) * (i + 1)
+        except (TypeError, ValueError):
+            continue
+    for i, x in enumerate(cd or []):
+        try:
+            s += int(round(float(x) * 1000)) * (i + 3)
+        except (TypeError, ValueError):
+            continue
+    for x in moc or []:
+        try:
+            s += int(round(float(x) * 10))
+        except (TypeError, ValueError):
+            continue
+    return abs(int(s))
+
+
+def _chon_kieu(loai: str, dung: list, da_dung: list, i: int,
+               xoay: int = 0) -> str:
     """Kiểu cho loại điểm này — TUYỆT ĐỐI không lặp kiểu đã dùng trong clip.
 
     Trước đây hết kiểu mới thì QUAY LẠI dùng kiểu cũ (`uv[i % len(uv)]`) -> một
     clip có thể ra 2 điểm CÙNG một hiệu ứng, đúng cái anh Hùng chê ở tiếng động
     ("mọi Part một tiếng ding"). Nay hết kiểu mới thì BỎ điểm đó — thà ít điểm
     hơn là lặp.
+
+    === VÌ SAO CÓ `xoay` (mở rộng kho 09/08/2026) ===
+    `i` chỉ nhận 0, 1, 2 (số điểm đã chọn, trần `DIEM_MAX` = 3), nên `moi[i %
+    len(moi)]` **chỉ với tới 3 vị trí ĐẦU** của mỗi hàng. Hệ quả đo được trên
+    kho cũ: điểm "caotrao" ĐẦU TIÊN của **mọi clip, mọi kênh trong 200-300
+    kênh** đều là `zoom_nhoi`; hook đầu clip cũng luôn `zoom_nhoi`. Thêm kiểu
+    mới vào cuối hàng thì chúng KHÔNG BAO GIỜ được chọn — đúng cái bẫy "đóng gói
+    rồi mà chưa nối" mà hồ sơ cổng 41 đã ghi (6 shader nằm trong `.exe` mà không
+    một dòng mã nào gọi tới).
+    `xoay` = vân tay của clip (`van_tay_clip`) nên:
+      · clip KHÁC nhau bắt đầu ở vị trí KHÁC nhau -> cả hàng đều tới được;
+      · CÙNG một clip luôn ra CÙNG kết quả -> vẫn TIỀN ĐỊNH, không random
+        (bất biến cổng 38 B1: 3 lượt cùng input ra cùng output).
+    Mặc định `xoay=0` = ĐÚNG HÀNH VI CŨ, để caller/test gọi thẳng hàm này không
+    bị đổi nghĩa.
     """
     uv = [k for k in _UV_THEO_LOAI.get(loai, ()) if k in dung]
     moi = [k for k in uv if k not in da_dung]
     if not moi:
         return ""
-    # xoay theo chỉ số điểm -> 2 clip khác nhau không ra y hệt một bộ
-    return moi[i % len(moi)]
+    # xoay theo chỉ số điểm + vân tay clip -> 2 clip khác nhau không ra y hệt
+    # một bộ, VÀ mọi kiểu trong hàng đều có cơ hội được chọn
+    return moi[(int(i) + int(xoay)) % len(moi)]
 
 
 _LOAI_NHAN = {"caotrao": "cao trào (tiếng vọt lên)",
