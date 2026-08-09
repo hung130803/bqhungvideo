@@ -664,6 +664,62 @@
      ảnh). Cổng giữ ca này vì bản ffmpeg sau đổi hành vi là ra hạt nhấp nháy mà
      không ai biết. Cùng ca đó canh luôn **`gradients` phải có `seed`** — mặc
      định `seed=-1` là NGẪU NHIÊN mỗi lượt xuất.
+     **MỞ RỘNG 10 -> 46 KIỂU / 14 CẢNH (09/08/2026).** Anh Hùng: *"càng nhiều
+     kiểu càng tốt, 100 kiểu cũng được, **nhưng AI phải hiểu ngữ cảnh, thêm hợp
+     lý, không thêm bừa bãi làm video chất lượng thấp đi**"*.
+     **CÁCH MỞ RỘNG ĐÚNG — ĐÃ CHỐT, đừng làm khác:** thêm **BIẾN THỂ NHÌN trong
+     CÙNG một cảnh**, KHÔNG bịa thêm ngữ cảnh không nhận ra được. Lý do là số
+     học: mỗi CẢNH mới là một cơ hội NHẬN NHẦM (bảng từ khoá phải đoán "cảnh này
+     là gì"), còn BIẾN THỂ thì dùng LẠI đúng bằng chứng đã chấm đạt ngưỡng —
+     rủi ro thêm bằng **0**, mà 3 Part của một video thôi kêu giống hệt nhau.
+     Vì thế 36 kiểu mới đều chỉ là 1 trong 4 phép biến đổi của khuôn đã đo
+     (`_lp` + `_luoi`): **cỡ ô · tốc độ rơi · HÌNH hạt · MÀU** — không cơ chế
+     mới nào. Bảng: tuyết 4 · trái tim 4 · lấp lánh 4 · confetti 4 · mưa 4 ·
+     bokeh 4 · lửa 3 · tia sáng 3 · bụi phim 3 · lá rơi 3, cộng **4 CẢNH MỚI**
+     (dưới nước 3 · ma quái 3 · tiền bạc 3 · công nghệ 2) — chỉ nhận cảnh nào
+     digest tả bằng từ RẤT khó nhầm; cảnh chỉ đoán được bằng từ chung chung
+     ("food", "travel", "sport") thì **KHÔNG thêm**.
+     `Luat.bien` = `((khoá, (gợi ý…)), …)`; `_chon_bien` đi 2 đường: **gợi ý
+     riêng** ("blizzard" -> bão tuyết dày, "icicle" -> tinh thể) rồi **rải đều
+     TIỀN ĐỊNH** theo `crc32` của CHÍNH bằng chứng (KHÔNG `hash()` — nó băm kèm
+     `PYTHONHASHSEED` ngẫu nhiên mỗi tiến trình nên 3 làn xuất song song ra 3
+     biến thể khác nhau, không tra lại được). Biến thể bị máy nhân viên loại ->
+     LÙI sang biến thể khác cùng cảnh, không mất lớp phủ.
+     **SỐ ĐO 46/46 ĐẠT** ở đúng 1080x1920: thấy được **8,16 – 36,12%** điểm ảnh
+     · rò ngoài cửa sổ **0,0000%** · hai mép **0,0000%** · |dU| ≤ 2,29 ·
+     |dV| ≤ 2,55 (trần 3,0) · bão hoà ≥ 0,83 (sàn 0,80) · sáng đỉnh ≤ 1,134
+     (trần 1,45). Lần đo ĐẦU 39/46 đạt, 7 kiểu phải sửa theo số:
+     · **BÀI HỌC LỚN — MỘT dải rộng thì lệch màu, NHIỀU dải hẹp thì không.**
+       `tia_sang_doc` bản 1 dải rộng đo **dU 4,49**, trong khi `nang_xuyen`
+       (nhiều tia song song, tổng diện tích còn LỚN HƠN) chỉ **dU 0,74**. `dU`
+       là lệch U TRUNG BÌNH CẢ KHUNG: một dải rộng nằm trọn trên MỘT vạch màu
+       của `testsrc2` nên kéo lệch hẳn một phía; nhiều dải hẹp rải khắp khung
+       thì phần kéo của các vạch màu khác nhau TRIỆT TIÊU nhau. Cùng nguyên
+       nhân: `suong_mo` ô 64 px (chỉ 3x6 mảng) dV 3,52 -> ô 40 px còn 0,93;
+       `song_nuoc` vân thưa dV 4,39 -> tăng tần số cho vân mịn còn 0,45.
+       **Bản 2 của `tia_sang_doc` vẫn hỏng (dV 3,30) vì lý do THỨ HAI: dải DỌC
+       cộng hưởng với vạch màu DỌC của `testsrc2`** — phải nghiêng nhẹ
+       (X + 0,20·Y) cho mỗi dải cắt ngang nhiều vạch, khi đó còn **0,47**.
+     · màu hạt vẫn phải NHẠT: `bong_bay` 4 màu `0xB4…` phủ 24% ra **dV 4,39**;
+       nhạt về `0xD8…` + thu bán kính (24% -> 14,7%) thì còn **1,33**.
+     · hạt quá nhỏ/thưa thì KHÔNG THẤY: `lap_lanh_bui` **4,43%** ·
+       `xuoc_phim` **5,49%** · `la_bay` **7,07%** (ngưỡng 8%).
+     **TỐI ƯU BẮT BUỘC — `_quay()`:** hạt XOAY viết thẳng ra là 4 phép lượng
+     giác **mỗi ĐIỂM ẢNH** (`cos(g)`/`sin(g)` mỗi cái 2 lần). Cổng 46 CA 5 bắt
+     được: `canh_hoa` **+6,27** và `tan_lua_day` **+6,52** CPU-giây/clip trong
+     khi trung vị nhóm **4,89**, trần 6,0. `_quay` cất sẵn `cos` vào `ld(3)`,
+     `sin` vào `ld(5)` -> còn 2 phép, áp cho cả 8 kiểu có xoay.
+     **BẪY ĐI KÈM, ĐÃ SẬP NGAY:** `la_kim_tuyen` là kiểu DUY NHẤT vừa xoay vừa
+     nhấp nháy và nó đang để hệ số nhấp nháy ở **`ld(3)`** — ghi đè đúng ô
+     `_quay` vừa cất `cos` vào, tức hạt xoay theo… nhịp nhấp nháy. ffmpeg vẫn
+     `rc=0`, đủ khung, không một dòng báo; **chỉ số đo tố giác** (diện tích
+     12,38% -> 13,27%). Nay nhấp nháy để `ld(4)` và cổng 46 CA 6 có **ca quét
+     tĩnh**: kiểu nào gọi `_quay` rồi còn `st(3,`/`st(5,` nữa là FAIL.
+     **CỔNG 46 CHẤM THEO *CẢNH*, KHÔNG THEO *KIỂU*** — có biến thể rồi mà vẫn
+     ép ra đúng một khoá thì chính là cấm cái đa dạng vừa làm ra (ca "em bé" ra
+     `trai_tim_nho`, ca "cảnh đêm" ra `den_nhap_nhay` đều ĐÚNG HƠN). Đổi lại,
+     mệnh đề "tuyết không rơi trên video nấu ăn" phải chặn **CẢ HỌ** 4 biến thể,
+     chặn mỗi `tuyet_roi` là để lọt `tuyet_bao`/`tuyet_bui`.
 - **2 CỔNG PASS OAN ĐÃ CHỨNG MINH BẰNG PHÉP THỬ PHÁ (08/08/2026)** — sửa xong,
   đừng để tái diễn:
   * `_test_hlbox.py` mục 12 so với `git show **HEAD**:app/core/captions.py`. Cây
