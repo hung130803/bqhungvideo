@@ -813,6 +813,21 @@
      → CSV*. File cần 3 cột: tên file clip · số lượt xem · thời lượng xem trung
      bình (giây hoặc `0:21`). Có thêm cột thời lượng clip thì tính được tỉ lệ
      xem hết.
+- **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
+  `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
+  (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
+  **CÁCH CHỨNG MINH "CÓ SẴN, KHÔNG PHẢI HỒI QUY" — DÙNG LẠI CHO LẦN SAU:** tạo
+  `git worktree` ở ĐÚNG commit đã phát hành (`git worktree add <tmp> <sha>
+  --detach`), nối `bin/` bằng junction (`mklink /J`, vì `bin/` và `.venv` bị
+  gitignore) rồi chạy CHÍNH cổng đó bằng python của repo chính — file test tự
+  `sys.path.insert(0, Path(__file__).parent)` nên nó nạp `app/` của BẢN MỐC.
+  Kết quả ra **GIỐNG TỪNG CHỮ SỐ** (51 OK · 1 FAIL · 5,07% · 33,21 dB) = ca này
+  hỏng sẵn trong bản anh Hùng đang chạy, và nó **TIỀN ĐỊNH** (không nhấp nháy).
+  **ĐẦU MỐI ĐỂ CHỮA:** cổng 43 đo CHÍNH kiểu đó ra **15,86% (ĐẠT)** ở độ đậm
+  0,25 — tức shader chạy tốt, chỉ là mức 'nhe' trên NGUỒN của cổng 41 quá nhạt.
+  Vignette chỉ đổi VÙNG VIỀN nên ngưỡng 8% (đặt cho kiểu đổi toàn khung như
+  `sh_hat_phim` 42,57%) có thể là ngưỡng SAI CHỖ. Xem thêm bài học cổng 36
+  "mốc đo phải ở CẢNH SÁNG" trước khi kết luận là shader hỏng.
 - **2 CỔNG PASS OAN ĐÃ CHỨNG MINH BẰNG PHÉP THỬ PHÁ (08/08/2026)** — sửa xong,
   đừng để tái diễn:
   * `_test_hlbox.py` mục 12 so với `git show **HEAD**:app/core/captions.py`. Cây

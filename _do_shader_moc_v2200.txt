@@ -1,0 +1,80 @@
+==========================================================================
+CỔNG 41 — NHÓM HIỆU ỨNG SHADER GPU (libplacebo + 6 .hook)
+==========================================================================
+nguồn: 182 khung · 6.066s · 1080x1920 · lossless 14.8 MB
+máy: frei0r=True · Vulkan/libplacebo=True · kho {'tong_kho': 89, 'dung_duoc': 89, 'thuan': 29, 'frei0r': 11, 'shader': 3, 'lop_phu': 46, 'co_frei0r': True, 'co_shader': True}
+
+[CA A] libplacebo chạy THẬT + bản thân nó KHÔNG đổi màu
+  [OK ] dò máy `co_libplacebo()` (render thật + đếm khung): True
+  [OK ] libplacebo KHÔNG shader: đủ khung (không phải bẫy rc=0/0 khung): rc=0 · 182/182 khung · 
+  [OK ] libplacebo KHÔNG shader: KHÔNG tự đổi màu (dU,dV < 1,0): dU -0.09 · dV -0.03 · PSNR 60.12 dB · 0.0% pixel
+
+[CA B] 6 shader: thấy được · không rò ngoài cửa sổ · không loè màu
+  [OK ] đủ 3 shader trong kho: 3: ['sh_hat_phim', 'sh_toi_vien', 'sh_tuong_phan']
+  [OK ] sh_hat_phim: số khung + độ dài GIỮ NGUYÊN: 182/182 khung · 6.066s vs 6.066s
+  [OK ] sh_hat_phim: THẤY ĐƯỢC ở mức 'nhe' (>= 8.0% pixel): 43.85% pixel |dY|>12 · PSNR 30.21 dB
+  [OK ] sh_hat_phim: KHÔNG LOÈ MÀU (|dU|,|dV| < 3.0): dU -0.03 · dV -0.17
+  [OK ] sh_hat_phim: KHÔNG RÒ ra ngoài cửa sổ (2 mốc, trước và sau): giây 0,60: 0.0% / 99.0 dB · giây 5,20: 0.0% / 99.0 dB
+  [OK ] sh_toi_vien: số khung + độ dài GIỮ NGUYÊN: 182/182 khung · 6.066s vs 6.066s
+  [FAIL] sh_toi_vien: THẤY ĐƯỢC ở mức 'nhe' (>= 8.0% pixel): 5.07% pixel |dY|>12 · PSNR 33.21 dB
+  [OK ] sh_toi_vien: KHÔNG LOÈ MÀU (|dU|,|dV| < 3.0): dU -0.0 · dV -0.2
+  [OK ] sh_toi_vien: KHÔNG RÒ ra ngoài cửa sổ (2 mốc, trước và sau): giây 0,60: 0.0% / 99.0 dB · giây 5,20: 0.0% / 99.0 dB
+  [OK ] sh_tuong_phan: số khung + độ dài GIỮ NGUYÊN: 182/182 khung · 6.066s vs 6.066s
+  [OK ] sh_tuong_phan: THẤY ĐƯỢC ở mức 'nhe' (>= 8.0% pixel): 65.86% pixel |dY|>12 · PSNR 29.63 dB
+  [OK ] sh_tuong_phan: KHÔNG LOÈ MÀU (|dU|,|dV| < 3.0): dU -0.1 · dV 0.03
+  [OK ] sh_tuong_phan: KHÔNG RÒ ra ngoài cửa sổ (2 mốc, trước và sau): giây 0,60: 0.0% / 99.0 dB · giây 5,20: 0.0% / 99.0 dB
+
+[CA C] BẤT BIẾN: không shader -> KHÔNG mở Vulkan, chuỗi y như cũ
+  [OK ] `can_vulkan([])` = False (mức Tắt): []
+  [OK ] `can_vulkan` bộ TOÀN hiệu ứng CPU = False: zoom_nhoi
+  [OK ] `can_vulkan` bộ CÓ shader = True: sh_hat_phim
+  [OK ] `bo_shader` giữ CPU, bỏ đúng shader: ['zoom_nhoi']
+  [OK ] chuỗi hiệu ứng CPU KHÔNG chứa libplacebo/hwupload: 371 ký tự
+  [OK ] chuỗi shader: CÓ `-init_hw_device vulkan` -> chạy; KHÔNG có -> FAIL TO (không im lặng ra clip trơn): rc có VK=0 · rc không VK=4294967274 · [hwupload @ 000002987c657300] A hardware device reference is required to upload frames to.
+
+[CA D] 2 shader trong 1 clip: nhãn KHÔNG trùng, mốc ĐÚNG chỗ
+  [OK ] 3 hiệu ứng (2 shader + 1 CPU) trong 1 clip: chạy được: rc=0 · 182/182 khung · 
+  [OK ] độ dài GIỮ NGUYÊN sau 2 lần trim+concat: 6.066s vs 6.066s
+  [OK ] mốc shader 1 (giây 1,2): ĐỔI: 44.18% pixel · PSNR 30.21 dB
+  [OK ] mốc giữa 2 shader (giây 2,5): y hệt gốc: 0.0% pixel · PSNR 99.0 dB
+  [OK ] mốc shader 2 (giây 3,6): ĐỔI: 65.84% pixel · PSNR 29.63 dB
+  [OK ] mốc sau cùng (giây 5,6): y hệt gốc: 0.0% pixel · PSNR 99.0 dB
+
+[CA E] ca biên: cửa sổ ở NGAY ĐẦU (mảnh trước rỗng) và SÁT CUỐI
+  [OK ] cửa sổ đầu clip (0.00-0.45s): đủ khung + đúng độ dài: rc=0 · 182/182 khung · 6.066s vs 6.066s · 
+  [OK ] cửa sổ đầu clip: hiệu ứng CÓ chạy: 44.34% pixel ở giây 0.23
+  [OK ] cửa sổ sát cuối (5.50-5.95s): đủ khung + đúng độ dài: rc=0 · 182/182 khung · 6.066s vs 6.066s · 
+  [OK ] cửa sổ sát cuối: hiệu ứng CÓ chạy: 36.99% pixel ở giây 5.72
+
+[CA F] fallback ÊM: không Vulkan / BQ_SHADER=0 -> tự bỏ, KHÔNG lỗi
+  [OK ] không Vulkan -> `dung_duoc()` KHÔNG còn shader nào, KHÔNG nổ lỗi: 86 hiệu ứng, shader còn 0
+  [OK ] không Vulkan -> AI chọn KHÔNG bao giờ ra shader: ['luot_doc', 'luot_ngang']
+  [OK ] không Vulkan -> `can_vulkan` của bộ vừa chọn = False: 2 điểm
+  [OK ] `thong_ke()` báo đúng trạng thái máy: {'tong_kho': 89, 'dung_duoc': 86, 'thuan': 29, 'frei0r': 11, 'shader': 0, 'lop_phu': 46, 'co_frei0r': True, 'co_shader': False}
+  [OK ] `BQ_SHADER=0` tắt hẳn nhóm shader: co_shader()=False · shader trong dung_duoc()=0
+  [OK ] mất file .hook -> BỎ hiệu ứng đó, giữ hiệu ứng CPU: eq=brightness='0.26*sin(3.14159*(t-3.000)/(3.400-3.000))':contrast='1+…
+
+[CA G] đường xuất THẬT + lùi êm khi shader hỏng giữa chừng
+  [OK ] xuất THẬT qua `export_canvas_clip` có shader: ra clip đủ khung: 150 khung · 5.000s · nhật ký ['sh_hat_phim']
+  [OK ] shader HỎNG giữa lúc xuất -> LÙI ÊM, clip vẫn ra đủ khung: 150 khung · 5.000s
+  [OK ] lùi êm rồi thì NHẬT KÝ phải bỏ shader (không khoe cái không có): ['loe_sang']
+
+[CA H] quét tĩnh: khuôn rẻ · cửa Vulkan · không còn file mồ côi
+  [OK ] khuôn shader dùng `trim`+`concat` (cách RẺ 1,16x), KHÔNG phải `overlay` cả clip (2,18x): 350 ký tự
+  [OK ] khuôn shader có `{i}` (nhãn riêng từng hiệu ứng — chống trùng pad): có
+  [OK ] `ffmpeg_utils` mở Vulkan CÓ ĐIỀU KIỆN `_can_vk` (không mở bừa): có `if _can_vk:` + `vulkan=vk`
+  [OK ] `ffmpeg_utils` có nhánh LÙI ÊM `bo_shader`: có
+  [OK ] MỌI file .hook đóng gói đều được kho hiệu ứng dùng (không còn tài nguyên mồ côi): đĩa 3 · kho 3 · thừa [] · thiếu []
+  [OK ] bản đóng gói (.spec + CI) vẫn mang theo `app/assets/hieu_ung`: cả 2 file đều có
+  [OK ] mọi shader đều có mặt trong luật chọn `_UV_THEO_LOAI`: đủ 3
+  [OK ] shader nằm ở vị trí AI thật sự chọn tới (3 vị trí đầu): 3/3 tới được: ['sh_hat_phim', 'sh_toi_vien', 'sh_tuong_phan']
+
+[CA I] shader bị libplacebo TỰ TẮT mà rc=0 -> cửa dò phải bắt
+  [OK ] (mô tả bẫy) shader hỏng THÂN -> rc=0 + đủ khung + KHÔNG hiệu ứng: rc=0 · 182 khung · chỉ 0.0% pixel đổi -> nếu chỉ xem rc+khung thì TƯỞNG chạy tốt
+  [OK ] `_shader_chay_that()` chứng minh shader ĐỔI ĐƯỢC pixel thật: True
+  [OK ] shader không chạy được -> `co_libplacebo(do_lai=True)` = False (không báo nhầm là dùng được): False
+
+==========================================================================
+KẾT: 51 OK · 1 FAIL
+  FAIL · sh_toi_vien: THẤY ĐƯỢC ở mức 'nhe' (>= 8.0% pixel) — 5.07% pixel |dY|>12 · PSNR 33.21 dB
+==========================================================================
