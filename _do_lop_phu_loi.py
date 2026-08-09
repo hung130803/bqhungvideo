@@ -226,6 +226,11 @@ def main() -> int:
         ("lịch sự lắm", "bui_phim", "lịch sử"),
         ("trời lạnh mà ấm áp", "ma_quai", "ma ám"),
         ("có điện rồi", "tia_sang", "cổ điển"),
+        # CJK: từ khoá NGẮN khớp bên trong từ dài (không có dấu cách)
+        ("火曜日に行きます", "tan_lua", "火 (thứ Ba)"),
+        ("그건 불가능하고 불편해요", "tan_lua", "불 (bất tiện)"),
+        ("눈이 아파요", "tuyet_roi", "눈 (mắt/tuyết)"),
+        ("가격 비교를 해봤어요", "mua_roi", "비 (so sánh/mưa)"),
     ]
     n_cu = n_moi = 0
     for cau, canh, y in BAY:
@@ -244,7 +249,13 @@ def main() -> int:
 
     # ── 4. CÂU TIẾNG VIỆT ĐÚNG NGHĨA vẫn phải khớp (không sửa quá tay)
     print("\n══ 4. CÂU ĐÚNG NGHĨA VẪN PHẢI KHỚP (chống sửa quá tay) ══")
-    THAT = [("ngoài trời tuyết rơi trắng xoá", "tuyet_roi"),
+    THAT = [("外は大雪が降っています", "tuyet_roi"),
+            ("今日は結婚式で花嫁がとても綺麗", "trai_tim"),
+            ("誕生日ケーキとパーティーの準備", "confetti"),
+            ("오늘 결혼식 신부가 정말 예뻐요", "trai_tim"),
+            ("생일 케이크 파티 축하합니다", "confetti"),
+            ("눈보라가 심해서 스키장에 못 갔어요", "tuyet_roi"),
+            ("ngoài trời tuyết rơi trắng xoá", "tuyet_roi"),
             ("hôm nay là đám cưới của cô dâu", "trai_tim"),
             ("chúc mừng sinh nhật, bánh kem đây", "confetti"),
             ("trời mưa suốt cả buổi chiều", "mua_roi"),
