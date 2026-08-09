@@ -3009,10 +3009,54 @@ def _recap_orig_caption_cues(recap_parts: list, segs: list,
     return cues
 
 
-def _pick_hook_seg(video_id: int, signals: dict, segs: list):
-    """Chọn 2-4s CAO TRÀO nhất để 'nhá hàng' lên đầu clip (hook-first).
-    Ưu tiên mốc AI đã chọn (hook_seg); không có thì dò cửa sổ âm thanh to nhất.
-    Trả None nếu không tìm được / hook đã nằm ngay đầu clip (tránh lặp)."""
+def _ghi_hook_log(video_id, ket: dict) -> None:
+    """1 dòng vào `logs/hook_<ngày>.log` — IN RA CÂU ĐƯỢC CHỌN.
+
+    Vì sao phải ghi: hook là thứ người xem thấy ĐẦU TIÊN, nhưng nó nằm sâu
+    trong đường xuất; không ghi thì "sao clip mở đầu bằng câu này" là câu
+    không tra được. KHÔNG BAO GIỜ ném lỗi.
+    """
+    try:
+        from datetime import datetime
+
+        from config import DATA_DIR
+        d = DATA_DIR / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"hook_{datetime.now():%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] video {video_id} — "
+                    f"{ket.get('vi_sao', '')} | giây "
+                    f"{ket['seg'][0]}-{ket['seg'][1]} | "
+                    f"CÂU: {str(ket.get('cau', ''))[:160]}\n")
+    except Exception:  # noqa: BLE001 — nhật ký không bao giờ chặn việc
+        pass
+
+
+def _pick_hook_seg(video_id: int, signals: dict, segs: list,
+                   transcript: dict = None):
+    """Chọn 2-4s để 'nhá hàng' lên đầu clip (hook-first).
+
+    THỨ TỰ ƯU TIÊN (v2.21.0):
+      1. **TÒ MÒ** — chấm từng CÂU chép lời (`hook_to_mo`), lấy câu để lại câu
+         hỏi / thông tin dở dang. Chỗ ỒN NHẤT không phải chỗ giữ chân người
+         xem; chép lời đã có sẵn nên đường này tốn 0 giây, 0 lượt LLM.
+      2. mốc AI đã chọn (`signals['hook_seg']`) — đường cũ.
+      3. cửa sổ 2,5 s có `_audio_score` lớn nhất — đường cũ.
+    Trả None nếu không tìm được / hook đã nằm ngay đầu clip (tránh lặp).
+
+    BẤT BIẾN: bước 1 hỏng / video KHÔNG LỜI -> rơi thẳng xuống 2 và 3 y như
+    bản cũ, không được vỡ.
+    """
+    try:
+        from app.ai.hook_to_mo import chon_hook_to_mo
+        tr = transcript if transcript is not None else \
+            get_analysis(video_id, "transcript")
+        ket = chon_hook_to_mo(tr, segs)
+        if ket:
+            _ghi_hook_log(video_id, ket)
+            return ket["seg"]
+    except Exception:  # noqa: BLE001 — hook tò mò hỏng KHÔNG được chặn xuất
+        pass
     hs = signals.get("hook_seg")
     try:
         if isinstance(hs, (list, tuple)) and len(hs) >= 2:
