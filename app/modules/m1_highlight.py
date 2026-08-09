@@ -2004,6 +2004,45 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         _want = int(cfg.get("count", 0) or 0)
         if _want > 0 and len(ai_clips) > _want:
             ai_clips = ai_clips[:_want]
+        # ---- 🔎 HẬU KIỂM BẢN GHÉP (app/ai/mach_lac.py) ----
+        # App chọn 3 đoạn hay rồi ghép, và tới v2.20.0 **chưa bao giờ xem lại
+        # bản ghép**. Ba đoạn hay riêng lẻ vẫn có thể rời rạc. Đây là lượt đọc
+        # LỜI THOẠI của chính các đoạn đã chọn (rẻ — chữ đã có sẵn), chỉ dùng
+        # `vision_digest` nếu CACHE đã có (không bao giờ tự bật AI xem hình).
+        # Đặt ở ĐÂY, TRƯỚC `_trim_junk_edges`/`_enforce_len`, để `_enforce_len`
+        # vẫn là NGƯỜI NÓI CUỐI về độ dài (bài học cổng 12).
+        # FAIL-SAFE: mọi lỗi -> GIỮ NGUYÊN lựa chọn ban đầu.
+        if getattr(_st, "HAU_KIEM_GHEP", True):
+            try:
+                from app.ai import mach_lac as _ml_mod
+                _dg_ml = get_analysis(video_id, _vd.VD_KIND) or []
+                ctx.progress(0.67, "🔎 xem lại bản ghép có mạch lạc không...")
+                for _ci, _c in enumerate(ai_clips):
+                    _sg = _c.get("segments") or []
+                    if len(_sg) < _ml_mod.DOAN_TOI_THIEU:
+                        continue
+                    try:
+                        _sg2, _ly = _ml_mod.hau_kiem(
+                            _sg, transcript,
+                            lambda p, model="": _call_waiting_quota(
+                                lambda: llm.complete_text(p, model=model)
+                                if model else llm.complete_text(p),
+                                ctx, prov),
+                            digest=_dg_ml,
+                            min_giay=float(cfg.get("min_len", 0.0) or 0.0),
+                            model=str(getattr(_st, "JUDGE_MODEL", "") or ""))
+                    except Exception as _e_ml:  # noqa: BLE001
+                        _sg2 = _sg
+                        _ly = (f"hậu kiểm lỗi ({type(_e_ml).__name__}) -> "
+                               "GIỮ NGUYÊN lựa chọn ban đầu")
+                    if _sg2 is not _sg and _sg2 != _sg:
+                        _c["segments"] = _sg2
+                        _c["mach_lac"] = _ly
+                        ai_warns.append(f"Part {_ci + 1} sửa mạch: {_ly[:70]}")
+                    _ml_mod.ghi_nhat_ky(
+                        _ly, f"video {video_id} · Part {_ci + 1}")
+            except Exception:  # noqa: BLE001 - hậu kiểm KHÔNG được chặn lượt cắt
+                pass
         _len_notes: list = []
         clip_ids = []
         for c in ai_clips:
