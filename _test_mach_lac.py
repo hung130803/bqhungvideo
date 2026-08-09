@@ -274,6 +274,20 @@ def ca6_noi_vao_duong_that() -> None:
         "cuối về độ dài — bài học cổng 12)",
         0 < i_hk < i_en, f"vị trí {i_hk} < {i_en}")
     bao("có công tắc `HAU_KIEM_GHEP`", "HAU_KIEM_GHEP" in src)
+    # HẾT LƯỢT PHẢI **GIỮ NGUYÊN**, KHÔNG ĐƯỢC ĐỢI. `_call_waiting_quota` là
+    # vòng đợi tới 15 PHÚT dành cho khâu CHỌN ĐOẠN (đợi vài phút để có clip AI
+    # vẫn rẻ hơn xuất clip cơ bản rồi làm lại). Hậu kiểm thì ngược hẳn: nó là
+    # thứ THÊM VÀO, fail-safe "giữ nguyên" không tốn gì. Bọc nhầm vào đây là
+    # **15 phút/Part**; 3 Part x 300 kênh thì đứng cả dây chuyền.
+    # Quét ĐÚNG BIỂU THỨC GỌI (từ `_ml_mod.hau_kiem(` trở đi), KHÔNG quét cả
+    # khối phía trên: chính dòng ghi chú giải thích "KHÔNG bọc
+    # `_call_waiting_quota`" nằm ở đó -> quét rộng là FAIL OAN (đúng bài học
+    # cổng 27 "chỉ soi NHÃN NÚT, đừng soi cả file"; bản đầu của ca này đã sập).
+    _goi = src[i_hk:i_hk + 320]
+    bao("hậu kiểm gọi THẲNG `complete_text`, KHÔNG bọc `_call_waiting_quota` "
+        "(hết lượt -> GIỮ NGUYÊN, KHÔNG đợi 15 phút/Part)",
+        "_call_waiting_quota" not in _goi and "llm.complete_text" in _goi,
+        _goi.split("\n")[1].strip() if "\n" in _goi else "")
     from config import settings
     bao("`settings.HAU_KIEM_GHEP` có thật và mặc định BẬT",
         getattr(settings, "HAU_KIEM_GHEP", None) is True,

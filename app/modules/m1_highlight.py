@@ -2028,12 +2028,18 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                     if len(_sg) < _ml_mod.DOAN_TOI_THIEU:
                         continue
                     try:
+                        # GỌI THẲNG `complete_text`, **KHÔNG** bọc
+                        # `_call_waiting_quota`. Vòng đợi-hết-lượt là dành cho
+                        # khâu CHỌN ĐOẠN (đợi vài phút để có clip AI vẫn rẻ hơn
+                        # xuất clip cơ bản rồi làm lại). Hậu kiểm thì NGƯỢC LẠI:
+                        # nó là thứ THÊM VÀO, fail-safe của nó là "giữ nguyên
+                        # lựa chọn ban đầu" — không tốn gì. Bọc vòng đợi vào đây
+                        # là biến một khâu tuỳ chọn thành **15 PHÚT/Part** khi
+                        # cả 38 key đang cooldown; 3 Part x 300 kênh thì đứng cả
+                        # dây chuyền. Hết lượt -> ném -> `hau_kiem` bắt -> GIỮ
+                        # NGUYÊN, đúng yêu cầu.
                         _sg2, _ly = _ml_mod.hau_kiem(
-                            _sg, transcript,
-                            lambda p, model="": _call_waiting_quota(
-                                lambda: llm.complete_text(p, model=model)
-                                if model else llm.complete_text(p),
-                                ctx, prov),
+                            _sg, transcript, llm.complete_text,
                             digest=_dg_ml,
                             min_giay=float(cfg.get("min_len", 0.0) or 0.0),
                             model=str(getattr(_st, "JUDGE_MODEL", "") or ""))
