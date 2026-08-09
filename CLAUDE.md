@@ -813,6 +813,55 @@
      → CSV*. File cần 3 cột: tên file clip · số lượt xem · thời lượng xem trung
      bình (giây hoặc `0:21`). Có thêm cột thời lượng clip thì tính được tỉ lệ
      xem hết.
+  51. `_test_xem_hinh_kenh.py` → **AI XEM HÌNH BẬT/TẮT RIÊNG TỪNG KÊNH**
+     (`projects.xem_hinh`). Anh Hùng 09/08/2026: *"cứ thêm phần bật tuỳ chỉnh
+     từng kênh đã, tôi test xem sao, nếu oke thì mặc định tất cả"*.
+     **ĐO A/B 60 LƯỢT THẬT TRƯỚC KHI LÀM** (6 video × 5 vòng × 2 bên, đan xen):
+     bật xem hình **ĐỔI LỰA CHỌN THẬT** — video 728 s chồng lấn **6,8%**
+     (p=0,024) · 150 s **23,4%** (p=0,008) · **53 s chọn Y HỆT (100%)**.
+     Dấu hiệu KHÔNG phải mật độ lời (hiệu ứng mạnh nhất ở video **4,25 từ/giây**
+     — giả thuyết "nói nhiều thì chép lời đủ rồi" **SAI**) mà là **SỐ MỐC
+     HÌNH**: cần **>= 8 mốc**. Giá thật chỉ **+1,6 .. +10,6 giây/video**, trừ 1
+     video dính Groq **503 'over capacity'** cả 5/5 vòng -> **+244 giây**.
+     **BA TRẠNG THÁI, KHÔNG PHẢI HAI** — cột khai `INTEGER` NULLABLE:
+     `NULL` = kênh CHƯA ĐỤNG TỚI -> theo mặc định app (`VISION_CUT`, đang TẮT) ·
+     `1`/`0` = user đã chọn. Ép `NOT NULL DEFAULT 0` là **mất luôn đường đổi mặc
+     định toàn cục** cho ~300 kênh chưa đụng (đúng cái `tpl_name`=`''` né được).
+     **CỬA DUY NHẤT**: việc tra ô nằm TRONG `vision_digest.build_vision_digest`
+     (`kenh=_TU_TRA` -> `xem_hinh_kenh(video_id)`), KHÔNG bắt caller tự truyền —
+     nếu không thì lặp đúng lỗi (a) của cổng 19 (mẫu-theo-kênh chỉ áp ở dây
+     chuyền, bấm tay vẫn ăn cấu hình trang chính). Cổng có ca **quét tĩnh bằng
+     `tokenize`**: không file nào được gọi thẳng `vision_digest_enabled()`.
+     **2 CHỐT TIẾT KIỆM (đo mới có, đừng chỉnh mò):**
+     (a) `MOC_TOI_THIEU = 8` — dù kênh BẬT, `len(pick_frame_times())` < 8 thì
+     BỎ QUA + ghi `logs/vision_<ngày>.log`. Số mốc app tính ra khớp đúng bộ
+     A/B: **53 s -> 3 · 150 s -> 8 · 728 s -> 12**. `bat_buoc` (video KHÔNG
+     lời) được đi tiếp: lúc đó hình là căn cứ duy nhất.
+     (b) `VISION_HAN_GIAY = 28` + `VISION_503_TOI_DA = 2` + `la_loi_qua_tai()`
+     — **503 ≠ 429 ≠ 413**, mỗi loại một đường: 429 phạt key + đợi · 413 thu
+     nhỏ · **503 BỎ XEM HÌNH cho video đó, KHÔNG phạt key**. Đo: dừng ở **2/5
+     lượt (0,45 s)** thay vì nướng hết, **0/4 key bị khoá**, clip vẫn ra
+     (`generate_highlights` thật ra `count=2` dù vision 503 + LLM chữ chết).
+     Digest bị CẮT NGANG thì **KHÔNG đóng dấu vào cache** (Groq quá tải là
+     chuyện 5 phút; đóng dấu là video mang bản cụt VĨNH VIỄN).
+     **UI**: bảng Dây chuyền 9 -> **10 cột**, cột 5 = "AI xem hình" (combo
+     `(mặc định: TẮT)` / `BẬT xem hình` / `TẮT xem hình`); nhãn mục đầu phải
+     HIỆN mặc định thật (bài học cổng 16 v2.6.25a). Gán 1 lượt: **bấm tiêu đề
+     cột 5** hoặc menu 🔧 -> `_pipe_bulk_xem_hinh` -> `_pipe_apply_xem_hinh_all`
+     lấy pid từ **BẢNG** (`_pipe_rows_pid`) nên tôn trọng nhóm + ô tìm. Nhãn
+     mới KHÔNG EMOJI.
+     **BẤT BIẾN ĐO ĐƯỢC**: **16/16** tổ hợp `USE_VISION × VISION_CUT ×
+     LIGHT_MODE × bat_buoc` với kênh NULL cho ra ĐÚNG quyết định của mốc
+     `378230e`, nạp bằng `git show <mốc>:app/core/vision_digest.py` (**KHÔNG
+     dùng `main`** — sau gộp nó trùng mã đang test, PASS OAN), kèm chốt "bản
+     mốc phải KHÁC bản đang test". **THỬ PHÁ** (bỏ nhánh `kenh is True/False`):
+     cổng FAIL đúng **9 mục** -> không phải con dấu.
+     **BẪY ĐÃ SẬP KHI VIẾT CỔNG NÀY (2 cái):** (1) quét tĩnh bằng `in` chuỗi ->
+     chính DÒNG GHI CHÚ giải thích bản vá bị kể là vi phạm (đỏ oan, y hệt cổng
+     47) — phải `tokenize` bỏ COMMENT+STRING, kèm ca TỰ KIỂM BỘ DÒ; (2)
+     `time.monotonic()` trên Windows nhảy ~15 ms nên `_ChotQuaTai(han_giay=0)`
+     đo ra `da_ton()=0.0` và `0 > 0` là False -> ca "quá giờ" FAIL OAN; phải
+     đẩy lùi `chot.moc` để giả lập thời gian đã trôi.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.

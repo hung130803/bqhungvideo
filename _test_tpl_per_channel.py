@@ -137,10 +137,15 @@ pg.layout_tpl = {"dau": "MẶC ĐỊNH"}
 pg._pipeline_dialog()
 qapp.processEvents()
 tbl = pg._pipe_tbl
-kiem(tbl.columnCount() == 9, f"bảng có 9 cột (thêm cột Mẫu)",
+# 9 cột từ v2.6.24 (thêm cột "Mẫu") -> 10 cột từ v2.22.0 (thêm cột "AI xem
+# hình", cổng 51). Cột "Mẫu" phải GIỮ NGUYÊN chỉ số 4 — cột mới chèn SAU nó,
+# nếu không thì cú bấm tiêu đề "gán 1 mẫu hàng loạt" rơi vào cột khác.
+kiem(tbl.columnCount() == 10, "bảng có 10 cột (Mẫu + AI xem hình)",
      str(tbl.columnCount()))
 kiem(tbl.horizontalHeaderItem(4).text() == "Mẫu",
      "cột 4 tên 'Mẫu'", tbl.horizontalHeaderItem(4).text())
+kiem(tbl.horizontalHeaderItem(5).text() == "AI xem hình",
+     "cột 5 tên 'AI xem hình'", tbl.horizontalHeaderItem(5).text())
 cb4 = tbl.cellWidget(0, 4)
 kiem(cb4 is not None, "dòng đầu có ô chọn mẫu")
 tens = [cb4.itemText(i) for i in range(cb4.count())]
