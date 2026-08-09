@@ -554,14 +554,36 @@ def ca_bat_bien(src: Path) -> None:
     # `VIEC_HIEU_UNG.md`. Vì vậy phải TỰ KIỂM đối chứng trước khi tin kết quả.
     _nay = (REPO / "app" / "core" / "ffmpeg_utils.py").read_text(
         encoding="utf-8", errors="replace")
+    # HAI NGUYÊN NHÂN khiến 2 bản TRÙNG NHAU, chỉ MỘT là nguy hiểm — phải tách,
+    # nếu không thì mọi nhánh KHÔNG ĐỘNG tới `ffmpeg_utils.py` sẽ ĐỎ OAN VĨNH
+    # VIỄN (đúng bệnh đã sập ở cổng 41 và 47, và cổng đỏ oan thì người ta bỏ
+    # qua nó — nguy hiểm hơn hẳn):
+    #   (a) NGUY HIỂM: mốc đối chứng ĐÃ CHỨA commit của nhánh này (main bị
+    #       fast-forward tới nhánh) -> "so nó với chính nó", PSNR 99 dB vĩnh
+    #       viễn. Dấu hiệu CHÍNH XÁC: HEAD là TỔ TIÊN của mốc.
+    #   (b) LÀNH: mốc là bản phát hành THẬT trước đó, và nhánh này đơn giản
+    #       KHÔNG SỬA file đó dòng nào -> bất biến ĐÚNG DO XÂY DỰNG (cùng mã
+    #       nguồn thì không thể ra khác). Vẫn chạy tiếp phép đo để đường xuất
+    #       được ffmpeg chạy thật 2 lượt, nhưng GHI RÕ là "do không động vào".
+    _la_to_tien = subprocess.run(
+        ["git", "-C", str(REPO), "merge-base", "--is-ancestor", "HEAD", _moc],
+        capture_output=True, creationflags=_NOWIN, timeout=60).returncode == 0
     if out.strip() == _nay.strip():
-        bao("bản `main` phải KHÁC nhánh này (chống so-với-chính-mình)", False,
-            "`git show main:app/core/ffmpeg_utils.py` TRÙNG file đang test -> "
-            "`main` đã bị merge/fast-forward tới nhánh này, phép so BẤT BIẾN "
-            "vô nghĩa. Chạy `git branch -f main origin/main` rồi kiểm lại.")
-        return
-    bao("bản `main` KHÁC nhánh này (đối chứng hợp lệ)", True,
-        f"main {len(out)} ký tự · nhánh {len(_nay)} ký tự")
+        if _la_to_tien:
+            bao("mốc đối chứng phải KHÁC nhánh này (chống so-với-chính-mình)",
+                False,
+                f"`git show {_moc}:app/core/ffmpeg_utils.py` TRÙNG file đang "
+                f"test VÀ HEAD là tổ tiên của `{_moc}` -> mốc đã bị "
+                f"merge/fast-forward tới nhánh này, phép so BẤT BIẾN vô nghĩa. "
+                f"Đặt BQ_MOC_REF về commit ĐÃ PHÁT HÀNH rồi kiểm lại.")
+            return
+        bao(f"bất biến ĐÚNG DO XÂY DỰNG: nhánh này KHÔNG sửa "
+            f"`ffmpeg_utils.py` dòng nào so với `{_moc}`", True,
+            f"{len(_nay)} ký tự giống hệt · HEAD KHÔNG phải tổ tiên của {_moc} "
+            f"(nên không phải ca 'so nó với chính nó')")
+    else:
+        bao(f"bản mốc `{_moc}` KHÁC nhánh này (đối chứng hợp lệ)", True,
+            f"mốc {len(out)} ký tự · nhánh {len(_nay)} ký tự")
     fmain = _SB / "fu_main.py"
     fmain.write_text(out, encoding="utf-8")
     spec = importlib.util.spec_from_file_location("fu_main", str(fmain))
