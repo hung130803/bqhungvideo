@@ -770,6 +770,8 @@
   vượt 0 dBFS, đúng ca BẤT KHẢ THI đã ghi ở trên) · ON **−2,30** / 0 (TẮT
   −2,45 / 0). **KHÔNG ÁT LỜI**: ngoài cửa sổ mốc, dải giọng 300-4 kHz đổi nhiều
   nhất **+0,27 / +0,14 / +0,29 dB** trên 3 clip.
+  **CỔNG 44 chạy 5 LƯỢT LIÊN TIẾP: ĐẠT cả 5** (68 mục/lượt, 0 hỏng, ~2 phút
+  mỗi lượt) — không còn nhấp nháy.
   **ĐÃ CÂN NHẮC RỒI BỎ, ghi thẳng để đừng ai làm lại:** *dời điểm nhấn sang chỗ
   KHÔNG có lời*. Điểm nhấn HÌNH do `chon_hieu_ung` đặt theo cao trào CHUYỂN
   ĐỘNG; dời nó đi vài trăm ms để né giọng nói là **bỏ đúng cái khung đáng nhấn**
