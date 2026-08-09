@@ -135,7 +135,9 @@ def ca2_413(ML) -> None:
     print("\n[CA 2] `LLMTooLarge` (413) phải NỔI LÊN, KHÔNG PHẠT KEY")
     from app.ai import llm
     from config import settings
-    keys = settings.groq_keys() or ["gsk_test_khoa_gia_de_do_trang_thai"]
+    # KHÔNG viết key giả có tiền tố thật vào file: cửa chặn phát hành chạy
+    # `git diff | grep gsk_` và phải ra 0 — một chuỗi mẫu cũng làm nó đỏ.
+    keys = settings.groq_keys() or ["(khong-co-key)"]
     truoc = [llm.key_status("groq")]
     noi = False
     # LỜI LỖI THẬT của Groq (đúng nguyên văn đã gặp 06/08/2026): có "413" +
