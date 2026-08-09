@@ -1047,9 +1047,12 @@ _dk(HieuUng(
     ghi_chu="cưới/lãng mạn — biến thể của cảnh «trai_tim»"))
 _dk(HieuUng(
     "lap_lanh_bui", "Bụi kim tuyến", "Glitter Dust", "lop_phu",
+    # ĐO LẦN 1: hạt 0,32*ô + sàn nhấp nháy 0,50 chỉ ra **4,43%** — dưới ngưỡng
+    # THẤY ĐƯỢC 8%. Sao 4 cánh có diện tích nhỏ hơn đĩa cùng bán kính rất nhiều,
+    # lại còn bị nhân với hệ số nhấp nháy. Nới lên 0,56*ô + sàn 0,62.
     _lp(_luoi(10, 0.35)
-        + f"st(8,0.32*ld(1)*(0.70+0.6*{_bam_lai(53.7, 0.117)}));"
-        + f"st(3,0.50+0.50*max(0,sin(9.0*T+6.283*{_bam_lai(31.9, 0.613)})));"
+        + f"st(8,0.56*ld(1)*(0.70+0.6*{_bam_lai(53.7, 0.117)}));"
+        + f"st(3,0.62+0.38*max(0,sin(9.0*T+6.283*{_bam_lai(31.9, 0.613)})));"
         + "255*{p1}*" + _LP_SONG + "*ld(3)"
         "*clip(2.2-2.2*pow(abs(ld(9))/ld(8),0.5)"
         "-2.2*pow(abs(ld(0))/ld(8),0.5),0,1)"),
@@ -1102,11 +1105,15 @@ _dk(HieuUng(
 _dk(HieuUng(
     "bong_bay", "Bóng bay lên", "Balloons", "lop_phu",
     # bóng = ĐĨA hơi dẹt đứng, bay LÊN chậm, ô to nên thưa.
+    # ĐO LẦN 1: **dV 4,39** (trần 3,0) — 24% khung phủ bởi 4 màu 0xB4=180 là
+    # quá đậm cho một mảng lớn. Chữa 2 vế: nhạt màu về mức 0xD8 và thu bán kính
+    # (24% -> ~13% diện tích). Đây đúng bài học "tim bay hồng đậm làm tím khung"
+    # anh Hùng đã từ chối một lần.
     _lp(_luoi(34, 1.3, len_tren=True, lac=0.10)
-        + f"st(8,0.30*ld(1)+0.08*ld(1)*{_bam_lai(53.7, 0.117)});"
+        + f"st(8,0.22*ld(1)+0.06*ld(1)*{_bam_lai(53.7, 0.117)});"
         + "255*{p1}*" + _LP_SONG
         + "*clip(1.6-1.6*hypot(ld(9)/ld(8),ld(0)/(1.20*ld(8))),0,1)",
-        nen="gradients=c0=0xFFB4B4:c1=0xFFF4B4:c2=0xB4E4FF:c3=0xD8B4FF"
+        nen="gradients=c0=0xFFD8D8:c1=0xFFF6D8:c2=0xD8EEFF:c3=0xE8D8FF"
             ":n=4:seed=31:speed=0.02"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="sinh nhật/bóng bay — biến thể của cảnh «confetti»"))
@@ -1201,9 +1208,22 @@ _dk(HieuUng(
     ghi_chu="khói/hơi nóng — biến thể của cảnh «tan_lua»"))
 _dk(HieuUng(
     "tia_sang_doc", "Vệt sáng dọc quét", "Vertical Light Leak", "lop_phu",
-    _lp("255*{p1}*" + _LP_SONG + "*clip(1-abs(X/W-(0.08+0.92*T/{d}))*6.5,0,1)",
+    # ĐO LẦN 1 — **MỘT dải rộng thì lệch màu, NHIỀU dải hẹp thì không**: bản đầu
+    # là 1 dải rộng 0,31·W, đo ra **dU 4,49** (trần 3,0) trong khi `nang_xuyen`
+    # (nhiều tia song song, tổng diện tích còn LỚN HƠN) chỉ **dU 0,74**. Lý do:
+    # dU là lệch U TRUNG BÌNH CẢ KHUNG; một dải rộng nằm trọn trên MỘT vạch màu
+    # của `testsrc2` nên kéo lệch hẳn về một phía, còn nhiều dải hẹp rải khắp
+    # khung thì phần kéo của các vạch màu khác nhau TRIỆT TIÊU nhau. Nay 3 dải
+    # hẹp quét ngang (cùng tổng diện tích, cùng ý đồ nhìn).
+    # ĐO LẦN 2 (3 dải THẲNG ĐỨNG): dV còn **3,30** — vẫn chạm trần. Nguyên nhân
+    # thứ hai, riêng của trục dọc: `testsrc2` có các VẠCH MÀU DỌC, mà dải sáng
+    # cũng dọc -> hai lưới CỘNG HƯỞNG, dải nằm trọn trong vạch. Nay 5 dải và
+    # NGHIÊNG NHẸ (X + 0,20·Y): mỗi dải cắt ngang nhiều vạch màu nên phần kéo
+    # tự triệt tiêu, mà mắt vẫn đọc ra là "vệt sáng dọc quét ngang".
+    _lp("st(1,mod((X+0.20*Y)/W*5.0-1.15*T/{d},1));"
+        + "255*{p1}*" + _LP_SONG + "*clip(1-abs(ld(1)-0.5)*8.0,0,1)",
         nen="color=c=0xFFF0DC"),
-    ts=((0.18, 0.30), ), dai=0.70, hop=(),
+    ts=((0.20, 0.34), ), dai=0.70, hop=(),
     ghi_chu="hoài niệm/hoàng hôn — biến thể của cảnh «tia_sang»"))
 _dk(HieuUng(
     "nang_xuyen", "Nắng xuyên nhiều tia", "God Rays", "lop_phu",
@@ -1222,10 +1242,13 @@ _dk(HieuUng(
         f"st(6,{_bam('ld(2)', 'ld(5)', 127.1, 311.7)});"
         f"st(7,{_bam_lai(97.13, 0.371)});"
         "st(9,mod(X,ld(1))-(0.15*ld(1)+0.70*ld(1)*ld(6)));"
+        # ĐO LẦN 1: **5,49%** — dưới ngưỡng 8%. Vạch quá mảnh (3,8 px trên lưới
+        # 216 px) và chỉ 38% số cột có vạch. Nay dày 6,4 px + 50% số cột + vệt
+        # kéo dài hơn theo chiều dọc (2,4 -> 1,6).
         + "255*{p1}*" + _LP_SONG
-        + f"*gt({_bam_lai(19.7, 0.443)},0.62)"
-        "*clip(1-abs(ld(9))/1.9,0,1)"
-        "*clip(1-abs(Y/H-ld(7))*2.4,0,1)"),
+        + f"*gt({_bam_lai(19.7, 0.443)},0.50)"
+        "*clip(1-abs(ld(9))/3.2,0,1)"
+        "*clip(1-abs(Y/H-ld(7))*1.6,0,1)"),
     ts=((0.55, 0.90), ), dai=0.70, hop=(),
     ghi_chu="phim cũ/tư liệu — biến thể của cảnh «bui_phim»"))
 _dk(HieuUng(
@@ -1242,11 +1265,14 @@ _dk(HieuUng(
     ghi_chu="ký ức/căn phòng cũ — biến thể của cảnh «bui_phim»"))
 _dk(HieuUng(
     "la_bay", "Lá bay theo gió", "Leaves In Wind", "lop_phu",
-    _lp(_luoi(21, 1.1, lac=0.62)
+    # ĐO LẦN 1: **7,07%** — sát dưới ngưỡng 8%. Lá to lên (0,17x0,29 ->
+    # 0,21x0,35 ô = +49% diện tích) và bớt lắc (0,62 -> 0,48, lắc quá mạnh làm
+    # lá tràn sang ô bên cạnh rồi chồng lên nhau).
+    _lp(_luoi(21, 1.1, lac=0.48)
         + f"st(8,3.0*T*ld(3)+6.283*{_bam_lai(53.7, 0.117)});"
         + "255*{p1}*" + _LP_SONG
-        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.17*ld(1)),"
-          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.29*ld(1))),0,1)",
+        + "*clip(2.0-2.0*hypot((ld(9)*cos(ld(8))+ld(0)*sin(ld(8)))/(0.21*ld(1)),"
+          "(ld(0)*cos(ld(8))-ld(9)*sin(ld(8)))/(0.35*ld(1))),0,1)",
         nen="color=c=0xFFEDD2"),
     ts=((0.55, 0.85), ), dai=0.80, hop=(),
     ghi_chu="gió thổi/đường rừng — biến thể của cảnh «la_roi»"))
@@ -1286,21 +1312,30 @@ _dk(HieuUng(
     ghi_chu="lặn/sóng/thác nước"))
 _dk(HieuUng(
     "song_nuoc", "Vân sáng mặt nước", "Water Caustics", "lop_phu",
-    # vân nước = 2 sóng sin chéo nhau, không dùng lưới băm -> rẻ nhất nhóm.
-    _lp("st(1,sin(X/W*17.0+2.3*T)+sin(Y/H*21.0-1.7*T)"
-        "+sin((X/W+Y/H)*13.0+3.1*T));"
+    # vân nước = 3 sóng sin chéo nhau, không dùng lưới băm -> rẻ nhất nhóm.
+    # ĐO LẦN 1: **dU 3,11 · dV 4,39** (trần 3,0) tuy chỉ phủ 12%. Cùng nguyên
+    # nhân với `tia_sang_doc`: vân THƯA thì mỗi dải nằm trọn trên một vạch màu
+    # của `testsrc2`, kéo lệch một phía. Nay tăng tần số (17/21/13 ->
+    # 31/37/23) cho vân MỊN rải đều khắp khung -> phần kéo triệt tiêu nhau;
+    # màu đổi về TRẮNG (bỏ ánh xanh) cho chắc.
+    _lp("st(1,sin(X/W*31.0+2.3*T)+sin(Y/H*37.0-1.7*T)"
+        "+sin((X/W+Y/H)*23.0+3.1*T));"
         + "255*{p1}*" + _LP_SONG + "*clip((ld(1)-1.35)/0.85,0,1)",
-        nen="color=c=0xF0FAFF"),
+        nen="color=c=white"),
     ts=((0.55, 0.90), ), dai=0.80, hop=(),
     ghi_chu="hồ bơi/biển/dưới nước"))
 _dk(HieuUng(
     "suong_mo", "Sương mù trôi", "Drifting Fog", "lop_phu",
-    _lp(_luoi(64, 0.30, lac=0.55)
-        + f"st(8,0.42*ld(1)+0.18*ld(1)*{_bam_lai(53.7, 0.117)});"
+    # ĐO LẦN 1: **dV 3,52** (trần 3,0) với 34% khung bị phủ. Ô 64 px trên lưới
+    # 216x384 = chỉ 3x6 mảng -> quá THÔ, mỗi mảng nằm trọn trên một vạch màu.
+    # Nay ô 40 (nhiều mảng hơn, kéo màu triệt tiêu nhau) + mảng nhỏ lại + nhạt
+    # hơn (34% -> ~20% diện tích).
+    _lp(_luoi(40, 0.30, lac=0.55)
+        + f"st(8,0.30*ld(1)+0.12*ld(1)*{_bam_lai(53.7, 0.117)});"
         + "255*{p1}*" + _LP_SONG
         + "*clip(1.0-hypot(ld(9)/(1.6*ld(8)),ld(0)/ld(8)),0,1)",
-        nen="color=c=0xF0F0F4"),
-    ts=((0.32, 0.52), ), dai=0.80, hop=(),
+        nen="color=c=0xF2F2F4"),
+    ts=((0.28, 0.46), ), dai=0.80, hop=(),
     ghi_chu="kinh dị/halloween/rừng đêm"))
 _dk(HieuUng(
     "dom_ma", "Đốm ma lơ lửng", "Ghost Orbs", "lop_phu",
