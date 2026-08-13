@@ -43,6 +43,77 @@ def _remap_words(words: list, segments: list) -> list:
     return out
 
 
+#: SỐ KÝ TỰ tối đa của MỘT "từ ảo" CJK sau khi gom, theo MODE của preset. Mode
+#: nào TỰ gom thêm ở dưới (group 3 · karaoke 4 · active/hlbox 3 cụm) thì gom ở
+#: đây ÍT thôi, không thì dòng phụ đề dài 12-18 chữ -> tràn 3 dòng / cắt đáy.
+#: `word` KHÔNG gom thêm nữa nên phải gom đủ đọc ngay tại đây.
+#: Đo ở 1080x1920, cỡ chữ 0,055*h = 105 px: bề rộng dùng được 1080-2*151 = 778
+#: px ≈ 7 chữ Hán/dòng -> 6 là vừa 1 dòng, còn dư chỗ cho viền.
+_CJK_MAX = {"word": 6, "group": 2, "karaoke": 2, "active": 2, "hlbox": 2}
+
+
+def _noi_cum(parts: list, tho: list | None = None) -> str:
+    """Nối các từ của MỘT cụm thành chuỗi hiển thị. Giữa 2 từ CJK KHÔNG chèn
+    dấu cách (Nhật/Trung/Hàn không dùng dấu cách — chèn vào ra
+    'これは 誰も語 らなか った' / '他们 发现 东'), còn lại nối bằng 1 dấu cách.
+
+    `parts` = chuỗi ĐÃ có tag ASS (nhánh 'active'); `tho` = chữ THÔ tương ứng
+    để dò CJK (tag `{\\1c…}` không phải chữ nên phải dò trên bản thô).
+    BẤT BIẾN: không có từ CJK nào -> trả Y HỆT `" ".join(parts)` (đường EN/VI
+    không đổi 1 byte)."""
+    tho = parts if tho is None else tho
+    ra = ""
+    for k, ps in enumerate(parts):
+        if k:
+            ra += "" if (_co_cjk(tho[k]) and _co_cjk(tho[k - 1])) else " "
+        ra += ps
+    return ra
+
+
+def _gom_cjk(words: list, max_ky_tu: int = 6, max_dur: float = 1.8,
+             gap: float = 0.45) -> list:
+    """GOM các "từ" CJK 1 KÝ TỰ thành CỤM ĐỌC ĐƯỢC.
+
+    LỖI THẬT (đo 14/08/2026 trên video tiếng Trung của anh Hùng
+    `一只手表牵扯出一个巨大的秘密`): Groq whisper-large-v3 trả **MỐC TỪNG KÝ TỰ**
+    cho tiếng Trung — 1.020/1.074 "từ" chỉ dài 1 ký tự. `_word_cues` cho mỗi từ
+    1 dòng nên file .ass ra **1,07 ký tự/dòng, trung bình 0,175 s/dòng** (min
+    0,05 s): người xem thấy MỘT chữ Hán nhấp nháy 6 lần/giây, KHÔNG ĐỌC ĐƯỢC.
+    ffmpeg vẫn trả mã 0, khung vẫn đủ pixel -> cổng đếm pixel PASS OAN.
+
+    Gom TRƯỚC khi dựng cue nên MỌI mode (word/group/karaoke/active/hlbox) đều
+    hết bệnh, không phải vá 5 chỗ. Ngắt cụm khi: đủ `max_ky_tu` ký tự HIỂN THỊ ·
+    quá `max_dur` giây · hở > `gap` giây (khoảng lặng = ý mới) · đổi đoạn ghép
+    (`seg_idx`) · gặp dấu KẾT CÂU. Từ latin/số xen giữa KHÔNG bị gom vào chữ Hán.
+    BẤT BIẾN: không có ký tự CJK nào -> trả Y HỆT list vào (đường EN/VI KHÔNG
+    đổi 1 byte — cổng 21 so từng byte 18 preset cũ)."""
+    if not any(_co_cjk(str(w[2])) for w in words or []):
+        return words                       # bất biến: non-CJK y nguyên
+    ket_cau = "。！？；…!?;、，,"
+    ra: list = []
+    for w in words or []:
+        t = str(w[2])
+        gop = bool(ra) and _co_cjk(ra[-1][2]) and (
+            _co_cjk(t) or _chi_dau_cau(t))
+        if gop:
+            c = ra[-1]
+            if (w[3] != c[3]                              # khác đoạn ghép
+                    or len([x for x in c[2] if not _chi_dau_cau(x)])
+                    >= max_ky_tu                          # đủ chữ
+                    or (w[1] - c[0]) > max_dur            # cụm quá dài
+                    or (w[0] - c[1]) > gap                # có khoảng lặng
+                    or (c[2] and c[2][-1] in ket_cau)):   # vừa hết câu
+                gop = False
+        if gop:
+            c = ra[-1]
+            ra[-1] = [c[0], max(c[1], w[1]),
+                      c[2] + ("" if _co_cjk(t) or _chi_dau_cau(t) else " ") + t,
+                      c[3]]
+        else:
+            ra.append([w[0], w[1], t, w[3]])
+    return ra
+
+
 def _group(words: list, max_words: int = 3, max_dur: float = 2.4,
            gap: float = 0.6) -> list:
     """Gom 2-3 từ/cụm. KHÔNG gom qua ranh giới đoạn ghép (seg_idx đổi -> cụm mới).
@@ -61,7 +132,8 @@ def _group(words: list, max_words: int = 3, max_dur: float = 2.4,
             cur.append(w)
     if cur:
         chunks.append(cur)
-    return [[ch[0][0], ch[-1][1], " ".join(c[2] for c in ch)] for ch in chunks]
+    return [[ch[0][0], ch[-1][1], _noi_cum([c[2] for c in ch])]
+            for ch in chunks]
 
 
 def group_word_cues(word_cues: list, max_words: int = 3,
@@ -89,7 +161,8 @@ def group_word_cues(word_cues: list, max_words: int = 3,
             cur.append([a, b, txt])
     if cur:
         chunks.append(cur)
-    return [[ch[0][0], ch[-1][1], " ".join(w[2] for w in ch)] for ch in chunks]
+    return [[ch[0][0], ch[-1][1], _noi_cum([w[2] for w in ch])]
+            for ch in chunks]
 
 
 def preset_mode(preset: str) -> str:
@@ -131,12 +204,16 @@ def _karaoke_cues(words: list, max_words: int = 4, max_dur: float = 2.6,
     out = []
     for ch in chunks:
         start, prev, parts = ch[0][0], ch[0][0], []
-        for w in ch:
+        for i, w in enumerate(ch):
             lead = int(round(max(0.0, w[0] - prev) * 100))
             if lead > 0:
                 parts.append("{\\k%d}" % lead)        # chờ (chưa tô sáng)
             dur = int(round(max(0.08, w[1] - w[0]) * 100))
-            parts.append("{\\kf%d}%s " % (dur, _esc(w[2])))
+            # dấu cách SAU mỗi từ — trừ khi từ này VÀ từ kế đều là CJK (Nhật/
+            # Trung/Hàn không dùng dấu cách; chèn vào ra '借助金 属探测 仪仔细').
+            _sp = "" if (i + 1 < len(ch) and _co_cjk(str(w[2]))
+                         and _co_cjk(str(ch[i + 1][2]))) else " "
+            parts.append("{\\kf%d}%s%s" % (dur, _esc(w[2]), _sp))
             prev = w[1]
         out.append([start, ch[-1][1] + 0.25, "".join(parts).strip()])
     return out
@@ -432,6 +509,10 @@ def build_ass(words: list, segments: list, out_path,
         return False
     p = CAPTION_PRESETS.get(preset) or CAPTION_PRESETS[DEFAULT_PRESET]
     mode = p["mode"]
+    # 🈶 CJK (Trung/Nhật/Hàn): whisper trả MỐC TỪNG KÝ TỰ -> gom thành cụm đọc
+    # được TRƯỚC khi dựng cue, nếu không phụ đề là 1 chữ nhấp nháy 0,17 s/lần
+    # (xem `_gom_cjk`). Non-CJK trả y nguyên nên đường EN/VI KHÔNG đổi 1 byte.
+    remapped = _gom_cjk(remapped, _CJK_MAX.get(mode, 6))
     main = color or p["color"]                 # màu chữ: user chọn hoặc của kiểu
     size = size or max(40, int(out_h * 0.05))
     side = int(out_w * 0.14)
@@ -796,7 +877,8 @@ def build_ass(words: list, segments: list, out_path,
                                      + "{\\alpha&H00&}")
                     else:
                         parts.append(wt)
-                ev.append([wa, we, i == 0, i == n - 1, " ".join(parts)])
+                ev.append([wa, we, i == 0, i == n - 1,
+                           _noi_cum(parts, [ww[2] for ww in ch])])
         # CHỐNG CHÈN NHAU: sắp theo giờ, ép mỗi dòng kết thúc TRƯỚC khi dòng kế bắt đầu
         ev.sort(key=lambda e: e[0])
         for k in range(len(ev) - 1):
