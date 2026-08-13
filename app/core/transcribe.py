@@ -19,6 +19,16 @@ _cuda_libs_done = False
 # GPU vẫn dùng model lớn như cũ — không đổi gì.
 _BIG_MODELS = ("large", "distil-large", "turbo")
 
+#: SÀN độ dài (giây) của mảnh tiếng được gửi lên Groq. Groq đòi >= 0,01 s và
+#: trả 400 "Audio file is too short" nếu ngắn hơn — mà lời lỗi đó làm CẢ bước
+#: chép lời thất bại, video mất phụ đề rồi không ra Part nào (anh Hùng gặp
+#: 09/08/2026). Lấy 0,25 chứ không 0,01 vì mp3 encode xong độ dài xê dịch vài
+#: ms, và mảnh dưới 1/4 giây không mang chữ nào -> bỏ đi KHÔNG mất lời.
+#: ĐỂ Ở CẤP MODULE, đừng nhét vào trong hàm — cổng 52 phải đọc và vá được nó
+#: để tự kiểm bộ dò (đặt trong hàm thì test không với tới, và không ai điều
+#: chỉnh được khi Groq đổi ngưỡng).
+_CAT_TOI_THIEU = 0.25
+
 
 def _ram_gb() -> float:
     """Tổng RAM máy (GB) — ctypes thuần, không cần psutil (bản .exe nhẹ)."""
@@ -508,10 +518,6 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     flags = 0x0800_0000 if os.name == "nt" else 0
     chunk = 600
     total = _audio_duration(audio_path, fp, flags)
-    # Sàn ĐỘ DÀI mảnh gửi Groq. Groq đòi >= 0,01s; lấy 0,25s cho có khoảng an
-    # toàn (mp3 encode xong độ dài xê dịch vài ms) và vì mảnh dưới 1/4 giây
-    # không mang chữ nào — bỏ đi KHÔNG mất lời.
-    _CAT_TOI_THIEU = 0.25
     n = max(1, math.ceil(total / chunk)) if total > 0 else 1
     work = tempfile.mkdtemp(prefix="gq_")
     try:
