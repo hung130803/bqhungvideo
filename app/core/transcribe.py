@@ -508,6 +508,10 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     flags = 0x0800_0000 if os.name == "nt" else 0
     chunk = 600
     total = _audio_duration(audio_path, fp, flags)
+    # Sàn ĐỘ DÀI mảnh gửi Groq. Groq đòi >= 0,01s; lấy 0,25s cho có khoảng an
+    # toàn (mp3 encode xong độ dài xê dịch vài ms) và vì mảnh dưới 1/4 giây
+    # không mang chữ nào — bỏ đi KHÔNG mất lời.
+    _CAT_TOI_THIEU = 0.25
     n = max(1, math.ceil(total / chunk)) if total > 0 else 1
     work = tempfile.mkdtemp(prefix="gq_")
     try:
@@ -517,6 +521,15 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
         parts: dict = {}                         # i -> đường dẫn mp3 đã cắt
         for i in range(n):
             start = i * chunk                    # mốc CHÍNH XÁC của phần này
+            # MẢNH CUỐI QUÁ NGẮN -> BỎ, ĐỪNG GỬI. Groq trả 400 "Audio file is
+            # too short. Minimum audio length is 0.01 seconds." và lời lỗi đó
+            # làm CẢ bước chép lời thất bại -> video không có phụ đề -> không
+            # chọn được đoạn -> "không có Part nào được xuất" (anh Hùng gặp
+            # 09/08/2026). Gốc: `n = ceil(total/chunk)` nên audio 600,005 giây
+            # ra mảnh cuối 0,005 giây; chốt `getsize >= 400` KHÔNG bắt được vì
+            # header mp3 một mình đã đủ 400 byte.
+            if total > 0 and (total - start) < _CAT_TOI_THIEU:
+                continue
             part = os.path.join(work, f"p{i}.mp3")
             cmd = [ff, "-y", "-ss", str(start)]
             if total > 0:
