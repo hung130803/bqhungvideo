@@ -170,19 +170,42 @@ def main() -> int:
 
     # ---- CA 3: TỰ KIỂM BỘ DÒ — bỏ sàn thì cổng PHẢI kêu ----
     # Không có ca này thì cổng chỉ là con dấu (bài học cổng 43 + 47).
-    print("\n[CA 3] TỰ KIỂM: hạ sàn về 0 thì cổng PHẢI bắt được mảnh rỗng")
+    # GIẢ độ dài KHÔNG thay thế được audio thật: nguồn 6 giây thì ffmpeg cắt
+    # KHÔNG NỔI mảnh thứ 2 (start=600 vượt quá file) -> mảnh vào danh sách
+    # hỏng, không bao giờ tới Groq, và ca này FAIL OAN. Phải sinh audio DÀI
+    # THẬT 600,005 giây thì mảnh cuối mới ra 0,005 s thật.
+    print("\n[CA 3] TỰ KIỂM BỘ DÒ — audio DÀI THẬT 600,005 giây")
+    dai_src = _SB / "nguon_dai.mp3"
+    if not _dung_audio(600.005, dai_src):
+        bao("dựng được audio thật 600,005 giây", False, "ffmpeg lỗi")
+        return 1
+    d_that = _dai(str(dai_src))
+    bao("dựng được audio thật 600,005 giây", d_that > 599.0,
+        f"{d_that:.3f} giây, {dai_src.stat().st_size} byte")
+
+    # 3a. BỎ SÀN -> mảnh cuối 0,005 s PHẢI lọt ra (chứng minh bộ dò thấy được)
     cu = tr._CAT_TOI_THIEU
     tr._CAT_TOI_THIEU = 0.0                # type: ignore[assignment]
     try:
-        gui3 = _chay(600.005, src)
-        dais3 = [d for _p, d in gui3]
-        rong = [d for d in dais3 if 0 <= d < 0.25]
-        print(f"      gửi {len(gui3)} mảnh: {[f'{d:.3f}' for d in dais3]}")
+        g0 = _chay(d_that, dai_src)
+        d0 = [d for _p, d in g0]
+        rong = [d for d in d0 if 0 <= d < 0.25]
+        print(f"      BỎ sàn  -> {len(g0)} mảnh: {[f'{d:.3f}' for d in d0]}")
         bao("bỏ sàn -> XUẤT HIỆN mảnh rỗng (bộ dò có tác dụng)", bool(rong),
             f"{len(rong)} mảnh < 0,25s"
             + (f", ngắn nhất {min(rong):.4f}s" if rong else " -> BỘ DÒ MÙ"))
     finally:
         tr._CAT_TOI_THIEU = cu             # type: ignore[assignment]
+
+    # 3b. CÓ SÀN -> chính mảnh đó phải BIẾN MẤT (chứng minh bản vá chặn được)
+    g1 = _chay(d_that, dai_src)
+    d1 = [d for _p, d in g1]
+    con = [d for d in d1 if 0 <= d < tr._CAT_TOI_THIEU]
+    print(f"      CÓ sàn  -> {len(g1)} mảnh: {[f'{d:.3f}' for d in d1]}")
+    bao("có sàn -> mảnh rỗng BIẾN MẤT (bản vá chặn được)", not con,
+        f"{len(con)} mảnh < {tr._CAT_TOI_THIEU}s")
+    bao("có sàn -> KHÔNG mất mảnh có chữ", len(d1) >= 1,
+        f"{len(d1)} mảnh, dài nhất {max(d1):.1f}s" if d1 else "0 mảnh")
 
     print("\n" + "=" * 62)
     print(f"ĐẠT {len(_OK)} · HỎNG {len(_LOI)}")
