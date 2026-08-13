@@ -95,17 +95,32 @@ def _chay(bao_dai: float, src: Path) -> list:
     Groq trả gì.
     """
     da_gui: list = []
-    goc_dai, goc_one = tr._audio_duration, tr._groq_one
+    goc_dai, goc_one, goc_va = (tr._audio_duration, tr._groq_one,
+                                tr.va_lo_chep_loi)
 
     def _dai_gia(*_a, **_k):
         return bao_dai
 
     def _one_gia(audio_path, *_a, **_k):
-        da_gui.append(audio_path)
-        return ([], [], "vi", "")
+        # ĐO NGAY TẠI ĐÂY — file còn sống. `_transcribe_groq` xoá thư mục
+        # `work` trong `finally`, đo sau là ffprobe trả -1 và bị đọc nhầm
+        # thành "mảnh lạ" (khuyết điểm bản đầu của cổng này).
+        da_gui.append((audio_path, _dai(audio_path)))
+        # PHẢI TRẢ KẾT QUẢ CÓ CHỮ. Trả rỗng thì `_transcribe_groq` coi cửa sổ
+        # đó là HỎNG rồi THỬ LẠI -> 1 mảnh đếm thành 2 lượt gửi, và cổng kết
+        # luận sai (khuyết điểm thứ 3 của cổng này, bắt được khi thấy cả 2
+        # lượt đều dài 6,000 s = TRỌN file, tức cùng một mảnh gửi hai lần).
+        return ([{"start": 0.0, "end": 1.0, "text": "co chu"}],
+                [{"start": 0.0, "end": 1.0, "word": "co"}], "vi", "co chu")
+
+    def _va_gia(_ap, segs, words, lang, *_a, **_k):
+        # TẮT đường VÁ LỖ: nó cũng gọi `_groq_one`, nên để nguyên thì 1 audio
+        # ra 2 lượt gửi và phép đếm "mấy MẢNH" sai hẳn (khuyết điểm thứ 2).
+        return (segs, words, lang)
 
     tr._audio_duration = _dai_gia          # type: ignore[assignment]
     tr._groq_one = _one_gia                # type: ignore[assignment]
+    tr.va_lo_chep_loi = _va_gia            # type: ignore[assignment]
     try:
         tr._transcribe_groq(str(src), "vi", None)
     except Exception as e:  # noqa: BLE001
@@ -114,6 +129,7 @@ def _chay(bao_dai: float, src: Path) -> list:
     finally:
         tr._audio_duration = goc_dai       # type: ignore[assignment]
         tr._groq_one = goc_one             # type: ignore[assignment]
+        tr.va_lo_chep_loi = goc_va         # type: ignore[assignment]
     return da_gui
 
 
@@ -136,7 +152,7 @@ def main() -> int:
     # ---- CA 1: ĐÚNG CA CỦA ANH HÙNG — 600,005 giây -> mảnh cuối 0,005 s ----
     print("\n[CA 1] audio BÁO 600,005 giây (mảnh cuối lẽ ra 0,005 s)")
     gui = _chay(600.005, src)
-    dais = [_dai(p) for p in gui]
+    dais = [d for _p, d in gui]
     print(f"      gửi {len(gui)} mảnh, độ dài THẬT: "
           f"{[f'{d:.3f}' for d in dais]}")
     qua_ngan = [d for d in dais if 0 <= d < tr._CAT_TOI_THIEU]
@@ -159,7 +175,7 @@ def main() -> int:
     tr._CAT_TOI_THIEU = 0.0                # type: ignore[assignment]
     try:
         gui3 = _chay(600.005, src)
-        dais3 = [_dai(p) for p in gui3]
+        dais3 = [d for _p, d in gui3]
         rong = [d for d in dais3 if 0 <= d < 0.25]
         print(f"      gửi {len(gui3)} mảnh: {[f'{d:.3f}' for d in dais3]}")
         bao("bỏ sàn -> XUẤT HIỆN mảnh rỗng (bộ dò có tác dụng)", bool(rong),
