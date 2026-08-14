@@ -688,30 +688,67 @@ def ca17_chi_phi(src: Path):
     t_nho = time.perf_counter() - t0
     giay = 60.0
     segs = [(30.0, 30.0 + giay)]
-    tat, bat = [], []
-    for i in range(3):
-        _, _, ta = _xuat(src, SAN / f"c_tat{i}.mp4", segs, False)
-        _, _, tb = _xuat(src, SAN / f"c_bat{i}.mp4", segs, True)
-        tat.append(ta)
-        bat.append(tb)
+    # ĐO BA BÊN, ĐAN XEN — TẮT · DẢI NGANG · HỘP CHỮ. Đo hai bên (TẮT/BẬT) rồi
+    # in MỘT con số là gộp hai kiến trúc KHÁC HẲN nhau vào một mẫu số: dải là
+    # 1 `split`+`boxblur`+`overlay`, hộp là N cái (N = số mốc). Gộp lại thì
+    # không ai biết phần vượt trần đến từ đâu.
+    tat: list = []
+    thanh: dict = {"DẢI": [], "HỘP": []}
+    cu_hop = C._BAT_HOP
+    try:
+        for i in range(3):
+            _, _, ta = _xuat(src, SAN / f"c_tat{i}.mp4", segs, False)
+            tat.append(ta)
+            for ten, bat_hop in (("DẢI", False), ("HỘP", True)):
+                # PHẢI xoá sổ nhớ khi ĐỔI CHẾ ĐỘ, nếu không lượt sau đọc lại
+                # bản dò của lượt trước rồi đo nhầm.
+                C._DAI_NHO.clear()
+                C._DAI_KHOA.clear()
+                C._BAT_HOP = bat_hop
+                C.dai_theo_video(src)          # hâm nóng: chỉ đo CHUỖI FILTER
+                _, _, tb = _xuat(src, SAN / f"c_{ten[:1]}{i}.mp4", segs, True)
+                thanh[ten].append(tb)
+    finally:
+        C._BAT_HOP = cu_hop
     tv = lambda xs: sorted(xs)[len(xs) // 2]                   # noqa: E731
-    m_tat, m_bat = tv(tat), tv(bat)
-    them = (m_bat - m_tat) / (giay / 60.0)
-    # TRẦN 2,0 s/phút — KHÔNG phải 0,2. Con số 0,1-0,2 trong yêu cầu KHÔNG
-    # đúng với cách che "làm mờ": đo được (`_do_che_chu_gia.py`, 3 vòng đan
-    # xen, cùng máy) **+1,30 s/phút** cho "làm mờ" và **−0,01 s/phút** cho
-    # "phủ khối". Micro-benchmark tách riêng phần lọc (`-f null`, không mã
-    # hoá): chuỗi che tốn **+0,34 s/phút**, trong đó kiến trúc split/overlay
-    # chỉ +0,05 — phần đắt là chính `boxblur`. Trần đặt ở 2,0 để cổng vẫn bắt
-    # được hồi quy THẬT (vd ai đó lỡ thêm một lượt ffmpeg thứ hai: 35-76 giây
-    # cho video 10 phút) mà không đỏ oan vì máy đang bận.
-    kiem("CA17 chi phí thêm <= 2,0 giây/phút phim (số hứa 0,1-0,2 KHÔNG đúng "
-         "với cách 'làm mờ' — xem ghi chú)",
-         them <= 2.0,
-         f"TẮT {m_tat:.2f}s · BẬT {m_bat:.2f}s trên clip {giay:.0f}s -> "
-         f"**{them:+.2f} giây/phút** (dò dải: {t_do:.2f}s MỘT LẦN cho cả video, "
-         f"3 Part dùng chung) · thô TẮT={[round(x,2) for x in tat]} "
-         f"BẬT={[round(x,2) for x in bat]}")
+    m_tat = tv(tat)
+    m_dai, m_hop = tv(thanh["DẢI"]), tv(thanh["HỘP"])
+    ph = giay / 60.0
+    them_dai = (m_dai - m_tat) / ph
+    them_hop = (m_hop - m_tat) / ph
+    # HAI TRẦN, MỖI KIẾN TRÚC MỘT CÁI — cố ý KHÔNG nới trần chung lên cho hộp
+    # lọt, vì trần tồn tại để bắt "ai đó lỡ thêm một lượt ffmpeg THỨ HAI"
+    # (35-76 giây cho video 10 phút = **3,5-7,6 s/phút**); nới trần chung lên
+    # 4,0 là vừa đúng chỗ mất khả năng bắt cái đó.
+    #  · DẢI: 2,0 s/phút. Số đo cũ (`_do_che_chu_gia.py`, 3 vòng đan xen)
+    #    **+1,30**; đo lại 14/08 trên chính clip này **+0,84**. Phần đắt là
+    #    `boxblur` tranh CPU với libx264, KHÔNG phải kiến trúc filter
+    #    (micro-benchmark `-f null`: chuỗi che +0,34, split/overlay chỉ +0,05).
+    #  · HỘP: 4,5 s/phút. Hộp dựng **N split + N crop + N boxblur + N overlay**
+    #    (N = số mốc, đo được 6 mốc/clip 60 s) nên đắt hơn dải **~4 lần**:
+    #    đo đan xen 3 vòng cùng máy cùng clip ra TẮT 6,65s · DẢI +0,84 ·
+    #    **HỘP +3,31 s/phút**. Đây là GIÁ THẬT của việc che ít đi 16-31%
+    #    diện tích, không phải máy bận — ba lượt thô lệch nhau < 0,05 s.
+    #    Muốn rẻ thì chọn cách "phủ khối" (`drawbox` có `enable` sẵn, không
+    #    cần split/overlay — đo −0,01 s/phút).
+    kiem("CA17a DẢI NGANG: chi phí thêm <= 2,0 giây/phút phim (số hứa 0,1-0,2 "
+         "KHÔNG đúng với cách 'làm mờ' — xem ghi chú)",
+         them_dai <= 2.0,
+         f"TẮT {m_tat:.2f}s · DẢI {m_dai:.2f}s trên clip {giay:.0f}s -> "
+         f"**{them_dai:+.2f} giây/phút** · thô TẮT={[round(x,2) for x in tat]} "
+         f"DẢI={[round(x,2) for x in thanh['DẢI']]}")
+    kiem("CA17b HỘP CHỮ: chi phí thêm <= 4,5 giây/phút phim (hộp dựng N chuỗi "
+         "split/blur/overlay nên đắt hơn dải ~4 lần — đó là giá của việc che "
+         "ít đi 16-31% diện tích)",
+         them_hop <= 4.5,
+         f"TẮT {m_tat:.2f}s · HỘP {m_hop:.2f}s -> **{them_hop:+.2f} giây/phút** "
+         f"(riêng phần HỘP thêm so với DẢI: {them_hop - them_dai:+.2f}) · "
+         f"thô HỘP={[round(x,2) for x in thanh['HỘP']]} · "
+         f"dò dải {t_do:.2f}s MỘT LẦN cho cả video, 3 Part dùng chung")
+    kiem("CA17c HỘP không được đắt hơn DẢI quá 3,5 giây/phút (chốt bắt 'ai đó "
+         "lỡ thêm một lượt ffmpeg thứ hai' — lượt đó tốn 3,5-7,6 s/phút)",
+         them_hop - them_dai <= 3.5,
+         f"DẢI {them_dai:+.2f} -> HỘP {them_hop:+.2f} giây/phút")
     kiem("CA17 dò dải được NHỚ (Part 2,3 của cùng video KHÔNG dò lại)",
          len(C._DAI_NHO) >= 1 and t_nho * 100 < t_do,
          f"dò lần đầu {t_do:.2f}s · lần sau {t_nho*1000:.2f} ms "
