@@ -67,3 +67,10 @@ _mut_*.txt
 _tg/
 _lib/
 _tq_work/
+
+# Worktree tạm của phiên làm việc — một BẢN SAO CẢ REPO, lỡ `git add -A` là
+# commit vài trăm MB. KHÔNG xoá tay ở đây, chỉ chặn không cho vào commit.
+.claude/
+# Thư mục làm việc của `_do_tempo_cau.py` / `_do_kho_tg.py` (mp3/wav từng câu)
+_do_tempo_tam/
+_do_tg_kho/
