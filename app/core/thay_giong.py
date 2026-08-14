@@ -1420,6 +1420,10 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         "tempo_can_max_truoc": _mx(truoc), "tempo_can_max_sau": _mx(sau),
         "so_cau_vuot_truoc": sum(1 for t in truoc if t > nguong_tempo),
         "so_cau_vuot_sau": sum(1 for t in sau if t > nguong_tempo),
+        # TỪNG CÂU (không chỉ max) — phân bố mới nói được "còn bao nhiêu câu
+        # bị ép", max chỉ nói được câu tệ nhất.
+        "can_truoc": [round(t, 3) for t in truoc],
+        "can_sau": [round(t, 3) for t in sau],
     }
 
 
@@ -1531,6 +1535,10 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         "tempo_tb": round(sum(temps) / len(temps), 3) if temps else 1.0,
         "so_cau_ep": so_ep, "so_cau_muon": so_muon,
         "so_cau_vuot_canh_bao": sum(1 for t in temps if t > tempo_canh_bao),
+        # PHÂN BỐ từng câu — `tempo_max` một mình che mất "bao nhiêu % câu bị
+        # ép quá 1,2 / 1,3 / 1,4" (số đo anh Hùng cần để biết nghe dở tới đâu).
+        "tempo_cau": [round(t, 3) for t in temps],
+        "chong_cau_ms": [round(x, 1) for x in chong],
     }
 
 
