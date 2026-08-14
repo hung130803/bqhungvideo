@@ -238,10 +238,69 @@ def _auto_recap(payload: dict, ctx: JobContext) -> dict:
     return {"video_id": video_id, **res}
 
 
+def _thay_giong(payload: dict, ctx: JobContext) -> dict:
+    """THAY GIỌNG NÓI cho MỘT video (làn riêng `LAN_TG`, xem worker.py).
+
+    Mỗi video một job — cố ý, không gộp cả thư mục vào 1 job:
+      · tắt app giữa chừng thì chỉ mất video đang dở, các video còn lại nằm
+        trong DB và chạy tiếp khi mở lại (bài học "sổ chỉ ở RAM, phải hồi
+        phục": 72 nhận / 4 xong).
+      · bấm Huỷ được TỪNG video.
+      · bảng tiến độ đọc thẳng bảng `jobs`, không phải sổ RAM riêng.
+    """
+    from app.core import thay_giong as tg
+
+    duong = str(payload.get("video") or "")
+    if not duong or not os.path.exists(duong):
+        raise RuntimeError(f"Không thấy video: {duong}")
+
+    # CHẶN TRƯỚC: máy nhân viên KHÔNG có Demucs -> KHÔNG được lui 'cách nhẹ'
+    # (đo: rò rỉ lời 100% zh / 86,3% en = giọng cũ còn nguyên chồng lên giọng
+    # mới, ffmpeg vẫn trả mã 0). Thà job đỏ còn hơn 300 kênh hỏng im lặng.
+    tg.chot_co_bo_tach_giong(payload.get("cach_tach") or "auto")
+
+    def _prog(p: float, m: str) -> None:
+        # ctx.progress tự kiểm cờ Huỷ -> đổi sang HuyBo để `thay_giong_video`
+        # KHÔNG nuốt nó thành "video lỗi" rồi tự thử lại.
+        try:
+            ctx.progress(max(0.0, min(0.999, p)), m[:160])
+        except CanceledError as e:
+            raise tg.HuyBo() from e
+
+    try:
+        r = tg.thay_giong_mot_video(
+            duong,
+            dich_sang=str(payload.get("dich_sang") or "en"),
+            voice=str(payload.get("voice") or ""),
+            cach_tach=str(payload.get("cach_tach") or "auto"),
+            thay_goc=bool(payload.get("thay_goc", True)),
+            kenh=str(payload.get("kenh") or ""),
+            thung_rac=str(payload.get("thung_rac") or ""),
+            thu_muc_lam=str(payload.get("thu_muc_lam") or ""),
+            on_progress=_prog,
+        )
+    except tg.HuyBo as e:
+        raise CanceledError() from e
+    if not r.get("ok"):
+        raise RuntimeError(str(r.get("loi") or "Thay giọng lỗi không rõ"))
+    # gọn lại cho cột `result` của bảng jobs (bỏ mảng câu/đường dẫn tạm)
+    tt = r.get("thay_the") or {}
+    return {
+        "vao": r.get("vao"), "ra": r.get("ra"),
+        "do_dai": r.get("do_dai"), "giay": r.get("giay_tong"),
+        "kiem": r.get("kiem"), "tach": (r.get("tach") or {}).get("cach"),
+        "da_thay_goc": bool(tt.get("thay")),
+        "goc_o": tt.get("goc_da_vao_thung_rac") or tt.get("goc_o") or "",
+        "vi_sao": tt.get("vi_sao", ""),
+        "khop": r.get("khop"), "dich": r.get("dich"),
+    }
+
+
 register_handler("analyze", _analyze)
 register_handler("auto", _auto)
 register_handler("auto_mixed", _auto_mixed)
 register_handler("auto_recap", _auto_recap)
+register_handler("thay_giong", _thay_giong)
 
 # Nạp handler của Module 1 (tự register khi import)
 from app.modules import m1_highlight  # noqa: E402,F401

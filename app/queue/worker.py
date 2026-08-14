@@ -25,6 +25,26 @@ from app.database import db
 # ---- registry handler ----
 _HANDLERS: dict[str, Callable] = {}
 
+# ---- LÀN THỨ BA: THAY GIỌNG NÓI ----
+# Vì sao phải có làn RIÊNG (không dùng lại làn CPU/GPU):
+#   · Job thay giọng chạy HÀNG PHÚT mỗi video (Demucs 0,4× thời lượng + Groq
+#     + edge-tts) và ăn ~1,3 GB RAM. Nhét vào làn CPU là job xuất clip của
+#     anh Hùng phải xếp hàng sau nó.
+#   · `_lane_limit` khoá mỗi làn về 1 khi ECO_MODE bật (mặc định BẬT), nên
+#     dùng làn cũ thì SỐ LUỒNG user đặt ở hộp Thay giọng không bao giờ có
+#     tác dụng — đa luồng chỉ là cái nhãn.
+# Điều phối vẫn lấy job theo TỪNG LÀN, cửa sổ 50 dòng RIÊNG cho mỗi làn —
+# đúng cách đã chữa lỗi "làn cắt chết đói vì LIMIT 50" (cổng 5).
+LAN_GPU = "gpu"
+LAN_CPU = "cpu"
+LAN_TG = "tg"
+LOAI_LAN_TG = ("thay_giong",)
+_TG_PLACE = ",".join("?" * len(LOAI_LAN_TG))
+
+#: Trần luồng của làn thay giọng. Demucs ăn ~1,3 GB RAM/video; quá số này là
+#: máy đảo trang -> CHẬM HƠN chứ không nhanh hơn.
+TG_TRAN = 4
+
 
 def register_handler(job_type: str, fn: Callable) -> None:
     _HANDLERS[job_type] = fn
@@ -141,18 +161,23 @@ class JobContext:
 
 class WorkerPool:
     def __init__(self, profile: dict, max_cpu: int = 2, max_gpu: int = 1,
-                 poll_interval: float = 0.5):
+                 poll_interval: float = 0.5, max_tg: int = 2):
         self.profile = profile
         self.max_cpu = max(1, max_cpu)
         self.max_gpu = max(0, max_gpu)
+        self.max_tg = max(1, max_tg)
         self.poll_interval = poll_interval
 
         # Executor để DƯ sức (cap 16) — số luồng thực tế do self.max_cpu/max_gpu
         # KIỂM SOÁT khi điều phối, nên ĐỔI SỐ LUỒNG LÚC ĐANG CHẠY được (set_limits).
         self._cpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="cpu")
         self._gpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="gpu")
+        # Executor RIÊNG cho làn thay giọng: job ở đây chạy HÀNG PHÚT, dùng
+        # chung executor với làn CPU là job xuất clip không còn chỗ chạy.
+        self._tg_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tg")
         self._inflight: set[int] = set()
         self._inflight_gpu: dict[int, bool] = {}   # nhớ job nào dùng GPU (khỏi hỏi DB)
+        self._inflight_tg: set[int] = set()        # job đang chạy ở làn THAY GIỌNG
         self._canceled: set[int] = set()
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -170,6 +195,9 @@ class WorkerPool:
             self._cpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="cpu")
         if self._gpu_pool._shutdown:
             self._gpu_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="gpu")
+        if getattr(self._tg_pool, "_shutdown", False):
+            self._tg_pool = ThreadPoolExecutor(max_workers=8,
+                                               thread_name_prefix="tg")
         self._dispatcher = threading.Thread(target=self._loop, daemon=True,
                                             name="dispatcher")
         self._dispatcher.start()
@@ -199,6 +227,8 @@ class WorkerPool:
         self._cpu_pool.shutdown(wait=wait, cancel_futures=True)
         if self._gpu_pool:
             self._gpu_pool.shutdown(wait=wait, cancel_futures=True)
+        if getattr(self, "_tg_pool", None):
+            self._tg_pool.shutdown(wait=wait, cancel_futures=True)
 
     def add_listener(self, fn: Callable[[], None]) -> None:
         """UI đăng ký để được báo khi có thay đổi (cập nhật bảng job)."""
@@ -212,12 +242,16 @@ class WorkerPool:
                 pass
 
     def set_limits(self, max_cpu: Optional[int] = None,
-                   max_gpu: Optional[int] = None) -> None:
-        """Đổi SỐ LUỒNG lúc đang chạy (cắt = cpu, AI = gpu). Có hiệu lực ngay."""
+                   max_gpu: Optional[int] = None,
+                   max_tg: Optional[int] = None) -> None:
+        """Đổi SỐ LUỒNG lúc đang chạy (cắt = cpu, AI = gpu, thay giọng = tg).
+        Có hiệu lực ngay."""
         if max_cpu is not None:
             self.max_cpu = max(1, min(16, int(max_cpu)))
         if max_gpu is not None:
             self.max_gpu = max(1, min(16, int(max_gpu)))
+        if max_tg is not None:
+            self.max_tg = max(1, min(TG_TRAN, int(max_tg)))
         self._notify()   # đánh thức điều phối để áp số mới ngay
 
     # ---- crash recovery ----
@@ -356,16 +390,43 @@ class WorkerPool:
             pass
         return limit
 
-    def _capacity(self, needs_gpu: bool) -> int:
-        # dùng bộ nhớ (không truy vấn DB) -> nhanh, không nghẽn, đếm đúng
+    def _lane_limit_tg(self) -> int:
+        """Số video THAY GIỌNG chạy song song.
+
+        CỐ Ý KHÔNG bị `ECO_MODE` khoá về 1: đây là việc người dùng vừa bấm và
+        đang NGỒI XEM bảng tiến độ, còn số luồng thì chính họ đặt trong hộp
+        Thay giọng. Khoá về 1 là biến ô "Số luồng" thành cái nhãn vô nghĩa.
+        Trần `TG_TRAN` vì Demucs ăn ~1,3 GB RAM/video — quá số này là máy đảo
+        trang, chậm hơn chứ không nhanh hơn.
+        """
+        return max(1, min(TG_TRAN, int(self.max_tg)))
+
+    def _dem_lan(self) -> tuple[int, int, int]:
+        """(đang chạy GPU, đang chạy CPU, đang chạy THAY GIỌNG).
+
+        Đọc bộ nhớ, KHÔNG truy vấn DB -> nhanh, không nghẽn, đếm đúng.
+        """
         with self._lock:
-            running_gpu = sum(1 for v in self._inflight_gpu.values() if v)
-            running_cpu = len(self._inflight) - running_gpu
-        running = running_gpu if needs_gpu else running_cpu
-        return self._lane_limit(needs_gpu) - running
+            tg = len(self._inflight_tg)
+            gpu = sum(1 for j, v in self._inflight_gpu.items()
+                      if v and j not in self._inflight_tg)
+            cpu = len(self._inflight) - gpu - tg
+        return gpu, cpu, tg
+
+    def _capacity_lan(self, lan: str) -> int:
+        gpu, cpu, tg = self._dem_lan()
+        if lan == LAN_TG:
+            return self._lane_limit_tg() - tg
+        la_gpu = lan == LAN_GPU
+        return self._lane_limit(la_gpu) - (gpu if la_gpu else cpu)
+
+    def _capacity(self, needs_gpu: bool) -> int:
+        """Giữ nguyên chữ ký CŨ (script đo/test ngoài đang gọi)."""
+        return self._capacity_lan(LAN_GPU if needs_gpu else LAN_CPU)
 
     def _dispatch_once(self) -> None:
-        """Xếp job chờ vào 2 LÀN RIÊNG: GPU (phân tích) và CPU (cắt/xuất).
+        """Xếp job chờ vào 3 LÀN RIÊNG: GPU (phân tích) · CPU (cắt/xuất) ·
+        TG (thay giọng nói).
 
         LỖI THẬT (anh Hùng 2026-07-26 — màn Tiến trình hiện "1 phân tích ·
         0 đang cắt · 72 đợi" dù Luồng cắt = 2): trước đây chỉ MỘT query
@@ -377,30 +438,50 @@ class WorkerPool:
 
         Nay MỖI LÀN có cửa sổ 50 dòng RIÊNG nên một làn bị ngập không thể làm
         làn kia chết đói. Trong từng làn vẫn giữ đúng thứ tự ưu tiên như cũ.
+        Làn TG lọc theo `type`, hai làn cũ LOẠI TRỪ đúng các type đó — nếu
+        không thì job thay giọng lại nằm chung cửa sổ 50 dòng của làn CPU và
+        lỗi chết đói tái diễn y hệt, chỉ đổi tên thủ phạm.
         """
-        for lane_gpu in (True, False):
-            if self._capacity(lane_gpu) <= 0:
+        for lan in (LAN_GPU, LAN_CPU, LAN_TG):
+            if self._capacity_lan(lan) <= 0:
                 continue                    # làn đang đầy -> khỏi truy vấn
-            rows = db.query(
-                "SELECT id, type, payload, needs_gpu FROM jobs "
-                "WHERE status='pending' AND needs_gpu=? "
-                "ORDER BY priority DESC, created_at ASC LIMIT 50",
-                (1 if lane_gpu else 0,))
-            self._dispatch_rows(rows, lane_gpu)
+            if lan == LAN_TG:
+                rows = db.query(
+                    "SELECT id, type, payload, needs_gpu FROM jobs "
+                    f"WHERE status='pending' AND type IN ({_TG_PLACE}) "
+                    "ORDER BY priority DESC, created_at ASC LIMIT 50",
+                    tuple(LOAI_LAN_TG))
+            else:
+                rows = db.query(
+                    "SELECT id, type, payload, needs_gpu FROM jobs "
+                    "WHERE status='pending' AND needs_gpu=? "
+                    f"AND type NOT IN ({_TG_PLACE}) "
+                    "ORDER BY priority DESC, created_at ASC LIMIT 50",
+                    (1 if lan == LAN_GPU else 0, *LOAI_LAN_TG))
+            self._dispatch_rows(rows, lan)
 
-    def _dispatch_rows(self, rows, lane_gpu: bool) -> None:
+    def _dispatch_rows(self, rows, lan) -> None:
+        # `lan` nhận CẢ bool (bản cũ: True = GPU) lẫn chuỗi làn — script đo cũ
+        # gọi thẳng hàm này thì vẫn chạy đúng thay vì xếp nhầm làn im lặng.
+        if isinstance(lan, bool):
+            lan = LAN_GPU if lan else LAN_CPU
         for r in rows:
             jid = int(r["id"])
             with self._lock:
                 if jid in self._inflight:
                     continue
             needs_gpu = bool(r["needs_gpu"])
-            if self._capacity(needs_gpu) <= 0:
+            if self._capacity_lan(lan) <= 0:
                 break                       # làn vừa đầy -> dừng, sang làn kia
             with self._lock:
                 self._inflight.add(jid)
                 self._inflight_gpu[jid] = needs_gpu
-            pool = self._gpu_pool if needs_gpu else self._cpu_pool
+                if lan == LAN_TG:
+                    self._inflight_tg.add(jid)
+            if lan == LAN_TG:
+                pool = self._tg_pool
+            else:
+                pool = self._gpu_pool if needs_gpu else self._cpu_pool
             pool.submit(self._run_job, jid, r["type"], r["payload"])
 
     # ---- chạy 1 job ----
@@ -473,5 +554,6 @@ class WorkerPool:
             with self._lock:
                 self._inflight.discard(job_id)
                 self._inflight_gpu.pop(job_id, None)
+                self._inflight_tg.discard(job_id)
             self._canceled.discard(job_id)
             self._notify()

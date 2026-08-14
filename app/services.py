@@ -290,6 +290,35 @@ def enqueue_auto_recap(pool: WorkerPool, video_id: int, project_id: int,
     )
 
 
+def enqueue_thay_giong(pool: WorkerPool, video_path: str, dich_sang: str,
+                       voice: str = "", cach_tach: str = "auto",
+                       thay_goc: bool = True, kenh: str = "",
+                       thung_rac: str = "", thu_muc_lam: str = "",
+                       ) -> Optional[int]:
+    """THAY GIỌNG NÓI cho MỘT video — job chạy ở LÀN RIÊNG (worker.LAN_TG).
+
+    Mỗi video một job (không gộp cả thư mục vào một job): tắt app giữa chừng
+    thì các video chưa làm vẫn nằm trong DB và chạy tiếp khi mở lại.
+
+    `dedup_key` khoá theo ĐƯỜNG DẪN + ngôn ngữ + giọng: bấm Chạy hai lần trên
+    cùng thư mục thì lần thứ hai TRẢ VỀ ID JOB CŨ (không đẻ job trùng, cũng
+    KHÔNG trả None — bài học "enqueue trả jid CŨ khi trùng, không trả None").
+    `skip_if_done=False` để sau này vẫn chạy lại được sang ngôn ngữ khác.
+    `max_attempts=1`: một lượt tốn hàng phút + lượt Groq, tự thử lại 3 lần là
+    đốt lượt của 300 kênh cho một video hỏng thật.
+    """
+    duong = os.path.abspath(str(video_path))
+    khoa = f"thaygiong:{duong.lower()}:{dich_sang}:{voice}"
+    return pool.enqueue(
+        "thay_giong",
+        {"video": duong, "dich_sang": dich_sang, "voice": voice,
+         "cach_tach": cach_tach, "thay_goc": bool(thay_goc), "kenh": kenh,
+         "thung_rac": thung_rac, "thu_muc_lam": thu_muc_lam},
+        needs_gpu=False, priority=5,
+        dedup_key=khoa, skip_if_done=False, max_attempts=1,
+    )
+
+
 def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    project_id: int, out_w: int = 1080, out_h: int = 1920,
                    mode: str = "face", zoom: float = 1.0,
