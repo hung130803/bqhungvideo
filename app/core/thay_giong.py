@@ -42,14 +42,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
-import tempfile
-import threading
 import time
-import unicodedata
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -634,15 +630,16 @@ def cau_tu_transcript(d: dict, gop_toi_da: float = 12.0) -> list[dict]:
             continue
         cum: list = []
         for w in ws:
-            cum.append(w)
-            dai = float(cum[-1]["end"]) - float(cum[0]["start"])
-            if dai >= gop_toi_da:
+            # CẮT TRƯỚC KHI VƯỢT, không phải sau: gộp rồi mới kiểm thì câu luôn
+            # dài quá `gop_toi_da` đúng một từ (đo: đặt 12s ra câu 14,5s).
+            if cum and float(w["end"]) - float(cum[0]["start"]) > gop_toi_da:
                 out.append({
                     "start": round(float(cum[0]["start"]), 3),
                     "end": round(float(cum[-1]["end"]), 3),
                     "text": "".join(str(x.get("word", "")) for x in cum).strip(),
                 })
                 cum = []
+            cum.append(w)
         if cum:
             out.append({
                 "start": round(float(cum[0]["start"]), 3),
@@ -1349,3 +1346,115 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
     kq["giay_tong"] = round(time.time() - t0, 2)
     prog(1.0, "Xong" if kq.get("ok") else f"LỖI: {kq.get('loi', '')[:120]}")
     return kq
+
+
+# ==================================================================
+# NỐI VÀO APP — thư mục video, ĐA LUỒNG, thay gốc AN TOÀN
+# ==================================================================
+
+DUOI_VIDEO = (".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv")
+
+
+def _so_luong_mac_dinh() -> int:
+    """Số video chạy song song. Demucs ăn ~1,3 GB RAM + nhiều nhân, nên KHÔNG
+    chạy nhiều: mặc định 2, ép bằng env `BQ_TG_LUONG`."""
+    try:
+        n = int((os.environ.get("BQ_TG_LUONG") or "").strip() or 0)
+        if n > 0:
+            return n
+    except ValueError:
+        pass
+    return 2
+
+
+def thay_the_video_goc(video_goc: str | Path, video_moi: str | Path,
+                       kenh: str = "", thung_rac: str = "") -> dict:
+    """ĐƯA GỐC VÀO THÙNG RÁC rồi đặt video mới vào đúng chỗ/tên của nó.
+
+    TUYỆT ĐỐI KHÔNG xoá hẳn (anh Hùng nói "tự xoá" nhưng xoá hẳn là mất video
+    vĩnh viễn) và KHÔNG chuyển vào %TEMP% (bị dọn định kỳ = mất). Dùng
+    `pipeline.delete_or_recycle`: thùng rác user chọn, không có thì `_DaXoa`
+    cạnh thư mục kênh — luôn khôi phục được.
+
+    CHỈ ĐƯỢC GỌI SAU KHI `kiem_video_ra` đã xác nhận file mới hợp lệ.
+    """
+    from app.core import pipeline as P
+
+    goc = Path(video_goc)
+    moi = Path(video_moi)
+    if not moi.exists() or moi.stat().st_size < 10240:
+        raise RuntimeError("File mới không hợp lệ — KHÔNG đụng tới video gốc")
+
+    action, dst = P.delete_or_recycle(goc, kenh or goc.parent.name,
+                                      thung_rac or "")
+    if action != "recycled":
+        # gốc đang kẹt (Windows còn giữ handle) -> GIỮ NGUYÊN mọi thứ, để lượt
+        # sau làm lại. Không được ghi đè lên gốc lúc này.
+        return {"thay": False, "vi_sao": "gốc đang kẹt, chưa dọn được",
+                "goc_o": str(goc)}
+    try:
+        shutil.move(str(moi), str(goc))
+    except OSError as e:
+        # gốc đã vào thùng rác an toàn, chỉ là chưa đặt được file mới vào chỗ.
+        return {"thay": False, "vi_sao": f"không đặt được file mới: {e}",
+                "goc_da_vao_thung_rac": str(dst), "file_moi_con_o": str(moi)}
+    return {"thay": True, "goc_da_vao_thung_rac": str(dst),
+            "video_moi": str(goc)}
+
+
+def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
+                       voice: str = "", cach_tach: str = "auto",
+                       so_luong: int = 0, thung_rac: str = "",
+                       kenh: str = "", thay_goc: bool = True,
+                       on_video: Optional[Callable[[str, dict], None]] = None,
+                       ) -> dict:
+    """Thay giọng CẢ THƯ MỤC video, chạy ĐA LUỒNG, xong thì thay video gốc.
+
+    `thay_goc=False` -> chỉ tạo file mới bên cạnh, KHÔNG đụng gốc (dùng để thử).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    thu_muc = Path(thu_muc)
+    vids = sorted(p for p in thu_muc.iterdir()
+                  if p.is_file() and p.suffix.lower() in DUOI_VIDEO
+                  and not p.stem.endswith("__thaygiong"))
+    n = so_luong if so_luong > 0 else _so_luong_mac_dinh()
+    lam_goc = thu_muc / "_thaygiong_tam"
+    lam_goc.mkdir(parents=True, exist_ok=True)
+
+    ket: list[dict] = []
+    t0 = time.time()
+
+    def _mot(v: Path) -> dict:
+        r = thay_giong_video(v, dich_sang=dich_sang,
+                             thu_muc_lam=lam_goc / v.stem, voice=voice,
+                             cach_tach=cach_tach)
+        if r.get("ok") and thay_goc:
+            try:
+                r["thay_the"] = thay_the_video_goc(v, r["ra"], kenh, thung_rac)
+            except Exception as e:  # noqa: BLE001
+                r["thay_the"] = {"thay": False, "vi_sao": str(e)}
+        return r
+
+    with ThreadPoolExecutor(max_workers=max(1, n)) as ex:
+        fut = {ex.submit(_mot, v): v for v in vids}
+        for f in as_completed(fut):
+            v = fut[f]
+            try:
+                r = f.result()
+            except Exception as e:  # noqa: BLE001
+                r = {"vao": str(v), "ok": False, "loi": str(e)}
+            ket.append(r)
+            if on_video:
+                on_video(str(v), r)
+
+    xong = sum(1 for r in ket if r.get("ok"))
+    return {
+        "thu_muc": str(thu_muc), "so_video": len(vids),
+        "xong": xong, "hong": len(vids) - xong,
+        "da_thay_goc": sum(1 for r in ket
+                           if (r.get("thay_the") or {}).get("thay")),
+        "so_luong": n,
+        "giay": round(time.time() - t0, 2),
+        "chi_tiet": ket,
+    }
