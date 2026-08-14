@@ -588,7 +588,7 @@ class ThayGiongDialog(QDialog):
                 continue
             self._jobs[d] = jid
             self._dat_o(r, 1, "Đang chờ", MUTED)
-            self._dat_o(r, 2, "0% · bước 0/8")
+            self._dat_o(r, 2, f"0% · bước 0/{len(tg_so.TEN_BUOC)}")
             self._dat_o(r, 3, "Việc này đang chạy ở nền (nhận lại từ hàng đợi)")
             n += 1
         if n:
@@ -724,7 +724,7 @@ class ThayGiongDialog(QDialog):
             if jid:
                 self._jobs[duong] = int(jid)
                 self._dat_o(r, 1, "Đang chờ", MUTED)
-                self._dat_o(r, 2, "0% · bước 0/8")
+                self._dat_o(r, 2, f"0% · bước 0/{len(tg_so.TEN_BUOC)}")
                 self._dat_o(r, 3, "Đã xếp hàng, chờ tới lượt")
                 self.doi_trang_thai.emit(duong, "Đang chờ", 0.0)
             else:
@@ -884,7 +884,7 @@ class ThayGiongDialog(QDialog):
                     self._dat_o(r, 3, "Bạn đã dừng — bấm Chạy để làm lại "
                                       "(video gốc không bị đụng)")
                 else:
-                    self._dat_o(r, 2, f"{p * 100:.0f}% · bước 0/8")
+                    self._dat_o(r, 2, f"{p * 100:.0f}% · bước 0/{len(tg_so.TEN_BUOC)}")
                     self._dat_o(r, 3, "Đã xếp hàng, chờ tới lượt")
             moi = self.bang.item(r, 1).text() if self.bang.item(r, 1) else ""
             if moi != self._tt_dong.get(duong):

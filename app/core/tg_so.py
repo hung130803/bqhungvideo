@@ -39,10 +39,14 @@ XONG = "xong"
 LOI = "loi"
 BO_QUA = "bo_qua"          # user chuột phải chọn "Bỏ qua video này"
 
-#: Nhãn TIẾNG VIỆT của 8 bước — KHÔNG EMOJI (máy anh Hùng thiếu font).
+#: Nhãn TIẾNG VIỆT của 9 bước — KHÔNG EMOJI (máy anh Hùng thiếu font).
+#: BƯỚC 7 "Đang đọc nhanh" THÊM Ở v2.27.0 cùng lúc với `doc_nhanh_vua_khung`.
+#: Thiếu nó thì lời nhắn *"Đọc nhanh lại câu còn dài quá khung..."* rơi vào
+#: khoá `"đọc"` = bước 5, tức bảng tiến độ **CHẠY NGƯỢC** (…6/8 "Đang rút gọn"
+#: rồi tụt về 5/8 "Đang đọc") — đúng cái anh Hùng nhìn thấy là "chạy lùi/treo".
 TEN_BUOC = ("Đang rút tiếng", "Đang tách giọng", "Đang chép lời",
-            "Đang dịch", "Đang đọc", "Đang rút gọn", "Đang khớp tiếng",
-            "Đang ghép")
+            "Đang dịch", "Đang đọc", "Đang rút gọn", "Đang đọc nhanh",
+            "Đang khớp tiếng", "Đang ghép")
 
 _KHOA = threading.RLock()
 _NHO: dict = {}            # bản sao trong RAM của file sổ
@@ -354,12 +358,16 @@ def buoc_tu_tien_trinh(p: float, loi_nhan: str = "") -> tuple:
         ("rút tiếng", 1), ("rut tieng", 1),
         ("tách giọng", 2), ("tach giong", 2), ("demucs", 2),
         ("chép lời", 3), ("chep loi", 3),
+        # "đọc nhanh" PHẢI đứng TRƯỚC "đọc" — cùng luật đã ghi ở trên, lần này
+        # ở chiều nguy hiểm hơn: bước 7 nằm SAU bước 6, gán nhầm về 5 thì
+        # thanh tiến độ CHẠY NGƯỢC chứ không chỉ sai chữ.
+        ("đọc nhanh", 7), ("doc nhanh", 7),
         ("đọc", 5), ("doc ban dich", 5),        # TRƯỚC "dịch" — xem trên
         ("rút gọn", 6), ("rut gon", 6),
         ("dịch", 4), ("dich ", 4),
-        ("khớp thời gian", 7), ("khop thoi gian", 7),
-        ("trộn tiếng", 8), ("tron tieng", 8),
-        ("ghép tiếng", 8), ("ghep tieng", 8),
+        ("khớp thời gian", 8), ("khop thoi gian", 8),
+        ("trộn tiếng", 9), ("tron tieng", 9),
+        ("ghép tiếng", 9), ("ghep tieng", 9),
     )
     b = 0
     for dau, so in khoa:
@@ -367,9 +375,12 @@ def buoc_tu_tien_trinh(p: float, loi_nhan: str = "") -> tuple:
             b = so
             break
     if not b:                       # lời nhắn lạ -> suy theo KHOẢNG tiến trình
+        # Các mốc này lấy THẲNG từ `thay_giong_video` (0.02 · 0.06 · 0.32 ·
+        # 0.44 · 0.62 · 0.74 · 0.79 · 0.80 · 0.91). Đổi mốc trong đó mà quên
+        # bảng này thì bảng tiến độ sai IM LẶNG.
         moc = ((0.06, 1), (0.32, 2), (0.44, 3), (0.62, 4), (0.74, 5),
-               (0.80, 6), (0.91, 7), (1.01, 8))
-        b = 8
+               (0.79, 6), (0.80, 7), (0.91, 8), (1.01, 9))
+        b = len(TEN_BUOC)
         for tran, so in moc:
             if p < tran:
                 b = so
