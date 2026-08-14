@@ -664,6 +664,11 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
         # trình riêng đó là python của `.venv`, nên nó mượn torch của `.venv`
         # rồi báo CÀI XONG trong khi `_lib` vẫn rỗng torch. Đúng cái bẫy hàm
         # này sinh ra để chặn, nhưng lại tự sập vào.
+        # `PathFinder` nhớ nội dung thư mục theo mtime; `_lib` vừa bị pip ghi
+        # thêm nên phải xoá bộ nhớ đó, không thì lượt kiểm ngay sau khi cài có
+        # thể vẫn thấy `_lib` như lúc chưa cài (báo THIẾU oan).
+        import importlib
+        importlib.invalidate_caches()
         goi = do_goi_tach_giong(lib)
         thieu = [g for g in GOI_TACH_GIONG if not goi[g]["lib"]]
         kiem = {g: goi[g]["lib"] for g in GOI_TACH_GIONG if goi[g]["lib"]}
