@@ -984,6 +984,69 @@
      (nặng thêm ~2 GB) · để app TỰ TẢI Demucs lần đầu · hoặc tách giọng trên
      MỘT máy có cài rồi chia file. Chưa chọn thì tính năng này mới chạy được
      trên máy dev.
+  52. `_test_cjk_va.py` → **3 LỖ HỔNG TIẾNG TRUNG ĐÃ VÁ** (14/08/2026). Lượt
+     kiểm tiếng Trung end-to-end tìm ra 3 chỗ app **im lặng bỏ rơi tiếng
+     Trung** — cả 3 đều "app vẫn chạy, cổng vẫn xanh, chỉ SỐ ĐO tố giác".
+     (a) **`lop_phu.py` — bảng từ khoá cảnh chỉ có Nhật/Hàn.** 1.122 từ khoá
+     khớp đúng **1** từ trên 1.132 ký tự lời Trung thật (`宝物`, trùng may).
+     Nặng hơn: **BẪY CHÉO NGÔN NGỮ** — chữ Hán Nhật và Trung dùng chung MẶT
+     CHỮ nhưng khác nghĩa (cùng họ bẫy `tuyết`/`tuyệt vời`, khác cơ chế):
+     `料理` Nhật = nấu ăn nhưng **Trung = XỬ LÝ**, mà nó nằm trong danh sách
+     CẤM của 5 cảnh -> câu tiếng Trung nói "xử lý chuyện này" bị **cấm oan 5
+     cảnh**; `手紙` Nhật = lá thư, **Trung = giấy vệ sinh** -> khớp `bui_phim`.
+     CHỮA: bảng `_ZH` **RIÊNG** (không gộp chung rổ `_CJK`), và bảng tiếng
+     Trung **KHÔNG thừa hưởng một từ khoá Nhật/Hàn nào** (`_CO_CJK` lọc sạch)
+     — đó đúng là chỗ 2 cái bẫy chui vào. Nhãn ngôn ngữ đi THEO MỐC
+     (`digest_tu_loi` -> `loc_digest_theo_doan`), cùng đường của cờ `loi=True`.
+     `chuan_ngon_ngu` phải nhận **CẢ `zh` LẪN `Chinese`**: Groq trả nhãn CHỮ
+     trên video thật của anh Hùng, thiếu dạng nào là bản vá **không bao giờ
+     chạy mà không một dòng báo**. Đo: `料理` cấm oan 5 -> **0** cảnh · từ khoá
+     khớp **1/1.122 -> 8/912** · `duoi_nuoc` **0,00 -> 1,00** · đoạn cắt thật
+     0-60s **0 -> 1 lớp phủ**. Chỉ thêm **BIẾN THỂ NGÔN NGỮ trong 14 cảnh ĐÃ
+     dò được**, KHÔNG thêm cảnh mới (luật anh Hùng đã chốt).
+     (b) **`recap.py` — `.split()` trên chữ chép lời.** Câu CJK ra **1 token**
+     -> mọi tỉ lệ trùng 0.0 -> **bộ dò chống chép lời TẮT IM LẶNG**. **NỬA THỨ
+     HAI của lỗi, sửa `.split()` không thôi là vô ích:** lọc `len(w) > 1` vứt
+     SẠCH token CJK (mỗi chữ Hán là 1 token, len == 1) -> tập từ-nội-dung vẫn
+     RỖNG. Đo thêm 2 lỗ nữa, cả hai đều thật: guard `len(t) < 15 ký tự` của
+     `_is_transcript_copy` đếm KÝ TỰ (15 chữ latin ~ 3 từ, 15 CHỮ HÁN ~ 15 từ)
+     nên **85/99 câu Trung ngắn hơn ngưỡng** -> chỉ bắt **14/99**; và
+     `transcript_norm` nối câu bằng DẤU CÁCH còn LLM chép nhiều câu thì viết
+     LIỀN -> `in` trượt. Số đo: chép nguyên văn **14/99 -> 90/99** · kể lại
+     (Groq sinh) **0/14 -> 14/14** · sáng tác (Groq sinh) **0/11 bị gut oan** ·
+     ghép 4 câu liền **False -> True**.
+     **NGƯỠNG PHẢI HIỆU CHUẨN RIÊNG, ĐỪNG DÙNG LẠI HẰNG SỐ CŨ** — chúng đo cho
+     ngôn ngữ CÓ dấu cách (1 token = 1 TỪ), còn CJK 1 token = 1 KÝ TỰ.
+     `_do_cjk_calib.py` quét trên corpus Groq THẬT (19 câu phải bắt / 11 câu
+     không được bắt): tập từ-nội-dung **0,818 vs 0,643** · n-gram **3 vs 4** ·
+     fuzzy **0,840 vs 0,643** -> hai nhóm TÁCH RỜI, ngưỡng lấy GIỮA khoảng
+     trống (0,72 · 6 · 0,74).
+     **NHẬT/HÀN GIỮ NGUYÊN ĐƯỜNG CŨ** (`_la_chu_han` chỉ bắt chữ Hán THUẦN):
+     máy **không còn video tiếng Hàn** nào (4 video tên Hàn trong
+     `_do_hook_cache.json` được Groq chép ra TIẾNG ANH vì tiếng thật là tiếng
+     Anh), không có corpus thì bật mò một lưới có thể gut sạch narrate.
+     **ĐÃ CÂN NHẮC RỒI BỎ:** bỏ ngắn mạch của `_is_relevant` — đo ra cả 11 câu
+     sáng tác LẪN 3 câu CỐ Ý lạc đề đều ra True, lưới không phân biệt được gì
+     với tập token 1-ký-tự.
+     (c) **`hook_to_mo.py` — `_HUA_HEN` 26 từ, 0 chữ Hán** (nhóm DUY NHẤT
+     trong 5 nhóm rỗng tiếng Trung). Thêm 9 từ. Đo: câu 1 dấu hiệu **0,100 ->
+     0,302**, đúng bằng câu Anh/Việt tương đương (0,302 là ĐÚNG thiết kế: 1
+     dấu hiệu mờ nhạt thì không qua cửa 0,34, tiếng nào cũng vậy).
+     **BẤT BIẾN ĐO ĐƯỢC (mốc `841c773`, nạp bằng `git show`):** 480 phép so
+     lớp phủ + **2.274** phép so recap (mọi QUYẾT ĐỊNH + `validate_parts`
+     đầu-cuối) + 332 câu `cham_cau`, trên **16 video THẬT 4 nhóm tiếng** ->
+     **lệch 0**. Tập token nội bộ chỉ đổi ở tiếng NHẬT (342 chỗ) và **không
+     lật một quyết định nào** — phải tách 2 mức này ra, gộp là ĐỎ OAN.
+     **THỬ PHÁ 5 phép, cổng FAIL cả 5**: tắt `chuan_ngon_ngu` (FAIL 3) · trả
+     lọc token về `len>1` (FAIL 1) · trả `.split()` vào `_content_seq`
+     (FAIL 3) · bỏ từ khoá Trung khỏi `_HUA_HEN` (FAIL 4) · nhét lại `料理`
+     vào bảng zh (FAIL 1). Chạy `BQ_MOC_CJK=HEAD` -> FAIL 6 (chốt "so nó với
+     chính nó").
+     **LỖ CÒN LẠI, GHI THẲNG:** (1) câu Nhật/Hàn ngắn hơn 15 ký tự chép nguyên
+     văn VẪN LỌT (ca 9e) — chờ corpus lời dẫn Nhật/Hàn; (2) **`dubbing.py`
+     dòng 1977 · 2199 · 2312 có ĐÚNG cùng bệnh `.split()`** và đều là chỗ ĐẾM
+     TỪ THẬT (chia cụm phụ đề theo số từ · align chữ kịch bản với mốc STT) —
+     luồng khác đang sửa file đó, chưa đụng.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.

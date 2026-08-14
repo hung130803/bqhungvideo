@@ -434,7 +434,7 @@ ok(_bien and 940 < _bien[0] < 990,
    "6b chỗ đó đúng là `_word_tokens`, không phải chỗ khác lọt lưới",
    f"dòng {_bien[0] if _bien else '?'}")
 ok(len(_hang) == 3, "6c 3 chỗ `.split()` trên HẰNG CHUỖI (tách bảng stopword "
-   f"vi/en/hi) ĐỂ YÊN — đúng, chúng không đếm chữ chép lời", f"dòng {_hang}")
+   "vi/en/hi) ĐỂ YÊN — đúng, chúng không đếm chữ chép lời", f"dòng {_hang}")
 
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== CA 7. VIỆC 3 — `_HUA_HEN` bắt được câu hứa hẹn tiếng Trung ===")
