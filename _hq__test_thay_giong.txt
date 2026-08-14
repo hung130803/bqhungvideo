@@ -1,0 +1,59 @@
+
+=== CA 1: kiem_video_ra bat file hong ma ffmpeg van tra ma 0 ===
+  [ĐẠT] video that PHAI qua duoc — 75 khung, RMS 0.087892
+  [ĐẠT] bat file KHONG TON TAI
+  [ĐẠT] bat file 0 byte
+  [ĐẠT] bat file 0 KHUNG HINH
+  [ĐẠT] bat file IM LANG HAN
+  [ĐẠT] bat LECH DO DAI (1s vs 3s)
+
+=== CA 2: thay the video goc — GOC PHAI VAO THUNG RAC, KHONG MAT ===
+  [ĐẠT] bao da thay — {'thay': True, 'goc_da_vao_thung_rac': 'C:\\Users\\Admin\\AppData\\Local\\Temp\\tg_gate_vo__4fjf\\ca2\\_DaXoa\\2026-08-1
+  [ĐẠT] video moi nam DUNG CHO/TEN cua goc
+  [ĐẠT] file moi khong con o cho cu
+  [ĐẠT] GOC VAN CON (khoi phuc duoc) — tim thay 3 ban sao dung byte: ca1\that.mp4
+
+=== CA 3: file moi HONG -> TU CHOI dung toi goc ===
+  [ĐẠT] tu choi file moi HONG
+  [ĐẠT] goc CON NGUYEN VEN sau khi tu choi
+
+=== CA 4: THUNG RAC KHONG DUOC NAM TRONG %TEMP% ===
+  [ĐẠT] _is_safe_recycle_root TU CHOI thu muc trong %TEMP% — C:\Users\Admin\AppData\Local\Temp\thung_rac_gia
+  [ĐẠT] _is_safe_recycle_root NHAN thu muc BEN VUNG — D:\KhoVideo\ThungRac
+  [ĐẠT] thung rac %TEMP% -> goc VAN CON o noi khoi phuc duoc — ca3\Kenh3\goc3.mp4
+  [ĐẠT] KHONG dung thung rac %TEMP% user lo dat — cat vao: AppData\Local\Temp\tg_gate_vo__4fjf\ca4\_DaXoa\2026-08-14\Kenh4\g4.mp4
+  [ĐẠT] goc di vao _DaXoa noi bo (canh thu muc kenh) — _DaXoa
+
+=== CA 5: TU KIEM BO DO MEO (bay da sap that 14/08) ===
+  [ĐẠT] do_meo doc duoc dinh THAT — dinh -21.072762 dBFS, cham tran 960
+  [ĐẠT] do_meo dung ten chi so DUNG (Abs_Peak_count) — ffmpeg N-121186 chi co ten nay
+  [ĐẠT] TU KIEM BO DO: ban bo-chuoi KHONG con ten cu (ghi chu khong bi ke la vi pham) — ghi chu van duoc phep nhac ten cu de canh bao
+  [ĐẠT] do_meo NEM khi khong doc duoc (khong tra None am tham)
+
+=== CA 6: khop_thoi_gian — dung moc dau, khong chong lan ===
+  [ĐẠT] dat DUNG moc dau (lech 0 ms) — 0.0 ms
+  [ĐẠT] KHONG chong lan khi cau lot khung — 0.0 ms
+  [ĐẠT] KHONG ep toc do khi da lot khung — tempo_max 1.0
+  [ĐẠT] cau tran khung -> CO ep toc do — tempo_max 1.25
+  [ĐẠT] ep xong KHONG chong lan cau ke — 0.0 ms
+
+=== CA 7: chan audio MONO-NHAN-DOI (tru kenh giua ra im lang) ===
+  [ĐẠT] nhan ra mono-nhan-doi (KHONG tru kenh giua duoc)
+  [ĐẠT] cach nhe TU CHOI mono-nhan-doi
+  [ĐẠT] stereo THAT thi tru kenh giua duoc
+
+=== CA 8: cau_tu_transcript — cat segment dai theo moc TU ===
+  [ĐẠT] segment 30s bi CAT NHO — 3 cau
+  [ĐẠT] moi cau <= ~12s — [9.5, 9.5, 9.5]
+  [ĐẠT] KHONG nuot chu — ['tu0 tu1', 'tu2 tu3', 'tu4 tu5']
+  [ĐẠT] segment ngan giu nguyen
+
+=== CA 9: MAY KHONG CO DEMUCS -> BAO LOI, KHONG am tham ra video hong ===
+  [ĐẠT] auto + KHONG demucs -> phai NEM — co noi ro thieu Demucs
+  [ĐẠT] co_phep_nhe=True thi VAN chay duoc
+  [ĐẠT] ban lui phai mang DAU vi sao — máy không có Demucs/torch
+  [ĐẠT] ep cach='nhe' thi mang CANH BAO chat luong — cách nhẹ: giọng gốc CÒN SÓT nhiều, chỉ dùng để thử
+  [ĐẠT] may NAY co Demucs that (khong thi moi so do o tren vo nghia) — thiet bi: cpu
+
+==============================================================
+ĐẠT 38 · HỎNG 0

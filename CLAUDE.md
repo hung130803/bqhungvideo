@@ -1438,6 +1438,17 @@
      chúng thành mã chết, mà để lại còn nguy hơn — tiến trình riêng ấy CHÍNH LÀ
      python `.venv` nên nó mượn torch rồi báo "cài xong". Hậu kiểm sau khi cài
      nay so `spec.origin` với `_lib`.
+     **LỖI THỨ HAI CỔNG NÀY LÔI RA — `_lib` CỦA BẢN `.exe` BỊ CHÍNH LƯỢT TỰ CẬP
+     NHẬT XOÁ (CA 5).** `lib_demucs()` lấy `Path(__file__).parents[2]`, trong
+     bản đóng gói chỗ đó là **`_internal`** — mà `self_update.py` cập nhật bằng
+     `ren _internal -> _internal.old` rồi `rmdir /S /Q _internal.old`. Tức anh
+     Hùng bấm tải 155 MB, lượt tự cập nhật kế tiếp **xoá sạch**, và app lại báo
+     "chưa có bộ tách giọng" — đúng câu anh ấy kêu, nhưng là một nguyên nhân
+     KHÁC. Nay nhánh `frozen` trả `DATA_DIR/_lib` (`config.py` đã tách `DATA_DIR`
+     sẵn đúng vì lý do này). **CHỈ đổi nhánh `frozen`**: chạy nguồn vẫn
+     `<repo>/_lib` nên `_lib` máy dev không bị bỏ rơi (CA5d canh đúng điều đó).
+     Đọc `config.DATA_DIR` MỖI LẦN GỌI, không cất hằng số (bài học
+     `tg_so.duong_so`).
      **CHƯA ĐẠT, GHI THẲNG:** **chưa tải torch thật về `_lib`** (155 MB, máy anh
      Hùng đang chạy sản xuất) — cơ chế `--target`+`--ignore-installed` chứng
      minh bằng gói NHỎ `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip

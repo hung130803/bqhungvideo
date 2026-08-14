@@ -1,0 +1,87 @@
+=== DỰNG SÂN: 3 video giả + bộ điều phối THẬT ===
+  10 mốc tiến trình đọc từ thay_giong.py: 0.02 Rút tiếng khỏi video.. · 0.06 Tách giọng khỏi nhạc n · 0.32 Chép lời gốc... · 0.44 Dịch 12 câu... ...
+
+=== NHÃN KHÔNG EMOJI (máy anh Hùng thiếu font -> Ô ĐEN) ===
+  [ĐẠT] KHÔNG nhãn nào có emoji (21 nhãn) — []
+  [ĐẠT] có đủ 2 ô thư mục + 2 nút chọn — ['Chọn thư mục nguồn...', 'Chọn thư mục đích...', 'Thay LỜI THOẠI của video sang tiếng khác, GIỮ NGUYÊN nhạc nền và tiến
+
+=== CỔNG 1: BẢNG HIỆN ĐỦ DÒNG NGAY + ĐỔI THEO TỪNG BƯỚC ===
+  [ĐẠT] bảng liệt kê đủ 3 video NGAY khi chọn thư mục (chưa bấm gì) — 3 dòng
+  [ĐẠT] bấm Chạy xếp đúng 3 job — 3 job
+  [ĐẠT] NGAY sau khi bấm Chạy: đủ 3 dòng có trạng thái (không dòng nào trống) — Đang chờ · Đang chờ · Đang chờ
+  [ĐẠT] video chưa tới lượt vẫn hiện 'Đang chờ' (không phải trống) — Đang chờ · Đang chờ · Đang chờ
+  [ĐẠT] cột Tiến trình có % + bước NGAY từ đầu — 0% · bước 0/9 · 0% · bước 0/9 · 0% · bước 0/9
+  [ĐẠT] dòng đầu VẼ RA THẬT (điểm ảnh chữ trong ô Trạng thái) — 256 điểm ảnh chữ · ô 149x29 px
+  [ĐẠT] dòng bảng đủ cao để đọc (>= 18 px) — 29 px
+  [ĐẠT] TỰ KIỂM BỘ DÒ: vùng TRỐNG dưới bảng ra ~0 điểm ảnh chữ — 0 điểm ảnh
+  [ĐẠT] đóng hộp rồi mở lại giữa chừng -> NHẬN LẠI việc đang chạy — 3/3 job nhận lại
+  [ĐẠT] hộp mở lại KHÔNG hiện 'Chưa chạy' cho việc đang chạy — Đang tách giọng · Đang tách giọng · Đang chờ
+  [ĐẠT] hộp mở lại hiện ĐÚNG BƯỚC đang làm (không chỉ 'Đang chờ') — Đang tách giọng · Đang tách giọng · Đang chờ
+  lượt 1 xong sau 6.22s · 3 video có chuỗi trạng thái
+    video_1.mp4: Đang chờ -> Đang chờ -> Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang đọc -> Đang rút gọn -> Đang đọc nhanh -> Đang khớp tiếng -> Đang ghép -> Xong
+    video_2.mp4: Đang chờ -> Đang chờ -> Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang đọc -> Đang rút gọn -> Đang đọc nhanh -> Đang khớp tiếng -> Đang ghép -> Xong
+    video_3.mp4: Đang chờ -> Đang chờ -> Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang đọc -> Đang rút gọn -> Đang đọc nhanh -> Đang khớp tiếng -> Đang ghép -> Lỗi
+  [ĐẠT] 8 mốc THẬT trong mã -> 8 bước ĐÚNG THỨ TỰ, không bước nào bị nuốt — Rút tiếng khỏi v->Đang rút tiếng · Tách giọng khỏi ->Đang tách giọng · Chép lời gốc...->Đang chép lời · Dịch 12 câu...->Đang dịch · Đọc bản dịch...->Đang đọc · Rút gọn câu dài ->Đang rút gọn · Đọc nhanh lại câ->Đang đọc nhanh · Khớp thời gian..->Đang khớp tiếng · Trộn tiếng mới v->Đang ghép · Ghép tiếng mới v->Đang ghép
+  [ĐẠT] bắt được ĐỦ các bước THẬT qua tín hiệu (tách/chép/dịch/đọc/ghép) — thiếu: []
+  [ĐẠT] một video đi từ 'Đang chờ' -> nhiều bước -> 'Xong' — Đang chờ -> Đang chờ -> Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang đọc -> Đang rút gọn -> Đang đọc nhanh -> Đang khớp tiếng -> Đang ghép -> Xong
+  [ĐẠT] video LỖI có trạng thái 'Lỗi' — Đang chờ -> Đang chờ -> Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang đọc -> Đang rút gọn -> Đang đọc nhanh -> Đang khớp tiếng -> Đang ghép -> Lỗi
+  [ĐẠT] cột Ghi chú của video lỗi là LÝ DO ĐỌC HIỂU (không phải mã lỗi thô) — File video mới hỏng (rỗng) — video gốc giữ nguyên. · bấm Chạy để làm lại
+  [ĐẠT] XONG CẢ LƯỢT có dòng tổng kết (tín hiệu xong_ca_luot) — [(2, 1, 0, 0)]
+  [ĐẠT] dòng tổng kết ghi rõ mấy xong / mấy lỗi — XONG CẢ LƯỢT: 2 video xong · 1 lỗi
+  [ĐẠT] có hộp BÁO XONG cho anh Hùng (không im lặng) — Thay giọng nói: xong cả lượt | XONG CẢ LƯỢT: 2 video xong · 1 lỗi
+
+Video mới nằm ở: C:\Use
+
+=== CỔNG 2: ĐÍCH NHẬN FILE MỚI · NGUỒN KHÔNG MẤT FILE NÀO ===
+  [ĐẠT] thư mục NGUỒN: không mất/không đổi file nào (MD5 từng byte) — 3 file gốc · còn 3
+  [ĐẠT] thư mục NGUỒN: không đẻ thêm file rác nào — thêm: []
+  [ĐẠT] thư mục ĐÍCH nhận đúng 2 video mới, GIỮ NGUYÊN tên gốc — ['video_1.mp4', 'video_2.mp4']
+  [ĐẠT] video ở đích là BẢN MỚI (khác gốc từng byte)
+  [ĐẠT] KHÔNG job nào đi đường xoá gốc (thay_goc=False ở MỌI lượt gọi) — 3 lượt gọi
+  [ĐẠT] KHÔNG job nào được truyền Thùng rác
+  [ĐẠT] thư mục làm việc tạm nằm trong ĐÍCH, không nằm cạnh video gốc — al\Temp\tgbang_iqf8jrn0\da_thay_tieng\_thaygiong_tam\video_2
+  [ĐẠT] dọn sạch thư mục tạm sau khi xong — []
+
+=== CỔNG 3: NGUỒN TRÙNG ĐÍCH -> CẢNH BÁO, KHÔNG GHI ĐÈ ===
+  [ĐẠT] hộp NHẬN RA hai thư mục trùng nhau
+  [ĐẠT] nhãn cảnh báo hiện ngay dưới ô (không đợi bấm Chạy) — CẢNH BÁO: Thư mục đích ĐANG TRÙNG thư mục nguồn — làm vậy là GHI ĐÈ LÊN VIDEO GỐ
+  [ĐẠT] bấm Chạy khi trùng -> xếp 0 job — 0 job
+  [ĐẠT] có CẢNH BÁO bật lên (không im lặng ghi đè) — Thư mục đích trùng thư mục nguồn | Thư mục đích đang TRÙNG thư mục nguồn.
+
+Làm vậy là GHI 
+  [ĐẠT] thư mục nguồn KHÔNG bị đụng khi trùng
+  [ĐẠT] để trống ô đích -> tự dùng <nguồn>\_da_thay_tieng — C:\Users\Admin\AppData\Local\Temp\tgbang_iqf8jrn0\kho_video\_da_thay_tieng
+  [ĐẠT] mặc định đó KHÔNG bị coi là trùng nguồn
+
+=== CỔNG 4: CHẠY LẦN 2 -> XONG THÌ BỎ QUA, LỖI THÌ LÀM LẠI ===
+  [ĐẠT] chạy lần 2 chỉ xếp job cho video LỖI (1 job, không phải 3) — 1 job
+  [ĐẠT] job đó đúng là video_3 (video lỗi) — ['video_3.mp4']
+  [ĐẠT] 2 video đã xong hiện rõ 'Đã xong — bỏ qua' (không im lặng) — Đã xong — bỏ qua · Đã xong — bỏ qua
+  [ĐẠT] video lỗi chạy lại thành công -> đích có đủ 3 video — ['video_1.mp4', 'video_2.mp4', 'video_3.mp4']
+  [ĐẠT] tổng kết lượt 2 ghi rõ số bỏ qua — [(1, 0, 0, 2)]
+
+=== CỔNG 5: CHUỘT PHẢI 'LÀM LẠI VIDEO NÀY' ===
+  [ĐẠT] làm lại 1 video -> xếp ĐÚNG 1 job — 1 job
+  [ĐẠT] job đó đúng là video_1 (video được chọn) — ['video_1.mp4']
+  [ĐẠT] payload job trỏ ĐÚNG video + ĐÚNG thư mục đích — video_1.mp4
+  [ĐẠT] làm lại xong: đích vẫn đủ 3 video (ghi đè bản cũ, không đẻ tên lạ) — ['video_1.mp4', 'video_2.mp4', 'video_3.mp4']
+  [ĐẠT] thư mục nguồn VẪN không mất file nào sau 3 lượt chạy — 3 file
+  [ĐẠT] 'Bỏ qua video này' -> lượt Chạy sau xếp 0 job cho video đó — 0 job
+
+=== CỔNG 6: SỔ SỐNG SÓT QUA KHỞI ĐỘNG LẠI ===
+  [ĐẠT] sổ được GHI RA ĐĨA (không chỉ nằm trong RAM) — thay_giong_so.json · 1291 byte
+  [ĐẠT] (a) xoá sạch bộ nhớ đệm -> đọc lại đĩa vẫn nhớ video đã xong
+  [ĐẠT] (b) TIẾN TRÌNH KHÁC mở sổ lên vẫn nhớ 'đã xong' — {"v1": true, "v3": true, "can_chay_v1": false}
+  [ĐẠT] (b) tiến trình khác cũng kết luận KHÔNG cần chạy lại — False
+  [ĐẠT] video vừa ghi 'xong' -> không cần chạy lại
+  [ĐẠT] thay file khác cùng tên vào -> sổ coi là CHƯA LÀM (khoá có cỡ+mtime)
+
+=== CỔNG 7: THỬ PHÁ — gỡ chốt 'bỏ qua video đã xong' ===
+  [ĐẠT] 7a gỡ chốt ở UI -> lớp 2 (`tg_chay.xep_mot`) VẪN chặn video đã xong — 0 job (2 lớp chắn: UI + cửa xếp job)
+  [ĐẠT] 7b gỡ CẢ HAI chốt -> xếp lại CẢ 3 job = mục 4 VỠ (nó đang đo thật) — 3 job (nếu vẫn 0 thì mục 4 là con dấu)
+  [ĐẠT] vá lại chốt -> video đã xong lại được bỏ qua như cũ — can_chay(video_3)=False
+  [ĐẠT] vá lại chốt -> bấm Chạy xếp 0 job như trước khi phá
+
+==============================================================
+SỐ ĐO: {"luot1_giay": 6.22, "so_trang_thai_bat_duoc": 12, "job_luot2": 1, "job_lam_lai_mot": 1, "job_go_1_chot": 0, "job_go_ca_2_chot": 3}
+ĐẠT 57 · HỎNG 0

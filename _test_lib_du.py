@@ -289,6 +289,47 @@ try:
     dat("CA4c bản MỚI thì không lệch (đối chứng của CA4a)",
         r_dev["thieu"] == r_exe["thieu"])
 
+    # ==================================================================
+    print("\n=== CA 5: `_lib` CỦA BẢN .exe PHẢI SỐNG SÓT QUA LƯỢT TỰ CẬP NHẬT ===")
+    # `self_update.py` cập nhật bằng `ren _internal -> _internal.old` rồi
+    # `rmdir /S /Q _internal.old`. Đặt `_lib` trong `_internal` = mỗi lượt tự
+    # cập nhật xoá sạch 155 MB vừa tải. App này tự cập nhật liên tục.
+    bat = Path(REPO, "app", "core", "self_update.py").read_text(
+        encoding="utf-8", errors="replace")
+    dat("CA5a xác nhận bản cập nhật THẬT SỰ xoá cả thư mục `_internal`",
+        "_internal.old" in bat and "rmdir" in bat)
+
+    # Giả lập bản .exe: `frozen` = True + DATA_DIR trỏ ra ngoài.
+    ma_fz = (
+        "import sys, json, os\n"
+        "sys.frozen = True\n"
+        "sys.path.insert(0, %r)\n"
+        "import config\n"
+        "from app.core import thay_giong as TG\n"
+        "print('BQJSON' + json.dumps({'lib': TG.lib_demucs(),\n"
+        "      'data': str(config.DATA_DIR)}))\n" % REPO)
+    fz = SAN / "_fz.py"
+    fz.write_text(ma_fz, encoding="utf-8")
+    env = dict(os.environ)
+    env.pop("BQ_DEMUCS_LIB", None)
+    env["BQ_DATA_DIR"] = str(SAN / "data_gia")
+    env["PYTHONUTF8"] = "1"
+    rf = subprocess.run([sys.executable, str(fz)], capture_output=True,
+                        text=True, encoding="utf-8", errors="replace",
+                        timeout=300, env=env)
+    ra_fz = json.loads([d for d in (rf.stdout or "").splitlines()
+                        if d.startswith("BQJSON")][0][6:])
+    print(f"  bản .exe -> _lib = {ra_fz['lib']}")
+    dat("CA5b bản .exe đặt `_lib` NGOÀI `_internal` (không bị cập nhật xoá)",
+        "_internal" not in ra_fz["lib"], ra_fz["lib"])
+    dat("CA5c và đặt trong DATA_DIR — chỗ config.py cố ý tách ra để giữ dữ liệu",
+        Path(ra_fz["lib"]).resolve().parent == Path(ra_fz["data"]).resolve(),
+        f"{ra_fz['lib']} vs {ra_fz['data']}")
+    dat("CA5d chạy từ NGUỒN vẫn là `<repo>/_lib` y như cũ "
+        "(không bỏ rơi `_lib` máy dev đã tải)",
+        Path(TG.lib_demucs()).resolve() == Path(REPO, "_lib").resolve(),
+        TG.lib_demucs())
+
 except Exception as e:  # noqa: BLE001
     HONG += 1
     import traceback

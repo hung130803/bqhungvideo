@@ -283,10 +283,28 @@ def lib_demucs() -> str:
 
     Một lượt `pip install demucs` kéo theo torch/torchaudio có thể phá app đang
     chạy sản xuất 300 kênh của anh Hùng. Đường dẫn từ env `BQ_DEMUCS_LIB`,
-    mặc định `<repo>/_lib`.
+    mặc định `<repo>/_lib` khi chạy nguồn.
+
+    **BẢN `.exe` PHẢI ĐẶT NGOÀI `_internal` — ĐO ĐƯỢC, KHÔNG PHÒNG XA:**
+    `Path(__file__).parents[2]` trong bản đóng gói trỏ vào **`_internal`**, mà
+    `self_update.py` cập nhật bằng cách `ren _internal -> _internal.old` rồi
+    `rmdir /S /Q _internal.old` — tức **mỗi lượt tự cập nhật là xoá sạch `_lib`**
+    và anh Hùng phải tải lại 155 MB. App này tự cập nhật liên tục, nên đó không
+    phải rủi ro lý thuyết mà là chuyện chắc chắn xảy ra.
+    `config.py` đã tách sẵn `DATA_DIR` đúng vì lý do này (*"Tách 2 cái để khi
+    cập nhật bản .exe (thay _internal) KHÔNG làm mất dữ liệu người dùng"*) — đi
+    theo nó. CHỈ đổi ở nhánh `frozen`: chạy nguồn vẫn `<repo>/_lib` y như cũ nên
+    `_lib` đã tải sẵn của máy dev không bị bỏ rơi.
     """
     p = (os.environ.get("BQ_DEMUCS_LIB") or "").strip()
-    return p or str(Path(__file__).resolve().parents[2] / "_lib")
+    if p:
+        return p
+    if getattr(sys, "frozen", False):
+        # Đọc `config.DATA_DIR` MỖI LẦN GỌI, không cất sẵn vào hằng số — cổng
+        # test đổi `BQ_DATA_DIR` rồi nạp lại config (bài học `tg_so.duong_so`).
+        import config
+        return str(Path(config.DATA_DIR) / "_lib")
+    return str(Path(__file__).resolve().parents[2] / "_lib")
 
 
 def _duoi_thu_muc(duong: str, thu_muc: str) -> bool:
