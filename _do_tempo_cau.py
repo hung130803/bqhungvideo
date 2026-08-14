@@ -56,6 +56,50 @@ def mot_luot(k: dict, dich_sang: str, vong: int, lam: Path) -> dict:
     rg["files"], rg["ok"] = dn["files"], dn["ok"]
     kh = tg.khop_thoi_gian(cau, dn["files"], dn["ok"], tong, lam / "khop")
 
+    # NGHĨA CÓ MẤT KHÔNG: `dich_hau_kiem` chỉ chấm bản dịch ĐẦU. Bước rút gọn
+    # sửa chữ SAU đó và KHÔNG được chấm lần nào — nên phải chấm lại bản CUỐI
+    # bằng đúng phép dịch-ngược có sẵn, rồi so với điểm bản đầu.
+    goc_txt = [c["text"] for c in cau]
+    diem_cuoi = tg._dich_nguoc_cham(goc_txt, rg["texts"], goc_ma, dich_sang)
+    doi = [i for i in range(len(cau))
+           if i < len(rg["texts"]) and rg["texts"][i] != dd["ban_dich"][i]]
+    nghia = {
+        "so_cau_doi_chu": len(doi),
+        "diem_dau_tb": round(sum(dd["diem"]) / max(1, len(dd["diem"])), 2),
+        "diem_cuoi_tb": round(sum(diem_cuoi) / max(1, len(diem_cuoi)), 2),
+        "diem_cuoi_min": round(min(diem_cuoi), 2) if diem_cuoi else 0.0,
+        "duoi_nguong_cuoi": sum(1 for d in diem_cuoi
+                                if d < tg.NGUONG_GIONG_NGHIA),
+    }
+    # ĐỐI CHỨNG BẮT BUỘC: câu KHÔNG bị đổi chữ phải được chấm GẦN NHƯ CŨ.
+    # Không có cột này thì không phân biệt được "rút gọn làm mất nghĩa" với
+    # "chính bộ chấm nhấp nháy" — và bộ chấm là LLM, nó chấm cả LOẠT nên đổi
+    # 16 câu là đổi luôn ngữ cảnh của 27 câu còn lại.
+    giu = [i for i in range(len(cau)) if i < len(diem_cuoi) and i not in doi]
+    if giu:
+        nghia["doi_chung_giu_dau"] = round(
+            sum(dd["diem"][i] for i in giu) / len(giu), 2)
+        nghia["doi_chung_giu_cuoi"] = round(
+            sum(diem_cuoi[i] for i in giu) / len(giu), 2)
+        nghia["doi_chung_troi"] = round(
+            nghia["doi_chung_giu_cuoi"] - nghia["doi_chung_giu_dau"], 2)
+    if doi:
+        nghia["diem_dau_cau_doi"] = round(
+            sum(dd["diem"][i] for i in doi) / len(doi), 2)
+        nghia["diem_cuoi_cau_doi"] = round(
+            sum(diem_cuoi[i] for i in doi) / len(doi), 2)
+        # TỤT THẬT = tụt của câu bị đổi TRỪ ĐI trôi của câu giữ nguyên
+        nghia["tut_that"] = round(
+            (nghia["diem_cuoi_cau_doi"] - nghia["diem_dau_cau_doi"])
+            - nghia.get("doi_chung_troi", 0.0), 2)
+        xau = sorted(doi, key=lambda i: diem_cuoi[i])[:3]
+        nghia["vi_du_xau"] = [{
+            "i": i, "diem": round(diem_cuoi[i], 1),
+            "goc": goc_txt[i][:90],
+            "dich_dau": dd["ban_dich"][i][:110],
+            "sau_rut_gon": rg["texts"][i][:110],
+        } for i in xau]
+
     # câu nào bị ép -> bản dịch dài hơn câu gốc bao nhiêu?
     dai = []
     for i, t in enumerate(kh["tempo_cau"]):
@@ -72,6 +116,7 @@ def mot_luot(k: dict, dich_sang: str, vong: int, lam: Path) -> dict:
         "vong": vong, "giay": round(time.time() - t0, 1),
         "so_cau": len(cau),
         "cat_le": tts.get("cat_le", {}),
+        "nghia": nghia,
         "dich": {kk: vv for kk, vv in dd.items() if kk != "ban_dich"},
         "rut_gon": {kk: vv for kk, vv in rg.items()
                     if kk not in ("texts", "files", "ok")},
@@ -129,6 +174,24 @@ def main() -> int:
                   f"{kh['so_cau_chong_lan']} câu · "
                   f"lệch đầu max {kh['lech_dau_ms_max']} ms · "
                   f"cắt đuôi {kh.get('so_cau_cat', '?')} câu")
+            ng = r["nghia"]
+            print(f"  NGHĨA (dịch-ngược chấm lại bản CUỐI): "
+                  f"{ng['so_cau_doi_chu']} câu bị đổi chữ · "
+                  f"điểm TB {ng['diem_dau_tb']} -> {ng['diem_cuoi_tb']} · "
+                  f"min cuối {ng['diem_cuoi_min']} · "
+                  f"dưới ngưỡng {ng['duoi_nguong_cuoi']} câu")
+            if "doi_chung_troi" in ng:
+                print(f"    ĐỐI CHỨNG câu GIỮ NGUYÊN: {ng['doi_chung_giu_dau']}"
+                      f" -> {ng['doi_chung_giu_cuoi']} "
+                      f"(trôi {ng['doi_chung_troi']:+.2f} = nhiễu bộ chấm)")
+            if "diem_dau_cau_doi" in ng:
+                print(f"    riêng câu BỊ ĐỔI: {ng['diem_dau_cau_doi']} -> "
+                      f"{ng['diem_cuoi_cau_doi']} · TỤT THẬT "
+                      f"{ng.get('tut_that'):+.2f} (đã trừ nhiễu)")
+                for e in ng.get("vi_du_xau", []):
+                    print(f"      #{e['i']} ({e['diem']}) gốc: {e['goc']}")
+                    print(f"           dịch : {e['dich_dau']}")
+                    print(f"           rút  : {e['sau_rut_gon']}")
             if r["dai"]:
                 x = sorted(r["dai"], key=lambda d: -d["tempo"])[:5]
                 print("  5 câu ép mạnh nhất (gốc -> dịch, ký tự):")

@@ -1434,6 +1434,23 @@ TEMPO_CANH_BAO = 1.30
 #: Trần tuyệt đối: rút gọn + mượn hết rồi vẫn tràn thì đành ép tới đây.
 TEMPO_TOI_DA = 1.50
 
+#: NGƯỠNG GỌI TỚI BƯỚC RÚT GỌN — **KHÔNG phải `TEMPO_CANH_BAO`**.
+#: Từ khi có bước 4c (`doc_nhanh_vua_khung`), phần dôi ra tới ~1,45 lần khung
+#: đã được giọng ĐỌC NHANH nuốt gọn mà KHÔNG méo tiếng, KHÔNG mất chữ. Nên
+#: rút gọn chỉ phải lo phần vượt QUÁ tầm với của `rate`.
+#:
+#: ĐO ĐƯỢC VÌ SAO KHÔNG ĐƯỢC ĐỂ THẤP: đặt ngưỡng 1,30 + ngân sách ký tự nhắm
+#: thẳng khung (hệ số 0,92) thì bản dịch bị chặt tới mức MẤT NGHĨA — chấm lại
+#: bằng chính phép dịch-ngược, câu bị đổi chữ tụt **7,19 -> 2,38 · 7,00 ->
+#: 4,89 · 7,00 -> 2,00** (3 lượt). Ép nhanh làm xấu TIẾNG, chặt chữ làm xấu
+#: NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.
+NGUONG_RUT_GON = 1.38
+
+#: Ngân sách ký tự cho bước rút gọn = `khung × ký-tự/giây × hệ số này`. Lớn
+#: hơn 1 CÓ CHỦ Ý: câu chỉ cần ngắn tới mức `rate` với tới được, không cần
+#: ngắn tới mức đọc vừa khung ở tốc độ thường.
+RUT_GON_HE_SO = 1.30
+
 #: Chừa lại chút im lặng trước câu kế khi mượn (giây) — mượn sát quá thì hai
 #: câu dính liền, nghe như nói hụt hơi.
 CHUA_TRUOC_CAU_KE = 0.12
@@ -1527,7 +1544,7 @@ def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
 
 def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                       tong: float, out_dir: str | Path, dich_sang: str,
-                      voice: str = "", nguong_tempo: float = TEMPO_CANH_BAO,
+                      voice: str = "", nguong_tempo: float = NGUONG_RUT_GON,
                       vong_toi_da: int = 2,
                       on_progress: Optional[Callable[[float, str], None]] = None,
                       ) -> dict:
@@ -1573,10 +1590,10 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
             d = probe_duration(files[i])
             muc.append({"i": i, "text": texts[i], "khung": kh, "d_nat": d,
                         "bot": max(0.05, 1.0 - kh / d) if d > 0 else 0.2,
-                        # trừ hao 8%: LLM hay viết sát trần, mà đọc hụt một
-                        # chút thì chỉ thừa khoảng lặng (vô hại), đọc quá thì
-                        # lại phải ép tốc độ (có hại).
-                        "toi_da_kytu": max(6, int(kh * kts * 0.92))})
+                        # Ngân sách NỚI theo `RUT_GON_HE_SO`: phần dôi ra đã
+                        # có bước ĐỌC NHANH lo, không cần chặt chữ tới mức
+                        # mất nghĩa (số đo ở chú thích NGUONG_RUT_GON).
+                        "toi_da_kytu": max(8, int(kh * kts * RUT_GON_HE_SO))})
         moi = _rut_gon_loat(muc, dich_sang)
 
         # đọc lại CHỈ các câu vừa rút gọn, vào file RIÊNG để còn so

@@ -149,6 +149,16 @@ HOP_TY_KHUNG_MIN = 0.50
 #: Hộp không được hẹp hơn tỉ lệ này của bề rộng khung — chốt chống "hộp ma"
 #: (một khung bắt trúng đốm nhiễu rồi đẻ ra hộp 20px).
 HOP_HEP_MIN = 0.06
+#: Số HÀNG (hệ RONG_DO) tối đa được nới thêm mỗi phía TRÊN/DƯỚI dải.
+#: **VÌ SAO CẦN**: dải mọc theo ngưỡng 0,40 lần đỉnh nên nó dừng ở chỗ nét chữ
+#: THƯA — tức CHÓP và CHÂN chữ nằm NGOÀI dải. NHÌN TẬN MẮT trên clip đã che
+#: (`_hop/ZOOM_dh_2_*.png`): còn một HÀNG GẠCH ĐỨT ở mép trên và mép dưới ô mờ
+#: — đó là chóp/chân các chữ. **Lỗi này CÓ SẴN từ bản dải**, bản HỘP chỉ làm nó
+#: dễ thấy hơn (ô hẹp lại nên mắt bắt được mép). Đo mật độ theo hàng, tính
+#: theo % mật độ TRONG dải: hàng đầu tiên ngoài dải còn **12-20%**.
+HOP_CAO_THEM = 3
+#: Hàng ngoài dải còn >= tỉ lệ này mật độ trong dải thì vẫn tính là chữ.
+HOP_HANG_MEP = 0.10
 #: Tắt hẳn bước thu-về-hộp (đo A/B, gỡ rối máy user): `BQ_CHE_HOP=0`.
 _BAT_HOP = os.environ.get("BQ_CHE_HOP", "1").strip() not in ("0", "false", "no")
 
@@ -725,8 +735,34 @@ def do_hop_chu(src: str | Path, dai: DaiChu, fps: float = HOP_FPS,
         ra.x0 = _chan(min(h[2] for h in ra.hop), xuong=True)
         ra.x1 = min(W, _chan(max(h[3] for h in ra.hop)))
         ra.x0_dai, ra.x1_dai = dai.x0_dai or dai.x0, dai.x1_dai or dai.x1
+
+        # ---- NỚI CHÓP/CHÂN CHỮ (xem ghi chú `HOP_CAO_THEM`) ----
+        # Đo mật độ theo HÀNG chỉ trong BỀ NGANG CÓ CHỮ — lấy cả dải thì nền
+        # hai bên (thứ vừa được bỏ ra khỏi vùng che) lại kéo số liệu.
+        prof = gia[:, :, max(0, int(ra.x0 * tyv)):
+                   max(2, int(ra.x1 * tyv))].mean(axis=(0, 2))
+        trong = float(prof[r0:r1].mean()) if r1 > r0 else 0.0
+        if trong > 0:
+            ng_hang = HOP_HANG_MEP * trong
+            them_tren = them_duoi = 0
+            for k in range(1, HOP_CAO_THEM + 1):
+                if r0 - k < 0 or prof[r0 - k] < ng_hang:
+                    break
+                them_tren = k
+            for k in range(1, HOP_CAO_THEM + 1):
+                if r1 - 1 + k >= len(prof) or prof[r1 - 1 + k] < ng_hang:
+                    break
+                them_duoi = k
+            if them_tren:
+                ra.y0 = _chan(max(0, dai.y0 - int(round(them_tren / tyv))),
+                              xuong=True)
+            if them_duoi:
+                ra.y1 = min(int(dai.cao),
+                            _chan(dai.y1 + int(round(them_duoi / tyv))))
         ra.ly_do = (f"{dai.ly_do} · HỘP CHỮ {len(ra.hop)} mốc, che còn "
-                    f"{ra.ty_le_thu*100:.0f}% bề ngang dải")
+                    f"{ra.ty_le_thu*100:.0f}% bề ngang dải"
+                    + (f", nới cao {dai.cao_dai}->{ra.cao_dai}px"
+                       if ra.cao_dai != dai.cao_dai else ""))
         return ra
     except Exception:                                          # noqa: BLE001
         return dai              # dò hộp hỏng -> che nguyên dải, KHÔNG chết
