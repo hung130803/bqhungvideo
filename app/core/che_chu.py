@@ -233,6 +233,28 @@ def _doc_khung(src: str | Path, moc: Sequence[float],
     return ra, w, h
 
 
+def _chan(v: int, xuong: bool = False) -> int:
+    """Làm tròn về số CHẴN (xuống hoặc lên) — bắt buộc cho yuv420p."""
+    v = int(v)
+    if v % 2 == 0:
+        return v
+    return v - 1 if xuong else v + 1
+
+
+def dai_mac_dinh(rong: int, cao: int, ny: float = 0.88,
+                 cao_ty: float = 0.075) -> DaiChu:
+    """Dải ĐÁY MẶC ĐỊNH khi không dò ra gì — CHỈ để ĐẶT CHỮ MỚI, không để che.
+
+    `co_chu=False` nên `loc_che` vẫn trả rỗng: viết chữ lên hình thì không bao
+    giờ hỏng hình, còn LÀM MỜ nhầm chỗ thì có.
+    """
+    h = _chan(max(8, int(cao * cao_ty)))
+    y1 = _chan(min(cao, int(cao * ny) + h // 2))
+    return DaiChu(co_chu=False, y0=max(0, _chan(y1 - h, xuong=True)), y1=y1,
+                  x0=0, x1=_chan(rong), rong=rong, cao=cao,
+                  ly_do="dải đáy mặc định (không dò ra chữ cháy)")
+
+
 def _moc_lay_mau(bat_dau: float, ket_thuc: float, n: int) -> list:
     """n mốc RẢI ĐỀU, tránh 2 mép (mép hay là logo mở đầu / bảng kết thúc)."""
     if ket_thuc <= bat_dau:
@@ -350,11 +372,15 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
     else:
         cx0, cx1 = 0, w
 
+    # TOẠ ĐỘ PHẢI CHẴN — yuv420p lấy mẫu màu 2x1/2x2, `crop`+`overlay` ở toạ độ
+    # LẺ buộc ffmpeg nội suy lại mặt phẳng màu -> BẨN 1 hàng/cột NGAY BÊN
+    # NGOÀI dải. Đo trong cổng 54 CA 5: dải y0=311 (lẻ) -> PSNR ngoài dải
+    # 45,2 dB; snap về chẵn -> `inf` (không lệch một điểm ảnh nào).
     ty = H / h
-    kq.y0 = max(0, int(round(tot_y0 * ty)) - 2)
-    kq.y1 = min(H, int(round(tot_y1 * ty)) + 2)
-    kq.x0 = max(0, int(round(cx0 * ty)))
-    kq.x1 = min(W, int(round(cx1 * ty)))
+    kq.y0 = _chan(max(0, int(round(tot_y0 * ty)) - 2), xuong=True)
+    kq.y1 = min(H, _chan(min(H, int(round(tot_y1 * ty)) + 2)))
+    kq.x0 = _chan(max(0, int(round(cx0 * ty))), xuong=True)
+    kq.x1 = min(W, _chan(min(W, int(round(cx1 * ty)))))
 
     if kq.ty_le_khung < ty_le_khung_min:
         kq.ly_do = (f"chỉ {kq.ty_le_khung*100:.0f}% khung có chữ trong dải "
@@ -468,8 +494,12 @@ def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
         return False
     W, H = int(dai.rong), int(dai.cao)
     cao_dai = dai.cao_dai
+    # CỠ CHỮ = 0,85 x CHIỀU CAO DẢI. Dải dò ra chính là BỀ CAO VỆT MỰC của chữ
+    # cũ, mà cỡ font ~ bề cao vệt mực (CJK gần 1:1, Latin có thêm chân chữ).
+    # Bản đầu để 0,62 -> chữ mới NHỎ HƠN HẲN chữ cũ, nhìn ra ngay bằng mắt
+    # (dải 36 px thì chữ ra 22 px trong khi chữ Trung gốc cao ~36 px).
     cs = int(co_chu) if co_chu >= 8 else int(
-        max(14, min(cao_dai * 0.62, H * 0.075)) / max(1, nhieu_dong) * nhieu_dong)
+        max(14, min(cao_dai * 0.85, H * 0.085)))
     cs = max(14, int(cs))
     ow = do_vien if do_vien > 0 else max(1.0, round(cs * 0.09, 1))
     ht = "".join(d[2] for d in dong[:400])
@@ -506,9 +536,15 @@ def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
 
 # ───────────────────────── GỘP: CHE + VIẾT trong 1 lượt ─────────────────────
 def _esc_loc(p: str) -> str:
-    """Escape đường dẫn cho filter `subtitles=` trên Windows (C:\\ -> C\\:/)."""
+    """Escape đường dẫn cho filter `subtitles=` (Windows: `D:\\x` -> `D\\:/x`).
+
+    BẪY ĐÃ SẬP: escape THỪA một lớp (`\\\\:` thay vì `\\:`) thì ffmpeg đọc phần
+    sau dấu hai chấm thành TÊN THAM SỐ và báo *Unable to parse "original_size"*
+    — lời lỗi chẳng dính gì tới đường dẫn, rất dễ đi sửa nhầm chỗ.
+    Đúng: một dấu `\\` trước `:` và trước `'`, dấu `\\` của Windows đổi thành `/`.
+    """
     q = str(p).replace("\\", "/")
-    return q.replace(":", "\\\\:").replace("'", "\\\\'")
+    return q.replace(":", "\\:").replace("'", "\\'")
 
 
 def che_va_viet(src: str | Path, dst: str | Path,
@@ -547,7 +583,13 @@ def che_va_viet(src: str | Path, dst: str | Path,
         bao["che"] = True
     co_dong = False
     if dong:
-        co_dong = ghi_ass(dong, ass, dai, font=font, co_chu=co_chu)
+        # KHÔNG dò ra dải -> vẫn viết được chữ mới, đặt ở DẢI ĐÁY MẶC ĐỊNH.
+        # Không che gì cả (bao["che"] vẫn False) — viết chữ không hỏng hình,
+        # làm mờ nhầm chỗ thì có.
+        d_viet = dai if (dai and dai.co_chu and dai.cao_dai > 0) else \
+            dai_mac_dinh(tt["rong"] or 1080, tt["cao"] or 1920)
+        co_dong = ghi_ass(dong, ass, d_viet, font=font, co_chu=co_chu)
+        bao["dai_viet"] = d_viet.dict()
     if co_dong:
         chuoi.append(f"subtitles='{_esc_loc(ass)}'")
         bao["so_dong"] = len(dong)
@@ -558,8 +600,13 @@ def che_va_viet(src: str | Path, dst: str | Path,
 
     enc = list(bo_ma) if bo_ma else ["-c:v", "libx264", "-preset", "veryfast",
                                      "-crf", "20", "-pix_fmt", "yuv420p"]
+    # NỐI BẰNG DẤU PHẨY, KHÔNG PHẢI CHẤM PHẨY: `loc_che` trả về một GRAPH
+    # (split/crop/overlay ngăn bằng `;`), chuỗi cuối của nó là `overlay=...`.
+    # Nối `;subtitles=` là đẻ ra một chuỗi RỜI không có đầu vào -> ffmpeg báo
+    # "Cannot find an unused video input stream". Nối `,` thì `subtitles` chạy
+    # TIẾP SAU overlay — đúng thứ tự: che xong mới viết chữ mới đè lên.
     cmd = [_bin("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
-           "-i", src, "-filter_complex", ";".join(chuoi),
+           "-i", src, "-filter_complex", ",".join(chuoi),
            *enc, "-c:a", "copy", "-movflags", "+faststart", dst]
     bao["cmd"] = cmd
     r = (chay(cmd) if chay else _chay(cmd, timeout=timeout))

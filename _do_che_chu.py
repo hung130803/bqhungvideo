@@ -297,6 +297,67 @@ def do_viet(dai_clip: float = 20.0) -> dict:
     return kq
 
 
+# ───────────────── PHÉP ĐO 4 — ĐỘ MẠNH MỜ + RÒ RA NGOÀI DẢI ────────────────
+def do_manh_va_ro() -> dict:
+    """Mờ tới mức nào là ĐỦ xoá chữ, và có LÀM BẨN phần ngoài dải không?
+
+    Ca sai thứ hai của tính năng này (sau 'che oan cả video'): che ĐÚNG dải
+    nhưng filter liếm ra ngoài -> hỏng hình ở chỗ không ai ngờ.
+    """
+    print("\n=== PHÉP ĐO 4 — ĐỘ MẠNH LÀM MỜ + RÒ RA NGOÀI DẢI ===")
+    kq = {}
+    for nhan, p, that in _bo():
+        if not that:
+            continue
+        clip = RA / f"{nhan}_goc.mp4"
+        if not clip.exists():
+            continue
+        d = C.do_dai_chu(clip)
+        tt = C.thong_tin(clip)
+        moc = [tt["do_dai"] * f for f in (0.15, 0.35, 0.55, 0.75, 0.92)]
+        print(f"\n  --- {nhan} dải {d.cao_dai}px "
+              f"(mật độ gốc {C.mat_do_vung(clip, d.y0, d.y1, moc, d.x0, d.x1):.4f})")
+        print(f"      {'mạnh':>5s} {'bán kính':>9s} {'mật độ còn':>11s} "
+              f"{'PSNR NGOÀI dải':>15s}")
+        for m in (0.25, 0.4, 0.6, 0.8, 1.0):
+            out = RA / f"{nhan}_mo{int(m*100)}.mp4"
+            loc = C.loc_che(d, cach="mo", do_manh=m)
+            r = subprocess.run(
+                [C._bin("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
+                 "-i", str(clip), "-filter_complex", loc, "-c:v", "libx264",
+                 "-preset", "veryfast", "-qp", "0", "-pix_fmt", "yuv420p",
+                 "-an", str(out)], capture_output=True,
+                creationflags=C._CREATE_NO_WINDOW)
+            if r.returncode != 0:
+                raise RuntimeError(f"mạnh={m} mã {r.returncode}: "
+                                   f"{r.stderr.decode('u8','replace')[-300:]}")
+            md = C.mat_do_vung(out, d.y0, d.y1, moc, d.x0, d.x1)
+            ps = _psnr_ngoai_dai(clip, out, d)
+            bk = int(max(2, min(d.cao_dai / 3.2 * m,
+                                (d.x1 - d.x0) // 2 - 1, d.cao_dai // 2 - 1)))
+            print(f"      {m:5.2f} {bk:9d} {md:11.4f} {ps:>15s}")
+            kq.setdefault(nhan, []).append(
+                {"manh": m, "ban_kinh": bk, "mat_do": md, "psnr_ngoai": ps})
+    return kq
+
+
+def _psnr_ngoai_dai(a, b, d) -> str:
+    """PSNR của phần NGOÀI dải (che dải đi rồi mới so) — inf = KHÔNG rò 1 px."""
+    H = d.cao
+    vf = (f"[0:v]drawbox=x=0:y={d.y0}:w=iw:h={d.cao_dai}:color=black@1:"
+          "t=fill[a];"
+          f"[1:v]drawbox=x=0:y={d.y0}:w=iw:h={d.cao_dai}:color=black@1:"
+          "t=fill[b];[a][b]psnr")
+    r = subprocess.run([C._bin("ffmpeg"), "-hide_banner", "-i", str(a),
+                        "-i", str(b), "-filter_complex", vf, "-f", "null", "-"],
+                       capture_output=True, creationflags=C._CREATE_NO_WINDOW)
+    txt = r.stderr.decode("utf-8", "replace")
+    for ln in txt.splitlines():
+        if "average:" in ln and "PSNR" in ln:
+            return ln.split("average:")[1].split()[0]
+    return f"?(mã {r.returncode}) H={H}"
+
+
 if __name__ == "__main__":
     viec = sys.argv[1] if len(sys.argv) > 1 else "tat"
     ra = {}
@@ -307,6 +368,8 @@ if __name__ == "__main__":
         ra["che"] = do_che()
     if viec in ("viet", "tat"):
         ra["viet"] = do_viet()
+    if viec in ("manh", "tat"):
+        ra["manh"] = do_manh_va_ro()
     (SAN / "ket_qua.json").write_text(
         json.dumps(ra, ensure_ascii=False, default=str, indent=1),
         encoding="utf-8")
