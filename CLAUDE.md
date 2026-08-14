@@ -1046,7 +1046,76 @@
      văn VẪN LỌT (ca 9e) — chờ corpus lời dẫn Nhật/Hàn; (2) **`dubbing.py`
      dòng 1977 · 2199 · 2312 có ĐÚNG cùng bệnh `.split()`** và đều là chỗ ĐẾM
      TỪ THẬT (chia cụm phụ đề theo số từ · align chữ kịch bản với mốc STT) —
-     luồng khác đang sửa file đó, chưa đụng.
+     **ĐÃ VÁ, xem cổng 54.**
+  54. `_test_dubbing_cjk.py` → **3 CHỖ `.split()` CỦA `dubbing.py`** (14/08/
+     2026) — đúng 3 chỗ cổng 52 bàn giao lại. Cả 3 đều ĐẾM TỪ THẬT nên câu
+     Trung/Nhật (không có dấu cách) ra **1 token**:
+     (a) `_phrase_groups_by_speech` + (b) `_phrase_groups_even` — chia cụm phụ
+     đề narrate theo SỐ TỪ -> **21/21 part ra ĐÚNG 1 CỤM**, cụm dài tới **78 ký
+     tự** = một dòng chữ đứng im gần hết part (cue dài nhất đo được **12,15s**).
+     (c) `_align_stt_words` — **NGUY HIỂM NHẤT vì hỏng KHÔNG MỘT DÒNG BÁO**:
+     `m=1` từ kịch bản vs `k`=41-72 mốc STT -> `abs(m-k)/max(m,k)` = **0,957-
+     0,986** > `miss_max` 0,40 -> trả None **21/21 part** -> app lặng lẽ lùi về
+     silencedetect, tức đường khớp-từng-từ bằng STT **đã tốn lượt Groq chép lời
+     rồi** mà không bao giờ dùng được với tiếng Trung.
+     Vá bằng `_tach_tu` (dựa `recap._word_tokens`). Phải vá KÈM
+     `_phrase_groups_from_words` — nó NỐI CHUỖI chính kết quả của (c), không vá
+     thì phụ đề ra `他 们 发 现`.
+     **SỐ ĐO (lời Trung THẬT, 1.230 ký tự · 1.074 mốc từng-từ, 21 part):** part
+     ra 1 cụm **21/21 -> 0/21** · tổng cụm **21 -> 197** · ký tự/cụm **78 -> 6**
+     · align **0/21 -> 21/21** ghép được · cả bài **None -> 1.132 từ** · cue
+     qua `m1._recap_caption_cues` **21 -> 197**, ngắn nhất **0,152s** (trên sàn
+     0,12s của cổng 21). **BẤT BIẾN: 272 phép gọi / 12 video chữ latin (Anh ·
+     Việt · nhóm `han`) -> CHUỖI KẾT QUẢ giống mốc `841c773` 100%**, tổng cụm
+     **770 = 770**. Tiếng NHẬT **38 -> 295 cụm** = CỐ Ý (cũng không có dấu
+     cách, cũng đang ra 1 cụm/part).
+     **BẪY LỚN NHẤT — HANGUL KHÔNG ĐƯỢC ĐI CHUNG:** `recap._CJK_CHARS` GỒM
+     hangul, ở recap thì vô hại (chỉ ĐẾM token). Ở `dubbing` thì KHÔNG: chỗ này
+     còn **NỐI LẠI ĐỂ HIỂN THỊ** và còn **SO SỐ TỪ với mốc STT**, mà **tiếng
+     Hàn CÓ dùng dấu cách**. Đo trên câu Hàn thật: `recap._word_tokens` ra
+     **20 token thay vì 5** -> tỉ lệ lệch **0,75 > 0,40** -> `_align_stt_words`
+     sẽ trả None = **làm hỏng tiếng Hàn đang chạy tốt**; và
+     `captions._noi_cum` (coi hangul là CJK) nối ra `그런데갑자기눈보라가…` =
+     **mất sạch dấu cách, KỂ CẢ khi đưa vào đúng `.split()`**. Nên `dubbing`
+     có bộ ký tự RIÊNG `_KHONG_DAU_CACH` (Hán · kana · dấu câu CJK · Thái ·
+     Lào · Miến · Khmer — **KHÔNG hangul**), tách theo CỤM-TRẮNG trước, và
+     `_noi_tu` viết riêng chứ KHÔNG gọi `captions._noi_cum`. Cổng có 2 ca TỰ
+     KIỂM (3b/3d) bắt đúng 2 hàm đó phải TRƯỢT — ai sau này "dọn cho gọn" bằng
+     cách gọi thẳng chúng sẽ bị chặn với đúng lý do.
+     **DÁN KÝ TỰ THẬT VÀO DẢI REGEX = ĐỌC KHÔNG RA SAI LỆCH:** dòng `"豈-﫿"`
+     chép từ `recap._CJK_CHARS` (chú thích "CJK compat ideographs" =
+     U+F900-U+FAFF) thì `豈` thật ra là **U+8C48** -> dải thật **U+8C48-U+FAFF**
+     — **nuốt trọn hangul** (U+AC00-U+D7A3). Bản vá "chừa tiếng Hàn" KHÔNG hề
+     chừa, đo vẫn ra 20 token. Nay viết bằng `\u`. Bẫy anh em: dấu câu CJK
+     `、`(U+3001) nằm NGOÀI dải U+3040+ nên câu Nhật nối lại ra `瞬間 、 誰も`
+     -> phải mở về **U+3000-U+30FF** và **U+FF01-U+FF9F**. Nay 9 hệ chữ nối
+     lại **đúng nguyên văn 9/9**. (`recap._CJK_CHARS` vẫn còn dải rộng đó —
+     ĐỂ YÊN: ở recap hangul vốn cố ý nằm trong, thu hẹp lại là đổi hành vi
+     tiếng Hàn của cổng 52.)
+     **KHÔNG DÙNG `chuan_ngon_ngu` — CỐ Ý, và tốt hơn:** bản vá không đọc NHÃN
+     ngôn ngữ một lần nào (quét AST chứng minh), nó dò trên CHÍNH CHỮ. Nên bẫy
+     "Groq trả `Chinese` chứ không phải `zh`" (corpus THẬT đúng là `Chinese`)
+     không với tới được đường này; đổi nhãn qua **5 dạng** kể cả nhãn SAI
+     (`Norwegian Nynorsk` — Groq gán nhầm thật cho video Hàn) đều ra Y HỆT.
+     **THỬ PHÁ 8 phép, cổng FAIL cả 8** (`_pha_dubbing_cjk.py`): trả `.split()`
+     vào từng chỗ trong 3 chỗ (FAIL 2 · 7 · 4) · `_tach_tu` gọi thẳng
+     `recap._word_tokens` (FAIL 4) · `_noi_tu` gọi `captions._noi_cum`
+     (FAIL 6) · dải regex nuốt hangul (FAIL 6) · bỏ cỡ cụm CJK (FAIL 2) ·
+     `BQ_MOC_DUB=HEAD` (FAIL 9). **CỔNG 54: ĐẠT 44 · HỎNG 0.**
+     **3 LỖI CỦA CHÍNH CỔNG/SCRIPT THỬ PHÁ, chỉ lộ ra LÚC PHÁ:** (1) file repo
+     là **CRLF** nên chuỗi tìm nhiều dòng viết `\n` KHÔNG khớp -> 4/6 phép phá
+     im lặng không phá được gì mà bản đầu còn **đếm vào cột LỌT** = báo cáo
+     ngược sự thật; nay "không tìm thấy chỗ phá" = **LỖI CỦA PHÉP THỬ**, tách
+     hẳn khỏi LỌT. (2) bỏ `_co_cum` mà cổng vẫn 42/0 — chia NHỎ hơn không làm
+     cụm ngắn đi theo hướng trần-ký-tự/sàn-thời-lượng canh, nó làm cụm CUỐI
+     part DÀI RA; phải đo THẲNG số cụm (197 = chia 6 · chia 4 ra 291). (3)
+     `a == b != _uoc(_RECAP := 4)` — so sánh DÂY short-circuit khi vế đầu SAI
+     nên `_RECAP` không bao giờ được gán -> **đúng lúc bản vá hỏng thì cổng nổ
+     `NameError`** thay vì in ra mục nào hỏng.
+     **LỖ CÒN LẠI, GHI THẲNG:** `captions._gom_cjk`/`_noi_cum` (đường phụ đề
+     của VIDEO GỐC, không phải narrate) vẫn coi hangul là CJK -> dán liền các
+     từ tiếng Hàn. Cổng 54 ca 3d ĐO ĐƯỢC điều đó nhưng **không sửa** (khác
+     file, khác đường, ngoài phạm vi việc này).
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
