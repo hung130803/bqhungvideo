@@ -62,3 +62,8 @@ _kiem_ketqua*.json
 _ket_*.json
 _ket_*.txt
 _mut_*.txt
+
+# Thay giọng: thư mục đo + thư viện Demucs (nặng, KHÔNG commit)
+_tg/
+_lib/
+_tq_work/
