@@ -77,3 +77,6 @@ _do_tg_kho/
 
 # Thu muc nhap cua luot do pip (cong 58) — khong bao gio commit
 _tmp_dry/
+
+# Nhat ky luot chay hoi quy (_hq_<ten cong>.txt) — rac cua phep do
+_hq_*.txt
