@@ -1,10 +1,26 @@
 # -*- coding: utf-8 -*-
 """HỘP THAY GIỌNG NÓI — thay lời thoại cả THƯ MỤC video sang tiếng khác.
 
-Anh Hùng đặt hàng: *"đầu vào là video ở folder, làm xong tự xoá video gốc,
-thay bằng video mới hiện ở đó"* · *"chạy đa luồng"*.
+Anh Hùng dùng thật v2.26.0 rồi báo 4 điều, bản này sửa đúng 4 điều đó:
 
-BỐN CHỐT AN TOÀN CỦA MÀN NÀY (đừng gỡ cái nào):
+1. *"ấn chạy thì nó chỉ hiện cái thanh tiến trình, không hiện gì cả, xong hay
+   gì cũng không báo, hay đang phân tích như nào cũng không thấy"* -> **BẢNG
+   TIẾN ĐỘ SỐNG**: bấm Chạy là MỖI VIDEO MỘT DÒNG hiện ngay (kể cả video chưa
+   tới lượt = "Đang chờ"), trạng thái đổi theo BƯỚC THẬT (`tg_so
+   .buoc_tu_tien_trinh` đọc tiến trình + lời nhắn của chính
+   `thay_giong_video`), cột tiến trình ghi `% · bước mấy/mấy`, xong cả lượt thì
+   có DÒNG TỔNG KẾT + hộp báo.
+2. *"cho tôi tự chọn thư mục ĐẦU VÀO thư mục ĐẦU RA đi, KHÔNG CẦN cái thùng
+   rác phân tích thay giọng rồi tự xoá đâu nhé"* -> **2 ô thư mục**, video gốc
+   **KHÔNG BAO GIỜ bị đụng tới**; ô "đưa vào Thùng rác" và đường
+   `delete_or_recycle` đã bỏ hẳn khỏi luồng này.
+3. *"nếu cái nào phân tích thay lỗi phải có mục CHẠY LẠI"* -> chuột phải vào
+   dòng: **Làm lại video này · Làm lại tất cả · Bỏ qua video này**; video LỖI
+   thì lượt Chạy sau TỰ làm lại (lỗi ≠ đã xong).
+4. *"ấn chạy chỉ chạy những video CHƯA chạy xong thôi"* -> sổ trạng thái
+   `app/core/tg_so.py` ghi RA ĐĨA (tắt app/tự cập nhật vẫn nhớ).
+
+BA CHỐT AN TOÀN CỦA MÀN NÀY (đừng gỡ cái nào):
 
 1. **THIẾU BỘ TÁCH GIỌNG -> CHẶN, KHÔNG LÙI.** Bản `.exe` không gói
    torch/demucs (`requirements-build.txt` ghi thẳng "KHÔNG gói torch") nên
@@ -14,31 +30,34 @@ BỐN CHỐT AN TOÀN CỦA MÀN NÀY (đừng gỡ cái nào):
    giọng cũ còn NGUYÊN chồng lên giọng mới, ffmpeg vẫn trả mã 0, không một
    dòng báo. Trên 200-300 kênh là hỏng hàng loạt không ai biết.
 
-2. **XOÁ GỐC = ĐƯA VÀO THÙNG RÁC**, không bao giờ xoá hẳn, không bao giờ vào
-   `%TEMP%` (bị dọn = mất video vĩnh viễn). Và chỉ dọn SAU KHI `kiem_video_ra`
-   xác nhận file mới có hình, có tiếng, đúng độ dài.
+2. **KHÔNG ĐỤNG VIDEO GỐC.** Bản mới ghi sang THƯ MỤC ĐÍCH; nguồn trùng đích
+   thì CẢNH BÁO và không xếp job nào (ghi đè = mất gốc). Thư mục làm việc tạm
+   cũng nằm trong thư mục ĐÍCH, để thư mục nguồn sạch đúng như anh Hùng dặn.
 
 3. **ĐA LUỒNG ĐI QUA BỘ ĐIỀU PHỐI**, làn RIÊNG `worker.LAN_TG` — mỗi video
    một job nên tắt app giữa chừng vẫn chạy tiếp được, và bấm Huỷ được từng
    video. Không tự đẻ ThreadPool trong UI.
 
-4. **NHÃN TIẾNG VIỆT, KHÔNG EMOJI** — máy anh Hùng thiếu glyph nên emoji ra Ô
-   ĐEN. Danh sách giọng tái dùng `dubbing.list_recap_voices()` của hộp Cài đặt
-   Reup nhưng phải đi qua `bo_emoji()` vì nhãn gốc có cờ/biểu tượng.
+**NHÃN TIẾNG VIỆT, KHÔNG EMOJI** — máy anh Hùng thiếu glyph nên emoji ra Ô
+ĐEN. Danh sách giọng tái dùng `dubbing.list_recap_voices()` của hộp Cài đặt
+Reup nhưng phải đi qua `bo_emoji()` vì nhãn gốc có cờ/biểu tượng.
 """
 from __future__ import annotations
 
 import os
 import threading
 import unicodedata
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
+    QAbstractItemView, QComboBox, QDialog, QFileDialog, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox, QProgressBar,
     QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
+from app.core import tg_chay, tg_so
 from app.core import thay_giong as TG
 from app.database import db
 from app.ui.appsettings import app_settings
@@ -48,14 +67,18 @@ from app.ui.theme import (
 
 #: Khoá QSettings — đủ để mở lại hộp là thấy y nguyên lần trước.
 K_THUMUC = "tg_thu_muc"
+K_THUMUC_RA = "tg_thu_muc_ra"
 K_NGON_NGU = "tg_ngon_ngu"
 K_GIONG = "tg_giong"
 K_LUONG = "tg_luong"
-K_XOA_GOC = "tg_xoa_goc"
 
 #: Nhãn mục đầu combo giọng. Phải NÓI RA mặc định thật, không ghi trơn
 #: "(tự chọn)" — bài học cổng 16 v2.6.25a: user tưởng là CHƯA chọn gì.
 NHAN_GIONG_TU = "Tự chọn theo ngôn ngữ đích (khuyên dùng)"
+
+#: Trạng thái hiện ở cột 2 khi video bị BỎ QUA vì đã xong (anh Hùng phải đọc
+#: được LÝ DO nó không chạy, không phải im lặng bỏ).
+CHU_DA_XONG = "Đã xong — bỏ qua"
 
 #: cache danh sách giọng cho cả phiên chạy (đỡ gọi mạng mỗi lần mở hộp)
 _CACHE_GIONG: list = []
@@ -103,21 +126,35 @@ def giong_dung_duoc(ds: list) -> list:
 
 
 class ThayGiongDialog(QDialog):
-    """Chọn thư mục · ngôn ngữ · giọng · số luồng -> xếp job, xem tiến độ."""
+    """Chọn thư mục vào/ra · ngôn ngữ · giọng · số luồng -> xếp job, xem tiến
+    độ TỪNG VIDEO, chuột phải để làm lại."""
 
     _giong_xong = pyqtSignal()          # danh sách giọng nạp xong (thread nền)
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
+    #: (đường dẫn video, trạng thái, tiến trình 0..1) — bắn MỖI LẦN một dòng
+    #: ĐỔI trạng thái. Cổng test bắt tín hiệu này để đo "bảng có sống không"
+    #: thay vì nhìn bằng mắt.
+    doi_trang_thai = pyqtSignal(str, str, float)
+    #: (số xong, số lỗi, số huỷ, số bỏ qua) — bắn ĐÚNG MỘT LẦN khi cả lượt kết
+    #: thúc. Anh Hùng: "xong hay gì cũng không báo".
+    xong_ca_luot = pyqtSignal(int, int, int, int)
 
     def __init__(self, pool, parent=None, thung_rac: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Thay giọng nói cho cả thư mục")
-        self.resize(940, 620)
+        self.resize(1000, 660)
         self._pool = pool
         self._s = app_settings()
+        # `thung_rac` GIỮ LẠI trong chữ ký cho lối gọi cũ (studio_page) nhưng
+        # KHÔNG dùng nữa: luồng này không xoá/dọn video gốc nữa.
         self._thung_rac = thung_rac
         self._jobs: dict[str, int] = {}     # đường dẫn video -> job id
+        self._xong_id: dict[int, dict] = {}  # job đã kết thúc -> khỏi hỏi DB
+        self._tt_dong: dict[str, str] = {}   # dòng -> trạng thái ĐANG hiện
         self._dang_cai = False
         self._giong_tho: list = []
+        self._da_bao_xong = True            # chưa chạy lượt nào -> không báo
+        self._bo_qua_luot = 0               # số video bỏ qua ở lượt vừa bấm
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 14, 14, 14)
@@ -125,24 +162,43 @@ class ThayGiongDialog(QDialog):
 
         gt = QLabel(
             "Thay LỜI THOẠI của video sang tiếng khác, GIỮ NGUYÊN nhạc nền và "
-            "tiếng động hiện trường. Xong thì video gốc được đưa vào Thùng "
-            "rác (khôi phục được) và video mới nằm đúng chỗ cũ.")
+            "tiếng động hiện trường. Video MỚI ghi vào Thư mục đích — video "
+            "gốc GIỮ NGUYÊN, app không xoá/không di chuyển gì cả.")
         gt.setWordWrap(True)
         gt.setStyleSheet(f"color:{MUTED}; font-size:11px;")
         lay.addWidget(gt)
 
-        # ---- hàng 1: thư mục nguồn ----
+        # ---- hàng 1: THƯ MỤC NGUỒN ----
         h1 = QHBoxLayout()
-        h1.addWidget(QLabel("Thư mục video:"))
+        h1.addWidget(QLabel("Thư mục nguồn:"))
         self.ed_thu_muc = QLineEdit(str(self._s.value(K_THUMUC, "") or ""))
         self.ed_thu_muc.setPlaceholderText(
             "Chọn thư mục chứa video cần thay giọng")
         self.ed_thu_muc.textChanged.connect(self._doi_thu_muc)
         h1.addWidget(self.ed_thu_muc, 1)
-        b_chon = QPushButton("Chọn thư mục...")
+        b_chon = QPushButton("Chọn thư mục nguồn...")
         b_chon.clicked.connect(self._chon_thu_muc)
         h1.addWidget(b_chon)
         lay.addLayout(h1)
+
+        # ---- hàng 1b: THƯ MỤC ĐÍCH ----
+        h1b = QHBoxLayout()
+        h1b.addWidget(QLabel("Thư mục đích:"))
+        self.ed_thu_muc_ra = QLineEdit(
+            str(self._s.value(K_THUMUC_RA, "") or ""))
+        self.ed_thu_muc_ra.setPlaceholderText(
+            "Để trống = tự tạo thư mục _da_thay_tieng bên trong thư mục nguồn")
+        self.ed_thu_muc_ra.textChanged.connect(self._doi_thu_muc_ra)
+        h1b.addWidget(self.ed_thu_muc_ra, 1)
+        b_chon_ra = QPushButton("Chọn thư mục đích...")
+        b_chon_ra.clicked.connect(self._chon_thu_muc_ra)
+        h1b.addWidget(b_chon_ra)
+        lay.addLayout(h1b)
+
+        self.lb_dich = QLabel("")
+        self.lb_dich.setWordWrap(True)
+        self.lb_dich.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        lay.addWidget(self.lb_dich)
 
         # ---- hàng 2: ngôn ngữ · giọng · số luồng ----
         h2 = QHBoxLayout()
@@ -178,17 +234,6 @@ class ThayGiongDialog(QDialog):
         h2.addWidget(self.sp_luong)
         lay.addLayout(h2)
 
-        # ---- hàng 3: xoá gốc ----
-        self.ck_xoa = QCheckBox(
-            "Xong thì đưa video gốc vào Thùng rác và đặt video mới vào chỗ cũ")
-        self.ck_xoa.setToolTip(
-            "KHÔNG BAO GIỜ xoá hẳn — gốc được chuyển vào thư mục Thùng rác "
-            "(hoặc _DaXoa cạnh thư mục kênh) nên luôn khôi phục được.\n"
-            "Chỉ dọn SAU KHI đã kiểm file mới có hình, có tiếng, đúng độ dài.")
-        self.ck_xoa.setChecked(
-            str(self._s.value(K_XOA_GOC, "1")) not in ("0", "false", "False"))
-        lay.addWidget(self.ck_xoa)
-
         # ---- hàng 4: TÌNH TRẠNG BỘ TÁCH GIỌNG (chốt an toàn số 1) ----
         h4 = QHBoxLayout()
         self.lb_demucs = QLabel("")
@@ -215,6 +260,9 @@ class ThayGiongDialog(QDialog):
         self.bang.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
         self.bang.verticalHeader().setVisible(False)
+        self.bang.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.bang.customContextMenuRequested.connect(self._menu_dong)
         self.bang.setStyleSheet(
             f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
             f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
@@ -227,20 +275,34 @@ class ThayGiongDialog(QDialog):
         hh = self.bang.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hh.setStretchLastSection(True)
-        self.bang.setColumnWidth(0, 330)
-        self.bang.setColumnWidth(1, 120)
-        self.bang.setColumnWidth(2, 90)
+        self.bang.setColumnWidth(0, 300)
+        self.bang.setColumnWidth(1, 150)
+        self.bang.setColumnWidth(2, 130)
         lay.addWidget(self.bang, 1)
+
+        lb_meo = QLabel(
+            "Mẹo: bấm CHUỘT PHẢI vào một dòng để Làm lại video đó · Làm lại "
+            "tất cả · Bỏ qua video đó.")
+        lb_meo.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        lay.addWidget(lb_meo)
 
         # ---- hàng cuối: nút ----
         h5 = QHBoxLayout()
         self.lb_tt = QLabel("")
+        self.lb_tt.setWordWrap(True)
         self.lb_tt.setStyleSheet(f"color:{MUTED};")
         h5.addWidget(self.lb_tt, 1)
         self.b_chay = QPushButton("Chạy")
         self.b_chay.setProperty("primary", True)
-        self.b_chay.clicked.connect(self._chay)
+        # lambda: nút bắn kèm cờ `checked` -> vào thẳng tham số `lam_lai`
+        self.b_chay.clicked.connect(lambda: self._chay())
         h5.addWidget(self.b_chay)
+        self.b_lam_lai = QPushButton("Làm lại tất cả")
+        self.b_lam_lai.setToolTip(
+            "Quên hết trạng thái đã lưu của các video ĐANG HIỆN rồi chạy lại "
+            "từ đầu. Video gốc vẫn không bị đụng tới.")
+        self.b_lam_lai.clicked.connect(lambda: self._lam_lai_tat_ca())
+        h5.addWidget(self.b_lam_lai)
         self.b_dung = QPushButton("Dừng tất cả")
         self.b_dung.clicked.connect(self._dung)
         h5.addWidget(self.b_dung)
@@ -260,7 +322,7 @@ class ThayGiongDialog(QDialog):
         # vẫn chạy timer bình thường.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._nhip)
-        self._timer.start(1000)
+        self._timer.start(700)
 
     # ------------------------------------------------------------------
     # BỘ TÁCH GIỌNG
@@ -300,6 +362,7 @@ class ThayGiongDialog(QDialog):
         co = bool(getattr(self, "_tt_demucs", {}).get("co"))
         co_tm = bool(self._video_trong_thu_muc())
         self.b_chay.setEnabled(co and co_tm and not self._dang_cai)
+        self.b_lam_lai.setEnabled(co and co_tm and not self._dang_cai)
         if not co:
             self.b_chay.setToolTip(
                 "Chưa có bộ tách giọng — bấm '" + TG.NHAN_TAI_DEMUCS
@@ -308,7 +371,9 @@ class ThayGiongDialog(QDialog):
         elif not co_tm:
             self.b_chay.setToolTip("Chưa chọn thư mục có video.")
         else:
-            self.b_chay.setToolTip("")
+            self.b_chay.setToolTip(
+                "Chỉ chạy những video CHƯA xong. Video đã xong thì bỏ qua "
+                "(chuột phải vào dòng để làm lại).")
 
     def _tai_demucs(self) -> None:
         """NGƯỜI DÙNG BẤM thì mới tải. Chạy ở thread nền, báo qua tín hiệu."""
@@ -408,7 +473,7 @@ class ThayGiongDialog(QDialog):
         self._cap_nhat_nut_chay()
 
     # ------------------------------------------------------------------
-    # THƯ MỤC + BẢNG
+    # THƯ MỤC VÀO / RA
     # ------------------------------------------------------------------
     def _chon_thu_muc(self) -> None:
         d = QFileDialog.getExistingDirectory(
@@ -417,6 +482,53 @@ class ThayGiongDialog(QDialog):
         if d:
             self.ed_thu_muc.setText(d)
 
+    def _chon_thu_muc_ra(self) -> None:
+        d = QFileDialog.getExistingDirectory(
+            self, "Chọn thư mục ĐÍCH (nơi ghi video đã thay giọng)",
+            self.ed_thu_muc_ra.text().strip()
+            or self.ed_thu_muc.text().strip())
+        if d:
+            self.ed_thu_muc_ra.setText(d)
+
+    def thu_muc_dich(self) -> str:
+        """Thư mục đích THẬT SỰ dùng: ô trống thì lấy mặc định.
+
+        Một nguồn sự thật cho cả nhãn, cảnh báo trùng và lúc xếp job — ba chỗ
+        tự đoán riêng là hiện một đằng ghi một nẻo.
+        """
+        ra = self.ed_thu_muc_ra.text().strip()
+        if ra:
+            return ra
+        tm = self.ed_thu_muc.text().strip()
+        return tg_so.thu_muc_dich_mac_dinh(tm) if tm else ""
+
+    def trung_thu_muc(self) -> bool:
+        """Nguồn và đích có TRÙNG nhau không (ghi đè = mất video gốc)."""
+        tm = self.ed_thu_muc.text().strip()
+        ra = self.thu_muc_dich()
+        return bool(tm and ra and tg_so.trung_thu_muc(tm, ra))
+
+    def _doi_thu_muc_ra(self) -> None:
+        self._cap_nhat_nhan_dich()
+
+    def _cap_nhat_nhan_dich(self) -> None:
+        ra = self.thu_muc_dich()
+        if not ra:
+            self.lb_dich.setText("")
+            return
+        if self.trung_thu_muc():
+            self.lb_dich.setText(
+                "CẢNH BÁO: Thư mục đích ĐANG TRÙNG thư mục nguồn — làm vậy là "
+                "GHI ĐÈ LÊN VIDEO GỐC. Hãy chọn thư mục đích khác (hoặc để "
+                "trống để app tự dùng " + tg_so.thu_muc_dich_mac_dinh(
+                    self.ed_thu_muc.text().strip()) + ").")
+            self.lb_dich.setStyleSheet(
+                f"color:{DANGER}; font-size:11px; font-weight:600;")
+        else:
+            self.lb_dich.setText("Video mới sẽ nằm ở: " + ra
+                                 + " · video gốc GIỮ NGUYÊN.")
+            self.lb_dich.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+
     def _video_trong_thu_muc(self) -> list:
         tm = self.ed_thu_muc.text().strip()
         if not tm or not os.path.isdir(tm):
@@ -424,15 +536,67 @@ class ThayGiongDialog(QDialog):
         return TG.liet_ke_video(tm)
 
     def _doi_thu_muc(self) -> None:
+        """Dựng lại bảng theo thư mục + SỔ TRẠNG THÁI đã lưu trên đĩa."""
         vids = self._video_trong_thu_muc()
+        self._jobs.clear()
+        self._xong_id.clear()
         self.bang.setRowCount(len(vids))
         for r, v in enumerate(vids):
-            self.bang.setItem(r, 0, QTableWidgetItem(v.name))
-            self.bang.setItem(r, 1, QTableWidgetItem("Chưa chạy"))
-            self.bang.setItem(r, 2, QTableWidgetItem("-"))
-            self.bang.setItem(r, 3, QTableWidgetItem(""))
-        self.lb_tt.setText(f"{len(vids)} video trong thư mục")
+            it = QTableWidgetItem(v.name)
+            it.setData(Qt.ItemDataRole.UserRole, str(v))
+            it.setToolTip(str(v))
+            self.bang.setItem(r, 0, it)
+            self._ve_theo_so(r, str(v))
+        self._cap_nhat_nhan_dich()
         self._cap_nhat_nut_chay()
+        self._dem_lai()
+
+    def _ve_theo_so(self, r: int, duong: str) -> None:
+        """Vẽ 3 cột còn lại của một dòng theo SỔ (chưa chạy lượt nào)."""
+        m = tg_so.tra(duong)
+        tt = m.get("trang_thai") or ""
+        if tt == tg_so.XONG:
+            self._dat_o(r, 1, CHU_DA_XONG, SUCCESS)
+            self._dat_o(r, 2, "100%")
+            self._dat_o(r, 3, "Đã làm xong lần trước — bấm Chạy sẽ bỏ qua. "
+                              "Chuột phải để làm lại.")
+        elif tt == tg_so.LOI:
+            self._dat_o(r, 1, "Lỗi", DANGER)
+            self._dat_o(r, 2, "-")
+            self._dat_o(r, 3, tg_so.loi_doc_hieu(str(m.get("loi") or ""))
+                        + " (bấm Chạy sẽ tự làm lại)")
+        elif tt == tg_so.BO_QUA:
+            self._dat_o(r, 1, "Bỏ qua", MUTED)
+            self._dat_o(r, 2, "-")
+            self._dat_o(r, 3, "Bạn đã chọn bỏ qua video này. Chuột phải để "
+                              "làm lại.")
+        else:
+            self._dat_o(r, 1, "Chưa chạy", MUTED)
+            self._dat_o(r, 2, "-")
+            self._dat_o(r, 3, "")
+
+    def _duong_dong(self, r: int) -> str:
+        it = self.bang.item(r, 0)
+        if it is None:
+            return ""
+        return str(it.data(Qt.ItemDataRole.UserRole) or "")
+
+    def _dong_theo_duong(self, duong: str) -> int:
+        for r in range(self.bang.rowCount()):
+            if self._duong_dong(r) == duong:
+                return r
+        return -1
+
+    def _dem_lai(self) -> None:
+        """Nhãn dưới cùng khi KHÔNG chạy lượt nào: đếm theo sổ."""
+        if self._jobs:
+            return
+        vids = [self._duong_dong(r) for r in range(self.bang.rowCount())]
+        t = tg_so.tom_tat(vids)
+        self.lb_tt.setStyleSheet(f"color:{MUTED};")
+        self.lb_tt.setText(
+            f"{len(vids)} video trong thư mục · đã xong {t['xong']} · "
+            f"lỗi {t['loi']} · bỏ qua {t['bo_qua']} · chưa chạy {t['chua']}")
 
     # ------------------------------------------------------------------
     # CHẠY
@@ -440,41 +604,157 @@ class ThayGiongDialog(QDialog):
     def luu_cai_dat(self) -> None:
         """Ghi mọi lựa chọn vào QSettings — mở lại hộp là thấy y nguyên."""
         self._s.setValue(K_THUMUC, self.ed_thu_muc.text().strip())
+        self._s.setValue(K_THUMUC_RA, self.ed_thu_muc_ra.text().strip())
         self._s.setValue(K_NGON_NGU, self.cb_nn.currentData() or "en")
         self._s.setValue(K_GIONG, self.cb_giong.currentData() or "")
         self._s.setValue(K_LUONG, int(self.sp_luong.value()))
-        self._s.setValue(K_XOA_GOC, "1" if self.ck_xoa.isChecked() else "0")
 
-    def _chay(self) -> None:
+    def _chay(self, lam_lai: list | None = None) -> int:
+        """Xếp job cho video CHƯA XONG. Trả SỐ JOB đã xếp.
+
+        `lam_lai` = danh sách đường dẫn phải chạy BẤT KỂ sổ nói gì (chuột phải
+        -> Làm lại). Trả số job để cổng test đếm được thẳng, không phải đoán
+        qua DB.
+        """
+        ep = {str(x) for x in (lam_lai or [])}
         tt = self._do_demucs()
         if not tt["co"]:
             QMessageBox.warning(
                 self, "Chưa có bộ tách giọng",
                 TG.THIEU_DEMUCS + "\n\nBấm '" + TG.NHAN_TAI_DEMUCS + "'.")
-            return
+            return 0
         vids = self._video_trong_thu_muc()
         if not vids:
             QMessageBox.information(self, "Chưa có video",
                                     "Thư mục này không có video nào.")
-            return
+            return 0
+        # CHỐT: nguồn trùng đích -> KHÔNG xếp job nào. Ghi đè = mất video gốc.
+        if self.trung_thu_muc():
+            self._cap_nhat_nhan_dich()
+            QMessageBox.warning(
+                self, "Thư mục đích trùng thư mục nguồn",
+                "Thư mục đích đang TRÙNG thư mục nguồn.\n\nLàm vậy là GHI ĐÈ "
+                "LÊN VIDEO GỐC (mất bản gốc vĩnh viễn), nên app KHÔNG chạy.\n"
+                "Hãy chọn thư mục đích khác, hoặc để trống ô đó để app tự "
+                "dùng:\n" + tg_so.thu_muc_dich_mac_dinh(
+                    self.ed_thu_muc.text().strip()))
+            return 0
         self.luu_cai_dat()
         if self._pool is not None:
             self._pool.set_limits(max_tg=int(self.sp_luong.value()))
+        ra = self.thu_muc_dich()
+        try:
+            os.makedirs(ra, exist_ok=True)
+        except OSError as e:
+            QMessageBox.warning(self, "Không tạo được thư mục đích",
+                                f"{ra}\n\n{e}")
+            return 0
         nn = str(self.cb_nn.currentData() or "en")
         giong = str(self.cb_giong.currentData() or "")
-        tam = os.path.join(str(vids[0].parent), TG.TEN_THU_MUC_TAM)
-        for v in vids:
-            jid = None
-            if self._pool is not None:
-                from app import services
-                jid = services.enqueue_thay_giong(
-                    self._pool, str(v), nn, voice=giong,
-                    thay_goc=self.ck_xoa.isChecked(),
-                    kenh=v.parent.name, thung_rac=self._thung_rac,
-                    thu_muc_lam=os.path.join(tam, v.stem))
+
+        self._jobs.clear()
+        self._xong_id.clear()
+        self._da_bao_xong = False
+        self._bo_qua_luot = 0
+        loi_xep: list[str] = []
+        for r in range(self.bang.rowCount()):
+            duong = self._duong_dong(r)
+            if not duong:
+                continue
+            buoc_lai = duong in ep
+            # BỎ QUA video đã xong — CHỐT CHÍNH của việc 3. Gỡ nó ra là mỗi
+            # lần bấm Chạy lại làm lại từ đầu cả 300 video.
+            if not buoc_lai and not tg_chay.can_chay(duong):
+                self._bo_qua_luot += 1
+                self._ve_theo_so(r, duong)
+                continue
+            try:
+                jid = tg_chay.xep_mot(
+                    self._pool, duong, nn, voice=giong, thu_muc_ra=ra,
+                    kenh=Path(duong).parent.name, lam_lai=buoc_lai)
+            except (ValueError, OSError) as e:   # noqa: PERF203
+                loi_xep.append(f"{Path(duong).name}: {e}")
+                self._dat_o(r, 1, "Lỗi", DANGER)
+                self._dat_o(r, 3, tg_so.loi_doc_hieu(str(e)))
+                continue
             if jid:
-                self._jobs[str(v)] = int(jid)
+                self._jobs[duong] = int(jid)
+                self._dat_o(r, 1, "Đang chờ", MUTED)
+                self._dat_o(r, 2, "0% · bước 0/8")
+                self._dat_o(r, 3, "Đã xếp hàng, chờ tới lượt")
+                self.doi_trang_thai.emit(duong, "Đang chờ", 0.0)
+            else:
+                # không có bộ điều phối (hộp mở rời) -> nói thẳng, đừng im
+                self._dat_o(r, 1, "Chưa chạy được", WARN)
+                self._dat_o(r, 3, "Không nối được bộ điều phối việc — mở lại "
+                                  "app rồi thử lại")
+        if loi_xep:
+            QMessageBox.warning(self, "Có video không xếp được",
+                                "\n".join(loi_xep[:8]))
+        if not self._jobs:
+            self._da_bao_xong = True     # không có việc nào -> không báo xong
+            self.lb_tt.setStyleSheet(f"color:{SUCCESS};")
+            self.lb_tt.setText(
+                f"Không có video nào cần chạy — {self._bo_qua_luot} video đã "
+                f"xong nên bỏ qua. Muốn làm lại: chuột phải vào dòng hoặc bấm "
+                f"'Làm lại tất cả'.")
         self._nhip()
+        return len(self._jobs)
+
+    def _lam_lai_tat_ca(self) -> int:
+        """Quên sổ của MỌI video ĐANG HIỆN rồi chạy lại từ đầu."""
+        vids = [self._duong_dong(r) for r in range(self.bang.rowCount())]
+        vids = [v for v in vids if v]
+        if not vids:
+            return 0
+        if QMessageBox.question(
+                self, "Làm lại tất cả",
+                f"Chạy lại TỪ ĐẦU {len(vids)} video đang hiện trong bảng?\n\n"
+                "Video gốc vẫn KHÔNG bị đụng tới; bản cũ trong thư mục đích "
+                "sẽ bị ghi đè.") != QMessageBox.StandardButton.Yes:
+            return 0
+        tg_so.xoa_nhieu(vids)
+        return self._chay(lam_lai=vids)
+
+    def _menu_dong(self, pos) -> None:
+        """Chuột phải vào dòng: Làm lại video này · Làm lại tất cả · Bỏ qua."""
+        r = self.bang.rowAt(pos.y())
+        duong = self._duong_dong(r) if r >= 0 else ""
+        m = QMenu(self)
+        a1 = QAction("Làm lại video này", self)
+        a1.setEnabled(bool(duong))
+        a1.triggered.connect(lambda: self._lam_lai_mot(duong))
+        m.addAction(a1)
+        a2 = QAction("Làm lại tất cả", self)
+        a2.triggered.connect(self._lam_lai_tat_ca)
+        m.addAction(a2)
+        m.addSeparator()
+        a3 = QAction("Bỏ qua video này", self)
+        a3.setEnabled(bool(duong))
+        a3.triggered.connect(lambda: self._bo_qua_mot(duong))
+        m.addAction(a3)
+        m.exec(self.bang.viewport().mapToGlobal(pos))
+
+    def _lam_lai_mot(self, duong: str) -> int:
+        """Chạy lại ĐÚNG MỘT video (bỏ qua sổ). Trả số job đã xếp."""
+        if not duong:
+            return 0
+        tg_so.xoa(duong)
+        r = self._dong_theo_duong(duong)
+        if r >= 0:
+            self._ve_theo_so(r, duong)
+        return self._chay(lam_lai=[duong])
+
+    def _bo_qua_mot(self, duong: str) -> None:
+        """Đánh dấu BỎ QUA — lượt Chạy sau không đụng tới video này nữa."""
+        if not duong:
+            return
+        tg_so.ghi(duong, tg_so.BO_QUA)
+        r = self._dong_theo_duong(duong)
+        if r >= 0:
+            self._ve_theo_so(r, duong)
+        self._jobs.pop(duong, None)
+        self._dem_lai()
 
     def _dung(self) -> None:
         if self._pool is None or not self._jobs:
@@ -489,10 +769,11 @@ class ThayGiongDialog(QDialog):
     # ------------------------------------------------------------------
     # NHỊP CẬP NHẬT BẢNG (đọc thẳng bảng `jobs`, không giữ sổ RAM riêng)
     # ------------------------------------------------------------------
-    _CHU = {"pending": "Đang chờ", "running": "Đang chạy", "done": "Xong",
-            "failed": "LỖI", "canceled": "Đã huỷ"}
+    _KET_THUC = ("done", "failed", "canceled")
+    _CHU = {"pending": "Đang chờ", "done": "Xong", "failed": "Lỗi",
+            "canceled": "Đã dừng"}
     _MAU = {"done": SUCCESS, "failed": DANGER, "canceled": MUTED,
-            "running": WARN}
+            "running": WARN, "pending": MUTED}
 
     def _nhip(self) -> None:
         if self._dang_cai:
@@ -502,39 +783,109 @@ class ThayGiongDialog(QDialog):
             return
         if not self._jobs:
             return
-        ids = list(self._jobs.values())
-        cho = ",".join("?" * len(ids))
-        try:
-            rows = db.query(
-                f"SELECT id, status, progress, message, error FROM jobs "
-                f"WHERE id IN ({cho})", tuple(ids))
-        except Exception:  # noqa: BLE001 - DB vỡ thì đừng làm sập hộp
-            return
-        theo_id = {int(r["id"]): r for r in rows}
-        xong = loi = chay = 0
+        # CHỈ HỎI DB những job CHƯA kết thúc — thư mục 300 video là 300 id,
+        # hỏi lại cả đống mỗi 0,7 giây là tự làm đơ máy đang chạy sản xuất.
+        con = [j for j in self._jobs.values() if j not in self._xong_id]
+        theo_id: dict = dict(self._xong_id)
+        if con:
+            cho = ",".join("?" * len(con))
+            try:
+                rows = db.query(
+                    f"SELECT id, status, progress, message, error FROM jobs "
+                    f"WHERE id IN ({cho})", tuple(con))
+            except Exception:  # noqa: BLE001 - DB vỡ thì đừng làm sập hộp
+                return
+            for r in rows:
+                d = {"status": str(r["status"] or ""),
+                     "progress": float(r["progress"] or 0),
+                     "message": str(r["message"] or ""),
+                     "error": str(r["error"] or "")}
+                theo_id[int(r["id"])] = d
+                if d["status"] in self._KET_THUC:
+                    self._xong_id[int(r["id"])] = d
+                    dv = self._duong_theo_job(int(r["id"]))
+                    if d["status"] == "failed" and dv:
+                        # ghi sổ ở đây nữa: lỗi NÉM TRƯỚC khi vào handler (vd
+                        # thiếu Demucs) thì handler không kịp ghi.
+                        tg_so.ghi(dv, tg_so.LOI,
+                                  loi=(d["error"] or d["message"])[:300])
+
+        xong = loi = huy = chay = 0
         for r in range(self.bang.rowCount()):
-            it = self.bang.item(r, 0)
-            if it is None:
-                continue
-            duong = self._duong_theo_ten(it.text())
+            duong = self._duong_dong(r)
             jid = self._jobs.get(duong)
             row = theo_id.get(int(jid)) if jid else None
             if row is None:
                 continue
-            tt = str(row["status"] or "")
-            self._dat_o(r, 1, self._CHU.get(tt, tt), self._MAU.get(tt))
-            self._dat_o(r, 2, f"{float(row['progress'] or 0) * 100:.0f}%")
-            self._dat_o(r, 3, str(row["error"] or row["message"] or "")[:200])
+            tt = row["status"]
+            p = row["progress"]
+            if tt == "running":
+                nhan, b, tong = tg_so.buoc_tu_tien_trinh(p, row["message"])
+                self._dat_o(r, 1, nhan, WARN)
+                self._dat_o(r, 2, f"{p * 100:.0f}% · bước {b}/{tong}")
+                self._dat_o(r, 3, row["message"][:200])
+            else:
+                self._dat_o(r, 1, self._CHU.get(tt, tt), self._MAU.get(tt))
+                if tt == "done":
+                    self._dat_o(r, 2, "100%")
+                    self._dat_o(r, 3, "Xong — video mới ở thư mục đích "
+                                      "(gốc giữ nguyên)")
+                elif tt == "failed":
+                    self._dat_o(r, 2, f"{p * 100:.0f}%")
+                    self._dat_o(r, 3, tg_so.loi_doc_hieu(
+                        row["error"] or row["message"])
+                        + " · bấm Chạy để làm lại")
+                elif tt == "canceled":
+                    self._dat_o(r, 2, f"{p * 100:.0f}%")
+                    self._dat_o(r, 3, "Bạn đã dừng — bấm Chạy để làm lại "
+                                      "(video gốc không bị đụng)")
+                else:
+                    self._dat_o(r, 2, f"{p * 100:.0f}% · bước 0/8")
+                    self._dat_o(r, 3, "Đã xếp hàng, chờ tới lượt")
+            moi = self.bang.item(r, 1).text() if self.bang.item(r, 1) else ""
+            if moi != self._tt_dong.get(duong):
+                self._tt_dong[duong] = moi
+                self.doi_trang_thai.emit(duong, moi, p)
             xong += tt == "done"
-            loi += tt in ("failed", "canceled")
+            loi += tt == "failed"
+            huy += tt == "canceled"
             chay += tt in ("running", "pending")
-        self.lb_tt.setText(
-            f"{self.bang.rowCount()} video · xong {xong} · đang/chờ {chay}"
-            f" · lỗi-huỷ {loi}")
 
-    def _duong_theo_ten(self, ten: str) -> str:
-        tm = self.ed_thu_muc.text().strip()
-        return os.path.join(tm, ten) if tm else ten
+        if chay:
+            self.lb_tt.setStyleSheet(f"color:{MUTED};")
+            self.lb_tt.setText(
+                f"Đang chạy: còn {chay} video · xong {xong} · lỗi {loi}"
+                + (f" · dừng {huy}" if huy else "")
+                + (f" · bỏ qua {self._bo_qua_luot}"
+                   if self._bo_qua_luot else ""))
+        elif not self._da_bao_xong:
+            self._da_bao_xong = True
+            self._bao_xong(xong, loi, huy)
+
+    def _duong_theo_job(self, jid: int) -> str:
+        for d, j in self._jobs.items():
+            if int(j) == int(jid):
+                return d
+        return ""
+
+    def _bao_xong(self, xong: int, loi: int, huy: int) -> None:
+        """DÒNG TỔNG KẾT + hộp báo — anh Hùng: "xong hay gì cũng không báo"."""
+        chu = (f"XONG CẢ LƯỢT: {xong} video xong · {loi} lỗi"
+               + (f" · {huy} bị dừng" if huy else "")
+               + (f" · {self._bo_qua_luot} bỏ qua (đã xong từ trước)"
+                  if self._bo_qua_luot else ""))
+        self.lb_tt.setStyleSheet(
+            f"color:{DANGER if loi else SUCCESS}; font-weight:600;")
+        self.lb_tt.setText(chu)
+        self.xong_ca_luot.emit(xong, loi, huy, self._bo_qua_luot)
+        them = ""
+        if loi:
+            them = ("\n\nVideo LỖI sẽ TỰ CHẠY LẠI ở lần bấm Chạy sau. Cột "
+                    "'Ghi chú' ghi rõ lý do từng video.")
+        QMessageBox.information(
+            self, "Thay giọng nói: xong cả lượt",
+            chu + "\n\nVideo mới nằm ở: " + self.thu_muc_dich()
+            + "\nVideo gốc GIỮ NGUYÊN, app không xoá gì cả." + them)
 
     def _dat_o(self, r: int, c: int, chu: str, mau: str = "") -> None:
         it = self.bang.item(r, c)
@@ -544,7 +895,6 @@ class ThayGiongDialog(QDialog):
         if it.text() != chu:
             it.setText(chu)
         if mau:
-            from PyQt6.QtGui import QColor
             it.setForeground(QColor(mau))
 
     # ------------------------------------------------------------------

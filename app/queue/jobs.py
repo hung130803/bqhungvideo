@@ -247,8 +247,21 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
         phục": 72 nhận / 4 xong).
       · bấm Huỷ được TỪNG video.
       · bảng tiến độ đọc thẳng bảng `jobs`, không phải sổ RAM riêng.
+
+    **KHÔNG BAO GIỜ ĐỤNG VIDEO GỐC (v2.27.0).** Anh Hùng: *"cho tôi tự chọn
+    thư mục ĐẦU VÀO thư mục ĐẦU RA đi, KHÔNG CẦN cái thùng rác phân tích thay
+    giọng rồi tự xoá đâu nhé"*. Vì vậy handler **ép `thay_goc=False`** rồi tự
+    chuyển bản mới sang THƯ MỤC ĐÍCH — đường `delete_or_recycle` biến mất khỏi
+    luồng này. Ép ở ĐÂY (không chỉ ở UI) là cố ý: job cũ nằm sẵn trong DB từ
+    bản trước mang `thay_goc=True`, không ép thì mở app lên nó vẫn dọn gốc.
+
+    Sổ trạng thái (`tg_so`) được ghi Ở ĐÂY chứ không chỉ ở UI: đóng hộp/tắt
+    app rồi mở lại vẫn phải biết video nào đã xong.
     """
+    import shutil
+
     from app.core import thay_giong as tg
+    from app.core import tg_so
 
     duong = str(payload.get("video") or "")
     if not duong or not os.path.exists(duong):
@@ -258,6 +271,17 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
     # (đo: rò rỉ lời 100% zh / 86,3% en = giọng cũ còn nguyên chồng lên giọng
     # mới, ffmpeg vẫn trả mã 0). Thà job đỏ còn hơn 300 kênh hỏng im lặng.
     tg.chot_co_bo_tach_giong(payload.get("cach_tach") or "auto")
+
+    goc = os.path.abspath(duong)
+    thu_muc_ra = str(payload.get("thu_muc_ra") or "").strip() or \
+        tg_so.thu_muc_dich_mac_dinh(os.path.dirname(goc))
+    # CHỐT SỐNG CÒN: đích trùng nguồn = ghi đè MẤT GỐC. Chặn ở đây nữa (UI đã
+    # cảnh báo) vì job có thể tới từ payload cũ/đường gọi khác.
+    if tg_so.trung_thu_muc(os.path.dirname(goc), thu_muc_ra):
+        raise RuntimeError(
+            "Thư mục đích TRÙNG thư mục nguồn — sẽ ghi đè mất video gốc")
+    os.makedirs(thu_muc_ra, exist_ok=True)
+    dich = tg_so.duong_ra(goc, thu_muc_ra)
 
     def _prog(p: float, m: str) -> None:
         # ctx.progress tự kiểm cờ Huỷ -> đổi sang HuyBo để `thay_giong_video`
@@ -273,25 +297,47 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             dich_sang=str(payload.get("dich_sang") or "en"),
             voice=str(payload.get("voice") or ""),
             cach_tach=str(payload.get("cach_tach") or "auto"),
-            thay_goc=bool(payload.get("thay_goc", True)),
+            thay_goc=False,          # ÉP: video gốc GIỮ NGUYÊN, xem docstring
             kenh=str(payload.get("kenh") or ""),
-            thung_rac=str(payload.get("thung_rac") or ""),
+            thung_rac="",
             thu_muc_lam=str(payload.get("thu_muc_lam") or ""),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
         raise CanceledError() from e
+    except Exception as e:           # noqa: BLE001 - ghi sổ rồi ném tiếp
+        tg_so.ghi(goc, tg_so.LOI, loi=f"{type(e).__name__}: {e}"[:300])
+        raise
     if not r.get("ok"):
-        raise RuntimeError(str(r.get("loi") or "Thay giọng lỗi không rõ"))
+        loi = str(r.get("loi") or "Thay giọng lỗi không rõ")
+        tg_so.ghi(goc, tg_so.LOI, loi=loi[:300])
+        raise RuntimeError(loi)
+
+    # --- ĐẶT BẢN MỚI VÀO THƯ MỤC ĐÍCH (giữ NGUYÊN tên file gốc) ---
+    try:
+        if os.path.exists(dich):     # lần chạy lại -> thay bản cũ trong đích
+            os.remove(dich)
+        shutil.move(str(r["ra"]), dich)
+    except OSError as e:
+        tg_so.ghi(goc, tg_so.LOI, loi=f"không đặt được file vào đích: {e}")
+        raise RuntimeError(
+            f"Không đặt được video mới vào thư mục đích: {e}") from e
+    r["ra"] = dich
+
+    # dọn thư mục làm việc tạm (wav/mp3 của 1 video 10 phút lên hàng trăm MB)
+    lam = str(payload.get("thu_muc_lam") or "")
+    if lam and os.path.isdir(lam):
+        shutil.rmtree(lam, ignore_errors=True)
+
+    tg_so.ghi(goc, tg_so.XONG, ra=dich, giay=r.get("giay_tong"),
+              dich_sang=str(payload.get("dich_sang") or ""))
     # gọn lại cho cột `result` của bảng jobs (bỏ mảng câu/đường dẫn tạm)
-    tt = r.get("thay_the") or {}
     return {
-        "vao": r.get("vao"), "ra": r.get("ra"),
+        "vao": r.get("vao"), "ra": dich,
         "do_dai": r.get("do_dai"), "giay": r.get("giay_tong"),
         "kiem": r.get("kiem"), "tach": (r.get("tach") or {}).get("cach"),
-        "da_thay_goc": bool(tt.get("thay")),
-        "goc_o": tt.get("goc_da_vao_thung_rac") or tt.get("goc_o") or "",
-        "vi_sao": tt.get("vi_sao", ""),
+        "da_thay_goc": False, "goc_o": goc,
+        "vi_sao": "giữ nguyên video gốc, bản mới nằm ở thư mục đích",
         "khop": r.get("khop"), "dich": r.get("dich"),
     }
 
