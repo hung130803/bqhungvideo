@@ -1963,6 +1963,12 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
 # BƯỚC 5 — KHỚP THỜI GIAN (co giãn + MƯỢN thời gian đoạn kế)
 # ==================================================================
 
+#: Ngưỡng im khi ĐO MỐC TIẾNG THẬT trên file đã khớp. Nhạy hơn `NGUONG_IM_DB`
+#: (-45) vì ở đây câu đã qua `aresample`/`atempo`, nền số hoá nhích lên; -40 dB
+#: là chỗ `_do_chu_tieng.py` đo được tách sạch giọng khỏi nền trên cả 2 lớp.
+NGUONG_IM_MOC_DB = -40.0
+
+
 def _atempo_chuoi(tempo: float) -> str:
     """Chuỗi filter atempo, chia tầng nếu > 2.0 (atempo chỉ nhận 0.5-2.0)."""
     parts = []
@@ -1994,15 +2000,36 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     Bất biến được KIỂM LẠI trên file đã ghi (`d_fin` đo bằng ffprobe), không
     tin số dự kiến: `atempo`/`atrim`/`aresample` làm tròn khác `d/k`.
 
-    Trả {manh, lech_dau_ms, lech_cuoi_ms, tempo_max, so_cau_ep, so_cau_muon}.
+    Trả {manh, lech_dau_ms, lech_cuoi_ms, tempo_max, so_cau_ep, so_cau_muon,
+    moc_tieng, im_duoi_chu_ms_*}.
     `manh` = [(mốc_giây, đường_dẫn_wav)] để bước 6 trộn.
+    `moc_tieng` = [(i, giây_BẮT_ĐẦU_NÓI, giây_HẾT_NÓI)] trên timeline đầu ra,
+    ĐO bằng `silencedetect` trên chính file vừa ghi. **Đây là NGUỒN MỐC DUY
+    NHẤT cho chữ mới** — xem `thay_audio_video`.
+
+    **`lech_dau_ms` TRƯỚC ĐÂY LÀ SỐ BỊA.** Bản cũ ghi thẳng
+    `lech_dau.append(0.0)` kèm chú thích "đặt ĐÚNG mốc gốc": đó là mốc ĐẶT
+    FILE, không phải mốc PHÁT RA TIẾNG. File sau `cat_le_im` vẫn còn `GIU_DAU`
+    (0,04 s) lề im, `atempo`/`aresample` còn làm nó lệch thêm. Đo thật trên
+    video Douyin 132 s: **42,7 ms trung bình, 70,2 ms lớn nhất** — nhỏ, nhưng
+    một con số ĐO ĐƯỢC thì lần sau nó to lên mới có ai thấy. Đây đúng họ bẫy
+    `astats`/`startswith` của cổng 44/53: **phép đo hỏng nguy hiểm hơn không
+    đo, vì nó phát chứng nhận.**
+
+    **`im_duoi_chu_ms` LÀ SỐ MỚI, VÀ NÓ MỚI LÀ CHỖ HỎNG THẬT.** = phần khung
+    câu còn chạy SAU KHI đã hết tiếng. Phụ đề cháy sẵn trong hình chạy theo
+    người nói GỐC, nên chỗ đó là "chữ chạy mà không ai nói". Đo trên chính
+    video anh Hùng chê: **tổng 22,52 s / 132,3 s**, câu tệ nhất **6.599 ms**
+    (khung 11,89 s mà tiếng chỉ 5,29 s).
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manh: list[tuple[float, str]] = []
+    moc_tieng: list[tuple[int, float, float]] = []
     lech_dau: list[float] = []
     lech_cuoi: list[float] = []
+    im_duoi: list[float] = []
     chong: list[float] = []
     temps: list[float] = []
     so_ep = so_muon = so_cat = 0
@@ -2065,10 +2092,18 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
             cat_lan += 1
             tran = min(tran, ke - a)          # siết lại rồi cắt thật
 
+        # MỐC TIẾNG THẬT — ĐO, không suy ra từ chỗ đặt file.
+        le_d, le_c, _tg = do_le_im(dst, nguong_db=NGUONG_IM_MOC_DB)
+        t_noi_a = a + le_d
+        t_noi_b = a + max(le_d + 0.05, d_fin - le_c)
+        moc_tieng.append((i, round(t_noi_a, 3), round(t_noi_b, 3)))
+
         manh.append((a, str(dst)))
         temps.append(tempo)
-        lech_dau.append(0.0)                  # đặt ĐÚNG mốc gốc
+        lech_dau.append(le_d * 1000.0)        # LỆCH ĐẦU THẬT (bản cũ bịa 0,0)
         lech_cuoi.append((a + d_fin - b) * 1000.0)
+        # CHỮ CÒN CHẠY MÀ ĐÃ HẾT TIẾNG — con số anh Hùng nghe ra
+        im_duoi.append(max(0.0, b - t_noi_b) * 1000.0)
         # CHỒNG LẤN = phần LIẾM SANG câu kế. Đây mới là con số nói lên
         # "timeline sai": kéo dài vào KHOẢNG LẶNG là cố ý (mượn thời gian),
         # còn đè lên câu sau mới là hỏng.
@@ -2082,9 +2117,15 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
 
     return {
         "manh": manh,
+        "moc_tieng": moc_tieng,
         "so_cau": len(manh), "bo_qua": bo_qua,
         "lech_dau_ms_tb": _tb([abs(x) for x in lech_dau]),
         "lech_dau_ms_max": round(max([abs(x) for x in lech_dau] or [0]), 1),
+        # CHỮ CHẠY MÀ KHÔNG CÓ TIẾNG — cấm giấu, đây là lỗi anh Hùng nghe ra
+        "im_duoi_chu_ms_tb": _tb(im_duoi),
+        "im_duoi_chu_ms_max": round(max(im_duoi or [0]), 1),
+        "im_duoi_chu_giay_tong": round(sum(im_duoi) / 1000.0, 2),
+        "so_cau_im_duoi_1s": sum(1 for x in im_duoi if x > 1000.0),
         # lệch cuối GỒM CẢ phần mượn khoảng lặng hợp lệ -> đọc kèm chồng lấn
         "lech_cuoi_ms_tb": _tb([abs(x) for x in lech_cuoi]),
         "lech_cuoi_ms_max": round(max([abs(x) for x in lech_cuoi] or [0]), 1),
@@ -2135,14 +2176,18 @@ def _dai_dong_lenh(args: list[str]) -> int:
 
 
 def _args_ghep(manh: list[tuple[float, str]], tong: float,
-               out_wav: str | Path, pcm: str = "pcm_s16le") -> list[str]:
+               out_wav: str | Path, pcm: str = "pcm_s16le",
+               sr: int = SR_TACH, ac: int = 2, cl: str = "stereo") -> list[str]:
     """Tham số ffmpeg rải `manh` lên 1 track im lặng dài `tong` giây.
 
     `normalize=0` BẮT BUỘC — không thì amix chia biên độ theo số đầu vào và
     giọng nhỏ dần theo số câu (bẫy đã ghi ở đầu file).
+
+    `sr`/`ac`/`cl` có tham số vì `dubbing._mix_track` (đường LỒNG TIẾNG) dùng
+    48k MONO và mắc ĐÚNG cùng bệnh — xem `ghep_track_am`.
     """
     args: list[str] = ["-f", "lavfi", "-t", f"{tong:.3f}",
-                       "-i", f"anullsrc=r={SR_TACH}:cl=stereo"]
+                       "-i", f"anullsrc=r={sr}:cl={cl}"]
     parts, labels = [], []
     for i, (start, wav) in enumerate(manh):
         args += ["-i", str(wav)]
@@ -2153,13 +2198,13 @@ def _args_ghep(manh: list[tuple[float, str]], tong: float,
     parts.append(f"[0:a]{''.join(labels)}amix=inputs={n}:duration=first:"
                  f"normalize=0[out]")
     args += ["-filter_complex", ";".join(parts), "-map", "[out]",
-             "-ac", "2", "-ar", str(SR_TACH), "-c:a", pcm,
+             "-ac", str(ac), "-ar", str(sr), "-c:a", pcm,
              str(out_wav)]
     return args
 
 
 def _chia_me(manh: list[tuple[float, str]], tong: float,
-             out_wav: str | Path) -> list[list[tuple[float, str]]]:
+             out_wav: str | Path, **kw) -> list[list[tuple[float, str]]]:
     """Chia `manh` thành các MẺ, mỗi mẻ dựng được bằng MỘT lệnh vừa ngân sách.
 
     Cắt theo ĐỘ DÀI DÒNG LỆNH THẬT (dựng thử rồi đo), không theo "N câu mỗi
@@ -2172,7 +2217,8 @@ def _chia_me(manh: list[tuple[float, str]], tong: float,
     for m in manh:
         thu = cur + [m]
         if cur and _dai_dong_lenh(
-                _args_ghep(thu, tong, out_wav, "pcm_f32le")) > NGAN_SACH_CMD:
+                _args_ghep(thu, tong, out_wav, "pcm_f32le",
+                           **kw)) > NGAN_SACH_CMD:
             me.append(cur)
             cur = [m]
         else:
@@ -2183,7 +2229,8 @@ def _chia_me(manh: list[tuple[float, str]], tong: float,
 
 
 def _cong_track(files: list[str], tong: float, out_wav: str | Path,
-                pcm: str = "pcm_s16le") -> None:
+                pcm: str = "pcm_s16le", sr: int = SR_TACH, ac: int = 2,
+                chay: Optional[Callable] = None) -> None:
     """CỘNG nhiều track cùng độ dài lại làm một (amix `normalize=0` = phép cộng).
 
     Tự chia mẻ nốt nếu danh sách file dài quá ngân sách — track mẻ mang tên
@@ -2191,6 +2238,7 @@ def _cong_track(files: list[str], tong: float, out_wav: str | Path,
     này ở đây thì hàm đúng với MỌI độ dài video, không phải "đủ dùng cho tới
     khi anh Hùng đưa video 3 tiếng".
     """
+    chay = chay or _ffmpeg
     lop = [str(f) for f in files]
     vong = 0
     tam_da_tao: list[Path] = []
@@ -2202,10 +2250,10 @@ def _cong_track(files: list[str], tong: float, out_wav: str | Path,
             fc = ("".join(f"[{i}:a]" for i in range(len(lop)))
                   + f"amix=inputs={len(lop)}:duration=first:normalize=0[out]")
             args += ["-filter_complex", fc, "-map", "[out]",
-                     "-ac", "2", "-ar", str(SR_TACH), "-c:a", pcm,
+                     "-ac", str(ac), "-ar", str(sr), "-c:a", pcm,
                      str(out_wav)]
             if len(lop) <= 2 or _dai_dong_lenh(args) <= NGAN_SACH_CMD:
-                _ffmpeg(args, "cộng các mẻ track giọng", timeout=900)
+                chay(args, "cộng các mẻ track giọng", timeout=900)
                 return
             # còn dài -> cộng từng nhóm 32 rồi lặp lại
             goc = Path(out_wav).parent
@@ -2216,7 +2264,7 @@ def _cong_track(files: list[str], tong: float, out_wav: str | Path,
                     moi.append(nhom[0])
                     continue
                 dst = goc / f"_cg{vong}_{k // 32:02d}.wav"
-                _cong_track(nhom, tong, dst, "pcm_f32le")
+                _cong_track(nhom, tong, dst, "pcm_f32le", sr, ac, chay)
                 tam_da_tao.append(dst)
                 moi.append(str(dst))
             lop, vong = moi, vong + 1
@@ -2250,21 +2298,41 @@ def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
     không cần tin lời hứa "kết quả giống nhau". Đường chia mẻ chỉ chạy ở đúng
     chỗ bản cũ ĐÃ CHẾT.
     """
-    args = _args_ghep(manh, tong, out_wav)
+    ghep_track_am(manh, tong, out_wav, ten_viec="ghép track giọng mới")
+
+
+def ghep_track_am(manh: list[tuple[float, str]], tong: float,
+                  out_wav: str | Path, sr: int = SR_TACH, ac: int = 2,
+                  cl: str = "stereo", chay: Optional[Callable] = None,
+                  ten_viec: str = "ghép track") -> None:
+    """Rải `manh` lên track im lặng `tong` giây, TỰ CHIA MẺ khi lệnh quá dài.
+
+    Dùng chung cho HAI đường mắc ĐÚNG cùng bệnh (rà ra 14/08/2026):
+      · `thay_giong._ghep_track_giong` — 44,1k STEREO (thay giọng nói)
+      · `dubbing._mix_track`           — 48k MONO (lồng tiếng / thuyết minh)
+
+    `chay` = hàm chạy ffmpeg CỦA MODULE GỌI. Mỗi module có `_ffmpeg` riêng
+    (khác lời báo lỗi, khác cách gắn tiến trình vào job để bấm Huỷ giết được
+    nó) — đừng ép cả hai dùng chung một hàm chạy chỉ để bớt một tham số.
+    """
+    chay = chay or _ffmpeg
+    kw = {"sr": sr, "ac": ac, "cl": cl}
+    args = _args_ghep(manh, tong, out_wav, **kw)
     if _dai_dong_lenh(args) <= NGAN_SACH_CMD:
-        _ffmpeg(args, "ghép track giọng mới", timeout=900)
+        chay(args, ten_viec, timeout=900)
         return
 
     goc = Path(out_wav).parent
-    me = _chia_me(manh, tong, out_wav)
+    me = _chia_me(manh, tong, out_wav, **kw)
     tam: list[Path] = []
     try:
         for k, nhom in enumerate(me):
             dst = goc / f"_me{k:02d}.wav"
-            _ffmpeg(_args_ghep(nhom, tong, dst, "pcm_f32le"),
-                    f"ghép track giọng mẻ {k + 1}/{len(me)}", timeout=900)
+            chay(_args_ghep(nhom, tong, dst, "pcm_f32le", **kw),
+                 f"{ten_viec} mẻ {k + 1}/{len(me)}", timeout=900)
             tam.append(dst)
-        _cong_track([str(t) for t in tam], tong, out_wav)
+        _cong_track([str(t) for t in tam], tong, out_wav, "pcm_s16le",
+                    sr, ac, chay)
     finally:
         # DỌN KỂ CẢ KHI LỖI GIỮA CHỪNG: mỗi mẻ là một wav dài bằng cả video
         # (video 8 phút ~ 85 MB), bỏ lại vài mẻ là đúng đường tới "ổ C đầy".
@@ -2335,8 +2403,27 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
                      che_chu: bool = False,
                      che_chu_cach: str = "mo",
                      che_chu_muc: float = 1.0,
-                     che_chu_log: Optional[list] = None) -> None:
+                     che_chu_log: Optional[list] = None,
+                     dong_chu: Optional[list] = None) -> None:
     """Thay TIẾNG của video. `che_chu=False` -> GIỮ NGUYÊN hình (`-c:v copy`).
+
+    `dong_chu` = [(giây_bắt_đầu, giây_kết_thúc, chữ), ...] — **MỐC LẤY TỪ
+    CHÍNH FILE GIỌNG ĐÃ SINH RA** (`khop_thoi_gian` trả `moc_tieng`, đo bằng
+    `silencedetect`), KHÔNG lấy từ bản chép lời gốc. Giọng nói ở đâu thì chữ
+    hiện ở đó — MỘT NGUỒN DUY NHẤT.
+
+    **VÌ SAO PHẢI VIẾT LẠI CHỮ, KHÔNG PHẢI CHỈ CHE** (lỗi anh Hùng nghe+xem
+    14/08/2026: *"chữ dịch ở dưới vẫn chạy mà trên đáng lý ra phải nói mà k có
+    nói, 1 lúc sau nó lại tự nói"*): phụ đề của video Douyin **cháy sẵn trong
+    ĐIỂM ẢNH** và đường này `-c:v copy` nên nó giữ NGUYÊN mốc GỐC, trong khi
+    giọng thì đặt lại theo câu chép lời. Hai bên lệch nhau ở đúng 2 chỗ ĐO
+    ĐƯỢC: câu dài (khung 11,89 s, tiếng 5,29 s -> **6,6 giây chữ chạy không
+    tiếng**) và LỖ bản chép lời (Groq bỏ sót 9,56 s liền). Che-mà-không-viết
+    thì hết lệch nhưng người xem **mất trắng** phần chữ; che-rồi-viết-theo-
+    giọng thì chữ và tiếng không thể lệch nhau NỮA theo cấu tạo.
+
+    Chữ mới CHỈ được viết khi CÓ CHE (`loc` khác rỗng): viết đè lên chữ cũ mà
+    không che là **HAI LỚP CHỮ** chồng nhau, tệ hơn hẳn.
 
     **VÌ SAO CHE CHỮ PHẢI Ở ĐÂY, KHÔNG PHẢI Ở `ffmpeg_utils`** (lỗi anh Hùng
     báo 14/08/2026: *"chữ trong video vẫn k bị mờ"*): `che_chu` tới v2.27.1
@@ -2390,6 +2477,27 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
         thay_audio_video(video_goc, audio_moi, video_ra, che_chu=False)
         return
 
+    # --- CHỮ MỚI THEO MỐC GIỌNG (chỉ khi ĐÃ che — cấm 2 lớp chữ) ---
+    chuoi = [loc]
+    so_dong = 0
+    if dong_chu:
+        try:
+            d_viet = dai if (dai is not None and getattr(dai, "co_chu", False)
+                             and dai.cao_dai > 0) else None
+            ass = Path(video_ra).with_suffix(".chu_theo_giong.ass")
+            if d_viet is not None and _CC.ghi_ass(dong_chu, ass, d_viet):
+                # nối bằng DẤU PHẨY: `loc` là GRAPH kết bằng `overlay=`, nối
+                # `;subtitles=` là đẻ chuỗi RỜI không đầu vào (bẫy đã ghi ở
+                # `che_chu.che_va_viet`). Phẩy = viết chữ SAU khi che xong.
+                chuoi.append(f"subtitles='{_CC._esc_loc(ass)}'")
+                so_dong = len(dong_chu)
+        except Exception as e:      # noqa: BLE001 — chữ mới KHÔNG được giết lượt
+            so_dong = 0
+            if che_chu_log:
+                che_chu_log[-1]["chu_loi"] = str(e)[:200]
+    if che_chu_log:
+        che_chu_log[-1]["so_dong_chu"] = so_dong
+
     from app.core.ffmpeg_utils import detect_encoder
     enc = detect_encoder()
     if enc == "h264_nvenc":
@@ -2399,10 +2507,44 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
         ve = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
               "-pix_fmt", "yuv420p"]
     _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
-             "-filter_complex", f"[0:v]{loc}[vout]",
+             "-filter_complex", f"[0:v]{','.join(chuoi)}[vout]",
              "-map", "[vout]", "-map", "1:a:0", *ve,
              "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_ra)],
             "thay tiếng + che chữ vào video", timeout=3600)
+
+
+#: Chữ mới phải nằm ít nhất bấy nhiêu giây trên màn hình — câu đọc 0,2 giây mà
+#: chữ chớp 0,2 giây thì không ai đọc kịp. Nới về SAU (chưa tới câu kế) nên
+#: không bao giờ che mất chữ của câu sau.
+CHU_TOI_THIEU_S = 0.90
+
+#: Chừa lại trước mốc nói của câu KẾ — chữ hai câu dính nhau nhìn như nhảy.
+CHU_CHUA_TRUOC_S = 0.06
+
+
+def dong_chu_theo_giong(moc_tieng: list, texts: list) -> list:
+    """[(bắt_đầu, kết_thúc, chữ)] cho `che_chu.ghi_ass` — MỐC TỪ GIỌNG.
+
+    `moc_tieng` = `khop_thoi_gian()["moc_tieng"]` = [(i, giây_nói, giây_hết)]
+    ĐO bằng `silencedetect` trên chính file wav đã khớp. `texts` = lời CUỐI
+    CÙNG app đọc lên (`rut_gon_vua_khung()["texts"]`).
+
+    Hàm THUẦN, không đụng đĩa — để cổng thử phá gọi thẳng được: đưa mốc GỐC
+    (`cau[i]["start"]`) vào đây là bảng lệch phải ĐỎ.
+    """
+    ra: list = []
+    n = len(moc_tieng)
+    for k, (i, a, b) in enumerate(moc_tieng):
+        t = str(texts[i]).strip() if 0 <= i < len(texts) else ""
+        if not t:
+            continue
+        b = max(float(b), float(a) + CHU_TOI_THIEU_S)
+        if k + 1 < n:                      # KHÔNG được lấn sang câu kế
+            b = min(b, float(moc_tieng[k + 1][1]) - CHU_CHUA_TRUOC_S)
+        if b <= a:
+            b = float(a) + 0.20
+        ra.append((round(float(a), 3), round(b, 3), t))
+    return ra
 
 
 #: Tên tiếng Việt của cách che — cho nhật ký, KHÔNG EMOJI.
@@ -2445,10 +2587,14 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      thu_muc_lam: str | Path = "", voice: str = "",
                      cach_tach: str = "auto", giu_file_tam: bool = False,
                      che_chu: bool = False, che_chu_cach: str = "mo",
-                     che_chu_muc: float = 1.0,
+                     che_chu_muc: float = 1.0, viet_chu: bool = True,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
+
+    `viet_chu=True` (mặc định) + `che_chu=True` -> sau khi che dòng chữ cháy
+    sẵn thì VIẾT LẠI bản dịch vào đúng dải đó, mốc lấy từ CHÍNH GIỌNG vừa
+    sinh. Không bật che chữ thì cờ này vô hiệu (viết đè lên chữ cũ = 2 lớp).
 
     KHÔNG tự xoá/đổi tên gì cả — việc đó do `thay_giong_thu_muc` làm SAU KHI
     `kiem_video_ra` đã xác nhận file mới hợp lệ.
@@ -2513,6 +2659,12 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                                on_progress=lambda p, m: prog(0.74 + 0.06 * p, m))
         kq["rut_gon"] = {k: v for k, v in rg.items()
                          if k not in ("texts", "files", "ok")}
+        # LỜI CUỐI CÙNG app THẬT SỰ đọc lên (sau dịch + rút gọn). Không có mục
+        # này thì không cách nào đối chiếu "app ĐỊNH nói gì" với "file phát ra
+        # cái gì" — đúng chỗ mù đã để lỗi dịch lệch bậc đi tới tận tai anh Hùng
+        # mà mọi cổng vẫn xanh. `doc_nhanh_vua_khung` chỉ đọc lại NHANH HƠN,
+        # không đổi một chữ nào, nên đây là lời cuối.
+        kq["loi_cuoi"] = list(rg["texts"])
 
         # --- bước 4c: đọc NHANH lại câu còn dài (thay cho ép atempo méo tiếng)
         prog(0.79, "Đọc nhanh lại câu còn dài quá khung...")
@@ -2549,9 +2701,16 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # (`DAU_DA_LAM`) vẫn nhận ra.
         ra = tam_goc / f"ban{DAU_DA_LAM}{video_in.suffix}"
         _cc_log: list = []
+        # CHỮ MỚI LẤY MỐC TỪ CHÍNH FILE GIỌNG (`kh["moc_tieng"]` đo bằng
+        # silencedetect), KHÔNG lấy `cau[i]["start"]` của bản chép lời gốc.
+        # Đây là cả điểm mấu chốt của bản vá: một nguồn mốc duy nhất.
+        dong_chu = dong_chu_theo_giong(kh.get("moc_tieng") or [],
+                                       rg["texts"]) if viet_chu else []
+        kq["chu_theo_giong"] = {"bat": bool(viet_chu),
+                                "so_dong": len(dong_chu)}
         thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
                          che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
-                         che_chu_log=_cc_log)
+                         che_chu_log=_cc_log, dong_chu=dong_chu)
         kq["che_chu"] = _cc_log[0] if _cc_log else {"bat": False}
         kq["kiem"] = kiem_video_ra(ra, tong)
         kq["ra"] = str(ra)

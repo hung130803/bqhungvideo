@@ -391,19 +391,46 @@ def ca6_pha(moc, ten_moc: str) -> None:
     finally:
         tg.NGAN_SACH_CMD = cu
 
-    # QUÉT TĨNH bằng AST: `_ghep_track_giong` phải THẬT SỰ hỏi độ dài dòng lệnh
-    # (tìm bằng chuỗi thì đổi `<=` thành `>=` vẫn xanh — bài học cổng 56d).
+    # QUÉT TĨNH bằng AST: đường ghép track phải THẬT SỰ hỏi độ dài dòng lệnh.
+    # Tìm bằng CHUỖI thì đổi `<=` thành `>=` vẫn xanh (bài học cổng 56d).
+    # PHẢI ĐI THEO ĐỒ THỊ GỌI, đừng chỉ soi thân MỘT hàm: bản đầu của ca này
+    # soi đúng `_ghep_track_giong`, tới lúc gộp chung với `dubbing` thì thân nó
+    # còn mỗi `ghep_track_am(...)` -> cổng ĐỎ OAN trong khi bản vá vẫn nguyên.
+    # Cổng đỏ oan thì người ta bỏ qua nó, nguy hơn hẳn (cổng 41/47/51/54).
     import ast
     cay = ast.parse((REPO / "app" / "core" / "thay_giong.py").read_text(
         encoding="utf-8"))
-    ham = next((n for n in ast.walk(cay)
-                if isinstance(n, ast.FunctionDef)
-                and n.name == "_ghep_track_giong"), None)
-    goi = {n.func.id for n in ast.walk(ham) if ham is not None
-           and isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-    bao("`_ghep_track_giong` có gọi `_dai_dong_lenh` (AST)",
+    than = {n.name: n for n in ast.walk(cay)
+            if isinstance(n, ast.FunctionDef)}
+
+    def goi_tu(ten: str, sau: int = 3) -> set:
+        """Mọi hàm với tới được từ `ten` (đi xuống `sau` tầng gọi nội bộ)."""
+        n = than.get(ten)
+        if n is None or sau < 0:
+            return set()
+        truc = {c.func.id for c in ast.walk(n)
+                if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+        ra = set(truc)
+        for t in truc:
+            if t in than and t != ten:
+                ra |= goi_tu(t, sau - 1)
+        return ra
+
+    goi = goi_tu("_ghep_track_giong")
+    bao("đường ghép track có gọi `_dai_dong_lenh` (AST, theo đồ thị gọi)",
         "_dai_dong_lenh" in goi, ", ".join(sorted(goi)) or "(không hàm nào)")
-    bao("`_ghep_track_giong` có gọi `_chia_me` (AST)", "_chia_me" in goi)
+    bao("đường ghép track có gọi `_chia_me` (AST)", "_chia_me" in goi)
+
+    # và `dubbing._mix_track` phải ĐI QUA cửa chung, không được dựng lệnh lại
+    cay2 = ast.parse((REPO / "app" / "core" / "dubbing.py").read_text(
+        encoding="utf-8"))
+    mt = next((n for n in ast.walk(cay2)
+               if isinstance(n, ast.FunctionDef) and n.name == "_mix_track"),
+              None)
+    g2 = {c.func.id for c in ast.walk(mt) if mt is not None
+          and isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    bao("`dubbing._mix_track` đi qua `ghep_track_am` (AST)",
+        "ghep_track_am" in g2, ", ".join(sorted(g2)) or "(không hàm nào)")
 
 
 def ca7_don_rac() -> None:
@@ -464,6 +491,102 @@ def ca8_max_path() -> None:
     print(f"       dài nhất: {max((len(str(p)), str(p)) for p in ds)[1][:150]}")
 
 
+def ca9_dubbing() -> None:
+    """CA 9 — `dubbing._mix_track` mắc ĐÚNG cùng bệnh (rà ra khi soi chỗ khác).
+
+    Đường LỒNG TIẾNG / thuyết minh cũng đưa 1 `-i <wav>` mỗi CỤM. Cổng 54 đo
+    lời Trung: 21 part ra **197 cụm** — thừa sức chạm trần trên máy anh Hùng.
+    """
+    print("\n[CA 9] `dubbing._mix_track` — CÙNG BỆNH, phải vá theo")
+    from app.core import dubbing as db
+
+    moc = os.environ.get("BQ_MOC_REF", "v2.27.1")
+    r = subprocess.run(["git", "-C", str(REPO), "show",
+                        f"{moc}:app/core/dubbing.py"],
+                       capture_output=True, creationflags=_NOWIN, timeout=60)
+    out = (r.stdout or b"").decode("utf-8", errors="replace")
+    dbm = None
+    if r.returncode == 0 and len(out) > 5000:
+        f = SB / "db_moc.py"
+        f.write_text(out, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("db_moc", str(f))
+        if spec and spec.loader:
+            dbm = importlib.util.module_from_spec(spec)
+            sys.modules["db_moc"] = dbm
+            try:
+                spec.loader.exec_module(dbm)
+            except Exception as e:                           # noqa: BLE001
+                bao("nạp được dubbing.py của mốc", False,
+                    f"{type(e).__name__}: {e}")
+                dbm = None
+    if dbm is None:
+        bao("nạp được dubbing.py của mốc", False, f"git rc={r.returncode}")
+
+    goc = SB / "ca9"
+    kh = duong_khop(goc, TEN_DAI) / "dub"
+    n = 260
+    manh = lam_manh(n, kh)
+    tong = n * 0.5 + 1.0
+
+    if dbm is not None:
+        try:
+            dbm._mix_track(manh, tong, str(kh.parent / "moc.wav"))
+            bao(f"`dubbing._mix_track` bản mốc `{moc}` NỔ WinError 206", False,
+                "nó chạy được -> ca này không tái hiện được")
+        except OSError as e:
+            bao(f"`dubbing._mix_track` bản mốc `{moc}` NỔ WinError 206",
+                getattr(e, "winerror", None) == 206,
+                f"{type(e).__name__} WinError {getattr(e, 'winerror', None)}")
+        except Exception as e:                               # noqa: BLE001
+            bao(f"`dubbing._mix_track` bản mốc `{moc}` NỔ WinError 206", False,
+                f"nổ khác loại: {type(e).__name__}: {str(e)[:80]}")
+
+    ra = kh.parent / "moi.wav"
+    try:
+        db._mix_track(manh, tong, str(ra))
+        bao("`dubbing._mix_track` bản MỚI chạy trót lọt",
+            ra.exists() and ra.stat().st_size > 10240,
+            f"{ra.stat().st_size // 1024 if ra.exists() else 0} KiB")
+    except Exception as e:                                   # noqa: BLE001
+        bao("`dubbing._mix_track` bản MỚI chạy trót lọt", False,
+            f"{type(e).__name__}: {e}")
+        return
+    # 48k MONO — đừng để lượt tổng quát hoá đổi mất định dạng track
+    from app.core.thay_giong import probe_duration
+    r2 = _test_guard.chay_that(
+        [__import__("config").settings.FFPROBE_PATH, "-v", "error",
+         "-select_streams", "a:0", "-show_entries",
+         "stream=sample_rate,channels", "-of", "csv=p=0", str(ra)],
+        capture_output=True, text=True, timeout=60, creationflags=_NOWIN)
+    bao("track ra vẫn 48000 Hz MONO", (r2.stdout or "").strip() == "48000,1",
+        (r2.stdout or "").strip())
+    bao("đúng độ dài", abs(probe_duration(ra) - tong) < 0.25,
+        f"{probe_duration(ra):.3f}s (mong {tong:.3f}s)")
+    bao("mảnh CUỐI (mẻ cuối) có tiếng",
+        do_rms(ra, (n - 1) * 0.5 + 0.02, 0.15) > 0.01,
+        f"RMS {do_rms(ra, (n - 1) * 0.5 + 0.02, 0.15):.5f}")
+
+    # BẤT BIẾN: cụm ÍT -> dòng lệnh giống mốc TỪNG KÝ TỰ
+    if dbm is not None:
+        it = manh[:25]
+        bat: dict[str, list[str]] = {}
+
+        def _bat(ten):
+            def f(args, what, timeout=600):
+                bat[ten] = list(args)
+            return f
+        cu_moi, cu_moc = db._ffmpeg, dbm._ffmpeg
+        try:
+            db._ffmpeg, dbm._ffmpeg = _bat("moi"), _bat("moc")
+            db._mix_track(it, tong, str(kh.parent / "x.wav"))
+            dbm._mix_track(it, tong, str(kh.parent / "x.wav"))
+        finally:
+            db._ffmpeg, dbm._ffmpeg = cu_moi, cu_moc
+        bao("cụm ÍT -> dòng lệnh GIỐNG TỪNG KÝ TỰ bản mốc",
+            bat.get("moi") == bat.get("moc"),
+            f"{len(bat.get('moi') or [])} vs {len(bat.get('moc') or [])} tham số")
+
+
 def main() -> int:
     print("=" * 78)
     print("CỔNG 59 — TÊN VIDEO DÀI / VIDEO DÀI KHÔNG ĐƯỢC GIẾT LƯỢT THAY GIỌNG")
@@ -479,6 +602,7 @@ def main() -> int:
         ca6_pha(moc, ten_moc)
         ca7_don_rac()
         ca8_max_path()
+        ca9_dubbing()
     finally:
         shutil.rmtree(SB, ignore_errors=True)
     print("\n" + "=" * 78)

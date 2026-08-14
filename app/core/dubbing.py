@@ -2173,21 +2173,23 @@ def _fit_chunk(src_mp3: str, dst_wav: str, budget: float, hard_max: float,
 def _mix_track(chunk_wavs: list[tuple[float, str]], total: float,
                out_wav: str) -> None:
     """Ghép các cụm vào 1 track: nền im lặng anullsrc dài ĐÚNG total, mỗi cụm
-    adelay theo mốc start rồi amix (normalize=0 giữ nguyên âm lượng)."""
-    args: list[str] = ["-f", "lavfi", "-t", f"{total:.3f}",
-                       "-i", "anullsrc=r=48000:cl=mono"]
-    parts, labels = [], []
-    for i, (start, wav) in enumerate(chunk_wavs):
-        args += ["-i", wav]
-        ms = max(0, int(round(start * 1000)))
-        parts.append(f"[{i + 1}:a]adelay={ms}:all=1[d{i}]")
-        labels.append(f"[d{i}]")
-    n = len(chunk_wavs) + 1
-    parts.append(f"[0:a]{''.join(labels)}amix=inputs={n}:duration=first:"
-                 f"normalize=0[out]")
-    args += ["-filter_complex", ";".join(parts), "-map", "[out]",
-             "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", str(out_wav)]
-    _ffmpeg(args, "ghép track lồng tiếng", timeout=600)
+    adelay theo mốc start rồi amix (normalize=0 giữ nguyên âm lượng).
+
+    **CÙNG BỆNH `WinError 206` VỚI `thay_giong._ghep_track_giong` — vá 14/08/
+    2026 khi rà lại.** Hàm này cũng đưa MỘT `-i <đường dẫn wav>` vào dòng lệnh
+    cho MỖI CỤM, mà số cụm phình theo độ dài video (cổng 54 đo lời Trung: 21
+    part ra **197 cụm**). `CreateProcess` từ chối từ ~32.767 ký tự rồi ném
+    `FileNotFoundError [WinError 206] The filename or extension is too long` —
+    tên lỗi nghe như `MAX_PATH` 260 nên rất dễ chẩn sai (xem cổng 59).
+
+    Việc dựng lệnh + chia mẻ nay nằm ở `thay_giong.ghep_track_am` để HAI đường
+    không lệch nhau. Vẫn truyền `_ffmpeg` CỦA MODULE NÀY vào: nó có lời báo lỗi
+    riêng và gắn tiến trình vào job (bấm Huỷ giết được ffmpeg).
+    """
+    from app.core.thay_giong import ghep_track_am
+
+    ghep_track_am(chunk_wavs, total, out_wav, sr=48000, ac=1, cl="mono",
+                  chay=_ffmpeg, ten_viec="ghép track lồng tiếng")
 
 
 def _loudnorm_wav(wav_path: str, i_lufs: float = -16.0) -> None:
