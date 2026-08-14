@@ -534,9 +534,30 @@ def ca_bat_bien(src: str, td: str) -> None:
                        creationflags=_NOWIN, timeout=90)
     ma = (r.stdout or b"").decode("utf-8", "replace")
     hien = (REPO / "app" / "core" / "hieu_ung.py").read_text(encoding="utf-8")
-    bao(f"bản mốc `{moc}` KHÁC bản đang test (không tự chấm mình)",
-        bool(ma) and ma != hien,
-        f"{len(ma)} vs {len(hien)} ký tự")
+    # "MỐC TRÙNG BẢN ĐANG TEST" CÓ HAI NGUYÊN NHÂN, ĐỪNG GỘP (bài học cổng 36
+    # CA 8, lặp lại ở cổng 56 CA 16/CA 23-3'). Gộp lại thì MỌI bản phát hành
+    # sau không động tới `hieu_ung.py` đều ĐỎ OAN — mà cổng đỏ oan thì người ta
+    # bỏ qua nó, nguy hiểm hơn hẳn.
+    #  · HEAD là TỔ TIÊN của mốc = mốc ĐÃ NUỐT nhánh này -> "so nó với chính
+    #    nó" -> FAIL như cũ.
+    #  · KHÔNG phải tổ tiên = bản này đơn giản KHÔNG SỬA `hieu_ung.py` -> hai
+    #    bản giống nhau TỪNG BYTE thì không thể ra hành vi khác, tức bất biến
+    #    đúng DO XÂY DỰNG -> ĐẠT.
+    # ĐÃ GẶP THẬT ở v2.27.0: lượt hồi quy đặt `BQ_MOC_REF=v2.26.0` cho CẢ LƯỢT
+    # (đúng cho `che_chu.py` vì file đó có sửa) nhưng `hieu_ung.py` thì không
+    # sửa -> trùng y hệt -> cổng này HỎNG 1 oan. Một biến môi trường dùng chung
+    # cho nhiều cổng thì mỗi cổng phải tự chịu được mọi mốc hợp lệ.
+    _to_tien = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", moc], cwd=str(REPO),
+        capture_output=True, creationflags=_NOWIN, timeout=90).returncode == 0
+    bao(f"mốc `{moc}` KHÔNG được là chính nhánh này (chống tự chấm mình)",
+        bool(ma) and not (ma == hien and _to_tien),
+        f"{len(ma)} vs {len(hien)} ký tự"
+        + ("" if ma != hien else
+           (" — TRÙNG VÀ HEAD là tổ tiên của mốc -> mốc đã nuốt nhánh này, "
+            "phép so BẤT BIẾN vô nghĩa" if _to_tien else
+            " — TRÙNG nhưng HEAD KHÔNG phải tổ tiên của mốc -> bản này KHÔNG "
+            "SỬA `hieu_ung.py`, bất biến đúng DO XÂY DỰNG")))
     if ma:
         import types
         mod = types.ModuleType("_hu_moc")

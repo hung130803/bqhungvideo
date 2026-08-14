@@ -19,6 +19,18 @@ os.environ["WHISPER_PROVIDER"] = "groq"          # chép lời nhanh bằng key 
 # chạy quá 420s -> cổng báo FAIL oan (đo: job kẹt 'running', thư mục
 # models--Systran--faster-whisper-large-v3 vừa được tạo). Nay CHUYỀN key qua
 # BIẾN MÔI TRƯỜNG của tiến trình test (không ghi ra file nào — đúng luật key).
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE. Cổng này CÓ
+# `import _test_guard` (guard đã reconfigure utf-8) nhưng nó `print` từ dòng 29
+# — TRƯỚC lời import đó — nên vẫn chết cp1252 khi chạy hồi quy hàng loạt.
+# Quét tĩnh "có import _test_guard không" KHÔNG bắt được ca này: phải hỏi
+# "reconfigure có chạy TRƯỚC print ĐẦU TIÊN không".
+import sys as _sys_utf8
+for _f in (_sys_utf8.stdout, _sys_utf8.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 _env_that = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BQHungVideo" / ".env"
 if _env_that.exists():
     for _ln in _env_that.read_text(encoding="utf-8", errors="replace").splitlines():
