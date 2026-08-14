@@ -80,6 +80,12 @@ def tim_video_trung():
         g = _dai(p)
         ung.append((g, p))
     ung.sort()
+    # anh Hùng chỉ đích danh 2 file này -> ưu tiên tuyệt đối, không tự đoán
+    for khoa in ("一只手表", "第12集"):
+        for g, p in ung:
+            if khoa in p.name and g > 60.0:
+                print(f"  (ưu tiên file anh Hùng chỉ: {khoa})")
+                return (g, p)
     tren60 = [(g, p) for g, p in ung if g > 60.0]
     print(f"  ứng viên tiếng Trung: {len(ung)} file · trên 60s: {len(tren60)}")
     for g, p in ung:
