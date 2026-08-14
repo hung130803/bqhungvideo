@@ -20,16 +20,27 @@ from app.core.thay_giong import TEN_THU_MUC_TAM
 
 
 def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
-                     thu_muc_ra: str | Path) -> str:
+                     thu_muc_ra: str | Path, che_chu: bool = False,
+                     che_chu_cach: str = "mo", che_chu_muc: float = 1.0) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
     không được nuốt vào job cũ (bài học cổng 56e — cờ không vào hash chống
     trùng thì bấm lại chẳng job nào chạy mà không một dòng báo).
+
+    **CỜ CHE CHỮ NỐI VÀO ĐUÔI, CHỈ KHI THẬT SỰ BẬT** — y hệt cách
+    `services.enqueue_export` làm (cổng 56e): nối vô điều kiện là đổi khoá của
+    MỌI job cũ đang nằm trong DB. Mức mờ đi qua `chuan_muc_mo` TRƯỚC khi băm
+    vì 0,30 và 0,50 đều bị SÀN 0,60 kéo về cùng một chỗ — băm giá trị THÔ là
+    đẻ job chạy lại cho một thay đổi KHÔNG TỒN TẠI.
     """
     d = os.path.abspath(str(video)).lower()
     r = os.path.abspath(str(thu_muc_ra)).lower()
-    return f"thaygiong:{d}:{dich_sang}:{voice}:{r}"
+    sig = f"thaygiong:{d}:{dich_sang}:{voice}:{r}"
+    if che_chu:
+        from app.core.che_chu import chuan_cach, chuan_muc_mo
+        sig += f":cc={chuan_cach(che_chu_cach)}:{chuan_muc_mo(che_chu_muc):.2f}"
+    return sig
 
 
 def thu_muc_lam_cho(video: str | Path, thu_muc_ra: str | Path) -> str:
@@ -52,7 +63,9 @@ def can_chay(video: str | Path, lam_lai: bool = False) -> bool:
 
 def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             thu_muc_ra: str | Path = "", kenh: str = "",
-            lam_lai: bool = False) -> Optional[int]:
+            lam_lai: bool = False, che_chu: bool = False,
+            che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
+            ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
     `lam_lai=True` xoá mục trong sổ TRƯỚC khi xếp — nếu không thì job chạy
@@ -71,13 +84,20 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     if pool is None:
         return None
     os.makedirs(ra, exist_ok=True)
+    tt = {"video": v, "dich_sang": dich_sang, "voice": voice,
+          "cach_tach": "auto", "thay_goc": False, "kenh": kenh,
+          "thung_rac": "", "thu_muc_ra": ra,
+          "thu_muc_lam": thu_muc_lam_cho(v, ra)}
+    if che_chu:
+        # CHỈ ghi khoá khi BẬT: payload không mang khoá = job cũ/lối gọi chưa
+        # nối vẫn chạy y như trước (`jobs._thay_giong` đọc bằng `.get`).
+        tt["che_chu"] = True
+        tt["che_chu_cach"] = che_chu_cach
+        tt["che_chu_muc"] = che_chu_muc
     return pool.enqueue(
-        "thay_giong",
-        {"video": v, "dich_sang": dich_sang, "voice": voice,
-         "cach_tach": "auto", "thay_goc": False, "kenh": kenh,
-         "thung_rac": "", "thu_muc_ra": ra,
-         "thu_muc_lam": thu_muc_lam_cho(v, ra)},
+        "thay_giong", tt,
         needs_gpu=False, priority=5,
-        dedup_key=khoa_chong_trung(v, dich_sang, voice, ra),
+        dedup_key=khoa_chong_trung(v, dich_sang, voice, ra, che_chu,
+                                   che_chu_cach, che_chu_muc),
         skip_if_done=False, max_attempts=1,
     )

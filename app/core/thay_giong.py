@@ -2114,12 +2114,82 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
 # ==================================================================
 
 def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
-                     video_ra: str | Path) -> None:
-    """Thay TIẾNG của video, GIỮ NGUYÊN hình (`-c:v copy`, không encode lại)."""
+                     video_ra: str | Path,
+                     che_chu: bool = False,
+                     che_chu_cach: str = "mo",
+                     che_chu_muc: float = 1.0,
+                     che_chu_log: Optional[list] = None) -> None:
+    """Thay TIẾNG của video. `che_chu=False` -> GIỮ NGUYÊN hình (`-c:v copy`).
+
+    **VÌ SAO CHE CHỮ PHẢI Ở ĐÂY, KHÔNG PHẢI Ở `ffmpeg_utils`** (lỗi anh Hùng
+    báo 14/08/2026: *"chữ trong video vẫn k bị mờ"*): `che_chu` tới v2.27.1
+    CHỈ được nối vào đường XUẤT CLIP (`export_canvas_clip`). Đường THAY TIẾNG
+    là đường KHÁC — nó không cắt clip, không vẽ lớp chữ, và tới đây thì
+    `grep che_chu app/core/thay_giong.py` ra **0 kết quả**. Nên bật ô trong
+    "Chỉnh mẫu" rồi bấm "Thay giọng nói" thì chữ cháy sẵn KHÔNG BAO GIỜ bị
+    che, mà cũng KHÔNG một dòng báo — đúng họ bẫy "app vẫn chạy, cổng vẫn
+    xanh" cả repo này đang chống.
+
+    **GIÁ PHẢI TRẢ, NÓI THẲNG:** che chữ thì BẮT BUỘC encode lại luồng hình
+    (không có cách nào bôi mờ điểm ảnh mà vẫn `-c:v copy`). Vì vậy cờ TẮT
+    phải giữ lệnh ffmpeg **giống từng ký tự** bản cũ — đó là bất biến cổng 59
+    đo, không phải lời hứa.
+
+    `segs=[(0, độ_dài)]`: đường này giữ NGUYÊN video nên thời gian ĐẦU RA
+    trùng thời gian NGUỒN, `hop_theo_doan` quy đổi với `off=0` là đúng. Nhờ
+    vậy hộp che vẫn BÁM THEO MỐC (chữ chạy tới đâu che tới đó) chứ không phải
+    một dải ngang suốt phim.
+    """
+    if not che_chu:
+        _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
+                 "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                 "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_ra)],
+                "thay tiếng vào video", timeout=1800)
+        if che_chu_log is not None:
+            che_chu_log.append({"bat": False, "che": False, "ly_do": ""})
+        return
+
+    loc, dai, ly_do = "", None, ""
+    try:
+        from app.core import che_chu as _CC
+        dur = probe_duration(video_goc)
+        segs = [(0.0, dur)] if dur > 0 else None
+        loc, dai, ly_do = _CC.loc_cho_xuat(
+            video_goc, cach=che_chu_cach, muc=che_chu_muc, segs=segs)
+    except Exception as e:      # noqa: BLE001 — che chữ KHÔNG được giết lượt
+        loc, dai = "", None
+        ly_do = f"dò/che chữ lỗi ({e}) -> KHÔNG che"
+    if che_chu_log is not None:
+        che_chu_log.append({
+            "bat": True, "che": bool(loc),
+            "cach": _CC_TEN.get((che_chu_cach or "mo").lower(), "làm mờ"),
+            "muc": float(che_chu_muc or 0), "ly_do": ly_do,
+            "dai": (dai.dict() if dai is not None
+                    and hasattr(dai, "dict") else None)})
+
+    if not loc:
+        # KHÔNG dò ra chữ -> đừng encode lại vô ích (che oan video sạch là ca
+        # sai đắt nhất của tính năng này: 0/76 ở cổng 56).
+        thay_audio_video(video_goc, audio_moi, video_ra, che_chu=False)
+        return
+
+    from app.core.ffmpeg_utils import detect_encoder
+    enc = detect_encoder()
+    if enc == "h264_nvenc":
+        ve = ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr",
+              "-cq", "21", "-pix_fmt", "yuv420p"]
+    else:
+        ve = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+              "-pix_fmt", "yuv420p"]
     _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
-             "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+             "-filter_complex", f"[0:v]{loc}[vout]",
+             "-map", "[vout]", "-map", "1:a:0", *ve,
              "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_ra)],
-            "thay tiếng vào video", timeout=1800)
+            "thay tiếng + che chữ vào video", timeout=3600)
+
+
+#: Tên tiếng Việt của cách che — cho nhật ký, KHÔNG EMOJI.
+_CC_TEN = {"mo": "làm mờ", "khoi": "phủ khối", "hat": "làm hạt"}
 
 
 def kiem_video_ra(video_ra: str | Path, do_dai_goc: float,
@@ -2157,6 +2227,8 @@ def kiem_video_ra(video_ra: str | Path, do_dai_goc: float,
 def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      thu_muc_lam: str | Path = "", voice: str = "",
                      cach_tach: str = "auto", giu_file_tam: bool = False,
+                     che_chu: bool = False, che_chu_cach: str = "mo",
+                     che_chu_muc: float = 1.0,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
@@ -2248,9 +2320,14 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                              tam_goc / "tieng_moi.wav")
         kq["tron"] = au
 
-        prog(0.96, "Ghép tiếng mới vào video...")
+        prog(0.96, "Ghép tiếng mới vào video..." if not che_chu
+             else "Che chữ cháy sẵn rồi ghép tiếng mới vào video...")
         ra = tam_goc / f"{video_in.stem}__thaygiong{video_in.suffix}"
-        thay_audio_video(video_in, au["ra"], ra)
+        _cc_log: list = []
+        thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
+                         che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
+                         che_chu_log=_cc_log)
+        kq["che_chu"] = _cc_log[0] if _cc_log else {"bat": False}
         kq["kiem"] = kiem_video_ra(ra, tong)
         kq["ra"] = str(ra)
         kq["ok"] = True
@@ -2329,6 +2406,8 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          voice: str = "", cach_tach: str = "auto",
                          thay_goc: bool = True, kenh: str = "",
                          thung_rac: str = "", thu_muc_lam: str | Path = "",
+                         che_chu: bool = False, che_chu_cach: str = "mo",
+                         che_chu_muc: float = 1.0,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -2345,6 +2424,8 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
     v = Path(video_in)
     r = thay_giong_video(v, dich_sang=dich_sang, voice=voice,
                          cach_tach=cach_tach, thu_muc_lam=thu_muc_lam,
+                         che_chu=che_chu, che_chu_cach=che_chu_cach,
+                         che_chu_muc=che_chu_muc,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r

@@ -53,9 +53,10 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QFileDialog, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox, QProgressBar,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
+    QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
+    QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
+    QTableWidgetItem, QVBoxLayout,
 )
 
 from app.core import tg_chay, tg_so
@@ -72,6 +73,9 @@ K_THUMUC_RA = "tg_thu_muc_ra"
 K_NGON_NGU = "tg_ngon_ngu"
 K_GIONG = "tg_giong"
 K_LUONG = "tg_luong"
+K_CHE_CHU = "tg_che_chu"
+K_CHE_CACH = "tg_che_cach"
+K_CHE_MUC = "tg_che_muc"
 
 #: Nhãn mục đầu combo giọng. Phải NÓI RA mặc định thật, không ghi trơn
 #: "(tự chọn)" — bài học cổng 16 v2.6.25a: user tưởng là CHƯA chọn gì.
@@ -234,6 +238,53 @@ class ThayGiongDialog(QDialog):
             self.sp_luong.setValue(2)
         h2.addWidget(self.sp_luong)
         lay.addLayout(h2)
+
+        # ---- hàng 3: CHE CHỮ CHÁY SẴN TRONG HÌNH ----
+        # Ô này CỐ Ý đặt Ở ĐÂY chứ không bắt sang "Chỉnh mẫu": thay tiếng và
+        # xuất clip là HAI ĐƯỜNG KHÁC NHAU (anh Hùng 14/08/2026 bật ô bên kia
+        # rồi tưởng đã bật, chữ vẫn còn nguyên). Nhãn TIẾNG VIỆT, KHÔNG EMOJI.
+        h3 = QHBoxLayout()
+        self.ck_che = QCheckBox("Làm mờ chữ cháy sẵn trong hình")
+        self.ck_che.setToolTip(
+            "Video nguồn (Douyin/reup) thường ĐỐT phụ đề THẲNG VÀO KHUNG "
+            "hình — gỡ ra không được, thay tiếng xong dòng chữ cũ vẫn nằm "
+            "đó.\nBật ô này để app dò dải chữ ở đáy khung rồi che đi.\n\n"
+            "Đã đo: dò đúng 96,7% · che oan 0/76 video sạch · bỏ sót 9,1%.\n"
+            "LƯU Ý: bật ô này thì phải MÃ HOÁ LẠI luồng hình (tắt thì chép "
+            "nguyên, không đụng tới hình), nên lượt chạy lâu hơn.")
+        self.ck_che.setChecked(
+            str(self._s.value(K_CHE_CHU, "0")) in ("1", "true", "True"))
+        h3.addWidget(self.ck_che)
+
+        h3.addSpacing(8)
+        h3.addWidget(QLabel("Cách che:"))
+        self.cb_che_cach = QComboBox()
+        self.cb_che_cach.addItem("Làm mờ (ít lộ)", "mo")
+        self.cb_che_cach.addItem("Phủ khối đặc (chắc chắn, nhưng lộ)", "khoi")
+        i = self.cb_che_cach.findData(str(self._s.value(K_CHE_CACH, "mo")))
+        self.cb_che_cach.setCurrentIndex(max(0, i))
+        h3.addWidget(self.cb_che_cach)
+
+        h3.addSpacing(8)
+        h3.addWidget(QLabel("Mức mờ:"))
+        self.sp_che_muc = QDoubleSpinBox()
+        # SÀN 0,60 là SÀN CỨNG trong mã (`che_chu.chuan_muc_mo`) — đặt sàn ở
+        # đây nữa để anh Hùng không kéo xuống chỗ mắt vẫn đọc được chữ (mức
+        # 0,40 đo ra "sạch" theo máy mà PNG vẫn đọc rõ 这时医生灵机一动).
+        self.sp_che_muc.setRange(0.60, 2.00)
+        self.sp_che_muc.setSingleStep(0.10)
+        self.sp_che_muc.setToolTip(
+            "Càng cao càng mờ. Dưới 0,60 mắt vẫn đọc được chữ (đã đo) nên "
+            "app KHÔNG cho hạ thấp hơn.")
+        try:
+            self.sp_che_muc.setValue(float(self._s.value(K_CHE_MUC, 1.0) or 1.0))
+        except (TypeError, ValueError):
+            self.sp_che_muc.setValue(1.0)
+        h3.addWidget(self.sp_che_muc)
+        h3.addStretch(1)
+        lay.addLayout(h3)
+        self.ck_che.toggled.connect(self._doi_che_chu)
+        self._doi_che_chu(self.ck_che.isChecked())
 
         # ---- hàng 4: TÌNH TRẠNG BỘ TÁCH GIỌNG (chốt an toàn số 1) ----
         h4 = QHBoxLayout()
@@ -687,6 +738,15 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_NGON_NGU, self.cb_nn.currentData() or "en")
         self._s.setValue(K_GIONG, self.cb_giong.currentData() or "")
         self._s.setValue(K_LUONG, int(self.sp_luong.value()))
+        self._s.setValue(K_CHE_CHU, "1" if self.ck_che.isChecked() else "0")
+        self._s.setValue(K_CHE_CACH, self.cb_che_cach.currentData() or "mo")
+        self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
+
+    def _doi_che_chu(self, bat: bool) -> None:
+        """Bật/tắt 2 ô con theo ô chính — tắt mà vẫn chỉnh được là gây hiểu
+        nhầm 'đã bật' (đúng cái đã làm anh Hùng tưởng che chữ đang chạy)."""
+        self.cb_che_cach.setEnabled(bool(bat))
+        self.sp_che_muc.setEnabled(bool(bat))
 
     def _chay(self, lam_lai: list | None = None) -> int:
         """Xếp job cho video CHƯA XONG. Trả SỐ JOB đã xếp.
@@ -730,6 +790,9 @@ class ThayGiongDialog(QDialog):
             return 0
         nn = str(self.cb_nn.currentData() or "en")
         giong = str(self.cb_giong.currentData() or "")
+        cc = bool(self.ck_che.isChecked())
+        cc_cach = str(self.cb_che_cach.currentData() or "mo")
+        cc_muc = float(self.sp_che_muc.value())
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -750,7 +813,8 @@ class ThayGiongDialog(QDialog):
             try:
                 jid = tg_chay.xep_mot(
                     self._pool, duong, nn, voice=giong, thu_muc_ra=ra,
-                    kenh=Path(duong).parent.name, lam_lai=buoc_lai)
+                    kenh=Path(duong).parent.name, lam_lai=buoc_lai,
+                    che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

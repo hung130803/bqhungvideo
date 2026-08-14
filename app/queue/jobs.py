@@ -315,6 +315,12 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             kenh=str(payload.get("kenh") or ""),
             thung_rac="",
             thu_muc_lam=str(payload.get("thu_muc_lam") or ""),
+            # CHE CHỮ CHÁY SẴN: job cũ trong DB KHÔNG mang khoá này -> `False`,
+            # tức hành vi y hệt bản trước. Mức mờ qua `chuan_muc_mo` (SÀN CỨNG
+            # 0,60 — dưới đó mắt vẫn đọc được chữ, đã đo ở cổng 56).
+            che_chu=bool(payload.get("che_chu")),
+            che_chu_cach=str(payload.get("che_chu_cach") or "mo"),
+            che_chu_muc=float(payload.get("che_chu_muc") or 1.0),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
@@ -350,6 +356,7 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
         "vao": r.get("vao"), "ra": dich,
         "do_dai": r.get("do_dai"), "giay": r.get("giay_tong"),
         "kiem": r.get("kiem"), "tach": (r.get("tach") or {}).get("cach"),
+        "che_chu": r.get("che_chu"),
         "da_thay_goc": False, "goc_o": goc,
         "vi_sao": "giữ nguyên video gốc, bản mới nằm ở thư mục đích",
         "khop": r.get("khop"), "dich": r.get("dich"),
