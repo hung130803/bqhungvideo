@@ -322,6 +322,29 @@ dat("TỰ KIỂM BỘ DÒ: vùng TRỐNG dưới bảng ra ~0 điểm ảnh ch�
     f"{_in0} điểm ảnh")
 dlg.hide()
 
+# ĐÓNG HỘP RỒI MỞ LẠI GIỮA CHỪNG: việc vẫn chạy ở nền, hộp mới phải NHẬN LẠI
+# (không nhận lại thì bảng hiện "Chưa chạy" trong khi máy đang làm — đúng cái
+# anh Hùng kêu "không hiện gì cả").
+_t0 = time.time()                      # đợi tới khi có job THẬT SỰ đang chạy
+while time.time() - _t0 < 20:
+    _app.processEvents()
+    if db.query_one("SELECT id FROM jobs WHERE type='thay_giong' "
+                    "AND status='running' AND progress>0.05"):
+        break
+    time.sleep(0.05)
+_dlg2 = ThayGiongDialog(pool, None)
+_dlg2.ed_thu_muc.setText(str(NGUON))
+_dlg2.ed_thu_muc_ra.setText(str(DICH))
+dat("đóng hộp rồi mở lại giữa chừng -> NHẬN LẠI việc đang chạy",
+    len(_dlg2._jobs) == 3, f"{len(_dlg2._jobs)}/3 job nhận lại")
+_tt2 = [_dlg2.bang.item(r, 1).text() for r in range(_dlg2.bang.rowCount())]
+dat("hộp mở lại KHÔNG hiện 'Chưa chạy' cho việc đang chạy",
+    all(x != "Chưa chạy" for x in _tt2), " · ".join(_tt2))
+dat("hộp mở lại hiện ĐÚNG BƯỚC đang làm (không chỉ 'Đang chờ')",
+    any(x.startswith("Đang ") and x != "Đang chờ" for x in _tt2),
+    " · ".join(_tt2))
+_dlg2.close()
+
 giay = cho_xong(dlg)
 SO["luot1_giay"] = giay
 print(f"  lượt 1 xong sau {giay}s · {len(CHUOI)} video có chuỗi trạng thái")

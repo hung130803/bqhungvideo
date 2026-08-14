@@ -44,6 +44,7 @@ Reup nhưng phải đi qua `bo_emoji()` vì nhãn gốc có cờ/biểu tượng
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import unicodedata
@@ -547,9 +548,52 @@ class ThayGiongDialog(QDialog):
             it.setToolTip(str(v))
             self.bang.setItem(r, 0, it)
             self._ve_theo_so(r, str(v))
+        self._nhan_lai_job_dang_chay()
         self._cap_nhat_nhan_dich()
         self._cap_nhat_nut_chay()
         self._dem_lai()
+        self._nhip()
+
+    def _nhan_lai_job_dang_chay(self) -> int:
+        """NHẬN LẠI job thay giọng đang chạy/đang chờ của đúng video trong bảng.
+
+        Đóng hộp rồi mở lại (hoặc tắt app giữa chừng rồi mở lên) thì việc VẪN
+        CHẠY ở nền — không nhận lại thì bảng hiện "Chưa chạy" trong khi máy
+        đang làm, đúng cái anh Hùng kêu *"không hiện gì cả"*. Sự thật nằm ở
+        bảng `jobs` chứ không ở hộp, nên dựng lại được (bài học "sổ chỉ ở RAM,
+        phải hồi phục").
+        """
+        try:
+            rows = db.query(
+                "SELECT id, payload FROM jobs WHERE type='thay_giong' "
+                "AND status IN ('pending','running')")
+        except Exception:  # noqa: BLE001 - DB vỡ thì đừng làm sập hộp
+            return 0
+        theo_duong: dict[str, int] = {}
+        for r in rows:
+            try:
+                p = json.loads(r["payload"] or "{}")
+            except (ValueError, TypeError):
+                continue
+            v = str(p.get("video") or "")
+            if v:
+                theo_duong[os.path.normcase(os.path.abspath(v))] = int(r["id"])
+        n = 0
+        for r in range(self.bang.rowCount()):
+            d = self._duong_dong(r)
+            if not d:
+                continue
+            jid = theo_duong.get(os.path.normcase(os.path.abspath(d)))
+            if not jid:
+                continue
+            self._jobs[d] = jid
+            self._dat_o(r, 1, "Đang chờ", MUTED)
+            self._dat_o(r, 2, "0% · bước 0/8")
+            self._dat_o(r, 3, "Việc này đang chạy ở nền (nhận lại từ hàng đợi)")
+            n += 1
+        if n:
+            self._da_bao_xong = False   # còn việc chạy -> xong phải BÁO
+        return n
 
     def _ve_theo_so(self, r: int, duong: str) -> None:
         """Vẽ 3 cột còn lại của một dòng theo SỔ (chưa chạy lượt nào)."""
