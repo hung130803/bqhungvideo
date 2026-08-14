@@ -22,6 +22,7 @@ BỐN CÁI BẪY CỔNG NÀY CỐ Ý PHÒNG (đều đã cắn thật ở repo n
 """
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -801,6 +802,28 @@ def ca18_round_trip_ui():
         e.deleteLater()
 
 
+def _tim_goi(ham, ten: str):
+    """AST của lời gọi `ten(...)` ĐẦU TIÊN trong thân `ham`. None = không có.
+
+    Đọc bằng AST chứ không `in` chuỗi — bài học cổng 47/51/54: quét tĩnh bằng
+    chuỗi vừa ĐỎ OAN (dính dòng ghi chú) vừa PASS OAN (đổi giá trị mà chuỗi
+    vẫn còn). Ở đây nó bắt được đúng phép phá `che_chu=False`.
+    """
+    import inspect
+    import textwrap
+    try:
+        cay = ast.parse(textwrap.dedent(inspect.getsource(ham)))
+    except (OSError, SyntaxError):
+        return None
+    for n in ast.walk(cay):
+        if isinstance(n, ast.Call):
+            f = n.func
+            nm = getattr(f, "id", None) or getattr(f, "attr", None)
+            if nm == ten:
+                return n
+    return None
+
+
 def ca19_pha_duong_truyen():
     """CỔNG 5 — CỐ TÌNH PHÁ: bỏ cờ khỏi đường truyền thì cổng PHẢI kêu.
 
@@ -811,12 +834,27 @@ def ca19_pha_duong_truyen():
     from app.core import ffmpeg_utils as FU
     from app.modules import m1_highlight as M1
     import inspect
-    # (a) m1 phải THẬT SỰ truyền 4 tham số che_chu vào export_canvas_clip
-    ma = inspect.getsource(M1._export_clip_impl)
-    thieu = [k for k in ("che_chu=", "che_chu_cach=", "che_chu_muc=",
-                         "che_chu_log=") if k not in ma]
+    # (a) m1 phải THẬT SỰ truyền 4 tham số che_chu vào export_canvas_clip.
+    #     ĐỌC BẰNG AST, KHÔNG `in` chuỗi: phép thử phá đổi
+    #     `che_chu=_cc_cf["bat"]` thành `che_chu=False` mà bản kiểm cũ (chỉ tìm
+    #     chuỗi "che_chu=") **VẪN XANH** — tức nó chỉ là con dấu. Nay đòi giá
+    #     trị truyền vào phải là BIỂU THỨC (đọc từ `doc_che_chu`), không được
+    #     là HẰNG SỐ đóng cứng.
+    goi = _tim_goi(M1._export_clip_impl, "export_canvas_clip")
+    kw = {k.arg: k.value for k in (goi.keywords if goi else []) if k.arg}
+    thieu = [k for k in ("che_chu", "che_chu_cach", "che_chu_muc",
+                         "che_chu_log") if k not in kw]
     kiem("CA19a m1 truyền đủ 4 tham số che chữ vào export_canvas_clip",
-         not thieu, f"thiếu: {thieu}" if thieu else "đủ 4")
+         bool(goi) and not thieu, f"thiếu: {thieu}" if thieu else "đủ 4")
+    hang = [k for k in ("che_chu", "che_chu_cach", "che_chu_muc")
+            if k in kw and isinstance(kw[k], ast.Constant)]
+    kiem("CA19a' giá trị truyền vào KHÔNG phải hằng số đóng cứng "
+         "(phải lấy từ `doc_che_chu`)", not hang,
+         f"đóng cứng: {[(k, ast.unparse(kw[k])) for k in hang]}"
+         if hang else "cả 3 đều là biểu thức")
+    # và `doc_che_chu` phải THẬT SỰ được gọi trong thân hàm xuất
+    kiem("CA19a'' `doc_che_chu` được gọi trong `_export_clip_impl`",
+         bool(_tim_goi(M1._export_clip_impl, "doc_che_chu")))
     # (b) export_canvas_clip phải CÓ tham số + phải DÙNG nó (không nhận rồi bỏ)
     sig = inspect.signature(FU.export_canvas_clip).parameters
     kiem("CA19b export_canvas_clip có đủ tham số",
