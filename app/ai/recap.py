@@ -934,6 +934,24 @@ def _has_cjk(text: str) -> bool:
     return bool(_CJK_RE.search(str(text or "")))
 
 
+# Chữ HÁN THUẦN = tiếng TRUNG. Phải tách khỏi Nhật/Hàn vì các lưới bên dưới
+# được HIỆU CHUẨN RIÊNG cho nó (`_do_cjk_calib.py`, corpus Groq thật): tiếng
+# Nhật trộn kana, tiếng Hàn tách theo ÂM TIẾT nên phân bố token khác hẳn, mà
+# trên máy KHÔNG CÓ corpus lời dẫn Nhật/Hàn để đo -> hai thứ tiếng đó GIỮ
+# NGUYÊN đường cũ (bỏ qua lưới fuzzy/n-gram). Thà không bật còn hơn bật mò.
+_KANA_RE = re.compile("[぀-ヿｦ-ﾟ]")
+_HANGUL_RE = re.compile("[가-힣]")
+_HAN_RE = re.compile("[㐀-䶿一-鿿豈-﫿]")
+
+
+def _la_chu_han(text: str) -> bool:
+    """Text viết bằng chữ HÁN THUẦN (tiếng Trung): có chữ Hán, KHÔNG kana,
+    KHÔNG hangul. Hàm thuần."""
+    s = str(text or "")
+    return bool(_HAN_RE.search(s)) and not _KANA_RE.search(s) \
+        and not _HANGUL_RE.search(s)
+
+
 def _word_tokens(norm_text: str) -> list:
     """Tách `norm_text` (đã qua _norm_for_copy) thành danh sách token cho
     ĐẾM MẬT ĐỘ / SO-KHỚP TẬP-TỪ CJK-aware:
@@ -948,19 +966,45 @@ def _word_tokens(norm_text: str) -> list:
     return _CJK_TOKEN_RE.findall(s)
 
 
+#: Ký tự tối thiểu để coi là "câu đủ dài" — CHỮ HÁN đếm khác chữ latin.
+#: 15 ký tự latin ~ 3 từ; 15 CHỮ HÁN ~ 15 TỪ, tức cả một câu dài. ĐO THẬT trên
+#: 99 câu tiếng Trung của video anh Hùng: **85/99 câu ngắn hơn 15 ký tự**, nên
+#: lưới chép-nguyên-văn chỉ bắt được **14/99** — LLM chép y nguyên câu
+#: `就在他返回水底寻找手表时` (12 ký tự, một câu HOÀN CHỈNH) vẫn lọt.
+#: Quét ngưỡng trên chính corpus đó (`_do_cjk_calib.py`): 6 -> bắt 93/99 · **8
+#: -> 80/99** · 10 -> 60/99 · 15 -> 14/99, và **0/11 câu SÁNG TÁC của Groq bị
+#: bắt oan ở MỌI mức**. Chọn 8 chứ không phải 6: dưới 8 chữ Hán là mấy câu đệm
+#: rất thường ("这不是在夸张" = "không phải nói quá") — trùng ngẫu nhiên là
+#: chuyện bình thường, đúng lý do cái guard này tồn tại.
+_MIN_CHARS_COPY = 15
+_MIN_CHARS_COPY_CJK = 8
+
+
 def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
     """Narrate text có phải CHÉP NGUYÊN VĂN transcript không (AI lười).
-    Chỉ tính khi câu đủ dài (>= 4 từ và >= 15 ký tự sau chuẩn hoá) — câu quá
-    ngắn ('what?', 'không thể nào') trùng ngẫu nhiên là bình thường."""
+    Chỉ tính khi câu đủ dài (>= 4 từ và >= 15 ký tự sau chuẩn hoá; CJK dùng
+    ngưỡng ký tự RIÊNG, xem `_MIN_CHARS_COPY_CJK`) — câu quá ngắn ('what?',
+    'không thể nào') trùng ngẫu nhiên là bình thường."""
     if not transcript_norm:
         return False
     t = _norm_for_copy(text)
     # Guard độ dài: >= 4 TOKEN (CJK-aware — câu Nhật không dấu cách vẫn đếm
-    # đúng qua _word_tokens) VÀ >= 15 ký tự. Non-CJK: _word_tokens == split()
-    # nên hành vi Y CŨ.
-    if len(t) < 15 or len(_word_tokens(t)) < 4:
+    # đúng qua _word_tokens) VÀ >= ngưỡng ký tự THEO HỆ CHỮ. Non-CJK: ngưỡng
+    # 15 và _word_tokens == split() nên hành vi Y CŨ.
+    if len(_word_tokens(t)) < 4:
         return False
-    return t in transcript_norm
+    if len(t) < (_MIN_CHARS_COPY_CJK if _has_cjk(t) else _MIN_CHARS_COPY):
+        return False
+    if t in transcript_norm:
+        return True
+    # LỖ THỨ HAI, chỉ có ở CJK: `transcript_norm` nối các câu bằng DẤU CÁCH,
+    # còn LLM chép lại nhiều câu liền thì viết LIỀN (tiếng Trung không có dấu
+    # cách) -> `in` trượt. Đo: chép nguyên 4 câu liền nhau -> lưới cũ trả
+    # False. Bỏ hết dấu cách hai bên là bắt được. Chỉ làm cho text CJK: với
+    # tiếng Anh/Việt, bỏ dấu cách sẽ dính từ và làm khớp bừa.
+    if _has_cjk(t):
+        return re.sub(r"\s+", "", t) in re.sub(r"\s+", "", transcript_norm)
+    return False
 
 
 # Ngưỡng FUZZY anti-copy: lời narrate trùng > tỉ lệ từ này với transcript
@@ -983,6 +1027,28 @@ _CONTENT_OVERLAP_MAX = 0.55
 # trong transcript window -> coi là THUẬT LẠI lời nhân vật (dù tỉ lệ tổng thấp).
 # Bắt kiểu "anh ấy nói anh ấy bấm nhầm nút bán hết cổ phiếu" nhại nguyên cụm.
 _RETELL_NGRAM = 3
+
+# ------------------------------------------------------------------
+# NGƯỠNG RIÊNG CHO **TIẾNG TRUNG** — `_word_tokens` cho 1 token = 1 KÝ TỰ chứ
+# không phải 1 TỪ, nên 3 ngưỡng trên (đo cho ngôn ngữ CÓ dấu cách) áp thẳng là
+# BÁO NHẦM: "3 từ-nội-dung liên tiếp" thành "3 chữ Hán liền nhau".
+# ĐO THẬT (`_do_cjk_calib.py` — corpus Groq THẬT trên transcript tiếng Trung
+# của anh Hùng: 19 câu PHẢI BẮT = 5 câu chép nguyên văn + 14 câu Groq được yêu
+# cầu KỂ LẠI · 11 câu KHÔNG ĐƯỢC BẮT = Groq được yêu cầu BÌNH LUẬN góc ngoài):
+#
+#   thước            | nhóm PHẢI BẮT (min/trung vị) | nhóm KHÔNG BẮT (max)
+#   tập từ-nội-dung  | 0,818 / 1,000                | 0,643
+#   n-gram dài nhất  | 3 / 15                       | 4
+#   fuzzy token thô  | 0,840 / 1,000                | 0,643
+#
+# Hai nhóm TÁCH RỜI HẲN, nên ngưỡng lấy ở GIỮA khoảng trống (không sát mép):
+#   overlap 0,72 -> bắt 19/19 ĐÚNG · 0/11 OAN
+#   n-gram  6    -> bắt 18/19 ĐÚNG · 0/11 OAN  (nhóm không-bắt cao nhất là 4)
+#   fuzzy   0,74 -> bắt 19/19 ĐÚNG · 0/11 OAN
+# Ba lưới OR với nhau -> tổng 19/19 bắt đúng, 0/11 bắt oan.
+_CONTENT_OVERLAP_ZH = 0.72
+_RETELL_NGRAM_ZH = 6
+_FUZZY_COPY_ZH = 0.74
 
 # ------------------------------------------------------------------
 # CHUẨN HOÁ ĐẠI TỪ NGÔI + biến thể thì/số cho anti-copy ORDER-INDEPENDENT.
@@ -1009,6 +1075,20 @@ _PRON_WORDS = frozenset((
 ))
 
 
+def _la_tu_noi_dung(c: str) -> bool:
+    """Token `c` có được tính là TỪ-NỘI-DUNG không (sau `_canon_word`).
+
+    Lưới cũ là `len(c) > 1` — đúng cho ngôn ngữ có dấu cách (bỏ chữ cái lẻ
+    "a", "i"), nhưng **SAI HẲN với CJK**: `_word_tokens` tách MỖI ký tự Hán
+    thành 1 token, nên `len(c) > 1` vứt SẠCH mọi token tiếng Trung/Nhật ->
+    tập từ-nội-dung RỖNG -> mọi tỉ lệ trùng ra 0.0 -> lưới chống chép lời
+    TẮT IM LẶNG. Đây là nửa thứ hai của lỗi `.split()`: chỉ đổi cách tách mà
+    không đổi cái lọc này thì vẫn không có gì chạy.
+
+    BẤT BIẾN: token KHÔNG có ký tự CJK -> y hệt `len(c) > 1`."""
+    return len(c) > 1 or _CJK_RE.search(c) is not None
+
+
 def _canon_word(w: str) -> str:
     """Chuẩn hoá 1 từ cho so-TẬP anti-copy: đại từ ngôi -> token chung "§p";
     cắt hậu tố thì/số EN thường (-ing/-ed/-es/-s) để "touches"~"touched"
@@ -1027,11 +1107,11 @@ def _content_pron_set(text: str) -> set:
     GIỮ (dạng "§p") vì "một người làm X" là nội dung khớp giữa narrate kể lại
     và transcript. Dùng cho so-TẬP ORDER-INDEPENDENT (đảo trật tự vẫn khớp)."""
     out: set = set()
-    for w in _norm_for_copy(text).split():
+    for w in _word_tokens(_norm_for_copy(text)):   # CJK-aware — CẤM .split()
         c = _canon_word(w)
         if c == _PRON_CANON:
             out.add(c)
-        elif len(c) > 1 and c not in _STOPWORDS:
+        elif _la_tu_noi_dung(c) and c not in _STOPWORDS:
             out.add(c)
     return out
 
@@ -1050,7 +1130,8 @@ def _fuzzy_copy_ratio(text: str, window_words: set) -> float:
     gần như toàn hư từ (का की में है...) nên đếm TỪ THÔ làm lời sáng tác
     trùng ~100% -> gut oan (lỗi thật). Token Devanagari không đụng vi/en
     -> đường EN/VI giữ Y CŨ (lưới thô cố tình đếm cả stopword vi/en)."""
-    words = [w for w in _norm_for_copy(text).split() if w not in _STOP_HI]
+    words = [w for w in _word_tokens(_norm_for_copy(text))    # CẤM .split()
+             if w not in _STOP_HI]
     if len(words) < 4 or not window_words:
         return 0.0
     hit = sum(1 for w in words if w in window_words)
@@ -1081,7 +1162,10 @@ def _window_words(sentences: list, start: float, end: float) -> set:
     for a, b, t in sentences or []:
         try:
             if float(b) > start and float(a) < end and t:
-                out.update(_norm_for_copy(t).split())
+                # CJK-aware: câu Trung/Nhật KHÔNG có dấu cách, `.split()` cho ra
+                # ĐÚNG 1 token = cả câu -> tập này không bao giờ giao được với
+                # tập từ của narrate -> mọi tỉ lệ trùng ra 0 (lưới TẮT).
+                out.update(_word_tokens(_norm_for_copy(t)))
         except (TypeError, ValueError):
             continue
     return out
@@ -1106,14 +1190,14 @@ def _content_seq(text: str) -> list:
     n-gram liên tiếp trùng transcript. Chuẩn hoá (_canon_word) giúp n-gram
     khớp dù AI đổi thì (touched/touches) hoặc ngôi (I/he)."""
     out = []
-    for w in _norm_for_copy(text).split():
+    for w in _word_tokens(_norm_for_copy(text)):   # CJK-aware — CẤM .split()
         c = _canon_word(w)
-        if c == _PRON_CANON or (len(c) > 1 and c not in _STOPWORDS):
+        if c == _PRON_CANON or (_la_tu_noi_dung(c) and c not in _STOPWORDS):
             out.append(c)
     return out
 
 
-def _is_retelling(text: str, window_text: str, n: int = _RETELL_NGRAM) -> bool:
+def _is_retelling(text: str, window_text: str, n: Optional[int] = None) -> bool:
     """narrate có KỂ LẠI lời nhân vật không — 2 lưới (OR):
       (1) TẬP TỪ-NỘI-DUNG (order-independent, chuẩn đại từ/thì) trùng
           transcript window >= _CONTENT_OVERLAP_MAX (55%) -> KỂ LẠI. Bắt
@@ -1130,8 +1214,15 @@ def _is_retelling(text: str, window_text: str, n: int = _RETELL_NGRAM) -> bool:
     ["§p", "nói"] — chỉ cụm NỘI DUNG thật mới bị bắt."""
     if not window_text:
         return False
+    # NGƯỠNG THEO HỆ CHỮ: chữ Hán thuần (tiếng Trung) dùng bộ hằng số đã HIỆU
+    # CHUẨN RIÊNG vì token = 1 KÝ TỰ. Mọi thứ tiếng khác giữ nguyên hằng số cũ
+    # -> bất biến EN/VI/JA/KO.
+    zh = _la_chu_han(text)
+    tran = _CONTENT_OVERLAP_ZH if zh else _CONTENT_OVERLAP_MAX
+    if n is None:
+        n = _RETELL_NGRAM_ZH if zh else _RETELL_NGRAM
     # (1) TẬP TỪ-NỘI-DUNG order-independent
-    if _content_overlap_ratio(text, window_text) >= _CONTENT_OVERLAP_MAX:
+    if _content_overlap_ratio(text, window_text) >= tran:
         return True
     # (2) n-gram TỪ-NỘI-DUNG liên tiếp (đã chuẩn hoá đại từ/thì)
     if n < 1:
@@ -1168,20 +1259,28 @@ def _is_copy_narrate(text: str, sentences: list, start: float,
     Soi window HẸP (đúng [start,end]) TRƯỚC rồi window RỘNG (±pad) — window
     rộng bắt câu kề, hẹp tránh phồng oan khi part dài. Hàm thuần — test được.
 
-    CJK (Nhật/Trung/Hàn): các lưới FUZZY (_fuzzy_copy_ratio) + N-GRAM nội dung
-    (_is_retelling) được HIỆU CHUẨN cho ngôn ngữ có dấu cách. Áp token-KÝ-TỰ
-    cho CJK sẽ BÁO NHẦM (kanji chung như 会社/気持ち trùng 3-gram) -> gut oan
-    thoại tốt. Nên với text CJK ta BỎ QUA 2 lưới này (coi như KHÔNG copy) —
-    lưới CHÉP NGUYÊN VĂN _is_transcript_copy (so chuỗi con, char-based, đúng
-    cho CJK) vẫn chạy RIÊNG ở validate_parts nên chép y nguyên vẫn bị bắt."""
-    if _has_cjk(text):
+    CJK: 2 lưới FUZZY + N-GRAM được hiệu chuẩn cho ngôn ngữ CÓ dấu cách; áp
+    thẳng token-KÝ-TỰ vào là BÁO NHẦM (kanji chung như 会社/気持ち trùng
+    3-gram) -> gut oan thoại tốt. Trước 14/08/2026 cả 3 hệ chữ đều bị TẮT
+    HẲN ở đây. Nay tách làm hai:
+      * **chữ Hán thuần = tiếng TRUNG** -> CHẠY, bằng bộ ngưỡng đo riêng
+        (`_CONTENT_OVERLAP_ZH` · `_RETELL_NGRAM_ZH` · `_FUZZY_COPY_ZH`,
+        xem số đo ở chỗ khai báo). Đo: 19/19 câu kể-lại/chép bị bắt, 0/11 câu
+        bình luận sáng tác bị bắt oan.
+      * **Nhật / Hàn** (có kana / hangul) -> GIỮ NGUYÊN đường cũ, vì trên máy
+        KHÔNG có corpus lời dẫn Nhật/Hàn để hiệu chuẩn. Bật mò một lưới có
+        thể gut sạch narrate là đắt hơn nhiều so với để nguyên; lưới CHÉP
+        NGUYÊN VĂN `_is_transcript_copy` vẫn chạy riêng cho chúng."""
+    zh = _la_chu_han(text)
+    if _has_cjk(text) and not zh:
         return False
+    tran_fz = _FUZZY_COPY_ZH if zh else _FUZZY_COPY_MAX
     for ws, we in ((start, end), (start - pad, end + pad)):
         wtext = _window_text(sentences, ws, we)
         if not wtext:
             continue
         if _fuzzy_copy_ratio(text, _window_words(sentences, ws, we)) \
-                > _FUZZY_COPY_MAX:
+                > tran_fz:
             return True
         if _is_retelling(text, wtext):
             return True
@@ -1226,8 +1325,8 @@ _STOPWORDS = _STOP_VI | _STOP_EN | _STOP_HI
 def _content_words(text: str) -> set:
     """Tập TỪ-NỘI-DUNG của text (đã chuẩn hoá, bỏ stopword vi+en, bỏ từ 1 ký
     tự) — dùng so RELEVANCE lời narrate với transcript khung cảnh."""
-    return {w for w in _norm_for_copy(text).split()
-            if len(w) > 1 and w not in _STOPWORDS}
+    return {w for w in _word_tokens(_norm_for_copy(text))  # CẤM .split()
+            if _la_tu_noi_dung(w) and w not in _STOPWORDS}
 
 
 # Độ dài PREFIX tối thiểu để coi 2 từ-nội-dung là LIÊN QUAN (cùng gốc/biến
@@ -2392,7 +2491,7 @@ def validate_parts_windows(parts, windows: list, sentences=None,
     if sentences:
         for ws, we in wlist:
             wwords.append({w for w in _window_words(sentences, ws, we)
-                           if len(w) > 1 and w not in _STOPWORDS})
+                           if _la_tu_noi_dung(w) and w not in _STOPWORDS})
     out: list[dict] = []
     for wi, (ws, we) in enumerate(wlist):
         sub = []

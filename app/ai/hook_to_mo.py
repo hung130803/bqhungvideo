@@ -114,6 +114,13 @@ _BAT_NGO = (
 )
 
 # (5) HỨA HẸN CÓ CẤU TRÚC — "3 điều", "bước cuối cùng".
+# TIẾNG TRUNG (thêm 14/08/2026): nhóm này là nhóm DUY NHẤT trong 5 nhóm không
+# có lấy MỘT chữ Hán nào (đo `_do_cjk_va.py`: 26 từ · 0 chữ Hán, trong khi
+# `_DO_DANG` có 6 · `_PHAT_HIEN` 4 · `_CAU_HOI` 3 · `_BAT_NGO` 4) -> câu Trung
+# kiểu "trước hết ta xem bước thứ nhất" không ăn được điểm nào của nhóm này.
+# Chọn từ theo đúng luật CJK KHÔNG DẤU CÁCH: **tối thiểu 2 ký tự**, và tránh
+# chữ quá thường: `你看` (= "bạn xem") là tiếng đệm dày đặc trong lời nói
+# tiếng Trung nên KHÔNG nhận — đúng lý do `一番`/`제일` đã bị loại ở nhóm (4).
 _HUA_HEN = (
     "the first", "number one", "step one", "here's how", "heres how",
     "let me show", "watch this", "wait for it", "keep watching",
@@ -121,6 +128,8 @@ _HUA_HEN = (
     "xem này", "chờ chút", "xem tiếp",
     "まず", "一つ目", "こうやって", "見て", "最後まで",
     "첫 번째", "이렇게", "보세요", "끝까지",
+    "首先", "第一步", "第一个", "接下来", "教你", "这样做", "看到最后",
+    "继续看", "别急",
 )
 
 # (6) XẤU — chào hỏi / kêu gọi / câu rỗng. Có mặt là TRỪ điểm nặng: mở clip
