@@ -1030,12 +1030,27 @@ def ca23_co_vao_hash_chong_trung():
         kiem(f"CA23-3' lấy được services.py của {moc}", False,
              f"git rc={r.returncode} · {len(src_moc)} ký tự")
     elif src_moc.strip() == nay.strip():
-        # Chống PASS OAN, đúng bài học cổng 36/51: mốc TRÙNG file đang test là
-        # "so nó với chính nó". Việc này CHẮC CHẮN sửa services.py nên trùng =
-        # mốc đã nuốt nhánh (thường là đặt nhầm BQ_MOC_REF=main sau khi gộp).
-        kiem("CA23-3' mốc đối chứng phải KHÁC nhánh này", False,
-             f"`git show {moc}:app/services.py` TRÙNG file đang test -> phép "
-             f"so BẤT BIẾN vô nghĩa. Đặt BQ_MOC_REF về bản ĐÃ PHÁT HÀNH.")
+        # Chống PASS OAN, đúng bài học cổng 36 CA 8: mốc TRÙNG file đang test
+        # có HAI nguyên nhân khác hẳn nhau, gộp lại là ĐỎ OAN VĨNH VIỄN cho
+        # mọi bản phát hành sau không động tới `services.py`.
+        #  · HEAD là TỔ TIÊN của mốc = mốc ĐÃ NUỐT nhánh này (thường là đặt
+        #    nhầm `BQ_MOC_REF=main` sau khi gộp) -> "so nó với chính nó", FAIL.
+        #  · KHÔNG phải tổ tiên = bản phát hành này đơn giản không sửa
+        #    `services.py` -> bất biến `dedup_key` đúng DO XÂY DỰNG (hai bản
+        #    giống nhau TỪNG BYTE thì không thể ra hash khác), ĐẠT.
+        to_tien = subprocess.run(
+            ["git", "-C", REPO, "merge-base", "--is-ancestor", "HEAD", moc],
+            capture_output=True, creationflags=C._CREATE_NO_WINDOW,
+            timeout=60).returncode == 0
+        kiem("CA23-3' mốc đối chứng KHÔNG được là chính nhánh này",
+             not to_tien,
+             f"`git show {moc}:app/services.py` TRÙNG file đang test"
+             + (" VÀ HEAD là TỔ TIÊN của mốc -> mốc đã nuốt nhánh này, phép "
+                "so BẤT BIẾN vô nghĩa. Đặt BQ_MOC_REF về bản ĐÃ PHÁT HÀNH."
+                if to_tien else
+                " nhưng HEAD KHÔNG phải tổ tiên của mốc -> bản này KHÔNG SỬA "
+                "`services.py`, nên `dedup_key` giống mốc TỪNG BYTE do xây "
+                "dựng (không phải do đo hớ)."))
     else:
         import importlib.util
         fm = SAN / "sv_moc.py"
@@ -1142,6 +1157,157 @@ def ca22_ghep_doan(src: Path):
              lg[0]["ly_do"] if lg else "(rỗng)")
 
 
+def _he_ra(src_w: int, src_h: int) -> tuple:
+    """(x_trái, y_trên, tx, ty) quy toạ độ NGUỒN -> FILE XUẤT 1080x1920."""
+    cx, cy, sw = _RECT
+    vw = max(2, int(round(sw * _OUT_W)) // 2 * 2)
+    vh = int(round(vw * src_h / src_w))
+    vh += vh % 2
+    return (cx * _OUT_W - vw / 2.0, cy * _OUT_H - vh / 2.0,
+            vw / float(src_w), vh / float(src_h))
+
+
+def ca24_hop_chu(src: Path):
+    """HỘP CHỮ — con số CHÍNH: che ÍT ĐI bao nhiêu % mà VẪN che hết chữ.
+
+    `do_hop_chu` thu dải ngang về HỘP bám mép chữ thật, đổi theo mốc thời
+    gian. Ba mệnh đề phải đúng CÙNG LÚC, thiếu một cái là phải lùi về dải:
+      (1) DIỆN TÍCH che giảm thật — đo theo **điểm ảnh × giây** trên đường
+          xuất có `segs` hook-first, KHÔNG đọc `ty_le_thu` (thuộc tính đó chỉ
+          tính BỀ NGANG, mà hộp còn được nới CAO thêm ở chóp/chân chữ — báo
+          cáo bề ngang thôi là giấu mất phần diện tích tăng).
+      (2) vẫn CHE HẾT CHỮ — mật độ nét đo trên **CẢ BỀ NGANG DẢI CŨ**, không
+          phải chỉ trong hộp. Đo trong hộp là tự hỏi "chỗ tôi che có sạch
+          không" (luôn sạch); câu cần hỏi là "chỗ tôi BỎ RA có sót chữ không".
+      (3) KHÔNG che oan thêm: hộp không bao giờ RỘNG hơn dải, phần nới CAO
+          nằm trong mức `HOP_CAO_THEM`, và video KHÔNG chữ vẫn KHÔNG bị đụng.
+    """
+    print("\nCA 24 — HỘP CHỮ: che ÍT ĐI bao nhiêu %, mà có còn che HẾT chữ không")
+    segs = [(120.0, 135.0), (40.0, 55.0)]        # HOOK-FIRST (ngược thời gian)
+    dai_clip = sum(e - s for s, e in segs)
+    cu = C._BAT_HOP
+    try:
+        # PHẢI xoá sổ nhớ khi ĐỔI CHẾ ĐỘ. Quên xoá thì lượt "HỘP" đọc lại bản
+        # DẢI đã nhớ và in ra "giảm 0,0%" — số SAI mà trông rất thuyết phục.
+        C._DAI_NHO.clear()
+        C._DAI_KHOA.clear()
+        C._BAT_HOP = False
+        d_dai = C.dai_theo_video(src)
+        C._DAI_NHO.clear()
+        C._DAI_KHOA.clear()
+        C._BAT_HOP = True
+        d_hop = C.dai_theo_video(src)
+    finally:
+        C._BAT_HOP = cu
+    if not (d_dai.co_chu and d_hop.co_chu):
+        kiem("CA24 nguồn thật dò ra chữ ở CẢ HAI chế độ", False,
+             f"dải co_chu={d_dai.co_chu} · hộp co_chu={d_hop.co_chu}")
+        return
+    kiem("CA24a HỘP không được đổi kết luận 'có chữ' (đây là cửa giữ kỉ lục "
+         "CHE OAN 0/76)",
+         d_hop.co_chu is d_dai.co_chu and bool(d_hop.hop),
+         f"co_chu {d_dai.co_chu} -> {d_hop.co_chu} · {len(d_hop.hop or [])} mốc")
+    kiem("CA24a' hộp KHÔNG BAO GIỜ rộng hơn dải",
+         d_hop.x0 >= d_dai.x0 and d_hop.x1 <= d_dai.x1,
+         f"dải x={d_dai.x0}..{d_dai.x1} ({d_dai.x1-d_dai.x0}px) · "
+         f"hộp x={d_hop.x0}..{d_hop.x1} ({d_hop.x1-d_hop.x0}px)")
+    # Nới chóp/chân: hộp CÓ QUYỀN cao hơn dải, nhưng chỉ trong mức đã khai.
+    # Cao hơn nữa = đang ăn vào HÌNH, tức che oan kiểu mới.
+    tran = int(round(C.HOP_CAO_THEM * d_dai.rong / float(C.RONG_DO))) + 2
+    tren, duoi = d_dai.y0 - d_hop.y0, d_hop.y1 - d_dai.y1
+    kiem(f"CA24a'' nới chóp/chân nằm trong mức khai báo (<= {tran}px mỗi phía, "
+         "cao hơn nữa là ăn vào HÌNH)",
+         0 <= tren <= tran and 0 <= duoi <= tran,
+         f"trên +{tren}px · dưới +{duoi}px · cao dải {d_dai.cao_dai}px -> "
+         f"hộp {d_hop.cao_dai}px")
+
+    # ---- (1) CON SỐ CHÍNH: DIỆN TÍCH CHE (điểm ảnh × giây) ----
+    hop_ra = C.hop_theo_doan(d_hop, segs)
+    dt_dai = dai_clip * (d_dai.x1 - d_dai.x0) * d_dai.cao_dai
+    dt_hop = (sum((b - a) * (x1 - x0) for a, b, x0, x1 in hop_ra)
+              * d_hop.cao_dai) if hop_ra else \
+        dai_clip * (d_hop.x1 - d_hop.x0) * d_hop.cao_dai
+    giam = (1.0 - dt_hop / max(1.0, dt_dai)) * 100.0
+    kiem("CA24b DIỆN TÍCH CHE GIẢM THẬT (> 0%; hộp mà che NHIỀU HƠN dải thì "
+         "tính năng này phản tác dụng, phải lùi về dải ngang)",
+         giam > 0.0,
+         f"dải {dt_dai/1e6:.2f} -> hộp {dt_hop/1e6:.2f} triệu điểm-ảnh·giây "
+         f"= **GIẢM {giam:.1f}%** · {len(hop_ra)} hộp theo mốc · "
+         f"bề ngang riêng {d_hop.ty_le_thu*100:.0f}% dải")
+
+    # ---- (2) CHE HẾT CHỮ + KHÔNG SÓT Ở RÌA ----
+    a, b = SAN / "hop_tat.mp4", SAN / "hop_bat.mp4"
+    ok_a, e_a, _ = _xuat(src, a, segs, False)
+    lg: list = []
+    C._DAI_NHO.clear()
+    C._DAI_KHOA.clear()
+    ok_b, e_b, _ = _xuat(src, b, segs, True, log=lg)
+    kiem("CA24c xuất được cả bản TẮT và bản BẬT-HỘP", ok_a and ok_b,
+         f"{e_a}|{e_b}")
+    if not (ok_a and ok_b):
+        return
+    for ten, p in (("TẮT", a), ("BẬT-HỘP", b)):
+        o, mo = _kiem_file(p, dai_clip)
+        kiem(f"CA24c file {ten} có khung hình + đúng độ dài", o, mo)
+    left, top, tx, ty = _he_ra(d_dai.rong, d_dai.cao)
+    # ĐO TRÊN BỀ NGANG DẢI CŨ (không phải trong hộp) — đây mới là phép kiểm
+    # "sót ký tự ở rìa". Dùng luôn y của HỘP để phần nới cao cũng được tính.
+    yy0 = max(0, int(top + d_hop.y0 * ty))
+    yy1 = min(_OUT_H, int(top + d_hop.y1 * ty))
+    xx0 = max(0, int(left + (d_dai.x0_dai or d_dai.x0) * tx))
+    xx1 = min(_OUT_W, int(left + (d_dai.x1_dai or d_dai.x1) * tx))
+    moc = [dai_clip * f for f in (0.08, 0.25, 0.42, 0.58, 0.75, 0.92)]
+    md_a = C.mat_do_vung(a, yy0, yy1, moc, xx0, xx1)
+    md_b = C.mat_do_vung(b, yy0, yy1, moc, xx0, xx1)
+    kiem("CA24d bản TẮT còn nguyên chữ trên bề ngang dải (đối chứng, >= 0,05)",
+         md_a >= 0.05, f"mật độ nét {md_a:.4f}")
+    kiem("CA24d' HỘP che HẾT chữ — mật độ nét trên **CẢ BỀ NGANG DẢI CŨ** về "
+         "~0 (<= 0,02). Đây là phép kiểm 'không sót ký tự ở RÌA': phần dải bị "
+         "hộp BỎ RA vẫn nằm trong vùng đo.",
+         md_b <= 0.02,
+         f"{md_a:.4f} -> {md_b:.4f} (giảm {md_a/max(md_b,1e-9):.0f} lần) · "
+         f"vùng đo y={yy0}..{yy1} x={xx0}..{xx1} (bề ngang DẢI, "
+         f"hộp chỉ che {d_hop.ty_le_thu*100:.0f}% chỗ đó)")
+    kiem("CA24d'' nhật ký nói rõ là che HỘP CHỮ",
+         bool(lg) and lg[0]["che"] and "HỘP" in (lg[0].get("ly_do") or ""),
+         lg[0]["ly_do"] if lg else "(rỗng)")
+
+    # ---- (3) CHE OAN: video KHÔNG chữ phải KHÔNG bị đụng ----
+    sach = [KHO / t for t in ("en_d5.mp4", "en_bus.mp4")]
+    sach = [p for p in sach if p.exists()]
+    if not sach:
+        HONG.append("CA24e KHÔNG có video sạch trong kho -> không đo được "
+                    "CHE OAN (đừng coi là ĐẠT)")
+    for p in sach:
+        C._DAI_NHO.clear()
+        C._DAI_KHOA.clear()
+        C._BAT_HOP = True
+        try:
+            f, d, ly = C.loc_cho_xuat(p, segs=segs)
+        finally:
+            C._BAT_HOP = cu
+        kiem(f"CA24e CHE OAN — {p.name} không chữ -> chuỗi filter RỖNG kể cả "
+             "khi bật hộp (hộp chỉ chạy sau khi ĐÃ kết luận có chữ)",
+             f == "" and (d is None or not d.co_chu), f"ly_do: {ly[:80]}")
+
+    # ---- (4) ẢNH ĐỂ NGƯỜI/LLM TỰ NHÌN — phóng to đúng dải ----
+    ch = max(2, (yy1 - yy0 + 24) // 2 * 2)
+    yc = max(0, yy0 - 12)
+    for ten, p in (("TAT", a), ("HOP", b)):
+        for i, f in enumerate((0.18, 0.50, 0.82)):
+            dst = SAN / f"ZOOM_{ten}_{i}.png"
+            subprocess.run(
+                [C._bin("ffmpeg"), "-y", "-v", "error", "-ss",
+                 f"{dai_clip*f:.3f}", "-i", str(p), "-frames:v", "1", "-vf",
+                 f"crop={_OUT_W}:{ch}:0:{yc},scale=iw*2:ih*2:flags=neighbor",
+                 str(dst)], capture_output=True,
+                creationflags=C._CREATE_NO_WINDOW)
+    n_anh = len(list(SAN.glob("ZOOM_*.png")))
+    kiem("CA24f có ảnh PHÓNG TO vùng dải để NGƯỜI TỰ NHÌN (cổng không tự chấm "
+         "'nhìn đẹp' — số đo 'sạch' mà mắt vẫn đọc được chữ đã xảy ra)",
+         n_anh >= 6, f"{n_anh} ảnh · {SAN}\\ZOOM_*.png")
+
+
 def ca20_nhin_bang_mat(src: Path, a: Path, b: Path, vung) -> None:
     """Trích khung TRƯỚC/SAU của FILE XUẤT để NGƯỜI/LLM tự nhìn.
 
@@ -1200,6 +1366,7 @@ def main() -> int:
             print(f"\n(nguồn thật cho CA 15-17-20: {that})")
             xa, xb, vung = ca15_bat_tat_co_tac_dung(that)
             ca22_ghep_doan(that)
+            ca24_hop_chu(that)
             ca16_bat_bien(that)
             if os.environ.get("BQ_BO_DO_CHI_PHI", "") != "1":
                 ca17_chi_phi(that)
