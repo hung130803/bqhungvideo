@@ -1947,15 +1947,15 @@ _RECAP_PHRASE_MAX_CJK = 6
 #: Hàn vẫn ra 20 token thay vì 5, tức bản vá "chừa tiếng Hàn" KHÔNG hề chừa.
 #: Mắt thường không đọc ra được sai lệch đó, `\u` thì đọc ra ngay.
 _KHONG_DAU_CACH = re.compile(
-    "[　-ヿ"      # dau cau CJK (、 。 「...) + hiragana + katakana
-    "㐀-䶿"       # CJK Unified ext-A
-    "一-鿿"       # CJK Unified (chu Han)
-    "豈-﫿"       # CJK compat ideographs
-    "！-ﾟ"       # dau cau/chu so toan-rong + katakana nua
-    "฀-๿"       # Thai
-    "຀-໿"       # Lao
-    "က-႟"       # Mien Dien
-    "ក-៿]")     # Khmer
+    "[\u3000-\u30FF"              # dau cau CJK (U+3001 U+3002 U+300C...) + kana
+    "\u3400-\u4DBF"               # CJK Unified ext-A
+    "\u4E00-\u9FFF"               # CJK Unified (chu Han)
+    "\uF900-\uFAFF"               # CJK compat ideographs
+    "\uFF01-\uFF9F"               # dau cau/chu so toan-rong + katakana nua
+    "\u0E00-\u0E7F"               # Thai
+    "\u0E80-\u0EFF"               # Lao
+    "\u1000-\u109F"               # Mien Dien
+    "\u1780-\u17FF]")             # Khmer
 
 
 def _tach_tu(text: str) -> list:
