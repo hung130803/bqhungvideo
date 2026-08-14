@@ -14,6 +14,19 @@ import sys
 import tempfile
 from pathlib import Path
 
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE. Thiếu dòng này
+# thì Python lấy bảng mã cp1252 -> `print` tiếng Việt ném UnicodeEncodeError
+# NGAY DÒNG ĐẦU -> cổng "HỎNG" oan, mã thoát 1, trong khi mã app không sai một
+# chỗ nào. Chỉ lộ ra khi chạy hồi quy hàng loạt (`> file`); chạy tay trong
+# console utf-8 thì luôn xanh, nên loại lỗi này rất dễ bị đổ oan cho bản vá
+# đang làm. (`_test_guard` đã làm sẵn việc này nhưng cổng này không dựng UI
+# nên không import nó.)
+for _f in (sys.stdout, sys.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 T = Path(tempfile.mkdtemp(prefix="lane_"))
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)

@@ -11,6 +11,15 @@ import sys
 from pathlib import Path
 import tempfile
 
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
+# cùng nội dung ở `_test_lane_starve.py`. Thiếu nó thì cổng HỎNG OAN (mã thoát
+# 1) ngay dòng `print` đầu tiên khi chạy hồi quy hàng loạt.
+for _f in (sys.stdout, sys.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 os.environ["BQ_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
 # CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
 # Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
