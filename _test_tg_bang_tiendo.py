@@ -241,6 +241,31 @@ dlg.xong_ca_luot.connect(
 
 
 # ==================================================================
+print("\n=== NHÃN KHÔNG EMOJI (máy anh Hùng thiếu font -> Ô ĐEN) ===")
+# Chỉ soi NHÃN NÚT + tiêu đề cột + nhãn chữ (bài học cổng 27: soi cả file thì
+# emoji trong dòng ghi chú cũng bị kể, FAIL OAN).
+import unicodedata  # noqa: E402
+
+from PyQt6.QtWidgets import QLabel, QPushButton  # noqa: E402
+
+
+def _co_emoji(s: str) -> bool:
+    return any(ord(c) > 0xFFFF or unicodedata.category(c) == "So"
+               for c in s or "")
+
+
+_nhan = [w.text() for w in dlg.findChildren(QPushButton)]
+_nhan += [w.text() for w in dlg.findChildren(QLabel)]
+_nhan += [dlg.bang.horizontalHeaderItem(c).text()
+          for c in range(dlg.bang.columnCount())]
+_xau = [x for x in _nhan if _co_emoji(x)]
+dat(f"KHÔNG nhãn nào có emoji ({len(_nhan)} nhãn)", not _xau, str(_xau))
+dat("có đủ 2 ô thư mục + 2 nút chọn",
+    any("nguồn" in x.lower() for x in _nhan)
+    and any("đích" in x.lower() for x in _nhan),
+    str([x for x in _nhan if "thư mục" in x.lower()])[:120])
+
+
 print("\n=== CỔNG 1: BẢNG HIỆN ĐỦ DÒNG NGAY + ĐỔI THEO TỪNG BƯỚC ===")
 dat("bảng liệt kê đủ 3 video NGAY khi chọn thư mục (chưa bấm gì)",
     dlg.bang.rowCount() == 3, f"{dlg.bang.rowCount()} dòng")
