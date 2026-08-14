@@ -1373,6 +1373,76 @@
      video đang dở chạy lại từ bước 0 · chưa ai bấm thử trên máy nhân viên
      thật · `app/services.py:enqueue_thay_giong` nay là **MÃ CHẾT** (không một
      nơi nào gọi — đường thật là `tg_chay.xep_mot`).
+  58. `_test_lib_du.py` → **`_lib` PHẢI TỰ ĐỨNG ĐƯỢC + PHÉP DÒ PHẢI NÓI THẬT**
+     (v2.27.1, 14/08/2026). Anh Hùng: *"trước tôi nhớ báo cài rồi mà nay nó ghi
+     chưa có bộ tách giọng"*. **ĐẠT 21 · HỎNG 0.**
+     **GỐC:** `co_demucs`/`tinh_trang_demucs` chèn `_lib` vào `sys.path` rồi hỏi
+     `find_spec` *"import được không"*. Máy dev có `.venv` -> **ăn torch của
+     `.venv`** -> trả True, `thieu=[]` -> app báo "đã cài". Bản `.exe` không có
+     `.venv` để mượn -> cùng `_lib` đó báo "chưa có". **Máy dev XANH, máy thật
+     ĐỎ.** Đo trên chính `_lib` anh Hùng: `demucs` -> `_lib\demucs`, còn `torch`
+     và **`soundfile`** (thiếu 2 gói chứ không phải 1) -> `.venv\...`.
+     **BẰNG CHỨNG NGUYÊN NHÂN LÀ "pip BỎ QUA GÓI ĐÃ CÓ", KHÔNG PHẢI "tải dở":**
+     mọi gói CÓ trong `_lib` (antlr4 · demucs · einops · julius · lameenc ·
+     omegaconf) đều **KHÔNG có trong `.venv`**; mọi gói THIẾU (torch ·
+     soundfile · numpy · tqdm...) đều **`.venv` ĐÃ CÓ**. Một phép chia đôi hoàn
+     hảo, và cả thư mục cùng dấu thời gian 00:55 (không phải tải đứt quãng).
+     Thêm: `_lib` sinh lúc **00:55** trong khi `cai_demucs()` mới ra đời ở commit
+     **11:46** cùng ngày -> `_lib` KHÔNG do nút trong app tạo ra.
+     **VIỆC 1 — `--ignore-installed`.** Cờ này ép mọi gói nằm THẬT trong
+     `--target`. LƯU Ý ĐO ĐƯỢC: **pip 26.2.1 hiện tại KHÔNG còn bỏ qua nữa**
+     (thử `--target` có/không `--upgrade`/`--ignore-installed` đều ra 17 mục y
+     hệt) — nhưng `_lib` chứng minh hành vi cũ CÓ THẬT, nên đặt cờ để không bao
+     giờ phải phụ thuộc phiên bản pip.
+     **DUNG LƯỢNG LÀ SỐ ĐO, KHÔNG PHẢI ƯỚC BỪA** (hỏi metadata chỉ mục +
+     `pip install --dry-run --report`, **KHÔNG tải thật**): 33 gói =
+     **154,0 MB** tải về (torch 121,9 MB + 32,1 MB còn lại), bung ra đĩa ~700 MB
+     (riêng torch **513,6 MB**). Nhãn cũ *"khoảng 2 GB"* **gấp 13 lần** lượng
+     tải thật. **BẢN CUDA: ĐO RA KHÔNG CÓ GÌ ĐỂ ĐÁNH ĐỔI** — wheel Windows trên
+     PyPI **122,1 MB** vs bản `+cpu` **121,9 MB**, lệch **0,2 MB**, và **cả hai
+     đều không kéo theo gói `nvidia-*` nào**. Muốn dùng RTX 3060 phải trỏ hẳn
+     sang chỉ mục `cu###` — việc RIÊNG, không tự nhiên có bằng cách bỏ cờ.
+     `--extra-index-url` (KHÔNG `--index-url`): chỉ mục cpu không có
+     demucs/soundfile nên ép cả lượt vào đó là hỏng phép giải; vẫn ra `+cpu` vì
+     `2.13.0+cpu` > `2.13.0` theo PEP 440 (đã kiểm bằng `--report`).
+     **VIỆC 2 — dò bằng `PathFinder` trên ĐÚNG `[_lib]`**, so `spec.origin` với
+     `_lib` chứ không hỏi "import được không". Dùng `PathFinder` chứ KHÔNG
+     `importlib.util.find_spec` vì `find_spec("demucs.pretrained")` **IMPORT gói
+     cha** thật (và `find_spec` thì luôn tìm trên `sys.path` nên không trả lời
+     được câu "có nằm trong `_lib` không"). **BA KHOÁ, BA CÂU HỎI KHÁC NHAU —
+     đọc nhầm là lại tự lừa:** `thieu`/`du_lib` = sự thật của `_lib` = **đúng
+     cái bản .exe thấy** · `co` = máy NÀY chạy được không (máy dev mượn `.venv`
+     là THẬT, vì bước tách chạy bằng `_python_chay_tach()` = python `.venv`) ·
+     `ngoai_lib` = gói đang mượn = *"máy này chạy được, máy anh Hùng thì không"*.
+     `co_demucs()` KHÔNG còn chèn `_lib` vào `sys.path` — chèn vào là làm bẩn
+     phép đo của mọi lượt dò sau.
+     **VIỆC 3 — hộp hiện NGUỒN TỪNG GÓI** (`_lib` / hệ thống / KHÔNG CÓ) + đường
+     dẫn `_lib`. Thêm trạng thái **CÀI DỞ** (máy này chạy được nhưng .exe sẽ báo
+     thiếu), nút đổi nhãn thành `Cài tiếp phần còn thiếu (torch, soundfile)`.
+     Nút bám **`thieu`**, KHÔNG bám `co` — bám `co` chính là cách bản cũ giấu
+     mất việc `_lib` thiếu torch (máy dev mượn được -> nút biến mất -> không ai
+     bấm -> bản .exe mãi mãi thiếu). Hộp "Đã cài xong" mừng theo `du_lib`.
+     **MỆNH ĐỀ TRUNG TÂM CỦA CỔNG (CA 1a):** *danh sách gói THIẾU mà máy DEV nói
+     ra phải GIỐNG HỆT danh sách mà một tiến trình KHÔNG có `.venv` nói ra.*
+     Cách giả lập `.exe`: import `app` xong **RỒI MỚI** cắt mọi mục
+     `site-packages` khỏi `sys.path` — bản `.exe` vẫn có đủ dotenv/PyQt6 trong
+     `_internal`, khác biệt duy nhất là chỗ tìm torch. Cắt trước thì chính
+     `import config` chết và cổng đo nhầm thứ khác.
+     **THỬ PHÁ (CA 4) — chạy lại CHÍNH mã bản cũ ở CẢ HAI môi trường:** dev
+     `thiếu=[]` vs .exe `thiếu=['torch','soundfile']` -> CA1a FAIL. Cổng không
+     phải con dấu.
+     **QUÉT TĨNH PHẢI BẰNG AST:** chính phần ghi chú của `cai_demucs` có chuỗi
+     `--ignore-installed`, nên tìm bằng chuỗi thì gỡ cờ khỏi lệnh mà cổng VẪN
+     XANH (đúng bài học cổng 56d).
+     **ĐÃ GỠ `kiem_lib_bang_tien_trinh_rieng` + `_MA_KIEM_LIB`**: sau bản vá
+     chúng thành mã chết, mà để lại còn nguy hơn — tiến trình riêng ấy CHÍNH LÀ
+     python `.venv` nên nó mượn torch rồi báo "cài xong". Hậu kiểm sau khi cài
+     nay so `spec.origin` với `_lib`.
+     **CHƯA ĐẠT, GHI THẲNG:** **chưa tải torch thật về `_lib`** (155 MB, máy anh
+     Hùng đang chạy sản xuất) — cơ chế `--target`+`--ignore-installed` chứng
+     minh bằng gói NHỎ `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip
+     có thể bỏ qua) rồi **suy ra** cho torch · `BQHungVideo.spec` vẫn KHÔNG gói
+     torch/demucs/`_lib` nên máy nhân viên vẫn phải bấm nút + phải có Python 3.
 - **BỎ ÉP NHANH (`atempo`) — CHỮA TẬN GỐC "NÓI KHÔNG MƯỢT" (v2.27.0,
   14/08/2026).** Anh Hùng nghe thật và báo *"phần sub thoại giọng lồng tiếng
   cảm giác KHÔNG KHỚP, KHÔNG MƯỢT, nói còn nhiều lỗi"*. Cổng 53/55 chỉ có MỘT
