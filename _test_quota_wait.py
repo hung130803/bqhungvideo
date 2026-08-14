@@ -6,6 +6,16 @@
 # m1_highlight._call_waiting_quota ĐỢI key hồi (ngân sách 15 phút) rồi gọi
 # lại — chỉ chịu thua khi hết ngân sách (hết lượt NGÀY) / lỗi không phải
 # hết-lượt / user bấm Huỷ.
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
+# đầy đủ ở `_test_lane_starve.py`. PHẢI đặt TRƯỚC lời gọi `print` ĐẦU TIÊN,
+# nếu không thì vá cũng như không.
+import sys as _sys_utf8
+for _f in (_sys_utf8.stdout, _sys_utf8.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 import os
 import sys
 from pathlib import Path
@@ -153,16 +163,6 @@ llm.soonest_ready_wait = _orig_wait
 print("== 6. đuôi combo/kho không đếm clip 'archived' ==")
 from app.database.db import db  # noqa: E402
 from app import services  # noqa: E402
-
-# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
-# đầy đủ ở `_test_lane_starve.py`. Thiếu nó thì chạy hồi quy hàng loạt
-# (`> file.txt`) là Python lấy cp1252 và dòng `print` tiếng Việt ĐẦU TIÊN ném
-# UnicodeEncodeError -> cổng HỎNG OAN với mã thoát 1.
-for _f in (sys.stdout, sys.stderr):
-    try:
-        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
-    except Exception:  # noqa: BLE001
-        pass
 
 
 pid = db.execute("INSERT INTO projects(name, assets_dir, grp) "

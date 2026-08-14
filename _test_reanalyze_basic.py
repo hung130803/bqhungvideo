@@ -6,6 +6,16 @@
 #      (cắt cơ bản còn gốc / cắt cơ bản đã xoá / đã qua AI -> bỏ).
 #   2. pipeline.index_recycled — lập chỉ mục Thùng rác theo tên file để
 #      khôi phục video đã xoá.
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
+# đầy đủ ở `_test_lane_starve.py`. PHẢI đặt TRƯỚC lời gọi `print` ĐẦU TIÊN,
+# nếu không thì vá cũng như không.
+import sys as _sys_utf8
+for _f in (_sys_utf8.stdout, _sys_utf8.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 import os
 import sys
 import tempfile
@@ -23,16 +33,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app.database.db import db  # noqa: E402
 from app import services  # noqa: E402
 from app.core import pipeline as P  # noqa: E402
-
-# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
-# đầy đủ ở `_test_lane_starve.py`. Thiếu nó thì chạy hồi quy hàng loạt
-# (`> file.txt`) là Python lấy cp1252 và dòng `print` tiếng Việt ĐẦU TIÊN ném
-# UnicodeEncodeError -> cổng HỎNG OAN với mã thoát 1.
-for _f in (sys.stdout, sys.stderr):
-    try:
-        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
-    except Exception:  # noqa: BLE001
-        pass
 
 
 FAIL = []
