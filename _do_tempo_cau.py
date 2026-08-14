@@ -68,6 +68,7 @@ def mot_luot(k: dict, dich_sang: str, vong: int, lam: Path) -> dict:
     return {
         "vong": vong, "giay": round(time.time() - t0, 1),
         "so_cau": len(cau),
+        "cat_le": tts.get("cat_le", {}),
         "dich": {kk: vv for kk, vv in dd.items() if kk != "ban_dich"},
         "rut_gon": {kk: vv for kk, vv in rg.items()
                     if kk not in ("texts", "files", "ok")},
@@ -97,6 +98,11 @@ def main() -> int:
             luots.append(r)
             kh, rg = r["khop"], r["rut_gon"]
             print(f"\n--- LƯỢT {v + 1} ({r['giay']}s) ---")
+            cl = r.get("cat_le") or {}
+            if cl:
+                print(f"  cắt lề im: {cl.get('giay_truoc')}s -> "
+                      f"{cl.get('giay_sau')}s (bỏ {cl.get('giay_cat_tong')}s "
+                      f"= {cl.get('giay_cat_tb')}s/câu)")
             print(f"  dịch lại {r['dich']['ty_le_dich_lai']}% · "
                   f"điểm nghĩa TB {r['dich']['diem_tb']} · "
                   f"min {r['dich']['diem_min']}")
@@ -110,7 +116,8 @@ def main() -> int:
                   f"ép {kh['so_cau_ep']} · mượn {kh['so_cau_muon']}")
             print(f"  CHỒNG LẤN max {kh['chong_lan_ms_max']} ms · "
                   f"{kh['so_cau_chong_lan']} câu · "
-                  f"lệch đầu max {kh['lech_dau_ms_max']} ms")
+                  f"lệch đầu max {kh['lech_dau_ms_max']} ms · "
+                  f"cắt đuôi {kh.get('so_cau_cat', '?')} câu")
             if r["dai"]:
                 x = sorted(r["dai"], key=lambda d: -d["tempo"])[:5]
                 print("  5 câu ép mạnh nhất (gốc -> dịch, ký tự):")

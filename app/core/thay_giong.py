@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1258,10 +1259,142 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
 
     t0 = time.time()
     ok = asyncio.run(dubbing._synth_all(texts, voice, paths, on_done=_done))
+    # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
+    # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
+    # độ dài file có kèm ~1,07 s im lặng của edge-tts.
+    if on_progress:
+        on_progress(0.95, "Cắt lề im lặng đầu/cuối câu...")
+    sach, le = cat_le_loat(paths, list(ok), out_dir / "sach")
     return {
-        "files": paths, "ok": list(ok), "voice": voice,
+        "files": sach, "files_tho": paths, "ok": list(ok), "voice": voice,
         "giay": round(time.time() - t0, 2),
         "so_hong": sum(1 for x in ok if not x),
+        "cat_le": le,
+    }
+
+
+# ==================================================================
+# BƯỚC 4a — CẮT LỀ IM LẶNG edge-tts CHÈN VÀO MỖI CÂU
+# ==================================================================
+#
+# ĐÂY LÀ GỐC RỄ CỦA "NÓI KHÔNG MƯỢT" — đo được, không phải phòng xa.
+# `_do_le_im.py` đo bằng `silencedetect` trên chính file edge-tts trả về:
+# mỗi câu bị chèn **~0,20 giây im ở ĐẦU và ~0,87 giây im ở CUỐI**, bất kể câu
+# dài hay ngắn. Câu dịch 12 ký tự: file 1,848 s nhưng TIẾNG THẬT chỉ 0,762 s
+# — **58% file là im lặng**.
+#
+# App cũ đo độ dài câu bằng `probe_duration` (tức TÍNH CẢ LỀ IM) rồi ép
+# `atempo` cho lọt khung -> **ép méo tiếng nói thật chỉ để nén khoảng im**.
+# Đo trên video Douyin 90 giây: 23-32% số câu chạm TRẦN 1,5 ở cả 3 lượt.
+#
+# Cắt lề rồi thì phần lớn câu lọt khung ở tempo 1,0 — không méo gì cả.
+# GIỮ LẠI một chút hai đầu (`GIU_DAU`/`GIU_CUOI`) để câu không nghe như bị
+# chặt cụt; khoảng nghỉ giữa các câu đã có sẵn trên TIMELINE GỐC (mỗi câu đặt
+# đúng mốc `start` của người nói gốc), không cần edge-tts nghỉ hộ.
+
+#: Ngưỡng coi là im lặng. -45 dBFS: dưới mức này edge-tts không phát gì (đo
+#: được lề im ổn định 0,18-0,21 s đầu · 0,82-1,31 s cuối trên 12 câu thử).
+NGUONG_IM_DB = -45.0
+
+#: Chừa lại hai đầu (giây) — cắt sát 0 thì phụ âm đầu/đuôi bị gọt, nghe cụt.
+GIU_DAU = 0.04
+GIU_CUOI = 0.08
+
+
+def do_le_im(path: str | Path, nguong_db: float = NGUONG_IM_DB,
+             ) -> tuple[float, float, float]:
+    """(im ĐẦU, im CUỐI, tổng) giây — đo bằng `silencedetect` THẬT.
+
+    Chỉ tính khoảng im DÍNH MÉP file; khoảng nghỉ giữa câu thì KHÔNG đụng.
+    Lỗi/không đo được -> (0, 0, tổng) = coi như không có lề (fail-safe: thà
+    không cắt còn hơn cắt nhầm vào tiếng nói).
+    """
+    tong = probe_duration(path)
+    if tong <= 0:
+        return (0.0, 0.0, 0.0)
+    cmd = [settings.FFMPEG_PATH, "-hide_banner", "-i", str(path),
+           "-af", f"silencedetect=n={nguong_db}dB:d=0.03", "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_CREATE_NO_WINDOW, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return (0.0, 0.0, tong)
+    khoang: list[tuple[float, float]] = []
+    st: Optional[float] = None
+    for m in re.finditer(r"silence_(start|end): (-?[\d.]+)", r.stderr or ""):
+        if m.group(1) == "start":
+            st = float(m.group(2))
+        elif st is not None:
+            khoang.append((st, float(m.group(2))))
+            st = None
+    if st is not None:
+        khoang.append((st, tong))
+    dau = khoang[0][1] if khoang and khoang[0][0] <= 0.02 else 0.0
+    cuoi = (tong - khoang[-1][0]) if khoang and khoang[-1][1] >= tong - 0.02 \
+        else 0.0
+    return (max(0.0, dau), max(0.0, cuoi), tong)
+
+
+def cat_le_im(src: str | Path, dst: str | Path,
+              nguong_db: float = NGUONG_IM_DB) -> float:
+    """Cắt lề im lặng hai đầu file TTS -> wav. Trả độ dài THẬT sau khi cắt.
+
+    KHÔNG BAO GIỜ trả file rỗng: đo hỏng, hoặc cắt xong còn dưới 0,08 giây
+    (câu chỉ có tiếng thở / TTS hỏng) -> giữ NGUYÊN bản gốc. Độ dài trả về
+    luôn là số ĐO LẠI trên file đã ghi, không phải số dự kiến (bẫy "ffmpeg mã
+    0 nhưng file rỗng").
+    """
+    src, dst = Path(src), Path(dst)
+    dau, cuoi, tong = do_le_im(src, nguong_db)
+    a = max(0.0, dau - GIU_DAU)
+    b = max(a + 0.01, tong - max(0.0, cuoi - GIU_CUOI))
+    af = ["aresample=44100"]
+    if tong > 0 and (a > 0.005 or b < tong - 0.005) and (b - a) >= 0.08:
+        af.append(f"atrim=start={a:.3f}:end={b:.3f}")
+        af.append("asetpts=N/SR/TB")
+    _ffmpeg(["-i", str(src), "-af", ",".join(af), "-ac", "1", "-ar", "44100",
+             "-c:a", "pcm_s16le", str(dst)], f"cắt lề im {src.name}")
+    d = probe_duration(dst)
+    if d < 0.05:                       # cắt hụt -> quay về bản chưa cắt
+        _ffmpeg(["-i", str(src), "-af", "aresample=44100", "-ac", "1",
+                 "-ar", "44100", "-c:a", "pcm_s16le", str(dst)],
+                f"giữ nguyên {src.name}")
+        d = probe_duration(dst)
+    return d
+
+
+def cat_le_loat(files: list[str], ok: list[bool], out_dir: str | Path,
+                tien_to: str = "sach") -> tuple[list[str], dict]:
+    """Cắt lề cho cả loạt câu. Trả (files_mới, số đo).
+
+    Câu TTS hỏng (`ok[i]` False) giữ nguyên đường dẫn cũ — caller vẫn bỏ nó
+    theo `ok`, không được để lệch chỉ số.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ra = list(files)
+    cat_tong = 0.0
+    truoc_tong = 0.0
+    sau_tong = 0.0
+    n = 0
+    for i, f in enumerate(files):
+        if i >= len(ok) or not ok[i] or not f or not Path(f).exists():
+            continue
+        d0 = probe_duration(f)
+        dst = out_dir / f"{tien_to}_{i:04d}.wav"
+        d1 = cat_le_im(f, dst)
+        ra[i] = str(dst)
+        truoc_tong += d0
+        sau_tong += d1
+        cat_tong += max(0.0, d0 - d1)
+        n += 1
+    return ra, {
+        "so_cau": n,
+        "giay_cat_tong": round(cat_tong, 2),
+        "giay_cat_tb": round(cat_tong / max(1, n), 3),
+        "giay_truoc": round(truoc_tong, 2),
+        "giay_sau": round(sau_tong, 2),
     }
 
 
@@ -1397,6 +1530,9 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         from app.core import dubbing
         v = voice or giong_theo_ngon_ngu(dich_sang)
         ok2 = asyncio.run(dubbing._synth_all(thu, v, paths))
+        # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
+        # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
+        paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}")
 
         for j, m in enumerate(muc):
             i = m["i"]
@@ -1454,6 +1590,13 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
       2. Tràn -> MƯỢN khoảng lặng ngay sau câu (tới trước câu kế
          `CHUA_TRUOC_CAU_KE` giây). Mượn được thì vẫn tempo 1.0.
       3. Mượn hết vẫn tràn -> mới ép atempo, trần `tempo_toi_da`.
+      4. Ép trần vẫn tràn -> CẮT + fade ra. **0 ms CHỒNG LẤN LÀ BẤT BIẾN**,
+         không phải may: thà mất đuôi một câu còn hơn hai câu chồng tiếng
+         (anh Hùng nghe ra ngay, và nó làm hỏng CẢ câu sau chứ không chỉ câu
+         này). Số câu phải cắt được ĐẾM và trả về — cấm giấu.
+
+    Bất biến được KIỂM LẠI trên file đã ghi (`d_fin` đo bằng ffprobe), không
+    tin số dự kiến: `atempo`/`atrim`/`aresample` làm tròn khác `d/k`.
 
     Trả {manh, lech_dau_ms, lech_cuoi_ms, tempo_max, so_cau_ep, so_cau_muon}.
     `manh` = [(mốc_giây, đường_dẫn_wav)] để bước 6 trộn.
@@ -1466,8 +1609,11 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     lech_cuoi: list[float] = []
     chong: list[float] = []
     temps: list[float] = []
-    so_ep = so_muon = 0
+    so_ep = so_muon = so_cat = 0
     bo_qua = 0
+    #: mép an toàn khi cắt: ffmpeg làm tròn theo mẫu, cắt đúng bằng trần thì
+    #: file ra có thể dài hơn vài chục micro-giây -> vẫn tính là chồng lấn.
+    _MEP = 0.005
 
     for i, c in enumerate(cau):
         if i >= len(files) or not ok[i] or not Path(files[i]).exists():
@@ -1479,7 +1625,9 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
 
         # khoảng lặng tới câu kế (có thể MƯỢN)
         ke = float(cau[i + 1]["start"]) if i + 1 < len(cau) else tong
-        cho_phep = max(khung, ke - a - CHUA_TRUOC_CAU_KE)
+        # TRẦN CỨNG: câu này TUYỆT ĐỐI không được kéo tới mốc câu kế.
+        tran = max(0.10, ke - a)
+        cho_phep = min(tran, max(khung, ke - a - CHUA_TRUOC_CAU_KE))
 
         d_nat = probe_duration(files[i])
         if d_nat <= 0:
@@ -1498,13 +1646,28 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
                 so_muon += 1
 
         dst = out_dir / f"khop_{i:04d}.wav"
-        af = ["aresample=44100"]
-        if abs(tempo - 1.0) > 1e-3:
-            af.append(_atempo_chuoi(tempo))
-        _ffmpeg(["-i", files[i], "-af", ",".join(af), "-ac", "2",
-                 "-ar", str(SR_TACH), "-c:a", "pcm_s16le", str(dst)],
-                f"khớp thời gian câu #{i}")
-        d_fin = _kiem_wav(dst)
+        d_fin = 0.0
+        cat_lan = 0
+        # (4) BẤT BIẾN 0 ms: dựng, ĐO LẠI, còn tràn thì cắt — tối đa 2 vòng.
+        while True:
+            af = ["aresample=44100"]
+            if abs(tempo - 1.0) > 1e-3:
+                af.append(_atempo_chuoi(tempo))
+            gioi = tran - _MEP
+            if cat_lan or (d_nat / tempo) > gioi:
+                af.append(f"atrim=0:{gioi:.3f}")
+                af.append("asetpts=N/SR/TB")
+                af.append(f"afade=t=out:st={max(0.0, gioi - 0.10):.3f}:d=0.10")
+            _ffmpeg(["-i", files[i], "-af", ",".join(af), "-ac", "2",
+                     "-ar", str(SR_TACH), "-c:a", "pcm_s16le", str(dst)],
+                    f"khớp thời gian câu #{i}")
+            d_fin = _kiem_wav(dst)
+            if a + d_fin <= ke + 1e-4 or cat_lan >= 2:
+                if cat_lan:
+                    so_cat += 1
+                break
+            cat_lan += 1
+            tran = min(tran, ke - a)          # siết lại rồi cắt thật
 
         manh.append((a, str(dst)))
         temps.append(tempo)
@@ -1534,6 +1697,9 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         "tempo_max": round(max(temps or [1.0]), 3),
         "tempo_tb": round(sum(temps) / len(temps), 3) if temps else 1.0,
         "so_cau_ep": so_ep, "so_cau_muon": so_muon,
+        # Câu phải CẮT ĐUÔI để giữ bất biến 0 ms — số này KHÔNG được giấu:
+        # nó là chỗ duy nhất còn mất chữ.
+        "so_cau_cat": so_cat,
         "so_cau_vuot_canh_bao": sum(1 for t in temps if t > tempo_canh_bao),
         # PHÂN BỐ từng câu — `tempo_max` một mình che mất "bao nhiêu % câu bị
         # ép quá 1,2 / 1,3 / 1,4" (số đo anh Hùng cần để biết nghe dở tới đâu).
