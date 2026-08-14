@@ -1256,8 +1256,12 @@
      chưa ai xem bằng mắt trên máy nhân viên thật.
   57. `_test_tg_bang_tiendo.py` → **HỘP THAY GIỌNG: BẢNG TIẾN ĐỘ SỐNG · THƯ
      MỤC VÀO/RA · NHỚ VIDEO ĐÃ XONG** (v2.27.0, 14/08/2026). Anh Hùng dùng
-     thật v2.26.0 rồi báo 4 lỗi, cổng này canh đúng 4 cái đó. **ĐẠT 49 ·
-     HỎNG 0** (cổng 55 sau khi cập nhật: **ĐẠT 47 · HỎNG 0**).
+     thật v2.26.0 rồi báo 4 lỗi, cổng này canh đúng 4 cái đó. **ĐẠT 57 ·
+     HỎNG 0** (cổng 55 sau khi cập nhật: **ĐẠT 47 · HỎNG 0**, chạy 2 lượt đều
+     xanh). Có cả ca **soi PIXEL** (ô Trạng thái vẽ ra **256 điểm ảnh chữ**,
+     vùng trống **0**) và ca **quét nhãn KHÔNG EMOJI** (21 nhãn) — đếm MÀU
+     kiểu cổng 9 không dùng được ở đây vì chạy offscreen chữ không khử răng
+     cưa nên ô CÓ CHỮ cũng chỉ ra đúng 2 màu (ngưỡng ">= 3 màu" FAIL OAN).
      (a) *"ấn chạy thì chỉ hiện thanh tiến trình, không hiện gì cả, xong hay
      gì cũng không báo, đang phân tích như nào cũng không thấy"* -> bảng hiện
      **đủ dòng NGAY** khi bấm Chạy (video chưa tới lượt = "Đang chờ"), trạng
@@ -1300,10 +1304,18 @@
      bản mã, đo **ĐAN XEN B,A,B,A** ra **18,26s vs 25,09s = nhanh 1,37 lần**
      (khớp 1,43 lần của cổng 55 cũ). Lượt đầu nuốt chi phí nạp model + mạng
      Groq. Đúng bài học "Đo A/B phải đan xen" — đã sập 3 lần trên máy này.
-     **CHƯA ĐẠT, GHI THẲNG:** bảng đọc thẳng bảng `jobs` mỗi 0,7s nên tắt hộp
-     rồi mở lại thì cột tiến trình của việc ĐANG chạy về "Chưa chạy" cho tới
-     khi job đó xong (sổ chỉ ghi lúc KẾT THÚC) · chưa có nút "Dừng video này"
-     riêng (chỉ có "Dừng tất cả") · chưa ai bấm thử trên máy nhân viên thật.
+     **MỞ LẠI HỘP GIỮA CHỪNG PHẢI NHẬN LẠI VIỆC** (`_nhan_lai_job_dang_chay`):
+     đóng hộp/tắt app thì job vẫn nằm trong bảng `jobs` và vẫn chạy, nên hộp
+     mới phải tra lại theo `payload.video` — không nhận lại thì bảng hiện
+     "Chưa chạy" trong khi máy đang làm, đúng cái anh Hùng kêu. Đo: **3/3 job
+     nhận lại**, bảng hiện *Đang tách giọng · Đang tách giọng · Đang chờ*
+     (không dòng nào "Chưa chạy").
+     **CHƯA ĐẠT, GHI THẲNG:** chưa có nút "Dừng video này" riêng (chỉ có "Dừng
+     tất cả" — chuột phải mới có làm lại/bỏ qua) · bảng chỉ đọc thư mục MỘT
+     CẤP (`liet_ke_video` không đệ quy) nên chọn thư mục mẹ chứa 300 thư mục
+     kênh thì bảng trống · sổ chỉ ghi lúc job KẾT THÚC, tắt app giữa chừng thì
+     video đang dở chạy lại từ bước 0 · chưa ai bấm thử trên máy nhân viên
+     thật.
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
