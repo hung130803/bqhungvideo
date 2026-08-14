@@ -250,7 +250,12 @@ print("\n=== CA 3: MÁY KHÔNG CÓ DEMUCS -> CHẶN, KHÔNG lui cách nhẹ ==="
 _that_tt = TG.tinh_trang_demucs
 _that_co = TG.co_demucs
 TG.tinh_trang_demucs = lambda: {          # giả lập ĐÚNG máy nhân viên
-    "co": False, "thieu": ["torch", "demucs"], "lib": str(T / "lib_rong"),
+    # Máy nhân viên MỚI TINH thì KHÔNG có gói nào — `thieu` phải đủ 3, không
+    # phải 2. Thiếu 2/3 là trạng thái CÀI DỞ, nhãn nút khác hẳn (cổng 58).
+    "co": False, "du_lib": False,
+    "thieu": list(TG.GOI_TACH_GIONG), "ngoai_lib": [],
+    "nguon": {g: "" for g in TG.GOI_TACH_GIONG},
+    "lib": str(T / "lib_rong"),
     "thiet_bi": "", "cai_duoc": True, "loi_nhan": TG.THIEU_DEMUCS}
 TG.co_demucs = lambda: False
 try:
@@ -261,8 +266,14 @@ try:
     dlg3.ed_thu_muc.setText(str(d3))
     dat("HIỆN nút tải bộ tách giọng", not dlg3.b_tai.isHidden(),
         dlg3.b_tai.text())
+    # Con số phải là SỐ ĐO, không phải ước bừa: "khoảng 2 GB" của bản cũ gấp
+    # 13 lần lượng tải thật (đo 14/08/2026: 33 gói = 154,0 MB).
     dat("nhãn nút tải nói rõ DUNG LƯỢNG",
-        "2 GB" in dlg3.b_tai.text(), dlg3.b_tai.text())
+        "MB" in dlg3.b_tai.text() and any(c.isdigit()
+                                          for c in dlg3.b_tai.text()),
+        dlg3.b_tai.text())
+    dat("nhãn nút là 'tải cả bộ' (chưa có gói nào), KHÔNG phải 'cài tiếp'",
+        TG.NHAN_CAI_TIEP not in dlg3.b_tai.text(), dlg3.b_tai.text())
     dat("KHOÁ nút Chạy", not dlg3.b_chay.isEnabled())
     dlg3._chay()                            # bấm Chạy khi thiếu Demucs
     dat("bấm Chạy vẫn KHÔNG xếp job nào", len(dlg3._jobs) == 0,

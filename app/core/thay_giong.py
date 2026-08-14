@@ -48,6 +48,7 @@ import subprocess
 import sys
 import threading
 import time
+from importlib.machinery import PathFinder
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -288,8 +289,102 @@ def lib_demucs() -> str:
     return p or str(Path(__file__).resolve().parents[2] / "_lib")
 
 
+def _duoi_thu_muc(duong: str, thu_muc: str) -> bool:
+    """`duong` có nằm TRONG `thu_muc` không (so đường dẫn THẬT, đã resolve)."""
+    if not duong or not thu_muc:
+        return False
+    try:
+        a = Path(duong).resolve()
+        b = Path(thu_muc).resolve()
+    except (OSError, ValueError):        # đường dẫn rác / ổ đĩa đã rút
+        return False
+    return a == b or b in a.parents
+
+
+def _duong_cua_spec(sp) -> str:
+    """Đường dẫn file THẬT của một `ModuleSpec` ('' = không xác định được)."""
+    if sp is None:
+        return ""
+    o = sp.origin or ""
+    if o in ("", "namespace", "built-in", "frozen"):
+        locs = list(getattr(sp, "submodule_search_locations", None) or [])
+        o = locs[0] if locs else ""
+    return o
+
+
+def _tim_goi(ten: str, duong: Optional[list[str]]) -> str:
+    """Gói `ten` nằm ở đâu khi tìm trong `duong` (None = `sys.path`). '' = không có.
+
+    **DÙNG `PathFinder` CHỨ KHÔNG `importlib.util.find_spec` — 2 lý do:**
+    (a) `find_spec("demucs.pretrained")` **IMPORT gói cha** `demucs` thật; ở đây
+        chỉ cần biết FILE nằm đâu nên không có cớ gì phải nạp mã người khác vào
+        tiến trình app (và đó là đường dẫn tới bẫy `import torch` sau Qt).
+    (b) `find_spec` luôn tìm trên `sys.path` nên KHÔNG trả lời được câu hỏi
+        *"gói này có nằm THẬT trong `_lib` không"* — nó vui vẻ trả về gói của
+        `.venv` máy dev. `PathFinder.find_spec(ten, [lib])` tìm ĐÚNG trong `lib`.
+    """
+    try:
+        return _duong_cua_spec(PathFinder.find_spec(ten, duong))
+    except Exception:  # noqa: BLE001 - gói cha hỏng / thư mục không đọc được
+        return ""
+
+
+def _demucs_du_bo(duong: str) -> bool:
+    """`demucs` tìm thấy ở `duong` có kèm `pretrained.py` không (cài dở thì không)."""
+    try:
+        return (Path(duong).parent / "pretrained.py").is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def do_goi_tach_giong(lib: str = "") -> dict:
+    """TỪNG gói tách giọng đang nằm ở ĐÂU — KHÔNG import một dòng nào.
+
+    Trả `{tên: {"lib": <đường trong _lib|"">, "he": <đường NGOÀI _lib|"">,
+    "nguon": "_lib" | "hệ thống" | ""}}`.
+
+    **VÌ SAO PHẢI PHÂN BIỆT `_lib` VỚI "hệ thống" — LỖI THẬT ANH HÙNG GẶP
+    (14/08/2026, *"trước tôi nhớ báo cài rồi mà nay nó ghi chưa có bộ tách
+    giọng"*):** bản cũ chèn `_lib` vào `sys.path` rồi hỏi `find_spec` "import
+    được không". Trên máy dev, `.venv` đã có `torch` + `soundfile` nên câu trả
+    lời luôn là CÓ **kể cả khi `_lib` không hề có torch** -> app báo "đã cài",
+    `thieu = []`. Bản `.exe` không có `.venv` -> cùng một `_lib` đó lại báo
+    "chưa có bộ tách giọng". Máy dev XANH, máy thật ĐỎ, không ai phát hiện.
+    ĐO ĐƯỢC trên chính `_lib` của anh Hùng: `demucs` -> `_lib\\demucs`, còn
+    `torch` -> `.venv\\Lib\\site-packages\\torch` và `soundfile` ->
+    `.venv\\...\\soundfile.py`. Tức **2/3 gói chưa bao giờ nằm trong `_lib`.**
+    Vì vậy câu hỏi đúng là *"`spec.origin` có nằm dưới `_lib` không"*, không
+    phải *"import được không"*.
+    """
+    lib = lib or lib_demucs()
+    try:
+        co_thu_muc = Path(lib).is_dir()
+    except (OSError, ValueError):
+        co_thu_muc = False
+    duong_lib = [lib] if co_thu_muc else []
+    ra: dict = {}
+    for ten in GOI_TACH_GIONG:
+        o_lib = _tim_goi(ten, duong_lib) if duong_lib else ""
+        if o_lib and ten == "demucs" and not _demucs_du_bo(o_lib):
+            o_lib = ""                  # có thư mục nhưng cụt -> coi như chưa có
+        he = ""
+        if not o_lib:
+            he = _tim_goi(ten, None)
+            # `sys.path` có thể ĐÃ chứa `_lib` (lượt dò trước chèn vào) — tìm
+            # thấy ở đó thì vẫn là `_lib`, đừng đếm nhầm thành "hệ thống".
+            if he and _duoi_thu_muc(he, lib):
+                o_lib, he = he, ""
+                if ten == "demucs" and not _demucs_du_bo(o_lib):
+                    o_lib = ""
+            elif he and ten == "demucs" and not _demucs_du_bo(he):
+                he = ""
+        ra[ten] = {"lib": o_lib, "he": he,
+                   "nguon": "_lib" if o_lib else ("hệ thống" if he else "")}
+    return ra
+
+
 def co_demucs() -> bool:
-    """Máy này CÓ Demucs + torch không — dò bằng `find_spec`, KHÔNG import.
+    """Máy này CÓ Demucs + torch không — dò bằng đường dẫn, KHÔNG import.
 
     **VÌ SAO KHÔNG ĐƯỢC IMPORT THẬT (đo được 14/08, không phải phòng xa):**
     trong tiến trình đã nạp PyQt6 + `QApplication` thì `import torch` CHẾT với
@@ -298,19 +393,21 @@ def co_demucs() -> bool:
     CÓ Demucs** -> UI báo "máy chưa cài" và người ta đi cài lại lần nữa.
     Đo: torch TRƯỚC Qt -> OK · torch SAU Qt -> WinError 1114 (tái hiện 100%).
 
-    `find_spec` chỉ TÌM module, không nạp DLL -> chạy đúng ở cả hai thứ tự.
-    Việc "chạy được thật không" do `_tach_demucs` (tiến trình riêng) trả lời,
-    và nó báo lỗi THẬT chứ không im lặng.
+    Dò bằng `PathFinder` (chỉ TÌM file, không nạp DLL) -> chạy đúng ở cả hai
+    thứ tự. Việc "chạy được thật không" do `_tach_demucs` (tiến trình riêng)
+    trả lời, và nó báo lỗi THẬT chứ không im lặng.
+
+    **TRẢ LỜI CÂU "MÁY NÀY CHẠY ĐƯỢC KHÔNG", KHÔNG PHẢI "`_lib` ĐÃ ĐỦ CHƯA".**
+    Hai câu đó KHÁC NHAU trên máy dev: bước tách chạy bằng `_python_chay_tach()`
+    = `sys.executable` (python của `.venv`), nên gói nằm trong `.venv` vẫn dùng
+    được thật. Muốn biết bản `.exe` sẽ thấy gì thì đọc `tinh_trang_demucs()`
+    khoá **`du_lib`** / **`thieu`** — đó mới là sự thật của `_lib`.
+    Chốt quan trọng: hàm này KHÔNG còn chèn `_lib` vào `sys.path` nữa. Chèn vào
+    là tự tay làm bẩn phép đo của mọi lượt dò sau (và của tiến trình giả lập
+    `.exe` ở cổng 58).
     """
-    lib = lib_demucs()
-    if lib and lib not in sys.path and Path(lib).is_dir():
-        sys.path.insert(0, lib)
-    import importlib.util
-    try:
-        return all(importlib.util.find_spec(m) is not None
-                   for m in ("torch", "demucs.pretrained", "soundfile"))
-    except Exception:  # noqa: BLE001 - find_spec ném khi gói cha hỏng
-        return False
+    goi = do_goi_tach_giong()
+    return all(goi[t]["nguon"] for t in GOI_TACH_GIONG)
 
 
 def qt_da_nap() -> bool:
@@ -366,7 +463,25 @@ def thiet_bi_tach() -> str:
 GOI_TACH_GIONG = ("torch", "demucs", "soundfile")
 
 #: Nhãn nút TẢI (tiếng Việt, KHÔNG EMOJI — máy anh Hùng thiếu font).
-NHAN_TAI_DEMUCS = "Tải bộ tách giọng (khoảng 2 GB)"
+#: SỐ ĐO 14/08/2026 (hỏi metadata chỉ mục, KHÔNG tải thật): 33 gói = **154,0 MB
+#: tải về** (torch 121,9 MB + 32,1 MB còn lại), bung ra đĩa ~700 MB (riêng
+#: torch 513,6 MB, đo trên `.venv`). "Khoảng 2 GB" của bản cũ là ƯỚC BỪA — nó
+#: doạ người dùng bằng con số gấp 13 lần lượng tải thật.
+NHAN_TAI_DEMUCS = "Tải bộ tách giọng (tải khoảng 155 MB)"
+
+#: Nhãn khi `_lib` đã có MỘT PHẦN (vd có demucs, thiếu torch). Ghi "Tải bộ tách
+#: giọng" lúc này là nói sai: người dùng tưởng chưa có gì và tưởng phải tải lại
+#: từ đầu.
+NHAN_CAI_TIEP = "Cài tiếp phần còn thiếu"
+
+
+def nhan_nut_tai(tt: Optional[dict] = None) -> str:
+    """Nhãn ĐÚNG cho nút tải, theo tình trạng `_lib` hiện tại."""
+    tt = tt if tt is not None else tinh_trang_demucs()
+    thieu = list(tt.get("thieu") or [])
+    if thieu and len(thieu) < len(GOI_TACH_GIONG):
+        return NHAN_CAI_TIEP + " (" + ", ".join(thieu) + ")"
+    return NHAN_TAI_DEMUCS
 
 #: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
 _KHOA_CAI = threading.Lock()
@@ -409,29 +524,34 @@ def _lenh_pip() -> list[str]:
 def tinh_trang_demucs() -> dict:
     """Máy này đã có bộ tách giọng chưa? KHÔNG tải gì, KHÔNG gọi mạng.
 
-    Trả {co, thieu, lib, thiet_bi, cai_duoc, loi_nhan} — UI đọc `co` để CHẶN
-    nút Chạy và đọc `thieu` để ghi rõ còn thiếu gói nào.
-    """
-    import importlib.util
+    Trả {co, du_lib, thieu, ngoai_lib, nguon, goi, lib, thiet_bi, cai_duoc,
+    loi_nhan}. Đọc cho đúng — 3 khoá này trả lời 3 câu HỎI KHÁC NHAU:
 
+    · **`thieu`** = gói KHÔNG nằm trong `_lib`. **Đây đúng là cái bản `.exe` sẽ
+      thấy** (máy nhân viên không có `.venv` nào để mượn). Nhãn/nút phải bám
+      khoá này, đừng bám `co`.
+    · **`du_lib`** = `not thieu`. `_lib` tự đứng được một mình chưa.
+    · **`co`** = máy NÀY chạy được không (tính cả gói mượn của môi trường hệ
+      thống). Chỉ dùng để khoá/mở nút Chạy — trên máy dev nó True trong khi
+      `_lib` vẫn thiếu torch, và đó là ĐÚNG chứ không phải mâu thuẫn.
+    · **`ngoai_lib`** = gói đang được MƯỢN của môi trường hệ thống. Danh sách
+      này KHÔNG RỖNG nghĩa là *"máy này chạy được, máy anh Hùng thì không"* —
+      phải nói thẳng ra màn hình, vì đây chính là chỗ đã lừa một lần rồi.
+    """
     lib = lib_demucs()
-    if lib and lib not in sys.path and Path(lib).is_dir():
-        sys.path.insert(0, lib)
-    thieu: list[str] = []
-    for ten, goi in (("torch", "torch"), ("demucs.pretrained", "demucs"),
-                     ("soundfile", "soundfile")):
-        # `find_spec` chứ KHÔNG `__import__`: trong tiến trình app (đã nạp Qt)
-        # `import torch` chết WinError 1114 -> máy CÓ Demucs vẫn bị báo là
-        # CHƯA CÓ. Xem ghi chú dài ở `co_demucs`.
-        try:
-            if importlib.util.find_spec(ten) is None:
-                thieu.append(goi)
-        except Exception:  # noqa: BLE001
-            thieu.append(goi)
-    co = not thieu
+    goi = do_goi_tach_giong(lib)
+    thieu = [t for t in GOI_TACH_GIONG if not goi[t]["lib"]]
+    ngoai_lib = [t for t in thieu if goi[t]["he"]]
+    khong_dau = [t for t in GOI_TACH_GIONG if not goi[t]["nguon"]]
+    co = not khong_dau
     return {
         "co": co,
+        "du_lib": not thieu,
         "thieu": thieu,
+        "ngoai_lib": ngoai_lib,
+        "goi": goi,
+        "nguon": {t: goi[t]["nguon"] for t in GOI_TACH_GIONG},
+        "duong": {t: (goi[t]["lib"] or goi[t]["he"]) for t in GOI_TACH_GIONG},
         "lib": lib,
         # '' = CHƯA BIẾT. Hàm này là cửa UI gọi (hộp "Thay giọng nói" dựng
         # trong tiến trình app ĐÃ NẠP Qt), nên `thiet_bi_tach` ở đây LUÔN trả
@@ -494,8 +614,31 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
     nhat_ky: list[str] = []
     try:
         Path(lib).mkdir(parents=True, exist_ok=True)
+        # `--ignore-installed` LÀ CỜ QUYẾT ĐỊNH, ĐỪNG GỠ.
+        # Không có nó, pip coi gói đã có trong MÔI TRƯỜNG ĐANG CHẠY là "đã thoả
+        # mãn" rồi BỎ QUA, không chép vào `--target`. Trên máy dev `.venv` sẵn
+        # có torch + soundfile -> `_lib` chỉ nhận được `demucs` và mấy gói lạ.
+        # ĐO ĐƯỢC trên chính `_lib` của anh Hùng (14/08/2026): mọi gói CÓ trong
+        # `_lib` (antlr4 · demucs · einops · julius · lameenc · omegaconf) đều là
+        # gói KHÔNG có trong `.venv`, còn mọi gói THIẾU (torch · soundfile ·
+        # numpy · tqdm...) đều là gói `.venv` ĐÃ CÓ. Một phép chia đôi hoàn hảo
+        # — không thể là trùng hợp, và cũng không phải "tải dở giữa chừng" (cả
+        # thư mục cùng dấu thời gian 00:55).
+        # Cờ này khiến pip giải lại TOÀN BỘ 33 gói vào `_lib` (154 MB) -> `_lib`
+        # tự đứng được một mình, đúng cái bản `.exe` cần.
+        #
+        # `--extra-index-url` (KHÔNG phải `--index-url`): chỉ mục cpu của pytorch
+        # không có `demucs`/`soundfile` nên ép cả lượt vào đó là hỏng phép giải.
+        # Vẫn ra bản CPU vì `2.13.0+cpu` > `2.13.0` theo PEP 440 (local version)
+        # — ĐÃ KIỂM bằng `pip install --dry-run --report`: pip chọn
+        # `torch==2.13.0+cpu` lấy từ download.pytorch.org.
+        # Bản CUDA có đáng không: ĐO RA LÀ KHÔNG CÓ GÌ ĐỂ ĐÁNH ĐỔI — wheel
+        # Windows trên PyPI (122,1 MB) và bản `+cpu` (121,9 MB) LỆCH NHAU 0,2 MB
+        # và cả hai đều KHÔNG kéo theo gói `nvidia-*` nào. Muốn dùng RTX 3060
+        # phải trỏ hẳn sang chỉ mục `cu###`, đó là việc RIÊNG chứ không phải
+        # tự nhiên có bằng cách bỏ cờ này.
         args = [*pip, "install", "--no-input", "--disable-pip-version-check",
-                "--upgrade", "--target", lib,
+                "--upgrade", "--ignore-installed", "--target", lib,
                 "--extra-index-url", "https://download.pytorch.org/whl/cpu",
                 *GOI_TACH_GIONG]
         prog(0.02, "Đang tải bộ tách giọng (khoảng 2 GB, chạy 1 lần)...")
@@ -529,16 +672,24 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
                            + " | ".join(nhat_ky[-4:]),
                     "nhat_ky": nhat_ky[-40:]}
         prog(0.97, "Đang kiểm lại bộ tách giọng...")
-        kiem = kiem_lib_bang_tien_trinh_rieng(lib)
-        thieu = [g for g in GOI_TACH_GIONG if g not in kiem]
+        # KIỂM BẰNG ĐƯỜNG DẪN TRONG `_lib`, KHÔNG BẰNG "import được không".
+        # Bản cũ hỏi tiến trình riêng "`__import__` có chạy không" — mà tiến
+        # trình riêng đó là python của `.venv`, nên nó mượn torch của `.venv`
+        # rồi báo CÀI XONG trong khi `_lib` vẫn rỗng torch. Đúng cái bẫy hàm
+        # này sinh ra để chặn, nhưng lại tự sập vào.
+        goi = do_goi_tach_giong(lib)
+        thieu = [g for g in GOI_TACH_GIONG if not goi[g]["lib"]]
+        kiem = {g: goi[g]["lib"] for g in GOI_TACH_GIONG if goi[g]["lib"]}
         if thieu:
-            return {"ok": False, "lib": lib, "ma_thoat": 0,
-                    "giay": round(time.time() - t0, 2),
-                    "loi": "pip báo xong nhưng vẫn thiếu: "
-                           + ", ".join(thieu) + " — " + str(kiem)[:300],
+            return {"ok": False, "lib": lib, "ma_thoat": 0, "goi": goi,
+                    "giay": round(time.time() - t0, 2), "thieu": thieu,
+                    "loi": "pip trả mã 0 nhưng " + ", ".join(thieu)
+                           + " VẪN KHÔNG nằm trong _lib (" + lib + "). "
+                             "Đừng coi là đã cài — bản .exe sẽ không chạy được.",
                     "kiem": kiem, "nhat_ky": nhat_ky[-40:]}
         prog(1.0, "Đã cài xong bộ tách giọng")
         return {"ok": True, "lib": lib, "ma_thoat": 0, "kiem": kiem,
+                "goi": goi, "thieu": [],
                 "giay": round(time.time() - t0, 2),
                 "nhat_ky": nhat_ky[-40:]}
     except Exception as e:  # noqa: BLE001

@@ -332,16 +332,47 @@ class ThayGiongDialog(QDialog):
         """Dò bộ tách giọng rồi cập nhật nhãn + KHOÁ/MỞ nút Chạy."""
         tt = TG.tinh_trang_demucs()
         self._tt_demucs = tt
-        if tt["co"]:
+        # Nút phải bám `thieu` (sự thật của `_lib`) chứ KHÔNG bám `co` (máy này
+        # chạy được không). Bám `co` chính là cách bản cũ giấu mất việc `_lib`
+        # thiếu torch: máy dev mượn được của `.venv` -> nút biến mất -> không ai
+        # bấm -> bản `.exe` mãi mãi thiếu torch.
+        thieu = list(tt.get("thieu") or [])
+        ngoai = list(tt.get("ngoai_lib") or [])
+        nguon = dict(tt.get("nguon") or {})
+        du_lib = bool(tt.get("du_lib", tt["co"] and not thieu))
+        self.b_tai.setText(TG.nhan_nut_tai(tt))
+        # Đang lấy TỪ ĐÂU — hiện luôn, đừng bắt người dùng đoán.
+        chi_tiet = ("\nNguồn từng gói: "
+                    + " · ".join(f"{g}: {nguon.get(g) or 'KHÔNG CÓ'}"
+                                 for g in TG.GOI_TACH_GIONG)
+                    + f"\nThư mục _lib: {tt.get('lib', '')}") if nguon else ""
+        if du_lib:
             # `thiet_bi` = '' nghĩa là CHƯA BIẾT (hộp này chạy trong tiến
             # trình đã nạp Qt nên KHÔNG được import torch để hỏi — xem
             # `thay_giong.thiet_bi_tach`). Chưa biết thì ĐỪNG ĐOÁN: ghi "CPU"
             # bừa là máy có card vẫn đọc thành "chạy trên CPU".
             _tb = {"cuda": " (chạy trên card đồ hoạ)",
                    "cpu": " (chạy trên CPU)"}.get(tt["thiet_bi"], "")
-            self.lb_demucs.setText(f"Bộ tách giọng: ĐÃ CÓ{_tb}.")
+            self.lb_demucs.setText(
+                f"Bộ tách giọng: ĐÃ CÓ ĐỦ trong _lib{_tb}." + chi_tiet)
             self.lb_demucs.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
             self.b_tai.setVisible(False)
+        elif tt["co"]:
+            # CÀI DỞ: máy này chạy được vì đang MƯỢN gói của môi trường hệ
+            # thống, nhưng `_lib` thiếu -> bản .exe trên máy nhân viên sẽ báo
+            # "chưa có bộ tách giọng". Phải nói THẲNG, đây đúng là ca đã lừa
+            # anh Hùng một lần (app báo "đã cài" trong khi thiếu torch).
+            self.lb_demucs.setText(
+                "Bộ tách giọng CÀI DỞ: " + ", ".join(thieu)
+                + " KHÔNG nằm trong _lib"
+                + (" (đang mượn của môi trường hệ thống: "
+                   + ", ".join(ngoai) + ")" if ngoai else "")
+                + ".\nMáy NÀY vẫn chạy được, nhưng bản .exe trên máy nhân viên "
+                  "sẽ báo THIẾU vì ở đó không có gì để mượn. Bấm '"
+                + TG.NHAN_CAI_TIEP + "' để lấy nốt." + chi_tiet)
+            self.lb_demucs.setStyleSheet(f"color:{WARN}; font-size:11px;")
+            self.b_tai.setVisible(True)
+            self.b_tai.setEnabled(bool(tt["cai_duoc"]) and not self._dang_cai)
         else:
             self.lb_demucs.setText(
                 "Máy này CHƯA có bộ tách giọng (thiếu: "
@@ -352,7 +383,7 @@ class ThayGiongDialog(QDialog):
                 + ("" if tt["cai_duoc"] else
                    "\nMáy này không có Python/pip nên app không tự tải được: "
                    "cài Python 3 rồi bấm lại, hoặc copy thư mục _lib từ máy "
-                   "đã cài sang."))
+                   "đã cài sang.") + chi_tiet)
             self.lb_demucs.setStyleSheet(f"color:{WARN}; font-size:11px;")
             self.b_tai.setVisible(True)
             self.b_tai.setEnabled(bool(tt["cai_duoc"]) and not self._dang_cai)
@@ -406,9 +437,13 @@ class ThayGiongDialog(QDialog):
         self._dang_cai = False
         self.pb_tai.setVisible(False)
         tt = self._do_demucs()
-        if ok and tt["co"]:
-            QMessageBox.information(self, "Xong",
-                                    "Đã cài xong bộ tách giọng.")
+        # Mừng theo `du_lib` chứ KHÔNG theo `co`: `co` True nhờ MƯỢN gói của
+        # `.venv` thì `_lib` vẫn rỗng torch, và hộp "Đã cài xong" lúc đó đúng
+        # là câu đã lừa anh Hùng lần trước.
+        if ok and tt.get("du_lib", tt["co"]):
+            QMessageBox.information(
+                self, "Xong",
+                "Đã cài xong bộ tách giọng vào _lib.\n" + str(tt.get("lib", "")))
         else:
             QMessageBox.warning(
                 self, "Chưa cài được",
