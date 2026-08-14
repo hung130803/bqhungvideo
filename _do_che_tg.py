@@ -50,20 +50,67 @@ def mat_do(src: Path, d, moc: float) -> float:
                           d.x0_dai or d.x0, d.x1_dai or d.x1)
 
 
-def main() -> int:
-    SAN.mkdir(parents=True, exist_ok=True)
-    ten = sys.argv[1] if len(sys.argv) > 1 else "zh_ep12"
+def _chuan_bi(ten: str):
+    """Cắt 20 giây + tách audio. Trả (video ngắn, wav)."""
     goc = NGUON / f"{ten}.mp4"
     if not goc.exists():
-        print(f"KHÔNG CÓ nguồn {goc}")
-        return 2
-
+        return None, None
     ngan = SAN / f"{ten}_20s.mp4"
     if not ngan.exists():
         cat(goc, ngan, 6.0, 20.0)
     au = SAN / f"{ten}_au.wav"
     if not au.exists():
         tach_audio(ngan, au)
+    return ngan, au
+
+
+def che_oan(tens: list[str]) -> int:
+    """CA CHE OAN: video KHÔNG có chữ mà BẬT ô -> KHÔNG được che.
+
+    Che nhầm vào hình là hỏng video — tệ hơn hẳn che thừa. Kỉ lục hiện tại
+    trên đường XUẤT CLIP là 0/76; đường THAY TIẾNG phải giữ đúng bất biến đó,
+    và phải giữ luôn `-c:v copy` (không encode lại vô ích).
+    """
+    print("===== CA CHE OAN (video KHÔNG chữ + BẬT ô) =====")
+    hong = 0
+    for ten in tens:
+        ngan, au = _chuan_bi(ten)
+        if ngan is None:
+            print(f"[{ten}] KHÔNG CÓ nguồn -> bỏ qua")
+            continue
+        d = CC.dai_theo_video(ngan)
+        ra = SAN / f"{ten}_OAN.mp4"
+        if ra.exists():
+            ra.unlink()
+        log: list = []
+        TG.thay_audio_video(ngan, au, ra, che_chu=True,
+                            che_chu_cach="mo", che_chu_muc=1.0,
+                            che_chu_log=log)
+        n = log[0] if log else {}
+        goc_co = (SAN / f"{ten}_20s.mp4").stat().st_size
+        print(f"[{ten}] dò: có_chữ={d.co_chu} · {d.ly_do[:70]}")
+        print(f"    che={n.get('che')} · lý do: {n.get('ly_do', '')[:70]}")
+        print(f"    cỡ ra {ra.stat().st_size/1e6:.1f} MB "
+              f"(gốc {goc_co/1e6:.1f} MB — copy thì gần bằng nhau)")
+        CC.trich_khung(ra, 8.0, SAN / f"{ten}_OAN_8s.png")
+        if n.get("che"):
+            print("    *** CHE OAN — HỎNG ***")
+            hong += 1
+        else:
+            print("    OK: không che, giữ đường -c:v copy")
+    print(f"\nche oan: {hong} video bị che oan")
+    return 1 if hong else 0
+
+
+def main() -> int:
+    SAN.mkdir(parents=True, exist_ok=True)
+    ten = sys.argv[1] if len(sys.argv) > 1 else "zh_ep12"
+    if ten == "oan":
+        return che_oan(sys.argv[2:] or ["en_bus", "en_d5"])
+    ngan, au = _chuan_bi(ten)
+    if ngan is None:
+        print(f"KHÔNG CÓ nguồn {NGUON / (ten + '.mp4')}")
+        return 2
 
     d = CC.dai_theo_video(ngan)
     print(f"[{ten}] dò dải: có_chữ={d.co_chu} y={d.y0}..{d.y1} "
