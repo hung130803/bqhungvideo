@@ -41,11 +41,14 @@ def duong_du_kien(video: Path, thu_muc_ra: str) -> list[tuple[str, str]]:
       · `thay_giong.thay_giong_video` bước 0..6
       · `tg_so.duong_ra`           -> `<ra>/<tên gốc>`
     """
-    from app.core.thay_giong import TEN_THU_MUC_TAM
+    from app.core.thay_giong import DAU_DA_LAM
+    from app.core.tg_chay import thu_muc_lam_cho
 
-    stem, suf = video.stem, video.suffix
+    suf = video.suffix
     ra = Path(thu_muc_ra)
-    tam = ra / TEN_THU_MUC_TAM / stem
+    # ĐỌC TỪ MÃ THẬT, đừng chép tay lại quy tắc: chép tay là đo bản chữ CŨ, mã
+    # đổi thì ngoài đời sai mà phép đo vẫn đẹp (bài học cổng 57).
+    tam = Path(thu_muc_lam_cho(video, thu_muc_ra))
     d: list[tuple[str, str]] = [
         ("0. nguồn (video gốc)", str(video)),
         ("*. ĐÍCH cuối cùng", str(ra / video.name)),
@@ -62,7 +65,7 @@ def duong_du_kien(video: Path, thu_muc_ra: str) -> list[tuple[str, str]]:
         ("4c. đọc nhanh cắt lề", str(tam / "docnhanh" / "sach" / "sach_0000.wav")),
         ("5. khớp thời gian", str(tam / "khop" / "khop_0000.wav")),
         ("6. trộn tiếng mới", str(tam / "tieng_moi.wav")),
-        ("6. GHÉP video (ra)", str(tam / f"{stem}__thaygiong{suf}")),
+        ("6. GHÉP video (ra)", str(tam / f"ban{DAU_DA_LAM}{suf}")),
     ]
     return d
 

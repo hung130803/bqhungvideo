@@ -11,6 +11,7 @@ Job đi qua LÀN RIÊNG `worker.LAN_TG` (mỗi video một job) — xem
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Optional
@@ -43,14 +44,48 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     return sig
 
 
+#: Số ký tự tên video giữ lại làm TIỀN TỐ thư mục tạm — chỉ để người mở thư
+#: mục ra còn đoán được nó của video nào. Phần bảo đảm KHÔNG TRÙNG là mã băm.
+TEN_TAM_TOI_DA = 16
+
+
+def ten_tam_cho(video: str | Path) -> str:
+    """Tên thư mục tạm NGẮN nhưng KHÔNG BAO GIỜ TRÙNG: `<16 ký tự đầu>_<băm8>`.
+
+    **VÌ SAO KHÔNG DÙNG THẲNG TÊN VIDEO** (bản cũ làm thế): video reup tiếng
+    Trung tên tới 60 ký tự, mà mọi file trung gian đều nằm dưới thư mục này và
+    ĐI VÀO DÒNG LỆNH ffmpeg — đo được 127 ký tự cho MỖI đường dẫn wav, nhân
+    278 câu là 47.794 ký tự dòng lệnh (`WinError 206`). Cắt tên ở đây rút mỗi
+    đường dẫn xuống ~92 ký tự, và kéo đường dài nhất của cả lượt từ **183 về
+    ~120 ký tự** — chỗ dư tới trần `MAX_PATH` 260 tăng gấp đôi, nên anh Hùng
+    đặt thư mục đích sâu vài cấp (`D:\\Kênh\\<tên kênh>\\xuất`) vẫn không vỡ.
+
+    **BẮT BUỘC LÀ BĂM, KHÔNG ĐƯỢC CẮT CỤT KHÔNG.** Hai video reup thường trùng
+    nhau rất dài ở đầu tên (`（完整）…`, `上集，…`) — cắt 16 ký tự đầu là hai
+    video khác nhau ra CÙNG một thư mục tạm, hai lượt chạy song song ghi đè
+    `goc.wav`/`khop_0000.wav` của nhau và cả hai ra video hỏng mà không một
+    dòng báo. Băm theo ĐƯỜNG DẪN ĐẦY ĐỦ (không phải riêng tên) để hai video
+    trùng tên ở hai thư mục nguồn khác nhau cũng tách được.
+    """
+    duong = os.path.normcase(os.path.abspath(str(video)))
+    ma = hashlib.sha1(duong.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    # bỏ ký tự Windows cấm + khoảng trắng/dấu chấm ở đuôi (Windows tự cắt đuôi
+    # đó rồi báo "không thấy thư mục" ở lượt sau)
+    tho = Path(str(video)).stem[:TEN_TAM_TOI_DA]
+    sach = "".join("_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in tho)
+    return f"{sach.rstrip(' .')}_{ma}" if sach.rstrip(' .') else ma
+
+
 def thu_muc_lam_cho(video: str | Path, thu_muc_ra: str | Path) -> str:
     """Thư mục làm việc tạm — ĐẶT TRONG THƯ MỤC ĐÍCH, không đặt cạnh video gốc.
 
     Anh Hùng đòi "thư mục nguồn không được đụng tới": file wav/mp3 của một
     video 10 phút lên hàng trăm MB, đổ vào thư mục nguồn là bẩn đúng chỗ anh
     ấy dặn đừng đụng. (Vẫn KHÔNG dùng %TEMP% — bị dọn định kỳ giữa chừng.)
+
+    Tên thư mục do `ten_tam_cho` đặt: NGẮN + băm, xem lý do ở đó.
     """
-    return str(Path(thu_muc_ra) / TEN_THU_MUC_TAM / Path(str(video)).stem)
+    return str(Path(thu_muc_ra) / TEN_THU_MUC_TAM / ten_tam_cho(video))
 
 
 def can_chay(video: str | Path, lam_lai: bool = False) -> bool:

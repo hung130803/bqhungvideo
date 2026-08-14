@@ -2034,9 +2034,35 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
 # BƯỚC 6 — TRỘN GIỌNG MỚI + LỚP NHẠC GỐC
 # ==================================================================
 
-def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
-                      out_wav: str | Path) -> None:
-    """Rải các câu đã khớp lên 1 track im lặng dài ĐÚNG `tong` giây.
+#: Trần DÒNG LỆNH của Windows `CreateProcess` (ký tự, kể cả NUL) — **KHÔNG
+#: liên quan gì tới `MAX_PATH` 260** dù lời lỗi nghe y hệt. ĐO ĐƯỢC 14/08/2026
+#: (`_do_cmdline.py`, gọi ffmpeg thật với tham số dài dần): 32.763 ký tự CHẠY
+#: ĐƯỢC · 32.863 ký tự ném `FileNotFoundError [WinError 206] The filename or
+#: extension is too long`. Đúng chuỗi lỗi anh Hùng thấy trên màn hình, và tên
+#: lỗi ấy đã dẫn thẳng tới chẩn đoán sai "đường dẫn quá 260".
+TRAN_CMD_WINDOWS = 32767
+
+#: Ngân sách tự đặt cho MỘT lệnh ffmpeg. Chừa ~2.700 ký tự so với trần thật:
+#: `list2cmdline` thêm dấu ngoặc/gạch chéo mà ta không đoán trước được, và
+#: `settings.FFMPEG_PATH` trên máy nhân viên có thể dài hơn máy này.
+NGAN_SACH_CMD = 30000
+
+
+def _dai_dong_lenh(args: list[str]) -> int:
+    """Độ dài dòng lệnh Windows sẽ dựng ra — KỂ CẢ phần `_ffmpeg` tự thêm.
+
+    Đo bằng chính `subprocess.list2cmdline` (thứ `Popen` dùng để nối argv
+    thành `lpCommandLine`), không ước lượng bằng `sum(len(...))`: dấu ngoặc
+    kép quanh đường dẫn có dấu cách là phần đếm được, đừng bỏ.
+    """
+    return len(subprocess.list2cmdline(
+        [settings.FFMPEG_PATH, "-y", "-hide_banner", "-loglevel", "error",
+         *args]))
+
+
+def _args_ghep(manh: list[tuple[float, str]], tong: float,
+               out_wav: str | Path, pcm: str = "pcm_s16le") -> list[str]:
+    """Tham số ffmpeg rải `manh` lên 1 track im lặng dài `tong` giây.
 
     `normalize=0` BẮT BUỘC — không thì amix chia biên độ theo số đầu vào và
     giọng nhỏ dần theo số câu (bẫy đã ghi ở đầu file).
@@ -2053,9 +2079,126 @@ def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
     parts.append(f"[0:a]{''.join(labels)}amix=inputs={n}:duration=first:"
                  f"normalize=0[out]")
     args += ["-filter_complex", ";".join(parts), "-map", "[out]",
-             "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+             "-ac", "2", "-ar", str(SR_TACH), "-c:a", pcm,
              str(out_wav)]
-    _ffmpeg(args, "ghép track giọng mới", timeout=900)
+    return args
+
+
+def _chia_me(manh: list[tuple[float, str]], tong: float,
+             out_wav: str | Path) -> list[list[tuple[float, str]]]:
+    """Chia `manh` thành các MẺ, mỗi mẻ dựng được bằng MỘT lệnh vừa ngân sách.
+
+    Cắt theo ĐỘ DÀI DÒNG LỆNH THẬT (dựng thử rồi đo), không theo "N câu mỗi
+    mẻ": chi phí mỗi câu là ĐỘ DÀI ĐƯỜNG DẪN wav, mà đường dẫn đó dài ngắn tuỳ
+    tên video + chỗ anh Hùng đặt thư mục đích. Chốt cứng con số câu là hôm nay
+    đúng, mai anh ấy đổi thư mục là sai lại.
+    """
+    me: list[list[tuple[float, str]]] = []
+    cur: list[tuple[float, str]] = []
+    for m in manh:
+        thu = cur + [m]
+        if cur and _dai_dong_lenh(
+                _args_ghep(thu, tong, out_wav, "pcm_f32le")) > NGAN_SACH_CMD:
+            me.append(cur)
+            cur = [m]
+        else:
+            cur = thu
+    if cur:
+        me.append(cur)
+    return me
+
+
+def _cong_track(files: list[str], tong: float, out_wav: str | Path,
+                pcm: str = "pcm_s16le") -> None:
+    """CỘNG nhiều track cùng độ dài lại làm một (amix `normalize=0` = phép cộng).
+
+    Tự chia mẻ nốt nếu danh sách file dài quá ngân sách — track mẻ mang tên
+    NGẮN (`_me00.wav`) nên trên thực tế không bao giờ tới đó, nhưng để vòng lặp
+    này ở đây thì hàm đúng với MỌI độ dài video, không phải "đủ dùng cho tới
+    khi anh Hùng đưa video 3 tiếng".
+    """
+    lop = [str(f) for f in files]
+    vong = 0
+    tam_da_tao: list[Path] = []
+    try:
+        while True:
+            args: list[str] = []
+            for f in lop:
+                args += ["-i", str(f)]
+            fc = ("".join(f"[{i}:a]" for i in range(len(lop)))
+                  + f"amix=inputs={len(lop)}:duration=first:normalize=0[out]")
+            args += ["-filter_complex", fc, "-map", "[out]",
+                     "-ac", "2", "-ar", str(SR_TACH), "-c:a", pcm,
+                     str(out_wav)]
+            if len(lop) <= 2 or _dai_dong_lenh(args) <= NGAN_SACH_CMD:
+                _ffmpeg(args, "cộng các mẻ track giọng", timeout=900)
+                return
+            # còn dài -> cộng từng nhóm 32 rồi lặp lại
+            goc = Path(out_wav).parent
+            moi: list[str] = []
+            for k in range(0, len(lop), 32):
+                nhom = lop[k:k + 32]
+                if len(nhom) == 1:
+                    moi.append(nhom[0])
+                    continue
+                dst = goc / f"_cg{vong}_{k // 32:02d}.wav"
+                _cong_track(nhom, tong, dst, "pcm_f32le")
+                tam_da_tao.append(dst)
+                moi.append(str(dst))
+            lop, vong = moi, vong + 1
+    finally:
+        for f in tam_da_tao:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
+                      out_wav: str | Path) -> None:
+    """Rải các câu đã khớp lên 1 track im lặng dài ĐÚNG `tong` giây.
+
+    **LỖI THẬT 14/08/2026 — `WinError 206` trên video DÀI.** Hàm này đưa MỘT
+    `-i <đường dẫn wav>` vào dòng lệnh cho MỖI CÂU, cộng một `adelay` trong
+    `-filter_complex`. Chi phí ~170 ký tự/câu (đường dẫn ~127 + nhãn), nên dòng
+    lệnh phình theo `số câu × độ dài đường dẫn`. Đo trên 6 video thật của anh
+    Hùng (`_do_206.py`): 107 câu -> 17.097 ký tự (chạy được) · **278 câu ->
+    47.794** · **241 câu -> 42.153** — hai video cuối chính là hai dòng "Lỗi"
+    trên màn hình. `CreateProcess` từ chối từ ~32.767 ký tự.
+
+    **CHỮA: chia MẺ.** `amix` với `normalize=0` là PHÉP CỘNG thuần, mà mỗi mẻ
+    đã là một track dài đủ `tong` giây (chỗ chưa có câu nào là im lặng = 0),
+    nên cộng các mẻ lại cho ra ĐÚNG track như dựng một lượt. Mẻ trung gian ghi
+    `pcm_f32le` để không lượng tử hoá hai lần.
+
+    **VỪA NGÂN SÁCH THÌ CHẠY Y HỆT BẢN CŨ** — không phải "cho chắc" mà là cách
+    duy nhất giữ được bất biến: video ngắn đi đúng dòng lệnh cũ TỪNG KÝ TỰ, nên
+    không cần tin lời hứa "kết quả giống nhau". Đường chia mẻ chỉ chạy ở đúng
+    chỗ bản cũ ĐÃ CHẾT.
+    """
+    args = _args_ghep(manh, tong, out_wav)
+    if _dai_dong_lenh(args) <= NGAN_SACH_CMD:
+        _ffmpeg(args, "ghép track giọng mới", timeout=900)
+        return
+
+    goc = Path(out_wav).parent
+    me = _chia_me(manh, tong, out_wav)
+    tam: list[Path] = []
+    try:
+        for k, nhom in enumerate(me):
+            dst = goc / f"_me{k:02d}.wav"
+            _ffmpeg(_args_ghep(nhom, tong, dst, "pcm_f32le"),
+                    f"ghép track giọng mẻ {k + 1}/{len(me)}", timeout=900)
+            tam.append(dst)
+        _cong_track([str(t) for t in tam], tong, out_wav)
+    finally:
+        # DỌN KỂ CẢ KHI LỖI GIỮA CHỪNG: mỗi mẻ là một wav dài bằng cả video
+        # (video 8 phút ~ 85 MB), bỏ lại vài mẻ là đúng đường tới "ổ C đầy".
+        for f in tam:
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
@@ -2322,7 +2465,15 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
 
         prog(0.96, "Ghép tiếng mới vào video..." if not che_chu
              else "Che chữ cháy sẵn rồi ghép tiếng mới vào video...")
-        ra = tam_goc / f"{video_in.stem}__thaygiong{video_in.suffix}"
+        # TÊN NGẮN, KHÔNG nhắc lại tên video: `tam_goc` ĐÃ mang tên video rồi
+        # nên ghép thêm stem vào đây là đếm tên hai lần (đo: 183 ký tự cho
+        # video tên 60 ký tự, trong khi cả đường chỉ còn 76 ký tự dư tới trần
+        # MAX_PATH 260 — anh Hùng đặt thư mục đích sâu hơn một cấp là vỡ).
+        # File này chỉ sống trong thư mục tạm; `jobs._thay_giong` chuyển nó
+        # sang `<thư mục đích>/<TÊN GỐC>` nên tên ở đây user không bao giờ
+        # thấy. Giữ đuôi `__thaygiong` để mọi lượt quét bỏ-qua-bản-đã-làm
+        # (`DAU_DA_LAM`) vẫn nhận ra.
+        ra = tam_goc / f"ban{DAU_DA_LAM}{video_in.suffix}"
         _cc_log: list = []
         thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
                          che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
