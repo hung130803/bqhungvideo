@@ -1254,6 +1254,56 @@
      "clip đơn" KHÔNG che** (chưa đi qua `export_canvas_clip`) · sổ nhớ dò dải
      (`_DAI_NHO`) **chỉ ở RAM**, tắt app là mất, mở lại phải dò lại từ đầu ·
      chưa ai xem bằng mắt trên máy nhân viên thật.
+  57. `_test_tg_bang_tiendo.py` → **HỘP THAY GIỌNG: BẢNG TIẾN ĐỘ SỐNG · THƯ
+     MỤC VÀO/RA · NHỚ VIDEO ĐÃ XONG** (v2.27.0, 14/08/2026). Anh Hùng dùng
+     thật v2.26.0 rồi báo 4 lỗi, cổng này canh đúng 4 cái đó. **ĐẠT 49 ·
+     HỎNG 0** (cổng 55 sau khi cập nhật: **ĐẠT 47 · HỎNG 0**).
+     (a) *"ấn chạy thì chỉ hiện thanh tiến trình, không hiện gì cả, xong hay
+     gì cũng không báo, đang phân tích như nào cũng không thấy"* -> bảng hiện
+     **đủ dòng NGAY** khi bấm Chạy (video chưa tới lượt = "Đang chờ"), trạng
+     thái chạy theo BƯỚC THẬT, cột tiến trình `% · bước n/8`, xong lượt thì có
+     dòng tổng kết + hộp báo. Đo bằng **BẮT TÍN HIỆU** `doi_trang_thai` /
+     `xong_ca_luot` (không nhìn bằng mắt): chuỗi thật bắt được là *Đang chờ ->
+     Đang rút tiếng -> Đang tách giọng -> Đang chép lời -> Đang dịch -> Đang
+     đọc -> Đang rút gọn -> Đang khớp tiếng -> Đang ghép -> Xong*.
+     **LỖI THẬT CỔNG NÀY LÔI RA:** lời nhắn bước 5 là *"Đọc bản dịch..."* —
+     nó **CHỨA chữ "dịch"** nên bảng tra bước khớp `("dịch", 4)` trước và
+     bước ĐỌC hiện thành "Đang dịch"; bảng **KHÔNG BAO GIỜ** hiện "Đang đọc"
+     (bắt được 4/5 nhãn bắt buộc, thiếu đúng 1). Quy tắc chung: **bảng tra
+     theo CHUỖI CON phải xếp cụm DÀI/RIÊNG trước cụm ngắn dùng chung chữ.**
+     Cổng đọc 9 mốc `prog(...)` **thẳng từ mã nguồn `thay_giong_video`**
+     (regex trên thân hàm) rồi phát lại — chép tay nhãn vào test là đo bản
+     chữ CŨ, mã đổi thì ngoài đời sai mà cổng vẫn xanh.
+     (b) *"cho tôi tự chọn thư mục ĐẦU VÀO thư mục ĐẦU RA, KHÔNG CẦN cái
+     thùng rác tự xoá đâu"* -> 2 ô thư mục; **video gốc KHÔNG bị đụng một
+     byte** (MD5 3/3 trùng sau 3 lượt chạy), bản mới nằm ở thư mục đích với
+     TÊN GỐC. `jobs._thay_giong` **ÉP `thay_goc=False`** — ép ở HANDLER chứ
+     không chỉ ở UI, vì job cũ nằm sẵn trong DB từ bản trước mang
+     `thay_goc=True`, không ép thì mở app lên nó vẫn dọn gốc. Thư mục làm
+     việc tạm chuyển sang nằm TRONG thư mục đích (wav vài trăm MB không được
+     đổ vào thư mục anh Hùng dặn đừng đụng) và **dọn cả khi LỖI**. Nguồn
+     trùng đích -> cảnh báo + **xếp 0 job** (2 cửa chặn: UI và
+     `tg_chay.xep_mot`).
+     (c)(d) *"phân tích lỗi phải có mục CHẠY LẠI"* + *"ấn chạy chỉ chạy video
+     CHƯA xong"* -> sổ `app/core/tg_so.py` ghi **RA ĐĨA**
+     (`DATA_DIR/thay_giong_so.json`, ghi kiểu thay-nguyên-file), khoá theo
+     **đường dẫn + CỠ + mtime** (y `che_chu._khoa_video`) nên thay file khác
+     cùng tên vào là coi như CHƯA LÀM. Đo: chạy lần 2 xếp **1 job** (đúng
+     video LỖI) thay vì 3 · video xong hiện "Đã xong — bỏ qua" · chuột phải
+     "Làm lại video này" xếp **đúng 1 job đúng video** · sổ đọc lại được bằng
+     **TIẾN TRÌNH KHÁC** (đúng cảnh tắt app/tự cập nhật).
+     **THỬ PHÁ (mục 7):** gỡ chốt ở UI -> vẫn **0 job** (lớp 2 chặn — 2 lớp
+     chắn là SỐ ĐO, không phải lời hứa); gỡ **CẢ HAI** -> **3 job** = mục 4
+     vỡ đúng như phải vỡ.
+     **BẪY ĐO ĐÃ SẬP KHI CẬP NHẬT CỔNG 55:** đo đa luồng LIỀN MẠCH (arm 2
+     luồng trước, arm 1 luồng sau) ra *"2 luồng CHẬM HƠN 0,62 lần"* — cùng
+     bản mã, đo **ĐAN XEN B,A,B,A** ra **18,26s vs 25,09s = nhanh 1,37 lần**
+     (khớp 1,43 lần của cổng 55 cũ). Lượt đầu nuốt chi phí nạp model + mạng
+     Groq. Đúng bài học "Đo A/B phải đan xen" — đã sập 3 lần trên máy này.
+     **CHƯA ĐẠT, GHI THẲNG:** bảng đọc thẳng bảng `jobs` mỗi 0,7s nên tắt hộp
+     rồi mở lại thì cột tiến trình của việc ĐANG chạy về "Chưa chạy" cho tới
+     khi job đó xong (sổ chỉ ghi lúc KẾT THÚC) · chưa có nút "Dừng video này"
+     riêng (chỉ có "Dừng tất cả") · chưa ai bấm thử trên máy nhân viên thật.
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
