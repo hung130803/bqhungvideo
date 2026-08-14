@@ -25,7 +25,13 @@ VÌ SAO KHÔNG "XOÁ CHỮ" (inpaint, đoán lại hình phía sau) — ĐÃ CÂ
 RANH GIỚI: file này KHÔNG sửa gì của module khác. Nó chỉ ĐỌC lại 2 thứ đã đo
 kỹ ở nơi khác: `captions.font_cjk` (chọn font CÓ GLYPH cho chữ Hán — khai bừa
 là ffmpeg vẫn trả mã 0 mà chữ ra Ô VUÔNG tofu) và `thay_giong.kiem_video_ra`
-(bẫy "mã 0 nhưng file 0 KiB / 0 khung"). CHƯA nối vào đường xuất chính.
+(bẫy "mã 0 nhưng file 0 KiB / 0 khung").
+
+ĐÃ NỐI VÀO ĐƯỜNG XUẤT (14/08/2026) — xem `loc_cho_xuat` + `dai_theo_video` ở
+CUỐI file. Chuỗi filter được GỘP vào lượt mã hoá SẴN CÓ của
+`ffmpeg_utils.export_canvas_clip`, KHÔNG thêm lượt ffmpeg thứ hai: đo được
+gộp vào = **+0,1-0,2 giây/phút phim**, chạy riêng một lượt = **35-76 giây cho
+video 10 phút** (nhân 200-300 kênh là khoản thật).
 """
 from __future__ import annotations
 
@@ -33,6 +39,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -86,6 +93,51 @@ TY_LE_HANG = 0.85
 RONG_DO = 640
 #: Số khung lấy mẫu mặc định.
 SO_KHUNG = 16
+
+# ─────────────── SÀN MỨC MỜ — ĐÃ ĐO, TUYỆT ĐỐI ĐỪNG HẠ ──────────────────────
+#: Mức mờ THẤP NHẤT được phép cho cách che "mo".
+#:
+#: **VÌ SAO CÓ SÀN NÀY** (đo trên clip Douyin THẬT, xem cổng 56 CA 6 + CA 14):
+#: mức **0,40** đưa mật độ nét trong dải về **0,0030** — nghĩa là MỌI THƯỚC ĐO
+#: BẰNG MÁY đều bảo "dải đã sạch, không còn chữ". Nhưng trích khung ra PNG rồi
+#: NHÌN BẰNG MẮT thì **vẫn đọc được bóng chữ** `这时医生灵机一动`. Chỉ từ
+#: **0,60** trở lên mắt mới thật sự không đọc nổi.
+#: Đây là đúng loại bẫy cả repo này đang chống: *phép đo "sạch" phát chứng nhận
+#: cho một thứ vẫn hỏng*. Vì vậy sàn nằm TRONG MÃ (`chuan_muc_mo`), không chỉ
+#: nằm ở thanh kéo — user gõ 0,3 vào mẫu cũ / sửa JSON tay cũng bị kẹp về 0,60.
+MUC_MO_SAN = 0.60
+#: Trần: trên mức này `boxblur` đã bị kẹp bởi bề rộng/cao dải nên tăng thêm
+#: không đổi gì mà chỉ làm người dùng tưởng còn nút để xoay.
+MUC_MO_TRAN = 2.0
+#: Mặc định — mức cổng 56 dùng và đã đo là kín (mật độ 0,0000-0,0006).
+MUC_MO_MAC_DINH = 1.0
+
+
+def chuan_muc_mo(x) -> float:
+    """Kẹp mức mờ vào [MUC_MO_SAN, MUC_MO_TRAN]. Rác/None -> mặc định.
+
+    CỬA DUY NHẤT ép sàn 0,60 (xem ghi chú `MUC_MO_SAN`). Mọi đường vào (UI,
+    mẫu cũ đọc từ đĩa, payload job, test) phải đi qua đây — đặt sàn ở thanh
+    kéo thôi thì mẫu lưu sẵn 0,30 vẫn lọt.
+    """
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return MUC_MO_MAC_DINH
+    if not (v == v) or v in (float("inf"), float("-inf")):   # NaN / vô cực
+        return MUC_MO_MAC_DINH
+    return max(MUC_MO_SAN, min(MUC_MO_TRAN, v))
+
+
+def chuan_cach(x) -> str:
+    """Chuẩn hoá cách che về đúng {"mo","khoi"}. Lạ/rỗng -> "mo".
+
+    "hat" (pixelate) CỐ Ý không có ở đây: nó chỉ để đối chứng trong cổng 56,
+    đo ra ô vuông to còn lộ hơn khối đặc mà VẪN đọc ra chữ — đưa vào UI là mời
+    người dùng chọn cái tệ nhất.
+    """
+    c = str(x or "").strip().lower()
+    return c if c in ("mo", "khoi") else "mo"
 
 
 # ───────────────────────────── kết quả dò ───────────────────────────────────
@@ -691,6 +743,94 @@ def mat_do_vung(src: str | Path, y0: int, y1: int, moc: Sequence[float],
     for g in gs:
         tong += float(_mat_na(g)[a:b, c:d].mean())
     return tong / len(gs)
+
+
+# ═══════════════ NỐI VÀO ĐƯỜNG XUẤT (dùng ở `ffmpeg_utils`) ═════════════════
+#: Kết quả dò, nhớ theo (đường dẫn, cỡ file, mtime_ns). MỘT video ra 3 Part =
+#: đường xuất đi qua đây 3 lần; dò lại 3 lần là 3 lượt đọc 16 khung vô ích.
+_DAI_NHO: dict = {}
+#: Khoá RIÊNG cho từng video (không phải một khoá chung): 3 làn xuất song song
+#: trên 3 video KHÁC NHAU không được xếp hàng chờ nhau, mà 3 Part của CÙNG một
+#: video thì chỉ được dò MỘT lượt.
+_DAI_KHOA: dict = {}
+_SO_KHOA = threading.Lock()
+#: Trần số video nhớ — 300 kênh chạy cả ngày, giữ vô hạn là rò bộ nhớ chậm.
+_NHO_TOI_DA = 512
+
+
+def _khoa_video(src: str | Path) -> Optional[tuple]:
+    """(đường dẫn tuyệt đối, cỡ, mtime_ns) — None nếu không đọc được.
+
+    PHẢI có cỡ + mtime: `thay_giong` ghi file MỚI vào ĐÚNG chỗ file cũ, khoá
+    chỉ theo tên là đọc lại dải của bản trước (dải cũ nằm sai chỗ trên hình
+    mới) mà không một dòng báo.
+    """
+    try:
+        p = Path(src).resolve()
+        st = p.stat()
+        return (str(p).lower(), st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
+def dai_theo_video(src: str | Path, so_khung: int = SO_KHUNG) -> DaiChu:
+    """`do_dai_chu` NHỚ KẾT QUẢ theo video. Không bao giờ ném lỗi.
+
+    Vì sao phải nhớ: dò = 16 lượt `ffmpeg -ss ... -frames:v 1` + 2 lượt
+    `ffprobe`. Đó là phần ĐẮT của tính năng này (chuỗi filter thì gần như miễn
+    phí). Một video 3 Part -> nhớ được là bỏ 2/3 chi phí; 200-300 kênh thì đó
+    là khoản thật.
+    """
+    key = _khoa_video(src)
+    if key is None:                       # file lạ/mất -> dò thẳng, không nhớ
+        return do_dai_chu(src, so_khung=so_khung)
+    with _SO_KHOA:
+        if key in _DAI_NHO:
+            return _DAI_NHO[key]
+        khoa = _DAI_KHOA.get(key)
+        if khoa is None:
+            khoa = _DAI_KHOA[key] = threading.Lock()
+    with khoa:
+        with _SO_KHOA:                    # người khác vừa dò xong khi ta đợi
+            if key in _DAI_NHO:
+                return _DAI_NHO[key]
+        d = do_dai_chu(src, so_khung=so_khung)
+        with _SO_KHOA:
+            if len(_DAI_NHO) >= _NHO_TOI_DA:
+                _DAI_NHO.clear()
+                _DAI_KHOA.clear()
+            _DAI_NHO[key] = d
+    return d
+
+
+def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
+                 dai: Optional[DaiChu] = None,
+                 so_khung: int = SO_KHUNG) -> tuple:
+    """(chuỗi_filter, DaiChu, lý_do) cho ĐƯỜNG XUẤT. Chuỗi rỗng = KHÔNG che.
+
+    Chuỗi trả về là một MẢNH chuỗi filter THIẾU nhãn hai đầu, đúng khuôn
+    `parts` của `export_canvas_clip` đang dùng: caller ghép
+    `f"{nhãn_vào}{chuỗi}[nhãn_ra]"`. `loc_che` trả về một GRAPH ngăn bằng `;`
+    mà chuỗi ĐẦU bắt đầu bằng `split` và chuỗi CUỐI kết bằng `overlay=x:y`, nên
+    bọc hai đầu là ra graph hợp lệ (cách "khoi" chỉ có một `drawbox`).
+
+    KHÔNG dò ra chữ -> trả rỗng: **che oan video sạch là ca sai đắt nhất** của
+    tính năng này (đo ở cổng 56: 0/76 video không chữ bị che).
+    """
+    try:
+        d = dai if dai is not None else dai_theo_video(src, so_khung=so_khung)
+    except Exception:                                          # noqa: BLE001
+        return "", None, "dò dải chữ lỗi -> KHÔNG che"
+    if d is None:
+        return "", None, "dò dải chữ lỗi -> KHÔNG che"
+    if not d.co_chu:
+        return "", d, f"KHÔNG che ({d.ly_do})"
+    f = loc_che(d, cach=chuan_cach(cach), do_manh=chuan_muc_mo(muc))
+    if not f:
+        return "", d, f"dải không dùng được (cao {d.cao_dai}px) -> KHÔNG che"
+    ten = "làm mờ" if chuan_cach(cach) == "mo" else "phủ khối"
+    return f, d, (f"che dải y={d.y0}..{d.y1} ({d.cao_dai}px) x={d.x0}..{d.x1}"
+                  f" — {ten} mức {chuan_muc_mo(muc):.2f}".replace(".", ","))
 
 
 def trich_khung(src: str | Path, t: float, dst: str | Path,
