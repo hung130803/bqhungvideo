@@ -2635,6 +2635,13 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                       "so_cau": len(cau),
                       "nguon": d.get("_nguon"),
                       "giay": d.get("_giay_chep")}
+        # MỐC người GỐC nói từng câu. Đi cặp với `loi_cuoi` (cùng số phần tử,
+        # cùng thứ tự) để đối chiếu được "câu này ĐÁNG LẼ nói lúc mấy giây" với
+        # "trong file thành phẩm nó nói lúc mấy giây". Thiếu mốc thì phép đo
+        # lệch phải mượn bản chép lời của lượt KHÁC — số ra sai mà trông vẫn
+        # hợp lý (đã suýt báo nhầm 3,2 giây lệch vì đúng chuyện này).
+        kq["cau_moc"] = [(round(float(c["start"]), 3),
+                          round(float(c["end"]), 3)) for c in cau]
         if not cau:
             raise RuntimeError("Không chép được câu nào — video không có lời?")
 
