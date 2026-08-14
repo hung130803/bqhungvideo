@@ -3109,6 +3109,11 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     return lst, temps
 
 
+def _cc_cach_ten(cach: str) -> str:
+    """Nhãn TIẾNG VIỆT của cách che (cho nhật ký). KHÔNG emoji."""
+    return "phủ khối" if str(cach or "").strip().lower() == "khoi" else "làm mờ"
+
+
 def export_canvas_clip(
     src: str | Path,
     dst: str | Path,
@@ -3218,6 +3223,24 @@ def export_canvas_clip(
                                         # theo NỘI DUNG chỗ nối
                                         # (`chon_chuyen_canh`); hoặc truyền
                                         # thẳng [(kiểu, giây)] (dùng cho test).
+    che_chu: bool = False,               # CHE CHỮ CHÁY SẴN TRONG HÌNH
+                                        # (`app/core/che_chu.py`). MẶC ĐỊNH
+                                        # TẮT: có ca che nhầm nên anh Hùng phải
+                                        # tự bật. False -> KHÔNG dò, KHÔNG một
+                                        # dòng filter nào => lệnh ffmpeg giống
+                                        # HỆT bản trước khi có tính năng này
+                                        # (bất biến của 200-300 kênh đang chạy).
+    che_chu_cach: str = "mo",            # "mo" (làm mờ) | "khoi" (phủ khối)
+    che_chu_muc: float = 1.0,            # mức mờ — SÀN CỨNG 0,60
+                                        # (`che_chu.chuan_muc_mo`; mức 0,40 đo
+                                        # ra "sạch" mà mắt vẫn đọc được chữ).
+    che_chu_dai: object = None,          # DaiChu đã dò sẵn (test/đo). None ->
+                                        # tự dò 1 lần rồi NHỚ theo video.
+    che_chu_log: Optional[list] = None,  # LIST CỦA CALLER: hàm ghi vào đây
+                                        # {che, ly_do, dai} — nhật ký dây
+                                        # chuyền in ra cho anh Hùng đọc. Che
+                                        # nhầm/không che đều phải NÓI RA, đừng
+                                        # im lặng (bài học "lớp chữ MẤT").
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
@@ -3331,6 +3354,39 @@ def export_canvas_clip(
             continue
         if b - a > 0.05:
             dims.append((max(0.0, a), b))
+
+    # ---- CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) ----------------
+    # Nguồn Douyin/reup đốt phụ đề VÀO KHUNG, gỡ ra không được. Đây là chỗ che
+    # nó đi. GỘP VÀO LƯỢT MÃ HOÁ NÀY, KHÔNG thêm lệnh ffmpeg thứ hai — đo được:
+    # gộp vào **+0,1-0,2 giây/phút phim**, chạy riêng một lượt **35-76 giây cho
+    # video 10 phút**. Với 200-300 kênh thì khoảng cách đó là khoản thật.
+    #
+    # `che_chu=False` -> KHÔNG dò, `_cc_loc` rỗng, KHÔNG một `parts.append` nào
+    # => lệnh ffmpeg KHÔNG khác một ký tự nào so với bản trước tính năng này
+    # (cùng cách giữ bất biến mà nhóm shader/chuyển cảnh đang dùng).
+    #
+    # DÒ nằm NGOÀI `build`: `build` được gọi LẠI khi lùi nvenc -> libx264, dò
+    # trong đó là đọc 16 khung HAI LẦN.
+    # CỐ Ý KHÔNG qua cửa chờ ffmpeg (y như `_do_muc_clip`/`do_nhip`): 16 lượt
+    # `-ss ... -frames:v 1` ở 640px, không encode. Bắt nó xếp hàng sau các lệnh
+    # encode nặng thì mỗi lượt xuất đội thêm hàng chục giây vô ích. Kết quả được
+    # NHỚ theo video nên 3 Part của một video chỉ dò MỘT lượt.
+    _cc_loc, _cc_dai, _cc_ly = "", None, ""
+    if che_chu:
+        _raise_if_job_canceled()   # bấm Huỷ -> đừng đọc 16 khung rồi mới chết
+        try:
+            from app.core import che_chu as _CC
+            _cc_loc, _cc_dai, _cc_ly = _CC.loc_cho_xuat(
+                src, cach=che_chu_cach, muc=che_chu_muc, dai=che_chu_dai)
+        except Exception as _e:    # noqa: BLE001 — che chữ KHÔNG được làm chết
+            _cc_loc, _cc_dai = "", None            # lượt xuất; nói ra lý do
+            _cc_ly = f"dò/che chữ lỗi ({_e}) -> KHÔNG che"
+    if che_chu_log is not None:
+        che_chu_log.append({
+            "bat": bool(che_chu), "che": bool(_cc_loc),
+            "cach": _cc_cach_ten(che_chu_cach), "muc": float(che_chu_muc or 0),
+            "ly_do": _cc_ly,
+            "dai": (_cc_dai.dict() if _cc_dai is not None else None)})
 
     # ---- GHÉP NHIỀU ĐOẠN = 2 PHA (xem _extract_segments_to_temp): pha 1
     # tách từng đoạn ra file tạm (RAM phẳng, tiếng-hình cắt CÙNG NHAU, giữ
@@ -3633,6 +3689,16 @@ def export_canvas_clip(
             s, e = segs[0]
             cmd += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
         content, aud, aud_map = "[0:v]", "[0:a]", "0:a?"
+        # CHE CHỮ CHÁY SẴN: áp TRƯỚC MỌI THỨ, kể cả `hflip`. Toạ độ dải do
+        # `do_dai_chu` trả về là PIXEL CỦA KHUNG NGUỒN — mà `[0:v]` ở đây đúng
+        # là khung nguồn ở CẢ HAI đường (một đoạn = `-ss/-t` trên nguồn; nhiều
+        # đoạn = concat các mezzanine pha 1, mà `_build_seg` KHÔNG có filter
+        # scale nào nên mảnh giữ nguyên cỡ nguồn). Đặt SAU `hflip` thì x0/x1 bị
+        # soi gương -> che lệch sang mép đối diện với dải chữ trên video không
+        # đối xứng ngang.
+        if _cc_loc:
+            parts.append(f"{content}{_cc_loc}[cche]")
+            content = "[cche]"
         # LẬT GƯƠNG: hflip áp lên KHỐI video content SỚM NHẤT (ngay sau khi lấy
         # content, TRƯỚC pre_crop/reframe/overlay PNG/phụ đề/fade). Nhờ vậy chỉ
         # HÌNH bị soi gương; overlay chữ + phụ đề .ass chồng SAU nên KHÔNG ngược.
