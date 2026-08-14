@@ -49,6 +49,28 @@ HAN = {
     "_test_pipe_overlap.py": 1200,
 }
 
+# ── MỐC ĐỐI CHỨNG RIÊNG TỪNG CỔNG — đặt THEO FILE, KHÔNG đặt chung cả lượt ──
+# Hai cách sai đối xứng nhau, cả hai đều đã cắn thật ở repo này:
+#  · để cổng so với `main`: gộp nhánh xong thì `main` CHÍNH LÀ bản đang test
+#    -> "so nó với chính nó" -> **PASS OAN VĨNH VIỄN** (cổng 36 CA8, cổng 12
+#    của `_test_hlbox.py`).
+#  · đặt MỘT `BQ_MOC_REF` chung cho cả lượt: cổng nào KHÔNG đụng file nó so
+#    sẽ thấy mốc TRÙNG bản đang test rồi **ĐỎ OAN** — mà cổng đỏ oan thì
+#    người ta bỏ qua nó, nguy hiểm hơn hẳn (bài học cổng 41 và 47).
+# Vì vậy: chỉ ép mốc cho cổng nào mặc định đang trỏ về `main`, và ĐỂ YÊN cổng
+# đã có mốc SHA riêng (`_test_lop_phu.py` = 7b1da35/494a541 · `_test_cjk_va` +
+# `_test_dubbing_cjk` = 841c773 · `_test_xem_hinh_kenh` = 378230e), cùng cổng
+# TỰ TÌM commit đưa tính năng vào rồi lấy CHA (`_test_hlbox`, `_test_rac_va_bao`).
+#: Bản ĐÃ PHÁT HÀNH liền trước — đổi mỗi lần phát hành.
+MOC_TRUOC = os.environ.get("BQ_MOC_TRUOC_BAN", "v2.25.0")
+MOC = {
+    # so `app/core/ffmpeg_utils.py`; mặc định trong file là `main` -> phải ép
+    "_test_chuyen_canh.py": {"BQ_MOC_REF": MOC_TRUOC},
+    "_test_rac_va_bao.py": {"BQ_MOC_REF": MOC_TRUOC},
+    # so `app/services.py` + `app/core/ffmpeg_utils.py` (cổng 56 CA16/CA23)
+    "_test_che_chu.py": {"BQ_MOC_REF": MOC_TRUOC},
+}
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -77,10 +99,11 @@ def main() -> int:
     for i, f in enumerate(ds, 1):
         han = HAN.get(f, 900)
         t0 = time.time()
+        env_f = dict(env, **MOC.get(f, {}))     # mốc RIÊNG cho cổng cần mốc
         try:
             r = subprocess.run([py, f], cwd=str(REPO), capture_output=True,
                                text=True, encoding="utf-8", errors="replace",
-                               timeout=han, env=env)
+                               timeout=han, env=env_f)
             rc, qh = r.returncode, False
             ra = (r.stdout or "") + "\n===STDERR===\n" + (r.stderr or "")
         except subprocess.TimeoutExpired as e:
@@ -94,8 +117,10 @@ def main() -> int:
             if any(k in x for k in ("ĐẠT", "FAIL", "LỖI", "PASS", "✅", "❌", "hỏng")):
                 tom = x.strip()[:90]
                 break
+        _m = MOC.get(f)
         print(f"[{i:2d}/{len(ds)}] [{'ĐẠT ' if ok else 'FAIL'}] {f:32s} "
-              f"{dt:7.1f}s rc={rc}  {tom}", flush=True)
+              f"{dt:7.1f}s rc={rc}  {tom}"
+              + (f"   [mốc {list(_m.values())[0]}]" if _m else ""), flush=True)
         if not ok:
             for x in dong[-18:]:
                 print(f"        | {x[:120]}", flush=True)
