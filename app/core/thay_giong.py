@@ -449,15 +449,32 @@ def _tach_nhe(wav_44k: str | Path, out_dir: Path,
     }
 
 
+#: Lời báo khi máy KHÔNG có Demucs. ĐO ĐƯỢC: đường lui `nhe` để lọt 86-100%
+#: số từ của lời gốc sang track "nhạc" -> video ra vẫn nghe rõ giọng cũ chồng
+#: lên giọng mới. Đó là VIDEO HỎNG, không phải "chất lượng thấp hơn một chút".
+THIEU_DEMUCS = (
+    "Máy này CHƯA cài Demucs/torch nên KHÔNG tách được giọng khỏi nhạc nền.\n"
+    "Đã đo trên video thật: cách nhẹ (trừ kênh giữa) để sót 86-100% lời gốc "
+    "trong track nhạc — video ra sẽ nghe thấy CẢ giọng cũ lẫn giọng mới.\n"
+    "Hãy cài Demucs (xem `lib_demucs()`) rồi chạy lại, hoặc gọi với "
+    "cach='nhe' nếu CỐ Ý chấp nhận chất lượng đó."
+)
+
+
 def tach_giong(wav_44k: str | Path, out_dir: str | Path,
                cach: str = "auto", model_name: str = "htdemucs",
-               threads: int = 0,
+               threads: int = 0, cho_phep_nhe: bool = False,
                on_progress: Optional[Callable[[float, str], None]] = None,
                ) -> dict:
     """Tách `wav_44k` (stereo 44,1 kHz) thành lớp NHẠC (giữ) + lớp GIỌNG (bỏ).
 
     `cach`: "demucs" (ép Demucs, thiếu lib -> lỗi) | "nhe" (ép ffmpeg) |
-            "auto" (có Demucs thì Demucs, KHÔNG có thì tự lui `nhe`).
+            "auto" (có Demucs thì Demucs, KHÔNG có thì **BÁO LỖI**).
+
+    VÌ SAO "auto" KHÔNG TỰ LUI NỮA: đường lui `nhe` KHÔNG xoá được giọng (đo:
+    rò 86-100% số từ). Tự lui = âm thầm xuất ra video hỏng HÀNG LOẠT, đúng loại
+    bẫy "ffmpeg trả mã 0 mà file sai" mà cả repo này đang chống. Muốn lui thì
+    phải NÓI RA: `cho_phep_nhe=True` hoặc `cach="nhe"`.
 
     Trả dict: nhac / giong / stems / giay / ty_le / thiet_bi / do_dai / sr / cach
     (`giong` = "" nghĩa là cách này KHÔNG cho lớp giọng sạch).
@@ -467,7 +484,9 @@ def tach_giong(wav_44k: str | Path, out_dir: str | Path,
     cach = (cach or "auto").lower().strip()
 
     if cach == "nhe":
-        return _tach_nhe(wav_44k, out_dir, on_progress)
+        ket = _tach_nhe(wav_44k, out_dir, on_progress)
+        ket["canh_bao"] = "cách nhẹ: giọng gốc CÒN SÓT nhiều, chỉ dùng để thử"
+        return ket
     if cach == "demucs":
         return _tach_demucs(wav_44k, out_dir, model_name, threads, on_progress)
 
@@ -477,12 +496,14 @@ def tach_giong(wav_44k: str | Path, out_dir: str | Path,
             return _tach_demucs(wav_44k, out_dir, model_name, threads,
                                 on_progress)
         except Exception as e:  # noqa: BLE001
-            # Demucs hỏng giữa đường (model tải lỗi, hết RAM...) -> vẫn còn
-            # đường lui, nhưng GHI RÕ lý do vào kết quả để không im lặng tụt
-            # chất lượng.
+            # Demucs hỏng giữa đường (model tải lỗi, hết RAM...).
+            if not cho_phep_nhe:
+                raise RuntimeError(f"{THIEU_DEMUCS}\n(lý do: {e})") from e
             ket = _tach_nhe(wav_44k, out_dir, on_progress)
             ket["lui_vi"] = str(e)[:300]
             return ket
+    if not cho_phep_nhe:
+        raise RuntimeError(THIEU_DEMUCS)
     ket = _tach_nhe(wav_44k, out_dir, on_progress)
     ket["lui_vi"] = "máy không có Demucs/torch"
     return ket

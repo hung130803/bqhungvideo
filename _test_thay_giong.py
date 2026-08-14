@@ -332,6 +332,46 @@ dat("segment ngan giu nguyen", len(tg.cau_tu_transcript(d_ngan)) == 1)
 
 
 # ==================================================================
+print("\n=== CA 9: MAY KHONG CO DEMUCS -> BAO LOI, KHONG am tham ra video hong ===")
+# Do duoc: duong lui `nhe` de sot 86-100% loi goc -> video ra nghe CA giong cu
+# lan giong moi. Tu lui = xuat video hong HANG LOAT ma khong ai biet.
+# May nay CO demucs nen phai gia lap may nhan vien bang cach va `co_demucs`.
+d9 = Path(T) / "ca9"
+d9.mkdir(parents=True, exist_ok=True)
+w9 = d9 / "stereo.wav"
+ff(["-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+    "-f", "lavfi", "-i", "sine=frequency=660:duration=2",
+    "-filter_complex", "[0:a][1:a]join=inputs=2:channel_layout=stereo[o]",
+    "-map", "[o]", "-ar", "44100", "-c:a", "pcm_s16le", str(w9)])
+
+_that_co_demucs = tg.co_demucs
+try:
+    tg.co_demucs = lambda: False          # gia lap may nhan vien
+    try:
+        tg.tach_giong(w9, d9 / "ra_auto", cach="auto")
+        dat("auto + KHONG demucs -> phai NEM", False,
+            "khong nem — dang am tham xuat video hong")
+    except RuntimeError as e:
+        dat("auto + KHONG demucs -> phai NEM", "Demucs" in str(e),
+            "co noi ro thieu Demucs")
+
+    # co y chap nhan thi VAN cho, nhung phai co dau canh bao
+    k9 = tg.tach_giong(w9, d9 / "ra_nhe", cach="auto", cho_phep_nhe=True)
+    dat("co_phep_nhe=True thi VAN chay duoc", bool(k9.get("nhac")))
+    dat("ban lui phai mang DAU vi sao", bool(k9.get("lui_vi")),
+        str(k9.get("lui_vi"))[:60])
+
+    k9b = tg.tach_giong(w9, d9 / "ra_nhe2", cach="nhe")
+    dat("ep cach='nhe' thi mang CANH BAO chat luong",
+        bool(k9b.get("canh_bao")), str(k9b.get("canh_bao"))[:60])
+finally:
+    tg.co_demucs = _that_co_demucs
+
+dat("may NAY co Demucs that (khong thi moi so do o tren vo nghia)",
+    tg.co_demucs(), f"thiet bi: {tg.thiet_bi_tach()}")
+
+
+# ==================================================================
 print("\n" + "=" * 62)
 print(f"ĐẠT {len(OK)} · HỎNG {len(FAIL)}")
 for f in FAIL:

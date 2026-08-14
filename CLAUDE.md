@@ -957,13 +957,33 @@
      **ĐA LUỒNG**: `thay_giong_thu_muc` mặc định **2 luồng** (env
      `BQ_TG_LUONG`) vì Demucs ăn ~1,3 GB RAM/video — đo 2 video/2 luồng
      **74,97s** so với ~120s chạy lần lượt.
-     **CHƯA ĐẠT, GHI THẲNG:** còn 4/23 câu chồng lấn tới 266 ms · kết quả
-     **BIẾN ĐỘNG giữa các lượt** vì LLM không tiền định (số câu sửa 21 vs 28,
-     tempo còn lại 1,83 vs 1,41) và chưa đo độ lệch đó bằng nhiều lượt · chưa
-     có nút/màn hình trong UI (mới là hàm làm nền) · chưa nối vào bộ điều phối
-     job. **KHÔNG hứa "dịch chuẩn 100%"**: bước 3 chỉ đo được **tỉ lệ câu phải
-     dịch lại 39,1%**, điểm giống nghĩa trung bình **8,7/10**, thấp nhất
-     **7,0/10** sau hậu kiểm — đó là số thật, không phải lời hứa.
+     **CHƯA ĐẠT, GHI THẲNG:** chưa có nút/màn hình trong UI (mới là hàm làm
+     nền) · chưa nối vào bộ điều phối job. **KHÔNG hứa "dịch chuẩn 100%"**:
+     bước 3 chỉ đo được tỉ lệ câu phải dịch lại và điểm giống nghĩa — đó là số
+     thật, không phải lời hứa.
+     **ĐO BIẾN ĐỘNG 3 LƯỢT cùng video cùng mã** (LLM không tiền định — chạy 1
+     lượt rồi báo số là SAI): tỉ lệ dịch lại **0% · 21,7% · 39,1%** · điểm
+     giống nghĩa TB **9,35 · 8,96 · 8,70** (không lượt nào còn câu dưới ngưỡng
+     7) · **CHỒNG LẤN 0 ms ở 2/3 lượt và 266 ms / 4 câu ở 1/3 lượt** — lỗi
+     timeline là NGẪU NHIÊN theo lượt dịch, không phải luôn luôn. Đáng lo nhất:
+     `tempo_max` lượt nào cũng **SÁT TRẦN 1,5** (1,467 · 1,485 · 1,500), tức
+     trần atempo bị chạm THƯỜNG XUYÊN — rút gọn giúp nhưng CHƯA đủ.
+     **BẢN `.exe` v2.24.0 KHÔNG CHẠY ĐƯỢC TÍNH NĂNG NÀY — PHẢI ĐỌC:**
+     `BQHungVideo.spec` **không khai** torch/demucs/`_lib`, và
+     `requirements-build.txt` ghi thẳng *"KHÔNG gói torch/whisper/mediapipe/
+     opencv (nặng GB)"*. Demucs nằm ở `_lib/` (gitignore) nên **chỉ máy dev này
+     có**; trên máy nhân viên `co_demucs()` = False.
+     Vì thế `tach_giong(cach="auto")` **KHÔNG TỰ LUI sang `nhe` nữa mà NÉM
+     `THIEU_DEMUCS`** — tự lui là âm thầm xuất video hỏng HÀNG LOẠT (giọng cũ
+     còn nguyên chồng lên giọng mới) mà không một dòng báo, đúng loại bẫy cả
+     repo này đang chống. Muốn lui phải NÓI RA: `cho_phep_nhe=True` hoặc
+     `cach="nhe"`; bản lui luôn mang khoá `lui_vi`/`canh_bao` để nhật ký không
+     khoe cái mình không làm được. Cổng 53 CA 9 vá `co_demucs` thành False để
+     giả lập máy nhân viên và bắt đúng hành vi này.
+     **MUỐN BÁN RA THẬT phải chọn 1 trong 3**: gói torch+demucs vào `.exe`
+     (nặng thêm ~2 GB) · để app TỰ TẢI Demucs lần đầu · hoặc tách giọng trên
+     MỘT máy có cài rồi chia file. Chưa chọn thì tính năng này mới chạy được
+     trên máy dev.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
