@@ -360,6 +360,10 @@ class ThayGiongDialog(QDialog):
             self._giong_tho = list(_CACHE_GIONG)
             self._dung_combo_giong()
             return
+        # DỰNG COMBO NGAY với những gì đang có (rỗng) để GIỌNG ĐÃ LƯU hiện ra
+        # tức thì. Không có bước này thì mở hộp -> lưu (chưa kịp tải xong) là
+        # ghi đè giọng user đã chọn bằng "" — đúng loại lỗi "chọn X ra Y".
+        self._dung_combo_giong()
         ra: list = []
         self._ra_giong = ra
 
