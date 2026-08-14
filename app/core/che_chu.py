@@ -486,10 +486,21 @@ def loc_che(dai: DaiChu, cach: str = "mo", do_manh: float = 1.0,
         lam = (f"scale={max(2, w // o)}:{max(2, h // o)}:flags=area,"
                f"scale={w}:{h}:flags=neighbor")
     else:
-        r = max(2, int(h / 3.2 * do_manh))
-        r = min(r, max(2, w // 2 - 1), max(2, h // 2 - 1))
+        # BÁN KÍNH PHẢI HỢP LỆ, KHÔNG CHỈ "LỚN HƠN 2".
+        # LỖI THẬT (tìm ra 14/08/2026 khi đo giá từng mảnh, dựng dải giả 2x2):
+        # bản cũ có `max(2, ...)` ở CẢ HAI vế kẹp nên với dải nhỏ nó ép bán
+        # kính về **2** trong khi `boxblur` đòi `radius <= min(w,h)/2` -> ffmpeg
+        # báo *"Invalid luma_param radius value 2, must be >= 0 and <= 1"* rồi
+        # **CHẾT CẢ LƯỢT XUẤT** (0 khung, "Nothing was written into output
+        # file"). Tức một dải chữ hẹp bất thường là mất trắng clip, không phải
+        # "che xấu một chút". Nay kẹp bằng `min(...)` THẬT, sàn 1.
+        # CHROMA: yuv420p lấy mẫu màu 2x2 nên mặt phẳng màu chỉ w/2 x h/2 ->
+        # trần của chroma_radius là w//4 / h//4, KHÔNG phải r//2.
+        r = max(1, int(h / 3.2 * do_manh))
+        r = min(r, max(1, w // 2), max(1, h // 2))
+        cr = min(max(0, r // 2), max(0, w // 4), max(0, h // 4))
         lam = (f"boxblur=luma_radius={r}:luma_power=3"
-               f":chroma_radius={max(1, r // 2)}:chroma_power=2")
+               f":chroma_radius={cr}:chroma_power=2")
     return (f"split[cc_a][cc_b];"
             f"[cc_b]crop={w}:{h}:{x}:{y},{lam}[cc_c];"
             f"[cc_a][cc_c]overlay={x}:{y}{en}")
