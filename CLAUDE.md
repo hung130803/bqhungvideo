@@ -1116,6 +1116,26 @@
      của VIDEO GỐC, không phải narrate) vẫn coi hangul là CJK -> dán liền các
      từ tiếng Hàn. Cổng 54 ca 3d ĐO ĐƯỢC điều đó nhưng **không sửa** (khác
      file, khác đường, ngoài phạm vi việc này).
+- **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
+  (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
+  được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
+  **ĐÃ BISECT, KHÔNG ĐOÁN:** trả CẢ `app/ai/hook_to_mo.py` LẪN `app/ai/
+  recap.py` về `841c773` (bản anh Hùng đang chạy, TRƯỚC cả loạt vá CJK của
+  cổng 52) -> **vẫn HỎNG 1, y hệt**; trả riêng từng file cũng vậy. Tức không
+  phải hồi quy của cổng 52 mà cũng không phải của cổng 54.
+  **GỐC: CA2 CHÉP LỜI LẠI BẰNG GROQ MỖI LẦN CHẠY** (41 key · 150 s audio/
+  video) trên VIDEO THẬT đọc thẳng từ `D:\video ssmatool\…`. Kho video đó
+  **đổi theo thời gian** (thư mục `video hàn` đã bị xoá, video mới thêm vào),
+  nên mẫu số 8 video bây giờ KHÔNG còn là 8 video lúc hiệu chuẩn. Lần chạy
+  này 6/8 video rơi vào cảnh *"KHÔNG MỘT CHỮ NÀO — nhạc/tiếng động"* hoặc
+  không câu nào đủ tò mò -> giữ đường CŨ (đúng thiết kế), nên tỉ lệ tụt.
+  Dấu hiệu rõ nhất kho đã lệch: video trong nhóm `han` được Groq chép ra
+  **`Chinese`** và **`English`**.
+  **ĐỪNG "CHỮA" BẰNG CÁCH HẠ NGƯỠNG 60%** — 3 mệnh đề chất lượng của CA2 vẫn
+  ĐẠT sạch (*0 video nào hook mới tò mò THẤP HƠN hook cũ* · *0 video hook mới
+  là câu chào/kêu gọi đăng ký*), tức bản thân bộ chọn hook không tệ đi. Cần
+  **đóng băng corpus** (cache chép lời như `_do_hook_cache.json` đang làm cho
+  các cổng khác) rồi mới nói được 4/8 hay 2/8 là số của MÃ hay của KHO.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
