@@ -993,16 +993,21 @@ def _is_transcript_copy(text: str, transcript_norm: str) -> bool:
     # 15 và _word_tokens == split() nên hành vi Y CŨ.
     if len(_word_tokens(t)) < 4:
         return False
-    if len(t) < (_MIN_CHARS_COPY_CJK if _has_cjk(t) else _MIN_CHARS_COPY):
+    # Ngưỡng ký tự CHỈ hạ cho chữ HÁN THUẦN (tiếng Trung) — thứ tiếng duy nhất
+    # có corpus để đo. Nhật/Hàn giữ nguyên 15 -> **bất biến từng byte**. Hai
+    # thứ tiếng đó có CÙNG cái lỗ này (câu ngắn hơn 15 ký tự thì lọt); chữa
+    # được khi nào có corpus lời dẫn Nhật/Hàn để hiệu chuẩn — xem báo cáo.
+    zh = _la_chu_han(t)
+    if len(t) < (_MIN_CHARS_COPY_CJK if zh else _MIN_CHARS_COPY):
         return False
     if t in transcript_norm:
         return True
-    # LỖ THỨ HAI, chỉ có ở CJK: `transcript_norm` nối các câu bằng DẤU CÁCH,
-    # còn LLM chép lại nhiều câu liền thì viết LIỀN (tiếng Trung không có dấu
-    # cách) -> `in` trượt. Đo: chép nguyên 4 câu liền nhau -> lưới cũ trả
-    # False. Bỏ hết dấu cách hai bên là bắt được. Chỉ làm cho text CJK: với
-    # tiếng Anh/Việt, bỏ dấu cách sẽ dính từ và làm khớp bừa.
-    if _has_cjk(t):
+    # LỖ THỨ HAI: `transcript_norm` nối các câu bằng DẤU CÁCH, còn LLM chép
+    # lại nhiều câu liền thì viết LIỀN (tiếng Trung không có dấu cách) -> `in`
+    # trượt. Đo: chép nguyên 4 câu liền nhau -> lưới cũ trả False. Bỏ hết dấu
+    # cách hai bên là bắt được. Chỉ làm cho chữ Hán thuần: với tiếng Anh/Việt,
+    # bỏ dấu cách sẽ dính từ và làm khớp bừa.
+    if zh:
         return re.sub(r"\s+", "", t) in re.sub(r"\s+", "", transcript_norm)
     return False
 
