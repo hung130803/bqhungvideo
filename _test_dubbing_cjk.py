@@ -250,8 +250,36 @@ ok(bool(_full) and abs(len(_full) - len(ZH_WORDS)) / len(_full) <= 0.40,
    f"1h CẢ BÀI: {len(_tq['text'])} ký tự kịch bản vs {len(ZH_WORDS)} mốc STT "
    f"-> ghép được {len(_full) if _full else 0} từ",
    f"mốc: {'None' if not _full_moc else len(_full_moc)}")
-ok(all(_full[i][0] <= _full[i + 1][0] for i in range(len(_full) - 1)),
-   "1i mốc trả về KHÔNG GIẢM (bất biến của hàm, không được vỡ khi đổi tách từ)")
+ok(bool(_full) and all(_full[i][0] <= _full[i + 1][0]
+                       for i in range(len(_full) - 1)),
+   "1i mốc trả về KHÔNG GIẢM (bất biến của hàm, không được vỡ khi đổi tách "
+   "từ)", "" if _full else "trả None -> không có gì để kiểm")
+
+# CỠ CỤM RIÊNG cho CJK phải THẬT SỰ được áp. Ca này thêm sau khi THỬ PHÁ:
+# bỏ `_co_cum` (ép cỡ cụm CJK về 4 như chữ latin) mà cổng vẫn 42/0 — vì cụm
+# NGẮN đi thì `1e` (trần ký tự) và `8b` (sàn thời lượng) đều KHÔNG kêu: chia
+# nhỏ hơn làm cụm CUỐI của part DÀI ra chứ không ngắn đi. Phải đo THẲNG.
+_ck = [len(D._tach_tu(noi_cau(p))) for p in ZH_PARTS]
+
+
+def _uoc(co: int) -> int:
+    return sum(-(-n // co) for n in _ck)
+
+
+#: KHÔNG viết `a == b != _uoc(_RECAP := 4)`: so sánh dây short-circuit ngay khi
+#: vế đầu SAI -> `_RECAP` không bao giờ được gán -> lúc bản vá HỎNG thì cổng
+#: NỔ `NameError` thay vì in ra mục nào hỏng (đã sập đúng thế lúc thử phá).
+_CO_LATIN = 4
+ok(sum(_n2) == _uoc(D._RECAP_PHRASE_MAX_CJK)
+   and _uoc(D._RECAP_PHRASE_MAX_CJK) != _uoc(_CO_LATIN),
+   f"1j cỡ cụm CJK ({D._RECAP_PHRASE_MAX_CJK} ký tự) THẬT SỰ được áp: "
+   f"{sum(_n2)} cụm = đúng số cụm khi chia {D._RECAP_PHRASE_MAX_CJK} "
+   f"(chia {_CO_LATIN} như chữ latin sẽ ra {_uoc(_CO_LATIN)})")
+ok(D._co_cum(ZH_SEGS[0][2], 4) == D._RECAP_PHRASE_MAX_CJK
+   and D._co_cum(KO[0], 4) == 4
+   and D._co_cum("the man dropped his watch", 4) == 4,
+   "1k `_co_cum`: chữ Hán -> cỡ CJK · tiếng Hàn và tiếng Anh -> giữ nguyên "
+   "cỡ cũ (1 token = 1 TỪ chứ không phải 1 ký tự)")
 
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== CA 2. BẤT BIẾN — chữ LATIN (Anh · Việt · nhóm `han`) ===")
