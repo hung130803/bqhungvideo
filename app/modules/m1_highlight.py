@@ -2802,9 +2802,15 @@ def doc_che_chu(payload: dict) -> dict:
 
     HẠN CHẾ CỦA ĐƯỜNG 2, GHI THẲNG: nó KHÔNG có trong hash chống trùng. Bật ô
     trong mẫu rồi bấm "Xuất cả kênh" thì clip đã xuất y hệt trước đó bị
-    smart-skip — phải bấm "Xuất lại" (nút đó ép `force=True`). Bịt hẳn chỗ này
-    chỉ cần MỘT dòng ở `studio_page` + MỘT tham số ở `services.enqueue_export`
-    (hai file đang có luồng khác sửa, xem báo cáo).
+    smart-skip — phải bấm "Xuất lại" (nút đó ép `force=True`).
+    **ĐÃ BỊT ở v2.26.0**: `studio_page._export_video_inner` truyền THẲNG 3
+    tham số `che_chu*` vào `services.enqueue_export`, và `enqueue_export` nối
+    chúng vào `sig` (CHỈ khi cờ BẬT, để `sig` của mẫu KHÔNG che giữ nguyên
+    từng ký tự — thêm phần tử vào tuple `extra` là 200-300 kênh xuất lại từ
+    đầu). Đường 2 GIỮ LẠI, không xoá: job cũ đã nằm trong DB trước bản này
+    không mang khoá `che_chu`, và lối gọi khác vẫn được quyền không truyền —
+    `enqueue_export` mặc định `che_chu=None` chứ KHÔNG phải `False`, vì
+    `False` nghĩa là "đã chốt: TẮT" và sẽ bịt luôn đường lùi.
 
     KHÔNG BAO GIỜ NÉM: tra mẫu hỏng -> TẮT (mặc định an toàn, che oan hình là
     ca sai đắt nhất).

@@ -356,6 +356,17 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    hieu_ung: str = "nhe",
                    fx_sfx_dir: str = "", flip_h: bool = False,
                    fit_src: bool = False,
+                   # CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) —
+                   # cùng khuôn `flip_h`/`fx_sfx_dir`: cờ CHỐT lúc xếp job nên
+                   # mẫu bị sửa/xoá giữa chừng cũng không đổi kết quả clip.
+                   # `None` = LỐI GỌI KHÔNG TRUYỀN -> payload KHÔNG mang khoá
+                   # `che_chu` -> `m1.doc_che_chu` đi ĐƯỜNG LÙI (tra mẫu theo
+                   # tên). Giữ `None` chứ không phải `False` là CỐ Ý: `False`
+                   # nghĩa là "đã chốt: TẮT" và sẽ BỊT đường lùi của mọi lối
+                   # gọi cũ chưa kịp nối.
+                   che_chu: Optional[bool] = None,
+                   che_chu_cach: str = "",
+                   che_chu_muc: Optional[float] = None,
                    flat_export: bool = False,
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
@@ -384,11 +395,25 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
               str(chuyen_canh or ""), str(hieu_ung or ""),
               bool(flat_export))).encode()
     ).hexdigest()[:12]
+    # CHE CHỮ vào hash chống trùng — nếu không thì bật ô trong Chỉnh mẫu rồi
+    # bấm "Xuất cả kênh" là clip đã xuất bị SMART-SKIP, user phải bấm "Xuất
+    # lại" từng clip mới ăn (lỗi thật, đúng họ với chuyen_canh/hieu_ung).
+    # CHỈ GÓP KHI THẬT SỰ BẬT, và nối vào ĐUÔI `sig` chứ không thêm phần tử
+    # vào tuple `extra`: thêm vào tuple là đổi hash của MỌI clip cũ -> 200-300
+    # kênh xuất lại từ đầu. Cách này giữ `sig` GIỐNG TỪNG KÝ TỰ bản trước khi
+    # cờ TẮT, mà bật/tắt/đổi cách/đổi mức vẫn ĐỔI hash.
+    _cc_sig = ""
+    if che_chu:
+        from app.core import che_chu as _CC
+        # Kẹp qua `chuan_*` TRƯỚC khi băm: hai mức 0,30 và 0,50 đều bị sàn kéo
+        # về 0,60 nên ra clip GIỐNG HỆT — băm giá trị thô là đẻ job xuất lại
+        # cho một thay đổi không tồn tại.
+        _cc_m = _CC.MUC_MO_MAC_DINH if che_chu_muc is None else che_chu_muc
+        _cc_sig = (f":cc{_CC.chuan_cach(che_chu_cach)}"
+                   f"{_CC.chuan_muc_mo(_cc_m):.2f}")
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
-           f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}")
-    return pool.enqueue(
-        "m1_export_clip",
-        {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
+           f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}{_cc_sig}")
+    tai = {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
          "mode": mode, "zoom": zoom, "crop_rect": crop_rect,
          "text_overlays": text_overlays or [], "overlay_png": overlay_png,
          "ovl_spec": ovl_spec or {},
@@ -406,7 +431,16 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "fx_fade": fx_fade, "fx_whoosh": fx_whoosh,
          "chuyen_canh": chuyen_canh, "hieu_ung": hieu_ung,
          "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src,
-         "flat": bool(flat_export)},
+         "flat": bool(flat_export)}
+    if che_chu is not None:
+        # CHỈ đặt khoá khi lối gọi ĐÃ CHỐT cờ. Đặt vô điều kiện là bịt đường
+        # lùi "tra mẫu theo tên" của mọi lối gọi chưa nối (`doc_che_chu` chọn
+        # đường bằng `"che_chu" in payload`).
+        tai["che_chu"] = bool(che_chu)
+        tai["che_chu_cach"] = che_chu_cach or ""
+        tai["che_chu_muc"] = che_chu_muc
+    return pool.enqueue(
+        "m1_export_clip", tai,
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",

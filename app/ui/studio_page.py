@@ -8557,6 +8557,16 @@ class StudioPage(QWidget):
                 fx_sfx_dir=self._pick_sfx_dir(),
                 flip_h=bool(self.layout_tpl.get("flip_h", False)),
                 fit_src=bool(self.layout_tpl.get("fit_src", False)),
+                # CHE CHỮ CHÁY SẴN TRONG HÌNH — theo MẪU ĐÃ CHỐT, cùng đường
+                # với `flip_h`. Truyền THẲNG (thay vì để `m1.doc_che_chu` tra
+                # mẫu theo tên) vì chỉ đường này mới đưa được cờ vào hash
+                # chống trùng: bật ô rồi bấm "Xuất cả kênh" phải xuất LẠI
+                # thật, chứ không bị smart-skip bắt user bấm "Xuất lại" từng
+                # clip. Mẫu cũ chưa có khoá -> False/'' -> y hệt hành vi cũ.
+                che_chu=bool(self.layout_tpl.get("che_chu", False)),
+                che_chu_cach=str(self.layout_tpl.get("che_chu_cach", "")
+                                 or ""),
+                che_chu_muc=self.layout_tpl.get("che_chu_muc"),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 # ĐƠN THUỐC lớp chữ đi CÙNG job: ảnh `_ovl_` có mất thì job tự
                 # dựng lại được (tắt app giữa lượt xuất / user dọn _cache).
