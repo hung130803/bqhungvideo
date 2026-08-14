@@ -1749,15 +1749,23 @@ def _translate_chunks(chunks: list[dict], target_lang: str) -> list[str]:
 # ------------------------------------------------------------------
 async def _synth_all(texts: list[str], voice: str, paths: list[str],
                      on_done: Optional[Callable[[int], None]] = None,
-                     rate: str = "+0%",
+                     rate: str | list = "+0%",
                      ) -> list[bool]:
     """Đọc từng câu song song. Trả list[bool] ok[i] = câu #i ra file hợp lệ.
     Câu lỗi (retry 4 lần vẫn hỏng) -> ok[i]=False (KHÔNG ném lỗi cả track):
     caller sẽ BỎ RIÊNG cụm đó, các cụm khác giữ ĐÚNG mốc (không dồn/lệch).
-    rate: tốc độ edge-tts ("-3%"/"+0%"/"+4%"...) — nhịp kể recap."""
+    rate: tốc độ edge-tts ("-3%"/"+0%"/"+4%"...) — nhịp kể recap. Truyền LIST
+    thì MỖI CÂU MỘT TỐC ĐỘ riêng: `thay_giong` dùng để bảo edge-tts ĐỌC NHANH
+    HƠN (giọng đọc nhanh THẬT, không méo) thay vì ép `atempo` sau khi đã đọc
+    (WSOLA cắt-dán, đo được 5,4-8,1 dB méo phổ)."""
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
+
+    def _rate(i: int) -> str:
+        if isinstance(rate, (list, tuple)):
+            return str(rate[i]) if i < len(rate) and rate[i] else "+0%"
+        return str(rate or "+0%")
 
     async def one(i: int) -> None:
         async with sem:
@@ -1769,7 +1777,7 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
             for attempt in range(4):        # server MS chập chờn THEO ĐỢT
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 try:
-                    comm = edge_tts.Communicate(txt, voice, rate=rate)
+                    comm = edge_tts.Communicate(txt, voice, rate=_rate(i))
                     await comm.save(paths[i])
                     if os.path.getsize(paths[i]) > 200:
                         ok[i] = True

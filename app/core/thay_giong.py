@@ -1072,11 +1072,36 @@ _TEN_NN = {
     "en": "tiếng Anh", "vi": "tiếng Việt", "zh": "tiếng Trung",
     "ja": "tiếng Nhật", "ko": "tiếng Hàn", "de": "tiếng Đức",
     "fr": "tiếng Pháp", "es": "tiếng Tây Ban Nha", "th": "tiếng Thái",
+    "pt": "tiếng Bồ Đào Nha", "id": "tiếng Indonesia", "ru": "tiếng Nga",
+    "it": "tiếng Ý", "ar": "tiếng Ả Rập", "hi": "tiếng Hindi",
+}
+
+#: Groq trả NHÃN CHỮ ("Chinese"), KHÔNG phải mã ISO — bẫy đã ghi ở CLAUDE.md
+#: (cổng 52). `thay_giong_video` còn cắt `[:2]` nữa nên nhãn tới đây là "ch",
+#: tra bảng trượt, và prompt dịch ra câu *"Dịch các câu thoại sau từ ch sang
+#: tiếng Anh"* — model phải TỰ ĐOÁN tiếng nguồn. Bảng này bắt CẢ HAI dạng.
+_NHAN_NN = {
+    "chinese": "zh", "ch": "zh", "mandarin": "zh", "cmn": "zh",
+    "english": "en", "vietnamese": "vi", "japanese": "ja", "korean": "ko",
+    "german": "de", "french": "fr", "spanish": "es", "thai": "th",
+    "portuguese": "pt", "indonesian": "id", "russian": "ru",
+    "italian": "it", "arabic": "ar", "hindi": "hi",
 }
 
 
+def ma_ngon_ngu(ma: str) -> str:
+    """Chuẩn hoá nhãn ngôn ngữ -> mã ISO 2 ký tự. Không nhận ra -> trả nguyên."""
+    s = (ma or "").strip().lower().replace("_", "-")
+    if s in _NHAN_NN:
+        return _NHAN_NN[s]
+    goc = s.split("-")[0]
+    if goc in _TEN_NN:
+        return goc
+    return _NHAN_NN.get(goc, goc)
+
+
 def _ten_nn(ma: str) -> str:
-    return _TEN_NN.get((ma or "").lower()[:2], ma or "tiếng Anh")
+    return _TEN_NN.get(ma_ngon_ngu(ma), ma or "tiếng Anh")
 
 
 def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
@@ -1432,16 +1457,42 @@ def khung_cho_phep(cau: list[dict], i: int, tong: float) -> float:
     return max(max(0.05, b - a), ke - a - CHUA_TRUOC_CAU_KE)
 
 
+def toc_do_doc(texts: list[str], files: list[str], ok: list[bool]) -> float:
+    """KÝ TỰ/GIÂY của CHÍNH giọng đang dùng, đo trên chính lượt đọc vừa xong.
+
+    Vì sao không dùng hằng số: mỗi giọng/ngôn ngữ một tốc độ (đo `_do_le_im.py`:
+    en-US-JennyNeural 20,45 · vi-VN-HoaiMyNeural 18,85 ký tự/giây trên phần
+    TIẾNG THẬT). Tự đo thì đổi giọng/đổi ngôn ngữ vẫn đúng, không phải chỉnh
+    tay. Chỉ tính câu đã CẮT LỀ (files ở đây là bản sạch) — tính cả lề im thì
+    ra tốc độ thấp giả tạo và ngân sách ký tự bị siết oan.
+    """
+    kt = gy = 0.0
+    for i, f in enumerate(files):
+        if i >= len(ok) or not ok[i] or not f or not Path(f).exists():
+            continue
+        d = probe_duration(f)
+        t = texts[i] if i < len(texts) else ""
+        if d > 0.15 and len(t) > 3:
+            kt += len(t)
+            gy += d
+    return (kt / gy) if gy > 0.5 else 16.0
+
+
 def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
-    """Nhờ LLM rút NGẮN các câu dịch quá dài, GIỮ Ý CHÍNH."""
+    """Nhờ LLM rút NGẮN các câu dịch quá dài, GIỮ Ý CHÍNH.
+
+    Mỗi câu kèm **NGÂN SÁCH KÝ TỰ** tính từ tốc độ đọc ĐO ĐƯỢC của chính
+    giọng đang dùng — nói "ngắn bớt 40%" thì model đoán mò, đưa con số ký tự
+    thì nó có đích rõ ràng.
+    """
     from app.ai import llm
 
     items = []
     for j, m in enumerate(muc):
+        nga = m.get("toi_da_kytu") or 0
         items.append(
-            f'#{j} [phải đọc lọt {m["khung"]:.1f} giây, bản hiện tại đọc mất '
-            f'{m["d_nat"]:.1f} giây -> cần ngắn bớt khoảng '
-            f'{m["bot"]:.0%}]: "{m["text"][:400]}"')
+            f'#{j} [khung {m["khung"]:.1f} giây, bản hiện tại đọc mất '
+            f'{m["d_nat"]:.1f} giây, TỐI ĐA {nga} ký tự]: "{m["text"][:400]}"')
     system = ("Bạn là biên tập lời thoại lồng tiếng. Rút NGẮN câu mà GIỮ "
               "nguyên ý chính. CHỈ trả JSON thuần.")
     prompt = (
@@ -1450,6 +1501,7 @@ def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
         f"{chr(10).join(items)}\n\n"
         "QUY TẮC:\n"
         "- GIỮ Ý CHÍNH và giữ đúng ngôn ngữ đang có.\n"
+        "- KHÔNG được vượt số ký tự TỐI ĐA ghi trong ngoặc của câu đó.\n"
         "- Bỏ từ đệm, bỏ chi tiết phụ, dùng từ ngắn hơn.\n"
         "- Vẫn phải là câu nói TỰ NHIÊN, không cụt lủn khó hiểu.\n"
         f"- Trả MẢNG JSON đúng {len(muc)} chuỗi, cùng thứ tự."
@@ -1514,12 +1566,17 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         if on_progress:
             on_progress(vong / max(1, vong_toi_da),
                         f"Rút gọn {len(xau)} câu dài quá khung...")
+        kts = toc_do_doc(texts, files, ok)      # ký tự/giây ĐO của giọng này
         muc = []
         for i in xau:
             kh = khung_cho_phep(cau, i, tong)
             d = probe_duration(files[i])
             muc.append({"i": i, "text": texts[i], "khung": kh, "d_nat": d,
-                        "bot": max(0.05, 1.0 - kh / d) if d > 0 else 0.2})
+                        "bot": max(0.05, 1.0 - kh / d) if d > 0 else 0.2,
+                        # trừ hao 8%: LLM hay viết sát trần, mà đọc hụt một
+                        # chút thì chỉ thừa khoảng lặng (vô hại), đọc quá thì
+                        # lại phải ép tốc độ (có hại).
+                        "toi_da_kytu": max(6, int(kh * kts * 0.92))})
         moi = _rut_gon_loat(muc, dich_sang)
 
         # đọc lại CHỈ các câu vừa rút gọn, vào file RIÊNG để còn so
@@ -1560,6 +1617,111 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         # bị ép", max chỉ nói được câu tệ nhất.
         "can_truoc": [round(t, 3) for t in truoc],
         "can_sau": [round(t, 3) for t in sau],
+    }
+
+
+# ==================================================================
+# BƯỚC 4c — ĐỌC NHANH LẠI (thay cho ép `atempo`)
+# ==================================================================
+#
+# `atempo` là WSOLA: cắt sóng thành cửa sổ rồi dán chồng — ĐO ĐƯỢC
+# **5,357 dB méo phổ ở 1,20 · 6,765 ở 1,50 · 8,071 ở 1,80** (vòng tròn ép
+# nhanh k rồi ép chậm 1/k, `_do_nguong_tempo.py`). Đó chính là cái tai nghe ra
+# là "nói không mượt, nhiều lỗi".
+#
+# edge-tts có tham số `rate`: mô hình TỰ ĐỌC NHANH HƠN — không có phép cắt-dán
+# nào, méo do co giãn = 0 theo cấu tạo. Đo `_do_rate_tts.py` (8 câu thật):
+#   rate +5% -> nhanh THẬT 1,046x · +10% -> 1,093 · +20% -> 1,190 ·
+#   +30% -> 1,279 · +40% -> 1,370 · +50% -> 1,455
+# sai lệch so với yêu cầu chỉ −0,4% .. −3,0%, và WER KHÔNG xấu đi
+# (0,83-2,92% — đúng dải nhiễu của chính phép đo).
+#
+# Nên thứ tự chữa bây giờ là: rút NGẮN CHỮ -> ĐỌC NHANH -> mượn thời gian ->
+# cuối cùng mới `atempo`.
+
+#: Trên mức này thì đọc lại còn hơn ép. 1,03 = dưới cả sai số của `rate`.
+NGUONG_DOC_NHANH = 1.03
+
+#: Trần `rate` edge-tts. +50% đã đo ra 1,455x; trên nữa CHƯA ĐO nên không dùng.
+RATE_TOI_DA = 50
+
+#: Bù phần edge-tts đọc HỤT so với yêu cầu (đo −0,4% .. −3,0%) + chút dư để
+#: `khop_thoi_gian` không phải đụng tới `atempo` nữa.
+RATE_BU = 4
+
+
+def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
+                        ok: list[bool], tong: float, out_dir: str | Path,
+                        dich_sang: str = "en", voice: str = "",
+                        nguong: float = NGUONG_DOC_NHANH,
+                        on_progress: Optional[Callable[[float, str], None]] = None,
+                        ) -> dict:
+    """Câu nào vẫn dài quá khung -> ĐỌC LẠI bằng chính giọng đó, NHANH HƠN.
+
+    Chỉ NHẬN bản đọc nhanh khi nó thật sự NGẮN HƠN bản cũ (edge-tts có lúc trả
+    file dài hơn — nhận bừa là tự làm hỏng, cùng luật với bước rút gọn).
+
+    Trả {files, ok, so_doc_lai, can_truoc, can_sau, rate_max}.
+    """
+    import asyncio
+    from app.core import dubbing
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = list(files)
+    ok = list(ok)
+
+    def _can() -> list[float]:
+        ra = []
+        for i in range(len(cau)):
+            if i >= len(files) or not ok[i] or not Path(files[i]).exists():
+                ra.append(1.0)
+                continue
+            d = probe_duration(files[i])
+            kh = khung_cho_phep(cau, i, tong)
+            ra.append(max(1.0, d / kh) if kh > 0 and d > 0 else 1.0)
+        return ra
+
+    truoc = _can()
+    xau = [i for i, t in enumerate(truoc) if t > nguong]
+    if not xau:
+        return {"files": files, "ok": ok, "so_doc_lai": 0,
+                "can_truoc": [round(t, 3) for t in truoc],
+                "can_sau": [round(t, 3) for t in truoc], "rate_max": 0}
+
+    if on_progress:
+        on_progress(0.2, f"Đọc nhanh lại {len(xau)} câu cho vừa khung...")
+    v = voice or giong_theo_ngon_ngu(dich_sang)
+    thu = [texts[i] if i < len(texts) else "" for i in xau]
+    rates, paths = [], []
+    for j, i in enumerate(xau):
+        r = min(RATE_TOI_DA,
+                max(1, int(round((truoc[i] - 1.0) * 100)) + RATE_BU))
+        rates.append(f"+{r}%")
+        paths.append(str(out_dir / f"nhanh_{i:04d}.mp3"))
+    ok2 = asyncio.run(dubbing._synth_all(thu, v, paths, rate=rates))
+    sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach")
+
+    so = 0
+    for j, i in enumerate(xau):
+        if not ok2[j] or not Path(sach[j]).exists():
+            continue
+        d_cu = probe_duration(files[i])
+        d_moi = probe_duration(sach[j])
+        if d_moi <= 0.05 or d_moi >= d_cu - 0.02:
+            continue                       # không ngắn hơn -> GIỮ bản cũ
+        files[i] = sach[j]
+        ok[i] = True
+        so += 1
+
+    sau = _can()
+    return {
+        "files": files, "ok": ok, "so_doc_lai": so,
+        "can_truoc": [round(t, 3) for t in truoc],
+        "can_sau": [round(t, 3) for t in sau],
+        "can_max_truoc": round(max(truoc or [1.0]), 3),
+        "can_max_sau": round(max(sau or [1.0]), 3),
+        "rate_max": max(int(r.strip("+%")) for r in rates) if rates else 0,
     }
 
 
@@ -1903,9 +2065,17 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         kq["rut_gon"] = {k: v for k, v in rg.items()
                          if k not in ("texts", "files", "ok")}
 
+        # --- bước 4c: đọc NHANH lại câu còn dài (thay cho ép atempo méo tiếng)
+        prog(0.79, "Đọc nhanh lại câu còn dài quá khung...")
+        dn = doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"], tong,
+                                 tam_goc / "docnhanh", dich_sang, tts["voice"],
+                                 on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
+        kq["doc_nhanh"] = {k: v for k, v in dn.items()
+                           if k not in ("files", "ok", "can_truoc", "can_sau")}
+
         # --- bước 5: khớp thời gian
         prog(0.80, "Khớp thời gian...")
-        kh = khop_thoi_gian(cau, rg["files"], rg["ok"], tong,
+        kh = khop_thoi_gian(cau, dn["files"], dn["ok"], tong,
                             tam_goc / "khop",
                             on_progress=lambda p, m: prog(0.80 + 0.10 * p, m))
         kq["khop"] = {k: v for k, v in kh.items() if k != "manh"}

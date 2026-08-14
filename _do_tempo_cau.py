@@ -51,7 +51,10 @@ def mot_luot(k: dict, dich_sang: str, vong: int, lam: Path) -> dict:
     tts = tg.doc_ban_dich(dd["ban_dich"], lam / "tts", "", dich_sang)
     rg = tg.rut_gon_vua_khung(cau, dd["ban_dich"], tts, tong,
                               lam / "rutgon", dich_sang, tts["voice"])
-    kh = tg.khop_thoi_gian(cau, rg["files"], rg["ok"], tong, lam / "khop")
+    dn = tg.doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"], tong,
+                                lam / "docnhanh", dich_sang, tts["voice"])
+    rg["files"], rg["ok"] = dn["files"], dn["ok"]
+    kh = tg.khop_thoi_gian(cau, dn["files"], dn["ok"], tong, lam / "khop")
 
     # câu nào bị ép -> bản dịch dài hơn câu gốc bao nhiêu?
     dai = []
@@ -72,6 +75,8 @@ def mot_luot(k: dict, dich_sang: str, vong: int, lam: Path) -> dict:
         "dich": {kk: vv for kk, vv in dd.items() if kk != "ban_dich"},
         "rut_gon": {kk: vv for kk, vv in rg.items()
                     if kk not in ("texts", "files", "ok")},
+        "doc_nhanh": {kk: vv for kk, vv in dn.items()
+                      if kk not in ("files", "ok", "can_truoc", "can_sau")},
         "khop": {kk: vv for kk, vv in kh.items() if kk != "manh"},
         "dai": dai,
         "texts": rg["texts"],
@@ -110,6 +115,12 @@ def main() -> int:
                   f"tempo CẦN max {rg['tempo_can_max_truoc']} -> "
                   f"{rg['tempo_can_max_sau']} · "
                   f"vượt {rg['so_cau_vuot_truoc']} -> {rg['so_cau_vuot_sau']}")
+            dn = r.get("doc_nhanh") or {}
+            if dn:
+                print(f"  đọc nhanh lại: {dn.get('so_doc_lai')} câu · "
+                      f"rate max +{dn.get('rate_max')}% · "
+                      f"tempo CẦN max {dn.get('can_max_truoc')} -> "
+                      f"{dn.get('can_max_sau')}")
             print(f"  PHÂN BỐ tempo ÁP THẬT ({kh['so_cau']} câu): "
                   f"{_pb(kh['tempo_cau'])}")
             print(f"  tempo max {kh['tempo_max']} · TB {kh['tempo_tb']} · "
