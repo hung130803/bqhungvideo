@@ -892,6 +892,32 @@ def ca19_pha_duong_truyen():
     _sig_gia = inspect.signature(_gia).parameters
     kiem("CA19e TỰ KIỂM: bản GIẢ thiếu tham số -> phép kiểm (b) TRƯỢT đúng",
          not all(k in _sig_gia for k in ("che_chu", "che_chu_cach")))
+    # (f) ĐƯỜNG LÙI "tra MẪU theo TÊN" — hiện là đường DUY NHẤT đưa cờ từ
+    #     Chỉnh mẫu tới lượt xuất (studio_page/services đang có luồng khác sửa
+    #     nên chưa nối được payload). Nó ĐỌC DB THẬT nên phải kiểm bằng DB
+    #     THẬT (sandbox), không mock: mock ở đây là giấu đúng chỗ có thể vỡ.
+    from app import services as _sv
+    _ten = "_test_che_chu_mau"
+    try:
+        _sv.save_template(_ten, {"che_chu": True, "che_chu_cach": "khoi",
+                                 "che_chu_muc": 0.30})
+        _r = M1.doc_che_chu({"cap_style": {"_mau": _ten}})
+        kiem("CA19f đường LÙI: tra MẪU theo tên -> lấy đúng cờ (và qua sàn)",
+             _r == {"bat": True, "cach": "khoi", "muc": 0.60}, f"{_r}")
+        _sv.save_template(_ten, {"che_chu": False})
+        kiem("CA19f' mẫu TẮT -> TẮT",
+             M1.doc_che_chu({"cap_style": {"_mau": _ten}})["bat"] is False)
+        # PAYLOAD phải THẮNG mẫu (khi studio_page nối xong thì cờ đã chốt lúc
+        # xếp job mới là nguồn đúng — mẫu có bị sửa sau đó cũng không đổi clip)
+        _sv.save_template(_ten, {"che_chu": False})
+        kiem("CA19f'' payload ƯU TIÊN hơn mẫu",
+             M1.doc_che_chu({"che_chu": True,
+                             "cap_style": {"_mau": _ten}})["bat"] is True)
+    finally:
+        try:
+            _sv.delete_template(_ten)
+        except Exception:                                      # noqa: BLE001
+            pass
 
 
 def ca20_nhin_bang_mat(src: Path, a: Path, b: Path, vung) -> None:
