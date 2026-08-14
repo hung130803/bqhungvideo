@@ -161,20 +161,16 @@ def tach_giong_ra(video: str | Path, lam: Path, ten: str) -> str:
     if not wav.exists():
         TG.tach_wav(video, wav)
     d = lam / f"{ten}_tach"
-    v = d / "vocals.wav"
-    if v.exists():
+    v = d / "stem_vocals.wav"
+    if v.exists():                       # đã tách rồi -> DÙNG LẠI, Demucs đắt
         return str(v)
     r = TG.tach_giong(wav, d, cach="demucs")
     return str(r.get("giong") or "")
 
 
-def moc_noi(giong_wav: str | Path, nguong_db: float = -38.0,
-            im_toi_thieu: float = 0.30) -> list:
-    """Mốc BẮT ĐẦU NÓI trên lớp giọng — `silencedetect` THẬT, không metadata.
-
-    Trả list giây. Khoảng im ngắn hơn `im_toi_thieu` không tính là ngắt (thở
-    giữa câu), nếu không một câu ra 5 mốc.
-    """
+def khoang_im(giong_wav: str | Path, nguong_db: float = -40.0,
+              im_toi_thieu: float = 0.20) -> tuple[list, float]:
+    """Các khoảng IM trên lớp giọng — `silencedetect` THẬT, không metadata."""
     cmd = [_ff(), "-hide_banner", "-i", str(giong_wav), "-af",
            f"silencedetect=n={nguong_db}dB:d={im_toi_thieu:g}",
            "-f", "null", "-"]
@@ -191,76 +187,95 @@ def moc_noi(giong_wav: str | Path, nguong_db: float = -38.0,
             st = None
     if st is not None:
         khoang.append((st, tong))
-    # ĐOẠN CÓ TIẾNG = phần bù của các khoảng im
-    noi: list = []
+    return khoang, tong
+
+
+def doan_noi(khoang: list, tong: float, toi_thieu: float = 0.12) -> list:
+    """Phần bù của các khoảng im = các ĐOẠN CÓ TIẾNG [(a, b), ...]."""
+    ra: list = []
     cur = 0.0
     for a, b in khoang:
-        if a - cur > 0.12:
-            noi.append(round(cur, 3))
+        if a - cur > toi_thieu:
+            ra.append((round(cur, 3), round(a, 3)))
         cur = b
-    if tong - cur > 0.12:
-        noi.append(round(cur, 3))
-    return noi
-
-
-# ──────────────────────────────── GHÉP CẶP ──────────────────────────────────
-def ghep(chu: list, tieng: list, cua_so: float = 4.0) -> list:
-    """Ghép mỗi mốc CHỮ với mốc TIẾNG gần nhất trong `cua_so` giây.
-
-    Ghép theo KHOẢNG CÁCH chứ không theo thứ tự cứng: số dòng chữ và số câu
-    tiếng không bằng nhau (một câu chép lời có thể trải 2-3 dòng phụ đề), ép
-    theo thứ tự là đẻ ra lệch giả hàng giây.
-    """
-    ra: list = []
-    for c in chu:
-        gan = [v for v in tieng if abs(v - c) <= cua_so]
-        if not gan:
-            ra.append({"chu": c, "tieng": None, "lech_ms": None})
-            continue
-        v = min(gan, key=lambda x: abs(x - c))
-        ra.append({"chu": c, "tieng": v,
-                   "lech_ms": round((v - c) * 1000.0, 1)})
+    if tong - cur > toi_thieu:
+        ra.append((round(cur, 3), round(tong, 3)))
     return ra
 
 
-def tom_tat(cap: list) -> dict:
-    xs = [c["lech_ms"] for c in cap if c["lech_ms"] is not None]
-    if not xs:
+def moc_noi(doan: list) -> list:
+    return [a for a, _ in doan]
+
+
+def cho_bao_lau(ts: float, doan: list, tran: float = 12.0) -> float:
+    """Từ lúc CHỮ hiện (`ts`) phải CHỜ bao lâu mới nghe thấy tiếng (giây).
+
+    ĐÂY LÀ THƯỚC ĐO ĐÚNG CÁI ANH HÙNG TẢ: *"chữ chạy mà trên đáng lý ra phải
+    nói mà k có nói, 1 lúc sau nó lại tự nói"*. Đang nói sẵn lúc chữ hiện -> 0.
+
+    Ghép-cặp-theo-mốc KHÔNG dùng được ở đây: lời dẫn Douyin gần như liên tục
+    (đo được vocals gốc chỉ 3,5% im), nên "mốc bắt đầu nói" quá ít so với số
+    dòng chữ và mọi phép ghép cặp đều ra lệch giả hàng giây.
+    """
+    for a, b in doan:
+        if a - 1e-6 <= ts < b:
+            return 0.0
+        if a > ts:
+            return min(tran, a - ts)
+    return tran
+
+
+# ──────────────────────────────── BẢNG LỆCH ─────────────────────────────────
+#: NGƯỠNG NGHE/NHÌN RA. Chọn CHẶT và nói rõ là chọn chặt: mốc 150 ms lấy theo
+#: khuyến nghị đồng bộ tiếng-hình của EBU R37 / ITU-R BT.1359 (tiếng đi SAU
+#: hình quá 125-185 ms là thấy lệch). Ở đây "hình" là DÒNG CHỮ.
+NGUONG_MS = 150.0
+
+
+def bang_cho(chu: list, doan: list) -> list:
+    """Mỗi dòng chữ -> phải chờ bao lâu mới có tiếng."""
+    return [{"chu": round(c, 3),
+             "cho_ms": round(cho_bao_lau(c, doan) * 1000.0, 1)}
+            for c in chu]
+
+
+def tom_tat(bang: list) -> dict:
+    if not bang:
         return {"n": 0}
-    a = np.array(xs, float)
+    a = np.array([b["cho_ms"] for b in bang], float)
     return {
-        "n": len(xs), "khong_ghep_duoc": sum(1 for c in cap
-                                             if c["lech_ms"] is None),
-        "trung_binh_ms": round(float(a.mean()), 1),
-        "trung_vi_ms": round(float(np.median(a)), 1),
-        "tuyet_doi_tb_ms": round(float(np.abs(a).mean()), 1),
-        "tuyet_doi_max_ms": round(float(np.abs(a).max()), 1),
-        "p90_tuyet_doi_ms": round(float(np.percentile(np.abs(a), 90)), 1),
-        "vuot_150ms": int((np.abs(a) > 150).sum()),
-        "vuot_150ms_ty_le": round(float((np.abs(a) > 150).mean()), 4),
-        "vuot_500ms": int((np.abs(a) > 500).sum()),
+        "n": len(a),
+        "cho_tb_ms": round(float(a.mean()), 1),
+        "cho_trung_vi_ms": round(float(np.median(a)), 1),
+        "cho_max_ms": round(float(a.max()), 1),
+        "p90_ms": round(float(np.percentile(a, 90)), 1),
+        f"vuot_{int(NGUONG_MS)}ms": int((a > NGUONG_MS).sum()),
+        f"vuot_{int(NGUONG_MS)}ms_ty_le": round(float((a > NGUONG_MS).mean()),
+                                                4),
+        "vuot_1000ms": int((a > 1000).sum()),
+        "tong_cho_giay": round(float(a.sum()) / 1000.0, 2),
     }
 
 
-def tich_luy(cap: list, phan: int = 4) -> list:
-    """Lệch trung bình theo TỪNG PHẦN video — trôi dần thì thấy ngay ở đây."""
-    xs = [c for c in cap if c["lech_ms"] is not None]
-    if not xs:
+def tich_luy(bang: list, phan: int = 4) -> list:
+    """Chờ trung bình theo TỪNG PHẦN video — trôi dần thì thấy ngay ở đây."""
+    if not bang:
         return []
-    n = len(xs)
+    n = len(bang)
     ra = []
     for k in range(phan):
         lo, hi = n * k // phan, n * (k + 1) // phan
-        pha = xs[lo:hi]
+        pha = bang[lo:hi]
         if not pha:
             continue
-        a = np.array([p["lech_ms"] for p in pha], float)
+        a = np.array([p["cho_ms"] for p in pha], float)
         ra.append({"phan": f"{k + 1}/{phan}",
                    "tu_giay": round(pha[0]["chu"], 1),
                    "den_giay": round(pha[-1]["chu"], 1),
-                   "so_moc": len(pha),
-                   "lech_tb_ms": round(float(a.mean()), 1),
-                   "lech_tuyet_doi_tb_ms": round(float(np.abs(a).mean()), 1)})
+                   "so_dong": len(pha),
+                   "cho_tb_ms": round(float(a.mean()), 1),
+                   "cho_max_ms": round(float(a.max()), 1),
+                   f"vuot_{int(NGUONG_MS)}ms": int((a > NGUONG_MS).sum())})
     return ra
 
 
@@ -281,24 +296,35 @@ def do_mot(goc: str, ra_video: str, lam: Path, ten: str) -> dict:
     g_voc = tach_giong_ra(goc, lam, f"{ten}_goc")
     print(f"[{ten}] Demucs bản THÀNH PHẨM...", flush=True)
     r_voc = tach_giong_ra(ra_video, lam, f"{ten}_ra")
-    tieng_goc = moc_noi(g_voc) if g_voc else []
-    tieng_moi = moc_noi(r_voc) if r_voc else []
-    print(f"[{ten}] mốc TIẾNG GỐC {len(tieng_goc)} · TIẾNG MỚI "
-          f"{len(tieng_moi)}", flush=True)
 
-    cap_goc = ghep(chu, tieng_goc)
-    cap_moi = ghep(chu, tieng_moi)
+    def _doan(w: str) -> tuple[list, dict]:
+        if not w or not Path(w).exists():
+            return [], {}
+        ks, tong = khoang_im(w)
+        dn = doan_noi(ks, tong)
+        tim = sum(b - a for a, b in ks)
+        return dn, {"tong_giay": round(tong, 2), "so_doan_noi": len(dn),
+                    "im_giay": round(tim, 2),
+                    "im_ty_le": round(tim / max(1e-6, tong), 4),
+                    "lo_lon_nhat_giay": round(max([b - a for a, b in ks] or [0]),
+                                              2)}
+
+    dn_goc, tt_goc = _doan(g_voc)
+    dn_moi, tt_moi = _doan(r_voc)
+    print(f"[{ten}] tiếng GỐC {tt_goc} · MỚI {tt_moi}", flush=True)
+
+    b_goc = bang_cho(chu, dn_goc)
+    b_moi = bang_cho(chu, dn_moi)
     kq = {
         "ten": ten, "goc": goc, "ra": ra_video,
         "dai_chu": dai.dict(), "tt_chu": tt_chu,
-        "moc_chu": chu, "moc_tieng_goc": tieng_goc,
-        "moc_tieng_moi": tieng_moi,
-        "doi_chung_goc": {"tom_tat": tom_tat(cap_goc),
-                          "theo_phan": tich_luy(cap_goc)},
-        "thanh_pham": {"tom_tat": tom_tat(cap_moi),
-                       "theo_phan": tich_luy(cap_moi),
-                       "bang": cap_moi},
-        "bang_goc": cap_goc,
+        "moc_chu": chu,
+        "tieng_goc": tt_goc, "tieng_moi": tt_moi,
+        "doan_noi_goc": dn_goc, "doan_noi_moi": dn_moi,
+        "doi_chung_goc": {"tom_tat": tom_tat(b_goc),
+                          "theo_phan": tich_luy(b_goc), "bang": b_goc},
+        "thanh_pham": {"tom_tat": tom_tat(b_moi),
+                       "theo_phan": tich_luy(b_moi), "bang": b_moi},
     }
     return kq
 
