@@ -1116,6 +1116,66 @@
      của VIDEO GỐC, không phải narrate) vẫn coi hangul là CJK -> dán liền các
      từ tiếng Hàn. Cổng 54 ca 3d ĐO ĐƯỢC điều đó nhưng **không sửa** (khác
      file, khác đường, ngoài phạm vi việc này).
+  55. `_test_thay_giong_ui.py` → **THAY GIỌNG NÓI ĐÃ NỐI VÀO UI + CHẠY ĐA
+     LUỒNG** (14/08/2026). Cổng 53 kiểm các HÀM; cổng này kiểm cái anh Hùng
+     thật sự bấm: nút "Thay giọng nói" ở trang chính -> hộp
+     `app/ui/thay_giong_dialog.py` -> bộ điều phối -> video mới đúng chỗ, gốc
+     trong Thùng rác. **ĐẠT 37 · HỎNG 0.** Thành phần THẬT: ffmpeg · Groq
+     (41 key) · edge-tts · Demucs · `WorkerPool`.
+     **LỖI THẬT LỚN NHẤT VIỆC NÀY LÔI RA — `torch` CHẾT SAU KHI Qt NẠP:**
+     trong tiến trình đã có `QApplication`, `import torch` ném
+     `OSError [WinError 1114] ... torch\lib\c10.dll`. Tái hiện 100%: torch
+     TRƯỚC Qt -> OK · torch SAU Qt -> 1114. **App này LÀ app Qt**, nên bản
+     `thay_giong` v2.24.0 (nhúng thẳng Demucs vào tiến trình app) là tính
+     năng **KHÔNG BAO GIỜ chạy được khi bấm từ giao diện** — mà lỗi lại đội
+     lốt *"máy chưa cài Demucs"*, đúng loại bẫy dẫn người ta đi cài lại 2 GB
+     lần nữa. CHỮA: `_tach_demucs` chạy **SCRIPT ĐỘC LẬP ở TIẾN TRÌNH RIÊNG**
+     (không `-m <module>`: bản `.exe` không chạy được và không có cây mã
+     nguồn) + `co_demucs`/`tinh_trang_demucs` dò bằng **`find_spec`** chứ
+     không import. Lợi kèm: RAM ~1,3 GB trả sạch khi tiến trình thoát, và
+     bấm Huỷ **giết được** tiến trình (`register_job_proc`). Vẫn `_kiem_wav`
+     file tiến trình con ghi ra — không tin nó báo "ok".
+     **LÀN THỨ BA CỦA BỘ ĐIỀU PHỐI** (`worker.LAN_TG`, `LOAI_LAN_TG =
+     ("thay_giong",)`): mỗi làn vẫn có cửa sổ **50 dòng RIÊNG**, và hai làn
+     cũ phải `type NOT IN (...)` — không loại trừ thì job thay giọng lại ngồi
+     chung cửa sổ làn CPU và lỗi "làn cắt chết đói vì LIMIT 50" tái diễn y
+     hệt, chỉ đổi tên thủ phạm. `_lane_limit_tg` **CỐ Ý không bị `ECO_MODE`
+     khoá về 1** (nếu không thì ô "Số luồng" của user chỉ là cái nhãn); trần
+     `TG_TRAN = 4` vì Demucs ~1,3 GB RAM/video. Executor RIÊNG `_tg_pool` —
+     job này chạy hàng phút, dùng chung với làn CPU là job xuất hết chỗ.
+     **MỖI VIDEO MỘT JOB** (không gộp cả thư mục): tắt app giữa chừng thì
+     video chưa làm vẫn nằm trong DB và chạy tiếp; Huỷ được từng video; bảng
+     tiến độ đọc thẳng bảng `jobs`, không có sổ RAM riêng.
+     **SỐ ĐO:** 2 video / **2 luồng 18,58s** · **lần lượt 26,55s** = nhanh
+     **1,43×**; đỉnh job chạy cùng lúc **2** (làn 2 luồng) và **1** (làn 1
+     luồng); MD5 gốc trong Thùng rác **trùng từng byte**; bản mới 215 khung,
+     RMS 0,09. Tách 6 giây audio trong tiến trình ĐÃ NẠP Qt: **7,47s wall**,
+     tỉ lệ 0,783×, `torch 2.13.0+cpu` (trước bản vá: 0 dòng chạy được).
+     **THIẾU DEMUCS = CHẶN, KHÔNG LÙI**: hộp hiện nút `Tải bộ tách giọng
+     (khoảng 2 GB)` (nhãn KHÔNG EMOJI), **khoá nút Chạy**, bấm Chạy xếp **0
+     job**, handler NÉM. Quét tĩnh bằng `tokenize` (bỏ COMMENT+STRING — bài
+     học cổng 47/51): `thay_giong_dialog.py` · `jobs.py` · `services.py`
+     KHÔNG được có `cho_phep_nhe`/`"nhe"`, kèm ca **TỰ KIỂM BỘ DÒ** bắt
+     `thay_giong.py` PHẢI còn chữ đó. `cai_demucs()` chỉ chạy khi NGƯỜI DÙNG
+     BẤM, cài vào `_lib` RIÊNG (không đụng `.venv` đang chạy 300 kênh), và
+     kiểm lại bằng **tiến trình riêng** (máy dev có torch trong `.venv` nên
+     kiểm tại chỗ là "tưởng cài xong").
+     **2 LỖI CỦA CHÍNH CỔNG (sửa, đừng lặp):** (a) thùng rác của cổng nằm
+     trong `%TEMP%` -> `_is_safe_recycle_root` từ chối (ĐÚNG) rồi lùi về
+     `_DaXoa` -> mục MD5 **HỎNG OAN**; nay thùng rác đặt NGOÀI `%TEMP%`
+     (`<repo>/bq_test_tgrac_<pid>`, dọn sạch cuối lượt). (b) phép THỬ PHÁ bản
+     đầu gỡ **MỘT** chốt rồi đợi bất biến vỡ — nó KHÔNG vỡ, vì
+     `thay_the_video_goc` còn chốt cỡ file. Nay tách 2 mục: gỡ 1 chốt ->
+     **vẫn giữ** (2 lớp chắn, là SỐ ĐO) · gỡ **CẢ HAI** -> **VỠ** (chứng minh
+     ca 4 đang đo thật).
+     **LỖI THẬT CỦA UI cổng lôi ra:** combo giọng chỉ dựng SAU khi thread nền
+     tải xong danh sách -> mở hộp rồi Lưu ngay là **ghi đè giọng user đã chọn
+     bằng `""`** (đúng họ lỗi "chọn X ra Y"). Nay dựng combo NGAY với giá trị
+     đã lưu, thread nền chỉ bổ sung.
+     **CHƯA ĐẠT, GHI THẲNG:** `tempo_max` vẫn sát trần 1,5 như cổng 53 đã đo
+     (rút gọn giúp nhưng chưa đủ) · bản `.exe` vẫn KHÔNG gói torch nên máy
+     nhân viên phải bấm nút tải (~2 GB) và **phải có Python 3 trên máy** thì
+     app mới tải/chạy được — không có Python thì hộp báo thẳng, không im lặng.
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
