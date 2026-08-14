@@ -3454,9 +3454,17 @@ def export_canvas_clip(
                     # "trời mưa" tự nó qua ngưỡng. Để rỗng thì bậc thang giữ
                     # nguyên ý nghĩa: phải **2 CÂU** nói tới cảnh đó.
                     _lp_loi = ""
+                # NGÔN NGỮ của bản chép lời -> chọn ĐÚNG bảng từ khoá lời
+                # thoại. Bắt buộc truyền cả ở đường XEM HÌNH (mốc là mô tả
+                # tiếng Anh nhưng `_lp_loi` là lời THẬT của video): thiếu là
+                # câu tiếng Trung nói "料理" (= xử lý) bị bảng Nhật cấm oan
+                # 5 cảnh. Nhãn lạ/rỗng -> bảng mặc định, hành vi y cũ.
+                _lp_lang = str(((noi_dung or {}).get("transcript") or {})
+                               .get("language") or "")
                 _lp_chon, _lp_ly = _LP.chon_lop_phu(
                     _lp_moc, _lp_loi, _out_dur,
-                    str(hieu_ung).strip().lower(), co_the_dung=_dung_kieu)
+                    str(hieu_ung).strip().lower(), co_the_dung=_dung_kieu,
+                    ngon_ngu=_lp_lang)
                 _LP.ghi_nhat_ky(_lp_ly, os.path.basename(str(dst)))
             except Exception:  # noqa: BLE001 — lớp phủ KHÔNG được chặn lượt xuất
                 _lp_chon = []

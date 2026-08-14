@@ -724,6 +724,186 @@ for _k, _b in _CJK.items():
     _dk(_l)      # dựng lại CẢ HAI bộ mẫu (bỏ dấu + có dấu)
 
 
+# ==================== TỪ KHOÁ TIẾNG TRUNG — **BẢNG RIÊNG** ====================
+# **VÌ SAO KHÔNG NHÉT CHUNG VÀO `_CJK`** — không phải cho gọn, mà vì ĐO RA BẪY.
+# Bảng `_CJK` ở trên là Nhật + Hàn. Chữ Hán thì Nhật và Trung **dùng chung mặt
+# chữ nhưng KHÁC NGHĨA**, đúng họ bẫy `tuyết`/`tuyệt vời` của tiếng Việt — chỉ
+# khác cơ chế (ở đây là chung MẶT CHỮ chứ không phải chung DẠNG BỎ DẤU):
+#     `料理`  Nhật = MÓN ĂN/nấu ăn · **Trung = XỬ LÝ / giải quyết**
+#             -> nó đang nằm trong danh sách CẤM của `tuyet_roi` · `mua_roi` ·
+#             `duoi_nuoc` · `ma_quai` · `cong_nghe`, nên MỘT câu tiếng Trung nói
+#             "xử lý chuyện này" là **cấm oan 5 cảnh** (đo `_do_cjk_va.py`).
+#     `手紙`  Nhật = LÁ THƯ (đang ở nhóm phụ của `bui_phim`) ·
+#             **Trung = GIẤY VỆ SINH** -> khớp bừa.
+# Vì vậy bảng tiếng Trung **KHÔNG thừa hưởng một từ khoá Nhật/Hàn nào**: nó lấy
+# phần LATIN (Anh/Việt — không thể khớp chữ Hán nên vô hại, mà lời song ngữ có
+# chèn tên riêng tiếng Anh thì vẫn dò được) rồi cộng bảng dưới đây.
+#
+# **LUẬT SẮT GIỮ NGUYÊN CỦA NHÓM CJK:** tiếng Trung KHÔNG CÓ DẤU CÁCH nên từ
+# khoá NGẮN khớp BÊN TRONG từ dài -> **tối thiểu 2 ký tự** và phải khó nhầm.
+# 3 bẫy NỘI BỘ tiếng Trung đã tránh sẵn:
+#     `雪`  khớp trong **雪碧**(Sprite)/**雪花啤酒** -> chỉ dùng 下雪·大雪·滑雪…
+#     `海底` khớp trong **海底捞** (chuỗi lẩu rất nổi tiếng) -> vẫn dùng 海底 vì
+#           nó là bằng chứng mạnh nhất của cảnh dưới nước, nhưng **海底捞 và
+#           火锅 được đưa vào danh sách CẤM** của chính cảnh đó -> video ăn lẩu
+#           bị loại thẳng, không cộng trừ gì.
+#     `古董` (đồ cổ) KHÔNG được nhận cho `bui_phim`: nó là ĐỒ VẬT, không phải
+#           thước phim cũ — video săn kho báu nhắc "古董宝贝" sẽ kéo `bui_phim`
+#           lên ngang `tien_bac`/`duoi_nuoc` rồi cả ba cùng rụng vì "pha tạp".
+#
+# NGUYÊN TẮC MỞ RỘNG (anh Hùng đã chốt, không làm khác): chỉ thêm **BIẾN THỂ
+# NGÔN NGỮ trong ĐÚNG 14 cảnh đã dò được**, KHÔNG thêm cảnh mới. Mỗi cảnh mới là
+# một cơ hội dò sai; còn viết lại đúng cảnh cũ bằng thứ tiếng khác thì dùng lại
+# nguyên bậc thang chấm điểm đã đo (`NGUONG_TIN` · trần nhóm phụ · danh sách
+# CẤM · hai họ sát nhau = bỏ) — rủi ro thêm bằng 0.
+_ZH: dict = {
+    "tuyet_roi": {
+        "manh": ("下雪", "大雪", "雪花", "雪人", "滑雪", "暴风雪", "雪景"),
+        "phu": ("寒冷", "好冷", "冬天", "围巾", "手套", "冰天雪地"),
+        "cam": ("厨房", "做饭", "烤箱", "食谱", "平底锅", "沙漠", "海滩",
+                "游泳池")},
+    "trai_tim": {
+        "manh": ("婚礼", "新娘", "新郎", "接吻", "拥抱", "情侣", "宝宝",
+                 "婴儿", "新生儿", "小狗", "小猫", "求婚", "订婚"),
+        "phu": ("家人", "妈妈", "爸爸", "礼物", "花束"),
+        "cam": ("打架", "流血", "手枪", "事故", "葬礼", "战争", "警察",
+                "比赛", "裁判", "进球")},
+    "confetti": {
+        "manh": ("生日", "蛋糕", "派对", "庆祝", "毕业", "冠军", "颁奖",
+                 "纪念日", "新年"),
+        "phu": ("掌声", "气球", "干杯"),
+        "cam": ("葬礼", "事故", "医院", "战争", "打架")},
+    "mua_roi": {
+        "manh": ("下雨", "大雨", "暴雨", "雨伞", "台风", "梅雨", "眼泪",
+                 "流泪", "告别", "坟墓"),
+        "phu": ("寂寞", "孤单", "阴天"),
+        "cam": ("生日", "派对", "婚礼", "沙漠")},
+    "dom_bokeh": {
+        "manh": ("夜景", "霓虹", "路灯", "演唱会", "舞台", "烟花", "灯笼",
+                 "蜡烛"),
+        "phu": ("半夜", "傍晚"),
+        "cam": ("正午", "白天", "海滩")},
+    "tan_lua": {
+        "manh": ("火焰", "火灾", "篝火", "爆炸", "壁炉", "焊接", "火山",
+                 "着火"),
+        "phu": ("冒烟", "浓烟"),
+        "cam": ("大雪", "下雨", "水下", "医院", "宝宝")},
+    "la_roi": {
+        "manh": ("红叶", "落叶", "秋天", "枫叶"),
+        "phu": ("大自然", "户外", "公园")},
+    "duoi_nuoc": {
+        "manh": ("水下", "水底", "潜水", "浮潜", "水族馆", "热带鱼", "瀑布",
+                 "珊瑚", "海底"),
+        "phu": ("海水", "波浪", "泡泡", "沉船", "水面"),
+        "cam": ("沙漠", "火灾", "做饭", "大雪", "海底捞", "火锅")},
+    "ma_quai": {
+        "manh": ("万圣节", "幽灵", "灵异", "恐怖", "鬼魂", "墓地", "僵尸",
+                 "女巫", "闹鬼"),
+        "phu": ("起雾", "半夜", "废墟"),
+        "cam": ("生日", "婚礼", "宝宝", "海滩")},
+    "tien_bac": {
+        "manh": ("现金", "钞票", "钱包", "彩票", "金条", "宝物", "宝藏",
+                 "财宝", "亿万富翁", "中奖", "发工资"),
+        "phu": ("购物", "价格", "银行", "投资"),
+        "cam": ("葬礼", "医院", "战争", "事故")},
+    "cong_nghe": {
+        "manh": ("电脑", "编程", "软件", "机器人", "人工智能", "全息",
+                 "服务器", "电子游戏", "程序员"),
+        "phu": ("键盘", "数据", "技术"),
+        "cam": ("大自然", "森林", "海滩", "做饭", "宝宝", "婚礼")},
+    "lap_lanh": {
+        "manh": ("闪闪发光", "钻石", "首饰", "戒指", "化妆", "魔法", "变身",
+                 "公主"),
+        "phu": ("豪华", "吓一跳"),
+        "cam": ("打架", "流血", "事故", "葬礼", "战争")},
+    "bui_phim": {
+        "manh": ("黑白", "纪录片", "老电影", "博物馆", "祖先"),
+        "phu": ("奶奶", "爷爷", "书信", "日记"),
+        "cam": ("最新", "未来感", "游戏直播", "开箱")},
+    "tia_sang": {
+        "manh": ("晚霞", "朝霞", "日出", "日落", "回忆", "复古", "胶片相机",
+                 "老照片"),
+        "phu": ("逆光", "怀念"),
+        "cam": ("屏幕录制", "电子表格", "恐怖")},
+}
+
+#: Ký tự của các hệ chữ CJK — dùng để LOẠI từ khoá Nhật/Hàn khỏi bảng tiếng
+#: Trung (xem khối ghi chú ngay trên). Cùng dải với `recap._CJK_CHARS`.
+_CO_CJK = re.compile("[぀-ヿ㐀-䶿一-鿿豈-﫿"
+                     "ｦ-ﾟ가-힣]")
+
+#: khoá ngôn ngữ -> bảng từ khoá riêng. Thêm thứ tiếng mới = thêm 1 dòng ở đây
+#: + 1 nhánh trong `chuan_ngon_ngu`; MỌI thứ tiếng không có mặt ở đây đi bảng
+#: MẶC ĐỊNH, tức **bất biến của tiếng Nhật/Hàn/Anh/Việt nằm ở đúng chỗ này**.
+_TU_LANG: dict = {"zh": _ZH}
+#: `_MAU_LANG[lang][khoá cảnh]` = bộ mẫu CÓ DẤU (đường LỜI THOẠI) đã biên dịch.
+#: Đường XEM HÌNH (`_re_*`) KHÔNG theo ngôn ngữ: mô tả digest luôn là tiếng Anh.
+_MAU_LANG: dict = {}
+#: từ khoá GỐC tương ứng (cùng thứ tự) — chỉ để in nhật ký/đo, không dò bằng nó.
+_TU_LANG_GOC: dict = {}
+
+
+def _dung_bang_lang() -> None:
+    """Dựng bộ mẫu LỜI THOẠI cho từng ngôn ngữ có bảng riêng. Chạy 1 lần lúc
+    nạp module, sau khi `LUAT` đã đủ 14 cảnh."""
+    for _lang, _bang in _TU_LANG.items():
+        _m, _g = {}, {}
+        for _khoa, _lu in LUAT.items():
+            _b = _bang.get(_khoa) or {}
+            _tu = {}
+            for _o in ("manh", "phu", "cam"):
+                # BỎ HẲN từ khoá có chữ CJK của bảng mặc định (Nhật/Hàn) — đó
+                # chính là chỗ `料理`/`手紙` chui vào. Giữ phần latin.
+                _tu[_o] = ([t for t in getattr(_lu, _o)
+                            if not _CO_CJK.search(t)]
+                           + list(_b.get(_o) or ()))
+            _m[_khoa] = {_o: [_bien_dau(t) for t in _tu[_o]] for _o in _tu}
+            _g[_khoa] = _tu
+        _MAU_LANG[_lang] = _m
+        _TU_LANG_GOC[_lang] = _g
+
+
+_dung_bang_lang()
+
+
+def chuan_ngon_ngu(ma: str) -> str:
+    """Nhãn ngôn ngữ của bản chép lời -> khoá bảng từ khoá. Hàm THUẦN.
+
+    Groq trả nhãn KHÔNG thống nhất: đo trên máy anh Hùng ra `'Chinese'` (chữ,
+    không phải mã ISO) ở video `我的观影报告`, còn chỗ khác lại trả `zh`. Nhận
+    cả hai, kể cả `zh-CN`/`zh-TW`/`yue` (Quảng Đông) — thiếu một dạng là cả bản
+    vá này không bao giờ chạy mà **không một dòng báo nào**.
+
+    Trả `""` = dùng bảng MẶC ĐỊNH (Nhật/Hàn/Anh/Việt/mọi thứ tiếng khác).
+    """
+    m = str(ma or "").strip().lower().replace("_", "-")
+    if not m:
+        return ""
+    if m.split("-")[0] in ("zh", "zho", "chi", "cmn", "yue", "wuu") \
+            or m.startswith(("chinese", "mandarin", "cantonese", "trung",
+                             "tiếng trung", "tieng trung")):
+        return "zh"
+    return ""
+
+
+def _mau_loi(l: Luat, lang: str = "") -> tuple:
+    """Bộ mẫu LỜI THOẠI `(mạnh, phụ, cấm)` của luật `l` theo ngôn ngữ.
+
+    `lang` rỗng / không có bảng riêng -> trả ĐÚNG bộ mẫu cũ `l._rd_*`, tức
+    **cùng một đối tượng** chứ không phải bản dựng lại — bất biến tuyệt đối.
+    """
+    b = _MAU_LANG.get(lang or "", {}).get(l.khoa)
+    if b is None:
+        return l._rd_manh, l._rd_phu, l._rd_cam
+    return b["manh"], b["phu"], b["cam"]
+
+
+def _tu_loi(l: Luat, lang: str = "", o: str = "manh") -> list:
+    """Danh sách từ khoá GỐC (cùng thứ tự với `_mau_loi`) — chỉ để đo/ghi log."""
+    b = _TU_LANG_GOC.get(lang or "", {}).get(l.khoa)
+    return list(b[o]) if b else list(getattr(l, o))
+
+
 # -------------------------------------------------------------- CHẤM ĐIỂM
 def _dem_moc(digest: list, mau: list, mau_dau: list) -> tuple[int, list]:
     """Đếm SỐ MỐC digest có ít nhất 1 từ khoá khớp -> (số mốc, [mốc đã khớp]).
@@ -756,7 +936,7 @@ def _dem_tu(loi: str, mau: list) -> int:
     return sum(1 for r in mau if any(x.search(loi) for x in r))
 
 
-def _diem(l: Luat, digest: list, loi: str) -> Optional[dict]:
+def _diem(l: Luat, digest: list, loi: str, lang: str = "") -> Optional[dict]:
     """Điểm thô + bằng chứng của 1 luật. `None` = BỊ CẤM (thấy từ khoá cấm).
 
     Thang: mốc digest MẠNH 2,0 (trần 2 mốc) · mốc digest PHỤ 0,7 (trần 3) ·
@@ -764,17 +944,21 @@ def _diem(l: Luat, digest: list, loi: str) -> Optional[dict]:
     Trần riêng của nhóm PHỤ = 0,7*3 + 0,5*2 = 3,1 điểm thô = 0,52 < NGUONG_TIN
     -> **bối cảnh một mình KHÔNG BAO GIỜ đủ**, đúng chủ ý.
 
-    `loi` là text CÒN DẤU (xem `_ha`).
+    `loi` là text CÒN DẤU (xem `_ha`). `lang` = khoá bảng từ khoá LỜI THOẠI
+    (`chuan_ngon_ngu`); rỗng = bảng mặc định, tức Y HỆT bản trước bản vá.
+    Bộ mẫu XEM HÌNH (`_re_*`) KHÔNG đổi theo ngôn ngữ: mô tả digest do model
+    vision sinh ra và prompt bắt buộc tiếng Anh.
     """
-    if _dem_tu(loi, l._rd_cam):
+    rd_manh, rd_phu, rd_cam = _mau_loi(l, lang)
+    if _dem_tu(loi, rd_cam):
         return None
-    n_cam_hinh, _ = _dem_moc(digest, l._re_cam, l._rd_cam)
+    n_cam_hinh, _ = _dem_moc(digest, l._re_cam, rd_cam)
     if n_cam_hinh:
         return None
-    dm, moc_manh = _dem_moc(digest, l._re_manh, l._rd_manh)
-    dp, moc_phu = _dem_moc(digest, l._re_phu, l._rd_phu)
-    tm = _dem_tu(loi, l._rd_manh)
-    tp = _dem_tu(loi, l._rd_phu)
+    dm, moc_manh = _dem_moc(digest, l._re_manh, rd_manh)
+    dp, moc_phu = _dem_moc(digest, l._re_phu, rd_phu)
+    tm = _dem_tu(loi, rd_manh)
+    tp = _dem_tu(loi, rd_phu)
     tho = 2.0 * min(2, dm) + 0.7 * min(3, dp) + 1.5 * min(2, tm) \
         + 0.5 * min(2, tp)
     return {"khoa": l.khoa, "ho": l.ho, "tho": tho,
@@ -842,7 +1026,8 @@ def _chon_bien(l: Luat, digest: list, loi: str, dung: set,
 def chon_lop_phu(digest: list, loi: str, tong_giay: float,
                  muc: str = "vua", co_the_dung: Optional[list] = None,
                  tranh: Optional[list] = None,
-                 ngan_sach: Optional[float] = None) -> tuple[list, str]:
+                 ngan_sach: Optional[float] = None,
+                 ngon_ngu: Optional[str] = None) -> tuple[list, str]:
     """KHỚP CẢNH -> tối đa 1 lớp phủ. Hàm THUẦN (không ffmpeg, không DB, không LLM).
 
     Trả `([{bat,het,khoa,dam,loai,vi_sao}], lý do)`. Danh sách RỖNG là kết quả
@@ -855,6 +1040,10 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
       loi    : bản chép lời CỦA CHÍNH ĐOẠN NÀY (không phải cả video).
       tranh  : các giây ĐÃ có hiệu ứng khác (giữ khoảng cách `CACH_MIN`).
       ngan_sach : số giây còn lại trong trần 10% (None = tự tính).
+      ngon_ngu  : nhãn ngôn ngữ của bản chép lời (`transcript['language']`,
+               Groq trả `zh` HOẶC `Chinese`). `None` = tự đọc nhãn `lang` mà
+               `digest_tu_loi` đã đóng lên từng mốc. Thứ tiếng không có bảng
+               riêng -> bảng MẶC ĐỊNH, hành vi Y HỆT trước bản vá.
     """
     global LY_DO_CUOI
     from app.core import hieu_ung as HU
@@ -873,6 +1062,14 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
                     "chỉ để chọn hiệu ứng)")
     dung = set(co_the_dung if co_the_dung is not None else HU.dung_duoc())
     loi_n = _ha(loi or "")
+    # NGÔN NGỮ -> chọn bảng từ khoá LỜI THOẠI. Caller (`ffmpeg_utils`) truyền
+    # thẳng nhãn từ bản chép lời; không truyền thì đọc nhãn `lang` mà
+    # `digest_tu_loi` đã đóng lên mốc (đường lời) — mốc XEM HÌNH không có nhãn
+    # nên rơi về bảng mặc định, đúng ý.
+    if ngon_ngu is None:
+        ngon_ngu = next((str(d.get("lang")) for d in (digest or [])
+                         if d.get("lang")), "")
+    lang = chuan_ngon_ngu(ngon_ngu)
     # NGUỒN của các mốc, chỉ để VIẾT NHẬT KÝ cho đúng chữ: đọc "2 mốc hình mạnh"
     # trong khi thật ra là 2 CÂU NÓI thì lần sau không ai tra lại được.
     _n_loi = sum(1 for d in digest or [] if d.get("loi"))
@@ -884,7 +1081,7 @@ def chon_lop_phu(digest: list, loi: str, tong_giay: float,
         # tên cảnh có thể không còn là tên một kiểu trong kho.
         if not any(k2 in dung and k2 in HU.KHO for k2, _g in l._re_bien):
             continue
-        d = _diem(l, digest, loi_n)
+        d = _diem(l, digest, loi_n, lang)
         if d is not None:
             bang.append(d)
     if not bang:
@@ -1023,6 +1220,11 @@ def loc_digest_theo_doan(digest: list, segs: list, vspeed: float = 1.0) -> list:
                     # hay bỏ dấu theo đúng cờ này. Rơi cờ ở đây là lời thoại
                     # tiếng Việt bị dò bằng bảng bỏ dấu -> mở lại 9 cái bẫy.
                     x["loi"] = True
+                if d.get("lang"):
+                    # NHÃN NGÔN NGỮ cũng phải đi theo mốc, cùng lý do: rơi nhãn
+                    # là lời tiếng Trung bị dò bằng bảng Nhật/Hàn -> `料理`
+                    # (Trung = "xử lý") cấm oan 5 cảnh.
+                    x["lang"] = str(d.get("lang"))
                 ra.append(x)
                 break
             acc += (e - s)
@@ -1059,6 +1261,10 @@ def digest_tu_loi(transcript: dict, segs: list, vspeed: float = 1.0,
     ss = [(float(s), float(e)) for s, e in (segs or []) if float(e) > float(s)]
     if not ss:
         return []
+    # NHÃN NGÔN NGỮ đóng thẳng lên mốc: bước chép lời ĐÃ biết thứ tiếng (Groq
+    # trả `zh`/`ja`/`ko`/`Chinese`…), nên `chon_lop_phu` không phải đoán lại —
+    # và caller cũ (không truyền `ngon_ngu`) vẫn được chọn đúng bảng.
+    ma = str((transcript or {}).get("language") or "")
     tho = []
     for c in (transcript or {}).get("segments") or []:
         try:
@@ -1067,7 +1273,10 @@ def digest_tu_loi(transcript: dict, segs: list, vspeed: float = 1.0,
             continue          # câu KHÔNG MỐC -> bỏ (không biết rơi vào đoạn nào)
         t = str(c.get("text") or "").strip()
         if t:
-            tho.append({"t": a, "desc": t, "act": 5, "loi": True})
+            d = {"t": a, "desc": t, "act": 5, "loi": True}
+            if ma:
+                d["lang"] = ma
+            tho.append(d)
         if len(tho) >= tran:
             break
     return loc_digest_theo_doan(tho, ss, vspeed)
