@@ -1449,6 +1449,20 @@
      `<repo>/_lib` nên `_lib` máy dev không bị bỏ rơi (CA5d canh đúng điều đó).
      Đọc `config.DATA_DIR` MỖI LẦN GỌI, không cất hằng số (bài học
      `tg_so.duong_so`).
+     **CỔNG 55 CA6b NHẤP NHÁY — ĐO ĐƯỢC 1/4 LƯỢT, KHÔNG PHẢI HỒI QUY.** Lượt
+     hồi quy v2.27.1 có một lần `_test_thay_giong_ui.py` ra **47/1**, hỏng đúng
+     mục *"gỡ CẢ HAI chốt -> bất biến VỠ"* (`gốc còn: True · rác: 0`); 3 lượt
+     khác đều **48/0** (lượt ngay sau đó: `gốc còn: False · rác: 1`). Gốc: mục
+     THỬ PHÁ đó cần **cả dây chuyền THẬT chạy XONG** (Demucs + Groq + edge-tts)
+     rồi mới tới bước thay file — bất kỳ trục trặc tạm nào (Groq 503, mạng
+     edge-tts) làm lượt chạy chết SỚM là gốc không bị đụng, và mục này báo HỎNG
+     **vì lý do ngược hẳn với cái nó canh**. Chứng minh không phải hồi quy:
+     `git diff v2.27.0..HEAD -- app/core/thay_giong.py` **không đụng một dòng
+     nào** của `thay_giong_mot_video` / `thay_the_video_goc` / `kiem_video_ra`
+     (toàn bộ thay đổi nằm trong vùng dò + cài, và hàm duy nhất bị GỠ là
+     `kiem_lib_bang_tien_trinh_rieng`). Thấy mục này đỏ thì **chạy lại trước
+     khi nghi bản vá**; muốn hết nhấp nháy phải tách mục THỬ PHÁ khỏi dây
+     chuyền thật (chưa làm).
      **CHƯA ĐẠT, GHI THẲNG:** **chưa tải torch thật về `_lib`** (155 MB, máy anh
      Hùng đang chạy sản xuất) — cơ chế `--target`+`--ignore-installed` chứng
      minh bằng gói NHỎ `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip
