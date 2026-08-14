@@ -22,6 +22,11 @@ from PyQt6.QtWidgets import (
 
 from app import services
 from app.core.captions import CAPTION_PRESETS, NARR_SAME_LABEL, apply_case
+from app.core.che_chu import MUC_MO_MAC_DINH as CHE_CHU_MAC_DINH
+from app.core.che_chu import MUC_MO_SAN as CHE_CHU_SAN
+from app.core.che_chu import MUC_MO_TRAN as CHE_CHU_TRAN
+from app.core.che_chu import chuan_cach as che_chu_chuan_cach
+from app.core.che_chu import chuan_muc_mo as che_chu_chuan_muc
 from app.core.ffmpeg_utils import CHUYEN_CANH_MUC, CHUYEN_CANH_NHAN
 from app.core.hieu_ung import MUC as HIEU_UNG_MUC
 from app.core.hieu_ung import MUC_NHAN as HIEU_UNG_NHAN
@@ -1319,6 +1324,66 @@ class EditorDialog(QDialog):
             "tiêu đề, chữ Part và phụ đề vẫn đọc bình thường (không bị ngược). "
             "Thời lượng, tiếng, mọi thứ khác giữ nguyên.")
         gb.addWidget(self.flip_h_chk)
+        # ---- CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) ----
+        # Nguồn Douyin/reup đốt phụ đề VÀO KHUNG, gỡ ra không được. Ô này che nó
+        # đi (không "xoá chữ"/inpaint — đã cân nhắc và loại, xem đầu che_chu.py).
+        # MẶC ĐỊNH TẮT: bộ dò đúng 96,7% nhưng CÓ ca che nhầm, nên anh Hùng phải
+        # tự bật cho kênh nào cần. NHÃN KHÔNG EMOJI (máy anh Hùng thiếu glyph).
+        self.che_chu_chk = QCheckBox("Che chữ cháy sẵn trong hình")
+        self.che_chu_chk.setChecked(False)
+        self.che_chu_chk.setToolTip(
+            "Video nguồn (Douyin/reup) thường ĐỐT phụ đề THẲNG VÀO HÌNH — gỡ "
+            "ra không được. Bật mục này thì app tự dò DẢI CHỮ ở ĐÁY khung rồi "
+            "che nó đi trong chính lượt xuất (không thêm lượt encode nào, đo "
+            "được chỉ tốn thêm 0,1-0,2 giây mỗi phút phim).\n"
+            "App dò trên 16 khung rải đều cả video: phải có chữ ở ÍT NHẤT 50% "
+            "số khung, dải phải MỎNG (1,5-16% chiều cao khung) và đậm hơn nền "
+            "-> logo/watermark đứng im và video không có chữ KHÔNG bị che.\n"
+            "DÒ RA 'KHÔNG CÓ CHỮ' THÌ KHÔNG CHE GÌ HẾT — che nhầm video sạch là "
+            "ca hỏng đắt nhất, nên app thà bỏ sót.\n"
+            "MẶC ĐỊNH TẮT: hãy bật cho riêng kênh nào nguồn có chữ cháy.")
+        self.che_chu_chk.toggled.connect(self._che_chu_ui)
+        gb.addWidget(self.che_chu_chk)
+        crow = QHBoxLayout()
+        crow.addWidget(QLabel("Cách che:"))
+        self.che_chu_cach = _NoWheelCombo()
+        self.che_chu_cach.addItem("Làm mờ", "mo")
+        self.che_chu_cach.addItem("Phủ khối", "khoi")
+        self.che_chu_cach.setToolTip(
+            "LÀM MỜ: giữ được màu/độ sáng nền nên nhìn như nguồn nén xấu, ít "
+            "lộ — nên dùng.\n"
+            "PHỦ KHỐI: dán một khối đen đặc, chắc chắn che hết nhưng LỘ rõ là "
+            "đã bị dán đè.")
+        crow.addWidget(self.che_chu_cach, 1)
+        gb.addLayout(crow)
+        # MỨC MỜ — SÀN CỨNG 0,60. Thanh kéo đặt min=60 để user không kéo xuống
+        # được; `che_chu.chuan_muc_mo` kẹp lần nữa lúc đọc/ghi mẫu (mẫu cũ sửa
+        # tay hoặc job cũ vẫn có thể mang 0,30).
+        self.che_chu_muc = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.che_chu_muc.setRange(int(CHE_CHU_SAN * 100),
+                                  int(CHE_CHU_TRAN * 100))
+        self.che_chu_muc.setValue(int(CHE_CHU_MAC_DINH * 100))
+        self.che_chu_muc.setToolTip(
+            "Mức mờ. KHÔNG hạ xuống dưới 0,60 được — và đây là số ĐO ĐƯỢC, "
+            "không phải cẩn thận thừa: ở mức 0,40 mọi thước đo bằng máy đều "
+            "báo dải đã sạch (mật độ nét 0,0030 ~ bằng 0), NHƯNG trích khung "
+            "ra nhìn bằng mắt thì VẪN ĐỌC ĐƯỢC bóng chữ Trung. Từ 0,60 trở lên "
+            "mới thật sự không đọc nổi.")
+        self.che_chu_muc_lbl = QLabel(f"{CHE_CHU_MAC_DINH:.2f}".replace(".", ","))
+        self.che_chu_muc_lbl.setFixedWidth(44)
+        self.che_chu_muc.valueChanged.connect(
+            lambda v: self.che_chu_muc_lbl.setText(
+                f"{v / 100:.2f}".replace(".", ",")))
+        gb.addLayout(_frow("Mức mờ", self.che_chu_muc, self.che_chu_muc_lbl))
+        self.che_chu_note = QLabel(
+            "Chỉ dò được DẢI CHỮ Ở ĐÁY khung (chỗ phụ đề hay nằm). Chữ ở GIỮA "
+            "hình, GÓC TRÊN hay chữ trong biển hiệu thì KHÔNG dò được và không "
+            "che. Mức mờ chặn cứng ở 0,60: đo thật, mức 0,40 máy báo sạch mà "
+            "mắt vẫn đọc ra chữ.")
+        self.che_chu_note.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        self.che_chu_note.setWordWrap(True)
+        gb.addWidget(self.che_chu_note)
+        self._che_chu_ui()
         # THƯ MỤC tiếng động riêng (tùy chọn): giống nhạc nền ngẫu nhiên — có
         # thư mục + có file thì mỗi điểm ghép lấy 1 file ngẫu nhiên; để trống ->
         # dùng bộ tiếng tổng hợp đa dạng ở trên.
@@ -1819,6 +1884,20 @@ class EditorDialog(QDialog):
             if _hi >= 0:
                 self.hieu_ung_cb.setCurrentIndex(_hi)
             self.flip_h_chk.setChecked(bool(layout.get("flip_h", False)))
+            # CHE CHỮ CHÁY SẴN — mẫu CŨ chưa có khoá này -> TẮT (mặc định an
+            # toàn: 200-300 kênh đang chạy không được tự nhiên bị che hình).
+            self.che_chu_chk.setChecked(bool(layout.get("che_chu", False)))
+            _ci = self.che_chu_cach.findData(
+                che_chu_chuan_cach(layout.get("che_chu_cach", "mo")))
+            if _ci >= 0:
+                self.che_chu_cach.setCurrentIndex(_ci)
+            # KẸP QUA `chuan_muc_mo`: mẫu lưu sẵn 0,30 (sửa tay / bản thử) phải
+            # về 0,60 ngay khi mở ra, chứ không chỉ chặn ở thanh kéo.
+            self.che_chu_muc.setValue(int(round(che_chu_chuan_muc(
+                layout.get("che_chu_muc", CHE_CHU_MAC_DINH)) * 100)))
+            self.che_chu_muc_lbl.setText(
+                f"{self.che_chu_muc.value() / 100:.2f}".replace(".", ","))
+            self._che_chu_ui()
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
             bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
@@ -2275,6 +2354,16 @@ class EditorDialog(QDialog):
                 self._bgm_file = f
         self._bgm_lbl_update()
 
+    def _che_chu_ui(self):
+        """Bật/tắt các ô con của 'Che chữ cháy sẵn' theo ô tích chính.
+
+        Vẫn HIỆN (không ẩn): control nằm trong nhánh `if` bị ẩn hẳn thì user
+        không biết là có (bài học prodown 'control trong {kOpen && …}').
+        """
+        on = self.che_chu_chk.isChecked()
+        for w in (self.che_chu_cach, self.che_chu_muc, self.che_chu_muc_lbl):
+            w.setEnabled(on)
+
     def _fx_sfx_update(self):
         self.fx_sfx_lbl.setText(
             f"Thư mục tiếng động: {self._fx_sfx_dir or '(để trống = tiếng tổng hợp)'}")
@@ -2605,6 +2694,12 @@ class EditorDialog(QDialog):
         lay["hieu_ung"] = self.hieu_ung_cb.currentData() or "tat"
         lay["fx_sfx_dir"] = self._fx_sfx_dir
         lay["flip_h"] = self.flip_h_chk.isChecked()
+        # CHE CHỮ CHÁY SẴN — mức mờ đi qua `chuan_muc_mo` LẦN NỮA trước khi lưu
+        # (thanh kéo đã chặn min=60, nhưng sàn phải nằm trong MÃ chứ không chỉ
+        # ở widget: mẫu do bản khác/sửa tay ghi ra vẫn phải bị kẹp).
+        lay["che_chu"] = self.che_chu_chk.isChecked()
+        lay["che_chu_cach"] = che_chu_chuan_cach(self.che_chu_cach.currentData())
+        lay["che_chu_muc"] = che_chu_chuan_muc(self.che_chu_muc.value() / 100.0)
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
