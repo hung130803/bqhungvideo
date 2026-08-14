@@ -64,6 +64,25 @@ PHEP = [
      "    if che_chu:\n        _raise_if_job_canceled()",
      "    if True:\n        _raise_if_job_canceled()",
      "batbien"),
+    # ---- 3 phép của ĐƯỜNG TRUYỀN CỜ (v2.26.0, xem CA 23) ----
+    # Đây là 3 cách "gỡ bản vá mà app vẫn chạy y hệt": clip vẫn ra đúng, chỉ
+    # mỗi chuyện anh Hùng bật ô rồi bấm "Xuất cả kênh" là KHÔNG job nào chạy.
+    ("studio_page truyền HẰNG SỐ che_chu=False (phép phá của CA19a, lần này ở "
+     "mắt xích UI)",
+     "app/ui/studio_page.py",
+     "                che_chu=bool(self.layout_tpl.get(\"che_chu\", False)),",
+     "                che_chu=False,",
+     "hash"),
+    ("studio_page KHÔNG truyền cờ nữa (quay về đường LÙI của v2.25.0)",
+     "app/ui/studio_page.py",
+     "                che_chu=bool(self.layout_tpl.get(\"che_chu\", False)),\n",
+     "",
+     "hash"),
+    ("cờ KHÔNG vào `sig` (đúng bệnh smart-skip của v2.25.0)",
+     "app/services.py",
+     "    _cc_sig = \"\"\n    if che_chu:",
+     "    _cc_sig = \"\"\n    if False and che_chu:",
+     "hash"),
 ]
 
 
@@ -93,12 +112,15 @@ def main() -> int:
         "    if that: T.ca15_bat_tat_co_tac_dung(that)\n"
         "elif ca == 'batbien':\n"
         "    T.ca16_bat_bien(T._nguon_that())\n"
+        "elif ca == 'hash':\n"
+        "    T.ca23_co_vao_hash_chong_trung()\n"
         "print('DAT', len(T.DAT), 'HONG', len(T.HONG))\n"
         "sys.exit(1 if T.HONG else 0)\n", encoding="utf-8")
     print("=== ĐỐI CHỨNG: chưa phá gì ===")
-    rc, n, _ = chay("tinh")
-    print(f"  cổng (tinh): mã thoát {rc} · {n} mục HỎNG "
-          f"-> {'XANH' if rc == 0 else 'ĐỎ'}")
+    for _ca in ("tinh", "hash"):
+        rc, n, _ = chay(_ca)
+        print(f"  cổng ({_ca}): mã thoát {rc} · {n} mục HỎNG "
+              f"-> {'XANH' if rc == 0 else 'ĐỎ'}")
     bat, lot, hong_thu = [], [], []
     for ten, f, tim, thay, ca in PHEP:
         p = REPO / f
