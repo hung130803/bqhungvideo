@@ -155,17 +155,30 @@ def do_rms(path: str | Path, start: float = 0.0, dur: float = 0.0) -> float:
 
 
 def do_meo(path: str | Path) -> dict:
-    """Đỉnh (dBFS) + số mẫu chạm trần, đọc bằng `astats` (dùng `in`)."""
+    """Đỉnh (dBFS) + số mẫu CHẠM TRẦN, đọc bằng `astats` (dùng `in`).
+
+    BẪY ĐÃ SẬP THẬT (14/08, bản đầu của hàm này): tên chỉ số
+    `Number_of_clipped_samples` KHÔNG TỒN TẠI trong ffmpeg N-121186 -> cả lệnh
+    ffmpeg CHẾT ("Unable to parse measure_overall") -> hàm trả
+    `{dinh: None, cham_tran: None}` IM LẶNG -> mọi phép kiểm "có méo không"
+    đọc None rồi cho qua = TỰ PASS OAN VĨNH VIỄN. Tên đúng là `Abs_Peak_count`
+    (in ra dòng "Abs Peak count:").
+    Nay ffmpeg lỗi thì NÉM, không trả None âm thầm.
+    """
     cmd = [settings.FFMPEG_PATH, "-hide_banner", "-nostats", "-i", str(path),
            "-map", "0:a:0", "-af", "astats=measure_overall=Peak_level+"
-           "Number_of_clipped_samples:measure_perchannel=none",
+           "Abs_Peak_count:measure_perchannel=none",
            "-f", "null", "-"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
                            creationflags=_CREATE_NO_WINDOW, timeout=600)
-    except (OSError, subprocess.TimeoutExpired):
-        return {"dinh": None, "cham_tran": None}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError(f"Không chạy được astats để đo méo: {e}") from e
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"astats lỗi khi đo méo (mã {r.returncode}): "
+            f"{(r.stderr or '')[-300:]}")
     dinh, cham = None, None
     for line in (r.stderr or "").splitlines():
         if "Peak level dB:" in line:
@@ -175,11 +188,15 @@ def do_meo(path: str | Path) -> dict:
                     dinh = float(raw)
                 except ValueError:
                     pass
-        if "Number of clipped samples:" in line:
+        if "Abs Peak count:" in line:
             try:
                 cham = int(float(line.split(":")[-1].strip()))
             except ValueError:
                 pass
+    if dinh is None:
+        raise RuntimeError(
+            "astats chạy xong mà KHÔNG có dòng 'Peak level dB' — đừng coi là "
+            "'không méo', hãy sửa phép đo.")
     return {"dinh": dinh, "cham_tran": cham}
 
 
@@ -842,19 +859,166 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
 
 
 # ==================================================================
-# BƯỚC 5 — KHỚP THỜI GIAN (co giãn + MƯỢN thời gian đoạn kế)
+# HẰNG SỐ KHỚP THỜI GIAN (bước 4b và bước 5 dùng chung)
 # ==================================================================
 
-#: Trên mức này nghe đã MÉO -> phải mượn thời gian đoạn kế thay vì ép nhanh.
+#: Trên mức này nghe đã MÉO -> chữa bằng cách rút NGẮN câu dịch / mượn thời
+#: gian đoạn kế, chứ đừng ép nhanh.
 TEMPO_CANH_BAO = 1.30
 
-#: Trần tuyệt đối: mượn hết rồi vẫn tràn thì đành ép tới đây.
+#: Trần tuyệt đối: rút gọn + mượn hết rồi vẫn tràn thì đành ép tới đây.
 TEMPO_TOI_DA = 1.50
 
 #: Chừa lại chút im lặng trước câu kế khi mượn (giây) — mượn sát quá thì hai
 #: câu dính liền, nghe như nói hụt hơi.
 CHUA_TRUOC_CAU_KE = 0.12
 
+
+# ==================================================================
+# BƯỚC 4b — RÚT GỌN CÂU DỊCH DÀI QUÁ KHUNG (làm TRƯỚC khi ép atempo)
+# ==================================================================
+#
+# VÌ SAO PHẢI CÓ (đo được, không phải phòng xa): dịch Trung -> Anh đọc lên
+# DÀI HƠN HẲN câu gốc. Lượt e2e đầu tiên trên zh60: 15/21 câu phải ép quá
+# 1,30, `tempo_max` CHẠM TRẦN 1,50 và lệch mốc cuối tới 4.632 ms.
+# Ép nhanh thì méo tiếng; câu ngắn lại thì KHÔNG méo gì cả. Nên chữa ở CHỮ
+# trước, chỉ còn dư mới đụng tới tốc độ.
+
+def khung_cho_phep(cau: list[dict], i: int, tong: float) -> float:
+    """Khung thời gian câu #i được phép chiếm (đã tính phần MƯỢN đoạn kế)."""
+    a = float(cau[i]["start"])
+    b = float(cau[i]["end"])
+    ke = float(cau[i + 1]["start"]) if i + 1 < len(cau) else tong
+    return max(max(0.05, b - a), ke - a - CHUA_TRUOC_CAU_KE)
+
+
+def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
+    """Nhờ LLM rút NGẮN các câu dịch quá dài, GIỮ Ý CHÍNH."""
+    from app.ai import llm
+
+    items = []
+    for j, m in enumerate(muc):
+        items.append(
+            f'#{j} [phải đọc lọt {m["khung"]:.1f} giây, bản hiện tại đọc mất '
+            f'{m["d_nat"]:.1f} giây -> cần ngắn bớt khoảng '
+            f'{m["bot"]:.0%}]: "{m["text"][:400]}"')
+    system = ("Bạn là biên tập lời thoại lồng tiếng. Rút NGẮN câu mà GIỮ "
+              "nguyên ý chính. CHỈ trả JSON thuần.")
+    prompt = (
+        f"Các câu {_ten_nn(dich_sang)} sau đọc lên DÀI HƠN khung thời gian cho "
+        "phép. Hãy viết lại NGẮN HƠN.\n"
+        f"{chr(10).join(items)}\n\n"
+        "QUY TẮC:\n"
+        "- GIỮ Ý CHÍNH và giữ đúng ngôn ngữ đang có.\n"
+        "- Bỏ từ đệm, bỏ chi tiết phụ, dùng từ ngắn hơn.\n"
+        "- Vẫn phải là câu nói TỰ NHIÊN, không cụt lủn khó hiểu.\n"
+        f"- Trả MẢNG JSON đúng {len(muc)} chuỗi, cùng thứ tự."
+    )
+    try:
+        data = llm.complete_json(prompt, system=system)
+    except Exception:  # noqa: BLE001
+        return [m["text"] for m in muc]
+    if isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list):
+                data = v
+                break
+    if not isinstance(data, list):
+        return [m["text"] for m in muc]
+    out = []
+    for j, m in enumerate(muc):
+        t = data[j] if j < len(data) else None
+        out.append(str(t).strip() if isinstance(t, str) and str(t).strip()
+                   else m["text"])
+    return out
+
+
+def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
+                      tong: float, out_dir: str | Path, dich_sang: str,
+                      voice: str = "", nguong_tempo: float = TEMPO_CANH_BAO,
+                      vong_toi_da: int = 2,
+                      on_progress: Optional[Callable[[float, str], None]] = None,
+                      ) -> dict:
+    """Rút ngắn câu dịch nào đọc lên vượt khung, ĐỌC LẠI, giữ bản TỐT HƠN.
+
+    Chỉ NHẬN bản rút gọn khi nó thật sự đọc NGẮN HƠN bản cũ — LLM đôi khi trả
+    câu dài hơn, nhận bừa là tự làm hỏng.
+
+    Trả {texts, files, ok, so_sua, tempo_can_truoc, tempo_can_sau}.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    texts = list(texts)
+    files = list(tts["files"])
+    ok = list(tts["ok"])
+
+    def _can_tempo() -> list[float]:
+        """Hệ số atempo CẦN cho từng câu (1.0 = lọt khung sẵn)."""
+        ra = []
+        for i in range(len(cau)):
+            if i >= len(files) or not ok[i] or not Path(files[i]).exists():
+                ra.append(1.0)
+                continue
+            d = probe_duration(files[i])
+            kh = khung_cho_phep(cau, i, tong)
+            ra.append(max(1.0, d / kh) if kh > 0 and d > 0 else 1.0)
+        return ra
+
+    truoc = _can_tempo()
+    so_sua = 0
+    for vong in range(max(0, vong_toi_da)):
+        can = _can_tempo()
+        xau = [i for i, t in enumerate(can) if t > nguong_tempo]
+        if not xau:
+            break
+        if on_progress:
+            on_progress(vong / max(1, vong_toi_da),
+                        f"Rút gọn {len(xau)} câu dài quá khung...")
+        muc = []
+        for i in xau:
+            kh = khung_cho_phep(cau, i, tong)
+            d = probe_duration(files[i])
+            muc.append({"i": i, "text": texts[i], "khung": kh, "d_nat": d,
+                        "bot": max(0.05, 1.0 - kh / d) if d > 0 else 0.2})
+        moi = _rut_gon_loat(muc, dich_sang)
+
+        # đọc lại CHỈ các câu vừa rút gọn, vào file RIÊNG để còn so
+        thu = [m for m in moi]
+        paths = [str(out_dir / f"rg{vong}_{muc[j]['i']:04d}.mp3")
+                 for j in range(len(muc))]
+        import asyncio
+        from app.core import dubbing
+        v = voice or giong_theo_ngon_ngu(dich_sang)
+        ok2 = asyncio.run(dubbing._synth_all(thu, v, paths))
+
+        for j, m in enumerate(muc):
+            i = m["i"]
+            if not ok2[j] or not Path(paths[j]).exists():
+                continue
+            d_moi = probe_duration(paths[j])
+            if d_moi <= 0 or d_moi >= m["d_nat"] - 0.05:
+                continue                       # không ngắn hơn -> GIỮ bản cũ
+            texts[i] = thu[j]
+            files[i] = paths[j]
+            ok[i] = True
+            so_sua += 1
+
+    sau = _can_tempo()
+
+    def _mx(xs: list[float]) -> float:
+        return round(max(xs or [1.0]), 3)
+
+    return {
+        "texts": texts, "files": files, "ok": ok, "so_sua": so_sua,
+        "tempo_can_max_truoc": _mx(truoc), "tempo_can_max_sau": _mx(sau),
+        "so_cau_vuot_truoc": sum(1 for t in truoc if t > nguong_tempo),
+        "so_cau_vuot_sau": sum(1 for t in sau if t > nguong_tempo),
+    }
+
+
+# ==================================================================
+# BƯỚC 5 — KHỚP THỜI GIAN (co giãn + MƯỢN thời gian đoạn kế)
+# ==================================================================
 
 def _atempo_chuoi(tempo: float) -> str:
     """Chuỗi filter atempo, chia tầng nếu > 2.0 (atempo chỉ nhận 0.5-2.0)."""
@@ -889,6 +1053,7 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     manh: list[tuple[float, str]] = []
     lech_dau: list[float] = []
     lech_cuoi: list[float] = []
+    chong: list[float] = []
     temps: list[float] = []
     so_ep = so_muon = 0
     bo_qua = 0
@@ -934,6 +1099,10 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         temps.append(tempo)
         lech_dau.append(0.0)                  # đặt ĐÚNG mốc gốc
         lech_cuoi.append((a + d_fin - b) * 1000.0)
+        # CHỒNG LẤN = phần LIẾM SANG câu kế. Đây mới là con số nói lên
+        # "timeline sai": kéo dài vào KHOẢNG LẶNG là cố ý (mượn thời gian),
+        # còn đè lên câu sau mới là hỏng.
+        chong.append(max(0.0, (a + d_fin - ke) * 1000.0))
         if on_progress:
             on_progress((i + 1) / max(1, len(cau)),
                         f"Khớp thời gian {i + 1}/{len(cau)}...")
@@ -946,8 +1115,11 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         "so_cau": len(manh), "bo_qua": bo_qua,
         "lech_dau_ms_tb": _tb([abs(x) for x in lech_dau]),
         "lech_dau_ms_max": round(max([abs(x) for x in lech_dau] or [0]), 1),
+        # lệch cuối GỒM CẢ phần mượn khoảng lặng hợp lệ -> đọc kèm chồng lấn
         "lech_cuoi_ms_tb": _tb([abs(x) for x in lech_cuoi]),
         "lech_cuoi_ms_max": round(max([abs(x) for x in lech_cuoi] or [0]), 1),
+        "chong_lan_ms_max": round(max(chong or [0]), 1),
+        "so_cau_chong_lan": sum(1 for x in chong if x > 1.0),
         "tempo_max": round(max(temps or [1.0]), 3),
         "tempo_tb": round(sum(temps) / len(temps), 3) if temps else 1.0,
         "so_cau_ep": so_ep, "so_cau_muon": so_muon,
@@ -1138,13 +1310,21 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # --- bước 4: đọc bản dịch
         prog(0.62, "Đọc bản dịch...")
         tts = doc_ban_dich(dd["ban_dich"], tam_goc / "tts", voice, dich_sang,
-                           on_progress=lambda p, m: prog(0.62 + 0.16 * p, m))
+                           on_progress=lambda p, m: prog(0.62 + 0.12 * p, m))
         kq["doc"] = {"voice": tts["voice"], "giay": tts["giay"],
                      "so_hong": tts["so_hong"]}
 
+        # --- bước 4b: rút gọn câu dài quá khung (chữa ở CHỮ trước khi ép tốc độ)
+        prog(0.74, "Rút gọn câu dài quá khung...")
+        rg = rut_gon_vua_khung(cau, dd["ban_dich"], tts, tong,
+                               tam_goc / "rutgon", dich_sang, tts["voice"],
+                               on_progress=lambda p, m: prog(0.74 + 0.06 * p, m))
+        kq["rut_gon"] = {k: v for k, v in rg.items()
+                         if k not in ("texts", "files", "ok")}
+
         # --- bước 5: khớp thời gian
         prog(0.80, "Khớp thời gian...")
-        kh = khop_thoi_gian(cau, tts["files"], tts["ok"], tong,
+        kh = khop_thoi_gian(cau, rg["files"], rg["ok"], tong,
                             tam_goc / "khop",
                             on_progress=lambda p, m: prog(0.80 + 0.10 * p, m))
         kq["khop"] = {k: v for k, v in kh.items() if k != "manh"}
