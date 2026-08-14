@@ -2791,7 +2791,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          thay_goc: bool = True, kenh: str = "",
                          thung_rac: str = "", thu_muc_lam: str | Path = "",
                          che_chu: bool = False, che_chu_cach: str = "mo",
-                         che_chu_muc: float = 1.0,
+                         che_chu_muc: float = 1.0, viet_chu: bool = True,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -2809,7 +2809,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
     r = thay_giong_video(v, dich_sang=dich_sang, voice=voice,
                          cach_tach=cach_tach, thu_muc_lam=thu_muc_lam,
                          che_chu=che_chu, che_chu_cach=che_chu_cach,
-                         che_chu_muc=che_chu_muc,
+                         che_chu_muc=che_chu_muc, viet_chu=viet_chu,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r

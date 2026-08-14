@@ -321,6 +321,10 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             che_chu=bool(payload.get("che_chu")),
             che_chu_cach=str(payload.get("che_chu_cach") or "mo"),
             che_chu_muc=float(payload.get("che_chu_muc") or 1.0),
+            # VIẾT LẠI BẢN DỊCH THEO MỐC GIỌNG sau khi che. Job cũ trong DB
+            # KHÔNG mang khoá này -> `False` = y hệt bản trước (chỉ che, không
+            # viết). Chỉ có tác dụng khi `che_chu` bật.
+            viet_chu=bool(payload.get("viet_chu")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
@@ -357,6 +361,7 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
         "do_dai": r.get("do_dai"), "giay": r.get("giay_tong"),
         "kiem": r.get("kiem"), "tach": (r.get("tach") or {}).get("cach"),
         "che_chu": r.get("che_chu"),
+        "chu_theo_giong": r.get("chu_theo_giong"),
         "da_thay_goc": False, "goc_o": goc,
         "vi_sao": "giữ nguyên video gốc, bản mới nằm ở thư mục đích",
         "khop": r.get("khop"), "dich": r.get("dich"),

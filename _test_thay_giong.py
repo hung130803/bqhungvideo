@@ -267,8 +267,39 @@ for i, dur in enumerate((1.5, 1.8, 1.2)):     # deu LOT khung -> tempo 1.0
         "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(p)])
     files6.append(str(p))
 kh = tg.khop_thoi_gian(cau6, files6, [True] * 3, 10.0, d6 / "ra")
-dat("dat DUNG moc dau (lech 0 ms)", kh["lech_dau_ms_max"] == 0.0,
+# `lech_dau_ms` NAY LA SO DO (silencedetect tren chinh file da ghi), khong con
+# la hang so 0.0 gan cung ("dat DUNG moc goc" = moc DAT FILE, khong phai moc
+# PHAT RA TIENG). File sine lien tuc thi le im ~0 nen van phai NHO.
+dat("dat DUNG moc dau (le im do duoc < 60 ms)", kh["lech_dau_ms_max"] < 60.0,
     f"{kh['lech_dau_ms_max']} ms")
+# CHONG PASS OAN: file CO 0,5s im o dau thi con so phai LEN, khong duoc van 0.
+d6b = d6 / "leim"
+d6b.mkdir(parents=True, exist_ok=True)
+p_im = d6b / "im.wav"
+ff(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.5",
+    "-f", "lavfi", "-i", "sine=frequency=300:duration=1.0",
+    "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[o]", "-map", "[o]",
+    "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(p_im)])
+kh_im = tg.khop_thoi_gian([{"start": 0.0, "end": 2.0, "text": "a"}],
+                          [str(p_im)], [True], 10.0, d6b / "ra")
+dat("lech_dau la SO DO THAT (0,5s im dau -> >= 400 ms)",
+    kh_im["lech_dau_ms_max"] >= 400.0, f"{kh_im['lech_dau_ms_max']} ms")
+dat("im_duoi_chu_ms do duoc (khung 2s ma tieng het som)",
+    kh_im["im_duoi_chu_ms_max"] > 200.0,
+    f"{kh_im['im_duoi_chu_ms_max']} ms")
+dat("moc_tieng tra ve duoc", len(kh_im.get("moc_tieng") or []) == 1,
+    f"{len(kh_im.get('moc_tieng') or [])} moc")
+if kh_im.get("moc_tieng"):
+    _i, _a, _b = kh_im["moc_tieng"][0]
+    dat("moc NOI sau moc DAT FILE (0,0s)", _a > 0.4 and _b > _a,
+        f"noi {_a:.3f} -> {_b:.3f}")
+# dong_chu_theo_giong: ham THUAN, cong thu pha goi thang duoc
+_dc = tg.dong_chu_theo_giong([(0, 1.0, 1.4), (1, 3.0, 3.9)], ["mot", "hai"])
+dat("dong_chu_theo_giong lay DUNG moc tieng",
+    len(_dc) == 2 and abs(_dc[0][0] - 1.0) < 1e-6
+    and abs(_dc[1][0] - 3.0) < 1e-6, str(_dc))
+dat("chu toi thieu 0,90s va KHONG lan sang cau ke",
+    _dc[0][1] >= 1.85 and _dc[0][1] <= 3.0 - 0.05, f"{_dc[0]}")
 dat("KHONG chong lan khi cau lot khung", kh["chong_lan_ms_max"] < 1.0,
     f"{kh['chong_lan_ms_max']} ms")
 dat("KHONG ep toc do khi da lot khung", kh["tempo_max"] <= 1.001,

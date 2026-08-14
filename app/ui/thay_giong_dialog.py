@@ -76,6 +76,7 @@ K_LUONG = "tg_luong"
 K_CHE_CHU = "tg_che_chu"
 K_CHE_CACH = "tg_che_cach"
 K_CHE_MUC = "tg_che_muc"
+K_VIET_CHU = "tg_viet_chu"
 
 #: Nhãn mục đầu combo giọng. Phải NÓI RA mặc định thật, không ghi trơn
 #: "(tự chọn)" — bài học cổng 16 v2.6.25a: user tưởng là CHƯA chọn gì.
@@ -283,6 +284,28 @@ class ThayGiongDialog(QDialog):
         h3.addWidget(self.sp_che_muc)
         h3.addStretch(1)
         lay.addLayout(h3)
+
+        # ---- hàng 3b: VIẾT LẠI BẢN DỊCH THEO MỐC GIỌNG ----
+        # Lỗi anh Hùng nghe+xem 14/08/2026: "chữ dịch ở dưới vẫn chạy mà trên
+        # đáng lý ra phải nói mà k có nói, 1 lúc sau nó lại tự nói". Chữ cháy
+        # sẵn chạy theo NGƯỜI NÓI GỐC, giọng mới chạy theo bản chép lời — đo
+        # ra 24,2% thời lượng video là "chữ chạy mà không ai nói".
+        h3b = QHBoxLayout()
+        self.ck_viet = QCheckBox("Viết lại bản dịch theo đúng lúc giọng nói")
+        self.ck_viet.setToolTip(
+            "Sau khi che dòng chữ cũ, app viết BẢN DỊCH vào đúng dải đó, mốc "
+            "lấy từ CHÍNH FILE GIỌNG vừa sinh ra (đo bằng silencedetect).\n"
+            "Giọng nói ở đâu thì chữ hiện ở đó — không thể lệch nhau nữa.\n\n"
+            "Đã đo trên video thật: TẮT ô này thì 12,96% số dòng chữ hiện lên "
+            "trước tiếng quá 150 ms, dòng tệ nhất chờ 5.057 ms.\n"
+            "Chỉ dùng được khi ô 'Làm mờ chữ cháy sẵn' đang BẬT — không che "
+            "mà viết là hai lớp chữ chồng nhau.")
+        self.ck_viet.setChecked(
+            str(self._s.value(K_VIET_CHU, "1")) in ("1", "true", "True"))
+        h3b.addWidget(self.ck_viet)
+        h3b.addStretch(1)
+        lay.addLayout(h3b)
+
         self.ck_che.toggled.connect(self._doi_che_chu)
         self._doi_che_chu(self.ck_che.isChecked())
 
@@ -741,12 +764,16 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_CHU, "1" if self.ck_che.isChecked() else "0")
         self._s.setValue(K_CHE_CACH, self.cb_che_cach.currentData() or "mo")
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
+        self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
 
     def _doi_che_chu(self, bat: bool) -> None:
         """Bật/tắt 2 ô con theo ô chính — tắt mà vẫn chỉnh được là gây hiểu
         nhầm 'đã bật' (đúng cái đã làm anh Hùng tưởng che chữ đang chạy)."""
         self.cb_che_cach.setEnabled(bool(bat))
         self.sp_che_muc.setEnabled(bool(bat))
+        # Viết chữ dịch CHỈ có nghĩa khi đang che: viết đè lên chữ cũ mà không
+        # che là HAI LỚP CHỮ chồng nhau, tệ hơn hẳn để nguyên.
+        self.ck_viet.setEnabled(bool(bat))
 
     def _chay(self, lam_lai: list | None = None) -> int:
         """Xếp job cho video CHƯA XONG. Trả SỐ JOB đã xếp.
@@ -793,6 +820,7 @@ class ThayGiongDialog(QDialog):
         cc = bool(self.ck_che.isChecked())
         cc_cach = str(self.cb_che_cach.currentData() or "mo")
         cc_muc = float(self.sp_che_muc.value())
+        cc_viet = bool(self.ck_viet.isChecked())
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -814,7 +842,8 @@ class ThayGiongDialog(QDialog):
                 jid = tg_chay.xep_mot(
                     self._pool, duong, nn, voice=giong, thu_muc_ra=ra,
                     kenh=Path(duong).parent.name, lam_lai=buoc_lai,
-                    che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc)
+                    che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
+                    viet_chu=cc_viet)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

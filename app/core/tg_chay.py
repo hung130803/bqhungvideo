@@ -22,7 +22,8 @@ from app.core.thay_giong import TEN_THU_MUC_TAM
 
 def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      thu_muc_ra: str | Path, che_chu: bool = False,
-                     che_chu_cach: str = "mo", che_chu_muc: float = 1.0) -> str:
+                     che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
+                     viet_chu: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -41,6 +42,12 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     if che_chu:
         from app.core.che_chu import chuan_cach, chuan_muc_mo
         sig += f":cc={chuan_cach(che_chu_cach)}:{chuan_muc_mo(che_chu_muc):.2f}"
+        # VIẾT CHỮ MỚI chỉ có nghĩa khi ĐANG CHE, nên nó nằm TRONG nhánh này:
+        # job không che thì khoá giống TỪNG KÝ TỰ bản cũ. Video ra khác hẳn
+        # (có thêm dòng chữ dịch) nên bắt buộc phải vào khoá, không thì bật ô
+        # rồi bấm Chạy là bị smart-skip — đúng lỗi cổng 56e đã sập một lần.
+        if viet_chu:
+            sig += ":vc=1"
     return sig
 
 
@@ -100,6 +107,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             thu_muc_ra: str | Path = "", kenh: str = "",
             lam_lai: bool = False, che_chu: bool = False,
             che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
+            viet_chu: bool = False,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -129,10 +137,14 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
         tt["che_chu"] = True
         tt["che_chu_cach"] = che_chu_cach
         tt["che_chu_muc"] = che_chu_muc
+        # Viết chữ dịch theo giọng chỉ có nghĩa khi ĐANG che (không che mà
+        # viết = 2 lớp chữ chồng nhau).
+        tt["viet_chu"] = bool(viet_chu)
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
         dedup_key=khoa_chong_trung(v, dich_sang, voice, ra, che_chu,
-                                   che_chu_cach, che_chu_muc),
+                                   che_chu_cach, che_chu_muc,
+                                   bool(che_chu) and bool(viet_chu)),
         skip_if_done=False, max_attempts=1,
     )
