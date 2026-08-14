@@ -1433,6 +1433,13 @@
   là câu chào/kêu gọi đăng ký*), tức bản thân bộ chọn hook không tệ đi. Cần
   **đóng băng corpus** (cache chép lời như `_do_hook_cache.json` đang làm cho
   các cổng khác) rồi mới nói được 4/8 hay 2/8 là số của MÃ hay của KHO.
+  **HỒI QUY v2.27.0 (14/08/2026) — CỔNG NÀY NAY XANH: `TẤT CẢ ĐẠT`, mã thoát
+  0, CA2 đo lại đúng `4/8`, phủ đủ 4 nhóm `anh · han · nhat · viet`.** Chính
+  điều đó **XÁC NHẬN chẩn đoán ở trên**: không một dòng mã hook nào đổi giữa
+  hai lượt, chỉ KHO VIDEO đổi (nhóm `han` đọc lại được). Nói cách khác cổng
+  này **nhấp nháy theo kho đĩa** — thấy nó đỏ thì kiểm kho TRƯỚC khi nghi mã,
+  và **đừng lấy một lượt xanh làm bằng chứng là đã chữa xong**; việc đóng băng
+  corpus vẫn còn nguyên đó.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
@@ -1730,6 +1737,15 @@
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước
   commit.
+- **MỌI CỔNG PHẢI IN ĐƯỢC TIẾNG VIỆT KHI stdout BỊ CHUYỂN HƯỚNG RA FILE.**
+  Chạy hồi quy hàng loạt là `python _test_x.py > file.txt`; lúc đó Python
+  không còn console utf-8 nên lấy **cp1252** và dòng `print` tiếng Việt ĐẦU
+  TIÊN ném `UnicodeEncodeError` -> cổng báo **mã thoát 1** trong khi mã app
+  không sai chỗ nào. Chạy tay trong console thì LUÔN XANH, nên loại lỗi này
+  cực dễ bị **đổ oan cho bản vá đang làm**. Đo 14/08/2026 khi chạy đủ 61 cổng:
+  `_test_lane_starve.py` (1 giây) và `_test_clip_count_len.py` (0 giây) chết
+  đúng kiểu đó. `_test_guard` đã reconfigure sẵn, nhưng cổng KHÔNG dựng UI thì
+  không import nó -> phải tự `sys.stdout.reconfigure(encoding="utf-8")`.
 - Test sandbox: đặt env `BQ_DB_PATH` + `BQ_DATA_DIR` sang thư mục tạm để không
   đụng dữ liệu thật (`%LOCALAPPDATA%\BQHungVideo` là data bản đóng gói).
 - ĐÓNG GÓI: chạy `.venv-build\Scripts\python.exe -m PyInstaller BQHungVideo.spec --noconfirm --clean`. **KHÔNG dùng `.venv`** — venv đó không có PyInstaller, gọi vào là báo "No module named PyInstaller" mà `dist/` VẪN CÒN bản build cũ nên rất dễ tưởng đã build xong (sập bẫy 06/08/2026: dist/ là bản 22/07). Sau build phải KIỂM: đếm file trong `dist/BQHungVideo/_internal/app/assets/sfx` và xem ngày sửa của .exe.
