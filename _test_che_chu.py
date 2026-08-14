@@ -920,6 +920,51 @@ def ca19_pha_duong_truyen():
             pass
 
 
+def ca22_ghep_doan(src: Path):
+    """ĐƯỜNG SẢN XUẤT THẬT: clip GHÉP NHIỀU ĐOẠN + CÓ CHUYỂN CẢNH.
+
+    CA 15 chỉ xuất 1 đoạn. Clip của anh Hùng gần như luôn 2-3 đoạn và có
+    chuyển cảnh, mà đường đó đi qua `_extract_segments_to_temp` (mảnh mezzanine
+    + concat) chứ không phải `-ss/-t` thẳng trên nguồn. Nếu mảnh mezzanine đổi
+    KÍCH THƯỚC thì toạ độ dải (tính theo pixel NGUỒN) sẽ che LỆCH CHỖ — và sẽ
+    lệch IM LẶNG, ffmpeg vẫn rc=0. Ca này chốt cả 2 điều: che ĐÚNG CHỖ và
+    độ dài/số khung KHÔNG lệch (bài học v1.87 "hình một đằng tiếng một đằng").
+    Có cả thứ tự HOOK-FIRST (đoạn sau ngược thời gian).
+    """
+    print("\nCA 22 — GHÉP NHIỀU ĐOẠN + CHUYỂN CẢNH (đường sản xuất thật)")
+    d = C.dai_theo_video(src)
+    if not d.co_chu:
+        kiem("CA22 nguồn thật dò ra chữ", False, d.ly_do)
+        return
+    y0, y1, x0, x1, _ = _dai_ra(d, d.rong, d.cao)
+    for ten, segs, xf in (("2 đoạn HOOK-FIRST (ngược thời gian)",
+                           [(60.0, 66.0), (20.0, 26.0)], "nhe"),
+                          ("3 đoạn + chuyển cảnh mức mạnh",
+                           [(30.0, 35.0), (80.0, 85.0), (10.0, 15.0)],
+                           "manh")):
+        o = SAN / f"m_{len(segs)}doan.mp4"
+        lg: list = []
+        try:
+            from app.core import ffmpeg_utils as fu
+            fu.export_canvas_clip(
+                str(src), str(o), segs, _RECT, bg="blur", out_w=_OUT_W,
+                out_h=_OUT_H, fx_fade=False, fx_whoosh=False, hieu_ung="tat",
+                chuyen_canh=xf, che_chu=True, che_chu_cach="mo",
+                che_chu_muc=1.0, che_chu_log=lg)
+        except Exception as e:                                 # noqa: BLE001
+            kiem(f"CA22 xuất được: {ten}", False, f"{type(e).__name__}: {e}")
+            continue
+        mong = sum(e - s for s, e in segs)
+        ok, mo = _kiem_file(o, mong)
+        kiem(f"CA22 {ten}: có khung + ĐÚNG độ dài (chuyển cảnh KHÔNG ăn bớt)",
+             ok, mo)
+        md = C.mat_do_vung(o, y0, y1, [1.0, 3.0, 5.0], x0, x1)
+        kiem(f"CA22 {ten}: che ĐÚNG CHỖ trên clip đã ghép (mật độ <= 0,02)",
+             md <= 0.02, f"mật độ nét trong dải = {md:.4f}")
+        kiem(f"CA22 {ten}: nhật ký ghi có che", bool(lg) and lg[0]["che"],
+             lg[0]["ly_do"] if lg else "(rỗng)")
+
+
 def ca20_nhin_bang_mat(src: Path, a: Path, b: Path, vung) -> None:
     """Trích khung TRƯỚC/SAU của FILE XUẤT để NGƯỜI/LLM tự nhìn.
 
@@ -976,6 +1021,7 @@ def main() -> int:
         else:
             print(f"\n(nguồn thật cho CA 15-17-20: {that})")
             xa, xb, vung = ca15_bat_tat_co_tac_dung(that)
+            ca22_ghep_doan(that)
             ca16_bat_bien(that)
             if os.environ.get("BQ_BO_DO_CHI_PHI", "") != "1":
                 ca17_chi_phi(that)
