@@ -2,14 +2,43 @@
  "en": [
   {
    "vong": 1,
-   "giay": 101.7,
+   "giay": 109.2,
    "so_cau": 19,
    "cat_le": {
     "so_cau": 19,
-    "giay_cat_tong": 18.91,
-    "giay_cat_tb": 0.995,
-    "giay_truoc": 68.11,
-    "giay_sau": 49.2
+    "giay_cat_tong": 18.89,
+    "giay_cat_tb": 0.994,
+    "giay_truoc": 69.29,
+    "giay_sau": 50.4
+   },
+   "nghia": {
+    "so_cau_doi_chu": 2,
+    "diem_dau_tb": 9.37,
+    "diem_cuoi_tb": 9.21,
+    "diem_cuoi_min": 4.0,
+    "duoi_nguong_cuoi": 2,
+    "doi_chung_giu_dau": 9.65,
+    "doi_chung_giu_cuoi": 9.47,
+    "doi_chung_troi": -0.18,
+    "diem_dau_cau_doi": 7.0,
+    "diem_cuoi_cau_doi": 7.0,
+    "tut_that": 0.18,
+    "vi_du_xau": [
+     {
+      "i": 17,
+      "diem": 4.0,
+      "goc": "I don't know. Let's go.",
+      "dich_dau": "Tôi không biết. Hãy đi thôi.",
+      "sau_rut_gon": "Đi thôi."
+     },
+     {
+      "i": 18,
+      "diem": 10.0,
+      "goc": "Now hurry up. You need to...",
+      "dich_dau": "Bây giờ hãy nhanh lên. Anh cần phải...",
+      "sau_rut_gon": "Nhanh lên."
+     }
+    ]
    },
    "dich": {
     "diem": [
@@ -17,9 +46,9 @@
      10.0,
      10.0,
      10.0,
-     10.0,
-     10.0,
      7.0,
+     10.0,
+     10.0,
      10.0,
      10.0,
      10.0,
@@ -43,14 +72,14 @@
    },
    "rut_gon": {
     "so_sua": 2,
-    "tempo_can_max_truoc": 4.069,
-    "tempo_can_max_sau": 1.002,
+    "tempo_can_max_truoc": 3.963,
+    "tempo_can_max_sau": 1.044,
     "so_cau_vuot_truoc": 2,
     "so_cau_vuot_sau": 0,
     "can_truoc": [
      1.002,
      1.0,
-     1.0,
+     1.044,
      1.0,
      1.0,
      1.0,
@@ -66,12 +95,12 @@
      1.0,
      1.0,
      2.264,
-     4.069
+     3.963
     ],
     "can_sau": [
      1.002,
      1.0,
-     1.0,
+     1.044,
      1.0,
      1.0,
      1.0,
@@ -90,13 +119,19 @@
      1.0
     ]
    },
+   "doc_nhanh": {
+    "so_doc_lai": 1,
+    "can_max_truoc": 1.044,
+    "can_max_sau": 1.002,
+    "rate_max": 8
+   },
    "khop": {
     "so_cau": 19,
     "bo_qua": 0,
     "lech_dau_ms_tb": 0.0,
     "lech_dau_ms_max": 0.0,
-    "lech_cuoi_ms_tb": 1976.0,
-    "lech_cuoi_ms_max": 8817.0,
+    "lech_cuoi_ms_tb": 1936.1,
+    "lech_cuoi_ms_max": 9137.0,
     "chong_lan_ms_max": 0.0,
     "so_cau_chong_lan": 0,
     "tempo_max": 1.002,
@@ -161,20 +196,20 @@
    "texts": [
     "Vậy chúng ta đi đến ngôi nhà cũ của chúng ta. Đó là ngôi nhà cũ. Wow. Tôi sẽ đi bộ đến đó.",
     "đó",
-    "Cái gì vậy gia đình? Vậy hôm nay chúng ta sẽ đi đến Baltimore.",
-    "Và cuối cùng ai đó sẽ được cắt tóc nhưng anh ấy đang khóc ngay bây giờ vì đầu anh ấy đau.",
-    "nào hãy đi, tóc của bạn trông thật ngớ ngẩn",
-    "chúa ơi, đầu tôi đau quá như ở đây, bạn biết nếu ai đó bỏ lỡ cuộc hẹn của",
-    "bác sĩ tai để tìm hiểu điều gì cần làm với phẫu thuật này cho xoang của anh ấy",
+    "Còn gì mới, gia đình? Vậy hôm nay chúng ta sẽ đi đến Baltimore.",
+    "Và cuối cùng cũng có ai đó sẽ được cắt tóc nhưng bây giờ anh ấy đang khóc vì đầu anh ấy đau.",
+    "nào, tóc của anh trông thật ngớ ngẩn",
+    "ôi trời ơi, đầu tôi đau quá như ở đây, anh biết đấy, nếu có ai đó bỏ lỡ cuộc hẹn của",
+    "bác sĩ tai để tìm hiểu anh ấy cần làm gì với ca phẫu thuật này cho xoang của mình",
     "Xoay máy quay lại.",
     "Tôi đã bỏ lỡ cuộc hẹn của mình để có thể đăng vlog lên.",
-    "Điều đó thật vô trách nhiệm.",
-    "Cô ấy có đang than vãn không?",
+    "Đó thật là bất trách nhiệm.",
+    "Cô ấy có đang than thở không?",
     "được cung cấp",
     "Vâng.",
     "Vâng.",
     "Cô ấy đang làm gì?",
-    "Bạn than vãn về cái gì?",
+    "Cô đang than thở về cái gì?",
     "Cái quái gì vừa xảy ra vậy?",
     "Đi thôi.",
     "Nhanh lên."
@@ -182,20 +217,49 @@
   },
   {
    "vong": 2,
-   "giay": 99.8,
+   "giay": 136.7,
    "so_cau": 19,
    "cat_le": {
     "so_cau": 19,
-    "giay_cat_tong": 18.91,
-    "giay_cat_tb": 0.995,
-    "giay_truoc": 68.42,
-    "giay_sau": 49.52
+    "giay_cat_tong": 18.89,
+    "giay_cat_tb": 0.994,
+    "giay_truoc": 68.47,
+    "giay_sau": 49.58
+   },
+   "nghia": {
+    "so_cau_doi_chu": 2,
+    "diem_dau_tb": 9.37,
+    "diem_cuoi_tb": 8.89,
+    "diem_cuoi_min": 4.0,
+    "duoi_nguong_cuoi": 2,
+    "doi_chung_giu_dau": 9.65,
+    "doi_chung_giu_cuoi": 8.94,
+    "doi_chung_troi": -0.71,
+    "diem_dau_cau_doi": 7.0,
+    "diem_cuoi_cau_doi": 8.5,
+    "tut_that": 2.21,
+    "vi_du_xau": [
+     {
+      "i": 17,
+      "diem": 7.0,
+      "goc": "I don't know. Let's go.",
+      "dich_dau": "Tôi không biết. Hãy đi thôi.",
+      "sau_rut_gon": "Đi thôi."
+     },
+     {
+      "i": 18,
+      "diem": 10.0,
+      "goc": "Now hurry up. You need to...",
+      "dich_dau": "Bây giờ hãy nhanh lên. Bạn cần phải...",
+      "sau_rut_gon": "Nhanh lên."
+     }
+    ]
    },
    "dich": {
     "diem": [
      10.0,
      10.0,
-     7.0,
+     10.0,
      10.0,
      10.0,
      7.0,
@@ -217,7 +281,7 @@
     "ty_le_dich_lai": 0.0,
     "con_duoi_nguong": 1,
     "ty_le_con_xau": 5.3,
-    "diem_tb": 9.21,
+    "diem_tb": 9.37,
     "diem_min": 4.0,
     "nguong": 7.0
    },
@@ -270,12 +334,16 @@
      1.0
     ]
    },
+   "doc_nhanh": {
+    "so_doc_lai": 0,
+    "rate_max": 0
+   },
    "khop": {
     "so_cau": 19,
     "bo_qua": 0,
     "lech_dau_ms_tb": 0.0,
     "lech_dau_ms_max": 0.0,
-    "lech_cuoi_ms_tb": 1960.2,
+    "lech_cuoi_ms_tb": 1980.3,
     "lech_cuoi_ms_max": 8817.0,
     "chong_lan_ms_max": 0.0,
     "so_cau_chong_lan": 0,
@@ -336,72 +404,101 @@
     "Và cuối cùng thì ai đó sẽ được cắt tóc nhưng bây giờ anh ấy đang khóc vì đầu anh ấy đau.",
     "nào hãy đi, tóc của bạn trông thật ngớ ngẩn",
     "ôi trời ơi, đầu tôi đau quá như ở đây, bạn biết nếu ai đó bỏ lỡ cuộc hẹn của",
-    "bác sĩ tai để tìm hiểu anh ấy cần làm gì với ca phẫu thuật này cho xoang của mình",
+    "bác sĩ tai để tìm hiểu điều gì cần làm với ca phẫu thuật này cho xoang của anh ấy",
     "Xoay máy quay lại.",
     "Tôi đã bỏ lỡ cuộc hẹn của mình để có thể đăng vlog lên.",
-    "Điều đó thật vô trách nhiệm.",
-    "Cô ấy có đang than thở không?",
+    "Đó là điều không có trách nhiệm.",
+    "Cô ấy đang than thở à?",
     "được cung cấp",
     "Vâng.",
     "Vâng.",
     "Cô ấy đang làm gì?",
     "Bạn than thở về cái gì?",
-    "Cái quỷ gì vừa xảy ra vậy?",
+    "Cái quái gì vừa xảy ra vậy?",
     "Đi thôi.",
     "Nhanh lên."
    ]
   },
   {
    "vong": 3,
-   "giay": 109.8,
+   "giay": 24.3,
    "so_cau": 19,
    "cat_le": {
     "so_cau": 19,
-    "giay_cat_tong": 18.83,
-    "giay_cat_tb": 0.991,
-    "giay_truoc": 69.62,
-    "giay_sau": 50.79
+    "giay_cat_tong": 18.91,
+    "giay_cat_tb": 0.995,
+    "giay_truoc": 67.68,
+    "giay_sau": 48.77
+   },
+   "nghia": {
+    "so_cau_doi_chu": 2,
+    "diem_dau_tb": 9.37,
+    "diem_cuoi_tb": 9.37,
+    "diem_cuoi_min": 4.0,
+    "duoi_nguong_cuoi": 1,
+    "doi_chung_giu_dau": 9.29,
+    "doi_chung_giu_cuoi": 9.47,
+    "doi_chung_troi": 0.18,
+    "diem_dau_cau_doi": 10.0,
+    "diem_cuoi_cau_doi": 8.5,
+    "tut_that": -1.68,
+    "vi_du_xau": [
+     {
+      "i": 17,
+      "diem": 7.0,
+      "goc": "I don't know. Let's go.",
+      "dich_dau": "Tôi không biết. Hãy đi thôi.",
+      "sau_rut_gon": "Đi thôi."
+     },
+     {
+      "i": 18,
+      "diem": 10.0,
+      "goc": "Now hurry up. You need to...",
+      "dich_dau": "Bây giờ hãy nhanh lên. Bạn cần phải...",
+      "sau_rut_gon": "Nhanh lên."
+     }
+    ]
    },
    "dich": {
     "diem": [
      10.0,
      10.0,
      7.0,
-     7.0,
      10.0,
-     10.0,
-     10.0,
-     7.0,
-     10.0,
-     10.0,
-     10.0,
-     10.0,
-     10.0,
-     10.0,
-     10.0,
-     7.0,
      10.0,
      4.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     10.0,
+     7.0,
+     10.0,
+     10.0,
      10.0
     ],
-    "phai_dich_lai": 0,
-    "ty_le_dich_lai": 0.0,
+    "phai_dich_lai": 2,
+    "ty_le_dich_lai": 10.5,
     "con_duoi_nguong": 1,
     "ty_le_con_xau": 5.3,
-    "diem_tb": 9.05,
+    "diem_tb": 9.37,
     "diem_min": 4.0,
     "nguong": 7.0
    },
    "rut_gon": {
     "so_sua": 2,
-    "tempo_can_max_truoc": 3.963,
-    "tempo_can_max_sau": 1.046,
+    "tempo_can_max_truoc": 4.069,
+    "tempo_can_max_sau": 1.0,
     "so_cau_vuot_truoc": 2,
     "so_cau_vuot_sau": 0,
     "can_truoc": [
      1.0,
      1.0,
-     1.046,
+     1.0,
      1.0,
      1.0,
      1.0,
@@ -417,12 +514,12 @@
      1.0,
      1.0,
      2.264,
-     3.963
+     4.069
     ],
     "can_sau": [
      1.0,
      1.0,
-     1.046,
+     1.0,
      1.0,
      1.0,
      1.0,
@@ -441,25 +538,29 @@
      1.0
     ]
    },
+   "doc_nhanh": {
+    "so_doc_lai": 0,
+    "rate_max": 0
+   },
    "khop": {
     "so_cau": 19,
     "bo_qua": 0,
     "lech_dau_ms_tb": 0.0,
     "lech_dau_ms_max": 0.0,
-    "lech_cuoi_ms_tb": 1925.9,
-    "lech_cuoi_ms_max": 9137.0,
+    "lech_cuoi_ms_tb": 1997.2,
+    "lech_cuoi_ms_max": 8817.0,
     "chong_lan_ms_max": 0.0,
     "so_cau_chong_lan": 0,
-    "tempo_max": 1.046,
-    "tempo_tb": 1.002,
-    "so_cau_ep": 1,
+    "tempo_max": 1.0,
+    "tempo_tb": 1.0,
+    "so_cau_ep": 0,
     "so_cau_muon": 5,
     "so_cau_cat": 0,
     "so_cau_vuot_canh_bao": 0,
     "tempo_cau": [
      1.0,
      1.0,
-     1.046,
+     1.0,
      1.0,
      1.0,
      1.0,
@@ -499,34 +600,25 @@
      0.0
     ]
    },
-   "dai": [
-    {
-     "i": 2,
-     "tempo": 1.046,
-     "kytu_goc": 53,
-     "kytu_dich": 63,
-     "khung": 4.74,
-     "doc_mat": 4.96
-    }
-   ],
+   "dai": [],
    "texts": [
-    "Vậy chúng ta đi đến ngôi nhà cũ của chúng ta. Đó là ngôi nhà cũ. Wow, tôi sẽ đi bộ đến đó.",
+    "Vậy chúng ta đi đến ngôi nhà cũ của chúng tôi. Đó là ngôi nhà cũ. Wow. Tôi sẽ đi bộ đến đó.",
     "đó",
-    "Còn gì nữa, gia đình? Vậy hôm nay chúng ta sẽ đi đến Baltimore.",
-    "Và cuối cùng cũng có ai đó sẽ cắt tóc, nhưng bây giờ anh ấy đang khóc vì đầu anh ấy đau.",
-    "nào, tóc của anh trông thật ngớ ngẩn",
-    "ôi trời ơi, đầu tôi đau quá, giống như ở đây, anh biết đấy, nếu có ai đó bỏ lỡ cuộc hẹn của mình",
-    "đến gặp bác sĩ tai để tìm hiểu phải làm gì với ca phẫu thuật này cho xoang của anh ấy",
+    "Cái gì thế gia đình? Vậy hôm nay chúng ta sẽ đi đến Baltimore.",
+    "Và cuối cùng ai đó sẽ được cắt tóc nhưng anh ấy đang khóc vì đầu anh ấy đau.",
+    "nào hãy đi, tóc của bạn trông thật ngớ ngẩn",
+    "chúa ơi, đầu tôi đau quá như ở đây, bạn biết nếu ai đó bỏ lỡ cuộc hẹn của",
+    "bác sĩ tai để tìm hiểu điều gì cần làm với ca phẫu thuật này cho xoang của anh ấy",
     "Xoay máy quay lại.",
-    "Tôi đã bỏ lỡ cuộc hẹn của mình để có thể đăng vlog này.",
-    "Đó là điều bất trách nhiệm.",
-    "Cô ấy có đang than thở không?",
-    "đã cung cấp",
+    "Tôi đã bỏ lỡ cuộc hẹn của mình để có thể đăng vlog lên.",
+    "Điều đó thật vô trách nhiệm.",
+    "Cô ấy có đang than vãn không?",
+    "được cung cấp",
     "Vâng.",
     "Vâng.",
     "Cô ấy đang làm gì?",
-    "Cô đang than thở về điều gì?",
-    "Điều quái gì vừa xảy ra vậy?",
+    "Bạn than vãn về cái gì?",
+    "Cái quái gì vừa xảy ra vậy?",
     "Đi thôi.",
     "Nhanh lên."
    ]
