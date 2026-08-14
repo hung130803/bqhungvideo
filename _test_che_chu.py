@@ -920,6 +920,183 @@ def ca19_pha_duong_truyen():
             pass
 
 
+def ca23_co_vao_hash_chong_trung():
+    """CỔNG 6 — CỜ PHẢI NẰM TRONG HASH CHỐNG TRÙNG (lỗi NGƯỜI DÙNG GẶP NGAY).
+
+    Tới v2.25.0 cờ che chữ chỉ đi ĐƯỜNG LÙI (`doc_che_chu` tra mẫu theo tên
+    lúc xuất), mà đường đó KHÔNG có trong `dedup_key`. Hậu quả THẬT: anh Hùng
+    bật ô trong Chỉnh mẫu rồi bấm "Xuất cả kênh" -> clip đã xuất y hệt trước
+    đó bị **SMART-SKIP**, không job nào chạy, phải bấm "Xuất lại" từng clip.
+
+    Ca này dùng **WorkerPool + DB THẬT** (không mock) vì smart-skip là một
+    câu lệnh SQL trên bảng `jobs`, mock đi là giấu đúng chỗ có thể vỡ.
+
+    BA ĐIỀU PHẢI CHỨNG MINH, theo đúng yêu cầu:
+      (a) đổi cờ -> `dedup_key` ĐỔI -> job xuất được đẻ ra thật;
+      (b) đường LÙI cũ vẫn chạy (mẫu cũ không hỏng);
+      (c) BẤT BIẾN: mẫu KHÔNG bật che chữ -> `dedup_key` giống TỪNG KÝ TỰ bản
+          mốc, tức 200-300 kênh KHÔNG bị xuất lại từ đầu.
+    """
+    print("\nCA 23 — cờ che chữ nằm trong HASH CHỐNG TRÙNG (chống smart-skip)")
+    import inspect
+    from app import services as SV
+    from app.database import db as DB
+    from app.queue.worker import WorkerPool
+
+    # ---- (0) chữ ký hàm: mặc định phải là None, KHÔNG phải False -----------
+    # `False` nghĩa là "đã CHỐT: tắt" -> payload luôn mang khoá `che_chu` ->
+    # `doc_che_chu` không bao giờ đi đường lùi nữa -> job cũ trong DB và mọi
+    # lối gọi chưa nối mất đường. Đây là khác biệt tinh vi, phải canh bằng ca.
+    sg = inspect.signature(SV.enqueue_export).parameters
+    kiem("CA23-0 enqueue_export có đủ 3 tham số che chữ",
+         all(k in sg for k in ("che_chu", "che_chu_cach", "che_chu_muc")),
+         f"có: {[k for k in sg if k.startswith('che_chu')]}")
+    kiem("CA23-0' mặc định `che_chu` là None (KHÔNG phải False — False bịt "
+         "đường lùi)", sg["che_chu"].default is None,
+         f"default = {sg['che_chu'].default!r}")
+
+    # ---- (1) studio_page phải THẬT SỰ truyền, đọc bằng AST -----------------
+    # Bài học đã cắn ở CA19a: tìm bằng CHUỖI thì phép phá `che_chu=False` vẫn
+    # XANH. Ở đây đòi giá trị truyền vào là BIỂU THỨC (đọc từ mẫu), không được
+    # là hằng số đóng cứng.
+    from app.ui import studio_page as SP
+    goi = _tim_goi(SP.StudioPage._export_video_inner, "enqueue_export")
+    kw = {k.arg: k.value for k in (goi.keywords if goi else []) if k.arg}
+    thieu = [k for k in ("che_chu", "che_chu_cach", "che_chu_muc")
+             if k not in kw]
+    kiem("CA23-1 studio_page truyền đủ 3 tham số vào enqueue_export",
+         bool(goi) and not thieu, f"thiếu: {thieu}" if thieu else "đủ 3")
+    hang = [k for k in ("che_chu", "che_chu_cach", "che_chu_muc")
+            if k in kw and isinstance(kw[k], ast.Constant)]
+    kiem("CA23-1' giá trị truyền vào KHÔNG phải hằng số đóng cứng "
+         "(phải đọc từ `layout_tpl`)", not hang,
+         f"đóng cứng: {[(k, ast.unparse(kw[k])) for k in hang]}"
+         if hang else "cả 3 đều là biểu thức")
+
+    # ---- (2) dedup_key: bật/tắt/đổi cách/đổi mức -> ĐỔI --------------------
+    ghi: list = []
+
+    class _PoolGhi:
+        def enqueue(self, kind, payload, **kw):
+            ghi.append((payload, kw["dedup_key"]))
+            return 1
+
+    def _key(**kw) -> tuple:
+        ghi.clear()
+        SV.enqueue_export(_PoolGhi(), _CID, _VID, _PID, **kw)
+        return ghi[0]
+
+    # clip THẬT trong DB sandbox: `enqueue_export` băm cả mốc cắt start/end
+    _PID = DB.insert(
+        "INSERT INTO projects (name, assets_dir) VALUES (?,?)",
+        ("_cc_hash_kenh", str(SAN / "_cc_kenh")))
+    _VID = DB.insert(
+        "INSERT INTO videos (project_id, src_path, duration) VALUES (?,?,?)",
+        (_PID, r"D:\khong-co-that\a.mp4", 120.0))
+    _CID = DB.insert(
+        "INSERT INTO clips (video_id, start_sec, end_sec, status) "
+        "VALUES (?,?,?,?)", (_VID, 12.0, 48.5, "suggested"))
+
+    p_lui, k_lui = _key()                                   # KHÔNG truyền
+    p_tat, k_tat = _key(che_chu=False)                      # CHỐT tắt
+    p_bat, k_bat = _key(che_chu=True)                       # CHỐT bật
+    _, k_khoi = _key(che_chu=True, che_chu_cach="khoi")     # đổi cách
+    _, k_m07 = _key(che_chu=True, che_chu_muc=0.7)          # đổi mức
+    _, k_m03 = _key(che_chu=True, che_chu_muc=0.3)          # dưới sàn
+    _, k_m05 = _key(che_chu=True, che_chu_muc=0.5)          # cũng dưới sàn
+
+    kiem("CA23-2a BẬT -> dedup_key ĐỔI (đây là chỗ chữa smart-skip)",
+         k_bat != k_tat, f"tắt …{k_tat[-24:]} · bật …{k_bat[-24:]}")
+    kiem("CA23-2b đổi CÁCH che (mờ -> khối) -> dedup_key ĐỔI", k_khoi != k_bat)
+    kiem("CA23-2c đổi MỨC mờ (1,0 -> 0,7) -> dedup_key ĐỔI", k_m07 != k_bat)
+    # Chiều NGƯỢC LẠI cũng phải đúng: hai mức đều bị SÀN 0,60 kéo về cùng một
+    # chỗ thì ra clip GIỐNG HỆT -> băm giá trị THÔ là đẻ job xuất lại cho một
+    # thay đổi KHÔNG TỒN TẠI (300 kênh × mỗi lần user kéo nhầm thanh trượt).
+    kiem("CA23-2d mức 0,30 và 0,50 đều bị sàn kéo về 0,60 -> KHÔNG đẻ job "
+         "xuất lại oan", k_m03 == k_m05, f"…{k_m03[-16:]} / …{k_m05[-16:]}")
+    kiem("CA23-2d' nhưng 0,60 vẫn KHÁC mặc định 1,0", k_m03 != k_bat)
+
+    # ---- (3) BẤT BIẾN dedup_key: phải GIỐNG TỪNG KÝ TỰ bản MỐC -------------
+    kiem("CA23-3 CHỐT TẮT ra dedup_key y hệt lối gọi KHÔNG truyền cờ",
+         k_tat == k_lui, f"…{k_tat[-28:]}")
+    moc = os.environ.get("BQ_MOC_REF", _MOC_MAC_DINH)
+    r = subprocess.run(["git", "-C", REPO, "show", f"{moc}:app/services.py"],
+                       capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW, timeout=60)
+    src_moc = (r.stdout or b"").decode("utf-8", errors="replace")
+    nay = (Path(REPO) / "app" / "services.py").read_text(
+        encoding="utf-8", errors="replace")
+    if r.returncode != 0 or len(src_moc) < 3000:
+        kiem(f"CA23-3' lấy được services.py của {moc}", False,
+             f"git rc={r.returncode} · {len(src_moc)} ký tự")
+    elif src_moc.strip() == nay.strip():
+        # Chống PASS OAN, đúng bài học cổng 36/51: mốc TRÙNG file đang test là
+        # "so nó với chính nó". Việc này CHẮC CHẮN sửa services.py nên trùng =
+        # mốc đã nuốt nhánh (thường là đặt nhầm BQ_MOC_REF=main sau khi gộp).
+        kiem("CA23-3' mốc đối chứng phải KHÁC nhánh này", False,
+             f"`git show {moc}:app/services.py` TRÙNG file đang test -> phép "
+             f"so BẤT BIẾN vô nghĩa. Đặt BQ_MOC_REF về bản ĐÃ PHÁT HÀNH.")
+    else:
+        import importlib.util
+        fm = SAN / "sv_moc.py"
+        fm.write_text(src_moc, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("sv_moc", str(fm))
+        mm = importlib.util.module_from_spec(spec)     # type: ignore[arg-type]
+        sys.modules["sv_moc"] = mm
+        try:
+            spec.loader.exec_module(mm)                # type: ignore[union-attr]
+            ghi.clear()
+            mm.enqueue_export(_PoolGhi(), _CID, _VID, _PID)
+            k_moc = ghi[0][1]
+            kiem(f"CA23-3' dedup_key giống TỪNG KÝ TỰ bản mốc `{moc}` khi che "
+                 "chữ TẮT (200-300 kênh KHÔNG xuất lại từ đầu)",
+                 k_moc == k_tat, f"mốc …{k_moc[-28:]} · nay …{k_tat[-28:]}")
+            kiem("CA23-3'' và bản mốc KHÔNG hề có tham số che_chu "
+                 "(đối chứng hợp lệ)",
+                 "che_chu" not in inspect.signature(mm.enqueue_export).parameters)
+        except Exception as e:                                 # noqa: BLE001
+            kiem(f"CA23-3' nạp được services.py của {moc}", False,
+                 f"{type(e).__name__}: {e}")
+
+    # ---- (4) SMART-SKIP THẬT trên bảng `jobs` ------------------------------
+    # Đây là phép đo CUỐI CÙNG, đúng thứ anh Hùng gặp: job cũ đã 'done' thì
+    # bấm "Xuất cả kênh" lần nữa có đẻ job mới không.
+    pool = WorkerPool({}, max_cpu=1, max_gpu=0)      # KHÔNG start() -> 0 luồng
+    j0 = SV.enqueue_export(pool, _CID, _VID, _PID)   # lượt xuất ĐẦU (mẫu tắt)
+    DB.execute("UPDATE jobs SET status='done' WHERE id=?", (j0,))
+    j_lap = SV.enqueue_export(pool, _CID, _VID, _PID)
+    kiem("CA23-4a xuất lại y hệt -> SMART-SKIP đúng (không đẻ job trùng)",
+         j_lap is None, f"trả {j_lap!r}")
+    # ĐƯỜNG LÙI (v2.25.0): mẫu bật che chữ nhưng cờ KHÔNG vào payload ->
+    # vẫn bị skip. GIỮ ca này để số đo nói ra ĐÚNG cái đã hỏng, không giấu.
+    j_lui = SV.enqueue_export(pool, _CID, _VID, _PID)
+    kiem("CA23-4b (số đo của LỖI CŨ) đường LÙI không đưa cờ vào hash -> "
+         "vẫn bị smart-skip", j_lui is None, f"trả {j_lui!r}")
+    j_bat = SV.enqueue_export(pool, _CID, _VID, _PID, che_chu=True)
+    kiem("CA23-4c ĐƯỜNG MỚI: bật che chữ -> ĐẺ JOB THẬT, không bị smart-skip",
+         isinstance(j_bat, int) and j_bat != j0, f"job id = {j_bat!r}")
+    j_bat2 = SV.enqueue_export(pool, _CID, _VID, _PID, che_chu=True)
+    kiem("CA23-4d bấm lần nữa -> trả ID JOB CŨ, không đẻ trùng "
+         "(bài học 'enqueue trả jid CŨ, không trả None')", j_bat2 == j_bat,
+         f"{j_bat} vs {j_bat2}")
+    j_khoi = SV.enqueue_export(pool, _CID, _VID, _PID, che_chu=True,
+                               che_chu_cach="khoi")
+    kiem("CA23-4e đổi sang PHỦ KHỐI -> job KHÁC nữa",
+         isinstance(j_khoi, int) and j_khoi != j_bat, f"job id = {j_khoi!r}")
+
+    # ---- (5) payload -> doc_che_chu: mắt xích cuối -------------------------
+    from app.modules import m1_highlight as M1
+    kiem("CA23-5a payload CHỐT BẬT -> doc_che_chu đọc ra BẬT",
+         M1.doc_che_chu(p_bat) == {"bat": True, "cach": "mo", "muc": 1.0},
+         f"{M1.doc_che_chu(p_bat)}")
+    kiem("CA23-5b payload CHỐT TẮT -> TẮT (không tra mẫu nữa)",
+         M1.doc_che_chu(p_tat)["bat"] is False and "che_chu" in p_tat)
+    kiem("CA23-5c KHÔNG truyền -> payload KHÔNG mang khoá -> đường LÙI còn "
+         "nguyên (job cũ trong DB vẫn chạy đúng)", "che_chu" not in p_lui,
+         f"khoá che chữ trong payload: "
+         f"{[k for k in p_lui if k.startswith('che_chu')]}")
+
+
 def ca22_ghep_doan(src: Path):
     """ĐƯỜNG SẢN XUẤT THẬT: clip GHÉP NHIỀU ĐOẠN + CÓ CHUYỂN CẢNH.
 
@@ -1012,6 +1189,7 @@ def main() -> int:
         ca14_trich_khung_de_nhin(p, o, d)
         # ---- PHẦN 2: ĐÃ NỐI VÀO ĐƯỜNG XUẤT ----
         ca19_pha_duong_truyen()      # quét tĩnh, rẻ -> chạy trước
+        ca23_co_vao_hash_chong_trung()
         ca21_dai_nho_khong_lam_chet_xuat()
         ca18_round_trip_ui()
         that = _nguon_that()
