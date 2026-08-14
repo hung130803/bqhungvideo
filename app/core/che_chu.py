@@ -829,8 +829,11 @@ def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
     if not f:
         return "", d, f"dải không dùng được (cao {d.cao_dai}px) -> KHÔNG che"
     ten = "làm mờ" if chuan_cach(cach) == "mo" else "phủ khối"
+    # dấu PHẨY thập phân (tiếng Việt) — chỉ đổi TRONG SỐ, đừng `.replace('.',
+    # ',')` cả câu: bản đầu làm thế và biến `y=678..714` thành `y=678,,714`.
+    mm = f"{chuan_muc_mo(muc):.2f}".replace(".", ",")
     return f, d, (f"che dải y={d.y0}..{d.y1} ({d.cao_dai}px) x={d.x0}..{d.x1}"
-                  f" — {ten} mức {chuan_muc_mo(muc):.2f}".replace(".", ","))
+                  f" — {ten} mức {mm}")
 
 
 def trich_khung(src: str | Path, t: float, dst: str | Path,

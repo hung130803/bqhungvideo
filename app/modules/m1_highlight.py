@@ -2784,9 +2784,59 @@ def _context_join_categories(segs: list, signals: dict, seed=None) -> list:
     return cats
 
 
+def doc_che_chu(payload: dict) -> dict:
+    """CỜ "che chữ cháy sẵn trong hình" cho lượt xuất này -> {bat, cach, muc}.
+
+    HAI ĐƯỜNG, theo đúng thứ tự ưu tiên:
+      1. **PAYLOAD** — `payload['che_chu']` (+ `che_chu_cach`/`che_chu_muc`).
+         Đây là đường ĐÚNG, cùng khuôn `flip_h`/`fx_sfx_dir`: cờ được CHỐT lúc
+         xếp job nên mẫu có bị sửa/xoá giữa chừng cũng không đổi kết quả, và nó
+         nằm trong hash chống trùng của `services.enqueue_export` nên bật/tắt
+         là job xuất LẠI thật.
+      2. **MẪU ĐÃ CHỐT, tra theo TÊN** `cap_style['_mau']` — đường LÙI, dùng khi
+         payload chưa mang cờ (job cũ xếp trước bản này, hoặc lối gọi chưa
+         truyền). Tên mẫu trong `cap_style` là tên ĐÃ CHỐT lúc xếp job
+         (`_tpl_for_project` đóng dấu `_ten_mau`), nên KHÔNG dính lỗi (b) của
+         cổng 19 ("đổi layout_tpl ở caller -> lượt xuất chen ngang trộn mẫu
+         giữa 2 kênh"). Tra theo TÊN nên vẫn chốt đúng kênh.
+
+    HẠN CHẾ CỦA ĐƯỜNG 2, GHI THẲNG: nó KHÔNG có trong hash chống trùng. Bật ô
+    trong mẫu rồi bấm "Xuất cả kênh" thì clip đã xuất y hệt trước đó bị
+    smart-skip — phải bấm "Xuất lại" (nút đó ép `force=True`). Bịt hẳn chỗ này
+    chỉ cần MỘT dòng ở `studio_page` + MỘT tham số ở `services.enqueue_export`
+    (hai file đang có luồng khác sửa, xem báo cáo).
+
+    KHÔNG BAO GIỜ NÉM: tra mẫu hỏng -> TẮT (mặc định an toàn, che oan hình là
+    ca sai đắt nhất).
+    """
+    from app.core import che_chu as _CC
+
+    bat, cach, muc = None, "", None
+    if "che_chu" in (payload or {}):
+        bat = bool(payload.get("che_chu"))
+        cach = payload.get("che_chu_cach") or ""
+        muc = payload.get("che_chu_muc")
+    else:
+        ten = str(((payload or {}).get("cap_style") or {}).get("_mau") or "")
+        if ten:
+            try:
+                from app import services as _sv
+                tpl = _sv.get_template(ten) or {}
+                if "che_chu" in tpl:
+                    bat = bool(tpl.get("che_chu"))
+                    cach = tpl.get("che_chu_cach") or ""
+                    muc = tpl.get("che_chu_muc")
+            except Exception:                                  # noqa: BLE001
+                bat = None
+    return {"bat": bool(bat), "cach": _CC.chuan_cach(cach),
+            "muc": _CC.chuan_muc_mo(_CC.MUC_MO_MAC_DINH if muc is None
+                                    else muc)}
+
+
 def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
                    hu_log: list | None = None, duong: str = "canvas",
-                   td_log: list | None = None) -> None:
+                   td_log: list | None = None,
+                   cc_log: list | None = None) -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
@@ -2855,10 +2905,23 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
         lop_chu = "CÓ"
     else:
         lop_chu = "không có trong mẫu"
+    # CHE CHỮ CHÁY SẴN: phải ghi ra CẢ khi bật mà KHÔNG che được. Bật ô rồi mở
+    # file thấy chữ Trung vẫn còn thì chỉ nhật ký mới nói được vì sao (dò ra
+    # "không có chữ" là quyết định CỐ Ý, không phải hỏng — xem `che_chu`).
+    che_chu_dong = ""
+    _cc = (cc_log or [None])[0] if cc_log else None
+    if _cc:
+        if _cc.get("che"):
+            che_chu_dong = f" · che chữ cháy: {_cc.get('ly_do') or 'CÓ'}"
+        elif _cc.get("bat"):
+            che_chu_dong = (" · che chữ cháy: BẬT nhưng KHÔNG che — "
+                            + (_cc.get("ly_do") or "không rõ")
+                            + " (chỉ dò được DẢI ĐÁY; chữ giữa/góc trên không "
+                              "dò được)")
     dong = (f"   ↳ {pfx.strip() or 'Part'} công thức: mẫu «{ten_mau}» · "
             f"phụ đề «{cap}» · lớp chữ: {lop_chu} · "
             f"tiếng động: {', '.join(tieng)} · "
-            f"hiệu ứng hình: {', '.join(hieu_ung)}")
+            f"hiệu ứng hình: {', '.join(hieu_ung)}{che_chu_dong}")
     # ĐIỂM NHẤN: mỗi điểm ghi LÝ DO KÈM SỐ (anh Hùng: cấm ghi chung chung kiểu
     # "cảnh hay"). `hu_log` là danh sách hiệu ứng THẬT SỰ vào file — đã lọc theo
     # font ở `export_canvas_clip`, nên nhật ký không bao giờ khoe hiệu ứng ma.
@@ -3647,6 +3710,12 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # toàn cục `_SFX_LAST_PICK`: 3 làn xuất song song thì nó là của clip nào
         # xong sau cùng).
         _td_log: list = []
+        # CHE CHỮ CHÁY SẴN TRONG HÌNH — cờ lấy từ payload (đường chuẩn) hoặc từ
+        # MẪU ĐÃ CHỐT theo tên (đường lùi); xem `doc_che_chu`. MẶC ĐỊNH TẮT.
+        # `_cc_log` nhận lại ĐÚNG thứ ffmpeg đã làm để ghi vào nhật ký — bật mà
+        # không che được thì phải NÓI RA, đừng im (bài học "lớp chữ MẤT").
+        _cc_cf = doc_che_chu(payload)
+        _cc_log: list = []
         # NỘI DUNG CẢNH cho nhóm LỚP PHỦ HẠT (tuyết/tim/confetti…): chỉ ĐỌC
         # CACHE `vision_digest` + chép lời CỦA CHÍNH các đoạn này. Tuyệt đối
         # KHÔNG gọi `build_vision_digest` ở đây — nó có thể bắn LLM (đo thật
@@ -3703,6 +3772,13 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,
             flip_h=flip_h,
+            # CHE CHỮ CHÁY SẴN: GỘP vào chuỗi filter của chính lượt mã hoá này
+            # (không thêm lệnh ffmpeg thứ hai). TẮT -> export_canvas_clip không
+            # dò, không thêm filter nào => file ra GIỐNG HỆT bản cũ.
+            che_chu=_cc_cf["bat"],
+            che_chu_cach=_cc_cf["cach"],
+            che_chu_muc=_cc_cf["muc"],
+            che_chu_log=_cc_log,
             # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (không mất hình): export_canvas_clip
             # tự tính lại video_rect theo tỉ lệ nguồn (đã có probe sẵn ở đó).
             fit_src=bool(payload.get("fit_src")),
@@ -3775,7 +3851,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                                   else "canvas")),
                        # TIẾNG ĐỘNG của CHÍNH lượt này — không đọc biến toàn
                        # cục (3 làn xuất song song là đọc nhầm clip khác).
-                       td_log=locals().get("_td_log") or [])
+                       td_log=locals().get("_td_log") or [],
+                       # CHE CHỮ CHÁY: cùng lý do — list RIÊNG của lượt này.
+                       cc_log=locals().get("_cc_log") or [])
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
         pass
     # ---- CHO ANH HÙNG NHÌN THẤY: lưu ĐÚNG hiệu ứng + tiếng động vừa ĐƯA VÀO
