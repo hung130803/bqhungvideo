@@ -325,7 +325,9 @@ else:
             if D_MOC._phrase_groups_from_words(w, 1.5) \
                     != D._phrase_groups_from_words(w, 1.5):
                 _lech.append((g, "_phrase_groups_from_words", txt[:26]))
-    ok(not _lech,
+    # `not _lech` một mình là BẪY PASS RỖNG: vòng lặp không chạy phép nào thì
+    # cũng "không lệch". Phải chốt luôn SỐ PHÉP ĐO và số nhóm tiếng.
+    ok(not _lech and _n >= 200 and _nhom_do == {"anh", "han", "viet"},
        f"2a {_n} phép gọi trên {len(KHO4) - 4} video chữ latin "
        f"{sorted(_nhom_do)}: CHUỖI KẾT QUẢ giống mốc {MOC} 100%",
        f"lệch {len(_lech)}: {_lech[:3]}")
@@ -481,10 +483,13 @@ ok(all(r for _n, r in _rt),
    f"7a tách rồi nối lại ra ĐÚNG NGUYÊN VĂN {sum(r for _n, r in _rt)}/"
    f"{len(_rt)} ca (9 hệ chữ)",
    " · ".join(n for n, r in _rt if not r) or "không ca nào lệch")
-ok(all(D._noi_tu(s.split()) == " ".join(s.split())
-       for n, s in _CA if not D._KHONG_DAU_CACH.search(s)),
+_non = [(n, s) for n, s in _CA if not D._KHONG_DAU_CACH.search(s)]
+ok(len(_non) >= 4 and all(D._noi_tu(s.split()) == " ".join(s.split())
+                          for _n, s in _non),
    "7b BẤT BIẾN: text không thuộc hệ chữ không-dấu-cách -> `_noi_tu` == "
-   "`\" \".join` từng byte")
+   "`\" \".join` từng byte (chốt luôn SỐ ca lọc được — bộ ký tự bị nới rộng "
+   "quá tay thì danh sách này rỗng và ca sẽ PASS RỖNG)",
+   f"{len(_non)} ca: {[n for n, _s in _non]}")
 # không MẤT CHỮ: ghép mọi cụm lại phải ra đủ chữ của kịch bản
 _mat = []
 for n, s in _CA:
