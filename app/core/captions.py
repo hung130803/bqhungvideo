@@ -283,6 +283,88 @@ def _co_cjk(t: str) -> bool:
     return False
 
 
+#: FONT CHO CHỮ CJK, theo thứ tự ƯU TIÊN — (tên họ font khai trong .ass,
+#: các tên FILE để kiểm "máy này có thật không").
+#: ĐO 14/08/2026 trên máy anh Hùng: 12/12 font đóng gói trong
+#: `app/assets/fonts` có **0 glyph CJK**. Chữ Hán hiện được là nhờ libass TỰ
+#: LÙI sang font hệ điều hành — thứ tự lùi do fontconfig quyết định, app không
+#: kiểm soát: khai 'Montserrat' thì nó đi
+#: `Montserrat-Bold -> YuGothicUI-Semibold (NHẬT) -> MicrosoftJhengHeiUIBold
+#: (Trung PHỒN THỂ)`, tức phụ đề tiếng Trung GIẢN THỂ đang vẽ bằng font Nhật.
+#: Khai thẳng 'Microsoft YaHei' -> libass chọn `MicrosoftYaHei-Bold` NGAY, 0
+#: lượt lùi. Máy KHÔNG có font nào trong danh sách -> giữ nguyên font user
+#: chọn, libass lùi y như cũ (KHÔNG làm xấu đi máy nhân viên).
+_CJK_FONT_UNG = {
+    "trung": (("Microsoft YaHei", ("msyh.ttc", "msyh.ttf")),
+              ("Microsoft JhengHei", ("msjh.ttc", "msjh.ttf")),
+              ("SimSun", ("simsun.ttc",)),
+              ("SimHei", ("simhei.ttf",))),
+    "nhat": (("Yu Gothic UI", ("YuGothR.ttc", "YuGothM.ttc")),
+             ("Meiryo", ("meiryo.ttc",)),
+             ("MS Gothic", ("msgothic.ttc",))),
+    "han": (("Malgun Gothic", ("malgun.ttf",)),
+            ("Batang", ("batang.ttc",)),
+            ("Gulim", ("gulim.ttc",))),
+}
+_CJK_FONT_NHO: dict = {}
+
+
+def _thu_muc_font_he() -> list:
+    """Thư mục font của Windows (máy + hồ sơ user). Không phải Windows -> []."""
+    import os
+    ra = []
+    w = os.environ.get("WINDIR") or os.environ.get("SystemRoot")
+    if w:
+        ra.append(os.path.join(w, "Fonts"))
+    la = os.environ.get("LOCALAPPDATA")
+    if la:
+        ra.append(os.path.join(la, "Microsoft", "Windows", "Fonts"))
+    return [d for d in ra if os.path.isdir(d)]
+
+
+def _chu_gi(t: str) -> str:
+    """Chữ này là TRUNG / NHẬT / HÀN? '' = không phải CJK.
+    Kana -> Nhật · Hangul -> Hàn · chỉ chữ Hán -> Trung (tiếng Nhật viết THUẦN
+    kanji gần như không có, còn tiếng Trung thì KHÔNG BAO GIỜ có kana)."""
+    kana = hangul = han = False
+    for c in t or "":
+        o = ord(c)
+        if 0x3040 <= o <= 0x30FF:
+            kana = True
+        elif 0xAC00 <= o <= 0xD7AF:
+            hangul = True
+        elif (0x3400 <= o <= 0x4DBF or 0x4E00 <= o <= 0x9FFF
+                or 0xF900 <= o <= 0xFAFF):
+            han = True
+    if kana:
+        return "nhat"
+    if hangul:
+        return "han"
+    return "trung" if han else ""
+
+
+def font_cjk(text: str, font: str = "") -> str:
+    """FONT nên khai trong .ass cho chuỗi `text`.
+
+    BẤT BIẾN: `text` KHÔNG có ký tự CJK nào -> trả Y HỆT `font` (đường EN/VI
+    không đổi 1 byte). Có CJK -> trả font CJK ĐẦU TIÊN mà MÁY NÀY CÓ THẬT;
+    không có cái nào -> vẫn trả `font` (giữ nguyên hành vi cũ)."""
+    ngon = _chu_gi(text)
+    if not ngon:
+        return font
+    if ngon not in _CJK_FONT_NHO:
+        import os
+        thu = _thu_muc_font_he()
+        chon = ""
+        for ho, files in _CJK_FONT_UNG[ngon]:
+            if any(os.path.isfile(os.path.join(d, f))
+                   for d in thu for f in files):
+                chon = ho
+                break
+        _CJK_FONT_NHO[ngon] = chon
+    return _CJK_FONT_NHO[ngon] or font
+
+
 def _ass_color(hexv: str) -> str:
     """#RRGGBB -> &H00BBGGRR (ASS dùng BGR)."""
     h = (hexv or "#FFFFFF").lstrip("#")
@@ -513,6 +595,14 @@ def build_ass(words: list, segments: list, out_path,
     # được TRƯỚC khi dựng cue, nếu không phụ đề là 1 chữ nhấp nháy 0,17 s/lần
     # (xem `_gom_cjk`). Non-CJK trả y nguyên nên đường EN/VI KHÔNG đổi 1 byte.
     remapped = _gom_cjk(remapped, _CJK_MAX.get(mode, 6))
+    # 🈶 FONT cho chữ CJK: font đóng gói của app có 0 glyph chữ Hán (đo 12/12
+    # file), chữ hiện được là do libass TỰ LÙI sang font hệ điều hành — thứ tự
+    # lùi app không kiểm soát và máy thiếu font thì ra Ô VUÔNG mà ffmpeg VẪN
+    # trả mã 0. Khai thẳng font CJK CÓ THẬT trên máy này (xem `font_cjk`).
+    # Non-CJK -> trả y nguyên `font` nên đường EN/VI KHÔNG đổi 1 byte.
+    _chu_ht = "".join(str(w[2]) for w in remapped[:400]) + str(hook or "") \
+        + "".join(str(c[2]) for c in extra_cues[:200])
+    font = font_cjk(_chu_ht, font)
     main = color or p["color"]                 # màu chữ: user chọn hoặc của kiểu
     size = size or max(40, int(out_h * 0.05))
     side = int(out_w * 0.14)
@@ -637,7 +727,7 @@ def build_ass(words: list, segments: list, out_path,
     # FONT Style Narrate: narr_font user chọn (Chỉnh mẫu khu "Chữ AI đọc");
     # rỗng / NARR_SAME_LABEL -> dùng font phụ đề gốc (giữ hành vi cũ).
     nfont = (font if (not narr_font or narr_font == NARR_SAME_LABEL)
-             else narr_font)
+             else font_cjk(_chu_ht, narr_font))   # CJK: font riêng cũng phải đổi
     narr_style = (f"Style: Narrate,{nfont},{nsize},{narr_primary},{secondary},"
                   f"{narr_outline_c},{narr_back},-1,{narr_ital},0,0,100,100,0,0,"
                   f"{narr_border},{now},{narr_shadow},{align},{side},{side},"
