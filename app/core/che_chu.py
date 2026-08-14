@@ -102,6 +102,56 @@ RONG_DO = 640
 #: Số khung lấy mẫu mặc định.
 SO_KHUNG = 16
 
+# ═══════════ HỘP CHỮ — che ĐÚNG CHỖ CÓ CHỮ, không che cả dải ngang ══════════
+# Anh Hùng 14/08/2026: *"sao phần text hiện trong video nó không xác định rồi
+# che mờ ĐÚNG VỊ TRÍ chữ xuất hiện thôi không được à"*.
+#
+# VÌ SAO DÒ BỀ NGANG KHÓ HƠN DÒ DẢI (đo, không đoán): bộ dò DẢI làm việc trên
+# profile TRUNG BÌNH nhiều khung nên vân nền tự triệt tiêu. Bề NGANG thì phải
+# dò trên TỪNG khung — và ở đó **nền cho mực ngang ngửa chữ**. Đã NHÌN TẬN MẮT
+# (`_do_hieu_chuan_hop.py`, `zh_dongho` t=7,75s): chữ ở x≈495..790 còn lan can
+# + thang kim loại ở x≈900..1280 cũng là NÉT SÁNG MẢNH — đúng thứ top-hat sinh
+# ra để bắt. Nâng ngưỡng nét KHÔNG cứu được (ngưỡng 150 vẫn nhô sai 256 px).
+#
+# CÁCH CHỮA ĐO ĐƯỢC — **GIAO NHAU THEO THỜI GIAN**: một dòng phụ đề đứng YÊN
+# TỪNG ĐIỂM ẢNH suốt 1,5-3 giây, còn nền thì trôi. Giữ điểm ảnh nào CÒN BẬT ở
+# khung liền trước HOẶC liền sau thì nền chết, chữ sống. Đo trên 3 khung hỏng
+# nặng nhất của `zh_dongho`: mực nhiễu bên phải **186 -> 0**, mực chữ giữ
+# nguyên chỗ. Vì vậy bước này BẮT BUỘC phải lấy mẫu DÀY (khung cách nhau ~0,5s)
+# — dò thưa thì không có "khung liền trước" để giao.
+#
+#: Số khung/giây khi quét dày. 2 = cách nhau 0,5s.
+#: GIÁ ĐÃ ĐO (`_do_gia_lay_mau.py`): MỘT lượt giải mã `fps=` tốn **0,62-0,84
+#: s/phút phim** và cho 1-2 khung/giây, trong khi 48 lượt `-ss` tốn **0,78-1,84
+#: s/phút** mà chỉ được 48 khung. Tức quét dày RẺ HƠN mà dày gấp 7 lần — đừng
+#: "tối ưu" bằng cách quay lại kiểu nhiều lượt `-ss`.
+HOP_FPS = 2.0
+#: Mỗi đoạn thời gian dài bao nhiêu giây thì đổi hộp một lần.
+HOP_DOAN = 8.0
+#: Đệm quanh hộp (px ở hệ RONG_DO). Đo `_do_hieu_chuan_hop.py`: đệm 10px đưa
+#: số khung "nhô ra ngoài hộp" của `zh_ep12` từ 2 về **0**.
+HOP_DEM = 10
+#: Trần SỐ HỘP khác nhau trong MỘT LƯỢT XUẤT. Mỗi hộp = 1 nhánh
+#: split/crop/boxblur/overlay; nhiều nhánh làm đồ thị filter phình.
+HOP_TOI_DA = 6
+#: Trần số mốc NHỚ THEO VIDEO. Phải LỚN HƠN HẲN `HOP_TOI_DA`: một clip 60 giây
+#: cắt ra từ video 6 phút chỉ dùng ~1/6 số mốc, gộp sớm về 6 ở mức VIDEO là
+#: vứt hết độ mịn trước khi biết clip lấy đoạn nào (đo trên `zh_ep12`: gộp
+#: sớm ra 6 mốc dài ~58 giây/mốc — bằng cả một Part).
+HOP_NHO_TOI_DA = 64
+#: Ngưỡng cột = tỉ lệ này nhân ĐỈNH cột. Mọc ra từ cột đậm nhất.
+HOP_TY_COT = 0.20
+#: Mật độ nét tối thiểu trong dải để coi khung đó "đang có chữ".
+HOP_MD_MIN = 0.012
+#: Tỉ lệ khung phải dò ra chữ thì mới dám thu hộp. Dưới mức này = bộ dò không
+#: nắm được nội dung -> GIỮ NGUYÊN DẢI (thà che thừa còn hơn sót chữ).
+HOP_TY_KHUNG_MIN = 0.50
+#: Hộp không được hẹp hơn tỉ lệ này của bề rộng khung — chốt chống "hộp ma"
+#: (một khung bắt trúng đốm nhiễu rồi đẻ ra hộp 20px).
+HOP_HEP_MIN = 0.06
+#: Tắt hẳn bước thu-về-hộp (đo A/B, gỡ rối máy user): `BQ_CHE_HOP=0`.
+_BAT_HOP = os.environ.get("BQ_CHE_HOP", "1").strip() not in ("0", "false", "no")
+
 # ─────────────── SÀN MỨC MỜ — ĐÃ ĐO, TUYỆT ĐỐI ĐỪNG HẠ ──────────────────────
 #: Mức mờ THẤP NHẤT được phép cho cách che "mo".
 #:
@@ -166,14 +216,37 @@ class DaiChu:
     so_khung: int = 0
     ly_do: str = ""
     moc: list = field(default_factory=list)   # các giây đã lấy mẫu
+    #: HỘP THEO ĐOẠN THỜI GIAN — [(t0, t1, x0, x1), …] ở **THỜI GIAN NGUỒN** và
+    #: **PIXEL NGUỒN**. Rỗng = chưa dò hộp (dùng x0..x1 cho cả clip).
+    hop: list = field(default_factory=list)
+    #: bề rộng dải TRƯỚC khi thu về hộp (để báo cáo "giảm bao nhiêu %")
+    x0_dai: int = 0
+    x1_dai: int = 0
 
     @property
     def cao_dai(self) -> int:
         return max(0, self.y1 - self.y0)
 
+    @property
+    def ty_le_thu(self) -> float:
+        """Tỉ lệ DIỆN TÍCH che còn lại so với dải ngang gốc (1,0 = chưa thu).
+
+        Tính theo THỜI LƯỢNG: hộp hẹp mà chỉ dùng 1 giây thì không được tính
+        như hộp hẹp dùng cả clip.
+        """
+        rong_dai = max(1, self.x1_dai - self.x0_dai)
+        if not self.hop:
+            return (self.x1 - self.x0) / float(rong_dai)
+        tong = sum((b - a) for a, b, _, _ in self.hop)
+        if tong <= 0:
+            return (self.x1 - self.x0) / float(rong_dai)
+        return sum((b - a) * (x1 - x0) for a, b, x0, x1 in self.hop) / \
+            float(tong * rong_dai)
+
     def dict(self) -> dict:
         d = asdict(self)
         d["cao_dai"] = self.cao_dai
+        d["ty_le_thu"] = round(self.ty_le_thu, 4)
         return d
 
 
@@ -441,6 +514,7 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
     kq.y1 = min(H, _chan(min(H, int(round(tot_y1 * ty)) + 2)))
     kq.x0 = _chan(max(0, int(round(cx0 * ty))), xuong=True)
     kq.x1 = min(W, _chan(min(W, int(round(cx1 * ty)))))
+    kq.x0_dai, kq.x1_dai = kq.x0, kq.x1   # bề rộng DẢI, để so khi thu về hộp
 
     if kq.ty_le_khung < ty_le_khung_min:
         kq.ly_do = (f"chỉ {kq.ty_le_khung*100:.0f}% khung có chữ trong dải "
@@ -461,57 +535,291 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
     return kq
 
 
+# ────────────────── PHẦN 1b — THU DẢI VỀ HỘP CHỮ (bề NGANG) ─────────────────
+def _doc_dai_day(src: str | Path, dai: DaiChu, fps: float = HOP_FPS,
+                 rong: int = RONG_DO) -> tuple:
+    """MỘT lượt giải mã: `fps=` + `crop` đúng dải hàng -> (ảnh, w, hàng_đầu).
+
+    `crop` NGAY SAU `scale` (không phải trước) để toạ độ khớp hệ RONG_DO mà cả
+    file này đang dùng. Cắt sớm giảm hẳn byte qua ống — dải chỉ ~7% chiều cao.
+    """
+    tt = thong_tin(src)
+    if not tt["rong"] or not tt["cao"]:
+        return None, 0, 0
+    w = rong if rong % 2 == 0 else rong + 1
+    h = int(round(tt["cao"] * w / tt["rong"]))
+    h += h % 2
+    ty = h / float(tt["cao"])
+    a = max(0, int(dai.y0 * ty) - 12)
+    b = min(h, max(a + 4, int(dai.y1 * ty) + 12))
+    ch = b - a
+    cmd = [_bin("ffmpeg"), "-v", "error", "-i", str(src), "-vf",
+           f"fps={fps},scale={w}:{h},crop={w}:{ch}:0:{a}", "-f", "rawvideo",
+           "-pix_fmt", "gray", "-"]
+    try:
+        r = _chay(cmd, timeout=1800)
+    except subprocess.TimeoutExpired:
+        return None, 0, 0
+    n = len(r.stdout) // (w * ch)
+    if n < 6:
+        return None, 0, 0
+    return (np.frombuffer(r.stdout[:n * w * ch], np.uint8)
+            .reshape(n, ch, w), w, a)
+
+
+def _loc_thoi_gian(m: np.ndarray) -> np.ndarray:
+    """Giữ điểm ảnh CÒN BẬT ở khung liền trước HOẶC liền sau.
+
+    Đây là cửa tách CHỮ khỏi NỀN: phụ đề đứng yên từng điểm ảnh 1,5-3 giây,
+    nền thì trôi. Xem khối ghi chú "HỘP CHỮ" ở đầu file cho số đo.
+    """
+    if len(m) < 2:
+        return m
+    tr = np.empty_like(m)
+    sa = np.empty_like(m)
+    tr[1:] = m[:-1]
+    tr[0] = m[1]
+    sa[:-1] = m[1:]
+    sa[-1] = m[-2]
+    return (m & (tr | sa)).astype(np.uint8)
+
+
+def _be_ngang(mm: np.ndarray, r0: int, r1: int, w: int) -> Optional[tuple]:
+    """[x0,x1) của chữ trong MỘT khung đã lọc. None = khung này không có chữ."""
+    sub = mm[r0:r1]
+    if sub.size == 0 or float(sub.mean()) < HOP_MD_MIN:
+        return None
+    cot = sub.sum(axis=0).astype(np.float32)
+    if cot.max() <= 0:
+        return None
+    cs = np.convolve(cot, np.ones(3, np.float32) / 3.0, mode="same")
+    dinh = int(np.argmax(cs))
+    ng = max(1.0, HOP_TY_COT * float(cs[dinh]))
+    khe = max(2, r1 - r0)          # bắc cầu khe = 1 chiều cao chữ (dấu cách)
+    a = b = dinh
+    i, hut = dinh, 0
+    while i + 1 < w:
+        i += 1
+        if cs[i] >= ng:
+            b, hut = i, 0
+        else:
+            hut += 1
+            if hut > khe:
+                break
+    i, hut = dinh, 0
+    while i - 1 >= 0:
+        i -= 1
+        if cs[i] >= ng:
+            a, hut = i, 0
+        else:
+            hut += 1
+            if hut > khe:
+                break
+    return a, b + 1
+
+
+def _gop_hop(hop: list, toi_da: int) -> list:
+    """Gộp các đoạn liền kề cho tới khi còn <= `toi_da` hộp.
+
+    Mỗi lượt gộp CẶP LIỀN KỀ nào làm DIỆN TÍCH tăng ít nhất — gộp bừa thì hai
+    hộp hẹp ở hai đầu clip kéo nhau ra thành một hộp rộng bằng cả dải.
+    """
+    hop = [list(x) for x in hop]
+    while len(hop) > toi_da:
+        tot, gia_tot = 0, None
+        for i in range(len(hop) - 1):
+            a, b, x0, x1 = hop[i]
+            c, d, y0, y1 = hop[i + 1]
+            n0, n1 = min(x0, y0), max(x1, y1)
+            gia = ((n1 - n0) - (x1 - x0)) * (b - a) + \
+                  ((n1 - n0) - (y1 - y0)) * (d - c)
+            if gia_tot is None or gia < gia_tot:
+                tot, gia_tot = i, gia
+        a, b, x0, x1 = hop[tot]
+        c, d, y0, y1 = hop[tot + 1]
+        hop[tot] = [a, d, min(x0, y0), max(x1, y1)]
+        del hop[tot + 1]
+    return [tuple(x) for x in hop]
+
+
+def do_hop_chu(src: str | Path, dai: DaiChu, fps: float = HOP_FPS,
+               doan: float = HOP_DOAN, toi_da: int = HOP_NHO_TOI_DA) -> DaiChu:
+    """Thu DẢI NGANG về HỘP CHỮ: bề ngang theo mép chữ THẬT, đổi theo thời gian.
+
+    Trả về BẢN SAO của `dai` với `x0/x1` = hộp HỢP cả video (khít) và `hop` =
+    [(t0, t1, x0, x1), …] theo thời gian NGUỒN.
+
+    **KHÔNG BAO GIỜ NÉM, KHÔNG BAO GIỜ ĐỘNG VÀO `co_chu`.** Việc "có chữ hay
+    không" đã chốt ở `do_dai_chu` và đó là cửa giữ kỉ lục CHE OAN 0/76 — hàm
+    này chỉ được phép làm vùng che NHỎ LẠI. Dò hỏng/ít bằng chứng -> trả
+    `dai` y nguyên (che nguyên dải như trước, không sót chữ).
+    """
+    if not dai or not dai.co_chu or dai.cao_dai <= 0:
+        return dai
+    try:
+        arr, w, off = _doc_dai_day(src, dai, fps=fps)
+        if arr is None:
+            return dai
+        n = arr.shape[0]
+        W = int(dai.rong)
+        tyv = w / float(max(1, W))
+        r0 = max(0, int(dai.y0 * tyv) - off)
+        r1 = min(arr.shape[1], max(r0 + 2, int(dai.y1 * tyv) - off))
+        mns = np.stack([_mat_na(g) for g in arr])
+        const = (mns.sum(axis=0) >= TY_LE_HANG * n).astype(np.uint8)
+        doi = np.clip(mns.astype(np.int16) - const[None], 0, 1).astype(np.uint8)
+        gia = _loc_thoi_gian(doi)
+        hs = [_be_ngang(gia[i], r0, r1, w) for i in range(n)]
+        co = [x for x in hs if x]
+        if len(co) < max(6, int(HOP_TY_KHUNG_MIN * n)):
+            return dai                      # ít bằng chứng -> GIỮ NGUYÊN DẢI
+        hep_min = HOP_HEP_MIN * w
+
+        def _khit(bs) -> Optional[tuple]:
+            bs = [b for b in bs if b]
+            if not bs:
+                return None
+            a = min(b[0] for b in bs) - HOP_DEM
+            z = max(b[1] for b in bs) + HOP_DEM
+            if z - a < hep_min:             # nới đều 2 phía cho đủ sàn
+                bu = (hep_min - (z - a)) / 2.0
+                a, z = a - bu, z + bu
+            return max(0.0, a), min(float(w), z)
+
+        buoc = max(1, int(round(doan * fps)))
+        tho = []
+        i = 0
+        while i < n:
+            j = min(n, i + buoc)
+            # lấy DƯ 1 mẫu mỗi phía: dòng phụ đề vắt qua mép đoạn thì mẫu của
+            # nó rơi vào đoạn BÊN CẠNH
+            k = _khit(hs[max(0, i - 1):min(n, j + 1)])
+            tho.append([i / fps, j / fps, k])
+            i = j
+        # đoạn KHÔNG dò ra chữ -> mượn hộp hàng xóm (đừng bỏ trống: chữ có thể
+        # có mà bộ dò trượt; thà che thừa một đoạn còn hơn để lộ)
+        for idx, x in enumerate(tho):
+            if x[2] is None:
+                tr = next((tho[k][2] for k in range(idx - 1, -1, -1)
+                           if tho[k][2]), None)
+                sa = next((tho[k][2] for k in range(idx + 1, len(tho))
+                           if tho[k][2]), None)
+                cc = [c for c in (tr, sa) if c]
+                x[2] = (min(c[0] for c in cc), max(c[1] for c in cc)) if cc \
+                    else None
+        tho = [x for x in tho if x[2]]
+        if not tho:
+            return dai
+        hop = _gop_hop([(a, b, k[0], k[1]) for a, b, k in tho], toi_da)
+
+        def _px(v: float, len_ra: int) -> int:
+            return max(0, min(len_ra, int(round(v / tyv))))
+
+        # BẢN SAO qua `asdict` — KHÔNG dùng `dai.dict()`: `dict()` cố ý thêm 2
+        # khoá TÍNH RA (`cao_dai`, `ty_le_thu`) không phải trường của lớp, đưa
+        # ngược vào hàm dựng là TypeError.
+        ra = DaiChu(**asdict(dai))
+        ra.hop = [(round(a, 3), round(b, 3),
+                   _chan(_px(x0, W), xuong=True), _chan(min(W, _px(x1, W))))
+                  for a, b, x0, x1 in hop]
+        ra.x0 = _chan(min(h[2] for h in ra.hop), xuong=True)
+        ra.x1 = min(W, _chan(max(h[3] for h in ra.hop)))
+        ra.x0_dai, ra.x1_dai = dai.x0_dai or dai.x0, dai.x1_dai or dai.x1
+        ra.ly_do = (f"{dai.ly_do} · HỘP CHỮ {len(ra.hop)} mốc, che còn "
+                    f"{ra.ty_le_thu*100:.0f}% bề ngang dải")
+        return ra
+    except Exception:                                          # noqa: BLE001
+        return dai              # dò hộp hỏng -> che nguyên dải, KHÔNG chết
+
+
 # ───────────────────────────── PHẦN 2 — CHE ─────────────────────────────────
 CACH_CHE = ("mo", "khoi", "hat")
 
 
 def loc_che(dai: DaiChu, cach: str = "mo", do_manh: float = 1.0,
-            mau: str = "black", khoang: Optional[Sequence] = None) -> str:
-    """Chuỗi filter ffmpeg CHE dải chữ. Rỗng = không che gì.
+            mau: str = "black", khoang: Optional[Sequence] = None,
+            hop_ra: Optional[Sequence] = None) -> str:
+    """Chuỗi filter ffmpeg CHE chữ. Rỗng = không che gì.
 
     cach:
-      "mo"   — LÀM MỜ dải (boxblur). Giữ được màu/độ sáng nền -> ít lộ, nhìn
-               như nguồn nén xấu chứ không như "bị dán đè".
+      "mo"   — LÀM MỜ (boxblur). Giữ được màu/độ sáng nền -> ít lộ, nhìn như
+               nguồn nén xấu chứ không như "bị dán đè".
       "khoi" — PHỦ KHỐI ĐẶC (drawbox fill). Chắc chắn che hết, nhưng LỘ.
       "hat"  — thu nhỏ rồi phóng lại (pixelate). Để đối chứng, không khuyên
                dùng: ô vuông to nhìn còn lộ hơn khối đặc mà vẫn đọc ra chữ.
     khoang = [(bd, kt), ...] chỉ che trong các khoảng đó; None = che cả clip.
+    `hop_ra` = [(t0, t1, x0, x1), …] **THEO THỜI GIAN ĐẦU RA** (caller phải quy
+    đổi trước — xem `hop_theo_doan`). Có thì mỗi mốc một hộp riêng; None thì
+    dùng MỘT hộp `dai.x0..x1` cho cả clip y như trước.
     """
     if not dai or not dai.co_chu or dai.cao_dai <= 0:
         return ""
-    x, y = int(dai.x0), int(dai.y0)
-    w, h = int(dai.x1 - dai.x0), int(dai.cao_dai)
-    if w <= 1 or h <= 1:
+    y, h = int(dai.y0), int(dai.cao_dai)
+    if h <= 1:
         return ""
-    en = _bieu_thuc_enable(khoang)
+    if hop_ra:
+        khung = [(float(a), float(b), int(x0), int(x1))
+                 for a, b, x0, x1 in hop_ra
+                 if float(b) > float(a) and int(x1) - int(x0) > 1]
+    else:
+        khung = [(0.0, 0.0, int(dai.x0), int(dai.x1))]
+    khung = [k for k in khung if k[3] - k[2] > 1]
+    if not khung:
+        return ""
     if cach == "khoi":
-        f = (f"drawbox=x={x}:y={y}:w={w}:h={h}:color={mau}@1:t=fill")
-        return f + en
-    # 'mo' và 'hat' phải CẮT RA — LÀM — DÁN LẠI (boxblur/scale không có `enable`
-    # theo vùng). Cùng khuôn "cắt mảnh" mà nhóm shader/lớp phủ đang dùng.
+        # `drawbox` CÓ timeline `enable` -> nối thẳng bằng dấu phẩy, không cần
+        # split/overlay. Rẻ nhất trong 3 cách (đo −0,01 s/phút).
+        ve = []
+        for (a, b, x0, x1) in khung:
+            en = (_bieu_thuc_enable([(a, b)]) if hop_ra
+                  else _bieu_thuc_enable(khoang))
+            ve.append(f"drawbox=x={x0}:y={y}:w={x1-x0}:h={h}:"
+                      f"color={mau}@1:t=fill{en}")
+        return ",".join(ve)
+    # 'mo' và 'hat' phải CẮT RA — LÀM — DÁN LẠI (`scale` không có `enable` theo
+    # vùng). Cùng khuôn "cắt mảnh" mà nhóm shader/lớp phủ đang dùng.
+    ve = []
+    for i, (a, b, x0, x1) in enumerate(khung):
+        w = x1 - x0
+        en = (_bieu_thuc_enable([(a, b)]) if hop_ra
+              else _bieu_thuc_enable(khoang))
+        lam = _loc_lam(cach, w, h, do_manh)
+        # `boxblur` CÓ timeline `enable` -> ngoài cửa sổ nó CHO QUA NGUYÊN VẸN,
+        # nên nhiều mốc không nhân chi phí lên: chỉ mốc đang bật mới làm mờ.
+        # (`crop` không có timeline nhưng nó gần như không tốn gì.)
+        if cach != "hat":
+            lam += en
+        vao = "" if i == 0 else f"[cc_d{i-1}]"
+        ra_nhan = "" if i == len(khung) - 1 else f"[cc_d{i}]"
+        ve.append(f"{vao}split[cc_a{i}][cc_b{i}]")
+        ve.append(f"[cc_b{i}]crop={w}:{h}:{x0}:{y},{lam}[cc_c{i}]")
+        ve.append(f"[cc_a{i}][cc_c{i}]overlay={x0}:{y}{en}{ra_nhan}")
+    return ";".join(ve)
+
+
+def _loc_lam(cach: str, w: int, h: int, do_manh: float) -> str:
+    """Phần LÀM MỜ / LÀM HẠT cho một hộp w x h."""
     if cach == "hat":
         o = max(2, int(min(w, h) / max(1.0, 6.0 * do_manh)))
-        lam = (f"scale={max(2, w // o)}:{max(2, h // o)}:flags=area,"
-               f"scale={w}:{h}:flags=neighbor")
-    else:
-        # BÁN KÍNH PHẢI HỢP LỆ, KHÔNG CHỈ "LỚN HƠN 2".
-        # LỖI THẬT (tìm ra 14/08/2026 khi đo giá từng mảnh, dựng dải giả 2x2):
-        # bản cũ có `max(2, ...)` ở CẢ HAI vế kẹp nên với dải nhỏ nó ép bán
-        # kính về **2** trong khi `boxblur` đòi `radius <= min(w,h)/2` -> ffmpeg
-        # báo *"Invalid luma_param radius value 2, must be >= 0 and <= 1"* rồi
-        # **CHẾT CẢ LƯỢT XUẤT** (0 khung, "Nothing was written into output
-        # file"). Tức một dải chữ hẹp bất thường là mất trắng clip, không phải
-        # "che xấu một chút". Nay kẹp bằng `min(...)` THẬT, sàn 1.
-        # CHROMA: yuv420p lấy mẫu màu 2x2 nên mặt phẳng màu chỉ w/2 x h/2 ->
-        # trần của chroma_radius là w//4 / h//4, KHÔNG phải r//2.
-        r = max(1, int(h / 3.2 * do_manh))
-        r = min(r, max(1, w // 2), max(1, h // 2))
-        cr = min(max(0, r // 2), max(0, w // 4), max(0, h // 4))
-        lam = (f"boxblur=luma_radius={r}:luma_power=3"
-               f":chroma_radius={cr}:chroma_power=2")
-    return (f"split[cc_a][cc_b];"
-            f"[cc_b]crop={w}:{h}:{x}:{y},{lam}[cc_c];"
-            f"[cc_a][cc_c]overlay={x}:{y}{en}")
+        return (f"scale={max(2, w // o)}:{max(2, h // o)}:flags=area,"
+                f"scale={w}:{h}:flags=neighbor")
+    # BÁN KÍNH PHẢI HỢP LỆ, KHÔNG CHỈ "LỚN HƠN 2".
+    # LỖI THẬT (tìm ra 14/08/2026 khi đo giá từng mảnh, dựng dải giả 2x2):
+    # bản cũ có `max(2, ...)` ở CẢ HAI vế kẹp nên với dải nhỏ nó ép bán
+    # kính về **2** trong khi `boxblur` đòi `radius <= min(w,h)/2` -> ffmpeg
+    # báo *"Invalid luma_param radius value 2, must be >= 0 and <= 1"* rồi
+    # **CHẾT CẢ LƯỢT XUẤT** (0 khung, "Nothing was written into output
+    # file"). Tức một dải chữ hẹp bất thường là mất trắng clip, không phải
+    # "che xấu một chút". Nay kẹp bằng `min(...)` THẬT, sàn 1.
+    # HỘP CHỮ làm ca này THƯỜNG GẶP HƠN HẲN: hộp hẹp hơn dải nên `w//2` là
+    # trần thật sự bị chạm (dải 1280 px không bao giờ chạm, hộp 90 px thì có).
+    # CHROMA: yuv420p lấy mẫu màu 2x2 nên mặt phẳng màu chỉ w/2 x h/2 ->
+    # trần của chroma_radius là w//4 / h//4, KHÔNG phải r//2.
+    r = max(1, int(h / 3.2 * do_manh))
+    r = min(r, max(1, w // 2), max(1, h // 2))
+    cr = min(max(0, r // 2), max(0, w // 4), max(0, h // 4))
+    return (f"boxblur=luma_radius={r}:luma_power=3"
+            f":chroma_radius={cr}:chroma_power=2")
 
 
 def _bieu_thuc_enable(khoang: Optional[Sequence]) -> str:
@@ -520,6 +828,60 @@ def _bieu_thuc_enable(khoang: Optional[Sequence]) -> str:
     ve = "+".join(f"between(t,{float(a):.3f},{float(b):.3f})"
                   for a, b in khoang if float(b) > float(a))
     return f":enable='{ve}'" if ve else ""
+
+
+#: Nới hai mép mỗi cửa sổ `enable` (giây). Ba lý do, tất cả đều làm cửa sổ
+#: RỘNG RA (an toàn một chiều): mốc dò cách nhau 0,5s nên biên chỉ đúng tới
+#: ±0,25s · chỗ ghép đoạn có `xfade` trộn hình hai đoạn trong 0,25-0,4s ·
+#: nguồn VFR làm mốc trôi vài chục ms. Hai cửa sổ chồng nhau thì CẢ HAI hộp
+#: cùng che — thừa một chút, không sót.
+HOP_LE_GIAY = 0.35
+
+
+def hop_theo_doan(dai: DaiChu, segs: Optional[Sequence]) -> list:
+    """Quy HỘP từ THỜI GIAN NGUỒN sang THỜI GIAN ĐẦU RA của clip.
+
+    `segs` = [(bắt_đầu, kết_thúc), …] **theo đúng thứ tự sẽ ghép** (kể cả
+    hook-first = NGƯỢC thời gian). Mốc đầu ra của đoạn i = TỔNG ĐỘ DÀI GỐC của
+    các đoạn trước nó — đúng trục mà file `.ass` đang dùng, và `_bu_xfade` của
+    `ffmpeg_utils` được viết ra chính là để giữ trục đó (xem cổng 36: lấy thêm
+    `d` giây ở cuối đoạn trước rồi đặt `offset = độ_dài_GỐC`, nhờ vậy
+    "KHÔNG phải sửa `.ass`").
+
+    Trả [] nếu không quy đổi được -> caller dùng MỘT hộp cho cả clip.
+    """
+    if not dai or not dai.hop or not segs:
+        return []
+    try:
+        ds = [(float(a), float(b)) for a, b in segs if float(b) > float(a)]
+    except (TypeError, ValueError):
+        return []
+    if not ds:
+        return []
+    ra = []
+    off = 0.0
+    for (s, e) in ds:
+        for (t0, t1, x0, x1) in dai.hop:
+            a, b = max(float(t0), s), min(float(t1), e)
+            if b <= a:
+                continue
+            ra.append((max(0.0, off + (a - s) - HOP_LE_GIAY),
+                       off + (b - s) + HOP_LE_GIAY, int(x0), int(x1)))
+        off += e - s
+    if not ra:
+        return []
+    ra.sort()
+    # gộp mốc LIỀN NHAU cùng hộp (đỡ một nhánh filter mà không đổi kết quả)
+    gon = [list(ra[0])]
+    for m in ra[1:]:
+        p = gon[-1]
+        if m[2] == p[2] and m[3] == p[3] and m[0] <= p[1] + 1e-6:
+            p[1] = max(p[1], m[1])
+        else:
+            gon.append(list(m))
+    # rồi mới hạ về TRẦN CỦA ĐỒ THỊ FILTER — gộp ở đây (sau khi đã biết clip
+    # lấy đoạn nào) chứ không gộp ở mức VIDEO, xem ghi chú `HOP_NHO_TOI_DA`.
+    return _gop_hop([tuple(x) for x in gon], HOP_TOI_DA)
 
 
 # ───────────────────────── PHẦN 3 — VIẾT CHỮ MỚI ────────────────────────────
@@ -641,6 +1003,8 @@ def che_va_viet(src: str | Path, dst: str | Path,
     tt = thong_tin(src)
     if dai is None:
         dai = do_dai_chu(src)
+        if dai.co_chu and _BAT_HOP:
+            dai = do_hop_chu(src, dai)
     bao = {"dai": dai.dict() if dai else None, "cach": cach,
            "che": False, "so_dong": 0, "ass": ""}
     tam = Path(thu_muc_tam or Path(dst).parent)
@@ -648,7 +1012,12 @@ def che_va_viet(src: str | Path, dst: str | Path,
     ass = tam / (Path(dst).stem + ".che_chu.ass")
 
     chuoi = []
-    f_che = loc_che(dai, cach=cach, do_manh=do_manh, khoang=khoang)
+    # Hàm này xử lý CẢ video (không `-ss`, không ghép đoạn) nên THỜI GIAN ĐẦU
+    # RA = THỜI GIAN NGUỒN -> `segs` chính là [(0, độ dài)].
+    hop_ra = (hop_theo_doan(dai, [(0.0, tt["do_dai"])])
+              if (dai and dai.hop and not khoang and tt["do_dai"] > 0) else [])
+    f_che = loc_che(dai, cach=cach, do_manh=do_manh, khoang=khoang,
+                    hop_ra=hop_ra or None)
     if f_che:
         chuoi.append(f_che)
         bao["che"] = True
@@ -814,6 +1183,12 @@ def dai_theo_video(src: str | Path, so_khung: int = SO_KHUNG) -> DaiChu:
             if key in _DAI_NHO:
                 return _DAI_NHO[key]
         d = do_dai_chu(src, so_khung=so_khung)
+        # THU DẢI VỀ HỘP CHỮ — chỉ chạy khi ĐÃ kết luận CÓ chữ. Video không chữ
+        # (phần đông kho của anh Hùng) vì thế KHÔNG tốn thêm một giây nào, và
+        # kỉ lục "che oan 0/76" không bị đụng tới: `do_hop_chu` không được phép
+        # đổi `co_chu`, nó chỉ làm vùng che NHỎ LẠI.
+        if d.co_chu and _BAT_HOP:
+            d = do_hop_chu(src, d)
         with _SO_KHOA:
             if len(_DAI_NHO) >= _NHO_TOI_DA:
                 _DAI_NHO.clear()
@@ -824,14 +1199,20 @@ def dai_theo_video(src: str | Path, so_khung: int = SO_KHUNG) -> DaiChu:
 
 def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
                  dai: Optional[DaiChu] = None,
-                 so_khung: int = SO_KHUNG) -> tuple:
+                 so_khung: int = SO_KHUNG,
+                 segs: Optional[Sequence] = None) -> tuple:
     """(chuỗi_filter, DaiChu, lý_do) cho ĐƯỜNG XUẤT. Chuỗi rỗng = KHÔNG che.
 
     Chuỗi trả về là một MẢNH chuỗi filter THIẾU nhãn hai đầu, đúng khuôn
     `parts` của `export_canvas_clip` đang dùng: caller ghép
     `f"{nhãn_vào}{chuỗi}[nhãn_ra]"`. `loc_che` trả về một GRAPH ngăn bằng `;`
     mà chuỗi ĐẦU bắt đầu bằng `split` và chuỗi CUỐI kết bằng `overlay=x:y`, nên
-    bọc hai đầu là ra graph hợp lệ (cách "khoi" chỉ có một `drawbox`).
+    bọc hai đầu là ra graph hợp lệ (cách "khoi" chỉ có `drawbox` nối bằng `,`).
+
+    `segs` = các đoạn nguồn sẽ ghép thành clip, ĐÚNG THỨ TỰ (hook-first thì
+    NGƯỢC thời gian — cứ truyền y như `export_canvas_clip` nhận). Có `segs` thì
+    hộp chữ đổi THEO MỐC; không có thì dùng MỘT hộp HỢP cả video (vẫn hẹp hơn
+    dải, chỉ là không bám theo từng dòng).
 
     KHÔNG dò ra chữ -> trả rỗng: **che oan video sạch là ca sai đắt nhất** của
     tính năng này (đo ở cổng 56: 0/76 video không chữ bị che).
@@ -844,15 +1225,24 @@ def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
         return "", None, "dò dải chữ lỗi -> KHÔNG che"
     if not d.co_chu:
         return "", d, f"KHÔNG che ({d.ly_do})"
-    f = loc_che(d, cach=chuan_cach(cach), do_manh=chuan_muc_mo(muc))
+    hop_ra = hop_theo_doan(d, segs)
+    f = loc_che(d, cach=chuan_cach(cach), do_manh=chuan_muc_mo(muc),
+                hop_ra=hop_ra or None)
     if not f:
         return "", d, f"dải không dùng được (cao {d.cao_dai}px) -> KHÔNG che"
     ten = "làm mờ" if chuan_cach(cach) == "mo" else "phủ khối"
     # dấu PHẨY thập phân (tiếng Việt) — chỉ đổi TRONG SỐ, đừng `.replace('.',
     # ',')` cả câu: bản đầu làm thế và biến `y=678..714` thành `y=678,,714`.
     mm = f"{chuan_muc_mo(muc):.2f}".replace(".", ",")
-    return f, d, (f"che dải y={d.y0}..{d.y1} ({d.cao_dai}px) x={d.x0}..{d.x1}"
-                  f" — {ten} mức {mm}")
+    if hop_ra:
+        tb = sum((b - a) * (x1 - x0) for a, b, x0, x1 in hop_ra) / \
+            max(1e-6, sum(b - a for a, b, _, _ in hop_ra))
+        rong_dai = max(1, (d.x1_dai or d.x1) - (d.x0_dai or d.x0))
+        vi = (f"che HỘP CHỮ {len(hop_ra)} mốc, rộng TB {tb:.0f}px "
+              f"(dải cũ {rong_dai}px = {tb/rong_dai*100:.0f}%)")
+    else:
+        vi = f"che dải x={d.x0}..{d.x1}"
+    return f, d, (f"{vi} y={d.y0}..{d.y1} ({d.cao_dai}px) — {ten} mức {mm}")
 
 
 def trich_khung(src: str | Path, t: float, dst: str | Path,

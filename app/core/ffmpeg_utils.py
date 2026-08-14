@@ -3380,8 +3380,17 @@ def export_canvas_clip(
         _raise_if_job_canceled()   # bấm Huỷ -> đừng đọc 16 khung rồi mới chết
         try:
             from app.core import che_chu as _CC
+            # `segs` = các đoạn nguồn sẽ ghép, ĐÚNG THỨ TỰ (hook-first thì
+            # NGƯỢC thời gian). Nhờ nó `che_chu` đổi HỘP CHE theo từng mốc thay
+            # vì che một DẢI NGANG suốt clip (anh Hùng 14/08/2026: *"che mờ
+            # ĐÚNG VỊ TRÍ chữ xuất hiện thôi"*). Trục thời gian của `enable=`
+            # là trục ĐẦU RA — đúng trục `.ass` đang dùng, và `_bu_xfade` viết
+            # ra chính là để giữ trục đó. Không truyền `segs` thì
+            # `loc_cho_xuat` tự lùi về MỘT hộp cho cả clip: vẫn đúng, chỉ che
+            # thừa hơn.
             _cc_loc, _cc_dai, _cc_ly = _CC.loc_cho_xuat(
-                src, cach=che_chu_cach, muc=che_chu_muc, dai=che_chu_dai)
+                src, cach=che_chu_cach, muc=che_chu_muc, dai=che_chu_dai,
+                segs=segs)
         except Exception as _e:    # noqa: BLE001 — che chữ KHÔNG được làm chết
             _cc_loc, _cc_dai = "", None            # lượt xuất; nói ra lý do
             _cc_ly = f"dò/che chữ lỗi ({_e}) -> KHÔNG che"
