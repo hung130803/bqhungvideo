@@ -345,13 +345,18 @@ def buoc_tu_tien_trinh(p: float, loi_nhan: str = "") -> tuple:
     thẳng hàm này.
     """
     m = (loi_nhan or "").lower()
+    # THỨ TỰ NÀY LÀ MỘT PHÉP ĐO, ĐỪNG SẮP LẠI CHO "gọn": lời nhắn bước 5 là
+    # *"Đọc bản dịch..."* — nó CHỨA chữ "dịch" nên nếu ("dịch", 4) đứng trước
+    # thì bước ĐỌC hiện thành "Đang dịch" và bảng KHÔNG BAO GIỜ hiện "Đang
+    # đọc" (cổng 57 mục 1 bắt được đúng lỗi này). Cụm DÀI/RIÊNG phải xét
+    # trước cụm ngắn dùng chung chữ.
     khoa = (
         ("rút tiếng", 1), ("rut tieng", 1),
         ("tách giọng", 2), ("tach giong", 2), ("demucs", 2),
         ("chép lời", 3), ("chep loi", 3),
-        ("dịch", 4), ("dich ", 4),
-        ("đọc bản dịch", 5), ("doc ban dich", 5),
+        ("đọc", 5), ("doc ban dich", 5),        # TRƯỚC "dịch" — xem trên
         ("rút gọn", 6), ("rut gon", 6),
+        ("dịch", 4), ("dich ", 4),
         ("khớp thời gian", 7), ("khop thoi gian", 7),
         ("trộn tiếng", 8), ("tron tieng", 8),
         ("ghép tiếng", 8), ("ghep tieng", 8),

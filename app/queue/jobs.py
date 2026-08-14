@@ -238,6 +238,20 @@ def _auto_recap(payload: dict, ctx: JobContext) -> dict:
     return {"video_id": video_id, **res}
 
 
+def _don_thu_muc_tam(payload: dict) -> None:
+    """Dọn thư mục làm việc tạm của MỘT video thay giọng.
+
+    Phải dọn CẢ khi lỗi: file wav/mp3 của một video 10 phút lên hàng trăm MB,
+    300 kênh mà mỗi video lỗi bỏ lại một đống là đúng đường dẫn tới "ổ C đầy
+    100%" đã xảy ra thật hôm 31/07. Không bao giờ ném lỗi.
+    """
+    import shutil
+
+    lam = str(payload.get("thu_muc_lam") or "")
+    if lam and os.path.isdir(lam):
+        shutil.rmtree(lam, ignore_errors=True)
+
+
 def _thay_giong(payload: dict, ctx: JobContext) -> dict:
     """THAY GIỌNG NÓI cho MỘT video (làn riêng `LAN_TG`, xem worker.py).
 
@@ -304,13 +318,17 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             on_progress=_prog,
         )
     except tg.HuyBo as e:
+        # HUỶ ≠ LỖI: KHÔNG ghi sổ (lượt sau vẫn phải chạy lại video này) và
+        # KHÔNG dọn thư mục tạm (file có thể còn bị tiến trình con giữ).
         raise CanceledError() from e
     except Exception as e:           # noqa: BLE001 - ghi sổ rồi ném tiếp
         tg_so.ghi(goc, tg_so.LOI, loi=f"{type(e).__name__}: {e}"[:300])
+        _don_thu_muc_tam(payload)
         raise
     if not r.get("ok"):
         loi = str(r.get("loi") or "Thay giọng lỗi không rõ")
         tg_so.ghi(goc, tg_so.LOI, loi=loi[:300])
+        _don_thu_muc_tam(payload)
         raise RuntimeError(loi)
 
     # --- ĐẶT BẢN MỚI VÀO THƯ MỤC ĐÍCH (giữ NGUYÊN tên file gốc) ---
@@ -324,11 +342,7 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             f"Không đặt được video mới vào thư mục đích: {e}") from e
     r["ra"] = dich
 
-    # dọn thư mục làm việc tạm (wav/mp3 của 1 video 10 phút lên hàng trăm MB)
-    lam = str(payload.get("thu_muc_lam") or "")
-    if lam and os.path.isdir(lam):
-        shutil.rmtree(lam, ignore_errors=True)
-
+    _don_thu_muc_tam(payload)
     tg_so.ghi(goc, tg_so.XONG, ra=dich, giay=r.get("giay_tong"),
               dich_sang=str(payload.get("dich_sang") or ""))
     # gọn lại cho cột `result` của bảng jobs (bỏ mảng câu/đường dẫn tạm)
