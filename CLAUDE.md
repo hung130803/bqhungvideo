@@ -1172,8 +1172,9 @@
      tải xong danh sách -> mở hộp rồi Lưu ngay là **ghi đè giọng user đã chọn
      bằng `""`** (đúng họ lỗi "chọn X ra Y"). Nay dựng combo NGAY với giá trị
      đã lưu, thread nền chỉ bổ sung.
-     **CHƯA ĐẠT, GHI THẲNG:** `tempo_max` vẫn sát trần 1,5 như cổng 53 đã đo
-     (rút gọn giúp nhưng chưa đủ) · bản `.exe` vẫn KHÔNG gói torch nên máy
+     **`tempo_max` SÁT TRẦN 1,5 — ĐÃ CHỮA TẬN GỐC ở v2.27.0, xem khối
+     "BỎ ÉP NHANH" bên dưới.**
+     **CHƯA ĐẠT, GHI THẲNG:** bản `.exe` vẫn KHÔNG gói torch nên máy
      nhân viên phải bấm nút tải (~2 GB) và **phải có Python 3 trên máy** thì
      app mới tải/chạy được — không có Python thì hộp báo thẳng, không im lặng.
   56. `_test_che_chu.py` → **CHE CHỮ CHÁY SẴN TRONG HÌNH** (`app/core/
@@ -1249,10 +1250,50 @@
      đường filter + 3 phép của đường truyền cờ: `studio_page` truyền hằng số
      `che_chu=False` (FAIL 1) · gỡ hẳn 3 tham số khỏi `studio_page` (FAIL 1) ·
      cờ không vào `sig` (FAIL 6).
+     **THU DẢI NGANG VỀ HỘP CHỮ (v2.27.0, CA 24 — con số chính anh Hùng hỏi:
+     "che ít đi bao nhiêu?").** `do_hop_chu` dò BỀ NGANG chữ THẬT theo từng
+     đoạn 8 giây rồi đổi hộp theo mốc thời gian; `hop_theo_doan` quy về
+     timeline ĐẦU RA (chịu được hook-first ngược thời gian). Chỉ chạy SAU khi
+     `do_dai_chu` đã kết luận CÓ chữ, và **KHÔNG được phép đổi `co_chu`** —
+     nhờ vậy kỉ lục CHE OAN 0/76 không bị đụng tới (CA 24e đo lại: 2 video
+     sạch -> chuỗi filter RỖNG kể cả khi bật hộp).
+     **SỐ ĐO (đường xuất THẬT, 2 đoạn hook-first, clip 60 s):**
+     · `zh_ep12` 1,55 -> 1,21 triệu điểm-ảnh·giây = **GIẢM 21,5%** (6 hộp,
+       rộng TB 528 px trên dải 716 px)
+     · `zh_dongho` 3,38 -> 2,34 = **GIẢM 30,8%** (6 hộp, 763 px trên 1106 px)
+     · clip MỘT đoạn: 1,55 -> 1,30 = **GIẢM 16,0%**
+     **HỘP CÒN CHE *KÍN HƠN* DẢI, KHÔNG CHỈ NHỎ HƠN — và đây mới là phần đáng
+     giá.** Dải mọc theo ngưỡng 0,40 lần đỉnh nên nó DỪNG ở chỗ nét chữ thưa,
+     tức **CHÓP và CHÂN chữ nằm NGOÀI dải**: trích khung ra nhìn thấy rõ một
+     HÀNG GẠCH ĐỨT ở hai mép ô mờ. Lỗi này **CÓ SẴN trong bản dải (v2.26.0 anh
+     Hùng đang chạy)**, hộp chỉ làm nó dễ thấy nên mới bị bắt. `HOP_CAO_THEM`
+     nới tối đa 3 hàng (hệ RONG_DO) mỗi phía, chỉ nới khi hàng đó còn >= 10%
+     mật độ nét trong dải. Đo nét ở 9 hàng ngay ngoài dải trên FILE XUẤT
+     (`zh_dongho`, 3 mốc): gốc 8,48/10,40 -> **DẢI 10,01/13,77 (CÒN NGUYÊN,
+     thậm chí đậm hơn vì thêm mép ô mờ) · HỘP 3,56/3,32 (SẠCH)**.
+     **CHE HẾT CHỮ, KHÔNG SÓT Ở RÌA:** phép đo phải lấy **CẢ BỀ NGANG DẢI CŨ**
+     chứ không phải trong hộp — đo trong hộp là tự hỏi "chỗ tôi che có sạch
+     không" (luôn sạch), câu cần hỏi là "chỗ tôi BỎ RA có sót chữ không". Mật
+     độ nét trên cả bề ngang dải: **0,32 -> 0,0000** (`zh_ep12`) ·
+     **0,35 -> 0,0020** (`zh_dongho`). Kèm ảnh phóng to 2× (`ZOOM_*.png`) để
+     người tự nhìn — CHỮ BIẾN MẤT HẲN, và ở `zh_dongho` nhìn rõ vật thể bên
+     phải khung **vẫn SẮC NÉT** trong bản hộp trong khi bản dải đã bôi nhoè nó.
+     **GIÁ PHẢI TRẢ, GHI THẲNG (CA 17):** hộp dựng **N split + N crop +
+     N boxblur + N overlay** (N = số mốc, đo 6 mốc/clip 60 s) nên **đắt hơn
+     dải ~4 lần**. Đo đan xen 3 vòng cùng máy cùng clip, ba lượt thô lệch nhau
+     < 0,05 s (tức KHÔNG phải máy bận): **TẮT 6,65 s · DẢI +0,84 s/phút ·
+     HỘP +3,31 s/phút**. Vì vậy CA 17 tách thành 3 mục, **mỗi kiến trúc một
+     trần** (DẢI 2,0 · HỘP 4,5 · hiệu HỘP−DẢI <= 3,5) thay vì nới một trần
+     chung lên 4,0 — trần tồn tại để bắt "ai đó lỡ thêm một lượt ffmpeg THỨ
+     HAI" (35-76 giây cho video 10 phút = **3,5-7,6 s/phút**), nới trần chung
+     lên 4,0 là vừa đúng chỗ mất khả năng bắt cái đó. Muốn rẻ thì chọn cách
+     **"phủ khối"**: `drawbox` có `enable` sẵn nên không cần split/overlay
+     (đo −0,01 s/phút), và `BQ_CHE_HOP=0` tắt hẳn bước thu-về-hộp.
      **CHƯA ĐẠT, GHI THẲNG:** chỉ dò **dải ĐÁY** (`che_chu.py` chỉ quét từ một
      mốc trở xuống) — chữ ở đỉnh/giữa khung KHÔNG che · **Mixed-Cut và mẫu
      "clip đơn" KHÔNG che** (chưa đi qua `export_canvas_clip`) · sổ nhớ dò dải
      (`_DAI_NHO`) **chỉ ở RAM**, tắt app là mất, mở lại phải dò lại từ đầu ·
+     hộp làm lượt xuất **chậm thêm 3,3 giây mỗi phút phim** (số ở trên) ·
      chưa ai xem bằng mắt trên máy nhân viên thật.
   57. `_test_tg_bang_tiendo.py` → **HỘP THAY GIỌNG: BẢNG TIẾN ĐỘ SỐNG · THƯ
      MỤC VÀO/RA · NHỚ VIDEO ĐÃ XONG** (v2.27.0, 14/08/2026). Anh Hùng dùng
@@ -1315,7 +1356,63 @@
      CẤP (`liet_ke_video` không đệ quy) nên chọn thư mục mẹ chứa 300 thư mục
      kênh thì bảng trống · sổ chỉ ghi lúc job KẾT THÚC, tắt app giữa chừng thì
      video đang dở chạy lại từ bước 0 · chưa ai bấm thử trên máy nhân viên
-     thật.
+     thật · `app/services.py:enqueue_thay_giong` nay là **MÃ CHẾT** (không một
+     nơi nào gọi — đường thật là `tg_chay.xep_mot`).
+- **BỎ ÉP NHANH (`atempo`) — CHỮA TẬN GỐC "NÓI KHÔNG MƯỢT" (v2.27.0,
+  14/08/2026).** Anh Hùng nghe thật và báo *"phần sub thoại giọng lồng tiếng
+  cảm giác KHÔNG KHỚP, KHÔNG MƯỢT, nói còn nhiều lỗi"*. Cổng 53/55 chỉ có MỘT
+  con số `tempo_max` và lượt nào cũng **sát trần 1,5**.
+  **GỐC RỄ ĐO ĐƯỢC (`_do_le_im.py`, `silencedetect` trên chính file edge-tts
+  trả về): edge-tts chèn ~0,20 s im ở ĐẦU và ~0,87 s im ở CUỐI MỖI CÂU**, bất
+  kể câu dài hay ngắn. Câu dịch 12 ký tự: file **1,848 s** nhưng tiếng THẬT chỉ
+  **0,762 s = 58% file là im lặng**. App cũ đo độ dài bằng `probe_duration`
+  (TÍNH CẢ LỀ IM) rồi ép `atempo` cho lọt khung -> **ép méo TIẾNG NÓI THẬT chỉ
+  để nén KHOẢNG IM**. `atempo` là WSOLA (cắt sóng, dán chồng), đo được **5,357
+  dB méo phổ ở 1,20 · 6,765 ở 1,50 · 8,071 ở 1,80** — đúng cái tai nghe ra.
+  **BỐN BƯỚC CHỮA, theo thứ tự (đừng đổi):** cắt lề im TRƯỚC khi đo khung
+  (`cat_le_loat`, giữ 0,04 s đầu / 0,08 s cuối cho khỏi cụt phụ âm) -> rút NGẮN
+  CHỮ theo NGÂN SÁCH KÝ TỰ đo được -> **ĐỌC NHANH bằng `rate` của edge-tts**
+  (mô hình tự đọc nhanh, KHÔNG có phép cắt-dán nào nên méo = 0 theo cấu tạo;
+  đo `+5% -> 1,046× · +20% -> 1,190 · +50% -> 1,455`, WER không xấu đi) ->
+  mượn khoảng lặng -> `atempo` chỉ còn là chốt cuối.
+  **BẢNG SỐ — 3 LƯỢT, 2 NGUỒN (LLM KHÔNG TIỀN ĐỊNH, chạy 1 lượt rồi báo là tự
+  lừa mình: đã gặp 0% vs 39,1%):**
+
+  | nguồn zh (Douyin 90 s, 43-44 câu, Trung -> Anh) | cũ (lượt 1/2/3) | **v2.27.0 (lượt 1/2/3)** |
+  |---|---|---|
+  | câu chạm trần 1,5 | 26,8% · 23,3% · 31,7% | **0,0% · 0,0% · 0,0%** |
+  | câu vượt 1,30 | 46,3% · 39,5% · 51,2% | **0,0% · 0,0% · 0,0%** |
+  | chồng lấn | 574 ms/14 câu · 561/10 · 574/15 | **0 ms / 0 câu (cả 3)** |
+  | `tempo_max` | 1,467 · 1,485 · 1,500 | **1,017 · 1,027 · 1,017** |
+
+  Nguồn `en` (19 câu, Anh -> Việt): **0,0% ở MỌI bậc cả 3 lượt**, chồng lấn
+  **0 ms**, `tempo_max` **1,002 · 1,000 · 1,000**. Tức **CHỒNG LẤN 0 ms là BẤT
+  BIẾN, 6/6 lượt trên 2 nguồn** — không phải may. Lề im cắt được: zh bỏ
+  **41,8-42,8 s / 125-129 s** file TTS (33%), en bỏ **18,9 s / 67,7-69,3 s**.
+  **RÚT GỌN CÓ LÀM MẤT NGHĨA KHÔNG — CÓ, VÀ ĐÂY LÀ SỐ.** `dich_hau_kiem` chỉ
+  chấm bản dịch ĐẦU; bước rút gọn sửa chữ SAU đó nên phải chấm LẠI bản CUỐI
+  bằng chính phép dịch-ngược. **BẮT BUỘC có cột ĐỐI CHỨNG "câu KHÔNG bị đổi
+  chữ"**: bộ chấm là LLM và nó chấm cả LOẠT, đổi 15 câu là đổi luôn ngữ cảnh
+  của 28 câu còn lại — không trừ nhiễu đó ra thì không phân biệt được "rút gọn
+  làm mất nghĩa" với "bộ chấm nhấp nháy". Nguồn zh:
+
+  | lượt | câu bị đổi chữ | riêng câu BỊ ĐỔI | nhiễu (câu giữ nguyên) | **TỤT THẬT** |
+  |---|---|---|---|---|
+  | 1 | 15 | 7,00 -> 6,20 | −0,20 | **−0,60** |
+  | 2 | 16 | 7,38 -> 5,31 | −0,83 | **−1,24** |
+  | 3 | 12 | 7,00 -> 6,33 | −0,09 | **−0,58** |
+
+  Ví dụ thật: *"Boss Johnny got out of the car immediately"* -> *"Johnny got
+  out of the car"* (mất "Boss" và "immediately", chấm 4,0). Nguồn en chỉ 2 câu
+  bị đổi nên số ra nhiễu hẳn (+0,18 · +2,21 · −1,68) — **2 điểm dữ liệu không
+  kết luận được gì, ghi ra để khỏi ai đọc nhầm là "tiếng Anh không mất nghĩa"**.
+  **VÌ SAO `NGUONG_RUT_GON` LÀ 1,38 CHỨ KHÔNG PHẢI 1,30, VÀ `RUT_GON_HE_SO`
+  LỚN HƠN 1:** đặt ngưỡng 1,30 + ngân sách nhắm thẳng khung (hệ số 0,92) thì
+  bản dịch bị chặt tới mức MẤT NGHĨA — chấm lại ra **7,19 -> 2,38 · 7,00 ->
+  4,89 · 7,00 -> 2,00**. Từ khi có bước ĐỌC NHANH, phần dôi tới ~1,45 lần khung
+  đã được `rate` nuốt gọn mà không méo tiếng, không mất chữ, nên rút gọn chỉ
+  phải lo phần vượt QUÁ tầm với của `rate`. **Ép nhanh làm xấu TIẾNG, chặt chữ
+  làm xấu NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.**
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
