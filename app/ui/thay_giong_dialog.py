@@ -270,10 +270,13 @@ class ThayGiongDialog(QDialog):
         tt = TG.tinh_trang_demucs()
         self._tt_demucs = tt
         if tt["co"]:
-            self.lb_demucs.setText(
-                "Bộ tách giọng: ĐÃ CÓ (chạy trên "
-                + ("card đồ hoạ" if tt["thiet_bi"] == "cuda" else "CPU")
-                + ").")
+            # `thiet_bi` = '' nghĩa là CHƯA BIẾT (hộp này chạy trong tiến
+            # trình đã nạp Qt nên KHÔNG được import torch để hỏi — xem
+            # `thay_giong.thiet_bi_tach`). Chưa biết thì ĐỪNG ĐOÁN: ghi "CPU"
+            # bừa là máy có card vẫn đọc thành "chạy trên CPU".
+            _tb = {"cuda": " (chạy trên card đồ hoạ)",
+                   "cpu": " (chạy trên CPU)"}.get(tt["thiet_bi"], "")
+            self.lb_demucs.setText(f"Bộ tách giọng: ĐÃ CÓ{_tb}.")
             self.lb_demucs.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
             self.b_tai.setVisible(False)
         else:

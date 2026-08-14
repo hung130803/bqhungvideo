@@ -110,13 +110,29 @@ def main() -> int:
             rc, qh = -9, True
             ra = "QUÁ HẠN\n" + str(getattr(e, "stdout", "") or "")[-4000:]
         dt = time.time() - t0
-        ok = rc == 0 and not qh
+        # ── CRASH NATIVE KHÔNG LÀM ĐỔI MÃ THOÁT — PHẢI TỰ ĐI TÌM ──
+        # Đo thật 14/08/2026: `_test_app_smoke.py` in ra "✅ KHÔNG LỖI" và
+        # **rc=0**, trong khi stderr có *"Windows fatal exception: access
+        # violation"* — `import torch` trong tiến trình đã nạp Qt làm
+        # `torch/lib/c10.dll` nổ ở tầng native. `faulthandler` (app bật từ
+        # cổng 6) CHỘP ĐƯỢC rồi in ra, nhưng nó là VEH: in xong TRẢ QUYỀN cho
+        # handler khác, torch tự gượng dậy ném OSError, `except` của app nuốt
+        # -> mọi thứ "xanh". Tức lượt kiểm toàn bộ đang PASS OAN cho đúng loại
+        # lỗi làm CHẾT APP trên máy anh Hùng.
+        # Vì vậy: thấy dấu hiệu crash native trong output là FAIL, bất kể rc.
+        _crash = [d for d in ("Windows fatal exception",
+                              "Fatal Python error",
+                              "Segmentation fault")
+                  if d in ra]
+        ok = rc == 0 and not qh and not _crash
         dong = [x for x in ra.splitlines() if x.strip()]
         tom = ""
         for x in reversed(dong[-25:]):
             if any(k in x for k in ("ĐẠT", "FAIL", "LỖI", "PASS", "✅", "❌", "hỏng")):
                 tom = x.strip()[:90]
                 break
+        if _crash:      # ĐÈ LÊN dòng tóm tắt: bản thân dòng đó đang nói "ĐẠT"
+            tom = f"CRASH NATIVE dù rc={rc}: {_crash[0]}"
         _m = MOC.get(f)
         print(f"[{i:2d}/{len(ds)}] [{'ĐẠT ' if ok else 'FAIL'}] {f:32s} "
               f"{dt:7.1f}s rc={rc}  {tom}"
@@ -125,7 +141,7 @@ def main() -> int:
             for x in dong[-18:]:
                 print(f"        | {x[:120]}", flush=True)
         ket.append({"file": f, "rc": rc, "giay": round(dt, 1), "dat": ok,
-                    "quahan": qh, "tom": tom})
+                    "quahan": qh, "crash": bool(_crash), "tom": tom})
         (REPO / "_ketqua_log").mkdir(exist_ok=True)
         (REPO / "_ketqua_log" / f"{f}.txt").write_text(
             ra, encoding="utf-8", errors="replace")

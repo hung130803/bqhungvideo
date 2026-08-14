@@ -483,6 +483,39 @@ dat("gỡ CẢ HAI chốt -> bất biến VỠ (ca 4 thật sự đang đo)", _v
 
 
 # ==================================================================
+print("\n=== CA 7: CỬA CUỐI CỦA BẪY torch-SAU-Qt (sót 1 cửa, đã đo) ===")
+# Cổng này (v2.25.0) đã đổi `co_demucs`/`tinh_trang_demucs` sang `find_spec`,
+# NHƯNG `tinh_trang_demucs` vẫn gọi `thiet_bi_tach()` — hàm đó `import torch`.
+# Tiến trình NÀY đã nạp Qt, nên đó đúng là cửa còn lại của bẫy.
+# ĐO ĐƯỢC 14/08/2026 bằng `_test_app_smoke.py`: mở hộp "Thay giọng nói" ->
+# *"Windows fatal exception: access violation"* ở
+# `torch/__init__.py:_load_dll_libraries`, mà **rc vẫn = 0** và cổng vẫn in
+# "KHÔNG LỖI" (faulthandler là VEH: in xong trả quyền, torch ném OSError,
+# `except` nuốt). `try/except` KHÔNG chặn được access violation ở tầng native.
+dat("CA7 tiến trình test này ĐÃ nạp Qt (điều kiện của bẫy)",
+    TG.qt_da_nap(), "PyQt6 có trong sys.modules")
+dat("CA7a `thiet_bi_tach` KHÔNG import torch khi Qt đã nạp -> trả '' "
+    "(CHƯA BIẾT, không phải 'cpu')",
+    TG.thiet_bi_tach() == "", f"trả {TG.thiet_bi_tach()!r}")
+dat("CA7b gọi `thiet_bi_tach` xong torch VẪN KHÔNG bị nạp vào tiến trình",
+    "torch" not in sys.modules,
+    "torch không có trong sys.modules")
+_tt7 = TG.tinh_trang_demucs()
+dat("CA7c `tinh_trang_demucs` (cửa UI gọi) cũng KHÔNG kéo torch vào",
+    "torch" not in sys.modules and _tt7["thiet_bi"] == "",
+    f"thiet_bi={_tt7['thiet_bi']!r} · torch nạp: {'torch' in sys.modules}")
+dat("CA7d nhưng vẫn DÒ RA đủ gói (find_spec vẫn chạy, không bị tắt oan)",
+    _tt7["co"] is True or _tt7["thieu"] != [],
+    f"co={_tt7['co']} · thiếu={_tt7['thieu']}")
+# '' phải hiện thành "ĐÃ CÓ." trơn, KHÔNG được hiện "chạy trên CPU" — đoán
+# bừa là máy có card đồ hoạ vẫn đọc thành CPU (đúng họ lỗi "chọn X ra Y").
+_nhan = {"cuda": " (chạy trên card đồ hoạ)",
+         "cpu": " (chạy trên CPU)"}.get("", "")
+dat("CA7e thiết bị CHƯA BIẾT -> nhãn KHÔNG được đoán bừa 'chạy trên CPU'",
+    _nhan == "", f"nhãn thêm: {_nhan!r}")
+
+
+# ==================================================================
 try:
     pool.stop(wait=False)
 except Exception:  # noqa: BLE001

@@ -312,16 +312,38 @@ def co_demucs() -> bool:
         return False
 
 
+def qt_da_nap() -> bool:
+    """Tiến trình NÀY đã nạp Qt chưa (chỉ NGÓ `sys.modules`, không import gì).
+
+    Dùng để CHẶN `import torch` — xem `thiet_bi_tach`.
+    """
+    return any(m == "PyQt6" or m.startswith("PyQt6.") for m in sys.modules)
+
+
 def thiet_bi_tach() -> str:
-    """'cuda' nếu torch build CÓ CUDA và thấy GPU, ngược lại 'cpu'.
+    """'cuda' nếu torch build CÓ CUDA và thấy GPU · 'cpu' · **'' = chưa biết**.
 
     ĐÃ ĐO: `.venv` app cài torch **2.13.0+cpu** nên trả 'cpu' KỂ CẢ khi máy có
     RTX 3060. Đây là con số quyết định tốc độ — xem báo cáo.
 
-    LƯU Ý: gọi từ TIẾN TRÌNH APP (đã nạp Qt) thì `import torch` chết ->
-    trả 'cpu'. Thiết bị THẬT do `_tach_demucs` đọc ở tiến trình riêng và ghi
-    vào khoá `thiet_bi` của kết quả — đọc số đó, đừng đọc hàm này.
+    **TRẢ '' NGAY KHI TIẾN TRÌNH ĐÃ NẠP Qt — ĐỪNG GỠ CHỐT NÀY.** `try/except`
+    quanh `import torch` KHÔNG đủ: trước khi ném `OSError [WinError 1114]`,
+    `torch/__init__.py:_load_dll_libraries` gây **ACCESS VIOLATION** ở tầng
+    native. Cái đó KHÔNG bắt được bằng `except`; `faulthandler` của app (bật
+    từ cổng 6) chộp được và ghi `logs/crash_native.txt` — tức mỗi lần anh Hùng
+    mở hộp "Thay giọng nói" là một dòng crash native, và app đứng trước rủi ro
+    chết thật. Đo được 14/08/2026 bằng chính `_test_app_smoke.py`:
+    *"Windows fatal exception: access violation"* với ngăn xếp
+    `_thay_giong_dialog -> tinh_trang_demucs -> thiet_bi_tach -> import torch`.
+    Đây là ĐÚNG cái bẫy cổng 55 đã ghi, chỉ là còn SÓT một cửa: `co_demucs` và
+    `tinh_trang_demucs` đã đổi sang `find_spec` rồi, riêng hàm này thì chưa.
+
+    '' KHÔNG PHẢI 'cpu': trả 'cpu' cho ca chưa-biết là NÓI DỐI người dùng (máy
+    có CUDA vẫn hiện "chạy trên CPU"). Thiết bị THẬT do `_tach_demucs` đọc ở
+    TIẾN TRÌNH RIÊNG và ghi vào khoá `thiet_bi` của kết quả — đọc số đó.
     """
+    if qt_da_nap():
+        return ""
     try:
         import torch
         return "cuda" if torch.cuda.is_available() else "cpu"
@@ -410,6 +432,10 @@ def tinh_trang_demucs() -> dict:
         "co": co,
         "thieu": thieu,
         "lib": lib,
+        # '' = CHƯA BIẾT. Hàm này là cửa UI gọi (hộp "Thay giọng nói" dựng
+        # trong tiến trình app ĐÃ NẠP Qt), nên `thiet_bi_tach` ở đây LUÔN trả
+        # '' — đúng như thiết kế, không phải thiếu sót. Thiết bị THẬT nằm ở
+        # kết quả của `_tach_demucs` (tiến trình riêng).
         "thiet_bi": thiet_bi_tach() if co else "",
         "cai_duoc": bool(_lenh_pip()),
         "loi_nhan": "" if co else THIEU_DEMUCS,
