@@ -3357,9 +3357,13 @@ def export_canvas_clip(
 
     # ---- CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) ----------------
     # Nguồn Douyin/reup đốt phụ đề VÀO KHUNG, gỡ ra không được. Đây là chỗ che
-    # nó đi. GỘP VÀO LƯỢT MÃ HOÁ NÀY, KHÔNG thêm lệnh ffmpeg thứ hai — đo được:
-    # gộp vào **+0,1-0,2 giây/phút phim**, chạy riêng một lượt **35-76 giây cho
-    # video 10 phút**. Với 200-300 kênh thì khoảng cách đó là khoản thật.
+    # nó đi. GỘP VÀO LƯỢT MÃ HOÁ NÀY, KHÔNG thêm lệnh ffmpeg thứ hai — chạy
+    # riêng một lượt tốn **35-76 giây cho video 10 phút**. Với 200-300 kênh thì
+    # khoảng cách đó là khoản thật.
+    # CHI PHÍ CỦA CHÍNH CHUỖI CHE (đo đan xen, xem docstring `che_chu.py`):
+    # "làm mờ" **+1,30 s/phút** · "phủ khối" **−0,01 s/phút**. Số +0,1-0,2
+    # từng ghi ở đây CHỈ đúng với "phủ khối" — phần đắt là `boxblur` tranh CPU
+    # với libx264, không phải kiến trúc filter (split/overlay chỉ +0,05).
     #
     # `che_chu=False` -> KHÔNG dò, `_cc_loc` rỗng, KHÔNG một `parts.append` nào
     # => lệnh ffmpeg KHÔNG khác một ký tự nào so với bản trước tính năng này

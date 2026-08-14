@@ -29,9 +29,17 @@ là ffmpeg vẫn trả mã 0 mà chữ ra Ô VUÔNG tofu) và `thay_giong.kiem_v
 
 ĐÃ NỐI VÀO ĐƯỜNG XUẤT (14/08/2026) — xem `loc_cho_xuat` + `dai_theo_video` ở
 CUỐI file. Chuỗi filter được GỘP vào lượt mã hoá SẴN CÓ của
-`ffmpeg_utils.export_canvas_clip`, KHÔNG thêm lượt ffmpeg thứ hai: đo được
-gộp vào = **+0,1-0,2 giây/phút phim**, chạy riêng một lượt = **35-76 giây cho
-video 10 phút** (nhân 200-300 kênh là khoản thật).
+`ffmpeg_utils.export_canvas_clip`, KHÔNG thêm lượt ffmpeg thứ hai: chạy riêng
+một lượt tốn **35-76 giây cho video 10 phút** (nhân 200-300 kênh là khoản
+thật).
+
+CHI PHÍ THẬT CỦA CHUỖI CHE — ĐO LẠI, ĐỪNG CHÉP SỐ CŨ (`_do_che_chu_gia.py`,
+3 vòng ĐAN XEN, cùng máy): **"làm mờ" +1,30 giây/phút phim** · **"phủ khối"
+−0,01 giây/phút** (tức không tốn gì). Con số **+0,1-0,2** từng ghi ở đây CHỈ
+đúng với "phủ khối". Phần đắt là chính `boxblur` TRANH CPU với libx264, KHÔNG
+phải kiến trúc filter: đo riêng phần lọc (`-f null`, không mã hoá) ra +0,34
+s/phút, trong đó split/overlay chỉ **+0,05**. Vì vậy đừng "tối ưu" bằng cách
+đổi cách nối filter — muốn rẻ thì đổi sang "phủ khối".
 """
 from __future__ import annotations
 

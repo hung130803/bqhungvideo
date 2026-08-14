@@ -1176,6 +1176,84 @@
      (rút gọn giúp nhưng chưa đủ) · bản `.exe` vẫn KHÔNG gói torch nên máy
      nhân viên phải bấm nút tải (~2 GB) và **phải có Python 3 trên máy** thì
      app mới tải/chạy được — không có Python thì hộp báo thẳng, không im lặng.
+  56. `_test_che_chu.py` → **CHE CHỮ CHÁY SẴN TRONG HÌNH** (`app/core/
+     che_chu.py`, 14/08/2026). Nguồn Douyin/reup **đốt phụ đề VÀO KHUNG**, gỡ
+     ra không được — thay tiếng sang ngôn ngữ khác thì dòng chữ Trung cũ vẫn
+     nằm đó. App **CHE** dải chữ (làm mờ / phủ khối) rồi viết chữ mới đè lên.
+     Chuỗi filter GỘP vào lượt mã hoá SẴN CÓ của `export_canvas_clip`, **không
+     thêm lệnh ffmpeg thứ hai** (chạy riêng một lượt = 35-76 giây cho video 10
+     phút × 200-300 kênh). **KHÔNG "xoá chữ"/inpaint — đã cân nhắc và LOẠI**:
+     nội dung sau chữ không có ở đâu để lấy, inpaint từng khung ra vệt nhoè
+     NHẤP NHÁY, mô hình video thì GPU + hàng phút/clip.
+     **5 BẪY ĐÃ ĐO — phần giá trị nhất của việc này:**
+     (a) **CHI PHÍ: "làm mờ" +1,30 s/phút phim · "phủ khối" −0,01 s/phút**
+     (`_do_che_chu_gia.py`, 3 vòng ĐAN XEN). Con số **+0,1-0,2** ghi trong bản
+     đầu **CHỈ đúng với phủ khối** — đã sửa lại ở cả 2 docstring. Phần đắt là
+     chính **`boxblur` tranh CPU với libx264**, KHÔNG phải kiến trúc filter:
+     đo riêng phần lọc (`-f null`) ra +0,34 s/phút, trong đó split/overlay chỉ
+     **+0,05**. Nên đừng "tối ưu" bằng cách đổi cách nối filter; muốn rẻ thì
+     đổi sang phủ khối. Trần của CA 17 vì thế đặt **2,0 s/phút**, không phải
+     0,2 — đặt theo lời hứa thay vì theo số đo là cổng đỏ oan mỗi lượt.
+     (b) **SỐ ĐO "SẠCH" MÀ MẮT VẪN ĐỌC ĐƯỢC CHỮ** — đúng loại bẫy cả repo đang
+     chống (*phép đo phát chứng nhận cho thứ vẫn hỏng*, anh em của `astats`
+     cổng 53 và `startswith` cổng 44). Trên clip Douyin THẬT: mức mờ **0,40**
+     đưa mật độ nét trong dải về **0,0030** — MỌI thước máy bảo "dải đã sạch"
+     — nhưng trích khung ra PNG **vẫn đọc được bóng chữ** `这时医生灵机一动`.
+     Chỉ từ **0,60** mắt mới thật sự không đọc nổi. Vì vậy: mặc định **1,0**,
+     **SÀN CỨNG 0,60 nằm TRONG MÃ** (`chuan_muc_mo` — cửa DUY NHẤT, mọi đường
+     vào phải qua: UI, mẫu cũ đọc từ đĩa, payload job, test; đặt sàn ở thanh
+     kéo thôi thì mẫu lưu sẵn 0,30 vẫn lọt). **CẤM hạ dưới 0,6.** Kèm CA 14
+     trích PNG ra để NGƯỜI TỰ NHÌN — cổng không tự phong cho mình quyền kết
+     luận "nhìn đẹp".
+     (c) **`max(2, …)` Ở CẢ HAI VẾ KẸP BÁN KÍNH = MẤT TRẮNG CLIP.** Dải NHỎ
+     làm `boxblur` nhận bán kính KHÔNG HỢP LỆ -> **ffmpeg chết cả lượt xuất, 0
+     khung**. Đây không phải "che xấu một chút" mà là mất hẳn clip. Kẹp phải
+     bằng `min()` THẬT (`min(r, max(1, w//2), max(1, h//2))`) + chroma theo
+     yuv420p. Dải thường 716x36 / 1280x44 **KHÔNG đổi một số nào** (CA 21 canh
+     cả hai chiều: dải nhỏ không giết lượt xuất, dải thường không bị đổi).
+     (d) **CỔNG TÌM BẰNG CHUỖI THÌ LỌT** (bài học thứ ba của họ 47/51/54, lần
+     này ở chiều NGƯỢC: 47/51/54 là **đỏ oan**, đây là **PASS oan**). Bản đầu
+     của CA 19a tìm chuỗi `che_chu=` -> phép phá đổi thành `che_chu=False`
+     **VẪN XANH** = con dấu. Nay đọc bằng **AST** và đòi **giá trị truyền vào
+     phải là BIỂU THỨC, không được là hằng số** (`ast.Constant`). Quy tắc
+     chung: quét tĩnh mà chỉ hỏi "có mặt không" thì luôn có một phép phá giữ
+     nguyên mặt chữ mà đổi ý nghĩa.
+     (e) **CỜ PHẢI VÀO HASH CHỐNG TRÙNG** (v2.26.0, CA 23 — lỗi NGƯỜI DÙNG GẶP
+     NGAY). Bản v2.25.0 bị CẤM chạm `studio_page.py`/`services.py` (luồng khác
+     đang sửa) nên đi ĐƯỜNG LÙI: `m1.doc_che_chu` tra MẪU theo tên
+     `cap_style["_mau"]` lúc xuất. Đường đó **không có trong `dedup_key`** ->
+     anh Hùng bật ô trong Chỉnh mẫu rồi bấm "Xuất cả kênh" thì clip đã xuất bị
+     **SMART-SKIP**, không job nào chạy, phải bấm "Xuất lại" từng clip. Nay
+     `studio_page` truyền thẳng 3 tham số vào `services.enqueue_export`.
+     **2 QUYẾT ĐỊNH TINH VI, ĐỪNG "DỌN GỌN" MẤT:**
+     · `enqueue_export` mặc định **`che_chu=None`, KHÔNG phải `False`**.
+       `doc_che_chu` chọn đường bằng `"che_chu" in payload`, nên `False` nghĩa
+       là "đã CHỐT: tắt" và sẽ **bịt đường lùi** của job cũ đã nằm trong DB +
+       mọi lối gọi chưa nối. `None` = không truyền -> payload không mang khoá.
+     · cờ **chỉ góp vào `sig` KHI THẬT SỰ BẬT**, và nối vào **ĐUÔI chuỗi
+       `sig`** chứ KHÔNG thêm phần tử vào tuple `extra`. Thêm vào tuple là đổi
+       hash của MỌI clip cũ -> **200-300 kênh xuất lại từ đầu** (đúng lý do
+       `ovl_spec` cũng cố ý đứng ngoài hash, cổng 42). Cách này giữ `sig`
+       **giống TỪNG KÝ TỰ** bản mốc khi cờ TẮT.
+     · mức mờ đi qua `chuan_muc_mo` **TRƯỚC khi băm**: 0,30 và 0,50 đều bị sàn
+       kéo về 0,60 nên ra clip GIỐNG HỆT — băm giá trị THÔ là đẻ job xuất lại
+       cho một thay đổi KHÔNG TỒN TẠI.
+     **SỐ ĐO CA 23 (dùng `WorkerPool` + DB THẬT, không mock — smart-skip là một
+     câu lệnh SQL trên bảng `jobs`):** TẮT -> `None` (skip đúng) · BẬT -> job
+     id MỚI · bấm lần nữa -> **trả ID job CŨ** (không đẻ trùng, không trả
+     None) · đổi sang phủ khối -> job id MỚI nữa. BẤT BIẾN: `dedup_key` khi
+     TẮT giống **từng ký tự** bản mốc `v2.25.0` (nạp `git show
+     v2.25.0:app/services.py` thành module riêng rồi GỌI THẬT), kèm chốt chống
+     PASS OAN "mốc TRÙNG file đang test -> FAIL".
+     **THỬ PHÁ 10 phép (`_pha_che_chu.py`), cổng BẮT ĐƯỢC 10/10** — 7 phép của
+     đường filter + 3 phép của đường truyền cờ: `studio_page` truyền hằng số
+     `che_chu=False` (FAIL 1) · gỡ hẳn 3 tham số khỏi `studio_page` (FAIL 1) ·
+     cờ không vào `sig` (FAIL 6).
+     **CHƯA ĐẠT, GHI THẲNG:** chỉ dò **dải ĐÁY** (`che_chu.py` chỉ quét từ một
+     mốc trở xuống) — chữ ở đỉnh/giữa khung KHÔNG che · **Mixed-Cut và mẫu
+     "clip đơn" KHÔNG che** (chưa đi qua `export_canvas_clip`) · sổ nhớ dò dải
+     (`_DAI_NHO`) **chỉ ở RAM**, tắt app là mất, mở lại phải dò lại từ đầu ·
+     chưa ai xem bằng mắt trên máy nhân viên thật.
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
