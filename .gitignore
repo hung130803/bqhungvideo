@@ -74,3 +74,6 @@ _tq_work/
 # Thư mục làm việc của `_do_tempo_cau.py` / `_do_kho_tg.py` (mp3/wav từng câu)
 _do_tempo_tam/
 _do_tg_kho/
+
+# Thu muc nhap cua luot do pip (cong 58) — khong bao gio commit
+_tmp_dry/
