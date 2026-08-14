@@ -1247,41 +1247,116 @@ def _ten_nn(ma: str) -> str:
     return _TEN_NN.get(ma_ngon_ngu(ma), ma or "tiếng Anh")
 
 
+#: Số vòng ĐÒI LẠI phần LLM trả thiếu. Đo `_do_nhan_dich.py`: mảng CÓ NHÃN trả
+#: đủ 37/37 ngay VÒNG 1 ở cả 3 lượt — vòng 2-3 chỉ là lưới an toàn.
+VONG_DOI_LAI = 3
+
+
+def _mang_llm(data) -> list:
+    """Bóc mảng ra khỏi kiểu LLM hay trả ({"ket_qua": [...]} hoặc [...])."""
+    if isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list):
+                return v
+    return data if isinstance(data, list) else []
+
+
+def _theo_nhan(data, chi_so: list[int], khoa: str) -> dict[int, object]:
+    """Map kết quả LLM về ĐÚNG câu bằng NHÃN `#i`, không bằng VỊ TRÍ.
+
+    **VÌ SAO TỒN TẠI — LỖI ANH HÙNG BÁO 14/08/2026** (*"vẫn không khớp"* +
+    *"giọng nói không chuẩn"*): mọi hàm LLM ở đây từng đọc kết quả bằng
+    `data[i]`, trong khi prompt đã đánh số `#0 #1 #2 …` rồi VỨT NHÃN ĐI. Đo
+    thật (`_do_lech_dich.py`, Groq thật, 37 câu tiếng Trung, 3 lượt): LLM trả
+    về **29 · 33 · 34** phần tử — LUÔN THIẾU. Hậu quả kép:
+      · câu rơi ra ngoài mảng -> nhánh lùi `c["text"]` = **giữ nguyên tiếng
+        Trung** rồi đưa cho giọng en-US đọc (= "nói không chuẩn");
+      · LLM gộp 2 câu ở giữa -> **mọi câu phía sau lệch bậc**, giọng đọc lời
+        của đoạn khác (= "không khớp").
+    Cả hai VÔ HÌNH với thước v2.27.0 vì thước đó chỉ đo ĐỘ DÀI (tempo, chồng
+    lấn, lệch mốc), không ai hỏi "câu này có đúng LỜI của đoạn này không".
+
+    `chi_so` = danh sách nhãn THẬT đã gửi đi (bản gọi lại chỉ gửi phần thiếu,
+    nhãn vẫn là nhãn GỐC). Trả {nhãn: giá trị} — thiếu thì KHÔNG có khoá, để
+    caller tự biết mà đòi lại chứ không im lặng lấp bằng câu gốc.
+
+    CHẤP NHẬN CẢ HAI KIỂU TRẢ VỀ: model ngoan thì ra `{"i":…, "<khoa>":…}`;
+    model trả mảng thuần thì lùi về đọc theo VỊ TRÍ **trong đúng `chi_so`**
+    (không phải theo 0..n-1) — bản lùi này vẫn đúng khi mảng đủ.
+    """
+    xs = _mang_llm(data)
+    ra: dict[int, object] = {}
+    co_nhan = False
+    for o in xs:
+        if not isinstance(o, dict):
+            continue
+        gt = o.get(khoa, o.get("t", o.get("text")))
+        try:
+            i = int(o.get("i"))
+        except (TypeError, ValueError):
+            continue
+        if i in chi_so and gt is not None and i not in ra:
+            ra[i] = gt
+            co_nhan = True
+    if co_nhan:
+        return ra
+    # lùi: mảng thuần -> ghép theo thứ tự đã gửi
+    for j, i in enumerate(chi_so):
+        if j < len(xs) and not isinstance(xs[j], dict):
+            ra[i] = xs[j]
+    return ra
+
+
 def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     """Dịch cả loạt câu trong 1 lượt LLM. Trả list cùng số phần tử."""
     from app.ai import llm
 
     ten_dich = _ten_nn(dich_sang)
-    items = []
-    for i, c in enumerate(cau):
-        dur = max(0.1, float(c["end"]) - float(c["start"]))
-        items.append(f'#{i} [{dur:.1f} giây]: "{c["text"][:400]}"')
     system = ("Bạn là chuyên gia dịch THAY TIẾNG cho video. Dịch tự nhiên như "
               "VĂN NÓI, đúng ý, đúng cảm xúc. CHỈ trả JSON thuần.")
-    prompt = (
-        f"Dịch các câu thoại sau từ {_ten_nn(goc_ma)} sang {ten_dich}.\n"
-        f"{chr(10).join(items)}\n\n"
-        "QUY TẮC:\n"
-        f"- Dịch sang {ten_dich}, văn NÓI tự nhiên.\n"
-        "- ĐỌC LÊN phải lọt khung [số giây] của câu đó — dài quá thì lược từ "
-        "đệm, GIỮ Ý CHÍNH.\n"
-        "- KHÔNG thêm chú thích, không phiên âm.\n"
-        f"- Trả MẢNG JSON đúng {len(cau)} chuỗi, cùng thứ tự."
-    )
-    data = llm.complete_json(prompt, system=system)
-    if isinstance(data, dict):
-        for v in data.values():
-            if isinstance(v, list):
-                data = v
-                break
-    if not isinstance(data, list):
+
+    ra: dict[int, str] = {}
+    con: list[int] = list(range(len(cau)))
+    loi_dau: Optional[Exception] = None
+    for vong in range(VONG_DOI_LAI):
+        if not con:
+            break
+        items = []
+        for i in con:
+            c = cau[i]
+            dur = max(0.1, float(c["end"]) - float(c["start"]))
+            items.append(f'#{i} [{dur:.1f} giây]: "{c["text"][:400]}"')
+        prompt = (
+            f"Dịch các câu thoại sau từ {_ten_nn(goc_ma)} sang {ten_dich}.\n"
+            f"{chr(10).join(items)}\n\n"
+            "QUY TẮC:\n"
+            f"- Dịch sang {ten_dich}, văn NÓI tự nhiên.\n"
+            "- ĐỌC LÊN phải lọt khung [số giây] của câu đó — dài quá thì lược "
+            "từ đệm, GIỮ Ý CHÍNH.\n"
+            "- KHÔNG thêm chú thích, không phiên âm.\n"
+            f"- Trả MẢNG JSON {len(con)} đối tượng "
+            '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
+            "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào, KHÔNG gộp hai câu."
+        )
+        try:
+            data = llm.complete_json(prompt, system=system)
+        except Exception as e:      # noqa: BLE001
+            # Hết lượt / mạng chết ở vòng ĐÒI LẠI không được xoá phần đã dịch
+            # được ở vòng trước — thà thiếu vài câu còn hơn mất cả loạt.
+            loi_dau = loi_dau or e
+            break
+        for i, t in _theo_nhan(data, con, "t").items():
+            if isinstance(t, str) and t.strip():
+                ra[i] = t.strip()
+        con = [i for i in range(len(cau)) if i not in ra]
+    if not ra and loi_dau is not None:
+        raise loi_dau
+    if not ra:
         raise llm.LLMError("LLM không trả mảng bản dịch.")
-    out = []
-    for i, c in enumerate(cau):
-        t = data[i] if i < len(data) else None
-        out.append(str(t).strip() if isinstance(t, str) and str(t).strip()
-                   else c["text"])
-    return out
+    # Câu vẫn không đòi được -> đành giữ câu GỐC (nhánh này là chỗ tiếng Trung
+    # lọt sang giọng tiếng Anh; nay nó chỉ còn là lưới cuối, không phải đường
+    # đi thường xuyên như trước — đo: 4,0 câu/lượt -> 0,0).
+    return [ra.get(i) or c["text"] for i, c in enumerate(cau)]
 
 
 def _dich_nguoc_cham(goc: list[str], dich: list[str], goc_ma: str,
@@ -1307,25 +1382,25 @@ def _dich_nguoc_cham(goc: list[str], dich: list[str], goc_ma: str,
         "- 7  = sát nghĩa, chỉ khác cách diễn đạt.\n"
         "- 4  = lệch một phần ý, hoặc sót ý quan trọng.\n"
         "- 0  = SAI nghĩa hẳn, hoặc dịch thiếu gần hết.\n"
-        f"Trả MẢNG JSON đúng {len(goc)} SỐ, cùng thứ tự: [10, 7, ...]"
+        f"Trả MẢNG JSON {len(goc)} đối tượng "
+        '{"i": <đúng số sau dấu #>, "d": <điểm 0-10>}. '
+        "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào."
     )
     try:
         data = llm.complete_json(prompt, system=system)
     except Exception:  # noqa: BLE001
         return [10.0] * len(goc)
-    if isinstance(data, dict):
-        for v in data.values():
-            if isinstance(v, list):
-                data = v
-                break
-    if not isinstance(data, list):
+    # Lấy theo NHÃN: điểm rơi nhầm câu thì vòng "dịch lại câu lệch nghĩa" đi
+    # dịch lại ĐÚNG NHỮNG CÂU KHÔNG CẦN, còn câu hỏng thật thì bỏ sót.
+    bang = _theo_nhan(data, list(range(len(goc))), "d")
+    if not bang:
         return [10.0] * len(goc)
     out = []
     for i in range(len(goc)):
         try:
-            out.append(float(data[i]))
-        except (IndexError, TypeError, ValueError):
-            out.append(10.0)
+            out.append(float(bang[i]))          # type: ignore[arg-type]
+        except (KeyError, TypeError, ValueError):
+            out.append(10.0)                    # không chấm được -> ĐỪNG nghi oan
     return out
 
 
@@ -1664,22 +1739,21 @@ def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
         "- KHÔNG được vượt số ký tự TỐI ĐA ghi trong ngoặc của câu đó.\n"
         "- Bỏ từ đệm, bỏ chi tiết phụ, dùng từ ngắn hơn.\n"
         "- Vẫn phải là câu nói TỰ NHIÊN, không cụt lủn khó hiểu.\n"
-        f"- Trả MẢNG JSON đúng {len(muc)} chuỗi, cùng thứ tự."
+        f"- Trả MẢNG JSON {len(muc)} đối tượng "
+        '{"i": <đúng số sau dấu #>, "t": "<câu đã rút gọn>"}. '
+        "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào."
     )
     try:
         data = llm.complete_json(prompt, system=system)
     except Exception:  # noqa: BLE001
         return [m["text"] for m in muc]
-    if isinstance(data, dict):
-        for v in data.values():
-            if isinstance(v, list):
-                data = v
-                break
-    if not isinstance(data, list):
-        return [m["text"] for m in muc]
+    # Lấy theo NHÃN. Ở đây lệch bậc còn độc hơn: câu A bị thay bằng bản rút gọn
+    # của câu B -> lời ĐÚNG NGHĨA của đoạn khác, mà độ dài vẫn "vừa khung" nên
+    # không thước nào kêu.
+    bang = _theo_nhan(data, list(range(len(muc))), "t")
     out = []
     for j, m in enumerate(muc):
-        t = data[j] if j < len(data) else None
+        t = bang.get(j)
         out.append(str(t).strip() if isinstance(t, str) and str(t).strip()
                    else m["text"])
     return out
