@@ -676,9 +676,16 @@ def ca17_chi_phi(src: Path):
     """
     print("\nCA 17 — CHI PHÍ THÊM: gộp vào lượt mã hoá phải ~0,1-0,2 giây/phút")
     import time
+    # XOÁ SỔ NHỚ TRƯỚC KHI ĐO. CA 15/16 chạy trước đã hâm nóng, nên bản đầu của
+    # ca này in "dò dải: 0,00s" — con số ĐẸP nhưng VÔ NGHĨA (đang đo lần TRA
+    # SỔ, không phải lần DÒ). Đo nhầm thì tệ hơn không đo.
+    C._DAI_NHO.clear()
     t0 = time.perf_counter()
-    C.dai_theo_video(src)              # hâm nóng + đo chi phí DÒ (một lần/video)
+    C.dai_theo_video(src)              # chi phí DÒ THẬT (một lần / video)
     t_do = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    C.dai_theo_video(src)              # lần 2 = tra sổ nhớ
+    t_nho = time.perf_counter() - t0
     giay = 60.0
     segs = [(30.0, 30.0 + giay)]
     tat, bat = [], []
@@ -705,9 +712,10 @@ def ca17_chi_phi(src: Path):
          f"**{them:+.2f} giây/phút** (dò dải: {t_do:.2f}s MỘT LẦN cho cả video, "
          f"3 Part dùng chung) · thô TẮT={[round(x,2) for x in tat]} "
          f"BẬT={[round(x,2) for x in bat]}")
-    kiem("CA17 dò dải được NHỚ (Part 2,3 của cùng video không dò lại)",
-         len(C._DAI_NHO) >= 1 and t_do > 0,
-         f"{len(C._DAI_NHO)} video trong sổ nhớ · dò lần đầu {t_do:.2f}s")
+    kiem("CA17 dò dải được NHỚ (Part 2,3 của cùng video KHÔNG dò lại)",
+         len(C._DAI_NHO) >= 1 and t_nho * 100 < t_do,
+         f"dò lần đầu {t_do:.2f}s · lần sau {t_nho*1000:.2f} ms "
+         f"-> 3 Part tốn {t_do:.2f}s chứ không phải {t_do*3:.2f}s")
 
 
 def ca21_dai_nho_khong_lam_chet_xuat():
