@@ -44,7 +44,24 @@ NGUON = [
     ("zh2", KHO / "Kênh Douyin — 20 video" /
      "上集，一帮非洲孩子，被军阀洗脑残暴至极 #我的观影报告 #电影解说 #悬疑电影 #人性.mp4"),
     ("en", KHO / "GOING BACK TO OUR OLD HOUSE.mp4"),
+    # BẢN SAO ĐÓNG BĂNG — xem `DU_PHONG` bên dưới.
+    ("zh_ep12", Path(r"D:\claude\_do_che_chu\nguon\zh_ep12.mp4")),
+    ("zh_dongho", Path(r"D:\claude\_do_che_chu\nguon\zh_dongho.mp4")),
 ]
+
+#: **KHO TRÊN ĐĨA ĐỔI THEO THỜI GIAN — ĐÃ LÀM HỎNG PHÉP ĐO MỘT LẦN.** Cổng 47
+#: CA2 từng báo `2/8` thay vì `4/8` và phải bisect mới biết không phải hồi quy
+#: mã, mà là `Downloads\Video\video hàn` bị xoá. Tới 14/08/2026 thì cả thư mục
+#: `Kênh Douyin — 20 video` cũng RỖNG: hai nguồn `zh`/`zh2` ở trên trỏ vào chỗ
+#: KHÔNG CÒN GÌ -> mọi phép đo thay giọng chết ngay dòng đầu.
+#:
+#: Bản sao Douyin đóng băng ở `_do_che_chu\nguon` (đã dùng cho cổng 56) không
+#: đi đâu cả. Thiếu nguồn gốc thì lấy bản sao đó — ghi RA MÀN HÌNH là đang
+#: dùng bản thay thế, không im lặng đổi mẫu số rồi báo số như thường.
+DU_PHONG = {
+    "zh": Path(r"D:\claude\_do_che_chu\nguon\zh_ep12.mp4"),
+    "zh2": Path(r"D:\claude\_do_che_chu\nguon\zh_dongho.mp4"),
+}
 
 GIAY = 90.0     # cắt 90 giây đầu mỗi video
 
@@ -74,9 +91,16 @@ def _luu(c: dict) -> None:
 def chuan_bi(ten: str, can_nhac: bool = False) -> dict:
     """Trả {video, wav, tong, chep, cau, nhac} cho 1 nguồn — có cache."""
     src = dict(NGUON)[ten]
+    thay = False
+    if not src.exists() and ten in DU_PHONG:
+        src, thay = DU_PHONG[ten], True
+        print(f"  [{ten}] NGUỒN GỐC KHÔNG CÒN -> dùng bản sao đóng băng "
+              f"{src.name} (mẫu số ĐÃ ĐỔI, đừng so thẳng với số cũ)")
     if not src.exists():
         raise FileNotFoundError(f"không thấy video: {src}")
-    d = LAM / ten
+    # Nguồn thay thế phải có THƯ MỤC và KHOÁ CACHE RIÊNG — dùng lại khoá cũ là
+    # lấy bản chép lời của video KHÁC mà không một dòng báo.
+    d = LAM / (f"{ten}__dp" if thay else ten)
     d.mkdir(parents=True, exist_ok=True)
     vid = d / "cat.mp4"
     if not vid.exists():
@@ -87,7 +111,7 @@ def chuan_bi(ten: str, can_nhac: bool = False) -> dict:
         tong = tg.tach_wav(vid, wav)
 
     c = _cache()
-    khoa = f"chep|{ten}|{GIAY}"
+    khoa = f"chep|{ten}|{GIAY}" + (f"|dp:{src.name}" if thay else "")
     if khoa not in c:
         print(f"  [{ten}] chép lời bằng Groq (lần đầu, sẽ cache)...")
         c[khoa] = tg.chep_loi(wav)
