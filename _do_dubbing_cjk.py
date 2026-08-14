@@ -147,11 +147,16 @@ print(f"  CẢ BÀI (1.230 ký tự vs {len(ZH_WORDS)} mốc STT): "
 
 # ─────────────────────────────────────────── D. BẤT BIẾN 4 thứ tiếng
 print("\n=== D. BẤT BIẾN — 16 video thật 4 nhóm tiếng (chuỗi kết quả) ===")
+print("  (băm THEO TỪNG NHÓM: nhóm chữ latin phải Y HỆT; nhóm `nhat` CỐ Ý đổi")
+print("   vì tiếng Nhật cũng KHÔNG có dấu cách — trước đây cũng ra 1 cụm)")
 import hashlib  # noqa: E402
+from collections import defaultdict  # noqa: E402
 
-_h = hashlib.sha256()
-_n = 0
+_hh: dict = defaultdict(hashlib.sha256)
+_nn: dict = defaultdict(int)
+_cum: dict = defaultdict(int)
 for v in KHO4:
+    g = str(v.get("nhom") or "?")
     ss = [(float(s["start"]), float(s["end"]), str(s.get("text") or ""))
           for s in v.get("segments") or [] if str(s.get("text") or "").strip()]
     if not ss:
@@ -163,12 +168,28 @@ for v in KHO4:
               (2 * dur / 3, dur)]
         for r in (D._phrase_groups_by_speech(txt, 1.5, sp),
                   D._phrase_groups_even(txt, 1.5, dur)):
-            _h.update(repr(r).encode("utf-8"))
-            _n += 1
+            _hh[g].update(repr(r).encode("utf-8"))
+            _nn[g] += 1
+            _cum[g] += len(r)
         w = [[i * 0.3, i * 0.3 + 0.28, t]
              for i, t in enumerate(str(txt).split())]
-        _h.update(repr(D._align_stt_words(txt, w)).encode("utf-8"))
-        _n += 1
-print(f"  {_n} phép gọi trên {len(KHO4)} video -> sha256 "
-      f"{_h.hexdigest()[:32]}")
+        _hh[g].update(repr(D._align_stt_words(txt, w)).encode("utf-8"))
+        _nn[g] += 1
+for g in sorted(_hh):
+    print(f"  {g:5} {_nn[g]:4} phép gọi · {_cum[g]:5} cụm -> "
+          f"sha256 {_hh[g].hexdigest()[:32]}")
+
+# ─────────────────────────────────────────── E. TIẾNG HÀN (tự dựng)
+print("\n=== E. TIẾNG HÀN — hangul CÓ dấu cách, phải đi đường .split() ===")
+_KO = ("그런데 갑자기 눈보라가 몰아치기 시작했습니다",
+       "결국 그는 아무 말도 하지 못하고 돌아섰어요",
+       "이 사진 속에 숨겨진 비밀을 아무도 몰랐습니다")
+_tach = getattr(D, "_tach_tu", None)      # bản MỐC chưa có -> đo bằng .split()
+_noi = getattr(D, "_noi_tu", None)
+for s in _KO:
+    t = _tach(s) if _tach else s.split()
+    r = _noi(t) if _noi else " ".join(t)
+    print(f"  split {len(s.split())} · tách {len(t)} · nối lại đúng nguyên "
+          f"văn: {r == s} · cỡ cụm "
+          f"{D._co_cum(s, 4) if hasattr(D, '_co_cum') else 4}")
 print("\nXONG.")

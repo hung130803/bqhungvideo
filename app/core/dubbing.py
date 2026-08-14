@@ -1905,6 +1905,100 @@ _SIL_END_RE = re.compile(r"silence_end:\s*(-?[\d.]+)")
 # _phrase_groups_by_speech ngay dưới dùng làm default arg.)
 _RECAP_PHRASE_MIN = 2
 _RECAP_PHRASE_MAX = 4
+#: CỠ CỤM RIÊNG cho chữ viết KHÔNG DÙNG DẤU CÁCH (Trung/Nhật/Thái…): ở đó
+#: 1 token = 1 KÝ TỰ chứ không phải 1 TỪ, nên "4 từ" hoá ra 4 chữ Hán = cụm
+#: teo, chữ nhấp nháy (đúng bệnh `_gom_cjk` của captions.py đã đo:
+#: 1,07 ký tự/dòng · 0,175 s/dòng = KHÔNG ĐỌC ĐƯỢC). Lấy 6 cho khớp
+#: `captions._CJK_MAX["word"]` — số đó ĐO ở 1080x1920, cỡ chữ 0,055*h:
+#: bề rộng dùng được 778 px ≈ 7 chữ Hán/dòng nên 6 vừa đúng MỘT dòng.
+_RECAP_PHRASE_MAX_CJK = 6
+
+
+# ------------------------------------------------------------------
+# TÁCH TỪ / NỐI TỪ CHO PHỤ ĐỀ NARRATE — CHỮ KHÔNG DÙNG DẤU CÁCH.
+# `.split()` coi CẢ CÂU tiếng Trung/Nhật là **1 từ** -> mọi phép "chia cụm
+# theo SỐ TỪ" và "so số từ" bên dưới ra số 1. ĐO THẬT trên lời Trung của anh
+# Hùng (`_do_dubbing_cjk.py`): 21/21 part ra ĐÚNG 1 cụm dài tới 78 ký tự (phụ
+# đề đứng im cả part) và `_align_stt_words` trả None 21/21 (âm thầm lùi
+# silencedetect). Chữa bằng cách tách theo KÝ TỰ như `recap._word_tokens`.
+#
+# ‼ HANGUL PHẢI Ở NGOÀI — ĐO RA, KHÔNG SUY ĐOÁN. `recap._CJK_CHARS` GỒM cả
+# hangul vì ở recap nó chỉ ĐẾM token (đếm theo âm tiết chỉ làm mật độ cao hơn,
+# vô hại). Ở ĐÂY thì khác: ta còn NỐI LẠI để HIỂN THỊ và còn SO SỐ TỪ với mốc
+# STT, mà **tiếng Hàn CÓ dùng dấu cách**. Đo trên câu Hàn thật:
+#   · `'그런데 갑자기 눈보라가 몰아치기 시작했습니다'` -> `.split()` 5 từ
+#     nhưng `recap._word_tokens` **20 token** -> `abs(m-k)/max(m,k)` = 0,75 >
+#     0,40 -> `_align_stt_words` sẽ trả None = **LÀM HỎNG tiếng Hàn đang chạy
+#     tốt** (STT tiếng Hàn trả theo TỪ, k ≈ 5).
+#   · `captions._noi_cum` coi hangul là CJK nên nối KHÔNG dấu cách ->
+#     `'그런데갑자기눈보라가몰아치기시작했습니다'` = **mất sạch dấu cách**,
+#     kể cả khi đưa vào đúng `.split()`.
+# Nên ở file này dùng bộ ký tự RIÊNG `_KHONG_DAU_CACH` = đúng những hệ chữ
+# THẬT SỰ không có dấu cách (Hán · kana · Thái · Lào · Miến · Khmer), và
+# TÁCH THEO CỤM-TRẮNG trước: chuỗi không chứa ký tự nào thuộc bộ đó thì giữ
+# nguyên nguyên cụm -> tiếng Hàn/Anh/Việt đi Y HỆT `.split()`.
+# ------------------------------------------------------------------
+#: Hệ chữ THẬT SỰ KHÔNG có dấu cách giữa các từ. CỐ Ý KHÁC `recap._CJK_CHARS`
+#: ở đúng một điểm: **KHÔNG có hangul** (xem khối ghi chú trên).
+#: VIẾT BẰNG `\u` CHỨ KHÔNG DÁN KÝ TỰ THẬT — bài học vừa sập khi làm việc này:
+#: dòng `"豈-﫿"` (chép từ `recap._CJK_CHARS`, chú thích "CJK compat
+#: ideographs" = U+F900-U+FAFF) hoá ra `豈` là **U+8C48**, nên dải thật là
+#: **U+8C48-U+FAFF** — NUỐT TRỌN hangul (U+AC00-U+D7A3). Đo: `_tach_tu` câu
+#: Hàn vẫn ra 20 token thay vì 5, tức bản vá "chừa tiếng Hàn" KHÔNG hề chừa.
+#: Mắt thường không đọc ra được sai lệch đó, `\u` thì đọc ra ngay.
+_KHONG_DAU_CACH = re.compile(
+    "[　-ヿ"      # dau cau CJK (、 。 「...) + hiragana + katakana
+    "㐀-䶿"       # CJK Unified ext-A
+    "一-鿿"       # CJK Unified (chu Han)
+    "豈-﫿"       # CJK compat ideographs
+    "！-ﾟ"       # dau cau/chu so toan-rong + katakana nua
+    "฀-๿"       # Thai
+    "຀-໿"       # Lao
+    "က-႟"       # Mien Dien
+    "ក-៿]")     # Khmer
+
+
+def _tach_tu(text: str) -> list:
+    """Tách `text` thành token ĐẾM ĐƯỢC / HIỂN THỊ ĐƯỢC. Hàm thuần.
+
+    Cụm-trắng nào CÓ ký tự hệ chữ không-dấu-cách -> tách tiếp thành TỪNG KÝ TỰ
+    (qua `recap._word_tokens`); cụm còn lại giữ nguyên.
+    BẤT BIẾN: text không có ký tự thuộc `_KHONG_DAU_CACH` -> trả Y HỆT
+    `text.split()` (đường Anh · Việt · **Hàn** không đổi một byte)."""
+    from app.ai.recap import _word_tokens
+    ra: list = []
+    for cum in str(text or "").split():
+        if _KHONG_DAU_CACH.search(cum):
+            ra.extend(_word_tokens(cum))
+        else:
+            ra.append(cum)
+    return ra
+
+
+def _noi_tu(toks: list) -> str:
+    """Nối token thành chuỗi HIỂN THỊ: giữa 2 token đều thuộc hệ chữ
+    không-dấu-cách thì KHÔNG chèn dấu cách ('他们发现' chứ không '他 们 发 现'),
+    còn lại nối bằng 1 dấu cách. Hàm thuần.
+
+    BẤT BIẾN: không token nào thuộc `_KHONG_DAU_CACH` -> Y HỆT
+    `" ".join(toks)`. KHÔNG dùng `captions._noi_cum` vì hàm đó coi hangul là
+    CJK -> nuốt dấu cách của tiếng Hàn (đo ở khối ghi chú trên)."""
+    ra, truoc = "", ""
+    for k, t in enumerate(str(x) for x in toks or []):
+        if k:
+            ra += "" if (_KHONG_DAU_CACH.search(t)
+                         and _KHONG_DAU_CACH.search(truoc)) else " "
+        ra += t
+        truoc = t
+    return ra
+
+
+def _co_cum(text: str, group: int) -> int:
+    """Số token mỗi cụm cho `text`: hệ chữ không-dấu-cách dùng
+    `_RECAP_PHRASE_MAX_CJK` (1 token = 1 KÝ TỰ), còn lại giữ nguyên `group`
+    (1 token = 1 TỪ). Hàm thuần."""
+    return (_RECAP_PHRASE_MAX_CJK if _KHONG_DAU_CACH.search(str(text or ""))
+            else int(group))
 
 
 def _detect_speech_segments(wav_path: str, total: float,
@@ -1973,10 +2067,14 @@ def _phrase_groups_by_speech(text: str, start: float,
 
     Dùng cho giọng el/Gemini khi BẬT cảm xúc (có [dramatic pause]) — sửa lỗi
     'phụ đề delay lệch' do chia đều mù quáng qua khoảng lặng. speech_segs
-    rỗng -> [] (caller dùng _phrase_groups_even chia đều)."""
-    toks = str(text or "").split()
+    rỗng -> [] (caller dùng _phrase_groups_even chia đều).
+
+    Tách/nối từ CJK-aware (`_tach_tu`/`_noi_tu`) — `.split()` cho câu Trung ra
+    1 token nên CẢ PART thành MỘT cụm đứng im (đo: 21/21 part, cụm 78 ký tự)."""
+    toks = _tach_tu(text)
     if not toks or not speech_segs:
         return []
+    group = _co_cum(text, group)
     groups = [toks[i:i + group] for i in range(0, len(toks), group)]
     ng = len(groups)
     seg_dur = [max(0.01, b - a) for a, b in speech_segs]
@@ -2002,21 +2100,21 @@ def _phrase_groups_by_speech(text: str, start: float,
             continue
         segs_here = groups[gi:gi + take]
         gi += take
-        chars = [max(1, len(" ".join(g))) for g in segs_here]
+        chars = [max(1, len(_noi_tu(g))) for g in segs_here]
         tot_c = sum(chars) or 1
         t = float(start) + sa
         seg_len = sb - sa
         for g, c in zip(segs_here, chars):
             d = seg_len * c / tot_c
-            out.append([round(t, 3), round(t + d, 3), " ".join(g)])
+            out.append([round(t, 3), round(t + d, 3), _noi_tu(g)])
             t += d
         if out:                         # kẹp cụm cuối đoạn đúng mép có tiếng
             out[-1][1] = round(float(start) + sb, 3)
     # cụm còn sót (do làm tròn) -> nối vào đoạn cuối cùng
     if gi < ng and out:
-        leftover = " ".join(" ".join(g) for g in groups[gi:])
+        leftover = _noi_tu([x for g in groups[gi:] for x in g])
         if leftover.strip():
-            out[-1][2] = (out[-1][2] + " " + leftover).strip()
+            out[-1][2] = _noi_tu([out[-1][2], leftover]).strip()
     return out
 
 
@@ -2195,16 +2293,20 @@ def _phrase_groups_even(text: str, start: float, speech_dur: float,
     `start`. speech_dur = độ dài phần LỜI NÓI thật (mép từ cuối), KHÔNG tính
     khoảng lặng/hơi thở đuôi mà edge-tts hay thêm -> cụm cuối tắt đúng lúc hết
     tiếng (không trôi +1s). Trả [[a, b, cụm], ...] trên timeline clip. Ít trôi
-    hơn karaoke từng-từ vì chỉ cần TỔNG speech_dur đúng (đo thật)."""
-    toks = str(text or "").split()
+    hơn karaoke từng-từ vì chỉ cần TỔNG speech_dur đúng (đo thật).
+
+    Tách/nối từ CJK-aware (`_tach_tu`/`_noi_tu`) — cùng lý do
+    `_phrase_groups_by_speech`: `.split()` cho câu Trung ra 1 token."""
+    toks = _tach_tu(text)
     if not toks or speech_dur <= 0.05:
         return []
+    group = _co_cum(text, group)
     groups = [toks[i:i + group] for i in range(0, len(toks), group)]
     total_w = sum(len(g) for g in groups) or 1
     out, t = [], float(start)
     for g in groups:
         d = speech_dur * len(g) / total_w
-        out.append([round(t, 3), round(t + d, 3), " ".join(g)])
+        out.append([round(t, 3), round(t + d, 3), _noi_tu(g)])
         t += d
     # kẹp cụm cuối đúng mép tiếng (làm tròn tích luỹ)
     if out:
@@ -2308,8 +2410,17 @@ def _align_stt_words(script_text: str, stt_words: list,
     LỆ chỉ số (từ kịch bản i nhận khoảng thời gian của cụm từ STT tương
     ứng); lệch quá `miss_max` (40%) -> None (STT nghe sai quá nhiều — caller
     fallback silencedetect). Trả [[start, end, từ_kịch_bản], ...] theo thời
-    gian FILE, mốc không giảm. Hàm thuần — unit test được."""
-    toks = str(script_text or "").split()
+    gian FILE, mốc không giảm. Hàm thuần — unit test được.
+
+    Tách từ CJK-aware (`_tach_tu`). ĐÂY LÀ CHỖ NGUY HIỂM NHẤT trong 3 chỗ vì
+    nó hỏng KHÔNG MỘT DÒNG BÁO: `.split()` cho kịch bản Trung ra `m = 1` từ
+    trong khi STT trả `k` = hàng chục mốc -> `abs(m-k)/max(m,k)` luôn ~0,96-0,99
+    > `miss_max` 0,40 -> **trả None 21/21 part** -> app lặng lẽ lùi về
+    silencedetect, tức tính năng khớp-từng-từ bằng STT (đã tốn lượt Groq để
+    chép lời!) KHÔNG BAO GIỜ chạy với tiếng Trung. Groq whisper chấm tiếng
+    Trung theo KÝ TỰ (đo: 1.020/1.074 mốc dài đúng 1 ký tự) nên số token
+    CJK-aware của kịch bản khớp rất sát số mốc STT."""
+    toks = _tach_tu(script_text)
     k = len(stt_words or [])
     m = len(toks)
     if not m or not k:
@@ -2335,11 +2446,17 @@ def _phrase_groups_from_words(words: list, start: float,
     STT/WordBoundary) thành CỤM ~`group` từ, neo timeline clip bằng cộng
     `start` -> [[a, b, cụm], ...]. Mốc cụm = mép từ ĐẦU/CUỐI ĐO THẬT —
     không chia đều ước lượng nên không trôi khi giọng đọc nhanh chậm thất
-    thường (giọng cảm xúc). Hàm thuần — unit test được."""
+    thường (giọng cảm xúc). Hàm thuần — unit test được.
+
+    Nối cụm CJK-aware (`_noi_tu`): `_align_stt_words` trả mỗi chữ Hán 1 phần
+    tử, `" ".join` sẽ ra '他 们 发 现' — chữa được chỗ kia mà không chữa chỗ
+    này thì phụ đề tiếng Trung có dấu cách giữa từng chữ. Cỡ cụm cũng theo
+    `_co_cum` vì 1 phần tử = 1 KÝ TỰ."""
     out = []
+    group = _co_cum("".join(str(w[2]) for w in words or []), group)
     for i in range(0, len(words or []), group):
         g = words[i:i + group]
-        txt = " ".join(str(w[2]).strip() for w in g if str(w[2]).strip())
+        txt = _noi_tu([str(w[2]).strip() for w in g if str(w[2]).strip()])
         if not txt:
             continue
         out.append([round(start + float(g[0][0]), 3),
