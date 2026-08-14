@@ -32,6 +32,13 @@ from pathlib import Path
 REPO = str(Path(__file__).resolve().parent)
 sys.path.insert(0, REPO)                      # KHÔNG ghi cứng đường repo
 os.environ.setdefault("BQ_FFMPEG_SLOTS", "1")
+# SANDBOX DB + DATA_DIR — PHẢI đặt TRƯỚC mọi `import app.*`. Từ khi cổng này
+# dựng UI (CA 18) và tra mẫu (CA 19) thì nó CÓ đụng DB; không tách ra là test
+# đọc/ghi thẳng dữ liệu thật của anh Hùng (luật: test không được đụng máy user).
+_SB = Path(r"D:\claude\_do_che_chu\_sandbox")
+_SB.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("BQ_DATA_DIR", str(_SB))
+os.environ.setdefault("BQ_DB_PATH", str(_SB / "studio.db"))
 
 import _test_guard                            # noqa: E402,F401  chặn cửa sổ ngoài
 import numpy as np                            # noqa: E402
@@ -43,6 +50,7 @@ KHO = Path(r"D:\claude\_do_che_chu\nguon")     # video thật đã copy ra sandb
 
 DAT: list = []
 HONG: list = []
+_QAPP = None            # PHẢI giữ tham chiếu QApplication — xem CA 18
 
 
 def kiem(ten: str, ok: bool, chi_tiet: str = "") -> bool:
@@ -397,6 +405,471 @@ def ca14_trich_khung_de_nhin(p: Path, o: Path, d):
     print(f"      SAU  : {b}")
 
 
+# ══════════════ PHẦN 2 — ĐÃ NỐI VÀO ĐƯỜNG XUẤT (14/08/2026) ═════════════════
+# CA 15..20 kiểm cái KHÁC HẲN CA 1..14: không còn là "module có dò đúng không"
+# mà là "**bấm nút trong app thì file .mp4 có đổi không, và mẫu KHÔNG bật thì
+# có còn giống hệt bản cũ không**".
+_MOC_MAC_DINH = "v2.25.0"          # mốc đối chứng (đổi bằng env BQ_MOC_REF)
+_RECT = (0.5, 0.5, 1.0)            # khối video ĐẦY BỀ NGANG, tâm khung
+_OUT_W, _OUT_H = 1080, 1920
+
+
+def _nguon_that() -> Path | None:
+    """Video THẬT có chữ cháy để đo đường xuất. Không có -> bỏ qua CA 15-17."""
+    for ten in ("zh_ep12.mp4", "zh_dongho.mp4"):
+        p = KHO / ten
+        if p.exists():
+            return p
+    return None
+
+
+def _dai_ra(d, src_w: int, src_h: int) -> tuple:
+    """Đổi dải (toạ độ NGUỒN) sang toạ độ FILE XUẤT 1080x1920.
+
+    Khối video: `scale={vw}:-2` rồi `overlay=x=cx*W-w/2 : y=cy*H-h/2`. Phải
+    tính đúng chỗ này, nếu không phép đo "mật độ nét trong dải" đo nhầm vùng
+    khác rồi ra 0 ở CẢ HAI bản -> cổng tự PASS OAN.
+    """
+    cx, cy, sw = _RECT
+    vw = max(2, int(round(sw * _OUT_W)) // 2 * 2)
+    vh = int(round(vw * src_h / src_w))
+    vh += vh % 2
+    y_top = cy * _OUT_H - vh / 2.0
+    x_left = cx * _OUT_W - vw / 2.0
+    ty = vh / float(src_h)
+    tx = vw / float(src_w)
+    return (max(0, int(y_top + d.y0 * ty)), min(_OUT_H, int(y_top + d.y1 * ty)),
+            max(0, int(x_left + d.x0 * tx)), min(_OUT_W, int(x_left + d.x1 * tx)),
+            max(0, int(y_top)))
+
+
+def _xuat(src: Path, dst: Path, segs: list, che: bool, cach: str = "mo",
+          muc: float = 1.0, log: list | None = None, mod=None) -> tuple:
+    """Gọi ĐÚNG `export_canvas_clip` của app (không dựng lệnh ffmpeg riêng)."""
+    fu = mod
+    if fu is None:
+        from app.core import ffmpeg_utils as fu   # noqa: PLC0415
+    t0 = __import__("time").perf_counter()
+    try:
+        k = {}
+        if che or mod is None:      # bản MỐC không có tham số này -> đừng truyền
+            k = dict(che_chu=che, che_chu_cach=cach, che_chu_muc=muc,
+                     che_chu_log=log)
+        fu.export_canvas_clip(
+            str(src), str(dst), segs, _RECT, bg="blur",
+            out_w=_OUT_W, out_h=_OUT_H, fx_fade=False, fx_whoosh=False,
+            hieu_ung="tat", chuyen_canh="tat", **k)
+    except Exception as e:                                     # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"[:250], 0.0
+    return True, "", __import__("time").perf_counter() - t0
+
+
+def _kiem_file(p: Path, dai_mong: float) -> tuple:
+    """(ok, mô tả) — BẪY 'mã 0 nhưng file 0 KiB / 0 khung' (xem docstring đầu)."""
+    if not p.exists():
+        return False, "KHÔNG có file"
+    co = p.stat().st_size
+    kh = C.so_khung_hinh(p)
+    dai = C.thong_tin(p)["do_dai"]
+    ok = co > 10240 and kh > 0 and abs(dai - dai_mong) < 0.6
+    return ok, f"{co/1e6:.2f} MB · {kh} khung · {dai:.3f}s (mong {dai_mong:.3f}s)"
+
+
+def ca15_bat_tat_co_tac_dung(src: Path):
+    """CỔNG 1 — bật/tắt phải ĐỔI FILE THẬT, đo bằng mật độ nét TRONG DẢI."""
+    print("\nCA 15 — BẬT/TẮT có tác dụng thật trên FILE XUẤT (video có chữ cháy)")
+    d = C.dai_theo_video(src)
+    if not d.co_chu:
+        kiem("CA15 nguồn thật phải dò ra chữ", False, d.ly_do)
+        return None, None, None
+    segs = [(30.0, 40.0)]
+    dai_mong = 10.0
+    a, b = SAN / "x_tat.mp4", SAN / "x_bat.mp4"
+    lg_a, lg_b = [], []
+    ok_a, e_a, _ = _xuat(src, a, segs, False, log=lg_a)
+    ok_b, e_b, _ = _xuat(src, b, segs, True, log=lg_b)
+    kiem("CA15 xuất được bản TẮT", ok_a, e_a)
+    kiem("CA15 xuất được bản BẬT", ok_b, e_b)
+    if not (ok_a and ok_b):
+        return None, None, None
+    for ten, p in (("TẮT", a), ("BẬT", b)):
+        ok, mo = _kiem_file(p, dai_mong)
+        kiem(f"CA15 file {ten} có khung hình + đúng độ dài", ok, mo)
+    y0, y1, x0, x1, y_top = _dai_ra(d, d.rong, d.cao)
+    moc = [1.0, 3.5, 6.0, 8.5]
+    m_a = C.mat_do_vung(a, y0, y1, moc, x0, x1)
+    m_b = C.mat_do_vung(b, y0, y1, moc, x0, x1)
+    kiem("CA15 bản TẮT GIỮ NGUYÊN chữ trong dải (mật độ >= 0,05)",
+         m_a >= 0.05, f"mật độ nét {m_a:.4f}")
+    kiem("CA15 bản BẬT xoá sạch nét trong dải (mật độ <= 0,02)",
+         m_b <= 0.02, f"mật độ nét {m_b:.4f}")
+    kiem("CA15 giảm ít nhất 5 lần", m_b * 5 <= m_a,
+         f"{m_a:.4f} -> {m_b:.4f} (giảm {m_a/max(m_b,1e-9):.1f} lần)")
+    # ---- RÒ: PHẢI ĐO ĐÚNG THỨ, nếu không cổng đỏ oan ----
+    # (1) RÒ CỦA CHÍNH FILTER — đo LOSSLESS (-qp 0) trên NGUỒN. `-crf` TỰ NÓ
+    #     làm lệch điểm ảnh khắp khung (bài học cổng 46) nên đo rò trên file
+    #     nén là không phân biệt nổi rò thật với nhiễu mã hoá.
+    kiem("CA15 filter KHÔNG đụng một điểm ảnh nào ngoài dải (lossless = inf)",
+         _psnr_lossless_ngoai(src, d) == float("inf"),
+         f"PSNR ngoài dải (-qp 0) = {_psnr_lossless_ngoai(src, d)}")
+    # (2) TRÊN FILE XUẤT: chỉ đòi KHỐI VIDEO (phần khán giả nhìn là hình thật)
+    #     ngoài dải không đổi. **NỀN MỜ THÌ CÓ ĐỔI, VÀ ĐÓ LÀ ĐÚNG**: nền là
+    #     bản phóng to đã làm mờ của CHÍNH khung nguồn, nên dải chữ cũng nằm
+    #     trong đó — che ở nguồn thì nền cũng sạch theo. Đòi "cả khung không
+    #     đổi" là đòi một điều SAI (đo được: nền dưới 30,7 dB, khối video trên
+    #     dải 51,6 dB — hai con số nói hai chuyện khác nhau).
+    ps = _psnr_vung(a, b, y_top, y0 - y_top)
+    kiem("CA15 KHỐI VIDEO phía trên dải KHÔNG đổi (PSNR >= 45 dB)",
+         ps >= 45.0, f"PSNR khối video (hàng {y_top}..{y0}) = {ps} dB")
+    kiem("CA15 nhật ký nói ĐÚNG: TẮT = không che, BẬT = có che",
+         bool(lg_a) and not lg_a[0]["che"] and bool(lg_b) and lg_b[0]["che"],
+         f"TẮT che={lg_a[0]['che'] if lg_a else '?'} | "
+         f"BẬT ly_do={lg_b[0]['ly_do'] if lg_b else '?'}")
+    return a, b, (y0, y1, x0, x1)
+
+
+def _psnr_vung(a: Path, b: Path, y: int, h: int) -> float:
+    """PSNR CHỈ trong dải hàng [y, y+h) của 2 file xuất."""
+    h = max(2, h)
+    vf = (f"[0:v]crop={_OUT_W}:{h}:0:{y}[a];[1:v]crop={_OUT_W}:{h}:0:{y}[b];"
+          "[a][b]psnr")
+    r = subprocess.run([C._bin("ffmpeg"), "-hide_banner", "-i", str(a),
+                        "-i", str(b), "-filter_complex", vf, "-f", "null", "-"],
+                       capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW)
+    for ln in r.stderr.decode("utf-8", "replace").splitlines():
+        if "average:" in ln and "PSNR" in ln:
+            v = ln.split("average:")[1].split()[0]
+            return float("inf") if v == "inf" else float(v)
+    return -1.0
+
+
+def _psnr_lossless_ngoai(src: Path, d) -> float:
+    """Che THẲNG trên nguồn ở `-qp 0` rồi so phần NGOÀI dải. inf = 0 rò."""
+    f = C.loc_che(d, cach="mo", do_manh=1.0)
+    l1, l2 = SAN / "ll_goc.mkv", SAN / "ll_che.mkv"
+    for dst, vf in ((l1, ""), (l2, f)):
+        cmd = [C._bin("ffmpeg"), "-y", "-v", "error", "-ss", "30", "-t", "2",
+               "-i", str(src)]
+        if vf:
+            cmd += ["-filter_complex", vf]
+        cmd += ["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", "-an",
+                str(dst)]
+        subprocess.run(cmd, capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW)
+    return _psnr_ngoai(l1, l2, d)
+
+
+def _psnr_ngoai_khung(a: Path, b: Path, y0: int, y1: int) -> float:
+    """PSNR phần NGOÀI dải trên FILE XUẤT (che dải lại bằng drawbox rồi so)."""
+    h = max(1, y1 - y0)
+    vf = (f"[0:v]drawbox=x=0:y={y0}:w=iw:h={h}:color=black@1:t=fill[a];"
+          f"[1:v]drawbox=x=0:y={y0}:w=iw:h={h}:color=black@1:t=fill[b];"
+          "[a][b]psnr")
+    r = subprocess.run([C._bin("ffmpeg"), "-hide_banner", "-i", str(a),
+                        "-i", str(b), "-filter_complex", vf, "-f", "null", "-"],
+                       capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW)
+    for ln in r.stderr.decode("utf-8", "replace").splitlines():
+        if "average:" in ln and "PSNR" in ln:
+            v = ln.split("average:")[1].split()[0]
+            return float("inf") if v == "inf" else float(v)
+    return -1.0
+
+
+def _psnr(a: Path, b: Path) -> float:
+    r = subprocess.run([C._bin("ffmpeg"), "-hide_banner", "-i", str(a),
+                        "-i", str(b), "-lavfi", "psnr", "-f", "null", "-"],
+                       capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW)
+    for ln in r.stderr.decode("utf-8", "replace").splitlines():
+        if "average:" in ln and "PSNR" in ln:
+            v = ln.split("average:")[1].split()[0]
+            return float("inf") if v == "inf" else float(v)
+    return -1.0
+
+
+def ca16_bat_bien(src: Path):
+    """CỔNG 2 — QUAN TRỌNG NHẤT: mẫu KHÔNG bật che chữ phải ra file GIỐNG HỆT
+    bản trước khi có tính năng này. 200-300 kênh đang chạy, không được đổi gì.
+
+    Cách làm mượn nguyên của cổng 36 CA 8 (đã chứng minh chống PASS OAN): nạp
+    `git show <mốc>:app/core/ffmpeg_utils.py` thành MODULE RIÊNG rồi xuất song
+    song bằng CÙNG tham số, so PSNR — so ĐÚNG bản mã cũ, không phải so "lệnh
+    trông giống nhau".
+    """
+    print("\nCA 16 — BẤT BIẾN: che chữ TẮT == bản mốc (đây là ca quan trọng nhất)")
+    import importlib.util
+    moc = os.environ.get("BQ_MOC_REF", _MOC_MAC_DINH)
+    r = subprocess.run(["git", "-C", REPO, "show",
+                        f"{moc}:app/core/ffmpeg_utils.py"],
+                       capture_output=True,
+                       creationflags=C._CREATE_NO_WINDOW, timeout=60)
+    out = (r.stdout or b"").decode("utf-8", errors="replace")
+    if r.returncode != 0 or len(out) < 5000:
+        kiem(f"CA16 lấy được ffmpeg_utils.py của {moc}", False,
+             f"git rc={r.returncode} · {len(out)} ký tự")
+        return
+    nay = (Path(REPO) / "app" / "core" / "ffmpeg_utils.py").read_text(
+        encoding="utf-8", errors="replace")
+    # CHỐNG PASS OAN — cùng lý lẽ cổng 36: mốc TRÙNG file đang test thì phép so
+    # là "so nó với chính nó" và 99 dB VĨNH VIỄN. Tách 2 nguyên nhân: HEAD là
+    # TỔ TIÊN của mốc = mốc đã nuốt nhánh này (NGUY HIỂM, FAIL); không phải tổ
+    # tiên = nhánh đơn giản chưa sửa file (LÀNH). Ở việc này file CHẮC CHẮN đã
+    # sửa nên trùng là dấu hiệu hỏng thật.
+    la_to_tien = subprocess.run(
+        ["git", "-C", REPO, "merge-base", "--is-ancestor", "HEAD", moc],
+        capture_output=True, creationflags=C._CREATE_NO_WINDOW,
+        timeout=60).returncode == 0
+    if out.strip() == nay.strip():
+        kiem("CA16 mốc đối chứng phải KHÁC nhánh này", False,
+             f"`git show {moc}:app/core/ffmpeg_utils.py` TRÙNG file đang test"
+             + (" VÀ HEAD là tổ tiên của mốc -> mốc đã nuốt nhánh này"
+                if la_to_tien else "") +
+             " -> phép so BẤT BIẾN vô nghĩa. Đặt BQ_MOC_REF về bản ĐÃ PHÁT HÀNH.")
+        return
+    kiem(f"CA16 bản mốc `{moc}` KHÁC nhánh này (đối chứng hợp lệ)", True,
+         f"mốc {len(out)} ký tự · nhánh {len(nay)} ký tự")
+    fm = SAN / "fu_moc.py"
+    fm.write_text(out, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("fu_moc", str(fm))
+    if spec is None or spec.loader is None:
+        kiem("CA16 nạp được module mốc", False, "spec/loader None")
+        return
+    mm = importlib.util.module_from_spec(spec)
+    sys.modules["fu_moc"] = mm
+    try:
+        spec.loader.exec_module(mm)
+    except Exception as e:                                     # noqa: BLE001
+        kiem("CA16 nạp được module mốc", False, f"{type(e).__name__}: {e}")
+        return
+    # 2 ĐOẠN + hook-first (đoạn sau NGƯỢC thời gian) = đường ghép đoạn thật,
+    # đúng cảnh sản xuất; đây cũng là chỗ dễ vỡ nhất nếu filter chèn sai chỗ.
+    segs = [(60.0, 66.0), (20.0, 26.0)]
+    a, b = SAN / "bb_moc.mp4", SAN / "bb_tat.mp4"
+    ok_a, e_a, _ = _xuat(src, a, segs, False, mod=mm)
+    ok_b, e_b, _ = _xuat(src, b, segs, False)
+    kiem("CA16 xuất được bằng mã của MỐC", ok_a, e_a)
+    kiem("CA16 xuất được bằng mã NHÁNH này (che chữ TẮT)", ok_b, e_b)
+    if not (ok_a and ok_b):
+        return
+    d1 = C.thong_tin(a)["do_dai"]
+    d2 = C.thong_tin(b)["do_dai"]
+    k1, k2 = C.so_khung_hinh(a), C.so_khung_hinh(b)
+    kiem("CA16 độ dài + số khung giống mốc",
+         abs(d1 - d2) * 1000 < 40 and k1 == k2,
+         f"mốc {d1:.3f}s/{k1} khung · nhánh {d2:.3f}s/{k2} khung")
+    ps = _psnr(a, b)
+    kiem("CA16 PSNR >= 50 dB (mẫu KHÔNG bật che chữ ra file y hệt bản cũ)",
+         ps >= 50.0, f"PSNR = {ps} dB")
+
+
+def ca17_chi_phi(src: Path):
+    """CỔNG 3 — chi phí THÊM mỗi phút phim. Đo ĐAN XEN + lấy TRUNG VỊ.
+
+    Đo liền mạch (chạy hết 3 lượt TẮT rồi mới 3 lượt BẬT) đã ra kết luận sai 2
+    lần ở repo này — máy anh Hùng luôn có việc nền chạy. Phải đan xen.
+    Dò dải được HÂM NÓNG trước: con số cần chứng minh là chi phí của CHUỖI
+    FILTER trong lượt mã hoá, còn dò là chi phí MỘT LẦN cho cả video (3 Part
+    dùng chung) — trộn 2 thứ vào nhau là báo cáo sai bản chất.
+    """
+    print("\nCA 17 — CHI PHÍ THÊM: gộp vào lượt mã hoá phải ~0,1-0,2 giây/phút")
+    import time
+    t0 = time.perf_counter()
+    C.dai_theo_video(src)              # hâm nóng + đo chi phí DÒ (một lần/video)
+    t_do = time.perf_counter() - t0
+    giay = 60.0
+    segs = [(30.0, 30.0 + giay)]
+    tat, bat = [], []
+    for i in range(3):
+        _, _, ta = _xuat(src, SAN / f"c_tat{i}.mp4", segs, False)
+        _, _, tb = _xuat(src, SAN / f"c_bat{i}.mp4", segs, True)
+        tat.append(ta)
+        bat.append(tb)
+    tv = lambda xs: sorted(xs)[len(xs) // 2]                   # noqa: E731
+    m_tat, m_bat = tv(tat), tv(bat)
+    them = (m_bat - m_tat) / (giay / 60.0)
+    # TRẦN 2,0 s/phút — KHÔNG phải 0,2. Con số 0,1-0,2 trong yêu cầu KHÔNG
+    # đúng với cách che "làm mờ": đo được (`_do_che_chu_gia.py`, 3 vòng đan
+    # xen, cùng máy) **+1,30 s/phút** cho "làm mờ" và **−0,01 s/phút** cho
+    # "phủ khối". Micro-benchmark tách riêng phần lọc (`-f null`, không mã
+    # hoá): chuỗi che tốn **+0,34 s/phút**, trong đó kiến trúc split/overlay
+    # chỉ +0,05 — phần đắt là chính `boxblur`. Trần đặt ở 2,0 để cổng vẫn bắt
+    # được hồi quy THẬT (vd ai đó lỡ thêm một lượt ffmpeg thứ hai: 35-76 giây
+    # cho video 10 phút) mà không đỏ oan vì máy đang bận.
+    kiem("CA17 chi phí thêm <= 2,0 giây/phút phim (số hứa 0,1-0,2 KHÔNG đúng "
+         "với cách 'làm mờ' — xem ghi chú)",
+         them <= 2.0,
+         f"TẮT {m_tat:.2f}s · BẬT {m_bat:.2f}s trên clip {giay:.0f}s -> "
+         f"**{them:+.2f} giây/phút** (dò dải: {t_do:.2f}s MỘT LẦN cho cả video, "
+         f"3 Part dùng chung) · thô TẮT={[round(x,2) for x in tat]} "
+         f"BẬT={[round(x,2) for x in bat]}")
+    kiem("CA17 dò dải được NHỚ (Part 2,3 của cùng video không dò lại)",
+         len(C._DAI_NHO) >= 1 and t_do > 0,
+         f"{len(C._DAI_NHO)} video trong sổ nhớ · dò lần đầu {t_do:.2f}s")
+
+
+def ca21_dai_nho_khong_lam_chet_xuat():
+    """LỖI THẬT tìm ra 14/08/2026 (khi đo giá từng mảnh): dải NHỎ làm `boxblur`
+    nhận bán kính KHÔNG HỢP LỆ -> ffmpeg **chết cả lượt xuất, 0 khung**.
+
+    Đây không phải "che xấu một chút" mà là MẤT TRẮNG clip. Ca này chạy ffmpeg
+    THẬT với các cỡ dải hiểm để bản sau không sập lại.
+    """
+    print("\nCA 21 — DẢI NHỎ/HẸP KHÔNG ĐƯỢC LÀM CHẾT LƯỢT XUẤT (lỗi thật)")
+    p = nguon(SAN / "n_nho.mp4", chu=["a", "b"], giay=3)
+    tt = C.thong_tin(p)
+    W, H = tt["rong"], tt["cao"]
+    for w, h in ((2, 2), (4, 4), (10, 10), (W, 2), (2, H // 4)):
+        d = C.DaiChu(co_chu=True, y0=0, y1=h, x0=0, x1=w, rong=W, cao=H)
+        f = C.loc_che(d, cach="mo", do_manh=1.0)
+        if not f:
+            kiem(f"CA21 dải {w}x{h} -> trả rỗng (không che, không chết)", True)
+            continue
+        o = SAN / f"nho_{w}x{h}.mp4"
+        r = ff(["-i", str(p), "-filter_complex", f"[0:v]{f}[v]", "-map", "[v]",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-pix_fmt", "yuv420p", "-an", str(o)], cho_loi=True)
+        kh = C.so_khung_hinh(o) if o.exists() else 0
+        kiem(f"CA21 dải {w}x{h} -> ffmpeg CHẠY ĐƯỢC + có khung hình",
+             r.returncode == 0 and kh > 0,
+             f"mã thoát THẬT={r.returncode} · {kh} khung"
+             + ("" if r.returncode == 0 else
+                " · " + r.stderr.decode("utf-8", "replace")[-160:]))
+
+
+def ca18_round_trip_ui():
+    """CỔNG 4 — mở Chỉnh mẫu offscreen, đặt giá trị, LƯU, mở lại -> đúng số.
+    Kèm ca hạ mức mờ xuống 0,3 -> PHẢI bị chặn về 0,6."""
+    print("\nCA 18 — ROUND-TRIP UI (Chỉnh mẫu) + SÀN 0,60 chặn cứng")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from app.ui.editor import EditorDialog
+    except Exception as e:                                     # noqa: BLE001
+        kiem("CA18 nạp được UI", False, f"{type(e).__name__}: {e}")
+        return
+    # GIỮ THAM CHIẾU vào biến TOÀN CỤC. `QApplication.instance() or
+    # QApplication([])` mà không gán đi đâu thì Python thu hồi ngay đối tượng
+    # vừa tạo -> Qt sập 0xC0000409 (STATUS_STACK_BUFFER_OVERRUN) NGAY LÚC dựng
+    # dialog, KHÔNG một dòng traceback, và stdout chưa kịp xả nên nhìn như
+    # "test chạy không ra gì". Đã sập đúng 1 lần khi viết cổng này.
+    global _QAPP
+    _QAPP = QApplication.instance() or QApplication([])
+    ed = EditorDialog("", layout={})
+    kiem("CA18 mặc định TẮT (anh Hùng phải tự bật)",
+         not ed.che_chu_chk.isChecked())
+    kiem("CA18 ô con MỜ ĐI khi chưa bật (nhưng vẫn HIỆN, không ẩn)",
+         not ed.che_chu_cach.isEnabled() and ed.che_chu_cach.isVisible()
+         is not None)
+    ed.che_chu_chk.setChecked(True)
+    ed.che_chu_cach.setCurrentIndex(ed.che_chu_cach.findData("khoi"))
+    ed.che_chu_muc.setValue(140)
+    kiem("CA18 bật ô -> ô con dùng được", ed.che_chu_cach.isEnabled())
+    lay = ed._collect_layout()
+    kiem("CA18 lưu đúng 3 khoá",
+         lay.get("che_chu") is True and lay.get("che_chu_cach") == "khoi"
+         and abs(float(lay.get("che_chu_muc", 0)) - 1.40) < 1e-6,
+         f"che_chu={lay.get('che_chu')} cach={lay.get('che_chu_cach')} "
+         f"muc={lay.get('che_chu_muc')}")
+    ed2 = EditorDialog("", layout=lay)
+    kiem("CA18 mở lại -> ĐÚNG giá trị vừa lưu",
+         ed2.che_chu_chk.isChecked()
+         and ed2.che_chu_cach.currentData() == "khoi"
+         and ed2.che_chu_muc.value() == 140,
+         f"bật={ed2.che_chu_chk.isChecked()} "
+         f"cach={ed2.che_chu_cach.currentData()} muc={ed2.che_chu_muc.value()}")
+    # ---- SÀN: mẫu lưu sẵn 0,30 (bản thử / sửa tay) phải bị kẹp về 0,60 ----
+    xau = dict(lay)
+    xau["che_chu_muc"] = 0.30
+    ed3 = EditorDialog("", layout=xau)
+    kiem("CA18 mẫu ghi 0,30 -> UI chặn về 0,60", ed3.che_chu_muc.value() == 60,
+         f"thanh kéo = {ed3.che_chu_muc.value()/100:.2f}")
+    kiem("CA18 lưu lại cũng ra 0,60 (sàn nằm trong MÃ, không chỉ ở widget)",
+         abs(float(ed3._collect_layout().get("che_chu_muc", 0)) - 0.60) < 1e-6,
+         f"{ed3._collect_layout().get('che_chu_muc')}")
+    kiem("CA18 thanh kéo KHÔNG cho kéo dưới 0,60", ed.che_chu_muc.minimum() == 60,
+         f"min={ed.che_chu_muc.minimum()}")
+    # nhãn KHÔNG EMOJI (máy anh Hùng thiếu font -> ô vuông đen)
+    txt = (ed.che_chu_chk.text() + ed.che_chu_cach.itemText(0)
+           + ed.che_chu_cach.itemText(1) + ed.che_chu_note.text())
+    xau_ky = [c for c in txt if ord(c) > 0x2000 and not (
+        0x2010 <= ord(c) <= 0x203A)]
+    kiem("CA18 nhãn KHÔNG có emoji/ký tự dễ thiếu font", not xau_ky,
+         f"ký tự lạ: {xau_ky}")
+    for e in (ed, ed2, ed3):
+        e.deleteLater()
+
+
+def ca19_pha_duong_truyen():
+    """CỔNG 5 — CỐ TÌNH PHÁ: bỏ cờ khỏi đường truyền thì cổng PHẢI kêu.
+
+    Cổng không kêu khi bản vá bị gỡ thì nó chỉ là con dấu. Ở đây phá 3 chỗ,
+    mỗi chỗ là một mắt xích thật của đường editor -> mẫu -> m1 -> ffmpeg.
+    """
+    print("\nCA 19 — CỐ TÌNH PHÁ đường truyền: mỗi mắt xích đứt phải LỘ RA")
+    from app.core import ffmpeg_utils as FU
+    from app.modules import m1_highlight as M1
+    import inspect
+    # (a) m1 phải THẬT SỰ truyền 4 tham số che_chu vào export_canvas_clip
+    ma = inspect.getsource(M1._export_clip_impl)
+    thieu = [k for k in ("che_chu=", "che_chu_cach=", "che_chu_muc=",
+                         "che_chu_log=") if k not in ma]
+    kiem("CA19a m1 truyền đủ 4 tham số che chữ vào export_canvas_clip",
+         not thieu, f"thiếu: {thieu}" if thieu else "đủ 4")
+    # (b) export_canvas_clip phải CÓ tham số + phải DÙNG nó (không nhận rồi bỏ)
+    sig = inspect.signature(FU.export_canvas_clip).parameters
+    kiem("CA19b export_canvas_clip có đủ tham số",
+         all(k in sig for k in ("che_chu", "che_chu_cach", "che_chu_muc",
+                                "che_chu_log")),
+         f"có: {[k for k in sig if k.startswith('che_chu')]}")
+    ma2 = inspect.getsource(FU.export_canvas_clip)
+    kiem("CA19b' và THẬT SỰ chèn vào chuỗi filter (`_cc_loc` vào `parts`)",
+         "loc_cho_xuat" in ma2 and "parts.append(f\"{content}{_cc_loc}" in ma2,
+         "có `loc_cho_xuat` + `parts.append`")
+    # (c) sàn 0,60 phải nằm trong MÃ — gỡ `chuan_muc_mo` là lọt 0,30
+    kiem("CA19c `chuan_muc_mo` kẹp 0,30 -> 0,60", C.chuan_muc_mo(0.30) == 0.60,
+         f"chuan_muc_mo(0.30) = {C.chuan_muc_mo(0.30)}")
+    kiem("CA19c doc_che_chu cũng đi qua sàn",
+         M1.doc_che_chu({"che_chu": True, "che_chu_muc": 0.3})["muc"] == 0.60)
+    # (d) mặc định phải TẮT ở MỌI cửa
+    kiem("CA19d mặc định TẮT ở export_canvas_clip",
+         sig["che_chu"].default is False)
+    kiem("CA19d mặc định TẮT ở doc_che_chu (payload rỗng / mẫu không có khoá)",
+         M1.doc_che_chu({})["bat"] is False
+         and M1.doc_che_chu({"cap_style": {"_mau": "khong-ton-tai"}})["bat"]
+         is False)
+    # (e) TỰ KIỂM BỘ DÒ: bịa một `export_canvas_clip` KHÔNG có tham số ->
+    #     ca (b) phải TRƯỢT. Không có ca này thì (b) chỉ là con dấu.
+    def _gia(src, dst, segments, video_rect, bg="blur"):
+        return True
+    _sig_gia = inspect.signature(_gia).parameters
+    kiem("CA19e TỰ KIỂM: bản GIẢ thiếu tham số -> phép kiểm (b) TRƯỢT đúng",
+         not all(k in _sig_gia for k in ("che_chu", "che_chu_cach")))
+
+
+def ca20_nhin_bang_mat(src: Path, a: Path, b: Path, vung) -> None:
+    """Trích khung TRƯỚC/SAU của FILE XUẤT để NGƯỜI/LLM tự nhìn.
+
+    Cổng KHÔNG tự chấm "nhìn đẹp" — bài học đã đo: mức 0,40 cho mật độ 0,0030
+    (máy bảo sạch) mà mắt vẫn đọc được chữ.
+    """
+    print("\nCA 20 — TRÍCH KHUNG FILE XUẤT ĐỂ NGƯỜI TỰ NHÌN")
+    if not (a and b and a.exists() and b.exists()):
+        kiem("CA20 có file xuất để trích", False, "thiếu file từ CA 15")
+        return
+    p1, p2 = SAN / "XUAT_TAT.png", SAN / "XUAT_BAT.png"
+    C.trich_khung(a, 5.0, p1)
+    C.trich_khung(b, 5.0, p2)
+    kiem("CA20 có đủ ảnh XUẤT-TẮT + XUẤT-BẬT",
+         p1.exists() and p2.exists() and p1.stat().st_size > 1000)
+    print(f"      TẮT: {p1}")
+    print(f"      BẬT: {p2}")
+    if vung:
+        print(f"      (dải chữ trên file xuất: y={vung[0]}..{vung[1]} "
+              f"x={vung[2]}..{vung[3]})")
+
+
 def main() -> int:
     if SAN.exists():
         shutil.rmtree(SAN, ignore_errors=True)
@@ -420,6 +893,21 @@ def main() -> int:
         ca12_khong_chu_thi_khong_che()
         ca13_khong_tieng()
         ca14_trich_khung_de_nhin(p, o, d)
+        # ---- PHẦN 2: ĐÃ NỐI VÀO ĐƯỜNG XUẤT ----
+        ca19_pha_duong_truyen()      # quét tĩnh, rẻ -> chạy trước
+        ca21_dai_nho_khong_lam_chet_xuat()
+        ca18_round_trip_ui()
+        that = _nguon_that()
+        if that is None:
+            HONG.append("KHÔNG có video thật có chữ cháy trong kho -> "
+                        "CA15/16/17/20 KHÔNG chạy được (đừng coi là ĐẠT)")
+        else:
+            print(f"\n(nguồn thật cho CA 15-17-20: {that})")
+            xa, xb, vung = ca15_bat_tat_co_tac_dung(that)
+            ca16_bat_bien(that)
+            if os.environ.get("BQ_BO_DO_CHI_PHI", "") != "1":
+                ca17_chi_phi(that)
+            ca20_nhin_bang_mat(that, xa, xb, vung)
     except Exception:                                          # noqa: BLE001
         traceback.print_exc()
         HONG.append("NGOẠI LỆ giữa chừng")
