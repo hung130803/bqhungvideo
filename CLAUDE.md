@@ -1289,12 +1289,24 @@
      lên 4,0 là vừa đúng chỗ mất khả năng bắt cái đó. Muốn rẻ thì chọn cách
      **"phủ khối"**: `drawbox` có `enable` sẵn nên không cần split/overlay
      (đo −0,01 s/phút), và `BQ_CHE_HOP=0` tắt hẳn bước thu-về-hộp.
+     **CHE OAN ĐO LẠI SAU KHI CÓ HỘP: `0/76 = 0,0%` — KHÔNG TĂNG MỘT CỬA SỔ
+     NÀO** (`_do_che_chu.py do`, 120 cửa sổ / 22 video: 44 thật CÓ chữ · 76
+     thật KHÔNG chữ; đúng 116/120 = 96,7%; bỏ sót 4/44 = 9,1%). Đây là RÀNG
+     BUỘC CỨNG của tính năng — che nhầm vào hình là hỏng video, tệ hơn che
+     thừa. Lý do nó không thể tăng: `do_hop_chu` **chỉ chạy sau khi
+     `do_dai_chu` đã kết luận CÓ chữ** và không được phép đổi `co_chu`; quét
+     `git diff v2.26.0..HEAD -- app/core/che_chu.py` cho **0 dòng** đụng tới
+     phép gán `co_chu`. **ĐO XONG MỚI NÓI, đừng chỉ lập luận** — cổng 56 CA 24e
+     kiểm thêm ở mức đường xuất: 2 video sạch -> chuỗi filter RỖNG kể cả khi
+     bật hộp. **CỔNG 56 SAU KHI THÊM CA 24: ĐẠT 122 · HỎNG 0.**
      **CHƯA ĐẠT, GHI THẲNG:** chỉ dò **dải ĐÁY** (`che_chu.py` chỉ quét từ một
      mốc trở xuống) — chữ ở đỉnh/giữa khung KHÔNG che · **Mixed-Cut và mẫu
      "clip đơn" KHÔNG che** (chưa đi qua `export_canvas_clip`) · sổ nhớ dò dải
      (`_DAI_NHO`) **chỉ ở RAM**, tắt app là mất, mở lại phải dò lại từ đầu ·
      hộp làm lượt xuất **chậm thêm 3,3 giây mỗi phút phim** (số ở trên) ·
-     chưa ai xem bằng mắt trên máy nhân viên thật.
+     **bỏ sót vẫn 9,1%** (4/44 cửa sổ có chữ mà không dò ra — chữ Trung còn
+     nguyên trên hình ở những chỗ đó) · chưa ai xem bằng mắt trên máy nhân
+     viên thật.
   57. `_test_tg_bang_tiendo.py` → **HỘP THAY GIỌNG: BẢNG TIẾN ĐỘ SỐNG · THƯ
      MỤC VÀO/RA · NHỚ VIDEO ĐÃ XONG** (v2.27.0, 14/08/2026). Anh Hùng dùng
      thật v2.26.0 rồi báo 4 lỗi, cổng này canh đúng 4 cái đó. **ĐẠT 57 ·
