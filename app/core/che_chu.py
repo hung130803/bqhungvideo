@@ -48,17 +48,36 @@ _CREATE_NO_WINDOW = 0x0800_0000 if os.name == "nt" else 0
 NGUONG_NET = 55
 #: Mật độ nét trên MỘT HÀNG để coi hàng đó "đang có chữ".
 NGUONG_HANG = 0.045
-#: Tỉ lệ khung mà một hàng phải "có chữ" thì hàng đó mới thuộc DẢI.
-NGUONG_HANG_KHUNG = 0.35
+#: Dải MỌC RA TỪ HÀNG ĐẬM NHẤT, dừng khi mật độ tụt dưới `TY_LE_DINH` lần đỉnh.
+#: NGƯỠNG CỨNG KHÔNG DÙNG ĐƯỢC — đo trên video Douyin `dy3` (bãi đá/cát ngay
+#: dưới dòng chữ): hàng chữ 0,19-0,27 còn hàng CÁT 0,05-0,09, cả hai đều vượt
+#: 0,045 nên dải mọc từ 88% xuống tận 99% = cao 29,4% khung -> bị luật CAO_MAX
+#: đá ra -> BỎ SÓT cả video CÓ chữ. Lấy 0,40 lần đỉnh thì 0,40x0,26 = 0,104 >
+#: 0,09 -> cắt sạch cát mà vẫn ôm trọn nét chữ.
+TY_LE_DINH = 0.40
+#: Khe hở (tỉ lệ chiều cao khung) được phép BẮC CẦU khi mọc dải — phụ đề 2
+#: dòng có khoảng trắng giữa 2 dòng, không bắc cầu là chỉ che được 1 dòng.
+KHE_TOI_DA = 0.018
 #: Tỉ lệ khung có chữ trong dải -> mới dám kết luận "video CÓ chữ cháy".
 #: Đây là con số chặn CA SAI NGUY HIỂM NHẤT (che nhầm video không chữ).
 TY_LE_KHUNG_MIN = 0.50
-#: Mật độ trong dải phải gấp bấy nhiêu lần mật độ NỀN (phần còn lại của khung).
-TY_SO_NEN_MIN = 2.5
+#: MẬT ĐỘ TUYỆT ĐỐI trong dải. Đây là cửa chặn CHÍNH, đo được là tách sạch:
+#: 5 video Trung có phụ đề cháy 0,186..0,309 · dải "ma" đậm nhất dò ra trên 10
+#: video Mỹ không phụ đề 0,055. Lấy 0,10 = giữa hai đám, cách mỗi bên ~2 lần.
+MAT_DO_MIN = 0.10
+#: Mật độ trong dải / mật độ NỀN. CHỈ LÀ CỬA PHỤ — đặt cao là GIẾT OAN.
+#: Đo trên `dy3` (Douyin, cảnh bãi đá + rừng): dải chữ mật độ 0,20-0,29, rõ
+#: mồn một bằng mắt, nhưng NỀN cũng đầy vân nên tỉ số chỉ 1,97-2,49 -> ngưỡng
+#: 2,5 làm BỎ SÓT 3/6 cửa sổ của một video CÓ chữ. Hạ về 1,5.
+TY_SO_NEN_MIN = 1.5
 #: Chỉ dò từ mốc này trở xuống (dải đáy cố định — ca phủ phần đông video reup).
 VUNG_DAY = 0.55
 #: Chiều cao dải hợp lệ (tỉ lệ chiều cao khung). Ngoài khoảng = KHÔNG phải chữ.
-CAO_MIN, CAO_MAX = 0.015, 0.24
+#: PHỤ ĐỀ LÀ DẢI MỎNG — đo trên 5 video Trung: 36..52 px / 720 = **5,0..7,2%**
+#: (kể cả loại 2 dòng cũng chỉ ~13%). Ca CHE OAN duy nhất bắt được (`en7`: áo
+#: in chữ "OLD NAVY" + giá treo quần áo phía sau) mọc ra dải **148 px = 20,6%**
+#: — chặn ở 16% là giết đúng nó mà vẫn còn 2,2 lần dư cho phụ đề thật.
+CAO_MIN, CAO_MAX = 0.015, 0.16
 #: Pixel bật ở >= tỉ lệ này số khung = HẰNG (logo/watermark/khung viền) -> TRỪ
 #: RA. Đây là cửa phân biệt PHỤ ĐỀ (chữ đổi liên tục) với WATERMARK (đứng im).
 TY_LE_HANG = 0.85
@@ -231,7 +250,8 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
                ket_thuc: float = 0.0, so_khung: int = SO_KHUNG,
                vung_day: float = VUNG_DAY,
                ty_le_khung_min: float = TY_LE_KHUNG_MIN,
-               ty_so_nen_min: float = TY_SO_NEN_MIN) -> DaiChu:
+               ty_so_nen_min: float = TY_SO_NEN_MIN,
+               mat_do_min: float = MAT_DO_MIN) -> DaiChu:
     """Dò DẢI NGANG chứa chữ cháy sẵn ở đáy khung.
 
     CÁCH LÀM (3 tín hiệu cộng lại, mỗi cái chặn một loại nhầm):
@@ -241,6 +261,8 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
           bị coi là "có chữ cháy" rồi bị che oan.
       (3) LẶP LẠI QUA THỜI GIAN — dải phải có chữ ở >= `ty_le_khung_min` số
           khung. Một khung lẻ có bảng hiệu/màn hình máy tính không đủ tư cách.
+      (4) MẬT ĐỘ TUYỆT ĐỐI >= `mat_do_min` — cửa chặn CHÍNH. Tỉ số với nền chỉ
+          là cửa PHỤ vì cảnh nhiều vân (bãi đá, rừng) làm nền cũng đậm.
 
     Không đạt bất kỳ điều nào -> `co_chu=False` + `ly_do` nói rõ vì sao.
     KHÔNG BAO GIỜ ném lỗi: nguồn hỏng cũng chỉ trả co_chu=False.
@@ -268,29 +290,39 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
     doi = np.clip(mns.astype(np.int16) - const[None], 0, 1).astype(np.uint8)
 
     prof = doi.mean(axis=2)                             # (N, h) mật độ/hàng
-    co = prof > NGUONG_HANG                             # hàng "đang có chữ"
-    ty_le_hang = co.mean(axis=0)                        # (h,)
+    tb = prof.mean(axis=0)                              # (h,) mật độ TB/hàng
 
     y_min = int(h * vung_day)
-    hop_le = ty_le_hang >= NGUONG_HANG_KHUNG
-    hop_le[:y_min] = False
-
-    # đoạn liên tiếp DÀI NHẤT trong vùng đáy
-    tot_y0 = tot_y1 = 0
-    i = y_min
-    while i < h:
-        if hop_le[i]:
-            j = i
-            while j < h and hop_le[j]:
-                j += 1
-            if j - i > tot_y1 - tot_y0:
-                tot_y0, tot_y1 = i, j
-            i = j
-        else:
-            i += 1
-    if tot_y1 <= tot_y0:
-        kq.ly_do = "không có hàng nào đủ mật độ nét ở vùng đáy"
+    y_dinh = int(y_min + np.argmax(tb[y_min:]))
+    dinh = float(tb[y_dinh])
+    if dinh < NGUONG_HANG:
+        kq.ly_do = (f"hàng đậm nhất vùng đáy chỉ {dinh:.4f} "
+                    f"(cần >= {NGUONG_HANG})")
         return kq
+
+    # MỌC RA TỪ ĐỈNH, bắc cầu khe hở nhỏ (phụ đề 2 dòng)
+    ng = max(NGUONG_HANG, TY_LE_DINH * dinh)
+    khe = max(2, int(h * KHE_TOI_DA))
+    tot_y0 = tot_y1 = y_dinh
+    i, hut = y_dinh, 0
+    while i + 1 < h:
+        i += 1
+        if tb[i] >= ng:
+            tot_y1, hut = i, 0
+        else:
+            hut += 1
+            if hut > khe:
+                break
+    i, hut = y_dinh, 0
+    while i - 1 >= y_min:
+        i -= 1
+        if tb[i] >= ng:
+            tot_y0, hut = i, 0
+        else:
+            hut += 1
+            if hut > khe:
+                break
+    tot_y1 += 1
 
     cao_ty = (tot_y1 - tot_y0) / h
     if cao_ty < CAO_MIN or cao_ty > CAO_MAX:
@@ -327,6 +359,10 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
     if kq.ty_le_khung < ty_le_khung_min:
         kq.ly_do = (f"chỉ {kq.ty_le_khung*100:.0f}% khung có chữ trong dải "
                     f"(cần >= {ty_le_khung_min*100:.0f}%)")
+        return kq
+    if kq.mat_do < mat_do_min:
+        kq.ly_do = (f"mật độ nét trong dải {kq.mat_do:.4f} — quá nhạt để là "
+                    f"chữ (cần >= {mat_do_min})")
         return kq
     if kq.ty_so_nen < ty_so_nen_min:
         kq.ly_do = (f"dải chỉ đậm gấp {kq.ty_so_nen:.2f} lần nền "
