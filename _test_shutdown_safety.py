@@ -121,9 +121,30 @@ kiem("self.thumbs_ready.emit()" not in sp.replace(
      "safe_emit(lambda: self.thumbs_ready.emit())", ""),
      "không còn emit TRẦN trong _bg_thumbs")
 
+def _thoat(ma: int) -> None:
+    """`os._exit` KHÔNG XẢ BỘ ĐỆM stdout — phải tự xả TRƯỚC khi gọi.
+
+    Cổng này cố ý thoát bằng `os._exit` (luồng nền của app còn sống, finalize
+    interpreter là treo). Nhưng khi chạy hồi quy hàng loạt thì stdout là FILE,
+    tức đệm theo KHỐI chứ không theo dòng, nên `os._exit` vứt sạch mọi thứ
+    vừa in: đo 14/08/2026 log của cổng này ra **0 byte** trong khi mã thoát
+    vẫn 0. Chạy tay trong console thì thấy đủ chữ (console đệm theo DÒNG) nên
+    lỗi này ẩn kỹ. Hậu quả nặng nhất nằm ở nhánh HỎNG: `os._exit(1)` nuốt luôn
+    danh sách FAIL, để lại đúng một con số 1 không kèm lý do.
+    Đây là họ hàng của bài học "os._exit làm SQLite không checkpoint, WAL nợ
+    lại" — cùng một nguyên nhân: thoát cứng thì mọi bộ đệm chưa xả đều mất.
+    """
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.flush()
+        except Exception:  # noqa: BLE001
+            pass
+    os._exit(ma)
+
+
 print()
 if FAIL:
     print(f"KẾT QUẢ: {len(FAIL)} FAIL -> {FAIL}")
-    os._exit(1)
+    _thoat(1)
 print("KẾT QUẢ: TẤT CẢ ĐẠT — luồng nền không thể làm sập app nữa")
-os._exit(0)
+_thoat(0)
