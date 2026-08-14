@@ -1244,10 +1244,28 @@ def ca24_hop_chu(src: Path):
          "CHE OAN 0/76)",
          d_hop.co_chu is d_dai.co_chu and bool(d_hop.hop),
          f"co_chu {d_dai.co_chu} -> {d_hop.co_chu} · {len(d_hop.hop or [])} mốc")
-    kiem("CA24a' hộp KHÔNG BAO GIỜ rộng hơn dải",
-         d_hop.x0 >= d_dai.x0 and d_hop.x1 <= d_dai.x1,
-         f"dải x={d_dai.x0}..{d_dai.x1} ({d_dai.x1-d_dai.x0}px) · "
-         f"hộp x={d_hop.x0}..{d_hop.x1} ({d_hop.x1-d_hop.x0}px)")
+    # BỀ NGANG HỢP của mọi hộp CÓ THỂ RỘNG HƠN DẢI, và đó KHÔNG phải lỗi —
+    # đo được 14/08: dải x=122..838 (716px) · hộp x=86..874 (**788px, +10%**).
+    # Hai bộ dò lấy mẫu KHÁC HẲN nhau: dải xem `SO_KHUNG=16` khung cho CẢ
+    # video, hộp xem `HOP_FPS=2` khung/giây (video 5 phút = 600 khung) nên nó
+    # THẤY dòng phụ đề dài nhất mà 16 khung kia bỏ sót, cộng `HOP_DEM=10` px
+    # đệm mỗi bên. Nới ra ở đó là che ĐÚNG chỗ có chữ.
+    # Cái phải canh là (a) đừng nới quá tay (dấu hiệu bắt nhiễu) và (b) bề
+    # ngang TRUNG BÌNH THEO THỜI GIAN vẫn phải NHỎ HƠN dải — đó mới là mệnh
+    # đề "che ít đi", còn hợp-của-mọi-hộp thì không nói lên điều gì.
+    rong_dai = max(1, d_dai.x1 - d_dai.x0)
+    du = (d_hop.x1 - d_hop.x0) / rong_dai - 1.0
+    kiem("CA24a' bề ngang HỢP của mọi hộp không được vượt dải quá 15% (hộp dò "
+         "2 khung/giây nên THẤY dòng dài nhất mà 16 khung của dải bỏ sót — nới "
+         "ra là đúng; vượt nhiều mới là dấu hiệu bắt nhiễu)",
+         du <= 0.15,
+         f"dải x={d_dai.x0}..{d_dai.x1} ({rong_dai}px) · "
+         f"hộp x={d_hop.x0}..{d_hop.x1} ({d_hop.x1-d_hop.x0}px) = "
+         f"{du*100:+.1f}%")
+    kiem("CA24a''' bề ngang TRUNG BÌNH THEO THỜI GIAN phải NHỎ HƠN dải (đây "
+         "mới là mệnh đề 'che ít đi' trên trục ngang)",
+         d_hop.ty_le_thu < 1.0,
+         f"trung bình theo thời lượng = {d_hop.ty_le_thu*100:.0f}% bề ngang dải")
     # Nới chóp/chân: hộp CÓ QUYỀN cao hơn dải, nhưng chỉ trong mức đã khai.
     # Cao hơn nữa = đang ăn vào HÌNH, tức che oan kiểu mới.
     tran = int(round(C.HOP_CAO_THEM * d_dai.rong / float(C.RONG_DO))) + 2
