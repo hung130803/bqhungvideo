@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CỔNG 54 — CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`).
+"""CỔNG 56 — CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`).
 
 Chạy ffmpeg THẬT. Nguồn tự sinh bằng `lavfi` (tiền định, không phụ thuộc file
 trên máy) + video THẬT của anh Hùng khi có.

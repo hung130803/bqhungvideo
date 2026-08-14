@@ -374,7 +374,7 @@ def do_dai_chu(src: str | Path, bat_dau: float = 0.0,
 
     # TOẠ ĐỘ PHẢI CHẴN — yuv420p lấy mẫu màu 2x1/2x2, `crop`+`overlay` ở toạ độ
     # LẺ buộc ffmpeg nội suy lại mặt phẳng màu -> BẨN 1 hàng/cột NGAY BÊN
-    # NGOÀI dải. Đo trong cổng 54 CA 5: dải y0=311 (lẻ) -> PSNR ngoài dải
+    # NGOÀI dải. Đo trong cổng 56 CA 5: dải y0=311 (lẻ) -> PSNR ngoài dải
     # 45,2 dB; snap về chẵn -> `inf` (không lệch một điểm ảnh nào).
     ty = H / h
     kq.y0 = _chan(max(0, int(round(tot_y0 * ty)) - 2), xuong=True)
