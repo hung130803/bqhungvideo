@@ -486,21 +486,13 @@ def nhan_nut_tai(tt: Optional[dict] = None) -> str:
 #: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
 _KHOA_CAI = threading.Lock()
 
-#: Mã kiểm CHẠY Ở TIẾN TRÌNH RIÊNG: import trong tiến trình đang chạy có thể
-#: ăn torch của `.venv` (máy dev) -> tưởng đã cài vào `_lib`.
-_MA_KIEM_LIB = (
-    "import sys, json\n"
-    "sys.path.insert(0, sys.argv[1])\n"
-    "ra = {}\n"
-    "for ten, khoa in (('torch','torch'), ('demucs.pretrained','demucs'),"
-    " ('soundfile','soundfile')):\n"
-    "    try:\n"
-    "        m = __import__(ten)\n"
-    "        ra[khoa] = getattr(m, '__file__', '?')\n"
-    "    except Exception as e:\n"
-    "        ra['loi_' + khoa] = str(e)[:200]\n"
-    "print(json.dumps(ra))\n"
-)
+# ĐÃ GỠ `_MA_KIEM_LIB` + `kiem_lib_bang_tien_trinh_rieng` (14/08/2026).
+# Chúng chạy python riêng rồi `sys.path.insert(0, lib)` và hỏi "`__import__` có
+# chạy không". Nhưng python riêng ấy CHÍNH LÀ python của `.venv`, nên nó mượn
+# torch của `.venv` rồi báo "cài xong" trong khi `_lib` vẫn rỗng torch — đúng
+# cái bẫy nó sinh ra để chặn. Giữ lại một hàm kiểm biết nói dối thì nguy hiểm
+# hơn không có hàm nào (phép đo hỏng phát chứng nhận cho thứ vẫn hỏng).
+# Thay bằng `do_goi_tach_giong()`: so `spec.origin` với `_lib`, không import gì.
 
 
 def _lenh_pip() -> list[str]:
@@ -561,29 +553,6 @@ def tinh_trang_demucs() -> dict:
         "cai_duoc": bool(_lenh_pip()),
         "loi_nhan": "" if co else THIEU_DEMUCS,
     }
-
-
-def kiem_lib_bang_tien_trinh_rieng(lib: str = "") -> dict:
-    """Kiểm `_lib` bằng TIẾN TRÌNH RIÊNG — chống "tưởng cài xong".
-
-    Trên máy dev, `.venv` đã có torch nên `tinh_trang_demucs()` trả True KỂ CẢ
-    khi `_lib` rỗng. Hàm này chạy python riêng với `sys.path` chỉ thêm `_lib`
-    rồi trả đường dẫn file THẬT của từng gói để biết nó đến từ đâu.
-    """
-    lib = lib or lib_demucs()
-    pip = _lenh_pip()
-    if not pip:
-        return {"loi": "Máy này không có python/pip để kiểm"}
-    try:
-        r = subprocess.run([pip[0], *(["-3"] if pip[1:2] == ["-3"] else []),
-                            "-c", _MA_KIEM_LIB, lib],
-                           capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=180,
-                           creationflags=_CREATE_NO_WINDOW)
-        return json.loads((r.stdout or "{}").strip().splitlines()[-1])
-    except (OSError, ValueError, IndexError,
-            subprocess.TimeoutExpired) as e:
-        return {"loi": str(e)[:200]}
 
 
 def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,

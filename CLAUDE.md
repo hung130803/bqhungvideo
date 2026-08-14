@@ -1159,7 +1159,10 @@
      `thay_giong.py` PHẢI còn chữ đó. `cai_demucs()` chỉ chạy khi NGƯỜI DÙNG
      BẤM, cài vào `_lib` RIÊNG (không đụng `.venv` đang chạy 300 kênh), và
      kiểm lại bằng **tiến trình riêng** (máy dev có torch trong `.venv` nên
-     kiểm tại chỗ là "tưởng cài xong").
+     kiểm tại chỗ là "tưởng cài xong"). **PHÉP KIỂM ĐÓ ĐÃ SAI VÀ ĐÃ BỊ GỠ ở
+     v2.27.1 — xem cổng 58:** tiến trình riêng ấy chính là python của `.venv`
+     nên nó mượn torch của `.venv` rồi báo "cài xong" trong khi `_lib` rỗng
+     torch. Nay hậu kiểm so `spec.origin` với `_lib` (`do_goi_tach_giong`).
      **2 LỖI CỦA CHÍNH CỔNG (sửa, đừng lặp):** (a) thùng rác của cổng nằm
      trong `%TEMP%` -> `_is_safe_recycle_root` từ chối (ĐÚNG) rồi lùi về
      `_DaXoa` -> mục MD5 **HỎNG OAN**; nay thùng rác đặt NGOÀI `%TEMP%`
