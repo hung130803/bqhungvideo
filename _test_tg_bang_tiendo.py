@@ -280,6 +280,48 @@ _tt0 = [dlg.bang.item(r, 2).text() for r in range(dlg.bang.rowCount())]
 dat("cột Tiến trình có % + bước NGAY từ đầu", all("%" in x for x in _tt0),
     " · ".join(_tt0))
 
+# SOI PIXEL (bài học cổng 9): "có item" chưa chắc là "NHÌN THẤY". QSS chung
+# từng bóp dòng còn ~0 px và cổng không QSS vẫn xanh trong khi máy anh Hùng
+# thấy DÒNG TRỐNG TRƠN. Ở đây đếm màu thật vẽ ra trên dòng đầu.
+from PyQt6.QtGui import QImage  # noqa: E402
+
+dlg.show()
+_app.processEvents()
+_vp = dlg.bang.viewport()
+_img = QImage(_vp.size(), QImage.Format.Format_ARGB32)
+_vp.render(_img)
+def _muc_in(rect) -> int:
+    """Số điểm ảnh KHÁC màu nền trong một ô = "có chữ vẽ ra thật".
+
+    Đếm MÀU (kiểu cổng 9) không dùng được ở đây: chạy offscreen thì chữ không
+    khử răng cưa nên ô CÓ CHỮ cũng chỉ ra ĐÚNG 2 màu (nền + chữ) — ngưỡng
+    ">= 3 màu" FAIL OAN. Đếm điểm ảnh khác nền thì phân biệt được thật.
+    """
+    dem: dict = {}
+    for y in range(max(0, rect.top()), min(_img.height(), rect.bottom())):
+        for x in range(max(0, rect.left()), min(_img.width(), rect.right())):
+            k = _img.pixel(x, y)
+            dem[k] = dem.get(k, 0) + 1
+    if not dem:
+        return 0
+    nen = max(dem.values())
+    return sum(dem.values()) - nen
+
+
+_rect = dlg.bang.visualItemRect(dlg.bang.item(0, 1))
+_in = _muc_in(_rect)
+dat("dòng đầu VẼ RA THẬT (điểm ảnh chữ trong ô Trạng thái)", _in >= 40,
+    f"{_in} điểm ảnh chữ · ô {_rect.width()}x{_rect.height()} px")
+dat("dòng bảng đủ cao để đọc (>= 18 px)", _rect.height() >= 18,
+    f"{_rect.height()} px")
+# TỰ KIỂM BỘ DÒ: vùng TRỐNG dưới dòng cuối phải ra gần 0 — không thì phép đo
+# trên chỉ là con dấu (đo cái gì cũng "có chữ").
+_duoi = dlg.bang.visualItemRect(dlg.bang.item(2, 1)).translated(0, 60)
+_in0 = _muc_in(_duoi)
+dat("TỰ KIỂM BỘ DÒ: vùng TRỐNG dưới bảng ra ~0 điểm ảnh chữ", _in0 <= 5,
+    f"{_in0} điểm ảnh")
+dlg.hide()
+
 giay = cho_xong(dlg)
 SO["luot1_giay"] = giay
 print(f"  lượt 1 xong sau {giay}s · {len(CHUOI)} video có chuỗi trạng thái")
