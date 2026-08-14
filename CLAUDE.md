@@ -885,6 +885,85 @@
      thiếu khoá `words`** -> `co_loi_noi_that` tính mật độ `len(words)/giây` ra
      **0,00** -> app gán "video KHÔNG có lời" -> `bat_buoc=True` -> xem hình bật
      BẤT KỂ ô của kênh -> cổng đo ra 5 lượt và suýt kết luận oan là bản vá rò.
+  53. `_test_thay_giong.py` → **THAY GIỌNG NÓI: thay LỜI THOẠI sang tiếng
+     khác, GIỮ NGUYÊN nhạc nền + tiếng động** (`app/core/thay_giong.py`,
+     v2.24.0, 14/08/2026). KHÁC HẲN `dubbing.py`: `dubbing` CHỒNG giọng mới lên
+     tiếng gốc (voice-over, tiếng gốc vẫn nghe thấy); ở đây tiếng gốc bị **TÁCH
+     BỎ HẲN** rồi đặt giọng đã dịch vào chỗ trống. **ĐẠT 33 · HỎNG 0.**
+     **BƯỚC 1 (TÁCH GIỌNG) LÀ NỀN MÓNG — ĐO XONG MỚI ĐƯỢC LÀM TIẾP.** Đo trên
+     2 video THẬT 60 giây (Trung + Anh), máy này CPU (torch `2.13.0+cpu` nên
+     `cuda.is_available()` = False KỂ CẢ khi máy có RTX 3060):
+
+     | | thời gian/1 phút | RAM đỉnh | giảm giọng | giữ nhạc | **RÒ RỈ TỪ** |
+     |---|---|---|---|---|---|
+     | demucs (zh) | 24,88s (0,415×) | 1281 MB | 13,79 dB | −3,28 dB | **2,3%** |
+     | nhẹ (zh) | 0,09s (0,002×) | 48 MB | 1,76 dB | +0,34 dB | **100%** |
+     | demucs (en) | 21,93s (0,366×) | 1298 MB | 25,92 dB | −10,58 dB | **3,4%** |
+     | nhẹ (en) | 0,07s (0,001×) | 46 MB | 8,00 dB | −4,59 dB | **86,3%** |
+
+     **THƯỚC "RÒ RỈ TỪ" LÀ THƯỚC DUY NHẤT THẲNG THẮN: CHÉP LẠI CHÍNH LỚP
+     "NHẠC" BẰNG GROQ RỒI ĐẾM TỪ.** RMS đẹp vẫn lừa được; whisper thì không.
+     Nó **LOẠI HẲN cách nhẹ**: lớp "nhạc" của cách nhẹ chép ra **256/256 từ
+     tiếng Trung Y HỆT bản gốc**. Gốc: video thật gần như **DUAL-MONO**
+     (tương quan L/R 0,963) nên `(L−R)` vứt ~98% năng lượng gồm cả nhạc -> phải
+     cộng lại dải trầm/cao để cứu nhạc -> **cộng lại thì giọng về theo**. Hai
+     mục tiêu LOẠI TRỪ NHAU, không tham số nào cứu được.
+     **HỆ QUẢ PHẢI NÓI THẲNG VỚI ANH HÙNG: máy nhân viên KHÔNG có torch thì
+     đường lui `nhe` ra chất lượng KHÔNG BÁN ĐƯỢC** (giọng gốc còn nghe rõ
+     chồng lên giọng mới). Đường lui chỉ để KHÔNG VỠ APP, không phải lựa chọn
+     chất lượng. Demucs cài RIÊNG ở `_lib/` (env `BQ_DEMUCS_LIB`), **cố ý
+     KHÔNG cài vào `.venv`** — một lượt `pip install demucs` kéo theo
+     torch/torchaudio có thể phá app đang chạy sản xuất 300 kênh.
+     **BƯỚC 5 (KHỚP THỜI GIAN) LÀ CHỖ VỠ THỨ HAI.** Dịch Trung -> Anh đọc lên
+     DÀI HƠN HẲN câu gốc: lượt đầu **15/21 câu phải ép quá 1,30** và `atempo`
+     **CHẠM TRẦN 1,50**. **CHỮA Ở CHỮ TRƯỚC, ĐỪNG ĐỤNG TỐC ĐỘ** — bước 4b
+     `rut_gon_vua_khung` nhờ LLM viết NGẮN lại, đọc lại, và **chỉ NHẬN bản mới
+     khi nó đọc NGẮN HƠN thật** (LLM đôi khi trả câu dài hơn). Đo: tempo cần
+     max **2,61 -> 1,83** (lượt khác 2,32 -> 1,41), số câu vượt **15 -> 8**
+     (lượt khác 18 -> 4), tempo trung bình khi khớp **1,349 -> 1,206**.
+     Thứ tự ưu tiên trong `khop_thoi_gian` (đừng đổi): lọt khung sẵn -> KHÔNG
+     đụng tốc độ · tràn -> **MƯỢN khoảng lặng đoạn kế** · mượn hết mới ép.
+     **THƯỚC ĐO PHẢI TÁCH 2 THỨ:** "lệch mốc cuối" **GỒM CẢ phần mượn khoảng
+     lặng hợp lệ** nên nó to (4.632 ms) mà KHÔNG có nghĩa là sai. Con số thật
+     sự nói lên "timeline sai" là **CHỒNG LẤN** = phần liếm sang câu kế:
+     **266,1 ms / 4 trong 23 câu**. Đọc nhầm hai cột này là kết luận sai.
+     **AN TOÀN VIDEO GỐC (việc nặng nhất của cổng):** anh Hùng nói "làm xong tự
+     xoá video gốc" — **TUYỆT ĐỐI KHÔNG xoá hẳn**. Thứ tự BẮT BUỘC:
+     `kiem_video_ra` (tồn tại + **có KHUNG HÌNH** + có tiếng + đúng độ dài)
+     XONG -> mới `delete_or_recycle` đưa gốc vào thùng rác -> rồi mới đặt file
+     mới vào chỗ. Gốc KẸT (Windows còn giữ handle) -> **GIỮ NGUYÊN tất cả**,
+     để lượt sau; cấm ghi đè lên gốc lúc đó. Cổng chứng minh bằng **MD5**: gốc
+     trong thùng rác trùng TỪNG BYTE với gốc ban đầu.
+     **BẪY ĐÃ SẬP THẬT KHI LÀM VIỆC NÀY — `astats` TÊN CHỈ SỐ KHÔNG TỒN TẠI:**
+     `do_meo` dùng `Number_of_clipped_samples`, tên này **KHÔNG CÓ trong ffmpeg
+     N-121186** -> **cả lệnh ffmpeg CHẾT** ("Unable to parse measure_overall")
+     -> hàm trả `{dinh: None, cham_tran: None}` **IM LẶNG** -> mọi phép kiểm
+     "có méo không" đọc None rồi cho qua = **TỰ PASS OAN VĨNH VIỄN**. Tên đúng
+     là **`Abs_Peak_count`** (in ra dòng `Abs Peak count:`). Nay ffmpeg lỗi thì
+     **NÉM**, không trả None âm thầm. Đây là anh em của bẫy `startswith` đã ghi
+     ở cổng 44: **phép đo hỏng nguy hiểm hơn không đo**, vì nó phát chứng nhận.
+     **LỖI THẬT cổng lôi ra:** `cau_tu_transcript` gộp từ RỒI MỚI kiểm độ dài
+     -> câu luôn vượt trần đúng MỘT TỪ (đặt 12s ra **14,5s**). Nay cắt TRƯỚC
+     khi vượt: **14,5s -> 9,5s**, không nuốt chữ (6/6 từ).
+     **3 LỖI CỦA CHÍNH CỔNG (không phải lỗi app) đã sửa:** sandbox của cổng
+     **nằm trong %TEMP%** nên lấy nó làm ví dụ "thư mục thường" thì
+     `_is_safe_recycle_root` từ chối là ĐÚNG (đổi sang chuỗi `D:\KhoVideo\…`,
+     hàm thuần không cần file có thật); phép đo "không bỏ vào %TEMP%" vô nghĩa
+     vì sandbox đã ở đó -> đổi thành bất biến THẬT "không được DÙNG thùng rác
+     %TEMP% user lỡ đặt"; và **quét tĩnh bằng `in` cả file** làm chính
+     DOCSTRING của `do_meo` (cố ý nhắc tên sai để cảnh báo người sau) bị kể là
+     vi phạm -> **ĐỎ OAN VĨNH VIỄN**, phải `tokenize` bỏ COMMENT+STRING đúng
+     như bài học cổng 47/51.
+     **ĐA LUỒNG**: `thay_giong_thu_muc` mặc định **2 luồng** (env
+     `BQ_TG_LUONG`) vì Demucs ăn ~1,3 GB RAM/video — đo 2 video/2 luồng
+     **74,97s** so với ~120s chạy lần lượt.
+     **CHƯA ĐẠT, GHI THẲNG:** còn 4/23 câu chồng lấn tới 266 ms · kết quả
+     **BIẾN ĐỘNG giữa các lượt** vì LLM không tiền định (số câu sửa 21 vs 28,
+     tempo còn lại 1,83 vs 1,41) và chưa đo độ lệch đó bằng nhiều lượt · chưa
+     có nút/màn hình trong UI (mới là hàm làm nền) · chưa nối vào bộ điều phối
+     job. **KHÔNG hứa "dịch chuẩn 100%"**: bước 3 chỉ đo được **tỉ lệ câu phải
+     dịch lại 39,1%**, điểm giống nghĩa trung bình **8,7/10**, thấp nhất
+     **7,0/10** sau hậu kiểm — đó là số thật, không phải lời hứa.
 - **CỔNG 41 CÓ 1 CA HỎNG SẴN TỪ v2.20.0 — `sh_toi_vien` (09/08/2026).**
   `_test_shader.py` báo `51 OK · 1 FAIL`: *sh_toi_vien THẤY ĐƯỢC ở mức 'nhe'
   (>= 8,0%) — **5,07%** điểm ảnh |dY|>12 · PSNR 33,21 dB*.
