@@ -358,6 +358,48 @@ def _psnr_ngoai_dai(a, b, d) -> str:
     return f"?(mã {r.returncode}) H={H}"
 
 
+# ───────────── PHÉP ĐO 6 — VIDEO DỌC 9:16 (short — loại reup nhiều nhất) ────
+#: Sự thật ghi bằng MẮT từ `bang/doc/<nhãn>.png` (4 mốc/video, ảnh dải đáy).
+DOC = [
+    ("D1", V / "nhật 9" / "初デートでフリーズした男性.mp4", True),
+    ("D2", V / "nhật 9" / "服が同じだと必ずやる娘の行動.mp4", True),
+    ("D3", V / "nhật 9" / "毎日少しずつ髪切ったら家族は気づく？.mp4", True),
+    ("D4", V / "nhat3" / "#猫 #shorts 毎日それ以上にかわいくなります🥰#cat.mp4",
+     False),
+    ("D5", V / "nhat3" / "深夜の新宿😵‍💫トー横広場全然平和だ🥰.mp4", False),
+    ("D6", V / "nhật13" / "暇を持て余した清掃員の遊び   #すごい #おもしろ "
+                          "#バズれ #おすすめ #おもしろ動画 #shorts #海外.mp4",
+     False),
+]
+
+
+def do_doc() -> dict:
+    """Bộ đối chứng KHÁC HÌNH DẠNG: short DỌC 1080x1920 / 720x1280, chữ NHẬT.
+
+    Bộ chính toàn 16:9 và 4:3, chữ Trung — nếu chỉ đo đó thì không biết bộ dò
+    có phụ thuộc tỉ lệ khung / ngôn ngữ hay không.
+    """
+    print("\n=== PHÉP ĐO 6 — VIDEO DỌC 9:16, chữ NHẬT ===")
+    ok = n = 0
+    for nhan, p, that in DOC:
+        if not Path(p).exists():
+            print(f"  {nhan}: THIẾU FILE")
+            continue
+        n += 1
+        tt = C.thong_tin(p)
+        t0 = time.perf_counter()
+        r = C.do_dai_chu(p, so_khung=14)
+        gy = time.perf_counter() - t0
+        dung = r.co_chu == that
+        ok += dung
+        print(f"  {'ĐÚNG' if dung else 'SAI '} {nhan} {tt['rong']}x{tt['cao']}"
+              f" {tt['do_dai']:5.1f}s dò={'CÓ   ' if r.co_chu else 'KHÔNG'}"
+              f" y={r.y0}..{r.y1} tlk={r.ty_le_khung:.2f}"
+              f" md={r.mat_do:.4f} {gy:4.1f}s | {r.ly_do[:44]}")
+    print(f"  -> {ok}/{n} đúng")
+    return {"dung": ok, "tong": n}
+
+
 # ───────── PHÉP ĐO 5 — CHI PHÍ THÊM MỖI PHÚT VIDEO (câu hỏi của anh Hùng) ───
 def do_chi_phi(dai_clip: float = 60.0, so_luot: int = 3) -> dict:
     """Bật tính năng này thì mỗi phút video tốn thêm bao nhiêu giây?
@@ -443,6 +485,8 @@ if __name__ == "__main__":
         ra["che"] = do_che()
     if viec in ("viet", "tat"):
         ra["viet"] = do_viet()
+    if viec in ("doc", "tat"):
+        ra["doc"] = do_doc()
     if viec in ("chiphi", "tat"):
         ra["chiphi"] = do_chi_phi()
     if viec in ("manh", "tat"):
