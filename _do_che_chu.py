@@ -358,6 +358,81 @@ def _psnr_ngoai_dai(a, b, d) -> str:
     return f"?(mã {r.returncode}) H={H}"
 
 
+# ───────── PHÉP ĐO 5 — CHI PHÍ THÊM MỖI PHÚT VIDEO (câu hỏi của anh Hùng) ───
+def do_chi_phi(dai_clip: float = 60.0, so_luot: int = 3) -> dict:
+    """Bật tính năng này thì mỗi phút video tốn thêm bao nhiêu giây?
+
+    Đo ĐAN XEN + lấy TRUNG VỊ (máy anh Hùng luôn có việc nền — đo liền mạch
+    đã ra kết luận sai 2 lần ở việc khác).
+    Tách rõ 2 con số vì chúng khác nhau một trời một vực:
+      · THÊM VÀO LƯỢT MÃ HOÁ ĐANG CÓ (nối filter vào đường xuất) = phần dư.
+      · CHẠY RIÊNG MỘT LƯỢT trên video gốc = trọn một lượt mã hoá.
+    """
+    print(f"\n=== PHÉP ĐO 5 — CHI PHÍ THÊM ({dai_clip:.0f}s/clip, {so_luot} "
+          "lượt ĐAN XEN, TRUNG VỊ) ===")
+    RA.mkdir(parents=True, exist_ok=True)
+    goc_720 = RA / "cp_720.mp4"
+    goc_1080 = RA / "cp_1080.mp4"
+    src = NGUON / "zh_dongho.mp4"
+    if not src.exists():
+        print("  (không có nguồn) ")
+        return {}
+    if not goc_720.exists():
+        _cat(src, goc_720, 20.0, dai_clip)
+    if not goc_1080.exists():
+        subprocess.run([C._bin("ffmpeg"), "-y", "-v", "error", "-i",
+                        str(goc_720), "-vf", "scale=1920:1080", "-c:v",
+                        "libx264", "-preset", "veryfast", "-crf", "18",
+                        "-pix_fmt", "yuv420p", "-c:a", "copy", str(goc_1080)],
+                       check=True, creationflags=C._CREATE_NO_WINDOW)
+    dong = [(i * 3.0, i * 3.0 + 2.8, f"Dòng chữ dịch số {i+1}")
+            for i in range(int(dai_clip / 3))]
+    kq = {}
+    for ten, clip in (("1280x720", goc_720), ("1920x1080", goc_1080)):
+        d = C.do_dai_chu(clip)
+        t_do = 0.0
+        for _ in range(so_luot):
+            t0 = time.perf_counter()
+            C.do_dai_chu(clip)
+            t_do = max(t_do, 0) + (time.perf_counter() - t0)
+        t_do /= so_luot
+        ass = RA / "cp.ass"
+        C.ghi_ass(dong, ass, d)
+        bo = {
+            "chỉ mã hoá lại": "null",
+            "+ che (mờ)": C.loc_che(d, cach="mo"),
+            "+ che + viết chữ": C.loc_che(d, cach="mo")
+            + f",subtitles='{C._esc_loc(str(ass))}'",
+        }
+        ket = {k: [] for k in bo}
+        for _ in range(so_luot):
+            for k, loc in bo.items():
+                w, cpu, rc, err = _cpu_giay(
+                    [C._bin("ffmpeg"), "-y", "-hide_banner", "-loglevel",
+                     "error", "-i", str(clip), "-filter_complex", loc,
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                     "-pix_fmt", "yuv420p", "-c:a", "copy",
+                     str(RA / f"cp_{ten}_{abs(hash(k))%9999}.mp4")])
+                if rc != 0:
+                    raise RuntimeError(f"{k} mã {rc}: {err[-400:]}")
+                ket[k].append((w, cpu))
+        base = statistics.median(w for w, _ in ket["chỉ mã hoá lại"])
+        print(f"\n  --- nguồn {ten} · dải {d.cao_dai}px · "
+              f"DÒ mất {t_do:.2f}s/video (1 lần, không theo độ dài)")
+        print(f"      {'':22s} {'wall':>7s} {'CPU-giây':>9s} "
+              f"{'phần dư/phút':>13s} {'trọn lượt/phút':>15s}")
+        for k in bo:
+            w = statistics.median(x for x, _ in ket[k])
+            cpu = statistics.median(c for _, c in ket[k])
+            du = (w - base) / dai_clip * 60.0
+            tron = w / dai_clip * 60.0
+            print(f"      {k:22s} {w:6.2f}s {cpu:8.2f}s "
+                  f"{du:+12.2f}s {tron:14.2f}s")
+            kq.setdefault(ten, {})[k] = {"wall": w, "cpu": cpu, "du": du,
+                                         "tron": tron, "do_giay": t_do}
+    return kq
+
+
 if __name__ == "__main__":
     viec = sys.argv[1] if len(sys.argv) > 1 else "tat"
     ra = {}
@@ -368,6 +443,8 @@ if __name__ == "__main__":
         ra["che"] = do_che()
     if viec in ("viet", "tat"):
         ra["viet"] = do_viet()
+    if viec in ("chiphi", "tat"):
+        ra["chiphi"] = do_chi_phi()
     if viec in ("manh", "tat"):
         ra["manh"] = do_manh_va_ro()
     (SAN / "ket_qua.json").write_text(
