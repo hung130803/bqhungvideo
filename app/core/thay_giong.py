@@ -45,6 +45,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -52,6 +53,16 @@ from typing import Callable, Optional
 from config import settings
 
 _CREATE_NO_WINDOW = 0x0800_0000 if os.name == "nt" else 0
+
+
+class HuyBo(Exception):
+    """NGƯỜI DÙNG BẤM HUỶ — không phải "video lỗi".
+
+    `thay_giong_video` bọc cả 6 bước trong `except Exception` để một video
+    hỏng không làm chết cả lượt. Nhưng `CanceledError` của bộ điều phối cũng
+    là `Exception` -> nếu không có lớp RIÊNG thì bấm Huỷ bị ghi thành LỖI
+    VIDEO, và job kết thúc 'failed' rồi TỰ THỬ LẠI (bài học "huỷ ≠ lỗi").
+    """
 
 #: Lớp GIỮ LẠI (nhạc nền + tiếng động hiện trường) và lớp VỨT ĐI.
 LOP_GIU = ("drums", "bass", "other")
@@ -76,17 +87,51 @@ _CAO_HZ = 7000
 # HẠ TẦNG — gọi ffmpeg và ĐO, tuyệt đối không tin mã thoát
 # ==================================================================
 
+def _gan_job(p) -> None:
+    """Gắn tiến trình ffmpeg vào JOB đang chạy trên thread này (nếu có).
+
+    Không gắn thì bấm Huỷ chỉ đặt cờ, còn lệnh ffmpeg đang chạy vẫn chạy tới
+    hết (1-2 phút) — đúng bệnh đã chữa cho đường xuất clip.
+    """
+    try:
+        from app.queue.worker import register_job_proc
+        register_job_proc(p)
+    except Exception:  # noqa: BLE001 - chạy ngoài app (script đo) thì bỏ qua
+        pass
+
+
+def _bo_gan_job(p) -> None:
+    try:
+        from app.queue.worker import unregister_job_proc
+        unregister_job_proc(p)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _ffmpeg(args: list[str], what: str, timeout: int = 900) -> None:
-    """Chạy ffmpeg. In mã thoát THẬT khi lỗi (không nối `| tail` để khỏi mất mã)."""
+    """Chạy ffmpeg. In mã thoát THẬT khi lỗi (không nối `| tail` để khỏi mất mã).
+
+    Dùng `Popen` chứ không `subprocess.run` để GẮN được tiến trình vào job —
+    bấm Huỷ là ffmpeg bị giết ngay, không phải đợi lệnh chạy hết.
+    """
     cmd = [settings.FFMPEG_PATH, "-y", "-hide_banner", "-loglevel", "error",
            *args]
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", creationflags=_CREATE_NO_WINDOW,
-                       timeout=timeout)
-    if r.returncode != 0:
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                         errors="replace", creationflags=_CREATE_NO_WINDOW)
+    _gan_job(p)
+    try:
+        _out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        raise
+    finally:
+        _bo_gan_job(p)
+    if p.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg lỗi khi {what} (mã thoát {r.returncode}): "
-            f"{(r.stderr or '')[-500:]}")
+            f"ffmpeg lỗi khi {what} (mã thoát {p.returncode}): "
+            f"{(err or '')[-500:]}")
 
 
 def probe_duration(path: str | Path) -> float:
@@ -270,6 +315,193 @@ def thiet_bi_tach() -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"
     except Exception:  # noqa: BLE001
         return "cpu"
+
+
+# ==================================================================
+# DÒ BỘ TÁCH GIỌNG + CHO NGƯỜI DÙNG BẤM TẢI
+# ==================================================================
+#
+# HƯỚNG ĐÃ CHỐT: app TỰ DÒ, THIẾU thì HIỆN NÚT để NGƯỜI DÙNG BẤM TẢI.
+# TUYỆT ĐỐI KHÔNG tự tải sau lưng (2 GB trên đường mạng của anh Hùng) và
+# TUYỆT ĐỐI KHÔNG tự lui sang "cách nhẹ" — đo được rò rỉ lời 100% (tiếng
+# Trung) / 86,3% (tiếng Anh), tức giọng cũ CÒN NGUYÊN chồng lên giọng mới mà
+# ffmpeg vẫn trả mã 0, không một dòng báo. Trên 200-300 kênh là hỏng hàng loạt.
+
+#: Các gói phải có mới tách được giọng. `soundfile` để đọc/ghi wav cho Demucs.
+GOI_TACH_GIONG = ("torch", "demucs", "soundfile")
+
+#: Nhãn nút TẢI (tiếng Việt, KHÔNG EMOJI — máy anh Hùng thiếu font).
+NHAN_TAI_DEMUCS = "Tải bộ tách giọng (khoảng 2 GB)"
+
+#: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
+_KHOA_CAI = threading.Lock()
+
+#: Mã kiểm CHẠY Ở TIẾN TRÌNH RIÊNG: import trong tiến trình đang chạy có thể
+#: ăn torch của `.venv` (máy dev) -> tưởng đã cài vào `_lib`.
+_MA_KIEM_LIB = (
+    "import sys, json\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "ra = {}\n"
+    "for ten, khoa in (('torch','torch'), ('demucs.pretrained','demucs'),"
+    " ('soundfile','soundfile')):\n"
+    "    try:\n"
+    "        m = __import__(ten)\n"
+    "        ra[khoa] = getattr(m, '__file__', '?')\n"
+    "    except Exception as e:\n"
+    "        ra['loi_' + khoa] = str(e)[:200]\n"
+    "print(json.dumps(ra))\n"
+)
+
+
+def _lenh_pip() -> list[str]:
+    """Lệnh pip dùng để TẢI bộ tách giọng. [] = máy này không cài được.
+
+    Bản `.exe` (PyInstaller) KHÔNG có pip nên `sys.executable` vô dụng — phải
+    tìm python của máy. Không có thì BÁO RÕ chứ không im lặng thất bại.
+    """
+    if not getattr(sys, "frozen", False):
+        return [sys.executable, "-m", "pip"]
+    for ten in ("python.exe", "python3.exe"):
+        p = shutil.which(ten)
+        if p:
+            return [p, "-m", "pip"]
+    p = shutil.which("py")
+    if p:
+        return [p, "-3", "-m", "pip"]
+    return []
+
+
+def tinh_trang_demucs() -> dict:
+    """Máy này đã có bộ tách giọng chưa? KHÔNG tải gì, KHÔNG gọi mạng.
+
+    Trả {co, thieu, lib, thiet_bi, cai_duoc, loi_nhan} — UI đọc `co` để CHẶN
+    nút Chạy và đọc `thieu` để ghi rõ còn thiếu gói nào.
+    """
+    lib = lib_demucs()
+    if lib and lib not in sys.path and Path(lib).is_dir():
+        sys.path.insert(0, lib)
+    thieu: list[str] = []
+    for ten, goi in (("torch", "torch"), ("demucs.pretrained", "demucs"),
+                     ("soundfile", "soundfile")):
+        try:
+            __import__(ten)
+        except Exception:  # noqa: BLE001
+            thieu.append(goi)
+    co = not thieu
+    return {
+        "co": co,
+        "thieu": thieu,
+        "lib": lib,
+        "thiet_bi": thiet_bi_tach() if co else "",
+        "cai_duoc": bool(_lenh_pip()),
+        "loi_nhan": "" if co else THIEU_DEMUCS,
+    }
+
+
+def kiem_lib_bang_tien_trinh_rieng(lib: str = "") -> dict:
+    """Kiểm `_lib` bằng TIẾN TRÌNH RIÊNG — chống "tưởng cài xong".
+
+    Trên máy dev, `.venv` đã có torch nên `tinh_trang_demucs()` trả True KỂ CẢ
+    khi `_lib` rỗng. Hàm này chạy python riêng với `sys.path` chỉ thêm `_lib`
+    rồi trả đường dẫn file THẬT của từng gói để biết nó đến từ đâu.
+    """
+    lib = lib or lib_demucs()
+    pip = _lenh_pip()
+    if not pip:
+        return {"loi": "Máy này không có python/pip để kiểm"}
+    try:
+        r = subprocess.run([pip[0], *(["-3"] if pip[1:2] == ["-3"] else []),
+                            "-c", _MA_KIEM_LIB, lib],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=180,
+                           creationflags=_CREATE_NO_WINDOW)
+        return json.loads((r.stdout or "{}").strip().splitlines()[-1])
+    except (OSError, ValueError, IndexError,
+            subprocess.TimeoutExpired) as e:
+        return {"loi": str(e)[:200]}
+
+
+def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
+               timeout: int = 5400) -> dict:
+    """TẢI + CÀI bộ tách giọng vào `_lib`. **CHỈ gọi khi NGƯỜI DÙNG BẤM.**
+
+    Cài vào thư mục RIÊNG `_lib` (env `BQ_DEMUCS_LIB`), CỐ Ý KHÔNG cài vào
+    `.venv` của app: một lượt `pip install demucs` kéo theo torch/torchaudio
+    có thể phá app đang chạy sản xuất 300 kênh của anh Hùng.
+
+    Trả {ok, giay, lib, ma_thoat, loi, nhat_ky}. Không bao giờ tự chạy nền.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            on_progress(max(0.0, min(1.0, p)), m)
+
+    lib = lib_demucs()
+    pip = _lenh_pip()
+    if not pip:
+        return {"ok": False, "lib": lib, "giay": 0.0,
+                "loi": "Máy này không có python/pip nên app không tự tải "
+                       "được. Cài Python 3 (python.org) rồi bấm lại, hoặc "
+                       "copy thư mục _lib từ máy đã cài sang."}
+    if not _KHOA_CAI.acquire(blocking=False):
+        return {"ok": False, "lib": lib, "giay": 0.0,
+                "loi": "Đang tải rồi — đợi lượt này xong."}
+    t0 = time.time()
+    nhat_ky: list[str] = []
+    try:
+        Path(lib).mkdir(parents=True, exist_ok=True)
+        args = [*pip, "install", "--no-input", "--disable-pip-version-check",
+                "--upgrade", "--target", lib,
+                "--extra-index-url", "https://download.pytorch.org/whl/cpu",
+                *GOI_TACH_GIONG]
+        prog(0.02, "Đang tải bộ tách giọng (khoảng 2 GB, chạy 1 lần)...")
+        p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", bufsize=1,
+                             creationflags=_CREATE_NO_WINDOW)
+        _gan_job(p)
+        han = time.time() + timeout
+        n = 0
+        try:
+            for dong in p.stdout or ():
+                dong = dong.rstrip()
+                if not dong:
+                    continue
+                nhat_ky.append(dong)
+                n += 1
+                # KHÔNG biết trước tổng dung lượng -> % chỉ là dấu hiệu "đang
+                # chạy", trần 0,95 để không khoe xong trước khi xong.
+                prog(min(0.95, 0.02 + n / 900.0), dong[-110:])
+                if time.time() > han:
+                    p.kill()
+                    raise subprocess.TimeoutExpired(args[0], timeout)
+            ma = p.wait(timeout=120)
+        finally:
+            _bo_gan_job(p)
+        if ma != 0:
+            return {"ok": False, "lib": lib, "ma_thoat": ma,
+                    "giay": round(time.time() - t0, 2),
+                    "loi": "pip trả mã " + str(ma) + ": "
+                           + " | ".join(nhat_ky[-4:]),
+                    "nhat_ky": nhat_ky[-40:]}
+        prog(0.97, "Đang kiểm lại bộ tách giọng...")
+        kiem = kiem_lib_bang_tien_trinh_rieng(lib)
+        thieu = [g for g in GOI_TACH_GIONG if g not in kiem]
+        if thieu:
+            return {"ok": False, "lib": lib, "ma_thoat": 0,
+                    "giay": round(time.time() - t0, 2),
+                    "loi": "pip báo xong nhưng vẫn thiếu: "
+                           + ", ".join(thieu) + " — " + str(kiem)[:300],
+                    "kiem": kiem, "nhat_ky": nhat_ky[-40:]}
+        prog(1.0, "Đã cài xong bộ tách giọng")
+        return {"ok": True, "lib": lib, "ma_thoat": 0, "kiem": kiem,
+                "giay": round(time.time() - t0, 2),
+                "nhat_ky": nhat_ky[-40:]}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "lib": lib, "giay": round(time.time() - t0, 2),
+                "loi": f"{type(e).__name__}: {e}"[:400],
+                "nhat_ky": nhat_ky[-40:]}
+    finally:
+        _KHOA_CAI.release()
 
 
 def _tach_demucs(wav_44k: str | Path, out_dir: Path, model_name: str,
@@ -1361,6 +1593,10 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         kq["kiem"] = kiem_video_ra(ra, tong)
         kq["ra"] = str(ra)
         kq["ok"] = True
+    except HuyBo:
+        # HUỶ ≠ LỖI. Nuốt nó thành `ok=False` là job kết thúc 'failed' rồi
+        # TỰ THỬ LẠI dù người dùng đã bấm Huỷ (bài học cổng 7).
+        raise
     except Exception as e:  # noqa: BLE001
         kq["ok"] = False
         kq["loi"] = f"{type(e).__name__}: {e}"
@@ -1374,6 +1610,91 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
 # ==================================================================
 
 DUOI_VIDEO = (".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv")
+
+#: Đuôi tên file app tự đặt cho bản ĐÃ thay giọng — quét thư mục phải BỎ QUA
+#: nó, không thì lượt sau đi thay giọng của chính bản vừa làm.
+DAU_DA_LAM = "__thaygiong"
+
+#: Thư mục làm việc tạm ĐẶT CẠNH video (KHÔNG dùng %TEMP%: file wav/mp3 của
+#: một video 10 phút lên hàng trăm MB, và %TEMP% bị dọn định kỳ).
+TEN_THU_MUC_TAM = "_thaygiong_tam"
+
+#: Ngôn ngữ đích cho combo UI — nhãn TIẾNG VIỆT, KHÔNG EMOJI. Thứ tự theo
+#: thị trường anh Hùng nhắm: Mỹ · Hàn · Nhật · Anh · Đức · Pháp.
+NGON_NGU_DICH = (
+    ("Tiếng Anh", "en"),
+    ("Tiếng Hàn", "ko"),
+    ("Tiếng Nhật", "ja"),
+    ("Tiếng Đức", "de"),
+    ("Tiếng Pháp", "fr"),
+    ("Tiếng Trung", "zh"),
+    ("Tiếng Tây Ban Nha", "es"),
+    ("Tiếng Bồ Đào Nha", "pt"),
+    ("Tiếng Thái", "th"),
+    ("Tiếng Indonesia", "id"),
+    ("Tiếng Việt", "vi"),
+)
+
+
+def liet_ke_video(thu_muc: str | Path) -> list[Path]:
+    """Video trong thư mục (bỏ bản đã thay giọng + thư mục tạm/thùng rác).
+
+    MỘT NGUỒN SỰ THẬT cho cả UI (đếm để hiện bảng) và lượt chạy — hai bên đếm
+    khác nhau là bảng tiến độ lệch với việc thật.
+    """
+    p = Path(thu_muc)
+    if not p.is_dir():
+        return []
+    return sorted(f for f in p.iterdir()
+                  if f.is_file() and f.suffix.lower() in DUOI_VIDEO
+                  and not f.stem.endswith(DAU_DA_LAM))
+
+
+def chot_co_bo_tach_giong(cach_tach: str = "auto") -> None:
+    """CHẶN TRƯỚC: máy chưa có bộ tách giọng thì ném NGAY, đừng chạy dở.
+
+    Vì sao phải chặn ở đây nữa dù `tach_giong` đã ném: không có chốt này thì
+    mỗi video vẫn rút audio xong (chục giây/video) rồi mới chết ở bước 1 — 20
+    video là 20 lần vô ích, và nhật ký đầy lỗi giống nhau.
+    """
+    if (cach_tach or "auto").lower().strip() == "nhe":
+        return                                  # user CỐ Ý chọn cách nhẹ
+    tt = tinh_trang_demucs()
+    if not tt["co"]:
+        raise RuntimeError(THIEU_DEMUCS)
+
+
+def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
+                         voice: str = "", cach_tach: str = "auto",
+                         thay_goc: bool = True, kenh: str = "",
+                         thung_rac: str = "", thu_muc_lam: str | Path = "",
+                         on_progress: Optional[
+                             Callable[[float, str], None]] = None,
+                         ) -> dict:
+    """MỘT video: 6 bước -> KIỂM file mới -> gốc vào thùng rác -> đặt bản mới.
+
+    Đây là cửa DUY NHẤT của "làm 1 video" — job handler và
+    `thay_giong_thu_muc` đều đi qua đây, nên thứ tự an toàn không thể lệch
+    giữa hai đường (bài học cổng 19: mẫu-theo-kênh chỉ áp ở dây chuyền, bấm
+    tay vẫn ăn cấu hình cũ).
+
+    THỨ TỰ BẮT BUỘC, ĐỪNG ĐỔI: `kiem_video_ra` ĐẠT -> `delete_or_recycle`
+    -> mới `shutil.move` bản mới vào chỗ gốc.
+    """
+    v = Path(video_in)
+    r = thay_giong_video(v, dich_sang=dich_sang, voice=voice,
+                         cach_tach=cach_tach, thu_muc_lam=thu_muc_lam,
+                         on_progress=on_progress)
+    if not r.get("ok"):
+        return r
+    if not thay_goc:
+        r["thay_the"] = {"thay": False, "vi_sao": "user chọn GIỮ video gốc"}
+        return r
+    try:
+        r["thay_the"] = thay_the_video_goc(v, r["ra"], kenh, thung_rac)
+    except Exception as e:  # noqa: BLE001
+        r["thay_the"] = {"thay": False, "vi_sao": str(e)[:300]}
+    return r
 
 
 def _so_luong_mac_dinh() -> int:
@@ -1436,26 +1757,21 @@ def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     thu_muc = Path(thu_muc)
-    vids = sorted(p for p in thu_muc.iterdir()
-                  if p.is_file() and p.suffix.lower() in DUOI_VIDEO
-                  and not p.stem.endswith("__thaygiong"))
+    # CHẶN TRƯỚC khi đụng video nào: thiếu bộ tách giọng thì ném NGAY.
+    chot_co_bo_tach_giong(cach_tach)
+    vids = liet_ke_video(thu_muc)
     n = so_luong if so_luong > 0 else _so_luong_mac_dinh()
-    lam_goc = thu_muc / "_thaygiong_tam"
+    lam_goc = thu_muc / TEN_THU_MUC_TAM
     lam_goc.mkdir(parents=True, exist_ok=True)
 
     ket: list[dict] = []
     t0 = time.time()
 
     def _mot(v: Path) -> dict:
-        r = thay_giong_video(v, dich_sang=dich_sang,
-                             thu_muc_lam=lam_goc / v.stem, voice=voice,
-                             cach_tach=cach_tach)
-        if r.get("ok") and thay_goc:
-            try:
-                r["thay_the"] = thay_the_video_goc(v, r["ra"], kenh, thung_rac)
-            except Exception as e:  # noqa: BLE001
-                r["thay_the"] = {"thay": False, "vi_sao": str(e)}
-        return r
+        return thay_giong_mot_video(
+            v, dich_sang=dich_sang, voice=voice, cach_tach=cach_tach,
+            thay_goc=thay_goc, kenh=kenh, thung_rac=thung_rac,
+            thu_muc_lam=lam_goc / v.stem)
 
     with ThreadPoolExecutor(max_workers=max(1, n)) as ex:
         fut = {ex.submit(_mot, v): v for v in vids}
