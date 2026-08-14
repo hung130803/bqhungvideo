@@ -10,9 +10,19 @@ Demucs thật · WorkerPool thật. KHÔNG mock. Chỗ duy nhất được can t
 **GÂY LỖI CÓ CHỦ Ý** (ffmpeg ghi ra file 0 KiB, giả lập máy thiếu Demucs) —
 đó là phép thử, không phải thay thế thành phần.
 
+**CẬP NHẬT v2.27.0 — ANH HÙNG ĐỔI Ý VỀ VIDEO GỐC.** Nguyên văn: *"cho tôi tự
+chọn thư mục ĐẦU VÀO thư mục ĐẦU RA đi, KHÔNG CẦN cái thùng rác phân tích thay
+giọng rồi tự xoá đâu nhé"*. Nên CA 1 đổi từ "gốc vào Thùng rác" sang **"gốc
+KHÔNG bị đụng một byte nào, bản mới nằm ở thư mục đích"**. Đường an toàn cũ
+(`kiem_video_ra` -> `delete_or_recycle`) VẪN CÒN trong `thay_giong.py` và CA
+4/6 vẫn đo nó bằng cách gọi thẳng hàm lõi — vì `thay_giong_thu_muc` (đường
+dòng lệnh) còn dùng, và vì mất chốt đó là mất video thật.
+Bảng tiến độ · thư mục vào/ra · sổ nhớ video đã xong -> đo ở **cổng 57**
+(`_test_tg_bang_tiendo.py`).
+
 CÁC CA:
-  1. Bấm Chạy trên thư mục 2 video -> 2 video MỚI đúng chỗ, 2 gốc trong
-     Thùng rác, **MD5 gốc trùng TỪNG BYTE**.
+  1. Bấm Chạy trên thư mục 2 video -> 2 video MỚI nằm ở THƯ MỤC ĐÍCH, 2 video
+     GỐC còn nguyên **MD5 trùng TỪNG BYTE**, Thùng rác RỖNG.
   2. ĐA LUỒNG THẬT: 2 luồng nhanh hơn chạy lần lượt (đo wall-time) + đo
      được SỐ JOB CHẠY CÙNG LÚC ở làn thay giọng.
   3. MÁY KHÔNG CÓ DEMUCS: hiện nút tải, KHOÁ nút Chạy, bấm Chạy không xếp
@@ -75,6 +85,7 @@ from app.database import db  # noqa: E402
 from app.queue.worker import WorkerPool  # noqa: E402
 from config import settings  # noqa: E402
 from app.core import thay_giong as TG  # noqa: E402
+from app.core import tg_so as TG_SO  # noqa: E402
 
 from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
@@ -207,9 +218,9 @@ print("\n=== CA 5: ROUND-TRIP UI (đặt -> lưu -> mở lại) ===")
 d5 = thu_muc_video("ca5", 1)
 dlg5 = ThayGiongDialog(None, None)
 dlg5.ed_thu_muc.setText(str(d5))
+dlg5.ed_thu_muc_ra.setText(str(T / "ca5_ra"))
 dlg5.cb_nn.setCurrentIndex(dlg5.cb_nn.findData("ko"))
 dlg5.sp_luong.setValue(3)
-dlg5.ck_xoa.setChecked(False)
 dlg5.cb_giong.addItem("giọng thử", "ko-KR-SunHiNeural")
 dlg5.cb_giong.setCurrentIndex(dlg5.cb_giong.count() - 1)
 dlg5.luu_cai_dat()
@@ -221,7 +232,8 @@ dat("nhớ THƯ MỤC", dlg5b.ed_thu_muc.text() == str(d5),
 dat("nhớ NGÔN NGỮ ĐÍCH", dlg5b.cb_nn.currentData() == "ko",
     str(dlg5b.cb_nn.currentData()))
 dat("nhớ SỐ LUỒNG", dlg5b.sp_luong.value() == 3, str(dlg5b.sp_luong.value()))
-dat("nhớ ô XOÁ GỐC", dlg5b.ck_xoa.isChecked() is False)
+dat("nhớ THƯ MỤC ĐÍCH", dlg5b.ed_thu_muc_ra.text() == str(T / "ca5_ra"),
+    dlg5b.ed_thu_muc_ra.text()[-40:])
 dat("nhớ GIỌNG đã chọn",
     dlg5b.cb_giong.currentData() == "ko-KR-SunHiNeural",
     str(dlg5b.cb_giong.currentData()))
@@ -295,7 +307,7 @@ def _ma_that(path: Path) -> str:
 
 
 for _f in ("app/ui/thay_giong_dialog.py", "app/queue/jobs.py",
-           "app/services.py"):
+           "app/services.py", "app/core/tg_chay.py", "app/core/tg_so.py"):
     _m = _ma_that(Path(REPO, _f))
     dat(f"{_f}: KHÔNG có đường lui 'cách nhẹ'",
         "cho_phep_nhe" not in _m and "'nhe'" not in _m
@@ -318,12 +330,13 @@ thung.mkdir(parents=True, exist_ok=True)
 
 # --- arm B: 2 LUỒNG (đây cũng là ca 1) ---
 d2 = thu_muc_video("ca1_2luong", 2)
+ra2 = T / "ca1_ra"
 goc_md5 = {p.name: md5(p) for p in TG.liet_ke_video(d2)}
 dlg = ThayGiongDialog(pool, None, thung_rac=str(thung))
 dlg.ed_thu_muc.setText(str(d2))
+dlg.ed_thu_muc_ra.setText(str(ra2))
 dlg.cb_nn.setCurrentIndex(dlg.cb_nn.findData("en"))
 dlg.sp_luong.setValue(2)
-dlg.ck_xoa.setChecked(True)
 dlg._chay()                                   # <- BẤM CHẠY
 ids2 = list(dlg._jobs.values())
 dat("bấm Chạy xếp đúng 2 job", len(ids2) == 2, f"{len(ids2)} job")
@@ -344,12 +357,17 @@ dat("2 job đều XONG", len(xong2) == 2,
     "; ".join(f"{r['status']}:{str(r['error'] or '')[:90]}" for r in rows2))
 
 con = TG.liet_ke_video(d2)
-dat("thư mục vẫn có ĐÚNG 2 video (mới thay chỗ cũ)", len(con) == 2,
+dat("thư mục NGUỒN vẫn có ĐÚNG 2 video", len(con) == 2,
     str([p.name for p in con]))
-moi_khac = [p for p in con if md5(p) != goc_md5.get(p.name)]
-dat("cả 2 video trong thư mục là BẢN MỚI (khác gốc)",
-    len(moi_khac) == 2, f"{len(moi_khac)}/2 khác gốc")
-for p in con:
+dat("video GỐC KHÔNG bị đụng một byte nào (MD5 trùng)",
+    all(md5(p) == goc_md5.get(p.name) for p in con),
+    f"{sum(1 for p in con if md5(p) == goc_md5.get(p.name))}/2 nguyên vẹn")
+moi = sorted(ra2.glob("*.mp4"))
+dat("thư mục ĐÍCH có đúng 2 video MỚI, giữ nguyên tên gốc",
+    [p.name for p in moi] == sorted(goc_md5), str([p.name for p in moi]))
+dat("video ở đích KHÁC gốc (là bản đã thay giọng)",
+    all(md5(p) != goc_md5.get(p.name) for p in moi))
+for p in moi:
     try:
         k = TG.kiem_video_ra(p, TG.probe_duration(p))
         dat(f"bản mới {p.name} có hình + có tiếng", k["khung"] > 0
@@ -357,47 +375,64 @@ for p in con:
     except Exception as e:  # noqa: BLE001
         dat(f"bản mới {p.name} có hình + có tiếng", False, str(e)[:90])
 
-# GỐC phải nằm trong Thùng rác NGƯỜI DÙNG CHỌN, TRÙNG TỪNG BYTE
+# THÙNG RÁC PHẢI RỖNG: luồng này KHÔNG còn đường dọn gốc nữa (anh Hùng đổi ý
+# 14/08/2026). Hộp vẫn nhận tham số `thung_rac` cho lối gọi cũ — nhận mà KHÔNG
+# dùng, và đây là phép đo chứng minh điều đó.
 rac = [p for p in thung.rglob("*.mp4")]
-rac_md5 = {md5(p) for p in rac}
-dat("2 video GỐC nằm trong Thùng rác user chọn", len(rac) == 2,
+dat("Thùng rác RỖNG — app không dọn/không xoá video gốc nữa", not rac,
     f"{len(rac)} file: {[p.name for p in rac]}")
-dat("MD5 gốc trong Thùng rác TRÙNG TỪNG BYTE với gốc ban đầu",
-    set(goc_md5.values()) == rac_md5 and len(rac_md5) == 1,
-    f"gốc {sorted(set(goc_md5.values()))} · rác {sorted(rac_md5)}")
 from app.core import pipeline as P  # noqa: E402
-dat("Thùng rác dùng thật KHÔNG nằm trong %TEMP%",
+dat("Thùng rác truyền vào vẫn là chỗ AN TOÀN (nếu sau này dùng lại)",
     P._is_safe_recycle_root(str(thung)), str(thung))
-dat("KHÔNG xoá hẳn video nào (số file gốc = số file trong thùng rác)",
-    len(rac) == len(goc_md5), f"{len(goc_md5)} gốc -> {len(rac)} trong rác")
+dat("sổ trạng thái nhớ 2 video đã xong (bấm Chạy lần nữa sẽ bỏ qua)",
+    all(TG_SO.da_xong(p) for p in con), str(TG_SO.tom_tat(con)))
+dat("bấm Chạy LẦN 2 -> 0 job (chỉ chạy video CHƯA xong)",
+    dlg._chay() == 0)
 
-# --- arm A: LẦN LƯỢT (1 luồng) trên 2 video Y HỆT ---
-db.execute("DELETE FROM jobs")
-d1 = thu_muc_video("ca2_lanluot", 2)
-pool.set_limits(max_tg=1)
-dlgA = ThayGiongDialog(pool, None, thung_rac=str(RAC / "ThungRacA"))
-dlgA.ed_thu_muc.setText(str(d1))
-dlgA.cb_nn.setCurrentIndex(dlgA.cb_nn.findData("en"))
-dlgA.sp_luong.setValue(1)
-dlgA.ck_xoa.setChecked(True)
-dlgA._chay()
-idsA = list(dlgA._jobs.values())
-rA = cho_xong(pool, idsA)
-dlgA.close()
-SO["1luong_giay"] = rA["giay"]
-SO["dinh_song_song_1"] = rA["dinh_song_song"]
-print(f"  lần lượt (1 luồng): {rA['giay']:.2f}s · đỉnh cùng lúc "
-      f"{rA['dinh_song_song']}")
+# --- CA 2: ĐA LUỒNG — ĐO ĐAN XEN, KHÔNG ĐO LIỀN MẠCH ---
+# Bài học đã sập 2 lần trên chính máy này ("Đo A/B phải đan xen"): mỗi lượt
+# gọi Groq/edge-tts qua MẠNG và máy anh Hùng luôn có việc nền, nên chạy arm B
+# rồi arm A một mạch là đo NHIỄU chứ không đo mã. Đo lần đầu kiểu liền mạch ra
+# "2 luồng CHẬM HƠN 0,62 lần" — trong khi cùng bản mã, đo đan xen ra nhanh hơn.
+# Nay chạy B,A,B,A và lấy LƯỢT NHANH NHẤT mỗi bên (ít dính việc nền nhất).
+def _arm(luong: int, ten: str) -> dict:
+    db.execute("DELETE FROM jobs")
+    d = thu_muc_video(ten, 2)
+    pool.set_limits(max_tg=luong)
+    dl = ThayGiongDialog(pool, None, thung_rac=str(RAC / ("Rac_" + ten)))
+    dl.ed_thu_muc.setText(str(d))
+    dl.ed_thu_muc_ra.setText(str(T / (ten + "_ra")))
+    dl.cb_nn.setCurrentIndex(dl.cb_nn.findData("en"))
+    dl.sp_luong.setValue(luong)
+    dl._chay()
+    r = cho_xong(pool, list(dl._jobs.values()))
+    dl.close()
+    print(f"  {luong} luồng ({ten}): {r['giay']:.2f}s · đỉnh cùng lúc "
+          f"{r['dinh_song_song']}")
+    return r
 
-dat("làn 1 luồng CHỈ chạy 1 job cùng lúc", rA["dinh_song_song"] <= 1,
-    f"đỉnh {rA['dinh_song_song']}")
-dat("làn 2 luồng CHẠY THẬT 2 job cùng lúc", r2["dinh_song_song"] >= 2,
-    f"đỉnh {r2['dinh_song_song']}")
+
+_do = [("B1", _arm(2, "ab_2luong_1")), ("A1", _arm(1, "ab_1luong_1")),
+       ("B2", _arm(2, "ab_2luong_2")), ("A2", _arm(1, "ab_1luong_2"))]
+_B = [r for k, r in _do if k.startswith("B")]
+_A = [r for k, r in _do if k.startswith("A")]
+SO["2luong_giay"] = min(r["giay"] for r in _B)
+SO["1luong_giay"] = min(r["giay"] for r in _A)
+SO["2luong_moi_luot"] = [r["giay"] for r in _B]
+SO["1luong_moi_luot"] = [r["giay"] for r in _A]
+SO["dinh_song_song"] = max(r["dinh_song_song"] for r in _B)
+SO["dinh_song_song_1"] = max(r["dinh_song_song"] for r in _A)
+
+dat("làn 1 luồng CHỈ chạy 1 job cùng lúc", SO["dinh_song_song_1"] <= 1,
+    f"đỉnh {SO['dinh_song_song_1']}")
+dat("làn 2 luồng CHẠY THẬT 2 job cùng lúc", SO["dinh_song_song"] >= 2,
+    f"đỉnh {SO['dinh_song_song']}")
 _nhanh = SO["1luong_giay"] / max(0.01, SO["2luong_giay"])
 SO["nhanh_hon_lan"] = round(_nhanh, 3)
-dat("2 luồng NHANH HƠN chạy lần lượt", _nhanh >= 1.20,
-    f"{SO['1luong_giay']:.2f}s -> {SO['2luong_giay']:.2f}s "
-    f"= nhanh {_nhanh:.2f} lần")
+dat("2 luồng NHANH HƠN chạy lần lượt (đo ĐAN XEN, lấy lượt nhanh nhất)",
+    _nhanh >= 1.20,
+    f"1 luồng {SO['1luong_moi_luot']} · 2 luồng {SO['2luong_moi_luot']} "
+    f"-> nhanh {_nhanh:.2f} lần")
 
 
 # ==================================================================
