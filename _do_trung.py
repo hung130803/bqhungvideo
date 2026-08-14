@@ -80,8 +80,10 @@ def tim_video_trung():
         g = _dai(p)
         ung.append((g, p))
     ung.sort()
-    # anh Hùng chỉ đích danh 2 file này -> ưu tiên tuyệt đối, không tự đoán
-    for khoa in ("一只手表", "第12集"):
+    # anh Hùng chỉ đích danh 2 file này -> ưu tiên tuyệt đối, không tự đoán.
+    # `BQ_TRUNG_KHOA` đổi thứ tự để đo file thứ hai.
+    uu = os.environ.get("BQ_TRUNG_KHOA", "")
+    for khoa in ([uu] if uu else []) + ["一只手表", "第12集"]:
         for g, p in ung:
             if khoa in p.name and g > 60.0:
                 print(f"  (ưu tiên file anh Hùng chỉ: {khoa})")
