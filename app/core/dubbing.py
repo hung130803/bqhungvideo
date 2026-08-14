@@ -1934,9 +1934,10 @@ _RECAP_PHRASE_MAX_CJK = 6
 #     `'그런데갑자기눈보라가몰아치기시작했습니다'` = **mất sạch dấu cách**,
 #     kể cả khi đưa vào đúng `.split()`.
 # Nên ở file này dùng bộ ký tự RIÊNG `_KHONG_DAU_CACH` = đúng những hệ chữ
-# THẬT SỰ không có dấu cách (Hán · kana · Thái · Lào · Miến · Khmer), và
-# TÁCH THEO CỤM-TRẮNG trước: chuỗi không chứa ký tự nào thuộc bộ đó thì giữ
-# nguyên nguyên cụm -> tiếng Hàn/Anh/Việt đi Y HỆT `.split()`.
+# THẬT SỰ không có dấu cách (Hán · kana · DẤU CÂU CJK và dạng toàn-rộng ·
+# Thái · Lào · Miến · Khmer), và TÁCH THEO CỤM-TRẮNG trước: chuỗi không chứa
+# ký tự nào thuộc bộ đó thì giữ nguyên nguyên cụm -> tiếng Hàn/Anh/Việt đi
+# Y HỆT `.split()`.
 # ------------------------------------------------------------------
 #: Hệ chữ THẬT SỰ KHÔNG có dấu cách giữa các từ. CỐ Ý KHÁC `recap._CJK_CHARS`
 #: ở đúng một điểm: **KHÔNG có hangul** (xem khối ghi chú trên).
@@ -1947,7 +1948,7 @@ _RECAP_PHRASE_MAX_CJK = 6
 #: Hàn vẫn ra 20 token thay vì 5, tức bản vá "chừa tiếng Hàn" KHÔNG hề chừa.
 #: Mắt thường không đọc ra được sai lệch đó, `\u` thì đọc ra ngay.
 _KHONG_DAU_CACH = re.compile(
-    "[\u3000-\u30FF"              # dau cau CJK (U+3001 U+3002 U+300C...) + kana
+    "[\u3000-\u30FF"              # dau cau CJK + kana
     "\u3400-\u4DBF"               # CJK Unified ext-A
     "\u4E00-\u9FFF"               # CJK Unified (chu Han)
     "\uF900-\uFAFF"               # CJK compat ideographs
@@ -2070,7 +2071,8 @@ def _phrase_groups_by_speech(text: str, start: float,
     rỗng -> [] (caller dùng _phrase_groups_even chia đều).
 
     Tách/nối từ CJK-aware (`_tach_tu`/`_noi_tu`) — `.split()` cho câu Trung ra
-    1 token nên CẢ PART thành MỘT cụm đứng im (đo: 21/21 part, cụm 78 ký tự)."""
+    1 token nên CẢ PART thành MỘT cụm đứng im (đo: 21/21 part, cụm 78 ký
+    tự)."""
     toks = _tach_tu(text)
     if not toks or not speech_segs:
         return []
@@ -2414,7 +2416,8 @@ def _align_stt_words(script_text: str, stt_words: list,
 
     Tách từ CJK-aware (`_tach_tu`). ĐÂY LÀ CHỖ NGUY HIỂM NHẤT trong 3 chỗ vì
     nó hỏng KHÔNG MỘT DÒNG BÁO: `.split()` cho kịch bản Trung ra `m = 1` từ
-    trong khi STT trả `k` = hàng chục mốc -> `abs(m-k)/max(m,k)` luôn ~0,96-0,99
+    trong khi STT trả `k` = hàng chục mốc -> `abs(m-k)/max(m,k)` luôn
+    ~0,96-0,99
     > `miss_max` 0,40 -> **trả None 21/21 part** -> app lặng lẽ lùi về
     silencedetect, tức tính năng khớp-từng-từ bằng STT (đã tốn lượt Groq để
     chép lời!) KHÔNG BAO GIỜ chạy với tiếng Trung. Groq whisper chấm tiếng
