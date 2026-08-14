@@ -107,6 +107,17 @@ kiem(st == "exported", "clip đang có job xuất chạy KHÔNG bị đưa vào 
 # ═══ L1: main.py xả đệm khi stdout=None (bản .exe không console) ═══
 print("\n== L1: tắt app khi stdout/stderr = None (bản .exe windowed) ==")
 import io  # noqa: E402
+
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
+# đầy đủ ở `_test_lane_starve.py`. Thiếu nó thì chạy hồi quy hàng loạt
+# (`> file.txt`) là Python lấy cp1252 và dòng `print` tiếng Việt ĐẦU TIÊN ném
+# UnicodeEncodeError -> cổng HỎNG OAN với mã thoát 1.
+for _f in (sys.stdout, sys.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
 src = io.open(str(Path(__file__).resolve().parent / 'main.py'), encoding="utf-8").read()
 kiem("sys.stdout.flush," not in src and "sys.stderr.flush)" not in src,
      "main.py KHÔNG còn lấy .flush ngay trong tuple (ngoài try)")

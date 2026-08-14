@@ -154,6 +154,17 @@ print("== 6. đuôi combo/kho không đếm clip 'archived' ==")
 from app.database.db import db  # noqa: E402
 from app import services  # noqa: E402
 
+# IN ĐƯỢC TIẾNG VIỆT KỂ CẢ KHI stdout BỊ CHUYỂN HƯỚNG RA FILE — xem ghi chú
+# đầy đủ ở `_test_lane_starve.py`. Thiếu nó thì chạy hồi quy hàng loạt
+# (`> file.txt`) là Python lấy cp1252 và dòng `print` tiếng Việt ĐẦU TIÊN ném
+# UnicodeEncodeError -> cổng HỎNG OAN với mã thoát 1.
+for _f in (sys.stdout, sys.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+
+
 pid = db.execute("INSERT INTO projects(name, assets_dir, grp) "
                  "VALUES('K', ?, '')", (T,)).lastrowid
 vid = db.execute("INSERT INTO videos(project_id, src_path, duration) "
