@@ -288,19 +288,27 @@ def lib_demucs() -> str:
 
 
 def co_demucs() -> bool:
-    """Demucs + torch có nạp được không (KHÔNG tải model, chỉ thử import).
+    """Máy này CÓ Demucs + torch không — dò bằng `find_spec`, KHÔNG import.
 
-    Máy nhân viên KHÔNG cài torch -> hàm trả False -> tự lui `tach_nhe`.
+    **VÌ SAO KHÔNG ĐƯỢC IMPORT THẬT (đo được 14/08, không phải phòng xa):**
+    trong tiến trình đã nạp PyQt6 + `QApplication` thì `import torch` CHẾT với
+    `OSError [WinError 1114] ... Error loading torch\\lib\\c10.dll`. App này
+    LÀ app Qt, nên hàm bản cũ (import thật) trả **False trên chính máy ĐANG
+    CÓ Demucs** -> UI báo "máy chưa cài" và người ta đi cài lại lần nữa.
+    Đo: torch TRƯỚC Qt -> OK · torch SAU Qt -> WinError 1114 (tái hiện 100%).
+
+    `find_spec` chỉ TÌM module, không nạp DLL -> chạy đúng ở cả hai thứ tự.
+    Việc "chạy được thật không" do `_tach_demucs` (tiến trình riêng) trả lời,
+    và nó báo lỗi THẬT chứ không im lặng.
     """
     lib = lib_demucs()
     if lib and lib not in sys.path and Path(lib).is_dir():
         sys.path.insert(0, lib)
+    import importlib.util
     try:
-        import torch  # noqa: F401
-        import demucs.apply  # noqa: F401
-        import demucs.pretrained  # noqa: F401
-        return True
-    except Exception:  # noqa: BLE001
+        return all(importlib.util.find_spec(m) is not None
+                   for m in ("torch", "demucs.pretrained", "soundfile"))
+    except Exception:  # noqa: BLE001 - find_spec ném khi gói cha hỏng
         return False
 
 
@@ -309,6 +317,10 @@ def thiet_bi_tach() -> str:
 
     ĐÃ ĐO: `.venv` app cài torch **2.13.0+cpu** nên trả 'cpu' KỂ CẢ khi máy có
     RTX 3060. Đây là con số quyết định tốc độ — xem báo cáo.
+
+    LƯU Ý: gọi từ TIẾN TRÌNH APP (đã nạp Qt) thì `import torch` chết ->
+    trả 'cpu'. Thiết bị THẬT do `_tach_demucs` đọc ở tiến trình riêng và ghi
+    vào khoá `thiet_bi` của kết quả — đọc số đó, đừng đọc hàm này.
     """
     try:
         import torch
@@ -377,14 +389,20 @@ def tinh_trang_demucs() -> dict:
     Trả {co, thieu, lib, thiet_bi, cai_duoc, loi_nhan} — UI đọc `co` để CHẶN
     nút Chạy và đọc `thieu` để ghi rõ còn thiếu gói nào.
     """
+    import importlib.util
+
     lib = lib_demucs()
     if lib and lib not in sys.path and Path(lib).is_dir():
         sys.path.insert(0, lib)
     thieu: list[str] = []
     for ten, goi in (("torch", "torch"), ("demucs.pretrained", "demucs"),
                      ("soundfile", "soundfile")):
+        # `find_spec` chứ KHÔNG `__import__`: trong tiến trình app (đã nạp Qt)
+        # `import torch` chết WinError 1114 -> máy CÓ Demucs vẫn bị báo là
+        # CHƯA CÓ. Xem ghi chú dài ở `co_demucs`.
         try:
-            __import__(ten)
+            if importlib.util.find_spec(ten) is None:
+                thieu.append(goi)
         except Exception:  # noqa: BLE001
             thieu.append(goi)
     co = not thieu
@@ -504,84 +522,197 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
         _KHOA_CAI.release()
 
 
-def _tach_demucs(wav_44k: str | Path, out_dir: Path, model_name: str,
-                 threads: int,
-                 on_progress: Optional[Callable[[float, str], None]],
-                 ) -> dict:
-    """Tách bằng Demucs (`htdemucs`, Meta, MIT). Ném RuntimeError nếu thiếu lib."""
-    lib = lib_demucs()
-    if lib and lib not in sys.path and Path(lib).is_dir():
-        sys.path.insert(0, lib)
-    os.environ.setdefault("TORCH_HOME", str(Path(lib) / "_models"))
-    try:
-        import soundfile as sf
-        import torch
-        from demucs.apply import apply_model
-        from demucs.pretrained import get_model
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(f"Chưa cài được Demucs (thư mục {lib}): {e}") from e
+#: Mã CHẠY DEMUCS Ở TIẾN TRÌNH RIÊNG. Cố ý là script ĐỘC LẬP (chỉ cần
+#: lib + torch + demucs + soundfile) chứ không `-m app.core.thay_giong`:
+#: bản `.exe` KHÔNG chạy được `-m <module>` và cũng không có cây mã nguồn,
+#: nên chung một đường thế này thì máy dev và máy nhân viên chạy y hệt.
+_MA_TACH = '''
+import json, os, sys, time
+lib, wav_in, out_dir, model_name, threads = sys.argv[1:6]
+sys.path.insert(0, lib)
+os.environ.setdefault("TORCH_HOME", os.path.join(lib, "_models"))
 
-    def prog(p: float, m: str) -> None:
-        if on_progress:
-            on_progress(max(0.0, min(1.0, p)), m)
 
-    if threads > 0:
+def bao(p, m):
+    sys.stdout.write("BQP\\t%.4f\\t%s\\n" % (p, m))
+    sys.stdout.flush()
+
+
+try:
+    bao(0.02, "Nap model tach giong...")
+    import soundfile as sf
+    import torch
+    from demucs.apply import apply_model
+    from demucs.pretrained import get_model
+
+    if int(threads) > 0:
         torch.set_num_threads(int(threads))
-
-    prog(0.02, "Nạp model tách giọng...")
     model = get_model(model_name)
     model.eval()
-
-    data, sr = sf.read(str(wav_44k), dtype="float32", always_2d=True)
+    data, sr = sf.read(wav_in, dtype="float32", always_2d=True)
     if sr != model.samplerate:
-        raise RuntimeError(
-            f"Audio phải ở {model.samplerate} Hz (đang {sr} Hz) — resample "
-            "bằng ffmpeg trước khi gọi (dùng tach_wav).")
+        raise RuntimeError("Audio phai o %d Hz (dang %d Hz)"
+                           % (model.samplerate, sr))
     wav = torch.from_numpy(data.T).contiguous()
-    if wav.shape[0] == 1:                       # mono -> nhân đôi kênh
+    if wav.shape[0] == 1:
         wav = wav.repeat(2, 1)
     dur = wav.shape[1] / float(sr)
-
-    # Chuẩn hoá theo trung bình/độ lệch như bản gốc Demucs rồi trả lại sau.
     ref = wav.mean(0)
     std = float(ref.std()) or 1.0
     mean = float(ref.mean())
     w = (wav - mean) / std
-
-    dev = thiet_bi_tach()
-    prog(0.10, f"Đang tách nhạc/giọng ({dur:.0f} giây, {dev})...")
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    bao(0.10, "Dang tach nhac/giong (%.0f giay, %s)..." % (dur, dev))
     t0 = time.time()
     with torch.no_grad():
         src = apply_model(model, w[None], device=dev, progress=False,
                           split=True, overlap=0.25)[0]
     giay = time.time() - t0
     src = src * std + mean
-
-    stems: dict[str, str] = {}
+    stems = {}
     for i, name in enumerate(model.sources):
-        p = out_dir / f"stem_{name}.wav"
-        sf.write(str(p), src[i].numpy().T, sr)
-        stems[name] = str(p)
-
-    # Lớp GIỮ = cộng drums+bass+other ở MIỀN MẪU (không qua `amix` để tránh bẫy
-    # chia biên độ, và giữ đúng từng mẫu).
+        p = os.path.join(out_dir, "stem_%s.wav" % name)
+        sf.write(p, src[i].numpy().T, sr)
+        stems[name] = p
     idx = {n: i for i, n in enumerate(model.sources)}
-    keep = sum(src[idx[n]] for n in LOP_GIU if n in idx)
-    p_nhac = out_dir / "lop_nhac.wav"
-    sf.write(str(p_nhac), keep.numpy().T, sr)
+    keep = None
+    for n in ("drums", "bass", "other"):
+        if n in idx:
+            keep = src[idx[n]] if keep is None else keep + src[idx[n]]
+    p_nhac = os.path.join(out_dir, "lop_nhac.wav")
+    sf.write(p_nhac, keep.numpy().T, sr)
+    ket = {"ok": True, "nhac": p_nhac, "stems": stems,
+           "giay": round(giay, 2), "thiet_bi": dev,
+           "do_dai": round(dur, 3), "sr": sr,
+           "torch": getattr(torch, "__version__", "?")}
+except Exception as e:
+    ket = {"ok": False, "loi": "%s: %s" % (type(e).__name__, e)}
+sys.stdout.write("BQJSON\\t" + json.dumps(ket) + "\\n")
+sys.stdout.flush()
+'''
 
+
+def _python_chay_tach() -> list[str]:
+    """Python dùng để chạy bước tách. [] = máy không có python nào."""
+    if not getattr(sys, "frozen", False):
+        return [sys.executable]
+    for ten in ("python.exe", "python3.exe"):
+        p = shutil.which(ten)
+        if p:
+            return [p]
+    p = shutil.which("py")
+    return [p, "-3"] if p else []
+
+
+def _viet_runner(lib: str) -> Path:
+    """Ghi script chạy Demucs ra `<lib>/_bq_tach_runner.py` (ghi đè mỗi lượt)."""
+    p = Path(lib) / "_bq_tach_runner.py"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_MA_TACH, encoding="utf-8")
+    return p
+
+
+def _tach_demucs(wav_44k: str | Path, out_dir: Path, model_name: str,
+                 threads: int,
+                 on_progress: Optional[Callable[[float, str], None]],
+                 timeout: int = 5400,
+                 ) -> dict:
+    """Tách bằng Demucs (`htdemucs`, Meta, MIT) — chạy ở **TIẾN TRÌNH RIÊNG**.
+
+    **VÌ SAO TIẾN TRÌNH RIÊNG — ĐO ĐƯỢC 14/08, ĐỪNG GỘP LẠI VÀO APP:**
+    trong tiến trình đã nạp PyQt6 + `QApplication` thì `import torch` chết với
+    `OSError [WinError 1114] Error loading ...torch\\lib\\c10.dll`. Tái hiện
+    100%: torch TRƯỚC Qt -> OK · torch SAU Qt -> 1114. App này LÀ app Qt, nên
+    bản cũ (nhúng thẳng Demucs vào tiến trình app) là tính năng **KHÔNG BAO
+    GIỜ chạy được khi bấm từ giao diện** — mà lỗi lại đội lốt "máy chưa cài
+    Demucs", đúng loại bẫy dẫn người ta đi chữa nhầm chỗ.
+    Hai cái lợi kèm theo: RAM ~1,3 GB được trả SẠCH khi tiến trình thoát, và
+    bấm Huỷ giết được tiến trình (đã `register_job_proc`).
+    """
+    lib = lib_demucs()
+    py = _python_chay_tach()
+    if not py:
+        raise RuntimeError(
+            "Không tìm thấy Python để chạy bộ tách giọng. Cài Python 3 "
+            "(python.org) rồi thử lại.")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    runner = _viet_runner(lib)
+
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            on_progress(max(0.0, min(1.0, p)), m)
+
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    # Ngân sách luồng cho torch/OpenMP: không đặt là 1 video ăn hết CPU cả máy
+    # và các luồng thay giọng khác đứng im.
+    if threads > 0:
+        for v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS",
+                  "OPENBLAS_NUM_THREADS"):
+            env.setdefault(v, str(int(threads)))
+    args = [*py, str(runner), lib, str(wav_44k), str(out_dir), model_name,
+            str(int(threads))]
+    t0 = time.time()
+    p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True,
+                         encoding="utf-8", errors="replace", bufsize=1,
+                         env=env, creationflags=_CREATE_NO_WINDOW)
+    _gan_job(p)
+    ket: dict = {}
+    duoi: list[str] = []
+    ma: Optional[int] = None
+    han = time.time() + timeout
+    try:
+        for dong in p.stdout or ():
+            dong = dong.rstrip("\n")
+            if dong.startswith("BQP\t"):
+                phan = dong.split("\t", 2)
+                try:
+                    prog(float(phan[1]), phan[2] if len(phan) > 2 else "")
+                except (ValueError, IndexError):
+                    pass
+                continue
+            if dong.startswith("BQJSON\t"):
+                try:
+                    ket = json.loads(dong.split("\t", 1)[1])
+                except ValueError:
+                    ket = {}
+                continue
+            if dong.strip():
+                duoi.append(dong[-300:])
+            if time.time() > han:
+                p.kill()
+                raise RuntimeError("Tách giọng quá giờ (bỏ cuộc)")
+        ma = p.wait(timeout=120)
+    finally:
+        _bo_gan_job(p)
+    if not ket.get("ok"):
+        raise RuntimeError(
+            "Tách giọng lỗi (mã thoát {}): {}".format(
+                "?" if ma is None else ma,
+                ket.get("loi") or " | ".join(duoi[-4:]) or "không rõ"))
+    p_nhac = ket.get("nhac") or ""
+    # KHÔNG tin tiến trình con báo "ok" — ĐO lại file nó ghi ra. Đây là cùng
+    # một luật với "ffmpeg trả mã 0 mà file rỗng".
     _kiem_wav(p_nhac)
+    dur = float(ket.get("do_dai") or 0)
+    giay = float(ket.get("giay") or (time.time() - t0))
     prog(1.0, "Xong tách nhạc/giọng")
+    stems = ket.get("stems") or {}
     return {
         "cach": f"demucs:{model_name}",
-        "nhac": str(p_nhac),
+        "nhac": p_nhac,
         "giong": stems.get(LOP_BO, ""),
         "stems": stems,
         "giay": round(giay, 2),
         "ty_le": round(giay / dur, 3) if dur > 0 else 0.0,
-        "thiet_bi": dev,
+        "thiet_bi": ket.get("thiet_bi") or "cpu",
         "do_dai": round(dur, 3),
-        "sr": sr,
+        "sr": ket.get("sr") or SR_TACH,
+        "giay_ca_tien_trinh": round(time.time() - t0, 2),
+        "torch": ket.get("torch", ""),
     }
 
 

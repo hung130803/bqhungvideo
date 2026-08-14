@@ -352,6 +352,15 @@ class StudioPage(QWidget):
             "vào thư mục kênh rồi XÓA video gốc. Chạy khi bấm — không tự chạy.")
         pipe_btn.clicked.connect(self._pipeline_dialog)
         actrow.addWidget(pipe_btn)
+        # THAY GIỌNG NÓI: nhãn KHÔNG EMOJI (máy anh Hùng thiếu font -> ô đen)
+        self.tg_btn = QPushButton("Thay giọng nói")
+        self.tg_btn.setProperty("ghost", True)
+        self.tg_btn.setToolTip(
+            "THAY GIỌNG NÓI cả THƯ MỤC video sang tiếng khác, GIỮ NGUYÊN nhạc\n"
+            "nền + tiếng động. Xong thì video gốc vào Thùng rác (khôi phục\n"
+            "được) và video mới nằm đúng chỗ cũ. Chạy đa luồng.")
+        self.tg_btn.clicked.connect(self._thay_giong_dialog)
+        actrow.addWidget(self.tg_btn)
         from app.ai.recap import STYLES as _RECAP_STYLES
         self.recap_style = QComboBox()
         self.recap_style.setToolTip("Phong cách thuyết minh cho nút 🎙 Reup.")
@@ -6975,6 +6984,21 @@ class StudioPage(QWidget):
                 self.recap_style.setCurrentIndex(i)
             self.status.setText("Đã lưu cài đặt Reup thuyết minh (áp dụng "
                                 "cho mọi kênh).")
+
+    def _thay_giong_dialog(self):
+        """Mở hộp THAY GIỌNG NÓI (thay lời thoại cả thư mục sang tiếng khác).
+
+        Truyền thẳng THÙNG RÁC của dây chuyền (`pipe_recycle_dir`) để video
+        gốc đi vào ĐÚNG chỗ anh Hùng đã đặt — một nguồn sự thật, không đẻ ra
+        thùng rác thứ hai cho người ta đi tìm.
+        """
+        from app.ui.thay_giong_dialog import ThayGiongDialog
+        dlg = ThayGiongDialog(self.state.pool, self,
+                              thung_rac=self._pipe_recycle_dir())
+        self._tg_dlg = dlg              # để cổng test soi được widget bên trong
+        dlg.exec()
+        self.status.setText("Đã đóng hộp Thay giọng nói (việc đang chạy vẫn "
+                            "chạy tiếp ở nền).")
 
     def _recap_volume(self) -> float:
         """Hệ số 'Âm lượng giọng kể' từ ⚙ Cài đặt Reup (QSettings
