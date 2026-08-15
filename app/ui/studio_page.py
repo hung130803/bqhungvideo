@@ -8567,6 +8567,12 @@ class StudioPage(QWidget):
                 che_chu_cach=str(self.layout_tpl.get("che_chu_cach", "")
                                  or ""),
                 che_chu_muc=self.layout_tpl.get("che_chu_muc"),
+                # QUÉT CẢ KHUNG — mẫu CŨ chưa có khoá thì để `None` (theo env,
+                # mặc định TẮT), KHÔNG ép `False`: ép là bịt luôn đường bật
+                # bằng `BQ_CHE_TOAN_KHUNG` mà các phép đo đang dùng.
+                che_chu_toan_khung=(
+                    None if self.layout_tpl.get("che_chu_toan_khung") is None
+                    else bool(self.layout_tpl.get("che_chu_toan_khung"))),
                 overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
                 # ĐƠN THUỐC lớp chữ đi CÙNG job: ảnh `_ovl_` có mất thì job tự
                 # dựng lại được (tắt app giữa lượt xuất / user dọn _cache).

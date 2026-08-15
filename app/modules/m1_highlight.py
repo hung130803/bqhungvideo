@@ -2818,10 +2818,15 @@ def doc_che_chu(payload: dict) -> dict:
     from app.core import che_chu as _CC
 
     bat, cach, muc = None, "", None
+    #: QUÉT CẢ KHUNG — giữ NGUYÊN `None` khi không ai nói gì (ba trạng thái,
+    #: xem `che_chu.loc_cho_xuat`). `bool()` ở đây là mất đường đổi mặc định.
+    tk = None
     if "che_chu" in (payload or {}):
         bat = bool(payload.get("che_chu"))
         cach = payload.get("che_chu_cach") or ""
         muc = payload.get("che_chu_muc")
+        if payload.get("che_chu_toan_khung") is not None:
+            tk = bool(payload.get("che_chu_toan_khung"))
     else:
         ten = str(((payload or {}).get("cap_style") or {}).get("_mau") or "")
         if ten:
@@ -2832,11 +2837,14 @@ def doc_che_chu(payload: dict) -> dict:
                     bat = bool(tpl.get("che_chu"))
                     cach = tpl.get("che_chu_cach") or ""
                     muc = tpl.get("che_chu_muc")
+                    if tpl.get("che_chu_toan_khung") is not None:
+                        tk = bool(tpl.get("che_chu_toan_khung"))
             except Exception:                                  # noqa: BLE001
                 bat = None
     return {"bat": bool(bat), "cach": _CC.chuan_cach(cach),
             "muc": _CC.chuan_muc_mo(_CC.MUC_MO_MAC_DINH if muc is None
-                                    else muc)}
+                                    else muc),
+            "toan_khung": tk}
 
 
 def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
@@ -3784,6 +3792,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             che_chu=_cc_cf["bat"],
             che_chu_cach=_cc_cf["cach"],
             che_chu_muc=_cc_cf["muc"],
+            che_chu_toan_khung=_cc_cf.get("toan_khung"),
             che_chu_log=_cc_log,
             # KHUNG TỰ KHỚP TỈ LỆ VIDEO GỐC (không mất hình): export_canvas_clip
             # tự tính lại video_rect theo tỉ lệ nguồn (đã có probe sẵn ở đó).

@@ -1918,7 +1918,8 @@ def loc_cho_xuat_toan_khung(src: str | Path, cach: str = "mo",
 def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
                  dai: Optional[DaiChu] = None,
                  so_khung: int = SO_KHUNG,
-                 segs: Optional[Sequence] = None) -> tuple:
+                 segs: Optional[Sequence] = None,
+                 toan_khung: Optional[bool] = None) -> tuple:
     """(chuỗi_filter, DaiChu, lý_do) cho ĐƯỜNG XUẤT. Chuỗi rỗng = KHÔNG che.
 
     Chuỗi trả về là một MẢNH chuỗi filter THIẾU nhãn hai đầu, đúng khuôn
@@ -1934,11 +1935,21 @@ def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
 
     KHÔNG dò ra chữ -> trả rỗng: **che oan video sạch là ca sai đắt nhất** của
     tính năng này (đo ở cổng 56: 0/76 video không chữ bị che).
+
+    `toan_khung`: **BA TRẠNG THÁI, không phải hai** (cùng khuôn `projects.
+    xem_hinh` của cổng 51 — xem lý do ở đó):
+      · `None`  = lối gọi KHÔNG nói gì -> theo biến môi trường
+                  `BQ_CHE_TOAN_KHUNG` (mặc định TẮT). Giữ nguyên đường cũ cho
+                  job cũ trong DB và mọi lối gọi chưa nối.
+      · `True`  = user ĐÃ BẬT ô trong mẫu -> quét CẢ KHUNG.
+      · `False` = user ĐÃ TẮT -> chỉ dò dải ĐÁY, kể cả khi env đang bật.
+    Ép về `bool` là mất luôn đường đổi mặc định toàn cục.
     """
     # QUÉT CẢ KHUNG — chỉ khi user bật hẳn. Mặc định TẮT nên đường xuất của
     # anh Hùng KHÔNG đổi một ký tự nào so với v2.28.0 (xem báo cáo: giá đắt
     # hơn và còn 2 ca che oan chưa chữa được).
-    if _BAT_TOAN_KHUNG and dai is None:
+    _tk = _BAT_TOAN_KHUNG if toan_khung is None else bool(toan_khung)
+    if _tk and dai is None:
         f, vs, vi = loc_cho_xuat_toan_khung(src, cach=cach, muc=muc,
                                             segs=segs)
         if f:

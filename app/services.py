@@ -367,6 +367,10 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    che_chu: Optional[bool] = None,
                    che_chu_cach: str = "",
                    che_chu_muc: Optional[float] = None,
+                   # QUÉT CẢ KHUNG (chữ ở TRÊN/GÓC) thay vì chỉ dải ĐÁY.
+                   # `None` = không chốt -> theo env `BQ_CHE_TOAN_KHUNG`
+                   # (mặc định TẮT). Cùng lý do ba-trạng-thái như `che_chu`.
+                   che_chu_toan_khung: Optional[bool] = None,
                    flat_export: bool = False,
                    force: bool = False) -> Optional[int]:
     """force=True: xuất lại kể cả khi từng xuất xong y hệt (nút 'Xuất lại' /
@@ -411,6 +415,12 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         _cc_m = _CC.MUC_MO_MAC_DINH if che_chu_muc is None else che_chu_muc
         _cc_sig = (f":cc{_CC.chuan_cach(che_chu_cach)}"
                    f"{_CC.chuan_muc_mo(_cc_m):.2f}")
+        # QUÉT CẢ KHUNG đổi HẲN vùng che -> phải đổi hash, nếu không thì bật ô
+        # xong bấm "Xuất cả kênh" là bị smart-skip (đúng lỗi v2.25.0 đã gặp).
+        # Nối vào ĐUÔI và CHỈ khi BẬT -> `sig` của mẫu che-dải-đáy giữ nguyên
+        # TỪNG KÝ TỰ, không đẻ job xuất lại cho 200-300 kênh.
+        if che_chu_toan_khung:
+            _cc_sig += "tk"
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}{_cc_sig}")
     tai = {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
@@ -439,6 +449,9 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         tai["che_chu"] = bool(che_chu)
         tai["che_chu_cach"] = che_chu_cach or ""
         tai["che_chu_muc"] = che_chu_muc
+        # GIỮ `None` nếu lối gọi không chốt (ba trạng thái) — `doc_che_chu`
+        # phân biệt bằng `is not None`, ép `bool()` là mất đường theo env.
+        tai["che_chu_toan_khung"] = che_chu_toan_khung
     return pool.enqueue(
         "m1_export_clip", tai,
         project_id=project_id, video_id=video_id,

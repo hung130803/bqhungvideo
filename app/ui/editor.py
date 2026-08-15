@@ -1375,11 +1375,37 @@ class EditorDialog(QDialog):
             lambda v: self.che_chu_muc_lbl.setText(
                 f"{v / 100:.2f}".replace(".", ",")))
         gb.addLayout(_frow("Mức mờ", self.che_chu_muc, self.che_chu_muc_lbl))
+        # ---- QUÉT CẢ KHUNG (mặc định TẮT) ----
+        # Đường dò toàn khung đã xong từ trước, nhưng tới nay chỉ bật được bằng
+        # biến môi trường `BQ_CHE_TOAN_KHUNG=1`. Nay thành ô tích để anh Hùng
+        # tự quyết. MẶC ĐỊNH TẮT vì ĐÁNH ĐỔI ĐO ĐƯỢC, không phải cẩn thận thừa:
+        #   · bỏ sót 33,3% -> 0%          (được)
+        #   · che oan     0 -> 2 ca       (mất)
+        #   · video quay bằng CAMERA CỐ ĐỊNH thì HỎNG NẶNG: `jp_tuyet` ra 4
+        #     vùng thì 2 sai, bôi gần hết khung. Nền không trôi nên mẹo
+        #     "giao nhau theo thời gian" — thứ lọc vùng giả của cả đường này —
+        #     mất tác dụng hoàn toàn.
+        #   · video dọc chậm thêm 3,38 giây mỗi phút phim.
+        self.che_chu_tk = QCheckBox("Quét cả khung (bắt chữ ở trên và ở góc)")
+        self.che_chu_tk.setChecked(False)
+        self.che_chu_tk.setToolTip(
+            "TẮT (mặc định): chỉ dò DẢI CHỮ Ở ĐÁY khung — chỗ phụ đề hay nằm.\n"
+            "BẬT: dò CẢ KHUNG nên bắt được cả chữ ở TRÊN và ở GÓC.\n"
+            "\n"
+            "ĐÁNH ĐỔI (số đo thật, 19 video):\n"
+            "· Bắt thêm được chữ: bỏ sót 33,3% xuống còn 0%.\n"
+            "· Nhưng CHE NHẦM tăng từ 0 lên 2 ca.\n"
+            "· Và CHẬM HƠN: video dọc tốn thêm 3,38 giây mỗi phút phim.\n"
+            "\n"
+            "ĐỪNG BẬT cho video quay bằng CAMERA CỐ ĐỊNH (máy đặt yên một "
+            "chỗ): nền không trôi nên app phân biệt được chữ với vật thể "
+            "đứng im — đo thật ra 4 vùng thì 2 vùng sai, bôi mờ gần hết khung.")
+        gb.addWidget(self.che_chu_tk)
         self.che_chu_note = QLabel(
-            "Chỉ dò được DẢI CHỮ Ở ĐÁY khung (chỗ phụ đề hay nằm). Chữ ở GIỮA "
-            "hình, GÓC TRÊN hay chữ trong biển hiệu thì KHÔNG dò được và không "
-            "che. Mức mờ chặn cứng ở 0,60: đo thật, mức 0,40 máy báo sạch mà "
-            "mắt vẫn đọc ra chữ.")
+            "TẮT ô 'Quét cả khung' thì chỉ dò được DẢI CHỮ Ở ĐÁY khung (chỗ "
+            "phụ đề hay nằm); chữ ở GIỮA hình, GÓC TRÊN hay chữ trong biển "
+            "hiệu thì KHÔNG dò được và không che. Mức mờ chặn cứng ở 0,60: đo "
+            "thật, mức 0,40 máy báo sạch mà mắt vẫn đọc ra chữ.")
         self.che_chu_note.setStyleSheet("color:#9AA6BF; font-size:11px;")
         self.che_chu_note.setWordWrap(True)
         gb.addWidget(self.che_chu_note)
@@ -1897,6 +1923,10 @@ class EditorDialog(QDialog):
                 layout.get("che_chu_muc", CHE_CHU_MAC_DINH)) * 100)))
             self.che_chu_muc_lbl.setText(
                 f"{self.che_chu_muc.value() / 100:.2f}".replace(".", ","))
+            # QUÉT CẢ KHUNG — mẫu CŨ chưa có khoá -> TẮT (đánh đổi: bắt thêm
+            # chữ nhưng che oan 2 ca + chậm 3,38 s/phút, xem tooltip).
+            self.che_chu_tk.setChecked(
+                bool(layout.get("che_chu_toan_khung", False)))
             self._che_chu_ui()
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
@@ -2361,7 +2391,8 @@ class EditorDialog(QDialog):
         không biết là có (bài học prodown 'control trong {kOpen && …}').
         """
         on = self.che_chu_chk.isChecked()
-        for w in (self.che_chu_cach, self.che_chu_muc, self.che_chu_muc_lbl):
+        for w in (self.che_chu_cach, self.che_chu_muc, self.che_chu_muc_lbl,
+                  self.che_chu_tk):
             w.setEnabled(on)
 
     def _fx_sfx_update(self):
@@ -2700,6 +2731,7 @@ class EditorDialog(QDialog):
         lay["che_chu"] = self.che_chu_chk.isChecked()
         lay["che_chu_cach"] = che_chu_chuan_cach(self.che_chu_cach.currentData())
         lay["che_chu_muc"] = che_chu_chuan_muc(self.che_chu_muc.value() / 100.0)
+        lay["che_chu_toan_khung"] = self.che_chu_tk.isChecked()
         lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file

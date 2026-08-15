@@ -3236,6 +3236,14 @@ def export_canvas_clip(
                                         # ra "sạch" mà mắt vẫn đọc được chữ).
     che_chu_dai: object = None,          # DaiChu đã dò sẵn (test/đo). None ->
                                         # tự dò 1 lần rồi NHỚ theo video.
+    che_chu_toan_khung: Optional[bool] = None,  # QUÉT CẢ KHUNG (chữ ở TRÊN/
+                                        # GÓC) thay vì chỉ dải ĐÁY. BA trạng
+                                        # thái: None = theo env
+                                        # `BQ_CHE_TOAN_KHUNG` (mặc định TẮT) ·
+                                        # True/False = user đã chọn trong mẫu.
+                                        # Ép về bool là mất đường đổi mặc định
+                                        # toàn cục (bài học `projects.xem_hinh`
+                                        # cổng 51).
     che_chu_log: Optional[list] = None,  # LIST CỦA CALLER: hàm ghi vào đây
                                         # {che, ly_do, dai} — nhật ký dây
                                         # chuyền in ra cho anh Hùng đọc. Che
@@ -3390,7 +3398,7 @@ def export_canvas_clip(
             # thừa hơn.
             _cc_loc, _cc_dai, _cc_ly = _CC.loc_cho_xuat(
                 src, cach=che_chu_cach, muc=che_chu_muc, dai=che_chu_dai,
-                segs=segs)
+                segs=segs, toan_khung=che_chu_toan_khung)
         except Exception as _e:    # noqa: BLE001 — che chữ KHÔNG được làm chết
             _cc_loc, _cc_dai = "", None            # lượt xuất; nói ra lý do
             _cc_ly = f"dò/che chữ lỗi ({_e}) -> KHÔNG che"
