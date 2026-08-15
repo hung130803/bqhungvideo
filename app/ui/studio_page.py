@@ -1744,6 +1744,22 @@ class StudioPage(QWidget):
             "đó); tốc độ vẫn khớp khung tự động.")
         elkeys.setFixedHeight(50); c_eleven.addWidget(elkeys)
 
+        # ---- MỘT DÒNG NHẮC ĐIỀU KHOẢN (KHÔNG đổi cách app xoay key) ----
+        # Ô này nhận NHIỀU key và app xoay vòng khi một key hết hạn mức free.
+        # Điều khoản ElevenLabs cấm dùng nhiều tài khoản để khai thác gói free,
+        # và §1(c) cấm dùng gói free cho mục đích thương mại; chế tài là KHOÁ
+        # TÀI KHOẢN, không gỡ lại được. Anh Hùng CHƯA QUYẾT nên ở đây chỉ NÓI
+        # RA sự thật đó — không tự ý gỡ tính năng, không doạ, không chặn nút.
+        el_dk = QLabel(
+            "Lưu ý điều khoản: gói free ElevenLabs là 10.000 ký tự/tháng cho "
+            "MỘT tài khoản. Dùng nhiều tài khoản để cộng hạn mức free, hoặc "
+            "dùng gói free cho video kiếm tiền, đều trái điều khoản của họ "
+            "(mục 1c) và có thể bị khoá tài khoản vĩnh viễn. Gói trả phí thì "
+            "được dùng thương mại.")
+        el_dk.setWordWrap(True)
+        el_dk.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        c_eleven.addWidget(el_dk)
+
         # Nút "Kiểm tra" credit ElevenLabs: gọi GET /user/subscription cho
         # TỪNG key ở THREAD NỀN -> hiện "Key …abc: còn 8.230/10.000 ký tự
         # (free, reset 15/07)"; key lỗi hiện "SAI KEY"/lý do nguyên văn.
