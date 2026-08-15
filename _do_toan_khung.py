@@ -442,8 +442,84 @@ def lenh_hinh(nguong: int = 12) -> None:
               f"{gon:10.3f} {cb:10.2f}")
 
 
+# ══════════════════════════ LỆNH: do ════════════════════════════════════════
+#: BỘ ĐỐI CHỨNG mức VÙNG. `vung_that` = số VÙNG CHỮ thật, ghi BẰNG MẮT.
+#: `co_tren` = có chữ NGOÀI dải đáy (thứ bản cũ không thể thấy).
+BO_DOI_CHUNG = [
+    # (nhãn, đường dẫn, số vùng chữ THẬT, có chữ ngoài dải đáy)
+    ("P_jp_taxi", NHIN / "nguon/jp_taxi.mp4", 2, True),
+    ("P_jp_tuyet", NHIN / "nguon/jp_tuyet.mp4", 2, True),
+    ("P_jp_art", NHIN / "nguon/jp_art.mp4", 2, True),
+    ("P_zh_phim", NHIN / "nguon/zh_phim.mp4", 1, False),
+    ("P_zh_ep12", NGUON / "zh_ep12.mp4", 1, False),
+    ("P_zh_dongho", NGUON / "zh_dongho.mp4", 1, False),
+    ("P_dy1", NGUON / "dy1.mp4", 1, False),
+    ("P_dy2", NGUON / "dy2.mp4", 1, False),
+    ("P_dy3", NGUON / "dy3.mp4", 1, False),
+    ("N_en_bus", NGUON / "en_bus.mp4", 0, False),
+    ("N_en_d5", NGUON / "en_d5.mp4", 0, False),
+]
+_AM = ["DaddyOFive.mp4", "DaddyOFive Ryan Missed the Bus!!!.mp4",
+       "Daddy O Five - The Purge Prank (Scary).mp4",
+       "KID STARTS A FIRE DaddyOFive Re Upload.mp4",
+       "GOING BACK TO OUR OLD HOUSE.mp4", "DAD VS JAKE IN NERF WAR!!.mp4",
+       "HILARIOUS FAMILY GYMNASTICS CHALLENGE!!!.mp4",
+       "GETTING OUR GOLDEN RETRIEVER PUPPY.mp4"]
+for _i, _n in enumerate(_AM, 1):
+    BO_DOI_CHUNG.append((f"N_en{_i}", V / _n, 0, False))
+
+
+def lenh_do() -> None:
+    """BỎ SÓT / CHE OAN: bản DẢI ĐÁY (đang chạy) vs bản TOÀN KHUNG (mới)."""
+    print("\n=== BỎ SÓT / CHE OAN — mức VÙNG, sự thật ghi BẰNG MẮT ===")
+    print(f"  {'video':14s} {'thật':>4s} | {'CŨ dò':>6s} {'sót':>4s} "
+          f"{'oan':>4s} | {'MỚI dò':>7s} {'sót':>4s} {'oan':>4s} | giây")
+    tk = {"cu_sot": 0, "cu_oan": 0, "moi_sot": 0, "moi_oan": 0, "that": 0,
+          "tren_that": 0, "tren_cu": 0, "tren_moi": 0, "n": 0}
+    for nhan, p, that, co_tren in BO_DOI_CHUNG:
+        if not Path(p).exists():
+            print(f"  {nhan:14s} THIẾU FILE")
+            continue
+        t0 = time.perf_counter()
+        cu = C.do_dai_chu(p)
+        t_cu = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        vs = C.do_vung_chu(p)
+        t_moi = time.perf_counter() - t0
+        n_cu = 1 if cu.co_chu else 0
+        n_moi = len(vs)
+        cu_sot, cu_oan = max(0, that - n_cu), max(0, n_cu - that)
+        moi_sot, moi_oan = max(0, that - n_moi), max(0, n_moi - that)
+        tk["that"] += that
+        tk["cu_sot"] += cu_sot
+        tk["cu_oan"] += cu_oan
+        tk["moi_sot"] += moi_sot
+        tk["moi_oan"] += moi_oan
+        tk["n"] += 1
+        if co_tren:
+            tk["tren_that"] += 1
+            # bản CŨ chỉ dò dải đáy -> không bao giờ bắt được chữ ở trên
+            tt = C.thong_tin(p)
+            if any(v.y1 < tt["cao"] * C.VUNG_DAY for v in vs):
+                tk["tren_moi"] += 1
+        print(f"  {nhan:14s} {that:4d} | {n_cu:6d} {cu_sot:4d} {cu_oan:4d} | "
+              f"{n_moi:7d} {moi_sot:4d} {moi_oan:4d} | "
+              f"{t_cu:4.1f}/{t_moi:4.1f}")
+    t = max(1, tk["that"])
+    print(f"\n  TỔNG {tk['n']} video · {tk['that']} vùng chữ THẬT")
+    print(f"    bản DẢI ĐÁY (đang chạy): bỏ sót {tk['cu_sot']}/{t} = "
+          f"{tk['cu_sot']/t*100:.1f}%  ·  che oan {tk['cu_oan']}")
+    print(f"    bản TOÀN KHUNG (mới)   : bỏ sót {tk['moi_sot']}/{t} = "
+          f"{tk['moi_sot']/t*100:.1f}%  ·  che oan {tk['moi_oan']}")
+    print(f"    video có chữ NGOÀI dải đáy: {tk['tren_that']} — bản cũ bắt "
+          f"được {tk['tren_cu']}, bản mới {tk['tren_moi']}")
+
+
 def _main() -> int:
     lenh = sys.argv[1] if len(sys.argv) > 1 else "quet"
+    if lenh == "do":
+        lenh_do()
+        return 0
     if lenh == "hinh":
         lenh_hinh(int(sys.argv[2]) if len(sys.argv) > 2 else 12)
         return 0
