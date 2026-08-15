@@ -2864,26 +2864,45 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     # tí nào — tức tính năng chạy hay không tuỳ may.
     nhac_sau = (cb.get("muc_nhac_luc_noi_db") or -14.0) + g_nhac
     nguong_duck, ratio_duck = _tham_so_duck(nhac_sau)
+    # **KHÔNG DÙNG `asplit` ĐỂ LẤY TÍN HIỆU KHOÁ CHO `sidechaincompress`.**
+    # ĐO ĐƯỢC 15/08/2026: `[gi]asplit=2[gi1][gikey]` rồi cho một nhánh vào
+    # `sidechaincompress` còn nhánh kia vào `amix=duration=first` làm **ĐỘ DÀI
+    # ĐẦU RA KHÔNG TIỀN ĐỊNH** — chạy 3 lượt CÙNG một lệnh, cùng file, ra
+    # **107,183 · 107,254 · 107,183 giây**, và trong lượt dây chuyền thật ra
+    # **106,162** (hụt 1,09 s). Hai nhánh asplit bị tiêu thụ ở nhịp khác nhau
+    # nên EOF lan tới `amix` sớm muộn tuỳ lượt. rc=0, không một dòng báo —
+    # đúng họ bẫy "ffmpeg trả mã 0 mà file sai" của cả repo này.
+    # CHỮA: mở CHÍNH FILE ĐÓ THÊM MỘT ĐẦU VÀO (`-i` thứ ba, giải mã wav là
+    # rẻ) -> không còn nhánh dùng chung. VÀ ép độ dài bằng `apad`+`atrim` —
+    # hai lớp, vì đây là chỗ `kiem_video_ra` đã bắt được lỗi thật.
     fc = [f"[0:a]volume={g_nhac:.2f}dB[nh0]",
           f"[1:a]volume={g_giong:.2f}dB[gi]"]
+    vao = ["-i", str(nhac_wav), "-i", str(giong_vao)]
     if duck:
-        fc.append("[gi]asplit=2[gi1][gikey]")
+        vao += ["-i", str(giong_vao)]
+        fc.append(f"[2:a]volume={g_giong:.2f}dB[gikey]")
         fc.append(
             f"[nh0][gikey]sidechaincompress=threshold={nguong_duck:.5f}"
             f":ratio={ratio_duck:.3f}:attack=20:release=300:makeup=1"
             ":level_sc=1[nh]")
-        gi_lab = "[gi1]"
     else:
         fc.append("[nh0]anull[nh]")
-        gi_lab = "[gi]"
-    fc.append(f"[nh]{gi_lab}amix=inputs=2:duration=first:normalize=0[mx]")
+    fc.append("[nh][gi]amix=inputs=2:duration=first:normalize=0[mx]")
     fc.append(f"[mx]alimiter=level_in=1:level_out=1:limit="
-              f"{10.0 ** (tran_dinh_db / 20.0):.6f}:level=0:latency=1[out]")
-    _ffmpeg(["-i", str(nhac_wav), "-i", str(giong_vao),
-             "-filter_complex", ";".join(fc),
+              f"{10.0 ** (tran_dinh_db / 20.0):.6f}:level=0:latency=1[lim]")
+    # ÉP ĐÚNG ĐỘ DÀI: thiếu thì đệm im lặng, thừa thì cắt. Không có bước này
+    # thì mỗi lượt xuất ra một độ dài khác nhau -> `kiem_video_ra` đỏ ngẫu
+    # nhiên, và tệ hơn là hình-tiếng lệch dần về cuối phim.
+    fc.append(f"[lim]apad,atrim=0:{tong:.3f},asetpts=N/SR/TB[out]")
+    _ffmpeg([*vao, "-filter_complex", ";".join(fc),
              "-map", "[out]", "-ac", "2", "-ar", str(SR_TACH),
              "-c:a", "pcm_s16le", str(out_wav)], "trộn giọng mới + nhạc")
     _kiem_wav(out_wav)
+    _d = probe_duration(out_wav)
+    if abs(_d - tong) > 0.05:
+        raise RuntimeError(
+            f"Bản trộn dài {_d:.3f}s, phải là {tong:.3f}s "
+            f"(lệch {_d - tong:+.3f}s) — KHÔNG ghép vào video")
 
     meo = do_meo(out_wav)
     kq = {
@@ -2905,7 +2924,17 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     }
     g, n = kq["rms_giong"], kq["rms_nhac"]
     if g > 0 and n > 0:
-        kq["giong_tren_nhac_db"] = round(20.0 * math.log10(g / n), 2)
+        # RMS CẢ TRACK của lớp giọng THÔ — giữ lại để so với các lượt cũ, NHƯNG
+        # nó KHÔNG phải con số nói lên "có nghe được lời không": track giọng
+        # ~30% là im lặng nên nó thấp giả tạo, và nó đo bản CHƯA nâng.
+        kq["giong_tren_nhac_db_tho"] = round(20.0 * math.log10(g / n), 2)
+    if cb.get("do_duoc"):
+        # CON SỐ ĐÁNG ĐỌC: giọng cao hơn nhạc bao nhiêu dB LÚC ĐANG NÓI, sau
+        # khi đã áp hệ số. Cộng thêm phần nhạc NÉ đi (đo được, xem DUCK_RATIO).
+        tinh = float(cb["giong_tren_nhac_truoc_db"]) + g_giong - g_nhac
+        kq["giong_tren_nhac_tinh_db"] = round(tinh, 2)
+        kq["giong_tren_nhac_ke_ne_db"] = round(
+            tinh + (DUCK_DB_DO_DUOC if duck else 0.0), 2)
     if on_progress:
         on_progress(1.0, "Trộn xong")
     return kq
@@ -3216,6 +3245,14 @@ def dong_chu_theo_giong(moc_tieng: list, texts: list,
                 gop[-1][2] = f"{gop[-1][2]} {cs}".strip()
             else:
                 gop.append([ca, cb, cs])
+        # CỤM CUỐI CÂU bị câu KẾ bóp ngắn thì gộp NGƯỢC vào cụm trước. Vòng
+        # gộp ở trên chỉ nhìn khoảng cách giữa hai cụm, không biết cụm cuối
+        # sắp bị `tran_cuoi` cắt — đo ra 4-10 cụm chớp dưới 0,4 s đúng từ chỗ
+        # này, và chúng nằm ở CUỐI câu nên là chỗ mắt vừa kịp nhìn tới.
+        while len(gop) > 1 and (het_cau - gop[-1][0]) < CUM_TOI_THIEU_S:
+            cuoi_bo = gop.pop()
+            gop[-1][1] = cuoi_bo[1]
+            gop[-1][2] = f"{gop[-1][2]} {cuoi_bo[2]}".strip()
         # KHUNG HIỂN THỊ: cụm này hiện tới lúc cụm SAU bắt đầu (không hở,
         # không chồng). Cụm cuối chạy tới hết tiếng của câu.
         for j, (ca, _cb, cs) in enumerate(gop):

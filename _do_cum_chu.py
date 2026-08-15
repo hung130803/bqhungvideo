@@ -120,22 +120,24 @@ def bang_lech(kq: dict, cues: list, giong_wav: Path) -> None:
     ws = [_w(x) for x in words]
     lech: list[float] = []
     khong_khop = 0
-    j = 0
+    #: CHỈ TÌM TRONG CỬA SỔ ±`CUA_SO` giây quanh mốc cụm. Bản đầu tìm TIẾN từ
+    #: con trỏ trên cả bài -> một cụm trượt là khớp bừa vào lần xuất hiện ở
+    #: tận cuối phim, đẻ ra lệch **30.196 ms** và kéo trung bình lên 1.289 ms
+    #: trong khi trung vị chỉ 35 ms. Trung vị thì đúng, trung bình thì rác —
+    #: đúng loại số làm người đọc kết luận ngược.
+    CUA_SO = 3.0
     for ca, _cb, cs in cues:
         dau = (cs.split() or [""])[0].strip(".,!?;:\"'“”…").lower()
         if not dau:
             continue
-        # tìm TIẾN từ vị trí hiện tại — cụm đi theo thứ tự thời gian
-        k = -1
-        for m in range(j, len(ws)):
-            if ws[m][0].strip(".,!?;:\"'“”….").lower() == dau:
-                k = m
-                break
-        if k < 0:
+        ung = [m for m in range(len(ws))
+               if abs(ws[m][1] - ca) <= CUA_SO
+               and ws[m][0].strip(".,!?;:\"'“”….").lower() == dau]
+        if not ung:
             khong_khop += 1
             continue
+        k = min(ung, key=lambda m: abs(ws[m][1] - ca))
         lech.append((ca - ws[k][1]) * 1000.0)
-        j = k + 1
     if not lech:
         print(f"  không khớp được cụm nào ({khong_khop} cụm) -> không kết luận")
         return
