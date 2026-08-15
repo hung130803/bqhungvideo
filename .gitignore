@@ -81,3 +81,10 @@ _tmp_dry/
 # Nhat ky luot chay hoi quy (_hq_<ten cong>.txt) — rac cua phep do
 _hq_*.txt
 _do_lt/
+
+# San do cua luot chep loi / khop tieng / rubberband (506 + 75 + 28 MB wav+json)
+# — deu la SAN DO tai sinh lai duoc, TUYET DOI khong commit.
+_do_chep_san/
+_do_khop_san/
+_do_rb_tam/
+_do_rb_cache.json
