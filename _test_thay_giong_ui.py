@@ -468,8 +468,20 @@ def _chay_hong(thu_muc_ten: str, thung_ten: str, pha: int = 0) -> dict:
     that_kiem = TG.kiem_video_ra
     that_the = TG.thay_the_video_goc
 
-    def hong(video_goc, audio_moi, video_ra):
+    def hong(video_goc, audio_moi, video_ra, **_du):
         # Đúng ca "ffmpeg trả mã 0 mà file rỗng": file ra tồn tại, 0 byte.
+        #
+        # **`**_du` LÀ CỐ Ý — thiếu nó thì CA 4 ĐẠT OAN và CA 6 ĐỎ OAN.**
+        # `thay_audio_video` nhận thêm `che_chu`/`che_chu_cach`/`che_chu_muc`/
+        # `che_chu_log`/`dong_chu` từ `ecaaf9d` (14/08). Stub cũ nổ
+        # `TypeError: hong() got an unexpected keyword argument 'che_chu'`
+        # -> lượt chạy chết TRƯỚC khi kịp ghi file 0 byte, nên:
+        #   · CA 4 vẫn xanh nhưng vì lượt chạy NÉM, KHÔNG phải vì chốt giữ
+        #     gốc (= con dấu, đúng thứ CA 6 sinh ra để chống);
+        #   · CA 6 gỡ cả hai chốt mà bất biến KHÔNG vỡ (`gốc còn: True`) nên
+        #     báo HỎNG — vì lý do NGƯỢC HẲN với cái nó canh.
+        # Đo 2 lượt liên tiếp đều 47/1 nên KHÔNG phải mục nhấp nháy 1/4 lượt
+        # đã ghi ở CLAUDE.md; đây là hỏng THẬT của phép thử, có sẵn từ 14/08.
         Path(video_ra).write_bytes(b"")
 
     def the_khong_chot(video_goc, video_moi, kenh="", thung_rac=""):
