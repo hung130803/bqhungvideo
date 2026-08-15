@@ -653,8 +653,59 @@ def lenh_moc(*duong) -> None:
               f"{sum(tong['ho'])/max(1e-6, sum(tong['cochu']))*100:.2f}%")
 
 
+# ══════════════════════════ LỆNH: xuat ══════════════════════════════════════
+def lenh_xuat(duong: str, *moc) -> None:
+    """XUẤT 2 bản (TẮT / BẬT che) rồi trích khung ra PNG để NGƯỜI TỰ NHÌN.
+
+    Chạy đúng chuỗi filter mà đường xuất thật dùng (`loc_cho_xuat_toan_khung`)
+    — không dựng lại chuỗi riêng cho phép đo, nếu không thì đo cái khác với
+    cái chạy.
+    """
+    p = Path(duong)
+    ra = NHIN / "xuat"
+    ra.mkdir(parents=True, exist_ok=True)
+    tt = C.thong_tin(p)
+    f, vs, vi = C.loc_cho_xuat_toan_khung(p)
+    print(f"\n=== XUẤT: {p.name} ===\n  {vi}")
+    if not f:
+        print("  KHÔNG có chuỗi che -> bỏ qua")
+        return
+    dai = min(float(os.environ.get("BQ_CC_DAI", "40")), tt["do_dai"])
+    hai = {}
+    for ten, vf in (("TAT", None), ("BAT", f)):
+        d = ra / f"{p.stem}_{ten}.mp4"
+        cmd = [C._bin("ffmpeg"), "-y", "-v", "error", "-i", str(p),
+               "-t", f"{dai:.3f}"]
+        if vf:
+            cmd += ["-filter_complex", f"[0:v]{vf}[v]", "-map", "[v]"]
+        else:
+            cmd += ["-map", "0:v:0"]
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-an", str(d)]
+        t0 = time.perf_counter()
+        r = _ff(cmd)
+        gy = time.perf_counter() - t0
+        so = C.so_khung_hinh(d)
+        print(f"  {ten}: mã {r.returncode}, {gy:5.2f}s, {so} khung, "
+              f"{d.stat().st_size/1048576 if d.exists() else 0:.1f} MB")
+        if r.returncode != 0:
+            print("   ", r.stderr.decode("utf-8", "replace")[:400])
+            return
+        hai[ten] = d
+    for t in [float(x) for x in moc]:
+        for ten, d in hai.items():
+            g = ra / f"{p.stem}_t{t:.0f}_{ten}.png"
+            _ff([C._bin("ffmpeg"), "-y", "-v", "error", "-ss", f"{t:.3f}",
+                 "-i", str(d), "-frames:v", "1", "-vf", "scale=380:-2",
+                 str(g)], han=120)
+            print(f"  {g}")
+
+
 def _main() -> int:
     lenh = sys.argv[1] if len(sys.argv) > 1 else "quet"
+    if lenh == "xuat":
+        lenh_xuat(sys.argv[2], *sys.argv[3:])
+        return 0
     if lenh == "moc":
         lenh_moc(*sys.argv[2:])
         return 0

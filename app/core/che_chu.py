@@ -1345,6 +1345,72 @@ def loc_che(dai: DaiChu, cach: str = "mo", do_manh: float = 1.0,
     return ";".join(ve)
 
 
+def _cat_khoang(a: float, b: float, ks: Optional[Sequence]) -> list:
+    """Giao [a,b] với danh sách khoảng `ks`. `ks` rỗng -> trả [(a,b)]."""
+    if not ks:
+        return [(a, b)]
+    ra = [(max(a, float(k0)), min(b, float(k1))) for k0, k1 in ks
+          if min(b, float(k1)) > max(a, float(k0))]
+    return ra
+
+
+def loc_che_nhieu(vungs: Sequence, cach: str = "mo", do_manh: float = 1.0,
+                  mau: str = "black", hop_ds: Optional[Sequence] = None) -> str:
+    """Chuỗi filter che NHIỀU VÙNG cùng lúc (đáy + trên + góc).
+
+    `vungs` = danh sách `DaiChu` (từ `do_vung_chu`). `hop_ds` = danh sách
+    SONG SONG các `hop_ra` đã quy về thời gian ĐẦU RA; None -> dùng
+    `v.hop`/`v.x0..x1` ở thời gian NGUỒN (đúng khi xuất nguyên video).
+
+    Mỗi vùng là một chuỗi `split/crop/boxblur/overlay` RIÊNG, nối tiếp nhau:
+    đầu ra của vùng i là đầu vào của vùng i+1. Nhãn mang tiền tố theo chỉ số
+    vùng nên không đụng nhau — dùng chung nhãn `cc_a0` là ffmpeg báo
+    "Duplicate stream label" rồi chết cả lượt xuất.
+    """
+    vs = [v for v in (vungs or []) if v and v.co_chu and v.cao_dai > 1]
+    if not vs:
+        return ""
+    if cach == "khoi":
+        ve = []
+        for i, v in enumerate(vs):
+            hop = hop_ds[i] if hop_ds and i < len(hop_ds) else None
+            khung = list(hop or []) or [(0.0, 0.0, v.x0, v.x1)]
+            for (a, b, x0, x1) in khung:
+                ks = _cat_khoang(a, b, v.khoang) if (a or b) else v.khoang
+                ve.append(f"drawbox=x={x0}:y={v.y0}:w={x1-x0}:h={v.cao_dai}:"
+                          f"color={mau}@1:t=fill{_bieu_thuc_enable(ks)}")
+        return ",".join(ve)
+    ve = []
+    tt_i = 0
+    tong = []
+    for i, v in enumerate(vs):
+        hop = hop_ds[i] if hop_ds and i < len(hop_ds) else None
+        khung = [(float(a), float(b), int(x0), int(x1))
+                 for a, b, x0, x1 in (hop or [])
+                 if float(b) > float(a) and int(x1) - int(x0) > 1] \
+            or [(0.0, 0.0, int(v.x0), int(v.x1))]
+        for (a, b, x0, x1) in khung:
+            tong.append((v, a, b, x0, x1))
+    n = len(tong)
+    for (v, a, b, x0, x1) in tong:
+        w = x1 - x0
+        h = v.cao_dai
+        ks = _cat_khoang(a, b, v.khoang) if (b > a) else v.khoang
+        if not ks:
+            ks = None
+        en = _bieu_thuc_enable(ks)
+        lam = _loc_lam(cach, w, h, do_manh)
+        if cach != "hat":
+            lam += en
+        vao = "" if tt_i == 0 else f"[cc_n{tt_i-1}]"
+        ra_nhan = "" if tt_i == n - 1 else f"[cc_n{tt_i}]"
+        ve.append(f"{vao}split[cc_p{tt_i}][cc_q{tt_i}]")
+        ve.append(f"[cc_q{tt_i}]crop={w}:{h}:{x0}:{v.y0},{lam}[cc_r{tt_i}]")
+        ve.append(f"[cc_p{tt_i}][cc_r{tt_i}]overlay={x0}:{v.y0}{en}{ra_nhan}")
+        tt_i += 1
+    return ";".join(ve)
+
+
 def _loc_lam(cach: str, w: int, h: int, do_manh: float) -> str:
     """Phần LÀM MỜ / LÀM HẠT cho một hộp w x h."""
     if cach == "hat":
@@ -1745,6 +1811,96 @@ def dai_theo_video(src: str | Path, so_khung: int = SO_KHUNG) -> DaiChu:
     return d
 
 
+_VUNG_NHO: dict = {}
+
+
+def vung_theo_video(src: str | Path) -> list:
+    """`do_vung_chu` NHỚ KẾT QUẢ theo video (cùng khoá với `dai_theo_video`).
+
+    Đắt hơn hẳn bản dải: bản dải đọc 16 khung rời, bản này GIẢI MÃ CẢ VIDEO ở
+    fps=4. Vì vậy nhớ lại là bắt buộc, không phải tối ưu cho vui.
+    """
+    key = _khoa_video(src)
+    if key is None:
+        return do_vung_chu(src)
+    with _SO_KHOA:
+        if key in _VUNG_NHO:
+            return _VUNG_NHO[key]
+        khoa = _DAI_KHOA.get(key)
+        if khoa is None:
+            khoa = _DAI_KHOA[key] = threading.Lock()
+    with khoa:
+        with _SO_KHOA:
+            if key in _VUNG_NHO:
+                return _VUNG_NHO[key]
+        vs = do_vung_chu(src)
+        with _SO_KHOA:
+            if len(_VUNG_NHO) >= _NHO_TOI_DA:
+                _VUNG_NHO.clear()
+            _VUNG_NHO[key] = vs
+    return vs
+
+
+def _khoang_theo_doan(ks: Optional[Sequence], segs: Optional[Sequence],
+                      noi: float = HOP_LE_GIAY) -> list:
+    """Quy KHOẢNG CÓ CHỮ từ thời gian NGUỒN sang thời gian ĐẦU RA của clip.
+
+    Cùng phép quy đổi của `hop_theo_doan` (chịu được hook-first NGƯỢC thời
+    gian): mốc đầu ra của đoạn i = TỔNG ĐỘ DÀI GỐC các đoạn trước nó.
+    """
+    if not ks:
+        return []
+    if not segs:
+        return list(ks)
+    try:
+        ds = [(float(a), float(b)) for a, b in segs if float(b) > float(a)]
+    except (TypeError, ValueError):
+        return list(ks)
+    ra, off = [], 0.0
+    for (s, e) in ds:
+        for (t0, t1) in ks:
+            a, b = max(float(t0), s), min(float(t1), e)
+            if b > a:
+                ra.append((max(0.0, off + (a - s) - noi),
+                           off + (b - s) + noi))
+        off += e - s
+    return _gop_khoang(ra)
+
+
+def loc_cho_xuat_toan_khung(src: str | Path, cach: str = "mo",
+                            muc: float = 1.0,
+                            segs: Optional[Sequence] = None) -> tuple:
+    """(chuỗi_filter, [DaiChu], lý_do) — đường QUÉT CẢ KHUNG.
+
+    Trả rỗng khi không dò ra vùng nào: che oan là ca sai đắt nhất.
+    """
+    try:
+        vs = vung_theo_video(src)
+    except Exception:                                          # noqa: BLE001
+        return "", [], "dò vùng chữ lỗi -> KHÔNG che"
+    if not vs:
+        return "", [], "KHÔNG dò ra vùng chữ nào -> KHÔNG che"
+    hop_ds, vung_ra = [], []
+    for v in vs:
+        w = DaiChu(**asdict(v))
+        w.khoang = _khoang_theo_doan(v.khoang, segs)
+        # KHÔNG có `segs` = xuất nguyên video -> thời gian nguồn CHÍNH LÀ thời
+        # gian đầu ra, dùng thẳng `v.hop` (hộp bám bề ngang chữ theo từng
+        # đoạn). Bỏ qua là mất luôn phần thu-về-hộp đã đo giảm 21-31%.
+        hop_ds.append((hop_theo_doan(v, segs) if segs else
+                       (v.hop or None)) or None)
+        vung_ra.append(w)
+    f = loc_che_nhieu(vung_ra, cach=chuan_cach(cach),
+                      do_manh=chuan_muc_mo(muc), hop_ds=hop_ds)
+    if not f:
+        return "", vs, "vùng không dùng được -> KHÔNG che"
+    ten = "làm mờ" if chuan_cach(cach) == "mo" else "phủ khối"
+    mm = f"{chuan_muc_mo(muc):.2f}".replace(".", ",")
+    vi = " · ".join(f"y={v.y0}..{v.y1}({len(v.khoang)} khoảng)"
+                    for v in vung_ra)
+    return f, vs, f"che TOÀN KHUNG {len(vs)} vùng: {vi} — {ten} mức {mm}"
+
+
 def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
                  dai: Optional[DaiChu] = None,
                  so_khung: int = SO_KHUNG,
@@ -1765,6 +1921,16 @@ def loc_cho_xuat(src: str | Path, cach: str = "mo", muc: float = 1.0,
     KHÔNG dò ra chữ -> trả rỗng: **che oan video sạch là ca sai đắt nhất** của
     tính năng này (đo ở cổng 56: 0/76 video không chữ bị che).
     """
+    # QUÉT CẢ KHUNG — chỉ khi user bật hẳn. Mặc định TẮT nên đường xuất của
+    # anh Hùng KHÔNG đổi một ký tự nào so với v2.28.0 (xem báo cáo: giá đắt
+    # hơn và còn 2 ca che oan chưa chữa được).
+    if _BAT_TOAN_KHUNG and dai is None:
+        f, vs, vi = loc_cho_xuat_toan_khung(src, cach=cach, muc=muc,
+                                            segs=segs)
+        if f:
+            return f, (vs[0] if vs else None), vi
+        if vs:
+            return "", (vs[0] if vs else None), vi
     try:
         d = dai if dai is not None else dai_theo_video(src, so_khung=so_khung)
     except Exception:                                          # noqa: BLE001
