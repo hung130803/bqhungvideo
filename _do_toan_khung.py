@@ -701,8 +701,69 @@ def lenh_xuat(duong: str, *moc) -> None:
             print(f"  {g}")
 
 
+# ══════════════════════════ LỆNH: gia ═══════════════════════════════════════
+def lenh_gia(duong: str, dai: float = 30.0, vong: int = 3) -> None:
+    """GIÁ: giây/phút phim — TẮT vs 1 vùng (dải cũ) vs NHIỀU vùng (mới).
+
+    ĐO ĐAN XEN + TRUNG VỊ. Máy này luôn có việc nền (prodown/ffmpeg), đo
+    liền mạch đã ra kết luận sai 3 lần trong repo này.
+    """
+    p = Path(duong)
+    tt = C.thong_tin(p)
+    dai = min(dai, tt["do_dai"])
+    f_moi, vs, vi = C.loc_cho_xuat_toan_khung(p)
+    d = C.dai_theo_video(p)
+    f_cu = C.loc_che(d, cach="mo", do_manh=1.0,
+                     hop_ra=None) if d and d.co_chu else ""
+    print(f"\n=== GIÁ ({p.name}, {dai:.0f}s/lượt, {vong} vòng ĐAN XEN) ===")
+    print(f"  MỚI: {vi}")
+    print(f"  CŨ : {'dải y=%d..%d' % (d.y0, d.y1) if d and d.co_chu else 'KHÔNG dò ra'}")
+    arm = [("TAT", None), ("DAI_1vung", f_cu or None), ("TOANKHUNG", f_moi)]
+    do = {a: [] for a, _ in arm}
+    for _v in range(vong):
+        for ten, vf in arm:
+            if ten != "TAT" and not vf:
+                continue
+            out = T / f"gia_{ten}.mp4"
+            cmd = [C._bin("ffmpeg"), "-y", "-v", "error", "-i", str(p),
+                   "-t", f"{dai:.3f}"]
+            if vf:
+                cmd += ["-filter_complex", f"[0:v]{vf}[v]", "-map", "[v]"]
+            else:
+                cmd += ["-map", "0:v:0"]
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                    "-pix_fmt", "yuv420p", "-an", str(out)]
+            t0 = time.perf_counter()
+            r = _ff(cmd)
+            gy = time.perf_counter() - t0
+            if r.returncode == 0:
+                do[ten].append(gy)
+            try:
+                out.unlink()
+            except OSError:
+                pass
+    tat = statistics.median(do["TAT"]) if do["TAT"] else 0.0
+    print(f"  {'kiến trúc':12s} {'thô (3 vòng)':>26s} {'trung vị':>9s} "
+          f"{'thêm s/phút':>12s}")
+    for ten, _ in arm:
+        if not do[ten]:
+            print(f"  {ten:12s} (không chạy)")
+            continue
+        tv = statistics.median(do[ten])
+        them = (tv - tat) / dai * 60.0
+        print(f"  {ten:12s} {str([round(x,2) for x in do[ten]]):>26s} "
+              f"{tv:9.2f} {them:+12.2f}")
+    if vs:
+        print(f"  số vùng: {len(vs)} · số nhánh filter: "
+              f"{f_moi.count('overlay=')}")
+
+
 def _main() -> int:
     lenh = sys.argv[1] if len(sys.argv) > 1 else "quet"
+    if lenh == "gia":
+        lenh_gia(sys.argv[2], float(sys.argv[3]) if len(sys.argv) > 3 else 30.0,
+                 int(sys.argv[4]) if len(sys.argv) > 4 else 3)
+        return 0
     if lenh == "xuat":
         lenh_xuat(sys.argv[2], *sys.argv[3:])
         return 0

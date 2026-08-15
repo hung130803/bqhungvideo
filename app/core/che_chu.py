@@ -269,6 +269,16 @@ VET_DAI_TY_MAX = 0.60
 #   còn khe nào để gợn; dải ghi tay đo cả bề ngang khung nên có nền hai bên
 #   làm gợn giả. Tức con số đẹp lúc thử là ĐO SAI CHỖ. Đổi 1 vùng dò đúng lấy
 #   1 vùng che oan là lỗ vốn -> GỠ, và ghi lại đây.
+#: TRẦN TỔNG SỐ HỘP của TẤT CẢ các vùng cộng lại (= số nhánh
+#: split/crop/boxblur/overlay trong đồ thị filter).
+#: **ĐO RỒI MỚI ĐẶT** (`_do_toan_khung.py gia`, jp_taxi 1080x1920, 3 vòng đan
+#: xen, trung vị): không cap thì 2 vùng đẻ ra **13 nhánh** và lượt xuất tốn
+#: **+15,53 s/phút** — trong khi dải 1 vùng chỉ +0,43. Mỗi nhánh là một
+#: `split` NGUYÊN KHUNG 1080x1920; ghi chú cũ "split/overlay chỉ +0,05" đo
+#: trên MỘT hộp ở nguồn NGANG, nhân 13 lần ở nguồn DỌC là chuyện khác hẳn.
+#: Hộp trong cùng một vùng lại RỜI NHAU theo thời gian, nên gộp chúng về ít
+#: hộp hơn chỉ làm vùng che RỘNG ra chút, không hở chữ.
+VUNG_HOP_TONG = 4
 #: QUÉT CẢ KHUNG — MẶC ĐỊNH TẮT. Xem báo cáo: nó chữa được ca "chữ ở trên"
 #: nhưng có giá của nó (chi phí + rủi ro che oan trên nguồn nền nhiều vân).
 #: `BQ_CHE_TOAN_KHUNG=1` để bật.
@@ -1880,6 +1890,8 @@ def loc_cho_xuat_toan_khung(src: str | Path, cach: str = "mo",
         return "", [], "dò vùng chữ lỗi -> KHÔNG che"
     if not vs:
         return "", [], "KHÔNG dò ra vùng chữ nào -> KHÔNG che"
+    # NGÂN SÁCH NHÁNH FILTER chia đều cho các vùng — xem `VUNG_HOP_TONG`.
+    moi_vung = max(1, int(VUNG_HOP_TONG) // max(1, len(vs)))
     hop_ds, vung_ra = [], []
     for v in vs:
         w = DaiChu(**asdict(v))
@@ -1887,8 +1899,10 @@ def loc_cho_xuat_toan_khung(src: str | Path, cach: str = "mo",
         # KHÔNG có `segs` = xuất nguyên video -> thời gian nguồn CHÍNH LÀ thời
         # gian đầu ra, dùng thẳng `v.hop` (hộp bám bề ngang chữ theo từng
         # đoạn). Bỏ qua là mất luôn phần thu-về-hộp đã đo giảm 21-31%.
-        hop_ds.append((hop_theo_doan(v, segs) if segs else
-                       (v.hop or None)) or None)
+        hop = (hop_theo_doan(v, segs) if segs else (v.hop or None)) or None
+        if hop and len(hop) > moi_vung:
+            hop = _gop_hop(list(hop), moi_vung)
+        hop_ds.append(hop or None)
         vung_ra.append(w)
     f = loc_che_nhieu(vung_ra, cach=chuan_cach(cach),
                       do_manh=chuan_muc_mo(muc), hop_ds=hop_ds)
