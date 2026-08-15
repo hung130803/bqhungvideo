@@ -30,13 +30,27 @@ for _f in (sys.stdout, sys.stderr):
         pass
 
 
+#: Cổng TỰ KHAI mốc riêng (`_MOC_MAC_DINH`) — mốc của nó có ý nghĩa RIÊNG,
+#: ép mốc chung vào là đỏ oan. Xem giải thích trong `chay()`.
+KHONG_EP_MOC = {"_test_che_chu.py"}
+
+
 def chay(ten: str) -> tuple[int, float, str]:
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env.setdefault("BQ_FFMPEG_SLOTS", "1")
     # MỐC ĐỐI CHỨNG: `main` giờ CHÍNH LÀ bản đang test -> mọi cổng so với
-    # `main` sẽ PASS OAN vĩnh viễn. Dùng thẻ đã phát hành.
-    env.setdefault("BQ_MOC_REF", "v2.26.0")
+    # `main` sẽ PASS OAN vĩnh viễn. Dùng thẻ ĐÃ PHÁT HÀNH.
+    #
+    # NHƯNG KHÔNG PHẢI CỔNG NÀO CŨNG CÙNG MỘT MỐC — đã sập ngay lượt đầu:
+    # `_test_che_chu.py` CA23-3'' đòi bản mốc **KHÔNG HỀ CÓ** tham số
+    # `che_chu` (đó chính là cách nó chứng minh `dedup_key` không đổi so với
+    # bản có trước tính năng). `v2.25.0` có **0** dòng `che_chu` trong
+    # `services.py`, `v2.26.0` có **15** -> ép `v2.26.0` vào là cổng ĐỎ OAN,
+    # mà lỗi thì trông y hệt một lượt hồi quy thật. Cổng nào tự khai
+    # `_MOC_MAC_DINH` là nó biết rõ hơn mình: ĐỪNG ép.
+    if ten not in KHONG_EP_MOC:
+        env.setdefault("BQ_MOC_REF", "v2.26.0")
     t0 = time.time()
     log = REPO / f"_hq_{Path(ten).stem}.txt"
     with open(log, "w", encoding="utf-8", errors="replace") as f:

@@ -939,8 +939,14 @@ def ca19_pha_duong_truyen():
         _sv.save_template(_ten, {"che_chu": True, "che_chu_cach": "khoi",
                                  "che_chu_muc": 0.30})
         _r = M1.doc_che_chu({"cap_style": {"_mau": _ten}})
+        # `toan_khung` là khoá THỨ TƯ, thêm ở v2.28.x (ô "Quét cả khung", cổng
+        # 62). Mẫu này KHÔNG đặt cờ -> phải ra `None` = "không ai chốt, theo
+        # env" chứ KHÔNG phải False. Giữ so khớp TUYỆT ĐỐI (đừng đổi sang so
+        # tập con cho khỏi phải sửa): mất nó là khoá thứ năm nào đó lọt vào mà
+        # không ai biết.
         kiem("CA19f đường LÙI: tra MẪU theo tên -> lấy đúng cờ (và qua sàn)",
-             _r == {"bat": True, "cach": "khoi", "muc": 0.60}, f"{_r}")
+             _r == {"bat": True, "cach": "khoi", "muc": 0.60,
+                    "toan_khung": None}, f"{_r}")
         _sv.save_template(_ten, {"che_chu": False})
         kiem("CA19f' mẫu TẮT -> TẮT",
              M1.doc_che_chu({"cap_style": {"_mau": _ten}})["bat"] is False)
@@ -1138,8 +1144,11 @@ def ca23_co_vao_hash_chong_trung():
 
     # ---- (5) payload -> doc_che_chu: mắt xích cuối -------------------------
     from app.modules import m1_highlight as M1
+    # Khoá thứ tư `toan_khung` (cổng 62): payload này KHÔNG chốt cờ quét cả
+    # khung nên phải là `None` — `False` ở đây sẽ BỊT đường theo env.
     kiem("CA23-5a payload CHỐT BẬT -> doc_che_chu đọc ra BẬT",
-         M1.doc_che_chu(p_bat) == {"bat": True, "cach": "mo", "muc": 1.0},
+         M1.doc_che_chu(p_bat) == {"bat": True, "cach": "mo", "muc": 1.0,
+                                   "toan_khung": None},
          f"{M1.doc_che_chu(p_bat)}")
     kiem("CA23-5b payload CHỐT TẮT -> TẮT (không tra mẫu nữa)",
          M1.doc_che_chu(p_tat)["bat"] is False and "che_chu" in p_tat)
