@@ -152,7 +152,16 @@ DA_GOI: list = []          # ghi lại tham số handler truyền xuống
 
 def gia_thay_giong(video_in, dich_sang="en", voice="", cach_tach="auto",
                    thay_goc=True, kenh="", thung_rac="", thu_muc_lam="",
-                   on_progress=None):
+                   che_chu=False, che_chu_cach="mo", che_chu_muc=1.0,
+                   viet_chu=True, on_progress=None, **_du):
+    # **`**_du` LÀ CỐ Ý.** Cổng này HỎNG SẴN từ `ecaaf9d` (14/08 22:31, tổ
+    # tiên của mốc lượt sửa 15/08): việc "che chữ" thêm 4 tham số vào
+    # `thay_giong_mot_video` -> stub này nổ `unexpected keyword argument
+    # 'che_chu'` -> **3/3 video ra LỖI** và mục "0 video xong · 3 lỗi" đỏ, mà
+    # lời lỗi lại nằm ở cột Ghi chú nên đọc lướt tưởng app hỏng.
+    # Stub phải NUỐT tham số mới: nó chỉ đóng vai "handler chạy được", không
+    # phải nơi kiểm chữ ký hàm. Ai đổi chữ ký thật mà quên chỗ này thì cổng
+    # đỏ vì lý do KHÔNG liên quan tới cái nó canh (bảng tiến độ).
     v = Path(video_in)
     DA_GOI.append({"video": str(v), "thay_goc": bool(thay_goc),
                    "thung_rac": str(thung_rac or ""),
