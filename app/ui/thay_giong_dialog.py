@@ -119,13 +119,29 @@ def giong_dung_duoc(ds: list) -> list:
         if v.startswith("gemini:") or v.startswith("el:"):
             continue
         ra.append((bo_emoji(str(nhan)), v))
+
+    # ---- BIẾN THỂ GIỌNG VIỆT (đổi `pitch`) ----
+    # edge-tts chỉ có 2 giọng tiếng Việt; `thay_giong.BIEN_THE_PITCH` sinh
+    # thêm mức cao độ ĐÃ ĐO (xem `_do_bien_the_giong.py`). Chèn NGAY SAU giọng
+    # gốc tương ứng để combo đọc theo cụm, và BỎ QUA mức `+0Hz` — mã của nó
+    # trùng đúng id giọng gốc đã có ở trên, thêm nữa là hai dòng y hệt nhau.
+    bt: dict[str, list] = {}
+    for ma, nhan in TG.bien_the_giong():
+        goc = TG.tach_giong_pitch(ma)[0]
+        if ma != goc:                       # `+0Hz` -> mã == giọng gốc -> bỏ
+            bt.setdefault(goc, []).append((nhan, ma))
+    mo_rong: list = []
+    for nhan, vid in ra:
+        mo_rong.append((nhan, vid))
+        mo_rong.extend(bt.get(vid, []))
+
     # nhóm rỗng (bị lọc sạch) thì bỏ luôn nhãn nhóm, đừng để dòng trơ
     gon: list = []
-    for i, (nhan, vid) in enumerate(ra):
+    for i, (nhan, vid) in enumerate(mo_rong):
         if vid:
             gon.append((nhan, vid))
             continue
-        con = any(v for _n, v in ra[i + 1:i + 2])
+        con = any(v for _n, v in mo_rong[i + 1:i + 2])
         if con:
             gon.append((nhan, vid))
     return gon

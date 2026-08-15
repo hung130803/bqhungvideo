@@ -88,3 +88,6 @@ _do_chep_san/
 _do_khop_san/
 _do_rb_tam/
 _do_rb_cache.json
+
+# mp3/wav cua `_do_bien_the_giong.py` — de NGHE bang tai, khong commit
+_do_bt_giong/

@@ -1588,6 +1588,121 @@ def giong_theo_ngon_ngu(ma: str) -> str:
     return dubbing.default_voice(dubbing.norm_lang(ma))
 
 
+# ==================================================================
+# BIẾN THỂ GIỌNG — edge-tts chỉ có 2 giọng Việt, `pitch` sinh thêm
+# ==================================================================
+# edge-tts cho tiếng Việt có ĐÚNG 2 giọng: `vi-VN-NamMinhNeural` (nam) và
+# `vi-VN-HoaiMyNeural` (nữ). 200-300 kênh dùng chung 2 giọng thì kênh nào cũng
+# kêu giống nhau. `pitch` sinh thêm biến thể mà **KHÔNG tốn thêm một lượt mạng
+# nào** — cùng một lời gọi `Communicate`, chỉ thêm tham số.
+#
+# CÁCH MÃ HOÁ: `"<voice>|<pitch>"`, ví dụ `"vi-VN-NamMinhNeural|-20Hz"`.
+# Chọn dấu `|` vì id giọng edge-tts KHÔNG BAO GIỜ chứa nó, nên chuỗi cũ
+# (không có `|`) đi qua `tach_giong_pitch` ra Y NGUYÊN + `"+0Hz"`, mà
+# `_synth_all_words` coi `"+0Hz"` là KHÔNG truyền `pitch` -> mẫu đã lưu, job
+# đã nằm trong DB và mọi lối gọi chưa nối đều chạy y hệt trước, không đổi một
+# ký tự nào.
+_SEP_PITCH = "|"
+_RE_PITCH = re.compile(r"[+-]\d{1,3}Hz")
+
+
+def tach_giong_pitch(voice: str) -> tuple[str, str]:
+    """`"vi-VN-NamMinhNeural|-20Hz"` -> `("vi-VN-NamMinhNeural", "-20Hz")`.
+
+    Chuỗi KHÔNG có `|` -> trả nguyên vẹn kèm `"+0Hz"` (đường cũ, không đổi).
+    Mã pitch LẠ (user sửa tay mẫu / file mẫu hỏng) -> BỎ phần pitch chứ
+    KHÔNG ném: mất một biến thể còn hơn chết cả lượt thay giọng.
+    """
+    s = str(voice or "")
+    if _SEP_PITCH not in s:
+        return s, "+0Hz"
+    v, _, p = s.partition(_SEP_PITCH)
+    p = p.strip()
+    return v.strip(), (p if _RE_PITCH.fullmatch(p) else "+0Hz")
+
+
+def ma_bien_the(voice: str, pitch: str) -> str:
+    """Ghép ngược: `("vi-VN-NamMinhNeural", "-20Hz")` -> mã lưu vào mẫu.
+
+    `"+0Hz"` KHÔNG ghép hậu tố — giọng gốc phải giữ ĐÚNG chuỗi cũ để mẫu đã
+    lưu và mã sinh mới trùng nhau từng ký tự.
+    """
+    p = str(pitch or "+0Hz").strip()
+    if p == "+0Hz" or not _RE_PITCH.fullmatch(p):
+        return str(voice or "")
+    return f"{voice}{_SEP_PITCH}{p}"
+
+
+# ================== BẢNG BIẾN THỂ — LẤY TỪ SỐ ĐO ==================
+# `_do_bien_the_giong.py` (16/08/2026): 2 giọng × 9 mức pitch × 10 câu THẬT
+# (lấy từ corpus bản dịch của anh Hùng), mỗi file cho **Groq CHÉP NGƯỢC rồi
+# ĐẾM TỪ SAI**, cộng **F0 trung vị** đo bằng tự tương quan trên sóng.
+# Mốc so sánh là `+0Hz` CỦA CHÍNH GIỌNG ĐÓ (edge-tts + Groq vốn đã có sai số
+# nền ~5-7%, so với 0 tuyệt đối là kết luận sai).
+#
+#   Nam Minh (mốc F0 146,0 Hz · sai từ nền 7,08%)
+#     -40Hz 107,2 Hz  6,19% (−0,88)      +10Hz 155,8 Hz  6,19% (−0,88)
+#     -30Hz 116,2 Hz  7,96% (+0,88)      +20Hz 166,3 Hz  7,96% (+0,88)
+#     -20Hz 127,0 Hz  7,08% (+0,00)      +30Hz 175,1 Hz  7,08% (+0,00)
+#     -10Hz 135,6 Hz  7,08% (+0,00)      +40Hz 184,5 Hz  6,19% (−0,88)
+#   Hoài My (mốc F0 225,1 Hz · sai từ nền 5,31%)
+#     -40Hz 165,7 Hz  8,85% (+3,54) LOẠI +10Hz 240,1 Hz  7,08% (+1,77)
+#     -30Hz 180,2 Hz  7,96% (+2,65)      +20Hz 254,6 Hz  7,96% (+2,65)
+#     -20Hz 195,4 Hz  7,96% (+2,65)      +30Hz 269,4 Hz  7,96% (+2,65)
+#     -10Hz 210,1 Hz  5,31% (+0,00)      +40Hz 281,9 Hz  9,73% (+4,42) LOẠI
+#
+# ĐỌC BẢNG NÀY CHO ĐÚNG:
+# · **KHÔNG có biến thể GIẢ**: bước F0 ~10 Hz (nam) / ~15 Hz (nữ), trên
+#   ngưỡng phân biệt cao độ của tai người (~3-5%) -> mức nào cũng khác thật.
+# · Cửa "sai từ" **LOẠI đúng 2/18**: Hoài My ±40Hz. Tức nó không phải con
+#   dấu, nhưng cũng **THÔ**: 113 từ nên 1 từ sai = 0,88 điểm %, dải nhiễu
+#   ±1 điểm. Đừng đọc chênh lệch dưới 1 điểm thành ý nghĩa gì.
+#
+# ==== VÌ SAO BẢNG DƯỚI CHỈ ±20Hz TRONG KHI SỐ ĐO CHO TỚI ±30/±40 ====
+# **KHÔNG phải vì con số** — mà vì con số đó ĐO SAI THỨ. "Groq chép đúng
+# chữ" là ĐỌC RÕ, KHÔNG PHẢI NGHE TỰ NHIÊN. Một giọng đẩy xuống 107 Hz hay
+# lên 282 Hz vẫn có thể chép đúng 100% mà tai người nghe ra "giọng máy /
+# giọng chuột". **Tôi không có tai, nên tôi không được phép nói mức nào nghe
+# được.** Đây đúng họ bẫy repo đã dính: *số đo bảo dải chữ đã sạch mà mắt
+# vẫn đọc ra chữ* (cổng 56b).
+# Nên bảng ship ±20Hz — vùng còn cách xa cửa loại ở CẢ HAI giọng (Δ sai từ
+# lớn nhất +2,65 so với mức loại +3,54). Muốn mở tới ±30Hz thì **phải NGHE
+# trước**: `_do_bien_the_giong.py` để sẵn file ở `_do_bt_giong/`.
+#: `{voice edge-tts: ((pitch, nhãn tiếng Việt), ...)}` — nhãn KHÔNG EMOJI.
+BIEN_THE_PITCH: dict[str, tuple[tuple[str, str], ...]] = {
+    "vi-VN-NamMinhNeural": (
+        ("-20Hz", "Nam Minh — trầm"),
+        ("-10Hz", "Nam Minh — hơi trầm"),
+        ("+0Hz", "Nam Minh — giọng gốc"),
+        ("+10Hz", "Nam Minh — hơi cao"),
+        ("+20Hz", "Nam Minh — cao"),
+    ),
+    "vi-VN-HoaiMyNeural": (
+        ("-20Hz", "Hoài My — trầm"),
+        ("-10Hz", "Hoài My — hơi trầm"),
+        ("+0Hz", "Hoài My — giọng gốc"),
+        ("+10Hz", "Hoài My — hơi cao"),
+        ("+20Hz", "Hoài My — cao"),
+    ),
+}
+
+
+def bien_the_giong(voice: str = "") -> list[tuple[str, str]]:
+    """Danh sách `[(mã lưu vào mẫu, nhãn tiếng Việt)]` cho combo giao diện.
+
+    `voice` rỗng -> trả biến thể của MỌI giọng có bảng. Giọng không có bảng
+    (mọi giọng không phải tiếng Việt) -> trả `[]`, combo giữ nguyên như cũ.
+    """
+    ten = tach_giong_pitch(voice)[0] if voice else ""
+    ra: list[tuple[str, str]] = []
+    for v, bang in BIEN_THE_PITCH.items():
+        if ten and v != ten:
+            continue
+        for p, nhan in bang:
+            ra.append((ma_bien_the(v, p), nhan))
+    return ra
+
+
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
                  dich_sang: str = "en",
                  on_progress: Optional[Callable[[float, str], None]] = None,
@@ -1618,8 +1733,14 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
     # tốn thêm giây mạng nào — `_synth_all_words` chỉ đọc thêm loại chunk mà
     # server vẫn gửi. Đây là hạ tầng app đã có sẵn cho phụ đề recap; đường
     # THAY TIẾNG trước nay vứt nó đi rồi đổ cả cụm 3 dòng ra một lúc.
+    # BIẾN THỂ GIỌNG: `voice` có thể mang hậu tố `|<pitch>`. Phải tách ở CẢ 3
+    # chỗ gọi TTS của file này (đây · `rut_gon_vua_khung` · `doc_nhanh_vua_
+    # khung`) — sót một chỗ thì câu đi qua chỗ đó đọc bằng cao độ GỐC, ra
+    # video lẫn hai giọng mà rc vẫn 0, không một dòng báo.
+    _v, _pitch = tach_giong_pitch(voice)
     ok, moc_tu = asyncio.run(
-        dubbing._synth_all_words(texts, voice, paths, on_done=_done))
+        dubbing._synth_all_words(texts, _v, paths, on_done=_done,
+                                 pitch=_pitch))
     # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
     # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
     # độ dài file có kèm ~1,07 s im lặng của edge-tts.
@@ -1988,8 +2109,9 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                  for j in range(len(muc))]
         import asyncio
         from app.core import dubbing
-        v = voice or giong_theo_ngon_ngu(dich_sang)
-        ok2, mt2 = asyncio.run(dubbing._synth_all_words(thu, v, paths))
+        v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
+        ok2, mt2 = asyncio.run(
+            dubbing._synth_all_words(thu, v, paths, pitch=_pitch))
         # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
         # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
         paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
@@ -2106,7 +2228,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
 
     if on_progress:
         on_progress(0.2, f"Đọc nhanh lại {len(xau)} câu cho vừa khung...")
-    v = voice or giong_theo_ngon_ngu(dich_sang)
+    v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
     thu = [texts[i] if i < len(texts) else "" for i in xau]
     rates, paths = [], []
     for j, i in enumerate(xau):
@@ -2117,7 +2239,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     # `rate` chỉ đổi TỐC ĐỌC của model; WordBoundary server trả theo audio
     # THẬT (đã áp rate) nên mốc từng-từ vẫn đúng, KHÔNG phải bù lại.
     ok2, mt2 = asyncio.run(
-        dubbing._synth_all_words(thu, v, paths, rate=rates))
+        dubbing._synth_all_words(thu, v, paths, rate=rates, pitch=_pitch))
     sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0
