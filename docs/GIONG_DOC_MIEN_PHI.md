@@ -910,3 +910,705 @@ file = 0,000 dB)*:
 ở `%TEMP%` (đã xoá sạch sau khi đo). Groq whisper-large-v3 thật, 3 lượt mỗi
 phép. ffmpeg của chính app (`bin/ffmpeg.exe`). Ổ C: 414 GB trống trước và sau
 khi làm — đã dọn hết model và torch, chỉ giữ 12 MB file nghe thử.*
+
+---
+---
+
+# LƯỢT 3 — "Nhét Piper vào app thì tôi có phải công khai mã nguồn không?"
+
+*Tra ngày 16/08/2026. Chỉ đọc mã và tra cứu, KHÔNG sửa file nào trong `app/`.*
+
+## Câu hỏi của anh Hùng
+
+Lượt trước thử Piper thấy **kỹ thuật rất tốt**: mốc từng chữ có thật, **nhanh
+gấp 25,8 lần thời gian thật**, chỉ **63 MB**, **không cần `torch`** (nên không
+dính bẫy treo app khi chạy chung với giao diện). Nhưng để lại một cảnh báo chưa
+ai gỡ: **gói `piper-tts` mang giấy phép GPL-3.0**.
+
+GPL là loại giấy phép có tiếng là "lây". Anh đang **bán app này**. Nếu nhét
+Piper vào mà bị buộc phải công khai toàn bộ mã nguồn thì **mất cả app**, không
+riêng phần giọng đọc. Nên câu này phải trả lời cho dứt.
+
+---
+
+## TRẢ LỜI NGẮN — ĐỌC ĐOẠN NÀY LÀ ĐỦ
+
+### **KHÔNG. Anh KHÔNG phải công khai mã nguồn app** — nếu làm đúng một cách.
+
+Cách đúng đó anh **đã và đang làm rồi**, với `ffmpeg`.
+
+Trong app anh có sẵn `dist/BQHungVideo/_internal/ffmpeg.exe`. `ffmpeg` bản có
+`rubberband` **cũng là GPL** y như Piper. Anh phát hành nó kèm app mấy năm nay,
+và app anh **vẫn đóng, vẫn bán được, vẫn không ai bắt anh mở mã**. Vì sao?
+
+> **Vì `ffmpeg.exe` là một CHƯƠNG TRÌNH RIÊNG. App anh chỉ *gọi* nó, không
+> *nuốt* nó vào bụng.**
+
+**Piper y hệt như vậy.** Gọi Piper như gọi `ffmpeg` thì app anh không dính GPL.
+
+Ba sự thật quyết định, lấy từ chính văn bản của tổ chức viết ra GPL:
+
+| # | Sự thật | Nghĩa với anh |
+|---|---|---|
+| 1 | Hai chương trình **riêng**, nói chuyện qua **dòng lệnh / ống / file** thì vẫn là **hai chương trình riêng** | Gọi `piper.exe` bằng dòng lệnh → app anh **không** thành GPL |
+| 2 | **Kết quả** một chương trình GPL tạo ra **không dính** GPL | File **WAV Piper đọc ra là của anh**, bán thoải mái |
+| 3 | Đóng chung một bộ cài (**"aggregate"**) **không** làm phần còn lại thành GPL | Để Piper cạnh app trong cùng thư mục cài **vẫn không** lây |
+
+### Nhưng có MỘT lằn ranh chết người
+
+| Cách gọi Piper | App anh có phải mở mã không? |
+|---|---|
+| `subprocess.run(["piper.exe", ...])` — chạy tiến trình riêng | **KHÔNG** ✅ |
+| Để app tự tải Piper về khi cần, không đóng vào `.exe` | **KHÔNG**, và còn nhẹ hơn nữa ✅✅ |
+| `import piper` trong mã Python của app | 🔴 **CÓ — đây là chỗ chết** |
+| Đóng gói `piper` vào chung `.exe` PyInstaller 155 MB | 🔴 **CÓ — cũng chết** |
+
+**`import piper` là một dòng duy nhất có thể làm anh mất quyền giữ kín mã
+nguồn.** Nhớ đúng một câu này thôi cũng đủ.
+
+### Và một tin tốt bất ngờ
+
+Trong lúc tra, tôi phát hiện **luồng đang chạy song song** (đổi `atempo` sang
+`rubberband`) **cũng đụng đúng vấn đề này**. `rubberband` là **GPL-2.0**. Xem
+mục 6 — không nguy hiểm, nhưng có việc phải làm.
+
+---
+
+## MỤC 1 — `piper-tts` thật sự giấy phép gì
+
+### Câu trả lời: **có HAI Piper, HAI giấy phép khác nhau** — và cái đang dùng là GPL
+
+Đây chính là chỗ mà mọi bài blog viết sai. Bảng dưới lấy thẳng từ máy chủ PyPI
+và GitHub, **không lấy từ bài viết nào**:
+
+| Bản `piper-tts` | Ngày ra | Kho mã | Giấy phép ghi trong gói |
+|---|---|---|---|
+| 1.1.0 | 27/07/2023 | `rhasspy/piper` | **MIT** ✅ |
+| 1.2.0 | 17/08/2023 | `rhasspy/piper` | **MIT** ✅ |
+| **1.3.0** | **10/07/2025** | **`OHF-Voice/piper1-gpl`** | 🔴 **GPL-3.0-or-later** |
+| 1.4.0 → 1.6.1 | tới 13/08/2026 | `OHF-Voice/piper1-gpl` | 🔴 **GPL-3.0-or-later** |
+
+**Chuyện đã xảy ra:** tác giả (Michael Hansen) đóng băng kho cũ `rhasspy/piper`
+(nay ở trạng thái *archived*, đọc được nhưng không phát triển nữa) và viết lại
+từ đầu ở kho mới. Kho mới **tên nó có sẵn chữ `gpl`**: `piper1-gpl`. Họ đặt tên
+vậy là **cố ý báo trước**, không phải giấu.
+
+**Nghĩa là:** anh gõ `pip install piper-tts` hôm nay là **nhận bản GPL**, không
+phải bản MIT. Bản MIT phải chỉ đích danh `piper-tts==1.2.0` mới lấy được.
+
+### Bản Python và bản C++ có khác nhau không? — **KHÔNG. Cả hai đều GPL.**
+
+Đây là câu anh nghi ngờ đúng hướng nhưng kết quả ngược với dự đoán. Trong kho
+`piper1-gpl`, **cả bản Python lẫn bản C++ nằm chung một kho, chung một giấy
+phép GPL-3.0**. Nhật ký thay đổi bản 1.5.0 ghi rõ họ **chuyển bản C++ từ kho cũ
+sang kho GPL**: *"Add `libpiper` C++ CLI executable ported from the legacy Piper
+repository"*. Tức là **không có cửa "dùng bản C++ cho khỏi GPL"**.
+
+### Vì sao nó phải là GPL — gốc rễ nằm ở `espeak-ng`
+
+| Thành phần | Việc của nó | Giấy phép |
+|---|---|---|
+| Mã Piper (cũ) | điều khiển | MIT |
+| `piper-phonemize` | chuyển chữ → âm | MIT |
+| **`espeak-ng`** | **bộ chuyển chữ→âm thật sự nằm bên dưới** | 🔴 **GPL-3.0** |
+| `onnxruntime` | chạy mô hình | MIT |
+
+`espeak-ng` là thứ biến chữ "xin chào" thành các âm để mô hình đọc. Piper
+**nhúng thẳng nó vào trong** (`README` của họ: *"embeds espeak-ng for
+phonemization"*). Mà GPL quy định: cái gì **nhúng chung thành một chương trình**
+với phần GPL thì cả chương trình đó phải là GPL. Nên Piper **buộc** phải GPL.
+Việc đổi giấy phép năm 2025 chỉ là **thừa nhận cho đúng sự thật vốn có**.
+
+### ⚠️ Cạm bẫy: bản MIT cũ **KHÔNG** sạch như tên gọi
+
+Đây là phát hiện quan trọng nhất mục này, và nó **phá tan** cách né hiển nhiên
+nhất ("thôi thì dùng bản MIT 2023 cho lành").
+
+Tôi **tải thật** gói `piper_windows_amd64.zip` (22,5 MB, bản 2023.11.14-2, đã
+có 252.969 lượt tải) và **mở ra xem bên trong**:
+
+```
+piper/espeak-ng.dll          380.928 byte   ← GPL-3.0
+piper/piper_phonemize.dll    407.040 byte
+piper/onnxruntime.dll      9.271.704 byte
+piper/piper.exe              509.952 byte
+piper/espeak-ng-data/...     357 file dữ liệu espeak-ng
+```
+
+**Số file giấy phép kèm theo trong gói: 0.** Không có `LICENSE`, không có
+`COPYING`, không có `NOTICE`.
+
+Hai kết luận:
+
+1. **Gói "MIT" đó vẫn chứa `espeak-ng` GPL bên trong.** Nhãn ngoài ghi MIT
+   nhưng ruột có GPL. Phát hành nó vẫn là **đang phát hành phần mềm GPL**.
+2. **Chính gói đó cũng chưa làm đúng GPL** (thiếu văn bản giấy phép). Anh mà
+   chép nguyên xi đi bán thì **thừa hưởng luôn cái thiếu sót đó**.
+
+> **Chốt: không có đường nào dùng Piper mà tránh được `espeak-ng` GPL.**
+> Đừng mất công tìm. Hãy chuyển sang tìm cách **sống chung an toàn** — mục 2.
+
+### ⚠️ Cạm bẫy thứ hai: tính năng anh CẦN chỉ có ở bản GPL
+
+Tôi kiểm tra ruột gói Python bản MIT cũ. Nó chỉ có:
+`__init__.py, __main__.py, config.py, const.py, download.py, file_hash.py,
+http_server.py, util.py, voice.py, voices.json` — **không có mô-đun mốc thời
+gian nào cả**.
+
+Tính năng **mốc từng chữ** (`alignments`) — đúng thứ làm anh để mắt tới Piper —
+**chỉ được thêm vào ở bản GPL**, tài liệu `docs/ALIGNMENTS.md` của kho mới.
+
+**Nên: lùi về bản MIT 1.2.0 = mất luôn lý do dùng Piper.** Cửa đó đóng.
+
+*(Ghi thêm cho đúng: tài liệu của họ ghi tính năng này là **"Experimental"** —
+đang thử nghiệm. Và nó trả về mốc theo **âm tiết (phoneme)**, không phải theo
+**từ** — muốn ra mốc từng từ phải tự gộp lại. Ngoài ra phải "vá" file giọng
+`.onnx` một lần trước khi dùng.)*
+
+---
+
+## MỤC 2 — Gọi qua tiến trình riêng: ĐÂY LÀ MẤU CHỐT
+
+### Câu trả lời: **CÓ, khác hẳn. Và đây chính là lối thoát.**
+
+GPL phân biệt rất rõ hai kiểu dùng. Tôi lấy nguyên văn từ trang Hỏi-Đáp chính
+thức của Free Software Foundation — **tổ chức viết ra GPL**, nên đây là nguồn
+gốc chứ không phải suy đoán của ai:
+
+> *"pipes, sockets and command-line arguments are communication mechanisms
+> normally used between two separate programs. So when they are used for
+> communication, the modules normally are separate programs."*
+>
+> **Dịch:** *ống dẫn, socket và tham số dòng lệnh là những cách liên lạc
+> thường dùng giữa hai chương trình riêng biệt. Nên khi dùng chúng để liên
+> lạc, các phần đó bình thường là những chương trình riêng biệt.*
+
+Và nói thẳng về kiểu `fork/exec` (đúng kiểu `subprocess` mà app anh đang dùng
+cho Demucs):
+
+> *"A main program that uses simple fork and exec to invoke plug-ins and does
+> not establish intimate communication between them results in the plug-ins
+> being a separate program."*
+>
+> **Dịch:** *Chương trình chính dùng fork và exec đơn giản để gọi phần bổ trợ,
+> mà không thiết lập liên lạc thân mật giữa chúng, thì phần bổ trợ là một
+> chương trình riêng.*
+
+### Dịch sang tiếng người: hai kiểu "dùng"
+
+| | **Nuốt vào bụng** (nhúng thư viện) | **Sai vặt** (gọi tiến trình riêng) |
+|---|---|---|
+| Trong mã trông như | `import piper` | `subprocess.run(["piper.exe", ...])` |
+| Chạy ở đâu | **cùng một tiến trình** với app | **tiến trình riêng**, bộ nhớ riêng |
+| Trao đổi bằng | biến, đối tượng trong bộ nhớ | **dòng lệnh + file WAV** |
+| Ví dụ app anh đang có | *(chưa có, đừng có)* | `ffmpeg.exe`, `yt-dlp.exe`, Demucs |
+| GPL coi là | **MỘT chương trình** → lây | **HAI chương trình** → **không lây** |
+| App anh phải mở mã? | 🔴 **CÓ** | ✅ **KHÔNG** |
+
+**Đây là mô hình mà hàng nghìn phần mềm thương mại đóng kín đang dùng với
+`ffmpeg`.** Nó không phải mẹo lách luật, nó là cách làm chuẩn mực, được chính
+tác giả GPL công nhận bằng văn bản.
+
+### May mắn: app anh **buộc** phải làm cách này rồi
+
+Ghi nhớ kỹ thuật của máy này đã ghi: app **phải chạy Demucs ở tiến trình riêng
+vì lỗi `torch` + Qt làm treo app** (access violation). Piper thì **không cần
+`torch`**, nhưng nó **vẫn dùng `onnxruntime`** — cùng họ thư viện nặng nạp DLL
+vào tiến trình, cùng nhóm rủi ro với giao diện Qt.
+
+> **Cái mà kỹ thuật đã bắt anh làm (tiến trình riêng), thì pháp lý cũng muốn
+> anh làm y như vậy.** Hai bên trùng nhau. Không phải chọn giữa an toàn kỹ
+> thuật và an toàn pháp lý — chỉ có một đường, và nó đúng cả hai.
+
+### Còn "liên lạc thân mật" thì sao? — đừng lo, nhưng đừng làm quá
+
+FSF có gài một câu dè chừng: nếu hai bên *"exchanging complex internal data
+structures"* (trao đổi cấu trúc dữ liệu nội bộ phức tạp) thì **vẫn có thể** bị
+coi là một chương trình.
+
+**Việc anh làm không rơi vào đó.** Anh chỉ đưa vào một câu văn bản, nhận về một
+file WAV và một danh sách mốc thời gian. Đó là **dữ liệu thường**, đúng như
+`ffmpeg` nhận đường dẫn file và trả file. Đây là **ranh giới an toàn rộng rãi**.
+
+Để giữ cho rộng, chỉ cần **đừng** làm mấy thứ sau: đừng viết bộ nhớ chung
+(shared memory) với Piper, đừng sửa mã Piper rồi nhúng ngược vào app, đừng làm
+app **không chạy nổi** nếu thiếu Piper.
+
+### Sự thật thứ hai, quan trọng không kém: **file WAV làm ra là của anh**
+
+Nhiều người sợ GPL đến mức tưởng "dùng công cụ GPL thì sản phẩm cũng thành
+GPL". **Sai.** FSF trả lời dứt khoát:
+
+> *"the copyright on the editors and tools does not cover the code you write.
+> Using them does not place any restrictions, legally, on the license you use
+> for your code."*
+>
+> **Dịch:** *bản quyền của trình soạn thảo và công cụ không phủ lên mã anh
+> viết. Dùng chúng không đặt bất kỳ ràng buộc pháp lý nào lên giấy phép anh
+> chọn cho mã của mình.*
+
+Và về đầu ra:
+
+> *"The output of a program is not, in general, covered by the copyright on the
+> code of the program."*
+>
+> **Dịch:** *Đầu ra của một chương trình, nói chung, không bị bản quyền của mã
+> chương trình đó phủ lên.*
+
+> **Nghĩa với anh: mọi video anh xuất ra, mọi file tiếng Piper đọc — là của
+> anh, bán được, kiếm tiền được, không phải chia sẻ gì cho ai.** GPL không đụng
+> tới sản phẩm, nó chỉ đụng tới **bản thân phần mềm Piper**.
+
+### Vậy anh còn nợ GPL cái gì?
+
+Nếu anh **phát hành Piper kèm app** (bỏ chung bộ cài), anh có **nghĩa vụ với
+riêng phần Piper** — không phải với app anh:
+
+| Nghĩa vụ | Làm cụ thể | Nặng không? |
+|---|---|---|
+| Kèm văn bản giấy phép | bỏ file `COPYING` (bản GPL-3) vào thư mục Piper | 5 phút |
+| Cho người dùng lấy được mã nguồn Piper | ghi rõ địa chỉ kho `github.com/OHF-Voice/piper1-gpl` + số hiệu bản đang dùng | 5 phút |
+| Không được cấm người dùng dùng quyền GPL với phần Piper | trong điều khoản app, ghi rõ Piper theo GPL riêng | 10 phút |
+| Ghi rõ nếu anh có sửa Piper | **đừng sửa Piper** là xong | 0 phút |
+
+**Toàn bộ nghĩa vụ chỉ nằm ở phần Piper. Mã app anh không phải đụng tới.**
+
+Và GPL-3 có hẳn một điều khoản bảo vệ chuyện này — nguyên văn mục 5:
+
+> *"A compilation of a covered work with other separate and independent works,
+> which are not by their nature extensions of the covered work, and which are
+> not combined with it such as to form a larger program, in or on a volume of
+> a storage or distribution medium, is called an "aggregate"... **Inclusion of
+> a covered work in an aggregate does not cause this License to apply to the
+> other parts of the aggregate.**"*
+>
+> **Dịch câu chốt:** *Việc đưa một tác phẩm thuộc GPL vào một tập hợp KHÔNG
+> làm giấy phép này áp lên các phần khác của tập hợp đó.*
+
+Đây là **câu bảo vệ anh, viết sẵn trong chính GPL**. Bỏ `piper.exe` chung thư
+mục với app anh = "aggregate" = app anh không bị lây.
+
+---
+
+## MỤC 3 — Để app tự tải lúc chạy, thay vì đóng gói sẵn
+
+### Câu trả lời: **CÓ, nhẹ hẳn. Đây là cách sạch nhất.**
+
+Toàn bộ nghĩa vụ GPL chỉ bật lên khi anh **"convey"** — tức là **phát hành /
+trao phần mềm đó cho người khác**. Anh **không phát hành** thì **không có nghĩa
+vụ nào cả**.
+
+| Cách làm | Anh có "phát hành" Piper không? | Nghĩa vụ GPL của anh |
+|---|---|---|
+| Nhét `piper` vào `.exe` PyInstaller | 🔴 CÓ, và còn **trộn chung một file** | 🔴 **Nặng nhất — nguy cơ mất quyền giữ kín mã** |
+| Bỏ `piper.exe` rời trong thư mục cài | CÓ (nhưng là "aggregate") | Nhẹ: kèm giấy phép + chỉ chỗ lấy mã nguồn |
+| **App tự tải Piper về máy người dùng khi cần** | ✅ **KHÔNG** | ✅ **Gần như không có gì** |
+
+**Vì sao cách 3 nhẹ nhất:** người tải Piper về là **người dùng**, tải thẳng từ
+**máy chủ của tác giả Piper**. Anh chỉ là người **chỉ đường**. Anh không sao
+chép, không phân phối, nên **không phải người phát hành**.
+
+Đây đúng là cách app anh **đã làm với `yt-dlp`** ở dự án prodown, và là cách
+rất nhiều phần mềm thương mại xử lý `ffmpeg` ("bấm đây để tải ffmpeg").
+
+### ⚠️ Nhưng đừng tưởng cách 3 là bùa hộ mệnh
+
+Ba điều làm hỏng cách 3, phải tránh:
+
+1. **Đừng tự dựng máy chủ chứa bản sao Piper của anh.** Tải từ máy chủ anh =
+   anh đang phát hành = nghĩa vụ quay lại đủ. **Phải tải thẳng từ GitHub của
+   tác giả.**
+2. **Đừng dùng cách 3 mà vẫn `import piper`.** Tải rời chỉ giải quyết việc
+   *phát hành*. Nếu mã app vẫn nhúng Piper vào cùng tiến trình thì lúc chạy
+   trên máy người dùng **vẫn là một chương trình gộp** — rủi ro còn nguyên.
+   **Tải rời + gọi tiến trình riêng, phải đủ cả hai.**
+3. **App phải chạy được khi chưa có Piper.** Thiếu Piper thì báo "chưa cài
+   giọng Piper" và dùng đường cũ (edge-tts), chứ đừng chết. App mà **không tồn
+   tại nổi nếu thiếu Piper** thì lập luận "hai chương trình riêng" yếu đi.
+
+### Lợi thêm không liên quan pháp lý
+
+`.exe` của anh đang **155 MB**. Không nhét Piper vào thì **không phình thêm**,
+và **ai không dùng giọng Piper thì không phải tải 63 MB giọng + ~22 MB máy
+đọc** làm gì.
+
+---
+
+## MỤC 4 — Ba giọng tiếng Việt: giấy phép thật
+
+Tôi đọc thẳng **model card** của từng giọng trên HuggingFace, không đọc blog.
+
+### Bảng tổng
+
+| Giọng | Trọng số | Dữ liệu huấn luyện | Kiếm tiền được? |
+|---|---|---|---|
+| **`vi_VN-vais1000-medium`** | **MIT** | **CC BY 4.0** | ✅ **ĐƯỢC** — phải ghi công |
+| `vi_VN-vivos-x_low` | MIT | 🔴 **CC BY-NC-SA 4.0** | 🔴 **CẤM** |
+| `vi_VN-25hours_single-low` | MIT | ⚠️ **"Unknown"** | ⚠️ **Không dám chắc → tránh** |
+
+### `vais1000` — **XÁC NHẬN đúng, dùng được**
+
+Nguyên văn model card (`.../vi/vi_VN/vais1000/medium/MODEL_CARD`):
+
+```
+# Model card for vais1000 (medium)
+* Language: vi_VN (Vietnamese, Vietnam)
+* Speakers: 1
+* Quality: medium
+* Samplerate: 22,050Hz
+## Dataset
+* URL: https://ieee-dataport.org/documents/vais-1000-vietnamese-speech-synthesis-corpus
+* License: https://creativecommons.org/licenses/by/4.0/
+```
+
+Và kho trọng số `rhasspy/piper-voices` khai `license: mit` ngay đầu README.
+
+**Hai lớp, cả hai đều cho kiếm tiền:**
+- **Trọng số** (file `.onnx` 63 MB anh chạy) = **MIT** — thoải mái nhất, chỉ
+  cần giữ dòng bản quyền.
+- **Dữ liệu gốc** (giọng người đọc để luyện) = **CC BY 4.0** — cho phép dùng
+  thương mại, **đổi lại phải ghi công**.
+
+> **CC BY 4.0 và MIT đều KHÔNG lây sang app anh.** Chúng không phải copyleft
+> như GPL. Chúng chỉ đòi **ghi công**. Đây là loại giấy phép dễ thở nhất.
+
+### Ghi công thế nào — ghi ở đâu, ghi gì
+
+**Ghi ở đâu:** một mục "Giấy phép / Nguồn mở" trong app (hộp thoại *Giới thiệu*,
+hoặc file `LICENSES.txt` kèm bộ cài). **Không cần** ghi trong từng video, không
+cần đọc lên trong video, không cần dán lên YouTube.
+
+**Ghi gì** — chép nguyên khối này là đủ:
+
+```
+Giọng đọc tiếng Việt: vi_VN-vais1000-medium (Piper)
+  Trọng số: rhasspy/piper-voices — giấy phép MIT
+    https://huggingface.co/rhasspy/piper-voices
+  Dữ liệu huấn luyện: VAIS-1000 Vietnamese Speech Synthesis Corpus
+    Truong Do / VAIS (https://vais.vn), IEEE DataPort, 2017
+    DOI: 10.21227/H2B887
+    Giấy phép: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+
+Máy đọc: Piper (OHF-Voice/piper1-gpl) — giấy phép GPL-3.0-or-later
+  Mã nguồn: https://github.com/OHF-Voice/piper1-gpl
+  Bao gồm espeak-ng — giấy phép GPL-3.0
+    Mã nguồn: https://github.com/espeak-ng/espeak-ng
+```
+
+### ⚠️ Một chỗ mập mờ, tôi ghi thẳng ra
+
+Tôi có vào trang gốc IEEE DataPort của VAIS-1000 để đối chiếu. Trang đó hiện
+**tên người nộp là Truong Do**, tổ chức **VAIS (vais.vn)**, DOI
+`10.21227/H2B887`, năm 2017 — **nhưng trang công khai KHÔNG hiện rõ dòng giấy
+phép CC BY 4.0** (có thể phải đăng nhập IEEE mới thấy).
+
+Nghĩa là: **"CC BY 4.0" là do model card của Piper khẳng định, tôi chưa đối
+chiếu được với trang gốc.** Rủi ro thấp (trọng số vẫn là MIT, và người làm
+Piper có tiếng cẩn thận về giấy phép), nhưng **tôi không nói chắc 100%** khi
+chưa nhìn tận mắt. Nếu anh muốn chắc tuyệt đối, đây là chỗ đáng hỏi — xem mục 7.
+
+### `vivos` — **XÁC NHẬN đúng như lượt trước: CẤM kiếm tiền**
+
+```
+## Dataset
+* Name: InfoRe Technology 1
+* URL: https://ailab.hcmus.edu.vn/vivos/
+* License: CC BY-NC-SA 4.0
+```
+
+**NC = NonCommercial = cấm thương mại.** Lượt trước ghi đúng, tôi xác nhận lại.
+Với anh — người **dùng app để kiếm tiền** — giọng này **loại thẳng**, không bàn.
+
+**Lỗi thiếu dấu thanh cũng xác nhận đúng**: lượt trước đo được giọng này in ra
+`Missing phoneme from id map: 2 / 4 / 5 / 6` — thiếu chính các dấu thanh tiếng
+Việt. Nên giọng này **vừa cấm về pháp lý, vừa hỏng về kỹ thuật**. Bỏ.
+
+*(Ghi thêm: model card này có mâu thuẫn nhỏ — tên dữ liệu ghi "InfoRe Technology
+1" nhưng đường dẫn lại trỏ về VIVOS của ĐH KHTN TP.HCM. Không quan trọng, vì
+đằng nào cũng đã loại.)*
+
+### `25hours_single` — **giấy phép "Unknown", nguy hiểm hơn `vivos`**
+
+```
+## Dataset
+* Name: InfoRe Technology 1
+* License: Unknown
+```
+
+Cái này **nguy hơn** `vivos`, dù nghe có vẻ nhẹ hơn. Vì:
+
+- `vivos` ghi rõ "cấm" → anh biết mà tránh.
+- `25hours_single` ghi **"Unknown"** → **không ai biết gì cả**. Không có giấy
+  phép nghĩa là **mặc định giữ nguyên bản quyền cho chủ sở hữu**, chứ không
+  phải "tự do dùng". Im lặng **không phải là cho phép**.
+
+Lượt trước cũng đã đo được giọng này cho **0 mốc thời gian** — vô dụng với anh.
+**Loại vì cả hai lý do.**
+
+### Kết luận mục 4
+
+> **Piper cho anh đúng MỘT giọng tiếng Việt dùng được: `vais1000`.**
+> Hiện anh đang có **2 giọng** (edge-tts). Đổi sang Piper là **ít giọng đi**,
+> và mọi kênh trong 200-300 kênh sẽ **đọc y hệt nhau bằng một giọng duy nhất**.
+> Đây là chuyện kinh doanh, không phải chuyện pháp lý — nhưng nó đáng cân nhắc
+> ngang với chuyện giấy phép.
+
+---
+
+## MỤC 5 — Có bộ nào sạch hơn để thay Piper không?
+
+Tôi cho tra lại **hơn 20 bộ**, mỗi bộ đều **đọc file LICENSE thật / model card
+thật**, không đọc blog.
+
+### Quy luật phát hiện được: **mã và trọng số là HAI giấy phép khác nhau**
+
+Đây là cái bẫy làm blog viết sai nhiều nhất. Rất nhiều bộ có **mã Apache-2.0
+(thoáng)** nhưng **trọng số CC-BY-NC (cấm kiếm tiền)**. Blog nhìn GitHub thấy
+"Apache" là viết "dùng thoải mái" — **sai hoàn toàn**, vì thứ anh chạy là
+**trọng số**.
+
+### Bảng những bộ có tiếng Việt
+
+| Bộ | Mã nguồn | **Trọng số** | Kiếm tiền? |
+|---|---|---|---|
+| **Piper `vais1000`** | GPL-3.0 *(máy đọc)* | **MIT** + dữ liệu CC BY 4.0 | ✅ **ĐƯỢC** |
+| `facebook/mms-tts-vie` | Apache-2.0 | 🔴 **CC-BY-NC-4.0** | 🔴 CẤM |
+| VietTTS (dangvansam) | Apache-2.0 | 🔴 **CC-BY-NC** | 🔴 CẤM |
+| viXTTS (capleaf) | MPL-2.0 | 🔴 **CPML** *(Coqui, phi thương mại)* | 🔴 CẤM |
+| Coqui XTTS-v2 | MPL-2.0 | 🔴 **CPML** | 🔴 CẤM |
+| edge-tts *(đang dùng)* | **LGPLv3** ⚠️ | *(dịch vụ Microsoft)* | ⚠️ xem dưới |
+
+### Bảng những bộ giấy phép sạch — **nhưng không có tiếng Việt**
+
+| Bộ | Mã | Trọng số | Tiếng Việt? |
+|---|---|---|---|
+| Kokoro-82M | Apache-2.0 | **Apache-2.0** | 🔴 **KHÔNG** |
+| Chatterbox (Resemble AI) | MIT | **MIT** | 🔴 **KHÔNG** (23 thứ tiếng, không có `vi`) |
+| Kitten TTS | Apache-2.0 | **Apache-2.0** | 🔴 **KHÔNG** (chỉ tiếng Anh) |
+| Orpheus / Dia / Sesame CSM | Apache-2.0 | Apache-2.0 | 🔴 **KHÔNG** |
+
+### Kết luận mục 5: **KHÔNG có bộ nào vừa sạch hơn Piper vừa có tiếng Việt.**
+
+Nói thẳng: **tôi không đề xuất thay Piper bằng bộ khác, vì không có bộ nào để
+thay.** Bức tranh sau khi tra hơn 20 bộ:
+
+- Bộ nào **giấy phép sạch (MIT/Apache)** thì **không có tiếng Việt**.
+- Bộ nào **có tiếng Việt** thì trọng số **cấm thương mại**, trừ Piper.
+- **Piper `vais1000` là bộ tiếng Việt DUY NHẤT có trọng số dùng thương mại
+  được.** Cái "bẩn" của Piper chỉ nằm ở **máy đọc** (GPL), mà máy đọc thì
+  **giải quyết được bằng tiến trình riêng** (mục 2). Còn cái "bẩn" của các bộ
+  kia nằm ở **trọng số** — thứ **không có cách nào chữa**.
+
+> **Nói cách khác: Piper có vấn đề DỄ CHỮA. Các bộ khác có vấn đề KHÔNG CHỮA
+> ĐƯỢC.** Nên nếu đã quyết dùng giọng chạy tại máy, **Piper vẫn là lựa chọn
+> đúng** — không phải vì nó hoàn hảo, mà vì nó là cái duy nhất còn đứng được.
+
+### Đường vòng thật sự sạch: **tách "đọc" và "đo mốc" thành hai việc**
+
+Điều đáng giá nhất tôi tìm được ở mục này: **thứ anh cần mốc từng chữ thì không
+nhất thiết phải lấy từ máy đọc.** Có thể để bộ nào đọc cũng được, rồi **đo mốc
+riêng** bằng công cụ sạch phép:
+
+| Công cụ đo mốc | Mã | Mô hình tiếng Việt | Kiếm tiền? |
+|---|---|---|---|
+| **faster-whisper** | **MIT** | **MIT / Apache-2.0** | ✅ **ĐƯỢC** |
+| **MFA** (Montreal Forced Aligner) | **MIT** | **CC-0 / CC BY 4.0** | ✅ **ĐƯỢC** *(lượt 2 đo sai số 19,93 ms)* |
+| 🔴 WhisperX | BSD-2 | 🔴 **CC-BY-NC** *(tự tải ngầm!)* | 🔴 CẤM |
+| 🔴 ctc-forced-aligner | mâu thuẫn | 🔴 **CC-BY-NC** | 🔴 CẤM |
+| 🔴 torchaudio `MMS_FA` | BSD-2 | 🔴 **CC-BY-NC** | 🔴 CẤM |
+
+Ba dòng đỏ cuối là **bẫy im lặng**: mã thì sạch, nhưng chạy lên là **tự động
+tải về một mô hình cấm thương mại mà không báo gì**. Lượt 2 đã bắt được WhisperX;
+lượt này bắt thêm **hai cái nữa cùng kiểu**.
+
+**Nghĩa với anh:** nếu sau này Piper vướng gì, anh **vẫn còn đường** — dùng máy
+đọc bất kỳ (kể cả edge-tts đang chạy) rồi lấy mốc bằng **faster-whisper (MIT)**
+hoặc **MFA (MIT)**. Hai cái này sạch cả mã lẫn mô hình, **không bộ nào lây GPL**.
+
+### ⚠️ Tiện thể: `edge-tts` **đang dùng** cũng không sạch như tưởng
+
+Trong lúc tra tôi phát hiện chuyện này, **không nằm trong câu hỏi nhưng anh nên
+biết**, vì nó là thứ app anh đang chạy thật cho 200-300 kênh:
+
+- `edge-tts` **không phải MIT**. Nó là **LGPLv3** (chỉ đúng một file lẻ là MIT).
+  PyPI để trống ô giấy phép, GitHub báo "NOASSERTION" — nên **mọi công cụ quét
+  giấy phép tự động đều đọc sai cái này**.
+- LGPLv3 **nhẹ hơn GPL nhiều** (không buộc mở mã app), nhưng nó **có một điều
+  kiện về cách đóng gói**: đóng `--onefile` PyInstaller thì về lý phải cho người
+  dùng khả năng thay thư viện. Đóng `--onedir` (kiểu `dist/BQHungVideo/` app anh
+  đang dùng) thì **nhẹ hơn nhiều**.
+- Đáng lo hơn giấy phép: **chính tác giả `edge-tts` viết công khai rằng
+  "It shouldn't be used for commercial reasons"** (không nên dùng cho mục đích
+  thương mại), vì gói này **gọi vào cửa sau không công khai của Microsoft** và
+  có hẳn một file tên `drm.py` để **giả chữ ký chống lạm dụng** của Microsoft.
+
+> **Tôi không nói anh phải bỏ `edge-tts` ngay.** Nhưng phải nói thẳng: **rủi ro
+> của `edge-tts` (đang chạy) không hề nhỏ hơn rủi ro của Piper.** Nếu anh lo
+> Piper tới mức cân nhắc bỏ, thì bằng cùng thước đo đó, `edge-tts` đáng lo hơn —
+> vì nó phụ thuộc một cửa mà Microsoft **đóng lúc nào cũng được**, và không có
+> văn bản nào cho phép anh dùng nó để kiếm tiền.
+
+---
+
+## MỤC 6 — ⚠️ VIỆC ĐANG LÀM SONG SONG CŨNG DÍNH: `rubberband` là GPL-2.0
+
+Không nằm trong 5 câu hỏi, nhưng **cùng đúng một vấn đề** và **đang diễn ra ngay
+lúc này**, nên tôi phải báo.
+
+Luồng khác đang đổi bước ép co giãn từ `atempo` sang **`rubberband`**
+(`app/core/thay_giong.py`). Tôi tra kho gốc `breakfastquay/rubberband`:
+
+> **Giấy phép: GPL-2.0.**
+
+Và `ffmpeg` muốn có `rubberband` thì **phải biên dịch với cờ `--enable-gpl`** —
+tức bản `ffmpeg.exe` trong `dist/BQHungVideo/_internal/` **là một bản GPL**.
+
+### Tin tốt: **anh không phải sửa gì trong mã app**
+
+Vì `ffmpeg.exe` là **chương trình riêng, gọi bằng dòng lệnh** — **đúng y mô
+hình an toàn ở mục 2**. App anh gọi nó, không nuốt nó. **Không lây.**
+
+Thật ra đây là **bằng chứng sống** rằng cách làm này an toàn: anh đã phát hành
+`ffmpeg` GPL kèm app từ lâu, app vẫn đóng, vẫn bán.
+
+### Việc phải làm: **kèm giấy phép cho `ffmpeg`** (5 phút, nên làm luôn)
+
+Đây là **lỗ hổng có thật** trong bộ cài hiện tại — cùng đúng cái lỗi mà gói
+Piper 2023 mắc phải (thiếu file giấy phép). Cần thêm vào thư mục cài một file
+`LICENSES.txt` ghi:
+
+```
+FFmpeg — GPL-2.0-or-later (bản này biên dịch với --enable-gpl)
+  Mã nguồn: https://ffmpeg.org/download.html
+  (kèm librubberband — Rubber Band Library, GPL-2.0,
+   https://github.com/breakfastquay/rubberband)
+yt-dlp — Unlicense / public domain
+```
+
+> **Kết luận mục 6: cứ tiếp tục dùng `rubberband`, số đo của nó tốt hơn hẳn
+> `atempo`. Chỉ cần thêm một file văn bản vào bộ cài.** Không phải sửa mã, không
+> phải mở mã.
+
+---
+
+## MỤC 7 — GIỚI HẠN CỦA TÔI + CÂU HỎI SOẠN SẴN CHO LUẬT SƯ
+
+### **Tôi không phải luật sư. Báo cáo này KHÔNG phải tư vấn pháp lý.**
+
+Việc tôi làm ở đây là **thu thập sự thật**: giấy phép nào, điều khoản viết gì,
+tổ chức viết ra GPL giải thích ra sao. Tôi **đọc văn bản gốc** (PyPI, GitHub,
+HuggingFace, gnu.org, và mở thẳng gói `.zip` ra xem ruột) chứ không đọc blog.
+Nhưng **đọc đúng văn bản không giống với biết nó được toà xử thế nào**.
+
+### Những chỗ tôi CHẮC (đã nhìn tận mắt văn bản gốc)
+
+| Sự thật | Chắc tới đâu |
+|---|---|
+| `piper-tts` từ 1.3.0 trở đi là GPL-3.0-or-later | **Chắc** — đọc từ PyPI |
+| `piper-tts` 1.1.0/1.2.0 là MIT | **Chắc** — đọc từ PyPI |
+| Gói Windows "MIT" 2023 **có chứa** `espeak-ng.dll` GPL, **không có** file giấy phép | **Chắc** — tự tải, tự mở ra xem |
+| Tính năng mốc thời gian **chỉ có ở bản GPL** | **Chắc** — so danh sách file hai kho |
+| `vais1000`: trọng số MIT, dữ liệu CC BY 4.0 | **Chắc** *(trừ ghi chú mập mờ ở mục 4)* |
+| `vivos`: CC BY-NC-SA 4.0 — cấm thương mại | **Chắc** — đọc model card |
+| `25hours_single`: giấy phép "Unknown" | **Chắc** — model card ghi đúng chữ đó |
+| `rubberband` là GPL-2.0 | **Chắc** — đọc kho gốc |
+| FSF nói dòng lệnh/ống = hai chương trình riêng | **Chắc** — nguyên văn trên gnu.org |
+| GPL không phủ lên **đầu ra** của chương trình | **Chắc** — nguyên văn trên gnu.org |
+
+### Những chỗ tôi KHÔNG chắc — **ghi thẳng là mập mờ**
+
+1. **"Liên lạc thân mật" mập mờ tới đâu.** FSF nói dòng lệnh = riêng biệt,
+   **nhưng cũng nói** nếu trao đổi "cấu trúc dữ liệu nội bộ phức tạp" thì có thể
+   bị coi là một. **Không có ranh giới bằng số.** Việc anh làm (đưa câu chữ,
+   nhận file WAV) nằm **rất sâu trong vùng an toàn**, nhưng "rất sâu trong vùng
+   an toàn" là **ý kiến của tôi**, không phải một con số ai cũng đo được.
+2. **Quan điểm FSF không phải luật.** Trang Hỏi-Đáp của FSF là cách **người
+   viết ra giấy phép** hiểu giấy phép đó. Nó có sức nặng lớn trong ngành, nhưng
+   **chưa có toà án Việt Nam nào phán về chuyện này**. Ở Mỹ và Đức có vài vụ
+   xử GPL, phần lớn **kết thúc bằng hoà giải** chứ không ra án lệ rõ ràng.
+3. **Ranh giới "tải rời thì không phải phát hành"** được cộng đồng chấp nhận
+   rộng rãi và rất nhiều phần mềm thương mại làm vậy, **nhưng tôi không tìm
+   được vụ kiện nào xác nhận**. Nó là **thông lệ**, không phải án lệ.
+4. **Giấy phép gốc của VAIS-1000** — như đã ghi ở mục 4, tôi chỉ đối chiếu được
+   qua model card của Piper, chưa thấy dòng giấy phép trên trang IEEE.
+5. **Luật Việt Nam áp dụng thế nào** thì tôi **hoàn toàn không biết**. Mọi thứ
+   trên đây là đọc theo văn bản giấy phép (viết theo luật Mỹ).
+
+### **Có cần hỏi luật sư không?**
+
+**Ý kiến thẳng của tôi: với cách làm "tiến trình riêng + tải rời" thì KHÔNG cần
+gấp.** Vì:
+
+- Đây là mô hình **hàng nghìn phần mềm thương mại đóng kín đang dùng với
+  `ffmpeg`** suốt 20 năm.
+- **Chính anh đã làm vậy với `ffmpeg` GPL rồi** — thêm Piper không tạo ra loại
+  rủi ro mới nào, chỉ là **thêm một cái nữa cùng loại**.
+- Phần "lây" nguy hiểm nhất (`import piper`) thì **tránh được bằng một quyết
+  định kỹ thuật**, không cần ai tư vấn.
+
+**Nên hỏi luật sư khi:** anh bán app cho **doanh nghiệp lớn / khách nước ngoài**
+(họ hay bắt rà soát giấy phép trước khi mua), hoặc anh **gọi vốn / bán lại app**
+(bên mua **chắc chắn** sẽ rà), hoặc anh có ý định **sửa mã Piper**.
+
+### 5 CÂU HỎI SOẠN SẴN — đưa thẳng cho luật sư, khỏi hỏi vòng vo
+
+> Gửi luật sư: tôi phát triển và **bán** một phần mềm máy tính Windows **mã
+> nguồn đóng**. Tôi muốn dùng kèm một số thành phần mã nguồn mở. Xin hỏi 5 câu:
+>
+> **1.** Phần mềm của tôi gọi chương trình `piper.exe` (giấy phép **GPL-3.0**)
+> bằng cách **chạy nó như một tiến trình riêng qua dòng lệnh**, truyền vào một
+> đoạn văn bản và nhận về một file âm thanh. Mã nguồn của tôi **không nhúng,
+> không liên kết (link), không `import`** thư viện của chương trình đó.
+> **Việc này có làm phần mềm của tôi trở thành "tác phẩm phái sinh" và buộc tôi
+> phải công bố mã nguồn theo GPL-3.0 không?**
+>
+> **2.** Nếu tôi **đóng gói `piper.exe` chung bộ cài** với phần mềm của tôi (mỗi
+> bên là file riêng, không trộn vào nhau), thì điều khoản **"aggregate" tại mục
+> 5 GPL-3.0** có bảo vệ phần mềm của tôi khỏi nghĩa vụ công bố mã nguồn không?
+> **Cụ thể tôi phải làm gì để tuân thủ cho riêng phần `piper.exe`?**
+>
+> **3.** Nếu thay vì đóng gói sẵn, phần mềm của tôi **hướng dẫn người dùng tự
+> tải `piper.exe` từ máy chủ GitHub của tác giả** khi họ cần, thì **tôi có được
+> coi là "conveying" (phát hành) phần mềm GPL đó không**, và nghĩa vụ của tôi
+> khác gì so với câu 2?
+>
+> **4.** Các **file âm thanh và video** do phần mềm của tôi tạo ra, trong đó có
+> đoạn tiếng được `piper.exe` (GPL-3.0) đọc: **tôi có toàn quyền thương mại với
+> các file đó không?** Khách hàng của tôi có bị ràng buộc gì không?
+>
+> **5.** Tôi dùng mô hình giọng nói có **trọng số giấy phép MIT**, huấn luyện từ
+> bộ dữ liệu giấy phép **CC BY 4.0**. **Nghĩa vụ ghi công (attribution) tối
+> thiểu của tôi là gì**, và **ghi ở đâu là đủ** — trong phần "Giới thiệu" của
+> phần mềm có đủ không, hay phải ghi trong từng video xuất ra?
+>
+> *(Bối cảnh: phần mềm của tôi hiện đã phát hành kèm `ffmpeg.exe` bản GPL theo
+> đúng mô hình ở câu 1-2. Nếu cách đó có vấn đề, xin cho biết luôn.)*
+
+---
+
+## TÓM TẮT LƯỢT 3 — 5 CÂU TRẢ LỜI
+
+| # | Câu hỏi | Trả lời |
+|---|---|---|
+| 1 | **Nhét Piper có phải mở mã nguồn app không?** | **KHÔNG** — nếu gọi qua **tiến trình riêng**. 🔴 **CÓ** — nếu `import piper` hoặc đóng chung `.exe` |
+| 2 | **Cách an toàn nhất** | **Không đóng vào `.exe`.** Để app tải `piper.exe` từ GitHub tác giả khi cần, gọi bằng `subprocess`, chỉ trao đổi qua **dòng lệnh + file WAV**. Thiếu Piper thì lùi về edge-tts, đừng chết |
+| 3 | **`vais1000` dùng được không** | **ĐƯỢC.** Trọng số **MIT**, dữ liệu **CC BY 4.0**. Ghi công trong mục "Giới thiệu" của app — chép khối chữ ở mục 4. **Không** phải ghi trong video. Hai giọng Việt còn lại: `vivos` **cấm thương mại** + thiếu dấu thanh, `25hours` giấy phép **"Unknown"** → **bỏ cả hai** |
+| 4 | **Có bộ nào sạch hơn không** | **KHÔNG.** Tra hơn 20 bộ: sạch phép thì **không có tiếng Việt**; có tiếng Việt thì **trọng số cấm thương mại**. **Piper `vais1000` là bộ tiếng Việt duy nhất bán được.** Vấn đề của Piper **chữa được**; vấn đề của các bộ kia **không chữa được** |
+| 5 | **Cần hỏi luật sư chỗ nào** | **Không gấp** — anh đã làm đúng mô hình này với `ffmpeg` GPL rồi. Hỏi khi **bán cho doanh nghiệp / gọi vốn / bán lại app**. **5 câu soạn sẵn ở mục 7** |
+
+### Ba việc nên làm, theo thứ tự
+
+1. **Thêm file `LICENSES.txt` vào bộ cài** *(5 phút, làm được ngay, chưa cần
+   quyết gì về Piper)* — hiện app **đang phát hành `ffmpeg` GPL mà không kèm
+   giấy phép**. Đây là lỗ hổng có thật, và vá nó gần như không tốn gì.
+2. **Nếu quyết dùng Piper: chốt ngay từ đầu là "tiến trình riêng + tải rời".**
+   Quyết sai ở bước này thì **sửa sau rất đắt** — vì lúc đó mã đã viết theo kiểu
+   `import` mất rồi.
+3. **Cân nhắc lại việc có nên đổi sang Piper không** — đây là chuyện **kinh
+   doanh chứ không phải pháp lý: Piper cho anh 1 giọng, edge-tts đang cho anh
+   2.** 200-300 kênh mà đọc chung một giọng duy nhất là một cái giá thật.
+
+*Tra cứu ngày 16/08/2026. Không sửa file nào trong `app/`. Không chạy ffmpeg,
+không chạy việc nặng CPU (tôn trọng luồng đo tốc độ chạy song song). Có tải 1
+file 22,5 MB để mở ra kiểm chứng, **đã xoá ngay sau khi xem**; ổ C: 414 GB
+trống trước và sau.*
