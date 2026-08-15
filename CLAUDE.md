@@ -1523,6 +1523,37 @@
   đã được `rate` nuốt gọn mà không méo tiếng, không mất chữ, nên rút gọn chỉ
   phải lo phần vượt QUÁ tầm với của `rate`. **Ép nhanh làm xấu TIẾNG, chặt chữ
   làm xấu NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.**
+- **LỆCH CHỮ-TIẾNG: ĐO LẠI SAU BẢN VÁ — *KHÔNG* GIẢM. CON SỐ CHỈ ĐỔI CỘT
+  (15/08/2026).** `c10c68b` đo được **24,2%** thời lượng video "chữ chạy mà
+  không nói" (`im_duoi_chu` 22,52s + `lỗ bản chép lời` 9,56s = 32,08s /
+  132,3s). `20d2a57` vá xong nhưng **chưa ai đo lại**. Nay đo lại **3 LƯỢT**
+  trên ĐÚNG video mốc (`dy2.mp4`, 132,3s, Trung -> Anh, Groq + edge-tts thật;
+  lượt 2/3 dùng lại stem Demucs nên rẻ):
+
+  | lượt | `im_duoi_chu` | lỗ chép lời | TỔNG | % video | lệch đầu TB | chồng lấn |
+  |---|---|---|---|---|---|---|
+  | trước (mốc) | 22,52s | **9,56s** | 32,08s | **24,2%** | (bịa 0,0) | — |
+  | l1 | 35,37s | **0,00s** | 35,37s | 26,7% | 43,4 ms | 0,0 ms |
+  | l2 | 34,63s | **0,00s** | 34,63s | 26,2% | 43,6 ms | 0,0 ms |
+  | l3 | 33,21s | **0,00s** | 33,21s | 25,1% | 42,7 ms | 0,0 ms |
+
+  **NÓI THẲNG: 24,2% -> TB 26,0% = KHÔNG CHỮA ĐƯỢC, còn hơi xấu hơn.** Cột
+  "lỗ chép lời" về 0 trông như thắng lợi, nhưng **9,56s đó không biến mất —
+  nó CHUYỂN SANG cột `im_duoi_chu`**: câu #1 nay có khung **9,62s** mà tiếng
+  chỉ **0,99s** (đúng bằng khoảng trống cũ `cau[1].end=3,06 -> cau[2].start=
+  12,62`). Chia số đo làm 2 cột đã che mất điều đó — **thước duy nhất đáng
+  tin là TỔNG**.
+  Lệch KHÔNG rải đều: **6 câu chiếm 70%** toàn bộ (câu #1 8,63s · #25 3,70s ·
+  #37 3,34s), đều là câu KHUNG RẤT DÀI mà tiếng ngắn. Muốn hạ con số này phải
+  **chia nhỏ khung câu dài**, không phải chỉnh mốc.
+  **CÁI THẬT SỰ CHỮA ĐƯỢC** là đường **che dải chữ cũ + VIẾT LẠI bản dịch
+  theo `moc_tieng`** (`ecaaf9d`): chữ mới sinh từ chính giọng đã đọc nên
+  không bao giờ chạy khi không có tiếng. Đã chứng minh BẰNG MẮT (xem mục che
+  chữ trên đường thay tiếng). Đừng lẫn hai thứ: bản vá mốc làm số ĐO ĐƯỢC,
+  bản vá che-và-viết mới làm người XEM hết thấy lệch.
+  **CÁI TỐT LÊN VÀ ĐO ĐƯỢC:** `lech_dau_ms` không còn là hằng số bịa `0,0` mà
+  là số đo thật **42,7-43,6 ms** (0 câu vượt 150 ms), và **chồng lấn 0,0 ms
+  cả 3/3 lượt** — bất biến 0 ms vẫn giữ.
 - **CỔNG 47 CA2 HỎNG SẴN VÌ *KHO VIDEO TRÊN ĐĨA ĐỔI*, KHÔNG PHẢI VÌ MÃ
   (14/08/2026).** `_test_hook_to_mo.py` báo `HỎNG 1`: *CA2 hook tò mò chọn
   được trên >= 60% video (**2/8**)* trong khi mục 47 ở trên ghi **4/8**.
