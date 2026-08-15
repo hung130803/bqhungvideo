@@ -587,6 +587,119 @@ def ca9_dubbing() -> None:
             f"{len(bat.get('moi') or [])} vs {len(bat.get('moc') or [])} tham số")
 
 
+def ca10_map_theo_nhan() -> None:
+    """CA 10 — LLM TRẢ THIẾU / TRẢ ĐẢO THỨ TỰ THÌ VẪN PHẢI GHÉP ĐÚNG CÂU.
+
+    Đây là GỐC RỄ của *"vẫn không khớp"* + *"giọng nói không chuẩn"* anh Hùng
+    báo 14/08/2026. `257e713` đã đổi 3 hàm LLM sang map theo NHÃN `#i` thay vì
+    theo VỊ TRÍ, nhưng **chưa có cổng nào canh** — mà đây đúng loại lỗi im
+    lặng: app vẫn chạy, video vẫn ra, chỉ là câu #7 đọc lời của câu #6.
+
+    BẤT BIẾN QUAN TRỌNG NHẤT Ở ĐÂY: **LLM bỏ sót một câu thì chỉ MỘT câu đó
+    hỏng — cấm làm LỆCH BẬC mọi câu phía sau.** Map theo vị trí biến một lỗi
+    lẻ thành hỏng cả đoạn.
+
+    Ca cuối là **TỰ KIỂM BỘ DÒ**: dựng lại đúng cách CŨ (`data[i]`) trên cùng
+    bộ dữ liệu và bắt nó phải SAI. Bản cũ mà cũng đúng thì cả CA 10 chỉ là
+    con dấu (bài học cổng 43/56).
+    """
+    print("\n=== CA 10: LLM tra THIEU / DAO THU TU -> van ghep DUNG cau ===")
+    from app.core import thay_giong as tg
+
+    goc = ["c0", "c1", "c2", "c3", "c4"]
+    chi_so = list(range(5))
+
+    # (a) đủ + đúng thứ tự
+    du = [{"i": i, "t": f"T{i}"} for i in chi_so]
+    r = tg._theo_nhan(du, chi_so, "t")
+    bao("tra DU + dung thu tu -> map dung 5/5",
+        r == {i: f"T{i}" for i in chi_so}, str(r))
+
+    # (b) THIẾU 1 mục (bỏ #2) — thứ mà Groq làm THẬT 29/33/34 trên 37 câu
+    thieu = [{"i": i, "t": f"T{i}"} for i in chi_so if i != 2]
+    r = tg._theo_nhan(thieu, chi_so, "t")
+    bao("THIEU #2 -> khong co khoa 2 (khong lap im lang)", 2 not in r, str(r))
+    bao("THIEU #2 -> 4 cau CON LAI KHONG lech bac",
+        all(r.get(i) == f"T{i}" for i in (0, 1, 3, 4)), str(r))
+
+    # (c) ĐẢO THỨ TỰ hoàn toàn
+    dao = [{"i": i, "t": f"T{i}"} for i in (3, 0, 4, 1, 2)]
+    r = tg._theo_nhan(dao, chi_so, "t")
+    bao("DAO thu tu -> van map dung 5/5",
+        r == {i: f"T{i}" for i in chi_so}, str(r))
+
+    # (d) VÒNG ĐÒI LẠI: nhãn là nhãn GỐC, không phải 0..n-1
+    con = [1, 4]
+    r = tg._theo_nhan([{"i": 4, "t": "T4"}, {"i": 1, "t": "T1"}], con, "t")
+    bao("vong DOI LAI (nhan goc 1 va 4, tra dao) -> dung nhan goc",
+        r == {1: "T1", 4: "T4"}, str(r))
+
+    # (e) mảng THUẦN (model bướng) -> lùi về VỊ TRÍ TRONG `chi_so`
+    r = tg._theo_nhan(["T1", "T4"], [1, 4], "t")
+    bao("mang THUAN o vong doi lai -> ghep theo vi tri TRONG chi_so",
+        r == {1: "T1", 4: "T4"}, str(r))
+
+    # (f) rác đủ kiểu -> bỏ qua, KHÔNG được nổ
+    rac = [{"i": 0, "t": "T0"}, "chuoi la", {"t": "khong co i"},
+           {"i": 99, "t": "ngoai pham vi"}, {"i": 1, "t": "T1"},
+           {"i": 1, "t": "TRUNG NHAN - phai bo"}, {"i": None, "t": "x"}]
+    try:
+        r = tg._theo_nhan(rac, chi_so, "t")
+        bao("rac du kieu -> chi lay muc hop le, khong no",
+            r == {0: "T0", 1: "T1"}, str(r))
+    except Exception as e:  # noqa: BLE001
+        bao("rac du kieu -> chi lay muc hop le, khong no", False, f"NO: {e}")
+
+    # (g) 3 hàm dùng 3 KHOÁ khác nhau — `_dich_nguoc_cham` dùng "d"
+    r = tg._theo_nhan([{"i": 1, "d": 9.0}, {"i": 0, "d": 4.0}], [0, 1], "d")
+    bao("khoa 'd' (_dich_nguoc_cham) cung map theo nhan",
+        r == {0: 4.0, 1: 9.0}, str(r))
+
+    # (h) END-TO-END `_dich_loat`: LLM giả trả THIẾU + ĐẢO ở vòng 1
+    from app.ai import llm as _llm
+    cau = [{"start": float(i), "end": float(i) + 1.0, "text": g}
+           for i, g in enumerate(goc)]
+    that = _llm.complete_json
+    goi: list[int] = []
+    try:
+        def gia_thieu_roi_du(prompt, system=None, **kw):   # noqa: ANN001
+            goi.append(1)
+            if len(goi) == 1:                 # vòng 1: thiếu #1, #3 + ĐẢO
+                return [{"i": i, "t": f"T{i}"} for i in (4, 2, 0)]
+            return [{"i": i, "t": f"T{i}"} for i in (3, 1)]   # vòng 2: nốt
+        _llm.complete_json = gia_thieu_roi_du
+        ra = tg._dich_loat(cau, "en", "zh")
+        bao("_dich_loat: LLM thieu+dao -> vong DOI LAI lay du 5/5",
+            ra == [f"T{i}" for i in range(5)], str(ra))
+        bao("_dich_loat: dung DUNG 2 luot LLM (doi lai phan thieu)",
+            len(goi) == 2, f"{len(goi)} luot")
+
+        # (i) LLM LUÔN thiếu #2 -> chỉ #2 rơi về câu GỐC, 4 câu kia ĐÚNG
+        goi.clear()
+
+        def gia_luon_thieu(prompt, system=None, **kw):     # noqa: ANN001
+            goi.append(1)
+            return [{"i": i, "t": f"T{i}"} for i in (4, 3, 1, 0)]
+        _llm.complete_json = gia_luon_thieu
+        ra = tg._dich_loat(cau, "en", "zh")
+        bao("_dich_loat: LLM LUON thieu #2 -> rieng #2 lui ve cau GOC",
+            ra[2] == "c2", str(ra))
+        bao("_dich_loat: 4 cau con lai KHONG lech bac (loi le van la loi le)",
+            [ra[i] for i in (0, 1, 3, 4)] == ["T0", "T1", "T3", "T4"], str(ra))
+    finally:
+        _llm.complete_json = that
+
+    # (j) TỰ KIỂM BỘ DÒ — cách CŨ (map theo VỊ TRÍ) phải SAI trên chính bộ này
+    cu_thieu = [{"i": i, "t": f"T{i}"} for i in chi_so if i != 2]
+    cu = [o["t"] for o in cu_thieu]           # bản cũ: data[i], vứt nhãn
+    lech = [i for i in range(len(cu)) if cu[i] != f"T{i}"]
+    bao("TU KIEM BO DO: cach CU (theo vi tri) LECH BAC tu cau #2 tro di",
+        len(lech) >= 2, f"lech {len(lech)} cau: {cu}")
+    cu_dao = [o["t"] for o in dao]
+    bao("TU KIEM BO DO: cach CU tren mang DAO cho ra sai thu tu",
+        cu_dao != [f"T{i}" for i in chi_so], str(cu_dao))
+
+
 def main() -> int:
     print("=" * 78)
     print("CỔNG 59 — TÊN VIDEO DÀI / VIDEO DÀI KHÔNG ĐƯỢC GIẾT LƯỢT THAY GIỌNG")
@@ -603,6 +716,7 @@ def main() -> int:
         ca7_don_rac()
         ca8_max_path()
         ca9_dubbing()
+        ca10_map_theo_nhan()
     finally:
         shutil.rmtree(SB, ignore_errors=True)
     print("\n" + "=" * 78)
