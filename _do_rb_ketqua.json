@@ -1,0 +1,83 @@
+{
+ "ffmpeg": "ffmpeg",
+ "co_rubberband": true,
+ "bang": {
+  "1.00": {
+   "atempo_1luot_db": 3.617309591989701,
+   "rb_1luot_db": 0.0,
+   "atempo_dai": 4.340000000000001,
+   "rb_dai": 4.316,
+   "dai_dich": 4.372000000000001,
+   "sai_khung_atempo_pc": -0.7319304666056731,
+   "sai_khung_rb_pc": -1.280878316559948,
+   "atempo_vongtron_db": 6.641164171204491,
+   "rb_vongtron_db": 0.0,
+   "wer_atempo": 1.2820512820512822,
+   "wer_rb": 1.2820512820512822
+  },
+  "1.10": {
+   "atempo_1luot_db": null,
+   "rb_1luot_db": null,
+   "atempo_dai": 3.9463856666666666,
+   "rb_dai": 3.922781666666666,
+   "dai_dich": 3.974545454545454,
+   "sai_khung_atempo_pc": -0.708503354681298,
+   "sai_khung_rb_pc": -1.302382586154324,
+   "atempo_vongtron_db": 5.120083872317877,
+   "rb_vongtron_db": 2.6631211519888067
+  },
+  "1.20": {
+   "atempo_1luot_db": null,
+   "rb_1luot_db": null,
+   "atempo_dai": 3.6189168333333335,
+   "rb_dai": 3.595260666666667,
+   "dai_dich": 3.643333333333333,
+   "sai_khung_atempo_pc": -0.6701692589203921,
+   "sai_khung_rb_pc": -1.3194693504116985,
+   "atempo_vongtron_db": 5.836934332304818,
+   "rb_vongtron_db": 3.643250099817268
+  },
+  "1.30": {
+   "atempo_1luot_db": null,
+   "rb_1luot_db": null,
+   "atempo_dai": 3.3400105,
+   "rb_dai": 3.3180521666666665,
+   "dai_dich": 3.363076923076923,
+   "sai_khung_atempo_pc": -0.6858725983531501,
+   "sai_khung_rb_pc": -1.3387965080817315,
+   "atempo_vongtron_db": 5.622081588553741,
+   "rb_vongtron_db": 4.1407602926257665,
+   "wer_atempo": 1.2820512820512822,
+   "wer_rb": 1.2820512820512822
+  },
+  "1.50": {
+   "atempo_1luot_db": null,
+   "rb_1luot_db": null,
+   "atempo_dai": 2.8946666666666663,
+   "rb_dai": 2.8744898333333335,
+   "dai_dich": 2.9146666666666667,
+   "sai_khung_atempo_pc": -0.6861848124428338,
+   "sai_khung_rb_pc": -1.3784366422689804,
+   "atempo_vongtron_db": 6.352870680063954,
+   "rb_vongtron_db": 4.8343368658408545,
+   "wer_atempo": 1.2820512820512822,
+   "wer_rb": 1.2820512820512822
+  },
+  "1.80": {
+   "atempo_1luot_db": null,
+   "rb_1luot_db": null,
+   "atempo_dai": 2.4157503333333334,
+   "rb_dai": 2.394041833333333,
+   "dai_dich": 2.428888888888889,
+   "sai_khung_atempo_pc": -0.5409286367795008,
+   "sai_khung_rb_pc": -1.4346912168344101,
+   "atempo_vongtron_db": 7.702532458836974,
+   "rb_vongtron_db": 5.694908005521428,
+   "wer_atempo": 1.2820512820512822,
+   "wer_rb": 1.2820512820512822
+  }
+ },
+ "doi_chung_db": 0.0,
+ "cpu_atempo": 0.0,
+ "cpu_rb": 0.015625
+}

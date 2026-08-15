@@ -2043,7 +2043,12 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
 # (0,83-2,92% — đúng dải nhiễu của chính phép đo).
 #
 # Nên thứ tự chữa bây giờ là: rút NGẮN CHỮ -> ĐỌC NHANH -> mượn thời gian ->
-# cuối cùng mới `atempo`.
+# cuối cùng mới ép co giãn.
+#
+# **CẬP NHẬT (việc 1, 15/08/2026): bước ép cuối nay đi `rubberband` chứ không
+# còn `atempo`** — xem khối số đo ở `_co_gian_chuoi`. THỨ TỰ TRÊN GIỮ NGUYÊN:
+# `rubberband` chỉ làm bước cuối bớt đau, nó KHÔNG chữa cái gốc (ép nén khoảng
+# im), nên đừng lấy nó làm cớ hạ `NGUONG_DOC_NHANH` hay bỏ bước rút gọn.
 
 #: Trên mức này thì đọc lại còn hơn ép. 1,03 = dưới cả sai số của `rate`.
 NGUONG_DOC_NHANH = 1.03
@@ -2150,13 +2155,109 @@ NGUONG_IM_MOC_DB = -40.0
 
 
 def _atempo_chuoi(tempo: float) -> str:
-    """Chuỗi filter atempo, chia tầng nếu > 2.0 (atempo chỉ nhận 0.5-2.0)."""
+    """Chuỗi filter atempo, chia tầng nếu > 2.0 (atempo chỉ nhận 0.5-2.0).
+
+    **ĐƯỜNG LÙI** — chỉ dùng khi ffmpeg của máy KHÔNG có `rubberband`. Đường
+    chính là `_co_gian_chuoi`; xem khối ghi chú ở đó cho số đo hai bên.
+    """
     parts = []
     while tempo > 2.0:
         parts.append("atempo=2.0")
         tempo /= 2.0
     parts.append(f"atempo={tempo:.4f}")
     return ",".join(parts)
+
+
+# ─────────────── CO GIÃN: `rubberband` THAY `atempo` ────────────────────────
+#
+# **ĐỌC HẾT KHỐI NÀY TRƯỚC KHI ĐỔI LẠI.** v2.27.0 đã CỐ Ý bỏ đường ép nhanh
+# (`29a0fb2`), và lý do lúc đó gồm HAI phần — chỉ MỘT phần được chữa bằng việc
+# đổi bộ lọc:
+#   (1) `atempo` là WSOLA (cắt sóng thành cửa sổ rồi dán chồng) -> méo.
+#       -> ĐỔI BỘ LỌC CHỮA ĐƯỢC.
+#   (2) GỐC RỄ: app đang ép nén KHOẢNG IM của edge-tts chứ không phải tiếng
+#       nói (câu 12 ký tự thì 58% file là im lặng). Chữa bằng cắt lề im +
+#       rút ngắn chữ + `rate`.
+#       -> ĐỔI BỘ LỌC **KHÔNG** CHỮA. Lý do này VẪN ĐÚNG NGUYÊN.
+# Vì vậy **THỨ TỰ ƯU TIÊN Ở `khop_thoi_gian` GIỮ NGUYÊN** (lọt sẵn -> mượn ->
+# mới ép). Đổi bộ lọc chỉ làm cho BƯỚC CUỐI — cái vẫn còn đó và vẫn bắn trên
+# câu quá dài — rẻ hơn về chất lượng. Đây KHÔNG phải lời mời hạ `NGUONG_
+# DOC_NHANH` hay bỏ bước rút gọn.
+#
+# SỐ ĐO (`_do_rubberband.py` + `_do_rb_soi.py`, 6 câu edge-tts thật, thước
+# log-mel quy về dB; ĐỐI CHỨNG chép nguyên file = **0,000 dB** nên thước sạch):
+#
+#   hệ số | atempo | rubberband      (vòng tròn: ép k rồi ép ngược 1/k)
+#    1,10 |  5,120 |  2,663
+#    1,20 |  5,837 |  3,643
+#    1,30 |  5,622 |  4,141
+#    1,50 |  6,353 |  4,834
+#    1,80 |  7,703 |  5,695
+#
+# **CHỖ CHÊNH LỆCH LỚN NHẤT LÀ Ở HỆ SỐ 1,0** — tức lúc KHÔNG ĐƯỢC PHÉP đổi gì:
+#   · `rubberband=tempo=1.0` trả lại **ĐÚNG TỪNG MẪU** (lệch mẫu lớn nhất
+#     `0.000000`, lệch phổ **0,000 dB**) — nó là đường ống trong suốt.
+#   · `atempo=1.0` **phá tiếng**: lệch phổ thô 3,617 dB, và **căn thẳng hàng
+#     rồi VẪN còn 1,982 dB** (tức méo THẬT, không phải chỉ trễ), kèm trễ
+#     **2,8-15,0 ms THAY ĐỔI theo từng câu** = rung mốc tiếng so với hình.
+#   Hôm nay `khop_thoi_gian` không gọi bộ lọc ở đúng 1,0 (`abs(tempo-1.0) >
+#   1e-3`) nên cái hại đó chưa chạm đường thật — nhưng nó nói lên bản chất:
+#   với `atempo` thì mọi hệ số đều mất phí, còn `rubberband` thì không.
+#
+# GIÁ PHẢI TRẢ, GHI THẲNG:
+#   · **ĐẮT HƠN**: atempo ~0,000 CPU-giây/câu (dưới ngưỡng đo được),
+#     rubberband **0,016** CPU-giây/câu. Với ~40 câu/video là **+0,6
+#     CPU-giây/video** — không đáng kể so với Demucs (~25 giây/phút phim).
+#   · **NGẮN HƠN ~1,3%**: `rubberband` bỏ bớt đuôi. Đã soi: mất **112 ms ở
+#     ĐUÔI** trên 3/6 câu (3 câu còn lại mất 0 ms), **trễ đầu = 0 mẫu** (mốc
+#     đầu câu giữ nguyên tuyệt đối), và phần bị bỏ đo được **−180 dBFS = im
+#     lặng số tuyệt đối**, KHÔNG phải phụ âm cuối. Với `khop_thoi_gian` thì
+#     ngắn hơn là phía AN TOÀN (bất biến "0 ms chồng lấn"), và hàm vẫn đo lại
+#     `d_fin` bằng ffprobe chứ không tin số dự kiến.
+#   · Bảng "ép đúng khung" vì thế đọc ra `atempo −0,69%` vs `rubberband
+#     −1,38%` — nhìn thì atempo sát hơn, nhưng toàn bộ phần chênh của
+#     rubberband là ĐUÔI IM bị bỏ, không phải sai hệ số.
+
+#: Đã dò được `rubberband` trong ffmpeg đang dùng chưa (None = chưa dò).
+_CO_RUBBERBAND: Optional[bool] = None
+
+
+def co_rubberband() -> bool:
+    """ffmpeg ĐANG DÙNG có bộ lọc `rubberband` không (nhớ kết quả).
+
+    Máy nhân viên có thể chạy ffmpeg riêng trên PATH không build kèm
+    `--enable-librubberband`. **Thiếu bộ lọc thì LÙI về `atempo`, KHÔNG
+    được nổ** — ép nhanh hơi méo vẫn tốt hơn cả lượt xuất chết.
+    """
+    global _CO_RUBBERBAND
+    if _CO_RUBBERBAND is None:
+        try:
+            r = subprocess.run(
+                [settings.FFMPEG_PATH, "-hide_banner", "-filters"],
+                capture_output=True, text=True, timeout=60)
+            _CO_RUBBERBAND = bool(re.search(r"^\s*\S*\s+rubberband\s",
+                                            r.stdout or "", re.MULTILINE))
+        except Exception:                                      # noqa: BLE001
+            _CO_RUBBERBAND = False
+    return _CO_RUBBERBAND
+
+
+def _co_gian_chuoi(tempo: float) -> str:
+    """Chuỗi filter CO GIÃN THỜI GIAN cho hệ số `tempo` (>1 = nhanh lên).
+
+    `rubberband` nếu ffmpeg có (mặc định), LÙI về `atempo` nếu không. Đặt
+    `BQ_TG_RUBBERBAND=0` để ép đi đường `atempo` (đo A/B / gỡ rối máy user).
+
+    `rubberband` nhận tempo 0,01..100 nên KHÔNG phải chia tầng như `atempo`
+    (bị kẹp 0,5..2,0).
+    """
+    if os.environ.get("BQ_TG_RUBBERBAND", "1").strip() in ("0", "false", "no"):
+        return _atempo_chuoi(tempo)
+    if not co_rubberband():
+        return _atempo_chuoi(tempo)
+    #: `transients=crisp` (mặc định) giữ phụ âm bật sắc nét — đúng chỗ WSOLA
+    #: làm hỏng trước tiên. Không đặt `pitch` (giữ nguyên cao độ giọng).
+    return f"rubberband=tempo={tempo:.4f}"
 
 
 def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
@@ -2258,7 +2359,9 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         while True:
             af = ["aresample=44100"]
             if abs(tempo - 1.0) > 1e-3:
-                af.append(_atempo_chuoi(tempo))
+                # `rubberband` (lùi về `atempo` nếu ffmpeg máy không có) —
+                # xem khối số đo ở `_co_gian_chuoi`.
+                af.append(_co_gian_chuoi(tempo))
             gioi = tran - _MEP
             if cat_lan or (d_nat / tempo) > gioi:
                 af.append(f"atrim=0:{gioi:.3f}")
