@@ -81,6 +81,11 @@ TIEN_TO = (
     # `%TEMP%` lên **420 GB**, ổ C **đầy 100% / 0 byte**. Ba cổng này chạy
     # Demucs + ffmpeg + wav PCM KHÔNG NÉN nên phải có tên ở đây.
     "tg_gate_", "tgui_", "tgbang_",
+    # cổng 60 (chữ chạy theo lời · dịch không sót chữ gốc · cân mức
+    # giọng-nhạc). Rác nhẹ (hàm thuần + 2 file wav vài giây), nhưng vẫn phải
+    # khai: bài học 15/08 là danh sách này chỉ đúng khi KHÔNG BAO GIỜ có ngoại
+    # lệ kiểu "cái này nhẹ, khỏi khai".
+    "chutheoloi_",
     # ── RÀ TOÀN BỘ 15/08/2026: 27 cổng NỮA tạo thư mục trong %TEMP% mà
     # KHÔNG có tên ở đây, tức KHÔNG AI DỌN HỘ khi chúng bị giết/chết native.
     # Rà bằng regex trên `mkdtemp(prefix=…)` của mọi `_test_*.py` rồi đối
