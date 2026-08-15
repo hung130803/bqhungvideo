@@ -1468,6 +1468,109 @@
      minh bằng gói NHỎ `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip
      có thể bỏ qua) rồi **suy ra** cho torch · `BQHungVideo.spec` vẫn KHÔNG gói
      torch/demucs/`_lib` nên máy nhân viên vẫn phải bấm nút + phải có Python 3.
+  60. `_test_chu_theo_loi.py` → **CHỮ CHẠY THEO LỜI · DỊCH KHÔNG SÓT CHỮ GỐC ·
+     CÂN MỨC GIỌNG-NHẠC** (15/08/2026, 3 lỗi anh Hùng báo cùng ngày trên đường
+     THAY GIỌNG). **ĐẠT 42 · HỎNG 0**, hàm THUẦN + ffmpeg (không mạng, không
+     Groq) nên không nhấp nháy; cổng cần thành phần thật là 53/55/57.
+     Video đối chứng: `Downloads\longtieng\近期热播的7部新片推荐…mp4` (107,25 s,
+     Trung -> Việt) **và CHÍNH BẢN ANH HÙNG ĐÃ XUẤT** nằm trong `xuất\`.
+     (a) **LỖI "chữ hiện hàng loạt"** — *"nói đến đâu chữ hiện đến đó chứ không
+     hiện hàng loạt ra chữ như thế kia"*. `dong_chu_theo_giong` trả ĐÚNG 1
+     dòng/câu: đo được **41,6 ký tự/lần · dài nhất 127 · 4 lần đứng im quá 4
+     giây** (max 6,16 s). Nay cắt thành CỤM <= `TRAN_KY_TU_CUM` (30), mốc lấy
+     từ **WordBoundary của edge-tts** — hạ tầng app ĐÃ CÓ (`dubbing.
+     _synth_all_words`, đang dùng cho phụ đề recap) mà đường thay tiếng vứt đi.
+     Nối qua đủ 5 chặng: `doc_ban_dich` -> `cat_le_loat` (**phải TRỪ số giây
+     vừa cắt ở đầu**, quên là lệch đều 0,16-0,20 s) -> `rut_gon_vua_khung` ->
+     `doc_nhanh_vua_khung` -> `khop_thoi_gian` (quy về timeline ĐẦU RA; **có
+     cắt đuôi thì dùng `1/tempo` + vứt từ rơi ngoài, KHÔNG cắt thì dùng
+     `d_fin/d_nat` ĐO THẬT** — hai đường tỉ lệ khác nhau, gộp là chữ chạy
+     nhanh hơn tiếng). SỐ SAU: **62 lần hiện · 25,1 ký tự/lần · dài nhất 37 ·
+     0 lần quá 60 ký tự · 0 lần quá 4 giây · 0 lần chớp dưới 0,4 giây.**
+     **LỆCH CHỮ-TIẾNG, đối chứng ĐỘC LẬP (Groq chép lại chính file giọng, 369
+     mốc từ, khớp 58/62 cụm): TB 39,2 ms · trung vị 34,0 ms · 90% 91 ms · max
+     181 ms · 41/58 cụm trong ±50 ms.**
+     **KARAOKE `\k` — ĐÃ ĐO CẢ HAI RỒI MỚI LOẠI**, đừng ai làm lại: render
+     THẬT qua libass rồi đếm điểm ảnh chữ trên câu 156 ký tự của anh Hùng —
+     `\k` để **41.487-42.010 px** nằm trên màn hình suốt 9,6 giây (nguyên khối
+     4 dòng, chỉ đổi màu dần) còn cụm nối tiếp chỉ **6.945-8.503 px**
+     (**ít hơn 5-6 lần**). Tức `\k` KHÔNG giải được câu anh Hùng kêu, nó chỉ tô
+     màu cái khối anh ấy đang chê. Thêm: thẻ bị nuốt -> **42.022 px = khối chữ
+     cũ**, hỏng ÂM THẦM.
+     (b) **LỖI "âm thanh sau khi tách lỗi hết, chỗ có chỗ không nghe không
+     được"** — xem khối "GIỌNG MỚI BỊ NHẠC NỀN DÌM" bên dưới.
+     (c) **LỖI "dịch còn có cả tiếng Trung không hiểu"**: `con_chu_goc()` dùng
+     lại `recap._has_cjk` + **CỬA NGÔN NGỮ ĐÍCH** (`NN_DUNG_CHU_CJK` =
+     zh/ja/ko/th/lo/my/km) — thiếu cửa đó là báo động giả 100% khi user dịch
+     SANG tiếng Trung. Câu còn sót -> `_dich_lai_sot` gửi kèm CHÍNH BẢN DỊCH
+     HỎNG cho model thấy nó vừa sai gì, tối đa 2 vòng, **chỉ NHẬN bản mới khi
+     nó thật sự SẠCH** (nhận bừa là đổi câu sót này lấy câu sót khác rồi tự
+     khen đã chữa). Còn sót thì BÁO RA (`sot_chu_goc_truoc/sau`), **KHÔNG tự ý
+     xoá câu** (xoá là mất tiếng = đúng lỗi (b)). Đo: **1/39 (2,6%) -> 0/38
+     (0,0%)**.
+     **CA 7 THỬ PHÁ**: đặt trần ký tự vô hạn (= quay về cách cũ) thì bảng phải
+     kêu — ra 2 dòng, dòng dài 66 ký tự > trần. Cổng không phải con dấu.
+- **GIỌNG MỚI BỊ NHẠC NỀN DÌM 9,3 dB — "chỗ có chỗ không nghe không được"
+  (15/08/2026).** Anh Hùng: *"phần tách âm thanh giọng nói, nó nói mà âm thanh
+  sau khi tách lỗi hết, chỗ có chỗ không nghe không được"*.
+  **BA GIẢ THUYẾT ĐẦU TIÊN ĐỀU SAI — ghi thẳng để đừng ai đi lại đường đó.**
+  Chạy `tach_giong(cach="demucs")` THẬT trên video anh Hùng gửi: lớp NHẠC im
+  trong khi gốc có tiếng **0 cửa sổ / 0,00 s / 0,0% video**; bảo toàn năng
+  lượng `căn(nhạc²+giọng²)` lệch gốc **−0,18 dB**; **không có chu kỳ mất tiếng
+  nào** -> KHÔNG phải ranh giới đoạn Demucs, KHÔNG phải chết giữa chừng, KHÔNG
+  phải ghép sai. Và bản anh Hùng đã xuất cũng **0,0 s im hẳn / 0,0 s tụt quá
+  20 dB** — *"chỗ có chỗ không"* KHÔNG phải im lặng.
+  **CHỖ HỎNG THẬT: bước TRỘN dùng HAI HẰNG SỐ đặt mò** `muc_giong_db=0` /
+  `muc_nhac_db=-2`, tức giả định lớp nhạc và giọng TTS vốn đã ngang nhau. Đo:
+
+  | | GỐC (Trung) | BẢN THAY TIẾNG |
+  |---|---|---|
+  | nhạc lúc đang nói | −12,1 dBFS | −11,4 dBFS |
+  | giọng lúc đang nói | −8,8 dBFS | **−20,6 dBFS** |
+  | **GIỌNG TRÊN NHẠC** | **+3,35 dB** | **−9,27 dB** |
+  | cửa sổ giọng chìm dưới nhạc | 8,7% | **93,5%** |
+
+  Nghe ra tiếng ở chỗ nào nhạc tình cờ lặng xuống = đúng chữ *"chỗ có chỗ
+  không"*. **PHẢI ĐO LÚC ĐANG NÓI, không phải RMS cả track** — track giọng
+  ~30% là im lặng nên RMS toàn bài thấp giả tạo (cùng bài học "nền đo bằng
+  `mean_volume`" của nhóm tiếng động).
+  **CHỮA:** `duong_bao_muc` + `can_bang_giong_nhac` (đo 2 lớp theo cửa sổ
+  0,2 s) -> `nen_lop_giong` -> **ĐO LẠI** -> nâng giọng/hạ nhạc -> nhạc NÉ
+  giọng bằng `sidechaincompress`. SỐ SAU: giọng trên nhạc **−7,32 -> +5,99
+  dB**, cửa sổ chìm **90,1% -> 7,9%**, đỉnh nhánh giọng đúng trần **−3,00
+  dBFS**, chạm trần bản trộn **36 -> 1 mẫu**.
+  **GIÁ PHẢI TRẢ, GHI THẲNG:** nhạc nền mất **−10,46 dB** (cũ −2,00) và bản
+  trộn nhỏ tiếng hơn **3,8 dB**. Không thể vừa giữ nguyên nhạc vừa nghe rõ lời
+  khi nguồn đã master **đỉnh 0,0 dBFS** — không còn chỗ trống nào để thêm
+  tiếng vào (đúng ca "BẤT KHẢ THI" đã ghi ở nhóm tiếng động).
+  **BỐN BẪY ĐO ĐÃ SẬP TRONG ĐÚNG VIỆC NÀY — mỗi cái một dạng "tự tin vào số
+  mình suy ra":**
+  · **đỉnh lấy từ đường bao RMS** ra −15,9 dBFS trong khi đỉnh THẬT (`astats
+    Peak level`) là **−5,33** — hụt **10,6 dB**. Nâng +12 dB theo số hụt đó
+    đẩy lớp giọng lên **+6,67 dBFS**, `alimiter` phải gọt 7,7 dB NGAY TRÊN
+    TIẾNG NÓI (chạm trần 36 -> **1.577 mẫu**).
+  · **suy ra đỉnh-sau-nén bằng công thức nén** ra −13,54 dBFS, đo thật
+    **−2,99** — lệch 10,6 dB, vì `attack=5ms` CHO LỌT đúng những phụ âm bật
+    tạo ra đỉnh. Nay nén ra FILE RIÊNG rồi ĐO LẠI (2 vòng đo, không phải 1).
+  · **`ratio` của `sidechaincompress` KHÔNG phải số dB tụt xuống.** Đặt đích
+    tụt 4 dB bằng công thức -> đo ra nhạc mất **10,42 dB**, giọng vọt
+    **+15,48 dB** (đích 10,0). Nay quét thật: ratio **1,3 -> −3,28 dB** · 1,6
+    -> −4,79 · 2,0 -> −5,75 · 3,0 -> −6,64. `DUCK_RATIO` là **hằng số ĐÃ ĐO**,
+    muốn đổi thì chạy lại bảng, đừng suy từ công thức.
+  · **quét 12 tổ hợp tham số nén ra CẢ 12 đều +5,55..+5,99 dB** — nén sâu hơn
+    thì vừa hạ đỉnh (được nâng nhiều hơn) vừa hạ luôn mức lời (phải nâng nhiều
+    hơn), triệt tiêu nhau. **Không có gì để "tối ưu" ở hai số đó**; cái chặn
+    thật là trần đỉnh và trần hạ nhạc, và đó là đánh đổi với NHẠC NỀN.
+  **`asplit` LÀM ĐỘ DÀI ĐẦU RA KHÔNG TIỀN ĐỊNH — lỗi thật, `kiem_video_ra`
+  bắt được.** Lấy tín hiệu khoá cho `sidechaincompress` bằng
+  `[gi]asplit=2[gi1][gikey]` rồi một nhánh vào bộ nén một nhánh vào
+  `amix=duration=first`: hai nhánh bị tiêu thụ ở NHỊP KHÁC NHAU nên EOF lan
+  tới `amix` sớm muộn tuỳ lượt. Chạy 3 lượt CÙNG một lệnh cùng file ra
+  **107,183 · 107,254 · 107,183 giây** (dây chuyền thật: **106,162** ->
+  `kiem_video_ra` ném *"lệch 1,093s"* và DỪNG trước khi đụng video gốc). rc=0,
+  không một dòng báo. CHỮA 2 lớp: mở CHÍNH FILE ĐÓ thêm một `-i` thứ ba (bỏ
+  nhánh dùng chung) + ép `apad,atrim=0:<tổng>` rồi `probe_duration` kiểm lại,
+  lệch quá 0,05 s thì NÉM. Đo lại **5/5 lượt ra đúng 107,253991**.
 - **BỎ ÉP NHANH (`atempo`) — CHỮA TẬN GỐC "NÓI KHÔNG MƯỢT" (v2.27.0,
   14/08/2026).** Anh Hùng nghe thật và báo *"phần sub thoại giọng lồng tiếng
   cảm giác KHÔNG KHỚP, KHÔNG MƯỢT, nói còn nhiều lỗi"*. Cổng 53/55 chỉ có MỘT
