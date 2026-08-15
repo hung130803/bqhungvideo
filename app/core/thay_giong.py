@@ -1251,6 +1251,11 @@ def _ten_nn(ma: str) -> str:
 #: đủ 37/37 ngay VÒNG 1 ở cả 3 lượt — vòng 2-3 chỉ là lưới an toàn.
 VONG_DOI_LAI = 3
 
+#: Số vòng dịch LẠI câu còn sót chữ gốc. Vòng nào LLM không đổi được câu nào
+#: thì dừng sớm — đốt thêm lượt Groq cho một model đang lặp lại chính nó là vô
+#: ích (và 300 kênh thì lượt nào cũng đáng tiền).
+CJK_VONG_TOI_DA = 2
+
 
 def _mang_llm(data) -> list:
     """Bóc mảng ra khỏi kiểu LLM hay trả ({"ket_qua": [...]} hoặc [...])."""
@@ -1307,6 +1312,76 @@ def _theo_nhan(data, chi_so: list[int], khoa: str) -> dict[int, object]:
     return ra
 
 
+#: Ngôn ngữ đích mà chữ CJK/Thái/Lào/Miến/Khmer trong bản dịch là ĐÚNG — với
+#: các tiếng này `_has_cjk` kêu là kêu ĐÚNG NGƯỜI, không phải sót.
+#: (`recap._CJK_CHARS` gom cả Thái/Lào/Miến/Khmer, xem chú thích ở đó.)
+NN_DUNG_CHU_CJK = frozenset({"zh", "ja", "ko", "th", "lo", "my", "km"})
+
+#: Luật ĐI KÈM MỌI prompt dịch. Tách hằng số để 3 chỗ (dịch loạt · dịch lại
+#: câu lệch nghĩa · dịch lại câu còn chữ gốc) không bao giờ lệch nhau.
+_LUAT_KHONG_SOT = (
+    "- TUYỆT ĐỐI KHÔNG để sót chữ của tiếng gốc trong bản dịch: không chữ "
+    "Hán, không kana, không hangul. Tên riêng cũng phải chuyển sang chữ của "
+    "ngôn ngữ đích.")
+
+
+def con_chu_goc(text: str, dich_sang: str) -> bool:
+    """Bản dịch CÒN SÓT chữ của tiếng gốc (Hán/kana/hangul) không?
+
+    Dùng lại `recap._has_cjk` (đừng viết bộ dò mới — cổng 52 đã hiệu chuẩn nó
+    trên corpus thật). Chỉ thêm CỬA NGÔN NGỮ ĐÍCH: dịch SANG tiếng Trung/Nhật/
+    Hàn/Thái… thì chữ đó là kết quả ĐÚNG, kêu lên là báo động giả 100%.
+
+    Hàm THUẦN — cổng gọi thẳng được, không cần mạng.
+    """
+    if ma_ngon_ngu(dich_sang) in NN_DUNG_CHU_CJK:
+        return False
+    from app.ai import recap
+    return recap._has_cjk(str(text or ""))
+
+
+def _dich_lai_sot(goc: list[str], dich: list[str], dich_sang: str,
+                  goc_ma: str) -> list[str]:
+    """Dịch LẠI riêng những câu còn sót chữ gốc, prompt siết chặt hơn.
+
+    Khác `_dich_loat`: gửi kèm CHÍNH BẢN DỊCH HỎNG để model thấy nó vừa làm
+    sai gì. Trả list cùng độ dài `goc`; câu nào không đòi được thì trả lại
+    đúng bản cũ (KHÔNG bịa, không xoá — caller còn đếm để báo cáo).
+    """
+    from app.ai import llm
+
+    ten_dich = _ten_nn(dich_sang)
+    items = [f'#{i} GỐC ({_ten_nn(goc_ma)}): "{g[:300]}"\n'
+             f'   BẢN DỊCH HỎNG (còn chữ gốc): "{d[:300]}"'
+             for i, (g, d) in enumerate(zip(goc, dich))]
+    system = ("Bạn là chuyên gia dịch THAY TIẾNG cho video. CHỈ trả JSON "
+              "thuần.")
+    prompt = (
+        f"Những bản dịch dưới đây BỊ LỖI: vẫn còn nguyên chữ của tiếng gốc "
+        f"nên người xem {ten_dich} không đọc/nghe được. Hãy dịch LẠI cho "
+        "đúng.\n"
+        f"{chr(10).join(items)}\n\n"
+        "QUY TẮC:\n"
+        f"- Dịch TOÀN BỘ sang {ten_dich}, văn NÓI tự nhiên.\n"
+        + _LUAT_KHONG_SOT + "\n"
+        "- Bản dịch phải dài xấp xỉ câu gốc, không thêm chú thích.\n"
+        f"- Trả MẢNG JSON {len(goc)} đối tượng "
+        '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
+        "BẮT BUỘC đủ MỌI số #."
+    )
+    try:
+        data = llm.complete_json(prompt, system=system)
+    except Exception:  # noqa: BLE001
+        return list(dich)
+    bang = _theo_nhan(data, list(range(len(goc))), "t")
+    ra = list(dich)
+    for i in range(len(goc)):
+        t = bang.get(i)
+        if isinstance(t, str) and t.strip():
+            ra[i] = t.strip()
+    return ra
+
+
 def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     """Dịch cả loạt câu trong 1 lượt LLM. Trả list cùng số phần tử."""
     from app.ai import llm
@@ -1330,10 +1405,13 @@ def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
             f"Dịch các câu thoại sau từ {_ten_nn(goc_ma)} sang {ten_dich}.\n"
             f"{chr(10).join(items)}\n\n"
             "QUY TẮC:\n"
-            f"- Dịch sang {ten_dich}, văn NÓI tự nhiên.\n"
+            f"- Dịch sang {ten_dich}, văn NÓI tự nhiên — viết như người thật "
+            "đang NÓI trong video, KHÔNG dịch máy móc từng chữ.\n"
+            "- Giữ giọng điệu của câu gốc (kể chuyện, giới thiệu, cảm thán).\n"
             "- ĐỌC LÊN phải lọt khung [số giây] của câu đó — dài quá thì lược "
             "từ đệm, GIỮ Ý CHÍNH.\n"
             "- KHÔNG thêm chú thích, không phiên âm.\n"
+            + _LUAT_KHONG_SOT + "\n"
             f"- Trả MẢNG JSON {len(con)} đối tượng "
             '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
             "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào, KHÔNG gộp hai câu."
@@ -1449,11 +1527,46 @@ def dich_hau_kiem(cau: list[dict], dich_sang: str, goc_ma: str = "",
                 diem[i] = diem_lai[j]
         tong_lam_lai += len(xau)
 
+    # --- HẬU KIỂM CHỮ GỐC CÒN SÓT (lỗi anh Hùng: "còn có cả tiếng Trung
+    # không hiểu"). Phải làm SAU vòng dịch-lại-theo-nghĩa: vòng đó có thể tự
+    # đẻ ra câu sót mới, và cũng có thể chữa hộ vài câu.
+    sot_dau = [i for i, t in enumerate(ban_dich)
+               if con_chu_goc(t, dich_sang)]
+    sot = list(sot_dau)
+    for _ in range(CJK_VONG_TOI_DA):
+        if not sot:
+            break
+        if on_progress:
+            on_progress(0.9, f"Dịch lại {len(sot)} câu còn sót chữ gốc...")
+        lai = _dich_lai_sot([goc_txt[i] for i in sot],
+                            [ban_dich[i] for i in sot], dich_sang, goc_ma)
+        doi = 0
+        for j, i in enumerate(sot):
+            # CHỈ NHẬN khi bản mới thật sự SẠCH — nhận bừa là đổi một câu sót
+            # lấy một câu sót khác rồi tự khen đã chữa (cùng luật "chỉ nhận
+            # bản rút gọn khi nó NGẮN HƠN thật" của bước 4b).
+            if lai[j] != ban_dich[i] and not con_chu_goc(lai[j], dich_sang):
+                ban_dich[i] = lai[j]
+                doi += 1
+        sot = [i for i in sot if con_chu_goc(ban_dich[i], dich_sang)]
+        if not doi:
+            break                    # LLM không nhúc nhích -> đừng đốt lượt
+    # CÒN SÓT THÌ NÓI RA, KHÔNG GIẤU: câu này sẽ được giọng đích đọc nguyên
+    # chữ Hán = đúng cái anh Hùng nghe thấy. Không tự ý xoá (xoá là mất câu,
+    # thành "chỗ có chỗ không").
+    con_sot = [i for i in range(len(ban_dich))
+               if con_chu_goc(ban_dich[i], dich_sang)]
+
     con_xau = sum(1 for d in diem if d < nguong)
     if on_progress:
         on_progress(1.0, "Dịch xong")
     return {
         "ban_dich": ban_dich,
+        "sot_chu_goc_truoc": len(sot_dau),
+        "sot_chu_goc_sau": len(con_sot),
+        "sot_chu_goc_cau": con_sot[:20],
+        "ty_le_sot_truoc": round(100.0 * len(sot_dau) / max(1, len(cau)), 1),
+        "ty_le_sot_sau": round(100.0 * len(con_sot) / max(1, len(cau)), 1),
         "diem": [round(float(d), 2) for d in diem],
         "phai_dich_lai": tong_lam_lai,
         "ty_le_dich_lai": round(100.0 * tong_lam_lai / max(1, len(cau)), 1),
@@ -1501,18 +1614,25 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
                         f"Đang đọc câu {xong['n']}/{len(texts)}...")
 
     t0 = time.time()
-    ok = asyncio.run(dubbing._synth_all(texts, voice, paths, on_done=_done))
+    # THU LUÔN MỐC TỪNG-TỪ (WordBoundary). Cùng một lượt gọi edge-tts, KHÔNG
+    # tốn thêm giây mạng nào — `_synth_all_words` chỉ đọc thêm loại chunk mà
+    # server vẫn gửi. Đây là hạ tầng app đã có sẵn cho phụ đề recap; đường
+    # THAY TIẾNG trước nay vứt nó đi rồi đổ cả cụm 3 dòng ra một lúc.
+    ok, moc_tu = asyncio.run(
+        dubbing._synth_all_words(texts, voice, paths, on_done=_done))
     # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
     # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
     # độ dài file có kèm ~1,07 s im lặng của edge-tts.
     if on_progress:
         on_progress(0.95, "Cắt lề im lặng đầu/cuối câu...")
-    sach, le = cat_le_loat(paths, list(ok), out_dir / "sach")
+    sach, le = cat_le_loat(paths, list(ok), out_dir / "sach", moc_tu=moc_tu)
     return {
         "files": sach, "files_tho": paths, "ok": list(ok), "voice": voice,
         "giay": round(time.time() - t0, 2),
         "so_hong": sum(1 for x in ok if not x),
         "cat_le": le,
+        "moc_tu": moc_tu,
+        "so_cau_co_moc": sum(1 for m in moc_tu if m),
     }
 
 
@@ -1581,21 +1701,36 @@ def do_le_im(path: str | Path, nguong_db: float = NGUONG_IM_DB,
 
 def cat_le_im(src: str | Path, dst: str | Path,
               nguong_db: float = NGUONG_IM_DB) -> float:
-    """Cắt lề im lặng hai đầu file TTS -> wav. Trả độ dài THẬT sau khi cắt.
+    """Cắt lề im lặng hai đầu file TTS -> wav. Trả độ dài THẬT sau khi cắt."""
+    return cat_le_im_moc(src, dst, nguong_db)[0]
+
+
+def cat_le_im_moc(src: str | Path, dst: str | Path,
+                  nguong_db: float = NGUONG_IM_DB) -> tuple[float, float]:
+    """Như `cat_le_im` nhưng trả THÊM số giây đã cắt Ở ĐẦU.
+
+    Trả `(độ dài sau cắt, giây cắt đầu)`.
+
+    **VÌ SAO CẦN SỐ THỨ HAI:** mốc WordBoundary của edge-tts đo trên file mp3
+    GỐC. Cắt mất `a` giây đầu rồi mà không trừ lại thì MỌI mốc từ lệch đúng
+    `a` giây (đo được 0,16-0,20 s — đủ để chữ chạy trước tiếng thấy rõ). Đây
+    là chỗ duy nhất biết `a`, nên nó phải nói ra chứ không nuốt.
 
     KHÔNG BAO GIỜ trả file rỗng: đo hỏng, hoặc cắt xong còn dưới 0,08 giây
-    (câu chỉ có tiếng thở / TTS hỏng) -> giữ NGUYÊN bản gốc. Độ dài trả về
-    luôn là số ĐO LẠI trên file đã ghi, không phải số dự kiến (bẫy "ffmpeg mã
-    0 nhưng file rỗng").
+    (câu chỉ có tiếng thở / TTS hỏng) -> giữ NGUYÊN bản gốc, và khi đó giây
+    cắt đầu là **0,0** (phải trả đúng 0, không phải `a` dự kiến — trả số dự
+    kiến là dời mốc của một phép cắt KHÔNG XẢY RA).
     """
     src, dst = Path(src), Path(dst)
     dau, cuoi, tong = do_le_im(src, nguong_db)
     a = max(0.0, dau - GIU_DAU)
     b = max(a + 0.01, tong - max(0.0, cuoi - GIU_CUOI))
     af = ["aresample=44100"]
+    da_cat = 0.0
     if tong > 0 and (a > 0.005 or b < tong - 0.005) and (b - a) >= 0.08:
         af.append(f"atrim=start={a:.3f}:end={b:.3f}")
         af.append("asetpts=N/SR/TB")
+        da_cat = a
     _ffmpeg(["-i", str(src), "-af", ",".join(af), "-ac", "1", "-ar", "44100",
              "-c:a", "pcm_s16le", str(dst)], f"cắt lề im {src.name}")
     d = probe_duration(dst)
@@ -1604,15 +1739,42 @@ def cat_le_im(src: str | Path, dst: str | Path,
                  "-ar", "44100", "-c:a", "pcm_s16le", str(dst)],
                 f"giữ nguyên {src.name}")
         d = probe_duration(dst)
-    return d
+        da_cat = 0.0
+    return d, da_cat
+
+
+def doi_moc_tu(moc: list, tru: float, dai: float = 0.0) -> list:
+    """Dời mốc từng-từ về sau khi CẮT `tru` giây ở đầu file. Hàm THUẦN.
+
+    Mốc âm (từ nằm trọn trong phần vừa cắt — không xảy ra với lề IM nhưng cứ
+    chặn) bị kẹp về 0; kẹp trần theo `dai` nếu có.
+    """
+    ra = []
+    for m in moc or ():
+        try:
+            a, b, w = float(m[0]) - tru, float(m[1]) - tru, m[2]
+        except (TypeError, ValueError, IndexError):
+            continue
+        a = max(0.0, a)
+        b = max(a, b)
+        if dai > 0:
+            a, b = min(a, dai), min(b, dai)
+        ra.append([round(a, 3), round(b, 3), w])
+    return ra
 
 
 def cat_le_loat(files: list[str], ok: list[bool], out_dir: str | Path,
-                tien_to: str = "sach") -> tuple[list[str], dict]:
+                tien_to: str = "sach",
+                moc_tu: Optional[list] = None) -> tuple[list[str], dict]:
     """Cắt lề cho cả loạt câu. Trả (files_mới, số đo).
 
     Câu TTS hỏng (`ok[i]` False) giữ nguyên đường dẫn cũ — caller vẫn bỏ nó
     theo `ok`, không được để lệch chỉ số.
+
+    `moc_tu` (nếu truyền) là list mốc từng-từ theo CÂU, **sửa TẠI CHỖ**: mỗi
+    câu bị dời đúng số giây vừa cắt ở đầu. Sửa tại chỗ chứ không trả bản mới
+    vì hàm này đã có 2 giá trị trả về và 3 nơi gọi — thêm cái thứ ba là chỗ
+    nào quên nhận cái đó thì mốc lệch IM LẶNG.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1626,8 +1788,10 @@ def cat_le_loat(files: list[str], ok: list[bool], out_dir: str | Path,
             continue
         d0 = probe_duration(f)
         dst = out_dir / f"{tien_to}_{i:04d}.wav"
-        d1 = cat_le_im(f, dst)
+        d1, cat_dau = cat_le_im_moc(f, dst)
         ra[i] = str(dst)
+        if moc_tu is not None and i < len(moc_tu):
+            moc_tu[i] = doi_moc_tu(moc_tu[i], cat_dau, d1)
         truoc_tong += d0
         sau_tong += d1
         cat_tong += max(0.0, d0 - d1)
@@ -1777,6 +1941,11 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
     texts = list(texts)
     files = list(tts["files"])
     ok = list(tts["ok"])
+    # Mốc từng-từ đi KÈM file: câu nào bị thay file thì mốc cũ VÔ GIÁ TRỊ,
+    # phải thay theo. Quên chỗ này là chữ chạy theo lời của bản CHƯA rút gọn.
+    moc_tu = [list(m) for m in (tts.get("moc_tu") or [[] for _ in texts])]
+    while len(moc_tu) < len(texts):
+        moc_tu.append([])
 
     def _can_tempo() -> list[float]:
         """Hệ số atempo CẦN cho từng câu (1.0 = lọt khung sẵn)."""
@@ -1820,10 +1989,11 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         import asyncio
         from app.core import dubbing
         v = voice or giong_theo_ngon_ngu(dich_sang)
-        ok2 = asyncio.run(dubbing._synth_all(thu, v, paths))
+        ok2, mt2 = asyncio.run(dubbing._synth_all_words(thu, v, paths))
         # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
         # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
-        paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}")
+        paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
+                                 moc_tu=mt2)
 
         for j, m in enumerate(muc):
             i = m["i"]
@@ -1834,6 +2004,7 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                 continue                       # không ngắn hơn -> GIỮ bản cũ
             texts[i] = thu[j]
             files[i] = paths[j]
+            moc_tu[i] = mt2[j]
             ok[i] = True
             so_sua += 1
 
@@ -1844,6 +2015,7 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
 
     return {
         "texts": texts, "files": files, "ok": ok, "so_sua": so_sua,
+        "moc_tu": moc_tu,
         "tempo_can_max_truoc": _mx(truoc), "tempo_can_max_sau": _mx(sau),
         "so_cau_vuot_truoc": sum(1 for t in truoc if t > nguong_tempo),
         "so_cau_vuot_sau": sum(1 for t in sau if t > nguong_tempo),
@@ -1888,6 +2060,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
                         ok: list[bool], tong: float, out_dir: str | Path,
                         dich_sang: str = "en", voice: str = "",
                         nguong: float = NGUONG_DOC_NHANH,
+                        moc_tu: Optional[list] = None,
                         on_progress: Optional[Callable[[float, str], None]] = None,
                         ) -> dict:
     """Câu nào vẫn dài quá khung -> ĐỌC LẠI bằng chính giọng đó, NHANH HƠN.
@@ -1904,6 +2077,9 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     out_dir.mkdir(parents=True, exist_ok=True)
     files = list(files)
     ok = list(ok)
+    moc_tu = [list(m) for m in (moc_tu or [[] for _ in files])]
+    while len(moc_tu) < len(files):
+        moc_tu.append([])
 
     def _can() -> list[float]:
         ra = []
@@ -1919,7 +2095,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     truoc = _can()
     xau = [i for i, t in enumerate(truoc) if t > nguong]
     if not xau:
-        return {"files": files, "ok": ok, "so_doc_lai": 0,
+        return {"files": files, "ok": ok, "so_doc_lai": 0, "moc_tu": moc_tu,
                 "can_truoc": [round(t, 3) for t in truoc],
                 "can_sau": [round(t, 3) for t in truoc], "rate_max": 0}
 
@@ -1933,8 +2109,11 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
                 max(1, int(round((truoc[i] - 1.0) * 100)) + RATE_BU))
         rates.append(f"+{r}%")
         paths.append(str(out_dir / f"nhanh_{i:04d}.mp3"))
-    ok2 = asyncio.run(dubbing._synth_all(thu, v, paths, rate=rates))
-    sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach")
+    # `rate` chỉ đổi TỐC ĐỌC của model; WordBoundary server trả theo audio
+    # THẬT (đã áp rate) nên mốc từng-từ vẫn đúng, KHÔNG phải bù lại.
+    ok2, mt2 = asyncio.run(
+        dubbing._synth_all_words(thu, v, paths, rate=rates))
+    sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0
     for j, i in enumerate(xau):
@@ -1945,12 +2124,13 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
         if d_moi <= 0.05 or d_moi >= d_cu - 0.02:
             continue                       # không ngắn hơn -> GIỮ bản cũ
         files[i] = sach[j]
+        moc_tu[i] = mt2[j]
         ok[i] = True
         so += 1
 
     sau = _can()
     return {
-        "files": files, "ok": ok, "so_doc_lai": so,
+        "files": files, "ok": ok, "so_doc_lai": so, "moc_tu": moc_tu,
         "can_truoc": [round(t, 3) for t in truoc],
         "can_sau": [round(t, 3) for t in sau],
         "can_max_truoc": round(max(truoc or [1.0]), 3),
@@ -1983,6 +2163,7 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
                    tong: float, out_dir: str | Path,
                    tempo_canh_bao: float = TEMPO_CANH_BAO,
                    tempo_toi_da: float = TEMPO_TOI_DA,
+                   moc_tu: Optional[list] = None,
                    on_progress: Optional[Callable[[float, str], None]] = None,
                    ) -> dict:
     """Đặt từng câu đã đọc vào ĐÚNG mốc gốc, co giãn khi cần.
@@ -2027,6 +2208,8 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
 
     manh: list[tuple[float, str]] = []
     moc_tieng: list[tuple[int, float, float]] = []
+    #: [(chỉ số câu, [[giây_bắt_đầu, giây_hết, từ], ...])] — TIMELINE ĐẦU RA.
+    moc_tu_ra: list[tuple[int, list]] = []
     lech_dau: list[float] = []
     lech_cuoi: list[float] = []
     im_duoi: list[float] = []
@@ -2098,6 +2281,29 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         t_noi_b = a + max(le_d + 0.05, d_fin - le_c)
         moc_tieng.append((i, round(t_noi_a, 3), round(t_noi_b, 3)))
 
+        # MỐC TỪNG-TỪ -> TIMELINE ĐẦU RA. Hai đường tỉ lệ KHÁC NHAU, đừng gộp:
+        #  · không cắt đuôi -> lấy `d_fin/d_nat` ĐO THẬT (atempo/aresample làm
+        #    tròn khác `1/tempo`, dùng số đo thì hết phải tin lời hứa);
+        #  · CÓ cắt đuôi -> `d_fin` là chiều dài SAU KHI CẮT nên `d_fin/d_nat`
+        #    sẽ nén cả câu lại (chữ chạy nhanh hơn tiếng); phải dùng `1/tempo`
+        #    rồi VỨT những từ rơi ra ngoài phần đã cắt.
+        mt = (moc_tu[i] if moc_tu is not None and i < len(moc_tu) else None)
+        if mt:
+            if cat_lan:
+                ty_le = 1.0 / max(1e-6, tempo)
+            else:
+                ty_le = (d_fin / d_nat) if d_nat > 0 \
+                    else 1.0 / max(1e-6, tempo)
+            ds = []
+            for w in mt:
+                wa, wb = float(w[0]) * ty_le, float(w[1]) * ty_le
+                if wa >= d_fin - 1e-3:
+                    break                     # từ này nằm trong phần bị cắt
+                ds.append([round(a + wa, 3), round(a + min(wb, d_fin), 3),
+                           w[2]])
+            if ds:
+                moc_tu_ra.append((i, ds))
+
         manh.append((a, str(dst)))
         temps.append(tempo)
         lech_dau.append(le_d * 1000.0)        # LỆCH ĐẦU THẬT (bản cũ bịa 0,0)
@@ -2118,6 +2324,8 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     return {
         "manh": manh,
         "moc_tieng": moc_tieng,
+        "moc_tu": moc_tu_ra,
+        "so_cau_co_moc_tu": len(moc_tu_ra),
         "so_cau": len(manh), "bo_qua": bo_qua,
         "lech_dau_ms_tb": _tb([abs(x) for x in lech_dau]),
         "lech_dau_ms_max": round(max([abs(x) for x in lech_dau] or [0]), 1),
@@ -2521,29 +2729,194 @@ CHU_TOI_THIEU_S = 0.90
 #: Chừa lại trước mốc nói của câu KẾ — chữ hai câu dính nhau nhìn như nhảy.
 CHU_CHUA_TRUOC_S = 0.06
 
+#: TRẦN KÝ TỰ MỖI LẦN HIỆN CHỮ — con số anh Hùng nhìn thấy trực tiếp.
+#: Ảnh anh ấy gửi 15/08 là **MỘT KHỐI 3 DÒNG / 131 ký tự** đổ ra cùng lúc.
+#: Chọn bằng SỐ ĐO (`_do_cum_chu.py`, 39 câu bản dịch THẬT của chính video
+#: đó), không đoán: xem bảng ở `chia_cum_theo_tu`.
+TRAN_KY_TU_CUM = 30
 
-def dong_chu_theo_giong(moc_tieng: list, texts: list) -> list:
-    """[(bắt_đầu, kết_thúc, chữ)] cho `che_chu.ghi_ass` — MỐC TỪ GIỌNG.
+#: Cụm ngắn hơn mức này thì GỘP với cụm kế — 2 chữ chớp 0,2 giây còn khó đọc
+#: hơn cả câu dài. Gộp chứ không giãn: giãn là lấn sang cụm sau.
+CUM_TOI_THIEU_S = 0.45
+
+#: Dấu ngắt câu (cả dạng nửa-độ-rộng lẫn CJK) — cắt cụm ở đây thì câu không
+#: bị đứt giữa mệnh đề.
+_DAU_NGAT = ",.!?;:…，。！？；：、"
+
+
+def _khop_tu_vao_chu(text: str, moc: list) -> list:
+    """Gắn từng mốc-từ vào ĐÚNG vị trí ký tự của nó trong `text`. Hàm THUẦN.
+
+    Trả `[(char_dau, char_cuoi, giây_a, giây_b)]`. Từ nào không tìm thấy trong
+    text (edge-tts đôi khi trả từ đã chuẩn hoá) thì BỎ QUA chứ không đoán —
+    các từ còn lại vẫn đủ để chia cụm, còn đoán bừa là chữ nhảy lung tung.
+
+    Đi TIẾN theo con trỏ nên từ lặp lại (`the ... the`) vẫn khớp đúng lần
+    xuất hiện của nó, không dính về lần đầu.
+    """
+    ra: list = []
+    cur = 0
+    thap = text.lower()
+    for m in moc or ():
+        try:
+            w = str(m[2] or "").strip()
+            a, b = float(m[0]), float(m[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not w:
+            continue
+        j = text.find(w, cur)
+        if j < 0:
+            j = thap.find(w.lower(), cur)
+        if j < 0:
+            continue
+        ra.append((j, j + len(w), a, b))
+        cur = j + len(w)
+    return ra
+
+
+def chia_cum_theo_tu(text: str, moc: list, tran: int = TRAN_KY_TU_CUM,
+                     ) -> list:
+    """Cắt `text` thành CỤM <= `tran` ký tự, mốc lấy từ WordBoundary. THUẦN.
+
+    Trả `[(giây_bắt_đầu, giây_hết_TỪ CUỐI của cụm, chữ)]` — mốc còn THÔ (chưa
+    nối liền cụm), `dong_chu_theo_giong` mới là chỗ chốt khung hiển thị.
+
+    `moc` rỗng / không khớp được từ nào -> trả `[]`, caller tự lùi về cách
+    chia theo TỈ LỆ KÝ TỰ (vẫn cắt ngắn được, chỉ kém chính xác hơn).
+
+    **CẮT Ở DẤU NGẮT KHI CÓ THỂ:** đủ 60% ngân sách mà gặp dấu phẩy/chấm thì
+    cắt luôn — cụm trùng với mệnh đề thì đọc lướt một cái là hiểu, còn cắt
+    giữa mệnh đề thì mắt phải chờ cụm sau.
+    """
+    text = str(text or "")
+    tu = _khop_tu_vao_chu(text, moc)
+    if not tu:
+        return []
+    cum: list[list] = []          # [char_dau, char_cuoi, a, b]
+    for c0, c1, a, b in tu:
+        if not cum:
+            cum.append([c0, c1, a, b])
+            continue
+        cuoi = cum[-1]
+        dai = c1 - cuoi[0]
+        # ký tự ngay sau từ vừa xong (bỏ qua khoảng trắng) là dấu ngắt?
+        sau = text[cuoi[1]:c0].strip()
+        ngat = bool(sau) and sau[-1] in _DAU_NGAT
+        if dai > tran or (ngat and (cuoi[1] - cuoi[0]) >= tran * 0.6):
+            cum.append([c0, c1, a, b])
+        else:
+            cuoi[1], cuoi[3] = c1, b
+    ra: list = []
+    for k, (c0, c1, a, b) in enumerate(cum):
+        # LẤY CẢ PHẦN GIỮA HAI CỤM (dấu câu, khoảng trắng) vào cụm TRƯỚC —
+        # không thì dấu phẩy/chấm biến mất khỏi chữ hiện lên.
+        het = cum[k + 1][0] if k + 1 < len(cum) else len(text)
+        # cụm ĐẦU lấy luôn phần mở đầu bị edge-tts bỏ (dấu ngoặc kép...)
+        bd = 0 if k == 0 else c0
+        s = text[bd:het].strip()
+        if s:
+            ra.append((round(a, 3), round(b, 3), s))
+    return ra
+
+
+def chia_cum_theo_ty_le(text: str, a: float, b: float,
+                        tran: int = TRAN_KY_TU_CUM) -> list:
+    """ĐƯỜNG LÙI khi không có mốc từ: cắt theo ký tự, chia đều theo TỈ LỆ.
+
+    Kém chính xác hơn WordBoundary (giả định đọc đều), nhưng vẫn giải đúng
+    việc anh Hùng kêu — không đổ cả khối 3 dòng ra một lúc. Hàm THUẦN.
+    """
+    from app.core import dubbing
+
+    text = str(text or "").strip()
+    if not text:
+        return []
+    tu = dubbing._tach_tu(text) or [text]
+    cum: list[str] = []
+    for w in tu:
+        if cum and len(cum[-1]) + 1 + len(w) <= tran:
+            cum[-1] = dubbing._noi_tu([cum[-1], w])
+        else:
+            cum.append(w)
+    tong_kt = sum(len(c) for c in cum) or 1
+    ra: list = []
+    t = float(a)
+    dai = max(0.05, float(b) - float(a))
+    for c in cum:
+        d = dai * len(c) / tong_kt
+        ra.append((round(t, 3), round(t + d, 3), c))
+        t += d
+    return ra
+
+
+def dong_chu_theo_giong(moc_tieng: list, texts: list,
+                        moc_tu: Optional[list] = None,
+                        tran: int = TRAN_KY_TU_CUM) -> list:
+    """[(bắt_đầu, kết_thúc, chữ)] cho `che_chu.ghi_ass` — CHỮ CHẠY THEO LỜI.
 
     `moc_tieng` = `khop_thoi_gian()["moc_tieng"]` = [(i, giây_nói, giây_hết)]
     ĐO bằng `silencedetect` trên chính file wav đã khớp. `texts` = lời CUỐI
     CÙNG app đọc lên (`rut_gon_vua_khung()["texts"]`).
+    `moc_tu` = `khop_thoi_gian()["moc_tu"]` = [(i, [[a, b, từ], ...])] đã ở
+    TIMELINE ĐẦU RA.
+
+    **VÌ SAO ĐỔI (anh Hùng 15/08):** *"nó che nhưng mà không khớp, kiểu nói
+    đến đâu chữ hiện đến đó chứ không hiện hàng loạt ra chữ như thế kia"*.
+    Bản cũ trả ĐÚNG MỘT dòng cho cả câu -> khung câu 9,6 giây thì 131 ký tự
+    (3 dòng) đứng im 9,6 giây. Nay mỗi câu bị cắt thành nhiều CỤM <= `tran`
+    ký tự, mốc lấy từ WordBoundary của chính giọng vừa đọc.
+
+    **KHÔNG DÙNG THẺ KARAOKE `\\k`** — đã cân nhắc và LOẠI, lý do đo được ghi
+    ở `_do_cum_chu.py`: `\\k` vẫn để NGUYÊN cả khối 3 dòng trên màn hình (chỉ
+    đổi màu dần), tức KHÔNG giải được đúng câu anh Hùng kêu; và libass phải
+    có style 2 màu, nền/trình phát nào nuốt thẻ là ra một khối chữ đứng im —
+    hỏng ÂM THẦM. Cụm nối tiếp thì mọi trình phát đều hiểu.
 
     Hàm THUẦN, không đụng đĩa — để cổng thử phá gọi thẳng được: đưa mốc GỐC
     (`cau[i]["start"]`) vào đây là bảng lệch phải ĐỎ.
     """
+    bang_tu = {int(i): ds for i, ds in (moc_tu or ())}
     ra: list = []
     n = len(moc_tieng)
     for k, (i, a, b) in enumerate(moc_tieng):
         t = str(texts[i]).strip() if 0 <= i < len(texts) else ""
         if not t:
             continue
-        b = max(float(b), float(a) + CHU_TOI_THIEU_S)
-        if k + 1 < n:                      # KHÔNG được lấn sang câu kế
-            b = min(b, float(moc_tieng[k + 1][1]) - CHU_CHUA_TRUOC_S)
-        if b <= a:
-            b = float(a) + 0.20
-        ra.append((round(float(a), 3), round(b, 3), t))
+        a, b = float(a), float(b)
+        # TRẦN CỨNG của câu này: không bao giờ lấn sang mốc nói của câu kế.
+        tran_cuoi = (float(moc_tieng[k + 1][1]) - CHU_CHUA_TRUOC_S
+                     if k + 1 < n else None)
+        het_cau = max(b, a + CHU_TOI_THIEU_S)
+        if tran_cuoi is not None:
+            het_cau = min(het_cau, tran_cuoi)
+        if het_cau <= a:
+            het_cau = a + 0.20
+
+        cum = chia_cum_theo_tu(t, bang_tu.get(int(i)) or [], tran)
+        if not cum:
+            cum = chia_cum_theo_ty_le(t, a, b, tran)
+        if not cum:
+            continue
+        # GỘP cụm quá ngắn vào cụm sau — chữ chớp 0,2 giây khó đọc hơn cả câu
+        # dài, mà GIÃN thì lấn sang cụm sau (2 dòng chữ cùng lúc).
+        gop: list[list] = []
+        for ca, cb, cs in cum:
+            if gop and (ca - gop[-1][0]) < CUM_TOI_THIEU_S:
+                gop[-1][1] = cb
+                gop[-1][2] = f"{gop[-1][2]} {cs}".strip()
+            else:
+                gop.append([ca, cb, cs])
+        # KHUNG HIỂN THỊ: cụm này hiện tới lúc cụm SAU bắt đầu (không hở,
+        # không chồng). Cụm cuối chạy tới hết tiếng của câu.
+        for j, (ca, _cb, cs) in enumerate(gop):
+            ket = gop[j + 1][0] if j + 1 < len(gop) else het_cau
+            if tran_cuoi is not None:
+                ket = min(ket, tran_cuoi)
+            ca = max(a, min(ca, het_cau))
+            if ket <= ca:
+                continue
+            ra.append((round(ca, 3), round(ket, 3), cs))
     return ra
 
 
@@ -2677,6 +3050,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         prog(0.79, "Đọc nhanh lại câu còn dài quá khung...")
         dn = doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"], tong,
                                  tam_goc / "docnhanh", dich_sang, tts["voice"],
+                                 moc_tu=rg.get("moc_tu"),
                                  on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
         kq["doc_nhanh"] = {k: v for k, v in dn.items()
                            if k not in ("files", "ok", "can_truoc", "can_sau")}
@@ -2684,7 +3058,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # --- bước 5: khớp thời gian
         prog(0.80, "Khớp thời gian...")
         kh = khop_thoi_gian(cau, dn["files"], dn["ok"], tong,
-                            tam_goc / "khop",
+                            tam_goc / "khop", moc_tu=dn.get("moc_tu"),
                             on_progress=lambda p, m: prog(0.80 + 0.10 * p, m))
         kq["khop"] = {k: v for k, v in kh.items() if k != "manh"}
         if not kh["manh"]:
@@ -2711,10 +3085,17 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # CHỮ MỚI LẤY MỐC TỪ CHÍNH FILE GIỌNG (`kh["moc_tieng"]` đo bằng
         # silencedetect), KHÔNG lấy `cau[i]["start"]` của bản chép lời gốc.
         # Đây là cả điểm mấu chốt của bản vá: một nguồn mốc duy nhất.
-        dong_chu = dong_chu_theo_giong(kh.get("moc_tieng") or [],
-                                       rg["texts"]) if viet_chu else []
-        kq["chu_theo_giong"] = {"bat": bool(viet_chu),
-                                "so_dong": len(dong_chu)}
+        dong_chu = dong_chu_theo_giong(
+            kh.get("moc_tieng") or [], rg["texts"],
+            moc_tu=kh.get("moc_tu")) if viet_chu else []
+        kq["chu_theo_giong"] = {
+            "bat": bool(viet_chu), "so_dong": len(dong_chu),
+            "so_cau": len(kh.get("moc_tieng") or []),
+            "so_cau_co_moc_tu": kh.get("so_cau_co_moc_tu", 0),
+            "tran_ky_tu": TRAN_KY_TU_CUM,
+            "ky_tu_tb": round(sum(len(d[2]) for d in dong_chu)
+                              / max(1, len(dong_chu)), 1),
+            "ky_tu_max": max([len(d[2]) for d in dong_chu] or [0])}
         thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
                          che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
                          che_chu_log=_cc_log, dong_chu=dong_chu)
