@@ -74,6 +74,13 @@ TIEN_TO = (
     # 10 thư mục sót = 1,3 MB — nhỏ, nhưng đúng cái bệnh đã làm ổ C đầy 100%.
     "test_hu_khung_", "test_tieng_hu_", "_dohu_", "_tienghu_", "_dotieng_",
     "_dothu_", "_dochiphi_",
+    # ── NHÓM THAY GIỌNG (cổng 53/55/57) — RÁC NẶNG NHẤT TỪ TRƯỚC TỚI NAY ──
+    # 15/08/2026: `tg_gate_` KHÔNG có tên trong danh sách này, nên khi cổng 53
+    # bị `timeout` giết 3 lần thì KHÔNG một lớp nào dọn hộ. Mỗi lượt để lại
+    # **80-131 GB** (một lệnh ffmpeg viết wav vô hạn, đo 115,4 MB/giây),
+    # `%TEMP%` lên **420 GB**, ổ C **đầy 100% / 0 byte**. Ba cổng này chạy
+    # Demucs + ffmpeg + wav PCM KHÔNG NÉN nên phải có tên ở đây.
+    "tg_gate_", "tgui_", "tgbang_",
 )
 
 

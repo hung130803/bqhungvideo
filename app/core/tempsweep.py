@@ -46,6 +46,15 @@ RAC_TEMP: tuple[tuple[str, bool, float, str], ...] = (
     # 2 giờ mới dọn: job xếp hàng vẫn cần đúng file này để dựng lại lớp chữ.
     ("_ovl_*", None, 2.0, "ảnh lớp chữ tiêu đề/Part"),
     ("bq_dbcopy*", True, 2.0, "bản sao DB để kiểm tra"),
+    # Hộp cát của nhóm cổng THAY GIỌNG. Chúng chứa wav PCM **không nén** +
+    # bản tách Demucs nên là loại rác NẶNG NHẤT: 15/08/2026 một lượt bị
+    # `timeout` giết bỏ lại **80-131 GB**, `%TEMP%` phình 420 GB và ổ C đầy
+    # 100%. Máy dev CHÍNH LÀ máy anh Hùng, nên bộ dọn của app phải biết mặt
+    # chúng — đừng trông chờ mỗi cổng tự dọn (cái làm đầy ổ chính là lượt
+    # KHÔNG dọn được).
+    ("tg_gate_*", True, 2.0, "hộp cát cổng 53 thay giọng"),
+    ("tgui_*", True, 2.0, "hộp cát cổng 55 thay giọng UI"),
+    ("tgbang_*", True, 2.0, "hộp cát cổng 57 bảng tiến độ"),
 )
 
 _GIU_BAN_DB = 3          # giữ 3 bản studio_*.db / .corrupt mới nhất

@@ -23,17 +23,128 @@ CÁC CA:
 """
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = str(Path(__file__).resolve().parent)   # KHÔNG ghi cứng đường repo
 sys.path.insert(0, REPO)
 
-T = tempfile.mkdtemp(prefix="tg_gate_")
+# stdout chuyển hướng ra file/pipe thì Python lấy **cp1252**, và dòng `print`
+# tiếng Việt ĐẦU TIÊN ném `UnicodeEncodeError` -> cổng chết trong 0-1 giây với
+# mã thoát 1 trong khi mã app không sai chỗ nào. `_test_guard` có vá sẵn,
+# NHƯNG khối dọn hộp cát dưới đây chạy TRƯỚC nó (phải vậy: dọn xong mới tạo
+# hộp mới) nên phải tự vá ở đây. Đã sập đúng bẫy này 15/08/2026 ngay trong
+# lượt kiểm bản vá dọn rác.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001
+    pass
+
+# ==================================================================
+# HỘP CÁT PHẢI DỌN ĐƯỢC **KỂ CẢ KHI CỔNG BỊ GIẾT** — 15/08/2026
+# ==================================================================
+# CHUYỆN ĐÃ XẢY RA THẬT: cổng này bị `timeout` giết 3 lần. Phần dọn nằm ở
+# CUỐI FILE (dòng thẳng, không `finally`, không `atexit`) nên không lượt nào
+# chạy tới nó -> mỗi lượt bỏ lại một hộp cát **80-131 GB**, `%TEMP%` phình
+# **420 GB**, ổ C **đầy 100% / 0 byte**, ffmpeg báo `No space left on device`.
+#
+# BA LỚP, KHÔNG PHẢI MỘT — mỗi lớp bịt một kiểu chết khác nhau:
+#   1. **DỌN HỘP CÁT CŨ LÚC KHỞI ĐỘNG — lớp CHẮC NHẤT, và là lớp duy nhất
+#      không cần tiến trình cũ hợp tác.** `timeout` giết bằng tín hiệu mà
+#      Windows KHÔNG bảo đảm cho chạy handler (bị `TerminateProcess` thì
+#      không một dòng Python nào chạy nữa), nên đừng đặt hết niềm tin vào
+#      lớp 2/3. Lớp này chỉ hỏi "PID chủ hộp cát còn sống không".
+#   2. `atexit` — thoát êm, `sys.exit`, ngoại lệ không ai bắt.
+#   3. `SIGTERM`/`SIGBREAK`/`SIGINT` — bị giết "tử tế".
+_TIEN_TO = "tg_gate_"
+
+
+def _con_song(pid: int) -> bool:
+    """PID còn sống không?
+
+    **TUYỆT ĐỐI KHÔNG dùng `os.kill(pid, 0)` để hỏi thăm trên Windows** —
+    CPython cài `os.kill` thành `TerminateProcess(handle, sig)`, nên "hỏi"
+    bằng tín hiệu 0 là **GIẾT THẬT** tiến trình đó với mã thoát 0. Không có
+    `psutil` thì trả True: không biết chắc -> GIỮ (luật chung của repo).
+    """
+    try:
+        import psutil
+    except ImportError:
+        return True
+    try:
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _don_hop_cat_cu() -> tuple[int, float]:
+    """Xoá hộp cát `tg_gate_*` của các tiến trình ĐÃ CHẾT. Trả (số, GB)."""
+    goc = Path(tempfile.gettempdir())
+    n, byte = 0, 0
+    try:
+        ds = list(goc.glob(_TIEN_TO + "*"))
+    except OSError:
+        return (0, 0.0)
+    for d in ds:
+        try:
+            if not d.is_dir():
+                continue
+            phan = d.name[len(_TIEN_TO):].split("_")[0]
+            if phan.isdigit():
+                # tên MỚI mang PID -> hỏi thẳng, không phải đoán theo tuổi
+                if int(phan) == os.getpid() or _con_song(int(phan)):
+                    continue
+            elif d.stat().st_mtime > time.time() - 7200:
+                continue        # tên kiểu CŨ (không PID) -> đợi đủ 2 giờ
+            byte += sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            shutil.rmtree(d, ignore_errors=True)
+            n += 1
+        except OSError:
+            continue
+    return (n, byte / 1073741824.0)
+
+
+_cu_n, _cu_gb = _don_hop_cat_cu()
+if _cu_n:
+    print(f"  dọn {_cu_n} hộp cát tg_gate_* còn sót của lượt TRƯỚC "
+          f"({_cu_gb:.2f} GB)")
+
+#: Tên mang PID để lượt sau biết chắc chủ nó chết hay chưa (cùng cách
+#: `ffmpeg_utils._tag_moi` đánh dấu mảnh `_seg_p<pid>…`).
+T = tempfile.mkdtemp(prefix=f"{_TIEN_TO}{os.getpid()}_")
+
+
+def _don_hop_cat(*_a) -> None:
+    """Xoá hộp cát của CHÍNH lượt này. Gọi bao nhiêu lần cũng được."""
+    shutil.rmtree(T, ignore_errors=True)
+
+
+def _bi_giet(_sig=None, _frame=None) -> None:
+    """Bị giết -> dọn rồi thoát THẲNG (đang trong handler, đừng dựng lại)."""
+    _don_hop_cat()
+    try:
+        sys.stdout.flush()
+    except Exception:  # noqa: BLE001
+        pass
+    os._exit(2)
+
+
+atexit.register(_don_hop_cat)
+for _ten_sig in ("SIGTERM", "SIGBREAK", "SIGINT"):
+    _sig_obj = getattr(signal, _ten_sig, None)
+    if _sig_obj is not None:
+        try:
+            signal.signal(_sig_obj, _bi_giet)
+        except (ValueError, OSError):
+            pass                 # không phải luồng chính -> bỏ qua
+
 os.environ["BQ_DATA_DIR"] = T
 os.environ["BQ_DB_PATH"] = str(Path(T) / "studio.db")
 os.environ["BQ_FFMPEG_SLOTS"] = "1"
@@ -53,10 +164,27 @@ def dat(dieu: str, ok: bool, chi_tiet: str = "") -> None:
           + (f" — {chi_tiet}" if chi_tiet else ""))
 
 
+#: Trần thời gian cho MỘT lệnh ffmpeg dựng nguồn của cổng này.
+#: **KHÔNG phải "chờ cho chắc" mà là VAN CHẶN.** Mọi nguồn ở đây là clip
+#: 1-3 giây nên 120 giây đã rộng gấp bội; con số này tồn tại để một lệnh
+#: ffmpeg lỡ viết VÔ HẠN không thể ghi quá ~14 GB trước khi bị giết (đo
+#: 15/08/2026: **115,4 MB/giây** -> chạy tự do 15 phút là **101 GB**).
+FF_HAN_GIAY = 120
+
+
 def ff(args: list[str]) -> int:
-    r = subprocess.run([settings.FFMPEG_PATH, "-y", "-hide_banner",
-                        "-loglevel", "error", *args],
-                       capture_output=True, text=True)
+    try:
+        r = subprocess.run([settings.FFMPEG_PATH, "-y", "-hide_banner",
+                            "-loglevel", "error", *args],
+                           capture_output=True, text=True,
+                           timeout=FF_HAN_GIAY)
+    except subprocess.TimeoutExpired:
+        # `subprocess.run` tự giết tiến trình con trước khi ném -> không để
+        # lại ffmpeg mồ côi đang bơm dữ liệu vào đĩa.
+        loi = f"ffmpeg quá {FF_HAN_GIAY}s, đã giết: {' '.join(args[:6])}"
+        FAIL.append(loi)
+        print(f"  [HỎNG] {loi}")
+        return 124
     return r.returncode
 
 
@@ -276,7 +404,15 @@ dat("dat DUNG moc dau (le im do duoc < 60 ms)", kh["lech_dau_ms_max"] < 60.0,
 d6b = d6 / "leim"
 d6b.mkdir(parents=True, exist_ok=True)
 p_im = d6b / "im.wav"
-ff(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.5",
+# `-t` PHẢI đứng TRƯỚC `-i` mà nó giới hạn — nó là tuỳ chọn ĐẦU VÀO, áp cho
+# đầu vào ĐƯỢC KHAI SAU NÓ. Bản cũ viết `-i anullsrc … -t 0.5 -i sine …` nên
+# 0,5 giây rơi vào SINE (vốn đã có `duration=1.0`), còn `anullsrc` **KHÔNG có
+# hạn nào = VÔ HẠN**; `concat` đọc đoạn 0 tới EOF mà EOF không bao giờ tới ->
+# ffmpeg bơm im lặng vào `im.wav` mãi mãi. ĐO 15/08/2026: **115,4 MB/giây**
+# (1.452.015.616 byte trong 12 giây). Đây chính là chỗ làm đầy ổ C 420 GB và
+# là chỗ cổng "treo ở CA 6" suốt 3 lượt — `ff()` cũ KHÔNG có hạn giờ nên nó
+# không treo vì mạng hay vì Demucs, nó treo vì đang ghi đĩa không điểm dừng.
+ff(["-f", "lavfi", "-t", "0.5", "-i", "anullsrc=r=44100:cl=stereo",
     "-f", "lavfi", "-i", "sine=frequency=300:duration=1.0",
     "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[o]", "-map", "[o]",
     "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(p_im)])

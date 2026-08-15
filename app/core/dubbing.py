@@ -58,6 +58,29 @@ _MAX_STRETCH = 1.5
 # Số cụm TTS chạy song song (edge-tts qua mạng)
 _TTS_PARALLEL = 4
 
+#: HẠN CHỜ (giây) cho MỘT lượt gọi edge-tts. `Communicate.save` KHÔNG tự đặt
+#: hạn: dịch vụ của Microsoft không trả lời là nó đợi VĨNH VIỄN — app đứng im,
+#: không xong, không báo lỗi. Ngoài đời là anh Hùng bấm Chạy rồi bảng đứng ở
+#: "Đang đọc" mãi mãi — một lượt hỏng CÓ BÁO còn đỡ hơn hẳn.
+#:
+#: **NÓI THẲNG BẢN VÁ NÀY CHỮA GÌ — VÀ KHÔNG CHỮA GÌ.** Nó ra đời vì nghi
+#: edge-tts làm cổng 53 CA 6 treo (3 lượt: 15 phút · 40 phút · lượt cuối chết
+#: vì hết đĩa). **NGHI SAI — đã kiểm và BÁC BỎ 15/08/2026:** CA 6 gọi
+#: `khop_thoi_gian` với wav dựng sẵn, **không đi qua một dòng edge-tts nào**
+#: (đường TTS chỉ ở `doc_ban_dich` / `rut_gon_vua_khung` /
+#: `doc_nhanh_vua_khung`). Thủ phạm thật là một lệnh ffmpeg của CHÍNH CỔNG ghi
+#: WAV **VÔ HẠN** — `-t 0.5` đặt SAU `-i anullsrc` nên hạn rơi vào đầu vào
+#: KHÁC, đo **115,4 MB/giây** (đủ 101 GB trong 15 phút). Sửa đúng chỗ đó xong
+#: cổng chạy trọn trong **5 giây**, và ổ đầy cũng KHÔNG phải nguyên nhân treo
+#: mà là HẬU QUẢ của cùng lệnh ffmpeg ấy.
+#: GIỮ bản vá này lại vì rủi ro nó chặn là RỦI RO THẬT và độc lập (máy nhân
+#: viên mạng chập chờn), nhưng **nó chưa từng được chứng minh bằng một lượt
+#: treo THẬT nào** — đừng ghi công cho nó việc nó không làm.
+#: 90 giây vì cụm dài nhất đo được ~23 giây tiếng; gấp ~4 lần là thoải mái cho
+#: mạng chậm mà vẫn thua xa ngưỡng người dùng bỏ cuộc. Hết hạn -> `TimeoutError`
+#: -> rơi vào `except` sẵn có -> THỬ LẠI, chứ không chết cả lượt.
+_TTS_HAN_GIAY = 90.0
+
 # 🎙 Reup thuyết minh — NHỊP KỂ user chọn (Cài đặt Reup) -> rate edge-tts.
 # Giá trị NHỎ có chủ đích: fit window (atempo) tự bù phần lệch, rate chỉ đổi
 # "đà" giọng đọc gốc (thong thả vs dồn dập) trước khi khớp khung.
@@ -1630,7 +1653,15 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
             comm = edge_tts.Communicate(txt, voice, **kw)
         except TypeError:               # bản edge-tts cổ không có pitch
             comm = edge_tts.Communicate(txt, voice, rate=rate)
-        await comm.save(out_mp3)
+        # HẠN CHỜ BẮT BUỘC. `comm.save` mở socket tới dịch vụ của Microsoft và
+        # KHÔNG tự đặt hạn — dịch vụ không trả lời (hoặc trả nhỏ giọt) là nó
+        # đợi VĨNH VIỄN: anh Hùng bấm Chạy -> bảng đứng ở "Đang đọc" mãi mãi,
+        # KHÔNG xong, KHÔNG báo lỗi — tệ hơn hẳn một lượt hỏng có báo.
+        # Vòng `for _ in range(2)` bên dưới đã có sẵn đường thử lại, nhưng nó
+        # chỉ chạy khi có NGOẠI LỆ; treo thì không bao giờ tới lượt nó.
+        # ĐÂY LÀ PHÒNG XA, KHÔNG PHẢI BẢN VÁ CỦA MỘT LƯỢT TREO ĐÃ ĐO — xem
+        # `_TTS_HAN_GIAY` để biết vì sao chẩn đoán ban đầu bị bác bỏ.
+        await asyncio.wait_for(comm.save(out_mp3), timeout=_TTS_HAN_GIAY)
 
     for _ in range(2):                  # mạng chập chờn -> thử lại 1 lần
         try:
@@ -1778,7 +1809,13 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 try:
                     comm = edge_tts.Communicate(txt, voice, rate=_rate(i))
-                    await comm.save(paths[i])
+                    # HẠN CHỜ: xem ghi chú ở `synth_demo`. Chỗ này nguy hơn vì
+                    # nó chạy cho TỪNG CỤM (hàng chục lượt/video) và nằm trong
+                    # `asyncio.gather` — MỘT cụm treo là treo CẢ video, mà
+                    # `range(4)` thử lại chỉ cứu được ca NÉM ngoại lệ.
+                    # `TimeoutError` rơi đúng vào `except` bên dưới -> thử lại.
+                    await asyncio.wait_for(comm.save(paths[i]),
+                                           timeout=_TTS_HAN_GIAY)
                     if os.path.getsize(paths[i]) > 200:
                         ok[i] = True
                         break
