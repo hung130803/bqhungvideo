@@ -20,7 +20,12 @@ for _f in (sys.stdout, sys.stderr):
     except Exception:  # noqa: BLE001
         pass
 
-os.environ["BQ_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
+# PHẢI CÓ TIỀN TỐ: `mkdtemp()` trần đẻ ra `tmpXXXXXXXX` — trùng khuôn tên mà
+# MỌI chương trình khác trên máy cũng dùng, nên `_test_guard.don_rac_cu`
+# KHÔNG thể dọn hộ (quét `tmp*` là dám xoá file của app khác). Không tiền tố
+# = rác nằm lại VĨNH VIỄN, đúng bệnh đã làm ổ C đầy 100% hôm 15/08/2026.
+os.environ["BQ_DB_PATH"] = os.path.join(
+    tempfile.mkdtemp(prefix="clipcount_"), "t.db")
 # CHẠY ĐÚNG BẢN MÃ CHỨA FILE TEST NÀY (worktree hay repo chính đều được).
 # Trước đây ghi CỨNG đường repo chính, nên chạy cổng từ một git worktree là
 # đang kiểm BẢN MÃ KHÁC — nhánh đang sửa không hề được kiểm mà cổng vẫn
