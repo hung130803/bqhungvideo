@@ -2551,17 +2551,279 @@ def ghep_track_am(manh: list[tuple[float, str]], tong: float,
                 pass
 
 
+#: BƯỚC ĐO đường bao mức (giây). 0,20 s đủ mịn để thấy từng câu, đủ thô để
+#: không biến khoảng nghỉ giữa hai từ thành "hết nói".
+BUOC_DO_MUC = 0.20
+
+#: Cửa sổ được coi là ĐANG NÓI: mức giọng nằm trong bấy nhiêu dB dưới bách
+#: phân vị 95 của CHÍNH lớp giọng. Lấy TƯƠNG ĐỐI vì mức edge-tts trả về đổi
+#: theo giọng/ngôn ngữ — hằng số tuyệt đối là đúng hôm nay, sai khi đổi giọng.
+DANG_NOI_DUOI_DB = 18.0
+
+#: ĐÍCH: giọng mới phải cao hơn nhạc nền bấy nhiêu dB Ở LÚC ĐANG NÓI.
+#: **CON SỐ NÀY LẤY TỪ CHÍNH BẢN GỐC**, không bịa: đo lớp giọng/lớp nhạc của
+#: video Trung anh Hùng gửi ra **+3,35 dB**. Đặt +6 vì giọng TTS phẳng hơn
+#: giọng người (dải động 8 dB so với 34 dB) nên cần dư ra mới nghe rõ bằng.
+DICH_GIONG_TREN_NHAC_DB = 6.0
+
+#: Trần NÂNG giọng. Trên mức này là kéo cả nền nhiễu của edge-tts lên theo.
+TANG_GIONG_TOI_DA_DB = 12.0
+
+#: Trần HẠ nhạc. Cả tính năng này tên là "GIỮ NGUYÊN nhạc nền" — hạ quá tay
+#: là tự phá mục tiêu. Phần còn thiếu để nhạc NÉ chỗ nào cần thì `ducking` lo.
+HA_NHAC_TOI_DA_DB = 8.0
+
+#: Đỉnh lớp giọng sau khi nâng không được vượt mức này (dBFS) — chừa chỗ cho
+#: nhạc cộng vào rồi mới tới `alimiter`.
+#:
+#: **PHẢI SO VỚI ĐỈNH THẬT, KHÔNG PHẢI ĐỈNH ĐƯỜNG BAO RMS** — bản đầu của
+#: hàm này lấy `max(đường bao RMS)` làm đỉnh và đã sai HẲN: đường bao ra
+#: **-15,9 dBFS** trong khi đỉnh thật (`astats Peak level`) là **-5,33**, tức
+#: hụt **10,6 dB**. Nâng +12 dB theo con số hụt đó đẩy lớp giọng lên
+#: **+6,67 dBFS**, và `alimiter` phải gọt tới 7,7 dB ngay trên tiếng nói —
+#: đúng loại "sửa cái này hỏng cái kia" mà tai nghe ra là giọng bị bóp.
+DINH_GIONG_TOI_DA_DB = -3.0
+
+#: NÉN LỚP GIỌNG TRƯỚC KHI NÂNG. Giọng edge-tts có hệ số đỉnh/RMS **15,3 dB**
+#: (đỉnh -5,33 · RMS lúc nói -20,64) — vài phụ âm bật chiếm hết chỗ trống, còn
+#: phần nghe được thì thấp. Nén hạ hệ số đó xuống rồi mới nâng: to hơn mà
+#: KHÔNG đụng trần, và tiếng nói đều hơn (dễ nghe trên nền nhạc).
+#: Ngưỡng đặt CAO HƠN mức lời đo được `NEN_TREN_LOI_DB` dB nên chỉ phần đỉnh
+#: bị đụng, thân câu giữ nguyên động.
+#:
+#: **QUÉT 12 TỔ HỢP RỒI MỚI CHỌN** (`_do_nen_giong.py`, ngưỡng +3/+6/+9/+12 dB
+#: trên mức lời × tỉ lệ 3/4/6). Kết quả đáng nhớ: **cả 12 tổ hợp ra giọng/nhạc
+#: +5,55 .. +5,99 dB** — tham số nén gần như KHÔNG đổi kết quả cuối, vì nén
+#: sâu hơn thì vừa hạ đỉnh (được nâng nhiều hơn) vừa hạ luôn mức lời (phải
+#: nâng nhiều hơn), hai cái triệt tiêu nhau. Cái CHẶN thật sự là trần đỉnh
+#: `DINH_GIONG_TOI_DA_DB` và trần hạ nhạc `HA_NHAC_TOI_DA_DB`.
+#: Vì vậy chọn +6/3.0 = mức ĐỤNG VÀO THÂN CÂU ÍT NHẤT trong nhóm cùng kết quả
+#: (mức lời chỉ tụt 1,71 dB, so với 2,93 dB ở ngưỡng +3).
+#: **ĐỪNG "tối ưu" hai số này** — bảng đã cho thấy không có gì để tối ưu; muốn
+#: khá hơn phải đụng vào hai cái trần kia, và đó là đánh đổi với NHẠC NỀN.
+NEN_TREN_LOI_DB = 6.0
+NEN_TI_LE = 3.0
+
+#: NHẠC NÉ GIỌNG (ducking) — nhạc tụt ở ĐÚNG chỗ đang nói, chỗ không nói giữ
+#: NGUYÊN mức. Khác hẳn "hạ nhạc cả bài", và đó là lý do phải có nó: cả tính
+#: năng này tên là *giữ nguyên nhạc nền*.
+#:
+#: **HAI HẰNG SỐ NÀY LÀ SỐ ĐO, KHÔNG PHẢI CÔNG THỨC** (`_do_hieu_chuan_duck.py`
+#: trên chính lượt chạy thật). Bản đầu tính `ratio` từ công thức nén
+#: `R = 1/(1 - duck/(vào-T))` rồi tin luôn — SAI HẲN: đặt đích tụt 4 dB mà đo
+#: ra nhạc mất **10,42 dB** và giọng vọt **+15,48 dB** (đích 10,0). Lý do:
+#: mức nhạc ta đo là TRUNG VỊ cửa sổ RMS 0,2 s, còn bộ nén nhìn mức TỨC THỜI,
+#: mà đỉnh nhạc cao hơn trung vị nhiều nên nó nén sâu hơn hẳn.
+#: Bảng quét THẬT (ngưỡng đặt dưới mức nhạc 8 dB), cột giữa là nhạc tụt TB:
+#:     ratio 1,3 -> **-3,28 dB** · 1,6 -> -4,79 · 2,0 -> -5,75 · 3,0 -> -6,64
+#: Chọn **1,3**: đủ dọn chỗ cho lời mà nhạc vẫn còn nghe rõ. Muốn đổi thì
+#: CHẠY LẠI bảng đó, đừng suy từ công thức.
+DUCK_RATIO = 1.3
+
+#: Ngưỡng nén đặt THẤP HƠN MỨC NHẠC ĐO ĐƯỢC bấy nhiêu dB (bám mức thật, không
+#: phải hằng số tuyệt đối: cùng `threshold=0.03` thì phim nhạc to tụt 10 dB
+#: còn phim nhạc nhỏ không tụt tí nào — tức tính năng chạy hay không tuỳ may).
+DUCK_TREN_NGUONG_DB = 8.0
+
+#: Độ tụt ĐO ĐƯỢC ứng với `DUCK_RATIO` ở trên — chỉ để ghi nhật ký/báo cáo,
+#: KHÔNG dùng để tính gì (tính ngược lại từ nó là quay về đúng cái sai cũ).
+DUCK_DB_DO_DUOC = 3.28
+
+
+def _tham_so_duck(muc_nhac_db: float, ratio: float = DUCK_RATIO,
+                  ) -> tuple[float, float]:
+    """(ngưỡng tuyến tính, ratio) cho `sidechaincompress`. Hàm THUẦN.
+
+    Ngưỡng bám theo MỨC NHẠC ĐO ĐƯỢC nên độ tụt không đổi khi đổi phim.
+    """
+    nguong = 10.0 ** ((muc_nhac_db - DUCK_TREN_NGUONG_DB) / 20.0)
+    return (max(1e-4, min(1.0, nguong)), max(1.0, min(20.0, ratio)))
+
+
+def duong_bao_muc(path: str | Path, buoc: float = BUOC_DO_MUC,
+                  sr: int = SR_TACH) -> list[float]:
+    """[dBFS] mỗi `buoc` giây — MỘT lượt ffmpeg, tính trong C.
+
+    `-inf` (cửa sổ im tuyệt đối) -> **-120.0**: phải trả số hữu hạn, không thì
+    mọi phép trung bình/bách phân vị phía sau ra `nan` rồi lặng lẽ hỏng.
+    BẪY (cổng 44/53): mỗi dòng `astats` mở đầu bằng `[Parsed_astats_0 @ ...]`
+    nên phải dùng `in`, KHÔNG `startswith`.
+    """
+    n = max(1, int(round(sr * buoc)))
+    cmd = [settings.FFMPEG_PATH, "-v", "error", "-nostdin", "-i", str(path),
+           "-map", "0:a:0", "-af",
+           f"aresample={sr},asetnsamples=n={n}:p=0,"
+           "astats=metadata=1:reset=1:measure_overall=none:"
+           "measure_perchannel=RMS_level,"
+           "ametadata=print:key=lavfi.astats.1.RMS_level:file=-",
+           "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_CREATE_NO_WINDOW, timeout=1800)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    ra: list[float] = []
+    for dong in (r.stdout or "").splitlines():
+        if "lavfi.astats.1.RMS_level=" not in dong:
+            continue
+        try:
+            ra.append(float(dong.split("=", 1)[1].strip()))
+        except ValueError:
+            ra.append(-120.0)
+    return ra
+
+
+def _bpv(xs: list[float], p: float) -> float:
+    if not xs:
+        return -120.0
+    s = sorted(xs)
+    return s[min(len(s) - 1, max(0, int(round(p * (len(s) - 1)))))]
+
+
+def nen_lop_giong(giong_wav: str | Path, out_wav: str | Path,
+                  muc_loi_db: float) -> str:
+    """NÉN lớp giọng (chưa nâng mức) -> file mới. Trả đường dẫn.
+
+    Tách hẳn thành MỘT LƯỢT RIÊNG để bước sau ĐO được kết quả thật thay vì
+    suy ra. Đã thử suy ra và SAI: công thức nén cho đỉnh sau nén **-13,54
+    dBFS**, đo thật lại ra **-2,99** — lệch 10,6 dB, vì `attack=5ms` CHO LỌT
+    phụ âm bật (chính những mẫu tạo ra đỉnh). Đây đúng họ bẫy `astats` cổng
+    53: phép đo suy diễn phát chứng nhận cho thứ không đúng.
+    """
+    nguong = 10.0 ** ((muc_loi_db + NEN_TREN_LOI_DB) / 20.0)
+    _ffmpeg(["-i", str(giong_wav), "-af",
+             f"acompressor=level_in=1:threshold={nguong:.6f}:"
+             f"ratio={NEN_TI_LE:.1f}:attack=5:release=150:makeup=1:knee=6",
+             "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+             str(out_wav)], "nén lớp giọng mới")
+    _kiem_wav(out_wav)
+    return str(out_wav)
+
+
+def can_bang_giong_nhac(giong_wav: str | Path, nhac_wav: str | Path,
+                        dich_db: float = DICH_GIONG_TREN_NHAC_DB) -> dict:
+    """ĐO hai lớp rồi TÍNH hệ số — không chỉnh mò, không hằng số bịa.
+
+    **VÌ SAO HÀM NÀY RA ĐỜI (lỗi anh Hùng 15/08: *"âm thanh sau khi tách lỗi
+    hết, chỗ có chỗ không nghe không được"*).** Bản cũ trộn bằng HAI HẰNG SỐ
+    `muc_giong_db=0` / `muc_nhac_db=-2`, tức giả định lớp nhạc và giọng TTS
+    vốn đã ngang nhau. Đo trên chính video anh Hùng gửi thì KHÔNG:
+    nhạc nền Douyin master rất to, còn edge-tts trả về mức vừa phải ->
+    `giong_tren_nhac_db = **-10,61 dB**` (bản gốc tiếng Trung là **+3,35 dB**).
+    Giọng mới nằm dưới nhạc hơn 10 dB thì chỗ nhạc lặng mới nghe ra tiếng =
+    đúng chữ "chỗ có chỗ không".
+
+    Cách đo phải là **LÚC ĐANG NÓI**, không phải RMS cả track: track giọng có
+    tới ~30% là im lặng giữa các câu nên RMS toàn bài luôn thấp giả tạo — đọc
+    số đó rồi kéo bù là kéo quá tay. (Cùng bài học "nền đo bằng `mean_volume`"
+    của nhóm tiếng động.)
+
+    Trả {gain_giong_db, gain_nhac_db, ...số đo}. Đo hỏng -> trả hệ số 0 và
+    khoá `do_duoc=False`: thà giữ y bản cũ còn hơn nhân một hệ số bịa.
+    """
+    bg = duong_bao_muc(giong_wav)
+    bn = duong_bao_muc(nhac_wav)
+    n = min(len(bg), len(bn))
+    if n < 5:
+        return {"do_duoc": False, "gain_giong_db": 0.0, "gain_nhac_db": 0.0,
+                "ly_do": "không dựng được đường bao mức"}
+    dinh_g = _bpv(bg[:n], 0.95)
+    nguong = dinh_g - DANG_NOI_DUOI_DB
+    noi = [i for i in range(n) if bg[i] >= nguong and bg[i] > -70.0]
+    if len(noi) < 3:
+        return {"do_duoc": False, "gain_giong_db": 0.0, "gain_nhac_db": 0.0,
+                "ly_do": "không tìm được cửa sổ đang nói"}
+    muc_g = _bpv([bg[i] for i in noi], 0.5)
+    muc_n = _bpv([bn[i] for i in noi], 0.5)
+    hien_tai = muc_g - muc_n
+    can = dich_db - hien_tai
+
+    # ĐỈNH THẬT (không phải đỉnh đường bao RMS — xem chú thích
+    # `DINH_GIONG_TOI_DA_DB`), ĐO trên chính file được đưa vào.
+    dinh_tho = float(do_meo(giong_wav).get("dinh") or 0.0)
+    nguong_nen_db = muc_g + NEN_TREN_LOI_DB
+    tran_theo_dinh = max(0.0, DINH_GIONG_TOI_DA_DB - dinh_tho)
+    # NÂNG GIỌNG TRƯỚC (không đụng tới nhạc là không mất gì của bản gốc),
+    # chặn bởi 2 trần: trần nâng và ĐỈNH lớp giọng.
+    g_giong = max(0.0, min(can, TANG_GIONG_TOI_DA_DB, tran_theo_dinh))
+    # Còn thiếu bao nhiêu thì hạ nhạc — nhưng chỉ tới trần, phần dư để
+    # `ducking` lo (né đúng chỗ, không hạ cả bài).
+    g_nhac = -max(0.0, min(can - g_giong, HA_NHAC_TOI_DA_DB))
+    return {
+        "do_duoc": True,
+        "gain_giong_db": round(g_giong, 2),
+        "gain_nhac_db": round(g_nhac, 2),
+        "nen_nguong_db": round(nguong_nen_db, 2),
+        "nen_ti_le": NEN_TI_LE,
+        "muc_giong_luc_noi_db": round(muc_g, 2),
+        "muc_nhac_luc_noi_db": round(muc_n, 2),
+        "giong_tren_nhac_truoc_db": round(hien_tai, 2),
+        "can_bu_db": round(can, 2),
+        "dinh_giong_db": round(dinh_tho, 2),
+        "he_so_dinh_db": round(dinh_tho - muc_g, 2),
+        "so_cua_so_noi": len(noi),
+        "giay_noi": round(len(noi) * BUOC_DO_MUC, 2),
+        "dich_db": dich_db,
+    }
+
+
+def do_giong_tren_nhac(giong_wav: str | Path, nhac_wav: str | Path) -> dict:
+    """Thước NGHIỆM THU: giọng cao hơn nhạc bao nhiêu dB LÚC ĐANG NÓI.
+
+    Tách riêng khỏi `can_bang_giong_nhac` để đo được cả TRƯỚC lẫn SAU bằng
+    CÙNG một phép — dùng chính hàm tính hệ số để tự chấm là tự cấp chứng chỉ.
+    """
+    bg = duong_bao_muc(giong_wav)
+    bn = duong_bao_muc(nhac_wav)
+    n = min(len(bg), len(bn))
+    if n < 5:
+        return {"do_duoc": False}
+    nguong = _bpv(bg[:n], 0.95) - DANG_NOI_DUOI_DB
+    noi = [i for i in range(n) if bg[i] >= nguong and bg[i] > -70.0]
+    if len(noi) < 3:
+        return {"do_duoc": False}
+    d = sorted(bg[i] - bn[i] for i in noi)
+    return {
+        "do_duoc": True,
+        "giong_tren_nhac_tb": round(sum(d) / len(d), 2),
+        "giong_tren_nhac_trung_vi": round(d[len(d) // 2], 2),
+        "giong_tren_nhac_min": round(d[0], 2),
+        "so_cua_so_chim": sum(1 for x in d if x < 0),
+        "ty_le_chim": round(100.0 * sum(1 for x in d if x < 0) / len(d), 1),
+        "so_cua_so_noi": len(noi),
+    }
+
+
 def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
                     tong: float, out_wav: str | Path,
-                    muc_giong_db: float = 0.0, muc_nhac_db: float = -2.0,
+                    muc_giong_db: float = 0.0, muc_nhac_db: float = 0.0,
                     tran_dinh_db: float = TRAN_DINH_DB,
+                    tu_can_bang: bool = True, duck: bool = True,
                     on_progress: Optional[Callable[[float, str], None]] = None,
                     ) -> dict:
     """Trộn GIỌNG MỚI lên LỚP NHẠC gốc, hạn đỉnh chống méo, rồi ĐO cân bằng.
 
+    `tu_can_bang=True` (mặc định): hệ số lấy từ `can_bang_giong_nhac` — ĐO hai
+    lớp rồi tính, thay cho hai hằng số cũ. `muc_giong_db`/`muc_nhac_db` vẫn
+    được cộng vào (người dùng còn chỉnh tay được), chỉ khác là nay chúng là
+    phần BÙ THÊM chứ không phải toàn bộ câu trả lời.
+
+    **`muc_nhac_db` MẶC ĐỊNH ĐỔI -2,0 -> 0,0 CÓ CHỦ Ý:** -2 dB cũ là một hằng
+    số đặt mò cho việc "nhường chỗ cho lời". Nay phần nhường chỗ đã do phép đo
+    quyết định (`gain_nhac_db`) nên giữ -2 nữa là TRỪ HAI LẦN — mà mỗi dB nhạc
+    mất đi là một dB đi ngược mục tiêu "giữ nguyên nhạc nền". Truyền tay giá
+    trị khác thì vẫn được cộng như cũ.
+
+    `duck=True`: nhạc NÉ giọng bằng `sidechaincompress` — tụt ~`DUCK_DB` dB ở
+    đúng chỗ đang nói, chỗ không nói giữ NGUYÊN. Đây là lý do không phải hạ
+    nhạc cả bài để nghe rõ lời.
+
     `alimiter` bắt buộc `level=0` (mặc định `level=true` TỰ NÂNG +3,1 dB) và
     `latency=1` (không có thì trễ 0,98 ms) — bẫy đã ghi ở đầu file.
     """
+    import math
+
     out_wav = Path(out_wav)
     tam = out_wav.with_suffix(".giong.wav")
     if on_progress:
@@ -2569,16 +2831,56 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     _ghep_track_giong(manh, tong, tam)
     _kiem_wav(tam)
 
+    # HAI VÒNG ĐO, KHÔNG PHẢI MỘT. Vòng 1 đo track giọng THÔ để biết ngưỡng
+    # nén; nén ra file riêng; vòng 2 đo lại CHÍNH FILE ĐÃ NÉN để tính mức
+    # nâng. Suy ra đỉnh-sau-nén bằng công thức đã sai 10,6 dB (xem
+    # `nen_lop_giong`), nên bước ĐO LẠI này là bắt buộc chứ không phải cho
+    # chắc. Giá: 1 lượt ffmpeg trên audio (~1-2 s cho video 107 s).
+    cb: dict = {"do_duoc": False}
+    giong_vao = tam
+    if tu_can_bang:
+        if on_progress:
+            on_progress(0.4, "Đo mức giọng so với nhạc nền...")
+        cb0 = can_bang_giong_nhac(tam, nhac_wav)
+        if cb0.get("do_duoc"):
+            if on_progress:
+                on_progress(0.5, "Nén lớp giọng cho đều...")
+            giong_vao = out_wav.with_suffix(".giong_nen.wav")
+            nen_lop_giong(tam, giong_vao, float(cb0["muc_giong_luc_noi_db"]))
+            cb = can_bang_giong_nhac(giong_vao, nhac_wav)
+            cb["truoc_nen"] = {k: cb0.get(k) for k in
+                               ("muc_giong_luc_noi_db", "dinh_giong_db",
+                                "he_so_dinh_db", "giong_tren_nhac_truoc_db")}
+        else:
+            cb = cb0
+    g_giong = muc_giong_db + (cb.get("gain_giong_db") or 0.0)
+    g_nhac = muc_nhac_db + (cb.get("gain_nhac_db") or 0.0)
+
     if on_progress:
         on_progress(0.6, "Trộn giọng mới với nhạc nền gốc...")
-    fc = (
-        f"[0:a]volume={muc_nhac_db:.2f}dB[nh];"
-        f"[1:a]volume={muc_giong_db:.2f}dB[gi];"
-        "[nh][gi]amix=inputs=2:duration=first:normalize=0[mx];"
-        f"[mx]alimiter=level_in=1:level_out=1:limit="
-        f"{10.0 ** (tran_dinh_db / 20.0):.6f}:level=0:latency=1[out]"
-    )
-    _ffmpeg(["-i", str(nhac_wav), "-i", str(tam), "-filter_complex", fc,
+    # NHÁNH NHẠC: chỉnh mức -> (nếu bật) NÉ GIỌNG. Ngưỡng nén bám theo MỨC
+    # NHẠC ĐO ĐƯỢC (sau khi đã chỉnh `g_nhac`), không phải hằng số: cùng một
+    # `threshold=0.03` thì phim nhạc to tụt 10 dB còn phim nhạc nhỏ không tụt
+    # tí nào — tức tính năng chạy hay không tuỳ may.
+    nhac_sau = (cb.get("muc_nhac_luc_noi_db") or -14.0) + g_nhac
+    nguong_duck, ratio_duck = _tham_so_duck(nhac_sau)
+    fc = [f"[0:a]volume={g_nhac:.2f}dB[nh0]",
+          f"[1:a]volume={g_giong:.2f}dB[gi]"]
+    if duck:
+        fc.append("[gi]asplit=2[gi1][gikey]")
+        fc.append(
+            f"[nh0][gikey]sidechaincompress=threshold={nguong_duck:.5f}"
+            f":ratio={ratio_duck:.3f}:attack=20:release=300:makeup=1"
+            ":level_sc=1[nh]")
+        gi_lab = "[gi1]"
+    else:
+        fc.append("[nh0]anull[nh]")
+        gi_lab = "[gi]"
+    fc.append(f"[nh]{gi_lab}amix=inputs=2:duration=first:normalize=0[mx]")
+    fc.append(f"[mx]alimiter=level_in=1:level_out=1:limit="
+              f"{10.0 ** (tran_dinh_db / 20.0):.6f}:level=0:latency=1[out]")
+    _ffmpeg(["-i", str(nhac_wav), "-i", str(giong_vao),
+             "-filter_complex", ";".join(fc),
              "-map", "[out]", "-ac", "2", "-ar", str(SR_TACH),
              "-c:a", "pcm_s16le", str(out_wav)], "trộn giọng mới + nhạc")
     _kiem_wav(out_wav)
@@ -2592,10 +2894,17 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
         "dinh_dbfs": meo.get("dinh"),
         "cham_tran": meo.get("cham_tran"),
         "do_dai": round(probe_duration(out_wav), 3),
+        "can_bang": cb,
+        "gain_giong_db": round(g_giong, 2),
+        "gain_nhac_db": round(g_nhac, 2),
+        "duck_db_du_kien": DUCK_DB_DO_DUOC if duck else 0.0,
+        "duck_nguong": round(nguong_duck, 5) if duck else 0.0,
+        "duck_ratio": round(ratio_duck, 3) if duck else 0.0,
+        "giong_track": str(tam),
+        "giong_da_nen": str(giong_vao),
     }
     g, n = kq["rms_giong"], kq["rms_nhac"]
     if g > 0 and n > 0:
-        import math
         kq["giong_tren_nhac_db"] = round(20.0 * math.log10(g / n), 2)
     if on_progress:
         on_progress(1.0, "Trộn xong")
