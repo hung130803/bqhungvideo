@@ -29,6 +29,11 @@ import sys
 import time
 from pathlib import Path
 
+# stdout PHẢI utf-8: lượt đo hàng loạt chạy `python _do_che_chu.py do > file`
+# và lúc đó Python không còn console utf-8 nên lấy cp1252 -> dòng `print`
+# tiếng Việt ĐẦU TIÊN ném UnicodeEncodeError, script chết trước khi đo được
+# gì. Đã sập đúng như vậy 15/08/2026 khi dựng lại mốc bỏ sót 9,1%.
+sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.setdefault("BQ_FFMPEG_SLOTS", "1")
 
