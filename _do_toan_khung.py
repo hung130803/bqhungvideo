@@ -515,8 +515,149 @@ def lenh_do() -> None:
           f"được {tk['tren_cu']}, bản mới {tk['tren_moi']}")
 
 
+# ══════════════════════════ LỆNH: moc ═══════════════════════════════════════
+#: Lưới SỰ THẬT: 20 khung/giây = 50 ms. Đây là thước, phải mịn hơn hẳn thứ
+#: đang đo (bộ dò chạy 2-4 khung/giây).
+THAT_FPS = 20.0
+
+
+def _moc_that(src, v, fps: float = THAT_FPS) -> list:
+    """Mốc chữ THẬT hiện/tắt trong vùng `v`, lưới 1/fps giây. KHÔNG nới."""
+    tt = C.thong_tin(src)
+    x0, x1 = int(v.x0), int(v.x1)
+    y0, y1 = int(v.y0), int(v.y1)
+    w = max(2, x1 - x0)
+    hh = max(2, y1 - y0)
+    # co bề rộng về hệ 320 để mật độ so được với ngưỡng cùng thang
+    rw = max(16, int(round(320 * w / max(1, tt["rong"]))))
+    rw += rw % 2
+    rh = max(4, int(round(hh * rw / w)))
+    rh += rh % 2
+    cmd = [C._bin("ffmpeg"), "-v", "error", "-i", str(src), "-vf",
+           f"fps={fps},crop={w}:{hh}:{x0}:{y0},scale={rw}:{rh}",
+           "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+    r = _ff(cmd)
+    n = len(r.stdout) // (rw * rh)
+    if n < 4:
+        return []
+    arr = np.frombuffer(r.stdout[:n * rw * rh], np.uint8).reshape(n, rh, rw)
+    md = np.stack([C._mat_na(g) for g in arr]).reshape(n, -1).mean(axis=1)
+    co = md > C.NGUONG_HANG
+    ra, i = [], 0
+    while i < n:
+        if not co[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and co[j + 1]:
+            j += 1
+        if (j - i + 1) / fps >= 0.15:          # bỏ loé 1-2 khung
+            ra.append((i / fps, (j + 1) / fps))
+        i = j + 1
+    return ra
+
+
+def lenh_moc(*duong) -> None:
+    """ĐỘ LỆCH THỜI GIAN (ms) hai đầu: chữ hiện/tắt THẬT vs mặt che bật/tắt."""
+    print(f"\n=== ĐỘ LỆCH MỐC (sự thật lưới {1000/THAT_FPS:.0f} ms) ===")
+    print("  lệch ĐẦU  < 0 = mặt che bật SỚM hơn chữ (che oan cảnh)")
+    print("  lệch CUỐI > 0 = mặt che tắt MUỘN hơn chữ (che oan cảnh)")
+    print("  lệch > 0 ở ĐẦU hoặc < 0 ở CUỐI = **HỞ CHỮ** (tệ nhất)")
+    tong = {"cu_d": [], "cu_c": [], "moi_d": [], "moi_c": [], "n": 0}
+    for d in duong:
+        p = Path(d)
+        if not p.exists():
+            continue
+        tt = C.thong_tin(p)
+        vs = C.do_vung_chu(p)
+        print(f"\n  {p.name} ({tt['do_dai']:.1f}s) — {len(vs)} vùng")
+        for iv, v in enumerate(vs):
+            that = _moc_that(p, v)
+            if not that:
+                print(f"    vùng{iv} y={v.y0}..{v.y1}: không đo được mốc thật")
+                continue
+            # --- KẾ TOÁN THEO LƯỚI 50 ms (thước ĐÚNG) ---
+            # Ghép cặp từng khoảng rồi trừ hai đầu là SAI: mặt che CỐ Ý bắc
+            # cầu khe 0,2s giữa 2 câu liền nhau, phép ghép cặp đọc ra thành
+            # "tắt muộn 11.750 ms" trong khi ngay sau đó VẪN CÓ CHỮ. Hai câu
+            # hỏi đúng là: che khi KHÔNG có chữ bao nhiêu giây, và có chữ mà
+            # KHÔNG che bao nhiêu giây.
+            nb = int(tt["do_dai"] * THAT_FPS) + 1
+            g_that = np.zeros(nb, bool)
+            g_che = np.zeros(nb, bool)
+            for a, b in that:
+                g_that[int(a * THAT_FPS):int(b * THAT_FPS) + 1] = True
+            for a, b in (v.khoang or [(0.0, tt["do_dai"])]):
+                g_che[int(max(0, a) * THAT_FPS):int(b * THAT_FPS) + 1] = True
+            thua = float((g_che & ~g_that).sum()) / THAT_FPS
+            ho = float((~g_che & g_that).sum()) / THAT_FPS
+            co_chu = float(g_that.sum()) / THAT_FPS
+            # bản CŨ = che suốt clip
+            thua_cu = float((~g_that).sum()) / THAT_FPS
+            print(f"    vùng{iv} y={v.y0}..{v.y1} — {len(that)} lần chữ hiện, "
+                  f"bộ dò ra {len(v.khoang)} khoảng")
+            print(f"      CHE THỪA (che mà KHÔNG có chữ): CŨ {thua_cu:6.1f}s "
+                  f"({thua_cu/tt['do_dai']*100:4.1f}% clip) -> MỚI "
+                  f"{thua:6.1f}s ({thua/tt['do_dai']*100:4.1f}%)")
+            print(f"      HỞ CHỮ  (có chữ mà KHÔNG che): CŨ    0.0s -> MỚI "
+                  f"{ho:6.2f}s ({ho/max(1e-6, co_chu)*100:4.1f}% thời gian "
+                  f"có chữ)")
+            tong.setdefault("thua_cu", []).append(thua_cu)
+            tong.setdefault("thua", []).append(thua)
+            tong.setdefault("ho", []).append(ho)
+            tong.setdefault("cochu", []).append(co_chu)
+            tong.setdefault("dai", []).append(tt["do_dai"])
+            for (a, b) in that:
+                # bản CŨ: `hop` phủ KÍN trục thời gian -> che SUỐT clip
+                cu_d = (0.0 - a) * 1000.0
+                cu_c = (tt["do_dai"] - b) * 1000.0
+                kh = [k for k in v.khoang if k[1] > a and k[0] < b]
+                if kh:
+                    md_, mc_ = min(k[0] for k in kh), max(k[1] for k in kh)
+                    moi_d, moi_c = (md_ - a) * 1000.0, (mc_ - b) * 1000.0
+                    ho = moi_d > 0 or moi_c < 0
+                else:
+                    moi_d = moi_c = float("nan")
+                    ho = True
+                tong["cu_d"].append(cu_d)
+                tong["cu_c"].append(cu_c)
+                tong["n"] += 1
+                if kh:
+                    tong["moi_d"].append(moi_d)
+                    tong["moi_c"].append(moi_c)
+                tong["ho_n"] = tong.get("ho_n", 0) + (1 if ho else 0)
+                print(f"      chữ {a:6.2f}..{b:6.2f}s | CŨ đầu "
+                      f"{cu_d:+9.0f} cuối {cu_c:+9.0f} | MỚI đầu "
+                      f"{moi_d:+7.0f} cuối {moi_c:+7.0f} ms"
+                      f"{'  <-- HỞ CHỮ' if ho else ''}")
+
+    def _tk(xs):
+        if not xs:
+            return "—"
+        return (f"TB {statistics.mean(xs):+.0f} · |TB| "
+                f"{statistics.mean([abs(x) for x in xs]):.0f} · xấu nhất "
+                f"{max(xs, key=abs):+.0f}")
+    print(f"\n  === TỔNG {tong['n']} lần chữ hiện ===")
+    print(f"    CŨ  (che suốt clip) đầu : {_tk(tong['cu_d'])} ms")
+    print(f"    CŨ                  cuối: {_tk(tong['cu_c'])} ms")
+    print(f"    MỚI                 đầu : {_tk(tong['moi_d'])} ms")
+    print(f"    MỚI                 cuối: {_tk(tong['moi_c'])} ms")
+    print(f"    (mốc ghép cặp — đọc kèm cảnh báo bắc cầu ở trên)")
+    if tong.get("thua"):
+        tc, tm = sum(tong["thua_cu"]), sum(tong["thua"])
+        print(f"\n    *** KẾ TOÁN LƯỚI 50 ms (thước ĐÚNG) ***")
+        print(f"    CHE THỪA tổng: CŨ {tc:.1f}s -> MỚI {tm:.1f}s "
+              f"= giảm {(1-tm/max(1e-6, tc))*100:.1f}%")
+        print(f"    HỞ CHỮ  tổng: {sum(tong['ho']):.2f}s / "
+              f"{sum(tong['cochu']):.1f}s có chữ = "
+              f"{sum(tong['ho'])/max(1e-6, sum(tong['cochu']))*100:.2f}%")
+
+
 def _main() -> int:
     lenh = sys.argv[1] if len(sys.argv) > 1 else "quet"
+    if lenh == "moc":
+        lenh_moc(*sys.argv[2:])
+        return 0
     if lenh == "do":
         lenh_do()
         return 0
