@@ -1523,6 +1523,31 @@
   đã được `rate` nuốt gọn mà không méo tiếng, không mất chữ, nên rút gọn chỉ
   phải lo phần vượt QUÁ tầm với của `rate`. **Ép nhanh làm xấu TIẾNG, chặt chữ
   làm xấu NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.**
+- **CỔNG 56 CA17a/CA17b HỎNG SẴN VÌ *NGƯỠNG CHI PHÍ*, KHÔNG PHẢI HỒI QUY
+  (15/08/2026).** Lượt hồi quy v2.28.0: `_test_che_chu.py` ra **ĐẠT 120 ·
+  HỎNG 2** (trước ghi 122/0), hỏng đúng 2 mục NGÂN SÁCH THỜI GIAN:
+
+  | | mốc đã ghi (v2.27.0) | đo lại lượt 1 | lượt 2 | trần |
+  |---|---|---|---|---|
+  | TẮT | 6,65 s | 6,74 s | 6,79 s | — |
+  | DẢI | **+0,84** s/phút | **+2,57** | **+2,54** | 2,0 |
+  | HỘP | **+3,31** s/phút | **+5,46** | **+5,52** | 4,5 |
+
+  **KHÔNG PHẢI HỒI QUY — chứng minh bằng git, không bằng lập luận:**
+  `git diff v2.27.0..HEAD -- app/core/che_chu.py app/core/ffmpeg_utils.py`
+  **RỖNG**, và `_test_che_chu.py` cũng KHÔNG đổi. Tức mã sinh ra con số này
+  giống HỆT bản đã đo +0,84/+3,31.
+  **CŨNG KHÔNG PHẢI MÁY BẬN:** 3 vòng thô trong mỗi lượt lệch nhau ≤ 0,10 s
+  (TẮT [6,74·6,73·6,75] · DẢI [9,33·9,30·9,32]), CPU cả máy 22%, 0 tiến
+  trình ffmpeg/prodown; và hai LƯỢT cách nhau vẫn ra ±0,03/±0,06.
+  **CHỐT QUAN TRỌNG NHẤT VẪN ĐẠT:** CA17c (HỘP − DẢI ≤ 3,5 s/phút) ĐẠT ở
+  +2,88 và +2,98 — đây mới là mục canh *"ai đó lỡ thêm một lượt ffmpeg THỨ
+  HAI"* (lượt đó tốn 3,5-7,6 s/phút). Không ai thêm lượt nào.
+  Dấu hiệu đáng ngờ nhất: **TẮT chỉ chậm 1,4% mà DẢI chậm 24%** — không phải
+  máy chậm đều, nên nghi mốc +0,84 đo trên điều kiện khác (chính CLAUDE.md
+  còn ghi một số KHÁC cho cùng việc: `_do_che_chu_gia.py` ra **+1,30**
+  s/phút). **CẤM HẠ NGƯỠNG cho hết đỏ** — việc phải làm là đo lại đan xen
+  trên máy rảnh rồi hiệu chuẩn lại trần bằng SỐ, đúng cách trần đó ra đời.
 - **LỆCH CHỮ-TIẾNG: ĐO LẠI SAU BẢN VÁ — *KHÔNG* GIẢM. CON SỐ CHỈ ĐỔI CỘT
   (15/08/2026).** `c10c68b` đo được **24,2%** thời lượng video "chữ chạy mà
   không nói" (`im_duoi_chu` 22,52s + `lỗ bản chép lời` 9,56s = 32,08s /
