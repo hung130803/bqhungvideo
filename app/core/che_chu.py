@@ -48,6 +48,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -162,6 +163,118 @@ HOP_HANG_MEP = 0.10
 #: Tắt hẳn bước thu-về-hộp (đo A/B, gỡ rối máy user): `BQ_CHE_HOP=0`.
 _BAT_HOP = os.environ.get("BQ_CHE_HOP", "1").strip() not in ("0", "false", "no")
 
+# ══════════ QUÉT CẢ KHUNG — chữ ở TRÊN / GÓC / GIỮA, không chỉ đáy ══════════
+# Anh Hùng 15/08/2026: *"làm mờ chữ nó tự nhận diện trên khung hình không được
+# à, phải khớp 100%, không lệch không nhanh"*.
+#
+# GỐC RỄ CỦA "KHÔNG NHẬN DIỆN": `do_dai_chu` có `y_min = int(h * VUNG_DAY)`
+# nên bộ dò **CHỈ NHÌN 45% DƯỚI** khung. Chữ ở đỉnh/góc thì nó KHÔNG NHÌN
+# THẤY — khác hẳn "nhìn nhầm", và không ngưỡng nào chữa được.
+#
+# ĐO TRƯỚC KHI MỞ (`_do_toan_khung.py quet`, 20 video): mật độ nét theo 5 tầng
+# khung cho thấy 3 video có chữ ĐẬM ngoài dải đáy — `jp_taxi` tầng 20-40%
+# **0,2808** (tiêu đề 2 dòng ở đỉnh) trong khi đáy 0,2692. NHÌN TẬN MẮT xác
+# nhận: tiêu đề đỏ+trắng ở đỉnh + phụ đề ở dưới.
+#
+# **MỞ RA CẢ KHUNG THÌ NỀN NHIỀU GẤP BỘI — mẹo GIAO NHAU THEO THỜI GIAN vẫn là
+# nền tảng nhưng KHÔNG mạnh thêm được nữa.** Đo `_do_toan_khung.py ben` trên
+# `jp_taxi`, đòi điểm ảnh bật LIÊN TIẾP k khung: k=1 tách 2,39 lần · k=2
+# **2,92** · k=3 2,94 · k=4 2,70 · k=6 2,67. Tức **k=2 (bản đang chạy) đã gần
+# đỉnh**, nâng lên chỉ ăn mòn chính nét chữ — đúng đường cụt mà việc trước đã
+# đo với ngưỡng nét (150 vẫn nhô sai 256 px). ĐỪNG đi lại.
+#
+# **CỬA TÁCH THẬT SỰ LÀ CHIỀU CAO DẢI, KHÔNG PHẢI ĐỘ BỀN.** Nền đậm nhất bắt
+# được là bức tường hoạ tiết khắc nét trong `jp_art` (mật độ 0,2889 — ĐẬM HƠN
+# cả chữ): không phép lọc cục bộ nào phân biệt nổi nó với chữ, vì nó ĐÚNG LÀ
+# nét mảnh dày đặc. Nhưng nó dày suốt **hàng trăm hàng**, còn một DÒNG CHỮ chỉ
+# dày 1,5-16% khung rồi tắt hẳn. Vì vậy luật `CAO_MIN..CAO_MAX` (đã có sẵn cho
+# dải đáy) chính là cửa chặn, và bản toàn-khung chỉ việc áp nó cho MỌI đỉnh.
+#
+#: Bề rộng dò khi quét CẢ khung. Nhỏ hơn `RONG_DO`=640 vì nay phải giữ CẢ
+#: khung nhiều lượt chứ không chỉ dải đáy (640 px, 9:16, fps=2, video 10 phút
+#: = 875 MB). 320 px vẫn đủ cho top-hat 9x9: đo lại `jp_taxi` ở 320 ra đúng 2
+#: đỉnh 0,1228 / 0,2160 với nền giữa 0,0740.
+VUNG_RONG = 320
+#: Số khung/giây khi quét cả khung. 4 = lưới 0,25 s -> sai số mốc vốn có
+#: ±125 ms (bản dải đáy lấy 0,5 s = ±250 ms). Xem `_do_toan_khung.py moc`.
+VUNG_FPS = 4.0
+#: Trần SỐ VÙNG trả về. Mỗi vùng = 1 nhánh split/crop/boxblur/overlay.
+VUNG_TOI_DA = 4
+#: Tỉ lệ khung có chữ để một VÙNG được nhận. Thấp hơn `TY_LE_KHUNG_MIN`=0,50
+#: của dải đáy VÌ MỘT LÝ DO ĐO ĐƯỢC: phụ đề đáy chạy gần như suốt video, còn
+#: TIÊU ĐỀ ở đỉnh chỉ hiện vài chục giây đầu. Đòi 50% là bỏ sót đúng loại chữ
+#: vừa mở bộ dò ra để bắt. Bù lại phải kèm `VUNG_GIAY_MIN`.
+VUNG_KHUNG_MIN = 0.25
+#: …và phải hiện TỔNG CỘNG ít nhất ngần này giây. Một vùng chỉ loé 1-2 khung
+#: (đèn xe, biển hiệu lướt qua) không đủ tư cách dù tỉ lệ có cao.
+VUNG_GIAY_MIN = 2.0
+#: Vùng chiếm hơn ngần này DIỆN TÍCH khung = gần chắc chắn là NỀN, không phải
+#: chữ. Chốt chặn cuối cho ca "tường hoạ tiết" (`jp_art` mật độ 0,2889).
+VUNG_DIEN_TICH_MAX = 0.25
+#: Khoảng cách tối thiểu (tỉ lệ chiều cao) giữa 2 vùng — gần hơn thì là CÙNG
+#: một khối chữ bị ngắt quãng, phải gộp chứ không đẻ 2 nhánh filter.
+VUNG_CACH_MIN = 0.03
+#: Nới mỗi đầu mốc thời gian (giây) — "thà che thừa vài khung còn hơn để hụt".
+#: Xem `_do_toan_khung.py moc` cho số đo hai đầu.
+VUNG_NOI_GIAY = 0.25
+#: Khe hở (giây) được BẮC CẦU khi gom khung có chữ thành khoảng thời gian.
+#: Phụ đề đổi dòng có 1-2 khung trống giữa 2 câu; ngắt ra là bật/tắt lia lịa
+#: (mắt đọc ra là nhấp nháy) mà chẳng che thêm được gì.
+VUNG_KHE_GIAY = 0.6
+# ─── VÌ SAO BẢN TOÀN KHUNG **KHÔNG** TRỪ PHẦN HẰNG (đo, đừng "dọn gọn") ─────
+# Luật (2) của `do_dai_chu` trừ mọi điểm ảnh bật ở >= 85% số khung, để logo
+# góc không bị coi là chữ. Với DẢI ĐÁY luật đó đúng: phụ đề đổi câu liên tục.
+# Với TIÊU ĐỀ thì nó là ÁN TỬ — tiêu đề nằm yên suốt clip nên chính nó bị xoá
+# sạch. ĐO (`_do_toan_khung.py hinh`, mật độ nét trong dải ghi sự thật bằng
+# MẮT), cột trái = CÓ trừ hằng, cột phải = KHÔNG trừ:
+#     taxi_TIEUDE   0,0007 -> **0,1115**   (159 lần)
+#     tuyet_TIEUDE  0,0013 -> **0,1852**   (142 lần)
+#     art_TIEUDE    0,0724 -> 0,1312
+#     taxi_phude    0,1138 -> 0,1138       (phụ đề: KHÔNG đổi)
+# Tức "chữ ở trên không che được" có HAI nguyên nhân chồng lên nhau, chữa một
+# cái vẫn hỏng: `y_min` không cho NHÌN, và luật HẰNG xoá mất thứ nhìn ra.
+# Vì vậy ở đây dò trên mặt nạ CHƯA trừ hằng, rồi loại logo Ở MỨC VÙNG bằng
+# `_LOGO_*` bên dưới (vùng toàn mực HẰNG mà lại HẸP = logo, không phải tiêu
+# đề — tiêu đề bao giờ cũng trải ngang).
+#: Vùng có >= ngần này tỉ lệ mực là mực HẰNG thì mới xét tiếp luật logo.
+LOGO_HANG_TY = 0.80
+#: …và HẸP hơn ngần này bề rộng khung thì kết luận là LOGO/watermark -> BỎ.
+LOGO_RONG_TY = 0.35
+#: Mực nằm trong dãy ngang dài hơn ngần này điểm ảnh (hệ `VUNG_RONG`) = "VỆT
+#: DÀI" — lan can, mép bàn, mép giường, khung cửa.
+VET_DAI_PX = 12
+#: Vùng có hơn ngần này tỉ lệ mực nằm trong vệt dài = MÉP NGANG, không phải
+#: chữ. ĐO trên 11 dải đã ghi sự thật bằng mắt: chữ **0,0 .. 43,7%** · nền
+#: **12,2 .. 73,2%**. Hai đám CHỒNG NHAU nên đây KHÔNG phải cửa vạn năng —
+#: nó chỉ giết sạch loại "mép ngang dài" (taxi mép giường 73,2% · tuyết sàn
+#: 72,6%), đúng loại mà ghi chú dòng 105-165 đã kêu là khó nhất. Phần nền còn
+#: lại để mật độ (0,10) và chiều cao (CAO_MAX) lo. Lấy 0,60 = giữa 43,7 và
+#: 72,6, cách mỗi bên ~1,4 lần.
+VET_DAI_TY_MAX = 0.60
+# ─── 4 ĐẶC TRƯNG ĐÃ ĐO RỒI **LOẠI** — đừng ai làm lại (`_do_toan_khung.py
+#     hinh`, 11 dải ghi sự thật BẰNG MẮT: 6 chữ / 5 nền) ────────────────────
+#   · BIÊN ĐỘ top-hat trên điểm có mực: chữ 112,9..165,3 · nền 87,9..125,6
+#   · % nét rất gắt (>120):            chữ 42,5..75,6% · nền 11,4..57,5%
+#   · TƯƠNG PHẢN (lệch chuẩn độ xám):  chữ 38,6..85,4  · nền 46,3..70,7
+#   · TỈ SỐ NỀN CỤC BỘ (đậm hơn hàng ngay trên/dưới bao nhiêu lần):
+#                                      chữ 0,93..63,98 · nền 1,21..2,18
+#   Cả 4 đều CHỒNG LẤN, không cái nào cắt được. Đặc biệt "tỉ số nền cục bộ"
+#   nghe rất thuyết phục ("chữ là dải mỏng nổi trên nền") nhưng tiêu đề nằm
+#   trong khối chữ nhiều dòng thì hàng ngay trên/dưới nó CŨNG là chữ -> 0,93.
+# ─── và MỘT đặc trưng đã VIẾT XONG rồi GỠ: ĐỘ GỢN THEO HÀNG ───────────────
+#   Số trên dải ghi tay tách khá đẹp (chữ 0,341..1,136 · nền 0,215..0,792) nên
+#   đã cài thật với ngưỡng 0,30. **CHẠY LẠI THÌ NÓ GIẾT ĐÚNG VIDEO ANH HÙNG
+#   ĐƯA** (`zh_phim`: 1 vùng -> **0 vùng**, gợn 0,135). Lý do: đo trong BỀ
+#   NGANG HỘP (đúng chỗ có chữ) thì dải phụ đề MỘT DÒNG toàn thân chữ, không
+#   còn khe nào để gợn; dải ghi tay đo cả bề ngang khung nên có nền hai bên
+#   làm gợn giả. Tức con số đẹp lúc thử là ĐO SAI CHỖ. Đổi 1 vùng dò đúng lấy
+#   1 vùng che oan là lỗ vốn -> GỠ, và ghi lại đây.
+#: QUÉT CẢ KHUNG — MẶC ĐỊNH TẮT. Xem báo cáo: nó chữa được ca "chữ ở trên"
+#: nhưng có giá của nó (chi phí + rủi ro che oan trên nguồn nền nhiều vân).
+#: `BQ_CHE_TOAN_KHUNG=1` để bật.
+_BAT_TOAN_KHUNG = os.environ.get("BQ_CHE_TOAN_KHUNG", "0").strip() \
+    not in ("0", "false", "no", "")
+
 # ─────────────── SÀN MỨC MỜ — ĐÃ ĐO, TUYỆT ĐỐI ĐỪNG HẠ ──────────────────────
 #: Mức mờ THẤP NHẤT được phép cho cách che "mo".
 #:
@@ -232,6 +345,11 @@ class DaiChu:
     #: bề rộng dải TRƯỚC khi thu về hộp (để báo cáo "giảm bao nhiêu %")
     x0_dai: int = 0
     x1_dai: int = 0
+    #: [(t0, t1), …] giây ở **THỜI GIAN NGUỒN** — lúc vùng này THẬT SỰ có chữ.
+    #: Rỗng = có chữ suốt (đường DẢI ĐÁY cũ, giữ nguyên hành vi).
+    khoang: list = field(default_factory=list)
+    #: fps đã dùng khi dò (để tính lại sai số mốc). 0 = bản dải đáy cũ.
+    fps_do: float = 0.0
 
     @property
     def cao_dai(self) -> int:
@@ -766,6 +884,400 @@ def do_hop_chu(src: str | Path, dai: DaiChu, fps: float = HOP_FPS,
         return ra
     except Exception:                                          # noqa: BLE001
         return dai              # dò hộp hỏng -> che nguyên dải, KHÔNG chết
+
+
+# ═══════════ PHẦN 1c — QUÉT CẢ KHUNG, TRẢ NHIỀU VÙNG CHỮ ════════════════════
+def _doc_dong(src: str | Path, fps: float, rong: int,
+              han: int = 1800) -> tuple:
+    """Giải mã DÒNG CHẢY cả khung -> (mảng bit nén (N, h*w/8), w, h).
+
+    **VÌ SAO PHẢI NÉN BIT chứ không giữ ảnh xám:** quét cả khung ở fps=4 cho
+    video 10 phút = 2.400 khung x 320x570 = **438 MB** một mảng, rồi mặt nạ +
+    hằng + giao thời gian nhân lên 3-4 lần. `np.packbits` đưa mỗi khung về
+    22,8 KB -> cả video **55 MB**, vừa đủ chạy 3 làn xuất song song.
+
+    Đọc bằng `Popen` + đọc từng khung chứ không `subprocess.run`: `run` gom
+    TOÀN BỘ stdout vào một `bytes` (đúng 438 MB nói trên) trước khi trả về.
+    Vẫn có TRẦN THỜI GIAN thật — canh bằng đồng hồ trong vòng đọc rồi giết
+    tiến trình (VIỆC 0: không lệnh ffmpeg nào được chạy vô hạn).
+    """
+    tt = thong_tin(src)
+    if not tt["rong"] or not tt["cao"]:
+        return None, 0, 0
+    w = int(rong) + (int(rong) % 2)
+    h = int(round(tt["cao"] * w / tt["rong"]))
+    h += h % 2
+    cmd = [_bin("ffmpeg"), "-v", "error", "-i", str(src), "-vf",
+           f"fps={fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "gray",
+           "-"]
+    khung = w * h
+    goi = []
+    han_luc = time.monotonic() + han
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                         creationflags=_CREATE_NO_WINDOW)
+    try:
+        while True:
+            if time.monotonic() > han_luc:
+                break
+            buf = p.stdout.read(khung)
+            if not buf or len(buf) < khung:
+                break
+            g = np.frombuffer(buf, np.uint8).reshape(h, w)
+            goi.append(np.packbits(_mat_na(g).reshape(-1)))
+    finally:
+        try:
+            p.stdout.close()
+        except OSError:
+            pass
+        if p.poll() is None:
+            p.kill()
+        try:
+            p.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+    if len(goi) < 6:
+        return None, 0, 0
+    return np.stack(goi), w, h
+
+
+def _mo_goi(goi: np.ndarray, i0: int, i1: int, h: int, w: int) -> np.ndarray:
+    """Bung lại (i1-i0, h, w) uint8 0/1 từ mảng bit nén."""
+    return np.unpackbits(goi[i0:i1], axis=1)[:, :h * w].reshape(-1, h, w)
+
+
+def _ty_vet_dai(m: np.ndarray, nguong: int = VET_DAI_PX) -> float:
+    """Tỉ lệ mực nằm trong DÃY NGANG dài hơn `nguong` điểm ảnh.
+
+    Chèn một cột 0 hai bên rồi trải phẳng: dãy không thể vắt qua hai hàng, nên
+    tính được toàn bộ bằng MỘT phép `diff` thay vì vòng lặp Python từng hàng.
+    """
+    if m.ndim == 3:
+        m = m.any(axis=0)
+    tong = int(m.sum())
+    if tong <= 0:
+        return 0.0
+    z = np.zeros((m.shape[0], 1), np.int8)
+    mm = np.concatenate([z, (m > 0).astype(np.int8), z], axis=1).ravel()
+    d = np.diff(mm)
+    dau = np.flatnonzero(d == 1)
+    cuoi = np.flatnonzero(d == -1)
+    if not dau.size:
+        return 0.0
+    L = cuoi - dau
+    return float(L[L > nguong].sum()) / float(tong)
+
+
+def _gop_khoang(ks: Sequence) -> list:
+    """Gộp các khoảng (t0,t1) CHỒNG NHAU. Bản đầu chỉ `set()` hai danh sách nên
+    hai khoảng chồng nhau bị đếm HAI LẦN — `jp_tuyet` ra tổng thời lượng có
+    chữ **258% clip**, con số vô nghĩa mà không ai kêu."""
+    ds = sorted((float(a), float(b)) for a, b in ks if float(b) > float(a))
+    if not ds:
+        return []
+    ra = [list(ds[0])]
+    for a, b in ds[1:]:
+        if a <= ra[-1][1] + 1e-6:
+            ra[-1][1] = max(ra[-1][1], b)
+        else:
+            ra.append([a, b])
+    return [(round(a, 3), round(b, 3)) for a, b in ra]
+
+
+def _khoang_tu_co(co: np.ndarray, fps: float, khe: float = VUNG_KHE_GIAY,
+                  noi: float = VUNG_NOI_GIAY) -> list:
+    """Mảng bool "khung này có chữ" -> [(t0, t1), …] giây, đã bắc cầu + nới.
+
+    Nới HAI ĐẦU là CỐ Ý và chỉ nới ra (an toàn một chiều): lưới lấy mẫu
+    1/fps giây nên biên vốn chỉ đúng tới ±(1/2fps); thà che thừa 0,25 s còn
+    hơn để lộ nửa giây chữ.
+    """
+    ra = []
+    n = len(co)
+    i = 0
+    b_khe = max(1, int(round(khe * fps)))
+    while i < n:
+        if not co[i]:
+            i += 1
+            continue
+        j = i
+        hut = 0
+        k = i
+        while k + 1 < n:
+            k += 1
+            if co[k]:
+                j, hut = k, 0
+            else:
+                hut += 1
+                if hut > b_khe:
+                    break
+        ra.append((max(0.0, i / fps - noi), (j + 1) / fps + noi))
+        i = j + 1
+    # gộp khoảng chồng nhau sau khi nới
+    if not ra:
+        return []
+    gon = [list(ra[0])]
+    for a, b in ra[1:]:
+        if a <= gon[-1][1] + 1e-6:
+            gon[-1][1] = max(gon[-1][1], b)
+        else:
+            gon.append([a, b])
+    return [(round(a, 3), round(b, 3)) for a, b in gon]
+
+
+#: Sổ ghi VÌ SAO từng ứng viên bị loại — chỉ để gỡ rối/đo, không ai đọc trong
+#: đường chạy thật. Ghi đè mỗi lượt gọi `do_vung_chu`.
+VET_LOAI: list = []
+
+
+def do_vung_chu(src: str | Path, fps: float = VUNG_FPS,
+                rong: int = VUNG_RONG, toi_da: int = VUNG_TOI_DA,
+                doan: float = HOP_DOAN) -> list:
+    """QUÉT CẢ KHUNG -> danh sách `DaiChu`, mỗi vùng có MỐC THỜI GIAN RIÊNG.
+
+    Khác `do_dai_chu` ở đúng hai điều, cả hai đều là thứ anh Hùng kêu:
+      · KHÔNG có `y_min` — mọi hàng của khung đều được xét, nên chữ ở đỉnh /
+        góc / giữa cũng bắt được.
+      · Mỗi vùng mang `khoang` = [(t0,t1), …] **lúc vùng đó THẬT SỰ có chữ**,
+        nên mặt che bật/tắt theo chữ chứ không bật suốt clip.
+
+    CÁCH TÁCH CHỮ KHỎI NỀN (mở cả khung thì nền nhiều gấp bội — xem khối ghi
+    chú "QUÉT CẢ KHUNG" ở đầu file cho số đo của từng cửa):
+      (1) trừ phần HẰNG (logo/watermark đứng im) — y như bản dải.
+      (2) GIAO NHAU THEO THỜI GIAN (`_loc_thoi_gian`) — nền trôi thì chết.
+      (3) **CHIỀU CAO DẢI** `CAO_MIN..CAO_MAX` — cửa mạnh nhất. Mảng nền dày
+          đặc nét (tường hoạ tiết) mọc ra dải cao hàng trăm hàng và bị đá ra;
+          một dòng chữ chỉ dày 1,5-16% khung.
+      (4) DIỆN TÍCH `VUNG_DIEN_TICH_MAX` — chốt chặn cuối.
+      (5) mật độ / tỉ số nền / tổng thời lượng hiện — y như bản dải.
+
+    KHÔNG BAO GIỜ NÉM: nguồn hỏng -> trả [].
+    """
+    ra = []
+    VET_LOAI.clear()
+    try:
+        tt = thong_tin(src)
+        W, H = tt["rong"], tt["cao"]
+        if not W or not H:
+            return []
+        goi, w, h = _doc_dong(src, fps, rong)
+        if goi is None:
+            return []
+        n = goi.shape[0]
+        mns = _mo_goi(goi, 0, n, h, w)
+        # KHÔNG trừ phần HẰNG ở đây (xem khối ghi chú `LOGO_HANG_TY`): trừ là
+        # xoá luôn TIÊU ĐỀ. Vẫn TÍNH mặt nạ hằng để loại LOGO ở mức VÙNG.
+        const = (mns.sum(axis=0) >= TY_LE_HANG * n).astype(np.uint8)
+        gia = _loc_thoi_gian(mns)
+        del mns
+        tb = gia.mean(axis=(0, 2))                      # (h,) mật độ TB/hàng
+        khe = max(2, int(h * KHE_TOI_DA))
+        da_lay = np.zeros(h, bool)
+        ty = H / float(h)
+        dai_ung = []
+        for _ in range(max(1, int(toi_da)) * 3):        # dò dư rồi lọc
+            con = np.where(da_lay, -1.0, tb)
+            y_dinh = int(np.argmax(con))
+            dinh = float(con[y_dinh])
+            if dinh < NGUONG_HANG:
+                break
+            ng = max(NGUONG_HANG, TY_LE_DINH * dinh)
+            y0 = y1 = y_dinh
+            i, hut = y_dinh, 0
+            while i + 1 < h:
+                i += 1
+                if da_lay[i]:
+                    break
+                if tb[i] >= ng:
+                    y1, hut = i, 0
+                else:
+                    hut += 1
+                    if hut > khe:
+                        break
+            i, hut = y_dinh, 0
+            while i - 1 >= 0:
+                i -= 1
+                if da_lay[i]:
+                    break
+                if tb[i] >= ng:
+                    y0, hut = i, 0
+                else:
+                    hut += 1
+                    if hut > khe:
+                        break
+            y1 += 1
+            # đánh dấu ĐÃ XÉT (kể cả khi loại) — không thì vòng sau lại bám
+            # đúng đỉnh đó và lặp vô tận
+            da_lay[max(0, y0 - 1):min(h, y1 + 1)] = True
+            cao_ty = (y1 - y0) / float(h)
+            if cao_ty > CAO_MAX:
+                VET_LOAI.append(f"hàng {y0}..{y1} ({y0/h*100:.0f}%) đỉnh "
+                                f"{dinh:.4f}: CAO {cao_ty*100:.1f}% > "
+                                f"{CAO_MAX*100:.0f}% -> NỀN")
+                continue                                # (3) NỀN dày -> loại
+            dai_ung.append((y0, y1))
+        if not dai_ung:
+            return []
+        # ---- GỘP ỨNG VIÊN LIỀN KỀ **TRƯỚC** KHI ĐO CAO_MIN ----
+        # LỖI THẬT của bản đầu (đo trên `jp_taxi`): tiêu đề ở đỉnh có đỉnh nét
+        # **0,2592** — ĐẬM HƠN cả phụ đề đáy (0,2160) — mà vẫn BỊ BỎ SÓT, lý do
+        # ghi ra là *"CAO 1,4% ngoài 1,5..16%"*. Vì tiêu đề là **2 DÒNG**: dòng
+        # 1 chữ ĐỎ VIỀN TRẮNG (nét mảnh -> top-hat rất mạnh 0,2592), dòng 2 chữ
+        # TRẮNG ĐẶC (top-hat chỉ ăn được VIỀN nét -> 0,0614). Ngưỡng mọc dải là
+        # `0,40 x đỉnh` = 0,1037 nên dòng 2 **không đủ tư cách nối vào dòng 1**,
+        # và mỗi dòng riêng lẻ lại mỏng hơn sàn CAO_MIN. Tức hai luật ĐÚNG cộng
+        # lại thành một lỗ hổng — đúng loại lỗi cổng 28 sinh ra để bắt.
+        # Nay gộp ứng viên cách nhau < `khe` hàng RỒI MỚI đo chiều cao.
+        dai_ung.sort()
+        gop = [list(dai_ung[0])]
+        for y0, y1 in dai_ung[1:]:
+            if y0 - gop[-1][1] <= khe and (y1 - gop[-1][0]) / float(h) <= CAO_MAX:
+                gop[-1][1] = max(gop[-1][1], y1)
+            else:
+                gop.append([y0, y1])
+        dai_ung = []
+        for y0, y1 in gop:
+            if (y1 - y0) / float(h) < CAO_MIN:
+                VET_LOAI.append(f"hàng {y0}..{y1} ({y0/h*100:.0f}%): CAO "
+                                f"{(y1-y0)/h*100:.1f}% < {CAO_MIN*100:.1f}%")
+                continue
+            dai_ung.append((y0, y1))
+        if not dai_ung:
+            return []
+        # NỀN = **TRUNG VỊ mật độ hàng của CẢ khung**, không phải "mọi hàng
+        # ngoài ứng viên". Bản đầu lấy phần ngoài ứng viên nên khi ứng viên
+        # phủ gần hết khung (video nền nhiều vân) thì mẫu số tụt về ~0 và
+        # `ty_so_nen` vọt lên 10-15 lần cho những vùng THẬT SỰ LÀ NỀN —
+        # cửa chặn tự vô hiệu hoá đúng lúc cần nó nhất (`jp_tuyet`).
+        md_nen = max(1e-6, float(np.median(tb)))
+
+        for (y0, y1) in sorted(dai_ung):
+            trong = gia[:, y0:y1, :]
+            md_khung = trong.reshape(n, -1).mean(axis=1)
+            co = md_khung > NGUONG_HANG
+            ty_khung = float(co.mean())
+            giay = float(co.sum()) / fps
+            # mật độ tính trên KHUNG CÓ CHỮ, không phải cả video: tiêu đề hiện
+            # 25% thời lượng mà chia đều cho cả video là tự pha loãng 4 lần
+            md = float(md_khung[co].mean()) if co.any() else float(md_khung.mean())
+            vt = f"hàng {y0}..{y1} ({y0/h*100:.0f}%)"
+            if ty_khung < VUNG_KHUNG_MIN or giay < VUNG_GIAY_MIN:
+                VET_LOAI.append(f"{vt}: chỉ {ty_khung*100:.0f}% khung / "
+                                f"{giay:.1f}s có chữ (cần "
+                                f"{VUNG_KHUNG_MIN*100:.0f}% và "
+                                f"{VUNG_GIAY_MIN}s)")
+                continue
+            if md < MAT_DO_MIN or md / max(1e-6, md_nen) < TY_SO_NEN_MIN:
+                VET_LOAI.append(f"{vt}: mật độ {md:.4f} (cần {MAT_DO_MIN}) / "
+                                f"gấp {md/max(1e-6, md_nen):.2f} lần nền "
+                                f"(cần {TY_SO_NEN_MIN})")
+                continue
+            cot = trong[co].sum(axis=(0, 1))
+            nz = np.nonzero(cot > max(1, int(0.02 * co.sum() * (y1 - y0))))[0]
+            if not nz.size:
+                VET_LOAI.append(f"{vt}: không có cột nào đủ đậm")
+                continue
+            dem = int(w * 0.02)
+            cx0, cx1 = max(0, int(nz[0]) - dem), min(w, int(nz[-1]) + 1 + dem)
+            if (cx1 - cx0) * (y1 - y0) > VUNG_DIEN_TICH_MAX * w * h:
+                VET_LOAI.append(f"{vt}: diện tích "
+                                f"{(cx1-cx0)*(y1-y0)/(w*h)*100:.0f}% khung "
+                                f"(trần {VUNG_DIEN_TICH_MAX*100:.0f}%) -> NỀN")
+                continue                                # (4) quá to -> NỀN
+            # (6) VỆT NGANG DÀI = mép giường / lan can / khung cửa, KHÔNG phải
+            # chữ. Đo trên khung ĐẬM NHẤT của vùng (khung trống không nói lên
+            # điều gì về hình dạng).
+            k = int(np.argmax(np.where(co, md_khung, -1.0)))
+            ty_vet = _ty_vet_dai(trong[k])
+            if ty_vet > VET_DAI_TY_MAX:
+                VET_LOAI.append(f"{vt}: {ty_vet*100:.0f}% mực nằm trong vệt "
+                                f"ngang dài (trần {VET_DAI_TY_MAX*100:.0f}%) "
+                                f"-> MÉP NGANG, không phải chữ")
+                continue
+            # (7) LOGO/WATERMARK: mực gần như HẰNG mà vùng lại HẸP. Tiêu đề
+            # cũng hằng nhưng trải ngang, nên hai thứ tách được bằng bề rộng.
+            muc = trong[co].sum()
+            hang_ty = float((trong[co] & const[None, y0:y1, :]).sum()) / \
+                max(1.0, float(muc))
+            if hang_ty >= LOGO_HANG_TY and (cx1 - cx0) < LOGO_RONG_TY * w:
+                VET_LOAI.append(f"{vt}: {hang_ty*100:.0f}% mực là HẰNG và chỉ "
+                                f"rộng {(cx1-cx0)/w*100:.0f}% khung -> "
+                                f"LOGO/watermark, KHÔNG che")
+                continue
+            d = DaiChu(co_chu=True, rong=W, cao=H, so_khung=n,
+                       ty_le_khung=ty_khung, mat_do=md, mat_do_nen=md_nen,
+                       ty_so_nen=md / max(1e-6, md_nen), fps_do=fps)
+            d.y0 = _chan(max(0, int(round(y0 * ty)) - 2), xuong=True)
+            d.y1 = min(H, _chan(min(H, int(round(y1 * ty)) + 2)))
+            d.x0 = _chan(max(0, int(round(cx0 * ty))), xuong=True)
+            d.x1 = min(W, _chan(min(W, int(round(cx1 * ty)))))
+            d.x0_dai, d.x1_dai = d.x0, d.x1
+            d.khoang = _khoang_tu_co(co, fps)
+            d.hop = _hop_trong_vung(gia, y0, y1, w, W, ty, fps, doan, co)
+            d.ly_do = (f"vùng y={d.y0}..{d.y1} ({d.cao_dai}px, "
+                       f"{d.y0/max(1,H)*100:.0f}% khung) — "
+                       f"{ty_khung*100:.0f}% khung có chữ ({giay:.1f}s), "
+                       f"đậm gấp {d.ty_so_nen:.1f} lần nền")
+            ra.append(d)
+        ra.sort(key=lambda d: d.y0)
+        # Gộp 2 vùng DÍNH NHAU (cùng khối chữ bị ngắt quãng) — đỡ 1 nhánh
+        # filter. **PHẢI KIỂM LẠI CAO_MAX SAU KHI GỘP**: bản đầu gộp vô điều
+        # kiện và các vùng gộp DÂY CHUYỀN nhau (mỗi cặp cách < 3% nhưng cộng
+        # dồn thì xa) -> `jp_tuyet` ra MỘT vùng cao **43% khung** (y=576..1398)
+        # tức che gần nửa hình. Đúng cái luật CAO_MAX sinh ra để chặn, bị chính
+        # bước gộp lách qua.
+        gon = []
+        for d in ra:
+            p = gon[-1] if gon else None
+            if p is not None and d.y0 - p.y1 < VUNG_CACH_MIN * H \
+                    and (max(p.y1, d.y1) - p.y0) / float(H) <= CAO_MAX:
+                p.y1 = max(p.y1, d.y1)
+                p.x0, p.x1 = min(p.x0, d.x0), max(p.x1, d.x1)
+                p.hop = []                    # hộp của 2 vùng khác nhau, bỏ
+                p.khoang = _gop_khoang(p.khoang + d.khoang)
+                p.ly_do += " + gộp vùng liền kề"
+            else:
+                gon.append(d)
+        return gon[:max(1, int(toi_da))]
+    except Exception:                                          # noqa: BLE001
+        return []
+
+
+def _hop_trong_vung(gia: np.ndarray, r0: int, r1: int, w: int, W: int,
+                    ty: float, fps: float, doan: float,
+                    co: np.ndarray) -> list:
+    """Bề NGANG chữ theo từng đoạn `doan` giây, TRONG một vùng.
+
+    Cùng khuôn `do_hop_chu` nhưng chỉ giữ đoạn THẬT SỰ có chữ — không mượn hộp
+    hàng xóm cho đoạn trống. Đây là chỗ khác quan trọng nhất so với bản dải:
+    bản dải phủ kín trục thời gian (mượn hộp cho mọi đoạn) nên mặt che BẬT
+    SUỐT CLIP; ở đây đoạn không có chữ thì KHÔNG có hộp, `khoang` lo phần tắt.
+    """
+    n = gia.shape[0]
+    hs = [_be_ngang(gia[i], r0, r1, w) if co[i] else None for i in range(n)]
+    hep_min = HOP_HEP_MIN * w
+    buoc = max(1, int(round(doan * fps)))
+    tho = []
+    i = 0
+    while i < n:
+        j = min(n, i + buoc)
+        bs = [b for b in hs[max(0, i - 1):min(n, j + 1)] if b]
+        if bs:
+            a = min(b[0] for b in bs) - HOP_DEM
+            z = max(b[1] for b in bs) + HOP_DEM
+            if z - a < hep_min:
+                bu = (hep_min - (z - a)) / 2.0
+                a, z = a - bu, z + bu
+            tho.append((i / fps, j / fps, max(0.0, a), min(float(w), z)))
+        i = j
+    if not tho:
+        return []
+
+    def _px(v: float) -> int:
+        return max(0, min(W, int(round(v * ty))))
+
+    return [(round(a, 3), round(b, 3), _chan(_px(x0), xuong=True),
+             min(W, _chan(_px(x1)))) for a, b, x0, x1 in tho]
 
 
 # ───────────────────────────── PHẦN 2 — CHE ─────────────────────────────────
