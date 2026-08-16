@@ -1769,6 +1769,62 @@
   **NẾU SAU NÀY MUỐN ĐỘNG LẠI:** hướng đáng đo là nối **`dich_theo_gio` KHÔNG
   kèm thước** (lấy phần ngân sách thời gian, bỏ phần hội đồng chấm) — đó mới là
   chỗ có số. Nối cả `dich_va_soat` thì đã đo, đã trả lời: KHÔNG.
+- **`dich_theo_gio` KHÔNG KÈM THƯỚC: ĐO XONG — *CŨNG KHÔNG NỐI* (16/08/2026).**
+  Đây là hướng CUỐI CÙNG của đường dịch mà mục trên còn để ngỏ. Cờ
+  `thay_giong.DUNG_DICH_GIO` (env `BQ_DICH_GIO=1`) **mặc định TẮT**, chỉ để đo
+  lại. Đường sống vẫn là `_dich_loat`.
+  **TỰ KIỂM ĐƯỜNG DỊCH LÀ BẮT BUỘC, ĐỪNG BỎ:** `_do_dich_soat.py` nay chạy
+  `tu_kiem_duong()` TRƯỚC mọi lượt (vá 3 đích + `_dich_nguoc_cham`, **0 lượt
+  LLM**) và DỪNG với mã thoát 2 nếu arm gọi sai hàm. Lý do: lượt đo trước từng
+  báo "đã đo `dich_va_soat`" trong khi thật ra so `dich_theo_gio`. Thử phá (gỡ
+  nhánh `elif DUNG_DICH_GIO`) -> ra đúng *"arm GIỜ -> gọi ['loat'] SAI"*, mã
+  thoát **2**. Cổng không phải con dấu.
+  **3 LƯỢT ĐAN XEN, cùng corpus đóng băng của mục trên** (`_do_dich_cache.json`
+  = 50 câu THẬT của `近期热播的7部新片推荐…mp4`, 106,64 s, Trung -> Việt), Groq +
+  edge-tts THẬT, đo ở mức `dich_hau_kiem`:
+
+  | chỉ số (TB 3 lượt) | MỐC (`_dich_loat`) | GIỜ (`dich_theo_gio`) |
+  |---|---|---|
+  | ĐẠT theo thước % | **82,67** | **69,33** |
+  | còn chữ Hán | 0,33 | **0,00** |
+  | **câu < 20 ký tự (cụt)** | **1,33** | **5,67** |
+  | câu > 60 ký tự (gộp) | 6,67 | 5,33 |
+  | lệch \|s\| / câu | 0,721 | **0,465** |
+  | TRÀN (đọc dài hơn khung) | 26,9 s | **12,7 s** |
+  | tổng đọc / tổng khung | 1,166x | **1,021x** |
+  | **LƯỢT LLM / video** | **5,0** | **12,3** |
+  | GIÂY (wall) | 8,3 | 25,8 |
+
+  **HAI RÀO CHẮN BỊ PHÁ, mỗi cái đủ để dừng:**
+  (a) **CÂU CỤT TĂNG 4,3 LẦN** (1,33 -> 5,67) và tăng ở **CẢ 3/3 lượt**
+  (1->7 · 1->5 · 2->5) nên KHÔNG phải nhiễu. Ký tự/câu TB tụt 43,0 -> 36,2:
+  ngân sách thời gian ép chữ ngắn lại, và chỗ nó cắt vào là NGHĨA. Cùng bệnh
+  "đổi câu gộp lấy câu cụt" mà `dich_va_soat` đã mắc.
+  (b) **LƯỢT LLM 2,46x** (5,0 -> 12,3), trần đặt trước là 1,5x. Rẻ hơn hẳn
+  `dich_va_soat` (10,9x) nhưng vẫn quá trần, và với 200-300 kênh thì đó là
+  2,5 lần lượt Groq cho một thứ đo ra là XẤU HƠN.
+  **`dat_%` TỤT 13,3 ĐIỂM — NGOÀI VÙNG NHIỄU.** Thước tự nhiễu 18,7% nên chênh
+  dưới ~5 điểm % là nhiễu; 13,3 điểm thì không, và GIỜ thua ở **CẢ 3/3 lượt**
+  (−18 · −4 · −18). Cả 4 trục đều thua (nghia 7,55 vs 6,86 · xuoi 7,84 vs 7,50 ·
+  noi 7,54 vs 7,22 · tron 8,52 vs 7,86).
+  **CÁI TỐT CỦA NÓ LÀ THẬT NHƯNG *KHÔNG CẦN NỮA*** — đúng lý lẽ đã dùng để bác
+  `dich_va_soat`: tràn 26,9 -> 12,7 s và đọc/khung 1,166 -> 1,021x đo trên
+  **TTS THÔ**, trong khi đường sống còn bước **4b `rut_gon_vua_khung` + 4c
+  `doc_nhanh_vua_khung`** (v2.27.0) xử đúng việc đó ở tầng TIẾNG với
+  `tempo_max` **1,017-1,027** và **chồng lấn 0 ms, 6/6 lượt**. Trả 2,5 lần
+  lượt Groq + 4,3 lần câu cụt để giải trước một bài toán bước sau đã giải xong
+  là lỗ — y hệt kết luận của `dich_va_soat`, chỉ khác con số.
+  **MỘT CHỖ MỐC KHÔNG SẠCH, GHI THẲNG:** lượt này `_dich_loat` để lọt **1 câu
+  còn chữ Hán ở lượt 3** (TB 0,33) trong khi lượt đo trước sạch 3/3, còn GIỜ
+  sạch 3/3. Tức mệnh đề "mốc sạch 0,00" **KHÔNG tái lập được** — nó là kết quả
+  NGẪU NHIÊN theo lượt dịch chứ không phải bất biến. Đừng lấy nó làm rào chắn
+  cứng cho lượt sau; rào chắn đứng vững ở đây là CÂU CỤT và LƯỢT LLM.
+  **CỘT `GIÂY` CỦA LƯỢT 2-3 BỊ NHIỄU, KHÔNG DÙNG ĐỂ KẾT LUẬN:** lúc đó máy đang
+  tải + chạy thử bản `.exe` v2.29.0 song song. Lượt 1 (máy rảnh) ra **14,6 s vs
+  9,7 s = 1,5x**; con số KHÔNG phụ thuộc máy là **LƯỢT LLM 2,46x**. Dùng cột đó.
+  **ĐƯỜNG DỊCH COI NHƯ ĐÃ ĐÓNG:** cả hai hướng (`dich_va_soat` và
+  `dich_theo_gio`) đều đã đo end-to-end và đều bị bác BẰNG SỐ. Muốn cải thiện
+  chất lượng dịch thì phải tìm chỗ KHÁC, đừng đo lại hai hướng này.
 - **CỔNG 56 CA17a/CA17b HỎNG SẴN VÌ *NGƯỠNG CHI PHÍ*, KHÔNG PHẢI HỒI QUY
   (15/08/2026).** Lượt hồi quy v2.28.0: `_test_che_chu.py` ra **ĐẠT 120 ·
   HỎNG 2** (trước ghi 122/0), hỏng đúng 2 mục NGÂN SÁCH THỜI GIAN:
