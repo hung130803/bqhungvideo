@@ -2850,7 +2850,8 @@ def doc_che_chu(payload: dict) -> dict:
 def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
                    hu_log: list | None = None, duong: str = "canvas",
                    td_log: list | None = None,
-                   cc_log: list | None = None) -> None:
+                   cc_log: list | None = None,
+                   dt_log: dict | None = None) -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
@@ -2932,10 +2933,32 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
                             + (_cc.get("ly_do") or "không rõ")
                             + " (chỉ dò được DẢI ĐÁY; chữ giữa/góc trên không "
                               "dò được)")
+    # ĐỘ TO: ghi SỐ ĐO thật của file vừa xuất. Phải có vì đây là bước DUY NHẤT
+    # đụng tới tiếng của mọi clip, và vì có ca **BẤT KHẢ THI** (clip hệ số đỉnh
+    # >20 dB không thể vừa đủ to vừa không vỡ tiếng) — lúc đó phải nói ra
+    # THIẾU BAO NHIÊU LU chứ không được im lặng giao clip nhỏ tiếng.
+    do_to_dong = ""
+    if dt_log:
+        _tr, _sa = dt_log.get("truoc") or {}, dt_log.get("sau") or {}
+        if dt_log.get("bo_qua"):
+            do_to_dong = (f" · độ to: KHÔNG chỉnh — {dt_log.get('ly_do') or ''}"
+                          + (f" (đang {_tr.get('I')} LUFS)" if _tr else ""))
+        else:
+            do_to_dong = (
+                f" · độ to: {_tr.get('I')} -> {_sa.get('I')} LUFS "
+                f"({dt_log.get('nang_db', 0):+.2f} dB, bậc {dt_log.get('buoc')})"
+                f" · đỉnh {_tr.get('TP')} -> {_sa.get('TP')} dBTP"
+                f" · LRA {_tr.get('LRA')} -> {_sa.get('LRA')}")
+            if dt_log.get("qua_tran_dinh"):
+                do_to_dong += " · ⚠ ĐỈNH VẪN VƯỢT TRẦN"
+            if not dt_log.get("dat_dich"):
+                do_to_dong += (f" · ⚠ CHƯA đủ to, thiếu "
+                               f"{dt_log.get('thieu_lu')} LU: "
+                               f"{dt_log.get('ly_do') or ''}")
     dong = (f"   ↳ {pfx.strip() or 'Part'} công thức: mẫu «{ten_mau}» · "
             f"phụ đề «{cap}» · lớp chữ: {lop_chu} · "
             f"tiếng động: {', '.join(tieng)} · "
-            f"hiệu ứng hình: {', '.join(hieu_ung)}{che_chu_dong}")
+            f"hiệu ứng hình: {', '.join(hieu_ung)}{che_chu_dong}{do_to_dong}")
     # ĐIỂM NHẤN: mỗi điểm ghi LÝ DO KÈM SỐ (anh Hùng: cấm ghi chung chung kiểu
     # "cảnh hay"). `hu_log` là danh sách hiệu ứng THẬT SỰ vào file — đã lọc theo
     # font ở `export_canvas_clip`, nên nhật ký không bao giờ khoe hiệu ứng ma.
@@ -3847,6 +3870,36 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                                      "KHÔNG chuyển cảnh, KHÔNG hiệu ứng điểm "
                                      "nhấn, KHÔNG phụ đề")}
 
+    # ---- CHUẨN HOÁ ĐỘ TO — **CỬA DUY NHẤT CHO MỌI ĐƯỜNG XUẤT** ----
+    # Đặt ở đây, NGOÀI cả 3 nhánh, là cố ý: đường cắt thường · ghép đoạn ·
+    # recap · Mixed-Cut · clip đơn đều đi qua đúng chỗ này. Bắt từng nhánh tự
+    # gọi là lặp lại lỗi (a) của cổng 19 (mẫu-theo-kênh chỉ áp ở dây chuyền tự
+    # động, bấm tay vẫn ăn cấu hình trang chính) và lỗi che chữ của cổng 56
+    # ("Mixed-Cut và mẫu clip đơn KHÔNG che" vì chúng không qua
+    # `export_canvas_clip`).
+    #
+    # GỐC (đo, không đoán — `_kq_lufs_duong.json`): đường xuất **chưa bao giờ
+    # có bước chuẩn hoá độ to**. Độ to clip trải **15,75 LU** và **3/8 bản
+    # xuất có đỉnh thật vượt 0 dBTP** = vỡ tiếng thật. Mạng xã hội chỉ chuẩn
+    # hoá XUỐNG chứ không nâng lên, nên clip −22 LUFS phát ra nhỏ hơn hẳn.
+    #
+    # HỎNG THÌ GIỮ NGUYÊN CLIP, KHÔNG LÀM VỠ LƯỢT XUẤT: `chuan_do_to_clip` đã
+    # tự nuốt lỗi và trả `bo_qua=True`, nhưng bọc thêm một lớp ở đây phòng lỗi
+    # lạ (đĩa đầy đúng lúc, file bị khoá). CanceledError PHẢI nổi lên — huỷ là
+    # huỷ, không được "lùi êm".
+    _dt_log = None
+    try:
+        from app.core.ffmpeg_utils import chuan_do_to_clip as _chuan_dt
+        ctx.progress(0.97, f"{pfx}đang chuẩn hoá độ to...")
+        _dt_log = _chuan_dt(out_path)
+    except CanceledError:
+        raise
+    except Exception as e:  # noqa: BLE001 — chuẩn hoá KHÔNG được giết lượt xuất
+        _dt_log = {"bo_qua": True,
+                   "ly_do": f"lỗi ngoài chuẩn hoá độ to -> giữ clip ({e})"}
+    if _dt_log:
+        result_extra = {**(result_extra or {}), "do_to": _dt_log}
+
     # ---- MINH BẠCH: ghi ĐÚNG những gì vừa áp cho Part này vào nhật ký dây
     # chuyền. Lý do (anh Hùng 06/08/2026): "hiệu ứng chữ khi xuất ra nó ra 1
     # kiểu khác mấy cái kiểu mới tôi mới thêm, với không biết nó đã thêm hiệu
@@ -3868,7 +3921,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                        # cục (3 làn xuất song song là đọc nhầm clip khác).
                        td_log=locals().get("_td_log") or [],
                        # CHE CHỮ CHÁY: cùng lý do — list RIÊNG của lượt này.
-                       cc_log=locals().get("_cc_log") or [])
+                       cc_log=locals().get("_cc_log") or [],
+                       # ĐỘ TO: số đo THẬT của chính file vừa xuất.
+                       dt_log=locals().get("_dt_log") or None)
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
         pass
     # ---- CHO ANH HÙNG NHÌN THẤY: lưu ĐÚNG hiệu ứng + tiếng động vừa ĐƯA VÀO
