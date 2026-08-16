@@ -1,0 +1,30 @@
+app\ai\recap.py:1719:5: local variable 'n_orig0' is assigned to but never used
+app\core\analysis.py:18:1: '.ffmpeg_utils.extract_audio_wav' imported but unused
+app\core\audio_analysis.py:13:9: 'librosa' imported but unused
+app\core\audio_analysis.py:36:5: 'numpy as np' imported but unused
+app\core\diarization.py:15:9: 'pyannote.audio' imported but unused
+app\core\face_track.py:15:9: 'mediapipe' imported but unused
+app\core\face_track.py:16:9: 'cv2' imported but unused
+app\core\scene_detect.py:12:9: 'scenedetect' imported but unused
+app\core\transcribe.py:84:9: 'faster_whisper' imported but unused
+app\core\transcribe.py:158:9: 'stable_whisper' imported but unused
+app\database\db.py:111:17: local variable 'first_err' is assigned to but never used
+app\queue\jobs.py:378:1: 'app.modules.m1_highlight' imported but unused
+app\ui\editor.py:15:1: 'PyQt6.QtWidgets.QGroupBox' imported but unused
+app\ui\fonts.py:7:1: 'pathlib.Path' imported but unused
+app\ui\login.py:7:1: 'PyQt6.QtCore.QSettings' imported but unused
+app\ui\login.py:8:1: 'PyQt6.QtGui.QGuiApplication' imported but unused
+app\ui\main_window.py:7:1: 'PyQt6.QtCore.QSettings' imported but unused
+app\ui\main_window.py:13:1: 'app.queue.resource_manager.PROFILE' imported but unused
+app\ui\main_window.py:111:9: 'app.ui.theme.WINDOW' imported but unused
+app\ui\recap_settings.py:58:1: 'PyQt6.QtCore.QSettings' imported but unused
+app\ui\state.py:22:9: 'PyQt6.QtCore.QSettings' imported but unused
+app\ui\studio_page.py:17:1: 'PyQt6.QtCore.QSettings' imported but unused
+app\ui\studio_page.py:610:9: 'config.Settings' imported but unused
+app\ui\studio_page.py:1475:9: 'PyQt6.QtWidgets.QApplication' imported but unused
+app\ui\studio_page.py:4487:9: 'PyQt6.QtWidgets.QComboBox' imported but unused
+app\ui\studio_page.py:4487:9: 'PyQt6.QtWidgets.QSpinBox' imported but unused
+app\ui\studio_page.py:4493:9: 'app.ui.wheelguard.NoWheelSpinBox' imported but unused
+app\ui\studio_page.py:5552:25: f-string is missing placeholders
+app\ui\studio_page.py:7343:9: local variable 'b_gan' is assigned to but never used
+main.py:65:5: 'app.queue.jobs' imported but unused

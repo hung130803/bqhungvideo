@@ -24,7 +24,7 @@ THỬ PHÁ CỔNG 65 — mỗi phép PHẢI làm cổng ĐỎ
 
 [BẮT] bỏ CACHE của nghe thử
    mã thoát 1 · dự kiến CA 6 · 1 mục hỏng
-      HỎNG bấm lần 2 dùng CACHE (không gọi lại) — 731 ms, cache=False
+      HỎNG bấm lần 2 dùng CACHE (không gọi lại) — 904 ms, cache=False
 
 [BẮT] gỡ nút Nghe thử khỏi hộp
    mã thoát 3221225477 · dự kiến CA 7 · 1 mục hỏng

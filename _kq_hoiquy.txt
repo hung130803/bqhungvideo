@@ -1,0 +1,25 @@
+==============================================================================
+HỒI QUY — 18 cổng · BQ_MOC_REF=v2.25.0
+==============================================================================
+  65 độ to + nghe thử    rc=0     33.2s  ĐẠT   47 · HỎNG 0     (mốc 47)
+  64 Piper               rc=0     42.3s  ĐẠT   53 · HỎNG 0     (mốc 47)
+  63 biến thể giọng      rc=1      0.3s  ĐẠT   23 · HỎNG 1     << TỤT so mốc 24
+  62 quét cả khung       rc=0      1.3s  ĐẠT   33 · HỎNG 0     (mốc 33)
+  60 chữ theo lời        rc=0      0.4s  ĐẠT   42 · HỎNG 0     (mốc 42)
+  59 đường dài           rc=0      9.3s  ĐẠT   46 · HỎNG 0     (mốc 46)
+  57 bảng tiến độ        rc=0     14.9s  ĐẠT   57 · HỎNG 0     (mốc 57)
+  56 che chữ             rc=0    190.8s  ĐẠT  123 · HỎNG 0     (mốc 123)
+  55 thay giọng UI       rc=0    164.8s  ĐẠT   48 · HỎNG 0     (mốc 48)
+  54 dubbing CJK         rc=0      1.1s  ĐẠT   44 · HỎNG 0     (mốc 44)
+  53 thay giọng          rc=0      4.9s  ĐẠT   44 · HỎNG 0     (mốc 44)
+  52 CJK vá              rc=0      4.2s  ĐẠT   46 · HỎNG 0     (mốc 46)
+  52b mảnh cuối          rc=0      2.4s  ĐẠT    9 · HỎNG 0   
+  31 nút không cụt       rc=0      0.8s  ĐẠT   18 · HỎNG 0   
+  và/lỡ phụ đề           rc=0      0.5s  ĐẠT   16 · HỎNG 0     (mốc 16)
+  không popup            rc=0      2.2s  ĐẠT    ? · HỎNG ?   
+  làn cắt đói            rc=0      0.1s  ĐẠT    ? · HỎNG ?   
+  smoke                  rc=0      1.4s  ĐẠT    ? · HỎNG ?   
+==============================================================================
+ĐỎ: 1 cổng -> ['63 biến thể giọng']
+ĐÁNG NGỜ (rc=0 mà không thấy dòng tổng kết / chạy <0,3s): ['không popup', 'làn cắt đói', 'smoke']
+TỤT SỐ MỤC so với mốc: ['63 biến thể giọng']

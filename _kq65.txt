@@ -33,16 +33,16 @@ CỔNG 65 — ĐỘ TO BẢN TRỘN + NÚT NGHE THỬ
 
 == CA 6: nghe thử (KHÔNG phát ra loa) ==
   ĐẠT  edge-tts giọng gốc: sinh được tiếng — nguồn=edge-tts lỗi=
-  ĐẠT  edge-tts giọng gốc: file đủ lớn (không phải 0 KiB) — 198222 byte
-  ĐẠT  edge-tts giọng gốc: có độ dài thật — 4.13 s
+  ĐẠT  edge-tts giọng gốc: file đủ lớn (không phải 0 KiB) — 154256 byte
+  ĐẠT  edge-tts giọng gốc: có độ dài thật — 3.21 s
   ĐẠT  edge-tts giọng gốc: NÓI RA nguồn giọng thật — edge-tts
   ĐẠT  edge-tts biến thể trầm: sinh được tiếng — nguồn=edge-tts lỗi=
-  ĐẠT  edge-tts biến thể trầm: file đủ lớn (không phải 0 KiB) — 191310 byte
-  ĐẠT  edge-tts biến thể trầm: có độ dài thật — 3.98 s
+  ĐẠT  edge-tts biến thể trầm: file đủ lớn (không phải 0 KiB) — 143502 byte
+  ĐẠT  edge-tts biến thể trầm: có độ dài thật — 2.99 s
   ĐẠT  edge-tts biến thể trầm: NÓI RA nguồn giọng thật — edge-tts
   ĐẠT  Piper vais1000: sinh được tiếng — nguồn=piper lỗi=
-  ĐẠT  Piper vais1000: file đủ lớn (không phải 0 KiB) — 137726 byte
-  ĐẠT  Piper vais1000: có độ dài thật — 2.87 s
+  ĐẠT  Piper vais1000: file đủ lớn (không phải 0 KiB) — 135498 byte
+  ĐẠT  Piper vais1000: có độ dài thật — 2.82 s
   ĐẠT  Piper vais1000: NÓI RA nguồn giọng thật — piper
   ĐẠT  bấm lần 2 dùng CACHE (không gọi lại) — 1 ms, cache=True
   ĐẠT  giọng rỗng -> báo lỗi, không nổ — Chưa chọn giọng

@@ -3193,6 +3193,18 @@ TRAN_DINH_THAT_DBTP = -1.0
 #: −14,02) — tức gần như cho không.
 BIEN_DINH_THAT_DB = 0.5
 
+#: SÀN: bản trộn đo dưới mức này thì **BỎ QUA** bước chuẩn hoá.
+#: Bản trộn gần câm (Demucs trả lớp rỗng · cả loạt câu TTS hỏng) đo ra
+#: −60..−70 LUFS; nâng nó về −14 là +46..+56 dB, và thứ được nâng lúc đó là
+#: NỀN NHIỄU chứ không phải tiếng nói. Thà giao file nhỏ tiếng còn hơn giao
+#: file rít. `_kiem_wav` không bắt được ca này vì nó đo RMS, không đo LUFS.
+SAN_LUFS_CHUAN_HOA = -45.0
+
+#: Trần chỉnh độ to MỘT LƯỢT (dB, cả hai chiều). Bình thường chỉ cần 1-3 dB;
+#: cần quá 24 dB nghĩa là bản trộn đã bất thường, và nâng tiếp cũng không cứu
+#: được. Chặn ở đây để một lượt đo lỗi không đẻ ra file vỡ tiếng.
+TRAN_CHINH_DO_TO_DB = 24.0
+
 
 def do_do_to(path: str | Path) -> dict:
     """ĐỘ TO TÍCH HỢP + ĐỈNH THẬT + DẢI ĐỘNG, bằng pha ĐO của `loudnorm`.
@@ -3271,6 +3283,21 @@ def chuan_do_to(wav_in: str | Path, wav_out: str | Path,
     truoc = do_do_to(wav_in)
     can = dich - truoc["I"]
     tran_lim = tran_tp - BIEN_DINH_THAT_DB
+
+    # CHẶN NÂNG ĐIÊN. Bản trộn gần như câm (Demucs trả lớp rỗng, TTS hỏng cả
+    # loạt) đo ra -60..-70 LUFS -> `can` thành +46..+56 dB, và lúc đó thứ được
+    # nâng KHÔNG phải tiếng nói mà là NỀN NHIỄU. Thà để nhỏ tiếng còn hơn đưa
+    # cho anh Hùng một file rít. `_kiem_wav` đã chặn ca câm tuyệt đối, nhưng nó
+    # đo RMS chứ không đo LUFS nên không bắt được ca "có tiếng mà bé xíu".
+    if truoc["I"] < SAN_LUFS_CHUAN_HOA:
+        return {"nang_db": 0.0, "bo_qua": True,
+                "vi_sao": (f"bản trộn chỉ {truoc['I']:.2f} LUFS, dưới sàn "
+                           f"{SAN_LUFS_CHUAN_HOA} — nâng lên là nâng nền "
+                           f"nhiễu chứ không phải tiếng nói"),
+                "truoc": {k: round(v, 2) for k, v in truoc.items()},
+                "sau": {k: round(v, 2) for k, v in truoc.items()},
+                "dat_dich": False, "qua_tran_dinh": False, "lra_doi": 0.0}
+    can = max(-TRAN_CHINH_DO_TO_DB, min(TRAN_CHINH_DO_TO_DB, can))
 
     # `alimiter` BẮT BUỘC `level=0` (mặc định `level=true` TỰ NÂNG +3,1 dB —
     # tức tự phá đúng cái trần vừa đặt) và `latency=1` (không có thì trễ
