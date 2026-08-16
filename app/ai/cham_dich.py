@@ -38,42 +38,83 @@ model chấm gắt, con số ra sẽ là của cách xếp bài chứ không ph�
 Trong đó có ĐÚNG ca đã đẻ ra file này: `新片 -> "phim về chip"` (thước cũ cho
 7,85-7,97/10) và `落魄拳手 -> "võ sĩ xuống cấp"`.
 
-**KÊU OAN: đây là mặt YẾU, ghi thẳng.** Bản TỐT được cho ĐẠT chỉ
-**11/20 · 17/20 · 14/20 · 12/20 = 67,5% trung bình** — tức ~1/3 câu dịch tốt
-bị thước chấm trượt, và con số NHẤP NHÁY mạnh (55% .. 85%).
+**KÊU OAN CỦA v1: đây là mặt YẾU, và nó là lý do có v2.** Bản TỐT được cho ĐẠT
+chỉ **11/20 · 17/20 · 14/20 · 12/20 = 67,5% trung bình**; đo lại bằng
+`_do_dich_luat.py` trên 200 quan sát ra **38,8%** kêu oan (bộ kiểm 150 quan
+sát: **25,0%**). Tức cứ 3 câu dịch tốt thì 1 câu bị đem đi dịch lại.
 
-**KHÔNG CÓ NGƯỠNG NÀO CHỮA ĐƯỢC — đã đo phân bố, hai nhóm CHỒNG NHAU:**
-  · `diem` nhóm HỎNG: 0,0 .. **6,0** (trung vị 2,0)
-  · `diem` nhóm TỐT : **5,0** .. 9,0 (trung vị 8,0)
-Không có khoảng trống để đặt ngưỡng vào (khác hẳn ca `_do_cjk_calib.py` —
-ở đó hai nhóm TÁCH RỜI nên lấy giữa khoảng trống là có căn cứ). Bảng đánh đổi
-đo được (chỉ cửa hội đồng, 60 bản hỏng + 40 bản tốt):
+**HẠ NGƯỠNG KHÔNG CHỮA ĐƯỢC — ĐÃ ĐO, ĐỪNG THỬ LẠI.** `diem` (=MIN 4 trục) hai
+nhóm CHỒNG NHAU: HỎNG 0,0..6,0 · TỐT 5,0..9,0. Chỉ hạ ngưỡng v1 từ 7,0 xuống
+6,0 ra **99,2% bắt / 30,0% oan** (kiểm 95,6% / 20,0%) — vẫn không dùng được.
 
-    ngưỡng | hỏng bị bắt      | tốt bị kêu oan
-      5,0  | 44/60 =  73,3%   |  2/40 =  5,0%
-      6,0  | 52/60 =  86,7%   |  5/40 = 12,5%
-      7,0  | 60/60 = 100,0%   | 12/40 = 30,0%
-      7,5  | 60/60 = 100,0%   | 18/40 = 45,0%
+==========================================================================
+v2 (16/08/2026) — NGƯỠNG RIÊNG TỪNG TRỤC. **ĐÍCH ĐẠT: bắt >= 90% · oan <= 10%**
+==========================================================================
+**GỐC BỆNH KHÔNG PHẢI CON SỐ NGƯỠNG MÀ LÀ PHÉP `MIN`.** Cả 4 trục đều tách
+được hai nhóm (AUC: tron 0,941 · nghia 0,931 · xuoi 0,920 · noi 0,917), nhưng
+một bản dịch TỐT thường bị hội đồng chê ĐÚNG MỘT trục (hay là văn phong) —
+`MIN` biến một lá phiếu lạc thành một bản án. Nên v2 cho **mỗi trục một
+ngưỡng riêng**, trục nào không chấm được thì BỎ QUA.
 
-`NGUONG_DAT` GIỮ **7,0**: thước này để SOI, ca sai đắt nhất của nó là BỎ LỌT
-bản dịch hỏng chứ không phải kêu oan bản dịch tốt (kêu oan thì người đọc nhìn
-câu là biết; bỏ lọt thì `新片 -> phim về chip` đi thẳng vào video).
-**AI NỐI THƯỚC NÀY VÀO ĐƯỜNG DỊCH LẠI PHẢI ĐỌC ĐOẠN NÀY TRƯỚC**: ở ngưỡng 7,0
-là dịch lại ~30% câu vốn đã tốt — vừa tốn lượt Groq vừa CÓ CƠ LÀM XẤU ĐI
-(CLAUDE.md đã đo bước rút gọn làm tụt −0,58 .. −1,24 điểm). Muốn nối thì hạ
-về 6,0 hoặc 5,0 theo bảng trên, và phải NÓI RA là đang đổi khả năng bắt lấy
-sự yên tĩnh.
+**CỬA THUẬT NGỮ LÀ NGUỒN KÊU OAN LỚN NHẤT** (đo từng cửa MỘT MÌNH, 200 quan sát):
 
-**BA CỬA GÁNH VIỆC KHÁC HẲN NHAU — đừng bỏ cửa nào:**
-  · **luật máy** (`loi_may`, TIỀN ĐỊNH, 0 lượt LLM): bắt **13/30**, kêu oan
-    **0/20**. Nó bắt TRỌN 3 loại lỗi HÌNH THỨC (cụt 5/5 · gộp 4/4 · còn chữ
-    Hán 4/4) và **0/17** loại lỗi NGHĨA. Chính xác tuyệt đối, nhưng mù nghĩa.
-  · **hội đồng 3 model**: cửa duy nhất với tới 17 lỗi NGHĨA còn lại
-    (sai thuật ngữ · ngược tai · dịch máy word-by-word). Đắt và nhấp nháy,
-    nhưng bỏ nó đi là tỉ lệ bắt tụt thẳng từ 100% xuống **43,3%**.
-  · **soát thuật ngữ**: bắt thêm ~10 câu/lượt, nhưng cũng là nguồn kêu oan
-    (đo: 2-3 câu tốt/lượt, ví dụ `落魄拳手` bị kêu trên bản dịch ĐÚNG
-    "võ sĩ sa cơ lỡ vận").
+    cửa                    | bắt hỏng | kêu oan
+    luật máy               |   43,3%  |   0,0%
+    thuật ngữ 1/3 model    |   93,3%  |  58,8%
+    thuật ngữ 2/3 model    |   75,0%  |  18,8%   <- v1 dùng mức này
+    thuật ngữ 3/3 model    |   25,0%  |   1,2%
+    nghia >= 5 · 6 · 7     | 69,2/72,5/82,5% | 3,8/10,0/13,8%
+    xuoi  >= 5 · 6 · 7     | 66,7/80,0/85,0% | 1,2/ 5,0/15,0%
+    noi   >= 5 · 6 · 7     | 65,8/80,0/85,8% | 1,2/ 5,0/16,2%
+    tron  >= 5 · 6 · 7     | 55,8/59,2/70,0% | 2,5/ 2,5/ 3,8%
+
+**SỐ CỦA v2** (`NGUONG_TRUC` + `TN_CAN`=3 + `TN_NGUONG_NGHIA`=6,0). Mỗi bộ là
+một lượt gọi LLM RIÊNG, xáo bài khác nhau — 700 quan sát tất cả:
+
+    bộ (50 câu × số lượt)         |  v1 bắt/oan   |  **v2 bắt/oan**
+    HIỆU CHUẨN (200 = 4 lượt)     | 100,0% / 38,8% |  97,5% / 10,0%
+    KIỂM CHÉO  (150 = 3 lượt)     |  98,9% / 25,0% |  93,3% /  6,7%
+    XÁC NHẬN   (150 = 3 lượt)     | 100,0% / 43,3% |  97,8% / 10,0%
+    **GỘP NGOÀI MẪU (300)**       |  99,4% / 34,2% | **95,6% / 8,3%**
+
+**ĐÍCH ĐẠT trên bộ NGOÀI MẪU: bắt 95,6% (>= 90%) · kêu oan 8,3% (<= 10%).**
+Tức kêu oan hạ **34,2% -> 8,3%**, đổi lấy 3,8 điểm khả năng bắt.
+
+BA ĐIỀU CHỐNG TỰ LỪA, đừng bỏ khi đo lại:
+1. Luật chọn từ một DANH SÁCH NGẮN số tròn viết ra TRƯỚC, **không** lấy luật
+   thắng lưới quét (~46.000 luật/200 quan sát). Luật thắng lưới đo 97,5%/6,2%
+   trên bộ hiệu chuẩn nhưng chỉ **87,8%** trên bộ kiểm = học thuộc bài.
+2. Bộ XÁC NHẬN được gọi SAU KHI luật đã chốt, không tham gia việc chọn.
+3. Số của chính v1 nhấp nháy **25,0 .. 43,3%** giữa 3 bộ — một lượt đo không
+   đủ để nói gì về thước này, đây là 10 lượt.
+
+**MẶT YẾU CÒN LẠI, GHI THẲNG:** loại `nguoc_tai` (đúng nghĩa nhưng không ai
+nói tiếng Việt như vậy) chỉ bắt **28/36 = 77,8%** ngoài mẫu (bộ hiệu chuẩn
+87,5%). Đây là loại lỗi NHẤP NHÁY nhất vì nó phụ thuộc hoàn toàn vào khẩu vị
+văn phong của hội đồng. **5 loại còn lại đều 100% ngoài mẫu**: thuat_ngu 36/36
+· cut 30/30 · gop 24/24 · chu_han 24/24 · may_moc 30/30.
+
+**THỬ PHÁ (gỡ từng chốt, 300 quan sát ngoài mẫu) — cổng này không phải con dấu:**
+    nguyên vẹn                        95,6% bắt / 8,3% oan
+    gỡ HẾT 4 trục                     52,8%   (**−42,8 điểm**)
+    gỡ luật máy                       85,6%   (−10,0)
+    gỡ ngưỡng `nghia`                 92,2%   (−3,3)
+    gỡ ngưỡng `noi`                   92,8%   (−2,8)
+    gỡ ngưỡng `xuoi`                  95,0%   (−0,6)
+    gỡ ngưỡng `tron`                  95,6%   (±0,0 — luật máy đã bắt trọn)
+    gỡ cửa thuật ngữ                  95,6%   (**±0,0 — cửa này KHÔNG gánh gì**)
+**Cửa thuật ngữ ở mức 3/3 KHÔNG bắt thêm câu nào trên corpus này** — 4 trục đã
+bắt trọn 18/18 ca `thuat_ngu` (kể cả `新片 -> "phim về chip"`). GIỮ nó lại làm
+lưới an toàn cho video khác (giá đo được: 1,2% kêu oan khi đứng một mình), chứ
+KHÔNG được kể nó vào công trạng của con số ở trên.
+
+**BA CỬA GÁNH VIỆC KHÁC HẲN NHAU:**
+  · **luật máy** (`loi_may`, TIỀN ĐỊNH, 0 lượt LLM): kêu oan **0,0%**, bắt
+    TRỌN 3 loại lỗi HÌNH THỨC (cụt · gộp · còn chữ Hán) và **0** lỗi NGHĨA.
+    Chính xác tuyệt đối, nhưng mù nghĩa.
+  · **hội đồng 3 model**: cửa duy nhất với tới lỗi NGHĨA. Gỡ hết 4 trục là tụt
+    93,3% -> 52,2%.
+  · **soát thuật ngữ**: xem khối THỬ PHÁ ở trên.
 """
 from __future__ import annotations
 
@@ -102,11 +143,38 @@ TEN_TIEU_CHI = {
     "tron": "không cụt / không gộp",
 }
 
-#: Câu có điểm chốt DƯỚI mức này là TRƯỢT. Thang 0-10, CÀNG CAO CÀNG TỐT.
+#: NGƯỠNG CŨ (v1) — MIN 4 trục >= 7,0. GIỮ LẠI để `_do_thuoc_dich.py` còn so
+#: được với mốc; ĐƯỜNG CHẤM MẶC ĐỊNH KHÔNG CÒN DÙNG NÓ (xem `NGUONG_TRUC`).
 NGUONG_DAT = 7.0
 
+# --------------------------------------------------------------------------
+# v2 — NGƯỠNG RIÊNG TỪNG TRỤC (hiệu chuẩn `_do_dich_luat.py`, 16/08/2026)
+# --------------------------------------------------------------------------
+# **VÌ SAO BỎ "MIN 4 TRỤC >= 7,0".** MIN bắt bản dịch phải tốt ĐỀU cả 4 trục
+# ở cùng một mức, trong khi hai nhóm KHÔNG hề trải giống nhau. Đo AUC (xác
+# suất một câu TỐT được chấm cao hơn một câu HỎNG) trên 200 quan sát:
+#     tron 0,941 · nghia 0,931 · xuoi 0,920 · noi 0,917
+# — bốn trục đều tách được, nhưng câu TỐT thường có ĐÚNG MỘT trục tụt (hội
+# đồng chê văn phong), và MIN biến một lá phiếu lạc thành một bản án. Đó là
+# toàn bộ 30-39% kêu oan của v1, và **hạ ngưỡng KHÔNG chữa được**: đo riêng
+# "chỉ hạ v1 về 6,0" ra 99,2% bắt / **30,0%** oan (kiểm chéo 95,6% / 20,0%).
+#
+# **CỬA THUẬT NGỮ LÀ NGUỒN KÊU OAN LỚN NHẤT.** Đo từng cửa một mình:
+#     thuật ngữ 1/3 model: bắt 93,3% · **kêu oan 58,8%**
+#     thuật ngữ 2/3 model: bắt 75,0% · **kêu oan 18,8%**   <- v1 dùng mức này
+#     thuật ngữ 3/3 model: bắt 25,0% · kêu oan  1,2%
+# Nên v2 đòi **CẢ 3 model** cùng kêu, và chỉ cho nó phủ quyết khi trục
+# `nghia` cũng dưới `TN_NGUONG_NGHIA` — một lỗi thuật ngữ THẬT thì kéo cả
+# `nghia` xuống; kêu một mình trong khi `nghia` vẫn 9 là lượt soát đang bịa.
+#
+# SỐ ĐO CỦA CHÍNH LUẬT NÀY — xem docstring đầu file.
+#: Ngưỡng RIÊNG từng trục. Câu ĐẠT khi MỌI trục đo được đều >= ngưỡng của nó.
+NGUONG_TRUC = {"nghia": 5.0, "xuoi": 6.0, "noi": 6.0, "tron": 6.0}
 #: Số model phải CÙNG kêu một khoá lỗi thì cửa thuật ngữ mới tính là lỗi.
-TN_CAN = 2
+TN_CAN = 3
+#: Cửa thuật ngữ chỉ được phủ quyết khi `nghia` cũng dưới mức này.
+#: `None` = phủ quyết vô điều kiện (hành vi v1).
+TN_NGUONG_NGHIA = 6.0
 
 #: Số câu mỗi lượt gọi. Groq trả 413 "Request too large" khi gói to — đó là lỗi
 #: CỦA YÊU CẦU, phải THU NHỎ, KHÔNG được phạt key (bug cũ đã đốt sạch 38 key).
@@ -392,18 +460,50 @@ def _khoa_loi(s: str) -> str:
 # --------------------------------------------------------------------------
 # CỬA CHỐT
 # --------------------------------------------------------------------------
+def dat_cau(c: dict, nguong_truc: dict | None = None,
+            tn_nguong_nghia: float | None = TN_NGUONG_NGHIA) -> bool:
+    """Một câu đã chấm có ĐẠT không. HÀM THUẦN — cổng và phép đo gọi thẳng.
+
+    `c` cần có: `loi` (luật máy) · `thuat_ngu` · 4 trục. Trục nào KHÔNG chấm
+    được thì BỎ QUA (không có căn cứ thì không kết tội); không một trục nào
+    chấm được thì TRƯỢT (cũng không có căn cứ để tha).
+    """
+    ng = nguong_truc or NGUONG_TRUC
+    if c.get("loi"):
+        return False                     # LUẬT MÁY LÀ SÀN, tiền định, 0 kêu oan
+    if c.get("thuat_ngu"):
+        if tn_nguong_nghia is None:
+            return False
+        n = c.get("nghia")
+        if n is None or n < tn_nguong_nghia:
+            return False
+    co = 0
+    for k, v in ng.items():
+        x = c.get(k)
+        if x is None:
+            continue
+        co += 1
+        if x < v:
+            return False
+    return co > 0
+
+
 def cham_ban_dich(goc: list[str], dich: list[str], goc_ma: str = "zh",
-                  dich_ma: str = "vi", nguong: float = NGUONG_DAT,
+                  dich_ma: str = "vi", nguong_truc: dict | None = None,
                   models: Iterable[str] = MODEL_HOI_DONG,
-                  soat_tn: bool = True) -> dict:
+                  soat_tn: bool = True,
+                  tn_nguong_nghia: float | None = TN_NGUONG_NGHIA) -> dict:
     """Chấm cả loạt: luật máy + hội đồng + soát thuật ngữ. CHỈ ĐỌC, không sửa.
 
     Trả {cau: [...], dat, tong, ty_le_dat, diem_tb, ...} — `cau[i]` gồm
-    `diem` · 4 tiêu chí · `loi` (mã lỗi máy) · `thuat_ngu` (list) · `dat`.
+    `diem` (MIN 4 trục, giữ để ĐỌC/so mốc) · 4 tiêu chí · `loi` (mã lỗi máy)
+    · `thuat_ngu` (list) · `dat` (theo NGƯỠNG RIÊNG TỪNG TRỤC).
     """
     n = len(goc)
     hd = cham_hoi_dong(goc, dich, goc_ma, dich_ma, models) if n else []
-    tn = (soat_thuat_ngu(goc, dich, goc_ma, dich_ma, list(models)[:2])
+    # CẢ 3 model ở cửa thuật ngữ (v1 chỉ hỏi 2): cửa này nay đòi TOÀN BỘ đồng
+    # ý nên phải có đủ 3 phiếu, hỏi 2 mà đòi 3 là tắt cửa mà không nói ra.
+    tn = (soat_thuat_ngu(goc, dich, goc_ma, dich_ma, list(models), TN_CAN)
           if (n and soat_tn) else [[] for _ in range(n)])
 
     cau = []
@@ -412,11 +512,7 @@ def cham_ban_dich(goc: list[str], dich: list[str], goc_ma: str = "zh",
         d = dict(hd[i]) if i < len(hd) else {"diem": None, "so_phieu": 0}
         d["loi"] = lm
         d["thuat_ngu"] = tn[i] if i < len(tn) else []
-        # LUẬT MÁY LÀ SÀN: dính lỗi máy thì TRƯỢT bất kể hội đồng khen mấy.
-        # Thuật ngữ sai cũng TRƯỢT — đó là cả lý do có cửa này.
-        d["dat"] = bool(
-            not lm and not d["thuat_ngu"]
-            and d.get("diem") is not None and d["diem"] >= nguong)
+        d["dat"] = dat_cau(d, nguong_truc, tn_nguong_nghia)
         cau.append(d)
 
     co_diem = [c["diem"] for c in cau if c.get("diem") is not None]

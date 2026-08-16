@@ -274,6 +274,48 @@ def in_ngan(c_cal: list[dict], c_kiem: list[dict]) -> None:
         print(f"  {ten:<44} | " + " | ".join(o))
 
 
+def thu_pha(bo: list[dict], ten_bo: str) -> None:
+    """THỬ PHÁ: gỡ từng chốt của luật ĐANG CHẠY ra, tỉ lệ bắt PHẢI TỤT.
+
+    Không có mục này thì luật mới chỉ là một con dấu: mọi số đẹp có thể chỉ
+    do luật máy gánh, còn 4 trục + cửa thuật ngữ chẳng bắt thêm gì. Repo đã
+    có 4 cổng PASS OAN vì đúng lý do đó.
+    """
+    ng = dict(CD.NGUONG_TRUC)
+    print("\n" + "=" * 74)
+    print(f"THỬ PHÁ LUẬT ĐANG CHẠY — trên bộ {ten_bo} ({len(bo)} quan sát)")
+    print("=" * 74)
+    goc = cham_luat(bo, lam_luat(ng, CD.TN_CAN, CD.TN_NGUONG_NGHIA))
+    print(f"  {'phép phá':<40} | bắt đúng | kêu oan | so với nguyên vẹn")
+    print(f"  {'(nguyên vẹn)':<40} | {goc['ty_bat']:7.1f}% | "
+          f"{goc['ty_oan']:6.1f}% |")
+
+    pha = [("gỡ LUẬT MÁY", None, ng, CD.TN_CAN, CD.TN_NGUONG_NGHIA),
+           ("gỡ cửa THUẬT NGỮ", "tn", ng, 99, None)]
+    for k in TRUC:
+        n2 = dict(ng)
+        n2[k] = 0.0
+        pha.append((f"gỡ ngưỡng trục `{k}`", "truc", n2, CD.TN_CAN,
+                    CD.TN_NGUONG_NGHIA))
+    pha.append(("gỡ HẾT trục (chỉ còn luật máy + thuật ngữ)", "truc",
+                {k: 0.0 for k in TRUC}, CD.TN_CAN, CD.TN_NGUONG_NGHIA))
+
+    for ten, _kieu, n2, tc, tn in pha:
+        g = lam_luat(n2, tc, tn)
+        if ten.startswith("gỡ LUẬT MÁY"):
+            def f(c, _g=g):
+                return _g({**c, "loi_may": []})
+        else:
+            f = g
+        r = cham_luat(bo, f)
+        d = r["ty_bat"] - goc["ty_bat"]
+        print(f"  {ten:<40} | {r['ty_bat']:7.1f}% | {r['ty_oan']:6.1f}% | "
+              f"{d:+6.1f} điểm bắt"
+              + ("   <-- CHỐT NÀY KHÔNG GÁNH GÌ" if abs(d) < 0.01 else ""))
+    print("  (chốt nào gỡ ra mà tỉ lệ bắt KHÔNG tụt = chốt đó đang thừa —"
+          " phải nói ra, đừng để nó làm nền cho con số đẹp)")
+
+
 def main() -> int:
     calib = [REPO / x for x in
              os.environ.get("BQ_CALIB", "_do_dich_calib.json").split(";") if x]
@@ -306,6 +348,7 @@ def main() -> int:
     in_phan_bo(c_cal)
     in_cua(c_cal)
     in_ngan(c_cal, c_kiem)
+    thu_pha(c_kiem or c_cal, "KIỂM" if c_kiem else "HIỆU CHUẨN")
 
     print("\n" + "=" * 74)
     print("QUÉT LƯỚI LUẬT 'NGƯỠNG RIÊNG TỪNG TRỤC'")

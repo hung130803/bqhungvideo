@@ -15,9 +15,13 @@ BỐN NHÓM SỐ, mỗi nhóm trả lời đúng một việc CLAUDE.md giao:
      so với `end - start` của câu gốc.
   4. **SÓT CHỮ GỐC** — câu còn chữ Hán đi thẳng vào giọng Việt.
 
-**ĐAN XEN BẮT BUỘC.** Mỗi lượt chạy MỐC rồi MỚI rồi mới sang lượt sau, và
-lượt CHẴN đảo thứ tự. Máy này luôn có luồng khác chạy nền + Groq có lúc quá
-tải; đo liền mạch (tất cả lượt MỐC trước) đã ra kết luận sai 3 lần trong repo.
+**BA ARM, ĐAN XEN BẮT BUỘC.** `MỐC` · `MỚI` (prompt chung) · `MỚI+VD` (thêm
+ví dụ chống lỗi lấy từ CHÍNH video này). Thứ tự chạy XOAY VÒNG mỗi lượt nên
+arm nào cũng có lần chạy đầu và lần chạy cuối. Máy này luôn có luồng khác chạy
+nền + Groq có lúc quá tải; đo liền mạch đã ra kết luận sai 3 lần trong repo.
+
+Arm `MỚI+VD` tồn tại để **tách bằng số** phần "prompt tốt lên thật" khỏi phần
+"đã được dạy đúng bài thi" — corpus đo CHÍNH LÀ video đẻ ra hai ví dụ đó.
 
   .venv\\Scripts\\python -u _do_dich_ab.py            # 3 lượt
   BQ_LUOT=1 .venv\\Scripts\\python -u _do_dich_ab.py  # thử nhanh
@@ -75,11 +79,29 @@ def arm_moc(cau, goc_ma) -> dict:
 
 
 def arm_moi(cau, goc_ma) -> dict:
+    """MỚI — prompt CHUNG, KHÔNG một ví dụ nào lấy từ video đang đo."""
     from app.ai.dich import dich_theo_gio
     t0 = time.time()
-    kq = dich_theo_gio(cau, "vi", goc_ma)
+    kq = dich_theo_gio(cau, "vi", goc_ma, vi_du_rieng=False)
     kq["giay"] = round(time.time() - t0, 1)
     return kq
+
+
+def arm_moi_vd(cau, goc_ma) -> dict:
+    """MỚI+VD — thêm ví dụ chống lỗi lấy từ CHÍNH video này (`新片`,
+    `落魄拳手`). Arm này tồn tại để TÁCH BẰNG SỐ hai thứ hay bị lẫn: prompt
+    tốt lên thật, hay chỉ là đã được dạy đúng bài thi. Hơn `MỚI` bao nhiêu
+    thì đúng bấy nhiêu là phần KHÔNG mang sang video khác được.
+    """
+    from app.ai.dich import dich_theo_gio
+    t0 = time.time()
+    kq = dich_theo_gio(cau, "vi", goc_ma, vi_du_rieng=True)
+    kq["giay"] = round(time.time() - t0, 1)
+    return kq
+
+
+ARM = [("MỐC", arm_moc), ("MỚI", arm_moi), ("MỚI+VD", arm_moi_vd)]
+TEN_THU_MUC = {"MỐC": "moc", "MỚI": "moi", "MỚI+VD": "moivd"}
 
 
 # --------------------------------------------------------------------------
@@ -155,7 +177,7 @@ def in_arm(t: dict) -> None:
     print(f"  --- {t['ten']} ---")
     print(f"    ĐẠT theo thước       : {t['ty_le_dat']:.1f}%  "
           f"(điểm TB {t['diem_tb']})")
-    print(f"    4 trục TB            : " +
+    print("    4 trục TB            : " +
           " · ".join(f"{k} {v}" for k, v in t["truc"].items()))
     print(f"    cửa thuật ngữ bắt    : {t['so_thuat_ngu']}/{t['n']}")
     print(f"    luật máy bắt         : {t['so_loi_may']}/{t['n']} "
@@ -166,7 +188,7 @@ def in_arm(t: dict) -> None:
           f"câu > {DAI_KY_TU} ký tự (gộp): {t['cau_dai']}/{t['n']}")
     print(f"    ký tự/câu TB         : {t['ky_tu_tb']}")
     if t["tts_do_duoc"]:
-        print(f"    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):")
+        print("    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):")
         print(f"      tổng đọc {t['tong_doc']:.1f}s / tổng khung "
               f"{t['tong_khung']:.1f}s")
         print(f"      lệch tuyệt đối TB {t['lech_tuyet_doi_tb']:.3f}s/câu")
@@ -196,9 +218,10 @@ def main() -> int:
 
     tat_ca = []
     for lu in range(SO_LUOT):
-        thu_tu = [("MỐC", arm_moc), ("MỚI", arm_moi)]
-        if lu % 2 == 1:
-            thu_tu.reverse()                     # ĐAN XEN: đảo thứ tự lượt chẵn
+        # ĐAN XEN: xoay vòng thứ tự arm mỗi lượt. Máy này luôn có luồng khác
+        # chạy nền và Groq có lúc quá tải -> arm nào cũng phải được chạy ở cả
+        # vị trí đầu lẫn vị trí cuối.
+        thu_tu = ARM[lu % len(ARM):] + ARM[:lu % len(ARM)]
         print(f"\n{'=' * 74}\nLƯỢT {lu + 1}  (thứ tự chạy: "
               f"{' -> '.join(t for t, _ in thu_tu)})\n{'=' * 74}")
         mot = {}
@@ -209,14 +232,14 @@ def main() -> int:
                 print(f"  {ten}: LỖI {type(e).__name__}: {e}")
                 continue
             mot[ten] = {"raw": r}
-        for ten in ("MỐC", "MỚI"):
+        for ten, _f in ARM:
             if ten not in mot:
                 continue
             bd = mot[ten]["raw"]["ban_dich"]
             t = do_mot_arm(ten, cau, goc_ma, bd,
-                           san / f"l{lu}_{'moc' if ten == 'MỐC' else 'moi'}")
+                           san / f"l{lu}_{TEN_THU_MUC[ten]}")
             t["ban_dich"] = bd
-            if ten == "MỚI":
+            if ten != "MỐC":
                 r = mot[ten]["raw"]
                 t["so_lech_truoc"] = r["so_lech_truoc"]
                 t["so_lech_sau"] = r["so_lech_sau"]
@@ -224,7 +247,7 @@ def main() -> int:
                 t["thieu_cau"] = r["thieu_cau"]
             mot[ten] = t
             in_arm(t)
-            if ten == "MỚI":
+            if ten != "MỐC":
                 print(f"    ngân sách: lệch TRƯỚC hậu kiểm "
                       f"{t['so_lech_truoc']}/{t['n']} -> SAU "
                       f"{t['so_lech_sau']}/{t['n']} "
@@ -241,22 +264,27 @@ def main() -> int:
            ("lệch |s|/câu", "lech_tuyet_doi_tb"),
            ("TRỐNG s", "trong_tong"), ("TRỐNG %khung", "trong_ty_le"),
            ("TRÀN s", "tran_tong")]
-    print(f"  {'chỉ số':<16} | " +
-          " | ".join(f"MỐC l{i+1}" for i in range(SO_LUOT)) + " || " +
-          " | ".join(f"MỚI l{i+1}" for i in range(SO_LUOT)) + " || TB MỐC -> TB MỚI")
+    fmt = lambda v: ("   -   " if v is None else f"{v:7.2f}")  # noqa: E731
+    for ten_a, _ in ARM:
+        print(f"\n  === {ten_a} ===")
+        print(f"  {'chỉ số':<16} | " +
+              " | ".join(f" lượt {i+1}" for i in range(SO_LUOT)) + " |    TB")
+        for ten, k in cot:
+            v = [m.get(ten_a, {}).get(k) for m in tat_ca]
+            s_ = [x for x in v if x is not None]
+            tb = sum(s_) / len(s_) if s_ else float("nan")
+            print(f"  {ten:<16} | " + " | ".join(fmt(x) for x in v) +
+                  f" | {tb:7.2f}")
+
+    print(f"\n  === SO TRUNG BÌNH {SO_LUOT} LƯỢT ===")
+    print(f"  {'chỉ số':<16} | " + " | ".join(f"{t:>9}" for t, _ in ARM))
     for ten, k in cot:
-        va, vb = [], []
-        for m in tat_ca:
-            va.append(m.get("MỐC", {}).get(k))
-            vb.append(m.get("MỚI", {}).get(k))
-        sa = [x for x in va if x is not None]
-        sb = [x for x in vb if x is not None]
-        f = lambda v: ("  -  " if v is None else f"{v:6.2f}")   # noqa: E731
-        tb_a = sum(sa) / len(sa) if sa else float("nan")
-        tb_b = sum(sb) / len(sb) if sb else float("nan")
-        print(f"  {ten:<16} | " + " | ".join(f(x) for x in va) + " || " +
-              " | ".join(f(x) for x in vb) +
-              f" || {tb_a:7.2f} -> {tb_b:7.2f}")
+        o = []
+        for ten_a, _ in ARM:
+            s_ = [m.get(ten_a, {}).get(k) for m in tat_ca]
+            s_ = [x for x in s_ if x is not None]
+            o.append(f"{sum(s_)/len(s_):9.2f}" if s_ else "        -")
+        print(f"  {ten:<16} | " + " | ".join(o))
 
     RA.write_text(json.dumps(tat_ca, ensure_ascii=False, indent=1),
                   encoding="utf-8")

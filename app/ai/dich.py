@@ -55,6 +55,35 @@ SAN = 0.62
 #: Câu gốc ngắn hơn ngần này giây thì KHÔNG ép sàn: khung 1 giây chỉ chứa 3
 #: âm tiết, ép thêm là bắt model nhồi chữ vô nghĩa.
 KHUNG_TOI_THIEU = 1.2
+
+# --------------------------------------------------------------------------
+# TRẦN THEO CÂU GỐC — CHỐT CHỐNG BỊA, ĐO ĐƯỢC, ĐỪNG BỎ
+# --------------------------------------------------------------------------
+# **LỖI THẬT CỦA CHÍNH BẢN ĐẦU FILE NÀY**, bắt được ngay lượt thử 8 câu: khung
+# 4,12 s cho câu gốc `第一部地下决斗室` (8 chữ Hán = "Phần một: Sàn Đấu Ngầm")
+# đẻ ra ngân sách **15 chữ**, và model ngoan ngoãn nhồi cho đủ:
+#   *"Bộ phim đầu tiên về phòng đấu ngầm, **nơi diễn ra các trận đấu đầy kịch
+#   tính và hấp dẫn**"* (20 chữ) — vế sau KHÔNG CÓ trong câu gốc.
+# Tức ngân sách thời gian nếu chỉ nhìn ĐỒNG HỒ thì nó mua thời lượng bằng
+# NỘI DUNG BỊA. Đó là đổi một lỗi đo được (trống tiếng) lấy một lỗi tệ hơn
+# (sai nội dung), đúng bài học "chặt chữ làm xấu NỘI DUNG — cái sau tệ hơn".
+#
+# Nên ngân sách phải kẹp bởi ĐỘ DÀI TỰ NHIÊN của chính câu gốc. Tỉ lệ đo trên
+# 20 bản dịch Trung -> Việt viết tay (`_do_bo_hong.TOT`):
+#   min 0,50 · 10% 0,67 · **trung vị 0,89** · 90% 1,13 · max 1,25 âm tiết/chữ Hán
+#: Trần "còn tự nhiên" — trên mức này là đang thêm chữ không có trong câu gốc.
+TY_LE_TRAN = 1.25
+#: Trần CỨNG cho cửa viết-lại (nới hơn trần nhắm để đừng bắt viết lại một câu
+#: chỉ hơi dài hơn bản người dịch).
+TY_LE_TRAN_CUNG = 1.50
+#: Sàn "còn tự nhiên" — dưới mức này thì câu gốc vốn đã ngắn, ép dài là bịa.
+TY_LE_SAN = 0.70
+#: Nguồn KHÔNG phải chữ Hán (mỗi âm tiết đã là một "chữ") thì tỉ lệ khác hẳn.
+#: **CHƯA ĐO** cho nhóm này — để 1,0/1,8/0,7 là số THẬN TRỌNG, không phải số
+#: đo được. Ai dùng cho nguồn Anh/Nhật/Hàn phải đo lại rồi sửa ở đây.
+TY_LE_TRAN_LATIN = 1.60
+TY_LE_TRAN_CUNG_LATIN = 2.00
+TY_LE_SAN_LATIN = 0.60
 #: Số câu mỗi lượt gọi. Groq trả 413 khi gói to — 413 là lỗi CỦA YÊU CẦU,
 #: phải THU NHỎ, KHÔNG phạt key.
 CO_MOI_LUOT = 14
@@ -97,19 +126,52 @@ def am_tiet_vua(giay: float, phan: float = NHAM) -> int:
     return max(1, int(round(n)))
 
 
-def ngan_sach(giay: float) -> dict:
-    """Ngân sách CHỮ cho một khung `giay`: {dich, min, max, giay}.
+def co_goc(goc: str) -> int:
+    """"Cỡ" câu gốc tính bằng đơn vị đếm được: chữ Hán, hoặc âm tiết nếu
+    nguồn không phải CJK (cùng quy ước `cham_dich.loi_may`)."""
+    from app.ai.cham_dich import _so_chu_han
+    return _so_chu_han(goc) or am_tiet_viet(goc)
 
-    `min` = 0 nghĩa là khung quá ngắn để đặt sàn (xem `KHUNG_TOI_THIEU`).
+
+def ngan_sach(giay: float, goc: str = "") -> dict:
+    """Ngân sách CHỮ cho khung `giay`, KẸP theo độ dài tự nhiên của `goc`.
+
+    Trả {giay, dich, min, max, do_goc, tran_goc}.
+    `min` = 0 nghĩa là không đặt sàn (khung quá ngắn, hoặc câu gốc vốn ngắn).
+
+    HAI RÀNG BUỘC, LẤY CÁI CHẶT HƠN:
+      · ĐỒNG HỒ  — bao nhiêu chữ đọc lọt khung (mô hình tốc độ đọc đo được)
+      · CÂU GỐC  — bao nhiêu chữ là còn dịch, quá thì là BỊA (tỉ lệ đo được)
+    Bỏ ràng buộc thứ hai thì khung dài + câu gốc ngắn = model nhồi chữ (xem
+    khối ghi chú `TY_LE_TRAN` — lỗi thật của bản đầu file này).
     """
     giay = max(0.0, float(giay))
-    nho = giay < KHUNG_TOI_THIEU
+    n = co_goc(goc)
+    from app.ai.cham_dich import _so_chu_han
+    han = _so_chu_han(goc) > 0
+    r_tran = TY_LE_TRAN if han else TY_LE_TRAN_LATIN
+    r_cung = TY_LE_TRAN_CUNG if han else TY_LE_TRAN_CUNG_LATIN
+    r_san = TY_LE_SAN if han else TY_LE_SAN_LATIN
+
+    dong_ho = am_tiet_vua(giay, NHAM)
+    dh_max = max(2, int((giay * TRAN - GIAY_CO_DINH) / GIAY_MOI_AM_TIET))
+    dh_min = 0 if giay < KHUNG_TOI_THIEU else \
+        max(1, int((giay * SAN - GIAY_CO_DINH) / GIAY_MOI_AM_TIET))
+
+    if n <= 0:                                   # không đo được cỡ gốc
+        return {"giay": round(giay, 2), "dich": dong_ho, "min": dh_min,
+                "max": dh_max, "do_goc": 0, "tran_goc": 0}
+
+    tran_goc = max(2, int(round(r_tran * n)))
+    cung_goc = max(2, int(round(r_cung * n)))
+    san_goc = max(1, int(round(r_san * n)))
     return {
         "giay": round(giay, 2),
-        "dich": am_tiet_vua(giay, NHAM),
-        "min": 0 if nho else max(1, int((giay * SAN - GIAY_CO_DINH)
-                                        / GIAY_MOI_AM_TIET)),
-        "max": max(2, int((giay * TRAN - GIAY_CO_DINH) / GIAY_MOI_AM_TIET)),
+        "dich": max(1, min(dong_ho, tran_goc)),
+        "min": min(dh_min, san_goc),             # KHÔNG BAO GIỜ ép bịa
+        "max": max(2, min(dh_max, cung_goc)),
+        "do_goc": n,
+        "tran_goc": tran_goc,
     }
 
 
@@ -145,21 +207,33 @@ _SYSTEM = ("Bạn là biên dịch viên LỒNG TIẾNG chuyên nghiệp. Bản 
            "CHỈ trả JSON thuần.")
 
 
-def _luat_chung(ten_dich: str) -> str:
+#: Ví dụ CHỐNG LỖI lấy từ CHÍNH video đang đo (`新片`, `落魄拳手`). Bật cái này
+#: lên là **dạy đúng bài thi**: con số đo trên video đó không còn nói được là
+#: prompt tốt hay là prompt đã học thuộc. Mặc định TẮT. `_do_dich_ab.py` chạy
+#: RIÊNG một arm bật nó lên để tách hai phần đó ra bằng SỐ.
+VI_DU_RIENG = (
+    " Ví dụ lỗi thật của kênh này phải tránh: "
+    '`新片` nghĩa là "phim mới" — dịch thành "chip" là SAI HẲN; '
+    '`落魄拳手` là "võ sĩ sa cơ lỡ vận" — không phải "đầu bếp", không phải '
+    '"võ sĩ xuống cấp".'
+)
+
+
+def _luat_chung(ten_dich: str, vi_du_rieng: bool = False) -> str:
     return (
         "QUY TẮC BẮT BUỘC:\n"
-        f"1. ĐÚNG NGHĨA TRƯỚC ĐÃ. Dịch đúng nghĩa MẶT CHỮ của từ khoá "
+        "1. ĐÚNG NGHĨA TRƯỚC ĐÃ. Dịch đúng nghĩa MẶT CHỮ của từ khoá "
         "(tên riêng, con số, sự vật chính). TUYỆT ĐỐI KHÔNG đoán nghĩa theo "
-        "ÂM ĐỌC hay theo từ trông giống. Ví dụ lỗi thật phải tránh: "
-        '`新片` nghĩa là "phim mới" — dịch thành "chip" là SAI HẲN; '
-        '`落魄拳手` là "võ sĩ sa cơ lỡ vận" — không phải "đầu bếp", không '
-        'phải "võ sĩ xuống cấp".\n'
+        "ÂM ĐỌC hay theo từ trông na ná — một từ khoá dịch sai là người xem "
+        "hiểu sai cả câu. Từ nào nhiều nghĩa thì chọn nghĩa hợp BỐI CẢNH cả "
+        "video ở trên."
+        + (VI_DU_RIENG if vi_du_rieng else "") + "\n"
         f"2. VĂN NÓI {ten_dich.upper()}, KHÔNG DỊCH MẶT CHỮ. Viết như người "
-        "thật đang nói trong video. CẤM bê nguyên từ Hán-Việt/từ gốc khi "
-        'tiếng Việt có cách nói thường: "trường diện" -> "cảnh phim"; '
-        '"tuyệt cảnh cầu sinh" -> "tìm đường sống giữa đường cùng"; '
-        '"quyền quyền đến thịt" -> "đấm phát nào ra phát nấy". Đọc lại câu '
-        "mình vừa viết: người Việt có nói như thế không?\n"
+        "thật đang nói trong video. CẤM bê nguyên âm Hán-Việt (hoặc từ mượn "
+        "của tiếng gốc) khi tiếng Việt đã có cách nói thường: "
+        '"hắc ám" -> "tối tăm"; "tiểu tâm" -> "cẩn thận"; '
+        '"khai thuỷ" -> "bắt đầu". Đọc lại câu mình vừa viết: người Việt có '
+        "nói như thế không? Nghe gượng là viết lại.\n"
         "3. MỘT CÂU GỐC RA ĐÚNG MỘT CÂU DỊCH. Không gộp hai câu làm một, "
         "không tách một câu làm hai, không thêm câu mới, không bỏ câu nào.\n"
         "4. ĐỦ Ý — không cắt cụt thành mẩu ghi chú. Nhưng cũng KHÔNG thêm "
@@ -176,10 +250,14 @@ def _luat_do_dai() -> str:
         "- Viết khoảng **N chữ**, và BẮT BUỘC nằm trong khoảng min-max.\n"
         "- 'Chữ' = tiếng tách bởi dấu cách, ví dụ 'Bảy bộ phim mới đang hot' "
         "= 6 chữ.\n"
-        "- NGẮN QUÁ thì hình chạy mà không có tiếng — hãy nói trọn ý, thêm "
+        "- NGẮN QUÁ thì hình chạy mà không có tiếng — hãy nói TRỌN Ý, thêm "
         "chủ ngữ / từ nối / cách nói tự nhiên cho đủ nhịp.\n"
         "- DÀI QUÁ thì máy phải đọc nhanh, méo tiếng — hãy bỏ từ đệm, chọn từ "
         "ngắn hơn, GIỮ NGUYÊN ý chính.\n"
+        "- **TUYỆT ĐỐI KHÔNG BỊA THÊM Ý cho đủ số chữ.** Câu gốc ngắn thì bản "
+        "dịch được phép ngắn — thà thiếu vài chữ còn hơn thêm một chi tiết "
+        "không có trong câu gốc. Số chữ ghi ở trên đã tính sẵn theo độ dài "
+        "câu gốc rồi.\n"
         "- ĐẾM LẠI số chữ trước khi trả.\n"
     )
 
@@ -196,7 +274,8 @@ def _mo_ta_cau(i: int, c: dict, ns: dict) -> str:
 # --------------------------------------------------------------------------
 def _dich_goi(cau: list[dict], chi_so: list[int], ns: list[dict],
               dich_sang: str, goc_ma: str, boi_canh: str,
-              model: Optional[str] = None) -> dict[int, str]:
+              model: Optional[str] = None,
+              vi_du_rieng: bool = False) -> dict[int, str]:
     from app.ai import llm
 
     ten_dich = _ten_nn(dich_sang)
@@ -206,7 +285,7 @@ def _dich_goi(cau: list[dict], chi_so: list[int], ns: list[dict],
         f"BỐI CẢNH CẢ VIDEO (để hiểu đúng thuật ngữ, KHÔNG dịch phần này):\n"
         f"\"{boi_canh}\"\n\n"
         f"CÁC CÂU CẦN DỊCH:\n{chr(10).join(items)}\n\n"
-        + _luat_chung(ten_dich)
+        + _luat_chung(ten_dich, vi_du_rieng)
         + _luat_do_dai()
         + f"\nTrả MẢNG JSON {len(chi_so)} đối tượng "
         '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
@@ -251,8 +330,9 @@ def _viet_lai(cau: list[dict], chi_so: list[int], hien: list[str],
         f"{chr(10).join(items)}\n\n"
         "QUY TẮC:\n"
         "- GIỮ NGUYÊN Ý của câu gốc. Rút ngắn thì bỏ từ đệm, KHÔNG bỏ ý "
-        "chính. Kéo dài thì nói trọn ý bằng cách nói tự nhiên hơn, KHÔNG bịa "
-        "thêm thông tin không có trong câu gốc.\n"
+        "chính. Kéo dài thì nói trọn ý bằng cách nói tự nhiên hơn — "
+        "**TUYỆT ĐỐI KHÔNG bịa thêm chi tiết không có trong câu gốc**; "
+        "không đủ chữ mà vẫn trọn ý thì cứ để ngắn.\n"
         f"- Vẫn phải là văn NÓI {ten_dich}, không dịch mặt chữ.\n"
         "- ĐẾM LẠI số chữ trước khi trả.\n"
         f"- Trả MẢNG JSON {len(chi_so)} đối tượng "
@@ -280,6 +360,7 @@ def _lech(n: int, ns: dict) -> bool:
 def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
                   model: Optional[str] = None,
                   vong_viet_lai: int = VONG_VIET_LAI,
+                  vi_du_rieng: bool = False,
                   on_progress: Optional[Callable[[float, str], None]] = None,
                   ) -> dict:
     """Dịch `cau` (list {text,start,end}) sang `dich_sang` THEO NGÂN SÁCH THỜI GIAN.
@@ -298,8 +379,8 @@ def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
                 "so_lech_sau": 0, "so_viet_lai": 0, "sot_chu_goc": 0,
                 "thieu_cau": 0}
 
-    ns = [ngan_sach(float(c.get("end", 0)) - float(c.get("start", 0)))
-          for c in cau]
+    ns = [ngan_sach(float(c.get("end", 0)) - float(c.get("start", 0)),
+                    str(c.get("text") or "")) for c in cau]
     bc = _boi_canh(cau)
 
     if on_progress:
@@ -313,7 +394,8 @@ def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
         moi: dict[int, str] = {}
         for nhom in _chia_co(len(con)):
             phan = [con[j] for j in nhom]
-            moi.update(_dich_goi(cau, phan, ns, dich_sang, goc_ma, bc, model))
+            moi.update(_dich_goi(cau, phan, ns, dich_sang, goc_ma, bc, model,
+                                 vi_du_rieng))
         if not moi:
             break
         ra.update(moi)

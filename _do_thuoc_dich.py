@@ -58,15 +58,21 @@ def dung_bo() -> tuple[list, list, list]:
 
 
 def cua_bat(c: dict) -> str:
-    """Cửa nào đã bắt câu này (để biết phần LLM có kéo được gì không)."""
+    """Cửa nào đã bắt câu này (để biết phần LLM có kéo được gì không).
+
+    Từ v2 thước dùng NGƯỠNG RIÊNG TỪNG TRỤC, không còn MIN 4 trục >= 7,0 —
+    nên phải kể ĐÍCH DANH trục nào tụt, chứ in một con số `diem` chung thì
+    người đọc không biết câu bị bắt vì nghĩa hay vì văn phong.
+    """
     ra = []
     if c.get("loi"):
         ra.append("máy:" + ",".join(c["loi"]))
     if c.get("thuat_ngu"):
         ra.append("thuật-ngữ")
-    d = c.get("diem")
-    if d is not None and d < CD.NGUONG_DAT:
-        ra.append(f"hội-đồng:{d}")
+    tut = [f"{k}={c[k]}" for k, v in CD.NGUONG_TRUC.items()
+           if c.get(k) is not None and c[k] < v]
+    if tut:
+        ra.append("trục:" + ",".join(tut))
     return " + ".join(ra) or "(không cửa nào)"
 
 
