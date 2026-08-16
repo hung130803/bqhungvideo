@@ -1,0 +1,98 @@
+[
+ {
+  "nhan": "GỐC (video anh Hùng gửi)",
+  "file": "C:\\Users\\Admin\\Downloads\\longtieng\\近期热播的7部新片推荐。 #电影推荐 #新片速递.mp4",
+  "I": -5.07,
+  "TP": 6.16,
+  "LRA": 3.3,
+  "thresh": -15.15,
+  "I_eb": -5.0,
+  "TP_eb": 6.2,
+  "LRA_eb": 3.4,
+  "lech_thuoc": 0.07
+ },
+ {
+  "nhan": "XUẤT — bản anh Hùng đã chạy",
+  "file": "C:\\Users\\Admin\\Downloads\\longtieng\\xuất\\近期热播的7部新片推荐。 #电影推荐 #新片速递.mp4",
+  "I": -16.0,
+  "TP": -2.26,
+  "LRA": 2.1,
+  "thresh": -26.11,
+  "I_eb": -15.9,
+  "TP_eb": -2.3,
+  "LRA_eb": 2.1,
+  "lech_thuoc": 0.1
+ },
+ {
+  "nhan": "XUẤT — bản trộn v2.30.0 (e2e)",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\tieng_moi.wav",
+  "I": -12.76,
+  "TP": -0.57,
+  "LRA": 2.6,
+  "thresh": -22.79,
+  "I_eb": -12.7,
+  "TP_eb": -0.6,
+  "LRA_eb": 3.2,
+  "lech_thuoc": 0.06
+ },
+ {
+  "nhan": "XUẤT — video e2e v2.30.0",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\ban__thaygiong.mp4",
+  "I": -12.78,
+  "TP": 0.04,
+  "LRA": 2.7,
+  "thresh": -22.81,
+  "I_eb": -12.7,
+  "TP_eb": 0.0,
+  "LRA_eb": 3.1,
+  "lech_thuoc": 0.08
+ },
+ {
+  "nhan": "TRỘN — cách CŨ (giọng 0 dB · nhạc −2 dB)",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\_cantieng\\tron_CŨ.wav",
+  "I": -12.76,
+  "TP": -0.57,
+  "LRA": 2.6,
+  "thresh": -22.79,
+  "I_eb": -12.7,
+  "TP_eb": -0.6,
+  "LRA_eb": 3.2,
+  "lech_thuoc": 0.06
+ },
+ {
+  "nhan": "TRỘN — cách MỚI (bản đã chữa 15/08)",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\_cantieng\\tron_MỚI.wav",
+  "I": -14.26,
+  "TP": -1.4,
+  "LRA": 2.1,
+  "thresh": -24.33,
+  "I_eb": -14.3,
+  "TP_eb": -1.4,
+  "LRA_eb": 2.1,
+  "lech_thuoc": 0.04
+ },
+ {
+  "nhan": "lớp GIỌNG thô (chưa nâng)",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\tieng_moi.giong.wav",
+  "I": -18.19,
+  "TP": -5.33,
+  "LRA": 3.0,
+  "thresh": -28.29,
+  "I_eb": -18.2,
+  "TP_eb": -5.3,
+  "LRA_eb": 3.3,
+  "lech_thuoc": 0.01
+ },
+ {
+  "nhan": "lớp NHẠC gốc (Demucs)",
+  "file": "D:\\claude\\ai-content-studio\\_do_lt\\e2e\\tach\\lop_nhac.wav",
+  "I": -11.63,
+  "TP": 0.99,
+  "LRA": 3.9,
+  "thresh": -21.99,
+  "I_eb": -11.6,
+  "TP_eb": 1.0,
+  "LRA_eb": 4.1,
+  "lech_thuoc": 0.03
+ }
+]
