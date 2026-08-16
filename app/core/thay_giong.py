@@ -1726,6 +1726,95 @@ def bien_the_giong(voice: str = "") -> list[tuple[str, str]]:
     return ra
 
 
+#: Câu mẫu NGHE THỬ. Có dấu thanh đủ 6 kiểu + một cụm số, để nghe ra ngay
+#: giọng nào nuốt dấu (Piper `vais1000` từng bị chê thiếu dấu ở giọng khác).
+CAU_NGHE_THU = "Xin chào anh Hùng, đây là giọng đọc thử của kênh mình nhé."
+
+
+def doc_thu(voice: str, out_wav: str | Path, text: str = "",
+            dung_cache: bool = True) -> dict:
+    """Đọc MỘT câu mẫu bằng **đúng giọng + đúng biến thể cao độ** đang chọn.
+
+    **ĐI ĐÚNG CỬA MÀ LƯỢT XUẤT THẬT ĐI** (`dubbing._synth_all_words`, y hệt
+    `doc_ban_dich`) — không dựng đường riêng cho nút nghe thử. Nghe thử mà đi
+    cửa khác thì nó hết là *nghe thử*: anh Hùng nghe một đằng, video ra một
+    nẻo. Nhờ đi cửa chung, nút này tự hưởng luôn nhánh rẽ Piper
+    (`_piper_hay_khong`) và phần tách `|<pitch>` mà không phải chép lại luật.
+
+    Trả `{"ra", "nguon", "cache", "loi"}` — `nguon` là NGUỒN GIỌNG THẬT SỰ đã
+    đọc (`edge-tts` / `piper` / `elevenlabs`), **KHÔNG phải cái người dùng
+    chọn**: Piper chưa tải thì app LÙI ÊM về edge-tts, mà lùi êm không nói ra
+    thì người nghe tưởng đang nghe Piper rồi chọn nhầm cho cả 300 kênh.
+
+    `dung_cache=True`: cùng (giọng · pitch · câu) thì dùng lại file cũ. Bấm
+    liên tiếp KHÔNG gọi lại mạng — với ElevenLabs mỗi lượt gọi là tốn credit
+    thật, còn edge-tts thì đỡ 1-2 giây chờ.
+    """
+    import asyncio
+    import hashlib
+
+    import config
+
+    out_wav = Path(out_wav)
+    txt = (text or "").strip() or CAU_NGHE_THU
+    v, pitch = tach_giong_pitch(voice or "")
+    if not v:
+        return {"ra": "", "nguon": "", "cache": False,
+                "loi": "Chưa chọn giọng"}
+
+    # Đọc `config.DATA_DIR` MỖI LẦN GỌI, không cất hằng số: cổng test trỏ
+    # `BQ_DATA_DIR` sang thư mục tạm, cất sẵn là ghi vào DATA_DIR THẬT.
+    kho = Path(config.DATA_DIR) / "_nghe_thu"
+    kho.mkdir(parents=True, exist_ok=True)
+    khoa = hashlib.sha1(f"{v}|{pitch}|{txt}".encode("utf-8")).hexdigest()[:16]
+    cache = kho / f"{khoa}.wav"
+
+    # NGUỒN THẬT: hỏi trước khi đọc, vì `_piper_hay_khong` có thể lùi về edge.
+    nguon = "edge-tts"
+    if v.startswith("el:"):
+        nguon = "elevenlabs"
+    elif v.startswith("gemini:"):
+        nguon = "gemini"
+    else:
+        try:
+            from app.core import piper_tts
+            if piper_tts.la_giong_piper(v):
+                nguon = "piper" if piper_tts.co_piper() else (
+                    "edge-tts (Piper chưa tải nên lùi về giọng thường)")
+        except Exception:  # noqa: BLE001
+            pass
+
+    if dung_cache and cache.exists() and cache.stat().st_size > 1024:
+        shutil.copyfile(cache, out_wav)
+        return {"ra": str(out_wav), "nguon": nguon, "cache": True, "loi": ""}
+
+    tam = out_wav.with_suffix(".tho.mp3")
+    try:
+        if v.startswith(("el:", "gemini:")):
+            # hai nguồn này KHÔNG đi qua `_synth_all_words`; `synth_demo` là
+            # cửa đã có sẵn cho chúng (hộp Lồng tiếng đang dùng).
+            from app.core.dubbing import synth_demo
+            if not synth_demo(v, tam, text=txt, pitch=pitch):
+                raise RuntimeError("nguồn giọng không trả về tiếng")
+        else:
+            from app.core import dubbing
+            ok, _w = asyncio.run(dubbing._synth_all_words(
+                [txt], v, [str(tam)], pitch=pitch))
+            if not ok or not ok[0]:
+                raise RuntimeError("nguồn giọng không trả về tiếng")
+        # -> WAV: `winsound` của giao diện CHỈ phát được WAV.
+        _ffmpeg(["-i", str(tam), "-ac", "1", "-ar", "24000",
+                 "-c:a", "pcm_s16le", str(out_wav)], "đổi tiếng thử ra wav")
+        _kiem_wav(out_wav)          # bẫy "rc=0 mà file 0 KiB / RMS 0"
+        if dung_cache:
+            shutil.copyfile(out_wav, cache)
+        return {"ra": str(out_wav), "nguon": nguon, "cache": False, "loi": ""}
+    except Exception as e:  # noqa: BLE001
+        return {"ra": "", "nguon": nguon, "cache": False, "loi": str(e)}
+    finally:
+        Path(tam).unlink(missing_ok=True)
+
+
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
                  dich_sang: str = "en",
                  on_progress: Optional[Callable[[float, str], None]] = None,

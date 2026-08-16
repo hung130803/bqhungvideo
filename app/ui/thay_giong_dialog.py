@@ -175,6 +175,9 @@ class ThayGiongDialog(QDialog):
     _giong_xong = pyqtSignal()          # danh sách giọng nạp xong (thread nền)
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
     _piper_xong = pyqtSignal(bool, str)  # tải giọng Piper xong (ok, lời)
+    #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi) — nghe thử sinh xong ở
+    #: thread nền. Phải qua tín hiệu: đụng widget từ thread nền là sập app.
+    _nghe_xong = pyqtSignal(str, str, str)
     #: (đường dẫn video, trạng thái, tiến trình 0..1) — bắn MỖI LẦN một dòng
     #: ĐỔI trạng thái. Cổng test bắt tín hiệu này để đo "bảng có sống không"
     #: thay vì nhìn bằng mắt.
@@ -263,6 +266,17 @@ class ThayGiongDialog(QDialog):
         self.cb_giong.setMinimumWidth(300)
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
         h2.addWidget(self.cb_giong, 1)
+
+        # NGHE THỬ — anh Hùng 16/08: *"không có phần nghe thử à"*. Trước đây
+        # muốn biết giọng nghe ra sao phải chạy HẾT CẢ VIDEO (hàng phút) rồi mở
+        # file ra nghe. Nhãn KHÔNG EMOJI (bài học v2.6.22: máy anh Hùng thiếu
+        # glyph nên nút ra Ô ĐEN — "xấu quá tự nhiên có cái ô đen").
+        self.b_nghe = QPushButton("Nghe thử")
+        self.b_nghe.setToolTip(
+            "Đọc một câu mẫu bằng ĐÚNG giọng và ĐÚNG cao độ đang chọn.\n"
+            "Đi đúng cửa mà lượt xuất thật đi, nên nghe sao là ra vậy.")
+        self.b_nghe.clicked.connect(self._nghe_thu)
+        h2.addWidget(self.b_nghe)
 
         h2.addSpacing(8)
         h2.addWidget(QLabel("Số luồng:"))
@@ -452,6 +466,7 @@ class ThayGiongDialog(QDialog):
         self._giong_xong.connect(self._dung_combo_giong)
         self._cai_xong.connect(self._cai_demucs_xong)
         self._piper_xong.connect(self._tai_piper_xong)
+        self._nghe_xong.connect(self._nghe_thu_xong)
 
         self._do_demucs()
         self._nap_giong_nen()
@@ -462,6 +477,82 @@ class ThayGiongDialog(QDialog):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._nhip)
         self._timer.start(700)
+
+    # ------------------------------------------------------------------
+    # NGHE THỬ GIỌNG
+    # ------------------------------------------------------------------
+    def _nghe_thu(self) -> None:
+        """Đọc câu mẫu bằng giọng đang chọn -> phát ra loa. KHÔNG chặn hộp.
+
+        Phát bằng `winsound` (WAV, thư viện chuẩn) chứ KHÔNG `QMediaPlayer`:
+        backend QtMultimedia trên nhiều máy Windows (wheel PyQt6 thiếu DLL
+        FFmpeg) chết IM LẶNG — bấm không kêu gì mà cũng không báo gì. Cùng lý
+        do `editor._dub_preview` đã chọn winsound.
+
+        BẤM LIÊN TIẾP KHÔNG ĐƯỢC CHỒNG TIẾNG: khoá nút trong lúc sinh, và
+        `SND_PURGE` ngắt tiếng cũ trước khi phát tiếng mới.
+        """
+        import threading
+
+        voice = self.cb_giong.currentData() or ""
+        if not voice:
+            QMessageBox.information(
+                self, "Nghe thử",
+                "Mục đang chọn là “tự chọn theo ngôn ngữ đích” nên chưa biết "
+                "giọng nào. Chọn một giọng cụ thể rồi bấm lại.")
+            return
+        self._ngat_tieng()
+        self.b_nghe.setEnabled(False)
+        self.b_nghe.setText("Đang đọc...")
+
+        import tempfile
+        import uuid
+        wav = str(Path(tempfile.gettempdir())
+                  / f"_bqnghe_{uuid.uuid4().hex[:8]}.wav")
+
+        def bg() -> None:
+            try:
+                from app.core import thay_giong as TGC
+                kq = TGC.doc_thu(voice, wav)
+                self._nghe_xong.emit(kq.get("ra") or "", kq.get("nguon") or "",
+                                     kq.get("loi") or "")
+            except Exception as e:  # noqa: BLE001
+                self._nghe_xong.emit("", "", str(e))
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _ngat_tieng(self) -> None:
+        """Ngắt tiếng nghe thử đang kêu (nếu có). Máy không có winsound thì im."""
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _nghe_thu_xong(self, wav: str, nguon: str, loi: str) -> None:
+        """Chạy ở LUỒNG GIAO DIỆN (qua tín hiệu) -> đụng widget mới an toàn."""
+        self.b_nghe.setEnabled(True)
+        self.b_nghe.setText("Nghe thử")
+        if loi or not wav or not Path(wav).exists():
+            QMessageBox.warning(
+                self, "Nghe thử không được",
+                f"Không đọc thử được giọng này.\n\nLý do: {loi or 'không rõ'}"
+                "\n\nGiọng thường (edge-tts) cần MẠNG; giọng Piper cần đã tải "
+                "về máy. Kiểm rồi bấm lại.")
+            return
+        # NGUỒN THẬT, không phải cái vừa chọn: Piper chưa tải thì app LÙI ÊM
+        # về edge-tts — không nói ra thì anh Hùng tưởng đang nghe Piper.
+        if "lùi" in nguon:
+            self.lb_tt.setText(f"Nghe thử: {nguon}")
+        try:
+            import winsound
+            winsound.PlaySound(
+                wav, winsound.SND_FILENAME | winsound.SND_ASYNC
+                | winsound.SND_NODEFAULT)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(
+                self, "Nghe thử không được",
+                f"Máy này không phát được âm thanh:\n{e}")
 
     # ------------------------------------------------------------------
     # BỘ TÁCH GIỌNG
@@ -1223,6 +1314,7 @@ class ThayGiongDialog(QDialog):
     # ------------------------------------------------------------------
     def closeEvent(self, e):  # noqa: N802 - Qt
         self.luu_cai_dat()
+        self._ngat_tieng()      # đóng hộp -> tắt tiếng nghe thử còn kêu dở
         try:
             self._timer.stop()
         except Exception:  # noqa: BLE001
@@ -1231,6 +1323,7 @@ class ThayGiongDialog(QDialog):
 
     def reject(self):  # noqa: D102 - Qt
         self.luu_cai_dat()
+        self._ngat_tieng()
         try:
             self._timer.stop()
         except Exception:  # noqa: BLE001
