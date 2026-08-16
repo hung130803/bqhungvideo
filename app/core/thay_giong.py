@@ -1750,7 +1750,6 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
     liên tiếp KHÔNG gọi lại mạng — với ElevenLabs mỗi lượt gọi là tốn credit
     thật, còn edge-tts thì đỡ 1-2 giây chờ.
     """
-    import asyncio
     import hashlib
 
     import config
@@ -1789,21 +1788,37 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         return {"ra": str(out_wav), "nguon": nguon, "cache": True, "loi": ""}
 
     tam = out_wav.with_suffix(".tho.mp3")
+    thu_muc = out_wav.parent / f"_thu_{khoa}"
     try:
         if v.startswith(("el:", "gemini:")):
-            # hai nguồn này KHÔNG đi qua `_synth_all_words`; `synth_demo` là
-            # cửa đã có sẵn cho chúng (hộp Lồng tiếng đang dùng).
+            # Hai nguồn này KHÔNG đi qua đường thay tiếng — `giong_dung_duoc`
+            # lọc chúng khỏi combo vì `doc_ban_dich` không đọc được. Giữ nhánh
+            # cho lối gọi khác (hộp Lồng tiếng đã dùng `synth_demo` sẵn).
             from app.core.dubbing import synth_demo
             if not synth_demo(v, tam, text=txt, pitch=pitch):
                 raise RuntimeError("nguồn giọng không trả về tiếng")
+            nguon_file = tam
         else:
-            from app.core import dubbing
-            ok, _w = asyncio.run(dubbing._synth_all_words(
-                [txt], v, [str(tam)], pitch=pitch))
-            if not ok or not ok[0]:
+            # ĐI THẲNG QUA `doc_ban_dich` — ĐÚNG BƯỚC 4 của lượt xuất thật,
+            # KHÔNG tự gọi `_synth_all_words`. Ba cái lợi, cái thứ ba là lý do
+            # quyết định:
+            #  (1) nó tự `tach_giong_pitch` -> biến thể cao độ chắc chắn đúng;
+            #  (2) nó tự CẮT LỀ IM (edge-tts chèn ~1,07 s im mỗi câu) -> bấm
+            #      là kêu ngay, không phải ngồi đợi khoảng lặng;
+            #  (3) **KHÔNG đẻ ra chỗ gọi `_synth_all_words` thứ 4.** Cổng 63
+            #      đếm đúng 3 chỗ và cố ý ĐỎ khi có chỗ thứ 4, để bắt người
+            #      thêm phải nối `pitch`. Đi qua cửa CẤP TRÊN vừa khỏi đụng
+            #      chốt đó, vừa đúng tinh thần của nó — và không phải sửa một
+            #      con số nào trong cổng.
+            kq_d = doc_ban_dich([txt], thu_muc, voice=voice)
+            if not kq_d.get("ok") or not kq_d["ok"][0]:
                 raise RuntimeError("nguồn giọng không trả về tiếng")
+            ds = [p for p in (kq_d.get("files") or []) if p]
+            if not ds:
+                raise RuntimeError("không có file tiếng nào ra")
+            nguon_file = Path(ds[0])
         # -> WAV: `winsound` của giao diện CHỈ phát được WAV.
-        _ffmpeg(["-i", str(tam), "-ac", "1", "-ar", "24000",
+        _ffmpeg(["-i", str(nguon_file), "-ac", "1", "-ar", "24000",
                  "-c:a", "pcm_s16le", str(out_wav)], "đổi tiếng thử ra wav")
         _kiem_wav(out_wav)          # bẫy "rc=0 mà file 0 KiB / RMS 0"
         if dung_cache:
@@ -1813,6 +1828,7 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         return {"ra": "", "nguon": nguon, "cache": False, "loi": str(e)}
     finally:
         Path(tam).unlink(missing_ok=True)
+        shutil.rmtree(thu_muc, ignore_errors=True)
 
 
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
