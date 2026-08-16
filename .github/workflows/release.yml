@@ -68,6 +68,7 @@ jobs:
           --add-data "app/assets/hieu_ung;app/assets/hieu_ung"
           --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
           --add-data ".env.example;."
+          --add-data "LICENSES.txt;."
           --add-binary "bin/ffmpeg.exe;."
           --add-binary "bin/ffprobe.exe;."
           --add-binary "bin/yt-dlp.exe;."

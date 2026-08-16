@@ -10,7 +10,12 @@ from PyInstaller.utils.hooks import collect_all
 # GHI NGUỒN + GIẤY PHÉP GPL/LGPL của frei0r, thứ BẮT BUỘC phải kèm khi phát
 # hành. Cổng `_test_dong_goi.py` nay quét MỌI thư mục app/assets/* mà mã có đọc
 # và bắt lỗi nếu spec chưa khai.
-datas = [('app/database/schema.sql', 'app/database'), ('app/assets/fonts', 'app/assets/fonts'), ('app/assets/sfx', 'app/assets/sfx'), ('app/assets/hieu_ung', 'app/assets/hieu_ung'), ('app/core/potoken_plugins', 'app/core/potoken_plugins'), ('.env.example', '.')]
+# `LICENSES.txt` KHÔNG phải cho đẹp: `bin/ffmpeg.exe` kèm theo là bản
+# `--enable-gpl --enable-version3` (GPL-3.0-or-later, có librubberband
+# GPL-2.0) và GPL BUỘC phải kèm văn bản giấy phép + chỉ chỗ lấy mã nguồn. Bộ
+# cài trước 16/08/2026 THIẾU hẳn file này. Để cạnh .exe ('.') cho người dùng
+# thấy ngay, không chôn trong `_internal`.
+datas = [('app/database/schema.sql', 'app/database'), ('app/assets/fonts', 'app/assets/fonts'), ('app/assets/sfx', 'app/assets/sfx'), ('app/assets/hieu_ung', 'app/assets/hieu_ung'), ('app/core/potoken_plugins', 'app/core/potoken_plugins'), ('.env.example', '.'), ('LICENSES.txt', '.')]
 binaries = [('bin/ffmpeg.exe', '.'), ('bin/ffprobe.exe', '.'), ('bin/yt-dlp.exe', '.')]
 hiddenimports = ['openai', 'requests', 'psutil', 'dotenv']
 hiddenimports += collect_submodules('app')

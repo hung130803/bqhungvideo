@@ -129,6 +129,39 @@ def ca_a_quet_tinh() -> None:
         "CÓ" if "app/assets/hieu_ung" in txt else
         "THIẾU -> máy nhân viên mất 25 hiệu ứng + 21 chuyển cảnh GPU")
 
+    # ---- LICENSES.txt: NGHĨA VỤ PHÁP LÝ, không phải tài liệu cho đẹp ----
+    # `bin/ffmpeg.exe` kèm bộ cài là bản `--enable-gpl --enable-version3`
+    # (GPL-3.0-or-later, có librubberband GPL-2.0). GPL BUỘC người phát hành
+    # kèm văn bản giấy phép + chỉ chỗ lấy mã nguồn. Bộ cài trước 16/08/2026
+    # THIẾU hẳn — app vẫn chạy, không một dòng báo, chỉ có rủi ro pháp lý.
+    lic = REPO / "LICENSES.txt"
+    bao("NGUỒN có LICENSES.txt", lic.exists(), str(lic).replace(str(REPO), "."))
+    for nhan, p in (("build tay (.spec)", SPEC),
+                    ("PHÁT HÀNH (release.yml)", CI)):
+        if not p.exists():
+            continue
+        t1 = p.read_text(encoding="utf-8", errors="replace")
+        bao(f"{nhan} khai LICENSES.txt", "LICENSES.txt" in t1,
+            "CÓ" if "LICENSES.txt" in t1 else
+            "THIẾU -> phát hành ffmpeg GPL mà không kèm giấy phép")
+    if lic.exists():
+        t_lic = lic.read_text(encoding="utf-8", errors="replace")
+        # Nêu ĐÍCH DANH từng thành phần bắt buộc. Chỉ hỏi "file có tồn tại
+        # không" thì ai đó để lại file rỗng là cổng vẫn xanh.
+        can_co = {
+            "ffmpeg (GPL-3.0)": ("ffmpeg", "GPL-3.0"),
+            "rubberband": ("rubberband",),
+            "Piper + kho mã nguồn": ("piper1-gpl",),
+            "espeak-ng": ("espeak-ng",),
+            "giọng vais1000 + CC BY 4.0": ("vais1000", "CC BY 4.0"),
+            "edge-tts (LGPL)": ("edge-tts", "LGPL"),
+        }
+        thieu_m = [ten for ten, khoa in can_co.items()
+                   if not all(k.lower() in t_lic.lower() for k in khoa)]
+        bao("LICENSES.txt nêu ĐỦ thành phần bắt buộc", not thieu_m,
+            f"thiếu {thieu_m}" if thieu_m
+            else f"đủ {len(can_co)} mục · {len(t_lic)} ký tự")
+
 
 # =====================================================================
 def ca_b_ban_da_build() -> None:

@@ -1,0 +1,204 @@
+================================================================================
+BQ HUNG VIDEO — GIẤY PHÉP CỦA CÁC THÀNH PHẦN ĐI KÈM
+================================================================================
+
+File này liệt kê phần mềm và dữ liệu KHÔNG PHẢI do BQ Hung Video viết ra nhưng
+được phát hành kèm (hoặc được app tải về khi người dùng chọn dùng).
+
+Đây là file BẮT BUỘC phải có trong bộ cài: `ffmpeg.exe` đi kèm là bản GPL, và
+GPL yêu cầu kèm văn bản giấy phép + chỉ chỗ lấy mã nguồn. Trước bản này bộ cài
+thiếu nó.
+
+Mã nguồn của chính BQ Hung Video KHÔNG bị các giấy phép dưới đây ràng buộc.
+Lý do: app gọi mọi thành phần GPL bằng TIẾN TRÌNH RIÊNG (`subprocess`), chỉ
+trao đổi dòng lệnh và file — theo mục 5 của GPL-3 đó là "aggregate", và
+FSF trả lời rõ là hai chương trình riêng. App KHÔNG liên kết (`import`) bất kỳ
+thư viện GPL nào vào tiến trình của mình.
+
+Cập nhật: 16/08/2026.
+
+
+================================================================================
+1. FFmpeg / ffprobe  —  GPL-3.0-or-later
+================================================================================
+
+Tệp kèm theo : ffmpeg.exe, ffprobe.exe (nằm cạnh BQHungVideo.exe)
+Bản dùng     : N-125998-g2a20737f66-20260809
+Bản dựng sẵn : BtbN/FFmpeg-Builds — ffmpeg-master-latest-win64-gpl
+               https://github.com/BtbN/FFmpeg-Builds
+Trang chủ    : https://ffmpeg.org/
+Mã nguồn     : https://github.com/FFmpeg/FFmpeg
+Toàn văn GPL : https://www.gnu.org/licenses/gpl-3.0.html
+
+VÌ SAO LÀ GPL-3.0 CHỨ KHÔNG PHẢI LGPL:
+Bản dựng này bật `--enable-gpl` VÀ `--enable-version3`. FFmpeg bản thân nó là
+LGPL-2.1-or-later, nhưng khi bật `--enable-gpl` thì kết quả là GPL, và
+`--enable-version3` nâng tiếp lên GPL-3.0-or-later.
+
+Các thành phần GPL nằm trong bản dựng này (không liệt kê hết):
+  librubberband  GPL-2.0-or-later   https://breakfastquay.com/rubberband/
+  libx264        GPL-2.0-or-later   https://www.videolan.org/developers/x264.html
+  libx265        GPL-2.0-or-later   https://bitbucket.org/multicoreware/x265_git
+  libxvid        GPL-2.0-or-later   https://labs.xvid.com/
+  frei0r         GPL-2.0-or-later   https://frei0r.dyne.org/
+  libvidstab     GPL-2.0-or-later   https://github.com/georgmartius/vid.stab
+
+librubberband được app dùng cho bước co giãn thời gian giọng đọc
+(`app/core/thay_giong.py`). Nó là GPL-2.0-or-later; đi chung với
+`--enable-version3` thì cả bản dựng ra GPL-3.0-or-later.
+
+CÁCH LẤY MÃ NGUỒN: theo địa chỉ kho ở trên. BQ Hung Video không sửa một dòng
+nào của FFmpeg hay các thư viện của nó.
+
+
+================================================================================
+2. frei0r-plugins  —  GPL-2.0-or-later (một số plugin LGPL)
+================================================================================
+
+Tệp kèm theo : _internal/app/assets/hieu_ung/frei0r/*.dll  (12 plugin)
+Bản dùng     : 2.5.0 (gói MSYS2 mingw64)
+Mã nguồn     : https://github.com/dyne/frei0r
+Văn bản giấy phép: _internal/app/assets/hieu_ung/frei0r/COPYING
+
+CHI TIẾT ĐẦY ĐỦ (nguồn từng file, vì sao dùng được, plugin nào đang bật) nằm ở
+  _internal/app/assets/hieu_ung/NGUON_GIAY_PHEP.md
+File đó là bản ghi nguồn chính thức của nhóm hiệu ứng, đọc ở đó.
+
+
+================================================================================
+3. Piper (máy đọc)  —  GPL-3.0-or-later   [KHÔNG kèm trong bộ cài]
+================================================================================
+
+Piper KHÔNG nằm trong bộ cài này. App chỉ tải nó về máy người dùng KHI người
+dùng tự chọn dùng giọng Piper, và tải THẲNG từ kho của tác giả. Ghi ở đây để
+người dùng biết mình đang chạy phần mềm gì và lấy mã nguồn ở đâu.
+
+Tên     : Piper (piper-tts)
+Bản dùng: 1.6.1
+Mã nguồn: https://github.com/OHF-Voice/piper1-gpl
+Giấy phép: GPL-3.0-or-later  (kho cũ `rhasspy/piper` bản <= 1.2.0 là MIT;
+           từ bản 1.3.0 dự án chuyển sang kho `piper1-gpl` và đổi sang GPL-3)
+Toàn văn : kèm trong chính gói tải về, file `COPYING`
+
+Thành phần con:
+  espeak-ng   GPL-3.0-or-later   https://github.com/espeak-ng/espeak-ng
+              (bộ chuyển chữ sang âm — đây chính là lý do Piper buộc phải GPL)
+  onnxruntime MIT                https://github.com/microsoft/onnxruntime
+
+App gọi Piper bằng TIẾN TRÌNH RIÊNG, chỉ trao đổi dòng lệnh và file WAV. App
+KHÔNG `import piper`. Đây là cùng mô hình app đã dùng với ffmpeg nhiều năm.
+
+ĐẦU RA LÀ CỦA NGƯỜI DÙNG: file WAV do Piper đọc ra không bị GPL phủ lên
+("The output of a program is not, in general, covered by the copyright on the
+code of the program." — FSF). Video xuất ra bán được bình thường.
+
+
+================================================================================
+4. Giọng đọc tiếng Việt vi_VN-vais1000-medium  —  MIT + CC BY 4.0
+================================================================================
+
+Giọng này KHÔNG kèm trong bộ cài; app tải khi người dùng chọn dùng.
+CC BY 4.0 đòi GHI CÔNG — khối chữ dưới đây chính là phần ghi công đó.
+
+    Giọng đọc tiếng Việt: vi_VN-vais1000-medium (Piper)
+      Trọng số: rhasspy/piper-voices — giấy phép MIT
+        https://huggingface.co/rhasspy/piper-voices
+      Dữ liệu huấn luyện: VAIS-1000 Vietnamese Speech Synthesis Corpus
+        Truong Do / VAIS (https://vais.vn), IEEE DataPort, 2017
+        DOI: 10.21227/H2B887
+        Giấy phép: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+
+    Máy đọc: Piper (OHF-Voice/piper1-gpl) — giấy phép GPL-3.0-or-later
+      Mã nguồn: https://github.com/OHF-Voice/piper1-gpl
+      Bao gồm espeak-ng — giấy phép GPL-3.0
+        Mã nguồn: https://github.com/espeak-ng/espeak-ng
+
+MỘT CHỖ CHƯA ĐỐI CHIẾU ĐƯỢC, GHI THẲNG: dòng "CC BY 4.0" là do model card của
+Piper khẳng định. Trang gốc IEEE DataPort của VAIS-1000 (tên người nộp
+Truong Do, tổ chức VAIS, DOI 10.21227/H2B887, năm 2017) KHÔNG hiện rõ dòng giấy
+phép ra ngoài — có thể phải đăng nhập IEEE mới thấy. Trọng số vẫn là MIT nên
+rủi ro thấp, nhưng đây là chỗ chưa nhìn tận mắt.
+
+HAI GIỌNG PIPER TIẾNG VIỆT CÒN LẠI KHÔNG ĐƯỢC ĐƯA VÀO APP:
+  vi_VN-vivos-x_low          dữ liệu CC BY-NC-SA 4.0 — NC = CẤM THƯƠNG MẠI.
+                             Kèm lỗi kỹ thuật: bảng âm thiếu dấu thanh tiếng
+                             Việt (in ra "Missing phoneme from id map: 2/4/5/6").
+  vi_VN-25hours_single-low   model card ghi "License: Unknown". Im lặng không
+                             phải là cho phép — không dùng.
+
+
+================================================================================
+5. edge-tts  —  LGPL-3.0-or-later   [ĐANG DÙNG HẰNG NGÀY — ĐỌC MỤC NÀY]
+================================================================================
+
+Tên      : edge-tts
+Mã nguồn : https://github.com/rany2/edge-tts
+Giấy phép: LGPL-3.0-or-later
+
+LGPL cho phép dùng trong phần mềm đóng (không phải mở mã app), miễn là người
+dùng thay thế được thư viện đó. App cài edge-tts dạng thư viện Python bình
+thường nên điều kiện này thoả.
+
+ĐIỀU CẦN BIẾT, NÓI TRUNG THỰC KHÔNG DOẠ: tác giả edge-tts viết công khai trong
+kho của mình rằng
+
+    "It shouldn't be used for commercial reasons"
+    (tạm dịch: không nên dùng cho mục đích thương mại)
+
+Đây KHÔNG phải điều khoản của LGPL, và cũng không phải lệnh cấm có hiệu lực
+pháp lý từ giấy phép. Nó là quan điểm của tác giả, xuất phát từ chỗ edge-tts
+gọi tới dịch vụ đọc văn bản của Microsoft Edge — tức phần rủi ro thật nằm ở
+ĐIỀU KHOẢN DỊCH VỤ CỦA MICROSOFT, không nằm ở giấy phép mã nguồn.
+
+Ghi ra đây để người vận hành app biết mà tự quyết định, vì app đang dùng
+edge-tts làm giọng đọc chính hằng ngày. Đây cũng chính là lý do có thêm lựa
+chọn Piper: Piper chạy hẳn trên máy, không gọi dịch vụ của ai.
+
+
+================================================================================
+6. yt-dlp  —  Unlicense (public domain)
+================================================================================
+
+Tệp kèm theo : yt-dlp.exe (nằm cạnh BQHungVideo.exe)
+Mã nguồn     : https://github.com/yt-dlp/yt-dlp
+Giấy phép    : Unlicense — https://unlicense.org/
+Không có ràng buộc nào.
+
+
+================================================================================
+7. Kho tiếng động  —  CC0 1.0 + tự sinh
+================================================================================
+
+Tệp kèm theo : _internal/app/assets/sfx/
+Phần tự sinh : sinh bằng ffmpeg lavfi (`tools/gen_sfx.py`) — không bản quyền.
+Phần tải về  : Kenney.nl — CC0 1.0 (public domain), dùng thương mại được,
+               không bắt buộc ghi nguồn.  https://kenney.nl/
+Danh sách nguồn từng gói: _internal/app/assets/sfx/NGUON.md
+
+
+================================================================================
+8. Phông chữ  —  SIL Open Font License 1.1
+================================================================================
+
+Tệp kèm theo : _internal/app/assets/fonts/*.ttf
+Nguồn        : Google Fonts — https://fonts.google.com/
+Giấy phép    : SIL OFL 1.1 (dòng giấy phép nằm trong chính từng file .ttf)
+               https://scripts.sil.org/OFL
+OFL cho phép dùng thương mại và nhúng vào video. Điều kiện chính là không bán
+riêng bản thân phông chữ.
+
+CHƯA RÀ TỪNG FILE: 20 phông đều lấy từ Google Fonts nên đều OFL 1.1, nhưng
+chưa mở từng file đối chiếu dòng giấy phép. Ghi ra để không ai tưởng đã kiểm.
+
+
+================================================================================
+GHI CHÚ CHO NGƯỜI PHÁT HÀNH
+================================================================================
+
+- Thêm thành phần bên ngoài nào vào bộ cài thì PHẢI thêm mục vào file này.
+  Cổng `_test_dong_goi.py` kiểm file này có mặt trong `dist/`.
+- Đừng sửa mã của ffmpeg / Piper / frei0r. Không sửa thì nghĩa vụ GPL chỉ còn
+  đúng hai việc: kèm văn bản giấy phép (file này) và chỉ chỗ lấy mã nguồn
+  (các địa chỉ ở trên).
+- Đừng tự dựng máy chủ chứa bản sao Piper. Tải thẳng từ GitHub của tác giả thì
+  người tải là NGƯỜI DÙNG, app chỉ chỉ đường — nhẹ nhất về nghĩa vụ.
