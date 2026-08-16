@@ -1263,6 +1263,12 @@ CJK_VONG_TOI_DA = 2
 #: `BQ_DICH_SOAT=1` bật để đo A/B.
 DUNG_DICH_SOAT = os.environ.get("BQ_DICH_SOAT", "") == "1"
 
+#: Dùng `app.ai.dich.dich_theo_gio` — chỉ lấy phần NGÂN SÁCH THỜI GIAN của
+#: `dich_va_soat`, **BỎ HẲN hội đồng 3 model chấm điểm** (phần đắt nhất).
+#: Đây là hướng còn lại sau khi `DUNG_DICH_SOAT` đã đo và bị bác.
+#: `BQ_DICH_GIO=1` bật để đo A/B.
+DUNG_DICH_GIO = os.environ.get("BQ_DICH_GIO", "") == "1"
+
 
 def _mang_llm(data) -> list:
     """Bóc mảng ra khỏi kiểu LLM hay trả ({"ket_qua": [...]} hoặc [...])."""
@@ -1510,6 +1516,10 @@ def dich_hau_kiem(cau: list[dict], dich_sang: str, goc_ma: str = "",
     if DUNG_DICH_SOAT:
         from app.ai import dich as _D
         ban_dich = list(_D.dich_va_soat(cau, dich_sang, goc_ma)["ban_dich"])
+    elif DUNG_DICH_GIO:
+        # NGÂN SÁCH THỜI GIAN, KHÔNG kèm thước chấm (bỏ hội đồng 3 model).
+        from app.ai import dich as _D
+        ban_dich = list(_D.dich_theo_gio(cau, dich_sang, goc_ma)["ban_dich"])
     else:
         ban_dich = _dich_loat(cau, dich_sang, goc_ma)
 

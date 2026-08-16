@@ -87,11 +87,20 @@ def _bat_dem() -> None:
 
 
 def chay_arm(ten: str, cau, goc_ma) -> dict:
-    """Gọi CHÍNH `dich_hau_kiem` của app, chỉ khác cờ `DUNG_DICH_SOAT`."""
+    """Gọi CHÍNH `dich_hau_kiem` của app, chỉ khác CỜ CHỌN ĐƯỜNG DỊCH.
+
+    Ba arm, cùng đi qua `dich_hau_kiem` (nên phần `_dich_nguoc_cham` + vòng
+    dịch lại + vòng CJK của chính nó là CHUNG cho cả ba — chỉ khác bước dịch
+    ĐẦU):
+      · `MỐC`  — `_dich_loat`      (app đang chạy hôm nay)
+      · `SOÁT` — `dich_va_soat`    (ngân sách + THƯỚC CHẤM — đã đo, đã bác)
+      · `GIỜ`  — `dich_theo_gio`   (ngân sách, KHÔNG thước — hướng còn lại)
+    """
     from app.core import thay_giong as TG
 
     _bat_dem()
     TG.DUNG_DICH_SOAT = (ten == "SOÁT")
+    TG.DUNG_DICH_GIO = (ten == "GIỜ")
     n0 = _DEM["n"]
     t0 = time.time()
     dd = TG.dich_hau_kiem(cau, "vi", goc_ma)
@@ -104,11 +113,53 @@ def chay_arm(ten: str, cau, goc_ma) -> dict:
     }
 
 
-ARM = ["MỐC", "SOÁT"]
-TEN_THU_MUC = {"MỐC": "moc", "SOÁT": "soat"}
+#: `BQ_ARM="MỐC,GIỜ"` để chỉ đo 2 arm cần (SOÁT đã đo xong và đã bị bác — chạy
+#: lại nó tốn 126s/lượt cho một câu trả lời đã có).
+ARM = [x.strip() for x in os.environ.get("BQ_ARM", "MỐC,SOÁT").split(",")
+       if x.strip()]
+TEN_THU_MUC = {"MỐC": "moc", "SOÁT": "soat", "GIỜ": "gio"}
 
 
 # --------------------------------------------------------------------------
+def tu_kiem_duong() -> bool:
+    """**ARM NÀO GỌI ĐÚNG HÀM NẤY** — chạy TRƯỚC mọi lượt đo, 0 lượt LLM.
+
+    Vì sao bắt buộc: lượt đo trước đã báo "đã đo A/B `dich_va_soat`" trong khi
+    thật ra nó so `dich_theo_gio` — cờ rẽ nhánh sai một chữ là cả bảng số vô
+    nghĩa mà KHÔNG một dòng báo. Ở đây vá cả 3 đích + `_dich_nguoc_cham` nên
+    không gọi mạng lần nào.
+    """
+    from app.ai import dich as _D
+    from app.core import thay_giong as TG
+
+    goi: list[str] = []
+    cu = (TG._dich_loat, _D.dich_theo_gio, _D.dich_va_soat, TG._dich_nguoc_cham)
+    cau = [{"start": 0.0, "end": 2.0, "text": "测试"}]
+    try:
+        TG._dich_loat = lambda c, d, g: (goi.append("loat"), ["x"] * len(c))[1]
+        _D.dich_theo_gio = lambda c, *a, **k: (
+            goi.append("gio"), {"ban_dich": ["x"] * len(c)})[1]
+        _D.dich_va_soat = lambda c, *a, **k: (
+            goi.append("soat"), {"ban_dich": ["x"] * len(c)})[1]
+        TG._dich_nguoc_cham = lambda g, d, a, b: [10.0] * len(d)
+        cho = {"MỐC": "loat", "SOÁT": "soat", "GIỜ": "gio"}
+        ok = True
+        for ten in ARM:
+            goi.clear()
+            TG.DUNG_DICH_SOAT = (ten == "SOÁT")
+            TG.DUNG_DICH_GIO = (ten == "GIỜ")
+            TG.dich_hau_kiem(cau, "vi", "zh")
+            dat = goi == [cho[ten]]
+            ok = ok and dat
+            print(f"  arm {ten:<5} -> gọi {goi or ['(KHÔNG GỌI GÌ)']}  "
+                  f"{'ĐÚNG' if dat else 'SAI — mong ' + cho[ten]}")
+        return ok
+    finally:
+        (TG._dich_loat, _D.dich_theo_gio, _D.dich_va_soat,
+         TG._dich_nguoc_cham) = cu
+        TG.DUNG_DICH_SOAT = TG.DUNG_DICH_GIO = False
+
+
 def do_tts(texts: list[str], san: Path) -> list[float]:
     """Đọc THẬT rồi trả độ dài TIẾNG (đã cắt lề im) từng câu. Hỏng -> 0.0."""
     if BO_TTS:
@@ -195,6 +246,12 @@ def main() -> int:
     print(f"A/B END-TO-END `dich_hau_kiem` — {len(cau)} câu · goc_ma={goc_ma!r} "
           f"· {SO_LUOT} lượt ĐAN XEN")
     print(f"TTS: {'BỎ QUA' if BO_TTS else 'edge-tts THẬT'}")
+    print(f"ARM: {' · '.join(ARM)}")
+    print("=" * 74)
+    print("TỰ KIỂM ĐƯỜNG DỊCH (arm nào gọi đúng hàm nấy, 0 lượt LLM):")
+    if not tu_kiem_duong():
+        print("DỪNG: arm gọi SAI HÀM — mọi số đo sau đây sẽ vô nghĩa.")
+        return 2
     print("=" * 74)
 
     tat_ca: list[dict] = []
@@ -247,18 +304,33 @@ def main() -> int:
         ("GIÂY (wall)", "giay", 1),
         ("LƯỢT LLM", "luot_llm", 1),
     ]
-    print(f"{'chỉ số (TB)':<24}|{'MỐC':>12} |{'SOÁT':>12}")
-    print("-" * 52)
+    print(f"{'chỉ số (TB)':<24}|" + "|".join(f"{a:>12} " for a in ARM))
+    print("-" * (25 + 14 * len(ARM)))
     for nhan, khoa, sau in hang:
-        a, b = tb("MỐC", khoa, sau), tb("SOÁT", khoa, sau)
-        print(f"{nhan:<24}|{str(a):>12} |{str(b):>12}")
+        o = "|".join(f"{str(tb(a, khoa, sau)):>12} " for a in ARM)
+        print(f"{nhan:<24}|{o}")
     for k in ("nghia", "xuoi", "noi", "tron"):
         v = []
         for ten in ARM:
             xs = [m[ten]["truc"][k] for m in tat_ca
                   if ten in m and "truc" in m[ten]]
             v.append(round(sum(xs) / len(xs), 2) if xs else None)
-        print(f"{'  trục ' + k:<24}|{str(v[0]):>12} |{str(v[1]):>12}")
+        o = "|".join(f"{str(x):>12} " for x in v)
+        print(f"{'  trục ' + k:<24}|{o}")
+
+    # ---- TỪNG LƯỢT (LLM không tiền định: trung bình che mất biến động) ----
+    print()
+    print("TỪNG LƯỢT — `dat_%` · sót Hán · cụt · lượt LLM")
+    for i, m in enumerate(tat_ca):
+        o = []
+        for a in ARM:
+            d = m.get(a) or {}
+            if "loi" in d:
+                o.append(f"{a}: LỖI")
+            else:
+                o.append(f"{a}: {d.get('ty_le_dat')}% · {d.get('sot_chu_goc')}"
+                         f" · {d.get('cau_ngan')} · {d.get('luot_llm')}")
+        print(f"  lượt {i + 1}: " + "   |   ".join(o))
 
     RA.write_text(json.dumps(tat_ca, ensure_ascii=False, indent=1),
                   encoding="utf-8")
