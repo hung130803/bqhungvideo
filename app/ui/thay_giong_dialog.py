@@ -135,6 +135,27 @@ def giong_dung_duoc(ds: list) -> list:
         mo_rong.append((nhan, vid))
         mo_rong.extend(bt.get(vid, []))
 
+    # ---- GIỌNG PIPER — LỰA CHỌN THỨ HAI, chạy hẳn trên máy ----
+    # CHỈ MỘT giọng được phép có mặt: `vais1000` (trọng số MIT + dữ liệu
+    # CC BY 4.0 -> bán được, ghi công ở `LICENSES.txt` mục 4). Hai giọng Việt
+    # còn lại của Piper BỊ CẤM: `vivos` là CC BY-NC-SA (cấm thương mại) và
+    # thiếu dấu thanh; `25hours_single` ghi "License: Unknown" — im lặng
+    # KHÔNG phải là cho phép. Cổng 64 quét đúng hai cái tên đó.
+    #
+    # Chèn NGAY SAU cụm giọng Việt để anh Hùng thấy cùng chỗ. Nhãn nói THẲNG
+    # khi chưa tải, vì lúc đó app LÙI về edge-tts — người chọn phải biết
+    # trước, không để họ tưởng đang nghe Piper.
+    try:
+        from app.core import piper_tts
+        nhan_p = piper_tts.NHAN_GIONG
+        if not piper_tts.co_piper():
+            nhan_p += " — chưa tải, sẽ dùng giọng thường"
+        cuoi_vi = max((i for i, (_n, v) in enumerate(mo_rong)
+                       if str(v).startswith("vi-VN")), default=-1)
+        mo_rong.insert(cuoi_vi + 1, (nhan_p, piper_tts.MA_GIONG))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
     # nhóm rỗng (bị lọc sạch) thì bỏ luôn nhãn nhóm, đừng để dòng trơ
     gon: list = []
     for i, (nhan, vid) in enumerate(mo_rong):

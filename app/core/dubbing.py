@@ -1788,7 +1788,18 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
     rate: tốc độ edge-tts ("-3%"/"+0%"/"+4%"...) — nhịp kể recap. Truyền LIST
     thì MỖI CÂU MỘT TỐC ĐỘ riêng: `thay_giong` dùng để bảo edge-tts ĐỌC NHANH
     HƠN (giọng đọc nhanh THẬT, không méo) thay vì ép `atempo` sau khi đã đọc
-    (WSOLA cắt-dán, đo được 5,4-8,1 dB méo phổ)."""
+    (WSOLA cắt-dán, đo được 5,4-8,1 dB méo phổ).
+
+    GIỌNG PIPER (`piper:...`) đi đường riêng — xem `_piper_hay_khong`. Cửa
+    này KHÔNG cần mốc từng chữ nên bỏ hẳn lượt đọc chữ rời (`lay_moc=False`),
+    tiết kiệm đúng 1,12× thời gian đọc."""
+    dung_piper, voice = _piper_hay_khong(voice)
+    if dung_piper:
+        from app.core import piper_tts
+        ok_p, _moc = piper_tts.doc_loat(texts, paths, on_done=on_done,
+                                        rate=rate, lay_moc=False)
+        return ok_p
+
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
@@ -1833,6 +1844,46 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
 _WB_TICKS = 10_000_000.0
 
 
+# ==================================================================
+# CỬA DUY NHẤT RẼ SANG PIPER
+# ==================================================================
+# Piper là LỰA CHỌN THỨ HAI (xem `app/core/piper_tts.py`). Chỗ rẽ đặt NGAY
+# TRONG hai hàm đọc `_synth_all` / `_synth_all_words` — tức **cửa duy nhất**
+# mọi đường TTS đi qua — chứ KHÔNG bắt từng nơi gọi tự kiểm.
+#
+# VÌ SAO PHẢI LÀ CỬA DUY NHẤT: `thay_giong.py` có BA chỗ gọi
+# `_synth_all_words` (`doc_ban_dich` · `rut_gon_vua_khung` ·
+# `doc_nhanh_vua_khung`) và `dubbing.py` còn ba chỗ gọi `_synth_all` nữa. Sót
+# MỘT chỗ thì những câu đi qua chỗ đó đọc bằng MÁY ĐỌC KHÁC -> video **lẫn
+# hai giọng**, mà `rc` vẫn 0 và không một dòng nào báo. Đó đúng là mệnh đề
+# cổng 63 đang canh, và là lỗi (a) của cổng 19 (mẫu-theo-kênh chỉ áp ở dây
+# chuyền, bấm tay vẫn ăn cấu hình trang chính). Đặt ở đây thì KHÔNG THỂ sót.
+#
+# `pitch` KHÔNG áp dụng cho Piper: máy đọc này không chỉnh được cao độ. Bảng
+# biến thể `thay_giong.BIEN_THE_PITCH` chỉ có khoá cho 2 giọng edge-tts nên
+# mã Piper tự nhiên không sinh biến thể nào — không phải chặn thêm.
+def _piper_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng Piper không, giọng phải LÙI VỀ nếu không dùng được).
+
+    THIẾU PIPER THÌ LÙI ÊM VỀ edge-tts, KHÔNG ĐƯỢC NỔ — nhưng phải GHI LẠI
+    lý do. Lùi êm mà im lặng thì đúng bằng hỏng âm thầm.
+
+    Khác hẳn ca Demucs (cổng 55: "thiếu là CHẶN, không lùi"): ở đó lùi ra
+    video HỎNG (giọng cũ chồng giọng mới). Ở đây lùi ra video ĐÚNG, chỉ khác
+    giọng — nên lùi là lựa chọn đúng.
+    """
+    from app.core import piper_tts
+    if not piper_tts.la_giong_piper(voice):
+        return False, voice
+    if piper_tts.co_piper():
+        return True, voice
+    lui = default_voice("vi")
+    piper_tts._ghi_log(
+        f"Chưa có bộ đọc Piper ({piper_tts.tinh_trang_piper()['thieu']}) "
+        f"-> LÙI về edge-tts giọng {lui}")
+    return False, lui
+
+
 async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
                            rate: str | list = "+0%",
@@ -1851,7 +1902,14 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
     recap đọc nhanh hơn +2%); chuỗi đơn = chung cho mọi cụm.
     pitch: TÔNG GIỌNG edge-tts ('-18Hz'/'+0Hz'/'+18Hz' — Tông giọng recap),
     chung cho mọi cụm; '+0Hz' -> không truyền (giữ hành vi cũ y nguyên).
+
+    GIỌNG PIPER (`piper:...`) đi đường riêng — xem `_piper_hay_khong`.
     """
+    dung_piper, voice = _piper_hay_khong(voice)
+    if dung_piper:
+        from app.core import piper_tts
+        return piper_tts.doc_loat(texts, paths, on_done=on_done, rate=rate)
+
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
