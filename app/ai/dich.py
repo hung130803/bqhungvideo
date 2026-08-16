@@ -41,20 +41,31 @@ from app.ai.cham_dich import am_tiet_viet
 GIAY_MOI_AM_TIET = 0.2388
 GIAY_CO_DINH = 0.1503
 
-#: Nhắm bao nhiêu phần khung câu gốc. KHÔNG nhắm 1,00: bản dịch còn phải đi
-#: qua bước ĐỌC NHANH (`rate` của edge-tts) và bước mượn khoảng lặng; nhắm
-#: sát trần là mọi sai số đều đẩy sang phía TRÀN, tức ép `atempo` — thứ đã đo
-#: được là làm méo tiếng (5,357 dB ở 1,20 · 6,765 ở 1,50).
-NHAM = 0.92
-#: Trần: dài hơn ngần này lần khung thì bắt viết lại. 1,30 vì bước đọc nhanh
-#: của app nuốt được tới ~1,45 lần mà không méo (đo `rate`: +50% -> 1,455×).
+# **LỖI THẬT THỨ HAI CỦA FILE NÀY — `NHAM = 0,92` ĐỔI NGHĨA LẤY ĐỒNG HỒ.**
+# Bản đầu nhắm 92% khung cho MỌI câu. Đo A/B lượt 1 trên video thật
+# (`_kq_ab_nham092.txt`): đồng hồ đẹp hẳn lên — lệch tuyệt đối **0,714 ->
+# 0,435 s/câu**, tràn **27,6 -> 4,4 s** — nhưng CHẤT LƯỢNG SẬP:
+#     ĐẠT theo thước **78,0% -> 58,0%**
+#     luật máy bắt **1 -> 12** câu (trong đó `cut` **10**)
+#     câu dưới 20 ký tự **2 -> 11** (4% -> **22%**)
+# Nguyên nhân là SỐ HỌC, không phải prompt: video này nói dày (106,64 s khung
+# cho ~500 chữ Hán). Tiếng Việt tự nhiên cần ~0,89 âm tiết/chữ Hán ≈ 445 âm
+# tiết ≈ **113,8 s** — tức **107% khung**. Nhắm 92% là ép bản dịch ngắn hơn
+# mức tự nhiên 14%, và chỗ duy nhất để lấy 14% đó là Ý.
+#
+# **ĐỒNG HỒ KHÔNG ĐƯỢC ĂN VÀO NGHĨA.** App đã có sẵn chỗ nuốt phần dôi mà
+# KHÔNG méo tiếng: `rate` của edge-tts (đo trong CLAUDE.md: +20% -> 1,190× ·
+# +50% -> 1,455×, WER không xấu đi) — khác hẳn `atempo` (cắt-dán, méo 5,357 dB
+# ở 1,20). Nên ngân sách nhắm ~1,05 khung, để phần dôi cho `rate` xử lý.
+#: Nhắm bao nhiêu phần khung. > 1,00 là CỐ Ý: xem khối ghi chú ngay trên.
+NHAM = 1.05
+#: Trần: dài hơn ngần này lần khung thì bắt viết lại (vẫn trong tầm `rate`).
 TRAN = 1.30
-#: Sàn: ngắn hơn ngần này lần khung là CỤT — đây là chốt chống đúng cái
-#: "0,99 s tiếng trong khung 9,62 s".
-SAN = 0.62
-#: Câu gốc ngắn hơn ngần này giây thì KHÔNG ép sàn: khung 1 giây chỉ chứa 3
-#: âm tiết, ép thêm là bắt model nhồi chữ vô nghĩa.
-KHUNG_TOI_THIEU = 1.2
+#: Trần TUYỆT ĐỐI của bước ĐỌC NHANH — đo được `rate` +50% ra 1,455× mà WER
+#: không xấu đi. Một bản dịch dài ĐÚNG BẰNG mức tự nhiên thì KHÔNG bị coi là
+#: dài quá, miễn còn dưới mức này: bắt nó viết ngắn lại là lại đi cắt Ý để
+#: mua đồng hồ, đúng lỗi `NHAM=0,92` ở trên.
+TRAN_RATE = 1.45
 
 # --------------------------------------------------------------------------
 # TRẦN THEO CÂU GỐC — CHỐT CHỐNG BỊA, ĐO ĐƯỢC, ĐỪNG BỎ
@@ -71,16 +82,23 @@ KHUNG_TOI_THIEU = 1.2
 # Nên ngân sách phải kẹp bởi ĐỘ DÀI TỰ NHIÊN của chính câu gốc. Tỉ lệ đo trên
 # 20 bản dịch Trung -> Việt viết tay (`_do_bo_hong.TOT`):
 #   min 0,50 · 10% 0,67 · **trung vị 0,89** · 90% 1,13 · max 1,25 âm tiết/chữ Hán
+#: Mức "tự nhiên" — TRUNG VỊ đo được. Đây là mức NHẮM khi đồng hồ cho phép.
+TY_LE_TU_NHIEN = 0.89
 #: Trần "còn tự nhiên" — trên mức này là đang thêm chữ không có trong câu gốc.
 TY_LE_TRAN = 1.25
 #: Trần CỨNG cho cửa viết-lại (nới hơn trần nhắm để đừng bắt viết lại một câu
 #: chỉ hơi dài hơn bản người dịch).
 TY_LE_TRAN_CUNG = 1.50
-#: Sàn "còn tự nhiên" — dưới mức này thì câu gốc vốn đã ngắn, ép dài là bịa.
-TY_LE_SAN = 0.70
+#: **SÀN CỨNG CHỐNG CỤT — LẤY TỪ CÂU GỐC, KHÔNG LẤY TỪ ĐỒNG HỒ.** Phải nằm
+#: TRÊN `cham_dich.TY_LE_CUT` (0,45 — mức luật máy kết luận là CỤT), nếu
+#: không thì chính ngân sách đẻ ra câu mà chính thước của mình chấm trượt
+#: (đo lượt 1: `cut` 10/50 câu). 0,55 = trên sàn đó, dưới bách phân vị 10%
+#: của người dịch (0,67) nên không ép ai phải dài dòng.
+TY_LE_SAN = 0.55
 #: Nguồn KHÔNG phải chữ Hán (mỗi âm tiết đã là một "chữ") thì tỉ lệ khác hẳn.
-#: **CHƯA ĐO** cho nhóm này — để 1,0/1,8/0,7 là số THẬN TRỌNG, không phải số
-#: đo được. Ai dùng cho nguồn Anh/Nhật/Hàn phải đo lại rồi sửa ở đây.
+#: **CHƯA ĐO** cho nhóm này — đây là số THẬN TRỌNG, không phải số đo được.
+#: Ai dùng cho nguồn Anh/Nhật/Hàn phải đo lại rồi sửa ở đây.
+TY_LE_TU_NHIEN_LATIN = 1.10
 TY_LE_TRAN_LATIN = 1.60
 TY_LE_TRAN_CUNG_LATIN = 2.00
 TY_LE_SAN_LATIN = 0.60
@@ -139,39 +157,61 @@ def ngan_sach(giay: float, goc: str = "") -> dict:
     Trả {giay, dich, min, max, do_goc, tran_goc}.
     `min` = 0 nghĩa là không đặt sàn (khung quá ngắn, hoặc câu gốc vốn ngắn).
 
-    HAI RÀNG BUỘC, LẤY CÁI CHẶT HƠN:
-      · ĐỒNG HỒ  — bao nhiêu chữ đọc lọt khung (mô hình tốc độ đọc đo được)
-      · CÂU GỐC  — bao nhiêu chữ là còn dịch, quá thì là BỊA (tỉ lệ đo được)
-    Bỏ ràng buộc thứ hai thì khung dài + câu gốc ngắn = model nhồi chữ (xem
-    khối ghi chú `TY_LE_TRAN` — lỗi thật của bản đầu file này).
+    THỨ TỰ QUYỀN LỰC — **CÂU GỐC TRƯỚC, ĐỒNG HỒ SAU**. Đã đo cả hai chiều:
+      · để ĐỒNG HỒ dẫn (bản `NHAM=0,92`) -> ĐẠT 78% -> **58%**, câu cụt 2 ->
+        **11**. Đồng hồ mua thời lượng bằng NGHĨA.
+      · để CÂU GỐC dẫn mà bỏ đồng hồ (bản mốc `_dich_loat`) -> **39/50 câu
+        tràn khung**, tổng đọc 126,1 s trên khung 106,6 s.
+    Nên: `dich` nhắm mức TỰ NHIÊN của câu gốc, đồng hồ chỉ ĐƯỢC KÉO XUỐNG khi
+    khung thật sự chật, và **không bao giờ kéo xuống dưới `min`** (sàn chống
+    cụt lấy từ câu gốc). Phần dôi còn lại để bước ĐỌC NHANH (`rate`) nuốt.
     """
     giay = max(0.0, float(giay))
     n = co_goc(goc)
     from app.ai.cham_dich import _so_chu_han
     han = _so_chu_han(goc) > 0
+    r_tn = TY_LE_TU_NHIEN if han else TY_LE_TU_NHIEN_LATIN
     r_tran = TY_LE_TRAN if han else TY_LE_TRAN_LATIN
     r_cung = TY_LE_TRAN_CUNG if han else TY_LE_TRAN_CUNG_LATIN
     r_san = TY_LE_SAN if han else TY_LE_SAN_LATIN
 
     dong_ho = am_tiet_vua(giay, NHAM)
     dh_max = max(2, int((giay * TRAN - GIAY_CO_DINH) / GIAY_MOI_AM_TIET))
-    dh_min = 0 if giay < KHUNG_TOI_THIEU else \
-        max(1, int((giay * SAN - GIAY_CO_DINH) / GIAY_MOI_AM_TIET))
 
     if n <= 0:                                   # không đo được cỡ gốc
-        return {"giay": round(giay, 2), "dich": dong_ho, "min": dh_min,
-                "max": dh_max, "do_goc": 0, "tran_goc": 0}
+        return {"giay": round(giay, 2), "dich": dong_ho, "min": 0,
+                "max": dh_max, "do_goc": 0, "tu_nhien": 0}
 
+    tu_nhien = max(1, int(round(r_tn * n)))
     tran_goc = max(2, int(round(r_tran * n)))
     cung_goc = max(2, int(round(r_cung * n)))
-    san_goc = max(1, int(round(r_san * n)))
+    san_goc = max(1, int(round(r_san * n)))      # SÀN lấy từ GỐC, không từ giờ
+
+    dich = min(tu_nhien, dong_ho, tran_goc)      # đồng hồ chỉ được KÉO XUỐNG
+    dich = max(dich, san_goc)                    # ... nhưng không dưới sàn
+    # TRẦN: theo đồng hồ, NHƯNG một bản dịch dài đúng bằng mức TỰ NHIÊN thì
+    # không bao giờ bị kêu là dài quá (miễn còn trong tầm `rate`).
+    tn_ok = min(tu_nhien, am_tiet_vua(giay, TRAN_RATE))
+    tran = max(san_goc + 1, min(dh_max, cung_goc), tn_ok)
+    # HAI TRẦN KHÁC NHAU, ĐỪNG GỘP:
+    #   `max`    = con số GỢI Ý viết vào prompt (chặt hơn, để model tự nhắm)
+    #   `ep_max` = mức HẬU KIỂM mới bắt viết lại (rộng hơn)
+    # Gộp làm một là mỗi câu hơi dài đều bị đem đi viết lại — mà viết lại là
+    # nơi mất nghĩa. Đo trên 20 bản dịch NGƯỜI viết tay của chính corpus này:
+    # ép theo `max` kêu **10/20** bản là "dài quá"; ép theo `ep_max` chỉ còn
+    # những bản thật sự quá tầm `rate`. Hậu kiểm phải canh CÁI KHÔNG LÀM ĐƯỢC,
+    # không phải canh cái chưa tối ưu.
+    ep_max = max(tran, int((giay * TRAN_RATE - GIAY_CO_DINH)
+                           / GIAY_MOI_AM_TIET), int(round(r_cung * n)))
     return {
         "giay": round(giay, 2),
-        "dich": max(1, min(dong_ho, tran_goc)),
-        "min": min(dh_min, san_goc),             # KHÔNG BAO GIỜ ép bịa
-        "max": max(2, min(dh_max, cung_goc)),
+        "dich": max(1, dich),
+        "min": san_goc,
+        "max": max(tran, dich),
+        "ep_min": san_goc,
+        "ep_max": max(ep_max, dich),
         "do_goc": n,
-        "tran_goc": tran_goc,
+        "tu_nhien": tu_nhien,
     }
 
 
@@ -351,10 +391,16 @@ def _viet_lai(cau: list[dict], chi_so: list[int], hien: list[str],
 
 
 def _lech(n: int, ns: dict) -> bool:
-    """Câu `n` chữ có lệch ngân sách `ns` không."""
-    if n > ns["max"]:
+    """Câu `n` chữ có lệch ngân sách `ns` tới mức PHẢI VIẾT LẠI không?
+
+    Dùng `ep_min`/`ep_max` (mức hậu kiểm) chứ KHÔNG dùng `min`/`max` (con số
+    gợi ý trong prompt) — xem ghi chú trong `ngan_sach`.
+    """
+    hi = ns.get("ep_max", ns["max"])
+    lo = ns.get("ep_min", ns["min"])
+    if n > hi:
         return True
-    return bool(ns["min"]) and n < ns["min"]
+    return bool(lo) and n < lo
 
 
 def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",

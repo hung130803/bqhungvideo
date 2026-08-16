@@ -266,6 +266,27 @@ def _chia_co(n: int, co: int = CO_MOI_LUOT):
         yield list(range(i, min(i + co, n)))
 
 
+def _chay_song_song(viec: list, khi_loi):
+    """Chạy các lá phiếu của hội đồng SONG SONG (mỗi model một luồng).
+
+    Model này KHÔNG phụ thuộc model kia nên chạy tuần tự chỉ là ngồi đợi mạng
+    3 lần. Lỗi của một model KHÔNG được kéo cả hội đồng xuống — trả `khi_loi`
+    cho riêng lá phiếu đó, đúng luật "thiếu 1 ý kiến, hội đồng vẫn chạy".
+    """
+    if len(viec) <= 1:
+        return [f() for f in viec]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(viec)) as ex:
+        fs = [ex.submit(f) for f in viec]
+        ra = []
+        for f in fs:
+            try:
+                ra.append(f.result())
+            except Exception:                    # noqa: BLE001
+                ra.append(khi_loi() if callable(khi_loi) else khi_loi)
+        return ra
+
+
 def _cham_mot_model(goc: list[str], dich: list[str], goc_ma: str, dich_ma: str,
                     model: str) -> dict[int, dict]:
     """MỘT model chấm 4 tiêu chí cho mọi câu. Trả {i: {tiêu chí: điểm}}.
@@ -327,7 +348,9 @@ def cham_hoi_dong(goc: list[str], dich: list[str], goc_ma: str = "zh",
     Không model nào chấm được -> `so_phieu` = 0 và `diem` = None (KHÔNG bịa 10:
     không có căn cứ thì phải nói là không có căn cứ).
     """
-    phieu = [_cham_mot_model(goc, dich, goc_ma, dich_ma, m) for m in models]
+    phieu = _chay_song_song(
+        [(lambda m=m: _cham_mot_model(goc, dich, goc_ma, dich_ma, m))
+         for m in models], {})
     ra: list[dict] = []
     for i in range(len(goc)):
         gom: dict[str, list[float]] = {k: [] for k in TIEU_CHI}
@@ -438,9 +461,11 @@ def soat_thuat_ngu(goc: list[str], dich: list[str], goc_ma: str = "zh",
     nhiều gấp mấy lần 2 model cùng kêu). `can=0` = mặc định `TN_CAN`.
     """
     ds = list(models)
-    phieu = [_soat_mot_model(goc, dich, goc_ma, dich_ma, m) for m in ds]
-    if not phieu:
+    if not ds:
         return [[] for _ in goc]
+    phieu = _chay_song_song(
+        [(lambda m=m: _soat_mot_model(goc, dich, goc_ma, dich_ma, m))
+         for m in ds], lambda: [[] for _ in goc])
     return gop_thuat_ngu(phieu, can or TN_CAN)
 
 
@@ -500,11 +525,22 @@ def cham_ban_dich(goc: list[str], dich: list[str], goc_ma: str = "zh",
     · `thuat_ngu` (list) · `dat` (theo NGƯỠNG RIÊNG TỪNG TRỤC).
     """
     n = len(goc)
-    hd = cham_hoi_dong(goc, dich, goc_ma, dich_ma, models) if n else []
-    # CẢ 3 model ở cửa thuật ngữ (v1 chỉ hỏi 2): cửa này nay đòi TOÀN BỘ đồng
-    # ý nên phải có đủ 3 phiếu, hỏi 2 mà đòi 3 là tắt cửa mà không nói ra.
-    tn = (soat_thuat_ngu(goc, dich, goc_ma, dich_ma, list(models), TN_CAN)
-          if (n and soat_tn) else [[] for _ in range(n)])
+    if not n:
+        hd, tn = [], []
+    else:
+        # CẢ 3 model ở cửa thuật ngữ (v1 chỉ hỏi 2): cửa này nay đòi TOÀN BỘ
+        # đồng ý nên phải có đủ 3 phiếu — hỏi 2 mà đòi 3 là tắt cửa mà không
+        # nói ra. Hai lượt (chấm điểm · soát thuật ngữ) độc lập nhau nên chạy
+        # SONG SONG luôn.
+        viec = [lambda: cham_hoi_dong(goc, dich, goc_ma, dich_ma, models)]
+        if soat_tn:
+            viec.append(lambda: soat_thuat_ngu(goc, dich, goc_ma, dich_ma,
+                                               list(models), TN_CAN))
+        kq = _chay_song_song(viec, lambda: [])
+        hd = kq[0]
+        tn = kq[1] if soat_tn and len(kq) > 1 else [[] for _ in range(n)]
+        if len(tn) != n:
+            tn = [[] for _ in range(n)]
 
     cau = []
     for i in range(n):
