@@ -1,0 +1,58 @@
+=== CA 1: con_chu_goc — bat chu sot, KHONG bao dong gia ===
+  DAT  dich sang tieng Viet ma con chu Han -> BAT
+  DAT  dich sang tieng Anh ma con kana -> BAT
+  DAT  ban dich sach -> KHONG bat
+  DAT  dich SANG zh -> chu do la KET QUA DUNG, khong bat
+  DAT  dich SANG Chinese -> chu do la KET QUA DUNG, khong bat
+  DAT  dich SANG ja -> chu do la KET QUA DUNG, khong bat
+  DAT  dich SANG ko -> chu do la KET QUA DUNG, khong bat
+  DAT  dich SANG th -> chu do la KET QUA DUNG, khong bat
+  DAT  chuoi rong -> khong bat
+  DAT  None -> khong bat
+
+=== CA 2: chia_cum_theo_tu — moc tu WordBoundary ===
+  DAT  cat ra NHIEU cum  (3 cum)
+  DAT  moi cum <= tran ky tu (+dau cau)  (max 31)
+  DAT  moc TANG DAN
+  DAT  cum dau bat dau tu moc tu DAU TIEN  (0.0)
+  DAT  KHONG mat chu: noi lai du tu
+  DAT  giu DAU CAU (dau phay/cham)
+  DAT  khong co moc tu -> tra [] (de caller tu lui)
+  DAT  moc KHONG khop chu nao -> tra []
+  DAT  tu LAP LAI khop dung lan xuat hien  ([0, 4, 12, 16])
+
+=== CA 3: dong_chu_theo_giong — khong ho, khong chong ===
+  DAT  cau DAI bi cat nho  (3 dong)
+  DAT  KHONG dong nao vuot tran ky tu qua nhieu  (max 34)
+  DAT  moi dong co do dai duong
+  DAT  KHONG dong nao CHONG dong ke  ([])
+  DAT  cau 1 KHONG lan sang moc noi cua cau 2
+  DAT  dong dau bat dau DUNG moc noi
+  DAT  KHONG co moc tu van cat nho (duong lui)  (4)
+  DAT  duong lui cung khong chong lan
+  DAT  cau NGAN van ra dung 1 dong/cau (bat bien cong 53)  ([(1.0, 1.9, 'mot'), (3.0, 3.9, 'hai')])
+  DAT  chu toi thieu 0,90s va khong lan cau ke (bat bien cong 53)  ((1.0, 1.9, 'mot'))
+  DAT  texts rong -> bo qua, khong no
+
+=== CA 4: doi_moc_tu — tru phan da cat le im ===
+  DAT  moc bi tru dung so giay da cat  ([[0.04, 0.34, 'a'], [0.44, 0.74, 'b']])
+  DAT  moc am bi kep ve 0
+  DAT  kep tran theo do dai
+  DAT  moc rac -> bo qua, khong no
+
+=== CA 5: _tham_so_duck — nguong BAM muc nhac ===
+  DAT  nguong bam theo muc nhac (nhac nho -> nguong nho)  (0.02239 < 0.10752)
+  DAT  nguong dat duoi muc nhac dung DUCK_TREN_NGUONG_DB
+  DAT  ratio = hang so DA DO, khong tinh tu cong thuc  (1.3)
+  DAT  nguong luon nam trong (0, 1]
+
+=== CA 6: can_bang_giong_nhac — FAIL-SAFE khi do hong ===
+  DAT  hai track IM -> do_duoc=False, he so 0 (khong nhan he so bia)  (không tìm được cửa sổ đang nói)
+  DAT  file qua ngan -> do_duoc=False
+  DAT  duong_bao_muc file khong ton tai -> [] (khong no)
+
+=== CA 7: THU PHA — go bo cat cum thi bang phai DO ===
+  DAT  tran vo han -> ra 1 dong/cau va VUOT tran that (bo do co keu)  (2 dong, max 66 ky tu)
+
+============================================================
+DAT 42 · HONG 0

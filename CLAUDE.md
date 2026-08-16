@@ -1825,6 +1825,119 @@
   **ĐƯỜNG DỊCH COI NHƯ ĐÃ ĐÓNG:** cả hai hướng (`dich_va_soat` và
   `dich_theo_gio`) đều đã đo end-to-end và đều bị bác BẰNG SỐ. Muốn cải thiện
   chất lượng dịch thì phải tìm chỗ KHÁC, đừng đo lại hai hướng này.
+- **MỐC TỪNG CHỮ CỦA PIPER LỆCH BAO NHIÊU — ĐÃ ĐO (16/08/2026,
+  `_do_piper_moc_that.py`).** Cổng 64 chứng minh được mốc Piper *đúng thứ tự ·
+  đúng số từ · tổng lệch <= 0,3 ms* nhưng **chưa có con số mili-giây nào so với
+  THỰC TẾ** — mà "đúng tổng" vẫn có thể sai chỗ chia. Nay đo bằng ĐÚNG cách
+  cổng 60 đã đo edge-tts: **cho Groq chép ngược CHÍNH file tiếng vừa đọc** rồi
+  căn hai chuỗi từ bằng `SequenceMatcher`. Hai arm **đi chung cửa
+  `dubbing._synth_all_words`** (không dựng đường riêng cho phép đo), 2 lượt ĐAN
+  XEN, **426 mốc từ mỗi arm**, 14 câu Việt THẬT (bản dịch của chính video anh
+  Hùng).
+  **BẮT BUỘC TÁCH *LỆCH HỆ THỐNG* KHỎI *RUNG* — không tách là đọc ngược:**
+
+  | | EDGE (mốc THẬT) | PIPER (mốc SUY RA) |
+  |---|---|---|
+  | khớp từ | 416/426 (98%) | 409/426 (96%) |
+  | lệch \|ms\| TB (SỐ THÔ) | 60,4 | 65,1 (**1,08x**) |
+  | trung vị · 90% · max | 52 · 110 · 300 | 52 · 150 · 235 |
+  | **lệch HỆ THỐNG** | **−51,0 ms** | **+33,0 ms** |
+  | **RUNG (trừ lệch hệ thống)** | **38,6 ms** | **59,1 ms (1,53x)** |
+  | rung trung vị · 90% | 26 · 81 | 44 · **138 (1,70x)** |
+  | trong ±50 ms sau khi trừ lệch | 311/416 (**75%**) | 228/409 (**56%**) |
+  | **hiện MUỘN hơn tiếng >50 ms** | **2/416 (0,5%)** | **170/409 (42%)** |
+
+  **SỐ THÔ 1,08x LÀ SỐ LỪA — hai lỗi NGƯỢC DẤU triệt tiêu nhau.** Đọc mỗi cột
+  "TB" rồi kết luận "Piper ngang edge-tts" là sai.
+  **−51,0 ms CỦA EDGE LÀ ĐỘ TRỄ *CỦA THƯỚC*, KHÔNG PHẢI LỖI CỦA EDGE-TTS:**
+  `WordBoundary` là sự thật của chính máy đọc, nên phần lệch chung ấy là chỗ
+  Groq đánh dấu đầu từ MUỘN hơn thực tế. Trừ ra thì rung thật của edge-tts =
+  **38,6 ms — KHỚP với 35,1 ms cổng 60 đã ghi bằng một phép đo KHÁC** (cổng 60
+  đo mốc ĐẦU CỤM, đây đo TỪNG TỪ). Hai phép đo độc lập gặp nhau = phương pháp
+  đứng vững. **Đừng so thẳng 65,1 ms với 35,1 ms** — khác đơn vị đo.
+  **NÓI THẲNG: PIPER TỆ HƠN THẬT — rung 1,53x, đuôi 90% 1,70x**, và lệch về
+  phía KHÓ CHỊU: **42% số từ hiện MUỘN hơn tiếng** trong khi edge-tts chỉ
+  0,5%. Nay hộp chọn giọng GHI THẲNG đánh đổi đó.
+  **NGUYÊN NHÂN CỦA +33 ms ĐÃ TRUY RA (chưa vá):** `piper_tts._co_gian` co giãn
+  mốc theo **TOÀN BỘ độ dài WAV, KỂ CẢ LỀ IM** (`he = dai_that / tong`), mà
+  Piper cũng chèn lề im như edge-tts -> hệ số quá lớn -> mọi mốc bị đẩy muộn,
+  càng về cuối câu càng muộn. Đúng DẤU và đúng CƠ CHẾ. **Hướng vá: co giãn theo
+  KHOẢNG CÓ TIẾNG** (`thay_giong.do_le_im` đã có sẵn) rồi dịch mốc theo lề đầu.
+  Đây là ~84 ms lệch so với edge-tts **trừ được bằng một hằng số** — phần rẻ
+  nhất; phần RUNG 1,53x thì không hằng số nào chữa được. **CHƯA LÀM VÌ CHƯA
+  ĐO LẠI** — repo này đã nhiều lần thấy "bản vá chỉ chuyển số sang cột khác"
+  (xem mục lệch chữ-tiếng 15/08), nên phải đo lại 2 lượt trước khi nối.
+- **THỬ BẢN `.exe` v2.29.0 NHƯ MÁY NHÂN VIÊN — CHẠY ĐƯỢC (16/08/2026).**
+  Tải asset thật từ GitHub Releases (`BQHungVideo-v2.29.0.zip`, **239.893.572
+  byte**, SHA256 khớp `5579748a…15c9d`), giải nén ra thư mục tạm, chạy với
+  `BQ_DATA_DIR` trỏ vào thư mục RỖNG (giả lập máy mới **và** để không đụng
+  `%LOCALAPPDATA%\BQHungVideo` thật của anh Hùng).
+  **KẾT QUẢ:** mở ra màn **Đăng nhập** -> đăng nhập -> cửa sổ chính
+  *BQ Hung Video v2.29.0*, 110 MB RAM / 34 luồng. Nhận đúng máy (24 luồng ·
+  31,8 GB · RTX 3060 · *ffmpeg Sẵn sàng*). **Không có `error.log`**,
+  `crash_native.txt` chỉ có dòng đánh dấu mở app. Đóng bằng Alt+F4 -> thoát
+  ÊM, **không hộp lỗi lúc tắt**, không bỏ lại ffmpeg mồ côi.
+  · **`LICENSES.txt` CÓ trong bộ cài** — ở `_internal/LICENSES.txt`, 204 dòng,
+    nêu ĐÍCH DANH đủ 8 mục (ffmpeg/ffprobe · frei0r · Piper+espeak-ng ·
+    vais1000 · edge-tts · yt-dlp · kho tiếng động CC0 · phông OFL).
+  · **Bộ đóng gói khớp kho nguồn**: `_internal/app/assets/sfx` = **186 file**,
+    đúng bằng `app/assets/sfx` của repo. `ffmpeg.exe`/`ffprobe.exe` có mặt.
+  · **NÚT TẢI PIPER BÁO ĐÚNG**: *"CHƯA TẢI (212 MB) — chọn giọng này thì app
+    vẫn chạy nhưng sẽ đọc bằng giọng thường (edge-tts)"*. Đúng số đo 212,4 MB.
+  · **Ô Demucs báo đúng theo cổng 58**: nêu đích danh *thiếu: torch, demucs,
+    soundfile*, liệt kê NGUỒN TỪNG GÓI (đều KHÔNG CÓ), và `_lib` trỏ vào
+    **DATA_DIR** chứ không phải `_internal` (bản vá CA5 chạy đúng trong bản
+    đóng gói thật).
+  · **THIẾU PYTHON 3 THÌ BÁO GÌ** (giả lập `frozen` + PATH rỗng): Demucs ->
+    `cai_duoc=False` -> **nút tải BỊ KHOÁ** + câu *"Máy này không có Python/pip
+    nên app không tự tải được: cài Python 3 rồi bấm lại, hoặc copy thư mục
+    _lib từ máy đã cài sang"*. Piper -> `thieu` có thêm
+    *`python3 (máy chưa cài Python)`*, `cai_piper()` trả
+    *"Máy chưa cài Python 3 nên không tải được bộ đọc Piper."*
+    **KHÁC BIỆT CÒN LẠI (nhỏ):** nút Piper **KHÔNG bị khoá** như nút Demucs —
+    user bấm rồi mới nhận lời báo, thay vì thấy nút xám. Không im lặng nên
+    không nguy hiểm, nhưng lệch chuẩn với Demucs.
+  **2 LỖI GIAO DIỆN TÌM ĐƯỢC (đều CÓ SẴN, không phải hồi quy v2.29.0):**
+  (a) **hộp xác nhận tải Demucs vẫn ghi *"khoảng 2 GB"*** trong khi nhãn nút
+  ghi *155 MB* — cổng 58 đã đo lại (154,0 MB) và sửa `NHAN_TAI_DEMUCS` nhưng
+  **sót 2 chỗ người dùng thấy** (`QMessageBox` + dòng báo tiến độ). Tức bấm nút
+  ghi 155 MB rồi bị hộp doạ 2 GB ngay sau đó. **ĐÃ SỬA.**
+  (b) nút `Copy` ở hàng Nguồn video **bị cắt chữ** (khung hẹp hơn nhãn), và 2
+  nút cạnh nó là EMOJI trần (`✏` U+270F dòng 247 · `📊` U+1F4CA dòng 254 của
+  `studio_page.py`). Máy này có phông màu nên hiện được, **nhưng đây đúng họ
+  lỗi v2.6.22** ("xấu quá tự nhiên có cái ô đen") mà cổng 27 chỉ quét được vài
+  hộp thoại. **CHƯA SỬA — ghi nợ**, vì đụng `studio_page.py` giữa lúc chưa
+  duyệt là rủi ro không đáng.
+- **CHE OAN TRÊN NGUỒN CAMERA CỐ ĐỊNH: ĐO XONG — *CHƯA ĐỦ CƠ SỞ, GHI NỢ*
+  (16/08/2026, `_do_nguon_tinh.py`).** Ý tưởng: cửa tách chữ/nền mạnh nhất của
+  quét-cả-khung là GIAO NHAU THEO THỜI GIAN, vốn giả định *"chữ đứng yên, nền
+  TRÔI"*; camera cố định làm giả định đó sai. Thước đề xuất **tự chấm điểm
+  chính cái cửa đó**: `ty_giu` = tỉ lệ điểm ảnh mặt nạ SỐNG SÓT sau
+  `_loc_thoi_gian`. Gần 1,0 = lọc không bỏ đi gì = không còn tác dụng.
+  **GIÁ BẰNG 0** (cả hai vế `do_vung_chu` đã tính sẵn, chỉ thêm 2 phép `.sum()`).
+  **SỐ ĐO, 11 video có sự thật ghi bằng mắt:**
+
+  | | `ty_giu` | `dong_khung` |
+  |---|---|---|
+  | jp_tuyet (**che oan 2 vùng**) | **0,9149** | 0,0343 |
+  | 10 video sạch (0 oan) | 0,4137 .. **0,8923** | 0,0200 .. 0,1323 |
+
+  **KHÔNG NỐI, VÌ BA LÝ DO — mỗi cái đủ để dừng:**
+  (a) **Cả corpus chỉ có ĐÚNG 1 video che oan.** Đặt ngưỡng giữa 0,8923 và
+  0,9149 là hiệu chuẩn theo **một điểm dữ liệu**, biên vỏn vẹn **0,023
+  (2,3%)** — đúng loại "ngưỡng đặt mò" mà cổng 56/43 đã dặn đừng làm.
+  (b) **Thước thứ hai NÓI NGƯỢC.** `dong_khung` (mức đổi giữa 2 khung liền
+  nhau) của jp_tuyet là **0,0343**, nằm GỌN trong dải video sạch — không tách
+  được gì. Hai thước độc lập không đồng ý thì chưa có kết luận.
+  (c) **PHẢN VÍ DỤ GIẾT LUÔN GIẢ THUYẾT "camera tĩnh":** `jp_taxi` có
+  `dong_khung` **0,0200 — THẤP NHẤT cả bộ**, tức đứng yên hơn cả jp_tuyet, mà
+  nó dò **ĐÚNG 2/2 vùng, 0 oan**. Vậy "nguồn tĩnh" MỘT MÌNH không phải nguyên
+  nhân của che oan. `ty_giu` (đo sức phân biệt CÒN LẠI của bộ lọc) là tín hiệu
+  đúng hướng hơn — nhưng đúng hướng chưa phải là đủ số.
+  **VIỆC TỒN, CẦN GÌ ĐỂ LÀM TIẾP:** thêm video camera-cố-định vào bộ đối chứng
+  (hiện chỉ 1 ca xấu / 11). Có >= 4-5 ca xấu mà `ty_giu` vẫn tách rời thì mới
+  đặt được ngưỡng; còn không thì **giữ nguyên cách chữa hiện tại: quét cả khung
+  MẶC ĐỊNH TẮT** (ô tích trong Chỉnh mẫu + `BQ_CHE_TOAN_KHUNG`).
 - **CỔNG 56 CA17a/CA17b HỎNG SẴN VÌ *NGƯỠNG CHI PHÍ*, KHÔNG PHẢI HỒI QUY
   (15/08/2026).** Lượt hồi quy v2.28.0: `_test_che_chu.py` ra **ĐẠT 120 ·
   HỎNG 2** (trước ghi 122/0), hỏng đúng 2 mục NGÂN SÁCH THỜI GIAN:
