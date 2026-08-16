@@ -1720,6 +1720,55 @@
   đã được `rate` nuốt gọn mà không méo tiếng, không mất chữ, nên rút gọn chỉ
   phải lo phần vượt QUÁ tầm với của `rate`. **Ép nhanh làm xấu TIẾNG, chặt chữ
   làm xấu NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.**
+- **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
+  (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
+  `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.
+  **VÌ SAO PHẢI ĐO LẠI DÙ ĐÃ CÓ "DO 3":** `_do_dich_ab.py` so `_dich_loat` với
+  **`dich_theo_gio`** — KHÔNG phải `dich_va_soat`. Tức phần THƯỚC CHẤM
+  (`cham_ban_dich` = hội đồng 3 model + cửa thuật ngữ 3 model) **chưa ai đo một
+  lần nào**, mà nó chính là phần đắt. Và phải đo ở mức `dich_hau_kiem`, không
+  phải mức hàm con: sau khi nối, `dich_hau_kiem` VẪN chạy tiếp
+  `_dich_nguoc_cham` + vòng dịch lại + vòng CJK của chính nó.
+  **`_do_dich_soat.py` — 3 lượt ĐAN XEN, video THẬT của anh Hùng**
+  (`近期热播的7部新片推荐…mp4`, 107,24 s, 50 câu, Trung -> Việt), Groq +
+  edge-tts THẬT:
+
+  | chỉ số (TB 3 lượt) | MỐC (`_dich_loat`) | SOÁT (`dich_va_soat`) |
+  |---|---|---|
+  | ĐẠT theo thước % | 76,0 | 78,0 |
+  | **còn chữ Hán** | **0,00** | **0,33** |
+  | **câu < 20 ký tự (cụt)** | **1,33** | **3,00** |
+  | câu > 60 ký tự (gộp) | 9,67 | 5,33 |
+  | lệch \|s\| / câu | 0,762 | 0,511 |
+  | TRÀN (đọc dài hơn khung) | 29,8 s | 16,7 s |
+  | tổng đọc / tổng khung | 1,206x | 1,075x |
+  | **LƯỢT LLM / video** | **5,0** | **54,7** |
+  | **GIÂY (wall)** | **9,5** | **126,1** |
+
+  **BỐN LÝ DO KHÔNG NỐI, theo thứ tự nặng:**
+  (a) **Chất lượng KHÔNG tăng.** +2,0 điểm % nằm gọn trong **nhiễu 18,7%** của
+  chính thước (DO 3 đo: 17/91 chuỗi Y HỆT khi ĐẠT khi TRƯỢT; chênh dưới ~5 điểm
+  % là nhiễu). Tệ hơn: `dat_%` của arm SOÁT được chấm bằng **CHÍNH cái thước mà
+  `dich_va_soat` dùng để chọn câu đi dịch lại** — dạy đúng bài thi, nên +2,0 còn
+  là con số ĐƯỢC ƯU ÁI. Từng lượt: 76->80 · 78->78 · 74->76.
+  (b) **Hai chỉ số ĐỘC LẬP (thước không với tới) XẤU ĐI.** `còn chữ Hán` 0,00 ->
+  0,33 — MỐC sạch **3/3 lượt**, SOÁT để lọt 1 câu ở lượt 3; đó đúng là lỗi anh
+  Hùng đã kêu *"dịch còn có cả tiếng Trung không hiểu"*. `cụt` 1,33 -> 3,00.
+  Đổi câu gộp lấy câu cụt — cùng bệnh DO 3 đã ghi.
+  (c) **GIÁ: 10,9x lượt Groq và 13,3x thời gian**, ổn định cả 3 lượt (5·5·5 so
+  với 54·54·56). Với 200-300 kênh thì đó là 11 lần lượt cho một thứ không đo
+  được là tốt hơn.
+  (d) **Cái tốt DUY NHẤT (thời gian đọc) không đến từ thước, và app ĐÃ tự lo.**
+  Phần lệch/tràn giảm là công của `dich_theo_gio` (dịch theo NGÂN SÁCH), DO 3 đã
+  đo riêng nó ra 0,41 s/câu và tràn 10,36 s — **tốt hơn cả SOÁT** mà rẻ hơn
+  nhiều. Quan trọng hơn: con số "tràn" ở đây đo trên **TTS THÔ**, trong khi
+  đường sống còn bước **4b `rut_gon_vua_khung` + 4c `doc_nhanh_vua_khung`**
+  (v2.27.0) xử đúng việc đó ở tầng TIẾNG — đo được `tempo_max` **1,017-1,027**
+  và **chồng lấn 0 ms, 6/6 lượt**. Trả 11 lần lượt Groq để giải TRƯỚC một bài
+  toán bước sau đã giải xong là lỗ.
+  **NẾU SAU NÀY MUỐN ĐỘNG LẠI:** hướng đáng đo là nối **`dich_theo_gio` KHÔNG
+  kèm thước** (lấy phần ngân sách thời gian, bỏ phần hội đồng chấm) — đó mới là
+  chỗ có số. Nối cả `dich_va_soat` thì đã đo, đã trả lời: KHÔNG.
 - **CỔNG 56 CA17a/CA17b HỎNG SẴN VÌ *NGƯỠNG CHI PHÍ*, KHÔNG PHẢI HỒI QUY
   (15/08/2026).** Lượt hồi quy v2.28.0: `_test_che_chu.py` ra **ĐẠT 120 ·
   HỎNG 2** (trước ghi 122/0), hỏng đúng 2 mục NGÂN SÁCH THỜI GIAN:
