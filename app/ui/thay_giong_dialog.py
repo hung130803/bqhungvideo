@@ -174,6 +174,7 @@ class ThayGiongDialog(QDialog):
 
     _giong_xong = pyqtSignal()          # danh sách giọng nạp xong (thread nền)
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
+    _piper_xong = pyqtSignal(bool, str)  # tải giọng Piper xong (ok, lời)
     #: (đường dẫn video, trạng thái, tiến trình 0..1) — bắn MỖI LẦN một dòng
     #: ĐỔI trạng thái. Cổng test bắt tín hiệu này để đo "bảng có sống không"
     #: thay vì nhìn bằng mắt.
@@ -195,6 +196,8 @@ class ThayGiongDialog(QDialog):
         self._xong_id: dict[int, dict] = {}  # job đã kết thúc -> khỏi hỏi DB
         self._tt_dong: dict[str, str] = {}   # dòng -> trạng thái ĐANG hiện
         self._dang_cai = False
+        self._dang_cai_piper = False
+        self._tt_piper: dict = {}
         self._giong_tho: list = []
         self._da_bao_xong = True            # chưa chạy lượt nào -> không báo
         self._bo_qua_luot = 0               # số video bỏ qua ở lượt vừa bấm
@@ -363,6 +366,24 @@ class ThayGiongDialog(QDialog):
         self.pb_tai.setVisible(False)
         lay.addWidget(self.pb_tai)
 
+        # ---- hàng 4b: GIỌNG PIPER (lựa chọn thứ hai, chạy trên máy) ----
+        # KHÁC hẳn hàng Demucs ở trên: thiếu Demucs là CHẶN (lùi ra video
+        # hỏng), còn thiếu Piper chỉ là LÙI ÊM về edge-tts (video vẫn đúng,
+        # chỉ khác giọng). Nên hàng này KHÔNG khoá nút Chạy.
+        h4b = QHBoxLayout()
+        self.lb_piper = QLabel("")
+        self.lb_piper.setWordWrap(True)
+        h4b.addWidget(self.lb_piper, 1)
+        self.b_tai_piper = QPushButton("Tải giọng Việt chạy trên máy")
+        self.b_tai_piper.setToolTip(
+            "Tải bộ đọc Piper + giọng vais1000 (khoảng 100 MB) về thư mục "
+            "riêng.\nChỉ tải khi BẠN bấm — app không bao giờ tự tải sau lưng.\n"
+            "Tải THẲNG từ kho GitHub của tác giả Piper.")
+        self.b_tai_piper.clicked.connect(self._tai_piper)
+        h4b.addWidget(self.b_tai_piper)
+        lay.addLayout(h4b)
+        self._do_piper()
+
         # ---- bảng tiến độ ----
         self.bang = QTableWidget(0, 4)
         self.bang.setHorizontalHeaderLabels(
@@ -425,6 +446,7 @@ class ThayGiongDialog(QDialog):
 
         self._giong_xong.connect(self._dung_combo_giong)
         self._cai_xong.connect(self._cai_demucs_xong)
+        self._piper_xong.connect(self._tai_piper_xong)
 
         self._do_demucs()
         self._nap_giong_nen()
@@ -561,6 +583,79 @@ class ThayGiongDialog(QDialog):
                 "Chưa cài được bộ tách giọng.\n\n" + (loi or "")
                 + "\n\nApp vẫn CHẶN tính năng này — không chạy cách nhẹ vì "
                   "nó cho ra video còn nguyên giọng cũ.")
+
+    # ------------------------------------------------------------------
+    # GIỌNG PIPER — LỰA CHỌN THỨ HAI (không chặn gì)
+    # ------------------------------------------------------------------
+    def _do_piper(self) -> dict:
+        """Dò Piper rồi cập nhật nhãn. KHÔNG khoá nút Chạy.
+
+        Thiếu Piper thì `dubbing._synth_all_words` tự LÙI về edge-tts, video
+        vẫn ra đúng — chỉ khác giọng. Vì vậy đây là thông tin, không phải
+        chốt chặn (khác hẳn Demucs ở hàng trên).
+        """
+        from app.core import piper_tts as PT
+        tt = PT.tinh_trang_piper()
+        self._tt_piper = tt
+        if tt["co"]:
+            self.lb_piper.setText(
+                "Giọng Việt chạy trên máy (Piper): ĐÃ CÓ. "
+                "Chọn trong ô Giọng đọc để dùng.")
+            self.lb_piper.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            self.b_tai_piper.setVisible(False)
+        else:
+            self.lb_piper.setText(
+                "Giọng Việt chạy trên máy (Piper): CHƯA TẢI — chọn giọng này "
+                "thì app vẫn chạy nhưng sẽ đọc bằng giọng thường (edge-tts).")
+            self.lb_piper.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            self.b_tai_piper.setVisible(True)
+        return tt
+
+    def _tai_piper(self) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải — app không tự tải sau lưng.
+
+        Tải THẲNG từ kho GitHub của tác giả: người tải là NGƯỜI DÙNG, app chỉ
+        chỉ đường. Tự dựng máy chủ chứa bản sao Piper là app trở thành NGƯỜI
+        PHÁT HÀNH và nghĩa vụ GPL quay lại đủ.
+        """
+        from app.core import piper_tts as PT
+        if getattr(self, "_dang_cai_piper", False):
+            return
+        if QMessageBox.question(
+                self, "Tải giọng chạy trên máy",
+                "Sẽ tải khoảng 100 MB (bộ đọc Piper + giọng vais1000) về:\n"
+                + str(self._tt_piper.get("thu_muc", ""))
+                + "\n\nBộ đọc Piper theo giấy phép GPL-3.0, tải thẳng từ kho "
+                  "của tác giả. Giọng vais1000 dùng thương mại được (xem "
+                  "LICENSES.txt).\n\nTải bây giờ?"
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        self._dang_cai_piper = True
+        self.b_tai_piper.setEnabled(False)
+        self.b_tai_piper.setText("Đang tải...")
+
+        def bg():
+            r = PT.cai_piper()
+            self._piper_xong.emit(bool(r.get("ok")),
+                                  str(r.get("loi") or "")[:400])
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _tai_piper_xong(self, ok: bool, loi: str) -> None:
+        self._dang_cai_piper = False
+        self.b_tai_piper.setEnabled(True)
+        tt = self._do_piper()
+        if ok and tt["co"]:
+            QMessageBox.information(
+                self, "Xong",
+                "Đã tải xong giọng chạy trên máy.\n" + str(tt.get("thu_muc", ""))
+                + "\n\nChọn lại trong ô Giọng đọc để dùng.")
+        else:
+            QMessageBox.warning(
+                self, "Chưa tải được",
+                "Chưa tải được giọng chạy trên máy.\n\n" + (loi or "")
+                + "\n\nApp vẫn dùng được bình thường bằng giọng thường "
+                  "(edge-tts).")
 
     # ------------------------------------------------------------------
     # DANH SÁCH GIỌNG (tái dùng của hộp Cài đặt Reup)
