@@ -329,6 +329,60 @@ def ca5_moc_tung_chu() -> None:
     lech = [abs(m[-1][1] - PT.dai_wav(p)) for m, p in zip(moc, ps) if m]
     kiem("5d mốc cuối khớp ĐỘ DÀI TIẾNG THẬT (co giãn có chạy)",
          all(x < 0.02 for x in lech), f"lệch tối đa {max(lech) * 1000:.1f} ms")
+
+    # --- `_co_gian` phải NHẢY QUA chỗ nghỉ giữa câu, không rải đều lên mọi
+    # chữ. Câu dưới CỐ Ý có 2 dấu phẩy: Piper nghỉ đúng ở đó (đo được 3 khoảng
+    # 100-140 ms = 4,8% câu), và rải đều chỗ nghỉ ấy chính là lỗi +33,0 ms.
+    #
+    # THỬ LẠI TỚI 3 LƯỢT, CÓ LÝ DO: Piper là VITS, bộ dự đoán độ dài của nó
+    # CÓ NHIỄU -> chỗ nghỉ KHÔNG cố định giữa các lượt. Đo 4 lượt/câu:
+    # câu 3 dấu phẩy ra nghỉ **4/4 lượt** (2-3 chỗ, 269-359 ms), câu 2 dấu
+    # phẩy **4/4** nhưng có lượt ra 0 -> chốt một lượt duy nhất là cổng ĐỎ
+    # NHẤP NHÁY. (Ghi thêm: dấu CHẤM giữa dòng ra **0/4** — Piper chỉ nghỉ ở
+    # dấu PHẨY, đừng dùng dấu chấm làm câu thử.)
+    d2 = hop_cat("nghi")
+    cau_nghi = ("Hôm nay, tôi sẽ chia sẻ với các bạn một câu chuyện rất thú "
+                "vị, mà tôi đã gặp cách đây ba phút, khi đang đi bộ trên "
+                "con đường quen thuộc gần nhà mình.")
+    ok2, moc2, kh, tong2, im_giua = [False], [[]], [], 0.0, 0.0
+    for _lan in range(3):
+        p2 = str(d2 / f"nghi{_lan}.wav")
+        ok2, moc2 = PT.doc_loat([cau_nghi], [p2])
+        kh, tong2 = PT.khoang_co_tieng(p2)
+        im_giua = tong2 - sum(e - s for s, e in kh)
+        if len(kh) >= 2 and im_giua > 0.05:
+            break
+    # TỰ KIỂM BỘ DÒ TRƯỚC ĐÃ: không có chỗ nghỉ nào thì cách cũ và cách mới ra
+    # Y HỆT nhau, mọi mục dưới sẽ XANH OAN. Đây đúng bẫy "cổng đạt oan vì lượt
+    # chạy chết trước khi tới chốt" (cổng 55 CA4 · 62 CA4).
+    kiem("5i TỰ KIỂM: câu thử THẬT SỰ có chỗ nghỉ giữa câu (không có thì mọi "
+         "mục dưới xanh oan)", len(kh) >= 2 and im_giua > 0.05,
+         f"{len(kh)} khoảng có tiếng · im giữa câu {im_giua * 1000:.0f} ms "
+         f"· {[f'{s:.2f}-{e:.2f}' for s, e in kh]}")
+    m2 = moc2[0] if moc2 and moc2[0] else []
+    kiem("5j mốc ra được cho câu có chỗ nghỉ", bool(m2) and ok2 == [True],
+         f"{len(m2)} mốc")
+    if m2 and len(kh) >= 2:
+        # KHÔNG chữ nào được nằm GỌN trong một chỗ nghỉ
+        nghi = [(kh[i][1], kh[i + 1][0]) for i in range(len(kh) - 1)]
+        trong_nghi = [w for a, b, w in m2
+                      if any(a >= s - 1e-6 and b <= e + 1e-6 for s, e in nghi)]
+        kiem("5k KHÔNG chữ nào rơi GỌN vào chỗ nghỉ (rải đều = chữ hiện lúc "
+             "máy đang im)", not trong_nghi, f"{trong_nghi}")
+
+    # --- mức ĐƠN VỊ: cùng đầu vào, có/không khoảng có tiếng phải ra KHÁC HẲN.
+    # Không có mục này thì xoá sạch phần vá đi cổng vẫn xanh.
+    gia = [[0.0, 1.0, "a"], [1.0, 2.0, "b"]]
+    cu = PT._co_gian(gia, 3.0, None)                     # cách CŨ: rải đều
+    moi = PT._co_gian(gia, 3.0, [(0.0, 1.0), (2.0, 3.0)])  # nghỉ 1s ở giữa
+    kiem("5l cách CŨ (rải đều) đặt chữ 'b' vào GIỮA CHỖ NGHỈ — đây là bệnh",
+         abs(cu[1][0] - 1.5) < 1e-6, f"cũ: {cu}")
+    kiem("5m bản vá NHẢY QUA chỗ nghỉ: 'b' bắt đầu đúng lúc tiếng trở lại",
+         abs(moi[1][0] - 2.0) < 1e-6 and abs(moi[0][1] - 1.0) < 1e-6,
+         f"mới: {moi}")
+    kiem("5n TỰ KIỂM: hai cách LỆCH HẲN nhau (trùng nhau = bản vá chưa nối)",
+         abs(moi[1][0] - cu[1][0]) > 0.02,
+         f"lệch {abs(moi[1][0] - cu[1][0]) * 1000:.0f} ms")
     # chữ trong mốc phải là CHÍNH chữ của câu, đúng thứ tự
     kiem("5e mốc gán ĐÚNG CHỮ, đúng thứ tự (bẫy `con`/`giờ.` không làm lệch)",
          all([w for _a, _b, w in m] == [x.strip(".,") for x in t.split()]

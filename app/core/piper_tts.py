@@ -401,20 +401,136 @@ def _tra_file(thu_muc: Path, chu: str) -> Optional[Path]:
     return None
 
 
-def _co_gian(moc: list[list], dai_that: float) -> list[list]:
-    """Co giãn mốc về ĐÚNG độ dài WAV thật của câu.
+#: Ngưỡng coi là im lặng, dBFS. GIỮ BẰNG `thay_giong.NGUONG_IM_DB` — hai chỗ
+#: cùng đo một thứ trên cùng loại file thì lệch ngưỡng là lệch mốc.
+NGUONG_IM_DB = -45.0
+
+
+#: Khoảng im ngắn hơn mức này KHÔNG coi là chỗ nghỉ — đó là chỗ ngậm hơi của
+#: phụ âm tắc trong chính một chữ. Đo trên câu Piper thật: mọi chỗ nghỉ thật
+#: đều dài **100-140 ms**, và ngưỡng 30 ms với 60 ms cho ra Y HỆT kết quả
+#: (không có khoảng nào rơi vào giữa) -> 60 ms nằm ở giữa vùng trống, an toàn.
+IM_TOI_THIEU = 0.06
+
+
+def khoang_co_tieng(p: str | Path, nguong_db: float = NGUONG_IM_DB,
+                    im_toi_thieu: float = IM_TOI_THIEU,
+                    cua_so: float = 0.01) -> tuple[list[tuple[float, float]],
+                                                   float]:
+    """Các khoảng CÓ TIẾNG của WAV `[(đầu, cuối), ...]` + tổng độ dài file.
+
+    ĐỌC THẲNG MẪU WAV, KHÔNG GỌI FFMPEG: một lượt lấy mốc có hàng chục file
+    câu, mỗi file một tiến trình `silencedetect` là tự nhân chi phí lên nhiều
+    lần. WAV Piper là PCM 16-bit mono nên `wave` + `array` đọc đủ và rẻ.
+
+    KHÔNG dùng `thay_giong.do_le_im` được vì hàm đó **cố ý chỉ nhìn im DÍNH
+    MÉP** — mà chỗ im của Piper lại nằm BÊN TRONG câu (xem `_co_gian`).
+
+    Đo hụt -> trả `([], tổng)` = "không biết", để nơi gọi lùi về cách cũ.
+    """
+    try:
+        import array
+        with wave.open(str(p), "rb") as w:
+            sr = float(w.getframerate() or 0)
+            n = w.getnframes()
+            if sr <= 0 or n <= 0 or w.getsampwidth() != 2:
+                return ([], n / sr if sr > 0 else 0.0)
+            ch = max(1, w.getnchannels())
+            raw = w.readframes(n)
+        tong = n / sr
+        a = array.array("h")
+        a.frombytes(raw[:(len(raw) // 2) * 2])
+        if ch > 1:                       # một kênh là đủ để dò im lặng
+            a = a[::ch]
+        if not a:
+            return ([], tong)
+        nguong = 32768.0 * (10.0 ** (nguong_db / 20.0))
+        buoc = max(1, int(sr * cua_so))
+        to = [max(max(k), -min(k)) >= nguong
+              for k in (a[i:i + buoc] for i in range(0, len(a), buoc))]
+        # gom các ô IM liền nhau; chỉ ô im DÀI mới được cắt câu
+        im: list[tuple[int, int]] = []
+        i = 0
+        while i < len(to):
+            if to[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(to) and not to[j]:
+                j += 1
+            if (j - i) * buoc / sr >= im_toi_thieu:
+                im.append((i, j))
+            i = j
+        kh: list[tuple[float, float]] = []
+        moc_i = 0
+        for s, e in im + [(len(to), len(to))]:
+            if s > moc_i:
+                kh.append((moc_i * buoc / sr,
+                           min(tong, s * buoc / sr)))
+            moc_i = e
+        kh = [(s, e) for s, e in kh if e - s > 1e-6]
+        return (kh, tong)
+    except Exception:  # noqa: BLE001
+        return ([], dai_wav(p))
+
+
+def _co_gian(moc: list[list], dai_that: float,
+             khoang: Optional[list[tuple[float, float]]] = None) -> list[list]:
+    """Trải mốc lên các KHOẢNG CÓ TIẾNG của câu, NHẢY QUA chỗ im.
 
     Chữ đọc RỜI ngắn hơn chữ đọc TRONG CÂU — đo được **−3,4%** trên câu 48 từ
     (9,427 s so với 9,764 s). Không co giãn thì mốc cuối hụt gần 1/3 giây,
-    tức chữ chạy nhanh hơn tiếng suốt cả câu.
+    tức chữ chạy nhanh hơn tiếng suốt cả câu. Nên vẫn phải co giãn.
+
+    **NHƯNG CO GIÃN THEO TOÀN BỘ WAV LÀ SAI — đo được +33,0 ms (bản đầu):**
+    `he = dai_that / tong` bắt phần có tiếng giãn ra phủ luôn cả chỗ NGHỈ,
+    tức rải đều thời gian nghỉ lên MỌI chữ. Chỗ nghỉ của Piper KHÔNG rải đều:
+    đo trên câu thật thì nó dồn vào **đúng chỗ dấu phẩy**, 3 khoảng
+    100-140 ms = **4,8% độ dài câu**. Hậu quả: mọi chữ đứng TRƯỚC một chỗ
+    nghỉ bị đẩy MUỘN đúng bằng phần nghỉ mà nó "ứng trước" hộ, rồi lại được
+    kéo về sau khi đi qua chỗ nghỉ. Đó là ĐỘ TRÔI theo vị trí trong câu, nên
+    nó vào thẳng cột RUNG chứ không chỉ cột lệch hệ thống.
+
+    **ĐÍNH CHÍNH CHẨN ĐOÁN CŨ (`CLAUDE.md` 16/08):** chẩn đoán *"Piper cũng
+    chèn lề im hai đầu như edge-tts"* là **SAI — đã đo và bác**. Hai thước
+    độc lập (`khoang_co_tieng` đọc mẫu, và `thay_giong.do_le_im` chạy ffmpeg
+    `silencedetect`) đều ra **0,000 s lề đầu · 0,000 s lề cuối** trên cả câu
+    lẫn 46 chữ rời. Vá theo lề im là vá vào chỗ KHÔNG CÓ BỆNH (bộ tự-kiểm
+    5d3 của cổng 64 bắt được đúng chỗ đó). Bệnh nằm ở chỗ nghỉ GIỮA câu.
+
+    `khoang` rỗng/không có -> lùi về đúng cách cũ (phủ kín `[0, dai_that]`).
     """
     if not moc or dai_that <= 0:
         return moc
     tong = moc[-1][1]
     if tong <= 0:
         return moc
-    he = dai_that / tong
-    return [[round(a * he, 3), round(b * he, 3), w] for a, b, w in moc]
+    kh = [(s, e) for s, e in (khoang or []) if e > s]
+    if not kh:
+        kh = [(0.0, dai_that)]
+    co_tieng = sum(e - s for s, e in kh)
+    if co_tieng <= 0.02:
+        kh, co_tieng = [(0.0, dai_that)], dai_that
+    he = co_tieng / tong
+
+    def _gio(v: float, la_dau: bool) -> float:
+        """Đổi 'đã đi được v giây TIẾNG' -> mốc thời gian thật trong file.
+
+        `la_dau` quyết định cách xử ĐÚNG RANH GIỚI: mốc BẮT ĐẦU rơi trúng mép
+        thì nhảy sang khoảng SAU (chữ bắt đầu khi tiếng bắt đầu lại), mốc KẾT
+        THÚC thì ở lại mép khoảng TRƯỚC. Không phân biệt là chữ đầu tiên sau
+        chỗ nghỉ hiện ra ngay lúc máy còn đang im.
+        """
+        con = v
+        for s, e in kh:
+            d = e - s
+            if con < d - 1e-9 or (not la_dau and con <= d + 1e-9):
+                return s + max(0.0, min(con, d))
+            con -= d
+        return kh[-1][1]
+
+    return [[round(_gio(a * he, True), 3), round(_gio(b * he, False), 3), w]
+            for a, b, w in moc]
 
 
 #: Bảng ĐO THẬT (xem đầu file). Tra bảng, KHÔNG dùng công thức: `length_scale`
@@ -589,6 +705,9 @@ def _lay_moc(texts: list[str], paths: list[str], chi_so: list[int],
             _ghi_log(f"Piper: không tra ra WAV của chữ {t!r} -> BỎ MỐC cả "
                      f"nhóm (thà không có mốc còn hơn mốc gán nhầm chữ)")
             return
+        # ĐỘ DÀI FILE là đủ: đo 46 WAV chữ rời của Piper ra lề im **0,0 ms**
+        # ở CẢ HAI đầu (hai thước độc lập). Trừ lề ở đây là trừ một thứ
+        # KHÔNG TỒN TẠI, chỉ tốn thêm một lượt đọc mẫu cho mỗi chữ.
         bang[t] = dai_wav(p)
         dung.add(p.name.lower())
     thua = [p.name for p in d_tu.glob("*.wav") if p.name.lower() not in dung]
@@ -605,7 +724,8 @@ def _lay_moc(texts: list[str], paths: list[str], chi_so: list[int],
         for chu, d in zip(ds, tho):
             moc.append([t0, t0 + d, chu])
             t0 += d
-        words[i] = _co_gian(moc, dai_wav(paths[i]))
+        kh, l_tong = khoang_co_tieng(paths[i])
+        words[i] = _co_gian(moc, l_tong or dai_wav(paths[i]), kh)
 
 
 def _don(d: Path) -> None:

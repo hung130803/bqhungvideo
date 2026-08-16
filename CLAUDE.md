@@ -1858,15 +1858,69 @@
   **NÓI THẲNG: PIPER TỆ HƠN THẬT — rung 1,53x, đuôi 90% 1,70x**, và lệch về
   phía KHÓ CHỊU: **42% số từ hiện MUỘN hơn tiếng** trong khi edge-tts chỉ
   0,5%. Nay hộp chọn giọng GHI THẲNG đánh đổi đó.
-  **NGUYÊN NHÂN CỦA +33 ms ĐÃ TRUY RA (chưa vá):** `piper_tts._co_gian` co giãn
-  mốc theo **TOÀN BỘ độ dài WAV, KỂ CẢ LỀ IM** (`he = dai_that / tong`), mà
-  Piper cũng chèn lề im như edge-tts -> hệ số quá lớn -> mọi mốc bị đẩy muộn,
-  càng về cuối câu càng muộn. Đúng DẤU và đúng CƠ CHẾ. **Hướng vá: co giãn theo
-  KHOẢNG CÓ TIẾNG** (`thay_giong.do_le_im` đã có sẵn) rồi dịch mốc theo lề đầu.
-  Đây là ~84 ms lệch so với edge-tts **trừ được bằng một hằng số** — phần rẻ
-  nhất; phần RUNG 1,53x thì không hằng số nào chữa được. **CHƯA LÀM VÌ CHƯA
-  ĐO LẠI** — repo này đã nhiều lần thấy "bản vá chỉ chuyển số sang cột khác"
-  (xem mục lệch chữ-tiếng 15/08), nên phải đo lại 2 lượt trước khi nối.
+  **CHẨN ĐOÁN CŨ VỀ +33 ms LÀ SAI — ĐÃ VÁ, ĐÃ ĐO LẠI, VÀ *KHÔNG* CHỮA ĐƯỢC
+  (16/08/2026).** Ghi đầy đủ vì đây đúng loại bẫy repo này hay sập.
+  · **Chẩn cũ ("Piper cũng chèn lề im hai đầu như edge-tts") ĐÃ BỊ BÁC BẰNG SỐ.**
+    `_do_piper_le_im.py` đo bằng **hai thước độc lập** — đọc thẳng mẫu WAV, và
+    ffmpeg `silencedetect` qua `thay_giong.do_le_im` — trên cả câu lẫn **46 chữ
+    rời**: lề đầu **0,000 s**, lề cuối **0,000 s**, `0,0 ms/chữ`. Piper **KHÔNG
+    chèn lề im**. Vá theo lề im là vá vào chỗ KHÔNG CÓ BỆNH. Bắt được là nhờ
+    mục **tự-kiểm 5d3** (bản vá đầu xanh hết, chỉ mục "lề có đủ lớn để hai mục
+    trên có răng không" là đỏ) — không có mục tự-kiểm đó thì đã phát hành một
+    bản vá rỗng kèm lời khoe.
+  · **Im lặng của Piper nằm GIỮA CÂU, đúng chỗ DẤU PHẨY** (3 khoảng 100-140 ms
+    = 4,8% câu trên câu 3 dấu phẩy). **Dấu CHẤM giữa dòng KHÔNG tạo nghỉ**
+    (0/4 lượt). Và **chỗ nghỉ KHÔNG CỐ ĐỊNH** — Piper là VITS, bộ dự đoán độ
+    dài có nhiễu: cùng một câu ra 2 hoặc 3 chỗ nghỉ tuỳ lượt (`_do_piper_nghi.py`,
+    4 lượt/câu). Cổng nào chốt vào chỗ nghỉ mà chỉ chạy 1 lượt là **ĐỎ NHẤP
+    NHÁY** -> cổng 64 mục 5i thử tới 3 lượt.
+  · **BẢN VÁ ĐÃ NỐI:** `_co_gian` nay **trải mốc lên các KHOẢNG CÓ TIẾNG và
+    NHẢY QUA chỗ nghỉ** (`khoang_co_tieng`, đọc mẫu chứ không gọi ffmpeg —
+    hàng chục file/lượt). Bất biến mới, cổng 64 canh: **không chữ nào rơi gọn
+    vào chỗ nghỉ** (5k) — cách cũ rải đều thì có, tức chữ hiện lúc máy đang im.
+  · **NHƯNG NÓ KHÔNG CHỮA ĐƯỢC BỆNH — nói thẳng.** `_do_co_gian_ab.py` đo
+    **GHÉP CẶP**: cùng một file tiếng, cùng một lượt Groq, chỉ khác phép tính
+    (bắt buộc phải ghép cặp — nhiễu VITS + nhiễu Groq nuốt hết hiệu ứng nếu so
+    hai lượt chạy rời). **413 mốc mỗi bên:**
+
+  | | CŨ (rải đều) | MỚI (nhảy qua nghỉ) |
+  |---|---|---|
+  | lệch \|ms\| TB | 60,1 | 59,5 |
+  | lệch HỆ THỐNG | +32,0 | **+36,0 (TỆ HƠN)** |
+  | RUNG TB · 90% | 53,0 · 114 | 50,6 · **113** |
+  | hiện muộn >50 ms | 156/413 (38%) | 161/413 (39%) |
+  | **ghép cặp từng mốc** | — | **27 tốt lên · 32 TỆ ĐI · 354 y nguyên** |
+
+    **Lý do rất đơn giản: corpus thật gần như KHÔNG CÓ chỗ nghỉ** — 4 chỗ,
+    tổng **0,53 s / 90,64 s = 0,6%**. 354/413 mốc (86%) KHÔNG ĐỔI MỘT LY.
+    Cơ chế có thật nhưng gần như không xảy ra trên câu anh Hùng đang dùng.
+    **Giữ bản vá vì nó đúng và không làm tệ đi mức nào đáng kể, KHÔNG được
+    kể nó là bản chữa.**
+  · Cột end-to-end sau khi vá (cùng `_do_piper_moc_that.py`, 2 lượt đan xen,
+    409 mốc): lệch hệ thống **+33,0 -> +29,0 ms** · RUNG **59,1 -> 57,7 ms** ·
+    hiện muộn **42% -> 37%**. **ĐỪNG KHOE MẤY SỐ NÀY** — phép ghép cặp ở trên
+    chứng minh phần lớn chênh lệch đó là **nhiễu chạy-khác-chạy của VITS**,
+    không phải công của bản vá. Cột đối chứng EDGE tái lập gần như y hệt
+    (hệ thống −51,0 -> −50,0 · rung 38,6 -> 38,7) nên phép đo đứng vững, máy
+    rảnh thật; chỉ có phần quy công là không đứng vững.
+  · **NGUYÊN NHÂN THẬT — TRUY ĐƯỢC MỘT NỬA, CÒN NỢ MỘT NỬA.** Chia lệch theo
+    VỊ TRÍ trong câu (413 mốc, dữ liệu ghép cặp):
+
+        1/5 câu:  thứ 1 → +22 ms · thứ 2 → +31 · thứ 3 → +32 · thứ 4 → +56
+                  · thứ 5 → +41
+
+    (a) **CÓ ĐỘ TRÔI THẬT, +22 -> +56 ms theo vị trí.** Trôi trong-câu thì
+    thước có lệch hằng số cũng không giải thích được, nên đây là lỗi THẬT của
+    `he = dai_that / tong`: nó rải đều phần dôi ra (chữ đọc rời ngắn hơn chữ
+    trong câu −3,4%) lên MỌI chữ, trong khi phần dôi thật gần như dồn vào cuối
+    câu (kéo dài âm cuối). **Hướng còn lại: đừng co giãn ĐỀU** — nhưng chưa
+    thử, chưa đo, đừng ghi là đã biết cách.
+    (b) **Ngay 1/5 ĐẦU đã +22 ms rồi**, mà lúc đó `he` mới đẩy được ~10 ms.
+    Phần hằng số này **có thể là của THƯỚC chứ không của Piper**: cả bảng đang
+    ngầm giả định độ trễ −51 ms của Groq là **không phụ thuộc giọng**, mà điều
+    đó **CHƯA AI CHỨNG MINH** (Piper vào tiếng gắt hơn edge-tts thì Groq có thể
+    đánh dấu sớm hơn). **Muốn chốt "Piper trễ hơn edge 84 ms" thì phải có
+    thước THỨ BA độc lập.** Chưa có -> đừng nói chắc.
 - **THỬ BẢN `.exe` v2.29.0 NHƯ MÁY NHÂN VIÊN — CHẠY ĐƯỢC (16/08/2026).**
   Tải asset thật từ GitHub Releases (`BQHungVideo-v2.29.0.zip`, **239.893.572
   byte**, SHA256 khớp `5579748a…15c9d`), giải nén ra thư mục tạm, chạy với
