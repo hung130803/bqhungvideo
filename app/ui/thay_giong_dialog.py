@@ -375,9 +375,14 @@ class ThayGiongDialog(QDialog):
         self.lb_piper.setWordWrap(True)
         h4b.addWidget(self.lb_piper, 1)
         self.b_tai_piper = QPushButton("Tải giọng Việt chạy trên máy")
+        # DUNG LƯỢNG LÀ SỐ ĐO, KHÔNG PHẢI ƯỚC BỪA (bài học cổng 58: nhãn
+        # Demucs từng ghi "khoảng 2 GB" trong khi lượng tải thật là 154 MB —
+        # gấp 13 lần). Chạy thật `cai_piper` vào hộp cát: **36,8 giây**, chiếm
+        # **212,4 MB** trên đĩa (bộ đọc + onnxruntime + numpy + giọng 63 MB).
         self.b_tai_piper.setToolTip(
-            "Tải bộ đọc Piper + giọng vais1000 (khoảng 100 MB) về thư mục "
-            "riêng.\nChỉ tải khi BẠN bấm — app không bao giờ tự tải sau lưng.\n"
+            "Tải bộ đọc Piper + giọng vais1000 về thư mục riêng.\n"
+            "Đo thật: 212 MB trên đĩa, khoảng 37 giây.\n"
+            "Chỉ tải khi BẠN bấm — app không bao giờ tự tải sau lưng.\n"
             "Tải THẲNG từ kho GitHub của tác giả Piper.")
         self.b_tai_piper.clicked.connect(self._tai_piper)
         h4b.addWidget(self.b_tai_piper)
@@ -605,8 +610,9 @@ class ThayGiongDialog(QDialog):
             self.b_tai_piper.setVisible(False)
         else:
             self.lb_piper.setText(
-                "Giọng Việt chạy trên máy (Piper): CHƯA TẢI — chọn giọng này "
-                "thì app vẫn chạy nhưng sẽ đọc bằng giọng thường (edge-tts).")
+                "Giọng Việt chạy trên máy (Piper): CHƯA TẢI (212 MB) — chọn "
+                "giọng này thì app vẫn chạy nhưng sẽ đọc bằng giọng thường "
+                "(edge-tts).")
             self.lb_piper.setStyleSheet("color:#B0B0B0; font-size:11px;")
             self.b_tai_piper.setVisible(True)
         return tt
@@ -623,7 +629,7 @@ class ThayGiongDialog(QDialog):
             return
         if QMessageBox.question(
                 self, "Tải giọng chạy trên máy",
-                "Sẽ tải khoảng 100 MB (bộ đọc Piper + giọng vais1000) về:\n"
+                "Sẽ tải bộ đọc Piper + giọng vais1000 về:\n"
                 + str(self._tt_piper.get("thu_muc", ""))
                 + "\n\nBộ đọc Piper theo giấy phép GPL-3.0, tải thẳng từ kho "
                   "của tác giả. Giọng vais1000 dùng thương mại được (xem "

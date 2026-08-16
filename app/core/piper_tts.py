@@ -106,6 +106,12 @@ model đã nạp**, đo trong tiến trình. Gọi rời thì mỗi lượt ph�
 (~2,2 s). Đo thật cả lượt: câu 9,7 giây tiếng ra trong **2,70 s wall =
 3,62× thời gian thật**. Lấy mốc tốn thêm **1,12×** lượt đọc câu nữa.
 Vì vậy: GOM CẢ LOẠT VÀO MỘT LƯỢT GỌI (`doc_loat`), đừng gọi từng câu.
+
+DUNG LƯỢNG LÀ SỐ ĐO, KHÔNG PHẢI ƯỚC BỪA (bài học cổng 58: nhãn Demucs từng
+ghi *"khoảng 2 GB"* trong khi lượng tải thật là 154 MB — **gấp 13 lần**).
+Chạy thật `cai_piper()` vào hộp cát rỗng: **ok=True · 36,8 giây · 212,4 MB
+trên đĩa** (bộ đọc + onnxruntime + numpy + giọng 63 MB), rồi đọc thử một câu
+ra **8 mốc / 1,788 s**. Nhãn trong UI ghi đúng số đó.
 """
 from __future__ import annotations
 
