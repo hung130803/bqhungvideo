@@ -369,6 +369,22 @@
      trước rồi PASS OAN.
   38. `_test_hieu_ung_ai.py` → hiệu ứng điểm nhấn + AI chọn theo SỐ ĐO.
   39. `_test_dong_goi.py` → BẢN ĐÓNG GÓI đủ tài nguyên (bẫy `.exe` cũ hơn mã).
+     **+ `LICENSES.txt` (16/08/2026) — LỖ HỔNG PHÁP LÝ THẬT, không phải tài
+     liệu cho đẹp.** Bộ cài đang PHÁT HÀNH `bin/ffmpeg.exe` bản
+     `--enable-gpl --enable-version3` (**GPL-3.0-or-later**, có
+     `librubberband` GPL-2.0 mà `thay_giong` dùng để co giãn tiếng) nhưng
+     **KHÔNG kèm văn bản giấy phép và không chỉ chỗ lấy mã nguồn** — app vẫn
+     chạy, không một dòng báo, chỉ có rủi ro. `LICENSES.txt` nay gồm 8 mục:
+     ffmpeg/ffprobe · frei0r (trỏ về `NGUON_GIAY_PHEP.md` đã có) · Piper
+     GPL-3 + espeak-ng · giọng `vais1000` (khối ghi công CC BY 4.0, **kèm cả
+     chỗ CHƯA đối chiếu được** với trang gốc IEEE) · **edge-tts LGPLv3 kèm
+     nguyên văn câu tác giả *"It shouldn't be used for commercial reasons"***
+     (ghi trung tính: đó KHÔNG phải điều khoản LGPL, rủi ro thật nằm ở điều
+     khoản dịch vụ Microsoft — anh Hùng dùng hằng ngày nên cần biết) · yt-dlp
+     Unlicense · kho tiếng động CC0 · phông chữ OFL (ghi thẳng là **CHƯA rà
+     từng file**). Khai ở **CẢ HAI** cửa đóng gói. Cổng đòi nêu **ĐÍCH DANH**
+     từng thành phần — chỉ hỏi "file có tồn tại không" thì để lại file rỗng
+     vẫn xanh. THỬ PHÁ 2 phép, bắt được cả 2.
   40. `_test_da_quoc_gia.py` → **ĐA QUỐC GIA: AI phải hiểu MỌI loại nội dung.**
      Video THẬT của anh Hùng theo nhóm ngôn ngữ (Nhật `video nhật dài` · Hàn
      `video hàn` · Anh `video mỹ` · Việt `video viêt`), chép lời bằng **Groq
@@ -1510,6 +1526,84 @@
      (0,0%)**.
      **CA 7 THỬ PHÁ**: đặt trần ký tự vô hạn (= quay về cách cũ) thì bảng phải
      kêu — ra 2 dòng, dòng dài 66 ký tự > trần. Cổng không phải con dấu.
+  64. `_test_piper.py` → **PIPER LÀM LỰA CHỌN THỨ HAI, KHÔNG THAY edge-tts**
+     (`app/core/piper_tts.py`, 16/08/2026). **ĐẠT 47 · HỎNG 0.** Thử phá
+     `_pha_piper.py`: **BẮT 6 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+     **RANH GIỚI GIẤY PHÉP LÀ MỆNH ĐỀ SỐ 1** — `piper-tts` là **GPL-3.0**
+     (kho `OHF-Voice/piper1-gpl`; bản MIT cũ dừng ở 1.2.0, `pip install
+     piper-tts` hôm nay là nhận bản GPL). App này là phần mềm ĐÓNG. Gọi Piper
+     như **CHƯƠNG TRÌNH RỜI** qua `subprocess`, chỉ trao đổi **dòng lệnh +
+     file WAV** thì app KHÔNG phải mở mã — y hệt mô hình đã chạy với `ffmpeg`
+     (cũng GPL) nhiều năm. **`import piper` MỘT DÒNG THÔI LÀ MẤT QUYỀN GIỮ
+     KÍN MÃ**; đóng vào `.exe` PyInstaller cũng vậy. Nên `piper_tts.py`
+     KHÔNG import, KHÔNG chèn `_piper` vào `sys.path`, và dò "đã cài chưa"
+     bằng **FILE CÓ TỒN TẠI KHÔNG** chứ không `find_spec` (`find_spec` phải
+     NẠP gói cha = chạm mã GPL trong tiến trình app). App **TỰ TẢI** từ kho
+     GitHub của tác giả, lưu **NGOÀI thư mục cài** (`DATA_DIR/_piper` ở bản
+     đóng gói — để cạnh `.exe` là lượt tự cập nhật `rmdir /S /Q _internal.old`
+     **xoá sạch**, đúng lỗi `_lib` của Demucs ở cổng 58 CA5).
+     **VÌ SAO CHỈ LÀ LỰA CHỌN THÊM, ĐỪNG AI ĐỔI HẲN:** nhấn nhá đo được
+     edge-tts NamMinh **3,96** · HoaiMy **3,40** · Piper vais1000 **3,24** —
+     đổi sang Piper là **đi lùi ở đúng cái anh Hùng đang chê**, và Piper chỉ
+     có **1 giọng Việt** (edge-tts có 2). Cái nó hơn: chạy HẲN TRÊN MÁY và có
+     mốc từng chữ không tốn lượt mạng.
+     **CỬA DUY NHẤT**: chỗ rẽ nằm NGAY TRONG `dubbing._synth_all` và
+     `_synth_all_words`, KHÔNG bắt từng nơi gọi tự kiểm — nhờ vậy phủ cả **3
+     chỗ gọi của `thay_giong.py`** LẪN 3 chỗ của `dubbing.py`. Sót một chỗ là
+     video **LẪN HAI GIỌNG** mà `rc` vẫn 0 (đúng mệnh đề cổng 63). CA 4 gọi
+     THẬT cả 3 hàm rồi ĐẾM, không quét chuỗi.
+     **THIẾU PIPER THÌ LÙI ÊM** về edge-tts + ghi `logs/piper_<ngày>.log`.
+     Khác ca Demucs (cổng 55 "thiếu là CHẶN"): ở đó lùi ra video HỎNG, ở đây
+     lùi ra video ĐÚNG chỉ khác giọng.
+     **CHỈ `vais1000`** (trọng số MIT + dữ liệu CC BY 4.0 -> bán được, ghi
+     công ở `LICENSES.txt` mục 4). `vivos` CC BY-NC-SA = **cấm thương mại** +
+     thiếu dấu thanh; `25hours_single` giấy phép **"Unknown"** — im lặng
+     KHÔNG phải là cho phép. CA 2 quét đúng hai tên đó trong MÃ THẬT.
+     **MỐC TỪNG CHỮ — 3 BẪY ĐÃ ĐO, cả 3 đều "chạy được, không một dòng báo":**
+     (a) **`--output-dir-naming timestamp` LÀM MẤT FILE.** `piper/__main__.py`
+     đặt tên bằng `time.monotonic_ns()`, mà `time.monotonic` trên Windows nhảy
+     **15,625 ms** -> hai chữ NGẮN liền nhau ghi đè nhau. Đo 48 từ ra **44 ·
+     46 · 46** WAV — **NHẤP NHÁY**. Nguy hiểm thật không phải thiếu file mà là
+     `zip(wav, tu)` **gán mốc cho SAI CHỮ** từ chỗ mất trở đi.
+     (b) **TÊN FILE KHÔNG PHẢI CHỮ MÌNH GỬI**: `con` -> **`con_.wav`** (CON là
+     tên THIẾT BỊ Windows) · `giờ.` -> **`giờ.wav`** (Windows nuốt dấu chấm
+     cuối). Đoán một dạng tên là tra hụt -> mốc lệch. Nay làm sạch dấu câu
+     TRƯỚC khi gửi + bộ khớp nhiều dạng + **ĐỐI SOÁT HAI CHIỀU** (mọi chữ tra
+     ra file, mọi file có chủ); lệch một cái là **BỎ MỐC CẢ NHÓM** — mốc gán
+     nhầm chữ tệ hơn hẳn không có mốc.
+     (c) **chữ đọc RỜI ngắn hơn chữ đọc TRONG CÂU**: **9,427 s vs 9,764 s
+     (−3,4%)** -> bắt buộc `_co_gian` về đúng độ dài WAV thật.
+     Hệ quả phải nói thẳng: mốc Piper là **SUY RA**, không phải mốc máy đọc
+     trả về như `WordBoundary` của edge-tts. Đúng thứ tự, đúng tổng; ranh giới
+     từng chữ là ước lượng theo tỉ lệ.
+     **`length_scale` BÃO HOÀ — SỐ CŨ LÀ SỐ RÁC.** Bảng trong
+     `_do_piper/work/ket_qua.json` ra **TOÀN 0,000 giây**: lượt đo đó KHÔNG HỀ
+     CHẠY ĐƯỢC (vòng lặp không kiểm `rc`) nhưng vẫn ghi ra file kết quả trông
+     như thật — đúng họ "phép đo hỏng phát chứng nhận" (`astats` cổng 53 ·
+     `startswith` cổng 44). Đo lại có kiểm `rc` (`_do_piper_moc2.py`):
+
+     | length_scale | 1.0 | 0.8 | 0.74 | 0.5 | 0.45 | 0.3 | 0.2 |
+     |---|---|---|---|---|---|---|---|
+     | so tự nhiên | .981 | .937 | .860 | .751 | .744 | .697 | **.692** |
+
+     **HAI ĐIỀU PHẢI NHỚ:** bão hoà ở **~0,69×** (ép dưới 0,5 gần như không
+     ngắn thêm), và **`length_scale` KHÔNG TỈ LỆ THUẬN** — đặt **0,45 ra
+     0,744×**, ai tính `ls = khung / độ_dài` sẽ ép hụt rất xa rồi tưởng Piper
+     hỏng. `_ls_tu_rate` vì thế **tra BẢNG ĐO**, không dùng công thức. So cho
+     công bằng: edge-tts `rate=+50%` ra **0,687×** — **hai bên xấp xỉ nhau**,
+     nên kiến trúc 4 bước hiện tại dùng được nguyên xi với Piper.
+     **CHI PHÍ:** gọi tiến trình rời thì **lượt nào cũng nạp lại model
+     (~2,2 s)**. Con số "25,8× nhanh hơn thời gian thật" trong tài liệu là tốc
+     độ SAU khi model đã nạp, đo TRONG tiến trình. Đo cả lượt: câu 9,7 s tiếng
+     ra trong **2,70 s wall = 3,62×**. Lấy mốc tốn thêm **1,12×**. Vì vậy
+     `doc_loat` **GOM CẢ LOẠT VÀO MỘT LƯỢT GỌI**, đừng gọi từng câu.
+     **2 LỖI CỦA CHÍNH CỔNG, do THỬ PHÁ lôi ra:** (1) CA7c dùng
+     `"_piper_hay_khong" in inspect.getsource(...)` -> **khớp trúng chính
+     DOCSTRING** ("xem `_piper_hay_khong`") nên gỡ SẠCH nhánh rẽ khỏi
+     `_synth_all` mà cổng vẫn XANH = con dấu (bẫy cổng 56d, chiều **PASS
+     OAN**); nay đọc bằng **AST**, đòi hàm THẬT SỰ GỌI. (2) CA5f vá đè lên
+     chính `_tra_file` nên phép phá "đoán bừa" không chạm tới được; nay thêm
+     5g/5h kiểm chính hàm đó ở mức đơn vị.
 - **GIỌNG MỚI BỊ NHẠC NỀN DÌM 9,3 dB — "chỗ có chỗ không nghe không được"
   (15/08/2026).** Anh Hùng: *"phần tách âm thanh giọng nói, nó nói mà âm thanh
   sau khi tách lỗi hết, chỗ có chỗ không nghe không được"*.
