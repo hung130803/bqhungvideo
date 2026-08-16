@@ -109,6 +109,8 @@ CO_MOI_LUOT = 14
 VONG_DOI_LAI = 3
 #: Số vòng viết lại câu lệch ngân sách.
 VONG_VIET_LAI = 2
+#: Số vòng dịch lại câu CÒN SÓT CHỮ GỐC (bằng `thay_giong.CJK_VONG_TOI_DA`).
+CJK_VONG_TOI_DA = 2
 #: Bối cảnh gửi kèm: bao nhiêu ký tự đầu bài. Đủ để model biết video nói về
 #: cái gì (đây là chốt bắt `新片` = "phim mới" chứ không phải "con chip"),
 #: chưa đủ to để chạm 413.
@@ -191,18 +193,19 @@ def ngan_sach(giay: float, goc: str = "") -> dict:
     dich = max(dich, san_goc)                    # ... nhưng không dưới sàn
     # TRẦN: theo đồng hồ, NHƯNG một bản dịch dài đúng bằng mức TỰ NHIÊN thì
     # không bao giờ bị kêu là dài quá (miễn còn trong tầm `rate`).
-    tn_ok = min(tu_nhien, am_tiet_vua(giay, TRAN_RATE))
-    tran = max(san_goc + 1, min(dh_max, cung_goc), tn_ok)
     # HAI TRẦN KHÁC NHAU, ĐỪNG GỘP:
-    #   `max`    = con số GỢI Ý viết vào prompt (chặt hơn, để model tự nhắm)
-    #   `ep_max` = mức HẬU KIỂM mới bắt viết lại (rộng hơn)
-    # Gộp làm một là mỗi câu hơi dài đều bị đem đi viết lại — mà viết lại là
-    # nơi mất nghĩa. Đo trên 20 bản dịch NGƯỜI viết tay của chính corpus này:
-    # ép theo `max` kêu **10/20** bản là "dài quá"; ép theo `ep_max` chỉ còn
-    # những bản thật sự quá tầm `rate`. Hậu kiểm phải canh CÁI KHÔNG LÀM ĐƯỢC,
-    # không phải canh cái chưa tối ưu.
-    ep_max = max(tran, int((giay * TRAN_RATE - GIAY_CO_DINH)
-                           / GIAY_MOI_AM_TIET), int(round(r_cung * n)))
+    #   `max`    = con số GỢI Ý viết vào prompt (theo đồng hồ ở mức `TRAN`)
+    #   `ep_max` = mức HẬU KIỂM mới bắt viết lại (nới tới tầm `rate`)
+    # **CẢ HAI ĐỀU PHẢI LÀ `min(đồng hồ, câu gốc)` — LẤY CÁI CHẶT HƠN.** Bản
+    # trước lấy `max(...)` cho `ep_max` với lý do "đừng bắt viết lại câu chỉ
+    # hơi dài", và hậu kiểm CHẾT HẲN: đo lượt 1 ra **41/50 câu tràn khung mà
+    # 0/50 câu bị bắt**, tổng đọc **132,0 s** trên khung 106,6 s = **1,24×**,
+    # tức TỆ HƠN cả bản mốc (1,08×). Trần nới bằng `max` thì vế 1,5×câu-gốc
+    # luôn thắng và ngân sách thành lời khuyên suông.
+    ep_max = max(san_goc + 1,
+                 min(int((giay * TRAN_RATE - GIAY_CO_DINH) / GIAY_MOI_AM_TIET),
+                     cung_goc))
+    tran = max(san_goc + 1, min(dh_max, cung_goc))
     return {
         "giay": round(giay, 2),
         "dich": max(1, dich),
@@ -481,12 +484,45 @@ def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
         if not doi:
             break                        # LLM không nhúc nhích -> đừng đốt lượt
 
+    # ---- SÓT CHỮ GỐC (lỗi anh Hùng: "dịch còn có cả tiếng Trung không hiểu")
+    # Phải làm SAU vòng viết-lại-theo-ngân-sách: vòng đó có thể tự đẻ ra câu
+    # sót mới. Dùng LẠI `_dich_lai_sot` của `thay_giong` (đã đo: 1/39 -> 0/38)
+    # thay vì viết bản thứ hai — hai bản prompt cùng việc là hai bản sẽ lệch
+    # nhau lúc ai đó sửa một bên.
+    # ĐO ĐƯỢC VÌ SAO CẦN: bản KHÔNG có bước này ra `con_chu_goc` **4/50** câu
+    # trong khi đường mốc chỉ 1/50 (`_kq_ab_epmax_long.txt`).
+    sot_dau = [i for i, t in enumerate(ban_dich) if _con_chu_goc(t, dich_sang)]
+    sot = list(sot_dau)
+    for _vong in range(CJK_VONG_TOI_DA):
+        if not sot:
+            break
+        if on_progress:
+            on_progress(0.9, f"Dịch lại {len(sot)} câu còn sót chữ gốc...")
+        try:
+            from app.core.thay_giong import _dich_lai_sot
+            lai = _dich_lai_sot([str(cau[i].get("text") or "") for i in sot],
+                                [ban_dich[i] for i in sot], dich_sang, goc_ma)
+        except Exception:                                # noqa: BLE001
+            break
+        doi = 0
+        for j, i in enumerate(sot):
+            # CHỈ NHẬN khi bản mới thật sự SẠCH — nhận bừa là đổi câu sót này
+            # lấy câu sót khác rồi tự khen đã chữa.
+            if lai[j] != ban_dich[i] and not _con_chu_goc(lai[j], dich_sang):
+                ban_dich[i] = lai[j]
+                doi += 1
+        sot = [i for i in sot if _con_chu_goc(ban_dich[i], dich_sang)]
+        if not doi:
+            break
+
     return {
         "ban_dich": ban_dich,
         "ngan_sach": ns,
         "so_lech_truoc": len(lech0),
-        "so_lech_sau": len(lech),
+        "so_lech_sau": sum(1 for i in range(n)
+                           if _lech(am_tiet_viet(ban_dich[i]), ns[i])),
         "so_viet_lai": da_sua,
+        "sot_chu_goc_truoc": len(sot_dau),
         "sot_chu_goc": sum(1 for t in ban_dich if _con_chu_goc(t, dich_sang)),
         "thieu_cau": thieu,
     }
