@@ -1794,6 +1794,37 @@
   còn ghi một số KHÁC cho cùng việc: `_do_che_chu_gia.py` ra **+1,30**
   s/phút). **CẤM HẠ NGƯỠNG cho hết đỏ** — việc phải làm là đo lại đan xen
   trên máy rảnh rồi hiệu chuẩn lại trần bằng SỐ, đúng cách trần đó ra đời.
+  **ĐÃ ĐO LẠI VÀ CHỐT — 16/08/2026: TRẦN ĐẶT ĐÚNG, THỦ PHẠM LÀ MÁY BẬN.**
+  Đo trên máy THẬT SỰ RẢNH (CPU nền 2,7-5,4%), `_do_ca17.py` **7 vòng ĐAN XEN
+  có XOAY THỨ TỰ** (CA17 chỉ 3 vòng và luôn chạy TẮT trước, nên arm chạy sau
+  gánh phần máy đã nóng):
+
+  | lượt                         | DẢI   | HỘP   | HỘP−DẢI |
+  |------------------------------|-------|-------|---------|
+  | mốc 14/08 (3 vòng)           | +0,84 | +3,31 |  +2,47  |
+  | 16/08 cổng 56 (3 vòng)       | +0,78 | +3,20 |  +2,43  |
+  | 16/08 `_do_ca17.py` (7 vòng) | +0,70 | +3,14 |  +2,45  |
+
+  **BA lượt độc lập khớp nhau trong ±0,14 (DẢI) · ±0,17 (HỘP) · ±0,04
+  (HỘP−DẢI)**; biên độ thô trong 7 vòng chỉ 0,13s / 0,17s. Phép đo TIỀN ĐỊNH
+  khi máy rảnh -> `+2,57 / +5,46 / +4,60 / +10,66` là số của MÁY, không phải
+  của MÃ.
+  **GIỮ NGUYÊN cả 3 trần (2,0 · 4,5 · 3,5).** Biên còn lại: DẢI **2,4-2,9
+  lần**, HỘP **1,36-1,43 lần**, HỘP−DẢI **1,42 lần**. Cố ý **KHÔNG siết xuống
+  sát số đo** (max×1,25 ra 1,01 / 3,98 / 3,14) — siết là làm cổng dễ đỏ oan
+  hơn với nhiễu máy, đúng cái vừa đi chữa. Cũng **KHÔNG nới lên** cho vừa
+  +10,66: nới thế là vừa đúng chỗ cổng mất khả năng bắt "ai đó lỡ thêm một
+  lượt ffmpeg THỨ HAI" (3,5-7,6 s/phút) — tức giết chính lý do trần tồn tại.
+  **CHỮA Ở CHỖ ĐÚNG: `CPU_RANH_MAX` (15%) + `bo_qua()`.** CA17 nay đo CPU nền
+  trước khi chạy; máy bận thì 3 mục chi phí **KHÔNG CHẤM** — không ĐẠT (đếm là
+  ĐẠT thì đúng bằng "phép đo hỏng phát chứng nhận", bệnh `astats` cổng 53) và
+  không HỎNG (đỏ vì máy bận là ĐỎ OAN, mà cổng đỏ oan thì người ta bỏ qua nó —
+  bài học cổng 41 và 47). Số vẫn được IN RA để đọc, và dòng tổng kết hiện
+  `BỎ QUA n` + liệt kê từng mục ở cuối nên một lượt bỏ qua **không thể trông
+  giống** một lượt chấm đủ. Thử phá (`BQ_CPU_MAX=0`): ra đúng **BỎ QUA 3**.
+  **QUY TẮC CHUNG rút ra: mục đo THỜI GIAN phải tự canh tải máy.** Không canh
+  thì nó là cổng đo MÁY chứ không đo MÃ, và sẽ đỏ/xanh theo việc anh Hùng có
+  mở trình duyệt hay không.
 - **LỆCH CHỮ-TIẾNG: ĐO LẠI SAU BẢN VÁ — *KHÔNG* GIẢM. CON SỐ CHỈ ĐỔI CỘT
   (15/08/2026).** `c10c68b` đo được **24,2%** thời lượng video "chữ chạy mà
   không nói" (`im_duoi_chu` 22,52s + `lỗ bản chép lời` 9,56s = 32,08s /

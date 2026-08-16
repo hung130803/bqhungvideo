@@ -51,13 +51,42 @@ KHO = Path(r"D:\claude\_do_che_chu\nguon")     # video thật đã copy ra sandb
 
 DAT: list = []
 HONG: list = []
+BO_QUA: list = []       # mục KHÔNG chấm được vì máy bận — xem `bo_qua()`
 _QAPP = None            # PHẢI giữ tham chiếu QApplication — xem CA 18
+
+#: CPU nền tối đa còn đo được CHI PHÍ. Trên ngưỡng này thì CA17 KHÔNG chấm.
+#: Số này không phải đặt bừa: cùng một dòng mã, đo lúc máy rảnh ra HỘP +3,14
+#: .. +3,31 mà lúc máy bận ra **+10,66** — xem khối ghi chú trần trong
+#: `ca17_chi_phi`.
+CPU_RANH_MAX = float(os.environ.get("BQ_CPU_MAX", "15"))
+
+
+def cpu_nen() -> float:
+    """CPU nền cả máy (%). Không có psutil -> trả -1 = 'không biết, cứ đo'."""
+    try:
+        import psutil                                   # noqa: PLC0415
+    except Exception:                                    # noqa: BLE001
+        return -1.0
+    return max(psutil.cpu_percent(interval=1.0) for _ in range(3))
 
 
 def kiem(ten: str, ok: bool, chi_tiet: str = "") -> bool:
     (DAT if ok else HONG).append(ten)
     print(f"  {'ĐẠT ' if ok else 'HỎNG'} {ten}" + (f" — {chi_tiet}" if chi_tiet else ""))
     return ok
+
+
+def bo_qua(ten: str, ly_do: str, chi_tiet: str = "") -> None:
+    """KHÔNG chấm mục này — và NÓI TO vì sao.
+
+    Chỉ dùng cho mục mà phép đo KHÔNG CÒN TIN ĐƯỢC (xem chốt máy-bận của CA17).
+    Cố tình KHÔNG cộng vào `DAT`: mục bỏ qua mà đếm là ĐẠT thì đúng bằng "phép
+    đo hỏng phát chứng nhận" — bệnh `astats` cổng 53 và `startswith` cổng 44.
+    Cũng KHÔNG cộng vào `HONG`: đỏ vì máy bận là ĐỎ OAN, mà cổng đỏ oan thì
+    người ta bỏ qua nó (bài học cổng 41 và 47), nguy hiểm hơn hẳn.
+    """
+    BO_QUA.append(ten)
+    print(f"  BỎ QUA {ten} — {ly_do}" + (f" — {chi_tiet}" if chi_tiet else ""))
 
 
 def ff(args: list, what: str = "", cho_loi: bool = False):
@@ -676,6 +705,21 @@ def ca17_chi_phi(src: Path):
     """
     print("\nCA 17 — CHI PHÍ THÊM: gộp vào lượt mã hoá phải ~0,1-0,2 giây/phút")
     import time
+    # ---- CHỐT MÁY-BẬN (16/08/2026). ĐỌC TRƯỚC KHI ĐỘNG VÀO TRẦN. ----
+    # Ba mục CA17a/b/c là phép đo THỜI GIAN, nên số của chúng nói về MÁY nhiều
+    # ngang nói về MÃ. Bằng chứng: cùng một dòng mã (`git diff v2.27.0..HEAD --
+    # app/core/che_chu.py app/core/ffmpeg_utils.py` RỖNG) mà HỘP ra +3,31
+    # (14/08, máy rảnh) · +5,46 (15/08) · +4,60 (16/08) · **+10,66 (máy bận)**.
+    # Đo lại trên máy THẬT SỰ RẢNH thì con số quay về đúng mốc — xem bảng ở
+    # khối trần bên dưới. Nên lúc máy bận, việc đúng là **KHÔNG CHẤM**, không
+    # phải nới trần: nới trần cho vừa +10,66 là vừa đúng chỗ cổng mất khả năng
+    # bắt "ai đó lỡ thêm một lượt ffmpeg THỨ HAI" (3,5-7,6 s/phút).
+    cpu0 = cpu_nen()
+    may_ban = cpu0 > CPU_RANH_MAX
+    print(f"  CPU nền trước khi đo: "
+          f"{'không đo được (thiếu psutil)' if cpu0 < 0 else f'{cpu0:.1f}%'}"
+          f"  (trần {CPU_RANH_MAX:.0f}%)"
+          + ("  -> MÁY BẬN, 3 mục chi phí sẽ KHÔNG chấm" if may_ban else ""))
     # XOÁ SỔ NHỚ TRƯỚC KHI ĐO. CA 15/16 chạy trước đã hâm nóng, nên bản đầu của
     # ca này in "dò dải: 0,00s" — con số ĐẸP nhưng VÔ NGHĨA (đang đo lần TRA
     # SỔ, không phải lần DÒ). Đo nhầm thì tệ hơn không đo.
@@ -716,39 +760,66 @@ def ca17_chi_phi(src: Path):
     ph = giay / 60.0
     them_dai = (m_dai - m_tat) / ph
     them_hop = (m_hop - m_tat) / ph
+    # ---- TRẦN: ĐÃ HIỆU CHUẨN LẠI 16/08/2026 — GIỮ NGUYÊN SỐ, có căn cứ mới.
     # HAI TRẦN, MỖI KIẾN TRÚC MỘT CÁI — cố ý KHÔNG nới trần chung lên cho hộp
     # lọt, vì trần tồn tại để bắt "ai đó lỡ thêm một lượt ffmpeg THỨ HAI"
     # (35-76 giây cho video 10 phút = **3,5-7,6 s/phút**); nới trần chung lên
     # 4,0 là vừa đúng chỗ mất khả năng bắt cái đó.
-    #  · DẢI: 2,0 s/phút. Số đo cũ (`_do_che_chu_gia.py`, 3 vòng đan xen)
-    #    **+1,30**; đo lại 14/08 trên chính clip này **+0,84**. Phần đắt là
+    #
+    # **VÌ SAO TRẦN KHÔNG ĐỔI DÙ SỐ TỪNG "TRÔI".** Nghi vấn 15/08 là "trần đặt
+    # sai từ đầu vì nó là số của MỘT lượt". Đã đo lại để trả lời bằng số, trên
+    # máy THẬT SỰ RẢNH (CPU nền 2,7-5,4%), `_do_ca17.py` **7 vòng ĐAN XEN có
+    # XOAY THỨ TỰ** (CA17 chỉ 3 vòng và luôn chạy TẮT trước — arm chạy sau gánh
+    # phần máy đã nóng):
+    #
+    #   | lượt                         | DẢI   | HỘP   | HỘP−DẢI |
+    #   |------------------------------|-------|-------|---------|
+    #   | mốc 14/08 (3 vòng)           | +0,84 | +3,31 |  +2,47  |
+    #   | 16/08 cổng 56 (3 vòng)       | +0,78 | +3,20 |  +2,43  |
+    #   | 16/08 `_do_ca17.py` (7 vòng) | +0,70 | +3,14 |  +2,45  |
+    #
+    # BA lượt độc lập trên máy rảnh khớp nhau trong **±0,14 (DẢI)** và
+    # **±0,17 (HỘP)**; biên độ thô trong 7 vòng chỉ 0,13s (DẢI) / 0,17s (HỘP).
+    # Tức phép đo TIỀN ĐỊNH khi máy rảnh, và trần cũ **đặt đúng**. Các con số
+    # +2,57 / +5,46 / +4,60 / +10,66 là số của MÁY BẬN, không phải của mã —
+    # nay chốt máy-bận ở đầu hàm này chặn hẳn đường đó.
+    # **KHÔNG hạ trần xuống sát số đo** (max×1,25 ra 1,01 / 3,98 / 3,14): siết
+    # lại là làm cổng dễ đỏ oan hơn với nhiễu máy, đúng cái vừa đi chữa.
+    #  · DẢI: 2,0 s/phút — đo 0,70-0,84, biên **2,4-2,9 lần**. Phần đắt là
     #    `boxblur` tranh CPU với libx264, KHÔNG phải kiến trúc filter
     #    (micro-benchmark `-f null`: chuỗi che +0,34, split/overlay chỉ +0,05).
-    #  · HỘP: 4,5 s/phút. Hộp dựng **N split + N crop + N boxblur + N overlay**
-    #    (N = số mốc, đo được 6 mốc/clip 60 s) nên đắt hơn dải **~4 lần**:
-    #    đo đan xen 3 vòng cùng máy cùng clip ra TẮT 6,65s · DẢI +0,84 ·
-    #    **HỘP +3,31 s/phút**. Đây là GIÁ THẬT của việc che ít đi 16-31%
-    #    diện tích, không phải máy bận — ba lượt thô lệch nhau < 0,05 s.
-    #    Muốn rẻ thì chọn cách "phủ khối" (`drawbox` có `enable` sẵn, không
-    #    cần split/overlay — đo −0,01 s/phút).
-    kiem("CA17a DẢI NGANG: chi phí thêm <= 2,0 giây/phút phim (số hứa 0,1-0,2 "
-         "KHÔNG đúng với cách 'làm mờ' — xem ghi chú)",
-         them_dai <= 2.0,
-         f"TẮT {m_tat:.2f}s · DẢI {m_dai:.2f}s trên clip {giay:.0f}s -> "
-         f"**{them_dai:+.2f} giây/phút** · thô TẮT={[round(x,2) for x in tat]} "
-         f"DẢI={[round(x,2) for x in thanh['DẢI']]}")
-    kiem("CA17b HỘP CHỮ: chi phí thêm <= 4,5 giây/phút phim (hộp dựng N chuỗi "
-         "split/blur/overlay nên đắt hơn dải ~4 lần — đó là giá của việc che "
-         "ít đi 16-31% diện tích)",
-         them_hop <= 4.5,
-         f"TẮT {m_tat:.2f}s · HỘP {m_hop:.2f}s -> **{them_hop:+.2f} giây/phút** "
-         f"(riêng phần HỘP thêm so với DẢI: {them_hop - them_dai:+.2f}) · "
-         f"thô HỘP={[round(x,2) for x in thanh['HỘP']]} · "
-         f"dò dải {t_do:.2f}s MỘT LẦN cho cả video, 3 Part dùng chung")
-    kiem("CA17c HỘP không được đắt hơn DẢI quá 3,5 giây/phút (chốt bắt 'ai đó "
-         "lỡ thêm một lượt ffmpeg thứ hai' — lượt đó tốn 3,5-7,6 s/phút)",
-         them_hop - them_dai <= 3.5,
-         f"DẢI {them_dai:+.2f} -> HỘP {them_hop:+.2f} giây/phút")
+    #  · HỘP: 4,5 s/phút — đo 3,14-3,31, biên **1,36-1,43 lần**. Hộp dựng
+    #    **N split + N crop + N boxblur + N overlay** (N = số mốc, 6 mốc/clip
+    #    60 s) nên đắt hơn dải ~4 lần. Đây là GIÁ THẬT của việc che ít đi
+    #    16-31% diện tích. Muốn rẻ thì chọn "phủ khối" (`drawbox` có `enable`
+    #    sẵn, không cần split/overlay — đo −0,01 s/phút).
+    #  · HỘP−DẢI: 3,5 s/phút — đo 2,43-2,47. Đây mới là mục canh lượt ffmpeg
+    #    thứ hai, và nó ổn định nhất trong ba (lệch 0,04 giữa 3 lượt).
+    def _cham(ten, ok, ct):
+        if may_ban:
+            bo_qua(ten, f"máy bận (CPU nền {cpu0:.1f}% > {CPU_RANH_MAX:.0f}%) "
+                        "— phép đo THỜI GIAN không tin được", ct)
+        else:
+            kiem(ten, ok, ct)
+
+    _cham("CA17a DẢI NGANG: chi phí thêm <= 2,0 giây/phút phim (số hứa 0,1-0,2 "
+          "KHÔNG đúng với cách 'làm mờ' — xem ghi chú)",
+          them_dai <= 2.0,
+          f"TẮT {m_tat:.2f}s · DẢI {m_dai:.2f}s trên clip {giay:.0f}s -> "
+          f"**{them_dai:+.2f} giây/phút** · thô TẮT={[round(x,2) for x in tat]} "
+          f"DẢI={[round(x,2) for x in thanh['DẢI']]}")
+    _cham("CA17b HỘP CHỮ: chi phí thêm <= 4,5 giây/phút phim (hộp dựng N chuỗi "
+          "split/blur/overlay nên đắt hơn dải ~4 lần — đó là giá của việc che "
+          "ít đi 16-31% diện tích)",
+          them_hop <= 4.5,
+          f"TẮT {m_tat:.2f}s · HỘP {m_hop:.2f}s -> **{them_hop:+.2f} giây/phút** "
+          f"(riêng phần HỘP thêm so với DẢI: {them_hop - them_dai:+.2f}) · "
+          f"thô HỘP={[round(x,2) for x in thanh['HỘP']]} · "
+          f"dò dải {t_do:.2f}s MỘT LẦN cho cả video, 3 Part dùng chung")
+    _cham("CA17c HỘP không được đắt hơn DẢI quá 3,5 giây/phút (chốt bắt 'ai đó "
+          "lỡ thêm một lượt ffmpeg thứ hai' — lượt đó tốn 3,5-7,6 s/phút)",
+          them_hop - them_dai <= 3.5,
+          f"DẢI {them_dai:+.2f} -> HỘP {them_hop:+.2f} giây/phút")
     kiem("CA17 dò dải được NHỚ (Part 2,3 của cùng video KHÔNG dò lại)",
          len(C._DAI_NHO) >= 1 and t_nho * 100 < t_do,
          f"dò lần đầu {t_do:.2f}s · lần sau {t_nho*1000:.2f} ms "
@@ -1439,9 +1510,14 @@ def main() -> int:
         traceback.print_exc()
         HONG.append("NGOẠI LỆ giữa chừng")
     print(f"\n{'='*70}\nĐẠT {len(DAT)} · HỎNG {len(HONG)}"
-          f" · cửa sổ ngoài bị chặn: {len(_test_guard.DA_CHAN)}")
+          + (f" · BỎ QUA {len(BO_QUA)}" if BO_QUA else "")
+          + f" · cửa sổ ngoài bị chặn: {len(_test_guard.DA_CHAN)}")
     for h in HONG:
         print(f"  HỎNG: {h}")
+    # BỎ QUA phải HIỆN RA ở dòng cuối, không được chìm giữa log: mục không
+    # chấm mà im lặng thì lượt chạy trông y hệt lượt chấm đủ.
+    for b in BO_QUA:
+        print(f"  BỎ QUA (máy bận, không chấm): {b}")
     print(f"Ảnh để soi bằng mắt: {SAN}")
     return 1 if HONG else 0
 

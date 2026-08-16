@@ -180,7 +180,7 @@ def in_arm(d: dict) -> None:
     print(f"    ký tự/câu TB         : {d['ky_tu_tb']}")
     print(f"    GIÁ: {d['giay']}s wall · {d['luot_llm']} lượt LLM")
     if "lech_tuyet_doi_tb" in d:
-        print(f"    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):")
+        print("    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):")
         print(f"      tổng đọc {d['tong_doc']}s / tổng khung {d['tong_khung']}s"
               f"  ({d['ty_doc_khung']}x)")
         print(f"      lệch tuyệt đối TB {d['lech_tuyet_doi_tb']}s/câu")
