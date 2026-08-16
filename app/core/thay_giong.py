@@ -628,7 +628,9 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
                 "--upgrade", "--ignore-installed", "--target", lib,
                 "--extra-index-url", "https://download.pytorch.org/whl/cpu",
                 *GOI_TACH_GIONG]
-        prog(0.02, "Đang tải bộ tách giọng (khoảng 2 GB, chạy 1 lần)...")
+        # Số ĐO của cổng 58, không phải ước bừa: 154,0 MB TẢI VỀ (bung ra đĩa
+        # ~700 MB). Nhãn "2 GB" của bản cũ gấp 13 lần lượng tải thật.
+        prog(0.02, "Đang tải bộ tách giọng (khoảng 155 MB, chạy 1 lần)...")
         p = subprocess.Popen(args, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True,
                              encoding="utf-8", errors="replace", bufsize=1,

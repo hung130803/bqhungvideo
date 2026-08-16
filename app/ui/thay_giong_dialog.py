@@ -25,7 +25,7 @@ BA CHỐT AN TOÀN CỦA MÀN NÀY (đừng gỡ cái nào):
 1. **THIẾU BỘ TÁCH GIỌNG -> CHẶN, KHÔNG LÙI.** Bản `.exe` không gói
    torch/demucs (`requirements-build.txt` ghi thẳng "KHÔNG gói torch") nên
    máy nhân viên KHÔNG chạy được. App tự dò; thiếu thì hiện nút
-   `Tải bộ tách giọng (khoảng 2 GB)` và **KHOÁ nút Chạy**. TUYỆT ĐỐI không
+   `Tải bộ tách giọng (tải khoảng 155 MB)` và **KHOÁ nút Chạy**. TUYỆT ĐỐI không
    tự lui sang "cách nhẹ": đã đo rò rỉ lời **100% (Trung) · 86,3% (Anh)** —
    giọng cũ còn NGUYÊN chồng lên giọng mới, ffmpeg vẫn trả mã 0, không một
    dòng báo. Trên 200-300 kênh là hỏng hàng loạt không ai biết.
@@ -551,7 +551,10 @@ class ThayGiongDialog(QDialog):
             return
         if QMessageBox.question(
                 self, "Tải bộ tách giọng",
-                "Sẽ tải khoảng 2 GB về thư mục:\n" + self._tt_demucs["lib"]
+                # 155 MB là SỐ ĐO (cổng 58), "2 GB" là ước bừa của bản cũ —
+                # nhãn nút đã sửa từ v2.27.1 mà hộp xác nhận thì bị sót, nên
+                # user bấm nút ghi 155 MB rồi thấy hộp doạ 2 GB.
+                "Sẽ tải khoảng 155 MB về thư mục:\n" + self._tt_demucs["lib"]
                 + "\n\nChỉ tải 1 lần. Trong lúc tải vẫn dùng app bình thường "
                   "được. Tải bây giờ?") != QMessageBox.StandardButton.Yes:
             return
