@@ -3043,11 +3043,155 @@ def do_giong_tren_nhac(giong_wav: str | Path, nhac_wav: str | Path) -> dict:
     }
 
 
+#: ĐÍCH ĐỘ TO TÍCH HỢP (LUFS) của bản trộn cuối — mức mạng xã hội chuẩn hoá về.
+#:
+#: **VÌ SAO PHẢI CÓ BƯỚC NÀY (anh Hùng 16/08/2026: *"phần giọng nói ít tiếng
+#: quá nghe không hay"*):** đường thay tiếng TRƯỚC ĐÂY KHÔNG HỀ chuẩn hoá độ
+#: to — chỉ có `alimiter` chặn đỉnh, mà chặn đỉnh KHÔNG nói gì về độ to nghe
+#: được. Đo trên chính file anh Hùng xuất 16/08: **−16,00 LUFS**, trong khi
+#: video GỐC là **−5,07 LUFS** — thấp hơn **10,9 LU**.
+#:
+#: YouTube/TikTok chỉ chuẩn hoá XUỐNG, KHÔNG nâng lên: clip −16 LUFS phát ra
+#: nhỏ hơn hẳn mọi clip khác trong cùng luồng (chúng đều bị kéo về ~−14).
+#: Đó đúng là chữ *"ít tiếng quá"*.
+#:
+#: **Lượt chữa "giọng chìm dưới nhạc" (15/08) LÀM NẶNG THÊM chứ không gây ra:**
+#: trộn cách CŨ −12,76 -> cách MỚI −14,26 = nhỏ đi **1,50 LU**. Gỡ nguyên phần
+#: đó ra vẫn còn thiếu ~3 LU nữa. Bệnh có TRƯỚC, lượt chữa chỉ cộng thêm.
+DICH_LUFS = -14.0
+
+#: Trần ĐỈNH THẬT (dBTP) của bản đã chuẩn hoá. Đỉnh thật (đo giữa các mẫu) mới
+#: là cái quyết định có vỡ tiếng sau khi nén AAC hay không — đỉnh MẪU không đủ.
+TRAN_DINH_THAT_DBTP = -1.0
+
+#: Biên trừ hao đặt cho `alimiter` (nó chặn đỉnh MẪU, không chặn đỉnh THẬT).
+#:
+#: **PHẢI TRỪ HAI LẦN, KHÔNG PHẢI MỘT** — cả hai đều là SỐ ĐO trên chính file
+#: anh Hùng, quét 5 mức trần:
+#:
+#: | trần `alimiter` | đỉnh thật của WAV | sau khi nén **AAC 192k** |
+#: |---|---|---|
+#: | −1,0 | −0,94 (**vượt**) | **−0,95 (VẪN VƯỢT)** |
+#: | −1,2 | −1,14 | −1,15 |
+#: | **−1,5** | **−1,44** | **−1,27** |
+#: | −1,8 | −1,74 | −1,64 |
+#: | −2,0 | −1,94 | −1,75 |
+#:
+#: (1) `alimiter` chặn đỉnh MẪU nên đỉnh THẬT (đo giữa các mẫu) vượt thêm
+#:     **+0,06 dB**; (2) **nén AAC còn đẩy lên tiếp, đo được tới +0,19 dB** —
+#:     bước này TRƯỚC ĐÂY KHÔNG AI TÍNH, và nó là lý do bản e2e v2.30.0 ra
+#:     **+0,04 dBTP** (vỡ tiếng) dù lớp wav của nó mới −0,57.
+#:
+#: Chọn **0,5 dB**: bản AAC cuối ra −1,27 dBTP, còn dư 0,27 dB cho lượt nén
+#: LẠI của TikTok (nó re-encode 128–192 kbps, mà AES TD1004 ghi rõ *coder bit
+#: rate thấp vọt đỉnh nhiều hơn*). Giá phải trả: **0,01 LU** (−14,01 ->
+#: −14,02) — tức gần như cho không.
+BIEN_DINH_THAT_DB = 0.5
+
+
+def do_do_to(path: str | Path) -> dict:
+    """ĐỘ TO TÍCH HỢP + ĐỈNH THẬT + DẢI ĐỘNG, bằng pha ĐO của `loudnorm`.
+
+    Trả `{"I": LUFS, "TP": dBTP, "LRA": LU, "thresh": LUFS}`.
+
+    `print_format=json` in ra **stderr** (không phải stdout) — đọc nhầm cửa là
+    ra rỗng rồi tưởng file câm. ffmpeg lỗi thì **NÉM**, tuyệt đối không trả
+    `None` âm thầm: đó đúng là bẫy `astats` cổng 53 (*phép đo hỏng nguy hiểm
+    hơn không đo, vì nó phát chứng nhận*).
+    """
+    import json as _json
+    import re as _re
+
+    # KHÔNG dùng `_ffmpeg`: nó ép `-loglevel error`, mà JSON của loudnorm in ở
+    # mức `info` -> sẽ ra RỖNG rồi bị đọc nhầm thành "file câm".
+    cmd = [settings.FFMPEG_PATH, "-y", "-hide_banner", "-nostdin",
+           "-i", str(path), "-af",
+           f"loudnorm=I={DICH_LUFS}:TP={TRAN_DINH_THAT_DBTP}"
+           ":LRA=11:print_format=json", "-f", "null", "-"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf-8", errors="replace",
+                         stdin=subprocess.DEVNULL,
+                         creationflags=_CREATE_NO_WINDOW)
+    _gan_job(p)
+    try:
+        _out, err = p.communicate(timeout=900)   # BẮT BUỘC có hạn chờ
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        raise
+    finally:
+        _bo_gan_job(p)
+    if p.returncode != 0:
+        raise RuntimeError(f"ffmpeg lỗi khi đo độ to (mã thoát {p.returncode}"
+                           f"): {(err or '')[-500:]}")
+    m = _re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", err or "", _re.S)
+    if not m:
+        raise RuntimeError(f"loudnorm KHÔNG trả JSON khi đo {Path(path).name}")
+    d = _json.loads(m.group(0))
+    return {"I": float(d["input_i"]), "TP": float(d["input_tp"]),
+            "LRA": float(d["input_lra"]), "thresh": float(d["input_thresh"])}
+
+
+def chuan_do_to(wav_in: str | Path, wav_out: str | Path,
+                dich: float = DICH_LUFS,
+                tran_tp: float = TRAN_DINH_THAT_DBTP) -> dict:
+    """Nâng bản trộn về `dich` LUFS bằng **MỘT HỆ SỐ TĨNH**, chặn đỉnh thật.
+
+    **VÌ SAO KHÔNG DÙNG `loudnorm` ĐỂ ÁP (đã đo cả 3 cách, đây là số):**
+
+    | cách | I | TP | LRA (vào 2,10) | độ lệch chuẩn hệ số |
+    |---|---|---|---|---|
+    | `loudnorm` MỘT lượt (động) | −13,81 | −1,00 | **2,00** | **0,277 dB** |
+    | `loudnorm` HAI lượt `linear=true` | −14,11 | −0,99 | **1,90** | — |
+    | **nâng thuần + hạn đỉnh (đang dùng)** | **−14,00** | −0,94* | **2,10** | **0,017 dB** |
+
+    (*) trước khi trừ hao `BIEN_DINH_THAT_DB`; sau khi trừ ra **−1,14 dBTP**.
+
+    **`linear=true` KHÔNG Ở LẠI TUYẾN TÍNH — nó TỰ TỤT VỀ ĐỘNG mà rc vẫn 0.**
+    Trên chính file anh Hùng: cần nâng **+2,00 dB** nhưng chỗ trống tới trần
+    đỉnh chỉ **1,26 dB**, nên ffmpeg in *"Normalization Type: Dynamic"* rồi
+    làm động — LRA **2,10 -> 1,90**, tức **NÉN DẬP** đúng cái phải tránh. Chỉ
+    đọc `rc` thì không bao giờ biết. Đây là họ bẫy "ffmpeg trả mã 0 mà kết quả
+    sai" của cả repo này.
+
+    **HỆ SỐ TĨNH GIỮ NGUYÊN CÂN BẰNG GIỌNG-NHẠC THEO TOÁN HỌC, không phải theo
+    hy vọng:** nhân cả bản trộn với cùng một số thì hiệu (giọng − nhạc) ở MỌI
+    cửa sổ không đổi một ly. Đo lại để chắc: giọng trên nhạc **+5,99 -> +5,99
+    dB**, cửa sổ chìm **7,9% -> 7,9%**, y hệt từng chữ số.
+
+    Phần vượt trần do `alimiter` gọt — nó chỉ đụng vài đỉnh nhọn, khác hẳn bộ
+    nén động kéo lên dìm xuống suốt cả bài (0,017 so với 0,277 dB).
+    """
+    wav_in, wav_out = Path(wav_in), Path(wav_out)
+    truoc = do_do_to(wav_in)
+    can = dich - truoc["I"]
+    tran_lim = tran_tp - BIEN_DINH_THAT_DB
+
+    # `alimiter` BẮT BUỘC `level=0` (mặc định `level=true` TỰ NÂNG +3,1 dB —
+    # tức tự phá đúng cái trần vừa đặt) và `latency=1` (không có thì trễ
+    # 0,98 ms, đủ làm lệch hình-tiếng). Bẫy đã ghi ở đầu file.
+    _ffmpeg(["-i", str(wav_in), "-af",
+             f"volume={can:.3f}dB,alimiter=level_in=1:level_out=1:"
+             f"limit={10.0 ** (tran_lim / 20.0):.6f}:level=0:latency=1",
+             "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+             str(wav_out)], "chuẩn hoá độ to")
+    _kiem_wav(wav_out)
+    sau = do_do_to(wav_out)
+    kq = {"nang_db": round(can, 2), "tran_alimiter_db": round(tran_lim, 2),
+          "truoc": {k: round(v, 2) for k, v in truoc.items()},
+          "sau": {k: round(v, 2) for k, v in sau.items()},
+          "dat_dich": abs(sau["I"] - dich) <= 0.5,
+          "qua_tran_dinh": sau["TP"] > tran_tp,
+          "lra_doi": round(sau["LRA"] - truoc["LRA"], 2)}
+    return kq
+
+
 def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
                     tong: float, out_wav: str | Path,
                     muc_giong_db: float = 0.0, muc_nhac_db: float = 0.0,
                     tran_dinh_db: float = TRAN_DINH_DB,
                     tu_can_bang: bool = True, duck: bool = True,
+                    chuan_do_to_bat: bool = True,
                     on_progress: Optional[Callable[[float, str], None]] = None,
                     ) -> dict:
     """Trộn GIỌNG MỚI lên LỚP NHẠC gốc, hạn đỉnh chống méo, rồi ĐO cân bằng.
@@ -3066,6 +3210,13 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     `duck=True`: nhạc NÉ giọng bằng `sidechaincompress` — tụt ~`DUCK_DB` dB ở
     đúng chỗ đang nói, chỗ không nói giữ NGUYÊN. Đây là lý do không phải hạ
     nhạc cả bài để nghe rõ lời.
+
+    `chuan_do_to_bat=True` (mặc định): bước CUỐI nâng cả bản trộn về
+    `DICH_LUFS`. **Bước này chữa đúng câu anh Hùng kêu 16/08 (*"ít tiếng
+    quá"*)** — xem `chuan_do_to`. Nó dùng MỘT HỆ SỐ TĨNH nên KHÔNG đụng tới
+    cân bằng giọng-nhạc mà mấy trăm dòng ở trên vừa đo ra; đo lại sau khi nâng
+    vẫn đúng **+5,99 dB / 7,9%**, không lệch một chữ số.
+    Hỏng ở bước này thì GIỮ bản trộn chưa nâng (nhỏ tiếng còn hơn mất video).
 
     `alimiter` bắt buộc `level=0` (mặc định `level=true` TỰ NÂNG +3,1 dB) và
     `latency=1` (không có thì trễ 0,98 ms) — bẫy đã ghi ở đầu file.
@@ -3152,9 +3303,35 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
             f"Bản trộn dài {_d:.3f}s, phải là {tong:.3f}s "
             f"(lệch {_d - tong:+.3f}s) — KHÔNG ghép vào video")
 
+    # ---- CHUẨN HOÁ ĐỘ TO — bước CUỐI, sau khi độ dài đã chốt ----
+    # Đặt ở đây chứ không nhét vào chuỗi filter trên: muốn nâng bao nhiêu thì
+    # phải ĐO bản trộn đã xong, mà đo được thì nó phải tồn tại rồi. Giá: thêm
+    # 2 lượt ffmpeg CHỈ TRÊN AUDIO (~2 s cho video 107 s).
+    # `volume` + `alimiter` KHÔNG đổi độ dài, nhưng vẫn kiểm lại bên dưới —
+    # đây đúng chỗ `asplit` từng làm độ dài không tiền định mà rc vẫn 0.
+    do_to: dict = {}
+    if chuan_do_to_bat:
+        if on_progress:
+            on_progress(0.9, "Chuẩn hoá độ to...")
+        _tam_ch = out_wav.with_suffix(".chuan.wav")
+        try:
+            do_to = chuan_do_to(out_wav, _tam_ch)
+            _dc = probe_duration(_tam_ch)
+            if abs(_dc - tong) > 0.05:
+                raise RuntimeError(
+                    f"Bản chuẩn hoá dài {_dc:.3f}s, phải là {tong:.3f}s "
+                    f"(lệch {_dc - tong:+.3f}s)")
+            os.replace(_tam_ch, out_wav)
+        except Exception as e:  # noqa: BLE001
+            # Chuẩn hoá hỏng thì GIỮ BẢN TRỘN CŨ (vẫn nghe được, chỉ nhỏ tiếng)
+            # — KHÔNG để cả video chết vì bước làm-đẹp này.
+            do_to = {"loi": str(e)}
+            Path(_tam_ch).unlink(missing_ok=True)
+
     meo = do_meo(out_wav)
     kq = {
         "ra": str(out_wav),
+        "do_to": do_to,
         "rms_giong": round(do_rms(tam), 6),
         "rms_nhac": round(do_rms(nhac_wav), 6),
         "rms_tron": round(do_rms(out_wav), 6),

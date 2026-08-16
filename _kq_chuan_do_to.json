@@ -1,0 +1,58 @@
+{
+ "truoc": {
+  "I": -14.26,
+  "TP": -1.4,
+  "LRA": 2.1,
+  "eb": {
+   "I": -14.3,
+   "LRA": 2.1,
+   "TP": -1.4
+  },
+  "can_bang": {
+   "do_duoc": true,
+   "giong_tren_nhac_tb": 5.99,
+   "giong_tren_nhac_trung_vi": 5.82,
+   "giong_tren_nhac_min": -13.11,
+   "so_cua_so_chim": 35,
+   "ty_le_chim": 7.9,
+   "so_cua_so_noi": 441
+  }
+ },
+ "arm": [
+  {
+   "arm": "A",
+   "I": -13.81,
+   "TP": -1.0,
+   "LRA": 2.0,
+   "eb_I": -13.8,
+   "eb_TP": -1.0,
+   "giay": 1.79,
+   "hs_tb": 0.48,
+   "hs_dolech": 0.277,
+   "hs_min": -0.37,
+   "hs_max": 1.25
+  },
+  {
+   "arm": "B",
+   "I": -14.0,
+   "TP": -1.14,
+   "LRA": 2.1,
+   "eb_I": -14.0,
+   "eb_TP": -1.1,
+   "giay": 2.1,
+   "hs_tb": 0.26,
+   "hs_dolech": 0.0,
+   "hs_min": 0.26,
+   "hs_max": 0.26
+  }
+ ],
+ "can_bang_sau": {
+  "do_duoc": true,
+  "giong_tren_nhac_tb": 5.99,
+  "giong_tren_nhac_trung_vi": 5.82,
+  "giong_tren_nhac_min": -13.11,
+  "so_cua_so_chim": 35,
+  "ty_le_chim": 7.9,
+  "so_cua_so_noi": 441
+ }
+}
