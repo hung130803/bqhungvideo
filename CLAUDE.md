@@ -1265,6 +1265,19 @@
      TẮT giống **từng ký tự** bản mốc `v2.25.0` (nạp `git show
      v2.25.0:app/services.py` thành module riêng rồi GỌI THẬT), kèm chốt chống
      PASS OAN "mốc TRÙNG file đang test -> FAIL".
+     **MỐC ĐỐI CHỨNG CỦA CỔNG 56 LÀ `BQ_MOC_REF=v2.25.0` — ĐỪNG CHÉP NHẦM
+     THÀNH `v2.26.0` (đã chép nhầm suốt một phiên, 16/08/2026).** Lý do là số
+     học chứ không phải sở thích: **`che_chu` RA ĐỜI Ở v2.26.0** —
+     `git show v2.25.0:app/services.py | grep -c che_chu` -> **0** ·
+     `git show v2.26.0:app/services.py | grep -c che_chu` -> **15**. Mà CA23-3''
+     đòi *"bản mốc KHÔNG hề có tham số `che_chu`"* thì phép so "bật/tắt che chữ
+     vẫn ra cùng `dedup_key`" mới có nghĩa; lấy v2.26.0 làm mốc là **so tính
+     năng với CHÍNH NÓ** -> CA23-3'' đỏ, và nó đỏ ĐÚNG (cổng đang báo mốc không
+     hợp lệ, KHÔNG phải app hỏng). Quy tắc chung: **mốc đúng = bản phát hành
+     NGAY TRƯỚC tính năng đang test**. Và **KHÔNG BAO GIỜ dùng `main`** — sau
+     khi gộp thì `main` chính là bản đang test, cổng đối chứng tự PASS OAN vĩnh
+     viễn (bài học cổng 36/51/52). `_chay_hoi_quy.py` đã đặt sẵn mặc định này,
+     chạy cổng 56 bằng tay thì phải tự truyền.
      **THỬ PHÁ 10 phép (`_pha_che_chu.py`), cổng BẮT ĐƯỢC 10/10** — 7 phép của
      đường filter + 3 phép của đường truyền cờ: `studio_page` truyền hằng số
      `che_chu=False` (FAIL 1) · gỡ hẳn 3 tham số khỏi `studio_page` (FAIL 1) ·
