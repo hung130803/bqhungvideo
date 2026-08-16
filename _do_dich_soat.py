@@ -43,7 +43,12 @@ for _f in (sys.stdout, sys.stderr):
         pass
 
 CACHE = REPO / "_do_dich_cache.json"
-RA = REPO / "_do_dich_soat.json"
+#: Tên file kết quả đi theo BỘ ARM — chạy bộ arm khác KHÔNG được đè lên số đo
+#: của bộ trước (lượt đo SOÁT tốn 126s/lượt, mất là phải chạy lại).
+RA = REPO / ("_do_dich_soat.json" if os.environ.get("BQ_ARM", "") == ""
+             else "_do_dich_" + "_".join(
+                 {"MỐC": "moc", "SOÁT": "soat", "GIỜ": "gio"}.get(x.strip(), "x")
+                 for x in os.environ["BQ_ARM"].split(",") if x.strip()) + ".json")
 SO_LUOT = int(os.environ.get("BQ_LUOT", "3"))
 BO_TTS = os.environ.get("BQ_BO_TTS", "") == "1"
 
