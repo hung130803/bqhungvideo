@@ -4113,3 +4113,337 @@ def export_canvas_clip(
         # lượt xuất sau nhặt nốt. Trước đây nuốt PermissionError im lặng.
         _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))
     return True
+
+
+# ======================================================================
+# CHUẨN HOÁ ĐỘ TO CHO **FILE CLIP ĐÃ XUẤT** (mọi đường xuất)
+# ======================================================================
+#
+# Anh Hùng 16/08/2026: *"tool cắt sao phần giọng nói ít tiếng quá"*. Đường THAY
+# TIẾNG đã chữa (`thay_giong.chuan_do_to`). Đo tiếp đường CẮT ra một lỗ hổng
+# KHÁC, và nó nặng hơn (`_kq_lufs_duong.json`, ffmpeg thật trên 4 video thật):
+#
+#   * ĐỘ TO TRẢI **15,75 LU** giữa các clip (−6,65 .. −22,40) — đường cắt
+#     KHÔNG có một bước chuẩn hoá nào, clip to hay nhỏ hoàn toàn tuỳ đoạn phim
+#     cắt trúng. Clip −22,40 thấp hơn đích **8,4 LU**.
+#   * **ĐỈNH THẬT VƯỢT 0 dBTP ở 3/8 bản xuất** (+3,94 · +0,94 · +0,66) = VỠ
+#     TIẾNG thật. `alimiter` sau khi trộn CHỈ được thêm khi có tiếng động
+#     (`whoosh_on`), nên đường cắt trần không ai chặn đỉnh.
+#
+# Lệch so với nguồn KHÔNG một chiều (+3,47 / −7,23) -> **không "chép mức nguồn"
+# được, phải ĐO TỪNG CLIP**.
+#
+# ---------------------------------------------------------------------------
+# THƯỚC: `ebur128`, **KHÔNG** phải `loudnorm` — ĐÃ TRUY RA BẰNG THƯỚC THỨ BA
+# ---------------------------------------------------------------------------
+# Luật của repo: hai thước lệch quá 0,5 LU thì DỪNG. Lượt hiệu chuẩn DỪNG thật
+# (`cat_7963.mp4`: loudnorm −10,78 · ebur128 −10,20 = lệch 0,58 LU). Truy tiếp
+# bằng **thước THỨ BA tự viết** (ITU-R BS.1770-4 bằng numpy, KHÔNG qua ffmpeg —
+# xem `_do_hai_thuoc.py`):
+#
+#   thước 3 = −10,21 -> cách `ebur128` **0,008 LU** · cách `loudnorm` **0,572 LU**
+#
+# Cả 8 bản xuất đều lệch CÙNG CHIỀU ÂM (−0,12 .. −0,58 LU): **`loudnorm` pha đo
+# ĐỌC THẤP**. Cả hai thước vẫn TUYẾN TÍNH (nhân −6/−3/0/+3 dB thì cả hai dịch
+# đúng ±0,00-0,01 dB), nên đây KHÔNG phải phép đo hỏng — chỉ là hai bộ cổng
+# (gating) chia khối khác nhau. Nhưng YouTube/TikTok đo theo BS.1770, nên lấy
+# `loudnorm` làm đích là **đẩy clip TO HƠN đích thật tới 0,6 LU**.
+#
+# ---------------------------------------------------------------------------
+# CÁCH ÁP: NÂNG THUẦN + HẠN ĐỈNH — *KHÔNG* dùng `loudnorm` để áp
+# ---------------------------------------------------------------------------
+# `loudnorm linear=true` **TỰ TỤT VỀ CHẾ ĐỘ ĐỘNG mà rc vẫn 0** khi không đủ chỗ
+# trống tới trần đỉnh (đo trên đường thay tiếng: LRA 2,10 -> 1,90 = NÉN DẬP).
+# Hệ số TĨNH thì giữ nguyên mọi cân bằng theo TOÁN HỌC: nhân cả bản trộn với
+# cùng một số thì hiệu (giọng − nhạc − tiếng động) ở MỌI cửa sổ không đổi.
+
+#: Đích độ to tích hợp. −14 LUFS cho mobile có cơ sở (AES 10268, 4,2 triệu
+#: album); và mạng xã hội chỉ chuẩn hoá XUỐNG chứ KHÔNG nâng lên, nên clip
+#: −22 LUFS phát ra nhỏ hơn hẳn mọi clip khác trong cùng luồng.
+DICH_LUFS_CLIP = -14.0
+
+#: Trần ĐỈNH THẬT (dBTP) của clip đã chuẩn hoá.
+TRAN_DINH_THAT_CLIP = -1.0
+
+#: Biên trừ hao đặt cho `alimiter`. Với QUÁ MẪU (dưới) `alimiter` giữ đúng
+#: trần nên phần vọt còn lại chỉ là của **nén AAC (~+0,2 dB)**. Chọn 0,5 dB ->
+#: bản AAC cuối ra ~−1,3 dBTP, còn dư ~0,3 dB cho lượt re-encode của TikTok
+#: (AES TD1004: coder bit rate thấp vọt đỉnh nhiều hơn) — cùng cách tính đã
+#: dùng cho đường thay tiếng.
+BIEN_DINH_CLIP = 0.5
+
+#: **QUÁ MẪU 4× QUANH `alimiter` — BẮT BUỘC, và đây là chỗ đã suýt sập.**
+#:
+#: `alimiter` chặn đỉnh **MẪU**, không chặn đỉnh **THẬT** (giữa hai mẫu), nên
+#: nó không giữ nổi trần trên nguồn có cú va nhọn. Đo trên clip hệ số đỉnh
+#: 22,8 dB (nâng +3,10 dB, trần `alimiter` −2,0):
+#:
+#: | chuỗi | ffmpeg `bin/` (N-125998) | ffmpeg trên PATH (N-121186) |
+#: |---|---|---|
+#: | `alimiter` trần trụi | −1,4 dBTP | **−0,0 dBTP (VƯỢT trần −1,0)** |
+#: | **`aresample=192k` -> `alimiter` -> `aresample=48k`** | **−1,8** | **−1,8** |
+#:
+#: Hai điều rút ra:
+#:  (1) không quá mẫu thì **kết quả PHỤ THUỘC BẢN ffmpeg** — lệch tới 1,4 dB.
+#:      Bản `.exe` giao cho nhân viên dùng `bin/` (config trỏ thẳng), còn chạy
+#:      TỪ NGUỒN thì `settings.FFMPEG_PATH = "ffmpeg"` lấy bản trên PATH. Tức
+#:      **máy dev và máy thật chạy hai bản ffmpeg khác nhau** (bẫy "dev xanh,
+#:      máy thật đỏ" của cổng 58, lần này ở tầng binary).
+#:  (2) có quá mẫu thì hai bản ra **ĐÚNG MỘT SỐ**, và phần vọt còn lại đúng
+#:      bằng phần của AAC (0,2 dB).
+#: Giá: đo được **+0,05 giây/clip** (0,32 -> 0,37 s) — gần như cho không, vì
+#: chỉ luồng TIẾNG đi qua. I và LRA **không đổi một ly** (−19,0 / 7,0 cả hai).
+QUA_MAU_HAN_DINH = 192000
+
+#: SÀN: clip đo dưới mức này thì **BỎ QUA**. Clip gần câm (video không tiếng,
+#: đoạn phim im) đo ra −60..−70 LUFS; nâng về −14 là +46..+56 dB, và thứ được
+#: nâng lúc đó là NỀN NHIỄU chứ không phải nội dung.
+SAN_LUFS_CLIP = -45.0
+
+#: Trần chỉnh độ to MỘT LƯỢT (dB, cả hai chiều) — chặn một lượt đo lỗi không
+#: đẻ ra clip vỡ tiếng.
+TRAN_CHINH_DO_TO_CLIP = 24.0
+
+#: **CLIP ĐÃ ĐÚNG ĐỘ TO RỒI THÌ ĐỪNG ĐỤNG.** Lệch dưới mức này (và đỉnh đã
+#: dưới trần) -> KHÔNG mã hoá lại audio: tránh một đời nén AAC thừa + tiết
+#: kiệm ~1 giây/clip trên 200-300 kênh. 0,5 LU nằm dưới ngưỡng tai nghe ra
+#: (~1 LU).
+NGUONG_BO_QUA_LU = 0.5
+
+#: NGÂN SÁCH GỌT (dB) — phần `alimiter` được phép cắt khỏi đỉnh.
+#:
+#: Đây là chỗ **BẤT KHẢ THI** phải nói thẳng: clip đo I −21,90 LUFS mà đỉnh
+#: thật +0,90 dBTP có hệ số đỉnh **22,8 dB**; muốn vừa −14 LUFS vừa ≤ −1 dBTP
+#: thì hệ số đỉnh phải còn 13 dB — tức PHẢI nén 10 dB. Không có cách nào vừa
+#: đủ to vừa không đụng dải động. Quét ngân sách trên chính clip đó
+#: (`_do_got_lra.py`, thước `ebur128`):
+#:
+#: | ngân sách gọt | 0 | 2 | 4 | **6** | 8 | 10,3 (đủ đích) |
+#: |---|---|---|---|---|---|---|
+#: | ΔLRA | +0,10 | 0,00 | +0,10 | **0,00** | −0,20 | **−0,80** |
+#: | đỉnh thật sau | −1,50 | −0,90 | −1,10 | **−1,20** | −1,00 | **−0,50 (VƯỢT)** |
+#:
+#: Gọt hết cỡ vừa NÉN DẬP (ΔLRA −0,80) vừa **phá luôn trần đỉnh** (−0,50).
+#: Chốt 6,0 dB: ΔLRA 0,00 và còn cách mốc hỏng (8 dB) một khoảng, đúng cách
+#: đặt trần của cổng 56 CA17 (đừng siết sát số đo).
+NGAN_SACH_GOT_DB = 6.0
+
+#: LRA được phép TỤT bao nhiêu thì vẫn coi là "không nén dập".
+#:
+#: Ngân sách gọt MỘT MÌNH KHÔNG ĐỦ — đo ra hai clip cùng bị gọt mà phản ứng
+#: ngược nhau: gọt 6,00 dB -> ΔLRA **0,00** (đỉnh là một cú va lẻ, ngắn hơn
+#: khối 3 giây nên không đụng LRA) · gọt 4,70 dB -> ΔLRA **−0,60** (đoạn to
+#: KÉO DÀI, gọt là đổi hẳn độ to khối). Vì vậy phải ĐO LẠI SAU KHI ÁP rồi mới
+#: kết luận, và có đường LÙI ở dưới.
+LRA_TUT_TOI_DA = 0.2
+
+#: Lệch độ dài tối đa cho phép giữa file vào và file ra (giây). `-c:v copy`
+#: nên độ dài phải giữ nguyên; lệch là dấu hiệu ffmpeg cắt cụt.
+LECH_DO_DAI_CLIP = 0.05
+
+
+def _lop_huy():
+    """Lớp `CanceledError` (nạp MUỘN — `worker` import ngược lại module này)."""
+    try:
+        from app.queue.worker import CanceledError
+        return (CanceledError,)
+    except Exception:           # noqa: BLE001
+        return ()
+
+
+def do_do_to_clip(path: str | Path, han: int = 900) -> dict:
+    """ĐỘ TO TÍCH HỢP + ĐỈNH THẬT + DẢI ĐỘNG của một file, bằng `ebur128`.
+
+    Trả `{"I": LUFS, "TP": dBTP, "LRA": LU}`.
+
+    `-vn` để KHÔNG giải mã hình (chỉ cần tiếng) — đây là chỗ tiết kiệm chính:
+    file 1080x1920 mà giải mã cả hình thì phép ĐO đắt hơn cả phép ÁP.
+
+    ffmpeg lỗi / không in được Summary thì **NÉM**, tuyệt đối không trả `None`
+    hay số mặc định: đó đúng là bẫy `astats` cổng 53 và `startswith` cổng 44 —
+    *phép đo hỏng nguy hiểm hơn không đo, vì nó phát chứng nhận*.
+    """
+    import re as _re
+
+    p = Path(path)
+    cmd = [settings.FFMPEG_PATH, "-hide_banner", "-nostdin", "-i", str(p),
+           "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"]
+    r = subprocess.run(cmd, capture_output=True, timeout=han,
+                       stdin=subprocess.DEVNULL,
+                       creationflags=_CREATE_NO_WINDOW)
+    err = (r.stderr or b"").decode("utf-8", "replace")
+    if r.returncode != 0:
+        raise RuntimeError(f"ffmpeg lỗi khi đo độ to {p.name} "
+                           f"(mã thoát {r.returncode}): {err[-400:]}")
+    if "Summary:" not in err:
+        raise RuntimeError(f"ebur128 KHÔNG in Summary cho {p.name} "
+                           f"(file không có tiếng?): {err[-400:]}")
+    duoi = err[err.rfind("Summary:"):]
+
+    def _lay(nhan: str) -> float:
+        m = _re.search(nhan + r":\s*\n?\s*(-?\d+\.?\d*)", duoi)
+        if not m:
+            raise RuntimeError(f"ebur128 thiếu '{nhan}' cho {p.name}")
+        return float(m.group(1))
+
+    return {"I": _lay("I"), "LRA": _lay("LRA"), "TP": _lay("Peak")}
+
+
+def _chuoi_do_to(nang_db: float, tran_lim_db: float) -> str:
+    """Chuỗi filter TIẾNG: nâng thuần -> **quá mẫu** -> hạn đỉnh -> về 48k.
+
+    Quá mẫu là phần bắt buộc, xem `QUA_MAU_HAN_DINH`. Tỉ lệ 4× nguyên nên
+    vòng 48k -> 192k -> 48k không đổi số mẫu (đã kiểm độ dài + I + LRA).
+    """
+    return (f"volume={nang_db:.3f}dB,"
+            f"aresample={QUA_MAU_HAN_DINH},"
+            + _han_dinh(tran_lim_db, nha=10)
+            + ",aresample=48000")
+
+
+def _ap_do_to(src: Path, dst: Path, nang_db: float, tran_lim_db: float) -> None:
+    """NÂNG THUẦN + HẠN ĐỈNH trên FILE VIDEO, giữ nguyên hình (`-c:v copy`).
+
+    Chỉ luồng TIẾNG được mã hoá lại (~1 giây/clip); luồng hình chép nguyên
+    byte nên KHÔNG có đời nén hình nào thêm. Đi qua `_run` = qua CỬA CHỜ
+    ffmpeg (và nút Huỷ giết được tiến trình này).
+    """
+    cmd = [settings.FFMPEG_PATH, "-y", "-hide_banner", "-nostdin",
+           "-i", str(src), "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+           "-af", _chuoi_do_to(nang_db, tran_lim_db),
+           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)]
+    rc = _run(cmd)
+    if rc != 0:
+        raise RuntimeError(f"ffmpeg mã {rc} khi chuẩn hoá độ to {src.name}")
+    # ffmpeg TRẢ MÃ 0 MÀ FILE 0 KiB là chuyện ĐÃ XẢY RA THẬT trên repo này.
+    co = dst.stat().st_size if dst.exists() else 0
+    if co < 1024:
+        raise RuntimeError(f"chuẩn hoá độ to: ffmpeg mã 0 mà file ra rỗng "
+                           f"({co} byte)")
+
+
+def chuan_do_to_clip(path: str | Path,
+                     dich: float = DICH_LUFS_CLIP,
+                     tran_tp: float = TRAN_DINH_THAT_CLIP) -> dict:
+    """Đưa clip ĐÃ XUẤT về `dich` LUFS, đỉnh thật <= `tran_tp` dBTP.
+
+    Ghi ĐÈ chính file đó (qua file tạm + `os.replace`, nên hỏng giữa chừng thì
+    bản cũ còn nguyên). Trả một `dict` NHẬT KÝ — mọi đường ra đều có
+    `bo_qua`/`ly_do` để nơi gọi ghi lại được, KHÔNG bao giờ im lặng.
+
+    **BẬC THANG HỆ SỐ, TO NHẤT TRƯỚC — ÁP RỒI ĐO, ĐẠT THÌ LẤY.** Không tính
+    trước rồi tin, vì đã đo được hai clip cùng bị gọt mà LRA phản ứng ngược
+    nhau (gọt 6,00 dB -> ΔLRA 0,00 · gọt 4,70 dB -> ΔLRA −0,60):
+
+      1. đủ đích (`−14 LUFS`)
+      2. gọt đúng `NGAN_SACH_GOT_DB`
+      3. gọt NỬA ngân sách
+      4. **KHÔNG gọt một dB nào** (`nâng = trần_alimiter − đỉnh`)
+
+    Bậc 4 đạt **THEO CẤU TẠO**: không chạm đỉnh nào thì `alimiter` không có gì
+    để làm -> LRA không thể đổi, đỉnh ra đúng trần. Nên vòng lặp LUÔN dừng.
+    Bậc nào cũng bị kẹp `<= đích` — chuẩn hoá KHÔNG BAO GIỜ đẩy clip vượt −14.
+
+    Ca thường (6/8 clip đo được) đạt ngay bậc 1 = **một lượt ffmpeg**.
+
+    Hỏng ở bất kỳ đâu -> **GIỮ NGUYÊN file cũ** + `bo_qua=True`. Thà giao clip
+    chưa chuẩn hoá còn hơn mất clip. HUỶ thì NỔI LÊN (huỷ là huỷ).
+    """
+    p = Path(path)
+    tran_lim = tran_tp - BIEN_DINH_CLIP
+    kq: dict = {"file": p.name, "bo_qua": True, "ly_do": "", "nang_db": 0.0,
+                "buoc": 0, "dat_dich": False, "qua_tran_dinh": False}
+
+    truoc = do_do_to_clip(p)
+    dai_truoc = probe(p).duration
+    kq["truoc"] = {k: round(v, 2) for k, v in truoc.items()}
+
+    # CHẶN NÂNG ĐIÊN: clip gần câm -> thứ được nâng là NỀN NHIỄU chứ không
+    # phải nội dung. Thà giao clip nhỏ tiếng còn hơn giao clip rít.
+    if truoc["I"] < SAN_LUFS_CLIP:
+        kq["ly_do"] = (f"clip chỉ {truoc['I']:.2f} LUFS, dưới sàn "
+                       f"{SAN_LUFS_CLIP:.0f} — nâng lên là nâng nền nhiễu")
+        kq["sau"] = kq["truoc"]
+        return kq
+
+    can = max(-TRAN_CHINH_DO_TO_CLIP,
+              min(TRAN_CHINH_DO_TO_CLIP, dich - truoc["I"]))
+
+    # ĐÃ ĐÚNG ĐỘ TO RỒI THÌ ĐỪNG ĐỤNG (và đỉnh cũng đã dưới trần).
+    if abs(can) <= NGUONG_BO_QUA_LU and truoc["TP"] <= tran_tp:
+        kq["ly_do"] = (f"đã đúng độ to sẵn ({truoc['I']:.2f} LUFS, lệch đích "
+                       f"{can:+.2f} LU) và đỉnh {truoc['TP']:.2f} dBTP dưới "
+                       f"trần — không mã hoá lại")
+        kq["sau"] = kq["truoc"]
+        kq["dat_dich"] = True
+        return kq
+
+    # BẬC THANG hệ số, TO NHẤT trước; mọi bậc kẹp `<= can` (không vượt đích).
+    bac: list[float] = []
+    for x in (can,
+              (tran_lim + NGAN_SACH_GOT_DB) - truoc["TP"],
+              (tran_lim + NGAN_SACH_GOT_DB / 2.0) - truoc["TP"],
+              tran_lim - truoc["TP"]):
+        x = min(can, x)
+        if not bac or x < bac[-1] - 1e-6:
+            bac.append(x)
+    kq["bac_thang"] = [round(x, 2) for x in bac]
+    kq["da_thu"] = []
+
+    tam = p.with_name(f"_dt_{os.getpid()}_{p.name}")
+    try:
+        for buoc, nang in enumerate(bac, start=1):
+            _ap_do_to(p, tam, nang, tran_lim)
+
+            sau = do_do_to_clip(tam)
+            dai_sau = probe(tam).duration
+            lech_dai = abs(dai_sau - dai_truoc)
+            if lech_dai > LECH_DO_DAI_CLIP:
+                raise RuntimeError(
+                    f"độ dài đổi {lech_dai:.3f}s ({dai_truoc:.3f} -> "
+                    f"{dai_sau:.3f}) — KHÔNG nhận")
+            tut = truoc["LRA"] - sau["LRA"]
+            qua = sau["TP"] > tran_tp + 1e-9
+            # BIÊN 1e-6 KHÔNG PHẢI CHO ĐẸP — ĐÃ CẮN THẬT: `ebur128` in LRA một
+            # chữ số thập phân, `10.9 - 10.7` trong dấu phẩy động ra
+            # **0,20000000000000107** > 0,2 -> bậc ĐANG ĐẠT bị loại, clip tụt
+            # từ −15,4 xuống −18,3 = **mất 2,9 LU vì một hạt bụi số học**.
+            if (qua or tut > LRA_TUT_TOI_DA + 1e-6) and buoc < len(bac):
+                kq["da_thu"].append(
+                    {"nang_db": round(nang, 2),
+                     "sau": {k: round(v, 2) for k, v in sau.items()},
+                     "lra_tut": round(tut, 2), "qua_tran_dinh": bool(qua)})
+                continue        # -> BẬC THẤP HƠN
+            kq.update({
+                "bo_qua": False, "buoc": buoc, "nang_db": round(nang, 2),
+                "tran_alimiter_db": round(tran_lim, 2),
+                "sau": {k: round(v, 2) for k, v in sau.items()},
+                "lra_tut": round(tut, 2),
+                "dat_dich": abs(sau["I"] - dich) <= NGUONG_BO_QUA_LU + 1e-6,
+                "qua_tran_dinh": bool(qua),
+                "lech_do_dai": round(lech_dai, 3),
+                "ly_do": ("" if buoc == 1 else
+                          f"bậc {buoc}/{len(bac)}: {buoc - 1} hệ số to hơn bị "
+                          f"loại vì tụt dải động / vượt trần đỉnh"),
+            })
+            if not kq["dat_dich"]:
+                kq["thieu_lu"] = round(dich - sau["I"], 2)
+                kq["ly_do"] = (
+                    (kq["ly_do"] + " · " if kq["ly_do"] else "")
+                    + f"CHƯA tới đích: còn thiếu {kq['thieu_lu']:.2f} LU — "
+                      f"clip có hệ số đỉnh {truoc['TP'] - truoc['I']:.1f} dB, "
+                      f"muốn đủ to phải nén dải động")
+            os.replace(tam, p)
+            return kq
+        # Không tới đây được: bậc cuối luôn được NHẬN (điều kiện lùi có
+        # `buoc < len(bac)`). Giữ nhánh cho chắc, KHÔNG im lặng.
+        kq["ly_do"] = "không bậc nào nhận được — giữ nguyên bản cũ"
+        return kq
+    except Exception as e:      # noqa: BLE001 — HỎNG thì GIỮ bản cũ
+        if _lop_huy() and isinstance(e, _lop_huy()):
+            raise               # HUỶ LÀ HUỶ, không nuốt
+        kq["ly_do"] = f"lỗi khi chuẩn hoá độ to -> giữ nguyên bản cũ ({e})"
+        kq["sau"] = kq["truoc"]
+        return kq
+    finally:
+        _cleanup_paths([tam])
