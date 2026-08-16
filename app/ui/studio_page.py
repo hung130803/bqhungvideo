@@ -65,6 +65,28 @@ PRO_NAME = "Pro (giật tít + phụ đề vàng)"
 _OLD_PRO_NAME = "⭐ Pro (giật tít + phụ đề vàng)"   # tên cũ có emoji tofu -> dọn
 
 
+def _vua_chu(btn, *nhan):
+    """ĐẶT BỀ RỘNG NÚT THEO FONT THẬT LÚC CHẠY, không đặt số cứng.
+
+    LỖI THẬT (ảnh anh Hùng gửi 06/08/2026): nút "Hay"/"Nhạt" hiện ra
+    "Hav"/"Nha" — tôi đặt cứng 52px, mà ĐO với QSS thật thì "Hay" cần 69px và
+    "Nhạt" cần 82px; máy anh Hùng font còn to hơn máy dev nên các nút cũ
+    (Caption đặt 78px trong khi cần 121px) cũng đã sát mép. Số cứng KHÔNG BAO
+    GIỜ đúng cho mọi máy/mọi DPI -> phải đo fontMetrics + cộng padding của
+    QSS. Truyền THÊM các nhãn khác mà nút này có thể mang (vd
+    "Xuất"/"Xuất lại") để đổi chữ không cụt.
+
+    ĐỂ Ở MỨC MODULE (trước ở trong `_clip_row`): hàng "Nguồn video" cũng cần
+    nó, mà nó nằm kín trong một hàm khác nên hàng đó đặt cứng 52px rồi CỤT
+    CHỮ y hệt lỗi cũ — hai chỗ dùng chung một bản mới hết tái phát.
+    """
+    btn.ensurePolished()
+    fm = btn.fontMetrics()
+    rong = max(fm.horizontalAdvance(str(t)) for t in nhan) + 30
+    btn.setFixedWidth(max(56, rong))
+    return btn
+
+
 def _dur(s):
     s = int(s or 0)
     return f"{s // 60}:{s % 60:02d}"
@@ -211,8 +233,11 @@ class StudioPage(QWidget):
         self.grp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grp.customContextMenuRequested.connect(self._grp_menu)
         srcrow.addWidget(self.grp)
-        gman = QPushButton("⚙"); gman.setProperty("ghost", True)
-        gman.setFixedWidth(38)
+        # CŨNG LÀ EMOJI TRẦN (U+2699) + bề rộng cứng — cùng một họ lỗi với
+        # `Copy`/`✏`/`📊` ngay cạnh, nên sửa luôn một thể chứ không để lại
+        # đúng con bọ vừa đi bắt.
+        gman = _vua_chu(QPushButton("Sửa nhóm"), "Sửa nhóm")
+        gman.setProperty("ghost", True)
         gman.setToolTip("Quản lý nhóm & kênh: thêm/sửa/xoá nhóm, chuyển nhiều "
                         "kênh sang nhóm khác cùng lúc.")
         gman.clicked.connect(self._manage_groups)
@@ -236,23 +261,26 @@ class StudioPage(QWidget):
         # ("xấu quá tự nhiên có cái ô đen" — v2.6.22). Nút trong popup đã sửa
         # hồi đó, nhưng nút NÀY ở thanh trên cùng bị bỏ sót tới 06/08/2026
         # (cổng 27 quét mọi nhãn nút mới lôi ra).
-        cpy = QPushButton("Copy"); cpy.setProperty("ghost", True)
-        cpy.setFixedWidth(52)
-        cpy.setToolTip("Copy TÊN kênh đang chọn ra clipboard (để dán tìm "
+        # BỀ RỘNG ĐO THEO FONT (`_vua_chu`), KHÔNG đặt cứng: nút này từng để
+        # cứng 52px cho chữ "Copy" và anh Hùng thấy nó CỤT — đúng lỗi cổng 31
+        # đã chữa cho thẻ clip nhưng hàng này bị bỏ sót.
+        cpy = _vua_chu(QPushButton("Chép tên"), "Chép tên")
+        cpy.setProperty("ghost", True)
+        cpy.setToolTip("Chép TÊN kênh đang chọn ra clipboard (để dán tìm "
                        "video ngoài) — KHÔNG mở dropdown, không đổi lựa chọn.")
         cpy.clicked.connect(lambda: self._copy_channel_name())
         srcrow.addWidget(cpy)
         np = QPushButton("+ Kênh"); np.setProperty("ghost", True)
         np.clicked.connect(self._new_proj); srcrow.addWidget(np)
-        ren = QPushButton("✏"); ren.setProperty("ghost", True)
-        ren.setFixedWidth(38)
+        ren = _vua_chu(QPushButton("Sửa tên"), "Sửa tên")
+        ren.setProperty("ghost", True)
         ren.setToolTip("Sửa tên kênh đang chọn (tạo sai tên sửa lại được).\n"
                        "Lưu ý: clip xuất MỚI sẽ vào thư mục theo tên mới.")
         # lambda: clicked truyền checked=False -> đừng để lọt vào tham số pid
         ren.clicked.connect(lambda: self._rename_proj())
         srcrow.addWidget(ren)
-        dash = QPushButton("📊"); dash.setProperty("ghost", True)
-        dash.setFixedWidth(38)
+        dash = _vua_chu(QPushButton("Tình hình"), "Tình hình")
+        dash.setProperty("ghost", True)
         dash.setToolTip("Tình hình các kênh: đang chạy / đợi / lỗi 24h / "
                         "xong gần nhất / số clip đã xuất.")
         dash.clicked.connect(self._channel_dashboard); srcrow.addWidget(dash)
@@ -7926,22 +7954,6 @@ class StudioPage(QWidget):
                          "border-radius:19px; font-size:13px; font-weight:700;")
         sc.setToolTip("Điểm tiềm năng viral (0–100) — AI chấm theo nội dung + hình ảnh")
         lay.addWidget(sc)
-
-        def _vua_chu(btn, *nhan):
-            """ĐẶT BỀ RỘNG NÚT THEO FONT THẬT LÚC CHẠY, không đặt số cứng.
-
-            LỖI THẬT (ảnh anh Hùng gửi 06/08/2026): nút "Hay"/"Nhạt" hiện ra
-            "Hav"/"Nha" — tôi đặt cứng 52px, mà ĐO với QSS thật thì "Hay" cần
-            69px và "Nhạt" cần 82px; máy anh Hùng font còn to hơn máy dev nên
-            các nút cũ (Caption đặt 78px trong khi cần 121px) cũng đã sát mép.
-            Số cứng KHÔNG BAO GIỜ đúng cho mọi máy/mọi DPI -> phải đo
-            fontMetrics + cộng padding của QSS. Truyền THÊM các nhãn khác mà
-            nút này có thể mang (vd "Xuất"/"Xuất lại") để đổi chữ không cụt."""
-            btn.ensurePolished()
-            fm = btn.fontMetrics()
-            rong = max(fm.horizontalAdvance(str(t)) for t in nhan) + 30
-            btn.setFixedWidth(max(56, rong))
-            return btn
 
         pv = _vua_chu(QPushButton("Xem & sửa"), "Xem & sửa")
         pv.setProperty("ghost", True)

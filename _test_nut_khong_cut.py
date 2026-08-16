@@ -171,6 +171,76 @@ _tot.setFixedWidth(max(56, _tot.fontMetrics().horizontalAdvance("Nhạt") + 30))
 ok(_tot.width() >= _can + 8,
    "5c cách MỚI (đo font + padding) thì đủ rộng", f"{_tot.width()}px")
 
+print("\n=== 6. HÀNG 'Nguồn video' — nơi cổng này TỪNG KHÔNG NGÓ TỚI ===")
+# VÌ SAO THÊM: mục 1-5 chỉ quét thẻ clip (`_clip_row`). Hàng "Nguồn video" ở
+# thanh trên cùng vì thế giữ nguyên lỗi tới 16/08/2026: nút `Copy` đặt cứng
+# 52px (CỤT trên máy anh Hùng) và 3 nút EMOJI TRẦN `⚙`/`✏`/`📊` — đúng họ
+# lỗi v2.6.22 "xấu quá tự nhiên có cái ô đen" trên máy thiếu phông màu.
+_i0 = _src.find("srcrow = QHBoxLayout()")
+_i1 = _src.find('plw.addWidget(self._sec_hdr("Nguồn video"', _i0)
+ok(_i0 > 0 and _i1 > _i0, "6a khoanh được vùng hàng Nguồn video",
+   f"{_i1 - _i0} ký tự")
+_hang = _src[_i0:_i1]
+
+import re  # noqa: E402
+
+
+def _soi(than: str):
+    """(nhãn emoji, dòng đặt bề rộng cứng) — DÙNG CHUNG cho vùng thật và cho
+    đối chứng âm, để mục 6d chứng minh được bộ dò này có răng.
+
+    BẢN ĐẦU CỦA HÀM NÀY ĐÃ BỊ 6d BẮT LÀ MÙ: nó đòi `QPushButton` và
+    `setFixedWidth(` nằm CÙNG MỘT DÒNG, mà mã cũ lại viết đúng kiểu tách dòng
+
+        ren = QPushButton("✏"); ren.setProperty("ghost", True)
+        ren.setFixedWidth(38)                       <-- lọt
+
+    tức bộ dò sẽ xanh oan trên chính con bọ nó đi bắt. Nay: nhớ TÊN BIẾN đã
+    gán `QPushButton(...)` rồi soi mọi dòng `<biến>.setFixedWidth(`.
+    """
+    emo = [f"{m.group(1)!r} chứa U+{ord(ch):04X}"
+           for m in re.finditer(r'QPushButton\("([^"]*)"\)', than)
+           for ch in m.group(1) if ord(ch) > 0x2000 and ch not in "–—…"]
+    bien = set(re.findall(r'(\w+)\s*=\s*(?:_vua_chu\()?\s*QPushButton\(', than))
+    cung = []
+    for ln in than.splitlines():
+        s = ln.strip()
+        for v in bien:
+            if f"{v}.setFixedWidth(" in s:
+                cung.append(s[:60])
+                break
+    return emo, cung
+
+
+_emo, _cung = _soi(_hang)
+ok(not _emo, "6b KHÔNG nút nào trong hàng Nguồn video là EMOJI TRẦN",
+   str(_emo) if _emo else "toàn nhãn chữ tiếng Việt")
+ok(not _cung, "6c KHÔNG nút nào trong hàng đó đặt bề rộng CỨNG",
+   str(_cung) if _cung else "đều đi qua _vua_chu")
+
+# ĐỐI CHỨNG ÂM — dựng lại ĐÚNG mã cũ rồi đòi bộ dò phải BÁO. Không có mục này
+# thì `_soi` cứ trả rỗng là 6b/6c xanh vĩnh viễn (bẫy "cổng đạt oan").
+_gia = ('ren = QPushButton("✏"); ren.setProperty("ghost", True)\n'
+        'ren.setFixedWidth(38)\n')
+_e2, _c2 = _soi(_gia)
+ok(bool(_e2) and bool(_c2),
+   "6d ĐỐI CHỨNG: bộ dò BẮT được đúng mã cũ (emoji + px cứng)",
+   f"emoji={_e2} · cứng={len(_c2)} dòng")
+
+# và các nhãn MỚI phải đủ rộng với `_vua_chu` thật của studio_page
+from app.ui.studio_page import _vua_chu as _vc  # noqa: E402
+_nhan = re.findall(r'_vua_chu\(QPushButton\("([^"]+)"\)', _hang)
+ok(len(_nhan) >= 4, "6e các nút hàng Nguồn video đều qua _vua_chu",
+   f"{_nhan}")
+_cut6 = []
+for _t in _nhan:
+    _b = QPushButton(_t)
+    _b.setProperty("ghost", True)
+    _vc(_b, _t)
+    if _b.width() < _b.fontMetrics().horizontalAdvance(_t) + 8:
+        _cut6.append(f"{_t!r} {_b.width()}px")
+ok(not _cut6, "6f nhãn mới không nhãn nào cụt", str(_cut6) or f"{_nhan}")
+
 print(f"\n{'=' * 62}\nĐẠT {OK} · SAI {len(LOI)}")
 if LOI:
     for x in LOI:
