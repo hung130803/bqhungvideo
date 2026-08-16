@@ -1617,6 +1617,120 @@
      OAN**); nay đọc bằng **AST**, đòi hàm THẬT SỰ GỌI. (2) CA5f vá đè lên
      chính `_tra_file` nên phép phá "đoán bừa" không chạm tới được; nay thêm
      5g/5h kiểm chính hàm đó ở mức đơn vị.
+  65. `_test_do_to_nghe_thu.py` → **ĐỘ TO BẢN TRỘN + NÚT NGHE THỬ**
+     (16/08/2026). Anh Hùng: *"tool cắt sao phần giọng nói ít tiếng quá nghe
+     không hay, với không có phần nghe thử à, thêm tiếng cho tôi đi"*.
+     **ĐẠT 47 · HỎNG 0.** Thử phá `_pha_do_to.py`: **BẮT 8 · LỌT 0 · KHÔNG
+     PHÁ ĐƯỢC 0**.
+     **GỐC RỄ: đường thay tiếng CHƯA TỪNG chuẩn hoá độ to** —
+     `grep -c loudnorm app/core/thay_giong.py` = **0**. Chỉ có `alimiter` chặn
+     ĐỈNH, mà chặn đỉnh KHÔNG nói gì về ĐỘ TO nghe được. Hai thước độc lập
+     (`loudnorm` pha đo + `ebur128`, lệch > 0,5 LU thì DỪNG):
+
+     | | I (LUFS) | TP (dBTP) | LRA |
+     |---|---|---|---|
+     | GỐC Douyin anh Hùng gửi | **−5,07** | +6,16 | 3,30 |
+     | bản anh Hùng xuất 16/08 | **−16,00** | −2,26 | 2,10 |
+     | trộn cách CŨ (giọng 0 / nhạc −2) | −12,76 | −0,57 | 2,60 |
+     | trộn cách MỚI (bản chữa 15/08) | −14,26 | −1,40 | 2,10 |
+     | **ĐÍCH** | **−14,00** | **−1,00** | |
+
+     **CÓ HỒI QUY, NHƯNG NÓ KHÔNG PHẢI THỦ PHẠM CHÍNH — nói cả hai vế:** lượt
+     chữa "giọng chìm dưới nhạc" làm bản trộn **−12,76 -> −14,26 = nhỏ đi 1,50
+     LU**; nhưng gỡ nguyên phần đó ra vẫn còn thiếu ~3 LU nữa so với đích, và
+     bản anh Hùng nghe thật đo **−16,00**, tức **thấp hơn GỐC 10,9 LU**. Bệnh
+     CÓ TRƯỚC lượt chữa; lượt chữa chỉ cộng thêm.
+     Vì sao đó đúng là *"ít tiếng"*: **YouTube/TikTok chỉ chuẩn hoá XUỐNG,
+     KHÔNG nâng lên** (YouTube Stats-for-Nerds: `content loudness` âm = KHÔNG
+     áp gain). Clip −16 phát ra nhỏ hơn hẳn mọi clip khác trong cùng luồng,
+     vì chúng đều bị kéo về ~−14. −14 LUFS cho **mobile** có cơ sở: AES 10268
+     (Grimm) đo trên 4,2 triệu album, 80%/38 người nghe chọn mức căn −14.
+     **CÁCH ÁP: NÂNG THUẦN + HẠN ĐỈNH — *KHÔNG* dùng `loudnorm` để áp.** Đo cả
+     3 cách trên cùng file (vào I −16,00 · LRA 2,10):
+
+     | cách | I | TP | LRA | độ lệch chuẩn hệ số |
+     |---|---|---|---|---|
+     | `loudnorm` MỘT lượt (động) | −13,81 | −1,00 | 2,00 | **0,277 dB** |
+     | `loudnorm` HAI lượt `linear=true` | −14,11 | −0,99 | **1,90** | — |
+     | **nâng thuần + hạn đỉnh** | **−14,01** | −1,44 | **2,10** | **0,017 dB** |
+
+     **`linear=true` KHÔNG Ở LẠI TUYẾN TÍNH.** `init()` của `af_loudnorm.c`
+     chỉ vào LINEAR_MODE khi **cả ba** điều đúng: đủ 4 `measured_*` (khác giá
+     trị mặc định — lưu ý `measured_LRA=0` là số ĐO HỢP LỆ với nguồn đều mà
+     vẫn bị coi là "chưa đo") · `measured_LRA <= LRA` đích · **`measured_TP +
+     (I − measured_I) <= TP` đích**. Ở đây cần nâng +2,00 dB mà chỗ trống tới
+     trần đỉnh chỉ **1,26 dB** -> điều 3 sai -> ffmpeg in *"Normalization
+     Type: Dynamic"* rồi làm ĐỘNG: LRA **2,10 -> 1,90** = **NÉN DẬP**, đúng
+     cái phải tránh. **rc vẫn 0, không một dòng cảnh báo.** Ai dùng `loudnorm`
+     hai lượt thì **phải assert `"normalization_type": "linear"` trong JSON
+     lượt 2** — không thì đây là họ bẫy "ffmpeg trả mã 0 mà kết quả sai".
+     **HỆ SỐ TĨNH GIỮ CÂN BẰNG THEO TOÁN HỌC:** nhân cả bản trộn với cùng một
+     số thì hiệu (giọng − nhạc) ở MỌI cửa sổ không đổi. Đo lại để chắc: giọng
+     trên nhạc **+5,99 -> +5,99 dB**, cửa sổ chìm **7,9% -> 7,9%**, y hệt từng
+     chữ số. LRA đổi **0,00**.
+     **TRẦN ĐỈNH PHẢI TRỪ HAI LẦN — chỗ này trước đây không ai tính:**
+
+     | trần `alimiter` | đỉnh thật WAV | sau nén **AAC 192k** |
+     |---|---|---|
+     | −1,0 | −0,94 (vượt) | **−0,95 (VẪN VƯỢT)** |
+     | **−1,5** | **−1,44** | **−1,27** |
+
+     `alimiter` chặn đỉnh MẪU nên đỉnh THẬT vọt **+0,06 dB**, rồi **AAC vọt
+     tiếp tới +0,19 dB**. Đó là lý do bản e2e v2.30.0 ra **+0,04 dBTP** dù lớp
+     wav của nó mới −0,57. Biên **0,5 dB** -> AAC cuối −1,27 dBTP, còn dư 0,27
+     cho lượt re-encode của TikTok (AES TD1004: coder bit rate thấp vọt nhiều
+     hơn). Giá: **0,01 LU**.
+     **SÀN CHỐNG NÂNG ĐIÊN** `SAN_LUFS_CHUAN_HOA = -45`: bản trộn gần câm đo
+     −60..−70 LUFS, nâng về −14 là +46..+56 dB và thứ được nâng là NỀN NHIỄU.
+     `_kiem_wav` KHÔNG bắt được ca này vì nó đo RMS, không đo LUFS.
+     **NÚT NGHE THỬ** (`thay_giong.doc_thu`): đi **qua `doc_ban_dich`** = đúng
+     bước 4 của lượt xuất thật. **KHÔNG gọi thẳng `_synth_all_words`** — bản
+     đầu gọi thẳng và **cổng 63 ĐỎ ngay** (*"tìm thấy ĐÚNG 3 chỗ gọi… 4 chỗ"*,
+     chốt báo động cố ý). Chữa bằng cách đổi CHỖ GỌI chứ **không sửa con số
+     trong cổng**; đi cửa cấp trên còn được thêm: tự tách `pitch`, tự cắt lề
+     im (4,1s -> 3,0s, bấm là kêu ngay). 3 nguồn: edge-tts (+ biến thể cao
+     độ) · Piper `vais1000` · ElevenLabs qua `synth_demo` (nhưng
+     `giong_dung_duoc` LỌC BỎ `el:`/`gemini:` khỏi combo hộp này từ trước, nên
+     thực tế hộp Thay giọng chỉ có 2 nguồn — ElevenLabs nằm ở hộp Lồng tiếng).
+     **NÓI RA NGUỒN THẬT**, không nói cái user chọn: Piper chưa tải thì lùi êm
+     về edge-tts, không nói ra thì tưởng đang nghe Piper. Không chặn giao diện
+     (**0 ms**), cache theo (giọng·pitch·câu) **652 ms -> 1 ms**.
+     **CỔNG KHÔNG ĐƯỢC PHÁT TIẾNG RA LOA** — vá `winsound.PlaySound` thành hàm
+     ĐẾM TRƯỚC khi dựng hộp, kèm mục tự kiểm chính bản vá đó.
+     **HAI LỖ CỦA CHÍNH CỔNG, do THỬ PHÁ lôi ra (lượt phá đầu: LỌT 1 + KHÔNG
+     PHÁ ĐƯỢC 2):** (a) ca "đo hỏng phải NÉM" chỉ thử **file KHÔNG TỒN TẠI**,
+     mà ca đó đi nhánh raise KHÁC (ffmpeg mã != 0) -> thêm CA 2b giả lập
+     **ffmpeg mã 0 mà KHÔNG in JSON**; (b) ca LRA MỘT MÌNH là con dấu — nguồn
+     anh Hùng đã nén sẵn (LRA 2,10) nên bộ nén động gần như không đổi LRA
+     (2,10 -> 2,00, lọt ngưỡng). Chốt THẬT là **hệ số áp phải là HẰNG SỐ**
+     (nâng thuần 0,0035 dB · loudnorm động 0,277 dB) — đó mới là bất biến bảo
+     vệ tỉ lệ giọng-nhạc, và nó bắt được phép phá ngay.
+     **CHƯA LÀM, GHI THẲNG:** đường CẮT THƯỜNG và GHÉP ĐOẠN vẫn **KHÔNG** có
+     chuẩn hoá — xem khối "ĐỘ TO ĐƯỜNG CẮT" bên dưới.
+- **ĐỘ TO ĐƯỜNG CẮT TRẢI 15,75 LU — ĐO XONG, *CHƯA SỬA*, CẦN ANH HÙNG DUYỆT
+  (16/08/2026, `_do_lufs_duong.py`).** VIỆC 1 đòi "đường nào cũng phải đo".
+  Chạy ffmpeg THẬT (`export_canvas_clip`) trên 4 video THẬT:
+
+  | nguồn | NGUỒN | cắt thường | ghép 2 đoạn |
+  |---|---|---|---|
+  | Douyin (anh Hùng đang làm) | −5,07 | **−6,65 TP +3,94** | −6,15 TP +0,66 |
+  | GOING BACK TO OUR OLD HOUSE | −14,25 | −10,78 | −10,02 |
+  | DaddyOFive | −15,27 | −15,88 | −15,60 |
+  | Kid BREAKS his leg prank | −15,17 | **−22,40 TP +0,94** | **−20,22** |
+
+  **HAI LỖI, cả hai đều thật:** (1) **trải 15,75 LU** (−6,65 .. −22,40) giữa
+  các clip — clip ra to hay nhỏ hoàn toàn tuỳ đoạn phim cắt trúng; clip
+  −22,40 là **thấp hơn đích 8,4 LU**, đúng chữ *"ít tiếng quá"*. (2) **đỉnh
+  thật vượt 0 dBTP ở 3/8 bản xuất** = VỠ TIẾNG thật — `alimiter` sau khi trộn
+  CHỈ được thêm khi có tiếng động (`whoosh_on`), nên đường cắt trần không ai
+  chặn đỉnh.
+  Lệch so với nguồn **KHÔNG một chiều** (+3,47 / +4,23 ở đoạn to hơn TB cả
+  phim; −7,23 / −5,05 ở đoạn nhỏ hơn) -> **không "chép mức nguồn" được, phải
+  ĐO TỪNG CLIP**.
+  **VÌ SAO CHƯA SỬA:** thêm chuẩn hoá vào `export_canvas_clip` là đổi TIẾNG
+  CỦA MỌI CLIP từ nay về sau trên 200-300 kênh đang chạy sản xuất. Biện pháp
+  đã sẵn sàng (dùng lại `chuan_do_to`, chạy trên file đã xuất với `-c:v copy`
+  nên chỉ mã hoá lại audio, ~1 giây/clip). **Đợi anh Hùng duyệt.**
 - **GIỌNG MỚI BỊ NHẠC NỀN DÌM 9,3 dB — "chỗ có chỗ không nghe không được"
   (15/08/2026).** Anh Hùng: *"phần tách âm thanh giọng nói, nó nói mà âm thanh
   sau khi tách lỗi hết, chỗ có chỗ không nghe không được"*.
