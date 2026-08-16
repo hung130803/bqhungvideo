@@ -1,0 +1,130 @@
+{
+ "voice": "vi-VN-HoaiMyNeural",
+ "n": 20,
+ "a": 0.23879438110749185,
+ "b": 0.15034731270358348,
+ "r2": 0.9408500089686306,
+ "tho": 0.25353431372549023,
+ "hang": [
+  {
+   "text": "Rất đáng để xem",
+   "am_tiet": 4,
+   "giay": 1.12,
+   "giay_moi_at": 0.28
+  },
+  {
+   "text": "Ai mê phim hành động",
+   "am_tiet": 5,
+   "giay": 1.324,
+   "giay_moi_at": 0.2648
+  },
+  {
+   "text": "Thức đêm xem cũng đáng",
+   "am_tiet": 5,
+   "giay": 1.314,
+   "giay_moi_at": 0.2628
+  },
+  {
+   "text": "Phim đầu tiên: Sàn Đấu Ngầm",
+   "am_tiet": 6,
+   "giay": 2.047,
+   "giay_moi_at": 0.3412
+  },
+  {
+   "text": "Cảnh phim đúng là chấn động",
+   "am_tiet": 6,
+   "giay": 1.511,
+   "giay_moi_at": 0.2518
+  },
+  {
+   "text": "Bảy bộ phim mới đang hot gần đây",
+   "am_tiet": 8,
+   "giay": 1.981,
+   "giay_moi_at": 0.2476
+  },
+  {
+   "text": "Phim nào cũng nghẹt thở, cháy màn hình",
+   "am_tiet": 8,
+   "giay": 2.372,
+   "giay_moi_at": 0.2965
+  },
+  {
+   "text": "Thì đừng bỏ lỡ bộ phim này nhé",
+   "am_tiet": 8,
+   "giay": 1.97,
+   "giay_moi_at": 0.2462
+  },
+  {
+   "text": "Cô phải tìm đường sống giữa đường cùng",
+   "am_tiet": 8,
+   "giay": 2.048,
+   "giay_moi_at": 0.256
+  },
+  {
+   "text": "Từng giây đều khiến tim đập thình thịch",
+   "am_tiet": 8,
+   "giay": 1.847,
+   "giay_moi_at": 0.2309
+  },
+  {
+   "text": "Cảnh chiến đấu vừa dữ dội vừa mãn nhãn",
+   "am_tiet": 9,
+   "giay": 2.375,
+   "giay_moi_at": 0.2639
+  },
+  {
+   "text": "Cảnh đánh nhau thì đấm phát nào ra phát nấy",
+   "am_tiet": 10,
+   "giay": 2.435,
+   "giay_moi_at": 0.2435
+  },
+  {
+   "text": "Ai mê phim kinh dị thì đừng bỏ lỡ nhé",
+   "am_tiet": 10,
+   "giay": 2.359,
+   "giay_moi_at": 0.2359
+  },
+  {
+   "text": "Phim pha trộn giữa khoa học viễn tưởng và kinh dị",
+   "am_tiet": 11,
+   "giay": 2.694,
+   "giay_moi_at": 0.2449
+  },
+  {
+   "text": "Giành giật sự sống giữa những trận hỗn chiến không luật lệ",
+   "am_tiet": 12,
+   "giay": 2.862,
+   "giay_moi_at": 0.2385
+  },
+  {
+   "text": "Sau đám cưới, cô dâu lại rơi vào một trò chơi chết người",
+   "am_tiet": 13,
+   "giay": 3.324,
+   "giay_moi_at": 0.2557
+  },
+  {
+   "text": "Phim kể về đạo quân ác linh tìm cách mở cánh cổng địa ngục",
+   "am_tiet": 14,
+   "giay": 3.073,
+   "giay_moi_at": 0.2195
+  },
+  {
+   "text": "Phim kể về một võ sĩ sa cơ lỡ vận bước chân vào sàn đấu phi pháp",
+   "am_tiet": 17,
+   "giay": 3.817,
+   "giay_moi_at": 0.2245
+  },
+  {
+   "text": "Kể về năm 2042, một cơn bão mặt trời bí ẩn gây ra thảm hoạ toàn cầu",
+   "am_tiet": 17,
+   "giay": 5.191,
+   "giay_moi_at": 0.3054
+  },
+  {
+   "text": "Mười hai vị sứ giả buộc phải tập hợp, mở ra trận sinh tử với ác linh, quyết định sự tồn vong của loài người",
+   "am_tiet": 25,
+   "giay": 6.057,
+   "giay_moi_at": 0.2423
+  }
+ ]
+}

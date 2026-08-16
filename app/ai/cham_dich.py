@@ -105,6 +105,9 @@ TEN_TIEU_CHI = {
 #: Câu có điểm chốt DƯỚI mức này là TRƯỢT. Thang 0-10, CÀNG CAO CÀNG TỐT.
 NGUONG_DAT = 7.0
 
+#: Số model phải CÙNG kêu một khoá lỗi thì cửa thuật ngữ mới tính là lỗi.
+TN_CAN = 2
+
 #: Số câu mỗi lượt gọi. Groq trả 413 "Request too large" khi gói to — đó là lỗi
 #: CỦA YÊU CẦU, phải THU NHỎ, KHÔNG được phạt key (bug cũ đã đốt sạch 38 key).
 CO_MOI_LUOT = 12
@@ -282,9 +285,79 @@ def cham_hoi_dong(goc: list[str], dich: list[str], goc_ma: str = "zh",
 # --------------------------------------------------------------------------
 # SOÁT THUẬT NGỮ — cửa RIÊNG bắt `新片 -> "phim về chip"`
 # --------------------------------------------------------------------------
+def _soat_mot_model(goc: list[str], dich: list[str], goc_ma: str, dich_ma: str,
+                    model: str) -> list[list[str]]:
+    """MỘT model liệt kê từ bị dịch sai. Trả list cùng độ dài `goc`, mỗi phần
+    tử là danh sách KHOÁ LỖI đã chuẩn hoá (`_khoa_loi`) của riêng model đó.
+
+    Tách hàm ra để phép đo lấy được PHIẾU THÔ từng model — có phiếu thô thì
+    thử luật gộp khác (2/2 · 2/3 · 3/3) là việc TÍNH TOÁN, không phải gọi
+    lại LLM; và mọi luật được so trên CÙNG một bộ phiếu nên hiệu số không
+    lẫn nhiễu của LLM.
+    """
+    from app.ai import llm
+
+    ra: list[list[str]] = [[] for _ in goc]
+    for nhom in _chia_co(len(goc)):
+        items = []
+        for i in nhom:
+            items.append(f'#{i}\n  GỐC ({_ten_nn(goc_ma)}): "{goc[i][:300]}"\n'
+                         f'  BẢN DỊCH ({_ten_nn(dich_ma)}): "{dich[i][:300]}"')
+        system = ("Bạn là người soát THUẬT NGỮ trong bản dịch. "
+                  "CHỈ trả JSON thuần.")
+        prompt = (
+            "Với mỗi cặp, tìm những TỪ/CỤM TỪ trong câu GỐC bị dịch SAI "
+            "NGHĨA trong bản dịch.\n"
+            f"{chr(10).join(items)}\n\n"
+            "CHỈ kể lỗi SAI NGHĨA THẬT SỰ:\n"
+            "- Dịch ra một sự vật KHÁC HẲN (ví dụ chữ nghĩa là 'phim mới' "
+            "mà dịch thành 'con chip').\n"
+            "- Hiểu nhầm mặt chữ, đoán bừa theo âm, bịa thêm thứ không có "
+            "trong câu gốc.\n"
+            "- Tên riêng / con số bị đổi.\n"
+            "KHÔNG kể: cách diễn đạt khác nhưng cùng nghĩa · từ đồng nghĩa "
+            "· thêm/bớt từ đệm · thay đổi trật tự · rút gọn cho gọn câu. "
+            "Những cái đó là dịch BÌNH THƯỜNG, không phải lỗi.\n"
+            "Không thấy lỗi nào thì trả mảng rỗng — ĐỪNG cố tìm cho có.\n"
+            f"Trả MẢNG JSON {len(nhom)} đối tượng "
+            '{"i": <đúng số sau dấu #>, '
+            '"sai": ["<từ gốc> -> <bản dịch sai> (đúng: <nghĩa đúng>)", ...]}.'
+        )
+        try:
+            data = llm.complete_json(prompt, system=system, model=model)
+        except Exception:                        # noqa: BLE001
+            continue
+        for i, v in _theo_nhan(data, nhom, "sai").items():
+            if not isinstance(v, list):
+                continue
+            for x in v:
+                khoa = _khoa_loi(str(x))
+                if khoa and khoa not in ra[i]:
+                    ra[i].append(khoa)
+    return ra
+
+
+def gop_thuat_ngu(phieu: list[list[list[str]]], can: int = 2) -> list[list[str]]:
+    """Gộp phiếu thô của nhiều model: khoá lỗi nào được >= `can` model cùng
+    kêu thì mới tính. HÀM THUẦN (không gọi LLM) — dùng chung cho đường chạy
+    thật và cho phép đo quét luật.
+    """
+    n = len(phieu[0]) if phieu else 0
+    can = max(1, min(can, len(phieu)))
+    ra: list[list[str]] = []
+    for i in range(n):
+        dem: dict[str, int] = {}
+        for p in phieu:
+            for k in p[i]:
+                dem[k] = dem.get(k, 0) + 1
+        ra.append(sorted(k for k, v in dem.items() if v >= can))
+    return ra
+
+
 def soat_thuat_ngu(goc: list[str], dich: list[str], goc_ma: str = "zh",
                    dich_ma: str = "vi",
-                   models: Iterable[str] = MODEL_HOI_DONG[:2]) -> list[list[str]]:
+                   models: Iterable[str] = MODEL_HOI_DONG[:2],
+                   can: int = 0) -> list[list[str]]:
     """Hỏi ĐÚNG MỘT VIỆC: từ/cụm nào trong câu gốc bị dịch SAI?
 
     Tách khỏi lượt chấm điểm là CỐ Ý: hỏi "chấm điểm" thì model nhìn tổng thể
@@ -292,55 +365,15 @@ def soat_thuat_ngu(goc: list[str], dich: list[str], goc_ma: str = "zh",
     từng từ. Trả list cùng độ dài `goc`, mỗi phần tử là danh sách mô tả lỗi
     (rỗng = không thấy lỗi).
 
-    Lấy **GIAO** của các model (từ nào >= 2 model cùng kêu mới tính) — một mình
-    lượt này rất hay bịa lỗi trên câu dịch đúng (đo được: 1 model kêu oan
-    nhiều gấp mấy lần 2 model cùng kêu).
+    Lấy **GIAO** của các model (từ nào >= `can` model cùng kêu mới tính) — một
+    mình lượt này rất hay bịa lỗi trên câu dịch đúng (đo được: 1 model kêu oan
+    nhiều gấp mấy lần 2 model cùng kêu). `can=0` = mặc định `TN_CAN`.
     """
-    from app.ai import llm
-
-    dem: list[dict[str, int]] = [{} for _ in goc]
-    n_model = 0
-    for model in models:
-        n_model += 1
-        for nhom in _chia_co(len(goc)):
-            items = []
-            for i in nhom:
-                items.append(f'#{i}\n  GỐC ({_ten_nn(goc_ma)}): "{goc[i][:300]}"\n'
-                             f'  BẢN DỊCH ({_ten_nn(dich_ma)}): "{dich[i][:300]}"')
-            system = ("Bạn là người soát THUẬT NGỮ trong bản dịch. "
-                      "CHỈ trả JSON thuần.")
-            prompt = (
-                "Với mỗi cặp, tìm những TỪ/CỤM TỪ trong câu GỐC bị dịch SAI "
-                "NGHĨA trong bản dịch.\n"
-                f"{chr(10).join(items)}\n\n"
-                "CHỈ kể lỗi SAI NGHĨA THẬT SỰ:\n"
-                "- Dịch ra một sự vật KHÁC HẲN (ví dụ chữ nghĩa là 'phim mới' "
-                "mà dịch thành 'con chip').\n"
-                "- Hiểu nhầm mặt chữ, đoán bừa theo âm, bịa thêm thứ không có "
-                "trong câu gốc.\n"
-                "- Tên riêng / con số bị đổi.\n"
-                "KHÔNG kể: cách diễn đạt khác nhưng cùng nghĩa · từ đồng nghĩa "
-                "· thêm/bớt từ đệm · thay đổi trật tự · rút gọn cho gọn câu. "
-                "Những cái đó là dịch BÌNH THƯỜNG, không phải lỗi.\n"
-                "Không thấy lỗi nào thì trả mảng rỗng — ĐỪNG cố tìm cho có.\n"
-                f"Trả MẢNG JSON {len(nhom)} đối tượng "
-                '{"i": <đúng số sau dấu #>, '
-                '"sai": ["<từ gốc> -> <bản dịch sai> (đúng: <nghĩa đúng>)", ...]}.'
-            )
-            try:
-                data = llm.complete_json(prompt, system=system, model=model)
-            except Exception:                    # noqa: BLE001
-                continue
-            for i, v in _theo_nhan(data, nhom, "sai").items():
-                if not isinstance(v, list):
-                    continue
-                for x in v:
-                    khoa = _khoa_loi(str(x))
-                    if khoa:
-                        dem[i][khoa] = dem[i].get(khoa, 0) + 1
-
-    can = 2 if n_model >= 2 else 1
-    return [sorted(k for k, v in d.items() if v >= can) for d in dem]
+    ds = list(models)
+    phieu = [_soat_mot_model(goc, dich, goc_ma, dich_ma, m) for m in ds]
+    if not phieu:
+        return [[] for _ in goc]
+    return gop_thuat_ngu(phieu, can or TN_CAN)
 
 
 def _khoa_loi(s: str) -> str:
