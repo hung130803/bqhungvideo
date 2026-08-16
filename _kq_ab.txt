@@ -1,0 +1,201 @@
+==========================================================================
+A/B ĐƯỜNG DỊCH — 50 câu · nhãn ngôn ngữ 'Chinese' · 3 lượt ĐAN XEN
+TTS: edge-tts THẬT
+==========================================================================
+
+==========================================================================
+LƯỢT 1  (thứ tự chạy: MỐC -> MỚI -> MỚI+VD)
+==========================================================================
+  --- MỐC ---
+    ĐẠT theo thước       : 82.0%  (điểm TB 6.82)
+    4 trục TB            : nghia 7.5 · xuoi 8.08 · noi 7.5 · tron 8.5
+    cửa thuật ngữ bắt    : 1/50
+    luật máy bắt         : 2/50 {'cut': 1, 'con_chu_goc': 1}
+    còn chữ gốc (Hán)    : 1/50
+    câu < 20 ký tự (cụt) : 1/50 = 2%  · câu > 60 ký tự (gộp): 7/50
+    ký tự/câu TB         : 41.7
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 121.7s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.695s/câu
+      TRỐNG (đọc ngắn hơn khung) 9.8s = 9.2% khung · 4 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   24.9s · 38 câu
+  --- MỚI ---
+    ĐẠT theo thước       : 72.0%  (điểm TB 6.48)
+    4 trục TB            : nghia 6.82 · xuoi 7.68 · noi 7.52 · tron 7.56
+    cửa thuật ngữ bắt    : 5/50
+    luật máy bắt         : 1/50 {'cut': 1}
+    còn chữ gốc (Hán)    : 0/50
+    câu < 20 ký tự (cụt) : 6/50 = 12%  · câu > 60 ký tự (gộp): 5/50
+    ký tự/câu TB         : 35.9
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 106.2s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.404s/câu
+      TRỐNG (đọc ngắn hơn khung) 10.3s = 9.7% khung · 2 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   9.9s · 27 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 26/50 -> SAU 8/50 (viết lại được 35 câu, thiếu 0 câu)
+  --- MỚI+VD ---
+    ĐẠT theo thước       : 72.0%  (điểm TB 6.44)
+    4 trục TB            : nghia 6.92 · xuoi 7.5 · noi 7.3 · tron 8.08
+    cửa thuật ngữ bắt    : 6/50
+    luật máy bắt         : 1/50 {'cut': 1}
+    còn chữ gốc (Hán)    : 0/50
+    câu < 20 ký tự (cụt) : 5/50 = 10%  · câu > 60 ký tự (gộp): 5/50
+    ký tự/câu TB         : 36.3
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 109.9s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.406s/câu
+      TRỐNG (đọc ngắn hơn khung) 8.5s = 8.0% khung · 3 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   11.8s · 33 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 23/50 -> SAU 3/50 (viết lại được 28 câu, thiếu 0 câu)
+
+==========================================================================
+LƯỢT 2  (thứ tự chạy: MỚI -> MỚI+VD -> MỐC)
+==========================================================================
+  --- MỐC ---
+    ĐẠT theo thước       : 68.0%  (điểm TB 6.34)
+    4 trục TB            : nghia 7.46 · xuoi 7.22 · noi 6.76 · tron 8.14
+    cửa thuật ngữ bắt    : 3/50
+    luật máy bắt         : 1/50 {'con_chu_goc': 1}
+    còn chữ gốc (Hán)    : 1/50
+    câu < 20 ký tự (cụt) : 1/50 = 2%  · câu > 60 ký tự (gộp): 6/50
+    ký tự/câu TB         : 43.1
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 125.3s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.688s/câu
+      TRỐNG (đọc ngắn hơn khung) 7.9s = 7.4% khung · 3 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   26.5s · 41 câu
+  --- MỚI ---
+    ĐẠT theo thước       : 70.0%  (điểm TB 6.3)
+    4 trục TB            : nghia 6.75 · xuoi 7.35 · noi 7.12 · tron 7.51
+    cửa thuật ngữ bắt    : 1/50
+    luật máy bắt         : 1/50 {'con_chu_goc': 1}
+    còn chữ gốc (Hán)    : 1/50
+    câu < 20 ký tự (cụt) : 4/50 = 8%  · câu > 60 ký tự (gộp): 4/50
+    ký tự/câu TB         : 36.5
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 108.2s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.424s/câu
+      TRỐNG (đọc ngắn hơn khung) 9.8s = 9.2% khung · 3 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   11.4s · 30 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 22/50 -> SAU 6/50 (viết lại được 30 câu, thiếu 0 câu)
+  --- MỚI+VD ---
+    ĐẠT theo thước       : 74.0%  (điểm TB 6.67)
+    4 trục TB            : nghia 7.12 · xuoi 7.46 · noi 7.2 · tron 7.51
+    cửa thuật ngữ bắt    : 5/50
+    luật máy bắt         : 2/50 {'cut': 2}
+    còn chữ gốc (Hán)    : 0/50
+    câu < 20 ký tự (cụt) : 5/50 = 10%  · câu > 60 ký tự (gộp): 5/50
+    ký tự/câu TB         : 36.1
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 108.2s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.457s/câu
+      TRỐNG (đọc ngắn hơn khung) 10.6s = 10.0% khung · 3 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   12.2s · 33 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 25/50 -> SAU 8/50 (viết lại được 28 câu, thiếu 0 câu)
+
+==========================================================================
+LƯỢT 3  (thứ tự chạy: MỚI+VD -> MỐC -> MỚI)
+==========================================================================
+  --- MỐC ---
+    ĐẠT theo thước       : 70.0%  (điểm TB 6.35)
+    4 trục TB            : nghia 6.88 · xuoi 7.35 · noi 7.09 · tron 7.62
+    cửa thuật ngữ bắt    : 3/50
+    luật máy bắt         : 2/50 {'cut': 1, 'con_chu_goc': 1}
+    còn chữ gốc (Hán)    : 1/50
+    câu < 20 ký tự (cụt) : 2/50 = 4%  · câu > 60 ký tự (gộp): 8/50
+    ký tự/câu TB         : 42.7
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 123.8s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.694s/câu
+      TRỐNG (đọc ngắn hơn khung) 8.8s = 8.2% khung · 4 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   25.9s · 40 câu
+  --- MỚI ---
+    ĐẠT theo thước       : 70.0%  (điểm TB 6.22)
+    4 trục TB            : nghia 6.98 · xuoi 7.26 · noi 6.92 · tron 7.84
+    cửa thuật ngữ bắt    : 4/50
+    luật máy bắt         : 1/50 {'cut': 1}
+    còn chữ gốc (Hán)    : 0/50
+    câu < 20 ký tự (cụt) : 6/50 = 12%  · câu > 60 ký tự (gộp): 3/50
+    ký tự/câu TB         : 34.5
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 105.5s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.414s/câu
+      TRỐNG (đọc ngắn hơn khung) 10.9s = 10.2% khung · 4 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   9.8s · 27 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 23/50 -> SAU 10/50 (viết lại được 26 câu, thiếu 0 câu)
+  --- MỚI+VD ---
+    ĐẠT theo thước       : 74.0%  (điểm TB 6.58)
+    4 trục TB            : nghia 7.26 · xuoi 7.81 · noi 7.27 · tron 8.43
+    cửa thuật ngữ bắt    : 3/50
+    luật máy bắt         : 2/50 {'cut': 2}
+    còn chữ gốc (Hán)    : 0/50
+    câu < 20 ký tự (cụt) : 5/50 = 10%  · câu > 60 ký tự (gộp): 3/50
+    ký tự/câu TB         : 36.0
+    THỜI GIAN ĐỌC (edge-tts thật, đã cắt lề im):
+      tổng đọc 108.8s / tổng khung 106.6s
+      lệch tuyệt đối TB 0.448s/câu
+      TRỐNG (đọc ngắn hơn khung) 10.1s = 9.5% khung · 3 câu trống quá 1s
+      TRÀN (đọc dài hơn khung)   12.3s · 31 câu
+    ngân sách: lệch TRƯỚC hậu kiểm 21/50 -> SAU 6/50 (viết lại được 28 câu, thiếu 0 câu)
+
+==========================================================================
+TỔNG 3 LƯỢT
+==========================================================================
+
+  === MỐC ===
+  chỉ số           |  lượt 1 |  lượt 2 |  lượt 3 |    TB
+  ĐẠT thước %      |   82.00 |   68.00 |   70.00 |   73.33
+  điểm TB          |    6.82 |    6.34 |    6.35 |    6.50
+  thuật ngữ bắt    |    1.00 |    3.00 |    3.00 |    2.33
+  luật máy bắt     |    2.00 |    1.00 |    2.00 |    1.67
+  còn chữ Hán      |    1.00 |    1.00 |    1.00 |    1.00
+  câu<20kt         |    1.00 |    1.00 |    2.00 |    1.33
+  câu>60kt         |    7.00 |    6.00 |    8.00 |    7.00
+  lệch |s|/câu     |    0.69 |    0.69 |    0.69 |    0.69
+  TRỐNG s          |    9.84 |    7.88 |    8.78 |    8.83
+  TRỐNG %khung     |    9.20 |    7.40 |    8.20 |    8.27
+  TRÀN s           |   24.90 |   26.50 |   25.91 |   25.77
+
+  === MỚI ===
+  chỉ số           |  lượt 1 |  lượt 2 |  lượt 3 |    TB
+  ĐẠT thước %      |   72.00 |   70.00 |   70.00 |   70.67
+  điểm TB          |    6.48 |    6.30 |    6.22 |    6.33
+  thuật ngữ bắt    |    5.00 |    1.00 |    4.00 |    3.33
+  luật máy bắt     |    1.00 |    1.00 |    1.00 |    1.00
+  còn chữ Hán      |    0.00 |    1.00 |    0.00 |    0.33
+  câu<20kt         |    6.00 |    4.00 |    6.00 |    5.33
+  câu>60kt         |    5.00 |    4.00 |    3.00 |    4.00
+  lệch |s|/câu     |    0.40 |    0.42 |    0.41 |    0.41
+  TRỐNG s          |   10.34 |    9.80 |   10.90 |   10.35
+  TRỐNG %khung     |    9.70 |    9.20 |   10.20 |    9.70
+  TRÀN s           |    9.86 |   11.41 |    9.81 |   10.36
+
+  === MỚI+VD ===
+  chỉ số           |  lượt 1 |  lượt 2 |  lượt 3 |    TB
+  ĐẠT thước %      |   72.00 |   74.00 |   74.00 |   73.33
+  điểm TB          |    6.44 |    6.67 |    6.58 |    6.56
+  thuật ngữ bắt    |    6.00 |    5.00 |    3.00 |    4.67
+  luật máy bắt     |    1.00 |    2.00 |    2.00 |    1.67
+  còn chữ Hán      |    0.00 |    0.00 |    0.00 |    0.00
+  câu<20kt         |    5.00 |    5.00 |    5.00 |    5.00
+  câu>60kt         |    5.00 |    5.00 |    3.00 |    4.33
+  lệch |s|/câu     |    0.41 |    0.46 |    0.45 |    0.44
+  TRỐNG s          |    8.51 |   10.63 |   10.10 |    9.75
+  TRỐNG %khung     |    8.00 |   10.00 |    9.50 |    9.17
+  TRÀN s           |   11.78 |   12.22 |   12.29 |   12.10
+
+  === SO TRUNG BÌNH 3 LƯỢT ===
+  chỉ số           |       MỐC |       MỚI |    MỚI+VD
+  ĐẠT thước %      |     73.33 |     70.67 |     73.33
+  điểm TB          |      6.50 |      6.33 |      6.56
+  thuật ngữ bắt    |      2.33 |      3.33 |      4.67
+  luật máy bắt     |      1.67 |      1.00 |      1.67
+  còn chữ Hán      |      1.00 |      0.33 |      0.00
+  câu<20kt         |      1.33 |      5.33 |      5.00
+  câu>60kt         |      7.00 |      4.00 |      4.33
+  lệch |s|/câu     |      0.69 |      0.41 |      0.44
+  TRỐNG s          |      8.83 |     10.35 |      9.75
+  TRỐNG %khung     |      8.27 |      9.70 |      9.17
+  TRÀN s           |     25.77 |     10.36 |     12.10
+
+đã ghi _do_dich_ab.json (kèm TOÀN BỘ bản dịch từng lượt để đọc tay)

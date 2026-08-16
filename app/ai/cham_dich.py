@@ -108,6 +108,31 @@ bắt trọn 18/18 ca `thuat_ngu` (kể cả `新片 -> "phim về chip"`). GI�
 lưới an toàn cho video khác (giá đo được: 1,2% kêu oan khi đứng một mình), chứ
 KHÔNG được kể nó vào công trạng của con số ở trên.
 
+==========================================================================
+NHIỄU CÒN LẠI CỦA v2 — ĐO TRÊN VIDEO THẬT, **ĐỌC TRƯỚC KHI SO HAI BẢN DỊCH**
+==========================================================================
+v2 hạ kêu oan nhưng KHÔNG làm thước tiền định. Đo trên `_do_dich_ab.json`
+(3 lượt × 3 nhánh dịch, video thật): có **91 chuỗi bản dịch Y HỆT NHAU** được
+đem chấm lại từ đầu ở lượt/nhánh khác. Kết quả trên CÙNG MỘT CHUỖI:
+
+    trục   | biên độ (max−min) TB | trung vị | 90% | max
+    nghia  |        1,08          |   1,0    | 3,0 | 6,0
+    xuoi   |        1,06          |   1,0    | 2,0 | 5,0
+    noi    |        1,30          |   1,0    | 3,0 | 5,0
+    tron   |        1,09          |   1,0    | 2,0 | 5,0
+
+**17/91 = 18,7% chuỗi Y HỆT khi thì ĐẠT khi thì TRƯỢT.**
+Ví dụ: `"Bộ phim thứ tư: Liên minh Vệ sĩ"` được chấm `nghia` = **2,0 · 8,0 ·
+8,0**; `"Bộ phim thứ năm là Percy Jackson 2"` = **8,0 · 2,0**.
+
+HAI HỆ QUẢ BẮT BUỘC:
+1. **Chênh dưới ~5 điểm phần trăm `ty_le_dat` giữa hai bản dịch là NHIỄU,
+   không phải kết luận.** Muốn so hai đường dịch thì phải nhiều lượt, và phải
+   nhìn cả 4 trục lẫn luật máy chứ không chỉ một con số.
+2. **Chỗ thước lảo đảo nhất là TÊN RIÊNG** (tên phim, tên nhân vật): hội đồng
+   không tra cứu được nên khi thì tin khi thì kêu sai. Cả 3 ví dụ lệch nhiều
+   nhất đều là tên phim.
+
 **BA CỬA GÁNH VIỆC KHÁC HẲN NHAU:**
   · **luật máy** (`loi_may`, TIỀN ĐỊNH, 0 lượt LLM): kêu oan **0,0%**, bắt
     TRỌN 3 loại lỗi HÌNH THỨC (cụt · gộp · còn chữ Hán) và **0** lỗi NGHĨA.
