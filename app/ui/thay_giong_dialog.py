@@ -607,8 +607,18 @@ class ThayGiongDialog(QDialog):
         self._tt_piper = tt
         if tt["co"]:
             self.lb_piper.setText(
+                # ĐÁNH ĐỔI PHẢI NÓI RA, ĐÃ ĐO (`_do_piper_moc_that.py`, 426
+                # mốc từ, Groq chép ngược chính file tiếng): mốc của Piper là
+                # SUY RA nên rung 59,1 ms so với 38,6 ms của edge-tts (1,53x),
+                # và 42% số từ hiện MUỘN hơn tiếng quá 50 ms (edge-tts: 0,5%).
+                # Giấu chuyện này đi thì người dùng chọn Piper rồi tự hỏi vì
+                # sao chữ chạy không khớp.
                 "Giọng Việt chạy trên máy (Piper): ĐÃ CÓ. "
-                "Chọn trong ô Giọng đọc để dùng.")
+                "Chọn trong ô Giọng đọc để dùng.\n"
+                "Lưu ý đã đo: Piper không trả mốc từng chữ nên app phải SUY RA "
+                "— chữ chạy theo lời lệch gấp ~1,5 lần so với giọng thường "
+                "(edge-tts) và hay hiện MUỘN hơn tiếng. Cần chữ bám sát lời "
+                "thì dùng giọng thường.")
             self.lb_piper.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
             self.b_tai_piper.setVisible(False)
         else:

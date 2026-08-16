@@ -1,0 +1,63 @@
+==========================================================================
+MỐC TỪNG CHỮ — ĐỐI CHỨNG BẰNG GROQ CHÉP NGƯỢC  ·  14 câu · ~213 từ · 2 lượt ĐAN XEN
+Cửa gọi: dubbing._synth_all_words (ĐÚNG cửa app dùng)
+==========================================================================
+  ví dụ câu 0: Trận chiến cuối cùng trên đảo của người khổng lồ một mắt là phần hay n
+  ví dụ câu 1: Lần này, Percy và bạn bè của mình phải đối mặt với một cuộc phiêu lưu 
+  ví dụ câu 2: 12 vị sứ giả phải hợp tác để chiến đấu chống lại đội quân ma quỷ
+
+==========================================================================
+LƯỢT 1  (thứ tự: EDGE -> PIPER)
+==========================================================================
+  [EDGE] đọc 6.4s · 14/14 câu CÓ mốc
+  EDGE  : khớp 208/213 từ  (98%)  · bỏ 0 câu
+          lệch |ms|  TB   60.4 · trung vị   52.0 · 90%  110.0 · max  300.0
+          trong ±50 ms: 100/208 (48%)  · MUỘN hơn tiếng >50ms: 1  · sớm >50ms: 107
+          lệch CÓ DẤU TB -56.7 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG -51.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 38.6 · trung vị 26.0 · 90% 81.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 156/208 (75%)
+  [PIPER] đọc 10.0s · 14/14 câu CÓ mốc
+  PIPER : khớp 205/213 từ  (96%)  · bỏ 0 câu
+          lệch |ms|  TB   68.4 · trung vị   58.0 · 90%  153.0 · max  235.0
+          trong ±50 ms: 88/205 (43%)  · MUỘN hơn tiếng >50ms: 92  · sớm >50ms: 25
+          lệch CÓ DẤU TB +38.7 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG +36.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 62.8 · trung vị 47.0 · 90% 145.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 109/205 (53%)
+
+==========================================================================
+LƯỢT 2  (thứ tự: PIPER -> EDGE)
+==========================================================================
+  [PIPER] đọc 9.4s · 14/14 câu CÓ mốc
+  PIPER : khớp 204/213 từ  (96%)  · bỏ 0 câu
+          lệch |ms|  TB   61.7 · trung vị   47.5 · 90%  144.0 · max  220.0
+          trong ±50 ms: 104/204 (51%)  · MUỘN hơn tiếng >50ms: 78  · sớm >50ms: 22
+          lệch CÓ DẤU TB +36.6 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG +31.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 55.4 · trung vị 38.0 · 90% 132.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 118/204 (58%)
+  [EDGE] đọc 2.7s · 14/14 câu CÓ mốc
+  EDGE  : khớp 208/213 từ  (98%)  · bỏ 0 câu
+          lệch |ms|  TB   60.3 · trung vị   52.0 · 90%  113.0 · max  300.0
+          trong ±50 ms: 100/208 (48%)  · MUỘN hơn tiếng >50ms: 1  · sớm >50ms: 107
+          lệch CÓ DẤU TB -56.5 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG -51.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 38.7 · trung vị 26.0 · 90% 81.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 155/208 (75%)
+
+==========================================================================
+TỔNG KẾT — gộp 2 lượt
+==========================================================================
+  EDGE  : khớp 416/426 từ  (98%)  · bỏ 0 câu
+          lệch |ms|  TB   60.4 · trung vị   52.0 · 90%  110.0 · max  300.0
+          trong ±50 ms: 200/416 (48%)  · MUỘN hơn tiếng >50ms: 2  · sớm >50ms: 214
+          lệch CÓ DẤU TB -56.6 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG -51.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 38.6 · trung vị 26.0 · 90% 81.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 311/416 (75%)
+  PIPER : khớp 409/426 từ  (96%)  · bỏ 0 câu
+          lệch |ms|  TB   65.1 · trung vị   52.0 · 90%  150.0 · max  235.0
+          trong ±50 ms: 192/409 (47%)  · MUỘN hơn tiếng >50ms: 170  · sớm >50ms: 47
+          lệch CÓ DẤU TB +37.6 ms (dương = mốc muộn hơn tiếng)
+          TÁCH RA: lệch HỆ THỐNG +33.0 ms (trừ được bằng 1 hằng số)  ·  RUNG còn lại TB 59.1 · trung vị 44.0 · 90% 138.0 ms
+          sau khi trừ lệch hệ thống, trong ±50 ms: 228/409 (56%)
+
+  PIPER so với EDGE: TB 65.1 vs 60.4 ms = 1.08x  ·  trong ±50ms 47% vs 48%
+
+Ghi: D:\claude\ai-content-studio\_do_piper_moc_that.json
