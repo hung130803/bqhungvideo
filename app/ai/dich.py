@@ -444,3 +444,151 @@ def dich_theo_gio(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
         "sot_chu_goc": sum(1 for t in ban_dich if _con_chu_goc(t, dich_sang)),
         "thieu_cau": thieu,
     }
+
+
+# --------------------------------------------------------------------------
+# NỐI THƯỚC VÀO ĐƯỜNG DỊCH
+# --------------------------------------------------------------------------
+def dich_va_soat(cau: list[dict], dich_sang: str = "vi", goc_ma: str = "",
+                 model: Optional[str] = None,
+                 vong_soat: int = 1,
+                 vi_du_rieng: bool = False,
+                 on_progress: Optional[Callable[[float, str], None]] = None,
+                 ) -> dict:
+    """`dich_theo_gio` + CHẤM bằng `cham_dich` + dịch lại RIÊNG câu trượt.
+
+    **CHỈ ĐƯỢC BẬT KHI THƯỚC ĐÃ ĐỦ YÊN.** Ở v1 (kêu oan 34,2% ngoài mẫu) hàm
+    này là cỗ máy phá bản dịch tốt: cứ 3 câu đã tốt thì 1 câu bị đem đi dịch
+    lại, mà bước dịch lại đã đo được là CÓ CƠ LÀM XẤU ĐI (−0,58 .. −1,24
+    điểm). v2 hạ kêu oan về **8,3%** nên đường này mới có nghĩa.
+
+    HAI CHỐT CHỐNG TỰ PHÁ, đừng gỡ:
+      · **CHỈ NHẬN bản mới khi nó ĐẠT** (bản cũ trượt, bản mới đạt). Bản mới
+        cũng trượt -> GIỮ BẢN CŨ; đổi một câu trượt lấy một câu trượt khác
+        rồi tự khen đã chữa là đúng bẫy `_dich_lai_sot` đã ghi.
+      · Thước hỏng / hết lượt / mạng chết -> GIỮ NGUYÊN toàn bộ bản dịch đầu,
+        KHÔNG bao giờ ném (fail-safe, cùng luật `mach_lac`).
+
+    Trả kết quả của `dich_theo_gio` + {dat_truoc, dat_sau, so_dich_lai,
+    so_nhan, cau_cham}.
+    """
+    from app.ai import cham_dich as CD
+
+    kq = dich_theo_gio(cau, dich_sang, goc_ma, model,
+                       vi_du_rieng=vi_du_rieng, on_progress=on_progress)
+    goc = [str(c.get("text") or "") for c in cau]
+    bd = list(kq["ban_dich"])
+    ns = kq["ngan_sach"]
+    kq.update({"dat_truoc": None, "dat_sau": None, "so_dich_lai": 0,
+               "so_nhan": 0, "cau_cham": []})
+    if not bd:
+        return kq
+
+    try:
+        if on_progress:
+            on_progress(0.80, f"Soát lại {len(bd)} câu bằng thước chấm...")
+        cham = CD.cham_ban_dich(goc, bd, goc_ma=goc_ma or "zh",
+                                dich_ma=dich_sang)
+    except Exception:                                    # noqa: BLE001
+        return kq                                        # KHÔNG có thước -> thôi
+    kq["cau_cham"] = cham["cau"]
+    kq["dat_truoc"] = cham["ty_le_dat"]
+    kq["dat_sau"] = cham["ty_le_dat"]
+
+    for _vong in range(max(0, vong_soat)):
+        xau = [i for i, c in enumerate(cham["cau"]) if not c["dat"]]
+        if not xau:
+            break
+        kq["so_dich_lai"] += len(xau)
+        if on_progress:
+            on_progress(0.88, f"Dịch lại {len(xau)} câu thước chấm trượt...")
+        moi: dict[int, str] = {}
+        for nhom in _chia_co(len(xau)):
+            phan = [xau[j] for j in nhom]
+            moi.update(_dich_lai_xau(cau, phan, bd, ns, cham["cau"],
+                                     dich_sang, goc_ma, model, vi_du_rieng))
+        thu = list(bd)
+        doi = [i for i, t in moi.items()
+               if t.strip() and t.strip() != bd[i]
+               and not _con_chu_goc(t, dich_sang)]
+        for i in doi:
+            thu[i] = moi[i].strip()
+        if not doi:
+            break
+        try:
+            lai = CD.cham_ban_dich([goc[i] for i in doi],
+                                   [thu[i] for i in doi],
+                                   goc_ma=goc_ma or "zh", dich_ma=dich_sang)
+        except Exception:                                # noqa: BLE001
+            break
+        nhan = 0
+        for j, i in enumerate(doi):
+            if lai["cau"][j]["dat"]:                     # CHỈ NHẬN khi ĐẠT
+                bd[i] = thu[i]
+                cham["cau"][i] = lai["cau"][j]
+                nhan += 1
+        kq["so_nhan"] += nhan
+        if not nhan:
+            break
+    kq["ban_dich"] = bd
+    kq["dat_sau"] = round(100.0 * sum(1 for c in cham["cau"] if c["dat"])
+                          / max(1, len(cham["cau"])), 1)
+    kq["sot_chu_goc"] = sum(1 for t in bd if _con_chu_goc(t, dich_sang))
+    return kq
+
+
+def _ly_do(c: dict) -> str:
+    """Nói cho model biết câu của nó bị chê ĐÚNG chỗ nào — chê chung chung
+    thì nó viết lại một câu khác cùng bệnh."""
+    from app.ai import cham_dich as CD
+    ra = []
+    ma = {"cut": "bị CỤT, thiếu ý", "gop": "GỘP hai câu làm một",
+          "con_chu_goc": "còn sót chữ của tiếng gốc",
+          "chep_goc": "chép nguyên câu gốc", "rong": "rỗng"}
+    for m in c.get("loi") or []:
+        ra.append(ma.get(m, m))
+    if c.get("thuat_ngu"):
+        ra.append("dịch sai từ khoá: " + "; ".join(c["thuat_ngu"][:3]))
+    ten = {"nghia": "SAI NGHĨA", "xuoi": "KHÔNG XUÔI tiếng Việt",
+           "noi": "KHÔNG PHẢI VĂN NÓI", "tron": "THIẾU/THỪA ý"}
+    for k, v in CD.NGUONG_TRUC.items():
+        x = c.get(k)
+        if x is not None and x < v:
+            ra.append(f"{ten[k]} (chấm {x:.0f}/10)")
+    return " · ".join(ra) or "chưa đạt"
+
+
+def _dich_lai_xau(cau: list[dict], chi_so: list[int], hien: list[str],
+                  ns: list[dict], cham: list[dict], dich_sang: str,
+                  goc_ma: str, model: Optional[str] = None,
+                  vi_du_rieng: bool = False) -> dict[int, str]:
+    """Dịch lại câu thước chấm TRƯỢT, gửi kèm LÝ DO TRƯỢT."""
+    from app.ai import llm
+
+    ten_dich = _ten_nn(dich_sang)
+    items = []
+    for i in chi_so:
+        items.append(
+            f'#{i} GỐC: "{str(cau[i].get("text") or "")[:300]}"\n'
+            f'   BẢN DỊCH BỊ CHÊ: "{hien[i][:300]}"\n'
+            f'   LÝ DO: {_ly_do(cham[i])}\n'
+            f'   cần ~{ns[i]["dich"]} chữ, khung {ns[i]["giay"]:.1f} giây')
+    prompt = (
+        f"Những bản dịch {ten_dich} dưới đây đã bị người soát ĐÁNH TRƯỢT. "
+        "Hãy dịch LẠI cho đúng, sửa ĐÚNG cái bị chê.\n"
+        f"{chr(10).join(items)}\n\n"
+        + _luat_chung(ten_dich, vi_du_rieng)
+        + "- Đừng viết lại y như cũ: nó đã bị trượt vì lý do ghi ở trên.\n"
+        + f"- Trả MẢNG JSON {len(chi_so)} đối tượng "
+        '{"i": <đúng số sau dấu #>, "t": "<bản dịch mới>"}. '
+        "BẮT BUỘC đủ MỌI số #."
+    )
+    try:
+        data = llm.complete_json(prompt, system=_SYSTEM, model=model)
+    except Exception:                                    # noqa: BLE001
+        return {}
+    ra: dict[int, str] = {}
+    for i, t in _theo_nhan(data, chi_so, "t").items():
+        if isinstance(t, str) and t.strip():
+            ra[i] = t.strip()
+    return ra
