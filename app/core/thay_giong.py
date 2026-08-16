@@ -1256,6 +1256,13 @@ VONG_DOI_LAI = 3
 #: ích (và 300 kênh thì lượt nào cũng đáng tiền).
 CJK_VONG_TOI_DA = 2
 
+#: Dùng `app.ai.dich.dich_va_soat` (dịch theo NGÂN SÁCH THỜI GIAN + thước chấm)
+#: thay cho `_dich_loat` ở bước dịch ĐẦU của `dich_hau_kiem`.
+#: **MẶC ĐỊNH TẮT — có lý do bằng SỐ, đừng bật nếu chưa đo lại.** Xem khối
+#: "THƯỚC CHẤM DỊCH: ĐO XONG, KHÔNG NỐI" trong CLAUDE.md.
+#: `BQ_DICH_SOAT=1` bật để đo A/B.
+DUNG_DICH_SOAT = os.environ.get("BQ_DICH_SOAT", "") == "1"
+
 
 def _mang_llm(data) -> list:
     """Bóc mảng ra khỏi kiểu LLM hay trả ({"ket_qua": [...]} hoặc [...])."""
@@ -1500,7 +1507,11 @@ def dich_hau_kiem(cau: list[dict], dich_sang: str, goc_ma: str = "",
     if on_progress:
         on_progress(0.10, f"Đang dịch {len(cau)} câu...")
     goc_txt = [c["text"] for c in cau]
-    ban_dich = _dich_loat(cau, dich_sang, goc_ma)
+    if DUNG_DICH_SOAT:
+        from app.ai import dich as _D
+        ban_dich = list(_D.dich_va_soat(cau, dich_sang, goc_ma)["ban_dich"])
+    else:
+        ban_dich = _dich_loat(cau, dich_sang, goc_ma)
 
     if on_progress:
         on_progress(0.50, "Đang dịch ngược để hậu kiểm...")
