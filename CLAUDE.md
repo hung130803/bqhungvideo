@@ -1774,6 +1774,128 @@
      **không chạy được với Adam** -> câu tràn khung quay lại nhờ `atempo`, có
      thể chạm lại trần 1,5. **CHƯA ĐO** con số đó với Adam (một lượt đo là
      ~2.275 ký tự cho ĐÚNG một video) — nói cơ chế, không bịa số.
+  68. `_test_kieu_chu_tg.py` → **KIỂU CHỮ CHỈNH ĐƯỢC TRÊN ĐƯỜNG THAY GIỌNG**
+     (v2.32.0, 17/08/2026). Anh Hùng: *"phần chữ sub trong video tôi không điều
+     chỉnh được cỡ chữ, kiểu chữ, hay in nghiêng đậm, hay chỉnh viền gì được
+     ạ"* — kiểm được bằng một lệnh: `grep "Fontsize|FontName|Outline|Bold|
+     Italic" app/core/thay_giong.py` ra **0**. **ĐẠT 43 · HỎNG 0.** Thử phá
+     `_pha_kieu_chu.py`: **BẮT 14 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+     **CỬA DUY NHẤT `captions.kieu_chu_ass`** — tách RA TỪ CHÍNH thân
+     `build_ass` (không viết mới), nay `build_ass` (cắt thường) và
+     `che_chu.ghi_ass(kieu=...)` (thay giọng) đều gọi vào đó, nên đặt cùng tham
+     số là ra CÙNG một kiểu chữ. Bất biến sống còn của cổng 21 (18 preset CŨ ×
+     4 bộ tham số ra .ass giống TỪNG BYTE) vẫn giữ; `kieu=None` ra .ass giống
+     từng byte bản mốc `v2.31.0`.
+     **UI: 9 ô trong hộp Thay giọng** (27 preset sẵn có · 13 phông · cỡ % cao
+     khung · vị trí · đậm · nghiêng · màu chữ · màu viền · độ viền % cỡ chữ).
+     Nút màu dùng lại `editor.nut_chon_mau` (tách ra mức module ở `e4f0414`) —
+     KHÔNG đẻ bộ điều khiển thứ hai trông khác.
+     **BA QUYẾT ĐỊNH ĐỪNG "DỌN GỌN" MẤT:**
+     · **ô để MẶC ĐỊNH thì KHÔNG sinh khoá** (`don_kieu_chu` trả dict RỖNG) ->
+       `xep_mot` không ghi `kieu_chu` vào payload -> job giống TỪNG KHOÁ bản
+       trước, không đẻ job chạy lại cho 200-300 kênh (cùng lý lẽ `ovl_spec`
+       cổng 42 và cờ `che_chu` cổng 56e).
+     · **ĐẬM/NGHIÊNG là BA trạng thái**, dùng COMBO 3 mục chứ KHÔNG QCheckBox:
+       checkbox chỉ có 2 trạng thái nên mọi job đều mọc thêm khoá
+       `dam`/`nghieng` (`gon_kieu_chu` coi `None` = không đặt, `False` = lựa
+       chọn THẬT).
+     · **ô ghi PHẦN TRĂM, đơn thuốc nhận TỈ LỆ** — để lọt phần trăm xuống .ass
+       là `Fontsize: 8.5` = chữ 8 điểm ảnh (bẫy cổng 45c).
+     **`fontsdir` LÀ BẮT BUỘC** (`che_chu.chuoi_subtitles`): phông đóng gói
+     không cài vào hệ điều hành, thiếu `fontsdir` thì libass **lùi im lặng về
+     phông mặc định** mà ffmpeg vẫn mã 0 — ô chọn phông chỉ là cái nhãn. Cổng
+     có ca đo CẢ HAI chiều (có/không `fontsdir`).
+     **NHÌN TẬN MẮT, KHÔNG ĐẾM ĐIỂM ẢNH** (`_do_kieu_chu_nhin2.py`, ffmpeg +
+     libass + video Douyin THẬT, 4 arm, trích PNG rồi phóng 2×): mốc = Arial
+     39px trắng viền mỏng · Anton 54px VÀNG đậm (mặt chữ HẸP/CAO khác hẳn) ·
+     Be Vietnam Pro 29px ĐỎ NGHIÊNG viền TRẮNG dày · Montserrat 43px XANH
+     không đậm đặt GIỮA KHUNG. Tiếng Việt đủ dấu đúng ở CẢ 4 arm, **0 ô vuông
+     tofu**. Nhắc lại: **đếm điểm ảnh KHÔNG phát hiện được tofu** (tofu 2.431
+     px vs chữ thật 517 px = ngược 4,7 lần) — phải MỞ ẢNH RA XEM.
+     **2 LỖI CỦA CHÍNH CỔNG đã sửa (không phải lỗi app):** `NGUON` ghi cứng tên
+     file `4月新片海外电影片单.mp4` — file đó KHÔNG CÒN trên đĩa nên cổng ĐỎ OAN
+     vì KHO chứ không vì mã (đúng bệnh cổng 47 CA2); nay quét thư mục lấy mp4
+     đầu theo thứ tự tên. Và mục 7g đòi nhãn mục đầu "không chứa ngoặc" ->
+     **HỎNG OAN 3 nhãn ĐÚNG** ("Kiểu mặc định (trắng viền đen)"); bất biến thật
+     là *"bỏ phần trong ngoặc ra vẫn còn chữ có nghĩa"*, kèm ca TỰ KIỂM BỘ DÒ
+     bắt "(tự chọn)"/"(mặc định)" phải BỊ BẮT.
+- **"MÁY ĐỌC SAI CHỮ NƯỚC NGOÀI / TÊN RIÊNG" — ĐÃ ĐO, ĐÃ CHỐT CÁCH SỬA,
+  *CHƯA NỐI VÀO APP* (17/08/2026).** Anh Hùng: *"chọn tiếng Việt, mấy chữ tiếng
+  Anh hay tên riêng nó đọc toàn bị lỗi ... **lỗi to đó**"*. Bộ câu thử dùng
+  chung ở `_bo_cau_thu_doc.py` (4 ngôn ngữ × 6 loại × ~34 câu, chấm theo
+  **TOKEN** chứ không theo cả câu; loại `cau_thuong` là **SÀN ĐỐI CHỨNG** vì
+  máy nghe cũng sai).
+  **PHÉP ĐO 1 — token TRONG CÂU** (`_do_doc_sai.py`, edge-tts thật qua cửa
+  chung + Groq chép ngược): Việt **5%** · Anh **0%** · Trung **3%** · Nhật
+  **3%** (sàn `cau_thuong`: Việt 12%, còn lại 0%).
+  **NHƯNG PHÉP ĐO 1 QUÁ DỄ DÃI — đây mới là phần đáng giá.** Groq
+  whisper-large-v3 là MỘT MÔ HÌNH NGÔN NGỮ: nghe *"nét phờ lích"* trong câu
+  *"đứng đầu bảng xếp hạng ___"* thì nó vẫn viết ra `Netflix`. Tức **máy nghe
+  CHỮA HỘ máy đọc** và bảng đó đang phát chứng nhận cho thứ vẫn hỏng (họ bẫy
+  `astats` cổng 53 · mức mờ 0,40 cổng 56b).
+  **PHÉP ĐO 2 — token ĐỌC RỜI, không ngữ cảnh, có ARM ĐỐI CHỨNG giọng bản ngữ
+  en-US làm TRẦN** (`_do_doc_roi.py`):
+
+  | Loại | TRẦN en-US | Việt | Trung | Nhật |
+  |---|---|---|---|---|
+  | Tên riêng nước ngoài | 0% | **33%** | 17% | 17% |
+  | Từ viết tắt | 29% | **57%** | 17% | 17% |
+  | Số và ngày | 0% | 0% | 0% | 0% |
+  | Đơn vị / ký hiệu | 0% | 0% | 0% | 0% |
+  | **TỔNG** | **8%** | **24%** | **8%** | **8%** |
+
+  **TIẾNG VIỆT GẤP 3 LẦN TRẦN; Trung và Nhật ĐÚNG BẰNG trần** (trong phân giải
+  của phép đo, không có vấn đề thêm). Token hỏng ở arm đích MÀ TRẦN ĐỌC ĐƯỢC:
+  Việt 4 (`Marvel`->"Mác vô" · `TikTok`->"でっか" · `GDP`->"DDP" ·
+  `view`->"Vư"), Trung 1 (`Marvel`->"マーロ"), Nhật 1 (`Elon Musk`->"異論無粋").
+  Trong câu còn thấy `Elon Musk` -> **伊朗马斯克** ("Iran Musk") ở tiếng Trung
+  và **イロン息子** ("Iron con trai") ở tiếng Nhật.
+  **SỐ / NGÀY / ĐƠN VỊ: 0% ở CẢ 4 NGÔN NGỮ, CẢ 2 PHÉP ĐO** — Azure đã chuẩn
+  hoá sẵn (`1.500.000`->"1 triệu 500 nghìn" · `15/08`->"15 tháng 8" ·
+  `250 km/h`->"250 km trên giờ" · `38°C`->"38 độ C" · `500$`->"500 đô la").
+  Tức việc *"đọc rõ số"* là việc **KHÔNG CẦN LÀM**; làm là sửa thứ đang đúng.
+  **edge-tts CÓ CHO SSML QUA KHÔNG: KHÔNG** (`_do_ssml.py`, thí nghiệm chứ
+  không suy đoán). `Communicate` escape chữ người dùng TRƯỚC khi dựng SSML nên
+  thẻ bị **ĐỌC THÀNH TIẾNG**: `<lang xml:lang="en-US">Netflix</lang>` ra
+  *"...bảng xếp hạng Lan Smeller, Lan, NUSF, Netflix, Lan"*;
+  `<say-as interpret-as="characters">GDP</say-as>` ra *"CS Interps Charaster
+  GDP CS"*. Thử CẢ HAI đường (cửa chung của app **và** API trần) — giống hệt.
+  **ĐƯỜNG SSML ĐÓNG, đừng ai đi lại.**
+  **CÁCH SỬA — ĐO TRƯỚC KHI VIẾT** (`_do_phien_am.py`, 25 token, 2 arm ĐAN
+  XEN, **GHÉP CẶP** từng token vì `_do_co_gian_ab` đã chỉ ra "27 tốt lên mà 32
+  TỆ ĐI, tổng lại là hoà"): thô **6/25 (24%)** -> phiên âm **4/25 (16%)**;
+  **TỐT LÊN 2 · TỆ ĐI 0 · y nguyên 23**.
+  · **LUẬT VIẾT TẮT ĂN, và biết CHÍNH XÁC vì sao:** giọng Việt đánh vần bằng
+    TÊN CHỮ CÁI VIỆT (G="dê", D="đê", P="pê") nên `GDP` ra "dê-dê-pê" -> chép
+    thành **DDP**; người Việt đọc viết tắt bằng tên chữ cái ANH ("gi-đi-pi").
+    Đổi sang tên chữ cái Anh viết bằng âm Việt: `CEO` "See ya."->**CEO** ·
+    `GDP` "DDP"->**GDP**, và KHÔNG làm hỏng `AI`/`MV`/`USB` (đúng ở cả 2 arm).
+  · **BẢNG TÊN RIÊNG *KHÔNG* ĐƯỢC PHÁT HÀNH**, hai nửa đều nói không:
+    `Netflix`/`iPhone`/`Elon Musk`/`YouTube` **ĐANG ĐÚNG SẴN ở bản thô** (chép
+    âm cho chúng là rủi ro thuần, 0 lợi ích đo được); còn
+    `Marvel`/`TikTok`/`view` **VẪN HỎNG sau khi chép âm** ("Ma-veo"->«Mà về»,
+    "Tíc-tóc"->«でっか», "viu"->«Vư») — tức phiên âm ĐOÁN không hơn bản thô.
+  · **GIỚI HẠN CỦA PHÉP ĐO, đừng tính vào cột "chưa được":** `OST` hỏng ở cả 2
+    arm, **nhưng ARM TRẦN en-US cũng trượt OST** («Westy») — viết tắt 3 chữ đọc
+    MỘT MÌNH vốn mơ hồ.
+  **VÌ SAO CHƯA NỐI VÀO APP — CHỐT KỸ THUẬT THẬT:** chữ HIỆN LÊN lấy từ `texts`
+  GỐC, còn MỐC THỜI GIAN lấy từ WordBoundary của chính chữ ĐÃ GỬI cho máy đọc
+  (`dong_chu_theo_giong` -> `chia_cum_theo_tu` -> `_khop_tu_vao_chu`). Đổi chữ
+  gửi đi (`GDP`->"gi đi pi") là 3 mốc-từ không còn tìm thấy trong chữ hiện lên.
+  `_khop_tu_vao_chu` BỎ QUA từ không khớp nên KHÔNG vỡ — **nhưng nó đẩy con trỏ
+  `cur` đi TIẾN**, mà `"gi"` là chuỗi con của rất nhiều chữ Việt (`gì`, `giá`,
+  `nghĩ`), nên mốc sẽ dính vào SAI CHỖ rồi kéo con trỏ qua, làm lệch mốc của
+  các từ SAU đó = đúng lỗi *"chữ chạy không khớp tiếng"* mà v2.28.0 vừa chữa.
+  Bản vá ĐÚNG phải **trả mốc về token gốc** (gộp dãy mốc của phần thay thế lại
+  thành MỘT mốc mang chữ gốc) + cổng canh riêng. **CHƯA LÀM.**
+  **KHÔNG CÓ TAI — mọi số trên là SỐ ĐO.** File tiếng thật để anh Hùng tự nghe:
+  `_NGHE_THU_ANH_HUNG/doc_sai/<nn>/` (theo câu) và
+  `_NGHE_THU_ANH_HUNG/doc_roi/<nn>/` (token đọc rời).
+  **`edge-tts` ĐÃ CHỐT TRẦN `<8`** trong `requirements.txt` +
+  `requirements-build.txt`: từ 7.x mặc định đổi sang
+  `boundary="SentenceBoundary"` = **MẤT MỐC TỪNG CHỮ ÂM THẦM**. App an toàn nhờ
+  `dubbing.py:2046` truyền `WordBoundary` tường minh, nhưng chỗ gọi MỚI nào
+  quên là chữ lệch mà không ai biết. Máy đang chạy 7.2.8, vẫn lọt trần.
 - **ĐỘ TO ĐƯỜNG CẮT TRẢI 15,75 LU — ĐO XONG, *CHƯA SỬA*, CẦN ANH HÙNG DUYỆT
   (16/08/2026, `_do_lufs_duong.py`).** VIỆC 1 đòi "đường nào cũng phải đo".
   Chạy ffmpeg THẬT (`export_canvas_clip`) trên 4 video THẬT:
