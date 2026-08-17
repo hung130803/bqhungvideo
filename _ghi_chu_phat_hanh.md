@@ -2,7 +2,55 @@
 
 ## Sửa được gì
 
-### 1. Adam (ElevenLabs) — nay CHỌN ĐƯỢC trong hộp "Thay giọng nói"
+### 1. Chữ trong video thay giọng — nay CHỈNH ĐƯỢC cỡ · kiểu · đậm · nghiêng · màu · viền
+
+Anh Hùng: *"phần chữ sub trong video tôi không điều chỉnh được cỡ chữ, kiểu
+chữ, hay in nghiêng đậm, hay chỉnh viền gì được ạ"*.
+
+Đúng như vậy, và kiểm được bằng một lệnh: đường **cắt thường** đã có đủ mấy ô
+đó trong *Chỉnh mẫu* từ lâu, còn đường **thay giọng** thì
+`grep "Fontsize|FontName|Outline|Bold|Italic" app/core/thay_giong.py` ra **0
+kết quả** — kiểu chữ cứng, không một ô nào chỉnh được.
+
+Hộp **Thay giọng nói** nay có **9 ô** (hiện ra khi bật *Làm mờ chữ cháy sẵn* +
+*Viết lại bản dịch*):
+
+| Ô | Nhận gì | Để mặc định thì |
+|---|---|---|
+| Kiểu chữ | **27 kiểu SẴN CÓ của Chỉnh mẫu** | kiểu trắng viền đen như cũ |
+| Phông | 13 phông đã đo từng cái | phông cũ |
+| Cỡ chữ | % chiều cao khung | to bằng dòng chữ cũ vừa che |
+| Vị trí | trên / giữa / dưới khung | đúng chỗ chữ cũ |
+| In đậm · In nghiêng | có / không | như cũ |
+| Màu chữ · Màu viền | bảng màu | theo kiểu chữ |
+| Độ dày viền | % cỡ chữ | theo kiểu chữ |
+
+Hai điều cố ý làm theo cách này:
+
+* **Dùng THẲNG 27 kiểu của Chỉnh mẫu**, không đẻ bộ kiểu thứ hai. Cả hai đường
+  đi qua **cùng một cửa** trong mã, nên đặt cùng tham số là ra **cùng một kiểu
+  chữ** — không còn cảnh "clip cắt một kiểu, video thay giọng một kiểu".
+* **Nút chọn màu là ĐÚNG cái nút** anh Hùng đã quen trong Chỉnh mẫu (ô vuông
+  màu, chuột phải = về mặc định), không phải một bộ điều khiển thứ hai trông
+  khác.
+
+**Ô nào để mặc định thì y hệt bản trước, từng khoá một** — video đã làm bằng
+v2.31.0 không bị coi là "đã đổi cấu hình" rồi chạy lại.
+
+**Đã NHÌN TẬN MẮT, không chỉ đọc số.** Chạy ffmpeg thật trên video Douyin thật
+rồi trích khung ra ảnh, phóng to 2× để soi từng chữ:
+
+| Đặt gì | Nhìn thấy gì trong ảnh |
+|---|---|
+| không đặt gì (mốc) | chữ trắng, cỡ vừa, viền đen mỏng — **y như bản cũ** |
+| Anton · 7,5% · vàng · đậm | mặt chữ **hẹp và cao hẳn**, màu **vàng**, viền nâu dày |
+| Be Vietnam Pro · 4% · đỏ · nghiêng · viền trắng 20% | chữ **nghiêng thật**, **nhỏ hẳn**, đỏ trên viền trắng dày |
+| Montserrat · 6% · xanh · giữa khung · không đậm | chữ **xanh lơ**, nét mảnh hơn, nằm **giữa khung** (không còn ở đáy) |
+
+Tiếng Việt đủ dấu (Đ · â · à · ộ · đ · á · ấ) hiện đúng ở **cả 4 ảnh**, **không
+một ô vuông** nào.
+
+### 2. Adam (ElevenLabs) — nay CHỌN ĐƯỢC trong hộp "Thay giọng nói"
 
 Anh Hùng chụp màn hình hộp Thay giọng, Ngôn ngữ đích **Tiếng Anh**, combo
 Giọng đọc chỉ có edge-tts, và hỏi *"đâu Adam đâu"*.
@@ -19,7 +67,7 @@ chỗ là video **lẫn hai giọng** mà app vẫn báo thành công.
 
 Combo nay có **33 giọng ElevenLabs**, Adam đứng đầu nhóm.
 
-### 2. Mốc chữ của Adam — ĐO RA TỐT NGANG edge-tts, không giống Piper
+### 3. Mốc chữ của Adam — ĐO RA TỐT NGANG edge-tts, không giống Piper
 
 Việc này vốn được giao với giả định *"ElevenLabs không trả mốc, phải suy ra
 như Piper, chắc sẽ tệ hơn edge-tts nhiều"*. **Đo xong thì giả định đó SAI ở
@@ -65,7 +113,7 @@ rồi khoe là đã chữa.
 từ lượt đo Piper. Nay đo được: nó **phụ thuộc giọng thật**. Mọi kết luận cũ
 dựa trên lệch hệ thống của thước Groq cần đọc lại với lưu ý này.)*
 
-### 3. Cảnh báo chi phí TRƯỚC khi chạy — tiền của anh Hùng
+### 4. Cảnh báo chi phí TRƯỚC khi chạy — tiền của anh Hùng
 
 Thay giọng chạy **cả thư mục**. Gói free là **10.000 ký tự/tháng/tài khoản**,
 đang xoay 5 tài khoản ≈ 50.000 — vài video là cạn.
@@ -87,7 +135,7 @@ Bốn ca đều nói thẳng, không ca nào im lặng:
 Con số ghi rõ là **"ÍT NHẤT"**: các câu tràn khung phải đọc lại, mỗi lượt đọc
 lại là một lượt tính tiền nữa mà ước lượng này chưa đếm.
 
-### 4. Dòng tiến trình đã có tên video
+### 5. Dòng tiến trình đã có tên video
 
 Anh Hùng chụp hai dòng ghi `thay_giong — — thay_giong`: lặp tên loại việc, mà
 chỗ tên video thì **trống**. Chạy cả thư mục thì không biết dòng nào là video
@@ -99,7 +147,7 @@ bảng video trong máy, nên chỗ lấy tên bị rỗng và app lấp bằng 
 Nay đọc tên từ chính việc đó: **`Thay giọng · kenh 21 · Chuyen la co that`**.
 Payload rỗng/hỏng thì chỉ mất cái tên, **không làm sập bảng hàng đợi**.
 
-### 5. Một lỗi NỔ được tìm ra khi làm việc này
+### 6. Một lỗi NỔ được tìm ra khi làm việc này
 
 Đường lùi edge-tts của ElevenLabs gọi `asyncio.run(...)` từ bên trong một
 vòng lặp sự kiện đang chạy → **`RuntimeError` làm nổ cả lượt thay giọng**.
