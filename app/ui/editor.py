@@ -137,6 +137,57 @@ def _frow(label, *widgets, stretch_at=0):
     return row
 
 
+def nut_chon_mau(parent, get, set_, title="Chọn màu",
+                 default_label="theo preset"):
+    """Nút CHỌN MÀU dùng chung: hiện ô vuông màu hiện tại; bấm mở
+    QColorDialog. get() -> hex hiện tại ('' = mặc định/theo preset);
+    set_(hex) lưu lại ('' = xóa về mặc định). Chuột PHẢI = xóa về mặc định.
+    Trả (button, refresh) — gọi refresh() sau khi set giá trị ở nơi khác
+    (vd _apply_layout) để ô màu cập nhật.
+
+    Ở MỨC MODULE (không phải method) để hộp **Thay giọng** dùng lại đúng cái
+    nút anh Hùng đã quen trong Chỉnh mẫu, khỏi đẻ ra một bộ điều khiển thứ hai
+    trông khác. `EditorDialog._color_button` nay chỉ gọi vào đây.
+    """
+    btn = QPushButton()
+    btn.setFixedWidth(56)
+    btn.setToolTip(f"{title} (bấm chọn màu · chuột phải = {default_label})")
+
+    def refresh():
+        hexv = get() or ""
+        if hexv:
+            # ô nền = màu đang chọn, chữ A tương phản để thấy rõ
+            fg = "#000" if hexv.upper() > "#888888" else "#FFF"
+            btn.setText("A")
+            btn.setStyleSheet(
+                f"background:{hexv}; color:{fg}; border:1px solid #666;"
+                "font-weight:bold; border-radius:4px;")
+        else:                       # mặc định/theo preset -> hiện chữ "tự"
+            btn.setText("tự")
+            btn.setStyleSheet(
+                "background:#2A2A34; color:#9AA6BF; border:1px dashed #666;"
+                "border-radius:4px;")
+
+    def pick():
+        cur = get() or "#FFFFFF"
+        c = QColorDialog.getColor(QColor(cur), parent, title)
+        if c.isValid():
+            set_(c.name().upper())
+            refresh()
+
+    def reset():
+        set_("")
+        refresh()
+
+    btn.clicked.connect(pick)
+    # chuột phải -> menu 'Về mặc định'
+    from PyQt6.QtCore import Qt as _Qt
+    btn.setContextMenuPolicy(_Qt.ContextMenuPolicy.CustomContextMenu)
+    btn.customContextMenuRequested.connect(lambda _p: reset())
+    refresh()
+    return btn, refresh
+
+
 # Màu CHỮ AI KỂ (Style Narrate) — (nhãn, hex). Vàng #FFD966 mặc định (đầu list).
 _NARR_COLORS = [
     ("Vàng", "#FFD966"), ("Trắng", "#FFFFFF"), ("Xanh ngọc", "#16E0FF"),
@@ -1796,48 +1847,8 @@ class EditorDialog(QDialog):
 
     def _color_button(self, get, set_, title="Chọn màu",
                       default_label="theo preset"):
-        """Nút CHỌN MÀU dùng chung: hiện ô vuông màu hiện tại; bấm mở
-        QColorDialog. get() -> hex hiện tại ('' = mặc định/theo preset);
-        set_(hex) lưu lại ('' = xóa về mặc định). Chuột PHẢI = xóa về mặc định.
-        Trả (button, refresh) — gọi refresh() sau khi set giá trị ở nơi khác
-        (vd _apply_layout) để ô màu cập nhật."""
-        btn = QPushButton()
-        btn.setFixedWidth(56)
-        btn.setToolTip(f"{title} (bấm chọn màu · chuột phải = {default_label})")
-
-        def refresh():
-            hexv = get() or ""
-            if hexv:
-                # ô nền = màu đang chọn, chữ A tương phản để thấy rõ
-                fg = "#000" if hexv.upper() > "#888888" else "#FFF"
-                btn.setText("A")
-                btn.setStyleSheet(
-                    f"background:{hexv}; color:{fg}; border:1px solid #666;"
-                    "font-weight:bold; border-radius:4px;")
-            else:                       # mặc định/theo preset -> hiện chữ "tự"
-                btn.setText("tự")
-                btn.setStyleSheet(
-                    "background:#2A2A34; color:#9AA6BF; border:1px dashed #666;"
-                    "border-radius:4px;")
-
-        def pick():
-            cur = get() or "#FFFFFF"
-            c = QColorDialog.getColor(QColor(cur), self, title)
-            if c.isValid():
-                set_(c.name().upper())
-                refresh()
-
-        def reset():
-            set_("")
-            refresh()
-
-        btn.clicked.connect(pick)
-        # chuột phải -> menu 'Về mặc định'
-        from PyQt6.QtCore import Qt as _Qt
-        btn.setContextMenuPolicy(_Qt.ContextMenuPolicy.CustomContextMenu)
-        btn.customContextMenuRequested.connect(lambda _p: reset())
-        refresh()
-        return btn, refresh
+        """Xem `nut_chon_mau` — giữ nguyên tên cũ cho ~10 chỗ gọi trong file."""
+        return nut_chon_mau(self, get, set_, title, default_label)
 
     def _apply_layout(self, layout):
         if layout:
