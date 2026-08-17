@@ -29,7 +29,13 @@ google-generativeai==0.8.3   # Gemini
 python-dotenv==1.0.1
 
 # ---- Lồng tiếng AI (TTS Microsoft Neural, free, cần mạng) ----
-edge-tts>=6.1.12
+# TRẦN <8 LÀ CHỐT AN TOÀN, KHÔNG PHẢI CHO ĐẸP: từ **edge-tts 7.x** mặc định
+# của `Communicate` đổi sang `boundary="SentenceBoundary"` -> **MẤT MỐC TỪNG
+# CHỮ, ÂM THẦM** (không lỗi, không cảnh báo, chỉ là chữ trên video thôi chạy
+# theo lời). App hiện an toàn vì `dubbing.py:2046` truyền `WordBoundary` TƯỜNG
+# MINH — nhưng chỗ gọi MỚI nào quên truyền là hỏng mà không ai biết. Mở trần
+# thì phải đọc lại đúng chỗ đó trước. Máy này đang chạy 7.2.8.
+edge-tts>=6.1.12,<8
 
 # ---- Tiện ích ----
 psutil==6.0.0                # dò phần cứng (CPU/RAM)
