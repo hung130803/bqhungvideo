@@ -526,6 +526,64 @@ DEFAULT_PRESET = "Vàng nhảy (TikTok)"
 # AI kể render bằng MODE + màu/viền của preset đó (Style Narrate riêng).
 NARR_SAME_LABEL = "(giống phụ đề gốc)"
 
+#: Vị trí dọc đặt sẵn cho chữ (nhãn UI -> mã). "" = giữ chỗ mặc định của
+#: đường gọi (đường thay giọng: CHÍNH GIỮA DẢI CHỮ CŨ vừa che).
+VI_TRI_CHU = (("(theo chỗ chữ cũ)", ""), ("Trên", "tren"),
+              ("Giữa", "giua"), ("Dưới", "duoi"))
+#: Neo ASS + vị trí dọc (tỉ lệ chiều cao khung) cho từng mã ở trên.
+_VI_TRI_ASS = {"tren": (8, 0.10), "giua": (5, 0.50), "duoi": (2, 0.88)}
+
+
+def kieu_chu_ass(preset: str = "", size: int = 0, color: str = "",
+                 outline: str = "", ow: float = 0.0, out_h: int = 1920,
+                 dam: bool | None = None,
+                 nghieng: bool | None = None) -> dict:
+    """Quy 1 tên KIỂU (preset) + các ô user ghi đè ra TRƯỜNG KIỂU CHỮ của .ass.
+
+    ĐÂY LÀ CỬA DUY NHẤT quy preset ra kiểu chữ — `build_ass` (đường CẮT
+    THƯỜNG) và `che_chu.ghi_ass` (đường THAY GIỌNG) đều gọi vào đây, nên đặt
+    cùng tham số thì HAI ĐƯỜNG RA CÙNG MỘT KIỂU CHỮ. Tách ra từ chính thân
+    `build_ass` chứ không viết lại: bất biến cổng 21 ("18 preset CŨ × 4 bộ
+    tham số ra .ass giống TỪNG BYTE") canh đúng điều đó.
+
+    `size` = CỠ CHỮ tính bằng ĐIỂM ẢNH (0 -> tự theo `out_h`). Nhắc lại bẫy
+    cổng 45(c): truyền TỈ LỆ (0,055) vào đây thì .ass ghi `Fontsize: 0.055`,
+    chữ dưới 1 điểm ảnh = KHÔNG THẤY GÌ mà ffmpeg vẫn trả mã 0.
+    `ow` = độ dày viền theo TỈ LỆ cỡ chữ (0 -> theo preset).
+    `dam` / `nghieng` = None -> giữ mặc định (đậm, không nghiêng) như cũ.
+    """
+    p = CAPTION_PRESETS.get(preset) or CAPTION_PRESETS[DEFAULT_PRESET]
+    main = color or p["color"]                 # màu chữ: user chọn hoặc của kiểu
+    size = size or max(40, int(out_h * 0.05))
+    primary = _ass_color(main)
+    vien = _ass_color(p.get("outline", "#000000"))
+    dovien = max(0, int(size * p.get("ow", 0.10)))
+    shadow = p.get("shadow", 1)
+    back = _alpha_color("#000000", 0x96)        # bóng đổ mặc định
+    border_style = 1
+    if p.get("box"):                            # KIỂU NỀN HỘP
+        border_style = 3
+        vien = _ass_color(p.get("box_color", "#000000"))
+        dovien = max(8, int(size * 0.20))       # = bề dày hộp ôm chữ
+        shadow = 0
+    elif p.get("glow"):                         # KIỂU NEON: bóng = màu viền (phát sáng)
+        back = _alpha_color(p["glow"], 0x40)
+    # OVERRIDE user (Chỉnh mẫu, khu Phụ đề): màu viền / độ dày viền. Thiếu ->
+    # giữ theo preset như trên. `ow` theo tỉ lệ chiều cao (như 'ow' của
+    # preset) -> quy ra px theo size.
+    if outline:
+        vien = _ass_color(outline)
+    if ow and ow > 0:
+        dovien = max(0, int(size * ow))
+    return {"size": int(size), "primary": primary, "outline": vien,
+            "back": back, "ow": dovien, "shadow": shadow,
+            "border_style": border_style,
+            # ASS: -1 = BẬT, 0 = TẮT. Mặc định giữ nguyên hành vi cũ của
+            # `build_ass` (Bold=-1, Italic=0).
+            "bold": -1 if (True if dam is None else dam) else 0,
+            "italic": -1 if (False if nghieng is None else nghieng) else 0,
+            "upper": bool(p.get("upper")), "mode": p.get("mode", "word")}
+
 
 def build_ass(words: list, segments: list, out_path,
               out_w: int = 1080, out_h: int = 1920,
@@ -603,31 +661,16 @@ def build_ass(words: list, segments: list, out_path,
     _chu_ht = "".join(str(w[2]) for w in remapped[:400]) + str(hook or "") \
         + "".join(str(c[2]) for c in extra_cues[:200])
     font = font_cjk(_chu_ht, font)
-    main = color or p["color"]                 # màu chữ: user chọn hoặc của kiểu
-    size = size or max(40, int(out_h * 0.05))
+    # Kiểu chữ Style Default: quy qua CỬA DUY NHẤT `kieu_chu_ass` (đường THAY
+    # GIỌNG gọi đúng hàm này) — thân cũ nằm nguyên trong đó, cổng 21 canh
+    # ".ass giống TỪNG BYTE" nên phần này không được đổi hành vi.
+    _k = kieu_chu_ass(preset, size, color, cap_outline, cap_ow, out_h)
+    size = _k["size"]
     side = int(out_w * 0.14)
     align = 8
     margin_v = int(max(0.02, min(0.9, ny)) * out_h)
-    primary = _ass_color(main)
-    outline = _ass_color(p.get("outline", "#000000"))
-    ow = max(0, int(size * p.get("ow", 0.10)))
-    shadow = p.get("shadow", 1)
-    back = _alpha_color("#000000", 0x96)        # bóng đổ mặc định
-    border_style = 1
-    if p.get("box"):                            # KIỂU NỀN HỘP
-        border_style = 3
-        outline = _ass_color(p.get("box_color", "#000000"))
-        ow = max(8, int(size * 0.20))           # = bề dày hộp ôm chữ
-        shadow = 0
-    elif p.get("glow"):                         # KIỂU NEON: bóng = màu viền (phát sáng)
-        back = _alpha_color(p["glow"], 0x40)
-    # OVERRIDE user (Chỉnh mẫu, khu Phụ đề): màu viền / độ dày viền cho Style
-    # Default. Thiếu -> giữ theo preset như trên. cap_ow theo tỉ lệ chiều cao
-    # (như 'ow' của preset) -> quy ra px theo size.
-    if cap_outline:
-        outline = _ass_color(cap_outline)
-    if cap_ow and cap_ow > 0:
-        ow = max(0, int(size * cap_ow))
+    primary, outline, back = _k["primary"], _k["outline"], _k["back"]
+    ow, shadow, border_style = _k["ow"], _k["shadow"], _k["border_style"]
     # secondary: karaoke = màu CHƯA nói (mờ); kiểu khác không dùng
     if mode == "karaoke":
         secondary = _alpha_color(p.get("unsung", "#FFFFFF"), 0x64)

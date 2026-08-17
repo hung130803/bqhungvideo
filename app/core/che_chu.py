@@ -1533,16 +1533,82 @@ def _font_cho(chu: str, font: str) -> str:
         return font
 
 
+#: Khoá hợp lệ của ĐƠN THUỐC KIỂU CHỮ (`kieu`) — xem `ghi_ass`. Để rời ra cho
+#: UI/job dùng chung một bộ tên, khỏi mỗi nơi gõ một kiểu.
+KHOA_KIEU_CHU = ("preset", "font", "co_chu", "dam", "nghieng", "mau", "vien",
+                 "do_vien", "vi_tri")
+
+#: PHÔNG cho ô chọn của user. **ĐÃ ĐO TỪNG CÁI, KHÔNG PHẢI CHÉP DANH SÁCH**
+#: (`_do_phong_co_that.py` 17/08/2026): vẽ cùng một câu tiếng Việt đủ dấu bằng
+#: từng tên rồi so với một arm dùng tên phông BỊA — trùng từng byte = libass
+#: KHÔNG tìm ra phông đó và lùi về mặc định **mà vẫn trả mã 0**, tức ô chọn
+#: phông chỉ là cái nhãn. Bị loại vì đo ra "không có": `Baloo2` (viết liền —
+#: tên HỌ là `Baloo 2`, KHÁC tên FILE `Baloo2.ttf`) · `Nunito` · `Arial`.
+#: 9 cái đầu đóng gói kèm app (`app/assets/fonts`, `.spec` có khai) nên máy
+#: nhân viên chắc chắn có; 4 cái cuối là phông Windows.
+PHONG_UNG = ("Montserrat", "Be Vietnam Pro", "Anton", "Bungee", "Baloo 2",
+             "Oswald", "Lexend", "Lobster", "Pacifico",
+             "Segoe UI", "Tahoma", "Verdana", "Times New Roman")
+
+
+def thu_muc_phong() -> Optional[Path]:
+    """Thư mục PHÔNG ĐÓNG GÓI theo app (`app/assets/fonts`), None nếu không có.
+
+    Dùng chung một chỗ với đường CẮT THƯỜNG (`m1_highlight` truyền
+    `fonts_dir=ROOT_DIR/app/assets/fonts` vào `export_canvas_clip`)."""
+    try:
+        from config import ROOT_DIR
+        d = Path(ROOT_DIR) / "app" / "assets" / "fonts"
+        return d if d.is_dir() else None
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def chuoi_subtitles(ass: str | Path) -> str:
+    """Mảnh filter `subtitles=...` **LUÔN KÈM `fontsdir`**.
+
+    ĐO ĐƯỢC 17/08/2026, đây không phải cho đẹp: phông đóng gói trong
+    `app/assets/fonts` KHÔNG được cài vào hệ điều hành, nên thiếu `fontsdir`
+    thì libass không thấy `Anton`/`Be Vietnam Pro`/… và **lùi im lặng về phông
+    mặc định** — ffmpeg vẫn mã 0, vẫn đủ khung, chữ vẫn đọc được, chỉ là ô
+    chọn phông KHÔNG LÀM GÌ CẢ. Đo: cùng một .ass, không `fontsdir` ra file
+    3.248 KB y hệt arm phông bịa; có `fontsdir` ra 3.221 KB (Anton) và 3.232 KB
+    (Be Vietnam Pro), mở ảnh ra thấy rõ 3 mặt chữ khác nhau.
+    """
+    ra = f"subtitles='{_esc_loc(ass)}'"
+    fd = thu_muc_phong()
+    if fd is not None:
+        ra += f":fontsdir='{_esc_loc(fd)}'"
+    return ra
+
+
 def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
             font: str = "Arial", co_chu: float = 0.0,
             mau: str = "&H00FFFFFF", vien: str = "&H00000000",
-            do_vien: float = 0.0, nhieu_dong: int = 2) -> bool:
+            do_vien: float = 0.0, nhieu_dong: int = 2,
+            kieu: Optional[dict] = None) -> bool:
     """Ghi .ass đặt chữ MỚI vào ĐÚNG dải vừa che. True = có ít nhất 1 dòng.
 
     `dong` = [(bat_dau, ket_thuc, chữ), ...] — mốc đã ở TIMELINE ĐẦU RA (bên
     ngoài truyền vào; sau này là bản dịch). Không sắp lại, không remap.
     Chữ đặt bằng `\\an5\\pos(tâm dải)` nên nằm CHÍNH GIỮA dải cũ dù dải cao bao
     nhiêu — không phụ thuộc MarginV.
+
+    `kieu` = ĐƠN THUỐC KIỂU CHỮ do user đặt trong hộp Thay giọng (khoá:
+    `KHOA_KIEU_CHU`). **`None`/rỗng -> ra .ass GIỐNG TỪNG BYTE bản cũ** (bất
+    biến, có cổng canh) — mọi lối gọi cũ không phải sửa. Có đơn thuốc thì:
+
+    * `preset` = tên kiểu trong `captions.CAPTION_PRESETS` -> màu chữ / màu
+      viền / độ dày viền / bóng / nền hộp lấy qua `captions.kieu_chu_ass`, tức
+      **CÙNG MỘT CỬA** với đường CẮT THƯỜNG (`build_ass`). Đặt cùng tham số ->
+      hai đường ra cùng một kiểu chữ.
+    * `co_chu` = cỡ chữ theo TỈ LỆ CHIỀU CAO KHUNG (0 -> tự theo bề cao dải
+      chữ cũ như cũ). Nhận tỉ lệ chứ không nhận điểm ảnh vì video thay giọng
+      giữ nguyên khung nguồn, mỗi video một cỡ.
+    * `dam` / `nghieng` = in đậm / in nghiêng.
+    * `mau` / `vien` = "#RRGGBB" ghi đè màu của preset; `do_vien` = tỉ lệ so
+      với cỡ chữ (0 -> theo preset).
+    * `vi_tri` = "" (giữ chỗ dải chữ cũ) | "tren" | "giua" | "duoi".
     """
     dong = [(float(a), float(b), str(c))
             for a, b, c in (dong or []) if str(c).strip() and float(b) > float(a)]
@@ -1551,6 +1617,7 @@ def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
         return False
     W, H = int(dai.rong), int(dai.cao)
     cao_dai = dai.cao_dai
+    kieu = dict(kieu or {})
     # CỠ CHỮ = 0,85 x CHIỀU CAO DẢI. Dải dò ra chính là BỀ CAO VỆT MỰC của chữ
     # cũ, mà cỡ font ~ bề cao vệt mực (CJK gần 1:1, Latin có thêm chân chữ).
     # Bản đầu để 0,62 -> chữ mới NHỎ HƠN HẲN chữ cũ, nhìn ra ngay bằng mắt
@@ -1558,13 +1625,47 @@ def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
     cs = int(co_chu) if co_chu >= 8 else int(
         max(14, min(cao_dai * 0.85, H * 0.085)))
     cs = max(14, int(cs))
-    ow = do_vien if do_vien > 0 else max(1.0, round(cs * 0.09, 1))
-    ht = "".join(d[2] for d in dong[:400])
-    font = _font_cho(ht, font)
-    cx = (dai.x0 + dai.x1) / 2.0
-    cy = (dai.y0 + dai.y1) / 2.0
+    ty_co = float(kieu.get("co_chu") or 0)
+    if ty_co > 0:
+        # TỈ LỆ chiều cao khung -> ĐIỂM ẢNH. Đây đúng chỗ bẫy cổng 45(c): để
+        # lọt tỉ lệ xuống .ass là `Fontsize: 0.055`, chữ dưới 1 điểm ảnh =
+        # KHÔNG THẤY GÌ mà ffmpeg vẫn trả mã 0.
+        cs = max(14, int(round(ty_co * H)))
     # bề rộng cho phép: đúng bề ngang dải (chữ dài tự xuống dòng trong dải)
     le = max(4, int(W - (dai.x1 - dai.x0)) // 2)
+    cx = (dai.x0 + dai.x1) / 2.0
+    cy = (dai.y0 + dai.y1) / 2.0
+    neo, mv = 5, 10
+    dam = nghieng = 0
+    back, shadow, kieu_vien = "&H64000000", 0, 1
+    ow = do_vien if do_vien > 0 else max(1.0, round(cs * 0.09, 1))
+    if kieu:
+        from app.core.captions import _VI_TRI_ASS, kieu_chu_ass
+        k = kieu_chu_ass(str(kieu.get("preset") or ""), cs,
+                         str(kieu.get("mau") or ""), str(kieu.get("vien") or ""),
+                         float(kieu.get("do_vien") or 0), H,
+                         kieu.get("dam"), kieu.get("nghieng"))
+        mau, vien = k["primary"], k["outline"]
+        ow, back, shadow = k["ow"], k["back"], k["shadow"]
+        kieu_vien, dam, nghieng = k["border_style"], k["bold"], k["italic"]
+        if kieu.get("font"):
+            font = str(kieu["font"])
+        vt = str(kieu.get("vi_tri") or "")
+        if vt in _VI_TRI_ASS:
+            # user chốt vị trí -> BỎ neo theo dải chữ cũ, đặt theo khung hình
+            # (chữ mới không nhất thiết phải nằm đúng chỗ chữ cũ).
+            neo, ty = _VI_TRI_ASS[vt]
+            cx, cy = W / 2.0, ty * H
+            le = max(4, int(W * 0.06))
+        else:
+            # NEO THEO DẢI CHỮ CŨ + user chọn cỡ TO = CẮT ĐÁY KHUNG. Dải chữ
+            # của nguồn Douyin nằm sát mép dưới (đo: y=648..720 trên khung
+            # 720), mà `\an5` căn GIỮA khối chữ vào điểm neo -> nửa dưới khối
+            # rơi ra ngoài khung. NHÌN THẤY THẬT ở ảnh cỡ 0,110: dòng thứ hai
+            # bị chặt mất một nửa. Kéo điểm neo vào trong đúng NỬA DÒNG chữ.
+            cy = max(cs * 0.9, min(float(cy), H - cs * 0.9))
+    ht = "".join(d[2] for d in dong[:400])
+    font = _font_cho(ht, font)
     head = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -1576,15 +1677,16 @@ def ghi_ass(dong: Sequence, out_path: str | Path, dai: DaiChu,
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: CheChu,{font},{cs},{mau},{mau},{vien},&H64000000,"
-        f"0,0,0,0,100,100,0,0,1,{ow},0,5,{le},{le},10,1\n\n"
+        f"Style: CheChu,{font},{cs},{mau},{mau},{vien},{back},"
+        f"{dam},{nghieng},0,0,100,100,0,0,{kieu_vien},{ow},{shadow},"
+        f"{neo},{le},{le},{mv},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, "
         "MarginV, Effect, Text\n"
     )
     lines = [
         f"Dialogue: 0,{_tt(a)},{_tt(b)},CheChu,,0,0,0,,"
-        f"{{\\an5\\pos({cx:.0f},{cy:.0f})}}{_esc_ass(c)}"
+        f"{{\\an{neo}\\pos({cx:.0f},{cy:.0f})}}{_esc_ass(c)}"
         for a, b, c in dong
     ]
     Path(out_path).write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
