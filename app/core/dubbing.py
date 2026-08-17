@@ -43,6 +43,11 @@ from typing import Callable, Optional
 
 from config import DATA_DIR, settings
 
+# ĐỌC ĐÚNG VIẾT TẮT khi giọng là giọng Việt (`GDP` -> "gi đi pi") + GỘP MỐC VỀ
+# TOKEN GỐC. Module HÀM THUẦN, không nạp gì nặng -> import thẳng ở đầu file
+# được, không cần import trong hàm.
+from app.core import doc_viet_tat
+
 _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
 
 # Gom 2 câu transcript liền kề thành 1 cụm nếu hở dưới ngưỡng này (giây)
@@ -1659,6 +1664,10 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
             return False
     lang = norm_lang(voice.split("-")[0])
     txt = (text or "").strip() or _DEMO_TEXTS.get(lang) or _DEMO_TEXTS["en"]
+    # NGHE THỬ phải nghe ĐÚNG THỨ LÚC XUẤT SẼ RA — không thì anh Hùng nghe thử
+    # thấy "dê dê pê", xuất ra lại khác (hoặc ngược lại). Cửa này không dùng
+    # mốc từng chữ nên chỉ đổi chữ, không cần gộp mốc.
+    txt, _ = doc_viet_tat.sua_cho_may_doc(txt, voice)
     out_mp3 = str(out_mp3)
 
     async def _run() -> None:
@@ -1843,6 +1852,10 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                 if on_done:
                     on_done(i)
                 return
+            # VIẾT TẮT: giọng Việt đánh vần bằng tên chữ cái VIỆT nên `GDP` ra
+            # "dê-dê-pê". Cửa này KHÔNG trả mốc từ nên chỉ cần đổi chữ — xem
+            # `doc_viet_tat`. Giọng khác/máy đọc khác: trả nguyên văn.
+            txt, _ = doc_viet_tat.sua_cho_may_doc(txt, voice)
             for attempt in range(4):        # server MS chập chờn THEO ĐỢT
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 try:
@@ -2031,6 +2044,11 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                 if on_done:
                     on_done(i)
                 return
+            # VIẾT TẮT — xem `doc_viet_tat`. Cửa này CÓ trả mốc từng chữ nên
+            # phải giữ `_thay` để GỘP MỐC VỀ TOKEN GỐC sau khi đọc xong: chữ
+            # hiện lên lấy từ `texts` GỐC, mốc mang chữ "gi"/"đi"/"pi" là
+            # `_khop_tu_vao_chu` dính sai chỗ rồi lệch mốc mọi từ sau.
+            txt, _thay = doc_viet_tat.sua_cho_may_doc(txt, voice)
             r_i = rate[i] if isinstance(rate, list) else rate
             kw = {"rate": r_i}
             if pitch and pitch != "+0Hz":   # tông giọng (edge-tts >=6 có)
@@ -2063,7 +2081,7 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                                                round(a + d, 3), w])
                     if os.path.getsize(paths[i]) > 200:
                         ok[i] = True
-                        words[i] = wb
+                        words[i] = doc_viet_tat.tra_moc_ve_goc(wb, txt, _thay)
                         break
                 except Exception:  # noqa: BLE001
                     pass

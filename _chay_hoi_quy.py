@@ -33,6 +33,11 @@ PY = str(REPO / ".venv" / "Scripts" / "python.exe")
 
 #: (nhãn, file, mốc ĐẠT mong đợi hoặc None)
 CONG = [
+    # 69 và 68 PHẢI nằm trong danh sách này: cổng không được gọi thì nó chỉ là
+    # một file .py nằm đó, và lượt hồi quy "xanh" mà không chạy cổng mới chính
+    # là bẫy "ĐẠT OAN vì lượt chạy chưa tới chốt".
+    ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
+    ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    43),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
