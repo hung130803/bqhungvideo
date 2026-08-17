@@ -58,13 +58,22 @@ for _f in (sys.stdout, sys.stderr):
 
 SO_CAU = int(os.environ.get("BQ_SO_CAU", "14"))
 SO_LUOT = int(os.environ.get("BQ_LUOT", "2"))
-RA = REPO / "_do_piper_moc_that.json"
+RA = REPO / os.environ.get("BQ_RA", "_do_piper_moc_that.json")
+
+#: `NGON_NGU=en` -> đo trên câu TIẾNG ANH thật (đúng cảnh anh Hùng dùng Adam:
+#: hộp Thay giọng, Ngôn ngữ đích = Tiếng Anh). Arm đối chứng phải là giọng
+#: edge-tts CÙNG NGÔN NGỮ — so giọng Anh với giọng Việt là so hai thứ khác
+#: nhau rồi quy hết chênh lệch cho máy đọc.
+NGON_NGU = os.environ.get("BQ_NGON_NGU", "vi")
 
 GIONG = {
-    "EDGE": "vi-VN-NamMinhNeural",
+    "EDGE": ("en-US-AndrewNeural" if NGON_NGU == "en"
+             else "vi-VN-NamMinhNeural"),
     "PIPER": "piper:" + "vi_VN-vais1000-medium",
+    # Adam — giọng anh Hùng hỏi đích danh ("đâu Adam đâu")
+    "EL": "el:" + "pNInz6obpgDQGcFmaJgB",
 }
-ARM = ["EDGE", "PIPER"]
+ARM = [a for a in os.environ.get("BQ_ARM", "EDGE,PIPER").split(",") if a]
 
 
 # --------------------------------------------------------------------------
@@ -74,6 +83,30 @@ def nap_cau() -> list[str]:
     Lấy từ kết quả đo đường dịch (`_do_dich_soat.json`) chứ không bịa câu mẫu:
     câu mẫu ngắn/sạch làm phép đo đẹp giả tạo.
     """
+    if NGON_NGU == "en":
+        # Câu TIẾNG ANH THẬT — lời chép của chính video trên máy anh Hùng
+        # (`_do_hook_cache.json`, Groq chép). Không bịa câu mẫu: câu mẫu ngắn
+        # và sạch làm phép đo đẹp giả tạo.
+        d = json.loads((REPO / "_do_hook_cache.json")
+                       .read_text(encoding="utf-8"))
+        cau: set[str] = set()
+        for v in d:
+            if not isinstance(v, dict) or v.get("lang") != "English":
+                continue
+            for s in (v.get("segments") or []):
+                t = str((s or {}).get("text") or "").strip()
+                if t:
+                    cau.add(t)
+        ds = sorted(cau, key=lambda t: -len(t.split()))
+        # BQ_BO_QUA: bỏ N câu đầu -> lấy được bộ câu KHÁC HẲN để VALIDATE
+        # một hằng số đã hiệu chuẩn trên bộ trước. Hiệu chuẩn rồi kiểm trên
+        # CHÍNH bộ đã hiệu chuẩn là tự chấm bài mình.
+        bo = int(os.environ.get("BQ_BO_QUA", "0"))
+        ds = [t for t in ds if len(t.split()) >= 6][bo:bo + SO_CAU]
+        if not ds:
+            raise SystemExit("KHÔNG lấy được câu tiếng Anh từ "
+                             "_do_hook_cache.json")
+        return ds
     p = REPO / "_do_dich_soat.json"
     d = json.loads(p.read_text(encoding="utf-8"))
     for luot in d:
@@ -93,7 +126,10 @@ def doc_mot_arm(ten: str, texts: list[str], san: Path) -> tuple[list, list]:
     san.mkdir(parents=True, exist_ok=True)
     paths = [str(san / f"c{i:03d}.wav") for i in range(len(texts))]
     ok, words = asyncio.run(
-        dubbing._synth_all_words(texts, GIONG[ten], paths))
+        dubbing._synth_all_words(texts, GIONG[ten], paths, lang=NGON_NGU,
+                                 # đo mà lùi êm sang edge là đo NHẦM MÁY ĐỌC
+                                 # rồi gán số cho arm này — thà không có số.
+                                 el_lui=False))
     return list(zip(ok, paths)), words
 
 
@@ -262,14 +298,31 @@ def main() -> int:
     print("=" * 74)
     for a in ARM:
         in_tk(a, thong_ke(gom[a]), gom_bo[a], gom_tu[a])
-    te = thong_ke(gom["EDGE"])
-    tp = thong_ke(gom["PIPER"])
-    if te.get("n") and tp.get("n"):
+    # So MỌI arm với EDGE (arm đối chứng), không ghim cứng tên arm nào —
+    # ghim cứng "PIPER" làm lượt đo arm khác NỔ `KeyError` ĐÚNG LÚC đã in xong
+    # số, tức mất luôn phần kết luận.
+    te = thong_ke(gom.get("EDGE") or [])
+    for a in ARM:
+        if a == "EDGE" or not te.get("n"):
+            continue
+        tp = thong_ke(gom[a])
+        if not tp.get("n"):
+            continue
         print()
-        print(f"  PIPER so với EDGE: TB {tp['tb']:.1f} vs {te['tb']:.1f} ms "
-              f"= {tp['tb'] / max(0.1, te['tb']):.2f}x"
-              f"  ·  trong ±50ms {100.0 * tp['trong_50ms'] / tp['n']:.0f}% vs "
-              f"{100.0 * te['trong_50ms'] / te['n']:.0f}%")
+        print(f"  {a} so với EDGE — SỐ THÔ: TB {tp['tb']:.1f} vs "
+              f"{te['tb']:.1f} ms = {tp['tb'] / max(0.1, te['tb']):.2f}x")
+        # SỐ THÔ LÀ SỐ LỪA khi hai arm lệch hệ thống NGƯỢC DẤU (đã sập với
+        # Piper: 65,1 vs 60,4 nhìn ngang nhau, tách ra mới thấy 59,1 vs 38,6).
+        print(f"  {a} so với EDGE — TÁCH RA: lệch HỆ THỐNG "
+              f"{tp['lech_he_thong']:+.1f} vs {te['lech_he_thong']:+.1f} ms "
+              f"(trừ được bằng 1 hằng số)")
+        print(f"  {a} so với EDGE — RUNG (cái KHÔNG chữa được bằng hằng số): "
+              f"{tp['rung_tb']:.1f} vs {te['rung_tb']:.1f} ms = "
+              f"{tp['rung_tb'] / max(0.1, te['rung_tb']):.2f}x"
+              f"  ·  90% {tp['rung_p90']:.0f} vs {te['rung_p90']:.0f} ms")
+        print(f"  {a} so với EDGE — chữ hiện MUỘN hơn tiếng >50ms: "
+              f"{100.0 * tp['muon_hon_50'] / tp['n']:.1f}% vs "
+              f"{100.0 * te['muon_hon_50'] / te['n']:.1f}%")
     RA.write_text(json.dumps(tat_ca, ensure_ascii=False, indent=1),
                   encoding="utf-8")
     print(f"\nGhi: {RA}")

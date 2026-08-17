@@ -24,12 +24,15 @@ from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE, WARN
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
          "m1_mixed_cut": "Mixed-Cut", "auto_mixed": "Mixed-Cut",
          "auto_recap": "Reup thuyết minh",
-         "m1_export_clip": "Xuất clip"}
+         "m1_export_clip": "Xuất clip",
+         "thay_giong": "Thay giọng"}
 # Nhãn NGẮN + icon theo GIAI ĐOẠN (hiện ở TRƯỚC để biết ngay đang làm gì)
 _TYPE_TAG = {"auto": "🔍 Phân tích", "analyze": "🔍 Phân tích",
              "auto_mixed": "🔍 Mixed-Cut", "m1_mixed_cut": "🔍 Mixed-Cut",
              "auto_recap": "🎙 Thuyết minh",
-             "m1_highlights": "🔍 Tìm clip", "m1_export_clip": "✂ Xuất"}
+             "m1_highlights": "🔍 Tìm clip", "m1_export_clip": "✂ Xuất",
+             # KHÔNG EMOJI: máy nhân viên thiếu glyph là ra Ô ĐEN (v2.6.22).
+             "thay_giong": "Thay giọng"}
 _STATUS = {"running": ("Đang chạy", ACCENT), "pending": ("Đang chờ", MUTED),
            "done": ("✅ Xong", SUCCESS), "failed": ("✕ Lỗi · bấm xem", DANGER),
            "canceled": ("Đã hủy", MUTED), "skipped": ("Bỏ qua", MUTED)}
@@ -80,14 +83,59 @@ def _part_no(j) -> int:
         return 0
 
 
+#: Khoá trong `payload` có thể chứa ĐƯỜNG DẪN video, xếp theo thứ tự ưu tiên.
+#: `video` là khoá `jobs._thay_giong` đang dùng; hai khoá kia để job đời sau /
+#: đường gọi khác vẫn hiện được tên chứ không rơi về "—".
+_KHOA_DUONG = ("video", "src_path", "duong")
+
+
+def _khoa_payload(j, khoa: tuple) -> str:
+    """Giá trị chuỗi đầu tiên tìm được trong `payload` theo danh sách khoá.
+
+    KHÔNG BAO GIỜ NÉM: đây là đường vẽ nhãn, payload hỏng thì mất cái tên chứ
+    không được làm sập cả bảng hàng đợi.
+    """
+    import json
+    try:
+        p = j["payload"] if "payload" in j.keys() else ""
+        d = json.loads(p) or {}
+        if not isinstance(d, dict):
+            return ""
+        for k in khoa:
+            v = str(d.get(k) or "").strip()
+            if v:
+                return v
+    except (ValueError, TypeError, KeyError):
+        pass
+    return ""
+
+
+def _ten_tu_payload(j) -> str:
+    """Tên video (không đuôi) đọc từ `payload` — '' nếu không có."""
+    import os
+    v = _khoa_payload(j, _KHOA_DUONG)
+    return os.path.splitext(os.path.basename(v))[0] if v else ""
+
+
 def _job_name(j):
     """Nhãn: '<GIAI ĐOẠN> [Part N] · Kênh · Video' — hiện rõ loại việc + Part
     Ở TRƯỚC để user biết ngay đang làm gì cho video nào."""
     import os
-    chan = j["chan_name"] if "chan_name" in j.keys() and j["chan_name"] else "—"
+    chan = j["chan_name"] if "chan_name" in j.keys() and j["chan_name"] else ""
+    if not chan:
+        chan = _khoa_payload(j, ("kenh",))     # job không gắn `projects`
+    chan = chan or "—"
     vid = ""
     if "vid_path" in j.keys() and j["vid_path"]:
         vid = os.path.splitext(os.path.basename(j["vid_path"]))[0]
+    if not vid:
+        # JOB KHÔNG GẮN VỚI BẢNG `videos` -> `vid_path` RỖNG (LEFT JOIN trượt).
+        # Đúng ca `thay_giong`: nó chạy trên FILE trong thư mục anh Hùng chọn,
+        # không phải video trong DB. Trước đây dòng việc ra
+        # `thay_giong · — · thay_giong` (lặp tên LOẠI việc, chỗ tên video thì
+        # trống) nên chạy cả thư mục thì không biết dòng nào là video nào —
+        # anh Hùng chụp màn hình đúng chỗ này. Tên video nằm trong payload.
+        vid = _ten_tu_payload(j)
     tag = _TYPE_TAG.get(j["type"], _TYPE.get(j["type"], j["type"]))
     part = _part_no(j)
     if part > 0:

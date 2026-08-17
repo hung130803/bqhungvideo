@@ -1706,7 +1706,74 @@
      (nâng thuần 0,0035 dB · loudnorm động 0,277 dB) — đó mới là bất biến bảo
      vệ tỉ lệ giọng-nhạc, và nó bắt được phép phá ngay.
      **CHƯA LÀM, GHI THẲNG:** đường CẮT THƯỜNG và GHÉP ĐOẠN vẫn **KHÔNG** có
-     chuẩn hoá — xem khối "ĐỘ TO ĐƯỜNG CẮT" bên dưới.
+     chuẩn hoá — xem khối "ĐỘ TO ĐƯỜNG CẮT" bên dưới. **ĐÃ LÀM ở v2.31.0, xem
+     cổng 66.**
+  66. `_test_do_to_xuat.py` → **CHUẨN HOÁ ĐỘ TO CHO MỌI ĐƯỜNG XUẤT CLIP**
+     (v2.31.0). Cổng 65 canh đường THAY TIẾNG; cổng này canh **cắt thường ·
+     ghép đoạn · recap · Mixed-Cut · clip đơn**. **ĐẠT 50 · HỎNG 0.**
+     Nối ở **CỬA DUY NHẤT** `m1._export_clip_impl` (CA 10 đòi chỗ gọi nằm
+     NGOÀI mọi `if/for/while` — nằm trong nhánh là có đường xuất không đi qua).
+     **SỐ ĐO THẬT, 4 video / 8 bản xuất:** đỉnh vượt 0 dBTP **3/8 -> 0/8** ·
+     trải độ to **15,75 -> 7,40 LU** · đường thay tiếng **−16,00 -> −14,01**.
+     **CÒN 1 CLIP DỪNG Ở −21,40 — CỐ Ý, ĐỪNG "SỬA":** LRA 7,0 + đỉnh +0,90
+     dBTP, ép đủ to phải gọt quá ngân sách 6 dB = **nén dập**. Bậc thang lùi
+     lại là ĐÚNG; ai nới ngân sách cho "đẹp bảng" là đổi tiếng lấy con số.
+     Ba chốt: clip **gần câm** (< −45 LUFS) BỎ QUA · clip **đã đúng độ to**
+     không mã hoá lại byte nào (không thêm đời AAC) · chuẩn hoá **hỏng** thì
+     GIỮ NGUYÊN clip. Hình `-c:v copy` giống từng byte, lệch tiếng-hình 0 mẫu.
+  67. `_test_eleven_tg.py` → **ADAM (ElevenLabs) TRONG HỘP THAY GIỌNG**
+     (v2.32.0, 17/08/2026). Anh Hùng: *"đâu Adam đâu"*. **ĐẠT 35 · HỎNG 0.**
+     Nối ở **CỬA CHUNG** `dubbing._synth_all`/`_synth_all_words` (cạnh cửa
+     Piper) nên phủ cả 3 chỗ gọi của `thay_giong.py` mà **không sửa chỗ gọi
+     nào** — cổng 63 vẫn 24/0.
+     **`gemini:` VẪN CHẶN, có lý do bằng số:** Gemini TTS không trả word
+     boundary, mà đường thay tiếng dựng chữ THEO mốc từng chữ (cổng 60) ->
+     nhận vào là chữ quay lại kiểu đổ cả cụm.
+     **ĐIỀU BẤT NGỜ SỐ 1 — ElevenLabs CÓ TRẢ MỐC THẬT** (`/with-timestamps`,
+     `_parse_eleven_alignment` đã có sẵn từ đường recap). KHÔNG phải "mốc suy
+     ra" như Piper, không tốn lượt Groq nào. Việc này được giao với giả định
+     ngược lại — **đọc mã trước khi tin giả định**.
+     **ĐIỀU BẤT NGỜ SỐ 2 — THƯỚC GROQ PHỤ THUỘC GIỌNG. Đây là bài học lớn
+     nhất, và nó lật lại một giả định ngầm của MỌI phép đo mốc trước đây.**
+     Đo bằng đúng thước Piper (Groq chép ngược), 2 bộ câu Anh thật, arm edge
+     đan xen: RUNG Adam **47,2 / 34,0 ms** vs edge **46,0 / 35,0 ms** =
+     **1,03× và 0,97× — NGANG NHAU** (Piper 59,1 ms = 1,53×). NHƯNG số THÔ
+     lại xấu (70,1 vs 54,9) vì lệch HỆ THỐNG **+58,0 / +61,5 ms** (edge
+     −35,0 / −33,5) -> **57,7% chữ hiện muộn**. Lệch hệ thống trừ được bằng
+     hằng số, nên **suýt trừ 94 ms**. **THƯỚC THỨ BA CHẶN LẠI:** đo mốc chữ
+     đầu so với lúc thật sự phát tiếng (`silencedetect`, KHÔNG dùng Groq) ra
+     edge **−47,0 ms** vs Adam **−37,9 ms** = **chỉ lệch ~9 ms**. Tức +58 ms
+     là của THƯỚC, không của ElevenLabs; trừ 94 ms là tự tay làm sai thêm
+     94 ms rồi khoe đã chữa. Mục Piper ở dưới đã ghi *"chưa ai chứng minh độ
+     trễ Groq không phụ thuộc giọng"* — **nay chứng minh được là CÓ phụ
+     thuộc**. Quy tắc: **lệch HỆ THỐNG đo bằng Groq KHÔNG được coi là thuộc
+     tính của máy đọc** cho tới khi có thước thứ ba.
+     **LỖI THẬT CỔNG LÔI RA (CA 4):** `_synth_all_eleven` đồng bộ, mà đường
+     lùi của nó gọi `asyncio.run(_synth_all(...))`; gọi thẳng từ trong
+     `_synth_all_words` (async, đang trong event loop) -> **`RuntimeError:
+     asyncio.run() cannot be called from a running event loop`** = NỔ cả lượt
+     thay giọng. Nó **CHỈ nổ ở nhánh LÙI**, tức đúng lúc hết credit giữa mẻ
+     300 video — vài video đầu êm ru. Chữa bằng `_chay_eleven` =
+     `asyncio.to_thread`.
+     **KHÔNG TRỘN HAI GIỌNG:** `cho_lui_edge=False` cho 2 lượt ĐỌC LẠI
+     (`rut_gon_vua_khung` · `doc_nhanh_vua_khung`) — hết credit thì trả toàn
+     `False` = caller GIỮ bản ElevenLabs cũ. Để nó lùi edge là mấy câu đọc lại
+     ra giọng khác phần còn lại (đúng mệnh đề cổng 63). Lượt đọc ĐẦU thì vẫn
+     cho lùi: chưa có gì trong tay, video đúng mà khác giọng còn hơn câm.
+     **KHÔNG ĐỐT HẠN MỨC THẬT:** cổng vá `_eleven_tts` thành hàm sinh mp3 bằng
+     ffmpeg -> chạy trong hồi quy tốn **0 ký tự**. Đo thật tiêu **1.924 ký tự**
+     (47.833 -> 45.909 / 5 tài khoản free).
+     **BẪY VIẾT CỔNG, SẬP 1 LẦN:** `config.settings` là *instance* còn
+     `elevenlabs_keys` là `@classmethod` đọc `cls.ELEVENLABS_API_KEYS` — vá key
+     giả lên INSTANCE thì classmethod không thấy -> cửa rẽ đi thẳng edge và ca
+     *"phải trả False"* tự ĐẠT vì lý do NGƯỢC HẲN. Phải gán lên `type(settings)`
+     + có mục chốt *"vá key giả ĂN được"*, và CA 5 phải đòi thêm
+     `đã THỬ ElevenLabs` chứ không chỉ đòi kết quả False.
+     **CHƯA ĐẠT, GHI THẲNG:** ElevenLabs **không có tham số `rate`** nên bước
+     4c `doc_nhanh_vua_khung` (thứ đã đưa `tempo_max` về 1,017-1,027 ở v2.27.0)
+     **không chạy được với Adam** -> câu tràn khung quay lại nhờ `atempo`, có
+     thể chạm lại trần 1,5. **CHƯA ĐO** con số đó với Adam (một lượt đo là
+     ~2.275 ký tự cho ĐÚNG một video) — nói cơ chế, không bịa số.
 - **ĐỘ TO ĐƯỜNG CẮT TRẢI 15,75 LU — ĐO XONG, *CHƯA SỬA*, CẦN ANH HÙNG DUYỆT
   (16/08/2026, `_do_lufs_duong.py`).** VIỆC 1 đòi "đường nào cũng phải đo".
   Chạy ffmpeg THẬT (`export_canvas_clip`) trên 4 video THẬT:

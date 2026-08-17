@@ -288,6 +288,104 @@ def duong_ra(video: str | Path, thu_muc_dich: str | Path) -> str:
     return str(Path(thu_muc_dich) / Path(str(video)).name)
 
 
+# ══════════════════════════════════════════════════════════════════════
+# ƯỚC LƯỢNG CHI PHÍ GIỌNG TRẢ PHÍ (ElevenLabs) — TIỀN CỦA ANH HÙNG
+# ══════════════════════════════════════════════════════════════════════
+# Thay giọng chạy CẢ THƯ MỤC, mỗi video hàng nghìn ký tự, mà gói free chỉ
+# **10.000 ký tự/tháng/tài khoản** (đang xoay 5 tài khoản ≈ 50.000). Vài video
+# là cạn. Nên phải nói TRƯỚC khi chạy, đừng để hết giữa mẻ rồi mới biết.
+#
+#: Ký tự BẢN DỊCH trên MỘT PHÚT phim — **SỐ ĐO, không phải ước bừa**: bản dịch
+#: thật của video `近期热播的7部新片推荐…mp4` (`_do_dich_soat.json`) ra **2.275
+#: ký tự / 50 câu** cho **107,24 giây** phim = 1.273 ký tự/phút.
+#: Đây là ƯỚC LƯỢNG chứ không phải con số chắc: video nói dày/thưa lệch nhau
+#: nhiều, nên mọi chỗ hiện số này phải ghi rõ chữ "ước lượng".
+#:
+#: VÀ NÓ LÀ **SÀN DƯỚI**, không phải số cuối: bước 4b `rut_gon_vua_khung` và
+#: 4c `doc_nhanh_vua_khung` ĐỌC LẠI những câu tràn khung, mỗi lượt đọc lại là
+#: một lượt tính tiền nữa. Con số ở đây chỉ đếm LƯỢT ĐỌC ĐẦU. Vì vậy câu cảnh
+#: báo phải nói "ít nhất", đừng hứa là đủ.
+KY_TU_MOI_PHUT = 1273
+
+#: Chỉ đo độ dài THẬT của tối đa ngần này video rồi suy ra cho cả mẻ. Đo hết
+#: 300 video là 300 lượt `ffprobe` ngay lúc user vừa bấm Chạy — hộp thoại đứng
+#: hàng chục giây. Lấy mẫu rồi nhân là đủ cho một con số CẢNH BÁO.
+MAU_DO_DAI_TOI_DA = 12
+
+
+def uoc_ky_tu(videos, do_dai_giay=None) -> dict:
+    """Ước lượng số ký tự ElevenLabs cần cho cả mẻ `videos`.
+
+    `do_dai_giay(path) -> float` là hàm đo độ dài (tiêm vào để test được mà
+    không cần ffprobe/file thật). None -> tự dùng `dubbing.probe_duration`.
+
+    Trả {so_video, mau, giay_tb, tong_giay, ky_tu, uoc_luong=True}. Không đo
+    được video nào -> `giay_tb=0` và `ky_tu=0` kèm `khong_do_duoc=True`; nơi
+    gọi phải nói thẳng "không ước lượng được" chứ ĐỪNG hiện 0 như thể miễn phí.
+    """
+    ds = [str(v) for v in (videos or [])]
+    if not ds:
+        return {"so_video": 0, "mau": 0, "giay_tb": 0.0, "tong_giay": 0.0,
+                "ky_tu": 0, "uoc_luong": True, "khong_do_duoc": False}
+    if do_dai_giay is None:
+        from app.core.dubbing import probe_duration as do_dai_giay
+    mau = ds[:MAU_DO_DAI_TOI_DA]
+    giay = []
+    for p in mau:
+        try:
+            d = float(do_dai_giay(p) or 0)
+        except Exception:  # noqa: BLE001
+            d = 0.0
+        if d > 0:
+            giay.append(d)
+    if not giay:
+        return {"so_video": len(ds), "mau": len(mau), "giay_tb": 0.0,
+                "tong_giay": 0.0, "ky_tu": 0, "uoc_luong": True,
+                "khong_do_duoc": True}
+    tb = sum(giay) / len(giay)
+    tong = tb * len(ds)
+    return {"so_video": len(ds), "mau": len(giay), "giay_tb": round(tb, 1),
+            "tong_giay": round(tong, 1),
+            "ky_tu": int(round(tong / 60.0 * KY_TU_MOI_PHUT)),
+            "uoc_luong": True, "khong_do_duoc": False}
+
+
+def _so(n) -> str:
+    """12345 -> '12.345' (kiểu Việt). Tách riêng để phép thay dấu KHÔNG chạm
+    vào phần chữ của câu."""
+    return f"{int(n):,}".replace(",", ".")
+
+
+def loi_chi_phi(uoc: dict, con_lai) -> str:
+    """Câu cảnh báo chi phí (tiếng Việt, KHÔNG emoji) — '' nếu không cần lo.
+
+    `con_lai` = tổng ký tự còn lại trên mọi key, hoặc None khi KHÔNG đọc được
+    hạn mức (mạng/không key). None **KHÔNG** được coi là "còn nhiều": nói
+    thẳng là không đọc được.
+    """
+    if uoc.get("khong_do_duoc"):
+        return ("Không đo được độ dài video nên KHÔNG ước lượng được số ký "
+                "tự sẽ tiêu. Cứ chạy thì có thể hết hạn mức giữa chừng.")
+    can = int(uoc.get("ky_tu") or 0)
+    n = int(uoc.get("so_video") or 0)
+    # `.replace(",", ".")` phải áp lên RIÊNG con số. Áp lên cả câu thì nó nuốt
+    # luôn dấu phẩy của tiếng Việt ("Mẻ này 20 video, ước lượng" -> "video.").
+    dau = (f"Giọng ElevenLabs tính tiền theo KÝ TỰ. Mẻ này {n} video, ước "
+           f"lượng cần ÍT NHẤT khoảng {_so(can)} ký tự (chưa tính các câu "
+           f"phải đọc lại cho vừa khung)")
+    if con_lai is None:
+        return (dau + ", nhưng KHÔNG đọc được hạn mức còn lại (mạng lỗi hoặc "
+                "chưa cắm key). Chạy tiếp là chạy mò.")
+    conl = _so(con_lai)
+    if can > con_lai:
+        thieu = _so(can - int(con_lai))
+        return (dau + f"; hạn mức còn {conl} ký tự — THIẾU khoảng {thieu}.\n\n"
+                "Chạy tiếp thì tới lúc hết hạn mức app sẽ TỰ LÙI về giọng "
+                "edge-tts cho các video còn lại (video vẫn ra, chỉ khác "
+                "giọng) và ghi rõ video nào bị lùi trong nhật ký.")
+    return (dau + f"; hạn mức còn {conl} ký tự — đủ dùng.")
+
+
 def loi_doc_hieu(tho: str) -> str:
     """Đổi lỗi thô (mã lỗi/exception) thành LÝ DO ĐỌC HIỂU ĐƯỢC.
 

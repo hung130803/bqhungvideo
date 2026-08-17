@@ -1,123 +1,149 @@
-# BQ Hung Video v2.31.0
+# BQ Hung Video v2.32.0
 
 ## Sửa được gì
 
-### 1. Hết "ít tiếng quá" — clip nay to đúng chuẩn nền tảng
+### 1. Adam (ElevenLabs) — nay CHỌN ĐƯỢC trong hộp "Thay giọng nói"
 
-Anh Hùng: *"tool cắt sao phần giọng nói ít tiếng quá nghe không hay"*.
+Anh Hùng chụp màn hình hộp Thay giọng, Ngôn ngữ đích **Tiếng Anh**, combo
+Giọng đọc chỉ có edge-tts, và hỏi *"đâu Adam đâu"*.
 
-Đo ra **hai lỗi**, cả hai đều thật, và lỗi thứ hai nặng hơn lỗi anh Hùng kêu.
+Adam vốn **có** trong app (hộp Lồng tiếng) nhưng bị lọc khỏi hộp này, với lý
+do ghi thẳng trong mã: *"`doc_ban_dich` gọi thẳng `dubbing._synth_all` — hàm
+này CHỈ biết edge-tts. Đưa id `el:` vào là câu nào cũng hỏng mà UI vẫn khoe có
+chọn."* Bộ lọc **thành thật và đúng** — chỉ là chưa ai nối tiếp.
 
-**(a) Đường THAY TIẾNG chưa từng có bước chuẩn hoá độ to.** Bản anh Hùng xuất
-ngày 16/08 đo được **−16,00 LUFS**. Vì sao đó đúng là *"ít tiếng"*:
-YouTube/TikTok chỉ chuẩn hoá **XUỐNG**, không nâng lên — clip −16 phát ra nhỏ
-hơn hẳn mọi clip khác trong cùng luồng vì chúng đều bị kéo về ~−14.
+Nay đã nối, và nối ở **CỬA CHUNG** (`_synth_all` / `_synth_all_words`) chứ
+không vá từng chỗ gọi. Nhờ vậy phủ luôn cả **3 chỗ gọi** của đường thay giọng
+lẫn 3 chỗ của đường lồng tiếng — **không phải sửa một chỗ gọi nào**. Sót một
+chỗ là video **lẫn hai giọng** mà app vẫn báo thành công.
 
-| | I (LUFS) | TP (dBTP) | LRA |
-|---|---|---|---|
-| GỐC Douyin | −5,07 | +6,16 | 3,30 |
-| bản anh Hùng xuất 16/08 | **−16,00** | −2,26 | 2,10 |
-| **sau khi sửa** | **−14,01** | **−1,44** | **2,10** |
+Combo nay có **33 giọng ElevenLabs**, Adam đứng đầu nhóm.
 
-**(b) Đường CẮT THƯỜNG và GHÉP ĐOẠN: 3/8 bản xuất VỠ TIẾNG.** Đường cắt chép
-tiếng gốc nên không ai chặn đỉnh. Đo ffmpeg thật, 4 video thật, 8 bản xuất:
+### 2. Mốc chữ của Adam — ĐO RA TỐT NGANG edge-tts, không giống Piper
 
-| đường | I trước | TP trước | LRA trước | I sau | TP sau | LRA sau |
-|---|---|---|---|---|---|---|
-| cắt thường (Douyin) | −6,50 | **+3,90** | 3,10 | −14,00 | −3,80 | 3,10 |
-| ghép 2 đoạn (Douyin) | −5,90 | **+0,70** | 1,70 | −14,00 | −5,30 | 1,70 |
-| cắt thường | −21,90 | **+0,90** | 7,00 | −21,40 | −1,20 | 7,10 |
-| ghép 2 đoạn | −19,70 | −3,00 | 10,90 | −15,50 | −1,30 | 10,70 |
-| cắt thường | −15,50 | −2,00 | 8,10 | −14,10 | −1,40 | 8,10 |
-| ghép 2 đoạn | −15,40 | −2,50 | 3,00 | −14,00 | −1,20 | 3,00 |
-| cắt thường | −10,20 | −1,60 | 18,20 | −14,00 | −3,30 | 18,20 |
-| ghép 2 đoạn | −9,90 | −1,90 | 14,30 | −14,10 | −5,60 | 14,30 |
+Việc này vốn được giao với giả định *"ElevenLabs không trả mốc, phải suy ra
+như Piper, chắc sẽ tệ hơn edge-tts nhiều"*. **Đo xong thì giả định đó SAI ở
+cả hai vế**, và đây là phần đáng giá nhất của lượt này.
 
-> **Đỉnh vượt 0 dBTP (vỡ tiếng): 3/8 → 0/8.**
-> **Trải độ to giữa các clip: 15,75 LU → 7,40 LU.**
+**Vế một: ElevenLabs CÓ trả mốc thật.** Endpoint `/with-timestamps` trả mốc
+từng ký tự theo audio gốc. Không phải suy ra, không tốn một lượt Groq nào.
 
-Nay mọi đường xuất đi qua **một cửa chuẩn hoá duy nhất** — cắt thường · ghép ·
-recap · Mixed-Cut · clip đơn đều qua đó, không đường nào sót.
+**Vế hai: chất lượng mốc ngang edge-tts.** Đo bằng đúng thước đã đo Piper
+(Groq chép ngược chính file tiếng), 2 bộ câu tiếng Anh THẬT, arm đối chứng
+edge-tts chạy **đan xen trong cùng lượt**:
 
-**Ba chốt an toàn:**
-- Clip **gần câm** (dưới −45 LUFS) thì **BỎ QUA** — nâng lên là nâng nền nhiễu.
-- Clip **đã đúng độ to** thì không mã hoá lại một byte nào (không thêm đời AAC).
-- Chuẩn hoá **hỏng** thì giữ nguyên clip cũ, không mất video.
+| | bộ 1 (462 mốc) | bộ 2 held-out (270 mốc) |
+|---|---|---|
+| **RUNG — Adam** | **47,2 ms** | **34,0 ms** |
+| **RUNG — edge-tts** | **46,0 ms** | **35,0 ms** |
+| **tỉ lệ Adam/edge** | **1,03×** | **0,97×** |
 
-Hình **giống từng byte** (`-c:v copy`), độ dài không đổi, lệch tiếng-hình
-**0 mẫu**.
+> **RUNG là con số quan trọng nhất** — đó là phần KHÔNG chữa được bằng một
+> hằng số. Piper đo được **59,1 ms (1,53×)**; Adam **ngang edge-tts**.
+> Adam KHÔNG cùng họ với Piper.
 
-**Cách áp là "nâng thuần + hạn đỉnh", KHÔNG dùng `loudnorm`.** Đã đo cả 3 cách:
-`loudnorm` một lượt là bộ nén **ĐỘNG** (độ lệch chuẩn hệ số 0,277 dB — nó bóp
-méo tỉ lệ giọng/nhạc); `loudnorm linear=true` **tự tụt về động mà mã thoát vẫn
-0** khi thiếu chỗ trống (LRA 2,10 → 1,90 = nén dập, không một dòng cảnh báo).
-Cách đang dùng có hệ số **hằng số 0,0055 dB** nên tỉ lệ giọng-nhạc không đổi
-một ly. Trần đỉnh phải trừ **hai lần**: `alimiter` vọt +0,06 dB rồi **AAC vọt
-thêm +0,19 dB**.
+**Số thô thì trông xấu, và suýt nữa tôi tin nó.** Số thô: Adam 70,1 ms vs
+edge 54,9 ms, và **57,7% số chữ hiện MUỘN hơn tiếng**. Nguyên nhân là một
+**lệch HỆ THỐNG +58,0 ms** (bộ 2: +61,5 ms) trong khi edge là −35,0 (bộ 2:
+−33,5). Lệch hệ thống thì trừ một hằng số là xong — nên tôi đã **định trừ
+94 ms**.
 
-### 2. Nút "Nghe thử" trong hộp Thay giọng nói
+**Thước thứ ba chặn lại đúng lúc.** Đo mốc chữ đầu so với lúc THẬT SỰ phát ra
+tiếng (`silencedetect`, không dùng Groq):
 
-Anh Hùng: *"với không có phần nghe thử à"*. Nay có.
+| | mốc chữ đầu so với tiếng thật |
+|---|---|
+| edge-tts | −47,0 ms |
+| **Adam** | **−37,9 ms** |
 
-Nút đi qua **đúng bước 4 của lượt xuất thật**, không phải một đường đọc riêng —
-nghe thử thế nào thì xuất ra thế đó. Không chặn giao diện (**0 ms**); bấm lại
-cùng câu/giọng thì lấy từ cache (**652 ms → 1 ms**).
+Hai máy đọc chỉ lệch nhau **~9 ms**, không phải 94 ms. Tức **cái lệch +58 ms
+kia là của THƯỚC GROQ, không phải của ElevenLabs** — Groq đánh dấu đầu từ
+khác nhau tuỳ chất giọng. Trừ 94 ms đi thì đã tự tay làm mốc sai thêm 94 ms
+rồi khoe là đã chữa.
 
-**Nói ra NGUỒN THẬT, không nói cái bạn chọn:** chọn Piper mà máy chưa tải bộ đọc
-thì app lùi về edge-tts và **ghi rõ là đang nghe edge-tts** — không để bạn tưởng
-đang nghe Piper.
+*(Giả định "độ trễ Groq không phụ thuộc giọng" đã được ghi là CHƯA CHỨNG MINH
+từ lượt đo Piper. Nay đo được: nó **phụ thuộc giọng thật**. Mọi kết luận cũ
+dựa trên lệch hệ thống của thước Groq cần đọc lại với lưu ý này.)*
+
+### 3. Cảnh báo chi phí TRƯỚC khi chạy — tiền của anh Hùng
+
+Thay giọng chạy **cả thư mục**. Gói free là **10.000 ký tự/tháng/tài khoản**,
+đang xoay 5 tài khoản ≈ 50.000 — vài video là cạn.
+
+Chọn giọng ElevenLabs rồi bấm Chạy thì hộp hiện: **ước lượng số ký tự cả mẻ**
+(đo mẫu độ dài rồi nhân, theo số đo thật **1.273 ký tự/phút phim**) và **hạn
+mức còn lại thật** trên mọi key. Nút mặc định là **"Không chạy"** — bấm Enter
+theo phản xạ thì không tiêu tiền.
+
+Bốn ca đều nói thẳng, không ca nào im lặng:
+- đủ hạn mức → nói đủ
+- **thiếu** → nói thiếu bao nhiêu, và nói rõ app sẽ **tự lùi edge-tts** cho
+  các video còn lại (video vẫn ra, chỉ khác giọng) + ghi vào nhật ký
+- **không đọc được hạn mức** → nói thẳng *"chạy tiếp là chạy mò"*, không coi
+  như còn nhiều
+- **không đo được độ dài** → nói không ước lượng được, **không hiện số 0** như
+  thể miễn phí
+
+Con số ghi rõ là **"ÍT NHẤT"**: các câu tràn khung phải đọc lại, mỗi lượt đọc
+lại là một lượt tính tiền nữa mà ước lượng này chưa đếm.
+
+### 4. Dòng tiến trình đã có tên video
+
+Anh Hùng chụp hai dòng ghi `thay_giong — — thay_giong`: lặp tên loại việc, mà
+chỗ tên video thì **trống**. Chạy cả thư mục thì không biết dòng nào là video
+nào.
+
+Gốc: job thay giọng chạy trên FILE trong thư mục anh Hùng chọn, không gắn với
+bảng video trong máy, nên chỗ lấy tên bị rỗng và app lấp bằng mã loại việc.
+
+Nay đọc tên từ chính việc đó: **`Thay giọng · kenh 21 · Chuyen la co that`**.
+Payload rỗng/hỏng thì chỉ mất cái tên, **không làm sập bảng hàng đợi**.
+
+### 5. Một lỗi NỔ được tìm ra khi làm việc này
+
+Đường lùi edge-tts của ElevenLabs gọi `asyncio.run(...)` từ bên trong một
+vòng lặp sự kiện đang chạy → **`RuntimeError` làm nổ cả lượt thay giọng**.
+
+Chỗ nguy hiểm: nó **chỉ nổ ở nhánh LÙI**, tức đúng lúc ElevenLabs hết hạn mức
+giữa chừng. Chạy thử vài video đầu thì êm ru; tới giữa mẻ 300 video mới chết.
+Cổng 67 CA 4 bắt được ngay khi vừa nối xong.
 
 ---
 
 ## NÓI THẬT — những chỗ CHƯA được
 
-**1. Còn MỘT clip trong 8 bản xuất chưa tới đích −14 (dừng ở −21,40).** Đây là
-lựa chọn CỐ Ý chứ không phải sót: clip đó có dải động rộng (LRA 7,0) và đỉnh đã
-ở +0,90 dBTP, ép cho đủ to thì phải gọt quá ngân sách 6 dB = **nén dập tiếng**.
-App thà để clip nhỏ hơn còn hơn làm hỏng dải động. Vì vậy trải độ to còn
-**7,40 LU** chứ không về 0.
+**1. Giọng Gemini VẪN bị chặn, và đây là lý do bằng số chứ không phải quên.**
+Gemini TTS **không trả mốc từng chữ**. Đường thay giọng dựng chữ THEO mốc
+từng chữ ("nói đến đâu chữ hiện đến đó"), nhận Gemini vào là chữ quay lại
+kiểu đổ cả cụm — đúng cái anh Hùng đã kêu. Ngoài ra nó có thể **tự đổi cả
+track sang edge-tts** khi hết hạn mức mà không hỏi ai. Muốn mở Gemini thì
+phải giải hai chuyện đó trước.
 
-**2. Đường DỊCH: đã đóng, KHÔNG có lời giải.** Đã đo end-to-end và **bác cả hai**
-hướng còn lại, bằng số, mỗi hướng 3 lượt đan xen trên video thật:
+**2. ElevenLabs KHÔNG có tham số tốc độ đọc — bước "đọc nhanh cho vừa khung"
+không chạy được với Adam.** v2.27.0 chữa được lỗi *"nói không mượt"* nhờ bảo
+edge-tts **đọc nhanh hơn** thay vì ép `atempo` cắt-dán (đo được `tempo_max`
+xuống **1,017–1,027** và chồng lấn **0 ms, 6/6 lượt**). ElevenLabs không nhận
+tham số đó, nên câu tràn khung sẽ phải quay lại nhờ `atempo` như trước —
+tức có thể chạm lại trần 1,5 và nghe kém mượt hơn edge-tts.
+**Tôi CHƯA ĐO con số này với Adam** (một lượt đo là ~2.275 ký tự hạn mức của
+anh Hùng cho đúng một video). Nói ra cơ chế, không bịa con số.
+Bù lại, app **không bao giờ trộn hai giọng**: hai bước đọc lại được khoá
+đường lùi, hết hạn mức thì **giữ nguyên bản Adam cũ** chứ không chèn câu
+edge-tts vào giữa clip.
 
-| | đang dùng | thước chấm | ngân sách giờ |
-|---|---|---|---|
-| ĐẠT theo thước % | 82,67 | 78,0 | **69,33** |
-| câu cụt (mất nghĩa) | 1,33 | 3,00 | **5,67** |
-| lượt Groq / video | **5,0** | **54,7** | **12,3** |
+**3. Ước lượng chi phí là ƯỚC LƯỢNG.** Đo độ dài tối đa 12 video rồi nhân cho
+cả mẻ (đo hết 300 video là bắt anh Hùng chờ hàng chục giây ngay lúc vừa bấm
+Chạy). Video nói dày/thưa lệch nhau nhiều.
 
-Hướng "thước chấm" tốn **10,9 lần** lượt Groq mà chất lượng nằm trong nhiễu của
-chính cái thước. Hướng "ngân sách giờ" tốn 2,46 lần lượt mà **tụt 13,3 điểm** và
-đẻ ra **4,3 lần câu cụt**. Cả hai đều đi giải trước một bài toán mà bước sau
-(rút gọn + đọc nhanh) đã giải xong. **Muốn dịch tốt hơn phải tìm chỗ khác —
-đừng đo lại hai hướng này.**
+**4. Hạn mức đã tiêu cho lượt đo này: 1.924 ký tự** (47.833 → 45.909 trên 5
+tài khoản). Cổng 67 chạy trong hồi quy **không gọi mạng**, không tốn thêm ký
+tự nào.
 
-**3. Mốc chữ của giọng Piper vẫn kém edge-tts, và bản vá lần này KHÔNG kể là
-chữa.** Đo bằng Groq chép ngược chính file tiếng, 413-426 mốc từ:
+**5. Chưa ai NGHE Adam đọc trên video thật.** Mọi số ở trên là đo máy.
+File nghe thử để anh Hùng tự nghe: bấm nút **Nghe thử** trong hộp Thay giọng
+sau khi chọn Adam.
 
-| | edge-tts | Piper |
-|---|---|---|
-| **rung** (đã trừ lệch hệ thống) | **38,6 ms** | **59,1 ms (1,53×)** |
-| đuôi 90% | 81 ms | **138 ms (1,70×)** |
-| **chữ hiện MUỘN hơn tiếng** | **0,5%** | **42%** |
-
-Số thô (60,4 vs 65,1 ms) là **số lừa** — hai lỗi ngược dấu triệt tiêu nhau, phải
-tách ra mới thấy. Bản vá cho chữ nhảy qua chỗ máy đang im, đo ghép cặp ra
-**27 mốc tốt lên · 32 mốc TỆ ĐI · 354 y nguyên**, vì câu thật gần như không có
-chỗ nghỉ (0,53 s trên 90,64 s = 0,6%). Giữ bản vá vì nó đúng, **nhưng không kể
-là thành tích**. Hộp chọn giọng nay ghi thẳng đánh đổi đó.
-
-**4. Chưa ai NGHE giọng Piper.** Mọi số ở trên là đo máy — tôi không có tai.
-
-**5. Piper tốn 3,62× thời gian thật, 212 MB, và cần máy có Python 3.**
-
-**6. Che chữ "quét cả khung" vẫn MẶC ĐỊNH TẮT.** Nguồn quay camera cố định thì
-nó bôi hỏng khung hình. Đã đo cách tự phát hiện nhưng cả bộ đối chứng chỉ có
-**1** video che oan — biên vỏn vẹn 2,3%, không đủ đặt ngưỡng. Và cách che hiện
-tại vẫn **bỏ sót 9,1%** (4/44 cửa sổ có chữ mà không dò ra).
-
-**7. Giấy phép giọng đọc — CHỜ ANH HÙNG QUYẾT, tôi không tự ý gỡ.**
-`edge-tts` là LGPLv3 và kèm đúng câu của tác giả *"It shouldn't be used for
-commercial reasons"* (đó không phải điều khoản LGPL — rủi ro thật nằm ở điều
-khoản dịch vụ Microsoft). ElevenLabs thì đang xoay vòng **5 tài khoản miễn phí**.
-Cả hai đều đang dùng hằng ngày, nên anh Hùng cần biết để quyết.
+**6. Giấy phép — CHỜ ANH HÙNG QUYẾT, tôi không tự ý gỡ.** `edge-tts` là
+LGPLv3 kèm nguyên văn câu của tác giả *"It shouldn't be used for commercial
+reasons"*. ElevenLabs đang **xoay vòng 5 tài khoản miễn phí**. Cả hai đều
+đang dùng hằng ngày.

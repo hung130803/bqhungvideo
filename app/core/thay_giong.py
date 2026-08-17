@@ -1866,9 +1866,12 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
     # khung`) — sót một chỗ thì câu đi qua chỗ đó đọc bằng cao độ GỐC, ra
     # video lẫn hai giọng mà rc vẫn 0, không một dòng báo.
     _v, _pitch = tach_giong_pitch(voice)
+    # `lang` để cửa chung biết lùi về giọng edge-tts NÀO nếu giọng trả phí
+    # (ElevenLabs) hỏng/hết credit. Lượt đọc ĐẦU nên `el_lui` giữ mặc định
+    # True: chưa có gì trong tay, lùi cả track sang edge vẫn ra video ĐÚNG.
     ok, moc_tu = asyncio.run(
         dubbing._synth_all_words(texts, _v, paths, on_done=_done,
-                                 pitch=_pitch))
+                                 pitch=_pitch, lang=dich_sang))
     # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
     # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
     # độ dài file có kèm ~1,07 s im lặng của edge-tts.
@@ -2238,8 +2241,12 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         import asyncio
         from app.core import dubbing
         v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
+        # `el_lui=False`: đây là lượt ĐỌC LẠI, câu nào cũng đã có sẵn bản
+        # ElevenLabs. Hết credit mà lùi edge thì mấy câu này ra giọng khác
+        # phần còn lại = video LẪN HAI GIỌNG; trả False để GIỮ BẢN CŨ.
         ok2, mt2 = asyncio.run(
-            dubbing._synth_all_words(thu, v, paths, pitch=_pitch))
+            dubbing._synth_all_words(thu, v, paths, pitch=_pitch,
+                                     lang=dich_sang, el_lui=False))
         # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
         # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
         paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
@@ -2366,8 +2373,13 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
         paths.append(str(out_dir / f"nhanh_{i:04d}.mp3"))
     # `rate` chỉ đổi TỐC ĐỌC của model; WordBoundary server trả theo audio
     # THẬT (đã áp rate) nên mốc từng-từ vẫn đúng, KHÔNG phải bù lại.
+    # `el_lui=False` — cùng lý do ở `rut_gon_vua_khung`: giữ bản cũ chứ không
+    # trộn giọng. LƯU Ý ĐÁNH ĐỔI THẬT: ElevenLabs KHÔNG có tham số `rate` nên
+    # bước ĐỌC NHANH này không rút ngắn được gì, câu tràn khung sẽ phải nhờ
+    # `atempo` như trước v2.27.0 (xem mục "chưa được" của ghi chú phát hành).
     ok2, mt2 = asyncio.run(
-        dubbing._synth_all_words(thu, v, paths, rate=rates, pitch=_pitch))
+        dubbing._synth_all_words(thu, v, paths, rate=rates, pitch=_pitch,
+                                 lang=dich_sang, el_lui=False))
     sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0

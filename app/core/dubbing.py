@@ -1484,6 +1484,7 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
                       model: str = "",
                       edge_texts: Optional[list[str]] = None,
                       words_out: Optional[list] = None,
+                      cho_lui_edge: bool = True,
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua ElevenLabs TTS (KHUÔN _synth_all_gemini).
     _eleven_tts tự XOAY KEY từng request (key hết credit -> key kế NGAY,
@@ -1512,7 +1513,17 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
     endpoint /with-timestamps: words_out[i] = [[start_s, end_s, word], ...]
     (mốc theo audio GỐC part i, trước atempo). Cụm không có mốc (endpoint
     không hỗ trợ / fallback edge) -> words_out[i] = [] (caller lùi STT).
-    Đường fallback edge KHÔNG điền words_out (caller STT như cũ)."""
+    Đường fallback edge KHÔNG điền words_out (caller STT như cũ).
+
+    cho_lui_edge=False: ElevenLabs hỏng/hết credit thì trả TOÀN `False` chứ
+    KHÔNG đọc lại bằng edge-tts. Dùng cho các lượt đọc LẠI (`rut_gon_vua_khung`
+    · `doc_nhanh_vua_khung` của `thay_giong`): ở đó caller đã có sẵn bản
+    ElevenLabs của câu đó rồi, `ok[i]=False` nghĩa là "giữ bản cũ". Nếu để nó
+    lùi edge thì mấy câu ĐỌC LẠI ra giọng edge trong khi phần còn lại là giọng
+    ElevenLabs -> **video LẪN HAI GIỌNG**, mà `rc` vẫn 0 và không một dòng báo
+    (đúng mệnh đề cổng 63 đang canh). Lượt đọc ĐẦU (`doc_ban_dich`) thì vẫn để
+    `True`: ở đó chưa có gì trong tay, lùi edge cho cả track vẫn ra video ĐÚNG,
+    chỉ khác giọng — thà vậy còn hơn không có tiếng."""
     fb_texts = edge_texts if edge_texts is not None else texts
     if words_out is not None:              # 1 ô mốc TỪ cho mỗi cụm
         words_out.clear()
@@ -1529,6 +1540,12 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
             on_msg(m)
 
     def _fallback_edge(reason: str) -> list[bool]:
+        if not cho_lui_edge:
+            # GIỮ BẢN CŨ, đừng trộn giọng — xem docstring `cho_lui_edge`.
+            if on_msg:
+                on_msg(f"ElevenLabs {reason} -> GIỮ NGUYÊN bản đọc trước "
+                       f"(không lùi edge-tts để khỏi lẫn hai giọng)")
+            return [False] * len(texts)
         fb = _edge_fallback_voice(lang)
         if on_msg:
             on_msg(f"ElevenLabs {reason} -> synth LẠI toàn bộ bằng giọng dự "
@@ -1781,6 +1798,9 @@ def _translate_chunks(chunks: list[dict], target_lang: str) -> list[str]:
 async def _synth_all(texts: list[str], voice: str, paths: list[str],
                      on_done: Optional[Callable[[int], None]] = None,
                      rate: str | list = "+0%",
+                     lang: str = "",
+                     el_lui: bool = True,
+                     on_msg: Optional[Callable[[str], None]] = None,
                      ) -> list[bool]:
     """Đọc từng câu song song. Trả list[bool] ok[i] = câu #i ra file hợp lệ.
     Câu lỗi (retry 4 lần vẫn hỏng) -> ok[i]=False (KHÔNG ném lỗi cả track):
@@ -1793,6 +1813,13 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
     GIỌNG PIPER (`piper:...`) đi đường riêng — xem `_piper_hay_khong`. Cửa
     này KHÔNG cần mốc từng chữ nên bỏ hẳn lượt đọc chữ rời (`lay_moc=False`),
     tiết kiệm đúng 1,12× thời gian đọc."""
+    if _eleven_hay_khong(voice):
+        # PHẢI chạy ở LUỒNG RIÊNG (`to_thread`), đừng gọi thẳng — xem
+        # `_chay_eleven`.
+        return await _chay_eleven(
+            texts, voice, paths, lang, on_done, on_msg,
+            rate if isinstance(rate, str) else "+0%", el_lui, None)
+
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
         from app.core import piper_tts
@@ -1862,6 +1889,74 @@ _WB_TICKS = 10_000_000.0
 # `pitch` KHÔNG áp dụng cho Piper: máy đọc này không chỉnh được cao độ. Bảng
 # biến thể `thay_giong.BIEN_THE_PITCH` chỉ có khoá cho 2 giọng edge-tts nên
 # mã Piper tự nhiên không sinh biến thể nào — không phải chặn thêm.
+# ==================================================================
+# CỬA DUY NHẤT RẼ SANG ELEVENLABS — cùng chỗ, cùng lý lẽ với Piper
+# ==================================================================
+# `thay_giong` làm nội dung TIẾNG ANH và giọng hợp nhất là Adam (ElevenLabs).
+# Trước v2.32.0 `giong_dung_duoc` LỌC BỎ `el:` khỏi combo hộp Thay giọng, với
+# lý do THÀNH THẬT ghi ngay trong mã: *"`doc_ban_dich` gọi thẳng
+# `dubbing._synth_all` — hàm này CHỈ biết edge-tts"*. Bộ lọc đúng, chỉ là
+# không ai nối tiếp. Nay nối ở ĐÂY — cùng cửa Piper đang đứng — nên phủ luôn
+# cả 3 chỗ gọi `_synth_all_words` của `thay_giong.py` LẪN 3 chỗ gọi
+# `_synth_all` của `dubbing.py`, KHÔNG phải sửa chỗ gọi nào.
+#
+# KHÁC PIPER MỘT ĐIỂM QUAN TRỌNG: ElevenLabs **CÓ TRẢ MỐC TỪNG CHỮ THẬT**
+# (endpoint `/with-timestamps`, xem `_parse_eleven_alignment`) — không phải
+# mốc SUY RA như Piper. Nên `_synth_all_words` lấy mốc thẳng từ API qua
+# `words_out`, không cần chép ngược bằng Groq.
+def _eleven_hay_khong(voice: str) -> bool:
+    """Giọng này có phải ElevenLabs không (và máy có key để dùng không).
+
+    KHÔNG có key -> False: để lượt đọc đi tiếp bằng edge-tts như cũ thay vì
+    nướng thời gian gọi API chắc chắn hỏng. `_synth_all_eleven` vẫn tự lùi
+    edge khi hết credit GIỮA CHỪNG; chỗ này chỉ chặn ca "chưa cắm key nào".
+    """
+    if not str(voice or "").startswith("el:"):
+        return False
+    if not _eleven_keys():
+        _ghi_log_el(f"Chưa cắm key ElevenLabs -> giọng {voice} đọc bằng "
+                    f"edge-tts")
+        return False
+    return True
+
+
+async def _chay_eleven(texts, voice, paths, lang, on_done, on_msg, edge_rate,
+                       cho_lui_edge, words_out):
+    """Chạy `_synth_all_eleven` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    VÌ SAO KHÔNG GỌI THẲNG (lỗi THẬT, cổng 67 CA 4 bắt được lúc đang làm):
+    `_synth_all_eleven` là hàm ĐỒNG BỘ, mà đường lùi của nó
+    (`_fallback_edge`) gọi `asyncio.run(_synth_all(...))`. Gọi thẳng từ trong
+    `_synth_all`/`_synth_all_words` — vốn là `async` và đang chạy trong một
+    event loop — thì `asyncio.run` ném **`RuntimeError: asyncio.run() cannot
+    be called from a running event loop`** và **NỔ CẢ LƯỢT THAY GIỌNG**.
+
+    Chỗ nguy hiểm là nó CHỈ nổ ở nhánh LÙI, tức chỉ khi ElevenLabs hết credit
+    giữa chừng: chạy thử vài video đầu thì êm ru, tới đúng lúc hết hạn mức —
+    giữa mẻ 300 video — mới chết. `to_thread` cho nó một luồng KHÔNG có event
+    loop nên `asyncio.run` bên trong hợp lệ trở lại, và tiện thể không chặn
+    vòng lặp sự kiện.
+    """
+    return await asyncio.to_thread(
+        _synth_all_eleven, texts, voice, paths, norm_lang(lang),
+        on_done=on_done, on_msg=on_msg, edge_rate=edge_rate,
+        words_out=words_out, cho_lui_edge=cho_lui_edge)
+
+
+def _ghi_log_el(dong: str) -> None:
+    """Ghi lý do LÙI vào log ngày — lùi êm mà im lặng thì đúng bằng hỏng âm
+    thầm (cùng luật với `piper_tts._ghi_log`)."""
+    try:
+        import datetime
+        p = DATA_DIR / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now()
+        with open(p / f"eleven_{ts:%Y%m%d}.log", "a", encoding="utf-8") as f:
+            f.write(f"[{ts:%H:%M:%S}] {dong}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _piper_hay_khong(voice: str) -> tuple[bool, str]:
     """(có dùng Piper không, giọng phải LÙI VỀ nếu không dùng được).
 
@@ -1888,6 +1983,9 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
                            rate: str | list = "+0%",
                            pitch: str = "+0Hz",
+                           lang: str = "",
+                           el_lui: bool = True,
+                           on_msg: Optional[Callable[[str], None]] = None,
                            ) -> tuple[list[bool], list[list]]:
     """Như _synth_all nhưng THU thêm WORD BOUNDARY của edge-tts (stream API:
     chunk type "WordBoundary" có offset/duration 100-ns) -> mốc TỪNG TỪ theo
@@ -1905,6 +2003,17 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
 
     GIỌNG PIPER (`piper:...`) đi đường riêng — xem `_piper_hay_khong`.
     """
+    if _eleven_hay_khong(voice):
+        # MỐC TỪNG CHỮ LẤY THẲNG TỪ API (`/with-timestamps`) — chính xác theo
+        # audio gốc, KHÔNG phải suy ra như Piper, KHÔNG tốn lượt Groq nào.
+        moc_el: list = []
+        ok_e = await _chay_eleven(
+            texts, voice, paths, lang, on_done, on_msg,
+            rate if isinstance(rate, str) else "+0%", el_lui, moc_el)
+        while len(moc_el) < len(texts):     # lùi edge -> API không điền mốc
+            moc_el.append([])
+        return ok_e, moc_el
+
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
         from app.core import piper_tts

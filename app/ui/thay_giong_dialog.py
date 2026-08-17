@@ -107,16 +107,29 @@ def bo_emoji(s: str) -> str:
 
 
 def giong_dung_duoc(ds: list) -> list:
-    """Lọc danh sách giọng về ĐÚNG cái `thay_giong` đọc được (edge-tts).
+    """Lọc danh sách giọng về ĐÚNG cái `thay_giong` đọc được.
 
-    `doc_ban_dich` gọi thẳng `dubbing._synth_all` — hàm này CHỈ biết edge-tts.
-    Đưa id `gemini:` / `el:` vào là câu nào cũng hỏng mà UI vẫn khoe có chọn.
+    LỊCH SỬ, ĐỌC TRƯỚC KHI SỬA: tới v2.31.0 hàm này lọc bỏ CẢ `el:` LẪN
+    `gemini:`, lý do ghi thẳng trong mã là *"`doc_ban_dich` gọi thẳng
+    `dubbing._synth_all` — hàm này CHỈ biết edge-tts"*. Lý do đó ĐÚNG vào lúc
+    ấy. v2.32.0 đã nối ElevenLabs vào **cửa chung** `_synth_all`/
+    `_synth_all_words` (xem `dubbing._eleven_hay_khong`) nên `el:` chạy được
+    thật -> BỎ lọc `el:`.
+
+    **`gemini:` VẪN CHẶN, và đây là lý do bằng số chứ không phải quên:**
+    Gemini TTS **KHÔNG trả word boundary** (`dubbing.py` ghi rõ ở nhánh
+    `_synth_all_gemini`), mà đường thay tiếng DỰNG CHỮ THEO MỐC TỪNG TỪ (cổng
+    60: "nói đến đâu chữ hiện đến đó"). Đưa `gemini:` vào là mất mốc -> chữ
+    quay lại kiểu đổ cả cụm, đúng cái anh Hùng đã kêu. Ngoài ra
+    `_synth_all_gemini` có thể TỰ ĐỔI CẢ TRACK sang edge-tts khi hết hạn mức
+    mà không hỏi ai. Nối được `gemini:` thì phải giải hai chuyện đó trước.
+
     Nhãn nhóm (voice_id rỗng) giữ lại để combo còn phân nhóm ngôn ngữ.
     """
     ra: list = []
     for nhan, vid in ds or []:
         v = str(vid or "")
-        if v.startswith("gemini:") or v.startswith("el:"):
+        if v.startswith("gemini:"):
             continue
         ra.append((bo_emoji(str(nhan)), v))
 
@@ -1017,6 +1030,39 @@ class ThayGiongDialog(QDialog):
         # che là HAI LỚP CHỮ chồng nhau, tệ hơn hẳn để nguyên.
         self.ck_viet.setEnabled(bool(bat))
 
+    def _duyet_chi_phi(self, vids: list) -> bool:
+        """Hiện ước lượng ký tự + hạn mức còn lại, hỏi có chạy không.
+
+        True = chạy tiếp. Mặc định nút được chọn sẵn là **KHÔNG** — bấm Enter
+        theo phản xạ thì không tiêu tiền của anh Hùng.
+
+        `BQ_TG_BO_QUA_CHI_PHI=1` bỏ qua hộp này (cổng test dùng, để khỏi phải
+        gọi mạng và khỏi treo ở hộp thoại).
+        """
+        if os.environ.get("BQ_TG_BO_QUA_CHI_PHI") == "1":
+            return True
+        try:
+            uoc = tg_so.uoc_ky_tu(vids)
+            from app.core.dubbing import eleven_credit_remain
+            con = eleven_credit_remain()
+        except Exception as e:  # noqa: BLE001
+            # Ước lượng hỏng KHÔNG được chặn việc — nhưng phải nói ra.
+            return QMessageBox.question(
+                self, "Không ước lượng được chi phí",
+                f"Không ước lượng được số ký tự ElevenLabs sẽ tiêu ({e}).\n\n"
+                "Vẫn chạy?") == QMessageBox.StandardButton.Yes
+        loi = tg_so.loi_chi_phi(uoc, con)
+        h = QMessageBox(self)
+        h.setWindowTitle("Giọng ElevenLabs — kiểm chi phí trước khi chạy")
+        h.setIcon(QMessageBox.Icon.Warning)
+        h.setText(loi)
+        h.setInformativeText("Chạy mẻ này?")
+        h.addButton("Chạy", QMessageBox.ButtonRole.AcceptRole)
+        khong = h.addButton("Không chạy", QMessageBox.ButtonRole.RejectRole)
+        h.setDefaultButton(khong)          # Enter = KHÔNG tiêu tiền
+        h.exec()
+        return h.clickedButton() is not khong
+
     def _chay(self, lam_lai: list | None = None) -> int:
         """Xếp job cho video CHƯA XONG. Trả SỐ JOB đã xếp.
 
@@ -1059,6 +1105,10 @@ class ThayGiongDialog(QDialog):
             return 0
         nn = str(self.cb_nn.currentData() or "en")
         giong = str(self.cb_giong.currentData() or "")
+        # CHI PHÍ: giọng trả phí + chạy CẢ THƯ MỤC = dễ cạn hạn mức giữa mẻ.
+        # Nói TRƯỚC, và để anh Hùng tự quyết (mặc định là KHÔNG chạy).
+        if giong.startswith("el:") and not self._duyet_chi_phi(vids):
+            return 0
         cc = bool(self.ck_che.isChecked())
         cc_cach = str(self.cb_che_cach.currentData() or "mo")
         cc_muc = float(self.sp_che_muc.value())
