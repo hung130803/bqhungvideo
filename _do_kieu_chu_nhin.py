@@ -78,7 +78,9 @@ def xuat(hop: Path, ten: str, kieu: dict | None, dong: list,
     if not CC.ghi_ass(dong, ass, dai, kieu=kieu):
         return {"ten": ten, "loi": "ghi_ass trả False"}
     ra = hop / f"{ten}.mp4"
-    vf = f"{loc},subtitles='{CC._esc_loc(ass)}'"
+    # `chuoi_subtitles` = LUÔN kèm fontsdir; thiếu nó thì ô chọn phông im lặng
+    # không làm gì (xem ghi chú của chính hàm đó).
+    vf = f"{loc},{CC.chuoi_subtitles(ass)}"
     r = chay([FFMPEG, "-y", "-v", "error", "-t", giay, "-i", src,
               "-vf", vf, "-an", "-c:v", "libx264", "-crf", "18",
               "-pix_fmt", "yuv420p", str(ra)], ten)

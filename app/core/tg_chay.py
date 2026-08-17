@@ -23,7 +23,8 @@ from app.core.thay_giong import TEN_THU_MUC_TAM
 def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      thu_muc_ra: str | Path, che_chu: bool = False,
                      che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
-                     viet_chu: bool = False) -> str:
+                     viet_chu: bool = False,
+                     kieu_chu: Optional[dict] = None) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -48,7 +49,42 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
         # rồi bấm Chạy là bị smart-skip — đúng lỗi cổng 56e đã sập một lần.
         if viet_chu:
             sig += ":vc=1"
+            # KIỂU CHỮ (cỡ/phông/đậm/nghiêng/màu/viền/vị trí) cũng phải vào
+            # khoá: đổi cỡ chữ rồi bấm Chạy mà khoá không đổi thì job bị
+            # SMART-SKIP, không một dòng báo — đúng lỗi cổng 56e đã sập. Nối
+            # vào ĐUÔI và **chỉ khi có ô nào thật sự đặt**, nên video đã làm
+            # bằng bản trước giữ khoá GIỐNG TỪNG KÝ TỰ (không đẻ job chạy lại
+            # hàng loạt). Sắp khoá cho tiền định — dict cùng nội dung khác thứ
+            # tự phải ra CÙNG một khoá.
+            g = gon_kieu_chu(kieu_chu)
+            if g:
+                sig += ":kc=" + ",".join(f"{k}={g[k]}" for k in sorted(g))
     return sig
+
+
+def gon_kieu_chu(kieu_chu: Optional[dict]) -> dict:
+    """Lọc ĐƠN THUỐC KIỂU CHỮ còn đúng các ô USER THẬT SỰ ĐẶT.
+
+    Bỏ khoá lạ (UI đổi tên ô thì khoá cũ không âm thầm đi theo job) và bỏ ô để
+    TRỐNG — ô trống nghĩa là "theo mặc định", không phải một lựa chọn, nên nó
+    KHÔNG được làm đổi khoá chống trùng.
+    """
+    from app.core.che_chu import KHOA_KIEU_CHU
+    ra = {}
+    for k in KHOA_KIEU_CHU:
+        v = (kieu_chu or {}).get(k)
+        if v is None:
+            continue                     # ô để mặc định -> không vào khoá
+        if k in ("dam", "nghieng"):
+            # đây là 3 TRẠNG THÁI: None = mặc định · True = bật · False = TẮT.
+            # `False` là lựa chọn THẬT (bỏ in đậm) nên phải vào khoá.
+            ra[k] = "1" if v else "0"
+        elif k in ("co_chu", "do_vien"):
+            if float(v) > 0:             # 0 = "theo mặc định", không phải chọn
+                ra[k] = f"{float(v):.4f}"
+        elif str(v):
+            ra[k] = str(v)
+    return ra
 
 
 #: Số ký tự tên video giữ lại làm TIỀN TỐ thư mục tạm — chỉ để người mở thư
@@ -108,6 +144,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             lam_lai: bool = False, che_chu: bool = False,
             che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
             viet_chu: bool = False,
+            kieu_chu: Optional[dict] = None,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -140,11 +177,17 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
         # Viết chữ dịch theo giọng chỉ có nghĩa khi ĐANG che (không che mà
         # viết = 2 lớp chữ chồng nhau).
         tt["viet_chu"] = bool(viet_chu)
+        # KIỂU CHỮ chỉ có nghĩa khi CÓ viết chữ mới; và chỉ ghi khi user thật
+        # sự đặt ô nào đó -> payload của job cũ không mọc thêm khoá.
+        g = gon_kieu_chu(kieu_chu) if viet_chu else {}
+        if g:
+            tt["kieu_chu"] = dict(kieu_chu or {})
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
         dedup_key=khoa_chong_trung(v, dich_sang, voice, ra, che_chu,
                                    che_chu_cach, che_chu_muc,
-                                   bool(che_chu) and bool(viet_chu)),
+                                   bool(che_chu) and bool(viet_chu),
+                                   kieu_chu),
         skip_if_done=False, max_attempts=1,
     )

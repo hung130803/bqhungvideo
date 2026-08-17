@@ -19,6 +19,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 REPO = Path(__file__).resolve().parent
 CAP = REPO / "app" / "core" / "captions.py"
 CHE = REPO / "app" / "core" / "che_chu.py"
+TGC = REPO / "app" / "core" / "tg_chay.py"
 
 PHEP = [
     ("ghi_ass BỎ QUA đơn thuốc kiểu chữ", CHE,
@@ -39,6 +40,17 @@ PHEP = [
      "        if vt in _VI_TRI_ASS:", "        if False:"),
     ("ghi_ass BỎ QUA ô cỡ chữ", CHE,
      "        cs = max(14, int(round(ty_co * H)))", "        cs = cs"),
+    ("kiểu chữ KHÔNG vào khoá chống trùng (bệnh cổng 56e)", TGC,
+     '                sig += ":kc=" + ",".join(f"{k}={g[k]}" for k in sorted(g))',
+     '                sig += ""'),
+    # LƯU Ý: bỏ `sorted()` KHÔNG phá được gì — tính tiền định đến từ chỗ
+    # `gon_kieu_chu` duyệt TUPLE CỐ ĐỊNH `KHOA_KIEU_CHU`, `sorted()` chỉ là
+    # lớp thừa. Phép phá đúng là bắt nó duyệt theo dict user truyền vào: khi
+    # đó thứ tự phụ thuộc đầu vào VÀ khoá lạ lọt được vào chữ ký.
+    ("gon_kieu_chu duyệt dict user (mất tiền định + lọt khoá lạ)", TGC,
+     "    for k in KHOA_KIEU_CHU:", "    for k in (kieu_chu or {}):"),
+    ("kiểu chữ để MẶC ĐỊNH vẫn làm đổi khoá (đẻ job chạy lại hàng loạt)", TGC,
+     "        if v is None:", "        if False:"),
 ]
 
 
@@ -58,7 +70,7 @@ def chay_cong() -> int:
 
 
 def main() -> int:
-    goc = {CAP: doc(CAP), CHE: doc(CHE)}
+    goc = {CAP: doc(CAP), CHE: doc(CHE), TGC: doc(TGC)}
     bat = lot = khong_pha = 0
     try:
         for ten, f, tim, thay in PHEP:

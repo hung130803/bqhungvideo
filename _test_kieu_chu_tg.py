@@ -349,10 +349,61 @@ def muc5() -> None:
     print(f"       ẢNH để NGƯỜI tự nhìn: {h}")
 
 
+# ────────────── MỤC 6 — KIỂU CHỮ PHẢI VÀO KHOÁ CHỐNG TRÙNG ──────────────────
+def muc6() -> None:
+    print("\n[6] Đổi kiểu chữ rồi bấm Chạy: KHÔNG được bị smart-skip")
+    from app.core import tg_chay as T
+    a = ("D:/a/v.mp4", "vi", "giong", "D:/ra")
+    khong_che = T.khoa_chong_trung(*a)
+    che = T.khoa_chong_trung(*a, True, "mo", 1.0, True)
+    # BẤT BIẾN: không đặt ô nào -> khoá GIỐNG TỪNG KÝ TỰ bản trước khi có
+    # tính năng (không đẻ job chạy lại cho 200-300 kênh).
+    ok(T.khoa_chong_trung(*a, True, "mo", 1.0, True,
+                          {"co_chu": 0, "font": "", "dam": None}) == che,
+       "kiểu chữ để MẶC ĐỊNH -> khoá không đổi 1 ký tự")
+    moc, _ = _nap_moc(MOC, "app/core/tg_chay.py")
+    ok(moc.khoa_chong_trung(*a) == khong_che
+       and moc.khoa_chong_trung(*a, True, "mo", 1.0, True) == che,
+       "khoá của job CŨ khớp bản mốc", f"mốc {MOC}")
+    k1 = T.khoa_chong_trung(*a, True, "mo", 1.0, True, {"co_chu": 0.075})
+    doi = {
+        "cỡ chữ": {"co_chu": 0.11},
+        "phông": {"co_chu": 0.075, "font": "Anton"},
+        "in đậm": {"co_chu": 0.075, "dam": False},
+        "in nghiêng": {"co_chu": 0.075, "nghieng": True},
+        "màu chữ": {"co_chu": 0.075, "mau": "#FFD83D"},
+        "màu viền": {"co_chu": 0.075, "vien": "#C00000"},
+        "độ dày viền": {"co_chu": 0.075, "do_vien": 0.2},
+        "vị trí": {"co_chu": 0.075, "vi_tri": "tren"},
+        "kiểu (preset)": {"co_chu": 0.075, "preset": "Nền hộp đen"},
+    }
+    xau = [t for t, k in doi.items()
+           if T.khoa_chong_trung(*a, True, "mo", 1.0, True, k) == k1]
+    ok(not xau, "đổi BẤT KỲ ô nào cũng làm khoá ĐỔI", f"không đổi: {xau}")
+    # khoá phải TIỀN ĐỊNH: cùng nội dung, khác thứ tự dict -> cùng khoá.
+    # Tính tiền định đến từ `gon_kieu_chu` duyệt TUPLE CỐ ĐỊNH `KHOA_KIEU_CHU`
+    # (không phải từ `sorted`), nên phải thử với NHIỀU ô mới có răng.
+    ok(T.khoa_chong_trung(*a, True, "mo", 1.0, True,
+                          {"vi_tri": "tren", "font": "Anton", "co_chu": 0.075})
+       == T.khoa_chong_trung(*a, True, "mo", 1.0, True,
+                             {"co_chu": 0.075, "vi_tri": "tren",
+                              "font": "Anton"}),
+       "khoá TIỀN ĐỊNH (không phụ thuộc thứ tự khoá trong dict)")
+    # KHOÁ LẠ (UI đổi tên ô, mẫu cũ trên đĩa) KHÔNG được lọt vào chữ ký —
+    # lọt là job cũ đổi khoá vì một thứ app không hề dùng tới.
+    ok(T.khoa_chong_trung(*a, True, "mo", 1.0, True,
+                          {"co_chu": 0.075, "khoa_la_hoac_o_cu": "xyz"}) == k1,
+       "khoá LẠ trong đơn thuốc KHÔNG lọt vào chữ ký")
+    # KHÔNG viết chữ mới -> kiểu chữ vô nghĩa, không được lọt vào khoá
+    ok(T.khoa_chong_trung(*a, True, "mo", 1.0, False, {"co_chu": 0.11})
+       == T.khoa_chong_trung(*a, True, "mo", 1.0, False),
+       "tắt 'viết chữ mới' -> kiểu chữ KHÔNG vào khoá")
+
+
 def main() -> int:
     print(f"CỔNG 67 — kiểu chữ đường THAY GIỌNG · mốc {MOC}")
     try:
-        muc1(); muc2(); muc3(); muc4(); muc5()
+        muc1(); muc2(); muc3(); muc4(); muc5(); muc6()
     finally:
         pass
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
