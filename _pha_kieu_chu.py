@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parent
 CAP = REPO / "app" / "core" / "captions.py"
 CHE = REPO / "app" / "core" / "che_chu.py"
 TGC = REPO / "app" / "core" / "tg_chay.py"
+TGD = REPO / "app" / "ui" / "thay_giong_dialog.py"
 
 PHEP = [
     ("ghi_ass BỎ QUA đơn thuốc kiểu chữ", CHE,
@@ -51,6 +52,22 @@ PHEP = [
      "    for k in KHOA_KIEU_CHU:", "    for k in (kieu_chu or {}):"),
     ("kiểu chữ để MẶC ĐỊNH vẫn làm đổi khoá (đẻ job chạy lại hàng loạt)", TGC,
      "        if v is None:", "        if False:"),
+    # ---- phần UI (mục 7): hộp có ô mà không nối xuống job thì anh Hùng VẪN
+    # "không điều chỉnh được" trong khi 6 mục đầu vẫn xanh hết ----
+    ("hộp truyền HẰNG SỐ cho xep_mot (bẫy quét-chuỗi cổng 56d)", TGD,
+     "viet_chu=cc_viet, kieu_chu=cc_kieu)",
+     "viet_chu=cc_viet, kieu_chu=None)"),
+    # ANCHOR phải DUY NHẤT: `.replace(..., 1)` đổi chỗ ĐẦU TIÊN, mà
+    # `            if v:` có 2 chỗ trong file -> phá vào chỗ khác rồi báo LỌT
+    # oan. Dùng chính dòng gán, chỉ có 1.
+    ("don_kieu_chu BỎ ô Đậm/Nghiêng", TGD,
+     '                kc[khoa] = (v == "1")', '                pass'),
+    ("ô kiểu chữ SÁNG cả khi tắt viết chữ (hiểu nhầm 'đã bật')", TGD,
+     "        song = bool(bat) and bool(self.ck_che.isChecked())",
+     "        song = True"),
+    ("ô ghi PHẦN TRĂM lọt nguyên vào đơn thuốc (bẫy cổng 45c)", TGD,
+     '            kc["co_chu"] = float(self.sp_kc_co.value()) / 100.0',
+     '            kc["co_chu"] = float(self.sp_kc_co.value())'),
 ]
 
 
@@ -70,7 +87,7 @@ def chay_cong() -> int:
 
 
 def main() -> int:
-    goc = {CAP: doc(CAP), CHE: doc(CHE), TGC: doc(TGC)}
+    goc = {CAP: doc(CAP), CHE: doc(CHE), TGC: doc(TGC), TGD: doc(TGD)}
     bat = lot = khong_pha = 0
     try:
         for ten, f, tim, thay in PHEP:

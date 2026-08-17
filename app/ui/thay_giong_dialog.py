@@ -59,10 +59,13 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout,
 )
 
+from app.core import che_chu as TG_CC
 from app.core import tg_chay, tg_so
 from app.core import thay_giong as TG
+from app.core.captions import CAPTION_PRESETS
 from app.database import db
 from app.ui.appsettings import app_settings
+from app.ui.editor import nut_chon_mau
 from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, TEXT, WARN,
 )
@@ -77,6 +80,26 @@ K_CHE_CHU = "tg_che_chu"
 K_CHE_CACH = "tg_che_cach"
 K_CHE_MUC = "tg_che_muc"
 K_VIET_CHU = "tg_viet_chu"
+#: KIỂU CHỮ của dòng chữ mới (chỉ dùng khi đang che + viết chữ).
+K_KC_PRESET = "tg_kc_preset"
+K_KC_FONT = "tg_kc_font"
+K_KC_CO = "tg_kc_co"
+K_KC_DAM = "tg_kc_dam"
+K_KC_NGHIENG = "tg_kc_nghieng"
+K_KC_MAU = "tg_kc_mau"
+K_KC_VIEN = "tg_kc_vien"
+K_KC_DOVIEN = "tg_kc_dovien"
+K_KC_VITRI = "tg_kc_vitri"
+
+#: Nhãn mục ĐẦU của các ô kiểu chữ. Phải NÓI RA mặc định thật (bài học cổng 16
+#: v2.6.25a) — ghi trơn "(tự)" thì user tưởng ô chưa được đặt.
+NHAN_CO_TU = "Theo chữ cũ trong hình"
+NHAN_PHONG_TU = "Theo mặc định"
+NHAN_KIEU_TU = "Kiểu mặc định (trắng viền đen)"
+NHAN_VITRI_TU = "Đúng chỗ chữ cũ"
+NHAN_DAM_TU = "Theo kiểu chữ (đang ĐẬM)"
+NHAN_NGHIENG_TU = "Theo kiểu chữ (KHÔNG nghiêng)"
+NHAN_VIEN_TU = "Theo kiểu chữ"
 
 #: Nhãn mục đầu combo giọng. Phải NÓI RA mặc định thật, không ghi trơn
 #: "(tự chọn)" — bài học cổng 16 v2.6.25a: user tưởng là CHƯA chọn gì.
@@ -373,7 +396,167 @@ class ThayGiongDialog(QDialog):
         h3b.addStretch(1)
         lay.addLayout(h3b)
 
+        # ---- hàng 3c + 3d: KIỂU CHỮ của dòng chữ mới ----
+        # Anh Hùng 17/08/2026: *"phần chữ sub trong video tôi không điều chỉnh
+        # được cỡ chữ, kiểu chữ, hay in nghiêng đậm, hay chỉnh viền gì được ạ"*.
+        # Đường CẮT THƯỜNG đã có đủ trong Chỉnh mẫu; đường THAY GIỌNG thì
+        # `grep "Fontsize|FontName|Outline|Bold|Italic" app/core/thay_giong.py`
+        # ra 0 — cứng hết. Các ô dưới đây đi vào ĐƠN THUỐC `kieu_chu`
+        # (`che_chu.KHOA_KIEU_CHU`) rồi xuống `captions.kieu_chu_ass` — CÙNG
+        # MỘT CỬA với đường cắt thường, nên đặt cùng tham số là ra cùng kiểu.
+        # BẤT BIẾN: ô nào để MẶC ĐỊNH thì KHÔNG vào đơn thuốc (`don_kieu_chu`
+        # bỏ hẳn khoá đó) -> payload job giống TỪNG KHOÁ bản trước, không đẻ
+        # job xuất lại cho 200-300 kênh.
+        h3c = QHBoxLayout()
+        h3c.addWidget(QLabel("Kiểu chữ:"))
+        self.cb_kc_preset = QComboBox()
+        # Mục đầu phải NÓI RA mặc định thật (bài học cổng 16 v2.6.25a).
+        self.cb_kc_preset.addItem(NHAN_KIEU_TU, "")
+        for _t in CAPTION_PRESETS:
+            self.cb_kc_preset.addItem(_t, _t)
+        self.cb_kc_preset.setToolTip(
+            "Dùng THẲNG các kiểu chữ có sẵn của 'Chỉnh mẫu' (màu chữ · màu "
+            "viền · độ dày viền · bóng · nền hộp).\nĐể mục đầu là dùng kiểu "
+            "mặc định y như bản trước.")
+        _i = self.cb_kc_preset.findData(str(self._s.value(K_KC_PRESET, "") or ""))
+        self.cb_kc_preset.setCurrentIndex(max(0, _i))
+        h3c.addWidget(self.cb_kc_preset)
+
+        h3c.addSpacing(8)
+        h3c.addWidget(QLabel("Phông:"))
+        self.cb_kc_font = QComboBox()
+        self.cb_kc_font.addItem(NHAN_PHONG_TU, "")
+        for _f in TG_CC.PHONG_UNG:
+            self.cb_kc_font.addItem(_f, _f)
+        self.cb_kc_font.setToolTip(
+            "Danh sách này ĐÃ ĐO TỪNG CÁI (vẽ thật rồi so với phông bịa), "
+            "không phải chép: phông nào libass không tìm ra thì nó lùi im "
+            "lặng về phông mặc định mà ffmpeg vẫn trả mã 0.\n"
+            "9 phông đầu đóng gói kèm app nên máy nhân viên chắc chắn có; 4 "
+            "cái cuối là phông Windows.")
+        _i = self.cb_kc_font.findData(str(self._s.value(K_KC_FONT, "") or ""))
+        self.cb_kc_font.setCurrentIndex(max(0, _i))
+        h3c.addWidget(self.cb_kc_font)
+
+        h3c.addSpacing(8)
+        h3c.addWidget(QLabel("Cỡ chữ:"))
+        self.sp_kc_co = QDoubleSpinBox()
+        # TỈ LỆ CHIỀU CAO KHUNG, không phải điểm ảnh: video thay giọng giữ
+        # nguyên khung nguồn nên mỗi video một cỡ. Nhắc bẫy cổng 45(c): để lọt
+        # tỉ lệ xuống .ass là `Fontsize: 0.055` = chữ dưới 1 điểm ảnh.
+        self.sp_kc_co.setRange(0.0, 15.0)
+        self.sp_kc_co.setSingleStep(0.5)
+        self.sp_kc_co.setDecimals(1)
+        self.sp_kc_co.setSuffix(" % cao khung")
+        self.sp_kc_co.setSpecialValueText(NHAN_CO_TU)
+        self.sp_kc_co.setToolTip(
+            "Cỡ chữ tính theo PHẦN TRĂM chiều cao khung hình (video dọc "
+            "1920 thì 8,5% = 163 điểm ảnh).\nĐể 0 thì app tự lấy theo bề cao "
+            "dòng chữ CŨ vừa che — chữ mới to bằng chữ cũ.\n"
+            "ĐÃ ĐO: từ khoảng 11% trở lên, dòng thứ hai bị CẮT ĐÁY KHUNG với "
+            "nguồn có chữ sát mép dưới.")
+        try:
+            self.sp_kc_co.setValue(float(self._s.value(K_KC_CO, 0.0) or 0.0))
+        except (TypeError, ValueError):
+            self.sp_kc_co.setValue(0.0)
+        h3c.addWidget(self.sp_kc_co)
+
+        h3c.addSpacing(8)
+        h3c.addWidget(QLabel("Vị trí:"))
+        self.cb_kc_vitri = QComboBox()
+        self.cb_kc_vitri.addItem(NHAN_VITRI_TU, "")
+        self.cb_kc_vitri.addItem("Trên khung", "tren")
+        self.cb_kc_vitri.addItem("Giữa khung", "giua")
+        self.cb_kc_vitri.addItem("Dưới khung", "duoi")
+        self.cb_kc_vitri.setToolTip(
+            "Để mục đầu thì chữ mới nằm ĐÚNG CHỖ dòng chữ cũ vừa được che "
+            "(khỏi lộ vệt che trống).\nChọn trên/giữa/dưới là đặt theo khung "
+            "hình, không theo chữ cũ nữa.")
+        _i = self.cb_kc_vitri.findData(str(self._s.value(K_KC_VITRI, "") or ""))
+        self.cb_kc_vitri.setCurrentIndex(max(0, _i))
+        h3c.addWidget(self.cb_kc_vitri)
+        h3c.addStretch(1)
+        lay.addLayout(h3c)
+
+        h3d = QHBoxLayout()
+        # ĐẬM/NGHIÊNG là BA trạng thái, không phải hai (xem `gon_kieu_chu`):
+        # mục đầu = "theo kiểu chữ" (KHÔNG vào đơn thuốc), còn Có/Không là
+        # lựa chọn THẬT của user. Dùng combo chứ không QCheckBox vì checkbox
+        # chỉ có 2 trạng thái -> mọi job đều mọc thêm khoá `dam`/`nghieng`.
+        h3d.addWidget(QLabel("In đậm:"))
+        self.cb_kc_dam = QComboBox()
+        self.cb_kc_dam.addItem(NHAN_DAM_TU, "")
+        self.cb_kc_dam.addItem("Có", "1")
+        self.cb_kc_dam.addItem("Không", "0")
+        self.cb_kc_dam.setToolTip(
+            "Mục đầu = giữ y như bản trước (chữ ĐANG in đậm).")
+        _i = self.cb_kc_dam.findData(str(self._s.value(K_KC_DAM, "") or ""))
+        self.cb_kc_dam.setCurrentIndex(max(0, _i))
+        h3d.addWidget(self.cb_kc_dam)
+
+        h3d.addSpacing(8)
+        h3d.addWidget(QLabel("In nghiêng:"))
+        self.cb_kc_nghieng = QComboBox()
+        self.cb_kc_nghieng.addItem(NHAN_NGHIENG_TU, "")
+        self.cb_kc_nghieng.addItem("Có", "1")
+        self.cb_kc_nghieng.addItem("Không", "0")
+        self.cb_kc_nghieng.setToolTip(
+            "Mục đầu = giữ y như bản trước (chữ KHÔNG nghiêng).")
+        _i = self.cb_kc_nghieng.findData(
+            str(self._s.value(K_KC_NGHIENG, "") or ""))
+        self.cb_kc_nghieng.setCurrentIndex(max(0, _i))
+        h3d.addWidget(self.cb_kc_nghieng)
+
+        # MÀU: dùng ĐÚNG cái nút anh Hùng đã quen trong Chỉnh mẫu (ô vuông
+        # màu, chuột phải = về mặc định) — `editor.nut_chon_mau` đã tách ra
+        # mức module đúng để chỗ này dùng lại, khỏi đẻ bộ điều khiển thứ hai.
+        self._kc_mau = str(self._s.value(K_KC_MAU, "") or "")
+        self._kc_vien = str(self._s.value(K_KC_VIEN, "") or "")
+        h3d.addSpacing(8)
+        h3d.addWidget(QLabel("Màu chữ:"))
+        self.b_kc_mau, self._ve_kc_mau = nut_chon_mau(
+            self, lambda: self._kc_mau, self._dat_kc_mau,
+            "Màu chữ của dòng chữ mới", "theo kiểu chữ")
+        h3d.addWidget(self.b_kc_mau)
+
+        h3d.addSpacing(8)
+        h3d.addWidget(QLabel("Màu viền:"))
+        self.b_kc_vien, self._ve_kc_vien = nut_chon_mau(
+            self, lambda: self._kc_vien, self._dat_kc_vien,
+            "Màu viền của dòng chữ mới", "theo kiểu chữ")
+        h3d.addWidget(self.b_kc_vien)
+
+        h3d.addSpacing(8)
+        h3d.addWidget(QLabel("Độ dày viền:"))
+        self.sp_kc_dovien = QDoubleSpinBox()
+        # TỈ LỆ so với CỠ CHỮ (giống khoá `ow` của preset), không phải px.
+        self.sp_kc_dovien.setRange(0.0, 30.0)
+        self.sp_kc_dovien.setSingleStep(1.0)
+        self.sp_kc_dovien.setDecimals(0)
+        self.sp_kc_dovien.setSuffix(" % cỡ chữ")
+        self.sp_kc_dovien.setSpecialValueText(NHAN_VIEN_TU)
+        self.sp_kc_dovien.setToolTip(
+            "Độ dày viền tính theo PHẦN TRĂM CỠ CHỮ (các kiểu có sẵn dùng "
+            "11-16%).\nĐể 0 thì lấy theo kiểu chữ đang chọn.")
+        try:
+            self.sp_kc_dovien.setValue(
+                float(self._s.value(K_KC_DOVIEN, 0.0) or 0.0))
+        except (TypeError, ValueError):
+            self.sp_kc_dovien.setValue(0.0)
+        h3d.addWidget(self.sp_kc_dovien)
+        h3d.addStretch(1)
+        lay.addLayout(h3d)
+
+        #: Mọi ô kiểu chữ — bật/tắt theo ô "Viết lại bản dịch" (không viết chữ
+        #: thì không có chữ nào để tạo kiểu).
+        self._o_kieu_chu = [
+            self.cb_kc_preset, self.cb_kc_font, self.sp_kc_co,
+            self.cb_kc_vitri, self.cb_kc_dam, self.cb_kc_nghieng,
+            self.b_kc_mau, self.b_kc_vien, self.sp_kc_dovien,
+        ]
+
         self.ck_che.toggled.connect(self._doi_che_chu)
+        self.ck_viet.toggled.connect(self._doi_viet_chu)
         self._doi_che_chu(self.ck_che.isChecked())
 
         # ---- hàng 4: TÌNH TRẠNG BỘ TÁCH GIỌNG (chốt an toàn số 1) ----
@@ -1020,6 +1203,55 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_CACH, self.cb_che_cach.currentData() or "mo")
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
         self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
+        self._s.setValue(K_KC_PRESET, self.cb_kc_preset.currentData() or "")
+        self._s.setValue(K_KC_FONT, self.cb_kc_font.currentData() or "")
+        self._s.setValue(K_KC_CO, float(self.sp_kc_co.value()))
+        self._s.setValue(K_KC_DAM, self.cb_kc_dam.currentData() or "")
+        self._s.setValue(K_KC_NGHIENG, self.cb_kc_nghieng.currentData() or "")
+        self._s.setValue(K_KC_MAU, self._kc_mau)
+        self._s.setValue(K_KC_VIEN, self._kc_vien)
+        self._s.setValue(K_KC_DOVIEN, float(self.sp_kc_dovien.value()))
+        self._s.setValue(K_KC_VITRI, self.cb_kc_vitri.currentData() or "")
+
+    def _dat_kc_mau(self, hexv: str) -> None:
+        self._kc_mau = str(hexv or "")
+
+    def _dat_kc_vien(self, hexv: str) -> None:
+        self._kc_vien = str(hexv or "")
+
+    def don_kieu_chu(self) -> dict:
+        """ĐƠN THUỐC KIỂU CHỮ đọc từ các ô — CHỈ gồm ô user THẬT SỰ ĐẶT.
+
+        Ô để mặc định thì **KHÔNG có khoá trong dict**, chứ không phải mang
+        giá trị rỗng: `tg_chay.gon_kieu_chu` coi `None` là "không đặt" nhưng
+        coi `dam=False` là lựa chọn THẬT, nên trả bừa `dam=False` cho ô chưa
+        đụng tới là vừa đổi kiểu chữ vừa đổi khoá chống trùng của MỌI job.
+
+        Dict rỗng -> `xep_mot` không ghi khoá `kieu_chu` vào payload -> job ra
+        giống TỪNG KHOÁ bản trước.
+        """
+        kc: dict = {}
+        if self.cb_kc_preset.currentData():
+            kc["preset"] = str(self.cb_kc_preset.currentData())
+        if self.cb_kc_font.currentData():
+            kc["font"] = str(self.cb_kc_font.currentData())
+        if float(self.sp_kc_co.value()) > 0:
+            # ô ghi PHẦN TRĂM cho người đọc, đơn thuốc nhận TỈ LỆ.
+            kc["co_chu"] = float(self.sp_kc_co.value()) / 100.0
+        for khoa, o in (("dam", self.cb_kc_dam),
+                        ("nghieng", self.cb_kc_nghieng)):
+            v = str(o.currentData() or "")
+            if v:
+                kc[khoa] = (v == "1")
+        if self._kc_mau:
+            kc["mau"] = self._kc_mau
+        if self._kc_vien:
+            kc["vien"] = self._kc_vien
+        if float(self.sp_kc_dovien.value()) > 0:
+            kc["do_vien"] = float(self.sp_kc_dovien.value()) / 100.0
+        if self.cb_kc_vitri.currentData():
+            kc["vi_tri"] = str(self.cb_kc_vitri.currentData())
+        return kc
 
     def _doi_che_chu(self, bat: bool) -> None:
         """Bật/tắt 2 ô con theo ô chính — tắt mà vẫn chỉnh được là gây hiểu
@@ -1029,6 +1261,19 @@ class ThayGiongDialog(QDialog):
         # Viết chữ dịch CHỈ có nghĩa khi đang che: viết đè lên chữ cũ mà không
         # che là HAI LỚP CHỮ chồng nhau, tệ hơn hẳn để nguyên.
         self.ck_viet.setEnabled(bool(bat))
+        self._doi_viet_chu(self.ck_viet.isChecked())
+
+    def _doi_viet_chu(self, bat: bool) -> None:
+        """Ô kiểu chữ chỉ sống khi ĐANG CHE **và** ĐANG VIẾT chữ mới.
+
+        Phải xét CẢ HAI: `ck_viet` vẫn giữ dấu tích khi bị `setEnabled(False)`
+        nên chỉ nhìn nó thôi là các ô kiểu chữ vẫn sáng trong khi cả nhánh
+        viết chữ đang tắt — đúng kiểu hiểu nhầm 'đã bật' mà chốt trên đang
+        chống.
+        """
+        song = bool(bat) and bool(self.ck_che.isChecked())
+        for o in self._o_kieu_chu:
+            o.setEnabled(song)
 
     def _duyet_chi_phi(self, vids: list) -> bool:
         """Hiện ước lượng ký tự + hạn mức còn lại, hỏi có chạy không.
@@ -1113,6 +1358,10 @@ class ThayGiongDialog(QDialog):
         cc_cach = str(self.cb_che_cach.currentData() or "mo")
         cc_muc = float(self.sp_che_muc.value())
         cc_viet = bool(self.ck_viet.isChecked())
+        # ĐƠN THUỐC KIỂU CHỮ đọc từ CHÍNH các ô đang hiện (không đọc QSettings
+        # — bài học "chạy dây chuyền: đọc combo, không đọc setting": widget bị
+        # blockSignals thì setting lệch với cái user đang nhìn).
+        cc_kieu = self.don_kieu_chu()
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -1135,7 +1384,7 @@ class ThayGiongDialog(QDialog):
                     self._pool, duong, nn, voice=giong, thu_muc_ra=ra,
                     kenh=Path(duong).parent.name, lam_lai=buoc_lai,
                     che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
-                    viet_chu=cc_viet)
+                    viet_chu=cc_viet, kieu_chu=cc_kieu)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

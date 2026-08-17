@@ -325,6 +325,12 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # KHÔNG mang khoá này -> `False` = y hệt bản trước (chỉ che, không
             # viết). Chỉ có tác dụng khi `che_chu` bật.
             viet_chu=bool(payload.get("viet_chu")),
+            # KIỂU CHỮ (cỡ · phông · đậm · nghiêng · màu · viền · vị trí) do
+            # user đặt trong hộp Thay giọng. Job cũ trong DB KHÔNG mang khoá
+            # này -> None = kiểu chữ mặc định, .ass giống TỪNG BYTE bản trước.
+            # Chỉ có tác dụng khi `viet_chu` bật (không viết chữ thì không có
+            # chữ nào để tạo kiểu).
+            kieu_chu=payload.get("kieu_chu") or None,
             on_progress=_prog,
         )
     except tg.HuyBo as e:

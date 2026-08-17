@@ -3519,7 +3519,8 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
                      che_chu_cach: str = "mo",
                      che_chu_muc: float = 1.0,
                      che_chu_log: Optional[list] = None,
-                     dong_chu: Optional[list] = None) -> None:
+                     dong_chu: Optional[list] = None,
+                     kieu_chu: Optional[dict] = None) -> None:
     """Thay TIẾNG của video. `che_chu=False` -> GIỮ NGUYÊN hình (`-c:v copy`).
 
     `dong_chu` = [(giây_bắt_đầu, giây_kết_thúc, chữ), ...] — **MỐC LẤY TỪ
@@ -3600,11 +3601,20 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
             d_viet = dai if (dai is not None and getattr(dai, "co_chu", False)
                              and dai.cao_dai > 0) else None
             ass = Path(video_ra).with_suffix(".chu_theo_giong.ass")
-            if d_viet is not None and _CC.ghi_ass(dong_chu, ass, d_viet):
+            # `kieu_chu` = ĐƠN THUỐC KIỂU CHỮ user đặt trong hộp Thay giọng
+            # (cỡ · phông · đậm · nghiêng · màu chữ · màu viền · độ dày viền ·
+            # vị trí · kiểu có sẵn của Chỉnh mẫu). None/rỗng -> .ass giống
+            # TỪNG BYTE bản cũ, xem `che_chu.ghi_ass`.
+            if d_viet is not None and _CC.ghi_ass(dong_chu, ass, d_viet,
+                                                  kieu=kieu_chu):
                 # nối bằng DẤU PHẨY: `loc` là GRAPH kết bằng `overlay=`, nối
                 # `;subtitles=` là đẻ chuỗi RỜI không đầu vào (bẫy đã ghi ở
                 # `che_chu.che_va_viet`). Phẩy = viết chữ SAU khi che xong.
-                chuoi.append(f"subtitles='{_CC._esc_loc(ass)}'")
+                # `chuoi_subtitles` LUÔN kèm `fontsdir` — thiếu nó thì phông
+                # đóng gói (Anton/Be Vietnam Pro…) KHÔNG được libass tìm ra,
+                # nó lùi im lặng về phông mặc định mà ffmpeg vẫn trả mã 0, tức
+                # ô chọn phông chỉ là cái nhãn (đo 17/08/2026).
+                chuoi.append(_CC.chuoi_subtitles(ass))
                 so_dong = len(dong_chu)
         except Exception as e:      # noqa: BLE001 — chữ mới KHÔNG được giết lượt
             so_dong = 0
@@ -3876,6 +3886,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      cach_tach: str = "auto", giu_file_tam: bool = False,
                      che_chu: bool = False, che_chu_cach: str = "mo",
                      che_chu_muc: float = 1.0, viet_chu: bool = True,
+                     kieu_chu: Optional[dict] = None,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
@@ -4013,7 +4024,8 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
             "ky_tu_max": max([len(d[2]) for d in dong_chu] or [0])}
         thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
                          che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
-                         che_chu_log=_cc_log, dong_chu=dong_chu)
+                         che_chu_log=_cc_log, dong_chu=dong_chu,
+                         kieu_chu=kieu_chu)
         kq["che_chu"] = _cc_log[0] if _cc_log else {"bat": False}
         kq["kiem"] = kiem_video_ra(ra, tong)
         kq["ra"] = str(ra)
@@ -4095,6 +4107,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          thung_rac: str = "", thu_muc_lam: str | Path = "",
                          che_chu: bool = False, che_chu_cach: str = "mo",
                          che_chu_muc: float = 1.0, viet_chu: bool = True,
+                         kieu_chu: Optional[dict] = None,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -4113,7 +4126,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          cach_tach=cach_tach, thu_muc_lam=thu_muc_lam,
                          che_chu=che_chu, che_chu_cach=che_chu_cach,
                          che_chu_muc=che_chu_muc, viet_chu=viet_chu,
-                         on_progress=on_progress)
+                         kieu_chu=kieu_chu, on_progress=on_progress)
     if not r.get("ok"):
         return r
     if not thay_goc:

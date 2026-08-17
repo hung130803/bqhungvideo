@@ -49,7 +49,22 @@ sys.path.insert(0, str(REPO))
 FF = REPO / "bin" / "ffmpeg.exe"
 FFPROBE = REPO / "bin" / "ffprobe.exe"
 FONTS = REPO / "app" / "assets" / "fonts"
-NGUON = Path(r"C:\Users\Admin\Downloads\longtieng") / "4月新片海外电影片单.mp4"
+
+
+def _nguon_that() -> Path:
+    """Video nguồn THẬT — **KHÔNG ghi cứng một tên file**.
+
+    Kho `longtieng` của anh Hùng đổi theo ngày (tải về / dọn đi), ghi cứng tên
+    là cổng ĐỎ OAN vì KHO ĐĨA chứ không vì mã — đúng bệnh cổng 47 CA2 đã sập
+    (và tên cũ `4月新片海外电影片单.mp4` nay đã không còn). Lấy file mp4 đầu
+    theo thứ tự tên nên vẫn tiền định trong cùng một kho.
+    """
+    kho = Path(r"C:\Users\Admin\Downloads\longtieng")
+    ds = sorted(kho.glob("*.mp4")) if kho.is_dir() else []
+    return ds[0] if ds else kho / "(khong-co-video-nao).mp4"
+
+
+NGUON = _nguon_that()
 MOC = os.environ.get("BQ_MOC_KIEU", "v2.31.0")
 CAU = "Chào các bạn, đây là chữ mới thay giọng"
 
@@ -400,10 +415,164 @@ def muc6() -> None:
        "tắt 'viết chữ mới' -> kiểu chữ KHÔNG vào khoá")
 
 
+def muc7() -> None:
+    """CÁI ANH HÙNG THẬT SỰ BẤM: ô kiểu chữ trong hộp Thay giọng.
+
+    Mục 1-6 kiểm các HÀM. Nếu hộp thoại không có ô nào, hoặc có ô mà không nối
+    xuống `xep_mot`, thì cả 6 mục trên vẫn xanh mà anh Hùng vẫn *"không điều
+    chỉnh được"* — đúng lỗ hổng cổng 55 đã vá cho đường Demucs.
+    """
+    print("\n[7] Ô KIỂU CHỮ TRONG HỘP THAY GIỌNG")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+    from app.core.che_chu import KHOA_KIEU_CHU
+    from app.core.tg_chay import gon_kieu_chu
+    from app.ui import thay_giong_dialog as TGD
+
+    app = QApplication.instance() or QApplication([])
+    d = TGD.ThayGiongDialog(None)
+    try:
+        # (a) CHƯA ĐỤNG GÌ -> đơn thuốc RỖNG. Đây là bất biến giữ payload của
+        # job cũ nguyên vẹn: `xep_mot` chỉ ghi khoá `kieu_chu` khi có ô đặt.
+        ok(d.don_kieu_chu() == {},
+           "chưa đụng ô nào -> đơn thuốc RỖNG (payload job giống bản trước)",
+           f"{d.don_kieu_chu()}")
+
+        # (b) đủ 9 ô, và MỌI khoá sinh ra phải nằm trong KHOA_KIEU_CHU —
+        # khoá lạ thì `gon_kieu_chu` lọc bỏ im lặng, tức ô đó là CÁI NHÃN.
+        d.ck_che.setChecked(True)
+        d.ck_viet.setChecked(True)
+        d.cb_kc_preset.setCurrentIndex(
+            d.cb_kc_preset.findData("Trắng viền đen"))
+        d.cb_kc_font.setCurrentIndex(d.cb_kc_font.findData("Anton"))
+        d.sp_kc_co.setValue(8.5)
+        d.cb_kc_dam.setCurrentIndex(d.cb_kc_dam.findData("1"))
+        d.cb_kc_nghieng.setCurrentIndex(d.cb_kc_nghieng.findData("1"))
+        d._dat_kc_mau("#FFD83D")
+        d._dat_kc_vien("#C00000")
+        d.sp_kc_dovien.setValue(18)
+        d.cb_kc_vitri.setCurrentIndex(d.cb_kc_vitri.findData("duoi"))
+        kc = d.don_kieu_chu()
+        ok(set(kc) == set(KHOA_KIEU_CHU),
+           f"đặt đủ {len(KHOA_KIEU_CHU)} ô -> đơn thuốc có ĐỦ {len(KHOA_KIEU_CHU)} khoá",
+           f"thiếu {sorted(set(KHOA_KIEU_CHU) - set(kc))}")
+        ok(len(gon_kieu_chu(kc)) == len(KHOA_KIEU_CHU),
+           "mọi ô đều SỐNG SÓT qua gon_kieu_chu (không ô nào là cái nhãn)",
+           f"{sorted(gon_kieu_chu(kc))}")
+
+        # (c) Ô GHI PHẦN TRĂM, ĐƠN THUỐC NHẬN TỈ LỆ. Bẫy cổng 45(c): để lọt
+        # phần trăm xuống .ass là `Fontsize: 8.5` -> chữ 8 điểm ảnh; để lọt
+        # tỉ lệ vào ô là user gõ 0,085% rồi tưởng mình gõ sai.
+        ok(abs(kc["co_chu"] - 0.085) < 1e-9 and abs(kc["do_vien"] - 0.18) < 1e-9,
+           "ô ghi PHẦN TRĂM -> đơn thuốc nhận TỈ LỆ",
+           f"co_chu={kc['co_chu']} do_vien={kc['do_vien']}")
+
+        # (d) ĐẬM/NGHIÊNG là BA trạng thái. Mục đầu = "theo kiểu chữ" phải
+        # KHÔNG sinh khoá; chọn "Không" phải sinh khoá False (lựa chọn THẬT).
+        d.cb_kc_dam.setCurrentIndex(0)
+        ok("dam" not in d.don_kieu_chu(),
+           "ô Đậm để mục đầu -> KHÔNG sinh khoá `dam`")
+        d.cb_kc_dam.setCurrentIndex(d.cb_kc_dam.findData("0"))
+        ok(d.don_kieu_chu().get("dam") is False,
+           "ô Đậm chọn 'Không' -> `dam=False` (lựa chọn THẬT, có vào khoá)",
+           f"gon={gon_kieu_chu(d.don_kieu_chu()).get('dam')}")
+
+        # (e) BẬT/TẮT theo ô cha. Ô kiểu chữ sáng trong khi cả nhánh viết chữ
+        # đang tắt = đúng kiểu hiểu nhầm "đã bật" mà 2 chốt trên đang chống.
+        d.ck_viet.setChecked(False)
+        tat1 = [o.isEnabled() for o in d._o_kieu_chu]
+        d.ck_viet.setChecked(True)
+        d.ck_che.setChecked(False)
+        tat2 = [o.isEnabled() for o in d._o_kieu_chu]
+        d.ck_che.setChecked(True)
+        bat = [o.isEnabled() for o in d._o_kieu_chu]
+        ok(not any(tat1) and not any(tat2) and all(bat),
+           "ô kiểu chữ chỉ sống khi ĐANG CHE **và** ĐANG VIẾT chữ",
+           f"bỏ viết {sum(tat1)} · bỏ che {sum(tat2)} · bật đủ {sum(bat)}")
+
+        # (f) NHÃN KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ô đen, v2.6.22).
+        xau = [w.text() for w in d.findChildren(TGD.QPushButton)
+               if any(ord(c) > 0x2100 for c in w.text())]
+        xau += [o.itemText(i) for o in (d.cb_kc_preset, d.cb_kc_font,
+                                        d.cb_kc_vitri, d.cb_kc_dam,
+                                        d.cb_kc_nghieng)
+                for i in range(o.count())
+                if any(ord(c) > 0x2100 for c in o.itemText(i))]
+        ok(not xau, "nhãn nút/mục KHÔNG có emoji dễ thiếu phông", f"{xau[:4]}")
+
+        # (g) MỤC ĐẦU PHẢI NÓI RA MẶC ĐỊNH THẬT (bài học cổng 16 v2.6.25a):
+        # ghi trơn "(tự)"/"(mặc định)" thì user tưởng ô CHƯA được đặt.
+        # THƯỚC: bỏ hết phần trong ngoặc ra, phần CÒN LẠI vẫn phải là chữ có
+        # nghĩa. Ngoặc ở GIỮA nhãn là hợp lệ ("Kiểu mặc định (trắng viền
+        # đen)"), cái bị cấm là nhãn chỉ CÓ ngoặc. Bản đầu của mục này đòi
+        # nhãn không chứa ngoặc ở đầu/cuối -> HỎNG OAN 3 nhãn đúng.
+        import re as _re
+
+        def _tron(t: str) -> str:
+            return _re.sub(r"\([^)]*\)", " ", t).strip()
+
+        dau = [d.cb_kc_preset.itemText(0), d.cb_kc_font.itemText(0),
+               d.cb_kc_vitri.itemText(0), d.cb_kc_dam.itemText(0),
+               d.cb_kc_nghieng.itemText(0), d.sp_kc_co.specialValueText(),
+               d.sp_kc_dovien.specialValueText()]
+        xau_g = [t for t in dau if len(_tron(t)) < 6]
+        ok(not xau_g,
+           "mục đầu mọi ô NÓI RA mặc định thật, không ghi trơn '(tự)'",
+           f"{xau_g}")
+        # TỰ KIỂM BỘ DÒ: đúng mấy nhãn mà bài học cổng 16 cấm thì phải BỊ BẮT,
+        # không thì mục trên chỉ là con dấu.
+        ok(all(len(_tron(t)) < 6
+               for t in ("(tự)", "(tự chọn)", "(mặc định)", "()")),
+           "tự kiểm bộ dò: nhãn '(tự chọn)'/'(mặc định)' PHẢI bị bắt")
+
+        # (h) NỐI THẬT XUỐNG BỘ ĐIỀU PHỐI — đọc bằng AST, và đòi giá trị
+        # truyền vào phải là BIỂU THỨC chứ không phải hằng số. Quét chuỗi
+        # `kieu_chu=` thì phép phá đổi thành `kieu_chu=None` VẪN XANH (bẫy
+        # cổng 56d, chiều PASS OAN).
+        import ast
+        cay = ast.parse((REPO / "app" / "ui" / "thay_giong_dialog.py")
+                        .read_text(encoding="utf-8"))
+        goi = [n for n in ast.walk(cay)
+               if isinstance(n, ast.Call)
+               and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "xep_mot"]
+        kw = [k for g in goi for k in g.keywords if k.arg == "kieu_chu"]
+        ok(len(goi) == 1 and len(kw) == 1
+           and not isinstance(kw[0].value, ast.Constant),
+           "hộp gọi `xep_mot(kieu_chu=<biểu thức>)`, không phải hằng số",
+           f"{len(goi)} chỗ gọi · {len(kw)} chỗ truyền")
+
+        # (i) ĐI ĐÚNG TỚI PAYLOAD. Đây là mục có răng nhất: bắt CHÍNH
+        # `xep_mot` rồi đọc payload nó dựng — cửa mà `jobs._thay_giong` đọc.
+        from app.core import tg_chay
+        bat_duoc: dict = {}
+
+        class _PoolGia:
+            def enqueue(self, loai, tt, **kw):
+                bat_duoc.update({"loai": loai, "tt": dict(tt), "kw": dict(kw)})
+                return 12345
+
+        hop_v = hop() / "ui"
+        (hop_v / "vao").mkdir(parents=True, exist_ok=True)
+        (hop_v / "ra").mkdir(parents=True, exist_ok=True)
+        vid = hop_v / "vao" / "a.mp4"
+        vid.write_bytes(b"0" * 4096)
+        tg_chay.xep_mot(_PoolGia(), vid, "vi", thu_muc_ra=str(hop_v / "ra"),
+                        lam_lai=True, che_chu=True, viet_chu=True,
+                        kieu_chu=d.don_kieu_chu())
+        pl = bat_duoc.get("tt", {}).get("kieu_chu") or {}
+        ok(pl.get("font") == "Anton" and pl.get("vi_tri") == "duoi"
+           and abs(float(pl.get("co_chu", 0)) - 0.085) < 1e-9,
+           "đơn thuốc của hộp đi NGUYÊN VẸN tới payload job",
+           f"{sorted(pl)}")
+    finally:
+        d.deleteLater()
+
+
 def main() -> int:
     print(f"CỔNG 68 — kiểu chữ đường THAY GIỌNG · mốc {MOC}")
     try:
-        muc1(); muc2(); muc3(); muc4(); muc5(); muc6()
+        muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7()
     finally:
         pass
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
