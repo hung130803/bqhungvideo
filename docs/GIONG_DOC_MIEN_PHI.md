@@ -2146,3 +2146,496 @@ Không chạy ffmpeg nặng. Môi trường ảo riêng trong `%TEMP%\bq_tts_thu
 không đụng `.venv` của app. Ổ C: 402 GB trống trước khi làm; model đã tải về để
 thử (Kokoro 317 MB · Chatterbox 3,0 GB · kokoro-onnx 353 MB) **đã dọn sạch sau
 khi đo**, chỉ giữ lại 48 file nghe thử.*
+
+---
+
+# LƯỢT 5 — "chatter oke hơn à, bạn test kỹ đi, hay lỗi thôi, nếu có nhiều giọng hay"
+
+## Câu hỏi của anh Hùng
+
+Nguyên văn: *"chatter oke hơn à, bạn test kỹ đi, hay lỗi thôi, nếu có nhiều
+giọng hay"* · *"giọng đa quốc gia càng tốt, với cả là phải khớp tất cả cho đa
+quốc gia nhé"*.
+
+Lượt 4 loại Chatterbox bằng 3 con số. Lượt này **kiểm lại từng con số đó**, và
+hỏi thêm cái lượt 4 **chưa bao giờ hỏi riêng**: *Chatterbox có trả mốc từng
+chữ không?*
+
+---
+
+## TRẢ LỜI NGẮN — ĐỌC ĐOẠN NÀY LÀ ĐỦ
+
+### 1. **KHÔNG NÊN THÊM Chatterbox.** Nhưng lượt 4 **loại đúng vì lý do sai** — nói thẳng.
+
+Tôi kiểm lại 3 lý do lượt 4 đưa ra. **Hai trong ba là SAI, một là thiếu:**
+
+| lý do lượt 4 đưa ra | kiểm lại | phán quyết |
+|---|---|---|
+| "CPU 0,25× — quá chậm" | **GPU 1,53×** = nhanh gấp **6,1 lần** | **THIẾU** — chưa ai đo trên GPU |
+| "không có tham số thời lượng → không ép vừa khung" | `rubberband` ép 1,337× méo **0,901 dB**, sai **0,0%** từ | **SAI** — chữa được |
+| "cùng 1 câu 5 lượt chênh 16,8%" | 5 số đó là **5 BỘ THAM SỐ KHÁC NHAU**, không phải 5 lượt cùng tham số | **SAI phép đo** |
+
+Đo lại cho đúng: cùng câu **cùng tham số** thì chênh **33,7%** (tệ gấp đôi số
+cũ) — **nhưng đóng seed thì chênh 0,0%, tiền định tuyệt đối.** Tức cái lượt 4
+gọi là án tử thì vừa đo sai, vừa chữa được bằng một dòng `torch.manual_seed()`.
+
+### 2. Nhưng **án tử THẬT nằm ở chỗ lượt 4 không đo** — và nó nặng hơn cả 3 cái kia
+
+**Chatterbox KHÔNG trả mốc từng chữ.** Lượt 4 chỉ hỏi `hasattr(out,'tokens')`
+trên cái sóng âm trả về — đó là hỏi *"hàm có trả kèm mốc không"*, chứ không
+phải *"model có biết mốc không"*. Tôi đọc mã nguồn và **đi cửa sau moi ra
+được** ma trận gióng hàng nằm ẩn bên trong, dựng mốc ở mức tốt nhất có thể —
+tức cho Chatterbox **cơ hội tốt nhất**. Kết quả:
+
+**RUNG 76,2 ms = 1,75× edge-tts — TỆ HƠN CẢ PIPER (1,53×).**
+
+Piper đã phải ghi cảnh báo trong app vì mốc lệch. Chatterbox còn dưới mức đó.
+
+### 3. Và nó **BỊA CHỮ** ở tiếng Trung/Nhật — cái này một mình đã đủ loại
+
+Cho Groq chép ngược chính file Chatterbox vừa đọc:
+
+| | sai bao nhiêu chữ | đọc ra bao nhiêu chữ so với chữ gửi vào |
+|---|---|---|
+| Anh | 4,0% | 0,99× (đúng) |
+| **Nhật** | **15,9%** | **1,32×** |
+| **Trung** | **28,8%** | **1,66×** |
+
+Ví dụ thật — gửi vào `影片延续了拳霸等泰式动作片的黄金传统`, nó đọc ra
+`影片延續了全霸等泰式動作片的黃金傳統` **rồi đọc thêm**
+`陶石法行群透陶舍縣的神字同少善` — **một câu KHÔNG HỀ CÓ trong bản gửi vào.**
+Đo bằng thước thứ hai cũng ra: cùng 12 câu tiếng Trung, Chatterbox ra **160,4
+giây** tiếng trong khi edge-tts chỉ **78,4 giây** = **hơn gấp đôi**.
+
+Với người **bán video**, máy đọc tự bịa thêm câu là hỏng hàng, không phải lỗi nhỏ.
+
+### 4. **KHÔNG có tiếng Việt** — cả Chatterbox lẫn Kokoro
+
+Chatterbox 23 thứ tiếng, Kokoro 9 thứ tiếng, **cả hai đều KHÔNG có `vi`**.
+Anh làm nội dung Việt/Anh/Trung/Nhật thì hai bộ này hụt mất một chân.
+
+### 5. "Nhiều giọng hay" — **núm cảm xúc HẸP HƠN 17 giọng anh đang có**
+
+| | trải rộng (F0 std, nửa cung) |
+|---|---|
+| núm `exaggeration` của Chatterbox (6 mức) | 4,70 – 6,54 = **1,84** |
+| **17 giọng en-US edge-tts đang có sẵn** | 2,38 – 5,69 = **3,31** |
+
+**Vặn núm Chatterbox cho ít lựa chọn hơn là đổi giọng edge-tts.** Và núm đó
+**không tăng đều** (0,25→6,18 · 0,75→5,88 · 1,0→6,54 · 1,5→4,70) nên nó
+không dùng làm cái núm chỉnh được. Giọng dựng sẵn đặt tên: **0**.
+
+### 6. **NÊN LÀM GÌ: dùng nguyên 17 giọng đang có.** Kokoro để dành, chưa cần thêm.
+
+---
+
+## MỤC 1 — MỐC TỪNG CHỮ: CÂU HỎI QUAN TRỌNG NHẤT
+
+### 1.1 — API công khai: **KHÔNG CÓ MỐC, một dòng cũng không**
+
+Đọc mã nguồn `chatterbox-tts` 0.1.7 (bản mới nhất, MIT, đã đọc LICENSE gốc
+chứ không tin blog):
+
+* `tts.py` và `mtl_tts.py` — hai cửa công khai duy nhất — **không có một chữ
+  `align` nào**. Hàm `generate()` trả về đúng một khối sóng âm.
+* Bên trong `models/t3/inference/alignment_stream_analyzer.py` **CÓ** bộ gióng
+  hàng, và lớp `AlignmentAnalysisResult` còn ghi rõ ô `position`:
+  *"approximate position in the text token sequence. **Can be used for
+  generating online timestamps**"*.
+* **Nhưng lớp đó chưa bao giờ được dựng ra.** Hàm `step()` trả về `logits`,
+  không trả `AlignmentAnalysisResult`; cái hàng đợi để đẩy nó ra đã bị **ghi
+  chú lại** (`# self.queue = queue`). Đó là **mã chết**.
+* Bộ gióng hàng chỉ dùng vào việc **ép dừng khi model nói lảm nhảm**, không
+  dùng để trả mốc.
+* ⚠️ Nó **chỉ được dựng cho bản ĐA NGỮ**: `if self.hp.is_multilingual:`.
+  **Bản tiếng Anh thuần KHÔNG CÓ ma trận gióng hàng nào cả** — không có gì để
+  moi.
+
+### 1.2 — Đi cửa sau: moi ma trận ra, cho Chatterbox cơ hội TỐT NHẤT
+
+Không dừng ở "API không trả mốc" rồi kết luận, vì như thế vẫn là suy đoán. Tôi
+moi thẳng ma trận `alignment` (khung tiếng × cột chữ) từ bên trong model, rồi
+dựng mốc từng chữ theo đường gióng hàng.
+
+**Tự kiểm bộ dò TRƯỚC khi tin số** (nếu đường gióng hàng là rác thì mọi số sau
+đều vô nghĩa): đường gióng **đơn điệu 98%** (83/85 bước không lùi), **phủ
+100%** số cột chữ, mốc dựng ra **không cái nào bị lùi**. Bộ dò chạy đúng.
+
+Trần độ phân giải: model sinh tiếng ở **25 khung/giây** (đo được 25,50) →
+**mỗi khung 40 ms**. Đó là **sàn cứng** của mọi mốc suy ra từ đường này,
+trước khi tính sai số gióng hàng.
+
+### 1.3 — SỐ ĐO: 403 mốc, arm edge-tts chạy CÙNG corpus CÙNG lượt Groq
+
+Thước: y đúc cách đã đo Piper và Kokoro — **cho Groq chép ngược chính file
+tiếng vừa đọc**. 12 câu tiếng Anh THẬT, 2 lượt ĐAN XEN.
+
+| | **Chatterbox** *(mốc SUY RA, moi cửa sau)* | **edge-tts** *(mốc THẬT)* |
+|---|---|---|
+| khớp được | 403 mốc | 402 mốc |
+| **SỐ THÔ** lệch TB | 76,4 ms | 51,8 ms |
+| lệch HỆ THỐNG *(trừ được)* | −8,1 ms | −31,2 ms |
+| **➤ RUNG — KHÔNG chữa được** | **76,2 ms** | **43,6 ms** |
+| rung 90% | 131,0 ms | 78,7 ms |
+| trong ±50 ms | 47% | 69% |
+| **➤ chữ hiện MUỘN hơn tiếng** | **22,8%** | **7,5%** |
+
+> **ARM ĐỐI CHỨNG TÁI LẬP ĐÚNG SỐ CŨ: edge-tts ra 43,6 ms, lượt 4 đo 43,1 ms.**
+> Hai lượt đo độc lập, hai corpus hơi khác nhau, gặp nhau trong 0,5 ms — phép
+> đo đứng vững, không phải máy hôm nay đo kiểu khác.
+
+### 1.4 — Xếp hạng: **Chatterbox nằm DƯỚI Piper**
+
+| bộ đọc | RUNG | so edge | chữ hiện muộn | loại mốc |
+|---|---|---|---|---|
+| edge-tts *(đang chạy)* | **43,1–43,6 ms** | 1,00× | 7,1–7,5% | **THẬT** |
+| Kokoro | 46,1 ms | 1,07× | 9,1% | **THẬT** |
+| Piper | 59,1 ms | 1,53× | 42% | SUY RA |
+| **Chatterbox** | **76,2 ms** | **1,75×** | **22,8%** | **SUY RA, moi cửa sau** |
+
+Piper đã phải ghi cảnh báo trong app vì mốc lệch. **Chatterbox còn tệ hơn
+Piper về rung** — mà lại phải trả giá bằng một bản vá moi vào ruột thư viện.
+
+### 1.5 — Giá phải trả cho cái mốc đó, nếu vẫn muốn dùng
+
+* Đọc thuộc tính **riêng tư** `model.t3.patched_model.alignment_stream_analyzer.alignment`
+  — không có trong tài liệu, không có trong API, **bản sau đổi là gãy im lặng**.
+* **Chỉ chạy được với bản ĐA NGỮ.**
+* Với tiếng Trung/Nhật thì **không dò ngược được về chữ gốc** (xem mục 4).
+
+---
+
+## MỤC 2 — TỐC ĐỘ TRÊN RTX 3060
+
+Máy anh Hùng: **RTX 3060, 12 GB**. Model chiếm **3,0 GB VRAM** — thừa chỗ.
+
+| | CPU *(lượt 4)* | **GPU RTX 3060** | nhanh gấp |
+|---|---|---|---|
+| tiếng Anh | 0,25× | **1,53×** | **6,1 lần** |
+| tiếng Trung | — | 1,73× | |
+| tiếng Nhật | — | 1,68× | |
+| *(edge-tts, đối chứng)* | — | *5,55×* | |
+| *(Kokoro trên GPU)* | *1,76× (CPU)* | ***30,36×*** | *17 lần* |
+
+**Đọc bảng này cho đúng — ba điều:**
+
+1. **GPU cứu được tốc độ thật.** 1 phút tiếng tốn 39 giây máy, không phải 4
+   phút như lượt 4 báo. Với 200-300 kênh thì **đủ dùng trên máy anh Hùng**.
+2. **Nhưng vẫn chậm hơn edge-tts 3,6 lần**, và edge-tts **không tốn GPU** (nó
+   gọi qua mạng). GPU của anh còn phải chạy NVENC xuất video — thêm Chatterbox
+   là hai việc tranh nhau một cái card.
+3. ⚠️ **LƯỢT ĐẦU LUÔN CHẬM GẤP 4 LẦN** (0,36× so với 1,51× lượt sau) vì nạp
+   nhân CUDA. Ai đo một lượt rồi báo số là đo nhầm cái khác — mọi số trên đây
+   đã bỏ lượt hâm máy.
+
+> ⚠️ **MÁY NHÂN VIÊN KHÔNG CÓ GPU.** Trên CPU vẫn là 0,25×. Nếu thêm
+> Chatterbox thì phải ghi thẳng: **"chỉ chạy được máy anh Hùng"**. Kèm cả
+> `torch` bản CUDA ~2,5 GB phải tải rời (`.exe` đang 155 MB).
+
+---
+
+## MỤC 3 — `rubberband` CÓ CỨU ĐƯỢC CHÊNH ĐỘ DÀI KHÔNG
+
+### 3.1 — Trước hết: con số 16,8% của lượt 4 **đo sai**
+
+Mở `do5_chatterbox.json` ra xem thì 5 con số 5,24 / 5,32 / 5,44 / 6,04 / 6,12
+giây là **5 bộ tham số khác nhau** (`exaggeration` 0,3 / 0,5 / 0,7 / 1,2 +
+`cfg_weight` 0,5 / 0,5 / 0,4 / 0,3 + mặc định). Đó là đo **núm cảm xúc đổi độ
+dài bao nhiêu**, KHÔNG phải đo **cùng tham số có ra cùng độ dài không**.
+(`cfg_weight` là núm nhà làm ra nói thẳng là để chỉnh nhịp đọc — nên 5 con số
+đó *phải* khác nhau, đúng thiết kế.)
+
+### 3.2 — Đo lại cho đúng: cùng câu, cùng tham số, 8 lượt
+
+| | 8 lượt (giây) | chênh |
+|---|---|---|
+| **tự do** | 3,92 · 3,56 · 3,60 · 4,76 · 4,04 · 4,16 · 3,60 · 4,00 | **33,7%** *(lệch chuẩn 372 ms)* |
+| **đóng seed** | 3,68 × 8 lượt, giống nhau từng phần nghìn giây | **0,0%** |
+
+**Hai điều ngược nhau, phải nói cả hai:**
+1. Chênh thật là **33,7%, TỆ GẤP ĐÔI** con số lượt 4 báo.
+2. **Đóng seed là hết sạch** — `torch.manual_seed()` một dòng, chênh về 0,0%.
+
+Nhưng **tiền định KHÔNG PHẢI là điều khiển được**: đóng seed thì lần nào cũng
+ra 3,68 s, nhưng anh vẫn **không đặt được** "tôi cần đúng 5,00 s". Vẫn phải
+sinh xong rồi kéo giãn.
+
+### 3.3 — Kéo giãn méo tới đâu — đo bằng ĐÚNG thước cũ
+
+Thước: lệch phổ LTAS (dB, đã bỏ chênh âm lượng) + **Groq chép ngược đếm từ sai**.
+
+| mức ép | `rubberband` lệch phổ | từ sai | *(atempo, đối chứng)* |
+|---|---|---|---|
+| 0,80× | 0,821 dB | **0,0%** | *0,734 dB* |
+| **1,00×** | **0,000 dB** | **0,0%** | *0,332 dB* |
+| 1,25× | 0,873 dB | **0,0%** | *0,706 dB* |
+| **1,337×** *(mức CẦN để nuốt 33,7%)* | **0,901 dB** | **0,0%** | *0,902 dB* |
+| 1,50× | 0,978 dB | **0,0%** | *1,215 dB* |
+
+**Kết luận mục 3: `rubberband` CỨU ĐƯỢC.** Ép tới 1,5× vẫn **0,0% từ sai** —
+Groq chép lại đúng nguyên văn ở mọi mức. Mức cần thật (1,337×) chỉ méo
+**0,901 dB**.
+
+> Chi tiết đáng nhớ: ở **1,00×** `rubberband` lệch **đúng 0,000 dB** (nó cho
+> tiếng đi thẳng qua) còn `atempo` đã méo **0,332 dB** — tức `atempo` cắt-dán
+> sóng **kể cả khi không cần ép gì**. Đó là lý do app đã chọn `rubberband`, và
+> lựa chọn đó vẫn đúng.
+
+**Nên: "không có tham số thời lượng" KHÔNG phải án tử.** Lượt 4 kết luận vội ở
+chỗ này.
+
+---
+
+## MỤC 4 — BẢNG KHỚP 4 THỨ TIẾNG (yêu cầu mới của anh Hùng)
+
+Đo trên **câu THẬT lấy từ chính video anh Hùng đang làm** (Trung: video Douyin
+`近期热播的7部新片推荐`; Nhật + Việt: cache lời của các cổng đang chạy), không
+bịa câu. Mỗi thứ tiếng có arm edge-tts chạy **cùng corpus cùng lượt Groq**.
+
+### 4.1 — Chatterbox
+
+| | **Anh** | **Trung** | **Nhật** | **Việt** |
+|---|---|---|---|---|
+| có hỗ trợ không | ✅ | ✅ | ✅ | 🔴 **KHÔNG CÓ** |
+| RUNG (mốc suy ra) | **76,2 ms** | **269,2 ms** | **54,6 ms** | — |
+| so với edge cùng corpus | **1,75×** | **5,61×** | **1,69×** | — |
+| chữ hiện MUỘN | 22,8% | **91,3%** | 17,3% | — |
+| **đọc sai chữ** | 4,0% | **28,8%** | **15,9%** | — |
+| **đọc thừa bao nhiêu chữ** | 0,99× | **1,66×** | **1,32×** | — |
+| dò ngược mốc về chữ gốc | được | **rất khó** | **không được** | — |
+
+**Tiếng Trung là ca tệ nhất, và tệ theo mọi hướng:** rung gấp **5,61 lần**
+edge-tts, **91,3%** chữ hiện muộn, bịa thêm **66%** lượng chữ.
+
+**Vì sao mốc tiếng Trung/Nhật khó hơn hẳn — không phải chỉ vì thiếu dấu cách:**
+Chatterbox **đổi chữ trước khi đọc**. Tiếng Trung bị đổi sang **mã Thương Hiệt**
+(`近` → `[cj_y][cj_h][cj_m][cj_l][cj_.]`), tiếng Nhật bị **đổi kanji sang
+hiragana** (`飲む` → `のむ`). Nên cột trong ma trận gióng hàng **không còn là chữ
+gốc nữa**. Với tiếng Nhật thì kanji→hiragana là đường **một chiều, không lấy
+lại được** — muốn so phải đổi cả phía Groq sang hiragana (tôi đã làm đúng thế
+mới đo được).
+
+> ⚠️ **BẪY SỐ THÔ LẠI SUÝT LỪA MỘT LẦN NỮA:** tiếng Nhật số thô là **55,2 vs
+> 51,2 ms** — nhìn như ngang nhau (1,08×). Tách lệch hệ thống ra mới thấy RUNG
+> **54,6 vs 32,4 = 1,69×**. Đúng y cái bẫy đã sập 2 lần với Piper và Adam.
+
+### 4.2 — Kokoro (ứng viên đang đứng đầu)
+
+| | **Anh** | **Trung** | **Nhật** | **Việt** |
+|---|---|---|---|---|
+| có hỗ trợ không | ✅ | ✅ | ✅ | 🔴 **KHÔNG CÓ** |
+| **trả mốc từng chữ** | ✅ **227/227 token** | 🔴 **0 token, KHÔNG MỐC NÀO** | *(xem dưới)* | — |
+| RUNG | 46,1 ms *(1,07×)* | **không có mốc để đo** | — | — |
+| tốc độ GPU | **30,36×** | 25,81× | — | — |
+
+**Ba điều phải nói thẳng về Kokoro:**
+
+1. **Tiếng Anh: rất tốt.** Mốc THẬT, đủ 227/227 token, và trên GPU chạy
+   **30,36× thời gian thật** — nhanh hơn cả edge-tts (5,55×). Đây là số MỚI:
+   lượt 4 đo trên CPU ra 1,76×, **GPU nhanh gấp 17 lần**.
+2. **Tiếng Trung: KHÔNG TRẢ MỐC NÀO.** Nó vẫn đọc ra tiếng bình thường (40,4
+   giây cho 12 câu) nhưng trả về **0 token** — tức dùng Kokoro cho kênh tiếng
+   Trung là **mất sạch phụ đề chạy theo chữ**. Suy từ tiếng Anh ra là suy sai.
+3. **Tiếng Nhật: KHÔNG CÀI ĐƯỢC trên máy này.** Gói `pyopenjtalk` phải **biên
+   dịch từ mã C++** (cần CMake + trình biên dịch Visual C++); máy này không có
+   nên `pip install` **hỏng cả lượt**. Máy nhân viên lại càng không có.
+
+### 4.3 — Bảng gộp: bộ nào khớp được thứ tiếng nào
+
+| | Anh | Trung | Nhật | **Việt** |
+|---|---|---|---|---|
+| **edge-tts** *(đang chạy)* | ✅ **43,6 ms** THẬT | ✅ **48,0 ms** THẬT | ✅ **32,4 ms** THẬT | ✅ **2 giọng** |
+| Kokoro | ✅ 46,1 ms THẬT | 🔴 không mốc | ⚠️ không cài được | 🔴 **không có** |
+| Chatterbox | ⚠️ 76,2 ms suy ra | 🔴 269,2 ms + bịa chữ | ⚠️ 54,6 ms + bịa chữ | 🔴 **không có** |
+
+**Chỉ `edge-tts` khớp được cả bốn.** Số giọng: edge-tts có **322 giọng** tổng
+— **17** en-US · **6** zh-CN · **2** ja-JP · **2** vi-VN.
+
+---
+
+## MỤC 5 — "NẾU CÓ NHIỀU GIỌNG HAY"
+
+### 5.1 — Đếm giọng
+
+| | giọng dựng sẵn ĐẶT TÊN |
+|---|---|
+| edge-tts | **322** (17 Mỹ · 6 Trung · 2 Nhật · 2 Việt) |
+| Kokoro | 54 (20 giọng Mỹ) |
+| **Chatterbox** | **0** — đúng một giọng mặc định, muốn giọng khác thì phải nhân bản từ file mẫu |
+
+Chatterbox có **23 ngôn ngữ** nhưng **0 giọng**. Hai chuyện khác nhau, dễ đọc nhầm.
+
+### 5.2 — Núm cảm xúc có thật sự rộng hơn không — **KHÔNG**
+
+Thước: F0 std (nửa cung, càng cao càng lên xuống sinh động), cùng một câu,
+**đóng seed** cho sạch phép so. Lượt 4 chỉ so với 6 giọng edge; lần này đo
+**cả 17 giọng en-US**.
+
+| `exaggeration` | 0,25 | 0,50 | 0,75 | 1,00 | 1,50 | 2,00 |
+|---|---|---|---|---|---|---|
+| **F0 std** | 6,18 | 6,43 | 5,88 | **6,54** | **4,70** | 5,36 |
+
+| | trải rộng |
+|---|---|
+| núm Chatterbox | 4,70 – 6,54 = **1,84** |
+| **17 giọng en-US edge-tts** | 2,38 – 5,69 = **3,31** |
+
+**Trả lời thẳng câu anh Hùng hỏi: núm Chatterbox HẸP HƠN, không rộng hơn.**
+Đổi giọng edge-tts cho anh nhiều lựa chọn nhấn nhá hơn là vặn núm Chatterbox.
+Và núm đó **không tăng đều** — vặn từ 1,0 lên 1,5 thì nhấn nhá **TỤT** 6,54 →
+4,70. Nó không dùng làm núm chỉnh được.
+
+**Một điều CÔNG BẰNG phải nói cho Chatterbox:** mức **thấp nhất** của nó
+(4,70) vẫn **cao hơn 13 trong 17** giọng edge-tts. Tức giọng nó **sinh động
+hơn mặt bằng** thật — chỉ là không điều khiển được, và giọng edge cao nhất
+(Guy 5,69 · Emma 5,42) đã bám khá sát.
+
+> ⚠️ **Tôi không có tai.** F0 std đo cao độ lên xuống, đó là *dấu hiệu* của
+> giọng sinh động chứ không phải "hay". File nghe thử ở cuối, anh nghe rồi
+> chấm mới là chấm đúng.
+
+### 5.3 — Nhân bản giọng: **CHẠY THẬT**
+
+⚠️ **Tôi cố ý KHÔNG nhân bản giọng người thật.** Mẫu dùng để thử là **giọng
+MÁY** do edge-tts sinh ra — chứng minh được cơ chế mà không đụng quyền của ai.
+Anh muốn dùng thật thì **chỉ giọng của chính anh, hoặc giọng có phép bằng văn bản**.
+
+| mẫu đưa vào | cao độ mẫu | cao độ bản sao | lệch |
+|---|---|---|---|
+| giọng nam | 100,7 Hz | **99,9 Hz** | 0,9 Hz |
+| giọng nữ | 192,4 Hz | **205,0 Hz** | 12,6 Hz |
+
+Hai mẫu cách nhau 91,7 Hz → hai bản sao cách nhau **105,1 Hz** = giữ được
+**115%** khoảng cách. **Nhân bản chạy tốt**, mất 3,1–3,3 giây máy mỗi câu.
+
+Đây là **thứ duy nhất Chatterbox làm tốt hơn hẳn** edge-tts và Kokoro. Nhưng
+nó **không giải bài toán anh đang có** (đọc lời cho 200-300 kênh) — nó giải
+bài toán "muốn một giọng riêng không ai có".
+
+---
+
+## MỤC 6 — KẾT LUẬN: CHỌN MỘT
+
+### **Dùng nguyên 17 giọng `edge-tts` đang có. KHÔNG thêm Chatterbox. Kokoro để dành.**
+
+| | thêm **Chatterbox** | thêm **Kokoro** | **giữ nguyên edge-tts** |
+|---|---|---|---|
+| mốc từng chữ (Anh) | 76,2 ms suy ra, moi cửa sau | 46,1 ms THẬT | **43,6 ms THẬT** |
+| mốc tiếng Trung | 269,2 ms + bịa chữ | **KHÔNG CÓ MỐC** | **48,0 ms THẬT** |
+| tiếng Việt | **không có** | **không có** | **2 giọng** |
+| số giọng | 0 | 54 | **322** |
+| đọc đúng chữ | 🔴 bịa 1,66× ở tiếng Trung | ✅ | ✅ |
+| tốc độ | 1,53× (chỉ máy có GPU) | 30,36× GPU / 1,76× CPU | 5,55×, không tốn máy |
+| máy nhân viên | 🔴 **không chạy nổi** | ⚠️ cần tải 317 MB | ✅ **chạy sẵn** |
+| công sửa app | lớn (tiến trình riêng + torch 2,5 GB) | vừa | **0** |
+
+**Đánh đổi phải nói rõ khi chọn edge-tts:** nó **cần mạng**, và giấy phép thì
+tác giả có câu *"It shouldn't be used for commercial reasons"* (đã ghi trong
+`LICENSES.txt` mục 5 — rủi ro thật nằm ở điều khoản dịch vụ Microsoft, không
+phải ở LGPL). Đó là rủi ro **đã tồn tại sẵn**, lượt này không làm nó nặng thêm.
+
+**Khi nào mới nên lấy Kokoro ra:** khi anh cần **chạy hẳn trên máy, không cần
+mạng**, và **chỉ cho kênh tiếng Anh**. Lúc đó nó rất tốt: mốc thật, GPU
+**30,36×**, Apache sạch, 317 MB. Nhưng nó **không thay được** edge-tts vì thiếu
+tiếng Việt và mất mốc ở tiếng Trung.
+
+**Chatterbox chỉ đáng lấy ra nếu sau này anh muốn một giọng RIÊNG của chính
+anh** (nhân bản) cho một kênh đơn lẻ, chấp nhận không có phụ đề chạy theo chữ.
+Đó là việc khác hẳn việc đang làm.
+
+---
+
+## NHỮNG GÌ TÔI CHƯA LÀM ĐƯỢC — GHI THẲNG
+
+* **Chưa đo tiếng Việt cho Chatterbox và Kokoro** vì **cả hai đều không hỗ trợ**
+  — không phải tôi bỏ qua.
+* **Chưa đo Kokoro tiếng Nhật**: `pyopenjtalk` cần trình biên dịch C++, máy này
+  không có. Ghi là *không cài được*, không suy ra chất lượng.
+* **Chưa đo rung mốc của Kokoro ở tiếng Trung** — vì nó **không trả mốc nào**,
+  không có gì để đo.
+* **Mốc Chatterbox tiếng Trung/Nhật đo qua một tầng đổi chữ** (Thương Hiệt /
+  hiragana). Tôi đã đổi cả hai phía cho đối xứng, nhưng đây là phép đo **khó
+  hơn** tiếng Anh, sai số của chính phép đo có thể lớn hơn. Con số 5,61× vẫn
+  đứng vững vì nó quá lớn, nhưng đừng đọc 269,2 ms như một con số chính xác
+  tới mili-giây.
+* **Một phần lỗi "đọc sai chữ" tiếng Trung là do CHỮ PHỒN THỂ**: bảng Thương
+  Hiệt của Chatterbox là bản phồn thể nên nó đọc `声` thành `聲`. Con số **đứng
+  vững hơn** là **tỉ lệ ĐỘ DÀI 1,66×** — phồn thể hay giản thể thì vẫn là 1
+  chữ, nên chỗ đó không lừa được.
+* **`exaggeration` mới quét 6 mức, mỗi mức 1 lượt** (có đóng seed). Núm này
+  không tăng đều nên muốn chốt hình dạng của nó phải quét dày hơn.
+* **Tôi không nghe được.** Mọi kết luận về "hay" đều là số đo gián tiếp.
+
+---
+
+## FILE ĐỂ ANH TỰ NGHE
+
+Ở `%TEMP%\bq_tts_thu\nghe_thu\` (giữ nguyên 48 file lượt trước, thêm 11 file mới):
+
+| file | là gì |
+|---|---|
+| `CB5_camxuc_ex*.wav` (6 file) | núm cảm xúc Chatterbox ở 0,25 / 0,5 / 0,75 / 1,0 / 1,5 / 2,0 |
+| `CB5_nhanban_nam.wav` · `CB5_nhanban_nu.wav` | nhân bản giọng từ mẫu máy |
+| `CB5_rubberband_0.8x / 1.25x / 1.5x .wav` | ép thời gian bằng `rubberband` |
+
+Nghe `CB5_rubberband_1.5x.wav` là nghe được mức ép mạnh nhất — máy chép lại
+vẫn đúng 0,0% từ sai, nhưng **tai anh mới là người chấm**.
+
+---
+
+## SỐ ĐO TÓM TẮT ĐỂ TRA LẠI SAU
+
+```
+MỐC TỪNG CHỮ (Groq chép ngược · câu THẬT · 2 lượt ĐAN XEN · arm edge cùng corpus)
+  EN  Chatterbox RUNG 76,2 ms (1,75x) · hệ thống  -8,1 · muộn 22,8% · 403 mốc
+      edge-tts   RUNG 43,6 ms          · hệ thống -31,2 · muộn  7,5% · 402 mốc
+      >> arm edge TÁI LẬP số cũ 43,1 ms -> phép đo đứng vững
+  ZH  Chatterbox RUNG 269,2 ms (5,61x) · muộn 91,3%   | edge 48,0 ms · muộn 8,7%
+  JA  Chatterbox RUNG  54,6 ms (1,69x) · muộn 17,3%   | edge 32,4 ms · muộn 2,8%
+      (JA số THÔ 55,2 vs 51,2 = 1,08x -> BẪY, tách ra mới thấy 1,69x)
+  VI  Chatterbox KHÔNG HỖ TRỢ · Kokoro KHÔNG HỖ TRỢ
+
+XẾP HẠNG RUNG: edge 43,1-43,6 < Kokoro 46,1 < Piper 59,1 < CHATTERBOX 76,2
+
+CHATTERBOX CÓ MỐC KHÔNG: API công khai KHÔNG. Ma trận gióng hàng CÓ nhưng
+  (a) chỉ dựng cho bản ĐA NGỮ  (b) không lộ ra API, lớp kết quả là MÃ CHẾT
+  (c) trần độ phân giải 25 khung/giây = 40 ms
+
+ĐỌC ĐÚNG CHỮ (Groq chép ngược, đếm token)
+  EN sai  4,0% · đọc ra 0,99x     ZH sai 28,8% · đọc ra 1,66x (BỊA CHỮ)
+  JA sai 15,9% · đọc ra 1,32x     ZH: 12 câu ra 160,4s tiếng, edge chỉ 78,4s
+
+TỐC ĐỘ  Chatterbox CPU 0,25x -> GPU RTX3060 1,53x (6,1 lần) · VRAM 3,0 GB
+        Kokoro CPU 1,76x -> GPU 30,36x (17 lần) · edge-tts 5,55x
+        LƯỢT ĐẦU 0,36x vì nạp nhân CUDA -> phải bỏ lượt hâm máy
+
+ĐỘ DÀI CÓ TIỀN ĐỊNH KHÔNG (cùng câu CÙNG tham số, 8 lượt)
+  tự do 33,7% (KHÔNG phải 16,8% - số cũ đo 5 BỘ THAM SỐ KHÁC NHAU)
+  đóng seed 0,0% -> torch.manual_seed() chữa sạch
+
+RUBBERBAND (thước cũ: lệch phổ LTAS + Groq chép ngược đếm từ sai)
+  0,8x -> 0,821 dB · 1,0x -> 0,000 dB · 1,25x -> 0,873 · 1,337x -> 0,901
+  1,5x -> 0,978 dB.  TỪ SAI 0,0% Ở MỌI MỨC.
+  atempo ở 1,0x đã méo 0,332 dB (cắt-dán kể cả khi không ép)
+
+GIỌNG + NÚM CẢM XÚC (F0 std nửa cung, đóng seed)
+  Chatterbox núm 4,70-6,54 = trải 1,84  (không tăng đều: 1,0->6,54, 1,5->4,70)
+  17 giọng en-US edge   2,38-5,69 = trải 3,31  -> NÚM HẸP HƠN
+  giọng đặt tên: edge 322 (17 Mỹ/6 Trung/2 Nhật/2 Việt) · Kokoro 54 · CB 0
+
+NHÂN BẢN GIỌNG: CHẠY THẬT, giữ 115% khoảng cách cao độ, 3,1-3,3s/câu
+
+KOKORO 4 THỨ TIẾNG: EN mốc THẬT 227/227 · ZH **0 token, KHÔNG MỐC**
+  JA không cài được (pyopenjtalk cần trình biên dịch C++) · VI KHÔNG CÓ
+  9 ngôn ngữ: a b e f h i p j z
+
+GIẤY PHÉP: chatterbox-tts 0.1.7 = MIT (đọc LICENSE + METADATA gốc, không tin blog)
+```
+
+*Tra cứu + thử thật ngày 17/08/2026. **Không sửa một file nào trong `app/`.**
+Không chạy ffmpeg nặng. Môi trường ảo RIÊNG `%TEMP%\bq_tts_thu\venv7` (Chatterbox
++ torch CUDA) và `venv8` (Kokoro), **không đụng `.venv` của app**. Ổ C: 396 GB
+trống trước khi làm, 380 GB lúc đo xong. Model tải về để thử (Chatterbox 2,99 GB
+· Kokoro 0,31 GB · 2 venv 10,4 GB) **đã dọn sạch sau khi đo**, chỉ giữ lại file
+nghe thử. Model có sẵn từ trước của anh Hùng (Demucs · OmniVoice · 3 bản
+faster-whisper · whisper-large-v3-turbo) **KHÔNG đụng tới**.*
