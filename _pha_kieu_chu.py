@@ -1,6 +1,6 @@
-"""THỬ PHÁ CỔNG 67 — cổng không bắt được thì nó chỉ là con dấu.
+"""THỬ PHÁ CỔNG 68 — cổng không bắt được thì nó chỉ là con dấu.
 
-Mỗi phép phá gỡ ĐÚNG MỘT chốt của bản vá rồi chạy lại cổng 67; cổng phải ĐỎ.
+Mỗi phép phá gỡ ĐÚNG MỘT chốt của bản vá rồi chạy lại cổng 68; cổng phải ĐỎ.
 Xong thì hoàn nguyên nguyên trạng.
 
 LƯU Ý (bài học cổng 54): file repo là **CRLF**, nên chuỗi tìm phải nằm gọn

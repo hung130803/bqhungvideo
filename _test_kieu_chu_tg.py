@@ -1,4 +1,4 @@
-"""CỔNG 67 — KIỂU CHỮ CHỈNH ĐƯỢC TRÊN ĐƯỜNG THAY GIỌNG.
+"""CỔNG 68 — KIỂU CHỮ CHỈNH ĐƯỢC TRÊN ĐƯỜNG THAY GIỌNG.
 
 Anh Hùng 17/08/2026: *"phần chữ sub ở trong video tôi không điều chỉnh được cỡ
 chữ, kiểu chữ, hay in nghiêng đậm, hay chỉnh viền gì được à"*. Đường CẮT
@@ -71,13 +71,13 @@ def ok(dieu: bool, ten: str, chi_tiet: str = "") -> bool:
 def hop() -> Path:
     global _HOP
     if _HOP is None:
-        _HOP = REPO / f"_kc67_{os.getpid()}"
+        _HOP = REPO / f"_kc68_{os.getpid()}"
         _HOP.mkdir(exist_ok=True)
     return _HOP
 
 
 def don() -> None:
-    for d in REPO.glob("_kc67_*"):          # gồm cả hộp của lần chạy TRƯỚC
+    for d in REPO.glob("_kc68_*"):          # gồm cả hộp của lần chạy TRƯỚC
         shutil.rmtree(d, ignore_errors=True)
 
 
@@ -401,7 +401,7 @@ def muc6() -> None:
 
 
 def main() -> int:
-    print(f"CỔNG 67 — kiểu chữ đường THAY GIỌNG · mốc {MOC}")
+    print(f"CỔNG 68 — kiểu chữ đường THAY GIỌNG · mốc {MOC}")
     try:
         muc1(); muc2(); muc3(); muc4(); muc5(); muc6()
     finally:
