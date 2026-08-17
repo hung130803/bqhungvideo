@@ -1612,3 +1612,537 @@ gấp.** Vì:
 không chạy việc nặng CPU (tôn trọng luồng đo tốc độ chạy song song). Có tải 1
 file 22,5 MB để mở ra kiểm chứng, **đã xoá ngay sau khi xem**; ổ C: 414 GB
 trống trước và sau.*
+
+---
+---
+
+# LƯỢT 4 — "Không cần tiếng Việt nữa, giọng Mỹ nói tiếng Anh cũng được"
+
+## Câu hỏi của anh Hùng
+
+> *"cái giọng không hẳn là Việt, Mỹ nói tiếng Anh cũng được, đa dạng nên cho
+> tôi đi, đảm bảo có cảm xúc càng tốt, nhấn nhá cũng được, đảm bảo chữ khớp
+> 100% với khung hình không được lệch"*
+
+**Đây là điều kiện MỚI, và nó lật ngược ba lượt trước.** Ba lượt 1-2-3 đều
+chốt "không bộ nào đủ" **vì bắt buộc phải có tiếng Việt**. Nhóm bộ *sạch giấy
+phép nhất* (Kokoro, Chatterbox, Kitten, Orpheus) khi đó bị loại ở đúng cột
+tiếng Việt. Nay bỏ ràng buộc đó thì **chính nhóm bị loại ấy trở thành ứng
+viên** — nên phải tra và thử lại từ đầu ở nhóm này.
+
+---
+
+## TRẢ LỜI NGẮN — ĐỌC ĐOẠN NÀY LÀ ĐỦ
+
+### 1. Thứ anh xin, **anh ĐANG CÓ SẴN rồi** — 17 giọng Mỹ, 0 đồng, 0 công sửa
+
+`edge-tts` mà app đang chạy có **322 giọng**, trong đó **17 giọng Mỹ (`en-US`)**
+— 9 nam, 8 nữ, mỗi giọng Microsoft ghi sẵn tính cách khác nhau:
+
+| Giọng | Giới | Tính cách Microsoft ghi |
+|---|---|---|
+| Andrew | Nam | ấm, tự tin, chân thật |
+| Brian | Nam | dễ gần, thoải mái, thành thật |
+| Christopher | Nam | đáng tin, có uy |
+| Eric · Steffan | Nam | điềm tĩnh, lý trí |
+| Guy | Nam | nhiệt, dứt khoát kiểu tin tức |
+| Roger | Nam | sôi nổi |
+| Aria | Nữ | tích cực, tự tin |
+| Ava | Nữ | biểu cảm, ân cần |
+| Emma | Nữ | vui vẻ, rõ ràng |
+| Jenny | Nữ | thân thiện, dễ chịu |
+| Michelle | Nữ | thân thiện |
+| Ana | Nữ | giọng trẻ con |
+
+**Và app ĐÃ hiện đủ chúng trong ô chọn giọng rồi** — tôi đã đọc mã:
+`thay_giong_dialog.giong_dung_duoc` chỉ lọc bỏ mỗi `gemini:`, còn lại lấy
+**toàn bộ danh sách 322 giọng** từ Microsoft. Tức anh chỉ cần **mở ô chọn giọng
+và kéo xuống**, không phải chờ ai làm gì.
+
+> Vì sao trước giờ anh thấy có 2 giọng: 2 giọng đó là **2 giọng TIẾNG VIỆT** —
+> Microsoft chỉ cho tiếng Việt đúng 2 giọng. Chuyển sang tiếng Anh thì con số
+> là **17**.
+
+### 2. Về "khớp 100%": **KHÔNG bộ nào đạt 100%, tôi nói thẳng** — nhưng thứ anh đang chạy đã là tốt nhất có thể
+
+Hôm nay tôi đo lại trên **câu tiếng Anh thật, 462 mốc từ, 2 lượt đan xen**:
+
+| | `edge-tts` **(đang chạy)** | **Kokoro** (ứng viên tốt nhất) |
+|---|---|---|
+| **RUNG (lệch không chữa được)** | **43,1 ms** | **46,1 ms** |
+| chữ hiện MUỘN hơn tiếng | 7,1 % | 9,1 % |
+
+Chênh nhau **7 %** — coi như ngang. **Không có bộ miễn phí nào khớp hơn cái
+anh đang dùng.** Con số 43 mili-giây nghĩa là chữ lệch tiếng khoảng **1/23
+giây** — mắt gần như không bắt được, nhưng nó **không phải 0**, và tôi sẽ
+không hứa 0.
+
+### 3. Bộ anh mô tả đúng nhất (**Chatterbox**, có núm "cảm xúc") — **tôi đã cài, đã chạy, và phải LOẠI**
+
+Không phải vì giấy phép (MIT, sạch), mà vì **ba số đo**:
+
+| Đo trên máy này | Kết quả | Nghĩa là |
+|---|---|---|
+| Tốc độ trên CPU | **0,25× thời gian thật** | đọc 1 phút tiếng mất **4 phút máy** |
+| Tham số chỉnh tốc độ / thời lượng | **KHÔNG CÓ CÁI NÀO** | không ép vừa khung được |
+| Cùng 1 câu đọc 5 lượt | **5,24s … 6,12s** | dài ngắn **chênh 16,8 %** mỗi lượt |
+
+Dòng cuối là dòng giết nó: **cùng một câu, cùng một cài đặt, mỗi lần đọc ra
+một độ dài khác nhau.** App anh phải nhét câu vào khung cố định — với thứ
+không đoán trước được độ dài thì không có cách nào nhét.
+
+### 4. Nếu sau này muốn một bộ **chạy hẳn trên máy** (không cần mạng): **Kokoro** — và chỉ Kokoro
+
+Đây là phát hiện lớn nhất của lượt này: **Kokoro là bộ miễn phí ĐẦU TIÊN tôi
+đo được là NGANG HÀNG `edge-tts` về độ khớp chữ.** 20 giọng Mỹ, giấy phép
+Apache-2.0 sạch cả mã lẫn trọng số, 317 MB, chạy CPU.
+
+**Nhưng đừng đổi sang nó bây giờ** — anh đang có 17 giọng miễn phí không tốn
+CPU. Kokoro là *lựa chọn thêm*, để dành cho lúc cần.
+
+---
+
+## PHẦN A — BẢNG TRA CỨU (tra lại toàn bộ, không giới hạn danh sách cũ)
+
+Cột 2 vẫn là cột quyết định. Giải thích lại cho gọn:
+
+* **Mốc THẬT** = chính máy đọc nói cho app biết "chữ này ở giây thứ mấy". Không
+  sai được, vì tiếng được sinh ra TỪ chính con số đó.
+* **Mốc SUY RA** = máy đọc không nói gì, app phải tự đoán bằng cách chia tỉ lệ
+  hoặc cho máy khác nghe lại. Đây là chỗ Piper rơi vào — và đo được **42 %
+  chữ hiện muộn hơn tiếng**.
+
+### Nhóm 1 — ĐỦ ĐIỀU KIỆN (giọng Mỹ · giấy phép thương mại · Windows · có mốc)
+
+| Bộ | 1. Giọng Mỹ | 2. **Mốc từng chữ** | 3. Cảm xúc / nhấn nhá | 4. Giấy phép *(đọc file gốc)* | 5. Máy cần gì · nhanh chậm | 6. Nhân bản |
+|---|---|---|---|---|---|---|
+| **`edge-tts`** *(ĐANG CHẠY)* | **17 giọng `en-US`** (9 nam · 8 nữ) | **THẬT** — `WordBoundary` do Microsoft trả. **Đo hôm nay: rung 43,1 ms** | Không có núm, nhưng **17 tính cách khác nhau** + `rate` chỉnh tốc độ | ⚠️ **LGPLv3**; tác giả viết công khai *"It shouldn't be used for commercial reasons"* — rủi ro thật nằm ở điều khoản Microsoft | Qua mạng, **5,5× nhanh hơn thời gian thật**, ~0 CPU | KHÔNG |
+| **Kokoro** | **20** — 11 nữ `af_*` · 9 nam `am_*` *(đếm từ chính file model, không đọc tài liệu)* | **THẬT** — model trả `pred_dur`, **có cả đầu VÀ cuối mỗi chữ**. **Đo hôm nay: rung 46,1 ms** | Không có núm. **Nhưng giọng nam đo ra sinh động ngang `edge-tts`** (xem B4) | ✅ **Apache-2.0 CẢ mã LẪN trọng số** — tôi tự mở file gốc. Model card ghi thẳng: *"deployed in numerous commercial APIs"* | **317 MB** · CPU **1,8–2,3×** · **cần `torch`** | KHÔNG |
+
+### Nhóm 2 — SẠCH GIẤY PHÉP nhưng TRƯỢT cột khác
+
+| Bộ | Giọng Mỹ | Mốc | Cảm xúc | Giấy phép | Vì sao loại |
+|---|---|---|---|---|---|
+| **Chatterbox** *(Resemble AI)* | **0 giọng đặt tên** | 🔴 **KHÔNG** — trả về đúng 1 khối sóng âm | ✅ **núm `exaggeration` — chạy thật** | ✅ **MIT cả mã lẫn trọng số** | **CPU 0,25× · không có tham số thời lượng · độ dài chênh 16,8 %/lượt** |
+| **Piper** *(đã nối sẵn vào app)* | ~20 giọng `en_US` | ⚠️ **SUY RA** — rung 59,1 ms, **42 % chữ hiện muộn** | 🔴 KHÔNG | mã GPL-3 *(tiến trình riêng thì an toàn)* · trọng số MIT | Kém hẳn ở đúng cột quyết định |
+| **Orpheus** | 8 (`tara`, `leah`, `leo`…) | 🔴 KHÔNG | ✅ thẻ `<laugh>` `<sigh>` | ✅ Apache cả 2 | **3,78B · bản pip cần `vLLM` = KHÔNG chạy Windows**; 12 GB VRAM không đủ |
+| **Kitten TTS** | 8 | 🔴 KHÔNG | 🔴 KHÔNG | ✅ Apache cả 2 | Không mốc, không cảm xúc (nhưng chỉ 25–56 MB, CPU) |
+| **Parler-TTS** | 34 *(lẫn giọng Anh-Anh)* | 🔴 KHÔNG | mô tả bằng câu chữ, không phải núm | ✅ Apache cả 2 — **nguồn dữ liệu sạch nhất cả bảng** | Không mốc; không chọn được đúng giọng Mỹ |
+| **Zonos** | 0 | 🔴 KHÔNG | ✅ vector 8 chiều cảm xúc + `speaking_rate` | ✅ Apache cả 2 — ⚠️ **KHÔNG công bố dữ liệu huấn luyện** | Windows **không hỗ trợ chính thức** |
+| **Dia / Dia2** | 0 | Dia2 **CÓ** mốc (80 ms) | 21 thẻ | ✅ Apache cả 2 | 🔴 **giọng ĐỔI mỗi lượt chạy** — 300 kênh thì mỗi Part một người đọc |
+| **Kyutai TTS** | ~228 giọng | ✅ **THẬT** (80 ms, chỉ có mốc ĐẦU) | 🔴 KHÔNG | mã MIT · trọng số CC-BY · ⚠️ **giọng MẶC ĐỊNH là CC-BY-NC = CẤM bán** | **Windows không hỗ trợ chính thức**; không ép được thời lượng |
+| **StyleTTS 2** | 1 | có `pred_dur` bên trong nhưng **không trả ra** | qua giọng mẫu | mã MIT · ⚠️ **trọng số KHÔNG ghi giấy phép nào** | Giấy phép trọng số bỏ trống = không dám khuyên |
+| **LongCat-AudioDiT** | 0 | 🔴 KHÔNG | 🔴 KHÔNG | ✅ **MIT cả mã lẫn trọng số** *(sạch nhất tìm được)* | Không giọng đặt sẵn, không cảm xúc |
+| **Qwen3-TTS** | **2** (`Ryan`, `Aiden` — **đều nam**) | 🔴 KHÔNG | ✅ chỉ dẫn bằng câu chữ | ✅ Apache cả 2 | Chỉ 2 giọng, không có nữ |
+| **VoiceStar** | 0 | 🔴 KHÔNG | 🔴 KHÔNG | ⚠️ **tranh cãi** *(xem dưới)* | **chậm hơn thời gian thật 4,25×** |
+
+### Nhóm 3 — 🔴 CẤM THƯƠNG MẠI hoặc GIẤY PHÉP KHÔNG RÕ (loại thẳng)
+
+**Sáu cái bẫy MỚI bắt được lượt này** — bổ sung cho 5 cái blog ghi sai đã bắt ở
+các lượt trước. Đây là phần bảo vệ anh khỏi bị kiện, nên tôi ghi kỹ:
+
+| Bộ | Blog thường ghi | **SỰ THẬT (đọc nguồn gốc)** |
+|---|---|---|
+| **Step-Audio-EditX** *(đang đứng đầu bảng xếp hạng mã nguồn mở)* | "Apache 2.0, thoải mái dùng" | 🔴 **Ô giấy phép trên trang model BỎ TRỐNG.** Có người hỏi thẳng, nhóm tác giả **né không xác nhận** được phép dùng thương mại. Apache 2.0 chỉ là của **MÃ**, không phải **trọng số** |
+| **Covo-Audio** *(Tencent)* | "CC BY 4.0" | 🔴 File gốc ghi nguyên văn: *"chỉ dùng cho mục đích học thuật, tuyệt đối không dùng thương mại"* |
+| **Voxtral TTS** *(Mistral)* | "Mistral tặng miễn phí" | 🔴 **CC-BY-NC-4.0 — CẤM thương mại** |
+| **Resemble DramaBox** | "MIT" | 🔴 Thật ra là giấy phép riêng `ltx-2-community`, có ngưỡng doanh thu |
+| **MioTTS** | "Apache 2.0" | ⚠️ Mã Apache thật, **nhưng file giọng mẫu tiếng Anh kèm theo được sinh bằng TTS trả phí và README ghi rõ KHÔNG được dùng thương mại** |
+| **Kyutai TTS** | "MIT" | ⚠️ Mã MIT thật, nhưng **giọng mặc định trong mọi ví dụ là CC-BY-NC**. Chạy theo hướng dẫn = đang dùng tài sản cấm bán |
+
+Vẫn giữ nguyên lệnh cấm từ các lượt trước: **F5-TTS · XTTS/viXTTS · Fish-Speech
+· ChatTTS · Higgs Audio · Spark-TTS · MaskGCT · OmniVoice · `mms-tts` · VietTTS
+· viterbox** — trọng số CC-BY-NC hoặc giấy phép nghiên cứu.
+
+> **Quy luật lặp lại lần thứ tư, giờ có thể coi là luật:** bộ nào có `duration`
+> ép cứng được thời lượng thì gần như chắc chắn huấn luyện trên bộ dữ liệu
+> **Emilia** vốn cấm thương mại. **Mã Apache mà trọng số NC** là cái bẫy phổ
+> biến nhất trong cả lĩnh vực này.
+
+---
+
+## PHẦN B — THỬ THẬT TRÊN MÁY NÀY
+
+Môi trường ảo **RIÊNG** trong `%TEMP%\bq_tts_thu\venv4·5·6`, **không đụng
+`.venv` của app**, không cài vào Python hệ thống. Ổ C trước khi làm còn
+**402 GB**.
+
+### B1. Mốc từng chữ — **KOKORO NGANG `edge-tts`**, đây là số quan trọng nhất lượt này
+
+Đo bằng **đúng cách** `_do_piper_moc_that.py` đã đo Piper: cho **Groq chép
+ngược chính file tiếng vừa đọc** rồi căn hai chuỗi từ. 14 câu tiếng Anh THẬT
+(lời chép từ chính video trên máy anh), **462 mốc từ mỗi bên, 2 lượt ĐAN XEN**.
+
+> **VÌ SAO PHẢI CHẠY LẠI ARM `edge-tts` CHỨ KHÔNG CHÉP SỐ 38,6 ms CŨ:** số cũ
+> đo trên câu **tiếng Việt**. Độ trễ của chính **cái thước** (Groq đánh dấu đầu
+> từ) khác nhau theo ngôn ngữ. Chép thẳng số tiếng Việt sang so với giọng Anh
+> là so hai thứ khác nhau rồi quy hết chênh lệch cho máy đọc. Nên arm `edge-tts`
+> chạy **cùng corpus, cùng lượt Groq**.
+
+| | **`edge-tts`** *(mốc THẬT)* | **Kokoro** *(mốc THẬT)* | *[Piper — lượt trước, tiếng Việt]* |
+|---|---|---|---|
+| Khớp được bao nhiêu từ | 448/462 (97 %) | **462/462 (100 %)** | 409/426 (96 %) |
+| **SỐ THÔ** lệch TB | 51,2 ms | 47,7 ms | *65,1 ms* |
+| **Lệch HỆ THỐNG** *(trừ được bằng 1 hằng số)* | −30,0 ms | **−12,5 ms** | *+33,0 ms* |
+| **➤ RUNG — cái KHÔNG chữa được** | **43,1 ms** | **46,1 ms = 1,07×** | ***59,1 ms = 1,53×*** |
+| Rung ở mức 90 % | 77,5 ms | **77,5 ms** | *138 ms* |
+| Trong ±50 ms | 71 % | **72 %** | *56 %* |
+| **➤ Chữ hiện MUỘN hơn tiếng** | 7,1 % | **9,1 %** | ***42 %*** |
+| Tốc độ | **5,48×** *(mạng, ~0 CPU)* | 1,76× *(CPU)* | 3,62× |
+
+**Đọc bảng này cho đúng — có ba điều:**
+
+1. **Kokoro thuộc CÙNG HẠNG với `edge-tts`, KHÔNG thuộc hạng Piper.** Rung
+   1,07× (Piper 1,53×). Cột "chữ hiện muộn" còn rõ hơn: **9,1 % so với 42 %**.
+   Đây là lần đầu trong bốn lượt tra có một bộ **chạy trên máy** đạt mức này.
+2. **Nhưng `edge-tts` vẫn nhỉnh hơn** ở cả hai cột (43,1 < 46,1 · 7,1 % <
+   9,1 %). Không có lý do đổi.
+3. ⚠️ **Chênh lệch 3 ms là NHỎ.** Tôi chạy 2 lượt đan xen chứ chưa chạy đủ
+   nhiều lượt để chắc 46,1 và 43,1 không phải cùng một con số bị nhiễu. Kết
+   luận đứng vững là **"ngang hàng"**, không phải "edge tốt hơn 7 %".
+
+### B2. Kokoro — ép vừa khung 5 giây: **ĐƯỢC, và nhanh hơn Piper**
+
+| Đo | Kokoro | *(Piper — lượt 1)* |
+|---|---|---|
+| Câu đọc tự nhiên | 4,575 s | 4,8 s |
+| Ép về khung **5,0 s** | **5,0 s sau 1 vòng, lệch −1,0 %** | *5,05 s sau **4** vòng, lệch +1,0 %* |
+| Nén tối đa được | **0,497× độ dài tự nhiên** | *0,69×* |
+
+**Kokoro nén sâu hơn hẳn** (0,497× so với 0,69× của Piper và 0,687× của
+`edge-tts`), và **khớp khung chỉ trong 1 vòng** thay vì 4.
+
+⚠️ **Nhưng `speed` KHÔNG TỈ LỆ THUẬN — đúng y bệnh của Piper.** Ai tính
+`speed = độ_dài / khung` sẽ ép hụt:
+
+| `speed` | 0,70 | 0,85 | 1,00 | 1,15 | 1,30 | 1,50 | 1,80 | 2,20 | 3,00 |
+|---|---|---|---|---|---|---|---|---|---|
+| **thực tế ra** | 1,464 | 1,180 | 1,000 | 0,934 | 0,842 | 0,678 | 0,623 | 0,541 | **0,497** |
+| *nếu tỉ lệ thuận* | 1,429 | 1,176 | 1,000 | 0,870 | 0,769 | 0,667 | 0,556 | 0,455 | *0,333* |
+| lệch | +3,6 % | +0,4 % | 0 | +6,5 % | +7,2 % | +1,1 % | +6,7 % | +8,6 % | **+16,4 %** |
+
+→ phải **TRA BẢNG ĐO**, không dùng công thức. (Đúng bài học `_ls_tu_rate` của
+Piper.)
+
+### B3. Nén mạnh có làm **ngọng** không — đo bằng số, không bịa cảm nhận
+
+**Tôi không có tai, không nghe được.** Thay vì bịa, tôi cho **Groq chép ngược**
+bản đã nén rồi đếm từ sai:
+
+| `speed` | độ dài | **tỉ lệ từ sai** | Máy nghe ra gì |
+|---|---|---|---|
+| 1,00 | 4,58 s | **0,0 %** | đúng nguyên văn |
+| **1,30** | 3,85 s | **0,0 %** | **đúng nguyên văn** |
+| 1,50 | 3,10 s | 11,8 % | *"I will"* → *"We'll"* (sai 1 chỗ) |
+| 2,20 | 2,48 s | 17,6 % | thêm *"wrong"* → *"worst"* |
+| 3,00 | 2,27 s | 29,4 % | **nuốt mất chữ đầu câu** |
+
+**Kết luận: nén tới `speed` 1,30 (còn 0,842×) là SẠCH TUYỆT ĐỐI.** Từ 1,50 trở
+đi bắt đầu mất chữ. Vùng an toàn này **tương đương `edge-tts`** (`rate=+50%` ra
+0,687×), nên **kiến trúc 4 bước hiện tại của app dùng được nguyên xi** — không
+phải thiết kế lại gì.
+
+### B4. Nhấn nhá — **"Kokoro đọc đều đều" là NỬA ĐÚNG, và nửa sai mới quan trọng**
+
+Mọi tài liệu đều ghi Kokoro không có núm cảm xúc → dễ kết luận là giọng nhạt.
+Tôi đo bằng **đúng thước lượt 1** (độ lệch chuẩn cao độ, đơn vị nửa cung — càng
+cao càng lên xuống sinh động), **cùng một câu tiếng Anh cho mọi bộ**:
+
+| Hạng | Bộ đọc | F0 std | |
+|---|---|---|---|
+| 1 | **Chatterbox** `exaggeration=0,7` | **6,11** | núm cảm xúc chạy thật |
+| 2 | `edge-tts` **Aria** *(đang có)* | 5,89 | |
+| 3 | `edge-tts` **Jenny** *(đang có)* | 5,54 | |
+| 4 | Chatterbox mặc định | 5,45 | |
+| 5 | `edge-tts` **Emma** *(đang có)* | 5,23 | |
+| **6** | **Kokoro `am_fenrir`** | **5,14** | **giọng nam Kokoro ngang edge** |
+| 7 | `edge-tts` **Andrew** *(đang có)* | 4,91 | |
+| 8 | Chatterbox `exaggeration=1,2` | 4,89 | |
+| 9 | **Kokoro `am_puck`** | 4,62 | |
+| 10 | **Kokoro `am_liam`** | 4,35 | |
+| 11 | **Kokoro `am_michael`** | 4,10 | |
+| 12 | `edge-tts` **Guy** *(đang có)* | 4,07 | |
+| 13 | **Kokoro `af_sarah`** | 3,79 | |
+| 14 | **Kokoro `af_heart`** | 2,90 | |
+| 15 | Chatterbox `exaggeration=0,3` | 2,61 | |
+| 16 | **Kokoro `af_bella`** | 2,55 | |
+| 17 | `edge-tts` **Brian** *(đang có)* | 2,43 | |
+| 18 | **Kokoro `af_nicole`** | 1,87 | giọng thì thầm |
+
+**Ba điều đọc được:**
+
+1. **Giọng NAM của Kokoro (`am_fenrir` 5,14 · `am_puck` 4,62 · `am_liam` 4,35)
+   sinh động NGANG `edge-tts` Andrew (4,91).** Câu "Kokoro không có cảm xúc"
+   chỉ đúng với nhóm giọng **nữ** `af_*`.
+2. **Núm `exaggeration` của Chatterbox CÓ ĐỔI THẬT** (0,3 → 2,61 · 0,5 → 5,45 ·
+   0,7 → **6,11**) — nhưng **KHÔNG tăng đều**: vặn lên **1,2 lại TỤT xuống
+   4,89**. Vặn mạnh không có nghĩa là cảm xúc hơn.
+3. `edge-tts` đang có sẵn **cả dải** từ trầm tĩnh (Brian 2,43) tới rất biểu cảm
+   (Aria 5,89) — tức anh **đổi giọng là đổi được mức nhấn nhá**, không cần núm.
+
+> ⚠️ **Giới hạn của phép đo này, ghi thẳng:** F0 std đo **cao độ lên xuống**,
+> đó là *dấu hiệu* của giọng sinh động chứ **không phải "cảm xúc"**. Một giọng
+> lên xuống nhiều vẫn có thể vô hồn. **Tôi không có tai** — 48 file nghe thử
+> để ở cuối, anh nghe rồi tự chấm mới là chấm đúng.
+
+### B5. Chatterbox — **cài được** (khác với lời đồn), nhưng ba số đo loại nó
+
+Nhiều bài viết bảo Chatterbox không cài nổi trên Windows. **Sai — tôi cài
+được.** Nhưng có một bẫy thật, mất khá lâu mới ra:
+
+> **`chatterbox-tts` 0.1.7 chết ngay lúc nạp model với lời báo
+> `TypeError: 'NoneType' object is not callable`.** Lời báo đó **không liên
+> quan gì tới nguyên nhân thật**. Gốc: gói đóng dấu chìm `resemble-perth` cần
+> `pkg_resources`, mà `setuptools` bản 81 trở lên **đã bỏ `pkg_resources`**.
+> Chữa bằng `pip install "setuptools<81"`. Đúng họ lỗi "lời báo chỉ sai chỗ"
+> mà cả repo này đang chống.
+
+Sau khi chữa, đo được:
+
+| Đo thật | Kết quả | Nghĩa |
+|---|---|---|
+| Hàm `generate()` trả về gì | **chỉ 1 khối sóng âm** (`Tensor`), không `tokens`, không `pred_dur` | **KHÔNG có mốc từng chữ** |
+| Chữ ký hàm có tham số thời lượng không | `repetition_penalty · min_p · top_p · audio_prompt_path · exaggeration · cfg_weight · temperature` → **KHÔNG có `speed`/`rate`/`duration`** | **không ép vừa khung được** |
+| Tốc độ trên CPU | **0,25×** | đọc 1 phút tiếng tốn **4 phút máy** |
+| Cùng 1 câu, 5 lượt | 5,24 · 5,32 · 5,44 · 6,04 · **6,12 s** | **chênh 0,88 s = 16,8 %** |
+| Model trên đĩa | **3,0 GB** | |
+| Đóng dấu chìm | **BẮT BUỘC**, không tắt được | mọi file đều bị máy nhận ra là AI |
+
+**Dòng "chênh 16,8 %" là dòng giết nó.** App phải nhét câu vào khung cố định.
+Với Piper và Kokoro, app đọc thử rồi chỉnh `speed` cho vừa — làm được vì **đọc
+lại thì ra đúng độ dài đó**. Chatterbox mỗi lượt một độ dài khác → vòng chỉnh
+không bao giờ hội tụ. Cộng thêm 0,25× thì với 200-300 kênh là **không dùng
+được**, kể cả nếu bỏ qua chuyện mốc.
+
+### B6. `kokoro-onnx` — **thử rồi, MẤT MỐC, đừng ai đi lại đường này**
+
+Bản `kokoro-onnx` chạy bằng `onnxruntime` (thứ app **đã dùng sẵn** cho Piper)
+nên **không cần `torch`** — nghe như tránh được hẳn bẫy *"`import torch` sau khi
+Qt nạp = ACCESS VIOLATION"*. Tôi thử thật:
+
+| | bản `kokoro` (torch) | bản `kokoro-onnx` |
+|---|---|---|
+| **Trả mốc từng chữ** | ✅ **CÓ** (đầu + cuối mỗi chữ) | 🔴 **KHÔNG — chỉ có sóng âm + tần số** |
+| Trần `speed` | không giới hạn | **kẹp cứng 0,5 – 2,0** |
+| Tốc độ CPU | 1,76–2,35× | 1,97× |
+| Model | 317 MB | 325 MB + 28 MB giọng |
+
+**Kết luận: muốn mốc thì BẮT BUỘC dùng bản `torch`, tức BẮT BUỘC chạy tiến
+trình riêng.** Không có đường tắt. (Đúng mô hình app đã làm với Demucs ở cổng
+55 và Piper ở cổng 64 — nên không phải kiến trúc mới, chỉ là thêm một chỗ.)
+
+### B7. Một cái bẫy bắt được dọc đường — **app AN TOÀN, nhưng phải ghi lại**
+
+Arm đối chứng `edge-tts` của tôi lượt đầu ra **0 mốc, 14/14 câu bỏ, không một
+dòng báo lỗi**. Gốc:
+
+> **`edge-tts` từ bản 7 trở đi mặc định `boundary='SentenceBoundary'`** — trả
+> mốc từng **CÂU** thay vì từng **CHỮ**. Không truyền tham số là mất sạch mốc
+> từng chữ mà **hàm vẫn chạy bình thường, vẫn ra file tiếng đúng**.
+
+**Đã kiểm: app KHÔNG dính** — `dubbing.py` dòng 2046 truyền
+`boundary="WordBoundary"` tường minh. Nhưng máy anh đang cài `edge-tts 7.2.8`,
+và `requirements.txt` chỉ ghi `edge-tts>=6.1.12` (không chốt trần), nên **ai
+viết chỗ gọi MỚI mà quên tham số này là mất mốc âm thầm** — đúng loại lỗi
+"chạy được, không một dòng báo, chỉ số đo tố giác".
+
+---
+
+## PHẦN C — CÔNG SỨC NỐI VÀO APP
+
+### Đường A — dùng 17 giọng Mỹ của `edge-tts`: **0 công, làm được NGAY**
+
+Không phải sửa một dòng mã nào. Ô chọn giọng trong hộp **Thay giọng nói** đã
+lấy **toàn bộ** danh sách từ Microsoft (`giong_dung_duoc` chỉ lọc bỏ `gemini:`).
+Anh mở ô đó, kéo xuống mục `en-US`, chọn giọng khác nhau cho từng kênh.
+
+*Việc nhỏ duy nhất đáng làm (nếu anh muốn):* hộp thoại hiện đang tự sinh thêm
+**biến thể cao độ** cho **2 giọng tiếng Việt** vì Microsoft chỉ cho 2 giọng.
+Tiếng Anh có sẵn 17 nên không cần. Nếu muốn nhiều hơn nữa thì áp cùng cơ chế
+biến thể cao độ cho giọng Anh → **17 × 3 mức ≈ 50 giọng phân biệt được**.
+
+### Đường B — thêm Kokoro làm **lựa chọn thứ hai**: vừa phải, có khuôn sẵn
+
+Khuôn đã có: `app/core/piper_tts.py` (**754 dòng**) làm đúng việc này cho Piper
+ở cổng 64. Kokoro đi cùng đường, và có phần **dễ hơn** vì mốc là THẬT nên không
+cần lớp "đọc rời từng chữ rồi ghép" phức tạp nhất của Piper.
+
+Phải làm:
+
+1. **Tiến trình riêng — BẮT BUỘC.** Kokoro cần `torch`, mà `import torch` sau
+   khi Qt nạp là **ACCESS VIOLATION** (`try/except` KHÔNG chặn — cổng 55 đã đo).
+   Y hệt cách `_tach_demucs` đang chạy script độc lập.
+2. **Tải rời khi cần** — 317 MB, để ở `DATA_DIR/_kokoro` **chứ không cạnh
+   `.exe`** (lượt tự cập nhật `rmdir /S /Q _internal.old` sẽ xoá sạch — đúng lỗi
+   `_lib` của Demucs ở cổng 58 CA5).
+3. **Rẽ nhánh ở đúng MỘT cửa** `dubbing._synth_all` + `_synth_all_words` — cửa
+   duy nhất cổng 64 đã chốt. Sót một chỗ là video **lẫn hai giọng** mà mã trả
+   về vẫn báo thành công.
+4. **Bảng tra `speed`** (bảng ở B2), không dùng công thức.
+5. **Thiếu Kokoro thì lùi êm** về `edge-tts` + ghi nhật ký — giống Piper, khác
+   Demucs (thiếu Demucs thì phải CHẶN vì lùi ra video hỏng; ở đây lùi ra video
+   đúng, chỉ khác giọng).
+
+**Đánh đổi thật khi thêm Kokoro:** được **20 giọng Mỹ chạy hẳn trên máy, không
+phụ thuộc Microsoft, giấy phép Apache sạch tuyệt đối**. Mất: **tốn CPU thật**
+— 1,76× nghĩa là 10 phút lời đọc tốn khoảng 5,7 phút CPU, trong khi `edge-tts`
+tốn gần như 0 (chạy trên máy Microsoft). Với 200-300 kênh chạy song song thì đó
+là một khoản có thật, phải cân với việc cửa chờ ffmpeg đang tranh CPU rồi.
+
+### Đường C — Chatterbox: **KHÔNG. Đã đo, đã loại.**
+
+---
+
+## KẾT LUẬN — CÓ ĐỦ 5 ĐIỀU KIỆN KHÔNG?
+
+**Câu trả lời trung thực: KHÔNG có bộ nào đủ CẢ NĂM — nhưng lần này lý do đã
+khác hẳn ba lượt trước, và tin là tin TỐT.**
+
+Ba lượt trước bức tường là **giấy phép** (bộ nào tốt thì cấm bán) — thứ
+**không chữa được**. Lượt này bức tường chỉ còn là **núm cảm xúc**:
+
+| Điều kiện | `edge-tts` *(đang chạy)* | Kokoro | Chatterbox |
+|---|---|---|---|
+| 1. Giọng Mỹ, càng nhiều càng tốt | ✅ **17** | ✅ **20** | 🔴 **0** |
+| 2. Chỉnh được cảm xúc / nhấn nhá | ⚠️ **không có núm**, nhưng 17 tính cách khác nhau | ⚠️ **không có núm**, giọng nam đo ra ngang edge | ✅ **CÓ núm, chạy thật** |
+| 3. **Khớp thời gian** | ✅ **43,1 ms** *(tốt nhất đo được)* | ✅ **46,1 ms** | 🔴 **không có mốc + chênh 16,8 %/lượt** |
+| 4. Miễn phí + bán được | ⚠️ **LGPLv3 + tác giả khuyên không dùng thương mại** | ✅ **Apache-2.0 sạch cả hai** | ✅ **MIT sạch cả hai** |
+| 5. Windows + CPU/3060 | ✅ | ✅ | ⚠️ **CPU 0,25×** |
+
+**Không ai đủ 5. Nhưng hai hàng đầu thiếu đúng MỘT thứ — cái núm cảm xúc — mà
+thứ đó anh có thể đổi bằng cách CHỌN GIỌNG KHÁC** (dải nhấn nhá của `edge-tts`
+trải từ 2,43 tới 5,89, rộng hơn cả tầm núm của Chatterbox từ 2,61 tới 6,11).
+Còn hàng thứ ba có núm nhưng **hỏng ở cột sống còn**.
+
+### Bảng đánh đổi để anh tự chọn
+
+| Đường đi | Được gì | Mất gì | Tiền | Rủi ro pháp lý |
+|---|---|---|---|---|
+| **A. Dùng 17 giọng Mỹ `edge-tts` đang có** ⭐ | **17 giọng ngay hôm nay, 0 công sửa**, khớp tốt nhất (43,1 ms), không tốn CPU | Không có núm cảm xúc; vẫn phụ thuộc Microsoft | 0 | ⚠️ như hiện tại |
+| **B. A + biến thể cao độ cho giọng Anh** | khoảng **50 giọng phân biệt được** | Ít công; cơ chế đã có sẵn cho tiếng Việt | 0 | ⚠️ như hiện tại |
+| **C. Thêm Kokoro làm lựa chọn thứ hai** | 20 giọng **chạy hẳn trên máy**, **Apache-2.0 sạch tuyệt đối**, không phụ thuộc Microsoft | Tốn CPU thật (1,76×); phải làm tiến trình riêng + tải 317 MB | 0 | ✅ **Không** |
+| **D. Đổi HẲN sang Kokoro** | như C | **Khớp kém đi một chút** (46,1 vs 43,1), **mất 17 giọng edge**, tốn CPU | 0 | ✅ Không |
+| **E. Chatterbox** | núm cảm xúc thật | 🔴 **không mốc · không ép được khung · 16,8 % chênh độ dài · CPU 0,25× · 3 GB** | 0 | ✅ Không |
+| **F. Mua ElevenLabs Starter** | giọng hay nhất, có giấy phép thương mại | vẫn **không có mốc từng chữ** | **6 đô/tháng** | ✅ Không |
+
+### Tôi khuyên theo thứ tự
+
+1. **LÀM NGAY, 0 ĐỒNG, 0 CÔNG: mở ô chọn giọng, dùng 17 giọng Mỹ đang có.**
+   Đây là câu trả lời trực tiếp cho *"đa dạng nên cho tôi đi"*. Gợi ý phân vai
+   theo số đo B4: kênh cần **kịch tính** → `Aria` (5,89) hoặc `Jenny` (5,54);
+   kênh **kể chuyện ấm áp** → `Andrew` (4,91); kênh **tin tức dứt khoát** →
+   `Guy` (4,07); kênh **trầm tĩnh** → `Brian` (2,43).
+2. **Nếu vẫn thấy chưa đủ đa dạng: áp biến thể cao độ cho giọng Anh** — cơ chế
+   đã chạy sẵn cho tiếng Việt, nhân lên khoảng 50 giọng. Công sức nhỏ.
+3. **Nếu muốn thoát khỏi Microsoft (đây mới là lý do đúng để đổi): thêm Kokoro
+   làm lựa chọn thứ hai.** Nó là bộ **duy nhất trong bốn lượt tra** vừa chạy
+   trên máy, vừa giấy phép sạch tuyệt đối, vừa khớp ngang `edge-tts`. Nhưng
+   **đừng bỏ `edge-tts`** — hãy để cạnh nhau như Piper đang làm.
+4. **ĐỪNG đụng Chatterbox, Step-Audio-EditX, Voxtral, Covo-Audio** — cái đầu
+   hỏng kỹ thuật, ba cái sau hỏng giấy phép.
+
+### Về câu *"khớp 100 % không được lệch"* — nói thẳng một lần nữa
+
+**Không đạt được 100 %, và tôi sẽ không hứa.** Số thật là **43 ms** với thứ anh
+đang chạy — tức chữ và tiếng lệch nhau khoảng **1/23 giây**. Đó đã là **con số
+tốt nhất trong mọi bộ miễn phí tôi đo được qua bốn lượt**. Muốn tốt hơn nữa thì
+chỗ đáng sửa **không phải máy đọc** mà là **chia nhỏ khung câu dài** — lượt đo
+15/08 đã chỉ ra **6 câu chiếm 70 %** toàn bộ độ lệch, và đều là câu có khung
+rất dài mà tiếng ngắn.
+
+---
+
+## FILE ĐỂ ANH TỰ NGHE
+
+**`%TEMP%\bq_tts_thu\nghe_thu\`** (đường dẫn đầy đủ:
+`C:\Users\Admin\AppData\Local\Temp\bq_tts_thu\nghe_thu\`) — **48 file**, tất cả
+đọc cùng một câu tiếng Anh để anh so trực tiếp:
+
+| Nhóm file | Nghe để làm gì |
+|---|---|
+| `nn_edge_en-US-*.wav` (6 file) | **6 giọng Mỹ anh ĐANG CÓ** — Andrew · Aria · Brian · Emma · Guy · Jenny |
+| `nn_kokoro_*.wav` (8 file) | 8 giọng Kokoro — nghe `am_fenrir` và `am_puck` trước, đó là 2 giọng đo ra sinh động nhất |
+| `nn_chatterbox_ex*.wav` (4 file) | Núm cảm xúc Chatterbox ở 4 mức 0,3 / 0,5 / 0,7 / 1,2 |
+| `kokoro_ep_sp*.wav` (9 file) | Kokoro đọc nhanh dần — **nghe `sp1_3` (sạch) rồi `sp1_5` (bắt đầu mất chữ)** để tự thấy ranh giới |
+| `kokoro_ep_khung5_v0.wav` | Bản đã ép vừa đúng khung 5 giây |
+
+**Việc tôi cần anh làm:** nghe nhóm 1 và nhóm 2, xem giọng nào hợp kênh nào.
+Tôi đo được cao độ lên xuống bao nhiêu, **nhưng không nghe được là nó có hay
+không** — chỗ đó chỉ anh chấm được.
+
+---
+
+## NHỮNG GÌ TÔI CHƯA LÀM ĐƯỢC — GHI THẲNG
+
+* **Không nghe được file nào.** Mọi kết luận về "hay/dở" trong báo cáo này là
+  **số đo gián tiếp** (cao độ lên xuống, máy chép ngược đếm từ sai), không phải
+  cảm nhận. Đừng đọc F0 std thành "giọng hay".
+* **Chênh lệch 46,1 vs 43,1 ms mới chạy 2 lượt** — chưa đủ để chắc đó là chênh
+  lệch thật chứ không phải nhiễu. Kết luận an toàn là **"ngang hàng"**.
+* **Chưa đo Kokoro trên GPU** (RTX 3060). Mọi số đều là CPU. Trên GPU chắc chắn
+  nhanh hơn nhiều nhưng tôi không chạy để khỏi đụng luồng đo tốc độ chạy song
+  song.
+* **Chưa thử Kokoro trong tiến trình đã nạp Qt** — tức chưa chứng minh tận mắt
+  là nó dính bẫy ACCESS VIOLATION. Tôi **suy ra** từ chỗ nó dùng `torch`, mà
+  bẫy đó cổng 55 đã đo trực tiếp với chính `torch`. Nếu ai nối thật thì phải
+  làm tiến trình riêng ngay từ đầu, **đừng thử "biết đâu lần này không sao"**.
+* ⚠️ **Một điểm mập mờ về Kokoro tôi phải nói ra:** model card ghi thẳng là có
+  huấn luyện trên *"âm thanh tổng hợp do các bộ TTS đóng của nhà cung cấp lớn
+  sinh ra"*, và **4 tên giọng — `af_alloy`, `af_nova`, `am_echo`, `am_onyx` —
+  trùng khít tên giọng của OpenAI**. Giấy phép Apache-2.0 mà tác giả cấp cho
+  anh vẫn có hiệu lực, và tôi **tra không thấy vụ kiện hay tranh chấp nào**.
+  Nhưng cách an toàn không tốn gì: **tránh đúng 4 giọng đó, dùng `af_heart`
+  `af_bella` `am_fenrir` `am_michael` `am_puck`** — vốn là nhóm được chấm điểm
+  cao nhất, nên không mất gì.
+* **Chưa đo Piper giọng Anh.** Máy chỉ có sẵn giọng Việt `vais1000`. Con số
+  59,1 ms / 42 % chữ muộn là đo trên tiếng Việt; tiếng Anh có thể khác. Nhưng
+  vì cơ chế "mốc SUY RA" không đổi theo ngôn ngữ, tôi không kỳ vọng nó đổi hạng.
+* **Chưa thử Orpheus, Zonos, Kyutai** — cả ba đều **không hỗ trợ Windows chính
+  thức**; Orpheus còn cần `vLLM` vốn không chạy Windows. Đây là kết luận từ tài
+  liệu gốc chứ không phải thử thật, tôi ghi rõ để không nhận công.
+
+---
+
+## SỐ ĐO TÓM TẮT ĐỂ TRA LẠI SAU
+
+```
+MỐC TỪNG CHỮ (462 mốc/bên · 14 câu tiếng Anh THẬT · 2 lượt đan xen · Groq chép ngược)
+  edge-tts en-US-Andrew  RUNG 43,1 ms · hệ thống -30,0 · muộn>50ms 7,1% · 5,48x
+  Kokoro   af_heart      RUNG 46,1 ms · hệ thống -12,5 · muộn>50ms 9,1% · 1,76x
+  [Piper vi, lượt trước] RUNG 59,1 ms · hệ thống +33,0 · muộn>50ms  42%  · 3,62x
+
+ÉP KHUNG (Kokoro)   4,575s -> khung 5,0s: 1 vòng, lệch -1,0%
+  bão hoà 0,497x (Piper 0,69x · edge 0,687x)
+  speed KHÔNG tỉ lệ thuận (3,0 -> 0,497 chứ không 0,333)
+  ngọng (Groq chép ngược): speed 1,30 -> 0,0% | 1,50 -> 11,8% | 3,00 -> 29,4%
+
+CHATTERBOX  không mốc · KHÔNG tham số thời lượng · CPU 0,25x · 3,0 GB
+  cùng câu 5 lượt: 5,24 / 5,32 / 5,44 / 6,04 / 6,12 s = chênh 16,8%
+  exaggeration 0,3 -> F0std 2,61 | 0,5 -> 5,45 | 0,7 -> 6,11 | 1,2 -> 4,89 (KHÔNG tăng đều)
+  cài: cần setuptools<81, thiếu là chết với lời báo SAI CHỖ
+
+NHẤN NHÁ (F0 std, nửa cung, cùng 1 câu tiếng Anh)
+  Chatterbox 0,7 6,11 | edge Aria 5,89 | edge Jenny 5,54 | Chatterbox 0,5 5,45
+  edge Emma 5,23 | Kokoro am_fenrir 5,14 | edge Andrew 4,91 | Kokoro am_puck 4,62
+  Kokoro am_liam 4,35 | Kokoro am_michael 4,10 | edge Guy 4,07 | Kokoro af_sarah 3,79
+  Kokoro af_heart 2,90 | Kokoro af_bella 2,55 | edge Brian 2,43 | Kokoro af_nicole 1,87
+
+SỐ GIỌNG (đếm từ chính file model / API, không đọc tài liệu)
+  edge-tts: 322 giọng tổng · 47 giọng tiếng Anh · 17 giọng en-US
+  Kokoro:    54 giọng tổng · 20 giọng Mỹ (11 nữ af_ · 9 nam am_)
+  Chatterbox: 0 giọng đặt tên
+
+KÍCH THƯỚC  Kokoro 317 MB · kokoro-onnx 325+28 MB · Chatterbox 3,0 GB · Piper 63 MB
+
+kokoro-onnx (không cần torch): MẤT MỐC TỪNG CHỮ, speed kẹp 0,5-2,0
+  -> muốn mốc thì buộc dùng bản torch -> buộc chạy TIẾN TRÌNH RIÊNG
+
+BẪY: edge-tts >= 7 mặc định boundary='SentenceBoundary' -> mất mốc từng chữ
+  ÂM THẦM. App KHÔNG dính (dubbing.py:2046 truyền WordBoundary tường minh).
+```
+
+*Tra cứu + thử thật ngày 17/08/2026. **Không sửa một file nào trong `app/`.**
+Không chạy ffmpeg nặng. Môi trường ảo riêng trong `%TEMP%\bq_tts_thu\venv4·5·6`,
+không đụng `.venv` của app. Ổ C: 402 GB trống trước khi làm; model đã tải về để
+thử (Kokoro 317 MB · Chatterbox 3,0 GB · kokoro-onnx 353 MB) **đã dọn sạch sau
+khi đo**, chỉ giữ lại 48 file nghe thử.*
