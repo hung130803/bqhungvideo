@@ -33,6 +33,7 @@ PY = str(REPO / ".venv" / "Scripts" / "python.exe")
 
 #: (nhãn, file, mốc ĐẠT mong đợi hoặc None)
 CONG = [
+    ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
     ("64 Piper",            "_test_piper.py",           47),
     ("63 biến thể giọng",   "_test_bien_the_giong.py",  24),
