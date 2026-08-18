@@ -12,6 +12,7 @@ import re
 import threading
 import time
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Optional
 
 from config import settings
@@ -504,6 +505,31 @@ class LLMCatCut(LLMError):
 
     TUYỆT ĐỐI KHÔNG phạt key (mọi key cùng trần) — cùng luật với
     `LLMTooLarge`/`LLMModelMissing`."""
+
+
+class LLMRong(LLMError):
+    """AI **KHÔNG TRẢ VỀ NỘI DUNG NÀO** — thân trả lời rỗng / chỉ khoảng trắng.
+
+    LỖI THẬT 18/08/2026 (anh Hùng, ảnh mới nhất):
+    *"LLMError: ... Expecting value: line 1 column 1 (char 0)"*.
+
+    **`char 0` KHÁC HẲN `char 1837`** và phải đọc ra hai bệnh khác nhau:
+
+    * `char 1837` (đã chữa ở v2.36.0, xem `LLMCatCut`) = model CÓ viết, viết
+      được 1.837 ký tự rồi hết ngân sách token -> JSON đứt giữa chừng.
+    * **`char 0` = RỖNG NGAY TỪ ĐẦU** — không một ký tự nào. Không có gì để
+      "vớt", không có gì để "chia nhỏ". Nói *"không phải JSON hợp lệ"* ở đây là
+      **báo sai bệnh**: nghe như model trả rác nên người đọc đi soi prompt và
+      bộ bóc JSON, trong khi thật ra chưa hề có câu trả lời nào để bóc.
+
+    NGUYÊN NHÂN ĐO ĐƯỢC của thân rỗng trên Groq: gpt-oss là model **SUY LUẬN**,
+    phần "nghĩ" ăn CHUNG ngân sách `max_tokens`; nghĩ dài quá thì phần trả lời
+    còn **0 token** -> `content` rỗng mà `finish_reason` vẫn có thể là `stop`.
+    Vì vậy đường chữa là **THỬ LẠI** (kèm nhắc trả lời NGẮN), không phải đổi
+    parser.
+
+    TUYỆT ĐỐI KHÔNG PHẠT KEY — mọi key cùng model, cùng trần; đây không phải
+    lỗi của key. (Bug cũ hiểu sai 413 đã khoá cả 38 key một lần.)"""
 
 
 class LLMModelMissing(LLMError):
@@ -1102,6 +1128,61 @@ def _ghi_ket_thuc(resp) -> None:
         _LAN.ket_thuc = ""
 
 
+def chan_doan_lan() -> dict:
+    """HỒ SƠ THẬT của lượt gọi gần nhất **trên luồng này** — để báo ĐÚNG BỆNH
+    thay vì đoán từ lời của bộ parse JSON.
+
+    Theo LUỒNG (`threading.local`) vì 3 làn AI chạy song song; biến toàn cục là
+    đọc phải hồ sơ của lượt khác (đúng bệnh `_SFX_LAST_PICK` đã sập một lần).
+    """
+    return dict(getattr(_LAN, "chan_doan", None) or {})
+
+
+def _ghi_chan_doan(model: str, resp, out: str) -> None:
+    """Ghi lại NHỮNG GÌ NHÀ CUNG CẤP THẬT SỰ TRẢ VỀ: model nào · `finish_reason`
+    · thân dài bao nhiêu · có phải chỉ khoảng trắng · token đã tiêu.
+
+    Không có sổ này thì thân RỖNG và thân RÁC trông y như nhau trong lời lỗi
+    (cả hai đều ra `Expecting value: line 1 column 1`), và người đọc không có
+    cách nào biết mình đang chữa bệnh gì.
+    """
+    try:
+        raw = out or ""
+        u = getattr(resp, "usage", None)
+        _LAN.chan_doan = {
+            "model": str(model or ""),
+            "ket_thuc": str(getattr(resp.choices[0], "finish_reason", "") or ""),
+            "so_ky_tu": len(raw),
+            "rong": not raw.strip(),
+            "chi_khoang_trang": bool(raw) and not raw.strip(),
+            "token_ra": int(getattr(u, "completion_tokens", 0) or 0) if u else 0,
+            "token_vao": int(getattr(u, "prompt_tokens", 0) or 0) if u else 0,
+            "dau_than": raw[:200],
+        }
+    except Exception:  # noqa: BLE001 — sổ ghi chú, không được làm chết lượt gọi
+        _LAN.chan_doan = {}
+
+
+def _ghi_log_rong(dong: str) -> None:
+    """Ghi ca AI TRẢ RỖNG vào `logs/llm_rong_<ngày>.log`.
+
+    Thử lại êm mà im lặng thì đúng bằng hỏng âm thầm — cùng luật với
+    `giong_ngoai._ghi_log` / `piper_tts._ghi_log`. **KHÔNG BAO GIỜ in key**:
+    hồ sơ chỉ có tên model + số đo, không có mảnh nào của khoá.
+    """
+    try:
+        import datetime
+        from config import DATA_DIR
+        p = Path(DATA_DIR) / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now()
+        with open(p / f"llm_rong_{ts:%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{ts:%H:%M:%S}] {dong}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _nhan_json_mode(model: str) -> bool:
     """Model có nhận `response_format={"type":"json_object"}` không.
 
@@ -1181,7 +1262,9 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                 extra_body=extra,
             )
             _ghi_ket_thuc(resp)
-            return resp.choices[0].message.content or ""
+            _out = resp.choices[0].message.content or ""
+            _ghi_chan_doan(str(model or ""), resp, _out)
+            return _out
 
         # ---- GROQ: đi hết DÂY CHUYỀN model, model đầu chết thì sang model kế ----
         # Chỉ 3 loại lỗi mới được sang model kế (đều là lỗi CỦA MODEL):
@@ -1242,9 +1325,18 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                 raise          # lỗi CỦA KEY -> để complete_text xoay key
             _ghi_ket_thuc(resp)
             out = resp.choices[0].message.content or ""
+            _ghi_chan_doan(md, resp, out)
             if out.strip() or cuoi:
                 return out
-            loi_model = "model trả về content RỖNG"
+            # Thân RỖNG ở model chưa-phải-cuối -> sang model kế. Ghi lại SỐ ĐO
+            # THẬT (không đoán): model nào, finish_reason gì, tiêu bao nhiêu
+            # token đầu ra. gpt-oss là model SUY LUẬN nên phần "nghĩ" có thể ăn
+            # hết ngân sách, để lại content rỗng mà finish_reason vẫn `stop`.
+            _cd = chan_doan_lan()
+            loi_model = (f"model «{md}» trả về content RỖNG "
+                         f"(finish_reason={_cd.get('ket_thuc', '?')}, "
+                         f"token_ra={_cd.get('token_ra', 0)})")
+            _ghi_log_rong(f"{loi_model} -> thử model kế")
         raise LLMModelMissing(
             f"Mọi model Groq trong dây chuyền đều hỏng ({', '.join(chuoi)}): "
             f"{loi_model}")
@@ -1404,12 +1496,46 @@ def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
     vot_tot: object = None
     so_vot = -1
     bi_cat = False
+    so_rong = 0
     for _attempt in range(3):
         cuoi = (_attempt == 2)
         raw = complete_text(prompt, system=sys_now, temperature=0.3,
                             provider=provider, model=model, json_mode=True)
         cat = (ly_do_ket_thuc() == "length")
         bi_cat = bi_cat or cat
+
+        # ---- THÂN RỖNG: BÁO ĐÚNG BỆNH RỒI THỬ LẠI (xem `LLMRong`) ----
+        # Phải xét TRƯỚC `_extract_json`: đưa chuỗi rỗng vào đó thì lời lỗi ra
+        # `Expecting value: line 1 column 1 (char 0)` và bị gói thành "không
+        # phải JSON hợp lệ" — BÁO SAI BỆNH. Không có gì để bóc, cũng không có
+        # gì để vớt; việc phải làm là ĐÒI LẠI.
+        if not (raw or "").strip():
+            so_rong += 1
+            cd = chan_doan_lan()
+            mo_ta = (f"model «{cd.get('model', '?')}» · "
+                     f"finish_reason={cd.get('ket_thuc', '?')} · "
+                     f"thân {cd.get('so_ky_tu', 0)} ký tự"
+                     + (" (CHỈ khoảng trắng)" if cd.get("chi_khoang_trang")
+                        else " (RỖNG HẲN)")
+                     + f" · token_ra={cd.get('token_ra', 0)}"
+                     f" · token_vào={cd.get('token_vao', 0)}")
+            _ghi_log_rong(f"lượt {_attempt + 1}/3: AI không trả về nội dung — "
+                          f"{mo_ta}")
+            last_exc = LLMRong(
+                f"AI KHÔNG TRẢ VỀ NỘI DUNG (thân trả lời rỗng, {so_rong}/3 lượt "
+                f"đều rỗng). Đây KHÔNG phải lỗi hết hạn mức key và KHÔNG phải "
+                f"'JSON không hợp lệ' — nhà cung cấp trả về một câu trả lời "
+                f"TRỐNG. Hồ sơ lượt cuối: {mo_ta}")
+            if cuoi:
+                break
+            # Nhắc cho lượt sau: model suy luận tiêu hết ngân sách cho phần
+            # "nghĩ" là ca đã đo được -> đòi trả lời NGAY và NGẮN.
+            sys_now = (system + "\n\nQUAN TRỌNG: lần trước bạn trả về RỖNG. "
+                       "Hãy trả lời NGAY bằng đúng MỘT khối JSON hợp lệ, "
+                       "NGẮN GỌN, KHÔNG suy nghĩ dài dòng, KHÔNG markdown, "
+                       "KHÔNG chữ dẫn. TUYỆT ĐỐI không trả về câu trống.")
+            continue
+
         try:
             return _extract_json(raw, cho_vot=False)
         except (ValueError, json.JSONDecodeError) as e:

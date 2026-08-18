@@ -1711,12 +1711,18 @@ def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
     while True:
         try:
             return fn()
-        except llm.LLMTooLarge:
-            # YÊU CẦU QUÁ LỚN (413) — ĐỢI LÀ VÔ NGHĨA: mọi key cùng hạn mức, đợi
-            # 15 phút rồi gửi lại đúng cái prompt đó thì vẫn 413. Mà lời lỗi của
-            # Groq có chứa 'rate_limit_exceeded' nên nhánh dưới sẽ tưởng là hết
-            # lượt và ĐỢI THẬT (treo dây chuyền tới 15 phút/video). Phải chặn
-            # TRƯỚC. Xem llm.is_too_large_error.
+        except (llm.LLMTooLarge, llm.LLMCatCut, llm.LLMRong):
+            # BA LOẠI LỖI ĐỢI LÀ VÔ NGHĨA — chặn TRƯỚC nhánh dò-theo-lời-lỗi:
+            #   * 413 QUÁ LỚN: mọi key cùng hạn mức, đợi 15 phút rồi gửi lại
+            #     đúng cái prompt đó thì vẫn 413. Mà lời lỗi của Groq có chứa
+            #     'rate_limit_exceeded' nên nhánh dưới TƯỞNG là hết lượt và ĐỢI
+            #     THẬT (treo dây chuyền tới 15 phút/video). Xem
+            #     `llm.is_too_large_error`.
+            #   * BỊ CẮT (`finish_reason=length`): bệnh ở trần token đầu ra.
+            #   * TRẢ RỖNG: `complete_json` đã tự thử lại 3 lượt; key không liên
+            #     quan gì.
+            # Chặn bằng LỚP LỖI, KHÔNG bằng chuỗi trong lời lỗi — dò theo chuỗi
+            # là đúng cái bẫy đã sập một lần (cổng 28a).
             raise
         except llm.LLMError as e:
             msg = str(e)
