@@ -354,6 +354,25 @@ class LLMTooLarge(LLMError):
     """YÊU CẦU QUÁ LỚN cho hạn mức token/phút — KHÔNG phải key hết lượt."""
 
 
+class LLMModelMissing(LLMError):
+    """MODEL đã bị nhà cung cấp GỠ/đổi tên (404) — LỖI CỦA APP, KHÔNG PHẢI
+    CỦA KEY.
+
+    LỖI THẬT 17/08/2026: Groq khai tử `llama-3.3-70b-versatile` (model CHÍNH
+    **và** model dự phòng của app đều trỏ vào đúng nó, nên lưới rơi-về-fallback
+    bị vô hiệu: `_call_once` chỉ đổi model khi `model != fb`). Mọi lượt gọi ra
+    404, cả dây chuyền cắt/thay giọng/reup chết theo, và anh Hùng đọc lời lỗi
+    rồi tưởng **hết hạn mức 41 key** ("key groq tôi bao nhiêu mà sao hết
+    được").
+
+    Vì vậy lớp lỗi này tồn tại để tách BẠCH khỏi hết-lượt:
+      * TUYỆT ĐỐI KHÔNG `mark_limited`/`mark_invalid` — mọi key đều 404 y nhau,
+        phạt key là đốt sạch vòng xoay cho một lỗi chả liên quan tới key (đúng
+        vết xe 413 đã đốt 38 key, xem `is_too_large_error`).
+      * Lời lỗi phải nói RÕ là app cần cập nhật, đừng để nó trông như hết lượt.
+    """
+
+
 def is_too_large_error(msg: str) -> bool:
     """Lỗi 413 'Request too large … please reduce your message size'.
 
@@ -494,7 +513,11 @@ def check_groq_key_valid(key: str, timeout: float = 15.0) -> str:
 
 
 # Model NHẸ để đọc hạn mức (chat completions trả header ratelimit đầy đủ).
-_GROQ_PROBE_MODEL = "llama-3.3-70b-versatile"
+# 17/08/2026: `llama-3.3-70b-versatile` bị Groq GỠ -> phép dò hạn mức ăn 404 ở
+# MỌI key. Nhánh `e.code in (400, 404)` bên dưới `continue` nên không kết tội
+# key oan, nhưng nếu MỌI model dò đều chết thì kết quả ra "error: không dò được
+# model nào" = anh Hùng nhìn bảng key thấy đỏ hết mà key vẫn tốt.
+_GROQ_PROBE_MODEL = "openai/gpt-oss-20b"
 
 
 def _to_int(v):
@@ -703,7 +726,7 @@ def check_groq_keys(keys, progress=None, max_workers: int = 6,
 
 
 # Model Groq bị phát hiện "không tồn tại/đã gỡ" trong phiên này -> né, dùng
-# fallback ngay (đỡ tốn 1 request lỗi mỗi lần). Groq thi thoảng đổi tên/gỡ
+# model kế ngay (đỡ tốn 1 request lỗi mỗi lần). Groq thi thoảng đổi tên/gỡ
 # model — máy khách tự cập nhật KHÔNG được chết vì chuyện đó.
 _GROQ_DEAD_MODELS: set = set()
 
@@ -715,6 +738,136 @@ def _is_model_missing_error(msg: str) -> bool:
         "model_not_found", "model not found", "does not exist",
         "decommissioned", "model_decommissioned", "unknown model",
         "invalid model", "no longer supported", "has been deprecated"))
+
+
+#: tên CÔNG KHAI (cổng test + complete_text dùng) — giữ tên cũ cho tương thích.
+is_model_missing_error = _is_model_missing_error
+
+
+# --------------------------------------------------------------------------
+# DÂY CHUYỀN MODEL GROQ + TỰ DÒ MODEL CÒN SỐNG
+#
+# Vì sao phải có (lỗi thật 17/08/2026): app ghi CỨNG một tên model, Groq gỡ
+# model đó là **mọi lượt gọi chết**. Ghi cứng thêm một tên nữa cũng không cứu
+# được — bản cũ đặt CẢ `GROQ_LLM_MODEL` lẫn `GROQ_LLM_FALLBACK` bằng đúng
+# `llama-3.3-70b-versatile`, nên lưới `if model != fb` không bao giờ chạy.
+# Hai chốt ở đây:
+#   1) DÂY CHUYỀN nhiều model KHÁC HỌ -> model đầu 404 thì tự sang model kế.
+#   2) TỰ DÒ `/models` -> lọc theo danh sách Groq ĐANG trả về, thay vì tin tên
+#      ghi trong mã. Có cache (RAM + đĩa) nên không gọi mạng mỗi lượt.
+# --------------------------------------------------------------------------
+_GROQ_SONG_TTL = 6 * 3600.0       # 6 giờ — Groq đổi model theo tháng, không theo phút
+_GROQ_SONG_LOCK = threading.Lock()
+_GROQ_SONG: dict = {"ts": 0.0, "models": frozenset()}
+
+
+def _duong_cache_model() -> str:
+    """File nhớ danh sách model (đọc `config.DATA_DIR` MỖI LẦN — không cất hằng
+    số: bản đóng gói đổi DATA_DIR lúc chạy, xem bài học `tg_so.duong_so`)."""
+    import os
+    from config import DATA_DIR
+    return os.path.join(str(DATA_DIR), "groq_models.json")
+
+
+def models_groq_con_song(force: bool = False, timeout: float = 12.0):
+    """Hỏi Groq xem HIỆN CÒN model nào -> `frozenset` tên model.
+
+    **`frozenset()` RỖNG = "KHÔNG BIẾT", không phải "không còn model nào".**
+    Đọc nhầm hai cái đó là lọc sạch dây chuyền rồi app chết trong khi Groq vẫn
+    sống — nên mọi nơi dùng phải coi rỗng là "thôi đừng lọc".
+
+    KHÔNG BAO GIỜ NÉM: mất mạng/hết key thì trả về cache cũ (hoặc rỗng), lượt
+    gọi thật vẫn đi tiếp và vẫn có lưới 404 của `_call_once` đỡ.
+    """
+    import os
+    now = time.time()
+    with _GROQ_SONG_LOCK:
+        if not force and _GROQ_SONG["models"] and \
+                now - _GROQ_SONG["ts"] < _GROQ_SONG_TTL:
+            return _GROQ_SONG["models"]
+        # cache ĐĨA: mở app lên là có ngay, không phải chờ 1 lượt mạng
+        if not force and not _GROQ_SONG["models"]:
+            try:
+                with open(_duong_cache_model(), encoding="utf-8") as f:
+                    d = json.load(f)
+                if now - float(d.get("ts") or 0) < _GROQ_SONG_TTL:
+                    _GROQ_SONG["ts"] = float(d["ts"])
+                    _GROQ_SONG["models"] = frozenset(d.get("models") or ())
+                    if _GROQ_SONG["models"]:
+                        return _GROQ_SONG["models"]
+            except Exception:  # noqa: BLE001 — file chưa có/hỏng: dò lại
+                pass
+    ms: set = set()
+    try:
+        import urllib.error
+        import urllib.request
+        for key in (settings.groq_keys() or [])[:3]:   # 1 key sống là đủ
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/models",
+                # User-Agent BẮT BUỘC: Groq nấp sau Cloudflare, urllib trần bị
+                # chặn 403 "error code: 1010" (xem check_groq_key_valid).
+                headers={"Authorization": f"Bearer {key}",
+                         "User-Agent": "Mozilla/5.0",
+                         "Accept": "application/json"}, method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.load(resp)
+                ms = {str(m.get("id") or "") for m in (data.get("data") or [])}
+                ms.discard("")
+                if ms:
+                    break
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    continue               # key này hỏng -> thử key kế
+                break
+            except Exception:  # noqa: BLE001 — mạng: thôi, dùng cache cũ
+                break
+    except Exception:  # noqa: BLE001
+        ms = set()
+    if not ms:
+        return _GROQ_SONG["models"]        # giữ cache cũ, đừng xoá thành rỗng
+    with _GROQ_SONG_LOCK:
+        _GROQ_SONG["ts"], _GROQ_SONG["models"] = time.time(), frozenset(ms)
+    try:
+        os.makedirs(os.path.dirname(_duong_cache_model()), exist_ok=True)
+        with open(_duong_cache_model(), "w", encoding="utf-8") as f:
+            json.dump({"ts": _GROQ_SONG["ts"],
+                       "models": sorted(ms)}, f, ensure_ascii=False)
+    except Exception:  # noqa: BLE001 — ghi cache hỏng thì thôi, không phải lỗi
+        pass
+    return _GROQ_SONG["models"]
+
+
+def chuoi_model_groq(model: Optional[str] = None) -> list:
+    """DÂY CHUYỀN model để thử lần lượt: [model chính, dự phòng, dự phòng 2...].
+
+    Thứ tự: model caller chỉ định (nếu có) -> `GROQ_LLM_MODEL` ->
+    `GROQ_LLM_FALLBACK` -> `GROQ_LLM_CHAIN`. Bỏ trùng, bỏ rỗng, bỏ model đã
+    biết chết trong phiên.
+
+    LỌC THEO DANH SÁCH SỐNG chỉ khi ĐÃ dò được (xem `models_groq_con_song`) và
+    **chỉ khi còn lại ít nhất 1 model** — thà thử một tên có thể sai còn hơn
+    trả danh sách rỗng rồi app đứng hình."""
+    ra: list = []
+    tho = [model or "", getattr(settings, "GROQ_LLM_MODEL", "") or "",
+           getattr(settings, "GROQ_LLM_FALLBACK", "") or ""]
+    tho += [s.strip() for s in
+            str(getattr(settings, "GROQ_LLM_CHAIN", "") or "").split(",")]
+    for m in tho:
+        m = (m or "").strip()
+        if m and m not in ra and m not in _GROQ_DEAD_MODELS:
+            ra.append(m)
+    song = models_groq_con_song()
+    if song:
+        loc = [m for m in ra if m in song]
+        if loc:
+            return loc
+        # Không tên nào khớp danh sách sống (user gõ sai / Groq vừa đổi hết):
+        # lấy model MẠNH NHẤT còn sống làm phao, đừng để dây chuyền rỗng.
+        for uu in ("openai/gpt-oss-120b", "groq/compound", "openai/gpt-oss-20b"):
+            if uu in song:
+                return [uu]
+    return ra
 
 
 def _is_model_unfit_error(msg: str) -> bool:
@@ -736,11 +889,6 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             base_url, model = "https://api.deepseek.com", settings.DEEPSEEK_MODEL
         elif provider == "groq":
             base_url = "https://api.groq.com/openai/v1"
-            model = model or settings.GROQ_LLM_MODEL
-            fb = getattr(settings, "GROQ_LLM_FALLBACK",
-                         "llama-3.3-70b-versatile")
-            if model in _GROQ_DEAD_MODELS and fb:
-                model = fb
         elif provider == "ollama":
             base_url, model = settings.OLLAMA_BASE_URL, settings.OLLAMA_MODEL
             # QUAN TRỌNG: Ollama mặc định num_ctx=2048 -> prompt transcript dài bị
@@ -756,42 +904,57 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         # KHÔNG giới hạn token cứng: JSON chọn clip có thể dài, cắt cụt -> hỏng kết quả
-        fb = getattr(settings, "GROQ_LLM_FALLBACK", "")
-        try:
+        if provider != "groq":
             resp = client.chat.completions.create(
                 model=model, messages=msgs, temperature=temperature,
                 extra_body=extra,
             )
-        except Exception as e:  # noqa: BLE001
-            # Groq gỡ/đổi tên model -> RƠI VỀ fallback NGAY trong lệnh gọi này
-            # (nhớ trong phiên để các lệnh sau đi thẳng fallback). 413 request
-            # too large (model không kham nổi prompt dài trên tier free —
-            # LỖI THẬT với gpt-oss-120b) -> fallback CHO LỆNH NÀY, không memo
-            # (prompt ngắn vẫn dùng model chính được). Lỗi khác (key/quota/
-            # mạng) ném lại cho complete_text xử như cũ.
-            if provider == "groq" and fb and model != fb:
-                if _is_model_missing_error(str(e)):
-                    _GROQ_DEAD_MODELS.add(model)
-                elif not _is_model_unfit_error(str(e)):
-                    raise
+            return resp.choices[0].message.content or ""
+
+        # ---- GROQ: đi hết DÂY CHUYỀN model, model đầu chết thì sang model kế ----
+        # Chỉ 3 loại lỗi mới được sang model kế (đều là lỗi CỦA MODEL):
+        #   404 model bị gỡ · 413 model không kham nổi prompt · content RỖNG
+        #     (model reasoning tiêu hết chỗ output — lỗi thật của gpt-oss-120b).
+        # Lỗi CỦA KEY (429/401/mạng) phải NỔI LÊN NGAY cho `complete_text` xoay
+        # key: nuốt ở đây là mất cả vòng xoay 41 key.
+        chuoi = chuoi_model_groq(model)
+        if not chuoi:
+            raise LLMModelMissing(
+                "Không còn model Groq nào dùng được. Groq đã bỏ model cũ — "
+                "app cần cập nhật (đây KHÔNG phải lỗi hết hạn mức key).")
+        loi_model = ""
+        for i, md in enumerate(chuoi):
+            cuoi = (i == len(chuoi) - 1)
+            try:
                 resp = client.chat.completions.create(
-                    model=fb, messages=msgs, temperature=temperature,
+                    model=md, messages=msgs, temperature=temperature,
                     extra_body=extra,
                 )
-            else:
-                raise
-        out = resp.choices[0].message.content or ""
-        # CONTENT RỖNG (model reasoning "nghĩ" hết chỗ output — LỖI THẬT của
-        # gpt-oss-120b với prompt dài): thử lại 1 lần bằng fallback thay vì
-        # trả "" cho parser JSON fail mù mờ. Model nào cũng có thể dính ->
-        # lưới này giữ pipeline sống với MỌI model user tự cấu hình.
-        if (not out.strip() and provider == "groq" and fb and model != fb):
-            resp = client.chat.completions.create(
-                model=fb, messages=msgs, temperature=temperature,
-                extra_body=extra,
-            )
+            except Exception as e:  # noqa: BLE001
+                if _is_model_missing_error(str(e)):
+                    # NHỚ trong phiên: các lượt sau đi thẳng model kế, khỏi
+                    # tốn thêm một request 404 mỗi lần.
+                    _GROQ_DEAD_MODELS.add(md)
+                    loi_model = str(e)
+                    if cuoi:
+                        raise LLMModelMissing(
+                            f"Groq đã bỏ model «{md}» — app cần cập nhật "
+                            f"(KHÔNG phải hết hạn mức key). Chi tiết: {e}")
+                    continue
+                if _is_model_unfit_error(str(e)) and not cuoi:
+                    # 413: model này không kham nổi prompt dài trên tier hiện
+                    # tại. KHÔNG memo (prompt ngắn vẫn dùng nó được) và KHÔNG
+                    # phạt key — đổi key vô ích, mọi key cùng hạn mức.
+                    loi_model = str(e)
+                    continue
+                raise          # lỗi CỦA KEY -> để complete_text xoay key
             out = resp.choices[0].message.content or ""
-        return out
+            if out.strip() or cuoi:
+                return out
+            loi_model = "model trả về content RỖNG"
+        raise LLMModelMissing(
+            f"Mọi model Groq trong dây chuyền đều hỏng ({', '.join(chuoi)}): "
+            f"{loi_model}")
 
     if provider == "gemini":
         import google.generativeai as genai
@@ -858,6 +1021,15 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                         # khoá lần lượt CẢ 38 key trong 120s.
                         raise LLMTooLarge(f"Yêu cầu quá lớn cho hạn mức "
                                           f"token/phút: {last}")
+                    if _is_model_missing_error(last):
+                        # 404 MODEL BỊ GỠ: lỗi CỦA APP, mọi key đều 404 y nhau.
+                        # KHÔNG phạt key, KHÔNG xoay key (vô ích) — nổi lên với
+                        # lời báo nói RÕ là app cần cập nhật, đừng để nó trông
+                        # giống hết hạn mức (xem LLMModelMissing).
+                        raise LLMModelMissing(
+                            f"Groq đã bỏ model đang dùng nên app không gọi "
+                            f"được — cần cập nhật app. KHÔNG phải hết hạn mức "
+                            f"key (41 key vẫn còn nguyên). Chi tiết: {last}")
                     if is_rate_limit_error(last):
                         mark_limited(provider, key, last)
                         saw_retryable = True
@@ -895,6 +1067,10 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                 continue
             break
     # phân biệt lý do để user biết đường sửa
+    if _is_model_missing_error(last):
+        raise LLMModelMissing(
+            f"Groq đã bỏ model đang dùng nên app không gọi được — cần cập "
+            f"nhật app. KHÔNG phải hết hạn mức key. Chi tiết: {last}")
     if is_auth_error(last):
         raise LLMError(
             f"Tất cả key {provider} đều SAI/không hợp lệ. Vào 'Cài đặt AI' "

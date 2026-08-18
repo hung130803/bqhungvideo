@@ -153,9 +153,12 @@ from typing import Iterable
 # KHÔNG dùng model SUY LUẬN (qwen3.6): CLAUDE.md đã đo — nó tiêu hết max_tokens
 # cho khối <think> rồi trả rỗng (0/3 lượt ở khâu chấm).
 # --------------------------------------------------------------------------
+# 17/08/2026: `llama-3.3-70b-versatile` bị Groq GỠ (404) — hội đồng cũ để nó
+# đứng ĐẦU nên trọng tài thứ nhất chết ngay. Thay bằng `groq/compound` (hệ
+# agentic của Groq): vẫn KHÁC HỌ với gpt-oss, giữ được ý "3 góc nhìn".
 MODEL_HOI_DONG = (
-    "llama-3.3-70b-versatile",
     "openai/gpt-oss-120b",
+    "groq/compound",
     "openai/gpt-oss-20b",
 )
 

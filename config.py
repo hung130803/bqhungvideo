@@ -142,7 +142,9 @@ class Settings:
     ELEVENLABS_KEYS_FILE = _env("ELEVENLABS_KEYS_FILE")
     GROQ_WHISPER_MODEL = _env("GROQ_WHISPER_MODEL", "whisper-large-v3")
     # Groq còn chạy LLM FREE -> dùng làm AI CẮT, khỏi cần Ollama (đỡ ổ).
-    # MODEL CHÍNH mặc định = llama-3.3-70b-versatile.
+    # ── PHÉP ĐO 06/08/2026 GIỮ LẠI LÀM CĂN CỨ, nhưng KẾT LUẬN của nó ("giữ
+    #    llama làm mặc định") đã HẾT HIỆU LỰC: 17/08/2026 Groq GỠ HẲN llama,
+    #    không còn lựa chọn nào để giữ. Xem khối ══ bên dưới. ──
     # ĐO LẠI 06/08/2026 (`_do_model_manh.py` + `_do_so_model.py`, 3 video THẬT,
     # trọng tài chấm MÙ) — ghi chú cũ "gpt-oss-120b bị 413 / trả rỗng" CHỈ ĐÚNG
     # với prompt REUP (dài). Với khâu CHỌN ĐOẠN thì SAI:
@@ -153,16 +155,46 @@ class Settings:
     #   ĐIỀU QUAN TRỌNG HƠN ĐIỂM: llama ghép 2-7 ĐOẠN mỗi clip (bỏ phần nhạt ở
     #   giữa rồi nối phần hay) còn gpt-oss gần như chỉ lấy 1 KHỐI LIỀN (8/9
     #   clip = 1 đoạn) và còn ăn cả intro (11,7s) lẫn outro (998-1062s).
-    # => GIỮ llama làm mặc định cho khâu cắt. Muốn thử model khác: đặt
+    # => (kết luận CŨ 06/08: giữ llama cho khâu cắt — nay KHÔNG áp dụng được
+    #    nữa vì llama đã bị gỡ). Muốn thử model khác cho riêng khâu cắt: đặt
     #    SELECT_MODEL trong .env (không phải đổi GROQ_LLM_MODEL, tránh ảnh
     #    hưởng khâu reup vốn thật sự bị 413).
+    #    LƯU Ý HÀNH VI ĐỔI THEO: gpt-oss thiên về lấy 1 KHỐI LIỀN thay vì ghép
+    #    2-7 đoạn như llama. Đó là thay đổi CÁCH CẮT, không phải tụt điểm —
+    #    nhưng anh Hùng xem clip sẽ thấy khác, nên phải nói ra.
     # GROQ_LLM_MODEL_CREATIVE: model RIÊNG cho các pass VIẾT kịch bản reup —
     # mặc định RỖNG = dùng chung model chính.
     # Model lỗi "không tồn tại"/413/content rỗng -> app TỰ RƠI VỀ
     # GROQ_LLM_FALLBACK ngay trong lệnh gọi, không bao giờ chết ở máy khách.
-    GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+    # ══ 17/08/2026 — GROQ KHAI TỬ `llama-3.3-70b-versatile`. ĐỌC TRƯỚC KHI SỬA ══
+    # Hỏi thẳng GET /models bằng key thật: model đó KHÔNG còn trong danh sách,
+    # gọi vào ra 404 `model_not_found`. TOÀN BỘ họ Llama đã biến mất khỏi Groq
+    # (chỉ còn 2 model `llama-prompt-guard` 512 token, không phải model chat).
+    # Hậu quả trên máy anh Hùng: cắt/thay giọng/reup chết cả dây chuyền, 6 lỗi
+    # liên tiếp — và lời lỗi làm anh ấy tưởng HẾT HẠN MỨC 41 key.
+    #
+    # LỖI KIẾN TRÚC LÀM BẢN CŨ KHÔNG TỰ CỨU ĐƯỢC: `GROQ_LLM_MODEL` và
+    # `GROQ_LLM_FALLBACK` để **CÙNG MỘT TÊN**, mà lưới rơi-về-fallback trong
+    # `llm._call_once` có điều kiện `model != fb` -> lưới KHÔNG BAO GIỜ chạy.
+    # BẤT BIẾN TỪ NAY: model chính và model dự phòng phải KHÁC HỌ NHAU.
+    #
+    # Đo thật 17/08/2026 (gọi chat thật từng model, cùng câu hỏi, temperature=0):
+    #   openai/gpt-oss-120b  0,95s  trả lời ĐÚNG      <-- CHỌN LÀM MODEL CHÍNH
+    #   groq/compound        1,54s  trả lời ĐÚNG      <-- dự phòng 1 (KHÁC HỌ)
+    #   openai/gpt-oss-20b   0,60s  trả lời SAI       <-- dự phòng 2 (phao cuối)
+    # gpt-oss-120b đã được đo ở khâu CHỌN ĐOẠN từ 06/08: 53,3 điểm so với llama
+    # 52,2 (trọng tài chấm mù) -> đổi sang nó KHÔNG tụt chất lượng.
+    # LƯU Ý ĐO ĐƯỢC: gpt-oss là model SUY LUẬN — đặt `max_tokens` thấp thì phần
+    # "nghĩ" ăn hết chỗ và content trả về RỖNG. App KHÔNG đặt max_tokens cho
+    # chat nên không dính; chỗ gọi mới thì phải nhớ. Và `reasoning_effort` nay
+    # CHỈ nhận low/medium/high — `"none"` trả 400 (llm.py đã có lưới gọi lại).
+    GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
     GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE", "")
-    GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "llama-3.3-70b-versatile")
+    GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "groq/compound")
+    #: DÂY CHUYỀN DỰ PHÒNG THÊM (phân cách bằng dấu phẩy) — thử sau model chính
+    #: và model dự phòng. Groq sẽ còn khai tử model nữa; có dây chuyền thì lần
+    #: sau app chỉ chậm đi một nhịp chứ không chết. Xem `llm.chuoi_model_groq`.
+    GROQ_LLM_CHAIN = _env("GROQ_LLM_CHAIN", "openai/gpt-oss-20b")
     # Model THÔNG MINH NHẤT cho các lệnh NGẮN, chất lượng quyết định bộ mặt
     # kênh: ĐÁNH BÓNG TIÊU ĐỀ (đúng ngôn ngữ video, giật tít) + hashtag.
     # gpt-oss-120b trên tier free CHẠY TỐT với prompt ngắn (đã test thật —
