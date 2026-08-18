@@ -456,6 +456,16 @@ phát hành CẤM thương mại (app đã dán cảnh báo đúng ở `giong_ng
 - **File nghe thử GIỮ LẠI** ở `%TEMP%\bq_tts_thu\nghe_thu\` — 135 file cũ
   **không xoá cái nào**, lượt này thêm ~110 file mang tiền tố `L10_`.
 
+### FILE ĐỂ ANH HÙNG TỰ NGHE — `_NGHE_THU_ANH_HUNG\`
+
+Tôi không có tai, nên ba thư mục này là chỗ anh chốt bằng tai mình:
+
+| thư mục | nghe để làm gì |
+|---|---|
+| `luot10_cao_do\` (10 file) | **Quan trọng nhất.** `HoaiMy_-50Hz` … `p50Hz` và `NamMinh_-50Hz` … `p50Hz`. Máy nói đây là **những người nói khác nhau**; anh nghe xem có đúng là "người khác" hay chỉ là "cùng người nói cao/thấp hơn". Đây là câu hỏi 3 giọng Việt hay 5-6 giọng Việt. |
+| `luot10_kani\` (7 file) | 5 mục giọng của Kani-TTS-Vie. Nghe `1_Khoa` · `2_Hung` · `4_David` cạnh nhau — máy đo ra **cùng một người**. Và `1b`/`1c` là **cùng mục "Khoa" chạy lượt khác** — nghe xem giọng có trôi không. |
+| `luot10_giong_anh_moi\` (8 file) | 8 giọng tiếng Anh, trong đó **6 giọng app chưa mở** (`en-GB-Ryan` trải 4,85 · `en-GB-Sonia` · `en-IE-Connor` · `en-AU-Natasha` · `en-IN-Prabhat` · `en-NG-Ezinne` · `en-ZA-Luke`), kèm `en-US-Andrew` (5,35) để so. |
+
 ## 10. SỐ ĐO TÓM TẮT ĐỂ TRA LẠI SAU
 
 ```
