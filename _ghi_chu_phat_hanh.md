@@ -1,197 +1,99 @@
-# BQ Hung Video v2.32.0
+# BQ Hung Video v2.35.0
 
 ## Sửa được gì
 
-### 1. Chữ trong video thay giọng — nay CHỈNH ĐƯỢC cỡ · kiểu · đậm · nghiêng · màu · viền
+### 1. Chữ chạy theo lời của giọng ngoài: từ "một phần ba số chữ không có mốc" lên gần đủ
 
-Anh Hùng: *"phần chữ sub trong video tôi không điều chỉnh được cỡ chữ, kiểu
-chữ, hay in nghiêng đậm, hay chỉnh viền gì được ạ"*.
+Bản trước, giọng ngoài (OmniVoice) lấy mốc từng chữ bằng cách **cho máy nghe
+chép ngược** chính file tiếng vừa đọc rồi đoán xem nó nói gì. Chữ nào máy nghe
+nghe sai thì chữ đó **không có mốc nào** — chỗ đó chữ không chạy theo tiếng
+được.
 
-Đúng như vậy, và kiểm được bằng một lệnh: đường **cắt thường** đã có đủ mấy ô
-đó trong *Chỉnh mẫu* từ lâu, còn đường **thay giọng** thì
-`grep "Fontsize|FontName|Outline|Bold|Italic" app/core/thay_giong.py` ra **0
-kết quả** — kiểu chữ cứng, không một ô nào chỉnh được.
+Nay app dùng **gióng hàng cưỡng bức**: nó **không đoán chữ, nó đã biết chữ**,
+chỉ còn đi tìm mỗi chữ nằm ở giây nào. Đo trên 4 thứ tiếng (Việt · Anh · Trung
+· Nhật), 12 câu mỗi thứ, 2 lượt đan xen, **thước là `silencedetect` chứ không
+phải máy nghe nào**:
 
-Hộp **Thay giọng nói** nay có **9 ô** (hiện ra khi bật *Làm mờ chữ cháy sẵn* +
-*Viết lại bản dịch*):
-
-| Ô | Nhận gì | Để mặc định thì |
+| | cách cũ | **cách mới** |
 |---|---|---|
-| Kiểu chữ | **27 kiểu SẴN CÓ của Chỉnh mẫu** | kiểu trắng viền đen như cũ |
-| Phông | 13 phông đã đo từng cái | phông cũ |
-| Cỡ chữ | % chiều cao khung | to bằng dòng chữ cũ vừa che |
-| Vị trí | trên / giữa / dưới khung | đúng chỗ chữ cũ |
-| In đậm · In nghiêng | có / không | như cũ |
-| Màu chữ · Màu viền | bảng màu | theo kiểu chữ |
-| Độ dày viền | % cỡ chữ | theo kiểu chữ |
+| Số chữ CÓ mốc | 52,5% | **98,6%** |
+| · tiếng Việt | 37,6% | **98,9%** |
+| · tiếng Anh | 79,0% | **100,0%** |
+| · tiếng Trung | 67,5% | **96,8%** |
+| · tiếng Nhật | 25,7% | **98,7%** |
+| Chữ lệch tiếng (rung) | 711,9 ms | **90,4 ms** |
+| Thời gian lấy mốc cho 12 câu | 32,5 giây | **6,3 giây** |
+| Lượt Groq tiêu tốn | mỗi câu 1 lượt | **0** |
 
-Hai điều cố ý làm theo cách này:
+Đo lại trên một mẻ tiếng khác cũng ra **98,5%** — tức con số này là tính chất
+của cách làm, không phải may.
 
-* **Dùng THẲNG 27 kiểu của Chỉnh mẫu**, không đẻ bộ kiểu thứ hai. Cả hai đường
-  đi qua **cùng một cửa** trong mã, nên đặt cùng tham số là ra **cùng một kiểu
-  chữ** — không còn cảnh "clip cắt một kiểu, video thay giọng một kiểu".
-* **Nút chọn màu là ĐÚNG cái nút** anh Hùng đã quen trong Chỉnh mẫu (ô vuông
-  màu, chuột phải = về mặc định), không phải một bộ điều khiển thứ hai trông
-  khác.
+**Nói thẳng phần chưa được:** chữ vẫn bám lời kém hơn giọng thường (edge-tts).
+Rung còn **90-119 ms** so với **15,7 ms** của edge-tts, nặng nhất ở tiếng Anh.
+Cần chữ bám sát lời nhất thì vẫn dùng giọng thường.
 
-**Ô nào để mặc định thì y hệt bản trước, từng khoá một** — video đã làm bằng
-v2.31.0 không bị coi là "đã đổi cấu hình" rồi chạy lại.
+Giọng **Piper** cũng hưởng cùng bản này: máy có bộ gióng hàng thì Piper lệch
+**29,5 ms** thay vì 51,8 ms (giọng thường đo cùng lượt: 38,6 ms).
 
-**Đã NHÌN TẬN MẮT, không chỉ đọc số.** Chạy ffmpeg thật trên video Douyin thật
-rồi trích khung ra ảnh, phóng to 2× để soi từng chữ:
+### 2. Một chữ có dấu gạch nối làm mất mốc CẢ CÂU — đã sửa
 
-| Đặt gì | Nhìn thấy gì trong ảnh |
-|---|---|
-| không đặt gì (mốc) | chữ trắng, cỡ vừa, viền đen mỏng — **y như bản cũ** |
-| Anton · 7,5% · vàng · đậm | mặt chữ **hẹp và cao hẳn**, màu **vàng**, viền nâu dày |
-| Be Vietnam Pro · 4% · đỏ · nghiêng · viền trắng 20% | chữ **nghiêng thật**, **nhỏ hẳn**, đỏ trên viền trắng dày |
-| Montserrat · 6% · xanh · giữa khung · không đậm | chữ **xanh lơ**, nét mảnh hơn, nằm **giữa khung** (không còn ở đáy) |
+Lỗi thật, nhật ký ghi thẳng. Bảng chữ cái của bộ gióng hàng coi dấu `-` là ký
+tự đặc biệt, mà công cụ chép âm thì giữ nguyên dấu gạch nối. Kết quả: một câu
+có chữ như **`COVID-19`** thì **cả câu mất sạch mốc** — chữ trong câu đó không
+chạy theo tiếng nữa, và app không báo một dòng nào.
 
-Tiếng Việt đủ dấu (Đ · â · à · ộ · đ · á · ấ) hiện đúng ở **cả 4 ảnh**, **không
-một ô vuông** nào.
+Đo lại sau khi sửa: câu *"Dịch COVID-19 đã làm thay đổi cả thế giới..."* ra
+**13/13 mốc** (trước: rỗng).
 
-### 2. Adam (ElevenLabs) — nay CHỌN ĐƯỢC trong hộp "Thay giọng nói"
+### 3. Nút tải bộ gióng hàng ngay trong app
 
-Anh Hùng chụp màn hình hộp Thay giọng, Ngôn ngữ đích **Tiếng Anh**, combo
-Giọng đọc chỉ có edge-tts, và hỏi *"đâu Adam đâu"*.
+Trước đây muốn dùng gióng hàng phải **tự đặt file 1,18 GB vào đúng thư mục** —
+tức tính năng coi như không tồn tại với người không đọc mã.
 
-Adam vốn **có** trong app (hộp Lồng tiếng) nhưng bị lọc khỏi hộp này, với lý
-do ghi thẳng trong mã: *"`doc_ban_dich` gọi thẳng `dubbing._synth_all` — hàm
-này CHỈ biết edge-tts. Đưa id `el:` vào là câu nào cũng hỏng mà UI vẫn khoe có
-chọn."* Bộ lọc **thành thật và đúng** — chỉ là chưa ai nối tiếp.
+Hộp **Thay giọng nói** nay có thêm một hàng: *Tải bộ gióng hàng (khoảng
+1,2 GB)*, cùng kiểu với nút tải bộ tách giọng và nút tải giọng Piper.
 
-Nay đã nối, và nối ở **CỬA CHUNG** (`_synth_all` / `_synth_all_words`) chứ
-không vá từng chỗ gọi. Nhờ vậy phủ luôn cả **3 chỗ gọi** của đường thay giọng
-lẫn 3 chỗ của đường lồng tiếng — **không phải sửa một chỗ gọi nào**. Sót một
-chỗ là video **lẫn hai giọng** mà app vẫn báo thành công.
+- Dùng **chung** torch với bộ tách giọng nên **không tải thêm 2,5 GB** trùng.
+  Chưa tải bộ tách giọng thì nút nói thẳng là bấm nút kia trước, chứ không
+  lặng lẽ kéo về bản torch thứ hai.
+- Chưa tải thì app **vẫn chạy bình thường**, chỉ là mốc chữ lấy theo cách cũ.
 
-Combo nay có **33 giọng ElevenLabs**, Adam đứng đầu nhóm.
+### 4. Nhãn chọn giọng nay nói đúng theo máy của bạn
 
-### 3. Mốc chữ của Adam — ĐO RA TỐT NGANG edge-tts, không giống Piper
+Nhãn giọng ngoài trước đây ghi cố định *"chỉ có mốc cho 30-56% số chữ"*. Con số
+đó nay sai, nên nhãn tự đổi theo máy:
 
-Việc này vốn được giao với giả định *"ElevenLabs không trả mốc, phải suy ra
-như Piper, chắc sẽ tệ hơn edge-tts nhiều"*. **Đo xong thì giả định đó SAI ở
-cả hai vế**, và đây là phần đáng giá nhất của lượt này.
+- Máy **đã có** bộ gióng hàng: ghi số mới (phủ 98,5%, rung 90-119 ms).
+- Máy **chưa có**: vẫn cảnh báo, nhưng ghi đúng dải đo được là **38-99% tuỳ
+  lượt** kèm chỉ đường sang nút tải.
 
-**Vế một: ElevenLabs CÓ trả mốc thật.** Endpoint `/with-timestamps` trả mốc
-từng ký tự theo audio gốc. Không phải suy ra, không tốn một lượt Groq nào.
+Phần cảnh báo **giấy phép giữ nguyên**: trọng số OmniVoice là CC-BY-NC, nhà
+phát hành cấm dùng cho mục đích thương mại.
 
-**Vế hai: chất lượng mốc ngang edge-tts.** Đo bằng đúng thước đã đo Piper
-(Groq chép ngược chính file tiếng), 2 bộ câu tiếng Anh THẬT, arm đối chứng
-edge-tts chạy **đan xen trong cùng lượt**:
+### 5. Môi trường giọng ngoài không còn nằm trong thư mục tạm
 
-| | bộ 1 (462 mốc) | bộ 2 held-out (270 mốc) |
-|---|---|---|
-| **RUNG — Adam** | **47,2 ms** | **34,0 ms** |
-| **RUNG — edge-tts** | **46,0 ms** | **35,0 ms** |
-| **tỉ lệ Adam/edge** | **1,03×** | **0,97×** |
+Môi trường 7,74 GB của giọng ngoài trước đây nằm trong `%TEMP%`. Một lượt dọn
+đĩa của Windows — hoặc chính lúc ổ C đầy phải dọn — là **mất sạch**, và triệu
+chứng không phải một dòng lỗi mà là **giọng tự nhiên biến khỏi danh sách**.
+Đúng cái đã xảy ra một lần với bộ tách giọng.
 
-> **RUNG là con số quan trọng nhất** — đó là phần KHÔNG chữa được bằng một
-> hằng số. Piper đo được **59,1 ms (1,53×)**; Adam **ngang edge-tts**.
-> Adam KHÔNG cùng họ với Piper.
+Nay nó nằm cạnh app (bản đóng gói: trong thư mục dữ liệu, **không** nằm cạnh
+`.exe` để lượt tự cập nhật không xoá mất). Máy nào còn bản cũ vẫn chạy được,
+nhưng app ghi cảnh báo vào nhật ký mỗi lượt.
 
-**Số thô thì trông xấu, và suýt nữa tôi tin nó.** Số thô: Adam 70,1 ms vs
-edge 54,9 ms, và **57,7% số chữ hiện MUỘN hơn tiếng**. Nguyên nhân là một
-**lệch HỆ THỐNG +58,0 ms** (bộ 2: +61,5 ms) trong khi edge là −35,0 (bộ 2:
-−33,5). Lệch hệ thống thì trừ một hằng số là xong — nên tôi đã **định trừ
-94 ms**.
+## Đo bằng gì
 
-**Thước thứ ba chặn lại đúng lúc.** Đo mốc chữ đầu so với lúc THẬT SỰ phát ra
-tiếng (`silencedetect`, không dùng Groq):
+Thước duy nhất dùng để chấm là `silencedetect` — so mốc chữ đầu với lúc file
+**thật sự phát ra tiếng**. Cố ý không dùng máy nghe: mốc của cách cũ vốn do máy
+nghe sinh ra, nên đem máy nghe đi chấm là để nó tự chấm cho chính nó (đo thử ra
+đúng 0,0 ms trên 1.587 mốc — một bảng điểm hoàn hảo cho thứ chưa hề được kiểm).
 
-| | mốc chữ đầu so với tiếng thật |
-|---|---|
-| edge-tts | −47,0 ms |
-| **Adam** | **−37,9 ms** |
+## Còn nợ, ghi thẳng
 
-Hai máy đọc chỉ lệch nhau **~9 ms**, không phải 94 ms. Tức **cái lệch +58 ms
-kia là của THƯỚC GROQ, không phải của ElevenLabs** — Groq đánh dấu đầu từ
-khác nhau tuỳ chất giọng. Trừ 94 ms đi thì đã tự tay làm mốc sai thêm 94 ms
-rồi khoe là đã chữa.
-
-*(Giả định "độ trễ Groq không phụ thuộc giọng" đã được ghi là CHƯA CHỨNG MINH
-từ lượt đo Piper. Nay đo được: nó **phụ thuộc giọng thật**. Mọi kết luận cũ
-dựa trên lệch hệ thống của thước Groq cần đọc lại với lưu ý này.)*
-
-### 4. Cảnh báo chi phí TRƯỚC khi chạy — tiền của anh Hùng
-
-Thay giọng chạy **cả thư mục**. Gói free là **10.000 ký tự/tháng/tài khoản**,
-đang xoay 5 tài khoản ≈ 50.000 — vài video là cạn.
-
-Chọn giọng ElevenLabs rồi bấm Chạy thì hộp hiện: **ước lượng số ký tự cả mẻ**
-(đo mẫu độ dài rồi nhân, theo số đo thật **1.273 ký tự/phút phim**) và **hạn
-mức còn lại thật** trên mọi key. Nút mặc định là **"Không chạy"** — bấm Enter
-theo phản xạ thì không tiêu tiền.
-
-Bốn ca đều nói thẳng, không ca nào im lặng:
-- đủ hạn mức → nói đủ
-- **thiếu** → nói thiếu bao nhiêu, và nói rõ app sẽ **tự lùi edge-tts** cho
-  các video còn lại (video vẫn ra, chỉ khác giọng) + ghi vào nhật ký
-- **không đọc được hạn mức** → nói thẳng *"chạy tiếp là chạy mò"*, không coi
-  như còn nhiều
-- **không đo được độ dài** → nói không ước lượng được, **không hiện số 0** như
-  thể miễn phí
-
-Con số ghi rõ là **"ÍT NHẤT"**: các câu tràn khung phải đọc lại, mỗi lượt đọc
-lại là một lượt tính tiền nữa mà ước lượng này chưa đếm.
-
-### 5. Dòng tiến trình đã có tên video
-
-Anh Hùng chụp hai dòng ghi `thay_giong — — thay_giong`: lặp tên loại việc, mà
-chỗ tên video thì **trống**. Chạy cả thư mục thì không biết dòng nào là video
-nào.
-
-Gốc: job thay giọng chạy trên FILE trong thư mục anh Hùng chọn, không gắn với
-bảng video trong máy, nên chỗ lấy tên bị rỗng và app lấp bằng mã loại việc.
-
-Nay đọc tên từ chính việc đó: **`Thay giọng · kenh 21 · Chuyen la co that`**.
-Payload rỗng/hỏng thì chỉ mất cái tên, **không làm sập bảng hàng đợi**.
-
-### 6. Một lỗi NỔ được tìm ra khi làm việc này
-
-Đường lùi edge-tts của ElevenLabs gọi `asyncio.run(...)` từ bên trong một
-vòng lặp sự kiện đang chạy → **`RuntimeError` làm nổ cả lượt thay giọng**.
-
-Chỗ nguy hiểm: nó **chỉ nổ ở nhánh LÙI**, tức đúng lúc ElevenLabs hết hạn mức
-giữa chừng. Chạy thử vài video đầu thì êm ru; tới giữa mẻ 300 video mới chết.
-Cổng 67 CA 4 bắt được ngay khi vừa nối xong.
-
----
-
-## NÓI THẬT — những chỗ CHƯA được
-
-**1. Giọng Gemini VẪN bị chặn, và đây là lý do bằng số chứ không phải quên.**
-Gemini TTS **không trả mốc từng chữ**. Đường thay giọng dựng chữ THEO mốc
-từng chữ ("nói đến đâu chữ hiện đến đó"), nhận Gemini vào là chữ quay lại
-kiểu đổ cả cụm — đúng cái anh Hùng đã kêu. Ngoài ra nó có thể **tự đổi cả
-track sang edge-tts** khi hết hạn mức mà không hỏi ai. Muốn mở Gemini thì
-phải giải hai chuyện đó trước.
-
-**2. ElevenLabs KHÔNG có tham số tốc độ đọc — bước "đọc nhanh cho vừa khung"
-không chạy được với Adam.** v2.27.0 chữa được lỗi *"nói không mượt"* nhờ bảo
-edge-tts **đọc nhanh hơn** thay vì ép `atempo` cắt-dán (đo được `tempo_max`
-xuống **1,017–1,027** và chồng lấn **0 ms, 6/6 lượt**). ElevenLabs không nhận
-tham số đó, nên câu tràn khung sẽ phải quay lại nhờ `atempo` như trước —
-tức có thể chạm lại trần 1,5 và nghe kém mượt hơn edge-tts.
-**Tôi CHƯA ĐO con số này với Adam** (một lượt đo là ~2.275 ký tự hạn mức của
-anh Hùng cho đúng một video). Nói ra cơ chế, không bịa con số.
-Bù lại, app **không bao giờ trộn hai giọng**: hai bước đọc lại được khoá
-đường lùi, hết hạn mức thì **giữ nguyên bản Adam cũ** chứ không chèn câu
-edge-tts vào giữa clip.
-
-**3. Ước lượng chi phí là ƯỚC LƯỢNG.** Đo độ dài tối đa 12 video rồi nhân cho
-cả mẻ (đo hết 300 video là bắt anh Hùng chờ hàng chục giây ngay lúc vừa bấm
-Chạy). Video nói dày/thưa lệch nhau nhiều.
-
-**4. Hạn mức đã tiêu cho lượt đo này: 1.924 ký tự** (47.833 → 45.909 trên 5
-tài khoản). Cổng 67 chạy trong hồi quy **không gọi mạng**, không tốn thêm ký
-tự nào.
-
-**5. Chưa ai NGHE Adam đọc trên video thật.** Mọi số ở trên là đo máy.
-File nghe thử để anh Hùng tự nghe: bấm nút **Nghe thử** trong hộp Thay giọng
-sau khi chọn Adam.
-
-**6. Giấy phép — CHỜ ANH HÙNG QUYẾT, tôi không tự ý gỡ.** `edge-tts` là
-LGPLv3 kèm nguyên văn câu của tác giả *"It shouldn't be used for commercial
-reasons"*. ElevenLabs đang **xoay vòng 5 tài khoản miễn phí**. Cả hai đều
-đang dùng hằng ngày.
+- Rung mốc của gióng hàng ở **tiếng Anh** còn cao (lệch đều +104..+121 ms).
+  Chưa truy ra nguyên nhân, và cố ý **không trừ đi bằng một hằng số** — làm vậy
+  là tự tay làm sai thêm rồi khoe đã chữa.
+- Giọng ngoài **chưa có nút tải** (trọng số 6,1 GB + môi trường riêng); máy nào
+  chưa dựng sẵn thì app lùi êm về giọng thường.
+- Bản `.exe` vẫn **không gói** torch/model: máy nhân viên phải có Python 3 và
+  bấm nút tải. Gói vào là bộ cài phình từ 240 MB lên hơn 11 GB.
