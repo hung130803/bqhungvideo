@@ -71,7 +71,28 @@ Lần này có cái sai nằm ngay trong **README của chính model**, không p
 | `thangquang09/capspeech-nar-vietnamese` (thẻ HF) | **mit** | cùng GitHub đó, cũng **CC BY-NC 4.0** |
 | `splendor1811/omnivoice-vietnamese` (2.496 lượt tải) | **apache-2.0** | trọng số gốc OmniVoice là **CC-BY-NC** (đã chốt ở lượt 7) |
 
-### 6. Một điều trong đề bài **SAI**, phải nói thẳng: **VietBud500 KHÔNG mở.**
+### 6. Tôi **thử tay được** Kani-TTS-Vie. Nó **thua edge-tts** trên cùng bộ câu.
+
+Chạy trên máy chủ dùng thử của Hugging Face (không chiếm CPU/GPU máy này), đo
+**ĐAN XEN** — câu chẵn chạy Kani trước, câu lẻ chạy edge trước — cùng bộ câu,
+cùng lượt Groq chép ngược:
+
+| | sai từ | **bịa chữ** | đo được |
+|---|---|---|---|
+| **edge-tts** (đang dùng) | **0,0%** | **0,0%** | 4/4 câu |
+| **Kani-TTS-Vie** | **4,5%** | **0,0%** | 2/4 câu |
+
+Lỗi đọc thật bắt được: *"đi dạo **nhé**"* → máy nghe ra *"đi dạo **mé**"*.
+
+**Tin tốt: nó KHÔNG bịa chữ (0,0%)** — qua được án tử đã dùng để loại viXTTS và
+Chatterbox. Nhưng nó vẫn đọc sai nhiều hơn thứ anh đang chạy.
+
+> ⚠ **ĐỪNG so 4,5% này với con số 6,8% cũ.** Bộ câu lượt này là câu **sạch viết
+> tay**, nên edge-tts ra **0,0%**; còn 6,8% ngày trước đo trên bản chép tự động
+> **có lỗi sẵn**. Hai con số khác thước. Cách đọc đúng là so **trong cùng bảng
+> trên**: edge **0,0%** — Kani **4,5%**.
+
+### 7. Một điều trong đề bài **SAI**, phải nói thẳng: **VietBud500 KHÔNG mở.**
 
 Đề bài ghi *"VLSP · VietBud500 · InfoRe · Common Voice — các kho này giấy phép
 mở"*. Tôi tra thẳng thẻ dataset:
@@ -88,7 +109,7 @@ mở"*. Tôi tra thẳng thẻ dataset:
 gần như mọi model tiếng Việt hay đều dính NC: **kho dữ liệu tốt của tiếng Việt
 phần lớn là NC**, model huấn luyện trên đó thì thừa hưởng lệnh cấm.
 
-### 7. Kho giọng Piper CHÍNH THỨC: **vẫn đúng 3 giọng Việt, không thêm cái nào.**
+### 8. Kho giọng Piper CHÍNH THỨC: **vẫn đúng 3 giọng Việt, không thêm cái nào.**
 
 Tôi liệt kê thẳng danh sách file của `rhasspy/piper-voices` chứ không đọc bài
 giới thiệu: chỉ có `vais1000` · `25hours_single` · `vivos` — **y hệt lượt 1**.
@@ -174,7 +195,7 @@ Chấm theo đúng 2 điều kiện anh đặt ra:
 
 | Điều kiện | Ai vượt? |
 |---|---|
-| Sai từ tiếng Việt < **6,8%** (mốc edge-tts) | **Không bộ nào đo được là hơn.** Chưa bộ mới nào có số công bố; bộ tôi thử được thì không hơn (xem dưới) |
+| Sai từ tiếng Việt ít hơn edge-tts | **KHÔNG.** Bộ duy nhất tôi thử tay được (Kani-TTS-Vie) đo ra **4,5% so với 0,0%** của edge-tts trên **cùng bộ câu, cùng lượt Groq, đo đan xen** |
 | **Nhiều giọng Việt hơn 2** (edge-tts: HoaiMy + NamMinh) | **Chỉ 3 bộ có nhiều hơn 2 giọng, và cả 3 đều vướng:** v-tts 5 giọng (**NC**) · Kokoro-VI 14 giọng (**giọng Vbee**) · Kani-TTS-Vie 3 giọng (**sạch, nhưng chỉ hơn 1 giọng**) |
 
 Nói cách khác: **bộ nào nhiều giọng thì bẩn phép, bộ nào sạch phép thì ít giọng.**
@@ -207,28 +228,33 @@ ra cùng một kết luận. Thứ đang chạy vẫn là thứ tốt nhất tro
 
 ## NHỮNG GÌ TÔI CHƯA LÀM ĐƯỢC — GHI THẲNG
 
-1. **Tôi KHÔNG thử tay được bộ nào lượt này.** Lý do có thật, không phải lười:
-   máy đang có **2 luồng khác chạy** (phát hành v2.37.0 và đo VieNeu nhân bản) và
-   việc này bị dặn **không được chiếm CPU/GPU**. Thử thật một bộ = tải 1-4 GB
-   trọng số + chiếm GPU vài phút. Tôi **chủ động dừng** ở mức tra cứu thay vì
-   giành máy với luồng đang phát hành.
-   → Vì vậy **mọi số "sai từ / bịa chữ" của 18 bộ mới đều CHƯA ĐO**. Tôi không
-   bịa số. Bảng trên chỉ có thứ đọc được từ thẻ model, LICENSE và danh sách file.
-2. **Số giọng của LEMAS-TTS chưa xác định.** Nó khai `vi` trong 10 thứ tiếng và
+1. **Tôi chỉ thử tay được 1 bộ (Kani-TTS-Vie), và chỉ 2/4 câu.** Máy chủ dùng thử
+   ZeroGPU của Hugging Face báo hết hạn mức sau 2 câu — **đúng bức tường đã gặp ở
+   lượt 7**. Muốn chạy tiếp phải đăng nhập bằng tài khoản Hugging Face **của anh
+   Hùng**; tôi **không** đi tìm/dùng chìa khoá đăng nhập của anh.
+   → **17 bộ mới còn lại: CHƯA ĐO sai từ / bịa chữ.** Tôi không bịa số. Bảng giấy
+   phép chỉ gồm thứ đọc được từ thẻ model, LICENSE và danh sách file.
+   → Tôi **cố ý không** tải trọng số về chạy trên máy này: mỗi bộ 1-4 GB + chiếm
+   GPU, mà máy đang có **2 luồng khác chạy** (phát hành v2.37.0 · đo VieNeu nhân
+   bản) và việc này bị dặn không được chiếm CPU/GPU.
+2. **Số giọng THẬT của Kani-TTS-Vie: xác nhận được 2/3.** Khoa (nam Bắc) và Hùng
+   (nam Nam) đã ra tiếng thật, nghe được. **Trinh (nữ Nam) thử 4 lần đều bị chặn
+   hạn mức** nên tôi *không* xác nhận được — đừng đọc con số "3 giọng" như đã kiểm.
+3. **Số giọng của LEMAS-TTS chưa xác định.** Nó khai `vi` trong 10 thứ tiếng và
    là zero-shot, nhưng không công bố số giọng dựng sẵn. Đây là bộ **CC-BY-4.0
    sạch nhất** trong nhóm mới nên nếu anh muốn tôi đào tiếp thì đây là chỗ đáng đào.
-3. **Nghi ngờ về Kokoro-Vietnamese là SUY LUẬN TỪ BẰNG CHỨNG, không phải bản án.**
+4. **Nghi ngờ về Kokoro-Vietnamese là SUY LUẬN TỪ BẰNG CHỨNG, không phải bản án.**
    Bằng chứng: 3 tên giọng trùng bảng Vbee + kho cố ý giấu nguồn dữ liệu + một
    dự án khác công khai thừa nhận sao chép đúng giọng đó. Tôi **không** tải trọng
    số về so sóng âm với giọng Vbee thật — muốn chắc 100% thì phải làm phép đó.
    Nhưng với người **bán app**, mức nghi ngờ này đã quá đủ để tránh.
-4. **`LEMAS-Dataset` có thể dính Emilia.** Trong kho có file demo tên
+5. **`LEMAS-Dataset` có thể dính Emilia.** Trong kho có file demo tên
    `zh_emilia_zh_0008385782.mp3`. Emilia là kho cấm thương mại (đã ghi ở lượt 2).
    Thẻ dataset khai CC-BY-4.0, nhưng tôi **chưa đối chiếu được** hai điều này.
    Ai định dùng LEMAS thì phải làm rõ chỗ đó trước.
-5. **VLSP: không tra ra model TTS tiếng Việt nào dùng nó.** Truy vấn thẳng API
+6. **VLSP: không tra ra model TTS tiếng Việt nào dùng nó.** Truy vấn thẳng API
    Hugging Face lọc theo `text-to-speech` + `vlsp` ra **0 kết quả**.
-6. **Tôi không nghe được.** Mọi kết luận ở đây là đọc giấy phép và metadata, chứ
+7. **Tôi không nghe được.** Mọi kết luận ở đây là đọc giấy phép và metadata, chứ
    không phải chấm giọng hay dở. Tai anh mới là người chấm cuối.
 
 ---
@@ -291,8 +317,17 @@ GIỌNG "NGỌC HUYỀN" MIỄN PHÍ: CÓ THẬT, và là bản sao Vbee
     (mọi model khác cùng tác giả: apache-2.0)
   -> CÓ NHƯNG KHÔNG NÊN
 
-CHƯA ĐO: sai từ · bịa chữ · số giọng thật của cả 18 bộ mới
-  (nhường CPU/GPU cho 2 luồng đang chạy — không bịa số)
+THỬ TAY (Kani-TTS-Vie qua Space, ĐAN XEN, cùng bộ câu, cùng lượt Groq):
+  edge-tts        sai 0,0%  | bịa chữ 0,0% | 4/4 câu
+  Kani-TTS-Vie    sai 4,5%  | bịa chữ 0,0% | 2/4 câu (ZeroGPU hết hạn mức)
+  lỗi đọc thật: "đi dạo nhé" -> "đi dạo mé"
+  giọng thật xác nhận: 2/3 (Khoa nam Bắc · Hùng nam Nam); Trinh nữ Nam CHƯA kiểm
+  tốc độ: Kani 9,5-10,3 s/câu qua Space (có hàng đợi) | edge 0,9-3,6 s
+  >> KHÔNG so 4,5% với 6,8% cũ: bộ câu lượt này SẠCH nên edge ra 0,0%,
+     còn 6,8% đo trên bản chép tự động CÓ LỖI SẴN. Khác thước.
+  script đo: D:\claude\_do_kani_ab.py (ngoài repo, không đụng app/)
+
+CHƯA ĐO: sai từ · bịa chữ của 17 bộ mới còn lại (không bịa số)
 ```
 
 ---
