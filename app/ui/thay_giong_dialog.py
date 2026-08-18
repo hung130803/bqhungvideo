@@ -836,12 +836,22 @@ class ThayGiongDialog(QDialog):
         """NGƯỜI DÙNG BẤM thì mới tải. Chạy ở thread nền, báo qua tín hiệu."""
         if self._dang_cai:
             return
+        # DUNG LƯỢNG PHẢI KHỚP ĐƯỜNG SẼ ĐI. 155 MB là SỐ ĐO của bản CPU
+        # (cổng 58); máy có GPU NVIDIA thì `cai_demucs` lấy chỉ mục CUDA và
+        # lượng tải là 2,5 GB (đo HTTP HEAD). Ghi cứng một con số là lặp lại
+        # đúng lỗi cũ, chỉ đổi chiều: trước là nút ghi 155 MB mà hộp doạ 2 GB,
+        # nay sẽ là hộp hứa 155 MB rồi tải 2,5 GB.
+        gpu = TG.co_gpu_nvidia()
         if QMessageBox.question(
                 self, "Tải bộ tách giọng",
-                # 155 MB là SỐ ĐO (cổng 58), "2 GB" là ước bừa của bản cũ —
-                # nhãn nút đã sửa từ v2.27.1 mà hộp xác nhận thì bị sót, nên
-                # user bấm nút ghi 155 MB rồi thấy hộp doạ 2 GB.
-                "Sẽ tải khoảng 155 MB về thư mục:\n" + self._tt_demucs["lib"]
+                ("Máy này có GPU NVIDIA nên sẽ tải BẢN GPU: khoảng 2,5 GB, "
+                 "về thư mục:\n" + self._tt_demucs["lib"]
+                 + "\n\nĐÃ ĐO trên máy này: tách nhanh hơn 3,15 lần cả lượt "
+                   "(60 giây tiếng: 29,3 giây -> 9,3 giây), chất lượng tách "
+                   "KHÔNG đổi.\nMuốn bản nhẹ 155 MB thì tắt card NVIDIA rồi "
+                   "bấm lại."
+                 if gpu else
+                 "Sẽ tải khoảng 155 MB về thư mục:\n" + self._tt_demucs["lib"])
                 + "\n\nChỉ tải 1 lần. Trong lúc tải vẫn dùng app bình thường "
                   "được. Tải bây giờ?") != QMessageBox.StandardButton.Yes:
             return

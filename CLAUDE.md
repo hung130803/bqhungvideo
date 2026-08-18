@@ -1819,6 +1819,72 @@
      **HỎNG OAN 3 nhãn ĐÚNG** ("Kiểu mặc định (trắng viền đen)"); bất biến thật
      là *"bỏ phần trong ngoặc ra vẫn còn chữ có nghĩa"*, kèm ca TỰ KIỂM BỘ DÒ
      bắt "(tự chọn)"/"(mặc định)" phải BỊ BẮT.
+  70. `_test_groq_model.py` → **GROQ GỠ MODEL THÌ APP PHẢI SỐNG** (18/08/2026).
+     **ĐẠT 42 · HỎNG 0.** Số cổng là **70, KHÔNG phải 69** — 69 đã bị
+     `_test_viet_tat.py` lấy ở `964e22b` (sớm hơn ~19 giờ). Trùng số thì
+     `_kq69.txt` của hai cổng ghi đè nhau.
+     **CỔNG NÀY TỪNG KHÔNG NẰM TRONG `_chay_hoi_quy.py`** — tức bản sửa CHẶN
+     SẢN XUẤT được canh bởi một file .py không ai gọi, đúng cái bẫy mà chính
+     commit trước đó vừa cảnh báo. Đã nối vào.
+  71. `_test_demucs_gpu.py` → **TÁCH GIỌNG PHẢI DÙNG GPU KHI MÁY CÓ GPU**
+     (18/08/2026). **ĐẠT 22 · HỎNG 0.** Thử phá (ghi cứng lại chỉ mục `whl/cpu`
+     như bản cũ): **BẮT 4 mục**, mã thoát 1.
+     **GỐC KHÔNG PHẢI Ở MÃ CHỌN THIẾT BỊ** — anh Hùng thấy *"Đang tách
+     nhạc/giọng (249 giây, cpu)"* trên máy có RTX 3060, nhưng `_MA_TACH` viết
+     đúng từ đầu (`dev = "cuda" if torch.cuda.is_available() else "cpu"`).
+     Chỗ hỏng là **GÓI**: `cai_demucs` ghi cứng chỉ mục `whl/cpu` nên `_lib`
+     luôn nhận `torch+cpu`, bản dựng đó KHÔNG có CUDA -> `is_available()` False
+     vĩnh viễn. Máy có GPU hay không cũng ra một kết quả, **không một dòng báo**.
+     Ghi chú cũ trong mã còn chốt nhầm *"bản CUDA không có gì để đánh đổi"* —
+     câu đó đúng với chỗ nó nhìn (wheel PyPI 122,1 MB vs `+cpu` 121,9 MB, cả
+     hai đều không kèm gói `nvidia-*`) nhưng kết luận SAI: **trên Windows phần
+     CUDA nằm THẲNG trong wheel của chỉ mục `cu###`**, không đi qua gói
+     `nvidia-*`. Trỏ `--extra-index-url` vào `cu126` là có bản CUDA thật (kiểm
+     bằng `pip install --dry-run --report`: chọn đúng `torch==2.13.0+cu126`).
+     **SỐ ĐO** (`_do_demucs_gpu.py`, 3 vòng **ĐAN XEN**, 60 giây tiếng THẬT,
+     hai arm đi CHUNG runner của app — khác nhau đúng MỘT thứ là torch nào
+     được nạp):
+
+     | | CPU (`2.13.0+cpu`) | GPU (`2.13.0+cu126`) | nhanh gấp |
+     |---|---|---|---|
+     | `apply_model` | 25,06s | **2,70s** | **9,28x** |
+     | cả lượt (wall) | 29,27s | **9,28s** | **3,15x** |
+     | tỉ lệ so thời gian thật | 0,488x | **0,155x** | |
+
+     **VRAM: đỉnh 1.536/12.288 MiB, Demucs chiếm thêm 893 MiB** -> còn 10,7 GB
+     cho NVENC chạy cùng. **Phép đo VRAM đầu tiên của tôi SAI và tự nó ra số
+     đẹp**: lấy mẫu TRƯỚC và SAU tiến trình con, mà tiến trình thoát là trả
+     sạch VRAM -> ra đúng bằng mức nền (639 MiB) tức **không đo gì cả**. Phải
+     POLL trong lúc chạy. Cùng họ "phép đo hỏng phát chứng nhận" (`astats` cổng
+     53 · `startswith` cổng 44).
+     **CHẤT LƯỢNG KHÔNG ĐỔI — VÀ CHỈ ĐỌC ĐƯỢC ĐIỀU ĐÓ KHI CÓ SÀN NHIỄU.** Đây
+     là phần đáng giá nhất của lượt đo:
+
+     | | lớp nhạc | lớp giọng |
+     |---|---|---|
+     | GPU vs CPU (đang hỏi) | −19,02 / −21,54 / −21,11 dB | −29,92 / −32,92 / −32,70 dB |
+     | **CPU vs CPU (SÀN NHIỄU)** | **−19,24 / −22,05 dB** | **−29,65 / −32,63 dB** |
+
+     Hai hàng **TRÙNG DẢI** nhau -> lệch GPU-CPU là **NHIỄU của chính Demucs**
+     (nó không tiền định), KHÔNG phải "GPU làm đổi tiếng". Đọc mỗi số thô
+     −19 dB rồi kết luận "GPU làm hỏng tách" là sai — đúng bẫy **"số thô là SỐ
+     LỪA"** đã sập 3 lần. Tương quan 0,9936-0,9997 ở cả hai cột.
+     **GIÁ: wheel CUDA 2.474,4 MB vs `+cpu` 121,9 MB** (đo bằng HTTP HEAD trên
+     chính wheel, không ước bừa). Vì vậy **chỉ lấy bản CUDA khi máy THẬT SỰ có
+     GPU NVIDIA**: `co_gpu_nvidia()` hỏi `nvidia-smi`, **KHÔNG import torch**
+     (import torch trong tiến trình đã nạp Qt là ACCESS VIOLATION, `try/except`
+     không chặn — xem `thiet_bi_tach`; mà hỏi torch cũng vô nghĩa vì torch đang
+     cài LÀ bản CPU, đời nào cũng trả False = đúng vòng luẩn quẩn). Đoán nhầm
+     thì hậu quả chỉ là tải gói to/nhỏ hơn — `_MA_TACH` vẫn tự quyết định thiết
+     bị lúc chạy nên **máy nhân viên không GPU KHÔNG BAO GIỜ nổ vì hàm này**.
+     **NHÃN PHẢI KHỚP ĐƯỜNG SẼ ĐI** (CA 4): ghi 155 MB rồi tải 2,5 GB là lặp
+     đúng lỗi cũ chỉ đổi chiều (trước: nút ghi 155 MB, hộp doạ 2 GB).
+     **2 LỖI CỦA CHÍNH CỔNG, lộ ra ngay lượt chạy đầu:** `inspect.getsource`
+     mở file theo bảng mã MẶC ĐỊNH của máy (cp1252) -> docstring tiếng Việt ra
+     mojibake rồi `ast.parse` nổ; và tự cắt 4 khoảng trắng đầu dòng để bỏ thụt
+     lề thì cắt luôn vào THÂN DOCSTRING nhiều dòng -> `IndentationError`. Nay
+     đọc thẳng file bằng **utf-8** rồi lấy đúng nút `FunctionDef` theo tên,
+     không cắt gì.
 - **"MÁY ĐỌC SAI CHỮ NƯỚC NGOÀI / TÊN RIÊNG" — ĐÃ ĐO, ĐÃ CHỐT CÁCH SỬA,
   *CHƯA NỐI VÀO APP* (17/08/2026).** Anh Hùng: *"chọn tiếng Việt, mấy chữ tiếng
   Anh hay tên riêng nó đọc toàn bị lỗi ... **lỗi to đó**"*. Bộ câu thử dùng

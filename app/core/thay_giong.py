@@ -467,6 +467,39 @@ def thiet_bi_tach() -> str:
         return "cpu"
 
 
+#: Chỉ mục wheel của PyTorch. Bản `+cpu` 121,9 MB · bản `+cu126` **2.474,4 MB**
+#: (đo bằng HTTP HEAD trên chính wheel, không ước bừa).
+CHI_MUC_TORCH_CPU = "https://download.pytorch.org/whl/cpu"
+CHI_MUC_TORCH_CUDA = "https://download.pytorch.org/whl/cu126"
+
+
+def co_gpu_nvidia() -> bool:
+    """Máy có GPU NVIDIA DÙNG ĐƯỢC không — hỏi `nvidia-smi`, **KHÔNG import
+    torch**.
+
+    Vì sao không hỏi torch: đây là hàm chạy TRONG tiến trình app (đã nạp Qt),
+    mà `import torch` ở đó gây ACCESS VIOLATION chứ không phải ném lỗi bắt
+    được — xem `thiet_bi_tach`. Và dù có bắt được thì cũng vô nghĩa: torch
+    đang cài LÀ BẢN CPU, hỏi nó "có CUDA không" thì đời nào cũng trả False,
+    tức đúng vòng luẩn quẩn khiến máy có RTX 3060 mãi mãi tải bản CPU.
+
+    `nvidia-smi` đi kèm driver NVIDIA nên "gọi được + trả về tên GPU" là bằng
+    chứng đủ mạnh cho việc CHỌN GÓI TẢI. Nếu đoán nhầm thì hậu quả cũng chỉ
+    là tải gói to hơn/nhỏ hơn — `_MA_TACH` vẫn tự quyết định thiết bị bằng
+    `torch.cuda.is_available()` lúc chạy, nên KHÔNG BAO GIỜ nổ vì hàm này.
+
+    KHÔNG BAO GIỜ NÉM.
+    """
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=25,
+            creationflags=_CREATE_NO_WINDOW)
+        return r.returncode == 0 and bool((r.stdout or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # ==================================================================
 # DÒ BỘ TÁCH GIỌNG + CHO NGƯỜI DÙNG BẤM TẢI
 # ==================================================================
@@ -487,6 +520,14 @@ GOI_TACH_GIONG = ("torch", "demucs", "soundfile")
 #: doạ người dùng bằng con số gấp 13 lần lượng tải thật.
 NHAN_TAI_DEMUCS = "Tải bộ tách giọng (tải khoảng 155 MB)"
 
+#: Nhãn khi máy CÓ GPU NVIDIA: đường tải là bản CUDA, **2,5 GB** chứ không phải
+#: 155 MB (đo bằng HTTP HEAD trên chính wheel: 2.474,4 MB vs 121,9 MB). Ghi
+#: 155 MB rồi tải 2,5 GB là đúng lỗi đã mắc một lần theo chiều ngược lại (nhãn
+#: nút 155 MB nhưng hộp xác nhận doạ 2 GB). Nói kèm CÁI ĐƯỢC để người dùng tự
+#: quyết: đo được tách nhanh 3,15 lần cả lượt (9,28 lần riêng phần tính).
+NHAN_TAI_DEMUCS_GPU = ("Tải bộ tách giọng bản GPU (khoảng 2,5 GB — "
+                       "tách nhanh hơn ~3 lần)")
+
 #: Nhãn khi `_lib` đã có MỘT PHẦN (vd có demucs, thiếu torch). Ghi "Tải bộ tách
 #: giọng" lúc này là nói sai: người dùng tưởng chưa có gì và tưởng phải tải lại
 #: từ đầu.
@@ -494,12 +535,17 @@ NHAN_CAI_TIEP = "Cài tiếp phần còn thiếu"
 
 
 def nhan_nut_tai(tt: Optional[dict] = None) -> str:
-    """Nhãn ĐÚNG cho nút tải, theo tình trạng `_lib` hiện tại."""
+    """Nhãn ĐÚNG cho nút tải, theo tình trạng `_lib` hiện tại.
+
+    Nhãn phải nói dung lượng của ĐƯỜNG SẼ ĐI, không phải một con số cố định:
+    máy có GPU NVIDIA thì `cai_demucs` lấy chỉ mục CUDA (2,5 GB), máy không có
+    thì lấy bản CPU (155 MB).
+    """
     tt = tt if tt is not None else tinh_trang_demucs()
     thieu = list(tt.get("thieu") or [])
     if thieu and len(thieu) < len(GOI_TACH_GIONG):
         return NHAN_CAI_TIEP + " (" + ", ".join(thieu) + ")"
-    return NHAN_TAI_DEMUCS
+    return NHAN_TAI_DEMUCS_GPU if co_gpu_nvidia() else NHAN_TAI_DEMUCS
 
 #: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
 _KHOA_CAI = threading.Lock()
@@ -619,18 +665,47 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
         # Vẫn ra bản CPU vì `2.13.0+cpu` > `2.13.0` theo PEP 440 (local version)
         # — ĐÃ KIỂM bằng `pip install --dry-run --report`: pip chọn
         # `torch==2.13.0+cpu` lấy từ download.pytorch.org.
-        # Bản CUDA có đáng không: ĐO RA LÀ KHÔNG CÓ GÌ ĐỂ ĐÁNH ĐỔI — wheel
-        # Windows trên PyPI (122,1 MB) và bản `+cpu` (121,9 MB) LỆCH NHAU 0,2 MB
-        # và cả hai đều KHÔNG kéo theo gói `nvidia-*` nào. Muốn dùng RTX 3060
-        # phải trỏ hẳn sang chỉ mục `cu###`, đó là việc RIÊNG chứ không phải
-        # tự nhiên có bằng cách bỏ cờ này.
+        # MÁY CÓ GPU NVIDIA -> LẤY BẢN CUDA (sửa 18/08/2026).
+        # Ghi chú cũ ở đây nói "bản CUDA không có gì để đánh đổi" — câu đó
+        # đúng với chỗ nó nhìn (wheel PyPI 122,1 MB vs `+cpu` 121,9 MB, cả hai
+        # đều KHÔNG kèm gói `nvidia-*`) nhưng nó dẫn tới kết luận SAI, vì trên
+        # Windows phần CUDA nằm THẲNG trong wheel của chỉ mục `cu###` chứ
+        # không đi qua gói `nvidia-*`. Trỏ vào `cu126` thì có bản CUDA thật.
+        #
+        # ĐO ĐƯỢC (`_do_demucs_gpu.py`, 3 vòng ĐAN XEN, 60 giây tiếng THẬT,
+        # chạy CHÍNH runner của app, khác biệt duy nhất là torch nào được nạp):
+        #     apply_model  CPU 25,06s -> GPU  2,70s = NHANH 9,28 lần
+        #     cả lượt wall CPU 29,27s -> GPU  9,28s = NHANH 3,15 lần
+        #     VRAM đỉnh 1.536/12.288 MiB (Demucs chiếm thêm 893 MiB)
+        # CHẤT LƯỢNG KHÔNG ĐỔI, và phải đọc kèm SÀN NHIỄU mới thấy:
+        #     GPU vs CPU  lớp nhạc −19,02/−21,54/−21,11 dB
+        #     CPU vs CPU  lớp nhạc −19,24/−22,05 dB  <- sàn nhiễu
+        # Hai cột TRÙNG DẢI nhau -> lệch đó là NHIỄU của chính Demucs (không
+        # tiền định), KHÔNG phải "GPU làm đổi tiếng". Đọc mỗi số −19 dB rồi
+        # kết luận là đúng bẫy "số thô là SỐ LỪA".
+        #
+        # GIÁ: wheel CUDA **2.474,4 MB** so với 121,9 MB (đo bằng HTTP HEAD).
+        # Vì vậy CHỈ tải bản CUDA khi máy THẬT SỰ có GPU NVIDIA — máy nhân
+        # viên không GPU vẫn lấy đúng gói nhỏ như trước, không đổi một byte.
+        #
+        # `--extra-index-url` (KHÔNG phải `--index-url`): chỉ mục của pytorch
+        # không có `demucs`/`soundfile` nên ép cả lượt vào đó là hỏng phép
+        # giải. ĐÃ KIỂM bằng `pip install --dry-run --report`: với chỉ mục
+        # cu126 pip chọn đúng `torch==2.13.0+cu126`, với chỉ mục cpu pip chọn
+        # `torch==2.13.0+cpu`.
+        gpu = co_gpu_nvidia()
+        chi_muc = CHI_MUC_TORCH_CUDA if gpu else CHI_MUC_TORCH_CPU
         args = [*pip, "install", "--no-input", "--disable-pip-version-check",
                 "--upgrade", "--ignore-installed", "--target", lib,
-                "--extra-index-url", "https://download.pytorch.org/whl/cpu",
+                "--extra-index-url", chi_muc,
                 *GOI_TACH_GIONG]
-        # Số ĐO của cổng 58, không phải ước bừa: 154,0 MB TẢI VỀ (bung ra đĩa
-        # ~700 MB). Nhãn "2 GB" của bản cũ gấp 13 lần lượng tải thật.
-        prog(0.02, "Đang tải bộ tách giọng (khoảng 155 MB, chạy 1 lần)...")
+        # Số ĐO, không phải ước bừa: bản CPU 154,0 MB tải về (cổng 58) · bản
+        # CUDA ~2,5 GB. Nói ĐÚNG con số của đường đang đi — nhãn sai là user
+        # bấm xong ngồi đợi một lượt tải gấp 16 lần cái mình vừa đọc.
+        prog(0.02, ("Máy có GPU NVIDIA — đang tải bộ tách giọng bản CUDA "
+                    "(khoảng 2,5 GB, chạy 1 lần, tách nhanh hơn ~3 lần)..."
+                    if gpu else
+                    "Đang tải bộ tách giọng (khoảng 155 MB, chạy 1 lần)..."))
         p = subprocess.Popen(args, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True,
                              encoding="utf-8", errors="replace", bufsize=1,
@@ -681,9 +756,10 @@ def cai_demucs(on_progress: Optional[Callable[[float, str], None]] = None,
                            + " VẪN KHÔNG nằm trong _lib (" + lib + "). "
                              "Đừng coi là đã cài — bản .exe sẽ không chạy được.",
                     "kiem": kiem, "nhat_ky": nhat_ky[-40:]}
-        prog(1.0, "Đã cài xong bộ tách giọng")
+        prog(1.0, "Đã cài xong bộ tách giọng"
+                  + (" (bản CUDA — sẽ tách bằng GPU)" if gpu else ""))
         return {"ok": True, "lib": lib, "ma_thoat": 0, "kiem": kiem,
-                "goi": goi, "thieu": [],
+                "goi": goi, "thieu": [], "gpu": gpu, "chi_muc": chi_muc,
                 "giay": round(time.time() - t0, 2),
                 "nhat_ky": nhat_ky[-40:]}
     except Exception as e:  # noqa: BLE001

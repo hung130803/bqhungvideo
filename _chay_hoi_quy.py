@@ -41,6 +41,7 @@ CONG = [
     # versatile` -> 404 hàng loạt -> chết cả dây chuyền). Nó CÓ gọi Groq thật ở
     # mục 9 để chứng minh bảng phân loại lỗi khớp thân lỗi Groq trả về HÔM NAY;
     # muốn chạy offline thì đặt `BQ_BO_MANG=1`.
+    ("71 tách giọng GPU",   "_test_demucs_gpu.py",       22),
     ("70 model Groq còn sống", "_test_groq_model.py",    42),
     ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
     # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
