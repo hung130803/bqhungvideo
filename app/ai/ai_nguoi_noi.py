@@ -87,7 +87,7 @@ và trả khoảng. Việc nối vào đường xuất là việc riêng, chưa 
 ────────────────────────────────────────────────────────────────────────────
 SỐ ĐO TRÊN BỘ ĐỐI CHỨNG (`_do_nguoi_noi_cham.py`)
 ────────────────────────────────────────────────────────────────────────────
-4 video THẬT ở `Downloads\longtieng` (COPY ra `_kq_nn/`, **bản gốc không bị
+4 video THẬT ở `Downloads/longtieng` (COPY ra `_kq_nn/`, **bản gốc không bị
 đụng một byte**), 577 đoạn / 1209 giây. Sự thật ghi bằng MẮT: **13,93 giây
 tiếng gốc = 3,6% thời lượng**, dồn hết ở ĐẦU và CUỐI video.
 
