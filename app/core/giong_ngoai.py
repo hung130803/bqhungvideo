@@ -42,6 +42,59 @@ SỐ ĐO CỦA LƯỢT 7 (docs/GIONG_LUOT_7.md) — DÙNG LẠI, ĐỪNG ĐO L�
   · RTX 3060: VRAM **2,03 GiB** · nạp 5-31 s · EN 2,44× thời gian thật.
 
 ═══════════════════════════════════════════════════════════════════════════
+ĐỘ KHỚP MỐC — ĐÃ ĐO 18/08/2026, VÀ PHÉP ĐO HIỂN NHIÊN NHẤT LÀ PHÉP ĐO SAI
+═══════════════════════════════════════════════════════════════════════════
+`_do_gn_moc.py` — 2 lượt ĐAN XEN có xoay thứ tự, 12 câu THẬT mỗi thứ tiếng,
+4 thứ tiếng, arm đối chứng edge-tts chạy lại trên CÙNG corpus.
+
+**BẪY SỐ 1 — ĐO BẰNG GROQ LÀ SO NÓ VỚI CHÍNH NÓ.** Piper suy mốc từ ĐỘ DÀI
+WAV nên Groq là thước độc lập với nó (59,1 ms có nghĩa). OmniVoice thì mốc
+**lấy thẳng từ Groq**, mà Groq lại **TIỀN ĐỊNH** (chép cùng file hai lần ra
+mốc giống TỪNG CHỮ SỐ). Đo được đúng **0,0 ms trên cả 1.587 mốc / 4 thứ
+tiếng** — một bảng điểm hoàn hảo cho một thứ chưa hề được kiểm. Ai nhìn con
+số đó rồi kết luận "khớp hơn edge-tts 43,6 ms" là đã sập bẫy.
+
+**BẪY SỐ 2 — MỌI THƯỚC LÀ MÁY NGHE ĐỀU THIÊN VỊ.** Thước thứ hai
+(faster-whisper `medium`, trọng số KHÁC, chạy local) ra rung **50,6 ms** cho
+OmniVoice so với **56,5 ms** của edge-tts, tức "OmniVoice tốt hơn". ĐỪNG TIN:
+mốc OmniVoice do MÁY NGHE sinh ra nên nó mang sẵn cách cắt từ của máy nghe,
+khớp với một máy nghe khác dễ hơn hẳn mốc lấy từ CHỮ GỐC của edge-tts. Dấu
+hiệu lộ ra ngay ở cột `n`: cùng một corpus mà OmniVoice khớp **1.466** mốc
+còn edge-tts chỉ **1.043**.
+
+**THƯỚC DUY NHẤT KHÔNG THIÊN VỊ: `silencedetect`** (không máy nghe nào) — so
+mốc chữ ĐẦU với lúc THẬT SỰ phát ra tiếng, đúng thước thứ ba cổng 67 đã dùng
+để chặn một phép trừ sai 94 ms:
+
+    RUNG mốc chữ đầu   edge-tts **15,9 ms**  ·  OmniVoice **236,0 ms**
+    (Việt 2,6 / 42,8 · Anh 3,4 / 189,5 · Trung 5,1 / 148,5 · Nhật 17,6 / 506,2)
+    chữ hiện MUỘN hơn tiếng >50 ms:  edge-tts **0,0%**  ·  OmniVoice **32,3%**
+
+**VÀ CHỖ HỎNG NẶNG NHẤT KHÔNG PHẢI ĐỘ LỆCH — LÀ MỐC KHÔNG CÓ.** `_do_gn_phu.py`
+đếm tỉ lệ chữ CÓ mốc (Groq nghe sai thì từ đó bị bỏ, không nội suy):
+
+    PHỦ    Việt **34,6 – 56,3%**  ·  Anh 75,3 – 94,6%
+           Trung 46,9 – 73,8%     ·  Nhật 29,3 – 35,2%      (3 lượt đo)
+
+edge-tts phủ **100% do cấu tạo** (WordBoundary trả mọi từ). Tức với tiếng
+Việt, **một phần ba tới hai phần ba số chữ không có mốc nào** — chỗ đó chữ
+không chạy theo tiếng được.
+
+**VÀ CON SỐ ĐÓ KHÔNG ỔN ĐỊNH: đo lại trên ĐÚNG cùng bộ file WAV ra 56,3% rồi
+34,6%.** Groq tiền định trong hai cú gọi liền nhau (đã kiểm) nhưng qua các
+lượt cách xa thì KHÔNG — nên đây là dải, không phải một con số, và **không vá
+được bằng hằng số**. Ai lấy một lượt rồi báo một số là tự lừa mình.
+
+**KẾT LUẬN PHẢI NÓI THẲNG: kém hơn edge-tts, kém hơn cả Piper** (Piper rung
+59,1 ms / 42% muộn nhưng phủ đủ chữ). Vì vậy `CANH_BAO_CL_OV` ghi thẳng vào
+nhãn hộp chọn giọng — đúng tiền lệ Piper, cổng 72 CA 7 canh.
+
+**KHÔNG BỊA CHỮ — xác nhận lại**: thừa TB **+0,8%** (Việt) · **−1,7%**
+(Trung) trên arm OmniVoice, cùng dải với edge-tts. Khớp kết luận lượt 7
+(0,0%). Số Nhật (−30%) là do cách đếm token CJK, KHÔNG phải bịa chữ — hai arm
+lệch như nhau (−30,1% vs −29,9%) nên nó là của THƯỚC.
+
+═══════════════════════════════════════════════════════════════════════════
 ÉP VỪA KHUNG: DÙNG `rubberband`, **KHÔNG** DÙNG NÚM `duration` CỦA MODEL
 ═══════════════════════════════════════════════════════════════════════════
 Đây là phát hiện đáng giá nhất lượt 7, và nó ngược với trực giác. OmniVoice
@@ -128,8 +181,12 @@ CANH_BAO_GP_OV = ("trọng số CC-BY-NC: nhà phát hành CẤM dùng cho mục
 
 #: Cảnh báo CHẤT LƯỢNG — cùng luật với Piper (cổng 64): tệ hơn edge-tts thì
 #: phải ghi ra, đừng để người dùng tự phát hiện sau 300 video.
+#: Con số PHỦ và RUNG lấy từ `_do_gn_moc.py` + `_do_gn_phu.py` (2 lượt, 4 thứ
+#: tiếng, 1.466 mốc) — xem khối "ĐỘ KHỚP MỐC" ở đầu file.
 CANH_BAO_CL_OV = ("đọc sai chữ tiếng Việt 16,9% so với edge-tts 6,8%; "
-                  "mốc chữ phải dò lại bằng Groq nên kém khớp hơn edge-tts")
+                  "mốc chữ phải dò lại bằng máy nghe nên CHỈ CÓ cho 30-56% "
+                  "số chữ tiếng Việt và rung 236 ms (edge-tts 16 ms) — chữ "
+                  "sẽ chạy không khớp tiếng")
 
 #: Kho giọng THIẾT KẾ BẰNG CHỮ (voice design). OmniVoice không có giọng đặt
 #: tên sẵn: gõ một câu tả là ra giọng, nên số giọng coi như không giới hạn.
