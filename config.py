@@ -109,6 +109,16 @@ class Settings:
     # để dùng v3 alpha (biểu cảm hơn); dubbing tự lùi về v2 nếu API báo lỗi.
     ELEVENLABS_MODEL = _env("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 
+    # Vbee AIVoice (giọng Việt MUA CHÍNH HÃNG — tùy chọn, user tự cắm key).
+    # Cần ĐỦ CẢ HAI: App ID + access token (khác Groq/ElevenLabs chỉ 1 chuỗi);
+    # thiếu một nửa mà vẫn gọi là ăn 401 rồi tưởng key sai. Thiếu key ->
+    # app LÙI ÊM về edge-tts, không nổ (app/core/giong_vbee.py).
+    # LƯU Ý TIỀN: Vbee tính 1 điểm / 1 ký tự, và gói thường chỉ cho dùng MỘT
+    # NỬA số điểm qua API (phải VIP+ mới dùng trọn). Vbee KHÔNG có cửa hỏi số
+    # điểm còn lại nên app không chặn trước được — xem đầu giong_vbee.py.
+    VBEE_APP_ID = _env("VBEE_APP_ID")
+    VBEE_TOKEN = _env("VBEE_TOKEN")
+
     # Ollama (LLM chạy LOCAL, FREE, không giới hạn — dùng GPU của bạn)
     OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     # DÙNG 1 MODEL cho cả đọc chữ + nhìn hình (VL) -> card 12GB không phải
