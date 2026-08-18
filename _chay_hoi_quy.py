@@ -76,6 +76,10 @@ CONG = [
     # (mục "41 key còn nguyên") — đúng chỗ cổng 70 từng ĐỎ OAN vì 429 thật do
     # hai cổng đốt lượt đứng sát nhau.
     ("75 clip mở được",     "_test_clip_mo_duoc.py",     63),
+    # Cổng 76 canh việc "mức nhấn nhá hiện cạnh mỗi giọng + giọng truyền cảm
+    # lên trên". Nó KHÔNG gọi Groq và KHÔNG chạy ffmpeg (chấm bảng số + hàm
+    # thuần) nên đứng đâu cũng được; để cạnh nhóm cổng giọng cho dễ đọc.
+    ("76 nhấn nhá từng giọng", "_test_nhan_nha.py",      29),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
