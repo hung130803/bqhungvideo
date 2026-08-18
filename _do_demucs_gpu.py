@@ -108,8 +108,13 @@ def chay(arm: str, wav: Path, ra_dir: Path) -> dict:
         env["PYTHONPATH"] = str(LIB_CUDA)
     else:
         env.pop("PYTHONPATH", None)
-        # ép CPU-only kể cả khi ai đó cài CUDA torch vào .venv sau này
-        env["CUDA_VISIBLE_DEVICES"] = ""
+        # ÉP CPU. **PHẢI LÀ "-1", KHÔNG ĐƯỢC LÀ CHUỖI RỖNG** — đã đo:
+        # `CUDA_VISIBLE_DEVICES=""` KHÔNG giấu được GPU, lượt chạy vẫn ra
+        # `thiet_bi=cuda`. Từ khi `_lib` có torch bản CUDA (18/08/2026) thì
+        # runner nạp torch CUDA từ `_lib` cho CẢ HAI arm, nên nếu ép hụt là
+        # arm "CPU" âm thầm chạy GPU và bảng số ra "GPU nhanh bằng CPU" —
+        # một kết luận sai mà không có dấu hiệu gì.
+        env["CUDA_VISIBLE_DEVICES"] = "-1"
 
     v0 = vram_dang_dung()
     t0 = time.time()
@@ -126,6 +131,14 @@ def chay(arm: str, wav: Path, ra_dir: Path) -> dict:
             ket = json.loads(d.split("\t", 1)[1])
     if not ket.get("ok"):
         raise SystemExit(f"[{arm}] tach HONG: {ket.get('loi') or p.stderr[-400:]}")
+    # CHỐT CHỐNG ĐO NHẦM ARM: runner trả về thiết bị THẬT nó đã chạy. Không
+    # kiểm chỗ này thì một lượt ép-CPU-hụt sẽ ra bảng "GPU nhanh bằng CPU" mà
+    # trông hoàn toàn bình thường. Đây là cùng bài học "phép đo so NHẦM HÀM".
+    mong = "cuda" if arm == "gpu" else "cpu"
+    if str(ket.get("thiet_bi")) != mong:
+        raise SystemExit(
+            f"[{arm}] ĐO NHẦM ARM: mong «{mong}» nhưng chạy «{ket.get('thiet_bi')}» "
+            f"(torch={ket.get('torch')}). DỪNG — số đo sẽ vô nghĩa.")
     ket["wall"] = wall
     ket["vram_mib"] = vpeak
     return ket

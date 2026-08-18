@@ -1885,6 +1885,27 @@
      lề thì cắt luôn vào THÂN DOCSTRING nhiều dòng -> `IndentationError`. Nay
      đọc thẳng file bằng **utf-8** rồi lấy đúng nút `FunctionDef` theo tên,
      không cắt gì.
+     **KIỂM END-TO-END, KHÔNG DỪNG Ở "MÁY LÀM ĐƯỢC"** (`_do_lib_gpu_that.py`):
+     phép đo A/B bật GPU bằng cách chèn `PYTHONPATH`, tức nó mới chứng minh
+     CÁI MÁY làm được. Cửa thật là `_tach_demucs` -> tiến trình riêng ->
+     `sys.path.insert(0, _lib)`. Chạy KHÔNG đặt `PYTHONPATH`: **`thiet_bi =
+     cuda` · `torch = 2.13.0+cu126` · ổn định 3 lượt apply 2,65-2,69s / wall
+     6,42s**. Cài bằng CHÍNH `cai_demucs()` của app (ok=True · gpu=True ·
+     chi_muc=cu126 · 168 giây) nên `_lib` nay **tự đứng được một mình**
+     (`thieu=[]`) — trả luôn nợ cổng 58 *"chưa tải torch thật về `_lib`"*.
+     `_lib` từ 85 MB -> **4,3 GB**.
+     **MÁY NHÂN VIÊN COPY `_lib` SANG THÌ SAO — ĐÃ ĐO, KHÔNG SUY ĐOÁN:** giả
+     lập máy không GPU (`CUDA_VISIBLE_DEVICES=-1`) với `_lib` CÓ CUDA torch ->
+     **`ok=True · thiet_bi=cpu · 29,66s`**, lùi êm, không nổ. (Bản CPU thuần
+     đo 25,06s, tức chạy CPU bằng wheel CUDA chậm hơn ~18% — nói ra để ai copy
+     `_lib` sang máy không GPU biết mình đang trả gì.)
+     **BẪY ĐO MỚI, ĐÃ SẬP 1 LẦN: `CUDA_VISIBLE_DEVICES=""` (chuỗi RỖNG) KHÔNG
+     giấu được GPU** — chạy vẫn ra `thiet_bi=cuda`. Phải dùng **`-1`**. May là
+     runner có trả kèm `thiet_bi` và `torch` nên đọc ra ngay; nếu không thì ca
+     "giả lập máy không GPU" đã tự ĐẠT trong khi nó đang chạy GPU. (Arm CPU
+     của `_do_demucs_gpu.py` KHÔNG dính bẫy này vì lúc đó `_lib` chưa có torch
+     nên nó nạp `.venv` bản `+cpu` — bảng số vẫn đúng, và mỗi dòng đều in kèm
+     `torch=...` để tự chứng minh arm nào là arm nào.)
 - **"MÁY ĐỌC SAI CHỮ NƯỚC NGOÀI / TÊN RIÊNG" — ĐÃ ĐO, ĐÃ CHỐT CÁCH SỬA,
   *CHƯA NỐI VÀO APP* (17/08/2026).** Anh Hùng: *"chọn tiếng Việt, mấy chữ tiếng
   Anh hay tên riêng nó đọc toàn bị lỗi ... **lỗi to đó**"*. Bộ câu thử dùng
