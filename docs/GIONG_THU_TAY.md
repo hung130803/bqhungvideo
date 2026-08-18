@@ -70,7 +70,7 @@ nay ra **3,15** — **hai phép đo độc lập gặp nhau trong 0,16 nửa cun
 thước đứng vững và mốc dùng được. Từ đây lấy **3,15** làm mốc so (cùng câu,
 cùng lượt), và ghi kèm 3,31 để nối với lượt cũ.
 
-Giọng trải rộng nhất: `en-US-Andrew` **5,35** · hẹp nhất `en-US-Ana` **2,20`.
+Giọng trải rộng nhất: `en-US-Andrew` **5,35** · hẹp nhất `en-US-Ana` **2,20**.
 
 ---
 
@@ -303,7 +303,7 @@ vào **chính thứ app đang chạy** — chỗ duy nhất hôm nay đo ra đư
 | **CẢ 47 giọng tiếng Anh của edge-tts** | **3,53** |
 
 Trải nhất: `en-US-Andrew` **5,35** · `en-US-AndrewMultilingual` 5,25 ·
-`en-US-Emma` 4,96 · `en-GB-Ryan` **4,85** · đều đều nhất `en-PH-Rosa` **1,82`.
+`en-US-Emma` 4,96 · `en-GB-Ryan` **4,85** · đều đều nhất `en-PH-Rosa` **1,82**.
 
 → **Chỉ cần mở ô chọn giọng cho đủ 47 giọng thay vì 17 giọng en-US là dải cảm xúc
 rộng thêm 0,38 nửa cung, 0 đồng, 0 dòng mã model mới.** `en-GB-Ryan` 4,85 nằm
