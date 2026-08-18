@@ -268,7 +268,8 @@ ra cùng một kết luận. Thứ đang chạy vẫn là thứ tốt nhất tro
 - **Không tải một bộ trọng số nào** — chỉ đọc thẻ model, LICENSE, `config.json`
   và danh sách file (tổng tải về vài trăm KB).
 - **Không chiếm CPU/GPU** để nhường 2 luồng đang chạy.
-- Ổ C: **374 GB trống**, không đổi so với lúc bắt đầu.
+- Ổ C: **374 GB trống lúc bắt đầu, 372 GB lúc xong** — phần hụt là của 2 luồng
+  kia, tôi chỉ ghi ~1 MB (6 file tiếng thử + 1 file doc).
 - **Không đi tìm cách lấy giọng Vbee/FPT/Zalo/ElevenLabs**, không tìm key lậu,
   không tìm bản crack. Chỗ nào gặp thì ghi một dòng "có nhưng KHÔNG nên" rồi thôi
   (Nhóm C ở trên).
@@ -334,4 +335,4 @@ CHƯA ĐO: sai từ · bịa chữ của 17 bộ mới còn lại (không bịa 
 
 *Tra cứu ngày 18/08/2026. Lượt 9. **Không đẻ luồng con nào** — tự làm hết.
 **Không sửa file nào trong `app/`.** Không tăng version, không tag, không push.
-Không tải trọng số. Ổ C 374 GB trống, không đổi.*
+Không tải trọng số. Ổ C 374 -> 372 GB trống.*
