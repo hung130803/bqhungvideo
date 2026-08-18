@@ -586,6 +586,29 @@ def _recap_voice_label(v: dict) -> str:
             else f"   {star}{name} ({g})")
 
 
+#: Tiền tố ngôn ngữ được MỞ HẾT trong danh sách gọn (không cần `all=True`).
+#:
+#: **VÌ SAO CHỈ TIẾNG ANH, VÀ VÌ SAO MỞ (đo 18/08/2026):** edge-tts có **47
+#: giọng `en-*`** mà danh sách gọn chỉ hiện **15** (lọc theo `_HOT_VOICES`), tức
+#: **32 giọng bị khoá mà không lý do nào ngoài việc chưa ai thêm tay vào bảng
+#: hot**. Đo nhấn nhá (`_do_nhan_nha.py`): cả 47 giọng trải **3,53** — rộng hơn
+#: mốc 3,31 và hơn hẳn nhóm 17 giọng `en-US` (**3,15**); `en-GB-RyanNeural` đạt
+#: **4,85**, thứ 5 toàn bảng. Mở là **0 đồng, 0 model mới, 0 byte tài nguyên**.
+#:
+#: **KHÔNG mở các tiếng khác** — không phải vì chúng kém mà vì chưa đo: mở bừa
+#: là biến combo thành 322 dòng rồi anh Hùng lại phải dò tay, đúng cái vừa gom
+#: 9 ô thành 1 nút để tránh. Ngôn ngữ nào có bảng nhấn nhá thì thêm vào đây.
+#:
+#: `_HOT_VOICES` **CỐ Ý KHÔNG mọc thêm 32 tên**: dấu ⭐ và thứ tự "hot lên đầu
+#: nhóm" đọc từ đúng bảng đó, nhồi hết vào là ⭐ mất nghĩa (mọi giọng đều hot).
+GIONG_MO_HET = ("en-",)
+
+
+def _la_giong_mo_them(v: dict) -> bool:
+    """Giọng thuộc nhóm ngôn ngữ được mở hết? (xem `GIONG_MO_HET`)"""
+    return str(v.get("ShortName") or "").startswith(GIONG_MO_HET)
+
+
 def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
     """Giọng cho GIỌNG KỂ Reup thuyết minh, NHÓM THEO NGÔN NGỮ với nhãn
     tiếng Việt + cờ (sửa lỗi user 'danh sách mù mờ không biết tiếng gì').
@@ -625,8 +648,9 @@ def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
     allv = _fetch_all_voices()
     if all and allv:                    # kho ĐẦY ĐỦ (~500 giọng)
         pool = list(allv)
-    else:                               # danh sách gọn: chỉ giọng ⭐ hot
-        pool = [v for v in (allv or []) if v.get("ShortName") in _HOT_VOICES]
+    else:                               # danh sách gọn: giọng ⭐ hot + MỌI giọng Anh
+        pool = [v for v in (allv or [])
+                if v.get("ShortName") in _HOT_VOICES or _la_giong_mo_them(v)]
     if not pool:                        # offline -> giọng tĩnh đã kiểm chứng
         seen: set = set()
         for _lang, vs in VOICES.items():
