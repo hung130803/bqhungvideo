@@ -15,6 +15,25 @@ from PyInstaller.utils.hooks import collect_all
 # GPL-2.0) và GPL BUỘC phải kèm văn bản giấy phép + chỉ chỗ lấy mã nguồn. Bộ
 # cài trước 16/08/2026 THIẾU hẳn file này. Để cạnh .exe ('.') cho người dùng
 # thấy ngay, không chôn trong `_internal`.
+#
+# GIÓNG HÀNG (`app/core/giong_hang.py`) và GIỌNG NGOÀI (`giong_ngoai.py`):
+# **CỐ Ý KHÔNG khai gì thêm ở đây — đã kiểm, không phải bỏ sót.** Ghi ra để
+# người sau đừng "sửa" bằng cách nhét vài GB vào bộ cài:
+#   · Hai module Python đã VÀO bản .exe sẵn qua `collect_submodules('app')`
+#     (kiểm thật: `app.core.giong_hang` và `app.core.giong_ngoai` đều có
+#     trong danh sách 69 module).
+#   · Chúng KHÔNG đọc file tài nguyên nào. Script chạy ở tiến trình con được
+#     GHI RA từ chuỗi nhúng trong mã (`giong_hang._MA_GIONG` ·
+#     `giong_ngoai._MA_DOC`) chứ không phải file `.py` nằm cạnh — chính vì
+#     vậy bản `.exe` (không có cây mã nguồn) mới chạy được y máy dev.
+#   · Phần NẶNG là đồ TẢI RỜI LÚC CHẠY, giống hệt ràng buộc Demucs/Piper:
+#     torch dùng chung `_lib` (~4,3 GB bản CUDA) · model gióng hàng MMS_FA
+#     1,18 GB · trọng số OmniVoice 6,1 GB. Gói vào `.exe` là bộ cài phình từ
+#     240 MB lên hơn 11 GB cho tính năng phần lớn người dùng không bật.
+#     Tất cả nằm trong `DATA_DIR`, **KHÔNG cạnh `.exe`**: lượt tự cập nhật
+#     `ren _internal -> _internal.old` rồi `rmdir /S /Q` sẽ xoá sạch (cổng 58
+#     CA5 — đã xảy ra thật với `_lib`).
+#   · Nút tải nằm trong hộp Thay giọng (`giong_hang.cai_giong_hang`).
 datas = [('app/database/schema.sql', 'app/database'), ('app/assets/fonts', 'app/assets/fonts'), ('app/assets/sfx', 'app/assets/sfx'), ('app/assets/hieu_ung', 'app/assets/hieu_ung'), ('app/core/potoken_plugins', 'app/core/potoken_plugins'), ('.env.example', '.'), ('LICENSES.txt', '.')]
 binaries = [('bin/ffmpeg.exe', '.'), ('bin/ffprobe.exe', '.'), ('bin/yt-dlp.exe', '.')]
 hiddenimports = ['openai', 'requests', 'psutil', 'dotenv']

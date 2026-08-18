@@ -393,6 +393,23 @@ def main() -> int:                                          # noqa: C901
        and "CC-BY-NC" in gn.CANH_BAO_GP_OV,
        "7k cảnh báo GIẤY PHÉP nằm RIÊNG, không bị câu chất lượng nuốt")
 
+    # ---- CHỖ ĐỂ ĐỒ: KHÔNG ĐƯỢC NẰM TRONG `%TEMP%` (18/08/2026) -------------
+    # Môi trường 7,74 GB từng nằm trong `%TEMP%\bq_tts_rr\venv_ov`: một lượt
+    # tempsweep/Disk Cleanup là mất, và triệu chứng là "giọng biến khỏi
+    # combo" chứ không phải một dòng lỗi. Cùng bệnh `_lib` bị lượt tự cập
+    # nhật xoá (cổng 58 CA5).
+    import tempfile as _tf
+    ok(_tf.gettempdir().lower() not in str(gn.thu_muc_ngoai()).lower(),
+       "7l chỗ để đồ giọng ngoài KHÔNG nằm trong thư mục TẠM",
+       str(gn.thu_muc_ngoai()))
+    ok(gn.o_thu_muc_tam(str(Path(_tf.gettempdir()) / "x" / "Scripts"
+                            / "python.exe")) != "",
+       "7m TỰ KIỂM BỘ DÒ: đưa đường dẫn TRONG %TEMP% thì `o_thu_muc_tam` "
+       "PHẢI kêu (không thì 7n là con dấu)")
+    ok(gn.o_thu_muc_tam() == "" or not gn.co_omnivoice(),
+       "7n máy này: môi trường KHÔNG còn nằm trong %TEMP%",
+       gn.o_thu_muc_tam() or "sạch")
+
     # ══════════════ CA 8 — TỰ KIỂM: GỠ CHỐT RA THÌ PHẢI ĐỎ ══════════════
     print("\nCA 8 — TỰ KIỂM: gỡ chốt ra thì cổng PHẢI đỏ")
     ngoai_that = dubbing._ngoai_hay_khong

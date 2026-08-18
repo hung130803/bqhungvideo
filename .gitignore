@@ -75,6 +75,14 @@ _piper/
 _do_piper/
 _giong_hang/
 
+# Giọng ngoài (OmniVoice): môi trường Python RIÊNG ~7,7 GB + runner sinh lúc
+# chạy. Cùng luật `_piper`/`_lib`: KHÔNG commit, KHÔNG đóng vào .exe.
+# Thư mục này CỐ Ý nằm cạnh repo (chạy nguồn) / trong DATA_DIR (bản .exe) chứ
+# KHÔNG nằm trong `%TEMP%` — xem `giong_ngoai.thu_muc_ngoai`.
+_giong_ngoai/
+_do_gn_san/
+_do_gn_gh_san/
+
 # Worktree tạm của phiên làm việc — một BẢN SAO CẢ REPO, lỡ `git add -A` là
 # commit vài trăm MB. KHÔNG xoá tay ở đây, chỉ chặn không cho vào commit.
 .claude/

@@ -382,10 +382,16 @@ def thu_muc_ngoai() -> Path:
 #: Python có sẵn `omnivoice` + torch + transformers. Dò theo THỨ TỰ:
 #:   1. `BQ_OV_PYTHON` — ép cứng (đo A/B, gỡ rối máy user, cổng test)
 #:   2. môi trường riêng của app: `<thu_muc_ngoai>/venv`
-#:   3. môi trường đã dựng sẵn trên MÁY DEV NÀY ở `%TEMP%` (lượt 7 dựng ra,
-#:      xem `docs/GIONG_LUOT_7.md`). Ghi ra đây thay vì giấu, vì `%TEMP%` là
-#:      chỗ TẠM: `tempsweep` hoặc một lượt dọn đĩa là mất, và lúc đó
-#:      `co_omnivoice()` phải trả False cho ĐÚNG chứ không được đoán bừa.
+#:   3. `%TEMP%\bq_tts_rr\venv_ov` — **CHỖ CŨ, ĐÃ DỜI ĐI 18/08/2026.**
+#:      Lượt 7 dựng môi trường 7,74 GB ngay trong `%TEMP%`, tức một lượt
+#:      `tempsweep` / Disk Cleanup / anh Hùng dọn ổ C là **mất sạch**, và
+#:      triệu chứng lại là "giọng tự nhiên biến khỏi combo" — không ai lần ra
+#:      nguyên nhân. Đã chép sang `<thu_muc_ngoai>/venv` (47.520 file, 0
+#:      FAILED, chạy lại thật ra WAV 3,11 s + gióng hàng 11/11 mốc) rồi xoá
+#:      bản cũ (ổ C: 370 -> 377 GB trống).
+#:      **VẪN GIỮ ứng viên này ở CUỐI danh sách**, cố ý: máy nào còn bản cũ
+#:      thì vẫn chạy được thay vì gãy: nhưng `tinh_trang_omnivoice()['o_tam']`
+#:      sẽ báo và `doc_loat` ghi log MỖI LƯỢT (xem `o_thu_muc_tam`).
 def _ung_vien_python() -> list[Path]:
     ds: list[Path] = []
     ep = os.environ.get("BQ_OV_PYTHON", "").strip()
@@ -510,7 +516,38 @@ def tinh_trang_omnivoice() -> dict:
         "python": py,
         "model": model,
         "thu_muc": str(thu_muc_ngoai()),
+        # CẢNH BÁO CHỖ ĐỂ ĐỒ — xem `o_thu_muc_tam`. Đây KHÔNG phải "thiếu"
+        # (máy vẫn chạy được), nên để riêng khoá: gộp vào `thieu` là nút tải
+        # và nhãn báo sai trạng thái.
+        "o_tam": o_thu_muc_tam(py),
     }
+
+
+def o_thu_muc_tam(py: str = "") -> str:
+    """Môi trường đang nằm trong thư mục TẠM thì trả đường dẫn đó, "" nếu không.
+
+    VÌ SAO PHẢI BÁO RA. Môi trường OmniVoice ~7,7 GB được dựng ở
+    `%TEMP%\\bq_tts_rr\\venv_ov` (lượt 7). `%TEMP%` là chỗ TẠM: một lượt
+    `tempsweep`, một lượt Disk Cleanup của Windows, hoặc chính anh Hùng dọn ổ
+    C khi đầy là **mất sạch** — và lúc đó `co_omnivoice()` trả False nên
+    **giọng lặng lẽ biến khỏi combo**, đúng loại hỏng âm thầm repo này chống.
+    Đã có tiền lệ y hệt: `_lib` của Demucs bị chính lượt tự cập nhật xoá
+    (cổng 58 CA5) và anh Hùng kêu *"trước tôi nhớ báo cài rồi mà nay nó ghi
+    chưa có bộ tách giọng"*.
+
+    Chỗ ĐÚNG là `thu_muc_ngoai()` (cạnh repo khi chạy nguồn · `DATA_DIR` ở
+    bản `.exe`) — y như `_piper`. Hàm này KHÔNG tự dời: dời 7,7 GB sau lưng
+    người đang chạy sản xuất là việc phải hỏi. Nó chỉ NÓI RA.
+    """
+    try:
+        p = str(py or _python_omnivoice()[0] or "")
+        if not p:
+            return ""
+        tam = Path(tempfile.gettempdir()).resolve()
+        return str(Path(p).resolve()) if tam in Path(p).resolve().parents \
+            else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def co_omnivoice() -> bool:
@@ -954,6 +991,13 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
                  f"về edge-tts")
         _xong_het()
         return ok, words
+    if tt.get("o_tam"):
+        # Chạy được, nhưng đang đứng trên đất mượn. Nói ra MỖI LƯỢT: im lặng
+        # thì tới hôm mất mới biết, mà lúc đó triệu chứng lại là "giọng tự
+        # nhiên biến khỏi combo" — không ai lần ra nguyên nhân.
+        _ghi_log(f"CẢNH BÁO: môi trường OmniVoice đang nằm trong thư mục TẠM "
+                 f"({tt['o_tam']}). Một lượt dọn đĩa là mất. Chỗ đúng: "
+                 f"{tt['thu_muc']}\\venv")
 
     try:
         ok, words = _doc_omnivoice(texts, paths, voice, tt, rate, lang,
