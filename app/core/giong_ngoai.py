@@ -343,11 +343,20 @@ def nhan_giong(ma: str) -> str:
     phải chỗ để bán hàng: Piper đã có tiền lệ ghi thẳng đánh đổi ngay trong
     nhãn, và lý do là anh Hùng chạy 200-300 kênh — chọn nhầm một lần là hàng
     trăm video.
+
+    **KÈM MỨC NHẤN NHÁ** (``app/core/nhan_nha.py``) để giọng OmniVoice đứng
+    CÙNG THANG với giọng edge-tts — chúng đọc cùng bộ câu tiếng Việt nên so
+    trực tiếp được. Và số đó **cãi lại một mệnh đề đang được truyền tay**:
+    ``ov:nam_tre`` đo **4,24**, CAO HƠN cả NamMinh (4,04) lẫn HoaiMy (3,18),
+    chứ không phải "đáy thang 2,16" (2,16 là TRẢI của 11 giọng, không phải
+    giá trị một giọng). Lý do nên cân nhắc bỏ OmniVoice nằm ở **giấy phép và
+    độ chính xác chữ**, không nằm ở nhấn nhá.
     """
+    from app.core import nhan_nha
     for m, _tt, ten in GIONG_OV:
         if m == ma:
-            return (f"{ten} (OmniVoice, 4 thứ tiếng) - {CANH_BAO_GP_OV}; "
-                    f"{canh_bao_chat_luong()}")
+            return (f"{ten} (OmniVoice, 4 thứ tiếng){nhan_nha.nhan(ma)} - "
+                    f"{CANH_BAO_GP_OV}; {canh_bao_chat_luong()}")
     for m, _tt, ten in GIONG_IX:
         if m == ma:
             return (f"{ten} - không có tiếng Việt; mốc chữ phải dò lại bằng "

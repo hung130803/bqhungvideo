@@ -126,7 +126,11 @@ BANG: dict[str, float] = {
     "id-ID-GadisNeural": 3.19,
     "it-IT-ElsaNeural": 3.18,
     "vi-VN-HoaiMyNeural": 3.18,
-    "piper:vais1000": 3.11,
+    # Khoá phải là mã ĐẦY ĐỦ `piper_tts.MA_GIONG`. Bản đầu ghi
+    # `piper:vais1000` (tên tôi gõ lúc đo) -> `muc()` trả None, số đo đúng mà
+    # tra không ra. `_piper_hay_khong` nhận MỌI id bắt đầu bằng `piper:` nên
+    # phép đo vẫn chạy và vẫn ra tiếng — sai khoá KHÔNG hề lộ ra lúc đo.
+    "piper:vi_VN-vais1000-medium": 3.11,
     "en-PH-JamesNeural": 3.08,
     "en-ZA-LukeNeural": 3.08,
     "en-NG-AbeoNeural": 3.07,

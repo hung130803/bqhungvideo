@@ -125,6 +125,9 @@ import wave
 from pathlib import Path
 from typing import Callable, Optional
 
+# Bảng nhấn nhá (hàm thuần + 1 dict, không nạp gì nặng) — dùng cho NHAN_GIONG.
+from app.core import nhan_nha as _nhan_nha
+
 # ---------------------------------------------------------------------------
 # Nhận dạng giọng
 # ---------------------------------------------------------------------------
@@ -149,7 +152,15 @@ TEN_MODEL = "vi_VN-vais1000-medium"
 MA_GIONG = f"{TIEN_TO}{TEN_MODEL}"
 
 #: Nhãn hiện cho anh Hùng. Tiếng Việt, KHÔNG EMOJI, không phơi mã máy.
-NHAN_GIONG = "Giọng Việt chạy trên máy (Piper)"
+#:
+#: Kèm MỨC NHẤN NHÁ đo được để đứng CÙNG THANG với giọng edge-tts (xem
+#: `app/core/nhan_nha.py`): Piper đọc **cùng bộ câu tiếng Việt** với `vi-VN-*`
+#: nên so trực tiếp được — **3,11** so với NamMinh 4,04 · HoaiMy 3,18, tức nó
+#: là giọng Việt ĐỀU NHẤT trong ba giọng đang có.
+#: Ghép bằng `nhan_nha.nhan()` chứ KHÔNG chép số vào chuỗi: chép là ngày mai
+#: đo lại thì chỗ này nói một đằng, combo nói một nẻo.
+NHAN_GIONG = ("Giọng Việt chạy trên máy (Piper)"
+              + _nhan_nha.nhan(MA_GIONG))
 
 #: Kho tải. PHẢI là kho của CHÍNH TÁC GIẢ — tự dựng máy chủ chứa bản sao
 #: Piper là app trở thành NGƯỜI PHÁT HÀNH và nghĩa vụ GPL quay lại đủ.

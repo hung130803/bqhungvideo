@@ -48,6 +48,10 @@ from config import DATA_DIR, settings
 # được, không cần import trong hàm.
 from app.core import doc_viet_tat
 
+# HIỆN MỨC NHẤN NHÁ cạnh mỗi giọng + sắp giọng nhấn nhá cao lên trên. Cũng là
+# module HÀM THUẦN (một dict + 4 hàm, không nạp gì nặng, không gọi mạng).
+from app.core import nhan_nha
+
 _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
 
 # Gom 2 câu transcript liền kề thành 1 cụm nếu hở dưới ngưỡng này (giây)
@@ -473,8 +477,9 @@ def _voice_label(v: dict) -> str:
     g = _GENDER_VI.get((v.get("Gender") or "").lower(), "?")
     region = (v.get("Locale") or "").split("-")[-1]
     star = "⭐ " if short in _HOT_VOICES else ""      # giọng HOT -> gắn sao
-    return f"{star}{name} — {g} ({region}, đa ngữ)" if multi \
-        else f"{star}{name} — {g} ({region})"
+    nn = nhan_nha.nhan(short)                        # ' - nhấn nhá 5,4 ...'
+    return f"{star}{name} — {g} ({region}, đa ngữ){nn}" if multi \
+        else f"{star}{name} — {g} ({region}){nn}"
 
 
 def list_voices_for(lang: str) -> list[tuple[str, str]]:
@@ -498,13 +503,18 @@ def list_voices_for(lang: str) -> list[tuple[str, str]]:
              if "multilingual" in v.get("ShortName", "").lower()
              and v["ShortName"] not in seen]
     fav = {vid for _, vid in static}    # giọng mặc định cũ (đã kiểm chứng hay)
-    # Ưu tiên: giọng HOT (⭐) trước > cùng vùng chính > mặc định cũ > còn lại
-    native.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
+    # Ưu tiên: NHẤN NHÁ CAO trước (giọng chưa đo xuống cuối) > HOT (⭐) >
+    # cùng vùng chính > mặc định cũ > còn lại. Xem `app/core/nhan_nha.py`:
+    # trước lượt này thứ tự là bảng `_HOT_VOICES` viết tay, nên giọng lên
+    # xuống nhiều nhất có thể nằm tận cuối danh sách mà không ai biết.
+    native.sort(key=lambda v: (nhan_nha.khoa_sap(v["ShortName"]),
+                               0 if v["ShortName"] in _HOT_VOICES else 1,
                                0 if v.get("Locale") == pref else 1,
                                0 if v["ShortName"] in fav else 1,
                                v.get("Locale", ""), v.get("ShortName", "")))
-    # giọng đa ngữ HOT lên đầu nhóm đa ngữ
-    multi.sort(key=lambda v: (0 if v["ShortName"] in _HOT_VOICES else 1,
+    # nhóm đa ngữ: cũng nhấn nhá cao lên đầu, rồi mới tới ⭐
+    multi.sort(key=lambda v: (nhan_nha.khoa_sap(v["ShortName"]),
+                              0 if v["ShortName"] in _HOT_VOICES else 1,
                               v.get("ShortName", "")))
     edge = [(_voice_label(v), v["ShortName"]) for v in native + multi]
     return el + gem + (edge or static)
@@ -582,8 +592,9 @@ def _recap_voice_label(v: dict) -> str:
     g = {"female": "Nữ", "male": "Nam"}.get((v.get("Gender") or "").lower(),
                                             "?")
     star = "⭐ " if short in _HOT_VOICES else ""
-    return (f"   {star}{name} ({g}, đa ngữ)" if multi
-            else f"   {star}{name} ({g})")
+    nn = nhan_nha.nhan(short)                        # ' - nhấn nhá 5,4 ...'
+    return (f"   {star}{name} ({g}, đa ngữ){nn}" if multi
+            else f"   {star}{name} ({g}){nn}")
 
 
 #: Tiền tố ngôn ngữ được MỞ HẾT trong danh sách gọn (không cần `all=True`).
@@ -636,7 +647,12 @@ def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
         out.append((GEMINI_LOCKED_LABEL, ""))
     # 0) nhóm 🔥 ĐỀ XUẤT — curate tay kèm mô tả, KHÔNG cần mạng
     out.append(("🔥 ĐỀ XUẤT — mượt & hot nhất", ""))
-    out += [(f"   🔥 {desc}", vid) for vid, desc in _RECOMMENDED_VOICES]
+    # Nhóm này curate TAY nên trước đây thứ tự cũng là tay -> giọng nhấn nhá
+    # thấp có thể đứng đầu cái danh sách anh Hùng nhìn trước tiên. Nay sắp
+    # theo SỐ ĐO như mọi nhóm khác, và mô tả tay vẫn giữ nguyên.
+    out += [(f"   🔥 {desc}{nhan_nha.nhan(vid)}", vid)
+            for vid, desc in sorted(_RECOMMENDED_VOICES,
+                                    key=lambda it: nhan_nha.khoa_sap(it[0]))]
     # 0b) nhóm 🎧 ElevenLabs — chất lượng cao nhất (CẦN key). Có key -> liệt kê
     # giọng (Adam đầu + premade + account voices); KHÔNG key -> 1 dòng disabled
     # chỉ cách mở khóa. ElevenLabs KHÔNG có rate/pitch (tooltip UI đã ghi).
@@ -665,7 +681,8 @@ def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
     multi_ids = {v["ShortName"] for v in pool
                  if "multilingual" in v["ShortName"].lower()}
     multi = sorted((v for v in pool if v["ShortName"] in multi_ids),
-                   key=lambda v: (v["ShortName"] not in _HOT_VOICES,
+                   key=lambda v: (nhan_nha.khoa_sap(v["ShortName"]),
+                                  v["ShortName"] not in _HOT_VOICES,
                                   v["ShortName"]))
     if multi:
         out.append(("🌐 Đa ngôn ngữ — đọc được MỌI thứ tiếng", ""))
@@ -684,7 +701,9 @@ def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
         out.append((_lang_group_label(k), ""))
         out += [(_recap_voice_label(v), v["ShortName"])
                 for v in sorted(groups[k],
-                                key=lambda v: (v["ShortName"] not in
+                                key=lambda v: (nhan_nha.khoa_sap(
+                                                   v["ShortName"]),
+                                               v["ShortName"] not in
                                                _HOT_VOICES,
                                                v["ShortName"]))]
     return out
