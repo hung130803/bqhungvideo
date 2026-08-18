@@ -80,6 +80,11 @@ CONG = [
     # lên trên". Nó KHÔNG gọi Groq và KHÔNG chạy ffmpeg (chấm bảng số + hàm
     # thuần) nên đứng đâu cũng được; để cạnh nhóm cổng giọng cho dễ đọc.
     ("76 nhấn nhá từng giọng", "_test_nhan_nha.py",      29),
+    # Cổng 79 canh việc GOM NHÓM danh sách giọng (anh Hùng: "không phân gì cả,
+    # rất lung tung"). Đo trước khi sửa: combo có 110 mã cho 90 giọng, tức
+    # 20 dòng TRÙNG MÃ THẬT SỰ. Nó cũng KHÔNG gọi mạng/ffmpeg/Groq nên tiền
+    # định; để cạnh cổng 76 vì hai cổng đọc chung `nhan_nha.BANG`.
+    ("79 gom nhóm giọng",   "_test_gom_giong.py",        58),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
