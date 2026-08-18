@@ -56,6 +56,14 @@ CONG = [
     # một file .py nằm đó". Không đốt lượt Groq đáng kể: chỉ CA 9 gọi thật
     # (30 câu, 1 lượt); `BQ_BO_MANG=1` để chạy hoàn toàn offline.
     ("74 JSON bao dung",    "_test_json_bao_dung.py",    80),
+    # Cổng 75 canh bản sửa CHẶN SẢN XUẤT thứ BA: clip xuất ra KHÔNG MỞ ĐƯỢC,
+    # hình trắng (`0x80004005 — unsupported encoding settings`). Nó phải nằm
+    # ĐÂY, không được để làm "một file .py nằm đó" — đúng bẫy cổng 70 dính hôm
+    # qua. Nó KHÔNG gọi mạng (chỉ ffmpeg thật), và vì chạy vài phút nên nó còn
+    # làm QUÃNG NGHỈ cho bể key Groq giữa cổng 74 (CA 9 gọi thật) và cổng 70
+    # (mục "41 key còn nguyên") — đúng chỗ cổng 70 từng ĐỎ OAN vì 429 thật do
+    # hai cổng đốt lượt đứng sát nhau.
+    ("75 clip mở được",     "_test_clip_mo_duoc.py",     63),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
