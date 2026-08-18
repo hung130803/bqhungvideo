@@ -3701,16 +3701,21 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
 
     from app.core.ffmpeg_utils import detect_encoder
     enc = detect_encoder()
+    # `-profile:v high` + `-movflags +faststart`: xem `ffmpeg_utils._enc_args`.
+    # Trình phát Windows từ chối High 10 / High 4:4:4 (0x80004005 + khung
+    # trắng); thiếu `moov` ở đầu file thì phát qua mạng/ứng dụng nào đọc dần
+    # cũng báo hỏng. Ép ở CẢ HAI nhánh, không chỉ nhánh nvenc.
     if enc == "h264_nvenc":
         ve = ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr",
-              "-cq", "21", "-pix_fmt", "yuv420p"]
+              "-cq", "21", "-pix_fmt", "yuv420p", "-profile:v", "high"]
     else:
         ve = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-              "-pix_fmt", "yuv420p"]
+              "-pix_fmt", "yuv420p", "-profile:v", "high"]
     _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
              "-filter_complex", f"[0:v]{','.join(chuoi)}[vout]",
              "-map", "[vout]", "-map", "1:a:0", *ve,
-             "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_ra)],
+             "-c:a", "aac", "-b:a", "192k", "-shortest",
+             "-movflags", "+faststart", str(video_ra)],
             "thay tiếng + che chữ vào video", timeout=3600)
 
 

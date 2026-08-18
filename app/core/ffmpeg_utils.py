@@ -747,14 +747,55 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
         # wall 1,00x, và log ffmpeg VẪN ghi `h264_nvenc` -> KHÔNG rớt về CPU
         # (đúng điều lần thử trước nghi mà không ai ghi log lại để biết).
         return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq,
-                "-pix_fmt", "yuv420p", "-threads", str(encode_threads())]
+                "-pix_fmt", "yuv420p", "-profile:v", "high",
+                "-threads", str(encode_threads())]
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
     # -> máy yếu (không GPU) xuất nhanh. crf 20 = nét, file gọn.
     crf = "20" if quality == "high" else "23"
+    # ★ `-pix_fmt yuv420p` + `-profile:v high` LÀ BẮT BUỘC Ở CẢ HAI NHÁNH.
+    #
+    # LỖI THẬT (anh Hùng 18/08/2026, ảnh trình phát Windows): *"khi phân tích
+    # cắt các part cứ báo lỗi, video bị trắng"* — `We can't open ... It uses
+    # unsupported encoding settings. 0x80004005`.
+    #
+    # Nhánh này TRƯỚC ĐÂY KHÔNG CÓ `-pix_fmt`, nên x264 lấy pix_fmt THEO ĐẦU RA
+    # CỦA FILTER GRAPH, mà graph lại lấy theo NGUỒN:
+    #   nguồn yuv420p 8-bit  -> ra yuv420p       -> High      -> mở được
+    #   nguồn 10-bit (VP9 P2 / AV1 HDR, yt-dlp tải bestvideo là gặp)
+    #                        -> ra yuv420p10le   -> **High 10**
+    #   nguồn 4:4:4          -> ra yuv444p       -> **High 4:4:4 Predictive**
+    # Trình phát dựng sẵn của Windows KHÔNG giải mã được High 10 / High 4:4:4
+    # -> đúng lời lỗi 0x80004005 **và** đúng triệu chứng KHUNG TRẮNG (nó dựng
+    # được khung nhưng không giải nổi dữ liệu màu). ffmpeg vẫn **mã thoát 0**,
+    # đủ khung, đủ `moov` — nên KHÔNG một cổng nào cũ bắt được.
+    #
+    # VÌ SAO CHỈ HỎNG THỈNH THOẢNG: nhánh nvenc CÓ `-pix_fmt` sẵn, nên chỉ
+    # những lượt **LÙI VỀ libx264** mới ra file hỏng (`_run_with_fallback` lùi
+    # khi NVENC lỗi — hết session NVENC, driver, hoặc máy nhân viên không GPU).
+    # Cùng một video, Part này mở được Part kia không = đúng ảnh anh Hùng gửi.
+    #
+    # Đây là ANH EM của lỗi đã vá ở `_enc_mezz` (cổng 42) — hôm đó vá đúng MỘT
+    # hàm, còn `_enc_args` (hàm sinh ra FILE THÀNH PHẨM) thì bị bỏ sót.
     # GIỚI HẠN thread mỗi ffmpeg theo NGÂN SÁCH TOÀN CỤC (xem encode_threads):
     # mặc định libx264 ăn HẾT luồng CPU -> 2-3 job song song là máy đơ 100%.
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,
+            "-pix_fmt", "yuv420p", "-profile:v", "high",
             "-threads", str(encode_threads())]
+
+
+def khung_chan(out_w: int, out_h: int) -> tuple[int, int]:
+    """Ép KÍCH THƯỚC KHUNG về SỐ CHẴN (h264 4:2:0 đòi chẵn cả hai chiều).
+
+    Chiều LẺ thì libx264 ném *"width not divisible by 2"* và NVENC ra khung
+    méo/hỏng — cả hai đều là mất clip. Phép nội suy bên trong (`reframe_chain`,
+    `scale=...:-2`) đã chẵn sẵn, nhưng `out_w`/`out_h` đi từ **payload job**
+    (`m1._export_clip_impl` đọc `payload.get("out_w")`) nên một mẫu cũ / một
+    lối gọi mới truyền số lẻ là xuống thẳng ffmpeg không ai chặn.
+
+    Làm TRÒN XUỐNG (không lên) để khung không bao giờ vượt kích thước user đặt;
+    sàn 2 để không ra 0.
+    """
+    return (max(2, int(out_w) // 2 * 2), max(2, int(out_h) // 2 * 2))
 
 
 def _global_enc_opts() -> list[str]:
@@ -2293,6 +2334,7 @@ def export_vertical_clip(
                  fallback text_overlays (drawtext).
     """
     encoder = encoder or detect_encoder()
+    out_w, out_h = khung_chan(out_w, out_h)
     dur = max(0.1, end - start)
 
     cx = 0.5
@@ -2364,6 +2406,7 @@ def export_stitched_clip(
     if not moments:
         raise RuntimeError("Mixed-Cut không có đoạn nào để ghép.")
     encoder = encoder or detect_encoder()
+    out_w, out_h = khung_chan(out_w, out_h)
     total = sum(m["end"] - m["start"] for m in moments)
     # Video KHÔNG có luồng tiếng (screen-record...) -> atrim/concat a=1 sẽ fail;
     # ghép chỉ hình.
@@ -3032,7 +3075,12 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
                       # log vẫn `h264_nvenc` (KHÔNG rớt về CPU).
                       "-threads", str(encode_threads())]
             else:
+                # `-pix_fmt yuv420p` BẮT BUỘC: mảnh lệch pix_fmt làm ffmpeg
+                # DỰNG LẠI filter graph mỗi mảnh -> `metadata=print:file=` ghi
+                # đè -> `do_nhip` chỉ còn số của mảnh CUỐI -> MẤT ĐIỂM NHẤN
+                # (cổng 45a đo: lệch 420->444 ra nl=8/cd=8 thay vì 16/16).
                 c += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+                      "-pix_fmt", "yuv420p",
                       "-threads", str(encode_threads())]
             # CFR đồng nhất mọi đoạn (concat demuxer cần cùng thông số) + PCM
             # 48k stereo (không mất chất tiếng qua 2 pha, đồng nhất layout).
@@ -3089,7 +3137,10 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
                       "-cq", "16", "-pix_fmt", "yuv420p",
                       "-threads", str(encode_threads())]
             else:
+                # cùng lý do như `_build_seg`: mảnh CHUYỂN CẢNH đi qua
+                # `filter_complex` nên rất dễ ra 444 nếu không ép.
                 c += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+                      "-pix_fmt", "yuv420p",
                       "-threads", str(encode_threads())]
             c += ["-r", f"{fps:g}", "-fps_mode:v", "cfr"]
             if info.has_audio:
@@ -3270,6 +3321,7 @@ def export_canvas_clip(
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
     encoder = encoder or detect_encoder()
+    out_w, out_h = khung_chan(out_w, out_h)
     # Video KHÔNG có tiếng -> mọi filter [0:a] sẽ fail; xuất chỉ hình.
     _info = probe(src)
     has_audio = _info.has_audio

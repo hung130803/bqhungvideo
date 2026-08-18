@@ -1764,8 +1764,11 @@ def che_va_viet(src: str | Path, dst: str | Path,
         bao["ly_do"] = "không có gì để che và không có chữ mới -> bỏ qua"
         return bao
 
+    # `-profile:v high` đi kèm `-pix_fmt yuv420p`: xem `ffmpeg_utils._enc_args`
+    # (High 10 / High 4:4:4 làm trình phát Windows báo 0x80004005 + khung trắng).
     enc = list(bo_ma) if bo_ma else ["-c:v", "libx264", "-preset", "veryfast",
-                                     "-crf", "20", "-pix_fmt", "yuv420p"]
+                                     "-crf", "20", "-pix_fmt", "yuv420p",
+                                     "-profile:v", "high"]
     # NỐI BẰNG DẤU PHẨY, KHÔNG PHẢI CHẤM PHẨY: `loc_che` trả về một GRAPH
     # (split/crop/overlay ngăn bằng `;`), chuỗi cuối của nó là `overlay=...`.
     # Nối `;subtitles=` là đẻ ra một chuỗi RỜI không có đầu vào -> ffmpeg báo
