@@ -1848,6 +1848,22 @@
      nguội** rồi mới nghi mã — **ĐỪNG hạ mốc 42, ĐỪNG bỏ mục này**. Muốn hết
      nhấp nháy thì tách hẳn hai cổng đốt-lượt-Groq ra xa nhau trong danh sách
      (chưa làm, chưa đo).
+     **ĐÍNH CHÍNH 18/08/2026 (lượt hồi quy v2.37.0) — NGUYÊN NHÂN RỘNG HƠN
+     "cổng đứng sát nhau", và có PHÉP ĐO DỨT ĐIỂM:** chạy cổng MỘT MÌNH 3 lượt,
+     cách lượt Groq gần nhất 4-10 phút, vẫn ra **41 · 1** với **3 key** mang
+     `limited`. Phép đo tách bạch: gọi `llm.complete_text` một câu **model
+     SỐNG, KHÔNG dính 404 nào** trong tiến trình SẠCH -> `_KEY_STATE` khoá
+     **đúng 3 key**, bằng y số cổng báo. Tức 3 key ấy bị khoá vì **429 THẬT**
+     (bể key nóng do luồng khác trên máy đang đo giọng bằng Groq), `mark_limited`
+     làm **ĐÚNG LUẬT**, và chuyện đó **không liên quan gì tới đường 404**.
+     Chứng minh không phải hồi quy, 3 lớp: mục 3 và 3b (stub, tiền định) ra
+     `KHÔNG phạt MỘT key nào — {}` · mệnh đề TRUNG TÂM *"404 THẬT của Groq ->
+     app vẫn ra kết quả"* ĐẠT · `git diff v2.36.0..HEAD -- app/ai/llm.py` **0
+     dòng** đụng `mark_limited`/`is_rate_limit_error`/`limited`/`429`.
+     **Vậy mệnh đề "41 key còn nguyên" là mệnh đề về MÔI TRƯỜNG, không phải về
+     mã** — nó chỉ chấm được khi bể key sạch. Cách chữa đúng là cho mục ấy tự
+     canh bể key (như CA17 cổng 56 canh CPU: bận thì **BỎ QUA, không chấm**),
+     chứ không phải hạ mốc. **Chưa làm, chưa đo.**
   71. `_test_demucs_gpu.py` → **TÁCH GIỌNG PHẢI DÙNG GPU KHI MÁY CÓ GPU**
      (18/08/2026). **ĐẠT 22 · HỎNG 0.** Thử phá (ghi cứng lại chỉ mục `whl/cpu`
      như bản cũ): **BẮT 4 mục**, mã thoát 1.
