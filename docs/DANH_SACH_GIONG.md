@@ -61,7 +61,7 @@ ghi thẳng "chưa đo" chứ không đoán.
 | **edge-tts** *(đang dùng)* | **84** | **miễn phí** | không | **15,7 ms** — tốt nhất | **6,2 %** | được; rủi ro nằm ở điều khoản Microsoft (đã khai `LICENSES.txt` mục 5) |
 | **Piper** | 1 (Việt) | miễn phí | **212 MB** | 29,5 ms | chưa đo | **được** — MIT + dữ liệu CC BY 4.0 |
 | **OmniVoice** | 5 | miễn phí | **6,1 GB** | 90–119 ms | **16,9 %** | **KHÔNG** — trọng số CC-BY-NC cấm thương mại |
-| **VieNeu** *(đang thêm)* | 20 dựng sẵn | miễn phí | 286 MB | 14,6–15,4 ms | 7,7 % (giọng mặc định) | **CHƯA RÕ** — xem mục 5 |
+| **VieNeu** *(đang thêm)* | 19 dựng sẵn | miễn phí | **250 MB** | 14,6–15,4 ms | 7,7 % (giọng mặc định) | **CHƯA RÕ** — xem mục 5 |
 | **ElevenLabs** | tuỳ tài khoản | **tốn hạn mức** | không | ngang edge-tts | chưa đo | được (theo gói đã mua) |
 | **Vbee** | 3 | **tốn tiền theo ký tự** | không | 90–119 ms | chưa đo | được (theo gói đã mua) |
 
@@ -311,7 +311,8 @@ Một luồng khác đang nối bộ này vào app. Khi xong, 20 giọng sẽ n�
 
 **Cái tốt, đo được:** chữ bám lời **14,6–15,4 ms — ngang edge-tts**, tốt hơn
 Piper (29,5 ms) và hơn OmniVoice (90–119 ms) rất xa. Đọc sai chữ **7,7 %**,
-chỉ hơn edge-tts 1,5 điểm. Chỉ phải tải **286 MB**, chạy CPU.
+chỉ hơn edge-tts 1,5 điểm. Chỉ phải tải **250 MB**, chạy CPU (không cần
+torch, không cần card màn hình).
 
 **Cái phải hỏi trước khi dùng để kiếm tiền — nói thẳng:** mã và trọng số là
 Apache-2.0 (sạch), **nhưng bảng giọng thì không**. Bộ 6 giọng cũ ghi rõ
@@ -319,6 +320,14 @@ Apache-2.0 (sạch), **nhưng bảng giọng thì không**. Bộ 6 giọng cũ g
 phép gì cả**. Theo đúng lệ đã chốt trong repo này (giọng Piper `25hours_single`
 ghi *"Unknown"* → **im lặng không phải là cho phép**), chỗ trống đó **không
 được đọc thành "được dùng thoải mái"**. Chi tiết ở `docs/GIONG_VIENEU_V3.md`.
+
+**Hai điều nữa đã bắt được khi nối module vào app, ghi để anh biết trước:**
+
+- **Tiếng ra CÓ ĐÓNG DẤU CHÌM** (watermark Perth, bật sẵn trong bộ gốc). Nó
+  không nghe ra được nhưng máy dò ra được.
+- **Giọng thứ 20 tên "Adam" bị ẨN mặc định** — trùng tên một giọng thương
+  mại của ElevenLabs mà không kiểm được nguồn gốc. Muốn hiện phải bật tay.
+  Vì vậy bảng trên ghi **19 giọng**, không phải 20.
 
 ---
 

@@ -62,15 +62,20 @@ ELEVEN = "el"
 VBEE = "vbee"
 GEMINI = "gemini"
 
-#: tiền tố -> tên nguồn. `vieneu:` là CHỖ CHỪA SẴN cho luồng đang thêm
-#: `app/core/giong_vieneu.py` (VieNeu-TTS v3 Turbo, Apache 2.0). Chừa trước để
-#: khi module đó vào thì giọng rơi ĐÚNG nhóm "Trên máy" ngay, không phải sửa
-#: lại file này giữa lúc luồng khác đang giữ nó.
+#: tiền tố -> tên nguồn.
+#:
+#: **`vn:` và `vnb:` LÀ CỦA VieNeu — ĐỌC TỪ `giong_vieneu.py`, KHÔNG ĐOÁN.**
+#: Bản đầu của file này chừa sẵn `vieneu:` theo suy đoán; module thật vào
+#: (`a95e0e6`) thì tiền tố hoá ra là `vn:` (giọng dựng sẵn) và `vnb:` (giọng
+#: nhân bản từ mẫu). Đoán sai tiền tố thì `nguon()` trả về `edge` -> 20 giọng
+#: VieNeu rơi vào nhóm "các tiếng khác", mất nhãn "cần tải", và **không một
+#: dòng báo nào**. Thêm nguồn mới thì lấy hằng số từ chính module nguồn.
 _TIEN_TO: tuple[tuple[str, str], ...] = (
     ("piper:", PIPER),
     ("ov:", OMNIVOICE),
     ("ix:", INDEXTTS),
-    ("vieneu:", VIENEU),
+    ("vnb:", VIENEU),               # phải đứng TRƯỚC `vn:` — nó dài hơn
+    ("vn:", VIENEU),
     ("el:", ELEVEN),
     ("vbee:", VBEE),
     ("gemini:", GEMINI),
@@ -97,13 +102,15 @@ _MIEN_PHI: frozenset[str] = frozenset(
 #: Nguồn -> cần tải bao nhiêu thì mới chạy được. **SỐ ĐO, không ước:**
 #: Piper 212,4 MB (`piper_tts`, chạy thật `cai_piper()` vào hộp cát rỗng) ·
 #: OmniVoice 6,1 GB (`giong_ngoai`, trọng số trong kho Hugging Face) ·
-#: VieNeu 286 MB (`docs/GIONG_DOC_MIEN_PHI.md` bảng đối chiếu).
+#: VieNeu 250 MB — lấy ĐÚNG con số trên nhãn nút `giong_vieneu.NHAN_TAI`,
+#: không lấy 286 MB của `docs/GIONG_DOC_MIEN_PHI.md` (đó là cỡ trọng số,
+#: không phải lượng tải thật). Nhãn phải KHỚP ĐƯỜNG SẼ ĐI — cổng 71 CA 4.
 #: Nguồn không có trong bảng = chạy được ngay, không tải gì.
 _CAN_TAI: dict[str, str] = {
     PIPER: "212 MB",
     OMNIVOICE: "6,1 GB",
     INDEXTTS: "bộ IndexTTS",
-    VIENEU: "286 MB",
+    VIENEU: "250 MB",
 }
 
 #: Nguồn -> RUNG mốc chữ (chữ hiện lệch tiếng bao nhiêu). **CHỈ điền nguồn đã
@@ -216,7 +223,7 @@ _DUOI: dict[str, str] = {
     PIPER: "miễn phí, cần tải 212 MB",
     OMNIVOICE: "miễn phí, cần tải 6,1 GB",
     INDEXTTS: "miễn phí, cần tải bộ IndexTTS",
-    VIENEU: "miễn phí, cần tải 286 MB",
+    VIENEU: "miễn phí, cần tải 250 MB",
     ELEVEN: "TỐN HẠN MỨC ElevenLabs",
     VBEE: "TỐN TIỀN theo ký tự",
     GEMINI: "TỐN HẠN MỨC Gemini",
