@@ -268,10 +268,19 @@ try:
         dlg3.b_tai.text())
     # Con số phải là SỐ ĐO, không phải ước bừa: "khoảng 2 GB" của bản cũ gấp
     # 13 lần lượng tải thật (đo 14/08/2026: 33 gói = 154,0 MB).
-    dat("nhãn nút tải nói rõ DUNG LƯỢNG",
-        "MB" in dlg3.b_tai.text() and any(c.isdigit()
-                                          for c in dlg3.b_tai.text()),
-        dlg3.b_tai.text())
+    #
+    # ĐƠN VỊ KHÔNG ĐƯỢC GHI CỨNG LÀ "MB" (sửa 18/08/2026). Bất biến thật là
+    # *"nhãn phải nói dung lượng bằng SỐ ĐO"*, KHÔNG phải *"nhãn phải có chữ
+    # MB"*. Từ cổng 71, máy CÓ GPU NVIDIA thì đường tải là bản CUDA và con số
+    # đúng là **2,5 GB** — cũng là số đo (HTTP HEAD trên chính wheel:
+    # 2.474,4 MB). Ghi cứng "MB" làm cổng ĐỎ trên đúng cái máy vừa được tăng
+    # tốc 3,15 lần, tức đo CẤU HÌNH MÁY chứ không đo MÃ — đúng bệnh cổng 68
+    # vừa phải chữa. Muốn canh "nhãn khớp ĐƯỜNG SẼ ĐI" thì đó là cổng 71 CA 4
+    # (nó vá `co_gpu_nvidia` nên kiểm được CẢ HAI chiều, không phụ thuộc máy).
+    _nhan = dlg3.b_tai.text()
+    dat("nhãn nút tải nói rõ DUNG LƯỢNG (có số + đơn vị MB hoặc GB)",
+        ("MB" in _nhan or "GB" in _nhan) and any(c.isdigit() for c in _nhan),
+        _nhan)
     dat("nhãn nút là 'tải cả bộ' (chưa có gói nào), KHÔNG phải 'cài tiếp'",
         TG.NHAN_CAI_TIEP not in dlg3.b_tai.text(), dlg3.b_tai.text())
     dat("KHOÁ nút Chạy", not dlg3.b_chay.isEnabled())
