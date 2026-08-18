@@ -210,6 +210,38 @@ def main() -> int:
                abs(m_bu - m_moi) <= 2.0,
                f"bù {m_bu:.2f} vs mới {m_moi:.2f} dBFS")
 
+        print("\nMỤC 2e — LỚP GIỌNG BỊ NÉN: ngưỡng KHÔNG được leo trên mức lời")
+        # **CA NÀY RA ĐỜI TỪ MỘT THẤT BẠI THẬT.** Bản đầu đặt ngưỡng
+        # `sàn(p20) + 10 dB` và đo ở bước 0,20 s; trên lớp giọng Demucs THẬT thì
+        # sàn ước bị kéo lên sát mức lời (p20 −19,87 · p90 −12,85, cách nhau chỉ
+        # 7,0 dB) -> ngưỡng −9,87 dBFS **CAO HƠN cả đỉnh −10,18** -> bản vá
+        # KHÔNG BÙ MỘT MẢNH NÀO (`so_bu=0 · bo_qua=44`) trên video 396 s, mà
+        # cổng 78 vẫn XANH vì nguồn thử của nó có sàn thấp hơn tiếng 22 dB.
+        # Nguồn thử ở đây cố ý DẢI HẸP (sàn chỉ dưới tiếng 6 dB) để tái hiện.
+        goc_san = SAN_DUOI_DB
+        try:
+            globals()["SAN_DUOI_DB"] = 6.0      # lớp giọng "bị nén"
+            gg_nen = SB / "gg_nen.wav"
+            wav_tieng(gg_nen, TONG, [(0.0, 3.0), (6.0, 9.0), (12.0, 15.0)])
+        finally:
+            globals()["SAN_DUOI_DB"] = goc_san
+        bu_nen = TG.bu_giong_goc(gg_nen, manh, TONG, SB / "bu_nen")
+        ok("lớp giọng DẢI HẸP: ngưỡng vẫn NẰM DƯỚI mức lời",
+           bu_nen.get("nguong_db") is not None
+           and bu_nen["nguong_db"] < bu_nen["dinh_db"],
+           f"sàn {bu_nen.get('san_db')} · đỉnh {bu_nen.get('dinh_db')} · "
+           f"ngưỡng {bu_nen.get('nguong_db')} dBFS")
+        ok("lớp giọng DẢI HẸP: VẪN BÙ ĐƯỢC (không im lặng bỏ qua hết)",
+           bu_nen.get("so_bu", 0) >= 1,
+           f"{bu_nen.get('so_bu')} mảnh · bỏ qua {bu_nen.get('bo_qua')}")
+        ok("lưới an toàn có ĐÁNH DẤU khi nó phải ra tay",
+           bu_nen.get("luoi_an_toan") is True,
+           str(bu_nen.get("luoi_an_toan")))
+        ok("bước đo dùng cho phép dò là 0,05 s (0,20 s làm bộ dò MÙ)",
+           abs(TG.BU_GOC_BUOC - 0.05) < 1e-9, str(TG.BU_GOC_BUOC))
+        ok("ngưỡng nổi khớp thước đo `_do_mat_giong` (cùng 12 dB)",
+           abs(TG.BU_GOC_NOI_DB - 12.0) < 1e-9, str(TG.BU_GOC_NOI_DB))
+
         print("\nMỤC 2b — BẤT BIẾN: phủ kín thì KHÔNG bù mảnh nào")
         full = SB / "full.wav"
         wav_tieng(full, TONG, [(0.0, TONG)])

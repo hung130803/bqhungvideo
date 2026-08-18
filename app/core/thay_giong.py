@@ -3046,10 +3046,38 @@ BU_GOC_MEP = 0.06
 #: chồng lên đuôi/đầu giọng MỚI = hai giọng cùng nói.
 BU_GOC_LUI = 0.10
 
+#: BƯỚC ĐO đường bao khi dò "gốc có tiếng".
+#:
+#: **PHẢI LÀ 0,05 s, VÀ ĐÂY LÀ SỐ ĐO CHỨ KHÔNG PHẢI SỞ THÍCH.** Bản đầu dùng
+#: `BUOC_DO_MUC` (0,20 s) và bản vá **KHÔNG CHẠY MỘT LẦN NÀO** trên video thật
+#: (phép A/B end-to-end ra `so_bu = 0 · bo_qua = 44`). Lý do: cửa sổ 0,20 s
+#: TRUNG BÌNH mất các khoảng lặng giữa từ nên sàn bị kéo lên sát mức lời. Đo
+#: trên lớp giọng Demucs THẬT (`_do_nguong_bu.py`, 150 s video của anh Hùng):
+#:
+#: | bước | p20 (sàn) | p90 (lời) | cách nhau | `sàn+10` nhận ra |
+#: |---|---|---|---|---|
+#: | **0,05 s** | −26,39 | −11,95 | **14,4 dB** | **51,3%** |
+#: | 0,20 s | −19,87 | −12,85 | **7,0 dB** | **0,0%** (ngưỡng −9,87 > max −10,18) |
+BU_GOC_BUOC = 0.05
+
 #: Khoảng trống chỉ được bù khi lớp giọng GỐC thật sự CÓ TIẾNG ở đó, nổi hơn
 #: sàn nhiễu của chính nó bấy nhiêu dB. Không có cửa này thì mọi nhịp nghỉ đều
 #: được "bù" bằng nhiễu nền của Demucs.
-BU_GOC_NOI_DB = 10.0
+#:
+#: **12 dB LÀ ĐỂ KHỚP VỚI THƯỚC ĐO** (`_do_mat_giong.khoang_mat` dùng
+#: `sàn + 12` ở bước 0,05 s). Bộ dò của bản vá và bộ dò của phép đo phải là MỘT:
+#: lệch nhau thì có cửa sổ cổng đếm là "mất" mà bản vá không bù, rồi chốt "tổng
+#: giây mất = 0" không bao giờ đạt được vì một lý do không ai lần ra.
+BU_GOC_NOI_DB = 12.0
+
+#: LƯỚI AN TOÀN: ngưỡng KHÔNG BAO GIỜ được cao quá `p90 − mức này`.
+#:
+#: Sàn ước bằng bách phân vị 20 có thể sai HẲN khi lớp giọng bị nén / rỉ nhạc
+#: nhiều (đúng ca 0,20 s ở trên: sàn ước −19,87 trong khi lời chỉ −12,85). Thiếu
+#: lưới này thì ngưỡng leo lên TRÊN mức lời và bản vá **im lặng không bù gì** —
+#: hỏng đúng kiểu nguy hiểm nhất: mọi cổng vẫn xanh, chỉ `so_bu = 0` tố giác.
+#: Với dữ liệu thật lưới gần như không đụng tới: min(−14,39; −14,95) = −14,95.
+BU_GOC_DUOI_DINH_DB = 3.0
 
 
 def khoang_khong_giong(manh: list[tuple[float, str]], tong: float,
@@ -3158,7 +3186,7 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
         ket["ly_do"] = "không có khoảng trống" if not trong else "thiếu lớp giọng gốc"
         return ket
 
-    bao = duong_bao_muc(giong_goc, buoc=BUOC_DO_MUC)
+    bao = duong_bao_muc(giong_goc, buoc=BU_GOC_BUOC)
     if not bao:
         ket["ly_do"] = "không đo được đường bao lớp giọng gốc"
         return ket
@@ -3175,9 +3203,15 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
     # ngưỡng -110, đúng như phải vậy.
     sx = sorted(bao)
     san = sx[int(len(sx) * 0.20)]
-    nguong = san + BU_GOC_NOI_DB
+    dinh = sx[int(len(sx) * 0.90)]
+    # LƯỚI AN TOÀN — xem `BU_GOC_DUOI_DINH_DB`: ngưỡng không bao giờ được leo
+    # lên trên mức lời, dù phép ước sàn có sai thế nào.
+    nguong = min(san + BU_GOC_NOI_DB, dinh - BU_GOC_DUOI_DINH_DB)
     ket["san_db"] = round(san, 2)
+    ket["dinh_db"] = round(dinh, 2)
     ket["nguong_db"] = round(nguong, 2)
+    ket["luoi_an_toan"] = bool(dinh - BU_GOC_DUOI_DINH_DB
+                               < san + BU_GOC_NOI_DB)
 
     # --- KHỚP MỨC: giọng gốc phải to NGANG giọng mới, không to hơn ---
     # Lớp giọng gốc mang mức của bản master gốc (đo trên video anh Hùng:
@@ -3203,8 +3237,8 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
     for i, (a, b) in enumerate(trong):
         # Mốc trên lớp giọng GỐC (trục CHƯA giãn).
         ag, bg = a / k, b / k
-        i0 = int(ag / BUOC_DO_MUC)
-        i1 = min(len(bao), max(i0 + 1, int(bg / BUOC_DO_MUC)))
+        i0 = int(ag / BU_GOC_BUOC)
+        i1 = min(len(bao), max(i0 + 1, int(bg / BU_GOC_BUOC)))
         if not any(bao[j] > nguong for j in range(i0, i1)):
             ket["bo_qua"] += 1              # chỗ này gốc cũng im -> đừng bù
             continue
