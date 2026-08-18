@@ -2067,6 +2067,44 @@
      chỗ trả lời; `max_tokens_groq` co lại đúng luật nên không 413, nhưng số
      vòng đòi lại sẽ tăng. Muốn chắc thì chia mẻ ngay từ `_dich_loat` — chưa đo,
      chưa làm.
+  75. `_test_clip_mo_duoc.py` → **CLIP XUẤT RA PHẢI MỞ ĐƯỢC** (18/08/2026).
+     **ĐẠT 63 · HỎNG 0.** Anh Hùng gửi ảnh trình phát Windows: *"khi phân tích
+     cắt các part cứ báo lỗi, video bị trắng"* — `We can't open … It uses
+     unsupported encoding settings. 0x80004005`. Gốc: `_enc_args` (hàm sinh
+     tham số cho FILE THÀNH PHẨM) có `-pix_fmt yuv420p` ở nhánh `h264_nvenc`
+     nhưng nhánh `libx264` thì KHÔNG -> x264 lấy pix_fmt theo ĐẦU RA FILTER
+     GRAPH -> nguồn 10-bit ra **High 10**, nguồn 4:4:4 ra **High 4:4:4** =
+     đúng lời lỗi + đúng triệu chứng KHUNG TRẮNG, mà ffmpeg vẫn **mã thoát 0,
+     đủ khung, đủ `moov`** (họ bẫy *thành công giả*).
+     **NVENC KHÔNG PHẢI THỦ PHẠM — ĐỌC KỸ TRƯỚC KHI ĐI SỬA LẠI.** Nhánh nvenc
+     **vốn đã có `yuv420p` từ trước bản vá**; `df14b01` chỉ bổ sung thêm
+     `-profile:v high`. Đo trên máy này (`_do_nvenc_that.py`): NVENC mã TRƯỚC ra
+     `yuv420p / **Main**`, mã NAY ra `yuv420p / **High**` — cả hai đều 8-bit
+     4:2:0 nên **cả hai đều mở được**. Tức anh Hùng xuất bằng NVENC thì con
+     đường ra file hỏng là những lượt **LÙI VỀ libx264** (`_run_with_fallback`
+     lùi khi NVENC lỗi) chứ không phải lượt NVENC.
+     **HAI THỨ CHE MẤT BỆNH — biết trước thì khỏi kết luận oan "chốt chỉ là
+     trang trí" (chính mục tự-kiểm 7e của cổng đã PASS OAN vì cái này):**
+     · **NHIỀU ĐOẠN** đi qua mezzanine `_build_seg`, mà mezz **đã ép `yuv420p`
+       sẵn** (vá từ cổng 42) -> đầu vào lượt encode cuối đã là 420p;
+     · nền **`blur` dùng `overlay`**, mà `overlay` của ffmpeg mặc định
+       **`format=yuv420`** -> nó GHIM 420p bất kể nguồn.
+     Đo 12 arm trên nguồn 10-bit THẬT qua chính `export_canvas_clip`: bản gỡ
+     chốt ra `yuv420p` ở **MỌI** arm dùng `blur` hoặc nhiều đoạn. Chỉ đường
+     **1 ĐOẠN + `bg="fill"`** (không overlay) mới thả nguồn 10-bit xuống thẳng
+     encoder: gỡ chốt -> **`yuv420p10le / High 10`** · bản thật -> `yuv420p /
+     High`. Mục 7 nay chạy đúng cấu hình đó, nên nó chứng minh chốt **chịu
+     lực** chứ không phải con dấu.
+     **KHÔNG NHÌN ẢNH MÀ PHÂN BIỆT ĐƯỢC:** ffmpeg giải mã High 10 **bình
+     thường**, nên trích khung ra PNG thì file HỎNG và file LÀNH cho ra ảnh
+     giống nhau (đã mở cả 12 ảnh ra nhìn: đều là hình thật, không khung trắng).
+     Khung trắng là chuyện của **trình phát Windows**, không tái hiện được bằng
+     ffmpeg. Thước duy nhất phân biệt được là **`profile` trong ffprobe** — đây
+     là ca hiếm mà "mở ảnh ra nhìn" KHÔNG đủ, ngược với bài học tofu cổng 68.
+     Cổng vẫn trích PNG (mục 5) để bắt ca hỏng KHÁC: đơn sắc / trắng xoá.
+     **CHƯA LÀM, GHI THẲNG:** chưa ai mở thử bằng chính trình phát Windows của
+     anh Hùng (luật cấm mở trình phát trên máy anh ấy) — chuỗi suy luận
+     High 10/4:4:4 -> 0x80004005 lấy từ lời lỗi, chưa có phép đo tận mắt.
 - **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
   `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
   hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
