@@ -106,3 +106,9 @@ _do_rb_cache.json
 
 # mp3/wav cua `_do_bien_the_giong.py` — de NGHE bang tai, khong commit
 _do_bt_giong/
+
+# BAO MAT: cong 70 tung in NGUYEN VAN key Groq that ra file ket qua.
+# Mot luot `git add -A` la key vao lich su git cong khai. Chan tan goc.
+_kq*.txt
+_kq_hq/
+_kq*/
