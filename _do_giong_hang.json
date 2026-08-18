@@ -1,0 +1,270 @@
+{
+ "vi": {
+  "so_cau": 12,
+  "so_cau_gui": 12,
+  "gh_co_moc": 11,
+  "groq_co_moc": 12,
+  "giay_tieng": 64.7,
+  "giay_gh": 11.53,
+  "giay_groq": 11.84,
+  "K1_WB": {
+   "n": 221,
+   "tho_tb": 62.9,
+   "tho_p90": 120.0,
+   "he_thong": -55.0,
+   "rung_tb": 37.5,
+   "rung_trung_vi": 28.0,
+   "rung_p90": 77.0,
+   "muon_tho": 0.5,
+   "muon_sau": 9.0,
+   "trong_50_sau": 74.7
+  },
+  "K1_GH": {
+   "n": 206,
+   "tho_tb": 42.6,
+   "tho_p90": 85.0,
+   "he_thong": 41.0,
+   "rung_tb": 30.2,
+   "rung_trung_vi": 26.5,
+   "rung_p90": 58.0,
+   "muon_tho": 34.0,
+   "muon_sau": 5.8,
+   "trong_50_sau": 83.0
+  },
+  "K2_GROQ": {
+   "n": 221,
+   "tho_tb": 62.9,
+   "tho_p90": 120.0,
+   "he_thong": 55.0,
+   "rung_tb": 37.5,
+   "rung_trung_vi": 28.0,
+   "rung_p90": 77.0,
+   "muon_tho": 53.8,
+   "muon_sau": 16.3,
+   "trong_50_sau": 74.7
+  },
+  "K2_GH": {
+   "n": 206,
+   "tho_tb": 98.1,
+   "tho_p90": 120.0,
+   "he_thong": 94.0,
+   "rung_tb": 17.5,
+   "rung_trung_vi": 11.0,
+   "rung_p90": 31.0,
+   "muon_tho": 100.0,
+   "muon_sau": 4.4,
+   "trong_50_sau": 95.6
+  },
+  "K3": {
+   "WB": -154.5,
+   "GROQ": -7.7,
+   "GH": 10.4
+  },
+  "K3_n": {
+   "WB": 12,
+   "GROQ": 12,
+   "GH": 11
+  }
+ },
+ "en": {
+  "so_cau": 12,
+  "so_cau_gui": 12,
+  "gh_co_moc": 12,
+  "groq_co_moc": 12,
+  "giay_tieng": 61.1,
+  "giay_gh": 9.72,
+  "giay_groq": 11.9,
+  "K1_WB": {
+   "n": 202,
+   "tho_tb": 53.2,
+   "tho_p90": 98.0,
+   "he_thong": -33.0,
+   "rung_tb": 43.5,
+   "rung_trung_vi": 28.5,
+   "rung_p90": 80.0,
+   "muon_tho": 7.4,
+   "muon_sau": 18.3,
+   "trong_50_sau": 67.8
+  },
+  "K1_GH": {
+   "n": 202,
+   "tho_tb": 62.3,
+   "tho_p90": 122.0,
+   "he_thong": 47.0,
+   "rung_tb": 45.7,
+   "rung_trung_vi": 37.5,
+   "rung_p90": 80.0,
+   "muon_tho": 47.0,
+   "muon_sau": 18.3,
+   "trong_50_sau": 65.8
+  },
+  "K2_GROQ": {
+   "n": 202,
+   "tho_tb": 53.2,
+   "tho_p90": 98.0,
+   "he_thong": 33.0,
+   "rung_tb": 43.5,
+   "rung_trung_vi": 28.5,
+   "rung_p90": 80.0,
+   "muon_tho": 34.2,
+   "muon_sau": 13.9,
+   "trong_50_sau": 67.8
+  },
+  "K2_GH": {
+   "n": 207,
+   "tho_tb": 80.4,
+   "tho_p90": 114.0,
+   "he_thong": 76.0,
+   "rung_tb": 20.3,
+   "rung_trung_vi": 16.0,
+   "rung_p90": 43.0,
+   "muon_tho": 92.8,
+   "muon_sau": 5.3,
+   "trong_50_sau": 93.7
+  },
+  "K3": {
+   "WB": -48.7,
+   "GROQ": -9.4,
+   "GH": 9.2
+  },
+  "K3_n": {
+   "WB": 12,
+   "GROQ": 12,
+   "GH": 12
+  }
+ },
+ "zh": {
+  "so_cau": 12,
+  "so_cau_gui": 12,
+  "gh_co_moc": 12,
+  "groq_co_moc": 12,
+  "giay_tieng": 56.3,
+  "giay_gh": 8.12,
+  "giay_groq": 27.66,
+  "K1_WB": {
+   "n": 117,
+   "tho_tb": 63.4,
+   "tho_p90": 152.0,
+   "he_thong": -20.0,
+   "rung_tb": 59.2,
+   "rung_trung_vi": 40.0,
+   "rung_p90": 172.0,
+   "muon_tho": 15.4,
+   "muon_sau": 17.9,
+   "trong_50_sau": 58.1
+  },
+  "K1_GH": {
+   "n": 198,
+   "tho_tb": 52.2,
+   "tho_p90": 113.0,
+   "he_thong": 24.5,
+   "rung_tb": 46.5,
+   "rung_trung_vi": 29.0,
+   "rung_p90": 98.5,
+   "muon_tho": 28.8,
+   "muon_sau": 15.7,
+   "trong_50_sau": 78.8
+  },
+  "K2_GROQ": {
+   "n": 117,
+   "tho_tb": 63.4,
+   "tho_p90": 152.0,
+   "he_thong": 20.0,
+   "rung_tb": 59.2,
+   "rung_trung_vi": 40.0,
+   "rung_p90": 172.0,
+   "muon_tho": 34.2,
+   "muon_sau": 23.9,
+   "trong_50_sau": 58.1
+  },
+  "K2_GH": {
+   "n": 116,
+   "tho_tb": 80.7,
+   "tho_p90": 105.0,
+   "he_thong": 78.5,
+   "rung_tb": 16.5,
+   "rung_trung_vi": 12.0,
+   "rung_p90": 36.5,
+   "muon_tho": 95.7,
+   "muon_sau": 3.4,
+   "trong_50_sau": 96.6
+  },
+  "K3": {
+   "WB": -103.1,
+   "GROQ": -17.8,
+   "GH": -6.4
+  },
+  "K3_n": {
+   "WB": 12,
+   "GROQ": 12,
+   "GH": 12
+  }
+ },
+ "ja": {
+  "so_cau": 12,
+  "so_cau_gui": 12,
+  "gh_co_moc": 12,
+  "groq_co_moc": 12,
+  "giay_tieng": 76.5,
+  "giay_gh": 8.67,
+  "giay_groq": 28.26,
+  "K1_WB": {
+   "n": 218,
+   "tho_tb": 55.4,
+   "tho_p90": 98.0,
+   "he_thong": -50.0,
+   "rung_tb": 33.9,
+   "rung_trung_vi": 25.0,
+   "rung_p90": 75.0,
+   "muon_tho": 1.4,
+   "muon_sau": 14.2,
+   "trong_50_sau": 78.0
+  },
+  "K1_GH": {
+   "n": 332,
+   "tho_tb": 38.0,
+   "tho_p90": 81.0,
+   "he_thong": 21.5,
+   "rung_tb": 34.6,
+   "rung_trung_vi": 23.5,
+   "rung_p90": 74.5,
+   "muon_tho": 22.0,
+   "muon_sau": 11.1,
+   "trong_50_sau": 76.2
+  },
+  "K2_GROQ": {
+   "n": 218,
+   "tho_tb": 55.4,
+   "tho_p90": 98.0,
+   "he_thong": 50.0,
+   "rung_tb": 33.9,
+   "rung_trung_vi": 25.0,
+   "rung_p90": 75.0,
+   "muon_tho": 51.4,
+   "muon_sau": 7.8,
+   "trong_50_sau": 78.0
+  },
+  "K2_GH": {
+   "n": 272,
+   "tho_tb": 78.7,
+   "tho_p90": 100.0,
+   "he_thong": 75.0,
+   "rung_tb": 13.6,
+   "rung_trung_vi": 9.0,
+   "rung_p90": 28.0,
+   "muon_tho": 98.2,
+   "muon_sau": 2.9,
+   "trong_50_sau": 96.7
+  },
+  "K3": {
+   "WB": -82.4,
+   "GROQ": -1.4,
+   "GH": 1.3
+  },
+  "K3_n": {
+   "WB": 12,
+   "GROQ": 12,
+   "GH": 12
+  }
+ }
+}

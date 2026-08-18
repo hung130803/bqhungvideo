@@ -931,19 +931,32 @@ class ThayGiongDialog(QDialog):
         tt = PT.tinh_trang_piper()
         self._tt_piper = tt
         if tt["co"]:
-            self.lb_piper.setText(
-                # ĐÁNH ĐỔI PHẢI NÓI RA, ĐÃ ĐO (`_do_piper_moc_that.py`, 426
-                # mốc từ, Groq chép ngược chính file tiếng): mốc của Piper là
-                # SUY RA nên rung 59,1 ms so với 38,6 ms của edge-tts (1,53x),
-                # và 42% số từ hiện MUỘN hơn tiếng quá 50 ms (edge-tts: 0,5%).
-                # Giấu chuyện này đi thì người dùng chọn Piper rồi tự hỏi vì
-                # sao chữ chạy không khớp.
-                "Giọng Việt chạy trên máy (Piper): ĐÃ CÓ. "
-                "Chọn trong ô Giọng đọc để dùng.\n"
-                "Lưu ý đã đo: Piper không trả mốc từng chữ nên app phải SUY RA "
-                "— chữ chạy theo lời lệch gấp ~1,5 lần so với giọng thường "
-                "(edge-tts) và hay hiện MUỘN hơn tiếng. Cần chữ bám sát lời "
-                "thì dùng giọng thường.")
+            # DÒNG NÀY PHẢI ĐỔI THEO MÁY, KHÔNG PHẢI CÂU CỐ ĐỊNH. Đánh đổi cũ
+            # ("mốc SUY RA nên rung gấp 1,53x edge-tts, 42% chữ hiện muộn")
+            # CHỈ CÒN ĐÚNG khi máy chưa có bộ gióng hàng. Đo lại trên CÙNG 14
+            # câu, cùng cửa `_synth_all_words` (`_do_piper_moc_that.py` +
+            # `BQ_GIONG_HANG=0/1`):
+            #     rung   51,8 -> 29,5 ms  (edge-tts đo cùng lượt: 38,6)
+            #     trôi trong câu 42,0 -> 15,5 ms  <- đây mới là bệnh thật
+            # Tức CÓ gióng hàng thì Piper bám lời SÁT HƠN cả giọng thường.
+            # In câu cũ cho máy đã có gióng hàng là doạ người dùng bỏ một lựa
+            # chọn đang tốt; in câu mới cho máy chưa có là hứa hão.
+            from app.core import giong_hang as GH
+            if GH.co_giong_hang():
+                self.lb_piper.setText(
+                    "Giọng Việt chạy trên máy (Piper): ĐÃ CÓ. "
+                    "Chọn trong ô Giọng đọc để dùng.\n"
+                    "Đã đo: máy này có bộ gióng hàng nên chữ bám lời còn "
+                    "sát hơn giọng thường (lệch 29,5 ms so với 38,6 ms của "
+                    "edge-tts). Mốc rơi sau tiếng khoảng 20 ms.")
+            else:
+                self.lb_piper.setText(
+                    "Giọng Việt chạy trên máy (Piper): ĐÃ CÓ. "
+                    "Chọn trong ô Giọng đọc để dùng.\n"
+                    "Lưu ý đã đo: máy này CHƯA có bộ gióng hàng nên app phải "
+                    "SUY RA mốc từng chữ — chữ chạy theo lời lệch gấp ~1,4 "
+                    "lần so với giọng thường (edge-tts) và trôi dần về cuối "
+                    "câu. Cần chữ bám sát lời thì dùng giọng thường.")
             self.lb_piper.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
             self.b_tai_piper.setVisible(False)
         else:

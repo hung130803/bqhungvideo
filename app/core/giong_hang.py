@@ -187,7 +187,14 @@ def tinh_trang_giong_hang() -> dict:
 
 
 def co_giong_hang() -> bool:
-    """Có chạy gióng hàng được không. KHÔNG import torch (xem bất biến 1+2)."""
+    """Có chạy gióng hàng được không. KHÔNG import torch (xem bất biến 1+2).
+
+    `BQ_GIONG_HANG=0` tắt hẳn -> mọi máy đọc quay về đúng cách lấy mốc cũ.
+    Cần cái công tắc này vì hai lý do: đo A/B (bật/tắt trên CÙNG corpus mới
+    so được), và gỡ rối trên máy user mà không phải xoá 1,18 GB model.
+    """
+    if (os.environ.get("BQ_GIONG_HANG") or "").strip() == "0":
+        return False
     return bool(tinh_trang_giong_hang()["co"])
 
 

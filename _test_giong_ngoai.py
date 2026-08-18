@@ -180,8 +180,38 @@ def main() -> int:                                          # noqa: C901
     print("\nCA 2 — mốc từng chữ ra THẬT (bộ này không trả mốc, phải dò lại)")
     ok(all(len(m) > 0 for m in moc_w), "2a mọi câu có mốc",
        f"{[len(m) for m in moc_w]} từ")
-    ok(dem["moc"] >= len(TEXTS),
-       "2b cửa CÓ mốc gọi bộ dò mốc cho từng câu", f"{dem['moc']} lượt")
+    # 2b CANH BẤT BIẾN, KHÔNG CANH CƠ CHẾ. Bản đầu đòi đích danh
+    # `_lay_moc_groq` phải được gọi. Từ khi có `app/core/giong_hang.py`, máy
+    # CÓ bộ gióng hàng lấy mốc bằng đường đó và KHÔNG gọi Groq lượt nào (đo
+    # được: chính xác hơn 2,1-3,6 lần tuỳ thứ tiếng, và khỏi đốt lượt). Canh
+    # cơ chế cũ thì cổng ĐỎ OAN trên đúng cái máy vừa nâng cấp — mà cổng đỏ
+    # oan thì người ta bỏ qua nó (bài học cổng 41/47). Bất biến THẬT là:
+    # **cửa CÓ mốc phải ra mốc cho MỌI câu**, và **CẢ HAI đường đều phải tự
+    # đứng được** — nên kiểm luôn đường lùi thay vì bỏ đi.
+    from app.core import giong_hang as _GH
+    if _GH.co_giong_hang():
+        ok(dem["moc"] == 0,
+           "2b có bộ gióng hàng -> KHÔNG đốt lượt Groq nào mà vẫn đủ mốc",
+           f"{dem['moc']} lượt Groq · {[len(m) for m in moc_w]} từ")
+        dem["moc"] = 0
+        _cu = os.environ.get("BQ_GIONG_HANG")
+        os.environ["BQ_GIONG_HANG"] = "0"
+        try:
+            _ok2, _moc2 = asyncio.run(dubbing._synth_all_words(
+                TEXTS, MA_OV, _paths("ca2lui"), lang="vi"))
+        finally:
+            if _cu is None:
+                os.environ.pop("BQ_GIONG_HANG", None)
+            else:
+                os.environ["BQ_GIONG_HANG"] = _cu
+        ok(dem["moc"] >= len(TEXTS) and all(len(m) > 0 for m in _moc2),
+           "2b' TẮT gióng hàng -> tự quay về Groq chép ngược, VẪN đủ mốc "
+           "(đúng cảnh máy nhân viên chưa tải 1,18 GB model)",
+           f"{dem['moc']} lượt Groq · {[len(m) for m in _moc2]} từ")
+    else:
+        ok(dem["moc"] >= len(TEXTS),
+           "2b chưa có bộ gióng hàng -> cửa CÓ mốc gọi Groq cho từng câu",
+           f"{dem['moc']} lượt")
     tang = all(all(m[i][0] <= m[i + 1][0] for i in range(len(m) - 1))
                for m in moc_w if m)
     ok(tang, "2c mốc TĂNG DẦN theo thời gian")

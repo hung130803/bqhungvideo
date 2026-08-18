@@ -1,0 +1,41 @@
+{
+ "kq": {
+  "gpu": [
+   {
+    "wall": 29.32,
+    "giay_align": 5.58,
+    "nap": 18.89,
+    "thiet_bi": "cuda",
+    "co_moc": 101,
+    "n": 101
+   },
+   {
+    "wall": 16.56,
+    "giay_align": 5.6,
+    "nap": 7.44,
+    "thiet_bi": "cuda",
+    "co_moc": 101,
+    "n": 101
+   }
+  ],
+  "cpu": [
+   {
+    "wall": 76.79,
+    "giay_align": 65.7,
+    "nap": 6.84,
+    "thiet_bi": "cpu",
+    "co_moc": 101,
+    "n": 101
+   },
+   {
+    "wall": 72.58,
+    "giay_align": 62.4,
+    "nap": 6.1,
+    "thiet_bi": "cpu",
+    "co_moc": 101,
+    "n": 101
+   }
+  ]
+ },
+ "giay_tieng": 603.984
+}

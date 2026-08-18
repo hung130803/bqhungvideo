@@ -2051,6 +2051,65 @@ def _piper_hay_khong(voice: str) -> tuple[bool, str]:
     return False, lui
 
 
+# ==================================================================
+# CỬA CHUNG LẤY MỐC CHO MỌI MÁY ĐỌC **KHÔNG** TRẢ MỐC THẬT
+# ==================================================================
+# Trước file `giong_hang.py`, mỗi máy đọc tự xoay một kiểu và mỗi kiểu một
+# chất lượng: Piper **SUY RA** (đọc rời từng chữ rồi co giãn), OmniVoice nhờ
+# **Groq CHÉP NGƯỢC** (mỗi câu một lượt mạng). Nay cả hai đi CHUNG một cửa,
+# và cửa đó nhận (TIẾNG + CHỮ ĐÃ BIẾT) rồi đi tìm mỗi chữ nằm ở giây nào.
+#
+# **ĐO ĐƯỢC, KHÔNG PHẢI LÝ LẼ** (`_do_giong_hang.py`, 12 câu × 4 thứ tiếng,
+# mọi arm chạy trên CÙNG file tiếng nên khác biệt là của PHÉP LẤY MỐC):
+# RUNG (đã tách lệch hệ thống) Groq chép ngược -> gióng hàng:
+#   Việt 37,5 -> **17,5 ms** · Anh 43,5 -> **20,3** · Trung 59,2 -> **16,5**
+#   · Nhật 33,9 -> **13,6**. Thắng ở CẢ 4 thứ tiếng, đậm nhất ở Trung/Nhật.
+# Và bằng thước ĐỘC LẬP `silencedetect` (không Groq, không model), chữ ĐẦU
+# lệch lúc thật sự có tiếng: Groq −17,8..−1,4 ms · gióng hàng −6,4..+10,4 ms.
+#
+# BA ĐIỀU KHÔNG ĐƯỢC ĐỔI:
+# (1) **edge-tts và ElevenLabs KHÔNG đi qua đây.** Hai bộ đó trả mốc THẬT
+#     (`WordBoundary` · `/with-timestamps`); thay bằng mốc suy ra là đổi hành
+#     vi của 200-300 kênh đang chạy sản xuất để lấy một thứ chưa ai xin.
+# (2) **THIẾU BỘ GIÓNG HÀNG -> TRẢ NGUYÊN MỐC CŨ, ÊM, KHÔNG NỔ.** Máy nhân
+#     viên chưa tải 1,18 GB model thì mọi thứ chạy y như trước.
+# (3) **Câu nào gióng không nổi thì GIỮ MỐC CŨ của câu đó**, không phải bỏ cả
+#     mẻ — trộn mốc rỗng vào giữa là chữ biến mất ở đúng mấy câu đó.
+async def _moc_giong_hang(texts: list[str], paths: list[str], ok: list,
+                          moc_cu: list, lang: str, voice: str) -> list:
+    """Thay mốc SUY RA bằng mốc GIÓNG HÀNG. Thiếu đồ -> trả `moc_cu` y nguyên."""
+    try:
+        from app.core import giong_hang as gh
+        if not gh.co_giong_hang():
+            return moc_cu
+        lam = [i for i in range(len(texts))
+               if i < len(ok) and ok[i] and str(texts[i] or "").strip()
+               and os.path.exists(paths[i])]
+        if not lam:
+            return moc_cu
+        # `to_thread`: hàm này mở tiến trình con và chờ hàng chục giây. Gọi
+        # thẳng trong một hàm `async` là CHẶN CỨNG vòng lặp sự kiện suốt từng
+        # ấy thời gian — đúng khuôn `_chay_eleven`/`_chay_ngoai` đã phải dựng.
+        moc = await asyncio.to_thread(
+            gh.giong_hang_loat, [paths[i] for i in lam],
+            [texts[i] for i in lam], lang)
+        ra = list(moc_cu) + [[]] * max(0, len(texts) - len(moc_cu))
+        for k, i in enumerate(lam):
+            if k < len(moc) and moc[k]:
+                ra[i] = moc[k]
+        return ra
+    except Exception as e:  # noqa: BLE001
+        # Gióng hàng là phần THÊM. Nó hỏng thì lượt đọc vẫn phải ra video —
+        # mốc cũ kém chính xác hơn, nhưng video vẫn đúng.
+        try:
+            from app.core import giong_hang as gh
+            gh._ghi_log(f"gióng hàng hỏng ({voice}): {type(e).__name__}: {e} "
+                        f"-> GIỮ mốc cũ")
+        except Exception:  # noqa: BLE001
+            pass
+        return moc_cu
+
+
 async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
                            rate: str | list = "+0%",
@@ -2088,16 +2147,26 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
 
     dung_ngoai, voice = _ngoai_hay_khong(voice)
     if dung_ngoai:
-        # MỐC PHẢI DÒ LẠI BẰNG GROQ (bộ này không trả mốc) -> `lay_moc=True`.
-        # Đây là chỗ ĐẮT NHẤT của nhóm giọng ngoài: mỗi câu một lượt chép
-        # ngược. Cửa `_synth_all` (không cần mốc) truyền `lay_moc=False`.
-        return await _chay_ngoai(texts, voice, paths, lang, on_done, rate,
-                                 on_msg, lay_moc=True)
+        # `lay_moc` PHẢI BÁM THEO VIỆC MÁY CÓ BỘ GIÓNG HÀNG HAY KHÔNG.
+        # Ghi cứng `False` là **lỗi thật, cổng 72 CA 2b đã bắt được**: máy
+        # chưa tải 1,18 GB model thì OmniVoice ra **KHÔNG MỘT MỐC NÀO** ->
+        # chữ mất sạch nhịp, tệ hơn hẳn đường Groq nó vừa thay. Có gióng hàng
+        # thì mới được tắt Groq — lúc đó vừa chính xác hơn vừa khỏi đốt lượt
+        # (mỗi câu một lượt chép ngược là chỗ đắt nhất của nhóm giọng ngoài).
+        from app.core import giong_hang as _gh
+        co_gh = _gh.co_giong_hang()
+        ok_n, moc_n = await _chay_ngoai(texts, voice, paths, lang, on_done,
+                                        rate, on_msg, lay_moc=not co_gh)
+        return ok_n, await _moc_giong_hang(texts, paths, ok_n, moc_n, lang,
+                                           voice)
 
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
         from app.core import piper_tts
-        return piper_tts.doc_loat(texts, paths, on_done=on_done, rate=rate)
+        ok_p, moc_p = piper_tts.doc_loat(texts, paths, on_done=on_done,
+                                         rate=rate)
+        return ok_p, await _moc_giong_hang(texts, paths, ok_p, moc_p, lang,
+                                           voice)
 
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
