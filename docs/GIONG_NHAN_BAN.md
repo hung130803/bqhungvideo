@@ -7,14 +7,12 @@ phép lại).*
 **Không sửa một file nào trong `app/`. Không đẻ một luồng con nào. Không tăng
 version, không tag, không push.**
 
-> **Cách đọc tài liệu này:** phần A là câu trả lời. Phần B, C, D là số đo để
-> chứng minh. Nếu chỉ có 2 phút, đọc phần A.
-
----
-
-# PHẦN A — TRẢ LỜI NGẮN
-
-*(điền ở cuối, sau khi đủ 3 ý — xem phần B, C, D)*
+> **Cách đọc tài liệu này:** **nếu chỉ có 2 phút, kéo xuống cuối đọc PHẦN A** —
+> đó là câu trả lời. Phần B, C, D, E là số đo để chứng minh.
+>
+> **Trả lời một dòng: CÓ — thử 14 mẫu giọng miễn phí thì được 5 giọng dùng
+> được (4 giọng nghe ra là khác nhau), 0 đồng, hợp pháp, khớp thời gian ngang
+> edge-tts; đổi lại là đọc sai chữ nhiều hơn edge-tts khoảng 1,6 lần.**
 
 ---
 
@@ -342,5 +340,163 @@ lặp lại** nửa câu đầu:
 Đây là lỗi **lặp**, không phải bịa nội dung mới. Tỷ lệ **1/48 file bản sao
 (2,1%)**.
 
-> **CHỐT Ý 3: KHÔNG bịa chữ (+0,8% — sạch). NHƯNG sai từ 21,2% là KHÔNG ĐẠT.**
-> Và nguyên nhân đã truy ra: **lỗi của MẪU miễn phí, không phải lỗi của máy.**
+> **CHỐT Ý 3 (tạm): KHÔNG bịa chữ (+0,8% — sạch). Sai từ 21,2% là KHÔNG ĐẠT —
+> nhưng nguyên nhân là MẪU, không phải máy.** Vậy đổi nguồn mẫu tốt hơn thì sao?
+> Xem phần E.
+
+---
+
+# PHẦN E — ĐỔI NGUỒN MẪU TỐT HƠN, VÀ BẢNG CHỐT 14 GIỌNG
+
+## E1. Thử nguồn mẫu thứ hai: FLEURS
+
+Common Voice là **dân tự thu bằng điện thoại**. Tôi thử nguồn thứ hai —
+**FLEURS của Google** (`google/fleurs`, tiếng Việt): đây là **người đọc có chuẩn
+bị, thu trong điều kiện tốt hơn**.
+
+**Giấy phép kiểm từ máy chủ gốc: `cc-by-4.0`, không bị khoá.** CC-BY nghĩa là
+dùng thoải mái kể cả thương mại, **chỉ cần ghi nguồn**.
+
+*(Cổng đạo đức của tôi đã tự chặn một lần ở đây: script từ chối chạy vì đọc
+giấy phép ra dạng danh sách chứ không phải chuỗi. Tôi sửa cách đọc, xác nhận
+đúng là CC-BY-4.0 rồi mới chạy tiếp — chứ không bỏ qua cổng.)*
+
+Lấy **6 người đọc** trải đều cao độ, nhân bản **đúng 6 câu đó**:
+
+| | sai từ | bịa chữ |
+|---|---|---|
+| nhân bản từ mẫu **Common Voice** | 21,2% | +0,8% |
+| **nhân bản từ mẫu FLEURS** | **15,9%** | **−2,1%** |
+
+**Đổi nguồn mẫu ăn được 5,3 điểm.** Và **bịa chữ = 0/36 file** — sạch tuyệt đối.
+
+## E2. Nhưng số gộp vẫn là số lừa — phải xem TỪNG GIỌNG
+
+Số gộp 15,9% giấu mất chuyện quan trọng: **từng giọng chênh nhau rất xa**, từ
+**9,2%** tới **29,2%**. Nên câu hỏi đúng không phải *"nhân bản có tốt không"* mà
+là ***"bao nhiêu phần giọng nhân bản ra là dùng được"***.
+
+**Sàn của thước:** edge-tts — một máy đọc coi như chuẩn — vẫn bị chấm **6,2%**.
+Đó là **sai số của chính máy nghe**, không ai xuống dưới được. Nên cột quan
+trọng là **"vượt sàn"**: phần thực sự là lỗi của nhân bản.
+
+## E3. BẢNG CHỐT — 14 GIỌNG ĐÃ THỬ
+
+Ngưỡng: **sai từ ≤ 11%** (tức vượt sàn ≤ ~4,6 điểm) **VÀ** rung ≤ 30 ms.
+
+| giọng | nguồn mẫu | sai từ | vượt sàn | cao độ | rung | kết quả |
+|---|---|---|---|---|---|---|
+| **F1** | FLEURS CC-BY-4.0 | **9,2%** | +3,0 | 136,8 Hz | 9,3 ms | **DÙNG ĐƯỢC** |
+| **F5** | FLEURS CC-BY-4.0 | **9,2%** | +3,0 | 183,9 Hz | 22,5 ms | **DÙNG ĐƯỢC** |
+| **F3** | FLEURS CC-BY-4.0 | **10,8%** | +4,6 | 160,0 Hz | 12,6 ms | **DÙNG ĐƯỢC** |
+| **M0** | Common Voice CC0 | **10,8%** | +4,6 | 98,2 Hz | 20,4 ms | **DÙNG ĐƯỢC** |
+| **M1** | Common Voice CC0 | **10,8%** | +4,6 | 106,4 Hz | 3,6 ms | **DÙNG ĐƯỢC** |
+| M2 | Common Voice CC0 | 16,9% | +10,7 | 115,6 Hz | 3,9 ms | đọc sai nhiều |
+| F0 | FLEURS CC-BY-4.0 | 18,5% | +12,3 | 110,7 Hz | 11,0 ms | đọc sai nhiều |
+| F2 | FLEURS CC-BY-4.0 | 18,5% | +12,3 | 170,8 Hz | 17,8 ms | đọc sai nhiều |
+| M7 | Common Voice CC0 | 21,5% | +15,3 | 273,5 Hz | 0,1 ms | đọc sai nhiều |
+| M3 | Common Voice CC0 | 24,6% | +18,4 | 130,1 Hz | 6,1 ms | đọc sai nhiều |
+| M4 | Common Voice CC0 | 26,2% | +20,0 | 143,2 Hz | 7,9 ms | đọc sai nhiều |
+| M5 | Common Voice CC0 | 27,7% | +21,5 | 168,4 Hz | 11,3 ms | đọc sai nhiều |
+| F4 | FLEURS CC-BY-4.0 | 29,2% | +23,0 | 181,8 Hz | 7,2 ms | đọc sai nhiều |
+| M6 | Common Voice CC0 | 30,8% | +24,6 | 217,0 Hz | 11,6 ms | đọc sai nhiều |
+
+**Đọc bảng:**
+- **5/14 giọng dùng được = tỷ lệ trúng 36%** (cứ ~3 mẫu thử thì được 1 giọng).
+- **Cả 14/14 giọng đều đạt khâu thời gian** (rung ≤ 22,5 ms). **Không giọng nào
+  bị loại vì lệch giờ** — chỉ bị loại vì **đọc sai chữ**.
+- 5 giọng dùng được có cao độ **98,2 · 106,4 · 136,8 · 160,0 · 183,9 Hz**. Trong
+  đó **4 giọng cách nhau trên 20 Hz — tức nghe ra là 4 giọng KHÁC NHAU** (M0 và
+  M1 chỉ cách 8,2 Hz nên coi như một).
+- Nhóm dùng được sai từ **9,2–10,8%**, tức **vượt sàn chỉ +3,0 đến +4,6 điểm**.
+
+## E4. Một điểm phải nói thẳng: giọng CAO khó hơn
+
+| | sai từ trung bình | số giọng đạt |
+|---|---|---|
+| giọng trầm (< 140 Hz) | 15,1% | 3/6 |
+| giọng cao (≥ 140 Hz) | 21,7% | 2/8 |
+
+Tương quan cao độ ↔ sai từ: **+0,41** (có, nhưng không mạnh).
+
+**Không phải máy đọc dở giọng cao** — giọng mặc định của VieNeu chính là giọng
+cao (160,9 Hz) mà chỉ sai 7,7%. Nguyên nhân là **mẫu giọng nữ miễn phí ít và
+kém hơn**. Muốn giọng nữ hay, phải lọc nhiều mẫu hơn.
+
+---
+
+# PHẦN A — TRẢ LỜI NGẮN *(điền lại — đọc đoạn này là đủ)*
+
+## CÓ. Anh Hùng CÓ được nhiều giọng Việt miễn phí, hợp pháp, khớp chữ tốt.
+
+Nhưng phải kèm **một bước lọc**, và giọng ra **không hay bằng** 2 giọng
+edge-tts anh đang dùng. Cụ thể:
+
+### 1. Nhân bản CHẠY THẬT — không phải tưởng bở
+8 mẫu → 8 giọng bám đúng mẫu, **thứ tự trầm-bổng khớp tuyệt đối (28/28 cặp,
+Spearman 1,0000)**. Đối chứng âm sạch: giọng mặc định 160,9 Hz, còn 8 bản sao
+trải **98–273 Hz**, tản mát 60,9 Hz. **Không dính bẫy dương tính giả của lượt 4.**
+
+### 2. Khớp thời gian: ĐẠT HOÀN TOÀN — cửa tử lượt 4 đã mở
+Rung **14,6 ms**, so với **edge-tts 13,5 ms**. **Cả 14/14 giọng đều đạt.** Hơn
+Piper (29,5 ms) và hơn OmniVoice (90–119 ms) rất xa.
+
+### 3. Không bịa chữ
+**0/36 file** ở nguồn FLEURS. Ở nguồn Common Voice **1/48 file** bị đọc lặp nửa
+câu (2,1%). Không có kiểu bịa như viXTTS (29 chữ → 40 chữ). **Không bị loại vì
+bịa chữ.**
+
+### 4. Điểm yếu duy nhất, và là điểm yếu thật: ĐỌC SAI CHỮ
+| | sai từ |
+|---|---|
+| edge-tts (đang dùng, miễn phí) | **6,2%** |
+| VieNeu giọng mặc định | 7,7% |
+| **5 giọng nhân bản dùng được** | **9,2 – 10,8%** |
+| 9 giọng nhân bản còn lại | 16,9 – 30,8% ← **bỏ** |
+
+**Nhân bản không làm hỏng chữ** — nhân bản từ mẫu sạch tuyệt đối cho **7,7%,
+đúng bằng giọng mặc định, giá bằng 0**. Toàn bộ phần sai thêm là do **chất lượng
+mẫu giọng miễn phí**, và **lọc nhiễu không chữa được** (đã thử: 28,2% → 29,2%,
+không ăn thua).
+
+### 5. VẬY ĐƯỢC BAO NHIÊU GIỌNG?
+**Thử 14 mẫu → được 5 giọng dùng được (36%), trong đó 4 giọng nghe ra là khác
+nhau rõ.**
+
+Cách làm thực tế: **lấy nhiều mẫu CC0/CC-BY → nhân bản → ĐO → giữ giọng đạt.**
+Bước đo đã tự động hoá được (chính là cách tôi làm ra bảng E3). Với tỷ lệ trúng
+36%, muốn **10 giọng** thì lọc khoảng **28 mẫu**; muốn **20 giọng** thì lọc
+khoảng **56 mẫu**. Kho mẫu CC0 tiếng Việt có **hàng nghìn người đọc**, nên số
+giọng **không bị chặn bởi máy — chỉ bị chặn bởi công lọc**.
+
+### 6. TIỀN VÀ PHÁP LÝ
+- **0 đồng.** Máy đọc Apache 2.0, mẫu CC0 / CC-BY-4.0, chạy trên máy anh.
+- **Hợp pháp.** Không đụng giọng Vbee / FPT / Zalo / ElevenLabs. Riêng mẫu FLEURS
+  là CC-BY nên **khi phát hành phải ghi nguồn**; mẫu Common Voice là CC0 thì
+  không phải ghi gì.
+- Tốc độ nhân bản trên máy anh (chạy CPU, không đụng GPU): khoảng **1 giây máy
+  cho 1 giây tiếng**.
+
+### 7. NÓI THẲNG CÁI DỞ
+- Giọng nhân bản **đọc sai gấp ~1,6 lần** edge-tts (9,2–10,8% so với 6,2%).
+  Thêm giọng thì **đổi lấy chất lượng đọc kém đi** — đây là đánh đổi, không
+  phải bữa trưa miễn phí.
+- **Phải lọc.** Lấy bừa một mẫu thì **~2/3 khả năng ra giọng hỏng** (sai
+  17–31% chữ). Không đo mà dùng luôn là hỏng video.
+- **Giọng nữ khó ra hơn giọng nam** (2/8 so với 3/6).
+- Đây **không thay thế được 3 giọng Vbee** anh muốn. Muốn đúng
+  HN-Ngọc Huyền / HN-Anh Khôi / HN-Minh Quân thì vẫn chỉ có đường mua
+  (≈ 24,4 triệu/tháng — xem `docs/GIONG_CHOT.md`).
+
+### 8. NHỮNG GÌ TÔI CHƯA ĐO ĐƯỢC
+- **Chưa nghe bằng tai người.** Tôi không có tai; mọi kết luận ở trên là số đo
+  máy. File đã giữ ở `%TEMP%\bq_giong8\gen\`, `gen_fl\` và
+  `%TEMP%\bq_tts_thu\nghe_thu\` để anh nghe thử.
+- **Chưa đo trên corpus dài.** Mới 6 câu ngắn (65 chữ). Bài dài vài phút có thể
+  khác — nhất là chuyện đọc lặp.
+- **Chưa lọc quy mô lớn.** Tỷ lệ trúng 36% là từ **14 mẫu**; lọc 100 mẫu tỷ lệ
+  có thể lệch đi.
+- **Chưa đo tốc độ khi chạy hàng loạt 200 kênh** (mới đo từng câu lẻ).
+- Corpus 6 câu này là **văn nói có lỗi chính tả sẵn** (lấy từ bộ đo cũ). Nó
+  **không làm sai kết luận** vì mọi arm dùng chung một bộ và edge-tts vẫn tái
+  lập đúng mốc 6,2%/6,8% — nhưng con số tuyệt đối sẽ đẹp hơn trên văn viết sạch.
