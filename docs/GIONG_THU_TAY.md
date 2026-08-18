@@ -275,4 +275,262 @@ danhtran2mind` — tên repo đó **không tồn tại**. Bảng lượt 9 ghi "
 
 ---
 
-*(còn tiếp — bộ đo cuối: lấy thêm giọng từ thứ ĐANG CÓ)*
+## 5. BỘ ĐO CUỐI — **THỨ ANH HÙNG XIN, ANH ĐANG CÓ SẴN NHIỀU HƠN ANH TƯỞNG**
+
+Sau 4 bộ trên, câu trả lời "có bộ mới nào hơn không" là KHÔNG. Nên tôi quay thước
+vào **chính thứ app đang chạy** — chỗ duy nhất hôm nay đo ra được con số VƯỢT MỐC.
+
+### 5a. Anh Hùng đang có bao nhiêu giọng edge-tts (đếm bằng API, không đoán)
+
+`edge_tts.list_voices()` trả **322 giọng**, trong đó:
+
+| | số giọng |
+|---|---|
+| **tiếng Việt `vi-VN`** | **2** (HoaiMy nữ · NamMinh nam) — đúng như đã biết |
+| **tiếng Anh** | **47 giọng / 14 vùng** — en-US 17 · en-GB 5 · en-IN 3 · và 11 vùng khác 2 giọng mỗi vùng (AU · CA · HK · IE · KE · NZ · NG · PH · SG · ZA · TZ) |
+
+### 5b. **47 GIỌNG ANH TRẢI 3,53 — RỘNG HƠN MỐC 3,31.** Đây là số duy nhất hôm nay vượt mốc.
+
+Đo nhấn nhá cả 47 giọng trên **cùng một câu tiếng Anh** (cùng thước, cùng lượt):
+
+| | trải nhấn nhá |
+|---|---|
+| Chatterbox (núm cảm xúc) | 1,84 |
+| OmniVoice (11 giọng thiết kế) | 2,16 |
+| **Kani-TTS-Vie (5 mục)** | **2,26** |
+| 17 giọng en-US — mốc cũ lượt 5 | 3,31 |
+| 17 giọng en-US — đo lại hôm nay | 3,15 |
+| **CẢ 47 giọng tiếng Anh của edge-tts** | **3,53** |
+
+Trải nhất: `en-US-Andrew` **5,35** · `en-US-AndrewMultilingual` 5,25 ·
+`en-US-Emma` 4,96 · `en-GB-Ryan` **4,85** · đều đều nhất `en-PH-Rosa` **1,82`.
+
+→ **Chỉ cần mở ô chọn giọng cho đủ 47 giọng thay vì 17 giọng en-US là dải cảm xúc
+rộng thêm 0,38 nửa cung, 0 đồng, 0 dòng mã model mới.** `en-GB-Ryan` 4,85 nằm
+NGOÀI nhóm 17 giọng đang liệt kê, mà nó đứng thứ 5 toàn bảng.
+
+### 5c. Núm `pitch` — **có tạo ra GIỌNG KHÁC, đo được**, và KHÔNG làm đọc sai
+
+Đo bằng đúng thước ECAPA đã dùng cho Kani (mốc: hai giọng en-US khác nhau ≤ 0,314):
+
+| | cao độ trung vị | cặp giống nhau THẤP NHẤT |
+|---|---|---|
+| HoaiMy `-50Hz` → `+50Hz` | 141,6 → 272,0 Hz | **0,059** |
+| NamMinh `-50Hz` → `+50Hz` | 86,7 → 174,9 Hz | **0,013** |
+
+Chọn ra bộ mà **mọi cặp** đều dưới 0,314 (tức đôi một khác nhau như hai giọng
+en-US khác nhau):
+
+* **NamMinh: `-50Hz` · `+0Hz` · `+50Hz` = 3 giọng** (0,147 · 0,013 · 0,175)
+* **HoaiMy: `-50Hz` · `+0Hz` = 2 giọng** (0,139) — thêm `+50Hz` thì cặp
+  `+0/+50` lên 0,461, quá mức, nên chỉ được 2
+
+→ **2 giọng Việt của edge-tts đo ra 5 người nói đôi một khác nhau.**
+
+**VÀ NÓ KHÔNG PHÁ TIẾNG VIỆT** — đây là phép kiểm bắt buộc vì tiếng Việt CÓ
+THANH ĐIỆU, dịch cao độ là chỗ dễ làm sai dấu. Cho Groq chép ngược cả 10 file
+(2 giọng × 5 mức): **sai từ 0,0% và bịa chữ 0,0% ở CẢ 10/10**, câu chép ra đúng
+nguyên văn từng chữ ở mọi mức.
+
+> ⚠ **PHẢI NÓI RÕ GIỚI HẠN CỦA SỐ NÀY, ĐỪNG ĐỌC QUÁ:** ECAPA **rất nhạy với cao
+> độ**. Nó nói "hai vector người nói khác nhau" — điều đó đúng và đo được, nhưng
+> tai người có thể nghe ra *"vẫn một người, nói cao/thấp hơn"* chứ không phải
+> *"một người khác"*. **Tôi không có tai, nên chỗ này anh Hùng phải nghe rồi
+> chốt.** File để nghe: `L10_pit_*.wav`. App **đã có sẵn** đường này (cổng 65 —
+> nút Nghe thử đã liệt kê "edge-tts + biến thể cao độ"), nên thử là 0 công.
+
+### 5d. Núm `pitch` cho thêm GIỌNG, **không** cho thêm CẢM XÚC
+
+Đo nhấn nhá của NamMinh qua 5 mức pitch: **3,73 – 3,85 = trải 0,12**. Tức nó dịch
+cả giọng lên/xuống chứ không làm giọng lên xuống nhiều hơn. Muốn thêm cảm xúc thì
+phải **đổi GIỌNG** (mục 5b), không phải xoay núm.
+
+### 5e. Ba giọng Việt đang có: **là 3 giọng khác nhau thật, nhưng 2 giọng nữ hơi giống**
+
+| cặp | giống nhau |
+|---|---|
+| edge HoaiMy vs edge NamMinh | **0,189** — khác rõ |
+| edge NamMinh vs Piper vais1000 | **0,259** — khác rõ |
+| **edge HoaiMy vs Piper vais1000** | **0,544** — khác (dưới mức "cùng người" 0,70) nhưng **GẦN NHAU**, cùng nữ |
+
+Hai giọng Piper còn lại trong kho chính thức **không dùng được**: `vivos`
+CC-BY-NC (cấm thương mại) · `25hours_single` giấy phép **"Unknown"**.
+
+---
+
+## 6. BẢNG TỔNG — ĐỦ 7 CỘT ANH HÙNG ĐẶT
+
+| bộ | giọng **THẬT** | nhấn nhá TRẢI | sai từ Việt | sai từ Anh | **bịa chữ** | mốc từng chữ | giấy phép |
+|---|---|---|---|---|---|---|---|
+| **edge-tts** *(ĐANG CHẠY)* | **2 Việt** (→ **5** nếu tính biến thể cao độ) · **47 Anh** | **3,53** (47 giọng Anh) · 3,15 (17 en-US) | **5,2%** | **0,0%** | **0,0%** | **CÓ — rung 15,7 ms** | LGPLv3; rủi ro ở điều khoản Microsoft (đã khai `LICENSES.txt`) |
+| **Piper `vais1000`** *(đã nối)* | 1 Việt | 3,24 *(lượt 1)* | *(chưa đo lượt này)* | — | *(chưa đo)* | SUY RA, rung 57,7 ms | MIT + dữ liệu CC BY 4.0 — **bán được** |
+| **Kani-TTS-Vie** | **2** (1 nam · 1 nữ) — 18 cái TÊN nhưng 2 người nói; **giọng KHÔNG đứng yên** | **2,26** | **7,1%** | **0,0%** | **0,0%** | KHÔNG → cần `giong_hang.py` | 3 tầng: apache-2.0 (thẻ) / **LFM1.0** (nền) / **NVIDIA Open Model** (bộ giải mã) — **cả 3 CHO thương mại** |
+| **LEMAS-TTS** | **0 giọng dựng sẵn** (zero-shot nhân bản) | không đo được | không đo được | không đo được | không đo được | KHÔNG | thẻ CC-BY-4.0, nhưng dữ liệu 150k giờ **giấu nguồn** + dấu vết Emilia (NC) |
+| **MeloTTS-Vietnamese** | **1** (`spk2id` = `{"VI-default":0}`) | chưa đo | chưa đo | — | chưa đo | KHÔNG | **MIT + InfoRe CC-BY-4.0 — sạch nhất cả 2 tầng** |
+| **VITS-OpenBible-Vietnamese** | **2** (`speakers.pth`) | chưa đo | chưa đo | — | chưa đo | KHÔNG | CC-BY-SA-4.0 — bán được nhưng **buộc chia sẻ lại** |
+| **EveryVoice-OpenBible-VN** | không khai | chưa đo | chưa đo | — | chưa đo | KHÔNG | CC-BY-SA-4.0 |
+| **Viet-SpeechT5** | — | — | — | — | — | — | **tên repo lượt 9 ghi là 401 = KHÔNG TỒN TẠI** |
+| *(nhóm CC-BY-NC: v-tts 5 giọng · ZipVoice-VN · VibeVoice-VN · Dia-VN · Voxtral-4B · Parler-TTS-VN · CapSpeech-VN · omnivoice-VN)* | — | — | — | — | — | — | **CẤM thương mại → không thử, đúng đề bài** |
+| *(nhóm giọng đi mượn Vbee: Kokoro-VI 14 giọng · VieNeu-lora-ngoc-huyen)* | — | — | — | — | — | — | **LOẠI vì đạo đức, không thử** |
+
+## 7. TRẢ LỜI THẲNG BA CÂU HỎI
+
+### 7.1 Có bộ nào ĐÁNG THÊM VÀO APP không? — **KHÔNG.**
+
+| mốc anh Hùng đặt | ai vượt? |
+|---|---|
+| nhiều hơn **2 giọng Việt** | **KHÔNG BỘ MỚI NÀO.** Kani đo ra **2** · MeloTTS 1 · VITS-OpenBible 2 · LEMAS **0**. Bộ duy nhất có nhiều hơn 2 là Kokoro-VI (14) và v-tts (5) — một cái giọng đi mượn Vbee, một cái cấm thương mại. |
+| nhấn nhá trải hơn **3,31** | **KHÔNG BỘ MỚI NÀO.** Kani 2,26. **Thứ duy nhất vượt là 47 giọng Anh của chính edge-tts: 3,53.** |
+| sai từ không tệ hơn edge-tts | Kani: tiếng Anh **BẰNG** (0,0% = 0,0%), tiếng Việt **TỆ HƠN** (7,1% vs 5,2%). Các bộ khác chưa đo được. |
+| **0% bịa chữ** | Kani **ĐẠT** (0,0% cả Việt lẫn Anh) — công bằng mà nói, nó qua được án tử. |
+
+**Kani-TTS-Vie đạt 1/4 mốc.** Cộng thêm giá: **1,2 GB** tải về (448 MB thư viện
+NeMo + 723 MB trọng số), bộ thư viện KHÔNG có trong `.exe`, không có mốc từng
+chữ, đọc chậm hơn edge ~40% ở câu dài, và **giọng trôi giữa các lượt xuất**.
+
+### 7.2 Anh Hùng có bao nhiêu giọng miễn phí HỢP PHÁP?
+
+| | số giọng | nguồn |
+|---|---|---|
+| **Tiếng Việt** | **3** dùng ngay · **6** nếu bật biến thể cao độ | edge-tts HoaiMy + NamMinh (2) · Piper `vais1000` (1) · biến thể cao độ đo ra thêm 3 người nói khác (HoaiMy ×2, NamMinh ×3) |
+| **Tiếng Anh** | **47** | edge-tts, 14 vùng — hiện app chỉ liệt kê 17 giọng en-US, **còn 30 giọng chưa mở** |
+
+Cộng lại: **50 giọng dùng được ngay (3 Việt + 47 Anh)**, lên **53** nếu bật biến
+thể cao độ. **KHÔNG tính** 5 giọng OmniVoice trong app — trọng số CC-BY-NC, nhà
+phát hành CẤM thương mại (app đã dán cảnh báo đúng ở `giong_ngoai.CANH_BAO_GP_OV`).
+
+### 7.3 Việc nên làm — theo thứ tự rẻ trước
+
+1. **Mở ô chọn giọng tiếng Anh từ 17 lên 47.** Số đo: dải cảm xúc **3,15 → 3,53**.
+   0 đồng, 0 model mới, không tải gì. Đây là việc duy nhất hôm nay có số chứng minh.
+2. **Nghe thử 10 file `L10_pit_*.wav` rồi tự chốt** biến thể cao độ có ra "người
+   khác" hay chỉ là "cùng người nói cao hơn". Đo đã xong: sai từ 0,0%, đôi một
+   khác nhau theo máy. Chỉ còn thiếu cái tai của anh.
+3. **KHÔNG thêm Kani-TTS-Vie.** 1/4 mốc, +1,2 GB.
+4. **Nhớ MeloTTS-Vietnamese** như phương án cuối nếu ngày nào Microsoft đóng cửa
+   edge-tts: 1 giọng, nhưng **sạch phép nhất cả hai tầng** (mã MIT + dữ liệu
+   InfoRe CC-BY-4.0). Chưa đo chất lượng — cần dựng môi trường Python thứ hai.
+
+---
+
+## 8. NHỮNG GÌ CHƯA LÀM ĐƯỢC — GHI THẲNG
+
+1. **Không đo được chất lượng của 4 bộ**: MeloTTS-Vietnamese · VITS-OpenBible ·
+   EveryVoice-OpenBible · Viet-SpeechT5. Lý do thật: mỗi bộ đòi một bộ thư viện
+   riêng xung đột với máy này (MeloTTS ghim `transformers==4.27.4` + `numpy==1.26.4`;
+   VITS cần coqui-tts; EveryVoice cần `everyvoice`), **và cả 4 đều chỉ có 1-2
+   giọng nên đã trượt mốc đếm giọng trước khi chạy**. Tôi đọc số giọng từ chính
+   file cấu hình của model và ghi rõ cột chất lượng là "chưa đo" — **không bịa số**.
+2. **LEMAS-TTS không chạy**: nó là zero-shot nhân bản, không có giọng dựng sẵn,
+   nên chạy nó chỉ đo được "nó sao chép giọng tôi đưa vào tốt tới đâu" — không
+   trả lời được câu hỏi của anh Hùng. Vẫn đọc được giao diện thật để chốt "0 giọng".
+3. **Piper `vais1000` lượt này KHÔNG đo lại** sai từ / bịa chữ. Số 3,24 trong
+   bảng là của lượt 1, **thước khác câu** — đừng so thẳng với 3,53.
+4. **Tôi không có tai.** Mọi con số ở đây là số đo máy. Cụ thể ba chỗ CHỈ có tai
+   anh Hùng chốt được: (a) biến thể cao độ có ra người khác không · (b) `en-GB-Ryan`
+   4,85 nghe có hay hơn `en-US-Andrew` 5,35 không · (c) giọng Kani nghe thế nào.
+5. **ECAPA nhạy cao độ** — đã ghi ở mục 5c. Con số "5 giọng Việt" là số MÁY;
+   con số CHẮC CHẮN là **3**.
+6. **Kani đo ở nhiệt độ mặc định của Space** (`temperature=0.7`, `do_sample=True`).
+   Hạ nhiệt độ có thể làm giọng đứng yên hơn — **chưa thử**, và cũng không cứu
+   được mốc đếm giọng (2) hay nhấn nhá (2,26).
+
+---
+
+## 9. XÁC NHẬN CÁCH LÀM
+
+- **KHÔNG đẻ một luồng con nào** — tự làm hết.
+- **KHÔNG sửa một file nào trong `app/`.** Lượt này ghi đúng một file:
+  `docs/GIONG_THU_TAY.md`. Mọi script đo nằm NGOÀI repo (`D:\claude\_l10\`).
+- **Không tăng version, không tag, không push.** Commit sau MỖI bộ đo xong (5 lần).
+- **KHÔNG dùng tài khoản Hugging Face của anh Hùng** — không đăng nhập, không
+  token. Space chặn thì chuyển sang chạy tại máy, không đi tìm chìa khoá.
+- **Không đụng `_lib/`, `_giong_hang/`, `_giong_ngoai/`.** Dùng python của
+  `_giong_ngoai/venv` (đọc thôi), gói phụ cài vào thư mục RIÊNG
+  `D:\claude\_l10\pk` bằng `pip --target` nên **không thêm/xoá một gói nào** trong
+  môi trường app đang chạy sản xuất.
+- **GPU xin theo ĐỢT NGẮN**: 6 đợt, mỗi đợt 30 giây – 2 phút, nghỉ 20 giây giữa
+  các đợt. Đỉnh VRAM 2,8/12 GB — luồng phát hành v2.37.0 chạy song song suốt.
+- **Model tải về DỌN SẠCH** (xem mục 10). Ổ C: **372 GB trống** lúc bắt đầu và
+  lúc xong, chưa bao giờ xuống gần 50 GB.
+- **File nghe thử GIỮ LẠI** ở `%TEMP%\bq_tts_thu\nghe_thu\` — 135 file cũ
+  **không xoá cái nào**, lượt này thêm ~110 file mang tiền tố `L10_`.
+
+## 10. SỐ ĐO TÓM TẮT ĐỂ TRA LẠI SAU
+
+```
+BO CAU: 8 cau Viet + 8 cau Anh (4 cau dau moi thu tieng lay tu
+        _bo_cau_thu_doc.py loai cau_thuong; 4 cau sau viet them)
+THUOC:  sai tu/bia chu = Groq whisper-large-v3 chep nguoc + SequenceMatcher
+        nhan nha       = f0_std (nua cung quanh trung vi), librosa.pyin
+        so giong THAT  = ECAPA-TDNN (speechbrain/spkrec-ecapa-voxceleb)
+
+TU KIEM BO DO ECAPA (bat buoc, chay tren edge-tts):
+   TRONG-giong HoaiMy  0.704-0.848   (4 CAU KHAC NHAU = dieu kien KHO HON)
+   TRONG-giong NamMinh 0.739-0.807
+   HoaiMy vs NamMinh   0.209         -> khac giong, dung
+   4 giong en-US, cao nhat 0.314     -> nguong doc so: >=0.70 cung nguoi
+
+ARM DOI CHUNG edge-tts (chinh bo cau nay):
+   sai tu vi 5.2%  bia 0.0%  8/8 cau
+   sai tu en 0.0%  bia 0.0%  8/8 cau
+   nhan nha 17 giong en-US  2.20-5.35 = TRAI 3.15  (moc luot 5: 3.31)
+   nhan nha 47 giong en     1.82-5.35 = TRAI 3.53  <<< DUY NHAT VUOT MOC
+   nhan nha 2 giong vi      3.38-3.74 = TRAI 0.36
+
+KANI-TTS-VIE (chay TAI MAY, RTX 3060, nap model 5.9s, 2.0-3.9s/cau):
+   so giong THAT = 2   (Khoa=Hung=David | Trinh=Katie=mac dinh)
+   13 giong "cross-lingual" the model ke: 13/13 KHONG THAT (gom lai 3 cum,
+      trung voi 2 giong tren; nur~mac dinh 0.764, jenny 0.710, seulgi 0.694)
+   TRONG-giong 0.404-0.849 (TB tung muc 0.572-0.729) << edge 0.782
+      -> GIONG KHONG DUNG YEN giua cac luot
+   sai tu vi 7.1%  bia 0.0%  8/8   (edge 5.2%)
+   sai tu en 0.0%  bia 0.0%  8/8   (edge 0.0%)
+   nhan nha 5 muc 2.86-5.12 = TRAI 2.26   (edge 47 giong 3.53)
+   cau Anh dai: Kani 9.1-11.5s vs edge ~7s -> doc cham hon ~40%
+   GIAY PHEP 3 TANG: the apache-2.0 | nen lfm1.0 | codec NVIDIA Open Model
+      ca 3 CHO thuong mai; codec ghi ro "ready for commercial use"
+
+LEMAS-TTS: 0 giong dung san (gr.Audio "Reference Audio" = phai nap tieng mau)
+   du lieu 150.000 gio dan cc-by-4.0 nhung KHONG NEU MOT NGUON NAO
+   + file demo zh_emilia_*.mp3 (Emilia = CAM thuong mai)
+
+SO GIONG doc tu CHINH FILE CAU HINH (khong chay model):
+   MeloTTS-Vietnamese  spk2id {"VI-default":0}          = 1
+   VITS-OpenBible      speakers.pth 2 muc               = 2
+   Viet-SpeechT5 (ten luot 9 ghi)  HTTP 401             = KHONG TON TAI
+
+EDGE-TTS KIEM KE (edge_tts.list_voices): 322 giong tong
+   vi-VN 2 | tieng Anh 47 giong / 14 vung (en-US 17, en-GB 5, en-IN 3, 11 vung x2)
+
+NUM PITCH (do bang ECAPA + Groq):
+   HoaiMy  141.6 -> 272.0 Hz | cap thap nhat 0.059 | bo doi-mot-khac: -50,+0 = 2
+   NamMinh  86.7 -> 174.9 Hz | cap thap nhat 0.013 | bo doi-mot-khac: -50,+0,+50 = 3
+   SAI TU 0.0% + BIA 0.0% o CA 10/10 file -> khong pha thanh dieu tieng Viet
+   nhan nha qua 5 muc pitch 3.73-3.85 = TRAI 0.12 -> them GIONG, khong them CAM XUC
+   >> CANH BAO: ECAPA RAT NHAY CAO DO. So chac chan la 3 giong Viet, khong phai 5.
+
+3 GIONG VIET DANG CO (ECAPA):
+   HoaiMy vs NamMinh      0.189  khac ro
+   NamMinh vs vais1000    0.259  khac ro
+   HoaiMy vs vais1000     0.544  khac, nhung GAN NHAU (cung nu)
+   (Piper vivos = CC-BY-NC | 25hours_single = "Unknown" -> khong dung duoc)
+
+GIAY PHEP BAT SAI LUOT NAY (cong don 15 -> 16):
+   danhtran2mind/Vi-SpeechT5-TTS  luot 9 ghi "MIT" | THAT: repo 401, khong ton tai
+   (repo that la danhtran2mind/Viet-SpeechT5-TTS-finetuning)
+   + bo sung TANG 3 cua Kani ma luot 9 khong kiem: NVIDIA Open Model License
+
+CHUA DO: chat luong cua MeloTTS / VITS-OpenBible / EveryVoice / Viet-SpeechT5
+   (moi bo doi mot bo thu vien xung dot, va ca 4 chi co 1-2 giong nen da truot
+    moc dem giong truoc khi chay) — KHONG BIA SO
+
+script do: D:\claude\_l10\  (ngoai repo, khong dung app/)
+file nghe thu: %TEMP%\bq_tts_thu\nghe_thu\L10_*   (~110 file, giu 135 file cu)
+```
+
+---
+
+*Đo ngày 18/08/2026. Lượt 10. **Không đẻ luồng con nào** — tự làm hết.
+**Không sửa file nào trong `app/`.** Không tăng version, không tag, không push.
+Ổ C 372 GB trống trước và sau. Model tải về đã dọn.*
