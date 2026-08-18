@@ -268,10 +268,16 @@ def ten_ro_rang(vid: str, nhan: str, trung_ten: bool) -> str:
     """
     if not trung_ten:
         return nhan
-    ro = "bản đa ngôn ngữ" if da_ngu(vid) else "bản tiếng Anh"
-    if ro in nhan:
+    thap = str(nhan or "").lower()
+    if da_ngu(vid):
+        # nhãn nhóm ĐỀ XUẤT đã ghi sẵn "(đa ngôn ngữ)", nhãn thường ghi
+        # "(Nam, đa ngữ)" -> nói lần nữa là dòng dài thêm mà không rõ thêm.
+        if "đa ngôn ngữ" in thap or "đa ngữ" in thap:
+            return nhan
+        return f"{nhan} [bản đa ngôn ngữ]"
+    if "tiếng anh" in thap:
         return nhan
-    return f"{nhan} [{ro}]"
+    return f"{nhan} [bản tiếng Anh]"
 
 
 def la_bien_the(vid: str) -> bool:
@@ -375,6 +381,17 @@ def chon_khuyen(ds: list[tuple[str, str]], nn: str,
 
     Không giọng nào đủ 3 điều -> trả rỗng. **Nhóm rỗng thì `gom_nhom` bỏ hẳn
     nhãn nhóm**, thà không khuyên còn hơn khuyên bừa.
+
+    **GIỌNG ĐÚNG TIẾNG ĐÍCH LUÔN ĐỨNG TRÊN GIỌNG ĐA NGÔN NGỮ — và đây KHÔNG
+    phải sở thích, nó là điều kiện để con số nhấn nhá còn có nghĩa.**
+    ``nhan_nha`` đo mỗi giọng trên **4 câu ĐÚNG TIẾNG CỦA NÓ** và dặn thẳng ở
+    đầu bảng: *"so trong CÙNG một tiếng thì chắc; so CHÉO tiếng chỉ là tham
+    khảo"*. Xếp một hàng chung thì ``en-AU-WilliamMultilingual`` **4,73** (đo
+    trên câu tiếng Anh) đứng trên ``vi-VN-NamMinh`` **4,04** (đo trên câu
+    tiếng Việt) — bản đầu của hàm này ĐÃ làm đúng như vậy, tức là đem khuyên
+    anh Hùng một giọng đọc tiếng Việt giọng Tây bằng một phép so sai luật.
+    Nay chia **hai rổ**: đúng tiếng trước, đa ngôn ngữ sau; **trong mỗi rổ**
+    mới xếp theo số đo, vì lúc đó mọi giọng cùng một bộ câu.
     """
     goc = str(nn or "").split("-")[0].lower()
     ung: list[str] = []
@@ -385,7 +402,8 @@ def chon_khuyen(ds: list[tuple[str, str]], nn: str,
             continue
         if ma_ngon_ngu(vid) == goc or da_ngu(vid):
             ung.append(vid)
-    ung.sort(key=lambda v: nhan_nha.khoa_sap(_bo_pitch(v)))
+    ung.sort(key=lambda v: (1 if da_ngu(v) else 0,
+                            nhan_nha.khoa_sap(_bo_pitch(v))))
     return ung[:max(0, int(so))]
 
 
