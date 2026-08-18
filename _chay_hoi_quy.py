@@ -33,15 +33,26 @@ PY = str(REPO / ".venv" / "Scripts" / "python.exe")
 
 #: (nhãn, file, mốc ĐẠT mong đợi hoặc None)
 CONG = [
-    # 69 và 68 PHẢI nằm trong danh sách này: cổng không được gọi thì nó chỉ là
-    # một file .py nằm đó, và lượt hồi quy "xanh" mà không chạy cổng mới chính
-    # là bẫy "ĐẠT OAN vì lượt chạy chưa tới chốt".
+    # 70, 69 và 68 PHẢI nằm trong danh sách này: cổng không được gọi thì nó chỉ
+    # là một file .py nằm đó, và lượt hồi quy "xanh" mà không chạy cổng mới
+    # chính là bẫy "ĐẠT OAN vì lượt chạy chưa tới chốt".
+    #
+    # Cổng 70 canh bản sửa CHẶN SẢN XUẤT (Groq khai tử `llama-3.3-70b-
+    # versatile` -> 404 hàng loạt -> chết cả dây chuyền). Nó CÓ gọi Groq thật ở
+    # mục 9 để chứng minh bảng phân loại lỗi khớp thân lỗi Groq trả về HÔM NAY;
+    # muốn chạy offline thì đặt `BQ_BO_MANG=1`.
+    ("70 model Groq còn sống", "_test_groq_model.py",    42),
     ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
-    ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    43),
+    # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
+    # cổng từng ĐỎ OAN vì đọc trúng registry thật của anh Hùng).
+    ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    44),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
-    ("64 Piper",            "_test_piper.py",           47),
+    # Mốc 47 -> 57: cổng đã mọc thêm mục từ lâu (đo 53) và 18/08 thêm CA 3g
+    # (nút tải Piper phải KHOÁ khi máy thiếu Python 3, như nút Demucs). Để mốc
+    # thấp hơn số thật là mất khả năng bắt "mục lặng lẽ biến mất".
+    ("64 Piper",            "_test_piper.py",           57),
     ("63 biến thể giọng",   "_test_bien_the_giong.py",  24),
     ("62 quét cả khung",    "_test_toan_khung.py",      33),
     ("60 chữ theo lời",     "_test_chu_theo_loi.py",    42),
@@ -65,6 +76,13 @@ CONG = [
 #: NGỜ oan; đã dính một lượt với cổng 60/63.
 _RE_TK = re.compile(r"(?:ĐẠT|DAT|OK)\s+(\d+)\s*[·.]\s*"
                     r"(?:HỎNG|HONG|SAI)\s+(\d+)")
+
+#: Mục cổng CỐ Ý KHÔNG CHẤM. Hiện chỉ cổng 56 có (CA17a/b/c đo THỜI GIAN, máy
+#: bận thì `bo_qua()` — chấm ĐẠT là phát chứng nhận khống, chấm HỎNG là đỏ oan).
+#: Không trừ phần này ra thì cổng 56 bị gắn nhãn "TỤT so mốc 123" MỖI LẦN máy
+#: bận, và nhãn TỤT xuất hiện thường xuyên thì người ta thôi đọc nó — đúng cái
+#: bẫy "cổng đỏ oan còn nguy hơn không có cổng" (bài học cổng 41 và 47).
+_RE_BQ = re.compile(r"(?:BỎ QUA|BO QUA)\s+(\d+)")
 
 
 def moi_truong() -> dict:
@@ -97,7 +115,7 @@ def main() -> int:
         p = REPO / f
         if not p.exists():
             print(f"  {ten:<22} KHÔNG CÓ FILE {f}")
-            kq.append((ten, f, -1, 0.0, None, None, moc))
+            kq.append((ten, f, -1, 0.0, None, None, moc, 0))
             continue
         t0 = time.time()
         r = subprocess.run([PY, "-u", str(p)], cwd=str(REPO), env=env,
@@ -112,9 +130,18 @@ def main() -> int:
             m = m2                            # lấy dòng tổng kết CUỐI CÙNG
         dat = int(m.group(1)) if m else None
         hong = int(m.group(2)) if m else None
-        kq.append((ten, f, r.returncode, gy, dat, hong, moc))
+        mbq = None
+        for m3 in _RE_BQ.finditer(out):
+            mbq = m3                          # dòng tổng kết CUỐI CÙNG
+        bq = int(mbq.group(1)) if mbq else 0
+        # So mốc theo ĐẠT + BỎ QUA: mục bỏ qua là mục KHÔNG CHẤM, không phải
+        # mục mất đi. Vẫn in ra số bỏ qua để một lượt bỏ qua không bao giờ
+        # trông giống một lượt chấm đủ.
+        kq.append((ten, f, r.returncode, gy, dat, hong, moc, bq))
         co = "" if moc is None or dat is None else (
-            "  (mốc %d)" % moc if dat >= moc else "  << TỤT so mốc %d" % moc)
+            "  (mốc %d)" % moc if dat + bq >= moc else "  << TỤT so mốc %d" % moc)
+        if bq:
+            co = f"  · BỎ QUA {bq}{co}"
         print(f"  {ten:<22} rc={r.returncode:<3} {gy:6.1f}s  "
               f"ĐẠT {dat if dat is not None else '?':>4} · "
               f"HỎNG {hong if hong is not None else '?':<4}{co}")
@@ -126,9 +153,14 @@ def main() -> int:
     if ngo:
         print(f"ĐÁNG NGỜ (rc=0 mà không thấy dòng tổng kết / chạy <0,3s): "
               f"{[k[0] for k in ngo]}")
-    tut = [k[0] for k in kq if k[6] and k[4] is not None and k[4] < k[6]]
+    tut = [k[0] for k in kq
+           if k[6] and k[4] is not None and k[4] + k[7] < k[6]]
     if tut:
         print(f"TỤT SỐ MỤC so với mốc: {tut}")
+    bqua = [(k[0], k[7]) for k in kq if k[7]]
+    if bqua:
+        print(f"MỤC KHÔNG CHẤM (máy bận, không phải ĐẠT cũng không phải "
+              f"HỎNG): {bqua}")
     return 1 if do else 0
 
 

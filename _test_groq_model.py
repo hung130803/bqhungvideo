@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
-"""CỔNG 69 — **GROQ GỠ MODEL THÌ APP PHẢI SỐNG, VÀ KHÔNG ĐƯỢC ĐỔ OAN CHO KEY**
+"""CỔNG 70 — **GROQ GỠ MODEL THÌ APP PHẢI SỐNG, VÀ KHÔNG ĐƯỢC ĐỔ OAN CHO KEY**
 (17/08/2026).
+
+SỐ CỔNG LÀ **70**, KHÔNG PHẢI 69 (sửa 18/08/2026): số 69 đã bị
+`_test_viet_tat.py` lấy ở commit `964e22b` (17/08 15:51) — trước commit này
+(18/08 11:17). Trùng số thì `_kq69.txt` của hai cổng ghi đè nhau và người đọc
+báo cáo không biết "cổng 69 ĐẠT 42" là cổng nào. Cùng cách xử đã dùng ở
+`a35f7c9` (ElevenLabs đã lấy 67 -> cổng kiểu chữ dời sang 68).
 
 VÌ SAO CÓ CỔNG NÀY — LỖI THẬT, ĐÃ RA TỚI MÁY ANH HÙNG:
 Groq khai tử `llama-3.3-70b-versatile`. App ghi CỨNG tên đó ở **cả**
@@ -504,7 +510,7 @@ def main() -> int:
             pass
 
     print("\n" + "=" * 68)
-    print(f"CỔNG 69 — ĐẠT {DAT} · HỎNG {HONG}")
+    print(f"CỔNG 70 — ĐẠT {DAT} · HỎNG {HONG}")
     if _HONG:
         for d in _HONG:
             print(f"   HỎNG: {d}")
