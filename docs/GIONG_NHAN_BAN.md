@@ -117,5 +117,95 @@ chứng minh.
 > Hùng chọn bao nhiêu mẫu — không bị máy giới hạn.** Bộ Common Voice tiếng Việt
 > có hàng nghìn người đọc CC0 để chọn.
 
-*(còn Ý 2 — ghép gióng hàng khớp bao nhiêu; và Ý 3 — đọc có sai/bịa chữ không.
-Hai ý đó quyết định giọng này có DÙNG ĐƯỢC không, xem phần C và D.)*
+---
+
+# PHẦN C — Ý 2: GHÉP GIÓNG HÀNG THÌ KHỚP BAO NHIÊU?
+
+## C0. Vì sao ý này từng là cửa tử
+
+Lượt 4 đã loại VieNeu **chỉ vì một lý do**: không ra lệnh cho nó đọc đúng số
+giây được. Video cần tiếng khớp hình; giọng đọc không chỉnh được thời gian thì
+vô dụng.
+
+**Chặn đó nay đã hết.** `app/core/giong_hang.py` (v2.35.0) không cần máy đọc tự
+báo giờ nữa — nó **nghe lại file tiếng và tự dò ra từng chữ rơi vào giây nào**
+(bằng `torchaudio.functional.forced_align`). Nghĩa là **bất kỳ máy đọc nào** cũng
+lấy được mốc từng chữ, kể cả máy không hỗ trợ.
+
+## C1. Thước đo — và vì sao tôi không dùng máy nghe
+
+Thước là **`silencedetect` của ffmpeg** (ngưỡng −40 dB, 0,05 giây): nó chỉ ra
+**giây thật sự bắt đầu có tiếng** trong file. So mốc chữ đầu tiên mà gióng hàng
+đoán với giây có tiếng thật → ra sai số.
+
+Đây là **thước duy nhất không thiên vị** (nó không biết gì về máy đọc nào). Trong
+phiên này nó đã **chặn 2 phép đo sai**. Máy nghe (Whisper) thì tự nó cũng sai
+giờ, lấy nó làm chuẩn là lấy thước cong đo thước cong.
+
+**Bắt buộc tách 2 con số** — số thô là số lừa, đã sập 3 lần:
+- **LỆCH HỆ THỐNG** = sai đều một hướng. **Vô hại**, trừ đi một phát là hết.
+- **RUNG** = sai lung tung mỗi câu một kiểu. **Đây mới là cái hại**, không trừ được.
+
+Và tôi **chạy lại arm đối chứng edge-tts trên ĐÚNG 6 câu đó**, cùng lúc, cùng
+thước — chứ không so với con số cũ đo ở corpus khác.
+
+## C2. KẾT QUẢ
+
+| Máy đọc | PHỦ | LỆCH HỆ THỐNG | **RUNG** | chữ muộn >50 ms |
+|---|---|---|---|---|
+| **VieNeu — 8 bản sao** (48 file) | 95,4% | −11,9 ms | **25,4 ms** | 4,2% |
+| VieNeu — giọng mặc định (6 file) | 95,4% | +1,5 ms | **21,7 ms** | 0% |
+| **edge-tts — đối chứng** (12 file) | 95,4% | −14,9 ms | **16,7 ms** | 0% |
+| *edge-tts — mốc do CHÍNH NÓ tự báo* | *100%* | *−107,8 ms* | *51,5 ms* | *0%* |
+
+**Thước đã được hiệu chuẩn đúng:** arm edge-tts ra **16,7 ms**, khớp với mốc
+**15,7 ms** đo ở lượt trước. Nên các số còn lại trong bảng tin được.
+
+## C3. Đọc bảng trên
+
+**1. PHỦ 95,4% không phải lỗi giọng — là do CHỮ SỐ.**
+Cả 4 arm đều đúng 95,4%, không xê dịch. Tôi truy ra: 6 câu có **65 chữ**, gióng
+hàng trả **62 mốc**, thiếu **đúng 3**. Và corpus có **đúng 3 chữ số**: "Nhà **5**
+tầng", "Tầng hầm bi **2**", "có **3** cái". Bộ gióng hàng không đọc được số thô.
+→ **Với chữ đã viết ra lời (app vẫn làm vậy khi đọc), phủ ≈ 100%.** Không phải
+điểm trừ của nhân bản.
+
+**2. RUNG 25,4 ms — đạt, nhưng thua edge-tts 1,5 lần.**
+
+So với các mốc đã đo trong phiên:
+
+| | RUNG |
+|---|---|
+| edge-tts (đối chứng, cùng corpus) | **16,7 ms** |
+| VieNeu giọng mặc định | 21,7 ms |
+| **VieNeu bản sao (nhân bản)** | **25,4 ms** |
+| Piper | 29,5 ms |
+| OmniVoice + gióng hàng | 90–119 ms |
+
+**25,4 ms là dùng được** — tốt hơn Piper, và tốt hơn OmniVoice 4 lần. Ở mức
+25 ms thì tai người không nhận ra tiếng lệch hình.
+
+**3. Nhưng con số 25,4 bị 2 bản sao hỏng kéo xuống.** Xem từng bản sao:
+
+| bản sao | RUNG | | bản sao | RUNG |
+|---|---|---|---|---|
+| M4 | **7,3 ms** | | M6 | 16,5 ms |
+| M1 | **8,4 ms** | | M0 | 18,8 ms |
+| M7 | 11,7 ms | | **M5** | **51,5 ms** ← hỏng |
+| M2 | 14,8 ms | | **M3** | **58,4 ms** ← hỏng |
+
+**6/8 bản sao rung 7,3–18,8 ms — trung bình 12,9 ms, tức NGANG HOẶC HƠN
+edge-tts (16,7 ms).** Chỉ 2 bản sao (M3, M5) bị rung 51–58 ms kéo trung bình lên.
+
+→ **Cách xử lý thực tế: nhân bản xong thì ĐO, bản nào rung cao thì bỏ, chọn mẫu
+khác.** Mẫu miễn phí có hàng nghìn, loại 2 trong 8 không mất gì.
+
+**4. Phát hiện phụ có giá trị: đừng tin giờ do máy đọc tự báo.**
+Dòng cuối bảng C2: mốc **edge-tts tự khai** lệch hệ thống **−107,8 ms** và rung
+**51,5 ms** — **tệ hơn 3 lần** so với để `giong_hang` tự dò lại (16,7 ms). Tức
+`app/core/giong_hang.py` đang **chính xác hơn cả đồng hồ của chính máy đọc**.
+
+> **CHỐT Ý 2: gióng hàng ĐẠT. Nhân bản không còn bị chặn ở khâu khớp thời gian
+> nữa — cửa tử của lượt 4 đã mở.**
+
+*(còn Ý 3 — đọc có sai chữ / bịa chữ không. Đây là ý quyết định cuối, xem phần D.)*
