@@ -30,6 +30,22 @@ phép so đều so HAI CHUỖI RỖNG rồi báo "giống từng byte". Nay có 
 Mốc đối chứng: `BQ_MOC_KIEU` (mặc định `v2.31.0` = bản phát hành NGAY TRƯỚC
 việc này). KHÔNG dùng `main`/`HEAD`: sau khi gộp thì mốc chính là bản đang
 test, cổng tự PASS OAN vĩnh viễn (bài học cổng 36/51/52/56).
+
+**BẪY THỨ HAI, ĐÃ ĐỎ OAN THẬT NGÀY 18/08/2026 — ĐỌC TRƯỚC KHI SỬA MỤC 7a:**
+mục 7a đòi *"chưa đụng ô nào -> đơn thuốc RỖNG"*, nhưng `ThayGiongDialog` NẠP
+LẠI lựa chọn đã lưu qua `app_settings()`, mà cửa đó mặc định là **REGISTRY
+THẬT** `HKEY_CURRENT_USER\\Software\\AIContentStudio\\studio`. Anh Hùng dùng ô
+kiểu chữ v2.32.0 một lần (chọn preset CapCut + phông Montserrat) là hộp không
+còn mở ra ở mặc định nữa -> mục 7a HỎNG, cổng ra **ĐẠT 42 · HỎNG 1** trong khi
+`app/ui/thay_giong_dialog.py` **không đổi một dòng nào** kể từ `v2.32.0`
+(`git diff v2.32.0..HEAD` rỗng). Tức cổng đang đo CÀI ĐẶT CỦA MÁY chứ không đo
+MÃ — và nhớ giùm: hộp nhớ lựa chọn của user là **tính năng**, không phải lỗi.
+Chữa đúng chỗ: bật `BQ_QSETTINGS_INI` (cửa `app/ui/appsettings.py` dựng sẵn
+đúng cho việc này) để hộp mở ra ở MẶC ĐỊNH SẠCH. **CẤM** chữa bằng cách nới
+mục 7a thành "rỗng hoặc không rỗng" — thế là giết đúng bất biến nó sinh ra để
+giữ (đơn thuốc thừa khoá -> đổi khoá chống trùng -> 200-300 kênh xuất lại).
+Mục 7a' TỰ KIỂM chính bản vá này: cách ly hỏng thì báo ngay, đừng để cổng âm
+thầm quay về đo registry.
 """
 from __future__ import annotations
 
@@ -37,10 +53,18 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import types
 from pathlib import Path
 
-import _test_guard  # noqa: F401  (chặn mở Explorer/trình phát, ép stdout utf-8)
+# PHẢI đặt TRƯỚC mọi import chạm `app.ui`: `app_settings()` đọc env này lúc
+# ĐƯỢC GỌI, mà cửa gọi đầu tiên là lúc dựng hộp thoại ở mục 7. Đặt sớm cho
+# chắc, và dùng file .ini trong thư mục tạm nên có chết giữa chừng cũng không
+# để lại gì trong registry của anh Hùng.
+_INI = Path(tempfile.gettempdir()) / f"bq_cong68_{os.getpid()}.ini"
+os.environ["BQ_QSETTINGS_INI"] = str(_INI)
+
+import _test_guard  # noqa: E402,F401  (chặn mở Explorer/trình phát, stdout utf-8)
 
 sys.stdout.reconfigure(encoding="utf-8")
 REPO = Path(__file__).resolve().parent
@@ -430,6 +454,17 @@ def muc7() -> None:
     from app.ui import thay_giong_dialog as TGD
 
     app = QApplication.instance() or QApplication([])
+
+    # (a') TỰ KIỂM BẢN VÁ CÁCH LY — phải chạy TRƯỚC (a), không thì (a) đỏ mà
+    # người đọc không biết vì mã hỏng hay vì máy có sẵn cài đặt. Cổng nào đo
+    # trúng registry thật thì nó đo MÁY chứ không đo MÃ (xem docstring đầu
+    # file). Hỏi thẳng chính cửa app dùng, đừng chỉ hỏi biến môi trường.
+    from app.ui.appsettings import app_settings, dung_file_ini
+    _nguon_cfg = app_settings().fileName()
+    ok(dung_file_ini() and "AIContentStudio" not in _nguon_cfg,
+       "cài đặt ĐÃ CÁCH LY khỏi registry thật (mục a mới có nghĩa)",
+       f"nguồn={_nguon_cfg}")
+
     d = TGD.ThayGiongDialog(None)
     try:
         # (a) CHƯA ĐỤNG GÌ -> đơn thuốc RỖNG. Đây là bất biến giữ payload của
@@ -586,3 +621,8 @@ if __name__ == "__main__":
     finally:
         if os.environ.get("BQ_GIU_HOP") != "1":
             don()
+        # File .ini cách ly là RÁC của lượt chạy — hộp cát tự dọn.
+        try:
+            _INI.unlink(missing_ok=True)
+        except OSError:
+            pass
