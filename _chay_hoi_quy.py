@@ -44,7 +44,13 @@ CONG = [
     # Cổng 72 canh nhóm GIỌNG NGOÀI (OmniVoice / IndexTTS). Nó KHÔNG đốt GPU
     # hay lượt Groq nào trong hồi quy (vá `_chay_ov` + `_lay_moc_groq`); ca
     # chạy THẬT bật bằng `BQ_GN_THAT=1`.
-    ("72 giọng ngoài",      "_test_giong_ngoai.py",      40),
+    # Mốc 40 -> 45: CA 7 thêm 5 mục canh NHÃN ĐỔI THEO MÁY — có bộ gióng hàng
+    # thì con số PHỦ/RUNG trong nhãn phải khác hẳn lúc chưa có, và phần GIẤY
+    # PHÉP (CC-BY-NC) phải giữ nguyên ở CẢ HAI trạng thái (18/08/2026).
+    ("72 giọng ngoài",      "_test_giong_ngoai.py",      45),
+    # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
+    # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
+    ("73 gióng hàng",       "_test_giong_hang.py",      None),
     ("71 tách giọng GPU",   "_test_demucs_gpu.py",       22),
     ("70 model Groq còn sống", "_test_groq_model.py",    42),
     ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),

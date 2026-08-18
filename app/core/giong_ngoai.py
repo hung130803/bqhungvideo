@@ -89,6 +89,62 @@ lượt cách xa thì KHÔNG — nên đây là dải, không phải một con s
 59,1 ms / 42% muộn nhưng phủ đủ chữ). Vì vậy `CANH_BAO_CL_OV` ghi thẳng vào
 nhãn hộp chọn giọng — đúng tiền lệ Piper, cổng 72 CA 7 canh.
 
+═══════════════════════════════════════════════════════════════════════════
+GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ — ĐO 18/08/2026, VÀ ĐÂY LÀ SỐ
+═══════════════════════════════════════════════════════════════════════════
+`dubbing._synth_all_words` nay lấy mốc cho giọng ngoài bằng **gióng hàng
+cưỡng bức** (`giong_hang.py`) khi máy có bộ đó. Gióng hàng **không đoán chữ,
+nó ĐÃ BIẾT chữ** -> phủ gần đủ do cấu tạo, không phụ thuộc máy nghe.
+
+**PHÉP ĐO PHẢI TÁCH ĐƯỢC "GIÓNG HÀNG TỐT" KHỎI "LƯỢT NÀY MODEL ĐỌC RÕ HƠN".**
+Đây là chỗ suýt kết luận sai: `_do_gn_gh.py` (WAV sinh mới hôm nay) đo đường
+Groq ra PHỦ tiếng Việt **99,4%** — trong khi nhãn đang ghi 30-56%. Chạy lại
+`_do_gn_phu.py` trên bộ WAV CŨ thì vẫn ra **41,8% · 61,4%**. Cùng một hàm,
+cùng một corpus, khác nhau đúng ở **mẻ tiếng**: OmniVoice KHÔNG TIỀN ĐỊNH,
+lượt này đọc rõ lượt kia đọc ngọng, và Groq chép ngược ăn theo chuyện đó.
+Tức **34-56% không phải hằng số của đường Groq, nó là hằng số của một mẻ đọc
+kém** — ai đo một lượt rồi báo một số là tự lừa mình (mục trên đã cảnh báo,
+nhưng lần này truy được NGUYÊN NHÂN chứ không chỉ ghi nhận dao động).
+
+Vì vậy `_do_gn_cu.py` cho **hai đường lấy mốc chạy trên ĐÚNG MỘT BỘ FILE
+TIẾNG** — bỏ hẳn nhiễu đó. Thước DUY NHẤT là `silencedetect`.
+
+  bộ WAV CŨ (mẻ đọc kém, chính mẻ sinh ra con số 34-56%):
+
+    PHỦ        Groq **52,5%**  ->  gióng hàng **98,6%**
+       Việt      37,6 -> **98,9**   ·  Anh    79,0 -> **100,0**
+       Trung     67,5 -> **96,8**   ·  Nhật   25,7 -> **98,7**
+    RUNG chữ đầu  711,9 -> **90,4 ms**   ·  mốc[0] đúng từ đầu 45/96 -> 88/96
+    GIÂY/mẻ 12 câu  32,49 -> **6,30**   (và KHÔNG tốn lượt Groq nào)
+
+  bộ WAV MỚI (mẻ đọc tốt) — arm edge-tts chạy lại trên CÙNG corpus:
+
+    PHỦ       edge 78,2*  ·  Groq 82,1  ->  gióng hàng **98,5%**
+    RUNG      edge **15,7**  ·  Groq 250,4  ->  gióng hàng **119,2 ms**
+
+  (*) edge 78,2% KHÔNG phải lỗi của edge-tts mà là **giới hạn của mẫu số**:
+  PHỦ đếm theo `recap._word_tokens` (CJK tách TỪNG KÝ TỰ) còn `WordBoundary`
+  của edge trả theo CỤM, nên Trung 56,3% / Nhật 57,1% là hai cách đếm khác
+  nhau chứ không phải chữ mất mốc. Ở tiếng Việt/Anh (có dấu cách) edge ra
+  **99,4% / 100%** đúng như cấu tạo. Đọc cột PHỦ của CJK thì phải nhớ điều
+  này; cột dùng để kết luận là Việt/Anh và là phép so Groq-vs-gióng-hàng
+  (hai bên cùng một mẫu số).
+
+**PHỦ LÊN GẦN 100% Ở CẢ HAI MẺ (98,5 · 98,6) — tức nó là tính chất do CẤU
+TẠO, không phải may.** Đó là câu trả lời cho "gióng hàng có chữa được bệnh
+không": CÓ, đúng cái bệnh nặng nhất.
+
+**NHƯNG CHƯA BẰNG edge-tts, PHẢI NÓI THẲNG:** rung mốc chữ đầu còn
+**90-119 ms** so với **15,7 ms**. Nặng nhất là tiếng Anh (lệch hệ thống
+**+104..+121 ms**, rung 128 ms) — mốc rơi SAU lúc `silencedetect` báo có
+tiếng. Chưa truy ra vì sao, và **đừng trừ nó đi bằng một hằng số**: cổng 67
+đã chặn đúng phép trừ kiểu đó (94 ms), lệch hệ thống chỉ được coi là thuộc
+tính của bộ mốc khi có thước thứ ba xác nhận.
+Cột "% chữ hiện muộn >50 ms" (Groq 36,5% -> gióng hàng 42,7%) **KHÔNG đọc
+thẳng được**: nó tính trên lệch THÔ nên trừng phạt bên có lệch hệ thống
+DƯƠNG và thưởng bên marks SỚM — edge ra 0,0% chính vì nó sớm sẵn
+(−88,9 ms). Muốn so chất lượng thuần thì đọc cột RUNG.
+
 **KHÔNG BỊA CHỮ — xác nhận lại**: thừa TB **+0,8%** (Việt) · **−1,7%**
 (Trung) trên arm OmniVoice, cùng dải với edge-tts. Khớp kết luận lượt 7
 (0,0%). Số Nhật (−30%) là do cách đếm token CJK, KHÔNG phải bịa chữ — hai arm
@@ -181,12 +237,48 @@ CANH_BAO_GP_OV = ("trọng số CC-BY-NC: nhà phát hành CẤM dùng cho mục
 
 #: Cảnh báo CHẤT LƯỢNG — cùng luật với Piper (cổng 64): tệ hơn edge-tts thì
 #: phải ghi ra, đừng để người dùng tự phát hiện sau 300 video.
-#: Con số PHỦ và RUNG lấy từ `_do_gn_moc.py` + `_do_gn_phu.py` (2 lượt, 4 thứ
-#: tiếng, 1.466 mốc) — xem khối "ĐỘ KHỚP MỐC" ở đầu file.
-CANH_BAO_CL_OV = ("đọc sai chữ tiếng Việt 16,9% so với edge-tts 6,8%; "
-                  "mốc chữ phải dò lại bằng máy nghe nên CHỈ CÓ cho 30-56% "
-                  "số chữ tiếng Việt và rung 236 ms (edge-tts 16 ms) — chữ "
-                  "sẽ chạy không khớp tiếng")
+#:
+#: **HAI CÂU, VÌ MÁY CÓ HAI TRẠNG THÁI** (đúng tiền lệ nhãn Piper ở
+#: `thay_giong_dialog._do_piper`): bệnh nặng nhất của giọng ngoài là **mốc
+#: KHÔNG CÓ**, mà bệnh đó do đường LẤY MỐC gây ra chứ không phải do giọng —
+#: nên máy đã tải bộ gióng hàng thì câu cũ thành lời doạ sai. In câu cũ cho
+#: máy đã có gióng hàng là đuổi người dùng khỏi một lựa chọn vừa được chữa;
+#: in câu mới cho máy chưa có là hứa hão. `canh_bao_chat_luong()` chọn câu.
+#:
+#: Số lấy từ `_do_gn_gh.py` + `_do_gn_cu.py` (4 thứ tiếng × 12 câu × 2 lượt
+#: ĐAN XEN có xoay thứ tự, **2 bộ tiếng độc lập**, 2.186 chữ mỗi bộ), thước
+#: DUY NHẤT là `silencedetect` — xem khối "ĐỘ KHỚP MỐC" ở đầu file.
+#: Phần "đọc sai chữ" GIỮ NGUYÊN: nó đo cách model ĐỌC, không liên quan
+#: đường lấy mốc, nên gióng hàng không đụng tới.
+_CL_DOC_SAI = "đọc sai chữ tiếng Việt 16,9% so với edge-tts 6,8%"
+
+CANH_BAO_CL_OV = (_CL_DOC_SAI + "; mốc chữ phải dò lại bằng máy nghe nên "
+                  "CHỈ CÓ cho 38-99% số chữ tuỳ lượt (không đoán trước "
+                  "được) và rung 250-712 ms (edge-tts 16 ms) — chữ sẽ chạy "
+                  "không khớp tiếng. Tải bộ gióng hàng để hết bệnh này")
+
+#: Máy ĐÃ có bộ gióng hàng: mốc lấy từ chữ ĐÃ BIẾT nên phủ gần đủ do cấu tạo.
+#: Vẫn phải nói phần CHƯA bằng edge-tts — rung 90-119 ms so với 16 ms.
+CANH_BAO_CL_OV_GH = (_CL_DOC_SAI + "; máy này có bộ gióng hàng nên mốc chữ "
+                     "phủ 98,5% (trước 52-82%), nhưng vẫn rung 90-119 ms so "
+                     "với 16 ms của giọng thường — chữ bám lời kém hơn "
+                     "edge-tts")
+
+
+def canh_bao_chat_luong() -> str:
+    """Câu cảnh báo chất lượng ĐÚNG VỚI MÁY NÀY.
+
+    KHÔNG cất kết quả vào hằng số: người dùng bấm nút tải bộ gióng hàng giữa
+    phiên thì nhãn phải đổi theo, không đợi khởi động lại app (bài học
+    `tg_so.duong_so` — đọc lại mỗi lần gọi).
+    """
+    try:
+        from app.core import giong_hang as _gh
+        if _gh.co_giong_hang():
+            return CANH_BAO_CL_OV_GH
+    except Exception:  # noqa: BLE001 - thiếu module -> giữ cảnh báo cũ
+        pass
+    return CANH_BAO_CL_OV
 
 #: Kho giọng THIẾT KẾ BẰNG CHỮ (voice design). OmniVoice không có giọng đặt
 #: tên sẵn: gõ một câu tả là ra giọng, nên số giọng coi như không giới hạn.
@@ -240,7 +332,7 @@ def nhan_giong(ma: str) -> str:
     for m, _tt, ten in GIONG_OV:
         if m == ma:
             return (f"{ten} (OmniVoice, 4 thứ tiếng) - {CANH_BAO_GP_OV}; "
-                    f"{CANH_BAO_CL_OV}")
+                    f"{canh_bao_chat_luong()}")
     for m, _tt, ten in GIONG_IX:
         if m == ma:
             return (f"{ten} - không có tiếng Việt; mốc chữ phải dò lại bằng "

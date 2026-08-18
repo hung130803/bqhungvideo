@@ -363,6 +363,36 @@ def main() -> int:                                          # noqa: C901
        "7f IndexTTS CHƯA chạy được -> KHÔNG đưa vào combo (đưa vào là đẩy "
        "người dùng chọn thứ sẽ âm thầm lùi edge)")
 
+    # ---- NHÃN PHẢI ĐỔI THEO MÁY (thêm 18/08/2026) --------------------------
+    # Con số PHỦ/RUNG trong nhãn là con số của ĐƯỜNG LẤY MỐC, mà đường đó đổi
+    # theo việc máy có bộ gióng hàng hay không. In một câu cố định là: máy đã
+    # tải 1,2 GB vẫn bị doạ bằng số cũ (đuổi người dùng khỏi lựa chọn vừa
+    # được chữa), hoặc máy chưa tải lại được hứa hão. Đúng tiền lệ nhãn Piper.
+    from app.core import giong_hang as _GH
+    _co_that = _GH.co_giong_hang
+    try:
+        _GH.co_giong_hang = lambda: False
+        nhan_khong = gn.canh_bao_chat_luong()
+        _GH.co_giong_hang = lambda: True
+        nhan_co = gn.canh_bao_chat_luong()
+    finally:
+        _GH.co_giong_hang = _co_that
+    ok(nhan_khong != nhan_co,
+       "7g nhãn chất lượng ĐỔI THEO MÁY (có/không bộ gióng hàng)")
+    ok("gióng hàng" in nhan_co and "98,5" in nhan_co,
+       "7h máy CÓ gióng hàng -> nói số MỚI (phủ 98,5%)", nhan_co[-70:])
+    ok("38-99" in nhan_khong and "gióng hàng" in nhan_khong,
+       "7i máy CHƯA có -> GIỮ cảnh báo phủ thấp + chỉ đường tải",
+       nhan_khong[-70:])
+    ok("16,9" in nhan_co and "16,9" in nhan_khong,
+       "7j phần ĐỌC SAI CHỮ giữ ở CẢ HAI (đo cách model ĐỌC, gióng hàng "
+       "không đụng tới)")
+    # GIẤY PHÉP KHÔNG ĐƯỢC ĐỔI: trọng số vẫn CC-BY-NC dù có gióng hàng hay
+    # không — anh Hùng đã biết và chấp nhận, nhưng nhãn không được im đi.
+    ok("CC-BY-NC" not in nhan_co and "CC-BY-NC" not in nhan_khong
+       and "CC-BY-NC" in gn.CANH_BAO_GP_OV,
+       "7k cảnh báo GIẤY PHÉP nằm RIÊNG, không bị câu chất lượng nuốt")
+
     # ══════════════ CA 8 — TỰ KIỂM: GỠ CHỐT RA THÌ PHẢI ĐỎ ══════════════
     print("\nCA 8 — TỰ KIỂM: gỡ chốt ra thì cổng PHẢI đỏ")
     ngoai_that = dubbing._ngoai_hay_khong
