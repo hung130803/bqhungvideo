@@ -161,6 +161,64 @@ edge-tts ở điều kiện KHÓ HƠN (khác câu) vẫn giữ **0,782**. Nghĩa
 bấm xuất, "Khoa" có thể ra một người hơi khác. Với 200-300 kênh chạy sản xuất,
 đó là giọng kênh **trôi giữa các tập** mà không ai chỉnh được.
 
+### 2d. 13 giọng "cross-lingual" thẻ model kể ra — **KHÔNG CÓ CÁI NÀO LÀ THẬT**
+
+Thẻ model liệt kê thêm: *Puck · Kore · Andrew · Jenny · Simon · Seulgi · Bert ·
+Thorsten · Maria · Mei · Ming · Karim · Nur*. Nghe thì tưởng bộ này có gần 20
+giọng. Sinh đủ 13 file rồi đo bằng chính thước ECAPA:
+
+**13/13 đều rơi vào một trong các giọng đã có.** `nur` giống mục "Không chỉ
+định" **0,764** · `jenny` **0,710** · `seulgi` giống `Trinh` **0,694** ·
+`maria` giống `Hùng` **0,661**. Gom cụm 13 tên đó với nhau chỉ ra **3 cụm**, mà
+3 cụm đó lại trùng với 2 giọng đã đếm được ở mục 2c.
+
+→ **Tên giọng có 18. Người nói có 2.** Đây đúng là cái bẫy đề bài dặn: đừng đọc
+tên tham số, phải đo âm.
+
+### 2e. Sai từ · bịa chữ · nhấn nhá — trên ĐÚNG bộ câu của arm đối chứng
+
+| | **Kani-TTS-Vie** | **edge-tts** (mốc) |
+|---|---|---|
+| sai từ **tiếng Việt** | **7,1%** | **5,2%** |
+| sai từ **tiếng Anh** | **0,0%** | **0,0%** |
+| **bịa chữ** (cả 2 thứ tiếng) | **0,0%** | **0,0%** |
+| số câu đo được | 8/8 và 8/8 | 8/8 và 8/8 |
+| **nhấn nhá — TRẢI** | **2,26** (5 mục: 2,86 – 5,12) | **3,15** (17 giọng: 2,20 – 5,35) |
+| tốc độ | 2,0 – 3,9 s/câu (RTX 3060) | 0,9 – 5,1 s/câu (qua mạng) |
+
+Lỗi đọc thật của Kani: *"đi dạo **nhé**"* → *"đi dạo **né**"* ·
+*"Bà cụ **ngồi** bên hiên nhà, **lặng lẽ**"* → *"Bà cụ **vội** bên hiên nhà,
+**lạnh lẽ**"* · *"**Tiếng chuông vang** lên … cả **xóm**"* → *"**Tiến chung
+văn** lên … cả **sống**"*.
+
+**Ba điều đọc ra từ bảng này:**
+
+1. **QUA được án tử: bịa chữ 0,0%.** Đây là chỗ viXTTS và Chatterbox chết. Kani
+   sạch — nói cho công bằng.
+2. **Tiếng Anh NGANG edge-tts (0,0% cả hai).** Đúng thứ anh Hùng hỏi, và Kani
+   làm được. Nhưng "ngang" thì không có lý do gì để đổi.
+3. **Tiếng Việt TỆ HƠN edge-tts** (7,1% so với 5,2%), và **nhấn nhá HẸP HƠN**
+   (2,26 so với 3,15). Hai mốc quan trọng nhất đều thua.
+
+> Ghi thêm một số đáng ngờ: câu tiếng Anh dài Kani đọc mất **11,5 s** (David) và
+> **9,1 s** (Katie) trong khi edge-tts đọc cùng câu hết ~7 s — tức nó đọc **CHẬM
+> HƠN ~40%**. Với clip ngắn phải nhét lời vào khung hình thì đó là chỗ phải ép
+> tốc độ, mà ép là méo tiếng (bài học `atempo` v2.27.0).
+
+### 2f. CHẤM KANI THEO 4 MỐC ANH HÙNG ĐẶT
+
+| mốc phải vượt | Kani-TTS-Vie | đạt? |
+|---|---|---|
+| nhiều hơn **2 giọng Việt** | **2 giọng thật** (1 nam · 1 nữ), và cả 2 đều KHÔNG đứng yên giữa các lượt | **KHÔNG** |
+| nhấn nhá trải hơn **3,15** | **2,26** | **KHÔNG** |
+| sai từ không tệ hơn edge-tts | Việt **7,1%** vs 5,2% · Anh 0,0% vs 0,0% | **KHÔNG** (Việt tệ hơn) |
+| **0% bịa chữ** | **0,0%** | **ĐẠT** |
+
+**1/4. KHÔNG ĐÁNG THÊM VÀO APP.** Và nó còn đòi thêm **1,2 GB** (448 MB thư viện
+NeMo + 723 MB trọng số) cùng một bộ thư viện nặng không nằm trong `.exe`.
+
+**Bộ này CẦN `giong_hang.py`** — nó không trả mốc từng chữ.
+
 ---
 
 *(còn tiếp — các bộ đo tiếp theo ghi bên dưới, mỗi bộ xong là commit)*
