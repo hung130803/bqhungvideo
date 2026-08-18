@@ -35,6 +35,11 @@ dùng public"* — theo hợp đồng gốc là **bên bán đó đang vi phạm
 Nhưng nó phải là **hợp đồng riêng ký thẳng với Vbee**, chứ không phải mua gói lẻ rồi chia lại.
 Và tôi **không tìm thấy bên nào công khai được hợp đồng đó**.
 
+**Và tôi tìm ra chỗ anh Hùng có thể đã nghe thành "được phép":** Vbee **thật sự có** một chương trình
+chính thức cho bên thứ ba — nhưng đó là **Affiliate (giới thiệu ăn hoa hồng 20%)**, **không phải**
+đại lý bán lại. Người affiliate **được phép giới thiệu**, **không được phép cho người khác dùng giọng**.
+Chi tiết ở **mục 2** — đây là chỗ dễ nhầm nhất, nên đọc kỹ mục đó.
+
 ---
 
 ## 1. CÓ ĐẠI LÝ ĐƯỢC UỶ QUYỀN KHÔNG?
@@ -61,8 +66,42 @@ hỏi thẳng Vbee. Đây là điểm mấu chốt và tôi sẽ nói lại ở 
 - trang điều khoản dịch vụ chính thức (`policy.vbee.vn`)
 - trang hỏi đáp chính thức (`help.vbee.vn`)
 - trang bảng giá (`vbee.vn/bang-gia`)
+- trang giới thiệu công ty chính thức (`vbee.vn/blog/gioi-thieu`)
 
 **Không trang nào nhắc tới** các chữ: đại lý, reseller, nhà phân phối, white-label, OEM.
+
+### ⚠️ CHỖ DỄ HIỂU LẦM NHẤT — đọc kỹ phần này
+
+Vbee **CÓ** một chương trình chính thức, tên là **Affiliate** (tiếp thị liên kết),
+**hoa hồng tới 20%**. Có trang hướng dẫn riêng trên `help.vbee.vn`, vào app chọn
+mục *"Kiếm tiền với Vbee"* là đăng ký được.
+
+**Đây KHÔNG phải chương trình đại lý bán lại.** Rất dễ nhầm, nên phân biệt rõ:
+
+| | **Affiliate** (Vbee CÓ) | **Đại lý bán lại** (Vbee KHÔNG có) |
+|---|---|---|
+| Anh làm gì | giới thiệu người khác **tự mua** | anh mua rồi **bán/chia lại** cho người khác |
+| Khách trả tiền cho ai | **trả cho Vbee** | trả cho anh |
+| Ai giữ tài khoản | **mỗi khách một tài khoản riêng** | dùng chung tài khoản của anh |
+| Anh được gì | **hoa hồng 20%** | phần chênh giá |
+| Vbee cho phép? | **CÓ, chính thức** | **KHÔNG — điều 4.2 cấm** |
+
+Rất có thể đây chính là chỗ anh Hùng nghe thành *"bên họ có bản quyền Vbee rồi, được phép"*.
+Có bên **được phép giới thiệu** — nhưng **được phép giới thiệu ≠ được phép cho người khác dùng giọng**.
+Người affiliate **không hề có quyền** cho ai dùng giọng; khách vẫn phải tự mua của Vbee.
+
+### Còn "đối tác Shopee, Sendo" thì sao?
+
+Vbee có khoe là **đối tác của Shopee, Sendo**. Chỗ này cũng dễ nhầm: đó là
+**khách hàng lớn dùng dịch vụ Vbee**, **không phải bên được Vbee cho bán lại giọng**.
+Thấy chữ "đối tác" đừng hiểu thành "đại lý".
+
+### Viettelstore có bán Vbee không?
+
+Có trang `viettelstore.vn` viết bài về Vbee AI, nhìn tưởng là kênh bán chính hãng. Tôi đọc rồi:
+**đó chỉ là bài tin tức giới thiệu**, nằm trong mục `/tin-tuc/`. **Không có giá, không có giỏ hàng,
+và không có câu nào nói Viettelstore là đại lý được uỷ quyền của Vbee.** Bài đó còn hướng dẫn
+người đọc **tải từ trang chính thức của Vbee**. Nên **không phải** một cửa đại lý.
 
 Cái **có thật** là **gói API cho doanh nghiệp** — Vbee ghi:
 
@@ -149,10 +188,22 @@ Tôi kiểm tra trên **trang chính thức của Vbee**:
 | **HN-Anh Khôi** | **CÓ** — giọng nam miền Bắc, Vbee mô tả "biểu cảm cao, chỉn chu, nghiêm túc" |
 | **HN-Minh Quân** | **KHÔNG thấy** trên trang giọng vùng miền của Vbee |
 
-**Nói thẳng chỗ chưa chắc:** *Minh Quân* **không xuất hiện** trong danh sách giọng miền Bắc trên
-trang chính thức Vbee mà tôi đọc được. Có thể là giọng mới thêm sau, hoặc có thể **không phải
-giọng Vbee** mà là của bên khác. Tôi **không đoán**. Nếu anh Hùng cần chắc, phải mở thẳng
-thư viện giọng trong tài khoản Vbee xem có không.
+**Nói thẳng chỗ chưa chắc:** *Minh Quân* **không xuất hiện** ở **3 nguồn chính thức** tôi đã tra:
+trang giọng vùng miền của Vbee, bản thông báo cập nhật trên `help.vbee.vn`, và các bài
+giới thiệu sản phẩm. Có thể là giọng mới thêm sau, hoặc có thể **không phải giọng Vbee**
+mà là của bên khác. Tôi **không đoán**. Nếu anh Hùng cần chắc, phải mở thẳng thư viện giọng
+trong tài khoản Vbee xem có không.
+
+### ⚠️ Một cảnh báo nữa về giọng — quan trọng với 200–300 kênh
+
+Trong bản cập nhật chính thức của Vbee có hẳn một hạng mục **"Giọng sắp ngừng cung cấp"**.
+Nghĩa là **Vbee có quyền khai tử giọng**. Vbee cũng chia giọng thành **"Giọng Cơ Bản"**,
+**"Giọng Nâng Cao"**, **"Giọng Tiếng Việt Beta"** — các mức này **ăn số ký tự khác nhau**.
+
+Việc này đáng lưu ý cho anh Hùng: nếu cả dây chuyền 200–300 kênh **cột chặt vào đúng 3 giọng**,
+mà một giọng bị Vbee ngừng cung cấp, thì **hàng loạt kênh mất giọng cùng lúc**. Chuyện này
+xảy ra **kể cả khi anh mua chính hãng đầy đủ** — nên nó là lý do nên **chuẩn bị sẵn giọng thay thế**,
+không liên quan gì tới đại lý.
 
 ---
 
@@ -166,24 +217,34 @@ Tra hết các cửa, kết quả:
 
 1. **Không có đại lý được uỷ quyền nào chứng minh được.** Vbee cũng không công khai danh sách
    đối tác để đối chiếu.
-2. **Vbee không có chương trình đại lý/bán lại công khai.**
+2. **Vbee không có chương trình đại lý/bán lại.** Chương trình chính thức duy nhất là
+   **Affiliate (giới thiệu ăn hoa hồng 20%)** — và cái đó **không cho phép cho người khác dùng giọng**.
 3. Mọi chỗ **rẻ hơn** mà tôi tìm được đều là **tài khoản dùng chung không phép** — chính lời
    quảng cáo của họ ("tránh bị khoá", "bảo hành nếu rớt gói") tự chứng minh là họ không có phép.
-4. Cửa hợp pháp duy nhất là **gói API doanh nghiệp của Vbee** — và cửa đó **đắt hơn**, không rẻ hơn.
+4. Cửa hợp pháp duy nhất để đưa giọng Vbee vào app bán cho khách là **gói API doanh nghiệp của
+   Vbee** — và cửa đó **đắt hơn**, không rẻ hơn.
 
 **Nói gọn: rẻ hơn và hợp pháp — không tồn tại cùng lúc ở đây.** Cái rẻ thì không có phép,
 cái có phép thì không rẻ.
 
-### Anh Hùng có thể đúng ở chỗ nào
+### Anh Hùng đúng ở chỗ nào — và lệch ở chỗ nào
 
-Anh nói *"nhiều bên có bản quyền Vbee rồi, được phép"* — **loại hợp đồng đó có thật trong ngành**,
-tôi không phủ nhận. Nhưng:
+Anh nói *"nhiều bên có bản quyền Vbee rồi, được phép, và bên mua kia họ cho người khác dùng public"*.
 
-- Nó phải là **hợp đồng riêng ký thẳng với Vbee** (loại phải "liên hệ báo giá"), **không phải**
-  mua gói lẻ rồi chia lại.
-- Bên có hợp đồng đó **vẫn không được phép cho anh Hùng dùng lại**, trừ khi hợp đồng của họ
-  ghi rõ được phép cấp lại — và **họ phải cho anh xem được**.
-- **Không bên nào tôi tìm được cho xem cái đó.**
+**Anh đúng ở nửa đầu.** Có thật là **nhiều bên có bản quyền Vbee** (mua gói trả tiền), và có thật là
+**nhiều bên được Vbee cho phép** — cụ thể là **được phép làm affiliate giới thiệu**. Loại hợp đồng
+bán lại/gắn nhãn trong ngành phần mềm **cũng có thật**, tôi không phủ nhận.
+
+**Chỗ lệch là nửa sau.** *"Được phép"* mà anh nghe được là **được phép giới thiệu**, chứ không phải
+**được phép cho người khác dùng giọng**. Hai cái đó khác nhau, và điều 4.2 chặn đúng cái thứ hai:
+**"không thể cấp phép lại"**.
+
+Muốn *"cho người khác dùng public"* mà hợp pháp thì phải:
+
+- Có **hợp đồng riêng ký thẳng với Vbee** (loại phải "liên hệ báo giá"), **không phải** mua gói lẻ rồi chia lại.
+- Và bên đó **vẫn không được cho anh Hùng dùng lại**, trừ khi hợp đồng của họ ghi rõ được cấp lại
+  — và **họ phải cho anh xem được cái hợp đồng đó**.
+- **Không bên nào tôi tìm được cho xem cái đó.** Đó là lý do tôi kết luận KHÔNG.
 
 ### Nếu anh Hùng vẫn muốn theo hướng đại lý
 
@@ -203,9 +264,13 @@ Tôi chỉ tin **trang gốc**, không tin bài blog giới thiệu.
 |---|---|---|
 | `policy.vbee.vn` — điều khoản dịch vụ | **gốc, chính thức** | Điều 4.2 "không thể cấp phép lại" — chứng cứ chính |
 | `help.vbee.vn/docs/faq` | **gốc, chính thức** | được dùng cho YouTube/Facebook; không có mục đại lý |
+| `help.vbee.vn/.../affiliate` | **gốc, chính thức** | có Affiliate 20% — **không phải** đại lý bán lại |
+| `help.vbee.vn` — bản cập nhật 03/2025 | **gốc, chính thức** | có hạng mục "giọng sắp ngừng cung cấp"; **không thấy Minh Quân** |
 | `vbee.vn/bang-gia` | **gốc, chính thức** | có gói API doanh nghiệp, giá phải hỏi riêng |
 | `vbee.vn/blog` — giọng vùng miền | **gốc, chính thức** | xác nhận Ngọc Huyền + Anh Khôi; **không thấy Minh Quân** |
+| `vbee.vn/blog/gioi-thieu` | **gốc, chính thức** | không có chương trình phân phối; Shopee/Sendo là **khách**, không phải đại lý |
 | `fpt.ai/partners/` | **gốc** | **404 — không có trang đối tác** |
+| `viettelstore.vn` | trang bán lẻ lớn | chỉ là **bài tin tức**, không bán, không nhận là đại lý |
 | các trang bán tài khoản giá rẻ | bên bán tự nói | chỉ dùng để **nhận diện dấu hiệu**, không dùng làm bằng chứng |
 
 ### Chỗ tôi KHÔNG tra được (nói thẳng, không đoán)
