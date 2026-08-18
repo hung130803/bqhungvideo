@@ -1114,6 +1114,27 @@ def _nhan_json_mode(model: str) -> bool:
     return "gpt-oss" in m or m.startswith("openai/")
 
 
+def la_loi_tham_so_them(msg: str) -> bool:
+    """Lỗi 400 do MỘT THAM SỐ THÊM, không phải do prompt/key -> gọi lại kiểu
+    TRẦN là xong. Ba thân lỗi ĐO ĐƯỢC của Groq:
+
+    * *"`reasoning_effort` must be one of `low`, `medium`, or `high`"* — model
+      khác không nhận tham số đó.
+    * *"`response_format` … not supported"* — model không nhận json_object.
+    * **"Failed to generate JSON. Please adjust your prompt."** — ca NGUY HIỂM
+      NHẤT, bắt được đúng lúc chạy cổng 74 với Groq THẬT (18/08/2026): bật
+      `json_object` là Groq dùng bộ giải mã có RÀNG BUỘC, và khi model không
+      sinh nổi JSON hợp lệ trong ràng buộc đó thì nó **trả 400 chứ không trả
+      câu nào**. Tức bật json_object mà thiếu lưới này là ĐỔI một bệnh chập
+      chờn lấy một bệnh chập chờn KHÁC, và bệnh mới còn tệ hơn vì lời lỗi
+      "Gọi groq thất bại" chẳng nói gì về nguyên nhân. Hàm thuần."""
+    m = (msg or "").lower()
+    if "400" not in m:
+        return False
+    return any(s in m for s in ("reasoning_effort", "response_format",
+                                "json_object", "failed to generate json"))
+
+
 def _nhan_reasoning(model: str) -> bool:
     """Model gpt-oss là model SUY LUẬN: phần "nghĩ" ăn CHUNG ngân sách đầu ra.
 
@@ -1191,13 +1212,11 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                         extra_body=extra, **them,
                     )
                 except Exception as e_th:  # noqa: BLE001
-                    # Model KHÁC không nhận tham số thêm (Groq trả 400 nêu đích
-                    # danh tham số). Gọi lại kiểu TRẦN — đổi model/nhà cung cấp
-                    # không bao giờ được làm chết cả lượt vì một tuỳ chọn.
-                    _t = str(e_th)
-                    if not ("400" in _t and ("reasoning_effort" in _t
-                                             or "response_format" in _t
-                                             or "json_object" in _t)):
+                    # Tham số THÊM bị từ chối (model không nhận, hoặc bộ giải
+                    # mã json_object không sinh nổi JSON) -> gọi lại kiểu TRẦN.
+                    # Một TUỲ CHỌN không bao giờ được phép giết cả lượt: bản
+                    # trần chính là hành vi app đã chạy suốt từ trước.
+                    if not la_loi_tham_so_them(str(e_th)):
                         raise
                     resp = client.chat.completions.create(
                         model=md, messages=msgs, temperature=temperature,

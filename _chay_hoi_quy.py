@@ -55,7 +55,7 @@ CONG = [
     # ĐÂY vì đúng hôm qua cổng 70 vừa dính bẫy "cổng không ai gọi thì chỉ là
     # một file .py nằm đó". Không đốt lượt Groq đáng kể: chỉ CA 9 gọi thật
     # (30 câu, 1 lượt); `BQ_BO_MANG=1` để chạy hoàn toàn offline.
-    ("74 JSON bao dung",    "_test_json_bao_dung.py",    69),
+    ("74 JSON bao dung",    "_test_json_bao_dung.py",    80),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.

@@ -158,7 +158,20 @@ else:
 
 # ==========================================================================
 print("\n== CA 2. JSON ĐỨT CUỐI -> VỚT được, KHÔNG mất trắng ==")
-d = llm._extract_json(DUT_MANG)
+
+
+def boc_an_toan(s: str):
+    """Bóc mà KHÔNG cho ném — cổng phải BÁO HỎNG chứ không được CHẾT giữa
+    chừng. Cổng chết là mất luôn dòng tổng kết, và lượt hồi quy đọc ra một
+    thứ không phân biệt được với 'chưa chạy tới chốt'."""
+    try:
+        return llm._extract_json(s)
+    except Exception as e:  # noqa: BLE001
+        print(f"       (ném {type(e).__name__}: {str(e)[:70]})")
+        return None
+
+
+d = boc_an_toan(DUT_MANG)
 ok("mảng đứt -> ra list", isinstance(d, list), f"{type(d).__name__}")
 ok("vớt đúng 3 phần tử HOÀN CHỈNH (bỏ cái dở)",
    isinstance(d, list) and len(d) == 3, f"{len(d) if isinstance(d, list) else '?'}")
@@ -168,13 +181,13 @@ ok("phần tử vớt đúng nội dung",
 ok("KHÔNG bịa phần model chưa viết",
    isinstance(d, list) and all(isinstance(x, dict) and "t" in x for x in d))
 
-do = llm._extract_json(DUT_OBJ)
+do = boc_an_toan(DUT_OBJ)
 ok("object đứt -> ra dict", isinstance(do, dict), f"{type(do).__name__}")
 ok("giữ được khoá đã hoàn chỉnh (title)",
    isinstance(do, dict) and do.get("title") == "Bảy bộ phim mới")
+_parts = do.get("parts") if isinstance(do, dict) else None
 ok("vớt được mảng lồng bên trong (2 part đủ)",
-   isinstance(do, dict) and isinstance(do.get("parts"), list)
-   and len(do["parts"]) == 2, str(do.get("parts"))[:80])
+   isinstance(_parts, list) and len(_parts) == 2, str(_parts)[:80])
 
 if MOC is not None:
     b1 = b2 = "?"
@@ -191,16 +204,16 @@ if MOC is not None:
 
 # ==========================================================================
 print("\n== CA 3. bọc markdown · chữ dẫn thừa · dấu phẩy thừa ==")
-ok("khối ```json đóng đủ", llm._extract_json(BOC_MD) == [{"i": 0, "t": "xin chào"}])
+ok("khối ```json đóng đủ", boc_an_toan(BOC_MD) == [{"i": 0, "t": "xin chào"}])
 ok("khối ```json MỞ mà chưa đóng (JSON vẫn đủ)",
-   llm._extract_json(BOC_MD_HO) == [{"i": 0, "t": "xin chào"},
-                                    {"i": 1, "t": "tạm biệt"}])
+   boc_an_toan(BOC_MD_HO) == [{"i": 0, "t": "xin chào"},
+                              {"i": 1, "t": "tạm biệt"}])
 ok("khối ```json MỞ **và** JSON đứt",
-   llm._extract_json(BOC_MD_DUT) == [{"i": 0, "t": "xin chào"}],
-   str(llm._extract_json(BOC_MD_DUT))[:70])
-ok("chữ dẫn thừa trước/sau", llm._extract_json(CHU_THUA) == [{"i": 0, "t": "xin chào"}])
+   boc_an_toan(BOC_MD_DUT) == [{"i": 0, "t": "xin chào"}],
+   str(boc_an_toan(BOC_MD_DUT))[:70])
+ok("chữ dẫn thừa trước/sau", boc_an_toan(CHU_THUA) == [{"i": 0, "t": "xin chào"}])
 ok("dấu phẩy thừa trước ]",
-   llm._extract_json(PHAY_THUA) == [{"i": 0, "t": "a"}, {"i": 1, "t": "b"}])
+   boc_an_toan(PHAY_THUA) == [{"i": 0, "t": "a"}, {"i": 1, "t": "b"}])
 ok("_bo_phay_thua KHÔNG đụng dấu phẩy giữa chuỗi",
    json.loads(llm._bo_phay_thua('{"a":"x, y","b":1}'))["a"] == "x, y")
 if MOC is not None:
@@ -411,6 +424,9 @@ ok("prompt ngắn bị chặn ở trần trên (không xin 8000 -> 413)",
 _bat: dict = {}
 
 
+_LYDO = {"v": "stop"}
+
+
 class _Comp:
     def __init__(self, cl):
         self._cl = cl
@@ -424,7 +440,7 @@ class _Comp:
 
         class _C:
             message = _M()
-            finish_reason = "stop"
+            finish_reason = _LYDO["v"]
 
         class _R:
             choices = [_C()]
@@ -471,6 +487,19 @@ try:
        "response_format" not in _bat and "reasoning_effort" not in _bat,
        str(sorted(_bat)))
 
+    # `_call_once` PHẢI GHI LẠI `finish_reason` — không ghi thì `complete_json`
+    # không bao giờ biết mình bị CẮT và lại báo sai bệnh y như v2.34.0.
+    # (THỬ PHÁ 18/08 lôi ra đúng lỗ này: bỏ `_ghi_ket_thuc` mà cổng vẫn xanh
+    # vì mọi ca khác đều tự gán `_LAN.ket_thuc` bằng tay.)
+    llm.chuoi_model_groq = lambda m=None: ["openai/gpt-oss-120b"]
+    for _v in ("stop", "length"):
+        _LYDO["v"] = _v
+        llm._LAN.ket_thuc = "BẨN"
+        llm._call_once("groq", "k", "p", "s", 0.3, json_mode=True)
+        ok(f"_call_once GHI finish_reason={_v} vào sổ theo luồng",
+           llm.ly_do_ket_thuc() == _v, f"đọc ra {llm.ly_do_ket_thuc()!r}")
+    _LYDO["v"] = "stop"
+
     # model TỪ CHỐI tham số (400) -> phải gọi lại kiểu trần, KHÔNG chết
     _lan = {"n": 0}
 
@@ -500,6 +529,50 @@ try:
     out = llm._call_once("groq", "k", "p", "s", 0.3, json_mode=True)
     ok("400 vì tham số -> LÙI ÊM, vẫn ra kết quả", out.startswith("[{"), out[:40])
     ok("lùi êm = gọi lại đúng 1 lần", _lan["n"] == 2, str(_lan["n"]))
+
+    # THÂN LỖI THẬT gặp lúc chạy cổng này với Groq THẬT (18/08/2026): bật
+    # json_object thì Groq có thể trả 400 "Failed to generate JSON" — tức KHÔNG
+    # trả câu nào. Thiếu lưới này là đổi bệnh chập chờn cũ lấy bệnh mới.
+    LOI_THAT = ("Error code: 400 - {'error': {'message': \"Failed to generate "
+                "JSON. Please adjust your prompt. See 'failed_generation' for "
+                "more details.\", 'type': 'invalid_request_error'}}")
+    ok("nhận diện 400 'Failed to generate JSON'",
+       llm.la_loi_tham_so_them(LOI_THAT))
+    ok("nhận diện 400 'reasoning_effort must be one of'",
+       llm.la_loi_tham_so_them(
+           "Error code: 400 - `reasoning_effort` must be one of `low`"))
+    for _x in ("Error code: 429 - rate limit reached",
+               "Error code: 413 - Request too large",
+               "Error code: 400 - Organization has been restricted.",
+               "Error code: 401 - invalid api key", ""):
+        ok(f"KHÔNG nhận nhầm: {_x[:34]!r}", not llm.la_loi_tham_so_them(_x))
+
+    _lan2 = {"n": 0}
+
+    class _CompJsonChet(_Comp):
+        def create(self, model=None, messages=None, temperature=None,
+                   extra_body=None, **kw):
+            _lan2["n"] += 1
+            if "response_format" in kw:
+                raise RuntimeError(LOI_THAT)
+            return super().create(model=model, messages=messages,
+                                  temperature=temperature,
+                                  extra_body=extra_body, **kw)
+
+    class _ChatJC:
+        def __init__(self, cl):
+            self.completions = _CompJsonChet(cl)
+
+    class _StubJC(_Stub):
+        def __init__(self, **kw):
+            super().__init__(**kw)
+            self.chat = _ChatJC(self)
+
+    openai.OpenAI = _StubJC
+    out = llm._call_once("groq", "k", "p", "s", 0.3, json_mode=True)
+    ok("400 'Failed to generate JSON' -> LÙI về bản TRẦN, vẫn ra kết quả",
+       out.startswith("[{"), out[:40])
+    ok("lùi đúng 1 lần (không lặp vô tận)", _lan2["n"] == 2, str(_lan2["n"]))
 finally:
     openai.OpenAI = _goc_openai
     llm.chuoi_model_groq = _goc_chuoi
