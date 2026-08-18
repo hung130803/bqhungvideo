@@ -77,6 +77,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -174,7 +176,8 @@ def tinh_trang_giong_hang() -> dict:
             pass
     if not duong_model().is_file():
         thieu.append("model MMS_FA (1,18 GB)")
-    if not _python_chay():
+    py = _python_chay()
+    if not py:
         thieu.append("python3 (máy chưa cài Python)")
     return {
         "co": not thieu,
@@ -183,6 +186,17 @@ def tinh_trang_giong_hang() -> dict:
         "lib_torch": lib_torch(),
         "thu_muc": thu_muc_gh(),
         "model": str(duong_model()),
+        # `cai_duoc` = BẤM NÚT TẢI CÓ ĂN THUA GÌ KHÔNG — câu hỏi KHÁC hẳn
+        # `co`. Không có python thì pip không chạy được; chưa có torch trong
+        # `_lib` thì gióng hàng vẫn thiếu chân dù tải xong phần của mình, nên
+        # phải bấm nút *Tải bộ tách giọng* trước. Nút xám mà không nói vì sao
+        # chỉ là câu đố (bài học cổng 58/16/51) -> `vi_sao_khong_cai` nói ra.
+        "cai_duoc": bool(py) and _co_goi(lib_torch(), "torch"),
+        "vi_sao_khong_cai": ("Máy chưa cài Python 3 (python.org)." if not py
+                             else ("Chưa có torch — bấm 'Tải bộ tách giọng' "
+                                   "ở hàng trên trước."
+                                   if not _co_goi(lib_torch(), "torch")
+                                   else "")),
     }
 
 
@@ -224,6 +238,171 @@ def _ghi_log(dong: str) -> None:
             f.write(f"[{ts:%H:%M:%S}] {dong}\n")
     except Exception:                                # noqa: BLE001
         pass
+
+
+# ==========================================================================
+# TẢI BỘ GIÓNG HÀNG — **CHỈ khi NGƯỜI DÙNG BẤM**
+# ==========================================================================
+#: Nhãn nút. Số là SỐ ĐO trên máy này (`model.pt` 1.203,6 MB + torchaudio/
+#: uroman/regex vài MB), KHÔNG phải ước bừa. Nhãn sai là user bấm xong ngồi
+#: đợi một lượt tải khác hẳn cái vừa đọc — đúng lỗi `NHAN_TAI_DEMUCS` ghi
+#: 155 MB rồi hộp doạ 2 GB.
+NHAN_TAI_GH = "Tải bộ gióng hàng (khoảng 1,2 GB)"
+
+#: `torchaudio` phải `--no-deps`: nó khai phụ thuộc `torch`, mà torch đã nằm
+#: sẵn trong `_lib` (4,3 GB bản CUDA). Không có cờ này thì pip tải THÊM một
+#: bản torch nữa vào `thu_muc_gh()` — 2,5 GB trùng lặp cho thứ máy đã có.
+#: `uroman` thì lấy CẢ phụ thuộc (`regex`, ~0,3 MB).
+GOI_KHONG_DEPS = ("torchaudio",)
+GOI_CO_DEPS = ("uroman",)
+
+_KHOA_CAI = threading.Lock()
+
+#: Tải model bằng CHÍNH `torch.hub` của torchaudio thay vì tự gõ URL: nó biết
+#: đúng đường, tự kiểm hash, tự đặt tên file — và nếu bản torchaudio sau đổi
+#: URL thì ta đi theo, không phải sửa hằng số. Chạy Ở TIẾN TRÌNH RIÊNG vì nó
+#: `import torch` (bất biến 1).
+_MA_TAI_MODEL = r'''
+import os, sys
+thu_muc, lib_torch = sys.argv[1:3]
+sys.path.insert(0, lib_torch)
+sys.path.insert(0, thu_muc)
+os.environ.setdefault("TORCH_HOME", os.path.join(thu_muc, "_models"))
+try:
+    import torch
+    from torchaudio.pipelines import MMS_FA
+    MMS_FA.get_model()      # torch.hub tai ve <TORCH_HOME>/hub/checkpoints
+    sys.stdout.write("BQOK\ttorch %s\n" % getattr(torch, "__version__", "?"))
+except Exception as e:
+    sys.stdout.write("BQLOI\t%s: %s\n" % (type(e).__name__, e))
+sys.stdout.flush()
+'''
+
+
+def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
+                   timeout: int = 5400) -> dict:
+    """Tải `torchaudio` + `uroman` + model MMS_FA về `thu_muc_gh()`.
+
+    **CHỈ chạy khi NGƯỜI DÙNG BẤM** — app không bao giờ tự tải 1,2 GB sau
+    lưng người đang chạy sản xuất 300 kênh (cùng luật `cai_demucs`/
+    `cai_piper`).
+
+    **KHÔNG tự cài torch.** torch dùng CHUNG `_lib` với Demucs; hàm này chỉ
+    ĐỌC chỗ đó (xem `lib_torch`). Thiếu torch thì báo thẳng là phải bấm nút
+    *Tải bộ tách giọng* trước, chứ không âm thầm kéo về bản torch thứ hai —
+    hai bản torch trong hai thư mục là đúng cách phá Demucs đang chạy.
+
+    Trả `{ok, giay, thu_muc, loi, nhat_ky, tinh_trang}`. KHÔNG BAO GIỜ NÉM.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(max(0.0, min(1.0, p)), m)
+            except Exception:                            # noqa: BLE001
+                pass
+
+    d = thu_muc_gh()
+    t0 = time.time()
+
+    def _xong(ok: bool, loi: str = "", nk: Optional[list] = None) -> dict:
+        return {"ok": ok, "loi": loi, "thu_muc": d,
+                "giay": round(time.time() - t0, 2),
+                "nhat_ky": (nk or [])[-40:],
+                "tinh_trang": tinh_trang_giong_hang()}
+
+    from app.core.thay_giong import _lenh_pip          # dùng lại, không viết mới
+    pip = _lenh_pip()
+    if not pip:
+        return _xong(False, "Máy này không có python/pip nên app không tự tải "
+                            "được. Cài Python 3 (python.org) rồi bấm lại, "
+                            "hoặc copy thư mục _giong_hang từ máy đã cài sang.")
+    if not _co_goi(lib_torch(), "torch"):
+        return _xong(False, "Chưa có torch trong " + lib_torch() + ". Bấm nút "
+                            "'Tải bộ tách giọng' ở hàng trên trước — gióng "
+                            "hàng dùng CHUNG torch với bộ tách giọng, tải "
+                            "riêng một bản nữa là thừa 2,5 GB.")
+    if not _KHOA_CAI.acquire(blocking=False):
+        return _xong(False, "Đang tải rồi — đợi lượt này xong.")
+
+    nhat_ky: list[str] = []
+    try:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        # Cùng chỉ mục với torch đang có: bản `+cu126` và bản PyPI thường là
+        # hai cây khác nhau, lấy lệch cây là torchaudio nạp lên báo thiếu DLL.
+        from app.core.thay_giong import (CHI_MUC_TORCH_CPU,
+                                         CHI_MUC_TORCH_CUDA, co_gpu_nvidia)
+        chi_muc = CHI_MUC_TORCH_CUDA if co_gpu_nvidia() else CHI_MUC_TORCH_CPU
+        for goi, khong_deps in ((GOI_KHONG_DEPS, True), (GOI_CO_DEPS, False)):
+            args = [*pip, "install", "--no-input",
+                    "--disable-pip-version-check", "--upgrade",
+                    # `--ignore-installed`: thiếu cờ này thì pip coi gói máy
+                    # đã có là "đã thoả mãn" rồi BỎ QUA, `--target` nhận thư
+                    # mục rỗng -> máy dev vẫn chạy (mượn `.venv`) còn máy anh
+                    # Hùng thì không. Đúng lỗi `_lib` của Demucs (cổng 58).
+                    "--ignore-installed", "--target", d,
+                    "--extra-index-url", chi_muc, *goi]
+            if khong_deps:
+                args.insert(-len(goi), "--no-deps")
+            prog(0.02, "Đang tải " + ", ".join(goi) + "...")
+            try:
+                r = subprocess.run(args, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
+                                   creationflags=_CREATE_NO_WINDOW,
+                                   timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return _xong(False, "Tải " + ", ".join(goi) + " quá lâu, đã "
+                                    "dừng.", nhat_ky)
+            nhat_ky += [x for x in (r.stdout or "").splitlines() if x.strip()]
+            if r.returncode != 0:
+                return _xong(False, "pip trả mã " + str(r.returncode) + ": "
+                             + (r.stderr or r.stdout or "")[-500:], nhat_ky)
+
+        # MODEL — phần nặng. torch.hub tự bỏ qua nếu file đã có.
+        if duong_model().is_file():
+            prog(0.98, "Model MMS_FA đã có sẵn, không tải lại.")
+        else:
+            prog(0.10, "Đang tải model gióng hàng MMS_FA (khoảng 1,18 GB, "
+                       "chạy 1 lần)...")
+            runner = Path(d) / "_bq_tai_model.py"
+            runner.write_text(_MA_TAI_MODEL, encoding="utf-8")
+            py = _python_chay()
+            try:
+                r2 = subprocess.run([*py, str(runner), d, lib_torch()],
+                                    capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace",
+                                    creationflags=_CREATE_NO_WINDOW,
+                                    timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return _xong(False, "Tải model gióng hàng quá lâu, đã dừng.",
+                             nhat_ky)
+            finally:
+                try:
+                    runner.unlink()
+                except OSError:
+                    pass
+            ra = (r2.stdout or "") + "\n" + (r2.stderr or "")
+            nhat_ky += [x for x in ra.splitlines() if x.strip()][-20:]
+            if "BQOK\t" not in ra:
+                return _xong(False, "Tải model gióng hàng hỏng: "
+                             + ra.strip()[-500:], nhat_ky)
+
+        # HẬU KIỂM BẰNG ĐƯỜNG DẪN, KHÔNG BẰNG "pip báo mã 0".
+        # pip trả 0 mà thư mục vẫn thiếu là chuyện ĐÃ XẢY RA (cổng 58) — và
+        # đó đúng là ca máy dev xanh / máy anh Hùng đỏ.
+        prog(0.99, "Đang kiểm lại bộ gióng hàng...")
+        tt = tinh_trang_giong_hang()
+        if not tt["co"]:
+            return _xong(False, "Chạy xong nhưng VẪN THIẾU: "
+                         + ", ".join(tt["thieu"]) + " (trong " + d + "). "
+                         "Đừng coi là đã cài — bản .exe sẽ không chạy được.",
+                         nhat_ky)
+        prog(1.0, "Đã tải xong bộ gióng hàng")
+        _ghi_log(f"Đã cài bộ gióng hàng vào {d}")
+        return _xong(True, "", nhat_ky)
+    except Exception as e:                               # noqa: BLE001
+        return _xong(False, f"{type(e).__name__}: {e}", nhat_ky)
+    finally:
+        _KHOA_CAI.release()
 
 
 # ==========================================================================
@@ -291,6 +470,18 @@ try:
     uro = _ur.Uroman()
     bao(0.10, "Da nap (%s)" % dev)
 
+    # DAU GACH NOI LA TOKEN BLANK — BO NO, KHONG THI HONG MOC CA CAU.
+    # `BANG` cua MMS_FA anh xa '-' -> **0**, ma 0 chinh la blank truyen cho
+    # `forced_align(blank=0)`. uroman GIU NGUYEN dau gach noi ("COVID-19" ->
+    # "COVID-19"), nen mot chu co gach noi lam torchaudio nem
+    # `ValueError: targets Tensor shouldn't contain blank index` -> khoi
+    # `except` ben duoi tra `[]` cho CA CAU. Do that trong log ngay 18/08:
+    # cau 11 tieng Viet chet vi chuoi "covid-chi con la bai...".
+    # Loc theo ID (khong loc theo mat chu) de ban torchaudio sau co doi ky
+    # tu blank thi van dung.
+    BLANK = 0
+    BO = {c for c, v in BANG.items() if v == BLANK} | {"*"}
+
     def ma_hoa(tu, lcode):
         """1 tu -> danh sach id token. Romanize TUNG TU (xem docstring)."""
         try:
@@ -298,7 +489,7 @@ try:
         except Exception:
             r = uro.romanize_string(tu)
         r = (r or "").lower()
-        return [BANG[c] for c in r if c in BANG and c != "*"]
+        return [BANG[c] for c in r if c in BANG and c not in BO]
 
     ket = []
     tong = max(1, len(viec["cap"]))
@@ -328,8 +519,8 @@ try:
                 # ve CPU khong mat gi.
                 lp = torch.log_softmax(em, dim=-1).cpu()
                 al, sc = forced_align(
-                    lp, torch.tensor([ids], dtype=torch.int32), blank=0)
-            spans = merge_tokens(al[0], sc[0].exp(), blank=0)
+                    lp, torch.tensor([ids], dtype=torch.int32), blank=BLANK)
+            spans = merge_tokens(al[0], sc[0].exp(), blank=BLANK)
             giay_align += time.time() - t0
             if len(spans) != len(ids):
                 ket.append([])

@@ -60,6 +60,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core import che_chu as TG_CC
+from app.core import giong_hang as GH
 from app.core import tg_chay, tg_so
 from app.core import thay_giong as TG
 from app.core.captions import CAPTION_PRESETS
@@ -239,6 +240,7 @@ class ThayGiongDialog(QDialog):
     _giong_xong = pyqtSignal()          # danh sách giọng nạp xong (thread nền)
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
     _piper_xong = pyqtSignal(bool, str)  # tải giọng Piper xong (ok, lời)
+    _gh_xong = pyqtSignal(bool, str)    # tải bộ gióng hàng xong (ok, lời)
     #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi) — nghe thử sinh xong ở
     #: thread nền. Phải qua tín hiệu: đụng widget từ thread nền là sập app.
     _nghe_xong = pyqtSignal(str, str, str)
@@ -264,6 +266,7 @@ class ThayGiongDialog(QDialog):
         self._tt_dong: dict[str, str] = {}   # dòng -> trạng thái ĐANG hiện
         self._dang_cai = False
         self._dang_cai_piper = False
+        self._dang_cai_gh = False
         self._tt_piper: dict = {}
         self._giong_tho: list = []
         self._da_bao_xong = True            # chưa chạy lượt nào -> không báo
@@ -627,6 +630,29 @@ class ThayGiongDialog(QDialog):
         lay.addLayout(h4b)
         self._do_piper()
 
+        # ---- hàng 4c: BỘ GIÓNG HÀNG (mốc từng chữ cho MỌI máy đọc) ----
+        # Cùng luật hàng Piper: thiếu thì LÙI ÊM (mốc kém chính xác hơn,
+        # video vẫn đúng) nên KHÔNG khoá nút Chạy. Trước hôm nay anh Hùng và
+        # nhân viên phải TỰ đặt file 1,18 GB vào `_giong_hang/` — không có
+        # đường nào trong app tải được, tức tính năng coi như không tồn tại
+        # với người không đọc mã.
+        h4c = QHBoxLayout()
+        self.lb_gh = QLabel("")
+        self.lb_gh.setWordWrap(True)
+        h4c.addWidget(self.lb_gh, 1)
+        self.b_tai_gh = QPushButton(GH.NHAN_TAI_GH)
+        self.b_tai_gh.setToolTip(
+            "Tải bộ gióng hàng (torchaudio + uroman + model MMS_FA) về thư "
+            "mục riêng.\n"
+            "Đo thật: model 1.203,6 MB trên đĩa.\n"
+            "Dùng CHUNG torch với bộ tách giọng — phải tải bộ tách giọng "
+            "trước.\n"
+            "Chỉ tải khi BẠN bấm — app không bao giờ tự tải sau lưng.")
+        self.b_tai_gh.clicked.connect(self._tai_gh)
+        h4c.addWidget(self.b_tai_gh)
+        lay.addLayout(h4c)
+        self._do_gh()
+
         # ---- bảng tiến độ ----
         self.bang = QTableWidget(0, 4)
         self.bang.setHorizontalHeaderLabels(
@@ -690,6 +716,7 @@ class ThayGiongDialog(QDialog):
         self._giong_xong.connect(self._dung_combo_giong)
         self._cai_xong.connect(self._cai_demucs_xong)
         self._piper_xong.connect(self._tai_piper_xong)
+        self._gh_xong.connect(self._tai_gh_xong)
         self._nghe_xong.connect(self._nghe_thu_xong)
 
         self._do_demucs()
@@ -1022,6 +1049,87 @@ class ThayGiongDialog(QDialog):
                 "Chưa tải được giọng chạy trên máy.\n\n" + (loi or "")
                 + "\n\nApp vẫn dùng được bình thường bằng giọng thường "
                   "(edge-tts).")
+
+    # ------------------------------------------------------------------
+    # BỘ GIÓNG HÀNG — MỐC TỪNG CHỮ CHO MỌI MÁY ĐỌC (không chặn gì)
+    # ------------------------------------------------------------------
+    def _do_gh(self) -> dict:
+        """Dò bộ gióng hàng rồi cập nhật nhãn. KHÔNG khoá nút Chạy.
+
+        Thiếu thì `dubbing._moc_giong_hang` trả nguyên mốc cũ — video vẫn ra
+        đúng, chỉ mốc chữ kém chính xác hơn. Vì vậy đây là thông tin, không
+        phải chốt chặn (khác hẳn Demucs ở hàng trên).
+        """
+        tt = GH.tinh_trang_giong_hang()
+        self._tt_gh = tt
+        if tt["co"]:
+            self.lb_gh.setText(
+                "Bộ gióng hàng mốc từng chữ: ĐÃ CÓ. Mọi giọng không tự trả "
+                "mốc (Piper, giọng ngoài) sẽ lấy mốc bằng bộ này thay vì nhờ "
+                "máy nghe chép ngược.")
+            self.lb_gh.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            self.b_tai_gh.setVisible(False)
+        else:
+            # Nút xám mà không nói vì sao chỉ là câu đố — `vi_sao_khong_cai`
+            # nói ĐÍCH DANH thứ còn thiếu (bài học cổng 58/16/51).
+            self.lb_gh.setText(
+                "Bộ gióng hàng mốc từng chữ: CHƯA TẢI (1,2 GB) — thiếu: "
+                + ", ".join(tt["thieu"]) + ".\nKhông có nó thì giọng Piper và "
+                "giọng ngoài phải nhờ máy nghe dò lại mốc: chữ chạy lệch tiếng "
+                "hơn và tốn lượt mạng."
+                + ("\n" + tt["vi_sao_khong_cai"]
+                   if tt.get("vi_sao_khong_cai") else ""))
+            self.lb_gh.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            self.b_tai_gh.setVisible(True)
+            self.b_tai_gh.setEnabled(
+                bool(tt.get("cai_duoc", True)) and not self._dang_cai_gh)
+        return tt
+
+    def _tai_gh(self) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải — app không tự tải 1,2 GB sau lưng."""
+        if getattr(self, "_dang_cai_gh", False):
+            return
+        if QMessageBox.question(
+                self, "Tải bộ gióng hàng",
+                "Sẽ tải torchaudio + uroman + model MMS_FA về:\n"
+                + str(self._tt_gh.get("thu_muc", ""))
+                + "\n\nRiêng model khoảng 1,18 GB (đo thật 1.203,6 MB), tải "
+                  "một lần. Dùng CHUNG torch với bộ tách giọng nên không tải "
+                  "thêm torch.\n\nTải bây giờ?"
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        self._dang_cai_gh = True
+        self.b_tai_gh.setEnabled(False)
+        self.b_tai_gh.setText("Đang tải...")
+
+        def bg():
+            r = GH.cai_giong_hang()
+            self._gh_xong.emit(bool(r.get("ok")), str(r.get("loi") or "")[:400])
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _tai_gh_xong(self, ok: bool, loi: str) -> None:
+        self._dang_cai_gh = False
+        self.b_tai_gh.setText(GH.NHAN_TAI_GH)
+        self.b_tai_gh.setEnabled(True)
+        tt = self._do_gh()
+        # Nhãn Piper ĐỔI THEO việc có gióng hàng hay không -> phải dựng lại.
+        # CỐ Ý KHÔNG dựng lại combo giọng: `_dung_combo_giong` đặt lại combo
+        # theo giá trị ĐÃ LƯU, tức nuốt mất lựa chọn user vừa bấm mà chưa lưu
+        # (đúng họ lỗi "chọn X ra Y"). Nhãn giọng ngoài tự đúng ở lần mở hộp
+        # sau vì `nhan_giong()` hỏi lại máy mỗi lần dựng combo.
+        self._do_piper()
+        if ok and tt["co"]:
+            QMessageBox.information(
+                self, "Xong",
+                "Đã tải xong bộ gióng hàng.\n" + str(tt.get("thu_muc", ""))
+                + "\n\nTừ giờ giọng Piper và giọng ngoài lấy mốc bằng bộ này.")
+        else:
+            QMessageBox.warning(
+                self, "Chưa tải được",
+                "Chưa tải được bộ gióng hàng.\n\n" + (loi or "")
+                + "\n\nApp vẫn dùng được bình thường — mốc chữ lấy theo cách "
+                  "cũ.")
 
     # ------------------------------------------------------------------
     # DANH SÁCH GIỌNG (tái dùng của hộp Cài đặt Reup)
