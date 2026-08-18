@@ -1936,6 +1936,119 @@
      trỏ vào **DOCSTRING** chứ không phải phần MÃ (unparse giữ docstring);
      (c) mục 5a chỉ hỏi hằng `BLANK` có mặt -> phép phá chỉ trả dòng `return`
      về cũ vẫn để `BLANK = 0` nằm đó nên mục ấy **tự ĐẠT OAN**.
+  74. `_test_json_bao_dung.py` → **JSON CỦA LLM ĐỨT/BỌC/THỪA CHỮ THÌ VẪN PHẢI
+     SỐNG** (18/08/2026). **ĐẠT 80 · HỎNG 0.** Thử phá `_pha_json_bao_dung.py`
+     (9 phép, mỗi phép gỡ ĐÚNG một chốt): **BẮT 9 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+     **LỖI CHẶN SẢN XUẤT thứ HAI trong hai ngày** (anh Hùng, v2.34.0, đường
+     Thay giọng, 2 video ra *1 xong · 1 LỖI*): `LLMError: LLM trả về không phải
+     JSON hợp lệ: Expecting value: line 1 column 1838 (char 1837)`.
+     **GỐC RỄ — KHÔNG ĐẶT `max_tokens` KHÔNG PHẢI LÀ KHÔNG GIỚI HẠN.** Chú
+     thích cũ trong `_call_once` ghi *"KHÔNG giới hạn token cứng: JSON chọn clip
+     có thể dài, cắt cụt -> hỏng kết quả"* — đúng ý định, sai sự thật: **Groq
+     tự áp trần MẶC ĐỊNH**. Đo `_do_json_dut.py` (Groq THẬT, prompt dịch 50 câu
+     thật, 6/6 lượt): `openai/gpt-oss-120b` -> `completion_tokens` **3072** ·
+     `openai/gpt-oss-20b` -> **2048**, `finish_reason` = **`length` 6/6**. Bản
+     dịch cần **~3.100** token nên mảng JSON đứt giữa chừng. **Hụt ÍT nên bệnh
+     CHẬP CHỜN** — video ngắn lọt, video dài chết, đúng ảnh "1 xong 1 lỗi".
+     Cộng thêm: gpt-oss là model **SUY LUẬN**, phần "nghĩ" ăn CHUNG ngân sách
+     đó, nên chỗ còn cho câu trả lời chỉ ~1.000 token.
+     **RÀNG BUỘC TRẦN TRÊN, ĐỌC TỪ CHÍNH LỜI LỖI 413** (đừng đặt bừa):
+     *"Request too large … service tier `on_demand` on tokens per minute (TPM):
+     Limit 8000"* -> Groq tính **CẢ `max_tokens`** vào cỡ yêu cầu. Đo: prompt
+     551 + max_tokens 7168 = **CHẠY** · 551 + 8192 = **413**. Nên `max_tokens`
+     phải **TÍNH RA** (`max_tokens_groq`), và đó cũng là lý do **CHIA NHỎ yêu
+     cầu** không phải tuỳ hứng mà là ràng buộc số học: prompt dài thì chỗ trả
+     lời hẹp lại. 413 chính là bẫy đã đốt sạch 38 key một lần — nới bừa là dẫm
+     lại.
+
+     | max_tokens (50 câu, prompt 1413 tok) | out_tok | finish | parse |
+     |---|---|---|---|
+     | không đặt (= mặc định Groq) | 3072 | **length** | **HỎNG** |
+     | 2048 | 2048 | length | HỎNG |
+     | 3072 | 3072 | length | HỎNG |
+     | **4096** | 3105 | **stop** | **ĐẠT 50/50** |
+     | 6144 | 3077 | stop | ĐẠT 50/50 |
+     | 8192 | — | — | **413** |
+
+     **`reasoning_effort="low"` LÀ ĐÒN RẺ NHẤT** (max_tokens=4096, cùng prompt):
+     mặc định **3.247** token / 7,3s -> low **1.214** token / **3,2s**, vẫn ĐẠT
+     đủ 50 câu. Tức nghĩ ít đi thì vừa còn chỗ cho câu trả lời vừa **nhanh 2,3
+     lần**. **`"none"` BỊ GROQ TỪ CHỐI** (400 *"must be one of `low`, `medium`,
+     or `high`"*) — **khác `qwen3.6` bên vision**, đừng chép tham số từ đó sang
+     (mục cổng 26 ghi `reasoning_effort="none"`, chỉ đúng cho qwen).
+     **`response_format={"type":"json_object"}` CHẠY trên gpt-oss** (2/2 mỗi
+     model) và **KHÔNG đổi HÌNH DẠNG** — vẫn trả MẢNG `[{"i":..,"t":..}]` chứ
+     không bị bọc thành object, nên `thay_giong._theo_nhan` lấy đủ 12/12 (đo
+     `_do_hinh_dang.py` — phải đo, vì bật json_object mà nó bọc lại thành
+     object là hỏng đường lấy-theo-nhãn mà không một dòng báo). `groq/compound`
+     thì 413 -> để ngoài.
+     **NHƯNG json_object CÓ MẶT TỐI, bắt được đúng lúc chạy cổng với Groq
+     THẬT:** Groq dùng bộ giải mã có **RÀNG BUỘC**, model không sinh nổi JSON
+     trong ràng buộc đó thì nó trả **400 "Failed to generate JSON. Please
+     adjust your prompt."** = KHÔNG trả câu nào. Bật json_object mà thiếu lưới
+     là **đổi một bệnh chập chờn lấy một bệnh chập chờn KHÁC**, và bệnh mới tệ
+     hơn vì lời lỗi "Gọi groq thất bại" chẳng nói gì. Nay `la_loi_tham_so_them`
+     gom cả 3 thân lỗi 400 -> **gọi lại kiểu TRẦN**. Luật chung: **một TUỲ CHỌN
+     không bao giờ được phép giết cả lượt.**
+     **BỘ BÓC BAO DUNG DÙNG LẠI, KHÔNG VIẾT MỚI:** `llm._extract_json` (alias
+     công khai `boc_json`) là cửa DUY NHẤT — `complete_json` và
+     `complete_vision_json` vốn đã đi qua nó. Thêm: khối ```` ```json ```` MỞ mà
+     chưa đóng · dấu phẩy thừa · **`vot_json_cut`** vớt phần HOÀN CHỈNH của
+     JSON bị cắt. **Phần tử mảng dở dang thì BỎ HẲN** (trả `{"i":3}` thiếu
+     `"t"` là đẻ ra một mục trông như thật — họ bẫy "phép đo phát chứng nhận");
+     riêng giá trị CUỐI của object mà là container thì vớt tầng trong, vì đó là
+     hình dạng của recap `{"title":…,"parts":[…]}`.
+     **LỖI THỨ TỰ mà chính cổng lôi ra:** phải vớt **cấu trúc NGOÀI CÙNG TRƯỚC**
+     bước "ứng viên". Với `{"mach_lac":8,"thu_tu":[1,0,2],"vi_sao":"đảo cho x`
+     (object ngoài cùng không có `}` nào), bước ứng viên đi bắt **MẢNH LỒNG BÊN
+     TRONG** `[1,0,2]` rồi trả về một **LIST**; `mach_lac.doc_ket` đòi dict nên
+     vứt sạch. **Bản mốc KHÔNG NÉM mà trả SAI HÌNH DẠNG** — sai ruột nguy hiểm
+     hơn không parse được, vì caller không có cách nào biết mình vừa nhận nhầm.
+     **`complete_json`: 2 lượt đầu parse NGHIÊM (`cho_vot=False`), lượt CUỐI mới
+     vớt** và lấy bản vớt ĐƯỢC NHIỀU NHẤT trong 3 lượt. Nhờ vậy vẫn còn cơ hội
+     đòi bản ĐỦ, mà hết lượt thì trả phần thiếu chứ không TAY TRẮNG —
+     `_dich_loat` đếm nhãn thiếu rồi đòi lại đúng phần đó (vòng `VONG_DOI_LAI`
+     đã có sẵn, chưa bao giờ chạy tới vì mất sạch dữ liệu).
+     **LỜI LỖI PHẢI ĐÚNG BỆNH:** `LLMCatCut` — *"AI trả lời quá dài nên bị CẮT
+     giữa chừng"* + *"KHÔNG phải hết hạn mức key"*. Lời cũ *"không phải JSON hợp
+     lệ"* chỉ đúng phần NGỌN, nghe như model trả rác nên người đọc đi soi
+     prompt/parser trong khi bệnh ở trần token — đúng vết xe 404-model-chết bị
+     báo thành "Dữ liệu không hợp lệ" hôm trước. **KHÔNG PHẠT KEY** (lỗi ĐỊNH
+     DẠNG, mọi key cùng trần).
+     **`_uoc_token` HIỆU CHUẨN, KHÔNG ĐOÁN** (`_do_uoc_token.py`, trên
+     `usage.prompt_tokens` THẬT 551/874/1413): hệ CJK 1,1 + phần còn lại chia
+     2,2 -> 560/884/1424 = phồng nhiều nhất **1,02x**, **0 mốc hụt**. Ước HỤT là
+     `max_tokens` đặt quá tay rồi ăn 413, nên bộ ước phải luôn >= số thật.
+     **VIỆC 3 — RÀ CẢ LỚP BỆNH:** 3 chỗ còn tự dò dấu ngoặc bằng regex ĐÒI dấu
+     ĐÓNG nên câu trả lời bị cắt là trượt sạch: `chon_doan.cham_mu`
+     (`re.search(r"\[.*\]")` -> mất cả bảng chấm, rơi hết về điểm AI tự chấm) ·
+     `mach_lac.doc_ket` (`re.search(r"\{.*\}")` -> lượt hậu kiểm im lặng bỏ
+     qua) · `recap._director_from_data` (`json.loads` trần trên JSON-trong-
+     chuỗi). Cả 3 nay nối vào `boc_json` **ĐẶT SAU đường cũ** nên JSON hợp lệ
+     ra kết quả Y HỆT — cổng CA 1 so 9 mẫu hợp lệ với bản mốc, **0 lệch**.
+     **TỈ LỆ HỎNG TRƯỚC/SAU trên ĐÚNG đường app đi** (`thay_giong._dich_loat`,
+     50 câu THẬT, Groq THẬT): **TRƯỚC 6/6 HỎNG (100%)** · **SAU 18/18 ĐẠT
+     (0%)**, 0 câu còn nguyên tiếng gốc.
+     **MỐC ĐỐI CHỨNG `v2.35.0`** (bản phát hành NGAY TRƯỚC; đo
+     `git diff v2.34.0 v2.35.0 -- app/ai/llm.py` **RỖNG** nên v2.35.0 mang y
+     nguyên bệnh của v2.34.0) + chốt *"mốc TRÙNG bản đang test -> HỎNG"*.
+     **2 LỖI CỦA CHÍNH CỔNG, do THỬ PHÁ lôi ra:** (a) bỏ `_ghi_ket_thuc(resp)`
+     mà cổng **VẪN XANH** — vì mọi ca khác đều tự gán `_LAN.ket_thuc` bằng tay;
+     không ai ghi `finish_reason` thì `complete_json` không bao giờ biết mình bị
+     CẮT và **lại báo sai bệnh y như v2.34.0**. Nay CA 7 gọi `_call_once` THẬT
+     với stub trả `stop`/`length` rồi đòi đọc lại đúng. (b) cổng **CHẾT** giữa
+     chừng (`AttributeError` vì `do.get(...)` nằm trong tham số của `ok()`) thay
+     vì BÁO HỎNG -> mất luôn dòng tổng kết, đọc ra không phân biệt được với
+     "chưa chạy tới chốt".
+     **2 GIẢ ĐỊNH CŨ BỊ BÁC BẰNG SỐ, ghi để đừng ai chép lại:** *"không đặt
+     max_tokens = không giới hạn"* (SAI, Groq có trần mặc định) và
+     *`reasoning_effort="none"`* (SAI với gpt-oss, chỉ đúng với qwen3.6).
+     **CHƯA LÀM, GHI THẲNG:** `_dich_loat` vẫn gửi CẢ LOẠT câu trong một lượt —
+     nay nó sống nhờ vớt + đòi lại, chứ **chưa tự chia mẻ theo ngân sách
+     token**. Video dài hơn corpus 50 câu (prompt > ~2.500 token) sẽ ăn dần vào
+     chỗ trả lời; `max_tokens_groq` co lại đúng luật nên không 413, nhưng số
+     vòng đòi lại sẽ tăng. Muốn chắc thì chia mẻ ngay từ `_dich_loat` — chưa đo,
+     chưa làm.
 - **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
   `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
   hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
