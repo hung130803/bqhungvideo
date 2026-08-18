@@ -221,4 +221,58 @@ NeMo + 723 MB trọng số) cùng một bộ thư viện nặng không nằm tro
 
 ---
 
-*(còn tiếp — các bộ đo tiếp theo ghi bên dưới, mỗi bộ xong là commit)*
+## 3. LEMAS-TTS — **0 GIỌNG DỰNG SẴN**, đây là bộ NHÂN BẢN
+
+Lượt 9 để ngỏ *"chưa biết bao nhiêu giọng — nếu anh muốn tôi đào tiếp thì đây là
+chỗ đáng đào"*. Đào rồi, và câu trả lời **không cần chạy model** mới biết:
+
+Đọc giao diện thật của Space (`inference_gradio.py`): ô đầu vào là
+`ref_audio = gr.Audio(label="Reference Audio")` — **bắt buộc phải NẠP một đoạn
+tiếng mẫu**. Không có một ô chọn giọng nào, không một giọng đặt tên nào. Thẻ
+model cũng ghi thẳng: *"multilingual **zero-shot** text-to-speech"*, kiến trúc
+flow-matching (họ F5-TTS).
+
+→ **Số giọng dựng sẵn: 0.** Nó không cho anh Hùng giọng nào; nó **sao chép**
+giọng từ đoạn tiếng anh đưa vào. Muốn có giọng Việt thì hoặc anh **tự thu giọng
+mình**, hoặc lấy giọng người khác — mà cái sau đúng là đường lượt 9 đã kết luận
+KHÔNG NÊN. Nên bộ "sạch phép nhất trong nhóm mới" này **không giải được bài toán
+của anh**, dù giấy phép có sạch.
+
+**Và giấy phép của nó cũng không sạch như thẻ ghi.** Thẻ dataset
+`LEMAS-Dataset-train` khai `cc-by-4.0` cho **150.000 giờ / hơn 6.400 giờ tiếng
+Việt**. Nhưng phần "Methods" chỉ nói *"filtered … depending on the **source
+dataset**"* mà **KHÔNG NÊU MỘT CÁI TÊN NÀO**. Cùng dấu hiệu với
+`Kokoro-Vietnamese` (`TRAINING.md` ghi *"Datasets … are intentionally ignored"*).
+Cộng với bằng chứng lượt 9 đã bắt: trong kho có file demo
+`zh_emilia_zh_0008385782.mp3` — **Emilia là kho CẤM thương mại**. Một kho 150 nghìn
+giờ dán CC-BY-4.0 mà không dám kể nguồn thì với người **bán app** là cửa đóng.
+
+## 4. BỐN BỘ CÒN LẠI TRONG NHÓM SẠCH PHÉP — ĐO ĐƯỢC ĐẾN ĐÂU, NÓI THẲNG
+
+| bộ | số giọng — đo từ ĐÂU | có chạy end-to-end không |
+|---|---|---|
+| **MeloTTS-Vietnamese** `nmcuong` | **1** — đọc `spk2id` trong chính `pretrain/config.json`: `{"VI-default": 0}` | **KHÔNG** — xem lý do dưới |
+| **VITS-OpenBible-Vietnamese** | **2** — đọc `speakers.pth`: `SPEAKER_00_Vietnamese`, `SPEAKER_01_Vietnamese` | KHÔNG |
+| **EveryVoice-OpenBible-Vietnamese** | không khai; kho chỉ có `feature_prediction.ckpt` + `vocoder.ckpt` | KHÔNG |
+| **Viet-SpeechT5** | tên repo lượt 9 ghi (`danhtran2mind/Vi-SpeechT5-TTS`) trả **HTTP 401 = KHÔNG TỒN TẠI**. Repo thật là `danhtran2mind/Viet-SpeechT5-TTS-finetuning` (10 lượt tải) | KHÔNG |
+
+**VÌ SAO KHÔNG CHẠY MELOTTS — lý do kỹ thuật thật, không phải bỏ dở:**
+bản Việt phải dùng nhánh riêng `manhcuong02/MeloTTS_Vietnamese`, mà
+`requirements.txt` của nhánh đó ghim **`transformers==4.27.4`** và
+**`numpy==1.26.4`** — máy này đang có transformers 5.15.0 / numpy 2.5.2. Tức phải
+dựng một môi trường Python THỨ HAI với bộ ghim cũ (thêm ~2 GB torch nữa). **Và
+dựng xong cũng không đổi kết luận: 1 giọng thì không thể vượt mốc "nhiều hơn 2
+giọng Việt".** Nên tôi dừng ở chỗ đọc được số giọng từ chính file cấu hình của
+model, và ghi rõ là CHƯA đo chất lượng.
+
+Ba bộ còn lại cùng lý do: **1-2 giọng thì đã trượt mốc đếm giọng ngay từ đầu**,
+mỗi bộ lại đòi một bộ thư viện riêng (coqui-tts · everyvoice · transformers cũ).
+**Tôi không bịa số cho chúng.**
+
+**Thêm một chỗ ghi sai của lượt 9 (cộng dồn: 15 → 16):** `Viet-SpeechT5
+danhtran2mind` — tên repo đó **không tồn tại**. Bảng lượt 9 ghi "MIT" cho một
+đường dẫn 401. Cái có thật là `Viet-SpeechT5-TTS-finetuning`.
+
+---
+
+*(còn tiếp — bộ đo cuối: lấy thêm giọng từ thứ ĐANG CÓ)*
