@@ -490,8 +490,12 @@ giọng **không bị chặn bởi máy — chỉ bị chặn bởi công lọc*
 
 ### 8. NHỮNG GÌ TÔI CHƯA ĐO ĐƯỢC
 - **Chưa nghe bằng tai người.** Tôi không có tai; mọi kết luận ở trên là số đo
-  máy. File đã giữ ở `%TEMP%\bq_giong8\gen\`, `gen_fl\` và
-  `%TEMP%\bq_tts_thu\nghe_thu\` để anh nghe thử.
+  máy.
+  **File để anh tự nghe: `_NGHE_THU_ANH_HUNG\nhan_ban\`** (22 file) —
+  `DUNGDUOC_*` là 5 giọng đạt · `MOC_giong-mac-dinh_*` và `MOC_edge-HoaiMy_*`
+  để so · `BILOAI_M6-sai-30phantram_*` là giọng bị loại, để anh nghe xem mức
+  "sai 30% chữ" nó tệ thế nào.
+  Bản đầy đủ 100+ file vẫn ở `%TEMP%\bq_giong8\gen\`, `gen_fl\`, `gen2\`.
 - **Chưa đo trên corpus dài.** Mới 6 câu ngắn (65 chữ). Bài dài vài phút có thể
   khác — nhất là chuyện đọc lặp.
 - **Chưa lọc quy mô lớn.** Tỷ lệ trúng 36% là từ **14 mẫu**; lọc 100 mẫu tỷ lệ
