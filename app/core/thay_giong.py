@@ -3406,12 +3406,160 @@ def chuan_do_to(wav_in: str | Path, wav_out: str | Path,
     return kq
 
 
+#: BÙ DẢI CAO ("bù sáng") — CHỮA ĐÚNG CÂU anh Hùng kêu 18/08/2026: *"lỗi quan
+#: trọng: âm thanh video bị lỗi hay sao cứ bị bé"*.
+#:
+#: **ĐỘ TO TÍCH HỢP KHÔNG PHẢI THỦ PHẠM — ĐÃ ĐO, ĐỪNG ĐI SỬA LẠI CHỖ ĐÓ.**
+#: Bản anh Hùng xuất 18/08 đo ra **−14,00 LUFS**, tức `chuan_do_to` (v2.31.0)
+#: ĐÃ LÀM ĐÚNG VIỆC: video GỐC là −13,03, chỉ hơn **0,97 LU**. Hai thước độc
+#: lập (`loudnorm` pha đo · `ebur128`) lệch nhau **0,00 LU**.
+#: Chỗ hỏng nằm ở **CÂN BẰNG DẢI TẦN**. Quét 9 dải octave, GỐC so với bản
+#: thay giọng (ebur128, LUFS):
+#:
+#: | dải Hz | GỐC | THAY GIỌNG | lệch |
+#: |---|---|---|---|
+#: | 250-500 | −21,90 | −21,10 | +0,80 |
+#: | 500-1000 | −24,20 | −23,30 | +0,90 |
+#: | 1000-2000 | −25,40 | −29,30 | **−3,90** |
+#: | 2000-4000 | −25,00 | −32,20 | **−7,20** |
+#: | 4000-8000 | −28,30 | −40,90 | **−12,60** |
+#: | 8000-16000 | −28,20 | −51,20 | **−23,00** |
+#:
+#: Dải giọng nói (250-1000 Hz) khớp gốc trong **1 dB**, còn từ 2 kHz trở lên
+#: mất 7-23 dB. Tai người nhạy nhất ở **2-5 kHz**, nên mất 7-12 dB ở đó nghe
+#: ra ĐÚNG LÀ "bé" và đục — dù máy đo báo cùng một con số LUFS.
+#:
+#: **VÌ SAO MẤT (truy được, không đoán):** dải cao của bản gốc phần lớn là
+#: **phụ âm gió của chính người dẫn gốc** — mà đó đúng là thứ Demucs bóc đi.
+#: Đo lớp nhạc Demucs trả về: 8-16 kHz chỉ **−62,40 LUFS** (nguồn −27,60) =
+#: coi như câm. Giọng thay vào thì cả edge-tts LẪN OmniVoice đều trả **24 kHz
+#: mono** -> KHÔNG có gì trên 12 kHz, và đo được 8-16 kHz mới **−50,00**.
+#: Tức không phải "app hạ nhạc quá tay" (đo `gain_nhac_db` = **0,00 dB** trên
+#: chính nguồn này) mà là **chỗ trống do bóc giọng gốc không ai lấp lại**.
+#:
+#: **TRẦN +6 dB LÀ SỐ ĐO, KHÔNG PHẢI SỐ CHỌN.** Quét 5 mức trên chính bản
+#: xuất (thiếu 9,70 dB):
+#:
+#: | bù | còn thiếu | I | TP |
+#: |---|---|---|---|
+#: | 0 | 9,70 | −14,02 | −1,45 |
+#: | +4 | 6,20 | −13,94 | −1,46 |
+#: | **+6** | **4,40** | **−13,87** | **−1,46** |
+#: | +8 | 2,60 | −13,77 | −1,13 |
+#: | +10 | 0,90 | −13,63 | **−0,95 (VƯỢT trần −1,0 dBTP)** |
+#:
+#: +6 đóng được **55%** khoảng thiếu mà đỉnh thật KHÔNG nhúc nhích (−1,45 ->
+#: −1,46) và độ to chỉ đổi **0,15 LU**. +10 thì vỡ trần đỉnh. **ĐỪNG NỚI** —
+#: nới là đổi tiếng lấy con số, đúng cái đã cấm ở `chuan_do_to`.
+BU_SANG_TOI_DA_DB = 6.0
+
+#: Thiếu ÍT HƠN mức này thì BỎ QUA hẳn (khỏi tốn 1 lượt ffmpeg cho thứ không
+#: ai nghe ra). Nguồn nào bản trộn vốn đã sáng bằng gốc thì bước này KHÔNG
+#: CHẠY — an toàn DO XÂY DỰNG, không phải do hy vọng.
+BU_SANG_TOI_THIEU_DB = 1.0
+
+#: Tần số gối của bộ lọc kệ cao. Đặt ở 3,5 kHz (không phải 4 kHz) để phần
+#: 2-4 kHz — dải tai nhạy nhất, đang thiếu 7,20 dB — cũng được nâng một phần.
+BU_SANG_TAN_SO = 3500.0
+
+#: Dải THAM CHIẾU và dải CAO của phép đo "độ sáng". Lấy 300-3000 Hz làm mốc vì
+#: đo được bản trộn ĐÃ khớp gốc ở đó (lệch < 1 dB) — mốc phải là chỗ không
+#: hỏng, không thì phép trừ đo lẫn cả hai lỗi.
+_AF_SANG_MID = ("highpass=f=300:poles=2,highpass=f=300:poles=2,"
+                "lowpass=f=3000:poles=2,lowpass=f=3000:poles=2")
+_AF_SANG_HI = "highpass=f=4000:poles=2,highpass=f=4000:poles=2"
+
+
+def do_do_sang(path: str | Path) -> float:
+    """ĐỘ SÁNG = mức dải >4 kHz TRỪ mức dải 300-3000 Hz (dB). Càng lớn càng sáng.
+
+    **MỘT lượt ffmpeg cho CẢ HAI dải** (`asplit` + 2 `astats`) — đo hai lượt
+    riêng thì đắt gấp đôi mà không chính xác hơn, vì đây là phép TRỪ hai dải
+    của CÙNG một file.
+
+    Số này là TƯƠNG ĐỐI nên không phụ thuộc thước: dùng `astats` (RMS) hay
+    `ebur128` (K-weighted) đều ra cùng một kết luận, đã đối chiếu.
+
+    Đo hỏng -> trả `nan`; nơi gọi phải coi `nan` là "không bù" chứ đừng nhân
+    một hệ số bịa (bài học `astats` cổng 53: phép đo hỏng phát chứng nhận).
+
+    BẪY: mỗi dòng `astats` mở đầu bằng `[Parsed_astats_N @ ...]` nên phải dùng
+    `in`, KHÔNG `startswith` (cổng 44).
+    """
+    import math
+
+    fc = (f"[0:a]asplit=2[m][h];"
+          f"[m]{_AF_SANG_MID},astats@bqmid=measure_perchannel=none"
+          f":measure_overall=RMS_level[mo];"
+          f"[h]{_AF_SANG_HI},astats@bqhi=measure_perchannel=none"
+          f":measure_overall=RMS_level[ho]")
+    cmd = [settings.FFMPEG_PATH, "-y", "-hide_banner", "-nostdin",
+           "-i", str(path), "-filter_complex", fc,
+           "-map", "[mo]", "-f", "null", "-",
+           "-map", "[ho]", "-f", "null", "-"]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_CREATE_NO_WINDOW, timeout=1800)
+    except (OSError, subprocess.TimeoutExpired):
+        return float("nan")
+    if p.returncode != 0:
+        return float("nan")
+    # ĐỌC THEO **TÊN FILTER** (`astats@bqmid` / `astats@bqhi`), KHÔNG theo thứ
+    # tự dòng in ra.
+    #
+    # **BẪY ĐÃ SẬP THẬT KHI VIẾT HÀM NÀY (18/08/2026), và nó IM LẶNG:** bản
+    # đầu lấy `muc[1] - muc[0]` với lý lẽ "astats in theo thứ tự khai báo".
+    # SAI — ffmpeg giải phóng filter theo thứ tự NGƯỢC, nên dòng đầu là dải
+    # CAO. Độ lớn vẫn ra **9,65 dB** (khớp ebur128 9,70 tới 0,05 dB) nên nhìn
+    # số là thấy "đúng", chỉ có **DẤU BỊ LẬT** -> app sẽ đi CẮT dải cao đúng
+    # lúc cần NÂNG. Bắt được là nhờ đối chiếu với thước thứ hai; đọc một thước
+    # thôi thì bản vá này đã làm tiếng đục THÊM mà vẫn khoe đã chữa.
+    muc: dict[str, float] = {}
+    for dong in (p.stderr or "").splitlines():
+        if "RMS level dB:" not in dong:
+            continue
+        khoa = ("mid" if "astats@bqmid" in dong else
+                ("hi" if "astats@bqhi" in dong else ""))
+        if not khoa:
+            continue
+        try:
+            muc[khoa] = float(dong.split("RMS level dB:")[1].strip())
+        except (ValueError, IndexError):
+            pass
+    if len(muc) < 2 or any(math.isinf(x) or math.isnan(x)
+                           for x in muc.values()):
+        return float("nan")
+    return muc["hi"] - muc["mid"]
+
+
+def bu_sang(wav_in: str | Path, wav_out: str | Path, g_db: float,
+            tran_dinh_db: float = TRAN_DINH_DB) -> None:
+    """Nâng dải cao thêm `g_db` bằng BỘ LỌC KỆ (high shelf) + hạn đỉnh.
+
+    Dùng `treble` (kệ cao) chứ KHÔNG dùng bộ nén đa dải: kệ là phép NHÂN HẰNG
+    theo tần số nên KHÔNG đụng tới dải động (đo LRA 1,90 -> 1,90) và KHÔNG đổi
+    cân bằng giọng-nhạc trong dải lời nói.
+
+    `alimiter` bắt buộc `level=0` + `latency=1` — bẫy đã ghi ở đầu file.
+    """
+    _ffmpeg(["-i", str(wav_in), "-af",
+             f"treble=g={g_db:.2f}:f={BU_SANG_TAN_SO:.0f}"
+             f":width_type=q:w=0.6,"
+             f"alimiter=level_in=1:level_out=1:limit="
+             f"{10.0 ** (tran_dinh_db / 20.0):.6f}:level=0:latency=1",
+             "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+             str(wav_out)], "bù dải cao cho bản trộn")
+    _kiem_wav(wav_out)
+
+
 def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
                     tong: float, out_wav: str | Path,
                     muc_giong_db: float = 0.0, muc_nhac_db: float = 0.0,
                     tran_dinh_db: float = TRAN_DINH_DB,
                     tu_can_bang: bool = True, duck: bool = True,
                     chuan_do_to_bat: bool = True,
+                    goc_wav: str | Path = "",
                     on_progress: Optional[Callable[[float, str], None]] = None,
                     ) -> dict:
     """Trộn GIỌNG MỚI lên LỚP NHẠC gốc, hạn đỉnh chống méo, rồi ĐO cân bằng.
@@ -3523,6 +3671,51 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
             f"Bản trộn dài {_d:.3f}s, phải là {tong:.3f}s "
             f"(lệch {_d - tong:+.3f}s) — KHÔNG ghép vào video")
 
+    # ---- BÙ DẢI CAO — ĐẶT TRƯỚC chuẩn hoá độ to, CÓ LÝ DO ----
+    # Bù sáng làm đổi độ to (đo: +6 dB -> I nhích 0,15 LU), nên phải bù XONG
+    # rồi mới đo-và-nâng; làm ngược lại là chuẩn hoá cho một bản không còn tồn
+    # tại. Hệ số lấy từ CHÍNH VIDEO GỐC của lượt này, không phải hằng số:
+    # nguồn nào vốn đã đục thì `thieu` ra nhỏ và bước này TỰ KHÔNG CHẠY.
+    bu: dict = {}
+    if goc_wav and Path(goc_wav).exists():
+        import math as _mt
+        if on_progress:
+            on_progress(0.86, "Đo cân bằng dải tần so với bản gốc...")
+        s_goc = do_do_sang(goc_wav)
+        s_ra = do_do_sang(out_wav)
+        thieu = (s_goc - s_ra) if not (_mt.isnan(s_goc) or _mt.isnan(s_ra)) \
+            else float("nan")
+        bu = {"sang_goc_db": None if _mt.isnan(s_goc) else round(s_goc, 2),
+              "sang_tron_db": None if _mt.isnan(s_ra) else round(s_ra, 2),
+              "thieu_db": None if _mt.isnan(thieu) else round(thieu, 2)}
+        if _mt.isnan(thieu):
+            bu["bu_db"] = 0.0
+            bu["bo_qua"] = "đo độ sáng hỏng — KHÔNG bù (thà giữ nguyên còn hơn "
+            bu["bo_qua"] += "nhân một hệ số bịa)"
+        elif thieu < BU_SANG_TOI_THIEU_DB:
+            bu["bu_db"] = 0.0
+            bu["bo_qua"] = (f"chỉ thiếu {thieu:.2f} dB, dưới "
+                            f"{BU_SANG_TOI_THIEU_DB} — không ai nghe ra")
+        else:
+            g = min(thieu, BU_SANG_TOI_DA_DB)
+            _tam_bu = out_wav.with_suffix(".busang.wav")
+            try:
+                bu_sang(out_wav, _tam_bu, g, tran_dinh_db)
+                _db = probe_duration(_tam_bu)
+                if abs(_db - tong) > 0.05:
+                    raise RuntimeError(
+                        f"Bản bù sáng dài {_db:.3f}s, phải là {tong:.3f}s")
+                os.replace(_tam_bu, out_wav)
+                bu["bu_db"] = round(g, 2)
+                bu["cham_tran_bu"] = round(g, 2) == BU_SANG_TOI_DA_DB
+                bu["sang_sau_db"] = round(do_do_sang(out_wav), 2)
+            except Exception as e:  # noqa: BLE001
+                # Bù sáng là bước LÀM ĐẸP — hỏng thì giữ bản trộn cũ, tuyệt
+                # đối không để cả video chết vì nó (y như `chuan_do_to`).
+                bu["bu_db"] = 0.0
+                bu["loi"] = str(e)
+                Path(_tam_bu).unlink(missing_ok=True)
+
     # ---- CHUẨN HOÁ ĐỘ TO — bước CUỐI, sau khi độ dài đã chốt ----
     # Đặt ở đây chứ không nhét vào chuỗi filter trên: muốn nâng bao nhiêu thì
     # phải ĐO bản trộn đã xong, mà đo được thì nó phải tồn tại rồi. Giá: thêm
@@ -3552,6 +3745,7 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     kq = {
         "ra": str(out_wav),
         "do_to": do_to,
+        "bu_sang": bu,
         "rms_giong": round(do_rms(tam), 6),
         "rms_nhac": round(do_rms(nhac_wav), 6),
         "rms_tron": round(do_rms(out_wav), 6),
@@ -4073,8 +4267,11 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
 
         # --- bước 6: trộn + thay vào video
         prog(0.91, "Trộn tiếng mới với nhạc nền gốc...")
+        # `goc_wav` truyền vào để bước BÙ DẢI CAO lấy được cân bằng dải tần
+        # của CHÍNH video này làm đích (xem `BU_SANG_TOI_DA_DB`). Thiếu nó thì
+        # bước bù tự tắt — nên đây là chỗ DUY NHẤT phải nhớ nối.
         au = tron_thay_giong(t["nhac"], kh["manh"], tong,
-                             tam_goc / "tieng_moi.wav")
+                             tam_goc / "tieng_moi.wav", goc_wav=goc_wav)
         kq["tron"] = au
 
         prog(0.96, "Ghép tiếng mới vào video..." if not che_chu
