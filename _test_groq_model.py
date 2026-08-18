@@ -127,7 +127,17 @@ L413 = ("Error code: 413 - {'error': {'message': 'Request too large for model "
         "reduce your message size and try again.', 'code': "
         "'rate_limit_exceeded'}}")
 
-KEY_GIA = ["gsk_test_A", "gsk_test_B", "gsk_test_C"]
+#: Key GIẢ. **ĐỘ DÀI PHẢI GIỐNG KEY THẬT (56 ký tự), không phải cho đẹp:**
+#: `phat_key()` nay che key trước khi in (`llm.che_key`), mà phép che giữ 4 ký
+#: tự mỗi đầu — key giả kiểu `gsk_test_A` (10 ký tự) bị che THÀNH `**********`
+#: cho cả ba, nên mục "ĐÚNG key 429 bị đánh dấu" và "key lành KHÔNG bị phạt
+#: lây" mất khả năng phân biệt và tự ĐẠT/HỎNG oan. Đuôi cố ý khác nhau
+#: (`_kA`/`_kB`/`_kC`) để bản đã che vẫn tách được ba key.
+#: Chúng KHÔNG có tiền tố key thật ở phần đuôi và mang chữ `test` ngay sau
+#: `gsk_` nên cửa quét `_test_khong_lo_key.py` không kể là key thật.
+KEY_GIA = ["gsk_test" + "0" * 45 + "_kA",
+           "gsk_test" + "0" * 45 + "_kB",
+           "gsk_test" + "0" * 45 + "_kC"]
 
 #: model Groq ĐÃ CHẾT — không dòng mã sống nào được ghi cứng mấy tên này.
 CHET = ("llama-3.3-70b-versatile", "llama-3.1-70b-versatile",
@@ -245,8 +255,21 @@ def main() -> int:
         llm.models_groq_con_song = lambda *a, **k: frozenset()
 
     def phat_key():
-        return {k[1]: v.get("state") for k, v in llm._KEY_STATE.items()
-                if v.get("state") in ("limited", "invalid")}
+        """Key đang bị phạt -> `{key ĐÃ CHE: trạng thái}`.
+
+        **KEY ĐÃ CHE NGAY TẠI ĐÂY, KHÔNG CHE Ở CHỖ IN.** Mọi mục dưới đây đều
+        `str(phat_key())` vào lời báo, mà lời báo thì đi ra `_kq70*.txt`; che ở
+        từng chỗ in là 8 chỗ phải nhớ, sót một chỗ là lộ 41 key thật của anh
+        Hùng (đúng lỗ hổng 18/08/2026 — mục 9 khôi phục `goc_keys` nên sổ key
+        lúc đó mang key THẬT). Che ở NGUỒN thì không có chỗ nào để sót.
+
+        Phép so `phat_key() == {}` vẫn đúng nguyên vẹn (rỗng vẫn là rỗng), và
+        mục "ĐÚNG key 429 bị đánh dấu" vẫn phân biệt được từng key vì `che_key`
+        giữ 4 ký tự mỗi đầu.
+        """
+        return llm.che_so_do(
+            {k[1]: v.get("state") for k, v in llm._KEY_STATE.items()
+             if v.get("state") in ("limited", "invalid")})
 
     try:
         import openai
@@ -344,10 +367,22 @@ def main() -> int:
         _StubOpenAI.HOOK = staticmethod(hook_429)
         out = llm.complete_text("x")
         ok("429 -> sang KEY kế, vẫn ra kết quả", out == "OK_KEY_2", repr(out))
+        # Tra bằng key ĐÃ CHE vì `phat_key()` che ở NGUỒN (xem docstring của
+        # nó). Ba key giả cố ý khác đuôi nên bản che vẫn tách được từng cái —
+        # mục dưới đây vẫn phân biệt "key bị phạt" với "key lành".
         ok("ĐÚNG key 429 bị đánh dấu limited",
-           phat_key().get(KEY_GIA[0]) == "limited", str(phat_key()))
+           phat_key().get(llm.che_key(KEY_GIA[0])) == "limited",
+           str(phat_key()))
         ok("key lành KHÔNG bị phạt lây",
-           KEY_GIA[1] not in phat_key(), str(phat_key()))
+           llm.che_key(KEY_GIA[1]) not in phat_key(), str(phat_key()))
+        # Chốt chống PASS OAN cho chính phép che: nếu `che_key` gộp hai key giả
+        # thành một chuỗi (đúng cái xảy ra khi key giả dài 10 ký tự) thì HAI mục
+        # trên mất hết ý nghĩa mà vẫn xanh.
+        ok("phép che vẫn TÁCH được từng key (không gộp thành một chuỗi)",
+           llm.che_key(KEY_GIA[0]) != llm.che_key(KEY_GIA[1]),
+           f"{llm.che_key(KEY_GIA[0])} vs {llm.che_key(KEY_GIA[1])}")
+        ok("phép che KHÔNG để lộ nguyên văn key",
+           KEY_GIA[0] not in str(phat_key()), str(phat_key()))
         ok("429 KHÔNG làm app đổi model",
            all(m == "M_SONG" for _, m in _StubOpenAI.NHAT_KY),
            str(_StubOpenAI.NHAT_KY))

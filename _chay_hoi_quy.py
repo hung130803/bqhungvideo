@@ -55,7 +55,14 @@ CONG = [
     # ĐÂY vì đúng hôm qua cổng 70 vừa dính bẫy "cổng không ai gọi thì chỉ là
     # một file .py nằm đó". Không đốt lượt Groq đáng kể: chỉ CA 9 gọi thật
     # (30 câu, 1 lượt); `BQ_BO_MANG=1` để chạy hoàn toàn offline.
-    ("74 JSON bao dung",    "_test_json_bao_dung.py",    80),
+    # Cổng 77 canh LỖ HỔNG BẢO MẬT THẬT (18/08/2026): cổng 70 in `str(phat_key
+    # ())` = NGUYÊN VĂN key Groq ra `_kq70*.txt`. Nó đứng ĐẦU danh sách vì nó
+    # KHÔNG gọi mạng, chạy vài giây, và nếu có key rơi ra đĩa thì phải biết
+    # NGAY chứ không đợi hết 30 cổng. Nó cũng là cổng duy nhất quét ĐĨA — chạy
+    # sau các cổng khác thì nó còn bắt được key do CHÍNH LƯỢT NÀY vừa ghi ra,
+    # nên đặt thêm một lượt nữa ở CUỐI (xem `CONG_CUOI`).
+    ("77 không lộ key",     "_test_khong_lo_key.py",     27),
+    ("74 JSON bao dung",    "_test_json_bao_dung.py",     80),
     # Cổng 75 canh bản sửa CHẶN SẢN XUẤT thứ BA: clip xuất ra KHÔNG MỞ ĐƯỢC,
     # hình trắng (`0x80004005 — unsupported encoding settings`). Nó phải nằm
     # ĐÂY, không được để làm "một file .py nằm đó" — đúng bẫy cổng 70 dính hôm
@@ -69,7 +76,9 @@ CONG = [
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
     ("73 gióng hàng",       "_test_giong_hang.py",      None),
     ("71 tách giọng GPU",   "_test_demucs_gpu.py",       22),
-    ("70 model Groq còn sống", "_test_groq_model.py",    42),
+    # Mốc 42 -> 44: mục 4 thêm 2 chốt cho phép CHE KEY (che vẫn tách được từng
+    # key · bản in KHÔNG chứa nguyên văn key) — xem cổng 77.
+    ("70 model Groq còn sống", "_test_groq_model.py",    44),
     ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
     # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
     # cổng từng ĐỎ OAN vì đọc trúng registry thật của anh Hùng).
@@ -97,6 +106,12 @@ CONG = [
     ("không popup",         "_test_no_popup.py",      None),
     ("làn cắt đói",         "_test_lane_starve.py",   None),
     ("smoke",               "_test_app_smoke.py",     None),
+    # LƯỢT THỨ HAI của cổng 77, CỐ Ý đặt ở CUỐI. Lượt đầu chứng minh đĩa sạch
+    # TRƯỚC khi chạy; lượt này quét lại sau khi **29 cổng vừa ghi ra `_kq_hq/`
+    # và hàng loạt file tạm** — tức nó bắt được key do CHÍNH LƯỢT HỒI QUY NÀY
+    # làm rơi ra, đúng kịch bản đã xảy ra hôm nay. Quét đĩa mất vài giây nên
+    # chạy hai lượt gần như không tốn gì.
+    ("77 không lộ key (lượt cuối)", "_test_khong_lo_key.py", 27),
 ]
 
 #: Dòng tổng kết — mỗi cổng viết một kiểu, có cổng bỏ dấu tiếng Việt
@@ -139,7 +154,7 @@ def main() -> int:
     print(f"HỒI QUY — {len(CONG)} cổng · BQ_MOC_REF={env['BQ_MOC_REF']}")
     print("=" * 78)
     kq = []
-    for ten, f, moc in CONG:
+    for i_cong, (ten, f, moc) in enumerate(CONG):
         p = REPO / f
         if not p.exists():
             print(f"  {ten:<22} KHÔNG CÓ FILE {f}")
@@ -152,7 +167,12 @@ def main() -> int:
         out = (r.stdout or b"").decode("utf-8", "replace") + \
               (r.stderr or b"").decode("utf-8", "replace")
         (REPO / "_kq_hq").mkdir(exist_ok=True)
-        (REPO / "_kq_hq" / f"{f}.txt").write_text(out, encoding="utf-8")
+        # Tên log mang SỐ THỨ TỰ khi một file chạy nhiều lượt (cổng 77 chạy 2
+        # lượt: đầu và cuối). Không có số thì lượt sau ghi đè lượt trước và mất
+        # đúng cái log cần đọc.
+        _lap = sum(1 for _, f2, _ in CONG if f2 == f) > 1
+        _ten_log = f"{f}.{i_cong:02d}.txt" if _lap else f"{f}.txt"
+        (REPO / "_kq_hq" / _ten_log).write_text(out, encoding="utf-8")
         m = None
         for m2 in _RE_TK.finditer(out):
             m = m2                            # lấy dòng tổng kết CUỐI CÙNG

@@ -43,6 +43,52 @@ _COOLDOWN_MAX = 3600.0     # trần: kể cả server bảo chờ 4h cũng chỉ
 _IN_USE_WINDOW = 10.0      # key vừa dùng < Ns -> coi là "đang dùng" trên UI
 
 
+#: Số ký tự GIỮ LẠI ở mỗi đầu khi che key. 4 đủ để phân biệt 41 key của anh
+#: Hùng với nhau (tiền tố `gsk_` là chung, nên 4 ký tự SAU nó mới là phần
+#: nhận dạng) mà không đủ để dùng lại key.
+CHE_KEY_GIU = 4
+
+
+def che_key(key: object) -> str:
+    """Che một key API để IN RA ĐƯỢC: `gsk_abcd…wxyz` (còn 4 đầu / 4 cuối).
+
+    **VÌ SAO HÀM NÀY NẰM Ở ĐÂY, KHÔNG NẰM TRONG FILE TEST:** `.env` của anh
+    Hùng có **41 key Groq thật**, và lỗ hổng 18/08/2026 là cổng 70 in
+    `str(phat_key())` — tức NGUYÊN VĂN key — ra `_kq70*.txt` nằm trên đĩa.
+    Chặn `_kq*` khỏi git chỉ là lớp NGOÀI: file vẫn còn trên máy, vẫn vào bản
+    sao lưu, và lượt chạy sau vẫn in ra. Cửa duy nhất chữa được là **không bao
+    giờ dựng chuỗi có key nguyên văn**, nên phép che phải nằm CẠNH sổ key
+    (`_KEY_STATE`) để mọi nơi đọc sổ đều có sẵn nó.
+
+    Key NGẮN (≤ 2·4 + 4 ký tự) thì che HẾT thay vì để lộ gần trọn: key giả
+    trong test (`gsk_test_A`) không cần bảo vệ, nhưng một key thật bị cắt cụt
+    ở đâu đó thì vẫn phải kín. Trả `"(rỗng)"` cho `None`/`""` để lời báo của
+    cổng không thành chuỗi trống khó đọc.
+    """
+    s = "" if key is None else str(key)
+    if not s:
+        return "(rỗng)"
+    g = CHE_KEY_GIU
+    if len(s) <= 2 * g + 4:
+        return "*" * len(s)
+    return f"{s[:g]}…{s[-g:]}"
+
+
+def che_so_do(d: dict) -> dict:
+    """`{(provider, key): …}` hoặc `{key: …}` -> bản đã CHE key, in ra được.
+
+    Giữ nguyên hình dạng để lời báo của cổng vẫn đọc được (`{'gsk_abcd…wxyz':
+    'limited'}`), chỉ đổi phần key.
+    """
+    ra = {}
+    for k, v in (d or {}).items():
+        if isinstance(k, tuple) and len(k) == 2:
+            ra[(k[0], che_key(k[1]))] = v
+        else:
+            ra[che_key(k)] = v
+    return ra
+
+
 def _state_for(provider: str, key: str) -> dict:
     """Lấy (hoặc tạo) bản ghi trạng thái. GỌI KHI ĐANG GIỮ _KEY_LOCK."""
     st = _KEY_STATE.get((provider, key))
