@@ -73,6 +73,7 @@ _tq_work/
 # phép GPL đã chốt ở docs/GIONG_DOC_MIEN_PHI.md.
 _piper/
 _do_piper/
+_giong_hang/
 
 # Worktree tạm của phiên làm việc — một BẢN SAO CẢ REPO, lỡ `git add -A` là
 # commit vài trăm MB. KHÔNG xoá tay ở đây, chỉ chặn không cho vào commit.
