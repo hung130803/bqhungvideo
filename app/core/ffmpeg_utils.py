@@ -479,7 +479,7 @@ def _gpu_driver_version() -> str:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=driver_version",
              "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8,
             creationflags=(0x0800_0000 if os.name == "nt" else 0))
         _DRIVER_VER_CACHE = (r.stdout or "").strip().splitlines()[0].strip() \
             if r.returncode == 0 and (r.stdout or "").strip() else ""

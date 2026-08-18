@@ -238,7 +238,7 @@ def _chay_ffmpeg(cmd: list, giay: int, qua_cua_cho: bool = False) -> int:
             cho = False
     try:
         p = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
             errors="replace",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:

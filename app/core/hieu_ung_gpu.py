@@ -175,7 +175,7 @@ def _chay(args: list, giay: int = 90) -> tuple[int, str]:
     try:
         p = subprocess.run([_ffmpeg(), "-y", "-hide_banner", "-v", "error",
                             *[str(x) for x in args]],
-                           capture_output=True, text=True, errors="replace",
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=giay, creationflags=_CNW)
         return p.returncode, (p.stderr or "")[-400:]
     except Exception as e:                                   # noqa: BLE001
@@ -196,7 +196,7 @@ def _dem_khung(p: str) -> int:
         r = subprocess.run([fp, "-v", "error", "-select_streams", "v:0",
                             "-count_frames", "-show_entries",
                             "stream=nb_read_frames", "-of", "csv=p=0", p],
-                           capture_output=True, text=True, timeout=60,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                            creationflags=_CNW)
         s = (r.stdout or "").strip().splitlines()
         return int(s[0]) if s and s[0].strip().isdigit() else 0

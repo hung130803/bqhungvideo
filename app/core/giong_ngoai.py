@@ -825,7 +825,7 @@ def _ep_khung(nguon: Path, dich: Path, tempo: float) -> bool:
             [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
              "-i", str(nguon), "-filter:a", _tg._co_gian_chuoi(tempo),
              "-c:a", "pcm_s16le", str(dich)],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
             creationflags=_NO_WIN)
     except Exception as e:  # noqa: BLE001
         _ghi_log(f"Ép khung hỏng ({nguon.name}): {type(e).__name__}: {e}")

@@ -2628,7 +2628,7 @@ class EditorDialog(QDialog):
                 # CREATE_NO_WINDOW: bản .exe windowed không có console -> thiếu
                 # cờ này sẽ bật cửa sổ cmd đen chiếm focus suốt lúc render demo
                 from app.core.ffmpeg_utils import _CREATE_NO_WINDOW
-                r = subprocess.run(cmd, capture_output=True, text=True,
+                r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                    timeout=120, creationflags=_CREATE_NO_WINDOW,
                                    stdin=subprocess.DEVNULL)
                 self._demo_ready.emit(out if (r.returncode == 0

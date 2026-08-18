@@ -493,7 +493,7 @@ def co_gpu_nvidia() -> bool:
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=25,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=25,
             creationflags=_CREATE_NO_WINDOW)
         return r.returncode == 0 and bool((r.stdout or "").strip())
     except Exception:  # noqa: BLE001
@@ -2572,7 +2572,7 @@ def co_rubberband() -> bool:
         try:
             r = subprocess.run(
                 [settings.FFMPEG_PATH, "-hide_banner", "-filters"],
-                capture_output=True, text=True, timeout=60)
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             _CO_RUBBERBAND = bool(re.search(r"^\s*\S*\s+rubberband\s",
                                             r.stdout or "", re.MULTILINE))
         except Exception:                                      # noqa: BLE001

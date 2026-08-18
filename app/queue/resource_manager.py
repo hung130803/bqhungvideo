@@ -57,7 +57,7 @@ def detect_hardware() -> HardwareInfo:
             out = subprocess.run(
                 [smi, "--query-gpu=name,memory.total",
                  "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=8,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8,
                 # bản .exe windowed: thiếu cờ này sẽ NHÁY cửa sổ console đen
                 # mỗi lần mở app (trông như virus với khách)
                 creationflags=(0x08000000 if os.name == "nt" else 0),

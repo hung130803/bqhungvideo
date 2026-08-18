@@ -367,7 +367,7 @@ def _audio_duration(path: str, ff_probe: str, flags: int) -> float:
         r = subprocess.run(
             [ff_probe, "-v", "error", "-show_entries", "format=duration",
              "-of", "default=nw=1:nk=1", path],
-            capture_output=True, text=True, timeout=60, creationflags=flags)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=flags)
         return float((r.stdout or "0").strip() or 0)
     except Exception:  # noqa: BLE001
         return 0.0
@@ -400,7 +400,7 @@ def _co_giong_nguoi(audio_path: str, a: float, b: float) -> bool:
          "-af", "highpass=f=300:poles=2,highpass=f=300:poles=2,"
                 "lowpass=f=3400:poles=2,astats=metadata=1:reset=0",
          "-f", "null", "-"],
-        capture_output=True, text=True, creationflags=_NO_WINDOW)
+        capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=_NO_WINDOW)
     m = re.findall(r"RMS level dB:\s*(-?[\d.]+|-?inf)", r.stderr or "")
     if not m:
         return False

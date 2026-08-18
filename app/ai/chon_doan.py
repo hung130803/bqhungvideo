@@ -93,7 +93,7 @@ def nang_luong(src: str, ffmpeg: str, tong_giay: float = 0.0) -> list[float]:
                     f"ametadata=print:key=lavfi.astats.Overall.RMS_level:"
                     f"file=-",
              "-f", "null", os.devnull],
-            capture_output=True, text=True, errors="replace",
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             creationflags=_NO_WIN, timeout=900)
     except Exception:  # noqa: BLE001
         return []
@@ -165,7 +165,7 @@ def chuyen_dong(src: str, ffmpeg: str, fps: float = 4.0) -> list[float]:
                     f"tblend=all_mode=difference,signalstats,"
                     f"metadata=print:key=lavfi.signalstats.YAVG:file=-",
              "-f", "null", os.devnull],
-            capture_output=True, text=True, errors="replace",
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             creationflags=_NO_WIN, timeout=1800)
     except Exception:  # noqa: BLE001
         return []
