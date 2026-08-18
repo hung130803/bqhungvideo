@@ -775,6 +775,16 @@ class ThayGiongDialog(QDialog):
         self.bang.setColumnWidth(0, 300)
         self.bang.setColumnWidth(1, 150)
         self.bang.setColumnWidth(2, 130)
+        # SÀN CHIỀU CAO CỦA BẢNG — **KHÔNG PHẢI CHO ĐẸP.** Hộp cao cố định
+        # 1000x660 (`self.resize`), bảng lấy phần dôi bằng stretch=1. Mỗi lần
+        # thêm một hàng điều khiển ở trên, phần dôi hụt đi; bảng KHÔNG có sàn nên
+        # nó bị bóp TRƯỚC TIÊN. Đo 18/08/2026 sau khi thêm ô gợi ý giọng + ô
+        # "Chỉnh video theo giọng": **viewport còn 1288x2 px** — 3 dòng CÓ THẬT
+        # trong bảng mà anh Hùng KHÔNG THẤY GÌ, đúng câu anh ấy từng kêu *"ấn
+        # chạy thì chỉ hiện thanh tiến trình, không hiện gì cả"* (cổng 57 ra đời
+        # vì câu đó, và chính nó bắt lại được: 256 -> 0 điểm ảnh chữ).
+        # 150 px = tiêu đề (~32) + 4 dòng (~29) -> luôn thấy ít nhất 4 video.
+        self.bang.setMinimumHeight(150)
         lay.addWidget(self.bang, 1)
 
         lb_meo = QLabel(

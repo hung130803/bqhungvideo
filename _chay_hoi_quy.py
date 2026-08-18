@@ -66,7 +66,7 @@ CONG = [
     # gốc -> chỉ còn nhạc -> im tiếng người. Đo trên 4 bản anh Hùng đã xuất:
     # 82,3s/1.209,3s = 6,8%, dồn vào 2/4 video. Cổng KHÔNG gọi Demucs/Groq/mạng
     # (nguồn dựng bằng `lavfi`) nên tiền định, không nhấp nháy.
-    ("78 bù giọng gốc",     "_test_bu_giong_goc.py",     38),
+    ("78 bù giọng gốc",     "_test_bu_giong_goc.py",     43),
     ("74 JSON bao dung",    "_test_json_bao_dung.py",     80),
     # Cổng 75 canh bản sửa CHẶN SẢN XUẤT thứ BA: clip xuất ra KHÔNG MỞ ĐƯỢC,
     # hình trắng (`0x80004005 — unsupported encoding settings`). Nó phải nằm

@@ -4681,7 +4681,14 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # được tính vào CẢ cân bằng giọng-nhạc, CẢ ducking, CẢ chuẩn hoá độ to.
         manh_tron = list(kh["manh"])
         if bu_giong_goc_bat:
-            prog(0.905, "Bù giọng gốc ở đoạn không được đọc lại...")
+            # LỜI NHẮN NÀY CỐ Ý KHÔNG CHỨA CHỮ "ĐỌC" (hay "dịch"/"rút gọn"/
+            # "khớp thời gian"…). `tg_so.buoc_tu_tien_trinh` tra bước bằng CHUỖI
+            # CON, và khoá `("đọc", 5)` sẽ khớp *"không được đọc lại"* -> bảng
+            # tiến độ tụt từ 8/9 về 5/9 = **THANH TIẾN ĐỘ CHẠY NGƯỢC**, đúng cái
+            # anh Hùng từng kêu "chạy lùi/treo" (xem chú thích ở `TEN_BUOC` và
+            # khối `khoa`). Không khớp khoá nào thì nó suy theo KHOẢNG tiến
+            # trình: 0,905 < 0,91 -> bước 8, đúng và không lùi.
+            prog(0.905, "Bù giọng gốc cho đoạn bị bỏ trống...")
             try:
                 bu = bu_giong_goc(t.get("giong") or "", kh["manh"], tong_ra,
                                   tam_goc / "bu_goc", he_so_hinh=hs)

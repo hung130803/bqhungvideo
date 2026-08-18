@@ -346,6 +346,36 @@ def main() -> int:
                     mac = getattr(d, "value", None)
             ok("cờ `bu_giong_goc_bat` MẶC ĐỊNH BẬT", mac is True, str(mac))
 
+        # ─── MỤC 4b: BẢNG TIẾN ĐỘ KHÔNG ĐƯỢC CHẠY NGƯỢC ───────────────────
+        print("\nMỤC 4b — thêm bước mới KHÔNG được làm thanh tiến độ chạy NGƯỢC")
+        from app.core import tg_so
+        # Lấy 9 mốc `prog()` THẲNG TỪ MÃ (không chép tay — bài học cổng 57) rồi
+        # tra bước cho từng mốc: dãy số bước phải KHÔNG GIẢM.
+        import re as _re
+        ma = (REPO / "app" / "core" / "thay_giong.py").read_text(
+            encoding="utf-8")
+        i0 = ma.index("def thay_giong_video(")
+        j0 = ma.index("\ndef ", i0 + 10)
+        moc = [(float(p), _re.sub(r"\{[^}]*\}", "12", m)) for p, m in
+               _re.findall(r'prog\((0\.\d+),\s*f?"([^"]*)"', ma[i0:j0])]
+        ok("đọc được các mốc tiến trình từ chính mã", len(moc) >= 9,
+           f"{len(moc)} mốc")
+        buoc = [tg_so.buoc_tu_tien_trinh(p, m)[1] for p, m in moc]
+        giam = [(moc[i][1], buoc[i - 1], buoc[i])
+                for i in range(1, len(buoc)) if buoc[i] < buoc[i - 1]]
+        ok("dãy số bước KHÔNG GIẢM (thanh tiến độ không chạy ngược)",
+           not giam, str(giam) if giam else " -> ".join(map(str, buoc)))
+        # và ĐÍCH DANH bước bù: phải là bước 8, không phải bước 5 ("đọc")
+        bu_moc = [(p, m) for p, m in moc if "bù giọng gốc" in m.lower()]
+        ok("có mốc tiến trình cho bước BÙ GIỌNG GỐC", len(bu_moc) == 1,
+           str(bu_moc))
+        if bu_moc:
+            b8 = tg_so.buoc_tu_tien_trinh(*bu_moc[0])
+            ok("bước bù được tra là bước 8, KHÔNG tụt về 5 ('đọc')",
+               b8[1] == 8, f"{b8[0]} = bước {b8[1]}/{b8[2]}")
+            ok("lời nhắn bước bù KHÔNG chứa chữ 'đọc' (khoá của bước 5)",
+               "đọc" not in bu_moc[0][1].lower(), bu_moc[0][1])
+
         # ─── MỤC 5: TỰ KIỂM BỘ DÒ ─────────────────────────────────────────
         print("\nMỤC 5 — TỰ KIỂM: gỡ chốt ra thì phép đo PHẢI kêu")
         # (a) bỏ cửa "chỉ bù chỗ gốc có tiếng" -> phải bù cả vùng IM 16-20s
