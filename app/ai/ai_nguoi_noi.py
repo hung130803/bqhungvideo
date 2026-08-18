@@ -83,6 +83,33 @@ tiếng đang có.
 
 Module này KHÔNG tự sửa audio và KHÔNG gọi ffmpeg để trộn — nó chỉ QUYẾT ĐỊNH
 và trả khoảng. Việc nối vào đường xuất là việc riêng, chưa làm.
+
+────────────────────────────────────────────────────────────────────────────
+SỐ ĐO TRÊN BỘ ĐỐI CHỨNG (`_do_nguoi_noi_cham.py`)
+────────────────────────────────────────────────────────────────────────────
+4 video THẬT ở `Downloads\longtieng` (COPY ra `_kq_nn/`, **bản gốc không bị
+đụng một byte**), 577 đoạn / 1209 giây. Sự thật ghi bằng MẮT: **13,93 giây
+tiếng gốc = 3,6% thời lượng**, dồn hết ở ĐẦU và CUỐI video.
+
+  | | theo GIÂY | theo ĐOẠN |
+  |---|---|---|
+  | giữ đúng (không lồng oan) | **10,69/13,93 = 76,7%** | 2/3 = 66,7% |
+  | **LỒNG OAN** | **3,24/13,93 = 23,3%** | 1/3 = 33,3% |
+  | BỎ SÓT người kể | 2,72s / 1209s = 0,22% | 2/574 = **0,35%** |
+
+Từng tín hiệu, cột BỎ SÓT (thứ đắt nhất nếu sai):
+  · chỉ LLM   -> bỏ sót **2/573 = 0,35%**
+  · chỉ GIỌNG -> bỏ sót **0/573 = 0,00%**  (ECAPA sạch hơn, nhưng đắt hơn)
+
+Toàn bộ phần LỒNG OAN còn lại là **MỘT đoạn PHA**: câu 0 của `v2_nieu` gồm
+3,0 giây nhạc phim + 2,7 giây lời người kể **trong CÙNG một đoạn whisper**.
+Không bộ phân loại nào chữa được ca đó — phải TÁCH đoạn. Chưa làm.
+
+**LỊCH SỬ GIT, ghi để người sau không tìm nhầm chỗ:** file này và 10 script đo
+đi kèm bị cuốn vào commit `c6b51ff` ("SUA 2 LOI GIAO DIEN THAT: thanh tien do
+CHAY NGUOC") của một luồng khác đang làm chung cây mã — `git add` của tôi còn
+trong index lúc luồng đó `git commit`. Nội dung nguyên vẹn, chỉ thông điệp
+commit là của việc khác. Không sửa lịch sử vì cây mã đang dùng chung.
 """
 from __future__ import annotations
 
