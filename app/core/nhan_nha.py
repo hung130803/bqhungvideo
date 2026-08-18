@@ -32,6 +32,22 @@ máy đọc. Bảng dưới chỉ nhận giọng ĐỦ 4 CÂU. Vì còn lệch t
    giọng đều lại dễ nghe hơn. **Tôi không có tai — anh Hùng nghe rồi chốt**,
    số chỉ để khỏi phải dò mò 76 giọng.
 
+**ĐÍNH CHÍNH QUAN TRỌNG NHẤT CỦA LƯỢT NÀY — ``ov:nam_tre`` KHÔNG Ở ĐÁY THANG.**
+Việc này được giao với mệnh đề *"anh Hùng đang dùng ``ov:nam_tre``, nhấn nhá
+**2,16**, đáy thang"*. **Đo ra 4,24** — nằm **TRÊN tứ phân vị 75% (4,16)**,
+tức thuộc nhóm ĐỈNH của cả 82 giọng, và **cao hơn cả hai giọng Việt của
+edge-tts** (NamMinh 4,04 · HoaiMy 3,18).
+
+Con số 2,16 là **TRẢI (range) của 11 giọng OmniVoice** ở lượt 7
+(``docs/GIONG_LUOT_7.md``: *"nhấn nhá 11 giọng thiết kế: 1,48..3,64 = TRẢI
+2,16"*, tức 3,64 − 1,48), **không phải giá trị của riêng một giọng**. Đem một
+con số TRẢI so với giá trị TỪNG GIỌNG là so hai đơn vị khác nhau —
+``_do_nhan_nha.py`` đã cảnh báo đúng chỗ này từ lượt 10 mà nó vẫn được chép
+tiếp. **Vậy nếu muốn khuyên anh Hùng bỏ OmniVoice thì phải lấy lý do KHÁC**
+(trọng số CC-BY-NC cấm thương mại · đọc sai chữ Việt 16,9% so với 6,8% · mốc
+chữ rung 90-119 ms so với 16 ms) — **lý do "nhấn nhá thấp" là SAI, số không
+đỡ được**.
+
 **SỐ CŨ TRONG ``docs/GIONG_THU_TAY.md`` KHÁC BẢNG NÀY, VÀ ĐÓ LÀ BÌNH THƯỜNG:**
 tài liệu ghi Andrew 5,35 · Ryan 4,85 · Rosa 1,82; bảng này ra 4,49 · 5,38 ·
 2,35. Khác vì **khác bộ câu đọc** (F0 std phụ thuộc câu). Thứ hạng vẫn cùng
@@ -40,14 +56,16 @@ cùng một lượt đo, và bảng dùng cho UI là bảng dưới đây.
 """
 from __future__ import annotations
 
-#: Ngưỡng chia mức, lấy từ **TỨ PHÂN VỊ CỦA CHÍNH BẢNG ĐO** (76 giọng:
-#: 25% = 3,06 · 50% = 3,61 · 75% = 4,14) chứ không đặt mò. Đổi bảng thì phải
+#: Ngưỡng chia mức, lấy từ **TỨ PHÂN VỊ CỦA CHÍNH BẢNG ĐO** (82 giọng:
+#: 25% = 3,07 · 50% = 3,61 · 75% = 4,16) chứ không đặt mò. Đổi bảng thì phải
 #: chạy lại tứ phân vị, đừng giữ số cũ.
 RAT_CAO = 4.1
 CAO = 3.6
 VUA = 3.1
 
-#: voice_id (ShortName của edge-tts) -> nhấn nhá (nửa cung).
+#: voice_id -> nhấn nhá (nửa cung). Gồm cả giọng KHÔNG PHẢI edge-tts
+#: (``ov:`` OmniVoice · ``piper:``) — chúng đọc **CÙNG BỘ CÂU TIẾNG VIỆT** với
+#: ``vi-VN-*`` nên so với nhau là hợp lệ, và đó đúng là phép so anh Hùng cần.
 #: **SINH RA TỪ PHÉP ĐO, ĐỪNG SỬA TAY** — chạy ``_do_nhan_nha_bang.py``.
 BANG: dict[str, float] = {
     "ar-SA-HamedNeural": 5.86,
@@ -58,6 +76,7 @@ BANG: dict[str, float] = {
     "en-CA-LiamNeural": 5.01,
     "zh-CN-YunjianNeural": 5.00,
     "de-DE-ConradNeural": 4.94,
+    "ov:ong_gia": 4.93,
     "en-AU-WilliamMultilingualNeural": 4.73,
     "ja-JP-KeitaNeural": 4.69,
     "es-ES-AlvaroNeural": 4.68,
@@ -67,10 +86,12 @@ BANG: dict[str, float] = {
     "en-US-AndrewNeural": 4.49,
     "ko-KR-InJoonNeural": 4.48,
     "th-TH-NiwatNeural": 4.35,
+    "ov:nam_tre": 4.24,
     "en-NZ-MollyNeural": 4.22,
     "en-IE-ConnorNeural": 4.16,
     "en-AU-NatashaNeural": 4.14,
     "hi-IN-SwaraNeural": 4.14,
+    "ov:nam_tram": 4.06,
     "en-HK-SamNeural": 4.05,
     "vi-VN-NamMinhNeural": 4.04,
     "it-IT-DiegoNeural": 4.03,
@@ -86,6 +107,7 @@ BANG: dict[str, float] = {
     "zh-CN-XiaoxiaoNeural": 3.74,
     "zh-CN-YunxiNeural": 3.67,
     "en-IN-NeerjaNeural": 3.62,
+    "ov:nu_tre": 3.62,
     "en-GB-SoniaNeural": 3.61,
     "th-TH-PremwadeeNeural": 3.61,
     "en-CA-ClaraNeural": 3.60,
@@ -94,6 +116,7 @@ BANG: dict[str, float] = {
     "en-TZ-ElimuNeural": 3.48,
     "en-US-AvaMultilingualNeural": 3.44,
     "de-DE-KatjaNeural": 3.43,
+    "ov:nu_am": 3.40,
     "en-GB-ThomasNeural": 3.36,
     "en-US-AriaNeural": 3.33,
     "en-US-EricNeural": 3.31,
@@ -103,6 +126,7 @@ BANG: dict[str, float] = {
     "id-ID-GadisNeural": 3.19,
     "it-IT-ElsaNeural": 3.18,
     "vi-VN-HoaiMyNeural": 3.18,
+    "piper:vais1000": 3.11,
     "en-PH-JamesNeural": 3.08,
     "en-ZA-LukeNeural": 3.08,
     "en-NG-AbeoNeural": 3.07,

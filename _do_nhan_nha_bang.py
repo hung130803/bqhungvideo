@@ -141,10 +141,25 @@ CAU: dict[str, list[str]] = {
 }
 
 
+#: Máy đọc KHÔNG phải edge-tts -> id không mang mã ngôn ngữ (`ov:nam_tre`,
+#: `piper:vais1000`). Chúng đọc tiếng VIỆT trên máy anh Hùng, và cho chúng đọc
+#: **cùng bộ câu Việt với `vi-VN-*`** chính là phép so DUY NHẤT có nghĩa: cùng
+#: tiếng, cùng câu, cùng thước.
+#:
+#: **BẪY ĐÃ SẬP 1 LẦN, GIỮ LẠI ĐỂ ĐỪNG LẶP:** bản đầu tách tiền tố bằng
+#: `voice.split("-")[0]` nên `piper:vais1000` không khớp mã nào rồi rơi vào
+#: nhánh lùi **tiếng Anh** — bắt một model CHỈ BIẾT TIẾNG VIỆT đọc câu tiếng
+#: Anh rồi ghi số vào bảng. Nó ra 1,88 (thấp nhất toàn bảng) và trông rất
+#: giống một kết luận thật.
+NGOAI_EDGE = ("ov:", "ix:", "piper:")
+
+
 def cau_cho(voice: str) -> list[str]:
     """Bộ câu đúng tiếng của giọng; không có bảng -> lùi tiếng Anh."""
-    ma = str(voice).split("-")[0].lower()
-    return CAU.get(ma) or CAU["en"]
+    v = str(voice)
+    if v.startswith(NGOAI_EDGE):
+        return CAU["vi"]
+    return CAU.get(v.split("-")[0].lower()) or CAU["en"]
 
 
 def ra_wav(src: Path, dst: Path) -> bool:
@@ -226,7 +241,8 @@ if __name__ == "__main__":
         else:
             print(f"{v:34s} {d['nhan_nha']:9.2f} {d['f0_giua_hz']:8.1f}Hz "
                   f"{d['so_khung']:7d} {d.get('giay', 0):6.1f}")
-    tot = {k: v["nhan_nha"] for k, v in ra.items() if not v.get("loi")}
+    tot = {k: v["nhan_nha"] for k, v in ra.items()
+           if k in set(ds) and not v.get("loi")}
     if tot:
         xs = sorted(tot.values())
         print("-" * 72)

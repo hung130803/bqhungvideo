@@ -285,6 +285,21 @@ def canh_bao_chat_luong() -> str:
 #: Chỉ đưa vào combo vài giọng ĐÃ CHẠY THẬT ở lượt 7 — thêm giọng bịa là
 #: thêm chỗ hỏng mà không ai đo.
 #:   (mã, câu tả gửi cho model, nhãn tiếng Việt)
+#:
+#: **CÂU TẢ PHẢI GHÉP TỪ ĐÚNG BẢNG TỪ CỦA MODEL, KHÔNG ĐƯỢC VIẾT VĂN.**
+#: OmniVoice nhận một DANH SÁCH ĐÓNG (`male` · `female` · `young adult` ·
+#: `middle-aged` · `elderly` · `teenager` · `child` · `very low pitch` ·
+#: `low pitch` · `moderate pitch` · `high pitch` · `very high pitch` ·
+#: `whisper` · các giọng vùng). Viết thêm chữ cho hay là nó NÉM
+#: `ValueError: Unsupported instruct items`.
+#:
+#: **ĐÃ SẬP THẬT — `ov:nu_am` là giọng CHẾT từ lúc ra đời tới 18/08/2026:**
+#: nó khai `warm low pitch` (chữ `warm` không có trong bảng) nên **0/4 câu đọc
+#: được, 2/2 lượt đo**, rồi `doc_loat` lùi êm về edge-tts. Anh Hùng chọn nó
+#: trong combo thì được một giọng KHÁC HẲN mà **không một dòng báo trên giao
+#: diện** (lý do chỉ nằm trong `logs/giong_ngoai_<ngày>.log`) — đúng họ lỗi
+#: "chọn X ra Y". Thêm giọng mới vào bảng này thì **phải đọc thử 1 câu**,
+#: đừng tin là câu tả nghe hợp lý thì model hiểu.
 GIONG_OV: tuple[tuple[str, str, str], ...] = (
     ("ov:nu_tre",   "female, young adult, moderate pitch",
      "Nữ trẻ"),
@@ -292,7 +307,7 @@ GIONG_OV: tuple[tuple[str, str, str], ...] = (
      "Nam trẻ"),
     ("ov:nam_tram", "male, middle-aged, low pitch",
      "Nam trung niên trầm"),
-    ("ov:nu_am",    "female, middle-aged, warm low pitch",
+    ("ov:nu_am",    "female, middle-aged, low pitch",
      "Nữ trung niên ấm"),
     ("ov:ong_gia",  "male, elderly, very low pitch",
      "Nam cao tuổi rất trầm"),
