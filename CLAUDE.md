@@ -1492,11 +1492,15 @@
      `kiem_lib_bang_tien_trinh_rieng`). Thấy mục này đỏ thì **chạy lại trước
      khi nghi bản vá**; muốn hết nhấp nháy phải tách mục THỬ PHÁ khỏi dây
      chuyền thật (chưa làm).
-     **CHƯA ĐẠT, GHI THẲNG:** **chưa tải torch thật về `_lib`** (155 MB, máy anh
-     Hùng đang chạy sản xuất) — cơ chế `--target`+`--ignore-installed` chứng
-     minh bằng gói NHỎ `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip
-     có thể bỏ qua) rồi **suy ra** cho torch · `BQHungVideo.spec` vẫn KHÔNG gói
-     torch/demucs/`_lib` nên máy nhân viên vẫn phải bấm nút + phải có Python 3.
+     **CHƯA ĐẠT, GHI THẲNG:** ~~chưa tải torch thật về `_lib`~~ — cơ chế
+     `--target`+`--ignore-installed` khi đó mới chứng minh bằng gói NHỎ
+     `soundfile` (cố ý chọn nó vì `.venv` ĐÃ CÓ, đúng ca pip có thể bỏ qua)
+     rồi **suy ra** cho torch. **ĐÃ TẢI THẬT 18/08/2026** (xem cổng 71): chạy
+     chính `cai_demucs()` -> `ok=True`, 168 giây, `thieu=[]`, `_lib` 85 MB ->
+     **4,3 GB** và **tự đứng được một mình** — tức cơ chế đó nay là số ĐO chứ
+     không còn là suy ra. (Tải bản CUDA vì máy có RTX 3060; máy không GPU vẫn
+     lấy bản CPU 155 MB.) · `BQHungVideo.spec` vẫn KHÔNG gói torch/demucs/
+     `_lib` nên máy nhân viên vẫn phải bấm nút + phải có Python 3.
   60. `_test_chu_theo_loi.py` → **CHỮ CHẠY THEO LỜI · DỊCH KHÔNG SÓT CHỮ GỐC ·
      CÂN MỨC GIỌNG-NHẠC** (15/08/2026, 3 lỗi anh Hùng báo cùng ngày trên đường
      THAY GIỌNG). **ĐẠT 42 · HỎNG 0**, hàm THUẦN + ffmpeg (không mạng, không
@@ -1974,7 +1978,24 @@
   `nghĩ`), nên mốc sẽ dính vào SAI CHỖ rồi kéo con trỏ qua, làm lệch mốc của
   các từ SAU đó = đúng lỗi *"chữ chạy không khớp tiếng"* mà v2.28.0 vừa chữa.
   Bản vá ĐÚNG phải **trả mốc về token gốc** (gộp dãy mốc của phần thay thế lại
-  thành MỘT mốc mang chữ gốc) + cổng canh riêng. **CHƯA LÀM.**
+  thành MỘT mốc mang chữ gốc) + cổng canh riêng.
+  **ĐÃ LÀM XONG Ở `964e22b`, PHÁT HÀNH TRONG v2.33.0 — mục "CHƯA NỐI VÀO APP" ở
+  đầu khối trên nay LẠC HẬU, đọc tới đây thì dừng.** `app/core/doc_viet_tat.py`
+  (hàm THUẦN): `doi_chu` đổi viết tắt sang tên chữ cái Anh viết bằng âm Việt và
+  trả kèm khoảng ký tự từng phần thay thế; `tra_moc_ve_goc` GỘP dãy mốc của
+  phần thay thế thành MỘT mốc mang chữ GỐC (đầu của «gi», cuối của «pi», chữ =
+  `GDP`) nên `_khop_tu_vao_chu` không bao giờ nhìn thấy chữ đã đổi -> con trỏ
+  không bị kéo sai chỗ. Nối ở **CỬA CHUNG** của `dubbing.py` (đủ 3 cửa:
+  `_synth_all` · `_synth_all_words` — cửa CÓ mốc nên có gọi `tra_moc_ve_goc` ·
+  `synth_demo`, để nghe thử đúng bằng thứ lúc xuất sẽ ra).
+  **Cổng 69 `_test_viet_tat.py`: ĐẠT 95 · HỎNG 0**, không gọi mạng, không tốn
+  lượt. Tự kiểm đã chạy thật: đổi `words[i] = tra_moc_ve_goc(...)` về
+  `words[i] = wb` thì cổng ĐỎ thật (rc=1), 7/7 câu mất mốc và mốc dính vào chữ
+  Việt KHÁC.
+  Phạm vi vẫn CỐ Ý HẸP đúng như đã chốt ở trên (chỉ edge-tts giọng `vi-*`, chỉ
+  2-3 chữ cái HOA, bỏ qua số La Mã / viết tắt gốc Việt / cái đọc thành từ, và
+  **KHÔNG làm bảng tên riêng**) — mọi giới hạn đều theo chiều "để nguyên = hành
+  vi hôm nay, không thể tệ hơn".
   **KHÔNG CÓ TAI — mọi số trên là SỐ ĐO.** File tiếng thật để anh Hùng tự nghe:
   `_NGHE_THU_ANH_HUNG/doc_sai/<nn>/` (theo câu) và
   `_NGHE_THU_ANH_HUNG/doc_roi/<nn>/` (token đọc rời).
