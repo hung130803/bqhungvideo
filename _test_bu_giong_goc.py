@@ -179,6 +179,37 @@ def main() -> int:
         ok("mảnh bù KHÔNG đè lên vùng đã có giọng mới (cấm hai giọng cùng nói)",
            not de, str(de))
 
+        print("\nMỤC 2c — KHỚP MỨC: giọng gốc bù phải to NGANG giọng mới")
+        # Nguồn thử: giọng gốc to -24 dBFS. Dựng track giọng MỚI NHỎ HƠN 9 dB để
+        # buộc phép khớp phải hạ phần bù xuống — nếu không hạ thì chỗ bù NHẢY TO
+        # (đúng kiểu "chỗ to chỗ nhỏ") và `can_bang_giong_nhac` còn bớt nâng
+        # giọng TTS ở CẢ video.
+        nho1, nho2 = SB / "nho1.wav", SB / "nho2.wav"
+        for src, dst in ((m1, nho1), (m2, nho2)):
+            _ff(["-i", str(src), "-af", "volume=-9dB",
+                 "-c:a", "pcm_s16le", str(dst)], "hạ giọng mới 9 dB")
+        manh_nho = [(0.0, str(nho1)), (12.0, str(nho2))]
+        bu_n = TG.bu_giong_goc(gg, manh_nho, TONG, SB / "bu_nho")
+        ok("đo được mức CẢ HAI bên (không bên nào None)",
+           bu_n.get("muc_giong_moi_db") is not None
+           and bu_n.get("muc_giong_goc_db") is not None,
+           f"mới {bu_n.get('muc_giong_moi_db')} · gốc "
+           f"{bu_n.get('muc_giong_goc_db')} dBFS")
+        g = bu_n.get("gain_khop_db")
+        ok("giọng mới NHỎ hơn -> phần bù bị HẠ (gain âm, đúng CHIỀU)",
+           g is not None and g < -5.0, f"gain {g} dB")
+        ok("gain nằm trong trần ±12 dB", g is not None and abs(g) <= 12.0,
+           f"{g} dB")
+        # ĐO THẬT trên mảnh đã ghi: mức phần bù phải xấp xỉ mức giọng mới
+        if bu_n["manh"]:
+            b_bu = TG.duong_bao_muc(bu_n["manh"][0][1], buoc=0.05)
+            hu = [v for v in b_bu if v > -119.0]
+            m_bu = sorted(hu)[int(len(hu) * 0.90)] if hu else -120.0
+            m_moi = bu_n["muc_giong_moi_db"]
+            ok("mảnh bù ĐO RA xấp xỉ mức giọng mới (lệch <= 2 dB)",
+               abs(m_bu - m_moi) <= 2.0,
+               f"bù {m_bu:.2f} vs mới {m_moi:.2f} dBFS")
+
         print("\nMỤC 2b — BẤT BIẾN: phủ kín thì KHÔNG bù mảnh nào")
         full = SB / "full.wav"
         wav_tieng(full, TONG, [(0.0, TONG)])

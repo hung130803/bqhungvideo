@@ -3103,6 +3103,31 @@ def khoang_khong_giong(manh: list[tuple[float, str]], tong: float,
     return hep
 
 
+#: Số mảnh giọng mới được LẤY MẪU để đo mức. Đo hết 175 mảnh là 175 lượt ffmpeg
+#: cho một con số duy nhất; lấy mẫu rải đều cho ra cùng câu trả lời.
+BU_GOC_MAU_DO = 8
+
+
+def _muc_noi_manh(manh: list[tuple[float, str]]) -> Optional[float]:
+    """Mức LỜI (dBFS) của track giọng MỚI, đo qua vài mảnh lấy mẫu.
+
+    Lấy trung vị của bách phân vị 90 từng mảnh: p90 trong một mảnh là chỗ ĐANG
+    NÓI (mảnh nào cũng gần như toàn tiếng nói), còn trung vị giữa các mảnh loại
+    được mảnh cá biệt. Trả None khi không đo được — nơi gọi phải coi None là
+    "đừng bù mức", KHÔNG được coi là 0 dB.
+    """
+    if not manh:
+        return None
+    buoc = max(1, len(manh) // BU_GOC_MAU_DO)
+    ds: list[float] = []
+    for _off, p in manh[::buoc][:BU_GOC_MAU_DO]:
+        b = duong_bao_muc(p, buoc=BUOC_DO_MUC)
+        hu = [v for v in b if v > -119.0]
+        if hu:
+            ds.append(_bpv(hu, 0.90))
+    return _bpv(ds, 0.5) if ds else None
+
+
 def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
                  tong: float, out_dir: str | Path,
                  he_so_hinh: float = 1.0) -> dict:
@@ -3154,6 +3179,27 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
     ket["san_db"] = round(san, 2)
     ket["nguong_db"] = round(nguong, 2)
 
+    # --- KHỚP MỨC: giọng gốc phải to NGANG giọng mới, không to hơn ---
+    # Lớp giọng gốc mang mức của bản master gốc (đo trên video anh Hùng:
+    # cả bản trộn **-13,0 LUFS**) còn track TTS đo được **-19,7 LUFS** — chênh
+    # ~6-7 dB. Nhét thẳng vào thì hai chuyện xảy ra, cả hai đều nghe ra:
+    #   (1) chỗ bù NHẢY TO hơn phần còn lại = đúng kiểu "chỗ to chỗ nhỏ";
+    #   (2) `can_bang_giong_nhac` đo track giọng SAU khi đã cộng phần bù, thấy
+    #       nó to sẵn nên bớt nâng -> GIỌNG TTS bị nhỏ đi ở cả video.
+    # Nên đo mức LỜI của cả hai bên rồi bù cho ngang. Trần ±12 dB để một phép đo
+    # lệch không đẩy phần bù thành tiếng rít hay mất hút.
+    muc_moi = _muc_noi_manh(manh)
+    muc_goc = _bpv([v for v in bao if v > nguong], 0.5) if any(
+        v > nguong for v in bao) else None
+    gain_db = 0.0
+    if muc_moi is not None and muc_goc is not None:
+        gain_db = max(-12.0, min(12.0, muc_moi - muc_goc))
+    ket["muc_giong_moi_db"] = (None if muc_moi is None
+                               else round(muc_moi, 2))
+    ket["muc_giong_goc_db"] = (None if muc_goc is None
+                               else round(muc_goc, 2))
+    ket["gain_khop_db"] = round(gain_db, 2)
+
     for i, (a, b) in enumerate(trong):
         # Mốc trên lớp giọng GỐC (trục CHƯA giãn).
         ag, bg = a / k, b / k
@@ -3166,6 +3212,8 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
         af = [f"atrim=start={ag:.3f}:end={bg:.3f}", "asetpts=N/SR/TB"]
         if k > 1.0 + 1e-6:
             af.append(_co_gian_chuoi(1.0 / k))
+        if abs(gain_db) > 0.1:
+            af.append(f"volume={gain_db:.2f}dB")
         af.append(f"aresample={SR_TACH}")
         # Mép vào/ra: bật/tắt phát một thì nghe thấy "cụp".
         d = max(0.05, (bg - ag) * k)
