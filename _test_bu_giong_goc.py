@@ -220,6 +220,34 @@ def main() -> int:
         ok("thiếu lớp giọng gốc -> trả rỗng, KHÔNG ném (đừng giết lượt xuất)",
            bu1["manh"] == [], str(bu1.get("ly_do")))
 
+        print("\nMỤC 2d — CHUNG với 'Chỉnh video theo giọng' (he_so_hinh > 1)")
+        # Chế độ đó GIÃN trục thời gian đầu ra `k` lần, nên mốc bù phải lấy trên
+        # trục GỐC (chia k) rồi mảnh cắt ra phải được giãn ĐÚNG k. Sai một trong
+        # hai là phần bù TRÔI mỗi lúc một xa — mà `kiem_video_ra` không bắt được
+        # (độ dài tổng vẫn đúng), chỉ tai nghe ra.
+        K = 1.2
+        # giọng mới phủ 0-3,6s và 14,4-18s trên trục ĐÃ GIÃN (= 0-3 và 12-15 gốc)
+        m1k, m2k = SB / "m1k.wav", SB / "m2k.wav"
+        wav_tieng(m1k, 3.6, [(0.0, 3.6)])
+        wav_tieng(m2k, 3.6, [(0.0, 3.6)])
+        manh_k = [(0.0, str(m1k)), (14.4, str(m2k))]
+        bu_k = TG.bu_giong_goc(gg, manh_k, TONG * K, SB / "bu_k",
+                               he_so_hinh=K)
+        ok("chế độ chỉnh hình: vẫn bù được", bu_k.get("so_bu", 0) >= 1,
+           f"{bu_k.get('so_bu')} mảnh · khoảng {bu_k.get('khoang')}")
+        if bu_k["manh"]:
+            off, p = bu_k["manh"][0]
+            d_ra = TG.probe_duration(p)
+            a, b = bu_k["khoang"][0]
+            ok("mảnh bù DÀI ĐÚNG khoảng trống trên trục ĐÃ GIÃN (lệch <= 0,08s)",
+               abs(d_ra - (b - a)) <= 0.08,
+               f"mảnh {d_ra:.3f}s vs khoảng {(b - a):.3f}s (k={K})")
+            ok("mốc đặt mảnh bù nằm ĐÚNG đầu khoảng trống",
+               abs(off - a) < 1e-6, f"off {off} vs khoảng đầu {a}")
+            # Nội dung phải là chỗ gốc ĐANG NÓI (6-9s gốc = 7,2-10,8s đã giãn)
+            ok("khoảng bù (trục giãn) TRÙM chỗ gốc nói 6-9s -> 7,2-10,8s",
+               a <= 7.4 and b >= 10.6, f"({a}, {b})")
+
         # ─── MỤC 3: đo THẬT trên track đã ghép ────────────────────────────
         print("\nMỤC 3 — ĐO track giọng sau khi ghép: khoảng trống HẾT im")
         t_khong = SB / "track_khong_bu.wav"
