@@ -1100,9 +1100,40 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
 
 
 def _don(d: Path) -> None:
-    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`, cổng 42)."""
+    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`, cổng 42).
+
+    ═══ CHỐT NÀY SINH RA TỪ MỘT TAI NẠN THẬT — 19/08/2026 ═══
+    Bản đầu chép nguyên `giong_ngoai._don`:
+    ``if d and str(d) and d.is_dir(): shutil.rmtree(d)``. **`Path("")` KHÔNG
+    rỗng — nó là `WindowsPath('.')`**, tức THƯ MỤC ĐANG LÀM VIỆC: `str(d)` ra
+    `'.'` (truthy), `is_dir()` ra True, rồi `rmtree('.')` **xoá sạch cây mã**.
+
+    Đã xảy ra THẬT khi chạy cổng 79: cổng vá `_chay_vieneu` bằng một hàm trả
+    dict KHÔNG có khoá `_sandbox` -> `ket.get("_sandbox") or ""` ->
+    `Path("")`. Mất `.git` (chỉ còn `objects`), `.venv`, `bin`, `_lib`,
+    `_giong_hang`, `_piper`, `_giong_ngoai`; repo phải dựng lại từ
+    `.git/objects`.
+
+    Và đây KHÔNG phải lỗi riêng của cổng — `giong_ngoai.py` **đang chạy sản
+    xuất** có đúng lỗ đó ở nhánh QUÁ GIỜ (`_chay_ov` không đặt `_sandbox`),
+    tức một lượt OmniVoice quá giờ là xoá thư mục làm việc. Đã vá cùng ngày.
+
+    HAI LỚP CHẮN, cố ý thừa: mọi đường ra của `_chay_vieneu` đều đặt
+    `_sandbox` (đường 1), và hàm này **CHỈ xoá thư mục nằm THẬT SỰ BÊN TRONG**
+    `thu_muc_vieneu()` (đường 2). Đường 1 dễ bị một bản vá sau làm hỏng lại mà
+    không ai thấy, nên đường 2 mới là chốt chịu lực.
+    """
     try:
-        if d and str(d) and d.is_dir():
-            shutil.rmtree(d, ignore_errors=True)
+        if d is None or not str(d).strip():
+            return
+        p = Path(d).resolve()
+        goc = thu_muc_vieneu().resolve()
+        # `p == goc` cũng CẤM: hộp cát là thư mục CON; xoá cả gốc là xoá luôn
+        # môi trường Python vừa tải về.
+        if p == goc or goc not in p.parents:
+            _ghi_log(f"TỪ CHỐI dọn {p} — nằm ngoài {goc}")
+            return
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
     except Exception:  # noqa: BLE001
         pass

@@ -772,10 +772,15 @@ def _chay_ov(items: list[dict], model: str, py: str, instruct: str,
                 duoi.append(dong[-300:])
             if time.time() > han:
                 p.kill()
-                return {"ok": False, "loi": "quá giờ (bỏ cuộc)"}
+                # `_sandbox` PHẢI có ở MỌI đường ra: nơi gọi làm
+                # `_don(Path(ket.get("_sandbox") or ""))`, thiếu khoá là
+                # `Path("")` = thư mục ĐANG LÀM VIỆC. Xem `_don`.
+                return {"ok": False, "loi": "quá giờ (bỏ cuộc)",
+                        "_sandbox": str(sb)}
         ma = p.wait(timeout=120)
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "loi": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "loi": f"{type(e).__name__}: {e}",
+                "_sandbox": str(sb)}
     finally:
         if p is not None:
             _bo_gan_job(p)
@@ -1127,9 +1132,38 @@ def _ten_ngon_ngu(lang: str) -> str:
 
 
 def _don(d: Path) -> None:
-    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`, cổng 42)."""
+    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`, cổng 42).
+
+    ═══ ĐÃ XOÁ NHẦM CẢ REPO MỘT LẦN — 19/08/2026, ĐỪNG NỚI CHỐT NÀY ═══
+    Bản cũ là ``if d and str(d) and d.is_dir(): shutil.rmtree(d)``. Trông vô
+    hại, nhưng **``Path("")`` KHÔNG rỗng — nó là ``WindowsPath('.')``**, tức
+    THƯ MỤC ĐANG LÀM VIỆC: ``str(d)`` ra ``'.'`` (truthy), ``d.is_dir()`` ra
+    True, rồi ``rmtree('.')`` **xoá sạch cây mã**. Đã xảy ra THẬT: mất
+    ``.git`` (chỉ còn ``objects``), ``.venv``, ``bin``, ``_lib``,
+    ``_giong_hang``, ``_piper``, ``_giong_ngoai`` — phải dựng lại repo từ
+    ``.git/objects``.
+
+    Đường đi tới đó có sẵn trong chính file này: ``_doc_omnivoice`` gọi
+    ``_don(Path(ket.get("_sandbox") or ""))`` ở nhánh LỖI, mà ``_chay_ov``
+    **không đặt ``_sandbox`` ở nhánh quá-giờ và nhánh ném** -> ``.get`` trả
+    None -> ``or ""`` -> ``Path("")``. Nghĩa là **một lượt OmniVoice quá giờ
+    là xoá thư mục làm việc của anh Hùng**, im lặng, mã thoát vẫn 0.
+
+    Nay hai lớp chắn: ``_chay_ov`` luôn đặt ``_sandbox`` (đường 1), và hàm này
+    **CHỈ xoá thư mục nằm THẬT SỰ BÊN TRONG** ``thu_muc_ngoai()`` (đường 2).
+    Hai lớp vì đường 1 dễ bị một bản vá sau làm hỏng lại mà không ai thấy.
+    """
     try:
-        if d and str(d) and d.is_dir():
-            shutil.rmtree(d, ignore_errors=True)
+        if d is None or not str(d).strip():
+            return
+        p = Path(d).resolve()
+        goc = thu_muc_ngoai().resolve()
+        # `p == goc` cũng CẤM: hộp cát là thư mục CON, xoá cả gốc là xoá luôn
+        # môi trường 7,7 GB.
+        if p == goc or goc not in p.parents:
+            _ghi_log(f"TỪ CHỐI dọn {p} — nằm ngoài {goc}")
+            return
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
     except Exception:  # noqa: BLE001
         pass
