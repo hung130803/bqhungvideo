@@ -129,13 +129,23 @@ def doc_ket(raw: str, n: int) -> Optional[dict]:
         raw = _bks(raw)
     except Exception:  # noqa: BLE001 — không có hàm thì cứ parse như cũ
         pass
+    d = None
     m = re.search(r"\{.*\}", raw, re.S)
-    if not m:
-        return None
-    try:
-        d = json.loads(m.group(0))
-    except (ValueError, TypeError):
-        return None
+    if m:
+        try:
+            d = json.loads(m.group(0))
+        except (ValueError, TypeError):
+            d = None
+    if d is None:
+        # BỘ BÓC BAO DUNG (v2.35.0): khối markdown · chữ dẫn thừa · dấu phẩy
+        # thừa · JSON ĐỨT CUỐI. Regex trên đòi có `}` ĐÓNG nên câu trả lời bị
+        # cắt vì hết token là không khớp gì -> lượt hậu kiểm im lặng bỏ qua.
+        # Đặt SAU đường cũ nên JSON hợp lệ vẫn ra kết quả y hệt.
+        try:
+            from app.ai.llm import boc_json as _bj
+            d = _bj(raw)
+        except Exception:  # noqa: BLE001
+            return None
     if not isinstance(d, dict):
         return None
     ra: dict = {"mach_lac": None, "thu_tu": None, "bo": None,

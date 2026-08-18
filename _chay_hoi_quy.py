@@ -49,6 +49,13 @@ CONG = [
     # phần GIẤY PHÉP CC-BY-NC giữ nguyên ở CẢ HAI) + 3 mục canh CHỖ ĐỂ ĐỒ
     # không nằm trong `%TEMP%` (môi trường 7,74 GB từng nằm ở đó: một lượt dọn
     # đĩa là giọng biến khỏi combo, đúng bệnh `_lib` cổng 58 CA5).
+    # Cổng 74 canh bản sửa CHẶN SẢN XUẤT thứ HAI trong hai ngày: Groq áp trần
+    # token đầu ra MẶC ĐỊNH (3072/2048) khi app không đặt `max_tokens`, làm JSON
+    # bản dịch ĐỨT giữa chừng -> "LLM trả về không phải JSON hợp lệ". Nó nằm
+    # ĐÂY vì đúng hôm qua cổng 70 vừa dính bẫy "cổng không ai gọi thì chỉ là
+    # một file .py nằm đó". Không đốt lượt Groq đáng kể: chỉ CA 9 gọi thật
+    # (30 câu, 1 lượt); `BQ_BO_MANG=1` để chạy hoàn toàn offline.
+    ("74 JSON bao dung",    "_test_json_bao_dung.py",    69),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.

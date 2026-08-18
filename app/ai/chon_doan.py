@@ -640,12 +640,24 @@ def cham_mu(clips: list, transcript: dict, complete_text,
         except Exception:  # noqa: BLE001 - không có hàm thì cứ parse như cũ
             pass
         m = re.search(r"\[.*\]", raw, re.S)
-        if not m:
-            continue
+        if m:
+            try:
+                arr = json.loads(m.group(0))
+                break
+            except (ValueError, TypeError):
+                arr = None
+        # BỘ BÓC BAO DUNG (v2.35.0): khối markdown · chữ dẫn thừa · dấu phẩy
+        # thừa · **JSON ĐỨT CUỐI vì model hết chỗ token**. Regex trên đòi có
+        # dấu `]` ĐÓNG nên câu trả lời bị cắt là nó không khớp gì cả -> mất
+        # trắng cả bảng chấm (rơi hết về điểm AI tự chấm). Đặt SAU đường cũ
+        # nên JSON hợp lệ vẫn ra kết quả y hệt.
         try:
-            arr = json.loads(m.group(0))
-            break
-        except (ValueError, TypeError):
+            from app.ai.llm import boc_json as _bj
+            d = _bj(raw)
+            if isinstance(d, list) and d:
+                arr = d
+                break
+        except Exception:  # noqa: BLE001
             arr = None
     if arr is None:
         return {}

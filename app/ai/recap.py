@@ -2556,8 +2556,15 @@ def _director_from_data(data, sentences: list, duration: float,
         try:
             data = json.loads(data)
         except ValueError:
-            return None, ("kết quả không phải JSON object — trả JSON THUẦN "
-                          "đúng schema, không bọc trong chuỗi/chữ")
+            # BỘ BÓC BAO DUNG (v2.35.0): chuỗi này có thể là JSON bọc markdown
+            # / kèm chữ dẫn / **đứt cuối vì model hết chỗ token**. Đặt SAU
+            # `json.loads` nên chuỗi hợp lệ vẫn đi đúng đường cũ.
+            try:
+                from app.ai import llm as _llm
+                data = _llm.boc_json(str(data))
+            except Exception:  # noqa: BLE001
+                return None, ("kết quả không phải JSON object — trả JSON THUẦN "
+                              "đúng schema, không bọc trong chuỗi/chữ")
     if isinstance(data, list):          # model bọc object trong mảng
         data = next((x for x in data if isinstance(x, dict)), None)
     if not isinstance(data, dict):

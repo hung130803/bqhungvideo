@@ -49,7 +49,8 @@ _orig_keys = settings.llm_keys_for
 calls = {"n": 0}
 
 
-def _fake_call_fail_once(provider, key, prompt, system, temperature, model=None):
+def _fake_call_fail_once(provider, key, prompt, system, temperature,
+                         model=None, **_kw):
     calls["n"] += 1
     if calls["n"] == 1:
         raise RuntimeError("Connection error.")
@@ -72,7 +73,8 @@ print("== 3. loi la van dung ngay (khong lap vo tan) ==")
 calls["n"] = 0
 
 
-def _fake_call_weird(provider, key, prompt, system, temperature, model=None):
+def _fake_call_weird(provider, key, prompt, system, temperature,
+                     model=None, **_kw):
     calls["n"] += 1
     raise RuntimeError("loi gi do rat la khong ai biet")
 
@@ -98,7 +100,7 @@ jcalls: list = []
 
 
 def _fake_ct_bad_then_good(prompt, system="", temperature=0.4,
-                           provider=None, model=None):
+                           provider=None, model=None, **_kw):
     jcalls.append(system)
     if len(jcalls) == 1:
         return "day khong phai json dau nhe"
@@ -122,7 +124,7 @@ jcalls.clear()
 
 
 def _fake_ct_always_bad(prompt, system="", temperature=0.4,
-                        provider=None, model=None):
+                        provider=None, model=None, **_kw):
     jcalls.append(system)
     return "van khong phai json"
 
@@ -236,7 +238,8 @@ check("khong nham voi model go", not llm.is_org_restricted("model_not_found abc"
 calls["n"] = 0
 
 
-def _fake_call_banned_first(provider, key, prompt, system, temperature, model=None):
+def _fake_call_banned_first(provider, key, prompt, system, temperature,
+                            model=None, **_kw):
     calls["n"] += 1
     if key == "key_bi_ban":
         raise RuntimeError(ORG_MSG)
@@ -260,7 +263,8 @@ finally:
 calls["n"] = 0
 
 
-def _fake_call_all_banned(provider, key, prompt, system, temperature, model=None):
+def _fake_call_all_banned(provider, key, prompt, system, temperature,
+                          model=None, **_kw):
     calls["n"] += 1
     raise RuntimeError(ORG_MSG)
 

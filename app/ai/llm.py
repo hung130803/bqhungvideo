@@ -311,17 +311,141 @@ def bo_khoi_suy_nghi(text: str) -> str:
     return ""                       # nghĩ dở dang -> coi như CHƯA có đáp án
 
 
-def _extract_json(text: str):
-    """Bóc JSON ra khỏi câu trả lời (phòng khi model bọc trong ```json hoặc thêm chữ)."""
+def _bo_phay_thua(s: str) -> str:
+    """Bỏ dấu phẩy THỪA ngay trước `]`/`}` — model hay để lại, `json` thì cấm.
+
+    Hàm thuần. KHÔNG đụng dấu phẩy nằm trong chuỗi vì mẫu đòi ngay sau nó phải
+    là dấu đóng (chuỗi có `, ]` bên trong là cực hiếm và bản gốc cũng đã hỏng)."""
+    return re.sub(r",(\s*[\]}])", r"\1", s or "")
+
+
+def _bo_qua_trang(t: str, j: int, them: str = "") -> int:
+    while j < len(t) and (t[j].isspace() or t[j] in them):
+        j += 1
+    return j
+
+
+def vot_json_cut(text: str):
+    """VỚT phần ĐỌC ĐƯỢC của một JSON bị **CẮT NGANG**. Trả None nếu vô vọng.
+
+    VÌ SAO TỒN TẠI — LỖI CHẶN SẢN XUẤT 18/08/2026 (anh Hùng, đường Thay giọng,
+    v2.34.0): Groq áp **trần token đầu ra MẶC ĐỊNH** khi app không đặt
+    `max_tokens` (đo được: `openai/gpt-oss-120b` -> **3072**, `gpt-oss-20b` ->
+    **2048**). Bản dịch cả video cần ~3.100 token nên mảng JSON bị chặt giữa
+    chừng -> `json.loads` ném *"Expecting value: line 1 column 1838"* ->
+    `_dich_loat` **mất TRẮNG cả 50 câu** dù model đã dịch đúng 43 câu đầu.
+
+    Vớt được thì caller còn đường tự chữa: `_dich_loat` đếm nhãn thiếu rồi
+    ĐÒI LẠI đúng phần thiếu ở vòng sau (vòng đó đã có sẵn, chỉ chưa bao giờ
+    chạy tới vì mất sạch dữ liệu).
+
+    Vớt theo TỪNG PHẦN TỬ HOÀN CHỈNH bằng `raw_decode`, gặp phần tử dở thì
+    DỪNG — tuyệt đối không "đoán nốt" phần model chưa viết ra.
+    Hàm thuần, không mạng.
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    dau = [p for p in (t.find("["), t.find("{")) if p >= 0]
+    if not dau:
+        return None
+    i = min(dau)
+    dec = json.JSONDecoder()
+
+    if t[i] == "[":
+        ra: list = []
+        j = i + 1
+        while True:
+            j = _bo_qua_trang(t, j, ",")
+            if j >= len(t) or t[j] == "]":
+                break
+            try:
+                gt, j = dec.raw_decode(t, j)
+            except ValueError:
+                # PHẦN TỬ DỞ DANG THÌ BỎ HẲN, KHÔNG vớt nửa vời. Các phần tử
+                # của một mảng là NGANG HÀNG nhau, trả về một cái viết dở
+                # (`{"i":3}` thiếu `"t"`) chẳng thêm thông tin gì mà lại đẻ ra
+                # một mục trông như thật — đúng loại "phép đo phát chứng nhận"
+                # repo này đang chống. Thiếu thì caller ĐÒI LẠI, tốt hơn.
+                break
+            ra.append(gt)
+        return ra or None
+
+    ra_d: dict = {}
+    j = i + 1
+    while True:
+        j = _bo_qua_trang(t, j, ",")
+        if j >= len(t) or t[j] == "}":
+            break
+        if t[j] != '"':
+            break
+        try:
+            khoa, j = dec.raw_decode(t, j)
+        except ValueError:
+            break
+        j = _bo_qua_trang(t, j)
+        if j >= len(t) or t[j] != ":":
+            break
+        j = _bo_qua_trang(t, j + 1)
+        if j >= len(t):
+            break
+        try:
+            gt, j = dec.raw_decode(t, j)
+        except ValueError:
+            # Giá trị cuối là MỘT CONTAINER bị cắt -> vớt tầng trong. Đây là ca
+            # THƯỜNG GẶP của recap: {"title":"…","parts":[ {…}, {…  <- cắt.
+            # Khác ca "phần tử mảng dở dang" ở trên: ở đây cái dở dang chính là
+            # container NGOÀI CÙNG của nhánh con, mà vớt container ngoài cùng
+            # đúng là việc của hàm này; bên trong nó vẫn chỉ lấy phần tử HOÀN
+            # CHỈNH nên không có mục nửa vời nào lọt ra.
+            con = vot_json_cut(t[j:]) if t[j] in "[{" else None
+            if con:
+                ra_d[khoa] = con
+            break
+        ra_d[khoa] = gt
+    return ra_d or None
+
+
+def _extract_json(text: str, cho_vot: bool = True):
+    """Bóc JSON ra khỏi câu trả lời (phòng khi model bọc trong ```json hoặc thêm chữ).
+
+    `cho_vot=True` (mặc định): hết đường thì VỚT phần đọc được của JSON bị cắt
+    ngang (xem `vot_json_cut`). Đặt False khi caller muốn biết chắc "đủ hay
+    không" để còn gọi lại — `complete_json` dùng đúng kiểu đó cho 2 lượt đầu.
+
+    BẤT BIẾN: JSON HỢP LỆ đi qua đây phải ra kết quả Y HỆT bản cũ — mọi bước
+    thêm vào đều nằm SAU các bước cũ và chỉ chạy khi bước cũ đã ném.
+    """
     text = bo_khoi_suy_nghi(text)
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
+    else:
+        # khối markdown MỞ mà chưa kịp ĐÓNG (model bị cắt giữa khối) — bản cũ
+        # để nguyên cả dòng ```json nên không parse nổi.
+        mo = re.search(r"```(?:json)?\s*", text)
+        if mo and "```" not in text[mo.end():]:
+            text = text[mo.end():].strip()
     # thử parse trực tiếp trước
     try:
         return json.loads(text)
     except ValueError:
         pass
+    # CẤU TRÚC NGOÀI CÙNG BỊ CẮT MẤT DẤU ĐÓNG -> VỚT NGAY.
+    # Vì sao phải chặn TRƯỚC bước "ứng viên" dưới (lỗi cổng 74 bắt được):
+    # `{"mach_lac":8,"thu_tu":[1,0,2],"vi_sao":"đảo cho x` <- object ngoài cùng
+    # không có `}` nào, nên bước dưới đi bắt **MẢNH LỒNG BÊN TRONG** `[1,0,2]`
+    # rồi trả về một LIST. `mach_lac.doc_ket` đòi dict -> vứt sạch kết quả, mà
+    # lỗi lại đội lốt "model trả sai kiểu". Sai HÌNH DẠNG nguy hiểm hơn hẳn
+    # không parse được: caller không có cách nào biết mình vừa nhận nhầm ruột.
+    mo = [(p, c) for p, c in ((text.find("["), "]"), (text.find("{"), "}"))
+          if p >= 0]
+    if cho_vot and mo:
+        som, dong = min(mo)
+        if text.rfind(dong) < som:          # ngoài cùng chưa hề được đóng
+            vot = vot_json_cut(text)
+            if vot is not None:
+                return vot
     # chọn cấu trúc XUẤT HIỆN TRƯỚC (mảng hay object) — tránh bắt nhầm '{' bên trong
     # mảng khi model thêm chữ thừa phía trước (vd: "Đây là...\n[ {...} ]").
     cands = []
@@ -334,8 +458,21 @@ def _extract_json(text: str):
         try:
             return json.loads(frag)
         except ValueError:
+            pass
+        try:                       # dấu phẩy thừa trước dấu đóng
+            return json.loads(_bo_phay_thua(frag))
+        except ValueError:
             continue
+    if cho_vot:
+        vot = vot_json_cut(text)
+        if vot is not None:
+            return vot
     return json.loads(text)  # ném lỗi nếu vẫn không parse được
+
+
+#: tên CÔNG KHAI của bộ bóc JSON BAO DUNG — mọi chỗ trong repo phân tích phản
+#: hồi LLM phải đi qua đây, đừng viết bộ dò dấu ngoặc mới (xem VIỆC 3 v2.35.0).
+boc_json = _extract_json
 
 
 def is_rate_limit_error(msg: str) -> bool:
@@ -352,6 +489,21 @@ _is_rate_limit = is_rate_limit_error  # tên cũ, giữ tương thích
 
 class LLMTooLarge(LLMError):
     """YÊU CẦU QUÁ LỚN cho hạn mức token/phút — KHÔNG phải key hết lượt."""
+
+
+class LLMCatCut(LLMError):
+    """CÂU TRẢ LỜI BỊ CẮT vì hết chỗ (`finish_reason=length`) — model có trả
+    lời, chỉ là chưa viết xong thì hết ngân sách token.
+
+    LỖI THẬT 18/08/2026 (anh Hùng, đường Thay giọng v2.34.0): app báo
+    *"LLM trả về không phải JSON hợp lệ: Expecting value: line 1 column
+    1838"*. Lời đó chỉ đúng phần NGỌN — nghe như model trả rác, nên người đọc
+    đi soi prompt/parser trong khi bệnh nằm ở **trần token đầu ra**. Đây đúng
+    là vết xe vừa mới đi qua: 404 model chết bị báo thành "Dữ liệu không hợp
+    lệ" và anh Hùng tưởng hết hạn mức 41 key.
+
+    TUYỆT ĐỐI KHÔNG phạt key (mọi key cùng trần) — cùng luật với
+    `LLMTooLarge`/`LLMModelMissing`."""
 
 
 class LLMModelMissing(LLMError):
@@ -879,8 +1031,104 @@ def _is_model_unfit_error(msg: str) -> bool:
         or "reduce your message size" in m
 
 
+# --------------------------------------------------------------------------
+# TRẦN TOKEN ĐẦU RA — GỐC RỄ LỖI CHẶN SẢN XUẤT 18/08/2026
+#
+# App KHÔNG đặt `max_tokens` (chú thích cũ: "cắt cụt -> hỏng kết quả"). Nhưng
+# **không đặt KHÔNG có nghĩa là không giới hạn**: Groq tự áp trần MẶC ĐỊNH.
+# Đo thật 18/08/2026, cùng một prompt dịch 50 câu, 6/6 lượt:
+#     openai/gpt-oss-120b -> finish_reason=length, completion_tokens=3072
+#     openai/gpt-oss-20b   -> finish_reason=length, completion_tokens=2048
+# Bản dịch cần ~3.100 token -> hụt vài chục token -> JSON đứt -> mất cả video.
+# Hụt ÍT nên bệnh CHẬP CHỜN: video ngắn lọt, video dài chết (đúng ảnh anh Hùng
+# gửi: 1 xong · 1 LỖI trong cùng một lượt).
+#
+# ĐẶT max_tokens thì phải biết TRẦN TRÊN, không được đặt bừa: Groq tính **cả
+# `max_tokens`** vào cỡ yêu cầu. Nguyên văn lời lỗi đo được:
+#   413 - Request too large for model `openai/gpt-oss-120b` in organization
+#   `org_…` service tier `on_demand` on tokens per minute (TPM): Limit 8000…
+# Đo: prompt 551 token + max_tokens 7168 = 7719 -> CHẠY · + 8192 = 8743 -> 413.
+# Tức ràng buộc là `prompt + max_tokens <= 8000`, và 413 chính là cái bẫy đã
+# đốt sạch 38 key một lần (xem `is_too_large_error`) — nới bừa là dẫm lại.
+GROQ_TPM_TRAN = 8000        # token/phút mỗi yêu cầu, đo từ chính lời lỗi 413
+GROQ_BIEN_AN_TOAN = 500     # chừa cho phần Groq tự thêm (schema json_object…)
+GROQ_OUT_TOI_THIEU = 1024
+GROQ_OUT_TOI_DA = 6144      # đo: 6144 CHẠY ở prompt 1413 token; 8192 -> 413
+
+
+def _uoc_token(s: str) -> int:
+    """ƯỚC LƯỢNG token của một chuỗi. Phải ước THỪA, tuyệt đối đừng ước hụt —
+    hụt là `max_tokens` đặt quá tay rồi ăn 413.
+
+    Hiệu chuẩn `_do_uoc_token.py` trên `usage.prompt_tokens` THẬT của Groq
+    (prompt dịch 10 / 25 / 50 câu Trung-Việt -> 551 / 874 / 1413 token):
+    hệ CJK 1,1 + phần còn lại chia 2,2 cho ra 560 / 884 / 1424 = phồng nhiều
+    nhất **1,02x** và KHÔNG mốc nào hụt. Hàm thuần."""
+    if not s:
+        return 0
+    cjk = sum(1 for ch in s
+              if "⺀" <= ch <= "鿿" or "가" <= ch <= "힣"
+              or "豈" <= ch <= "﫿" or "　" <= ch <= "ヿ")
+    return int(cjk * 1.1 + (len(s) - cjk) / 2.2) + 8
+
+
+def max_tokens_groq(prompt: str, system: str = "") -> int:
+    """Chỗ trả lời XIN ĐƯỢC mà không đụng trần 8.000 token/phút của Groq.
+
+    Prompt càng dài thì chỗ cho câu trả lời càng hẹp — đó là lý do việc CHIA
+    NHỎ yêu cầu (ít câu hơn mỗi lượt) không phải chuyện tuỳ hứng mà là ràng
+    buộc số học. Hàm thuần."""
+    con = GROQ_TPM_TRAN - _uoc_token(prompt) - _uoc_token(system) \
+        - GROQ_BIEN_AN_TOAN
+    return max(GROQ_OUT_TOI_THIEU, min(GROQ_OUT_TOI_DA, con))
+
+
+#: LÝ DO KẾT THÚC của lượt gọi GẦN NHẤT **trên chính luồng này** (`length` =
+#: bị cắt vì hết chỗ). Để theo LUỒNG vì 3 làn AI chạy song song — biến toàn
+#: cục là đọc phải lý do của lượt khác (đúng bệnh `_SFX_LAST_PICK`).
+_LAN = threading.local()
+
+
+def ly_do_ket_thuc() -> str:
+    """`finish_reason` của lượt gọi gần nhất trên luồng hiện tại ("" nếu chưa
+    có). `length` = model bị CẮT vì hết chỗ, KHÔNG phải nó trả rác."""
+    return str(getattr(_LAN, "ket_thuc", "") or "")
+
+
+def _ghi_ket_thuc(resp) -> None:
+    try:
+        _LAN.ket_thuc = str(getattr(resp.choices[0], "finish_reason", "") or "")
+    except Exception:  # noqa: BLE001 — sổ ghi chú, không được làm chết lượt gọi
+        _LAN.ket_thuc = ""
+
+
+def _nhan_json_mode(model: str) -> bool:
+    """Model có nhận `response_format={"type":"json_object"}` không.
+
+    Đo 18/08/2026 (mỗi model 2 lượt): `openai/gpt-oss-120b` và `gpt-oss-20b`
+    ĐẠT 2/2, `finish_reason=stop`, và **hình dạng KHÔNG đổi** — vẫn là MẢNG
+    `[{"i":..,"t":..}]` chứ không bị bọc thành object, nên `_theo_nhan` của
+    `thay_giong` lấy đủ 12/12. `groq/compound` trả 413 `request_too_large`
+    -> để ngoài."""
+    m = (model or "").lower()
+    return "gpt-oss" in m or m.startswith("openai/")
+
+
+def _nhan_reasoning(model: str) -> bool:
+    """Model gpt-oss là model SUY LUẬN: phần "nghĩ" ăn CHUNG ngân sách đầu ra.
+
+    Đo 18/08/2026 (cùng prompt, max_tokens=4096): mặc định 3.247 token / 7,3s ·
+    `reasoning_effort="low"` **1.214 token / 3,2s**, bản dịch vẫn ĐẠT đủ 50
+    câu. Tức nghĩ ít đi thì vừa còn chỗ cho câu trả lời vừa nhanh gấp 2,3 lần.
+    LƯU Ý: **`"none"` bị Groq TỪ CHỐI** (400 *"`reasoning_effort` must be one
+    of `low`, `medium`, or `high`"*) — khác `qwen3.6` bên vision, đừng chép
+    tham số từ đó sang."""
+    return "gpt-oss" in (model or "").lower()
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
-               temperature: float, model: Optional[str] = None) -> str:
+               temperature: float, model: Optional[str] = None,
+               json_mode: bool = False) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
     if provider in ("openai", "deepseek", "ollama", "groq"):
         from openai import OpenAI
@@ -903,12 +1151,15 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         client = OpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=1)
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
-        # KHÔNG giới hạn token cứng: JSON chọn clip có thể dài, cắt cụt -> hỏng kết quả
+        _LAN.ket_thuc = ""
         if provider != "groq":
+            # KHÔNG giới hạn token cứng ở provider khác: hạn mức của họ không
+            # tính `max_tokens` vào cỡ yêu cầu như Groq nên đặt vào chỉ có hại.
             resp = client.chat.completions.create(
                 model=model, messages=msgs, temperature=temperature,
                 extra_body=extra,
             )
+            _ghi_ket_thuc(resp)
             return resp.choices[0].message.content or ""
 
         # ---- GROQ: đi hết DÂY CHUYỀN model, model đầu chết thì sang model kế ----
@@ -923,13 +1174,35 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                 "Không còn model Groq nào dùng được. Groq đã bỏ model cũ — "
                 "app cần cập nhật (đây KHÔNG phải lỗi hết hạn mức key).")
         loi_model = ""
+        # CHỖ TRẢ LỜI phải XIN TRƯỚC, đừng để Groq tự áp trần mặc định 2048-3072
+        # (xem khối ghi chú GROQ_TPM_TRAN — đây là gốc rễ lỗi 18/08/2026).
+        mt = max_tokens_groq(prompt, system)
         for i, md in enumerate(chuoi):
             cuoi = (i == len(chuoi) - 1)
+            them: dict = {"max_tokens": mt}
+            if json_mode and _nhan_json_mode(md):
+                them["response_format"] = {"type": "json_object"}
+            if _nhan_reasoning(md):
+                them["reasoning_effort"] = "low"
             try:
-                resp = client.chat.completions.create(
-                    model=md, messages=msgs, temperature=temperature,
-                    extra_body=extra,
-                )
+                try:
+                    resp = client.chat.completions.create(
+                        model=md, messages=msgs, temperature=temperature,
+                        extra_body=extra, **them,
+                    )
+                except Exception as e_th:  # noqa: BLE001
+                    # Model KHÁC không nhận tham số thêm (Groq trả 400 nêu đích
+                    # danh tham số). Gọi lại kiểu TRẦN — đổi model/nhà cung cấp
+                    # không bao giờ được làm chết cả lượt vì một tuỳ chọn.
+                    _t = str(e_th)
+                    if not ("400" in _t and ("reasoning_effort" in _t
+                                             or "response_format" in _t
+                                             or "json_object" in _t)):
+                        raise
+                    resp = client.chat.completions.create(
+                        model=md, messages=msgs, temperature=temperature,
+                        extra_body=extra, max_tokens=mt,
+                    )
             except Exception as e:  # noqa: BLE001
                 if _is_model_missing_error(str(e)):
                     # NHỚ trong phiên: các lượt sau đi thẳng model kế, khỏi
@@ -948,6 +1221,7 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                     loi_model = str(e)
                     continue
                 raise          # lỗi CỦA KEY -> để complete_text xoay key
+            _ghi_ket_thuc(resp)
             out = resp.choices[0].message.content or ""
             if out.strip() or cuoi:
                 return out
@@ -979,9 +1253,13 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
 
 def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                   provider: Optional[str] = None,
-                  model: Optional[str] = None) -> str:
+                  model: Optional[str] = None,
+                  json_mode: bool = False) -> str:
     """`model`: đè model CHỈ với provider groq (vd kimi-k2 cho pass viết
-    kịch bản); provider khác bỏ qua — an toàn khi user chọn gemini/ollama."""
+    kịch bản); provider khác bỏ qua — an toàn khi user chọn gemini/ollama.
+
+    `json_mode`: xin model trả JSON đúng chuẩn (`response_format`). Chỉ
+    `complete_json` bật; model không hỗ trợ thì tự bỏ qua, KHÔNG chết."""
     provider = provider or active_provider()
     keys = settings.llm_keys_for(provider)
     if not keys:
@@ -1007,7 +1285,8 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                 mark_used(provider, key)
                 try:
                     out = _call_once(provider, key, prompt, system,
-                                     temperature, model=model)
+                                     temperature, model=model,
+                                     json_mode=json_mode)
                     mark_ok(provider, key)
                     return out
                 except LLMError:
@@ -1087,21 +1366,61 @@ def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
     cụt/lẫn chữ — trước đây ném LLMError NGAY, xuyên qua mọi lớp xoay key,
     làm cả video rơi về "Cắt cơ bản" dù key còn đầy (bug anh Hùng 28/07).
     Lần gọi lại kèm nhắc "chỉ trả JSON" — lỗi kiểu này gọi lại gần như luôn
-    hết. Key Groq của user gần vô hạn, ưu tiên CHẤT LƯỢNG (xem MEMORY)."""
+    hết. Key Groq của user gần vô hạn, ưu tiên CHẤT LƯỢNG (xem MEMORY).
+
+    HAI THỨ THÊM 18/08/2026 (lỗi chặn sản xuất đường Thay giọng):
+    * **BỊ CẮT thì phải NÓI LÀ BỊ CẮT.** `finish_reason=length` -> ném
+      `LLMCatCut` với lời "AI trả lời quá dài bị cắt". Lời cũ *"không phải
+      JSON hợp lệ"* chỉ đúng phần NGỌN và đẩy người đọc đi tìm nhầm chỗ —
+      đúng vết xe 404-model-chết bị báo thành "Dữ liệu không hợp lệ".
+    * **LƯỢT CUỐI mới được VỚT.** 2 lượt đầu parse NGHIÊM (`cho_vot=False`)
+      để còn cơ hội đòi bản ĐỦ; hết lượt mới lấy phần vớt được, và lấy bản
+      vớt ĐƯỢC NHIỀU NHẤT trong 3 lượt. Trả phần thiếu vẫn hơn trả TAY
+      TRẮNG: `_dich_loat` đếm nhãn thiếu rồi đòi lại đúng phần đó.
+
+    KHÔNG PHẠT KEY ở đây: JSON hỏng là lỗi ĐỊNH DẠNG, mọi key đều như nhau.
+    """
     last_exc: Optional[LLMError] = None
     sys_now = system
+    vot_tot: object = None
+    so_vot = -1
+    bi_cat = False
     for _attempt in range(3):
+        cuoi = (_attempt == 2)
         raw = complete_text(prompt, system=sys_now, temperature=0.3,
-                            provider=provider, model=model)
+                            provider=provider, model=model, json_mode=True)
+        cat = (ly_do_ket_thuc() == "length")
+        bi_cat = bi_cat or cat
         try:
-            return _extract_json(raw)
+            return _extract_json(raw, cho_vot=False)
         except (ValueError, json.JSONDecodeError) as e:
-            last_exc = LLMError(
-                f"LLM trả về không phải JSON hợp lệ: {e}\n---\n{raw[:500]}")
+            try:
+                v = vot_json_cut(bo_khoi_suy_nghi(raw))
+            except Exception:  # noqa: BLE001
+                v = None
+            if v is not None and len(v) > so_vot:
+                vot_tot, so_vot = v, len(v)
+            last_exc = (
+                LLMCatCut(
+                    f"AI trả lời quá dài nên bị CẮT giữa chừng "
+                    f"(finish_reason=length, {len(raw)} ký tự) — hãy chia nhỏ "
+                    f"yêu cầu. KHÔNG phải hết hạn mức key. Chi tiết: {e}"
+                    f"\n---\n{raw[:500]}")
+                if cat else
+                LLMError(
+                    f"LLM trả về không phải JSON hợp lệ: {e}\n---\n{raw[:500]}"))
+            if cuoi:
+                break
             # nhắc CỨNG cho lần sau — model đã trả rác 1 lần rồi
             sys_now = (system + "\n\nQUAN TRỌNG: CHỈ trả về đúng MỘT khối "
                        "JSON hợp lệ. KHÔNG chữ dẫn, KHÔNG markdown, KHÔNG "
                        "giải thích, KHÔNG cắt cụt.")
+            if cat:
+                sys_now += ("\nLần trước câu trả lời DÀI QUÁ nên bị cắt mất "
+                            "đuôi: hãy viết NGẮN GỌN hơn, bỏ mọi chữ thừa, "
+                            "giữ đủ MỌI mục.")
+    if vot_tot is not None:
+        return vot_tot
     raise last_exc
 
 
