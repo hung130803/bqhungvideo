@@ -192,6 +192,34 @@ def giong_dung_duoc(ds: list) -> list:
     except Exception:  # noqa: BLE001
         pass                                # thiếu module -> combo y hệt cũ
 
+    # ---- GIỌNG NGOÀI (OmniVoice) — MỘT GIỌNG ĐỌC ĐƯỢC 4 THỨ TIẾNG ----
+    # **NHÃN PHẢI GHI THẲNG GIẤY PHÉP.** Trọng số OmniVoice là **CC-BY-NC =
+    # CẤM DÙNG THƯƠNG MẠI** (nguyên văn model card gốc), kèm lớp thứ ba
+    # Boson Higgs Audio 2 / Meta Llama 3. Anh Hùng BÁN app và dùng app kiếm
+    # tiền; anh ấy đã được trình bày rõ và vẫn bảo "thêm hết vào cho tôi" —
+    # đó là quyết định kinh doanh của anh ấy, nhưng nhãn vẫn phải nói ra để
+    # anh ấy biết mình đang chọn gì, không phải nhớ. Cùng lý lẽ đã dùng cho
+    # Piper (nói thẳng đánh đổi ngay trong nhãn, cổng 64) và cho edge-tts ở
+    # `LICENSES.txt` mục 5.
+    #
+    # Nhãn còn ghi CHẤT LƯỢNG ĐO ĐƯỢC: tiếng Việt nó đọc sai 16,9% so với
+    # edge-tts 6,8% (lượt 7), và mốc từng chữ phải dò lại bằng Groq nên kém
+    # khớp hơn edge-tts. Đây đúng tiền lệ Piper: tệ hơn edge-tts thì GHI
+    # CẢNH BÁO, đừng để người dùng tự phát hiện sau 300 video.
+    #
+    # `danh_sach_giong()` CHỈ trả giọng máy này chạy được — thiếu model thì
+    # combo KHÔNG có dòng nào (khác Piper: Piper app tự tải được nên còn hiện
+    # dòng "chưa tải"; OmniVoice 6,1 GB thì app không tự tải).
+    try:
+        from app.core import giong_ngoai
+        cuoi_vi2 = max((i for i, (_n, v) in enumerate(mo_rong)
+                        if str(v).startswith("vi-VN")
+                        or str(v).startswith("piper:")), default=-1)
+        for j, (ma_g, nhan_g) in enumerate(giong_ngoai.danh_sach_giong()):
+            mo_rong.insert(cuoi_vi2 + 1 + j, (nhan_g, ma_g))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
     # nhóm rỗng (bị lọc sạch) thì bỏ luôn nhãn nhóm, đừng để dòng trơ
     gon: list = []
     for i, (nhan, vid) in enumerate(mo_rong):

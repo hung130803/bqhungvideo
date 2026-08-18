@@ -192,6 +192,42 @@ chưa mở từng file đối chiếu dòng giấy phép. Ghi ra để không ai
 
 
 ================================================================================
+9. OmniVoice (giọng đọc 4 thứ tiếng)  —  MÃ Apache-2.0 · TRỌNG SỐ CC-BY-NC
+   [KHÔNG kèm trong bộ cài]           ĐỌC MỤC NÀY TRƯỚC KHI BẬT GIỌNG NÀY
+================================================================================
+Tệp kèm theo : KHÔNG CÓ. App chỉ GỌI khi máy đã có sẵn trọng số + môi trường
+               Python riêng (xem `app/core/giong_ngoai.py`). Bộ cài không
+               chứa một byte nào của OmniVoice.
+Nguồn        : https://github.com/k2-fsa/OmniVoice
+               https://huggingface.co/k2-fsa/OmniVoice
+
+BA LỚP GIẤY PHÉP CHỒNG NHAU, VÀ LỚP GIỮA CẤM KIẾM TIỀN:
+
+  Mã nguồn                     Apache-2.0     thoải mái, kể cả thương mại
+  TRỌNG SỐ (cái thực sự đọc)   CC-BY-NC       *** CẤM DÙNG THƯƠNG MẠI ***
+  Bộ mã hoá tiếng              Boson Higgs Audio 2 (dẫn xuất Meta Llama 3):
+  (`audio_tokenizer`)          >100.000 người dùng/năm phải xin phép riêng,
+                               và phải hiện dòng ghi công.
+
+Nguyên văn model card gốc trên Hugging Face:
+
+    "Our code is released under the Apache 2.0 License. The pre-trained model
+     is licensed under the CC-BY-NC due to constraints from its training data
+     (e.g., Emilia)."
+
+NC = NonCommercial = phi thương mại. Chủ app BÁN app và dùng app kiếm tiền,
+nên đây là VI PHẠM TRỰC DIỆN, không phải vùng xám. Điều này đã được trình bày
+rõ với chủ app TRƯỚC khi nối tính năng, và chủ app quyết định vẫn thêm vào.
+Vì vậy nhãn trong hộp chọn giọng ghi thẳng cảnh báo
+(`giong_ngoai.nhan_giong`, cổng 72 CA 7 canh) để người chọn biết mình đang
+chọn gì — không phải nhớ.
+
+Muốn bán ra thật mà vẫn cần "một giọng đọc nhiều thứ tiếng" thì phải đổi sang
+bộ có giấy phép cho thương mại — IndexTTS-2.5 (bilibili Model Use License) là
+cửa đáng theo, nhưng nó KHÔNG có tiếng Việt.
+
+
+================================================================================
 GHI CHÚ CHO NGƯỜI PHÁT HÀNH
 ================================================================================
 

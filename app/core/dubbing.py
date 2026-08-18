@@ -1829,6 +1829,12 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
             texts, voice, paths, lang, on_done, on_msg,
             rate if isinstance(rate, str) else "+0%", el_lui, None)
 
+    dung_ngoai, voice = _ngoai_hay_khong(voice)
+    if dung_ngoai:
+        ok_n, _mn = await _chay_ngoai(texts, voice, paths, lang, on_done,
+                                      rate, on_msg, lay_moc=False)
+        return ok_n
+
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
         from app.core import piper_tts
@@ -1970,6 +1976,59 @@ def _ghi_log_el(dong: str) -> None:
         pass
 
 
+# ==================================================================
+# CỬA DUY NHẤT RẼ SANG GIỌNG NGOÀI (OmniVoice / IndexTTS)
+# ==================================================================
+# Đặt ĐÚNG chỗ Piper và ElevenLabs đang đứng, vì đúng một lý do đã trả giá:
+# `thay_giong.py` có **3 chỗ** gọi `_synth_all_words` (`doc_ban_dich` ·
+# `rut_gon_vua_khung` · `doc_nhanh_vua_khung`) và `dubbing.py` còn 3 chỗ gọi
+# `_synth_all` nữa. **Sót MỘT chỗ là video LẪN HAI GIỌNG mà mã thoát vẫn 0.**
+# Nối ở đây thì phủ cả 6 chỗ mà KHÔNG phải sửa chỗ gọi nào — cổng 63 vẫn đếm
+# ĐÚNG 3 chỗ gọi như cũ.
+#
+# KHÁC ElevenLabs MỘT ĐIỂM CỐT TỬ: ElevenLabs **có** mốc từng chữ thật
+# (`/with-timestamps`). OmniVoice **KHÔNG có mốc** — `giong_ngoai` phải nhờ
+# **Groq chép ngược** dò lại. Xem `giong_ngoai._lay_moc_groq` và mục "CHƯA
+# ĐẠT" ở cuối file đó.
+def _ngoai_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng giọng ngoài không, giọng phải LÙI VỀ nếu không dùng được).
+
+    THIẾU MODEL/PYTHON THÌ LÙI ÊM VỀ edge-tts — cùng luật với Piper, khác
+    luật Demucs (thiếu Demucs mà lùi là ra video HỎNG nên phải CHẶN; ở đây
+    lùi ra video ĐÚNG, chỉ khác giọng). Nhưng phải GHI LẠI lý do: lùi êm mà
+    im lặng thì đúng bằng hỏng âm thầm.
+    """
+    from app.core import giong_ngoai as gn
+    if not gn.la_giong_ngoai(voice):
+        return False, voice
+    if gn.la_giong_omnivoice(voice) and gn.co_omnivoice():
+        return True, voice
+    if gn.la_giong_indextts(voice) and gn.co_indextts():
+        return True, voice
+    tt = (gn.tinh_trang_indextts() if gn.la_giong_indextts(voice)
+          else gn.tinh_trang_omnivoice())
+    lui = default_voice("vi")
+    gn._ghi_log(f"Chưa dùng được giọng {voice} (thiếu: {tt['thieu']}) -> "
+                f"LÙI về edge-tts giọng {lui}")
+    return False, lui
+
+
+async def _chay_ngoai(texts, voice, paths, lang, on_done, rate, on_msg,
+                      lay_moc: bool):
+    """Chạy `giong_ngoai.doc_loat` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    VÌ SAO KHÔNG GỌI THẲNG: hàm đó chạy `subprocess` đọc cả loạt (hàng chục
+    giây) rồi còn gọi Groq chép ngược từng câu để dò mốc. Gọi thẳng trong
+    `_synth_all`/`_synth_all_words` (đều là `async`) sẽ **chặn cứng vòng lặp
+    sự kiện** suốt từng ấy thời gian. Đây cũng đúng khuôn `_chay_eleven` đã
+    phải dựng sau lỗi thật của cổng 67 CA 4.
+    """
+    from app.core import giong_ngoai as gn
+    return await asyncio.to_thread(
+        gn.doc_loat, texts, paths, voice, on_done=on_done, rate=rate,
+        lang=norm_lang(lang), lay_moc=lay_moc, on_msg=on_msg)
+
+
 def _piper_hay_khong(voice: str) -> tuple[bool, str]:
     """(có dùng Piper không, giọng phải LÙI VỀ nếu không dùng được).
 
@@ -2026,6 +2085,14 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         while len(moc_el) < len(texts):     # lùi edge -> API không điền mốc
             moc_el.append([])
         return ok_e, moc_el
+
+    dung_ngoai, voice = _ngoai_hay_khong(voice)
+    if dung_ngoai:
+        # MỐC PHẢI DÒ LẠI BẰNG GROQ (bộ này không trả mốc) -> `lay_moc=True`.
+        # Đây là chỗ ĐẮT NHẤT của nhóm giọng ngoài: mỗi câu một lượt chép
+        # ngược. Cửa `_synth_all` (không cần mốc) truyền `lay_moc=False`.
+        return await _chay_ngoai(texts, voice, paths, lang, on_done, rate,
+                                 on_msg, lay_moc=True)
 
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
