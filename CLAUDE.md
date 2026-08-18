@@ -1830,6 +1830,24 @@
      **CỔNG NÀY TỪNG KHÔNG NẰM TRONG `_chay_hoi_quy.py`** — tức bản sửa CHẶN
      SẢN XUẤT được canh bởi một file .py không ai gọi, đúng cái bẫy mà chính
      commit trước đó vừa cảnh báo. Đã nối vào.
+     **ĐỎ OAN TRONG LƯỢT HỒI QUY VÌ *THỨ TỰ CỔNG*, KHÔNG PHẢI VÌ MÃ
+     (18/08/2026, lượt v2.36.0).** Cổng ra **ĐẠT 41 · HỎNG 1**, hỏng đúng mục
+     *"404 THẬT KHÔNG khoá key nào (41 key còn nguyên)"* với **2 key** mang
+     `limited`. **KHÔNG phải hồi quy của bản vá JSON:** mục 4 (429 giả) và mục
+     5 (413 giả) ĐẠT sạch, tức bảng phân loại lỗi còn nguyên; và chạy cổng
+     **MỘT MÌNH** ngay sau đó ra **ĐẠT 42 · HỎNG 0**, `phat_key()` = `{}`,
+     mã thoát **0**. Cơ chế: **cổng 74 đứng ĐẦU `_chay_hoi_quy.py` và CA 9 của
+     nó gọi Groq THẬT** (30 câu), cổng 70 chạy chỉ **~33 giây** sau đó — rơi
+     đúng CÙNG CỬA SỔ TPM một phút của Groq, nên vài key trả **429 THẬT** và
+     `mark_limited` đánh dấu **ĐÚNG LUẬT**. Mệnh đề của mục ấy ("41 key còn
+     nguyên") ngầm giả định **bể key SẠCH**, điều kiện đó vỡ khi có cổng đốt
+     lượt chạy ngay trước. Dấu hiệu nhận ra: thời gian chạy phồng
+     **9,4-10,9s -> 15,9s** (thử lại vòng qua key bị khoá), và 3 lượt hồi quy
+     cùng ngày TRƯỚC khi có cổng 74 đều **42/0**.
+     **CÁCH ĐỌC:** thấy mục này đỏ thì **chạy lại cổng MỘT MÌNH sau khi bể key
+     nguội** rồi mới nghi mã — **ĐỪNG hạ mốc 42, ĐỪNG bỏ mục này**. Muốn hết
+     nhấp nháy thì tách hẳn hai cổng đốt-lượt-Groq ra xa nhau trong danh sách
+     (chưa làm, chưa đo).
   71. `_test_demucs_gpu.py` → **TÁCH GIỌNG PHẢI DÙNG GPU KHI MÁY CÓ GPU**
      (18/08/2026). **ĐẠT 22 · HỎNG 0.** Thử phá (ghi cứng lại chỉ mục `whl/cpu`
      như bản cũ): **BẮT 4 mục**, mã thoát 1.
