@@ -56,7 +56,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
     QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QVBoxLayout,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.core import che_chu as TG_CC
@@ -81,6 +81,9 @@ K_CHE_CHU = "tg_che_chu"
 K_CHE_CACH = "tg_che_cach"
 K_CHE_MUC = "tg_che_muc"
 K_VIET_CHU = "tg_viet_chu"
+#: CÁCH KHỚP TIẾNG VỚI HÌNH — "" = ép giọng (y như mọi bản trước) · "hinh" =
+#: chỉnh video theo giọng.
+K_KHOP_CACH = "tg_khop_cach"
 #: KIỂU CHỮ của dòng chữ mới (chỉ dùng khi đang che + viết chữ).
 K_KC_PRESET = "tg_kc_preset"
 K_KC_FONT = "tg_kc_font"
@@ -427,6 +430,36 @@ class ThayGiongDialog(QDialog):
         h3b.addStretch(1)
         lay.addLayout(h3b)
 
+        # ---- hàng 3bb: KHỚP TIẾNG VỚI HÌNH THEO CHIỀU NÀO ----
+        # Anh Hùng 18/08/2026: *"giọng cứ lúc nhanh lúc chậm không đều —
+        # **đáng nhẽ chỉ chỉnh video sao cho khớp giọng nói chứ**"*. Anh ấy
+        # ĐÚNG: tới v2.37.0 đường này chỉ có MỘT chiều là ép tiếng vừa khung
+        # câu gốc (`atempo`/`rubberband`), nên mỗi câu một hệ số ép -> tốc độ
+        # đọc nhấp nhô. Mục ĐẦU giữ đúng hành vi cũ (không ai bị đổi sau lưng).
+        h3bb = QHBoxLayout()
+        h3bb.addWidget(QLabel("Khớp tiếng với hình:"))
+        self.cb_khop = QComboBox()
+        self.cb_khop.addItem("Ép giọng vừa video (có thể méo tiếng)", "")
+        self.cb_khop.addItem(
+            "Chỉnh video theo giọng (tiếng đều, khuyên dùng)", "hinh")
+        self.cb_khop.setToolTip(
+            "Ép giọng vừa video: giữ NGUYÊN độ dài video, câu nào đọc dài hơn "
+            "khung thì bị ép nhanh lại — đó là chỗ sinh ra 'lúc nhanh lúc "
+            "chậm' và tiếng bị méo.\n\n"
+            "Chỉnh video theo giọng: giọng đọc ở tốc độ TỰ NHIÊN (hệ số ép "
+            "1,000 cho MỌI câu), app làm CHẬM hình lại cho khớp. Hình không bị "
+            "mã hoá lại một khung nào (dùng -itsscale) nên không mất chất "
+            "lượng.\n"
+            "GIÁ PHẢI TRẢ: video dài ra, và nhịp hình tụt theo hệ số — app tự "
+            "chặn ở mức giữ >= 20 khung/giây, nguồn 23,976 fps thì tối đa "
+            "chậm 1,199 lần. Cần chậm hơn mức đó thì phần dư vẫn phải ép "
+            "tiếng, nhưng ít hơn hẳn.")
+        _i = self.cb_khop.findData(str(self._s.value(K_KHOP_CACH, "") or ""))
+        self.cb_khop.setCurrentIndex(max(0, _i))
+        h3bb.addWidget(self.cb_khop)
+        h3bb.addStretch(1)
+        lay.addLayout(h3bb)
+
         # ---- hàng 3c + 3d: KIỂU CHỮ của dòng chữ mới ----
         # Anh Hùng 17/08/2026: *"phần chữ sub trong video tôi không điều chỉnh
         # được cỡ chữ, kiểu chữ, hay in nghiêng đậm, hay chỉnh viền gì được ạ"*.
@@ -438,6 +471,42 @@ class ThayGiongDialog(QDialog):
         # BẤT BIẾN: ô nào để MẶC ĐỊNH thì KHÔNG vào đơn thuốc (`don_kieu_chu`
         # bỏ hẳn khoá đó) -> payload job giống TỪNG KHOÁ bản trước, không đẻ
         # job xuất lại cho 200-300 kênh.
+        # ---- NÚT GẬP: 9 ô kiểu chữ nằm SAU nút này, mặc định GẬP ----
+        # Anh Hùng 18/08/2026: *"cái phần edit chữ kia nhiều quá, không gom vào
+        # làm 1 được à, hiển thị rối mắt quá"*. LỖI CỦA TÔI ở v2.32.0: thêm
+        # đúng 9 ô vào giữa hộp, thành 2 hàng dày đặc chen giữa những thứ dùng
+        # HẰNG NGÀY (thư mục · ngôn ngữ · giọng · số luồng · 2 ô tích · Chạy).
+        #
+        # GỘP bằng cách GẬP, **KHÔNG bằng cách bỏ ô nào** — mọi ô vẫn còn đủ,
+        # vẫn cùng đối tượng widget, nên `don_kieu_chu` / `_luu` / `_o_kieu_chu`
+        # KHÔNG phải sửa một dòng nào và round-trip lưu-đọc-lại giữ nguyên.
+        #
+        # Chọn "khu gập" chứ không "hộp thoại con": hộp con phải chuyển quyền
+        # sở hữu widget + chép lại đường lưu/đọc = đúng chỗ đẻ ra lỗi "chọn X
+        # ra Y" mà repo này đã sửa nhiều lần.
+        h3kc = QHBoxLayout()
+        self.b_kc_gap = QPushButton("")
+        self.b_kc_gap.setCheckable(True)
+        self.b_kc_gap.setChecked(False)      # MẶC ĐỊNH GẬP
+        self.b_kc_gap.setToolTip(
+            "Mở ra để chỉnh kiểu chữ của dòng chữ mới (kiểu · phông · cỡ · vị "
+            "trí · đậm · nghiêng · màu chữ · màu viền · độ dày viền).\n"
+            "Gập lại thì các ô vẫn giữ nguyên giá trị đã chọn — gập chỉ là ẩn "
+            "đi cho hộp gọn, không phải trả về mặc định.")
+        h3kc.addWidget(self.b_kc_gap)
+        #: Nhãn TÓM TẮT — nói ra đang để mặc định hay đã đổi mấy mục, để anh
+        #: Hùng biết mà không phải mở ra xem (gập mà không nói gì thì thành
+        #: che mất thông tin, tệ hơn hiện cả 9 ô).
+        self.lb_kc_tt = QLabel("")
+        h3kc.addWidget(self.lb_kc_tt)
+        h3kc.addStretch(1)
+        lay.addLayout(h3kc)
+
+        #: Khung chứa 9 ô — ẩn/hiện CẢ KHỐI theo nút gập.
+        self._khung_kc = QWidget()
+        _lkc = QVBoxLayout(self._khung_kc)
+        _lkc.setContentsMargins(18, 0, 0, 0)   # thụt vào cho thấy nó thuộc nút
+
         h3c = QHBoxLayout()
         h3c.addWidget(QLabel("Kiểu chữ:"))
         self.cb_kc_preset = QComboBox()
@@ -507,7 +576,7 @@ class ThayGiongDialog(QDialog):
         self.cb_kc_vitri.setCurrentIndex(max(0, _i))
         h3c.addWidget(self.cb_kc_vitri)
         h3c.addStretch(1)
-        lay.addLayout(h3c)
+        _lkc.addLayout(h3c)
 
         h3d = QHBoxLayout()
         # ĐẬM/NGHIÊNG là BA trạng thái, không phải hai (xem `gon_kieu_chu`):
@@ -576,7 +645,8 @@ class ThayGiongDialog(QDialog):
             self.sp_kc_dovien.setValue(0.0)
         h3d.addWidget(self.sp_kc_dovien)
         h3d.addStretch(1)
-        lay.addLayout(h3d)
+        _lkc.addLayout(h3d)
+        lay.addWidget(self._khung_kc)
 
         #: Mọi ô kiểu chữ — bật/tắt theo ô "Viết lại bản dịch" (không viết chữ
         #: thì không có chữ nào để tạo kiểu).
@@ -588,6 +658,19 @@ class ThayGiongDialog(QDialog):
 
         self.ck_che.toggled.connect(self._doi_che_chu)
         self.ck_viet.toggled.connect(self._doi_viet_chu)
+        self.b_kc_gap.toggled.connect(self._doi_gap_kc)
+        # Mọi ô kiểu chữ đổi giá trị -> cập nhật lại nhãn tóm tắt, để lúc GẬP
+        # anh Hùng vẫn thấy "đã đổi mấy mục".
+        for _o in self._o_kieu_chu:
+            for _sig in ("currentIndexChanged", "valueChanged", "clicked"):
+                _s = getattr(_o, _sig, None)
+                if _s is not None:
+                    try:
+                        _s.connect(lambda *_a: self._ve_tt_kc())
+                    except (TypeError, RuntimeError):
+                        pass
+                    break
+        self._doi_gap_kc(False)
         self._doi_che_chu(self.ck_che.isChecked())
 
         # ---- hàng 4: TÌNH TRẠNG BỘ TÁCH GIỌNG (chốt an toàn số 1) ----
@@ -1371,6 +1454,7 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_CACH, self.cb_che_cach.currentData() or "mo")
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
         self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
+        self._s.setValue(K_KHOP_CACH, self.cb_khop.currentData() or "")
         self._s.setValue(K_KC_PRESET, self.cb_kc_preset.currentData() or "")
         self._s.setValue(K_KC_FONT, self.cb_kc_font.currentData() or "")
         self._s.setValue(K_KC_CO, float(self.sp_kc_co.value()))
@@ -1431,6 +1515,41 @@ class ThayGiongDialog(QDialog):
         self.ck_viet.setEnabled(bool(bat))
         self._doi_viet_chu(self.ck_viet.isChecked())
 
+    def _doi_gap_kc(self, mo: bool) -> None:
+        """Mở/gập khu 9 ô kiểu chữ. GẬP KHÔNG ĐỔI GIÁ TRỊ NÀO.
+
+        Sau khi ẩn/hiện phải `adjustSize()` — không thì hộp giữ nguyên chiều
+        cao cũ và chỗ vừa gập thành một khoảng TRỐNG, tức gập mà hộp không gọn
+        đi (đúng thứ anh Hùng đang chê).
+        """
+        self._khung_kc.setVisible(bool(mo))
+        self.b_kc_gap.setText("Chỉnh chữ — thu lại" if mo else "Chỉnh chữ...")
+        self._ve_tt_kc()
+        # Chỉ CO khi gập: mở ra thì để layout tự giãn, còn gập thì phải ép co
+        # (Qt không tự thu cửa sổ khi widget con biến mất).
+        if not mo:
+            self.adjustSize()
+
+    def _ve_tt_kc(self) -> None:
+        """Nhãn tóm tắt cạnh nút gập: đang mặc định, hay đã đổi mấy mục.
+
+        Đếm bằng CHÍNH `don_kieu_chu()` — cửa duy nhất quyết định cái gì đi vào
+        đơn thuốc. Đếm bằng cách tự đọc lại từng ô là đẻ ra nguồn sự thật thứ
+        hai rồi lệch nhau (bài học "chọn X ra Y").
+        """
+        try:
+            n = len(self.don_kieu_chu())
+        except Exception:  # noqa: BLE001
+            n = 0
+        if not hasattr(self, "lb_kc_tt"):
+            return
+        if n:
+            self.lb_kc_tt.setText(f"(đã đổi {n} mục)")
+            self.lb_kc_tt.setStyleSheet("color:#7CC4FF")
+        else:
+            self.lb_kc_tt.setText("(đang để mặc định — chữ trắng viền đen)")
+            self.lb_kc_tt.setStyleSheet("color:#8A93A6")
+
     def _doi_viet_chu(self, bat: bool) -> None:
         """Ô kiểu chữ chỉ sống khi ĐANG CHE **và** ĐANG VIẾT chữ mới.
 
@@ -1442,6 +1561,10 @@ class ThayGiongDialog(QDialog):
         song = bool(bat) and bool(self.ck_che.isChecked())
         for o in self._o_kieu_chu:
             o.setEnabled(song)
+        # Nút gập cũng phải tắt theo: mở ra 9 ô xám ngoét thì vừa rối vừa gây
+        # hiểu nhầm "chỉnh được".
+        if hasattr(self, "b_kc_gap"):
+            self.b_kc_gap.setEnabled(song)
 
     def _duyet_chi_phi(self, vids: list) -> bool:
         """Hiện ước lượng ký tự + hạn mức còn lại, hỏi có chạy không.
@@ -1530,6 +1653,8 @@ class ThayGiongDialog(QDialog):
         # — bài học "chạy dây chuyền: đọc combo, không đọc setting": widget bị
         # blockSignals thì setting lệch với cái user đang nhìn).
         cc_kieu = self.don_kieu_chu()
+        # ĐỌC TỪ COMBO ĐANG HIỆN, không đọc QSettings (cùng lý do trên).
+        cc_hinh = str(self.cb_khop.currentData() or "") == "hinh"
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -1552,7 +1677,8 @@ class ThayGiongDialog(QDialog):
                     self._pool, duong, nn, voice=giong, thu_muc_ra=ra,
                     kenh=Path(duong).parent.name, lam_lai=buoc_lai,
                     che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
-                    viet_chu=cc_viet, kieu_chu=cc_kieu)
+                    viet_chu=cc_viet, kieu_chu=cc_kieu,
+                    hinh_theo_giong=cc_hinh)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)
