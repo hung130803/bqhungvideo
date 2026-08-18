@@ -909,12 +909,21 @@ class ThayGiongDialog(QDialog):
             self.lb_piper.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
             self.b_tai_piper.setVisible(False)
         else:
+            # Máy không có Python 3 -> `cai_piper()` chắc chắn trả lỗi, nên
+            # KHOÁ nút y như nút Demucs (trước đây nút vẫn bấm được, user bấm
+            # xong mới nhận lời báo). Khoá thì phải NÓI VÌ SAO, không thì nút
+            # xám là câu đố.
             self.lb_piper.setText(
                 "Giọng Việt chạy trên máy (Piper): CHƯA TẢI (212 MB) — chọn "
                 "giọng này thì app vẫn chạy nhưng sẽ đọc bằng giọng thường "
-                "(edge-tts).")
+                "(edge-tts)."
+                + ("" if tt.get("cai_duoc", True) else
+                   "\nMáy này chưa cài Python 3 nên app không tự tải được: "
+                   "cài Python 3 (python.org) rồi bấm lại."))
             self.lb_piper.setStyleSheet("color:#B0B0B0; font-size:11px;")
             self.b_tai_piper.setVisible(True)
+            self.b_tai_piper.setEnabled(
+                bool(tt.get("cai_duoc", True)) and not self._dang_cai_piper)
         return tt
 
     def _tai_piper(self) -> None:

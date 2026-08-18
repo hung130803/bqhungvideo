@@ -230,6 +230,61 @@ def ca3_thieu_piper_lui_em() -> None:
     kiem("3f gỡ vá xong máy này vẫn thấy Piper (hộp cát không rò)",
          PT.co_piper() is True)
 
+    ca3g_nut_tai_khoa_khi_thieu_python()
+
+
+def ca3g_nut_tai_khoa_khi_thieu_python() -> None:
+    """NÚT TẢI PIPER PHẢI CƯ XỬ NHƯ NÚT DEMUCS (thêm 18/08/2026).
+
+    Lệch chuẩn tìm ra khi thử bản `.exe` v2.29.0 như máy nhân viên: máy KHÔNG
+    có Python 3 thì `cai_piper()` chắc chắn trả lỗi, nhưng nút Piper vẫn bấm
+    được — user bấm xong mới nhận lời báo, trong khi nút Demucs ngay bên trên
+    đã xám sẵn trong đúng ca đó. Không im lặng nên không nguy hiểm, nhưng hai
+    nút cạnh nhau cư xử khác nhau thì user không đoán được nút nào bấm được.
+
+    Phải đủ BA ca, không chỉ ca xấu: khoá nhầm lúc máy CÓ Python là biến nút
+    thật thành nút chết, tệ hơn hẳn lỗi đang chữa.
+    """
+    from app.core import piper_tts as PT
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    # Cách ly QSettings: hộp này NẠP lựa chọn đã lưu, đọc trúng registry thật
+    # là cổng đo MÁY chứ không đo MÃ (đúng lỗi cổng 68 đã đỏ oan 18/08).
+    os.environ.setdefault(
+        "BQ_QSETTINGS_INI",
+        str(Path(tempfile.gettempdir()) / f"bq_cong64_{os.getpid()}.ini"))
+    from PyQt6.QtWidgets import QApplication
+
+    from app.ui import thay_giong_dialog as TGD
+
+    _app = QApplication.instance() or QApplication([])
+    d = TGD.ThayGiongDialog(None)
+    g_tm, g_py = PT.thu_muc_piper, PT._python_chay
+    try:
+        # (1) ĐÃ TẢI -> nút biến mất (không có gì để bấm nữa)
+        t1 = d._do_piper()
+        kiem("3g1 đã có Piper -> nút tải ẨN", t1["co"] and
+             not d.b_tai_piper.isVisibleTo(d), f"co={t1['co']}")
+
+        PT.thu_muc_piper = lambda: hop_cat("chua_tai_piper")
+        # (2) CHƯA TẢI + CÓ Python -> nút BẤM ĐƯỢC (chốt chống khoá quá tay)
+        t2 = d._do_piper()
+        kiem("3g2 chưa tải mà máy CÓ Python -> nút BẤM ĐƯỢC",
+             t2["cai_duoc"] is True and d.b_tai_piper.isEnabled(),
+             f"cai_duoc={t2['cai_duoc']} · bấm được={d.b_tai_piper.isEnabled()}")
+
+        # (3) CHƯA TẢI + THIẾU Python -> nút KHOÁ, và nhãn NÓI VÌ SAO
+        PT._python_chay = lambda: []
+        t3 = d._do_piper()
+        kiem("3g3 chưa tải mà THIẾU Python 3 -> nút KHOÁ (như nút Demucs)",
+             t3["cai_duoc"] is False and not d.b_tai_piper.isEnabled(),
+             f"cai_duoc={t3['cai_duoc']} · bấm được={d.b_tai_piper.isEnabled()}")
+        kiem("3g4 ... và nhãn NÓI RÕ VÌ SAO (nút xám không lời báo = câu đố)",
+             "Python 3" in d.lb_piper.text(),
+             d.lb_piper.text()[-90:].replace("\n", " "))
+    finally:
+        PT.thu_muc_piper, PT._python_chay = g_tm, g_py
+        d.deleteLater()
+
 
 # =====================================================================
 def ca4_ba_cho_goi() -> None:

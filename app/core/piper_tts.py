@@ -243,9 +243,19 @@ _CAN_CO = ("piper/__main__.py", "piper/voice.py", "onnxruntime", "numpy")
 
 
 def tinh_trang_piper() -> dict:
-    """Trả {co, thieu, co_model, thu_muc, model, python}.
+    """Trả {co, thieu, co_model, thu_muc, model, python, cai_duoc}.
 
-    `co` = chạy được không · `thieu` = phần còn thiếu (để đặt nhãn nút).
+    `co` = chạy được không · `thieu` = phần còn thiếu (để đặt nhãn nút) ·
+    `cai_duoc` = **bấm nút tải có ăn thua gì không**.
+
+    VÌ SAO CÓ `cai_duoc` (thêm 18/08/2026 — lệch chuẩn tìm ra khi thử bản
+    `.exe` v2.29.0 như máy nhân viên): máy không có Python 3 thì `cai_piper()`
+    chắc chắn trả lỗi. Demucs đã khoá nút sẵn trong ca đó
+    (`thay_giong.tinh_trang_demucs` trả `cai_duoc`), còn Piper thì để nút bấm
+    được — user bấm xong mới nhận lời báo. Không im lặng nên không nguy hiểm,
+    nhưng hai nút cạnh nhau cư xử khác nhau thì user không đoán được nút nào
+    thật sự bấm được. Khoá nút thì PHẢI nói vì sao ở nhãn, không thì nút xám
+    chỉ là câu đố (đúng bài học "nhãn phải hiện mặc định thật", cổng 16/51).
     """
     d = thu_muc_piper()
     thieu = [t for t in _CAN_CO if not (d / t).exists()]
@@ -260,6 +270,7 @@ def tinh_trang_piper() -> dict:
         "thu_muc": str(d),
         "model": str(duong_model()),
         "python": py,
+        "cai_duoc": bool(py),
     }
 
 
