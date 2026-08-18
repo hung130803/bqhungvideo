@@ -4861,6 +4861,8 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          che_chu: bool = False, che_chu_cach: str = "mo",
                          che_chu_muc: float = 1.0, viet_chu: bool = True,
                          kieu_chu: Optional[dict] = None,
+                         hinh_theo_giong: bool = False,
+                         bu_giong_goc_bat: bool = True,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -4879,7 +4881,15 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          cach_tach=cach_tach, thu_muc_lam=thu_muc_lam,
                          che_chu=che_chu, che_chu_cach=che_chu_cach,
                          che_chu_muc=che_chu_muc, viet_chu=viet_chu,
-                         kieu_chu=kieu_chu, on_progress=on_progress)
+                         kieu_chu=kieu_chu,
+                         # HAI CỜ NÀY PHẢI CHUYỀN QUA — thiếu là job handler
+                         # (`jobs._thay_giong` gọi CỬA NÀY, không gọi thẳng
+                         # `thay_giong_video`) nổ `unexpected keyword argument`
+                         # và **MỌI job thay giọng đều LỖI**. Cổng 55 bắt được
+                         # đúng thế: 2/2 job `failed`.
+                         hinh_theo_giong=hinh_theo_giong,
+                         bu_giong_goc_bat=bu_giong_goc_bat,
+                         on_progress=on_progress)
     if not r.get("ok"):
         return r
     if not thay_goc:

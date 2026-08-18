@@ -1273,14 +1273,13 @@ class ThayGiongDialog(QDialog):
             if self._giong_tho:
                 _CACHE_GIONG[:] = self._giong_tho
         muon = str(self._s.value(K_GIONG, "") or "")
-        nn = str(self.cb_nn.currentData() or "en")
         self.cb_giong.blockSignals(True)
         self.cb_giong.clear()
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
         for nhan, vid in giong_dung_duoc(self._giong_tho):
-            # SỐ NHẤN NHÁ gắn vào nhãn — chỉ với giọng ĐÃ ĐO trên đúng ngôn
-            # ngữ đang chọn. `nhan_kem` trả rỗng khi chưa đo (cấm bịa số).
-            self.cb_giong.addItem(nhan + NN.nhan_kem(vid, nn), vid)
+            # SỐ NHẤN NHÁ gắn vào nhãn. `nhan_nha.nhan()` trả chuỗi RỖNG khi
+            # giọng CHƯA ĐO (cấm bịa số cạnh tên giọng — user sẽ tin mà chọn).
+            self.cb_giong.addItem(nhan + NN.nhan(vid), vid)
             if not vid:                     # nhãn NHÓM ngôn ngữ -> không chọn
                 it = self.cb_giong.model().item(self.cb_giong.count() - 1)
                 if it is not None:
@@ -1297,14 +1296,30 @@ class ThayGiongDialog(QDialog):
     def _ve_goi_y(self) -> None:
         """Dòng gợi ý giọng nhiều cảm xúc nhất cho NGÔN NGỮ ĐANG CHỌN.
 
-        Rỗng khi ngôn ngữ đó chưa có bảng đo — thà không gợi ý còn hơn gợi ý
-        một giọng chưa ai đo (bịa số cạnh tên giọng thì user sẽ tin mà chọn).
+        Rỗng khi ngôn ngữ đó chưa có giọng nào trong bảng đo — thà không gợi ý
+        còn hơn gợi ý một giọng chưa ai đo (bịa số cạnh tên giọng thì user sẽ
+        tin mà chọn).
+
+        Dựng THẲNG từ `nhan_nha.BANG` chứ không gọi một hàm gợi-ý riêng: bảng
+        đó là NGUỒN DUY NHẤT của mọi con số nhấn nhá, nên dòng gợi ý và cái số
+        hiện cạnh tên giọng không bao giờ nói hai chuyện khác nhau.
         """
         if not hasattr(self, "lb_goi_y"):
             return
-        nn = str(self.cb_nn.currentData() or "en")
+        self.lb_goi_y.setText("")
         try:
-            self.lb_goi_y.setText(NN.cau_goi_y(nn, ten_giong=self._ten_giong))
+            nn = str(self.cb_nn.currentData() or "en").split("-")[0].lower()
+            # chỉ xét giọng ĐANG CÓ trong combo -> không gợi ý thứ không chọn
+            # được (giọng bị lọc bỏ, hoặc ngôn ngữ khác đang không hiện).
+            co = {self.cb_giong.itemData(i)
+                  for i in range(self.cb_giong.count())}
+            ung = [(v, m) for v, m in NN.BANG.items()
+                   if v in co and str(v).lower().startswith(nn + "-")]
+            if ung:
+                ma, m = max(ung, key=lambda x: x[1])
+                self.lb_goi_y.setText(
+                    f"Giọng nhiều cảm xúc nhất đã đo: {self._ten_giong(ma)}"
+                    f" ({NN.nhan(ma).lstrip(' -')})")
         except Exception:  # noqa: BLE001
             self.lb_goi_y.setText("")
         self.lb_goi_y.setVisible(bool(self.lb_goi_y.text()))
