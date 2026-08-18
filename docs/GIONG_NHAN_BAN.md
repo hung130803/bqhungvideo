@@ -208,4 +208,97 @@ Dòng cuối bảng C2: mốc **edge-tts tự khai** lệch hệ thống **−10
 > **CHỐT Ý 2: gióng hàng ĐẠT. Nhân bản không còn bị chặn ở khâu khớp thời gian
 > nữa — cửa tử của lượt 4 đã mở.**
 
-*(còn Ý 3 — đọc có sai chữ / bịa chữ không. Đây là ý quyết định cuối, xem phần D.)*
+---
+
+# PHẦN D — Ý 3: ĐỌC CÓ SAI CHỮ / BỊA CHỮ KHÔNG?
+
+Đây là ý quyết định. Giọng hay mấy mà **đọc sai chữ** hoặc **tự bịa thêm chữ**
+thì video đăng lên là hỏng — và anh Hùng không ngồi nghe lại 200 kênh được.
+
+## D1. Cách đo và bằng chứng là thước ĐÚNG
+
+Cho máy nghe (Groq `whisper-large-v3`) **chép ngược** file tiếng ra chữ, rồi so
+với chữ gốc. **Mỗi file chép 3 lượt, lấy trung vị** để bớt nhiễu của máy nghe.
+
+**Thước này có đáng tin không?** Có, và đây là bằng chứng: arm đối chứng
+**edge-tts ra 6,2%**, trong khi mốc đã biết của edge-tts là **6,8%**. Thước tái
+lập đúng số đã biết → **các số còn lại tin được**.
+
+## D2. KẾT QUẢ — và nó là tin XẤU
+
+| Máy đọc | **sai từ** | thừa chữ (bịa) |
+|---|---|---|
+| edge-tts (đối chứng) | **6,2%** | −1,5% |
+| VieNeu **giọng mặc định** (không nhân bản) | **7,7%** | −1,5% |
+| **VieNeu — 8 bản sao nhân bản** | **21,2%** | +0,8% |
+
+Từng bản sao:
+
+| bản sao | sai từ | | bản sao | sai từ |
+|---|---|---|---|---|
+| M0 | 10,8% | | M7 | 21,5% |
+| M1 | 10,8% | | M3 | 24,6% |
+| M2 | 16,9% | | M4 | 26,2% |
+| | | | M5 | 27,7% |
+| | | | M6 | **30,8%** |
+
+**Nhân bản làm sai từ tăng từ 7,7% lên 21,2% — gấp 2,75 lần.** Bản tệ nhất sai
+gần **1/3 số chữ**. Đây là mức **không dùng được** cho video đăng kênh.
+
+## D3. Tôi đã truy ra NGUYÊN NHÂN — và nó không sửa được bằng lọc âm
+
+Giả thuyết tự nhiên: mẫu Common Voice là **người dân tự thu bằng điện thoại**,
+có ồn, có vọng phòng. Vậy **lọc sạch mẫu rồi nhân bản lại** thì có đỡ không?
+
+Tôi làm **thí nghiệm ghép cặp** — cùng người đọc, cùng 6 câu, **chỉ khác** mẫu
+đã lọc sạch hay chưa (lọc: cắt ù dưới 70 Hz + khử nhiễu + chuẩn độ to):
+
+| người đọc | mẫu **còn bẩn** | mẫu **đã lọc sạch** | đổi được |
+|---|---|---|---|
+| M4 | 26,2% | 33,8% | **+7,7** (tệ đi) |
+| M5 | 27,7% | 27,7% | 0,0 |
+| M6 | 30,8% | 26,2% | −4,6 (đỡ chút) |
+| **gộp 3 người** | **28,2%** | **29,2%** | **+1,0 → KHÔNG ĂN THUA** |
+
+→ **Lọc âm không cứu được.** Vấn đề không nằm ở tiếng ồn.
+
+**Vậy nó nằm ở đâu?** Tôi chạy thêm một arm quyết định: nhân bản từ **mẫu sạch
+tuyệt đối** — lấy chính đầu ra của giọng mặc định VieNeu làm mẫu (`STN`):
+
+| | sai từ |
+|---|---|
+| VieNeu giọng mặc định (không nhân bản gì) | **7,7%** |
+| **VieNeu nhân bản từ mẫu SẠCH TUYỆT ĐỐI** | **7,7%** |
+| | **giá của việc nhân bản = 0,0 điểm** |
+
+> **Đây là phát hiện quan trọng nhất của lượt này.**
+> **Bản thân cơ chế nhân bản KHÔNG làm hỏng chữ — giá của nó bằng 0.**
+> Toàn bộ 21,2% là do **CHẤT LƯỢNG MẪU GIỌNG**, và là loại hỏng mà **khử nhiễu
+> không chữa được** (giọng nghiệp dư, giọng vùng miền, cách nói, chất mic).
+
+Nói cho dễ hiểu: máy nhân bản **không có lỗi**. Nó bắt chước rất trung thành —
+trung thành cả **cái dở** của người thu mẫu. Mẫu miễn phí trên Common Voice là
+dân tự thu, nên bản sao cũng đọc "nghiệp dư" y như vậy.
+
+## D4. Có bịa chữ không? — KHÔNG, đây là điểm SÁNG
+
+Nhắc lại vì sao ý này quan trọng: **viXTTS** đưa 29 chữ Trung đọc ra **40 chữ**,
+**Chatterbox** cũng bịa. **Bịa là loại thẳng**, vì video sẽ nói thứ anh không viết.
+
+| | thừa chữ |
+|---|---|
+| VieNeu 8 bản sao (48 file) | **+0,8%** |
+| VieNeu mặc định | −1,5% |
+| edge-tts | −1,5% |
+
+**Chỉ 1/66 file** chép ra dài hơn gốc quá 15%. Đó là file `M1 c0` — máy **đọc
+lặp lại** nửa câu đầu:
+
+> gốc: «Tôi mới tộ căn nhà dị hợm bị người ta chê»
+> chép: «Tôi mới tổ căn nhà dị hợm Bị người ta chê **Tôi mới tổ căn nhà dị hợm**»
+
+Đây là lỗi **lặp**, không phải bịa nội dung mới. Tỷ lệ **1/48 file bản sao
+(2,1%)**.
+
+> **CHỐT Ý 3: KHÔNG bịa chữ (+0,8% — sạch). NHƯNG sai từ 21,2% là KHÔNG ĐẠT.**
+> Và nguyên nhân đã truy ra: **lỗi của MẪU miễn phí, không phải lỗi của máy.**
