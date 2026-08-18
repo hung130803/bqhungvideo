@@ -1842,6 +1842,128 @@ class StudioPage(QWidget):
 
         elbtn.clicked.connect(check_eleven)
 
+        # ====== THẺ 3b: Giọng Vbee AIVoice (giọng Việt MUA CHÍNH HÃNG) ======
+        # NHÃN KHÔNG EMOJI — cố ý khác 4 thẻ cũ: máy anh Hùng thiếu glyph nên
+        # emoji trần ra Ô ĐEN ("xấu quá tự nhiên có cái ô đen", v2.6.22).
+        # Vbee cần ĐỦ CẢ HAI thứ (App ID + token), khác Groq/ElevenLabs chỉ
+        # một chuỗi -> tách 2 ô, thiếu một nửa mà gọi là ăn 401 rồi tưởng
+        # key sai. Chưa có key -> app LÙI ÊM về edge-tts, không nổ.
+        c_vbee = _card(
+            "Giọng Vbee AIVoice - giọng Việt mua chính hãng (tùy chọn)",
+            "Mở khoá giọng HN - Ngọc Huyền / HN - Anh Khôi. Bỏ trống nếu chỉ "
+            "dùng edge-tts miễn phí — app tự lùi về edge-tts, không lỗi.")
+        c_vbee.addWidget(_flabel("Vbee App ID"))
+        vb_id = QLineEdit(settings.VBEE_APP_ID or "")
+        vb_id.setPlaceholderText("Để TRỐNG nếu chưa mua key Vbee")
+        c_vbee.addWidget(vb_id)
+        c_vbee.addWidget(_flabel("Vbee Access token"))
+        vb_tk = QLineEdit(settings.VBEE_TOKEN or "")
+        vb_tk.setPlaceholderText("Dán token từ vbee.vn (tạo ứng dụng)")
+        # CHE mặc định: dialog này hay được mở lúc quay màn hình/gửi ảnh gỡ rối.
+        vb_tk.setEchoMode(QLineEdit.EchoMode.Password)
+        c_vbee.addWidget(vb_tk)
+        vb_hien = QCheckBox("Hiện token (để kiểm tra đã dán đúng chưa)")
+        vb_hien.toggled.connect(
+            lambda b: vb_tk.setEchoMode(QLineEdit.EchoMode.Normal if b
+                                        else QLineEdit.EchoMode.Password))
+        c_vbee.addWidget(vb_hien)
+
+        # ---- BA ĐIỀU PHẢI NÓI RA, KHÔNG ĐỂ ANH HÙNG TỰ PHÁT HIỆN SAU 300
+        # VIDEO (đúng tiền lệ nhãn Piper/OmniVoice + dòng điều khoản của
+        # ElevenLabs ngay phía trên) ----
+        vb_note = QLabel(
+            "Cần biết trước khi mua: (1) Vbee KHÔNG trả mốc từng chữ, nên chữ "
+            "chạy theo lời phải dựng lại bằng bộ gióng hàng — phủ 98,6% và "
+            "rung 90-119 ms, so với 16 ms của giọng edge-tts, tức chữ bám lời "
+            "KÉM HƠN giọng thường. (2) Tính tiền theo ký tự (1 ký tự = 1 "
+            "điểm), và gói thường chỉ cho dùng MỘT NỬA số điểm qua API — phải "
+            "gói VIP+ mới dùng trọn. Vbee không có cửa hỏi số điểm còn lại nên "
+            "app không chặn trước được: hết điểm giữa mẻ thì video còn lại tự "
+            "đọc bằng edge-tts và app ghi rõ video nào bị lùi. (3) Gói miễn "
+            "phí 3.000 ký tự mỗi lượt: Vbee KHÔNG nói rõ gói này có được dùng "
+            "cho video kiếm tiền hay không — hỏi contact@vbee.ai trước khi "
+            "chạy sản xuất.")
+        vb_note.setWordWrap(True)
+        vb_note.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        c_vbee.addWidget(vb_note)
+
+        vbrow = QHBoxLayout()
+        vbbtn = QPushButton("Kiểm tra key Vbee")
+        vbbtn.setProperty("ghost", True)
+        vbbtn.setToolTip("Hỏi Vbee danh sách giọng của tài khoản này. Lượt hỏi "
+                         "này KHÔNG tiêu điểm nào.")
+        vbrow.addWidget(vbbtn); vbrow.addStretch(1)
+        c_vbee.addLayout(vbrow)
+        vbstat = QLabel("")
+        vbstat.setObjectName("vbee_status_label")
+        vbstat.setWordWrap(True)
+        vbstat.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        vbstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        c_vbee.addWidget(vbstat)
+
+        def check_vbee():
+            """Hỏi danh sách giọng -> vừa kiểm key vừa TRẢ LỜI câu 'có giọng
+            HN - Minh Quân không'.
+
+            Dùng cửa `voices` chứ KHÔNG đọc thử một câu: đọc thử là TIÊU ĐIỂM
+            thật của anh Hùng, mà cái cần biết ở đây chỉ là key có sống không.
+            KHÔNG BAO GIỜ in token ra nhãn.
+            """
+            aid = vb_id.text().strip()
+            tok = vb_tk.text().strip()
+            if not (aid and tok):
+                vbstat.setText("Chưa đủ key Vbee — cần CẢ App ID và Access "
+                               "token. Thiếu một nửa thì Vbee trả lỗi 401 "
+                               "trông y như key sai.")
+                return
+            vbbtn.setEnabled(False)
+            vbstat.setText("Đang hỏi Vbee danh sách giọng...")
+            res: list = []
+
+            def bg():
+                # Chuyền key qua BIẾN MÔI TRƯỜNG của tiến trình này để
+                # giong_vbee đọc được NGAY, khỏi phải bấm Lưu trước (ô vừa dán
+                # mà bắt Lưu rồi mới kiểm được là đúng lỗi "chọn X ra Y").
+                import os as _os
+                from app.core import giong_vbee as _gv
+                _os.environ["VBEE_APP_ID"] = aid
+                _os.environ["VBEE_TOKEN"] = tok
+                try:
+                    ds = _gv.tai_danh_sach_giong()
+                except Exception as e:  # noqa: BLE001 — không sập dialog
+                    res.append(f"Lỗi khi hỏi Vbee: {e}")
+                    return
+                if not ds:
+                    res.append("Không lấy được danh sách giọng. Key sai/hết "
+                               "hạn, hoặc mạng đứt. Xem logs/giong_vbee_*.log.")
+                    return
+                ten = [str(v.get("name") or "") for v in ds]
+                hn = [t for t in ten if t.strip().upper().startswith("HN")]
+                mq = [t for t in ten if "Minh Quân" in t or "Minh Quan" in t]
+                res.append(
+                    f"Key Vbee CHẠY ĐƯỢC: tài khoản có {len(ds)} giọng "
+                    f"({len(hn)} giọng Hà Nội). "
+                    + ("Có giọng HN - Minh Quân: " + ", ".join(mq[:3])
+                       if mq else
+                       "KHÔNG thấy giọng HN - Minh Quân trong tài khoản này "
+                       "(tài liệu API của Vbee cũng không có giọng đó)."))
+
+            threading.Thread(target=bg, daemon=True).start()
+            vbtimer = QTimer(dlg)
+
+            def vbpoll():
+                if not res:
+                    return
+                vbtimer.stop()
+                vbbtn.setEnabled(True)
+                vbstat.setText(res[0])
+
+            vbtimer.timeout.connect(vbpoll)
+            vbtimer.start(200)
+
+        vbbtn.clicked.connect(check_vbee)
+
         # ============ THẺ 4: 🎙 Nghe-chép lời (Whisper) ============
         c_wsp = _card(
             "🎙 Nghe-chép lời (Whisper)",
@@ -1952,6 +2074,8 @@ class StudioPage(QWidget):
             Settings.GROQ_API_KEYS = gkeys.toPlainText().strip()
             Settings.GROQ_KEYS_FILE = gfile[0]
             Settings.ELEVENLABS_API_KEYS = elkeys.toPlainText().strip()
+            Settings.VBEE_APP_ID = vb_id.text().strip()
+            Settings.VBEE_TOKEN = vb_tk.text().strip()
 
         def do_test():
             apply_live()
@@ -2014,7 +2138,9 @@ class StudioPage(QWidget):
                         "WHISPER_PROVIDER": wsrc.currentData(),
                         "GROQ_API_KEYS": gkeys.toPlainText().strip(),
                         "GROQ_KEYS_FILE": gfile[0],
-                        "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip()})
+                        "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip(),
+                        "VBEE_APP_ID": vb_id.text().strip(),
+                        "VBEE_TOKEN": vb_tk.text().strip()})
             self._update_ai_status()
             self.status.setText(f"Đã lưu cài đặt AI: {src.currentText()} · nghe-chép "
                                 f"{wsrc.currentText().split('—')[0].strip()}")
