@@ -205,8 +205,50 @@ Dòng cuối bảng C2: mốc **edge-tts tự khai** lệch hệ thống **−10
 **51,5 ms** — **tệ hơn 3 lần** so với để `giong_hang` tự dò lại (16,7 ms). Tức
 `app/core/giong_hang.py` đang **chính xác hơn cả đồng hồ của chính máy đọc**.
 
-> **CHỐT Ý 2: gióng hàng ĐẠT. Nhân bản không còn bị chặn ở khâu khớp thời gian
-> nữa — cửa tử của lượt 4 đã mở.**
+## C4. Tôi bắt được thước của chính mình bị sai — và đã sửa
+
+Khi đo thêm 6 giọng nữa (phần E), có 6 giọng bỗng ra rung **93–250 ms**, tệ gấp
+10 lần. Trước khi tin con số đó, tôi soi lại 9 file tệ nhất: đo độ to của đoạn
+âm thanh **nằm trước chữ đầu tiên**.
+
+| | kết quả |
+|---|---|
+| đoạn trước chữ đầu **nhỏ hơn** câu chính | **−25,1 dB** (trung vị) |
+| số file nhỏ hơn −12 dB (= hơi thở/tiếng nền) | **9/9** |
+| số file to ngang câu chính (= nghi bịa tiếng) | **0/9** |
+
+→ Đó là **hơi thở**, không phải máy bịa tiếng. Thước `silencedetect` đặt ở
+**−40 dB** quá nhạy: nó tưởng tiếng hít vào là "bắt đầu nói", nên chấm gióng hàng
+bị coi là **trễ oan**. **Lỗi của thước, không phải lỗi của giọng.**
+
+Tôi hạ độ nhạy xuống **−30 dB** và **đo lại TOÀN BỘ các arm y như nhau** — kể cả
+arm đối chứng edge-tts. Đây là **sửa thước, không phải nới thước**, và có cổng
+kiểm chứng: *nếu edge-tts không còn ra ~15 ms thì thước mới cũng sai và tôi vứt*.
+
+| arm | thước cũ (−40 dB) | **thước sửa (−30 dB)** |
+|---|---|---|
+| **edge-tts (cổng hiệu chuẩn)** | 14,5 ms | **13,5 ms** ← vẫn đúng mốc, thước tin được |
+| VieNeu giọng mặc định | 9,9 ms | **8,5 ms** |
+| bản sao từ mẫu Common Voice | 13,1 ms | **14,6 ms** |
+| bản sao từ mẫu FLEURS | *119,7 ms* | **15,4 ms** |
+
+## C5. Con số Ý 2 CUỐI CÙNG
+
+| | RUNG |
+|---|---|
+| VieNeu giọng mặc định | **8,5 ms** |
+| **edge-tts (đối chứng)** | **13,5 ms** |
+| **bản sao — mẫu Common Voice** | **14,6 ms** |
+| **bản sao — mẫu FLEURS** | **15,4 ms** |
+| Piper (mốc cũ) | 29,5 ms |
+| OmniVoice + gióng hàng (mốc cũ) | 90–119 ms |
+
+**Cả 14 giọng nhân bản đều rung ≤ 22,5 ms.** Không một giọng nào bị loại vì
+khớp thời gian.
+
+> **CHỐT Ý 2: gióng hàng ĐẠT HOÀN TOÀN. Giọng nhân bản khớp thời gian NGANG
+> edge-tts (14,6–15,4 ms so với 13,5 ms). Cửa tử của lượt 4 đã mở hẳn —
+> khâu thời gian không còn là vấn đề nữa.**
 
 ---
 
