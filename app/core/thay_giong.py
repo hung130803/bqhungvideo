@@ -164,6 +164,31 @@ def do_khung_hinh(path: str | Path) -> int:
         return 0
 
 
+def do_fps(path: str | Path) -> float:
+    """Nhịp hình THẬT của nguồn (fps). 0.0 nếu không đọc được.
+
+    Đọc `r_frame_rate` (phân số, vd `2997/125` = 23,976) chứ KHÔNG `avg_frame_
+    rate`: nguồn VFR thì avg là số trung bình vô nghĩa, còn trần làm chậm hình
+    phải bám nhịp danh định.
+    """
+    try:
+        r = subprocess.run(
+            [settings.FFPROBE_PATH, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0",
+             str(path)], capture_output=True, text=True,
+            creationflags=_CREATE_NO_WINDOW, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0.0
+    s = (r.stdout or "").strip().split(",")[0]
+    try:
+        if "/" in s:
+            a, b = s.split("/", 1)
+            return float(a) / float(b) if float(b) else 0.0
+        return float(s)
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
 def do_rms(path: str | Path, start: float = 0.0, dur: float = 0.0) -> float:
     """RMS (biên độ 0..1) của audio, đọc qua `astats`. 0.0 = IM LẶNG HẲN.
 
@@ -2598,11 +2623,83 @@ def _co_gian_chuoi(tempo: float) -> str:
     return f"rubberband=tempo={tempo:.4f}"
 
 
+#: TRẦN LÀM CHẬM HÌNH ở chế độ "Chỉnh video theo giọng".
+#:
+#: **ĐẶT THEO NHỊP HÌNH CÒN LẠI, KHÔNG PHẢI THEO SỞ THÍCH.** Làm chậm hình bằng
+#: `-itsscale` KHÔNG sinh khung mới — nó chỉ giãn mốc thời gian, nên nhịp hình
+#: hiệu dụng tụt đúng theo hệ số: `fps_còn_lại = fps_nguồn / k`.
+#: Nguồn anh Hùng đang làm đo được **23,976 fps** (`2997/125`), tức đã sát mức
+#: chiếu phim — chỗ trống rất hẹp:
+#:
+#: | k | nhịp hình còn lại (nguồn 23,976) |
+#: |---|---|
+#: | 1,10 | 21,80 fps |
+#: | **1,20** | **19,98 fps** |
+#: | 1,35 | 17,76 fps |
+#: | 1,50 | 15,98 fps |
+#:
+#: Chốt `SAN_NHIP_HINH_FPS = 20` -> nguồn 23,976 cho trần **k = 1,199**; nguồn
+#: 30 fps cho **k = 1,50** (chặn lại bởi trần cứng dưới đây).
+#: **TÔI KHÔNG CÓ MẮT để nói 20 fps có giật hay không** — vì vậy có sẵn file
+#: mẫu ở 5 mức cho anh Hùng TỰ XEM (`_do_hinh_theo_giong.py`), và trần này là
+#: chỗ để sửa sau khi anh ấy xem, KHÔNG phải con số cuối cùng.
+SAN_NHIP_HINH_FPS = 20.0
+
+#: Trần CỨNG, chặn trên cả phép tính theo fps. Nguồn 60 fps thì công thức cho
+#: k = 3,0 — chậm 3 lần là phim khác, không phải "khớp giọng".
+TRAN_CHINH_HINH = 1.25
+
+
+def he_so_hinh_can(cau: list[dict], files: list[str], ok: list[bool],
+                   tong: float) -> dict:
+    """Tính hệ số LÀM CHẬM HÌNH cần thiết để MỌI câu đọc ở tốc độ TỰ NHIÊN.
+
+    **ĐÂY LÀ "LÀM ĐÚNG CHIỀU" mà anh Hùng nói 18/08/2026:** *"đáng nhẽ chỉ
+    chỉnh video sao cho khớp giọng nói chứ"*. Chiều CŨ là ép tiếng vừa khung
+    câu gốc (`atempo`/`rubberband`) -> mỗi câu một hệ số ép -> tốc độ đọc nhấp
+    nhô = đúng chữ *"giọng cứ lúc nhanh lúc chậm không đều"*.
+
+    Điều kiện KHÔNG CHỒNG LẤN với hệ số `k` (câu i đặt ở `k*s_i`):
+        `k*s_i + d_i <= k*s_{i+1}`  ->  `k >= d_i / (s_{i+1} - s_i)`
+    nên `k = max` của các tỉ số đó (và của câu cuối so với hết phim). Lấy MỘT
+    hệ số cho cả clip chứ không phải mỗi câu một hệ số: hình đổi tốc độ giữa
+    phim thì mắt đọc ra ngay, còn tiếng thì giữ tempo **1,0 tuyệt đối**.
+
+    Trả `{k_can, k_dung, cham_tran, ty_so_max, cau_chat_nhat}`.
+    """
+    ty: list[tuple[float, int]] = []
+    for i, c in enumerate(cau):
+        if i >= len(files) or not ok[i] or not Path(files[i]).exists():
+            continue
+        d_nat = probe_duration(files[i])
+        if d_nat <= 0:
+            continue
+        a = float(c["start"])
+        ke = float(cau[i + 1]["start"]) if i + 1 < len(cau) else tong
+        cho = max(0.05, ke - a - CHUA_TRUOC_CAU_KE)
+        ty.append((d_nat / cho, i))
+    if not ty:
+        return {"k_can": 1.0, "k_dung": 1.0, "cham_tran": False,
+                "ty_so_max": 1.0, "cau_chat_nhat": -1}
+    ty.sort(reverse=True)
+    k_can = max(1.0, ty[0][0])
+    return {"k_can": round(k_can, 4), "ty_so_max": round(ty[0][0], 4),
+            "cau_chat_nhat": ty[0][1]}
+
+
+def tran_hinh_theo_fps(fps: float) -> float:
+    """Trần `k` cho nguồn `fps` — xem `SAN_NHIP_HINH_FPS`. Hàm THUẦN."""
+    if fps <= 0:
+        return TRAN_CHINH_HINH
+    return max(1.0, min(TRAN_CHINH_HINH, fps / SAN_NHIP_HINH_FPS))
+
+
 def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
                    tong: float, out_dir: str | Path,
                    tempo_canh_bao: float = TEMPO_CANH_BAO,
                    tempo_toi_da: float = TEMPO_TOI_DA,
                    moc_tu: Optional[list] = None,
+                   he_so_hinh: float = 1.0,
                    on_progress: Optional[Callable[[float, str], None]] = None,
                    ) -> dict:
     """Đặt từng câu đã đọc vào ĐÚNG mốc gốc, co giãn khi cần.
@@ -2660,16 +2757,21 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     #: file ra có thể dài hơn vài chục micro-giây -> vẫn tính là chồng lấn.
     _MEP = 0.005
 
+    # HỆ SỐ LÀM CHẬM HÌNH: mọi mốc câu nhân `k`, còn TIẾNG giữ nguyên độ dài
+    # tự nhiên. `k = 1.0` -> chạy y hệt bản cũ (không một phép nhân nào đổi số).
+    k = max(1.0, float(he_so_hinh or 1.0))
+    tong_ra = tong * k
+
     for i, c in enumerate(cau):
         if i >= len(files) or not ok[i] or not Path(files[i]).exists():
             bo_qua += 1
             continue
-        a = float(c["start"])
-        b = float(c["end"])
+        a = float(c["start"]) * k
+        b = float(c["end"]) * k
         khung = max(0.05, b - a)
 
         # khoảng lặng tới câu kế (có thể MƯỢN)
-        ke = float(cau[i + 1]["start"]) if i + 1 < len(cau) else tong
+        ke = (float(cau[i + 1]["start"]) * k if i + 1 < len(cau) else tong_ra)
         # TRẦN CỨNG: câu này TUYỆT ĐỐI không được kéo tới mốc câu kế.
         tran = max(0.10, ke - a)
         cho_phep = min(tran, max(khung, ke - a - CHUA_TRUOC_CAU_KE))
@@ -2791,6 +2893,11 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         # ép quá 1,2 / 1,3 / 1,4" (số đo anh Hùng cần để biết nghe dở tới đâu).
         "tempo_cau": [round(t, 3) for t in temps],
         "chong_cau_ms": [round(x, 1) for x in chong],
+        # TRẢI hệ số ép = max − min. `tempo_max` một mình KHÔNG nói được
+        # "giọng lúc nhanh lúc chậm": trải mới là con số của cái nhấp nhô đó.
+        "tempo_trai": round(max(temps or [1.0]) - min(temps or [1.0]), 3),
+        "he_so_hinh": round(k, 4),
+        "do_dai_ra": round(tong_ra, 3),
     }
 
 
@@ -2923,6 +3030,166 @@ def _cong_track(files: list[str], tong: float, out_wav: str | Path,
                 f.unlink()
             except OSError:
                 pass
+
+
+#: Khoảng trống ngắn hơn mức này thì KHÔNG bù giọng gốc — đó là nhịp nghỉ giữa
+#: hai câu, nhét tiếng gốc vào chỉ làm bẩn. 0,35 s là dưới độ dài một từ nói rõ
+#: (~0,15 s) cộng hai mép chuyển tiếp.
+BU_GOC_DAI_MIN = 0.35
+
+#: Mép chuyển tiếp vào/ra khi bù (giây). Bật/tắt phát một là nghe thấy "cụp" —
+#: cùng bài học `enable=` của nhóm hiệu ứng (cổng 43).
+BU_GOC_MEP = 0.06
+
+#: Lùi mép khoảng trống lại bấy nhiêu giây ở MỖI ĐẦU trước khi bù. Mốc câu mới
+#: và mốc câu gốc lệch nhau vài chục ms (cổng 60 đo 43 ms), nên bù sát mép là
+#: chồng lên đuôi/đầu giọng MỚI = hai giọng cùng nói.
+BU_GOC_LUI = 0.10
+
+#: Khoảng trống chỉ được bù khi lớp giọng GỐC thật sự CÓ TIẾNG ở đó, nổi hơn
+#: sàn nhiễu của chính nó bấy nhiêu dB. Không có cửa này thì mọi nhịp nghỉ đều
+#: được "bù" bằng nhiễu nền của Demucs.
+BU_GOC_NOI_DB = 10.0
+
+
+def khoang_khong_giong(manh: list[tuple[float, str]], tong: float,
+                       dai_min: float = BU_GOC_DAI_MIN,
+                       lui: float = BU_GOC_LUI) -> list[tuple[float, float]]:
+    """Khoảng KHÔNG có giọng MỚI trên trục [0, `tong`].
+
+    **VÌ SAO HÀM NÀY TỒN TẠI (lỗi anh Hùng báo 18/08/2026):** *"mấy cái đoạn âm
+    thanh gốc nói tiếng Anh nó không đọc phần đó thì lại bị **tắt tiếng**"* ·
+    *"cái nghe được cái không"*. Dây chuyền BỎ HẲN giọng gốc rồi đặt giọng mới
+    vào; đoạn nào bộ chép lời không lấy (câu tiếng Anh giữa phim Trung) hoặc
+    TTS lỗi thì **không có giọng nào cả** — còn lại chỉ nhạc.
+    ĐO ĐƯỢC trên 4 bản anh Hùng đã xuất (`_do_mat_giong.py`, so LỚP GIỌNG với
+    LỚP GIỌNG): mất **82,3 s / 1.209,3 s = 6,8%**, dồn vào 2/4 video
+    (**31,1 s** và **50,4 s**) — đúng chữ "cái nghe được cái không".
+
+    Mỗi mép khoảng trống bị LÙI vào `lui` giây để không chồng lên giọng mới.
+    Trả [] khi không có khoảng nào đáng bù.
+    """
+    if tong <= 0:
+        return []
+    # [đầu, cuối] của từng câu MỚI. `probe_duration` trên file đã ghi — KHÔNG
+    # suy từ độ dài dự kiến (`atempo`/cắt lề làm lệch, bài học `nen_lop_giong`).
+    che: list[tuple[float, float]] = []
+    for off, p in manh or []:
+        d = probe_duration(p)
+        if d > 0:
+            che.append((float(off), float(off) + d))
+    che.sort()
+    # gộp các đoạn chồng nhau lại thành phủ liên tục
+    gop: list[list[float]] = []
+    for a, b in che:
+        if gop and a <= gop[-1][1] + 1e-6:
+            gop[-1][1] = max(gop[-1][1], b)
+        else:
+            gop.append([a, b])
+    ra: list[tuple[float, float]] = []
+    moc = 0.0
+    for a, b in gop:
+        if a - moc >= dai_min:
+            ra.append((moc, a))
+        moc = max(moc, b)
+    if tong - moc >= dai_min:
+        ra.append((moc, tong))
+    # lùi hai mép rồi bỏ khoảng còn quá ngắn
+    hep: list[tuple[float, float]] = []
+    for a, b in ra:
+        a2, b2 = a + lui, b - lui
+        if b2 - a2 >= dai_min:
+            hep.append((round(max(0.0, a2), 3), round(min(tong, b2), 3)))
+    return hep
+
+
+def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
+                 tong: float, out_dir: str | Path,
+                 he_so_hinh: float = 1.0) -> dict:
+    """Cắt lớp giọng GỐC ở những khoảng KHÔNG có giọng mới -> mảnh để trộn vào.
+
+    Trả `{manh: [(offset, wav)], khoang: [...], giay_bu, giay_trong, bo_qua}`.
+    `manh` CỘNG THẲNG vào danh sách mảnh giọng mới rồi đưa cho
+    `tron_thay_giong` — **cố ý đi cửa đó chứ không trộn vào file cuối**: nhờ
+    vậy phần bù được tính vào cả phép cân bằng giọng-nhạc, cả ducking, cả bước
+    chuẩn hoá độ to. Trộn sau khi đã chuẩn hoá là làm sai chính con số vừa đo.
+
+    **CHỈ BÙ CHỖ GỐC CÓ TIẾNG THẬT.** Ngưỡng lấy theo SÀN NHIỄU CỦA CHÍNH lớp
+    giọng đó (`BU_GOC_NOI_DB`), không phải hằng số dBFS: Demucs để lại mức
+    nhiễu khác nhau mỗi lượt, đặt hằng số là bù cả những chỗ chỉ có nhiễu.
+
+    `he_so_hinh > 1` (chế độ "Chỉnh video theo giọng"): trục thời gian ĐẦU RA
+    đã giãn `k` lần nên mốc gốc phải chia `k` khi đi cắt, và mảnh cắt ra phải
+    được giãn đúng `k` — nếu không thì phần bù trôi mỗi lúc một xa.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    k = max(1.0, float(he_so_hinh or 1.0))
+    trong = khoang_khong_giong(manh, tong)
+    ket: dict = {"manh": [], "khoang": [], "giay_bu": 0.0,
+                 "giay_trong": round(sum(b - a for a, b in trong), 2),
+                 "so_trong": len(trong), "bo_qua": 0}
+    if not trong or not giong_goc or not Path(str(giong_goc)).exists():
+        ket["ly_do"] = "không có khoảng trống" if not trong else "thiếu lớp giọng gốc"
+        return ket
+
+    bao = duong_bao_muc(giong_goc, buoc=BUOC_DO_MUC)
+    if not bao:
+        ket["ly_do"] = "không đo được đường bao lớp giọng gốc"
+        return ket
+    # SÀN NHIỄU = bách phân vị 20 trên **MỌI** cửa sổ, KỂ CẢ cửa sổ im tuyệt
+    # đối (`duong_bao_muc` trả -120 cho `-inf`).
+    #
+    # **BỎ CỬA SỔ IM RA LÀ BUG, cổng 78 bắt được:** lớp giọng do Demucs tách
+    # LUÔN có sàn rỉ nhạc (đo thật trên 4 video: **-24,0 .. -29,2 dBFS**) nên
+    # bỏ hay không bỏ đều ra cùng số. Nhưng nguồn tách kiểu KHÁC (`cach="nhe"`
+    # của ffmpeg, hoặc video vốn im hẳn ngoài lời) cho ra "hoặc tiếng hoặc IM
+    # TUYỆT ĐỐI"; lọc `> -119` khi đó vứt sạch phần im, nên p20 của phần CÒN
+    # LẠI chính là MỨC LỜI -> ngưỡng nhảy lên trên cả lời -> **bù 0 mảnh, im
+    # lặng, không một dòng báo**. Tính trên mọi cửa sổ thì ca đó ra sàn -120 và
+    # ngưỡng -110, đúng như phải vậy.
+    sx = sorted(bao)
+    san = sx[int(len(sx) * 0.20)]
+    nguong = san + BU_GOC_NOI_DB
+    ket["san_db"] = round(san, 2)
+    ket["nguong_db"] = round(nguong, 2)
+
+    for i, (a, b) in enumerate(trong):
+        # Mốc trên lớp giọng GỐC (trục CHƯA giãn).
+        ag, bg = a / k, b / k
+        i0 = int(ag / BUOC_DO_MUC)
+        i1 = min(len(bao), max(i0 + 1, int(bg / BUOC_DO_MUC)))
+        if not any(bao[j] > nguong for j in range(i0, i1)):
+            ket["bo_qua"] += 1              # chỗ này gốc cũng im -> đừng bù
+            continue
+        p = out_dir / f"bu_{i:04d}.wav"
+        af = [f"atrim=start={ag:.3f}:end={bg:.3f}", "asetpts=N/SR/TB"]
+        if k > 1.0 + 1e-6:
+            af.append(_co_gian_chuoi(1.0 / k))
+        af.append(f"aresample={SR_TACH}")
+        # Mép vào/ra: bật/tắt phát một thì nghe thấy "cụp".
+        d = max(0.05, (bg - ag) * k)
+        m = min(BU_GOC_MEP, d / 3.0)
+        af.append(f"afade=t=in:st=0:d={m:.3f}")
+        af.append(f"afade=t=out:st={max(0.0, d - m):.3f}:d={m:.3f}")
+        try:
+            _ffmpeg(["-i", str(giong_goc), "-af", ",".join(af),
+                     "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+                     str(p)], f"cắt giọng gốc bù khoảng {a:.2f}-{b:.2f}s",
+                    timeout=300)
+        except Exception:                                   # noqa: BLE001
+            ket["bo_qua"] += 1
+            continue
+        # ffmpeg mã 0 mà file 0 KiB là ca đã sập nhiều lần -> kiểm KÍCH THƯỚC.
+        if not p.exists() or p.stat().st_size < 1024:
+            ket["bo_qua"] += 1
+            continue
+        ket["manh"].append((round(a, 3), str(p)))
+        ket["khoang"].append([round(a, 2), round(b, 2)])
+        ket["giay_bu"] += probe_duration(p)
+    ket["giay_bu"] = round(ket["giay_bu"], 2)
+    ket["so_bu"] = len(ket["manh"])
+    return ket
 
 
 def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
@@ -3109,9 +3376,19 @@ def duong_bao_muc(path: str | Path, buoc: float = BUOC_DO_MUC,
         if "lavfi.astats.1.RMS_level=" not in dong:
             continue
         try:
-            ra.append(float(dong.split("=", 1)[1].strip()))
+            v = float(dong.split("=", 1)[1].strip())
         except ValueError:
-            ra.append(-120.0)
+            v = -120.0
+        # **`float("-inf")` PARSE ĐƯỢC — nên nhánh `except` KHÔNG BAO GIỜ bắt
+        # được cửa sổ im tuyệt đối.** Docstring hàm này hứa trả -120,0 từ đầu
+        # nhưng thực tế trả `-inf`, và cổng 78 bắt được: `-inf` làm mọi phép
+        # TRUNG BÌNH ra `-inf` và mọi ngưỡng kiểu `sàn + 10` ra `-inf`, nên phép
+        # so `x < ngưỡng` LUÔN False -> bộ đo im lặng không thấy gì.
+        # Kẹp ở ĐÂY (cửa chung) chứ không ở từng nơi gọi: sót một nơi là một
+        # phép đo phát chứng nhận khống.
+        # KHÔNG đổi hành vi của `can_bang_giong_nhac`: nó lọc `> -70.0` nên -120
+        # và -inf đều bị loại y như nhau.
+        ra.append(-120.0 if v == float("-inf") else v)
     return ra
 
 
@@ -3790,8 +4067,20 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
                      che_chu_muc: float = 1.0,
                      che_chu_log: Optional[list] = None,
                      dong_chu: Optional[list] = None,
-                     kieu_chu: Optional[dict] = None) -> None:
+                     kieu_chu: Optional[dict] = None,
+                     he_so_hinh: float = 1.0) -> None:
     """Thay TIẾNG của video. `che_chu=False` -> GIỮ NGUYÊN hình (`-c:v copy`).
+
+    `he_so_hinh > 1` = chế độ **"Chỉnh video theo giọng"**: làm CHẬM hình đúng
+    hệ số đó để giọng được đọc ở tốc độ TỰ NHIÊN (xem `he_so_hinh_can`).
+
+    **LÀM CHẬM HÌNH MÀ VẪN `-c:v copy` — đây là chỗ đáng nói nhất:** dùng
+    `-itsscale` (nhân mốc thời gian của ĐẦU VÀO) chứ không `setpts`. `setpts`
+    là filter nên bắt buộc encode lại cả luồng hình — với video 10 phút × 200-
+    300 kênh thì đó là hàng giờ máy và một đời nén nữa. `-itsscale` chỉ ghi lại
+    mốc lúc remux: **0 khung nào bị mã hoá lại, 0 điểm ảnh nào đổi**.
+    Giá phải trả (nói thẳng): nó KHÔNG sinh khung mới, nên nhịp hình hiệu dụng
+    tụt đúng theo hệ số — xem trần `SAN_NHIP_HINH_FPS`.
 
     `dong_chu` = [(giây_bắt_đầu, giây_kết_thúc, chữ), ...] — **MỐC LẤY TỪ
     CHÍNH FILE GIỌNG ĐÃ SINH RA** (`khop_thoi_gian` trả `moc_tieng`, đo bằng
@@ -3830,13 +4119,20 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
     vậy hộp che vẫn BÁM THEO MỐC (chữ chạy tới đâu che tới đó) chứ không phải
     một dải ngang suốt phim.
     """
+    # `-itsscale` chỉ được thêm khi THẬT SỰ làm chậm hình. `he_so_hinh = 1.0`
+    # -> danh sách RỖNG -> lệnh ffmpeg giống **TỪNG KÝ TỰ** bản cũ (bất biến
+    # cổng 59 đo, và cổng 76 canh lại).
+    k = max(1.0, float(he_so_hinh or 1.0))
+    its = ["-itsscale", f"{k:.6f}"] if k > 1.0 + 1e-6 else []
+
     if not che_chu:
-        _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
+        _ffmpeg([*its, "-i", str(video_goc), "-i", str(audio_moi),
                  "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
                  "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_ra)],
                 "thay tiếng vào video", timeout=1800)
         if che_chu_log is not None:
-            che_chu_log.append({"bat": False, "che": False, "ly_do": ""})
+            che_chu_log.append({"bat": False, "che": False, "ly_do": "",
+                               "he_so_hinh": round(k, 4)})
         return
 
     loc, dai, ly_do = "", None, ""
@@ -3860,7 +4156,8 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
     if not loc:
         # KHÔNG dò ra chữ -> đừng encode lại vô ích (che oan video sạch là ca
         # sai đắt nhất của tính năng này: 0/76 ở cổng 56).
-        thay_audio_video(video_goc, audio_moi, video_ra, che_chu=False)
+        thay_audio_video(video_goc, audio_moi, video_ra, che_chu=False,
+                         he_so_hinh=k)
         return
 
     # --- CHỮ MỚI THEO MỐC GIỌNG (chỉ khi ĐÃ che — cấm 2 lớp chữ) ---
@@ -3905,7 +4202,11 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
     else:
         ve = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
               "-pix_fmt", "yuv420p", "-profile:v", "high"]
-    _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
+    # NHÁNH CHE CHỮ: `-itsscale` vẫn dùng được (nó đụng mốc ĐẦU VÀO, trước cả
+    # filter) nên KHÔNG cần `setpts` — chuỗi filter che chữ giữ nguyên. Mốc
+    # hộp che lấy từ `segs=[(0, dur)]` của video GỐC, mà `-itsscale` giãn đều
+    # nên hộp vẫn bám đúng chỗ chữ cũ.
+    _ffmpeg([*its, "-i", str(video_goc), "-i", str(audio_moi),
              "-filter_complex", f"[0:v]{','.join(chuoi)}[vout]",
              "-map", "[vout]", "-map", "1:a:0", *ve,
              "-c:a", "aac", "-b:a", "192k", "-shortest",
@@ -4162,9 +4463,21 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      che_chu: bool = False, che_chu_cach: str = "mo",
                      che_chu_muc: float = 1.0, viet_chu: bool = True,
                      kieu_chu: Optional[dict] = None,
+                     hinh_theo_giong: bool = False,
+                     bu_giong_goc_bat: bool = True,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
+
+    `bu_giong_goc_bat=True` (mặc định BẬT): đoạn nào KHÔNG được đọc lại thì giữ
+    lại GIỌNG GỐC thay vì để trống. Xem `khoang_khong_giong` — đây là bản chữa
+    lỗi anh Hùng báo 18/08/2026 (*"đoạn nói tiếng Anh nó không đọc thì bị tắt
+    tiếng"*), và mặc định BẬT vì để trống là MẤT NỘI DUNG.
+
+    `hinh_theo_giong=True` -> **CHỈNH VIDEO THEO GIỌNG** thay vì ép giọng vừa
+    khung câu gốc. Anh Hùng 18/08/2026: *"giọng cứ lúc nhanh lúc chậm không
+    đều — đáng nhẽ chỉ chỉnh video sao cho khớp giọng nói chứ"*. Xem
+    `he_so_hinh_can` (cách tính hệ số) và `SAN_NHIP_HINH_FPS` (trần + giá).
 
     `viet_chu=True` (mặc định) + `che_chu=True` -> sau khi che dòng chữ cháy
     sẵn thì VIẾT LẠI bản dịch vào đúng dải đó, mốc lấy từ CHÍNH GIỌNG vừa
@@ -4258,19 +4571,89 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
 
         # --- bước 5: khớp thời gian
         prog(0.80, "Khớp thời gian...")
+        # --- HỆ SỐ LÀM CHẬM HÌNH (chế độ "Chỉnh video theo giọng") ---
+        # Tính TRƯỚC khi khớp, vì `khop_thoi_gian` cần nó để đặt mốc. Trần lấy
+        # theo fps THẬT của nguồn (nguồn 23,976 fps chừa rất ít chỗ).
+        hs = 1.0
+        kq["hinh"] = {"bat": bool(hinh_theo_giong)}
+        if hinh_theo_giong:
+            _c = he_so_hinh_can(cau, dn["files"], dn["ok"], tong)
+            _fps = do_fps(video_in)
+            _tran = tran_hinh_theo_fps(_fps)
+            hs = max(1.0, min(float(_c["k_can"]), _tran))
+            kq["hinh"].update({
+                **_c, "fps_nguon": round(_fps, 3),
+                "tran_theo_fps": round(_tran, 4),
+                "k_dung": round(hs, 4),
+                "cham_tran": float(_c["k_can"]) > _tran + 1e-6,
+                "nhip_hinh_con_lai_fps": round(_fps / hs, 2) if hs > 0 else 0,
+            })
         kh = khop_thoi_gian(cau, dn["files"], dn["ok"], tong,
                             tam_goc / "khop", moc_tu=dn.get("moc_tu"),
+                            he_so_hinh=hs,
                             on_progress=lambda p, m: prog(0.80 + 0.10 * p, m))
         kq["khop"] = {k: v for k, v in kh.items() if k != "manh"}
         if not kh["manh"]:
             raise RuntimeError("Không câu nào khớp được thời gian")
+        # ĐỘ DÀI ĐẦU RA đổi theo hệ số hình — mọi bước sau (trộn · ghép · kiểm)
+        # phải dùng con số MỚI này, dùng `tong` cũ là lệch hẳn `(k-1)*tong`.
+        tong_ra = tong * hs
+
+        # --- LỚP NHẠC PHẢI GIÃN THEO HÌNH ---
+        # Làm chậm hình mà để nhạc/tiếng động chạy tốc độ cũ thì nhạc HẾT SỚM
+        # và mọi cú va không còn rơi đúng khung hình của nó — tức đổi một lỗi
+        # đồng bộ lấy một lỗi đồng bộ khác. Giãn bằng `rubberband` (đo được méo
+        # 0,061 dB so với `atempo` 5,982 dB) và ĐO LẠI độ dài trên file đã ghi.
+        nhac_dung = t["nhac"]
+        if hs > 1.0 + 1e-6:
+            prog(0.90, "Giãn nhạc nền cho khớp hình...")
+            _nh = tam_goc / "nhac_gian.wav"
+            _ffmpeg(["-i", str(t["nhac"]), "-af",
+                     f"{_co_gian_chuoi(1.0 / hs)},aresample={SR_TACH},"
+                     f"apad,atrim=0:{tong_ra:.3f},asetpts=N/SR/TB",
+                     "-ac", "2", "-ar", str(SR_TACH), "-c:a", "pcm_s16le",
+                     str(_nh)], "giãn lớp nhạc theo hệ số hình")
+            _kiem_wav(_nh, cho_phep_im=True)
+            _dn = probe_duration(_nh)
+            if abs(_dn - tong_ra) > 0.05:
+                raise RuntimeError(
+                    f"Lớp nhạc giãn ra {_dn:.3f}s, phải là {tong_ra:.3f}s")
+            nhac_dung = str(_nh)
+            kq["hinh"]["nhac_gian_giay"] = round(_dn, 3)
+
+        # --- BÙ GIỌNG GỐC Ở ĐOẠN KHÔNG ĐƯỢC ĐỌC LẠI ---
+        # Anh Hùng 18/08/2026: *"mấy cái đoạn âm thanh gốc nói tiếng Anh nó
+        # không đọc phần đó thì lại bị TẮT TIẾNG"* · *"cái nghe được cái
+        # không"*. Đoạn nào không có giọng MỚI thì giọng GỐC đã bị bỏ -> chỉ còn
+        # nhạc -> MẤT NỘI DUNG (nặng hơn chuyện âm lượng). Đo trên 4 bản anh
+        # Hùng đã xuất: mất 82,3s/1.209,3s = 6,8%, dồn vào 2/4 video (31,1s và
+        # 50,4s) — xem `khoang_khong_giong`.
+        #
+        # Mảnh bù CỘNG THẲNG vào danh sách mảnh giọng trước khi trộn, nên nó
+        # được tính vào CẢ cân bằng giọng-nhạc, CẢ ducking, CẢ chuẩn hoá độ to.
+        manh_tron = list(kh["manh"])
+        if bu_giong_goc_bat:
+            prog(0.905, "Bù giọng gốc ở đoạn không được đọc lại...")
+            try:
+                bu = bu_giong_goc(t.get("giong") or "", kh["manh"], tong_ra,
+                                  tam_goc / "bu_goc", he_so_hinh=hs)
+                manh_tron += bu["manh"]
+                kq["bu_goc"] = {x: y for x, y in bu.items() if x != "manh"}
+            except Exception as e:                          # noqa: BLE001
+                # Bù được thì tốt, KHÔNG bù được thì vẫn ra video (chỉ thiếu
+                # tiếng ở mấy đoạn đó, y như bản trước) — đừng để bước phụ này
+                # giết cả lượt xuất.
+                kq["bu_goc"] = {"ok": False,
+                                "loi": f"{type(e).__name__}: {e}"[:200]}
+        else:
+            kq["bu_goc"] = {"bat": False}
 
         # --- bước 6: trộn + thay vào video
         prog(0.91, "Trộn tiếng mới với nhạc nền gốc...")
         # `goc_wav` truyền vào để bước BÙ DẢI CAO lấy được cân bằng dải tần
         # của CHÍNH video này làm đích (xem `BU_SANG_TOI_DA_DB`). Thiếu nó thì
         # bước bù tự tắt — nên đây là chỗ DUY NHẤT phải nhớ nối.
-        au = tron_thay_giong(t["nhac"], kh["manh"], tong,
+        au = tron_thay_giong(nhac_dung, manh_tron, tong_ra,
                              tam_goc / "tieng_moi.wav", goc_wav=goc_wav)
         kq["tron"] = au
 
@@ -4303,9 +4686,12 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         thay_audio_video(video_in, au["ra"], ra, che_chu=che_chu,
                          che_chu_cach=che_chu_cach, che_chu_muc=che_chu_muc,
                          che_chu_log=_cc_log, dong_chu=dong_chu,
-                         kieu_chu=kieu_chu)
+                         kieu_chu=kieu_chu, he_so_hinh=hs)
         kq["che_chu"] = _cc_log[0] if _cc_log else {"bat": False}
-        kq["kiem"] = kiem_video_ra(ra, tong)
+        # KIỂM theo `tong_ra` (độ dài ĐÍCH), KHÔNG theo `tong`: chế độ chỉnh
+        # hình làm video dài ra `(k-1)*tong` một cách CỐ Ý. Dùng `tong` ở đây
+        # là `kiem_video_ra` ném đúng lúc mọi thứ đang đúng.
+        kq["kiem"] = kiem_video_ra(ra, tong_ra)
         kq["ra"] = str(ra)
         kq["ok"] = True
     except HuyBo:

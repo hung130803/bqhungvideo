@@ -24,7 +24,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      thu_muc_ra: str | Path, che_chu: bool = False,
                      che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
                      viet_chu: bool = False,
-                     kieu_chu: Optional[dict] = None) -> str:
+                     kieu_chu: Optional[dict] = None,
+                     hinh_theo_giong: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -59,6 +60,12 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
             g = gon_kieu_chu(kieu_chu)
             if g:
                 sig += ":kc=" + ",".join(f"{k}={g[k]}" for k in sorted(g))
+    # CHỈNH VIDEO THEO GIỌNG đổi CẢ ĐỘ DÀI video ra, nên nó BẮT BUỘC vào khoá —
+    # không thì bật ô rồi bấm Chạy là bị smart-skip, không một dòng báo (đúng
+    # lỗi cổng 56e). Nối vào ĐUÔI và CHỈ KHI BẬT: job cũ giữ khoá GIỐNG TỪNG
+    # KÝ TỰ, không đẻ lượt chạy lại cho 200-300 kênh.
+    if hinh_theo_giong:
+        sig += ":htg=1"
     return sig
 
 
@@ -145,6 +152,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
             viet_chu: bool = False,
             kieu_chu: Optional[dict] = None,
+            hinh_theo_giong: bool = False,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -182,12 +190,17 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
         g = gon_kieu_chu(kieu_chu) if viet_chu else {}
         if g:
             tt["kieu_chu"] = dict(kieu_chu or {})
+    # CHỈNH VIDEO THEO GIỌNG — nằm NGOÀI nhánh `che_chu` vì nó KHÔNG liên quan
+    # tới che chữ (đổi tốc độ hình, không đổi điểm ảnh). Chỉ ghi khoá khi BẬT
+    # -> payload job cũ không mọc thêm khoá nào.
+    if hinh_theo_giong:
+        tt["hinh_theo_giong"] = True
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
         dedup_key=khoa_chong_trung(v, dich_sang, voice, ra, che_chu,
                                    che_chu_cach, che_chu_muc,
                                    bool(che_chu) and bool(viet_chu),
-                                   kieu_chu),
+                                   kieu_chu, bool(hinh_theo_giong)),
         skip_if_done=False, max_attempts=1,
     )

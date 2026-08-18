@@ -331,6 +331,10 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # Chỉ có tác dụng khi `viet_chu` bật (không viết chữ thì không có
             # chữ nào để tạo kiểu).
             kieu_chu=payload.get("kieu_chu") or None,
+            # CHỈNH VIDEO THEO GIỌNG (làm chậm HÌNH cho khớp tiếng, thay vì ép
+            # tiếng vừa khung câu gốc). Job cũ trong DB KHÔNG mang khoá này ->
+            # `False` = ép giọng y hệt bản trước. ĐỘC LẬP với `che_chu`.
+            hinh_theo_giong=bool(payload.get("hinh_theo_giong")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:

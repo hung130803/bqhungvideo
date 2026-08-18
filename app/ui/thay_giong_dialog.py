@@ -66,6 +66,7 @@ from app.core import thay_giong as TG
 from app.core.captions import CAPTION_PRESETS
 from app.database import db
 from app.ui.appsettings import app_settings
+from app.core import nhan_nha as NN
 from app.ui.editor import nut_chon_mau
 from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, TEXT, WARN,
@@ -363,6 +364,17 @@ class ThayGiongDialog(QDialog):
             self.sp_luong.setValue(2)
         h2.addWidget(self.sp_luong)
         lay.addLayout(h2)
+
+        # ---- GỢI Ý GIỌNG NHIỀU CẢM XÚC ----
+        # Anh Hùng 18/08/2026: *"giọng chả có hồn gì, không có cảm xúc, rất là
+        # trơ"*. Combo trước đây chỉ hiện TÊN, nên không có cách nào biết giọng
+        # nào sinh động hơn — đó là lỗi TRÌNH BÀY của tôi, không phải của anh
+        # ấy. Nay mỗi giọng ĐÃ ĐO mang kèm số nhấn nhá, và dòng này gợi ý giọng
+        # cao nhất cho ngôn ngữ đang chọn. Giọng CHƯA ĐO thì KHÔNG hiện số.
+        self.lb_goi_y = QLabel("")
+        self.lb_goi_y.setWordWrap(True)
+        self.lb_goi_y.setStyleSheet("color:#7CC4FF")
+        lay.addWidget(self.lb_goi_y)
 
         # ---- hàng 3: CHE CHỮ CHÁY SẴN TRONG HÌNH ----
         # Ô này CỐ Ý đặt Ở ĐÂY chứ không bắt sang "Chỉnh mẫu": thay tiếng và
@@ -1251,11 +1263,14 @@ class ThayGiongDialog(QDialog):
             if self._giong_tho:
                 _CACHE_GIONG[:] = self._giong_tho
         muon = str(self._s.value(K_GIONG, "") or "")
+        nn = str(self.cb_nn.currentData() or "en")
         self.cb_giong.blockSignals(True)
         self.cb_giong.clear()
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
         for nhan, vid in giong_dung_duoc(self._giong_tho):
-            self.cb_giong.addItem(nhan, vid)
+            # SỐ NHẤN NHÁ gắn vào nhãn — chỉ với giọng ĐÃ ĐO trên đúng ngôn
+            # ngữ đang chọn. `nhan_kem` trả rỗng khi chưa đo (cấm bịa số).
+            self.cb_giong.addItem(nhan + NN.nhan_kem(vid, nn), vid)
             if not vid:                     # nhãn NHÓM ngôn ngữ -> không chọn
                 it = self.cb_giong.model().item(self.cb_giong.count() - 1)
                 if it is not None:
@@ -1267,8 +1282,34 @@ class ThayGiongDialog(QDialog):
                 i = self.cb_giong.count() - 1
             self.cb_giong.setCurrentIndex(i)
         self.cb_giong.blockSignals(False)
+        self._ve_goi_y()
+
+    def _ve_goi_y(self) -> None:
+        """Dòng gợi ý giọng nhiều cảm xúc nhất cho NGÔN NGỮ ĐANG CHỌN.
+
+        Rỗng khi ngôn ngữ đó chưa có bảng đo — thà không gợi ý còn hơn gợi ý
+        một giọng chưa ai đo (bịa số cạnh tên giọng thì user sẽ tin mà chọn).
+        """
+        if not hasattr(self, "lb_goi_y"):
+            return
+        nn = str(self.cb_nn.currentData() or "en")
+        try:
+            self.lb_goi_y.setText(NN.cau_goi_y(nn, ten_giong=self._ten_giong))
+        except Exception:  # noqa: BLE001
+            self.lb_goi_y.setText("")
+        self.lb_goi_y.setVisible(bool(self.lb_goi_y.text()))
+
+    def _ten_giong(self, ma: str) -> str:
+        """Tên hiển thị của một mã giọng, lấy từ CHÍNH combo đang có."""
+        i = self.cb_giong.findData(ma)
+        if i >= 0:
+            return str(self.cb_giong.itemText(i)).split("  ·  ")[0]
+        return ma
 
     def _doi_ngon_ngu(self) -> None:
+        # Nhãn nhấn nhá bám theo NGÔN NGỮ (số của corpus tiếng Việt không nói
+        # được gì về giọng đọc tiếng khác) -> đổi ngôn ngữ phải dựng lại combo.
+        self._dung_combo_giong()
         self._cap_nhat_nut_chay()
 
     # ------------------------------------------------------------------
