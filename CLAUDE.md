@@ -1910,6 +1910,108 @@
      của `_do_demucs_gpu.py` KHÔNG dính bẫy này vì lúc đó `_lib` chưa có torch
      nên nó nạp `.venv` bản `+cpu` — bảng số vẫn đúng, và mỗi dòng đều in kèm
      `torch=...` để tự chứng minh arm nào là arm nào.)
+  72. `_test_giong_ngoai.py` → **GIỌNG NGOÀI (OmniVoice / IndexTTS)**. Xem
+     docstring của chính file + `app/core/giong_ngoai.py`. **ĐẠT 48 · HỎNG 0.**
+  73. `_test_giong_hang.py` → **GIÓNG HÀNG CƯỠNG BỨC** (`app/core/
+     giong_hang.py`, 18/08/2026). **ĐẠT 36 · HỎNG 0.** Trước cổng này,
+     `giong_hang.py` — chỗ lấy MỐC TỪNG CHỮ cho **mọi máy đọc không tự trả
+     mốc** — chỉ có phép đo và bị canh GIÁN TIẾP qua cổng 72.
+     **LỖI THẬT CỔNG NÀY TRUY RA (mục "1 câu Việt /12 gióng không nổi" treo từ
+     lượt trước):** log ghi thẳng `ValueError: targets Tensor shouldn't contain
+     blank index. Found tensor([[20, 5, 21, 2, 13, **0**, ...`. Giải mã theo
+     bảng token MMS_FA ra `c o v i d - c h i c o n l a b a i`, tức chuỗi
+     `"covid-..."`. Bảng token ánh xạ **`'-' -> 0`**, mà 0 CHÍNH LÀ blank
+     truyền cho `forced_align(blank=0)`; `uroman` **giữ nguyên dấu gạch nối**
+     (`COVID-19` -> `COVID-19`). Một chữ có gạch nối => torchaudio ném =>
+     `except` trả `[]` cho **CẢ CÂU** => câu đó mất sạch mốc, **mã thoát vẫn
+     0**. Chữa bằng lọc token theo **ID** (`BO` = mọi ký tự có id == BLANK,
+     cộng `*`) chứ không lọc theo mặt chữ — bản torchaudio sau đổi ký tự blank
+     thì vẫn đúng. Đo lại: câu có `COVID-19` ra **13/13 mốc** (trước: RỖNG).
+     **THỬ PHÁ:** trả riêng dòng `return` của `ma_hoa` về bản cũ -> cổng ĐỎ,
+     `5d ... 0/12 mốc`, mã thoát 1.
+     **3 LỖI CỦA CHÍNH CỔNG, lộ ra ngay lượt chạy đầu:** (a) mục 5b hỏi thẳng
+     `"blank=0" not in _MA_GIONG` -> **ĐỎ OAN NGAY**, vì chính dòng GHI CHÚ
+     giải thích bản vá có chuỗi `forced_align(blank=0)` (bẫy 47/51/53/54, sập
+     lại lần nữa); (b) mục 6c dùng `ast.unparse` rồi `find("WordBoundary")` ->
+     trỏ vào **DOCSTRING** chứ không phải phần MÃ (unparse giữ docstring);
+     (c) mục 5a chỉ hỏi hằng `BLANK` có mặt -> phép phá chỉ trả dòng `return`
+     về cũ vẫn để `BLANK = 0` nằm đó nên mục ấy **tự ĐẠT OAN**.
+- **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
+  `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
+  hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
+  ElevenLabs `/with-timestamps`) -> gióng hàng -> Groq chép ngược.
+  **THƯỚC DUY NHẤT: `silencedetect`.** Hai bẫy đã sập: đo OmniVoice bằng Groq
+  là **so nó với chính nó** (mốc nó lấy từ Groq -> ra 0,0 ms trên 1.587 mốc),
+  và **mọi thước là máy nghe đều thiên vị** (faster-whisper nói OmniVoice tốt
+  hơn edge-tts, nhưng cột số mốc khớp tố giác 1.466 vs 1.043).
+  **PHÉP ĐO SUÝT KẾT LUẬN SAI — phần đáng giá nhất:** `_do_gn_gh.py` (WAV sinh
+  mới) đo đường Groq ra PHỦ tiếng Việt **99,4%** trong khi nhãn đang ghi
+  30-56%. Chạy lại `_do_gn_phu.py` trên bộ WAV CŨ vẫn ra **41,8% / 61,4%**.
+  Cùng hàm, cùng corpus, khác nhau đúng ở **MẺ TIẾNG**: OmniVoice **KHÔNG TIỀN
+  ĐỊNH**, lượt này đọc rõ lượt kia đọc ngọng, Groq chép ngược ăn theo. Tức
+  **34-56% không phải hằng số của đường Groq, nó là hằng số của MỘT MẺ ĐỌC
+  KÉM** — mục trên đã ghi nhận dao động, nay truy được NGUYÊN NHÂN.
+  Vì vậy `_do_gn_cu.py` cho **hai đường lấy mốc chạy trên ĐÚNG MỘT BỘ FILE
+  TIẾNG** (bỏ hẳn nhiễu đó). 4 thứ tiếng × 12 câu × 2 lượt ĐAN XEN có xoay thứ
+  tự, 2.186 chữ mỗi bộ, arm edge-tts chạy lại trên CÙNG corpus:
+
+  | | OV+Groq | **OV+gióng hàng** | edge-tts |
+  |---|---|---|---|
+  | PHỦ — bộ WAV CŨ (mẻ đọc kém) | 52,5% | **98,6%** | — |
+  | · Việt · Anh · Trung · Nhật | 37,6 · 79,0 · 67,5 · 25,7 | **98,9 · 100,0 · 96,8 · 98,7** | — |
+  | PHỦ — bộ WAV MỚI (mẻ đọc tốt) | 82,1% | **98,5%** | 78,2%* |
+  | RUNG mốc chữ đầu — CŨ / MỚI | 711,9 / 250,4 ms | **90,4 / 119,2 ms** | **15,7 ms** |
+  | mốc[0] đúng là từ đầu | 45/96 | **88/96** | 50/96* |
+  | GIÂY cho mẻ 12 câu | 32,49 | **6,30** | 3,54 |
+
+  (*) **edge 78,2% KHÔNG phải chữ mất mốc mà là GIỚI HẠN CỦA MẪU SỐ**: PHỦ đếm
+  theo `recap._word_tokens` (CJK tách TỪNG KÝ TỰ) còn `WordBoundary` trả theo
+  CỤM -> Trung 56,3% / Nhật 57,1%. Ở Việt/Anh (có dấu cách) edge ra **99,4% /
+  100%** đúng như cấu tạo. Cột dùng để kết luận là Việt/Anh và là phép so
+  Groq-vs-gióng-hàng (hai bên **cùng một mẫu số**).
+  **PHỦ LÊN GẦN 100% Ở CẢ HAI MẺ (98,5 · 98,6) -> là tính chất do CẤU TẠO,
+  không phải may.** Gióng hàng không đoán chữ, nó ĐÃ BIẾT chữ. Và nó **rẻ hơn
+  5,2 lần** đồng thời **không tốn một lượt Groq nào**.
+  **NHƯNG CHƯA BẰNG edge-tts, NÓI THẲNG:** rung còn **90-119 ms** so với
+  **15,7 ms**. Nặng nhất là tiếng Anh (lệch hệ thống **+104..+121 ms**, rung
+  128 ms). **Chưa truy ra vì sao, và ĐỪNG trừ nó đi bằng một hằng số** — cổng
+  67 đã chặn đúng phép trừ kiểu đó (94 ms).
+  **CỘT "% chữ hiện muộn >50 ms" KHÔNG ĐỌC THẲNG ĐƯỢC** (Groq 36,5% -> gióng
+  hàng 42,7%): nó tính trên lệch **THÔ** nên trừng phạt bên có lệch hệ thống
+  DƯƠNG và thưởng bên đánh mốc SỚM — edge ra 0,0% chính vì nó sớm sẵn
+  (−88,9 ms). Muốn so chất lượng thuần thì đọc cột **RUNG**.
+  **NHÃN ĐỔI THEO MÁY** (`giong_ngoai.canh_bao_chat_luong()`, đúng tiền lệ
+  nhãn Piper): máy CÓ gióng hàng -> nói phủ 98,5% + rung 90-119 ms; máy CHƯA
+  có -> giữ cảnh báo phủ thấp, nhưng số cũng phải sửa cho đúng (**38-99% tuỳ
+  lượt**, không phải "30-56%" — đo được 37,6% và 99,4% thì in 30-56% là biết
+  sai vẫn in). **Phần GIẤY PHÉP giữ nguyên** ở cả hai trạng thái. Cổng 72
+  CA 7g-7k canh.
+- **MÔI TRƯỜNG OmniVoice ĐÃ RA KHỎI `%TEMP%` (18/08/2026).** Lượt 7 dựng môi
+  trường Python **7,74 GB / 47.520 file** ở `%TEMP%\bq_tts_rr\venv_ov`. Một
+  lượt `tempsweep` / Disk Cleanup / anh Hùng dọn ổ C là **mất sạch**, và triệu
+  chứng không phải một dòng lỗi mà là **"giọng tự nhiên biến khỏi combo"** —
+  không ai lần ra nguyên nhân từ triệu chứng đó. Cùng bệnh `_lib` bị chính
+  lượt tự cập nhật xoá (cổng 58 CA5).
+  Đã dời THẬT sang `<repo>/_giong_ngoai/venv` (robocopy 47.520/47.520 file,
+  **0 FAILED**), **kiểm bằng cách CHẠY THẬT** chứ không chỉ đọc đường dẫn:
+  `doc_loat` ra WAV 3,11 s / 149.324 byte, gióng hàng trên chính file đó
+  **11/11 mốc**; rồi đổi tên bản cũ -> kiểm lại `co=True` -> mới xoá. Ổ C:
+  370 -> **377 GB** trống.
+  Chống tái diễn: `o_thu_muc_tam()` + khoá `o_tam` (để RIÊNG, **không gộp vào
+  `thieu`** — máy vẫn chạy được, gộp là nhãn/nút báo sai trạng thái) ·
+  `doc_loat` ghi log cảnh báo MỖI LƯỢT · ứng viên `%TEMP%` vẫn giữ ở CUỐI danh
+  sách (máy nào còn bản cũ thì chạy được thay vì gãy, nhưng nay nó kêu) ·
+  `.gitignore` thêm `_giong_ngoai/`. Cổng 72 CA 7l/7m/7n canh, kèm TỰ KIỂM
+  BỘ DÒ.
+- **`.spec` VÀ HAI TÍNH NĂNG NÀY: ĐÃ KIỂM, KHÔNG PHẢI SỬA GÌ.** Ghi ra vì mục
+  việc từng nêu ".spec chưa khai": `collect_submodules('app')` đã gom cả
+  `app.core.giong_hang` lẫn `app.core.giong_ngoai` (kiểm thật, có trong danh
+  sách 69 module); hai module **không đọc file tài nguyên nào** (script chạy ở
+  tiến trình con được GHI RA từ chuỗi nhúng `_MA_GIONG` / `_MA_DOC` — chính vì
+  thế bản `.exe` không có cây mã nguồn mới chạy được). Phần nặng là đồ **TẢI
+  RỜI LÚC CHẠY** đúng ràng buộc Demucs/Piper (torch dùng chung `_lib` ~4,3 GB ·
+  MMS_FA 1,18 GB · OmniVoice 6,1 GB); gói vào `.exe` là bộ cài phình từ 240 MB
+  lên hơn 11 GB. Ghi hẳn khối ghi chú vào `.spec` để người sau đừng "sửa".
 - **"MÁY ĐỌC SAI CHỮ NƯỚC NGOÀI / TÊN RIÊNG" — ĐÃ ĐO, ĐÃ CHỐT CÁCH SỬA,
   *CHƯA NỐI VÀO APP* (17/08/2026).** Anh Hùng: *"chọn tiếng Việt, mấy chữ tiếng
   Anh hay tên riêng nó đọc toàn bị lỗi ... **lỗi to đó**"*. Bộ câu thử dùng
