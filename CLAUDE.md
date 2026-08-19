@@ -2443,6 +2443,138 @@
   CỦA MỌI CLIP từ nay về sau trên 200-300 kênh đang chạy sản xuất. Biện pháp
   đã sẵn sàng (dùng lại `chuan_do_to`, chạy trên file đã xuất với `-c:v copy`
   nên chỉ mã hoá lại audio, ~1 giây/clip). **Đợi anh Hùng duyệt.**
+- **MẤT TIẾNG 82,35 s: BẢNG SAU ĐÃ CHẠY — VÀ CON SỐ 82,35 KHÔNG TÁI LẬP ĐƯỢC
+  (19/08/2026).** Đọc cả khối này trước khi đo lại, nếu không sẽ mất nửa phiên
+  đúng như tôi vừa mất.
+  **BỐN CHỖ DỄ KẾT LUẬN NGƯỢC, xếp theo mức nguy hiểm:**
+  (a) **`Downloads\longtieng\xuất` ĐÃ BỊ GHI ĐÈ.** mtime cả 4 file là **19/08
+  12:52-12:59**; bản xuất sinh ra con số 82,35 s **không còn trên đĩa**. Đo lại
+  4 file đang có ra **45,60 s**, và rất dễ kết luận "bản vá ăn 45%" hoặc "thước
+  hỏng". Cả hai đều SAI.
+  (b) **APP ANH HÙNG ĐANG CHẠY KHÔNG CÓ BẢN VÁ.** `D:\BQHungVideo\
+  BQHungVideo.exe` (bản CÀI, KHÁC `dist/`) dựng **18/08 20:01**, còn
+  `bu_giong_goc` ra đời ở `063da74` **18/08 22:18** — bản nhị phân không thể
+  chứa mã viết sau nó. **Chứng minh trực tiếp, không suy luận:** bóc
+  `PYZ-00.pyz` bằng `PyInstaller.archive.readers` rồi quét `co_consts` /
+  `co_names` của `app.core.thay_giong` -> `bu_giong_goc` · `BU_GOC_BUOC` ·
+  `khoang_khong_giong` **đều False**. Nên cột "file anh Hùng đang có" là số
+  **TRƯỚC**, không phải "sau khi vá". Anh Hùng phải cài **v2.39.0** mới có bản
+  vá (`git show 73fca2f:app/core/thay_giong.py` -> `BU_GOC_BUOC = 0.05`).
+  (c) **THƯỚC KHÔNG PHẢI THỦ PHẠM — đã đo.** Chạy `_do_mat_giong.py` HAI lượt
+  trên CÙNG 4 file: **45,60 s vs 45,45 s** (lệch 0,15 s = **0,01%** thời
+  lượng), sàn nhiễu lệch ≤ 0,1 dB. Thước TIỀN ĐỊNH.
+  (d) **VẬY 82,35 vs 45,60 LÀ NHIỄU CỦA CHÍNH DÂY CHUYỀN** — cùng mã KHÔNG vá,
+  cùng 4 video, hai lượt xuất khác nhau ra **82,35 s** và **45,60 s = 1,81
+  lần**. Gốc: LLM không tiền định -> mỗi lượt bỏ qua bộ câu khác nhau. **Đừng
+  bao giờ so hai lượt xuất RỜI** — commit `4d738e8` đã tố giác chuyện này một
+  lần (20,05 s vs 30,65 s trong khi bản vá nằm im) mà tôi vẫn suýt dẫm lại.
+  **PHÉP SO ĐÚNG LÀ GHÉP CẶP** (`_do_bang_sau.py`): MỘT lượt chạy dây chuyền
+  cho mỗi video, hai arm tách ra ở đúng chỗ bản vá tác động
+  (`manh_tron = kh["manh"] + bu["manh"]`), nên cùng bản tách / chép lời / dịch
+  / file giọng. Mọi nhiễu LLM bị triệt tiêu **theo cấu tạo**.
+  **SỐ ĐO (3/4 video, 908,2 s — video 3 chỉ mất 0,40 s nên không chạy lại):**
+
+  | video | dài | TRƯỚC (file đang có) | TẮT (đối chứng) | **BẬT** | bù |
+  |---|---|---|---|---|---|
+  | `#强烈推荐…` | 148,6 s | 0,00 s | 3,20 s | **0,00 s** | 9 mảnh / 17,66 s |
+  | `一款…倒忌时` | 363,2 s | 21,75 s | 36,40 s | **5,30 s** | 37 / 66,89 s |
+  | `八位好莱坞…` | 396,3 s | 20,95 s | 23,55 s | **9,45 s** | 37 / 41,75 s |
+  | **TỔNG** | **908,2 s** | **42,70 s** | **63,15 s** | **14,75 s** | |
+  | % thời lượng | | 4,70% | 6,95% | **1,62%** | |
+
+  **GHÉP CẶP: 63,15 s -> 14,75 s = giảm 76,6%.**
+  **PHÂN BỐ ĐỘ DÀI MỚI LÀ CHỖ ĐÁNG ĐỌC — con số tổng che mất nó:**
+
+  | | <0,5 s | 0,5-1 s | 1-2 s | >=2 s | tổng |
+  |---|---|---|---|---|---|
+  | file đang có (không vá) | 17,95 | 15,05 | **10,30** | **2,30** | 45,60 |
+  | ghép cặp — TẮT | 20,85 | 30,25 | **12,05** | 0,00 | 63,15 |
+  | ghép cặp — **BẬT** | 10,20 | 4,55 | **0,00** | **0,00** | 14,75 |
+
+  **MỌI KHOẢNG >= 1 GIÂY VỀ 0** (12,05 -> 0,00 s). Đó đúng là lớp "mất cả cụm
+  / cả câu" mà anh Hùng nghe ra là *"bị TẮT TIẾNG"*. Phần còn lại 14,75 s
+  **toàn mảnh dưới 1 giây** (10,20 s dưới 0,5 s; dài nhất trong arm BẬT của
+  video 4 là **0,65 s**) — đó là chênh nhịp giữa âm tiết tiếng Trung và tiếng
+  Việt, không phải mất nội dung. **NÓI THẲNG: KHÔNG về 0, và đừng hứa về 0**:
+  thước đếm mọi cửa sổ "gốc có tiếng mà xuất im" ≥ 0,30 s, trong đó có cả chỗ
+  hai ngôn ngữ đặt âm tiết lệch nhau.
+  **CHỐT CHỐNG-ĐẠT-OAN NẰM TRONG CHÍNH PHÉP ĐO:** arm TẮT ra 3,20 / 36,40 /
+  23,55 s -> thước CÓ RĂNG trên đúng bộ file này. Nếu nó ra 0 ở cả hai arm thì
+  số của arm BẬT là vô nghĩa.
+- **`ai_nguoi_noi` (giữ nguyên tiếng người thật): CHẠY ĐƯỢC, ĐO ĐƯỢC —
+  *CHƯA NỐI*, và lý do là THỨ TỰ chứ không phải chất lượng (19/08/2026).**
+  Smoke test trên bản chép lời THẬT đã cache (`_do_tg_cache.json` khoá
+  `chep|zh|90.0`, 45 đoạn / 398 mốc từ, Groq THẬT): `cham_llm` -> **10 lượt gọi
+  LLM / 156 s**, mồi đối chứng **bắt được 1 mẻ sai và gọi lại thành công**,
+  nhãn `ke 41 · goc 4`, `quyet_dinh` giữ gốc **4/45 đoạn = 3,48 s** và 4 đoạn
+  đó đều là **`你這個混蛋`** — thoại phim gào lên, đúng thứ cần giữ. Không dính
+  trần `TRAN_GIU_GOC`. Tức module KHÔNG phải mã chết.
+  **BỐN LÝ DO CHƯA NỐI, theo thứ tự nặng:**
+  (1) **THỨ TỰ:** "giữ gốc" nghĩa là KHÔNG lồng tiếng đoạn đó -> đường xuất
+  sinh thêm khoảng trống -> phần bù trống đó chính là `bu_giong_goc`, mà bản vá
+  ấy vừa mới chứng minh được (khối trên) và **anh Hùng còn chưa chạy nó lần
+  nào** (app 18/08 20:01 không có bản vá). Nối bộ sinh-thêm-khoảng-trống TRƯỚC
+  khi bộ bù-khoảng-trống ra tới máy anh Hùng là đúng cách làm nặng thêm chính
+  lỗi "TẮT TIẾNG".
+  (2) **GIÁ ĐO ĐƯỢC:** 10 lượt LLM cho 90 s nguồn = **~14 lượt cho video 148 s
+  · ~30 lượt cho video 396 s**, so với `_dich_loat` **5,0 lượt/video** ->
+  **+3,5 đến +4,7 lần** ngân sách LLM của đường thay tiếng. Hai tính năng đã bị
+  bác bằng đúng cột này (`dich_va_soat` 10,9x · `dich_theo_gio` 2,46x với trần
+  1,5x) — nhưng KHÁC ở chỗ hai cái đó đo ra chất lượng KHÔNG tăng, còn cái này
+  có ích lợi thật. Nên đây là con số để anh Hùng quyết, không phải cửa tự đóng.
+  (3) **ĐƯỜNG RẺ (0 lượt Groq) HIỆN KHÔNG CHẠY ĐƯỢC:** `cham_giong` (ECAPA, đo
+  được bỏ sót **0/573**) cần `speechbrain`, mà nó KHÔNG có trong `_lib` lẫn
+  `.venv`, và `_kq_nn/sb` không còn trên đĩa. `cham_phu_de` thì tự nó là thứ
+  đã dùng để DỰNG bộ đối chứng nên không được tự chấm điểm.
+  (4) **NGỮ NGHĨA "GIỮ GỐC" CHƯA CÓ CHỖ ĐẶT:** docstring đòi *"không tách,
+  không trộn lại"*, nhưng cách nối rẻ nhất hôm nay (bỏ lồng tiếng rồi để
+  `bu_giong_goc` lấp) cho ra **giọng gốc khớp mức TTS + nhạc đã bị hạ/ducking**
+  — với một cảnh phim thì lớp nhạc của cảnh đó lẽ ra phải còn nguyên. Muốn đúng
+  nghĩa phải cho đường trộn **chừa cửa sổ đó ra**, đó là sửa chuỗi trộn chứ
+  không phải một cái hook 10 dòng.
+  **CÒN NỢ:** ca PHA (3,0 s nhạc phim + 2,7 s người kể trong CÙNG một đoạn
+  whisper) = 100% số ca lồng oan còn lại. `cat_theo_tu` đã có và chữa được ca
+  `v1_dutu`, nhưng `v2_nieu` thì whisper gán từ từ giây 0,00 nên cắt theo mốc
+  từ KHÔNG đổi gì. Hướng chưa thử: dò trong LÒNG một đoạn bằng **đường bao lớp
+  giọng Demucs** (`duong_bao_muc` trên `t["giong"]`, đúng thứ `bu_giong_goc`
+  đang dùng) — chỗ stem im mà whisper vẫn ra chữ là chỗ nó nghe nhầm nhạc
+  thành lời. Chưa đo, đừng ghi là đã biết cách.
+- **NHẠC NỀN "DÌM 10,46 dB": ĐO LẠI RA `0,00 dB` TRÊN NGUỒN ANH HÙNG ĐANG LÀM,
+  VÀ Ở CA NÓ CÓ CẮN THÌ CỨU ĐƯỢC (19/08/2026, `_do_nhac_dai.py`).**
+  **10,46 dB KHÔNG PHẢI HẰNG SỐ CỦA APP.** `can_bang_giong_nhac` ĐO rồi mới
+  tính, và trên 2 video vừa chạy dây chuyền thật nó ra `gain_nhac_db =
+  **0,00 dB**` ở CẢ HAI: lớp nhạc sau khi tách đã nằm DƯỚI giọng TTS
+  **+9,28 dB** (video 1) và **+13,43 dB** (video 4), cao hơn đích
+  `DICH_GIONG_TREN_NHAC_DB` = 6 nên hàm không hạ nhạc một dB nào. Con số
+  −10,46 dB là của MỘT nguồn khác (nhạc CAO HƠN giọng 10,61 dB). Tức trên nguồn
+  anh Hùng đang làm hôm nay **không có gì để cứu**; phần hạ duy nhất là
+  ducking, mà ducking chỉ áp lúc đang nói.
+  **NHƯNG Ở CA NÓ CÓ CẮN THÌ CỨU ĐƯỢC, và đây là số.** Ép `g_nhac` về trần
+  `HA_NHAC_TOI_DA_DB` = −8 dB trên stem THẬT rồi so 17 arm (hai thước độ to
+  độc lập, lệch 0,02-0,33 LU — đều dưới 0,5):
+
+  | arm | nhạc trong DẢI LỜI lúc nói | SNR dải | nhạc lúc IM | **I lớp nhạc** |
+  |---|---|---|---|---|
+  | GỐC | −44,64 | 16,66 | −32,60 | −21,50 |
+  | **A = hiện tại** (hạ CẢ DẢI + né cả dải) | **−59,19** | **31,21** | −43,76 | **−28,60** |
+  | B (né chỉ dải lời 300-3400) | −54,14 | 26,16 | −33,62 | −21,50 |
+  | **F6** (dải lời, tĩnh −4, ratio 6) | −58,19 | 30,21 | −33,63 | **−21,30** |
+  | **F9** (dải lời, tĩnh −4, ratio 9) | −58,46 | 30,48 | −33,63 | **−21,30** |
+
+  **F9 giữ được 6,90 LU nhạc (−0,20 thay vì −7,10) và nhạc lúc IM cao hơn
+  10,13 dB, đổi lấy 0,73 dB SNR dải lời — trên một SNR đã 31 dB.** 0,73 dB ở
+  mức 31 dB không có hệ quả nghe được nào.
+  **ĐỐI CHỨNG KIẾN TRÚC BẮT BUỘC PHẢI CÓ (arm D):** cắt 3 dải bằng
+  `acrossover=split=300 3400:order=4th` rồi cộng lại NGUYÊN (gain 0) phải ra
+  GIỐNG lớp nhạc gốc — đo **dI +0,00 LU · dải lời +0,00 dB · IM +0,03 dB**.
+  Không có arm này thì mọi số của B/C/F là số của phép cắt dải, không phải của
+  ý tưởng.
+  **CHƯA LÀM, GHI THẲNG:** chưa nối vào `tron_thay_giong` · **chưa ai NGHE** —
+  hạ riêng dải giữa có thể ra tiếng "rỗng ruột" mà không thước nào ở trên bắt
+  được · cột `IM` chỉ có 51 cửa sổ và `IM XA LỜI` chỉ **12 cửa sổ = 2,4 s**
+  (video này 93% là lời) nên hai cột đó YẾU; cột đứng vững là **I (LUFS) cả
+  file**. Bảng `ratio` phải QUÉT LẠI nếu đổi mức nhạc, đừng suy từ công thức
+  (`_do_hieu_chuan_duck.py` đã sai 6 dB vì tính từ công thức nén).
 - **GIỌNG MỚI BỊ NHẠC NỀN DÌM 9,3 dB — "chỗ có chỗ không nghe không được"
   (15/08/2026).** Anh Hùng: *"phần tách âm thanh giọng nói, nó nói mà âm thanh
   sau khi tách lỗi hết, chỗ có chỗ không nghe không được"*.
