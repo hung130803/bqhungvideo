@@ -23,9 +23,20 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
+# `line_buffering=True` LÀ BẮT BUỘC, KHÔNG PHẢI CHO GỌN — **`reconfigure()` XOÁ
+# MẤT TÁC DỤNG CỦA `python -u`.** `-u` bật `write_through` cho lớp chữ; gọi
+# `reconfigure(encoding=...)` mà không nói gì về đệm là dựng lại lớp chữ với
+# `write_through=False`, tức stdout quay về **ĐỆM THEO KHỐI** khi đổ ra file.
+# ĐO ĐƯỢC (19/08/2026, lượt hồi quy v2.40.0): `_kq_hq/` đã có **12 cổng** chạy
+# xong mà file `> HOIQUY.txt` mới chỉ có **4 dòng**. Hệ quả đúng bằng cái bẫy
+# chính file này ra đời để chống (bẫy số 3 ở docstring): lượt chạy bị giết giữa
+# chừng — đã xảy ra 3 lần trong MỘT phiên — thì **mất sạch** báo cáo, và người
+# đọc không phân biệt được "cổng đang chạy" với "cổng đã chết". Log từng cổng
+# trong `_kq_hq/` vẫn còn, nhưng dòng ĐỎ/TỤT/ĐÁNG NGỜ thì chỉ có ở đây.
 for _f in (sys.stdout, sys.stderr):
     try:
-        _f.reconfigure(encoding="utf-8", errors="replace")
+        _f.reconfigure(encoding="utf-8", errors="replace",
+                       line_buffering=True)
     except Exception:  # noqa: BLE001
         pass
 

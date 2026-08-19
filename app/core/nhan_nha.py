@@ -419,6 +419,147 @@ def muc(voice: str) -> float | None:
     return BANG.get(str(voice or ""))
 
 
+# ---------------------------------------------------------------------------
+# ĐỌC SAI CHỮ — BẬC THỨ NHẤT CỦA KHOÁ SẮP (19/08/2026)
+# ---------------------------------------------------------------------------
+# **VÌ SAO PHẢI CÓ BẬC NÀY, và vì sao nó đứng TRƯỚC nhấn nhá.** ``BANG`` ở trên
+# đo ĐỘ LÊN XUỐNG của cao độ — nó KHÔNG nói giọng đọc ĐÚNG CHỮ hay không, và
+# chính docstring đầu file đã dặn *"số này KHÔNG nói giọng HAY hay DỞ"*. Hệ quả
+# đo được: ``vn:Xuân Vĩnh`` nhấn nhá **6,26 = ĐỈNH cả bảng 211 giọng** nên nó
+# đứng **DÒNG ĐẦU** nhóm "TRÊN MÁY" của combo (đo thẳng bằng
+# ``giong_bang.gom_nhom``, và cũng là dòng đầu ``giong_vieneu.danh_sach_giong``)
+# — tức chỗ người ta bấm nhanh nhất — trong khi nó đọc **SAI 26,4% số từ**, gấp
+# **5,5 lần** giọng mốc. Xếp một giọng như thế lên đầu là dùng số đo để tiến cử
+# đúng cái nó không đo.
+#
+# Nhấn nhá đẹp mà đọc sai chữ thì vô nghĩa: người xem nghe ra một câu KHÁC câu
+# mình viết. Nên bậc "đọc sai" phải đứng TRƯỚC, và nó chỉ có hai giá trị (0/1)
+# chứ không phải một thang — thang thì lại thành một phép so mới cần hiệu chuẩn.
+#
+# **KHÔNG BỎ, KHÔNG ẨN GIỌNG NÀO.** Anh Hùng chốt cả phiên: *"cứ thêm hết,
+# trùng lặp cũng được, tôi tự trải nghiệm"*. Bậc này chỉ đổi THỨ TỰ và thêm một
+# câu nhãn nói ra con số; bất biến *"tập mã ra == tập mã vào"* của cổng 79
+# KHÔNG được nhân nhượng.
+#
+# **NGUỒN SỐ: ``_kq_vn_quet34.txt``** — 34 câu tiếng Việt (6 loại: bản địa · câu
+# thường · đơn vị · số/ngày · tên riêng · viết tắt), đọc qua **CỬA THẬT**
+# ``dubbing._synth_all``, chấm bằng Groq chép ngược. **ĐỪNG ĐO LẠI, ĐỪNG SỬA
+# TAY.**
+#
+# **BẢNG 8 CÂU CHỈ ĐỂ CHỌN AI ĐO LẠI, KHÔNG BAO GIỜ ĐỂ KẾT LUẬN.** Lượt sàng
+# lọc 8 câu (10 token/giọng -> 1 token = 10 điểm %) gắn cờ ``vn:Thanh Bình``
+# WER **20,9%**; đo lại 34 câu ra **9,0%**. Nếu tin bảng sàng lọc thì đã đẩy oan
+# một giọng ĐẠT xuống cuối. Vì vậy ``DOC_SAI`` chỉ nhận số của lượt 34 câu.
+#
+# **CẤM SO CHÉO TIẾNG — LUẬT CŨ VẪN NGUYÊN, và bậc này không phá nó.** Cả 8 mã
+# dưới đây đọc **CÙNG một bộ 34 câu TIẾNG VIỆT**, mốc cũng là một giọng đọc
+# đúng bộ câu đó, nên phép so là phép so TRONG CÙNG MỘT TIẾNG. Bậc trả về là
+# 0/1 (không phải một con số để xếp hạng), nên giọng chưa đo -> bậc 0 -> thứ tự
+# của chúng giữ nguyên y cũ. Thêm giọng vào bảng thì phải đo bằng ĐÚNG bộ câu
+# đó; nhét WER đo trên câu tiếng khác vào đây chính là dựng lại phép so chéo.
+
+#: WER của giọng MỐC ``vi-VN-HoaiMyNeural`` trên chính bộ 34 câu đó.
+WER_MOC = 4.8
+
+#: Ngưỡng "đọc sai nhiều" = **3 lần mốc**. Con số này KHÔNG đặt mò và cũng
+#: KHÔNG phải chỗ tinh chỉnh: 8 mã đã đo chia thành hai chùm **TÁCH RỜI HẲN** —
+#:
+#:      4,8 · 4,8 · 6,2 · 9,0   |   khoảng TRỐNG 9,0 -> 19,9   |   19,9 · 25,5 · 26,4 · 29,2
+#:
+#: ``3 × 4,8 = 14,4`` rơi vào giữa khoảng trống đó (trung điểm 14,45), nên đặt
+#: ngưỡng ở BẤT KỲ đâu trong (9,0 ; 19,9) cũng ra CÙNG một kết quả — đúng cách
+#: ``_do_cjk_calib`` đã chốt ngưỡng CJK. **Đổi nó chỉ khi bảng đổi**, và phải
+#: đếm lại xem chùm còn tách rời không.
+NGUONG_DOC_SAI = 3.0 * WER_MOC
+
+#: mã giọng -> WER (%) trên bộ 34 câu tiếng Việt. Bảng này là BIÊN BẢN của một
+#: lượt đo, **không phải một danh sách đen viết tay** — mọi giọng đã đo đều nằm
+#: đây, kể cả giọng ĐẠT, và chính ``NGUONG_DOC_SAI`` mới quyết định ai bị đẩy
+#: xuống. Nhờ vậy đọc bảng là kiểm được ngay hai chùm có còn tách rời hay không.
+#: **SINH RA TỪ PHÉP ĐO (`_do_vn_quet.py` -> `_kq_vn_quet34.txt`), ĐỪNG SỬA
+#: TAY.** Giọng không có trong bảng = CHƯA ĐO, và "chưa đo" **không bao giờ**
+#: được coi là "đọc sai" (đó là bịa một lời khai xấu về giọng, mặt khác của
+#: đúng cái luật "cấm bịa một con số cạnh tên giọng").
+DOC_SAI: dict[str, float] = {
+    "vn:Quang Sơn": 29.2,
+    "vn:Xuân Vĩnh": 26.4,
+    "vn:Mai Anh": 25.5,
+    "vn:Ngọc Trân": 19.9,
+    "vn:Thanh Bình": 9.0,
+    "vn:Adam": 6.2,
+    "vn:Ngọc Huyền": 4.8,
+    "vi-VN-HoaiMyNeural": 4.8,          # MỐC
+}
+
+
+def wer(voice: str) -> float | None:
+    """% từ đọc sai của giọng; None = CHƯA ĐO (đừng đoán bừa)."""
+    return DOC_SAI.get(str(voice or ""))
+
+
+def doc_sai_nhieu(voice: str) -> bool:
+    """Giọng này đọc sai NHIỀU (>= ``NGUONG_DOC_SAI``)?
+
+    Chưa đo -> **False**. Không biết thì không được kết luận xấu.
+    """
+    v = wer(voice)
+    return v is not None and v >= NGUONG_DOC_SAI
+
+
+#: Chữ mở đầu câu cảnh báo. Để RIÊNG thành hằng số vì hai chỗ khác phải nhận ra
+#: nó mà không được chép tay: ``giong_bang.duoi_doc_sai`` (chống nói hai lần) và
+#: ``thay_giong_dialog._RE_GIU`` (bộ rút gọn nhãn — không nhận ra thì cảnh báo
+#: bị đẩy IM LẶNG vào tooltip, tức làm xong mà người dùng không thấy).
+DAU_DOC_SAI = "ĐỌC SAI"
+
+
+def nhan_doc_sai(voice: str) -> str:
+    """Đuôi nhãn cảnh báo, hoặc "" nếu giọng không thuộc nhóm đọc sai nhiều.
+
+    Viết cho người KHÔNG rành kỹ thuật: nói ra VIỆC (*đọc sai*), CON SỐ
+    (*29,2% từ*) và VIỆC NÊN LÀM (*chọn khác*). Chữ "WER" cố ý không xuất hiện —
+    nó là từ của người đo, không phải của người chọn giọng.
+
+    **SỐ IN RA LÀ SỐ ĐO, KHÔNG LÀM TRÒN CHO ĐẸP** (29,2 chứ không phải 29) —
+    làm tròn ở đây là mở đường cho lần sau bịa hẳn.
+
+    **VÌ SAO CÂU NÀY NGẮN TỚI MỨC PHẢI VIẾT "chọn khác" — SỐ ĐO, KHÔNG PHẢI
+    TIẾT KIỆM CHỮ CHO ĐẸP.** Dòng combo bị cổng 79 CA 10 chặn ở **132 ký tự**
+    (trần đó tồn tại để bắt "ai đó nhét bản ĐẦY ĐỦ 364-521 ký tự vào combo"),
+    mà dòng VieNeu dài nhất hiện đã **131** — tức chỉ còn **1 ký tự** trống.
+    Vì vậy ``giong_bang`` cho câu này **THAY CHỖ** đuôi nhấn nhá; phần nền của
+    dòng dài nhất (``vn:Quang Sơn``) sau khi bỏ nhấn nhá là **101 ký tự**, tức
+    ngân sách thật của câu này là **31 ký tự**. Đo từng cách viết:
+
+        " - ĐỌC SAI 29,2% TỪ"                 -> 19  (mất phần khuyên)
+        " - ĐỌC SAI 29,2% TỪ, chọn khác"      -> **30  ĐANG DÙNG** (dòng 131)
+        " - SAI 29,2% TỪ, chọn giọng khác"    -> 32  TRÀN (133)
+        " - ĐỌC SAI 29,2% TỪ, chọn giọng khác"-> 36  TRÀN (137)
+        " - ĐỌC SAI 29,2% TỪ, nên chọn giọng khác" -> 40  TRÀN (141)
+
+    **KHÔNG nới trần 132 cho vừa câu dài** — nới là vừa đúng chỗ cổng 79 mất
+    khả năng bắt cái nó sinh ra để bắt, và lượt thử đầu đã đo được hậu quả
+    THẬT của một dòng 178 ký tự: ``thay_giong_dialog.nhan_gon`` rơi vào nhánh
+    bỏ cuộc (``con < 120``) và **cắt mất "miễn phí, cần tải bộ 250 MB"** khỏi
+    dòng — cổng 84 bắt đúng 8 dòng như thế. Câu ĐẦY ĐỦ nằm ở TOOLTIP, chỗ đọc
+    một lần và không có trần.
+
+    KHÔNG EMOJI (máy anh Hùng thiếu glyph -> nhãn ra ô đen, bài học v2.6.22).
+    Chữ HOA thay cho dấu hiệu đồ hoạ.
+    """
+    # **HỎI QUA ``doc_sai_nhieu``, ĐỪNG SO NGƯỠNG LẠI Ở ĐÂY.** Viết
+    # `if v < NGUONG_DOC_SAI` lần thứ hai là dựng một thước THỨ HAI: hai chỗ so
+    # thì có ngày một chỗ đổi mà chỗ kia không, tức THỨ TỰ và NHÃN nói khác
+    # nhau (giọng xuống cuối mà dòng không nói lý do, hoặc ngược lại). Nó cũng
+    # là điều kiện để phép THỬ PHÁ "tắt đúng MỘT chốt" dựng lại được bản TRƯỚC
+    # trung thực — bản đầu vá riêng `doc_sai_nhieu` và ảnh "TRƯỚC" vẫn mang
+    # cảnh báo, tức ảnh đối chứng SAI mà trông như thật.
+    if not doc_sai_nhieu(voice):
+        return ""
+    so = f"{wer(voice):.1f}".replace(".", ",")
+    return f" - {DAU_DOC_SAI} {so}% TỪ, chọn khác"
+
+
 def chu(v: float) -> str:
     """Chữ mô tả kèm số — anh Hùng không phải tự dịch '5,4' ra nghĩa gì."""
     if v >= RAT_CAO:
@@ -462,11 +603,31 @@ def nhan(voice: str) -> str:
     return f" - nhấn nhá {lam_tron:.1f} {chu(lam_tron)}".replace(".", ",")
 
 
-def khoa_sap(voice: str) -> tuple[int, float]:
-    """Khoá sắp xếp: nhấn nhá CAO lên trước, giọng CHƯA ĐO xuống cuối.
+def khoa_sap(voice: str) -> tuple[int, int, float]:
+    """Khoá sắp xếp — **BA BẬC, đọc từ trái sang phải**::
 
-    Dùng với ``sorted(...)`` -> (0, -nhấn_nhá) cho giọng đã đo, (1, 0.0) cho
-    giọng chưa đo.
+        (bậc ĐỌC SAI, bậc CHƯA ĐO nhấn nhá, -nhấn nhá)
+
+        đọc đúng + đã đo    ->  (0, 0, -6.26)
+        đọc đúng + chưa đo  ->  (0, 1,   0.0)
+        ĐỌC SAI NHIỀU       ->  (1, 0, -6.26)   <- xuống CUỐI nhóm
+
+    Bậc 1 (``doc_sai_nhieu``) là bậc **MỚI 19/08/2026** và nó đứng NGOÀI CÙNG:
+    đọc sai chữ thì nhấn nhá đẹp cũng vô nghĩa. Xem khối ghi chú "ĐỌC SAI CHỮ"
+    ở trên để biết vì sao và bằng số nào.
+
+    **ĐÂY LÀ BỘ SẮP DUY NHẤT — ĐỪNG VIẾT BỘ THỨ HAI.** Nó được dùng ở
+    ``giong_bang.gom_nhom`` / ``chon_khuyen`` · ``giong_vieneu.danh_sach_giong``
+    · 5 chỗ trong ``dubbing.py``. Thêm bậc VÀO ĐÂY thì cả 8 chỗ đó cùng đúng
+    theo; viết một hàm sắp riêng cho combo là để 7 chỗ kia xếp kiểu cũ mà không
+    một dòng báo nào.
+    **CẤM SO NHẤN NHÁ CHÉO TIẾNG vẫn nguyên**: việc chia rổ theo tiếng do NƠI
+    GỌI làm (``chon_khuyen`` đặt ``1 if da_ngu(v) else 0`` TRƯỚC khoá này), và
+    bậc mới chỉ chèn thêm một tầng BÊN TRONG khoá nên không với tới thứ tự rổ.
+
+    Bậc trả về là **BỘ 3 phần tử, không còn là bộ 2** — nơi gọi nào so khoá này
+    với một tuple tự dựng sẽ ném ``TypeError`` chứ không im lặng xếp sai.
     """
     v = muc(voice)
-    return (1, 0.0) if v is None else (0, -v)
+    sai = 1 if doc_sai_nhieu(voice) else 0
+    return (sai, 1, 0.0) if v is None else (sai, 0, -v)

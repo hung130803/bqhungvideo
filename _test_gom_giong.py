@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _test_guard  # noqa: F401,E402  (utf-8 stdout + chặn mở cửa sổ)
 
 from app.core import giong_bang as GB  # noqa: E402
+from app.core import giong_vieneu as GV  # noqa: E402
 from app.core import nhan_nha as NN  # noqa: E402
 
 DAT = 0
@@ -161,21 +162,36 @@ for nn in ("vi", "en", "ja", "zh"):
        f"{len(ma)} dòng / {len(set(ma))} mã")
     # nhấn nhá giảm dần TRONG từng nhóm (nhóm "Khuyên dùng" có luật riêng:
     # đúng tiếng trước, đa ngôn ngữ sau -> bỏ qua, CA 5 chấm riêng)
-    loi = []
-    nhom, truoc = "", None
+    #
+    # **PHẢI SO TRONG CÙNG MỘT BẬC "ĐỌC SAI" (sửa 19/08/2026, xem CA 11).**
+    # `khoa_sap` nay có bậc NGOÀI CÙNG là `doc_sai_nhieu`, nên giọng đọc sai
+    # nhiều nằm ở ĐÁY nhóm bất kể nhấn nhá — đó là mệnh đề MỚI, không phải hồi
+    # quy. Bản cũ của mục này so cả nhóm bằng một dãy nên nó báo
+    # `vn:Xuân Vĩnh 6.26 > 2.95` (4 lượt, cả 4 ngôn ngữ) trong khi thứ tự đang
+    # ĐÚNG. Mục nay chấm HAI mệnh đề, và mệnh đề thứ hai chặt hơn hẳn bản cũ:
+    # nhấn nhá giảm dần TRONG từng bậc, VÀ bậc 0 phải hết trước khi bậc 1 bắt
+    # đầu (không xen kẽ).
+    loi, xen = [], []
+    nhom, truoc, bac_truoc = "", None, None
     for nhan, vid in ra:
         if not vid:
-            nhom, truoc = nhan, None
+            nhom, truoc, bac_truoc = nhan, None, None
             continue
         if nhom.startswith("KHUYÊN DÙNG"):
             continue
-        m = NN.muc(vid.split("|")[0])
+        goc_ma = vid.split("|")[0]
+        bac = 1 if NN.doc_sai_nhieu(goc_ma) else 0
+        m = NN.muc(goc_ma)
         m = -999.0 if m is None else m
-        if truoc is not None and m > truoc + 1e-9:
+        if bac_truoc is not None and bac < bac_truoc:
+            xen.append(f"{nhom[:22]}: {vid} bậc {bac} sau bậc {bac_truoc}")
+        if bac == bac_truoc and truoc is not None and m > truoc + 1e-9:
             loi.append(f"{nhom[:22]}: {vid} {m} > {truoc}")
-        truoc = m
-    ok(f"[{nn}] trong mỗi nhóm, nhấn nhá CAO đứng trên", not loi,
-       "; ".join(loi[:2]) or f"{len(ra)} dòng")
+        truoc, bac_truoc = m, bac
+    ok(f"[{nn}] trong mỗi nhóm, nhấn nhá CAO đứng trên (cùng bậc đọc sai)",
+       not loi, "; ".join(loi[:2]) or f"{len(ra)} dòng")
+    ok(f"[{nn}] giọng ĐỌC SAI NHIỀU nằm ở ĐÁY nhóm, không xen kẽ",
+       not xen, "; ".join(xen[:2]) or f"{len(ra)} dòng")
 
 # ---------------------------------------------------------------------------
 print()
@@ -390,6 +406,17 @@ ra = GB.gom_nhom(THO, "vi", loi_tat=True)
 # Mục này canh chuyện **bịa SỐ cạnh tên giọng**, nên thước đúng là CHỮ SỐ.
 _RE_CO_SO = re.compile(r"nhấn nhá\s*\d")
 thieu_so, bia_so, noi_hai_lan, muon_so = [], [], [], []
+# GIỌNG ĐỌC SAI NHIỀU LÀ RỔ RIÊNG (sửa 19/08/2026) — **KHÔNG phải nới lỏng
+# mệnh đề, mà là ĐỔI CHỖ CHẤM theo đúng chỗ thông tin đã chuyển tới.**
+# `giong_bang.gom_nhom` cho câu cảnh báo *THAY CHỖ* đuôi nhấn nhá (dòng VieNeu
+# đã 131/132 ký tự, hai con số không cùng nằm được — xem `bo_nhan_nha`), nên
+# hỏi "dòng có số nhấn nhá không" ở đây là hỏi một mệnh đề ĐÃ BỊ THAY. Bản đầu
+# của lượt vá này bỏ sót đúng mục đó và cổng ra HỎNG 1 (`vn:Xuân Vĩnh`).
+# Đổi lại, rổ này bị chấm bằng HAI mệnh đề CHẶT HƠN, cộng lại vẫn là
+# "không mất thông tin": dòng PHẢI nói ra cảnh báo, và số nhấn nhá PHẢI còn
+# đọc được ở nhãn ĐẦY ĐỦ (tooltip). Thiếu vế thứ hai thì đây đúng là một lượt
+# XOÁ THÔNG TIN được che bằng chữ "đổi chỗ đặt".
+doc_sai_dong, mat_so = [], []
 for nhan, vid in ra:
     if not vid:
         continue
@@ -401,14 +428,31 @@ for nhan, vid in ra:
             muon_so.append(nhan)
         continue
     da_do = NN.muc(vid) is not None
+    if NN.doc_sai_nhieu(vid):
+        doc_sai_dong.append((nhan, vid))
+        continue
     if da_do and not co_so:
         thieu_so.append(nhan)
     if not da_do and co_so:
         bia_so.append(nhan)
-ok("giọng ĐÃ ĐO -> dòng có số nhấn nhá", not thieu_so,
+ok("giọng ĐÃ ĐO -> dòng có số nhấn nhá (trừ giọng đọc sai nhiều)", not thieu_so,
    f"{len(thieu_so)} thiếu: {thieu_so[:1]}")
 ok("giọng CHƯA ĐO -> dòng KHÔNG có số (cấm bịa)", not bia_so,
    f"{len(bia_so)} bịa: {bia_so[:1]}")
+# --- rổ ĐỌC SAI NHIỀU: hai mệnh đề THAY cho mệnh đề "dòng phải có số" ---
+# Đòi rổ KHÔNG RỖNG là chốt chống-ĐẠT-OAN: bảng `DOC_SAI` rỗng hay ngưỡng bị
+# đẩy lên trời thì `all(...)` của một danh sách rỗng tự True, và cả hai mục
+# dưới thành con dấu.
+ok("giọng ĐỌC SAI NHIỀU -> dòng TỰ NÓI RA cảnh báo (không im lặng)",
+   bool(doc_sai_dong) and all(NN.DAU_DOC_SAI in n for n, _ in doc_sai_dong),
+   f"{len(doc_sai_dong)} dòng · vd {[n for n, _ in doc_sai_dong][:1]}")
+for _n, _v in doc_sai_dong:
+    # Nhãn ĐẦY ĐỦ = đúng thứ `thay_giong_dialog` dán vào tooltip.
+    if not _RE_CO_SO.search(GV.nhan_giong(GB._bo_pitch(_v)).lower()):
+        mat_so.append(_v)
+ok("... và số nhấn nhá CHUYỂN sang nhãn đầy đủ (tooltip), KHÔNG mất",
+   bool(doc_sai_dong) and not mat_so,
+   f"{len(mat_so)} mất: {mat_so[:2]}")
 # TỰ KIỂM BỘ DÒ — mục trên chỉ là con dấu nếu `_RE_CO_SO` không còn kêu. Bắt nó
 # phải PHÂN BIỆT được ba dạng đuôi thật của `nhan_nha.nhan()`.
 ok("TỰ KIỂM bộ dò: phân biệt 'có số' / 'chưa đo' / rỗng",

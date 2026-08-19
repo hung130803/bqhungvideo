@@ -221,10 +221,21 @@ DAU_CON_CHU = " · rê chuột xem thêm"
 #: (nó nằm GIỮA TÊN: `Nam Minh — Nam chuẩn`).
 _RE_TACH = re.compile(r"\s+[-·]\s+")
 
-#: PHẦN PHẢI GIỮ LẠI trên dòng — đúng 4 câu anh Hùng cần trả lời ngay:
-#: nó đọc có cảm xúc không · nó đọc được tiếng gì · tốn tiền không · phải tải gì.
-#: Phần nào KHÔNG khớp bộ này mà nhãn lại quá dài thì đẩy vào tooltip.
+#: PHẦN PHẢI GIỮ LẠI trên dòng — đúng 5 câu anh Hùng cần trả lời ngay: **nó có
+#: đọc sai chữ không** · nó đọc có cảm xúc không · nó đọc được tiếng gì · tốn
+#: tiền không · phải tải gì. Phần nào KHÔNG khớp bộ này mà nhãn lại quá dài thì
+#: đẩy vào tooltip.
+#:
+#: **CÂU CẢNH BÁO ĐỌC SAI PHẢI CÓ TRONG BỘ NÀY, nếu không thì bản vá 19/08/2026
+#: coi như KHÔNG LÀM.** Đo được: nhãn VieNeu đi tới **mức 3** của `nhan_gon`
+#: (cắt cả phần TÊN), tức mọi phần không khớp `_RE_GIU` đều bị đẩy im lặng vào
+#: tooltip — cảnh báo *"ĐỌC SAI NHIỀU: 26,4% từ"* sẽ nằm ở chỗ phải rê chuột
+#: mới thấy, đúng lúc nó cần đứng trên dòng. Lấy chữ mở đầu từ chính
+#: `nhan_nha.DAU_DOC_SAI` (hằng số CÔNG KHAI, như `GB.DAU_LOI_TAT` đã dùng ở
+#: hàm này) chứ KHÔNG chép tay: chép tay thì bên kia sửa một chữ là mục này im
+#: lặng hết khớp.
 _RE_GIU = (
+    re.compile(re.escape(NN.DAU_DOC_SAI)),
     re.compile(r"(?:nhấn nhá\s|chưa đo nhấn nhá)"),
     re.compile(r"(?:đọc được|chỉ đọc tiếng|chỉ tiếng|chưa đo đọc"
                r"|chưa đo tiếng|KHÔNG đọc được|TIẾNG ANH)"),

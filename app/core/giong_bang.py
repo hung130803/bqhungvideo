@@ -400,6 +400,60 @@ def duoi_nhan_nha(vid: str, nhan: str = "") -> str:
     return nhan_nha.nhan(vid)
 
 
+def duoi_doc_sai(vid: str, nhan: str = "") -> str:
+    """Đuôi ' - ĐỌC SAI 26,4% TỪ, chọn khác' cho một dòng combo.
+
+    Trả RỖNG khi giọng **CHƯA ĐO** hoặc đo ra **dưới ngưỡng** — chưa đo không
+    bao giờ được nói thành "đọc sai" (mặt sau của luật "cấm bịa số cạnh tên
+    giọng": bịa một lời khai XẤU cũng là bịa). Cũng trả RỖNG khi nhãn đã tự mang
+    câu đó rồi — cùng khuôn chống-nói-hai-lần của ``duoi_dong`` /
+    ``duoi_nhan_nha``.
+
+    **TRA THEO MÃ ĐÃ BỎ CAO ĐỘ (``_bo_pitch``), KHÁC HẲN ``duoi_nhan_nha``** —
+    và đây là chỗ dễ "dọn cho nhất quán" mà làm sai. Nhấn nhá thì biến thể cao
+    độ KHÔNG được mượn số của giọng gốc (dịch cao độ đổi thẳng F0, cổng 79 CA 9
+    canh). Đọc sai chữ thì NGƯỢC: dịch cao độ là phép hậu xử lý trên sóng, nó
+    không đổi một chữ nào máy đọc phát ra, nên WER của giọng gốc **đúng nguyên
+    vẹn** cho mọi biến thể. Bỏ ``_bo_pitch`` ở đây là để biến thể của một giọng
+    đọc sai lẻn lên đầu nhóm mà không mang cảnh báo.
+    """
+    if nhan_nha.DAU_DOC_SAI in str(nhan or ""):
+        return ""
+    return nhan_nha.nhan_doc_sai(_bo_pitch(vid))
+
+
+def bo_nhan_nha(vid: str, nhan: str) -> str:
+    """Bỏ đuôi nhấn nhá RA KHỎI nhãn — chỉ dùng cho dòng ĐỌC SAI NHIỀU.
+
+    **VÌ SAO PHẢI BỎ, và vì sao đó là quyết định ĐO ĐƯỢC chứ không phải khẩu
+    vị.** Nhãn VieNeu tự mang sẵn đuôi nhấn nhá (``giong_vieneu.nhan_giong``
+    gọi ``nhan_nha.nhan()``), và dòng dài nhất đã **131/132 ký tự** — trần cổng
+    79 CA 10. Tức trên dòng đó **hai con số phải tranh nhau đúng 1 ký tự trống**,
+    không có cách nào mang cả hai. Lượt thử đầu đã đo hậu quả của việc mang cả
+    hai: dòng phồng lên **178 ký tự**, ``thay_giong_dialog.nhan_gon`` rơi vào
+    nhánh bỏ cuộc và **cắt mất "miễn phí, cần tải bộ 250 MB"** khỏi 8 dòng.
+
+    Và trong hai con số đó, nhấn nhá là con số phải nhường: nó đo *nói CÓ CẢM
+    XÚC không*, còn WER đo *nói ĐÚNG CHỮ không*. Ghi *"nhấn nhá 6,3 rất truyền
+    cảm"* cạnh một giọng đọc sai **26,4% số từ** không chỉ là chiếm chỗ — nó là
+    một lời TIẾN CỬ đặt cạnh đúng cái giọng đang bị khuyên đừng dùng.
+
+    **CON SỐ NHẤN NHÁ KHÔNG BỊ MẤT** (đã kiểm, không suy luận): tooltip của dòng
+    còn dán thêm ``giong_vieneu.nhan_giong(vid)`` bản ĐẦY ĐỦ, mà bản đó tự gọi
+    ``nhan_nha.nhan()`` — nên rê chuột vẫn đọc được "nhấn nhá 6,3". Đây là "đổi
+    CHỖ ĐẶT", không phải "xoá thông tin", đúng luật ``_chu_thich`` đã ghi.
+
+    **CẮT THEO CHUỖI ĐÚNG BẰNG ``nhan_nha.nhan()``, KHÔNG DÙNG REGEX.**
+    ``nhan()`` là nơi DUY NHẤT dựng chuỗi đó, nên so nguyên văn thì hai bên
+    không thể lệch nhau. Regex kiểu ``- nhấn nhá .*?(?= - )`` thì đúng hôm nay
+    và sai im lặng ngày ``nhan()`` đổi một dấu — mà cắt hụt/cắt lố ở đây là
+    dòng ra chữ vô nghĩa chứ không nổ lỗi. Không tìm thấy -> trả NGUYÊN VẸN.
+    """
+    s = str(nhan or "")
+    d = nhan_nha.nhan(_bo_pitch(vid))
+    return s.replace(d, "", 1) if d and d in s else s
+
+
 def duoi_da_ngu(vid: str, nhan: str = "") -> str:
     """Đuôi ' - đọc được Việt·Anh·Hàn·Nhật·Trung (đã đo)' cho một dòng combo.
 
@@ -635,6 +689,11 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
       HAI chế độ, đây là mệnh đề không bao giờ được nhân nhượng;
     * **trong mỗi nhóm, nhấn nhá cao đứng trên** (``nhan_nha.khoa_sap``),
       giọng chưa đo xuống cuối nhóm chứ không bị vứt;
+    * **giọng ĐỌC SAI NHIỀU xuống ĐÁY nhóm** (bậc mới của ``khoa_sap``,
+      19/08/2026) và dòng của chúng tự nói ra con số. Trước lượt này
+      ``vn:Xuân Vĩnh`` — nhấn nhá 6,26 = ĐỈNH bảng 211 giọng, nhưng **đọc sai
+      26,4% từ** — đứng **DÒNG ĐẦU nhóm "TRÊN MÁY"** (đo thẳng bằng hàm này,
+      không suy từ mã). Vẫn **KHÔNG BỎ, KHÔNG ẨN** giọng nào;
     * ``loi_tat=False`` (mặc định): **mỗi mã xuất hiện ĐÚNG một lần**, nhóm
       "Khuyên dùng" LẤY HẲN giọng ra khỏi nhóm gốc.
 
@@ -710,9 +769,19 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
         ra.append((_NHAN_NHOM[k].format(nn=ten_ngon_ngu(nn)), ""))
         for nhan, vid in muc:
             n2 = ten_ro_rang(vid, nhan, ten_goc(vid) in can_ro)
-            # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79 chấm
-            # được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một dòng.
-            n2 += duoi_nhan_nha(vid, n2)
+            # CẢNH BÁO ĐỌC SAI **THAY CHỖ** SỐ NHẤN NHÁ, không cộng thêm — dòng
+            # VieNeu đã 131/132 ký tự nên hai con số tranh nhau đúng 1 ký tự
+            # trống, và nhấn nhá là con số phải nhường (xem `bo_nhan_nha`).
+            # Giọng đọc ĐÚNG thì nhánh này không chạy, dòng của chúng giống
+            # từng ký tự bản trước.
+            canh = duoi_doc_sai(vid, n2)
+            if canh:
+                n2 = bo_nhan_nha(vid, n2) + canh
+            else:
+                # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79
+                # chấm được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một
+                # dòng.
+                n2 += duoi_nhan_nha(vid, n2)
             # ĐỌC ĐƯỢC TIẾNG GÌ đứng TRƯỚC phần tiền: "chọn nó có ra tiếng
             # đúng không" là câu hỏi phải trả lời trước "nó tốn bao nhiêu".
             n2 += duoi_da_ngu(vid, n2)
