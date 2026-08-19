@@ -93,7 +93,22 @@ CONG = [
     # rất lung tung"). Đo trước khi sửa: combo có 110 mã cho 90 giọng, tức
     # 20 dòng TRÙNG MÃ THẬT SỰ. Nó cũng KHÔNG gọi mạng/ffmpeg/Groq nên tiền
     # định; để cạnh cổng 76 vì hai cổng đọc chung `nhan_nha.BANG`.
-    ("79 gom nhóm giọng",   "_test_gom_giong.py",        58),
+    # 58 -> 84 (v2.38.0): thêm CA 8 (nhóm "khuyên dùng" làm LỐI TẮT) · CA 9
+    # (mức nhấn nhá trên TỪNG dòng; biến thể cao độ KHÔNG được mượn số của
+    # giọng gốc) · CA 10 (20 giọng VieNeu không phải giọng chết — gọi THẬT
+    # `_synth_all_words` rồi xem nó rẽ vào đâu). NÂNG mốc = cổng CHẶT HƠN.
+    ("79 gom nhóm giọng",   "_test_gom_giong.py",        84),
+    # Cổng 81 canh lượt 19/08/2026: MỞ KHOÁ 185 giọng edge-tts (`giong_mo`) ·
+    # giọng RIÊNG THEO KÊNH + XOAY VÒNG (`giong_kenh`) · NHÂN BẢN giọng từ mẫu
+    # (`nhan_ban_giong`) · Chatterbox (`giong_chatter`). Cũng KHÔNG gọi mạng,
+    # KHÔNG chạy model, KHÔNG tốn lượt Groq — nó chấm hàm thuần + DB hộp cát,
+    # nên để cạnh cổng 76/79 (ba cổng cùng đọc `nhan_nha.BANG`).
+    # MỆNH ĐỀ TRUNG TÂM (CA 3i): xoay vòng giọng phải TIỀN ĐỊNH qua NHIỀU
+    # TIẾN TRÌNH có `PYTHONHASHSEED` KHÁC NHAU — app chạy 3 làn xuất song song
+    # nên dùng `hash()` là 3 Part của CÙNG một video ra 3 giọng, và không tra
+    # lại được. THỬ PHÁ (đổi `crc32` -> `hash()`): cổng ĐỎ đúng mục đó,
+    # `0/3 tiến trình khớp`, mã thoát 1.
+    ("81 giọng theo kênh",  "_test_giong_kenh.py",       57),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
@@ -105,7 +120,10 @@ CONG = [
     ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
     # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
     # cổng từng ĐỎ OAN vì đọc trúng registry thật của anh Hùng).
-    ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    44),
+    # 44 -> 45: thêm mục TỰ KIỂM cho phép đo cỡ chữ (phải có NỀN để trừ, và cỡ
+    # nhỏ vẫn phải đếm ra chữ). Trước đó phép đo cộng cả ĐỘ SÁNG CỦA PHIM vào
+    # số điểm ảnh chữ nên cổng đỏ oan mỗi khi kho video đổi sang phim sáng.
+    ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    45),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
