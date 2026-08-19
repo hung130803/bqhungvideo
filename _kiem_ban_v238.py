@@ -193,7 +193,7 @@ def main() -> int:
         dong[nn] = len(combo)
     lech = {nn: (tap_vao ^ s) for nn, s in tap_ra.items()}
     xau = {nn: v for nn, v in lech.items() if v}
-    print(f"\ngom_nhom (loi_tat=True) — số DÒNG combo theo ngôn ngữ đích:")
+    print("\ngom_nhom (loi_tat=True) — số DÒNG combo theo ngôn ngữ đích:")
     print("   " + " · ".join(f"{nn}={dong[nn]}" for nn in NGON_NGU))
     print(f"mã DUY NHẤT: {len(tap_vao)} (giống nhau ở cả "
           f"{len(NGON_NGU)} ngôn ngữ: {'CÓ' if not xau else 'KHÔNG - ' + str(xau)})")
