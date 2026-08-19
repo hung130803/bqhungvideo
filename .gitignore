@@ -127,6 +127,12 @@ _do_chatter/
 _mau_giong/
 _kq*.json
 
+# SAN DO cua `_do_adam.py` (Adam VieNeu vs Adam ElevenLabs) + cho de file
+# tieng anh Hung TU NGHE. Deu la wav/mp3 sinh lai duoc, va mot phan trong do
+# la tieng cua MAY DOC THUONG MAI (ElevenLabs) — khong dua vao lich su git.
+_do_adam/
+_NGHE_THU_ANH_HUNG/
+
 # BAO MAT: cong 70 tung in NGUYEN VAN key Groq that ra file ket qua.
 # Mot luot `git add -A` la key vao lich su git cong khai. Chan tan goc.
 _kq*.txt
