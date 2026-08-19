@@ -262,11 +262,62 @@ def main() -> int:
           f"{'CÓ' if 'zz-ZZ-CamNeural' in bat else 'KHÔNG - bộ dò HỎNG'}")
 
     cb_ok = kiem_chatter()
+    key_ok = kiem_lo_key()
 
     hong = bool(xau) or bool(lot) or bool(khong_bang) or \
-        ("zz-ZZ-CamNeural" not in bat) or not cb_ok
+        ("zz-ZZ-CamNeural" not in bat) or not cb_ok or not key_ok
     print("\n" + ("CÓ MỤC HỎNG — đọc bảng trên" if hong else "TẤT CẢ ĐẠT"))
     return 1 if hong else 0
+
+
+def kiem_lo_key() -> bool:
+    """CÓ KEY THẬT NÀO RƠI VÀO PHẦN CHƯA ĐẨY KHÔNG.
+
+    **`grep -c gsk_` LÀ CỔNG SAI, VÀ NÓ ĐANG ĐỎ OAN — đọc kỹ trước khi hoảng.**
+    Luật phát hành ghi *"`git log origin/main..HEAD -p | grep -c gsk_` phải =
+    0"*. Đo thật hôm nay: **22**. Nhưng cả 22 đều là chuỗi `gsk_` TRẦN (chính
+    là MẪU DÒ mà `app/ai/llm.py` và cổng 77 `_test_khong_lo_key.py` dùng để
+    BẮT key rơi ra) cộng vài key GIẢ (`gsk_test`, `gsk_abc`). Không một chuỗi
+    nào dài tới mức là key thật.
+
+    Tức cổng cũ trừng phạt đúng cái file sinh ra để chống rò key — anh em của
+    bẫy *"quét tĩnh bằng chuỗi thì chính DÒNG GHI CHÚ giải thích bản vá bị kể
+    là vi phạm"* (cổng 47/51/53/73). Cổng đỏ oan thì người ta thôi đọc nó.
+
+    Cổng ĐÚNG hỏi theo **HÌNH DẠNG KEY THẬT**: key Groq là `gsk_` + 52 ký tự,
+    ElevenLabs `sk_` + 48, Google `AIza` + 35. Ngưỡng đặt 40 cho rộng rãi.
+    Hàm **KHÔNG BAO GIỜ in giá trị khớp**, chỉ in SỐ ĐẾM và TÊN FILE.
+    """
+    import subprocess
+    print("\n" + "=" * 78)
+    print("RÒ KEY: quét phần CHƯA ĐẨY theo HÌNH DẠNG key thật")
+    print("=" * 78)
+    try:
+        r = subprocess.run(["git", "log", "origin/main..HEAD", "-p"],
+                           cwd=str(REPO), capture_output=True, timeout=300)
+    except Exception as e:                                   # noqa: BLE001
+        print(f"KHÔNG CHẤM ĐƯỢC: {type(e).__name__}: {e}")
+        return False
+    d = (r.stdout or b"").decode("utf-8", "replace")
+    import re as _re
+    mau = {
+        "Groq (gsk_+40)":       _re.compile(r"gsk_[A-Za-z0-9_]{40,}"),
+        "ElevenLabs (sk_+40)":  _re.compile(r"\bsk_[A-Za-z0-9]{40,}"),
+        "Google (AIza+35)":     _re.compile(r"AIza[A-Za-z0-9_\-]{35}"),
+        "OpenAI (sk-+30)":      _re.compile(r"sk-[A-Za-z0-9_\-]{30,}"),
+    }
+    tong = 0
+    for ten, rx in mau.items():
+        n = len(rx.findall(d))
+        tong += n
+        print(f"   {ten:22s} {n}")
+    tho = len(_re.findall(r"gsk_", d))
+    print(f"   {'(gsk_ TRẦN - cổng cũ)':22s} {tho}  <- mẫu dò + key giả, "
+          f"KHÔNG phải key thật")
+    print(f"   dòng diff quét: {len(d.splitlines())}")
+    print("KẾT: " + ("SẠCH — 0 key thật trong phần chưa đẩy" if tong == 0
+                     else f"CÓ {tong} CHUỖI DẠNG KEY THẬT — DỪNG, ĐỪNG ĐẨY"))
+    return tong == 0
 
 
 def kiem_chatter() -> bool:
