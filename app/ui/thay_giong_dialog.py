@@ -51,12 +51,12 @@ import unicodedata
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QStandardItem
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
-    QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QMessageBox, QProgressBar, QPushButton, QSpinBox, QStyledItemDelegate,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.core import che_chu as TG_CC
@@ -70,7 +70,8 @@ from app.core import giong_bang as GB
 from app.core import nhan_nha as NN
 from app.ui.editor import nut_chon_mau
 from app.ui.theme import (
-    ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, TEXT, WARN,
+    ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, SURFACE_HOVER, TEXT,
+    WARN,
 )
 
 #: Khoá QSettings — đủ để mở lại hộp là thấy y nguyên lần trước.
@@ -170,6 +171,80 @@ def rong_vua_chu(fm, nhan_ds, tran: int) -> int:
         return max(RONG_TOI_THIEU, min(RONG_TOI_THIEU, tran))
     can = max(fm.horizontalAdvance(str(n or "")) for n in nhan_ds)
     return max(RONG_TOI_THIEU, min(int(can) + LE_TRAN, tran))
+
+
+#: Vai trò dữ liệu đánh dấu "dòng này là TIÊU ĐỀ NHÓM". Phải là cờ RIÊNG, không
+#: được suy từ "mã giọng rỗng": dòng ĐẦU (`NHAN_GIONG_TU`) cũng có mã rỗng mà nó
+#: là một LỰA CHỌN THẬT — coi nó là tiêu đề nhóm là khoá mất lựa chọn mặc định.
+VAI_NHOM = int(Qt.ItemDataRole.UserRole) + 7
+
+
+def to_nhan_nhom(it) -> None:
+    """VIỆC 2 — đánh dấu TIÊU ĐỀ NHÓM: KHÔNG CHỌN ĐƯỢC + cho bộ vẽ biết.
+
+    **`setEnabled(False)` KHÔNG PHẢI "không chọn được".** Nó chỉ gỡ
+    ``ItemIsEnabled``; cờ ``ItemIsSelectable`` **VẪN CÒN**, nên dòng tiêu đề vẫn
+    chọn được bằng bàn phím/mã. Phải gỡ SẠCH bằng ``NoItemFlags`` — và cổng 84
+    kiểm CHÍNH CỜ ĐÓ chứ không chỉ kiểm màu: đổi màu mà vẫn chọn được thì bấm
+    vào tiêu đề là app nhận một "giọng" tên
+    *"MIỄN PHÍ (edge-tts) - giọng Tiếng Việt"*.
+
+    **VÌ SAO KHÔNG `setForeground`/`setFont` — ĐÃ THỬ VÀ ĐO RA LÀ VÔ TÁC DỤNG.**
+    QSS chung của app mở đầu bằng ``* {{ color: TEXT; font-family: ...;
+    font-size: 13px }}``; bộ vẽ item của `QStyleSheetStyle` lấy màu/phông từ QSS
+    và **đè lên** màu/phông đặt trên từng item. Soi điểm ảnh bản dùng
+    `setForeground(ACCENT)` (#4C8DFF): màu chữ dòng tiêu đề đo ra **#E8EDF7** —
+    tức vẫn là màu TEXT, xanh không hề tới. Đây đúng họ bẫy đã cắn repo này một
+    lần (QSS chung bóp widget con còn ~0 => "dòng trống trơn trên máy user mà
+    test không QSS vẫn PASS"). Nên việc VẼ giao cho `VeDongGiong` — nó tự tô,
+    không xin phép QSS.
+
+    Nhận cả ``QStandardItem`` (combo) lẫn ``QListWidgetItem`` (ô tìm giọng) —
+    hai chỗ bày CÙNG một danh sách thì phải trông GIỐNG NHAU, nên chỉ MỘT hàm
+    này. **Hai lớp đó đảo NGƯỢC thứ tự tham số của `setData`** (QStandardItem:
+    `(giá trị, vai)` · QListWidgetItem: `(vai, giá trị)`) và gọi sai thì KHÔNG
+    nổ lỗi — `True` tự thành `int` 1 = `DecorationRole`, tức dòng im lặng mất
+    dấu nhóm. Vì vậy phải `isinstance`, đừng `try/except TypeError`.
+    """
+    it.setFlags(Qt.ItemFlag.NoItemFlags)      # thật sự không chọn được
+    if isinstance(it, QStandardItem):
+        it.setData(True, VAI_NHOM)
+    else:
+        it.setData(VAI_NHOM, True)
+
+
+class VeDongGiong(QStyledItemDelegate):
+    """Bộ vẽ dòng cho ô danh sách giọng — tiêu đề nhóm KHÁC HẲN dòng giọng.
+
+    Tự vẽ chứ không nhờ `setForeground`/`setFont`: xem lý do đo được ở
+    `to_nhan_nhom`. Ba dấu hiệu cùng lúc, để không phụ thuộc một thứ nào:
+
+    * **VẠCH MÀU** dày 4 px ở lề trái — đọc được cả khi người dùng mù màu;
+    * **NỀN SÁNG HƠN** cả dải (`SURFACE_HOVER`) — tách nhóm bằng khối, không
+      chỉ bằng chữ;
+    * **CHỮ ĐẬM + MÀU ACCENT**.
+
+    Dòng giọng để `QStyledItemDelegate` vẽ y như cũ — không đụng gì.
+    """
+
+    def paint(self, painter, option, index):    # noqa: N802 - API Qt
+        if not index.data(VAI_NHOM):
+            super().paint(painter, option, index)
+            return
+        painter.save()
+        r = option.rect
+        painter.fillRect(r, QColor(SURFACE_HOVER))
+        painter.fillRect(r.left(), r.top(), 4, r.height(), QColor(ACCENT))
+        f = QFont(option.font)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.setPen(QColor(ACCENT))
+        o = r.adjusted(12, 0, -6, 0)
+        painter.drawText(
+            o, int(Qt.AlignmentFlag.AlignVCenter),
+            QFontMetrics(f).elidedText(str(index.data() or ""),
+                                       Qt.TextElideMode.ElideRight, o.width()))
+        painter.restore()
 
 
 def bo_emoji(s: str) -> str:
@@ -1410,7 +1485,7 @@ class ThayGiongDialog(QDialog):
             it = self.cb_giong.model().item(self.cb_giong.count() - 1)
             if not vid:                     # nhãn NHÓM -> không cho chọn
                 if it is not None:
-                    it.setEnabled(False)
+                    to_nhan_nhom(it)        # đậm + màu khác + NoItemFlags
             elif it is not None:
                 # TOOLTIP = phần chữ dài không nhét vào dòng được (giấy phép,
                 # điểm yếu đo được, việc phải tải). Nhờ nó mà nhãn VieNeu rút
@@ -1454,6 +1529,12 @@ class ThayGiongDialog(QDialog):
                 [self.cb_giong.itemText(i)
                  for i in range(self.cb_giong.count())],
                 rong_toi_da(self.cb_giong)))
+            # VIỆC 2: bộ vẽ riêng cho tiêu đề nhóm. Giữ MỘT thực thể trên hộp
+            # (đặt lại mỗi lần đổi ngôn ngữ là đẻ delegate rác, mà Qt KHÔNG sở
+            # hữu delegate -> Python thu hồi trong lúc view còn trỏ tới = sập).
+            if getattr(self, "_ve_dong", None) is None:
+                self._ve_dong = VeDongGiong(self)
+                view.setItemDelegate(self._ve_dong)
         except (AttributeError, RuntimeError):
             pass            # popup chỉ là đường LÙI (đường chính là ô tìm)
 
