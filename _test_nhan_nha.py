@@ -170,18 +170,32 @@ def ca3_khoa_la_ma_giong_that() -> None:
 
 # ----------------------------------------------------------------- CA 4
 def ca4_moi_giong_gon_co_so() -> None:
-    print("\nCA 4 — mọi giọng của danh sách gọn phải CÓ số")
+    print("\nCA 4 — mọi giọng của danh sách gọn phải NÓI RÕ mình ở đâu")
     from app.core import dubbing, nhan_nha as nn
     allv = dubbing._fetch_all_voices()
     if not allv:
-        bo_qua("4a giọng gọn có số", "chưa có cache danh sách giọng")
+        bo_qua("4a giọng gọn có đuôi", "chưa có cache danh sách giọng")
         return
     gon = [v["ShortName"] for v in allv
            if v.get("ShortName") in dubbing._HOT_VOICES
            or dubbing._la_giong_mo_them(v)]
-    thieu = sorted(s for s in gon if nn.muc(s) is None)
-    ok("4a không giọng gọn nào thiếu số", not thieu,
-       str(thieu[:5]) or f"{len(gon)}/{len(gon)} có số")
+    # 19/08/2026 — MỆNH ĐỀ ĐỔI VÌ *LUẬT* ĐỔI, VÀ NÓ CHẶT HƠN BẢN CŨ.
+    # Bản cũ: *"mọi giọng gọn phải CÓ SỐ"*. Mệnh đề đó chỉ đúng khi tấm vé vào
+    # combo do phép đo NHẤN NHÁ cấp — và chính nó đã khoá 137 giọng của 60 thứ
+    # tiếng lại (xem `app/core/giong_doc.py`). Nay vé do bằng chứng ĐỌC THẬT
+    # cấp, nên combo có giọng chưa đo nhấn nhá là chuyện ĐÚNG THIẾT KẾ.
+    # Cái thật sự phải canh không phải "có số" mà là **KHÔNG BAO GIỜ CÓ DÒNG
+    # TRỐNG TRƠN**: mỗi dòng phải hoặc mang số, hoặc NÓI THẲNG là chưa đo. Dòng
+    # trống là chỗ người đọc không phân biệt được "chưa đo" với "app quên", và
+    # đó mới là bệnh mục này sinh ra để chặn.
+    cam = sorted(s for s in gon if not nn.nhan(s))
+    ok("4a không dòng nào TRỐNG TRƠN (có số, hoặc nói thẳng 'chưa đo')",
+       not cam, str(cam[:5]) or f"{len(gon)}/{len(gon)} dòng có đuôi")
+    _chua = sorted(s for s in gon if nn.muc(s) is None)
+    ok("4a' giọng chưa đo -> ĐÚNG chữ 'chưa đo', KHÔNG một chữ số nào",
+       all(nn.nhan(s) == nn.CHUA_DO for s in _chua)
+       and not any(c.isdigit() for s in _chua for c in nn.nhan(s)),
+       f"{len(_chua)} giọng chưa đo / {len(gon)} giọng gọn")
     anh = [s for s in gon if s.startswith("en-")]
     ok("4b đủ 47 giọng tiếng Anh và giọng nào cũng có số",
        len(anh) == 47 and all(nn.muc(s) is not None for s in anh),

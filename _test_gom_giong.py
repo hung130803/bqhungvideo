@@ -39,6 +39,7 @@ nào**. Nên CA 1 không so với hằng số chép tay mà hỏi thẳng từng
 """
 from __future__ import annotations
 
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -380,11 +381,19 @@ ra = GB.gom_nhom(THO, "vi", loi_tat=True)
 # biến thể là MƯỢN số của mã khác — đúng thứ `chon_khuyen` đã từ chối
 # ("khuyên bằng một con số mượn của mã khác thì đúng bằng bịa") và đúng thứ
 # `nhan_nha.nhan()` tránh khi nó tra bằng mã ĐẦY ĐỦ. Nay tách hẳn hai rổ.
+# **BỘ DÒ PHẢI HỎI "CÓ SỐ", KHÔNG HỎI "CÓ CHỮ 'nhấn nhá'" (sửa 19/08/2026).**
+# Bản cũ đặt `co_so = "nhấn nhá" in nhan.lower()`. Từ lượt mở 137 giọng, nhãn
+# có trạng thái thứ ba `" - chưa đo nhấn nhá"` (`nhan_nha.CHUA_DO`) — nó CHỨA
+# chữ "nhấn nhá" mà **không có con số nào**, nên bộ dò cũ kể 137 dòng ĐÚNG
+# thành "bịa số" -> ĐỎ OAN. Cùng họ bẫy "quét bằng chuỗi" đã sập ở cổng
+# 47/51/53/56/73: hỏi *có mặt không* thay vì hỏi *có nghĩa gì*.
+# Mục này canh chuyện **bịa SỐ cạnh tên giọng**, nên thước đúng là CHỮ SỐ.
+_RE_CO_SO = re.compile(r"nhấn nhá\s*\d")
 thieu_so, bia_so, noi_hai_lan, muon_so = [], [], [], []
 for nhan, vid in ra:
     if not vid:
         continue
-    co_so = "nhấn nhá" in nhan.lower()
+    co_so = bool(_RE_CO_SO.search(nhan.lower()))
     if nhan.lower().count("nhấn nhá") > 1:
         noi_hai_lan.append(nhan)
     if GB.la_bien_the(vid):             # biến thể cao độ -> CẤM có số
@@ -400,6 +409,18 @@ ok("giọng ĐÃ ĐO -> dòng có số nhấn nhá", not thieu_so,
    f"{len(thieu_so)} thiếu: {thieu_so[:1]}")
 ok("giọng CHƯA ĐO -> dòng KHÔNG có số (cấm bịa)", not bia_so,
    f"{len(bia_so)} bịa: {bia_so[:1]}")
+# TỰ KIỂM BỘ DÒ — mục trên chỉ là con dấu nếu `_RE_CO_SO` không còn kêu. Bắt nó
+# phải PHÂN BIỆT được ba dạng đuôi thật của `nhan_nha.nhan()`.
+ok("TỰ KIỂM bộ dò: phân biệt 'có số' / 'chưa đo' / rỗng",
+   bool(_RE_CO_SO.search(" - nhấn nhá 4,5 rất truyền cảm"))
+   and not _RE_CO_SO.search(NN.CHUA_DO)
+   and not _RE_CO_SO.search(""),
+   f"CHUA_DO={NN.CHUA_DO!r}")
+# Trạng thái thứ ba phải THẤY ĐƯỢC trong combo thật, không chỉ ở mức hàm.
+_chua_do_dong = [n for n, v in ra if v and NN.CHUA_DO in n]
+ok("combo CÓ dòng 'chưa đo nhấn nhá' (trạng thái thứ ba lộ ra thật)",
+   len(_chua_do_dong) >= 100,
+   f"{len(_chua_do_dong)} dòng · vd {_chua_do_dong[:1]}")
 ok("BIẾN THỂ CAO ĐỘ KHÔNG mượn số của giọng gốc", not muon_so,
    f"{len(muon_so)} mượn: {muon_so[:1]}")
 ok("KHÔNG dòng nào nói 'nhấn nhá' hai lần", not noi_hai_lan,

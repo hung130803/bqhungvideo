@@ -34,37 +34,51 @@ file đủ dài mà toàn im lặng. **Tự kiểm bộ dò đã chạy thật**
 giây đo ra -99,0 dBFS (bị bắt) · file có tiếng nhưng cụt 0,26 giây (bị bắt) ·
 file 0 byte (bị bắt).
 
-**SỐ ĐO CỦA LƯỢT NÀY (19/08/2026, 415 giây):** 137 giọng còn khoá -> **ĐẠT 133
-· HỎNG 4**. Độ dài **2,59-4,34 giây** (trung vị 3,41) · RMS **-25,7..-17,2
-dBFS** — không giọng nào **gần** ngưỡng (gần nhất còn cách sàn độ dài 3,2 lần
-và cách sàn RMS 34 dB), tức phép kiểm không đứng ở chỗ chông chênh và một lượt
+**SỐ ĐO CỦA LƯỢT NÀY (19/08/2026):** 137 giọng còn khoá -> lượt đầu **ĐẠT 133 ·
+HỎNG 4** (415 giây); sau khi vá nguyên nhân của 4 ca hỏng -> **ĐẠT 137/137 ·
+HỎNG 0**. Cộng 185 giọng đã có bằng chứng từ lượt đo nhấn nhá, **cả 322 giọng /
+75 thứ tiếng của edge-tts nay đều có biên bản đọc thật**.
+
+Độ dài **2,59-4,34 giây** (trung vị 3,41) · RMS **-25,7..-17,2 dBFS**. Không
+giọng nào **gần** ngưỡng: ca sát sàn nhất vẫn dài gấp **3,2 lần** sàn độ dài và
+cao hơn sàn RMS **34 dB**. Phép kiểm không đứng ở chỗ chông chênh, nên một lượt
 nhiễu mạng không lật được kết luận.
 
-**4 GIỌNG KHÔNG ĐỌC ĐƯỢC, VÀ NGUYÊN NHÂN ĐÃ TRUY RA TẬN GỐC** — cả bốn là
-Inuktitut (``iu-Cans-CA-Siqiniq`` · ``iu-Cans-CA-Taqqiq`` ·
+═══════════════════════════════════════════════════════════════════════════
+4 CA HỎNG BAN ĐẦU — TRUY TẬN GỐC RỒI CHỮA, KHÔNG BỎ QUA
+═══════════════════════════════════════════════════════════════════════════
+Cả bốn là Inuktitut (``iu-Cans-CA-Siqiniq`` · ``iu-Cans-CA-Taqqiq`` ·
 ``iu-Latn-CA-Siqiniq`` · ``iu-Latn-CA-Taqqiq``). **KHÔNG phải Microsoft gỡ
-giọng, cũng KHÔNG phải câu thử của tôi sai** — hai nguyên nhân đó đã được TÁCH
+giọng, cũng KHÔNG phải câu thử của tôi sai** — hai nguyên nhân đó được TÁCH
 BẰNG PHÉP ĐO chứ không bằng lập luận: cho chính hai giọng đó đọc **câu tiếng
-Anh**, **một từ Latin**, và **dãy số đếm** thì cả bốn phép đều hỏng y hệt. Nếu
-câu Inuktitut của tôi sai thì câu tiếng Anh đã phải chạy.
+Anh**, **một từ Latin** và **dãy số đếm** thì cả bốn phép đều hỏng y hệt. Câu
+Inuktitut của tôi mà sai thì câu tiếng Anh đã phải chạy. Nó không chạy.
 
-Lỗi nằm ở **thư viện khách ``edge_tts``**:
+Thủ phạm là **thư viện khách ``edge_tts``**:
 ``data_classes.TTSConfig.__post_init__`` bóc tên giọng bằng
 ``^([a-z]{2,})-([A-Z]{2,})-(.+Neural)$``, mà mẫu đó đòi phần vùng có **>= 2
 CHỮ HOA liền nhau**. Locale Inuktitut có **4 đoạn** và đoạn thứ hai là
 ``Cans``/``Latn`` (một chữ hoa) -> không khớp -> tên giữ nguyên -> phép kiểm
 thứ hai ném ``ValueError: Invalid voice``. **Nó chết TRƯỚC KHI chạm mạng**, nên
-mọi phép thử lại (``_synth_all`` thử 4 lần) đều vô ích.
+``_synth_all`` thử lại 4 lần cũng vô ích — và vì ``_synth_all`` nuốt ngoại lệ,
+triệu chứng duy nhất ở ngoài là *"giọng này không đọc được"*. Không một dòng
+nào chỉ ra thủ phạm.
 
-**ĐÃ CHỨNG MINH CÓ ĐƯỜNG CHỮA:** gọi thẳng bằng tên dạng đầy đủ
-``Microsoft Server Speech Text to Speech Voice (iu-Cans-CA, SiqiniqNeural)``
-thì **ra tiếng thật** — 4,22 giây / -20,3 dBFS và 4,01 giây / -20,4 dBFS. Tức
-bốn giọng này SỐNG, chỉ là cửa của app chưa gọi đúng cách.
-``giong_mo.chuan_ten_edge`` đã có sẵn phép đổi tên đó. **Nhưng chúng vẫn KHÔNG
-nằm trong bảng này**, vì bảng này chỉ nhận giọng đã đi qua **ĐÚNG CỬA
-``dubbing._synth_all``** — mà cửa đó chưa gọi ``chuan_ten_edge`` (file
-``dubbing.py`` đang do luồng khác giữ). Đưa chúng vào trước là mở một giọng mà
-lúc anh Hùng bấm sẽ hỏng, đúng loại "chọn X ra Y" cả repo này đang chống.
+**CHỮA:** ``giong_mo.chuan_ten_edge`` đổi sang dạng tên đầy đủ
+``Microsoft Server Speech Text to Speech Voice (iu-Cans-CA, SiqiniqNeural)``,
+nối vào ``dubbing._ten_edge`` tại đúng 3 chỗ gọi ``edge_tts.Communicate``. Đo
+lại **QUA ĐÚNG CỬA** ``_synth_all``: **4/4 ĐẠT**, 4,22 / 4,01 / 4,22 / 4,01
+giây, -20,3..-20,4 dBFS.
+
+**MD5 của 4 file KHÁC NHAU cả 4** — chốt này có mặt vì hai locale
+``Cans``/``Latn`` ra CÙNG độ dài và CÙNG RMS (là đúng: cùng một giọng đọc cùng
+nội dung ở hai hệ chữ), nhìn cột số rất dễ tưởng bốn dòng đang dùng chung một
+file. Cột số không phân biệt được thì phải hỏi thước khác.
+
+**Bản vá chỉ chạm ca thư viện BÓ TAY**: ``chuan_ten_edge`` trả **nguyên văn**
+cho mọi mã thư viện tự bóc được, nên **318/322 giọng không đổi một ký tự nào**.
+Đó là điều kiện để một bản vá cho 4 giọng không thành canh bạc với 318 giọng
+đang chạy sản xuất.
 """
 from __future__ import annotations
 
@@ -117,6 +131,10 @@ BANG: dict[str, tuple[float, float]] = {
     "hu-HU-TamasNeural": (2.93, -21.7),
     "is-IS-GudrunNeural": (2.88, -22.6),
     "is-IS-GunnarNeural": (2.71, -23.4),
+    "iu-Cans-CA-SiqiniqNeural": (4.22, -20.3),
+    "iu-Cans-CA-TaqqiqNeural": (4.01, -20.4),
+    "iu-Latn-CA-SiqiniqNeural": (4.22, -20.3),
+    "iu-Latn-CA-TaqqiqNeural": (4.01, -20.4),
     "jv-ID-DimasNeural": (3.58, -18.5),
     "jv-ID-SitiNeural": (3.79, -21.7),
     "ka-GE-EkaNeural": (3.48, -24.5),

@@ -149,26 +149,27 @@ ok("1f ba trạng thái nhãn phân biệt được, 'chưa đo' KHÔNG có ch�
 print("\nCA 2 — luật mở khoá: ĐÃ CHỨNG MINH ĐỌC ĐƯỢC THÌ MỞ")
 ok("2a mọi giọng edge trong bảng đều được mở",
    all(giong_mo.nen_mo(k) for k in nhan_nha.BANG if ":" not in k))
-# Ca "không mở" nay lấy giọng ĐÃ THỬ VÀ ĐO RA LÀ KHÔNG ĐỌC ĐƯỢC (4 giọng
-# `iu-*`, xem `giong_doc` mục cuối) thay vì một giọng chỉ tình cờ chưa ai đo.
-# Mệnh đề "chưa chứng minh thì không mở" có răng hơn hẳn khi ca thử là ca đã
-# thử thật và hỏng thật.
-ok("2b giọng ĐO RA LÀ KHÔNG ĐỌC ĐƯỢC thì KHÔNG mở (4 giọng iu-*)",
-   not any(giong_mo.nen_mo(m) for m in
-           ("iu-Cans-CA-SiqiniqNeural", "iu-Cans-CA-TaqqiqNeural",
-            "iu-Latn-CA-SiqiniqNeural", "iu-Latn-CA-TaqqiqNeural"))
-   and not giong_mo.nen_mo(_LA))
+# Ca "không mở": nay MỌI giọng trong danh mục edge-tts đều đã có biên bản đọc
+# thật, nên ca thử phải là mã KHÔNG có trong bảng nào. Mệnh đề vẫn nguyên giá
+# trị và là mệnh đề PHÒNG THỦ quan trọng nhất của file: **có tên trong danh mục
+# Microsoft KHÔNG phải là vé vào combo** — phải có biên bản. Ngày Microsoft
+# thêm giọng mới, chúng KHÔNG được tự lọt vào trước khi ai đó cho chúng đọc thử.
+ok("2b mã KHÔNG có biên bản đọc thì KHÔNG mở (kể cả khi trông đúng dạng)",
+   not giong_mo.nen_mo(_LA)
+   and not giong_mo.nen_mo("pl-PL-KhongCoThatNeural")
+   and not giong_mo.nen_mo("en-US-KhongCoThatNeural"))
 ok("2c mã KHÔNG phải edge-tts bị từ chối (ov: · piper: · vnb: · cb:)",
    not any(giong_mo.nen_mo(m) for m in
            ("ov:nam_tre", "piper:vi_VN-vais1000-medium", "vnb:a.wav",
             "cb:en|a.wav", "el:Adam", "")))
-# 185 -> 318 · 15 -> 74 thứ tiếng (19/08/2026, lượt kiểm ĐỌC THẬT 133 giọng).
+# 185 -> 322 · 15 -> 75 thứ tiếng (19/08/2026, lượt kiểm ĐỌC THẬT 137 giọng).
+# Đây là TOÀN BỘ danh mục edge-tts của Microsoft, không còn giọng nào bị giữ.
 # **NÂNG MỐC = CỔNG CHẶT HƠN, KHÔNG PHẢI NỚI RA**: mỗi giọng cộng thêm đều phải
 # có biên bản `(độ dài, RMS)` trong `giong_doc.BANG`, và cổng 83 CA 1 đòi lại
 # đúng biên bản đó. Con số này KHÔNG được sửa cho khớp mã — nó chỉ đổi khi có
 # một lượt `_do_doc_that.py` mới chạy thật.
-ok("2d số giọng edge mở ra = 318, phủ 74 thứ tiếng",
-   giong_mo.so_giong_mo() == 318 and len(giong_mo.tieng_da_mo()) == 74,
+ok("2d số giọng edge mở ra = 322, phủ 75 thứ tiếng (TRỌN danh mục)",
+   giong_mo.so_giong_mo() == 322 and len(giong_mo.tieng_da_mo()) == 75,
    f"{giong_mo.so_giong_mo()} giọng / {len(giong_mo.tieng_da_mo())} tiếng")
 _dem = giong_mo.dem_theo_tieng()
 ok("2e đủ 47 giọng tiếng Anh (bảng cũ) + tiếng khác đã mở",

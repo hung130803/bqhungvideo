@@ -67,20 +67,20 @@ edge-tts có **322 giọng / 75 thứ tiếng**. Trước lượt này bảng c�
 (47 ``en-`` + 30 giọng ⭐ của 14 tiếng + 5 OmniVoice + 1 Piper). Lượt này đo
 thêm **109 giọng** của 14 thứ tiếng ĐÃ CÓ BỘ CÂU RIÊNG.
 
-**137 GIỌNG CÒN LẠI: NAY ĐÃ KIỂM ĐỌC THẬT, MỞ 133** (``_do_doc_that.py``, 415
-giây, 19/08/2026). Không đo nhấn nhá cho chúng — ``cau_cho()`` lùi về **câu
-tiếng Anh** cho tiếng không có bảng, mà bắt giọng Thổ / Ba Lan / Hà Lan đọc câu
-tiếng Anh rồi ghi số vào bảng là đo một thứ khác hẳn (bẫy đã làm
-``piper:vais1000`` ra 1,88). Nên nhấn nhá của chúng **để TRỐNG**, nhãn ghi
-*"chưa đo"*. Muốn có số thì **viết bộ 4 câu đúng tiếng đó trước**, chạy
-``_do_nhan_nha_het.py``; file này tự nhận, không phải sửa gì ở đây.
+**137 GIỌNG CÒN LẠI: NAY ĐÃ KIỂM ĐỌC THẬT, MỞ HẾT 137/137**
+(``_do_doc_that.py``, 19/08/2026). Cộng 185 giọng cũ -> **322/322 giọng, 75/75
+thứ tiếng của edge-tts đều có biên bản đọc thật**. Không đo nhấn nhá cho 137
+giọng mới — ``cau_cho()`` lùi về **câu tiếng Anh** cho tiếng không có bảng, mà
+bắt giọng Thổ / Ba Lan / Hà Lan đọc câu tiếng Anh rồi ghi số vào bảng là đo một
+thứ khác hẳn (bẫy đã làm ``piper:vais1000`` ra 1,88). Nên nhấn nhá của chúng
+**để TRỐNG**, nhãn ghi *"chưa đo"*. Muốn có số thì **viết bộ 4 câu đúng tiếng
+đó trước**, chạy ``_do_nhan_nha_het.py``; file này tự nhận, không sửa gì ở đây.
 
-**4 GIỌNG KHÔNG MỞ, NÊU ĐÍCH DANH:** ``iu-Cans-CA-Siqiniq`` ·
-``iu-Cans-CA-Taqqiq`` · ``iu-Latn-CA-Siqiniq`` · ``iu-Latn-CA-Taqqiq``. Nguyên
-nhân đã truy tận gốc và **không phải lỗi của Microsoft cũng không phải câu thử
-sai** — xem ``giong_doc`` mục cuối. Chữa được bằng ``chuan_ten_edge`` ngay
-dưới đây; chúng chỉ vào bảng sau khi cửa ``dubbing._synth_all`` gọi hàm đó và
-lượt kiểm đọc-thật chạy lại ĐẠT.
+**LƯỢT ĐẦU CÓ 4 GIỌNG HỎNG, VÀ CHÚNG ĐÃ ĐƯỢC CHỮA CHỨ KHÔNG BỎ QUA** — bốn
+giọng Inuktitut chết vì mẫu regex của **thư viện khách ``edge_tts``** không bóc
+nổi locale 4 đoạn, chết **trước khi chạm mạng**. ``chuan_ten_edge`` ngay dưới
+đây là bản vá; ``dubbing._ten_edge`` là chỗ nối. Xem ``giong_doc`` mục cuối cho
+đủ đường truy nguyên nhân (gồm cả phép TÁCH "câu thử sai" khỏi "giọng chết").
 """
 from __future__ import annotations
 

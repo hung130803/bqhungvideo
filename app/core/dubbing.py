@@ -612,12 +612,38 @@ def _recap_voice_label(v: dict) -> str:
 #:
 #: `_HOT_VOICES` **CỐ Ý KHÔNG mọc thêm 32 tên**: dấu ⭐ và thứ tự "hot lên đầu
 #: nhóm" đọc từ đúng bảng đó, nhồi hết vào là ⭐ mất nghĩa (mọi giọng đều hot).
+#:
+#: **HẰNG SỐ NÀY KHÔNG CÒN QUYẾT ĐỊNH GÌ (19/08/2026) — giữ để đọc lịch sử và
+#: để lối gọi cũ không nổ.** `_la_giong_mo_them` nay hỏi `giong_mo.nen_mo`.
 GIONG_MO_HET = ("en-",)
 
 
 def _la_giong_mo_them(v: dict) -> bool:
-    """Giọng thuộc nhóm ngôn ngữ được mở hết? (xem `GIONG_MO_HET`)"""
-    return str(v.get("ShortName") or "").startswith(GIONG_MO_HET)
+    """Giọng này có được hiện trong DANH SÁCH GỌN không.
+
+    **19/08/2026 — ĐỔI CĂN CỨ TỪ *TIỀN TỐ NGÔN NGỮ* SANG *BẰNG CHỨNG ĐỌC
+    ĐƯỢC*.** Bản cũ trả `ShortName.startswith(GIONG_MO_HET)` = `("en-",)`, tức
+    combo mở đúng 47 giọng Anh cộng bảng `_HOT_VOICES` viết tay.
+
+    **LỖI THẬT LÔI RA KHI RÀ LƯỢT NÀY, ĐÁNG GHI:** `app/core/giong_mo.py` đã
+    tồn tại từ lượt trước với đúng hàm `nen_mo` để thay chỗ này, docstring của
+    nó còn dặn thẳng *"luồng lắp giao diện gọi `nen_mo` thay cho
+    `_la_giong_mo_them`"* — **mà không ai nối**. Quét AST toàn `app/` cho ra
+    `nen_mo` chỉ được gọi từ CHÍNH `giong_mo.loc_mo`, còn `loc_mo` thì không
+    một nơi nào gọi. Tức 185 giọng "đã mở khoá" là **mã chết**: đo thật combo
+    dựng ra chỉ **76 giọng edge-tts**, không phải 185. Đúng bẫy *"tính năng
+    không ai gọi thì chỉ là một file .py nằm đó"* mà cổng 70 và 82 đã dính.
+
+    Nay một dòng này là chỗ nối. `nen_mo` đòi giọng có **biên bản đọc thật**
+    (`giong_doc.BANG`, kèm độ dài + RMS) hoặc **biên bản đo nhấn nhá**
+    (`nhan_nha.BANG`, 4 câu) — chứ không đòi nó tên bắt đầu bằng `en-`.
+
+    Import CỤC BỘ cố ý: `giong_mo` -> `giong_doc`/`nhan_nha` là ba module hàm
+    thuần, nhưng `dubbing` được nạp rất sớm và ở nhiều tiến trình con; giữ
+    import trong hàm thì lối gọi nào không đụng combo cũng không phải nạp thêm.
+    """
+    from app.core import giong_mo
+    return giong_mo.nen_mo(str(v.get("ShortName") or ""))
 
 
 def list_recap_voices(all: bool = False) -> list[tuple[str, str]]:  # noqa: A002
@@ -1718,10 +1744,11 @@ def synth_demo(voice: str, out_mp3: str | Path, text: str | None = None,
         kw = {"rate": rate}
         if pitch and pitch != "+0Hz":
             kw["pitch"] = pitch
+        _v_edge = _ten_edge(voice)
         try:
-            comm = edge_tts.Communicate(txt, voice, **kw)
+            comm = edge_tts.Communicate(txt, _v_edge, **kw)
         except TypeError:               # bản edge-tts cổ không có pitch
-            comm = edge_tts.Communicate(txt, voice, rate=rate)
+            comm = edge_tts.Communicate(txt, _v_edge, rate=rate)
         # HẠN CHỜ BẮT BUỘC. `comm.save` mở socket tới dịch vụ của Microsoft và
         # KHÔNG tự đặt hạn — dịch vụ không trả lời (hoặc trả nhỏ giọt) là nó
         # đợi VĨNH VIỄN: anh Hùng bấm Chạy -> bảng đứng ở "Đang đọc" mãi mãi,
@@ -1930,7 +1957,8 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
             for attempt in range(4):        # server MS chập chờn THEO ĐỢT
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 try:
-                    comm = edge_tts.Communicate(txt, voice, rate=_rate(i))
+                    comm = edge_tts.Communicate(txt, _ten_edge(voice),
+                                                rate=_rate(i))
                     # HẠN CHỜ: xem ghi chú ở `synth_demo`. Chỗ này nguy hơn vì
                     # nó chạy cho TỪNG CỤM (hàng chục lượt/video) và nằm trong
                     # `asyncio.gather` — MỘT cụm treo là treo CẢ video, mà
@@ -1953,6 +1981,31 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
 
 # WordBoundary của edge-tts trả offset/duration theo tick 100 nano-giây
 _WB_TICKS = 10_000_000.0
+
+
+def _ten_edge(voice: str) -> str:
+    """Tên giọng ở dạng thư viện `edge_tts` chắc chắn nhận.
+
+    **KHÔNG PHẢI DỌN DẸP — ĐÂY LÀ BẢN VÁ CHO 4 GIỌNG ĐANG CHẾT.** `edge_tts`
+    bóc tên giọng bằng mẫu đòi locale có **3 đoạn** và phần vùng có **>= 2 chữ
+    HOA**. Bốn giọng Inuktitut có locale **4 đoạn** (`iu-Cans-CA`,
+    `iu-Latn-CA`, đoạn hai chỉ 1 chữ hoa) nên trượt mẫu -> thư viện ném
+    `ValueError: Invalid voice` **TRƯỚC KHI chạm mạng**. `_synth_all` nuốt
+    ngoại lệ rồi thử lại 4 lần, nên ở ngoài chỉ thấy "giọng này không đọc
+    được" — không một dòng nào chỉ ra thủ phạm là thư viện khách.
+
+    Đo thật (`_do_doc_that.py`): 4/4 giọng `iu-*` hỏng ở **mọi** loại chữ (câu
+    Inuktitut · câu tiếng Anh · một từ Latin · dãy số) -> loại hẳn giả thuyết
+    "câu thử sai". Gọi bằng tên đầy đủ thì ra tiếng thật, 4,22 s / -20,3 dBFS.
+
+    **Đặt ĐÚNG TẠI CHỖ GỌI `Communicate`, KHÔNG gán đè lên biến `voice`.** Vì
+    `voice` còn được `doc_viet_tat.sua_cho_may_doc` và `norm_lang` đọc để biết
+    đây có phải giọng Việt không; đổi nó ở đầu hàm là một bản vá cho 4 giọng đi
+    sửa hành vi của 318 giọng còn lại. `chuan_ten_edge` cũng trả **nguyên văn**
+    cho mọi mã thư viện tự bóc được, nên 318/322 giọng không đổi một ký tự.
+    """
+    from app.core import giong_mo
+    return giong_mo.chuan_ten_edge(voice)
 
 
 # ==================================================================
@@ -2433,17 +2486,18 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                                             # (NoAudioReceived) -> thử lại lâu hơn
                 wb: list = []
                 try:
+                    _v_edge = _ten_edge(voice)
                     try:
                         # edge-tts >=7 mặc định SentenceBoundary -> phải xin
                         # WordBoundary tường minh
-                        comm = edge_tts.Communicate(txt, voice,
+                        comm = edge_tts.Communicate(txt, _v_edge,
                                                     boundary="WordBoundary",
                                                     **kw)
                     except TypeError:       # edge-tts <7: luôn WordBoundary
                         try:
-                            comm = edge_tts.Communicate(txt, voice, **kw)
+                            comm = edge_tts.Communicate(txt, _v_edge, **kw)
                         except TypeError:   # bản cổ không có pitch
-                            comm = edge_tts.Communicate(txt, voice, rate=r_i)
+                            comm = edge_tts.Communicate(txt, _v_edge, rate=r_i)
                     with open(paths[i], "wb") as f:
                         async for ch in comm.stream():
                             if ch["type"] == "audio" and ch.get("data"):
