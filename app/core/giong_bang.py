@@ -429,7 +429,14 @@ THU_TU_NHOM: tuple[str, ...] = (
 _NHAN_NHOM: dict[str, str] = {
     N_KHUYEN: "KHUYÊN DÙNG cho {nn} - miễn phí, chạy được ngay",
     N_DICH: "MIỄN PHÍ (edge-tts) - giọng {nn}",
-    N_DANGU: "MIỄN PHÍ (edge-tts) - đọc được MỌI thứ tiếng",
+    # "MỌI thứ tiếng" là LỜI CỦA MICROSOFT, và app từng in nguyên nó ra.
+    # Đo 19/08/2026 (`_do_5_tieng.py`): **10/12** giọng nhóm này đọc được cả 5
+    # tiếng Việt/Anh/Hàn/Nhật/Trung, nhưng `en-US-AndrewMultilingual` **trượt
+    # tiếng HÀN** (đọc rời sai 75%, trần 0%) và 2 ô tiếng Việt chưa kết luận
+    # được. Mà 5 tiếng cũng chỉ là 5 trong **75** thứ tiếng của edge-tts.
+    # Nên nhãn nhóm nói ĐÚNG PHẠM VI ĐÃ ĐO và trỏ người đọc xuống ĐUÔI DÒNG
+    # (`duoi_da_ngu`) — chỗ ghi từng tiếng cho từng giọng.
+    N_DANGU: "MIỄN PHÍ (edge-tts) - ĐA NGÔN NGỮ (đã đo 5 tiếng, xem cuối dòng)",
     N_MAY: "TRÊN MÁY - miễn phí nhưng phải tải model về trước",
     N_TIEN: "TRẢ TIỀN - tốn hạn mức hoặc tốn tiền",
     N_KHAC: "MIỄN PHÍ (edge-tts) - các tiếng khác",

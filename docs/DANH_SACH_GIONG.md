@@ -35,7 +35,7 @@ thành các nhóm, **tiêu đề nhóm màu vàng, không bấm chọn được*
 |---|---|
 | **KHUYÊN DÙNG cho \<tiếng đang chọn\>** | 5 giọng tốt nhất, **miễn phí và chạy được ngay** — không phải tải gì. Đây là lối tắt, cứ chọn đại một cái là xong. |
 | **MIỄN PHÍ (edge-tts) — giọng \<tiếng đang chọn\>** | Toàn bộ giọng đúng thứ tiếng anh đang làm |
-| **MIỄN PHÍ (edge-tts) — đọc được MỌI thứ tiếng** | Một giọng dùng cho mọi ngôn ngữ |
+| **MIỄN PHÍ (edge-tts) — ĐA NGÔN NGỮ (đã đo 5 tiếng)** | Một giọng kiêm nhiều thứ tiếng. **12 giọng**, đã bắt đọc thử Việt·Anh·Hàn·Nhật·Trung — xem mục 8 |
 | **TRÊN MÁY — miễn phí nhưng phải tải model** | Piper · VieNeu · OmniVoice. Dòng nào cũng ghi phải tải bao nhiêu |
 | **TRẢ TIỀN — tốn hạn mức hoặc tốn tiền** | ElevenLabs · Vbee. Chỉ hiện khi anh đã dán key |
 | **MIỄN PHÍ (edge-tts) — các tiếng khác** | Phần còn lại, đẩy xuống đáy |
@@ -68,18 +68,19 @@ thành các nhóm, **tiêu đề nhóm màu vàng, không bấm chọn được*
 | **Muốn giọng Việt KHÁC đi** | Nam Minh / Hoài My **— trầm · hơi trầm · hơi cao · cao** | vẫn 2 người đọc đó nhưng đổi cao độ, nghe ra là người khác |
 | **Video tiếng Anh, kể chuyện** | **Ryan** (Anh Quốc) | nhấn nhá **5,4** — cao nhất trong 42 giọng Anh |
 | **Video tiếng Anh, nam trầm ấm** | **Andrew — bản tiếng Anh** | nhấn nhá **4,5** |
-| **Một giọng đọc được MỌI thứ tiếng** | **William** hoặc **Emma** (bản đa ngôn ngữ) | nhấn nhá **4,7** |
+| **Một giọng đọc được cả 5 tiếng** (Việt · Anh · Hàn · Nhật · Trung) | **William** hoặc **Emma** (bản đa ngôn ngữ) | nhấn nhá **4,7**, và **đã bắt đọc thử đủ 5 tiếng** — xem mục 8 |
 | **Không muốn phụ thuộc mạng** | **Piper** (tải 212 MB) | chạy hẳn trên máy — nhưng chữ bám lời kém hơn (29,5 ms) |
 
 **Hai cái tên hay gây nhầm — Andrew và Brian có HAI bản, và chúng là HAI
-GIỌNG KHÁC NHAU thật:**
+GIỌNG KHÁC NHAU thật.** Cột "đọc được tiếng gì" dưới đây là **SỐ ĐO**, không
+phải nhãn của Microsoft (xem mục 8):
 
-| | nhấn nhá | đọc được tiếng gì |
+| | nhấn nhá | đọc được tiếng gì (ĐO 19/08/2026) |
 |---|---|---|
-| **Andrew — bản tiếng Anh** (`en-US-AndrewNeural`) | **4,5** rất truyền cảm | chỉ tiếng Anh |
-| **Andrew — bản đa ngôn ngữ** (`en-US-AndrewMultilingualNeural`) | **3,8** truyền cảm | mọi thứ tiếng |
-| **Brian — bản tiếng Anh** (`en-US-BrianNeural`) | **2,7** đều đều | chỉ tiếng Anh |
-| **Brian — bản đa ngôn ngữ** (`en-US-BrianMultilingualNeural`) | **2,7** đều đều | mọi thứ tiếng |
+| **Andrew — bản tiếng Anh** (`en-US-AndrewNeural`) | **4,5** rất truyền cảm | **chỉ tiếng Anh** — đo ra trượt cả 4 tiếng còn lại |
+| **Andrew — bản đa ngôn ngữ** (`en-US-AndrewMultilingualNeural`) | **3,8** truyền cảm | Anh · Nhật · Trung — **KHÔNG đọc được tiếng HÀN** (đọc rời sai 75%, trần 0%); tiếng Việt **chưa kết luận** |
+| **Brian — bản tiếng Anh** (`en-US-BrianNeural`) | **2,7** đều đều | chỉ tiếng Anh *(theo mã giọng, chưa đo riêng)* |
+| **Brian — bản đa ngôn ngữ** (`en-US-BrianMultilingualNeural`) | **2,7** đều đều | **đủ 5 tiếng** Việt · Anh · Hàn · Nhật · Trung |
 
 Danh sách trong app nay ghi thẳng **[bản tiếng Anh]** / **[bản đa ngôn ngữ]**
 vào cuối dòng, nên nhìn dòng đang chọn là biết ngay đang dùng bản nào.
@@ -150,15 +151,29 @@ dưới 3,1 = đều đều.**
 | Hoài My — hơi cao | Nữ | `vi-VN-HoaiMyNeural|+10Hz` | **3,2 *(số của giọng gốc)*** | vừa |
 | Hoài My — cao | Nữ | `vi-VN-HoaiMyNeural|+20Hz` | **3,2 *(số của giọng gốc)*** | vừa |
 
-### edge-tts — ĐA NGÔN NGỮ (5 giọng)
+### edge-tts — ĐA NGÔN NGỮ (**12 giọng**, đã ĐO đủ 5 tiếng)
 
-| Tên | Giới | Mã giọng (dán vào mẫu) | Nhấn nhá | Nghe ra sao |
-|---|---|---|---|---|
-| William | Nam | `en-AU-WilliamMultilingualNeural` | **4,7** | rất truyền cảm |
-| Emma | Nữ | `en-US-EmmaMultilingualNeural` | **4,7** | rất truyền cảm |
-| Andrew | Nam | `en-US-AndrewMultilingualNeural` | **3,8** | truyền cảm |
-| Ava | Nữ | `en-US-AvaMultilingualNeural` | **3,4** | vừa |
-| Brian | Nam | `en-US-BrianMultilingualNeural` | **2,7** | đều đều |
+Trước 19/08/2026 mục này chỉ liệt kê **5** giọng; danh mục thật của edge-tts có
+**12** giọng mang chữ `Multilingual`. Cột "5 tiếng" là **SỐ ĐO** — xem mục 8.
+
+| Tên | Giới | Mã giọng (dán vào mẫu) | Nhấn nhá | Nghe ra sao | 5 tiếng |
+|---|---|---|---|---|---|
+| William | Nam | `en-AU-WilliamMultilingualNeural` | **4,7** | rất truyền cảm | **5/5** |
+| Emma | Nữ | `en-US-EmmaMultilingualNeural` | **4,7** | rất truyền cảm | **5/5** |
+| Remy | Nam | `fr-FR-RemyMultilingualNeural` | **4,4** | rất truyền cảm | **5/5** |
+| Florian | Nam | `de-DE-FlorianMultilingualNeural` | **4,2** | rất truyền cảm | **5/5** |
+| Andrew | Nam | `en-US-AndrewMultilingualNeural` | **3,8** | truyền cảm | **3/5** — trượt **HÀN**, Việt chưa rõ |
+| Thalita | Nữ | `pt-BR-ThalitaMultilingualNeural` | **3,6** | truyền cảm | **5/5** |
+| Ava | Nữ | `en-US-AvaMultilingualNeural` | **3,4** | vừa | **4/5** — Việt chưa rõ |
+| Hyunsu | Nam | `ko-KR-HyunsuMultilingualNeural` | **3,4** | vừa | **5/5** |
+| Giuseppe | Nam | `it-IT-GiuseppeMultilingualNeural` | **3,4** | vừa | **5/5** |
+| Seraphina | Nữ | `de-DE-SeraphinaMultilingualNeural` | **3,2** | vừa | **5/5** |
+| Brian | Nam | `en-US-BrianMultilingualNeural` | **2,7** | đều đều | **5/5** |
+| Vivienne | Nữ | `fr-FR-VivienneMultilingualNeural` | **2,1** | đều đều | **5/5** |
+
+**CHỌN GÌ:** cần một giọng kiêm cả 5 tiếng thì lấy **William** hoặc **Emma**
+(5/5 và nhấn nhá cao nhất nhóm). **Tránh Andrew — bản đa ngôn ngữ nếu kênh
+tiếng Hàn.**
 
 ### edge-tts — Tiếng Anh (42 giọng)
 
@@ -548,3 +563,159 @@ Ghi thẳng, để anh không tưởng là đã đủ:
 - **Số giọng thay đổi theo máy.** Bảng này đếm trên máy dev (**110 giọng**, trong đó 20 giọng VieNeu mới).
   Máy chưa tải Piper/OmniVoice sẽ thấy ít hơn; máy có dán key ElevenLabs/Vbee
   sẽ thấy nhiều hơn.
+
+---
+
+## 8. GIỌNG NÀO ĐỌC ĐƯỢC MẤY TRONG 5 TIẾNG — ĐO 19/08/2026
+
+Anh Hùng: *"Giọng nào đọc chỉ 1 ngôn ngữ thì ghi rõ; cái nào 1 giọng đọc được
+cả tiếng Anh tiếng Việt cũng được"* · *"giọng nào đa ngôn ngữ cứ báo tôi nhé,
+nhiều giọng đọc hết oke cả Hàn Nhật Mỹ Trung mà rất hay ấy"*.
+
+Năm tiếng phủ: **Việt · Anh · Hàn · Nhật · Trung**. Đo **103 arm** qua **cửa
+thật** `dubbing._synth_all_words`, thước là **Groq chép ngược chính file vừa
+đọc** (`_do_5_tieng.py` · `_ra_bang_5_tieng.py`).
+
+### 8a. NHÃN "Multilingual" CỦA MICROSOFT — ĐO RA LÀ **PHẦN LỚN ĐÚNG**
+
+Lượt đo này bắt đầu với mệnh đề *"nhãn Multilingual KHÔNG phải bằng chứng"*
+(app gắn nhãn *"đọc được mọi thứ tiếng"* chỉ vì **tên giọng có chữ
+Multilingual**). Số đo **bác lại phần lớn nghi vấn đó**, và phải ghi thẳng:
+
+| | số |
+|---|---|
+| giọng mang nhãn `Multilingual` trong danh mục thật | **12** |
+| **đo ra KHÔNG đọc được tiếng Việt** | **0 / 12** |
+| đọc được **cả 5 tiếng** | **10 / 12** |
+| trượt đúng **một** tiếng | **1** — `en-US-AndrewMultilingual` × **HÀN** |
+| **chưa kết luận được** (hai thước đá nhau) | **2 ô** — `AndrewML` và `AvaML` × tiếng Việt |
+
+**Thước phụ ĐỘC LẬP đồng ý:** hỏi máy nghe *"tiếng phát ra là tiếng gì"*
+(`language=None` — câu hỏi khác hẳn "chữ có đúng không") thì **cả 12 giọng đều
+3/3 đúng tiếng ở mọi tiếng**. Hai thước khác nhau cùng chỉ một hướng.
+
+**Ca hỏng duy nhất vẫn đáng biết:** `en-US-AndrewMultilingualNeural` đọc tiếng
+Hàn sai **75%** token đọc rời (trần 0%). Nhãn nhà cung cấp hứa "mọi thứ tiếng"
+mà nó trượt một tiếng — **không một dòng báo**. Kênh tiếng Hàn thì đừng chọn nó.
+
+### 8b. NGƯỠNG ĐẶT BẰNG SỐ — TRẦN và SÀN, KHÔNG PHẢI SỐ TRÒN NGHĨ RA
+
+Mỗi tiếng có **TRẦN** (giọng bản ngữ đọc tiếng của chính nó — mức sai do MÁY
+NGHE gây ra, không thể tốt hơn) và **SÀN** (giọng một-tiếng bị ép đọc tiếng
+khác — hình dạng một ca HỎNG THẬT), đo trong **cùng một lượt**. Ngưỡng nằm
+**giữa khoảng trống**. Cột kết luận là **token ĐỌC RỜI**.
+
+| Tiếng | TRẦN | SÀN | Ngưỡng | Khoảng trống |
+|---|---|---|---|---|
+| Việt | 50 · 75 % | 100 % | **87,5 %** | 25 điểm — **thô, xem 8c** |
+| Anh | 0 · 0 % | 75 % | **37,5 %** | 75 điểm |
+| Hàn | 0 · 0 % | 75 % | **37,5 %** | 75 điểm |
+| Nhật | 0 % | 100 % | **50,0 %** | 100 điểm |
+| Trung | 0 · 0 % | 50 % | **25,0 %** | 50 điểm |
+
+**Ngưỡng TÁCH ĐƯỢC hai nhóm ở cả 5 tiếng** — không tiếng nào chồng lấn ở cột
+đọc rời. **CẤM SO CHÉO TIẾNG**: Việt/Anh chấm theo **TỪ**, Hàn/Nhật/Trung chấm
+theo **KÝ TỰ** (hai tiếng sau không có dấu cách nên không có "từ" để đếm) —
+hai đơn vị khác nhau, mọi kết luận so với TRẦN của **chính tiếng đó**.
+
+**SÀN cư xử đúng như phải:** `en-US-Andrew` (giọng một tiếng) trượt **cả 4**
+tiếng ngoài. `vi-VN-HoaiMy` trượt tiếng Anh, và với chữ Hàn/Nhật/Trung thì
+**KHÔNG RA NỔI MỘT FILE TIẾNG NÀO** (11/11 mẫu hỏng, ~300 giây thử lại mỗi
+tiếng, trong khi arm tiếng Anh của **cùng giọng** chạy ngon trong 46 giây —
+tức dịch vụ TỪ CHỐI, không phải mạng chập chờn). Ca đó **an toàn hơn**: lượt
+xuất không có tiếng thì anh thấy ngay, còn đọc bừa thì app im lặng.
+
+### 8c. HAI THƯỚC PHẢI ĐỒNG Ý — VÀ VÌ SAO
+
+Cột đọc rời **một mình không đủ**, đây là số: `en-US-AvaMultilingual` đọc câu
+Việt TRƠN sai **0,0 %** (bằng trần) mà **4/4 tên riêng đọc rời đều sai**. Mà
+chính **TRẦN tiếng Việt cũng sai 50-75 %** ở cột đó (`HoaiMy` 2/4 · `NamMinh`
+3/4) — nghĩa là phần lớn cái "sai" ấy là **máy NGHE không chép nổi một tên
+riêng Việt đứng một mình**, không phải máy ĐỌC sai.
+
+Chọn một cột làm quan toà là tự chọn kết luận. Nên luật là: **kết luận chỉ khi
+cột ĐỌC RỜI và cột CÂU THƯỜNG đồng ý**; đá nhau thì ghi **"chưa kết luận
+được"**. Đó là câu trả lời đúng cho ca Ava, và nó đúng 2 ô trên tổng 60 ô của
+nhóm đa ngôn ngữ.
+
+Riêng tiếng Việt còn một giới hạn phải nói: mỗi arm chỉ **4 token** đọc rời nên
+cột đó chỉ nhận giá trị 0/25/50/75/100 %, mà ngưỡng 87,5 % chỉ cách trần **một
+bước** — tức thực chất nó chỉ phân biệt được *"sai HẾT"* với *"sai gần hết"*.
+Cột câu thường mịn hơn hẳn (khoảng trống **94 điểm**: trần 0-2,8 % vs sàn 97 %).
+
+### 8d. MÁY NGHE CHỮA HỘ MÁY ĐỌC BAO NHIÊU
+
+Groq whisper là **một mô hình ngôn ngữ**: có ngữ cảnh thì nó ĐOÁN ra chữ đúng
+dù máy đọc phát âm sai. Đo chênh giữa hai cách hỏi:
+
+| | TRONG CÂU | ĐỌC RỜI | chênh |
+|---|---|---|---|
+| **tất cả 103 arm** | 8,8 % | 20,9 % | **+12,2 điểm** |
+| nhóm đa ngôn ngữ × **tiếng Việt** | 25,0 % | 72,9 % | **+47,9 điểm** |
+| nhóm TRẦN × tiếng Việt | 25,0 % | 62,5 % | +37,5 điểm |
+| nhóm đa ngôn ngữ × Nhật · Trung | 0,0 % | 0,0 % | +0,0 điểm |
+
+Chênh dồn gần hết vào **tiếng Việt** (tên riêng có dấu) và **gần bằng 0** ở
+Nhật/Trung. Vì vậy **không được kết luận bằng cột TRONG CÂU** — nó phát chứng
+nhận cho thứ vẫn hỏng.
+
+### 8e. GIỌNG MỘT TIẾNG — GHI RÕ TỪNG CÁI
+
+| Bộ đọc | Đọc được | Đọc chữ tiếng khác thì sao |
+|---|---|---|
+| `vi-VN-HoaiMy` · `vi-VN-NamMinh` | **chỉ tiếng Việt** (đo) | chữ Anh -> sai 45 % · chữ Hàn/Nhật/Trung -> **KHÔNG ra tiếng nào** |
+| `en-US-Andrew` · `en-US-Aria` | **chỉ tiếng Anh** (đo) | trượt cả 4 tiếng còn lại |
+| `ko-KR-SunHi` · `ko-KR-InJoon` | **chỉ tiếng Hàn** (đo) | chưa ép đọc tiếng khác |
+| `ja-JP-Nanami` · `ja-JP-Keita` | **chỉ tiếng Nhật** (đo) | chưa ép đọc tiếng khác |
+| `zh-CN-Xiaoxiao` · `zh-CN-Yunxi` | **chỉ tiếng Trung** (đo) | chưa ép đọc tiếng khác |
+| **Piper** `vais1000` | **chỉ tiếng Việt** (đo, 2,8 % — ngang trần) | **ra tiếng SAI CHỮ, không từ chối**: Anh 94 % · Hàn 127 % · Nhật 100 % · Trung 133 %. Nguy hơn edge-tts vì nó **không** báo gì |
+| **Chatterbox** | **KHÔNG CÓ tiếng Việt** — 23 tiếng của nó không có `vi` | xem 8f |
+
+### 8f. CHATTERBOX: GỐC CỦA CA "Mokonbel, Chutanko"
+
+`giong_chatter.TIENG` có **23 tiếng và KHÔNG có `vi`**. Đó chính là gốc của ca
+đã ghi trong repo: ép đọc *"Một cơn bão chưa từng có"* ra ***"Mokonbel,
+Chutanko, Tronglaichsatanglaich"*** — chữ là tiếng Việt nhưng `language_id`
+buộc phải là một tiếng KHÁC, nên model đọc **mặt chữ Việt bằng luật phát âm
+của tiếng đó**. `generate()` vẫn ra tiếng, **vẫn mã thoát 0**.
+
+### 8g. APP NAY NÓI RA — BA NHÃN, KHÔNG MẬP MỜ
+
+`app/core/da_ngu.py` giữ bảng ĐO ĐƯỢC; `giong_bang.duoi_da_ngu` dán vào mỗi
+dòng combo. Đo trên combo thật: **342 dòng, 0 dòng không có nhãn**.
+
+| Nhãn trên dòng | Bao nhiêu dòng | Nghĩa |
+|---|---|---|
+| `- đọc được Việt·Anh·Hàn·Nhật·Trung (đo)` | **12** | đã BẮT ĐỌC THỬ, kèm phần `KHÔNG đọc được X` nếu có |
+| `- chỉ tiếng X` | **329** | một tiếng |
+| `- chưa đo tiếng` | 0 trên combo hiện tại | không suy ra được gì (`ov:` `el:` `gemini:`) |
+
+Chọn giọng cho tiếng nó không đọc nổi thì **app BÁO**, và lời báo phân biệt ba
+mức: đã đo hỏng · **không ra tiếng nào** · chỉ suy từ mã giọng chưa đo riêng.
+Ghi chú `da_ngu.canh_bao` nói rõ vì sao được phép suy từ mã giọng (2 giọng đem
+thử trượt **8/8 ô**) mà **không** được phép suy từ chữ "Multilingual" (nó hứa
+5 tiếng cùng lúc — hứa nhiều hơn hẳn nên phải đo).
+
+### 8h. FILE TIẾNG ĐỂ ANH TỰ NGHE
+
+`_NGHE_THU_ANH_HUNG\da_ngon_ngu\` — xếp theo **TIẾNG** rồi tới **GIỌNG**, tên
+thư mục mang sẵn kết luận (`DAT` / `HONG` / `CHUA_KL` + % sai). Đọc
+`DOC_TRUOC_KHI_NGHE.txt` trước.
+
+**Số là số ĐO, không phải tai.** Ba câu chỉ tai anh trả lời được: nghe có HAY
+không · có NGỌNG / sai dấu không · nghe ra người bản ngữ hay người nước ngoài
+đọc tiếng đó.
+
+### 8i. CHƯA ĐO ĐƯỢC — GHI THẲNG
+
+- **Giọng bản ngữ Hàn/Nhật/Trung chưa bị ép đọc tiếng khác.** SÀN chỉ dựng từ
+  `vi-VN-HoaiMy` và `en-US-Andrew`, nên ngưỡng của Hàn/Nhật/Trung tựa vào
+  **một** giọng sàn. Thêm sàn thì ngưỡng chắc hơn.
+- **Chỉ 4 token đọc rời mỗi arm** -> độ phân giải 25 điểm. Tiếng Việt bị ảnh
+  hưởng nặng nhất (xem 8c).
+- **`el:` ElevenLabs, `vbee:`, `gemini:` chưa đo 5 tiếng.** Dòng của chúng ghi
+  "chưa đo tiếng", không đoán.
+- **VieNeu mới đo 1/20 giọng** (`Ngọc Huyền`). 19 giọng còn lại mang nhãn suy
+  từ bộ đọc (VieNeu là bộ đọc tiếng Việt, `Adam` là giọng tiếng Anh) chứ chưa
+  bắt đọc thử từng giọng.
+- **Chưa ai nghe bằng tai người** — xem 8h.
