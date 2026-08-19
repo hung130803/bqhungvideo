@@ -46,8 +46,44 @@ sys.path.insert(0, str(REPO))
 #: là bắt buộc: QSettings mặc định ghi vào REGISTRY dùng chung với app thật, và
 #: `luu_cai_dat` của CA 8 sẽ làm bẩn cài đặt của anh Hùng (bài học "Cutter: test
 #: đừng ghi QSettings").
-import tempfile                                             # noqa: E402
-_T = Path(tempfile.mkdtemp(prefix="degiong_"))
+#: HỘP CÁT ĐẶT TRONG REPO, **KHÔNG trong `%TEMP%`** — và đây là số đo, không
+#: phải sở thích: bản đầu dùng `tempfile.mkdtemp` và để lại **13 thư mục
+#: `degiong_*`** trên ổ C sau một buổi (mỗi lượt chạy cổng + 9 lượt của
+#: `_pha_de_giong.py` một cái). `shutil.rmtree(..., ignore_errors=True)` KHÔNG
+#: dọn nổi vì **QSettings còn giữ file `settings.ini` đang mở**, và
+#: `ignore_errors` thì nuốt luôn lỗi nên không ai biết. Ổ C của anh Hùng từng
+#: đầy 100%. Cùng cách chữa của cổng 55 (`<repo>/bq_test_tgrac_<pid>`).
+_T = Path(__file__).resolve().parent / f"bq_test_dg86_{os.getpid()}"
+_T.mkdir(parents=True, exist_ok=True)
+
+
+def _don_mo_coi() -> None:
+    """Dọn hộp cát của các lượt chạy TRƯỚC (PID đã chết).
+
+    Cần vì `QSettings` giữ `settings.ini` MỞ suốt đời tiến trình -> lượt chạy
+    KHÔNG BAO GIỜ tự dọn nổi hộp cát của chính nó, kể cả sau `sync()`. Quét mồ
+    côi ở đây thì tối đa chỉ còn MỘT thư mục sót (của lượt vừa chạy), thay vì
+    tích lại 13 cái như bản đầu. Cùng khuôn `ffmpeg_utils.don_seg_mo_coi`:
+    **chỉ xoá tên khớp mẫu app đặt VÀ pid đã chết** — thư mục của user thì không
+    đụng.
+    """
+    import shutil as _sh
+    for d in _T.parent.glob("bq_test_dg86_*"):
+        if d == _T or not d.is_dir():
+            continue
+        try:
+            pid = int(d.name.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        try:                                # pid còn sống -> ĐỪNG đụng
+            os.kill(pid, 0)
+            continue
+        except OSError:
+            pass
+        _sh.rmtree(d, ignore_errors=True)
+
+
+_don_mo_coi()
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 os.environ["BQ_DATA_DIR"] = str(_T)
@@ -874,10 +910,23 @@ def main() -> int:
         # chốt" (bài học cổng 74b).
         HONG.append(f"CỔNG CHẾT GIỮA CHỪNG: {type(e).__name__}: {e}")
     finally:
-        # KHÔNG ĐỂ RÁC %TEMP% TRÊN MÁY ANH HÙNG — ổ C từng đầy 100%. `_T` là
-        # hộp cát QSettings/DATA_DIR, `hop` là hộp cát ffmpeg.
+        # KHÔNG ĐỂ RÁC TRÊN MÁY ANH HÙNG — ổ C từng đầy 100%. `_T` là hộp cát
+        # QSettings/DATA_DIR, `hop` là hộp cát ffmpeg.
+        # **QSettings CÒN GIỮ `settings.ini` ĐANG MỞ** nên `rmtree` lượt đầu
+        # trượt; phải `sync()` rồi thử lại. `ignore_errors=True` một mình là
+        # nuốt lỗi im lặng rồi để rác lại (đã để lại 13 thư mục vì đúng thế).
         shutil.rmtree(hop, ignore_errors=True)
-        shutil.rmtree(_T, ignore_errors=True)
+        try:
+            from app.ui.appsettings import app_settings
+            app_settings().sync()
+        except Exception:                                   # noqa: BLE001
+            pass
+        for _ in range(3):
+            shutil.rmtree(_T, ignore_errors=True)
+            if not _T.exists():
+                break
+        if _T.exists():
+            print(f"  (!) KHÔNG dọn được hộp cát {_T} — dọn tay, đừng để rác")
     print("\n" + "=" * 78)
     print(f"ĐẠT {len(DAT)} · HỎNG {len(HONG)}"
           + (f" · BỎ QUA {len(BO_QUA)}" if BO_QUA else ""))
