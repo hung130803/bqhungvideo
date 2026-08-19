@@ -107,6 +107,22 @@ _do_rb_cache.json
 # mp3/wav cua `_do_bien_the_giong.py` — de NGHE bang tai, khong commit
 _do_bt_giong/
 
+# LUOT GIONG 19/08/2026 — deu la SAN DO / THU VIEN TAI ROI, tai sinh lai duoc:
+#   _lib_giong/       edge-tts cai RIENG de do (KHONG cai vao `.venv`: luong
+#                     khac dang dung lai `.venv`, chen vao la pha viec ho)
+#   _giong_chatter/   moi truong Python rieng cua Chatterbox (torch CUDA ~7 GB)
+#   bq_do_nhan_nha*/  mp3/wav cua 191 luot do nhan nha
+#   _do_chatter/      san do cua Chatterbox (wav + ket qua)
+#   _mau_giong/       MAU GIONG dua vao de nhan ban — TUYET DOI khong commit:
+#                     do la giong NGUOI THAT, va file mau khong phai cua repo.
+#   _kq*.json         cung ly do bao mat voi `_kq*.txt` o duoi.
+_lib_giong/
+_giong_chatter/
+bq_do_nhan_nha*/
+_do_chatter/
+_mau_giong/
+_kq*.json
+
 # BAO MAT: cong 70 tung in NGUYEN VAN key Groq that ra file ket qua.
 # Mot luot `git add -A` la key vao lich su git cong khai. Chan tan goc.
 _kq*.txt
