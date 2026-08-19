@@ -79,9 +79,32 @@ DUOI_DB = 18.0                  # = `thay_giong.DANG_NOI_DUOI_DB`
 #: `_do_hieu_chuan_duck.py`: tính ratio từ công thức sai 6 dB).
 QUET_RATIO = (1.3, 2.0, 3.0, 4.5, 6.0, 9.0)
 
+#: **HỆ SỐ HẠ NHẠC ÉP CỨNG — LÝ DO PHẢI CÓ, ĐỌC TRƯỚC KHI ĐỔI.**
+#: Lượt đo đầu chạy với hệ số THẬT của video này và ra `g_nhac = 0,00 dB`:
+#: lớp nhạc Douyin sau khi tách ĐÃ nằm dưới giọng TTS **+9,28 dB** (video 1)
+#: và **+13,43 dB** (video 4), tức cao hơn đích `DICH_GIONG_TREN_NHAC_DB` = 6
+#: nên `can_bang_giong_nhac` KHÔNG hạ nhạc một dB nào. Con số **−10,46 dB**
+#: ghi trong CLAUDE.md là của MỘT nguồn khác (nhạc CAO HƠN giọng 10,61 dB).
+#: Muốn trả lời "có cách rẻ hơn không" thì phải đo ở đúng chỗ nó cắn: ép
+#: `g_nhac` về TRẦN `HA_NHAC_TOI_DA_DB` (−8 dB) trên chính stem thật này.
+G_NHAC_EP = -8.0
 
-def ff(args: list[str], mo_ta: str, to: int = 1800) -> str:
-    r = subprocess.run([FFMPEG, "-y", "-v", "error", *args],
+#: Cửa sổ "IM XA LỜI": cách mọi cửa sổ đang-nói ít nhất bấy nhiêu giây. Cột
+#: `IM` trơn gồm cả đuôi `release=300ms` của ducking nên nó KHÔNG phân biệt
+#: được "nhạc bị hạ TĨNH" với "nhạc còn đang hồi sau câu nói".
+IM_XA_GIAY = 1.0
+
+
+def ff(args: list[str], mo_ta: str, to: int = 1800, muc: str = "error") -> str:
+    """`muc="info"` là BẮT BUỘC cho `loudnorm`/`ebur128`.
+
+    **BẪY ĐÃ SẬP Ở LƯỢT ĐẦU:** cả hai bộ đo in kết quả ở mức **info**, nên
+    `-v error` (dùng cho mọi lệnh khác để log gọn) làm chúng KHÔNG IN GÌ ->
+    regex không khớp -> hàm trả `nan` -> bảng đầy `nan` mà `rc` vẫn 0. Đúng họ
+    "phép đo hỏng phát chứng nhận" (`astats` cổng 53): nếu tôi đọc cột `dI`
+    trống rồi bỏ qua thì mọi kết luận về ĐỘ TO là bịa.
+    """
+    r = subprocess.run([FFMPEG, "-y", "-v", muc, *args],
                        capture_output=True, text=True, timeout=to)
     if r.returncode != 0:
         raise RuntimeError(f"{mo_ta}: rc={r.returncode} "
@@ -111,12 +134,12 @@ def do_i(p: Path) -> tuple[float, float]:
     """(I theo `loudnorm` pha ĐO, I theo `ebur128`) — HAI thước độc lập."""
     s = ff(["-i", str(p), "-af",
             "loudnorm=I=-14:TP=-1:LRA=11:print_format=json",
-            "-f", "null", "-"], f"loudnorm đo {p.name}")
-    m = re.findall(r"\{[^{}]*input_i[^{}]*\}", s, re.S)
-    i1 = float(json.loads(m[-1])["input_i"]) if m else float("nan")
+            "-f", "null", "-"], f"loudnorm đo {p.name}", muc="info")
+    m = re.findall(r'"input_i"\s*:\s*"?(-?[\d.]+|-inf)"?', s)
+    i1 = float(m[-1]) if m and m[-1] != "-inf" else float("nan")
     s2 = ff(["-i", str(p), "-af", "ebur128=peak=true", "-f", "null", "-"],
-            f"ebur128 {p.name}")
-    m2 = re.findall(r"I:\s*(-?\d+\.\d+)\s*LUFS", s2)
+            f"ebur128 {p.name}", muc="info")
+    m2 = re.findall(r"I:\s*(-?[\d.]+)\s*LUFS", s2)
     i2 = float(m2[-1]) if m2 else float("nan")
     return i1, i2
 
@@ -159,9 +182,13 @@ class Do:
         self.noi = [i for i, v in enumerate(bg) if v >= nguong and v > -70.0]
         _n = set(self.noi)
         self.im = [i for i in range(len(bg)) if i not in _n]
+        _xa = int(round(IM_XA_GIAY / BUOC))
+        self.im_xa = [i for i in self.im
+                      if not any((i + d) in _n for d in range(-_xa, _xa + 1))]
         self.gm = bao(loc_dai(giong_g, lam / "giong_mid.wav"))
-        print(f"  cửa sổ: NÓI {len(self.noi)} · IM {len(self.im)} "
-              f"(bước {BUOC}s) · ngưỡng nói {nguong:.2f} dBFS")
+        print(f"  cửa sổ: NÓI {len(self.noi)} · IM {len(self.im)} · "
+              f"IM XA LỜI {len(self.im_xa)} (bước {BUOC}s) · "
+              f"ngưỡng nói {nguong:.2f} dBFS")
 
     def _med(self, b: list[float], idx: list[int]) -> float:
         v = [b[i] for i in idx if i < len(b)]
@@ -175,6 +202,7 @@ class Do:
         r = {
             "noi_db": round(self._med(bn, self.noi), 2),
             "im_db": round(self._med(bn, self.im), 2),
+            "im_xa_db": round(self._med(bn, self.im_xa), 2),
             "noi_mid_db": round(self._med(bnm, self.noi), 2),
             "im_mid_db": round(self._med(bnm, self.im), 2),
             "I_loudnorm": round(i1, 2), "I_ebur": round(i2, 2),
@@ -230,23 +258,63 @@ def main() -> int:
     try:
         lam = SB / "lam"
         lam.mkdir(exist_ok=True)
-        print(f"chạy dây chuyền thật trên bản sao ({TEN[:36]})...")
-        t0 = time.time()
-        hop = chay_pipeline(lam)
-        tron = hop["tron"]
-        g_giong = float(tron["gain_giong_db"])
-        g_nhac = float(tron["gain_nhac_db"])
-        nguong_duck = float(tron["duck_nguong"])
-        ratio0 = float(tron["duck_ratio"])
-        tong = hop["tong"]
-        nhac0 = Path(hop["nhac"])
-        giong_nen = Path(tron["giong_da_nen"])
-        print(f"  xong {time.time() - t0:.0f}s · g_giọng {g_giong:+.2f} dB · "
-              f"g_nhạc {g_nhac:+.2f} dB · duck ngưỡng {nguong_duck:.5f} "
+        # STEM CẤT RIÊNG, NGOÀI hộp cát: lượt đầu tốn 23 phút dây chuyền rồi
+        # `finally` dọn sạch, nên sửa một dòng bộ đo là phải chạy lại cả dây
+        # chuyền. Có stem thì lượt sau chỉ còn ffmpeg.
+        kho = REPO / "bq_nhac_dai_stem"
+        ts = kho / "thong_so.json"
+        if ts.exists():
+            print(f"DÙNG LẠI stem đã cất ở {kho.name} (bỏ qua dây chuyền)")
+            tso = json.loads(ts.read_text(encoding="utf-8"))
+            nhac0, giong_nen = kho / "nhac.wav", kho / "giong_nen.wav"
+            g_giong = float(tso["g_giong_db"])
+            g_nhac_that = float(tso["g_nhac_db"])
+            nguong_duck = float(tso["duck_nguong"])
+            ratio0 = float(tso["duck_ratio"])
+            tong = float(tso["tong"])
+            can_bang = tso.get("can_bang")
+        else:
+            print(f"chạy dây chuyền thật trên bản sao ({TEN[:36]})...")
+            t0 = time.time()
+            hop = chay_pipeline(lam)
+            tron = hop["tron"]
+            g_giong = float(tron["gain_giong_db"])
+            g_nhac_that = float(tron["gain_nhac_db"])
+            nguong_duck = float(tron["duck_nguong"])
+            ratio0 = float(tron["duck_ratio"])
+            tong = hop["tong"]
+            nhac0 = Path(hop["nhac"])
+            giong_nen = Path(tron["giong_da_nen"])
+            can_bang = tron.get("can_bang")
+            print(f"  xong {time.time() - t0:.0f}s")
+            kho.mkdir(exist_ok=True)
+            shutil.copy2(nhac0, kho / "nhac.wav")
+            shutil.copy2(giong_nen, kho / "giong_nen.wav")
+            ts.write_text(json.dumps(
+                {"g_giong_db": g_giong, "g_nhac_db": g_nhac_that,
+                 "duck_nguong": nguong_duck, "duck_ratio": ratio0,
+                 "tong": tong, "can_bang": can_bang},
+                ensure_ascii=False, indent=1), encoding="utf-8")
+            nhac0, giong_nen = kho / "nhac.wav", kho / "giong_nen.wav"
+
+        # **HỆ SỐ THẬT CỦA VIDEO NÀY LÀ 0,00 dB — xem `G_NHAC_EP`.** Ép về
+        # trần để đo đúng chỗ bản vá cắn; hệ số thật vẫn in ra để không ai
+        # đọc nhầm bảng này thành "app đang hạ nhạc 8 dB".
+        g_nhac = G_NHAC_EP
+        # NGƯỠNG DUCK PHẢI TÍNH LẠI THEO MỨC NHẠC *SAU* KHI HẠ — nó bám mức
+        # thật, không phải hằng số (xem `DUCK_TREN_NGUONG_DB`). Giữ ngưỡng của
+        # lượt g_nhac=0 là đo một cấu hình app không bao giờ sinh ra.
+        nguong_duck, _r = TG._tham_so_duck(
+            float((can_bang or {}).get("muc_nhac_luc_noi_db") or -14.0)
+            + g_nhac)
+        print(f"  g_giọng {g_giong:+.2f} dB · g_nhạc THẬT của video này "
+              f"{g_nhac_that:+.2f} dB -> ÉP {g_nhac:+.2f} dB (trần "
+              f"HA_NHAC_TOI_DA_DB) · duck ngưỡng {nguong_duck:.5f} "
               f"ratio {ratio0:.2f}")
-        ket["thong_so"] = {"g_giong_db": g_giong, "g_nhac_db": g_nhac,
-                           "duck_nguong": nguong_duck, "duck_ratio": ratio0,
-                           "tong": tong, "can_bang": tron.get("can_bang")}
+        ket["thong_so"] = {"g_giong_db": g_giong, "g_nhac_db_that": g_nhac_that,
+                           "g_nhac_db_ep": g_nhac, "duck_nguong": nguong_duck,
+                           "duck_ratio": ratio0, "tong": tong,
+                           "can_bang": can_bang}
 
         # giọng SAU khi áp hệ số — mẫu số của mọi phép SNR
         giong_g = lam / "giong_g.wav"
@@ -324,18 +392,23 @@ def main() -> int:
             arm[f"F{r_:g}"] = gop(f"F{r_:g}", (0.0, g_nhac / 2, 0.0), 1, r_)
 
         print(f"\n  {'arm':<7}{'NÓI/dải':>9}{'SNR dải':>9}{'IM':>9}"
-              f"{'I(ln)':>8}{'I(ebu)':>8}{'dI':>7}{'lệch':>6}")
+              f"{'IM xa':>9}{'I(ln)':>8}{'I(ebu)':>8}{'dI':>7}{'lệch':>6}")
         g0 = ket["GOC"]
         print(f"  {'GỐC':<7}{g0['noi_mid_db']:>9.2f}{g0['snr_mid_db']:>9.2f}"
-              f"{g0['im_db']:>9.2f}{g0['I_loudnorm']:>8.2f}"
+              f"{g0['im_db']:>9.2f}{g0['im_xa_db']:>9.2f}"
+              f"{g0['I_loudnorm']:>8.2f}"
               f"{g0['I_ebur']:>8.2f}{0.0:>7.2f}{g0['lech_thuoc']:>6.2f}")
         for ten, p in arm.items():
             r = d.cham(ten, p)
             ket[ten] = r
             print(f"  {ten:<7}{r['noi_mid_db']:>9.2f}{r['snr_mid_db']:>9.2f}"
-                  f"{r['im_db']:>9.2f}{r['I_loudnorm']:>8.2f}"
+                  f"{r['im_db']:>9.2f}{r['im_xa_db']:>9.2f}"
+                  f"{r['I_loudnorm']:>8.2f}"
                   f"{r['I_ebur']:>8.2f}{r['dI_ebur']:>7.2f}"
                   f"{r['lech_thuoc']:>6.2f}")
+            if r["lech_thuoc"] > 0.5:
+                print(f"       !! HAI THƯỚC ĐỘ TO LỆCH {r['lech_thuoc']:.2f} LU "
+                      f"> 0,5 — KHÔNG tin cột I của arm này")
             KQ.write_text(json.dumps(ket, ensure_ascii=False, indent=1),
                           encoding="utf-8")
 
@@ -347,20 +420,22 @@ def main() -> int:
               f"{dd['noi_mid_db'] - g0['noi_mid_db']:+.2f} dB · IM lệch "
               f"{dd['im_db'] - g0['im_db']:+.2f} dB "
               f"({'ĐẠT' if abs(dd['dI_ebur']) <= 0.5 else 'HỎNG'})")
-        print(f"\n  ỨNG VIÊN (che lời <= arm A trong dải lời, "
-              f"nhạc lúc IM cao hơn arm A):")
+        print(f"\n  ỨNG VIÊN (che lời KHÔNG hơn arm A trong dải lời VÀ giữ "
+              f"nhạc hơn arm A ở CẢ HAI cột IM):")
         tot = []
         for ten, r in ket.items():
             if ten in ("GOC", "A", "D", "thong_so"):
                 continue
-            if r["noi_mid_db"] <= a["noi_mid_db"] + 0.30 \
-                    and r["im_db"] > a["im_db"] + 0.30:
-                tot.append((r["im_db"] - a["im_db"], ten, r))
+            if (r["noi_mid_db"] <= a["noi_mid_db"] + 0.30
+                    and r["im_db"] > a["im_db"] + 0.30
+                    and r["im_xa_db"] > a["im_xa_db"] + 0.30):
+                tot.append((r["im_xa_db"] - a["im_xa_db"], ten, r))
         for x, ten, r in sorted(tot, reverse=True):
-            print(f"    {ten:<7} nhạc lúc IM  {r['im_db']:+.2f} dBFS "
-                  f"(+{x:.2f} dB so arm A) · che lời "
+            print(f"    {ten:<7} nhạc IM {r['im_db']:+.2f} "
+                  f"(+{r['im_db'] - a['im_db']:.2f}) · IM xa "
+                  f"{r['im_xa_db']:+.2f} (+{x:.2f}) · che lời "
                   f"{r['noi_mid_db'] - a['noi_mid_db']:+.2f} dB · "
-                  f"dI {r['dI_ebur'] - a['dI_ebur']:+.2f} LU so arm A")
+                  f"I {r['I_ebur'] - a['I_ebur']:+.2f} LU so arm A")
         if not tot:
             print("    KHÔNG CÓ — đánh đổi bắt buộc, giữ nguyên arm A")
     finally:
