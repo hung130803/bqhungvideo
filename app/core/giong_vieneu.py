@@ -307,8 +307,8 @@ def _co_giong_hang() -> bool:
         return False
 
 
-def nhan_giong(ma: str) -> str:
-    """Nhãn đầy đủ cho hộp chọn giọng. TIẾNG VIỆT, KHÔNG EMOJI.
+def nhan_giong(ma: str, ngan: bool = False) -> str:
+    """Nhãn cho hộp chọn giọng. TIẾNG VIỆT, KHÔNG EMOJI.
 
     Nhãn PHẢI mang cả giấy phép lẫn điểm yếu — Piper/OmniVoice đã có tiền lệ
     ghi thẳng đánh đổi ngay trong nhãn, lý do là anh Hùng chạy 200-300 kênh:
@@ -317,18 +317,34 @@ def nhan_giong(ma: str) -> str:
     KÈM MỨC NHẤN NHÁ (`app/core/nhan_nha.py`) để giọng VieNeu đứng CÙNG THANG
     với edge-tts — chúng đọc cùng bộ câu tiếng Việt nên so trực tiếp được.
     Giọng chưa đo thì `nhan_nha.nhan()` trả chuỗi RỖNG (không bịa số).
+
+    ═══ ``ngan=True`` — VÌ SAO PHẢI CÓ, ĐO ĐƯỢC ═══
+    Nhãn đầy đủ dài **364-521 ký tự** (đo thẳng trên `gom_nhom`, giọng `Adam`
+    là 521). Combo lúc ĐÓNG chỉ rộng bằng hộp, nên **quá 60 ký tự là phần sau
+    không ai đọc được** — tức nhãn dài KHÔNG hề "nói ra cảnh báo", nó chỉ làm
+    danh sách không đọc nổi trong khi cảnh báo vẫn vô hình. Đúng cái anh Hùng
+    kêu: *"rất lung tung, không biết chọn sao"*.
+    Nên: **combo dùng bản NGẮN, phần cảnh báo đầy đủ đi vào TOOLTIP** (hộp
+    chọn giọng gắn bằng `ToolTipRole`). Không mất chữ nào, mà nhìn là đọc
+    được. Giọng có ngờ về nguồn vẫn mang dấu **NGỜ NGUỒN** ngay ở bản ngắn —
+    đó là chuyện tiền/pháp lý, không được đẩy hết vào tooltip.
     """
     from app.core import nhan_nha
     if la_giong_nhan_ban(ma):
         mau = Path(ten_giong(ma)).name or "(chưa chọn)"
-        return (f"Nhân bản từ mẫu «{mau}» (VieNeu){nhan_nha.nhan(ma)} - "
-                f"{GIAY_PHEP}; {canh_bao_chat_luong(ma)}")
+        dau = f"Nhân bản từ mẫu «{mau}» (VieNeu){nhan_nha.nhan(ma)}"
+        if ngan:
+            return dau
+        return f"{dau} - {GIAY_PHEP}; {canh_bao_chat_luong(ma)}"
     ten = ten_giong(ma)
     for k, mo_ta in GIONG_VN:
         if k == ten:
-            them = f"; {CANH_BAO_ADAM}" if k in _NGO_NGUON else ""
-            return (f"{k} — {mo_ta} (VieNeu){nhan_nha.nhan(ma)} - "
-                    f"{GIAY_PHEP}; {canh_bao_chat_luong(ma)}{them}")
+            ngo = k in _NGO_NGUON
+            dau = f"{k} — {mo_ta} (VieNeu){nhan_nha.nhan(ma)}"
+            if ngan:
+                return dau + (" - NGỜ NGUỒN" if ngo else "")
+            them = f"; {CANH_BAO_ADAM}" if ngo else ""
+            return f"{dau} - {GIAY_PHEP}; {canh_bao_chat_luong(ma)}{them}"
     return ma
 
 
@@ -337,29 +353,61 @@ def ma_nhan_ban(duong_mau: str) -> str:
     return TIEN_TO_NB + str(duong_mau or "").strip()
 
 
-def danh_sach_giong() -> list[tuple[str, str]]:
-    """[(mã, nhãn)] để đổ vào combo. CHỈ trả giọng máy này CHẠY ĐƯỢC.
+#: Ghi vào ĐẦU nhãn khi máy CHƯA tải model. Phải nói ra ở CHÍNH DÒNG đó, vì
+#: combo lúc ĐÓNG chỉ hiện một dòng — nhãn nhóm không cứu được.
+CHUA_TAI = "CHƯA TẢI (250 MB) — "
 
-    Đưa giọng không chạy được vào combo là đẩy người dùng chọn một thứ sẽ âm
-    thầm lùi về edge-tts — đúng loại "chọn X ra Y" mà repo này đã sửa nhiều
-    lần (việc #110, cổng 55).
 
-    Sắp theo **nhấn nhá giảm dần** (đúng cách cổng 76 đã chốt cho combo
-    chính): giọng truyền cảm lên trên, giọng chưa đo xuống cuối.
+def danh_sach_giong(du_chua_tai: bool = False,
+                    ngan: bool = False) -> list[tuple[str, str]]:
+    """[(mã, nhãn)] để đổ vào combo. Sắp theo **nhấn nhá giảm dần** (cổng 76).
+
+    ``du_chua_tai=False`` (mặc định, giữ cho mọi lối gọi cũ): CHỈ trả giọng
+    máy này CHẠY ĐƯỢC.
+
+    ``du_chua_tai=True``: trả ĐỦ 20 giọng kể cả khi chưa tải model, nhãn mang
+    tiền tố ``CHUA_TAI``. **ĐÂY LÀ ĐƯỜNG HỘP CHỌN GIỌNG ĐI**, và nó theo đúng
+    tiền lệ Piper (cổng 64) chứ không phải một ngoại lệ mới: app **tự tải
+    được** VieNeu (nút ``NHAN_TAI``, 250 MB) nên giấu đi thì người dùng không
+    bao giờ biết là có, còn hiện ra kèm chữ "CHƯA TẢI" thì họ biết phải bấm
+    gì. Khác hẳn OmniVoice 6,1 GB — cái đó app KHÔNG tự tải được nên giấu là
+    đúng.
+
+    Điều kiện để việc hiện-khi-chưa-tải KHÔNG thành bẫy "chọn X ra Y": lượt
+    đọc phải **nói ra** là nó đã lùi. `dubbing._vieneu_hay_khong` ghi log rồi
+    lùi edge-tts, đúng luật Piper.
     """
-    if not co_vieneu():
-        return []
     from app.core import nhan_nha
+    co = co_vieneu()
+    if not co and not du_chua_tai:
+        return []
     ma_ds = [TIEN_TO + k for k, _m in GIONG_VN if _cho_hien(k)]
     ma_ds.sort(key=lambda m: (nhan_nha.khoa_sap(m), m))
-    return [(m, nhan_giong(m)) for m in ma_ds]
+    dau = "" if co else CHUA_TAI
+    return [(m, dau + nhan_giong(m, ngan=ngan)) for m in ma_ds]
 
 
 def _cho_hien(khoa: str) -> bool:
-    """Giọng có ngờ về nguồn thì phải BẬT TAY mới hiện. Xem `_NGO_NGUON`."""
+    """Giọng có ngờ về nguồn có được vào combo không. Xem `_NGO_NGUON`.
+
+    **ĐỔI Ở v2.38.0 — MẶC ĐỊNH LÀ HIỆN, và đây là sửa cho NHẤT QUÁN chứ
+    không phải nới lỏng.** Bản đầu giấu `Adam` sau `BQ_VN_ADAM=1` vì tên nó
+    trùng một giọng thương mại của ElevenLabs. Nhưng cùng repo này đang HIỆN
+    OmniVoice — thứ có rào pháp lý **CỨNG HƠN HẲN** (trọng số CC-BY-NC = cấm
+    thương mại, đen trắng trong model card) — với lý lẽ ghi thẳng ở
+    `thay_giong_dialog.giong_dung_duoc`: *"anh Hùng đã được trình bày rõ và
+    vẫn bảo thêm hết vào cho tôi — đó là quyết định kinh doanh của anh ấy,
+    nhưng nhãn vẫn phải nói ra"*. Giấu một giọng chỉ MỜ NGHI về nguồn trong
+    khi hiện một giọng CHẮC CHẮN cấm thương mại là hai cân nặng nhẹ khác nhau
+    cho cùng một câu hỏi.
+    Cộng thêm luật anh Hùng vừa chốt cho lượt này: *"kệ nó cứ thêm vào trùng
+    lặp hay sao cũng được cho tôi... cứ thêm"*.
+    Nên nay: **HIỆN, kèm `CANH_BAO_ADAM` ngay trên dòng** — người chọn biết
+    mình đang chọn gì thay vì phải nhớ. `BQ_VN_ADAM=0` để tắt lại.
+    """
     if khoa not in _NGO_NGUON:
         return True
-    return os.environ.get("BQ_VN_ADAM", "").strip() == "1"
+    return os.environ.get("BQ_VN_ADAM", "").strip() != "0"
 
 
 # ---------------------------------------------------------------------------

@@ -66,6 +66,7 @@ from app.core import thay_giong as TG
 from app.core.captions import CAPTION_PRESETS
 from app.database import db
 from app.ui.appsettings import app_settings
+from app.core import giong_bang as GB
 from app.core import nhan_nha as NN
 from app.ui.editor import nut_chon_mau
 from app.ui.theme import (
@@ -222,6 +223,37 @@ def giong_dung_duoc(ds: list) -> list:
                         or str(v).startswith("piper:")), default=-1)
         for j, (ma_g, nhan_g) in enumerate(giong_ngoai.danh_sach_giong()):
             mo_rong.insert(cuoi_vi2 + 1 + j, (nhan_g, ma_g))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
+    # ---- GIỌNG VieNeu — 20 GIỌNG VIỆT DỰNG SẴN, CHẠY TRÊN MÁY ----
+    # `app/core/giong_vieneu.py` xong từ `a95e0e6` nhưng **chưa ai gọi tới** —
+    # y hệt ca `giong_bang`. Nối vào đây thì anh Hùng mới thấy chúng.
+    #
+    # ĐIỀU KIỆN TIÊN QUYẾT ĐÃ LÀM TRƯỚC, ĐỪNG ĐẢO THỨ TỰ: `dubbing._synth_all`
+    # và `_synth_all_words` phải BIẾT `vn:`/`vnb:` trước đã (xem
+    # `dubbing._vieneu_hay_khong`). Đưa mã giọng vào combo mà cửa đọc không
+    # nhận thì chọn "Minh Đức" sẽ ra giọng khác — đúng bẫy "chọn X ra Y" mà
+    # `ov:nu_am` đã sập một lần.
+    #
+    # `du_chua_tai=True`: hiện ĐỦ 20 giọng kể cả khi máy chưa tải model, nhãn
+    # mang tiền tố "CHƯA TẢI (250 MB)". Theo tiền lệ Piper chứ không phải
+    # OmniVoice — app TỰ TẢI được VieNeu (250 MB) nên giấu đi là người dùng
+    # không bao giờ biết có thứ đó; OmniVoice 6,1 GB app không tự tải nên nó
+    # mới phải giấu.
+    try:
+        from app.core import giong_vieneu
+        cuoi_vi3 = max((i for i, (_n, v) in enumerate(mo_rong)
+                        if str(v).startswith("vi-VN")
+                        or str(v).startswith("piper:")
+                        or str(v).startswith("ov:")
+                        or str(v).startswith("ix:")), default=-1)
+        # `ngan=True`: nhãn đầy đủ dài 364-521 ký tự (đo thật) nên trong combo
+        # nó vừa không đọc được vừa che mất mọi dòng khác. Phần cảnh báo đầy
+        # đủ đi vào TOOLTIP — xem `_dung_combo_giong`.
+        for j, (ma_g, nhan_g) in enumerate(
+                giong_vieneu.danh_sach_giong(du_chua_tai=True, ngan=True)):
+            mo_rong.insert(cuoi_vi3 + 1 + j, (nhan_g, ma_g))
     except Exception:  # noqa: BLE001
         pass                                # thiếu module -> combo y hệt cũ
 
@@ -1273,17 +1305,38 @@ class ThayGiongDialog(QDialog):
             if self._giong_tho:
                 _CACHE_GIONG[:] = self._giong_tho
         muon = str(self._s.value(K_GIONG, "") or "")
+        # NGÔN NGỮ ĐÍCH quyết định thứ tự nhóm: chọn Tiếng Việt thì giọng Việt
+        # phải lên đầu, không bị chôn dưới 47 giọng Anh. `_doi_ngon_ngu` đã
+        # gọi lại hàm này mỗi lần đổi ngôn ngữ.
+        nn = str(self.cb_nn.currentData() or "en")
         self.cb_giong.blockSignals(True)
         self.cb_giong.clear()
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
-        for nhan, vid in giong_dung_duoc(self._giong_tho):
-            # SỐ NHẤN NHÁ gắn vào nhãn. `nhan_nha.nhan()` trả chuỗi RỖNG khi
-            # giọng CHƯA ĐO (cấm bịa số cạnh tên giọng — user sẽ tin mà chọn).
-            self.cb_giong.addItem(nhan + NN.nhan(vid), vid)
-            if not vid:                     # nhãn NHÓM ngôn ngữ -> không chọn
-                it = self.cb_giong.model().item(self.cb_giong.count() - 1)
+        # GOM NHÓM (`app/core/giong_bang.py`, cổng 79). Trước v2.38.0 module
+        # đó đã xong và có cổng xanh nhưng **KHÔNG MỘT AI GỌI** — anh Hùng mở
+        # app vẫn thấy đúng cái danh sách "rất lung tung" của v2.37.0. Đây là
+        # chỗ nối nó vào.
+        #
+        # `loi_tat=True` = luật anh Hùng chốt 19/08: nhóm "Khuyên dùng" ở đầu
+        # GIỮ LẠI như một lối tắt (giọng vẫn còn trong nhóm gốc của nó), và
+        # dòng lối tắt tự ghi "cùng giọng ở nhóm dưới" để không ai tưởng đó là
+        # hai giọng khác nhau. Xem `giong_bang.gom_nhom`.
+        #
+        # SỐ NHẤN NHÁ nay do `gom_nhom` gắn (`giong_bang.duoi_nhan_nha`), UI
+        # KHÔNG gắn thêm lần nữa — dán hai lần thì dòng ra "... nhấn nhá 4,0
+        # ... nhấn nhá 4,0 ...".
+        for nhan, vid in GB.gom_nhom(giong_dung_duoc(self._giong_tho), nn,
+                                     loi_tat=True):
+            self.cb_giong.addItem(nhan, vid)
+            it = self.cb_giong.model().item(self.cb_giong.count() - 1)
+            if not vid:                     # nhãn NHÓM -> không cho chọn
                 if it is not None:
                     it.setEnabled(False)
+            elif it is not None:
+                # TOOLTIP = phần chữ dài không nhét vào dòng được (giấy phép,
+                # điểm yếu đo được, việc phải tải). Nhờ nó mà nhãn VieNeu rút
+                # từ 521 xuống ~60 ký tự mà KHÔNG mất một cảnh báo nào.
+                it.setToolTip(self._chu_thich(vid, nhan))
         if muon:
             i = self.cb_giong.findData(muon)
             if i < 0:                       # giọng đã lưu nhưng list chưa có
@@ -1323,6 +1376,33 @@ class ThayGiongDialog(QDialog):
         except Exception:  # noqa: BLE001
             self.lb_goi_y.setText("")
         self.lb_goi_y.setVisible(bool(self.lb_goi_y.text()))
+
+    def _chu_thich(self, vid: str, nhan: str) -> str:
+        """Chữ hiện khi rê chuột lên một dòng giọng.
+
+        Dòng trong combo cố ý NGẮN (đọc được khi combo đóng); mọi thứ dài mà
+        vẫn phải nói ra — giấy phép, điểm yếu đã đo, phải tải bao nhiêu — nằm
+        ở đây. Không giấu gì, chỉ đổi CHỖ ĐẶT.
+        """
+        dong = [nhan]
+        try:
+            from app.core import giong_vieneu
+            if giong_vieneu.la_giong_vieneu(vid):
+                dong.append(giong_vieneu.nhan_giong(vid))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            can = GB.can_tai(vid)
+            dong.append(f"Nguồn: {GB.TEN_NGUON.get(GB.nguon(vid), '?')}"
+                        + (f" · phải tải {can}" if can else "")
+                        + (" · miễn phí" if GB.mien_phi(vid)
+                           else " · TỐN TIỀN/HẠN MỨC"))
+            ms = GB.khop_ms(vid)
+            if ms:
+                dong.append(f"Chữ chạy lệch lời: {ms}")
+        except Exception:  # noqa: BLE001
+            pass
+        return "\n".join(d for d in dong if d)
 
     def _ten_giong(self, ma: str) -> str:
         """Tên hiển thị của một mã giọng, lấy từ CHÍNH combo đang có."""

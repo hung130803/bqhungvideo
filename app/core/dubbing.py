@@ -1885,6 +1885,15 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                                         rate=rate, lay_moc=False)
         return ok_p
 
+    dung_vn, voice = _vieneu_hay_khong(voice)
+    if dung_vn:
+        # Cửa này KHÔNG cần mốc từng chữ -> `lay_moc=False` bỏ hẳn lượt gióng
+        # hàng (mở tiến trình con + model 1,18 GB). Đúng cách nhánh Piper ở
+        # ngay trên đang làm.
+        ok_v, _mv = await _chay_vieneu(texts, paths, voice, lang, on_done,
+                                       rate, on_msg, lay_moc=False)
+        return ok_v
+
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
@@ -2095,6 +2104,66 @@ def _piper_hay_khong(voice: str) -> tuple[bool, str]:
 
 
 # ==================================================================
+# CỬA DUY NHẤT RẼ SANG VieNeu — cùng chỗ, cùng lý lẽ với Piper/OmniVoice
+# ==================================================================
+# `app/core/giong_vieneu.py` (20 giọng Việt dựng sẵn + nhân bản từ mẫu) được
+# dựng xong ở `a95e0e6` với ĐÚNG hợp đồng `doc_loat` của `piper_tts` /
+# `giong_ngoai` — nhưng **KHÔNG một dòng nào trong `dubbing.py` gọi tới nó**.
+# Hậu quả nếu cứ thế đưa `vn:` vào combo: mã giọng rơi thẳng xuống nhánh
+# edge-tts ở cuối hàm, `edge_tts.Communicate("...", "vn:Minh Đức")` hỏng ->
+# thử lại 4 lần -> câu rỗng, HOẶC (tệ hơn) người dùng chọn "Minh Đức" mà nghe
+# ra Hoài My. Đó đúng là **giọng chết "chọn X ra Y"** — thứ DUY NHẤT anh Hùng
+# coi là lỗi trong lượt sắp xếp danh sách giọng này (`ov:nu_am` đã bắt một ca).
+#
+# Nối ở ĐÂY chứ không ở nơi gọi, vì đây là **cửa duy nhất** mọi đường TTS đi
+# qua: 3 chỗ gọi `_synth_all_words` của `thay_giong.py` + 3 chỗ gọi
+# `_synth_all` của `dubbing.py`. Sót một chỗ là video **lẫn hai giọng** mà
+# `rc` vẫn 0 (mệnh đề cổng 63). Cách này KHÔNG thêm chỗ gọi nào ở
+# `thay_giong.py` nên cổng 63 vẫn đếm ĐÚNG 3.
+#
+# MỐC TỪNG CHỮ: VieNeu **không trả mốc** (đọc thẳng trong mã gói `v3turbo.py`:
+# `infer()` trả đúng `np.ndarray`, không có khoá timestamp nào). Khác
+# OmniVoice ở chỗ nó KHÔNG dò lại bằng máy nghe — `giong_vieneu._lay_moc` gọi
+# THẲNG bộ gióng hàng, nên ở đây **không được bọc thêm `_moc_giong_hang`**:
+# làm vậy là chạy gióng hàng HAI LƯỢT trên cùng bộ file (tốn gấp đôi, kết quả
+# y hệt). Thiếu bộ gióng hàng -> mốc rỗng, tiếng vẫn đúng, và nhãn giọng đã
+# nói trước điều đó (`giong_vieneu.canh_bao_chat_luong`).
+def _vieneu_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng VieNeu không, giọng phải LÙI VỀ nếu không dùng được).
+
+    THIẾU MODEL/PYTHON THÌ LÙI ÊM VỀ edge-tts — cùng luật Piper/OmniVoice
+    (lùi ra video ĐÚNG, chỉ khác giọng), khác luật Demucs (thiếu Demucs mà
+    lùi là ra video HỎNG nên phải CHẶN). Nhưng phải GHI LẠI lý do: lùi êm mà
+    im lặng thì đúng bằng hỏng âm thầm.
+    """
+    from app.core import giong_vieneu as vn
+    if not vn.la_giong_vieneu(voice):
+        return False, voice
+    if vn.co_vieneu():
+        return True, voice
+    lui = default_voice("vi")
+    vn._ghi_log(f"Chưa dùng được giọng {voice} "
+                f"(thiếu: {vn.tinh_trang_vieneu()['thieu']}) -> LÙI về "
+                f"edge-tts giọng {lui}")
+    return False, lui
+
+
+async def _chay_vieneu(texts, paths, voice, lang, on_done, rate, on_msg,
+                       lay_moc: bool):
+    """Chạy `giong_vieneu.doc_loat` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    VÌ SAO KHÔNG GỌI THẲNG: hàm đó mở tiến trình con nạp model rồi đọc cả
+    loạt (hàng chục giây), và còn chạy gióng hàng. Gọi thẳng trong một hàm
+    `async` là **chặn cứng vòng lặp sự kiện** suốt từng ấy thời gian — đúng
+    khuôn `_chay_eleven` đã phải dựng sau lỗi thật của cổng 67 CA 4.
+    """
+    from app.core import giong_vieneu as vn
+    return await asyncio.to_thread(
+        vn.doc_loat, texts, paths, voice, on_done=on_done, rate=rate,
+        lang=norm_lang(lang), lay_moc=lay_moc, on_msg=on_msg)
+
+
+# ==================================================================
 # CỬA CHUNG LẤY MỐC CHO MỌI MÁY ĐỌC **KHÔNG** TRẢ MỐC THẬT
 # ==================================================================
 # Trước file `giong_hang.py`, mỗi máy đọc tự xoay một kiểu và mỗi kiểu một
@@ -2210,6 +2279,16 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                                          rate=rate)
         return ok_p, await _moc_giong_hang(texts, paths, ok_p, moc_p, lang,
                                            voice)
+
+    dung_vn, voice = _vieneu_hay_khong(voice)
+    if dung_vn:
+        # `lay_moc=True`: `giong_vieneu._lay_moc` gọi THẲNG bộ gióng hàng nên
+        # mốc trả về đã là mốc gióng hàng rồi. **KHÔNG bọc `_moc_giong_hang`
+        # thêm lần nữa** — đó là chạy gióng hàng hai lượt trên cùng bộ file,
+        # tốn gấp đôi mà kết quả y hệt. Máy chưa có bộ gióng hàng -> mốc rỗng,
+        # tiếng vẫn đúng (nhãn giọng đã nói trước).
+        return await _chay_vieneu(texts, paths, voice, lang, on_done, rate,
+                                  on_msg, lay_moc=True)
 
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)

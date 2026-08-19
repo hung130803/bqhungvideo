@@ -258,6 +258,26 @@ def duoi_dong(vid: str, nhan: str = "") -> str:
     return " · " + duoi
 
 
+#: Chữ đánh dấu dòng LỐI TẮT ở nhóm "Khuyên dùng" — xem `gom_nhom(loi_tat=)`.
+#: Đặt ở CUỐI dòng và nói thẳng "cùng giọng", vì cái anh Hùng kêu ở v2.37.0
+#: không phải "có hai dòng" mà là "hai dòng mà không biết nó là một".
+DAU_LOI_TAT = " [lối tắt — cùng giọng ở nhóm dưới]"
+
+
+def duoi_nhan_nha(vid: str, nhan: str = "") -> str:
+    """Đuôi ' - nhấn nhá 4,0 rất truyền cảm' cho một dòng combo.
+
+    Trả RỖNG khi giọng CHƯA ĐO (``nhan_nha.nhan`` đã lo: cấm bịa số cạnh tên
+    giọng) **hoặc khi nhãn đã tự mang số rồi** — `giong_vieneu.nhan_giong` và
+    `dubbing.list_recap_voices` nhóm "ĐỀ XUẤT" đều tự gọi `nhan_nha.nhan()`,
+    dán thêm lần nữa là dòng ra *"... nhấn nhá 4,0 ... nhấn nhá 4,0 ..."*.
+    Cùng khuôn chống-nói-hai-lần của `duoi_dong`/`_DO_TRUNG`.
+    """
+    if "nhấn nhá" in str(nhan or "").lower():
+        return ""
+    return nhan_nha.nhan(vid)
+
+
 def ten_ro_rang(vid: str, nhan: str, trung_ten: bool) -> str:
     """Thêm chỗ KHÁC NHAU vào dòng khi hai giọng cùng tên người đọc.
 
@@ -402,12 +422,27 @@ def chon_khuyen(ds: list[tuple[str, str]], nn: str,
     """
     goc = str(nn or "").split("-")[0].lower()
     ung: list[str] = []
+    # **PHẢI TỰ BỎ MÃ TRÙNG — lỗi thật, cổng 79 CA 8 bắt được 19/08/2026.**
+    # Danh sách vào của app CÓ SẴN 20 dòng trùng mã (nhóm "ĐỀ XUẤT" của
+    # `list_recap_voices` liệt kê lại giọng đã có ở nhóm ngôn ngữ). Không lọc
+    # thì `ung` ra `[NamMinh, NamMinh, HoaiMy, HoaiMy, William]` -> nhóm
+    # "Khuyên dùng" **hiện Nam Minh HAI LẦN** và mất 2 suất khuyên. Đó đúng
+    # bằng cái anh Hùng kêu ("Andrew hiện hai lần"), chỉ đổi chỗ.
+    # `gom_nhom` vô tình che được vì nó dedupe TRƯỚC khi gọi — nhưng hàm này
+    # là hàm CÔNG KHAI, gọi thẳng từ ngoài (cổng 79 CA 5 làm đúng thế) thì
+    # bệnh lộ ra. Chốt phải nằm TRONG hàm, đừng nhờ nơi gọi.
+    da: set[str] = set()
     for _nhan, vid in ds:
-        if not vid or la_bien_the(vid) or not _dung_duoc_ngay(vid):
+        if not vid or vid in da or la_bien_the(vid):
+            continue
+        if not _dung_duoc_ngay(vid):
+            da.add(vid)
             continue
         if nhan_nha.muc(_bo_pitch(vid)) is None:
+            da.add(vid)
             continue
         if ma_ngon_ngu(vid) == goc or da_ngu(vid):
+            da.add(vid)
             ung.append(vid)
     ung.sort(key=lambda v: (1 if da_ngu(v) else 0,
                             nhan_nha.khoa_sap(_bo_pitch(v))))
@@ -415,7 +450,7 @@ def chon_khuyen(ds: list[tuple[str, str]], nn: str,
 
 
 def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
-             ) -> list[tuple[str, str]]:
+             loi_tat: bool = False) -> list[tuple[str, str]]:
     """Xếp lại danh sách giọng thành các nhóm có tiêu đề.
 
     Vào: ``[(nhãn, mã)]`` đúng dạng ``giong_dung_duoc`` trả ra — dòng có mã
@@ -424,12 +459,35 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
 
     Ra: cùng dạng ``[(nhãn, mã)]``, mã rỗng = nhãn nhóm (UI phải disable).
 
-    **BA BẤT BIẾN, cổng test chấm đúng ba cái này:**
+    **BẤT BIẾN, cổng 79 chấm:**
 
-    * **không mất giọng**: tập mã ra == tập mã vào (bỏ mã rỗng);
-    * **không trùng**: mỗi mã xuất hiện ĐÚNG một lần;
+    * **không mất giọng**: tập mã ra == tập mã vào (bỏ mã rỗng) — đúng ở CẢ
+      HAI chế độ, đây là mệnh đề không bao giờ được nhân nhượng;
     * **trong mỗi nhóm, nhấn nhá cao đứng trên** (``nhan_nha.khoa_sap``),
-      giọng chưa đo xuống cuối nhóm chứ không bị vứt.
+      giọng chưa đo xuống cuối nhóm chứ không bị vứt;
+    * ``loi_tat=False`` (mặc định): **mỗi mã xuất hiện ĐÚNG một lần**, nhóm
+      "Khuyên dùng" LẤY HẲN giọng ra khỏi nhóm gốc.
+
+    ═══ ``loi_tat=True`` — LUẬT ANH HÙNG CHỐT 19/08/2026, ĐÈ LÊN BẢN ĐẦU ═══
+    Nguyên văn: *"nhiều bên sẽ có nhiều giọng giống nhau nhưng kệ nó cứ thêm
+    vào trùng lặp hay sao cũng được cho tôi, tại chỗ free chỗ mất tiền ấy, cứ
+    thêm"*. Với nhóm "Khuyên dùng" thì nghĩa là: **giữ nó như một LỐI TẮT**,
+    tức giọng nằm CẢ ở đầu danh sách LẪN trong nhóm gốc của nó.
+
+    Đây KHÔNG mâu thuẫn với cái anh Hùng kêu ở v2.37.0 (*"Andrew hiện hai
+    lần"*), và chỗ khác nhau là chỗ đáng giá nhất của mục này: **hồi đó hai
+    dòng giống hệt nhau nên không đọc ra được đó là MỘT giọng hay HAI giọng
+    khác nhau** — mà ngay cạnh nó lại có một ca HAI GIỌNG THẬT cùng tên
+    (`AndrewNeural` 4,49 vs `AndrewMultilingualNeural` 3,79). Nay dòng lối tắt
+    mang ``DAU_LOI_TAT`` nói thẳng *"cùng giọng ở nhóm dưới"*, nên hai loại
+    trùng đó không thể lẫn vào nhau nữa.
+
+    **Vì sao vẫn để mặc định ``False``:** bất biến "mỗi mã đúng một lần" là
+    thứ chống được lỗi trùng THẬT (một mã lọt vào hai nhóm do chia nhóm sai).
+    Bỏ hẳn nó đi thì không còn ai canh chuyện đó. Nên nó vẫn được chấm ở chế
+    độ mặc định, còn chế độ lối tắt có bất biến RIÊNG, chặt hơn: mã lặp thì
+    phải lặp ĐÚNG HAI LẦN, đúng một lần ở "Khuyên dùng" và một lần ở nhóm
+    gốc, và dòng ở "Khuyên dùng" phải mang dấu lối tắt.
     """
     # 1) bỏ nhãn nhóm cũ + bỏ mã trùng (giữ nhãn gặp ĐẦU TIÊN)
     da: set[str] = set()
@@ -456,13 +514,17 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
             co_thuong[t] = True
     can_ro = {t for t in co_da if co_thuong.get(t)}
 
-    # 3) chia nhóm. "Khuyên dùng" LẤY HẲN giọng khỏi nhóm gốc.
+    # 3) chia nhóm. `loi_tat=False` -> "Khuyên dùng" LẤY HẲN giọng khỏi nhóm
+    #    gốc; `loi_tat=True` -> CHÉP THÊM một dòng, giọng vẫn còn ở nhóm gốc.
     khuyen = chon_khuyen(sach, nn)
     o_khuyen = set(khuyen)
     thung: dict[str, list[tuple[str, str]]] = {k: [] for k in THU_TU_NHOM}
     for nhan, vid in sach:
-        k = N_KHUYEN if vid in o_khuyen else nhom_cua(vid, nn)
-        thung[k].append((nhan, vid))
+        if vid in o_khuyen:
+            thung[N_KHUYEN].append((nhan, vid))
+            if not loi_tat:
+                continue                # LẤY HẲN -> không vào nhóm gốc nữa
+        thung[nhom_cua(vid, nn)].append((nhan, vid))
 
     # 4) sắp trong nhóm + dựng nhãn
     ra: list[tuple[str, str]] = []
@@ -478,5 +540,11 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
         ra.append((_NHAN_NHOM[k].format(nn=ten_ngon_ngu(nn)), ""))
         for nhan, vid in muc:
             n2 = ten_ro_rang(vid, nhan, ten_goc(vid) in can_ro)
-            ra.append((n2 + duoi_dong(vid, n2), vid))
+            # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79 chấm
+            # được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một dòng.
+            n2 += duoi_nhan_nha(vid, n2)
+            n2 += duoi_dong(vid, n2)
+            if loi_tat and k == N_KHUYEN:
+                n2 += DAU_LOI_TAT
+            ra.append((n2, vid))
     return ra

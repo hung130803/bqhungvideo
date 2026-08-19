@@ -317,6 +317,178 @@ ok("TỰ KIỂM: trả chốt lại thì khuyên dùng đúng như cũ",
 # ---------------------------------------------------------------------------
 print()
 print("=" * 72)
+print("CA 8 — LỐI TẮT (`loi_tat=True`): luật anh Hùng chốt 19/08/2026")
+print("=" * 72)
+# Nguyên văn: *"nhiều bên sẽ có nhiều giọng giống nhau nhưng kệ nó cứ thêm vào
+# trùng lặp hay sao cũng được cho tôi, tại chỗ free chỗ mất tiền ấy, cứ thêm"*.
+# Nhóm "Khuyên dùng" nay là LỐI TẮT: giọng nằm cả ở đầu LẪN trong nhóm gốc.
+#
+# Bất biến ở chế độ này CHẶT HƠN chứ không lỏng hơn: mã lặp phải lặp ĐÚNG HAI
+# LẦN, đúng một lần ở "Khuyên dùng", và dòng lối tắt phải TỰ NÓI nó là cùng
+# giọng — vì cạnh nó có ca TRÙNG TÊN MÀ KHÁC GIỌNG THẬT (Andrew/Brian), hai
+# loại đó mà lẫn vào nhau thì đúng bằng bệnh cũ.
+for nn in ("vi", "en"):
+    ra = GB.gom_nhom(THO, nn, loi_tat=True)
+    ma = _ma(ra)
+    ok(f"[{nn}] lối tắt: KHÔNG MẤT giọng nào", set(ma) == tap_vao,
+       f"thiếu {len(tap_vao - set(ma))} · thừa {len(set(ma) - tap_vao)}")
+    dem: dict[str, int] = {}
+    for v in ma:
+        dem[v] = dem.get(v, 0) + 1
+    qua = {v: n for v, n in dem.items() if n > 2}
+    ok(f"[{nn}] lối tắt: không mã nào quá HAI lần", not qua, f"{qua}")
+    # mã lặp phải đúng bằng tập "khuyên dùng"
+    lap = {v for v, n in dem.items() if n == 2}
+    kh = set(GB.chon_khuyen(THO, nn))
+    ok(f"[{nn}] mã lặp ĐÚNG BẰNG nhóm khuyên dùng", lap == kh,
+       f"lặp {len(lap)} · khuyên {len(kh)}")
+    # dòng lối tắt phải tự nói "cùng giọng"
+    nhom, thieu_dau = "", []
+    for nhan, vid in ra:
+        if not vid:
+            nhom = nhan
+            continue
+        if nhom.startswith("KHUYÊN DÙNG") and GB.DAU_LOI_TAT not in nhan:
+            thieu_dau.append(nhan)
+    ok(f"[{nn}] mọi dòng lối tắt TỰ NÓI là cùng giọng", not thieu_dau,
+       f"{len(thieu_dau)} dòng thiếu: {thieu_dau[:1]}")
+    # và dòng ở NHÓM GỐC thì KHÔNG được mang dấu đó (nếu không thì vô nghĩa)
+    ban_goc = [n for n, v in ra
+               if v and v in lap and GB.DAU_LOI_TAT not in n]
+    ok(f"[{nn}] bản trong nhóm gốc KHÔNG mang dấu lối tắt",
+       len(ban_goc) == len(lap), f"{len(ban_goc)}/{len(lap)}")
+
+# mặc định vẫn phải là chế độ CHẶT (bất biến cũ còn nguyên người canh)
+ra_mac_dinh = GB.gom_nhom(THO, "vi")
+ma_md = _ma(ra_mac_dinh)
+ok("mặc định `loi_tat=False` -> MỖI MÃ ĐÚNG MỘT LẦN (bất biến cũ còn)",
+   len(ma_md) == len(set(ma_md)), f"{len(ma_md)} dòng / {len(set(ma_md))} mã")
+
+# ---------------------------------------------------------------------------
+print()
+print("=" * 72)
+print("CA 9 — MỖI DÒNG CÓ MỨC NHẤN NHÁ, VÀ KHÔNG NÓI HAI LẦN")
+print("=" * 72)
+ra = GB.gom_nhom(THO, "vi", loi_tat=True)
+# giọng ĐÃ ĐO thì dòng phải mang số; giọng CHƯA ĐO thì TUYỆT ĐỐI không được
+# có số (bịa số cạnh tên giọng = "phép đo phát chứng nhận").
+#
+# **BIẾN THỂ CAO ĐỘ (`...|-20Hz`) LÀ CA RIÊNG, VÀ NÓ PHẢI *KHÔNG* CÓ SỐ.**
+# Bản đầu của mục này hỏi "tra được `muc()` theo mã GỐC thì dòng phải có số"
+# và ra HỎNG 8 dòng kiểu `Nam Minh — hơi cao`. Đọc kỹ thì **mã đúng, mục
+# test sai**: chưa ai đo riêng từng mức cao độ, nên gắn số của giọng gốc lên
+# biến thể là MƯỢN số của mã khác — đúng thứ `chon_khuyen` đã từ chối
+# ("khuyên bằng một con số mượn của mã khác thì đúng bằng bịa") và đúng thứ
+# `nhan_nha.nhan()` tránh khi nó tra bằng mã ĐẦY ĐỦ. Nay tách hẳn hai rổ.
+thieu_so, bia_so, noi_hai_lan, muon_so = [], [], [], []
+for nhan, vid in ra:
+    if not vid:
+        continue
+    co_so = "nhấn nhá" in nhan.lower()
+    if nhan.lower().count("nhấn nhá") > 1:
+        noi_hai_lan.append(nhan)
+    if GB.la_bien_the(vid):             # biến thể cao độ -> CẤM có số
+        if co_so:
+            muon_so.append(nhan)
+        continue
+    da_do = NN.muc(vid) is not None
+    if da_do and not co_so:
+        thieu_so.append(nhan)
+    if not da_do and co_so:
+        bia_so.append(nhan)
+ok("giọng ĐÃ ĐO -> dòng có số nhấn nhá", not thieu_so,
+   f"{len(thieu_so)} thiếu: {thieu_so[:1]}")
+ok("giọng CHƯA ĐO -> dòng KHÔNG có số (cấm bịa)", not bia_so,
+   f"{len(bia_so)} bịa: {bia_so[:1]}")
+ok("BIẾN THỂ CAO ĐỘ KHÔNG mượn số của giọng gốc", not muon_so,
+   f"{len(muon_so)} mượn: {muon_so[:1]}")
+ok("KHÔNG dòng nào nói 'nhấn nhá' hai lần", not noi_hai_lan,
+   f"{len(noi_hai_lan)}: {noi_hai_lan[:1]}")
+# TỰ KIỂM BỘ DÒ: `duoi_nhan_nha` phải câm khi nhãn đã tự mang số
+ok("TỰ KIỂM: nhãn đã có số -> `duoi_nhan_nha` trả RỖNG",
+   GB.duoi_nhan_nha("vi-VN-NamMinhNeural", "X - nhấn nhá 4,0 truyền cảm")
+   == "" and GB.duoi_nhan_nha("vi-VN-NamMinhNeural", "X") != "")
+
+# ---------------------------------------------------------------------------
+print()
+print("=" * 72)
+print("CA 10 — GIỌNG VieNeu KHÔNG ĐƯỢC LÀ GIỌNG CHẾT (chọn X phải ra X)")
+print("=" * 72)
+# Đây là mệnh đề DUY NHẤT anh Hùng coi là lỗi trong lượt này: *"chọn X mà ra Y
+# (giọng chết, như `ov:nu_am` đã bắt)"*. `giong_vieneu.py` xong từ `a95e0e6`
+# nhưng tới v2.37.0 **không một dòng nào trong `dubbing.py` gọi tới nó** — đưa
+# `vn:` vào combo mà quên nối cửa đọc thì mã giọng rơi thẳng xuống nhánh
+# edge-tts, tức chọn "Minh Đức" nghe ra Hoài My, `rc` vẫn 0.
+try:
+    from app.core import giong_vieneu as VN2
+    ds_vn = VN2.danh_sach_giong(du_chua_tai=True, ngan=True)
+    ok("VieNeu có ĐỦ 20 giọng dựng sẵn", len(ds_vn) == 20, f"{len(ds_vn)}")
+    ok("mọi mã VieNeu mang tiền tố thật `vn:` (KHÔNG phải `vieneu:`)",
+       all(m.startswith("vn:") for m, _n in ds_vn))
+    ok("20 giọng VieNeu đều có mặt trong danh sách THẬT của combo",
+       all(m in tap_vao for m, _n in ds_vn),
+       f"thiếu {[m for m, _n in ds_vn if m not in tap_vao][:2]}")
+    # nhãn phải ĐỌC ĐƯỢC trong combo (bản đầy đủ đo được 364-521 ký tự)
+    dai = max((len(n) for n, v in ra if v and v.startswith("vn:")), default=0)
+    ok("dòng VieNeu đủ ngắn để đọc trong combo (<= 120 ký tự)", dai <= 120,
+       f"dài nhất {dai} ký tự")
+    ok("dòng VieNeu vẫn nói ra việc phải tải",
+       all("tải" in n.lower() for n, v in ra if v and v.startswith("vn:")))
+
+    # --- CHỖ RẼ THẬT: gọi `_synth_all_words` rồi xem nó đi vào đâu ---
+    # KHÔNG quét chuỗi (bài học cổng 56d/64: quét chuỗi thì phép phá giữ
+    # nguyên mặt chữ mà đổi ý nghĩa vẫn xanh). Vá `giong_vieneu.doc_loat` để
+    # GHI LẠI lượt gọi, rồi chạy THẬT cửa chung.
+    import asyncio
+    from app.core import dubbing as DUB
+
+    goi: list = []
+
+    def _gia(texts, paths, voice, **kw):
+        goi.append(voice)
+        return [True] * len(texts), [[] for _ in texts]
+
+    goc_doc = VN2.doc_loat
+    goc_co = VN2.co_vieneu
+    try:
+        VN2.doc_loat = _gia
+        VN2.co_vieneu = lambda: True
+        ok_v, moc_v = asyncio.run(DUB._synth_all_words(
+            ["xin chào"], "vn:Minh Đức", ["/tmp/kh.mp3"], lang="vi"))
+        ok("`_synth_all_words` RẼ ĐÚNG sang VieNeu (không rơi edge-tts)",
+           goi == ["vn:Minh Đức"], f"gọi {goi}")
+        goi.clear()
+        asyncio.run(DUB._synth_all(
+            ["xin chào"], "vn:Minh Đức", ["/tmp/kh.mp3"], lang="vi"))
+        ok("`_synth_all` RẼ ĐÚNG sang VieNeu", goi == ["vn:Minh Đức"],
+           f"gọi {goi}")
+        goi.clear()
+        # giọng NHÂN BẢN cũng phải đi cùng cửa
+        asyncio.run(DUB._synth_all_words(
+            ["xin chào"], "vnb:D:/mau.wav", ["/tmp/kh.mp3"], lang="vi"))
+        ok("giọng nhân bản `vnb:` cũng đi qua cửa đó",
+           goi == ["vnb:D:/mau.wav"], f"gọi {goi}")
+        goi.clear()
+        # THIẾU MODEL -> LÙI ÊM về edge-tts, KHÔNG nổ (luật Piper/OmniVoice)
+        VN2.co_vieneu = lambda: False
+        dung, lui = DUB._vieneu_hay_khong("vn:Minh Đức")
+        ok("thiếu model -> LÙI ÊM về edge-tts, không nổ",
+           dung is False and lui and not lui.startswith("vn:"),
+           f"lùi về {lui!r}")
+        # và giọng KHÔNG phải VieNeu thì cửa này phải để yên
+        VN2.co_vieneu = lambda: True
+        ok("giọng edge-tts KHÔNG bị cửa VieNeu đụng vào",
+           DUB._vieneu_hay_khong("vi-VN-HoaiMyNeural")
+           == (False, "vi-VN-HoaiMyNeural"))
+    finally:
+        VN2.doc_loat = goc_doc
+        VN2.co_vieneu = goc_co
+except Exception as e:  # noqa: BLE001
+    ok(f"CA 10 chạy được ({e.__class__.__name__}: {e})", False)
+
+# ---------------------------------------------------------------------------
+print()
+print("=" * 72)
 print(f"TỔNG: ĐẠT {DAT} · HỎNG {HONG}")
 print("=" * 72)
 sys.exit(1 if HONG else 0)
