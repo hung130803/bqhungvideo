@@ -357,10 +357,20 @@ def lam_mot(i: int, goc: Path) -> dict:
     shutil.copy2(v_de, NGHE / f"DE_{goc.name}")
 
     # ---- THỜI GIAN: phần CHUNG + phần RIÊNG của từng arm ----
-    # Cột đáng đọc là "arm DE bỏ được bao nhiêu giây": đó là bước TÁCH (Demucs)
-    # + bước BÙ, cả hai đều nằm trong `kq["tach"]["giay"]` / `bu_goc`.
-    gy_tach_buoc = float((r.get("tach") or {}).get("giay") or 0.0)
-    gy_bu = float((r.get("bu_goc") or {}).get("giay") or 0.0)
+    # **ĐỌC HAI CỘT NÀY CHO ĐÚNG, ĐỪNG GỘP:**
+    #   · `tach.giay` = CHỈ thời gian `apply_model` của Demucs (tiến trình con
+    #     tự báo), KHÔNG phải cả bước — thiếu phần nạp model + rút/ghi wav. Đo
+    #     được 8,3 s cho video 149 s = 0,056x, trong khi cả BƯỚC đo ở cổng 71
+    #     (3 vòng ĐAN XEN) là **0,155x trên GPU · 0,488x trên CPU**. Lấy 0,056x
+    #     mà gọi là "thời gian bước tách" là báo hụt gần 3 lần.
+    #   · `tach.giay_ca_tien_trinh` = cả tiến trình con, GẦN cả bước hơn.
+    #   · `bu_goc.giay_bu` / `giay_trong` là **GIÂY ÂM THANH**, KHÔNG phải giây
+    #     tường. `bu_giong_goc` không trả thời gian chạy -> để `None`, đừng điền
+    #     0.0 (0.0 đọc thành "bước này miễn phí").
+    _t = r.get("tach") or {}
+    gy_tach_apply = float(_t.get("giay") or 0.0)
+    gy_tach_tt = _t.get("giay_ca_tien_trinh")
+    gy_bu = None
 
     # ---- ĐO ----
     print("  Demucs lớp giọng: gốc...")
@@ -415,8 +425,9 @@ def lam_mot(i: int, goc: Path) -> dict:
         "ten": goc.name, "ok": True, "dai": round(dai, 2),
         "giay_chung": round(gy_chung, 1),
         "giay_tron": hop["giay"],
-        "giay_buoc_tach": round(gy_tach_buoc, 1),
-        "giay_buoc_bu": round(gy_bu, 1),
+        "giay_tach_apply_model": round(gy_tach_apply, 1),
+        "giay_tach_ca_tien_trinh": gy_tach_tt,
+        "giay_buoc_bu": gy_bu,
         "thiet_bi_tach": (r.get("tach") or {}).get("thiet_bi"),
         "so_manh_tach": len(hop["bu_manh"]) + len(hop.get("manh_de") or []),
         "so_manh_bu": len(hop["bu_manh"]),
@@ -502,24 +513,25 @@ def in_bang(ket: dict) -> None:
               f" -> cột I đọc được)")
 
     print(f"\nTHỜI GIAN CHẠY (giây)")
-    print(f"{'video':<26}{'cả lượt':>10}{'bước TÁCH':>11}{'bước BÙ':>9}"
-          f"{'trộn TACH':>11}{'trộn DE':>9}{'DE bỏ được':>12}")
-    tb = tbu = 0.0
+    print(f"{'video':<26}{'cả lượt':>10}{'apply_model':>13}{'tiến trình tách':>17}"
+          f"{'trộn TACH':>11}{'trộn DE':>9}")
     for i in sorted(ket, key=int):
         k = ket[i]
         if not k.get("ok"):
             continue
-        bo = k.get("giay_buoc_tach", 0) + k.get("giay_buoc_bu", 0)
-        tb += k.get("giay_buoc_tach", 0)
-        tbu += k.get("giay_buoc_bu", 0)
+        _tt = k.get("giay_tach_ca_tien_trinh")
         print(f"{k['ten'][:24]:<26}{k.get('giay_chung', 0):>9.1f}s"
-              f"{k.get('giay_buoc_tach', 0):>10.1f}s"
-              f"{k.get('giay_buoc_bu', 0):>8.1f}s"
-              f"{(k.get('giay_tron') or {}).get('TACH', 0):>10.1f}s"
-              f"{(k.get('giay_tron') or {}).get('DE', 0):>8.1f}s"
-              f"{bo:>11.1f}s")
-    print(f"{'TỔNG bỏ được':<26}{'':>10}{tb:>10.1f}s{tbu:>8.1f}s"
-          f"{'':>11}{'':>9}{tb + tbu:>11.1f}s")
+              f"{k.get('giay_tach_apply_model', 0):>12.1f}s"
+              + (f"{_tt:>16.1f}s" if _tt is not None else f"{'—':>17}")
+              + f"{(k.get('giay_tron') or {}).get('TACH', 0):>10.1f}s"
+                f"{(k.get('giay_tron') or {}).get('DE', 0):>8.1f}s")
+    print("  ĐỌC CHO ĐÚNG: `apply_model` KHÔNG phải cả bước tách (thiếu nạp\n"
+          "  model + rút/ghi wav). Số của CẢ BƯỚC lấy ở cổng 71, đo 3 vòng ĐAN\n"
+          "  XEN: **0,155x thời gian thật trên GPU · 0,488x trên CPU**. Chế độ\n"
+          "  DE bỏ HẲN bước đó, và trên máy KHÔNG có torch thì cách cũ KHÔNG\n"
+          "  CHẠY ĐƯỢC chút nào — đó mới là khác biệt lớn nhất về thời gian.\n"
+          "  Cột `trộn` đo LIỀN MẠCH (TACH trước, DE sau) nên arm sau được lợi\n"
+          "  cache: đọc là 'không chậm hơn', đừng đọc là 'nhanh hơn N lần'.")
 
     print(f"\n{'=' * 78}")
     print(f"GHÉP CẶP:  TACH {t['TACH']:.2f}s  ->  DE {t['DE']:.2f}s"
