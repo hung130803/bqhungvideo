@@ -1894,6 +1894,19 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                                        rate, on_msg, lay_moc=False)
         return ok_v
 
+    dung_cb, voice = _chatter_hay_khong(voice)
+    if dung_cb:
+        _ma_cb = voice
+        ok_c = await _chay_chatter(texts, _ma_cb, paths, rate, on_msg)
+        if any(ok_c):
+            if on_done:                     # gọi SAU cả loạt: `doc_loat` chạy
+                for _i in range(len(texts)):    # tiến trình con một lượt, không
+                    on_done(_i)                 # có nhịp từng câu để bám
+            return ok_c
+        # Hỏng CẢ LOẠT -> đọc lại bằng edge-tts. KHÔNG `on_done` ở đây, nhánh
+        # edge bên dưới sẽ gọi — gọi hai lần là thanh tiến trình chạy quá 100%.
+        voice = _lui_chatter(_ma_cb, lang)
+
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
@@ -2164,6 +2177,96 @@ async def _chay_vieneu(texts, paths, voice, lang, on_done, rate, on_msg,
 
 
 # ==================================================================
+# CỬA DUY NHẤT RẼ SANG CHATTERBOX (`cb:<lang>|<mẫu>`) — cùng chỗ, cùng lý lẽ
+# ==================================================================
+# `app/core/giong_chatter.py` dựng xong ở `9aa4377` với ĐÚNG hợp đồng
+# `doc_loat` của `piper_tts`/`giong_ngoai`, và trong chính file đó có một dòng
+# ghi chú dặn *"luồng lắp giao diện phải thêm `("cb:", CHATTER)` vào
+# `giong_bang._TIEN_TO`"*. **Không ai thêm, và cũng không ai gọi tới nó** —
+# `grep -c "cb:" app/core/dubbing.py` ra **0** trước v2.38.0.
+#
+# Hậu quả nếu cứ đưa `cb:` vào combo mà không nối ở đây: mã giọng rơi thẳng
+# xuống nhánh edge-tts ở cuối hàm, `edge_tts.Communicate("...", "cb:en|D:\\
+# mau.wav")` hỏng -> thử lại 4 lần -> câu RỖNG, HOẶC (tệ hơn) người dùng chọn
+# giọng nhân bản của kênh mình mà nghe ra Hoài My. Đó đúng là **giọng chết
+# "chọn X ra Y"** — thứ DUY NHẤT anh Hùng coi là lỗi trong lượt sắp xếp danh
+# sách giọng (`ov:nu_am` đã bắt một ca, `vn:` một ca nữa).
+#
+# NỐI Ở ĐÂY, KHÔNG Ở NƠI GỌI: `thay_giong.py` có 3 chỗ gọi `_synth_all_words`
+# và `dubbing.py` còn 3 chỗ gọi `_synth_all`. Sót một chỗ là video **lẫn hai
+# giọng** mà `rc` vẫn 0 (mệnh đề cổng 63). Cách này KHÔNG thêm chỗ gọi nào ở
+# `thay_giong.py` nên cổng 63 vẫn đếm ĐÚNG 3.
+#
+# MỐC TỪNG CHỮ: Chatterbox **không trả mốc qua API công khai** (`generate()`
+# trả đúng một khối sóng âm; mốc chỉ moi được từ thuộc tính riêng tư
+# `t3.patched_model.alignment_stream_analyzer`, bản sau đổi là gãy im lặng).
+# Nên `_synth_all_words` lấy mốc bằng **BỘ GIÓNG HÀNG** — đúng cửa Piper và
+# OmniVoice đang đi, đo được rung 13,6-20,3 ms so với Groq chép ngược 33,9-59,2.
+def _chatter_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng Chatterbox không, giọng phải LÙI VỀ nếu không dùng được).
+
+    THIẾU MODEL/GPU THÌ LÙI ÊM VỀ edge-tts — cùng luật Piper/OmniVoice/VieNeu
+    (lùi ra video ĐÚNG, chỉ khác giọng), khác luật Demucs (thiếu Demucs mà lùi
+    là ra video HỎNG nên phải CHẶN). Nhưng phải GHI LẠI lý do: lùi êm mà im
+    lặng thì đúng bằng hỏng âm thầm.
+
+    **LÙI VỀ GIỌNG ĐÚNG THỨ TIẾNG CỦA MÃ**, không lùi về giọng Việt: mã
+    Chatterbox mang sẵn ngôn ngữ (`cb:en|...`), mà bộ này **không có tiếng
+    Việt** nên mọi mã của nó đều là tiếng khác. Lùi về `vi-VN-...` là đọc câu
+    tiếng Anh bằng giọng Việt.
+    """
+    from app.core import giong_chatter as gc
+    if not gc.la_giong_chatter(voice):
+        return False, voice
+    lang, ref = gc.tach_ma(voice)
+    lui = default_voice(lang or "en") or default_voice("en") or "en-US-AriaNeural"
+    if not lang or not ref:
+        gc._ghi_log(f"mã giọng sai dạng «{voice}» (thiếu ngôn ngữ hoặc đường "
+                    f"dẫn mẫu) -> LÙI về edge-tts giọng {lui}")
+        return False, lui
+    if gc.co_chatter():
+        return True, voice
+    tt = gc.tinh_trang()
+    gc._ghi_log(f"Chưa dùng được giọng {voice} (thiếu: {tt['thieu']}) -> "
+                f"LÙI về edge-tts giọng {lui}")
+    return False, lui
+
+
+async def _chay_chatter(texts, voice, paths, rate, on_msg):
+    """Chạy `giong_chatter.doc_loat` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    VÌ SAO KHÔNG GỌI THẲNG: hàm đó mở tiến trình con nạp model (10-48 giây)
+    rồi đọc cả loạt. Gọi thẳng trong một hàm `async` là **chặn cứng vòng lặp
+    sự kiện** suốt từng ấy thời gian — đúng khuôn `_chay_eleven` đã phải dựng
+    sau lỗi thật của cổng 67 CA 4.
+    """
+    from app.core import giong_chatter as gc
+    return await asyncio.to_thread(gc.doc_loat, texts, paths, voice,
+                                   rate=rate, on_msg=on_msg)
+
+
+def _lui_chatter(ma_cb: str, lang: str) -> str:
+    """Đọc HỎNG giữa chừng -> tên giọng edge-tts để đọc LẠI CẢ LOẠT.
+
+    `giong_chatter.doc_loat` là **all-or-nothing** (đọc được 18/20 câu thì nó
+    trả toàn `False`), nên "không câu nào ra" là tín hiệu duy nhất nó cho. Lúc
+    đó phải đọc lại CẢ LOẠT bằng edge-tts: bỏ mặc là video CÂM, còn đọc lại
+    từng câu hỏng là video **lẫn hai giọng** — đúng thứ luật all-or-nothing
+    sinh ra để chặn.
+
+    Ca này KHÔNG hiếm: Chatterbox trên CPU chạy **0,25x thời gian thật** (1
+    phút tiếng tốn 4 phút máy) nên máy không GPU rất dễ chạm hạn giờ.
+    """
+    from app.core import giong_chatter as gc
+    cb_lang = gc.tach_ma(ma_cb)[0]
+    lui = (default_voice(cb_lang or norm_lang(lang) or "en")
+           or default_voice("en") or "en-US-AriaNeural")
+    gc._ghi_log(f"đọc hỏng CẢ LOẠT bằng {ma_cb} -> đọc LẠI cả loạt bằng "
+                f"edge-tts giọng {lui} (all-or-nothing: không trộn 2 giọng)")
+    return lui
+
+
+# ==================================================================
 # CỬA CHUNG LẤY MỐC CHO MỌI MÁY ĐỌC **KHÔNG** TRẢ MỐC THẬT
 # ==================================================================
 # Trước file `giong_hang.py`, mỗi máy đọc tự xoay một kiểu và mỗi kiểu một
@@ -2289,6 +2392,21 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         # tiếng vẫn đúng (nhãn giọng đã nói trước).
         return await _chay_vieneu(texts, paths, voice, lang, on_done, rate,
                                   on_msg, lay_moc=True)
+
+    dung_cb, voice = _chatter_hay_khong(voice)
+    if dung_cb:
+        _ma_cb = voice
+        ok_c = await _chay_chatter(texts, _ma_cb, paths, rate, on_msg)
+        if any(ok_c):
+            if on_done:
+                for _i in range(len(texts)):
+                    on_done(_i)
+            # MỐC: API công khai của Chatterbox KHÔNG trả mốc nào -> đi cửa
+            # chung `_moc_giong_hang` như Piper/OmniVoice. Máy chưa có bộ gióng
+            # hàng -> mốc RỖNG, tiếng vẫn đúng (nhãn giọng đã nói trước).
+            return ok_c, await _moc_giong_hang(
+                texts, paths, ok_c, [[] for _ in texts], lang, _ma_cb)
+        voice = _lui_chatter(_ma_cb, lang)
 
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)

@@ -61,6 +61,7 @@ VIENEU = "vieneu"
 ELEVEN = "el"
 VBEE = "vbee"
 GEMINI = "gemini"
+CHATTER = "chatter"
 
 #: tiền tố -> tên nguồn.
 #:
@@ -70,6 +71,14 @@ GEMINI = "gemini"
 #: nhân bản từ mẫu). Đoán sai tiền tố thì `nguon()` trả về `edge` -> 20 giọng
 #: VieNeu rơi vào nhóm "các tiếng khác", mất nhãn "cần tải", và **không một
 #: dòng báo nào**. Thêm nguồn mới thì lấy hằng số từ chính module nguồn.
+#:
+#: **`cb:` LÀ CỦA CHATTERBOX — bài học đó lặp lại nguyên xi ở v2.38.0.**
+#: `giong_chatter.py` viết xong 471 dòng, có sẵn hằng `TIEN_TO = "cb:"` và một
+#: dòng ghi chú dặn đích danh *"luồng lắp giao diện phải thêm `("cb:", CHATTER)`
+#: vào `giong_bang._TIEN_TO`"* — mà **không ai thêm**. Hậu quả đo được trước khi
+#: vá: `nguon("cb:en|D:/mau.wav")` trả `edge` -> giọng nhân bản rơi vào nhóm
+#: *"MIỄN PHÍ (edge-tts) - các tiếng khác"*, mất nhãn "cần tải 5,5 GB" và mất
+#: cả cảnh báo "cần GPU". Đúng lỗi `ov:nu_am` và `vn:` đã sập hai lần.
 _TIEN_TO: tuple[tuple[str, str], ...] = (
     ("piper:", PIPER),
     ("ov:", OMNIVOICE),
@@ -79,6 +88,7 @@ _TIEN_TO: tuple[tuple[str, str], ...] = (
     ("el:", ELEVEN),
     ("vbee:", VBEE),
     ("gemini:", GEMINI),
+    ("cb:", CHATTER),
 )
 
 #: Tên nguồn hiện cho người đọc.
@@ -91,13 +101,19 @@ TEN_NGUON: dict[str, str] = {
     ELEVEN: "ElevenLabs",
     VBEE: "Vbee",
     GEMINI: "Gemini",
+    CHATTER: "Chatterbox",
 }
 
 #: Nguồn nào KHÔNG tốn tiền/hạn mức. edge-tts miễn phí (rủi ro nằm ở điều
 #: khoản dịch vụ Microsoft, đã khai `LICENSES.txt` mục 5 — đó là chuyện GIẤY
 #: PHÉP, không phải chuyện tiền, nên không trộn vào cột này).
+#:
+#: Chatterbox **MIỄN PHÍ THẬT**: giấy phép MIT cho CẢ mã LẪN trọng số, chạy
+#: hẳn trên máy, không một lượt mạng nào. Đây là cột DUY NHẤT nó hơn edge-tts
+#: (edge-tts miễn phí về tiền nhưng điều khoản dịch vụ Microsoft ghi thẳng
+#: *"It shouldn't be used for commercial reasons"* — `LICENSES.txt` mục 5).
 _MIEN_PHI: frozenset[str] = frozenset(
-    {EDGE, PIPER, OMNIVOICE, INDEXTTS, VIENEU})
+    {EDGE, PIPER, OMNIVOICE, INDEXTTS, VIENEU, CHATTER})
 
 #: Nguồn -> cần tải bao nhiêu thì mới chạy được. **SỐ ĐO, không ước:**
 #: Piper 212,4 MB (`piper_tts`, chạy thật `cai_piper()` vào hộp cát rỗng) ·
@@ -106,11 +122,15 @@ _MIEN_PHI: frozenset[str] = frozenset(
 #: không lấy 286 MB của `docs/GIONG_DOC_MIEN_PHI.md` (đó là cỡ trọng số,
 #: không phải lượng tải thật). Nhãn phải KHỚP ĐƯỜNG SẼ ĐI — cổng 71 CA 4.
 #: Nguồn không có trong bảng = chạy được ngay, không tải gì.
+#: Chatterbox 5,5 GB — lấy ĐÚNG con số trên nhãn nút `giong_chatter.NHAN_TAI`
+#: (torch CUDA ~2,5 GB + thư viện + trọng số ~3,0 GB), KHÔNG ước bừa. Nhãn phải
+#: KHỚP ĐƯỜNG SẼ ĐI: ghi 155 MB rồi tải 2,5 GB là đúng lỗi cổng 71 CA 4.
 _CAN_TAI: dict[str, str] = {
     PIPER: "212 MB",
     OMNIVOICE: "6,1 GB",
     INDEXTTS: "bộ IndexTTS",
     VIENEU: "250 MB",
+    CHATTER: "5,5 GB",
 }
 
 #: Nguồn -> RUNG mốc chữ (chữ hiện lệch tiếng bao nhiêu). **CHỈ điền nguồn đã
@@ -122,6 +142,14 @@ _CAN_TAI: dict[str, str] = {
 #: edge-tts (1,03 lần), nhưng con số đó đo bằng thước KHÁC (Groq chép ngược)
 #: nên **không đặt cạnh 15,7 ms được**. Cổng 67 đã chứng minh thước Groq phụ
 #: thuộc giọng; điền bừa vào đây là dựng lại đúng cái sai đó.
+#:
+#: **Chatterbox CŨNG CỐ Ý ĐỂ RỖNG, cùng lý do — đừng ai "bổ sung cho đủ".**
+#: Con số của nó là **76,2 ms** (`giong_chatter` docstring), đo bằng ĐÚNG thước
+#: Groq chép ngược, và trong CÙNG lượt đo đó edge-tts ra **43,6 ms**. Cặp
+#: 76,2/43,6 so được với nhau vì cùng thước; nhưng đặt 76,2 cạnh **15,7** (số
+#: của `silencedetect`) là trộn hai thước — đúng cái bẫy mục này sinh ra để
+#: chặn. Cặp số đó đi vào NHÃN (`giong_chatter.CANH_BAO_CL` ghi "76 ms so với
+#: 44 ms của giọng thường"), nơi cả hai vế cùng một thước.
 _KHOP_MS: dict[str, str] = {
     EDGE: "15,7 ms",
     PIPER: "29,5 ms",
@@ -164,14 +192,28 @@ def khop_ms(vid: str) -> str:
     return _KHOP_MS.get(nguon(vid), "")
 
 
+#: Nguồn dùng `|` cho việc KHÁC (không phải cao độ). Hiện chỉ Chatterbox:
+#: `cb:<lang>|<đường dẫn mẫu>`. Cắt ở `|` cho mã của nó là **vứt mất đường dẫn
+#: mẫu** — mà đường dẫn mẫu CHÍNH LÀ giọng; mất nó thì `tach_ma` trả rỗng và
+#: giọng nhân bản của kênh A ra giọng edge-tts. Cùng lỗi này còn nằm ở
+#: `thay_giong.tach_giong_pitch` (đã vá kèm).
+_CO_ONG_RIENG: tuple[str, ...] = (CHATTER,)
+
+
 def _bo_pitch(vid: str) -> str:
     """Bỏ hậu tố biến thể cao độ (`vi-VN-NamMinhNeural|-20Hz`).
 
     KHÔNG import `thay_giong` để dùng `tach_giong_pitch`: file đó kéo theo cả
     ffmpeg/Groq/Demucs, mà đây là hàm thuần dùng trong lúc dựng giao diện.
     Dấu phân cách `|` là quy ước đã chốt ở `thay_giong._SEP_PITCH`.
+
+    **Mã của nguồn dùng `|` cho việc khác thì trả NGUYÊN VẸN** — xem
+    `_CO_ONG_RIENG`.
     """
-    return str(vid or "").split("|", 1)[0]
+    s = str(vid or "")
+    if nguon(s) in _CO_ONG_RIENG:
+        return s
+    return s.split("|", 1)[0]
 
 
 def ma_ngon_ngu(vid: str) -> str:
@@ -227,6 +269,11 @@ _DUOI: dict[str, str] = {
     ELEVEN: "TỐN HẠN MỨC ElevenLabs",
     VBEE: "TỐN TIỀN theo ký tự",
     GEMINI: "TỐN HẠN MỨC Gemini",
+    # Ba cảnh báo trong một dòng ngắn, theo đúng thứ tự người dùng cần biết
+    # TRƯỚC khi bấm: phải tải · phải có GPU · KHÔNG đọc được tiếng Việt. Phần
+    # đầy đủ (mốc chữ 76 ms so 44 ms · đóng dấu chìm · đọc sai tiếng Trung
+    # 28,8%) nằm ở `giong_chatter.nhan_giong`, dòng combo không chứa nổi.
+    CHATTER: "miễn phí (MIT), cần tải 5,5 GB, cần GPU NVIDIA, KHÔNG có tiếng Việt",
 }
 
 #: Chữ để dò xem nhãn ĐÃ nói điều đó chưa (nhãn của `giong_ngoai`/`giong_vbee`
@@ -240,6 +287,12 @@ _DO_TRUNG: dict[str, tuple[str, ...]] = {
     OMNIVOICE: ("cần tải",),
     VIENEU: ("cần tải",),
     INDEXTTS: ("cần tải",),
+    # `giong_chatter.nhan_giong` đã mang đủ ba cảnh báo -> dán thêm là dòng
+    # dài gấp đôi mà không thêm một thông tin nào.
+    # **CHỮ PHẢI VIẾT THƯỜNG**: `duoi_dong` so với `nhan.lower()`, nên để
+    # "GPU"/"MIT" ở đây là chuỗi KHÔNG BAO GIỜ khớp -> dán thừa mà cổng nào
+    # chỉ hỏi "có đuôi không" vẫn xanh (đã sập ngay lượt thử đầu).
+    CHATTER: ("cần tải", "gpu", "mit"),
 }
 
 
@@ -315,8 +368,15 @@ def la_bien_the(vid: str) -> bool:
     Vì vậy chúng không được lên nhóm "Khuyên dùng" (khuyên bằng một con số
     mượn của mã khác thì đúng bằng bịa), mà nằm trong nhóm ngôn ngữ của chính
     giọng gốc, nơi nhãn "Nam Minh - trầm" tự nói ra nó là gì.
+
+    **`cb:en|D:/mau.wav` KHÔNG phải biến thể cao độ** dù có dấu `|` — xem
+    `_CO_ONG_RIENG`. Trả True cho nó là loại giọng nhân bản khỏi mọi phép lọc
+    đi theo hàm này, mà lý do loại lại là một chuyện không có thật.
     """
-    return "|" in str(vid or "")
+    s = str(vid or "")
+    if nguon(s) in _CO_ONG_RIENG:
+        return False
+    return "|" in s
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +430,13 @@ def nhom_cua(vid: str, nn: str) -> str:
 
     Tách riêng khỏi ``gom_nhom`` để cổng test chấm được từng mã một, không
     phải dựng cả danh sách rồi suy ngược.
+
+    **BẤT BIẾN: CHỈ giọng edge-tts mới vào được nhóm NGÔN NGỮ ĐÍCH** (nhánh
+    ``ng != EDGE`` chặn trước). Nhờ đó giọng Chatterbox **không bao giờ** hiện
+    ở nhóm "giọng Tiếng Việt" — mà nó đọc tiếng Việt ra **chuỗi vô nghĩa và
+    KHÔNG ném lỗi** (đo thật: *"Một cơn bão chưa từng có"* -> *"Mokonbel,
+    Chutanko..."*, mã thoát 0). Xếp nó vào nhóm tiếng Việt là mời người dùng
+    hỏng 300 video mà không một dòng báo. Cổng 82 CA 2 chấm đúng mệnh đề này.
     """
     ng = nguon(vid)
     if ng in (ELEVEN, VBEE, GEMINI):

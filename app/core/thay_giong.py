@@ -1736,9 +1736,21 @@ def tach_giong_pitch(voice: str) -> tuple[str, str]:
     Chuỗi KHÔNG có `|` -> trả nguyên vẹn kèm `"+0Hz"` (đường cũ, không đổi).
     Mã pitch LẠ (user sửa tay mẫu / file mẫu hỏng) -> BỎ phần pitch chứ
     KHÔNG ném: mất một biến thể còn hơn chết cả lượt thay giọng.
+
+    **CHATTERBOX DÙNG `|` CHO VIỆC KHÁC — PHẢI CHỪA RA (lỗi thật, v2.38.0).**
+    Mã của nó là `cb:<lang>|<đường dẫn mẫu>`. Luật "pitch lạ thì BỎ" ở trên
+    biến `cb:en|D:\\mau.wav` thành `("cb:en", "+0Hz")` -> **đường dẫn mẫu bị
+    vứt IM LẶNG** -> `giong_chatter.tach_ma("cb:en")` trả `("","")` -> lùi
+    edge-tts. Tức anh Hùng chọn giọng nhân bản của kênh mình, nghe ra Hoài My,
+    và **không một dòng báo** — đúng họ lỗi "chọn X ra Y" mà `ov:nu_am` đã
+    sập. Chừa Ở ĐÂY chứ không nới `_RE_PITCH`: luật "pitch lạ thì bỏ" vẫn
+    đúng và cổng 63 CA 1e vẫn chấm nó y nguyên.
     """
     s = str(voice or "")
     if _SEP_PITCH not in s:
+        return s, "+0Hz"
+    from app.core import giong_chatter as _gc
+    if _gc.la_giong_chatter(s):
         return s, "+0Hz"
     v, _, p = s.partition(_SEP_PITCH)
     p = p.strip()
