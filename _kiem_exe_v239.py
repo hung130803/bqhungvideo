@@ -161,10 +161,25 @@ def main() -> int:                                           # noqa: C901
         n = len([x for x in d.rglob("*") if x.is_file()]) if d.is_dir() else 0
         ok(n > 0, f"app/assets/{ten_tn} có trong bản đóng gói", f"{n} file")
 
+    # ffmpeg/ffprobe: `.spec` khai `binaries = [('bin/ffmpeg.exe', '.'), ...]`
+    # nên PyInstaller đặt chúng ở **`_internal/`**, KHÔNG phải `dist/.../bin/`.
+    # Bản đầu của phép kiểm này tìm ở `bin/` -> in "KHÔNG có trong dist" cho
+    # thứ ĐANG CÓ = báo động giả. Nay chấm ĐÚNG chỗ, và chấm THẬT chứ không chỉ
+    # ghi nhận: thiếu ffmpeg là app không cắt/xuất được gì.
+    #
+    # VÌ SAO PHẢI CHẤM: PyInstaller chỉ in **WARNING** rồi vẫn `rc=0` khi thiếu
+    # file trong `binaries` (đo thật lượt này: *"Ignoring non-existent resource
+    # ...\bin\yt-dlp.exe"*). Tức một lượt build sau khi `bin/` trống sẽ **âm
+    # thầm cho ra bộ cài KHÔNG CÓ ffmpeg**, đúng họ bẫy "app vẫn chạy, không
+    # một dòng báo".
     for b in ("ffmpeg.exe", "ffprobe.exe"):
-        # `bin/` không đi qua .spec (bộ cài kèm riêng) -> chỉ báo, không chấm.
-        co = (DIST / "bin" / b).is_file() or (REPO / "bin" / b).is_file()
-        print(f"  (ghi nhận) {b}: {'có' if co else 'KHÔNG có trong dist'}")
+        f = INT / b
+        ok(f.is_file() and f.stat().st_size > 20_000_000,
+           f"{b} có trong bản đóng gói (_internal)",
+           f"{f.stat().st_size:,} byte" if f.is_file() else "KHÔNG CÓ")
+    ytd = INT / "yt-dlp.exe"
+    print(f"  (ghi nhận) yt-dlp.exe: "
+          f"{'có' if ytd.is_file() else 'KHÔNG có — bin/yt-dlp.exe không tồn tại, build chỉ WARNING'}")
 
     # ---- 3. CHẠY THẬT ----
     print("\n-- 3. CHẠY THẬT với BQ_DATA_DIR tạm (giả lập máy nhân viên) --")
@@ -210,6 +225,11 @@ def main() -> int:                                           # noqa: C901
 
     # ---- 4. ĐÓNG ÊM + KHÔNG BỎ LẠI MỒ CÔI ----
     print("\n-- 4. ĐÓNG ÊM, KHÔNG BỎ LẠI TIẾN TRÌNH MỒ CÔI --")
+    # NÓI THẲNG GIỚI HẠN: đóng bằng `taskkill /F` là GIẾT, không phải "đóng
+    # êm". Vì vậy `rc` ở đây KHÔNG chứng minh được `closeEvent` chạy đúng, và
+    # KHÔNG được chấm. Thứ chấm được sau một lượt giết là: có Traceback không,
+    # có bỏ lại tiến trình con mồ côi không. Muốn chấm "đóng êm" thật thì phải
+    # gửi WM_CLOSE / Alt+F4 vào cửa sổ — chưa làm, ghi nợ.
     if con:
         subprocess.run(["taskkill", "/PID", str(pr.pid), "/T", "/F"],
                        capture_output=True, timeout=60)
@@ -221,7 +241,8 @@ def main() -> int:                                           # noqa: C901
         else ""
     err = (pr.stderr.read() or b"").decode("utf-8", "replace") if pr.stderr \
         else ""
-    print(f"  rc khi đóng = {rc}")
+    print(f"  rc khi đóng = {rc}  (giết bằng taskkill /F -> rc != 0 là ĐÚNG, "
+          f"KHÔNG chấm mục này)")
     if err.strip():
         print("  stderr (10 dòng đầu):")
         for d in err.strip().splitlines()[:10]:
