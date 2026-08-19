@@ -154,6 +154,17 @@ def ca3_khoa_la_ma_giong_that() -> None:
     from app.core import dubbing, giong_ngoai as gn, nhan_nha as nn
     from app.core import piper_tts
     hop_le = {m for m, _t, _n in gn.GIONG_OV} | {piper_tts.MA_GIONG}
+    # VieNeu: 20 giọng dựng sẵn vào bảng ngày 19/08/2026. Danh sách hợp lệ
+    # phải lấy TỪ CHÍNH `giong_vieneu.GIONG_VN` — gõ tay 20 tên có dấu vào
+    # đây là tự đẻ ra một bản sao trôi khác module thật, đúng cái mục 3b này
+    # đang canh cho Piper. Thiếu nguồn này thì cổng ĐỎ OAN mỗi lần bảng nhận
+    # thêm một họ giọng mới, mà cổng đỏ oan thì người ta bỏ qua nó (bài học
+    # cổng 41 và 47).
+    try:
+        from app.core import giong_vieneu as gv
+        hop_le |= {gv.TIEN_TO + k for k, _m in gv.GIONG_VN}
+    except Exception:                                          # noqa: BLE001
+        pass
     allv = dubbing._fetch_all_voices()
     if not allv:
         bo_qua("3a khoá là mã giọng thật", "chưa có cache danh sách giọng")
@@ -162,6 +173,12 @@ def ca3_khoa_la_ma_giong_that() -> None:
     la = sorted(k for k in nn.BANG if k not in hop_le)
     ok("3a mọi khoá tra ra được một giọng thật", not la,
        str(la) or f"{len(nn.BANG)}/{len(nn.BANG)} khoá hợp lệ")
+    # TỰ KIỂM BỘ DÒ: mục 3a chỉ có nghĩa nếu nó THẬT SỰ bắt được khoá lạ.
+    # Không có mục này thì mọi lượt nới `hop_le` đều có thể vô tình biến 3a
+    # thành con dấu (đúng bẫy "quét tĩnh chỉ hỏi có mặt không", cổng 56d).
+    ok("3a' TỰ KIỂM bộ dò bắt được khoá lạ",
+       "xx-YY-KhongTonTaiNeural" not in hop_le
+       and "vn:KhongCoGiongNay" not in hop_le)
     # đúng lỗi đã sập: mã Piper phải là mã ĐẦY ĐỦ
     ok("3b mã Piper trong bảng là mã đầy đủ của app",
        nn.muc(piper_tts.MA_GIONG) is not None,

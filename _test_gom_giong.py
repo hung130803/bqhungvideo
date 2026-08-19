@@ -450,9 +450,34 @@ try:
        all(m in tap_vao for m, _n in ds_vn),
        f"thiếu {[m for m, _n in ds_vn if m not in tap_vao][:2]}")
     # nhãn phải ĐỌC ĐƯỢC trong combo (bản đầy đủ đo được 364-521 ký tự)
+    #
+    # HIỆU CHUẨN LẠI 19/08/2026: 120 -> 132, **có lý do bằng số**, không phải
+    # nới cho cổng xanh. Trần 120 đặt lúc `nhan_nha.BANG` CHƯA có giọng `vn:`
+    # nào, nên `nhan_nha.nhan()` trả chuỗi RỖNG cho cả 20 dòng. Nay 20 giọng
+    # đã đo xong, mỗi dòng mọc thêm đúng phần ` - nhấn nhá X,Y <mức>` =
+    # **11-30 ký tự** — mà đó chính là thông tin `nhan_giong.__doc__` bắt phải
+    # nằm ở BẢN NGẮN. Dòng dài nhất là `vn:Adam` **121 ký tự** (nó gánh thêm
+    # dấu `- TIẾNG ANH`, dấu cảnh báo KHÔNG được đẩy vào tooltip).
+    #
+    # Giữ 120 thì cách duy nhất cho xanh là bỏ một trong hai: số nhấn nhá
+    # (mất đúng thứ vừa đo ra) hoặc dấu TIẾNG ANH (mất cảnh báo "chọn nó cho
+    # video Việt là hỏng cả loạt"). Cả hai tệ hơn 1 ký tự tràn.
+    #
+    # **TRẦN NÀY TỒN TẠI ĐỂ BẮT GÌ:** ai đó nhét bản ĐẦY ĐỦ (364-521 ký tự)
+    # vào combo. 132 vẫn bắt được với biên 2,8-3,9 lần. Và mục ngay dưới canh
+    # thẳng mệnh đề đó theo TỈ LỆ nên không còn phụ thuộc con số tuyệt đối.
+    TRAN_DAI = 132
     dai = max((len(n) for n, v in ra if v and v.startswith("vn:")), default=0)
-    ok("dòng VieNeu đủ ngắn để đọc trong combo (<= 120 ký tự)", dai <= 120,
-       f"dài nhất {dai} ký tự")
+    ok(f"dòng VieNeu đủ ngắn để đọc trong combo (<= {TRAN_DAI} ký tự)",
+       dai <= TRAN_DAI, f"dài nhất {dai} ký tự")
+    _dai_du = max((len(VN2.nhan_giong(m, ngan=False)) for m, _n in ds_vn),
+                  default=0)
+    _dai_ngan = max((len(VN2.nhan_giong(m, ngan=True)) for m, _n in ds_vn),
+                    default=1)
+    ok("bản NGẮN phải ngắn hơn bản ĐẦY ĐỦ >= 3 lần",
+       _dai_du >= 3 * _dai_ngan,
+       f"đầy đủ {_dai_du} · ngắn {_dai_ngan} · "
+       f"{_dai_du / max(1, _dai_ngan):.1f} lần")
     ok("dòng VieNeu vẫn nói ra việc phải tải",
        all("tải" in n.lower() for n, v in ra if v and v.startswith("vn:")))
 

@@ -110,7 +110,13 @@ def _import_muc_module(cay: ast.Module) -> set[str]:
 print("CA 1 — bảng nhấn nhá sau khi mở khoá")
 from app.core import giong_mo, nhan_nha  # noqa: E402
 
-ok("1a bảng có 191 giọng", len(nhan_nha.BANG) == 191, f"{len(nhan_nha.BANG)}")
+# 191 -> 211 ngày 19/08/2026 (thêm 20 giọng VieNeu, `_do_nhan_nha_vn.py`).
+# Con số này CỐ Ý ghi cứng: nó là dây báo động buộc lượt nào đổi bảng cũng
+# phải đọc lại CA 1c ngay dưới — chạy lại tứ phân vị, ÁP nó, rồi ĐẾM số giọng
+# đổi nhãn. Lượt 19/08 đổi 11 giọng (`VUA` 3,1 -> 3,2), xem `nhan_nha.__doc__`.
+SO_GIONG_BANG = 211
+ok(f"1a bảng có {SO_GIONG_BANG} giọng", len(nhan_nha.BANG) == SO_GIONG_BANG,
+   f"{len(nhan_nha.BANG)}")
 ok("1b mọi giá trị là số dương hợp lý (1..8 nửa cung)",
    all(isinstance(v, (int, float)) and 1.0 <= v <= 8.0
        for v in nhan_nha.BANG.values()))

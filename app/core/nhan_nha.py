@@ -94,6 +94,63 @@ mọi tiếng khác — bắt giọng Thổ/Ba Lan/Hà Lan đọc câu tiếng A
 bảng chính là bẫy đã làm ``piper:vais1000`` ra 1,88 (thấp nhất toàn bảng).
 Ô trống ở đây nghĩa là CHƯA ĐO, và ``nhan()`` trả chuỗi rỗng cho chúng — đúng
 luật "bịa một con số cạnh tên giọng là người dùng sẽ tin mà chọn".
+
+═══════════════════════════════════════════════════════════════════════════
+BẢNG 191 -> 211 GIỌNG: THÊM 20 GIỌNG VieNeu (19/08/2026)
+═══════════════════════════════════════════════════════════════════════════
+**CỘT NÀY TRỐNG LÀ MỘT LỖI THẬT, KHÔNG PHẢI "CHƯA LÀM TỚI".**
+``giong_vieneu.danh_sach_giong`` sắp giọng bằng ``khoa_sap(m)``, mà bảng
+không có một giọng ``vn:`` nào -> hàm trả **Y HỆT ``(1, 0.0)`` cho cả 20
+giọng** -> thứ tự thật rơi hết về tiêu chí phụ là **THỨ TỰ CHỮ CÁI**. Hệ quả
+đo được: ``vn:Adam`` — giọng TIẾNG ANH duy nhất — đứng **ĐẦU** danh sách 20
+giọng Việt chỉ vì chữ "A", ngay chỗ người ta bấm nhanh nhất. Anh Hùng chạy
+200-300 kênh Việt, bấm nhầm một lần là hàng trăm video đọc giọng Anh.
+
+Đo bằng ``_do_nhan_nha_vn.py``: đúng thước (``_do_nhan_nha.f0_nua_cung``),
+đúng cửa (``dubbing._synth_all``), đúng bộ câu ``CAU["vi"]`` mà ``vi-VN-*``
+đã dùng — nên số so được trong cùng một cột. **19/19 giọng Việt đo được**,
+trải **2,95 – 6,26**. ``vn:Adam`` đọc bộ câu ANH (5,55) vì nó là giọng tiếng
+Anh — cùng luật "cấm so chéo tiếng", ``giong_vieneu`` vẫn đẩy nó xuống cuối.
+
+**VieNeu KHÔNG TIỀN ĐỊNH — SỐ TRONG BẢNG LÀ TRUNG BÌNH 3 LƯỢT ĐAN XEN.**
+edge-tts đo lại lệch 0,00-0,12; VieNeu lệch **trung vị 0,31 · lớn nhất 1,00**
+(``vn:Phạm Tuyên`` 4,27–5,27). Vì vậy với giọng ``vn:`` thì **thứ hạng giữa
+hai giọng cách nhau dưới ~0,4 là không đọc được**; chỉ hai đầu bảng mới chắc.
+Đo 1 lượt rồi ghi vào đây là ghi một con số ngẫu nhiên.
+
+**TỨ PHÂN VỊ ĐÃ CHẠY LẠI — ``VUA`` 3,1 -> 3,2, VÀ ĐÂY LÀ CÁI GIÁ:**
+
+    191 giọng  ->  25% = 3,10 · 50% = 3,54 · 75% = 4,14
+    211 giọng  ->  25% = 3,16 · 50% = 3,55 · 75% = 4,14
+
+Làm tròn 1 chữ số thì chỉ ``VUA`` đổi. **ĐÃ ÁP**, vì luật ở trên nói rõ
+ngưỡng là tứ phân vị của CHÍNH bảng, và ``_test_giong_kenh`` CA 1c chấm đúng
+mệnh đề đó — giữ 3,1 cho "đẹp bảng" là tự tay biến ngưỡng đo được thành
+ngưỡng nghĩ ra.
+
+**ĐÚNG 8 GIỌNG CŨ ĐỔI NHÃN**, tất cả đều có số **làm tròn thành đúng 3,1**:
+``piper:vi_VN-vais1000-medium`` 3,11 · ``zh-CN-liaoning-Xiaobei`` 3,11 ·
+``ar-TN-Reem`` 3,10 · ``en-PH-James`` 3,08 · ``en-ZA-Luke`` 3,08 ·
+``de-DE-Amala`` 3,07 · ``en-NG-Abeo`` 3,07 · ``en-US-Jenny`` 3,06 —
+"vừa" -> "đều đều", **số đo không đổi một ly**. Lý do THẬT: 20 giọng VieNeu
+mới phần lớn nhấn nhá cao hơn chúng nên vị trí TƯƠNG ĐỐI của chúng trong kho
+tụt xuống. Nhãn là nhãn so với cả kho, không phải chứng chỉ vĩnh viễn.
+Bốn nhóm vẫn cân: **59 · 58 · 50 · 44** -> **59 · 58 · 42 · 52**.
+
+**BẪY ĐÃ SẬP KHI ĐẾM CON SỐ NÀY, GIỮ LẠI VÌ NÓ RẺ VÀ DỄ LẶP:** lượt đầu tôi
+đếm trên GIÁ TRỊ THÔ và ra **11 giọng** cùng phân bố "36 · 60" trông rất lệch
+— rồi lấy đó làm lý do KHÔNG áp ngưỡng. Cả hai con số đều SAI, vì ``nhan()``
+chấm mức trên **SỐ ĐÃ LÀM TRÒN** (đúng mệnh đề ``_test_giong_kenh`` CA 1d
+canh: *"CHỮ tính từ SỐ ĐÃ LÀM TRÒN, Jenny 3,06 không được ghi ngược"*). Giọng
+3,19 làm tròn thành 3,2 nên nó **KHÔNG** đổi nhãn — kể cả ``vi-VN-HoaiMy``
+3,18, giọng tôi đã lỡ nêu tên như một nạn nhân. **Đếm hệ quả của một ngưỡng
+thì phải đếm qua ĐÚNG hàm người dùng thấy, đừng đếm lại bằng công thức tự
+viết** — viết lại công thức là tự tạo một thước thứ hai, và thước thứ hai đó
+đã suýt lật ngược một quyết định đúng.
+
+Lần sau bảng đổi thì **chạy lại tứ phân vị, ÁP nó, rồi ĐẾM số giọng đổi nhãn
+QUA ``nhan()`` và nói ra** — đúng ba bước, không bỏ bước ba, và bước ba phải
+gọi ``nhan()``. ``_test_mo_giong_het`` mục 3f2 giữ con số đó trong mã.
 """
 from __future__ import annotations
 
@@ -135,7 +192,7 @@ CHUA_DO = " - chưa đo nhấn nhá"
 #: và phải đổi bằng cách chạy lại tứ phân vị.
 RAT_CAO = 4.1
 CAO = 3.5
-VUA = 3.1
+VUA = 3.2
 
 #: voice_id -> nhấn nhá (nửa cung). Gồm cả giọng KHÔNG PHẢI edge-tts
 #: (``ov:`` OmniVoice · ``piper:``) — chúng đọc **CÙNG BỘ CÂU TIẾNG VIỆT** với
@@ -144,6 +201,7 @@ VUA = 3.1
 #: (danh sách gọn) rồi ``_do_nhan_nha_het.py`` (phần còn lại).
 BANG: dict[str, float] = {
     "zh-CN-YunyangNeural": 6.66,
+    "vn:Xuân Vĩnh": 6.26,
     "ar-MA-JamalNeural": 6.03,
     "ar-DZ-IsmaelNeural": 6.01,
     "ar-AE-HamdanNeural": 5.99,
@@ -151,6 +209,8 @@ BANG: dict[str, float] = {
     "ar-SA-HamedNeural": 5.86,
     "ar-LB-RamiNeural": 5.75,
     "pt-BR-AntonioNeural": 5.74,
+    "vn:Thanh Bình": 5.61,
+    "vn:Adam": 5.55,
     "ar-IQ-BasselNeural": 5.47,
     "ar-QA-MoazNeural": 5.45,
     "en-GB-RyanNeural": 5.38,
@@ -166,13 +226,16 @@ BANG: dict[str, float] = {
     "zh-CN-YunjianNeural": 5.00,
     "de-DE-ConradNeural": 4.94,
     "ov:ong_gia": 4.93,
+    "vn:Quang Sơn": 4.90,
     "fr-CA-JeanNeural": 4.83,
+    "vn:Phạm Tuyên": 4.83,
     "en-AU-WilliamMultilingualNeural": 4.73,
     "ar-EG-ShakirNeural": 4.71,
     "ja-JP-KeitaNeural": 4.69,
     "es-ES-AlvaroNeural": 4.68,
     "en-US-EmmaMultilingualNeural": 4.66,
     "en-US-EmmaNeural": 4.66,
+    "vn:Minh Đức": 4.66,
     "de-DE-KillianNeural": 4.56,
     "en-IN-PrabhatNeural": 4.56,
     "zh-TW-YunJheNeural": 4.55,
@@ -193,6 +256,7 @@ BANG: dict[str, float] = {
     "hi-IN-SwaraNeural": 4.14,
     "zh-HK-HiuGaaiNeural": 4.10,
     "de-AT-JonasNeural": 4.09,
+    "vn:Đức Trí": 4.09,
     "es-ES-XimenaNeural": 4.07,
     "ov:nam_tram": 4.06,
     "en-HK-SamNeural": 4.05,
@@ -208,8 +272,11 @@ BANG: dict[str, float] = {
     "es-GQ-JavierNeural": 3.95,
     "es-GT-AndresNeural": 3.95,
     "ja-JP-NanamiNeural": 3.95,
+    "vn:Thái Sơn": 3.94,
     "en-IE-EmilyNeural": 3.91,
+    "vn:Mỹ Duyên": 3.89,
     "es-PE-AlexNeural": 3.87,
+    "vn:Đoan Trang": 3.86,
     "es-EC-LuisNeural": 3.81,
     "en-NZ-MitchellNeural": 3.80,
     "en-US-AndrewMultilingualNeural": 3.79,
@@ -224,6 +291,8 @@ BANG: dict[str, float] = {
     "es-CO-GonzaloNeural": 3.67,
     "zh-CN-YunxiNeural": 3.67,
     "pt-PT-DuarteNeural": 3.66,
+    "vn:Mai Anh": 3.65,
+    "vn:Minh Triết": 3.65,
     "zh-CN-shaanxi-XiaoniNeural": 3.65,
     "en-IN-NeerjaNeural": 3.62,
     "ov:nu_tre": 3.62,
@@ -241,8 +310,11 @@ BANG: dict[str, float] = {
     "es-CR-MariaNeural": 3.54,
     "es-SV-LorenaNeural": 3.54,
     "es-SV-RodrigoNeural": 3.54,
+    "vn:Ngọc Trân": 3.54,
     "en-SG-WayneNeural": 3.53,
     "es-PR-KarinaNeural": 3.53,
+    "vn:Thùy Dung": 3.53,
+    "vn:Trúc Ly": 3.51,
     "en-TZ-ElimuNeural": 3.48,
     "es-US-PalomaNeural": 3.48,
     "en-US-AvaMultilingualNeural": 3.44,
@@ -250,6 +322,7 @@ BANG: dict[str, float] = {
     "es-GT-MartaNeural": 3.43,
     "es-PA-MargaritaNeural": 3.43,
     "ko-KR-HyunsuMultilingualNeural": 3.43,
+    "vn:Quỳnh Anh": 3.43,
     "es-PE-CamilaNeural": 3.40,
     "ov:nu_am": 3.40,
     "ar-EG-SalmaNeural": 3.38,
@@ -267,6 +340,8 @@ BANG: dict[str, float] = {
     "ar-YE-MaryamNeural": 3.29,
     "en-US-ChristopherNeural": 3.29,
     "es-CL-CatalinaNeural": 3.27,
+    "vn:Kim Thanh": 3.27,
+    "vn:Thục Đoan": 3.27,
     "fr-BE-GerardNeural": 3.26,
     "ar-TN-HediNeural": 3.23,
     "ar-IQ-RanaNeural": 3.22,
@@ -284,10 +359,6 @@ BANG: dict[str, float] = {
     "it-IT-ElsaNeural": 3.18,
     "vi-VN-HoaiMyNeural": 3.18,
     "ar-BH-LailaNeural": 3.16,
-    # Khoá phải là mã ĐẦY ĐỦ `piper_tts.MA_GIONG`. Bản đầu ghi
-    # `piper:vais1000` (tên tôi gõ lúc đo) -> `muc()` trả None, số đo đúng mà
-    # tra không ra. `_piper_hay_khong` nhận MỌI id bắt đầu bằng `piper:` nên
-    # phép đo vẫn chạy và vẫn ra tiếng — sai khoá KHÔNG hề lộ ra lúc đo.
     "piper:vi_VN-vais1000-medium": 3.11,
     "zh-CN-liaoning-XiaobeiNeural": 3.11,
     "ar-TN-ReemNeural": 3.10,
@@ -297,6 +368,7 @@ BANG: dict[str, float] = {
     "en-NG-AbeoNeural": 3.07,
     "en-US-JennyNeural": 3.06,
     "es-AR-TomasNeural": 3.05,
+    "vn:Ngọc Huyền": 3.05,
     "ar-SY-LaithNeural": 3.03,
     "es-UY-MateoNeural": 3.03,
     "ru-RU-SvetlanaNeural": 3.00,
@@ -306,6 +378,7 @@ BANG: dict[str, float] = {
     "ar-MA-MounaNeural": 2.97,
     "en-SG-LunaNeural": 2.96,
     "en-US-AvaNeural": 2.95,
+    "vn:Ngọc Linh": 2.95,
     "ar-SA-ZariyahNeural": 2.93,
     "es-AR-ElenaNeural": 2.92,
     "es-UY-ValentinaNeural": 2.92,

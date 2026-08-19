@@ -213,8 +213,11 @@ def bang_cuoi(ra: dict) -> None:
     tb = {k: st.mean(xs) for k, xs in viet.items()}
     for k, m in sorted(tb.items(), key=lambda kv: -kv[1]):
         xs = viet[k]
+        # `nhan_nha.muc()` nhận MÃ GIỌNG và tra bảng; ở đây đang có GIÁ TRỊ
+        # vừa đo (chưa vào bảng) nên phải dùng `chu()`. Gọi nhầm thì cột mức
+        # in ra `None` cho cả 19 dòng — nhìn như "chưa phân mức được".
         print(f"{k:24s} {m:6.2f} {min(xs):5.2f}–{max(xs):5.2f} "
-              f"{max(xs)-min(xs):6.2f}  {nhan_nha.muc(m)}")
+              f"{max(xs)-min(xs):6.2f}  {nhan_nha.chu(m)}")
     trai = [max(xs) - min(xs) for xs in viet.values() if len(xs) > 1]
     xs = sorted(tb.values())
     print("-" * 74)
@@ -228,13 +231,19 @@ def bang_cuoi(ra: dict) -> None:
         print(f"[cột RIÊNG - tiếng Anh, CẤM so chéo] {k} "
               f"TB {st.mean(x):.2f} dải {min(x):.2f}–{max(x):.2f}")
     print("\nSO VỚI MỐC CÙNG TIẾNG VIỆT (cùng bộ câu, cùng thước):")
+    # **MỐC PHẢI TRA BẰNG KHOÁ THẬT.** `piper:vais1000` là tên GỌN trong tài
+    # liệu; khoá trong `nhan_nha.BANG` là `piper:vi_VN-vais1000-medium`. Tra
+    # bằng khoá ngắn thì `.get()` trả None và dòng mốc **biến mất khỏi bảng**
+    # mà không một dòng báo — đọc bảng ra thì tưởng "chưa đo Piper".
     for ten, ma in (("edge-tts NamMinh", "vi-VN-NamMinhNeural"),
                     ("edge-tts HoaiMy", "vi-VN-HoaiMyNeural"),
-                    ("Piper vais1000", "piper:vais1000"),
+                    ("Piper vais1000", "piper:vi_VN-vais1000-medium"),
                     ("OmniVoice nam_tre", "ov:nam_tre"),
                     ("OmniVoice nu_am", "ov:nu_am")):
         m = nhan_nha.BANG.get(ma)
         if m is None:
+            print(f"  {ten:22s} KHÔNG CÓ trong `nhan_nha.BANG` (khoá {ma!r}) "
+                  f"-> kiểm lại khoá, đừng bỏ qua")
             continue
         tren = sum(1 for v in tb.values() if v > m)
         print(f"  {ten:22s} {m:5.2f} -> {tren:2d}/{len(tb)} giọng VieNeu "

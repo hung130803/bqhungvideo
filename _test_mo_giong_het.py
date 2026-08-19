@@ -263,9 +263,75 @@ try:
         _p.write_text(_ma_moc, encoding="utf-8")
         _ns: dict = {}
         exec(compile(_ma_moc, str(_p), "exec"), _ns)            # noqa: S102
-        _lech = [k for k in NN.BANG if _ns["nhan"](k) != NN.nhan(k)]
-        ok("3f BẤT BIẾN: 191 nhãn cũ giống mốc TỪNG KÝ TỰ", not _lech,
-           f"mốc {MOC} · {len(NN.BANG)} khoá · lệch {len(_lech)}")
+        # LẶP TRÊN KHOÁ CỦA **BẢN MỐC**, KHÔNG PHẢI BẢNG HIỆN TẠI.
+        #
+        # ĐỎ OAN ĐÃ SẬP 19/08/2026: bản đầu lặp `for k in NN.BANG` — tức bảng
+        # MỚI. Thêm 20 giọng VieNeu vào bảng (đúng quy trình mà chính
+        # `nhan_nha.__doc__` mô tả: *"chạy `_do_nhan_nha_bang.py` rồi
+        # `_do_nhan_nha_het.py`"*) là hỏi bản mốc về 20 khoá nó chưa từng có
+        # -> mốc trả "" (hoặc CHUA_DO), bản mới trả số -> **lệch 20** và cổng
+        # ĐỎ. Nhưng mệnh đề nó canh là *"nhãn của giọng CŨ không đổi"*, và
+        # mệnh đề đó vẫn ĐÚNG. Nói cách khác cổng sẽ đỏ oan **mọi lần bảng
+        # nhận thêm giọng đo được** — tức đỏ oan đúng lúc người ta làm việc
+        # đúng, và cổng đỏ oan thì bị bỏ qua (bài học cổng 41 và 47).
+        #
+        # THÊM là hợp lệ, ĐỔI thì không. Vì vậy so trên phần GIAO, và in ra
+        # số khoá thêm để lượt thêm giọng vẫn nhìn thấy được.
+        _khoa_moc = set(_ns["BANG"])
+        _giao = [k for k in _khoa_moc if k in NN.BANG]
+        _mat = sorted(_khoa_moc - set(NN.BANG))
+        _them = len(set(NN.BANG) - _khoa_moc)
+        _lech_tho = [k for k in _giao if _ns["nhan"](k) != NN.nhan(k)]
+
+        # ---- TÁCH HAI NGUYÊN NHÂN "nhãn cũ đổi chữ" ----
+        # Nguyên nhân A: ai đó sửa CHỮ/công thức của `nhan()` -> phải FAIL.
+        # Nguyên nhân B: `BANG` nhận thêm giọng đo được -> tứ phân vị dịch ->
+        #   `VUA`/`CAO`/`RAT_CAO` dịch theo (luật ở `nhan_nha.__doc__`, cổng
+        #   `_test_giong_kenh` CA 1c chấm) -> nhãn của giọng nằm sát ranh giới
+        #   đổi nhóm **mà số đo không đổi một ly**. Đây là đường ĐÚNG.
+        # Gộp hai nguyên nhân là buộc phải chọn: hoặc cấm mở rộng bảng, hoặc
+        # bỏ mục này. Cách tách: ĐỒNG BỘ NGƯỠNG rồi so lại — còn lệch thì
+        # lệch đó KHÔNG do ngưỡng, tức là nguyên nhân A.
+        _ns_db: dict = {}
+        exec(compile(_ma_moc, str(_p), "exec"), _ns_db)          # noqa: S102
+        _ns_db["RAT_CAO"], _ns_db["CAO"], _ns_db["VUA"] = (
+            NN.RAT_CAO, NN.CAO, NN.VUA)
+        _lech = [k for k in _giao if _ns_db["nhan"](k) != NN.nhan(k)]
+        ok(f"3f BẤT BIẾN: {len(_giao)} nhãn cũ giống mốc TỪNG KÝ TỰ "
+           f"(sau khi đồng bộ ngưỡng)",
+           not _lech and not _mat,
+           f"mốc {MOC} · giao {len(_giao)} · lệch {len(_lech)}"
+           + (f" {_lech[:3]}" if _lech else "")
+           + (f" · MẤT khỏi bảng {_mat[:3]}" if _mat else "")
+           + f" · thêm mới {_them}")
+
+        # ---- NGƯỠNG DỊCH THÌ PHẢI KHAI RA SỐ GIỌNG ĐỔI NHÃN ----
+        # Mục này tồn tại để lượt mở rộng bảng KHÔNG ĐI QUA ÊM RU: đổi ngưỡng
+        # là đổi chữ trên combo anh Hùng đang nhìn, nên số đó phải nằm trong
+        # mã và người sửa phải cập nhật nó bằng tay.
+        # 19/08/2026: VUA 3,1 -> 3,2 (bảng 191 -> 211) -> ĐÚNG 8 giọng.
+        # 8 chứ không phải 11: `nhan()` chấm mức trên SỐ ĐÃ LÀM TRÒN (mệnh đề
+        # CA 1d của `_test_giong_kenh`), nên chỉ giọng làm tròn thành đúng 3,1
+        # mới đổi nhóm. Đếm bằng công thức tự viết trên giá trị THÔ ra 11 và
+        # đã suýt lật ngược quyết định áp ngưỡng — xem `nhan_nha.__doc__`.
+        SO_DOI_NHAN = 8
+        ok(f"3f2 số giọng CŨ đổi nhãn vì ngưỡng dịch = {SO_DOI_NHAN} (đã khai)",
+           len(_lech_tho) == SO_DOI_NHAN,
+           f"đếm {len(_lech_tho)} · ngưỡng mốc "
+           f"{_ns['VUA']}/{_ns['CAO']}/{_ns['RAT_CAO']} -> nay "
+           f"{NN.VUA}/{NN.CAO}/{NN.RAT_CAO} · ví dụ "
+           f"{sorted(_lech_tho)[:3]}")
+
+        # TỰ KIỂM BỘ DÒ: phép so chỉ có nghĩa nếu nó bắt được thay đổi thật.
+        # Sửa CHỮ (không phải ngưỡng) trong bản mốc -> 3f phải LỆCH.
+        _ns2: dict = {}
+        exec(compile(_ma_moc.replace('"đều đều"', '"deu deu"'),
+                     str(_p), "exec"), _ns2)                    # noqa: S102
+        _ns2["RAT_CAO"], _ns2["CAO"], _ns2["VUA"] = (
+            NN.RAT_CAO, NN.CAO, NN.VUA)
+        _lech_thu = [k for k in _giao if _ns2["nhan"](k) != NN.nhan(k)]
+        ok("3f' TỰ KIỂM phép so bắt được nhãn bị SỬA CHỮ", bool(_lech_thu),
+           f"đổi chữ mốc -> lệch {len(_lech_thu)} nhãn")
 except Exception as e:                                         # noqa: BLE001
     bo_qua("3f bất biến 191 nhãn cũ", f"{type(e).__name__}: {e}")
 
