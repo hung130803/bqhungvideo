@@ -72,6 +72,7 @@ ném `ImportError`. ffmpeg thì repo này đã có sẵn và đã dùng ở mọ
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import shutil
@@ -87,6 +88,58 @@ _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 #: Mốc chữ đầu tra ra ngoài file thì bỏ — mốc âm là dấu hiệu tính sai tỉ lệ
 #: khung, không phải chuyện "chữ nói trước khi file bắt đầu".
 _NGUONG_AM = -0.001
+
+#: Rác `_viec/` cũ hơn ngần này thì dọn — cùng luật `tempsweep`: file mới hơn
+#: có thể là của lượt ĐANG chạy (app thoát bằng `os._exit`, `finally` không
+#: chạy) nên tuyệt đối không đụng.
+_RAC_QUA_GIAY = 2 * 3600
+
+_DEM_LOT = itertools.count()
+_KHOA_LOT = threading.Lock()
+
+
+def _ma_lot() -> str:
+    """Mã DUY NHẤT cho MỘT lượt gọi — `p<pid>t<thread>n<đếm>`.
+
+    **ĐÂY LÀ CHỖ ĐÃ HỎNG, đừng rút gọn về `os.getpid()`.** Tên file việc/kết
+    quả trước đây là `viec_<pid>.json` / `ket_<pid>.json`, mà `pid` là của
+    tiến trình GỌI — giống hệt nhau cho MỌI luồng trong app. Hai video thay
+    giọng chạy song song (làn `LAN_TG` mặc định 2 luồng) là hai luồng cùng
+    một tiến trình, nên chúng:
+      · ghi ĐÈ file việc của nhau -> tiến trình con gióng mẻ tiếng của luồng
+        KIA rồi trả về đủ số mục, **mốc gán sai chữ mà không một dòng báo**;
+      · ghi ĐÈ file kết quả của nhau;
+      · và `finally` của luồng xong trước **XOÁ** file kết quả của luồng kia
+        -> luồng kia đọc hụt -> *"tiến trình gióng hàng không ghi kết quả
+        (mã 0)"* -> trả rỗng -> **mất sạch mốc của cả mẻ**.
+    Đo thật (`_do_gh_luong.py`, 2 mẻ 6 câu): chạy lần lượt ra **12/12 câu có
+    mốc**, chạy 2 luồng ra **6/12** — đúng một mẻ mất trắng, cả 2/2 lượt.
+    Giữ `pid` ở ĐẦU mã để lượt dọn rác còn phân biệt được "của tiến trình
+    đang sống" với "của lần chạy trước đã chết".
+    """
+    with _KHOA_LOT:
+        return f"p{os.getpid()}t{threading.get_ident()}n{next(_DEM_LOT)}"
+
+
+def _don_rac_viec(tmp: Path) -> None:
+    """Dọn file việc/kết quả MỒ CÔI của lần chạy trước.
+
+    Tên file nay là DUY NHẤT mỗi lượt nên `finally` không còn dọn hộ lượt
+    khác được nữa — app bị giết giữa chừng (`os._exit`) là để lại rác vĩnh
+    viễn. Chỉ đụng đúng mẫu tên app đặt và chỉ khi đã quá `_RAC_QUA_GIAY`;
+    file của user, tên gần giống, file mới -> KHÔNG ĐỘNG. Không bao giờ ném.
+    """
+    try:
+        gio = time.time()
+        for p in (list(tmp.glob("viec_*.json")) + list(tmp.glob("ket_*.json"))
+                  + list(tmp.glob("_bq_giong_runner_*.py"))):
+            try:
+                if gio - p.stat().st_mtime > _RAC_QUA_GIAY:
+                    p.unlink()
+            except OSError:
+                pass
+    except Exception:                                # noqa: BLE001
+        pass
 
 
 # ==========================================================================
@@ -558,14 +611,27 @@ sys.stdout.flush()
 '''
 
 
-def _viet_runner(thu_muc: str) -> Path:
-    """Ghi script chạy ra `<thu_muc>/_bq_giong_runner.py` (ghi đè mỗi lượt).
+def _viet_runner(tmp: Path, ma_lot: str) -> Path:
+    """Ghi script chạy ra `<_viec>/_bq_giong_runner_<mã lượt>.py`.
 
     Ghi vào thư mục RIÊNG, KHÔNG vào `_lib` của Demucs — file này không có
     việc gì phải đụng vào đồ đang chạy sản xuất.
+
+    **MỖI LƯỢT MỘT FILE RIÊNG. Đã thử hai cách rẻ hơn, CẢ HAI HỎNG TRÊN
+    WINDOWS — đừng "dọn gọn" về lại:**
+      · `write_text` đè lên MỘT đường dẫn dùng chung: mở chế độ `w` là CẮT
+        CỤT ngay rồi mới ghi dần, nên luồng thứ hai cắt cụt đúng file mà
+        tiến trình con của luồng thứ nhất đang đọc -> `SyntaxError` giữa
+        dòng hoặc file rỗng, `rc` vẫn có thể là 0.
+      · ghi tên tạm rồi `os.replace` (nguyên tử trên POSIX): Windows từ chối
+        thay file ĐANG BỊ MỞ — đo thật ra
+        `PermissionError [WinError 5] Access is denied` ngay lượt chạy song
+        song đầu tiên, vì python con đang giữ handle chính file script đó.
+    File riêng thì không có gì để tranh; `finally` của `giong_hang_loat` dọn,
+    và `_don_rac_viec` quét mồ côi của lần chạy bị giết giữa chừng.
     """
-    p = Path(thu_muc) / "_bq_giong_runner.py"
-    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    p = tmp / f"_bq_giong_runner_{ma_lot}.py"
     p.write_text(_MA_GIONG, encoding="utf-8")
     return p
 
@@ -645,11 +711,15 @@ def giong_hang_loat(wavs: list[str], texts: list[str], lang: str = "",
 
     thu_muc = thu_muc_gh()
     py = _python_chay()
-    runner = _viet_runner(thu_muc)
     tmp = Path(thu_muc) / "_viec"
     tmp.mkdir(parents=True, exist_ok=True)
-    p_viec = tmp / f"viec_{os.getpid()}.json"
-    p_ket = tmp / f"ket_{os.getpid()}.json"
+    _don_rac_viec(tmp)
+    # TÊN DUY NHẤT MỖI LƯỢT GỌI — xem `_ma_lot`. Đặt theo `os.getpid()` là
+    # hai luồng thay giọng song song ghi đè và XOÁ file của nhau.
+    _lot = _ma_lot()
+    runner = _viet_runner(tmp, _lot)
+    p_viec = tmp / f"viec_{_lot}.json"
+    p_ket = tmp / f"ket_{_lot}.json"
     p_viec.write_text(json.dumps(
         {"cap": cap, "ffmpeg": settings.FFMPEG_PATH, "threads": int(threads),
          "gpu": bool(gpu)}, ensure_ascii=False), encoding="utf-8")
@@ -704,7 +774,9 @@ def giong_hang_loat(wavs: list[str], texts: list[str], lang: str = "",
         _ghi_log(f"gióng hàng hỏng: {type(e).__name__}: {e} -> LÙI về cách cũ")
         return ra
     finally:
-        for p in (p_viec, p_ket):
+        # Dọn ĐÚNG file của lượt này (tên mang `_lot`) — không còn chuyện
+        # xoá nhầm file kết quả của luồng đang chạy song song.
+        for p in (p_viec, p_ket, runner):
             try:
                 p.unlink()
             except OSError:
