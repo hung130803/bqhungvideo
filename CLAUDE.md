@@ -2249,6 +2249,153 @@
      đang sửa file đó; lượt chạy này đã từng bị giết giữa chừng, giết đúng lúc
      phá là để lại bản hỏng trong file người khác) — cổng vẫn CHẤM
      `giong_vieneu._don` ở chế độ đọc-only qua CA 3 và CA 4.
+  85. `_test_nghe_thu_nn.py` → **NGHE THỬ PHẢI ĐỌC ĐÚNG NGÔN NGỮ, VÀ BÁO KHI
+     GIỌNG KHÔNG ĐỌC ĐƯỢC TIẾNG ĐÓ** (19/08/2026). **ĐẠT 75 · HỎNG 0.**
+     Anh Hùng: *"cái phần nghe thử chọn tiếng Anh ngôn ngữ đó cứ ra tiếng Việt
+     lung ta lung tung"*. **GỐC:** `thay_giong.doc_thu` dùng **MỘT câu tiếng
+     Việt CỐ ĐỊNH** (`CAU_NGHE_THU`) cho mọi giọng -> chọn giọng tiếng Anh là
+     nghe giọng Anh cố đọc chữ Việt, ra tiếng lạ, và người nghe kết luận
+     **"giọng này hỏng"**. Cửa nghe thử CŨ (`dubbing.synth_demo`, hộp Lồng
+     tiếng) đã chọn câu theo ngôn ngữ của giọng **TỪ LÂU** — chỉ đường Thay
+     giọng bị sót, tức lỗi SÓT CHỖ NỐI chứ không phải thiếu ý tưởng.
+     **CHỮA:** `cau_nghe_thu(nn)` lấy câu theo NGÔN NGỮ, nguồn là
+     `dubbing._DEMO_TEXTS` (**NGUỒN DUY NHẤT**, dùng chung với hộp Lồng tiếng)
+     + câu Việt quen của anh Hùng; thêm `de` vào bảng đó (11 ngôn ngữ đích nay
+     đủ 11 câu — trước thiếu tiếng Đức nên nó **lùi về câu TIẾNG ANH**, đúng
+     bệnh chỉ khác chiều). `nn_cua_giong(voice)` trả ngôn ngữ giọng ĐỌC ĐƯỢC
+     (`vn:Adam`->en · `vn:` khác->vi · `piper:vi_VN`->vi · `vbee:`->vi ·
+     `el:`/`gemini:`/`ov:`/`cb:`->`""` đa ngữ, **KHÔNG kết luận bừa**).
+     `doc_thu(..., nn=)` lấy câu theo NGÔN NGỮ ĐÍCH; `nn` rỗng thì SUY TỪ CHÍNH
+     GIỌNG nên **lối gọi cũ không phải sửa mà vẫn hết bệnh**.
+     **KHÔNG đọc ngôn ngữ đích từ QSettings** dù làm vậy thì khỏi sửa hộp
+     thoại: hộp chỉ ghi cài đặt lúc Chạy/đóng nên setting là lựa chọn **CŨ** —
+     đúng lỗi "chạy dây chuyền lấy nhóm từ setting nên chạy sai nhóm". Trạng
+     thái đang hiện nằm ở WIDGET (`cb_nn`), phải truyền vào.
+     **GIỌNG KHÔNG ĐỌC ĐƯỢC TIẾNG ĐÓ -> BÁO, KHÔNG ĐỌC BỪA:** `canh_bao` nói
+     cả hai vế (*"giọng này đọc tiếng «vi», câu mẫu là tiếng «en» ... nghe lạ
+     là ĐÚNG theo cấu tạo, KHÔNG phải giọng hỏng"*) + chỉ cách chọn đúng, và
+     hộp HIỆN nó lên dòng trạng thái (`_nghe_xong` thêm vế thứ tư). Vẫn ĐỌC:
+     đó đúng là thứ lượt xuất thật sẽ ra nếu giữ lựa chọn này.
+     **BỆNH THỨ HAI ÍT AI THẤY:** `doc_thu` gọi `doc_ban_dich` mà **để mặc định
+     `dich_sang="en"`** -> nghe thử câu TIẾNG VIỆT mà giọng hỏng thì cửa chung
+     lùi sang **giọng TIẾNG ANH đọc chữ Việt** = đúng bệnh đang chữa, khác
+     đường vào. Nay truyền `dich_sang=nn_cau` (cổng đòi nó là **BIỂU THỨC**,
+     hằng số là bản cũ — bài học cổng 56d).
+     **VẪN ĐI QUA `doc_ban_dich`**, KHÔNG đẻ chỗ gọi `_synth_all_words` thứ 4
+     (cổng 63 vẫn 24/0). Cache khoá theo CÂU nên đổi ngôn ngữ ra file KHÁC
+     (đo: MD5 khác nhau) chứ không trả tiếng cũ.
+     **TỰ KIỂM (CA 7):** vá `cau_nghe_thu` về bản CŨ (luôn câu Việt) -> mệnh đề
+     trung tâm CA 3 **VỠ**; bỏ một ngôn ngữ khỏi bảng -> CA 1 đỏ.
+     **0 KÝ TỰ ElevenLabs:** nhánh `el:` vá `synth_demo` thành hàm sinh mp3
+     bằng ffmpeg, kèm mục chốt *"bản vá ĂN được"* (thiếu chốt đó thì ca `el:`
+     tự ĐẠT vì lý do NGƯỢC HẲN — bẫy cổng 67).
+     **SỐ CỔNG LÀ 85, KHÔNG PHẢI 81:** trong cùng ngày một luồng khác đã lấy
+     81/82/83/84. Trùng số là hai cổng **ghi đè `_kq81.txt` của nhau** (bài học
+     70 vs 69) — cách kiểm số còn trống là đọc `_chay_hoi_quy.CONG`, đừng đếm
+     theo trí nhớ.
+     **BẢN ĐẦU CỦA CỔNG ĐỎ OAN 1 MỤC** vì quét chuỗi `"Adam"` trúng đúng DÒNG
+     GHI CHÚ của bản vá -> nay quét bằng `tokenize` (bỏ COMMENT+STRING) kèm
+     mục TỰ KIỂM BỘ DÒ. Mục "nói luôn CÁI GIÁ" cũng đỏ oan một lượt vì so
+     nguyên văn `"hạn mức"` trong khi nhãn cố ý VIẾT HOA. Hai cái này là **bài
+     học 47/51/53/73 lặp lại lần thứ năm**: quét chuỗi trên file có ghi chú
+     tiếng Việt thì kiểu gì cũng tự bắn vào chân.
+     **KÈM CA 9 — NHÃN `vn:Adam` PHẢI NÓI THẬT + CHỈ ĐƯỜNG:** xem khối *"Adam
+     NGHE LẠ"* ngay dưới.
+- **"Adam NGHE LẠ": ĐO XONG — **CHỈ KÉM, KHÔNG HỎNG** (19/08/2026,
+  `_do_adam_en.py` · `_kq_adam_en.txt`).** Anh Hùng nghe rồi: *"cái adam bị lỗi
+  hay sao nghe cứ lạ lạ khác lắm, không như tôi nghĩ"*, và trỏ vào giọng Adam
+  THẬT của ElevenLabs: *"ít nhất phải như này mới oke"*.
+  Cửa thật `dubbing._synth_all`, corpus + bộ chấm + cache TTS **dùng lại
+  `_do_vieneu_en.py`** (bộ chấm thứ hai = hai bảng số không so được), Groq chép
+  ngược, VieNeu chạy **2 lượt** vì không tiền định:
+
+  | arm (34 câu) | token sai TRONG CÂU | ĐỌC RỜI | bịa chữ | WER cả bài | lề im | nhãn tiếng |
+  |---|---|---|---|---|---|---|
+  | **`vn:Adam` × ANH** | **7,7-12,8%** | **16,7-29,2%** | **0,6%** | **5,2-7,0%** | 225/174 ms | **34/34 English** |
+  | edge Aria × ANH (TRẦN) | 0,0% | 4,2% | 0,9% | 3,7% | 197/**860** ms | 34/34 |
+  | `vn:Ngọc Huyền` × ANH | 17,9% | 8,3% | 1,6% | 8,3% | 112/187 ms | 33/34 (1 câu bị nhận là **Vietnamese**) |
+  | `vn:Minh Đức` × ANH | 17,9% | 20,8% | 2,2% | 11,4% | 94/118 ms | 33/34 (**Malay**) |
+  | `vn:Trúc Ly` × ANH | 15,4% | — | 3,4% | 11,7% | 104/175 ms | 33/34 (**Vietnamese**) |
+  | **`vn:Adam` × VIỆT** | **2,5-5,0%** | 24,0-28,0% | 1,4% | 5,3-5,9% | 117/176 ms | 34/34 |
+  | `vn:Ngọc Huyền` × VIỆT | 2,5% | 32,0% | 1,4% | 5,1% | 94/186 ms | 34/34 |
+  | edge HoaiMy × VIỆT (TRẦN) | 5,0% | — | 1,6% | 5,1% | 192/**842** ms | 34/34 |
+
+  (Adam chạy **2 lượt** nên là DẢI; arm khác lấy lại cache của lượt sáng nên 1
+  lượt — edge-tts tiền định, VieNeu thì KHÔNG, ghi thẳng ra để đừng ai đọc dải
+  của Adam thành "Adam nhấp nháy hơn giọng khác".)
+
+  **VÌ SAO KẾT LUẬN LÀ "KÉM", KHÔNG PHẢI "HỎNG" — 6 dấu hiệu, không phải 1:**
+  đọc trôi **34/34 câu + 24/24 token** (không câu nào hỏng, không lần nào lùi
+  edge) · **bịa chữ 0,6% = THẤP NHẤT cả bảng** · **WER cả bài 5,2-7,0% so với
+  trần 3,7%** (chỉ hơn 1,5-3,3 điểm, trong khi 3 giọng VieNeu khác đọc tiếng
+  Anh ra **8,3-11,7%** — tức Adam là giọng VieNeu **TỐT NHẤT** ở tiếng Anh) ·
+  lề im **225/174 ms** còn gọn hơn edge-tts (edge để **860 ms** ở đuôi) · máy
+  nghe dán nhãn **"English" 34/34 ở CẢ HAI LƯỢT** trong khi 3 giọng Việt đọc
+  tiếng Anh bị nhận thành **Vietnamese / Malay** · và đó là **giới hạn CỦA CẢ
+  BỘ** giọng Việt, không phải lỗi riêng giọng này.
+  Cột duy nhất Adam thua hẳn là **ĐỌC RỜI 16,7-29,2%** (trần 4,2%) — token một
+  mình, không còn ngữ cảnh cho máy nghe chữa hộ.
+  **CHỖ HỤT THẬT SỰ ĐO ĐƯỢC ĐÍCH DANH** (bảng 3 của `_kq_adam_en.txt`): TÊN
+  RIÊNG và VIẾT TẮT — `Albuquerque`->"Abakuki" · `Siobhan`->"Sivan" ·
+  `CEO`->"CAO" · `AI`->"I" · `OST` bị bỏ hẳn · `250 km/h`->"250 kilometers 10
+  hack". **ĐÂY ĐÚNG LÀ LỚP BỆNH `doc_viet_tat.py` ĐÃ CHỮA ĐƯỢC** cho edge-tts
+  giọng `vi-*` (cổng 69: `GDP` đọc "dê-dê-pê" -> đổi sang tên chữ cái Anh viết
+  bằng âm Việt). Hướng đáng làm tiếp là **mở phạm vi `doc_viet_tat` sang giọng
+  đọc tiếng Anh** — nhưng chưa làm, chưa đo, và nó cần cổng riêng vì bản vá cũ
+  cố ý hẹp (chỉ `vi-*`).
+  **KHÔNG TÌM RA LỖI MÃ/CẤU HÌNH NÀO** (ghi ra để khỏi ai đi tìm lại):
+  `_MA_DOC` gọi `infer(text=..., voice="Adam")` đúng tham số, KHÔNG kèm
+  `ref_audio`, KHÔNG truyền `style` (v3 Turbo ghi thẳng `style` là **DEPRECATED
+  và BỊ BỎ QUA**); `Adam` có **CÙNG BỘ KHOÁ** với 19 giọng Việt.
+  **GIẢ THUYẾT "Adam dùng BỘ ÂM TIẾNG VIỆT để đọc tiếng Anh": SAI ở chỗ người
+  ta hay nghĩ, ĐÚNG ở một chỗ khác** — và đây là phần đáng đọc nhất.
+  Bộ phiên âm ghi cứng `SEAPipeline(lang="vi")` + `G2P(lang="vi")`, `sea_g2p`
+  còn **TỪ CHỐI `lang="en"`** (*"lang must be one of ('vi','th','id')"*): đọc
+  tới đây thì tưởng đã chứng minh. **NHƯNG CHẠY THẬT** thì chữ tiếng Anh ra
+  **âm tiếng Anh ĐÚNG** (`A storm unlike anything` -> `ɐ stˈɔːɹm ʌnlˈaɪk
+  ˈɛnɪθˌɪŋ`), chữ Việt ra âm Việt kèm số thanh điệu; docstring của nó ghi
+  *"Vietnamese/**bilingual** text"*. Bộ token model là **byte-level BPE 419
+  token**, cả hai chuỗi âm ra **0 `<|unk|>`**. Vậy chỗ ĐÚNG của giả thuyết là
+  **MODEL ÂM** (checkpoint học `VieNeu-TTS-1000h-in-the-wild` tiếng Việt), và
+  bằng chứng sạch nhất nằm ngay trong bảng: **giọng "tiếng Anh" này giỏi TIẾNG
+  VIỆT (2,5-5,0%) hơn TIẾNG ANH (12,8%)**, và đọc tiếng Việt **ngang một giọng
+  Việt**. Một giọng như thế thì "nghe lạ" là **đúng theo cấu tạo**.
+  **QUY TẮC RÚT RA: đọc mã tới `lang="vi"` rồi kết luận là DỪNG QUÁ SỚM** —
+  phải chạy chính hàm đó với dữ liệu thật. Cùng họ bẫy "phép đo hỏng phát
+  chứng nhận", chỉ khác là ở đây *phép ĐỌC MÃ* phát chứng nhận.
+  **HÀNH ĐỘNG: việc của NHÃN, không phải của mã.** `GHI_CHU_ADAM` nay mang số
+  đo + nói thẳng "KÉM HƠN, KHÔNG HỎNG" + **chỉ đường sang Adam của ElevenLabs
+  đã có sẵn trong app**, KÈM CÁI GIÁ (tốn hạn mức theo ký tự) — chỉ đường mà
+  không nói giá là bẫy. **KHÔNG chặn, KHÔNG giấu khỏi combo**: anh Hùng đã chốt
+  *"cứ thêm hết, tôi tự trải nghiệm"*, và Adam **không** phải giọng tệ nhất bộ.
+  **RANH GIỚI CỨNG:** KHÔNG nhân bản/tinh chỉnh giọng từ mẫu ElevenLabs — app
+  này BÁN RA, đó là làm bản sao một giọng thương mại đang được bán.
+  **FILE NGHE THỬ:** `_NGHE_THU_ANH_HUNG/adam_v2/` — 2 câu tiếng Anh × 3 giọng
+  (`VN_Adam` · `EDGE_Aria` · `EL_Adam`), **chuẩn hoá cùng -14 LUFS** bằng chính
+  `chuan_do_to` (không chuẩn hoá thì phép nghe thành "file nào TO hơn": đo được
+  EL −16,1 vs VieNeu −20,1 LUFS = lệch 4 LU), MD5 **6/6 khác nhau** (bẫy cache
+  `_eleven_tts`). Tốn **103 ký tự** ElevenLabs (còn 44.222/50.000 trên 5 tài
+  khoản). **Tai anh Hùng là phán quyết cuối**, số chỉ để loại sớm cái hỏng rõ.
+- **QUÉT CẢ 20 GIỌNG VieNeu TRÊN CÂU TIẾNG VIỆT — 3 GIỌNG LỆCH HẲN, CẦN ĐO LẠI
+  (19/08/2026, `_do_vn_quet.py` · `_kq_vn_quet.txt`).** Anh Hùng chỉ nêu đích
+  danh Adam, nhưng câu hỏi thật là *"còn mấy kiểu khác nữa"*. Bộ 8 câu (sàng
+  lọc, **không phải bảng chính xác**: 10 token/giọng nên 1 token = 10 điểm %),
+  trần là `vi-VN-HoaiMyNeural` chạy cùng bộ câu:
+  **token sai: 20 giọng trải 0,0-30,0% (trung vị 0,0%) · trần 0,0%.**
+  Vượt trần (> trần + 10 điểm): **`vn:Xuân Vĩnh` 30,0%** · **`vn:Mai Anh`
+  20,0%** (bịa chữ **7,9%**, cao nhất bảng) · **`vn:Ngọc Trân` 20,0%**.
+  Cột **WER** (mẫu lớn hơn hẳn — ~90 từ/giọng) cùng chiều và mạnh hơn: Mai Anh
+  **34,4%** · Xuân Vĩnh **31,4%** · Quang Sơn **22,3%** · Thanh Bình **20,9%**
+  so với trần **5,4%** và trung vị bộ ~5-6%.
+  **`vn:Adam` đọc tiếng Việt chỉ 10,0% token sai / WER 5,4%** — nằm giữa bộ,
+  KHÔNG bị gắn cờ. Tức nếu bấm nhầm Adam cho video Việt thì hậu quả nhẹ hơn
+  hẳn 3 giọng vừa nêu.
+  **ĐÁNG LO NHẤT: `vn:Xuân Vĩnh` đang là DÒNG ĐẦU TIÊN của nhóm "Khuyên dùng"**
+  trong combo (đo thẳng `giong_bang.gom_nhom`), tức giọng người ta bấm nhanh
+  nhất lại là giọng lệch nhất trong phép sàng lọc này.
+  **CHƯA KẾT LUẬN, ĐANG ĐO LẠI:** `BQ_QUET_CAU=34` cho 5 giọng nghi + 2 giọng
+  đối chứng (`_kq_vn_quet34.txt`). **ĐỪNG chặn/giấu giọng nào theo bảng 8 câu**
+  — đúng luật "trùng tên = chưa biết" và luật anh Hùng đã chốt.
 - **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
   `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
   hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
@@ -2501,7 +2648,25 @@
   **CHỐT CHỐNG-ĐẠT-OAN NẰM TRONG CHÍNH PHÉP ĐO:** arm TẮT ra 3,20 / 36,40 /
   23,55 s -> thước CÓ RĂNG trên đúng bộ file này. Nếu nó ra 0 ở cả hai arm thì
   số của arm BẬT là vô nghĩa.
-- **`ai_nguoi_noi` (giữ nguyên tiếng người thật): CHẠY ĐƯỢC, ĐO ĐƯỢC —
+- **`ai_nguoi_noi`: ANH HÙNG ĐÃ CHỐT **BỎ** (19/08/2026) — *"bỏ cái tính năng
+  nhận diện cảnh người nói thật với người lồng tiếng"*. File + số đo GIỮ LẠI,
+  KHÔNG xoá (đọc khối dưới trước khi ai định dựng lại).**
+  **VÌ SAO BỎ, và lý do KHÔNG phải chất lượng:** module này tồn tại để quyết
+  *"chỗ này giữ tiếng gốc, chỗ kia lồng"*. Câu đó chỉ có nghĩa khi tiếng gốc
+  **BỊ BỎ ĐI** — tức cách trộn `"tach"`. Cùng ngày anh Hùng đề xuất chế độ
+  **ĐÈ GIỌNG, KHÔNG TÁCH** (`thay_giong.CACH_TRON == "de"`): tiếng gốc giữ
+  NGUYÊN, chỉ hạ xuống rồi đè giọng lồng lên. Ở chế độ đó tiếng gốc **không bao
+  giờ bị bỏ** -> **hết việc phải quyết**. Ý thứ hai của anh Hùng khớp ý thứ nhất.
+  **KHÔNG CÓ GÌ ĐỂ GỠ — đã quét, không suy đoán:** module CHƯA TỪNG được nối vào
+  đường xuất/UI. `grep -rn "nguoi_noi" app/ config.py main.py` ra **0 lời gọi**
+  (chỉ chính file đó + 1 dòng ghi chú ở `giong_chatter.py` nhắc TÊN SCRIPT ĐO);
+  `BQHungVideo.spec` không khai đích danh nó. Nơi duy nhất dùng là script đo
+  `_do_nguoi_noi_cham.py`. Nên "bỏ" ở đây = **chốt lại rằng sẽ không nối nữa**,
+  không phải một lượt gỡ mã.
+  Nếu sau này đổi ý (muốn giữ tiếng gốc THEO CẢNH *bên trong* cách `"tach"`) thì
+  đọc hết 4 lý do dưới trước khi viết dòng đầu — nặng nhất là ngân sách LLM
+  **+3,5 đến +4,7 lần**.
+  **SỐ ĐO CŨ (vẫn đúng, giữ nguyên): CHẠY ĐƯỢC, ĐO ĐƯỢC —
   *CHƯA NỐI*, và lý do là THỨ TỰ chứ không phải chất lượng (19/08/2026).**
   Smoke test trên bản chép lời THẬT đã cache (`_do_tg_cache.json` khoá
   `chep|zh|90.0`, 45 đoạn / 398 mốc từ, Groq THẬT): `cham_llm` -> **10 lượt gọi

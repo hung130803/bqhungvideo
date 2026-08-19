@@ -1,5 +1,33 @@
 """AI NHẬN BIẾT NGƯỜI KỂ CHUYỆN — chỗ nào LỒNG TIẾNG, chỗ nào GIỮ NGUYÊN GỐC.
 
+======================================================================
+ANH HÙNG ĐÃ CHỐT BỎ TÍNH NĂNG NÀY — 19/08/2026. ĐỌC KHỐI NÀY TRƯỚC.
+======================================================================
+Nguyên văn: *"bỏ cái tính năng nhận diện cảnh người nói thật với người lồng
+tiếng"*. **File này GIỮ LẠI cùng toàn bộ số đo bên dưới, KHÔNG xoá** — để người
+sau đừng dựng lại từ đầu.
+
+**VÌ SAO BỎ, và lý do KHÔNG phải là chất lượng:** module này tồn tại để quyết
+*"chỗ này giữ tiếng gốc, chỗ kia lồng tiếng"*. Câu hỏi đó chỉ có nghĩa khi tiếng
+gốc **BỊ BỎ ĐI** — tức ở đường `thay_giong` cách `"tach"` (Demucs tách nhạc-giọng
+rồi vứt giọng gốc). Cùng ngày, anh Hùng đề xuất chế độ **ĐÈ GIỌNG, KHÔNG TÁCH**
+(`thay_giong.CACH_TRON == "de"`): tiếng gốc giữ NGUYÊN, chỉ bị hạ xuống rồi đè
+giọng lồng lên. Ở chế độ đó tiếng gốc **không bao giờ bị bỏ**, nên **hết việc
+phải quyết** — câu hỏi mà module này trả lời không còn được đặt ra nữa.
+
+**TRẠNG THÁI LÚC BỎ (đã quét, không suy đoán):** module CHƯA TỪNG được nối vào
+đường xuất hay UI — `grep -rn "nguoi_noi" app/ config.py main.py` ra **0 lời gọi**
+(chỉ còn chính file này và một dòng ghi chú ở `giong_chatter.py` nhắc tên script
+đo). Nơi duy nhất dùng nó là script đo `_do_nguoi_noi_cham.py`. Vì vậy "bỏ" ở đây
+**không phải gỡ mã khỏi đường chạy** — không có gì để gỡ; nó là chốt lại rằng
+việc nối nó vào **sẽ không làm nữa**.
+
+**SỐ ĐO VẪN ĐÚNG VÀ VẪN ĐÁNG ĐỌC** (bên dưới): module CHẠY ĐƯỢC, `cham_llm` đo
+được 10 lượt LLM / 156 s cho 90 s nguồn, mồi đối chứng bắt được mẻ nhãn đảo. Nếu
+sau này anh Hùng đổi ý và muốn giữ tiếng gốc THEO CẢNH *bên trong* chế độ
+`"tach"`, thì đọc lại 4 lý do "chưa nối" ghi trong CLAUDE.md trước khi viết dòng
+mã đầu tiên — nặng nhất là ngân sách LLM **+3,5 đến +4,7 lần** đường thay tiếng.
+
 Anh Hùng, 18/08/2026, nguyên văn: *"nhận biết chỗ video gốc người thật nói thì
 GIỮ NGUYÊN, không lồng tiếng; chỗ người kể chuyện nói thì mới lồng tiếng — chứ
 đoạn người thật nó dịch không đâu vào đâu, mất hay"*.
