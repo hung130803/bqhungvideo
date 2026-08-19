@@ -160,6 +160,18 @@ CONG = [
     # CẢ LỚP BỆNH (mọi dòng có số dung lượng phải nói "dùng chung"), kèm 3 mục
     # TỰ KIỂM BỘ DÒ — thiếu chúng thì "0 dòng bệnh" có thể là bộ dò đã chết.
     ("84 ô tìm giọng",      "_test_o_tim_giong.py",      63),
+    # CỔNG 86 — chế độ "ĐÈ GIỌNG, KHÔNG TÁCH" (anh Hùng đề xuất 19/08/2026).
+    # Nối vào ĐÂY chứ không để rời: bản sửa CHẶN SẢN XUẤT mà chỉ được canh bởi
+    # một file `.py` không ai gọi thì đúng bằng không được canh (bẫy cổng 70).
+    # Mốc 62 gồm: CA 6 chạy ffmpeg THẬT chứng minh mất tiếng arm DE = 0,00 s
+    # trong khi arm TACH mất 2,40 s ĐÚNG tại cửa sổ không được lồng (chốt
+    # chống-đạt-oan nằm trong chính phép đo) · CA 2 khoá chống trùng khi TẮT cờ
+    # giống TỪNG KÝ TỰ mốc v2.39.0 · CA 8 ô chọn trong hộp (mặc định GIỮ cách
+    # cũ, nút Chạy MỞ khi chọn đè trên máy chưa có Demucs) · 5j/5k/5l canh lời
+    # nhắn tiến độ phải KHỚP KHOÁ bước 9 (bản vá này từng làm thanh tiến độ
+    # sống nhờ đường lùi) · 5m cửa thứ ba của chốt Demucs ở `jobs.py`.
+    # THỬ PHÁ `_pha_de_giong.py`: BẮT 8 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0.
+    ("86 đè giọng",         "_test_de_giong.py",         62),
     # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
     # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
     # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`
