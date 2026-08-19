@@ -130,6 +130,191 @@ CHU_DA_XONG = "Đã xong — bỏ qua"
 _CACHE_GIONG: list = []
 
 # ---------------------------------------------------------------------------
+# BỘ LỌC HỘP CHỌN GIỌNG (VIỆC 1)
+# ---------------------------------------------------------------------------
+# Anh Hùng 19/08/2026: *"thêm phần tìm kiếm giọng với lọc phân loại lại sao hợp
+# lý chứ hiển thị bảng nhỏ mà tận mấy trăm giọng tìm rất khó"*.
+#
+# Ô TÌM ĐÃ CÓ từ cổng 84, và nó CHỈ tra theo CHỮ -> anh Hùng phải BIẾT TRƯỚC gõ
+# gì. Với 364 dòng thì "biết trước gõ gì" là điều kiện không đáp ứng được: muốn
+# một giọng nữ tiếng Hàn miễn phí thì không có từ nào gõ ra được nhóm đó. Bộ lọc
+# dưới đây là đường ĐI NGƯỢC LẠI: bấm điều kiện, danh sách tự co.
+#
+# BA LUẬT BẤT BIẾN CỦA CẢ KHỐI NÀY:
+#
+# 1. **LỌC LÀ VIỆC CỦA USER BẤM, APP KHÔNG TỰ BỎ GIỌNG NÀO.** Mặc định mọi ô
+#    đều `(tất cả)`, tức lần mở đầu tiên danh sách y hệt bản trước. Anh Hùng đã
+#    chốt *"cứ thêm hết, tôi tự trải nghiệm"*.
+# 2. **DỮ LIỆU LẤY TỪ MODULE ĐÃ ĐO, KHÔNG ĐOÁN LẠI Ở ĐÂY.** Tiếng lấy từ
+#    `da_ngu.doc_duoc` (bảng ĐO ĐƯỢC + suy theo bộ đọc), tiền/chỗ-chạy lấy từ
+#    `giong_bang.mien_phi`/`tren_may`. Viết bảng riêng trong file UI là đẻ bản
+#    sao thứ hai rồi hai bên trôi khác nhau — đúng bẫy `_TIEN_TO` đã sập 2 lần.
+# 3. **CHƯA ĐO THÌ GIỮ, KHÔNG LOẠI** (xem `_khop_tieng`). Quy tắc chung của repo
+#    này: *không xác định được thì GIỮ* (cổng 20, `dbmaint._thoi_diem`).
+
+#: Khoá QSettings của bộ lọc + cỡ hộp. Nhớ qua các lần mở để anh Hùng không
+#: phải bấm lại/kéo lại — 300 kênh thì mỗi lần bấm lại là một lần phí.
+K_GP_TIENG = "tg_gp_loc_tieng"
+K_GP_GIOI = "tg_gp_loc_gioi"
+K_GP_TIEN = "tg_gp_loc_tien"
+K_GP_MAY = "tg_gp_loc_may"
+K_GP_RONG = "tg_gp_rong"
+K_GP_CAO = "tg_gp_cao"
+
+#: Nhãn mục "không lọc". MỘT hằng số dùng cho CẢ 4 hàng — 4 chỗ gõ tay
+#: `"(tất cả)"` là 4 chỗ có thể lệch nhau một dấu cách rồi `findData` trượt.
+LOC_TAT_CA = "(tất cả)"
+
+# ---------------------------------------------------------------------------
+# CỠ HỘP CHỌN GIỌNG (VIỆC 2 — "bảng nhỏ mà tận mấy trăm giọng")
+# ---------------------------------------------------------------------------
+#: Cỡ MẶC ĐỊNH khi anh Hùng chưa kéo lần nào. Bản trước cao cứng **460** và
+#: rộng vừa-nhãn; với 364 dòng thì 460 px chỉ đọc được ~19 dòng = **5% danh
+#: sách**, còn 2 hàng nút lọc mới thêm lại ăn thêm ~52 px của phần đó. 560 px
+#: đưa về ~19 dòng SAU khi đã trừ nút lọc, tức giữ nguyên số dòng đọc được rồi
+#: mới cộng thêm phần lọc.
+GP_CAO_CHUAN = 560
+#: Rộng SÀN. Hai hàng nút lọc cần chỗ: hàng "Tiếng" có 7 nút + nhãn, hàng dưới
+#: 9 nút + 3 nhãn. Hẹp hơn số này là nút xuống dòng/bị cắt chữ (bài học "nút
+#: Copy bị cắt chữ" ở bản .exe v2.29.0).
+GP_RONG_CHUAN = 640
+#: SÀN CỨNG cho cỡ đọc từ QSettings — cài đặt rác/âm/0 không được biến hộp
+#: thành một vệt không bấm được.
+GP_RONG_TOI_THIEU = 420
+GP_CAO_TOI_THIEU = 260
+#: Cửa sổ chính cao hơn thì hộp cao theo tỉ lệ này (màn hình lớn = xem được
+#: nhiều dòng hơn, không lý gì khoá cứng ở 560).
+GP_TY_LE_CAO = 0.86
+#: Số dòng popup MẶC ĐỊNH của combo được phép hiện. Chỉ dùng ở đường LÙI (khi
+#: `_mo_chon_giong` ném lỗi, `ComboGiong.showPopup` gọi `super()`); mặc định Qt
+#: là 10 dòng — với 364 dòng thì đường lùi đó vô dụng.
+GP_SO_DONG_COMBO = 28
+
+#: HÀNG TIẾNG — `(nhãn, mã)`. 5 tiếng đầu đúng bộ `da_ngu.NN5` (bộ DUY NHẤT có
+#: số đo thật), cộng ô `dangu` cho giọng đọc-được-mọi-thứ-tiếng. Không thêm
+#: tiếng thứ 6: `da_ngu` chưa đo tiếng nào khác nên ô đó sẽ lọc bằng phép SUY,
+#: mà lọc bằng phép suy thì lúc nó bỏ sót giọng không ai biết vì sao.
+LOC_TIENG: tuple[tuple[str, str], ...] = (
+    (LOC_TAT_CA, ""),
+    ("Việt", "vi"),
+    ("Anh", "en"),
+    ("Hàn", "ko"),
+    ("Nhật", "ja"),
+    ("Trung", "zh"),
+    ("Đa ngôn ngữ", "dangu"),
+)
+LOC_GIOI: tuple[tuple[str, str], ...] = (
+    (LOC_TAT_CA, ""), ("Nam", "nam"), ("Nữ", "nu"))
+LOC_TIEN: tuple[tuple[str, str], ...] = (
+    (LOC_TAT_CA, ""), ("Miễn phí", "mp"), ("Trả tiền", "tt"))
+LOC_MAY: tuple[tuple[str, str], ...] = (
+    (LOC_TAT_CA, ""), ("Trên máy", "may"), ("Qua mạng", "mang"))
+
+#: DÒ GIỚI TÍNH TỪ NHÃN — **suy từ CHỮ ĐÃ CÓ, KHÔNG suy từ mã giọng.**
+#: Vì sao không suy từ mã: mã `en-US-JennyNeural` không mang giới tính ở đâu cả,
+#: nên "suy từ mã" thực chất là **đoán theo TÊN NGƯỜI** — 364 dòng gồm cả tên
+#: Ả Rập/Thái/Swahili thì bảng tên nào cũng sai, mà sai kiểu im lặng.
+#: Nhãn thì NÓI THẲNG, và đó là chữ chính anh Hùng đang đọc trên dòng.
+#:
+#: BỐN DẠNG CÓ THẬT TRONG DỮ LIỆU (đo `_do_loc_giong.py` trên 364 dòng, không
+#: bịa dạng nào):
+#:   · `Ryan (Nam) - nhấn nhá 5,4 ...`            <- 335 dòng edge-tts
+#:   · `William (Nam, đa ngữ) - ...`              <- 12 dòng đa ngôn ngữ
+#:   · `Andrew — Nam trầm ấm (tiếng Anh) - ...`   <- nhóm ĐỀ XUẤT của dubbing
+#:   · `HN - Anh Khôi (nam, giọng kể chuyện) ...` <- Vbee, chữ THƯỜNG
+#: nên `(nam` phải khớp cả `(Nam)` `(Nam,` `(nam,`.
+#:
+#: **BẪY "Nam Minh" — ĐÃ ĐO, ĐỪNG NỚI LỎNG HAI BIỂU THỨC NÀY.** `vi-VN-NamMinh`
+#: có nhãn biến thể `Nam Minh — hơi cao`: chữ `Nam` ở đây là TÊN NGƯỜI, không
+#: phải giới tính. Vì vậy dạng thứ ba đòi `—`/`-` NGAY TRƯỚC chữ Nam (trong
+#: `Nam Minh — hơi cao` thì sau `—` là `hơi`, không khớp) và **không** có dạng
+#: "bắt đầu dòng bằng Nam". 8 dòng biến thể cao độ vì thế ra KHÔNG RÕ ở phép dò
+#: chữ, và được `gioi_giong` cứu bằng cách tra NHÃN CỦA GIỌNG GỐC.
+_RE_GIOI_NU = re.compile(r"\([Nn]ữ[,)]|[—-]\s*Nữ\b")
+_RE_GIOI_NAM = re.compile(r"\([Nn]am[,)]|[—-]\s*Nam\b")
+
+
+def gioi_tu_nhan(nhan: str) -> str:
+    """`"Ryan (Nam) - ..."` -> `"nam"`. Không đọc ra được -> `""`.
+
+    Hàm THUẦN (chỉ chữ vào, chữ ra) để cổng test chấm được từng nhãn một, không
+    phải dựng cả hộp thoại rồi suy ngược.
+
+    Khớp CẢ HAI biểu thức -> trả `""`: nhãn nói hai chuyện thì thà không biết
+    còn hơn chọn bừa một bên rồi lọc sai. (Đo trên 364 dòng: **0 dòng** khớp cả
+    hai — chốt này là lưới cho dữ liệu SAU này, không phải cho hôm nay.)
+    """
+    s = str(nhan or "")
+    a, b = bool(_RE_GIOI_NU.search(s)), bool(_RE_GIOI_NAM.search(s))
+    if a == b:
+        return ""
+    return "nu" if a else "nam"
+
+
+def gioi_giong(vid: str, nhan: str, nhan_goc: str = "") -> str:
+    """Giới tính của một dòng giọng: đọc nhãn của nó, hụt thì đọc nhãn GIỌNG GỐC.
+
+    `nhan_goc` = nhãn của mã sau khi bỏ hậu tố cao độ. Có nó thì 8 dòng biến thể
+    (`Nam Minh — hơi cao`, `Hoài My — trầm`...) vẫn lọc đúng, vì giọng gốc
+    `vi-VN-NamMinhNeural` mang nhãn `Nam Minh — Nam chuẩn (tiếng Việt)`.
+    Biến thể cao độ KHÔNG đổi giới tính người đọc, nên tra sang gốc là đúng
+    nghĩa chứ không phải mẹo.
+    """
+    g = gioi_tu_nhan(nhan)
+    if g:
+        return g
+    return gioi_tu_nhan(nhan_goc) if nhan_goc else ""
+
+
+def _khop_tieng(vid: str, ma: str) -> bool:
+    """Giọng `vid` có lọt ô tiếng `ma` không (`ma` rỗng = không lọc).
+
+    `dangu` -> hỏi `giong_bang.da_ngu` (giọng `*Multilingual*` của edge-tts).
+    Còn lại -> hỏi `da_ngu.doc_duoc`, và **`None` (chưa đo) thì GIỮ**: loại một
+    giọng vì mình chưa đo nó là giấu giọng đó khỏi anh Hùng mà không nói lý do.
+    Đo được có `None`: tiếng Việt 10 dòng (2 edge · 5 OmniVoice · 3 Vbee) — 3
+    dòng Vbee đúng là giọng Việt thật, loại đi là lọc SAI.
+    """
+    if not ma:
+        return True
+    if ma == "dangu":
+        return bool(GB.da_ngu(vid))
+    try:
+        from app.core import da_ngu as _DN
+        return _DN.doc_duoc(vid, ma) is not False
+    except Exception:  # noqa: BLE001 - thiếu module -> đừng lọc mất giọng nào
+        return True
+
+
+def khop_loc(vid: str, nhan: str, loc: dict, nhan_goc: str = "") -> bool:
+    """Một dòng giọng có lọt CẢ BỘ điều kiện đang bấm không.
+
+    Hàm THUẦN, tách hẳn khỏi widget — cổng test gọi thẳng nó với từng tổ hợp,
+    không phải đọc ngược từ số dòng trên màn hình.
+
+    `loc` = `{"tieng": .., "gioi": .., "tien": .., "may": ..}`, giá trị rỗng =
+    ô đó đang `(tất cả)`. Các ô CỘNG DỒN (AND) với nhau, và cộng dồn tiếp với ô
+    TÌM ở nơi gọi.
+    """
+    v = str(vid or "")
+    if not _khop_tieng(v, str(loc.get("tieng") or "")):
+        return False
+    gi = str(loc.get("gioi") or "")
+    if gi and gioi_giong(v, nhan, nhan_goc) != gi:
+        return False
+    ti = str(loc.get("tien") or "")
+    if ti:
+        mp = bool(GB.mien_phi(v))
+        if (ti == "mp") is not mp:
+            return False
+    ma = str(loc.get("may") or "")
+    if ma:
+        tm = bool(GB.tren_may(v))
+        if (ma == "may") is not tm:
+            return False
+    return True
+
+# ---------------------------------------------------------------------------
 # BỀ RỘNG Ô DANH SÁCH GIỌNG
 # ---------------------------------------------------------------------------
 #: Ô danh sách không bao giờ hẹp hơn số này (nhãn nhóm ngắn nhất vẫn phải đọc
@@ -699,9 +884,16 @@ class ThayGiongDialog(QDialog):
         # của `studio_page._open_chan_picker`.
         self.cb_giong = ComboGiong()
         self.cb_giong.setMinimumWidth(300)
+        # Đường LÙI (picker ném lỗi -> popup Qt mặc định) chỉ hiện 10 dòng, vô
+        # dụng với 364 giọng. Không sửa được "bảng nhỏ" ở đường chính mà bỏ
+        # đường lùi thì vẫn còn một cửa bày ra bảng nhỏ.
+        self.cb_giong.setMaxVisibleItems(GP_SO_DONG_COMBO)
         self.cb_giong.setToolTip(
-            "Bấm để mở danh sách giọng — có Ô TÌM ở trên, gõ tên giọng là tìm "
-            "trên MỌI nhóm (gõ không dấu cũng ra).")
+            "Bấm để mở danh sách giọng — có Ô TÌM và HÀNG NÚT LỌC ở trên.\n"
+            "Gõ tên giọng là tìm trên MỌI nhóm (gõ không dấu cũng ra); bấm nút "
+            "lọc để thu theo tiếng · giới · tiền · chỗ chạy.\n"
+            "Ô tìm và nút lọc CỘNG DỒN với nhau, và dòng ngay trên danh sách "
+            "luôn ghi đang hiện bao nhiêu trên tổng bao nhiêu.")
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
         self.cb_giong.picker = self._mo_chon_giong
         h2.addWidget(self.cb_giong, 1)
@@ -1846,6 +2038,134 @@ class ThayGiongDialog(QDialog):
             ra.append((i, nhan, vid, nhom))
         return ra
 
+    #: Khoá hàng lọc -> khoá QSettings. Một bảng, để `_gp_loc` (đọc) và
+    #: `_gp_luu_loc` (ghi) không bao giờ đi hai đường khác nhau.
+    _GP_KHOA_LOC = {"tieng": K_GP_TIENG, "gioi": K_GP_GIOI,
+                    "tien": K_GP_TIEN, "may": K_GP_MAY}
+
+    def _gp_hang_loc(self, hang, khoa: str, ten: str, bo) -> list:
+        """Một hàng nút lọc BẤM ĐƯỢC, loại trừ nhau trong cùng hàng.
+
+        Dùng `QPushButton` checkable + `QButtonGroup(exclusive)` chứ KHÔNG dùng
+        `QComboBox`: combo phải bấm-rồi-mở-rồi-chọn (3 động tác cho 1 lựa chọn)
+        và nó **giấu mất các lựa chọn còn lại**. Cả vấn đề anh Hùng nêu là "tìm
+        rất khó", nên mọi lựa chọn phải NHÌN THẤY và bấm MỘT nhát là xong.
+
+        NHÃN LÀ CHỮ, KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ô đen, v2.6.22).
+        Nút đang bấm tô màu ACCENT để phân biệt được ở khoảng cách một liếc mắt
+        — QSS RIÊNG cho nút này, vì QSS chung của app không có kiểu "đang chọn".
+        """
+        from PyQt6.QtWidgets import QButtonGroup
+        lb = QLabel(ten)
+        lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        hang.addWidget(lb)
+        nhom = QButtonGroup(self)
+        nhom.setExclusive(True)
+        # GIỮ THAM CHIẾU: `QButtonGroup` cha là `self` nên nó sống, nhưng giữ
+        # thêm ở đây để cổng test soi được, và để không ai "dọn gọn" mất.
+        if not hasattr(self, "_gp_bgroup"):
+            self._gp_bgroup = {}
+        self._gp_bgroup[khoa] = nhom
+        cu = str(self._s.value(self._GP_KHOA_LOC[khoa], "") or "")
+        co = {m for _n, m in bo}
+        if cu not in co:
+            cu = ""                     # cài đặt cũ/rác -> về (tất cả)
+        ra = []
+        for nhan, ma in bo:
+            b = QPushButton(nhan)
+            b.setCheckable(True)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setStyleSheet(
+                f"QPushButton{{background:{SURFACE};color:{MUTED};"
+                f"border:1px solid {BORDER};border-radius:6px;"
+                f"padding:2px 8px;font-size:11px;}}"
+                f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}"
+                f"QPushButton:checked{{background:{ACCENT};color:white;"
+                f"border-color:{ACCENT};font-weight:600;}}")
+            b.setChecked(ma == cu)
+            b.setProperty("ma_loc", ma)
+            nhom.addButton(b)
+            hang.addWidget(b)
+            ra.append((ma, b))
+            # `toggled` chứ không `clicked`: bấm nút B thì nút A bị nhóm loại ra
+            # KHÔNG phát `clicked`, mà `fill` phải chạy đúng MỘT lần cho lượt
+            # đó -> chỉ nghe vế BẬT.
+            b.toggled.connect(
+                lambda on, _k=khoa: (self._gp_doi_loc() if on else None))
+        return ra
+
+    def _nhan_giong_goc(self, vid: str) -> str:
+        """NHÃN ĐẦY ĐỦ của giọng GỐC (bỏ hậu tố cao độ) — "" nếu không phải biến thể.
+
+        Dùng cho phép dò giới tính: 8 dòng biến thể cao độ mang nhãn `Nam Minh —
+        hơi cao` / `Hoài My — trầm`, không có chữ nào nói giới tính, nên phải
+        tra sang giọng gốc `vi-VN-NamMinhNeural` (`Nam Minh — Nam chuẩn`).
+        Biến thể cao độ KHÔNG đổi người đọc nên tra sang gốc là đúng nghĩa.
+
+        Nhận ra biến thể bằng `giong_bang.la_bien_the` (hàm CÔNG KHAI đã có) —
+        đừng tự cắt ở `|`: nguồn Chatterbox dùng `|` cho việc KHÁC (đường dẫn
+        mẫu), cắt là mất giọng nhân bản.
+        """
+        v = str(vid or "")
+        try:
+            if not GB.la_bien_the(v):
+                return ""
+            goc = v.split("|", 1)[0]
+        except Exception:  # noqa: BLE001
+            return ""
+        i = self.cb_giong.findData(goc)
+        if i < 0:
+            return ""
+        it = self.cb_giong.model().item(i)
+        return str(self.cb_giong.itemText(i)) + "\n" + (
+            it.toolTip() if it is not None else "")
+
+    def _gp_loc(self) -> dict:
+        """Bộ lọc ĐANG BẤM, đọc từ CHÍNH các nút đang hiện.
+
+        **ĐỌC WIDGET, KHÔNG ĐỌC QSettings.** Cài đặt chỉ được ghi lúc đóng hộp
+        nên nó là lựa chọn CŨ; đọc nó là lặp đúng lỗi *"chạy dây chuyền lấy
+        nhóm từ setting nên chạy sai nhóm"* (bài học `pipe_run_group_from_combo`
+        và cổng 85).
+        """
+        ra = {}
+        for khoa, cap in (getattr(self, "_gp_nut", None) or {}).items():
+            ra[khoa] = ""
+            for ma, b in cap:
+                try:
+                    if b.isChecked():
+                        ra[khoa] = ma
+                        break
+                except RuntimeError:      # widget Qt đã xoá
+                    pass
+        return ra
+
+    def _gp_doi_loc(self) -> None:
+        """Bấm một nút lọc -> vẽ lại danh sách, GIỮ NGUYÊN chữ trong ô tìm."""
+        fill = getattr(self, "_gp_fill", None)
+        if fill is None:
+            return
+        try:
+            fill(self._gp_ed.text())
+        except RuntimeError:
+            pass
+
+    def _gp_luu_loc(self) -> None:
+        """Ghi lựa chọn lọc + CỠ HỘP vào QSettings (nhớ cho lần mở sau).
+
+        Anh Hùng dùng 300 kênh: bắt bấm lại 4 ô lọc và kéo lại cỡ hộp mỗi lần
+        mở là phí thật, đo bằng số lần bấm.
+        """
+        try:
+            for khoa, ma in self._gp_loc().items():
+                self._s.setValue(self._GP_KHOA_LOC[khoa], ma)
+            pop = getattr(self, "_gp_pop", None)
+            if pop is not None:
+                self._s.setValue(K_GP_RONG, int(pop.width()))
+                self._s.setValue(K_GP_CAO, int(pop.height()))
+        except (RuntimeError, AttributeError, ValueError):
+            pass                          # nhớ cỡ hộp KHÔNG được làm sập app
+
     def _mo_chon_giong(self):
         """DANH SÁCH GIỌNG có Ô TÌM ngay trên đầu — thay popup mặc định.
 
@@ -1917,8 +2237,35 @@ class ThayGiongDialog(QDialog):
         hrow.addWidget(xb)
         lay.addLayout(hrow)
 
+        # ---- VIỆC 1: HÀNG NÚT LỌC ----
+        # Ô tìm một mình đòi anh Hùng BIẾT TRƯỚC gõ gì; mấy nút này đi NGƯỢC
+        # LẠI (bấm điều kiện, danh sách tự co) và **cộng dồn với ô tìm**.
+        # Mặc định đều `(tất cả)` -> lần mở đầu danh sách y hệt bản trước.
+        #
+        # ĐÚNG **HAI** HÀNG, không phải bốn — mỗi hàng nút ăn ~26 px chiều cao,
+        # mà chiều cao là thứ đang thiếu (anh Hùng: *"hiển thị bảng nhỏ"*). Ba
+        # ô Giới/Tiền/Chạy chỉ có 3 nút mỗi ô nên xếp chung một hàng vẫn đọc
+        # được, trong khi tách ra là mất thêm 52 px của DANH SÁCH.
+        self._gp_nut = {}                  # khoá hàng -> [(mã, nút)]
+        r1 = QHBoxLayout()
+        r1.setSpacing(4)
+        self._gp_nut["tieng"] = self._gp_hang_loc(r1, "tieng", "Tiếng:",
+                                                  LOC_TIENG)
+        r1.addStretch(1)
+        lay.addLayout(r1)
+        r2 = QHBoxLayout()
+        r2.setSpacing(4)
+        for khoa, ten, bo in (("gioi", "Giới:", LOC_GIOI),
+                              ("tien", "Tiền:", LOC_TIEN),
+                              ("may", "Chạy ở:", LOC_MAY)):
+            self._gp_nut[khoa] = self._gp_hang_loc(r2, khoa, ten, bo)
+            r2.addSpacing(8)
+        r2.addStretch(1)
+        lay.addLayout(r2)
+
         lb = QLabel("")
         lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        lb.setWordWrap(True)
         lay.addWidget(lb)
 
         lst = QListWidget()
@@ -1942,17 +2289,41 @@ class ThayGiongDialog(QDialog):
             lst.clear()
             ds = self._giong_phang()
             tu = [bo_dau(t) for t in str(q or "").split() if t.strip()]
+            loc = self._gp_loc()
+            # CÓ LỌC hay CÓ GÕ -> bày PHẲNG (dán "ở nhóm: X" vào từng dòng).
+            # Giữ tiêu đề nhóm lúc đang lọc thì đa số tiêu đề trở thành nhãn
+            # RỖNG treo trên không (nhóm bị lọc sạch), tức đúng cái "loạn quá"
+            # mà cổng 84 vừa chữa. Bày phẳng dùng LẠI y đường của ô tìm.
+            co_loc = any(loc.values())
+            phang = bool(tu) or co_loc
+            # TỔNG = số GIỌNG, không tính tiêu đề nhóm và KHÔNG tính dòng 0
+            # ("Tự chọn theo ngôn ngữ đích" là một LỰA CHỌN, không phải một
+            # giọng). Đếm lẫn dòng 0 vào `hien` mà không lẫn vào `tong` thì
+            # lúc không lọc gì nhãn ra `đang hiện 365 / 364` — một con số vô lý
+            # nằm ngay chỗ anh Hùng phải TIN để biết bộ lọc có ăn hay không.
+            tong = sum(1 for _i, _n, v, _g in ds if v)
+            so_nhom = sum(1 for i, _n, v, _g in ds if not v and i > 0)
             hien = 0
             for i, nhan, vid, nhom in ds:
+                if phang and not vid:
+                    continue              # đang lọc/tìm -> bỏ tiêu đề nhóm
+                if vid and co_loc:
+                    # NHÃN ĐẦY ĐỦ nằm ở tooltip (dòng đã bị `nhan_gon` rút) —
+                    # phép dò giới tính phải đọc bản ĐẦY ĐỦ, không thì 335 dòng
+                    # edge-tts bị rút mất khúc "(Nam)" rồi lọc ra 0 dòng.
+                    it0 = self.cb_giong.model().item(i)
+                    tt = it0.toolTip() if it0 is not None else ""
+                    if not khop_loc(vid, f"{nhan}\n{tt}", loc,
+                                    self._nhan_giong_goc(vid)):
+                        continue
                 if tu:
-                    if not vid:
-                        continue          # đang tìm -> bỏ tiêu đề nhóm
                     it0 = self.cb_giong.model().item(i)
                     kho = bo_dau(" ".join((
                         nhan, vid, nhom,
                         it0.toolTip() if it0 is not None else "")))
                     if not all(t in kho for t in tu):
                         continue
+                if phang and vid:
                     # NHÃN GHI RÕ NHÓM — chọn được giọng nhóm khác thì phải biết
                     # mình vừa lấy ở nhóm nào (đúng cách `_open_chan_picker` ghi
                     # "· nhóm X").
@@ -1961,21 +2332,42 @@ class ThayGiongDialog(QDialog):
                     chu = nhan
                 it = QListWidgetItem(chu)
                 it.setData(Qt.ItemDataRole.UserRole, i)
-                if not vid and not tu and i > 0:
+                if not vid and not phang and i > 0:
                     to_nhan_nhom(it)      # tiêu đề nhóm: đậm + màu + không chọn
                 else:
                     it0 = self.cb_giong.model().item(i)
                     if it0 is not None and it0.toolTip():
                         it.setToolTip(it0.toolTip())
-                    hien += 1
+                    if vid:               # dòng 0 hiện nhưng KHÔNG phải giọng
+                        hien += 1
                 lst.addItem(it)
+            # ---- SỐ DÒNG ĐANG THẤY: `đang hiện 37 / 364` ----
+            # Không có con số này thì anh Hùng KHÔNG BIẾT bộ lọc có ăn hay
+            # không — bấm một nút, danh sách đổi, mà đổi bao nhiêu thì phải tự
+            # đếm bằng mắt trên 364 dòng. Luôn hiện CẢ HAI vế (đang thấy /
+            # tổng) kể cả lúc không lọc gì, để con số không "mọc ra" rồi biến
+            # mất tuỳ trạng thái.
+            dang = [f"đang hiện {hien} / {tong} giọng"]
             if not hien:
-                lst.addItem(QListWidgetItem("(không có giọng nào khớp)"))
-            lb.setText(
-                f"{hien} giọng khớp — bấm để chọn, Enter lấy dòng đầu"
-                if tu else
-                f"{hien} giọng · {sum(1 for _i, _n, v, _g in ds if not v)} nhóm"
-                " — gõ ở ô trên để tìm nhanh")
+                # LỌC RA 0 DÒNG THÌ PHẢI NÓI, đừng để bảng trắng trơn: bảng
+                # trắng đọc ra y như "app hỏng / danh sách mất rồi".
+                lst.addItem(QListWidgetItem(
+                    "Không giọng nào khớp — bấm (tất cả) ở các ô trên để xem "
+                    "lại, hoặc xoá chữ trong ô tìm."))
+                dang = ["Không giọng nào khớp — bấm (tất cả) để xem lại"
+                        f" (tổng {tong} giọng)"]
+            elif co_loc and tu:
+                dang.append("đang LỌC và đang TÌM cùng lúc")
+            elif co_loc:
+                dang.append("đang lọc: " + " · ".join(
+                    n for bo in (LOC_TIENG, LOC_GIOI, LOC_TIEN, LOC_MAY)
+                    for n, m in bo if m and m in loc.values()))
+            elif tu:
+                dang.append("bấm để chọn, Enter lấy dòng đầu")
+            else:
+                dang.append(f"{so_nhom} nhóm"
+                            " — gõ ở ô tìm hoặc bấm nút lọc ở trên")
+            lb.setText(" — ".join(dang))
             # về ĐẦU danh sách + chọn dòng chọn-được đầu tiên (Enter dùng nó)
             for r in range(lst.count()):
                 if lst.item(r).flags() & Qt.ItemFlag.ItemIsSelectable:
@@ -2028,6 +2420,26 @@ class ThayGiongDialog(QDialog):
 
         self._gp_filter = _BamRaNgoai(self, pop)
         _QApp.instance().installEventFilter(self._gp_filter)
+        # ---- VIỆC 2: KÉO ĐƯỢC CỠ HỘP + NHỚ CỠ ----
+        # Hộp là `QFrame` không viền nên KHÔNG có mép để kéo; `QSizeGrip` là
+        # cái tay cầm duy nhất. Không có nó thì "nhớ cỡ hộp" thành vô nghĩa —
+        # anh Hùng không có cách nào đặt ra một cỡ để mà nhớ.
+        from PyQt6.QtWidgets import QSizeGrip
+        gr = QHBoxLayout()
+        gr.setContentsMargins(0, 0, 0, 0)
+        gr.addStretch(1)
+        gr.addWidget(QSizeGrip(pop), 0, Qt.AlignmentFlag.AlignBottom
+                     | Qt.AlignmentFlag.AlignRight)
+        lay.addLayout(gr)
+        # GHI CỠ + LỰA CHỌN LỌC LÚC ĐÓNG. Bắt `closeEvent` chứ không nhờ nút
+        # Đóng: hộp còn đóng bằng Esc / bấm ra ngoài / chọn giọng — nối vào một
+        # cửa là 3 cửa kia mất cài đặt mà không ai biết.
+        _dong_cu = pop.closeEvent
+
+        def _dong(ev, _c=_dong_cu):
+            self._gp_luu_loc()
+            _c(ev)
+        pop.closeEvent = _dong           # type: ignore[method-assign]
         fill("")
         self._gp_dat_cho(pop)
         pop.show()
@@ -2036,16 +2448,67 @@ class ThayGiongDialog(QDialog):
         return pop
 
     def _gp_dat_cho(self, pop) -> None:
-        """Đặt hộp chọn giọng ngay dưới combo, RỘNG VỪA NHÃN DÀI NHẤT."""
+        """Đặt hộp chọn giọng ngay dưới combo, RỘNG VỪA NHÃN + CAO RA TẤM RA MIẾNG.
+
+        VIỆC 2 (anh Hùng: *"hiển thị bảng nhỏ mà tận mấy trăm giọng tìm rất
+        khó"*). Ba mức, ưu tiên giảm dần:
+
+        1. **CỠ ANH HÙNG ĐÃ KÉO** (QSettings) — cao nhất, vì đó là lựa chọn
+           tường minh của người dùng.
+        2. chưa kéo lần nào -> `GP_RONG_CHUAN` × `GP_CAO_CHUAN`, hoặc **theo tỉ
+           lệ CỬA SỔ CHÍNH** nếu cửa sổ đó lớn (`GP_TY_LE_CAO`) — máy anh Hùng
+           màn hình lớn thì hộp nên lớn theo, đừng khoá cứng ở một số nhỏ.
+        3. luôn kẹp trong MÀN HÌNH và không hẹp hơn nhãn dài nhất.
+
+        **BỀ CAO PHẢI KẸP THEO MÀN HÌNH, KHÔNG CHỈ THEO SỐ CHUẨN** — hộp mọc từ
+        combo nằm ở GIỮA hộp thoại nên nó đi XUỐNG; cao 560 trên màn hình 768 là
+        đáy hộp rơi ra ngoài mép dưới, tức thêm chiều cao mà **đọc được ÍT
+        HƠN**. Vì vậy còn có bước dời lên (`y` âm dần) khi thiếu chỗ.
+        """
         from PyQt6.QtCore import QPoint
         fm = self._gp_lst.fontMetrics()
         w = rong_vua_chu(
             fm, [self.cb_giong.itemText(i)
                  for i in range(self.cb_giong.count())],
             rong_toi_da(self.cb_giong))
-        pop.resize(max(w, self.cb_giong.width()), 460)
-        pop.move(self.cb_giong.mapToGlobal(
-            QPoint(0, self.cb_giong.height() + 2)))
+        w = max(w, self.cb_giong.width(), GP_RONG_CHUAN)
+        # cao chuẩn, hoặc theo tỉ lệ cửa sổ chính nếu cửa sổ lớn hơn
+        h = GP_CAO_CHUAN
+        try:
+            cs = self.window()
+            if cs is not None and cs.height() > 0:
+                h = max(h, int(cs.height() * GP_TY_LE_CAO))
+        except (AttributeError, RuntimeError):
+            pass
+        # cỡ anh Hùng đã kéo -> ưu tiên nhất
+        try:
+            rw = int(self._s.value(K_GP_RONG, 0) or 0)
+            rh = int(self._s.value(K_GP_CAO, 0) or 0)
+        except (TypeError, ValueError):
+            rw = rh = 0
+        if rw >= GP_RONG_TOI_THIEU:
+            w = rw
+        if rh >= GP_CAO_TOI_THIEU:
+            h = rh
+        # KẸP TRONG MÀN HÌNH (cả rộng lẫn cao) rồi mới đặt chỗ
+        goc = self.cb_giong.mapToGlobal(QPoint(0, self.cb_giong.height() + 2))
+        x, y = goc.x(), goc.y()
+        try:
+            mh = self.cb_giong.screen()
+            if mh is not None:
+                r = mh.availableGeometry()
+                w = min(w, max(GP_RONG_TOI_THIEU, r.width() - 24))
+                h = min(h, max(GP_CAO_TOI_THIEU, r.height() - 24))
+                x = min(max(r.left() + 4, x), max(r.left() + 4,
+                                                  r.right() - w - 4))
+                if y + h > r.bottom() - 4:
+                    # không đủ chỗ bên dưới -> dời LÊN, thà che combo còn hơn
+                    # để mất đuôi danh sách ra ngoài mép màn hình
+                    y = max(r.top() + 4, r.bottom() - h - 4)
+        except (AttributeError, RuntimeError):
+            pass
+        pop.resize(int(w), int(h))
+        pop.move(int(x), int(y))
 
     def _ve_goi_y(self) -> None:
         """Dòng gợi ý giọng nhiều cảm xúc nhất cho NGÔN NGỮ ĐANG CHỌN.
