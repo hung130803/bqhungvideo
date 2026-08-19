@@ -2121,6 +2121,75 @@
      **CHƯA LÀM, GHI THẲNG:** chưa ai mở thử bằng chính trình phát Windows của
      anh Hùng (luật cấm mở trình phát trên máy anh ấy) — chuỗi suy luận
      High 10/4:4:4 -> 0x80004005 lấy từ lời lỗi, chưa có phép đo tận mắt.
+  80. `_test_khong_xoa_nham.py` → **KHÔNG BAO GIỜ XOÁ NHẦM THƯ MỤC ĐANG LÀM
+     VIỆC** (19/08/2026). **ĐẠT 69 · HỎNG 0.** Thử phá `_pha_xoa_nham.py`:
+     **BẮT 7 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**. Đứng **ĐẦU** `_chay_hoi_quy.py`.
+     **ĐÃ MẤT CẢ CÂY MÃ HÔM ĐÓ, KHÔNG PHẢI GIẢ ĐỊNH:**
+     `giong_ngoai._doc_omnivoice` gọi `_don(Path(ket.get("_sandbox") or ""))`
+     ở nhánh LỖI, mà `_chay_ov` không đặt `_sandbox` ở nhánh quá-giờ ->
+     `Path("")`. **`Path("")` KHÔNG RỖNG — nó là `WindowsPath('.')`**:
+     `str()` ra `'.'` (truthy, lọt mọi canh `if d`), `.is_dir()` ra True (lọt
+     mọi canh `is_dir()`), rồi `rmtree` **xoá sạch thư mục đang làm việc**.
+     Mất `.git` (chỉ còn `objects`), `.venv`, `bin`, `_lib`, `_giong_hang`,
+     `_piper`, `_giong_ngoai`, **và `.env` 41 key** — **mã thoát vẫn 0**.
+     `b5bd003` vá ĐÚNG MỘT cửa. Quét lại toàn `app/` ra **5 cửa nữa cùng hình
+     dạng**, xếp theo mức nguy hiểm:
+     (a) **`services.delete_project`** — `_project_dir` trả thẳng
+     `Path(row["assets_dir"])`; dòng DB có `assets_dir` RỖNG -> `Path("")` ->
+     `.exists()` True -> `rmtree('.')`. Nguy nhất vì đây là đường NGƯỜI DÙNG
+     BẤM ("Xoá kênh") và dữ liệu vào đến từ **DB — mà DB này đã từng vỡ**.
+     (b) **`queue/jobs._don_thu_muc_tam`** — `""` may mà thoát
+     (`os.path.isdir("")` False) nhưng **`"."` thì `isdir` trả True**; gốc ổ
+     đĩa cũng lọt. `thu_muc_lam` đến từ PAYLOAD trong DB.
+     (c) **`core/piper_tts._don`** — `rmtree(d, ignore_errors=True)` TRẦN,
+     không một phép kiểm. Chưa nổ CHỈ VÌ nơi gọi hiện thời may mắn truyền
+     đường dẫn con — đó là MAY, không phải chốt.
+     (d) **`core/tempsweep._xoa`** — `rmtree(ignore_errors=False)` rồi
+     `except OSError` nuốt im lặng. An toàn DO XÂY DỰNG (mọi nơi gọi truyền
+     con của `glob`/`iterdir`), nhưng một mẫu tên mới vô ý (`"*"`) là đủ.
+     (e) `core/thay_giong.doc_thu` finally — đường dẫn suy ra từ tham số.
+     **CHỮA BẰNG CỬA CHUNG `app/core/xoa_an_toan.py`, KHÔNG VÁ LẺ** — vá lẻ
+     là bỏ sót cửa thứ 6 người sau thêm vào. Bốn chốt: `None`/chuỗi rỗng ·
+     **thư mục đang làm việc + mọi thư mục CHA của nó** (chốt bắt `Path("")`
+     và `"."`, tức chốt đã cứu cây mã) · gốc ổ đĩa/hệ thống/người dùng/gốc
+     cây mã · `trong=` và `ten_bat_dau=` làm lớp thứ hai.
+     **CỔNG CHẠY VỚI `os.chdir(<hộp cát>/lam)`** nên bản vá hỏng thì thứ bị
+     xoá là hộp cát chứ không phải repo; mồi canary đặt ở **CẢ `lam/` LẪN
+     THƯ MỤC CHA** (chỉ đặt trong `lam/` thì ca `".."` đi lọt). **Gốc ổ đĩa
+     KHÔNG BAO GIỜ đưa cho `rmtree` thật** — CA 4 vá `shutil.rmtree` thành
+     GIÁN ĐIỆP chỉ ghi sổ, nên guard hỏng thì đọc được sổ chứ không phải xoá
+     ổ C rồi mới biết. CA 6 quét tĩnh bằng **AST** (quét bằng chuỗi thì chính
+     DÒNG GHI CHÚ giải thích bản vá bị kể là vi phạm — bài học 47/51/53/73):
+     mọi file `app/` gọi `shutil.rmtree` phải nằm trong **sổ 9 file đã rà**,
+     thêm file lạ là ĐỎ.
+     **LƯỢT THỬ PHÁ ĐẦU RA `BẮT 5 · LỌT 2` — hai lỗ của CHÍNH CỔNG:**
+     · **LỌT 6** — gỡ chốt GỐC Ổ ĐĨA mà cổng vẫn xanh. Lý do là HOÀN CẢNH chứ
+       không phải chốt: hộp cát nằm trong `%TEMP%` nên **`C:\` là thư mục CHA
+       của cwd**, còn **`D:\` là thư mục CHA của gốc cây mã** -> hai chốt KHÁC
+       bắt hộ. **QUY TẮC CHUNG rút ra: mục nào canh MỘT chốt cụ thể thì phải
+       đọc LÝ DO cụ thể**, hỏi mỗi "có chặn không" là mục đó tự vô hiệu ngay
+       khi có chốt thứ hai tình cờ phủ lên. Nay CA 1 đòi đúng tiền tố
+       `GỐC Ổ ĐĨA` / `THƯ MỤC ĐANG LÀM VIỆC` / `thư mục CHA`.
+     · **LỌT 7** — phép phá viết SAI: nó đổi `goc` thành đường dẫn không bao
+       giờ khớp, mà mệnh đề là `if p == goc or goc not in p.parents: return`
+       nên vế hai LUÔN ĐÚNG -> `_don` **TỪ CHỐI MỌI THỨ**, tức "phá" làm hàm
+       CHẶT HƠN. Cổng xanh là ĐÚNG nhưng bảng đọc thành "cổng không bắt được".
+       **Phá thì phải GỠ SẠCH chốt, đừng đổi giá trị bên trong nó.**
+     **CỔNG TREO ~10 PHÚT, PHẢI GIẾT TAY (lỗi của cổng, không của app):** CA 4
+     gọi `tempsweep._xoa("C:\")`, mà `_co()` đi `rglob("*")` để đo dung lượng
+     **TRƯỚC** khi xoá -> quét cả ổ C 564 GB. Đọc ra là *"mã thoát 4294967295,
+     KHÔNG có dòng tổng kết"*. Nay vá `_co` về 0 trong đúng ca đó. Nhân tiện
+     đó cũng là lý do chốt `ly_do_cam` phải đứng **TRƯỚC** `_co` trong `_xoa`.
+     **BẪY WINDOWS ĐÃ SẬP:** hộp cát bản đầu dùng thư mục tên **`con`** ->
+     `NotADirectoryError [WinError 267]` **100% lượt**, kể cả `os.makedirs` +
+     5 lần thử lại. `CON` là **TÊN THIẾT BỊ Windows** (họ `PRN`/`AUX`/`NUL`/
+     `COM1`/`LPT1`). Bẫy này ĐÃ CÓ SẴN trong repo (`piper_tts._lam_sach` ghi
+     đúng nó) mà lượt này vẫn dẫm phải; lời lỗi trông y hệt lỗi tranh chấp AV
+     nên suýt bị chữa nhầm bằng "thử lại nhiều lần hơn".
+     `app/core/giong_vieneu.py` **CỐ Ý KHÔNG có phép phá** (hai luồng khác
+     đang sửa file đó; lượt chạy này đã từng bị giết giữa chừng, giết đúng lúc
+     phá là để lại bản hỏng trong file người khác) — cổng vẫn CHẤM
+     `giong_vieneu._don` ở chế độ đọc-only qua CA 3 và CA 4.
 - **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
   `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
   hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
