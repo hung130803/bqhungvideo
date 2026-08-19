@@ -1,10 +1,155 @@
-# BQ Hung Video v2.39.0 — có gì mới
+# BQ Hung Video v2.40.0 — có gì mới
 
 *Viết cho người dùng, không phải cho lập trình viên. Cái nào anh bấm thấy được
 thì mới ghi ở đây.*
 
-> **Máy anh đang chạy v2.37.0**, nên bản này gộp cả phần của v2.38.0 (chưa từng
-> phát hành ra máy nào) lẫn phần mới của v2.39.0. Đọc hết một lượt là đủ.
+> Bản này gộp cả phần của v2.38.0 / v2.39.0 lẫn phần mới của v2.40.0. Đọc hết
+> một lượt là đủ. Phần MỚI NHẤT nằm ngay dưới đây.
+
+---
+
+## MỚI Ở v2.40.0 — HẾT MẤT TIẾNG · Ô TÌM GIỌNG · NHÃN GIỌNG NÓI THẬT
+
+### 1. Có Ô TÌM GIỌNG rồi
+
+Anh nói: *"không có mục tìm kiếm giọng à, thêm vào"*. Đúng — **392 mã giọng**
+thì cuộn tay không dùng được.
+
+Nay bấm vào ô **Giọng đọc** là mở ra một danh sách có **ô tìm ngay ở trên**:
+
+* Gõ tên giọng là nó tìm trên **MỌI nhóm**, không phải chỉ nhóm đang mở. Mỗi
+  dòng tìm được có ghi rõ **"ở nhóm: …"** để anh biết mình vừa lấy giọng ở đâu.
+* **Gõ không dấu cũng ra** — gõ `hoai my` thì hiện đủ 6 dòng *Hoài My*.
+* Bấm `Enter` là lấy dòng đầu.
+* Đóng bằng: chọn giọng · nút **Đóng** · `Esc` · hoặc **bấm ra ngoài**.
+* **Anh sang trình duyệt rồi quay lại thì danh sách VẪN CÒN** (không tự đóng
+  như mấy lần trước).
+
+Nút là **chữ "Đóng"**, không phải hình — nên không còn cái ô đen như lần trước.
+
+### 2. Nhãn "250 MB" — xin lỗi anh, chỗ đó viết gây hiểu sai
+
+Anh hỏi: *"sao có cái giọng 1 giọng tận 250mb á tốn thế"*.
+
+**Con số 250 MB là đúng, nhưng chỗ ghi thì sai.** Nó ghi lặp trên **cả 20 dòng**
+giọng VieNeu, nên đọc lên thành 20 × 250 MB = **5 GB**. Sự thật là:
+
+> **Chỉ có MỘT bộ 250 MB, tải MỘT LẦN, dùng chung cho cả 20 giọng.**
+
+Nay dòng ghi *"cần tải **bộ** 250 MB"*, và **rê chuột** vào dòng đó thì hiện
+nguyên câu: *"TẢI MỘT LẦN: bộ VieNeu 250 MB dùng chung cho CẢ 20 giọng VieNeu —
+KHÔNG phải 20 × 250 MB."* Nút tải cũng ghi rõ như vậy.
+
+**Cùng bệnh đó còn một chỗ nữa anh chưa nhắc mà đã sửa luôn:** giọng OmniVoice
+ghi `6,1 GB` trên **5 dòng** — đọc lên thành 30,5 GB, trong khi cũng chỉ là một
+bộ dùng chung.
+
+### 3. Danh sách giọng: đọc được hết, nhóm nhìn ra ngay
+
+Nối tiếp phần sắp xếp lại của v2.39.0, bản này đã **đo và xem tận mắt**:
+
+| | trước | **nay** |
+|---|---|---|
+| nhãn giọng bị cắt giữa câu | 6-9 dòng | **0 dòng** |
+| tiêu đề nhóm | trông y hệt dòng giọng | **đậm, màu khác, không bấm chọn được** |
+| bỏ sót giọng | — | **0 giọng** (364/364 còn đủ) |
+
+### 4. HẾT MẤT TIẾNG — cách anh đề xuất đã làm xong và ĐO ĐƯỢC
+
+Anh đề xuất: *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM tiếng video gốc rồi
+ĐÈ giọng lồng tiếng vào, để không bị mất mấy tiếng của video"*.
+
+Đã làm, và **cách của anh thắng bằng số**. Trên 3 video của anh (tổng 908 giây),
+đo cùng một lượt chạy nên hai bên dùng chung y một bản dịch, y một file giọng:
+
+| | cách CŨ (tách nhạc) | **cách MỚI (đè giọng)** |
+|---|---|---|
+| tổng thời gian bị mất tiếng | **63,15 giây** | **0,00 giây** |
+| khoảng mất từ 1 giây trở lên | 12,05 giây | **0,00 giây** |
+| khoảng mất từ 2 giây trở lên | 0,00 giây | **0,00 giây** |
+
+Lý do nó về 0 không phải nhờ vá vặt: **không bỏ tiếng gốc đi thì không có gì để
+mất**. Đúng chỗ anh nhìn ra.
+
+**CÁI GIÁ, nói thẳng:** vì giữ nguyên tiếng gốc nên nền dày hơn, giọng lồng nổi
+trên nền **+3,8 đến +6,0 dB** tuỳ video (cách cũ nhắm 6,0). Video càng dài thì
+càng đạt đủ. Độ to file thành phẩm vẫn đúng chuẩn (−14,0 LUFS, đỉnh −1,4 dB),
+không vỡ tiếng.
+
+> **BẬT Ở ĐÂU:** hộp **Thay giọng nói** → ô **Cách trộn tiếng**.
+> **MẶC ĐỊNH VẪN LÀ CÁCH CŨ** — em cố ý không đổi, vì đổi mặc định là đổi tiếng
+> của **mọi video từ nay** trên 200-300 kênh anh đang chạy. Anh nghe thử rồi
+> thấy được thì bảo em, em mới đổi mặc định.
+>
+> File nghe thử đã đặt sẵn ở `_NGHE_THU_ANH_HUNG/de_giong/` — mỗi video một cặp
+> `TACH_*` và `DE_*` **cùng một lượt chạy**, nghe cạnh nhau là ra ngay.
+
+### 5. Nghe thử: chọn tiếng Anh thì nó ĐỌC tiếng Anh
+
+Anh báo: *"cái phần nghe thử chọn tiếng Anh ngôn ngữ đó cứ ra tiếng Việt lung
+ta lung tung"*.
+
+Đúng lỗi. Nút nghe thử trước đây **luôn đọc một câu tiếng Việt cố định**, nên
+chọn giọng tiếng Anh là nghe một giọng Anh cố đọc chữ Việt — ra tiếng lạ, và
+anh kết luận "giọng này hỏng" là hoàn toàn hợp lý.
+
+Nay câu mẫu **đi theo ngôn ngữ anh đang chọn**, đủ **11 thứ tiếng** (bổ sung
+tiếng Đức — trước thiếu nên nó lẳng lặng đọc câu tiếng Anh).
+
+**Và nếu giọng anh chọn KHÔNG đọc được tiếng đó, app nói thẳng ra** thay vì đọc
+bừa: *"giọng này đọc tiếng «vi», câu mẫu là tiếng «en» … nghe lạ là ĐÚNG theo
+cấu tạo, KHÔNG phải giọng hỏng"* — kèm chỉ dẫn chọn giọng phù hợp. Nó vẫn đọc,
+vì đó đúng là thứ lượt xuất thật sẽ ra nếu anh giữ lựa chọn này.
+
+### 6. Nhãn giọng: 4 giọng ĐỌC SAI NHIỀU đã xuống cuối, và nói rõ sai bao nhiêu
+
+Em quét cả 20 giọng VieNeu bằng bộ **34 câu tiếng Việt**, đọc qua đúng cửa app
+dùng, rồi cho máy chép lại để đếm chữ sai. Kết quả có 4 giọng lệch hẳn:
+
+| giọng | đọc sai |
+|---|---|
+| `Quang Sơn` | **29,2% số từ** |
+| `Xuân Vĩnh` | **26,4%** |
+| `Mai Anh` | **25,5%** |
+| `Ngọc Trân` | **19,9%** |
+| *(giọng mốc `Hoài My` để so)* | *4,8%* |
+
+Đáng lo nhất: **`Xuân Vĩnh` đang đứng DÒNG ĐẦU** — tức chỗ anh bấm nhanh nhất
+lại là giọng sai nhiều nhất. Nó lên đầu vì điểm *nhấn nhá* của nó cao nhất bảng,
+mà nhấn nhá chỉ đo **giọng có cảm xúc không**, không đo **đọc có đúng chữ không**.
+
+Nay:
+
+* 4 giọng đó **xuống cuối nhóm**, và dòng của chúng tự nói ra con số:
+  *"— ĐỌC SAI 29,2% TỪ, chọn khác"*.
+* **KHÔNG giọng nào bị ẩn hay bỏ đi** — anh đã bảo *"cứ thêm hết, tôi tự trải
+  nghiệm"*, nên em chỉ đổi THỨ TỰ và ghi số thật.
+* Nhóm khuyên dùng nay mở đầu bằng **`Nam Minh`**; nhóm chạy-trên-máy mở đầu
+  bằng **`Thanh Bình`**.
+* Số nhấn nhá không mất, nó chuyển vào phần **rê chuột** để nhường chỗ trên dòng
+  cho cảnh báo.
+
+### 7. Nhãn "đọc được tiếng gì" là số ĐO, không phải chép quảng cáo
+
+Dòng giọng đa ngữ nay ghi **"đọc được Việt·Anh·Hàn·Nhật·Trung (đã đo)"** — 5 thứ
+tiếng đó là **em cho từng giọng đọc thật rồi chấm lại**, không phải chép nhãn của
+Microsoft. Giọng nào chưa đo thì ghi thẳng là *chưa đo*, không đoán.
+
+### 8. Giọng `Adam`: nghe lạ là ĐÚNG — nhưng nó KÉM, không HỎNG
+
+Anh báo: *"cái adam bị lỗi hay sao nghe cứ lạ lạ khác lắm"*.
+
+Em đo rồi: **không có lỗi nào trong app.** Nhãn của nó nay nói thật:
+
+* Nó đọc trôi **34/34 câu**, và **bịa chữ ít nhất cả bảng**.
+* Nhưng nó sai **5,2-7,0% số từ** khi đọc tiếng Anh (giọng bản ngữ: 3,7%). Chỗ
+  hụt là **tên riêng và chữ viết tắt** (`Albuquerque`, `CEO`, `AI`).
+* Nguyên do: nó là giọng học từ **dữ liệu tiếng Việt**, nên nó đọc tiếng Việt
+  còn giỏi hơn đọc tiếng Anh. Một giọng như thế thì "nghe lạ" là đúng cấu tạo.
+
+**Muốn giọng Anh nghe chuẩn thì app đã có sẵn `Adam` của ElevenLabs** — nhãn nay
+chỉ đường sang đó, **kèm cái giá**: giọng ElevenLabs tính theo số ký tự trong
+hạn mức của anh, còn `Adam` này thì miễn phí.
 
 ---
 
