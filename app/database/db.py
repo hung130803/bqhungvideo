@@ -280,6 +280,26 @@ class Database:
                     "ALTER TABLE projects ADD COLUMN xem_hinh INTEGER")
                 self.conn().commit()
                 cols.append("xem_hinh")
+            # GIỌNG RIÊNG THEO KÊNH + RỔ GIỌNG XOAY VÒNG (anh Hùng 19/08/2026:
+            # 200-300 kênh mà cùng một giọng thì nền tảng dễ soi là hàng loạt).
+            # Cùng luật '' -là- chưa-đụng của `tpl_name`, KHÔNG dùng NULL:
+            #   giong    = '' -> kênh đi theo giọng đang chọn ở Cài đặt (y như
+            #              trước khi có cột này, không phá hành vi cũ)
+            #   giong_ro = '' -> không xoay vòng; có thì là JSON danh sách mã
+            #              giọng, mỗi video lấy một cái theo `giong_kenh.py`.
+            # Hai cột RIÊNG chứ không nhét chung một JSON: cột `giong` là thứ
+            # 300 kênh sẽ đọc ở mọi lượt xuất, để nó phải bóc JSON mỗi lần là
+            # trả giá cho một tính năng phần lớn kênh không dùng.
+            if "giong" not in cols:
+                for ddl in (
+                    "ALTER TABLE projects ADD COLUMN giong TEXT NOT NULL "
+                    "DEFAULT ''",
+                    "ALTER TABLE projects ADD COLUMN giong_ro TEXT NOT NULL "
+                    "DEFAULT ''",
+                ):
+                    self.conn().execute(ddl)
+                self.conn().commit()
+                cols.extend(["giong", "giong_ro"])
             self.conn().execute(
                 """CREATE TABLE IF NOT EXISTS pipeline_files (
                        id INTEGER PRIMARY KEY AUTOINCREMENT,
