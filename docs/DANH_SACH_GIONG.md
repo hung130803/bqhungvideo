@@ -426,6 +426,16 @@ VieNeu khác nhau còn giống nhau (0,292) hơn là `vn:Adam` giống Adam củ
 ElevenLabs (0,223)**. Hai cột "cùng người" và "khác người" ở trên là bắt buộc:
 thiếu chúng thì một con số đứng trơ không nói lên điều gì.
 
+**Một chỗ có thể làm số sai — đã kiểm rồi mới kết luận.** Tiếng VieNeu ra có
+**dấu chìm** (watermark) còn tiếng ElevenLabs thì không. Vậy có phải chính cái
+dấu chìm kéo điểm giống xuống, làm hai giọng *giống* nhau trông thành *khác*
+nhau? Đã tắt dấu chìm rồi đo lại: **0,112 – 0,330** — trùng dải với bản có dấu
+chìm, tức dấu chìm không kéo con số. Và bản tắt dấu chìm so với bản bật ra
+**0,764 – 0,932**, tức máy đo vẫn nhận ra đúng cùng một người. **Loại xong.**
+
+*(Chạy lại: `set BQ_VN_WATERMARK=0` rồi sinh lại `vn:Adam` và so bằng
+`_do_adam.py`.)*
+
 **Vì vậy: bỏ chữ NGỜ NGUỒN, không chặn nữa.** Giữ lại một cảnh báo mà chính
 mình vừa chứng minh là không có cơ sở thì người dùng đọc riết rồi bỏ qua mọi
 cảnh báo, kể cả cảnh báo thật.

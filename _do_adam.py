@@ -52,7 +52,26 @@ text-independent nên khác nội dung là ĐÚNG cách dùng, không phải nh�
 Ca 0 (`kiem_khac_file`) đối soát MD5 để chốt điều đó bằng số.
 
 **VieNeu KHÔNG TIỀN ĐỊNH** (OmniVoice từng ra 41,8% và 99,4% trên cùng một
-hàm) -> chạy **3 lượt**, báo **DẢI**, không báo một số.
+hàm) -> chạy **nhiều lượt**, báo **DẢI**, không báo một số.
+
+═══════════════════════════════════════════════════════════════════════════
+CONFOUNDER ĐÃ LOẠI: DẤU CHÌM (watermark Perth) CỦA VieNeu
+═══════════════════════════════════════════════════════════════════════════
+VieNeu bật `apply_watermark=True` MẶC ĐỊNH, tức mọi file `vn:` trong phép đo
+đều mang dấu chìm còn file ElevenLabs thì không. Nghi vấn hợp lý: **dấu chìm
+có tự nó kéo cos xuống, làm hai giọng GIỐNG nhau trông thành KHÁC nhau
+không?** Nếu có thì kết luận "khác người" là do thước, không do giọng.
+
+ĐO THẲNG (`BQ_VN_WATERMARK=0`, sinh lại `vn:Adam` rồi so lại):
+
+    vn:Adam KHÔNG watermark  x  ElevenLabs Adam    0,112 – 0,330 (TV 0,263)
+    vn:Adam KHÔNG watermark  x  vn:Adam CÓ watermark
+                                                   0,764 – 0,932 (TV 0,832)
+
+Hàng 1 **trùng dải** với bản có watermark (0,115 – 0,346) -> dấu chìm KHÔNG
+kéo con số. Hàng 2 nằm gọn trong vùng **cùng-một-người** -> dấu chìm không hề
+làm ECAPA mất dấu người nói. **Confounder này đã loại, kết luận đứng nguyên.**
+Chạy lại: xem lệnh trong `docs/DANH_SACH_GIONG.md` mục 6.
 """
 from __future__ import annotations
 
