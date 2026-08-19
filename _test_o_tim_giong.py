@@ -638,6 +638,27 @@ dat("tiền tố CHƯA TẢI (dán lên CẢ 20 dòng) cũng mang chữ 'bộ ch
 dat("`can_tai()` giữ SỐ THÔ '250 MB' (cổng 79/82 so khớp bằng nó)",
     GB.can_tai("vn:pham_tuyen") == "250 MB", GB.can_tai("vn:pham_tuyen"))
 
+# `ghi_chu_bo_chung` phải ĐỌC ĐƯỢC cho **MỌI** nguồn phải tải, kể cả nguồn hiện
+# 0 DÒNG trên combo. `_CAN_TAI[INDEXTTS]` là CHỮ (`"bộ IndexTTS"`, chưa đo được
+# dung lượng) chứ không phải số, nên khuôn `bộ {tên} {cần}` ra câu **"bộ IndexTTS
+# bộ IndexTTS … KHÔNG phải 5 × bộ IndexTTS"** — `× <chữ>` thì phép nhân hết
+# nghĩa. Lỗi đó KHÔNG ai thấy vì IndexTTS chưa lên combo, tức đúng loại ngủ yên
+# tới ngày có người bật nó lên. Chấm ở mức HÀM chứ đừng chờ nó ra giao diện.
+_xau_cau = []
+for _ng, _ma in (("vieneu", "vn:x"), ("ov", "ov:x"), ("ix", "ix:x"),
+                 ("piper", "piper:x"), ("chatter", "cb:x")):
+    _c = GB.ghi_chu_bo_chung(_ma, 5)
+    if not _c or "bộ bộ" in _c or "× bộ" in _c or _c.count("bộ IndexTTS") > 1:
+        _xau_cau.append((_ng, _c))
+dat("`ghi_chu_bo_chung` đọc được ở MỌI nguồn phải tải (kể cả nguồn 0 dòng)",
+    not _xau_cau, f"{len(_xau_cau)} câu xấu"
+    + (f" · vd {_xau_cau[0]}" if _xau_cau else ""))
+dat("nguồn KHÔNG phải tải gì -> câu RỖNG (gọi ở đâu cũng an toàn)",
+    GB.ghi_chu_bo_chung("vi-VN-HoaiMyNeural", 5) == "")
+dat("1 giọng thì KHÔNG nói 'dùng chung' (câu vô nghĩa, không có gì để chữa)",
+    "dùng chung" not in GB.ghi_chu_bo_chung("piper:x", 1),
+    GB.ghi_chu_bo_chung("piper:x", 1))
+
 # ---------------------------------------------------------------------------
 # CA 8 — THỬ PHÁ: GỠ CHỐT PHẢI ĐỎ
 # ---------------------------------------------------------------------------

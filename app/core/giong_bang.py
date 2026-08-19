@@ -330,10 +330,19 @@ def ghi_chu_bo_chung(vid: str, so_giong: int = 0) -> str:
     if not can:
         return ""
     ten = TEN_NGUON.get(nguon(vid), "bộ này")
-    if int(so_giong or 0) > 1:
+    n = int(so_giong or 0)
+    # **`_CAN_TAI` KHÔNG PHẢI LÚC NÀO CŨNG LÀ MỘT CON SỐ.** IndexTTS để
+    # `"bộ IndexTTS"` (chưa đo được dung lượng thật). Ghép thẳng vào khuôn
+    # `bộ {ten} {can}` ra câu **"bộ IndexTTS bộ IndexTTS … KHÔNG phải 5 × bộ
+    # IndexTTS"** — vô nghĩa, và `× <chữ>` thì phép nhân cũng hết nghĩa. Nguồn
+    # đó hiện 0 dòng trên combo nên KHÔNG ai thấy, tức đây đúng loại lỗi ngủ
+    # yên tới ngày có người bật nó lên. Phân nhánh theo "có số hay không".
+    if not can[:1].isdigit():
+        return (f"TẢI MỘT LẦN: cần {can}, dùng chung cho CẢ {n} giọng {ten}."
+                if n > 1 else f"TẢI MỘT LẦN: cần {can}.")
+    if n > 1:
         return (f"TẢI MỘT LẦN: bộ {ten} {can} dùng chung cho CẢ "
-                f"{int(so_giong)} giọng {ten} — KHÔNG phải "
-                f"{int(so_giong)} × {can}.")
+                f"{n} giọng {ten} — KHÔNG phải {n} × {can}.")
     return f"TẢI MỘT LẦN: bộ {ten} {can}."
 
 #: Chữ để dò xem nhãn ĐÃ nói điều đó chưa (nhãn của `giong_ngoai`/`giong_vbee`

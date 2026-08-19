@@ -159,7 +159,7 @@ CONG = [
     # 5 GB · `6,1 GB` trên **5 dòng** OmniVoice = đọc thành 30,5 GB. CA 9 canh
     # CẢ LỚP BỆNH (mọi dòng có số dung lượng phải nói "dùng chung"), kèm 3 mục
     # TỰ KIỂM BỘ DÒ — thiếu chúng thì "0 dòng bệnh" có thể là bộ dò đã chết.
-    ("84 ô tìm giọng",      "_test_o_tim_giong.py",      60),
+    ("84 ô tìm giọng",      "_test_o_tim_giong.py",      63),
     # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
     # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
     # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`
