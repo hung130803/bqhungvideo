@@ -65,12 +65,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 import unicodedata
 from pathlib import Path
-from typing import Optional
 
 _NO_WIN = 0x08000000 if os.name == "nt" else 0
 
@@ -161,8 +159,9 @@ def _do_mau(duong: str) -> dict:
     txt = (r.stderr or "") + (r.stdout or "")
     if r.returncode != 0:
         return {"loi": f"ffmpeg không đọc được file (mã {r.returncode})"}
+    # Lấy mốc `time=` LỚN NHẤT, không lấy cái cuối cùng: ffmpeg in nhiều dòng
+    # tiến trình và dòng cuối không bảo đảm là dòng lớn nhất.
     dai = 0.0
-    m = re.search(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", txt[::-1])
     for mm in re.finditer(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", txt):
         dai = max(dai, int(mm.group(1)) * 3600 + int(mm.group(2)) * 60
                   + float(mm.group(3)))

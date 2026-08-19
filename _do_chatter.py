@@ -336,7 +336,6 @@ def main() -> int:
     out_vi = d_ra / "vi_test.wav"
     items.append({"i": n, "text": CAU_VI, "lang": "en", "out": str(out_vi),
                   "ref": mau[list(mau)[0]], "seed": 1234})
-    i_vi = n
 
     # ═══ ĐỐI CHỨNG ÂM PHẢI CHẠY Ở TIẾN TRÌNH RIÊNG — LỖI THẬT ĐÃ SẬP ═══
     # Chatterbox CẤT `self.conds` trên chính đối tượng model: gọi `generate()`
@@ -417,7 +416,6 @@ def main() -> int:
             cap.append(cos(tb[ks[i]], tb[ks[j]]))
     NG_KHAC = 0.31          # hiệu chuẩn `_do_nguoi_noi_ecapa`: khác giọng <=0,31
     NG_CUNG = 0.60          # giữa 0,31 và 0,78 — nghi ngờ
-    rieng = 1
     da = [ks[0]] if ks else []
     for a in ks[1:]:
         if all(cos(tb[a], tb[b]) <= NG_CUNG for b in da):

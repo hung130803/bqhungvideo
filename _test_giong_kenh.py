@@ -150,7 +150,6 @@ ok("2e đủ 47 giọng tiếng Anh (bảng cũ) + tiếng khác đã mở",
 
 print("\nCA 3 — giọng theo kênh + XOAY VÒNG TIỀN ĐỊNH")
 from app.core import giong_kenh as gk  # noqa: E402
-from app.database import db  # noqa: E402
 import app.services as SV  # noqa: E402
 
 _p1 = SV.create_project("Kênh A", "nhóm 1")
@@ -384,10 +383,4 @@ print("\n" + "=" * 72)
 print(f"ĐẠT {DAT} · HỎNG {HONG} · BỎ QUA {BOQUA}")
 if _HONG:
     print("HỎNG: " + " | ".join(_HONG))
-try:
-    import shutil
-    from app.core import xoa_an_toan
-    db.close() if hasattr(db, "close") else None
-except Exception:  # noqa: BLE001
-    pass
 raise SystemExit(1 if HONG else 0)
