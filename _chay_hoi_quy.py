@@ -117,7 +117,7 @@ CONG = [
     # CHÍNH script runner trong tiến trình con với gói `chatterbox` GIẢ mô
     # phỏng đúng tính dính `self.conds` — thứ biến "đọc kênh A rồi kênh B"
     # thành "kênh B ra giọng kênh A" mà mã thoát vẫn 0.
-    ("82 Chatterbox đã nối", "_test_chatter_noi.py",     57),
+    ("82 Chatterbox đã nối", "_test_chatter_noi.py",     58),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.

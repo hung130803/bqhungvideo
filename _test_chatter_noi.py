@@ -482,6 +482,18 @@ ok("7g `ref` RỖNG -> runner NÉM, KHÔNG đọc một câu nào bằng mẫu c
 ok("7h nhánh ném vẫn đóng dấu `_sandbox` (thiếu nó là `Path('')` = "
    "thư mục đang làm việc, đã xoá sạch cây mã một lần)",
    bool(_ket_rong.get("_sandbox")))
+# `_chay` CỐ Ý không tự dọn — nơi gọi dọn (xem docstring của nó). CA 7g gọi
+# THẲNG `_chay` nên chính cổng này phải dọn, không thì mỗi lượt chạy bỏ lại
+# một thư mục `_job_*` trong `_giong_chatter` (đo: 7 lượt = 7 thư mục). Luật
+# "test không được để rác trên máy anh Hùng" áp cho cả cổng.
+try:
+    from app.core import xoa_an_toan as _xa
+    _xa.don_thu_muc(_ket_rong.get("_sandbox"), trong=gc.thu_muc_chatter())
+except Exception:  # noqa: BLE001
+    pass
+ok("7h2 cổng tự dọn hộp cát của lượt gọi thẳng `_chay` (không để rác "
+   "`_job_*` trong `_giong_chatter`)",
+   not Path(str(_ket_rong.get("_sandbox") or _SB)).exists())
 
 # --- 7i/7j: TỰ KIỂM BỘ DÒ — gỡ chốt thì kênh B PHẢI ra GIỌNG KÊNH A -------
 # Kịch bản dựng đúng như đời thật sẽ xảy ra: kênh A chạy bằng runner ĐÚNG (mẫu
