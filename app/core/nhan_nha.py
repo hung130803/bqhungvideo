@@ -97,6 +97,26 @@ luật "bịa một con số cạnh tên giọng là người dùng sẽ tin mà
 """
 from __future__ import annotations
 
+from app.core import giong_doc
+
+#: Đuôi nhãn cho giọng **ĐỌC ĐƯỢC nhưng CHƯA ĐO nhấn nhá** — trạng thái THỨ BA,
+#: thêm 19/08/2026 cùng lượt mở 133 giọng của 59 thứ tiếng.
+#:
+#: **VÌ SAO PHẢI CÓ TRẠNG THÁI THỨ BA.** Trước lượt này chỉ có hai: có số, hoặc
+#: không có mặt trong combo. Nên muốn mở một giọng thì buộc phải có số cho nó,
+#: mà có số thì phải có bộ 4 câu đúng tiếng — và đó chính là chỗ 137 giọng của
+#: 60 thứ tiếng bị kẹt. Hai đường thoát sai đều đã bị loại:
+#:
+#: * **bịa số** (chấm bằng câu tiếng Anh) -> người dùng thấy con số cạnh tên
+#:   giọng thì họ TIN mà chọn. Đây là bẫy đã làm ``piper:vais1000`` ra 1,88.
+#: * **để trống hẳn** -> ``duoi_nhan_nha`` trả rỗng, dòng combo không có đuôi,
+#:   nhìn y hệt một lỗi hiển thị. Người đọc không phân biệt được "chưa đo" với
+#:   "app quên".
+#:
+#: Nói thẳng "chưa đo" giải được cả hai: không có số nào để tin nhầm, mà cũng
+#: không ai tưởng là hỏng. **KHÔNG EMOJI** (máy anh Hùng thiếu glyph -> ô đen).
+CHUA_DO = " - chưa đo nhấn nhá"
+
 #: Ngưỡng chia mức, lấy từ **TỨ PHÂN VỊ CỦA CHÍNH BẢNG ĐO** chứ không đặt mò.
 #: Đổi bảng thì phải chạy lại tứ phân vị, đừng giữ số cũ — và lượt 19/08/2026
 #: đã chạy lại thật khi bảng lên 191 giọng:
@@ -338,20 +358,33 @@ def chu(v: float) -> str:
 
 
 def nhan(voice: str) -> str:
-    """Đuôi nhãn cho combo: ' - nhấn nhá 5,4 rất truyền cảm'.
+    """Đuôi nhãn cho combo — **BA TRẠNG THÁI, đừng rút về hai**::
 
-    CHƯA ĐO -> trả chuỗi RỖNG. Cố ý: bịa một con số cho giọng chưa đo là đúng
-    loại "phép đo phát chứng nhận" mà cả repo này đang chống.
+        đã đo             ->  " - nhấn nhá 5,4 rất truyền cảm"
+        ĐỌC ĐƯỢC, chưa đo ->  " - chưa đo nhấn nhá"        (xem ``CHUA_DO``)
+        không biết gì cả  ->  ""
+
+    Trạng thái thứ ba giữ nguyên nghĩa cũ: **bịa một con số cho giọng chưa đo
+    là đúng loại "phép đo phát chứng nhận" mà cả repo này đang chống**. Trạng
+    thái thứ hai là mới, và nó chỉ áp cho giọng ĐÃ CÓ BẰNG CHỨNG ĐỌC THẬT
+    (``giong_doc.BANG``) — tức nhãn "chưa đo" không bao giờ rơi vào một mã
+    giọng bâng quơ, nó luôn nói về một giọng app dám mở.
+
     KHÔNG EMOJI (máy anh Hùng thiếu glyph -> nhãn ra ô đen).
 
     **CHỮ TÍNH TỪ SỐ ĐÃ LÀM TRÒN, KHÔNG PHẢI SỐ THÔ.** Jenny đo 3,06: chấm
     ngưỡng trên số thô ra *"3,1 đều đều"* — người đọc thấy 3,1 >= ngưỡng 3,1
     mà chữ lại nói ngược. Cái hiện ra phải TỰ NHẤT QUÁN, kể cả khi phải lệch
     khỏi giá trị thô một chút.
+
+    **BẤT BIẾN CỔNG 83 CHẤM:** với **mọi** mã đã có trong ``BANG``, chuỗi trả
+    ra phải giống bản mốc **TỪNG KÝ TỰ**. Nhánh mới chỉ được chạm mã KHÔNG có
+    trong ``BANG`` — nếu không thì 191 dòng combo anh Hùng đang nhìn tự đổi
+    chữ sau một lượt vá chẳng liên quan.
     """
     v = muc(voice)
     if v is None:
-        return ""
+        return CHUA_DO if giong_doc.da_doc(voice) else ""
     lam_tron = round(v, 1)
     return f" - nhấn nhá {lam_tron:.1f} {chu(lam_tron)}".replace(".", ",")
 
