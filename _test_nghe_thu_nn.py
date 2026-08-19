@@ -446,7 +446,15 @@ def ca9_nhan_adam() -> None:
 
     du = VN.nhan_giong("vn:Adam", ngan=False)
     ngan = VN.nhan_giong("vn:Adam", ngan=True)
-    ok("ElevenLabs" in du, "nhãn ĐẦY ĐỦ chỉ đường sang ElevenLabs Adam")
+    # HỎI CÂU CHỈ ĐƯỜNG, KHÔNG HỎI CÁI TÊN. Chữ "ElevenLabs" còn xuất hiện ở
+    # câu ECAPA (*"tên trùng một giọng dựng sẵn của ElevenLabs..."*) nên hỏi
+    # `"ElevenLabs" in du` là mục này **tự ĐẠT** kể cả khi phần chỉ đường bị gỡ
+    # sạch — ĐÃ THỬ PHÁ và nó đúng là lọt (chỉ mục "nói CÁI GIÁ" bắt được).
+    # Đúng bài học cổng 56d: quét mà chỉ hỏi "có mặt không" thì luôn có một
+    # phép phá giữ nguyên mặt chữ mà đổi ý nghĩa.
+    ok("có sẵn trong app" in du.lower() and "ElevenLabs" in du,
+       "nhãn ĐẦY ĐỦ chỉ đường sang ElevenLabs Adam (câu HÀNH ĐỘNG, không chỉ "
+       "nhắc tên)")
     # So KHÔNG PHÂN BIỆT HOA/THƯỜNG: nhãn của repo này cố ý VIẾT HOA phần quan
     # trọng ("TỐN HẠN MỨC"), nên so nguyên văn là mục này ĐỎ OAN — đã sập đúng
     # vậy ở lượt chạy đầu.
