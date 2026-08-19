@@ -41,6 +41,19 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
+
+#: CÁCH LY MÁY THẬT — phải đặt TRƯỚC mọi import `config`/PyQt. `BQ_QSETTINGS_INI`
+#: là bắt buộc: QSettings mặc định ghi vào REGISTRY dùng chung với app thật, và
+#: `luu_cai_dat` của CA 8 sẽ làm bẩn cài đặt của anh Hùng (bài học "Cutter: test
+#: đừng ghi QSettings").
+import tempfile                                             # noqa: E402
+_T = Path(tempfile.mkdtemp(prefix="degiong_"))
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
+os.environ["BQ_DATA_DIR"] = str(_T)
+os.environ["BQ_DB_PATH"] = str(_T / "studio.db")
+os.environ["BQ_QSETTINGS_INI"] = str(_T / "settings.ini")
+os.environ["BQ_FFMPEG_SLOTS"] = "1"
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:                                           # noqa: BLE001
@@ -666,6 +679,122 @@ def ca7() -> None:
 
 
 # ==================================================================
+# CA 8 — Ô CHỌN TRONG HỘP THAY GIỌNG (cái anh Hùng thật sự bấm)
+# ==================================================================
+def ca8(hop_cat: Path) -> None:
+    """Ô chọn cách trộn: mặc định GIỮ cách cũ, và mở được nút Chạy khi chọn đè.
+
+    Cổng CA 1-7 kiểm các HÀM; mục này kiểm cái anh Hùng bấm. Không có nó thì
+    tính năng có thể đúng hết ở dưới mà **không với tới được** — đúng lỗi đã sập
+    ở cổng 19 (mẫu-theo-kênh chỉ áp ở dây chuyền, bấm tay vẫn ăn cấu hình cũ).
+    """
+    import unicodedata
+    from PyQt6.QtWidgets import QApplication, QComboBox, QLabel
+    from app.core import thay_giong as TG
+    from app.core import tg_chay as TC
+    import app.ui.thay_giong_dialog as TGD
+
+    print("\n[CA 8] Ô CHỌN TRONG HỘP THAY GIỌNG")
+    app = QApplication.instance() or QApplication([])
+
+    # TỰ KIỂM bản vá cách ly: QSettings phải là FILE INI trong hộp cát, không
+    # phải registry thật. Sai chỗ này là cổng làm bẩn cài đặt của anh Hùng.
+    from app.ui.appsettings import app_settings
+    # `QSettings.fileName()` trả đường dẫn dấu GẠCH XUÔI còn `_T` là gạch
+    # NGƯỢC -> so chuỗi thô là HỎNG OAN (đã sập một lần). Chuẩn hoá cả hai.
+    _f = str(app_settings().fileName())
+    ok(os.path.normcase(os.path.normpath(str(_T)))
+       in os.path.normcase(os.path.normpath(_f)),
+       "8a TỰ KIỂM: QSettings nằm trong hộp cát (KHÔNG registry thật của anh "
+       "Hùng)", _f)
+
+    vao = hop_cat / "vao"
+    vao.mkdir(parents=True, exist_ok=True)
+    (vao / "a.mp4").write_bytes(b"x" * 2048)
+    dlg = TGD.ThayGiongDialog(None, None)
+    dlg.ed_thu_muc.setText(str(vao))
+    dlg.ed_thu_muc_ra.setText(str(hop_cat / "ra"))
+    dlg._quet_thu_muc() if hasattr(dlg, "_quet_thu_muc") else None
+    app.processEvents()
+
+    cb = dlg.cb_tron
+    ok(cb.count() == 2, "8b ô chọn có ĐÚNG hai cách", f"{cb.count()} mục")
+    # MỤC ĐẦU + giá trị mặc định phải là CÁCH CŨ. Đây là mệnh đề quan trọng nhất
+    # của cả ô: đổi mặc định là đổi tiếng của MỌI video từ nay trên 200-300 kênh.
+    ok(cb.itemData(0) == "tach" and cb.currentData() == "tach",
+       "8c MẶC ĐỊNH là CÁCH CŨ (`tach`) — không đổi tiếng của 200-300 kênh sau "
+       "lưng anh Hùng", f"mục đầu {cb.itemData(0)!r} · đang chọn "
+                        f"{cb.currentData()!r}")
+    # nhãn lấy từ MỘT NGUỒN (`NHAN_CACH_TRON`), so TỪNG KÝ TỰ: viết tay hai lần
+    # là hai chỗ lệch nhau, rồi nhật ký nói khác cái user thấy.
+    ok(cb.itemText(0) == TG.NHAN_CACH_TRON["tach"]
+       and cb.itemText(1) == TG.NHAN_CACH_TRON["de"],
+       "8d nhãn hai mục lấy TỪNG KÝ TỰ từ `TG.NHAN_CACH_TRON` (một nguồn)")
+    nhan = [cb.itemText(i) for i in range(cb.count())]
+    nhan += [w.text() for w in dlg.findChildren(QLabel)
+             if "trộn" in (w.text() or "").lower()]
+    xau = [x for x in nhan
+           if any(ord(c) > 0xFFFF or unicodedata.category(c) == "So"
+                  for c in x)]
+    ok(not xau, f"8e nhãn KHÔNG EMOJI ({len(nhan)} nhãn)", str(xau))
+    ok(any("trộn" in (w.text() or "").lower()
+           for w in dlg.findChildren(QLabel)),
+       "8f có nhãn chữ nói rõ ô này là 'Cách trộn tiếng'")
+
+    # ---- CỜ ĐI TỚI `xep_mot` ĐÚNG như combo đang hiện ----
+    that = TC.xep_mot
+    thu: list[dict] = []
+
+    def bat(*a, **k):
+        thu.append(dict(k))
+        return None                     # None = "không có pool", UI tự xử lý
+    TGD.tg_chay.xep_mot = bat
+    try:
+        for gt, cho in (("tach", False), ("de", True)):
+            thu.clear()
+            cb.setCurrentIndex(cb.findData(gt))
+            app.processEvents()
+            dlg._chay()
+            got = [t.get("de_giong") for t in thu]
+            ok(bool(got) and all(x is cho for x in got),
+               f"8g chọn {gt!r} -> `xep_mot(de_giong={cho})` "
+               f"({len(got)} video)", str(got))
+    finally:
+        TGD.tg_chay.xep_mot = that
+
+    # ---- NÚT CHẠY: cách mới phải MỞ được trên máy CHƯA có Demucs ----
+    dlg._tt_demucs = {"co": False, "thieu": ["torch"], "cai_duoc": True,
+                      "lib": "x", "thiet_bi": ""}
+    for gt, cho in (("tach", False), ("de", True)):
+        cb.setCurrentIndex(cb.findData(gt))
+        app.processEvents()
+        dlg._cap_nhat_nut_chay()
+        ok(dlg.b_chay.isEnabled() is cho,
+           f"8h máy CHƯA có Demucs + chọn {gt!r} -> nút Chạy "
+           f"{'MỞ' if cho else 'KHOÁ'}",
+           f"isEnabled={dlg.b_chay.isEnabled()}")
+
+    # ---- QSettings: nhớ đúng lựa chọn, và đọc lại qua CỬA CHUẨN HOÁ ----
+    cb.setCurrentIndex(cb.findData("de"))
+    dlg.luu_cai_dat()
+    ok(str(app_settings().value(TGD.K_TRON_CACH, "")) == "de",
+       "8i `luu_cai_dat` ghi đúng cách đang chọn")
+    app_settings().setValue(TGD.K_TRON_CACH, "rac_khong_ton_tai")
+    dlg2 = TGD.ThayGiongDialog(None, None)
+    ok(dlg2.cb_tron.currentData() == "tach",
+       "8j QSettings mang giá trị LẠ -> hộp lùi về CÁCH CŨ, không lùi về cách "
+       "mới", str(dlg2.cb_tron.currentData()))
+    for x in (dlg, dlg2):
+        x.setParent(None)
+        x.deleteLater()
+    app.processEvents()
+    # combo cách trộn KHÔNG được là combo cuộn-chuột-đổi-giá-trị vô tình? — ô
+    # này dùng QComboBox chuẩn như `cb_khop`, cùng hành vi, không thêm mệnh đề.
+    ok(isinstance(cb, QComboBox), "8k ô chọn là QComboBox (giống `cb_khop`, "
+                                  "không đẻ bộ điều khiển kiểu khác)")
+
+
+# ==================================================================
 def main() -> int:
     hop = REPO / f"bq_test_dg_{os.getpid()}"
     shutil.rmtree(hop, ignore_errors=True)
@@ -681,6 +810,7 @@ def main() -> int:
         ca5()
         ca6(hop)
         ca7()
+        ca8(hop)
     except Exception as e:                                  # noqa: BLE001
         import traceback
         traceback.print_exc()
@@ -689,7 +819,10 @@ def main() -> int:
         # chốt" (bài học cổng 74b).
         HONG.append(f"CỔNG CHẾT GIỮA CHỪNG: {type(e).__name__}: {e}")
     finally:
+        # KHÔNG ĐỂ RÁC %TEMP% TRÊN MÁY ANH HÙNG — ổ C từng đầy 100%. `_T` là
+        # hộp cát QSettings/DATA_DIR, `hop` là hộp cát ffmpeg.
         shutil.rmtree(hop, ignore_errors=True)
+        shutil.rmtree(_T, ignore_errors=True)
     print("\n" + "=" * 78)
     print(f"ĐẠT {len(DAT)} · HỎNG {len(HONG)}"
           + (f" · BỎ QUA {len(BO_QUA)}" if BO_QUA else ""))

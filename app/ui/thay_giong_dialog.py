@@ -92,6 +92,11 @@ K_VIET_CHU = "tg_viet_chu"
 #: CÁCH KHỚP TIẾNG VỚI HÌNH — "" = ép giọng (y như mọi bản trước) · "hinh" =
 #: chỉnh video theo giọng.
 K_KHOP_CACH = "tg_khop_cach"
+#: CÁCH TRỘN TIẾNG — `"tach"` = thay hẳn giọng (tách nhạc, hành vi CŨ, MẶC ĐỊNH)
+#: · `"de"` = đè giọng lên tiếng gốc, KHÔNG tách.
+#: **MẶC ĐỊNH PHẢI LÀ `"tach"`**: đổi mặc định là đổi tiếng của MỌI video từ nay
+#: trên 200-300 kênh đang chạy sản xuất. Anh Hùng nghe cả hai rồi mới quyết.
+K_TRON_CACH = "tg_tron_cach"
 #: KIỂU CHỮ của dòng chữ mới (chỉ dùng khi đang che + viết chữ).
 K_KC_PRESET = "tg_kc_preset"
 K_KC_FONT = "tg_kc_font"
@@ -824,6 +829,50 @@ class ThayGiongDialog(QDialog):
         h3bb.addStretch(1)
         lay.addLayout(h3bb)
 
+        # ---- hàng 3bc: CÁCH TRỘN TIẾNG (đè giọng / thay hẳn giọng) ----
+        # Anh Hùng 19/08/2026: *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM
+        # tiếng video gốc rồi ĐÈ giọng lồng tiếng vào, để không bị mất mấy tiếng
+        # của video"*.
+        # MỤC ĐẦU LÀ CÁCH CŨ — CÓ CHỦ Ý, và đây là quyết định quan trọng nhất
+        # của cả ô này: đổi mặc định là đổi tiếng của MỌI video từ nay trên
+        # 200-300 kênh đang chạy sản xuất. Anh Hùng phải nghe THỬ CẢ HAI rồi mới
+        # duyệt cái nào làm mặc định.
+        # NHÃN NÓI RÕ ĐÁNH ĐỔI CỦA CẢ HAI BÊN, không khoe một bên: ô chọn chỉ
+        # khoe cái được thì đó không phải một lựa chọn có thông tin.
+        h3bc = QHBoxLayout()
+        h3bc.addWidget(QLabel("Cách trộn tiếng:"))
+        self.cb_tron = QComboBox()
+        # Nhãn lấy từ `thay_giong.NHAN_CACH_TRON` — MỘT NGUỒN DUY NHẤT, để nhật
+        # ký/cổng test và cái người dùng thấy không viết tay hai lần rồi lệch.
+        self.cb_tron.addItem(TG.NHAN_CACH_TRON["tach"], "tach")
+        self.cb_tron.addItem(TG.NHAN_CACH_TRON["de"], "de")
+        self.cb_tron.setToolTip(
+            "THAY HẲN GIỌNG (tách nhạc) — cách app vẫn làm từ trước:\n"
+            "  · tiếng gốc bị BỎ HẲN, chỉ còn nhạc nền + tiếng động\n"
+            "  · NHƯNG cần bộ tách giọng khoảng 4,3 GB, nên có card NVIDIA,\n"
+            "    và câu nào bộ chép lời bỏ qua thì thành khoảng TRỐNG — đo\n"
+            "    ghép cặp trên video của anh: còn mất 14,75 s / 1,62%.\n\n"
+            "ĐÈ GIỌNG (không tách) — cách mới:\n"
+            "  · giữ NGUYÊN tiếng gốc, chỉ hạ nó xuống rồi đè giọng lồng lên\n"
+            "  · KHÔNG mất tiếng chỗ nào (không bỏ gì thì không mất gì), KHÔNG\n"
+            "    cần tải bộ tách giọng, KHÔNG cần card, và nhanh hơn hẳn vì bỏ\n"
+            "    được cả bước tách\n"
+            "  · ĐÁNH ĐỔI: tiếng gốc VẪN NGHE ĐƯỢC ở dưới giọng lồng.\n\n"
+            "Nhạc/tiếng gốc chỉ bị hạ ĐÚNG LÚC giọng lồng đang nói (ducking), "
+            "không hạ đều cả bài.")
+        _it = self.cb_tron.findData(
+            TG.chuan_cach_tron(self._s.value(K_TRON_CACH, "tach")))
+        self.cb_tron.setCurrentIndex(max(0, _it))
+        h3bc.addWidget(self.cb_tron)
+        h3bc.addStretch(1)
+        lay.addLayout(h3bc)
+        # Đổi cách trộn -> phải tính lại nút Chạy NGAY: cách "đè" không dùng bộ
+        # tách giọng nên nó chạy được trên máy CHƯA có Demucs. Không nối tín
+        # hiệu này thì user chọn "đè giọng" mà nút Chạy vẫn xám = tính năng
+        # KHÔNG với tới được đúng cái máy nó được làm ra để phục vụ.
+        self.cb_tron.currentIndexChanged.connect(
+            lambda *_: self._cap_nhat_nut_chay())
+
         # ---- hàng 3c + 3d: KIỂU CHỮ của dòng chữ mới ----
         # Anh Hùng 17/08/2026: *"phần chữ sub trong video tôi không điều chỉnh
         # được cỡ chữ, kiểu chữ, hay in nghiêng đậm, hay chỉnh viền gì được ạ"*.
@@ -1339,15 +1388,31 @@ class ThayGiongDialog(QDialog):
         self._cap_nhat_nut_chay()
         return tt
 
+    def _de_giong(self) -> bool:
+        """User đang chọn ĐÈ GIỌNG (không tách) hay không.
+
+        Đọc từ COMBO ĐANG HIỆN, không đọc QSettings — bài học "chạy dây chuyền:
+        đọc combo, không đọc setting". `getattr` vì hàm này bị gọi từ
+        `_do_demucs()` có thể chạy TRƯỚC lúc combo được dựng.
+        """
+        cb = getattr(self, "cb_tron", None)
+        return cb is not None and TG.chuan_cach_tron(cb.currentData()) == "de"
+
     def _cap_nhat_nut_chay(self) -> None:
-        co = bool(getattr(self, "_tt_demucs", {}).get("co"))
+        # CHẾ ĐỘ ĐÈ GIỌNG KHÔNG CẦN BỘ TÁCH -> KHÔNG được khoá nút Chạy.
+        # Đây là nửa còn lại của tính năng: nó được làm ra cho đúng cái máy
+        # CHƯA có Demucs, mà nút Chạy vẫn xám thì user không với tới được.
+        de = self._de_giong()
+        co = de or bool(getattr(self, "_tt_demucs", {}).get("co"))
         co_tm = bool(self._video_trong_thu_muc())
         self.b_chay.setEnabled(co and co_tm and not self._dang_cai)
         self.b_lam_lai.setEnabled(co and co_tm and not self._dang_cai)
         if not co:
             self.b_chay.setToolTip(
                 "Chưa có bộ tách giọng — bấm '" + TG.NHAN_TAI_DEMUCS
-                + "' trước. App KHÔNG chạy cách nhẹ vì nó để lọt 86-100% "
+                + "' trước, HOẶC đổi ô 'Cách trộn tiếng' sang '"
+                + TG.NHAN_CACH_TRON["de"] + "' (cách đó KHÔNG cần bộ tách "
+                  "giọng).\nApp KHÔNG chạy cách nhẹ vì nó để lọt 86-100% "
                   "lời gốc (video ra nghe cả giọng cũ lẫn giọng mới).")
         elif not co_tm:
             self.b_chay.setToolTip("Chưa chọn thư mục có video.")
@@ -2247,6 +2312,10 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
         self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
         self._s.setValue(K_KHOP_CACH, self.cb_khop.currentData() or "")
+        # Qua `chuan_cach_tron` TRƯỚC KHI GHI: bản sau đổi tên cách trộn thì
+        # giá trị cũ trong QSettings không âm thầm biến thành cách MỚI.
+        self._s.setValue(K_TRON_CACH,
+                         TG.chuan_cach_tron(self.cb_tron.currentData()))
         self._s.setValue(K_KC_PRESET, self.cb_kc_preset.currentData() or "")
         self._s.setValue(K_KC_FONT, self.cb_kc_font.currentData() or "")
         self._s.setValue(K_KC_CO, float(self.sp_kc_co.value()))
@@ -2447,6 +2516,10 @@ class ThayGiongDialog(QDialog):
         cc_kieu = self.don_kieu_chu()
         # ĐỌC TỪ COMBO ĐANG HIỆN, không đọc QSettings (cùng lý do trên).
         cc_hinh = str(self.cb_khop.currentData() or "") == "hinh"
+        # CÁCH TRỘN cũng đọc từ COMBO ĐANG HIỆN, và đi qua `chuan_cach_tron` —
+        # cửa DUY NHẤT chuẩn hoá: không nhận ra thì lùi về cách CŨ, không lùi về
+        # cách mới (lùi về cái mới là âm thầm đổi tiếng của video người ta).
+        cc_de = TG.chuan_cach_tron(self.cb_tron.currentData()) == "de"
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -2470,7 +2543,7 @@ class ThayGiongDialog(QDialog):
                     kenh=Path(duong).parent.name, lam_lai=buoc_lai,
                     che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
                     viet_chu=cc_viet, kieu_chu=cc_kieu,
-                    hinh_theo_giong=cc_hinh)
+                    hinh_theo_giong=cc_hinh, de_giong=cc_de)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)
