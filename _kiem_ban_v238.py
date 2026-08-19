@@ -261,10 +261,101 @@ def main() -> int:
     print(f"TỰ KIỂM BỘ DÒ (chèn 1 giọng câm giả): bắt được = "
           f"{'CÓ' if 'zz-ZZ-CamNeural' in bat else 'KHÔNG - bộ dò HỎNG'}")
 
+    cb_ok = kiem_chatter()
+
     hong = bool(xau) or bool(lot) or bool(khong_bang) or \
-        ("zz-ZZ-CamNeural" not in bat)
+        ("zz-ZZ-CamNeural" not in bat) or not cb_ok
     print("\n" + ("CÓ MỤC HỎNG — đọc bảng trên" if hong else "TẤT CẢ ĐẠT"))
     return 1 if hong else 0
+
+
+def kiem_chatter() -> bool:
+    """`cb:` CÓ RẼ ĐÚNG NHÁNH KHÔNG — ca mà `_do_re_nhanh.py` KHÔNG chấm được.
+
+    Combo trên máy này có **0 mã `cb:`** vì Chatterbox là nguồn NHÂN BẢN: mã
+    chỉ sinh ra sau khi người dùng đăng ký một file mẫu. `_do_re_nhanh.py` lấy
+    mẫu TỪ COMBO nên nó in *"(không có trong combo)"* rồi đếm là HỎNG — đọc
+    thẳng dòng đó sẽ tưởng đường `cb:` gãy, trong khi cái thiếu là DỮ LIỆU chứ
+    không phải MÃ. Đây đúng ca "cổng đỏ vì KHO, không vì mã" (bài học cổng 47).
+
+    Nên dựng mã bằng chính `giong_chatter.ma_nhan_ban()` rồi gọi THẬT
+    `_synth_all_words`, đặt gián điệp ở `_chay_chatter` (nhánh tốn GPU) để
+    **0 lượt GPU**. Phép kiểm này chấm ĐÚNG một mệnh đề: *"tiền tố `cb:` đã
+    được đăng ký ở cửa chung, mã không rơi xuống edge-tts"* — đúng cái lỗi
+    `cb: chưa đăng ký` đã bắt được một lần.
+    """
+    import asyncio
+    import subprocess
+
+    from config import settings
+    print("\n" + "=" * 78)
+    print("CHATTERBOX: tiền tố `cb:` có rẽ đúng nhánh không (0 lượt GPU)")
+    print("=" * 78)
+    so: list[str] = []
+
+    async def gd(texts, voice, paths, rate=None, on_msg=None):
+        so.append("chatter")
+        ra = []
+        for p in paths:
+            try:
+                subprocess.run(
+                    [settings.FFMPEG_PATH, "-y", "-v", "error", "-f", "lavfi",
+                     "-i", "sine=frequency=220:duration=1.0", "-ar", "24000",
+                     "-ac", "1", p], check=True, timeout=60,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ra.append(True)
+            except Exception:                                # noqa: BLE001
+                ra.append(False)
+        return ra
+
+    D._chay_chatter = gd                                     # noqa: SLF001
+    if D._chay_chatter is not gd:                            # noqa: SLF001
+        print("DỪNG: gián điệp vá hụt -> sổ rỗng, không phân biệt được với hỏng")
+        return False
+
+    import edge_tts
+    goc_cm = edge_tts.Communicate
+
+    class GDCom(goc_cm):                                     # type: ignore
+        def __init__(self, *a, **k):
+            so.append("edge")
+            super().__init__(*a, **k)
+
+    edge_tts.Communicate = GDCom
+    try:
+        from app.core import giong_chatter as gc
+        mau = str(SAN / "mau_gia.wav")
+        subprocess.run(
+            [settings.FFMPEG_PATH, "-y", "-v", "error", "-f", "lavfi", "-i",
+             "sine=frequency=180:duration=6", "-ar", "24000", "-ac", "1", mau],
+            check=True, timeout=60, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        ket = {}
+        for ten, ma in (("đúng dạng", gc.ma_nhan_ban(mau, "en")),
+                        ("thiếu ngôn ngữ", "cb:|" + mau),
+                        ("tiếng lạ", gc.ma_nhan_ban(mau, "vi"))):
+            so.clear()
+            p = str(SAN / "cb_thu.wav")
+            try:
+                asyncio.run(D._synth_all_words(                # noqa: SLF001
+                    ["Hello anh Hung, this is a test."], ma, [p], lang="en"))
+            except Exception as e:                           # noqa: BLE001
+                ket[ten] = f"NỔ {type(e).__name__}"
+                continue
+            ket[ten] = so[0] if so else "(không nhánh nào)"
+        print(f"co_chatter() = {gc.co_chatter()}")
+        for k, v in ket.items():
+            print(f"   {k:16s} -> rẽ vào: {v}")
+        # BẤT BIẾN: mã ĐÚNG DẠNG phải vào chatter; mã HỎNG phải lùi edge (KHÔNG
+        # được nổ, KHÔNG được vào chatter với dữ liệu rác).
+        ok = (ket.get("đúng dạng") == "chatter"
+              and ket.get("thiếu ngôn ngữ") == "edge"
+              and ket.get("tiếng lạ") == "edge")
+        print("KẾT: " + ("ĐÚNG — tiền tố cb: đã đăng ký, mã hỏng lùi êm"
+                         if ok else "HỎNG — xem bảng trên"))
+        return ok
+    finally:
+        edge_tts.Communicate = goc_cm
 
 
 if __name__ == "__main__":
