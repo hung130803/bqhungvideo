@@ -204,6 +204,115 @@ def _co_goi(thu_muc: str, ten: str) -> bool:
     return (d / ten).is_dir() or (d / f"{ten}.py").is_file()
 
 
+# ==========================================================================
+# BẢN DỰNG CỦA torch / torchaudio — **CÙNG CÂY HAY KHÁC CÂY**
+# ==========================================================================
+# LỖI THẬT ANH HÙNG GẶP (v2.39.0, 19/08/2026) — bấm nút tải ra hộp *"Chưa tải
+# được"*:
+#     OSError: Could not load this library: ...\_giong_hang\torchaudio\lib\
+#     libtorchaudio.pyd
+# **KHÔNG phải "thiếu torch"** — torch CÓ trong `_lib` và tìm thấy bình
+# thường. Nguyên nhân là **LỆCH CÂY BẢN DỰNG**, đo bằng bảng nhập DLL của
+# chính file `.pyd` đó:
+#     bản `+cpu`   -> cần `torch_cpu.dll`
+#     bản `+cu126` -> cần `torch_cpu.dll` + **`torch_cuda.dll`** +
+#                     **`cudart64_12.dll`**
+# mà torch `2.13.0+cpu` **KHÔNG ship** hai DLL sau (đếm: cây `+cpu` có 9 DLL,
+# cây `+cu126` có 36). Máy anh Hùng đang là `torchaudio 2.11.0+cu126` ghép với
+# `torch 2.13.0+cpu` -> `.pyd` không nạp được.
+#
+# **VÌ SAO LỆCH:** bản cũ chọn chỉ mục bằng `co_gpu_nvidia()`. Máy anh Hùng có
+# RTX 3060 -> True -> lấy torchaudio `+cu126`; nhưng `_lib` của máy đó được
+# `cai_demucs` tải TRƯỚC bản vá GPU (cổng 71) nên là torch `+cpu`. Ghi chú cũ
+# ngay tại chỗ gọi đã nói đúng ý (*"cùng chỉ mục với torch đang có"*) nhưng mã
+# lại đi hỏi **CARD**, không hỏi **TORCH ĐANG CÓ**. Đó là chỗ sửa.
+#
+# Và vì sao **máy dev XANH**: repo `_lib` có torch `2.13.0+cu126`, ghép với
+# torchaudio `+cu126` là cùng cây -> nạp được. Đúng hình dạng bẫy cổng 58
+# (dev xanh / máy thật đỏ), chỉ khác cơ chế: cổng 58 là *pip bỏ qua gói đã
+# có*, đây là *lấy lệch cây bản dựng*.
+
+def _ban_trong_version_py(thu_muc: str, goi: str) -> str:
+    """`__version__` của `goi` nằm trong `thu_muc` — ĐỌC FILE, KHÔNG import.
+
+    torch/torchaudio đều có `<gói>/version.py` chứa đúng một dòng
+    `__version__ = '2.13.0+cpu'`. Đọc bằng regex trên FILE vì hàm này chạy
+    TRONG tiến trình app (đã nạp Qt) — `import torch` ở đó là ACCESS
+    VIOLATION mà `try/except` không chặn (bất biến 1).
+    """
+    import re
+    for ten in ("version.py",):
+        p = Path(thu_muc) / goi / ten
+        try:
+            s = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = re.search(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]",
+                      s, re.MULTILINE)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def ban_torch(lib: str = "") -> str:
+    """Bản torch đang nằm trong `_lib` — vd `2.13.0+cpu`. '' = không đọc được."""
+    return _ban_trong_version_py(lib or lib_torch(), "torch")
+
+
+def ban_torchaudio(d: str = "") -> str:
+    """Bản torchaudio đang nằm trong `thu_muc_gh()` — vd `2.11.0+cu126`."""
+    return _ban_trong_version_py(d or thu_muc_gh(), "torchaudio")
+
+
+def the_ban(v: str) -> str:
+    """Thẻ CÂY BẢN DỰNG: phần sau dấu `+`. `2.13.0+cpu` -> `cpu`.
+
+    Không có `+` (wheel PyPI thường, vd `.venv` đang dùng `2.13.0`) -> `''`,
+    nghĩa là cây PyPI mặc định.
+    """
+    return (str(v or "").split("+", 1)[1].strip() if "+" in str(v or "")
+            else "")
+
+
+def chi_muc_cho_torchaudio(lib: str = "") -> tuple[Optional[str], str]:
+    """Chỉ mục pip để torchaudio LẤY ĐÚNG CÂY của torch đang có.
+
+    Trả `(url | None, thẻ)`. `None` = cây PyPI thường, **không truyền
+    `--extra-index-url`**.
+
+    **HỎI TORCH ĐANG CÓ, KHÔNG HỎI CARD.** Máy có GPU mà `_lib` là torch
+    `+cpu` thì lấy torchaudio `+cu126` là hỏng ngay (xem khối ghi chú trên).
+    Viết theo THẺ chứ không liệt kê cứng `cu126` để bản torch sau (`cu128`…)
+    tự đi đúng chỗ — chỉ mục pytorch xếp thư mục đúng theo tên thẻ.
+    """
+    the = the_ban(ban_torch(lib))
+    if not the:
+        return None, ""
+    if the == "cpu":
+        return "https://download.pytorch.org/whl/cpu", the
+    if the.startswith("cu") or the.startswith("rocm") or the == "xpu":
+        return "https://download.pytorch.org/whl/" + the, the
+    return None, the
+
+
+def lech_cay_ban() -> str:
+    """'' nếu torch và torchaudio CÙNG CÂY; ngược lại là câu tả chỗ lệch.
+
+    Đây là phép kiểm mà `_co_goi` KHÔNG làm nổi: thư mục `torchaudio` vẫn nằm
+    đúng chỗ, `.pyd` vẫn đủ byte, chỉ là nó đòi DLL mà cây torch bên cạnh
+    không có. Hỏi "có thư mục không" thì trả lời CÓ rồi báo *đã cài* —
+    đúng loại "phép đo phát chứng nhận cho thứ vẫn hỏng".
+    """
+    bt, bta = ban_torch(), ban_torchaudio()
+    if not bt or not bta:
+        return ""                       # chưa đủ đồ -> `thieu` nói, không phải ở đây
+    t1, t2 = the_ban(bt), the_ban(bta)
+    if t1 == t2:
+        return ""
+    return (f"torchaudio {bta} KHÔNG cùng cây với torch {bt} "
+            f"(cần bản {'+' + t1 if t1 else 'PyPI thường'})")
+
+
 def tinh_trang_giong_hang() -> dict:
     """Máy có đủ đồ gióng hàng chưa — và THIẾU ĐÍCH DANH cái gì.
 
@@ -227,6 +336,12 @@ def tinh_trang_giong_hang() -> dict:
                 ngoai.append(ten)
         except Exception:                            # noqa: BLE001
             pass
+    # LỆCH CÂY BẢN DỰNG = ĐỒ CÓ ĐỦ MÀ VẪN KHÔNG CHẠY. Phải tính là THIẾU, nếu
+    # không thì `co=True` trong khi tiến trình con chết ngay lúc nạp -> app lùi
+    # êm mãi mãi và nhãn khoe "ĐÃ CÓ" (lỗi thật v2.39.0 của anh Hùng).
+    lech = lech_cay_ban()
+    if lech:
+        thieu.append(lech)
     if not duong_model().is_file():
         thieu.append("model MMS_FA (1,18 GB)")
     py = _python_chay()
@@ -239,6 +354,11 @@ def tinh_trang_giong_hang() -> dict:
         "lib_torch": lib_torch(),
         "thu_muc": thu_muc_gh(),
         "model": str(duong_model()),
+        # Ba khoá NÓI SỰ THẬT VỀ BẢN DỰNG — đọc được trong hộp thoại/nhật ký
+        # thì lần sau khỏi phải đi bóc bảng nhập DLL như lượt này.
+        "ban_torch": ban_torch(),
+        "ban_torchaudio": ban_torchaudio(),
+        "lech_cay": lech,
         # `cai_duoc` = BẤM NÚT TẢI CÓ ĂN THUA GÌ KHÔNG — câu hỏi KHÁC hẳn
         # `co`. Không có python thì pip không chạy được; chưa có torch trong
         # `_lib` thì gióng hàng vẫn thiếu chân dù tải xong phần của mình, nên
@@ -296,10 +416,21 @@ def _ghi_log(dong: str) -> None:
 # ==========================================================================
 # TẢI BỘ GIÓNG HÀNG — **CHỈ khi NGƯỜI DÙNG BẤM**
 # ==========================================================================
-#: Nhãn nút. Số là SỐ ĐO trên máy này (`model.pt` 1.203,6 MB + torchaudio/
-#: uroman/regex vài MB), KHÔNG phải ước bừa. Nhãn sai là user bấm xong ngồi
-#: đợi một lượt tải khác hẳn cái vừa đọc — đúng lỗi `NHAN_TAI_DEMUCS` ghi
-#: 155 MB rồi hộp doạ 2 GB.
+#: Nhãn nút. **ĐO LẠI 19/08/2026 bằng `pip install --dry-run --report` rồi
+#: HTTP HEAD trên chính URL wheel** (`_do_gh_tai_ve.py`, đo với Python 3.14 =
+#: đúng bản mà `.exe` gọi, vì wheel gắn thẻ `cp314`):
+#:
+#:     torchaudio 2.11.0+cpu     0,3 MB   ·  +cu126   1,4 MB
+#:     uroman 1.3.1.1            0,9 MB   ·  regex    0,3 MB
+#:     model.pt (MMS_FA)     1.203,6 MB   (1.262.047.414 byte = 1,18 GiB)
+#:     ------------------------------------------------------------------
+#:     TỔNG                  ~1.205-1.206 MB  =  **1,18 GiB  ~  1,2 GB**
+#:
+#: Nên **"khoảng 1,2 GB" là ĐÚNG và giữ nguyên** — với điều kiện KHÔNG kèm
+#: torch. Đường này cố ý dùng CHUNG torch của `_lib` (xem `lib_torch`), nên
+#: không có 2,5 GB nào ở đây. Ngày nào ai đổi sang tự cài torch thì **phải
+#: sửa nhãn này trước** (wheel `+cu126` một mình đã 2.474,4 MB = nhãn sai gấp
+#: hơn 2 lần) — đúng lỗi `NHAN_TAI_DEMUCS` ghi 155 MB rồi hộp doạ 2 GB.
 NHAN_TAI_GH = "Tải bộ gióng hàng (khoảng 1,2 GB)"
 
 #: `torchaudio` phải `--no-deps`: nó khai phụ thuộc `torch`, mà torch đã nằm
@@ -308,6 +439,98 @@ NHAN_TAI_GH = "Tải bộ gióng hàng (khoảng 1,2 GB)"
 #: `uroman` thì lấy CẢ phụ thuộc (`regex`, ~0,3 MB).
 GOI_KHONG_DEPS = ("torchaudio",)
 GOI_CO_DEPS = ("uroman",)
+
+#: Mã chạy ở TIẾN TRÌNH RIÊNG để HẬU KIỂM. **CẮT SẠCH `site-packages` khỏi
+#: `sys.path` SAU KHI đã dựng đường** — đó là cách giả lập bản `.exe` (mẫu
+#: đúng ở cổng 58 CA 1a). Trả `spec.origin` của TỪNG gói để so với thư mục
+#: ĐÍCH, và **nạp thật** `torchaudio` + `MMS_FA`: câu *"import được không"*
+#: trên máy dev là câu hỏi sai (nó mượn `.venv` rồi báo cài xong), còn câu
+#: *"thư mục có tồn tại không"* thì không thấy được lệch cây bản dựng.
+_MA_KIEM_GH = r'''
+import json, os, sys
+thu_muc, lib_torch = sys.argv[1:3]
+sys.path.insert(0, lib_torch)
+sys.path.insert(0, thu_muc)
+sys.path[:] = [p for p in sys.path
+               if "site-packages" not in p.replace("\\", "/").lower()]
+os.environ.setdefault("TORCH_HOME", os.path.join(thu_muc, "_models"))
+ra = {}
+from importlib.machinery import PathFinder
+for ten, cho in (("torch", lib_torch), ("torchaudio", thu_muc),
+                 ("uroman", thu_muc)):
+    o = ""
+    try:
+        sp = PathFinder.find_spec(ten, [cho])
+        o = getattr(sp, "origin", "") or ""
+        if not o:
+            loc = list(getattr(sp, "submodule_search_locations", None) or [])
+            o = loc[0] if loc else ""
+    except Exception:
+        o = ""
+    ra[ten + "_o"] = o
+try:
+    import torchaudio
+    ra["ta"] = getattr(torchaudio, "__version__", "?")
+    from torchaudio.pipelines import MMS_FA
+    MMS_FA.get_dict()
+    ra["nap"] = True
+except Exception as e:
+    ra["nap"] = False
+    ra["nap_loi"] = "%s: %s" % (type(e).__name__, str(e)[:300])
+sys.stdout.write("BQKIEM" + json.dumps(ra, ensure_ascii=False))
+sys.stdout.flush()
+'''
+
+
+def do_goi_gh(timeout: int = 600) -> dict:
+    """HẬU KIỂM: gói gióng hàng có nằm ĐÚNG THƯ MỤC ĐÍCH và NẠP ĐƯỢC không.
+
+    Chạy ở **tiến trình riêng, đã cắt `site-packages`** nên trả lời đúng câu
+    mà bản `.exe` sẽ hỏi. Trả `{ok, torchaudio_trong_dich, torch_trong_lib,
+    nap, nap_loi, ...}`. **KHÔNG BAO GIỜ NÉM.**
+
+    Vì sao không hỏi `find_spec` trần trong tiến trình app: nó nạp gói cha =
+    chạm torch sau Qt = ACCESS VIOLATION (bất biến 1), và nó luôn tìm trên
+    `sys.path` nên máy dev mượn `.venv` rồi báo "đã cài" — đúng lỗ hổng cổng
+    58 mà chính hàm này ra đời để bịt.
+    """
+    d = thu_muc_gh()
+    py = _python_chay()
+    ra: dict = {"ok": False, "thu_muc": d, "lib_torch": lib_torch()}
+    if not py:
+        ra["loi"] = "máy không có python để kiểm"
+        return ra
+    r = Path(d) / f"_bq_kiem_gh_{_ma_lot()}.py"
+    try:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        r.write_text(_MA_KIEM_GH, encoding="utf-8")
+        p = subprocess.run([*py, str(r), d, lib_torch()],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", creationflags=_CREATE_NO_WINDOW,
+                           timeout=timeout)
+        s = (p.stdout or "")
+        i = s.find("BQKIEM")
+        if i < 0:
+            ra["loi"] = ("tiến trình kiểm không trả kết quả (mã "
+                         + str(p.returncode) + "): "
+                         + ((p.stderr or s) or "")[-300:])
+            return ra
+        ra.update(json.loads(s[i + 6:]))
+        from app.core.thay_giong import _duoi_thu_muc
+        ra["torchaudio_trong_dich"] = _duoi_thu_muc(ra.get("torchaudio_o", ""), d)
+        ra["uroman_trong_dich"] = _duoi_thu_muc(ra.get("uroman_o", ""), d)
+        ra["torch_trong_lib"] = _duoi_thu_muc(ra.get("torch_o", ""), lib_torch())
+        ra["ok"] = bool(ra.get("nap")) and ra["torchaudio_trong_dich"] \
+            and ra["uroman_trong_dich"] and ra["torch_trong_lib"]
+        return ra
+    except Exception as e:                               # noqa: BLE001
+        ra["loi"] = f"{type(e).__name__}: {e}"
+        return ra
+    finally:
+        try:
+            r.unlink()
+        except OSError:
+            pass
 
 _KHOA_CAI = threading.Lock()
 
@@ -380,11 +603,29 @@ def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
     nhat_ky: list[str] = []
     try:
         Path(d).mkdir(parents=True, exist_ok=True)
-        # Cùng chỉ mục với torch đang có: bản `+cu126` và bản PyPI thường là
-        # hai cây khác nhau, lấy lệch cây là torchaudio nạp lên báo thiếu DLL.
-        from app.core.thay_giong import (CHI_MUC_TORCH_CPU,
-                                         CHI_MUC_TORCH_CUDA, co_gpu_nvidia)
-        chi_muc = CHI_MUC_TORCH_CUDA if co_gpu_nvidia() else CHI_MUC_TORCH_CPU
+        # ── CHỌN CHỈ MỤC THEO **TORCH ĐANG CÓ**, KHÔNG THEO CARD ────────────
+        # Bản cũ hỏi `co_gpu_nvidia()`; máy anh Hùng có RTX 3060 nên lấy
+        # torchaudio `+cu126` trong khi `_lib` là torch `+cpu` -> `.pyd` đòi
+        # `torch_cuda.dll`/`cudart64_12.dll` (không có trong cây `+cpu`) ->
+        # *"Could not load this library: libtorchaudio.pyd"*. Xem khối ghi chú
+        # ở `chi_muc_cho_torchaudio`.
+        chi_muc, the = chi_muc_cho_torchaudio()
+        bt = ban_torch()
+        nhat_ky.append(f"torch trong _lib: {bt or '?'} -> lấy torchaudio cây "
+                       f"{('+' + the) if the else 'PyPI thường'}")
+        # Đã có torchaudio LỆCH CÂY thì phải DỌN rồi cài lại: `--target` ghi đè
+        # được file cùng tên, nhưng cây `+cu126` có file cây `+cpu` KHÔNG có
+        # (`torchaudio_prefixctc.pyd` 4,59 MB) — để lại là trộn hai cây.
+        # Dọn qua `xoa_an_toan.don_thu_muc` (cổng 80), KHÔNG gọi `rmtree` trần.
+        if lech_cay_ban():
+            from app.core import xoa_an_toan
+            for ten in ("torchaudio",):
+                cu = Path(d) / ten
+                if cu.is_dir():
+                    xoa_an_toan.don_thu_muc(cu, trong=d, ghi_log=_ghi_log)
+                    nhat_ky.append("đã dọn torchaudio lệch cây: " + str(cu))
+            for p_di in Path(d).glob("torchaudio-*.dist-info"):
+                xoa_an_toan.don_thu_muc(p_di, trong=d, ghi_log=_ghi_log)
         for goi, khong_deps in ((GOI_KHONG_DEPS, True), (GOI_CO_DEPS, False)):
             args = [*pip, "install", "--no-input",
                     "--disable-pip-version-check", "--upgrade",
@@ -392,8 +633,12 @@ def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
                     # đã có là "đã thoả mãn" rồi BỎ QUA, `--target` nhận thư
                     # mục rỗng -> máy dev vẫn chạy (mượn `.venv`) còn máy anh
                     # Hùng thì không. Đúng lỗi `_lib` của Demucs (cổng 58).
-                    "--ignore-installed", "--target", d,
-                    "--extra-index-url", chi_muc, *goi]
+                    "--ignore-installed", "--target", d, *goi]
+            # `chi_muc` = None nghĩa là torch đang là wheel PyPI thường ->
+            # KHÔNG truyền `--extra-index-url` (thêm vào là mời pip đi lấy cây
+            # `+cpu`/`+cu126`, tức tự tạo lại đúng cái lệch vừa sửa).
+            if chi_muc:
+                args[-len(goi):-len(goi)] = ["--extra-index-url", chi_muc]
             if khong_deps:
                 args.insert(-len(goi), "--no-deps")
             prog(0.02, "Đang tải " + ", ".join(goi) + "...")
@@ -409,6 +654,35 @@ def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
             if r.returncode != 0:
                 return _xong(False, "pip trả mã " + str(r.returncode) + ": "
                              + (r.stderr or r.stdout or "")[-500:], nhat_ky)
+
+        # ── KIỂM NẠP **TRƯỚC** KHI TẢI 1,18 GB ─────────────────────────────
+        # Đây đúng chỗ lượt của anh Hùng chết: `_MA_TAI_MODEL` phải
+        # `from torchaudio.pipelines import MMS_FA` nên `.pyd` lệch cây làm cả
+        # bước model nổ, và lời lỗi hiện ra là *"Tải model gióng hàng hỏng"* —
+        # đổ oan cho bước tải model trong khi bệnh nằm ở bước pip trước đó.
+        # Kiểm ở đây thì lời lỗi nói ĐÚNG BỆNH và không ai phải đợi một lượt
+        # tải 1,18 GB để biết mình lắp lệch cây.
+        prog(0.08, "Đang kiểm torchaudio nạp được chưa...")
+        k = do_goi_gh()
+        if not k.get("nap"):
+            bta = ban_torchaudio()
+            return _xong(
+                False,
+                "torchaudio đã tải về nhưng KHÔNG NẠP ĐƯỢC: "
+                + str(k.get("nap_loi") or k.get("loi") or "?")[:300]
+                + f"\n\ntorch trong _lib: {bt or '?'} · torchaudio: "
+                + f"{bta or '?'}."
+                + ("\nHai bản KHÁC CÂY nhau — bấm lại nút này để tải đúng cây."
+                   if the_ban(bt) != the_ban(bta) else
+                   "\nHai bản cùng cây, nên đây là lỗi khác: đọc nhật ký."),
+                nhat_ky)
+        if not k.get("torchaudio_trong_dich"):
+            return _xong(False, "torchaudio KHÔNG nằm trong " + d
+                         + " (đang lấy ở: " + str(k.get("torchaudio_o") or "?")
+                         + "). Đừng coi là đã cài — bản .exe sẽ không thấy nó.",
+                         nhat_ky)
+        nhat_ky.append("hậu kiểm nạp: OK · torchaudio " + str(k.get("ta"))
+                       + " tại " + str(k.get("torchaudio_o")))
 
         # MODEL — phần nặng. torch.hub tự bỏ qua nếu file đã có.
         if duong_model().is_file():
@@ -439,10 +713,30 @@ def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
                 return _xong(False, "Tải model gióng hàng hỏng: "
                              + ra.strip()[-500:], nhat_ky)
 
-        # HẬU KIỂM BẰNG ĐƯỜNG DẪN, KHÔNG BẰNG "pip báo mã 0".
-        # pip trả 0 mà thư mục vẫn thiếu là chuyện ĐÃ XẢY RA (cổng 58) — và
-        # đó đúng là ca máy dev xanh / máy anh Hùng đỏ.
+        # ── HẬU KIỂM: **SO `spec.origin` VỚI THƯ MỤC ĐÍCH**, KHÔNG HỎI
+        # "import được không", KHÔNG tin "pip báo mã 0" ────────────────────
+        # pip trả 0 mà thư mục vẫn thiếu là chuyện ĐÃ XẢY RA (cổng 58), và
+        # "import được không" trên máy dev là câu hỏi SAI: nó mượn `.venv` rồi
+        # báo cài xong trong khi bản `.exe` cùng thư mục đó báo chưa có. Vì vậy
+        # `do_goi_gh` chạy ở tiến trình ĐÃ CẮT `site-packages` rồi đối chiếu
+        # từng `spec.origin` với đích.
         prog(0.99, "Đang kiểm lại bộ gióng hàng...")
+        k2 = do_goi_gh()
+        thieu_cho: list[str] = []
+        if not k2.get("torchaudio_trong_dich"):
+            thieu_cho.append("torchaudio (đang ở: "
+                             + str(k2.get("torchaudio_o") or "KHÔNG THẤY") + ")")
+        if not k2.get("uroman_trong_dich"):
+            thieu_cho.append("uroman (đang ở: "
+                             + str(k2.get("uroman_o") or "KHÔNG THẤY") + ")")
+        if not k2.get("torch_trong_lib"):
+            thieu_cho.append("torch KHÔNG nằm trong " + lib_torch()
+                             + " (đang ở: "
+                             + str(k2.get("torch_o") or "KHÔNG THẤY") + ")")
+        if thieu_cho or not k2.get("nap"):
+            return _xong(False, "Chạy xong nhưng KHÔNG ĐỨNG ĐƯỢC như bản .exe: "
+                         + "; ".join(thieu_cho or [str(k2.get("nap_loi"))])
+                         + ". Đừng coi là đã cài.", nhat_ky)
         tt = tinh_trang_giong_hang()
         if not tt["co"]:
             return _xong(False, "Chạy xong nhưng VẪN THIẾU: "
@@ -450,7 +744,8 @@ def cai_giong_hang(on_progress: Optional[Callable[[float, str], None]] = None,
                          "Đừng coi là đã cài — bản .exe sẽ không chạy được.",
                          nhat_ky)
         prog(1.0, "Đã tải xong bộ gióng hàng")
-        _ghi_log(f"Đã cài bộ gióng hàng vào {d}")
+        _ghi_log(f"Đã cài bộ gióng hàng vào {d} · torch {bt} · torchaudio "
+                 f"{ban_torchaudio()} · torchaudio tại {k2.get('torchaudio_o')}")
         return _xong(True, "", nhat_ky)
     except Exception as e:                               # noqa: BLE001
         return _xong(False, f"{type(e).__name__}: {e}", nhat_ky)
