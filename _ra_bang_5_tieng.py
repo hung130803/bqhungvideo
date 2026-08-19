@@ -43,7 +43,9 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 from _bo_cau_thu_doc import NHAN_NN                            # noqa: E402
 
-KQ = REPO / "bq_do_5_tieng" / "ket_qua.json"
+HOP = REPO / "bq_do_5_tieng"
+KQ = HOP / "ket_qua.json"
+CACHE = HOP / "cache.json"
 NN5 = ("vi", "en", "ko", "ja", "zh")
 
 #: Cột dùng để KẾT LUẬN. `tr` = ĐỌC RỜI (token một mình) — máy nghe không còn
@@ -62,10 +64,35 @@ COT_LUI = "cau"
 
 
 def nap() -> dict[str, list[dict]]:
-    if not KQ.exists():
-        print(f"CHƯA CÓ {KQ} — chạy `_do_5_tieng.py` trước.")
+    """Đọc **`cache.json`** rồi CHẤM LẠI — một nguồn sự thật duy nhất.
+
+    **LỖI ĐÃ SẬP, ĐỪNG QUAY LẠI ĐỌC `ket_qua.json`:** `_do_5_tieng.py` chạy
+    theo NHÓM (`tran,san` rồi `dich` rồi `ngoai`) và mỗi lượt **GHI ĐÈ**
+    `ket_qua.json` bằng đúng những arm của lượt đó. Nên đọc file ấy sau lượt
+    `dich` là mất sạch TRẦN và SÀN -> `nguong()` không đặt được ngưỡng nào ->
+    **cả bảng ra dấu `?`**, trông y hệt "phép đo không kết luận được gì" trong
+    khi số liệu vẫn còn nguyên trên đĩa.
+
+    `cache.json` giữ bản ghi THÔ của MỌI arm đã chạy (chép lời, token, cờ đọc
+    được) nên chấm lại từ đó vừa đủ mọi arm, vừa cho phép đổi cách chấm mà
+    KHÔNG phải đọc lại 103 arm bằng edge-tts + Groq.
+    """
+    if not CACHE.exists():
+        print(f"CHƯA CÓ {CACHE} — chạy `_do_5_tieng.py` trước.")
         raise SystemExit(2)
-    return json.loads(KQ.read_text(encoding="utf-8"))
+    from _do_5_tieng import cham
+    tho = json.loads(CACHE.read_text(encoding="utf-8"))
+    ra: dict[str, list[dict]] = {}
+    for _khoa, kq in tho.items():
+        if not isinstance(kq, dict) or "arm" not in kq:
+            continue
+        ra.setdefault(kq["arm"], []).append(cham(kq))
+    if not ra:
+        print(f"{CACHE} không có arm nào đọc được.")
+        raise SystemExit(2)
+    KQ.write_text(json.dumps(ra, ensure_ascii=False, indent=1),
+                  encoding="utf-8")
+    return ra
 
 
 def _ty(rs: list[dict], cot: str) -> float:
@@ -103,6 +130,7 @@ def gom(tat: dict) -> dict:
             "cau": _cau(rs), "tc": _ty(rs, "tc"), "tr": _ty(rs, "tr"),
             "hong": _hong(rs),
             "tr_n": sum(r["tr_n"] for r in rs),
+            "n_cau": sum(r["n_cau"] for r in rs),
             "nn_dung": sum(r["nn_dung"] for r in rs),
             "nn_n": sum(r["nn_n"] for r in rs),
             "nn_khac": sorted({x for r in rs for x in r["nn_khac"]}),
@@ -146,16 +174,14 @@ def nguong(g: dict, cot: str) -> dict[str, dict]:
 
 
 def chon_cot(ngt: dict, ngc: dict) -> dict[str, str]:
-    """Tiếng nào chấm bằng cột nào. Ưu tiên ĐỌC RỜI; cột đó chồng lấn thì
-    lùi sang câu thường và **NÓI RA**. Cả hai chồng lấn -> không chấm."""
+    """Tiếng nào có ngưỡng ở cột nào: ``"tr"`` · ``"cau"`` · ``"tr+cau"`` ·
+    ``""`` (không cột nào tách được -> không chấm tiếng đó)."""
     ra = {}
     for nn in NN5:
-        if ngt[nn].get("nguong") is not None:
-            ra[nn] = "tr"
-        elif ngc[nn].get("nguong") is not None:
-            ra[nn] = "cau"
-        else:
-            ra[nn] = ""
+        co_tr = ngt[nn].get("nguong") is not None
+        co_cau = ngc[nn].get("nguong") is not None
+        ra[nn] = ("tr+cau" if (co_tr and co_cau) else
+                  "tr" if co_tr else "cau" if co_cau else "")
     return ra
 
 
@@ -164,6 +190,55 @@ def doc_duoc(v: float, ng: dict) -> str | None:
     if ng.get("nguong") is None or v != v:
         return None
     return "CÓ" if v < ng["nguong"] else "KHÔNG"
+
+
+def phan_xu(v: dict, nn: str, NG: dict) -> tuple[str | None, str]:
+    """Kết luận cho MỘT (giọng × tiếng): ('CÓ'/'KHÔNG'/None, lý do).
+
+    **HAI THƯỚC PHẢI ĐỒNG Ý, KHÔNG THÌ KHÔNG KẾT LUẬN.** Đây là chỗ lượt đo
+    này đổi ý và nó đổi vì SỐ, không vì sở thích:
+
+    Bản đầu chấm bằng cột ĐỌC RỜI (đúng lời đề bài) và lấy cột câu thường làm
+    đường lùi. Nhưng dữ liệu tiếng Việt bác cách đó:
+
+    * ``en-US-AvaMultilingual`` đọc câu Việt TRƠN sai **0,0%** (bằng TRẦN) mà
+      **4/4 tên riêng đọc RỜI đều sai** -> cột đọc rời gọi nó là "KHÔNG đọc
+      được tiếng Việt", cột câu gọi nó là "đọc tốt như giọng bản ngữ".
+    * mà chính TRẦN tiếng Việt (``vi-VN-HoaiMy`` 2/4 · ``NamMinh`` 3/4) cũng
+      sai 50-75% ở cột đọc rời. Tức phần lớn cái "sai" đó là **máy NGHE không
+      chép nổi một tên riêng Việt đứng một mình**, không phải máy ĐỌC sai.
+
+    Chọn một trong hai cột làm quan toà là tự chọn một kết luận. Đòi hai cột
+    ĐỒNG Ý thì: khớp -> kết luận có căn cứ kép; đá nhau -> **nói thẳng là chưa
+    kết luận được**, và đó là câu trả lời ĐÚNG cho ca Ava.
+
+    Cột nào KHÔNG có ngưỡng (TRẦN chồng SÀN) thì không được bỏ phiếu.
+    """
+    # MÁY ĐỌC TỪ CHỐI HẲN — KHÁC "chưa kết luận", và nó là ca AN TOÀN NHẤT.
+    # `vi-VN-HoaiMy` + chữ Hàn/Nhật/Trung: edge-tts thử 4 lần rồi trả file
+    # 0 byte, **11/11 mẫu đều hỏng** ở cả 3 tiếng (mỗi arm ~300 giây backoff).
+    # Đó không phải mạng chập chờn (arm tiếng Anh của CÙNG giọng chạy ngon
+    # trong 46 giây) mà là dịch vụ TỪ CHỐI. Với người dùng, hậu quả là **lượt
+    # xuất không ra tiếng** chứ không phải ra chữ vô nghĩa — tức app FAIL TO
+    # thay vì im lặng, đúng thứ repo này luôn muốn. Gọi nó là "chưa kết luận"
+    # là bỏ mất một kết luận CHẮC CHẮN.
+    if v.get("hong", 0) > 0 and v.get("tr_n", 0) == 0 and v.get("n_cau", 0) == 0:
+        return "KHÔNG", (f"MÁY ĐỌC KHÔNG RA TIẾNG NÀO ({v['hong']} mẫu hỏng "
+                         f"hết) -> chọn giọng này cho tiếng đó là lượt xuất "
+                         f"KHÔNG CÓ TIẾNG")
+    kq_tr = doc_duoc(v["tr"], NG["tr"][nn])
+    kq_cau = doc_duoc(v["cau"], NG["cau"][nn])
+    co = [x for x in (kq_tr, kq_cau) if x is not None]
+    if not co:
+        return None, "không cột nào chấm được"
+    if kq_tr is not None and kq_cau is not None:
+        if kq_tr == kq_cau:
+            return kq_tr, "hai thước đồng ý"
+        return None, (f"HAI THƯỚC ĐÁ NHAU: đọc rời -> {kq_tr} "
+                      f"({v['tr']:.0f}%) · câu thường -> {kq_cau} "
+                      f"({v['cau']:.0f}%)")
+    return co[0], ("chỉ cột đọc rời chấm được" if kq_tr is not None
+                   else "chỉ cột câu thường chấm được")
 
 
 # ---------------------------------------------------------------------------
@@ -220,12 +295,15 @@ def main() -> int:
     print("\n" + "=" * 78)
     print("BẢNG 1 — GIỌNG NÀO ĐỌC ĐƯỢC MẤY TRONG 5 TIẾNG")
     print("=" * 78)
-    print("số = % token ĐỌC RỜI sai · (x) = KHÔNG đọc được · ? = chưa kết "
-          "luận được")
+    print("mỗi ô = «% ĐỌC RỜI sai / % sai chữ trên câu thường»")
+    print("dấu sau ô: (trống) = ĐỌC ĐƯỢC · x = KHÔNG đọc được · ? = chưa kết "
+          "luận được (hai thước đá nhau)")
+    print("kết luận chỉ khi HAI thước ĐỒNG Ý — xem `phan_xu.__doc__`")
+    da_nhau: list[tuple[str, str, str]] = []
     voices: dict[str, dict] = {}
     for v in g.values():
         voices.setdefault(v["voice"], {})[v["nn"]] = v
-    h = f"{'giọng':40s}{'nguồn':11s}" + "".join(f"{NHAN_NN[n]:>9s}"
+    h = f"{'giọng':40s}{'nguồn':11s}" + "".join(f"{NHAN_NN[n]:>10s}"
                                                for n in NN5) + "  đọc được"
     print(h)
     print("-" * len(h))
@@ -238,20 +316,21 @@ def main() -> int:
         o, dem, nguon = [], 0, "?"
         for nn in NN5:
             v = hang.get(nn)
-            cot = cot_cua[nn] or "tr"
             if not v:
-                o.append(f"{'-':>9s}")
+                o.append(f"{'-':>10s}")
                 continue
             nguon = v["nguon"]
-            kq = doc_duoc(v[cot], NG[cot][nn]) if cot_cua[nn] else None
+            kq, ly = phan_xu(v, nn, NG)
             dau = {"CÓ": " ", "KHÔNG": "x", None: "?"}[kq]
             if kq == "CÓ":
                 dem += 1
             thong_ke.setdefault(voice, []).append(f"{nn}:{kq}")
-            if v[cot] != v[cot]:
-                o.append(f"{'HỎNG':>7s}{dau} ")
-            else:
-                o.append(f"{v[cot]:6.0f}{dau} ")
+            if "ĐÁ NHAU" in ly:
+                da_nhau.append((voice, nn, ly))
+            # in CẢ HAI cột: rời/câu — người đọc tự thấy hai thước có khớp
+            tr = "NA" if v["tr"] != v["tr"] else f"{v['tr']:.0f}"
+            ca = "NA" if v["cau"] != v["cau"] else f"{v['cau']:.0f}"
+            o.append(f"{tr:>3s}/{ca:>3s}{dau} ")
         ten = voice if len(voice) <= 39 else voice[:36] + "..."
         print(f"{ten:40s}{nguon:11s}" + "".join(o) + f"  {dem}/5")
 
@@ -261,10 +340,17 @@ def main() -> int:
     print("=" * 78)
     ml = [v for v in voices if "multilingual" in v.lower()]
 
+    if da_nhau:
+        print(f"\n  HAI THƯỚC ĐÁ NHAU ở {len(da_nhau)} ô -> KHÔNG kết luận "
+              f"những ô đó (đây là câu trả lời ĐÚNG, không phải lỗi):")
+        for voice, nn, ly in da_nhau[:12]:
+            print(f"    {voice:42s} {NHAN_NN[nn]:6s} {ly}")
+        if len(da_nhau) > 12:
+            print(f"    ... còn {len(da_nhau)-12} ô nữa")
+
     def _kq(voice: str, nn: str) -> str | None:
         v = voices.get(voice, {}).get(nn)
-        c = cot_cua[nn]
-        return doc_duoc(v[c], NG[c][nn]) if (v and c) else None
+        return phan_xu(v, nn, NG)[0] if v else None
 
     for nn in NN5:
         co = khong = chua = 0
@@ -275,10 +361,11 @@ def main() -> int:
             co += kq == "CÓ"
             khong += kq == "KHÔNG"
             chua += kq is None
+        _c = {"tr+cau": "cả hai thước", "tr": "chỉ ĐỌC RỜI",
+              "cau": "chỉ câu thường", "": "KHÔNG cột nào"}[cot_cua[nn]]
         print(f"  {NHAN_NN[nn]:6s}: đọc được {co:2d} · KHÔNG đọc được "
               f"{khong:2d} · chưa kết luận {chua:2d}   (trên {len(ml)} giọng "
-              f"mang nhãn · chấm bằng cột "
-              f"{ {'tr': 'ĐỌC RỜI', 'cau': 'câu thường', '': '—'}[cot_cua[nn]] })")
+              f"mang nhãn · có ngưỡng ở: {_c})")
     xau_vi = [v for v in ml if _kq(v, "vi") == "KHÔNG"]
     print(f"\n  *** {len(xau_vi)}/{len(ml)} giọng mang nhãn \"Multilingual\" "
           f"ĐO RA KHÔNG ĐỌC ĐƯỢC TIẾNG VIỆT ***")

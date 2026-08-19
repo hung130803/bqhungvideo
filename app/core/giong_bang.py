@@ -45,6 +45,7 @@ tên giọng là người dùng sẽ tin mà chọn (đúng luật ``nhan_nha.nh
 """
 from __future__ import annotations
 
+from app.core import da_ngu as da_ngu_do
 from app.core import nhan_nha
 
 # ---------------------------------------------------------------------------
@@ -331,6 +332,33 @@ def duoi_nhan_nha(vid: str, nhan: str = "") -> str:
     return nhan_nha.nhan(vid)
 
 
+def duoi_da_ngu(vid: str, nhan: str = "") -> str:
+    """Đuôi ' - đọc được Việt·Anh·Hàn·Nhật·Trung (đã đo)' cho một dòng combo.
+
+    **ĐÂY LÀ CHỖ THAY "NHÃN CỦA MICROSOFT" BẰNG "SỐ ĐO".** ``da_ngu()`` phía
+    trên chỉ hỏi *"tên giọng có chữ Multilingual không"* — nó vẫn dùng để GOM
+    NHÓM (nhóm là chuyện BÀY, xếp sai thì chỉ khó tìm) nhưng **không được dùng
+    làm LỜI HỨA với người dùng** (hứa sai thì 300 video ra tiếng vô nghĩa mà
+    không một dòng báo). Lời hứa lấy từ ``app/core/da_ngu.py`` = bảng ĐO ĐƯỢC:
+    103 arm, hai thước phải đồng ý, ngưỡng suy từ TRẦN/SÀN cùng lượt.
+
+    Trả RỖNG khi nhãn đã tự nói điều đó rồi — cùng khuôn chống-nói-hai-lần
+    của ``duoi_dong``/``duoi_nhan_nha``. Phải có: ``giong_vieneu.nhan_giong``
+    và ``giong_ngoai`` tự ghi "4 thứ tiếng" / "TIẾNG ANH" vào nhãn của chúng.
+    """
+    # **DANH SÁCH NÀY PHẢI HẸP.** Bản đầu để cả chuỗi ``"tiếng anh"`` và nó
+    # khớp trúng ``[bản tiếng Anh]`` do `ten_ro_rang` vừa dán vào — mà chuỗi
+    # đó nói về *BẢN NÀO của Andrew*, không nói gì về *đọc được tiếng gì*.
+    # Hậu quả: đúng giọng ĐÃ ĐO (`en-US-AndrewNeural`, đo ra trượt cả 4 tiếng
+    # ngoài) lại là giọng DUY NHẤT mất nhãn ngôn ngữ. Dấu của `giong_vieneu`
+    # là `" - TIẾNG ANH"` nên phải so kèm dấu gạch, đừng so chuỗi trần.
+    thap = str(nhan or "").lower()
+    if any(t in thap for t in ("đọc được", "chỉ đọc tiếng", "chưa đo đọc",
+                              "thứ tiếng", " - tiếng anh")):
+        return ""
+    return da_ngu_do.nhan_gon(vid)
+
+
 def ten_ro_rang(vid: str, nhan: str, trung_ten: bool) -> str:
     """Thêm chỗ KHÁC NHAU vào dòng khi hai giọng cùng tên người đọc.
 
@@ -610,6 +638,9 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
             # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79 chấm
             # được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một dòng.
             n2 += duoi_nhan_nha(vid, n2)
+            # ĐỌC ĐƯỢC TIẾNG GÌ đứng TRƯỚC phần tiền: "chọn nó có ra tiếng
+            # đúng không" là câu hỏi phải trả lời trước "nó tốn bao nhiêu".
+            n2 += duoi_da_ngu(vid, n2)
             n2 += duoi_dong(vid, n2)
             if loi_tat and k == N_KHUYEN:
                 n2 += DAU_LOI_TAT

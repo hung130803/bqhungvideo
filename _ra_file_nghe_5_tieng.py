@@ -29,8 +29,8 @@ sys.path.insert(0, str(REPO))
 sys.stdout.reconfigure(encoding="utf-8")
 
 from _bo_cau_thu_doc import NHAN_NN                             # noqa: E402
-from _ra_bang_5_tieng import (NN5, chon_cot, doc_duoc,           # noqa: E402
-                              gom, nap, nguong)
+from _ra_bang_5_tieng import (NN5, chon_cot, gom, nap,           # noqa: E402
+                              nguong, phan_xu)
 
 HOP = REPO / "bq_do_5_tieng"
 NGHE = REPO / "_NGHE_THU_ANH_HUNG" / "da_ngon_ngu"
@@ -56,14 +56,16 @@ def main() -> int:
     NGHE.mkdir(parents=True, exist_ok=True)
     tong = 0
     for nn in NN5:
-        cot = cot_cua[nn] or "tr"
+        cot = "tr" if cot_cua[nn].startswith("tr") else "cau"
         arms = [(ten, v) for ten, v in g.items() if v["nn"] == nn]
         if not arms:
             continue
-        # ĐẠT tốt nhất trước, rồi toàn bộ HỎNG.
+        # ĐẠT tốt nhất trước, rồi toàn bộ HỎNG, rồi nhóm chưa kết luận.
+        # Nhóm "chưa kết luận" (hai thước đá nhau) là nhóm CẦN TAI NHẤT —
+        # máy đã nói thẳng là nó không phân xử được.
         dat, hong, chua = [], [], []
         for ten, v in arms:
-            kq = doc_duoc(v[cot], NG[cot][nn]) if cot_cua[nn] else None
+            kq, _ly = phan_xu(v, nn, NG)
             (dat if kq == "CÓ" else hong if kq == "KHÔNG" else chua).append(
                 (ten, v, kq))
         dat.sort(key=lambda x: (x[1][cot], x[1]["cau"]))
