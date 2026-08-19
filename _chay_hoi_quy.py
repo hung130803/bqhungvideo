@@ -61,6 +61,15 @@ CONG = [
     # NGAY chứ không đợi hết 30 cổng. Nó cũng là cổng duy nhất quét ĐĨA — chạy
     # sau các cổng khác thì nó còn bắt được key do CHÍNH LƯỢT NÀY vừa ghi ra,
     # nên đặt thêm một lượt nữa ở CUỐI (xem `CONG_CUOI`).
+    # Cổng 80 ĐỨNG ĐẦU, trước cả 77 — không phải vì nó quan trọng hơn, mà vì
+    # nó canh đúng cái NỀN mà 30 cổng còn lại đứng lên. Hôm nay
+    # `giong_ngoai._don(Path(""))` = `rmtree('.')` đã **xoá sạch cây mã** (mất
+    # `.git`, `.venv`, `bin`, `_lib`, `_giong_hang`, `_piper`, `_giong_ngoai`)
+    # với mã thoát 0. Gần như cổng nào trong danh sách này cũng dựng hộp cát
+    # rồi `rmtree` nó, nên chạy chúng trên một bản mã còn cửa hở là đánh cược
+    # cả cây mã mỗi lượt hồi quy. Nó cũng rẻ (~15 giây, không mạng, không
+    # ffmpeg, không Groq) nên đứng đầu không tốn gì.
+    ("80 không xoá nhầm",   "_test_khong_xoa_nham.py",   69),
     ("77 không lộ key",     "_test_khong_lo_key.py",     27),
     # Cổng 78 canh lỗi MẤT NỘI DUNG: đoạn không được đọc lại thì mất luôn giọng
     # gốc -> chỉ còn nhạc -> im tiếng người. Đo trên 4 bản anh Hùng đã xuất:
