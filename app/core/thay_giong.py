@@ -1839,13 +1839,80 @@ def bien_the_giong(voice: str = "") -> list[tuple[str, str]]:
     return ra
 
 
-#: Câu mẫu NGHE THỬ. Có dấu thanh đủ 6 kiểu + một cụm số, để nghe ra ngay
+#: Câu mẫu NGHE THỬ **TIẾNG VIỆT**. Có dấu thanh đủ 6 kiểu, để nghe ra ngay
 #: giọng nào nuốt dấu (Piper `vais1000` từng bị chê thiếu dấu ở giọng khác).
 CAU_NGHE_THU = "Xin chào anh Hùng, đây là giọng đọc thử của kênh mình nhé."
 
 
+def cau_nghe_thu(nn: str = "") -> str:
+    """Câu mẫu nghe thử **ĐÚNG NGÔN NGỮ** `nn`. Không có câu -> chuỗi RỖNG.
+
+    ═══ VÌ SAO HÀM NÀY PHẢI CÓ (lỗi anh Hùng gặp 19/08/2026) ═══
+    Anh Hùng: *"cái phần nghe thử chọn tiếng Anh ngôn ngữ đó cứ ra tiếng Việt
+    lung ta lung tung"*. `doc_thu` bản trước dùng **một câu tiếng Việt CỐ
+    ĐỊNH** cho mọi giọng, nên chọn giọng tiếng Anh là nghe giọng Anh cố đọc
+    chữ Việt — ra tiếng lạ, mà người nghe lại đọc thành "giọng này hỏng".
+    Trong khi cửa nghe thử CŨ (`dubbing.synth_demo`, hộp Lồng tiếng) đã chọn
+    câu theo ngôn ngữ của giọng từ lâu; **chỉ đường Thay giọng bị sót**.
+
+    ═══ NGUỒN CÂU: `dubbing._DEMO_TEXTS`, KHÔNG ĐẺ BẢNG THỨ HAI ═══
+    Hai bảng câu mẫu là hai chỗ để lệch nhau: sửa một chỗ thì nghe thử ở hộp
+    này và hộp kia đọc hai câu khác nhau mà không ai biết vì sao. Tiếng Việt
+    cố ý dùng `CAU_NGHE_THU` (câu quen của anh Hùng, đủ 6 dấu thanh).
+
+    **KHÔNG lùi về câu tiếng Anh ở đây** — trả RỖNG để nơi gọi tự quyết và
+    NÓI RA là nó đang lùi (`_cau_doc_thu.py` đã ghi đúng cái bẫy này: lùi câu
+    tiếng Anh cho tiếng khác thì phép nghe/đo vẫn "chạy" nhưng chứng nhận sai
+    thứ — nó chứng nhận "giọng đọc được chữ Latin").
+    """
+    from app.core import dubbing
+    ma = dubbing.norm_lang(str(nn or "").strip()) if str(nn or "").strip() else ""
+    if not ma:
+        return ""
+    if ma == "vi":
+        return CAU_NGHE_THU
+    return str(dubbing._DEMO_TEXTS.get(ma) or "")    # noqa: SLF001
+
+
+def nn_cua_giong(voice: str) -> str:
+    """Ngôn ngữ mà GIỌNG NÀY đọc được. `""` = đa ngữ / không biết.
+
+    Dùng để chọn câu mẫu khi nơi gọi KHÔNG truyền ngôn ngữ đích, và để biết
+    khi nào phải BÁO "giọng này không đọc được tiếng đó".
+
+    Trả `""` thay vì đoán bừa là cố ý: đoán sai thì câu mẫu sai ngôn ngữ, mà
+    đó chính là lỗi đang đi chữa. `""` -> nơi gọi lùi về hành vi cũ (câu Việt)
+    chứ không phát chứng nhận nào.
+    """
+    v = str(voice or "").strip()
+    if not v:
+        return ""
+    if v.startswith(("el:", "gemini:", "ov:", "ix:", "cb:")):
+        return ""                   # đa ngữ (hoặc chưa đo) -> không kết luận
+    if v.startswith("vbee:"):
+        return "vi"
+    if v.startswith("piper:"):
+        # `piper:vi_VN-vais1000-medium` -> `vi`. Piper đặt tên model theo
+        # `<lang>_<REGION>-...` nên phần trước `_` là mã ngôn ngữ.
+        ten = v.split(":", 1)[1]
+        return ten.split("_", 1)[0].strip().lower() or ""
+    from app.core import giong_vieneu as _vn
+    if _vn.la_giong_vieneu(v):
+        # `vn:Adam` là giọng TIẾNG ANH duy nhất của bộ VieNeu (19 giọng còn
+        # lại là giọng Việt) — bảng `GIONG_TIENG_ANH` là NGUỒN DUY NHẤT, đừng
+        # ghi tên giọng ra đây lần thứ hai.
+        if _vn.ten_giong(v) in _vn.GIONG_TIENG_ANH:
+            return "en"
+        return "vi"                 # kể cả giọng NHÂN BẢN: model là model Việt
+    from app.core import dubbing
+    # edge-tts: `vi-VN-HoaiMyNeural` -> `vi`. Có thể mang hậu tố `|<pitch>`
+    # nhưng nơi gọi đã tách; cứ chặn thêm cho chắc.
+    dau = v.split(_SEP_PITCH, 1)[0].split("-", 1)[0].strip().lower()
+    return dubbing.norm_lang(dau) if len(dau) in (2, 3) else ""
+
+
 def doc_thu(voice: str, out_wav: str | Path, text: str = "",
-            dung_cache: bool = True) -> dict:
+            dung_cache: bool = True, nn: str = "") -> dict:
     """Đọc MỘT câu mẫu bằng **đúng giọng + đúng biến thể cao độ** đang chọn.
 
     **ĐI ĐÚNG CỬA MÀ LƯỢT XUẤT THẬT ĐI** (`dubbing._synth_all_words`, y hệt
@@ -1854,25 +1921,65 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
     nẻo. Nhờ đi cửa chung, nút này tự hưởng luôn nhánh rẽ Piper
     (`_piper_hay_khong`) và phần tách `|<pitch>` mà không phải chép lại luật.
 
-    Trả `{"ra", "nguon", "cache", "loi"}` — `nguon` là NGUỒN GIỌNG THẬT SỰ đã
-    đọc (`edge-tts` / `piper` / `elevenlabs`), **KHÔNG phải cái người dùng
-    chọn**: Piper chưa tải thì app LÙI ÊM về edge-tts, mà lùi êm không nói ra
-    thì người nghe tưởng đang nghe Piper rồi chọn nhầm cho cả 300 kênh.
+    Trả `{"ra", "nguon", "cache", "loi", "canh_bao", "nn", "cau"}` — `nguon` là
+    NGUỒN GIỌNG THẬT SỰ đã đọc (`edge-tts` / `piper` / `elevenlabs`), **KHÔNG
+    phải cái người dùng chọn**: Piper chưa tải thì app LÙI ÊM về edge-tts, mà
+    lùi êm không nói ra thì người nghe tưởng đang nghe Piper rồi chọn nhầm cho
+    cả 300 kênh.
+
+    ═══ `nn` = NGÔN NGỮ ĐÍCH, và vì sao nó phải là THAM SỐ ═══
+    Câu mẫu đi theo `nn` (xem `cau_nghe_thu`). `nn` rỗng -> suy từ CHÍNH GIỌNG
+    (`nn_cua_giong`), nên lối gọi cũ **không phải sửa** mà vẫn hết bệnh "giọng
+    tiếng Anh đọc câu tiếng Việt".
+    **KHÔNG đọc ngôn ngữ đích từ QSettings** dù làm vậy thì khỏi sửa nơi gọi:
+    hộp thoại chỉ ghi cài đặt lúc Chạy/đóng, nên đọc setting là đọc lựa chọn
+    CŨ — đúng lỗi "chạy dây chuyền lấy nhóm từ setting nên chạy sai nhóm" đã
+    sập một lần. Trạng thái đang hiện nằm ở WIDGET, phải truyền vào.
+
+    ═══ GIỌNG KHÔNG ĐỌC ĐƯỢC TIẾNG ĐÓ THÌ **BÁO**, KHÔNG ĐỌC BỪA ═══
+    `vn:` (trừ `Adam`) · `piper:vais1000` · `vbee:` chỉ đọc được tiếng Việt;
+    `vn:Adam` và giọng `en-*` là giọng tiếng Anh. Bắt chúng đọc tiếng khác thì
+    ra tiếng lạ **và người nghe sẽ kết luận là giọng hỏng** — nên `canh_bao`
+    nói thẳng ra. Vẫn ĐỌC (không chặn): đó đúng là thứ lượt xuất thật sẽ ra
+    nếu anh Hùng giữ lựa chọn này, nghe được thì mới quyết được.
 
     `dung_cache=True`: cùng (giọng · pitch · câu) thì dùng lại file cũ. Bấm
     liên tiếp KHÔNG gọi lại mạng — với ElevenLabs mỗi lượt gọi là tốn credit
-    thật, còn edge-tts thì đỡ 1-2 giây chờ.
+    thật, còn edge-tts thì đỡ 1-2 giây chờ. Câu mẫu nằm TRONG khoá cache nên
+    đổi ngôn ngữ là tự sinh file mới, không trả file tiếng cũ.
     """
     import hashlib
 
     import config
+    from app.core import dubbing
 
     out_wav = Path(out_wav)
-    txt = (text or "").strip() or CAU_NGHE_THU
     v, pitch = tach_giong_pitch(voice or "")
     if not v:
-        return {"ra": "", "nguon": "", "cache": False,
-                "loi": "Chưa chọn giọng"}
+        return {"ra": "", "nguon": "", "cache": False, "canh_bao": "",
+                "nn": "", "cau": "", "loi": "Chưa chọn giọng"}
+
+    # ---- CHỌN CÂU MẪU THEO NGÔN NGỮ (ngôn ngữ đích > ngôn ngữ của giọng) ----
+    nn_dich = dubbing.norm_lang(str(nn).strip()) if str(nn or "").strip() else ""
+    nn_giong = nn_cua_giong(v)
+    nn_cau = nn_dich or nn_giong or "vi"
+    canh_bao = ""
+    txt = (text or "").strip()
+    if not txt:
+        txt = cau_nghe_thu(nn_cau)
+        if not txt:
+            # Ngôn ngữ chưa có câu mẫu -> LÙI câu tiếng Anh nhưng NÓI RA.
+            txt = cau_nghe_thu("en") or CAU_NGHE_THU
+            canh_bao = (f"chưa có câu mẫu tiếng «{nn_cau}» nên đang đọc câu "
+                        f"TIẾNG ANH")
+            nn_cau = "en"
+    if nn_giong and nn_cau != nn_giong:
+        # Giọng đọc tiếng A mà câu là tiếng B. Nói CẢ HAI vế + nói phải làm gì.
+        canh_bao = (
+            f"giọng này đọc tiếng «{nn_giong}», còn câu mẫu là tiếng "
+            f"«{nn_cau}» (ngôn ngữ đích) — nghe lạ là ĐÚNG theo cấu tạo, "
+            f"KHÔNG phải giọng hỏng. Muốn nghe đúng thì chọn giọng của tiếng "
+            f"«{nn_cau}»" + (f"; {canh_bao}" if canh_bao else ""))
 
     # Đọc `config.DATA_DIR` MỖI LẦN GỌI, không cất hằng số: cổng test trỏ
     # `BQ_DATA_DIR` sang thư mục tạm, cất sẵn là ghi vào DATA_DIR THẬT.
@@ -1896,9 +2003,11 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         except Exception:  # noqa: BLE001
             pass
 
+    ra_chung = {"nguon": nguon, "canh_bao": canh_bao, "nn": nn_cau, "cau": txt}
+
     if dung_cache and cache.exists() and cache.stat().st_size > 1024:
         shutil.copyfile(cache, out_wav)
-        return {"ra": str(out_wav), "nguon": nguon, "cache": True, "loi": ""}
+        return {"ra": str(out_wav), "cache": True, "loi": "", **ra_chung}
 
     tam = out_wav.with_suffix(".tho.mp3")
     thu_muc = out_wav.parent / f"_thu_{khoa}"
@@ -1923,7 +2032,12 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
             #      thêm phải nối `pitch`. Đi qua cửa CẤP TRÊN vừa khỏi đụng
             #      chốt đó, vừa đúng tinh thần của nó — và không phải sửa một
             #      con số nào trong cổng.
-            kq_d = doc_ban_dich([txt], thu_muc, voice=voice)
+            # `dich_sang=nn_cau`: cửa chung dùng nó để chọn giọng LÙI khi giọng
+            # đang chọn hỏng (`default_voice`) và để gióng hàng đúng ngôn ngữ.
+            # Bản trước để mặc định `"en"` -> nghe thử câu TIẾNG VIỆT mà giọng
+            # hỏng thì lùi sang giọng TIẾNG ANH đọc chữ Việt = đúng cái bệnh
+            # đang chữa, chỉ khác đường vào.
+            kq_d = doc_ban_dich([txt], thu_muc, voice=voice, dich_sang=nn_cau)
             if not kq_d.get("ok") or not kq_d["ok"][0]:
                 raise RuntimeError("nguồn giọng không trả về tiếng")
             ds = [p for p in (kq_d.get("files") or []) if p]
@@ -1936,9 +2050,9 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         _kiem_wav(out_wav)          # bẫy "rc=0 mà file 0 KiB / RMS 0"
         if dung_cache:
             shutil.copyfile(out_wav, cache)
-        return {"ra": str(out_wav), "nguon": nguon, "cache": False, "loi": ""}
+        return {"ra": str(out_wav), "cache": False, "loi": "", **ra_chung}
     except Exception as e:  # noqa: BLE001
-        return {"ra": "", "nguon": nguon, "cache": False, "loi": str(e)}
+        return {"ra": "", "cache": False, "loi": str(e), **ra_chung}
     finally:
         Path(tam).unlink(missing_ok=True)
         # Qua cửa chung (cổng 80): `thu_muc` = `out_wav.parent / f"_thu_{khoa}"`

@@ -1678,9 +1678,16 @@ def _synth_all_eleven(texts: list[str], voice: str, paths: list[str],
 # ------------------------------------------------------------------
 # Đọc thử 1 câu ngắn (nghe demo giọng trong UI)
 # ------------------------------------------------------------------
+#: Câu mẫu NGHE THỬ theo ngôn ngữ. **NGUỒN DUY NHẤT** cho cả `synth_demo`
+#: (hộp Lồng tiếng) lẫn `thay_giong.cau_nghe_thu` (hộp Thay giọng) — hai bảng
+#: là hai chỗ để lệch nhau rồi hai hộp đọc hai câu khác nhau mà không ai biết.
+#: PHẢI PHỦ ĐỦ `thay_giong.NGON_NGU_DICH` (11 tiếng): thiếu một tiếng thì nghe
+#: thử tiếng đó lùi về câu TIẾNG ANH — bệnh "chọn tiếng Anh mà ra tiếng Việt
+#: lung tung" của anh Hùng chỉ khác chiều. `de` thiếu tới 19/08/2026.
 _DEMO_TEXTS = {
     "vi": "Xin chào, đây là giọng đọc thử của kênh.",
     "en": "Hello, this is a voice preview.",
+    "de": "Hallo, das ist eine Hörprobe der Stimme.",
     "id": "Halo, ini adalah contoh suara.",
     "th": "สวัสดีค่ะ นี่คือเสียงตัวอย่าง",
     "ko": "안녕하세요, 이것은 음성 미리 듣기입니다.",
