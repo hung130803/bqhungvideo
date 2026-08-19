@@ -1973,7 +1973,8 @@
   72. `_test_giong_ngoai.py` → **GIỌNG NGOÀI (OmniVoice / IndexTTS)**. Xem
      docstring của chính file + `app/core/giong_ngoai.py`. **ĐẠT 48 · HỎNG 0.**
   73. `_test_giong_hang.py` → **GIÓNG HÀNG CƯỠNG BỨC** (`app/core/
-     giong_hang.py`, 18/08/2026). **ĐẠT 36 · HỎNG 0.** Trước cổng này,
+     giong_hang.py`, 18/08/2026; +CA 8 ngày 19/08). **ĐẠT 41 · HỎNG 0.**
+     Trước cổng này,
      `giong_hang.py` — chỗ lấy MỐC TỪNG CHỮ cho **mọi máy đọc không tự trả
      mốc** — chỉ có phép đo và bị canh GIÁN TIẾP qua cổng 72.
      **LỖI THẬT CỔNG NÀY TRUY RA (mục "1 câu Việt /12 gióng không nổi" treo từ
@@ -2023,6 +2024,11 @@
      nhanh gấp đôi và card còn thừa 8,9 GB — khoá lại là vứt đi 2×.
      **VRAM PHẢI POLL TRONG LÚC CHẠY** (bẫy cổng 71): lấy mẫu trước/sau ra
      đúng mức nền 430 MiB vì tiến trình thoát là trả sạch.
+     **CA 8 CANH LẠI, có THỬ PHÁ:** 8a `_ma_lot` duy nhất qua 8 luồng
+     (250/250) · 8b vẫn mở đầu bằng pid · 8c quét AST: thân `giong_hang_loat`
+     gọi `_ma_lot()` và KHÔNG còn `getpid` · 8d 2 luồng THẬT cùng lúc ra
+     **4/4 câu có mốc** · **8e vá `_ma_lot` trả hằng số (= bản cũ theo pid) ->
+     rơi về 2/4**, tức 8d đang đo thật chứ không phải con dấu.
   74. `_test_json_bao_dung.py` → **JSON CỦA LLM ĐỨT/BỌC/THỪA CHỮ THÌ VẪN PHẢI
      SỐNG** (18/08/2026). **ĐẠT 80 · HỎNG 0.** Thử phá `_pha_json_bao_dung.py`
      (9 phép, mỗi phép gỡ ĐÚNG một chốt): **BẮT 9 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.

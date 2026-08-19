@@ -45,7 +45,9 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import tokenize
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
@@ -379,6 +381,89 @@ def main() -> int:                                          # noqa: C901
        "7g `cai_duoc` = False thì PHẢI nói vì sao (nút xám không lời giải "
        "thích chỉ là câu đố — cổng 58/16/51)",
        f"cai_duoc={tt2['cai_duoc']} · {tt2['vi_sao_khong_cai']!r}")
+
+    # ══════════════ CA 8 — HAI LUỒNG KHÔNG ĐƯỢC DÙNG CHUNG FILE ═════════
+    # LỖI THẬT 19/08/2026. `viec_<pid>.json` / `ket_<pid>.json` lấy
+    # `os.getpid()` của tiến trình GỌI -> giống hệt nhau cho MỌI luồng trong
+    # app, mà làn `LAN_TG` mặc định 2 luồng. Đo: chạy lần lượt 12/12 câu ra
+    # mốc, chạy 2 luồng **6/12** — đúng một mẻ mất trắng, và `rc` vẫn 0 nên
+    # không một dòng báo nào lên tới giao diện.
+    print("\nCA 8 — 2 luồng gọi cùng lúc: file việc/kết quả phải RIÊNG")
+    _ma = [gh._ma_lot() for _ in range(50)]
+    _tu_luong: list[str] = []
+    _kh = threading.Lock()
+
+    def _sinh() -> None:
+        for _ in range(25):
+            v = gh._ma_lot()
+            with _kh:
+                _tu_luong.append(v)
+
+    _ths = [threading.Thread(target=_sinh) for _ in range(8)]
+    for _t in _ths:
+        _t.start()
+    for _t in _ths:
+        _t.join()
+    ok(len(set(_ma)) == len(_ma) and len(set(_tu_luong)) == len(_tu_luong),
+       "8a `_ma_lot` DUY NHẤT mỗi lượt gọi, kể cả gọi từ 8 luồng cùng lúc",
+       f"{len(set(_ma))}/{len(_ma)} + {len(set(_tu_luong))}/{len(_tu_luong)}")
+    ok(all(x.startswith(f"p{os.getpid()}") for x in _ma),
+       "8b mã lượt vẫn MỞ ĐẦU bằng pid — lượt dọn mồ côi phải phân biệt được "
+       "'của tiến trình đang sống' với 'của lần chạy trước đã chết'", _ma[0])
+    # Quét MÃ THẬT: thân `giong_hang_loat` phải GỌI `_ma_lot`, và KHÔNG được
+    # còn `getpid` nào tự đặt tên file. (`ast.unparse` bỏ comment sẵn — bài
+    # học 47/51/53/54, chính file này đã sập một lần ở CA 5b.)
+    _than = ast.unparse(_ham(NGUON, "giong_hang_loat"))
+    ok("_ma_lot()" in _than and "getpid" not in _than,
+       "8c `giong_hang_loat` đặt tên qua `_ma_lot()`, KHÔNG tự gọi `getpid`")
+
+    if not gh.co_giong_hang():
+        bo_qua("8d 2 luồng gióng hàng THẬT cùng lúc",
+               "máy chưa có bộ gióng hàng (đúng cảnh máy nhân viên)")
+    else:
+        san2 = Path(tempfile.mkdtemp(prefix="bq_gh73_ss_"))
+        try:
+            C1 = ["Anh ấy mở cánh cửa ra và bước vào trong căn phòng tối.",
+                  "Cô gái nhìn quanh rồi bật đèn lên cho sáng cả gian nhà."]
+            C2 = ["Hôm nay trời rất đẹp và mọi người đều vui vẻ đi chơi.",
+                  "Chúng tôi quyết định ở nhà nấu ăn thay vì đi ra ngoài."]
+            p1 = [str(san2 / f"a{i}.wav") for i in range(len(C1))]
+            p2 = [str(san2 / f"b{i}.wav") for i in range(len(C2))]
+            o1, _w1 = asyncio.run(dubbing._synth_all_words(
+                C1, "vi-VN-HoaiMyNeural", p1, lang="vi", el_lui=False))
+            o2, _w2 = asyncio.run(dubbing._synth_all_words(
+                C2, "vi-VN-HoaiMyNeural", p2, lang="vi", el_lui=False))
+            if not (all(o1) and all(o2)):
+                bo_qua("8d 2 luồng gióng hàng THẬT cùng lúc",
+                       "edge-tts không đọc được (mạng)")
+            else:
+                TONG = len(C1) + len(C2)
+
+                def _ss() -> int:
+                    """2 luồng cùng gọi -> TỔNG số câu ra được mốc."""
+                    with ThreadPoolExecutor(max_workers=2) as ex:
+                        fs = [ex.submit(gh.giong_hang_loat, w, t, "vi")
+                              for w, t in ((p1, C1), (p2, C2))]
+                        return sum(1 for f in fs for m in f.result() if m)
+
+                n_ss = _ss()
+                ok(n_ss == TONG,
+                   "8d 2 luồng gọi CÙNG LÚC -> KHÔNG mẻ nào mất mốc",
+                   f"{n_ss}/{TONG} câu có mốc")
+                # THỬ PHÁ: dựng lại đúng hành vi bản CŨ (tên theo pid = HẰNG
+                # SỐ cho mọi luồng). Không vỡ thì 8d chỉ là con dấu.
+                _that_ml = gh._ma_lot
+                try:
+                    gh._ma_lot = lambda: f"p{os.getpid()}"   # type: ignore
+                    n_pha = _ss()
+                finally:
+                    gh._ma_lot = _that_ml                    # type: ignore
+                ok(n_pha < TONG,
+                   "8e THỬ PHÁ: trả tên file về kiểu CŨ (chỉ theo pid) thì "
+                   "bất biến 8d PHẢI VỠ -> 8d đang đo thật, không phải con dấu",
+                   f"{n_pha}/{TONG} câu có mốc")
+        finally:
+            shutil.rmtree(san2, ignore_errors=True)
 
     print("\n" + "=" * 74)
     print(f"CỔNG 73: ĐẠT {DAT} · HỎNG {HONG}"
