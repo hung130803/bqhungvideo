@@ -1921,6 +1921,22 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
                                        rate, on_msg, lay_moc=False)
         return ok_v
 
+    # VBEE — đặt SAU VieNeu và TRƯỚC Chatterbox chỉ vì thứ tự dễ đọc; các nhánh
+    # loại trừ nhau theo tiền tố nên thứ tự không đổi kết quả. `lay_moc=False`:
+    # cửa này không cần mốc từng chữ, mà lấy mốc của Vbee tốn thêm một lượt
+    # gióng hàng (model 1,18 GB) — đúng cách nhánh Piper/VieNeu đang làm.
+    dung_vb, voice = _vbee_hay_khong(voice)
+    if dung_vb:
+        ok_b, _mb = await _chay_vbee(texts, paths, voice, lang, on_done,
+                                     rate, on_msg, lay_moc=False)
+        if any(ok_b):
+            return ok_b
+        # `doc_loat` là ALL-OR-NOTHING và tự ghi sổ lùi (`giong_vbee.so_lui`)
+        # nên tới đây nghĩa là "hỏng cả loạt, lý do đã ghi". Lùi về edge-tts:
+        # video ĐÚNG, chỉ khác giọng. KHÔNG gọi `on_done` ở đây — nhánh edge
+        # bên dưới sẽ gọi, gọi hai lần là thanh tiến trình chạy quá 100%.
+        voice = default_voice(norm_lang(lang) or "vi")
+
     dung_cb, voice = _chatter_hay_khong(voice)
     if dung_cb:
         _ma_cb = voice
@@ -2230,6 +2246,63 @@ async def _chay_vieneu(texts, paths, voice, lang, on_done, rate, on_msg,
 
 
 # ==================================================================
+# CỬA DUY NHẤT RẼ SANG VBEE
+# ==================================================================
+# `app/core/giong_vbee.py` dựng xong 948 dòng với ĐÚNG hợp đồng của
+# `_synth_all_words` (`doc_loat -> (ok, words)`, all-or-nothing, KHÔNG BAO GIỜ
+# ném) — **mà tới 19/08/2026 không một dòng nào ở đây gọi tới**. Chỗ duy nhất
+# đụng tới nó là `studio_page.py`, sau khi user dán key, để NGHE THỬ.
+#
+# Đây là ca thứ BA của cùng một bệnh, sau `giong_bang` và `giong_chatter`:
+# module viết xong, ghi chú dặn người sau nối vào, rồi không ai nối.
+#
+# **VÀ NẾU CHỈ ĐƯA `vbee:` VÀO COMBO MÀ KHÔNG NỐI CHỖ NÀY THÌ CÒN TỆ HƠN GIẤU
+# HẲN NÓ ĐI:** mã `vbee:` rơi thẳng xuống nhánh edge-tts ở cuối `_synth_all`,
+# `edge_tts` không nhận tên đó -> hỏng cả loạt -> anh Hùng chọn "Ngọc Huyền
+# (Vbee)" mà nghe ra giọng khác, không một dòng báo. Đúng lỗi "chọn X ra Y" mà
+# `ov:nu_am` và `vn:` đã sập hai lần. Vì vậy thứ tự BẮT BUỘC là: nối cửa TRƯỚC,
+# đưa vào combo SAU.
+
+
+def _vbee_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng Vbee không, giọng phải LÙI VỀ nếu không dùng được).
+
+    **THIẾU KEY THÌ LÙI ÊM, NHƯNG PHẢI GHI LẠI** — cùng luật Piper/OmniVoice/
+    VieNeu (lùi ra video ĐÚNG, chỉ khác giọng), khác luật Demucs (thiếu Demucs
+    mà lùi là ra video HỎNG nên phải CHẶN). Lùi êm mà im lặng thì đúng bằng
+    hỏng âm thầm, nên `giong_vbee._ghi_log` được gọi ngay ở đây.
+
+    Vbee là nguồn **TỐN TIỀN THẬT theo ký tự**, nên "thiếu key" là đường đi
+    THƯỜNG GẶP chứ không phải ca biên: anh Hùng chưa mua key.
+    """
+    from app.core import giong_vbee as vb
+    if not vb.la_giong_vbee(voice):
+        return False, voice
+    if vb.co_key():
+        return True, voice
+    lui = default_voice("vi")
+    tt = vb.tinh_trang_vbee()
+    vb._ghi_log(f"Chưa dùng được giọng {voice} (thiếu: "
+                f"{', '.join(tt.get('thieu') or ['key'])}; {vb.CAN_KEY}) "
+                f"-> LÙI về edge-tts giọng {lui}")
+    return False, lui
+
+
+async def _chay_vbee(texts, paths, voice, lang, on_done, rate, on_msg,
+                     lay_moc: bool):
+    """Chạy `giong_vbee.doc_loat` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    `doc_loat` gọi REST đồng bộ và có ca chờ job async tới 1800 giây. Gọi thẳng
+    trong một hàm `async` là **chặn cứng vòng lặp sự kiện** suốt từng ấy thời
+    gian — cùng khuôn `_chay_eleven`/`_chay_vieneu`, đừng làm khác.
+    """
+    from app.core import giong_vbee as vb
+    return await asyncio.to_thread(
+        vb.doc_loat, texts, paths, voice, on_done=on_done, rate=rate,
+        lang=norm_lang(lang), lay_moc=lay_moc, on_msg=on_msg)
+
+
+# ==================================================================
 # CỬA DUY NHẤT RẼ SANG CHATTERBOX (`cb:<lang>|<mẫu>`) — cùng chỗ, cùng lý lẽ
 # ==================================================================
 # `app/core/giong_chatter.py` dựng xong ở `9aa4377` với ĐÚNG hợp đồng
@@ -2445,6 +2518,22 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         # tiếng vẫn đúng (nhãn giọng đã nói trước).
         return await _chay_vieneu(texts, paths, voice, lang, on_done, rate,
                                   on_msg, lay_moc=True)
+
+    # VBEE — `lay_moc=True` ở cửa NÀY (khác `_synth_all`): đây là cửa đường
+    # thay tiếng, chữ chạy theo MỐC TỪNG CHỮ (cổng 60). `giong_vbee._lay_moc`
+    # gọi THẲNG bộ gióng hàng nên **KHÔNG bọc `_moc_giong_hang` lần nữa** —
+    # đúng lý do đã ghi ở nhánh VieNeu ngay trên: bọc thêm là chạy gióng hàng
+    # hai lượt trên cùng bộ file, tốn gấp đôi mà kết quả y hệt.
+    dung_vb, voice = _vbee_hay_khong(voice)
+    if dung_vb:
+        ok_b, moc_b = await _chay_vbee(texts, paths, voice, lang, on_done,
+                                       rate, on_msg, lay_moc=True)
+        if any(ok_b):
+            return ok_b, moc_b
+        # all-or-nothing đã hỏng cả loạt và tự ghi sổ lùi -> đọc LẠI cả loạt
+        # bằng edge-tts. Đọc lại từng câu hỏng là video LẪN HAI GIỌNG, đúng
+        # thứ luật all-or-nothing sinh ra để chặn (mệnh đề cổng 63).
+        voice = default_voice(norm_lang(lang) or "vi")
 
     dung_cb, voice = _chatter_hay_khong(voice)
     if dung_cb:

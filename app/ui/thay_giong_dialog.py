@@ -257,6 +257,32 @@ def giong_dung_duoc(ds: list) -> list:
     except Exception:  # noqa: BLE001
         pass                                # thiếu module -> combo y hệt cũ
 
+    # ---- GIỌNG Vbee — 3 GIỌNG VIỆT TRẢ TIỀN, HIỆN KỂ CẢ KHI CHƯA CÓ KEY ----
+    # Ca thứ BA của cùng một bệnh sau `giong_bang` và `giong_chatter`:
+    # `app/core/giong_vbee.py` dựng xong 948 dòng, `danh_sach_giong()` sẵn
+    # sàng, mà **không một dòng nào trong combo gọi tới**. Đo trước khi vá:
+    # combo có 0 mã `vbee:`.
+    #
+    # ĐIỀU KIỆN TIÊN QUYẾT ĐÃ LÀM TRƯỚC, ĐỪNG ĐẢO THỨ TỰ: `dubbing._synth_all`
+    # và `_synth_all_words` phải BIẾT `vbee:` trước đã (xem
+    # `dubbing._vbee_hay_khong`). Đưa mã vào combo mà cửa đọc không nhận thì
+    # chọn "Ngọc Huyền (Vbee)" sẽ ra giọng khác — đúng bẫy "chọn X ra Y" mà
+    # `ov:nu_am` và `vn:` đã sập hai lần.
+    #
+    # **HIỆN KỂ CẢ KHI CHƯA CÓ KEY** (`danh_sach_giong` luôn trả đủ 3): thứ
+    # còn thiếu chỉ là một dòng key dán vào Cài đặt, giấu đi thì anh Hùng
+    # không bao giờ biết có đường này để mua. Nhãn tự mang chữ
+    # `cần key Vbee, xem vbee.vn`, và `giong_bang._DO_TRUNG[VBEE]` đã dò đúng
+    # chữ đó nên `duoi_dong` KHÔNG dán thêm "TỐN TIỀN" lần thứ hai.
+    # Theo tiền lệ Piper/VieNeu (hiện + nói thẳng đang thiếu gì), khác
+    # OmniVoice (6,1 GB app không tự tải được nên mới giấu).
+    try:
+        from app.core import giong_vbee
+        for ma_g, nhan_g in giong_vbee.danh_sach_giong():
+            mo_rong.append((nhan_g, ma_g))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
     # nhóm rỗng (bị lọc sạch) thì bỏ luôn nhãn nhóm, đừng để dòng trơ
     gon: list = []
     for i, (nhan, vid) in enumerate(mo_rong):

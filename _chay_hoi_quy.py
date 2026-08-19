@@ -118,7 +118,35 @@ CONG = [
     # phỏng đúng tính dính `self.conds` — thứ biến "đọc kênh A rồi kênh B"
     # thành "kênh B ra giọng kênh A" mà mã thoát vẫn 0.
     ("82 Chatterbox đã nối", "_test_chatter_noi.py",     58),
-    ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
+    # Cổng 83 canh lượt 19/08/2026: MỞ HẾT giọng edge-tts (**76 -> 322 giọng /
+    # 75 thứ tiếng**) sau khi TÁCH "đọc được" khỏi "đo nhấn nhá". Nó lôi ra hai
+    # lỗi thật: `giong_mo.nen_mo` là **MÃ CHẾT** (quét AST: chỉ `loc_mo` gọi,
+    # mà `loc_mo` không ai gọi -> 185 giọng "đã mở khoá" chưa bao giờ ra tới
+    # combo), và 4 giọng Inuktitut chết vì regex của **thư viện khách**
+    # `edge_tts` không bóc nổi locale 4 đoạn — chết TRƯỚC KHI chạm mạng.
+    # Nó **KHÔNG tốn lượt Groq** và **KHÔNG đốt hạn mức ElevenLabs** (nhánh
+    # `el:` chấm bằng cách vá điểm đến rồi xem nó rẽ vào đâu). CA 2 CÓ gọi mạng
+    # edge-tts thật nhưng chỉ **3 giọng** (mẻ tiền định theo `crc32`, KHÔNG
+    # `hash()`) — mẻ đó là thứ giữ cho bảng biên bản khỏi thành lời tự khai;
+    # mạng hỏng thì nó BỎ QUA từng giọng, chỉ ĐỎ khi hỏng CẢ MẺ.
+    # THỬ PHÁ nằm ngay trong cổng (CA 9, BẮT 3/3), và chốt chống-PASS-OAN của
+    # mục 3f đã thử thật: `BQ_MOC_GIONG=HEAD` -> ĐỎ đúng mục đó, mã thoát 1.
+    ("83 mở hết giọng",     "_test_mo_giong_het.py",     41),
+    # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
+    # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
+    # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`
+    # xoá sạch cây mã thì 7,74 GB đó là thứ DUY NHẤT không dựng lại được ·
+    # CA 12 CHỌN X RA X (câu tả phải nằm trong BẢNG TỪ ĐÓNG của model — chữ
+    # ngoài bảng đã giết `ov:nu_am` một lần; mã lạ phải LÙI chứ không đọc
+    # bằng giọng mặc định).
+    # CA 10d LÔI RA MỘT LỖI THẬT: `goc or Path.home()` KHÔNG BAO GIỜ lùi được
+    # vì `Path("")` là `WindowsPath('.')` (truthy) -> bản đóng gói có
+    # DATA_DIR hỏng thì thư mục 7,7 GB rơi vào THƯ MỤC ĐANG LÀM VIỆC. Cùng họ
+    # bẫy đã xoá sạch cây mã sáng nay, chỉ khác là GHI nhầm chỗ chứ không
+    # XOÁ nhầm chỗ. Bản đầu của chính mục 10d ĐẠT OAN vì chỉ hỏi "có cạnh
+    # .exe không" — ĐẠT vì lý do SAI.
+    # THỬ PHÁ `_pha_giong_ngoai.py` (10 phép, mỗi phép gỡ ĐÚNG 1 chốt).
+    ("72 giọng ngoài",      "_test_giong_ngoai.py",      98),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
     ("73 gióng hàng",       "_test_giong_hang.py",      None),
