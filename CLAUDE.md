@@ -3274,6 +3274,22 @@
   `app/` từ repo chính, không đụng gì tới bản vá đang làm. Nay dùng
   `str(Path(__file__).resolve().parent)`. Viết cổng mới thì **đừng bao giờ ghi
   cứng đường repo**.
+  **`git worktree remove` ĐI XUYÊN JUNCTION VÀ XOÁ `bin/` THẬT — ĐÃ XẢY RA
+  19/08/2026, TÔI LÀM.** Cách dựng worktree ở mục cổng 41 dặn nối `bin/` bằng
+  `mklink /J` (vì `bin/` bị gitignore). Dọn xong bằng `git worktree remove
+  --force <wt>` thì nó theo junction vào và **xoá sạch `<repo>\bin`** —
+  `ffmpeg.exe` · `ffprobe.exe` · `yt-dlp.exe` biến khỏi cây mã đang chạy sản
+  xuất, trong khi 3 luồng khác đang gọi ffmpeg. Triệu chứng KHÔNG nói gì về
+  nguyên nhân: cổng chết giữa MỤC 1b với `FileNotFoundError [WinError 2] The
+  system cannot find the file specified`, đọc ra y như "cổng vừa hồi quy".
+  **THỨ TỰ DỌN ĐÚNG:** `cmd /c rmdir "<wt>\bin"` (gỡ JUNCTION trước, **KHÔNG**
+  `/s`) rồi mới `git worktree remove --force <wt>`.
+  **PHỤC HỒI:** `dist\BQHungVideo\_internal\ff{mpeg,probe}.exe` (bản đóng gói
+  copy TỪ `bin/` lúc build — đo được cùng dấu thời gian với lượt build) và
+  `D:\BQHungVideo\_internal\yt-dlp.exe`. Kiểm lại bằng `ffmpeg -filters` phải
+  còn **`acrossover · xfade_opencl · libplacebo · frei0r · rubberband`** (bản
+  `full_build` của gyan.dev); thiếu là mất nhóm hiệu ứng GPU + co giãn tiếng
+  mà app vẫn chạy. Đã kiểm 8/8 filter sau khi phục hồi, cổng 78 về 52/0.
 - **MỞ RỘNG KHO 09/08/2026 — điểm nhấn 27 -> 43 kiểu · chuyển cảnh GPU 21 -> 31**
   (nhánh `mo-rong-kho`; thước đo `_do_kho_moi.py`, 7 cổng, ở ĐÚNG 1080x1920).
   **16 kiểu điểm nhấn MỚI, tất cả là filter CÓ SẴN của ffmpeg = 0 byte tài

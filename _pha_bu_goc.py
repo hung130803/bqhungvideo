@@ -11,6 +11,23 @@ Worktree được nối `bin/` bằng junction (`bin/` nằm trong `.gitignore`)
 cổng dùng `Path(__file__).resolve().parent` nên nó nạp `app/` CỦA WORKTREE —
 đúng bài học "cổng test phải trỏ về bản mã của chính nó".
 
+╔══════════════════════════════════════════════════════════════════════════╗
+║ **`git worktree remove` ĐI XUYÊN JUNCTION VÀ XOÁ `bin/` THẬT — ĐÃ XẢY RA** ║
+╚══════════════════════════════════════════════════════════════════════════╝
+Dọn worktree bằng `git worktree remove --force <wt>` sau khi đã
+`mklink /J <wt>\bin <repo>\bin` thì nó xoá **NỘI DUNG CỦA `<repo>\bin`** —
+`ffmpeg.exe` + `ffprobe.exe` + `yt-dlp.exe` biến mất khỏi cây mã đang chạy
+sản xuất, và triệu chứng ở cổng là `FileNotFoundError [WinError 2]` giữa
+MỤC 1b, đọc ra y như "cổng hỏng" chứ không như "mất ffmpeg".
+**THỨ TỰ DỌN ĐÚNG, ĐỪNG LÀM KHÁC:**
+    cmd /c rmdir "<wt>\bin"          # gỡ JUNCTION trước (KHÔNG /s)
+    git worktree remove --force <wt>  # rồi mới xoá worktree
+Chỗ phục hồi nếu đã mất: `dist\BQHungVideo\_internal\ff{mpeg,probe}.exe` (bản
+đóng gói copy TỪ `bin/` lúc build) và `D:\BQHungVideo\_internal\yt-dlp.exe`.
+Kiểm lại bằng `ffmpeg -filters` phải còn `acrossover · xfade_opencl ·
+libplacebo · frei0r · rubberband` — bản "full_build" của gyan.dev, thiếu là
+mất nhóm hiệu ứng GPU + co giãn tiếng.
+
 BA PHÉP PHÁ, mỗi phép gỡ ĐÚNG MỘT chốt của bản vá `bu_giong_goc`. Chốt thứ
 tư — cửa *"gốc phải CÓ TIẾNG mới bù"* — đã có MỤC 5 của chính cổng tự kiểm
 (vá `duong_bao_muc` rồi đòi bộ dò phải kêu), nên không lặp lại ở đây:
