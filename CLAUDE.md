@@ -2393,9 +2393,34 @@
   **ĐÁNG LO NHẤT: `vn:Xuân Vĩnh` đang là DÒNG ĐẦU TIÊN của nhóm "Khuyên dùng"**
   trong combo (đo thẳng `giong_bang.gom_nhom`), tức giọng người ta bấm nhanh
   nhất lại là giọng lệch nhất trong phép sàng lọc này.
-  **CHƯA KẾT LUẬN, ĐANG ĐO LẠI:** `BQ_QUET_CAU=34` cho 5 giọng nghi + 2 giọng
-  đối chứng (`_kq_vn_quet34.txt`). **ĐỪNG chặn/giấu giọng nào theo bảng 8 câu**
-  — đúng luật "trùng tên = chưa biết" và luật anh Hùng đã chốt.
+  **ĐÃ ĐO LẠI BẰNG BỘ 34 CÂU (`_kq_vn_quet34.txt`) — 3 GIỌNG XÁC NHẬN LỆCH
+  THẬT, 1 GIỌNG LÀ NHIỄU CỦA PHÉP SÀNG LỌC:**
+
+  | giọng (34 câu · 40 token · ~350 từ) | token sai | bịa chữ | **WER** |
+  |---|---|---|---|
+  | **`vn:Quang Sơn`** | 20,0% | 3,8% | **29,2%** |
+  | **`vn:Xuân Vĩnh`** | 20,0% | 4,6% | **26,4%** |
+  | **`vn:Mai Anh`** | 17,5% | **7,4%** | **25,5%** |
+  | `vn:Ngọc Trân` | 7,5% | 1,9% | **19,9%** |
+  | `vn:Thanh Bình` | 0,0% | 3,0% | 9,0% |
+  | `vn:Adam` (đọc tiếng VIỆT) | 2,5% | 1,4% | 6,2% |
+  | `vn:Ngọc Huyền` | 2,5% | 1,4% | 4,8% |
+  | **edge HoaiMy (TRẦN)** | 2,5% | 1,6% | **4,8%** |
+
+  **3 giọng đầu sai gấp 5-6 LẦN TRẦN** trên mẫu ~350 từ/giọng — ngoài vùng
+  nhiễu, không phải hiệu ứng mẫu nhỏ. `vn:Ngọc Trân` gấp 4 lần. Ngược lại
+  `vn:Thanh Bình` bị bảng 8 câu gắn cờ (WER 20,9%) mà bộ 34 câu ra **9,0%** ->
+  đó là **nhiễu của phép sàng lọc**, đúng cái docstring `_do_vn_quet.py` đã
+  cảnh báo trước khi đo. **Bài học: bảng 8 câu chỉ để CHỌN AI ĐO LẠI, không
+  bao giờ để kết luận.**
+  `vn:Adam` đọc tiếng Việt **2,5% / WER 6,2%** = sát trần, tức bấm nhầm Adam
+  cho video Việt còn nhẹ hơn hẳn chọn 4 giọng kia cho đúng tiếng của nó.
+  **CHƯA LÀM GÌ VỚI 4 GIỌNG ĐÓ — CỐ Ý.** Anh Hùng đã chốt *"cứ thêm hết, tôi
+  tự trải nghiệm"*, và số này là **để anh ấy quyết**, không phải để tôi giấu
+  giọng khỏi combo. Việc nên làm tiếp (chưa làm, chưa đo): nhãn của 4 giọng đó
+  nói ra con số, hoặc xếp chúng xuống dưới trong `giong_bang.gom_nhom` — nhưng
+  `vn:Xuân Vĩnh` đang là **DÒNG ĐẦU nhóm "Khuyên dùng"** nên đây là việc đáng
+  làm sớm.
 - **GIÓNG HÀNG CHỮA ĐƯỢC BỆNH PHỦ CỦA GIỌNG NGOÀI — ĐO 18/08/2026.**
   `dubbing._synth_all_words` nay lấy mốc cho giọng ngoài + Piper bằng gióng
   hàng khi máy có bộ đó. Thứ tự: máy đọc tự trả mốc (edge-tts `WordBoundary`,
