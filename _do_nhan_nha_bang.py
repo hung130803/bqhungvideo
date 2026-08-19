@@ -151,14 +151,41 @@ CAU: dict[str, list[str]] = {
 #: nhánh lùi **tiếng Anh** — bắt một model CHỈ BIẾT TIẾNG VIỆT đọc câu tiếng
 #: Anh rồi ghi số vào bảng. Nó ra 1,88 (thấp nhất toàn bảng) và trông rất
 #: giống một kết luận thật.
-NGOAI_EDGE = ("ov:", "ix:", "piper:")
+#:
+#: **BẪY ĐÓ SẬP LẠI LẦN THỨ HAI VỚI `vn:` (VieNeu) — 19/08/2026.** Danh sách
+#: này ra đời trước `giong_vieneu.py`, nên `vn:Minh Đức` không khớp tiền tố
+#: nào -> `"vn:minh đức".split("-")[0]` không có trong `CAU` -> **rơi đúng
+#: nhánh lùi tiếng Anh**. Tức lượt đo 20 giọng VieNeu (bộ đọc CHỈ BIẾT TIẾNG
+#: VIỆT) sẽ bắt chúng đọc *"A storm unlike anything in recorded history…"*
+#: rồi ghi số vào cùng cột với `vi-VN-*`.
+#:
+#: **NÓI THẲNG SỐ ĐO, KHÔNG KHOE:** `_do_nhan_nha_vn.py` phần 1 đo bẫy này
+#: trên `vn:Ngọc Huyền` — bộ câu Việt **3,10** so với bộ câu Anh **2,82**,
+#: lệch **0,28**. Nhưng cùng lượt đó phát hiện chuyện lớn hơn: **VieNeu KHÔNG
+#: TIỀN ĐỊNH** — cùng giọng, cùng bộ câu Việt, hai lượt ra **3,28 và 2,92**
+#: (trải 0,36, tức LỚN HƠN chênh lệch giữa hai bộ câu). Vậy phép đo 2 lượt
+#: **không tách được** hai nguyên nhân, và con số 0,28 KHÔNG được kể là "bằng
+#: chứng bẫy". Cái vá này đứng vững vì lý do CẤU TẠO (VieNeu là bộ đọc tiếng
+#: Việt, bắt nó đọc tiếng Anh là đo thứ khác), không vì con số.
+NGOAI_EDGE = ("ov:", "ix:", "piper:", "vn:", "vnb:")
 
 
 def cau_cho(voice: str) -> list[str]:
-    """Bộ câu đúng tiếng của giọng; không có bảng -> lùi tiếng Anh."""
+    """Bộ câu đúng tiếng của giọng.
+
+    **KHÔNG ĐOÁN ĐƯỢC THÌ NÉM, ĐỪNG LÙI TIẾNG ANH.** Nhánh lùi im lặng chính
+    là chỗ `piper:vais1000` (1,88) và `vn:` chui vào. Giọng edge-tts luôn mang
+    mã `<nn>-<VÙNG>-<Tên>Neural` nên tra bảng là ra; mã có dấu `:` mà chưa
+    khai trong `NGOAI_EDGE` nghĩa là có nguồn giọng MỚI — người thêm nguồn
+    phải tự khai nó đọc tiếng gì, chứ không để phép đo tự bịa hộ.
+    """
     v = str(voice)
     if v.startswith(NGOAI_EDGE):
         return CAU["vi"]
+    if ":" in v:
+        raise ValueError(
+            f"giọng {v!r} mang tiền tố lạ — khai vào `NGOAI_EDGE` (nếu nó đọc "
+            f"tiếng Việt) trước khi đo, đừng để nó lùi về câu tiếng Anh")
     return CAU.get(v.split("-")[0].lower()) or CAU["en"]
 
 

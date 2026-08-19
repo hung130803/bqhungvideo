@@ -40,7 +40,8 @@ NHAN_LOAI = {
 THU_TU_LOAI = ("cau_thuong", "ten_rieng", "viet_tat", "so_ngay", "don_vi",
                "ban_dia")
 
-NHAN_NN = {"vi": "Việt", "en": "Anh", "zh": "Trung", "ja": "Nhật"}
+NHAN_NN = {"vi": "Việt", "en": "Anh", "zh": "Trung", "ja": "Nhật",
+           "ko": "Hàn"}
 
 CORPUS: dict[str, list[tuple[str, str, list[str]]]] = {
     # ================================================================
@@ -285,6 +286,78 @@ CORPUS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("ban_dia", "織田信長 の物語は何百年も語り継がれています。",
          ["織田信長"]),
         ("ban_dia", "彼女は 鹿児島 の小さな村で生まれました。", ["鹿児島"]),
+    ],
+    # ================================================================
+    # TIẾNG HÀN — thêm 19/08/2026 cho phép đo ĐA NGÔN NGỮ.
+    #
+    # Anh Hùng: *"giọng nào đa ngôn ngữ cứ báo tôi nhé, nhiều giọng đọc hết
+    # oke cả Hàn Nhật Mỹ Trung mà rất hay ấy"* -> năm tiếng phải phủ là
+    # Việt · Anh · Hàn · Nhật · Trung. Bốn tiếng đầu đã có từ lượt 17/08;
+    # thiếu đúng tiếng Hàn, mà thiếu một tiếng thì không trả lời được câu
+    # "giọng này đọc được mấy trong năm tiếng".
+    #
+    # **TIẾNG HÀN CÓ DẤU CÁCH** (khác Trung/Nhật) — đây không phải chi tiết
+    # vụn: `recap._CJK_CHARS` GỒM hangul nên mọi bộ tách "CJK-aware" có sẵn
+    # trong repo sẽ cắt tiếng Hàn thành TỪNG KÝ TỰ. Ở phép đo này thì cắt
+    # kiểu gì cũng được **miễn là hai bên qua CÙNG một bộ tách**, nhưng ai
+    # dùng lại bộ câu này cho việc KHÁC (nối chuỗi để hiển thị, so số từ với
+    # mốc STT) phải đọc bài học cổng 54 trước.
+    "ko": [
+        ("cau_thuong", "오늘은 날씨가 아주 좋으니까 같이 산책하러 가요.",
+         ["날씨가 아주 좋", "산책"]),
+        ("cau_thuong", "그는 문을 열고 어두운 방 안으로 들어갔습니다.",
+         ["문을 열고", "어두운 방"]),
+        ("cau_thuong", "그녀는 미소를 지으며 아무 말 없이 돌아섰습니다.",
+         ["미소", "돌아섰"]),
+        ("cau_thuong", "우리는 어제 오후 내내 거기에서 기다렸습니다.",
+         ["오후 내내", "기다렸"]),
+
+        ("ten_rieng", "이 영화는 지금 Netflix 순위에서 일 위입니다.",
+         ["Netflix"]),
+        ("ten_rieng", "Marvel 이 최신 영화를 방금 공개했습니다.", ["Marvel"]),
+        ("ten_rieng", "그녀는 이 영상을 오래된 iPhone 으로 찍었습니다.",
+         ["iPhone"]),
+        ("ten_rieng", "Elon Musk 가 또 인터넷에서 논란을 일으켰습니다.",
+         ["Elon Musk"]),
+        ("ten_rieng", "그 영상은 지난주에 TikTok 에서 크게 유행했습니다.",
+         ["TikTok"]),
+        ("ten_rieng", "그의 YouTube 채널은 구독자가 백만 명이 넘습니다.",
+         ["YouTube"]),
+
+        ("viet_tat", "AI 기술이 우리가 일하는 방식을 바꾸고 있습니다.", ["AI"]),
+        ("viet_tat", "이번 CEO 는 취임한 지 이제 삼 개월 되었습니다.", ["CEO"]),
+        ("viet_tat", "올해 우리나라 전체 GDP 가 꽤 많이 올랐습니다.", ["GDP"]),
+        ("viet_tat", "그녀의 새 MV 는 하루 만에 백만 조회를 기록했습니다.",
+         ["MV"]),
+        ("viet_tat", "이 영화의 OST 는 정말 좋아서 다들 좋아합니다.", ["OST"]),
+        ("viet_tat", "그 USB 를 컴퓨터에 꽂아 주세요.", ["USB"]),
+
+        ("so_ngay", "2026년 이 되자 모든 것이 완전히 달라졌습니다.", ["2026년"]),
+        ("so_ngay", "이 영화는 첫 주에 1,500,000 달러를 벌었습니다.",
+         ["1,500,000"]),
+        ("so_ngay", "우리는 작년 8월 15일 에 만나기로 약속했습니다.",
+         ["8월 15일"]),
+        ("so_ngay", "이 시장은 약 35억 규모로 평가되고 있습니다.", ["35억"]),
+        ("so_ngay", "관객의 90% 가 아주 높은 점수를 주었습니다.", ["90%"]),
+        ("so_ngay", "그것은 1999년 에 있었던 일이라 벌써 오래되었습니다.",
+         ["1999년"]),
+
+        ("don_vi", "이 차는 고속도로에서 250 km/h 까지 낼 수 있습니다.",
+         ["250 km/h"]),
+        ("don_vi", "그때 바깥 기온은 38°C 라서 너무 더웠습니다.", ["38°C"]),
+        ("don_vi", "그는 촬영 한 번에 500$ 를 냈습니다.", ["500$"]),
+        ("don_vi", "그 물고기는 거의 12 kg 이라 책상보다 컸습니다.", ["12 kg"]),
+        ("don_vi", "그 아파트는 85 m2 이고 도시 중심에 있습니다.", ["85 m2"]),
+        ("don_vi", "질문을 받은 사람 중 30% 만 동의했습니다.", ["30%"]),
+
+        ("ban_dia", "이순신 장군은 많은 사람들의 영웅입니다.", ["이순신"]),
+        ("ban_dia", "그들 가족은 광주 로 이사한 지 오래되었습니다.", ["광주"]),
+        ("ban_dia", "서울 에서 부산 까지 기차로 몇 시간이면 갑니다.",
+         ["서울", "부산"]),
+        ("ban_dia", "제주도 의 겨울 바다는 아주 유명합니다.", ["제주도"]),
+        ("ban_dia", "세종대왕 의 이야기는 수백 년 동안 전해졌습니다.",
+         ["세종대왕"]),
+        ("ban_dia", "그녀는 강원도 의 작은 마을에서 태어났습니다.", ["강원도"]),
     ],
 }
 
