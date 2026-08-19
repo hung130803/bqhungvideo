@@ -216,6 +216,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 from pathlib import Path
@@ -540,6 +541,15 @@ def tinh_trang_omnivoice() -> dict:
         "python": py,
         "model": model,
         "thu_muc": str(thu_muc_ngoai()),
+        # NGUỒN TỪNG GÓI — trả lời câu *"gói nằm THẬT ở đâu"*, đúng cái bản
+        # `.exe` thấy. `goi[x]['nguon'] == 'hệ thống'` nghĩa là *"máy này chạy
+        # được, máy anh Hùng thì không"* (cổng 58). Để RIÊNG khoá, không gộp
+        # vào `thieu`.
+        "goi": do_goi_ov(),
+        "venv": str(thu_muc_ngoai() / "venv"),
+        # Nút tải bấm được không (máy nhân viên có thể không có Python 3).
+        "cai_duoc": bool(_python_he_thong()),
+        "nhan_tai": nhan_tai(),
         # CẢNH BÁO CHỖ ĐỂ ĐỒ — xem `o_thu_muc_tam`. Đây KHÔNG phải "thiếu"
         # (máy vẫn chạy được), nên để riêng khoá: gộp vào `thieu` là nút tải
         # và nhãn báo sai trạng thái.
@@ -617,6 +627,334 @@ def co_indextts() -> bool:
         return bool(tinh_trang_indextts()["co"])
     except Exception:  # noqa: BLE001
         return False
+
+
+# ---------------------------------------------------------------------------
+# NÚT CÀI — chỉ chạy khi NGƯỜI DÙNG BẤM
+# ---------------------------------------------------------------------------
+#: **VÌ SAO HÀM NÀY PHẢI TỒN TẠI — 19/08/2026, MẤT MÔI TRƯỜNG 7,74 GB.**
+#: Repo có `cai_demucs` · `cai_giong_hang` · `cai_piper` · `cai_vieneu` nhưng
+#: KHÔNG có `cai_omnivoice`: môi trường lượt 7 dựng bằng tay ngoài app. Nên khi
+#: `_don(Path(""))` xoá sạch cây làm việc, mọi thứ khác dựng lại được từ nút
+#: bấm còn `_giong_ngoai/` thì **không có nút nào để bấm** — phải suy ra tên
+#: gói rồi cài tay. Một tính năng không có đường dựng lại là một tính năng chỉ
+#: sống được tới lần mất đầu tiên.
+#:
+#: Tên gói PyPI là **`omnivoice`** (0.2.1, `requires_python >= 3.10`) — đã kiểm
+#: bằng metadata chỉ mục, không đoán.
+
+#: Gói PHẢI nằm THẬT trong site-packages của môi trường riêng. Chỉ tên TẦNG
+#: TRÊN CÙNG: `PathFinder.find_spec("omnivoice.models.omnivoice", ...)` sẽ
+#: IMPORT gói cha thật, mà nạp torch vào tiến trình app đã có Qt là ACCESS
+#: VIOLATION (xem khối "TIẾN TRÌNH RIÊNG" ở đầu file).
+GOI_OV: tuple[str, ...] = ("omnivoice", "torch", "torchaudio",
+                           "transformers", "soundfile")
+
+#: Chỉ mục wheel của PyTorch. `--extra-index-url` chứ KHÔNG `--index-url`:
+#: chỉ mục này không có `omnivoice`/`gradio`/`librosa` nên ép cả lượt vào đó
+#: là hỏng phép giải (bài học `cai_demucs`).
+CHI_MUC_TORCH_CUDA = "https://download.pytorch.org/whl/cu126"
+CHI_MUC_TORCH_CPU = "https://download.pytorch.org/whl/cpu"
+
+#: **SỐ ĐO, KHÔNG PHẢI ƯỚC BỪA** — `pip install --dry-run --report` (87 gói)
+#: rồi HTTP HEAD từng wheel, 19/08/2026:
+#:     cu126  torch 2.13.0+cu126 **2.474,4 MB** + 184,4 MB còn lại = **2.658,8 MB**
+#:     cpu    torch 2.13.0+cpu     116,3 MB     + 183,2 MB còn lại =   **299,5 MB**
+#: Nhãn PHẢI khớp ĐƯỜNG SẼ ĐI (cổng 71 CA 4): repo này đã có lỗi nút ghi
+#: 155 MB mà hộp xác nhận doạ 2 GB — bấm xong ngồi đợi một lượt tải gấp 16 lần
+#: cái vừa đọc. Con số ở đây là **phần pip tải**; trọng số 6,1 GB là việc
+#: KHÁC và `tinh_trang_omnivoice()['thieu']` nói riêng.
+MB_TAI_GPU = 2658.8
+MB_TAI_CPU = 299.5
+NHAN_TAI_GPU = ("Tải môi trường OmniVoice bản CUDA (khoảng 2,6 GB) — "
+                "chạy 1 lần")
+NHAN_TAI_CPU = "Tải môi trường OmniVoice (khoảng 300 MB) — chạy 1 lần"
+
+
+def nhan_tai() -> str:
+    """Nhãn nút tải ĐÚNG với máy này. Đọc lại mỗi lần gọi (bài học
+    `tg_so.duong_so`): cắm/rút GPU giữa phiên thì nhãn phải đổi theo."""
+    return NHAN_TAI_GPU if co_gpu_nvidia() else NHAN_TAI_CPU
+
+
+def co_gpu_nvidia() -> bool:
+    """Máy có GPU NVIDIA dùng được không — hỏi `nvidia-smi`, **KHÔNG hỏi
+    torch**.
+
+    Dùng lại `thay_giong.co_gpu_nvidia` để hai nút tải không bao giờ chọn
+    khác chỉ mục nhau. Thiếu module thì tự hỏi lấy — hàm này KHÔNG BAO GIỜ NÉM,
+    và đoán nhầm cũng chỉ dẫn tới tải gói to/nhỏ hơn: `_MA_DOC` vẫn tự quyết
+    thiết bị bằng `torch.cuda.is_available()` lúc chạy.
+    """
+    try:
+        from app.core import thay_giong as _tg
+        return bool(_tg.co_gpu_nvidia())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=25, creationflags=_NO_WIN)
+        return r.returncode == 0 and bool((r.stdout or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _thu_muc_goi(venv: Path) -> str:
+    """site-packages của môi trường riêng. '' = chưa dựng."""
+    for ten in ("Lib", "lib"):
+        d = venv / ten / "site-packages"
+        try:
+            if d.is_dir():
+                return str(d)
+        except OSError:
+            pass
+    return ""
+
+
+def do_goi_ov(venv: Optional[Path] = None) -> dict:
+    """TỪNG gói đang nằm ở ĐÂU — **KHÔNG import một dòng nào**.
+
+    Trả `{tên: {"venv": <đường trong môi trường riêng|"">, "he": <đường NGOÀI>,
+    "nguon": "venv" | "hệ thống" | ""}}`.
+
+    **HỎI ĐÚNG CÂU — bài học cổng 58.** Câu hỏi KHÔNG phải *"import được
+    không"* (máy dev mượn gói của `.venv` rồi báo "đã cài" trong khi thư mục
+    đích rỗng, bản `.exe` thì báo thiếu — máy dev XANH, máy thật ĐỎ) mà là
+    *"`spec.origin` có nằm THẬT trong thư mục đích không"*.
+
+    Dùng `PathFinder` chứ KHÔNG `importlib.util.find_spec`: `find_spec` phải
+    NẠP gói cha, và nó luôn tìm trên `sys.path` nên không trả lời được câu
+    trên.
+    """
+    from importlib.machinery import PathFinder
+    if venv is None:
+        venv = thu_muc_ngoai() / "venv"
+    sp = _thu_muc_goi(Path(venv))
+    duong = [sp] if sp else []
+
+    def _tim(ten: str, o_dau: Optional[list]) -> str:
+        try:
+            s = PathFinder.find_spec(ten, o_dau)
+        except Exception:  # noqa: BLE001 - thư mục hỏng / gói cụt
+            return ""
+        if s is None:
+            return ""
+        g = getattr(s, "origin", "") or ""
+        if (not g or g == "namespace") and getattr(s, "submodule_search_locations", None):
+            try:
+                g = list(s.submodule_search_locations)[0]
+            except (TypeError, IndexError):
+                g = ""
+        return str(g or "")
+
+    ra: dict = {}
+    for ten in GOI_OV:
+        o_venv = _tim(ten, duong) if duong else ""
+        he = "" if o_venv else _tim(ten, None)
+        ra[ten] = {"venv": o_venv, "he": he,
+                   "nguon": "venv" if o_venv else ("hệ thống" if he else "")}
+    return ra
+
+
+def _python_he_thong() -> str:
+    """Python 3 trên máy để DỰNG môi trường riêng. "" = không có.
+
+    KHÔNG dùng `sys.executable` ở bản `.exe`: chỗ đó là chính
+    `BQHungVideo.exe`, gọi `-m venv` vào nó là vô nghĩa (đúng cách
+    `giong_vieneu._python_he_thong` / `piper_tts._python_chay` đã làm).
+    """
+    if not getattr(sys, "frozen", False):
+        ex = Path(sys.executable)
+        try:
+            if ex.exists() and ex.name.lower().startswith("python"):
+                return str(ex)
+        except OSError:
+            pass
+    for ten in ("py", "python", "python3"):
+        p = shutil.which(ten)
+        if p:
+            return p
+    return ""
+
+
+#: Một lượt cài là 2,6 GB — hai lượt chồng nhau vào cùng thư mục là hỏng cả hai.
+_KHOA_CAI = threading.Lock()
+
+
+def cai_omnivoice(on_progress: Optional[Callable[[float, str], None]] = None,
+                  han_giay: int = 7200) -> dict:
+    """Dựng môi trường OmniVoice ở `thu_muc_ngoai()/venv`. **CHỈ khi NGƯỜI
+    DÙNG BẤM** — không bao giờ tự chạy nền.
+
+    ═══ VÌ SAO **VENV** CHỨ KHÔNG `--target` NHƯ `_lib`/`_piper` ═══
+    Đây là chỗ đã sập một lần và nó là bẫy KÍCH THƯỚC-KHÔNG-CHỨNG-MINH-GÌ:
+    `--target` chỉ chép file vào một thư mục rồi nhét vào `sys.path` của MỘT
+    python KHÁC, nên gói biên dịch cho **cp314** nằm đủ 4 GB trong thư mục mà
+    python **cp312** nạp vào là `ImportError` phần mở rộng C. Thư mục đầy
+    không có nghĩa là chạy được.
+    Venv thì có **python CỦA NÓ**: pip cài cho đúng bản đang đứng đó, không
+    mượn gì của ai, không thể lệch ABI do xây dựng. Đó cũng đúng lý do
+    `giong_vieneu` chọn venv (librosa/numba/soundfile đều có phần mở rộng), và
+    là điều làm phép dò `_python_omnivoice` nói THẬT.
+
+    ═══ KHÔNG BAO GIỜ CÀI VÀO `.venv` ═══
+    `.venv` là môi trường anh Hùng đang chạy sản xuất 300 kênh. Một lượt
+    `pip install` kéo theo torch/transformers khác bản có thể phá app đang
+    chạy — đúng lý do Demucs phải ở `_lib` (cổng 55) và VieNeu ở
+    `_giong_vieneu` (cổng 79).
+
+    ═══ `--ignore-installed` ═══
+    Giữ đúng luật cổng 58: pip cũ coi gói đã có trong môi trường ĐANG CHẠY là
+    "đã thoả mãn" rồi BỎ QUA, không chép vào đích. Ở venv trắng thì gần như
+    không có gì để bỏ qua, nhưng cờ này khiến kết quả **không phụ thuộc bản
+    pip** — và `_lib` đã chứng minh hành vi cũ có thật.
+
+    Trả `{ok, loi, giay, venv, tinh_trang, goi, gpu, chi_muc, nhat_ky}`.
+    KHÔNG BAO GIỜ NÉM.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(max(0.0, min(1.0, p)), m)
+            except Exception:  # noqa: BLE001
+                pass
+
+    d = thu_muc_ngoai()
+    venv = d / "venv"
+    py = _python_he_thong()
+    if not py:
+        return {"ok": False, "venv": str(venv), "giay": 0.0,
+                "loi": ("Máy này không có Python 3 nên app không tự tải được: "
+                        "cài Python 3 (python.org) rồi bấm lại, hoặc copy thư "
+                        "mục _giong_ngoai từ máy đã cài sang.")}
+    if not _KHOA_CAI.acquire(blocking=False):
+        return {"ok": False, "venv": str(venv), "giay": 0.0,
+                "loi": "Đang tải rồi — đợi lượt này xong."}
+    t0 = time.time()
+    nhat_ky: list[str] = []
+    try:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return {"ok": False, "venv": str(venv), "giay": 0.0,
+                    "loi": f"Không tạo được thư mục {d}: {e}"}
+
+        vpy = _python_trong_venv(venv)
+        if not vpy:
+            prog(0.03, "Đang dựng môi trường Python riêng...")
+            r = _chay_lenh([py, "-m", "venv", str(venv)], 900)
+            nhat_ky.append(f"venv rc={r[0]} {r[1][-200:]}")
+            if r[0] != 0:
+                return {"ok": False, "venv": str(venv), "nhat_ky": nhat_ky,
+                        "giay": round(time.time() - t0, 2),
+                        "loi": f"Dựng môi trường hỏng: {r[1][-500:]}"}
+            vpy = _python_trong_venv(venv)
+        if not vpy:
+            return {"ok": False, "venv": str(venv), "nhat_ky": nhat_ky,
+                    "giay": round(time.time() - t0, 2),
+                    "loi": f"Dựng xong mà không thấy python ở {venv}"}
+
+        gpu = co_gpu_nvidia()
+        chi_muc = CHI_MUC_TORCH_CUDA if gpu else CHI_MUC_TORCH_CPU
+        args = [vpy, "-m", "pip", "install", "--no-input",
+                "--disable-pip-version-check", "--upgrade",
+                "--ignore-installed", "--extra-index-url", chi_muc,
+                "omnivoice"]
+        prog(0.06, (NHAN_TAI_GPU if gpu else NHAN_TAI_CPU) + "...")
+        p = None
+        try:
+            p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True,
+                                 encoding="utf-8", errors="replace",
+                                 bufsize=1, creationflags=_NO_WIN)
+            _gan_job(p)
+            han = time.time() + han_giay
+            n = 0
+            for dong in p.stdout or ():
+                dong = dong.rstrip()
+                if not dong:
+                    continue
+                nhat_ky.append(dong)
+                n += 1
+                # KHÔNG biết trước tổng byte -> % chỉ là dấu hiệu "đang chạy",
+                # trần 0,93 để không khoe xong trước khi xong.
+                prog(min(0.93, 0.06 + n / 1200.0), dong[-110:])
+                if time.time() > han:
+                    p.kill()
+                    return {"ok": False, "venv": str(venv), "gpu": gpu,
+                            "giay": round(time.time() - t0, 2),
+                            "nhat_ky": nhat_ky[-40:],
+                            "loi": f"Tải quá {han_giay}s, đã dừng."}
+            ma = p.wait(timeout=180)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "venv": str(venv), "gpu": gpu,
+                    "giay": round(time.time() - t0, 2),
+                    "nhat_ky": nhat_ky[-40:],
+                    "loi": f"{type(e).__name__}: {e}"}
+        finally:
+            if p is not None:
+                _bo_gan_job(p)
+        if ma != 0:
+            return {"ok": False, "venv": str(venv), "gpu": gpu, "ma_thoat": ma,
+                    "giay": round(time.time() - t0, 2),
+                    "nhat_ky": nhat_ky[-40:],
+                    "loi": f"pip trả mã {ma}: " + " | ".join(nhat_ky[-4:])}
+
+        # ═══ HẬU KIỂM: SO `spec.origin` VỚI THƯ MỤC ĐÍCH ═══
+        # KHÔNG hỏi "import được không" — bài học cổng 58. `PathFinder` nhớ
+        # nội dung thư mục theo mtime, mà pip vừa ghi vào, nên phải xoá bộ nhớ
+        # đó; không thì lượt kiểm ngay sau khi cài vẫn thấy thư mục như lúc
+        # chưa cài rồi báo THIẾU oan.
+        prog(0.95, "Đang kiểm lại...")
+        import importlib
+        importlib.invalidate_caches()
+        goi = do_goi_ov(venv)
+        thieu = [g for g in GOI_OV if not goi[g]["venv"]]
+        if thieu:
+            return {"ok": False, "venv": str(venv), "gpu": gpu, "goi": goi,
+                    "giay": round(time.time() - t0, 2),
+                    "nhat_ky": nhat_ky[-40:], "thieu": thieu,
+                    "loi": ("pip trả mã 0 nhưng những gói này KHÔNG nằm trong "
+                            + str(venv) + ": " + ", ".join(thieu))}
+        tt = tinh_trang_omnivoice()
+        prog(1.0, "Đã cài xong môi trường OmniVoice.")
+        _ghi_log(f"Đã cài môi trường OmniVoice vào {venv} "
+                 f"({'CUDA' if gpu else 'CPU'}, {round(time.time() - t0)}s)")
+        return {"ok": True, "loi": "", "venv": str(venv), "gpu": gpu,
+                "chi_muc": chi_muc, "goi": goi, "tinh_trang": tt,
+                "giay": round(time.time() - t0, 2), "nhat_ky": nhat_ky[-40:]}
+    finally:
+        try:
+            _KHOA_CAI.release()
+        except RuntimeError:
+            pass
+
+
+def _python_trong_venv(venv: Path) -> str:
+    """python.exe của môi trường riêng. '' = chưa dựng."""
+    for phan in (("Scripts", "python.exe"), ("bin", "python")):
+        p = Path(venv).joinpath(*phan)
+        try:
+            if p.exists():
+                return str(p)
+        except OSError:
+            pass
+    return ""
+
+
+def _chay_lenh(cmd: list, han: int) -> tuple:
+    """Mọi `subprocess` đều có `timeout` — luật của repo."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           creationflags=_NO_WIN, timeout=han)
+    except subprocess.TimeoutExpired:
+        return 1, f"chạy quá {han}s, đã dừng"
+    except OSError as e:
+        return 1, str(e)
+    return r.returncode, (r.stderr or "") + (r.stdout or "")
 
 
 def _ghi_log(dong: str) -> None:
