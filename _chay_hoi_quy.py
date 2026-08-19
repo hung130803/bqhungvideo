@@ -97,7 +97,11 @@ CONG = [
     # (mức nhấn nhá trên TỪNG dòng; biến thể cao độ KHÔNG được mượn số của
     # giọng gốc) · CA 10 (20 giọng VieNeu không phải giọng chết — gọi THẬT
     # `_synth_all_words` rồi xem nó rẽ vào đâu). NÂNG mốc = cổng CHẶT HƠN.
-    ("79 gom nhóm giọng",   "_test_gom_giong.py",        84),
+    # 84 -> **87** (19/08/2026): mốc 84 đã LẠC HẬU — cổng thật có 87 mục, và vì
+    # bộ so chỉ kêu khi `ĐẠT < mốc` nên 3 mục dư đó chưa bao giờ được canh.
+    # Lượt này cổng ra 86/1 (đuôi nhãn VieNeu dài 142 > trần 132 sau khi sửa
+    # nhãn "250 MB"); đã chữa bằng cách viết ngắn lại ĐUÔI, **KHÔNG nới trần**.
+    ("79 gom nhóm giọng",   "_test_gom_giong.py",        87),
     # Cổng 81 canh lượt 19/08/2026: MỞ KHOÁ 185 giọng edge-tts (`giong_mo`) ·
     # giọng RIÊNG THEO KÊNH + XOAY VÒNG (`giong_kenh`) · NHÂN BẢN giọng từ mẫu
     # (`nhan_ban_giong`) · Chatterbox (`giong_chatter`). Cũng KHÔNG gọi mạng,
@@ -149,7 +153,13 @@ CONG = [
     # không ra). Cổng còn LƯU ẢNH `_ANH_O_TIM_GIONG.png` để người tự mở ra
     # nhìn: **đếm điểm ảnh KHÔNG phát hiện được ô vuông tofu** (tofu 2.431 px
     # vs chữ thật 517 px = ngược 4,7 lần).
-    ("84 ô tìm giọng",      "_test_o_tim_giong.py",      48),
+    # Mốc 48 -> **59**: thêm CA 9 canh *"con số ĐÚNG mà đặt chỗ SAI thì người
+    # đọc NHÂN LÊN"* (anh Hùng: *"sao có cái giọng 1 giọng tận 250mb á tốn
+    # thế"*). Đo lúc chưa sửa: `250 MB` trên **20 dòng** VieNeu = đọc thành
+    # 5 GB · `6,1 GB` trên **5 dòng** OmniVoice = đọc thành 30,5 GB. CA 9 canh
+    # CẢ LỚP BỆNH (mọi dòng có số dung lượng phải nói "dùng chung"), kèm 3 mục
+    # TỰ KIỂM BỘ DÒ — thiếu chúng thì "0 dòng bệnh" có thể là bộ dò đã chết.
+    ("84 ô tìm giọng",      "_test_o_tim_giong.py",      60),
     # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
     # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
     # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`

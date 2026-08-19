@@ -81,6 +81,7 @@ _app.setStyleSheet(theme.QSS)              # QSS THẬT (bài học cổng 9 / v
 
 import app.ui.thay_giong_dialog as TGD  # noqa: E402
 from app.core import giong_bang as GB  # noqa: E402
+from app.core import giong_vieneu as VN_MOD  # noqa: E402
 from app.core.dubbing import list_recap_voices  # noqa: E402
 
 OK: list[str] = []
@@ -536,6 +537,106 @@ p2.render(pt)
 pt.end()
 img.save(str(Path(REPO) / "_ANH_O_TIM_GIONG.png"))
 print(f"       ảnh cả hộp: _ANH_O_TIM_GIONG.png ({img.width()}x{img.height()})")
+
+# ---------------------------------------------------------------------------
+# CA 9 — CON SỐ ĐÚNG NHƯNG ĐẶT CHỖ SAI THÌ NGƯỜI ĐỌC NHÂN LÊN
+# ---------------------------------------------------------------------------
+# Anh Hùng tự phát hiện: *"sao có cái giọng 1 giọng tận 250mb á tốn thế"*.
+# `250 MB` là số ĐÚNG, nhưng nó lặp trên **TỪNG DÒNG** trong 20 giọng VieNeu nên
+# đọc thành 20 × 250 MB = 5 GB. Đo lúc chưa sửa: `250 MB` trên **20 dòng** ·
+# `6,1 GB` trên **5 dòng** (30,5 GB!) · `212 MB` trên 1 dòng (1 dòng thì không
+# có ảo giác). Đây là mục canh CẢ LỚP BỆNH, không riêng VieNeu.
+# (Đặt sau CA 7 và TRƯỚC CA 8 vì CA 8 phá mã nguồn nên phải đứng cuối.)
+print("\n[CA 9] nhãn không được đọc thành nhân lên")
+import re as _re  # noqa: E402
+
+_RE_CO = _re.compile(r"\d+(?:,\d+)?\s*(?:MB|GB)")
+#: Chữ chặn phép nhân: nói rõ đây là MỘT bộ đã xác định, không phải mỗi dòng
+#: một lần tải. Dòng nào mang số dung lượng thì PHẢI có một trong mấy chữ này.
+#:
+#: **`"bộ "` NẰM TRONG DANH SÁCH LÀ CÓ LÝ DO ĐO ĐƯỢC, không phải nới cho xanh:**
+#: dòng combo bị cổng 79 chặn ở **132 ký tự**, mà `cần tải bộ dùng chung 250 MB`
+#: đo ra **142** (`bộ chung` 137 · `1 bộ` 133 · **`bộ` 131 = vừa**). Nới trần 132
+#: là vừa đúng chỗ cổng 79 mất khả năng bắt "ai đó nhét bản ĐẦY ĐỦ 682 ký tự vào
+#: combo". Nên DÒNG mang chữ `bộ`, còn CÂU ĐẦY ĐỦ KÈM SỐ GIỌNG bị các mục dưới
+#: đòi ở ba chỗ đọc MỘT LẦN (tooltip · nút tải · tiền tố CHƯA TẢI) — chỗ nào
+#: đọc một lần thì không dựng lại được ảo giác nhân.
+_CHU_CHUNG = ("dùng chung", "bộ chung", "TẢI MỘT LẦN", "tải MỘT LẦN",
+              "cần tải bộ ")
+
+
+def _nhan_nhan_len(lay_nhan) -> list[tuple[str, str]]:
+    """Dòng nào có số dung lượng mà KHÔNG nói 'dùng chung' -> đọc thành nhân."""
+    ra = []
+    for t in lay_nhan:
+        t = str(t or "")
+        if _RE_CO.search(t) and not any(c in t for c in _CHU_CHUNG):
+            ra.append((_RE_CO.search(t).group(0), t))
+    return ra
+
+
+# TỰ KIỂM BỘ DÒ — thiếu mục này thì "0 dòng bệnh" có thể là bộ dò chết.
+dat("TỰ KIỂM BỘ DÒ: nhãn kiểu CŨ ('cần tải 250 MB') PHẢI bị bắt",
+    len(_nhan_nhan_len(["Nam Minh - chỉ tiếng Việt · miễn phí, cần tải 250 MB"]))
+    == 1)
+dat("TỰ KIỂM BỘ DÒ: nhãn ĐÃ SỬA không bị bắt oan",
+    not _nhan_nhan_len(["Nam Minh · miễn phí, cần tải bộ 250 MB"]))
+dat("TỰ KIỂM BỘ DÒ: dòng KHÔNG có số dung lượng thì bỏ qua",
+    not _nhan_nhan_len(["Ryan (Nam) - chỉ tiếng Anh · miễn phí"]))
+# TRẦN 132 của cổng 79 là RÀNG BUỘC THẬT của mục trên — canh ngay tại đây để ai
+# đọc CA 9 thấy luôn vì sao dòng không mang cả câu (đừng đi nới trần bên kia).
+# **ĐO TRÊN NHÃN GỐC CỦA `gom_nhom`, KHÔNG đo `cb.itemText`**: combo đã qua
+# `nhan_gon` nên `itemText` luôn ngắn -> đo ở đó là mục này tự ĐẠT vĩnh viễn,
+# đúng lúc nhãn gốc phình quá trần mà cổng 79 mới là chỗ kêu.
+_ra79 = GB.gom_nhom(TGD.giong_dung_duoc(TGD._CACHE_GIONG), "vi", loi_tat=True)
+_dai_vn = max((len(_n) for _n, _v in _ra79
+               if _v and str(_v).startswith("vn:")), default=0)
+dat("nhãn GỐC dòng VieNeu vẫn dưới trần 132 của cổng 79 (đừng nới trần bên kia)",
+    0 < _dai_vn <= 132, f"dài nhất {_dai_vn} ký tự")
+
+for _ten_nn in ("vi", "en"):
+    _i = dlg2.cb_nn.findData(_ten_nn)
+    if _i >= 0:
+        dlg2.cb_nn.setCurrentIndex(_i)
+    _app.processEvents()
+    _cb2 = dlg2.cb_giong
+    _xau = _nhan_nhan_len(_cb2.itemText(k) for k in range(_cb2.count()))
+    dat(f"[{_ten_nn}] mọi dòng có số dung lượng đều nói 'dùng chung'",
+        not _xau, f"{len(_xau)} dòng bệnh"
+        + (f" · vd «{_xau[0][1][:60]}»" if _xau else ""))
+
+# SỐ GIỌNG phải ĐẾM ĐƯỢC, không ghi cứng — ghi cứng "20" thì lần thêm giọng kế
+# tiếp nhãn thành lời khai sai mà không cổng nào kêu.
+_so = getattr(dlg2, "_so_cung_bo", None) or {}
+dat("app ĐẾM số giọng từng nguồn trên danh sách ĐANG BÀY (không ghi cứng)",
+    isinstance(_so, dict) and _so.get("vieneu", 0) == 20
+    and _so.get("ov", 0) >= 1,
+    f"{ {k: v for k, v in _so.items() if k != 'edge'} }")
+# đếm theo MÃ DUY NHẤT, không theo DÒNG: nhóm lối tắt bày lại giọng đã có nên
+# đếm dòng ra 25 cho 20 giọng = chữa một số sai bằng một số sai khác.
+dat("đếm theo MÃ GIỌNG DUY NHẤT, không đếm DÒNG (nhóm lối tắt bày trùng)",
+    _so.get("vieneu", 0) == len(
+        {str(dlg2.cb_giong.itemData(k)) for k in range(dlg2.cb_giong.count())
+         if str(dlg2.cb_giong.itemData(k) or "").startswith("vn:")}),
+    f"{_so.get('vieneu', 0)} mã")
+
+_tip_vn = next((dlg2.cb_giong.model().item(k).toolTip() or ""
+                for k in range(dlg2.cb_giong.count())
+                if str(dlg2.cb_giong.itemData(k) or "").startswith("vn:")), "")
+dat("tooltip nói THẲNG 'KHÔNG phải 20 × 250 MB' (chỗ đọc từng dòng một)",
+    "dùng chung cho CẢ 20 giọng" in _tip_vn
+    and "KHÔNG phải 20 × 250 MB" in _tip_vn,
+    _tip_vn.split("\n")[-2][:96] if _tip_vn else "(rỗng)")
+dat("nút tải nói số giọng, và số đó LẤY TỪ `len(GIONG_VN)`",
+    "dùng chung cho cả 20 giọng" in VN_MOD.NHAN_TAI
+    and str(len(VN_MOD.GIONG_VN)) in VN_MOD.NHAN_TAI,
+    VN_MOD.NHAN_TAI)
+dat("tiền tố CHƯA TẢI (dán lên CẢ 20 dòng) cũng mang chữ 'bộ chung'",
+    "bộ chung" in VN_MOD.CHUA_TAI, repr(VN_MOD.CHUA_TAI))
+# `_CAN_TAI` là số THÔ cho phép so khớp nhãn nút (cổng 79/82 đọc nó) -> KHÔNG
+# được nhồi chữ vào, nếu không hai cổng kia đỏ oan.
+dat("`can_tai()` giữ SỐ THÔ '250 MB' (cổng 79/82 so khớp bằng nó)",
+    GB.can_tai("vn:pham_tuyen") == "250 MB", GB.can_tai("vn:pham_tuyen"))
 
 # ---------------------------------------------------------------------------
 # CA 8 — THỬ PHÁ: GỠ CHỐT PHẢI ĐỎ

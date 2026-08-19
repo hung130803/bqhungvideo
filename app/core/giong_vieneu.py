@@ -417,7 +417,15 @@ def ma_nhan_ban(duong_mau: str) -> str:
 
 #: Ghi vào ĐẦU nhãn khi máy CHƯA tải model. Phải nói ra ở CHÍNH DÒNG đó, vì
 #: combo lúc ĐÓNG chỉ hiện một dòng — nhãn nhóm không cứu được.
-CHUA_TAI = "CHƯA TẢI (250 MB) — "
+#:
+#: **CHỮ "BỘ CHUNG" LÀ BẮT BUỘC, KHÔNG PHẢI CHO ĐẸP.** Tiền tố này dán lên
+#: **CẢ 20 DÒNG** VieNeu, nên bản cũ `"CHƯA TẢI (250 MB) — "` cho anh Hùng đọc
+#: ra 20 × 250 MB = **5 GB** (*"sao có cái giọng 1 giọng tận 250mb á tốn
+#: thế"*). Sự thật là MỘT bộ 250 MB dùng chung cho cả 20 giọng, tải một lần.
+#: Số giọng chính xác nói ở nút `NHAN_TAI` và ở tooltip
+#: (`giong_bang.ghi_chu_bo_chung`) — hai chỗ đọc MỘT LẦN, không nhân lên được.
+#: Giữ NGẮN vì nó ăn vào bề rộng của chính dòng giọng (cổng 84: 0 nhãn bị cắt).
+CHUA_TAI = "CHƯA TẢI (bộ chung 250 MB) — "
 
 
 def danh_sach_giong(du_chua_tai: bool = False,
@@ -699,7 +707,13 @@ def _ghi_log(dong: str) -> None:
 #: 2,5 GB là lặp đúng lỗi cũ chỉ đổi chiều. Bản CPU (onnxruntime, KHÔNG cần
 #: torch) — đo bằng `pip download --no-deps` + metadata chỉ mục, xem
 #: `co_bao_nhieu_mb()`.
-NHAN_TAI = "Tải giọng Việt VieNeu (khoảng 250 MB)"
+#:
+#: **NÚT LÀ CHỖ ĐÚNG ĐỂ NÓI CON SỐ GIỌNG** (nó chỉ có MỘT cái, đọc một lần,
+#: không nhân lên được) — khác hẳn `CHUA_TAI` dán lên cả 20 dòng. Số giọng lấy
+#: bằng `len(GIONG_VN)` chứ KHÔNG ghi cứng "20": ghi cứng thì lần thêm/bớt
+#: giọng kế tiếp biến nhãn thành lời khai sai mà không một cổng nào kêu.
+NHAN_TAI = (f"Tải bộ giọng Việt VieNeu (250 MB, tải MỘT LẦN — dùng chung cho "
+            f"cả {len(GIONG_VN)} giọng)")
 
 
 def cai_vieneu(on_progress: Optional[Callable[[float, str], None]] = None,

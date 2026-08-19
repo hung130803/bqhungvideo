@@ -261,12 +261,42 @@ def ten_goc(vid: str) -> str:
 # ---------------------------------------------------------------------------
 #: Đuôi gắn vào cuối nhãn, theo nguồn. Ngắn cố ý: combo lúc ĐÓNG chỉ rộng bằng
 #: hộp, dòng dài quá là bị cắt đúng chỗ quan trọng.
+#: **CON SỐ ĐÚNG MÀ ĐẶT CHỖ SAI THÌ NGƯỜI ĐỌC NHÂN LÊN — anh Hùng 19/08/2026:**
+#: *"sao có cái giọng 1 giọng tận 250mb á tốn thế"*. Đuôi cũ ghi
+#: `"miễn phí, cần tải 250 MB"` và nó lặp trên **TỪNG DÒNG**, đo được:
+#:
+#:   · `250 MB` trên **20 dòng** VieNeu   -> đọc thành 20 × 250 MB = **5 GB**
+#:   · `6,1 GB` trên **5 dòng** OmniVoice -> đọc thành 5 × 6,1 GB = **30,5 GB**
+#:   · `212 MB` trên **1 dòng** Piper     -> 1 dòng thì không có ảo giác nhân
+#:
+#: Sự thật: mỗi nguồn chỉ có **MỘT bộ DÙNG CHUNG** cho mọi giọng của nó, tải
+#: một lần. Đuôi vì thế đổi `cần tải 250 MB` -> **`cần tải bộ 250 MB`**: chữ
+#: "bộ" biến câu từ *mỗi dòng một lần tải* thành *một bộ đã xác định*, và nó
+#: KHÔNG cần biết số dòng nên một chữ chữa được cả 5 nguồn.
+#:
+#: **VÌ SAO DÒNG KHÔNG MANG CẢ CÂU "dùng chung cho cả 20 giọng" — SỐ ĐO, KHÔNG
+#: PHẢI TIẾT KIỆM CHỮ CHO ĐẸP:** cổng 79 có trần **132 ký tự** cho dòng VieNeu
+#: (trần đó tồn tại để bắt "ai đó nhét bản ĐẦY ĐỦ 364-682 ký tự vào combo").
+#: Đo thật độ dài dòng dài nhất (`Thanh Bình`) với từng cách viết:
+#:
+#:   `cần tải 250 MB`                -> 128  (bản cũ, ĐỌC THÀNH NHÂN LÊN)
+#:   `cần tải bộ 250 MB`             -> **131  ĐANG DÙNG**
+#:   `cần tải 1 bộ 250 MB`           -> 133  TRÀN
+#:   `cần tải bộ chung 250 MB`       -> 137  TRÀN
+#:   `cần tải bộ dùng chung 250 MB`  -> 142  TRÀN
+#:
+#: Nới trần 132 cho vừa câu dài là vừa đúng chỗ cổng 79 mất khả năng bắt lỗi nó
+#: sinh ra để bắt — nên câu ĐẦY ĐỦ (kèm SỐ GIỌNG) đặt ở ba chỗ đọc MỘT LẦN,
+#: không nhân lên được: tooltip (`ghi_chu_bo_chung`) · nút `giong_vieneu.
+#: NHAN_TAI` · tiền tố `giong_vieneu.CHUA_TAI`.
+#: **ĐỪNG ghi cứng "cả 20 giọng" vào đây** — thêm/bớt giọng là nhãn thành lời
+#: khai sai mà không một cổng nào kêu.
 _DUOI: dict[str, str] = {
     EDGE: "miễn phí",
-    PIPER: "miễn phí, cần tải 212 MB",
-    OMNIVOICE: "miễn phí, cần tải 6,1 GB",
+    PIPER: "miễn phí, cần tải bộ 212 MB",
+    OMNIVOICE: "miễn phí, cần tải bộ 6,1 GB",
     INDEXTTS: "miễn phí, cần tải bộ IndexTTS",
-    VIENEU: "miễn phí, cần tải 250 MB",
+    VIENEU: "miễn phí, cần tải bộ 250 MB",
     ELEVEN: "TỐN HẠN MỨC ElevenLabs",
     VBEE: "TỐN TIỀN theo ký tự",
     GEMINI: "TỐN HẠN MỨC Gemini",
@@ -274,8 +304,37 @@ _DUOI: dict[str, str] = {
     # TRƯỚC khi bấm: phải tải · phải có GPU · KHÔNG đọc được tiếng Việt. Phần
     # đầy đủ (mốc chữ 76 ms so 44 ms · đóng dấu chìm · đọc sai tiếng Trung
     # 28,8%) nằm ở `giong_chatter.nhan_giong`, dòng combo không chứa nổi.
-    CHATTER: "miễn phí (MIT), cần tải 5,5 GB, cần GPU NVIDIA, KHÔNG có tiếng Việt",
+    CHATTER: ("miễn phí (MIT), cần tải bộ 5,5 GB, cần GPU NVIDIA, "
+              "KHÔNG có tiếng Việt"),
 }
+
+
+def ghi_chu_bo_chung(vid: str, so_giong: int = 0) -> str:
+    """Câu nói RÕ *"một bộ, tải một lần"* — dành cho TOOLTIP, không cho dòng.
+
+    Anh Hùng đọc 20 dòng cùng ghi *"cần tải 250 MB"* thành **20 × 250 MB =
+    5 GB** rồi hỏi *"sao có cái giọng 1 giọng tận 250mb á tốn thế"*. Đuôi dòng
+    (`_DUOI`) đã mang chữ "bộ dùng chung" để chặn phép nhân, nhưng nó cố ý
+    KHÔNG mang con số giọng: dòng combo không còn chỗ, và số ghi cứng trong
+    hằng số là thứ sẽ nói sai ngay lần thêm giọng kế tiếp.
+
+    Chỗ nói con số là ĐÂY, vì tooltip đọc **từng dòng một** nên không dựng lại
+    được ảo giác nhân. `so_giong` phải do NƠI GỌI ĐẾM TRÊN DANH SÁCH ĐANG BÀY
+    (`thay_giong_dialog._dung_combo_giong`) — đếm ở đó thì thêm/bớt giọng là số
+    tự đúng theo. `so_giong <= 1` -> KHÔNG nói số (một giọng thì "dùng chung"
+    là câu vô nghĩa, và cũng chẳng có ảo giác nào để chữa).
+
+    Trả "" cho nguồn không phải tải gì — gọi ở đâu cũng an toàn.
+    """
+    can = can_tai(vid)
+    if not can:
+        return ""
+    ten = TEN_NGUON.get(nguon(vid), "bộ này")
+    if int(so_giong or 0) > 1:
+        return (f"TẢI MỘT LẦN: bộ {ten} {can} dùng chung cho CẢ "
+                f"{int(so_giong)} giọng {ten} — KHÔNG phải "
+                f"{int(so_giong)} × {can}.")
+    return f"TẢI MỘT LẦN: bộ {ten} {can}."
 
 #: Chữ để dò xem nhãn ĐÃ nói điều đó chưa (nhãn của `giong_ngoai`/`giong_vbee`
 #: vốn đã dài và đã mang cảnh báo riêng). Nói hai lần một chuyện trên cùng một

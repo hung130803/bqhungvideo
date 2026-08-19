@@ -1647,6 +1647,18 @@ class ThayGiongDialog(QDialog):
         # đầu tiên", KHÔNG so với `giong_bang._NHAN_NHOM[N_KHUYEN]`: đó là tên
         # riêng tư của module khác (đang có luồng khác giữ), so vào là nhãn bên
         # đó sửa một chữ thì ghi chú này im lặng biến mất.
+        # VIỆC 3 — ĐẾM SỐ GIỌNG CỦA TỪNG NGUỒN TRÊN CHÍNH DANH SÁCH ĐANG BÀY,
+        # để tooltip nói được *"dùng chung cho cả 20 giọng"* mà không ai phải
+        # ghi cứng số 20 vào hằng số (ghi cứng = lần thêm giọng kế tiếp nhãn
+        # thành lời khai sai, không cổng nào kêu).
+        # **ĐẾM THEO MÃ GIỌNG DUY NHẤT, KHÔNG ĐẾM DÒNG:** nhóm lối tắt bày lại
+        # đúng những giọng đã có ở nhóm dưới, đếm dòng là ra 25 cho 20 giọng —
+        # tức đi chữa một con số sai bằng một con số sai khác.
+        _ma_theo_nguon: dict[str, set] = {}
+        for _n, _v in ds:
+            if _v:
+                _ma_theo_nguon.setdefault(GB.nguon(str(_v)), set()).add(str(_v))
+        self._so_cung_bo = {k: len(s) for k, s in _ma_theo_nguon.items()}
         i_lt = next((j for j, (n, v) in enumerate(ds)
                      if v and GB.DAU_LOI_TAT in n), -1)
         i_tieu_de_lt = max((j for j, (_n, v) in enumerate(ds)
@@ -2005,6 +2017,16 @@ class ThayGiongDialog(QDialog):
                         + (f" · phải tải {can}" if can else "")
                         + (" · miễn phí" if GB.mien_phi(vid)
                            else " · TỐN TIỀN/HẠN MỨC"))
+            # VIỆC 3 — nói RÕ "một bộ, tải một lần, dùng chung N giọng".
+            # Đuôi trên DÒNG chỉ dám ghi "bộ dùng chung" (hết chỗ, và số ghi
+            # cứng sẽ nói sai ngay lần thêm giọng kế tiếp); con số nói ở ĐÂY vì
+            # tooltip đọc TỪNG DÒNG MỘT nên không dựng lại được ảo giác nhân.
+            # `_so_cung_bo` do `_dung_combo_giong` ĐẾM TRÊN DANH SÁCH ĐANG BÀY.
+            bo = GB.ghi_chu_bo_chung(
+                vid, (getattr(self, "_so_cung_bo", None) or {}).get(
+                    GB.nguon(vid), 0))
+            if bo:
+                dong.append(bo)
             ms = GB.khop_ms(vid)
             if ms:
                 dong.append(f"Chữ chạy lệch lời: {ms}")
