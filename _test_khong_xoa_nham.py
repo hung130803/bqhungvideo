@@ -51,6 +51,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
@@ -93,6 +94,37 @@ def _tao(p: Path) -> Path:
     os.makedirs(p, exist_ok=True)
     return p
 
+
+def _don_rac_luot_truoc() -> int:
+    """Dọn hộp cát của những lượt chạy TRƯỚC bị giết giữa chừng.
+
+    Lượt chạy êm thì `finally` tự dọn, nhưng lượt bị `taskkill` thì không —
+    và cổng này ĐÃ bị giết hai lần trong ngày làm ra nó, để lại **25 thư mục
+    / 25 MB** trong `%TEMP%`. Máy dev CHÍNH LÀ máy anh Hùng và ổ C đã từng
+    đầy 100%, nên "test không để rác trên máy user" là luật, không phải phép
+    lịch sự (cùng lý do `_test_guard` tự dọn `%TEMP%` của lần trước).
+
+    CHỈ xoá thư mục khớp `xoanham_*` nằm THẲNG trong `%TEMP%` và đã cũ hơn
+    1 giờ — thư mục của một lượt ĐANG chạy song song không bị đụng.
+    """
+    n = 0
+    try:
+        goc = Path(tempfile.gettempdir()).resolve()
+        han = time.time() - 3600
+        for p in goc.glob("xoanham_*"):
+            try:
+                if not p.is_dir() or p.parent != goc or p.stat().st_mtime > han:
+                    continue
+                shutil.rmtree(p, ignore_errors=True)
+                n += 1
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return n
+
+
+_RAC_CU = _don_rac_luot_truoc()
 
 _SB = Path(tempfile.mkdtemp(prefix="xoanham_")).resolve()
 LAM = _SB / "lam"                    # đây sẽ là CWD của cả lượt chạy
@@ -517,6 +549,7 @@ def main() -> int:
     print(f"hộp cát : {_SB}")
     print(f"cwd     : {os.getcwd()}")
     print(f"repo    : {REPO}")
+    print(f"rác lượt trước đã dọn: {_RAC_CU} thư mục")
     if Path(os.getcwd()).resolve() == REPO:
         print("DỪNG: cwd đang là REPO — cổng này xoá thật, không chạy ở đây.")
         return 2
