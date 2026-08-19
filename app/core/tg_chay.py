@@ -25,7 +25,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      che_chu_cach: str = "mo", che_chu_muc: float = 1.0,
                      viet_chu: bool = False,
                      kieu_chu: Optional[dict] = None,
-                     hinh_theo_giong: bool = False) -> str:
+                     hinh_theo_giong: bool = False,
+                     de_giong: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -66,6 +67,15 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     # KÝ TỰ, không đẻ lượt chạy lại cho 200-300 kênh.
     if hinh_theo_giong:
         sig += ":htg=1"
+    # ĐÈ GIỌNG (không tách) ra file tiếng KHÁC HẲN (tiếng gốc còn nghe được ở
+    # dưới) nên BẮT BUỘC vào khoá — không thì đổi ô rồi bấm Chạy là bị
+    # smart-skip, không một dòng báo (đúng lỗi cổng 56e đã sập).
+    # NỐI VÀO ĐUÔI CHUỖI, **CHỈ KHI BẬT**, và KHÔNG thêm phần tử vào tuple nào:
+    # mặc định là cách CŨ nên khoá của 200-300 kênh đang chạy sản xuất giữ
+    # NGUYÊN TỪNG KÝ TỰ, không đẻ một lượt xuất lại nào. Đây là bài học
+    # `ovl_spec` (cổng 42) và cờ `che_chu` (cổng 56e).
+    if de_giong:
+        sig += ":dg=1"
     return sig
 
 
@@ -153,6 +163,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             viet_chu: bool = False,
             kieu_chu: Optional[dict] = None,
             hinh_theo_giong: bool = False,
+            de_giong: bool = False,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -195,12 +206,18 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     # -> payload job cũ không mọc thêm khoá nào.
     if hinh_theo_giong:
         tt["hinh_theo_giong"] = True
+    # ĐÈ GIỌNG (không tách) — cũng CHỈ ghi khoá khi BẬT, nên payload của job cũ
+    # nằm sẵn trong DB không mọc thêm khoá nào và `jobs._thay_giong` đọc bằng
+    # `.get` ra `False` = hành vi Y HỆT bản trước.
+    if de_giong:
+        tt["de_giong"] = True
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
         dedup_key=khoa_chong_trung(v, dich_sang, voice, ra, che_chu,
                                    che_chu_cach, che_chu_muc,
                                    bool(che_chu) and bool(viet_chu),
-                                   kieu_chu, bool(hinh_theo_giong)),
+                                   kieu_chu, bool(hinh_theo_giong),
+                                   bool(de_giong)),
         skip_if_done=False, max_attempts=1,
     )

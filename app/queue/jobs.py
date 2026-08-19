@@ -342,6 +342,12 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # tiếng vừa khung câu gốc). Job cũ trong DB KHÔNG mang khoá này ->
             # `False` = ép giọng y hệt bản trước. ĐỘC LẬP với `che_chu`.
             hinh_theo_giong=bool(payload.get("hinh_theo_giong")),
+            # ĐÈ GIỌNG, KHÔNG TÁCH: giữ NGUYÊN tiếng gốc làm nền, chỉ hạ xuống
+            # rồi đè giọng lồng lên. Job cũ trong DB KHÔNG mang khoá này ->
+            # `False` = vẫn tách nhạc y hệt bản trước. ĐỘC LẬP với mọi cờ khác;
+            # nó bỏ hẳn bước Demucs nên là đường DUY NHẤT chạy được trên máy
+            # không có torch (xem `thay_giong.chot_co_bo_tach_giong`).
+            de_giong=bool(payload.get("de_giong")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
@@ -377,6 +383,10 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
         "vao": r.get("vao"), "ra": dich,
         "do_dai": r.get("do_dai"), "giay": r.get("giay_tong"),
         "kiem": r.get("kiem"), "tach": (r.get("tach") or {}).get("cach"),
+        # CÁCH TRỘN phải nằm trong nhật ký: hai cách ra file tiếng KHÁC HẲN
+        # nhau, nên đọc lại một job cũ mà không biết nó chạy cách nào là không
+        # đối chiếu được gì (bài học `mẫu «(mẫu đã chốt lúc xếp job)»`, cổng 25b).
+        "cach_tron": r.get("cach_tron"),
         "che_chu": r.get("che_chu"),
         "chu_theo_giong": r.get("chu_theo_giong"),
         "da_thay_goc": False, "goc_o": goc,

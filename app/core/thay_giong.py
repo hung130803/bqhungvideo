@@ -1,17 +1,34 @@
 # -*- coding: utf-8 -*-
 """THAY GIỌNG NÓI — thay LỜI THOẠI sang tiếng khác, GIỮ NGUYÊN nhạc + tiếng động.
 
-KHÁC HẲN `dubbing.py`: `dubbing` CHỒNG giọng mới lên trên tiếng gốc (voice-over,
-tiếng gốc vẫn nghe thấy bên dưới). Ở đây tiếng gốc bị **TÁCH BỎ HẲN**, chỉ giữ
-lại lớp nhạc nền + tiếng động hiện trường, rồi đặt giọng đã dịch vào chỗ trống.
+HAI CÁCH TRỘN, cùng đi 6 bước dưới, KHÁC NHAU ĐÚNG Ở BƯỚC 1 VÀ BƯỚC 6 —
+xem `CACH_TRON` và `thay_giong_video(de_giong=...)`:
+
+  · **`"tach"` (MẶC ĐỊNH, hành vi cũ)** — Demucs tách lớp nhạc khỏi lớp giọng,
+    **BỎ HẲN** giọng gốc rồi đặt giọng đã dịch vào chỗ trống. Tiếng gốc mất
+    hoàn toàn; giá phải trả là cần torch/Demucs (~4,3 GB, nên có GPU) và mọi
+    câu bộ chép lời bỏ qua đều thành khoảng TRỐNG (xem `bu_giong_goc`).
+  · **`"de"` (đè giọng, KHÔNG tách)** — giữ NGUYÊN tiếng gốc làm nền, chỉ HẠ
+    nó xuống rồi ĐÈ giọng lồng lên (voice-over). **Mất tiếng = 0 THEO CẤU
+    TẠO**: không bỏ đi gì thì không có gì để mất. Không cần Demucs, không cần
+    GPU, không có bước tách nên nhanh hơn hẳn. Đánh đổi: tiếng gốc VẪN NGHE
+    ĐƯỢC ở dưới.
+
+**CÙNG MỘT HÀM TRỘN CHO CẢ HAI CÁCH** (`tron_thay_giong`) — chỗ khác nhau chỉ
+là *cái gì được truyền vào làm lớp nền*: lớp nhạc Demucs, hay CHÍNH audio gốc.
+Đừng viết đường trộn thứ hai: mọi thứ đã đo được ở đó (ducking theo cửa sổ
+giọng · cân bằng giọng-nhạc · chuẩn hoá −14 LUFS · trần đỉnh trừ hai lần ·
+chốt độ dài) đều dùng lại y nguyên cho cách mới.
 
 SÁU BƯỚC (mỗi bước có hàm riêng, đo được riêng):
-  1. `tach_giong`      — tách lớp NHẠC (giữ) khỏi lớp GIỌNG (bỏ).
+  1. `tach_giong`      — tách lớp NHẠC (giữ) khỏi lớp GIỌNG (bỏ). **Cách "de"
+                         BỎ HẲN bước này** (không tách thì không cần).
   2. `chep_loi`        — chép lời gốc, có mốc từng từ (dùng `transcribe.py`).
   3. `dich_hau_kiem`   — dịch + DỊCH NGƯỢC tự chấm, câu lệch thì dịch lại.
   4. `doc_ban_dich`    — TTS bản dịch (dùng `dubbing.py`).
   5. `khop_thoi_gian`  — co giãn atempo từng câu về đúng mốc gốc.
-  6. `tron_thay_giong` — trộn giọng mới lên lớp nhạc đã giữ.
+  6. `tron_thay_giong` — trộn giọng mới lên lớp NỀN (nhạc đã tách, hoặc chính
+                         audio gốc nếu chọn cách "de").
 
 ======================================================================
 BẪY ĐÃ ĐO ĐƯỢC TRÊN VIDEO THẬT — ĐỌC TRƯỚC KHI SỬA
@@ -65,6 +82,33 @@ class HuyBo(Exception):
     là `Exception` -> nếu không có lớp RIÊNG thì bấm Huỷ bị ghi thành LỖI
     VIDEO, và job kết thúc 'failed' rồi TỰ THỬ LẠI (bài học "huỷ ≠ lỗi").
     """
+
+#: HAI CÁCH TRỘN TIẾNG — xem docstring đầu file. `"tach"` là hành vi CŨ và là
+#: MẶC ĐỊNH; đổi mặc định là đổi tiếng của MỌI video từ nay trên 200-300 kênh
+#: đang chạy sản xuất, nên nó phải là một QUYẾT ĐỊNH của anh Hùng sau khi nghe,
+#: không phải một dòng mã.
+CACH_TRON = ("tach", "de")
+
+#: Nhãn tiếng Việt cho hộp chọn — đặt Ở ĐÂY (cạnh mã) chứ không ở UI: cổng test
+#: và nhật ký phải nói cùng một thứ tiếng với cái người dùng thấy, và hai chỗ
+#: viết tay hai lần là hai chỗ lệch nhau.
+NHAN_CACH_TRON = {
+    "tach": "Thay hẳn giọng (tách nhạc) — tiếng gốc MẤT HẲN",
+    "de": "Đè giọng (không tách) — giữ nguyên tiếng gốc bên dưới",
+}
+
+
+def chuan_cach_tron(cach: str | None) -> str:
+    """CỬA DUY NHẤT chuẩn hoá tên cách trộn. Không nhận ra -> `"tach"`.
+
+    Phải có một cửa: giá trị này tới từ QSettings (người dùng đổi bản), từ
+    payload job cũ trong DB, và từ tham số hàm — ba nguồn, và nguồn nào cũng có
+    thể mang chuỗi lạ. Không nhận ra thì lùi về **hành vi CŨ**, không phải về
+    cách mới: lùi về cái mới là âm thầm đổi tiếng của video người ta.
+    """
+    c = str(cach or "").strip().lower()
+    return c if c in CACH_TRON else "tach"
+
 
 #: Lớp GIỮ LẠI (nhạc nền + tiếng động hiện trường) và lớp VỨT ĐI.
 LOP_GIU = ("drums", "bass", "other")
@@ -4052,7 +4096,17 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
                     goc_wav: str | Path = "",
                     on_progress: Optional[Callable[[float, str], None]] = None,
                     ) -> dict:
-    """Trộn GIỌNG MỚI lên LỚP NHẠC gốc, hạn đỉnh chống méo, rồi ĐO cân bằng.
+    """Trộn GIỌNG MỚI lên LỚP NỀN, hạn đỉnh chống méo, rồi ĐO cân bằng.
+
+    **HÀM NÀY PHỤC VỤ CẢ HAI CÁCH TRỘN** (xem `CACH_TRON` ở đầu file) và không
+    hề biết mình đang chạy cách nào — chỗ khác nhau duy nhất là `nhac_wav`:
+      · cách `"tach"`: `nhac_wav` = lớp NHẠC do Demucs tách ra.
+      · cách `"de"`:   `nhac_wav` = **CHÍNH audio GỐC** (còn cả giọng gốc).
+    Đó là lý do không có đường trộn thứ hai: `can_bang_giong_nhac` ĐO lớp nền
+    rồi mới tính hệ số, nên nền to hơn (có thêm giọng gốc) thì nó tự hạ nền
+    nhiều hơn — trong trần `HA_NHAC_TOI_DA_DB` — còn `sidechaincompress` thì
+    vốn đã né theo CỬA SỔ giọng lồng, không hạ đều cả bài. Cả hai cơ chế đúng
+    cho cách mới mà không phải sửa một dòng nào.
 
     `tu_can_bang=True` (mặc định): hệ số lấy từ `can_bang_giong_nhac` — ĐO hai
     lớp rồi tính, thay cho hai hằng số cũ. `muc_giong_db`/`muc_nhac_db` vẫn
@@ -4678,9 +4732,24 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      kieu_chu: Optional[dict] = None,
                      hinh_theo_giong: bool = False,
                      bu_giong_goc_bat: bool = True,
+                     de_giong: bool = False,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
+
+    `de_giong=True` -> **ĐÈ GIỌNG, KHÔNG TÁCH** (anh Hùng đề xuất 19/08/2026:
+    *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM tiếng video gốc rồi ĐÈ giọng
+    lồng tiếng vào, để không bị mất mấy tiếng của video"*). Ba thứ đổi, và chỉ
+    ba thứ đó:
+      1. **BỎ bước tách** (`tach_giong`) — không cần Demucs/torch/GPU.
+      2. **Lớp nền = CHÍNH audio gốc** thay cho lớp nhạc đã tách. `chep_loi`
+         chép trên audio gốc (nó tự lùi khi không có lớp giọng, ghi rõ
+         `_nguon="audio_goc"` — không im lặng coi như cùng chất lượng).
+      3. **BỎ bước bù giọng gốc** — `bu_giong_goc` tồn tại để lấp chỗ giọng gốc
+         *đã bị bỏ*; ở đây nó chưa bao giờ bị bỏ nên bù là **CỘNG GIỌNG GỐC
+         HAI LẦN** (một lần trong nền, một lần trong mảnh bù) = vang đôi.
+    Mọi bước còn lại (chép lời · dịch · đọc · rút gọn · khớp · trộn · ducking ·
+    chuẩn hoá độ to · che chữ · viết chữ mới) đi Y NGUYÊN đường cũ.
 
     `bu_giong_goc_bat=True` (mặc định BẬT): đoạn nào KHÔNG được đọc lại thì giữ
     lại GIỌNG GỐC thay vì để trống. Xem `khoang_khong_giong` — đây là bản chữa
@@ -4710,7 +4779,9 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         if on_progress:
             on_progress(max(0.0, min(1.0, p)), m)
 
-    kq: dict = {"vao": str(video_in), "thu_muc_lam": str(tam_goc)}
+    de_giong = bool(de_giong)
+    kq: dict = {"vao": str(video_in), "thu_muc_lam": str(tam_goc),
+                "cach_tron": "de" if de_giong else "tach"}
     t0 = time.time()
     try:
         # --- bước 0: rút audio
@@ -4720,13 +4791,23 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         kq["do_dai"] = round(tong, 3)
 
         # --- bước 1: tách giọng / nhạc
-        prog(0.06, "Tách giọng khỏi nhạc nền...")
-        t = tach_giong(goc_wav, tam_goc / "tach", cach=cach_tach,
-                       on_progress=lambda p, m: prog(0.06 + 0.24 * p, m))
+        # CHẾ ĐỘ ĐÈ GIỌNG BỎ HẲN BƯỚC NÀY. Không phải "tối ưu cho nhanh" mà là
+        # điều kiện của chính tính năng: giữ nguyên tiếng gốc thì không có gì
+        # phải tách ra để bỏ đi. Nhờ vậy nó KHÔNG cần torch/Demucs/GPU và mất
+        # tiếng về 0 THEO CẤU TẠO (Demucs mới là chỗ sinh ra khoảng trống).
+        t: dict = {"nhac": str(goc_wav), "giong": "", "cach": "de_giong",
+                   "ghi_chu": "KHÔNG tách — giữ nguyên tiếng gốc làm lớp nền"}
+        if not de_giong:
+            prog(0.06, "Tách giọng khỏi nhạc nền...")
+            t = tach_giong(goc_wav, tam_goc / "tach", cach=cach_tach,
+                           on_progress=lambda p, m: prog(0.06 + 0.24 * p, m))
         kq["tach"] = {k: v for k, v in t.items() if k != "stems"}
 
         # --- bước 2: chép lời
         prog(0.32, "Chép lời gốc...")
+        # `t["giong"]` RỖNG ở chế độ đè giọng -> `chep_loi` tự chép trên audio
+        # GỐC và đóng dấu `_nguon="audio_goc"`. Nói thẳng cái giá: nền nhạc còn
+        # nguyên nên whisper dễ nhầm hơn so với chép trên lớp giọng đã tách.
         d = chep_loi(goc_wav, t.get("giong") or "",
                      on_progress=lambda p, m: prog(0.32 + 0.10 * p, m))
         cau = cau_tu_transcript(d)
@@ -4812,11 +4893,14 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # phải dùng con số MỚI này, dùng `tong` cũ là lệch hẳn `(k-1)*tong`.
         tong_ra = tong * hs
 
-        # --- LỚP NHẠC PHẢI GIÃN THEO HÌNH ---
+        # --- LỚP NỀN PHẢI GIÃN THEO HÌNH ---
         # Làm chậm hình mà để nhạc/tiếng động chạy tốc độ cũ thì nhạc HẾT SỚM
         # và mọi cú va không còn rơi đúng khung hình của nó — tức đổi một lỗi
         # đồng bộ lấy một lỗi đồng bộ khác. Giãn bằng `rubberband` (đo được méo
         # 0,061 dB so với `atempo` 5,982 dB) và ĐO LẠI độ dài trên file đã ghi.
+        # ĐỌC `t["nhac"]` CHỨ KHÔNG `goc_wav`: ở chế độ đè giọng hai cái là MỘT
+        # (xem chỗ dựng `t` ở bước 1), nên một dòng này phục vụ cả hai cách và
+        # không có đường nào bị bỏ sót phép giãn.
         nhac_dung = t["nhac"]
         if hs > 1.0 + 1e-6:
             prog(0.90, "Giãn nhạc nền cho khớp hình...")
@@ -4844,8 +4928,20 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         #
         # Mảnh bù CỘNG THẲNG vào danh sách mảnh giọng trước khi trộn, nên nó
         # được tính vào CẢ cân bằng giọng-nhạc, CẢ ducking, CẢ chuẩn hoá độ to.
+        #
+        # **CHẾ ĐỘ ĐÈ GIỌNG KHÔNG ĐƯỢC BÙ** — và đây là chỗ dễ sai nhất của cả
+        # bản vá: hai tính năng nghe như cùng hướng ("giữ tiếng gốc") nhưng cộng
+        # lại là SAI. Ở chế độ đè, giọng gốc nằm SẴN trong lớp nền; bù thêm mảnh
+        # giọng gốc nữa là cộng CÙNG MỘT tín hiệu hai lần -> vang đôi/dội, và
+        # tệ hơn là mảnh bù đó còn bị tính vào cân bằng giọng-nhạc rồi kéo lệch
+        # cả phép đo. Chốt bằng `and not de_giong`, KHÔNG bắt người gọi tự nhớ.
         manh_tron = list(kh["manh"])
-        if bu_giong_goc_bat:
+        if de_giong:
+            kq["bu_goc"] = {
+                "bat": False,
+                "vi_sao": "chế độ đè giọng — tiếng gốc còn NGUYÊN trong lớp "
+                          "nền, bù thêm là cộng giọng gốc hai lần"}
+        elif bu_giong_goc_bat:
             # LỜI NHẮN NÀY CỐ Ý KHÔNG CHỨA CHỮ "ĐỌC" (hay "dịch"/"rút gọn"/
             # "khớp thời gian"…). `tg_so.buoc_tu_tien_trinh` tra bước bằng CHUỖI
             # CON, và khoá `("đọc", 5)` sẽ khớp *"không được đọc lại"* -> bảng
@@ -4869,7 +4965,11 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
             kq["bu_goc"] = {"bat": False}
 
         # --- bước 6: trộn + thay vào video
-        prog(0.91, "Trộn tiếng mới với nhạc nền gốc...")
+        # LỜI NHẮN PHẢI NÓI ĐÚNG CÁI ĐANG LÀM (bảng tiến độ `tg_so` tra bước
+        # bằng CHUỖI CON nên cả hai câu đều phải chứa chữ "trộn" và KHÔNG chứa
+        # chữ "đọc"/"dịch"/"khớp" — xem chú thích ở khối bù giọng gốc).
+        prog(0.91, "Trộn giọng lồng lên tiếng gốc (đè, không tách)..."
+             if de_giong else "Trộn tiếng mới với nhạc nền gốc...")
         # `goc_wav` truyền vào để bước BÙ DẢI CAO lấy được cân bằng dải tần
         # của CHÍNH video này làm đích (xem `BU_SANG_TOI_DA_DB`). Thiếu nó thì
         # bước bù tự tắt — nên đây là chỗ DUY NHẤT phải nhớ nối.
@@ -4971,13 +5071,22 @@ def liet_ke_video(thu_muc: str | Path) -> list[Path]:
                   and not f.stem.endswith(DAU_DA_LAM))
 
 
-def chot_co_bo_tach_giong(cach_tach: str = "auto") -> None:
+def chot_co_bo_tach_giong(cach_tach: str = "auto",
+                          de_giong: bool = False) -> None:
     """CHẶN TRƯỚC: máy chưa có bộ tách giọng thì ném NGAY, đừng chạy dở.
 
     Vì sao phải chặn ở đây nữa dù `tach_giong` đã ném: không có chốt này thì
     mỗi video vẫn rút audio xong (chục giây/video) rồi mới chết ở bước 1 — 20
     video là 20 lần vô ích, và nhật ký đầy lỗi giống nhau.
+
+    `de_giong=True` -> **KHÔNG CHẶN**: chế độ đè giọng không đi qua `tach_giong`
+    một lần nào (xem `thay_giong_video`), nên đòi Demucs ở đây là chặn oan đúng
+    cái đường được làm ra để chạy trên máy KHÔNG có Demucs. Đây là chốt duy
+    nhất trong file phải biết tới `de_giong` — mọi chốt khác nằm trong
+    `thay_giong_video`.
     """
+    if de_giong:
+        return
     if (cach_tach or "auto").lower().strip() == "nhe":
         return                                  # user CỐ Ý chọn cách nhẹ
     tt = tinh_trang_demucs()
@@ -4994,6 +5103,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          kieu_chu: Optional[dict] = None,
                          hinh_theo_giong: bool = False,
                          bu_giong_goc_bat: bool = True,
+                         de_giong: bool = False,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -5020,6 +5130,11 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # đúng thế: 2/2 job `failed`.
                          hinh_theo_giong=hinh_theo_giong,
                          bu_giong_goc_bat=bu_giong_goc_bat,
+                         # CỜ THỨ BA CŨNG PHẢI CHUYỀN QUA — cùng lý do hai cờ
+                         # trên: `jobs._thay_giong` gọi CỬA NÀY chứ không gọi
+                         # thẳng `thay_giong_video`, thiếu một cờ là job nổ
+                         # `unexpected keyword argument` và MỌI job đều LỖI.
+                         de_giong=de_giong,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r
@@ -5084,17 +5199,20 @@ def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
                        voice: str = "", cach_tach: str = "auto",
                        so_luong: int = 0, thung_rac: str = "",
                        kenh: str = "", thay_goc: bool = True,
+                       de_giong: bool = False,
                        on_video: Optional[Callable[[str, dict], None]] = None,
                        ) -> dict:
     """Thay giọng CẢ THƯ MỤC video, chạy ĐA LUỒNG, xong thì thay video gốc.
 
     `thay_goc=False` -> chỉ tạo file mới bên cạnh, KHÔNG đụng gốc (dùng để thử).
+    `de_giong=True` -> chế độ ĐÈ GIỌNG (xem `thay_giong_video`).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     thu_muc = Path(thu_muc)
-    # CHẶN TRƯỚC khi đụng video nào: thiếu bộ tách giọng thì ném NGAY.
-    chot_co_bo_tach_giong(cach_tach)
+    # CHẶN TRƯỚC khi đụng video nào: thiếu bộ tách giọng thì ném NGAY. Chế độ
+    # đè giọng không dùng bộ tách nên chốt tự cho qua (xem hàm đó).
+    chot_co_bo_tach_giong(cach_tach, de_giong=de_giong)
     vids = liet_ke_video(thu_muc)
     n = so_luong if so_luong > 0 else _so_luong_mac_dinh()
     lam_goc = thu_muc / TEN_THU_MUC_TAM
@@ -5107,6 +5225,7 @@ def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
         return thay_giong_mot_video(
             v, dich_sang=dich_sang, voice=voice, cach_tach=cach_tach,
             thay_goc=thay_goc, kenh=kenh, thung_rac=thung_rac,
+            de_giong=de_giong,
             thu_muc_lam=lam_goc / v.stem)
 
     with ThreadPoolExecutor(max_workers=max(1, n)) as ex:
