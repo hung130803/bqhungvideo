@@ -171,8 +171,11 @@ def kho_theo_nguon() -> dict[str, tuple[int, str]]:
 
 
 def main() -> int:
+    # ĐỌC version TỪ MÃ, đừng ghi cứng: bump xong mà tiêu đề còn số cũ thì
+    # đọc log của hai lượt khác nhau lại tưởng là một lượt.
+    from app.version import __version__ as ver
     print("=" * 78)
-    print("KIỂM ĐỘC LẬP v2.38.0 — đếm ở ĐÚNG cửa hộp Thay giọng")
+    print(f"KIỂM ĐỘC LẬP v{ver} — đếm ở ĐÚNG cửa hộp Thay giọng")
     print("=" * 78)
     print(f"key mượn từ DATA_DIR thật (chỉ đọc, KHÔNG in giá trị): "
           f"Groq={SO_KEY['groq']} · ElevenLabs={SO_KEY['eleven']}")
