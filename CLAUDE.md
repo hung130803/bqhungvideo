@@ -2409,7 +2409,24 @@
      `_test_*.py` đang ghi cứng nó**. Checklist phục hồi `bin/` chỉ kiểm 5
      filter, mà **CẢ HAI build đều có đủ 8/8** nên checklist ĐẠT trong khi build
      vẫn sai. `_do_de_giong.py` dùng `settings.FFMPEG_PATH` + có `kiem_ffmpeg()`
-     TỰ KIỂM BỘ ĐO. **Việc thay lại `bin/` chưa làm.**
+     TỰ KIỂM BỘ ĐO.
+     **ĐÃ THAY `bin/` 19/08/2026 — nay là `N-126207-g21bbd98e7b-20260818`.**
+     **NGUỒN ĐÚNG là `D:\BQHungVideo\_internal\` (app ĐÃ CÀI của anh Hùng), KHÔNG
+     PHẢI `dist\BQHungVideo\_internal\`** — chỗ `dist/` chính là nơi chứa bản
+     2023 và là lý do lượt phục hồi trước sai. `D:\BQHungVideo` **CHỈ ĐỌC**.
+     Kiểm sau khi copy, đủ **4 phép** (checklist 5-filter cũ ĐẠT OAN nên đừng
+     dùng lại): `ffmpeg -version` phải ra `N-126207` · 8 filter
+     `acrossover · xfade_opencl · libplacebo · frei0r · rubberband · alimiter ·
+     loudnorm · sidechaincompress` đều **1/1** · `ffmpeg -h filter=astats` phải
+     có chuỗi `Abs_Peak_count` (đúng phép `kiem_ffmpeg()` dùng — đo được **4**
+     lần xuất hiện) · và **CHẠY THẬT** `astats=measure_overall=Peak_level+
+     Abs_Peak_count` phải ra **rc=0** kèm dòng `Abs Peak count:` (build 2023 ra
+     rc=1 `Unable to parse option value`). **LƯU Ý TÊN IN RA KHÁC TÊN CHỈ SỐ:**
+     tham số/metadata là `Abs_Peak_count` (gạch dưới) nhưng dòng in ra là
+     `Abs Peak count:` (dấu cách) — grep sai dạng là kết luận oan "thiếu chỉ
+     số" trên một ffmpeg CÓ ĐỦ. `bin/` **KHÔNG được git theo dõi**
+     (`git ls-files bin/` rỗng) nên lượt thay này không có gì để commit — đừng
+     đi tìm commit của nó.
      **CHƯA ĐẠT, GHI THẲNG:** chưa ai NGHE (file thử ở
      `_NGHE_THU_ANH_HUNG/de_giong/`, mỗi video một cặp `TACH_*` / `DE_*` cùng
      một lượt chạy — tai anh Hùng là phán quyết cuối) · mặc định vẫn là cách CŨ,
@@ -3590,12 +3607,16 @@
   system cannot find the file specified`, đọc ra y như "cổng vừa hồi quy".
   **THỨ TỰ DỌN ĐÚNG:** `cmd /c rmdir "<wt>\bin"` (gỡ JUNCTION trước, **KHÔNG**
   `/s`) rồi mới `git worktree remove --force <wt>`.
-  **PHỤC HỒI:** `dist\BQHungVideo\_internal\ff{mpeg,probe}.exe` (bản đóng gói
-  copy TỪ `bin/` lúc build — đo được cùng dấu thời gian với lượt build) và
-  `D:\BQHungVideo\_internal\yt-dlp.exe`. Kiểm lại bằng `ffmpeg -filters` phải
-  còn **`acrossover · xfade_opencl · libplacebo · frei0r · rubberband`** (bản
-  `full_build` của gyan.dev); thiếu là mất nhóm hiệu ứng GPU + co giãn tiếng
-  mà app vẫn chạy. Đã kiểm 8/8 filter sau khi phục hồi, cổng 78 về 52/0.
+  **PHỤC HỒI — LẤY TỪ `D:\BQHungVideo\_internal\` (CHỈ ĐỌC), cả 3 file
+  `ffmpeg.exe` · `ffprobe.exe` · `yt-dlp.exe`.**
+  **ĐỪNG LẤY TỪ `dist\BQHungVideo\_internal\` — lượt phục hồi đầu đã lấy ở đó
+  và LẤY VỀ BẢN 2023-01-12**, vì `dist/` là sản phẩm của một lượt build CŨ nên
+  nó chỉ chứa đúng cái `bin/` hồi đó có, không phải bản mới nhất. Sai lặng lẽ:
+  8/8 filter vẫn đủ nên checklist ĐẠT, chỉ `Abs_Peak_count` là thiếu — xem khối
+  cổng 86 để biết đủ 4 phép kiểm sau khi copy.
+  Kiểm lại bằng `ffmpeg -filters` phải còn **`acrossover · xfade_opencl ·
+  libplacebo · frei0r · rubberband`**; thiếu là mất nhóm hiệu ứng GPU + co giãn
+  tiếng mà app vẫn chạy. Đã kiểm 8/8 filter sau khi phục hồi, cổng 78 về 52/0.
 - **MỞ RỘNG KHO 09/08/2026 — điểm nhấn 27 -> 43 kiểu · chuyển cảnh GPU 21 -> 31**
   (nhánh `mo-rong-kho`; thước đo `_do_kho_moi.py`, 7 cổng, ở ĐÚNG 1080x1920).
   **16 kiểu điểm nhấn MỚI, tất cả là filter CÓ SẴN của ffmpeg = 0 byte tài
