@@ -412,6 +412,17 @@ def ca5() -> None:
                                  "thay_giong_mot_video", "de_giong")
     ok(co, "5e jobs._thay_giong đọc cờ từ payload (không phải hằng số)", ly)
 
+    # CỬA THỨ BA CỦA CHỐT DEMUCS — **ĐÃ BỊ SÓT MỘT LẦN TRONG CHÍNH BẢN VÁ NÀY.**
+    # `jobs._thay_giong` gọi `chot_co_bo_tach_giong` RIÊNG (không đi qua
+    # `thay_giong_thu_muc`), nên sót ở đó thì: UI mở nút Chạy -> job được xếp ->
+    # **CHẾT NGAY tại chốt** trên máy nhân viên, mà máy dev (có Demucs) xanh
+    # hết. Ba cửa phải khớp: UI `_cap_nhat_nut_chay` · `thay_giong_thu_muc` ·
+    # `jobs._thay_giong`.
+    co, ly = kwarg_khong_hang_so("app/queue/jobs.py", "_thay_giong",
+                                 "chot_co_bo_tach_giong", "de_giong")
+    ok(co, "5m jobs._thay_giong chuyền `de_giong=` vào CHỐT DEMUCS (cửa thứ ba "
+           "— sót là tính năng chết đúng trên máy nhân viên)", ly)
+
     # CHỐT CỔNG 63: vá phải ở CỬA CHUNG. Sót một chỗ là video ra HAI GIỌNG TRỘN
     # mà mã thoát vẫn 0 -> con số 3 này KHÔNG được đổi.
     n = len(re.findall(r"_synth_all_words\s*\(",

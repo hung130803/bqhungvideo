@@ -291,7 +291,17 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
     # CHẶN TRƯỚC: máy nhân viên KHÔNG có Demucs -> KHÔNG được lui 'cách nhẹ'
     # (đo: rò rỉ lời 100% zh / 86,3% en = giọng cũ còn nguyên chồng lên giọng
     # mới, ffmpeg vẫn trả mã 0). Thà job đỏ còn hơn 300 kênh hỏng im lặng.
-    tg.chot_co_bo_tach_giong(payload.get("cach_tach") or "auto")
+    #
+    # **`de_giong=` BẮT BUỘC PHẢI CHUYỀN VÀO ĐÂY — ĐÂY LÀ CỬA THỨ BA, VÀ NÓ ĐÃ
+    # BỊ SÓT MỘT LẦN.** Chế độ đè giọng không đi qua `tach_giong` một lần nào,
+    # nên chốt này đòi Demucs là chặn đúng cái đường được làm ra để chạy trên
+    # máy KHÔNG có Demucs. Sót ở đây thì hộp thoại vẫn cho bấm Chạy (UI đã mở
+    # nút), job vẫn được xếp, rồi **CHẾT NGAY tại dòng này** — tức tính năng
+    # chết đúng trên máy nhân viên mà máy dev (có Demucs) thì xanh hết. Ba cửa
+    # phải khớp nhau: `thay_giong_dialog._cap_nhat_nut_chay` ·
+    # `thay_giong.thay_giong_thu_muc` · và ĐÂY.
+    tg.chot_co_bo_tach_giong(payload.get("cach_tach") or "auto",
+                             de_giong=bool(payload.get("de_giong")))
 
     goc = os.path.abspath(duong)
     thu_muc_ra = str(payload.get("thu_muc_ra") or "").strip() or \
