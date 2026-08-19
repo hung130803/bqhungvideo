@@ -1162,8 +1162,34 @@
      **MỖI VIDEO MỘT JOB** (không gộp cả thư mục): tắt app giữa chừng thì
      video chưa làm vẫn nằm trong DB và chạy tiếp; Huỷ được từng video; bảng
      tiến độ đọc thẳng bảng `jobs`, không có sổ RAM riêng.
-     **SỐ ĐO:** 2 video / **2 luồng 18,58s** · **lần lượt 26,55s** = nhanh
-     **1,43×**; đỉnh job chạy cùng lúc **2** (làn 2 luồng) và **1** (làn 1
+     **SỐ ĐO (19/08/2026, đo lại — số cũ "1,43×" đã LẠC HẬU):** 2 video /
+     **1 luồng 24,81 · 25,56s** · **2 luồng 32,32 · 13,53s** = nhanh
+     **1,83×** (cổng lấy lượt NHANH NHẤT mỗi bên). Mốc cũ *2 luồng 18,58s ·
+     lần lượt 26,55s = 1,43×* đo ngày 14/08. **Ngưỡng vẫn là 1,20, KHÔNG hạ.**
+     **CỘT NÀY NHIỄU RẤT MẠNH VÌ GROQ, ĐỌC CHO ĐÚNG:** hai lượt của cùng một
+     arm 2 luồng ra **32,32s và 13,53s** — lệch 2,4 lần trên CÙNG bản mã,
+     CÙNG máy, cách nhau vài phút. Đo riêng ở cổng này còn bắt được một arm
+     1 luồng **144,86s** trong khi CPU của nó chỉ ~21s (`_do_tg_ab.py`), tức
+     **123 giây ngồi ĐỢI MẠNG** chứ không chạy. Gốc: 2 luồng = 2 video cùng
+     chép lời + dịch qua Groq, bể key nóng (các luồng khác trên máy cũng đốt
+     Groq) thì `_call_waiting_quota` đợi — đúng cơ chế đã ghi ở cổng 70
+     *"mệnh đề về MÔI TRƯỜNG, không phải về mã"*. Vì vậy **một lượt đo ra
+     "2 luồng chậm hơn" KHÔNG kết luận được gì**; phải đan xen nhiều lượt và
+     đọc lượt nhanh nhất (thiết kế sẵn của CA 2), hoặc đo lại lúc bể key nguội.
+     **"2 LUỒNG CHẬM HƠN DO BỘ GIÓNG CHỮ" LÀ CHẨN ĐOÁN SAI — ĐÃ BÁC BẰNG SỐ
+     (19/08/2026).** Bộ gióng hàng **KHÔNG NẰM TRÊN ĐƯỜNG CHẠY** của cổng này:
+     giọng mặc định là edge-tts, mà edge-tts tự trả `WordBoundary` nên
+     `dubbing._synth_all_words` đi thẳng nhánh edge, **không gọi
+     `giong_hang_loat` lần nào**. Hai phép đo độc lập cùng nói vậy: bọc hàm
+     đếm lượt gọi ra **0 lượt / 8 arm** (`_do_tg_ab.py`), và sandbox của cổng
+     55 sau lượt chạy **không hề có `logs/giong_hang_*.log`** (mà
+     `giong_hang_loat` ghi log ở MỌI đường ra, kể cả đường lùi). Đo A/B bật/
+     tắt `BQ_GIONG_HANG` trên chính đường thật: **BẬT 1 luồng 28,83s vs
+     2 luồng 17,79s (1,62×)** · **TẮT 1 luồng 27,08s vs 2 luồng 16,31s
+     (1,66×)** — hai bên như nhau, và **cả hai đều 2 luồng NHANH HƠN**.
+     Ai thấy "tắt gióng hàng thì nhanh lên" thì đó là bể key Groq nguội đi
+     giữa hai lượt đo, không phải bộ gióng hàng.
+     Đỉnh job chạy cùng lúc **2** (làn 2 luồng) và **1** (làn 1
      luồng); MD5 gốc trong Thùng rác **trùng từng byte**; bản mới 215 khung,
      RMS 0,09. Tách 6 giây audio trong tiến trình ĐÃ NẠP Qt: **7,47s wall**,
      tỉ lệ 0,783×, `torch 2.13.0+cpu` (trước bản vá: 0 dòng chạy được).
@@ -1970,6 +1996,33 @@
      trỏ vào **DOCSTRING** chứ không phải phần MÃ (unparse giữ docstring);
      (c) mục 5a chỉ hỏi hằng `BLANK` có mặt -> phép phá chỉ trả dòng `return`
      về cũ vẫn để `BLANK = 0` nằm đó nên mục ấy **tự ĐẠT OAN**.
+     **LỖI THỨ HAI, TÌM RA 19/08/2026 — HAI LUỒNG DÙNG CHUNG FILE VIỆC/KẾT
+     QUẢ.** `giong_hang_loat` đặt tên `viec_<pid>.json` / `ket_<pid>.json`
+     theo `os.getpid()` **của tiến trình GỌI** — giống hệt nhau cho MỌI luồng
+     trong app, mà làn `LAN_TG` mặc định **2 luồng**. Hai luồng ghi đè file
+     việc của nhau, ghi đè file kết quả của nhau, và `finally` của luồng xong
+     trước **XOÁ** file kết quả của luồng kia. Đo (`_do_gh_luong.py`, 2 mẻ 6
+     câu, đan xen): chạy lần lượt **12/12 câu có mốc** · chạy 2 luồng
+     **6/12**, đúng một mẻ mất trắng, **2/2 lượt**; log ghi *"tiến trình gióng
+     hàng không ghi kết quả (mã 0)"* — **rc = 0**, không một dòng báo trên
+     giao diện. Mất mốc mới là ca DỄ THẤY; ca nguy hơn là file việc bị ghi đè
+     ĐÚNG LÚC -> tiến trình con gióng mẻ tiếng của luồng KIA rồi trả về ĐỦ số
+     mục -> **mốc gán sai chữ, im lặng hoàn toàn**.
+     Chữa bằng `_ma_lot()` = `p<pid>t<thread>n<đếm>`, mỗi LƯỢT GỌI một bộ tên
+     (giữ `pid` ở đầu để `_don_rac_viec` còn quét mồ côi được).
+     **`_viet_runner` CŨNG PHẢI MỘT-FILE-MỘT-LƯỢT — đã thử 2 cách rẻ hơn, cả
+     hai hỏng trên Windows:** `write_text` đè lên đường dẫn dùng chung thì mở
+     chế độ `w` = CẮT CỤT ngay file mà tiến trình con đang đọc; còn ghi tên
+     tạm rồi `os.replace` (nguyên tử trên POSIX) thì Windows **từ chối thay
+     file ĐANG MỞ** — ra `PermissionError [WinError 5] Access is denied` ngay
+     lượt song song đầu tiên, vì python con đang giữ handle chính script đó.
+     **ĐO LẠI SAU VÁ, 3 vòng đan xen: 12/12 · 12/12 · 12/12 câu có mốc** ·
+     thời gian tường **lần lượt 15,49s vs 2 luồng 7,73s = 2 luồng NHANH 2,00×**
+     · VRAM đỉnh **3.346 / 12.288 MiB** (mỗi tiến trình ~1.455 MiB).
+     **KHÔNG serialize bằng khoá:** hai tiến trình gióng hàng song song đo ra
+     nhanh gấp đôi và card còn thừa 8,9 GB — khoá lại là vứt đi 2×.
+     **VRAM PHẢI POLL TRONG LÚC CHẠY** (bẫy cổng 71): lấy mẫu trước/sau ra
+     đúng mức nền 430 MiB vì tiến trình thoát là trả sạch.
   74. `_test_json_bao_dung.py` → **JSON CỦA LLM ĐỨT/BỌC/THỪA CHỮ THÌ VẪN PHẢI
      SỐNG** (18/08/2026). **ĐẠT 80 · HỎNG 0.** Thử phá `_pha_json_bao_dung.py`
      (9 phép, mỗi phép gỡ ĐÚNG một chốt): **BẮT 9 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
@@ -3179,6 +3232,23 @@
   llama-3.3-70b xếp đúng 3/3 lượt, 1,2 giây; qwen3.6-27b **0/3 lượt**, 19,5
   giây (tiêu hết max_tokens cho khối `<think>`). Muốn chấm chắc tay thì dùng
   HỘI ĐỒNG 3 TRỌNG TÀI (`JUDGE_PANEL=1`, đang bật).
+- **CPU-GIÂY CỦA TIẾN TRÌNH CON: ĐO KHÔNG ĐƯỢC TRONG PHIÊN AGENT — TỰ KIỂM
+  BỘ ĐO TRƯỚC KHI IN BẢNG (19/08/2026).** `_do_cpu_probe.py` đốt **1,8 giây
+  CPU thuần** trong một tiến trình con rồi hỏi lại ba bộ đo:
+  `GetProcessTimes` (ctypes, đã khai đủ `argtypes`, đọc ngay sau `wait()`) ->
+  **0,000s** · `psutil.Process.cpu_times()` -> **0,000s** ·
+  `psutil.cpu_times()` **CẢ MÁY** -> **11,8s (DÙNG ĐƯỢC)**. Tức môi trường
+  không cho đọc số liệu tiến trình con do chính phiên này đẻ ra — **không
+  phải tiến trình con không tốn CPU**. Thay bằng CPU-giây cả máy rồi TRỪ NỀN
+  đo ngay trước từng arm; nhưng nền phải THẬT SỰ đứng yên, luồng agent khác
+  chạy giữa chừng là ra số vô nghĩa (đo được 33,4s và **266,9s** cho hai arm
+  y hệt nhau).
+  **BẪY ĐI KÈM, ĐÃ SẬP:** bản đầu ghi sổ **MỌI** `Popen` để cộng CPU, mà chính
+  vòng poll VRAM gọi `nvidia-smi` bằng `subprocess.run` (= `Popen`) — arm chạy
+  LÂU thì poll NHIỀU HƠN, nên cột "CPU-giây" hoá ra đo `nvidia-smi`: **38 tiến
+  trình (2 luồng) vs 68 (lần lượt)** cho cùng 2 lượt gióng hàng, tự đẻ ra tỉ
+  lệ **1,68×** không có thật. Lọc theo tên lệnh, và **luôn in số tiến trình
+  đã ghi sổ** — con số đó là thứ tố giác.
 - Quy tắc sắt: test bằng THÀNH PHẦN THẬT (LLM/ffmpeg/DB thật — mock từng giấu
   bug); đường ghép đoạn phải test thứ tự hook-first (ngược thời gian) + nguồn
   VFR; key API chỉ qua ENV, không ghi file, kiểm `git diff | grep gsk_` trước
