@@ -265,6 +265,10 @@ cho từng việc.
   Trung dài tổng 20 phút: vẫn còn **45,6 giây / 3,8% thời lượng** có tiếng nói ở
   bản gốc mà bản thay tiếng bị im. Không rải đều: 2 video **0,0% và 0,1%** (coi
   như sạch), 2 video còn lại **6,5% và 5,4%**. Đang truy tiếp nguyên nhân.
+  **Và phải nói thêm một điều:** chính con số này **dao động theo từng lượt
+  chạy** — cùng một bộ mã, cùng 4 video, hai lượt xuất khác nhau ra **82,35 s**
+  và **45,60 s** (lệch **1,81 lần**). Nên đừng đọc "3,8%" như một hằng số; nó là
+  mức đo được của một lượt, và bản thân dây chuyền còn ngẫu nhiên ở chỗ đó.
 - **Chatterbox và VieNeu phải tự tải model, và máy phải có Python 3.** Bộ cài
   không kèm sẵn (kèm thì bộ cài phồng từ 240 MB lên hơn 11 GB). Chatterbox còn
   cần GPU NVIDIA mới dùng được thật.
