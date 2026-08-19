@@ -109,6 +109,15 @@ CONG = [
     # lại được. THỬ PHÁ (đổi `crc32` -> `hash()`): cổng ĐỎ đúng mục đó,
     # `0/3 tiến trình khớp`, mã thoát 1.
     ("81 giọng theo kênh",  "_test_giong_kenh.py",       57),
+    # Cổng 82 canh lượt NỐI Chatterbox vào app (v2.38.0). Trước nó,
+    # `giong_chatter.py` là 623 dòng mã mà **không một dòng nào trong
+    # `giong_bang.py`/`dubbing.py` gọi tới** — đúng bẫy "cổng/tính năng không ai
+    # gọi thì chỉ là một file .py nằm đó" mà cổng 70 đã dính. Nó KHÔNG gọi
+    # mạng, KHÔNG nạp model thật, KHÔNG đốt GPU: phần đắt nhất (CA 7) chạy
+    # CHÍNH script runner trong tiến trình con với gói `chatterbox` GIẢ mô
+    # phỏng đúng tính dính `self.conds` — thứ biến "đọc kênh A rồi kênh B"
+    # thành "kênh B ra giọng kênh A" mà mã thoát vẫn 0.
+    ("82 Chatterbox đã nối", "_test_chatter_noi.py",     57),
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      48),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.

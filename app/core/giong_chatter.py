@@ -173,9 +173,15 @@ GIAY_PHEP = "giấy phép MIT (cả mã lẫn trọng số) - bán được"
 
 #: Cảnh báo CHẤT LƯỢNG — cùng luật Piper/OmniVoice: tệ hơn edge-tts thì phải
 #: ghi ra ngay trên DÒNG, đừng để người dùng tự phát hiện sau 300 video.
+#:
+#: **Vế tiếng Việt phải nói rõ nó hỏng KIỂU GÌ, không chỉ nói "không có".**
+#: Ép đọc tiếng Việt thì nó KHÔNG ném lỗi và KHÔNG câm — nó đọc ra một chuỗi
+#: vô nghĩa (*"Một cơn bão chưa từng có"* -> *"Mokonbel, Chutanko..."*) rồi
+#: trả mã 0. Người dùng nhận được file nghe được, tưởng đã xong.
 CANH_BAO_CL = ("mốc chữ phải MOI CỬA SAU của thư viện nên rung 76 ms so với "
                "44 ms của giọng thường (chữ bám lời kém hơn); KHÔNG có tiếng "
-               "Việt; đọc sai chữ tiếng Trung 28,8% và có bịa thêm câu; mọi "
+               "Việt (ép đọc thì ra chuỗi vô nghĩa mà vẫn báo thành công); "
+               "đọc sai chữ tiếng Trung 28,8% và có bịa thêm câu; mọi "
                "file đều bị ĐÓNG DẤU CHÌM không tắt được")
 
 #: Cảnh báo MÁY — số đo, không phải lời doạ.
@@ -411,6 +417,19 @@ try:
     items = J["items"]
     ref = J.get("ref") or ""
     lang = J.get("lang") or "en"
+    # ‼ MAU THAM CHIEU LA BAT BUOC — DAY LA CHOT CHONG "KENH B RA GIONG KENH A".
+    # `ChatterboxMultilingualTTS` CAT mau len chinh doi tuong model (`self.
+    # conds`). Goi `generate()` KHONG kem `audio_prompt_path` thi no **dung lai
+    # mau cua luot TRUOC**, chu KHONG quay ve giong mac dinh — va no khong nem
+    # loi, khong bao mot dong nao. Doc kenh A roi kenh B ma quen truyen mau la
+    # kenh B ra GIONG KENH A. Voi 300 kenh day la loi chet nguoi.
+    # Vi vay: thieu `ref` thi **NEM NGAY**, khong doc mot cau nao. Doc bang mot
+    # giong khong xac dinh con te hon khong doc: nguoi dung nhan duoc file
+    # nghe duoc, tuong da xong.
+    if not ref:
+        raise ValueError(
+            "thieu audio_prompt_path (mau tham chieu): Chatterbox se dung lai "
+            "mau cua luot truoc -> kenh nay ra giong kenh khac")
     # DONG SEED: khong dong thi cung cau cung tham so lech do dai 33,7% giua
     # cac luot (do that, 8 luot). Dong seed -> 0,0%. Day khong phai lam dep
     # so: `khop_thoi_gian` o tien trinh cha can do dai TIEN DINH thi vong ep
@@ -420,10 +439,10 @@ try:
     t1 = time.time()
     for i, it in enumerate(items):
         torch.manual_seed(seed)
-        kw = {}
-        if ref:
-            kw["audio_prompt_path"] = ref
-        wav = m.generate(it["text"], language_id=lang, **kw)
+        # `audio_prompt_path` truyen VO DIEU KIEN o MOI cau — khong `if`,
+        # khong `**kw`. Mot cau lot la cau do mang giong cua lan goi truoc.
+        wav = m.generate(it["text"], language_id=lang,
+                         audio_prompt_path=ref)
         x = wav.detach().cpu()
         if x.dim() == 1:
             x = x[None]
