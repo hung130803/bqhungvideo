@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import unicodedata
 from pathlib import Path
@@ -160,6 +161,18 @@ def rong_toi_da(w) -> int:
     return max(RONG_TOI_THIEU, tran - LE_TRAN)
 
 
+def tran_nhan(w) -> int:
+    """Bề rộng TỐI ĐA cho CHỮ của một dòng (dùng cho `nhan_gon`).
+
+    Hẹp hơn `rong_toi_da` đúng một lần `LE_TRAN`, và đó KHÔNG phải cẩn thận quá
+    mức mà là số học: khi nhãn dài hơn trần, `rong_vua_chu` kẹp ô danh sách về
+    `rong_toi_da`, rồi Qt còn trừ tiếp viền + thanh cuộn. Lấy cùng một số cho cả
+    hai chỗ là để lại đúng `LE_TRAN` px thiếu -> nhãn vẫn bị elide, tức VIỆC 3
+    làm xong mà số nhãn bị cắt KHÔNG về 0 và rất khó nhìn ra vì sao.
+    """
+    return max(300, rong_toi_da(w) - LE_TRAN)
+
+
 def rong_vua_chu(fm, nhan_ds, tran: int) -> int:
     """Bề rộng vừa nhãn DÀI NHẤT, cộng chỗ thanh cuộn, chặn ở `tran`.
 
@@ -171,6 +184,103 @@ def rong_vua_chu(fm, nhan_ds, tran: int) -> int:
         return max(RONG_TOI_THIEU, min(RONG_TOI_THIEU, tran))
     can = max(fm.horizontalAdvance(str(n or "")) for n in nhan_ds)
     return max(RONG_TOI_THIEU, min(int(can) + LE_TRAN, tran))
+
+
+# ---------------------------------------------------------------------------
+# VIỆC 3 — NHÃN NGẮN LẠI, PHẦN DÀI ĐẨY VÀO TOOLTIP
+# ---------------------------------------------------------------------------
+#: Thay cho `giong_bang.DAU_LOI_TAT` (" [lối tắt — cùng giọng ở nhóm dưới]",
+#: 38 ký tự) — nó lặp trên MỌI dòng nhóm "Khuyên dùng" và ăn hết bề rộng, mà đó
+#: là thứ đọc MỘT LẦN là hiểu. Nói một lần ở TIÊU ĐỀ NHÓM (`GHI_CHU_LOI_TAT`),
+#: mỗi dòng chỉ còn dấu ngắn này, chi tiết nằm trong tooltip.
+DAU_LOI_TAT_GON = " · lối tắt"
+#: Ghi chú dán MỘT LẦN vào tiêu đề nhóm "Khuyên dùng".
+GHI_CHU_LOI_TAT = " (mấy giọng này còn nằm ở nhóm dưới)"
+#: Dán vào dòng bị rút gọn — user phải BIẾT là còn chữ chưa đọc, không thì rút
+#: gọn thành giấu thông tin.
+DAU_CON_CHU = " · rê chuột xem thêm"
+
+#: Tách nhãn thành các PHẦN. Chỉ tách ở " - " / " · " CÓ KHOẢNG TRẮNG hai bên:
+#: `đọc được Việt·Anh·Hàn·Nhật·Trung` dùng `·` KHÔNG có khoảng trắng nên không
+#: bị xé, còn `cùng-một-mã` và `0,61-0,63` cũng vậy. KHÔNG tách ở gạch dài `—`
+#: (nó nằm GIỮA TÊN: `Nam Minh — Nam chuẩn`).
+_RE_TACH = re.compile(r"\s+[-·]\s+")
+
+#: PHẦN PHẢI GIỮ LẠI trên dòng — đúng 4 câu anh Hùng cần trả lời ngay:
+#: nó đọc có cảm xúc không · nó đọc được tiếng gì · tốn tiền không · phải tải gì.
+#: Phần nào KHÔNG khớp bộ này mà nhãn lại quá dài thì đẩy vào tooltip.
+_RE_GIU = (
+    re.compile(r"(?:nhấn nhá\s|chưa đo nhấn nhá)"),
+    re.compile(r"(?:đọc được|chỉ đọc tiếng|chỉ tiếng|chưa đo đọc"
+               r"|chưa đo tiếng|KHÔNG đọc được|TIẾNG ANH)"),
+    re.compile(r"(?:miễn phí|TỐN TIỀN|tốn hạn mức|cần key|phải tải|cần tải)"),
+)
+
+
+def _phan_giu(p: str) -> bool:
+    """Phần này có phải thứ người dùng CẦN thấy ngay không?"""
+    t = p.strip()
+    return bool(t) and any(rx.match(t) for rx in _RE_GIU)
+
+
+def nhan_gon(nhan: str, fm, tran: int) -> str:
+    """Nhãn NGẮN cho một dòng giọng — phần dài đẩy vào tooltip.
+
+    Anh Hùng 19/08/2026: ``[lối tắt — cùng giọng ở nhóm dưới]`` lặp 5 lần và
+    **ăn hết bề rộng**. Nặng hơn (đo được, không có trong lời anh ấy nhưng cùng
+    một bệnh): nhãn giọng OmniVoice dài **591-610 ký tự = tới 3.733 px**, tức
+    KHÔNG BỀ RỘNG NÀO đủ — nới ô danh sách (VIỆC 1) một mình không bao giờ đưa
+    được số nhãn bị cắt về 0.
+
+    **KHÔNG BỎ GIỌNG NÀO, chỉ đổi cách BÀY** (anh Hùng đã chốt *"trùng lặp cũng
+    được, cứ thêm"*) — hàm này chỉ đụng CHỮ HIỂN THỊ, mã giọng đi kèm không đổi
+    một ký tự, nên round-trip lưu/đọc lại không thể lệch.
+
+    Ba mức, theo thứ tự nhẹ tay dần:
+
+    1. **Vừa rồi thì KHÔNG SỬA GÌ** (sau khi thay dấu lối tắt): giữ nguyên từng
+       byte cho ~98% dòng, tức bản vá này gần như không có mặt ở chúng.
+    2. Không vừa -> giữ phần TÊN + đúng 4 phần phải-thấy-ngay (`_RE_GIU`), mọi
+       phần khác đẩy vào tooltip và dán ``DAU_CON_CHU`` để user biết còn chữ.
+    3. Vẫn không vừa -> ép chính phần TÊN, **giữ nguyên cái đuôi tiền/tải**:
+       cắt tên còn khó chịu chứ cắt mất "TỐN TIỀN" là bấm nhầm mất tiền thật.
+    """
+    s = str(nhan or "")
+    lt = GB.DAU_LOI_TAT in s
+    if lt:
+        s = s.replace(GB.DAU_LOI_TAT, "")
+    if fm.horizontalAdvance(s + (DAU_LOI_TAT_GON if lt else "")) <= tran:
+        return s + (DAU_LOI_TAT_GON if lt else "")
+
+    # tách phần, GIỮ ĐÚNG vị trí để cắt được nguyên văn (đừng ghép lại phần
+    # TÊN bằng " · " — nhãn Vbee "HN - Anh Khôi ..." sẽ thành "HN · Anh Khôi")
+    moc: list[tuple[int, int, str]] = []
+    i = 0
+    for m in _RE_TACH.finditer(s):
+        moc.append((i, m.start(), s[i:m.start()]))
+        i = m.end()
+    moc.append((i, len(s), s[i:]))
+
+    k = [j for j, (_a, _b, p) in enumerate(moc) if _phan_giu(p)]
+    if not k:                       # nhãn lạ, không nhận ra phần nào -> ép thẳng
+        return fm.elidedText(s + (DAU_LOI_TAT_GON if lt else ""),
+                             Qt.TextElideMode.ElideRight, tran)
+    ten = s[:moc[k[0] - 1][1]] if k[0] > 0 else ""
+    duoi = "".join(f" · {moc[j][2].strip()}" for j in k)
+    if lt:
+        duoi += DAU_LOI_TAT_GON
+    # CÓ PHẦN BỊ ĐẨY VÀO TOOLTIP THÌ PHẢI NÓI RA — nhưng chỉ đếm phần nằm SAU
+    # phần-phải-giữ đầu tiên. **BẢN ĐẦU ĐẾM SAI VÀ ĐÃ ĐO RA:** nhãn VieNeu
+    # `Xuân Vĩnh — Nam · Nam · Phong cách tự nhiên (VieNeu)` tự nó đã có 2 dấu
+    # ` · ` nên bị tính thành 3 "phần bị bỏ", trong khi cả 3 đều nằm trong phần
+    # TÊN và được giữ nguyên -> dòng dán "rê chuột xem thêm" trong khi KHÔNG bỏ
+    # gì, tức nói với anh Hùng một câu không đúng rồi còn ăn 130 px bề rộng.
+    if any(j > k[0] and j not in k for j in range(len(moc))):
+        duoi += DAU_CON_CHU
+    con = tran - fm.horizontalAdvance(duoi)
+    if con < 120:                   # đuôi đã kín chỗ -> ép cả dòng, thà cụt tên
+        return fm.elidedText(s, Qt.TextElideMode.ElideRight, tran)
+    return fm.elidedText(ten, Qt.TextElideMode.ElideRight, con) + duoi
 
 
 #: Vai trò dữ liệu đánh dấu "dòng này là TIÊU ĐỀ NHÓM". Phải là cờ RIÊNG, không
@@ -1479,14 +1589,32 @@ class ThayGiongDialog(QDialog):
         # SỐ NHẤN NHÁ nay do `gom_nhom` gắn (`giong_bang.duoi_nhan_nha`), UI
         # KHÔNG gắn thêm lần nữa — dán hai lần thì dòng ra "... nhấn nhá 4,0
         # ... nhấn nhá 4,0 ...".
-        for nhan, vid in GB.gom_nhom(giong_dung_duoc(self._giong_tho), nn,
-                                     loi_tat=True):
-            self.cb_giong.addItem(nhan, vid)
-            it = self.cb_giong.model().item(self.cb_giong.count() - 1)
+        ds = GB.gom_nhom(giong_dung_duoc(self._giong_tho), nn, loi_tat=True)
+        # VIỆC 3 — ghi chú lối tắt nói MỘT LẦN ở tiêu đề nhóm, thay vì lặp 38 ký
+        # tự trên cả 5 dòng. Dò bằng "tiêu đề nhóm ĐỨNG NGAY TRƯỚC dòng lối tắt
+        # đầu tiên", KHÔNG so với `giong_bang._NHAN_NHOM[N_KHUYEN]`: đó là tên
+        # riêng tư của module khác (đang có luồng khác giữ), so vào là nhãn bên
+        # đó sửa một chữ thì ghi chú này im lặng biến mất.
+        i_lt = next((j for j, (n, v) in enumerate(ds)
+                     if v and GB.DAU_LOI_TAT in n), -1)
+        i_tieu_de_lt = max((j for j, (_n, v) in enumerate(ds)
+                            if not v and j < i_lt), default=-1)
+        fm = self.cb_giong.view().fontMetrics()
+        tr = tran_nhan(self.cb_giong)
+        for j, (nhan, vid) in enumerate(ds):
             if not vid:                     # nhãn NHÓM -> không cho chọn
+                self.cb_giong.addItem(
+                    nhan + (GHI_CHU_LOI_TAT if j == i_tieu_de_lt else ""), vid)
+                it = self.cb_giong.model().item(self.cb_giong.count() - 1)
                 if it is not None:
                     to_nhan_nhom(it)        # đậm + màu khác + NoItemFlags
-            elif it is not None:
+                continue
+            # NHÃN NGẮN lên dòng, NHÃN ĐẦY ĐỦ vào tooltip. Mã giọng (`vid`) là
+            # thứ đi vào QSettings và payload job — nó KHÔNG đổi, nên rút gọn
+            # chữ không thể làm lệch giọng đã chọn.
+            self.cb_giong.addItem(nhan_gon(nhan, fm, tr), vid)
+            it = self.cb_giong.model().item(self.cb_giong.count() - 1)
+            if it is not None:
                 # TOOLTIP = phần chữ dài không nhét vào dòng được (giấy phép,
                 # điểm yếu đo được, việc phải tải). Nhờ nó mà nhãn VieNeu rút
                 # từ 521 xuống ~60 ký tự mà KHÔNG mất một cảnh báo nào.
@@ -1575,8 +1703,19 @@ class ThayGiongDialog(QDialog):
         Dòng trong combo cố ý NGẮN (đọc được khi combo đóng); mọi thứ dài mà
         vẫn phải nói ra — giấy phép, điểm yếu đã đo, phải tải bao nhiêu — nằm
         ở đây. Không giấu gì, chỉ đổi CHỖ ĐẶT.
+
+        `nhan` truyền vào phải là **NHÃN ĐẦY ĐỦ** (bản trước khi `nhan_gon` rút
+        gọn) — đây là chỗ DUY NHẤT còn giữ nguyên văn 610 ký tự cảnh báo giấy
+        phép của giọng OmniVoice. Truyền nhãn đã rút vào đây là rút gọn biến
+        thành **xoá thông tin**.
         """
-        dong = [nhan]
+        dong = []
+        if GB.DAU_LOI_TAT in str(nhan or ""):
+            # dòng LỐI TẮT: nói thẳng ở ĐẦU tooltip, vì trên dòng nó chỉ còn
+            # đúng hai chữ "lối tắt".
+            dong.append("LỐI TẮT — vẫn đúng giọng này, nó còn nằm trong nhóm "
+                        "ngôn ngữ ở phía dưới. Chọn dòng nào cũng như nhau.")
+        dong.append(nhan)
         try:
             from app.core import giong_vieneu
             if giong_vieneu.la_giong_vieneu(vid):
