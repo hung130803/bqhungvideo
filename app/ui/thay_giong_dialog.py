@@ -118,6 +118,59 @@ CHU_DA_XONG = "Đã xong — bỏ qua"
 #: cache danh sách giọng cho cả phiên chạy (đỡ gọi mạng mỗi lần mở hộp)
 _CACHE_GIONG: list = []
 
+# ---------------------------------------------------------------------------
+# BỀ RỘNG Ô DANH SÁCH GIỌNG
+# ---------------------------------------------------------------------------
+#: Ô danh sách không bao giờ hẹp hơn số này (nhãn nhóm ngắn nhất vẫn phải đọc
+#: hết được).
+RONG_TOI_THIEU = 420
+#: Trừ ra khỏi trần: viền hộp + thanh cuộn + lề chữ trong dòng. Thiếu chỗ cho
+#: thanh cuộn thì 371 dòng làm thanh cuộn ĐÈ LÊN chữ (ô danh sách giọng luôn
+#: dài hơn màn hình nên thanh cuộn LUÔN có, không phải trường hợp hiếm).
+LE_TRAN = 44
+
+
+def rong_toi_da(w) -> int:
+    """Trần bề rộng ô danh sách: KHÔNG quá CỬA SỔ, KHÔNG quá MÀN HÌNH.
+
+    Vì sao phải có TRẦN CỬA SỔ chứ không chỉ trần màn hình: nhãn giọng
+    OmniVoice dài **610 ký tự = 3.733 px** (đo 19/08/2026) nên "nới vừa nội
+    dung" mà không chặn là ô danh sách phủ hết màn hình rồi vẫn còn thiếu. Trần
+    cửa sổ giữ nó không rộng hơn cái hộp nó mọc ra từ đó.
+
+    Vì sao vẫn phải có TRẦN MÀN HÌNH: cửa sổ có thể to hơn màn hình (anh Hùng
+    kéo hộp rộng ra, hoặc máy nhân viên màn hình nhỏ hơn) — lúc đó nới theo cửa
+    sổ là đẩy chữ ra ngoài mép màn hình, đúng cái vừa đi chữa chỉ khác chiều.
+    """
+    ung = []
+    try:
+        cs = w.window()
+        if cs is not None and cs.width() > 0:
+            ung.append(cs.width())
+    except (AttributeError, RuntimeError):   # noqa: PERF203 - widget đã bị xoá
+        pass
+    try:
+        mh = w.screen()
+        if mh is not None:
+            ung.append(mh.availableGeometry().width())
+    except (AttributeError, RuntimeError):
+        pass
+    tran = min(ung) if ung else 900
+    return max(RONG_TOI_THIEU, tran - LE_TRAN)
+
+
+def rong_vua_chu(fm, nhan_ds, tran: int) -> int:
+    """Bề rộng vừa nhãn DÀI NHẤT, cộng chỗ thanh cuộn, chặn ở `tran`.
+
+    Đo bằng ``fontMetrics().horizontalAdvance`` — bề rộng chữ THẬT với đúng
+    phông đang dùng. **Đừng đoán theo số ký tự**: nhãn tiếng Việt có dấu, chữ
+    hoa `KHÔNG ĐỌC ĐƯỢC` rộng hơn chữ thường cùng số ký tự.
+    """
+    if not nhan_ds:
+        return max(RONG_TOI_THIEU, min(RONG_TOI_THIEU, tran))
+    can = max(fm.horizontalAdvance(str(n or "")) for n in nhan_ds)
+    return max(RONG_TOI_THIEU, min(int(can) + LE_TRAN, tran))
+
 
 def bo_emoji(s: str) -> str:
     """Bỏ emoji/cờ/ký hiệu khỏi nhãn — máy anh Hùng thiếu font, ra Ô ĐEN.
@@ -1370,7 +1423,39 @@ class ThayGiongDialog(QDialog):
                 i = self.cb_giong.count() - 1
             self.cb_giong.setCurrentIndex(i)
         self.cb_giong.blockSignals(False)
+        self._noi_rong_popup()
         self._ve_goi_y()
+
+    def _noi_rong_popup(self) -> None:
+        """VIỆC 1 — nới Ô DANH SÁCH cho VỪA CHỮ, chặn trần ở bề rộng cửa sổ.
+
+        Anh Hùng 19/08/2026 (ảnh v2.39.0): *"nhiều giọng hơn mà không có phân
+        chia gì à, LOẠN QUÁ"*. Nhóm CHẠY ĐÚNG rồi, chỗ hỏng là **ô danh sách
+        hẹp bằng chính combo (300 px) nên nhãn bị cắt GIỮA CÂU** — và
+        `QComboBox` elide kiểu **ElideMiddle** (đo được:
+        `view().textElideMode()` = `ElideMiddle`), tức nó ăn đúng khúc GIỮA
+        mang thông tin: `KHUYÊN DÙNG cho Tiế...phí, chạy được ngay`.
+
+        ĐO TRƯỚC KHI SỬA (`_do_combo_giong.py`, 371 dòng, phông thật): ở bề
+        rộng combo 300 px thì **359/371 nhãn bị cắt (96,8%)**.
+
+        Cách nới: `view().setMinimumWidth(...)` — bề rộng popup của
+        `QComboBox` bám theo minimumWidth của VIEW (đo: popup 290 -> 630 px khi
+        đặt 640). **KHÔNG đo bằng `itemDelegate().sizeHint()`**: view của combo
+        dùng `QComboBoxDelegate` trả bề rộng ĐỒNG NHẤT cho mọi dòng (đo 851 px
+        cho cả dòng 1 ký tự lẫn dòng 600 ký tự) nên thước đó luôn nói "cắt
+        100%", một con số không có thật.
+        """
+        try:
+            view = self.cb_giong.view()
+            fm = view.fontMetrics()
+            view.setMinimumWidth(rong_vua_chu(
+                fm,
+                [self.cb_giong.itemText(i)
+                 for i in range(self.cb_giong.count())],
+                rong_toi_da(self.cb_giong)))
+        except (AttributeError, RuntimeError):
+            pass            # popup chỉ là đường LÙI (đường chính là ô tìm)
 
     def _ve_goi_y(self) -> None:
         """Dòng gợi ý giọng nhiều cảm xúc nhất cho NGÔN NGỮ ĐANG CHỌN.
