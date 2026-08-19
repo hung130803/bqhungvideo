@@ -720,8 +720,13 @@ def ca6(hop_cat: Path) -> None:
 # ==================================================================
 #: Thư mục nguồn thật. **KHÔNG ghi cứng TÊN FILE** — quét thư mục rồi lấy file
 #: đầu (bài học cổng 68: `NGUON` ghi cứng tên file làm cổng ĐỎ OAN vì KHO đổi).
-KHO_THAT = (Path(r"C:\Users\Admin\Downloads\longtieng") / "xuất",
-            Path(r"C:\Users\Admin\Downloads\longtieng"))
+#: `BQ_KHO_THAT` để ép đường khác — có nó thì THỬ ĐƯỢC nhánh BỎ QUA (trỏ vào thư
+#: mục không tồn tại), mà nhánh đó phải thử: nó là nhánh chạy trên máy nhân viên.
+KHO_THAT = tuple(
+    Path(x) for x in (os.environ["BQ_KHO_THAT"].split(os.pathsep)
+                      if os.environ.get("BQ_KHO_THAT") else ()))  \
+    or (Path(r"C:\Users\Admin\Downloads\longtieng") / "xuất",
+        Path(r"C:\Users\Admin\Downloads\longtieng"))
 
 
 def ca7() -> None:
@@ -753,9 +758,14 @@ def ca7() -> None:
             f = v[0]
             break
     if f is None:
+        # GHI ĐỦ **HAI** MỤC BỊ BỎ, KHÔNG PHẢI MỘT: `_chay_hoi_quy.py` so mốc
+        # bằng `ĐẠT + BỎ QUA >= mốc`, nên ghi thiếu một mục là lượt hồi quy trên
+        # máy KHÔNG có video thật báo **"TỤT so mốc"** = ĐỎ OAN. Số mục bỏ qua
+        # phải bằng đúng số mục lẽ ra được chấm.
         BO_QUA.append("7a hai thước độ to đồng ý trên nguồn THẬT")
-        print(f"  BỎ QUA 7a — không có mp4 nào trong {[str(x) for x in KHO_THAT]}"
-              f" (KHÔNG tính là ĐẠT)")
+        BO_QUA.append("7b nguồn thật nằm trong vùng hiệu chuẩn (LRA hẹp)")
+        print(f"  BỎ QUA 7a+7b — không có mp4 nào trong "
+              f"{[str(x) for x in KHO_THAT]} (KHÔNG tính là ĐẠT)")
         return
     t = D.do_to_hai_thuoc(f, "THAT", nem=False)
     print(f"       {f.name[:44]} · I loudnorm {t['I_loudnorm']:+.2f} · "
