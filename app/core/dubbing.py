@@ -1957,6 +1957,19 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
         # edge bên dưới sẽ gọi — gọi hai lần là thanh tiến trình chạy quá 100%.
         voice = _lui_chatter(_ma_cb, lang)
 
+    dung_kk, voice = _kokoro_hay_khong(voice)
+    if dung_kk:
+        _ma_kk = voice
+        ok_k = await _chay_kokoro(texts, _ma_kk, paths, rate, lang, on_msg)
+        if any(ok_k):
+            if on_done:                     # gọi SAU cả loạt: `doc_loat` chạy
+                for _i in range(len(texts)):    # tiến trình con một lượt, không
+                    on_done(_i)                 # có nhịp từng câu để bám
+            return ok_k
+        # Hỏng CẢ LOẠT -> đọc lại bằng edge-tts. KHÔNG `on_done` ở đây, nhánh
+        # edge bên dưới sẽ gọi — gọi hai lần là thanh tiến trình chạy quá 100%.
+        voice = _lui_kokoro(_ma_kk, lang)
+
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)
     ok = [False] * len(texts)
@@ -2400,6 +2413,84 @@ def _lui_chatter(ma_cb: str, lang: str) -> str:
 
 
 # ==================================================================
+# CỬA DUY NHẤT RẼ SANG KOKORO — cùng chỗ, cùng lý lẽ với Piper/Chatterbox
+# ==================================================================
+# `app/core/giong_kokoro.py` (28 giọng Anh, Apache 2.0, chạy hẳn trên máy)
+# dựng xong với ĐÚNG hợp đồng `doc_loat` của `piper_tts`/`giong_chatter`, và
+# trong chính file đó có mục "CÒN PHẢI LÀM" dặn đích danh phải nối vào ĐÂY.
+# Đây là ca thứ TƯ của cùng một bệnh — `ov:` · `vn:` · `cb:` đều đã sập vì
+# thiếu đúng bước này, và cả ba đều `rc=0`, không một dòng báo.
+#
+# **CHỖ RẼ ĐẶT NGAY TRONG `_synth_all` / `_synth_all_words`, KHÔNG bắt từng
+# nơi gọi tự kiểm.** Nhờ vậy nó phủ luôn **3 chỗ gọi `_synth_all_words` của
+# `thay_giong.py`** (`doc_ban_dich` · `rut_gon_vua_khung` ·
+# `doc_nhanh_vua_khung`) LẪN 3 chỗ gọi `_synth_all` của `dubbing.py`, mà
+# **không phải sửa một chỗ gọi nào** — cổng 63 vẫn phải đếm đúng 3.
+# Sót MỘT chỗ là video **LẪN HAI GIỌNG** với `rc` vẫn 0.
+#
+# THIẾU BỘ THÌ LÙI ÊM về edge-tts — cùng luật Piper/OmniVoice/VieNeu/
+# Chatterbox (lùi ra video ĐÚNG, chỉ khác giọng), khác luật Demucs (thiếu
+# Demucs mà lùi là ra video HỎNG nên phải CHẶN). Nhưng phải GHI LẠI lý do.
+#
+# **LÙI VỀ GIỌNG TIẾNG ANH, KHÔNG lùi về giọng Việt**: cả 28 giọng Kokoro đều
+# là Anh-Mỹ/Anh-Anh (`af_`/`am_`/`bf_`/`bm_`), nên mã của nó luôn đi với nội
+# dung tiếng Anh. Lùi về `vi-VN-...` là đọc câu tiếng Anh bằng giọng Việt —
+# đúng lỗi `_lui_chatter` đã phải sửa.
+#
+# `pitch` KHÔNG áp dụng: Kokoro không chỉnh được cao độ, và bảng
+# `thay_giong.BIEN_THE_PITCH` chỉ có khoá cho 2 giọng edge-tts nên mã `kk:`
+# không tự sinh biến thể nào — không phải chặn thêm.
+# ==================================================================
+def _kokoro_hay_khong(voice: str) -> tuple[bool, str]:
+    """(có dùng Kokoro không, giọng phải LÙI VỀ nếu không dùng được)."""
+    from app.core import giong_kokoro as kk
+    if not kk.la_giong_kokoro(voice):
+        return False, voice
+    ma = kk.tach_ma(voice)
+    # Lùi theo NGÔN NGỮ CỦA CHÍNH MÃ: `b*` là Anh-Anh, còn lại Anh-Mỹ.
+    lui = (default_voice("en") or "en-US-AriaNeural")
+    if not ma:
+        kk._ghi_log(f"mã giọng sai dạng «{voice}» -> LÙI về edge-tts {lui}")
+        return False, lui
+    if kk.co_kokoro():
+        return True, voice
+    tt = kk.tinh_trang()
+    kk._ghi_log(f"Chưa dùng được giọng {voice} (thiếu: {tt['thieu']}) -> "
+                f"LÙI về edge-tts giọng {lui}")
+    return False, lui
+
+
+async def _chay_kokoro(texts, voice, paths, rate, lang, on_msg):
+    """Chạy `giong_kokoro.doc_loat` **Ở LUỒNG RIÊNG** rồi chờ kết quả.
+
+    VÌ SAO KHÔNG GỌI THẲNG: hàm đó mở tiến trình con nạp torch + model (đo
+    được **2,12 s** khi trọng số đã có, **13,19 s** lượt đầu vì tải 312 MB)
+    rồi đọc cả loạt. Gọi thẳng trong một hàm `async` là **chặn cứng vòng lặp
+    sự kiện** suốt từng ấy thời gian — đúng khuôn `_chay_eleven` đã phải dựng
+    sau lỗi thật của cổng 67 CA 4.
+    """
+    from app.core import giong_kokoro as kk
+    return await asyncio.to_thread(kk.doc_loat, texts, paths, voice,
+                                   rate=rate, lang=lang, on_msg=on_msg)
+
+
+def _lui_kokoro(ma_kk: str, lang: str) -> str:
+    """Đọc HỎNG CẢ LOẠT -> tên giọng edge-tts để đọc LẠI CẢ LOẠT.
+
+    `giong_kokoro.doc_loat` là **all-or-nothing** (đọc được 18/20 câu thì nó
+    trả toàn `False`), nên "không câu nào ra" là tín hiệu duy nhất nó cho. Lúc
+    đó phải đọc lại CẢ LOẠT: bỏ mặc là video CÂM, còn đọc lại từng câu hỏng là
+    video **lẫn hai giọng** — đúng thứ luật all-or-nothing sinh ra để chặn.
+    """
+    from app.core import giong_kokoro as kk
+    lui = (default_voice("en") or "en-US-AriaNeural")
+    kk._ghi_log(f"đọc hỏng CẢ LOẠT bằng {ma_kk} -> đọc LẠI cả loạt bằng "
+                f"edge-tts giọng {lui} (all-or-nothing: không trộn 2 giọng)")
+    _ = lang
+    return lui
+
+
+# ==================================================================
 # CỬA CHUNG LẤY MỐC CHO MỌI MÁY ĐỌC **KHÔNG** TRẢ MỐC THẬT
 # ==================================================================
 # Trước file `giong_hang.py`, mỗi máy đọc tự xoay một kiểu và mỗi kiểu một
@@ -2556,6 +2647,31 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
             return ok_c, await _moc_giong_hang(
                 texts, paths, ok_c, [[] for _ in texts], lang, _ma_cb)
         voice = _lui_chatter(_ma_cb, lang)
+
+    dung_kk, voice = _kokoro_hay_khong(voice)
+    if dung_kk:
+        _ma_kk = voice
+        ok_k = await _chay_kokoro(texts, _ma_kk, paths, rate, lang, on_msg)
+        if any(ok_k):
+            if on_done:
+                for _i in range(len(texts)):
+                    on_done(_i)
+            # MỐC: `giong_kokoro.doc_loat` **KHÔNG trả mốc ra cửa này** (nó trả
+            # `list[bool]`) -> đi cửa chung `_moc_giong_hang` như Piper/
+            # Chatterbox. Máy chưa có bộ gióng hàng -> mốc RỖNG, tiếng vẫn
+            # đúng (nhãn giọng đã nói trước điều đó).
+            #
+            # **Kokoro CÓ mốc do chính nó dự đoán** (`KPipeline.
+            # join_timestamps` điền `MToken.start_ts/end_ts`) — đọc mã tới đó
+            # rồi tin là DỪNG QUÁ SỚM theo chiều ngược lại, nên
+            # `giong_kokoro.moc_thu` để sẵn đường vào cho phép đo. Nhưng đó là
+            # mốc SUY RA từ `pred_dur` (thư viện còn để một dòng `# TODO: Is -3
+            # an appropriate offset?` ở phép bù mốc đầu), KHÁC hẳn mốc ĐO của
+            # `WordBoundary`. Đường sản xuất chỉ đổi khi có SỐ, không đổi vì
+            # thấy thư viện có thuộc tính đó.
+            return ok_k, await _moc_giong_hang(
+                texts, paths, ok_k, [[] for _ in texts], lang, _ma_kk)
+        voice = _lui_kokoro(_ma_kk, lang)
 
     import edge_tts
     sem = asyncio.Semaphore(_TTS_PARALLEL)

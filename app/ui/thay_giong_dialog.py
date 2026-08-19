@@ -286,6 +286,22 @@ def _khop_tieng(vid: str, ma: str) -> bool:
         return True
 
 
+def chua_do_tieng(vid: str, ma: str) -> bool:
+    """Dòng này lọt ô tiếng `ma` vì CHƯA AI ĐO, chứ không vì đã đo là đọc được.
+
+    Tách hẳn khỏi `_khop_tieng` để nhãn nói được ra chỗ mình chưa biết. `None`
+    của `da_ngu.doc_duoc` nghĩa là *chưa đo / chưa kết luận* — chính module đó
+    dặn: *"None KHÔNG PHẢI 'KHÔNG' ... nơi gọi phải phân biệt"*.
+    """
+    if not ma or ma == "dangu":
+        return False
+    try:
+        from app.core import da_ngu as _DN
+        return _DN.doc_duoc(vid, ma) is None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def khop_loc(vid: str, nhan: str, loc: dict, nhan_goc: str = "") -> bool:
     """Một dòng giọng có lọt CẢ BỘ điều kiện đang bấm không.
 
@@ -2304,6 +2320,7 @@ class ThayGiongDialog(QDialog):
             tong = sum(1 for _i, _n, v, _g in ds if v)
             so_nhom = sum(1 for i, _n, v, _g in ds if not v and i > 0)
             hien = 0
+            chua_do = 0                   # lọt vì CHƯA ĐO, không vì đã đo đạt
             for i, nhan, vid, nhom in ds:
                 if phang and not vid:
                     continue              # đang lọc/tìm -> bỏ tiêu đề nhóm
@@ -2316,6 +2333,8 @@ class ThayGiongDialog(QDialog):
                     if not khop_loc(vid, f"{nhan}\n{tt}", loc,
                                     self._nhan_giong_goc(vid)):
                         continue
+                    if chua_do_tieng(vid, str(loc.get("tieng") or "")):
+                        chua_do += 1
                 if tu:
                     it0 = self.cb_giong.model().item(i)
                     kho = bo_dau(" ".join((
@@ -2362,6 +2381,16 @@ class ThayGiongDialog(QDialog):
                 dang.append("đang lọc: " + " · ".join(
                     n for bo in (LOC_TIENG, LOC_GIOI, LOC_TIEN, LOC_MAY)
                     for n, m in bo if m and m in loc.values()))
+            if hien and chua_do:
+                # NÓI RA CHỖ MÌNH CHƯA BIẾT, đừng để nó trông như đã đo.
+                # Ô tiếng giữ lại cả giọng CHƯA ĐO tiếng đó (luật "không xác
+                # định được thì GIỮ"), nên trong danh sách có dòng lọt vào vì
+                # KHÔNG AI ĐO chứ không vì nó đọc được. Đo được: 8 dòng như thế
+                # ở mỗi ô tiếng (5 OmniVoice · 3 Vbee). Im lặng thì anh Hùng
+                # thấy một giọng Vbee tiếng Việt nằm trong ô "Hàn" và kết luận
+                # bộ lọc hỏng.
+                dang.append(f"trong đó {chua_do} giọng CHƯA ĐO tiếng này "
+                            "(giữ lại cho anh tự thử, không phải đã đo đạt)")
             elif tu:
                 dang.append("bấm để chọn, Enter lấy dòng đầu")
             else:

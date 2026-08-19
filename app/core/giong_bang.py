@@ -63,6 +63,7 @@ ELEVEN = "el"
 VBEE = "vbee"
 GEMINI = "gemini"
 CHATTER = "chatter"
+KOKORO = "kokoro"
 
 #: tiền tố -> tên nguồn.
 #:
@@ -90,6 +91,14 @@ _TIEN_TO: tuple[tuple[str, str], ...] = (
     ("vbee:", VBEE),
     ("gemini:", GEMINI),
     ("cb:", CHATTER),
+    # `kk:` LÀ CỦA KOKORO — ca thứ TƯ của cùng một bệnh, sau `ov:`, `vn:` và
+    # `cb:`. `giong_kokoro.py` viết xong với sẵn hằng `TIEN_TO = "kk:"` và một
+    # mục "CÒN PHẢI LÀM" dặn đích danh phải thêm dòng này. Thiếu nó thì
+    # `nguon("kk:af_bella")` trả `edge` -> 28 giọng Kokoro rơi vào nhóm *"MIỄN
+    # PHÍ (edge-tts) - các tiếng khác"*, mất nhãn "cần tải 538 MB" và mất cả
+    # cảnh báo "không có mốc từng chữ" — mà `_synth_all` vẫn đưa mã đó cho
+    # edge-tts, tức **chọn Kokoro ra giọng edge-tts**, `rc` vẫn 0.
+    ("kk:", KOKORO),
 )
 
 #: Tên nguồn hiện cho người đọc.
@@ -103,6 +112,7 @@ TEN_NGUON: dict[str, str] = {
     VBEE: "Vbee",
     GEMINI: "Gemini",
     CHATTER: "Chatterbox",
+    KOKORO: "Kokoro",
 }
 
 #: Nguồn nào KHÔNG tốn tiền/hạn mức. edge-tts miễn phí (rủi ro nằm ở điều
@@ -113,8 +123,15 @@ TEN_NGUON: dict[str, str] = {
 #: hẳn trên máy, không một lượt mạng nào. Đây là cột DUY NHẤT nó hơn edge-tts
 #: (edge-tts miễn phí về tiền nhưng điều khoản dịch vụ Microsoft ghi thẳng
 #: *"It shouldn't be used for commercial reasons"* — `LICENSES.txt` mục 5).
+#:
+#: Kokoro **MIỄN PHÍ THẬT** như Chatterbox: **Apache 2.0** cho cả mã lẫn trọng
+#: số (đã xác minh tại kho gốc `hexgrad/Kokoro-82M` 19/08/2026 — xem docstring
+#: `giong_kokoro.py`), chạy hẳn trên máy, không một lượt mạng nào lúc đọc.
+#: KHÁC hẳn `F5-TTS` (CC-BY-NC = cấm thương mại, đã LOẠI) và khác
+#: `Kokoro-Vietnamese` (giấu nguồn dữ liệu, đã LOẠI — cùng chữ "Kokoro" nhưng
+#: hai thứ khác nhau).
 _MIEN_PHI: frozenset[str] = frozenset(
-    {EDGE, PIPER, OMNIVOICE, INDEXTTS, VIENEU, CHATTER})
+    {EDGE, PIPER, OMNIVOICE, INDEXTTS, VIENEU, CHATTER, KOKORO})
 
 #: Nguồn -> cần tải bao nhiêu thì mới chạy được. **SỐ ĐO, không ước:**
 #: Piper 212,4 MB (`piper_tts`, chạy thật `cai_piper()` vào hộp cát rỗng) ·
@@ -132,6 +149,15 @@ _CAN_TAI: dict[str, str] = {
     INDEXTTS: "bộ IndexTTS",
     VIENEU: "250 MB",
     CHATTER: "5,5 GB",
+    # Kokoro 538 MB — **SỐ ĐO 19/08/2026, không ước**: gói pip **211,7 MB**
+    # (HTTP HEAD trên CHÍNH 92 wheel mà `pip install --dry-run --report` chọn,
+    # 92/92 đo được; riêng torch 116,4 MB) + trọng số **312,1 MB**
+    # (`kokoro-v1_0.pth`, HEAD trên kho HF) + **14,0 MB** cho 28 gói giọng
+    # (0,50 MB/giọng, tải lười từng giọng). Bung ra đĩa thì lớn hơn hẳn: venv
+    # **1.120 MB** + trọng số 313 MB — nhãn nói LƯỢNG TẢI vì đó là thứ người
+    # dùng chờ, đúng cách `_lib` của Demucs đã sửa (nhãn cũ "2 GB" gấp 13 lần
+    # lượng tải thật). Nhãn phải KHỚP ĐƯỜNG SẼ ĐI — cổng 71 CA 4.
+    KOKORO: "538 MB",
 }
 
 #: Nguồn -> RUNG mốc chữ (chữ hiện lệch tiếng bao nhiêu). **CHỈ điền nguồn đã
@@ -151,6 +177,13 @@ _CAN_TAI: dict[str, str] = {
 #: của `silencedetect`) là trộn hai thước — đúng cái bẫy mục này sinh ra để
 #: chặn. Cặp số đó đi vào NHÃN (`giong_chatter.CANH_BAO_CL` ghi "76 ms so với
 #: 44 ms của giọng thường"), nơi cả hai vế cùng một thước.
+#:
+#: **Kokoro CŨNG CỐ Ý ĐỂ RỖNG — đừng ai "bổ sung cho đủ".** Nó KHÔNG trả mốc
+#: nào ra cửa `dubbing`, mốc lấy bằng GIÓNG HÀNG (cổng 73) đúng đường Piper/
+#: Chatterbox. Số của đường gióng hàng là **90-119 ms**, nhưng đó đo bằng
+#: `silencedetect` trên giọng OmniVoice; chép nó sang đây là khai một con số
+#: chưa ai đo trên Kokoro. Nhãn của `giong_kokoro.CANH_BAO` nói bằng CHỮ
+#: ("kém hơn edge-tts ở đúng chỗ đó") thay vì bằng số chưa có.
 _KHOP_MS: dict[str, str] = {
     EDGE: "15,7 ms",
     PIPER: "29,5 ms",
@@ -306,6 +339,13 @@ _DUOI: dict[str, str] = {
     # 28,8%) nằm ở `giong_chatter.nhan_giong`, dòng combo không chứa nổi.
     CHATTER: ("miễn phí (MIT), cần tải bộ 5,5 GB, cần GPU NVIDIA, "
               "KHÔNG có tiếng Việt"),
+    # Ba điều người dùng cần biết TRƯỚC khi bấm, theo đúng thứ tự: phải tải ·
+    # KHÔNG đọc được tiếng Việt (28 giọng đều Anh-Mỹ/Anh-Anh) · KHÔNG trả mốc
+    # từng chữ nên chữ chạy theo lời kém hơn edge-tts. Phần đầy đủ (điểm do
+    # CHÍNH tác giả chấm từng giọng, `am_adam` **F+**) nằm ở
+    # `giong_kokoro.nhan_giong` — dòng combo không chứa nổi.
+    KOKORO: ("miễn phí (Apache 2.0), cần tải bộ 538 MB, KHÔNG có tiếng Việt, "
+             "KHÔNG có mốc từng chữ"),
 }
 
 
@@ -362,6 +402,11 @@ _DO_TRUNG: dict[str, tuple[str, ...]] = {
     # "GPU"/"MIT" ở đây là chuỗi KHÔNG BAO GIỜ khớp -> dán thừa mà cổng nào
     # chỉ hỏi "có đuôi không" vẫn xanh (đã sập ngay lượt thử đầu).
     CHATTER: ("cần tải", "gpu", "mit"),
+    # `giong_kokoro.nhan_giong` chưa tự nói "cần tải" nên đuôi VẪN phải dán;
+    # để đây đúng một chữ để lần sau nhãn có nói thì tự thôi dán. **CHỮ PHẢI
+    # VIẾT THƯỜNG** — `duoi_dong` so với `nhan.lower()`, viết HOA là chuỗi
+    # KHÔNG BAO GIỜ khớp (đã sập ở `CHATTER` ngay lượt thử đầu).
+    KOKORO: ("cần tải",),
 }
 
 
