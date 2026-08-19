@@ -289,9 +289,26 @@ def ca7_ui() -> None:
     ok(all(ord(c) < 0x2000 for c in nhan), "nhãn không có ký tự lạ font")
 
     # CHỌN 1 GIỌNG rồi BẤM — nút phải khoá NGAY (không chặn vòng lặp).
+    #
+    # PHẢI CHỌN GIỌNG **edge-tts**, KHÔNG lấy dòng đầu có data. Từ v2.38.0 combo
+    # GOM NHÓM (`giong_bang.gom_nhom`, cổng 79) và dòng đầu tiên có data là
+    # **`vn:Xuân Vĩnh`** — giọng VieNeu chạy trên máy: nó mở tiến trình con +
+    # nạp model, đo thật **hơn 12 giây**, còn vòng đợi dưới đây chỉ chờ 240 ×
+    # 0,05 s = 12 s -> mục "xong thì mở khoá nút lại" **ĐỎ OAN** (đo 19/08/2026:
+    # cổng ra 30/5, và nút VẪN mở khoá, chỉ là muộn hơn cổng chịu đợi).
+    # Mục này canh HÀNH VI CỦA NÚT (khoá lúc đang đọc, mở lại khi xong), không
+    # canh tốc độ của một nguồn giọng — nên chọn nguồn RẺ là đúng phạm vi, và
+    # cổng cũng không còn phụ thuộc thứ tự sắp xếp combo của luồng khác.
+    def _la_edge(v: str) -> bool:
+        return bool(v) and ":" not in str(v)
+
     idx = next((i for i in range(dlg.cb_giong.count())
-                if dlg.cb_giong.itemData(i)), -1)
-    ok(idx >= 0, "combo có giọng cụ thể để chọn")
+                if _la_edge(dlg.cb_giong.itemData(i))), -1)
+    if idx < 0:                     # offline: danh sách rơi về mức tối thiểu
+        idx = next((i for i in range(dlg.cb_giong.count())
+                    if dlg.cb_giong.itemData(i)), -1)
+    ok(idx >= 0, "combo có giọng cụ thể để chọn",
+       repr(dlg.cb_giong.itemData(idx)) if idx >= 0 else "—")
     if idx >= 0:
         dlg.cb_giong.setCurrentIndex(idx)
         import time
