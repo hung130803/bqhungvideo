@@ -253,14 +253,53 @@ CANH_BAO_GP_OV = ("trọng số CC-BY-NC: nhà phát hành CẤM dùng cho mục
 #: đường lấy mốc, nên gióng hàng không đụng tới.
 _CL_DOC_SAI = "đọc sai chữ tiếng Việt 16,9% so với edge-tts 6,8%"
 
-CANH_BAO_CL_OV = (_CL_DOC_SAI + "; mốc chữ phải dò lại bằng máy nghe nên "
+#: ═══ MỖI CÂU RA MỘT NGƯỜI NÓI KHÁC — ĐO 19/08/2026, `_do_gn_giong.py` ═══
+#: Đây là khuyết tật NẶNG NHẤT của nhóm giọng ngoài và trước hôm nay **chưa
+#: ai đo**. OmniVoice không có giọng đặt tên sẵn: câu tả chỉ ghim ĐẶC TÍNH
+#: (giới tính · tuổi · cao độ), còn CHẤT GIỌNG thì model bốc mới mỗi lần sinh
+#: — kể cả các câu đi CHUNG MỘT lượt `generate()`. Tức anh Hùng chọn "Nữ trẻ"
+#: thì trong CÙNG một video, mỗi câu là một cô gái khác.
+#:
+#: THƯỚC: ECAPA (`speechbrain/spkrec-ecapa-voxceleb`), khoảng cách cosin, **2
+#: LƯỢT ĐỘC LẬP** (OmniVoice không tiền định — chạy một lượt rồi báo số là tự
+#: lừa). ARM ĐỐI CHỨNG edge-tts là BẮT BUỘC: không có nó thì không phân biệt
+#: được "model đổi giọng" với "thước hỏng trên tiếng máy đọc".
+#:
+#:                                      lượt 1    lượt 2
+#:   edge-tts, cùng giọng (SÀN)         0,2500    0,2497
+#:   OmniVoice, CÙNG một mã giọng       0,6293    0,6079   <- 2,4-2,5x SÀN
+#:   OmniVoice, hai mã KHÁC nhau        0,7533    0,7673
+#:   AUC cùng-giọng vs khác-giọng       0,471     0,498    <- 0,50 = mù hẳn
+#:
+#: Sàn edge-tts tái lập tới 3 chữ số (0,2500 / 0,2497) nên thước ổn định;
+#: hai lượt OmniVoice đều ra AUC ~0,5 nghĩa là **ECAPA không tách nổi 5 mã
+#: trong combo** — theo thước này chúng là **1 giọng**, hay đúng hơn là 30
+#: giọng khác nhau cho 30 câu.
+#: (Đừng đọc cột "chọn X ra X" của script đó: 10,0% rồi 36,7% — phép gán tâm
+#: với n=6 và phương sai nội lớp lớn thì lệch cả hai chiều. AUC không dùng
+#: tâm nào nên nó là con số đáng tin.)
+#:
+#: ĐẶC TÍNH thì model GIỮ ĐÚNG — F0 trung vị xếp đúng thứ tự câu tả ở cả 2
+#: lượt: nữ trẻ 258,8/269,1 · nữ ấm 238,3/237,9 · nam trẻ 179,4/159,4 · nam
+#: trầm 148,5/156,8 · ông già 103,9/108,9 Hz. Nên nói cho đúng: **chọn X ra
+#: đúng ĐẶC TÍNH của X, nhưng không ra đúng MỘT NGƯỜI**.
+_CL_DOI_NGUOI = ("mỗi câu ra một người nói KHÁC (đo ECAPA 2 lượt: khoảng "
+                 "cách cùng-một-mã 0,61-0,63 so với 0,25 của giọng thường, "
+                 "AUC 0,47-0,50 = không tách được 5 mã) nên trong cùng một "
+                 "video giọng đổi liên tục")
+
+CANH_BAO_CL_OV = (_CL_DOC_SAI + "; " + _CL_DOI_NGUOI
+                  + "; mốc chữ phải dò lại bằng máy nghe nên "
                   "CHỈ CÓ cho 38-99% số chữ tuỳ lượt (không đoán trước "
                   "được) và rung 250-712 ms (edge-tts 16 ms) — chữ sẽ chạy "
                   "không khớp tiếng. Tải bộ gióng hàng để hết bệnh này")
 
 #: Máy ĐÃ có bộ gióng hàng: mốc lấy từ chữ ĐÃ BIẾT nên phủ gần đủ do cấu tạo.
 #: Vẫn phải nói phần CHƯA bằng edge-tts — rung 90-119 ms so với 16 ms.
-CANH_BAO_CL_OV_GH = (_CL_DOC_SAI + "; máy này có bộ gióng hàng nên mốc chữ "
+#: **Gióng hàng KHÔNG chữa được bệnh đổi người nói** (nó là chuyện của máy
+#: ĐỌC, không phải của đường LẤY MỐC) nên câu đó giữ ở CẢ HAI trạng thái.
+CANH_BAO_CL_OV_GH = (_CL_DOC_SAI + "; " + _CL_DOI_NGUOI
+                     + "; máy này có bộ gióng hàng nên mốc chữ "
                      "phủ 98,5% (trước 52-82%), nhưng vẫn rung 90-119 ms so "
                      "với 16 ms của giọng thường — chữ bám lời kém hơn "
                      "edge-tts")
@@ -393,14 +432,26 @@ def thu_muc_ngoai() -> Path:
     BẢN ĐÓNG GÓI PHẢI RA `DATA_DIR`, KHÔNG ĐƯỢC RA CẠNH `.exe`: lượt tự cập
     nhật đổi tên `_internal` -> `_internal.old` rồi `rmdir /S /Q`, tức mọi
     thứ nằm trong đó bị XOÁ SẠCH (cổng 58 CA 5, đã xảy ra thật với `_lib`).
+
+    ═══ `Path("")` LẠI NỮA — CỔNG 72 CA 10d LÔI RA, 19/08/2026 ═══
+    Bản cũ là ``goc = Path(DATA_DIR or "")`` rồi ``(goc or Path.home())``.
+    Phép `or` đó **KHÔNG BAO GIỜ CHẠY**: `Path("")` là `WindowsPath('.')` và
+    `Path` không định nghĩa `__bool__` nên nó LUÔN truthy. Tức bản đóng gói
+    có `DATA_DIR` rỗng/hỏng thì thư mục 7,7 GB rơi vào **THƯ MỤC ĐANG LÀM
+    VIỆC của tiến trình** — chỗ mà `.exe` được bấm từ đó, đổi theo từng lượt
+    chạy. Đúng họ bẫy vừa xoá sạch cây mã sáng nay (`_don(Path(""))`), chỉ
+    khác là ở đây nó GHI nhầm chỗ thay vì XOÁ nhầm chỗ.
+    Nay kiểm CHUỖI trước khi dựng `Path`, không kiểm `Path` sau khi dựng.
     """
+    dd = ""
     try:
         import config
-        goc = Path(getattr(config, "DATA_DIR", "") or "")
+        dd = str(getattr(config, "DATA_DIR", "") or "").strip()
     except Exception:  # noqa: BLE001
-        goc = Path("")
+        dd = ""
     if getattr(sys, "frozen", False):
-        return (goc or Path.home()) / "_giong_ngoai"
+        goc = Path(dd) if dd else Path.home()
+        return goc / "_giong_ngoai"
     return Path(__file__).resolve().parents[2] / "_giong_ngoai"
 
 
@@ -1349,6 +1400,20 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
 
     if not la_giong_omnivoice(voice):
         _ghi_log(f"Mã giọng lạ {voice!r} -> LÙI về edge-tts")
+        _xong_het()
+        return ok, words
+
+    # ═══ CHỌN X PHẢI RA X ═══
+    # Mã `ov:` KHÔNG có trong bảng thì `_BANG_INSTRUCT.get(voice, "")` trả
+    # CHUỖI RỖNG, mà instruct rỗng nghĩa là "đọc bằng giọng mặc định của
+    # model" — tức anh Hùng chọn một giọng và nhận về **một giọng khác**, im
+    # lặng, mã thoát 0. Đúng họ lỗi "chọn X ra Y" (`ov:nu_am` đã sập một lần
+    # vì lý do khác: câu tả có chữ ngoài bảng từ đóng).
+    # Cảnh có thật: cấu hình kênh lưu từ bản cũ mang mã đã đổi tên/gỡ bỏ.
+    # Thà LÙI về edge-tts (video đúng, khác giọng) còn hơn ra giọng lạ.
+    if not _BANG_INSTRUCT.get(voice):
+        _ghi_log(f"Mã giọng {voice!r} KHÔNG có trong bảng câu tả -> đọc ra sẽ "
+                 f"là GIỌNG KHÁC, nên LÙI về edge-tts thay vì chọn X ra Y")
         _xong_het()
         return ok, words
 

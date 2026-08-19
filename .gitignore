@@ -127,6 +127,10 @@ _do_chatter/
 _mau_giong/
 _kq*.json
 
+# SAN DO cua `_do_song_ngu.py` (do "giong nao doc duoc CA Anh + Viet"):
+# 40+ arm x 17 file mp3 + ban chep nguoc. Tai sinh lai duoc tu cache.json.
+_do_song_ngu/
+
 # SAN DO cua `_do_adam.py` (Adam VieNeu vs Adam ElevenLabs) + cho de file
 # tieng anh Hung TU NGHE. Deu la wav/mp3 sinh lai duoc, va mot phan trong do
 # la tieng cua MAY DOC THUONG MAI (ElevenLabs) — khong dua vao lich su git.

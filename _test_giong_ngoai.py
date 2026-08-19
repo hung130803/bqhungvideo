@@ -31,8 +31,36 @@ CỘNG BA CHỐT CHỐNG TỰ-LỪA:
   · **ALL-OR-NOTHING**: một câu không đọc được là bỏ cả loạt. Đọc được 18/20
     rồi để 2 câu lùi edge là video lẫn hai giọng.
 
-**TỰ KIỂM: GỠ CHỐT RA THÌ PHẢI ĐỎ** — xem CA 8. Cổng không tự kiểm được thì
-chỉ là con dấu (bài học cổng 56d, 64, 65).
+BA KHỐI THÊM 19/08/2026 — LƯỢT DỰNG LẠI `_giong_ngoai/` (mốc 48 -> 98):
+  · **CA 10 — MÔI TRƯỜNG NẰM ĐÚNG CHỖ.** Không `%TEMP%` (một lượt tempsweep
+    / Disk Cleanup là mất 7,74 GB, mà triệu chứng chỉ là *"giọng biến khỏi
+    combo"*) và không cạnh `.exe` (lượt tự cập nhật `rmdir /S /Q
+    _internal.old` — cổng 58 CA5, đã xảy ra thật với `_lib`).
+    **CA 10d LÔI RA MỘT LỖI THẬT, và bản đầu của chính nó ĐẠT OAN:** nó chỉ
+    hỏi *"có cạnh .exe không"* -> ĐẠT, nhưng ĐẠT vì lý do SAI —
+    `goc or Path.home()` KHÔNG BAO GIỜ lùi được về Home vì `Path("")` là
+    `WindowsPath('.')` và `Path` không có `__bool__`. Bản đóng gói có
+    `DATA_DIR` hỏng thì thư mục 7,7 GB rơi vào **THƯ MỤC ĐANG LÀM VIỆC**.
+    Cùng họ bẫy `_don(Path(""))` đã xoá sạch cây mã sáng nay, chỉ khác là
+    GHI nhầm chỗ chứ không XOÁ nhầm chỗ. Quy tắc: **kiểm CHUỖI trước khi
+    dựng `Path`, đừng kiểm `Path` sau khi dựng.**
+  · **CA 11 — `cai_omnivoice` TỒN TẠI VÀ DÒ ĐÚNG.** Repo có `cai_demucs` ·
+    `cai_giong_hang` · `cai_piper` · `cai_vieneu` nhưng THIẾU đúng cái này,
+    nên khi cây mã bị xoá thì `_giong_ngoai/` là thứ DUY NHẤT không dựng lại
+    được bằng một nút bấm. Cổng CHẠY THẬT hàm đó với pip GIẢ: pip trả mã 0 mà
+    đích RỖNG -> phải báo HỎNG (cổng 58) · gói nằm thật -> phải báo XONG
+    (chống bộ dò "luôn False") · nhãn phải khớp SỐ ĐO.
+    **MỌI ĐƯỜNG CỦA CA 11 PHẢI NẰM TRONG KHỐI VÁ.** Lượt thử phá đã chứng
+    minh: gỡ chốt khoá rồi chạy mục 11s với `subprocess` THẬT là cổng khởi
+    động một lượt **pip 2,6 GB trên máy anh Hùng**.
+  · **CA 12 — CHỌN X RA X.** Câu tả phải nằm trong BẢNG TỪ ĐÓNG của model
+    (`ov:nu_am` khai `warm low pitch` -> `ValueError` -> 0/4 câu, 2/2 lượt
+    đo -> lùi êm về edge-tts, KHÔNG một dòng báo trên giao diện), và mã `ov:`
+    lạ phải LÙI chứ không đọc bằng giọng MẶC ĐỊNH.
+
+**TỰ KIỂM: GỠ CHỐT RA THÌ PHẢI ĐỎ** — xem CA 8, và `_pha_giong_ngoai.py`
+(10 phép, mỗi phép gỡ ĐÚNG một chốt): **BẮT 10 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+Cổng không tự kiểm được thì chỉ là con dấu (bài học cổng 56d, 64, 65).
 
 KHÔNG TỐN GPU/GROQ TRONG HỒI QUY: `giong_ngoai._chay_ov` và `_lay_moc_groq`
 bị VÁ — **đường đi, chỗ rẽ, cách lùi, cách ép khung, cách đếm đều là mã
@@ -103,6 +131,66 @@ def _ma_that(p: Path) -> str:
     return " ".join(ra)
 
 
+def _ham(nguon: str, ten: str):
+    """Nút `FunctionDef` tên `ten` trong `nguon`. None = không có."""
+    for n in ast.walk(ast.parse(nguon)):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and n.name == ten:
+            return n
+    return None
+
+
+def _chuoi_ma(fn) -> list:
+    """Mọi hằng CHUỖI trong thân hàm, **BỎ DOCSTRING**.
+
+    `_ma_that` vứt SẠCH chuỗi nên không dùng được để hỏi *"lệnh pip có cờ
+    `--ignore-installed` không"* — cờ ấy CHÍNH LÀ một chuỗi. Còn quét cả file
+    bằng `in` thì chính DOCSTRING giải thích cờ đó làm mục này tự ĐẠT, tức gỡ
+    cờ khỏi lệnh mà cổng vẫn XANH = con dấu (bài học cổng 56d/64, chiều PASS
+    OAN). Bỏ đúng docstring bằng AST là cách duy nhất đọc được Ý NGHĨA thay vì
+    mặt chữ. Có ca TỰ KIỂM BỘ DÒ hai chiều ở CA 11.
+    """
+    bo = set()
+    for n in ast.walk(fn):
+        than = getattr(n, "body", None)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                          ast.ClassDef, ast.Module)) and than \
+                and isinstance(than[0], ast.Expr) \
+                and isinstance(than[0].value, ast.Constant) \
+                and isinstance(than[0].value.value, str):
+            bo.add(id(than[0].value))
+    return [n.value for n in ast.walk(fn)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and id(n) not in bo]
+
+
+#: BẢNG TỪ ĐÓNG của OmniVoice (phần tiếng Anh) — chép từ
+#: `omnivoice/utils/voice_design.py::_INSTRUCT_CATEGORIES`. Viết cứng ở đây để
+#: cổng chạy được trên máy CHƯA cài môi trường; CA 12e đối chiếu lại với gói
+#: THẬT (đọc bằng AST, KHÔNG import) nên bảng này không thể mục ruỗng âm thầm.
+TU_INSTRUCT = {
+    "male", "female",
+    "child", "teenager", "young adult", "middle-aged", "elderly",
+    "very low pitch", "low pitch", "moderate pitch", "high pitch",
+    "very high pitch", "whisper",
+    "american accent", "british accent", "australian accent",
+    "chinese accent", "canadian accent", "indian accent", "korean accent",
+    "portuguese accent", "russian accent", "japanese accent",
+}
+
+
+def _tu_la(cau_ta: str) -> list:
+    """Mục trong câu tả KHÔNG có trong bảng từ đóng.
+
+    Đây đúng là bộ dò đáng lẽ phải có từ đầu: `ov:nu_am` khai `warm low pitch`
+    -> `ValueError: Unsupported instruct items` -> **0/4 câu, 2/2 lượt đo** ->
+    `doc_loat` lùi êm về edge-tts, KHÔNG một dòng báo trên giao diện. Anh Hùng
+    chọn giọng đó và nhận về một giọng KHÁC HẲN.
+    """
+    return [x.strip().lower() for x in str(cau_ta or "").split(",")
+            if x.strip() and x.strip().lower() not in TU_INSTRUCT]
+
+
 # ══════════════════════════════════════════════════════════════════
 def main() -> int:                                          # noqa: C901
     from app.core import dubbing
@@ -113,11 +201,13 @@ def main() -> int:                                          # noqa: C901
     print("=" * 74)
 
     san = Path(tempfile.mkdtemp(prefix="bq_gn_"))
-    dem = {"ov": 0, "moc": 0, "texts": [], "hong_cau": None, "lay_moc": []}
+    dem = {"ov": 0, "moc": 0, "texts": [], "hong_cau": None, "lay_moc": [],
+           "instruct": []}
 
     def _chay_ov_gia(items, model, py, instruct, langs, han_giay, on_msg):
         """Thay CÚ NẠP MODEL bằng ffmpeg. Mọi thứ khác vẫn là mã thật."""
         dem["ov"] += 1
+        dem["instruct"].append(instruct)
         dem["texts"] += [it["text"] for it in items]
         ra = []
         for k, it in enumerate(items):
@@ -387,6 +477,18 @@ def main() -> int:                                          # noqa: C901
     ok("16,9" in nhan_co and "16,9" in nhan_khong,
        "7j phần ĐỌC SAI CHỮ giữ ở CẢ HAI (đo cách model ĐỌC, gióng hàng "
        "không đụng tới)")
+    # MỖI CÂU MỘT NGƯỜI NÓI KHÁC — đo 19/08/2026 (ECAPA, 2 lượt độc lập, arm
+    # đối chứng edge-tts). Đây là khuyết tật NẶNG NHẤT và nó KHÔNG phải bệnh
+    # của đường lấy mốc, nên gióng hàng không chữa được -> phải in ở CẢ HAI
+    # trạng thái. Cùng luật với Piper: tệ hơn edge-tts thì ghi thẳng vào nhãn,
+    # đừng để anh Hùng tự phát hiện sau 300 video.
+    ok("người nói KHÁC" in nhan_co and "người nói KHÁC" in nhan_khong,
+       "7j' nhãn nói thẳng MỖI CÂU RA MỘT NGƯỜI NÓI KHÁC (ECAPA: cùng-một-mã "
+       "0,61-0,63 vs 0,25 của edge-tts · AUC 0,47-0,50)")
+    thieu_dn = [n for n in nhan_ov if "người nói KHÁC" not in n]
+    ok(nhan_ov and not thieu_dn,
+       "7j\" ... và câu đó có trong MỌI dòng combo OmniVoice",
+       f"thiếu ở {thieu_dn}" if thieu_dn else f"{len(nhan_ov)}/{len(nhan_ov)}")
     # GIẤY PHÉP KHÔNG ĐƯỢC ĐỔI: trọng số vẫn CC-BY-NC dù có gióng hàng hay
     # không — anh Hùng đã biết và chấp nhận, nhưng nhãn không được im đi.
     ok("CC-BY-NC" not in nhan_co and "CC-BY-NC" not in nhan_khong
@@ -455,6 +557,377 @@ def main() -> int:                                          # noqa: C901
                         and n.func.attr == "_ngoai_hay_khong"))]
         ok(bool(goi), f"9b `{ten_h}` GỌI THẬT `_ngoai_hay_khong` (đọc bằng "
            f"AST, không tìm chuỗi — bài học cổng 56d/64)")
+
+    # ══════════════ CA 10 — MÔI TRƯỜNG NẰM ĐÚNG CHỖ ══════════════
+    # Môi trường 7,74 GB của lượt 7 nằm trong `%TEMP%\bq_tts_rr\venv_ov`. Chỗ
+    # đó mất là mất SẠCH, và triệu chứng KHÔNG phải một dòng lỗi mà là "giọng
+    # tự nhiên biến khỏi combo" — không ai lần ra. Cạnh `.exe` cũng chết y
+    # vậy: lượt tự cập nhật `ren _internal -> _internal.old` rồi
+    # `rmdir /S /Q` (cổng 58 CA5, đã xảy ra thật với `_lib`).
+    print("\nCA 10 — môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh .exe)")
+    tam_goc = Path(tempfile.gettempdir()).resolve()
+    venv_that = (gn.thu_muc_ngoai() / "venv").resolve()
+    ok(tam_goc not in venv_that.parents and venv_that != tam_goc,
+       "10a thư mục venv KHÔNG nằm trong %TEMP%", str(venv_that))
+
+    import config as _cfg
+    dd_cu = getattr(_cfg, "DATA_DIR", "")
+    fr_cu = getattr(sys, "frozen", None)
+    canh_exe = Path(sys.executable).resolve().parent
+    gia_dd = (san / "datadir").resolve()
+    try:
+        sys.frozen = True                    # giả lập bản ĐÓNG GÓI
+        _cfg.DATA_DIR = str(gia_dd)
+        d_dong = gn.thu_muc_ngoai().resolve()
+        _cfg.DATA_DIR = ""                   # DATA_DIR hỏng/rỗng
+        d_rong = gn.thu_muc_ngoai().resolve()
+    finally:
+        _cfg.DATA_DIR = dd_cu
+        if fr_cu is None:
+            try:
+                del sys.frozen
+            except AttributeError:
+                pass
+        else:
+            sys.frozen = fr_cu
+    ok(gia_dd in d_dong.parents,
+       "10b bản ĐÓNG GÓI -> ra DATA_DIR", str(d_dong))
+    ok(canh_exe not in d_dong.parents and d_dong != canh_exe,
+       "10c ... và KHÔNG nằm cạnh .exe (lượt tự cập nhật rmdir _internal.old "
+       "sẽ xoá sạch — cổng 58 CA5)", str(canh_exe))
+    # 10d LÔI RA MỘT LỖI THẬT (19/08/2026) và bản đầu của chính nó ĐẠT OAN.
+    # Bản đầu chỉ hỏi "có cạnh .exe không" -> ĐẠT, nhưng ĐẠT vì lý do SAI:
+    # `goc or Path.home()` không bao giờ lùi được về Home, vì `Path("")` là
+    # `WindowsPath('.')` và Path không có `__bool__` nên LUÔN truthy. Thư mục
+    # 7,7 GB rơi vào THƯ MỤC ĐANG LÀM VIỆC — đúng họ bẫy `_don(Path(""))` vừa
+    # xoá sạch cây mã sáng nay. Nay hỏi ĐÚNG mệnh đề: phải về Home.
+    ok(d_rong == (Path.home() / "_giong_ngoai").resolve(),
+       "10d DATA_DIR rỗng -> lùi THẬT về Home (không phải `Path(\"\")` = thư "
+       "mục đang làm việc — bẫy đã xoá sạch cây mã 19/08)", str(d_rong))
+    ok(canh_exe not in d_rong.parents and d_rong != canh_exe
+       and d_rong != Path.cwd().resolve() / "_giong_ngoai",
+       "10d' ... và không cạnh .exe, không rơi vào thư mục đang làm việc",
+       str(Path.cwd()))
+    ok(gn.thu_muc_ngoai().resolve() != d_dong,
+       "10e TỰ KIỂM: bỏ giả lập thì hàm trả lại chỗ CHẠY NGUỒN (nếu hai bên "
+       "giống nhau thì 10b/10c là con dấu)")
+
+    uv = [str(p).lower() for p in gn._ung_vien_python()]
+    goc_l = str(gn.thu_muc_ngoai()).lower()
+    i_dung = next((i for i, p in enumerate(uv) if goc_l in p), -1)
+    i_tam = next((i for i, p in enumerate(uv)
+                  if str(tam_goc).lower() in p), -1)
+    ok(i_dung >= 0 and (i_tam < 0 or i_dung < i_tam),
+       "10f ứng viên CHỖ ĐÚNG đứng TRƯỚC ứng viên %TEMP% (máy còn bản cũ vẫn "
+       "chạy được, nhưng bản mới thắng)", f"đúng #{i_dung} · tạm #{i_tam}")
+    ok(tt_that["co"] is False
+       or goc_l in str(tt_that["python"]).lower(),
+       "10g máy NÀY: môi trường đang dùng nằm ở chỗ đúng",
+       tt_that["python"] or "chưa có")
+
+    # ══════════════ CA 11 — HÀM CÀI TỒN TẠI VÀ DÒ ĐÚNG ══════════════
+    # VÌ SAO CA NÀY TỒN TẠI: 19/08/2026 `_don(Path(""))` xoá sạch cây làm
+    # việc. Mọi thứ khác dựng lại được bằng một nút bấm (`cai_demucs` ·
+    # `cai_giong_hang` · `cai_piper` · `cai_vieneu`) — riêng `_giong_ngoai`
+    # 7,74 GB thì KHÔNG CÓ NÚT NÀO, phải suy ra tên gói PyPI rồi cài tay.
+    # Một tính năng không có đường dựng lại chỉ sống được tới lần mất đầu tiên.
+    print("\nCA 11 — hàm cài tồn tại · dò ĐÚNG · nhãn ĐÚNG SỐ")
+    nguon_gn = Path(gn.__file__).read_text(encoding="utf-8")
+    fn_cai = _ham(nguon_gn, "cai_omnivoice")
+    ok(fn_cai is not None and callable(getattr(gn, "cai_omnivoice", None)),
+       "11a có hàm `cai_omnivoice`")
+    tham = [a.arg for a in (fn_cai.args.args if fn_cai else [])]
+    ok("on_progress" in tham and "han_giay" in tham,
+       "11b có `on_progress` (báo tiến độ) + `han_giay` (mọi subprocess phải "
+       "có timeout — luật repo)", f"{tham}")
+
+    ch_cai = _chuoi_ma(fn_cai) if fn_cai else []
+    ok("--ignore-installed" in ch_cai,
+       "11c lệnh pip mang `--ignore-installed` (pip cũ BỎ QUA gói máy đã có "
+       "-> đích thiếu gói mà vẫn báo cài xong — cổng 58)")
+    ok("--extra-index-url" in ch_cai,
+       "11d dùng `--extra-index-url` chứ KHÔNG `--index-url` (chỉ mục pytorch "
+       "không có omnivoice/gradio/librosa -> ép cả lượt vào đó là hỏng phép "
+       "giải)")
+    ok("--index-url" not in ch_cai, "11e ... và không có `--index-url` trần")
+    # TỰ KIỂM BỘ DÒ — HAI CHIỀU. Chiều THA quan trọng hơn: docstring của
+    # `cai_omnivoice` CÓ chứa đúng chuỗi `--ignore-installed`, nên bộ dò quét
+    # cả file sẽ tự ĐẠT kể cả khi cờ đã bị gỡ khỏi lệnh (PASS OAN).
+    fn_bat = _ham("def f():\n    a = ['pip', '--ignore-installed']\n", "f")
+    fn_tha = _ham('def f():\n    """dùng --ignore-installed nhé"""\n    a = 1\n',
+                  "f")
+    ok("--ignore-installed" in _chuoi_ma(fn_bat),
+       "11f tự kiểm bộ dò (chiều BẮT): cờ nằm trong LỆNH thì thấy")
+    ok("--ignore-installed" not in _chuoi_ma(fn_tha),
+       "11g tự kiểm bộ dò (chiều THA): cờ chỉ nằm trong DOCSTRING thì KHÔNG "
+       "kể là có — không thì gỡ cờ khỏi lệnh mà cổng vẫn xanh")
+
+    # ---- CHẠY THẬT `cai_omnivoice` với pip GIẢ -----------------------------
+    lenh: list = []
+    tao_goi = [False]
+    sanbox = san / "moitruong"
+    sp_gia = sanbox / "venv" / "Lib" / "site-packages"
+
+    def _chay_lenh_gia(cmd, han):
+        lenh.append(list(cmd))
+        (sanbox / "venv" / "Scripts").mkdir(parents=True, exist_ok=True)
+        (sanbox / "venv" / "Scripts" / "python.exe").write_bytes(b"MZ")
+        sp_gia.mkdir(parents=True, exist_ok=True)
+        return 0, ""
+
+    class _PopenGia:
+        """pip TRẢ MÃ 0. Có cài thật hay không thì `tao_goi` quyết định."""
+
+        def __init__(self, args, **kw):
+            lenh.append(list(args))
+            if tao_goi[0]:
+                for g in gn.GOI_OV:
+                    if g == "soundfile":
+                        (sp_gia / "soundfile.py").write_text(
+                            "x=1\n", encoding="utf-8")
+                    else:
+                        (sp_gia / g).mkdir(parents=True, exist_ok=True)
+                        (sp_gia / g / "__init__.py").write_text(
+                            "x=1\n", encoding="utf-8")
+            self.stdout = iter(["Collecting omnivoice",
+                                "Successfully installed omnivoice-0.2.1"])
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    class _SubGia:
+        Popen = _PopenGia
+        PIPE = subprocess.PIPE
+        STDOUT = subprocess.STDOUT
+        run = staticmethod(subprocess.run)
+        TimeoutExpired = subprocess.TimeoutExpired
+
+    tm_that = gn.thu_muc_ngoai
+    cl_that = gn._chay_lenh
+    sub_that = gn.subprocess
+    gpu_that = gn.co_gpu_nvidia
+    pyht_that = gn._python_he_thong
+    try:
+        gn.thu_muc_ngoai = lambda: sanbox
+        gn._chay_lenh = _chay_lenh_gia
+        gn.subprocess = _SubGia
+        gn.co_gpu_nvidia = lambda: True
+        gn._python_he_thong = lambda: sys.executable
+
+        # (1) pip mã 0 mà KHÔNG cài gì -> PHẢI báo HỎNG
+        lenh.clear()
+        tao_goi[0] = False
+        r1 = gn.cai_omnivoice()
+        ok(not r1.get("ok"),
+           "11h pip trả mã 0 mà đích RỖNG -> báo HỎNG (không tin lời pip — "
+           "đây đúng chỗ `_lib` đã lừa một lần)", str(r1.get("loi"))[:70])
+        ok(sorted(r1.get("thieu") or []) == sorted(gn.GOI_OV),
+           "11i ... và nêu ĐÍCH DANH từng gói thiếu",
+           f"{r1.get('thieu')}")
+        pip_lenh = [c for c in lenh if "install" in c]
+        ok(bool(pip_lenh) and "--ignore-installed" in pip_lenh[-1],
+           "11j lệnh pip CHẠY THẬT có `--ignore-installed`")
+        ok(bool(pip_lenh) and str(sanbox).lower() in pip_lenh[-1][0].lower(),
+           "11k cài bằng python CỦA MÔI TRƯỜNG RIÊNG, KHÔNG phải `.venv` "
+           "(anh Hùng đang chạy sản xuất 300 kênh trên đó)",
+           pip_lenh[-1][0] if pip_lenh else "")
+        ok(bool(pip_lenh)
+           and ".venv" not in " ".join(pip_lenh[-1]).lower()
+           and "--target" not in pip_lenh[-1],
+           "11l ... và KHÔNG dùng `--target` (gói cp314 nằm đủ 4 GB trong thư "
+           "mục mà python cp312 nạp vào vẫn là ImportError — kích thước không "
+           "chứng minh gì)")
+        ok(bool(pip_lenh) and gn.CHI_MUC_TORCH_CUDA in pip_lenh[-1],
+           "11m máy CÓ GPU -> chỉ mục cu126")
+
+        # (2) pip có cài thật -> PHẢI báo XONG (chống bộ dò "luôn False")
+        lenh.clear()
+        tao_goi[0] = True
+        r2 = gn.cai_omnivoice()
+        ok(r2.get("ok"),
+           "11n gói NẰM THẬT trong đích -> báo XONG (nếu không thì 11h chỉ là "
+           "hàm luôn trả False)", str(r2.get("loi"))[:70])
+        ok(all(v["nguon"] == "venv" for v in (r2.get("goi") or {}).values()),
+           "11o hậu kiểm so `spec.origin` với thư mục ĐÍCH -> mọi gói nguồn "
+           "'venv' (không hỏi 'import được không')",
+           str({k: v["nguon"] for k, v in (r2.get("goi") or {}).items()}))
+
+        # (3) máy không GPU -> chỉ mục CPU
+        lenh.clear()
+        gn.co_gpu_nvidia = lambda: False
+        gn.cai_omnivoice()
+        pip_cpu = [c for c in lenh if "install" in c]
+        ok(bool(pip_cpu) and gn.CHI_MUC_TORCH_CPU in pip_cpu[-1],
+           "11p máy KHÔNG GPU -> chỉ mục cpu (đừng bắt máy nhân viên tải "
+           "2,5 GB CUDA vô ích)")
+
+        # (4) khoá chống bấm-hai-lần.
+        # PHẢI NẰM TRONG KHỐI VÁ NÀY, không được đưa ra ngoài — bài học lượt
+        # THỬ PHÁ 19/08/2026: gỡ chốt khoá rồi chạy mục này với `subprocess`
+        # THẬT thì `cai_omnivoice` đi thẳng vào `_giong_ngoai` THẬT và khởi
+        # động một lượt **pip 2,6 GB trên máy anh Hùng**. Cổng vẫn ĐỎ (nên
+        # phép phá tính là BẮT) nhưng nó đỏ vì lý do sai, và cái giá là một
+        # lượt tải thật. Cổng KHÔNG được có đường nào chạm máy thật.
+        ok(not gn._KHOA_CAI.locked(),
+           "11r khoá chống bấm-hai-lần được TRẢ ở mọi đường ra (kẹt khoá là "
+           "nút chết vĩnh viễn tới lúc khởi động lại app)")
+        gn._KHOA_CAI.acquire()
+        try:
+            r5 = gn.cai_omnivoice()
+            ok(not r5.get("ok") and "Đang tải" in str(r5.get("loi")),
+               "11s bấm lần hai lúc đang tải -> từ chối (hai lượt 2,6 GB "
+               "chồng nhau vào cùng thư mục là hỏng cả hai)",
+               str(r5.get("loi"))[:50])
+        finally:
+            # CỔNG PHẢI *BÁO HỎNG*, KHÔNG ĐƯỢC *CHẾT* (bài học cổng 74b).
+            # Bản gỡ-chốt để `cai_omnivoice` chạy tiếp rồi `release()` cái
+            # khoá nó chưa hề `acquire()`, nên `release()` lần hai ở đây ném
+            # `RuntimeError` -> cổng chết giữa chừng, MẤT dòng tổng kết, đọc
+            # ra không phân biệt được với "chưa chạy tới chốt".
+            try:
+                gn._KHOA_CAI.release()
+            except RuntimeError:
+                pass
+
+        # (5) máy chưa cài Python 3
+        gn._python_he_thong = lambda: ""
+        r4 = gn.cai_omnivoice()
+        ok(not r4.get("ok") and "Python 3" in str(r4.get("loi")),
+           "11q máy chưa có Python 3 -> nói THẲNG cách chữa, KHÔNG nổ",
+           str(r4.get("loi"))[:60])
+    finally:
+        gn.thu_muc_ngoai = tm_that
+        gn._chay_lenh = cl_that
+        gn.subprocess = sub_that
+        gn.co_gpu_nvidia = gpu_that
+        gn._python_he_thong = pyht_that
+
+    ok("torch" not in sys.modules and "omnivoice" not in sys.modules,
+       "11t chạy xong CA 11 mà torch/omnivoice VẪN chưa nạp vào tiến trình app")
+    fn_do = _ham(nguon_gn, "do_goi_ov")
+    ten_goi = {n.func.attr for n in ast.walk(fn_do)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    ok("find_spec" in ten_goi and "import_module" not in ten_goi,
+       "11u `do_goi_ov` dò bằng `PathFinder.find_spec` trên đúng thư mục đích")
+    ok("PathFinder" in _ma_that(Path(gn.__file__)),
+       "11v ... và là `PathFinder` chứ không `importlib.util.find_spec` (cái "
+       "sau NẠP gói cha, và luôn tìm trên sys.path nên không trả lời được câu "
+       "'gói có nằm ĐÚNG CHỖ KIA không')")
+
+    # ---- NHÃN PHẢI KHỚP SỐ ĐO --------------------------------------------
+    # Đã có lỗi thật: nút ghi 155 MB mà hộp xác nhận doạ 2 GB (gấp 13 lần).
+    def _so_trong(nhan: str) -> float:
+        """MB đọc ra từ nhãn ('2,6 GB' -> 2662,4)."""
+        import re
+        m = re.search(r"([\d,.]+)\s*(GB|MB)", nhan)
+        if not m:
+            return -1.0
+        v = float(m.group(1).replace(".", "").replace(",", "."))
+        return v * 1024.0 if m.group(2) == "GB" else v
+
+    for nhan, dung, ten_n in ((gn.NHAN_TAI_GPU, gn.MB_TAI_GPU, "GPU"),
+                              (gn.NHAN_TAI_CPU, gn.MB_TAI_CPU, "CPU")):
+        v = _so_trong(nhan)
+        ok(v > 0 and 0.8 <= v / dung <= 1.25,
+           f"11w nhãn {ten_n} ghi ĐÚNG số ĐO ĐƯỢC (pip --dry-run --report + "
+           f"HTTP HEAD từng wheel)", f"nhãn {v:.0f} MB · đo {dung:.1f} MB")
+    gpu_that2 = gn.co_gpu_nvidia
+    try:
+        gn.co_gpu_nvidia = lambda: True
+        n_gpu = gn.nhan_tai()
+        gn.co_gpu_nvidia = lambda: False
+        n_cpu = gn.nhan_tai()
+    finally:
+        gn.co_gpu_nvidia = gpu_that2
+    ok(n_gpu == gn.NHAN_TAI_GPU and n_cpu == gn.NHAN_TAI_CPU and n_gpu != n_cpu,
+       "11x `nhan_tai()` đổi theo máy — nhãn phải khớp ĐƯỜNG SẼ ĐI (cổng 71 "
+       "CA 4)")
+    xau_e2 = [n for n in (gn.NHAN_TAI_GPU, gn.NHAN_TAI_CPU)
+              if any(ord(c) > 0xFFFF or __import__("unicodedata")
+                     .category(c) == "So" for c in n)]
+    ok(not xau_e2, "11y nhãn nút KHÔNG EMOJI", f"{xau_e2}")
+
+    # ══════════════ CA 12 — CHỌN X PHẢI RA X ══════════════
+    # `ov:nu_am` là GIỌNG CHẾT từ lúc ra đời tới 18/08/2026: câu tả khai
+    # `warm low pitch`, mà `warm` KHÔNG nằm trong bảng từ đóng của model ->
+    # `ValueError: Unsupported instruct items` -> 0/4 câu, 2/2 lượt đo ->
+    # `doc_loat` lùi êm về edge-tts. Anh Hùng chọn nó và nhận về một giọng
+    # KHÁC HẲN, lý do chỉ nằm trong `logs/giong_ngoai_<ngày>.log`.
+    print("\nCA 12 — CHỌN X PHẢI RA X (giọng chọn phải là giọng đọc)")
+    bang = {m: t for m, t, _n in gn.GIONG_OV}
+    ok(all(bang.get(m) for m in bang),
+       "12a mọi mã trong combo có câu tả KHÔNG rỗng (rỗng = model đọc bằng "
+       "giọng MẶC ĐỊNH = chọn X ra Y)")
+    ok(len(set(bang.values())) == len(bang),
+       "12b 5 câu tả ĐÔI MỘT KHÁC NHAU (hai mã cùng câu tả là hai dòng combo "
+       "ra CÙNG một giọng)", f"{len(set(bang.values()))}/{len(bang)}")
+    la = {m: _tu_la(t) for m, t in bang.items() if _tu_la(t)}
+    ok(not la, "12c mọi mục trong câu tả nằm trong BẢNG TỪ ĐÓNG của model "
+       "(chữ ngoài bảng -> ValueError -> giọng CHẾT âm thầm)", f"{la}")
+    ok(_tu_la("female, warm low pitch") == ["warm low pitch"],
+       "12d tự kiểm bộ dò (chiều BẮT): đúng câu tả đã giết `ov:nu_am` thì "
+       "bộ dò PHẢI kêu")
+    ok(_tu_la("female, middle-aged, low pitch") == [],
+       "12e tự kiểm bộ dò (chiều THA): câu tả hợp lệ KHÔNG bị kêu oan")
+
+    # BẢNG CỨNG CỦA CỔNG PHẢI KHỚP BẢNG THẬT CỦA GÓI ĐÃ CÀI — đọc bằng AST,
+    # KHÔNG import (nạp omnivoice là kéo torch vào tiến trình app).
+    vd = Path(tt_that.get("python") or "").parent.parent / "Lib" \
+        / "site-packages" / "omnivoice" / "utils" / "voice_design.py"
+    if vd.is_file():
+        that_bang = set()
+        for n in ast.walk(ast.parse(vd.read_text(encoding="utf-8"))):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                that_bang.add(n.value)
+        thieu_b = [t for t in TU_INSTRUCT if t not in that_bang]
+        ok(not thieu_b,
+           "12f bảng cứng của cổng KHỚP bảng THẬT trong gói đã cài (đọc bằng "
+           "AST, không import) — bảng cứng không thể mục ruỗng âm thầm",
+           f"{thieu_b}")
+    else:
+        print("  (bỏ qua 12f — máy này chưa cài môi trường OmniVoice)")
+
+    if not that:
+        for m in bang:
+            dem["instruct"] = []
+            gn.doc_loat(TEXTS, _paths("ca12" + m.replace(":", "_")), m,
+                        lang="vi", lay_moc=False)
+            ok(dem["instruct"] == [bang[m]],
+               f"12g chọn `{m}` -> tiến trình con nhận ĐÚNG câu tả của mã đó",
+               f"{dem['instruct']}")
+        # MÃ LẠ: cấu hình kênh lưu từ bản cũ có thể mang mã đã đổi tên/gỡ bỏ.
+        # `_BANG_INSTRUCT.get(v, "")` trả rỗng -> model đọc bằng giọng MẶC
+        # ĐỊNH -> chọn X ra Y, im lặng. Phải LÙI, không được đọc bừa.
+        dem["instruct"] = []
+        log3: list = []
+        gn._ghi_log = lambda d: log3.append(d)
+        ok_la, _ = gn.doc_loat(TEXTS, _paths("ca12la"), "ov:khong_ton_tai",
+                               lang="vi", lay_moc=False)
+        gn._ghi_log = gn_log_that
+        ok(not any(ok_la) and dem["instruct"] == [],
+           "12h mã `ov:` LẠ -> KHÔNG đọc bằng giọng mặc định mà LÙI edge-tts "
+           "(video đúng, khác giọng — còn hơn ra giọng lạ)", f"{ok_la}")
+        ok(any("LÙI" in d for d in log3),
+           "12i ... và GHI LÝ DO (lùi êm mà im lặng = hỏng âm thầm)",
+           f"{len(log3)} dòng")
+        # TỰ KIỂM: gỡ chốt 12h thì nó PHẢI đọc bằng câu tả RỖNG
+        bang_that = gn._BANG_INSTRUCT
+        try:
+            gn._BANG_INSTRUCT = dict(bang_that)
+            gn._BANG_INSTRUCT["ov:khong_ton_tai"] = ""
+            dem["instruct"] = []
+            gn._ghi_log = lambda d: None
+            gn.doc_loat(TEXTS, _paths("ca12pha"), "ov:khong_ton_tai",
+                        lang="vi", lay_moc=False)
+        finally:
+            gn._BANG_INSTRUCT = bang_that
+            gn._ghi_log = gn_log_that
+        ok(dem["instruct"] == [],
+           "12j TỰ KIỂM: chốt bám CÂU TẢ RỖNG chứ không bám 'có mặt trong "
+           "bảng hay không' — mã có mặt mà câu tả rỗng thì vẫn phải lùi")
 
     print("\n" + "=" * 74)
     print(f"CỔNG 72: ĐẠT {DAT} · HỎNG {HONG}"
