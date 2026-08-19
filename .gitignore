@@ -80,6 +80,10 @@ _giong_hang/
 # Thư mục này CỐ Ý nằm cạnh repo (chạy nguồn) / trong DATA_DIR (bản .exe) chứ
 # KHÔNG nằm trong `%TEMP%` — xem `giong_ngoai.thu_muc_ngoai`.
 _giong_ngoai/
+# VieNeu: CUNG LUAT — moi truong Python RIENG (tai roi luc chay, khong phai ma
+# nguon). Truoc 19/08/2026 no KHONG duoc chan, tuc mot luot `git add -A` la ca
+# thu muc vao lich su git.
+_giong_vieneu/
 _do_gn_san/
 _do_gn_gh_san/
 
