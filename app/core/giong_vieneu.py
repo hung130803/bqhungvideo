@@ -386,7 +386,9 @@ GIONG_TIENG_ANH: frozenset[str] = frozenset({"Adam"})
 #: `_CL_DUNG_SAN`** — số đó đo trên bộ câu KHÁC, ghép hai bảng là kết luận sai.
 GHI_CHU_ADAM = (
     "giọng TIẾNG ANH duy nhất của bộ — chọn cho video tiếng Việt là đọc sai "
-    "cả loạt. ĐO 19/08 (34 câu × 2 lượt, máy nghe chép ngược): đọc tiếng Anh "
+    "cả loạt. ĐO 19/08 trên BỘ CÂU TIẾNG ANH RIÊNG (34 câu × 2 lượt, máy nghe "
+    "chép ngược — mấy số dưới đây KHÔNG so được với «7,7% so với edge-tts "
+    "6,2%» nói ở trên vì khác bộ câu): đọc tiếng Anh "
     "sai chữ 7,7-12,8% còn giọng thường en-US-AriaNeural chỉ 0,0%; đọc rời "
     "từng chữ 16,7-29,2% so với 4,2% — tức KÉM HƠN, KHÔNG HỎNG: nó đọc trôi "
     "cả 34/34 câu, bịa chữ 0,6% (THẤP NHẤT bảng), sai cả bài chỉ 5,2-7,0% so "
