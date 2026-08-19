@@ -298,9 +298,19 @@ def main() -> int:                                          # noqa: C901
     n = _ham(REPO / "app" / "core" / "dubbing.py", "_synth_all_words")
     goi = [x.func.id for x in ast.walk(n)
            if isinstance(x, ast.Call) and isinstance(x.func, ast.Name)]
-    ok(goi.count("_moc_giong_hang") == 2,
-       "6a `_synth_all_words` gọi `_moc_giong_hang` ĐÚNG 2 nhánh (giọng "
-       "ngoài + Piper) — đọc bằng AST, không tìm chuỗi (bài học 56d/64)",
+    # 2 -> 3 (v2.38.0): **CHATTERBOX VÀO ĐÚNG NHÓM NÀY**, không phải nới mốc
+    # cho hết đỏ. Mệnh đề của mục là *"mọi máy đọc KHÔNG trả mốc thật đều phải
+    # đi qua cửa chung"*, mà API công khai của Chatterbox trả đúng một khối
+    # sóng âm — mốc chỉ moi được từ thuộc tính RIÊNG TƯ
+    # `t3.patched_model.alignment_stream_analyzer` (bản sau đổi là gãy im
+    # lặng). Nó cùng cảnh Piper/OmniVoice nên phải nằm trong con số này.
+    # Vẫn giữ SỐ CỐ ĐỊNH chứ không đổi thành `>= 2`: nới thành bất đẳng thức là
+    # mất luôn khả năng bắt "ai đó cho edge-tts/ElevenLabs đi qua đây" — đúng
+    # cái mục 6b/6c đang canh.
+    ok(goi.count("_moc_giong_hang") == 3,
+       "6a `_synth_all_words` gọi `_moc_giong_hang` ĐÚNG 3 nhánh (giọng "
+       "ngoài + Piper + Chatterbox) — đọc bằng AST, không tìm chuỗi "
+       "(bài học 56d/64)",
        f"{goi.count('_moc_giong_hang')} chỗ")
     # edge-tts và ElevenLabs trả mốc THẬT -> KHÔNG được thay bằng mốc suy ra.
     # Đổi mốc của chúng là đụng phụ đề 200-300 kênh đang chạy sản xuất.
