@@ -3,8 +3,9 @@
 *Viết cho anh Hùng, ngày 19/08/2026. Anh nói: "phần chọn giọng nó không phân
 gì cả, rất lung tung, không biết chọn sao" và "ghi riêng chi tiết ra".*
 
-> **Nếu chỉ có 1 phút:** đọc mục **1** (chọn nhanh) rồi thôi.
-> Mục 2–3 là bảng đầy đủ. Mục 4–6 là số đo để chứng minh.
+> **Nếu chỉ có 1 phút:** đọc mục **1** (danh sách chia nhóm ra sao)
+> và mục **2** (chọn nhanh) rồi thôi.
+> Mục 3–4 là bảng đầy đủ. Mục 5–7 là số đo để chứng minh.
 
 ---
 
@@ -14,17 +15,51 @@ gì cả, rất lung tung, không biết chọn sao" và "ghi riêng chi tiết 
 chỉ hiện ra khi anh đã dán key vào Cài đặt AI — chưa dán thì chúng không có
 trong danh sách, nên **không thể bấm nhầm vào chỗ mất tiền**.
 
-**Giọng phải tải model chỉ có hai họ:** Piper (212 MB) và OmniVoice (6,1 GB).
-Danh sách ghi thẳng số MB/GB ngay cạnh tên. Chưa tải mà chọn thì app tự đọc
-bằng giọng thường và **nói ra là nó đã lùi** — không im lặng.
+**Giọng phải tải model có ba họ:** Piper (212 MB), **VieNeu (250 MB)** và
+OmniVoice (6,1 GB). Danh sách ghi thẳng số MB/GB ngay cạnh tên. Chưa tải mà
+chọn thì app tự đọc bằng giọng thường và **nói ra là nó đã lùi** — không im
+lặng.
 
 **Giọng đang dùng hằng ngày là edge-tts, và nó đang là loại tốt nhất trong
-nhà** về khoản chữ chạy khớp lời (15,7 ms — xem mục 4). Đừng đổi hẳn sang
+nhà** về khoản chữ chạy khớp lời (15,7 ms — xem mục 5). Đừng đổi hẳn sang
 loại khác chỉ vì nó "chạy trên máy".
 
 ---
 
-## 1. CHỌN NHANH — CHỈ CẦN NHỚ BẢNG NÀY
+## 1. DANH SÁCH GIỌNG NAY CHIA THÀNH 5–6 NHÓM CÓ TIÊU ĐỀ
+
+Anh nói *"nó không phân gì cả, rất lung tung"*. Từ v2.38.0 danh sách xếp lại
+thành các nhóm, **tiêu đề nhóm màu vàng, không bấm chọn được**:
+
+| Nhóm | Nghĩa là gì |
+|---|---|
+| **KHUYÊN DÙNG cho \<tiếng đang chọn\>** | 5 giọng tốt nhất, **miễn phí và chạy được ngay** — không phải tải gì. Đây là lối tắt, cứ chọn đại một cái là xong. |
+| **MIỄN PHÍ (edge-tts) — giọng \<tiếng đang chọn\>** | Toàn bộ giọng đúng thứ tiếng anh đang làm |
+| **MIỄN PHÍ (edge-tts) — đọc được MỌI thứ tiếng** | Một giọng dùng cho mọi ngôn ngữ |
+| **TRÊN MÁY — miễn phí nhưng phải tải model** | Piper · VieNeu · OmniVoice. Dòng nào cũng ghi phải tải bao nhiêu |
+| **TRẢ TIỀN — tốn hạn mức hoặc tốn tiền** | ElevenLabs · Vbee. Chỉ hiện khi anh đã dán key |
+| **MIỄN PHÍ (edge-tts) — các tiếng khác** | Phần còn lại, đẩy xuống đáy |
+
+**Ba điều đổi theo, đều là thứ anh kêu:**
+
+1. **Chọn Tiếng Việt thì giọng Việt lên ĐẦU.** Trước đây giọng Việt nằm ở vị
+   trí thứ 2 và bị 47 giọng Anh vây quanh; nay nó là **dòng đầu tiên**.
+2. **Mỗi dòng tự nói ra tiền.** Đọc hết dòng là biết miễn phí hay tốn tiền,
+   có phải tải gì không, nhấn nhá bao nhiêu. Trước đây phải đoán.
+3. **Vài giọng hiện HAI LẦN — cố ý, và dòng đó tự nói ra.** Nhóm "KHUYÊN
+   DÙNG" là lối tắt nên nó **chép lại** giọng của nhóm dưới; dòng lối tắt ghi
+   **"[lối tắt — cùng giọng ở nhóm dưới]"**. Khác hẳn chuyện cũ: hồi đó
+   Andrew hiện hai lần mà **không nói gì**, nên không phân biệt được với ca
+   *hai giọng khác nhau cùng tên Andrew* (có thật — xem bảng ngay dưới).
+
+> **Giọng na ná nhau giữa các nguồn thì GIỮ HẾT, không gộp.** Anh đã chốt:
+> *"chỗ free chỗ mất tiền ấy, cứ thêm"*. Một giọng nữ miền Bắc có ở edge-tts
+> (miễn phí) và ở VieNeu (tải 250 MB) là **hai lựa chọn khác nhau**, không
+> phải một dòng thừa.
+
+---
+
+## 2. CHỌN NHANH — CHỈ CẦN NHỚ BẢNG NÀY
 
 | Anh muốn | Chọn | Vì sao |
 |---|---|---|
@@ -51,7 +86,7 @@ vào cuối dòng, nên nhìn dòng đang chọn là biết ngay đang dùng b�
 
 ---
 
-## 2. SO SÁNH 6 NGUỒN GIỌNG — TIỀN, TẢI, CHẤT LƯỢNG
+## 3. SO SÁNH 6 NGUỒN GIỌNG — TIỀN, TẢI, CHẤT LƯỢNG
 
 Đây là bảng quan trọng nhất. Mọi con số đều là **số đo**, chỗ nào chưa đo thì
 ghi thẳng "chưa đo" chứ không đoán.
@@ -61,7 +96,7 @@ ghi thẳng "chưa đo" chứ không đoán.
 | **edge-tts** *(đang dùng)* | **84** | **miễn phí** | không | **15,7 ms** — tốt nhất | **6,2 %** | được; rủi ro nằm ở điều khoản Microsoft (đã khai `LICENSES.txt` mục 5) |
 | **Piper** | 1 (Việt) | miễn phí | **212 MB** | 29,5 ms | chưa đo | **được** — MIT + dữ liệu CC BY 4.0 |
 | **OmniVoice** | 5 | miễn phí | **6,1 GB** | 90–119 ms | **16,9 %** | **KHÔNG** — trọng số CC-BY-NC cấm thương mại |
-| **VieNeu** *(đang thêm)* | 19 dựng sẵn | miễn phí | **250 MB** | 14,6–15,4 ms | 7,7 % (giọng mặc định) | **CHƯA RÕ** — xem mục 5 |
+| **VieNeu** *(mới vào v2.38.0)* | **20 dựng sẵn** | miễn phí | **250 MB** | 14,6–15,4 ms | 7,7 % (giọng mặc định) | **CHƯA RÕ** — xem mục 6 |
 | **ElevenLabs** | tuỳ tài khoản | **tốn hạn mức** | không | ngang edge-tts | chưa đo | được (theo gói đã mua) |
 | **Vbee** | 3 | **tốn tiền theo ký tự** | không | 90–119 ms | chưa đo | được (theo gói đã mua) |
 
@@ -76,7 +111,11 @@ ghi thẳng "chưa đo" chứ không đoán.
 
 ---
 
-## 3. BẢNG ĐẦY ĐỦ — 90 GIỌNG
+## 4. BẢNG ĐẦY ĐỦ — 110 GIỌNG
+
+> **Đếm ngày 19/08/2026, máy dev:** danh sách dựng ra **105 giọng** lúc chưa
+> có OmniVoice trên máy; cộng 5 giọng OmniVoice là **110**. Con số đổi theo
+> máy — xem dòng cuối mục 7.
 
 Cột **"Mã giọng"** là thứ ghi vào mẫu; anh không cần dùng tới, để đây để lúc
 cần đối chiếu.
@@ -94,7 +133,7 @@ dưới 3,1 = đều đều.**
 > 2. **Số cao KHÔNG có nghĩa là HAY HƠN.** Nó chỉ đo độ lên xuống. Kể chuyện /
 >    giật gân thì cần cao; đọc tin tức, hướng dẫn thì giọng đều lại dễ nghe
 >    hơn. **Tôi không có tai — anh nghe rồi chốt**, số chỉ để anh khỏi phải dò
->    tay 90 giọng.
+>    tay 110 giọng.
 
 ### edge-tts — Tiếng Việt (10 giọng)
 
@@ -276,9 +315,43 @@ dưới 3,1 = đều đều.**
 |---|---|---|---|---|
 | Giọng Việt chạy trên máy (`vais1000`) | Nữ | `piper:vi_VN-vais1000-medium` | **3,1** | vừa |
 
+### VieNeu — chạy hẳn trên máy (20 giọng, tải 250 MB)
+
+Cột **Nhấn nhá để trống là CỐ Ý** — chưa đo, và bịa số cạnh tên giọng thì anh
+sẽ tin mà chọn. Cột "Giọng vùng nào" lấy nguyên văn mô tả của người làm ra bộ
+giọng, không tự dịch lại.
+
+| Tên | Giới | Mã giọng (dán vào mẫu) | Giọng vùng nào · kiểu đọc | Nhấn nhá |
+|---|---|---|---|---|
+| Minh Đức | Nam | `vn:Minh Đức` | Bắc · tin tức | chưa đo |
+| Phạm Tuyên | Nam | `vn:Phạm Tuyên` | Bắc · tự nhiên | chưa đo |
+| Thanh Bình | Nam | `vn:Thanh Bình` | Bắc · kể chuyện | chưa đo |
+| Thái Sơn | Nam | `vn:Thái Sơn` | Nam · kể chuyện | chưa đo |
+| Xuân Vĩnh | Nam | `vn:Xuân Vĩnh` | Nam · tự nhiên | chưa đo |
+| Minh Triết | Nam | `vn:Minh Triết` | Nam · tin tức | chưa đo |
+| Đức Trí | Nam | `vn:Đức Trí` | Nam · đọc truyện | chưa đo |
+| Quang Sơn | Nam | `vn:Quang Sơn` | Trung · tự nhiên | chưa đo |
+| Trúc Ly | Nữ | `vn:Trúc Ly` | Bắc · tự nhiên | chưa đo |
+| Đoan Trang | Nữ | `vn:Đoan Trang` | Bắc · tự nhiên | chưa đo |
+| Ngọc Linh | Nữ | `vn:Ngọc Linh` | Bắc · kể chuyện | chưa đo |
+| Mai Anh | Nữ | `vn:Mai Anh` | Bắc · tin tức | chưa đo |
+| Quỳnh Anh | Nữ | `vn:Quỳnh Anh` | Bắc · đọc truyện | chưa đo |
+| Ngọc Huyền | Nữ | `vn:Ngọc Huyền` | Bắc · tự nhiên | chưa đo |
+| Thục Đoan | Nữ | `vn:Thục Đoan` | Nam · kể chuyện | chưa đo |
+| Thùy Dung | Nữ | `vn:Thùy Dung` | Nam · tin tức | chưa đo |
+| Mỹ Duyên | Nữ | `vn:Mỹ Duyên` | Nam · đọc truyện | chưa đo |
+| Kim Thanh | Nữ | `vn:Kim Thanh` | Nam · đọc truyện | chưa đo |
+| Ngọc Trân | Nữ | `vn:Ngọc Trân` | Trung · tự nhiên | chưa đo |
+| **Adam** *(NGỜ NGUỒN)* | Nam | `vn:Adam` | Tiếng Anh · tự nhiên | chưa đo |
+
+Ngoài 20 giọng trên, VieNeu còn **nhân bản giọng từ file mẫu của anh** (mã
+`vnb:<đường dẫn file>`). Chất lượng bám hẳn vào mẫu: mẫu sạch đọc sai **7,7 %**
+(bằng giọng dựng sẵn), mẫu thu bằng điện thoại lên **21–31 %** — và lọc nhiễu
+**không chữa được**. Phải nghe thử rồi mới dùng.
+
 ---
 
-## 4. SỐ ĐO — LẤY Ở ĐÂU RA
+## 5. SỐ ĐO — LẤY Ở ĐÂU RA
 
 Không con số nào trong tài liệu này là ước lượng. Nguồn từng cột:
 
@@ -304,10 +377,32 @@ nhấn nhá.**
 
 ---
 
-## 5. VieNeu — 20 GIỌNG VIỆT ĐANG ĐƯỢC THÊM VÀO
+## 6. VieNeu — 20 GIỌNG VIỆT, **ĐÃ VÀO APP** (v2.38.0)
 
-Một luồng khác đang nối bộ này vào app. Khi xong, 20 giọng sẽ nằm trong nhóm
-**"TRÊN MÁY"** của danh sách (chỗ đã chừa sẵn).
+Đã nối xong. Mở hộp **Thay giọng nói** là thấy đủ **20 giọng** trong nhóm
+**"TRÊN MÁY — miễn phí nhưng phải tải model về trước"**, mỗi dòng ghi thẳng
+**"cần tải 250 MB"**.
+
+> **Máy chưa tải thì vẫn thấy chúng**, dòng mở đầu bằng **"CHƯA TẢI
+> (250 MB)"**. Cố ý làm vậy: giấu đi thì anh không bao giờ biết là có. Chọn
+> lúc chưa tải thì app đọc bằng giọng thường và **ghi lại là nó đã lùi** —
+> không im lặng.
+
+**20 giọng gồm:** 5 nam (Minh Đức, Phạm Tuyên, Thái Sơn, Xuân Vĩnh, Thanh
+Bình) · 5 nữ Bắc (Trúc Ly, Ngọc Linh, Đoan Trang, Mai Anh, Quỳnh Anh) · 4 nữ
+Nam (Thục Đoan, Thùy Dung, Mỹ Duyên, Kim Thanh) · 2 giọng Trung Bộ (Quang
+Sơn, Ngọc Trân) · Minh Triết, Đức Trí, Ngọc Huyền, và **Adam**.
+
+**Riêng "Adam" — đọc trước khi dùng:** nay **có hiện**, kèm chữ **NGỜ NGUỒN**
+ngay trên dòng. Tên nó trùng một giọng thương mại của ElevenLabs mà bộ gốc
+không kèm mẫu hay dòng ghi công nào, nên **không kiểm được nguồn**. Trước đây
+nó bị ẩn hẳn; nay hiện cho nhất quán — app đang hiện cả OmniVoice, thứ có rào
+pháp lý **cứng hơn hẳn** (cấm thương mại rõ ràng). Cân nhắc trước khi đăng
+kênh. Muốn ẩn lại: đặt `BQ_VN_ADAM=0`.
+
+**Cột "nhấn nhá" của 20 giọng này đang TRỐNG, và đó là cố ý.** Chưa ai đo, mà
+bịa một con số cạnh tên giọng thì anh sẽ tin mà chọn. Đo xong thì số tự hiện
+ra cạnh tên, không phải sửa gì thêm.
 
 **Cái tốt, đo được:** chữ bám lời **14,6–15,4 ms — ngang edge-tts**, tốt hơn
 Piper (29,5 ms) và hơn OmniVoice (90–119 ms) rất xa. Đọc sai chữ **7,7 %**,
@@ -325,13 +420,15 @@ ghi *"Unknown"* → **im lặng không phải là cho phép**), chỗ trống đ
 
 - **Tiếng ra CÓ ĐÓNG DẤU CHÌM** (watermark Perth, bật sẵn trong bộ gốc). Nó
   không nghe ra được nhưng máy dò ra được.
-- **Giọng thứ 20 tên "Adam" bị ẨN mặc định** — trùng tên một giọng thương
-  mại của ElevenLabs mà không kiểm được nguồn gốc. Muốn hiện phải bật tay.
-  Vì vậy bảng trên ghi **19 giọng**, không phải 20.
+- **Lỗi suýt lọt, bắt được lúc nối vào app:** module VieNeu viết xong từ đầu
+  nhưng **không một dòng nào trong app gọi tới nó**. Cứ thế đưa 20 giọng vào
+  danh sách thì chọn "Minh Đức" sẽ **nghe ra Hoài My** — đúng loại lỗi "chọn
+  X ra Y" mà giọng `ov:nu_am` đã dính một lần, và app vẫn chạy bình thường
+  nên không ai biết. Nay có cổng test gọi thật rồi xem nó chạy vào đâu.
 
 ---
 
-## 6. NHỮNG GÌ TÀI LIỆU NÀY CHƯA TRẢ LỜI ĐƯỢC
+## 7. NHỮNG GÌ TÀI LIỆU NÀY CHƯA TRẢ LỜI ĐƯỢC
 
 Ghi thẳng, để anh không tưởng là đã đủ:
 
@@ -346,6 +443,6 @@ Ghi thẳng, để anh không tưởng là đã đủ:
 - **"Tính cách" của từng giọng chỉ có với ~12 giọng** đã được mô tả tay
   (Andrew *nam trầm ấm*, Aria *nữ rõ ràng biểu cảm*...). 78 giọng còn lại chỉ
   có **tên · giới tính · nhấn nhá** — mô tả tính cách cho chúng là bịa.
-- **Số giọng thay đổi theo máy.** Bảng này đếm trên máy dev (**90 giọng**).
+- **Số giọng thay đổi theo máy.** Bảng này đếm trên máy dev (**110 giọng**, trong đó 20 giọng VieNeu mới).
   Máy chưa tải Piper/OmniVoice sẽ thấy ít hơn; máy có dán key ElevenLabs/Vbee
   sẽ thấy nhiều hơn.
