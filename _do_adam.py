@@ -265,7 +265,7 @@ def sinh_vn(ten_giong: str, luot: int, nhan: str) -> dict[str, Path]:
         # CHỌN X PHẢI RA X: `doc_loat` trả toàn False khi nó LÙI về edge-tts.
         # Bỏ qua chỗ này là đo giọng edge rồi gọi nó là VieNeu.
         if not all(ok):
-            print(f"  [!] LÙI edge-tts -> KHÔNG dùng lượt này")
+            print(f"  [!] «{ten_giong}» LÙI edge-tts -> KHÔNG dùng lượt này")
             return {}
     ra: dict[str, Path] = {}
     for g, idx in NHOM.items():
@@ -484,7 +484,6 @@ def main() -> int:
     # giọng X, lượt đọc lặng lẽ trả về giọng Y, `rc` vẫn 0. Ở đây có 5 lượt
     # `doc_loat(voice="vn:Adam")` GỌI RIÊNG BIỆT; nếu bộ lùi bừa thì các lượt
     # ấy không thể tụ lại quanh cùng một người.
-    lay = lambda t: [k for k in emb if k.startswith(t)]                # noqa
     tu_tu = trong_nhom("VN_Adam_")
     print(f"  5 lượt chọn `vn:Adam` có tụ về CÙNG MỘT người không: {dai(tu_tu)}")
     for ten, tien in (("Minh Đức", "VN_MinhDuc_"), ("Trúc Ly", "VN_TrucLy_")):
