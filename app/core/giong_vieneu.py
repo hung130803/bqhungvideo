@@ -121,6 +121,66 @@ huấn luyện từ giọng Vbee), hoặc giấy phép ghi rõ cấm thương m�
 (`piper_tts`: `vivos` CC BY-NC-SA · `25hours_single` "License: Unknown").
 
 ═══════════════════════════════════════════════════════════════════════════
+"Adam NGHE LẠ": HỎNG THẬT hay CHỈ KÉM — ĐO XONG 19/08/2026, LÀ **CHỈ KÉM**
+═══════════════════════════════════════════════════════════════════════════
+Anh Hùng nghe rồi: *"cái adam bị lỗi hay sao nghe cứ lạ lạ khác lắm, không như
+tôi nghĩ"*, và trỏ vào giọng Adam THẬT của ElevenLabs: *"ít nhất phải như này
+mới oke"*. `_do_adam_en.py` (cửa thật `dubbing._synth_all`, corpus + bộ chấm
+dùng lại `_do_vieneu_en.py`, Groq chép ngược, VieNeu chạy 2 lượt vì **không
+tiền định**) trả lời bằng số — xem `_kq_adam_en.txt`.
+
+**KHÔNG TÌM RA MỘT LỖI MÃ/CẤU HÌNH NÀO Ở ĐƯỜNG ADAM** (nên không có gì để
+sửa, và đó là kết luận chứ không phải "chưa tìm"):
+  · `_MA_DOC` gọi `tts.infer(text=..., voice="Adam")` — ĐÚNG tham số, KHÔNG
+    truyền kèm `ref_audio` (bẫy số 1 ở trên), KHÔNG truyền `style` (bản v3
+    Turbo ghi thẳng `style` là **DEPRECATED và BỊ BỎ QUA**: phong cách nằm
+    trong `codes` của chính giọng);
+  · `Adam` có **CÙNG BỘ KHOÁ** với 19 giọng Việt (`description · gender ·
+    region · style · speaker_emb 192 số · codes`) — tức nó chỉ là một CHẤT
+    GIỌNG khác, không phải một chế độ khác;
+  · đọc **34/34 câu** và **24/24 token rời**, không câu nào hỏng, không lần
+    nào lùi edge-tts.
+
+**GIẢ THUYẾT "Adam dùng BỘ ÂM TIẾNG VIỆT để đọc tiếng Anh" — ĐO RA LÀ SAI Ở
+CHỖ NGƯỜI TA HAY NGHĨ, VÀ ĐÚNG Ở MỘT CHỖ KHÁC.** Đây là phần đáng đọc nhất:
+  · `infer()` **không có tham số ngôn ngữ**, và bộ phiên âm ghi cứng
+    `SEAPipeline(lang="vi")` + `G2P(lang="vi")` (`vieneu_utils/
+    phonemize_text.py`); `sea_g2p` còn **từ chối `lang="en"`**
+    (*"lang must be one of ('vi','th','id')"*). Đọc tới đây thì giả thuyết
+    trông như đã được chứng minh.
+  · **NHƯNG CHẠY THẬT BỘ PHIÊN ÂM ĐÓ THÌ NGƯỢC LẠI**: chữ tiếng Anh ra **âm
+    tiếng Anh đúng** (`A storm unlike anything` -> `ɐ stˈɔːɹm ʌnlˈaɪk
+    ˈɛnɪθˌɪŋ`), chữ tiếng Việt ra âm Việt kèm số thanh điệu (`Một cơn bão` ->
+    `mˈo6t̪ kˈəːn bˈaː5w`). Docstring của nó ghi *"Vietnamese/**bilingual**
+    text"* — tức nó CÓ đường cho chữ Latin nước ngoài.
+  · Bộ token của model là **byte-level BPE 419 token**: cả hai chuỗi âm đều
+    ra **0 `<|unk|>`** (Anh 76 token / 80 ký tự âm · Việt 80/92). Không có
+    chuyện "âm tiếng Anh bị bỏ".
+  · Vậy chỗ ĐÚNG của giả thuyết là **MODEL ÂM**, không phải bộ âm/token:
+    checkpoint là `VieNeu-TTS-v3-Turbo` huấn luyện trên
+    `VieNeu-TTS-1000h-in-the-wild-**coded**` (tiếng Việt), nên nó phát ra âm
+    tiếng Anh bằng thứ nó học được từ tiếng Việt. Bằng chứng thực nghiệm sạch
+    nhất cho điều đó nằm ngay trong bảng số: **`vn:Adam` đọc TIẾNG VIỆT tốt
+    hơn hẳn chính nó đọc TIẾNG ANH, và tốt NGANG một giọng Việt** (xem
+    `GHI_CHU_ADAM`). Một giọng "tiếng Anh" mà giỏi tiếng Việt hơn tiếng Anh
+    thì "nghe lạ" là **đúng theo cấu tạo**, không phải lỗi.
+  · Thước PHỤ độc lập cũng nói vậy theo chiều khác: Groq (KHÔNG ép ngôn ngữ)
+    dán nhãn **34/34 câu Adam đọc tiếng Anh là "English"** — tiếng ra vẫn là
+    tiếng Anh nhận ra được, chứ không phải "tiếng lạ" theo nghĩa máy nghe
+    không hiểu.
+
+**HỆ QUẢ, VÀ NÓ LÀ VIỆC CỦA NHÃN CHỨ KHÔNG PHẢI CỦA MÃ:** kém là giới hạn của
+model, không sửa được bằng mã. Nên `GHI_CHU_ADAM` (a) nói thẳng số đo, (b) chỉ
+đường sang **ElevenLabs Adam đã có sẵn trong app** cho ai cần đúng chất giọng
+ấy, kèm cái giá (tốn hạn mức). **KHÔNG chặn, KHÔNG giấu khỏi combo** — anh
+Hùng đã chốt *"cứ thêm hết, tôi tự trải nghiệm"*, và số đo không đủ xấu để
+tự quyết thay anh ấy (Adam **không** phải giọng tệ nhất bộ ở tiếng Anh).
+
+**TUYỆT ĐỐI KHÔNG nhân bản/tinh chỉnh giọng từ mẫu ElevenLabs** để "cho giống
+Adam". App này BÁN RA; đó là làm bản sao một giọng thương mại đang được bán.
+Đường đó không đi, và cũng không đề xuất.
+
+═══════════════════════════════════════════════════════════════════════════
 SỐ ĐO ĐÃ CÓ (docs/GIONG_NHAN_BAN.md, lượt 9 — 18/08/2026)
 ═══════════════════════════════════════════════════════════════════════════
 Thước mốc DUY NHẤT là `silencedetect` (không máy nghe nào), ngưỡng −30 dB
@@ -312,13 +372,35 @@ GIONG_TIENG_ANH: frozenset[str] = frozenset({"Adam"})
 #: GHI CHÚ (không phải cảnh báo, không phải chốt chặn) cho `Adam` — đi vào
 #: TOOLTIP. Giữ lại thông tin của bản cũ vì **thông tin không sai, chỉ có kết
 #: luận rút ra từ nó là sai**; nay nói cả hai vế: cái ĐÃ ĐO và cái CHƯA BIẾT.
+#:
+#: **19/08/2026 — THÊM SỐ ĐO "HỎNG hay KÉM" VÀ CHỈ ĐƯỜNG SANG ElevenLabs.**
+#: Anh Hùng nghe rồi nói *"nghe cứ lạ lạ khác lắm, không như tôi nghĩ"* và trỏ
+#: vào giọng Adam THẬT của ElevenLabs. Đo ra là **KÉM, KHÔNG HỎNG** (chi tiết ở
+#: khối docstring đầu file + `_do_adam_en.py`), tức **không có gì sửa được bằng
+#: mã** — nên việc phải làm là nhãn NÓI THẲNG số đo và chỉ đúng chỗ có chất
+#: giọng đó. Nhãn không chỉ đường thì anh Hùng còn nghe thử 19 giọng nữa để
+#: tìm thứ bộ này không có.
+#:
+#: Số trong nhãn LẤY TỪ CÙNG MỘT LƯỢT ĐO (`_kq_adam_en.txt`, 34 câu, Groq chép
+#: ngược, cửa thật) nên so được với nhau. **Đừng trộn với 7,7%/6,2% của
+#: `_CL_DUNG_SAN`** — số đó đo trên bộ câu KHÁC, ghép hai bảng là kết luận sai.
 GHI_CHU_ADAM = (
     "giọng TIẾNG ANH duy nhất của bộ — chọn cho video tiếng Việt là đọc sai "
-    "cả loạt; tên trùng một giọng dựng sẵn của ElevenLabs nhưng ĐÃ ĐO bằng "
-    "ECAPA-TDNN và ra KHÁC NGƯỜI (0,115-0,346 so với cùng-một-người "
-    "0,756-0,931; hai giọng VieNeu khác nhau còn giống nhau hơn thế); vẫn "
-    "CHƯA BIẾT giọng gốc của ai vì gói không kèm mẫu gốc lẫn dòng ghi công — "
-    "đúng bằng mức chưa biết của 19 giọng còn lại")
+    "cả loạt. ĐO 19/08 (34 câu, máy nghe chép ngược): đọc tiếng Anh sai chữ "
+    "12,8% còn giọng thường en-US-AriaNeural chỉ 0,0%; đọc rời từng chữ 29,2% "
+    "so với 4,2% — tức KÉM HƠN, KHÔNG HỎNG: nó đọc trôi cả 34/34 câu, bịa chữ "
+    "0,6% (THẤP NHẤT bộ) và máy nghe nhận đúng tiếng Anh 34/34. Ba giọng "
+    "VieNeu khác đọc tiếng Anh còn sai nhiều hơn (15,4-17,9%), nên đây là "
+    "giới hạn CỦA CẢ BỘ giọng Việt, không phải lỗi riêng giọng này — nghe lạ "
+    "là ĐÚNG THEO CẤU TẠO (chính nó đọc TIẾNG VIỆT chỉ sai 2,5%, giỏi tiếng "
+    "Việt hơn tiếng Anh). MUỐN ĐÚNG CHẤT GIỌNG ẤY thì chọn Adam của "
+    "ElevenLabs đã có sẵn trong app (nhóm giọng trả phí) — hay hơn nhưng TỐN "
+    "HẠN MỨC tính theo số ký tự, đó là giá của chất lượng đó. "
+    "Tên trùng một giọng dựng sẵn của ElevenLabs nhưng ĐÃ ĐO bằng ECAPA-TDNN "
+    "và ra KHÁC NGƯỜI (0,115-0,346 so với cùng-một-người 0,756-0,931; hai "
+    "giọng VieNeu khác nhau còn giống nhau hơn thế); vẫn CHƯA BIẾT giọng gốc "
+    "của ai vì gói không kèm mẫu gốc lẫn dòng ghi công — đúng bằng mức chưa "
+    "biết của 19 giọng còn lại")
 
 #: Tên cũ, GIỮ để lối gọi/tài liệu cũ không gãy. Trỏ vào `GHI_CHU_ADAM`.
 CANH_BAO_ADAM = GHI_CHU_ADAM

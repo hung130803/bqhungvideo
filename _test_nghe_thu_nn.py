@@ -430,6 +430,52 @@ def ca8_hop_noi_ra() -> None:
     dlg.deleteLater()
 
 
+def ca9_nhan_adam() -> None:
+    """NHÃN `vn:Adam` phải NÓI THẬT + CHỈ ĐƯỜNG sang ElevenLabs Adam.
+
+    Anh Hùng nghe `vn:Adam` rồi nói *"nghe cứ lạ lạ khác lắm, không như tôi
+    nghĩ"* và trỏ vào giọng Adam THẬT của ElevenLabs: *"ít nhất phải như này
+    mới oke"*. Đo ra là **KÉM HƠN, KHÔNG HỎNG** (xem `_do_adam_en.py`), tức
+    không có gì để sửa bằng mã — việc phải làm là **nhãn nói thẳng** và **chỉ
+    đúng chỗ có chất giọng đó**: 33 giọng `el:` đã có sẵn trong app, tốn hạn
+    mức. Nhãn không nói thì anh Hùng còn nghe thử 20 giọng nữa để tìm thứ bộ
+    này không có.
+    """
+    print("\n== CA 9: nhãn `vn:Adam` nói thật + chỉ đường sang ElevenLabs ==")
+    from app.core import giong_vieneu as VN
+
+    du = VN.nhan_giong("vn:Adam", ngan=False)
+    ngan = VN.nhan_giong("vn:Adam", ngan=True)
+    ok("ElevenLabs" in du, "nhãn ĐẦY ĐỦ chỉ đường sang ElevenLabs Adam")
+    # So KHÔNG PHÂN BIỆT HOA/THƯỜNG: nhãn của repo này cố ý VIẾT HOA phần quan
+    # trọng ("TỐN HẠN MỨC"), nên so nguyên văn là mục này ĐỎ OAN — đã sập đúng
+    # vậy ở lượt chạy đầu.
+    ok("hạn mức" in du.lower(),
+       "nói luôn CÁI GIÁ (tốn hạn mức) — chỉ đường mà không nói giá là bẫy")
+    # Có SỐ ĐO, không phải lời khen/chê trơn.
+    import re
+    ok(bool(re.search(r"\d+,\d+%", du)) or bool(re.search(r"\d+%", du)),
+       "nhãn mang SỐ ĐO (phần trăm), không phải nhận xét trơn",
+       (re.search(r"[\d,]+%[^;]{0,40}", du) or [""])[0]
+       if re.search(r"[\d,]+%", du) else "—")
+    ok("KHÁC NGƯỜI" in du or "khác người" in du.lower(),
+       "vẫn giữ kết luận ECAPA: KHÔNG phải giọng ElevenLabs bán")
+    ok("TIẾNG ANH" in ngan,
+       "bản NGẮN vẫn mang dấu TIẾNG ANH (thứ SẼ HỎNG NGAY nếu chọn nhầm)",
+       ngan[-40:])
+    ok(len(ngan) <= 132, "bản NGẮN vẫn trong trần combo 132 ký tự (cổng 79)",
+       f"{len(ngan)} ký tự")
+    ok(all(ord(c) < 0x2000 or c in "«»—·" for c in du),
+       "nhãn KHÔNG EMOJI / không ký tự dễ thiếu font")
+    # Chỉ đường CHỈ đặt ở giọng Adam: 19 giọng Việt không liên quan gì tới
+    # ElevenLabs Adam, nhét vào là 19 dòng tooltip nhiễu.
+    ro = [k for k, _m in VN.GIONG_VN
+          if k not in VN.GIONG_TIENG_ANH
+          and "ElevenLabs" in VN.nhan_giong(VN.TIEN_TO + k, ngan=False)]
+    ok(not ro, "19 giọng Việt KHÔNG bị dán thêm chỉ đường ElevenLabs",
+       f"rò: {ro}" if ro else "0")
+
+
 def main() -> int:
     print("=" * 74)
     print("CỔNG 85 — NGHE THỬ ĐỌC ĐÚNG NGÔN NGỮ + BÁO KHI GIỌNG KHÔNG ĐỌC ĐƯỢC")
@@ -442,6 +488,7 @@ def main() -> int:
     ca6_quet_tinh()
     ca7_tu_kiem(ca3)
     ca8_hop_noi_ra()
+    ca9_nhan_adam()
     print("\n" + "=" * 74)
     print(f"ĐẠT {DAT} · HỎNG {HONG}")
     print("=" * 74)
