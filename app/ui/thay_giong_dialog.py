@@ -52,12 +52,16 @@ import unicodedata
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QStandardItem
+from PyQt6.QtGui import (
+    QAction, QColor, QFont, QFontMetrics, QKeySequence, QShortcut,
+    QStandardItem,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
-    QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
-    QMessageBox, QProgressBar, QPushButton, QSpinBox, QStyledItemDelegate,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMenu, QMessageBox, QProgressBar,
+    QPushButton, QSpinBox, QStyledItemDelegate, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.core import che_chu as TG_CC
@@ -126,10 +130,16 @@ _CACHE_GIONG: list = []
 #: Ô danh sách không bao giờ hẹp hơn số này (nhãn nhóm ngắn nhất vẫn phải đọc
 #: hết được).
 RONG_TOI_THIEU = 420
-#: Trừ ra khỏi trần: viền hộp + thanh cuộn + lề chữ trong dòng. Thiếu chỗ cho
-#: thanh cuộn thì 371 dòng làm thanh cuộn ĐÈ LÊN chữ (ô danh sách giọng luôn
-#: dài hơn màn hình nên thanh cuộn LUÔN có, không phải trường hợp hiếm).
-LE_TRAN = 44
+#: Chỗ KHÔNG dùng được cho chữ trong một ô danh sách, đo thật trên hộp chọn
+#: giọng: 16 lề hộp + 2 viền + ~20 **thanh cuộn** + 6 lề chữ trong dòng = 44,
+#: cộng 12 px dự phòng. Thanh cuộn phải tính vào: ô danh sách giọng LUÔN dài hơn
+#: màn hình nên nó LUÔN có, không phải trường hợp hiếm.
+#:
+#: **12 px dự phòng là số phải có, không phải cẩn thận quá mức.** Đo lần đầu với
+#: 44 px: chỗ cho chữ ra **711 px** và nhãn dài nhất cũng đúng **711 px** — 0 px
+#: dư. Lúc đó cổng chỉ cần phông nhích 1 px (máy khác, DPI khác, bản Qt khác) là
+#: quay lại "nhãn bị cắt" mà số đo trên máy này vẫn 0.
+LE_TRAN = 56
 
 
 def rong_toi_da(w) -> int:
@@ -355,6 +365,41 @@ class VeDongGiong(QStyledItemDelegate):
             QFontMetrics(f).elidedText(str(index.data() or ""),
                                        Qt.TextElideMode.ElideRight, o.width()))
         painter.restore()
+
+
+def bo_dau(s: str) -> str:
+    """`Hoài My` -> `hoai my` — để gõ KHÔNG DẤU vẫn tìm ra giọng.
+
+    Anh Hùng gõ nhanh và không bỏ dấu; bắt gõ đúng "Hoài My" thì ô tìm chỉ chạy
+    được với giọng tên tiếng Anh. Bỏ dấu bằng NFD rồi vứt nhóm dấu `Mn`, giữ
+    được cả `đ` -> `d` nhờ bảng thay riêng (NFD KHÔNG tách `đ`).
+    """
+    t = unicodedata.normalize("NFD", str(s or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return t.replace("đ", "d").replace("Đ", "d")
+
+
+class ComboGiong(QComboBox):
+    """Combo giọng — bấm vào là mở DANH SÁCH CÓ Ô TÌM, không phải popup thường.
+
+    Cùng khuôn `studio_page._ChanCombo`: `picker` gán từ ngoài, lỗi thì **LÙI
+    về popup mặc định** chứ không để user bấm mà không có gì mở ra.
+
+    **VẪN LÀ COMBO, KHÔNG BIẾN THÀNH Ô-GÕ** — bẫy này đã sập với ô tìm kênh ở
+    v2.6.10 (anh Hùng: *"này không mở được"*): đổi combo thành `QLineEdit` là
+    mất luôn cái danh sách bấm-để-xem.
+    """
+
+    picker = None                       # gán từ ngoài: callable không tham số
+
+    def showPopup(self):                # noqa: N802 - API Qt
+        if callable(self.picker):
+            try:
+                self.picker()
+                return
+            except Exception:  # noqa: BLE001 - hỏng thì vẫn phải mở được cái gì
+                pass
+        super().showPopup()
 
 
 def bo_emoji(s: str) -> str:
@@ -629,9 +674,16 @@ class ThayGiongDialog(QDialog):
 
         h2.addSpacing(8)
         h2.addWidget(QLabel("Giọng đọc:"))
-        self.cb_giong = QComboBox()
+        # VIỆC 4 — 392 mã giọng thì cuộn tay là không dùng được. Bấm combo mở
+        # popup [ô tìm + danh sách] (`_mo_chon_giong`), đúng mẫu đã chạy được
+        # của `studio_page._open_chan_picker`.
+        self.cb_giong = ComboGiong()
         self.cb_giong.setMinimumWidth(300)
+        self.cb_giong.setToolTip(
+            "Bấm để mở danh sách giọng — có Ô TÌM ở trên, gõ tên giọng là tìm "
+            "trên MỌI nhóm (gõ không dấu cũng ra).")
         self.cb_giong.addItem(NHAN_GIONG_TU, "")
+        self.cb_giong.picker = self._mo_chon_giong
         h2.addWidget(self.cb_giong, 1)
 
         # NGHE THỬ — anh Hùng 16/08: *"không có phần nghe thử à"*. Trước đây
@@ -1665,6 +1717,231 @@ class ThayGiongDialog(QDialog):
                 view.setItemDelegate(self._ve_dong)
         except (AttributeError, RuntimeError):
             pass            # popup chỉ là đường LÙI (đường chính là ô tìm)
+
+    # ------------------------------------------------------------------
+    # VIỆC 4 — Ô TÌM GIỌNG
+    # ------------------------------------------------------------------
+    def _giong_phang(self) -> list[tuple[int, str, str, str]]:
+        """Cả combo dàn thành MỘT danh sách phẳng `(chỉ số, nhãn, mã, nhóm)`.
+
+        Đây là chỗ bảo đảm mệnh đề *"gõ tên giọng ở nhóm KHÁC cũng phải ra"*:
+        nguồn tìm là TOÀN BỘ combo, không phải "nhóm đang chọn". Bẫy này đã sập
+        với ô tìm kênh ở v2.6.12 (anh Hùng: *"có hoạt động đâu"*) vì ô lọc chỉ
+        lọc trong nhóm hiện tại.
+        """
+        ra: list[tuple[int, str, str, str]] = []
+        nhom = ""
+        for i in range(self.cb_giong.count()):
+            nhan = str(self.cb_giong.itemText(i))
+            vid = str(self.cb_giong.itemData(i) or "")
+            it = self.cb_giong.model().item(i)
+            if it is not None and it.data(VAI_NHOM):
+                nhom = nhan
+                ra.append((i, nhan, "", nhan))
+                continue
+            ra.append((i, nhan, vid, nhom))
+        return ra
+
+    def _mo_chon_giong(self):
+        """DANH SÁCH GIỌNG có Ô TÌM ngay trên đầu — thay popup mặc định.
+
+        **DÙNG LẠI MẪU ĐÃ CHẠY ĐƯỢC** `studio_page._open_chan_picker` (cổng 9),
+        kể cả 4 bài học đã trả giá ở đó:
+
+        1. **VẪN LÀ COMBO** — bấm là mở danh sách. Biến nó thành ô-gõ là lặp
+           v2.6.10 (*"này không mở được"*).
+        2. **TÌM TRÊN TOÀN DANH SÁCH**, nhãn ghi rõ giọng đó thuộc nhóm nào. Lọc
+           trong-nhóm-đang-chọn là lặp v2.6.12 (*"có hoạt động đâu"*).
+        3. **KHÔNG `Qt.WindowType.Popup`** — kiểu đó Qt TỰ ĐÓNG khi mất focus,
+           anh Hùng sang trình duyệt rồi quay lại là mất danh sách (v2.6.21).
+           Dùng `Tool | FramelessWindowHint`: cửa sổ con ĐI THEO app, không tự
+           đóng. Đóng bằng: chọn giọng · nút Đóng · Esc · bấm ra ngoài.
+        4. **NÚT LÀ CHỮ, KHÔNG EMOJI** — máy anh Hùng thiếu glyph nên nút ra Ô
+           ĐEN (v2.6.22: *"xấu quá tự nhiên có cái ô đen"*).
+
+        Kèm QSS RIÊNG cho danh sách này: QSS chung có
+        `QListWidget::item{padding:9px 10px;margin:2px}` — padding đó cộng vào
+        mỗi dòng thì 371 dòng cao thêm hẳn một màn hình. Ghi đè về `padding:0`
+        và tự đặt chiều cao dòng.
+        """
+        cu = getattr(self, "_gp_pop", None)
+        # bấm lại vào combo khi đang mở -> ĐÓNG (bật/tắt như dropdown thường).
+        # Không có nhánh này thì bộ lọc bấm-ra-ngoài đóng rồi `showPopup` mở lại
+        # ngay = tưởng bấm không ăn.
+        if cu is not None and cu.isVisible():
+            cu.close()
+            return cu
+        if cu is not None and getattr(self, "_gp_fill", None) is not None:
+            try:
+                self._gp_ed.clear()
+                self._gp_fill("")
+                self._gp_dat_cho(cu)
+                cu.show()
+                cu.raise_()
+                self._gp_ed.setFocus()
+                return cu
+            except RuntimeError:
+                pass                # widget cũ Qt đã xoá -> dựng lại bên dưới
+
+        pop = QFrame(self, Qt.WindowType.Tool
+                     | Qt.WindowType.FramelessWindowHint)
+        pop.setObjectName("giongPick")
+        pop.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
+        pop.setStyleSheet(
+            f"#giongPick{{background:{BASE};border:1px solid {BORDER};"
+            f"border-radius:10px;}}")
+        lay = QVBoxLayout(pop)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(6)
+
+        hrow = QHBoxLayout()
+        hrow.setSpacing(6)
+        ed = QLineEdit()
+        ed.setPlaceholderText(
+            "Gõ tên giọng để tìm trên MỌI nhóm (gõ không dấu cũng ra)...")
+        ed.setClearButtonEnabled(True)
+        hrow.addWidget(ed, 1)
+        xb = QPushButton("Đóng")          # NÚT CHỮ, KHÔNG EMOJI
+        xb.setFixedWidth(58)
+        xb.setToolTip("Đóng danh sách (hoặc bấm Esc, hoặc bấm ra ngoài)")
+        xb.setStyleSheet(
+            f"QPushButton{{background:{SURFACE};color:{MUTED};"
+            f"border:1px solid {BORDER};border-radius:6px;padding:3px 6px;"
+            f"font-size:12px;}}"
+            f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}")
+        xb.clicked.connect(pop.close)
+        hrow.addWidget(xb)
+        lay.addLayout(hrow)
+
+        lb = QLabel("")
+        lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        lay.addWidget(lb)
+
+        lst = QListWidget()
+        lst.setAlternatingRowColors(False)
+        lst.setUniformItemSizes(True)     # 371 dòng: đo chiều cao 1 lần
+        lst.setStyleSheet(
+            f"QListWidget{{background:{SURFACE};border:1px solid {BORDER};"
+            f"border-radius:8px;color:{TEXT};}}"
+            f"QListWidget::item{{padding:2px 4px;margin:0px;}}"
+            f"QListWidget::item:hover{{background:{SURFACE_HOVER};}}"
+            f"QListWidget::item:selected{{background:{ACCENT};color:white;}}")
+        # CÙNG bộ vẽ với popup combo -> tiêu đề nhóm trông y hệt ở hai chỗ
+        if getattr(self, "_ve_dong", None) is None:
+            self._ve_dong = VeDongGiong(self)
+        lst.setItemDelegate(self._ve_dong)
+        lay.addWidget(lst, 1)
+        QShortcut(QKeySequence("Esc"), pop, pop.close)
+        self._gp_pop, self._gp_ed, self._gp_lst, self._gp_lb = pop, ed, lst, lb
+
+        def fill(q: str = "") -> None:
+            lst.clear()
+            ds = self._giong_phang()
+            tu = [bo_dau(t) for t in str(q or "").split() if t.strip()]
+            hien = 0
+            for i, nhan, vid, nhom in ds:
+                if tu:
+                    if not vid:
+                        continue          # đang tìm -> bỏ tiêu đề nhóm
+                    it0 = self.cb_giong.model().item(i)
+                    kho = bo_dau(" ".join((
+                        nhan, vid, nhom,
+                        it0.toolTip() if it0 is not None else "")))
+                    if not all(t in kho for t in tu):
+                        continue
+                    # NHÃN GHI RÕ NHÓM — chọn được giọng nhóm khác thì phải biết
+                    # mình vừa lấy ở nhóm nào (đúng cách `_open_chan_picker` ghi
+                    # "· nhóm X").
+                    chu = f"{nhan}   ·  ở nhóm: {nhom}" if nhom else nhan
+                else:
+                    chu = nhan
+                it = QListWidgetItem(chu)
+                it.setData(Qt.ItemDataRole.UserRole, i)
+                if not vid and not tu and i > 0:
+                    to_nhan_nhom(it)      # tiêu đề nhóm: đậm + màu + không chọn
+                else:
+                    it0 = self.cb_giong.model().item(i)
+                    if it0 is not None and it0.toolTip():
+                        it.setToolTip(it0.toolTip())
+                    hien += 1
+                lst.addItem(it)
+            if not hien:
+                lst.addItem(QListWidgetItem("(không có giọng nào khớp)"))
+            lb.setText(
+                f"{hien} giọng khớp — bấm để chọn, Enter lấy dòng đầu"
+                if tu else
+                f"{hien} giọng · {sum(1 for _i, _n, v, _g in ds if not v)} nhóm"
+                " — gõ ở ô trên để tìm nhanh")
+            # về ĐẦU danh sách + chọn dòng chọn-được đầu tiên (Enter dùng nó)
+            for r in range(lst.count()):
+                if lst.item(r).flags() & Qt.ItemFlag.ItemIsSelectable:
+                    lst.setCurrentRow(r)
+                    break
+            lst.scrollToTop()
+
+        def chon(item=None) -> None:
+            it = item or lst.currentItem()
+            if it is None:
+                return
+            i = it.data(Qt.ItemDataRole.UserRole)
+            if i is None:
+                return
+            pop.close()
+            self.cb_giong.setCurrentIndex(int(i))
+
+        ed.textChanged.connect(fill)
+        ed.returnPressed.connect(lambda: chon())
+        lst.itemClicked.connect(chon)
+        lst.itemActivated.connect(chon)
+        self._gp_fill = fill
+
+        # ĐÓNG KHI BẤM RA NGOÀI. Cửa sổ Tool KHÔNG tự đóng (đó là điều anh Hùng
+        # muốn khi sang app khác), nên phải tự bắt cú bấm. BỎ QUA cú bấm vào
+        # chính combo — nó tự bật/tắt ở trên.
+        from PyQt6.QtCore import QEvent
+        from PyQt6.QtCore import QObject as _QObj
+        from PyQt6.QtWidgets import QApplication as _QApp
+
+        class _BamRaNgoai(_QObj):
+            def __init__(self, hop, popup):
+                super().__init__(popup)
+                self.hop, self.popup = hop, popup
+
+            def eventFilter(self, obj, ev):      # noqa: N802 - API Qt
+                try:
+                    if (ev.type() == QEvent.Type.MouseButtonPress
+                            and self.popup.isVisible()
+                            and isinstance(obj, QWidget)):
+                        cb = self.hop.cb_giong
+                        if obj is cb or cb.isAncestorOf(obj):
+                            return False         # combo tự lo bật/tắt
+                        if obj is not self.popup \
+                                and not self.popup.isAncestorOf(obj):
+                            self.popup.close()
+                except RuntimeError:
+                    pass                         # widget đã bị xoá -> bỏ qua
+                return False                     # KHÔNG chặn sự kiện của app
+
+        self._gp_filter = _BamRaNgoai(self, pop)
+        _QApp.instance().installEventFilter(self._gp_filter)
+        fill("")
+        self._gp_dat_cho(pop)
+        pop.show()
+        pop.raise_()
+        ed.setFocus()
+        return pop
+
+    def _gp_dat_cho(self, pop) -> None:
+        """Đặt hộp chọn giọng ngay dưới combo, RỘNG VỪA NHÃN DÀI NHẤT."""
+        from PyQt6.QtCore import QPoint
+        fm = self._gp_lst.fontMetrics()
+        w = rong_vua_chu(
+            fm, [self.cb_giong.itemText(i)
+                 for i in range(self.cb_giong.count())],
+            rong_toi_da(self.cb_giong))
+        pop.resize(max(w, self.cb_giong.width()), 460)
+        pop.move(self.cb_giong.mapToGlobal(
+            QPoint(0, self.cb_giong.height() + 2)))
 
     def _ve_goi_y(self) -> None:
         """Dòng gợi ý giọng nhiều cảm xúc nhất cho NGÔN NGỮ ĐANG CHỌN.

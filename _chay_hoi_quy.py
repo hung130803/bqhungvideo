@@ -132,6 +132,24 @@ CONG = [
     # THỬ PHÁ nằm ngay trong cổng (CA 9, BẮT 3/3), và chốt chống-PASS-OAN của
     # mục 3f đã thử thật: `BQ_MOC_GIONG=HEAD` -> ĐỎ đúng mục đó, mã thoát 1.
     ("83 mở hết giọng",     "_test_mo_giong_het.py",     41),
+    # Cổng 84 canh CÁCH BÀY danh sách 392 mã giọng (anh Hùng 19/08/2026:
+    # *"nhiều giọng hơn mà không có phân chia gì à, LOẠN QUÁ"* và *"không có
+    # mục tìm kiếm giọng à, thêm vào"*). Cổng 79 đã canh việc GOM NHÓM đúng;
+    # chỗ hỏng nằm ở BÀY: ô danh sách hẹp nên `QComboBox` elide kiểu
+    # **ElideMiddle** ăn đúng khúc GIỮA mang thông tin, và tiêu đề nhóm trông y
+    # hệt dòng giọng.
+    # **CỔNG NÀY TỪNG KHÔNG NẰM Ở ĐÂY** — 4 bản vá (4332367 · 8156dac ·
+    # 574731c · e6738b3) đã lên `main` kèm ghi chú *"0 nhãn bị cắt"* mà cổng
+    # canh chúng là một file `.py` KHÔNG AI GỌI, đúng bẫy cổng 70 đã dính.
+    # Nó KHÔNG gọi mạng, KHÔNG tốn lượt Groq, KHÔNG đụng registry
+    # (`BQ_QSETTINGS_INI`); phần đắt nhất là dựng 6 hộp thoại offscreen (~40 s).
+    # THỬ PHÁ nằm TRONG chính cổng (CA 8, BẮT 4/4: gỡ `nhan_gon` -> 24 nhãn bị
+    # cắt · gỡ `NoItemFlags` -> tiêu đề nhóm CHỌN ĐƯỢC · gỡ `rong_vua_chu` ->
+    # hộp co về 300 px · gỡ nguồn tìm toàn-danh-sách -> gõ tên giọng nhóm KHÁC
+    # không ra). Cổng còn LƯU ẢNH `_ANH_O_TIM_GIONG.png` để người tự mở ra
+    # nhìn: **đếm điểm ảnh KHÔNG phát hiện được ô vuông tofu** (tofu 2.431 px
+    # vs chữ thật 517 px = ngược 4,7 lần).
+    ("84 ô tìm giọng",      "_test_o_tim_giong.py",      48),
     # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
     # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
     # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`
