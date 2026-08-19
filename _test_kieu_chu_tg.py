@@ -330,11 +330,17 @@ def muc5() -> None:
               "dò ra dải chữ của nguồn", ly[:60]):
         return
 
-    def xuat(ten: str, kieu: dict, fontsdir: bool = True) -> dict:
+    def xuat(ten: str, kieu: dict, fontsdir: bool = True,
+             chu: bool = True) -> dict:
+        # `chu=False` -> xuất ĐÚNG chuỗi filter đó nhưng KHÔNG đốt phụ đề, để
+        # lấy mức NỀN mà trừ đi (xem chỗ đếm điểm ảnh bên dưới).
         ass = h / f"r_{ten}.ass"
         CC.ghi_ass([(0.6, 5.6, CAU)], ass, dai, kieu=kieu)
-        vf = f"{loc},{CC.chuoi_subtitles(ass)}" if fontsdir else \
-             f"{loc},subtitles='{esc(ass)}'"
+        if not chu:
+            vf = loc
+        else:
+            vf = f"{loc},{CC.chuoi_subtitles(ass)}" if fontsdir else \
+                 f"{loc},subtitles='{esc(ass)}'"
         ra = h / f"r_{ten}.mp4"
         r = subprocess.run([str(FF), "-y", "-v", "error", "-t", "6",
                             "-i", str(src), "-vf", vf, "-an", "-c:v",
@@ -372,9 +378,26 @@ def muc5() -> None:
         px = im.load()
         return sum(1 for y in range(hh) for x in range(w) if px[x, y] > 200)
 
-    n_nho, n_to = dem(r_nho["png"]), dem(r_to["png"])
+    # **PHẢI TRỪ NỀN — ĐẾM CẢ KHUNG LÀ ĐANG ĐO ĐỘ SÁNG CỦA PHIM, KHÔNG PHẢI
+    # CỠ CHỮ.** Lỗi thật, bắt được ở lượt hồi quy v2.38.0: kho `longtieng` đổi
+    # nên `_nguon_that()` lấy phải một video SÁNG, khung gốc **CHƯA CÓ CHỮ NÀO
+    # đã đếm 169.182** điểm ảnh > 200. Lúc đó nhỏ = 171.439 và to = 189.289,
+    # tỉ lệ chỉ **1,10** -> trượt ngưỡng 1,3 -> cổng ĐỎ trong khi cỡ chữ chạy
+    # hoàn hảo: trừ nền ra thì phần CHỮ là **2.257 -> 20.107 = 8,9 LẦN**.
+    # Đây đúng bài học cổng 36 ("ngưỡng đếm pixel phải THEO TỈ LỆ, khung phim
+    # đã có vùng gần trắng") và cùng họ "đỏ oan vì KHO ĐĨA" của cổng 47 CA2 mà
+    # chính `_nguon_that()` ở trên đã phải chữa một lần.
+    # Ngưỡng 1,3 GIỮ NGUYÊN — sửa PHÉP ĐO, không hạ mốc.
+    r_khong = xuat("khong_chu", {**goc, "co_chu": 0.045}, chu=False)
+    n_nen = dem(r_khong["png"])
+    n_nho = max(0, dem(r_nho["png"]) - n_nen)
+    n_to = max(0, dem(r_to["png"]) - n_nen)
     ok(n_to > n_nho * 1.3, "cỡ TO vẽ ra NHIỀU điểm ảnh chữ hơn cỡ NHỎ",
-       f"nhỏ {n_nho} · to {n_to}")
+       f"nền {n_nen} · chữ nhỏ {n_nho} · chữ to {n_to}"
+       + (f" ({n_to / n_nho:.1f} lần)" if n_nho else ""))
+    ok(n_nho > 0 and n_nen > 0,
+       "TỰ KIỂM phép đo: có nền để trừ VÀ cỡ nhỏ vẫn đếm ra chữ",
+       f"nền {n_nen} · chữ nhỏ {n_nho}")
     # PHÔNG: có fontsdir thì mặt chữ PHẢI đổi; thiếu fontsdir thì KHÔNG đổi
     a = xuat("ph_anton_co", {**goc, "font": "Anton"}, fontsdir=True)
     b = xuat("ph_bia_co", {**goc, "font": "PhongBiaKhongCo"}, fontsdir=True)

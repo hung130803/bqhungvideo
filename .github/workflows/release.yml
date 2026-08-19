@@ -97,4 +97,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/BQHungVideo-*.zip
-          generate_release_notes: true
+          # GHI CHÚ PHÁT HÀNH VIẾT CHO NGƯỜI DÙNG, KHÔNG PHẢI DANH SÁCH COMMIT.
+          # `generate_release_notes: true` dán y nguyên tiêu đề commit vào phần
+          # mô tả bản phát hành — tức anh Hùng mở trang tải về sẽ đọc phải
+          # những dòng kiểu "cong 79 `_test_gom_giong.py`: DAT 58". Đó là chữ
+          # viết cho lập trình viên. Nay lấy `docs/GHI_CHU_PHAT_HANH.md`, viết
+          # bằng tiếng Việt theo đúng cái người dùng BẤM THẤY.
+          # Sửa file đó MỖI LẦN phát hành, đừng để nó nói về bản cũ.
+          body_path: docs/GHI_CHU_PHAT_HANH.md
+          generate_release_notes: false
