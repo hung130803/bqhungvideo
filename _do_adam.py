@@ -118,7 +118,11 @@ EL_NU = "EXAVITQu4vr4xnSDxMaL"      # Sarah — NỮ, đối chứng âm DỄ
 EL_NAM = "nPczCjzI2devNBz1zQrb"     # Brian — NAM trầm, đối chứng âm KHÓ
 
 #: Giọng VieNeu khác để hỏi "chọn X có ra X không" + sàn "khác người cùng bộ".
+#: **PHẢI CÓ ÍT NHẤT HAI** giọng đối chiếu, không phải một: với đúng một giọng
+#: khác thì ca "chọn X ra X" có thể ĐẠT do may (bộ lùi bừa sang giọng thứ ba
+#: vẫn ra "khác Minh Đức"). Lấy 1 nam (`Minh Đức`) + 1 nữ (`Trúc Ly`).
 VN_KHAC = "Minh Đức"
+VN_KHAC2 = "Trúc Ly"
 
 
 def sec(t: str) -> None:
@@ -362,6 +366,9 @@ def main() -> int:
     gk = sinh_vn(VN_KHAC, 1, "Khac")
     if gk:
         vn["VN_MinhDuc_L1"] = {"A": gk["A"]} if "A" in gk else {}
+    gk2 = sinh_vn(VN_KHAC2, 1, "Khac2")
+    if gk2:
+        vn["VN_TrucLy_L1"] = {"A": gk2["A"]} if "A" in gk2 else {}
 
     # ---- gom file -> khoá phẳng ------------------------------------------
     files: dict[str, str] = {}
@@ -452,6 +459,27 @@ def main() -> int:
             ket = ("KHÔNG KẾT LUẬN ĐƯỢC — nằm giữa hai mốc, đừng chọn bừa "
                    "một phía.")
     print(f"\n  ==> {ket}")
+
+    sec("CA 9 — CHỌN X RA X: `vn:Adam` có ra ĐÚNG Adam không")
+    # Vì sao ca này phải có: lỗi `ov:nu_am` đã bắt được một lần — combo hiện
+    # giọng X, lượt đọc lặng lẽ trả về giọng Y, `rc` vẫn 0. Ở đây có 5 lượt
+    # `doc_loat(voice="vn:Adam")` GỌI RIÊNG BIỆT; nếu bộ lùi bừa thì các lượt
+    # ấy không thể tụ lại quanh cùng một người.
+    lay = lambda t: [k for k in emb if k.startswith(t)]                # noqa
+    tu_tu = trong_nhom("VN_Adam_")
+    print(f"  5 lượt chọn `vn:Adam` có tụ về CÙNG MỘT người không: {dai(tu_tu)}")
+    for ten, tien in (("Minh Đức", "VN_MinhDuc_"), ("Trúc Ly", "VN_TrucLy_")):
+        d2 = nhom_cos("VN_Adam_", tien)
+        print(f"  `vn:Adam` × `vn:{ten}` (phải THẤP)          : {dai(d2)}")
+    khac = nhom_cos("VN_Adam_", "VN_MinhDuc_") + nhom_cos("VN_Adam_",
+                                                          "VN_TrucLy_")
+    ok_x = bool(tu_tu) and bool(khac) and min(tu_tu) > max(khac)
+    print(f"  ==> {'ĐẠT' if ok_x else 'KHÔNG ĐẠT'}: "
+          f"lượt-Adam-với-nhau thấp nhất {min(tu_tu):.3f} "
+          f"{'>' if ok_x else '<='} Adam-với-giọng-khác cao nhất "
+          f"{max(khac):.3f}".replace(".", ","))
+    if not ok_x:
+        print("  [!] CHỌN X KHÔNG RA X — combo và lượt đọc đang lệch nhau.")
 
     # ---- file để anh Hùng TỰ NGHE ---------------------------------------
     sec("7. FILE TIẾNG ĐỂ ANH HÙNG TỰ NGHE (tai anh ấy là phán quyết cuối)")

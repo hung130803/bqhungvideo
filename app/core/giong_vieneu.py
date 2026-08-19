@@ -74,24 +74,51 @@ người khác là việc phải hỏi, không phải việc tự quyết), và 
 `BQ_VN_WATERMARK=0` tắt được — để đo A/B, đừng bật bừa trong sản xuất.
 
 ═══════════════════════════════════════════════════════════════════════════
-BẪY SỐ 3 — GIỌNG "Adam" LÀ TÊN GIỌNG THƯƠNG MẠI CỦA ELEVENLABS
+GIỌNG "Adam" — NGHI VẤN ĐÃ ĐO XONG, KHÔNG CÒN CHẶN (19/08/2026)
 ═══════════════════════════════════════════════════════════════════════════
-Giọng thứ 20 tên **`Adam`**, mô tả *"Nam · Tiếng Anh · Giọng đọc tự nhiên"*.
-**`Adam` cũng đúng là tên một giọng dựng sẵn nổi tiếng của ElevenLabs.**
+Giọng thứ 20 tên **`Adam`**, mô tả *"Nam · Tiếng Anh · Giọng đọc tự nhiên"* —
+và `Adam` cũng đúng là tên một giọng dựng sẵn nổi tiếng của ElevenLabs.
 
-**KHÔNG chứng minh được nó lấy từ đâu, và cũng không chứng minh được là
-không** — bảng giọng chỉ lưu `speaker_emb` (192 số) + `codes`, **`text` =
-None**, tức KHÔNG có file mẫu gốc, KHÔNG có dòng ghi công, `meta` vỏn vẹn
-`{"note": "v3 turbo curated preset voices (named)", "count": 20}`. Không có
-mẫu gốc thì không có gì để đối chiếu.
+**BẢN TRƯỚC CHẶN NÓ, VÀ CHẶN SAI — TỰ MÂU THUẪN NGAY TRONG FILE NÀY.** Bằng
+chứng để chặn vỏn vẹn là **CÁI TÊN**; mà cách đó 10 dòng, cùng file, kết luận
+về `Ngọc Huyền` (trùng tên một giọng Vbee anh Hùng từng muốn mua) là *"trùng
+tên KHÔNG phải bằng chứng"* nên KHÔNG chặn. **Cùng một lập luận, áp hai
+kiểu.** Anh Hùng bắt đúng: *"Adam là giọng của 1 người nào đó chứ không phải
+giọng mà Adam bán"* — "Adam" là tên người rất phổ biến, y như "Ngọc Huyền".
 
-Vì vậy: giọng này **KHÔNG vào combo theo mặc định** (`_NGO_NGUON`), và nhãn
-của nó mang cảnh báo. Đây là chỗ **rủi ro pháp lý, không phải chỗ kỹ thuật**
-— app đang đi bán, mà 19 giọng Việt kia đã thừa dùng. `BQ_VN_ADAM=1` bật lại
-nếu anh Hùng tự quyết chịu rủi ro.
-(Giọng `Ngọc Huyền` trùng tên một giọng Vbee anh Hùng từng muốn mua — nhưng
-`Ngọc Huyền` là tên người Việt rất phổ biến, **trùng tên KHÔNG phải bằng
-chứng**, nên không gắn cảnh báo cho nó.)
+**ĐO THAY VÌ TRANH LUẬN.** Máy có 5 key ElevenLabs -> lấy được giọng Adam
+THẬT -> so bằng **ECAPA-TDNN** (`_do_adam.py`, thước là HỆ THỨ BA:
+`speechbrain/spkrec-ecapa-voxceleb`, không phải ElevenLabs cũng không phải
+VieNeu). 6 câu tiếng Anh giống hệt nhau, VieNeu chạy **5 lượt** vì bộ này
+không tiền định::
+
+    CÂU HỎI  VieNeu Adam  x  ElevenLabs Adam    0,115 – 0,346  (TV 0,223)
+
+    ĐỐI CHỨNG DƯƠNG  ElevenLabs Adam x chính nó 0,814 – 0,889
+    ĐỐI CHỨNG DƯƠNG  VieNeu Adam     x chính nó 0,756 – 0,931
+    ĐỐI CHỨNG ÂM     VN Adam x EL Brian (nam)   0,006 – 0,135
+    ĐỐI CHỨNG ÂM     VN Adam x EL Sarah (nữ)    0,082 – 0,204
+    ĐỐI CHỨNG ÂM     VN Adam x VN "Minh Đức"    0,255 – 0,362
+
+Cao nhất của câu hỏi (**0,346**) so với thấp nhất của cùng-một-người
+(**0,756**) là **vực sâu 0,41**. Nặng hơn nữa: **hai giọng VieNeu KHÁC NHAU
+giống nhau (0,292) HƠN là `vn:Adam` giống Adam ElevenLabs (0,223)**.
+=> **KHÁC NGƯỜI.** Giọng này KHÔNG phải giọng ElevenLabs bán.
+
+**ĐIỀU VẪN CHƯA BIẾT — GHI THẲNG, ĐỪNG ĐỌC PHÉP ĐO QUÁ TAY:** phép đo trên
+chỉ loại được ĐÚNG MỘT nghi vấn. Nó **KHÔNG** trả lời được "vậy giọng này của
+ai", vì bảng giọng chỉ lưu `speaker_emb` (192 số) + `codes`, **`text` = None**
+— KHÔNG file mẫu gốc, KHÔNG dòng ghi công, `meta` vỏn vẹn
+`{"note": "v3 turbo curated preset voices (named)", "count": 20}`. Đó đúng
+bằng mức "chưa biết" của **cả 19 giọng còn lại**, nên nó không phải lý do để
+đối xử riêng với giọng này. Nhãn nói ra điều chưa biết đó (`GHI_CHU_ADAM`),
+KHÔNG chặn.
+
+**LUẬT CHUNG RÚT RA, ÁP CHO MỌI BỘ GIỌNG:** *trùng tên = CHƯA BIẾT, không
+phải bằng chứng.* Muốn chặn thì phải có lý do CỤ THỂ HƠN CÁI TÊN — tác giả tự
+khai nguồn dữ liệu (`giong_vbee`: model "Ngọc Huyền" trên HuggingFace tự khai
+huấn luyện từ giọng Vbee), hoặc giấy phép ghi rõ cấm thương mại
+(`piper_tts`: `vivos` CC BY-NC-SA · `25hours_single` "License: Unknown").
 
 ═══════════════════════════════════════════════════════════════════════════
 SỐ ĐO ĐÃ CÓ (docs/GIONG_NHAN_BAN.md, lượt 9 — 18/08/2026)
@@ -262,12 +289,39 @@ GIONG_VN: tuple[tuple[str, str], ...] = (
     ("Adam",        "Nam · Tiếng Anh · Giọng đọc tự nhiên"),
 )
 
-#: Giọng có NGỜ VỀ NGUỒN -> mặc định KHÔNG vào combo. Xem khối "BẪY SỐ 3".
-_NGO_NGUON = {"Adam"}
+#: Giọng bị CHẶN khỏi combo vì nguồn.
+#:
+#: **RỖNG — 19/08/2026.** `Adam` từng nằm đây với bằng chứng DUY NHẤT là cái
+#: tên; đã đo bằng ECAPA và loại được nghi vấn đó (xem khối đầu file).
+#:
+#: **ĐIỀU KIỆN ĐỂ THÊM MỘT TÊN VÀO ĐÂY** — cố ý viết ra để lần sau đừng ai
+#: chặn theo linh cảm: phải có lý do **CỤ THỂ HƠN CÁI TÊN**, tức tác giả TỰ
+#: KHAI nguồn dữ liệu, hoặc giấy phép GHI RÕ cấm thương mại. Trùng tên một
+#: mình thì **KHÔNG** — đó là "chưa biết", không phải bằng chứng, và cả 20
+#: giọng của bộ này đều ở mức "chưa biết" như nhau.
+_NGO_NGUON: frozenset[str] = frozenset()
 
-CANH_BAO_ADAM = ("trùng tên một giọng dựng sẵn THƯƠNG MẠI của ElevenLabs; "
-                 "gói không kèm mẫu gốc hay dòng ghi công nào nên KHÔNG "
-                 "kiểm được nguồn — cân nhắc trước khi đăng kênh")
+#: Giọng đọc TIẾNG ANH. **`Adam` là giọng tiếng Anh DUY NHẤT trong 20 giọng**
+#: — 19 giọng còn lại đều là giọng Việt (Bắc/Trung/Nam), xem `GIONG_VN`.
+#:
+#: Phải nói ra **NGAY TRÊN DÒNG combo lúc ĐÓNG**, không đẩy vào tooltip: anh
+#: Hùng chạy 200-300 kênh Việt, chọn nhầm một lần là hàng trăm video đọc bằng
+#: giọng tiếng Anh. Đây là chuyện SẼ HỎNG NGAY, khác hẳn ghi chú nguồn.
+GIONG_TIENG_ANH: frozenset[str] = frozenset({"Adam"})
+
+#: GHI CHÚ (không phải cảnh báo, không phải chốt chặn) cho `Adam` — đi vào
+#: TOOLTIP. Giữ lại thông tin của bản cũ vì **thông tin không sai, chỉ có kết
+#: luận rút ra từ nó là sai**; nay nói cả hai vế: cái ĐÃ ĐO và cái CHƯA BIẾT.
+GHI_CHU_ADAM = (
+    "giọng TIẾNG ANH duy nhất của bộ — chọn cho video tiếng Việt là đọc sai "
+    "cả loạt; tên trùng một giọng dựng sẵn của ElevenLabs nhưng ĐÃ ĐO bằng "
+    "ECAPA-TDNN và ra KHÁC NGƯỜI (0,115-0,346 so với cùng-một-người "
+    "0,756-0,931; hai giọng VieNeu khác nhau còn giống nhau hơn thế); vẫn "
+    "CHƯA BIẾT giọng gốc của ai vì gói không kèm mẫu gốc lẫn dòng ghi công — "
+    "đúng bằng mức chưa biết của 19 giọng còn lại")
+
+#: Tên cũ, GIỮ để lối gọi/tài liệu cũ không gãy. Trỏ vào `GHI_CHU_ADAM`.
+CANH_BAO_ADAM = GHI_CHU_ADAM
 
 #: Giấy phép — nói ĐƯỢC cái gì, đừng chỉ nói tên giấy phép.
 GIAY_PHEP = ("Apache-2.0: dùng thương mại được, không phải mở mã app")
@@ -326,8 +380,9 @@ def nhan_giong(ma: str, ngan: bool = False) -> str:
     kêu: *"rất lung tung, không biết chọn sao"*.
     Nên: **combo dùng bản NGẮN, phần cảnh báo đầy đủ đi vào TOOLTIP** (hộp
     chọn giọng gắn bằng `ToolTipRole`). Không mất chữ nào, mà nhìn là đọc
-    được. Giọng có ngờ về nguồn vẫn mang dấu **NGỜ NGUỒN** ngay ở bản ngắn —
-    đó là chuyện tiền/pháp lý, không được đẩy hết vào tooltip.
+    được. Thứ **SẼ HỎNG NGAY** thì vẫn phải nằm ở bản NGẮN: giọng bị chặn
+    nguồn mang dấu **NGỜ NGUỒN**, giọng đọc tiếng Anh mang dấu **TIẾNG ANH**
+    (chọn nó cho video Việt là hỏng cả loạt — không được đẩy vào tooltip).
     """
     from app.core import nhan_nha
     if la_giong_nhan_ban(ma):
@@ -340,10 +395,17 @@ def nhan_giong(ma: str, ngan: bool = False) -> str:
     for k, mo_ta in GIONG_VN:
         if k == ten:
             ngo = k in _NGO_NGUON
+            anh = k in GIONG_TIENG_ANH
             dau = f"{k} — {mo_ta} (VieNeu){nhan_nha.nhan(ma)}"
             if ngan:
-                return dau + (" - NGỜ NGUỒN" if ngo else "")
+                # Chỉ MỘT dấu ở bản ngắn (combo đóng rất hẹp). NGỜ NGUỒN nặng
+                # hơn nên thắng — nhưng hiện `_NGO_NGUON` rỗng nên thực tế
+                # nhánh chạy là TIẾNG ANH.
+                return dau + (" - NGỜ NGUỒN" if ngo
+                              else " - TIẾNG ANH" if anh else "")
             them = f"; {CANH_BAO_ADAM}" if ngo else ""
+            if anh and not ngo:
+                them = f"; {GHI_CHU_ADAM}"
             return f"{dau} - {GIAY_PHEP}; {canh_bao_chat_luong(ma)}{them}"
     return ma
 
@@ -376,38 +438,56 @@ def danh_sach_giong(du_chua_tai: bool = False,
     Điều kiện để việc hiện-khi-chưa-tải KHÔNG thành bẫy "chọn X ra Y": lượt
     đọc phải **nói ra** là nó đã lùi. `dubbing._vieneu_hay_khong` ghi log rồi
     lùi edge-tts, đúng luật Piper.
+
+    ═══ GIỌNG TIẾNG ANH XUỐNG CUỐI — SỐ ĐO, KHÔNG PHẢI SỞ THÍCH ═══
+    `nhan_nha.BANG` **chưa có giọng `vn:` nào** (cố ý — chưa đo thì không bịa
+    số), nên `khoa_sap` trả **Y HỆT `(1, 0.0)` cho cả 20 giọng** và thứ tự
+    thật rơi hết về tiêu chí phụ là **THỨ TỰ CHỮ CÁI của mã giọng**. Hệ quả
+    đo được: `vn:Adam` đứng **ĐẦU DANH SÁCH** chỉ vì chữ "A" — tức giọng
+    TIẾNG ANH DUY NHẤT nằm trên cùng một danh sách 19 giọng Việt, ngay chỗ
+    người ta bấm nhanh nhất. Anh Hùng chạy 200-300 kênh Việt: chọn nhầm một
+    lần là hàng trăm video đọc bằng giọng Anh.
+    Nên thêm bậc **NGÔN NGỮ** vào ĐẦU khoá sắp: giọng Việt trước, giọng tiếng
+    Anh sau. Không đụng bậc nhấn nhá của cổng 76 — nó vẫn là bậc kế tiếp và
+    sẽ tự có tác dụng ngay khi bảng nhấn nhá có số cho `vn:`.
     """
     from app.core import nhan_nha
     co = co_vieneu()
     if not co and not du_chua_tai:
         return []
     ma_ds = [TIEN_TO + k for k, _m in GIONG_VN if _cho_hien(k)]
-    ma_ds.sort(key=lambda m: (nhan_nha.khoa_sap(m), m))
+    ma_ds.sort(key=lambda m: (1 if ten_giong(m) in GIONG_TIENG_ANH else 0,
+                              nhan_nha.khoa_sap(m), m))
     dau = "" if co else CHUA_TAI
     return [(m, dau + nhan_giong(m, ngan=ngan)) for m in ma_ds]
 
 
 def _cho_hien(khoa: str) -> bool:
-    """Giọng có ngờ về nguồn có được vào combo không. Xem `_NGO_NGUON`.
+    """Giọng này có được vào combo không. Xem `_NGO_NGUON`.
 
-    **ĐỔI Ở v2.38.0 — MẶC ĐỊNH LÀ HIỆN, và đây là sửa cho NHẤT QUÁN chứ
-    không phải nới lỏng.** Bản đầu giấu `Adam` sau `BQ_VN_ADAM=1` vì tên nó
-    trùng một giọng thương mại của ElevenLabs. Nhưng cùng repo này đang HIỆN
-    OmniVoice — thứ có rào pháp lý **CỨNG HƠN HẲN** (trọng số CC-BY-NC = cấm
-    thương mại, đen trắng trong model card) — với lý lẽ ghi thẳng ở
-    `thay_giong_dialog.giong_dung_duoc`: *"anh Hùng đã được trình bày rõ và
-    vẫn bảo thêm hết vào cho tôi — đó là quyết định kinh doanh của anh ấy,
-    nhưng nhãn vẫn phải nói ra"*. Giấu một giọng chỉ MỜ NGHI về nguồn trong
-    khi hiện một giọng CHẮC CHẮN cấm thương mại là hai cân nặng nhẹ khác nhau
-    cho cùng một câu hỏi.
-    Cộng thêm luật anh Hùng vừa chốt cho lượt này: *"kệ nó cứ thêm vào trùng
-    lặp hay sao cũng được cho tôi... cứ thêm"*.
-    Nên nay: **HIỆN, kèm `CANH_BAO_ADAM` ngay trên dòng** — người chọn biết
-    mình đang chọn gì thay vì phải nhớ. `BQ_VN_ADAM=0` để tắt lại.
+    **HIỆN ĐỦ 20/20 — `_NGO_NGUON` RỖNG (19/08/2026).**
+
+    Đường đi của quyết định này, ghi lại để đừng ai đảo ngược bằng linh cảm:
+      · bản đầu **GIẤU** `Adam` sau `BQ_VN_ADAM=1`, bằng chứng là CÁI TÊN;
+      · v2.38.0 đổi thành **HIỆN kèm dấu NGỜ NGUỒN** — đúng hướng, vì cùng
+        repo này đang hiện OmniVoice, thứ có rào pháp lý **CỨNG HƠN HẲN**
+        (trọng số CC-BY-NC = cấm thương mại, đen trắng trong model card).
+        Giấu một giọng chỉ MỜ NGHI trong khi hiện một giọng CHẮC CHẮN cấm
+        thương mại là hai cân nặng nhẹ cho cùng một câu hỏi;
+      · nay **BỎ HẲN dấu NGỜ NGUỒN**: nghi vấn đó đã ĐO và đã LOẠI bằng
+        ECAPA (khối đầu file). Để dấu lại là dán một cảnh báo mà chính mình
+        vừa chứng minh là không có cơ sở — người dùng đọc riết rồi bỏ qua mọi
+        cảnh báo, kể cả cảnh báo thật.
+
+    Giữ nguyên **CƠ CHẾ** `_NGO_NGUON` chứ không xoá: mai có giọng nào lộ ra
+    lý do CỤ THỂ (tác giả tự khai nguồn / giấy phép cấm thương mại) thì thêm
+    một dòng là chặn được. Cái bỏ đi là **cái tên trong danh sách**, không
+    phải cái khoá.
+
+    (`BQ_VN_ADAM` đã gỡ — nó khoá đúng một giọng theo tên, mà nay không giọng
+    nào bị chặn theo tên nữa.)
     """
-    if khoa not in _NGO_NGUON:
-        return True
-    return os.environ.get("BQ_VN_ADAM", "").strip() != "0"
+    return khoa not in _NGO_NGUON
 
 
 # ---------------------------------------------------------------------------
