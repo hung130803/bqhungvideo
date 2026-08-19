@@ -1005,15 +1005,22 @@ def cleanup_stale_temp(days: float = 3.0) -> int:
 
 
 def delete_project(project_id: int, pool: Optional[WorkerPool] = None) -> None:
-    """Xóa cả project: hủy job, xóa thư mục assets + dòng DB (cascade toàn bộ)."""
+    """Xóa cả project: hủy job, xóa thư mục assets + dòng DB (cascade toàn bộ).
+
+    ═══ CỬA HỞ ĐÃ VÁ 19/08/2026 (cổng 80) — CỬA NGUY HIỂM NHẤT TRONG SỐ 5 ═══
+    `_project_dir` trả thẳng ``Path(row["assets_dir"])`` không kiểm gì. Một
+    dòng DB có `assets_dir` **rỗng** cho ra ``Path("")`` = ``WindowsPath('.')``
+    -> `pdir.exists()` True -> `rmtree(".")` **XOÁ THƯ MỤC ĐANG LÀM VIỆC**,
+    đúng tai nạn `giong_ngoai._don` cùng ngày. Khác ba cửa kia ở chỗ đây là
+    đường NGƯỜI DÙNG BẤM ("Xoá kênh"), và dữ liệu vào đến từ DB — mà DB này
+    đã từng vỡ (30/07) nên "dòng có giá trị lạ" không phải chuyện giả định.
+    """
     _cancel_jobs(pool, "project_id=?", (project_id,))
     pdir = _project_dir(project_id)
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))  # cascade
-    if pdir and pdir.exists():
-        try:
-            shutil.rmtree(pdir, ignore_errors=True)
-        except OSError:
-            pass
+    if pdir is not None:
+        from app.core.xoa_an_toan import don_thu_muc
+        don_thu_muc(pdir)
 
 
 # ══════════════ 👍/👎 GU CỦA CHỦ KÊNH (AI học sở thích) ══════════════

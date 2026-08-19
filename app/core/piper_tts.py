@@ -751,12 +751,25 @@ def _lay_moc(texts: list[str], paths: list[str], chi_so: list[int],
 
 
 def _don(d: Path) -> None:
-    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`)."""
-    try:
-        import shutil
-        shutil.rmtree(d, ignore_errors=True)
-    except Exception:  # noqa: BLE001
-        pass
+    """Dọn thư mục tạm. KHÔNG BAO GIỜ NÉM (bài học rò `_seg_*`).
+
+    ═══ ĐÃ XOÁ NHẦM CẢ CÂY MÃ MỘT LẦN — 19/08/2026, ĐỪNG NỚI CHỐT NÀY ═══
+    Bản cũ là ``shutil.rmtree(d, ignore_errors=True)`` TRẦN, không một phép
+    kiểm nào. Hôm nay `giong_ngoai._don` (cùng hình dạng) nhận `Path("")` —
+    mà ``Path("")`` là ``WindowsPath('.')``, tức THƯ MỤC ĐANG LÀM VIỆC — rồi
+    `rmtree` xoá sạch `.git` / `.venv` / `bin` / `_lib` / `_giong_hang` /
+    `_piper`. Mã thoát vẫn 0, không một dòng báo.
+
+    Hàm này chưa nổ CHỈ VÌ nơi gọi hiện thời may mắn truyền đường dẫn con
+    (`tam = Path(paths[...]).parent / "_piper_<pid>_<t>"`). Đó là MAY, không
+    phải chốt: `paths` đến từ danh sách file của caller, và một chỗ gọi MỚI
+    truyền chuỗi rỗng là lặp lại đúng tai nạn hôm nay.
+    Nay đi qua cửa chung `xoa_an_toan.don_thu_muc` + đòi TÊN bắt đầu bằng
+    `_piper_` (tên do CHÍNH file này đặt) — hai lớp, vì lớp một dễ bị một bản
+    vá sau làm hỏng mà không ai thấy.
+    """
+    from app.core.xoa_an_toan import don_thu_muc
+    don_thu_muc(d, ghi_log=_ghi_log, ten_bat_dau="_piper_")
 
 
 def _ghi_log(s: str) -> None:

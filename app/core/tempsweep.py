@@ -73,7 +73,18 @@ def _co(p: Path) -> int:
 
 
 def _xoa(p: Path) -> int:
-    """Xoá 1 mục, trả số byte giải phóng (0 nếu bị khoá/lỗi)."""
+    """Xoá 1 mục, trả số byte giải phóng (0 nếu bị khoá/lỗi/BỊ CẤM).
+
+    Chốt `ly_do_cam` thêm 19/08/2026 (cổng 80): mọi nơi gọi hiện thời đều
+    truyền CON của `glob`/`iterdir` nên an toàn DO XÂY DỰNG — nhưng hàm này
+    là `rmtree(..., ignore_errors=False)` TRẦN, tức `_xoa(Path("."))` xoá
+    sạch thư mục đang làm việc rồi `except OSError` nuốt im lặng và trả 0.
+    Một mẫu tên mới vô ý (`"*"`) hay một nơi gọi mới là đủ. Chốt rẻ (chỉ
+    `resolve()`), đặt vào đây thì cả 4 nơi gọi được che một lượt.
+    """
+    from app.core.xoa_an_toan import ly_do_cam
+    if ly_do_cam(p):
+        return 0
     n = _co(p)
     try:
         if p.is_dir():

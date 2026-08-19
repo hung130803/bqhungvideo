@@ -244,12 +244,19 @@ def _don_thu_muc_tam(payload: dict) -> None:
     Phải dọn CẢ khi lỗi: file wav/mp3 của một video 10 phút lên hàng trăm MB,
     300 kênh mà mỗi video lỗi bỏ lại một đống là đúng đường dẫn tới "ổ C đầy
     100%" đã xảy ra thật hôm 31/07. Không bao giờ ném lỗi.
-    """
-    import shutil
 
-    lam = str(payload.get("thu_muc_lam") or "")
-    if lam and os.path.isdir(lam):
-        shutil.rmtree(lam, ignore_errors=True)
+    ═══ CỬA HỞ ĐÃ VÁ 19/08/2026 (cổng 80) ═══
+    Bản cũ: ``lam = str(payload.get("thu_muc_lam") or "")`` rồi
+    ``if lam and os.path.isdir(lam): rmtree(lam)``. Chuỗi `""` thì
+    `os.path.isdir("")` là False nên ca đó may mà thoát — NHƯNG **`"."` thì
+    `isdir` trả True** và `rmtree(".")` xoá sạch thư mục đang làm việc, y hệt
+    tai nạn `Path("")` của `giong_ngoai._don` cùng ngày. Gốc ổ đĩa (`"D:\\"`)
+    cũng lọt. Mà `thu_muc_lam` đến từ PAYLOAD trong DB — job cũ do bản app
+    trước ghi vào có thể mang bất cứ chuỗi nào.
+    """
+    from app.core.xoa_an_toan import don_thu_muc
+
+    don_thu_muc(payload.get("thu_muc_lam"))
 
 
 def _thay_giong(payload: dict, ctx: JobContext) -> dict:

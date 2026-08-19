@@ -1929,7 +1929,12 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         return {"ra": "", "nguon": nguon, "cache": False, "loi": str(e)}
     finally:
         Path(tam).unlink(missing_ok=True)
-        shutil.rmtree(thu_muc, ignore_errors=True)
+        # Qua cửa chung (cổng 80): `thu_muc` = `out_wav.parent / f"_thu_{khoa}"`
+        # nên hôm nay KHÔNG thể ra `.` — nhưng đó là tính chất của NƠI GỌI,
+        # không phải chốt của chỗ xoá, và `out_wav` đến từ tham số. Đòi thêm
+        # tiền tố `_thu_` (tên do chính hàm này đặt) cho khỏi phải tin vào may.
+        from app.core.xoa_an_toan import don_thu_muc
+        don_thu_muc(thu_muc, ten_bat_dau="_thu_")
 
 
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
