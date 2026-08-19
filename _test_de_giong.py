@@ -419,6 +419,50 @@ def ca5() -> None:
     ok(n == 3, "5f vẫn ĐÚNG 3 chỗ gọi `_synth_all_words` (bản vá không đẻ chỗ "
                "gọi thứ 4 — chốt cổng 63)", f"{n} chỗ")
 
+    # ---- LỜI NHẮN TIẾN ĐỘ PHẢI KHỚP KHOÁ, KHÔNG SỐNG NHỜ ĐƯỜNG LÙI ----
+    # LỖI THẬT bản vá này đã mắc và đã sửa: câu *"Trộn giọng lồng lên tiếng
+    # gốc…"* KHÔNG chứa cụm khoá "trộn tiếng" nên `buoc_tu_tien_trinh` rơi vào
+    # đường LÙI (suy theo KHOẢNG) và chỉ ra đúng bước 9 **nhờ may**. Cách phát
+    # hiện: gọi với `p=0.0` — khớp khoá thì vẫn ra 9, sống nhờ đường lùi thì ra
+    # 1. Không có mục này thì lần sau ai đổi mốc `prog` là thanh tiến độ chạy
+    # NGƯỢC âm thầm (đúng cái anh Hùng từng kêu).
+    # ĐỌC BẰNG **AST**, KHÔNG regex trên mã nguồn: bản đầu của mục này dùng
+    # `re.findall(r'"(Trộn[^"]*)"')` và **bắt trúng chính DÒNG GHI CHÚ** ngay
+    # trên nó (khối chú thích có trích nguyên văn câu CŨ để cảnh báo) -> HỎNG
+    # OAN. Đúng cái bẫy đã sập ở cổng 47/51/53/54/73/80, lần này sập lại trong
+    # đúng mục viết ra để chống một bẫy khác. Lấy chuỗi từ THAM SỐ của `prog()`
+    # thì ghi chú không với tới được.
+    from app.core import tg_so
+    n_tgv = than_ham(f_tg, "thay_giong_video")
+    cau: list[str] = []
+    for c in goi_trong_ham(n_tgv, "prog"):
+        for tv in c.args:
+            for nut in ast.walk(tv):        # phủ cả `A if cond else B`
+                if isinstance(nut, ast.Constant) \
+                        and isinstance(nut.value, str) \
+                        and nut.value.strip().lower().startswith("trộn"):
+                    cau.append(nut.value)
+    ok(len(cau) >= 2, "5i tìm được lời nhắn bước TRỘN của CẢ HAI cách (đọc "
+                      "bằng AST — regex bắt trúng chính dòng ghi chú)",
+       f"{len(cau)} câu: {cau}")
+    xau = [c for c in cau if tg_so.buoc_tu_tien_trinh(0.0, c)[1] != 9]
+    ok(not xau, "5j lời nhắn bước TRỘN của cả hai cách KHỚP KHOÁ bước 9 "
+                "(không sống nhờ đường lùi theo khoảng)",
+       f"rơi vào đường lùi: {xau}" if xau else f"{len(cau)}/{len(cau)} khớp")
+    # và KHÔNG được chứa cụm khoá của bước KHÁC -> thanh tiến độ tụt về sau
+    xau2 = [c for c in cau
+            if any(k in c.lower() for k in
+                   ("tách giọng", "chép lời", "đọc", "dịch", "rút gọn",
+                    "khớp thời gian"))]
+    ok(not xau2, "5k lời nhắn bước TRỘN KHÔNG chứa cụm khoá của bước TRƯỚC "
+                 "(chứa là thanh tiến độ CHẠY NGƯỢC)", str(xau2))
+    # TỰ KIỂM BỘ DÒ — không có mục này thì 5j/5k chỉ là con dấu.
+    ok(tg_so.buoc_tu_tien_trinh(
+        0.0, "Trộn giọng lồng lên tiếng gốc (đè, không tách)...")[1] != 9
+       and tg_so.buoc_tu_tien_trinh(0.0, "Trộn tiếng mới...")[1] == 9,
+       "5l TỰ KIỂM BỘ DÒ: câu THIẾU cụm 'trộn tiếng' phải bị 5j bắt, câu CÓ thì "
+       "không (đây đúng là lỗi bản vá này đã mắc rồi sửa)")
+
     # TỰ KIỂM BỘ DÒ — bộ dò phải TRƯỢT trên mã hỏng, không thì nó là con dấu.
     xau = ("def f(de_giong=False):\n"
            "    t = tach_giong(w, d)\n"

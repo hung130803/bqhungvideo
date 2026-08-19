@@ -4965,10 +4965,17 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
             kq["bu_goc"] = {"bat": False}
 
         # --- bước 6: trộn + thay vào video
-        # LỜI NHẮN PHẢI NÓI ĐÚNG CÁI ĐANG LÀM (bảng tiến độ `tg_so` tra bước
-        # bằng CHUỖI CON nên cả hai câu đều phải chứa chữ "trộn" và KHÔNG chứa
-        # chữ "đọc"/"dịch"/"khớp" — xem chú thích ở khối bù giọng gốc).
-        prog(0.91, "Trộn giọng lồng lên tiếng gốc (đè, không tách)..."
+        # LỜI NHẮN CỦA CẢ HAI CÁCH PHẢI CHỨA ĐÚNG CỤM **"Trộn tiếng"**.
+        # `tg_so.buoc_tu_tien_trinh` tra bước bằng CHUỖI CON với khoá
+        # `("trộn tiếng", 9)`; không khớp khoá nào thì nó lùi về suy theo KHOẢNG
+        # tiến trình. Bản đầu của dòng này viết *"Trộn giọng lồng lên tiếng
+        # gốc…"* — KHÔNG chứa "trộn tiếng" nên nó rơi vào đường LÙI, và chỉ ra
+        # đúng bước 9 NHỜ MAY (0,91 lọt khoảng cuối). Đo được bằng cách gọi với
+        # `p=0.0`: câu đó ra **bước 1** còn câu có "trộn tiếng" ra **bước 9** —
+        # tức ai đổi mốc `prog` sau này là thanh tiến độ chạy ngược ÂM THẦM.
+        # Và KHÔNG được chứa cụm "tách giọng" (khoá bước 2) — "không tách nhạc"
+        # thì an toàn, "không tách giọng" thì thanh tiến độ tụt về bước 2.
+        prog(0.91, "Trộn tiếng mới ĐÈ lên tiếng gốc (không tách nhạc)..."
              if de_giong else "Trộn tiếng mới với nhạc nền gốc...")
         # `goc_wav` truyền vào để bước BÙ DẢI CAO lấy được cân bằng dải tần
         # của CHÍNH video này làm đích (xem `BU_SANG_TOI_DA_DB`). Thiếu nó thì
