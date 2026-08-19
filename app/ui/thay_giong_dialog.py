@@ -586,9 +586,13 @@ class ThayGiongDialog(QDialog):
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
     _piper_xong = pyqtSignal(bool, str)  # tải giọng Piper xong (ok, lời)
     _gh_xong = pyqtSignal(bool, str)    # tải bộ gióng hàng xong (ok, lời)
-    #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi) — nghe thử sinh xong ở
-    #: thread nền. Phải qua tín hiệu: đụng widget từ thread nền là sập app.
-    _nghe_xong = pyqtSignal(str, str, str)
+    #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi, CẢNH BÁO) — nghe thử sinh
+    #: xong ở thread nền. Phải qua tín hiệu: đụng widget từ thread nền là sập
+    #: app. `canh_bao` là vế thứ tư THÊM 19/08/2026: giọng chỉ đọc được tiếng
+    #: Việt mà ngôn ngữ đích là tiếng Anh thì tiếng ra NGHE LẠ, và anh Hùng
+    #: kết luận "giọng hỏng". `doc_thu` biết điều đó nhưng trước đây không có
+    #: đường nào nói lên giao diện.
+    _nghe_xong = pyqtSignal(str, str, str, str)
     #: (đường dẫn video, trạng thái, tiến trình 0..1) — bắn MỖI LẦN một dòng
     #: ĐỔI trạng thái. Cổng test bắt tín hiệu này để đo "bảng có sống không"
     #: thay vì nhìn bằng mắt.
@@ -1214,14 +1218,20 @@ class ThayGiongDialog(QDialog):
         wav = str(Path(tempfile.gettempdir())
                   / f"_bqnghe_{uuid.uuid4().hex[:8]}.wav")
 
+        # NGÔN NGỮ ĐÍCH lấy từ **WIDGET ĐANG HIỆN**, không lấy từ QSettings:
+        # hộp chỉ ghi cài đặt lúc Chạy/đóng nên setting là lựa chọn CŨ (đúng
+        # lỗi "chạy dây chuyền lấy nhóm từ setting nên chạy sai nhóm").
+        nn = str(self.cb_nn.currentData() or "")
+
         def bg() -> None:
             try:
                 from app.core import thay_giong as TGC
-                kq = TGC.doc_thu(voice, wav)
+                kq = TGC.doc_thu(voice, wav, nn=nn)
                 self._nghe_xong.emit(kq.get("ra") or "", kq.get("nguon") or "",
-                                     kq.get("loi") or "")
+                                     kq.get("loi") or "",
+                                     kq.get("canh_bao") or "")
             except Exception as e:  # noqa: BLE001
-                self._nghe_xong.emit("", "", str(e))
+                self._nghe_xong.emit("", "", str(e), "")
 
         threading.Thread(target=bg, daemon=True).start()
 
@@ -1233,7 +1243,8 @@ class ThayGiongDialog(QDialog):
         except Exception:  # noqa: BLE001
             pass
 
-    def _nghe_thu_xong(self, wav: str, nguon: str, loi: str) -> None:
+    def _nghe_thu_xong(self, wav: str, nguon: str, loi: str,
+                       canh_bao: str = "") -> None:
         """Chạy ở LUỒNG GIAO DIỆN (qua tín hiệu) -> đụng widget mới an toàn."""
         self.b_nghe.setEnabled(True)
         self.b_nghe.setText("Nghe thử")
@@ -1246,7 +1257,12 @@ class ThayGiongDialog(QDialog):
             return
         # NGUỒN THẬT, không phải cái vừa chọn: Piper chưa tải thì app LÙI ÊM
         # về edge-tts — không nói ra thì anh Hùng tưởng đang nghe Piper.
-        if "lùi" in nguon:
+        if canh_bao:
+            # Cảnh báo NẶNG HƠN dòng nguồn nên nó thắng chỗ hiển thị: đây đúng
+            # là lúc tiếng nghe ra sẽ LẠ, mà không nói thì người nghe kết luận
+            # "giọng hỏng" rồi bỏ luôn một giọng dùng được.
+            self.lb_tt.setText(f"Nghe thử — LƯU Ý: {canh_bao}")
+        elif "lùi" in nguon:
             self.lb_tt.setText(f"Nghe thử: {nguon}")
         try:
             import winsound

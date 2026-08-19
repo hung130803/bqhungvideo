@@ -193,10 +193,11 @@ CONG = [
     # nhỏ vẫn phải đếm ra chữ). Trước đó phép đo cộng cả ĐỘ SÁNG CỦA PHIM vào
     # số điểm ảnh chữ nên cổng đỏ oan mỗi khi kho video đổi sang phim sáng.
     ("68 kiểu chữ thay giọng", "_test_kieu_chu_tg.py",    45),
-    # Cổng 81 canh lỗi anh Hùng gặp 19/08: nghe thử chọn tiếng Anh mà đọc câu
-    # TIẾNG VIỆT. Nó rẻ (3-4 lượt edge-tts, KHÔNG Groq, KHÔNG ElevenLabs — vá
+    # Cổng 85 canh lỗi anh Hùng gặp 19/08: nghe thử chọn tiếng Anh mà đọc câu
+    # TIẾNG VIỆT. Nó rẻ (4-5 lượt edge-tts, KHÔNG Groq, KHÔNG ElevenLabs — vá
     # `synth_demo` nên 0 ký tự) và đứng cạnh cổng 65 vì cùng canh nút nghe thử.
-    ("81 nghe thử đúng tiếng", "_test_nghe_thu_nn.py",    56),
+    # Số 85 chứ không phải 81: 81-84 vừa bị luồng khác lấy trong cùng ngày.
+    ("85 nghe thử đúng tiếng", "_test_nghe_thu_nn.py",    67),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

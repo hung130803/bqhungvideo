@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CỔNG 81 — NGHE THỬ PHẢI ĐỌC ĐÚNG NGÔN NGỮ, VÀ BÁO KHI GIỌNG KHÔNG ĐỌC ĐƯỢC.
+"""CỔNG 85 — NGHE THỬ PHẢI ĐỌC ĐÚNG NGÔN NGỮ, VÀ BÁO KHI GIỌNG KHÔNG ĐỌC ĐƯỢC.
 
 Anh Hùng 19/08/2026: *"cái phần nghe thử chọn tiếng Anh ngôn ngữ đó cứ ra tiếng
 Việt lung ta lung tung"*.
@@ -11,8 +11,12 @@ nghe thử CŨ (`dubbing.synth_demo`, hộp Lồng tiếng) đã chọn câu the
 của giọng từ lâu — **chỉ đường Thay giọng bị sót**, nên đây là lỗi SÓT CHỖ NỐI,
 không phải thiếu ý tưởng.
 
-Số cổng là **81**: 80 đã là `_test_khong_xoa_nham.py`. Trùng số thì hai cổng
-ghi đè file kết quả của nhau (bài học cổng 70 vs 69).
+Số cổng là **85**, KHÔNG phải 81: trong lúc lượt này đang chạy, một luồng khác
+đã lấy 81 (`_test_giong_kenh.py`) · 82 (`_test_chatter_noi.py`) · 83
+(`_test_mo_giong_het.py`) · 84 (`_test_o_tim_giong.py`). Trùng số thì hai cổng
+**ghi đè file kết quả của nhau** (`_kq81.txt`) và người đọc không phân biệt được
+số của cổng nào — đúng bài học cổng 70 vs 69. Cách kiểm số còn trống: đọc
+`_chay_hoi_quy.CONG` chứ đừng đếm theo trí nhớ.
 
 ═══════════════════════════════════════════════════════════════════════════
 CỔNG NÀY TỰ KIỂM — GỠ CHỐT RA PHẢI ĐỎ
@@ -353,9 +357,82 @@ def ca7_tu_kiem(ca3_that: bool) -> None:
             dubbing._DEMO_TEXTS["ko"] = giu                 # noqa: SLF001
 
 
+def ca8_hop_noi_ra() -> None:
+    """HỘP THOẠI phải NÓI RA cảnh báo — biết mà không nói thì bằng không biết."""
+    print("\n== CA 8: hộp Thay giọng truyền ngôn ngữ đích + HIỆN cảnh báo ==")
+    import winsound
+
+    # VÁ winsound TRƯỚC khi dựng hộp: cổng tuyệt đối không kêu ra loa máy anh
+    # Hùng (luật cổng 65). Mục dưới chứng minh bản vá này ăn được.
+    keu: list = []
+    winsound.PlaySound = lambda *a, **k: keu.append(a)      # type: ignore
+
+    src = (REPO / "app" / "ui" / "thay_giong_dialog.py").read_text(
+        encoding="utf-8")
+    cay = ast.parse(src)
+    ham = {n.name: n for n in ast.walk(cay) if isinstance(n, ast.FunctionDef)}
+    nt = ham.get("_nghe_thu")
+    # `nn=` phải là BIỂU THỨC đọc từ WIDGET. Hằng số `""` là bản cũ; đọc
+    # `self._s.value(...)` là đọc lựa chọn CŨ (hộp chỉ ghi setting lúc Chạy).
+    kw = None
+    for n in ast.walk(nt) if nt else []:
+        if isinstance(n, ast.Call):
+            for k in n.keywords:
+                if k.arg == "nn":
+                    kw = k
+    ok(kw is not None, "`_nghe_thu` truyền `nn=` cho `doc_thu`")
+    ok(kw is not None and not isinstance(kw.value, ast.Constant),
+       "`nn=` là BIỂU THỨC, không phải hằng số")
+    than = _ma_that(src[src.index("def _nghe_thu(") :
+                        src.index("def _ngat_tieng(")])
+    ok("cb_nn" in than, "lấy ngôn ngữ đích từ WIDGET `cb_nn`")
+    ok("_s.value" not in than.replace(" ", ""),
+       "KHÔNG đọc ngôn ngữ đích từ QSettings (đó là lựa chọn CŨ)")
+
+    from PyQt6.QtWidgets import QApplication, QDialog
+    qapp = QApplication.instance() or QApplication([])
+    from app.ui import thay_giong_dialog as D
+
+    dlg = D.ThayGiongDialog.__new__(D.ThayGiongDialog)
+    QDialog.__init__(dlg)
+    try:
+        D.ThayGiongDialog.__init__(dlg, pool=None)
+    except Exception as e:                                  # noqa: BLE001
+        ok(False, "dựng được hộp", str(e)[:120])
+        return
+    ok(True, "dựng được hộp")
+    qapp.processEvents()
+
+    # Tín hiệu phải mang đủ 4 vế — thiếu vế cảnh báo là hộp không có gì để hiện.
+    from PyQt6.QtCore import QMetaMethod                    # noqa: F401
+    p = Path(_SB) / "ca8.wav"
+    from app.core import thay_giong as TG
+    TG.doc_thu("vi-VN-HoaiMyNeural", p, dung_cache=True)
+    truoc = dlg.lb_tt.text()
+    CB = "giọng này đọc tiếng «vi», còn câu mẫu là tiếng «en» THỬ"
+    dlg._nghe_thu_xong(str(p), "edge-tts", "", CB)           # noqa: SLF001
+    qapp.processEvents()
+    sau = dlg.lb_tt.text()
+    ok(CB in sau, "hộp HIỆN cảnh báo lên dòng trạng thái", sau[:80])
+    ok(sau != truoc, "dòng trạng thái ĐỔI (không phải trùng chữ có sẵn)")
+    ok(all(ord(c) < 0x2000 or c in "«»—" for c in sau),
+       "dòng cảnh báo KHÔNG EMOJI / không ký tự dễ thiếu font")
+    # Không có cảnh báo -> giữ nguyên đường cũ (chỉ nói khi LÙI nguồn giọng).
+    dlg.lb_tt.setText("")
+    dlg._nghe_thu_xong(str(p), "edge-tts", "", "")          # noqa: SLF001
+    ok(dlg.lb_tt.text() == "", "không có cảnh báo -> KHÔNG thêm chữ gì")
+    dlg._nghe_thu_xong(str(p), "edge-tts (Piper chưa tải nên lùi về giọng "
+                       "thường)", "", "")                   # noqa: SLF001
+    ok("lùi" in dlg.lb_tt.text(), "vẫn nói ra khi LÙI nguồn giọng (đường cũ)",
+       dlg.lb_tt.text()[:60])
+    ok(len(keu) >= 1, "CÓ gọi phát tiếng (qua winsound đã vá) — bản vá ăn được",
+       f"{len(keu)} lượt")
+    dlg.deleteLater()
+
+
 def main() -> int:
     print("=" * 74)
-    print("CỔNG 81 — NGHE THỬ ĐỌC ĐÚNG NGÔN NGỮ + BÁO KHI GIỌNG KHÔNG ĐỌC ĐƯỢC")
+    print("CỔNG 85 — NGHE THỬ ĐỌC ĐÚNG NGÔN NGỮ + BÁO KHI GIỌNG KHÔNG ĐỌC ĐƯỢC")
     print("=" * 74)
     ca1_bang_cau()
     ca2_nn_giong()
@@ -364,6 +441,7 @@ def main() -> int:
     ca5_da_ngu_va_cache()
     ca6_quet_tinh()
     ca7_tu_kiem(ca3)
+    ca8_hop_noi_ra()
     print("\n" + "=" * 74)
     print(f"ĐẠT {DAT} · HỎNG {HONG}")
     print("=" * 74)
