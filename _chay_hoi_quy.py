@@ -167,7 +167,11 @@ CONG = [
     ("72 giọng ngoài",      "_test_giong_ngoai.py",      98),
     # Cổng 73 canh chính `giong_hang.py`. Trước hôm nay nó chỉ được canh GIÁN
     # TIẾP qua cổng 72 — tức phần lấy mốc cho MỌI máy đọc không có cổng riêng.
-    ("73 gióng hàng",       "_test_giong_hang.py",      None),
+    # Mốc `None` -> **52** (19/08/2026): cổng thêm CA 9 canh bản vá `e6738b3`
+    # (chọn chỉ mục torchaudio theo TORCH ĐANG CÓ, KHÔNG theo CARD). Để `None`
+    # là cổng chỉ canh mã thoát — mất sạch khả năng bắt "một mục âm thầm biến
+    # thành BỎ QUA". Đã chạy thật: ĐẠT 52 · HỎNG 0.
+    ("73 gióng hàng",       "_test_giong_hang.py",       52),
     ("71 tách giọng GPU",   "_test_demucs_gpu.py",       22),
     # Mốc 42 -> 44: mục 4 thêm 2 chốt cho phép CHE KEY (che vẫn tách được từng
     # key · bản in KHÔNG chứa nguyên văn key) — xem cổng 77.

@@ -465,6 +465,208 @@ def main() -> int:                                          # noqa: C901
         finally:
             shutil.rmtree(san2, ignore_errors=True)
 
+    # ══════════════════════════════════════════════════════════════════
+    # CA 9 — MÁY DEV VÀ MÁY THẬT PHẢI NÓI CÙNG MỘT CÂU
+    # ══════════════════════════════════════════════════════════════════
+    # LỖI THẬT (v2.39.0, 19/08/2026): anh Hùng bấm nút tải -> `OSError: Could
+    # not load this library: ...libtorchaudio.pyd`, trong khi máy dev chạy
+    # gióng hàng bình thường. Đo ra KHÔNG phải "thiếu torch" (torch CÓ trong
+    # `_lib`) mà là **LỆCH CÂY BẢN DỰNG**: torchaudio `+cu126` cần
+    # `torch_cuda.dll` + `cudart64_12.dll`, mà torch `+cpu` không ship hai DLL
+    # đó (bóc bảng nhập DLL của chính `.pyd`: cây `+cpu` 9 DLL · cây `+cu126`
+    # 36 DLL).
+    #
+    # ĐÂY LÀ CA ĐỘC NHẤT VÌ HAI PHÉP DÒ CŨ ĐỀU MÙ VỚI NÓ:
+    #   · `_co_goi` hỏi "có thư mục không" -> CÓ (thư mục đúng chỗ, .pyd đủ
+    #     byte) -> báo *đã cài* cho một bộ không bao giờ nạp được;
+    #   · "import được không" thì máy dev mượn `.venv` rồi trả lời CÓ.
+    # Nên mệnh đề phải là: **danh sách THIẾU máy dev nói ra == danh sách mà
+    # tiến trình KHÔNG có site-packages nói ra**, và cả hai phải NÊU ĐÍCH DANH
+    # chỗ lệch cây.
+    print("\nCA 9 — máy dev và bản .exe phải nói CÙNG một danh sách thiếu")
+    san9 = Path(tempfile.mkdtemp(prefix="bq_gh9_"))
+    # HAI BIẾN MÔI TRƯỜNG NÀY LÀ TRẠNG THÁI DÙNG CHUNG — phải TRẢ LẠI.
+    # Bản đầu của CA 9 đặt chúng trỏ vào hộp cát rồi bỏ đó: mục 9j sau đó đo
+    # `duong_model()` ra file model.pt GIẢ 1 byte của hộp cát (báo "2,6 MB")
+    # và dòng tổng kết in "bộ gióng hàng CHƯA" cho một máy đang CÓ. Đúng luật
+    # "test không được làm bẩn trạng thái dùng chung".
+    _env9_cu = {k: os.environ.get(k)
+                for k in ("BQ_GIONG_HANG_LIB", "BQ_DEMUCS_LIB")}
+    try:
+        # Hộp cát dựng ĐÚNG trạng thái máy anh Hùng SAU khi tải model xong:
+        # torch +cpu · torchaudio +cu126 · uroman · model.pt có mặt. Đây là
+        # trạng thái mà bản CŨ gọi là "đã cài đủ".
+        LIB9, GH9 = san9 / "_lib", san9 / "_gh"
+        (LIB9 / "torch").mkdir(parents=True)
+        (LIB9 / "torch" / "version.py").write_text(
+            "__version__ = '2.13.0+cpu'\n", encoding="utf-8")
+        (GH9 / "torchaudio").mkdir(parents=True)
+        (GH9 / "torchaudio" / "version.py").write_text(
+            "__version__ = '2.11.0+cu126'\n", encoding="utf-8")
+        (GH9 / "uroman").mkdir(parents=True)
+        mp = GH9 / "_models" / "hub" / "checkpoints"
+        mp.mkdir(parents=True)
+        (mp / "model.pt").write_bytes(b"0")      # chỉ cần CÓ FILE
+        env9 = {**os.environ, "BQ_GIONG_HANG_LIB": str(GH9),
+                "BQ_DEMUCS_LIB": str(LIB9), "PYTHONUTF8": "1"}
+
+        def _thieu_trong_tien_trinh(cat_sp: bool, nguon: str = "") -> dict:
+            """`tinh_trang_giong_hang()` chạy ở TIẾN TRÌNH RIÊNG.
+
+            `cat_sp=True` = giả lập bản `.exe`. **Import `app` XONG RỒI MỚI
+            cắt `site-packages`** — mẫu đúng ở cổng 58 CA 1a; cắt trước thì
+            chính `import config` chết và cổng đo nhầm thứ khác.
+            `nguon` != '' = nạp mã bản MỐC từ file đó (dùng cho phép thử phá).
+            """
+            import json as _js
+            import subprocess as _sp
+            ma = (
+                "import json,sys\n"
+                + (f"import importlib.util as _iu\n"
+                   f"_sp2=_iu.spec_from_file_location('_gh_moc', r'{nguon}')\n"
+                   "_m=_iu.module_from_spec(_sp2)\n"
+                   if nguon else
+                   "from app.core import giong_hang as _m\n")
+                + "import app.core.thay_giong as _tg\n"
+                + ("sys.path[:] = [p for p in sys.path if 'site-packages' "
+                   "not in p.replace(chr(92),'/').lower()]\n" if cat_sp else "")
+                + ("_sp2.loader.exec_module(_m)\n" if nguon else "")
+                + "t=_m.tinh_trang_giong_hang()\n"
+                + "sys.stdout.write('BQ9'+json.dumps("
+                  "{'co':t['co'],'thieu':t['thieu']},ensure_ascii=False))\n")
+            r = _sp.run([sys.executable, "-c", ma], capture_output=True,
+                        text=True, encoding="utf-8", errors="replace",
+                        env=env9, cwd=str(REPO), timeout=300)
+            s = r.stdout or ""
+            i = s.find("BQ9")
+            if i < 0:
+                return {"loi": ((r.stderr or s) or "")[-300:]}
+            return _js.loads(s[i + 3:])
+
+        dev9 = _thieu_trong_tien_trinh(False)
+        exe9 = _thieu_trong_tien_trinh(True)
+        ok(dev9.get("thieu") == exe9.get("thieu")
+           and "loi" not in dev9 and "loi" not in exe9,
+           "9a danh sách THIẾU của máy dev GIỐNG HỆT của tiến trình KHÔNG có "
+           "site-packages (mệnh đề trung tâm)",
+           f"dev={dev9.get('thieu')} · .exe={exe9.get('thieu')}")
+        ok(dev9.get("co") is False
+           and any("cùng cây" in x for x in (dev9.get("thieu") or [])),
+           "9b LỆCH CÂY BẢN DỰNG bị bắt và NÊU ĐÍCH DANH (đồ có đủ mà vẫn "
+           "không nạp được -> phải tính là THIẾU, không được `co=True`)",
+           f"co={dev9.get('co')} · {dev9.get('thieu')}")
+
+        # ── THỬ PHÁ: chạy lại CHÍNH mã bản MỐC trên CÙNG hộp cát ────────────
+        # `v2.39.0` = bản phát hành NGAY TRƯỚC bản vá (mốc đúng theo luật đã
+        # chốt ở cổng 56; KHÔNG dùng `main`/`HEAD` — sau khi gộp thì mốc chính
+        # là bản đang test và cổng tự PASS OAN vĩnh viễn).
+        MOC = (os.environ.get("BQ_MOC_GH") or "v2.39.0").strip()
+        import subprocess as _sp
+        _g = _sp.run(["git", "show", f"{MOC}:app/core/giong_hang.py"],
+                     capture_output=True, text=True, encoding="utf-8",
+                     errors="replace", cwd=str(REPO), timeout=120)
+        if _g.returncode != 0 or not (_g.stdout or "").strip():
+            bo_qua("9c THỬ PHÁ mã bản mốc " + MOC,
+                   "không đọc được mốc: " + (_g.stderr or "")[-120:])
+        elif (_g.stdout or "").replace("\r\n", "\n") == \
+                NGUON.read_text(encoding="utf-8").replace("\r\n", "\n"):
+            # Chốt chống PASS OAN: mốc TRÙNG bản đang test = so nó với chính
+            # nó, phép thử phá mất hết ý nghĩa.
+            ok(False, "9c mốc " + MOC + " TRÙNG bản đang test -> phép thử phá "
+               "vô nghĩa, chọn mốc là bản phát hành TRƯỚC bản vá", "")
+        else:
+            f_moc = san9 / "_gh_moc.py"
+            f_moc.write_text(_g.stdout, encoding="utf-8")
+            cu_dev = _thieu_trong_tien_trinh(False, str(f_moc))
+            cu_exe = _thieu_trong_tien_trinh(True, str(f_moc))
+            ok(cu_dev.get("co") is True and not cu_dev.get("thieu"),
+               "9c THỬ PHÁ: mã bản mốc " + MOC + " trên CÙNG hộp cát báo "
+               "`co=True · thiếu=[]` cho bộ KHÔNG BAO GIỜ NẠP ĐƯỢC "
+               "-> 9a/9b đang đo thật, không phải con dấu",
+               f"co={cu_dev.get('co')} · thiếu={cu_dev.get('thieu')}")
+            ok(cu_dev.get("thieu") == cu_exe.get("thieu"),
+               "9d mã bản mốc cũng nói GIỐNG NHAU ở hai môi trường -> bệnh "
+               "KHÔNG phải 'dev mượn .venv' mà là PHÉP DÒ MÙ VỚI LỆCH CÂY "
+               "(đọc cho đúng bệnh, đừng đổ cho cổng 58)",
+               f"dev={cu_dev.get('thieu')} · .exe={cu_exe.get('thieu')}")
+
+        # ── 9e: chọn chỉ mục theo TORCH, KHÔNG theo CARD ─────────────────────
+        # Đây đúng chỗ hỏng: máy có RTX 3060 nên bản cũ lấy `+cu126` trong khi
+        # `_lib` là `+cpu`. Vá xong thì CARD không được có tiếng nói nào.
+        from app.core import thay_giong as _tg9
+        _that_gpu = _tg9.co_gpu_nvidia
+        try:
+            _tg9.co_gpu_nvidia = lambda: True                # type: ignore
+            os.environ["BQ_DEMUCS_LIB"] = str(LIB9)
+            os.environ["BQ_GIONG_HANG_LIB"] = str(GH9)
+            url9, the9 = gh.chi_muc_cho_torchaudio()
+            ok(the9 == "cpu" and url9 and url9.endswith("/cpu"),
+               "9e torch `+cpu` + máy CÓ GPU -> vẫn phải lấy torchaudio cây "
+               "`+cpu` (chỉ mục đi theo TORCH ĐANG CÓ, không theo CARD)",
+               f"{the9} · {url9}")
+            (LIB9 / "torch" / "version.py").write_text(
+                "__version__ = '2.13.0+cu126'\n", encoding="utf-8")
+            _tg9.co_gpu_nvidia = lambda: False               # type: ignore
+            url9b, the9b = gh.chi_muc_cho_torchaudio()
+            ok(the9b == "cu126" and url9b and url9b.endswith("/cu126"),
+               "9f torch `+cu126` + `nvidia-smi` KHÔNG trả gì -> vẫn lấy cây "
+               "`+cu126` cho khớp torch (chiều ngược lại)",
+               f"{the9b} · {url9b}")
+        finally:
+            _tg9.co_gpu_nvidia = _that_gpu                   # type: ignore
+
+        # ── 9g/9h: quét AST (KHÔNG quét chuỗi — chính ghi chú của bản vá có
+        # chữ `co_gpu_nvidia`, quét chuỗi là ĐỎ OAN, bài học 47/51/53/73) ────
+        nc9 = _ham(NGUON, "cai_giong_hang")
+        goi9 = {n.func.id for n in ast.walk(nc9)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        goi9 |= {n.func.attr for n in ast.walk(nc9)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+        ok("chi_muc_cho_torchaudio" in goi9 and "co_gpu_nvidia" not in goi9,
+           "9g `cai_giong_hang` gọi `chi_muc_cho_torchaudio` và KHÔNG còn gọi "
+           "`co_gpu_nvidia` (đúng chỗ đã hỏng)",
+           f"chi_muc_cho_torchaudio={'chi_muc_cho_torchaudio' in goi9} · "
+           f"co_gpu_nvidia={'co_gpu_nvidia' in goi9}")
+        ok("do_goi_gh" in goi9,
+           "9h hậu kiểm phải qua `do_goi_gh` (so `spec.origin` VỚI THƯ MỤC "
+           "ĐÍCH ở tiến trình đã cắt site-packages), không hỏi 'import được "
+           "không'")
+        ok("site-packages" in gh._MA_KIEM_GH
+           and "find_spec" in gh._MA_KIEM_GH,
+           "9i mã hậu kiểm THẬT SỰ cắt site-packages và hỏi `spec.origin`")
+
+    finally:
+        for _k, _v in _env9_cu.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+        shutil.rmtree(san9, ignore_errors=True)
+
+    # ── 9j/9k: nhãn phải khớp lượng tải THẬT ────────────────────────────────
+    # ĐẶT NGOÀI khối hộp cát, SAU khi đã trả lại biến môi trường — nếu không
+    # thì `duong_model()` trỏ vào model.pt GIẢ 1 byte của hộp cát.
+    # Đo `_do_gh_tai_ve.py` (pip --dry-run --report + HTTP HEAD, Python 3.14):
+    # torchaudio 0,3 MB (+cu126 1,4) · uroman 0,9 · regex 0,3 · model
+    # 1.203,6 MB -> TỔNG ~1.206 MB = 1,18 GiB ~ 1,2 GB. Đúng vì KHÔNG kèm
+    # torch; ai đổi sang tự cài torch thì wheel `+cu126` một mình đã 2.474,4 MB
+    # và nhãn này thành sai gấp hơn 2 lần.
+    mp_that = Path(gh.duong_model())
+    if not mp_that.is_file():
+        bo_qua("9j nhãn nút khớp lượng tải thật",
+               "máy chưa có model.pt để đo (không chấm khống)")
+    else:
+        tong_mb = mp_that.stat().st_size / 1024 / 1024 + 1.4 + 0.9 + 0.3
+        so = f"{tong_mb:.1f}".replace(".", ",")     # chỉ đổi dấu của SỐ
+        ok("1,2 GB" in gh.NHAN_TAI_GH and 1150 <= tong_mb <= 1300,
+           "9j nhãn ghi ĐÚNG số GB tải về (model + torchaudio + uroman, "
+           "KHÔNG kèm torch)",
+           f"nhãn «{gh.NHAN_TAI_GH}» · đo thật {so} MB")
+    ok("torch" not in gh.GOI_KHONG_DEPS + gh.GOI_CO_DEPS,
+       "9k danh sách gói tải KHÔNG có torch (dùng chung `_lib`) — ngày nào "
+       "thêm torch vào đây thì nhãn 1,2 GB thành sai",
+       f"{gh.GOI_KHONG_DEPS + gh.GOI_CO_DEPS}")
+
     print("\n" + "=" * 74)
     print(f"CỔNG 73: ĐẠT {DAT} · HỎNG {HONG}"
           + (f" · BỎ QUA {BO_QUA}" if BO_QUA else ""))
