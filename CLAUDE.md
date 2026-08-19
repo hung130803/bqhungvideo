@@ -2301,6 +2301,122 @@
      tiếng Việt thì kiểu gì cũng tự bắn vào chân.
      **KÈM CA 9 — NHÃN `vn:Adam` PHẢI NÓI THẬT + CHỈ ĐƯỜNG:** xem khối *"Adam
      NGHE LẠ"* ngay dưới.
+  86. `_test_de_giong.py` → **CHẾ ĐỘ "ĐÈ GIỌNG, KHÔNG TÁCH"** (`thay_giong.
+     CACH_TRON`, 19/08/2026). **ĐẠT 62 · HỎNG 0.** Thử phá `_pha_de_giong.py`
+     (8 phép, mỗi phép gỡ ĐÚNG 1 chốt): **BẮT 8 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+     Anh Hùng đề xuất: *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM tiếng
+     video gốc rồi ĐÈ giọng lồng tiếng vào, để không bị mất mấy tiếng của
+     video"*. Ý đó tốt vì nó **KHÔNG TẠO RA** bệnh: chỗ tách chính là chỗ sinh
+     ra mất tiếng · dìm nhạc · cần torch 4,3 GB · cần GPU. Mất tiếng về **0
+     THEO CẤU TẠO** — không bỏ gì thì không có gì để mất.
+     **DÙNG LẠI, KHÔNG VIẾT MỚI — và đây là phần đáng nói nhất:**
+     `tron_thay_giong` đã có ĐỦ ducking theo CỬA SỔ giọng lồng
+     (`sidechaincompress`) + cân bằng giọng-nhạc ĐO-rồi-tính + chuẩn hoá −14
+     LUFS + `alimiter level=0 latency=1` + chốt độ dài. Chỗ khác nhau duy nhất
+     giữa hai cách là **CÁI GÌ được truyền vào làm lớp nền**: lớp nhạc Demucs,
+     hay CHÍNH `goc_wav`. Nên bản vá chỉ đổi **3 thứ** trong `thay_giong_video`:
+     bỏ bước `tach_giong` · nền = `goc_wav` · **bỏ `bu_giong_goc`** (ở chế độ đè
+     giọng gốc còn NGUYÊN trong nền, bù thêm là **cộng cùng một tín hiệu HAI
+     LẦN** = vang đôi, và mảnh bù còn kéo lệch cả phép cân bằng).
+     **MẶC ĐỊNH GIỮ CÁCH CŨ** — đổi mặc định là đổi tiếng của MỌI video từ nay
+     trên 200-300 kênh đang chạy sản xuất. Cờ **chỉ góp vào hash khi THẬT SỰ
+     BẬT** và nối vào **ĐUÔI chuỗi `sig`** (`:dg=1`), KHÔNG thêm phần tử vào
+     tuple: đo được khoá khi TẮT giống **TỪNG KÝ TỰ** mốc v2.39.0 trên 6 tổ hợp
+     cờ cũ (bài học `ovl_spec` cổng 42 · `che_chu` cổng 56e).
+     **THƯỚC MẤT TIẾNG CŨ LÀ THƯỚC *THIÊN VỊ* — ĐỌC KỸ TRƯỚC KHI ĐO LẠI.**
+     `_do_mat_giong.khoang_mat` gọi một cửa sổ là "IM" khi nó không nổi quá
+     `SÀN_NHIỄU_CỦA_CHÍNH_FILE_ĐÓ + 4 dB`, sàn = bách phân vị 20 của chính file.
+     Arm đè giữ NGUYÊN tiếng gốc -> lớp giọng ĐẦY HƠN -> ít cửa sổ im hơn ->
+     sàn CAO HƠN -> ngưỡng "IM" **khắt khe hơn**. Đo trên video 2, CÙNG lượt
+     chạy: arm TACH sàn **−31,91** (ngưỡng IM −27,91) · arm DE sàn **−24,14**
+     (ngưỡng IM −20,14) = **khắt khe hơn 7,77 dB**, và nó chấm arm DE ra
+     **10,65 s** trong khi arm TACH chỉ 6,40 s. Đọc thẳng *"DE mất nhiều hơn"*
+     là đúng bẫy **"số thô là SỐ LỪA"**.
+     **THƯỚC ĐÚNG (`_do_mat_tuyet_doi.py`):** MẤT = gốc CÓ tiếng **VÀ**
+     `bao_gốc[i] − bao_xuất[i] > TRU_DB`. Cả hai arm dùng **CÙNG sàn (của BẢN
+     GỐC)** và CÙNG ngưỡng tụt -> hết thiên vị theo cấu tạo. `TRU_DB = 20` SUY
+     TỪ HẰNG SỐ CỦA APP: `HA_NHAC_TOI_DA_DB` 8,0 + `DUCK_DB_DO_DUOC` 3,28 =
+     **11,28 dB** là mức tụt HỢP LỆ lớn nhất -> 20 chừa 8,7 dB biên.
+     **NGƯỠNG ĐÓ KHÔNG PHẢI CHỖ TINH CHỈNH, VÀ ĐÂY LÀ BẰNG CHỨNG:** phân bố số
+     ô theo độ tụt của arm DE = `<5: 1920 · 5-11,28: 1277 · **11,28-20: 0** ·
+     **20-30: 0** · >=30: 2`. Hai nhóm **TÁCH RỜI HẲN** (khoảng trống 11,28→30
+     dB không có ô nào) nên đặt ngưỡng ở đâu trong khoảng đó cũng ra cùng kết
+     quả. (2 ô >=30 dB là ô lẻ 0,05 s, dưới sàn `DAI_MIN` 0,30 s -> không tính.)
+     **SỐ ĐO GHÉP CẶP** (một lượt dây chuyền/video, hai arm tách ra ở đúng tham
+     số `nhac_wav` -> cùng bản tách/chép lời/dịch/FILE GIỌNG; đo rời hai lượt
+     lệch **1,81 lần** vì LLM không tiền định):
+
+     | thước | TACH (cũ, ĐÃ có `bu_giong_goc`) | **DE (mới)** |
+     |---|---|---|
+     | **TUYỆT ĐỐI (đúng)** | **4,25 s / 0,83%** | **0,00 s / 0,00%** |
+     | tương đối (thiên vị) | 6,40 s | 10,65 s |
+
+     Phân bố độ dài khoảng của arm DE: **0,00 ở CẢ BỐN bậc** (<0,5 · 0,5-1 ·
+     1-2 · >=2 s). Chốt chống-đạt-oan: arm TACH ra 4,25 s > 0 -> thước CÓ RĂNG.
+     **GIÁ PHẢI TRẢ, NÓI THẲNG BẰNG SỐ:** ở chế độ đè, nền CHỨA CẢ GIỌNG GỐC
+     nên nó to hơn hẳn lớp nhạc -> **CẢ HAI trần cùng bịnh**. Đo e2e clip 40 s:
+     giọng nâng chỉ **+5,12 dB** (trần đỉnh) và nền chỉ hạ được **−8,00 dB**
+     (đúng trần `HA_NHAC_TOI_DA_DB`) -> giọng trên nền **+3,77 dB** thay vì đích
+     6,0 (kể ducking **+7,05**). Trên video dài hơn thì đủ đích: video 1
+     **+4,56** (kể né 7,84) · video 2 **+6,00** (kể né 9,28). **ĐỪNG nới hai
+     trần đó để đạt +6** — đó là đổi tiếng gốc lấy con số, mà tiếng gốc chính là
+     thứ tính năng này cố ý giữ.
+     **ĐỘ TO + ĐỈNH trên file thành phẩm** (sau đời nén AAC, đúng thứ anh Hùng
+     nghe): I **−14,02 LUFS**, HAI thước độc lập đồng ý **0,03 LU** (`loudnorm`
+     −14,03 · `ebur128` −14,00), LRA 1,5, TP **−1,41 dBTP**, đỉnh −1,448 dBFS ->
+     trần trừ HAI LẦN chạy đúng.
+     **HAI THƯỚC ĐỘ TO CHỈ ĐỒNG Ý TRONG VÙNG HIỆU CHUẨN — số mới, đáng nhớ:**
+     lệch **0,03-0,08 LU** trên nguồn THẬT (LRA 1,8-2,1, Douyin master nén sẵn)
+     và trên nguồn LIÊN TỤC, nhưng **0,5-1,3 LU** trên nguồn dải động RỘNG (LRA
+     10-14) — cửa chặn TƯƠNG ĐỐI của BS.1770 làm khối 400 ms lật vào/ra khác
+     nhau, **KHÔNG phải thước nào hỏng**. Vì vậy cổng 86 chạy phép đối chiếu
+     0,5 LU ở **CA 7, trên nguồn THẬT**; trên nguồn tổng hợp thì in cả hai số
+     nhưng chấm bằng `loudnorm` (đúng bộ đo `chuan_do_to` dùng). **Nới ngưỡng
+     cho hết đỏ là đúng lúc mất khả năng bắt một thước hỏng thật.**
+     **BA CỬA CỦA CHỐT DEMUCS PHẢI KHỚP NHAU — ĐÃ SÓT MỘT CỬA:**
+     `thay_giong_dialog._cap_nhat_nut_chay` (mở nút Chạy) ·
+     `thay_giong.thay_giong_thu_muc` · **`jobs._thay_giong`**. Bản đầu sót cửa
+     thứ ba -> UI mở nút, job được xếp, rồi **CHẾT NGAY tại chốt** với lời
+     *"thiếu bộ tách giọng"*, tức tính năng chết đúng trên máy NHÂN VIÊN còn máy
+     dev (có Demucs) xanh hết. Mục **5m** canh cửa đó.
+     **LỜI NHẮN TIẾN ĐỘ PHẢI KHỚP KHOÁ, KHÔNG SỐNG NHỜ ĐƯỜNG LÙI — lỗi chính
+     bản vá này đẻ ra:** câu *"Trộn giọng lồng lên tiếng gốc…"* KHÔNG chứa cụm
+     khoá `"trộn tiếng"` mà `tg_so.buoc_tu_tien_trinh` tra, nên nó rơi vào đường
+     LÙI (suy theo KHOẢNG) và chỉ ra đúng bước 9 **NHỜ MAY** (0,91 lọt khoảng
+     cuối). Cách đo phân biệt: gọi với **`p=0.0`** -> câu cũ ra **bước 1**, câu
+     có "trộn tiếng" ra **bước 9**. Nay câu là *"Trộn tiếng mới ĐÈ lên tiếng gốc
+     (không tách nhạc)…"* — chứa `"trộn tiếng"` và **không** chứa `"tách giọng"`
+     (khoá bước 2; viết "không tách giọng" là thanh tiến độ tụt về bước 2).
+     Mục 5j/5k/5l canh cả lớp bệnh.
+     **BẪY ĐÃ SẬP KHI DỰNG CỔNG (3 cái, ghi để đừng ai lặp):**
+     · **giọng gốc LIÊN TỤC làm bộ dò TỰ ĐẠT OAN.** `_san_nhieu` lấy bách phân
+       vị 20, nên nguồn không có >20% im lặng thì sàn rơi vào GIỮA tiếng nói ->
+       `nguong_co = sàn + 12` không ai vượt -> **0 khoảng ở CẢ HAI arm**. Nguồn
+       tổng hợp phải NGẮT NHỊP từng "từ" (0,35 s tiếng / 0,15 s nghỉ).
+     · `anoisesrc` **bắt buộc có `s=` (seed)** — không thì mỗi lượt một mẻ ồn
+       khác nhau và cổng nhấp nháy (cùng lý do `gradients` phải có seed).
+     · mục 5i bản đầu dùng `re.findall(r'"(Trộn[^"]*)"')` và **bắt trúng chính
+       DÒNG GHI CHÚ** ngay trên nó (khối chú thích trích nguyên văn câu CŨ để
+       cảnh báo) -> HỎNG OAN. Nay đọc chuỗi từ THAM SỐ của `prog()` bằng **AST**
+       (phủ cả `A if cond else B`). Bài học 47/51/53/54/73/80 **lặp lại lần thứ
+       sáu, và lần này sập ngay trong mục viết ra để chống một bẫy khác.**
+     **`bin\ffmpeg.exe` KHÔNG PHẢI ffmpeg APP CHẠY — số đo mới, quan trọng:**
+     bản trong `bin/` sau lượt phục hồi từ `dist/` là build **2023-01-12**, còn
+     `config.py:310` đặt `FFMPEG_PATH = _env("FFMPEG_PATH", "ffmpeg")` nên app
+     lấy bản trên PATH = **N-121186 (2025-09-23)**. Build 2023 **KHÔNG CÓ chỉ số
+     `Abs_Peak_count`** (`Unable to parse option value`, rc=1) nên mọi script ghi
+     cứng `bin/ffmpeg.exe` đang đo một ffmpeg KHÁC ffmpeg sản xuất — **21 file
+     `_test_*.py` đang ghi cứng nó**. Checklist phục hồi `bin/` chỉ kiểm 5
+     filter, mà **CẢ HAI build đều có đủ 8/8** nên checklist ĐẠT trong khi build
+     vẫn sai. `_do_de_giong.py` dùng `settings.FFMPEG_PATH` + có `kiem_ffmpeg()`
+     TỰ KIỂM BỘ ĐO. **Việc thay lại `bin/` chưa làm.**
+     **CHƯA ĐẠT, GHI THẲNG:** chưa ai NGHE (file thử ở
+     `_NGHE_THU_ANH_HUNG/de_giong/`, mỗi video một cặp `TACH_*` / `DE_*` cùng
+     một lượt chạy — tai anh Hùng là phán quyết cuối) · mặc định vẫn là cách CŨ,
+     **chờ anh Hùng duyệt** · thước tuyệt đối mới chạy trên **2/4** video
+     (511,8 s) · chưa có số thời gian CẢ BƯỚC tách trong lượt này (`tach.giay`
+     chỉ là `apply_model`; số cả bước lấy ở cổng 71: **0,155x GPU · 0,488x CPU**)
+     · cột `trộn` đo LIỀN MẠCH nên chỉ đọc được là *"không chậm hơn"*.
 - **"Adam NGHE LẠ": ĐO XONG — **CHỈ KÉM, KHÔNG HỎNG** (19/08/2026,
   `_do_adam_en.py` · `_kq_adam_en.txt`).** Anh Hùng nghe rồi: *"cái adam bị lỗi
   hay sao nghe cứ lạ lạ khác lắm, không như tôi nghĩ"*, và trỏ vào giọng Adam
