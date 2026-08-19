@@ -342,7 +342,7 @@ giọng, không tự dịch lại.
 | Mỹ Duyên | Nữ | `vn:Mỹ Duyên` | Nam · đọc truyện | chưa đo |
 | Kim Thanh | Nữ | `vn:Kim Thanh` | Nam · đọc truyện | chưa đo |
 | Ngọc Trân | Nữ | `vn:Ngọc Trân` | Trung · tự nhiên | chưa đo |
-| **Adam** *(NGỜ NGUỒN)* | Nam | `vn:Adam` | Tiếng Anh · tự nhiên | chưa đo |
+| **Adam** *(TIẾNG ANH)* | Nam | `vn:Adam` | **Tiếng Anh** · tự nhiên | chưa đo |
 
 Ngoài 20 giọng trên, VieNeu còn **nhân bản giọng từ file mẫu của anh** (mã
 `vnb:<đường dẫn file>`). Chất lượng bám hẳn vào mẫu: mẫu sạch đọc sai **7,7 %**
@@ -393,12 +393,64 @@ Bình) · 5 nữ Bắc (Trúc Ly, Ngọc Linh, Đoan Trang, Mai Anh, Quỳnh Anh
 Nam (Thục Đoan, Thùy Dung, Mỹ Duyên, Kim Thanh) · 2 giọng Trung Bộ (Quang
 Sơn, Ngọc Trân) · Minh Triết, Đức Trí, Ngọc Huyền, và **Adam**.
 
-**Riêng "Adam" — đọc trước khi dùng:** nay **có hiện**, kèm chữ **NGỜ NGUỒN**
-ngay trên dòng. Tên nó trùng một giọng thương mại của ElevenLabs mà bộ gốc
-không kèm mẫu hay dòng ghi công nào, nên **không kiểm được nguồn**. Trước đây
-nó bị ẩn hẳn; nay hiện cho nhất quán — app đang hiện cả OmniVoice, thứ có rào
-pháp lý **cứng hơn hẳn** (cấm thương mại rõ ràng). Cân nhắc trước khi đăng
-kênh. Muốn ẩn lại: đặt `BQ_VN_ADAM=0`.
+### Riêng "Adam" — nghi vấn đã ĐO XONG (19/08/2026)
+
+**Kết luận trước, giải thích sau: `vn:Adam` KHÔNG phải giọng Adam mà
+ElevenLabs bán. Đo ra là HAI NGƯỜI KHÁC NHAU.**
+
+Chuyện cũ: giọng này từng bị **chặn hẳn khỏi hộp chọn**, rồi sau đó hiện kèm
+chữ **NGỜ NGUỒN**. Bằng chứng để làm vậy vỏn vẹn là **cái tên** trùng một
+giọng thương mại của ElevenLabs. Anh Hùng nói thẳng *"Adam là giọng của 1
+người nào đó chứ không phải giọng mà Adam bán"* — và anh đúng, vì cùng tài
+liệu này còn một giọng tên **Ngọc Huyền** cũng trùng tên một giọng Vbee mà
+không ai chặn nó, với đúng lý do "trùng tên không phải bằng chứng".
+
+Máy có 5 key ElevenLabs nên **lấy được giọng Adam thật để so**, thay vì cãi
+nhau. Thước là **ECAPA‑TDNN** — một hệ **thứ ba**, không phải ElevenLabs cũng
+không phải VieNeu (đo giọng bằng chính máy sinh ra nó là tự chấm điểm cho
+mình). Cùng 6 câu tiếng Anh, VieNeu chạy **5 lượt** vì bộ này không cho ra kết
+quả giống hệt nhau giữa các lượt:
+
+| So cái gì với cái gì | Điểm giống nhau |
+|---|---|
+| **VieNeu Adam × ElevenLabs Adam** *(câu hỏi chính)* | **0,115 – 0,346** |
+| ElevenLabs Adam × chính nó *(cùng người — mốc trên)* | 0,814 – 0,889 |
+| VieNeu Adam × chính nó *(cùng người — mốc trên)* | 0,756 – 0,931 |
+| VieNeu Adam × ElevenLabs Brian *(khác người, cùng nam)* | 0,006 – 0,135 |
+| VieNeu Adam × ElevenLabs Sarah *(khác người, nữ)* | 0,082 – 0,204 |
+| VieNeu Adam × VieNeu "Minh Đức" *(khác người, cùng bộ)* | 0,255 – 0,362 |
+
+Đọc bảng: số cao nhất của câu hỏi (**0,346**) còn cách số thấp nhất của
+"cùng một người" (**0,756**) một **vực sâu 0,41**. Rõ hơn nữa — **hai giọng
+VieNeu khác nhau còn giống nhau (0,292) hơn là `vn:Adam` giống Adam của
+ElevenLabs (0,223)**. Hai cột "cùng người" và "khác người" ở trên là bắt buộc:
+thiếu chúng thì một con số đứng trơ không nói lên điều gì.
+
+**Vì vậy: bỏ chữ NGỜ NGUỒN, không chặn nữa.** Giữ lại một cảnh báo mà chính
+mình vừa chứng minh là không có cơ sở thì người dùng đọc riết rồi bỏ qua mọi
+cảnh báo, kể cả cảnh báo thật.
+
+**Điều VẪN CHƯA BIẾT — nói thẳng, đừng đọc phép đo quá tay:** phép đo trên chỉ
+loại được **đúng một** nghi vấn. Nó không trả lời được "vậy giọng gốc là của
+ai", vì gói VieNeu không kèm file mẫu gốc lẫn dòng ghi công nào. Nhưng đó
+**đúng bằng mức chưa biết của 19 giọng còn lại** trong cùng bộ — nên nó không
+phải lý do để đối xử riêng với mỗi giọng này. Ghi chú đó nằm trong tooltip.
+
+**Cái PHẢI nhớ khi dùng — đây mới là rủi ro thật sự còn lại:** `Adam` là
+**giọng tiếng Anh DUY NHẤT** trong 20 giọng, 19 giọng kia đều là giọng Việt.
+Chọn nhầm nó cho video tiếng Việt là **cả loạt video đọc sai**. Nên nay dòng
+của nó mang chữ **TIẾNG ANH** ngay trên combo, và nó bị **đẩy xuống cuối
+danh sách** (trước đây nó đứng **đầu** — không phải vì hay, mà vì cả 20 giọng
+chưa ai đo nhấn nhá nên danh sách rơi về xếp theo chữ cái, và "A" đứng đầu).
+
+**Chọn `vn:Adam` có ra đúng Adam không — đã kiểm:** 5 lượt gọi riêng biệt đều
+tụ về **cùng một người** (0,756 – 0,931), trong khi so với `vn:Minh Đức` chỉ
+0,255 – 0,362 và `vn:Trúc Ly` chỉ 0,131 – 0,226. Không có chuyện chọn Adam mà
+máy lặng lẽ đọc bằng giọng khác.
+
+*File tiếng để anh tự nghe (cả hai nguồn, cùng câu):*
+`_NGHE_THU_ANH_HUNG/adam/`. **Tai anh là phán quyết cuối — số chỉ để loại
+sớm.** Phép đo: `_do_adam.py`. Hạn mức ElevenLabs đã tiêu: **736 ký tự**.
 
 **Cột "nhấn nhá" của 20 giọng này đang TRỐNG, và đó là cố ý.** Chưa ai đo, mà
 bịa một con số cạnh tên giọng thì anh sẽ tin mà chọn. Đo xong thì số tự hiện
@@ -425,6 +477,46 @@ ghi *"Unknown"* → **im lặng không phải là cho phép**), chỗ trống đ
   danh sách thì chọn "Minh Đức" sẽ **nghe ra Hoài My** — đúng loại lỗi "chọn
   X ra Y" mà giọng `ov:nu_am` đã dính một lần, và app vẫn chạy bình thường
   nên không ai biết. Nay có cổng test gọi thật rồi xem nó chạy vào đâu.
+
+---
+
+## 6b. GIỌNG NÀO BỊ CHẶN, VÌ LÝ DO GÌ — RÀ LẠI CẢ APP (19/08/2026)
+
+Chuyện "Adam" lộ ra một câu hỏi lớn hơn chính nó: **app có còn chỗ nào chặn
+hay dán cảnh báo cho một giọng CHỈ VÌ cái tên không?** Đã rà hết mọi bộ giọng
+(`giong_vieneu` · `giong_bang` · `giong_chatter` · `piper_tts` ·
+`giong_ngoai` · `giong_vbee` · hộp **Thay giọng nói**). Kết quả:
+
+| Chỗ chặn | Bị chặn cái gì | Lý do CỤ THỂ | Chỉ vì trùng tên? |
+|---|---|---|---|
+| `giong_vieneu._NGO_NGUON` | *(nay RỖNG)* | — | **CÓ → ĐÃ GỠ** |
+| `piper_tts` | giọng `vivos` | dữ liệu **CC BY‑NC‑SA 4.0 = cấm thương mại**, ghi trong model card; kèm thiếu dấu thanh, sai từ 10,6 % | không |
+| `piper_tts` | giọng `25hours_single` | model card ghi **"License: Unknown"** — im lặng không phải là cho phép; đo ra 0 mốc, sai từ 8,5 % | không |
+| `giong_vbee` | model *"Ngọc Huyền"* trên HuggingFace | **tác giả TỰ KHAI** huấn luyện từ giọng Vbee rồi tự dán giấy phép — người dán không phải chủ giọng | không |
+| `giong_vbee` | Kokoro‑Vietnamese | **giấu nguồn dữ liệu** | không |
+| hộp Thay giọng nói | giọng `gemini:` | **kỹ thuật**: Gemini TTS không trả mốc từng chữ, mà đường thay tiếng dựng chữ theo mốc đó | không |
+
+Hai chỗ **cố ý KHÔNG chặn**, để đối chiếu cho rõ luật:
+
+- **OmniVoice** có rào pháp lý **cứng hơn hẳn** mọi mục trên — trọng số
+  CC‑BY‑NC, tức **cấm kiếm tiền**, đen trắng trong model card — nhưng **vẫn
+  hiện trong app**, kèm nhãn nói thẳng điều đó. Đây là **quyết định kinh doanh
+  của anh Hùng**, không phải sơ suất; việc của app là nói ra, không phải quyết
+  thay.
+- **Giọng `Ngọc Huyền` trong bộ VieNeu** (khác hẳn model cùng tên trên
+  HuggingFace ở bảng trên) trùng tên một giọng Vbee, và **không bị chặn** —
+  đúng luật dưới đây.
+
+> **LUẬT CHUNG, ÁP CHO MỌI BỘ GIỌNG TỪ NAY:**
+> **trùng tên = CHƯA BIẾT, không phải bằng chứng.**
+> Muốn chặn một giọng thì phải có lý do **cụ thể hơn cái tên** — tác giả tự
+> khai nguồn dữ liệu, hoặc giấy phép ghi rõ cấm thương mại. Cái tên một mình
+> thì không, vì mọi giọng trong cùng bộ đều ở mức "chưa biết" như nhau, và
+> chặn một cái trong khi thả 19 cái còn lại là tự mâu thuẫn chứ không phải
+> thận trọng.
+
+Cơ chế chặn (`_NGO_NGUON`) **vẫn giữ nguyên trong mã**, chỉ là danh sách rỗng:
+mai có giọng nào lộ ra lý do cụ thể thì thêm một dòng là chặn được.
 
 ---
 

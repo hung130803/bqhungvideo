@@ -54,9 +54,20 @@ truyện / tự nhiên. Ngoài ra còn **nhân bản giọng từ file mẫu c�
 - **Máy chưa tải model thì vẫn thấy chúng**, dòng mở đầu bằng **"CHƯA TẢI
   (250 MB)"**. Chọn lúc chưa tải thì app đọc bằng giọng thường và ghi lại là
   nó đã lùi — không im lặng.
-- Giọng tên **"Adam"** có ghi kèm **NGỜ NGUỒN**: tên nó trùng một giọng bán
-  tiền của hãng khác mà không kiểm được nguồn gốc. Cân nhắc trước khi đăng
-  kênh.
+- Giọng tên **"Adam"** nay ghi kèm **TIẾNG ANH** (trước ghi *NGỜ NGUỒN*, đã
+  bỏ). Hai chuyện, đừng lẫn:
+  - **Nghi ngờ về nguồn: ĐÃ ĐO XONG, và đã loại.** Tên nó trùng một giọng bán
+    tiền của ElevenLabs, nên đã lấy giọng đó về so bằng máy đo giọng
+    (ECAPA‑TDNN, một hệ thứ ba). Kết quả: **hai người khác nhau** — độ giống
+    **0,115–0,346**, trong khi cùng-một-người đo ra **0,756–0,931**. Đến hai
+    giọng VieNeu khác nhau còn giống nhau hơn thế. Nên **không còn cảnh báo
+    nguồn nữa**; giữ lại một cảnh báo đã chứng minh là vô căn cứ chỉ làm anh
+    quen bỏ qua mọi cảnh báo.
+  - **Cái phải nhớ khi dùng:** đây là **giọng tiếng Anh DUY NHẤT** trong 20
+    giọng, 19 giọng kia đều là giọng Việt. Chọn nhầm cho video tiếng Việt là
+    hỏng cả loạt. Vì thế nó đã bị **đẩy xuống cuối danh sách** (trước đây nó
+    đứng đầu, chỉ vì xếp theo chữ cái mà "A" đứng trước).
+  - File tiếng để anh **tự nghe** cả hai nguồn: `_NGHE_THU_ANH_HUNG\adam\`.
 - **Chưa dùng để kiếm tiền vô tư được:** bảng giọng của bộ này **không khai
   giấy phép**. Chi tiết ở `docs/DANH_SACH_GIONG.md` mục 6.
 
