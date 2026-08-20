@@ -25,11 +25,21 @@ ra là `Abs Peak count:` (dấu cách). Và mỗi dòng `astats` mở đầu b�
 3 lượt / cấu hình ra **trải 0,00** ở cả I · TP · mẫu chạm trần (đo 20/08/2026).
 Nhưng QUA NHIỀU LƯỢT CHẠY KHÁC NHAU, cột `TP` của mấy cấu hình có kéo ô lệch
 tới **0,44 dB** (nền +6 đo được −4,23 / −4,46 / −4,67) trong khi `I` chỉ nhích
-0,01-0,02 LU — dạng lệch của **bộ nén AAC tự chọn số luồng theo tải máy**, nhắm
-vào ĐỈNH chứ không vào độ to. Cấu hình **MẶC ĐỊNH thì đứng yên −4,91 ở MỌI
-lượt** và khớp bản mốc 0,0000, nên bất biến số 1 không bị ảnh hưởng. Đừng đọc
-0,2-0,4 dB TP giữa hai lượt là "hồi quy" (bài học *"đo A/B phải đan xen"*):
-biên tới trần ở đây là ~3,7 dB, gấp 8 lần mức lệch đó.
+0,01-0,02 LU — nhắm vào ĐỈNH chứ không vào độ to, tức dạng lệch của **bộ nén
+AAC tự chọn số luồng theo TẢI MÁY**.
+
+**TẢI ĐÓ CÓ THẬT VÀ ĐÃ TRUY RA:** lúc đo, máy còn một phiên KHÁC đang chạy cổng
+test trên chính repo này (đếm được 16 hộp cát `bq_*` mới trong `%TEMP%` của
+những cổng tôi KHÔNG hề chạy — `bq_kk87_*`, `bq_c81_*`, `bq_eltg_*` — và một
+commit `_do_nhan_nha_bang.py` chen vào giữa dãy commit của lượt này). Đây đúng
+bài học đã ghi *"đo A/B phải đan xen — máy luôn có việc chạy nền, đo liền mạch
+ra kết luận sai 2 lần"*.
+
+Vì vậy: cấu hình **MẶC ĐỊNH đứng yên −4,91 ở MỌI lượt** và khớp bản mốc
+**0,0000** — bất biến số 1 KHÔNG bị ảnh hưởng, vì nó so mốc-với-nay TRONG CÙNG
+một tiến trình, cùng một tải. Còn so TP giữa hai lượt chạy khác nhau thì phải
+chừa 0,5 dB; đừng đọc 0,2-0,4 dB là "hồi quy". Biên tới trần ở đây là ~3,7 dB,
+gấp 8 lần mức lệch đó.
 
 Chạy: `.venv\\Scripts\\python _do_muc_am.py [--moc v2.41.1]`
 """
