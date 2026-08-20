@@ -221,6 +221,19 @@ CONG = [
     # `synth_demo` nên 0 ký tự) và đứng cạnh cổng 65 vì cùng canh nút nghe thử.
     # Số 85 chứ không phải 81: 81-84 vừa bị luồng khác lấy trong cùng ngày.
     ("85 nghe thử đúng tiếng", "_test_nghe_thu_nn.py",    67),
+    # Cổng 87 — giọng Kokoro. Đứng cạnh nhóm giọng vì cùng canh cửa
+    # `dubbing._synth_all` / `_synth_all_words`. Số **87** lấy bằng cách đọc
+    # chính `CONG` này (max đang là 86), KHÔNG đếm theo trí nhớ: bảng này đã có
+    # **52 và 77 trùng số**, mà trùng số thì hai cổng ghi đè `_kqNN.txt` của
+    # nhau (bài học 70 vs 69, 85 vs 81).
+    # Nó rẻ: KHÔNG gọi mạng, KHÔNG tốn lượt Groq/ElevenLabs. Có đọc THẬT nhưng
+    # chỉ **4/28 giọng** (mỗi giọng là một tiến trình rời ~9 giây; 28 giọng ≈
+    # 4,4 phút thì quá đắt cho một lượt 42 cổng) — bảng đủ 28 giọng nằm ở
+    # `_do_28_giong_kk.py`, đo được **28/28 KÊU, 0 CÂM**. Máy chưa tải Kokoro
+    # thì CA 9 tự **BỎ QUA** (không tự cho ĐẠT — đó là "phép đo phát chứng
+    # nhận"; cũng không báo HỎNG — đỏ oan thì người ta bỏ qua cổng).
+    # Thử phá `_pha_kokoro.py`: **BẮT 8 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+    ("87 giọng Kokoro",     "_test_kokoro.py",           44),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
