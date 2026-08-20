@@ -394,6 +394,26 @@ def muc4() -> None:
        f"{b['chong_lan_ms_max']} ms")
     ok(abs(b["do_dai_ra"] - 6.0 * float(c["k_can"])) < 0.01,
        "độ dài đầu ra = tổng × hệ số", f"{b['do_dai_ra']}")
+    # MỐC ĐẶT CÂU PHẢI GIÃN THEO `k` — mục này do THỬ PHÁ lôi ra (phép 5 của
+    # `_pha_khop_video.py` LỌT ở lượt đầu). Gỡ phép nhân `k` khỏi mốc ĐẦU câu
+    # (`a = float(c["start"]) * k` -> `a = float(c["start"])`) thì `khung =
+    # b − a` PHỒNG TO HƠN cả `k` (vì `b` vẫn giãn), câu nào cũng lọt khung nên
+    # `tempo_max` vẫn 1,000 và mọi mục trên vẫn XANH — trong khi tiếng bị đặt
+    # ở mốc CHƯA GIÃN của một video ĐÃ GIÃN, tức **tiếng trôi khỏi hình mỗi
+    # lúc một xa**. Đúng lỗi v1.87. Vì vậy phải chấm THẲNG chỗ đặt mảnh.
+    lech_moc = [abs(off - float(cau[i]["start"]) * float(c["k_can"]))
+                for i, (off, _p) in enumerate(b["manh"])]
+    ok(lech_moc and max(lech_moc) < 0.01,
+       "mốc ĐẶT từng câu giãn ĐÚNG hệ số (tiếng không trôi khỏi hình)",
+       f"lệch max {max(lech_moc) * 1000:.1f} ms / {len(lech_moc)} câu"
+       if lech_moc else "KHÔNG có mảnh nào")
+    # ĐỐI CHỨNG: arm KHÔNG chỉnh hình thì mốc phải trùng mốc GỐC. Thiếu mục
+    # này thì phép so trên có thể đúng vì một lý do khác.
+    lech_1 = [abs(off - float(cau[i]["start"]))
+              for i, (off, _p) in enumerate(a["manh"])]
+    ok(lech_1 and max(lech_1) < 0.01,
+       "ĐỐI CHỨNG k=1,0: mốc đặt câu trùng mốc GỐC",
+       f"lệch max {max(lech_1) * 1000:.1f} ms")
 
     # --- ffmpeg THẬT: itsscale giãn đúng, KHÔNG mã hoá lại khung nào ---
     v = hop() / "v.mp4"

@@ -1,0 +1,460 @@
+# -*- coding: utf-8 -*-
+"""ĐO GHÉP CẶP: "ép tiếng cho vừa video" (CŨ) so với "chỉnh video theo giọng"
+(MỚI) — trên video THẬT của anh Hùng (20/08/2026).
+
+Anh Hùng: *"cái phần âm thanh lồng tiếng nhanh chậm để khớp khung hình à nó nói
+cực kỳ chậm chỗ thì nhanh tôi muốn nó đều hoặc hơi nhanh tí ... điều chỉnh là
+điều chỉnh VIDEO sao cho khớp, KHÔNG PHẢI lồng tiếng mới tạo"*.
+
+**PHÉP SO PHẢI GHÉP CẶP, ĐỪNG ĐO RỜI HAI LƯỢT.** LLM không tiền định: CLAUDE.md
+đã ghi cùng mã cùng video hai lượt lệch **1,81 lần** (82,35 s vs 45,60 s), và
+commit `4d738e8` từng tố giác đúng chuyện đó (20,05 vs 30,65 s trong khi bản vá
+nằm im). Nên script này chạy dây chuyền **MỘT LƯỢT cho mỗi video** tới hết bước
+4c rồi TÁCH ra hai arm ở **đúng chỗ bản vá tác động** (tham số `he_so_hinh` của
+`khop_thoi_gian`): hai arm dùng CÙNG bản tách / chép lời / dịch / rút gọn / FILE
+GIỌNG. Mọi nhiễu LLM + nhiễu edge-tts bị triệt tiêu **theo cấu tạo**.
+
+**THƯỚC "TRẢI TỐC ĐỘ ĐỌC" LÀ THƯỚC QUAN TRỌNG NHẤT — và nó là thước MỚI.**
+`tempo_max` là số ĐỈNH: nó nói "câu tệ nhất bị ép bao nhiêu" mà **không nói gì
+về ĐỘ ĐỀU**. Nếu 43 câu bị ép 1,0 · 1,4 · 1,0 · 1,3 · 1,0 … thì `tempo_max`
+= 1,4 nhưng cái tai nghe ra là *"chỗ chậm chỗ nhanh"* — đó là ĐỘ TRẢI, không
+phải đỉnh. Thước ở đây: **ký tự/giây của TỪNG CÂU** đo trên chính file đã khớp
+(`moc_tieng` = mốc nói thật, đo bằng `silencedetect`), rồi lấy **độ lệch chuẩn**
+và **hệ số biến thiên** giữa các câu. Kèm SÀN ĐỐI CHỨNG: cùng phép đo trên file
+TTS THÔ (chưa khớp) — đó là phần trải VỐN CÓ của máy đọc, hai arm dùng chung,
+nên phần vượt trên sàn đó mới là phần do co giãn tiếng sinh ra.
+
+**MÉO PHỔ dùng ĐÚNG thước của `_do_rubberband.py`** (log-mel, vòng tròn `k` rồi
+`1/k`) để số so được với mốc CLAUDE.md đã ghi: `atempo` **5,357 dB ở 1,20** ·
+6,765 ở 1,50. Không viết thước thứ hai — hai thước là hai bảng số không so được.
+
+Nguồn: `C:\\Users\\Admin\\Downloads\\longtieng\\` — **CHỈ ĐỌC**, chỉ cắt ra bản
+sao trong thư mục làm việc của repo.
+
+    .venv\\Scripts\\python -u _do_khop_video.py [số video] [số giây/video]
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import statistics
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO))
+os.environ.setdefault("BQ_FFMPEG_SLOTS", "1")
+for _f in (sys.stdout, sys.stderr):
+    try:
+        _f.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
+import _do_kho_tg as kho                              # noqa: E402
+import _do_rubberband as rb                           # noqa: E402
+from config import settings                           # noqa: E402
+from app.core import thay_giong as tg                 # noqa: E402
+
+NGUON_DIR = Path(r"C:\Users\Admin\Downloads\longtieng")
+LAM = REPO / "_do_kv_tam"
+NGHE = REPO / "_NGHE_THU_ANH_HUNG" / "khop_video"
+KQ = REPO / "_kq_khop_video.json"
+DICH_SANG = "vi"          # nguồn Douyin tiếng Trung -> tiếng Việt (ca thật)
+_NW = 0x0800_0000 if os.name == "nt" else 0
+
+
+# ══════════════════════════ hạ tầng đo ══════════════════════════
+def _probe(path: Path, ent: str, dong: str = "v:0") -> str:
+    a = [settings.FFPROBE_PATH, "-v", "error"]
+    if dong:
+        a += ["-select_streams", dong]
+    a += ["-show_entries", ent, "-of", "csv=p=0", str(path)]
+    r = subprocess.run(a, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", creationflags=_NW, timeout=600)
+    return (r.stdout or "").strip().rstrip(",")
+
+
+def _f(path: Path, ent: str, dong: str = "v:0") -> float:
+    try:
+        return float(_probe(path, ent, dong) or 0)
+    except ValueError:
+        return 0.0
+
+
+def _lech(xs: list[float]) -> tuple[float, float, float]:
+    """(trung bình, độ lệch chuẩn, hệ số biến thiên %)."""
+    if len(xs) < 2:
+        return (xs[0] if xs else 0.0), 0.0, 0.0
+    tb = statistics.fmean(xs)
+    sd = statistics.pstdev(xs)
+    return tb, sd, (100.0 * sd / tb if tb else 0.0)
+
+
+def toc_do_doc(texts: list[str], moc: list, cau: list[dict]) -> list[float]:
+    """KÝ TỰ/GIÂY của TỪNG CÂU, đo trên mốc NÓI THẬT của file đã khớp.
+
+    `moc` = `khop_thoi_gian()["moc_tieng"]` = [(i, giây_BẮT_ĐẦU_NÓI,
+    giây_HẾT_NÓI)] — đo bằng `silencedetect` trên chính file vừa ghi, nên nó
+    KHÔNG tính phần im lặng hai đầu vào mẫu số. Dùng `probe_duration` ở đây là
+    đo cả lề im (bẫy v2.27.0 đã ghi).
+    """
+    ra = []
+    for i, a, b in moc:
+        if i >= len(texts):
+            continue
+        n = len(str(texts[i]).strip())
+        d = float(b) - float(a)
+        if n >= 8 and d > 0.25:      # câu quá ngắn -> tỉ số nhiễu, bỏ
+            ra.append(n / d)
+    return ra
+
+
+def meo_pho(files: list[str], tempos: list[float], lam: Path) -> dict:
+    """Méo phổ do CO GIÃN TIẾNG, thước log-mel của `_do_rubberband.py`.
+
+    Đo bằng **vòng tròn `k` rồi `1/k`** trên CHÍNH file giọng của lượt này: đó
+    là cách duy nhất so được hai file CÙNG ĐỘ DÀI (co giãn xong thì độ dài đổi,
+    log-mel không căn được). Số ra vì thế **so được với mốc CLAUDE.md**
+    (`atempo` 5,357 dB ở 1,20).
+
+    Câu nào tempo = 1,0 thì app KHÔNG áp filter nào -> méo **0,000 theo cấu
+    tạo**; vẫn đo để bảng có số thật chứ không phải lời khai.
+    """
+    lam.mkdir(parents=True, exist_ok=True)
+    ds, so_ep = [], 0
+    for i, (p, k) in enumerate(zip(files, tempos)):
+        if not p or not Path(p).exists():
+            continue
+        if abs(k - 1.0) <= 1e-3:
+            ds.append(0.0)
+            continue
+        so_ep += 1
+        a = lam / f"m{i:04d}_a.wav"
+        b = lam / f"m{i:04d}_b.wav"
+        try:
+            rb.ff(["-i", str(p), "-af", tg._co_gian_chuoi(k), "-ac", "1",
+                   "-ar", "16000", "-c:a", "pcm_s16le", str(a)])
+            rb.ff(["-i", str(a), "-af", tg._co_gian_chuoi(1.0 / k), "-ac", "1",
+                   "-ar", "16000", "-c:a", "pcm_s16le", str(b)])
+            v = rb.lech_db(Path(p), b)
+            if v >= 0:
+                ds.append(v)
+        except Exception as e:                          # noqa: BLE001
+            print(f"    (méo phổ câu #{i} bỏ qua: {type(e).__name__})")
+    tb, sd, _ = _lech(ds)
+    return {"meo_db_tb": round(tb, 3),
+            "meo_db_max": round(max(ds), 3) if ds else 0.0,
+            "so_cau_bi_ep": so_ep, "so_cau_do": len(ds)}
+
+
+# ══════════════════════════ một arm ══════════════════════════
+def mot_arm(ten: str, k: dict, dd: dict, rg: dict, dn: dict, hs: float,
+            lam: Path, tach: dict, nhan: str = "") -> dict:
+    """Chạy từ bước 5 tới file video, với `he_so_hinh = hs`."""
+    lam.mkdir(parents=True, exist_ok=True)
+    cau, tong = k["cau"], k["tong"]
+    t0 = time.time()
+    kh = tg.khop_thoi_gian(cau, dn["files"], dn["ok"], tong, lam / "khop",
+                           moc_tu=dn.get("moc_tu"), he_so_hinh=hs)
+    tong_ra = tong * hs
+
+    # LỚP NỀN phải giãn theo hình — y đường thật (`thay_giong_video`)
+    nhac = tach["nhac"]
+    if hs > 1.0 + 1e-6:
+        nh = lam / "nhac_gian.wav"
+        tg._ffmpeg(["-i", str(nhac), "-af",
+                    f"{tg._co_gian_chuoi(1.0 / hs)},aresample={tg.SR_TACH},"
+                    f"apad,atrim=0:{tong_ra:.3f},asetpts=N/SR/TB",
+                    "-ac", "2", "-ar", str(tg.SR_TACH), "-c:a", "pcm_s16le",
+                    str(nh)], "giãn lớp nhạc theo hệ số hình")
+        nhac = str(nh)
+
+    manh = list(kh["manh"])
+    bu = {}
+    try:
+        bu = tg.bu_giong_goc(tach.get("giong") or "", kh["manh"], tong_ra,
+                             lam / "bu_goc", he_so_hinh=hs)
+        manh += bu["manh"]
+    except Exception as e:                              # noqa: BLE001
+        bu = {"ok": False, "loi": f"{type(e).__name__}: {e}"[:120]}
+
+    au = tg.tron_thay_giong(nhac, manh, tong_ra, lam / "tieng.wav",
+                            goc_wav=k["wav"])
+    dong_chu = tg.dong_chu_theo_giong(kh.get("moc_tieng") or [], rg["texts"],
+                                      moc_tu=kh.get("moc_tu"))
+    ra = lam / f"{nhan or ('MOI' if hs > 1.0 + 1e-6 else 'CU')}_{ten}.mp4"
+    tg.thay_audio_video(k["video"], au["ra"], ra, che_chu=False,
+                        dong_chu=dong_chu, he_so_hinh=hs)
+    kiem = tg.kiem_video_ra(ra, tong_ra)
+
+    # ---------- SỐ ĐO ----------
+    tem = list(kh["tempo_cau"])
+    td_khop = toc_do_doc(rg["texts"], kh.get("moc_tieng") or [], cau)
+    tb_k, sd_k, cv_k = _lech(td_khop)
+    mp = meo_pho(dn["files"], tem, lam / "meo")
+    do_to = tg.do_do_to(au["ra"])
+
+    kv = int(_probe(ra, "stream=nb_read_packets").split()[0] or 0) \
+        if False else tg.do_khung_hinh(ra)
+    kn = tg.do_khung_hinh(k["video"])
+    d_hinh = _f(ra, "stream=duration", "v:0") or _f(ra, "format=duration", "")
+    d_tieng = _f(ra, "stream=duration", "a:0")
+
+    return {
+        "he_so_hinh": round(hs, 4),
+        "giay_chay": round(time.time() - t0, 1),
+        "tempo_max": kh["tempo_max"],
+        "tempo_tb": kh["tempo_tb"],
+        "tempo_trai": kh["tempo_trai"],
+        "so_cau": kh["so_cau"],
+        "so_cau_ep": kh["so_cau_ep"],
+        "so_qua_120": sum(1 for t in tem if t > 1.20),
+        "so_qua_130": sum(1 for t in tem if t > 1.30),
+        "so_qua_140": sum(1 for t in tem if t > 1.40),
+        "so_cau_cat": kh.get("so_cau_cat", 0),
+        "kytu_giay_tb": round(tb_k, 2),
+        "kytu_giay_sd": round(sd_k, 3),
+        "kytu_giay_cv": round(cv_k, 2),
+        "kytu_giay_n": len(td_khop),
+        **mp,
+        "chong_lan_ms_max": kh["chong_lan_ms_max"],
+        "so_cau_chong_lan": kh["so_cau_chong_lan"],
+        "lech_dau_ms_tb": kh["lech_dau_ms_tb"],
+        "im_duoi_chu_ms_tb": kh["im_duoi_chu_ms_tb"],
+        "im_duoi_chu_giay_tong": kh["im_duoi_chu_giay_tong"],
+        "so_cau_im_duoi_1s": kh["so_cau_im_duoi_1s"],
+        "so_dong_chu": len(dong_chu),
+        "khung_vao": kn, "khung_ra": kv,
+        "do_dai_hinh": round(d_hinh, 3),
+        "do_dai_tieng": round(d_tieng, 3),
+        "lech_hinh_tieng_ms": round(abs(d_hinh - d_tieng) * 1000.0, 1),
+        "do_dai_dich": round(tong_ra, 3),
+        "lufs_I": round(do_to.get("I", 0.0), 2),
+        "lufs_TP": round(do_to.get("TP", 0.0), 2),
+        "kiem_video_ra": kiem,
+        "bu_goc_giay": bu.get("giay_bu"),
+        "ra": str(ra),
+    }
+
+
+def mot_video(ten: str, giay: float) -> dict:
+    print(f"\n{'#' * 72}\n##### {ten} #####")
+    k = kho.chuan_bi(ten)
+    lam = LAM / ten
+    if lam.exists():
+        shutil.rmtree(lam, ignore_errors=True)
+    lam.mkdir(parents=True, exist_ok=True)
+
+    # --- bước 1: TÁCH (đắt, tiền định) — cache theo video ---
+    tach_dir = kho.LAM / ten / "tach_kv"
+    nhac, giong = tach_dir / "nhac.wav", tach_dir / "giong.wav"
+    if not (nhac.exists() and giong.exists()):
+        print("  tách giọng bằng Demucs (lần đầu, sẽ cache)...")
+        tach_dir.mkdir(parents=True, exist_ok=True)
+        t = tg.tach_giong(k["wav"], tach_dir / "raw", cach="demucs")
+        shutil.copy2(t["nhac"], nhac)
+        shutil.copy2(t["giong"], giong)
+    tach = {"nhac": str(nhac), "giong": str(giong)}
+
+    goc_ma = (k["chep"].get("language") or "")[:2].lower()
+    print(f"  {k['tong']:.2f}s · {len(k['cau'])} câu · {goc_ma} -> {DICH_SANG}")
+
+    # ===== PHẦN DÙNG CHUNG — chạy ĐÚNG MỘT LƯỢT =====
+    t0 = time.time()
+    dd = tg.dich_hau_kiem(k["cau"], DICH_SANG, goc_ma)
+    tts = tg.doc_ban_dich(dd["ban_dich"], lam / "tts", "", DICH_SANG)
+    rg = tg.rut_gon_vua_khung(k["cau"], dd["ban_dich"], tts, k["tong"],
+                              lam / "rutgon", DICH_SANG, tts["voice"])
+    dn = tg.doc_nhanh_vua_khung(k["cau"], rg["texts"], rg["files"], rg["ok"],
+                                k["tong"], lam / "docnhanh", DICH_SANG,
+                                tts["voice"], moc_tu=rg.get("moc_tu"))
+    print(f"  dùng chung xong ({time.time() - t0:.1f}s): giọng {tts['voice']}"
+          f" · rút gọn {rg['so_sua']} câu · đọc nhanh lại {dn['so_doc_lai']}"
+          f" câu (rate max +{dn['rate_max']}%)")
+
+    # SÀN ĐỐI CHỨNG: trải tốc độ đọc VỐN CÓ của máy đọc, trên file TTS THÔ.
+    # Hai arm dùng CHUNG bộ file này nên phần trải vượt trên sàn mới là phần
+    # do co giãn tiếng sinh ra. Không có sàn thì không đọc được cột trải.
+    tho = []
+    for i, p in enumerate(dn["files"]):
+        if not p or not Path(p).exists() or i >= len(rg["texts"]):
+            continue
+        le_d, le_c, _ = tg.do_le_im(p, nguong_db=tg.NGUONG_IM_MOC_DB)
+        d = tg.probe_duration(p) - le_d - le_c
+        n = len(str(rg["texts"][i]).strip())
+        if n >= 8 and d > 0.25:
+            tho.append(n / d)
+    tb_t, sd_t, cv_t = _lech(tho)
+    print(f"  SÀN (TTS thô, chưa khớp): {tb_t:.2f} ký tự/giây · "
+          f"SD {sd_t:.3f} · CV {cv_t:.2f}%  ({len(tho)} câu)")
+
+    # ===== TÁCH HAI ARM ở ĐÚNG chỗ bản vá tác động =====
+    _c = tg.he_so_hinh_can(k["cau"], dn["files"], dn["ok"], k["tong"])
+    fps = tg.do_fps(k["video"])
+    tran = tg.tran_hinh_theo_fps(fps)
+    hs = max(1.0, min(float(_c["k_can"]), tran))
+    print(f"  hệ số hình: cần {_c['k_can']} · fps nguồn {fps:.3f} · "
+          f"trần {tran:.4f} -> DÙNG {hs:.4f}"
+          + ("  [CHẠM TRẦN -> phần dư vẫn phải ép tiếng]"
+             if float(_c["k_can"]) > tran + 1e-6 else ""))
+
+    cu = mot_arm(ten, k, dd, rg, dn, 1.0, lam / "arm_cu", tach, "CU")
+    moi = mot_arm(ten, k, dd, rg, dn, hs, lam / "arm_moi", tach, "MOI")
+
+    # ===== ARM THỨ BA — **BỎ BƯỚC 4C** khi đã chỉnh hình =====
+    # LÝ DO CÓ ARM NÀY (đo lt1 mới lôi ra, không phải ý tưởng suy đoán): trải
+    # tốc độ đọc của arm CŨ (CV 20,45%) và arm MỚI (20,49%) đo ra **BẰNG SÀN**
+    # (TTS thô 20,48%) -> phần "chỗ chậm chỗ nhanh" **KHÔNG do `atempo`**, nó
+    # đã nằm sẵn trong bộ file TTS. Nguồn của nó là bước 4c
+    # `doc_nhanh_vua_khung`: nó đọc LẠI 22/35 câu với `rate` KHÁC NHAU (tới
+    # **+43%**), mỗi câu một tốc độ. Arm MỚI không chữa được vì
+    # `he_so_hinh_can` tính SAU 4c, tức nó chỉ đi khớp hình với một bộ tiếng
+    # ĐÃ nhấp nhô.
+    # Arm này khớp hình với bộ file TRƯỚC 4c (`rg["files"]` = tốc độ TỰ NHIÊN
+    # của máy đọc). Nếu trải TỤT thật thì đó mới là bản chữa đúng bệnh anh
+    # Hùng nghe ra; nếu không thì giả thuyết SAI và phải nói ra.
+    dn3 = {"files": rg["files"], "ok": rg["ok"], "moc_tu": rg.get("moc_tu")}
+    _c3 = tg.he_so_hinh_can(k["cau"], rg["files"], rg["ok"], k["tong"])
+    hs3 = max(1.0, min(float(_c3["k_can"]), tran))
+    print(f"  arm 3 (bỏ 4c): hệ số cần {_c3['k_can']} · trần {tran:.4f} -> "
+          f"DÙNG {hs3:.4f}"
+          + ("  [CHẠM TRẦN -> phần dư vẫn phải ép tiếng]"
+             if float(_c3["k_can"]) > tran + 1e-6 else ""))
+    moi3 = mot_arm(ten, k, dd, rg, dn3, hs3, lam / "arm_moi3", tach, "MOI3")
+
+    # ---- file NGHE THỬ (cùng một lượt chạy, cùng -14 LUFS) ----
+    ra = NGHE / ten
+    ra.mkdir(parents=True, exist_ok=True)
+    for arm in (cu, moi, moi3):
+        p = Path(arm["ra"])
+        if p.exists():
+            shutil.copy2(p, ra / p.name)
+            arm["nghe_thu"] = str(ra / p.name)
+
+    return {"ten": ten, "do_dai": round(k["tong"], 2),
+            "moi3": moi3,
+            "k_can_bo_4c": _c3["k_can"], "k_dung_bo_4c": round(hs3, 4),
+            "cham_tran_bo_4c": float(_c3["k_can"]) > tran + 1e-6,
+            "so_cau_doc_nhanh": dn.get("so_doc_lai"),
+            "rate_max_4c": dn.get("rate_max"),
+            "so_cau": len(k["cau"]), "ngon_ngu": goc_ma,
+            "fps_nguon": round(fps, 3), "tran_fps": round(tran, 4),
+            "k_can": _c["k_can"], "k_dung": round(hs, 4),
+            "cham_tran": float(_c["k_can"]) > tran + 1e-6,
+            "san_kytu_giay_tb": round(tb_t, 2),
+            "san_kytu_giay_sd": round(sd_t, 3),
+            "san_kytu_giay_cv": round(cv_t, 2),
+            "giong": tts["voice"], "cu": cu, "moi": moi}
+
+
+# ══════════════════════════ bảng ══════════════════════════
+_HANG = [
+    ("`tempo_max` (hệ số ép cao nhất)", "tempo_max", "{:.3f}"),
+    ("số câu phải ép quá 1,30", "so_qua_130", "{:d}"),
+    ("số câu phải ép quá 1,20", "so_qua_120", "{:d}"),
+    ("TRẢI hệ số ép (max − min)", "tempo_trai", "{:.3f}"),
+    ("TỐC ĐỘ ĐỌC: ký tự/giây TB", "kytu_giay_tb", "{:.2f}"),
+    ("TỐC ĐỘ ĐỌC: độ lệch chuẩn", "kytu_giay_sd", "{:.3f}"),
+    ("TỐC ĐỘ ĐỌC: hệ số biến thiên %", "kytu_giay_cv", "{:.2f}"),
+    ("méo phổ do co giãn tiếng (dB TB)", "meo_db_tb", "{:.3f}"),
+    ("méo phổ CAO NHẤT (dB)", "meo_db_max", "{:.3f}"),
+    ("chồng lấn max (ms)", "chong_lan_ms_max", "{:.1f}"),
+    ("số câu chồng lấn", "so_cau_chong_lan", "{:d}"),
+    ("lệch chữ so tiếng: chữ chạy khi hết tiếng (giây)",
+     "im_duoi_chu_giay_tong", "{:.2f}"),
+    ("lệch mốc đầu câu TB (ms)", "lech_dau_ms_tb", "{:.1f}"),
+    ("số câu bị CẮT đuôi", "so_cau_cat", "{:d}"),
+    ("hệ số làm chậm video", "he_so_hinh", "{:.3f}"),
+    ("số khung VÀO", "khung_vao", "{:d}"),
+    ("số khung RA", "khung_ra", "{:d}"),
+    ("độ dài HÌNH (s)", "do_dai_hinh", "{:.3f}"),
+    ("độ dài TIẾNG (s)", "do_dai_tieng", "{:.3f}"),
+    ("lệch hình vs tiếng (ms)", "lech_hinh_tieng_ms", "{:.1f}"),
+    ("độ to I (LUFS)", "lufs_I", "{:.2f}"),
+    ("đỉnh thật TP (dBTP)", "lufs_TP", "{:.2f}"),
+    ("giây chạy (bước 5 -> file)", "giay_chay", "{:.1f}"),
+]
+
+
+def in_bang(r: dict) -> None:
+    cu, moi, moi3 = r["cu"], r["moi"], r.get("moi3") or {}
+    print(f"\n===== BẢNG GHÉP CẶP · {r['ten']} · {r['do_dai']}s · "
+          f"{r['so_cau']} câu · {r['ngon_ngu']} -> {DICH_SANG} =====")
+    print(f"| {'chỉ số':<48} | {'arm CŨ (ép tiếng)':>18} | "
+          f"{'arm MỚI (khớp video)':>20} | {'MỚI-3 (bỏ 4c)':>19} |")
+    print(f"|{'-' * 50}|{'-' * 20}|{'-' * 22}|{'-' * 21}|")
+    for nhan, khoa, dang in _HANG:
+        vs = []
+        for d in (cu, moi, moi3):
+            v = d.get(khoa)
+            vs.append(dang.format(v) if v is not None else "?")
+        print(f"| {nhan:<48} | {vs[0]:>18} | {vs[1]:>20} | {vs[2]:>19} |")
+    print(f"\n  SÀN ĐỐI CHỨNG (TTS thô SAU 4c — arm CŨ và MỚI dùng chung): "
+          f"{r['san_kytu_giay_tb']:.2f} ký tự/giây · "
+          f"SD {r['san_kytu_giay_sd']:.3f} · CV {r['san_kytu_giay_cv']:.2f}%")
+    print(f"  bước 4c đã đọc nhanh lại {r.get('so_cau_doc_nhanh')} câu, "
+          f"rate max +{r.get('rate_max_4c')}% — NGHI LÀ nguồn của TRẢI")
+    print(f"  hệ số hình: cần {r['k_can']} · trần {r['tran_fps']} -> "
+          f"dùng {r['k_dung']}"
+          + ("  [CHẠM TRẦN]" if r["cham_tran"] else ""))
+    print(f"  hệ số hình nếu BỎ 4c: cần {r.get('k_can_bo_4c')} -> "
+          f"dùng {r.get('k_dung_bo_4c')}"
+          + ("  [CHẠM TRẦN -> phần dư vẫn phải ép tiếng]"
+             if r.get("cham_tran_bo_4c") else ""))
+    for t, arm in (("CŨ  ", cu), ("MỚI ", moi), ("MỚI3", moi3)):
+        kv = arm.get("kiem_video_ra") or {}
+        print(f"  kiểm video ra ({t}): {kv}")
+
+
+def main() -> int:
+    so = int(sys.argv[1]) if len(sys.argv) > 1 else 2
+    giay = float(sys.argv[2]) if len(sys.argv) > 2 else 90.0
+    kho.GIAY = giay
+
+    if not NGUON_DIR.is_dir():
+        print(f"KHÔNG thấy thư mục nguồn: {NGUON_DIR}")
+        return 2
+    vids = sorted(p for p in NGUON_DIR.glob("*.mp4") if p.is_file())
+    if not vids:
+        print(f"Thư mục {NGUON_DIR} không có .mp4 nào")
+        return 2
+    print(f"Nguồn (CHỈ ĐỌC): {NGUON_DIR} — {len(vids)} file, lấy {so} file "
+          f"đầu, cắt {giay:g}s mỗi file")
+
+    # `BQ_KV_BO=n` BỎ QUA n file đầu — để đo lại ĐÚNG một video mà không phải
+    # chạy lại cả mẻ. Tên `lt<i>` lấy theo chỉ số TUYỆT ĐỐI trong danh sách
+    # nên khoá cache chép lời/Demucs GIỮ NGUYÊN (đổi tên là lấy bản chép lời
+    # của video KHÁC mà không một dòng báo — bẫy `_do_kho_tg.DU_PHONG`).
+    bo = int(os.environ.get("BQ_KV_BO", "0") or 0)
+    tens = []
+    for i, p in enumerate(vids):
+        if i < bo or len(tens) >= so:
+            continue
+        ten = f"lt{i + 1}"
+        kho.NGUON.append((ten, p))     # chỉ trong TIẾN TRÌNH NÀY
+        tens.append(ten)
+        print(f"  {ten} <- {p.name}")
+
+    tat = []
+    for ten in tens:
+        try:
+            r = mot_video(ten, giay)
+            tat.append(r)
+            in_bang(r)
+        except Exception as e:                          # noqa: BLE001
+            import traceback
+            print(f"\n!!! {ten} HỎNG: {type(e).__name__}: {e}")
+            traceback.print_exc()
+
+    if tat:
+        KQ.write_text(json.dumps(tat, ensure_ascii=False, indent=1),
+                      encoding="utf-8")
+        print(f"\nGhi: {KQ.name} · file nghe thử: {NGHE}")
+    return 0 if tat else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

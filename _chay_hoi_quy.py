@@ -269,8 +269,14 @@ CONG = [
     #
     # Nó RẺ: KHÔNG gọi mạng, KHÔNG tốn lượt Groq/ElevenLabs, KHÔNG nạp model.
     # Phần đắt nhất là ffmpeg thật + 2 hộp thoại offscreen (~2-3 phút).
-    # Thử phá `_pha_khop_video.py`.
-    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",   73),
+    # Thử phá `_pha_khop_video.py`: **BẮT 9 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+    # Mốc 73 -> **75**: lượt phá ĐẦU ra `BẮT 8 · LỌT 1` và cái LỌT là LỖ CỦA
+    # CỔNG — gỡ phép nhân `k` khỏi mốc ĐẦU câu (`a = c["start"] * k`) thì
+    # `khung = b − a` PHỒNG hơn cả `k` (vì `b` vẫn giãn) nên câu nào cũng lọt,
+    # `tempo_max` vẫn 1,000, cổng vẫn XANH — trong khi tiếng bị đặt ở mốc CHƯA
+    # GIÃN của một video ĐÃ GIÃN, tức tiếng TRÔI khỏi hình mỗi lúc một xa
+    # (đúng lỗi v1.87). Nay chấm THẲNG chỗ đặt mảnh + có mục ĐỐI CHỨNG k=1,0.
+    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",   75),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

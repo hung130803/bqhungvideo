@@ -108,6 +108,10 @@ _do_khop_san/
 _do_rb_tam/
 _do_rb_cache.json
 
+# San do cua `_do_khop_video.py` (do GHEP CAP arm CU vs arm MOI): wav/mp4 cua
+# ca hai arm + manh khop tung cau + lop nhac da gian. Tai sinh lai duoc.
+_do_kv_tam/
+
 # mp3/wav cua `_do_bien_the_giong.py` — de NGHE bang tai, khong commit
 _do_bt_giong/
 
