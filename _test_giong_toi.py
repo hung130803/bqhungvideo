@@ -642,5 +642,45 @@ for x in _BOQUA:
     print("  BỎ QUA: " + x)
 print("=" * 74)
 
-shutil.rmtree(T, ignore_errors=True)
+
+def _don_hop_cat() -> None:
+    """Dọn hộp cát — NHẢ HANDLE DB TRƯỚC, thử lại, và KÊU nếu không dọn được.
+
+    ═══ LỖI THẬT CỦA CHÍNH CỔNG NÀY, VÁ 20/08/2026 ═══
+    Bản đầu chỉ `shutil.rmtree(T, ignore_errors=True)`. Đo được: **25 thư mục
+    `bq_test_giong_toi_*` nằm lại NGAY TRONG REPO** sau ~11 lượt chạy (mỗi lượt
+    một cái). Thứ còn lại luôn là **đúng một file `studio.db`** — sqlite chưa
+    nhả handle lúc cổng thoát, `rmtree` chết ở file đó, và `ignore_errors=True`
+    **nuốt im lặng**. Xoá bằng tay thì được ngay, tức handle nhả sau đó.
+
+    Đúng ba bệnh mà repo này chống, gộp trong hai dòng mã: rác test đọng trên
+    máy anh Hùng (cổng 17) · phép dọn hỏng mà không nói gì (rò `_seg_*`, cổng
+    42) · `ignore_errors` che mất `PermissionError`.
+
+    Nên: (1) gọi `_reset_conn()` để nhả handle — đúng cách `db` tự làm trước khi
+    copy file; (2) THỬ LẠI vài nhịp (khuôn `_XOA_CHO` của `ffmpeg_utils`);
+    (3) không dọn được thì **IN RA**, đừng để lần sau lại phải đi đếm thư mục.
+    """
+    try:
+        from app.database import db as _db
+        for _t in (getattr(_db, "db", None), _db):
+            _r = getattr(_t, "_reset_conn", None)
+            if callable(_r):
+                _r()
+    except Exception:                                          # noqa: BLE001
+        pass
+    import gc
+    import time as _tm
+    gc.collect()
+    for _ in range(6):
+        shutil.rmtree(T, ignore_errors=True)
+        if not T.exists():
+            return
+        _tm.sleep(0.35)
+    print(f"  LƯU Ý: KHÔNG dọn được hộp cát {T} — còn "
+          f"{[p.name for p in T.rglob('*') if p.is_file()][:5]}. "
+          f"Xoá tay để repo không đọng rác.")
+
+
+_don_hop_cat()
 sys.exit(1 if _HONG else 0)
