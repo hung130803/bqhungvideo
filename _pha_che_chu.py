@@ -83,6 +83,29 @@ PHEP = [
      "    _cc_sig = \"\"\n    if che_chu:",
      "    _cc_sig = \"\"\n    if False and che_chu:",
      "hash"),
+    # ---- 2 phép của ĐOẠN CUỐI VIDEO (20/08/2026, xem CA 25) ----
+    # Cả hai neo đã kiểm `count() == 1` TRƯỚC khi viết vào đây — bài học cổng
+    # 54: neo có ở 2 chỗ thì phép phá đánh vào hàm KHÁC rồi báo cáo ngược sự
+    # thật. Đừng đổi neo mà không đếm lại.
+    #
+    # PHÉP 1 — ĐỔI ĐÚNG *THỨ TỰ*, không đổi gì khác. `insert(0, ...)` đưa phép
+    # giãn lên TRƯỚC khối che, tức dựng lại CHÍNH bản hỏng (`-itsscale` cũng là
+    # "giãn trước filter"). Độ dài file vẫn đúng `k*dur` nên mục kiểm file VẪN
+    # ĐẠT — chỉ mục đo ĐIỂM ẢNH ở đuôi mới kêu. Đó là điều phải chứng minh:
+    # cổng canh CHỖ ĐẶT phép giãn, không chỉ canh "có giãn hay không".
+    ("đưa phép giãn lên TRƯỚC khối che (dựng lại đúng bản hỏng `-itsscale`)",
+     "app/core/thay_giong.py",
+     "        chuoi.append(f\"setpts=PTS*{k:.6f}\")",
+     "        chuoi.insert(0, f\"setpts=PTS*{k:.6f}\")",
+     "cuoi"),
+    # PHÉP 2 — GIÃN HAI LẦN: trả `*its` vào lệnh của nhánh che chữ trong khi
+    # `setpts` vẫn còn. Đây là cách "dọn gọn" dễ mắc nhất (thấy nhánh trên có
+    # `*its` nên thêm cho đều), và nó ra `k*k*dur`.
+    ("trả `-itsscale` vào lệnh nhánh che chữ (giãn HAI LẦN)",
+     "app/core/thay_giong.py",
+     "    _ffmpeg([\"-i\", str(video_goc), \"-i\", str(audio_moi),",
+     "    _ffmpeg([*its, \"-i\", str(video_goc), \"-i\", str(audio_moi),",
+     "cuoi"),
 ]
 
 
@@ -114,6 +137,8 @@ def main() -> int:
         "    T.ca16_bat_bien(T._nguon_that())\n"
         "elif ca == 'hash':\n"
         "    T.ca23_co_vao_hash_chong_trung()\n"
+        "elif ca == 'cuoi':\n"
+        "    T.ca25_doan_cuoi_video()\n"
         "print('DAT', len(T.DAT), 'HONG', len(T.HONG))\n"
         "sys.exit(1 if T.HONG else 0)\n", encoding="utf-8")
     print("=== ĐỐI CHỨNG: chưa phá gì ===")

@@ -1443,6 +1443,202 @@ def ca24_hop_chu(src: Path):
          n_anh >= 6, f"{n_anh} ảnh · {SAN}\\ZOOM_*.png")
 
 
+# ════════ CA 25 — ĐOẠN CUỐI VIDEO (lỗi anh Hùng báo 20/08/2026) ═════════════
+# *"kiểm tra lại cái phần làm mờ sao cứ đến gần cuối video nó k che mờ chữ gì
+# cả"*.
+#
+# GỐC: đường THAY TIẾNG làm chậm hình để khớp giọng. Hộp che thì dò trên video
+# GỐC nên mốc của nó là mốc CHƯA GIÃN, còn `enable='between(t,a,b)'` đọc biến
+# `t` của KHUNG ĐANG CHẠY. Phép giãn nằm TRƯỚC khối che (`-itsscale` là tuỳ chọn
+# ĐẦU VÀO) thì `t` đã bị nhân `k` -> lệch dần, và **mọi khung có `t` > độ dài
+# GỐC rơi ra NGOÀI mọi mệnh đề enable = KHÔNG CHE GÌ**. Đuôi đó dài đúng
+# `(1 − 1/k)` clip: k=1,1987 -> 16,6% · k=1,25 -> 20,0%.
+#
+# BA MỆNH ĐỀ, mỗi cái chặn một kiểu hỏng KHÁC nhau:
+#  (a) ĐỐI CHỨNG PHẢI CÓ RĂNG — k=1,0 thì mọi mốc phải được che. Thiếu mục này
+#      thì mục (b) có thể ĐẠT vì bộ dò không dò ra gì (tự ĐẠT OAN).
+#  (b) ĐO ĐIỂM ẢNH TRÊN FILE ĐÃ XUẤT ở k lớn nhất, **lấy mốc theo độ dài BẢN
+#      XUẤT** — lấy theo bản GỐC là bỏ trắng đúng cái đuôi đang hỏng (bản đầu
+#      của phép đo tôi viết đã sập bẫy này).
+#  (c) BẤT BIẾN TRÊN LỆNH ffmpeg, KHÔNG PHỤ THUỘC CÁCH VÁ: cửa sổ `enable` cuối
+#      cùng phải phủ tới KHUNG CUỐI, mà mốc của khung cuối là `k*dur` khi phép
+#      giãn đứng TRƯỚC khối che và `dur` khi nó đứng SAU. Viết theo mệnh đề đó
+#      thì vá bằng `setpts` sau khối che, hay vá bằng cách nhân sẵn mốc hộp,
+#      cổng đều chấm được — không khoá cứng vào một bản vá.
+#: ĐỘ DÀI NGUỒN CỦA CA 25 — **CỐ Ý KHÔNG chia hết cho `HOP_DOAN`=8**
+#: (21 = 2x8 + 5). Vòng chia đoạn của `do_hop_chu` là nghi phạm số 1 khi đọc mã,
+#: nên ca này phải đi qua đúng cảnh "đoạn lẻ cuối" chứ không chọn 24 hay 40 cho
+#: dễ. (Nghi phạm đó đo ra là VÔ TỘI — xem CA 25c.)
+_CA25_GIAY = 21
+_CA25_K = 1.25          # trần `thay_giong.TRAN_CHINH_HINH`
+_CA25_MOC = (0.20, 0.50, 0.75, 0.85, 0.92, 0.97)
+
+
+def _ca25_phu(hop, dai: float) -> tuple:
+    """(phủ được bao nhiêu giây, thiếu ở ĐUÔI) của danh sách cửa sổ."""
+    gop: list = []
+    for a, b, *_ in sorted((float(x[0]), float(x[1]), *x[2:]) for x in hop):
+        a, b = max(0.0, a), min(dai, b)
+        if b <= a:
+            continue
+        if gop and a <= gop[-1][1] + 1e-6:
+            gop[-1][1] = max(gop[-1][1], b)
+        else:
+            gop.append([a, b])
+    het = max((b for _, b in gop), default=0.0)
+    return sum(b - a for a, b in gop), max(0.0, dai - het)
+
+
+def _ca25_tieng(giay: float, dst: Path) -> Path:
+    """WAV im lặng. `-t` đặt TRƯỚC `-i` — sai chỗ thì `anullsrc` ghi VÔ HẠN
+    (đã đầy ổ C một lần, xem bài học `-t` là tuỳ chọn ĐẦU VÀO)."""
+    ff(["-f", "lavfi", "-t", f"{giay:.3f}", "-i",
+        "anullsrc=r=44100:cl=stereo", "-c:a", "aac", "-b:a", "96k", str(dst)],
+       f"tiếng im {dst.name}")
+    return dst
+
+
+def _ca25_moc_enable(lenh: list) -> tuple:
+    """(mốc CUỐI của mọi cửa sổ enable, có `-itsscale` không, giãn SAU khối che
+    không) — đọc THẲNG từ lệnh ffmpeg sắp chạy."""
+    import re
+    fc = ""
+    for i, a in enumerate(lenh):
+        if a == "-filter_complex" and i + 1 < len(lenh):
+            fc = str(lenh[i + 1])
+    b_max = 0.0
+    for m in re.finditer(r"between\(t,([-\d.]+),([-\d.]+)\)", fc):
+        b_max = max(b_max, float(m.group(2)))
+    # "giãn SAU khối che" = `setpts` nằm SAU phép che cuối cùng trong chuỗi.
+    p_che = max(fc.rfind("overlay="), fc.rfind("drawbox="), fc.rfind("boxblur="))
+    p_gian = fc.rfind("setpts=")
+    return b_max, ("-itsscale" in lenh), (p_gian > p_che >= 0)
+
+
+def ca25_doan_cuoi_video():
+    """ĐOẠN CUỐI VIDEO phải được che — kể cả khi hình bị làm CHẬM để khớp giọng.
+    """
+    print("\nCA 25 — ĐOẠN CUỐI VIDEO vẫn phải được che (lỗi anh Hùng 20/08/2026)")
+    from app.core import thay_giong as TG                      # noqa: PLC0415
+    # BA BẪY CỦA NGUỒN TỰ SINH, đã sập 2 cái khi viết ca này (ghi để đừng lặp):
+    #  · chữ NGẮN thì mật độ nét trong dải không đủ ngưỡng — 7 dòng CJK 5 ký tự
+    #    đo ra **0,0171** (cần >= `NGUONG_HANG` 0,045) rồi cả CA 25 tự tắt;
+    #  · **DÒNG GẦN GIỐNG NHAU BỊ MẶT NẠ HẰNG XOÁ SẠCH** — `Dong chu thu 1 chay
+    #    o day` .. `thu 7 chay o day` chỉ khác MỘT chữ số và `x=(w-tw)/2` cho
+    #    bề rộng y hệt, nên >= 85% điểm ảnh chữ bật ở MỌI khung -> luật (2) của
+    #    `do_dai_chu` coi đó là WATERMARK và trừ đi, còn **0,0180**. Đó là bộ dò
+    #    làm ĐÚNG (đúng cái giữ kỉ lục che oan 0/76), lỗi ở nguồn thử. Dòng phải
+    #    khác nhau CẢ NỘI DUNG lẫn BỀ RỘNG;
+    #  · độ dài KHÔNG phải nguyên nhân — cùng 4 dòng của CA 2 thì 8/12/16/21 s
+    #    đều dò ra (đậm gấp 17,2 / 16,6 / 17,6 / 17,3 lần nền).
+    src = nguon(SAN / "cuoi_nguon.mp4", giay=_CA25_GIAY,
+                chu=["Anh ay noi rang khong the tin duoc",
+                     "Co gai buoc vao phong",
+                     "Bac si nghi ra mot cach",
+                     "Ket qua that bat ngo",
+                     "Ong chu goi dien ngay lap tuc",
+                     "Khong ai biet chuyen gi da xay ra",
+                     "Cuoi cung su that duoc phoi bay"])
+    dur = float(C.thong_tin(src)["do_dai"] or 0)
+    d = C.dai_theo_video(src)
+    if not d.co_chu:
+        kiem("CA25 nguồn tự sinh phải dò ra chữ (không dò ra thì mọi mục dưới "
+             "tự ĐẠT OAN)", False, d.ly_do)
+        return
+    # ---- (c) ĐOẠN LẺ CUỐI: nghi phạm số 1 khi ĐỌC MÃ, đo ra là VÔ TỘI ----
+    le = dur % C.HOP_DOAN
+    phu, thieu = _ca25_phu(C.hop_theo_doan(d, [(0.0, dur)]), dur)
+    kiem(f"CA25c độ dài KHÔNG chia hết cho HOP_DOAN={C.HOP_DOAN:g} (đoạn lẻ "
+         f"cuối {le:.2f}s) mà cửa sổ hộp vẫn phủ TỚI HẾT clip",
+         le > 0.5 and thieu <= 0.05,
+         f"dài {dur:.3f}s · {len(d.hop or [])} mốc nguồn · phủ {phu:.2f}s · "
+         f"thiếu ở đuôi {thieu:.3f}s")
+    # ---- (a)(b) ĐO ĐIỂM ẢNH TRÊN FILE ĐÃ XUẤT, hai hệ số ----
+    for k in (1.0, _CA25_K):
+        au = _ca25_tieng(dur * k, SAN / f"cuoi_im_{int(k*100)}.m4a")
+        p_che, p_ref = (SAN / f"cuoi_che_{int(k*100)}.mp4",
+                        SAN / f"cuoi_ref_{int(k*100)}.mp4")
+        lg: list = []
+        TG.thay_audio_video(src, au, p_che, che_chu=True, che_chu_muc=1.0,
+                            che_chu_log=lg, he_so_hinh=k)
+        # ĐỐI CHỨNG chạy CÙNG hệ số nhưng KHÔNG che -> `-c:v copy` -> khung
+        # giống TỪNG ĐIỂM ẢNH, nên tỉ lệ che/đối_chứng tại CÙNG giây T là số
+        # sạch. So "gốc tại T" với "xuất tại T" là SAI: bản xuất giãn k lần nên
+        # giây T của nó là nội dung giây T/k của gốc — HAI CẢNH KHÁC NHAU.
+        TG.thay_audio_video(src, au, p_ref, che_chu=False, he_so_hinh=k)
+        d_ra = float(C.thong_tin(p_che)["do_dai"] or 0)
+        ok_f, mo_ta = _kiem_file(p_che, dur * k)
+        kiem(f"CA25 k={k:.2f} file xuất mở được + đúng độ dài", ok_f, mo_ta)
+        # ---- (e) KHÔNG ĐƯỢC MẤT KHUNG — mục này ra đời TỪ MỘT PHÉP PHÁ LỌT.
+        # Phép phá "trả `-itsscale` vào lệnh nhánh che chữ" làm hình giãn HAI
+        # LẦN (k*k), rồi `-shortest` CẮT bản xuất theo độ dài TIẾNG (k*dur) ->
+        # độ dài file vẫn ĐÚNG `k*dur` nên mục trên ĐẠT, và phần đuôi hỏng thì
+        # **đã bị xoá khỏi file** nên phép đo điểm ảnh cũng không thấy gì:
+        # cổng XANH trong khi 20% cuối THƯỚC PHIM biến mất. Cửa chặn đúng là
+        # SỐ KHUNG — `setpts` giữ nguyên từng khung, giãn hai lần thì mất
+        # (đo: 525 -> ~420). Lề 2 khung: đổi cơ chế giãn lệch đúng 1 khung
+        # (đo `_do_che_itsscale.py`: 1078 so với 1079).
+        kh_c, kh_r = C.so_khung_hinh(p_che), C.so_khung_hinh(p_ref)
+        kiem(f"CA25e k={k:.2f} KHÔNG mất khung nào so với bản đối chứng "
+             "(giãn hai lần thì `-shortest` cắt mất đoạn cuối THƯỚC PHIM, mà "
+             "cắt rồi thì phép đo điểm ảnh không còn thấy chỗ hỏng)",
+             abs(kh_c - kh_r) <= 2,
+             f"che {kh_c} khung · đối chứng {kh_r} khung "
+             f"(lệch {kh_c - kh_r:+d})")
+        if not lg or not lg[0].get("che"):
+            kiem(f"CA25 k={k:.2f} lượt xuất PHẢI có che (log nói không che thì "
+                 "mục dưới tự ĐẠT OAN)", False, str(lg[:1])[:200])
+            continue
+        xa, xb = (d.x0_dai or d.x0), (d.x1_dai or d.x1)
+        xau = []
+        for r in _CA25_MOC:
+            T = round(d_ra * r, 3)
+            mr = C.mat_do_vung(p_ref, d.y0, d.y1, [T], x0=xa, x1=xb)
+            mc = C.mat_do_vung(p_che, d.y0, d.y1, [T], x0=xa, x1=xb)
+            giu = mc / max(1e-9, mr)
+            print(f"        {int(r*100):3d}%  T={T:7.3f}s  đối chứng={mr:.4f}  "
+                  f"che={mc:.4f}  còn {giu*100:5.1f}%"
+                  + ("   <- vùng T > độ dài GỐC" if T > dur else ""))
+            if giu > 0.15:
+                xau.append((int(r * 100), round(giu, 3), T > dur))
+        ten = ("CA25a ĐỐI CHỨNG k=1,00: mọi mốc phải được che (mục này giữ cho "
+               "CA25b không tự ĐẠT OAN)" if k == 1.0 else
+               f"CA25b k={k:.2f} (hình chậm {(k-1)*100:.0f}%): mọi mốc vẫn "
+               f"được che, KỂ CẢ {(1-1/k)*100:.1f}% cuối clip")
+        kiem(ten, not xau,
+             f"{len(_CA25_MOC)}/{len(_CA25_MOC)} mốc còn <= 15% mật độ nét"
+             if not xau else f"mốc còn nguyên chữ: {xau}")
+    # ---- (d) BẤT BIẾN TRÊN CHÍNH LỆNH ffmpeg (không chạy ffmpeg) ----
+    lenh: list = []
+    cu = TG._ffmpeg
+    try:
+        TG._ffmpeg = lambda a, *x, **y: lenh.append(list(a))    # noqa: ARG005
+        TG.thay_audio_video(src, SAN / "cuoi_im_125.m4a",
+                            SAN / "cuoi_ast.mp4", che_chu=True,
+                            che_chu_muc=1.0, he_so_hinh=_CA25_K)
+    finally:
+        TG._ffmpeg = cu
+    kiem("CA25d bắt được lệnh ffmpeg của nhánh che chữ", bool(lenh),
+         f"{len(lenh)} lệnh")
+    if lenh:
+        b_max, co_its, gian_sau = _ca25_moc_enable(lenh[-1])
+        # Mốc của KHUNG CUỐI theo trục mà `enable=` đọc: giãn TRƯỚC khối che
+        # thì khung cuối mang mốc `k*dur`; giãn SAU (hoặc không giãn) thì `dur`.
+        t_cuoi = dur * _CA25_K if (co_its and not gian_sau) else dur
+        kiem("CA25d' cửa sổ `enable` CUỐI phải phủ tới KHUNG CUỐI của clip "
+             "(mệnh đề này không khoá vào một cách vá nào: nó tự đổi trục theo "
+             "chỗ đặt phép giãn)",
+             b_max >= t_cuoi - 0.1,
+             f"mốc enable cuối {b_max:.3f}s · khung cuối ở {t_cuoi:.3f}s · "
+             f"-itsscale={co_its} · giãn SAU khối che={gian_sau}")
+        C.trich_khung(SAN / f"cuoi_che_{int(_CA25_K*100)}.mp4",
+                      dur * _CA25_K * 0.97, SAN / "CUOI_CHE_97.png")
+        C.trich_khung(SAN / f"cuoi_ref_{int(_CA25_K*100)}.mp4",
+                      dur * _CA25_K * 0.97, SAN / "CUOI_REF_97.png")
+        print(f"      ảnh mốc 97% để tự nhìn: {SAN / 'CUOI_CHE_97.png'} "
+              f"(và ..._REF_97.png)")
+
+
 def ca20_nhin_bang_mat(src: Path, a: Path, b: Path, vung) -> None:
     """Trích khung TRƯỚC/SAU của FILE XUẤT để NGƯỜI/LLM tự nhìn.
 
@@ -1488,6 +1684,7 @@ def main() -> int:
         ca12_khong_chu_thi_khong_che()
         ca13_khong_tieng()
         ca14_trich_khung_de_nhin(p, o, d)
+        ca25_doan_cuoi_video()
         # ---- PHẦN 2: ĐÃ NỐI VÀO ĐƯỜNG XUẤT ----
         ca19_pha_duong_truyen()      # quét tĩnh, rẻ -> chạy trước
         ca23_co_vao_hash_chong_trung()

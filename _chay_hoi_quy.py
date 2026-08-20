@@ -283,7 +283,18 @@ CONG = [
     ("60 chữ theo lời",     "_test_chu_theo_loi.py",    42),
     ("59 đường dài",        "_test_duong_dai.py",       46),
     ("57 bảng tiến độ",     "_test_tg_bang_tiendo.py",  57),
-    ("56 che chữ",          "_test_che_chu.py",        123),
+    # Mốc 123 -> 132: thêm CA 25 **ĐOẠN CUỐI VIDEO** (9 mục), canh đúng lỗi anh
+    # Hùng báo 20/08/2026 *"cứ đến gần cuối video nó k che mờ chữ gì cả"*. Gốc:
+    # đường THAY TIẾNG làm chậm hình để khớp giọng bằng `-itsscale` — tuỳ chọn
+    # ĐẦU VÀO, tức giãn TRƯỚC filter — nên `t` mà `enable='between(t,a,b)'` đọc
+    # đã bị nhân k, còn hộp che thì dò trên video GỐC. Mọi khung có t > độ dài
+    # GỐC rơi ra NGOÀI mọi cửa sổ enable = KHÔNG CHE GÌ; đuôi đó dài đúng
+    # `(1 − 1/k)` clip (đo trên 4 file app đã xuất cho anh Hùng: **16,6%** với
+    # k=1,1987 và **20,0%** với k=1,25, mật độ nét còn **98,2-101,2%** bản gốc).
+    # CA 25 dùng nguồn 21 s — **CỐ Ý không chia hết cho `HOP_DOAN`=8** — và có
+    # arm ĐỐI CHỨNG k=1,00 để mục chính không tự ĐẠT OAN.
+    # Thử phá 2 phép (`_pha_che_chu.py`, mục `cuoi`): **BẮT 2/2**.
+    ("56 che chữ",          "_test_che_chu.py",        132),
     ("55 thay giọng UI",    "_test_thay_giong_ui.py",   48),
     ("54 dubbing CJK",      "_test_dubbing_cjk.py",     44),
     ("53 thay giọng",       "_test_thay_giong.py",      44),
