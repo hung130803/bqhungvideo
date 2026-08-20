@@ -95,6 +95,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -140,9 +141,12 @@ GIONG_KK: tuple[tuple[str, str, str], ...] = (
 #: đã chốt *"cứ thêm hết, tôi tự trải nghiệm"*; chỉ nói thật.
 DIEM_KEU = {"D", "D-", "D+", "F", "F+", "F-"}
 
-#: Nhãn nút tải. **PHẢI KHỚP ĐƯỜNG SẼ ĐI** — đo bằng `--dry-run --report`
-#: trước khi điền số, đừng ước (cổng 71 CA 4).
-NHAN_TAI = "Tải giọng Kokoro (chưa đo dung lượng)"
+#: Nhãn nút tải khai ở DƯỚI (`NHAN_TAI` / `NHAN_TAI_CUDA` + `nhan_tai()`),
+#: cạnh `mb_se_tai()` đã ĐO thật bằng `--dry-run --report`. Trước đây có một
+#: `NHAN_TAI = "…(chưa đo dung lượng)"` khai TRÙNG ở đúng chỗ này: Python lấy
+#: bản sau nên nhãn hiện ra vẫn đúng, **nhưng ai đọc file từ trên xuống thì
+#: thấy bản CŨ và tưởng app chưa đo** — đúng họ bẫy "phép đo phát chứng nhận
+#: cho thứ đã lạc hậu". Một hằng số = MỘT chỗ khai, đặt cạnh phép đo của nó.
 
 CANH_BAO = (
     "Kokoro KHÔNG trả mốc từng chữ — chữ chạy theo tiếng phải nhờ bộ gióng "
@@ -184,33 +188,766 @@ def espeak_data() -> Path | None:
     """`espeak-ng-data` mượn từ bộ Piper đã có. None = chưa có.
 
     Gọi espeak như CHƯƠNG TRÌNH RỜI (GPL) — xem docstring.
+
+    **BẢN `.exe` KHÔNG TÌM Ở `parents[2]` ĐƯỢC — ĐÃ SỬA 20/08/2026.** Trong bản
+    đóng gói, `parents[2]` là `_internal`, mà bộ Piper tải về nằm ở
+    `DATA_DIR/_piper` (`piper_tts.thu_muc_piper` cố ý đặt ngoài thư mục cài vì
+    lượt tự cập nhật `rmdir /S /Q _internal.old` xoá sạch — cổng 58 CA 5). Bản
+    cũ hỏi đúng một chỗ KHÔNG BAO GIỜ có gì, nên trên máy nhân viên
+    `tinh_trang()["co"]` mãi mãi False -> **chọn giọng Kokoro là lùi êm về
+    edge-tts vĩnh viễn**, kể cả sau khi đã tải đủ. Máy dev thì đúng, vì ở đây
+    `parents[2]` CHÍNH LÀ repo. Đúng lớp bệnh "máy dev xanh, máy thật đỏ".
     """
-    p = Path(__file__).resolve().parents[2] / "_piper" / "piper" / "espeak-ng-data"
-    return p if p.is_dir() else None
+    ds: list[Path] = []
+    try:
+        from app.core import piper_tts as _pt
+        ds.append(Path(_pt.thu_muc_piper()) / "piper" / "espeak-ng-data")
+    except Exception:  # noqa: BLE001 - thiếu module thì vẫn còn đường dưới
+        pass
+    ds.append(Path(__file__).resolve().parents[2] / "_piper" / "piper"
+              / "espeak-ng-data")
+    for p in ds:
+        try:
+            if p.is_dir():
+                return p
+        except OSError:
+            pass
+    return None
+
+
+def espeak_trong_venv() -> Path | None:
+    """`espeak-ng-data` do CHÍNH gói `espeakng_loader` mang theo. None = chưa có.
+
+    **ĐÂY LÀ ĐƯỜNG CHÍNH, KHÔNG PHẢI ĐƯỜNG LÙI — đọc trước khi "dọn gọn".**
+    `misaki/espeak.py` gọi `EspeakWrapper.set_data_path(espeakng_loader.
+    get_data_path())` NGAY LÚC IMPORT, tức bộ dữ liệu này là thứ Kokoro dùng khi
+    không ai đặt gì khác. `pip install kokoro` kéo theo `espeakng_loader` (đo
+    thật: `espeakng-loader==0.2.4` nằm trong 92 gói pip giải ra) nên máy nào cài
+    được Kokoro là máy đó CÓ bộ dữ liệu — không cần bộ Piper.
+    Bản cũ đếm "thiếu espeak-ng-data (lấy từ bộ Piper)" vào `thieu` nên máy chưa
+    tải Piper bị **CHẶN OAN** dù Kokoro chạy được.
+    """
+    sp = _thu_muc_goi(thu_muc() / "venv")
+    if not sp:
+        return None
+    p = Path(sp) / "espeakng_loader" / "espeak-ng-data"
+    try:
+        return p if p.is_dir() else None
+    except OSError:
+        return None
+
+
+def espeak_dung_duoc() -> tuple[str, str]:
+    """(đường dẫn, nguồn) của bộ phiên âm. nguồn: 'piper' | 'kokoro' | ''.
+
+    Ưu tiên bộ của Piper vì nó DÙNG CHUNG (một bộ cho cả hai máy đọc, đỡ 100 MB
+    trùng lặp), nhưng thiếu nó KHÔNG phải là thiếu — xem `espeak_trong_venv`.
+    """
+    p = espeak_data()
+    if p is not None:
+        return str(p), "piper"
+    v = espeak_trong_venv()
+    if v is not None:
+        return str(v), "kokoro"
+    return "", ""
+
+
+# ---------------------------------------------------------------------------
+# DÒ ĐÃ CÀI CHƯA — HỎI "GÓI CÓ NẰM THẬT TRONG MÔI TRƯỜNG RIÊNG KHÔNG"
+# ---------------------------------------------------------------------------
+#: Gói PHẢI nằm THẬT trong site-packages của môi trường riêng. Chỉ tên TẦNG
+#: TRÊN CÙNG: `PathFinder.find_spec("kokoro.pipeline", ...)` sẽ IMPORT gói cha
+#: thật, mà nạp torch vào tiến trình app đã có Qt là ACCESS VIOLATION.
+GOI_KK: tuple[str, ...] = ("kokoro", "misaki", "torch", "soundfile", "numpy")
+
+#: Gói đưa cho pip. `kokoro` tự kéo `misaki`/`torch`/`numpy`/`transformers`/
+#: `espeakng_loader` (đo: 92 gói); `soundfile` thì `_MA_DOC` cần để ghi WAV mà
+#: `kokoro` KHÔNG khai phụ thuộc nó -> phải nêu tên tường minh.
+GOI_PIP: tuple[str, ...] = ("kokoro", "soundfile")
+
+#: Chỉ mục wheel của PyTorch — cùng hai địa chỉ `thay_giong` đang dùng.
+CHI_MUC_TORCH_CPU = "https://download.pytorch.org/whl/cpu"
+CHI_MUC_TORCH_CUDA = "https://download.pytorch.org/whl/cu126"
+
+#: **SỐ ĐO 20/08/2026, KHÔNG ƯỚC** (`_do_kokoro_tai.py`): `pip install --dry-run
+#: --report` để pip tự giải phép phụ thuộc, rồi **HTTP HEAD** trên chính 92
+#: wheel nó chọn. Python 3.12, chỉ mục `cpu`:
+#:     92 gói = **211,5 MB**  (riêng torch 2.13.0+cpu = 116,3 MB)
+#: Trọng số tải riêng lúc chạy (qua Hugging Face, KHÔNG qua pip):
+#:     `kokoro-v1_0.pth` **312,1 MB** + 28 gói giọng **14,0 MB** (0,50 MB/giọng)
+#: -> TỔNG **537,6 MB ~ 538 MB**, khớp đúng `giong_bang._CAN_TAI[KOKORO]`.
+#: Bung ra đĩa thì lớn hơn hẳn: venv **1.120 MB** + trọng số 313 MB. Nhãn nói
+#: LƯỢNG TẢI vì đó là thứ người dùng ngồi chờ (đúng cách `_lib` của Demucs đã
+#: sửa: nhãn cũ "2 GB" gấp 13 lần lượng tải thật).
+MB_TAI_PIP = 211.5
+MB_TRONG_SO = 312.1
+MB_GIONG_28 = 14.0
+MB_TAI = MB_TAI_PIP + MB_TRONG_SO + MB_GIONG_28          # 537,6
+
+#: Bản CUDA: **2.569,7 MB** pip (torch 2.13.0+cu126 một mình **2.474,4 MB**) =
+#: **+2.358,2 MB** so với bản cpu, tức tổng ~2,9 GB.
+MB_TAI_PIP_CUDA = 2569.7
+
+#: **MẶC ĐỊNH LẤY BẢN CPU, VÀ ĐÂY LÀ LÝ DO BẰNG SỐ — đừng đổi mà không đo.**
+#: (a) `giong_bang._CAN_TAI[KOKORO]` ĐÃ PHÁT HÀNH con số **538 MB** ra đuôi dòng
+#:     combo. Nút này đi đường CUDA là tải 2,9 GB cho một nhãn ghi 538 MB —
+#:     đúng lỗi "nhãn không khớp đường sẽ đi" mà cổng 71 CA 4 sinh ra để chặn,
+#:     chỉ đổi chiều (trước: nút ghi 155 MB, hộp doạ 2 GB).
+#: (b) Kokoro là model **82 triệu tham số** — nhỏ hơn Demucs hàng chục lần. Đo
+#:     được của Demucs (nhanh 9,28x nhờ GPU, cổng 71) **KHÔNG suy sang đây
+#:     được**, và **chưa ai đo Kokoro trên GPU**. Trả 2.358 MB cho một cái lợi
+#:     chưa đo là đúng thứ repo này cấm.
+#: (c) Môi trường 1,4 GB trên máy dev đang chạy torch CPU và ĐÃ đọc ra WAV
+#:     158.444 byte / 3,30 giây — tức đường CPU là đường ĐÃ CHỨNG MINH.
+#: `BQ_KK_CUDA=1` chỉ để ĐO lại sau này; bật thì `nhan_tai()` tự đổi số theo
+#: (nhãn luôn khớp đường sẽ đi, kể cả ở lối đo).
+def xin_ban_cuda() -> bool:
+    """Có ai cố ý đòi bản CUDA không (chỉ để ĐO). KHÔNG BAO GIỜ NÉM."""
+    return str(os.environ.get("BQ_KK_CUDA", "")).strip() in ("1", "true", "True")
+
+
+def mb_se_tai() -> float:
+    """Số MB nút này SẼ tải, theo đúng đường nó sẽ đi."""
+    if xin_ban_cuda():
+        return MB_TAI_PIP_CUDA + MB_TRONG_SO + MB_GIONG_28
+    return MB_TAI
+
+
+#: Nhãn nút tải. **PHẢI KHỚP ĐƯỜNG SẼ ĐI** — đo bằng `--dry-run --report`
+#: trước khi điền số, đừng ước (cổng 71 CA 4).
+NHAN_TAI = "Tải giọng Kokoro (khoảng 538 MB)"
+NHAN_TAI_CUDA = "Tải giọng Kokoro bản CUDA (khoảng 2,9 GB — CHƯA ĐO có nhanh hơn)"
+
+
+def nhan_tai() -> str:
+    """Nhãn nút ĐÚNG với đường sẽ đi. Đọc lại mỗi lần gọi (bài học
+    `tg_so.duong_so`) — bật/tắt cờ đo giữa phiên thì nhãn phải đổi theo."""
+    return NHAN_TAI_CUDA if xin_ban_cuda() else NHAN_TAI
+
+
+def _thu_muc_goi(venv: Path) -> str:
+    """site-packages của môi trường riêng. '' = chưa dựng."""
+    for ten in ("Lib", "lib"):
+        d = Path(venv) / ten / "site-packages"
+        try:
+            if d.is_dir():
+                return str(d)
+        except OSError:
+            pass
+    return ""
+
+
+def do_goi_kokoro(venv: Optional[Path] = None) -> dict:
+    """TỪNG gói đang nằm ở ĐÂU — **KHÔNG import một dòng nào**.
+
+    Trả `{tên: {"venv": <đường trong môi trường riêng|"">, "he": <đường NGOÀI>,
+    "nguon": "venv" | "hệ thống" | ""}}`.
+
+    **HỎI ĐÚNG CÂU — bài học cổng 58, đã cắn hai lần.** Câu hỏi KHÔNG phải
+    *"import được không"*: máy dev có `.venv` đầy đủ nên câu trả lời luôn là CÓ
+    kể cả khi thư mục đích rỗng -> app báo "cài xong", còn bản `.exe` (không có
+    gì để mượn) báo thiếu. Câu đúng là *"`spec.origin` có nằm THẬT dưới thư mục
+    đích không"*, và nó cho ra CÙNG một câu trả lời ở cả hai máy **do xây
+    dựng**, vì `PathFinder.find_spec(ten, [site_packages])` không hề nhìn
+    `sys.path`.
+
+    Dùng `PathFinder` chứ KHÔNG `importlib.util.find_spec`: `find_spec` phải NẠP
+    gói cha (nạp torch sau Qt = ACCESS VIOLATION, `try/except` không chặn) và nó
+    luôn tìm trên `sys.path` nên không trả lời được câu trên.
+    """
+    from importlib.machinery import PathFinder
+    if venv is None:
+        venv = thu_muc() / "venv"
+    sp = _thu_muc_goi(Path(venv))
+    duong = [sp] if sp else []
+
+    def _tim(ten: str, o_dau: Optional[list]) -> str:
+        try:
+            s = PathFinder.find_spec(ten, o_dau)
+        except Exception:  # noqa: BLE001 - thư mục hỏng / gói cụt
+            return ""
+        if s is None:
+            return ""
+        g = getattr(s, "origin", "") or ""
+        if g in ("", "namespace", "built-in", "frozen"):
+            locs = list(getattr(s, "submodule_search_locations", None) or [])
+            g = locs[0] if locs else ""
+        return str(g or "")
+
+    ra: dict = {}
+    for ten in GOI_KK:
+        o_venv = _tim(ten, duong) if duong else ""
+        he = "" if o_venv else _tim(ten, None)
+        ra[ten] = {"venv": o_venv, "he": he,
+                   "nguon": "venv" if o_venv else ("hệ thống" if he else "")}
+    return ra
+
+
+# ---------------------------------------------------------------------------
+# PYTHON DÙNG ĐỂ DỰNG MÔI TRƯỜNG — CÓ HẠN TRÊN, ĐO ĐƯỢC
+# ---------------------------------------------------------------------------
+#: Bản Python **ĐÃ ĐO CHẠY ĐƯỢC** (môi trường 1,4 GB trên máy này là 3.12.10).
+BAN_PY_DO = (3, 12)
+
+#: Sàn của chính `kokoro` (`requires_python >= 3.10`).
+BAN_PY_TOI_THIEU = (3, 10)
+
+#: **TRẦN TRÊN — ĐO ĐƯỢC 20/08/2026, KHÔNG PHÒNG XA.** `_do_kokoro_tai.py` chạy
+#: `pip install --dry-run` cho `kokoro soundfile` bằng **Python 3.14.0** (đúng
+#: bản mà bản `.exe` sẽ gọi: `which python` trên máy này ra `C:\Python314`):
+#: cả hai chỉ mục đều **`metadata-generation-failed`**. Cơ chế: một gói trong
+#: cây phụ thuộc (đám C/Rust của `spacy`/`thinc`/`tokenizers`) chưa có wheel
+#: `cp314`, pip lùi dần về bản `kokoro` CŨ, bản cũ đó ghim **`numpy==1.26.4`**
+#: (wheel chỉ tới cp312) nên pip đi biên dịch numpy từ mã nguồn rồi chết:
+#: *"Unknown compiler(s): [['icl'], ['cl'], ['cc'], ['gcc'], ...]"* — máy nhân
+#: viên KHÔNG BAO GIỜ có MSVC.
+#: Cùng lệnh, Python **3.12.10** giải ra 92 gói / 211,5 MB, `numpy==2.5.2`, sạch.
+#: Vì vậy phải CHỌN bản Python, không phải lấy cái đầu tiên `which` trả về:
+#: lấy bừa là nút tải chết bằng một lời lỗi trình biên dịch mà không ai đọc nổi.
+#: 3.13 KHÔNG có trên máy này nên **chưa đo** — cho đi qua (đúng khoảng
+#: `requires_python`) nhưng xếp SAU 3.12 và 3.11.
+BAN_PY_TOI_DA = (3, 13)
+
+#: Thứ tự thử qua `py` launcher: bản ĐÃ ĐO trước, rồi tới bản chưa đo.
+_UU_TIEN_PY = ((3, 12), (3, 11), (3, 13), (3, 10))
+
+#: Cache lượt dò (mỗi lượt là một `subprocess`, mà `tinh_trang()` bị gọi cho
+#: MỖI mẻ đọc). None = chưa dò. Kết quả không đổi trong một phiên chạy.
+_PY_CAI: Optional[list[str]] = None
+_PY_CAI_THAY: str = ""
+
+
+def _ban_python(cmd: list[str]) -> tuple[int, int]:
+    """(major, minor) của một lệnh python. (0, 0) = không gọi được."""
+    try:
+        r = subprocess.run(
+            [*cmd, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=60, creationflags=_NO_WIN)
+        if r.returncode != 0:
+            return 0, 0
+        a, _, b = (r.stdout or "").strip().partition(".")
+        return int(a), int(b)
+    except Exception:  # noqa: BLE001
+        return 0, 0
+
+
+def _ung_vien_python() -> list[list[str]]:
+    """Các lệnh python đáng thử, theo thứ tự ưu tiên."""
+    ds: list[list[str]] = []
+    if not getattr(sys, "frozen", False):
+        # Chạy từ nguồn: python của `.venv` (3.12 trên máy này) — đúng bản đã
+        # dựng nên môi trường 1,4 GB đang chạy được.
+        ds.append([sys.executable])
+    pyl = shutil.which("py")
+    if pyl:
+        for a, b in _UU_TIEN_PY:
+            ds.append([pyl, f"-{a}.{b}"])
+    for ten in ("python.exe", "python3.exe", "python", "python3"):
+        p = shutil.which(ten)
+        if p and [p] not in ds:
+            ds.append([p])
+    return ds
+
+
+def python_cai(lam_lai: bool = False) -> list[str]:
+    """Lệnh python dùng để DỰNG môi trường Kokoro. `[]` = máy này không cài được.
+
+    **KHÔNG lấy `sys.executable` ở bản `.exe`** — chỗ đó là `BQHungVideo.exe`,
+    gọi `-m venv` vào nó là vô nghĩa (đúng cách `piper_tts._python_chay` và
+    `giong_ngoai._python_he_thong` đã làm).
+
+    **VÀ KHÔNG LẤY BẢN ĐẦU TIÊN `which` TRẢ VỀ** — xem `BAN_PY_TOI_DA`: trên
+    chính máy này `which python` ra **3.14.0**, mà 3.14 làm pip đi biên dịch
+    numpy từ mã nguồn rồi chết vì thiếu MSVC.
+    """
+    global _PY_CAI, _PY_CAI_THAY
+    if _PY_CAI is not None and not lam_lai:
+        return list(_PY_CAI)
+    thay: list[str] = []
+    chon: list[str] = []
+    for cmd in _ung_vien_python():
+        v = _ban_python(cmd)
+        if v == (0, 0):
+            continue
+        thay.append(f"{v[0]}.{v[1]}")
+        if BAN_PY_TOI_THIEU <= v <= BAN_PY_TOI_DA and not chon:
+            chon = list(cmd)
+    _PY_CAI = chon
+    _PY_CAI_THAY = ", ".join(dict.fromkeys(thay))
+    return list(chon)
+
+
+def vi_sao_khong_cai_duoc() -> str:
+    """Câu nói THẲNG vì sao nút tải bị khoá. '' = cài được.
+
+    Nút xám mà không nói vì sao chỉ là câu đố (bài học cổng 58/16/51).
+    """
+    if python_cai():
+        return ""
+    thay = _PY_CAI_THAY
+    if not thay:
+        return ("Máy này không có Python nên app không tự tải được: cài "
+                "Python 3 (bản 3.12, python.org) rồi bấm lại, hoặc copy thư "
+                "mục _giong_kokoro từ máy đã cài sang.")
+    return ("Máy này chỉ có Python " + thay + " mà bộ Kokoro chưa có bản dựng "
+            "sẵn cho bản đó (pip phải tự biên dịch numpy và chết vì máy không "
+            "có trình biên dịch C). Cài thêm Python "
+            f"{BAN_PY_DO[0]}.{BAN_PY_DO[1]} (python.org) rồi bấm lại, hoặc "
+            "copy thư mục _giong_kokoro từ máy đã cài sang.")
+
+
+# ---------------------------------------------------------------------------
+# CHỖ TRỐNG TRÊN ĐĨA — HỎI TRƯỚC KHI TẢI
+# ---------------------------------------------------------------------------
+#: Cần bấy nhiêu MB TRỐNG mới dám tải: venv bung ra **1.120 MB** + trọng số
+#: **313 MB** (đo trên chính máy này) + 15% chỗ thở cho lượt giải nén của pip.
+MB_CAN_TRONG = 1650.0
+
+
+def dia_trong_mb(cho: Optional[Path] = None) -> float:
+    """Số MB còn trống ở ổ chứa `cho`. -1.0 = không đo được. KHÔNG BAO GIỜ NÉM.
+
+    Đi LÊN dần tới thư mục CHA có thật: `thu_muc()` thường chưa tồn tại lúc hỏi,
+    mà `disk_usage` trên đường dẫn không tồn tại thì ném.
+    """
+    try:
+        p = Path(cho or thu_muc()).resolve()
+    except Exception:  # noqa: BLE001
+        return -1.0
+    for _ in range(8):
+        try:
+            if p.exists():
+                return shutil.disk_usage(str(p)).free / 1024 / 1024
+        except OSError:
+            pass
+        if p.parent == p:
+            break
+        p = p.parent
+    return -1.0
 
 
 def tinh_trang() -> dict:
-    """{co, thieu, thu_muc, so_giong, espeak}. **KHÔNG BAO GIỜ NÉM.**
+    """Máy này đã dùng được Kokoro chưa? KHÔNG tải gì, KHÔNG gọi mạng.
 
-    Dò bằng **FILE CÓ TỒN TẠI KHÔNG**, không `find_spec` — `find_spec` phải
-    NẠP gói cha, mà nạp torch trong tiến trình đã có Qt là ACCESS VIOLATION.
+    Trả {co, du_venv, thieu, ngoai_venv, nguon, duong, thu_muc, venv, so_giong,
+    espeak, espeak_nguon, co_trong_so, cai_duoc, vi_sao, mb_tai}.
+    **KHÔNG BAO GIỜ NÉM.**
+
+    Đọc cho đúng — ba khoá này trả lời BA CÂU KHÁC NHAU (bài học cổng 58):
+
+    · **`thieu`** = gói KHÔNG nằm trong môi trường riêng. **Đây đúng là cái bản
+      `.exe` sẽ thấy.** Nhãn/nút phải bám khoá này, ĐỪNG bám `co`.
+    · **`du_venv`** = `not thieu` — môi trường tự đứng được một mình chưa.
+    · **`co`** = đọc được không. Ở đây `co == du_venv` **do xây dựng**, vì bước
+      đọc chạy bằng `python_rieng()` (python CỦA môi trường riêng) nên không có
+      gì để mượn của `.venv` — khác hẳn Demucs, chỗ `co` và `du_lib` lệch nhau
+      trên máy dev. `ngoai_venv` vẫn được trả về để nói ra chuyện *"gói này máy
+      có nhưng nằm ngoài môi trường riêng"*, tức KHÔNG dùng được.
+
+    Dò bằng `PathFinder` trên ĐÚNG site-packages của môi trường riêng, **không**
+    `find_spec` — `find_spec` phải NẠP gói cha, mà nạp torch trong tiến trình đã
+    có Qt là ACCESS VIOLATION.
     """
     d = thu_muc()
+    venv = d / "venv"
     thieu: list[str] = []
-    py = python_rieng()
-    if not py.is_file():
-        thieu.append("môi trường Python riêng")
-    if not (d / "venv" / "Lib" / "site-packages" / "kokoro").is_dir():
-        thieu.append("kokoro")
-    if espeak_data() is None:
-        thieu.append("espeak-ng-data (lấy từ bộ Piper)")
+    goi: dict = {}
+    try:
+        if not python_rieng().is_file():
+            thieu.append("môi trường Python riêng")
+        goi = do_goi_kokoro(venv)
+        thieu += [t for t in GOI_KK if not goi[t]["venv"]]
+        dat, ngn = espeak_dung_duoc()
+        if not dat:
+            thieu.append("espeak-ng-data")
+    except Exception as e:  # noqa: BLE001 - hàm này KHÔNG BAO GIỜ NÉM
+        _ghi_log(f"tinh_trang hỏng: {type(e).__name__}: {e}")
+        dat, ngn = "", ""
+        if not thieu:
+            thieu.append("không dò được môi trường")
+    ngoai = [t for t in GOI_KK if goi.get(t, {}).get("he")]
     return {
         "co": not thieu,
+        "du_venv": not thieu,
         "thieu": thieu,
+        "ngoai_venv": ngoai,
+        "goi": goi,
+        "nguon": {t: goi.get(t, {}).get("nguon", "") for t in GOI_KK},
+        "duong": {t: (goi.get(t, {}).get("venv")
+                      or goi.get(t, {}).get("he", "")) for t in GOI_KK},
         "thu_muc": str(d),
+        "venv": str(venv),
         "so_giong": len(GIONG_KK),
-        "espeak": str(espeak_data() or ""),
+        "espeak": dat,
+        "espeak_nguon": ngn,
+        "co_trong_so": co_trong_so(),
+        "cai_duoc": bool(python_cai()),
+        "vi_sao": vi_sao_khong_cai_duoc(),
+        "mb_tai": mb_se_tai(),
     }
+
+
+def duong_trong_so() -> Path:
+    """Chỗ Hugging Face cất trọng số (`HF_HOME` mà `_chay_kokoro` đặt)."""
+    return thu_muc() / "hf"
+
+
+def co_trong_so() -> bool:
+    """Trọng số 312 MB đã nằm trên đĩa chưa. KHÔNG BAO GIỜ NÉM.
+
+    Dò bằng FILE, không hỏi thư viện: `kokoro-v1_0.pth` là tên do chính kho
+    `hexgrad/Kokoro-82M` đặt. Thiếu nó thì lượt đọc ĐẦU TIÊN phải tải 312 MB
+    giữa lúc anh Hùng đang chờ một video — nói ra trước thì đỡ tưởng app treo.
+    """
+    try:
+        return any(duong_trong_so().rglob("kokoro-v1_0.pth"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# ==========================================================================
+# TẢI BỘ KOKORO — **CHỈ khi NGƯỜI DÙNG BẤM**
+# ==========================================================================
+#: Một lượt tải là 538 MB — hai lượt chồng nhau vào cùng thư mục là hỏng cả hai
+#: (user bấm hai lần vẫn phải ra MỘT lượt).
+_KHOA_CAI = threading.Lock()
+
+#: Mã kéo TRỌNG SỐ về, chạy ở **TIẾN TRÌNH RIÊNG bằng python CỦA môi trường
+#: riêng**. Cùng ràng buộc `_MA_DOC`: `import torch` trong tiến trình đã nạp Qt
+#: là ACCESS VIOLATION mà `try/except` KHÔNG chặn được.
+#:
+#: Nó đọc THẬT một câu ngắn, không chỉ tải file. Lý do: "thư mục đầy" chưa bao
+#: giờ là bằng chứng chạy được (bài học `--target` của `giong_ngoai`), và bước
+#: này là lần DUY NHẤT app có cớ chạy Kokoro mà không ai đang đợi một video.
+_MA_TAI_TS = r'''
+import json, os, sys, time
+
+hf, giong, ra_wav, dat = sys.argv[1:5]
+os.environ["HF_HOME"] = hf
+if dat and os.path.isdir(dat):
+    os.environ["PHONEMIZER_ESPEAK_DATA_PATH"] = dat
+    os.environ["ESPEAK_DATA_PATH"] = dat
+
+
+def bao(p, m):
+    sys.stdout.write("BQP\t%.4f\t%s\n" % (p, m))
+    sys.stdout.flush()
+
+
+try:
+    bao(0.02, "Nap thu vien Kokoro...")
+    import numpy as np
+    import soundfile as sf
+    from kokoro import KPipeline
+    if dat and os.path.isdir(dat):
+        try:
+            from phonemizer.backend.espeak.wrapper import EspeakWrapper
+            EspeakWrapper.set_data_path(dat)
+        except Exception:
+            pass
+    bao(0.20, "Tai trong so Kokoro (khoang 312 MB)...")
+    t0 = time.time()
+    pipe = KPipeline(lang_code=("b" if giong[:1].lower() == "b" else "a"),
+                     repo_id="hexgrad/Kokoro-82M")
+    t_nap = time.time() - t0
+    bao(0.80, "Doc thu mot cau de kiem...")
+    manh = []
+    for r in pipe("Kokoro voice is ready.", voice=giong, speed=1.0):
+        a = getattr(r, "audio", None)
+        if a is None:
+            continue
+        manh.append(np.asarray(a, dtype="float32").reshape(-1))
+    if not manh:
+        raise RuntimeError("khong sinh duoc am nao")
+    a = np.concatenate(manh) if len(manh) > 1 else manh[0]
+    sf.write(ra_wav, a, 24000)
+    ket = {"ok": True, "nap": round(t_nap, 2), "wav": ra_wav,
+           "giay": round(len(a) / 24000.0, 3),
+           "torch": ""}
+    try:
+        import torch
+        ket["torch"] = getattr(torch, "__version__", "?")
+        ket["thiet_bi"] = "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        pass
+except Exception as e:
+    ket = {"ok": False, "loi": "%s: %s" % (type(e).__name__, e)}
+sys.stdout.write("BQJSON\t" + json.dumps(ket) + "\n")
+sys.stdout.flush()
+'''
+
+
+def _chay_ghi_log(args: list[str], han: int,
+                  prog: Optional[Callable[[float, str], None]] = None,
+                  p0: float = 0.0, p1: float = 0.9,
+                  nhip: float = 900.0) -> tuple[int, list[str], dict]:
+    """Chạy một lệnh, gom log, báo tiến độ, trả (mã thoát, log, BQJSON).
+
+    Mã thoát `-1` = quá giờ (đã giết). Đăng ký tiến trình con để bấm Huỷ giết
+    được nó. KHÔNG BAO GIỜ NÉM — hỏng thì trả mã thoát khác 0.
+    """
+    log: list[str] = []
+    ket: dict = {}
+    p = None
+    try:
+        p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", bufsize=1,
+                             creationflags=_NO_WIN)
+        _gan_job(p)
+        han_luc = time.time() + han
+        n = 0
+        for dong in p.stdout or ():
+            dong = dong.rstrip()
+            if not dong:
+                continue
+            if dong.startswith("BQJSON\t"):
+                try:
+                    ket = json.loads(dong.split("\t", 1)[1])
+                except ValueError:
+                    ket = {}
+                continue
+            if dong.startswith("BQP\t"):
+                phan = dong.split("\t", 2)
+                if prog and len(phan) > 2:
+                    try:
+                        prog(p0 + (p1 - p0) * float(phan[1]), phan[2])
+                    except (ValueError, TypeError):
+                        pass
+                continue
+            log.append(dong)
+            n += 1
+            # KHÔNG biết trước tổng byte -> % chỉ là dấu hiệu "đang chạy", và
+            # trần `p1` để không khoe xong trước khi xong.
+            if prog:
+                prog(min(p1, p0 + (p1 - p0) * n / nhip), dong[-110:])
+            if time.time() > han_luc:
+                p.kill()
+                return -1, log, ket
+        return p.wait(timeout=180), log, ket
+    except Exception as e:  # noqa: BLE001
+        log.append(f"{type(e).__name__}: {e}")
+        return 1, log, ket
+    finally:
+        if p is not None:
+            _bo_gan_job(p)
+
+
+def cai_kokoro(on_progress: Optional[Callable[[float, str], None]] = None,
+               han_giay: int = 7200, tai_trong_so: bool = True) -> dict:
+    """TẢI + CÀI bộ giọng Kokoro. **CHỈ chạy khi NGƯỜI DÙNG BẤM.**
+
+    Trả `{ok, loi, giay, venv, thieu, goi, tinh_trang, trong_so, canh_bao,
+    nhat_ky}`. **KHÔNG BAO GIỜ NÉM** — hỏng thì `ok=False` + `loi` (đúng ý
+    *"trả (False, lý do)"*, chỉ đóng trong dict cho khớp `cai_demucs`/
+    `cai_piper`/`cai_omnivoice` mà UI đang gọi) và ghi
+    `logs/kokoro_<ngày>.log`.
+
+    ═══ KHÔNG BAO GIỜ CÀI VÀO `.venv` ═══
+    `.venv` là môi trường anh Hùng đang chạy sản xuất 300 kênh. Một lượt
+    `pip install` kéo theo torch/transformers khác bản có thể phá app ĐANG
+    chạy — đúng lý do Demucs phải ở `_lib` (cổng 55), VieNeu ở
+    `_giong_vieneu` (cổng 79), OmniVoice ở `_giong_ngoai` (cổng 72).
+
+    ═══ VÌ SAO **VENV** CHỨ KHÔNG `--target` NHƯ `_lib`/`_piper` ═══
+    Module này đã chọn venv từ đầu (`python_rieng()` = `<thu_muc>/venv/Scripts/
+    python.exe`, và `_chay_kokoro` spawn ĐÚNG file đó) — đổi sang `--target` là
+    vứt bỏ môi trường 1,4 GB đang chạy được trên máy này. Nó cũng là lựa chọn
+    ĐÚNG cho đúng bộ gói này, theo phép đo đã ghi ở `giong_ngoai.cai_omnivoice`:
+    `--target` chỉ CHÉP file rồi nhét vào `sys.path` của MỘT python KHÁC, nên
+    gói biên dịch cho `cp312` nằm đủ 4 GB trong thư mục mà python `cp314` nạp
+    vào là `ImportError` phần mở rộng C. Cả 5 gói ở đây (torch · numpy ·
+    soundfile · tokenizers · thinc) đều có phần mở rộng nhị phân.
+    Venv thì có **python CỦA NÓ**: pip cài cho đúng bản đang đứng đó, không
+    mượn gì của ai, không thể lệch ABI **do xây dựng** — và đó cũng là lý do
+    `tinh_trang()['co']` ở đây nói thật trên CẢ máy dev lẫn bản `.exe`.
+
+    ═══ `--ignore-installed` — CỜ QUYẾT ĐỊNH, ĐỪNG GỠ ═══
+    pip coi gói đã có trong môi trường ĐANG CHẠY là "đã thoả mãn" rồi BỎ QUA,
+    không chép vào đích. Đó đúng là cách `_lib` của Demucs thiếu torch mà máy
+    dev vẫn báo "cài xong" (cổng 58: mọi gói CÓ trong `_lib` đều là gói `.venv`
+    KHÔNG có, mọi gói THIẾU đều là gói `.venv` ĐÃ CÓ — một phép chia đôi hoàn
+    hảo). Ở venv trắng thì gần như không có gì để bỏ qua, nhưng cờ này khiến
+    kết quả **không phụ thuộc bản pip** — và `_lib` đã chứng minh hành vi cũ có
+    thật.
+
+    ═══ HẬU KIỂM SO `spec.origin` VỚI THƯ MỤC ĐÍCH ═══
+    **ĐỪNG hỏi "import được không"** — máy dev mượn `.venv` rồi báo cài xong
+    trong khi bản `.exe` rỗng. Lỗi này đã cắn hai lần (cổng 58 và bộ gióng
+    hàng). Xem `do_goi_kokoro`.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(max(0.0, min(1.0, p)), m)
+            except Exception:  # noqa: BLE001
+                pass
+
+    t0 = time.time()
+    d = thu_muc()
+    venv = d / "venv"
+    ra: dict = {"ok": False, "loi": "", "venv": str(venv), "giay": 0.0,
+                "nhat_ky": [], "canh_bao": ""}
+
+    def xong(loi: str = "", **kw) -> dict:
+        ra.update(kw)
+        ra["loi"] = loi
+        ra["ok"] = not loi
+        ra["giay"] = round(time.time() - t0, 2)
+        _ghi_log(("Cài Kokoro XONG vào " + str(venv)) if not loi
+                 else ("Cài Kokoro HỎNG: " + loi[:300]))
+        return ra
+
+    try:
+        py = python_cai()
+        if not py:
+            return xong(vi_sao_khong_cai_duoc())
+
+        # ═══ `df` TRƯỚC KHI TẢI ═══
+        # Ổ C của máy anh Hùng đã đầy 100% một lần (30/07) và hậu quả là
+        # **studio.db vỡ** — tải 538 MB vào ổ gần đầy là mở lại đúng cửa đó.
+        # Hỏi ổ chứa thư mục đích (bản `.exe` -> DATA_DIR, có thể khác ổ repo).
+        trong = dia_trong_mb(d)
+        if 0 <= trong < MB_CAN_TRONG:
+            return xong(
+                f"Ổ đĩa chứa {d} chỉ còn {trong:,.0f} MB trống, cần khoảng "
+                f"{MB_CAN_TRONG:,.0f} MB (tải {mb_se_tai():,.0f} MB rồi bung "
+                "ra đĩa còn to hơn). Dọn bớt đĩa rồi bấm lại."
+                .replace(",", "."))
+
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return xong(f"Không tạo được thư mục {d}: {e}")
+
+        if not _KHOA_CAI.acquire(blocking=False):
+            return xong("Đang tải rồi — đợi lượt này xong.")
+        try:
+            nhat_ky: list[str] = []
+            # ---- 1. dựng môi trường Python riêng ----
+            vpy = str(python_rieng())
+            if not Path(vpy).is_file():
+                prog(0.02, "Đang dựng môi trường Python riêng...")
+                ma, log, _ = _chay_ghi_log([*py, "-m", "venv", str(venv)], 900)
+                nhat_ky += log[-10:]
+                if ma != 0 or not Path(vpy).is_file():
+                    return xong(f"Dựng môi trường Python hỏng (mã {ma}): "
+                                + " | ".join(log[-3:]), nhat_ky=nhat_ky)
+
+            # ---- 2. pip install vào ĐÚNG môi trường đó ----
+            cuda = xin_ban_cuda()
+            chi_muc = CHI_MUC_TORCH_CUDA if cuda else CHI_MUC_TORCH_CPU
+            # `--extra-index-url` (KHÔNG `--index-url`): chỉ mục của pytorch
+            # không có `kokoro`/`misaki`/`soundfile` nên ép cả lượt vào đó là
+            # hỏng phép giải (bài học `cai_demucs`).
+            args = [vpy, "-m", "pip", "install", "--no-input",
+                    "--disable-pip-version-check", "--upgrade",
+                    "--ignore-installed",
+                    "--extra-index-url", chi_muc, *GOI_PIP]
+            prog(0.05, ("Đang tải bộ giọng Kokoro (khoảng "
+                        f"{mb_se_tai():,.0f} MB, chạy 1 lần)..."
+                        .replace(",", ".")))
+            ma, log, _ = _chay_ghi_log(args, han_giay, prog, 0.05, 0.60,
+                                       nhip=1200.0)
+            nhat_ky += log[-40:]
+            if ma == -1:
+                return xong(f"Tải quá {han_giay}s, đã dừng.", nhat_ky=nhat_ky)
+            if ma != 0:
+                return xong(f"pip trả mã {ma}: " + " | ".join(log[-4:]),
+                            nhat_ky=nhat_ky)
+
+            # ---- 3. HẬU KIỂM: gói có nằm THẬT trong môi trường riêng không ----
+            # `PathFinder` nhớ nội dung thư mục theo mtime, mà pip vừa ghi vào,
+            # nên phải xoá bộ nhớ đó — không thì lượt kiểm ngay sau khi cài vẫn
+            # thấy thư mục như lúc chưa cài rồi báo THIẾU oan.
+            prog(0.62, "Đang kiểm lại từng gói...")
+            import importlib
+            importlib.invalidate_caches()
+            goi = do_goi_kokoro(venv)
+            thieu = [g for g in GOI_KK if not goi[g]["venv"]]
+            if thieu:
+                return xong(
+                    "pip trả mã 0 nhưng những gói này KHÔNG nằm trong "
+                    + str(venv) + ": " + ", ".join(thieu)
+                    + ". Đừng coi là đã cài — bản .exe sẽ không chạy được.",
+                    goi=goi, thieu=thieu, nhat_ky=nhat_ky)
+            ra.update({"goi": goi, "thieu": []})
+
+            # ---- 4. trọng số + ĐỌC THỬ MỘT CÂU ----
+            # Không tính vào `ok`: gói đã đủ thì lượt đọc đầu tiên tự tải trọng
+            # số được (thư viện tự lo). Nhưng nếu bỏ bước này thì 312 MB đó bị
+            # tải GIỮA LÚC anh Hùng đang chờ một video, và triệu chứng là "app
+            # treo". Hỏng ở đây -> `canh_bao`, KHÔNG phải `loi`.
+            if tai_trong_so:
+                prog(0.65, "Đang tải trọng số Kokoro (khoảng 312 MB)...")
+                kq = _thu_doc(vpy, han_giay, prog)
+                ra["trong_so"] = kq
+                if not kq.get("ok"):
+                    ra["canh_bao"] = (
+                        "Đã cài xong thư viện, nhưng chưa tải được trọng số / "
+                        "chưa đọc thử được: " + str(kq.get("loi") or "")[:300]
+                        + " — lượt đọc đầu tiên sẽ tự tải (chậm hơn).")
+                    _ghi_log("Cài Kokoro: " + ra["canh_bao"])
+
+            prog(1.0, "Đã cài xong bộ giọng Kokoro.")
+            return xong("", tinh_trang=tinh_trang(), nhat_ky=nhat_ky,
+                        cuda=cuda, chi_muc=chi_muc)
+        finally:
+            try:
+                _KHOA_CAI.release()
+            except RuntimeError:
+                pass
+    except Exception as e:  # noqa: BLE001 - hàm này KHÔNG BAO GIỜ NÉM
+        return xong(f"{type(e).__name__}: {e}"[:400])
+
+
+def _thu_doc(vpy: str, han_giay: int,
+             prog: Optional[Callable[[float, str], None]] = None) -> dict:
+    """Kéo trọng số về rồi ĐỌC THỬ một câu. Trả dict, KHÔNG NÉM.
+
+    Đọc thử bằng **`af_bella`** vì đó là giọng tác giả tự chấm cao nhất (A-);
+    trọng số model dùng chung nên chọn giọng nào cũng tải đúng 312 MB đó.
+    """
+    ma_lot = _ma_lot()
+    sb = thu_muc() / f"_cai_{ma_lot}"
+    runner = thu_muc() / f"_bq_kokoro_tai_{ma_lot}.py"
+    try:
+        sb.mkdir(parents=True, exist_ok=True)
+        runner.write_text(_MA_TAI_TS, encoding="utf-8")
+        wav = sb / "thu.wav"
+        dat, _ngn = espeak_dung_duoc()
+        ma, log, ket = _chay_ghi_log(
+            [vpy, "-u", str(runner), str(duong_trong_so()), "af_bella",
+             str(wav), dat], han_giay, prog, 0.65, 0.97, nhip=200.0)
+        if ma == -1:
+            return {"ok": False, "loi": f"quá {han_giay}s (bỏ cuộc)"}
+        if not ket:
+            return {"ok": False,
+                    "loi": f"mã thoát {ma}: " + (" | ".join(log[-3:]) or "?")}
+        if not ket.get("ok"):
+            return ket
+        # **ĐỪNG TIN TIẾN TRÌNH CON BÁO OK** — đo lại chính file nó ghi ra
+        # (cùng lý lẽ `_kiem_wav` ở đường đọc thật: `sf.write` một mảng toàn 0
+        # cho ra file hợp lệ hoàn hảo mà CÂM).
+        dung, vi_sao = _kiem_wav(wav)
+        if not dung:
+            return {"ok": False, "loi": "đọc thử ra file không dùng được: "
+                                        + vi_sao}
+        try:
+            ket["byte"] = wav.stat().st_size
+        except OSError:
+            pass
+        ket["co_trong_so"] = co_trong_so()
+        return ket
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "loi": f"{type(e).__name__}: {e}"}
+    finally:
+        _don(sb)
+        try:
+            runner.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def co_kokoro() -> bool:
@@ -221,22 +958,69 @@ def co_kokoro() -> bool:
         return False
 
 
-def nhan_giong(ma: str) -> str:
-    """Nhãn một dòng cho combo — **nói thật điểm tác giả chấm**.
+#: Dấu dán vào nhãn giọng khi máy CHƯA có bộ Kokoro. **PHẢI CÓ CHỮ "CHƯA
+#: TẢI"** — Piper đã làm đúng từ cổng 64 và đó là thứ duy nhất cho anh Hùng biết
+#: TRƯỚC khi bấm; không có nó thì anh ấy chọn `kk:af_bella`, app lùi êm về
+#: edge-tts (có ghi `logs/kokoro_*.log`, nhưng anh ấy không đọc log) rồi ngồi
+#: nghe một giọng khác hẳn cái mình chọn — đúng bẫy "chọn X ra Y" mà `ov:nu_am`,
+#: `vn:` và `cb:` đã sập ba lần.
+#:
+#: **CỐ Ý MANG CẢ CỤM "cần tải"** dù câu đọc hơi lặp: `giong_bang._DO_TRUNG[
+#: KOKORO]` dò đúng cụm đó để THÔI dán đuôi *"· miễn phí (Apache 2.0), cần tải
+#: bộ 538 MB, KHÔNG có tiếng Việt, KHÔNG có mốc từng chữ"* vào cuối dòng. Không
+#: có cụm này thì một dòng combo nói HAI LẦN cùng một chuyện và dài gấp đôi. (Ở
+#: Piper, `_DO_TRUNG[PIPER]` có sẵn cả "chưa tải" nên nhãn nó không cần —
+#: `giong_bang.py` đang do luồng khác giữ, không sửa được, nên chỗ nhường là
+#: đây.)
+DAU_CHUA_TAI = (" · CHƯA TẢI (cần tải bộ {mb} MB một lần, dùng chung cho cả "
+                "{n} giọng) — chọn giọng này thì app vẫn chạy nhưng sẽ đọc "
+                "bằng giọng thường (edge-tts)")
+
+
+def dau_chua_tai(tt: Optional[dict] = None) -> str:
+    """Dấu "CHƯA TẢI" cho nhãn giọng. "" khi máy đã có đủ. KHÔNG BAO GIỜ NÉM."""
+    try:
+        tt = tt if tt is not None else tinh_trang()
+        if tt.get("co"):
+            return ""
+        mb = float(tt.get("mb_tai") or MB_TAI)
+    except Exception:  # noqa: BLE001
+        mb = MB_TAI
+    # Dấu nghìn kiểu Việt: đổi RIÊNG con số rồi mới ghép. `.replace(",", ".")`
+    # trên CẢ câu thì nó ăn luôn dấu phẩy của câu tiếng Việt ("một lần, dùng
+    # chung" -> "một lần. dùng chung") — đã sập ngay lượt thử đầu.
+    return DAU_CHUA_TAI.format(mb=f"{mb:,.0f}".replace(",", "."),
+                               n=len(GIONG_KK))
+
+
+def nhan_giong(ma: str, tt: Optional[dict] = None) -> str:
+    """Nhãn một dòng cho combo — **nói thật điểm tác giả chấm VÀ nói thật là
+    máy chưa tải**.
 
     Giọng bị chấm dưới `DIEM_KEU` thì nhãn KÊU. Không chặn, không giấu: anh
     Hùng đã chốt *"cứ thêm hết, tôi tự trải nghiệm"*.
+
+    `tt` = kết quả `tinh_trang()` đã dò sẵn. **NƠI GỌI VÒNG LẶP PHẢI TRUYỀN
+    VÀO**: `tinh_trang()` đi `PathFinder` + `rglob` trọng số, gọi 28 lần cho
+    28 dòng combo là 28 lượt quét đĩa cho một câu trả lời duy nhất.
     """
     for m, mo_ta, diem in GIONG_KK:
         if m != ma:
             continue
         canh = " — TÁC GIẢ CHẤM THẤP, nên chọn giọng khác" if diem in DIEM_KEU else ""
-        return f"{m} — {mo_ta} (Kokoro) · điểm {diem}{canh} · miễn phí"
+        return (f"{m} — {mo_ta} (Kokoro) · điểm {diem}{canh} · miễn phí"
+                + dau_chua_tai(tt))
     return ma
 
 
 def danh_sach_giong() -> list[tuple[str, str]]:
-    """[(mã, nhãn)] để đổ vào combo. Giọng điểm cao lên trên."""
+    """[(mã, nhãn)] để đổ vào combo. Giọng điểm cao lên trên.
+
+    **TRẢ ĐỦ 28 GIỌNG KỂ CẢ KHI MÁY CHƯA TẢI** — chỉ đổi NHÃN, không ẩn dòng.
+    Anh Hùng đã chốt *"cứ thêm hết, tôi tự trải nghiệm"*, và đây đúng tiền lệ
+    Piper/VieNeu (app TỰ TẢI được nên còn hiện dòng "chưa tải"); chỉ OmniVoice
+    6,1 GB mới phải giấu vì app không tự tải được nó.
+    """
     thang = ["A", "A-", "B+", "B", "B-", "C+", "C", "C-",
              "D+", "D", "D-", "F+", "F", "F-"]
     def khoa(r: tuple[str, str, str]) -> tuple[int, str]:
@@ -244,7 +1028,8 @@ def danh_sach_giong() -> list[tuple[str, str]]:
             return (thang.index(r[2]), r[0])
         except ValueError:
             return (len(thang), r[0])
-    return [(TIEN_TO + m, nhan_giong(m))
+    tt = tinh_trang()                    # DÒ MỘT LẦN cho cả 28 dòng
+    return [(TIEN_TO + m, nhan_giong(m, tt))
             for m, _mo_ta, _d in sorted(GIONG_KK, key=khoa)]
 
 
