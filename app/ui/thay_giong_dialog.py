@@ -904,6 +904,8 @@ class HopGiongToi(QDialog):
     so_doi = pyqtSignal()
     #: tải phần nhân bản (torch + torchaudio) xong (ok, lời)
     _nb_xong = pyqtSignal(bool, str)
+    #: tải BỘ GIỌNG VieNeu xong (ok, lời) — bước 1 của chuỗi
+    _vn_xong = pyqtSignal(bool, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -925,6 +927,28 @@ class HopGiongToi(QDialog):
         self.ds = QListWidget()
         self.ds.setMinimumHeight(150)
         lay.addWidget(self.ds, 1)
+
+        # ---- hàng TẢI BỘ GIỌNG VieNeu (BƯỚC 1 CỦA CHUỖI) ----
+        # Đặt TRÊN hàng nhân bản vì nó là thứ phải có TRƯỚC: không có bộ VieNeu
+        # thì không có venv nào để cài phần nhân bản vào.
+        # **CHUỖI TRƯỚC LƯỢT NÀY BỊ ĐỨT ĐÚNG Ở ĐÂY**: `cai_vieneu()` có sẵn mà
+        # `grep -rn "cai_vieneu" app/ui/` ra **0 dòng**, nên máy chưa có VieNeu
+        # thì nút dưới chỉ ghi "Chưa có bộ giọng VieNeu — tải bộ đó trước" mà
+        # không có chỗ nào để bấm tải bộ đó. Ca thứ SÁU của "hàm xong ≠ tính
+        # năng xong".
+        self._dang_cai_vn = False
+        self._chuoi_toi_nhan_ban = False
+        h_vn = QHBoxLayout()
+        self.lb_vn = QLabel("")
+        self.lb_vn.setWordWrap(True)
+        h_vn.addWidget(self.lb_vn, 1)
+        self.b_tai_vn = QPushButton(VN_C.NHAN_TAI)
+        self.b_tai_vn.clicked.connect(self._tai_vieneu)
+        h_vn.addWidget(self.b_tai_vn)
+        lay.addLayout(h_vn)
+        self.pb_vn = QProgressBar()
+        self.pb_vn.setVisible(False)
+        lay.addWidget(self.pb_vn)
 
         # ---- hàng TẢI PHẦN NHÂN BẢN ----
         # Đặt NGAY DƯỚI danh sách, cố ý: dòng "CHƯA CHẠY ĐƯỢC (thiếu torch,
@@ -1007,6 +1031,7 @@ class HopGiongToi(QDialog):
 
         self._nghe_xong.connect(self._nghe_giong_xong)
         self._nb_xong.connect(self._tai_nhan_ban_xong)
+        self._vn_xong.connect(self._tai_vieneu_xong)
         # Nhịp vẽ tiến độ. CHỈ chạy trong lúc tải (`start()` ở `_tai_nhan_ban`)
         # — timer chạy suốt trong một hộp thoại là tự làm đơ máy đang chạy sản
         # xuất, và làm cổng test dựng UI phải chờ vô ích.
@@ -1014,7 +1039,186 @@ class HopGiongToi(QDialog):
         self._dong_ho_nb.setInterval(700)
         self._dong_ho_nb.timeout.connect(self._nhip)
         self._nap()
+        self._do_vieneu()
         self._do_nhan_ban()
+
+    # ------------------------------------------------------------------
+    def _do_vieneu(self) -> dict:
+        """Dò BỘ GIỌNG VieNeu rồi cập nhật nhãn + nút. KHÔNG khoá gì cả.
+
+        ═══ NÚT BÁM `thieu`, KHÔNG BÁM `co` ═══
+        Cùng một luật với `_do_nhan_ban`, và cùng một lý do: bám cờ *"máy này
+        chạy được không"* thì trên máy dev (đã có `_giong_vieneu/venv`) nút
+        **BIẾN MẤT**, không ai bấm thử, rồi bản `.exe` trên máy nhân viên trắng
+        **mãi mãi không có đường tải**. `thieu` là câu trả lời của đúng cái bản
+        `.exe` nhìn thấy.
+
+        `o_tam` để RIÊNG, **KHÔNG gộp vào `thieu`** — máy vẫn chạy được nên gộp
+        vào là nhãn/nút báo sai trạng thái (`tinh_trang_vieneu` đã ghi rõ).
+        Nhưng nó vẫn phải HIỆN RA: môi trường nằm trong `%TEMP%` là một lượt
+        Disk Cleanup thì giọng biến khỏi combo, và triệu chứng đó không ai lần
+        ra được.
+
+        Bộ dò hỏng -> nghiêng về **HIỆN nút** (ẩn nút là cách tính năng đã chết
+        một lần), và nói ra là chưa dò được.
+        """
+        try:
+            tt = VN_C.tinh_trang_vieneu()
+        except Exception as e:  # noqa: BLE001 - dò hỏng KHÔNG được giết hộp
+            tt = {"thieu": ["không dò được"], "co": False, "cai_duoc": True,
+                  "o_tam": "", "thu_muc": "", "so_giong": 0, "python": "",
+                  "phien_ban": ""}
+            self.lb_vn.setText(
+                f"Bộ giọng VieNeu: CHƯA DÒ ĐƯỢC ({type(e).__name__}: {e}) — "
+                "bấm thử vẫn được, app sẽ báo lý do rõ.")
+            self.lb_vn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            self.b_tai_vn.setVisible(True)
+            self.b_tai_vn.setEnabled(not self._dang_cai_vn)
+            self._tt_vn = tt
+            return tt
+        self._tt_vn = tt
+        thieu = list(tt.get("thieu") or [])
+        o_tam = str(tt.get("o_tam") or "")
+        if not thieu:
+            # ĐÃ CÓ -> ẩn nút, nhưng CẢNH BÁO `%TEMP%` vẫn phải nói ra.
+            self.lb_vn.setText(
+                f"Bộ giọng VieNeu: ĐÃ CÓ ({tt.get('so_giong')} giọng dựng "
+                f"sẵn, bản {tt.get('phien_ban') or 'không rõ'})."
+                + (("\n" + o_tam) if o_tam else ""))
+            self.lb_vn.setStyleSheet(
+                (f"color:{SUCCESS}; font-size:11px;") if not o_tam
+                else "color:#FFB86C; font-size:11px;")
+            self.b_tai_vn.setVisible(False)
+            self.pb_vn.setVisible(False)
+            return tt
+        vi_sao = VN_C.vi_sao_khong_cai_vieneu()
+        self.lb_vn.setText(
+            "BƯỚC 1/2 — Bộ giọng VieNeu: CHƯA CÓ, thiếu "
+            + ", ".join(thieu[:3]) + ("..." if len(thieu) > 3 else "")
+            + ".\nKhông có bộ này thì KHÔNG có môi trường để cài phần nhân bản "
+              "vào, nên phải tải nó trước."
+            + (("\n" + vi_sao) if vi_sao else "")
+            + (("\n" + o_tam) if o_tam else ""))
+        self.lb_vn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        self.b_tai_vn.setVisible(True)
+        self.b_tai_vn.setText(VN_C.nhan_tai_vieneu(thieu))
+        # Nút xám KHÔNG MỘT LỜI là câu đố (cổng 58/16/51) — `vi_sao` đã in ra
+        # nhãn ở trên, nên ở đây chỉ cần khoá.
+        self.b_tai_vn.setEnabled(
+            bool(tt.get("cai_duoc")) and not self._dang_cai_vn)
+        self.b_tai_vn.setToolTip(
+            f"Tải bộ giọng VieNeu vào môi trường Python RIÊNG:\n"
+            f"{tt.get('thu_muc')}"
+            + "\n\nKHÔNG cài vào môi trường app đang chạy."
+            + f"\nLượng tải đo thật: khoảng {self._mb_vn()} MB, tải MỘT LẦN."
+            + (("\n\n" + vi_sao) if vi_sao else ""))
+        return tt
+
+    def _mb_vn(self) -> str:
+        """Số MB bộ VieNeu cho nhãn/tooltip/hộp xác nhận — MỘT phép đo, ba chỗ
+        đọc. Chép tay ba chỗ là đúng lỗi cổng 58 (nút 155 MB, hộp doạ 2 GB)."""
+        try:
+            return VN_C.so_mb(VN_C.mb_vieneu())
+        except Exception:  # noqa: BLE001
+            return "?"
+
+    def _tai_vieneu(self) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải. Xong thì TỰ ĐI TIẾP sang bước 2.
+
+        ═══ NỐI CHUỖI: MỘT LẦN BẤM ĐI HẾT ═══
+        Yêu cầu của anh Hùng là *"máy khác tôi cập nhật là được tích hợp hết
+        vào"* — nên máy TRẮNG bấm một lần phải đi hết VieNeu -> phần nhân bản.
+        Hộp xác nhận vì thế nói cả HAI bước và TỔNG dung lượng, rồi bước 2 tự
+        chạy khi bước 1 xong: đã hỏi một lần thì đừng hỏi lại giữa chuỗi, mà
+        cũng không được tải 2,5 GB khi người ta chưa biết.
+        """
+        if self._dang_cai_vn or self._dang_cai_nb:
+            return
+        tt = getattr(self, "_tt_vn", None) or VN_C.tinh_trang_vieneu()
+        vi_sao = VN_C.vi_sao_khong_cai_vieneu()
+        if not tt.get("cai_duoc") or vi_sao:
+            QMessageBox.information(
+                self, "Chưa tải được",
+                vi_sao or "Máy này chưa tải được bộ giọng VieNeu.")
+            return
+        # Số của CẢ CHUỖI, lấy từ đúng hai hàm đo — không gõ tay con nào.
+        mb2 = self._mb_nb()
+        if QMessageBox.question(
+                self, "Tải bộ giọng VieNeu",
+                f"Sẽ tải HAI bước vào môi trường Python RIÊNG của VieNeu:\n"
+                + str(tt.get("thu_muc", ""))
+                + f"\n\nBƯỚC 1 — bộ giọng VieNeu: khoảng {self._mb_vn()} MB "
+                  f"({tt.get('so_giong')} giọng dựng sẵn, tải MỘT LẦN)."
+                + f"\nBƯỚC 2 — phần nhân bản giọng: khoảng {mb2} MB."
+                + "\n\nKHÔNG cài vào môi trường app đang chạy."
+                + "\nBước 2 sẽ TỰ chạy khi bước 1 xong.\n\nTải bây giờ?"
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        self._chuoi_toi_nhan_ban = True
+        self._dang_cai_vn = True
+        self.b_tai_vn.setEnabled(False)
+        self.b_tai_vn.setText("Đang tải bước 1/2...")
+        self.b_tai_nb.setEnabled(False)
+        self.pb_vn.setVisible(True)
+        self.pb_vn.setValue(1)
+        # Dict RIÊNG cho bước này. Thread nền CHỈ ghi vào dict thường, `_nhip`
+        # (timer của luồng UI) mới đọc ra và vẽ — **KHÔNG đụng widget từ thread
+        # nền** (luật `shutdown.safe_emit`; gốc: 8 lần crash 0xc0000005).
+        # Dùng chung dict với bước 2 là hai lượt ghi lẫn số của nhau.
+        buoc = {"p": 0.0, "m": "Đang tải bộ giọng VieNeu..."}
+        self._buoc_vieneu = buoc
+        self._dong_ho_nb.start()
+
+        def bg() -> None:
+            try:
+                r = VN_C.cai_vieneu(
+                    on_progress=lambda p, m: buoc.update({"p": p, "m": m}))
+                ok, loi = bool(r.get("ok")), str(r.get("loi") or "")[:400]
+            except Exception as e:  # noqa: BLE001 - thread nền KHÔNG được chết
+                ok, loi = False, f"{type(e).__name__}: {e}"[:400]
+            self._vn_xong.emit(ok, loi)
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _tai_vieneu_xong(self, ok: bool, loi: str) -> None:
+        self._dang_cai_vn = False
+        self.pb_vn.setVisible(False)
+        self.b_tai_vn.setEnabled(True)
+        if not self._dang_cai_nb:
+            self._dong_ho_nb.stop()
+        # MỪNG THEO `thieu`, KHÔNG THEO `ok`: một lượt cài trả mã 0 mà môi
+        # trường vẫn thiếu là chuyện ĐÃ xảy ra thật (cổng 58).
+        tt = self._do_vieneu()
+        self._nap()
+        if tt.get("thieu"):
+            self._chuoi_toi_nhan_ban = False
+            QMessageBox.warning(
+                self, "Chưa xong",
+                "Chưa tải xong bộ giọng VieNeu.\n"
+                + ("Còn thiếu: " + ", ".join(list(tt.get("thieu") or [])[:3])
+                   if tt.get("thieu") else "")
+                + (("\n\n" + loi) if loi else "")
+                + "\n\nApp vẫn chạy bình thường (giọng edge-tts không cần bộ "
+                  "này). Bấm lại để tải tiếp phần còn thiếu.\n"
+                  "Chi tiết ở logs/giong_vieneu_<ngày>.log")
+            return
+        # Bước 1 XONG -> đi tiếp bước 2 nếu còn thiếu. `_do_nhan_ban` cập nhật
+        # nút/nhãn trước, để nếu chuỗi dừng ở đây thì người dùng vẫn thấy nút
+        # bước 2 đang bật (chứ không phải một hộp thoại rồi hết đường).
+        tt2 = self._do_nhan_ban()
+        if self._chuoi_toi_nhan_ban and tt2.get("thieu") \
+                and tt2.get("cai_duoc"):
+            self._chuoi_toi_nhan_ban = False
+            self._tai_nhan_ban(da_dong_y=True)
+            return
+        self._chuoi_toi_nhan_ban = False
+        QMessageBox.information(
+            self, "Xong bước 1/2",
+            f"Đã tải xong bộ giọng VieNeu ({tt.get('so_giong')} giọng dựng "
+            "sẵn dùng được ngay).\n"
+            + (("\nPhần nhân bản: " + VN_C.nhan_tai_nhan_ban(
+                list(tt2.get("thieu") or [])))
+               if tt2.get("thieu") else "\nPhần nhân bản: ĐÃ CÓ."))
 
     # ------------------------------------------------------------------
     def _nap(self) -> None:
@@ -1135,9 +1339,16 @@ class HopGiongToi(QDialog):
         except Exception:  # noqa: BLE001
             return "?"
 
-    def _tai_nhan_ban(self) -> None:
-        """NGƯỜI DÙNG BẤM thì mới tải — app không tải 2,5 GB sau lưng."""
-        if self._dang_cai_nb:
+    def _tai_nhan_ban(self, da_dong_y: bool = False) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải — app không tải 2,5 GB sau lưng.
+
+        `da_dong_y=True` chỉ dùng khi đi TIẾP từ bước 1 của chuỗi
+        (`_tai_vieneu_xong`): hộp xác nhận ở bước 1 đã nói cả hai bước và tổng
+        dung lượng rồi, hỏi lại giữa chuỗi là bắt người dùng bấm hai lần cho
+        một lần đồng ý. **Mặc định vẫn là False** — nút bấm tay luôn phải hỏi,
+        và một tham số mặc-định-True là cách "app tự tải sau lưng" lẻn vào.
+        """
+        if self._dang_cai_nb or self._dang_cai_vn:
             return
         tt = getattr(self, "_tt_nb", None) or VN_C.tinh_trang_nhan_ban()
         if not tt.get("cai_duoc"):
@@ -1147,7 +1358,7 @@ class HopGiongToi(QDialog):
                     or "Máy này chưa cài được phần nhân bản."))
             return
         thieu = ", ".join(list(tt.get("thieu") or [])[:4])
-        if QMessageBox.question(
+        if not da_dong_y and QMessageBox.question(
                 self, "Tải phần nhân bản giọng",
                 f"Sẽ tải khoảng {self._mb_nb()} MB ({thieu}) vào môi trường "
                 "Python RIÊNG của VieNeu:\n"
@@ -1188,6 +1399,13 @@ class HopGiongToi(QDialog):
         toàn. Không có nhánh này thì thanh đứng im ở 1% suốt vài phút — đúng
         cái anh Hùng đã kêu ở hộp bên ("chỉ hiện thanh tiến trình, không hiện
         gì cả")."""
+        # HAI NHÁNH, HAI DICT RIÊNG. Gộp vào một dict là hai lượt tải ghi lẫn
+        # số của nhau (và chuỗi bước-1-rồi-bước-2 thì thanh nhảy ngược).
+        if self._dang_cai_vn:
+            b = getattr(self, "_buoc_vieneu", {"p": 0.0, "m": ""})
+            self.pb_vn.setValue(
+                int(max(1, min(100, float(b.get("p") or 0) * 100))))
+            self.lb_tt.setText("Bước 1/2: " + str(b.get("m") or "")[:140])
         if not self._dang_cai_nb:
             return
         b = getattr(self, "_buoc_nhan_ban", {"p": 0.0, "m": ""})
@@ -1199,6 +1417,9 @@ class HopGiongToi(QDialog):
         self._dong_ho_nb.stop()
         self.pb_nb.setVisible(False)
         self.b_tai_nb.setEnabled(True)
+        # Mở lại nút bước 1 nữa: `_tai_vieneu` khoá nó khi vào chuỗi, không mở
+        # lại là sau một lượt chuỗi thì nút đó xám vĩnh viễn cả phiên.
+        self.b_tai_vn.setEnabled(True)
         # MỪNG THEO `thieu`, KHÔNG THEO `ok` của pip: pip trả mã 0 mà gói vẫn
         # nằm ngoài môi trường đích là chuyện ĐÃ xảy ra thật (cổng 58).
         tt = self._do_nhan_ban()

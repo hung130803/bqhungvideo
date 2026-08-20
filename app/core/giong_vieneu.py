@@ -827,8 +827,68 @@ def _ghi_log(dong: str) -> None:
 #: không nhân lên được) — khác hẳn `CHUA_TAI` dán lên cả 20 dòng. Số giọng lấy
 #: bằng `len(GIONG_VN)` chứ KHÔNG ghi cứng "20": ghi cứng thì lần thêm/bớt
 #: giọng kế tiếp biến nhãn thành lời khai sai mà không một cổng nào kêu.
-NHAN_TAI = (f"Tải bộ giọng Việt VieNeu (250 MB, tải MỘT LẦN — dùng chung cho "
+#: Dung lượng bộ giọng VieNeu, MB tải về. **SỐ ĐO, KHÔNG ƯỚC BỪA** — đo bằng
+#: `_do_vieneu_tai.py` (`pip install --dry-run --report` cho `vieneu==3.2.8`
+#: bằng CHÍNH python hệ thống, **KHÔNG tải thật**, rồi cộng phần model tải từ
+#: HuggingFace). Sửa số này thì phải chạy lại script đó, đừng gõ tay.
+MB_VIENEU = 250.0
+
+
+def mb_vieneu() -> float:
+    """Số MB bộ giọng VieNeu sẽ tải. MỘT phép đo cho MỌI chỗ đọc.
+
+    Nhãn nút · tooltip · hộp xác nhận đều gọi hàm này. Chép tay ba chỗ là đúng
+    lỗi cổng 58: nút ghi 155 MB rồi hộp xác nhận doạ 2 GB cho cùng một lượt.
+    """
+    return MB_VIENEU
+
+
+#: `{MB_VIENEU:.0f}` chứ KHÔNG `so_mb()`: hằng này dựng lúc NẠP MODULE mà
+#: `so_mb` định nghĩa ở dưới -> gọi lên là `NameError` ngay lúc import. Với số
+#: dưới 1000 thì hai cách ra chuỗi y hệt; chỗ cần `so_mb` là `nhan_tai_vieneu`
+#: (chạy lúc bấm, và số có thể lên hàng nghìn).
+NHAN_TAI = (f"Tải bộ giọng Việt VieNeu ({MB_VIENEU:.0f} MB, tải MỘT LẦN — "
+            f"dùng chung cho cả {len(GIONG_VN)} giọng)")
+
+
+def nhan_tai_vieneu(thieu: Optional[list[str]] = None) -> str:
+    """Nhãn nút tải BỘ GIỌNG VieNeu, đúng với tình trạng hiện tại.
+
+    Khuôn y hệt `nhan_tai_nhan_ban`: **nêu ĐÍCH DANH** thứ còn thiếu + số MB
+    lấy từ `mb_vieneu()` (một phép đo, ba chỗ đọc).
+
+    ═══ NÚT NÀY TỪNG KHÔNG TỒN TẠI, VÀ ĐÓ LÀ CẢ VẤN ĐỀ ═══
+    `cai_vieneu()` viết xong từ lâu mà `grep -rn "cai_vieneu" app/ui/` ra **0
+    dòng** — ca thứ SÁU của *"hàm xong ≠ tính năng xong"* trong repo này (sau
+    `giong_bang`, `giong_chatter`, `giong_vbee`, `giong_kokoro`,
+    `cai_nhan_ban`). Hậu quả đo được: máy chưa có VieNeu thì nút nhân bản chỉ
+    ghi *"Chưa có bộ giọng VieNeu — tải bộ đó trước"* mà **không có chỗ nào để
+    bấm tải bộ đó** — chuỗi ĐỨT ngay giữa, và `NHAN_TAI` cũng là hằng CHẾT
+    (0 nơi đọc).
+    """
+    thieu = list(thieu if thieu is not None else tinh_trang_vieneu()["thieu"])
+    if not thieu:
+        return NHAN_TAI
+    mb = so_mb(mb_vieneu())
+    # Ca CÀI DỞ (venv dựng rồi mà `vieneu` chưa vào, hoặc bản quá cũ) phải
+    # trông KHÁC ca chưa có gì — xem `nhan_tai_nhan_ban` để biết vì sao.
+    if any("vieneu >=" in t for t in thieu):
+        return f"Cập nhật bộ giọng VieNeu (khoảng {mb} MB)"
+    return (f"Tải bộ giọng Việt VieNeu ({mb} MB, tải MỘT LẦN — dùng chung cho "
             f"cả {len(GIONG_VN)} giọng)")
+
+
+def vi_sao_khong_cai_vieneu() -> str:
+    """"" = tải được. Khác rỗng = LÝ DO, để nút xám còn nói được vì sao.
+
+    Nút xám KHÔNG MỘT LỜI là câu đố (bài học cổng 58/16/51), và đây là ca RẤT
+    dễ gặp: bản `.exe` KHÔNG mang Python nên máy nhân viên trắng có thể chưa có.
+    """
+    if not _python_he_thong():
+        return ("Máy này không có Python 3 nên app không tự tải được bộ giọng "
+                "VieNeu: cài Python 3 (python.org) rồi bấm lại, hoặc copy thư "
+                "mục _giong_vieneu từ máy đã cài sang.")
+    return ""
 
 
 def cai_vieneu(on_progress: Optional[Callable[[float, str], None]] = None,
