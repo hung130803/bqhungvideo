@@ -1126,9 +1126,12 @@ class HopGiongToi(QDialog):
 
         Chép tay ba chỗ là đúng lỗi cổng 58: nút ghi 155 MB rồi hộp xác nhận
         doạ 2 GB, hai con số cho cùng một lượt tải.
+
+        Định dạng đi qua `VN_C.so_mb()` — CÙNG hàm với nhãn nút, nên dấu nghìn
+        không thể lệch nhau giữa ba chỗ.
         """
         try:
-            return f"{VN_C.mb_nhan_ban():,.0f}".replace(",", ".")
+            return VN_C.so_mb(VN_C.mb_nhan_ban())
         except Exception:  # noqa: BLE001
             return "?"
 

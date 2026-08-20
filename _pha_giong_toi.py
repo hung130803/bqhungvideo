@@ -98,7 +98,7 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
 
     ("13. hộp xác nhận + tooltip ghi MỘT SỐ KHÁC nhãn nút (đúng lỗi cổng 58: "
      "nút 155 MB, hộp doạ 2 GB)",
-     UI, '            return f"{VN_C.mb_nhan_ban():,.0f}".replace(",", ".")',
+     UI, "            return VN_C.so_mb(VN_C.mb_nhan_ban())",
      '            return "155"', "12l"),
 
     ("14. nút KHÔNG còn khoá theo `cai_duoc` (máy không có Python 3 vẫn bấm "
@@ -132,6 +132,14 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
      VNC, '    return f"Tải phần nhân bản giọng ({\', \'.join(goi)} — {duoi})"',
      '    return f"\\U0001F4CB Tải phần nhân bản giọng '
      '({\', \'.join(goi)} — {duoi})"', "12j'' / 9c"),
+
+    # LỖI THẬT, bắt được ở lượt CHẠY THẬT đầu tiên (`_do_cai_nhan_ban.py`):
+    # `.replace(",", ".")` trên CẢ CÂU làm dấu phẩy tiếng Việt thành dấu chấm
+    # -> *"(khoảng 126 MB. tải 1 lần)"*.
+    ("20. đổi dấu nghìn trên CẢ CÂU thay vì chỉ con số (dấu phẩy tiếng Việt "
+     "thành dấu chấm — đã in ra thật ở lượt tải đầu)",
+     VNC, '                        "1 lần)..."))',
+     '                        "1 lần)...").replace(",", "."))', "12l'''"),
 
     # Neo MỘT DÒNG (LUẬT 2 của file này: repo là CRLF nên neo nhiều dòng dễ
     # trượt). `tt = self._do_nhan_ban()` chỉ có ĐÚNG 1 lần — đã đếm trước.

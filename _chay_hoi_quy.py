@@ -251,8 +251,11 @@ CONG = [
     # sinh WAV mẫu + 1 tiến trình con đọc lại sổ (~30 giây). Máy chưa tải bộ
     # VieNeu thì CA 11 tự **BỎ QUA** — không tự cho ĐẠT (đó là "phép đo phát
     # chứng nhận") và không báo HỎNG (đỏ oan thì người ta bỏ qua cổng).
-    # Thử phá `_pha_giong_toi.py`: 9 phép, mỗi phép gỡ ĐÚNG một chốt.
-    ("88 giọng của tôi",    "_test_giong_toi.py",        66),
+    # Thử phá `_pha_giong_toi.py`: 20 phép, mỗi phép gỡ ĐÚNG một chốt.
+    # 66 -> 104 (20/08/2026): thêm CA 12 — NÚT TẢI PHẦN NHÂN BẢN (torch +
+    # torchaudio vào venv VieNeu). NÂNG mốc, không hạ: mốc là SÀN, hạ nó cho
+    # cổng xanh là bỏ cổng.
+    ("88 giọng của tôi",    "_test_giong_toi.py",       104),
     # Cổng 89 — CHỈNH VIDEO THEO GIỌNG (`he_so_hinh`) + độ to bản trộn + hộp
     # Thay giọng gọn. Số **89** lấy bằng cách đọc chính `CONG` này (max đang là
     # 88), KHÔNG đếm theo trí nhớ.

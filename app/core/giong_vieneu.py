@@ -986,6 +986,19 @@ def mb_nhan_ban() -> float:
     return MB_NB_CUDA if ban_cuda_se_tai() else MB_NB_CPU
 
 
+def so_mb(mb: float) -> str:
+    """`2485.6` -> `"2.486"`. Dấu nghìn kiểu Việt, ĐỔI RIÊNG CON SỐ.
+
+    **ĐỪNG `.replace(",", ".")` trên CẢ CÂU** — nó ăn luôn dấu phẩy của câu
+    tiếng Việt. Đo được ở chính lượt CHẠY THẬT đầu tiên của `cai_nhan_ban`
+    (`_do_cai_nhan_ban.py`): dòng tiến độ ra *"(khoảng 126 MB. tải 1 lần)"*.
+    `giong_kokoro.dau_chua_tai` đã ghi đúng bài học này ("một lần, dùng chung"
+    -> "một lần. dùng chung") mà HAI chỗ khác trong cùng file đó vẫn còn lỗi —
+    nên ở đây làm MỘT hàm, và mọi nơi đọc số đều gọi nó.
+    """
+    return f"{mb:,.0f}".replace(",", ".")
+
+
 def _goi_nhan_ban() -> tuple[str, ...]:
     """Gói mà đường nhân bản cần — NGUỒN DUY NHẤT là `nhan_ban_giong`.
 
@@ -1041,7 +1054,7 @@ def nhan_tai_nhan_ban(thieu: Optional[list[str]] = None) -> str:
     # hỏng). Nút này chỉ cài được torch nên phải nói thẳng, đừng hứa.
     if thieu and not la_goi:
         return "Chưa có bộ giọng VieNeu — tải bộ đó trước"
-    mb = f"{mb_nhan_ban():,.0f}".replace(",", ".")
+    mb = so_mb(mb_nhan_ban())
     cuda = ban_cuda_se_tai()
     # Nói kèm "CHƯA ĐO có nhanh hơn" khi đi đường CUDA: Demucs có số đo 9,28x
     # để hứa, đường nhân bản của VieNeu thì **chưa ai đo GPU** — hứa nhanh mà
@@ -1186,10 +1199,10 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
         trong = _dia_trong_mb(venv)
         if 0 <= trong < can:
             return xong(
-                f"Ổ đĩa chứa {venv} chỉ còn {trong:,.0f} MB trống, cần khoảng "
-                f"{can:,.0f} MB (tải {mb:,.0f} MB rồi bung ra đĩa còn to hơn: "
-                "torch bản cpu tải 116 MB mà nằm trên đĩa 527 MB). Dọn bớt "
-                "đĩa rồi bấm lại.".replace(",", "."))
+                f"Ổ đĩa chứa {venv} chỉ còn {so_mb(trong)} MB trống, cần "
+                f"khoảng {so_mb(can)} MB (tải {so_mb(mb)} MB rồi bung ra đĩa "
+                "còn to hơn: bản cpu tải 126 MB mà venv phình 11,5 -> 603,7 MB "
+                "= +592 MB, ĐO THẬT). Dọn bớt đĩa rồi bấm lại.")
 
         if not _KHOA_NB.acquire(blocking=False):
             return xong("Đang tải rồi — đợi lượt này xong.")
@@ -1206,10 +1219,13 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
                     "--disable-pip-version-check", "--upgrade",
                     "--ignore-installed",
                     "--extra-index-url", chi_muc, *goi]
+            # `so_mb()` đổi dấu nghìn RIÊNG CON SỐ. Bản đầu `.replace(",",
+            # ".")` cả câu và lượt CHẠY THẬT đầu tiên in ra
+            # *"(khoảng 126 MB. tải 1 lần)"* — dấu phẩy thành dấu chấm.
             prog(0.02, ("Máy có GPU NVIDIA — đang tải phần nhân bản bản CUDA "
-                        f"(khoảng {mb:,.0f} MB, tải 1 lần)..." if cuda else
-                        f"Đang tải phần nhân bản (khoảng {mb:,.0f} MB, tải 1 "
-                        "lần)...").replace(",", "."))
+                        f"(khoảng {so_mb(mb)} MB, tải 1 lần)..." if cuda else
+                        f"Đang tải phần nhân bản (khoảng {so_mb(mb)} MB, tải "
+                        "1 lần)..."))
             ma, log = _chay_theo_dong(args, han_giay, prog, 0.02, 0.90)
             ra["nhat_ky"] = log[-40:]
             if ma == -1:

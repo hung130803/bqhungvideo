@@ -883,6 +883,37 @@ try:
        "(cpu 126,3 · cu126 2.485,6)",
        VN.mb_nhan_ban() in (VN.MB_NB_CPU, VN.MB_NB_CUDA),
        f"{VN.mb_nhan_ban()} · cuda={VN.ban_cuda_se_tai()}")
+    # DẤU PHẨY CỦA CÂU KHÔNG ĐƯỢC BIẾN THÀNH DẤU CHẤM. Lỗi thật, bắt được ở
+    # lượt CHẠY THẬT đầu tiên: `.replace(",", ".")` trên CẢ CÂU ra
+    # *"(khoảng 126 MB. tải 1 lần)"*. `giong_kokoro.dau_chua_tai` đã ghi bài
+    # học này rồi mà tôi vẫn lặp — nên khoá lại bằng cổng.
+    ok("12l'' `so_mb` chỉ đổi dấu nghìn CỦA SỐ (2485.6 -> '2.486')",
+       VN.so_mb(2485.6) == "2.486" and VN.so_mb(126.3) == "126",
+       f"{VN.so_mb(2485.6)} · {VN.so_mb(126.3)}")
+    # LỖI CỦA PHÉP THỬ, ghi lại để không ai lặp: bản đầu của mục này hỏi
+    # *"nhãn/tooltip/hộp còn dấu phẩy không"*. SAI — với `thieu=['torch']` thì
+    # phép `', '.join` chỉ có MỘT phần tử nên câu KHÔNG có dấu phẩy nào một
+    # cách hoàn toàn chính đáng (câu dùng "—" và ":"), và 4 mục ĐỎ OAN. Cái
+    # cần canh là BẤT BIẾN CẤU TRÚC: chỉ `so_mb` được phép đổi dấu nghìn.
+    _xau_replace: list[str] = []
+    for _n in ast.walk(_cay_vn):
+        if not (isinstance(_n, ast.FunctionDef) and _n.name != "so_mb"):
+            continue
+        for _c in ast.walk(_n):
+            if isinstance(_c, ast.Call) \
+                    and isinstance(_c.func, ast.Attribute) \
+                    and _c.func.attr == "replace" \
+                    and [getattr(a, "value", None) for a in _c.args] \
+                    == [",", "."]:
+                _xau_replace.append(_n.name)
+    ok("12l''' CHỈ `so_mb` được đổi dấu nghìn — không hàm nào khác gọi "
+       "`.replace(\",\", \".\")` (gọi trên CẢ CÂU thì dấu phẩy tiếng Việt "
+       "thành dấu chấm: lượt chạy thật in ra «khoảng 126 MB. tải 1 lần»)",
+       not _xau_replace, f"còn ở: {sorted(set(_xau_replace))}")
+    # Mặt DƯƠNG: nhãn có dấu phẩy THẬT (2 gói -> `', '.join`) phải giữ được nó.
+    _nh_2 = VN.nhan_tai_nhan_ban(["torch", "torchaudio"])
+    ok("12l'''' nhãn 2 gói giữ nguyên dấu phẩy của `', '.join`",
+       "torch, torchaudio" in _nh_2, _nh_2[:60])
     h3.close()
 
     # THIẾU PYTHON 3 -> KHOÁ NÚT **VÀ NÓI VÌ SAO**. Nút xám không một lời là
