@@ -993,6 +993,201 @@ def dau_chua_tai(tt: Optional[dict] = None) -> str:
                                n=len(GIONG_KK))
 
 
+# ---------------------------------------------------------------------------
+# NHẤN NHÁ — SỐ ĐO THẬT, THAY CHO Ô TRỐNG (20/08/2026)
+# ---------------------------------------------------------------------------
+# **VÌ SAO CÓ KHỐI NÀY.** Anh Hùng nghe rồi báo: *"phần giọng đọc koro tôi thấy
+# được mà k có nhấn nhá cảm xúc gì"*. Lúc đó `nhan_nha.BANG` **KHÔNG có một mã
+# `kk:` nào**, và `giong_doc.BANG` cũng chưa biết `kk:` -> `nhan_nha.nhan(
+# "kk:af_bella")` trả **chuỗi RỖNG**. Tức dòng combo không nói MỘT CHỮ nào về
+# nhấn nhá, và lời anh ấy không có con số nào để đối chiếu. (Chữ *"chưa đo
+# tiếng"* trên dòng Kokoro là của `da_ngu.nhan_gon` — nó nói *"chưa đo giọng
+# này ĐỌC ĐƯỢC TIẾNG GÌ"*, một phép đo KHÁC; đừng đọc nó thành "chưa đo nhấn
+# nhá".)
+#
+# **ĐO BẰNG ĐÚNG THƯỚC CŨ, KHÔNG DỰNG THƯỚC THỨ HAI** — `_do_nhan_nha_kk.py`
+# -> `_kq_nhan_nha_kk.json`: `_do_nhan_nha.f0_nua_cung` + `pstdev` (độ lệch
+# chuẩn cao độ F0, **nửa cung**, khung 40 ms) trên ĐÚNG bộ 4 câu tiếng Anh
+# `_do_nhan_nha_bang.CAU["en"]` mà mọi giọng `en-*` của bảng 211 giọng đã đọc.
+# Kokoro không có tiếng Việt nên bộ câu phải là tiếng Anh và mốc phải là giọng
+# edge-tts **tiếng Anh** (lấy `vi-VN-HoaiMy` làm mốc là dựng lại phép so chéo
+# tiếng mà `nhan_nha` cấm).
+#
+# **ĐỐI CHỨNG CHẠY CÙNG LƯỢT TÁI LẬP ĐƯỢC BẢNG CŨ** -> cột này SO ĐƯỢC với 211
+# giọng kia: `en-US-Aria` 3,33 -> **3,33** · `en-US-Andrew` 4,49 -> **4,45** ·
+# `en-GB-Ryan` 5,38 -> **5,38**. Lệch lớn nhất **0,04**, nằm gọn trong dải nhiễu
+# 0,00-0,12 mà chính `nhan_nha` đã đo. Không có 3 dòng này thì 28 số dưới đây
+# vô nghĩa — lệch là do giọng hay do thước, không cách nào biết.
+#
+# ═══ SỐ NÓI GÌ: LỜI ANH HÙNG ĐÚNG Ở GIỌNG ANH ẤY BẤM, SAI Ở CẢ BỘ ═══
+# 28/28 đo được, trải **2,24 – 5,66** · TB **3,75** · trung vị **3,92**.
+# **20/28 giọng Kokoro ĐẠT HOẶC HƠN `en-US-Aria` (3,33)**, TB cao hơn Aria
+# **+0,42**; và `am_santa` **5,66** cao hơn **CẢ `en-GB-Ryan` 5,38** — giọng
+# tiếng Anh cao nhất của bảng 211. Nên câu *"Kokoro không có nhấn nhá"* nói về
+# CẢ BỘ là **SAI theo số đo**.
+# Nhưng nó **ĐÚNG ở đúng những giọng người ta bấm**: `af_bella` — giọng tác giả
+# chấm **A-** và ghi thẳng *"giọng tốt nhất cả bộ"* — đo ra **2,33**, tức
+# **thấp thứ 2 trong 28** và **kém Aria 1,00 nửa cung**. Cùng chùm đáy còn
+# `bf_isabella` 2,24 (C) và `bf_emma` 2,36 (B-).
+#
+# **VÀ ĐÂY LÀ PHÁT HIỆN ĐÁNG NÓI NHẤT: ĐIỂM TÁC GIẢ KHÔNG DỰ ĐOÁN ĐƯỢC NHẤN
+# NHÁ.** Spearman giữa bậc điểm tác giả và nhấn nhá = **0,12** (gần như không
+# liên quan). Đọc thẳng hai đầu bảng thì thấy rõ hơn con số: 5 giọng nhấn nhá
+# CAO nhất bị chấm **D- · D+ · D · D · B-**, còn 5 giọng nhấn nhá THẤP nhất có
+# cả **A-** và **B-**. Tức người chọn giọng theo ĐIỂM (hoặc theo thứ tự dòng)
+# hoàn toàn có thể trúng giọng phẳng nhất bộ — và đó chính xác là chuyện đã xảy
+# ra. Vì vậy **hai con số phải cùng đứng trên dòng**, không con nào thay được
+# con nào: điểm tác giả nói *nghe có sạch/tự nhiên không*, nhấn nhá nói *có lên
+# xuống không*.
+#
+# ═══ VÌ SAO SỐ NẰM Ở ĐÂY CHỨ KHÔNG PHẢI TRONG `nhan_nha.BANG` ═══
+# Đây là câu hỏi đầu tiên người đọc sẽ hỏi. Lý do là ĐO ĐƯỢC, không phải cho
+# gọn — và **THƯỚC vẫn chỉ có MỘT** (thứ duy nhất không được nhân bản): số dưới
+# đây do `_do_nhan_nha.f0_nua_cung` sinh ra, y hệt 211 giọng kia. Chỗ khác nhau
+# là NƠI LƯU và VIỆC dùng nó — ở đây nó chỉ để **HIỆN**, không để **SẮP**.
+#
+# 1. **VÀO `BANG` LÀ ĐỔI THỨ TỰ COMBO THEO ĐÚNG CÁI KHÔNG NÊN.**
+#    `giong_bang.gom_nhom` sắp trong nhóm bằng `nhan_nha.khoa_sap`, tức nhấn
+#    nhá thành khoá CHÍNH. Với bảng trên thì `af_bella` (A-, *"giọng tốt nhất
+#    cả bộ"*) tụt xuống **gần đáy** 28 dòng còn `am_santa` (**D-**) và
+#    `bm_lewis` (**D+**) trèo lên **hai dòng đầu** — chỗ người ta bấm nhanh
+#    nhất. Chính `nhan_nha.__doc__` đã dặn *"Số này KHÔNG nói giọng HAY hay
+#    DỞ"*, và đây đúng lỗi `vn:Xuân Vĩnh` đã sập (nhấn nhá 6,26 = đỉnh bảng 211
+#    giọng nên đứng DÒNG ĐẦU nhóm, trong khi đọc sai 26,4% số từ). Với bộ
+#    Kokoro thì thước chất lượng đã có sẵn là **ĐIỂM TÁC GIẢ CHẤM**, và
+#    Spearman 0,12 ở trên chứng minh nhấn nhá KHÔNG thay được nó.
+# 2. **THÊM 28 GIỌNG VÀO BẢNG 211 LÀ DỊCH TỨ PHÂN VỊ** -> `VUA`/`CAO`/`RAT_CAO`
+#    phải dịch theo (luật ở `nhan_nha.__doc__`: bảng đổi thì chạy lại tứ phân
+#    vị, ÁP nó, rồi ĐẾM số giọng đổi nhãn QUA `nhan()`) -> đổi NHÃN của giọng
+#    CŨ. Đó là một lượt việc RIÊNG đi qua 4 cổng (76 CA 3a · 79 CA 10 ·
+#    81 CA 1c/1d · 83 mục 3f kèm `SO_DOI_NHAN`); làm nửa vời là tệ hơn không
+#    làm.
+# 3. **CỔNG 76 CA 3a CHƯA BIẾT TIỀN TỐ `kk:`** — `hop_le` chỉ gom `ov:`,
+#    `piper:`, `vn:` và giọng edge-tts, nên nhét `kk:` vào `BANG` là cổng ĐỎ
+#    ngay, và phải sửa cổng để mở đường cho mã.
+#
+# **ĐÃ KIỂM MỘT LO NGẠI VÀ NÓ KHÔNG CÓ THẬT** (ghi ra để đừng ai đi tìm lại):
+# tôi tưởng thêm vào `BANG` sẽ làm giọng Kokoro lọt vào nhóm *"Khuyên dùng"*
+# (`giong_bang.chon_khuyen` chặn bằng `nhan_nha.muc(...) is None`). Đo thật:
+# `kk:af_bella` còn trượt **hai** chốt khác của hàm đó — `_dung_duoc_ngay` trả
+# **False** và `ma_ngon_ngu` trả **rỗng** — nên nó không vào nhóm khuyên dù có
+# số hay không.
+#
+# **SINH RA TỪ PHÉP ĐO, ĐỪNG SỬA TAY.** Muốn đo lại: `.venv\\Scripts\\python -u
+# _do_nhan_nha_kk.py` (xoá `_kq_nhan_nha_kk.json` trước nếu muốn đo từ đầu).
+NHAN_NHA: dict[str, float] = {
+    "af_bella":       2.33,   # A-  <- giọng tác giả khen nhất, nhấn nhá ĐÁY
+    "af_heart":       4.01,   # A
+    "af_nicole":      4.44,   # B-
+    "af_aoede":       3.62,   # C+
+    "af_kore":        4.00,   # C+
+    "af_sarah":       3.73,   # C+
+    "af_alloy":       3.12,   # C
+    "af_jessica":     4.48,   # D
+    "af_nova":        3.50,   # C
+    "af_river":       2.92,   # D
+    "af_sky":         3.68,   # C-
+    "am_fenrir":      4.36,   # C+
+    "am_michael":     4.28,   # C+
+    "am_puck":        4.14,   # C+
+    "am_echo":        3.95,   # D
+    "am_eric":        3.57,   # D
+    "am_liam":        4.60,   # D
+    "am_onyx":        4.28,   # D
+    "am_santa":       5.66,   # D-  <- ĐỈNH cả bộ, hơn cả en-GB-Ryan 5,38
+    "am_adam":        3.01,   # F+
+    "bf_emma":        2.36,   # B-
+    "bf_isabella":    2.24,   # C   <- thấp nhất cả bộ
+    "bf_alice":       4.05,   # D
+    "bf_lily":        3.90,   # D
+    "bm_fable":       4.23,   # C
+    "bm_george":      3.02,   # C
+    "bm_daniel":      2.98,   # D
+    "bm_lewis":       4.67,   # D+
+}
+
+
+def nhan_nha_cua(ma: str) -> Optional[float]:
+    """Nhấn nhá (nửa cung) của một giọng Kokoro; ``None`` = CHƯA ĐO.
+
+    Nhận cả ``af_bella`` lẫn ``kk:af_bella`` — nơi gọi ở `giong_bang` cầm mã
+    CÓ tiền tố, còn `nhan_giong` cầm mã KHÔNG có; bắt hai bên tự nhớ cắt tiền
+    tố là chỗ sẽ có ngày một bên quên rồi im lặng trả ``None``.
+    """
+    v = str(ma or "")
+    return NHAN_NHA.get(tach_ma(v) or v)
+
+
+def duoi_nhan_nha(ma: str) -> str:
+    """Đuôi ``' · nhấn nhá 2,3'`` cho nhãn; ``''`` khi chưa đo.
+
+    ╔═══════════════════════════════════════════════════════════════════════╗
+    ║ CHƯA ĐƯỢC GỌI TỪ ĐÂU — CỐ Ý, VÀ ĐÂY LÀ SỐ ĐO CHỨNG MINH VÌ SAO        ║
+    ╚═══════════════════════════════════════════════════════════════════════╝
+    Tôi khai thẳng chuyện này thay vì để người sau tự phát hiện: repo đã có
+    **4 lần** module lõi nằm chết không ai gọi (`giong_bang`, `giong_chatter`,
+    `giong_vbee`, và chính `giong_kokoro` ở v2.41.0), nên *"hàm xong ≠ tính
+    năng xong"*. Lần này **hàm xong, số xong, nhưng ĐƯỜNG RA UI ĐANG BỊ CHẶN** —
+    không phải quên nối.
+
+    **DÒNG COMBO KOKORO KHÔNG CÒN CHỖ.** Nó đã **139-178 ký tự** vì
+    ``giong_bang.duoi_dong`` dán thêm một đuôi **85 ký tự** (*"miễn phí (Apache
+    2.0), cần tải bộ 538 MB, KHÔNG có tiếng Việt, KHÔNG có mốc từng chữ"*), và
+    ``thay_giong_dialog.nhan_gon`` phải rút nó về vừa bề rộng hộp (đo được: hộp
+    tìm giọng chỉ còn **dư 12 px**, mục CA 1 của cổng 84 tự in ra con số đó).
+    Ghép thêm bất cứ thứ gì là đẩy phần cuối ra khỏi dòng — **ĐO ĐƯỢC BA LẦN,
+    cổng 84 (mốc ĐẠT 62 · HỎNG 2)**:
+
+        ``· nhấn nhá 5,7 rất truyền cảm``  30 kt -> **ĐẠT 61** · 28 mục thiếu
+        ``· nhấn nhá 5,7``                 15 kt -> **ĐẠT 61** · 13 mục thiếu
+        ``· nhấn nhá 5,7`` + bỏ "(Kokoro)"  6 kt -> **ĐẠT 61** ·  9 mục thiếu
+
+    Và thứ bị đẩy ra khỏi dòng **không phải** con số nhấn nhá — nó là
+    ***"cần tải"*** và ***"miễn phí"***. Tức cái giá của việc hiện nhấn nhá là
+    mất đúng cảnh báo *"máy chưa tải bộ 538 MB, chọn giọng này thì app đọc bằng
+    giọng KHÁC"*. **Đó là một cuộc đổi TỆ**, và cổng 84 sinh ra chính để chặn
+    nó (nhãn Kokoro đã cắt mất chữ "cần tải" một lần, commit `62a9e6b`).
+
+    **BA ĐƯỜNG TẮT ĐỀU BỊ LOẠI, ghi ra để đừng ai đi lại:** hạ mốc cổng 84 ·
+    nới trần 132/bề rộng hộp · rút ngắn cảnh báo ``TÁC GIẢ CHẤM THẤP`` (20 ký
+    tự, nằm đúng trên 12 dòng dài nhất — và là thứ cổng 87 CA 10b canh). Cả ba
+    đều là **đổi một CẢNH BÁO lấy một CON SỐ**.
+
+    **MUỐN BẬT THÌ PHẢI LẤY LẠI ~30 KÝ TỰ TRÊN DÒNG, và chỗ lấy đã biết đích
+    danh:** đuôi 85 ký tự ``giong_bang._DUOI[KOKORO]``. Nó nói 4 việc trong đó
+    **2 việc đã nằm sẵn ở chỗ khác trên cùng dòng** — *"KHÔNG có tiếng Việt"*
+    trùng với ``Nữ · Mỹ`` / ``Nam · Anh`` của từng giọng, và *"KHÔNG có mốc từng
+    chữ"* là chi tiết kỹ thuật đúng chỗ cho tooltip. Cắt hai cụm đó là dư chỗ.
+    **Không làm trong lượt này** vì ``giong_bang.py`` đang do luồng khác giữ, và
+    sửa file dùng chung giữa lượt của người khác là cách hỏng cả hai lượt.
+
+    ═══ KHI BẬT: CHỈ SỐ, KHÔNG CHỮ MÔ TẢ ═══
+    Con số **CÙNG THANG** với 211 dòng kia (cùng thước, cùng bộ câu — xem khối
+    ghi chú trên ``NHAN_NHA``), nên *"nhấn nhá 2,3"* đứng cạnh *"nhấn nhá 3,3
+    vừa"* của ``en-US-Aria`` là so được ngay mà không cần chữ. Muốn CHỮ thì gọi
+    ``nhan_nha.chu(round(nhan_nha_cua(ma), 1))`` — **đừng viết lại ngưỡng ở
+    đây**, viết lần thứ hai là dựng một thước thứ hai rồi có ngày cùng một con
+    số 3,5 ra hai chữ khác nhau trên cùng một combo.
+
+    **DẤU ``·`` MỞ ĐẦU LÀ BẮT BUỘC, KHÔNG PHẢI TRANG TRÍ**: bộ rút gọn nhãn
+    ``thay_giong_dialog._RE_GIU`` chỉ giữ những phần **BẮT ĐẦU** bằng
+    ``nhấn nhá``/``cần tải``/``miễn phí``… mà phần lại tách theo ``\\s+[-·]\\s+``.
+    Nhét con số vào giữa phần TÊN thì `nhan_gon` không nhận ra nó là "phần phải
+    thấy ngay" và đẩy nó IM LẶNG vào tooltip — làm xong mà người dùng không thấy.
+
+    **KHÔNG BAO GIỜ NÉM** — nhãn combo hỏng là cả hộp thoại trắng.
+    """
+    v = nhan_nha_cua(ma)
+    if v is None:
+        return ""
+    # Đổi dấu thập phân RIÊNG trên CON SỐ rồi mới ghép, đừng `.replace` cả câu:
+    # hôm nay câu này không có dấu chấm nào khác nên hai cách ra như nhau, nhưng
+    # `dau_chua_tai` đã sập đúng bẫy đó một lần (`.replace` cả câu ăn luôn dấu
+    # phẩy tiếng Việt) — chừa sẵn chỗ cho câu dài hơn ngày sau.
+    so = f"{round(v, 1):.1f}".replace(".", ",")
+    return f" · nhấn nhá {so}"
+
+
 def nhan_giong(ma: str, tt: Optional[dict] = None) -> str:
     """Nhãn một dòng cho combo — **nói thật điểm tác giả chấm VÀ nói thật là
     máy chưa tải**.
@@ -1024,6 +1219,17 @@ def nhan_giong(ma: str, tt: Optional[dict] = None) -> str:
         # Cổng 84 đo được: 13 dòng thiếu thông tin "phải tải", ví dụ
         # «… · điểm A- · miễn phí - chưa đo tiếng · miễn phí (Apache 2.0), cần…»
         # Bỏ nó đi thì vừa hết nói hai lần vừa còn chỗ cho phần bị cắt.
+        # ═══ VÌ SAO **KHÔNG** GHÉP `duoi_nhan_nha(m)` VÀO DÒNG NÀY ═══
+        # Đã thử, đã đo, cổng 84 ĐỎ ở CẢ BA cách viết — bảng số nằm trong
+        # docstring của `duoi_nhan_nha`. Dòng combo Kokoro **KHÔNG CÒN CHỖ**, và
+        # thứ bị đẩy ra khỏi dòng là *"cần tải"* / *"miễn phí"* — đúng hai thứ
+        # cổng 84 sinh ra để giữ, và quan trọng HƠN con số nhấn nhá (chọn giọng
+        # chưa tải là ra giọng KHÁC, đúng bẫy "chọn X ra Y").
+        # **KHÔNG hạ mốc cổng · KHÔNG nới trần · KHÔNG rút ngắn cảnh báo "TÁC
+        # GIẢ CHẤM THẤP" để lấy chỗ** — cả ba đều là đổi một CẢNH BÁO lấy một
+        # CON SỐ. Số đã đo và đang nằm trong `NHAN_NHA`; mở đường ra UI là việc
+        # còn lại và nó phải mở bằng cách LẤY LẠI CHỖ, không phải bằng cách
+        # nhường cảnh báo.
         return f"{m} — {mo_ta} (Kokoro) · điểm {diem}{canh}" + dau_chua_tai(tt)
     return ma
 
