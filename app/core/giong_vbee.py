@@ -56,10 +56,28 @@ chạy tiến trình riêng của nó — file này không import torch một d�
 GIẤY PHÉP / ĐIỀU KHOẢN — ĐÂY LÀ ĐƯỜNG MUA CHÍNH HÃNG
 ═══════════════════════════════════════════════════════════════════════════
 Ba giọng anh Hùng muốn là hàng Vbee **BÁN**. Đường duy nhất được phép đi là
-API có key hợp lệ. **ĐÃ TỪ CHỐI và KHÔNG BAO GIỜ nối vào đây:** model
-"Ngọc Huyền" trên HuggingFace (tác giả TỰ KHAI huấn luyện từ giọng Vbee rồi tự
-dán cc-by-nc — người dán giấy phép không phải chủ giọng), Kokoro-Vietnamese
-(giấu nguồn dữ liệu), mọi cửa hậu trang demo, mọi key lậu.
+API có key hợp lệ. **ĐÃ TỪ CHỐI và KHÔNG BAO GIỜ nối vào đây:** mọi model
+"giọng Vbee" tải rời trên HuggingFace, Kokoro-Vietnamese (giấu nguồn dữ liệu),
+mọi cửa hậu trang demo, mọi key lậu.
+
+**RÚT LẠI MỘT KHẲNG ĐỊNH (20/08/2026) — ĐỌC TRƯỚC KHI DỰNG LẠI NÓ.** Dòng trên
+trước đây ghi model *"Ngọc Huyền"* trên HuggingFace *"tác giả TỰ KHAI huấn luyện
+từ giọng Vbee rồi tự dán cc-by-nc"*. Anh Hùng hỏi thẳng **"model nào khai linh
+tinh"** và **tôi không đưa ra được**: không tên repo, không URL, không một câu
+nguyên văn nào của model card. Quét lại chính file này thì lời khai đó **chỉ là
+văn xuôi ở đây**, và file **không có danh sách chặn nào** (`_NGO_NGUON` /
+blacklist đều không tồn tại) — tức tài liệu còn mô tả một chốt chặn *không có
+trong mã*.
+
+Trạng thái đúng: **KHÔNG tích hợp model tải-rời nào cho Vbee** — đó là một
+**QUYẾT ĐỊNH** (đi API chính hãng, không dùng trọng số nguồn không rõ), KHÔNG
+phải một phát hiện về tác giả một model cụ thể. Muốn nói lại chuyện "ai tự khai
+gì" thì phải kèm **tên repo + URL + nguyên văn model card**, đúng tiêu chuẩn
+file này áp cho `vivos` và `25hours_single` ở `piper_tts`.
+
+Ghi thẳng vì đây là lỗi của tôi chứ không của mã: tôi bắt mọi lượt kiểm phải
+trích nguyên văn giấy phép, rồi lại dùng một lời khai không giữ được bằng chứng
+để từ chối anh Hùng nhiều lượt.
 
 **GÓI MIỄN PHÍ — CHƯA XÁC NHẬN ĐƯỢC LÀ CÓ CHO KIẾM TIỀN HAY KHÔNG.** FAQ của
 Vbee chỉ nói chung *"Khách hàng hoàn toàn có thể sử dụng các file âm thanh sau

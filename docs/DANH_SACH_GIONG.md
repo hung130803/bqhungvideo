@@ -517,8 +517,29 @@ hay dán cảnh báo cho một giọng CHỈ VÌ cái tên không?** Đã rà h�
 | `giong_vieneu._NGO_NGUON` | *(nay RỖNG)* | — | **CÓ → ĐÃ GỠ** |
 | `piper_tts` | giọng `vivos` | dữ liệu **CC BY‑NC‑SA 4.0 = cấm thương mại**, ghi trong model card; kèm thiếu dấu thanh, sai từ 10,6 % | không |
 | `piper_tts` | giọng `25hours_single` | model card ghi **"License: Unknown"** — im lặng không phải là cho phép; đo ra 0 mốc, sai từ 8,5 % | không |
-| `giong_vbee` | model *"Ngọc Huyền"* trên HuggingFace | **tác giả TỰ KHAI** huấn luyện từ giọng Vbee rồi tự dán giấy phép — người dán không phải chủ giọng | không |
+| `giong_vbee` | model *"Ngọc Huyền"* trên HuggingFace | ⚠️ **LỜI KHAI NÀY ĐÃ BỊ RÚT — xem ghi chú ngay dưới bảng** | không |
 | `giong_vbee` | Kokoro‑Vietnamese | **giấu nguồn dữ liệu** | không |
+
+> ⚠️ **RÚT LẠI MỘT KHẲNG ĐỊNH (20/08/2026).** Dòng "Ngọc Huyền" ở trên trước đây
+> ghi *"tác giả TỰ KHAI huấn luyện từ giọng Vbee rồi tự dán giấy phép"*. Anh Hùng
+> hỏi thẳng **"model nào khai linh tinh"** và **tôi không đưa ra được**: không
+> tên repo HuggingFace, không URL, không một câu nguyên văn nào của model card.
+> Quét lại `app/core/giong_vbee.py` thì lời khai đó chỉ tồn tại dưới dạng **văn
+> xuôi ở dòng 60**, và file đó **không có danh sách chặn nào** (`_NGO_NGUON` /
+> blacklist đều không tồn tại) — tức bảng này còn mô tả một chốt chặn *không có
+> trong mã*.
+>
+> Vậy trạng thái đúng là: **KHÔNG tích hợp model HuggingFace nào cho Vbee** (app
+> đi qua **API Vbee** của chính anh Hùng, có key thì mới hiện) — đó là một
+> **quyết định**, không phải một phát hiện về tác giả model. Ai muốn dựng lại
+> khẳng định kia thì phải kèm **tên repo + URL + nguyên văn model card**, đúng
+> tiêu chuẩn mà chính tài liệu này áp cho `vivos` (CC BY‑NC‑SA, dẫn model card)
+> và `25hours_single` ("License: Unknown", dẫn model card).
+>
+> Ghi thẳng vì đây là lỗi của tôi, không phải của mã: tôi bắt mọi lượt kiểm phải
+> **trích nguyên văn giấy phép**, rồi lại dùng một lời khai không giữ được bằng
+> chứng để từ chối anh Hùng nhiều lượt. Đúng họ bẫy *"phép đo hỏng phát chứng
+> nhận"*, chỉ khác là ở đây thứ phát chứng nhận là **trí nhớ của tôi**.
 | hộp Thay giọng nói | giọng `gemini:` | **kỹ thuật**: Gemini TTS không trả mốc từng chữ, mà đường thay tiếng dựng chữ theo mốc đó | không |
 
 Hai chỗ **cố ý KHÔNG chặn**, để đối chiếu cho rõ luật:
