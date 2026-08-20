@@ -1007,9 +1007,24 @@ def nhan_giong(ma: str, tt: Optional[dict] = None) -> str:
     for m, mo_ta, diem in GIONG_KK:
         if m != ma:
             continue
-        canh = " — TÁC GIẢ CHẤM THẤP, nên chọn giọng khác" if diem in DIEM_KEU else ""
-        return (f"{m} — {mo_ta} (Kokoro) · điểm {diem}{canh} · miễn phí"
-                + dau_chua_tai(tt))
+        # Cụm này CỐ Ý NGẮN. Bản đầu ghi thêm ", nên chọn giọng khác" (21 ký tự)
+        # và cổng 84 đo được: **12 dòng** — đúng 12 giọng bị chấm thấp — dài quá
+        # nên bị cắt **đúng chỗ chữ "cần tải"** của đuôi `giong_bang.duoi_dong`.
+        # Tức lời khuyên "nên chọn giọng khác" đã ĐẨY MẤT thông tin quan trọng
+        # hơn nó (máy chưa tải bộ 538 MB thì chọn giọng này ra giọng KHÁC).
+        # Giữ đúng cụm "TÁC GIẢ CHẤM THẤP" — cổng 87 CA 10b dò chính chữ đó, và
+        # phần lời khuyên đã nằm trong tooltip của combo.
+        canh = " — TÁC GIẢ CHẤM THẤP" if diem in DIEM_KEU else ""
+        # **KHÔNG tự dán "· miễn phí" ở đây.** `giong_bang.duoi_dong` đã dán một
+        # bản GIÀU HƠN ("miễn phí (Apache 2.0), cần tải bộ 538 MB, KHÔNG có
+        # tiếng Việt, KHÔNG có mốc từng chữ"), mà `_DO_TRUNG[KOKORO]` chỉ dò chữ
+        # *"cần tải"* nên nó KHÔNG thấy chữ "miễn phí" của tôi -> dòng combo nói
+        # **"miễn phí" HAI LẦN** rồi dài quá và **bị cắt đúng chỗ chữ "cần
+        # tải"** — tức mất đúng cảnh báo mà anh Hùng cần thấy nhất.
+        # Cổng 84 đo được: 13 dòng thiếu thông tin "phải tải", ví dụ
+        # «… · điểm A- · miễn phí - chưa đo tiếng · miễn phí (Apache 2.0), cần…»
+        # Bỏ nó đi thì vừa hết nói hai lần vừa còn chỗ cho phần bị cắt.
+        return f"{m} — {mo_ta} (Kokoro) · điểm {diem}{canh}" + dau_chua_tai(tt)
     return ma
 
 
