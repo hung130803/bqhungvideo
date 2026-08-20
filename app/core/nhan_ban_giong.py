@@ -457,7 +457,38 @@ def goi_y_may(lang: str = "vi") -> str:
 #: BẮT BUỘC**, còn phần "còn thiếu gì nữa" là việc của **VÒNG TỰ DÒ**
 #: (`giong_vieneu.cai_nhan_ban` bước 3): nó ĐỌC THẬT, bóc tên từ lời lỗi, cài
 #: đúng tên đó rồi thử lại. Thêm tên vào đây là quay lại lối ĐOÁN.
-_CAN_CHO_NHAN_BAN = ("torch", "torchaudio")
+#: ═══ `transformers` PHẢI Ở ĐÂY — ĐÃ GỠ RA MỘT LẦN VÀ ĐÓ LÀ HỒI QUY ═══
+#: v2.42.2 gỡ `transformers` khỏi danh sách này, lý do là một phép ĐO THẬT trên
+#: venv máy dev: ba gói `transformers`/`neucodec`/`accelerate` **không có mặt** mà
+#: đường nhân bản **vẫn ra WAV có tiếng** (2,32 s · RMS 0,09761). Phép đo đó
+#: KHÔNG SAI — nhưng kết luận rút ra từ nó thì sai, vì nó chỉ đúng cho MỘT máy.
+#:
+#: Log máy anh Hùng, SAU KHI đã cập nhật v2.42.2 (lúc 21:25-21:26, tức sau khi
+#: danh sách bị gỡ):
+#:     VieNeu đọc hỏng: ModuleNotFoundError: No module named 'transformers'
+#: lặp **5 lượt liền**. Tức trên máy đó `transformers` là **BẮT BUỘC**.
+#:
+#: HẬU QUẢ CỦA VIỆC GỠ nặng hơn hẳn việc để thừa, và đây là chỗ phải nhớ:
+#: `thieu` rỗng -> nhãn ghi "đã đủ phần cần thiết" -> **NÚT TẢI ẨN ĐI** -> mà
+#: vòng tự dò lại nằm TRONG `cai_nhan_ban()` (thân cái nút đó) -> **không còn
+#: đường nào chạy tới nó**. Tôi tự bịt cửa duy nhất để sửa. Đó là mặt LẬT NGƯỢC
+#: của luật "nút bám `thieu`": bám `thieu` chỉ an toàn khi `thieu` không bao giờ
+#: BỎ SÓT.
+#:
+#: Nên luật ở đây là **BẤT ĐỐI XỨNG, cố ý**:
+#:   · để THỪA một tên  -> nút hiện thừa, mời tải thứ có thể không cần. Dở, nhưng
+#:     người dùng vẫn đi tới đích được.
+#:   · để THIẾU một tên -> nút biến mất, tính năng CHẾT, không có đường sửa từ
+#:     giao diện.
+#: Hai cái đó KHÔNG ngang nhau. Khi chưa biết chắc thì **nghiêng về để thừa**.
+#:
+#: Chữa tận gốc vẫn là **vòng tự dò** (đọc thật -> bóc tên gói thiếu -> cài ->
+#: thử lại), vì danh sách tĩnh đã chứng minh nói sai ở CẢ HAI CHIỀU: thiếu trên
+#: máy anh Hùng, thừa trên máy dev. Nhưng vòng đó chỉ chạy khi NÚT CÒN HIỆN —
+#: nên danh sách này là điều kiện để nó sống, không phải thứ thay nó.
+#: **CHƯA TRUY RA** vì sao hai máy khác nhau (nghi model đã cache nên máy dev đi
+#: nhánh nhẹ hơn). Chưa biết thì ghi là chưa biết.
+_CAN_CHO_NHAN_BAN = ("torch", "torchaudio", "transformers")
 
 #: Trần độ dài MỘT DÒNG COMBO giọng. **KHÔNG phải số đặt cho đẹp** — cổng 88 mục
 #: 8d chấm đúng con số này, và nó có gốc: nhãn Kokoro 139-178 ký tự đã bị cắt
