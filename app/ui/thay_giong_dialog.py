@@ -66,6 +66,7 @@ from PyQt6.QtWidgets import (
 
 from app.core import che_chu as TG_CC
 from app.core import giong_hang as GH
+from app.core import giong_kokoro as KK
 from app.core import tg_chay, tg_so
 from app.core import thay_giong as TG
 from app.core.captions import CAPTION_PRESETS
@@ -783,6 +784,30 @@ def giong_dung_duoc(ds: list) -> list:
     except Exception:  # noqa: BLE001
         pass                                # thiếu module -> combo y hệt cũ
 
+    # ---- GIỌNG KOKORO — 28 GIỌNG, Apache 2.0, chạy trên máy ----
+    # Ca thứ TƯ của cùng một bệnh sau `giong_bang`, `giong_chatter` và
+    # `giong_vbee`: `app/core/giong_kokoro.py` dựng xong (hàm đọc + hàm cài +
+    # 28 giọng đã dò giấy phép) mà **combo không có một dòng `kk:` nào** — đo
+    # trước khi vá: `grep -c "kk:" thay_giong_dialog.py` -> **0**. Tức tính
+    # năng coi như KHÔNG TỒN TẠI với người không đọc mã.
+    #
+    # ĐIỀU KIỆN TIÊN QUYẾT ĐÃ LÀM TRƯỚC, ĐỪNG ĐẢO THỨ TỰ: `dubbing._synth_all`
+    # VÀ `_synth_all_words` đều đã biết `kk:` (kiểm bằng `inspect.getsource`,
+    # không phải đọc mắt). Đưa mã vào combo mà **một** trong hai cửa chưa nhận
+    # thì video ra HAI GIỌNG TRỘN mà `rc` vẫn 0 — đúng bẫy `ov:nu_am` / `vn:` /
+    # `cb:` đã sập BA lần.
+    #
+    # **HIỆN ĐỦ 28 DÒNG KỂ CẢ KHI CHƯA TẢI**, nhãn tự mang cụm "CHƯA TẢI" của
+    # `giong_kokoro.dau_chua_tai` (app TỰ TẢI được 538 MB) — tiền lệ
+    # Piper/VieNeu, khác OmniVoice 6,1 GB phải giấu vì app không tự tải nổi.
+    # `danh_sach_giong()` tự dò tình trạng MỘT LẦN cho cả 28 dòng.
+    try:
+        from app.core import giong_kokoro
+        for ma_g, nhan_g in giong_kokoro.danh_sach_giong():
+            mo_rong.append((nhan_g, ma_g))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
     # nhóm rỗng (bị lọc sạch) thì bỏ luôn nhãn nhóm, đừng để dòng trơ
     gon: list = []
     for i, (nhan, vid) in enumerate(mo_rong):
@@ -802,6 +827,7 @@ class ThayGiongDialog(QDialog):
     _giong_xong = pyqtSignal()          # danh sách giọng nạp xong (thread nền)
     _cai_xong = pyqtSignal(bool, str)   # tải bộ tách giọng xong (ok, lời)
     _piper_xong = pyqtSignal(bool, str)  # tải giọng Piper xong (ok, lời)
+    _kokoro_xong = pyqtSignal(bool, str)  # tải giọng Kokoro xong (ok, lời)
     _gh_xong = pyqtSignal(bool, str)    # tải bộ gióng hàng xong (ok, lời)
     #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi, CẢNH BÁO) — nghe thử sinh
     #: xong ở thread nền. Phải qua tín hiệu: đụng widget từ thread nền là sập
@@ -833,7 +859,9 @@ class ThayGiongDialog(QDialog):
         self._dang_cai = False
         self._dang_cai_piper = False
         self._dang_cai_gh = False
+        self._dang_cai_kokoro = False
         self._tt_piper: dict = {}
+        self._tt_kokoro: dict = {}
         self._giong_tho: list = []
         self._da_bao_xong = True            # chưa chạy lượt nào -> không báo
         self._bo_qua_luot = 0               # số video bỏ qua ở lượt vừa bấm
@@ -1345,6 +1373,40 @@ class ThayGiongDialog(QDialog):
         lay.addLayout(h4b)
         self._do_piper()
 
+        # ---- hàng 4b2: GIỌNG KOKORO (28 giọng, Apache 2.0) ----
+        # CÙNG LUẬT hàng Piper, KHÁC hàng Demucs: thiếu Kokoro chỉ là LÙI ÊM về
+        # edge-tts (video vẫn đúng, chỉ khác giọng) nên hàng này **KHÔNG khoá
+        # nút Chạy**. Thiếu Demucs mới phải chặn, vì lùi ra video HỎNG.
+        #
+        # Trước hôm nay: `giong_kokoro.cai_kokoro()` viết xong đủ mọi chốt mà
+        # **không có một nút nào bấm được nó** — 28 dòng giọng nằm trong combo
+        # sẽ lặng lẽ đọc bằng edge-tts trên mọi máy chưa tải. Nút này là chỗ duy
+        # nhất người dùng bắt đầu được.
+        h4b2 = QHBoxLayout()
+        self.lb_kokoro = QLabel("")
+        self.lb_kokoro.setWordWrap(True)
+        h4b2.addWidget(self.lb_kokoro, 1)
+        self.b_tai_kokoro = QPushButton(KK.NHAN_TAI)
+        # DUNG LƯỢNG LÀ SỐ ĐO (bài học cổng 58: nhãn Demucs từng ghi "khoảng
+        # 2 GB" trong khi lượng tải thật 154 MB — gấp 13 lần, và bấm nút ghi
+        # 155 MB rồi bị hộp doạ 2 GB). Số 538 MB ở đây do `mb_se_tai()` đo bằng
+        # `pip install --dry-run --report` (KHÔNG tải thật) — đo lại được:
+        # `nhan_tai()` và `mb_se_tai()` đọc CÙNG một phép đo, không phải hai
+        # con số chép tay cạnh nhau.
+        self.b_tai_kokoro.setToolTip(
+            "Tải bộ giọng Kokoro (28 giọng, 8 thứ tiếng) về môi trường "
+            "Python RIÊNG.\n"
+            "Đo thật bằng pip --dry-run: khoảng 538 MB tải về.\n"
+            "KHÔNG cài vào .venv đang chạy sản xuất.\n"
+            "Giấy phép Apache 2.0 — dùng thương mại được.\n"
+            "KHÔNG có tiếng Việt và KHÔNG có mốc từng chữ (cần bộ gióng "
+            "hàng).\n"
+            "Chỉ tải khi BẠN bấm — app không bao giờ tự tải sau lưng.")
+        self.b_tai_kokoro.clicked.connect(self._tai_kokoro)
+        h4b2.addWidget(self.b_tai_kokoro)
+        lay.addLayout(h4b2)
+        self._do_kokoro()
+
         # ---- hàng 4c: BỘ GIÓNG HÀNG (mốc từng chữ cho MỌI máy đọc) ----
         # Cùng luật hàng Piper: thiếu thì LÙI ÊM (mốc kém chính xác hơn,
         # video vẫn đúng) nên KHÔNG khoá nút Chạy. Trước hôm nay anh Hùng và
@@ -1441,6 +1503,7 @@ class ThayGiongDialog(QDialog):
         self._giong_xong.connect(self._dung_combo_giong)
         self._cai_xong.connect(self._cai_demucs_xong)
         self._piper_xong.connect(self._tai_piper_xong)
+        self._kokoro_xong.connect(self._tai_kokoro_xong)
         self._gh_xong.connect(self._tai_gh_xong)
         self._nghe_xong.connect(self._nghe_thu_xong)
 
@@ -1786,6 +1849,141 @@ class ThayGiongDialog(QDialog):
                                   str(r.get("loi") or "")[:400])
 
         threading.Thread(target=bg, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # GIỌNG KOKORO — 28 GIỌNG, Apache 2.0 (không chặn gì)
+    # ------------------------------------------------------------------
+    def _do_kokoro(self) -> dict:
+        """Dò Kokoro rồi cập nhật nhãn. KHÔNG khoá nút Chạy.
+
+        **NÚT BÁM `thieu`, KHÔNG BÁM `co`** — đây là bài học cổng 58 và nó là
+        lý do cả tính năng có thể chết âm thầm: bám `co` thì trên máy dev (mượn
+        được gói của `.venv`) nút BIẾN MẤT, không ai bấm, và bản `.exe` mãi mãi
+        thiếu. Ở module này `co == du_venv` do xây dựng (bước đọc chạy bằng
+        python CỦA môi trường riêng nên không mượn được gì), nhưng vẫn bám
+        `thieu` để nếu sau này ai đổi cách dò thì chỗ này không hỏng theo.
+        """
+        try:
+            tt = KK.tinh_trang()
+        except Exception as e:  # noqa: BLE001 - hộp thoại KHÔNG được chết vì dò
+            tt = {"co": False, "thieu": [f"không dò được ({type(e).__name__})"],
+                  "cai_duoc": False, "vi_sao": str(e)[:200], "thu_muc": ""}
+        self._tt_kokoro = tt
+        thieu = list(tt.get("thieu") or [])
+        if not thieu:
+            self.lb_kokoro.setText(
+                f"Giọng Kokoro ({tt.get('so_giong', 0)} giọng, 8 thứ tiếng): "
+                "ĐÃ CÓ. Chọn trong ô Giọng đọc để dùng.\n"
+                "Lưu ý đã đo: bộ này KHÔNG có tiếng Việt, và KHÔNG tự trả mốc "
+                "từng chữ — cần bộ gióng hàng ở hàng dưới thì chữ mới bám lời.")
+            self.lb_kokoro.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            self.b_tai_kokoro.setVisible(False)
+        else:
+            # NÊU ĐÍCH DANH gói còn thiếu (cổng 58): câu "chưa cài" trơn thì
+            # không ai biết đang thiếu gì, và ca CÀI DỞ (thiếu 1 gói sau lượt
+            # tải đứt mạng) trông y hệt ca chưa cài lần nào.
+            vi_sao = str(tt.get("vi_sao") or "")
+            self.lb_kokoro.setText(
+                "Giọng Kokoro: CHƯA TẢI — chọn giọng này thì app vẫn chạy "
+                "nhưng sẽ đọc bằng giọng thường (edge-tts).\n"
+                "Còn thiếu: " + ", ".join(thieu[:6])
+                + ("..." if len(thieu) > 6 else "")
+                + ("" if tt.get("cai_duoc") else
+                   "\nApp không tự tải được: "
+                   + (vi_sao or "máy chưa cài Python 3 (python.org)")))
+            self.lb_kokoro.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            self.b_tai_kokoro.setVisible(True)
+            # Nhãn nút đổi theo máy: có GPU NVIDIA thì `nhan_tai()` trả bản
+            # CUDA kèm chữ "CHƯA ĐO có nhanh hơn" — nói thẳng là chưa đo, đừng
+            # hứa nhanh.
+            try:
+                self.b_tai_kokoro.setText(KK.nhan_tai())
+            except Exception:  # noqa: BLE001
+                self.b_tai_kokoro.setText(KK.NHAN_TAI)
+            self.b_tai_kokoro.setEnabled(
+                bool(tt.get("cai_duoc")) and not self._dang_cai_kokoro)
+        return tt
+
+    def _tai_kokoro(self) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải — app không tự tải sau lưng.
+
+        Hộp xác nhận phải ghi ĐÚNG con số của nút (bài học cổng 58: nút ghi
+        155 MB rồi hộp doạ 2 GB). Vì vậy nó lấy số từ CHÍNH `mb_se_tai()` chứ
+        không chép tay.
+        """
+        if self._dang_cai_kokoro:
+            return
+        tt = self._tt_kokoro or {}
+        try:
+            mb = f"{float(tt.get('mb_tai') or KK.mb_se_tai()):,.0f}".replace(
+                ",", ".")
+        except Exception:  # noqa: BLE001
+            mb = "538"
+        if QMessageBox.question(
+                self, "Tải giọng Kokoro",
+                f"Sẽ tải khoảng {mb} MB về môi trường Python RIÊNG:\n"
+                + str(tt.get("thu_muc", ""))
+                + "\n\nKHÔNG cài vào môi trường app đang chạy.\n"
+                  "Kokoro theo giấy phép Apache 2.0 — dùng thương mại được.\n\n"
+                  "Bộ này KHÔNG có tiếng Việt và KHÔNG tự trả mốc từng chữ.\n\n"
+                  "Tải bây giờ?"
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        self._dang_cai_kokoro = True
+        self.b_tai_kokoro.setEnabled(False)
+        self.b_tai_kokoro.setText("Đang tải...")
+        self.pb_tai.setVisible(True)
+        self.pb_tai.setValue(1)
+        # THEO ĐÚNG KHUÔN HÀNG DEMUCS: thread nền chỉ ghi vào một dict thường,
+        # `_nhip` (timer của luồng UI) mới đọc ra và vẽ. **KHÔNG đụng widget từ
+        # thread nền** — đó là luật `shutdown.safe_emit` của cả repo (gốc: 8
+        # lần crash 0xc0000005 hồi 28-30/07). Dùng dict RIÊNG chứ không dùng
+        # chung `_buoc_cai` của Demucs: hai lượt tải chạy song song thì hai
+        # tiến trình pip ghi lẫn số của nhau.
+        buoc = {"p": 0.0, "m": "Đang tải..."}
+        self._buoc_kokoro = buoc
+
+        def bg():
+            try:
+                r = KK.cai_kokoro(
+                    on_progress=lambda p, m: buoc.update({"p": p, "m": m}))
+                ok, loi = bool(r.get("ok")), str(r.get("loi") or "")[:400]
+            except Exception as e:  # noqa: BLE001 - thread nền KHÔNG được chết
+                ok, loi = False, f"{type(e).__name__}: {e}"[:400]
+            self._kokoro_xong.emit(ok, loi)
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _tai_kokoro_xong(self, ok: bool, loi: str) -> None:
+        self._dang_cai_kokoro = False
+        self.pb_tai.setVisible(False)
+        self.b_tai_kokoro.setEnabled(True)
+        tt = self._do_kokoro()
+        # MỪNG THEO `thieu`, KHÔNG THEO `ok`: pip trả 0 mà gói vẫn nằm ngoài
+        # môi trường riêng là chuyện đã xảy ra thật (cổng 58). Hậu kiểm là
+        # `tinh_trang()` chứ không phải mã thoát của pip.
+        if ok and not tt.get("thieu"):
+            QMessageBox.information(
+                self, "Xong",
+                f"Đã tải xong {tt.get('so_giong', 0)} giọng Kokoro.\n"
+                + str(tt.get("thu_muc", ""))
+                + "\n\nChọn lại trong ô Giọng đọc để dùng.")
+        else:
+            QMessageBox.warning(
+                self, "Chưa xong",
+                "Tải giọng Kokoro CHƯA xong.\n"
+                + ("Còn thiếu: " + ", ".join(list(tt.get("thieu") or [])[:6])
+                   if tt.get("thieu") else "")
+                + (("\n\n" + loi) if loi else "")
+                + "\n\nApp vẫn chạy bình thường: chọn giọng Kokoro thì nó đọc "
+                  "bằng giọng thường (edge-tts). Bấm lại để tải tiếp phần còn "
+                  "thiếu.\nChi tiết ở logs/kokoro_<ngày>.log")
+        # **CỐ Ý KHÔNG dựng lại combo giọng** — bản đầu của tôi có gọi
+        # `_dung_combo_giong()` ở đây cho nhãn 28 dòng thôi khoe "CHƯA TẢI", và
+        # đó là SAI: hàm đó đặt lại combo theo giá trị ĐÃ LƯU, tức nuốt mất
+        # lựa chọn user vừa bấm mà chưa lưu — đúng họ lỗi "chọn X ra Y" mà
+        # `_tai_gh_xong` đã ghi rõ vì sao nó không làm. Nhãn tự đúng ở lần mở
+        # hộp sau, vì `danh_sach_giong()` hỏi lại máy mỗi lần dựng combo.
 
     def _tai_piper_xong(self, ok: bool, loi: str) -> None:
         self._dang_cai_piper = False
@@ -3153,6 +3351,15 @@ class ThayGiongDialog(QDialog):
     def _nhip(self) -> None:
         if self._dang_cai:
             b = getattr(self, "_buoc_cai", {"p": 0.0, "m": ""})
+            self.pb_tai.setValue(int(max(1, min(100, b["p"] * 100))))
+            self.lb_tt.setText(str(b["m"])[:150])
+            return
+        # Lượt tải Kokoro cũng phải thấy được tiến độ. KHÔNG có nhánh này thì
+        # thanh hiện ra rồi ĐỨNG IM ở 1% suốt vài phút — đúng cái anh Hùng đã
+        # kêu ở hộp này ("ấn chạy thì chỉ hiện thanh tiến trình, không hiện gì
+        # cả"), chỉ đổi chỗ.
+        if self._dang_cai_kokoro:
+            b = getattr(self, "_buoc_kokoro", {"p": 0.0, "m": ""})
             self.pb_tai.setValue(int(max(1, min(100, b["p"] * 100))))
             self.lb_tt.setText(str(b["m"])[:150])
             return
