@@ -309,9 +309,21 @@ def main() -> int:                                          # noqa: C901
     # Vẫn giữ SỐ CỐ ĐỊNH chứ không đổi thành `>= 2`: nới thành bất đẳng thức là
     # mất luôn khả năng bắt "ai đó cho edge-tts/ElevenLabs đi qua đây" — đúng
     # cái mục 6b/6c đang canh.
-    ok(goi.count("_moc_giong_hang") == 3,
-       "6a `_synth_all_words` gọi `_moc_giong_hang` ĐÚNG 3 nhánh (giọng "
-       "ngoài + Piper + Chatterbox) — đọc bằng AST, không tìm chuỗi "
+    # 3 -> 4 (v2.41.1): **KOKORO VÀO ĐÚNG NHÓM NÀY**, không phải nới mốc cho hết
+    # đỏ. Chốt này nổ ĐÚNG khi Kokoro được nối vào combo, và đó là lý do nó tồn
+    # tại — buộc có người đọc lại. Kiểm nhánh thứ 4 trước khi đổi số (AST trên
+    # `_synth_all_words`): nó là `_moc_giong_hang(texts, paths, ok_k, [[] for _
+    # in texts], lang, _ma_kk)`, tức **`kk:` = Kokoro**. Kokoro **KHÔNG tự trả
+    # mốc từng chữ** (`giong_kokoro.doc_loat` chỉ trả True/False; `moc_thu` là
+    # đường ĐO, không phải đường chạy) nên nó cùng cảnh Piper/OmniVoice/
+    # Chatterbox và PHẢI nằm trong con số này. Tham số mốc là `[[] for _ in
+    # texts]` = "không có mốc nào để giữ", đúng như Chatterbox.
+    # Vẫn giữ SỐ CỐ ĐỊNH chứ không đổi thành `>= 3`: nới thành bất đẳng thức là
+    # mất luôn khả năng bắt "ai đó cho edge-tts/ElevenLabs đi qua đây" — đúng
+    # cái mục 6b/6c đang canh.
+    ok(goi.count("_moc_giong_hang") == 4,
+       "6a `_synth_all_words` gọi `_moc_giong_hang` ĐÚNG 4 nhánh (giọng "
+       "ngoài + Piper + Chatterbox + Kokoro) — đọc bằng AST, không tìm chuỗi "
        "(bài học 56d/64)",
        f"{goi.count('_moc_giong_hang')} chỗ")
     # edge-tts và ElevenLabs trả mốc THẬT -> KHÔNG được thay bằng mốc suy ra.
