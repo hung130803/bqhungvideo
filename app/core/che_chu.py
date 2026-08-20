@@ -1472,6 +1472,14 @@ def hop_theo_doan(dai: DaiChu, segs: Optional[Sequence]) -> list:
     `d` giây ở cuối đoạn trước rồi đặt `offset = độ_dài_GỐC`, nhờ vậy
     "KHÔNG phải sửa `.ass`").
 
+    **TRỤC `t` MÀ `enable=` ĐỌC PHẢI LÀ ĐÚNG TRỤC NÀY — chốt đã sập một lần.**
+    Hộp trả về mang mốc THEO ĐOẠN NGUỒN, nên MỌI phép giãn thời gian (`setpts`,
+    `-itsscale`) phải nằm **SAU** khối che trong chuỗi filter. `export_canvas_
+    clip` làm đúng thế (che ở `[0:v]`, `setpts=PTS/vspeed` ở gần cuối). Đường
+    THAY TIẾNG từng dùng `-itsscale` — tuỳ chọn ĐẦU VÀO, tức giãn TRƯỚC filter
+    — và đó chính là lỗi "gần cuối video không che gì": xem khối ghi chú ở
+    `thay_giong.thay_audio_video` nhánh che chữ.
+
     Trả [] nếu không quy đổi được -> caller dùng MỘT hộp cho cả clip.
     """
     if not dai or not dai.hop or not segs:
