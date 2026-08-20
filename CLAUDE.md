@@ -2653,6 +2653,91 @@
   cho từng kênh trong 200-300 kênh · bản `.exe` KHÔNG gói VieNeu nên máy nhân
   viên phải bấm nút tải + phải có Python 3, và đường nhân bản còn cần
   **torch + torchaudio** (nhãn nói đích danh khi thiếu).
+- **NÚT TẢI PHẦN NHÂN BẢN GIỌNG — `cai_nhan_ban()` (20/08/2026).** Anh Hùng
+  thêm giọng nhân bản của mình ("MQ Idol", mẫu 7 giây), **lưu thành công**, rồi
+  dòng giọng ghi *"CHƯA CHẠY ĐƯỢC (thiếu torch, torchaudio)"*. **Nhãn đó NÓI
+  THẬT** — nhưng **KHÔNG CÓ NÚT NÀO để cài**. Tính năng thật thà báo hỏng rồi
+  bỏ người dùng ở đó; đó là cái được vá.
+  **HAI THƯ MỤC, HAI SỰ THẬT KHÁC NHAU** (`thu_muc_vieneu()` đọc
+  `config.DATA_DIR` MỖI LẦN GỌI, không cất hằng số): chạy **nguồn** ->
+  `<repo>/_giong_vieneu/venv` **CÓ** cả `torch 2.13.0+cpu` lẫn
+  `torchaudio 2.11.0+cpu` nên `thieu_de_nhan_ban()` trả `[]`; bản **`.exe`** ->
+  `%LOCALAPPDATA%\BQHungVideo\_giong_vieneu\venv`, **KHÔNG có torch**. 20 giọng
+  dựng sẵn vẫn chạy vì chúng đi bằng `onnxruntime`; **chỉ đường NHÂN BẢN đụng
+  torch**.
+  **HÀM NẰM Ở `giong_vieneu`, KHÔNG Ở `nhan_ban_giong`** — cả 4 hàm cài đã có
+  đều ở module SỞ HỮU môi trường đích (`cai_demucs`->`_lib` ·
+  `cai_piper`->`_piper` · `cai_kokoro`/`cai_omnivoice`->venv riêng); ở đây đích
+  là `_giong_vieneu/venv` do chính file đó sở hữu, còn `nhan_ban_giong` là tầng
+  ĐIỀU PHỐI (VieNeu vs Chatterbox). Danh sách gói KHÔNG chép lại — đọc
+  `nhan_ban_giong._CAN_CHO_NHAN_BAN`, hai bản sao là hai chỗ để quên.
+  **DUNG LƯỢNG LÀ SỐ ĐO** (`_do_nhan_ban_tai.py`: `pip install --dry-run
+  --report` bằng CHÍNH python 3.12.10 của venv VieNeu, rồi **HTTP HEAD** trên
+  đúng wheel pip chọn; lệnh dry-run dựng GIỐNG HỆT lệnh sẽ cài):
+  **cpu 11 gói = 126,3 MB** (torch 116,3 · torchaudio 0,3) vs
+  **cu126 11 gói = 2.485,6 MB** (torch 2.474,4 · torchaudio 1,4) = chênh
+  **19,7 lần**. `co_gpu_nvidia()` (hỏi `nvidia-smi`, **KHÔNG import torch** —
+  torch sau Qt là ACCESS VIOLATION) quyết chỉ mục; `BQ_NB_CPU=1` ép bản nhỏ.
+  Máy anh Hùng có RTX 3060 nên mặc định đi CUDA, và nhãn nói thẳng **"CHƯA ĐO
+  có nhanh hơn"** — Demucs có số 9,28x để hứa, đường nhân bản của VieNeu thì
+  **chưa ai đo GPU**.
+  **NÚT BÁM `thieu`, KHÔNG BÁM CỜ "CHẠY ĐƯỢC"** — đây là chính cái bẫy đẻ ra
+  việc này, và nó đã sập hai lần (cổng 58 `_lib`, rồi hàng Kokoro): bám cờ thì
+  trên máy dev (venv ĐÃ có torch) nút **BIẾN MẤT**, không ai bấm, bản `.exe`
+  mãi mãi thiếu. Ca **CÀI DỞ** đổi nhãn thành `Cài tiếp phần còn thiếu (...)`,
+  và nó **vẫn ghi đủ số MB** vì `--ignore-installed` làm pip tải lại TOÀN BỘ
+  danh sách chứ không chỉ cái thiếu. Thiếu Python 3 -> **khoá nút VÀ in lý do**.
+  Bộ dò NÉM -> hộp không chết và **nghiêng về HIỆN nút** (ẩn nút là cách tính
+  năng đã chết một lần). **CỐ Ý KHÔNG gọi `_dung_combo_giong()`** sau khi tải
+  (hàm đó đọc giá trị ĐÃ LƯU nên nuốt lựa chọn user vừa bấm — họ lỗi "chọn X ra
+  Y"), chỉ `_nap()` cho tiền tố "CHƯA CHẠY ĐƯỢC" biến đi.
+  **ĐÃ CHẠY THẬT** (`_do_cai_nhan_ban.py`, bản CPU, hộp cát riêng — **KHÔNG**
+  đụng `_giong_vieneu/venv` đang dùng được): `ok=True` · **69,5s** rồi
+  **62,8s** (lượt 2 nhanh hơn nhờ cache wheel) · `thieu` sau = **[]** · venv
+  **11,5 -> 603,7 MB = +592,2 MB** bung ra đĩa cho 126,3 MB tải về · `torch
+  2.13.0+cpu` + `torchaudio` nằm THẬT trong site-packages hộp cát (đọc file
+  trực tiếp, KHÔNG hỏi "import được không"). Mẹo hộp cát rẻ: `_python_vieneu`
+  dò bằng **FILE CÓ TỒN TẠI KHÔNG** nên chỉ cần đặt mấy file RỖNG đúng tên là
+  `tinh_trang_vieneu()['co']` -> True, không phải chép cả môi trường mấy GB.
+  **LỖI LƯỢT CHẠY THẬT BẮT ĐƯỢC — `.replace(",", ".")` TRÊN CẢ CÂU:** dòng tiến
+  độ in ra *"(khoảng 126 MB. tải 1 lần)"*, dấu phẩy tiếng Việt thành dấu chấm.
+  `giong_kokoro.dau_chua_tai` **đã ghi đúng bài học này** ("một lần, dùng chung"
+  -> "một lần. dùng chung") mà tôi vẫn lặp. Nay có `giong_vieneu.so_mb()` đổi
+  dấu nghìn **RIÊNG CON SỐ**, và nhãn/tooltip/hộp xác nhận đều gọi nó (một phép
+  đo, ba chỗ đọc — cổng 58: nút 155 MB, hộp doạ 2 GB).
+  **CÒN LỖI CŨ Ở CHỖ KHÁC, CHƯA VÁ:** `giong_kokoro.py` dòng **817** và **850**
+  vẫn `.replace(",", ".")` trên cả câu (cùng file có chỗ 989 làm ĐÚNG kèm ghi
+  chú) — việc RIÊNG, không gộp vào lượt này.
+  **CỔNG 88 `_test_giong_toi.py`: 66 -> ĐẠT 104 · HỎNG 0** (CA 12, 38 mục mới).
+  Thử phá `_pha_giong_toi.py`: 9 -> **20 phép · BẮT 20 · LỌT 0 · KHÔNG PHÁ ĐƯỢC
+  0**. **Mệnh đề trung tâm (khuôn CA 1a cổng 58)** có RĂNG nhờ **MỒI CHIA ĐÔI**:
+  máy này venv VieNeu đã đủ nên phép so ra `[] == []` (đúng mà vô nghĩa), nên
+  cổng vá `_CAN_CHO_NHAN_BAN` thành **`PyQt6`** — gói CÓ trong `.venv`, THIẾU ở
+  venv VieNeu, đúng phép chia đôi cổng 58 — rồi đòi bản chạy-nguồn và tiến trình
+  KHÔNG có `.venv` nói **GIỐNG HỆT `['PyQt6']`**; bộ dò kiểu `find_spec` sẽ lệch
+  ngay đây.
+  **BA LỖI CỦA CHÍNH CỔNG, tôi tự mắc rồi tự bắt — đọc kẻo lặp:** (a) mục 12e
+  hỏi `"sys.executable" not in _ma_that(...)`, mà `_ma_that` **nối TOKEN bằng
+  dấu cách** nên chuỗi đó thành `"sys . executable"` -> mục **TỰ ĐẠT VĨNH VIỄN**;
+  nay quét `ast.Attribute`. (b) mục 12d bỏ docstring bằng cách so mặt chữ
+  (`startswith("TẢI + CÀI")`) — sửa một chữ trong docstring là phép bỏ trượt,
+  docstring (có chứa `--ignore-installed`) lọt vào rồi mục ĐẠT OAN dù cờ đã bị
+  gỡ khỏi LỆNH; nay bỏ theo **cấu trúc AST** + có mục 12d0 tự kiểm. (c) mục
+  12l''' bản đầu hỏi *"nhãn/tooltip/hộp còn dấu phẩy không"* -> **4 mục ĐỎ OAN**,
+  vì với `thieu=['torch']` thì `', '.join` chỉ có MỘT phần tử nên câu không có
+  dấu phẩy nào một cách **hoàn toàn chính đáng**; cái cần canh là **bất biến cấu
+  trúc** (chỉ `so_mb` được gọi `.replace(",", ".")`).
+  Kèm: `_don_hop_cat` của cổng 88 nay đăng ký bằng **`atexit`** — lượt thử phá
+  có phép làm cổng chết GIỮA ĐƯỜNG nên dòng gọi thẳng ở cuối file không chạy, đo
+  được **2 thư mục `bq_test_giong_toi_*`** đọng lại trong repo.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa tải thật bản CUDA** (2.485,6 MB — chỉ đo bằng
+  `--dry-run` + HTTP HEAD, và đó CHÍNH là đường mặc định trên máy có GPU của anh
+  Hùng) · chưa ai **NGHE** một giọng nhân bản sau khi cài bằng nút này · chưa đo
+  **GPU có nhanh hơn CPU** cho đường nhân bản VieNeu (nhãn nói đúng là chưa đo) ·
+  `cai_vieneu()` vẫn **KHÔNG có nút nào trong UI** (ca thứ NĂM của "hàm xong ≠
+  tính năng xong", `grep cai_vieneu app/ui/` -> 0 dòng) nên máy chưa có VieNeu
+  thì nút này chỉ ghi *"Chưa có bộ giọng VieNeu — tải bộ đó trước"* mà **không
+  có chỗ để bấm**.
 - **GIỌNG KOKORO ĐÃ NỐI VÀO UI + ĐO CẢ 28 GIỌNG (v2.41.0, 20/08/2026).**
   `app/core/giong_kokoro.py` viết xong đủ hàm đọc + hàm cài từ trước mà **UI
   không gọi tới một dòng nào** — đo trước khi vá: `grep -c "kk:"
