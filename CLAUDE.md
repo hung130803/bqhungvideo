@@ -2434,6 +2434,47 @@
      (511,8 s) · chưa có số thời gian CẢ BƯỚC tách trong lượt này (`tach.giay`
      chỉ là `apply_model`; số cả bước lấy ở cổng 71: **0,155x GPU · 0,488x CPU**)
      · cột `trộn` đo LIỀN MẠCH nên chỉ đọc được là *"không chậm hơn"*.
+- **GIỌNG KOKORO ĐÃ NỐI VÀO UI + ĐO CẢ 28 GIỌNG (v2.41.0, 20/08/2026).**
+  `app/core/giong_kokoro.py` viết xong đủ hàm đọc + hàm cài từ trước mà **UI
+  không gọi tới một dòng nào** — đo trước khi vá: `grep -c "kk:"
+  thay_giong_dialog.py` -> **0**. Ca thứ TƯ của cùng một bệnh sau `giong_bang`,
+  `giong_chatter`, `giong_vbee`: hàm xong ≠ tính năng tồn tại.
+  **28/28 GIỌNG KÊU, 0 CÂM** (`_do_28_giong_kk.py` -> `_kq_kk28.json`, đọc THẬT
+  một câu tiếng Anh rồi đọc mẫu WAV THẲNG chứ không tin `doc_loat` tự chấm —
+  `_kiem_wav` chỉ hỏi "có tiếng không"): dài **3,00-4,75 s** · RMS **0,02967
+  (af_nova, thấp nhất) - 0,08133 (af_aoede)** = trải 2,7 lần, tất cả trên sàn
+  `RMS_TOI_THIEU` 0,002 rất xa. Trước lượt này chỉ `kk:af_bella` từng được đọc
+  thử, tức 27 giọng trong combo chưa ai biết có kêu hay không.
+  **GỌI GỘP RẺ HƠN GỌI LẺ 5,35 LẦN — VÀ APP ĐANG GỌI ĐÚNG, ĐỪNG AI "DỌN GỌN"
+  THÀNH VÒNG LẶP TỪNG CÂU.** Đo 12 câu, 2 vòng ĐAN XEN có xoay thứ tự, lấy lượt
+  nhanh nhất mỗi bên (`_do_kk_gom.py`): **lẻ 90,44 s (7,54 s/câu) · gộp 16,91 s
+  (1,41 s/câu)**, cả hai ra đủ 12/12 WAV. Suy ra video 45 câu: **~339 s so với
+  ~63 s**. Lượt gọi ĐẦU TIÊN của tiến trình mất **60,5 s** (nạp model) so với
+  9,2-9,6 s các lượt sau — cùng bệnh Piper "lượt nào cũng nạp lại model ~2,2 s"
+  nhưng **đắt hơn 27 lần**. Đã kiểm bằng AST: `dubbing._synth_all` VÀ
+  `_synth_all_words` đều truyền `texts` (CẢ LOẠT) vào `_chay_kokoro`, không phải
+  `texts[i]` — kiến trúc đang đúng.
+  **NÚT TẢI BÁM `thieu`, KHÔNG BÁM `co`** (bài học cổng 58, và đây là chỗ cả
+  tính năng có thể chết âm thầm): bám `co` thì trên máy dev nút BIẾN MẤT, không
+  ai bấm, bản `.exe` mãi mãi thiếu. Đo bằng cách vá `tinh_trang` trả
+  `co=True, thieu=['torch']` -> nút **CÒN HIỆN**. Thiếu Kokoro chỉ LÙI ÊM về
+  edge-tts nên hàng này **KHÔNG khoá nút Chạy** (khác Demucs: thiếu là CHẶN, vì
+  lùi ra video HỎNG). Không có Python 3 -> khoá nút VÀ nói vì sao. Mừng theo
+  `thieu` chứ không theo mã thoát của pip.
+  **CỐ Ý KHÔNG dựng lại combo sau khi tải xong** — bản đầu của tôi CÓ gọi
+  `_dung_combo_giong()` cho nhãn 28 dòng thôi khoe "CHƯA TẢI", và đó là SAI: hàm
+  đó đặt lại combo theo giá trị ĐÃ LƯU nên nuốt mất lựa chọn user vừa bấm mà
+  chưa lưu = đúng họ lỗi "chọn X ra Y". `_tai_gh_xong` đã ghi rõ vì sao nó không
+  làm; tôi đọc sau khi viết. Nhãn tự đúng ở lần mở hộp sau.
+  Tiến độ đi qua dict RIÊNG `_buoc_kokoro` + nhánh trong `_nhip` (khuôn hàng
+  Demucs) — **không đụng widget từ thread nền**, và không dùng chung `_buoc_cai`
+  vì hai lượt tải song song thì hai tiến trình pip ghi lẫn số của nhau.
+  **CHƯA ĐẠT, GHI THẲNG:** chưa có cổng riêng cho Kokoro trong
+  `_chay_hoi_quy.py` (số cổng phải lấy bằng cách đọc `_chay_hoi_quy.CONG`, đừng
+  đếm theo trí nhớ — bài học 70 vs 69) · **chưa ai NGHE bằng tai** một giọng nào
+  trong 28 giọng, mọi số trên là số ĐO · chưa đo mốc từng chữ (Kokoro không tự
+  trả mốc, phải nhờ `giong_hang`) · `_giong_kokoro/` bị gitignore nên bản `.exe`
+  KHÔNG mang sẵn bộ này, máy nhân viên phải bấm nút + phải có Python 3.
 - **"Adam NGHE LẠ": ĐO XONG — **CHỈ KÉM, KHÔNG HỎNG** (19/08/2026,
   `_do_adam_en.py` · `_kq_adam_en.txt`).** Anh Hùng nghe rồi: *"cái adam bị lỗi
   hay sao nghe cứ lạ lạ khác lắm, không như tôi nghĩ"*, và trỏ vào giọng Adam
