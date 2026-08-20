@@ -2434,6 +2434,99 @@
      (511,8 s) · chưa có số thời gian CẢ BƯỚC tách trong lượt này (`tach.giay`
      chỉ là `apply_model`; số cả bước lấy ở cổng 71: **0,155x GPU · 0,488x CPU**)
      · cột `trộn` đo LIỀN MẠCH nên chỉ đọc được là *"không chậm hơn"*.
+- **"GẦN CUỐI VIDEO KHÔNG CHE MỜ CHỮ GÌ CẢ" — TRUY RA, VÁ, ĐO LẠI, CỔNG 56 CA 25
+  (20/08/2026).** Anh Hùng: *"kiểm tra lại cái phần làm mờ sao cứ đến gần cuối
+  video nó k che mờ chữ gì cả"*. Anh ấy nói **"cứ đến"** — tức CÓ QUY LUẬT, và
+  quy luật đó là `1 − 1/k`.
+  **NGUYÊN NHÂN ĐÍCH DANH: `thay_giong.thay_audio_video` nhánh CHE CHỮ dùng
+  `-itsscale k` để làm chậm hình cho khớp giọng.** `-itsscale` là tuỳ chọn **ĐẦU
+  VÀO** nên khung tới filter đã mang mốc `k*s`, còn hộp che thì `loc_cho_xuat`
+  dò trên video **GỐC** (`segs=[(0, dur)]`) nên `a,b` trong
+  `enable='between(t,a,b)'` là mốc **CHƯA GIÃN**. Hệ quả: lệch tuyến tính theo
+  thời gian, và **mọi khung có `t` > độ_dài_GỐC rơi ra NGOÀI mọi mệnh đề enable
+  = KHÔNG CHE GÌ**. Chú thích cũ ngay tại đó khẳng định *"`-itsscale` vẫn dùng
+  được (nó đụng mốc ĐẦU VÀO, trước cả filter) nên hộp vẫn bám đúng chỗ chữ cũ"*
+  — câu đó nghe hợp lý nên **chưa ai đo**, và nó SAI ở đúng chữ "trước cả
+  filter".
+  **BA NGHI PHẠM ĐỌC-MÃ ĐẦU TIÊN ĐỀU VÔ TỘI, đo rồi mới nói** (`_do_che_cuoi.py
+  phu`): vòng lặp 8 giây của `do_hop_chu` **KHÔNG** bỏ đoạn lẻ cuối · `hop_theo
+  _doan` phủ **100,0%** timeline đầu ra ở cả 7 độ dài clip (24 · 32 · 40 · 45 ·
+  60 · 61 · 67 s — gồm cả độ dài KHÔNG chia hết cho 8) và cả hook-first ngược
+  thời gian · `_DAI_NHO` không liên quan. Trên 4 video của anh Hùng, phần thiếu
+  phủ ở đuôi trong thời gian NGUỒN chỉ **0,000-0,206 s**.
+  **ĐO TRÊN CHÍNH 4 FILE APP ĐÃ XUẤT CHO ANH HÙNG** (`Downloads\longtieng\xuất`,
+  `_do_che_thuc_te.py`) — không dựng lại kịch bản:
+
+  | video | gốc -> xuất | k | đuôi KHÔNG che | mật độ nét còn |
+  |---|---|---|---|---|
+  | `#强烈推荐…` | 148,61 -> 178,14 s | 1,1987 | **16,6%** (29,5 s) | 99,2-136,8% |
+  | `一款…倒忌时` | 363,21 -> 435,39 s | 1,1988 | **16,6%** (72,2 s) | 108,0-178,5% |
+  | `从来没有…` | 301,19 -> 361,03 s | 1,1987 | **16,6%** (59,8 s) | 100,0-123,9% |
+  | `八位好莱坞…` | 396,34 -> 495,40 s | 1,2499 | **20,0%** (99,1 s) | 99,4-102,2% |
+
+  (`k` = 23,976/20 và 25/20 = **trần `SAN_NHIP_HINH_FPS`** — cả 4 video đều
+  CHẠM TRẦN, nên lỗi này bật ở **mọi** video anh Hùng chạy chế độ khớp hình.)
+  **HAI BẪY CỦA PHÉP ĐO, BẢN ĐẦU CỦA TÔI SẬP CẢ HAI — đọc trước khi đo lại:**
+  (1) **lấy mốc theo độ dài BẢN GỐC** thì mốc 99% chỉ tới giây 147/178, tức **bỏ
+  trắng đúng cái đuôi đang hỏng** và bảng ra "che một phần" khắp nơi, không thấy
+  lỗi; phải lấy theo độ dài **BẢN XUẤT**. (2) **so "gốc tại T" với "xuất tại T"
+  là so HAI CẢNH KHÁC NHAU** (xuất đã giãn `k` nên giây T của nó là nội dung
+  giây `T/k` của gốc). Thước sạch: bản **ĐỐI CHỨNG chạy CÙNG `k` nhưng
+  `che_chu=False`** -> `-c:v copy` -> khung giống TỪNG ĐIỂM ẢNH -> tỉ lệ
+  `che/đối_chứng` tại CÙNG giây T.
+  **BẢN VÁ (phiên song song làm, cách này ĐÚNG HƠN cách tôi định làm):** bỏ
+  `*its` khỏi lệnh nhánh che chữ, đưa phép giãn vào CHUỖI FILTER bằng
+  `setpts=PTS*k` đặt **SAU khối che và TRƯỚC `subtitles`** — trước `setpts` thì
+  `t` là mốc NGUỒN (đúng trục hộp che dò được), sau `setpts` thì `t` là mốc ĐẦU
+  RA (đúng trục `.ass` dựng từ `moc_tieng`). Đúng thứ tự `export_canvas_clip`
+  vẫn dùng, và nhánh này VỐN ĐÃ mã hoá lại luồng hình nên `setpts` **không tốn
+  thêm một đời nén nào**. Cách tôi định làm (nhân sẵn mốc hộp bằng tham số
+  `he_so`) cũng chạy được nhưng **đã GỠ**: sau bản vá kia nó là **mã chết**, mà
+  mã chết ở đây còn nguy hơn — ai nối vào là giãn **HAI LẦN**.
+  **ĐO LẠI SAU VÁ, thước ĐỘC LẬP với thước của bản vá** (`_do_che_itsscale.py`,
+  chữ Douyin THẬT, mảnh nguồn **45,003 s cố ý không chia hết cho 8**, 3 arm x 10
+  mốc): `k=1,00` **10/10 đã che** (đối chứng CÓ RĂNG) · `k=1,20` 5 mốc cuối
+  **98,8-101,2% -> 0,0-5,7%** · `k=1,25` **98,2-100,0% -> 0,0-5,0%**. Tổng
+  **30/30 mốc còn 0,0-5,7%**. Cột đối chứng tự chứng minh phép đo đúng trục: `T
+  = 0,10 x 45k` nên `s = T/k = 4,5` ở CẢ BA arm và mật độ đối chứng ra giống
+  nhau từng chữ số (0,0933 / 0,1303 / 0,2117…).
+  **NHÌN TẬN MẮT, CÙNG CẢNH CÙNG GIÂY** (`_do_che_anh.py`; TRƯỚC = chính file
+  trong `xuất`, SAU = chạy lại bản đã vá với CÙNG `k=1,1987`): mật độ nét
+  **0,1911 -> 0,0030** (mốc 86%) · **0,2147 -> 0,0052** (94%) · **0,1520 ->
+  0,0060** (99%), độ dài lệch **-0,001 s**. Ảnh TRƯỚC mốc 94% **đọc rõ**
+  `岸边已经没有什么物资了` nguyên vẹn kèm phụ đề tiếng Anh mới viết CHỒNG LÊN;
+  ảnh SAU dải mờ kín, không đọc được chữ nào.
+  **CHE OAN KHÔNG TĂNG MỘT CỬA SỔ NÀO** — bản vá không đụng một dòng nào của
+  đường DÒ: CA 1 (nguồn sạch) · CA 3 (watermark đứng im) · CA 12 (`loc_che` trả
+  rỗng) · **CA 24e (2 video thật KHÔNG chữ -> chuỗi filter RỖNG kể cả khi bật
+  hộp)** đều ĐẠT trong lượt 132/0.
+  **CỔNG 56 CA 25: ĐẠT 132 · HỎNG 0** (mốc `_chay_hoi_quy` 123 -> **132**).
+  9 mục, nguồn **21 s cố ý không chia hết cho `HOP_DOAN`=8**. CA25d' là mệnh đề
+  **KHÔNG khoá vào một cách vá nào**: cửa sổ `enable` cuối phải phủ tới KHUNG
+  CUỐI, và trục của khung cuối **tự đổi** theo chỗ đặt phép giãn (`k*dur` nếu
+  giãn TRƯỚC khối che, `dur` nếu SAU).
+  **THỬ PHÁ 2 phép, BẮT 2/2 — và phép thứ hai LỌT ở lượt đầu, đó là chỗ đáng
+  đọc nhất:** `insert(0, setpts)` thay cho `append` (đưa phép giãn lên TRƯỚC
+  khối che = dựng lại đúng bản hỏng) -> CA25b ĐỎ, 3 mốc đuôi còn **100,8 / 99,8
+  / 99,8%**. Nhưng phép "trả `-itsscale` vào lệnh nhánh che chữ" (giãn HAI LẦN)
+  **LỌT**: `-shortest` **CẮT** bản xuất theo độ dài TIẾNG (`k*dur`) nên độ dài
+  file vẫn ĐÚNG và **đoạn hỏng đã bị xoá khỏi file**, tức cổng xanh trong khi
+  20% cuối THƯỚC PHIM biến mất. Cửa chặn đúng là **SỐ KHUNG** (525 -> ~420) ->
+  thêm CA25e, phá lại thì BẮT. **Quy tắc chung: phép đo NỘI DUNG không bao giờ
+  bắt được lỗi LÀM MẤT nội dung — phải có thêm một mục đếm khung/độ dài.**
+  **BẪY NGUỒN TỰ SINH, sập 2 cái khi viết CA 25:** chữ NGẮN thì mật độ **0,0171**
+  < ngưỡng 0,045 và cả ca tự tắt; và 7 dòng GẦN GIỐNG NHAU (`...thu 1...` ..
+  `...thu 7...`, cùng bề rộng vì `x=(w-tw)/2`) bị **MẶT NẠ HẰNG** xoá sạch còn
+  **0,0180** — đó là bộ dò làm ĐÚNG (chính cửa giữ kỉ lục che oan 0/76), lỗi ở
+  nguồn thử. Độ dài **KHÔNG** phải nguyên nhân: cùng 4 dòng của CA 2 thì
+  8/12/16/21 s đều dò ra (đậm gấp 17,2 / 16,6 / 17,6 / 17,3 lần nền).
+  **CÒN NỢ, GHI THẲNG:** arm dùng `setpts` ra **1078 khung** so với **1079** của
+  arm `-itsscale` (lệch ĐÚNG 1 khung = 41 ms, do đổi cơ chế giãn + `-shortest`)
+  — chưa truy · **3 file cũ trong `Downloads\longtieng\xuất` vẫn là bản HỎNG**,
+  anh Hùng phải xuất lại mới hết chữ Trung ở đuôi · chưa ai xem bằng mắt trên
+  máy nhân viên · đường xuất CLIP (`export_canvas_clip`) **KHÔNG** dính lỗi này
+  (`setpts=PTS/vspeed` vốn đã đặt sau khối che) nhưng cũng chưa có ca canh riêng
+  cho `dub_stretch`.
 - **GIỌNG CỦA ANH HÙNG (NHÂN BẢN TỪ MẪU) ĐÃ NỐI VÀO UI — CỔNG 88 (20/08/2026).**
   Anh Hùng: *"ném giọng đọc của tôi khoảng mấy giây Reference Audio, sau đó dán
   bao nhiêu ký tự dùng giọng đó cũng được... không lấy của bất kỳ ai nữa, tự
