@@ -2295,6 +2295,52 @@ class ThayGiongDialog(QDialog):
         except Exception:  # noqa: BLE001
             pass
 
+    def _goi_y_nghe_thu(self) -> str:
+        """Câu GỢI Ý phải khớp GIỌNG ĐANG CHỌN, không phải câu chung.
+
+        LỖI THẬT anh Hùng gặp 20/08/2026 (có ảnh): anh chọn giọng NHÂN BẢN của
+        mình rồi bấm Nghe thử trong lúc phần nhân bản **đang tải 5%**, và hộp
+        báo lại khuyên *"Giọng thường (edge-tts) cần MẠNG; giọng Piper cần đã
+        tải về máy"* — **hai thứ chẳng liên quan gì tới giọng anh chọn**. Câu
+        chung đó đẩy anh đi kiểm mạng và kiểm Piper, tức lời báo lỗi **tự tay
+        gửi người đọc sang hướng sai**.
+
+        Cùng họ bẫy cả repo này chống ("phép đo hỏng phát chứng nhận"), chỉ khác
+        là ở đây thứ phát chứng nhận sai là **lời khuyên**. Xem thêm cổng 74:
+        lời lỗi *"không phải JSON hợp lệ"* đúng phần NGỌN nên người đọc đi soi
+        prompt trong khi bệnh ở trần token.
+        """
+        try:
+            ma = str(self.cb_giong.currentData() or "")
+        except Exception:  # noqa: BLE001
+            ma = ""
+        # Giọng NHÂN BẢN: nói đúng cái đang thiếu, và nói cả chuyện ĐANG TẢI —
+        # thiếu vế đó thì anh Hùng bấm lại liên tục trong lúc pip còn chạy.
+        if ma.startswith("vnb:"):
+            try:
+                from app.core import nhan_ban_giong as NB
+                thieu = NB.thieu_de_nhan_ban(NB.MAY_VIENEU)
+            except Exception:  # noqa: BLE001
+                thieu = []
+            if thieu:
+                # CỐ Ý nói CẢ HAI vế (chưa bấm / đang tải) thay vì đọc cờ
+                # `_dang_cai_nb` — cờ đó thuộc hộp «Giọng của tôi`, KHÔNG phải
+                # hộp này, nên `getattr` ở đây luôn ra False và câu "đang tải"
+                # sẽ không bao giờ hiện. Thà nói hai vế còn hơn đoán sai một vế:
+                # anh Hùng gặp đúng cảnh ĐANG TẢI 5% và bấm Nghe thử.
+                return ("Giọng NHÂN BẢN chưa chạy được vì còn thiếu: "
+                        + ", ".join(thieu[:4]) + "."
+                        + "\nMở hộp «Giọng của tôi» rồi bấm nút Tải phần nhân "
+                          "bản giọng. NẾU ĐANG TẢI thì chờ thanh tiến độ xong "
+                          "hẳn rồi bấm lại — đừng bấm nhiều lần."
+                        + "\n\n20 giọng VieNeu dựng sẵn KHÔNG cần phần này — "
+                          "chọn một giọng trong nhóm đó thì nghe thử được ngay.")
+            return ("Giọng nhân bản đã đủ phần cần thiết, nên lỗi này là chuyện "
+                    "KHÁC — xem logs/giong_vieneu_<ngày>.log. Kiểm cả file mẫu: "
+                    "phải là audio đọc được, một người nói, không nhạc nền.")
+        return ("Giọng thường (edge-tts) cần MẠNG; giọng Piper cần đã tải "
+                "về máy. Kiểm rồi bấm lại.")
+
     def _nghe_thu_xong(self, wav: str, nguon: str, loi: str,
                        canh_bao: str = "") -> None:
         """Chạy ở LUỒNG GIAO DIỆN (qua tín hiệu) -> đụng widget mới an toàn."""
@@ -2304,8 +2350,7 @@ class ThayGiongDialog(QDialog):
             QMessageBox.warning(
                 self, "Nghe thử không được",
                 f"Không đọc thử được giọng này.\n\nLý do: {loi or 'không rõ'}"
-                "\n\nGiọng thường (edge-tts) cần MẠNG; giọng Piper cần đã tải "
-                "về máy. Kiểm rồi bấm lại.")
+                "\n\n" + self._goi_y_nghe_thu())
             return
         # NGUỒN THẬT, không phải cái vừa chọn: Piper chưa tải thì app LÙI ÊM
         # về edge-tts — không nói ra thì anh Hùng tưởng đang nghe Piper.
