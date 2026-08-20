@@ -634,6 +634,347 @@ else:
        "lượt 4)", "use_ref_codes" not in ma_vn)
 
 # ---------------------------------------------------------------------------
+print("\n[CA 12] NÚT TẢI PHẦN NHÂN BẢN — bám `thieu`, KHÔNG bám \"chạy được\"")
+# ---------------------------------------------------------------------------
+# LỖI THẬT: anh Hùng lưu giọng "MQ Idol" xong, dòng giọng ghi **CHƯA CHẠY ĐƯỢC
+# (thiếu torch, torchaudio)** — nhãn NÓI THẬT (bản `.exe` có venv VieNeu ở
+# `%LOCALAPPDATA%` mà không có torch) nhưng **KHÔNG CÓ NÚT NÀO để cài**. Tính
+# năng thật thà báo hỏng rồi bỏ người dùng ở đó.
+_tt_nb = VN.tinh_trang_nhan_ban()
+ok("12a `tinh_trang_nhan_ban` trả đủ khoá cho UI",
+   all(k in _tt_nb for k in ("thieu", "co", "cai_duoc", "vi_sao", "nhan",
+                             "mb_tai", "cuda", "thu_muc")),
+   str(sorted(_tt_nb))[:80])
+
+# ═══ MỆNH ĐỀ TRUNG TÂM (khuôn cổng 58 CA 1a) ═══
+# Danh sách gói THIẾU mà bản CHẠY-NGUỒN nói ra phải GIỐNG HỆT danh sách một
+# tiến trình KHÔNG có `.venv` nói ra. Nếu lệch thì phép dò đang mượn gói của
+# `.venv` -> máy dev XANH, máy anh Hùng ĐỎ, đúng cái bẫy đã cắn hai lần.
+# Cách giả lập `.exe`: import `app` xong **RỒI MỚI** cắt mọi mục
+# `site-packages` khỏi `sys.path`. Cắt TRƯỚC thì chính `import config` chết và
+# cổng đo nhầm thứ khác (bản `.exe` vẫn có đủ dotenv/PyQt6 trong `_internal`;
+# khác biệt duy nhất là chỗ tìm torch).
+_ma_exe = r"""
+import json, os, sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+os.environ["BQ_DATA_DIR"] = sys.argv[1]
+sys.path.insert(0, sys.argv[2])
+# 1) import ĐỦ TRƯỚC — đúng như bản .exe đã có sẵn mọi thứ trong `_internal`
+import config                                          # noqa: F401
+from app.core import giong_vieneu as VN
+from app.core import nhan_ban_giong as NB
+# 2) RỒI MỚI cắt `site-packages` — từ giờ tiến trình này không còn `.venv` để
+#    mượn torch, y hệt máy anh Hùng.
+sys.path[:] = [p for p in sys.path if "site-packages" not in p.replace("\\", "/")]
+ra = {
+    "thieu": NB.thieu_de_nhan_ban(NB.MAY_VIENEU),
+    "thieu_vn": VN.thieu_nhan_ban(),
+    "co_sp": [p for p in sys.path if "site-packages" in p],
+}
+# MỒI CHIA ĐÔI kiểu cổng 58: `sys.argv[3]` là gói CÓ trong `.venv` mà KHÔNG có
+# trong venv VieNeu. Bộ dò đúng (theo FILE) phải kể nó là THIẾU ở CẢ hai tiến
+# trình; bộ dò kiểu `find_spec` thì bản chạy-nguồn "thấy" nó của `.venv` rồi
+# trả rỗng -> hai bên LỆCH và mục 12c'' bắt được.
+NB._CAN_CHO_NHAN_BAN = (sys.argv[3],)
+ra["thieu_moi"] = NB.thieu_de_nhan_ban(NB.MAY_VIENEU)
+print("BQJSON\t" + json.dumps(ra, ensure_ascii=False))
+"""
+#: Gói CÓ trong `.venv` của app, KHÔNG có trong `_giong_vieneu/venv` — đo
+#: trước khi dùng, đừng tin trí nhớ.
+_MOI = "PyQt6"
+_exe_py = T / "_gia_lap_exe.py"
+_exe_py.write_text(_ma_exe, encoding="utf-8")
+_p = subprocess.run([sys.executable, "-u", str(_exe_py), str(T), str(REPO),
+                     _MOI],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=600,
+                    creationflags=(0x08000000 if os.name == "nt" else 0))
+_kq_exe: dict = {}
+for _d in (_p.stdout or "").splitlines():
+    if _d.startswith("BQJSON\t"):
+        _kq_exe = json.loads(_d.split("\t", 1)[1])
+if not _kq_exe:
+    ok("12b giả lập bản `.exe` chạy được", False,
+       ((_p.stderr or "") + (_p.stdout or ""))[-200:])
+else:
+    # Bộ dò phải THẬT SỰ mất `.venv` — không thì 12c tự ĐẠT vì lý do SAI.
+    ok("12b giả lập `.exe`: đã cắt sạch `site-packages` khỏi `sys.path`",
+       not _kq_exe.get("co_sp"), str(_kq_exe.get("co_sp"))[:70])
+    _thieu_dev = NB.thieu_de_nhan_ban(NB.MAY_VIENEU)
+    ok("12c MỆNH ĐỀ TRUNG TÂM: danh sách thiếu của bản CHẠY-NGUỒN GIỐNG HỆT "
+       "của tiến trình KHÔNG có `.venv` (dò bằng FILE, không mượn `.venv`)",
+       list(_kq_exe.get("thieu") or []) == list(_thieu_dev),
+       f"nguồn={_thieu_dev} · .exe={_kq_exe.get('thieu')}")
+    ok("12c' `giong_vieneu.thieu_nhan_ban` nói CÙNG một câu với "
+       "`nhan_ban_giong.thieu_de_nhan_ban` (một bộ dò, không hai)",
+       list(_kq_exe.get("thieu_vn") or []) == list(_kq_exe.get("thieu") or []),
+       f"{_kq_exe.get('thieu_vn')} vs {_kq_exe.get('thieu')}")
+
+    # ═══ MỒI CHIA ĐÔI — 12c mới có RĂNG nhờ mục này ═══
+    # Trên máy này venv VieNeu ĐÃ có cả torch lẫn torchaudio, nên 12c so
+    # `[] == []`: ĐÚNG nhưng KHÔNG phân biệt được bộ dò tốt với bộ dò hỏng.
+    # `_MOI` là gói CÓ trong `.venv` của app mà KHÔNG có trong venv VieNeu —
+    # đúng phép chia đôi cổng 58 đã tìm ra ("mọi gói THIẾU đều là gói `.venv`
+    # ĐÃ CÓ"). Bộ dò theo FILE phải kể nó THIẾU ở CẢ hai tiến trình; bộ dò kiểu
+    # `find_spec` thì bản chạy-nguồn mượn `.venv` rồi trả RỖNG -> hai bên lệch.
+    _sp_venv = REPO / ".venv" / "Lib" / "site-packages" / _MOI
+    _sp_vn = (REPO / "_giong_vieneu" / "venv" / "Lib" / "site-packages" / _MOI)
+    if not _sp_venv.is_dir() or _sp_vn.is_dir():
+        bo_qua("12c'' mồi chia đôi",
+               f"{_MOI} không còn đúng thế 'có ở .venv, thiếu ở venv VieNeu'")
+    else:
+        _that_can = NB._CAN_CHO_NHAN_BAN
+        NB._CAN_CHO_NHAN_BAN = (_MOI,)          # type: ignore[assignment]
+        try:
+            _moi_dev = NB.thieu_de_nhan_ban(NB.MAY_VIENEU)
+        finally:
+            NB._CAN_CHO_NHAN_BAN = _that_can    # type: ignore[assignment]
+        _moi_exe = list(_kq_exe.get("thieu_moi") or [])
+        ok(f"12c''0 mồi `{_MOI}` THẬT SỰ thiếu ở venv VieNeu (nếu không thì "
+           "12c'' tự ĐẠT vì lý do SAI)", _moi_dev == [_MOI] != [],
+           f"nguồn nói {_moi_dev}")
+        ok(f"12c'' MỆNH ĐỀ TRUNG TÂM CÓ RĂNG: mồi `{_MOI}` (CÓ trong `.venv`, "
+           "THIẾU ở venv VieNeu) -> bản chạy-nguồn và tiến trình KHÔNG có "
+           "`.venv` nói GIỐNG HỆT. Bộ dò kiểu `find_spec` sẽ lệch ở đây.",
+           _moi_dev == _moi_exe == [_MOI],
+           f"nguồn={_moi_dev} · .exe={_moi_exe}")
+
+# ═══ LỆNH CÀI: `--ignore-installed` + KHÔNG cài vào `.venv` ═══
+# QUÉT BẰNG AST, KHÔNG QUÉT CHUỖI: chính phần GHI CHÚ của `cai_nhan_ban` có
+# cụm `--ignore-installed` (nó giải thích vì sao cờ đó phải ở đó), nên tìm
+# bằng `in` thì gỡ cờ khỏi LỆNH mà cổng vẫn XANH — đúng bài học cổng 58/56d.
+_cay_vn = ast.parse((REPO / "app" / "core" / "giong_vieneu.py")
+                    .read_text(encoding="utf-8"))
+_hang_cai: list[str] = []
+for _n in ast.walk(_cay_vn):
+    if isinstance(_n, ast.FunctionDef) and _n.name == "cai_nhan_ban":
+        # BỎ DOCSTRING BẰNG CẤU TRÚC AST, KHÔNG so mặt chữ. Bản đầu của mục
+        # này hỏi `_hang_cai[0].startswith("TẢI + CÀI")` — sửa một chữ trong
+        # docstring là phép bỏ đó trượt, docstring (có chứa
+        # `--ignore-installed` vì nó GIẢI THÍCH cờ ấy) lọt vào danh sách, rồi
+        # mục này ĐẠT OAN kể cả khi cờ đã bị gỡ khỏi LỆNH. Đúng bẫy cổng
+        # 47/51/53/54/73 lặp lần thứ bảy, lần này trong chính mục viết ra để
+        # chống nó.
+        _than = list(_n.body)
+        if _than and isinstance(_than[0], ast.Expr) \
+                and isinstance(_than[0].value, ast.Constant) \
+                and isinstance(_than[0].value.value, str):
+            _than.pop(0)
+        for _st in _than:
+            for _c in ast.walk(_st):
+                if isinstance(_c, ast.Constant) and isinstance(_c.value, str):
+                    _hang_cai.append(_c.value)
+ok("12d0 TỰ KIỂM PHÉP BỎ DOCSTRING: docstring của `cai_nhan_ban` CÓ chứa "
+   "`--ignore-installed` (nên nếu không bỏ nó thì 12d vô nghĩa)",
+   "--ignore-installed" in (ast.get_docstring(next(
+       n for n in ast.walk(_cay_vn)
+       if isinstance(n, ast.FunctionDef) and n.name == "cai_nhan_ban")) or ""))
+ok("12d lệnh cài CÓ `--ignore-installed` (quét AST trong THÂN hàm, đã bỏ "
+   "docstring — quét chuỗi cả file là gỡ cờ mà cổng vẫn xanh)",
+   "--ignore-installed" in _hang_cai, str(_hang_cai[:6])[:90])
+ok("12d' TỰ KIỂM BỘ DÒ: bản KHÔNG có cờ thì bộ dò phải TRƯỢT",
+   "--khong-he-co-co-nay" not in _hang_cai)
+
+def _than_ham(cay, ten: str):
+    """Các nút AST trong THÂN một hàm (đã bỏ docstring)."""
+    for n in ast.walk(cay):
+        if isinstance(n, ast.FunctionDef) and n.name == ten:
+            than = list(n.body)
+            if than and isinstance(than[0], ast.Expr) \
+                    and isinstance(than[0].value, ast.Constant) \
+                    and isinstance(than[0].value.value, str):
+                than.pop(0)
+            for st in than:
+                yield from ast.walk(st)
+
+
+def _dung_sys_executable(cay, ten: str) -> bool:
+    """Thân hàm `ten` có đụng `sys.executable` không (quét AST).
+
+    **KHÔNG quét chuỗi trên `_ma_that`**: hàm đó nối TOKEN bằng dấu cách nên
+    `sys.executable` biến thành `"sys . executable"` — tìm `"sys.executable"`
+    thì KHÔNG BAO GIỜ khớp và mục này tự ĐẠT vĩnh viễn. Bản đầu của tôi làm
+    đúng vậy; đây là cùng lớp bệnh "phép đo hỏng phát chứng nhận".
+    """
+    for c in _than_ham(cay, ten):
+        if isinstance(c, ast.Attribute) and c.attr == "executable" \
+                and isinstance(c.value, ast.Name) and c.value.id == "sys":
+            return True
+    return False
+
+
+ok("12e KHÔNG cài vào `.venv` của app: thân `cai_nhan_ban` không đụng "
+   "`sys.executable` (bản `.exe` thì đó là chính BQHungVideo.exe, còn ở mã "
+   "nguồn thì đó là `.venv` đang chạy sản xuất 300 kênh)",
+   not _dung_sys_executable(_cay_vn, "cai_nhan_ban"))
+ok("12e' TỰ KIỂM BỘ DÒ: hàm CÓ đụng `sys.executable` thì phải BỊ BẮT",
+   _dung_sys_executable(
+       ast.parse("def f():\n    return [sys.executable, '-m', 'pip']\n"), "f"))
+ok("12f hậu kiểm gọi lại `thieu_nhan_ban()` — SO ĐƯỜNG DẪN, không hỏi "
+   "\"import được không\"",
+   any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+       and c.func.id == "thieu_nhan_ban"
+       for n in ast.walk(_cay_vn)
+       if isinstance(n, ast.FunctionDef) and n.name == "cai_nhan_ban"
+       for c in ast.walk(n)))
+
+# ═══ NÚT: HIỆN khi thiếu, ẨN khi đủ — và BÁM `thieu` ═══
+_ghi_hop: list[str] = []
+QMessageBox.question = staticmethod(          # type: ignore[assignment]
+    lambda *a, **k: (_ghi_hop.append(str(a[2]) if len(a) > 2 else ""),
+                     QMessageBox.StandardButton.No)[1])
+
+h2 = HopGiongToi()
+h2.show()
+_du = not VN.thieu_nhan_ban()
+ok("12g máy này ĐỦ torch -> nút ẨN" if _du else
+   "12g máy này THIẾU -> nút HIỆN",
+   h2.b_tai_nb.isVisible() is (not _du),
+   f"thieu={VN.thieu_nhan_ban()} · hiện={h2.b_tai_nb.isVisible()}")
+h2.close()
+
+# **CÁI BẪY ĐÃ LÀM RA VIỆC NÀY.** Vá phép dò trả ['torch'] rồi đòi nút CÒN
+# HIỆN. Nút bám cờ "máy này chạy được không" thì trên máy dev (venv ĐÃ có
+# torch) nút BIẾN MẤT, không ai bấm, bản `.exe` mãi mãi thiếu — y hệt cách
+# `_lib` của Demucs thiếu torch mà nút không bao giờ hiện (cổng 58).
+_that_thieu2 = NB.thieu_de_nhan_ban
+NB.thieu_de_nhan_ban = lambda m: ["torch"]     # type: ignore[assignment]
+try:
+    h3 = HopGiongToi()
+    h3.show()
+    ok("12h vá `thieu_de_nhan_ban` -> ['torch'] thì nút CÒN HIỆN "
+       "(nút bám `thieu`, KHÔNG bám cờ 'chạy được')",
+       h3.b_tai_nb.isVisible(), f"hiện={h3.b_tai_nb.isVisible()}")
+    _nhan_nut = h3.b_tai_nb.text()
+    ok("12i nhãn nêu ĐÍCH DANH gói thiếu (không phải 'chưa cài' trơn)",
+       "torch" in _nhan_nut, _nhan_nut[:70])
+    ok("12i' ca CÀI DỞ trông KHÁC ca chưa cài lần nào ('Cài tiếp')",
+       "Cài tiếp" in _nhan_nut, _nhan_nut[:70])
+    ok("12j nhãn nút KHÔNG EMOJI", not _co_emoji(_nhan_nut),
+       "".join(_co_emoji(_nhan_nut)))
+    # Phải soi CẢ HAI nhánh nhãn: mục trên chỉ thấy nhánh CÀI DỞ, nên gắn
+    # emoji vào nhánh "chưa cài lần nào" thì nó KHÔNG bắt được (đo thật: phép
+    # phá 18 đi lọt mục này, may có 9c bắt hộ — mà dựa vào mục khác bắt hộ là
+    # đúng bẫy cổng 80 LỌT 6).
+    for _nh_b, _ten_b in ((VN.nhan_tai_nhan_ban([]), "chưa cài lần nào"),
+                          (VN.nhan_tai_nhan_ban(["torch", "torchaudio"]),
+                           "thiếu cả hai"),
+                          (VN.nhan_tai_nhan_ban(["vieneu/v3turbo.py"]),
+                           "chưa có bộ VieNeu")):
+        ok(f"12j'' nhãn nhánh «{_ten_b}» KHÔNG EMOJI", not _co_emoji(_nh_b),
+           "".join(_co_emoji(_nh_b)) or _nh_b[:44])
+    ok("12j' nhãn dòng trạng thái KHÔNG EMOJI",
+       not _co_emoji(h3.lb_nb.text()), "".join(_co_emoji(h3.lb_nb.text())))
+
+    # MỘT CON SỐ, BA CHỖ ĐỌC. Cổng 58: nút ghi 155 MB rồi hộp xác nhận doạ
+    # 2 GB — hai con số cho CÙNG một lượt tải. Ở đây lấy con số của
+    # `mb_nhan_ban()` rồi đòi nó có mặt ở CẢ nhãn, tooltip VÀ hộp xác nhận.
+    _so = f"{VN.mb_nhan_ban():,.0f}".replace(",", ".")
+    _ghi_hop.clear()
+    h3._tai_nhan_ban()          # hộp đã vá -> trả No, KHÔNG tải thật
+    _hop = " ".join(_ghi_hop)
+    ok("12k hộp xác nhận có hiện ra (và cổng trả No nên KHÔNG tải thật)",
+       bool(_ghi_hop) and not h3._dang_cai_nb, f"{len(_ghi_hop)} hộp")
+    ok(f"12l nhãn nút / tooltip / hộp xác nhận CÙNG một con số ({_so} MB)",
+       _so in _nhan_nut and _so in h3.b_tai_nb.toolTip() and _so in _hop,
+       f"nhãn={_so in _nhan_nut} tooltip={_so in h3.b_tai_nb.toolTip()} "
+       f"hộp={_so in _hop}")
+    ok("12l' con số đó là SỐ ĐO của đúng bản sẽ tải "
+       "(cpu 126,3 · cu126 2.485,6)",
+       VN.mb_nhan_ban() in (VN.MB_NB_CPU, VN.MB_NB_CUDA),
+       f"{VN.mb_nhan_ban()} · cuda={VN.ban_cuda_se_tai()}")
+    h3.close()
+
+    # THIẾU PYTHON 3 -> KHOÁ NÚT **VÀ NÓI VÌ SAO**. Nút xám không một lời là
+    # câu đố (bài học cổng 58/16/51), mà đây là ca rất dễ gặp: bản `.exe`
+    # không mang Python.
+    _that_pyht = VN._python_he_thong
+    VN._python_he_thong = lambda: ""            # type: ignore[assignment]
+    try:
+        h4 = HopGiongToi()
+        h4.show()
+        ok("12m thiếu Python 3 -> nút vẫn HIỆN nhưng bị KHOÁ",
+           h4.b_tai_nb.isVisible() and not h4.b_tai_nb.isEnabled(),
+           f"hiện={h4.b_tai_nb.isVisible()} bật={h4.b_tai_nb.isEnabled()}")
+        ok("12n ... VÀ nói vì sao ngay trên nhãn (Python)",
+           "Python" in h4.lb_nb.text(), h4.lb_nb.text()[-90:])
+        # bấm vào nút đã khoá (gọi thẳng handler) cũng KHÔNG được tải bừa
+        _ghi_hop.clear()
+        h4._tai_nhan_ban()
+        ok("12n' gọi thẳng handler lúc chưa cài được -> KHÔNG bắt đầu tải",
+           not h4._dang_cai_nb)
+        h4.close()
+    finally:
+        VN._python_he_thong = _that_pyht        # type: ignore[assignment]
+finally:
+    NB.thieu_de_nhan_ban = _that_thieu2         # type: ignore[assignment]
+
+# BỘ DÒ NÉM -> HỘP KHÔNG ĐƯỢC CHẾT, và phải nghiêng về HIỆN nút (ẩn nút chính
+# là cách tính năng đã chết một lần).
+_that_ttnb = VN.tinh_trang_nhan_ban
+
+
+def _no_tung(*_a, **_k):
+    raise RuntimeError("ổ mạng rút giữa lượt dò")
+
+
+VN.tinh_trang_nhan_ban = _no_tung               # type: ignore[assignment]
+try:
+    _loi_dung = ""
+    try:
+        h5 = HopGiongToi()
+        h5.show()
+        _hien5, _nhan5 = h5.b_tai_nb.isVisible(), h5.lb_nb.text()
+        h5.close()
+    except Exception as e:                                     # noqa: BLE001
+        _loi_dung = f"{type(e).__name__}: {e}"
+        _hien5, _nhan5 = False, ""
+    ok("12o bộ dò NÉM -> hộp vẫn dựng được, KHÔNG chết", not _loi_dung,
+       _loi_dung[:90])
+    ok("12p ... và nghiêng về HIỆN nút (ẩn nút là cách tính năng đã chết)",
+       _hien5, f"hiện={_hien5}")
+    ok("12q ... và NÓI RA là chưa dò được", "dò được" in _nhan5,
+       _nhan5[:90])
+finally:
+    VN.tinh_trang_nhan_ban = _that_ttnb         # type: ignore[assignment]
+
+# ═══ CỐ Ý KHÔNG dựng lại combo sau khi tải xong ═══
+# `_dung_combo_giong` đặt lại combo theo giá trị ĐÃ LƯU, nên gọi nó ở đây là
+# NUỐT MẤT giọng user vừa bấm mà chưa lưu — đúng họ lỗi "chọn X ra Y".
+# `_tai_gh_xong` và `_tai_kokoro_xong` đã cố ý không gọi; hàng này phải giống.
+_goi_combo = any(
+    isinstance(c, ast.Attribute) and c.attr == "_dung_combo_giong"
+    for c in _than_ham(cay_ui, "_tai_nhan_ban_xong"))
+ok("12s `_tai_nhan_ban_xong` CỐ Ý KHÔNG gọi `_dung_combo_giong` (hàm đó đọc "
+   "giá trị ĐÃ LƯU nên nuốt lựa chọn user vừa bấm — họ lỗi 'chọn X ra Y')",
+   not _goi_combo)
+ok("12s' ... mà VẪN nạp lại danh sách (`_nap`) để tiền tố 'CHƯA CHẠY ĐƯỢC' "
+   "biến đi",
+   any(isinstance(c, ast.Attribute) and c.attr == "_nap"
+       for c in _than_ham(cay_ui, "_tai_nhan_ban_xong")))
+ok("12s'' TỰ KIỂM BỘ DÒ: hàm CÓ gọi `_dung_combo_giong` thì phải BỊ BẮT",
+   any(isinstance(c, ast.Attribute) and c.attr == "_dung_combo_giong"
+       for c in _than_ham(
+           ast.parse("def f(self):\n    self._dung_combo_giong()\n"), "f")))
+
+# `cai_nhan_ban` KHÔNG BAO GIỜ NÉM — kể cả khi không có môi trường nào.
+os.environ["BQ_VN_PYTHON"] = str(T / "khong_he_co_python.exe")
+_that_pv = VN._python_vieneu
+VN._python_vieneu = lambda: ("", ["VieNeu"], ())   # type: ignore[assignment]
+try:
+    _r_cai = VN.cai_nhan_ban()
+    ok("12r `cai_nhan_ban` không có môi trường -> trả {ok:False, loi} chứ "
+       "KHÔNG NÉM", isinstance(_r_cai, dict) and _r_cai.get("ok") is False
+       and len(str(_r_cai.get("loi") or "")) > 15,
+       str(_r_cai.get("loi"))[:80])
+    ok("12r' ... và lời lẽ nói được phải làm gì (nêu VieNeu hoặc Python)",
+       any(k in str(_r_cai.get("loi") or "") for k in ("VieNeu", "Python")),
+       str(_r_cai.get("loi"))[:60])
+finally:
+    VN._python_vieneu = _that_pv                # type: ignore[assignment]
+    os.environ.pop("BQ_VN_PYTHON", None)
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 74)
 print(f"ĐẠT {_DAT} · HỎNG {len(_HONG)} · BỎ QUA {len(_BOQUA)}")
 for x in _HONG:
@@ -682,5 +1023,12 @@ def _don_hop_cat() -> None:
           f"Xoá tay để repo không đọng rác.")
 
 
-_don_hop_cat()
+# ĐĂNG KÝ chứ không gọi thẳng: lượt THỬ PHÁ có phép làm cổng chết GIỮA ĐƯỜNG
+# (vd gỡ lưới an toàn quanh bộ dò -> `HopGiongToi()` ném ở CA 3), và khi đó
+# dòng gọi thẳng ở cuối file KHÔNG BAO GIỜ chạy -> hộp cát đọng lại trong repo.
+# ĐO ĐƯỢC: lượt phá 19 phép để lại **2 thư mục `bq_test_giong_toi_*`**. Đúng
+# bệnh mà `_don_hop_cat` sinh ra để chống (25 thư mục sau ~11 lượt), chỉ khác
+# đường vào. `atexit` chạy cả khi thoát bình thường lẫn khi ném.
+import atexit  # noqa: E402
+atexit.register(_don_hop_cat)
 sys.exit(1 if _HONG else 0)

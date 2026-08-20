@@ -31,6 +31,7 @@ REPO = Path(__file__).resolve().parent
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 NB = REPO / "app" / "core" / "nhan_ban_giong.py"
+VNC = REPO / "app" / "core" / "giong_vieneu.py"
 UI = REPO / "app" / "ui" / "thay_giong_dialog.py"
 CONG = REPO / "_test_giong_toi.py"
 
@@ -78,6 +79,67 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
      NB, '            f"mẫu {_so_giay(g):.0f} giây){mat}")',
      '            f"mẫu {_so_giay(g):.0f} giây){mat}"'
      ' + " · " + "x" * 60)', "8d"),
+
+    # ═══ CA 12 — NÚT TẢI PHẦN NHÂN BẢN ═══
+    ("10. nút tải BÁM CỜ \"máy này chạy được\" thay vì bám `thieu` — CHÍNH "
+     "cái bẫy đã đẻ ra việc này: máy dev có torch -> nút BIẾN MẤT -> không ai "
+     "bấm -> bản .exe mãi mãi thiếu (cổng 58 + hàng Kokoro)",
+     UI, "        self.b_tai_nb.setVisible(True)",
+     "        self.b_tai_nb.setVisible(not VN_C.co_vieneu())", "12h"),
+
+    ("11. gỡ `--ignore-installed` khỏi LỆNH pip (pip coi gói của môi trường "
+     "đang chạy là 'đã thoả mãn' rồi BỎ QUA -> đích rỗng mà báo cài xong)",
+     VNC, '                    "--ignore-installed",', "", "12d"),
+
+    ("12. hậu kiểm bị gỡ — tin thẳng mã thoát của pip (đúng cách `_lib` báo "
+     "'cài xong' trong khi rỗng torch)",
+     VNC, "            thieu = thieu_nhan_ban()", "            thieu = []",
+     "12f"),
+
+    ("13. hộp xác nhận + tooltip ghi MỘT SỐ KHÁC nhãn nút (đúng lỗi cổng 58: "
+     "nút 155 MB, hộp doạ 2 GB)",
+     UI, '            return f"{VN_C.mb_nhan_ban():,.0f}".replace(",", ".")',
+     '            return "155"', "12l"),
+
+    ("14. nút KHÔNG còn khoá theo `cai_duoc` (máy không có Python 3 vẫn bấm "
+     "được rồi im)",
+     UI, '            bool(tt.get("cai_duoc")) and not self._dang_cai_nb)',
+     "            not self._dang_cai_nb)", "12m"),
+
+    ("15. bộ dò NÉM thì hộp CHẾT theo (bỏ lưới an toàn quanh "
+     "`tinh_trang_nhan_ban`)",
+     UI, "        except Exception as e:  # noqa: BLE001 - dò hỏng KHÔNG "
+         "được giết hộp",
+     "        except ZeroDivisionError as e:  # noqa: BLE001", "12o"),
+
+    ("16. nhãn ca CÀI DỞ không nêu tên gói và không nêu số MB (quay về "
+     "'chưa cài' trơn — người dùng không biết bấm gì)",
+     VNC, "        return f\"Cài tiếp phần còn thiếu "
+          "({', '.join(la_goi)} — {duoi})\"",
+     '        return "Cài tiếp phần còn thiếu"', "12i / 12l"),
+
+    ("17. cài vào `.venv` CỦA APP thay vì venv VieNeu (một lượt pip install "
+     "torch khác bản có thể phá app đang chạy sản xuất 300 kênh)",
+     VNC, '            args = [str(vpy), "-m", "pip", "install", "--no-input",',
+     '            args = [sys.executable, "-m", "pip", "install", '
+     '"--no-input",', "12e"),
+
+    # Gắn emoji vào nhánh "chưa cài lần nào" — nhánh mà mục 12j (chỉ soi ca
+    # CÀI DỞ) KHÔNG nhìn tới. Lượt phá đầu chứng minh đúng vậy: 12j LỌT, chỉ
+    # có 9c bắt hộ. Nay có 12j'' soi cả ba nhánh nhãn.
+    ("18. nhãn nút mang EMOJI ở nhánh 'chưa cài lần nào' (máy anh Hùng thiếu "
+     "glyph -> Ô ĐEN)",
+     VNC, '    return f"Tải phần nhân bản giọng ({\', \'.join(goi)} — {duoi})"',
+     '    return f"\\U0001F4CB Tải phần nhân bản giọng '
+     '({\', \'.join(goi)} — {duoi})"', "12j'' / 9c"),
+
+    # Neo MỘT DÒNG (LUẬT 2 của file này: repo là CRLF nên neo nhiều dòng dễ
+    # trượt). `tt = self._do_nhan_ban()` chỉ có ĐÚNG 1 lần — đã đếm trước.
+    ("19. tải xong thì DỰNG LẠI COMBO (`_dung_combo_giong` đọc giá trị ĐÃ "
+     "LƯU -> nuốt mất giọng user vừa bấm mà chưa lưu = họ lỗi 'chọn X ra Y')",
+     UI, "        tt = self._do_nhan_ban()",
+     "        tt = self._do_nhan_ban()\n        self._dung_combo_giong()",
+     "12s"),
 ]
 
 

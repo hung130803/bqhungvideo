@@ -1066,8 +1066,22 @@ class HopGiongToi(QDialog):
 
         Thiếu phần này chỉ LÙI ÊM về giọng thường nên **KHÔNG khoá nút nào** —
         khác Demucs (thiếu là CHẶN, vì lùi ra video HỎNG).
+
+        ═══ BỘ DÒ HỎNG THÌ NGHIÊNG VỀ **HIỆN NÚT**, và đó là quyết định ═══
+        Hộp này KHÔNG được chết vì một lượt dò hỏng (ổ mạng rút, `config` lạ).
+        Nhưng hướng lùi phải chọn đúng: **ẩn nút** là chính cái đã giết tính
+        năng một lần, nên hỏng thì vẫn HIỆN + bấm được, và nói ra là chưa dò
+        được. `cai_nhan_ban()` không bao giờ ném nên bấm vào cũng chỉ ra một
+        lời lỗi đọc được, còn ẩn đi thì người dùng không còn đường nào.
         """
-        tt = VN_C.tinh_trang_nhan_ban()
+        try:
+            tt = VN_C.tinh_trang_nhan_ban()
+        except Exception as e:  # noqa: BLE001 - dò hỏng KHÔNG được giết hộp
+            tt = {"thieu": ["không dò được"], "co": False, "cai_duoc": True,
+                  "vi_sao": f"Chưa dò được phần nhân bản ({type(e).__name__}: "
+                            f"{e}) — bấm thử vẫn được, app sẽ báo lý do rõ.",
+                  "nhan": "Tải phần nhân bản giọng", "mb_tai": 0.0,
+                  "cuda": False, "python": "", "thu_muc": ""}
         self._tt_nb = tt
         thieu = list(tt.get("thieu") or [])
         if not thieu:
