@@ -427,8 +427,37 @@ def goi_y_may(lang: str = "vi") -> str:
 #: Windows), `PyMuPDF` (đọc PDF) — không thứ nào là phụ thuộc của một lượt ĐỌC
 #: TIẾNG, và kéo chúng vào là lượt cài chắc chắn gãy.
 #: `safetensors`/`einops` KHÔNG cần khai: pip tự kéo theo `transformers`.
-_CAN_CHO_NHAN_BAN = ("torch", "torchaudio", "transformers", "neucodec",
-                     "accelerate")
+#:
+#: ═══ ĐO 20/08/2026: DANH SÁCH NÀY TỪNG DÀI QUÁ, VÀ ĐÓ LÀ BÁO ĐỘNG GIẢ ═══
+#: Lượt trước thêm `transformers`, `neucodec`, `accelerate` vào đây, suy từ
+#: `importlib.metadata.requires("vieneu")` (21 tên khai báo). **Suy luận đó
+#: SAI**, và `_do_may_trang.py` đo ra bằng cách ĐỌC THẬT:
+#:
+#:   · `_giong_vieneu/venv` (vieneu 3.2.8): transformers · neucodec ·
+#:     accelerate **ĐỀU KHÔNG CÓ** (`import` cả ba đều `ModuleNotFoundError`,
+#:     không có thư mục lẫn `.dist-info`)
+#:   · vậy mà đường NHÂN BẢN chạy **RA WAV CÓ TIẾNG**: 2,32 giây · RMS
+#:     **0,09761** · 25,1 giây
+#:
+#: Tức chúng là **phụ thuộc KHAI BÁO của gói**, không phải phụ thuộc của một
+#: lượt ĐỌC. Để chúng ở đây thì trên đúng cái máy nhân bản được, dòng combo ghi
+#: *"CHƯA CHẠY ĐƯỢC"* và nút mời tải **2.485,6 MB** (máy anh Hùng có RTX 3060
+#: nên mặc định đi CUDA) cho thứ KHÔNG CẦN. Báo động giả đắt hơn im lặng.
+#:
+#: ═══ NHƯNG ĐỪNG KẾT LUẬN "ba gói đó vô dụng" ═══
+#: Log máy anh Hùng có THẬT dòng `ModuleNotFoundError: No module named
+#: 'transformers'` từ chính đường nhân bản. Nên nhu cầu ấy CÓ THẬT ở môi trường
+#: đó mà KHÔNG có ở đây (khác `%TEMP%\bq_giong8\venv` vs `_giong_vieneu/venv`;
+#: nghi là do MODEL đã cache nên lượt đọc đi nhánh nhẹ hơn — **chưa truy ra,
+#: đừng ghi như đã biết**).
+#:
+#: ⇒ Kết luận đúng: **danh sách TĨNH không nói thật được ở CẢ HAI CHIỀU** — ở
+#: đây nó báo thiếu oan, ở máy anh Hùng nó báo đủ oan (chỉ có torch+torchaudio
+#: mà đọc vẫn gãy vì transformers). Nên nó chỉ giữ **mức TỐI THIỂU ĐÃ ĐO là
+#: BẮT BUỘC**, còn phần "còn thiếu gì nữa" là việc của **VÒNG TỰ DÒ**
+#: (`giong_vieneu.cai_nhan_ban` bước 3): nó ĐỌC THẬT, bóc tên từ lời lỗi, cài
+#: đúng tên đó rồi thử lại. Thêm tên vào đây là quay lại lối ĐOÁN.
+_CAN_CHO_NHAN_BAN = ("torch", "torchaudio")
 
 #: Trần độ dài MỘT DÒNG COMBO giọng. **KHÔNG phải số đặt cho đẹp** — cổng 88 mục
 #: 8d chấm đúng con số này, và nó có gốc: nhãn Kokoro 139-178 ký tự đã bị cắt
