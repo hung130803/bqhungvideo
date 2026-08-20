@@ -394,6 +394,12 @@ _DO_TRUNG: dict[str, tuple[str, ...]] = {
     GEMINI: ("tốn", "hạn mức", "cần key"),
     PIPER: ("cần tải", "chưa tải"),
     OMNIVOICE: ("cần tải",),
+    # `"cần tải"` ở đây còn gánh thêm một việc nữa, ĐỪNG BỎ: dòng giọng NHÂN
+    # BẢN (`vnb:`) chưa chạy được tự viết *"(miễn phí, cần tải transformers,
+    # ...)"* — nêu ĐÚNG thứ phải tải. Nhờ khớp `"cần tải"` mà `duoi_dong` tự
+    # thôi dán *"· miễn phí, cần tải bộ 250 MB"*, thứ vừa SAI SỐ (250 MB là bộ
+    # giọng VieNeu máy đã có sẵn, không phải phần nhân bản 126,3 / 2.485,6 MB)
+    # vừa cộng 30 ký tự vào một dòng đã sát trần. Xem `nhan_ban_giong.nhan`.
     VIENEU: ("cần tải",),
     INDEXTTS: ("cần tải",),
     # `giong_chatter.nhan_giong` đã mang đủ ba cảnh báo -> dán thêm là dòng
@@ -524,6 +530,42 @@ def duoi_da_ngu(vid: str, nhan: str = "") -> str:
                               "thứ tiếng", " - tiếng anh")):
         return ""
     return da_ngu_do.nhan_gon(vid)
+
+
+def dong_day_du(vid: str, nhan: str) -> str:
+    """Dòng combo **HOÀN CHỈNH** — đúng chuỗi người dùng ĐỌC THẤY.
+
+    ═══ VÌ SAO HÀM NÀY TỒN TẠI: HAI CHỖ ĐO HAI CHUỖI KHÁC NHAU ═══
+    ``gom_nhom`` dán thêm 4 đuôi (đọc sai / nhấn nhá / đa ngữ / dòng) vào cái
+    nhãn mà module giọng trả ra. Nên **nhãn gốc KHÔNG phải dòng người dùng
+    thấy**, và một module tự đo chuỗi CỦA NÓ rồi so với trần là đo sai đối
+    tượng — trần không bao giờ bập được.
+
+    Đó là lỗi THẬT đã đo được (20/08/2026): ``nhan_ban_giong.nhan`` tự đo
+    **110** ký tự, thấy dưới trần 130 nên giữ đủ tên gói; nhưng dòng SAU
+    ``gom_nhom`` là **156** ký tự — cổng 88 mục 8d bắt đúng con số đó, còn
+    ``nhan`` thì "không hiểu vì sao mình đỏ" và lượt trước đã kết luận nhầm
+    thành *"hai mục cổng xung đột nhau"*. Không mục nào xung đột: chỉ là
+    **46 ký tự đuôi không ai tính**.
+
+    Nên: ``gom_nhom`` và mọi module muốn TỰ ĐO đều gọi CHUNG hàm này. Một phép
+    dựng, hai người đọc — hai bản sao là hai chỗ để lệch nhau (đúng luật đã
+    ghi cho ``_CAN_CHO_NHAN_BAN`` và cho ``so_mb``).
+
+    **THỨ TỰ Ở ĐÂY LÀ HỢP ĐỒNG, ĐỪNG SẮP LẠI CHO ĐẸP:** cảnh báo đọc sai
+    **THAY CHỖ** số nhấn nhá (không cộng thêm — dòng VieNeu đã 131/132 ký tự,
+    xem ``bo_nhan_nha``); "đọc được tiếng gì" đứng TRƯỚC phần tiền vì *"chọn
+    nó có ra tiếng đúng không"* phải trả lời trước *"nó tốn bao nhiêu"*.
+    """
+    n2 = str(nhan or "")
+    canh = duoi_doc_sai(vid, n2)
+    if canh:
+        n2 = bo_nhan_nha(vid, n2) + canh
+    else:
+        n2 += duoi_nhan_nha(vid, n2)
+    n2 += duoi_da_ngu(vid, n2)
+    n2 += duoi_dong(vid, n2)
+    return n2
 
 
 def ten_ro_rang(vid: str, nhan: str, trung_ten: bool) -> str:
@@ -813,24 +855,13 @@ def gom_nhom(ds: list[tuple[str, str]], nn: str = "en",
                 nhan_nha.khoa_sap(_bo_pitch(it[1])), it[1]))
         ra.append((_NHAN_NHOM[k].format(nn=ten_ngon_ngu(nn)), ""))
         for nhan, vid in muc:
-            n2 = ten_ro_rang(vid, nhan, ten_goc(vid) in can_ro)
-            # CẢNH BÁO ĐỌC SAI **THAY CHỖ** SỐ NHẤN NHÁ, không cộng thêm — dòng
-            # VieNeu đã 131/132 ký tự nên hai con số tranh nhau đúng 1 ký tự
-            # trống, và nhấn nhá là con số phải nhường (xem `bo_nhan_nha`).
-            # Giọng đọc ĐÚNG thì nhánh này không chạy, dòng của chúng giống
-            # từng ký tự bản trước.
-            canh = duoi_doc_sai(vid, n2)
-            if canh:
-                n2 = bo_nhan_nha(vid, n2) + canh
-            else:
-                # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79
-                # chấm được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một
-                # dòng.
-                n2 += duoi_nhan_nha(vid, n2)
-            # ĐỌC ĐƯỢC TIẾNG GÌ đứng TRƯỚC phần tiền: "chọn nó có ra tiếng
-            # đúng không" là câu hỏi phải trả lời trước "nó tốn bao nhiêu".
-            n2 += duoi_da_ngu(vid, n2)
-            n2 += duoi_dong(vid, n2)
+            # BỐN ĐUÔI dựng ở `dong_day_du` — **một phép dựng, hai người
+            # đọc**. Chép lại thứ tự đó vào đây là đẻ ra đúng cái lệch đã làm
+            # `nhan_ban_giong.nhan` đo 110 trong khi dòng thật 156 ký tự.
+            # SỐ NHẤN NHÁ nằm TRONG dòng, không phải việc của UI: cổng 79 chấm
+            # được nội dung dòng, mà combo lúc ĐÓNG cũng chỉ hiện một dòng.
+            n2 = dong_day_du(vid, ten_ro_rang(vid, nhan,
+                                              ten_goc(vid) in can_ro))
             if loi_tat and k == N_KHUYEN:
                 n2 += DAU_LOI_TAT
             ra.append((n2, vid))

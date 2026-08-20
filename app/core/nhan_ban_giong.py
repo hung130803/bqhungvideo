@@ -404,7 +404,38 @@ def goi_y_may(lang: str = "vi") -> str:
 #: đúng cho giọng dựng sẵn và **SAI cho nhân bản**; phải hỏi thêm.
 #: Cài xong `torch` thì lộ tiếp `torchaudio` — nên danh sách này có HAI tên,
 #: và dò từng tên chứ không dò một cái rồi suy ra.
-_CAN_CHO_NHAN_BAN = ("torch", "torchaudio")
+#:
+#: ═══ DANH SÁCH NÀY TỪNG THIẾU, VÀ ĐÂY LÀ CÁCH NÓ ĐƯỢC SỬA (20/08/2026) ═══
+#: Anh Hùng tải xong 2,5 GB rồi **vẫn không đọc được**. Log máy anh ấy:
+#:     [19:00:39] Cài phần nhân bản XONG vào ...\_giong_vieneu\venv
+#:     [19:00:59] VieNeu đọc hỏng: ModuleNotFoundError: No module named 'transformers'
+#: Ghi chú ở trên tự nói *"cài xong torch thì lộ tiếp torchaudio"* — tức người
+#: viết ĐÃ BIẾT cơ chế lộ-dần mà vẫn dừng ở hai tên. Đó là **đoán, không phải
+#: đo**.
+#:
+#: **VÌ SAO KHÔNG DÒ ĐƯỢC BẰNG PHÉP IMPORT** (đã đo, đừng thử lại): chạy
+#: `python -c "import vieneu"` và `import vieneu.v3turbo` trên chính venv của
+#: anh Hùng — **CẢ HAI THÀNH CÔNG** trong khi `transformers` đang thiếu. Gói nạp
+#: `transformers` **LƯỜI**, chỉ khi đường nhân bản (`ref_audio=`) chạy. Nên phép
+#: dò duy nhất nói thật là **ĐỌC THẬT**, y như luật `_kiem_wav` của cả repo:
+#: bằng chứng phải là WAV CÓ TIẾNG, không phải "import được".
+#:
+#: Danh sách dưới đây lấy từ **CHÍNH METADATA của gói `vieneu`**
+#: (`importlib.metadata.requires("vieneu")`), không phải trí nhớ. Bản khai đầy đủ
+#: có 21 tên; ở đây **CỐ Ý bỏ** `gradio` (giao diện web), `lmdeploy` (máy chủ suy
+#: luận), `llama-cpp-python` + `triton` + `triton-windows` (không build được trên
+#: Windows), `PyMuPDF` (đọc PDF) — không thứ nào là phụ thuộc của một lượt ĐỌC
+#: TIẾNG, và kéo chúng vào là lượt cài chắc chắn gãy.
+#: `safetensors`/`einops` KHÔNG cần khai: pip tự kéo theo `transformers`.
+_CAN_CHO_NHAN_BAN = ("torch", "torchaudio", "transformers", "neucodec",
+                     "accelerate")
+
+#: Trần độ dài MỘT DÒNG COMBO giọng. **KHÔNG phải số đặt cho đẹp** — cổng 88 mục
+#: 8d chấm đúng con số này, và nó có gốc: nhãn Kokoro 139-178 ký tự đã bị cắt
+#: **đúng chỗ cụm "cần tải"** trên máy anh Hùng (20/08/2026), tức phần bị mất là
+#: phần quan trọng nhất. Đặt 130 (dưới trần cổng 132) để còn biên.
+#: Sửa số này thì phải sửa cả mục 8d và nói rõ lý do — đừng nới cho hết đỏ.
+TRAN_NHAN = 130
 
 
 def thieu_de_nhan_ban(may: str) -> list[str]:
@@ -474,11 +505,44 @@ def ma_giong(ten: str) -> str:
     mau = str(g.get("mau") or "")
     if not mau or not Path(mau).exists():
         return ""
+    return _ma_tu_muc(g)
+
+
+def _ma_tu_muc(g: dict) -> str:
+    """Mã giọng của MỘT MỤC SỔ, **không hỏi file mẫu còn không**.
+
+    Tách ra khỏi ``ma_giong`` vì hai người gọi cần hai câu trả lời khác nhau:
+    ``ma_giong`` (đưa vào combo / lưu cấu hình kênh) **phải** trả "" khi mẫu
+    mất — gán một giọng không đọc nổi cho kênh là 300 video ra tiếng sai; còn
+    ``_dong_that`` chỉ cần biết **mã thuộc NGUỒN nào** để đo độ dài dòng, và ca
+    mất-file-mẫu chính là ca dòng DÀI NHẤT (có thêm " - MẤT FILE MẪU").
+    Trả "" ở đó thì ``giong_bang.nguon("")`` lùi về edge-tts -> đuôi ngắn hơn
+    -> **đo hụt đúng ca xấu nhất**.
+    """
+    mau = str(g.get("mau") or "")
     if g.get("may") == MAY_CHATTER:
         from app.core import giong_chatter
         return giong_chatter.ma_nhan_ban(mau, str(g.get("lang") or "en"))
     from app.core import giong_vieneu
     return giong_vieneu.ma_nhan_ban(mau)
+
+
+def _dong_that(g: dict, nh: str) -> str:
+    """Dòng combo THẬT mà người dùng đọc thấy, để ``nhan()`` tự đo mình.
+
+    ``giong_bang.gom_nhom`` dán thêm 4 đuôi vào nhãn này, nên nhãn thô **không
+    phải** thứ phải so với trần. Gọi CHUNG ``giong_bang.dong_day_du`` — đúng
+    hàm ``gom_nhom`` dùng — nên không có bản sao nào để lệch.
+
+    **KHÔNG BAO GIỜ NÉM**: đây là đường dựng NHÃN, và một combo trống một dòng
+    còn tệ hơn một nhãn hơi dài. Hỏng thì trả nguyên nhãn vào (đo hụt phần đuôi
+    = nghiêng về GIỮ tên gói đích danh, tức nghiêng về nói thật).
+    """
+    try:
+        from app.core import giong_bang
+        return giong_bang.dong_day_du(_ma_tu_muc(g), nh)
+    except Exception:                                          # noqa: BLE001
+        return nh
 
 
 def them_giong(ten: str, duong_mau_goc: str, lang: str = "vi",
@@ -583,11 +647,70 @@ def nhan(ten: str) -> str:
     ten_may = "VieNeu" if may == MAY_VIENEU else "Chatterbox"
     # Nói ĐÍCH DANH còn thiếu gì, đừng ghi "chưa cài" trơn — người dùng không
     # biết bấm gì (bài học cổng 58: hộp Demucs phải nêu tên từng gói).
+    # NÊU 2 TÊN RỒI THÔI, KHÔNG NÊU 3. Danh sách gói tăng từ 2 lên 5 tên
+    # (20/08/2026, sau khi log máy anh Hùng lộ ra `transformers`) làm nhãn phình
+    # lên **156 ký tự** — vượt trần 132 mà **cổng 88 mục 8d bắt được**. Đó đúng
+    # cái bẫy đã đẩy mất cảnh báo "cần tải" của Kokoro sáng nay: nhãn dài thì
+    # phần bị cắt là phần QUAN TRỌNG NHẤT.
+    # Cụm "CHƯA CHẠY ĐƯỢC" phải còn — đó là thứ anh Hùng cần thấy; danh sách gói
+    # ĐẦY ĐỦ đã có ở nhãn riêng trong hộp «Giọng của tôi» và ở nút tải.
+    # Đo thật: liệt kê 3 tên -> **156 ký tự**, 2 tên + "..." -> **147**, vẫn vượt
+    # trần 132. Tên gói (`transformers`, `accelerate`, `neucodec`) quá dài để
+    # nằm trên MỘT DÒNG COMBO. Nên dòng này chỉ mang **SỐ LƯỢNG** + cụm
+    # "CHƯA CHẠY ĐƯỢC"; **danh sách ĐÍCH DANH nằm ở nhãn trong hộp «Giọng của
+    # tôi» và trên nút tải** — chỗ có đủ chiều rộng.
+    # Luật "nêu đích danh gói thiếu" (cổng 58) vẫn được giữ, chỉ chuyển sang chỗ
+    # ĐỌC ĐƯỢC. Nhồi nó vào dòng combo là cắt mất chính cụm cảnh báo — đúng lỗi
+    # Kokoro sáng nay.
     _t = thieu_de_nhan_ban(may)
-    chua = "" if not _t else f"CHƯA CHẠY ĐƯỢC (thiếu {', '.join(_t[:3])}) - "
     mat = "" if Path(str(g.get("mau") or "")).exists() else " - MẤT FILE MẪU"
-    return (f"{chua}{ten} (giọng nhân bản, {ten_may}, "
+    duoi = (f"{ten} (giọng nhân bản, {ten_may}, "
             f"mẫu {_so_giay(g):.0f} giây){mat}")
+    if not _t:
+        return duoi
+
+    # ═══ HAI MỤC CỔNG **KHÔNG** XUNG ĐỘT — LƯỢT TRƯỚC ĐO SAI CHUỖI ═══
+    # Cổng 88 mục **7c** đòi nhãn *"nói ĐÍCH DANH gói thiếu"* (bài học cổng 58);
+    # mục **8d** đòi dòng *"dưới 132 ký tự"* (bài học Kokoro: nhãn 139-178 ký tự
+    # **đẩy mất** chính cụm cảnh báo). Lượt trước kết luận hai mục đó xung đột
+    # và "hoà" bằng cách tụt về đếm số. **KẾT LUẬN ĐÓ SAI**, và đây là vì sao:
+    #
+    # `nhan()` đo **CHUỖI CỦA CHÍNH NÓ** (110 ký tự, dưới trần 130 -> giữ đủ
+    # tên), nhưng dòng người dùng THẤY là dòng SAU `giong_bang.gom_nhom`, và
+    # `gom_nhom` dán thêm **46 ký tự** đuôi -> **156**. Hai chỗ đo HAI CHUỖI
+    # KHÁC NHAU, nên cái trần trong hàm này **không bao giờ bập được** và mục
+    # 8d cứ đỏ dù hàm này "đã có nhánh tụt về đếm".
+    # 46 ký tự đó là `" - chưa đo tiếng"` + `" · miễn phí, cần tải bộ 250 MB"`,
+    # mà cụm sau còn là **SỐ SAI**: 250 MB là bộ giọng VieNeu (máy đã phải có
+    # sẵn), còn thứ đang thiếu là phần nhân bản 126,3 MB / 2.485,6 MB. Đã vá ở
+    # `giong_bang._DO_TRUNG[VIENEU]` (thêm `"chưa chạy được"`).
+    #
+    # Nay đo **ĐÚNG DÒNG NGƯỜI DÙNG ĐỌC** qua `giong_bang.dong_day_du` — cùng
+    # một phép dựng mà `gom_nhom` dùng, nên hai bên không thể lệch nhau nữa.
+    # Đo lại sau khi vá: 3 tên -> **126 ký tự**, DƯỚI trần. Tức **cả 7c lẫn 8d
+    # cùng đúng**, và không mục nào phải nhường.
+    # Nhánh tụt-về-đếm VẪN GIỮ: tên giọng do người dùng tự đặt nên vẫn có thể
+    # dài (200-300 kênh, ai đặt tên dài thì dòng vẫn phải vừa). Với danh sách 3
+    # gói hiện tại thì dòng ĐI ĐÚNG nhánh này — nên **danh sách đích danh phải
+    # có ở nhãn hộp «Giọng của tôi» và trên nút tải**, chỗ đủ rộng.
+    # **ĐỪNG đổi thành một trong hai vế cố định** — làm thế là bỏ một mục cổng.
+    #
+    # ═══ "miễn phí, cần tải" LÀ HAI BẤT BIẾN CỔNG 79, KHÔNG PHẢI CHỮ CHO ĐẸP ═══
+    # Cổng 79 CA 6 đòi **mọi dòng** nói được TIỀN (một trong: miễn phí · tốn ·
+    # tính tiền · cần key · hạn mức) và **mọi giọng phải-tải** nói ra việc TẢI.
+    # Trước đây dòng này mượn đuôi `duoi_dong` để nói hộ hai điều đó — nhưng đuôi
+    # ấy ghi *"cần tải bộ 250 MB"*, tức **SAI THỨ PHẢI TẢI**: 250 MB là bộ giọng
+    # VieNeu (máy phải có sẵn mới tạo nổi giọng nhân bản), còn thứ đang thiếu là
+    # phần nhân bản **126,3 MB bản CPU / 2.485,6 MB bản CUDA**. Đúng lớp lỗi
+    # cổng 58 ("nút ghi 155 MB rồi hộp doạ 2 GB").
+    # Nay dòng TỰ nói cả hai bằng chữ ĐÚNG. Nhờ chữ "cần tải" mà
+    # `giong_bang._DO_TRUNG[VIENEU]` làm `duoi_dong` tự thôi dán đuôi cũ — vừa
+    # hết nói sai, vừa trả lại 30 ký tự. **BỎ "miễn phí" hay "cần tải" khỏi câu
+    # này là cổng 79 ĐỎ NGAY** (đã đo: 91 · 2).
+    ten_du = f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {', '.join(_t)}) - " + duoi
+    if len(_dong_that(g, ten_du)) <= TRAN_NHAN:
+        return ten_du
+    return f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {len(_t)} gói) - " + duoi
 
 
 def xoa(ten: str, xoa_ca_mau: bool = True) -> bool:
