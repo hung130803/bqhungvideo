@@ -3336,6 +3336,150 @@
   đã được `rate` nuốt gọn mà không méo tiếng, không mất chữ, nên rút gọn chỉ
   phải lo phần vượt QUÁ tầm với của `rate`. **Ép nhanh làm xấu TIẾNG, chặt chữ
   làm xấu NỘI DUNG — cái sau tệ hơn, và trước đó không ai đo.**
+- **"CHỖ CHẬM CHỖ NHANH" *KHÔNG* PHẢI DO ÉP TIẾNG — TRUY RA LÀ BƯỚC 4C.
+  KÈM MỘT LỖI THẬT ĐÃ VÁ VÀ CỔNG 89 (20/08/2026).** Anh Hùng: *"cái phần âm
+  thanh lồng tiếng nhanh chậm để khớp khung hình à nó nói cực kỳ chậm chỗ thì
+  nhanh tôi muốn nó đều hoặc hơi nhanh tí ... điều chỉnh là điều chỉnh VIDEO
+  sao cho khớp, KHÔNG PHẢI lồng tiếng mới tạo"*.
+  **ĐỌC MỤC NÀY TRƯỚC KHI ĐI SỬA `khop_thoi_gian`/`atempo` LẦN NỮA.**
+  **(1) TÍNH NĂNG ANH ẤY XIN ĐÃ CÓ SẴN TỪ 18/08/2026** (commit `063da74`,
+  `he_so_hinh`): combo *"Khớp tiếng với hình"* trong hộp Thay giọng, mục thứ
+  hai *"Chỉnh video theo giọng (tiếng đều, khuyên dùng)"*. Nó **KHÔNG** đi qua
+  `dub_stretch`/`export_canvas_clip` (đường thay giọng không cắt clip) mà có
+  cơ chế RIÊNG: `he_so_hinh_can` -> `tran_hinh_theo_fps` -> `khop_thoi_gian
+  (he_so_hinh=k)` -> `-itsscale` ở `thay_audio_video`. Mặc định vẫn là cách
+  CŨ; cờ chỉ vào hash khi BẬT và nối vào ĐUÔI `sig` (`:htg=1`).
+  **(2) LỖI THẬT ĐÃ VÁ — HỘP CHE CHỮ TRÔI.** Nhánh CHE CHỮ có filter, và
+  `-itsscale` giãn mốc ĐẦU VÀO nên biến `t` trong `enable='between(t,a,b)'`
+  là mốc ĐÃ GIÃN còn `a,b` do `che_chu.loc_cho_xuat` dò trên video GỐC thì
+  CHƯA GIÃN -> hộp che trôi `(k−1)·t`, **lệch càng xa về cuối phim** (chữ ở
+  giây 80 với k=1,2 thì lệch **16 GIÂY**). Chú thích trong mã khẳng định
+  NGƯỢC LẠI nên chưa ai đo. `_do_hop_che_troi.py` đo ĐIỂM ẢNH trên file xuất
+  (dải TRẮNG ở đáy chỉ hiện trong một cửa sổ BIẾT TRƯỚC): đối chứng k=1,0 ->
+  **128** (che kín) · `-itsscale 1,25` -> **255 (lọt nguyên)** · `setpts` sau
+  khối che -> **128**; số khung **240 -> 240 ở cả ba**.
+  **VÁ:** nhánh che chữ bỏ `-itsscale`, đặt `setpts=PTS*k` **SAU khối che,
+  TRƯỚC `subtitles`** — thứ tự LÀ cả bản vá: trước `setpts` thì `t` = mốc
+  NGUỒN (khối che đọc đúng), sau `setpts` thì `t` = mốc ĐẦU RA (`.ass` dựng
+  từ `moc_tieng` vốn đã nhân `k`). Đúng thứ tự `export_canvas_clip` dùng, và
+  nhánh này VỐN ĐÃ encode lại hình nên `setpts` không thêm đời nén nào.
+  **(3) ĐO GHÉP CẶP TRÊN VIDEO THẬT (`_do_khop_video.py`, nguồn
+  `Downloads\longtieng`, Demucs + Groq + edge-tts THẬT, dịch Trung -> Việt).**
+  Một lượt dây chuyền/video tới hết bước 4c rồi TÁCH arm ở đúng tham số
+  `he_so_hinh` -> hai arm cùng bản tách/chép lời/dịch/FILE GIỌNG:
+
+  | | lt1 CŨ | lt1 MỚI | lt2 CŨ | lt2 MỚI |
+  |---|---|---|---|---|
+  | `tempo_max` | 1,030 | **1,000** | 1,276 | **1,065** |
+  | câu ép quá 1,30 | 0 | 0 | 0 | 0 |
+  | câu ép quá 1,20 | 0 | 0 | 2 | **0** |
+  | TRẢI hệ số ép | 0,030 | **0,000** | 0,276 | **0,065** |
+  | méo phổ TB / max (dB) | 0,129 / 2,201 | **0 / 0** | 0,458 / 4,904 | 0,103 / 3,003 |
+  | chồng lấn | 0 ms / 0 câu | 0 ms / 0 câu | 0 ms / 0 câu | 0 ms / 0 câu |
+  | hệ số làm chậm hình | 1,000 | 1,123 | 1,000 | 1,199 (CHẠM TRẦN) |
+  | khung vào -> ra | 2161 -> 2151 | 2161 -> 2151 | 2161 -> 2152 | 2161 -> 2152 |
+  | I (LUFS) | −14,37 | −14,37 | −14,00 | −14,01 |
+
+  **NÓI THẲNG: arm CŨ ĐÃ GẦN NHƯ ĐỀU RỒI** (`tempo_max` 1,030 và 1,276 · **0
+  câu** vượt 1,30 · chồng lấn 0 ms) — khớp mốc v2.27.0 đã ghi (1,017-1,027).
+  Tức chiều "ép tiếng" **KHÔNG còn là thủ phạm**, và nếu chỉ đọc `tempo_max`
+  thì sẽ kết luận "không có gì để chữa". Đó là kết luận SAI, xem (4).
+  **(4) THƯỚC TỐ GIÁC ĐƯỢC LÀ *TRẢI TỐC ĐỘ ĐỌC GIỮA CÁC CÂU*, và nó chỉ ra
+  bước 4C.** `tempo_max` là số ĐỈNH, nó không nói gì về ĐỘ ĐỀU. Thước mới:
+  **ký tự/giây của TỪNG CÂU** đo trên mốc NÓI THẬT (`moc_tieng`,
+  `silencedetect` — KHÔNG dùng `probe_duration`, nó tính cả lề im), rồi lấy
+  độ lệch chuẩn + hệ số biến thiên. **BẮT BUỘC có SÀN ĐỐI CHỨNG** đo trên
+  file TTS THÔ, hai arm dùng chung:
+
+  | | SÀN (TTS thô) | arm CŨ | arm MỚI |
+  |---|---|---|---|
+  | lt1 · CV % | 20,48 | 20,45 | 20,49 |
+  | lt2 · CV % | 14,83 | 14,04 | 14,62 |
+
+  **BA CỘT BẰNG NHAU** -> phần "chỗ chậm chỗ nhanh" **ĐÃ NẰM SẴN trong bộ file
+  TTS**, không do `atempo` sinh ra, và **arm MỚI không chữa được nó** (còn hơi
+  xấu hơn: 14,04 -> 14,62, vì `atempo` của arm CŨ tình cờ ép nhanh đúng mấy
+  câu đọc chậm nên làm tốc độ ĐỀU hơn một chút — đổi lại là méo phổ).
+  **NGUỒN LÀ BƯỚC 4C `doc_nhanh_vua_khung`**: nó đọc LẠI **22/35** câu (lt1)
+  và **33/50** câu (lt2) bằng `rate` của edge-tts, **mỗi câu một tốc độ khác
+  nhau, tới +43% và +50%**. Đó đúng là *"chỗ cực kỳ chậm chỗ thì nhanh"*.
+  Bước này méo phổ = 0 theo cấu tạo (đúng như v2.27.0 ghi) nên nó **chưa bao
+  giờ bị nghi** — mà cái nó phá là ĐỘ ĐỀU, không phải chất tiếng.
+  Arm MỚI không chữa vì `he_so_hinh_can` tính **SAU** 4c: nó chỉ đi khớp hình
+  với một bộ tiếng ĐÃ nhấp nhô.
+  **(5) ARM THỨ BA CHỨNG MINH ĐIỀU ĐÓ BẰNG SỐ** — khớp video + **BỎ bước 4c**
+  (khớp với `rg["files"]`, tốc độ TỰ NHIÊN), ghép cặp trên lt2, 50 câu:
+
+  | | CŨ | MỚI | **MỚI-3 (bỏ 4c)** |
+  |---|---|---|---|
+  | ký tự/giây TB | 20,68 | 20,64 | **18,32** |
+  | **độ lệch chuẩn** | 2,945 | 2,949 | **1,788** |
+  | **hệ số biến thiên %** | 14,24 | 14,29 | **9,76** |
+  | `tempo_max` | 1,029 | 1,000 | 1,236 |
+  | méo phổ TB / max (dB) | 0,194 / 2,189 | 0 / 0 | 0,842 / 4,594 |
+  | hệ số hình cần -> dùng | — | 1,152 -> 1,152 | **1,606 -> 1,199 (CHẠM TRẦN)** |
+
+  **TRẢI TỤT 31,5%** (CV 14,29 -> 9,76 · SD 2,949 -> 1,788) và tốc độ đọc TB
+  chậm lại 11% (20,64 -> 18,32 ký tự/giây) = **"nói đều" đúng nghĩa**.
+  **GIÁ, nói thẳng:** bỏ 4c thì hệ số hình cần **1,606** mà trần của nguồn
+  23,976 fps chỉ **1,199**, nên phần dư quay lại ép tiếng (`tempo_max` 1,236 ·
+  méo phổ 0,842 dB TB). Tức đây là ĐÁNH ĐỔI, không phải bữa trưa miễn phí, và
+  **trần mới là chỗ bị chặn** — không phải thuật toán.
+  **(6) TRẦN LÀM CHẬM HÌNH: 1,199 cho nguồn 23,976 fps, và nó ĐO ĐƯỢC.**
+  `SAN_NHIP_HINH_FPS = 20` · `TRAN_CHINH_HINH = 1,25`. `-itsscale` KHÔNG sinh
+  khung mới nên nhịp hình tụt đúng theo hệ số. Cổng 89 mục 8 đo trên file
+  xuất: theo trần -> **20,03 fps** (đủ sàn) · gỡ trần (k=2,553) -> **9,46
+  fps** = hình vỡ. Đo `số khung / độ dài`, **KHÔNG đọc `do_fps`** — nó lấy
+  nhịp hình trong VỎ CHỨA nên ở k=2,55 ra **47,00 fps** (cao HƠN nguồn 24!),
+  đúng họ bẫy "phép đo hỏng phát chứng nhận". Quá trần thì `cham_tran=True` +
+  `nhip_hinh_con_lai_fps` vào nhật ký — **lùi im lặng là bẫy repo này chống**.
+  **(7) GIÁ CÒN LẠI CỦA "KHỚP VIDEO", đo được:** video dài ra `(k−1)·tổng`
+  (90,03 -> 100,77 s ở lt1) và **gần như toàn bộ phần thêm là IM LẶNG giữa
+  câu** — cột *"chữ chạy khi hết tiếng"* 7,70 -> 17,98 s (lt1) và 10,77 ->
+  27,77 s (lt2), tức làm chậm ĐỀU thì giãn cả khoảng lặng. Đây **KHÔNG phải
+  chữ lệch tiếng** (`dong_chu_theo_giong` dựng cue TỪ `moc_tieng`), nó là
+  nhịp phim thưa ra. Cột *"lệch hình vs tiếng"* 269-354 ms có ở **CẢ HAI arm**
+  nên không do bản vá — đó là chênh `duration` giữa luồng hình (`-c:v copy`,
+  dừng ở khung cuối) và luồng tiếng; `kiem_video_ra` đo `lech_do_dai = 0,0` ở
+  **cả 3 arm**. Khung **2161 -> 2151/2152 ở MỌI arm** (mất 10 khung do
+  `-shortest`, không do phép giãn).
+  **(8) CỔNG 89 `_test_am_va_hinh.py`: ĐẠT 75 · HỎNG 0.** Thử phá
+  `_pha_khop_video.py` (9 phép): **BẮT 9 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+  File này **TRƯỚC ĐÂY tự nhận là "CỔNG 76" và KHÔNG nằm trong
+  `_chay_hoi_quy.CONG`** — hai bẫy chồng nhau: 76 đã thuộc
+  `_test_nhan_nha.py` (ghi đè `_kq76.txt` của nhau, bài học 70 vs 69) và
+  không ai gọi nó nên **nó đã CHẾT mà không ai biết** (`nhan_nha.muc()` đổi
+  chữ ký, MỤC 6 cũ gọi `muc(voice, nn)` -> `TypeError` giữa chừng). MỤC 6 cũ
+  bỏ (4 hàm nó chấm không còn tồn tại; phần nhãn nhấn nhá đã có cổng 76 canh),
+  thay bằng 3 mục mới: hộp che không trôi + phụ đề hiện đúng mốc trục ĐẦU RA
+  (đặt [5,00 6,00] đo **[5,05 5,95]**) · TẮT cờ thì lệnh ffmpeg và khoá chống
+  trùng GIỐNG TỪNG KÝ TỰ mốc **v2.37.0** · trần có RĂNG + lùi thì GHI LOG.
+  **LƯỢT PHÁ ĐẦU RA `BẮT 8 · LỌT 1`, và cái LỌT là LỖ CỦA CỔNG** — đây là giá
+  trị thật của phép thử phá: gỡ phép nhân `k` khỏi mốc ĐẦU câu
+  (`a = c["start"] * k` -> `a = c["start"]`) thì `khung = b − a` **PHỒNG hơn
+  cả `k`** (vì `b` vẫn giãn) nên câu nào cũng lọt khung, `tempo_max` vẫn
+  1,000, mọi mục cũ vẫn XANH — trong khi tiếng bị đặt ở mốc CHƯA GIÃN của một
+  video ĐÃ GIÃN, tức **tiếng trôi khỏi hình mỗi lúc một xa**, đúng lỗi v1.87.
+  Nay cổng chấm THẲNG chỗ đặt mảnh (`manh[i][0]` phải bằng `start * k`) + có
+  mục ĐỐI CHỨNG k=1,0. **Quy tắc rút ra: mục nào chấm "hệ số ép về 1,0" thì
+  phải chấm KÈM "mốc đặt câu giãn đúng hệ số" — một mình cột tempo có thể
+  xanh vì khung phồng, không vì tiếng đúng chỗ.**
+  **(9) FILE NGHE THỬ:** `_NGHE_THU_ANH_HUNG/khop_video/lt1/` (`CU_` ·
+  `MOI_`) và `lt2/` (`CU_` · `MOI_` · `MOI3_`) — mỗi bộ từ **CÙNG MỘT lượt
+  chạy**, đã chuẩn hoá cùng **−14 LUFS** bằng chính `chuan_do_to` trong
+  `tron_thay_giong` (không chuẩn hoá thì phép nghe thành "file nào TO hơn").
+  **Tai anh Hùng là phán quyết cuối** — mọi số trên là số ĐO.
+  **(10) CHƯA LÀM, GHI THẲNG:** **chưa ai NGHE** một file nào ·
+  **arm MỚI-3 (bỏ 4c) CHƯA NỐI VÀO APP** — nối được thì phải chọn giữa "nới
+  trần" (đã đo là hình vỡ) và "chấp nhận ép lại phần dư", đó là quyết định
+  của anh Hùng, không phải của tôi · **KHÔNG có ô cho anh Hùng CHỌN TỐC ĐỘ
+  ĐỌC** (anh ấy xin *"đều hoặc hơi nhanh tí"*): `RATE_TOI_DA`/`RATE_BU` là
+  hằng số trong mã, `doc_nhanh_vua_khung` chỉ bắn khi câu tràn khung, và
+  `grep` hộp Thay giọng ra **0 ô** nào về tốc độ đọc — muốn có thì thêm ô
+  "đọc nhanh sẵn +N%" áp ở `doc_ban_dich` cho MỌI câu (đều theo cấu tạo) kèm
+  đuôi `sig` riêng · mới đo **2 video × 90 s** (arm 3 chỉ **1 video**), chưa
+  đo nguồn 30/60 fps (trần sẽ rộng hơn hẳn) · cột `giây chạy` của lượt này
+  **KHÔNG đọc được** (máy có việc khác chạy nền giữa lượt đo).
 - **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
   (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
   `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.
