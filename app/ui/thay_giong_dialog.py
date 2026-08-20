@@ -98,6 +98,13 @@ K_KHOP_CACH = "tg_khop_cach"
 #: **MẶC ĐỊNH PHẢI LÀ `"tach"`**: đổi mặc định là đổi tiếng của MỌI video từ nay
 #: trên 200-300 kênh đang chạy sản xuất. Anh Hùng nghe cả hai rồi mới quyết.
 K_TRON_CACH = "tg_tron_cach"
+#: HAI Ô ÂM LƯỢNG (dB) — anh Hùng 20/08/2026: *"cái phần âm thanh gốc nó nói bé
+#: k tuỳ chỉnh âm thanh đc à chứ to quá"*.
+#: **MẶC ĐỊNH PHẢI LÀ 0,0** = app tự đo tự quyết y như mọi bản trước. Số khác 0
+#: mới sinh khoá trong payload + đuôi trong khoá chống trùng, nên để mặc định là
+#: 200-300 kênh đang chạy KHÔNG bị xuất lại một video nào.
+K_MUC_NEN = "tg_muc_nen_db"
+K_MUC_GIONG = "tg_muc_giong_db"
 #: KIỂU CHỮ của dòng chữ mới (chỉ dùng khi đang che + viết chữ).
 K_KC_PRESET = "tg_kc_preset"
 K_KC_FONT = "tg_kc_font"
@@ -1119,6 +1126,74 @@ class ThayGiongDialog(QDialog):
         # KHÔNG với tới được đúng cái máy nó được làm ra để phục vụ.
         self.cb_tron.currentIndexChanged.connect(
             lambda *_: self._cap_nhat_nut_chay())
+
+        # ---- hàng 3bd: HAI Ô ÂM LƯỢNG (dB) ----
+        # Anh Hùng 20/08/2026: *"cái phần âm thanh gốc nó nói bé k tuỳ chỉnh âm
+        # thanh đc à chứ to quá"*. Tới v2.41.1 hộp này KHÔNG có một điều khiển
+        # âm lượng nào (`grep -c "muc_giong_db\|slider" ` = 0): app đo rồi tự
+        # quyết bằng `DICH_GIONG_TREN_NHAC_DB` = 6 và `HA_NHAC_TOI_DA_DB` = 8.
+        # Phép đo đúng cho ca trung bình, nhưng "muốn nghe tiếng gốc nhiều hay
+        # ít" là LỰA CHỌN, không phải phép đo — app không có quyền quyết hộ.
+        #
+        # DÙNG SPIN BOX, KHÔNG SLIDER — ba lý do, không phải sở thích:
+        #   · hộp này đã có 4 spin/9 combo, thêm slider là bộ điều khiển thứ ba
+        #     cho cùng một loại việc (đúng chỗ cổng 86 mục 8k đang canh);
+        #   · dB là con số anh Hùng cần ĐỌC ĐƯỢC rồi nói lại cho tôi, slider
+        #     không hiện số;
+        #   · slider chỉ bị wheelguard khoá KHI CHƯA focus, còn QComboBox/
+        #     QAbstractSpinBox bị khoá HẲN (xem `wheelguard._WheelGuard`) — mà
+        #     việc #150 là "khoá cuộn chuột đổi giá trị" cho toàn app.
+        # `QDoubleSpinBox` là ĐÚNG lớp `sp_che_muc`/`sp_kc_co`/`sp_kc_dovien`
+        # đang dùng và nằm trong `_VALUE_WIDGETS` của bộ lọc cài trên
+        # QApplication (`main.py` + `main_window.py`), nên KHÔNG phải widget
+        # trần: cuộn chuột lên nó không đổi giá trị.
+        h3bd = QHBoxLayout()
+        h3bd.addWidget(QLabel("Tiếng gốc / nhạc nền:"))
+        self.sp_muc_nen = self._o_dB(
+            K_MUC_NEN,
+            "Cộng thêm bấy nhiêu dB vào LỚP NỀN — tức nhạc nền (cách 'thay "
+            "hẳn giọng') hoặc CẢ TIẾNG GỐC (cách 'đè giọng').\n\n"
+            "0,0 dB = MẶC ĐỊNH: app tự đo rồi tự quyết, y như mọi bản trước.\n"
+            "Số DƯƠNG = nghe rõ tiếng gốc hơn (đúng cái anh đang cần). Số ÂM = "
+            "dìm tiếng gốc xuống cho lời lồng nổi hơn.\n\n"
+            "Đo thật: app đang tự hạ nền tối đa 8,0 dB, nên +6 chỉ là trả nền "
+            "về gần mức GỐC của nó, không đẩy vượt bản gốc.\n"
+            "LƯU Ý: kéo dương nhiều thì giọng lồng chìm dần — trên +3 dB là bắt "
+            "đầu đi về phía bệnh 'chỗ có chỗ không nghe không được'.\n"
+            "Độ to CẢ VIDEO không đổi (app vẫn chuẩn hoá về -14 LUFS ở bước "
+            "cuối) — hai ô này chỉ đổi TỈ LỆ giữa lời lồng và nền.")
+        h3bd.addWidget(self.sp_muc_nen)
+
+        h3bd.addSpacing(8)
+        h3bd.addWidget(QLabel("Giọng lồng tiếng:"))
+        self.sp_muc_giong = self._o_dB(
+            K_MUC_GIONG,
+            "Cộng thêm bấy nhiêu dB vào GIỌNG LỒNG TIẾNG (giọng máy đọc bản "
+            "dịch).\n\n"
+            "0,0 dB = MẶC ĐỊNH: app tự đo rồi tự quyết, y như mọi bản trước.\n"
+            "Số ÂM = hạ lời lồng xuống cho tiếng gốc nghe rõ hơn. Số DƯƠNG = "
+            "lời lồng nổi hơn.\n\n"
+            "TRẦN AN TOÀN: phần TĂNG bị chặn theo ĐỈNH ĐO ĐƯỢC của chính lớp "
+            "giọng (không vượt -1,0 dBFS). Trên mức đó thì bộ hạn đỉnh phải gọt "
+            "NGAY TRÊN TIẾNG NÓI — đã đo một lần: nâng quá tay làm số mẫu chạm "
+            "trần nhảy từ 36 lên 1.577. App tự dừng ở trần và ghi vào nhật ký, "
+            "KHÔNG đổi tiếng lấy con số.\n"
+            "Muốn lời lồng nổi hơn mà đã chạm trần: hạ ô 'Tiếng gốc / nhạc "
+            "nền' xuống, hiệu quả y hệt mà không gọt tiếng.")
+        h3bd.addWidget(self.sp_muc_giong)
+
+        h3bd.addSpacing(8)
+        #: Nhãn NÓI RA số hiện tại + đâu là mặc định. Spin box tự hiện số của
+        #: nó, nhưng "0,0 nghĩa là gì" thì không — gập/đọc nhanh mà không có
+        #: dòng này là anh Hùng phải đoán (đúng bài học nhãn "(mẫu đang chọn)"
+        #: trơn ở cổng 16 v2.6.25a: thiếu chữ là user hiểu ngược).
+        self.lb_muc_tt = QLabel("")
+        self.lb_muc_tt.setWordWrap(True)
+        h3bd.addWidget(self.lb_muc_tt, 1)
+        lay.addLayout(h3bd)
+        for _o in (self.sp_muc_nen, self.sp_muc_giong):
+            _o.valueChanged.connect(lambda *_: self._ve_tt_muc())
+        self._ve_tt_muc()
 
         # ---- hàng 3c + 3d: KIỂU CHỮ của dòng chữ mới ----
         # Anh Hùng 17/08/2026: *"phần chữ sub trong video tôi không điều chỉnh
@@ -3017,6 +3092,12 @@ class ThayGiongDialog(QDialog):
         # giá trị cũ trong QSettings không âm thầm biến thành cách MỚI.
         self._s.setValue(K_TRON_CACH,
                          TG.chuan_cach_tron(self.cb_tron.currentData()))
+        # HAI Ô ÂM LƯỢNG: ghi số ĐÃ chuẩn hoá (qua `muc_am_luong`), không ghi
+        # `.value()` thô — mở lại hộp là thấy ĐÚNG số app sẽ áp, không phải số
+        # rồi bị làm tròn khác đi lúc chạy.
+        _nen, _giong = self.muc_am_luong()
+        self._s.setValue(K_MUC_NEN, _nen)
+        self._s.setValue(K_MUC_GIONG, _giong)
         self._s.setValue(K_KC_PRESET, self.cb_kc_preset.currentData() or "")
         self._s.setValue(K_KC_FONT, self.cb_kc_font.currentData() or "")
         self._s.setValue(K_KC_CO, float(self.sp_kc_co.value()))
@@ -3026,6 +3107,66 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_KC_VIEN, self._kc_vien)
         self._s.setValue(K_KC_DOVIEN, float(self.sp_kc_dovien.value()))
         self._s.setValue(K_KC_VITRI, self.cb_kc_vitri.currentData() or "")
+
+    def _o_dB(self, khoa: str, chu_dan: str) -> QDoubleSpinBox:
+        """Dựng MỘT ô dB. Hai ô đi qua CÙNG hàm này nên không lệch nhau được.
+
+        Trần lấy từ `TG.TRAN_MUC_TAY_DB`, bước từ `TG.BUOC_MUC_TAY_DB` — **MỘT
+        NGUỒN DUY NHẤT** với `chuan_muc_db` (cửa kẹp/làm tròn thật). Viết tay
+        6.0 ở đây là đẻ nguồn sự thật thứ hai rồi lệch khi ai đó đổi hằng số.
+
+        `setSuffix(" dB")` để đơn vị nằm NGAY TRONG ô — nhãn bên ngoài đã dài,
+        thêm chữ "dB" nữa là dài gấp đôi mà vẫn không rõ ô nào của ai.
+        """
+        o = QDoubleSpinBox()
+        o.setRange(-TG.TRAN_MUC_TAY_DB, TG.TRAN_MUC_TAY_DB)
+        o.setSingleStep(0.5)
+        o.setDecimals(1)
+        o.setSuffix(" dB")
+        # **KHÔNG dùng `setSpecialValueText`**: nó chỉ áp cho giá trị NHỎ NHẤT
+        # (-6,0 dB), không áp cho 0,0 — đặt nó ở đây là ô hiện chữ lạ đúng lúc
+        # anh Hùng kéo hết về đáy. Việc "nói ra 0,0 là mặc định" do nhãn
+        # `lb_muc_tt` lo (xem `_ve_tt_muc`).
+        o.setToolTip(chu_dan)
+        o.setMinimumWidth(96)
+        # ĐỌC LẠI QUA `chuan_muc_db`: file .ini có thể mang rác (sửa tay, bản
+        # trước ghi kiểu khác, số ngoài trần) -> lùi êm về 0,0 = mặc định, chứ
+        # KHÔNG nổ hộp thoại và cũng không nhận một hệ số bịa.
+        o.setValue(TG.chuan_muc_db(self._s.value(khoa, 0.0)))
+        return o
+
+    def muc_am_luong(self) -> tuple[float, float]:
+        """(nền dB, giọng dB) đọc từ CHÍNH HAI Ô ĐANG HIỆN — cửa DUY NHẤT.
+
+        Đọc widget, **KHÔNG đọc QSettings** (bài học "chạy dây chuyền: đọc
+        combo, không đọc setting": widget bị `blockSignals` thì setting lệch với
+        cái user đang nhìn -> chạy sai cấu hình). Và đi qua `chuan_muc_db` để
+        UI · payload · khoá chống trùng · bước trộn cùng một phép làm tròn.
+
+        `(0.0, 0.0)` = để mặc định -> `xep_mot` KHÔNG ghi khoá nào vào payload.
+        """
+        return (TG.chuan_muc_db(self.sp_muc_nen.value()),
+                TG.chuan_muc_db(self.sp_muc_giong.value()))
+
+    def _ve_tt_muc(self) -> None:
+        """Nhãn cạnh hai ô: đang mặc định, hay đã kéo mấy dB.
+
+        Đếm bằng CHÍNH `muc_am_luong()` — cửa duy nhất quyết định cái gì đi vào
+        payload. Tự đọc lại từng ô ở đây là đẻ nguồn sự thật thứ hai rồi lệch
+        (đúng bài học `_ve_tt_kc` ngay dưới).
+        """
+        if not hasattr(self, "lb_muc_tt"):
+            return
+        nen, giong = self.muc_am_luong()
+        if nen == 0.0 and giong == 0.0:
+            self.lb_muc_tt.setText("(đang để MẶC ĐỊNH 0,0 dB — app tự đo tự "
+                                   "quyết, y như bản trước)")
+            self.lb_muc_tt.setStyleSheet("color:#8A93A6")
+        else:
+            self.lb_muc_tt.setText(
+                f"(đã đổi: nền {nen:+.1f} dB · giọng {giong:+.1f} dB — mặc "
+                f"định là 0,0)".replace(".", ","))
+            self.lb_muc_tt.setStyleSheet("color:#7CC4FF")
 
     def _dat_kc_mau(self, hexv: str) -> None:
         self._kc_mau = str(hexv or "")
@@ -3221,6 +3362,10 @@ class ThayGiongDialog(QDialog):
         # cửa DUY NHẤT chuẩn hoá: không nhận ra thì lùi về cách CŨ, không lùi về
         # cách mới (lùi về cái mới là âm thầm đổi tiếng của video người ta).
         cc_de = TG.chuan_cach_tron(self.cb_tron.currentData()) == "de"
+        # HAI Ô ÂM LƯỢNG cũng đọc từ Ô ĐANG HIỆN (cùng lý do trên), qua cửa
+        # duy nhất `muc_am_luong`. (0,0 · 0,0) = mặc định -> `xep_mot` KHÔNG
+        # ghi khoá nào vào payload, khoá chống trùng giống TỪNG KÝ TỰ bản trước.
+        cc_nen_db, cc_giong_db = self.muc_am_luong()
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -3244,7 +3389,8 @@ class ThayGiongDialog(QDialog):
                     kenh=Path(duong).parent.name, lam_lai=buoc_lai,
                     che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
                     viet_chu=cc_viet, kieu_chu=cc_kieu,
-                    hinh_theo_giong=cc_hinh, de_giong=cc_de)
+                    hinh_theo_giong=cc_hinh, de_giong=cc_de,
+                    muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)
