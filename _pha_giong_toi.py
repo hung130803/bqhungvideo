@@ -69,9 +69,13 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
          "giu_dang_chon=True))",
      "        h.so_doi.connect(lambda: self._dung_combo_giong())", "10c"),
 
+    # NEO ĐÃ ĐỔI 20/08/2026: VIỆC 1 tách phần đuôi nhãn ra biến `duoi` (để
+    # `nhan()` còn đo được dòng THẬT), nên neo cũ (`return (f"{chua}{ten} ...`)
+    # còn **0 lần** -> phép này rơi vào cột "KHÔNG PHÁ ĐƯỢC". Đó đúng là LUẬT 2
+    # của file này làm việc: neo mất KHÔNG được đếm thành "cổng để lọt".
     ("8. nhãn giọng mang EMOJI (máy anh Hùng thiếu glyph -> Ô ĐEN)",
-     NB, '    return (f"{chua}{ten} (giọng nhân bản, {ten_may}, "',
-     '    return (f"{chua}\\U0001F4CB {ten} (giọng nhân bản, {ten_may}, "',
+     NB, '    duoi = (f"{ten} (giọng nhân bản, {ten_may}, "',
+     '    duoi = (f"\\U0001F4CB {ten} (giọng nhân bản, {ten_may}, "',
      "8b"),
 
     ("9. nhãn giọng DÀI ra 150 ký tự (đẩy mất cảnh báo 'cần tải' — bệnh "
@@ -148,6 +152,71 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
      UI, "        tt = self._do_nhan_ban()",
      "        tt = self._do_nhan_ban()\n        self._dung_combo_giong()",
      "12s"),
+
+    # ═══ VIỆC 2 — VÒNG TỰ DÒ ═══
+    # ĐÂY LÀ MỘT PHÉP PHÁ HAI-CHỐT, VÀ ĐÓ LÀ CỐ Ý — đọc kẻo "sửa cho đúng luật".
+    # Lọc tên gói có HAI lớp **thừa nhau có chủ đích**: char class của
+    # `_RE_THIEU`, và `re.fullmatch` sau khi `split(".")`. Đo được: gỡ MỘT lớp
+    # thì lớp còn lại vẫn chặn sạch cả 4 tên rác -> cổng XANH ĐÚNG, và bảng sẽ
+    # đọc thành "LỌT" oan (đúng bẫy LUẬT 3 của file này). Nên phép này gỡ CẢ
+    # HAI để chấm đúng cái tính chất *"tên rác không bao giờ tới được pip"*.
+    # Gỡ một lớp là chuyện KHÔNG cổng nào bắt, và đó là ĐÁNH ĐỔI ĐÃ BIẾT: hai
+    # lớp thừa nhau thì rẻ hơn một lớp có cổng canh.
+    ("21. gỡ CẢ HAI lớp lọc tên gói (lời lỗi là chuỗi từ TIẾN TRÌNH CON -> "
+     "đưa thẳng vào dòng lệnh pip là một cửa tiêm lệnh)",
+     VNC, "    goc = m.group(1).split(\".\")[0].strip()\n"
+          "    return goc if re.fullmatch(r\"[A-Za-z0-9_\\-]+\", goc) else \"\"",
+     "    return m.group(1).strip()", "13d"),
+
+    ("23. bỏ DANH SÁCH CHẶN (cài cả `gradio`/`triton` — hai thứ không dính gì "
+     "tới một lượt ĐỌC TIẾNG, và triton không build được trên Windows)",
+     VNC, '    t = ten.lower().replace("-", "_")', '    return ""\n'
+     '    t = ten.lower().replace("-", "_")', "13f / 13k"),
+
+    ("22. bỏ TRẦN vòng lặp (`while True` — một vòng lặp không trần trên đường "
+     "mạng là treo máy anh Hùng cả đêm)",
+     VNC, "                while vong < TRAN_VONG_DO:",
+     "                while True:", "13j"),
+
+    ("24. `do_wav` mừng theo ĐỘ DÀI, bỏ ngưỡng RMS (quay về đúng chỗ hổng: "
+     "`doc_loat` trả True chỉ nghĩa là file TỒN TẠI, không phải CÓ TIẾNG)",
+     VNC, '    ra["co_tieng"] = bool(ra["giay"] >= 0.3 and ra["rms"] >= 0.001)',
+     '    ra["co_tieng"] = bool(ra["giay"] >= 0.3)', "13h"),
+
+    ("25. vòng tự dò đi đường GIỌNG DỰNG SẴN (`voice=` thay vì `ref_audio=`) "
+     "— đường đó KHÔNG đụng torch nên lượt tự kiểm XANH OAN",
+     VNC, '    ket = _chay_vieneu(items, str(vpy), "", mau, han_giay, None)',
+     "    ket = _chay_vieneu(items, str(vpy), ma_nhan_ban(mau), '', "
+     "han_giay, None)", "13i"),
+
+    # ═══ VIỆC 3 — NÚT TẢI BỘ VieNeu ═══
+    ("26. UI KHÔNG gọi `cai_vieneu` nữa (đúng trạng thái TRƯỚC lượt này: "
+     "chuỗi ĐỨT, nút nhân bản bảo 'tải bộ đó trước' mà không có chỗ bấm)",
+     UI, "                r = VN_C.cai_vieneu(",
+     "                r = dict(ok=False, loi='x') or (", "14a"),
+
+    ("27. nút bước 1 luôn ẨN (ẩn nút là CHÍNH cách tính năng đã chết một lần)",
+     UI, "        self.b_tai_vn.setVisible(True)\n"
+     "        self.b_tai_vn.setText(VN_C.nhan_tai_vieneu(thieu))",
+     "        self.b_tai_vn.setVisible(False)\n"
+     "        self.b_tai_vn.setText(VN_C.nhan_tai_vieneu(thieu))", "14l"),
+
+    ("28. nút bước 1 KHÔNG còn khoá theo `cai_duoc` (máy không có Python 3 "
+     "vẫn bấm được rồi nhận một lời lỗi)",
+     UI, "        self.b_tai_vn.setEnabled(\n"
+     "            bool(tt.get(\"cai_duoc\")) and not self._dang_cai_vn)",
+     "        self.b_tai_vn.setEnabled(True)", "14n"),
+
+    ("29. bước 2 KHÔNG tự chạy khi bước 1 xong (chuỗi đứt giữa: máy trắng "
+     "bấm một lần không đi hết được)",
+     UI, "            self._tai_nhan_ban(da_dong_y=True)", "            pass",
+     "14i"),
+
+    # ═══ VIỆC 4 — RA KHỎI %TEMP% ═══
+    ("30. UI KHÔNG hiện cảnh báo `%TEMP%` nữa (chỉ ghi log = không ai đọc; "
+     "một lượt Disk Cleanup là giọng biến khỏi combo)",
+     UI, '                + (("\\n" + o_tam) if o_tam else ""))',
+     "                )", "15g"),
 ]
 
 

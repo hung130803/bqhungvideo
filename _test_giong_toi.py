@@ -37,10 +37,13 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
+import math
 import os
 import shutil
 import sys
+import tempfile
 import unicodedata
+import wave
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
@@ -772,6 +775,24 @@ ok("12d0 TỰ KIỂM PHÉP BỎ DOCSTRING: docstring của `cai_nhan_ban` CÓ ch
 ok("12d lệnh cài CÓ `--ignore-installed` (quét AST trong THÂN hàm, đã bỏ "
    "docstring — quét chuỗi cả file là gỡ cờ mà cổng vẫn xanh)",
    "--ignore-installed" in _hang_cai, str(_hang_cai[:6])[:90])
+# ═══ MỖI LỆNH pip PHẢI CÓ CỜ, KHÔNG PHẢI "ở đâu đó trong hàm có cờ" ═══
+# LỖI THẬT CỦA CHÍNH CỔNG NÀY, bắt được bằng thử phá 20/08/2026: từ khi
+# `cai_nhan_ban` có LỆNH pip THỨ HAI (vòng tự dò), mục 12d ở trên **mất răng** —
+# gỡ cờ khỏi lệnh CHÍNH thì lệnh của vòng tự dò vẫn còn cờ, `_hang_cai` vẫn
+# chứa chuỗi đó, mục vẫn ĐẠT. Đo được: phép phá 11 từ BẮT chuyển thành **LỌT**.
+# Bất biến đúng là: **MỌI** danh sách dòng lệnh có `"install"` đều phải mang cờ.
+_ds_pip = [
+    [c.value for c in ast.walk(_l)
+     if isinstance(c, ast.Constant) and isinstance(c.value, str)]
+    for _st in _than for _l in ast.walk(_st)
+    if isinstance(_l, ast.List)
+    and any(isinstance(e, ast.Constant) and e.value == "install"
+            for e in _l.elts)]
+ok("12d'' MỌI lệnh pip trong `cai_nhan_ban` đều mang cờ (có 2 lệnh: cài chính "
+   "+ vòng tự dò; hỏi 'ở đâu đó có cờ' là gỡ 1 lệnh mà cổng vẫn xanh)",
+   len(_ds_pip) >= 2 and all("--ignore-installed" in d for d in _ds_pip),
+   f"{len(_ds_pip)} lệnh pip · có cờ: "
+   f"{[('--ignore-installed' in d) for d in _ds_pip]}")
 ok("12d' TỰ KIỂM BỘ DÒ: bản KHÔNG có cờ thì bộ dò phải TRƯỢT",
    "--khong-he-co-co-nay" not in _hang_cai)
 
@@ -1004,6 +1025,389 @@ try:
 finally:
     VN._python_vieneu = _that_pv                # type: ignore[assignment]
     os.environ.pop("BQ_VN_PYTHON", None)
+
+# ---------------------------------------------------------------------------
+print("\n[CA 13] VÒNG TỰ DÒ — bóc tên gói từ lời lỗi, CHẶN, TRẦN vòng")
+# ---------------------------------------------------------------------------
+# Vì sao CA này tồn tại: hậu kiểm TĨNH chỉ nói "5 gói tôi BIẾT đều có mặt".
+# Trên máy anh Hùng, `import vieneu` VÀ `import vieneu.v3turbo` đều THÀNH CÔNG
+# trong khi `transformers` thiếu — gói nạp nó LƯỜI. Nên chỉ ĐỌC THẬT nói thật.
+ok("13a bóc đúng tên gói từ ModuleNotFoundError",
+   VN._ten_thieu("ModuleNotFoundError: No module named 'transformers'")
+   == "transformers")
+ok("13b lấy gói GỐC, không lấy module con (pip cài theo gói phát hành)",
+   VN._ten_thieu("No module named 'neucodec.models.x'") == "neucodec")
+ok("13c lời lỗi KHÔNG phải thiếu gói -> trả '' (đừng cài bừa)",
+   VN._ten_thieu("RuntimeError: CUDA out of memory") == "")
+# Lời lỗi là chuỗi từ TIẾN TRÌNH CON -> đưa thẳng vào dòng lệnh pip là một cửa
+# tiêm lệnh. Tên rác phải bị loại HẲN, không được "làm sạch rồi vẫn cài".
+for _rac in ("../../evil", "a b; rm -rf /", "x&&calc", "'; DROP TABLE"):
+    ok(f"13d tên RÁC bị loại: {_rac[:18]}", VN._ten_thieu(
+        f"No module named '{_rac}'") == "", VN._ten_thieu(
+        f"No module named '{_rac}'"))
+ok("13e tên-import khác tên-pip thì ánh xạ (sklearn -> scikit-learn)",
+   VN._ten_pip("sklearn") == "scikit-learn")
+ok("13e' không biết thì thử ĐÚNG TÊN, không đoán bừa "
+   "(đoán ra một gói LẠ mang đúng tên đó, tệ hơn báo lỗi)",
+   VN._ten_pip("neucodec") == "neucodec")
+# DANH SÁCH CHẶN: mỗi tên phải có LÝ DO đọc được, không phải một set trơn.
+for _c, _vi in (("gradio", "web"), ("lmdeploy", "máy chủ"),
+                ("triton", "Windows"), ("triton_windows", "Windows"),
+                ("llama_cpp", "Windows"), ("fitz", "PDF")):
+    ok(f"13f CHẶN `{_c}` và NÓI RA lý do", bool(VN._bi_chan(_c)),
+       VN._bi_chan(_c)[:52])
+ok("13f' gói THẬT SỰ cần thì KHÔNG bị chặn",
+   not any(VN._bi_chan(g) for g in ("transformers", "neucodec", "accelerate",
+                                    "torch", "torchaudio")))
+ok("13g có TRẦN vòng lặp (không trần = treo máy cả đêm trên đường mạng)",
+   isinstance(VN.TRAN_VONG_DO, int) and 2 <= VN.TRAN_VONG_DO <= 10,
+   f"{VN.TRAN_VONG_DO}")
+# `do_wav` là BẰNG CHỨNG CUỐI CÙNG. `doc_loat` trả True chỉ nghĩa là "tiến
+# trình chạy xong, file tồn tại" — cùng khoảng cách đã cho ffmpeg trả mã 0 với
+# file 0 KiB.
+_w_cam = T / "cam.wav"
+with wave.open(str(_w_cam), "wb") as _w:
+    _w.setnchannels(1)
+    _w.setsampwidth(2)
+    _w.setframerate(24000)
+    _w.writeframes(b"\x00\x00" * 24000)        # 1 giây LẶNG HOÀN TOÀN
+_d_cam = VN.do_wav(_w_cam)
+ok("13h WAV dài 1 giây mà LẶNG -> `co_tieng` phải là False "
+   "(đây đúng ca 'chạy xong mà câm')",
+   _d_cam["giay"] >= 0.9 and not _d_cam["co_tieng"],
+   f"dài {_d_cam['giay']}s · RMS {_d_cam['rms']}")
+_w_keu = T / "keu.wav"
+with wave.open(str(_w_keu), "wb") as _w:
+    _w.setnchannels(1)
+    _w.setsampwidth(2)
+    _w.setframerate(24000)
+    _w.writeframes(b"".join(
+        int(9000 * math.sin(i * 0.15)).to_bytes(2, "little", signed=True)
+        for i in range(24000)))
+_d_keu = VN.do_wav(_w_keu)
+ok("13h' ... còn WAV CÓ TIẾNG thì True (TỰ KIỂM BỘ DÒ: thiếu mục này thì "
+   "'câm' có thể là bộ dò đã chết)",
+   _d_keu["co_tieng"] and _d_keu["rms"] > 0.05,
+   f"dài {_d_keu['giay']}s · RMS {_d_keu['rms']}")
+ok("13h'' file không đọc được -> 0.0, KHÔNG NÉM",
+   VN.do_wav(T / "khong-he-co.wav")["giay"] == 0.0)
+
+# ── VÒNG TỰ DÒ CHẠY THẬT, bằng cách VÁ `_chay_vieneu` để GIẢ LẬP lỗi ──
+# Đây là mục có RĂNG nhất của CA: nó chấm chính cái VÒNG, không chấm mấy hàm
+# con. Giả lập đúng cảnh anh Hùng gặp: vá 2 tên thì lộ tên thứ 3.
+_that_cv = VN._chay_vieneu
+_that_ctd = VN._chay_theo_dong
+_that_mau = VN._mau_thu
+_that_dw = VN.do_wav
+_that_tnb = VN.thieu_nhan_ban
+_that_pvn = VN._python_vieneu
+
+
+def _dung_gia_lap(thieu_dan: list[str], **kw):
+    """Dựng hộp cát cho vòng tự dò: pip GIẢ, đọc GIẢ lỗi theo danh sách."""
+    _da_cai: list[str] = []
+    _con = list(thieu_dan)
+
+    def _cv(items, py, voice, ref, han, on_msg):
+        # ĐÒI ĐÚNG ĐƯỜNG NHÂN BẢN: `voice=""` + `ref_audio=<file mẫu>`.
+        # Không kiểm hai tham số này thì phép phá "đi đường giọng DỰNG SẴN"
+        # LỌT — đo được ở lượt phá đầu (phép 25). Đường dựng sẵn KHÔNG đụng
+        # torch nên lượt tự kiểm sẽ XANH OAN.
+        if voice or not ref:
+            return {"ok": False, "_sandbox": "",
+                    "loi": ("SAI ĐƯỜNG: vòng tự dò phải đi đường NHÂN BẢN "
+                            f"(voice='' + ref_audio=...), nhận voice={voice!r} "
+                            f"ref={ref!r}")}
+        if _con:
+            return {"ok": False, "_sandbox": "",
+                    "loi": ("Traceback...\nModuleNotFoundError: No module "
+                            f"named '{_con[0]}'")}
+        return {"ok": True, "_sandbox": "",
+                "ra": [{"i": 0, "p": items[0]["raw"]}]}
+
+    def _ctd(cmd, han, prog=None, lo=0.0, hi=0.9, nhip=900.0):
+        # pip GIẢ: gói cuối dòng lệnh chính là gói đang cài.
+        goi = cmd[-1]
+        _da_cai.append(goi)
+        if _con and goi == _con[0]:
+            _con.pop(0)
+        # `ma_pip` CHỈ áp cho lượt pip của VÒNG TỰ DÒ, không áp cho lượt cài
+        # CHÍNH ở bước 1. Bản đầu của mục này áp cho cả hai -> `cai_nhan_ban`
+        # chết ngay bước 1 và lời lỗi nêu `accelerate` (gói CUỐI danh sách
+        # chính) chứ không phải gói tự dò -> mục 13m ĐỎ vì **lỗi của phép thử**,
+        # không phải lỗi của mã. Lượt cài chính là lượt DUY NHẤT có `--upgrade`.
+        if "--upgrade" in cmd:
+            return 0, [f"Successfully installed {goi}"]
+        return kw.get("ma_pip", 0), [f"Successfully installed {goi}"]
+
+    VN._chay_vieneu = _cv                       # type: ignore[assignment]
+    VN._chay_theo_dong = _ctd                   # type: ignore[assignment]
+    VN._mau_thu = lambda d: str(_w_keu)         # type: ignore[assignment]
+    # Đọc "thành công" -> trả WAV CÓ TIẾNG; hỏng -> file không có.
+    VN.do_wav = lambda p: (_that_dw(_w_keu) if not _con     # type: ignore
+                           else {"giay": 0.0, "rms": 0.0, "co_tieng": False})
+    VN.thieu_nhan_ban = lambda: []              # type: ignore[assignment]
+    VN._python_vieneu = lambda: (               # type: ignore[assignment]
+        str(_py_gia), [], (3, 2, 8))
+    return _da_cai
+
+
+# python GIẢ chỉ cần TỒN TẠI (`cai_nhan_ban` dò bằng `is_file`)
+_py_gia = T / "venvgia" / "Scripts" / "python.exe"
+_py_gia.parent.mkdir(parents=True, exist_ok=True)
+_py_gia.write_bytes(b"")
+try:
+    # (1) thiếu 2 tên rồi lộ tên thứ 3 -> phải cài CẢ BA rồi mới xong
+    _cai = _dung_gia_lap(["transformers", "neucodec", "accelerate"])
+    _r = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    ok("13i vòng tự dò: lỗi 'No module named X' -> CÀI X rồi THỬ LẠI, "
+       "lộ tên thứ 3 vẫn đi tiếp",
+       _r.get("ok") is True and _r.get("tu_do") ==
+       ["transformers", "neucodec", "accelerate"],
+       f"ok={_r.get('ok')} · tự cài={_r.get('tu_do')} · vòng={_r.get('vong')}")
+    ok("13i' ... và bằng chứng cuối là WAV CÓ TIẾNG (độ dài + RMS)",
+       bool(_r.get("doc_thu", {}).get("co_tieng") is None
+            or _r.get("doc_thu", {}).get("rms", 0) > 0.05),
+       str(_r.get("doc_thu"))[:70])
+
+    # (2) HẾT TRẦN -> ok=False và NÊU RÕ còn thiếu gì
+    _dung_gia_lap([f"goi{i}" for i in range(VN.TRAN_VONG_DO + 3)])
+    _r2 = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    ok("13j hết TRẦN -> ok=False, KHÔNG lặp vô tận",
+       _r2.get("ok") is False and _r2.get("vong") == VN.TRAN_VONG_DO,
+       f"ok={_r2.get('ok')} · vòng={_r2.get('vong')}")
+    ok("13j' ... và lời lỗi NÊU ĐÍCH DANH gói còn thiếu",
+       "goi" in str(_r2.get("loi") or ""), str(_r2.get("loi"))[:90])
+
+    # (3) tên trong danh sách CHẶN -> KHÔNG được cài, phải nói lý do
+    _cai3 = _dung_gia_lap(["gradio"])
+    _r3 = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    ok("13k gói trong danh sách CHẶN -> KHÔNG cài",
+       _r3.get("ok") is False and not any("gradio" in c for c in _cai3),
+       f"ok={_r3.get('ok')} · đã cài={_cai3}")
+    ok("13k' ... và nói RA lý do chặn", "giao diện web"
+       in str(_r3.get("loi") or ""), str(_r3.get("loi"))[:90])
+
+    # (4) "cài đủ danh sách mà ĐỌC vẫn hỏng" -> ĐỎ. ĐÚNG CẢNH ANH HÙNG GẶP.
+    _dung_gia_lap(["transformers"])
+    VN._chay_vieneu = lambda *a, **k: {         # type: ignore[assignment]
+        "ok": False, "_sandbox": "",
+        "loi": "RuntimeError: model chưa tải xong"}
+    _r4 = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    ok("13l 'cài đủ danh sách nhưng ĐỌC THẬT vẫn hỏng' -> ok=False "
+       "(hậu kiểm tĩnh xanh mà đọc đỏ = đúng cảnh anh Hùng gặp)",
+       _r4.get("ok") is False and "ĐỌC THẬT" in str(_r4.get("loi") or ""),
+       str(_r4.get("loi"))[:90])
+
+    # (5) pip trả mã KHÁC 0 -> báo thẳng, đừng mừng
+    _dung_gia_lap(["transformers"], ma_pip=1)
+    _r5 = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    ok("13m pip trả mã khác 0 khi cài gói tự dò -> ok=False, nêu tên gói",
+       _r5.get("ok") is False and "transformers" in str(_r5.get("loi") or ""),
+       str(_r5.get("loi"))[:90])
+finally:
+    VN._chay_vieneu = _that_cv                  # type: ignore[assignment]
+    VN._chay_theo_dong = _that_ctd              # type: ignore[assignment]
+    VN._mau_thu = _that_mau                     # type: ignore[assignment]
+    VN.do_wav = _that_dw                        # type: ignore[assignment]
+    VN.thieu_nhan_ban = _that_tnb               # type: ignore[assignment]
+    VN._python_vieneu = _that_pvn               # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
+print("\n[CA 14] NÚT TẢI BỘ VieNeu — chuỗi KHÔNG được đứt ở đây")
+# ---------------------------------------------------------------------------
+# Ca thứ SÁU của "hàm xong ≠ tính năng xong": `cai_vieneu()` có sẵn mà
+# `grep -rn "cai_vieneu" app/ui/` ra 0 dòng -> nút nhân bản ghi "tải bộ đó
+# trước" mà KHÔNG có chỗ nào để bấm.
+_ui_src = Path("app/ui/thay_giong_dialog.py").read_text(
+    encoding="utf-8", errors="replace")
+ok("14a UI GỌI `cai_vieneu` (mệnh đề trung tâm của CA này)",
+   "cai_vieneu" in _ui_src, f"{_ui_src.count('cai_vieneu')} chỗ")
+ok("14a' ... và gọi qua AST chứ không phải chỉ nằm trong ghi chú",
+   "cai_vieneu" in _ma_that(Path("app/ui/thay_giong_dialog.py")))
+ok("14b nhãn nút nêu SỐ MB và lấy từ `mb_vieneu()` (một phép đo, ba chỗ đọc)",
+   str(int(VN.mb_vieneu())) in VN.nhan_tai_vieneu([]),
+   VN.nhan_tai_vieneu([])[:70])
+ok("14b' ca CẬP NHẬT (bản quá cũ) trông KHÁC ca chưa có gì",
+   VN.nhan_tai_vieneu(["vieneu >= 3.2.8 (đang có 3.1.0)"])
+   != VN.nhan_tai_vieneu(["vieneu"]),
+   VN.nhan_tai_vieneu(["vieneu >= 3.2.8 (đang có 3.1.0)"])[:60])
+ok("14c nhãn nút KHÔNG EMOJI", not _co_emoji(VN.NHAN_TAI)
+   and not _co_emoji(VN.nhan_tai_vieneu([])),
+   "".join(_co_emoji(VN.NHAN_TAI + VN.nhan_tai_vieneu([]))))
+ok("14d thiếu Python 3 -> NÓI RA vì sao (nút xám không một lời là câu đố)",
+   "Python 3" in VN.vi_sao_khong_cai_vieneu()
+   or VN.vi_sao_khong_cai_vieneu() == "",
+   VN.vi_sao_khong_cai_vieneu()[:60])
+
+_that_phs = VN._python_he_thong
+try:
+    VN._python_he_thong = lambda: ""            # type: ignore[assignment]
+    ok("14d' máy KHÔNG có Python 3 -> `cai_duoc` False VÀ có lý do",
+       VN.tinh_trang_vieneu()["cai_duoc"] is False
+       and "Python 3" in VN.vi_sao_khong_cai_vieneu())
+    _r6 = VN.cai_vieneu()
+    ok("14e `cai_vieneu` không có Python -> trả ok=False chứ KHÔNG NÉM",
+       isinstance(_r6, dict) and _r6.get("ok") is False
+       and "Python 3" in str(_r6.get("loi") or ""),
+       str(_r6.get("loi"))[:70])
+finally:
+    VN._python_he_thong = _that_phs             # type: ignore[assignment]
+
+# Nút bám `thieu`, KHÔNG bám `co` — bám `co` thì máy dev nút BIẾN MẤT và bản
+# `.exe` mãi mãi không có đường tải (đã sập 2 lần: cổng 58, hàng Kokoro).
+_ui_ast = _ma_that(Path("app/ui/thay_giong_dialog.py"))
+ok("14f nút bước 1 bám `thieu` (có nhánh đọc `thieu` trong `_do_vieneu`)",
+   "_do_vieneu" in _ui_ast and "thieu" in _ui_ast)
+ok("14g tiến độ đi qua dict RIÊNG `_buoc_vieneu`, không dùng chung với "
+   "bước 2 (dùng chung là hai lượt ghi lẫn số của nhau)",
+   "_buoc_vieneu" in _ui_ast and "_buoc_nhan_ban" in _ui_ast)
+ok("14h có tín hiệu riêng `_vn_xong` (thread nền KHÔNG đụng widget — "
+   "luật shutdown.safe_emit, gốc 8 lần crash 0xc0000005)",
+   "_vn_xong" in _ui_ast)
+# Hỏi ĐÚNG CHỖ GỌI, không hỏi "chuỗi `da_dong_y` có trong file không": chuỗi
+# đó còn nằm ở chính `def _tai_nhan_ban(self, da_dong_y=...)` nên gỡ LỜI GỌI mà
+# mục vẫn xanh — đo được ở lượt phá đầu (phép 28 LỌT).
+_than_vnx = _ui_src.split("def _tai_vieneu_xong")[1].split("\n    def ")[0]
+ok("14i NỐI CHUỖI: `_tai_vieneu_xong` GỌI bước 2 với `da_dong_y=True` "
+   "(máy trắng bấm một lần phải đi hết)",
+   "self._tai_nhan_ban(da_dong_y=True)" in _than_vnx)
+ok("14j ... mà mặc định `da_dong_y` VẪN LÀ False (một tham số mặc-định-True "
+   "là cách 'app tự tải 2,5 GB sau lưng' lẻn vào)",
+   "def _tai_nhan_ban(self, da_dong_y: bool = False)" in _ui_src)
+ok("14k `_tai_vieneu_xong` CỐ Ý KHÔNG gọi `_dung_combo_giong` (hàm đó đọc "
+   "giá trị ĐÃ LƯU nên nuốt lựa chọn user vừa bấm)",
+   "_dung_combo_giong" not in _ui_src.split("def _tai_vieneu_xong")[1]
+   .split("def ")[0])
+
+# Đường dẫn python GIẢ nằm trong %TEMP%, đúng cảnh máy anh Hùng
+# (`%TEMP%\bq_giong8\venv`). Dựng ở ĐÂY vì cả CA 14 lẫn CA 15 đều dùng.
+_tam_gia = str(Path(tempfile.gettempdir()) / "bq_giong8" / "venv" /
+               "Scripts" / "python.exe")
+
+# ═══ BEHAVIOURAL: DỰNG HỘP THẬT rồi hỏi cái NÚT, không đọc mặt chữ ═══
+# Mấy mục trên quét mã; mấy mục dưới BẤM. Chỉ quét mã thì một lượt "dọn gọn"
+# đổi luồng mà chuỗi vẫn đứt, cổng vẫn xanh.
+_that_ttvn = VN.tinh_trang_vieneu
+try:
+    # (a) THIẾU bộ VieNeu -> nút phải HIỆN (đây là ca máy TRẮNG)
+    VN.tinh_trang_vieneu = lambda: {            # type: ignore[assignment]
+        "co": False, "thieu": ["vieneu"], "python": "", "phien_ban": "",
+        "so_giong": 20, "thu_muc": str(VN.thu_muc_vieneu()), "o_tam": "",
+        "cai_duoc": True}
+    h5 = HopGiongToi()
+    h5.show()
+    ok("14l máy TRẮNG (thiếu bộ VieNeu) -> nút tải bộ VieNeu HIỆN "
+       "(trước lượt này KHÔNG có nút nào -> chuỗi ĐỨT)",
+       h5.b_tai_vn.isVisible() and h5.b_tai_vn.isEnabled(),
+       f"hiện={h5.b_tai_vn.isVisible()} · bật={h5.b_tai_vn.isEnabled()}")
+    ok("14l' ... và nhãn nói rõ đang ở BƯỚC NÀO",
+       "BƯỚC 1" in h5.lb_vn.text(), h5.lb_vn.text()[:60])
+    h5.close()
+
+    # (b) ĐỦ -> ẩn nút (nhưng xem 15g: cảnh báo %TEMP% vẫn phải hiện)
+    VN.tinh_trang_vieneu = lambda: {            # type: ignore[assignment]
+        "co": True, "thieu": [], "python": "x", "phien_ban": "3.2.8",
+        "so_giong": 20, "thu_muc": str(VN.thu_muc_vieneu()), "o_tam": "",
+        "cai_duoc": True}
+    h6 = HopGiongToi()
+    h6.show()
+    ok("14m đã có bộ VieNeu -> nút ẨN", not h6.b_tai_vn.isVisible())
+    h6.close()
+
+    # (c) KHÔNG có Python 3 -> nút VẪN HIỆN nhưng KHOÁ, và NÓI VÌ SAO.
+    # Ẩn nút là cách tính năng đã chết một lần; nút xám không một lời là câu đố.
+    VN.tinh_trang_vieneu = lambda: {            # type: ignore[assignment]
+        "co": False, "thieu": ["vieneu"], "python": "", "phien_ban": "",
+        "so_giong": 20, "thu_muc": str(VN.thu_muc_vieneu()), "o_tam": "",
+        "cai_duoc": False}
+    _that_pht2 = VN._python_he_thong
+    VN._python_he_thong = lambda: ""            # type: ignore[assignment]
+    try:
+        h7 = HopGiongToi()
+        h7.show()
+        ok("14n thiếu Python 3 -> nút VẪN HIỆN nhưng bị KHOÁ",
+           h7.b_tai_vn.isVisible() and not h7.b_tai_vn.isEnabled(),
+           f"hiện={h7.b_tai_vn.isVisible()} · bật={h7.b_tai_vn.isEnabled()}")
+        ok("14n' ... VÀ nói vì sao ngay trên nhãn (Python)",
+           "Python 3" in h7.lb_vn.text(), h7.lb_vn.text()[-90:])
+        _truoc = len(_ghi_hop)
+        h7._tai_vieneu()
+        ok("14n'' bấm lúc chưa cài được -> KHÔNG bắt đầu tải",
+           not h7._dang_cai_vn)
+        h7.close()
+    finally:
+        VN._python_he_thong = _that_pht2        # type: ignore[assignment]
+
+    # (d) bộ dò NÉM -> hộp KHÔNG chết và nghiêng về HIỆN nút
+    def _nem():
+        raise RuntimeError("ổ mạng rút")
+    VN.tinh_trang_vieneu = _nem                 # type: ignore[assignment]
+    h8 = HopGiongToi()
+    h8.show()
+    ok("14o bộ dò NÉM -> hộp vẫn dựng được, KHÔNG chết", True)
+    ok("14p ... và nghiêng về HIỆN nút (ẩn nút là cách tính năng đã chết)",
+       h8.b_tai_vn.isVisible())
+    ok("14q ... và NÓI RA là chưa dò được", "CHƯA DÒ ĐƯỢC" in h8.lb_vn.text(),
+       h8.lb_vn.text()[:70])
+    h8.close()
+
+    # (e) %TEMP%: máy VẪN chạy được (`thieu=[]`) nên nút ẩn — nhưng cảnh báo
+    # PHẢI hiện ra. Đây là mục "bị BẮT, không phải chỉ ghi log".
+    VN.tinh_trang_vieneu = lambda: {            # type: ignore[assignment]
+        "co": True, "thieu": [], "python": _tam_gia, "phien_ban": "3.2.8",
+        "so_giong": 20, "thu_muc": str(VN.thu_muc_vieneu()),
+        "o_tam": VN.o_thu_muc_tam(_tam_gia), "cai_duoc": True}
+    h9 = HopGiongToi()
+    h9.show()
+    ok("15g môi trường ở %TEMP% -> UI HIỆN cảnh báo dù `thieu` RỖNG "
+       "(chỉ ghi log thì không ai đọc; một lượt Disk Cleanup là giọng biến "
+       "khỏi combo)",
+       "TẠM" in h9.lb_vn.text().upper() or "TEMP" in h9.lb_vn.text().upper(),
+       h9.lb_vn.text()[-100:])
+    h9.close()
+finally:
+    VN.tinh_trang_vieneu = _that_ttvn           # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
+print("\n[CA 15] MÔI TRƯỜNG Ở `%TEMP%` PHẢI BỊ BẮT, không chỉ ghi log")
+# ---------------------------------------------------------------------------
+# Bệnh: máy anh Hùng chạy VieNeu từ `%TEMP%\bq_giong8\venv`. Một lượt Disk
+# Cleanup là **giọng biến khỏi combo**, và triệu chứng đó không ai lần ra.
+# CLAUDE.md đã chữa đúng lớp bệnh này cho OmniVoice (7,74 GB trong %TEMP%).
+ok("15a python nằm trong %TEMP% -> `o_thu_muc_tam` PHẢI kêu",
+   bool(VN.o_thu_muc_tam(_tam_gia)), VN.o_thu_muc_tam(_tam_gia)[:70])
+ok("15a' ... và nói ĐÚNG đường dẫn đang dùng (để còn lần ra)",
+   "bq_giong8" in VN.o_thu_muc_tam(_tam_gia)
+   or "Temp" in VN.o_thu_muc_tam(_tam_gia),
+   VN.o_thu_muc_tam(_tam_gia)[:80])
+ok("15b python ở CHỖ CHUẨN -> KHÔNG kêu oan (TỰ KIỂM BỘ DÒ)",
+   not VN.o_thu_muc_tam(str(VN.thu_muc_vieneu() / "venv" / "Scripts" /
+                            "python.exe")))
+# `o_tam` để RIÊNG khỏi `thieu`: máy VẪN chạy được nên gộp vào là nhãn/nút báo
+# sai trạng thái. Nhưng nó PHẢI hiện ra ở UI.
+ok("15c `o_tam` là khoá RIÊNG, KHÔNG gộp vào `thieu`",
+   "o_tam" in VN.tinh_trang_vieneu()
+   and not any("Temp" in str(t) for t in VN.tinh_trang_vieneu()["thieu"]))
+ok("15d UI HIỆN cảnh báo `o_tam` (chỉ ghi log thì không ai đọc)",
+   "o_tam" in _ui_ast, "có nhánh đọc o_tam trong thay_giong_dialog")
+# MÁY TRẮNG phải dựng môi trường ở CHỖ CHUẨN, không phải %TEMP%.
+_cv_src = _ma_that(Path("app/core/giong_vieneu.py"))
+ok("15e `cai_vieneu` dựng venv ở CHỖ CHUẨN (`thu_muc_vieneu`), "
+   "KHÔNG ở %TEMP%",
+   "thu_muc_vieneu" in _cv_src and "gettempdir" not in
+   _cv_src.split("def cai_vieneu")[1].split("def ")[0])
+# Ứng viên %TEMP% giữ ở CUỐI: máy nào còn bản cũ thì chạy được thay vì gãy,
+# nhưng chỗ chuẩn phải được chọn TRƯỚC.
+_uv = VN._ung_vien_python()
+_i_tam = [i for i, p in enumerate(_uv)
+          if str(Path(tempfile.gettempdir())).lower() in str(p).lower()]
+_i_chuan = [i for i, p in enumerate(_uv)
+            if str(VN.thu_muc_vieneu()).lower() in str(p).lower()]
+ok("15f ứng viên %TEMP% đứng SAU chỗ chuẩn trong `_ung_vien_python` "
+   "(chỗ ĐÚNG trước, chỗ TẠM sau)",
+   not (_i_tam and _i_chuan) or min(_i_chuan) < min(_i_tam),
+   f"chuẩn ở {_i_chuan} · tạm ở {_i_tam} · tổng {len(_uv)}")
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 74)

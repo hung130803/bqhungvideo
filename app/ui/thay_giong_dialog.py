@@ -1064,7 +1064,11 @@ class HopGiongToi(QDialog):
         """
         try:
             tt = VN_C.tinh_trang_vieneu()
-        except Exception as e:  # noqa: BLE001 - dò hỏng KHÔNG được giết hộp
+        # Ghi chú CỐ Ý khác dòng cùng loại ở `_do_nhan_ban`: `_pha_giong_toi`
+        # neo phép phá vào NGUYÊN VĂN dòng đó, hai dòng giống hệt nhau là neo
+        # khớp 2 chỗ -> phép phá bỏ qua và báo "KHÔNG PHÁ ĐƯỢC" (luật 1 của
+        # phép phá: neo phải DUY NHẤT). Đã đo: thêm hàm này làm phép 15 mất neo.
+        except Exception as e:  # noqa: BLE001 - dò VieNeu hỏng, đừng giết hộp
             tt = {"thieu": ["không dò được"], "co": False, "cai_duoc": True,
                   "o_tam": "", "thu_muc": "", "so_giong": 0, "python": "",
                   "phien_ban": ""}
