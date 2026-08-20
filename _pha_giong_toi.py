@@ -216,6 +216,21 @@ def main() -> int:
     ma3, _ = chay_cong()
     print(f"Cổng sau khi phục hồi: mã {ma3} "
           f"({'XANH — đã trả nguyên' if ma3 == 0 else 'ĐỎ — CÒN SÓT BẢN PHÁ!'})")
+
+    # DỌN HỘP CÁT MỒ CÔI — việc của FILE NÀY, không phải của cổng.
+    # `_test_giong_toi._don_hop_cat` đã đăng ký `atexit` mà VẪN sót: phép phá
+    # số 15 gỡ lưới an toàn quanh bộ dò nên `HopGiongToi.__init__` NÉM giữa lúc
+    # dựng widget, rồi một QDialog dựng dở bị thu gom làm Qt chết CỨNG lúc
+    # tiến trình tắt — `atexit` không chạy khi access violation. Đo được: 2 thư
+    # mục mỗi lượt phá 20 phép. IN RA SỐ chứ không dọn im lặng (dọn mà không
+    # nói thì lần sau lại phải đi đếm thư mục — bài học rò `_seg_*` cổng 42).
+    rac = sorted(REPO.glob("bq_test_giong_toi_*"))
+    for d in rac:
+        shutil.rmtree(d, ignore_errors=True)
+    con = [d.name for d in REPO.glob("bq_test_giong_toi_*")]
+    if rac:
+        print(f"Dọn hộp cát mồ côi do lượt phá để lại: {len(rac)} thư mục"
+              + (f" — CÒN SÓT {con}" if con else " (sạch)"))
     return 0 if (not lot and not hong_phep and ma3 == 0) else 1
 
 
