@@ -167,6 +167,15 @@ CAU: dict[str, list[str]] = {
 #: **không tách được** hai nguyên nhân, và con số 0,28 KHÔNG được kể là "bằng
 #: chứng bẫy". Cái vá này đứng vững vì lý do CẤU TẠO (VieNeu là bộ đọc tiếng
 #: Việt, bắt nó đọc tiếng Anh là đo thứ khác), không vì con số.
+#: **`kk:` (Kokoro) CỐ Ý KHÔNG CÓ TRONG DANH SÁCH NÀY — ĐỪNG THÊM VÀO.**
+#: Danh sách này nghĩa là *"máy đọc này đọc TIẾNG VIỆT"*. Kokoro **KHÔNG có
+#: tiếng Việt**: 28/28 giọng là `af_/am_/bf_/bm_` = Mỹ/Anh (xem
+#: `giong_kokoro.GIONG_KK`). Thêm `kk:` vào đây là bắt một bộ đọc CHỈ BIẾT
+#: TIẾNG ANH đọc 4 câu tiếng Việt rồi ghi số vào cùng cột với `vi-VN-*` — đúng
+#: cái bẫy đã làm `piper:vais1000` ra 1,88 (thấp nhất toàn bảng), chỉ là quay
+#: ngược chiều. Gặp `ValueError` khi chạy `_do_nhan_nha_bang.py kk:...` thì
+#: **đó là chốt đang làm việc**, không phải lỗi cần vá: giọng Kokoro đo bằng
+#: `_do_nhan_nha_kk.py` (bộ câu `CAU["en"]` + đối chứng edge-tts tiếng Anh).
 NGOAI_EDGE = ("ov:", "ix:", "piper:", "vn:", "vnb:")
 
 
