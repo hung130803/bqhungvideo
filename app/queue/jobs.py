@@ -358,6 +358,15 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # nó bỏ hẳn bước Demucs nên là đường DUY NHẤT chạy được trên máy
             # không có torch (xem `thay_giong.chot_co_bo_tach_giong`).
             de_giong=bool(payload.get("de_giong")),
+            # HAI Ô ÂM LƯỢNG anh Hùng tự kéo (tiếng gốc/nhạc nền · giọng lồng),
+            # đơn vị dB. Job cũ trong DB KHÔNG mang hai khoá này -> `.get` trả
+            # `None` -> `chuan_muc_db` biến thành **0,0** = app tự đo tự quyết y
+            # hệt bản trước, không lệch một dB nào.
+            # ĐỌC QUA `chuan_muc_db`, KHÔNG `float(... or 0)`: payload có thể
+            # mang rác (chuỗi, NaN, số ngoài trần) từ lối gọi khác/bản sau, mà
+            # một hệ số bịa nhân vào tiếng thì không có đường lùi.
+            muc_nen_db=tg.chuan_muc_db(payload.get("muc_nen_db")),
+            muc_giong_db=tg.chuan_muc_db(payload.get("muc_giong_db")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
@@ -397,6 +406,16 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
         # nhau, nên đọc lại một job cũ mà không biết nó chạy cách nào là không
         # đối chiếu được gì (bài học `mẫu «(mẫu đã chốt lúc xếp job)»`, cổng 25b).
         "cach_tron": r.get("cach_tron"),
+        # HAI Ô ÂM LƯỢNG — cùng lý do `cach_tron` ở trên: đổi mấy dB là ra file
+        # tiếng khác, đọc lại job cũ mà không biết anh Hùng kéo bao nhiêu thì
+        # không đối chiếu được gì. Lấy từ `tron` (số ĐÃ chuẩn hoá + đã kẹp
+        # trần), KHÔNG lấy lại từ payload — payload là cái XIN, `tron` là cái
+        # THẬT SỰ ÁP.
+        "muc_tay": {
+            "giong_db": (r.get("tron") or {}).get("muc_tay_giong_db"),
+            "nen_db": (r.get("tron") or {}).get("muc_tay_nen_db"),
+            "kep": (r.get("tron") or {}).get("muc_tay_kep") or {},
+        },
         "che_chu": r.get("che_chu"),
         "chu_theo_giong": r.get("chu_theo_giong"),
         "da_thay_goc": False, "goc_o": goc,

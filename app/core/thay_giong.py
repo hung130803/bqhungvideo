@@ -4847,9 +4847,19 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      hinh_theo_giong: bool = False,
                      bu_giong_goc_bat: bool = True,
                      de_giong: bool = False,
+                     muc_nen_db: float = 0.0,
+                     muc_giong_db: float = 0.0,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
+
+    `muc_nen_db` / `muc_giong_db` — HAI Ô ÂM LƯỢNG anh Hùng tự kéo (v2.42.0).
+    `0,0` = MẶC ĐỊNH, tức app tự đo tự quyết y như mọi bản trước. Xem
+    `tron_thay_giong` + `chuan_muc_db` cho trần và cách chuẩn hoá. Tên tham số
+    là **`muc_nen_db`** chứ không phải `muc_nhac_db` vì ở chế độ đè giọng lớp
+    nền chính là TIẾNG GỐC (còn cả giọng người ta), gọi nó là "nhạc" thì đọc mã
+    xong hiểu sai — chỗ MAP sang `tron_thay_giong(muc_nhac_db=...)` chỉ có ĐÚNG
+    MỘT dòng, ngay tại lời gọi.
 
     `de_giong=True` -> **ĐÈ GIỌNG, KHÔNG TÁCH** (anh Hùng đề xuất 19/08/2026:
     *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM tiếng video gốc rồi ĐÈ giọng
@@ -5094,8 +5104,14 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # `goc_wav` truyền vào để bước BÙ DẢI CAO lấy được cân bằng dải tần
         # của CHÍNH video này làm đích (xem `BU_SANG_TOI_DA_DB`). Thiếu nó thì
         # bước bù tự tắt — nên đây là chỗ DUY NHẤT phải nhớ nối.
+        # HAI Ô ÂM LƯỢNG NGƯỜI DÙNG: `muc_nen_db` -> `muc_nhac_db` (đây là
+        # ĐÚNG MỘT chỗ map tên, xem docstring). Truyền THẲNG, không kẹp ở đây:
+        # `tron_thay_giong` tự gọi `chuan_muc_db` nên chỉ có MỘT cửa chuẩn hoá
+        # — hai cửa là hai cách làm tròn rồi lệch nhau.
         au = tron_thay_giong(nhac_dung, manh_tron, tong_ra,
-                             tam_goc / "tieng_moi.wav", goc_wav=goc_wav)
+                             tam_goc / "tieng_moi.wav", goc_wav=goc_wav,
+                             muc_giong_db=muc_giong_db,
+                             muc_nhac_db=muc_nen_db)
         kq["tron"] = au
 
         prog(0.96, "Ghép tiếng mới vào video..." if not che_chu
@@ -5225,6 +5241,8 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          hinh_theo_giong: bool = False,
                          bu_giong_goc_bat: bool = True,
                          de_giong: bool = False,
+                         muc_nen_db: float = 0.0,
+                         muc_giong_db: float = 0.0,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -5256,6 +5274,13 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # thẳng `thay_giong_video`, thiếu một cờ là job nổ
                          # `unexpected keyword argument` và MỌI job đều LỖI.
                          de_giong=de_giong,
+                         # HAI Ô ÂM LƯỢNG — CÙNG LÝ DO ba cờ trên: `jobs.
+                         # _thay_giong` gọi CỬA NÀY chứ không gọi thẳng
+                         # `thay_giong_video`, thiếu một tham số là job nổ
+                         # `unexpected keyword argument` và MỌI job đều LỖI
+                         # (cổng 55 đã bắt được đúng thế: 2/2 job `failed`).
+                         muc_nen_db=muc_nen_db,
+                         muc_giong_db=muc_giong_db,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r
@@ -5321,12 +5346,15 @@ def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
                        so_luong: int = 0, thung_rac: str = "",
                        kenh: str = "", thay_goc: bool = True,
                        de_giong: bool = False,
+                       muc_nen_db: float = 0.0,
+                       muc_giong_db: float = 0.0,
                        on_video: Optional[Callable[[str, dict], None]] = None,
                        ) -> dict:
     """Thay giọng CẢ THƯ MỤC video, chạy ĐA LUỒNG, xong thì thay video gốc.
 
     `thay_goc=False` -> chỉ tạo file mới bên cạnh, KHÔNG đụng gốc (dùng để thử).
     `de_giong=True` -> chế độ ĐÈ GIỌNG (xem `thay_giong_video`).
+    `muc_nen_db` / `muc_giong_db` -> hai ô âm lượng, 0,0 = mặc định.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -5347,6 +5375,7 @@ def thay_giong_thu_muc(thu_muc: str | Path, dich_sang: str = "en",
             v, dich_sang=dich_sang, voice=voice, cach_tach=cach_tach,
             thay_goc=thay_goc, kenh=kenh, thung_rac=thung_rac,
             de_giong=de_giong,
+            muc_nen_db=muc_nen_db, muc_giong_db=muc_giong_db,
             thu_muc_lam=lam_goc / v.stem)
 
     with ThreadPoolExecutor(max_workers=max(1, n)) as ex:

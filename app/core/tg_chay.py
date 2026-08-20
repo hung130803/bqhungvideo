@@ -26,7 +26,9 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      viet_chu: bool = False,
                      kieu_chu: Optional[dict] = None,
                      hinh_theo_giong: bool = False,
-                     de_giong: bool = False) -> str:
+                     de_giong: bool = False,
+                     muc_nen_db: float = 0.0,
+                     muc_giong_db: float = 0.0) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -76,6 +78,26 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     # `ovl_spec` (cổng 42) và cờ `che_chu` (cổng 56e).
     if de_giong:
         sig += ":dg=1"
+    # HAI Ô ÂM LƯỢNG (dB) — cùng luật với mọi cờ trên, và ĐÂY LÀ CHỖ DỄ PHÁ
+    # 200-300 KÊNH ĐANG CHẠY SẢN XUẤT NHẤT của cả bản vá:
+    #   · qua `chuan_muc_db` TRƯỚC khi băm (y bài học `chuan_muc_mo` cổng 56e):
+    #     0,04 và 0,0 đều là "để mặc định", băm giá trị THÔ là đẻ job chạy lại
+    #     cho một thay đổi KHÔNG TỒN TẠI. `-0.0` cũng bị nó kéo về `0.0` nên
+    #     không có chuyện hai chuỗi khác nhau cho cùng một giá trị.
+    #   · nối vào **ĐUÔI CHUỖI**, KHÔNG thêm phần tử vào tuple nào: thêm vào
+    #     tuple là đổi hash của MỌI clip cũ = 200-300 kênh xuất lại từ đầu.
+    #   · **CHỈ KHI KHÁC 0,0** -> để mặc định thì khoá giống TỪNG KÝ TỰ bản
+    #     trước. Hai ô TÁCH RIÊNG hai nhánh `if`: kéo một ô thì chỉ một đuôi
+    #     mọc ra, nên khoá vẫn có khoá của bản trước làm TIỀN TỐ.
+    #   · `{:+.1f}` -> luôn có dấu và luôn một chữ số thập phân: `+3.0` /
+    #     `-2.5`. Không dùng `{}` trơn (3.0 và 3 ra hai chuỗi khác nhau).
+    from app.core.thay_giong import chuan_muc_db
+    _mn = chuan_muc_db(muc_nen_db)
+    if _mn != 0.0:
+        sig += f":mn={_mn:+.1f}"
+    _mg = chuan_muc_db(muc_giong_db)
+    if _mg != 0.0:
+        sig += f":mg={_mg:+.1f}"
     return sig
 
 
@@ -164,6 +186,8 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             kieu_chu: Optional[dict] = None,
             hinh_theo_giong: bool = False,
             de_giong: bool = False,
+            muc_nen_db: float = 0.0,
+            muc_giong_db: float = 0.0,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -211,6 +235,20 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     # `.get` ra `False` = hành vi Y HỆT bản trước.
     if de_giong:
         tt["de_giong"] = True
+    # HAI Ô ÂM LƯỢNG — **CHỈ ghi khoá khi KHÁC MẶC ĐỊNH (0,0)**, mỗi ô một
+    # nhánh riêng. Để mặc định thì payload KHÔNG mọc thêm khoá nào, nên job cũ
+    # nằm sẵn trong DB và `jobs._thay_giong` (đọc bằng `.get` -> None ->
+    # `chuan_muc_db` -> 0,0) cho ra hành vi Y HỆT bản trước. Tiền lệ đúng đang
+    # bắt chước: `che_chu` (cổng 56e) · `kieu_chu` (cổng 68) · `de_giong` (86).
+    # Chuẩn hoá TẠI ĐÂY để payload lưu vào DB là số ĐÃ kẹp trần — mở lại app
+    # sau 3 tháng thì job chạy đúng cái đã hiện trên màn hình lúc xếp.
+    from app.core.thay_giong import chuan_muc_db as _cmd
+    mn = _cmd(muc_nen_db)
+    if mn != 0.0:
+        tt["muc_nen_db"] = mn
+    mg = _cmd(muc_giong_db)
+    if mg != 0.0:
+        tt["muc_giong_db"] = mg
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
@@ -218,6 +256,6 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
                                    che_chu_cach, che_chu_muc,
                                    bool(che_chu) and bool(viet_chu),
                                    kieu_chu, bool(hinh_theo_giong),
-                                   bool(de_giong)),
+                                   bool(de_giong), mn, mg),
         skip_if_done=False, max_attempts=1,
     )
