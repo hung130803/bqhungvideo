@@ -2475,6 +2475,68 @@
   trong 28 giọng, mọi số trên là số ĐO · chưa đo mốc từng chữ (Kokoro không tự
   trả mốc, phải nhờ `giong_hang`) · `_giong_kokoro/` bị gitignore nên bản `.exe`
   KHÔNG mang sẵn bộ này, máy nhân viên phải bấm nút + phải có Python 3.
+- **NHẤN NHÁ 28 GIỌNG KOKORO: ĐO XONG (20/08/2026, `_do_nhan_nha_kk.py` ->
+  `_kq_nhan_nha_kk.json`).** Anh Hùng nghe rồi báo: *"phần giọng đọc koro tôi
+  thấy được mà k có nhấn nhá cảm xúc gì"*. Trước lượt này `nhan_nha.BANG` không
+  có **một mã `kk:` nào** và `giong_doc.BANG` cũng chưa biết `kk:`, nên
+  `nhan_nha.nhan("kk:af_bella")` trả **chuỗi RỖNG** — dòng combo không nói một
+  chữ nào về nhấn nhá. (Chữ *"chưa đo tiếng"* trên dòng Kokoro là của
+  `da_ngu.nhan_gon`, nó nói *"chưa đo giọng này ĐỌC ĐƯỢC TIẾNG GÌ"* — **một
+  phép đo KHÁC**, đừng đọc thành "chưa đo nhấn nhá".)
+  Đúng thước cũ (`_do_nhan_nha.f0_nua_cung` + `pstdev`), đúng bộ câu
+  `_do_nhan_nha_bang.CAU["en"]` mà mọi giọng `en-*` của bảng 211 đã đọc (Kokoro
+  **không có tiếng Việt** — 28/28 là `af_/am_/bf_/bm_` = Mỹ/Anh — nên lấy
+  `vi-VN-HoaiMy` làm mốc là dựng lại phép **so chéo tiếng** mà `nhan_nha` cấm).
+  **ĐỐI CHỨNG CHẠY CÙNG LƯỢT TÁI LẬP ĐƯỢC BẢNG CŨ** nên cột này so được:
+  `en-US-Aria` 3,33 -> **3,33** · `en-US-Andrew` 4,49 -> **4,45** ·
+  `en-GB-Ryan` 5,38 -> **5,38**, lệch tối đa **0,04** (dải nhiễu đã đo
+  0,00-0,12). Không có 3 dòng này thì 28 số kia vô nghĩa.
+  **28/28 đo được · trải 2,24-5,66 · TB 3,75 · trung vị 3,92.**
+  **LỜI ANH HÙNG ĐÚNG Ở GIỌNG ANH ẤY BẤM, SAI Ở CẢ BỘ — và phải nói cả hai
+  nửa:** *"Kokoro không có nhấn nhá"* nói về CẢ BỘ là **SAI theo số đo** —
+  **20/28 giọng ĐẠT HOẶC HƠN `en-US-Aria` (3,33)**, TB hơn Aria **+0,42**, và
+  `am_santa` **5,66** hơn **CẢ `en-GB-Ryan` 5,38** = giọng tiếng Anh cao nhất
+  của bảng 211. Nhưng nó **ĐÚNG ở đúng giọng người ta bấm**: `af_bella` — tác
+  giả chấm **A-** và ghi thẳng *"giọng tốt nhất cả bộ"* — đo ra **2,33**, tức
+  **thấp thứ 2 trong 28**, kém Aria **1,00** nửa cung; cùng chùm đáy có
+  `bf_isabella` **2,24** (C) và `bf_emma` **2,36** (B-).
+  **PHÁT HIỆN ĐÁNG NÓI NHẤT — ĐIỂM TÁC GIẢ KHÔNG DỰ ĐOÁN ĐƯỢC NHẤN NHÁ:**
+  Spearman **0,12**. 5 giọng nhấn nhá CAO nhất bị chấm **D- · D+ · D · D · B-**
+  (`am_santa` 5,66 · `bm_lewis` 4,67 · `am_liam` 4,60 · `af_jessica` 4,48 ·
+  `af_nicole` 4,44); 5 giọng THẤP nhất có cả **A-** và **B-**. Tức chọn giọng
+  theo ĐIỂM (hoặc theo thứ tự dòng — `gom_nhom` đang xếp `kk:` theo **thứ tự
+  chữ cái** vì mọi mã cùng tắc ở `khoa_sap`) hoàn toàn có thể trúng giọng phẳng
+  nhất bộ, và đó đúng là chuyện đã xảy ra. **Hai con số không thay được nhau.**
+  **SỐ NẰM Ở `giong_kokoro.NHAN_NHA`, CỐ Ý KHÔNG VÀO `nhan_nha.BANG`** — lý do
+  ĐO ĐƯỢC, không phải cho gọn: `gom_nhom` sắp trong nhóm bằng `khoa_sap` nên
+  vào `BANG` là `af_bella` tụt gần đáy 28 dòng còn `am_santa` (D-) /`bm_lewis`
+  (D+) trèo lên **hai dòng đầu** — đúng lỗi `vn:Xuân Vĩnh` đã sập. Thêm 28 giọng
+  vào 211 còn **dịch tứ phân vị** -> đổi nhãn giọng CŨ -> một lượt việc RIÊNG
+  qua 4 cổng (76 CA 3a · 79 CA 10 · 81 CA 1c/1d · 83 mục 3f kèm `SO_DOI_NHAN`).
+  **THƯỚC vẫn chỉ có MỘT** — đó là thứ không được nhân bản. Đã kiểm một lo ngại
+  và nó KHÔNG có thật: `chon_khuyen` chặn bằng `muc() is None`, nhưng `kk:` còn
+  trượt **hai** chốt khác (`_dung_duoc_ngay` False · `ma_ngon_ngu` rỗng) nên nó
+  không vào nhóm "Khuyên dùng" dù có số hay không.
+  **CHƯA ĐẠT, GHI THẲNG — SỐ CHƯA LÊN ĐƯỢC NHÃN COMBO.** Dòng Kokoro đã
+  **139-178 ký tự** (đuôi `giong_bang._DUOI[KOKORO]` một mình **85 ký tự**) và
+  hộp tìm giọng chỉ còn **dư 12 px** (cổng 84 CA 1 tự in). Đo **3 lần** bằng
+  cổng 84 (mốc **ĐẠT 62 · HỎNG 2**): thêm **30 kt** -> 61 (28 mục thiếu) ·
+  **15 kt** -> 61 (13 mục) · **15 kt + bỏ "(Kokoro)"** -> 61 (9 mục). Thứ bị
+  đẩy ra khỏi dòng **KHÔNG phải con số** mà là ***"cần tải"*** / ***"miễn
+  phí"*** — tức cái giá là **đổi một CẢNH BÁO lấy một CON SỐ** (chọn giọng chưa
+  tải là ra giọng KHÁC). Đã loại cả 3 đường tắt: hạ mốc cổng · nới trần · rút
+  ngắn `TÁC GIẢ CHẤM THẤP` (20 kt, nằm đúng trên 12 dòng dài nhất, và là thứ
+  cổng 87 CA 10b canh). **Muốn bật thì lấy lại ~30 ký tự từ
+  `giong_bang._DUOI[KOKORO]`** — 2 trong 4 việc nó nói đã trùng chỗ khác trên
+  cùng dòng (*"KHÔNG có tiếng Việt"* trùng `Nữ · Mỹ`/`Nam · Anh` của từng giọng;
+  *"KHÔNG có mốc từng chữ"* là chi tiết đúng chỗ cho tooltip). Không làm trong
+  lượt này vì `giong_bang.py` đang do luồng khác giữ.
+  Vẫn **chưa ai NGHE bằng tai** — mọi số trên là số ĐO, và `nhan_nha` đã dặn
+  *"số này KHÔNG nói giọng HAY hay DỞ"*. Gợi ý cho anh Hùng nghe thử theo số:
+  `am_santa` · `bm_lewis` · `am_liam` · `af_jessica` (nhấn nhá đỉnh, nhưng tác
+  giả chấm D-/D+/D/D nên phải nghe mới biết đổi được gì lấy gì).
+  Cổng đã chạy: **84 = 62 · 2** (đúng mốc) · **87 = 44 · 0** · **73 = 52 · 0** ·
+  **76 = 31 · 0**.
 - **"Adam NGHE LẠ": ĐO XONG — **CHỈ KÉM, KHÔNG HỎNG** (19/08/2026,
   `_do_adam_en.py` · `_kq_adam_en.txt`).** Anh Hùng nghe rồi: *"cái adam bị lỗi
   hay sao nghe cứ lạ lạ khác lắm, không như tôi nghĩ"*, và trỏ vào giọng Adam
