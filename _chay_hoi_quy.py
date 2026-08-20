@@ -253,6 +253,24 @@ CONG = [
     # chứng nhận") và không báo HỎNG (đỏ oan thì người ta bỏ qua cổng).
     # Thử phá `_pha_giong_toi.py`: 9 phép, mỗi phép gỡ ĐÚNG một chốt.
     ("88 giọng của tôi",    "_test_giong_toi.py",        66),
+    # Cổng 89 — CHỈNH VIDEO THEO GIỌNG (`he_so_hinh`) + độ to bản trộn + hộp
+    # Thay giọng gọn. Số **89** lấy bằng cách đọc chính `CONG` này (max đang là
+    # 88), KHÔNG đếm theo trí nhớ.
+    #
+    # **FILE NÀY ĐÃ NẰM NGOÀI DANH SÁCH TỪ 18/08/2026 VÀ ĐÃ CHẾT MÀ KHÔNG AI
+    # BIẾT** — đúng bẫy cổng 70 ("cổng không ai gọi thì chỉ là một file .py
+    # nằm đó"), cộng thêm bẫy TRÙNG SỐ: nó tự nhận là "CỔNG 76" trong khi 76
+    # đã thuộc `_test_nhan_nha.py` ở ngay trên, tức hai cổng ghi đè
+    # `_kq76.txt` của nhau (bài học 70 vs 69, 85 vs 81). Hệ quả ĐO ĐƯỢC:
+    # `nhan_nha.muc()` đổi chữ ký còn MỤC 6 cũ vẫn gọi `muc(voice, nn)` ->
+    # cổng nổ `TypeError` giữa chừng suốt nhiều lượt hồi quy. MỤC 6 cũ nay bỏ
+    # (phần nhãn nhấn nhá đã có cổng 76 canh), thay bằng 3 mục MỚI canh đúng
+    # chỗ dễ vỡ nhất của tính năng.
+    #
+    # Nó RẺ: KHÔNG gọi mạng, KHÔNG tốn lượt Groq/ElevenLabs, KHÔNG nạp model.
+    # Phần đắt nhất là ffmpeg thật + 2 hộp thoại offscreen (~2-3 phút).
+    # Thử phá `_pha_khop_video.py`.
+    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",   73),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

@@ -1,14 +1,32 @@
-"""CỔNG 76 — ÂM THANH KHÔNG BỊ BÉ · CHỈNH VIDEO THEO GIỌNG · HỘP BỚT RỐI ·
-NHÃN NHẤN NHÁ.
+"""CỔNG 89 — ÂM THANH KHÔNG BỊ BÉ · CHỈNH VIDEO THEO GIỌNG · HỘP BỚT RỐI.
 
-Bốn việc anh Hùng nêu 18/08/2026 (ảnh v2.36.0, hộp Thay giọng, `ov:nam_tre`):
+**SỐ CỔNG LÀ 89, VÀ FILE NÀY TRƯỚC ĐÂY TỰ NHẬN LÀ "CỔNG 76" — HAI LỖI CHỒNG
+NHAU, ĐỌC TRƯỚC KHI SỬA:**
+  · số **76 đã thuộc `_test_nhan_nha.py`** (đang nằm trong `_chay_hoi_quy.CONG`
+    với mốc 29). Trùng số thì hai cổng **ghi đè `_kq76.txt` của nhau** — đúng
+    bài học 70 vs 69 và 85 vs 81.
+  · và file này **KHÔNG HỀ nằm trong `CONG`**, tức nó chỉ là *"một file .py
+    nằm đó"* (bẫy cổng 70). Hệ quả ĐO ĐƯỢC: `nhan_nha.muc()` đã đổi chữ ký
+    thành **một tham số**, mà MỤC 6 cũ gọi `muc(voice, nn)` -> cổng **CHẾT**
+    với `TypeError` giữa chừng và **không ai biết**, vì không lượt hồi quy nào
+    gọi nó. Số 89 lấy bằng cách đọc chính `_chay_hoi_quy.CONG` (max đang là
+    88), KHÔNG đếm theo trí nhớ.
+
+**MỤC 6 CŨ (nhãn nhấn nhá) ĐÃ BỎ, CÓ LÝ DO:** nó chấm `nhan_nha.nhan_kem` /
+`goi_y_giong` / `cau_goi_y` / `BANG_VI` — **cả bốn nay KHÔNG CÒN TỒN TẠI**
+trong `app/core/nhan_nha.py`. Phần nhãn nhấn nhá đang được canh bởi cổng **76
+`_test_nhan_nha.py` (ĐẠT 31 · HỎNG 0)** cùng 79/84; viết lại ở đây là đẻ bản
+sao thứ hai của cùng một phép canh — đúng chỗ đã sinh ra vụ trùng số.
+
+Ba việc anh Hùng nêu 18/08/2026 (ảnh v2.36.0, hộp Thay giọng, `ov:nam_tre`):
   1. *"lỗi quan trọng: âm thanh video bị lỗi hay sao cứ bị bé"*
   2. *"giọng cứ lúc nhanh lúc chậm không đều — đáng nhẽ chỉ chỉnh video sao
      cho khớp giọng nói chứ"*
   3. *"cái phần edit chữ kia nhiều quá, không gom vào làm 1 được à"*
-  4. *"giọng chả có hồn gì, không có cảm xúc, rất là trơ"*
+và một việc anh ấy nêu LẠI 20/08/2026: *"điều chỉnh là điều chỉnh VIDEO sao
+cho khớp, KHÔNG PHẢI lồng tiếng mới tạo"* -> MỤC 6/7/8 bên dưới.
 
-CỔNG NÀY CANH 6 ĐIỀU:
+CỔNG NÀY CANH 8 ĐIỀU:
 1. **BÙ DẢI CAO đúng chiều và có TRẦN.** `do_do_sang` phải trả số ÂM cho file
    đục hơn (dấu bị lật là app đi CẮT dải cao đúng lúc cần NÂNG — bẫy đã sập
    thật, xem `do_do_sang`). Bù không bao giờ vượt `BU_SANG_TOI_DA_DB`, và
@@ -23,24 +41,38 @@ CỔNG NÀY CANH 6 ĐIỀU:
    giãn đúng độ dài mà **KHÔNG mã hoá lại một khung nào**.
 5. **HỘP THAY GIỌNG:** 9 ô kiểu chữ mặc định GẬP, mở ra là ĐỦ 9, round-trip
    lưu/đọc lại giữ đủ giá trị, và KHÔNG bỏ ô nào.
-6. **NHÃN NHẤN NHÁ:** giọng ĐÃ ĐO thì hiện số, giọng CHƯA ĐO thì KHÔNG bịa;
-   không so số giữa hai ngôn ngữ khác nhau (bẫy đã sập: Aria đo trên câu
-   tiếng Anh ra 5,89 nhưng trên corpus tiếng Việt chỉ 2,72).
+6. **HỘP CHE CHỮ KHÔNG ĐƯỢC TRÔI KHI LÀM CHẬM HÌNH, VÀ PHỤ ĐỀ PHẢI ĐI THEO.**
+   Đây là chỗ dễ vỡ nhất của cả tính năng, và nó **đã vỡ thật**: nhánh che chữ
+   dùng `-itsscale`, mà `-itsscale` giãn mốc ĐẦU VÀO nên biến `t` trong
+   `enable='between(t,a,b)'` là mốc ĐÃ GIÃN, còn `a,b` do
+   `che_chu.loc_cho_xuat` dò trên video GỐC thì CHƯA GIÃN -> hộp che trôi
+   `(k−1)·t`, chữ cháy sẵn hiện NGUYÊN từ giữa phim. Chú thích trong mã khẳng
+   định NGƯỢC LẠI nên chưa ai đo. Mục này đo bằng **ĐIỂM ẢNH trên file xuất**,
+   có ĐỐI CHỨNG `k=1,0` để chứng minh bộ dò có răng.
+7. **TẮT CỜ -> RA FILE GIỐNG BẢN MỐC** (nạp `git show <mốc>:…` thành module
+   riêng rồi CHẠY THẬT), và **khoá chống trùng khi TẮT giống TỪNG KÝ TỰ** —
+   không thì 200-300 kênh xuất lại từ đầu. Kèm chốt *"mốc TRÙNG bản đang test
+   -> HỎNG"* chống PASS OAN.
+8. **TRẦN LÀM CHẬM HÌNH CÓ RĂNG + LÙI VỀ CÁCH CŨ THÌ GHI LOG.** Quá trần thì
+   phần dư vẫn phải ép tiếng, và việc lùi đó phải NÓI RA (`cham_tran`) — lùi
+   im lặng là bẫy cả repo này chống.
 
-TỰ KIỂM: `_pha_am_va_hinh.py` gỡ từng chốt ra và cổng phải ĐỎ.
+TỰ KIỂM: `_pha_khop_video.py` gỡ từng chốt ra và cổng phải ĐỎ.
 """
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 # PHẢI đặt TRƯỚC mọi import chạm `app.ui` — `app_settings()` mặc định đọc
 # REGISTRY THẬT của anh Hùng, và cổng 68 đã ĐỎ OAN một lần vì đúng chuyện đó.
-_INI = Path(tempfile.gettempdir()) / f"bq_cong76_{os.getpid()}.ini"
+_INI = Path(tempfile.gettempdir()) / f"bq_cong89_{os.getpid()}.ini"
 os.environ["BQ_QSETTINGS_INI"] = str(_INI)
 os.environ.setdefault("BQ_FFMPEG_SLOTS", "1")
 os.environ.setdefault("BQ_TG_BO_QUA_CHI_PHI", "1")
@@ -51,9 +83,22 @@ sys.stdout.reconfigure(encoding="utf-8")
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 
-FF = REPO / "bin" / "ffmpeg.exe"
-FP = REPO / "bin" / "ffprobe.exe"
+#: **ĐỌC TỪ `settings`, KHÔNG ghi cứng `bin/ffmpeg.exe`** — `bin/` từng là build
+#: 2023 THIẾU `Abs_Peak_count`, tức đo một ffmpeg KHÁC ffmpeg sản xuất (bài học
+#: cổng 86). 21 file `_test_*.py` còn ghi cứng nó; file này thì không.
+from config import settings  # noqa: E402
+
+FF = Path(str(settings.FFMPEG_PATH))
+FP = Path(str(settings.FFPROBE_PATH))
 NOWIN = 0x08000000
+
+#: MỐC ĐỐI CHỨNG = bản phát hành **NGAY TRƯỚC** tính năng "Chỉnh video theo
+#: giọng". Đã kiểm bằng số, không đoán: `git show v2.37.0:app/core/thay_giong.py
+#: | grep -c he_so_hinh` -> **0** · `v2.41.1` -> **19**; `tg_chay.py` cũng
+#: 0 (v2.37.0) so với 1 (v2.38.0). **KHÔNG BAO GIỜ dùng `main`** — sau khi gộp
+#: thì `main` chính là bản đang test, cổng đối chứng tự PASS OAN vĩnh viễn
+#: (bài học cổng 36/51/52/56).
+MOC = os.environ.get("BQ_MOC_KV", "v2.37.0")
 
 DAT = HONG = 0
 _HOP: Path | None = None
@@ -73,14 +118,40 @@ def ok(dieu: bool, ten: str, chi_tiet: str = "") -> bool:
 def hop() -> Path:
     global _HOP
     if _HOP is None:
-        _HOP = REPO / f"_am76_{os.getpid()}"
+        _HOP = REPO / f"_am89_{os.getpid()}"
         _HOP.mkdir(exist_ok=True)
     return _HOP
 
 
 def don() -> None:
-    for d in REPO.glob("_am76_*"):
+    for d in list(REPO.glob("_am89_*")) + list(REPO.glob("_am76_*")):
         shutil.rmtree(d, ignore_errors=True)
+
+
+def nap_moc(duong: str, ten: str) -> types.ModuleType:
+    """Nạp một file của BẢN MỐC thành module riêng (không đụng bản đang test)."""
+    r = subprocess.run(["git", "show", f"{MOC}:{duong}"], cwd=str(REPO),
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=120)
+    if r.returncode != 0 or not (r.stdout or "").strip():
+        raise RuntimeError(f"không lấy được {MOC}:{duong}: {r.stderr[:200]}")
+    m = types.ModuleType(f"moc_{ten}")
+    m.__dict__["__file__"] = f"<{MOC}:{duong}>"
+    exec(compile(r.stdout, f"<{MOC}:{duong}>", "exec"), m.__dict__)
+    m.__dict__["_NGUON_"] = r.stdout
+    return m
+
+
+def than_ham(duong: str, ten: str) -> ast.AST:
+    """Nút AST của hàm `ten`. Đọc file bằng **utf-8 tường minh** —
+    `inspect.getsource` mở theo bảng mã MẶC ĐỊNH của máy (cp1252) nên docstring
+    tiếng Việt ra mojibake rồi `ast.parse` nổ (bẫy đã sập ở cổng 71)."""
+    cay = ast.parse((REPO / duong).read_text(encoding="utf-8"))
+    for n in ast.walk(cay):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and n.name == ten:
+            return n
+    raise RuntimeError(f"không thấy hàm {ten} trong {duong}")
 
 
 def _ff(args: list[str], timeout: int = 900) -> int:
@@ -410,58 +481,375 @@ def muc5() -> None:
         d.deleteLater()
 
 
+#: bề cao "dải chữ" ở đáy khung nguồn thử (điểm ảnh)
+_DAY = 40
+#: cửa sổ mà dải TRẮNG hiện ở đáy khung — mốc BIẾT TRƯỚC trên trục NGUỒN
+_CHU_A, _CHU_B = 3.0, 4.0
+#: cửa sổ của cue phụ đề — mốc BIẾT TRƯỚC trên trục **ĐẦU RA** (đã nhân `k`),
+#: đúng như `khop_thoi_gian.moc_tieng` trả về.
+_SUB_A, _SUB_B = 5.0, 6.0
+
+
+#: ngưỡng "điểm ảnh TRẮNG" — nền nguồn là XÁM (#808080, luma ~126) nên 200 tách
+#: sạch hai bên. Đếm TỈ LỆ điểm ảnh trắng chứ không lấy TRUNG BÌNH: hộp chữ chỉ
+#: phủ một phần dải nên trung bình bị nền xám kéo về giữa, không đọc được.
+_NG_TRANG = 200
+
+
+def _ty_trang(vid: Path, t: float, w: int, y0: int, cao: int) -> float:
+    """Tỉ lệ điểm ảnh TRẮNG trong dải `y0..y0+cao` tại mốc `t` giây (0..1).
+
+    Đọc ĐIỂM ẢNH, không đọc `rc` của ffmpeg — cả bản TRÔI lẫn bản ĐÚNG đều cho
+    `rc=0` và đủ khung, nên `rc` không phân biệt được gì.
+    """
+    r = subprocess.run(
+        [str(FF), "-v", "error", "-ss", f"{t:.3f}", "-i", str(vid),
+         "-frames:v", "1", "-vf", f"crop={w}:{cao}:0:{y0}",
+         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, creationflags=NOWIN, timeout=120)
+    b = r.stdout
+    if not b:
+        return -1.0
+    return sum(1 for v in b if v >= _NG_TRANG) / len(b)
+
+
+def _quet(vid: Path, w: int, y0: int, cao: int,
+          buoc: float = 0.2) -> list[tuple[float, float]]:
+    """[(mốc giây, tỉ lệ trắng)] — quét dày `buoc` giây suốt cả file."""
+    d = float(_probe(vid, "format=duration", vid=False) or 0)
+    ra, t = [], 0.05
+    while t < d - 0.05:
+        ra.append((t, _ty_trang(vid, t, w, y0, cao)))
+        t += buoc
+    return ra
+
+
+def _cua_so_trang(xs: list[tuple[float, float]],
+                  nguong: float = 0.10) -> tuple[float, float]:
+    """(mốc ĐẦU, mốc CUỐI) của khoảng có tỉ lệ trắng vượt `nguong`."""
+    co = [t for t, v in xs if v >= nguong]
+    return (min(co), max(co)) if co else (-1.0, -1.0)
+
+
 def muc6() -> None:
-    """NHÃN NHẤN NHÁ: có số thì hiện, chưa đo thì KHÔNG bịa."""
-    print("\nMỤC 6 — nhãn nhấn nhá: chỉ nói cái đã đo")
-    from app.core import nhan_nha as NN
-    ok(NN.muc("vi-VN-NamMinhNeural", "vi") is not None,
-       "giọng ĐÃ ĐO có số", str(NN.muc("vi-VN-NamMinhNeural", "vi")))
-    ok(NN.muc("vi-VN-KhongCoGiongNay", "vi") is None,
-       "giọng CHƯA ĐO -> None (không bịa)")
-    ok(NN.nhan_kem("vi-VN-KhongCoGiongNay", "vi") == "",
-       "giọng chưa đo -> nhãn RỖNG")
-    ok("nhấn nhá" in NN.nhan_kem("vi-VN-NamMinhNeural", "vi"),
-       "giọng đã đo -> nhãn có số",
-       NN.nhan_kem("vi-VN-NamMinhNeural", "vi"))
-    # BẪY ĐÃ SẬP: số của corpus tiếng Việt KHÔNG nói được gì về tiếng khác
-    ok(NN.muc("vi-VN-NamMinhNeural", "en") is None,
-       "ngôn ngữ KHÁC corpus -> None (cấm so số giữa 2 ngôn ngữ)")
-    ok(NN.nhan_kem("vi-VN-NamMinhNeural", "ja") == "",
-       "đổi ngôn ngữ đích -> KHÔNG dán số tiếng Việt vào")
-    g = NN.goi_y_giong("vi")
-    ok(g is not None and g[1] == max(NN.BANG_VI.values()),
-       "gợi ý ĐÚNG giọng nhấn nhá cao nhất", str(g))
-    ok(NN.goi_y_giong("en") is None,
-       "ngôn ngữ chưa có bảng -> KHÔNG gợi ý bừa")
-    ok(bool(NN.cau_goi_y("vi")) and not NN.cau_goi_y("en"),
-       "câu gợi ý chỉ hiện cho ngôn ngữ đã đo")
-    # Nhãn KHÔNG EMOJI (bài học v2.6.22 — máy anh Hùng thiếu glyph -> ô đen)
-    import unicodedata
-    xau = [c for c in NN.cau_goi_y("vi") + NN.nhan_kem("vi-VN-NamMinhNeural")
-           if ord(c) > 0xFFFF or unicodedata.category(c) == "So"]
-    ok(not xau, "nhãn KHÔNG EMOJI", str(xau))
-    # Combo hộp thoại phải THẬT SỰ mang nhãn đó
-    from PyQt6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication([])
-    from app.ui.thay_giong_dialog import ThayGiongDialog
-    d = ThayGiongDialog(None)
+    """HỘP CHE CHỮ KHÔNG TRÔI KHI LÀM CHẬM HÌNH + PHỤ ĐỀ ĐI THEO."""
+    print("\nMỤC 6 — che chữ + làm chậm hình: hộp phải BÁM, chữ phải ĐI THEO")
+    from app.core import che_chu as CC
+    from app.core import thay_giong as tg
+
+    W, H, FPS, DAI = 320, 240, 24.0, 6.0
+    K = 1.25
+    d = hop() / "che"
+    d.mkdir(exist_ok=True)
+
+    # NGUỒN: nền XÁM (không đen — phải phân biệt được "bị hộp phủ đen" với
+    # "vốn không có chữ"), dải TRẮNG ở đáy chỉ trong [_CHU_A, _CHU_B].
+    src = d / "goc.mp4"
+    _ff(["-f", "lavfi", "-i", f"color=c=gray:s={W}x{H}:r={FPS:g}:d={DAI:g}",
+         "-vf", (f"drawbox=x=0:y={H - _DAY}:w={W}:h={_DAY}:color=white:"
+                 f"t=fill:enable='between(t,{_CHU_A},{_CHU_B})'"),
+         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+         "-pix_fmt", "yuv420p", str(src)])
+    au = d / "a.wav"
+    _ff(["-f", "lavfi", "-i", f"sine=f=300:d={DAI * K:g}", "-ac", "2",
+         "-ar", "44100", "-c:a", "pcm_s16le", str(au)])
+    ok(src.exists() and int(_probe(src, "stream=nb_frames") or 0) > 0,
+       "6a dựng được nguồn có dải chữ ở đáy",
+       f"{_probe(src, 'stream=nb_frames')} khung")
+
+    # Chuỗi che GIẢ — đúng khuôn `che_chu` sinh ra: `drawbox` phủ khối kèm
+    # `enable='between(t,a,b)'`, với a,b là mốc dò được trên video GỐC.
+    _LOC = (f"drawbox=x=0:y={H - _DAY}:w={W}:h={_DAY}:color=black:"
+            f"t=fill:enable='between(t,{_CHU_A},{_CHU_B})'")
+
+    class _Dai:            # đủ để `thay_audio_video` chịu viết chữ mới
+        co_chu, cao_dai, y0, y1 = True, _DAY, H - _DAY, H
+
+        def dict(self) -> dict:
+            return {"y0": self.y0, "y1": self.y1}
+
+    # PHỤ ĐỀ THẬT: khối TRẮNG ĐẶC ở ĐỈNH khung, chỉ hiện trong cửa sổ
+    # `_SUB_A.._SUB_B` **trên trục ĐẦU RA** (đúng như `khop_thoi_gian.moc_tieng`
+    # trả về — nó đã nhân `k`). Đặt ở ĐỈNH để phép đo phụ đề không lẫn với phép
+    # đo hộp che ở ĐÁY. `BorderStyle: 3` + `BackColour` trắng cho ra một khối
+    # ĐẶC, đếm điểm ảnh chắc tay hơn hẳn nét chữ mảnh.
+    _ASS = (
+        "[Script Info]\nScriptType: v4.00+\n"
+        f"PlayResX: {W}\nPlayResY: {H}\n\n"
+        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, "
+        "SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
+        "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
+        "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "Style: Default,Arial,34,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,"
+        "&H00FFFFFF,0,0,0,0,100,100,0,0,3,3,0,8,0,0,2,1\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, MarginL, MarginR, "
+        "MarginV, Effect, Text\n"
+        f"Dialogue: 0,0:00:0{_SUB_A:.2f},0:00:0{_SUB_B:.2f},Default,"
+        "0,0,0,,MMMMMMMMMMMMMM\n")
+
+    goc_loc, goc_ass = CC.loc_cho_xuat, CC.ghi_ass
+    goc_ff = tg._ffmpeg
+    lenh: list[list[str]] = []
+
+    def _ghi_lenh(args, what, timeout=900):     # noqa: ANN001
+        lenh.append(list(args))
+        return goc_ff(args, what, timeout=timeout)
+
+    def _ghi_ass(dong, duong, dai, **k):        # noqa: ANN001
+        # Ghi file .ass THẬT rồi để `chuoi_subtitles` THẬT lo phần thoát ký tự
+        # đường dẫn — vá cả hai là mất luôn phép canh chỗ dễ sai đó.
+        Path(duong).write_text(_ASS, encoding="utf-8")
+        return True
+
     try:
-        d.cb_nn.setCurrentIndex(max(0, d.cb_nn.findData("vi")))
-        app.processEvents()
-        nh = [d.cb_giong.itemText(i) for i in range(d.cb_giong.count())]
-        ok(any("nhấn nhá" in t for t in nh),
-           "combo giọng THẬT SỰ hiện mức nhấn nhá",
-           next((t for t in nh if "nhấn nhá" in t), ""))
-        ok(bool(d.lb_goi_y.text()),
-           "hộp hiện dòng gợi ý giọng nhiều cảm xúc", d.lb_goi_y.text()[:70])
+        CC.loc_cho_xuat = lambda *a, **k: (_LOC, _Dai(), "giả lập")
+        CC.ghi_ass = _ghi_ass
+
+        # ---- lệnh ffmpeg: KHÔNG `-itsscale`, CÓ `setpts`, ĐÚNG THỨ TỰ ----
+        tg._ffmpeg = _ghi_lenh
+        r1 = d / "ra_k125.mp4"
+        tg.thay_audio_video(src, au, r1, che_chu=True,
+                            dong_chu=[(0.5, 1.5, "chữ")], he_so_hinh=K)
+        lc = lenh[-1]
+        fc = lc[lc.index("-filter_complex") + 1] if "-filter_complex" in lc \
+            else ""
+        ok("-itsscale" not in lc,
+           "6b nhánh che chữ KHÔNG dùng `-itsscale` (nó giãn mốc TRƯỚC filter)",
+           "sạch" if "-itsscale" not in lc else " ".join(lc[:4]))
+        ok(f"setpts=PTS*{K:.6f}" in fc,
+           "6c phép giãn nằm TRONG chuỗi filter (`setpts`)",
+           f"setpts=PTS*{K:.6f}")
+        i_loc, i_sp, i_sub = (fc.find("drawbox"), fc.find("setpts=PTS*"),
+                              fc.find("subtitles="))
+        ok(0 <= i_loc < i_sp < i_sub,
+           "6d THỨ TỰ: che (mốc NGUỒN) -> setpts -> phụ đề (mốc ĐẦU RA)",
+           f"che@{i_loc} · setpts@{i_sp} · sub@{i_sub}")
+
+        # ---- BẤT BIẾN: he_so_hinh=1,0 -> KHÔNG setpts, KHÔNG itsscale ----
+        lenh.clear()
+        r0 = d / "ra_k1.mp4"
+        tg.thay_audio_video(src, au, r0, che_chu=True,
+                            dong_chu=[(0.5, 1.5, "chữ")], he_so_hinh=1.0)
+        lc0 = lenh[-1]
+        fc0 = lc0[lc0.index("-filter_complex") + 1]
+        ok("-itsscale" not in lc0 and "setpts" not in fc0,
+           "6e BẤT BIẾN k=1,0: không setpts, không itsscale (giống bản trước)")
     finally:
-        d.deleteLater()
+        tg._ffmpeg = goc_ff
+        CC.loc_cho_xuat, CC.ghi_ass = goc_loc, goc_ass
+
+    # ---- ĐO ĐIỂM ẢNH trên FILE XUẤT THẬT ----
+    # dải TRẮNG ~235-255 · nền XÁM ~126 · bị phủ đen ~16
+    q1 = _quet(r1, W, H - _DAY, _DAY)
+    q0 = _quet(r0, W, H - _DAY, _DAY)
+    t1 = max(v for _, v in q1)
+    t0 = max(v for _, v in q0)
+    ok(t0 < 0.10,
+       "6f ĐỐI CHỨNG k=1,0 -> hộp che KÍN (dải trắng không lọt)",
+       f"trắng nhiều nhất {t0 * 100:.1f}%")
+    ok(t1 < 0.10,
+       "6g k=1,25 -> hộp che VẪN KÍN (không trôi)",
+       f"trắng nhiều nhất {t1 * 100:.1f}%")
+    d1 = float(_probe(r1, "format=duration", vid=False) or 0)
+    ok(abs(d1 - DAI * K) < 0.2,
+       "6h độ dài ra ĐÚNG hệ số", f"{DAI:g}×{K} = {DAI * K:g} · đo {d1:.3f}")
+    kn = int(_probe(src, "stream=nb_frames") or 0)
+    k1 = int(_probe(r1, "stream=nb_frames") or 0)
+    ok(k1 == kn and kn > 0,
+       "6i KHÔNG MẤT KHUNG khi giãn bằng setpts", f"{kn} -> {k1}")
+
+    # ---- PHỤ ĐỀ ĐI THEO: cue trên trục ĐẦU RA phải hiện ĐÚNG mốc đó ----
+    # Đây là phép canh chống LỖI v1.87 "hình một đằng tiếng một đằng": đặt
+    # `setpts` SAU `subtitles` thì cue [5,6] rơi vào output [6,25 · 7,50].
+    sa, sb = _cua_so_trang(_quet(r1, W, 0, _DAY, buoc=0.1), nguong=0.10)
+    ok(abs(sa - _SUB_A) < 0.35 and abs(sb - _SUB_B) < 0.35,
+       "6k PHỤ ĐỀ hiện ĐÚNG mốc trên trục ĐẦU RA (chữ không trôi khỏi tiếng)",
+       f"đặt [{_SUB_A:.2f}, {_SUB_B:.2f}] · đo [{sa:.2f}, {sb:.2f}]")
+
+    # ---- CHỐT CHỐNG ĐẠT-OAN: dựng lại LỆNH CŨ, bộ dò PHẢI kêu ----
+    # Không có mục này thì 6f/6g có thể ĐẠT chỉ vì phép đo không thấy gì —
+    # đúng bệnh "phép đo phát chứng nhận" (`astats` cổng 53).
+    rc = d / "ra_cu.mp4"
+    _ff(["-itsscale", f"{K:.6f}", "-i", str(src), "-filter_complex",
+         f"[0:v]{_LOC}[v]", "-map", "[v]", "-c:v", "libx264",
+         "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p",
+         str(rc)])
+    tc = max(v for _, v in _quet(rc, W, H - _DAY, _DAY))
+    ok(tc > 0.50,
+       "6l BỘ DÒ CÓ RĂNG: dựng lại cách CŨ (-itsscale) thì dải trắng LỌT",
+       f"trắng nhiều nhất {tc * 100:.1f}%")
+
+
+def muc7() -> None:
+    """TẮT CỜ -> GIỐNG BẢN MỐC: cả lệnh ffmpeg lẫn khoá chống trùng."""
+    print(f"\nMỤC 7 — bất biến khi TẮT, mốc đối chứng {MOC}")
+    from app.core import tg_chay as TC
+    from app.core import thay_giong as tg
+
+    moc_tg = nap_moc("app/core/thay_giong.py", "tg")
+    nay_tg = (REPO / "app/core/thay_giong.py").read_text(encoding="utf-8")
+    ok(moc_tg.__dict__["_NGUON_"] != nay_tg,
+       "7a bản mốc KHÁC bản đang test (chống so-nó-với-chính-nó)", f"mốc {MOC}")
+    ok("he_so_hinh" not in moc_tg.__dict__["_NGUON_"],
+       "7b mốc KHÔNG hề có `he_so_hinh` (mốc đúng = bản NGAY TRƯỚC tính năng)")
+
+    # --- lệnh ffmpeg của `thay_audio_video` khi TẮT: giống TỪNG KÝ TỰ ---
+    d = hop() / "bb"
+    d.mkdir(exist_ok=True)
+    v = d / "v.mp4"
+    _ff(["-f", "lavfi", "-i", "color=c=gray:s=160x120:r=24:d=3",
+         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+         str(v)])
+    a = d / "a.wav"
+    _ff(["-f", "lavfi", "-i", "sine=f=300:d=3", "-ac", "2", "-ar", "44100",
+         "-c:a", "pcm_s16le", str(a)])
+
+    def _bat(mod, ra: Path, **kw) -> list[str]:
+        got: list[list[str]] = []
+        goc = mod._ffmpeg
+        mod._ffmpeg = lambda args, what, timeout=900: got.append(list(args))
+        try:
+            mod.thay_audio_video(v, a, ra, che_chu=False, **kw)
+        finally:
+            mod._ffmpeg = goc
+        return got[-1] if got else []
+
+    l_moc = _bat(moc_tg, d / "m.mp4")
+    l_nay = _bat(tg, d / "n.mp4")
+    # Tham số CUỐI là đường ra, cố ý khác nhau -> so phần trước nó.
+    ok(bool(l_nay) and len(l_moc) == len(l_nay) and l_moc[:-1] == l_nay[:-1],
+       "7c TẮT -> lệnh ffmpeg GIỐNG TỪNG KÝ TỰ bản mốc",
+       f"{len(l_nay)} tham số")
+    ok("-itsscale" not in l_nay, "7d TẮT -> KHÔNG có `-itsscale`")
+
+    # --- khoá chống trùng ---
+    moc_tc = nap_moc("app/core/tg_chay.py", "tc")
+    ok("htg" not in moc_tc.__dict__["_NGUON_"],
+       "7e mốc `tg_chay` KHÔNG hề có đuôi `htg`")
+    bo = [
+        (("D:/v/a.mp4", "vi", "vi-VN-NamMinhNeural", "D:/ra"), {}),
+        (("D:/v/a.mp4", "en", "", "D:/ra"), {}),
+        (("D:/v/b.mp4", "vi", "g1", "E:/x"),
+         dict(che_chu=True, che_chu_cach="mo", che_chu_muc=1.0,
+              viet_chu=True)),
+        (("D:/v/b.mp4", "vi", "g1", "E:/x"),
+         dict(che_chu=True, che_chu_cach="khoi", che_chu_muc=0.3,
+              viet_chu=True, kieu_chu={"co_chu": 0.06, "dam": True})),
+    ]
+    lech = [(k, moc_tc.khoa_chong_trung(*x, **k), TC.khoa_chong_trung(*x, **k))
+            for x, k in bo
+            if moc_tc.khoa_chong_trung(*x, **k) != TC.khoa_chong_trung(*x, **k)]
+    ok(not lech,
+       f"7f TẮT -> khoá GIỐNG TỪNG KÝ TỰ mốc ({len(bo)} tổ hợp cờ cũ)",
+       str(lech[:1]) if lech else f"{len(bo)}/{len(bo)} trùng")
+
+    x = ("D:/v/c.mp4", "vi", "g2", "E:/y")
+    k_tat = TC.khoa_chong_trung(*x)
+    k_bat = TC.khoa_chong_trung(*x, hinh_theo_giong=True)
+    ok(k_bat != k_tat, "7g BẬT -> khoá ĐỔI (không bị smart-skip)")
+    ok(k_bat == k_tat + ":htg=1",
+       "7h đuôi nối vào CUỐI chuỗi, khoá cũ là TIỀN TỐ (không đổi hash cũ)",
+       k_bat[-8:])
+
+    # --- payload: ô để mặc định thì KHÔNG sinh khoá (quét AST) ---
+    nut = than_ham("app/core/tg_chay.py", "xep_mot")
+    trong_if = False
+    for n in ast.walk(nut):
+        if isinstance(n, ast.If) and isinstance(n.test, ast.Name) \
+                and n.test.id == "hinh_theo_giong":
+            for c in ast.walk(n):
+                if isinstance(c, ast.Subscript) \
+                        and isinstance(c.slice, ast.Constant) \
+                        and c.slice.value == "hinh_theo_giong":
+                    trong_if = True
+    ok(trong_if,
+       "7i payload chỉ mọc khoá `hinh_theo_giong` KHI BẬT (nằm trong `if`)")
+
+
+def muc8() -> None:
+    """TRẦN LÀM CHẬM HÌNH CÓ RĂNG + LÙI VỀ CÁCH CŨ THÌ GHI LOG."""
+    print("\nMỤC 8 — trần làm chậm hình: có răng, và lùi thì phải NÓI RA")
+    from app.core import thay_giong as tg
+
+    d = hop() / "tran"
+    d.mkdir(exist_ok=True)
+    # Câu GIỮA cần k = 3,2/(2−0,12) = 1,70 — VƯỢT trần của nguồn 24 fps (1,20)
+    fs = []
+    for i, giay in enumerate((1.0, 3.2, 1.0)):
+        p = d / f"c{i}.wav"
+        _ff(["-f", "lavfi", "-i", f"sine=f=300:d={giay}", "-ac", "2",
+             "-ar", "44100", "-c:a", "pcm_s16le", str(p)])
+        fs.append(str(p))
+    cau = [{"start": 0.0, "end": 2.0}, {"start": 2.0, "end": 4.0},
+           {"start": 4.0, "end": 6.0}]
+    c = tg.he_so_hinh_can(cau, fs, [True] * 3, 6.0)
+    tran = tg.tran_hinh_theo_fps(24.0)
+    hs = max(1.0, min(float(c["k_can"]), tran))
+    cham = float(c["k_can"]) > tran + 1e-6
+    ok(float(c["k_can"]) > 1.6, "8a dựng được ca VƯỢT TRẦN",
+       f"k_can {c['k_can']}")
+    ok(cham and abs(hs - tran) < 1e-6,
+       "8b quá trần -> KẸP về trần, không chậm hình quá tay",
+       f"k_can {c['k_can']} -> k_dung {hs:.4f} (trần {tran:.4f})")
+
+    o = d / "kh"
+    o.mkdir(exist_ok=True)
+    kh = tg.khop_thoi_gian(cau, fs, [True] * 3, 6.0, o, he_so_hinh=hs)
+    ok(kh["tempo_max"] > 1.001,
+       "8c chạm trần -> phần dư VẪN ép tiếng (lùi về cách cũ, không giấu)",
+       f"tempo_max {kh['tempo_max']}")
+    ok(kh["chong_lan_ms_max"] <= 1.0,
+       "8d lùi rồi thì BẤT BIẾN 0 ms chồng lấn vẫn giữ",
+       f"{kh['chong_lan_ms_max']} ms")
+
+    # --- LÙI PHẢI GHI LOG: `cham_tran` có thật trong nhật ký bước 5 ---
+    nut = than_ham("app/core/thay_giong.py", "thay_giong_video")
+    ok(any(isinstance(n, ast.Constant) and n.value == "cham_tran"
+           for n in ast.walk(nut)),
+       "8e nhật ký lượt chạy có khoá `cham_tran` (lùi im lặng là bẫy)")
+    ok(any(isinstance(n, ast.Constant)
+           and n.value == "nhip_hinh_con_lai_fps" for n in ast.walk(nut)),
+       "8f nhật ký nói cả GIÁ: nhịp hình còn lại bao nhiêu fps")
+
+    # --- TRẦN TỒN TẠI VÌ LÝ DO THẬT: gỡ trần -> nhịp hình vỡ ---
+    # **ĐO `số khung / độ dài`, KHÔNG đọc `do_fps`.** `do_fps` lấy nhịp hình
+    # trong VỎ CHỨA, mà `-itsscale` chỉ giãn MỐC nên trường đó có thể giữ
+    # nguyên hoặc bị ffprobe đoán lệch hẳn — đo thử ở k=2,55 nó ra **47,00
+    # fps** (cao HƠN nguồn 24!) trong khi nhịp thật là 9,4. Đọc số đó rồi kết
+    # luận là đúng bệnh "phép đo hỏng phát chứng nhận".
+    k_pha = float(c["k_can"]) * 1.5
+    v = d / "v.mp4"
+    _ff(["-f", "lavfi", "-i", "testsrc2=size=160x120:rate=24:d=4",
+         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+         str(v)])
+    # Tiếng phải DÀI HƠN cả hai bản giãn — `-shortest` cắt video theo tiếng,
+    # cắt rồi thì `số khung / độ dài` đo ra nhịp của phần bị cắt, không phải
+    # nhịp thật (bẫy đã sập khi viết mục này).
+    au = d / "a.wav"
+    _ff(["-f", "lavfi", "-i", f"sine=f=300:d={4.0 * k_pha + 2:.2f}",
+         "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(au)])
+
+    def _nhip(p: Path) -> float:
+        n = int(_probe(p, "stream=nb_frames") or 0)
+        s = float(_probe(p, "format=duration", vid=False) or 0)
+        return (n / s) if s > 0 else -1.0
+
+    r_tran, r_pha = d / "r_tran.mp4", d / "r_pha.mp4"
+    tg.thay_audio_video(v, au, r_tran, che_chu=False, he_so_hinh=tran)
+    tg.thay_audio_video(v, au, r_pha, che_chu=False, he_so_hinh=k_pha)
+    f_tran, f_pha = _nhip(r_tran), _nhip(r_pha)
+    ok(f_tran >= tg.SAN_NHIP_HINH_FPS - 0.5,
+       "8g theo TRẦN -> nhịp hình còn >= sàn đã chốt",
+       f"{f_tran:.2f} fps (sàn {tg.SAN_NHIP_HINH_FPS:g})")
+    ok(f_pha < tg.SAN_NHIP_HINH_FPS - 1.0,
+       "8h GỠ TRẦN -> nhịp hình VỠ (trần có lý do đo được, không đặt mò)",
+       f"k={k_pha:.3f} -> {f_pha:.2f} fps")
 
 
 def main() -> int:
-    print("CỔNG 76 — âm thanh bị bé · chỉnh hình theo giọng · hộp gọn · "
-          "nhãn nhấn nhá")
-    muc1(); muc2(); muc3(); muc4(); muc5(); muc6()
+    print("CỔNG 89 — âm thanh bị bé · chỉnh hình theo giọng · hộp gọn · "
+          "che chữ không trôi")
+    muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7(); muc8()
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
     return 0 if HONG == 0 else 1
 

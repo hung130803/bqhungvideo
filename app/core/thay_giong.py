@@ -4502,7 +4502,13 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
     """
     # `-itsscale` chỉ được thêm khi THẬT SỰ làm chậm hình. `he_so_hinh = 1.0`
     # -> danh sách RỖNG -> lệnh ffmpeg giống **TỪNG KÝ TỰ** bản cũ (bất biến
-    # cổng 59 đo, và cổng 76 canh lại).
+    # cổng 59 đo, và cổng 89 canh lại).
+    #
+    # **CHỈ DÙNG ĐƯỢC Ở NHÁNH KHÔNG CHE CHỮ.** Nhánh che chữ có FILTER, và
+    # `-itsscale` giãn mốc TRƯỚC khi frame vào filter -> biến `t` mà
+    # `enable='between(t,a,b)'` đọc là mốc ĐÃ GIÃN, còn `a,b` thì
+    # `che_chu.loc_cho_xuat` dò trên video GỐC nên là mốc CHƯA GIÃN. Xem khối
+    # ghi chú ở nhánh dưới cho số đo.
     k = max(1.0, float(he_so_hinh or 1.0))
     its = ["-itsscale", f"{k:.6f}"] if k > 1.0 + 1e-6 else []
 
@@ -4543,6 +4549,35 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
 
     # --- CHỮ MỚI THEO MỐC GIỌNG (chỉ khi ĐÃ che — cấm 2 lớp chữ) ---
     chuoi = [loc]
+    # LÀM CHẬM HÌNH Ở ĐÂY, KHÔNG BẰNG `-itsscale` — CÓ SỐ ĐO, ĐỪNG ĐỔI LẠI.
+    #
+    # Chú thích cũ ở nhánh này khẳng định *"`-itsscale` vẫn dùng được (nó đụng
+    # mốc ĐẦU VÀO, trước cả filter) nên hộp che vẫn bám đúng chỗ chữ cũ"*.
+    # Câu đó nghe hợp lý nên chưa ai đo. **NÓ SAI:** `-itsscale` nhân mốc
+    # ĐẦU VÀO nên frame tới filter đã mang mốc ĐÃ GIÃN -> biến `t` trong
+    # `enable='between(t,a,b)'` là mốc ĐÃ GIÃN, còn `a,b` do
+    # `che_chu.loc_cho_xuat` dò trên video GỐC nên CHƯA GIÃN. Hộp che trôi
+    # đúng hệ số `k` và **lệch càng xa về cuối phim** (chữ ở giây 80 với
+    # k=1,2 thì hộp rơi ở giây 80 còn chữ đã trôi tới 96 = 16 GIÂY lệch),
+    # tức chữ Trung cháy sẵn hiện NGUYÊN mà không một dòng báo — đúng lỗi
+    # v1.87 "hình một đằng tiếng một đằng".
+    # ĐO ĐƯỢC (`_do_hop_che_troi.py`, dải TRẮNG ở đáy khung chỉ hiện trong
+    # một cửa sổ BIẾT TRƯỚC, rồi đo ĐỘ SÁNG dải đáy trên file xuất — đọc ĐIỂM
+    # ẢNH, không đọc `rc`): đối chứng k=1,0 -> **128** (nền xám, che kín) ·
+    # `-itsscale 1,25` -> **255 (dải trắng LỌT NGUYÊN)** · `setpts` sau khối
+    # che -> **128**. Số khung **240 -> 240 ở CẢ BA**, độ dài 12,500s ở cả
+    # hai bản giãn.
+    # VÌ SAO ĐẶT ĐÚNG CHỖ NÀY (thứ tự là cả bản vá, đừng xê dịch):
+    #   · TRƯỚC `setpts`, `t` = mốc NGUỒN -> khối che `loc` đọc đúng mốc nó
+    #     dò được trên video gốc;
+    #   · SAU `setpts`, `t` = mốc ĐẦU RA -> filter `subtitles` đọc đúng, vì
+    #     `.ass` dựng từ `khop_thoi_gian.moc_tieng` vốn đã nằm trên trục ĐÃ
+    #     GIÃN (`a = cau[i]["start"] * k`).
+    # Đây đúng thứ tự `ffmpeg_utils.export_canvas_clip` đang dùng (che/overlay
+    # rồi mới `setpts`). Nhánh này VỐN ĐÃ mã hoá lại luồng hình (che chữ không
+    # thể `-c:v copy`) nên `setpts` KHÔNG tốn thêm một đời nén nào.
+    if k > 1.0 + 1e-6:
+        chuoi.append(f"setpts=PTS*{k:.6f}")
     so_dong = 0
     if dong_chu:
         try:
@@ -4583,11 +4618,10 @@ def thay_audio_video(video_goc: str | Path, audio_moi: str | Path,
     else:
         ve = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
               "-pix_fmt", "yuv420p", "-profile:v", "high"]
-    # NHÁNH CHE CHỮ: `-itsscale` vẫn dùng được (nó đụng mốc ĐẦU VÀO, trước cả
-    # filter) nên KHÔNG cần `setpts` — chuỗi filter che chữ giữ nguyên. Mốc
-    # hộp che lấy từ `segs=[(0, dur)]` của video GỐC, mà `-itsscale` giãn đều
-    # nên hộp vẫn bám đúng chỗ chữ cũ.
-    _ffmpeg([*its, "-i", str(video_goc), "-i", str(audio_moi),
+    # NHÁNH CHE CHỮ: **CỐ Ý KHÔNG có `its`** — phép giãn đã nằm trong `chuoi`
+    # dưới dạng `setpts`, đặt SAU khối che và TRƯỚC `subtitles` (xem khối ghi
+    # chú ở chỗ nối `chuoi`). Thêm `-itsscale` vào đây nữa là giãn HAI LẦN.
+    _ffmpeg(["-i", str(video_goc), "-i", str(audio_moi),
              "-filter_complex", f"[0:v]{','.join(chuoi)}[vout]",
              "-map", "[vout]", "-map", "1:a:0", *ve,
              "-c:a", "aac", "-b:a", "192k", "-shortest",
