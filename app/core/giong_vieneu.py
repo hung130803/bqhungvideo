@@ -258,6 +258,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 from pathlib import Path
@@ -875,6 +876,408 @@ def cai_vieneu(on_progress: Optional[Callable[[float, str], None]] = None,
                 "loi": f"Cài xong nhưng vẫn thiếu: {tt['thieu']}"}
     prog(1.0, "Đã cài xong bộ đọc VieNeu.")
     return {"ok": True, "loi": "", "tinh_trang": tt}
+
+
+# ---------------------------------------------------------------------------
+# NÚT TẢI PHẦN NHÂN BẢN — `torch` + `torchaudio` vào ĐÚNG venv của VieNeu
+# ---------------------------------------------------------------------------
+#
+# ═══ LỖI THẬT ĐẺ RA CẢ KHỐI NÀY (ảnh chụp màn hình của anh Hùng) ═══
+# Anh Hùng thêm giọng nhân bản của mình ("MQ Idol", mẫu 7 giây), **lưu thành
+# công**, rồi dòng giọng trong hộp "Giọng của tôi" hiện:
+#     CHƯA CHẠY ĐƯỢC (thiếu torch, torchaudio) - MQ Idol (giọng nhân bản...)
+# Nhãn đó **NÓI THẬT** — `nhan_ban_giong.thieu_de_nhan_ban()` dò bằng FILE CÓ
+# TỒN TẠI KHÔNG trong site-packages của python VieNeu (cố ý KHÔNG `find_spec`,
+# bài học cổng 58). Đo được: chạy từ MÃ NGUỒN thì `_giong_vieneu/venv/Lib/
+# site-packages/torch` CÓ + `torchaudio` CÓ -> trả `[]` = đủ; bản `.exe` thì
+# venv nằm ở `%LOCALAPPDATA%\BQHungVideo\_giong_vieneu\venv` và KHÔNG có torch.
+# Tức 20 giọng DỰNG SẴN vẫn chạy (chúng đi bằng `onnxruntime`, không cần
+# torch) — **chỉ đường NHÂN BẢN mới đụng torch** — và trước lượt này **KHÔNG
+# CÓ NÚT NÀO để cài nó**. Tính năng thật thà báo "chưa chạy được" mà không cho
+# anh ấy một đường sửa: đó là cái được vá ở đây.
+#
+# ═══ VÌ SAO HÀM NÀY NẰM Ở `giong_vieneu` CHỨ KHÔNG Ở `nhan_ban_giong` ═══
+# Cả 4 hàm cài đã có đều nằm trong module SỞ HỮU môi trường đích:
+# `thay_giong.cai_demucs` -> `_lib` · `piper_tts.cai_piper` -> `_piper` ·
+# `giong_kokoro.cai_kokoro` -> `_giong_kokoro/venv` · `giong_ngoai.
+# cai_omnivoice` -> `_giong_ngoai/venv`. Môi trường đích ở đây là
+# `_giong_vieneu/venv`, do CHÍNH file này sở hữu — `thu_muc_vieneu()`,
+# `_python_vieneu()`, `_python_he_thong()`, `_ghi_log()` đều đã ở đây. Còn
+# `nhan_ban_giong` là bộ ĐIỀU PHỐI (VieNeu vs Chatterbox); nhét một lệnh pip
+# riêng của VieNeu vào đó là làm rò nội tạng VieNeu ra tầng điều phối.
+# Danh sách gói thì KHÔNG chép lại: đọc `nhan_ban_giong._CAN_CHO_NHAN_BAN` —
+# hai bản sao là hai chỗ để quên.
+
+#: Chỉ mục wheel của PyTorch — CÙNG hai địa chỉ `thay_giong`/`giong_kokoro`/
+#: `giong_ngoai` đang dùng, để bốn nút tải không bao giờ chọn khác nhau.
+CHI_MUC_TORCH_CPU = "https://download.pytorch.org/whl/cpu"
+CHI_MUC_TORCH_CUDA = "https://download.pytorch.org/whl/cu126"
+
+#: **SỐ ĐO 20/08/2026, KHÔNG ƯỚC** (`_do_nhan_ban_tai.py` -> `_kq_nhan_ban_
+#: tai.json`): `pip install --dry-run --report` bằng CHÍNH python của venv
+#: VieNeu (3.12.10) rồi **HTTP HEAD** trên đúng wheel pip chọn. Lệnh dry-run
+#: dựng giống hệt lệnh `cai_nhan_ban()` chạy — đo một lệnh rồi cài lệnh KHÁC
+#: thì con số vô nghĩa.
+#:     cpu    11 gói = **126,3 MB**   (torch 2.13.0+cpu   116,3 · torchaudio 0,3)
+#:     cu126  11 gói = **2.485,6 MB** (torch 2.13.0+cu126 2.474,4 · torchaudio 1,4)
+#: Chênh **19,7 lần**. Vì vậy nhãn PHẢI nói đúng bản SẼ tải (cổng 71 CA 4:
+#: repo này đã có lỗi nút ghi 155 MB mà hộp xác nhận doạ 2 GB).
+MB_NB_CPU = 126.3
+MB_NB_CUDA = 2485.6
+
+#: Cần trống bao nhiêu mới cho tải. Ổ C của anh Hùng đã đầy 100% một lần
+#: (30/07) và hậu quả là **studio.db VỠ** — tải 2,5 GB vào ổ gần đầy là mở lại
+#: đúng cửa đó. Bung ra đĩa lớn hơn lượng tải (torch bản cpu tải 116 MB nhưng
+#: nằm trên đĩa **527 MB** — đo trên chính venv này), nên đòi ~2,2 lần.
+_HE_SO_BUNG = 2.2
+
+
+def xin_ban_cpu() -> bool:
+    """Có ai cố ý đòi bản CPU (nhỏ hơn 19,7 lần) không. KHÔNG BAO GIỜ NÉM.
+
+    Để dành cho hai ca thật: mạng tính theo dung lượng, và lối ĐO (hộp cát của
+    cổng/`_do_*` không nên kéo 2,5 GB). Bật thì `nhan_tai_nhan_ban()` tự đổi
+    số theo — **nhãn luôn khớp đường sẽ đi**, kể cả ở lối đo.
+    """
+    return str(os.environ.get("BQ_NB_CPU", "")).strip() in ("1", "true", "True")
+
+
+def co_gpu_nvidia() -> bool:
+    """Máy có GPU NVIDIA dùng được không — hỏi `nvidia-smi`, **KHÔNG import
+    torch**.
+
+    Dùng lại `thay_giong.co_gpu_nvidia` để bốn nút tải không bao giờ chọn khác
+    chỉ mục nhau. Vì sao không hỏi torch: hàm này chạy TRONG tiến trình app (đã
+    nạp Qt), mà `import torch` ở đó là **ACCESS VIOLATION** chứ không phải lỗi
+    bắt được — `try/except` không chặn nổi. Và dù bắt được cũng vô nghĩa: torch
+    đang cài LÀ BẢN CPU nên hỏi nó "có CUDA không" thì đời nào cũng False, tức
+    đúng vòng luẩn quẩn khiến máy có RTX 3060 mãi mãi tải bản CPU (cổng 71).
+
+    KHÔNG BAO GIỜ NÉM. Đoán nhầm thì hậu quả cũng chỉ là tải gói to/nhỏ hơn —
+    `_MA_DOC` vẫn tự quyết thiết bị lúc chạy.
+    """
+    try:
+        from app.core import thay_giong as _tg
+        return bool(_tg.co_gpu_nvidia())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=25, creationflags=_NO_WIN)
+        return r.returncode == 0 and bool((r.stdout or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def ban_cuda_se_tai() -> bool:
+    """Lượt tải SẼ lấy bản CUDA hay không. MỘT chỗ quyết định duy nhất.
+
+    Nhãn nút, tooltip, hộp xác nhận VÀ lệnh pip đều phải hỏi hàm này — ba chỗ
+    tự đoán lấy là đúng lỗi cổng 58 (nút ghi 155 MB, hộp doạ 2 GB).
+    """
+    return (not xin_ban_cpu()) and co_gpu_nvidia()
+
+
+def mb_nhan_ban() -> float:
+    """Số MB nút này SẼ tải, theo đúng đường nó sẽ đi. Đọc lại MỖI LẦN GỌI
+    (bài học `tg_so.duong_so`): cắm/rút GPU giữa phiên thì số phải đổi theo."""
+    return MB_NB_CUDA if ban_cuda_se_tai() else MB_NB_CPU
+
+
+def _goi_nhan_ban() -> tuple[str, ...]:
+    """Gói mà đường nhân bản cần — NGUỒN DUY NHẤT là `nhan_ban_giong`.
+
+    Chép lại danh sách sang đây là dựng bản sao thứ hai: lần thêm gói kế tiếp
+    (`torch` -> lộ `torchaudio` là chuyện ĐÃ xảy ra) sẽ sửa một bản và bỏ bản
+    kia, rồi nút cài thiếu gói mà nhãn vẫn khoe đủ.
+    """
+    try:
+        from app.core.nhan_ban_giong import _CAN_CHO_NHAN_BAN
+        return tuple(_CAN_CHO_NHAN_BAN)
+    except Exception:  # noqa: BLE001
+        return ("torch", "torchaudio")
+
+
+def thieu_nhan_ban() -> list[str]:
+    """Còn thiếu gì thì đường NHÂN BẢN mới chạy. **Đây là khoá nút phải bám.**
+
+    Chỉ gọi lại `nhan_ban_giong.thieu_de_nhan_ban(MAY_VIENEU)` — CỐ Ý không tự
+    dò lần thứ hai: hai bộ dò là hai câu trả lời, và cái nút bám sẽ là cái
+    KHÔNG khớp nhãn mà người dùng đang đọc. KHÔNG BAO GIỜ NÉM.
+    """
+    try:
+        from app.core.nhan_ban_giong import MAY_VIENEU, thieu_de_nhan_ban
+        return list(thieu_de_nhan_ban(MAY_VIENEU))
+    except Exception:  # noqa: BLE001
+        return ["không dò được"]
+
+
+def nhan_tai_nhan_ban(thieu: Optional[list[str]] = None) -> str:
+    """Nhãn nút tải ĐÚNG với đường sẽ đi VÀ đúng với tình trạng hiện tại.
+
+    Ba trạng thái phải trông KHÁC NHAU, nếu không người dùng đọc sai việc mình
+    đang làm:
+      · **chưa có gì** -> "Tải phần nhân bản giọng (torch, torchaudio — ...)"
+      · **CÀI DỞ** (lượt trước đứt mạng, còn 1 trong 2) -> "Cài tiếp phần còn
+        thiếu (torchaudio ...)". Ghi "Tải phần nhân bản" lúc này là nói sai:
+        người dùng tưởng chưa có gì và tưởng phải tải lại từ đầu (đúng lý do
+        `thay_giong.NHAN_CAI_TIEP` tồn tại).
+      · **chưa có cả bộ VieNeu** -> nút này KHÔNG giải được, phải nói ra chứ
+        đừng để bấm rồi báo lỗi.
+    Số MB lấy từ `mb_nhan_ban()` — CÙNG một phép đo với tooltip và hộp xác nhận.
+
+    **CA CÀI DỞ VẪN GHI ĐỦ SỐ MB, và đó là ĐÚNG chứ không phải quên:** lệnh cài
+    có `--ignore-installed` nên pip giải lại và tải lại **TOÀN BỘ** danh sách,
+    không phải chỉ cái còn thiếu (cổng 58 đo đúng vậy: cờ này khiến pip giải
+    lại cả 33 gói vào `_lib`). Ghi "1,4 MB" cho ca thiếu `torchaudio` là hứa
+    một lượt tải không tồn tại.
+    """
+    goi = _goi_nhan_ban()
+    thieu = list(thieu if thieu is not None else thieu_nhan_ban())
+    la_goi = [t for t in thieu if t in goi]
+    # Thiếu thứ KHÔNG phải torch/torchaudio = thiếu chính bộ VieNeu (hoặc bộ dò
+    # hỏng). Nút này chỉ cài được torch nên phải nói thẳng, đừng hứa.
+    if thieu and not la_goi:
+        return "Chưa có bộ giọng VieNeu — tải bộ đó trước"
+    mb = f"{mb_nhan_ban():,.0f}".replace(",", ".")
+    cuda = ban_cuda_se_tai()
+    # Nói kèm "CHƯA ĐO có nhanh hơn" khi đi đường CUDA: Demucs có số đo 9,28x
+    # để hứa, đường nhân bản của VieNeu thì **chưa ai đo GPU** — hứa nhanh mà
+    # không có số là đúng thứ repo này cấm (khuôn `giong_kokoro.NHAN_TAI_CUDA`).
+    duoi = (f"bản GPU khoảng {mb} MB — CHƯA ĐO có nhanh hơn" if cuda
+            else f"khoảng {mb} MB")
+    if la_goi and len(la_goi) < len(goi):
+        return f"Cài tiếp phần còn thiếu ({', '.join(la_goi)} — {duoi})"
+    return f"Tải phần nhân bản giọng ({', '.join(goi)} — {duoi})"
+
+
+def vi_sao_khong_cai_nhan_ban() -> str:
+    """"" = cài được. Khác rỗng = LÝ DO, để nút xám còn nói được vì sao.
+
+    Nút xám không một lời là câu đố (bài học cổng 58/16/51) — mà đây là ca RẤT
+    dễ gặp: bản `.exe` không mang Python, máy nhân viên có thể chưa cài.
+    """
+    if not _python_vieneu()[0]:
+        return ("Máy này chưa có bộ giọng VieNeu nên chưa có môi trường để cài "
+                "phần nhân bản vào. Tải bộ giọng Việt VieNeu trước.")
+    if not _python_he_thong():
+        return ("Máy này không có Python 3 nên app không tự tải được: cài "
+                "Python 3 (python.org) rồi bấm lại, hoặc copy thư mục "
+                "_giong_vieneu từ máy đã cài sang.")
+    return ""
+
+
+def _dia_trong_mb(d: Path) -> float:
+    """MB trống của ổ chứa `d`. -1 = không hỏi được (thì ĐỪNG chặn)."""
+    p = Path(d)
+    for _ in range(6):
+        try:
+            return shutil.disk_usage(str(p)).free / 1024 / 1024
+        except OSError:
+            if p.parent == p:
+                return -1.0
+            p = p.parent
+    return -1.0
+
+
+def tinh_trang_nhan_ban() -> dict:
+    """{thieu, co, cai_duoc, vi_sao, nhan, mb_tai, cuda, python, thu_muc}.
+
+    Một cửa cho UI đọc, để nhãn/nút/hộp xác nhận không ai tự dò lấy.
+    """
+    thieu = thieu_nhan_ban()
+    vi_sao = vi_sao_khong_cai_nhan_ban()
+    return {
+        # `thieu` là khoá NÚT PHẢI BÁM. Bám "chạy được" thì trên máy dev (đã có
+        # torch) nút BIẾN MẤT, không ai bấm, bản `.exe` mãi mãi thiếu — đúng
+        # cái bẫy đã làm ra việc này (cổng 58 + hàng Kokoro).
+        "thieu": thieu,
+        "co": not thieu,
+        "cai_duoc": not vi_sao,
+        "vi_sao": vi_sao,
+        "nhan": nhan_tai_nhan_ban(thieu),
+        "mb_tai": mb_nhan_ban(),
+        "cuda": ban_cuda_se_tai(),
+        "python": _python_vieneu()[0],
+        "thu_muc": str(thu_muc_vieneu()),
+    }
+
+
+#: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
+_KHOA_NB = threading.Lock()
+
+
+def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
+                 han_giay: int = 7200,
+                 ban_cuda: Optional[bool] = None) -> dict:
+    """TẢI + CÀI `torch` + `torchaudio` vào venv VieNeu. **CHỈ khi NGƯỜI DÙNG
+    BẤM.**
+
+    Trả `{ok, loi, giay, thieu, venv, cuda, chi_muc, mb_tai, nhat_ky}`.
+    **KHÔNG BAO GIỜ NÉM** — hỏng thì `ok=False` + `loi` + ghi
+    `logs/giong_vieneu_<ngày>.log`, đúng như 4 hàm cài kia.
+
+    ═══ CÀI VÀO VENV CỦA VIENEU, KHÔNG BAO GIỜ VÀO `.venv` CỦA APP ═══
+    `.venv` là môi trường anh Hùng đang chạy sản xuất 300 kênh. Một lượt
+    `pip install torch` khác bản có thể phá app ĐANG chạy — đúng lý do Demucs
+    phải ở `_lib` (cổng 55), Kokoro ở venv riêng, OmniVoice ở `_giong_ngoai`.
+    Thêm một lý do riêng ở đây: tiến trình đọc là `_python_vieneu()`, nên gói
+    nằm ở chỗ khác thì **cài xong vẫn không chạy được**.
+
+    ═══ `--ignore-installed` — CỜ QUYẾT ĐỊNH, ĐỪNG GỠ ═══
+    pip coi gói đã có trong môi trường ĐANG CHẠY là "đã thoả mãn" rồi BỎ QUA,
+    không chép vào đích. Đó đúng là cách `_lib` của Demucs thiếu torch mà máy
+    dev vẫn báo "cài xong" (cổng 58: mọi gói CÓ trong `_lib` đều là gói `.venv`
+    KHÔNG có, mọi gói THIẾU đều là gói `.venv` ĐÃ CÓ — một phép chia đôi hoàn
+    hảo). Ở venv riêng thì ít thứ để bỏ qua, nhưng cờ này khiến kết quả **không
+    phụ thuộc bản pip**, và `_lib` đã chứng minh hành vi cũ CÓ THẬT.
+
+    ═══ HẬU KIỂM SO ĐƯỜNG DẪN, ĐỪNG HỎI "IMPORT ĐƯỢC KHÔNG" ═══
+    Máy dev mượn `.venv` rồi báo cài xong trong khi đích rỗng — lỗi này đã cắn
+    HAI lần (cổng 58 và bộ gióng hàng). Hậu kiểm ở đây dùng lại CHÍNH
+    `thieu_de_nhan_ban()`, thứ dò bằng FILE CÓ TỒN TẠI KHÔNG trong
+    site-packages của đúng python đó: cài xong nó phải trả `[]`.
+    **Mừng theo nó, KHÔNG theo mã thoát của pip.**
+
+    `ban_cuda=None` -> hỏi `ban_cuda_se_tai()`. Truyền tường minh chỉ để ĐO
+    (hộp cát không nên kéo 2,5 GB) — và khi đó nhãn vẫn khớp vì hộp xác nhận
+    của UI đọc `mb_nhan_ban()` chứ không đọc tham số này.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(max(0.0, min(1.0, p)), m)
+            except Exception:  # noqa: BLE001
+                pass
+
+    t0 = time.time()
+    venv = thu_muc_vieneu() / "venv"
+    cuda = ban_cuda_se_tai() if ban_cuda is None else bool(ban_cuda)
+    mb = MB_NB_CUDA if cuda else MB_NB_CPU
+    ra: dict = {"ok": False, "loi": "", "giay": 0.0, "venv": str(venv),
+                "cuda": cuda, "mb_tai": mb, "thieu": [], "nhat_ky": []}
+
+    def xong(loi: str = "", **kw) -> dict:
+        ra.update(kw)
+        ra["loi"] = loi
+        ra["ok"] = not loi
+        ra["giay"] = round(time.time() - t0, 2)
+        _ghi_log(("Cài phần nhân bản XONG vào " + str(venv)) if not loi
+                 else ("Cài phần nhân bản HỎNG: " + loi[:300]))
+        return ra
+
+    try:
+        # ---- 0. có môi trường để cài vào chưa ----
+        # KHÔNG tự dựng venv ở đây: dựng xong mà không có `vieneu` thì
+        # `thieu_de_nhan_ban` vẫn trả danh sách của VieNeu -> hậu kiểm HỎNG và
+        # lời lỗi nói về torch trong khi thứ thiếu là cả bộ đọc. Nói thẳng.
+        py = _python_vieneu()[0]
+        if not py:
+            return xong(vi_sao_khong_cai_nhan_ban()
+                        or "Chưa có môi trường VieNeu để cài vào.")
+        vpy = Path(py)
+        if not vpy.is_file():
+            return xong(f"Không thấy python của VieNeu ở {vpy}")
+
+        # ---- 1. đĩa TRƯỚC KHI TẢI ----
+        can = mb * _HE_SO_BUNG
+        trong = _dia_trong_mb(venv)
+        if 0 <= trong < can:
+            return xong(
+                f"Ổ đĩa chứa {venv} chỉ còn {trong:,.0f} MB trống, cần khoảng "
+                f"{can:,.0f} MB (tải {mb:,.0f} MB rồi bung ra đĩa còn to hơn: "
+                "torch bản cpu tải 116 MB mà nằm trên đĩa 527 MB). Dọn bớt "
+                "đĩa rồi bấm lại.".replace(",", "."))
+
+        if not _KHOA_NB.acquire(blocking=False):
+            return xong("Đang tải rồi — đợi lượt này xong.")
+        try:
+            goi = _goi_nhan_ban()
+            chi_muc = CHI_MUC_TORCH_CUDA if cuda else CHI_MUC_TORCH_CPU
+            ra["chi_muc"] = chi_muc
+            # `--extra-index-url` (KHÔNG `--index-url`): ép cả lượt vào chỉ mục
+            # của pytorch là hỏng phép giải khi gói phụ thuộc không có ở đó
+            # (bài học `cai_demucs`). Vẫn ra bản đúng vì `2.13.0+cu126` >
+            # `2.13.0` theo PEP 440 — ĐÃ KIỂM bằng `--dry-run --report`: chỉ
+            # mục cpu ra `torch==2.13.0+cpu`, cu126 ra `torch==2.13.0+cu126`.
+            args = [str(vpy), "-m", "pip", "install", "--no-input",
+                    "--disable-pip-version-check", "--upgrade",
+                    "--ignore-installed",
+                    "--extra-index-url", chi_muc, *goi]
+            prog(0.02, ("Máy có GPU NVIDIA — đang tải phần nhân bản bản CUDA "
+                        f"(khoảng {mb:,.0f} MB, tải 1 lần)..." if cuda else
+                        f"Đang tải phần nhân bản (khoảng {mb:,.0f} MB, tải 1 "
+                        "lần)...").replace(",", "."))
+            ma, log = _chay_theo_dong(args, han_giay, prog, 0.02, 0.90)
+            ra["nhat_ky"] = log[-40:]
+            if ma == -1:
+                return xong(f"Tải quá {han_giay}s, đã dừng.")
+            if ma != 0:
+                return xong(f"pip trả mã {ma}: " + " | ".join(log[-4:]))
+
+            # ---- 2. HẬU KIỂM bằng CHÍNH phép dò của bản `.exe` ----
+            # `PathFinder`/`os.scandir` nhớ nội dung thư mục theo mtime mà pip
+            # vừa ghi vào -> phải xoá bộ nhớ đó, không thì lượt kiểm ngay sau
+            # khi cài vẫn thấy thư mục như lúc chưa cài rồi báo THIẾU oan.
+            prog(0.93, "Đang kiểm lại từng gói...")
+            import importlib
+            importlib.invalidate_caches()
+            thieu = thieu_nhan_ban()
+            ra["thieu"] = thieu
+            if thieu:
+                return xong(
+                    "pip trả mã 0 nhưng những gói này KHÔNG nằm trong "
+                    + str(venv) + ": " + ", ".join(thieu)
+                    + ". Đừng coi là đã cài — giọng nhân bản vẫn sẽ lùi về "
+                      "giọng thường.")
+            prog(1.0, "Đã cài xong phần nhân bản giọng.")
+            return xong("")
+        finally:
+            _KHOA_NB.release()
+    except Exception as e:  # noqa: BLE001 - nút bấm KHÔNG được phép ném
+        return xong(f"{type(e).__name__}: {e}")
+
+
+def _chay_theo_dong(cmd: list[str], han: int,
+                    prog: Optional[Callable[[float, str], None]] = None,
+                    lo: float = 0.0, hi: float = 0.9,
+                    nhip: float = 900.0) -> tuple[int, list[str]]:
+    """Chạy lệnh, ĐỌC TỪNG DÒNG để còn báo tiến độ. (mã thoát, nhật ký).
+
+    `-1` = quá hạn (đã giết). Không biết trước tổng dung lượng nên % chỉ là
+    dấu hiệu "đang chạy" — nhưng KHÔNG có nó thì thanh tiến độ đứng im ở 1%
+    suốt vài phút, đúng cái anh Hùng đã kêu ("ấn chạy thì chỉ hiện thanh tiến
+    trình, không hiện gì cả").
+    """
+    log: list[str] = []
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", bufsize=1,
+                             creationflags=_NO_WIN)
+    except OSError as e:
+        return 1, [str(e)]
+    han_lo = time.time() + han
+    n = 0
+    try:
+        for dong in p.stdout or ():
+            dong = dong.rstrip()
+            if dong:
+                log.append(dong)
+                n += 1
+                if prog:
+                    prog(min(hi, lo + n / nhip), dong[-110:])
+            if time.time() > han_lo:
+                p.kill()
+                return -1, log
+    finally:
+        try:
+            p.wait(timeout=60)
+        except Exception:  # noqa: BLE001
+            p.kill()
+    return int(p.returncode or 0), log
 
 
 def _chay_lenh(cmd: list[str], han: int) -> tuple[int, str]:
