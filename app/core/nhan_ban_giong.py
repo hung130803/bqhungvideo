@@ -65,6 +65,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import unicodedata
@@ -261,15 +262,101 @@ def _doc_so() -> dict:
         return {}
 
 
+def _muc(so: dict, ten: str) -> dict:
+    """Một mục trong sổ, LUÔN là dict. Mục lạ (chuỗi/None/số) -> ``{}``.
+
+    ═══ VÌ SAO PHẢI CÓ, KHÔNG PHẢI CHO GỌN ═══
+    ``_doc_so`` chỉ bảo đảm thứ trả về là **dict ngoài cùng**, nó KHÔNG kiểm
+    từng mục. Sổ bị sửa tay / bản cũ khác hình dạng / một lượt ghi hỏng là
+    ``so[ten]`` thành chuỗi, rồi ``g.get(...)`` ném ``AttributeError`` ngay
+    trong ``danh_sach()`` -> **combo giọng chết cả cụm** vì MỘT mục hỏng, mà
+    lời lỗi lại không nói gì về sổ. Đây đúng luật "sổ thiếu khoá thì phải đọc
+    được, không được nổ".
+    """
+    g = (so or {}).get(str(ten or "").strip())
+    return g if isinstance(g, dict) else {}
+
+
+def _so_giay(g: dict) -> float:
+    """``giay`` của một mục -> float. Khoá thiếu / chữ rác -> ``0.0``.
+
+    ``float(g.get('giay') or 0)`` ném ``ValueError`` khi ``giay`` là chuỗi rác
+    (``"4,5"`` — dấu phẩy tiếng Việt là ca RẤT dễ gặp nếu ai sửa sổ bằng tay),
+    và ``nhan()`` không có ``try`` nên nó nổ lên tới ``danh_sach()``.
+    """
+    try:
+        return float(g.get("giay") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _sao_luu_neu_hong(p: Path) -> str:
+    """Sổ trên đĩa ĐỌC KHÔNG RA thì chép riêng một bản. Trả đường bản sao.
+
+    ═══ LỖ THẬT, VÁ 20/08/2026 — ĐỌC KỸ ═══
+    ``_doc_so`` cố ý trả ``{}`` khi sổ hỏng và **không tự ghi đè** (đúng bài
+    học ``prodown`` "serde default hoặc mất data"). Nhưng chốt đó chỉ chặn
+    được NỬA đường: lượt ghi KẾ TIẾP (``them_giong``/``xoa``/``doi_ten``) lấy
+    ``so = _doc_so()`` = ``{}``, thêm một mục, rồi ``_ghi_so`` **thay nguyên
+    file** — tức nội dung cũ mất SẠCH, đúng cái ``_doc_so`` vừa cố tránh.
+    Anh Hùng chạy 200-300 kênh, sổ đó là toàn bộ tên giọng anh ấy đã đặt.
+
+    Nên: ghi đè thì cứ ghi (không ghi được là app không dùng được), **nhưng
+    phải để lại bản sao** để còn cứu tay. Không im lặng: ghi cả vào log.
+    """
+    try:
+        if not p.exists():
+            return ""
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(d, dict):
+            return ""                  # đọc được -> không có gì phải cứu
+    except Exception:                                          # noqa: BLE001
+        pass                           # đọc KHÔNG ra -> đi tiếp, cứu file
+    try:
+        bk = p.with_name(f"{p.stem}.hong-{time.strftime('%Y%m%d-%H%M%S')}.json")
+        shutil.copyfile(p, bk)
+        _ghi_log(f"Sổ giọng nhân bản ĐỌC KHÔNG RA -> đã sao lưu sang {bk.name} "
+                 f"trước khi ghi đè. Mở file đó ra cứu tay nếu cần.")
+        return str(bk)
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+
+def _ghi_log(dong: str) -> None:
+    """Ghi lý do vào log ngày. KHÔNG BAO GIỜ NÉM.
+
+    Cùng luật ``giong_vieneu._ghi_log``: một lượt lùi/cứu ÊM mà im lặng thì
+    đúng bằng hỏng âm thầm.
+    """
+    try:
+        import datetime
+        from config import DATA_DIR
+        p = Path(DATA_DIR) / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now()
+        with open(p / f"nhan_ban_giong_{ts:%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{ts:%H:%M:%S}] {dong}\n")
+    except Exception:                                          # noqa: BLE001
+        pass
+
+
 def _ghi_so(d: dict) -> bool:
     """Ghi sổ kiểu THAY NGUYÊN FILE (ghi tạm rồi đổi tên).
 
     Ghi thẳng mà máy tắt giữa chừng là sổ cụt -> mất toàn bộ giọng. Cùng cách
     ``tg_so.py`` đã chốt.
+
+    **SAO LƯU TRƯỚC KHI GHI ĐÈ MỘT SỔ ĐỌC KHÔNG RA** — xem
+    ``_sao_luu_neu_hong``. Chốt này phải nằm ở ĐÂY (cửa GHI) chứ không ở
+    ``_doc_so``: mọi đường sửa sổ đều đi qua đây, còn ``_doc_so`` bị gọi cả ở
+    đường chỉ-đọc (``danh_sach``/``nhan``) nên đặt ở đó là sao lưu mỗi lần vẽ
+    lại combo.
     """
     try:
         p = duong_so()
         p.parent.mkdir(parents=True, exist_ok=True)
+        _sao_luu_neu_hong(p)
         tam = p.with_suffix(".tmp")
         tam.write_text(json.dumps(d, ensure_ascii=False, indent=1),
                        encoding="utf-8")
@@ -381,7 +468,7 @@ def ma_giong(ten: str) -> str:
     ba: ``giong_bang.nguon()`` đã biết ``vnb:``, thêm một quy ước nữa là thêm
     một chỗ để quên (đúng lỗi ``vieneu:`` vs ``vn:`` đã sập ở ``24a3bcf``).
     """
-    g = _doc_so().get(str(ten or "").strip())
+    g = _muc(_doc_so(), ten)
     if not g:
         return ""
     mau = str(g.get("mau") or "")
@@ -472,7 +559,11 @@ def danh_sach(chi_chay_duoc: bool = False) -> list[tuple[str, str]]:
     đọc phải NÓI RA khi nó lùi — ``giong_chatter.doc_loat`` ghi log rồi lùi.
     """
     ra: list[tuple[str, str]] = []
-    for ten, g in sorted(_doc_so().items()):
+    so = _doc_so()
+    for ten in sorted(so):
+        # `_muc` chứ không `so[ten]`: MỘT mục hỏng không được phép giết cả
+        # danh sách (xem `_muc`). Mục hỏng thì `ma_giong` trả "" -> bỏ qua.
+        g = _muc(so, ten)
         ma = ma_giong(ten)
         if not ma:
             continue
@@ -485,7 +576,7 @@ def danh_sach(chi_chay_duoc: bool = False) -> list[tuple[str, str]]:
 
 def nhan(ten: str) -> str:
     """Nhãn một dòng cho giọng đã nhân bản. TIẾNG VIỆT, KHÔNG EMOJI."""
-    g = _doc_so().get(str(ten or "").strip())
+    g = _muc(_doc_so(), ten)
     if not g:
         return str(ten or "")
     may = str(g.get("may") or "")
@@ -496,27 +587,41 @@ def nhan(ten: str) -> str:
     chua = "" if not _t else f"CHƯA CHẠY ĐƯỢC (thiếu {', '.join(_t[:3])}) - "
     mat = "" if Path(str(g.get("mau") or "")).exists() else " - MẤT FILE MẪU"
     return (f"{chua}{ten} (giọng nhân bản, {ten_may}, "
-            f"mẫu {float(g.get('giay') or 0):.0f} giây){mat}")
+            f"mẫu {_so_giay(g):.0f} giây){mat}")
 
 
 def xoa(ten: str, xoa_ca_mau: bool = True) -> bool:
     """Bỏ một giọng khỏi sổ. Trả True nếu sổ đổi.
 
-    Xoá file mẫu bằng ``os.remove`` **có canh đường dẫn phải nằm TRONG
-    ``thu_muc_mau()``** — không canh thì một mục sổ hỏng (``mau`` trỏ ra ngoài)
-    là app đi xoá file của người dùng.
+    ═══ XOÁ FILE MẪU ĐI QUA ``xoa_an_toan``, KHÔNG TỰ CANH ═══
+    Bản đầu tự canh ``goc in p.parents`` — đúng, nhưng đó là **cửa thứ 6** của
+    đúng cái lớp bệnh mà ``app/core/xoa_an_toan.py`` sinh ra để chặn: một mục
+    sổ hỏng (``mau`` = ``""``) cho ra ``Path("")`` = ``WindowsPath('.')``, thứ
+    đã **xoá sạch cả cây mã** một lần (19/08/2026). Vá lẻ từng chỗ là bỏ sót
+    chỗ thứ 7 người sau thêm vào, nên đi cửa chung — nó có đủ BỐN chốt
+    (rỗng · thư mục đang làm việc + cha · gốc ổ đĩa · ``trong=``) thay vì một.
+
+    ``an_toan_de_xoa`` là hàm THUẦN và **không hỏi ``is_dir``** nên dùng được
+    cho FILE; ``don_thu_muc`` thì không (nó chỉ xoá thư mục).
+
+    ``xoa_ca_mau=False`` để bỏ giọng khỏi sổ mà GIỮ mẫu — dùng khi người dùng
+    chỉ muốn ẩn giọng đi.
     """
     so = _doc_so()
     ten = str(ten or "").strip()
     if ten not in so:
         return False
-    mau = str(so[ten].get("mau") or "")
+    mau = str(_muc(so, ten).get("mau") or "")
     so.pop(ten, None)
     ok = _ghi_so(so)
     if ok and xoa_ca_mau and mau:
         try:
-            p, goc = Path(mau).resolve(), thu_muc_mau().resolve()
-            if p.is_file() and goc in p.parents:
+            from app.core.xoa_an_toan import an_toan_de_xoa
+            p = Path(mau)
+            if not an_toan_de_xoa(p, trong=thu_muc_mau()):
+                _ghi_log(f"TỪ CHỐI xoá mẫu {mau!r} — nằm ngoài "
+                         f"{thu_muc_mau()} (giọng «{ten}» vẫn đã khỏi sổ)")
+            elif p.is_file():
                 os.remove(p)
         except Exception:                                      # noqa: BLE001
             pass
@@ -541,8 +646,16 @@ def sua_mau_mat() -> list[str]:
     tạm không thấy (ổ ngoài chưa cắm). Cùng luật ``_canh_bao_mau_mat`` của
     mẫu-theo-kênh: BÁO, để người dùng quyết.
     """
-    return [t for t, g in _doc_so().items()
-            if not Path(str(g.get("mau") or "")).exists()]
+    so = _doc_so()
+    ra: list[str] = []
+    for t in so:
+        mau = str(_muc(so, t).get("mau") or "")
+        # `Path("")` là `WindowsPath('.')` và `.exists()` ra **True** -> mục
+        # hỏng (thiếu khoá `mau`) sẽ bị coi là "mẫu còn nguyên". Phải hỏi
+        # chuỗi RỖNG trước, đừng để `Path` trả lời hộ.
+        if not mau or not Path(mau).exists():
+            ra.append(t)
+    return ra
 
 
 def la_giong_nhan_ban(ma: str) -> bool:
