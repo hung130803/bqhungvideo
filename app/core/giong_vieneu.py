@@ -252,8 +252,10 @@ CHƯA LÀM — GHI THẲNG, ĐỪNG ĐỌC NHẦM LÀ ĐÃ XONG
 """
 from __future__ import annotations
 
+import array
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1145,6 +1147,176 @@ def tinh_trang_nhan_ban() -> dict:
 #: Một lượt tải/cài duy nhất tại một thời điểm (user bấm 2 lần vẫn 1 lượt).
 _KHOA_NB = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# VÒNG TỰ DÒ — chấm dứt chuyện ĐOÁN danh sách gói
+# ---------------------------------------------------------------------------
+#: Trần số vòng. Hết trần thì trả `ok=False` nêu rõ còn thiếu gì, **KHÔNG lặp
+#: vô tận**: mỗi vòng là một lượt pip có thể tải hàng trăm MB, và một vòng lặp
+#: không trần trên đường mạng là cách treo máy anh Hùng cả đêm.
+TRAN_VONG_DO = 6
+
+#: Gói **KHÔNG BAO GIỜ** tự cài, dù lời lỗi có đòi đích danh. Lý do ghi ngay
+#: cạnh vì người sau sẽ hỏi "sao không cài nốt cho xong":
+_CHAN_TU_DO: dict[str, str] = {
+    "gradio": "giao diện web, không dính gì tới một lượt ĐỌC TIẾNG",
+    "lmdeploy": "máy chủ suy luận, kéo về là gãy lượt cài",
+    "llama_cpp": "llama-cpp-python KHÔNG build được trên Windows",
+    "triton": "triton KHÔNG build được trên Windows",
+    "triton_windows": "triton-windows KHÔNG build được trên Windows",
+    "fitz": "PyMuPDF là bộ đọc PDF",
+    "pymupdf": "bộ đọc PDF",
+}
+
+#: tên-IMPORT khác tên-PIP. Bảng NHỎ và chỉ chứa ca ĐÃ GẶP hoặc chắc chắn —
+#: không biết thì cứ thử ĐÚNG TÊN rồi báo thẳng khi pip trả mã khác 0 (đoán bừa
+#: một tên pip là cài về một gói LẠ mang đúng tên đó, tệ hơn hẳn báo lỗi).
+_TEN_PIP: dict[str, str] = {
+    "sklearn": "scikit-learn",
+    "cv2": "opencv-python-headless",
+    "PIL": "Pillow",
+    "yaml": "PyYAML",
+    "soxr": "soxr",
+    "regex": "regex",
+    "hf_hub": "huggingface-hub",
+    "huggingface_hub": "huggingface-hub",
+}
+
+#: Bóc tên gói khỏi lời lỗi. Chỉ nhận tên HỢP LỆ — lời lỗi là chuỗi từ tiến
+#: trình con, đưa thẳng vào dòng lệnh pip là một cửa tiêm lệnh.
+_RE_THIEU = re.compile(r"No module named ['\"]([A-Za-z0-9_.\-]+)['\"]")
+
+
+def _ten_thieu(loi: str) -> str:
+    """Tên gói còn thiếu, bóc từ ``ModuleNotFoundError``. "" nếu không thấy.
+
+    Lấy **gói GỐC** (``a.b.c`` -> ``a``): pip cài theo gói phát hành, không cài
+    theo module con. Và chỉ nhận ``[A-Za-z0-9_.\\-]+`` — xem ``_RE_THIEU``.
+    """
+    m = _RE_THIEU.search(str(loi or ""))
+    if not m:
+        return ""
+    goc = m.group(1).split(".")[0].strip()
+    return goc if re.fullmatch(r"[A-Za-z0-9_\-]+", goc) else ""
+
+
+def _ten_pip(ten: str) -> str:
+    """Tên để đưa cho pip. Không biết thì trả ĐÚNG TÊN đã bóc được."""
+    return _TEN_PIP.get(ten, _TEN_PIP.get(ten.lower(), ten))
+
+
+def _bi_chan(ten: str) -> str:
+    """Lý do KHÔNG tự cài gói này ("" = cứ cài)."""
+    t = ten.lower().replace("-", "_")
+    for k, v in _CHAN_TU_DO.items():
+        if t == k or t.startswith(k):
+            return v
+    return ""
+
+
+def _mau_thu(d: Path) -> str:
+    """Sinh WAV mẫu vài giây bằng ffmpeg để CÓ CÁI mà nhân bản. "" nếu hỏng.
+
+    **KHÔNG đòi mẫu của người dùng**: lượt cài phải tự chứng minh được là nó
+    chạy, ngay lúc bấm, không chờ ai đưa file.
+
+    ``duration=`` nằm TRONG biểu thức lavfi, **cố ý không dùng `-t`**:
+    ``-t`` là tuỳ chọn ĐẦU VÀO và đặt sai chỗ thì nguồn lavfi ghi VÔ HẠN —
+    lỗi đó đã làm đầy ổ C 420 GB một lần (115 MB/s). Dạng này có biên cứng.
+    """
+    ra = d / "mau_thu.wav"
+    try:
+        p = subprocess.run(
+            [_ffmpeg_vn(), "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "lavfi", "-i", "sine=frequency=210:duration=4",
+             "-ac", "1", "-ar", "24000", str(ra)],
+            capture_output=True, text=True, timeout=120,
+            creationflags=_NO_WIN)
+    except Exception:  # noqa: BLE001
+        return ""
+    # ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần trong repo
+    # này -> kiểm FILE, không tin mã thoát.
+    if p.returncode != 0 or not ra.is_file() or ra.stat().st_size < 2048:
+        return ""
+    return str(ra)
+
+
+def _ffmpeg_vn() -> str:
+    """ffmpeg đóng kèm app, lùi về tên trần nếu không có."""
+    p = Path(__file__).resolve().parents[2] / "bin" / "ffmpeg.exe"
+    return str(p) if p.exists() else "ffmpeg"
+
+
+def do_wav(p: str | Path) -> dict:
+    """ĐỘ DÀI + RMS của một WAV, đọc mẫu THẲNG. ``{giay, rms, co_tieng}``.
+
+    ═══ VÌ SAO KHÔNG TIN ``doc_loat`` TRẢ True ═══
+    ``doc_loat`` trả True nghĩa là *"tiến trình chạy xong, file có tồn tại"*.
+    Nó **không** trả lời *"file có TIẾNG không"*. Cả repo này đã bị đúng cái
+    khoảng cách đó cắn: ``ffmpeg`` trả mã 0 mà file 0 KiB (app tưởng xuất xong
+    rồi xoá gốc), và bộ 28 giọng Kokoro phải đọc mẫu THẲNG mới biết giọng nào
+    câm. Nên bằng chứng cuối cùng của lượt cài là **hai con số ở đây**.
+
+    RMS tính trên mẫu 16-bit; định dạng khác -> trả rms 0 và ``co_tieng`` theo
+    độ dài, ĐỪNG bịa số (bịa một lời khai TỐT cũng là bịa).
+    """
+    ra = {"giay": 0.0, "rms": 0.0, "co_tieng": False}
+    try:
+        with wave.open(str(p), "rb") as w:
+            fr = w.getframerate() or 0
+            n = w.getnframes()
+            ra["giay"] = round((n / float(fr)) if fr else 0.0, 3)
+            if w.getsampwidth() == 2 and n:
+                a = array.array("h")
+                a.frombytes(w.readframes(n)[: (n * w.getnchannels()) * 2])
+                if len(a):
+                    ra["rms"] = round(
+                        (sum(float(x) * x for x in a) / len(a)) ** 0.5
+                        / 32768.0, 5)
+    except Exception:  # noqa: BLE001
+        return ra
+    # Sàn 0,001: bộ 28 giọng Kokoro đo được thấp nhất 0,02967 nên 0,001 là
+    # "có tín hiệu" chứ không phải "đọc hay", đúng việc cần ở đây.
+    ra["co_tieng"] = bool(ra["giay"] >= 0.3 and ra["rms"] >= 0.001)
+    return ra
+
+
+def _doc_thu_nhan_ban(vpy: Path, mau: str, dich: Path,
+                      han_giay: int = 900) -> dict:
+    """ĐỌC THẬT một câu qua đường NHÂN BẢN. ``{ok, loi, giay, rms}``.
+
+    ═══ VÌ SAO PHẢI ĐỌC THẬT, KHÔNG PHÉP DÒ NÀO THAY ĐƯỢC ═══
+    Đo trên máy anh Hùng 20/08/2026: trên chính venv đang thiếu
+    ``transformers``, cả ``import vieneu`` LẪN ``import vieneu.v3turbo`` đều
+    **THÀNH CÔNG**. Gói nạp ``transformers`` **LƯỜI** — chỉ khi đường nhân bản
+    (``ref_audio=``) chạy. Nên mọi phép dò tĩnh đều nói "đủ" trong khi lượt đọc
+    thật sẽ gãy, và đó đúng là cách danh sách gói đoán tay cứ thiếu: vá 2 tên
+    thì lộ tên thứ 3.
+    """
+    t0 = time.time()
+    # Khuôn item ĐÚNG BẰNG khuôn `_doc` dựng: `{"i", "text", "raw"}`. Sai khoá
+    # ở đây là tiến trình con ném `KeyError` rồi vòng tự dò đọc lời lỗi đó
+    # thành "thiếu gói" — cổng phải bắt được chuyện này (mục 13).
+    items = [{"i": 0, "text": "Xin chào, đây là câu thử.", "raw": str(dich)}]
+    # ĐÚNG MỘT trong hai đường: đường NHÂN BẢN là `voice=""` +
+    # `ref_audio=<file mẫu>`. Truyền mã `vnb:...` vào ô `voice` là đi đường
+    # giọng DỰNG SẴN — đường đó KHÔNG đụng torch nên lượt tự dò sẽ xanh oan
+    # (xem "BẪY SỐ 1" ở đầu file).
+    ket = _chay_vieneu(items, str(vpy), "", mau, han_giay, None)
+    # `or ""` -> `Path("")` = `WindowsPath('.')` = THƯ MỤC ĐANG LÀM VIỆC; đúng
+    # cái đã xoá sạch cây mã một lần (xem `_don`). Kiểm chuỗi TRƯỚC khi dựng
+    # Path, đừng dựa vào chốt bên trong `_don` — nó là lớp chắn thứ hai.
+    _sb = str(ket.get("_sandbox") or "").strip()
+    if _sb:
+        _don(Path(_sb))
+    d = do_wav(dich)
+    loi = str(ket.get("loi") or "")
+    if ket.get("ok") and not d["co_tieng"]:
+        loi = (f"chạy xong mà WAV KHÔNG CÓ TIẾNG (dài {d['giay']}s, "
+               f"RMS {d['rms']}) — đừng coi là đã cài")
+    return {"ok": bool(ket.get("ok")) and d["co_tieng"], "loi": loi,
+            "giay": d["giay"], "rms": d["rms"],
+            "phut": round(time.time() - t0, 1)}
+
 
 def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
                  han_giay: int = 7200,
@@ -1281,7 +1453,84 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
                     + str(_venv_that(vpy)) + ": " + ", ".join(thieu)
                     + ". Đừng coi là đã cài — giọng nhân bản vẫn sẽ lùi về "
                       "giọng thường.")
-            prog(1.0, "Đã cài xong phần nhân bản giọng.")
+
+            # ---- 3. VÒNG TỰ DÒ: ĐỌC THẬT, ĐỪNG ĐOÁN DANH SÁCH GÓI ----
+            # Hậu kiểm tĩnh ở bước 2 chỉ nói *"5 gói tôi BIẾT đều có mặt"*. Nó
+            # KHÔNG nói được *"đọc có ra tiếng không"* — và đo trên máy anh Hùng
+            # thì `import vieneu` lẫn `import vieneu.v3turbo` **đều thành công**
+            # trong khi `transformers` đang thiếu, vì gói nạp nó LƯỜI (chỉ khi
+            # `ref_audio=` chạy). Nên chỉ có ĐỌC THẬT nói thật, và đó là lý do
+            # danh sách đoán tay cứ thiếu: vá 2 tên thì lộ tên thứ 3.
+            them: list[str] = []
+            vong = 0
+            with tempfile.TemporaryDirectory(prefix="bq_docthu_") as _td:
+                tmp = Path(_td)
+                mau = _mau_thu(tmp)
+                if not mau:
+                    # KHÔNG coi là hỏng cả lượt cài: gói đã nằm đúng chỗ, chỉ là
+                    # lượt tự kiểm không dựng nổi file mẫu (thiếu ffmpeg). Nói
+                    # thẳng ra thay vì im lặng mừng.
+                    _ghi_log("Vòng tự dò BỎ QUA: ffmpeg không dựng được WAV mẫu")
+                    prog(1.0, "Đã cài xong (chưa tự đọc thử được — thiếu "
+                              "ffmpeg).")
+                    return xong("", tu_do=them, vong=0, doc_thu="")
+                while vong < TRAN_VONG_DO:
+                    vong += 1
+                    prog(0.94, f"Đang đọc thử để kiểm tra thật (vòng {vong})...")
+                    kq = _doc_thu_nhan_ban(vpy, mau, tmp / f"thu{vong}.wav")
+                    ra["doc_thu"] = kq
+                    if kq["ok"]:
+                        _ghi_log(f"Vòng tự dò: ĐỌC THẬT ĐƯỢC ở vòng {vong} "
+                                 f"(WAV {kq['giay']}s · RMS {kq['rms']}), "
+                                 f"đã cài thêm: {them or 'không gói nào'}")
+                        break
+                    ten = _ten_thieu(kq["loi"])
+                    if not ten:
+                        # Hỏng vì lý do KHÁC (hết RAM, model chưa tải, ...) ->
+                        # đừng cài bừa thêm gói, nói đúng cái lỗi đọc được.
+                        _ghi_log(f"Vòng tự dò vòng {vong}: hỏng KHÔNG phải do "
+                                 f"thiếu gói -> {kq['loi'][:200]}")
+                        return xong(
+                            "Đã cài đủ danh sách gói nhưng ĐỌC THẬT vẫn hỏng: "
+                            + kq["loi"][:400], tu_do=them, vong=vong)
+                    vi = _bi_chan(ten)
+                    if vi:
+                        _ghi_log(f"Vòng tự dò vòng {vong}: CHẶN `{ten}` ({vi})")
+                        return xong(
+                            f"Đường nhân bản đòi `{ten}` mà gói đó nằm trong "
+                            f"danh sách CHẶN ({vi}). Không tự cài.",
+                            tu_do=them, vong=vong)
+                    goi_moi = _ten_pip(ten)
+                    _ghi_log(f"Vòng tự dò vòng {vong}: thiếu `{ten}` -> "
+                             f"cài `{goi_moi}` vào {venv}")
+                    prog(0.95, f"Còn thiếu {goi_moi} — đang cài (vòng {vong})...")
+                    ma2, log2 = _chay_theo_dong(
+                        [str(vpy), "-m", "pip", "install", "--no-input",
+                         "--disable-pip-version-check", "--ignore-installed",
+                         "--extra-index-url", chi_muc, goi_moi],
+                        han_giay, prog, 0.95, 0.99)
+                    if ma2 != 0:
+                        return xong(
+                            f"Đường nhân bản còn thiếu `{ten}` mà pip trả mã "
+                            f"{ma2} khi cài `{goi_moi}`: "
+                            + " | ".join(log2[-3:]),
+                            tu_do=them, vong=vong)
+                    them.append(goi_moi)
+                    importlib.invalidate_caches()
+                else:
+                    # Hết trần -> KHÔNG mừng. Nêu rõ còn thiếu gì.
+                    con = _ten_thieu(str(ra.get("doc_thu", {}).get("loi", "")))
+                    _ghi_log(f"Vòng tự dò HẾT TRẦN {TRAN_VONG_DO} vòng, "
+                             f"đã cài {them}, còn thiếu {con or '(không rõ)'}")
+                    return xong(
+                        f"Đã thử {TRAN_VONG_DO} vòng mà đường nhân bản vẫn "
+                        f"chưa đọc được — còn thiếu `{con or 'không rõ'}`. "
+                        f"Đã tự cài: {', '.join(them) or 'không gói nào'}.",
+                        tu_do=them, vong=vong)
+
+            ra["tu_do"] = them
+            ra["vong"] = vong
+            prog(1.0, "Đã cài xong phần nhân bản giọng — đã đọc thử ra tiếng.")
             return xong("")
         finally:
             _KHOA_NB.release()
