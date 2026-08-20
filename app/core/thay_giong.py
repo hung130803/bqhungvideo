@@ -3595,6 +3595,76 @@ DUCK_TREN_NGUONG_DB = 8.0
 DUCK_DB_DO_DUOC = 3.28
 
 
+# ==================================================================
+# NGƯỜI DÙNG TỰ CHỈNH ÂM LƯỢNG — hai ô dB trong hộp Thay giọng nói
+# ==================================================================
+# Anh Hùng 20/08/2026: *"cái phần âm thanh gốc nó nói bé k tuỳ chỉnh âm thanh
+# đc à chứ to quá"*. Tới v2.41.1 mọi hằng số ở trên TỰ QUYẾT thay anh ấy:
+# `grep -c "muc_giong_db\|muc_nhac_db\|slider" app/ui/thay_giong_dialog.py` = 0.
+# App ĐO rồi tính là đúng cho ca trung bình, nhưng nó KHÔNG biết tai anh Hùng
+# muốn nghe tiếng gốc nhiều hay ít — đó là lựa chọn, không phải phép đo.
+#
+# **HAI Ô NÀY CHỈ ĐỔI TỈ LỆ, KHÔNG ĐỔI ĐỘ TO CUỐI.** `chuan_do_to` (bước cuối
+# của `tron_thay_giong`) vẫn kéo cả bản trộn về `DICH_LUFS` bằng MỘT hệ số
+# TĨNH, nên I/TP của file thành phẩm giữ nguyên đích ở MỌI cấu hình — cái đổi
+# là hiệu (giọng − nền). Đó cũng là lý do không cần (và không được) nới trần
+# đỉnh: trần đỉnh trừ HAI LẦN nằm nguyên chỗ cũ.
+
+#: TRẦN hai ô, tính theo dB. Đặt ±6 vì đó là mức ĐỔI HẲN cảm nhận mà vẫn nằm
+#: trong chỗ trống của hệ:
+#:   · nền: phần tự động hạ nền tối đa `HA_NHAC_TOI_DA_DB` = 8 dB, nên +6 chỉ
+#:     đưa nền về gần mức GỐC của nó, không đẩy vượt bản gốc.
+#:   · giọng: −6 là hạ, luôn an toàn; +6 thì còn bị `DINH_GIONG_TAY_TOI_DA_DB`
+#:     bên dưới chặn lại theo ĐỈNH ĐO ĐƯỢC, nên trần này là trần MỀM của ô.
+#: Cho rộng hơn ±6 là mở cửa cho cấu hình tự dìm lời (bệnh 15/08: giọng dưới
+#: nhạc 9,27 dB -> 93,5% cửa sổ chìm = *"chỗ có chỗ không nghe không được"*).
+TRAN_MUC_TAY_DB = 6.0
+
+#: Bước làm tròn khi băm/so-với-mặc-định. 0,1 dB là dưới ngưỡng nghe ra được,
+#: nên **PHẢI làm tròn TRƯỚC khi băm** — y bài học `chuan_muc_mo` (cổng 56e):
+#: băm giá trị THÔ là đẻ job chạy lại cho một thay đổi KHÔNG TỒN TẠI.
+BUOC_MUC_TAY_DB = 0.1
+
+#: TRẦN ĐỈNH cho phần NGƯỜI DÙNG TỰ TĂNG giọng (dBFS), đo trên CHÍNH lớp giọng
+#: đã nén. Nới hơn trần tự động `DINH_GIONG_TOI_DA_DB` = −3,0 là CÓ CHỦ Ý:
+#: trần −3 để chừa chỗ cho nhạc cộng vào, còn ô này là anh Hùng CỐ Ý đòi giọng
+#: nổi hơn, nên phải cho nó tiêu vào chỗ trống đó.
+#:
+#: **VÌ SAO ĐÚNG BẰNG `TRAN_DINH_DB` (−1,0) CHỨ KHÔNG HƠN:** trên mức đó thì
+#: lớp giọng MỘT MÌNH đã vượt trần `alimiter` của bản trộn, tức bộ hạn đỉnh
+#: phải gọt NGAY TRÊN TIẾNG NÓI trước khi nền kịp cộng vào — đúng cái đã đo
+#: được một lần: nâng +12 dB theo số hụt sai làm đỉnh lớp giọng lên +6,67 dBFS,
+#: `alimiter` gọt 7,7 dB và số mẫu chạm trần nhảy **36 -> 1.577**.
+#: `Abs_Peak_count` là thước bắt được chuyện này; I và TP thì KHÔNG (chúng vẫn
+#: đúng đích vì `chuan_do_to` chạy sau).
+DINH_GIONG_TAY_TOI_DA_DB = TRAN_DINH_DB
+
+
+def chuan_muc_db(v) -> float:
+    """CHUẨN HOÁ một ô dB: kẹp trong trần, làm tròn `BUOC_MUC_TAY_DB`.
+
+    Đây là **CỬA DUY NHẤT** quyết định "ô này có khác mặc định hay không". Mọi
+    chỗ (UI · payload job · khoá chống trùng · bước trộn) phải đi qua đây, không
+    thì ba nơi tự chuẩn hoá theo ba kiểu rồi lệch nhau — lỗi "chọn X ra Y".
+
+    Rác (None · "" · chữ · NaN · inf) -> **0,0** = MẶC ĐỊNH. Thà bỏ qua một ô
+    hỏng còn hơn nhân một hệ số bịa vào tiếng của anh Hùng.
+
+    `-0.0` phải ra `0.0`: `-0.0 != 0.0` là False trong Python nên so sánh vẫn
+    đúng, nhưng `f"{-0.0:+.1f}"` ra `"-0.0"` -> khoá chống trùng khác chuỗi
+    trong khi giá trị y nhau.
+    """
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    if x != x or x in (float("inf"), float("-inf")):   # NaN / vô cực
+        return 0.0
+    x = max(-TRAN_MUC_TAY_DB, min(TRAN_MUC_TAY_DB, x))
+    x = round(x / BUOC_MUC_TAY_DB) * BUOC_MUC_TAY_DB
+    return round(x, 1) + 0.0        # `+ 0.0` biến -0.0 thành 0.0
+
+
 def _tham_so_duck(muc_nhac_db: float, ratio: float = DUCK_RATIO,
                   ) -> tuple[float, float]:
     """(ngưỡng tuyến tính, ratio) cho `sidechaincompress`. Hàm THUẦN.
@@ -4113,6 +4183,13 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
     được cộng vào (người dùng còn chỉnh tay được), chỉ khác là nay chúng là
     phần BÙ THÊM chứ không phải toàn bộ câu trả lời.
 
+    **HAI THAM SỐ ĐÓ NAY LÀ HAI Ô THẬT TRONG HỘP THAY GIỌNG** (v2.42.0, anh
+    Hùng 20/08/2026: *"phần âm thanh gốc nó nói bé k tuỳ chỉnh âm thanh đc à"*).
+    Cả hai đi qua `chuan_muc_db` (kẹp ±`TRAN_MUC_TAY_DB`, làm tròn 0,1 dB, rác
+    -> 0,0) NGAY TRONG hàm này, nên payload cũ/lối gọi khác không lọt được một
+    hệ số bịa nào. `0,0` = MẶC ĐỊNH và khối trần an toàn bên dưới **không chạy
+    một dòng nào** -> tiếng ra giống HỆT bản trước, không phải "gần giống".
+
     **`muc_nhac_db` MẶC ĐỊNH ĐỔI -2,0 -> 0,0 CÓ CHỦ Ý:** -2 dB cũ là một hằng
     số đặt mò cho việc "nhường chỗ cho lời". Nay phần nhường chỗ đã do phép đo
     quyết định (`gain_nhac_db`) nên giữ -2 nữa là TRỪ HAI LẦN — mà mỗi dB nhạc
@@ -4164,8 +4241,39 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
                                 "he_so_dinh_db", "giong_tren_nhac_truoc_db")}
         else:
             cb = cb0
+    # HAI Ô NGƯỜI DÙNG đi qua `chuan_muc_db` — CỬA DUY NHẤT chuẩn hoá (kẹp
+    # trần + làm tròn 0,1 dB + rác thành 0,0). Gọi ở ĐÂY nữa, không chỉ ở UI:
+    # payload job cũ / lối gọi khác / cổng test đều vào cửa này, và một hệ số
+    # bịa nhân vào tiếng là thứ không có đường lùi.
+    muc_giong_db = chuan_muc_db(muc_giong_db)
+    muc_nhac_db = chuan_muc_db(muc_nhac_db)
     g_giong = muc_giong_db + (cb.get("gain_giong_db") or 0.0)
     g_nhac = muc_nhac_db + (cb.get("gain_nhac_db") or 0.0)
+
+    # ---- TRẦN AN TOÀN: người dùng TĂNG giọng thì vẫn không được vỡ tiếng ----
+    # **CHỈ CHẠY KHI `muc_giong_db > 0`** — nghĩa là để MẶC ĐỊNH (0,0) hay HẠ
+    # giọng thì khối này không đụng tới một biến nào, và đó chính là bằng chứng
+    # "mặc định ra tiếng GIỐNG HỆT hôm nay" ở mức mã chứ không phải mức lời.
+    #
+    # Phần TỰ ĐỘNG đã tự kẹp bằng `tran_theo_dinh` (xem `can_bang_giong_nhac`)
+    # nên nó không bao giờ vượt trần −3; chỗ có thể vượt là phần CỘNG TAY. Kẹp
+    # theo ĐỈNH ĐO ĐƯỢC của chính lớp giọng đã nén, không theo hằng số bịa.
+    tay: dict = {}
+    if muc_giong_db > 0.0 and cb.get("do_duoc"):
+        tran_tay = max(0.0, DINH_GIONG_TAY_TOI_DA_DB
+                       - float(cb.get("dinh_giong_db") or 0.0))
+        if g_giong > tran_tay:
+            tay = {
+                "giong_xin_db": muc_giong_db,
+                "giong_cho_db": round(
+                    tran_tay - (cb.get("gain_giong_db") or 0.0), 2),
+                "bi_kep": True,
+                "vi_sao": (f"đỉnh lớp giọng {cb.get('dinh_giong_db')} dBFS + "
+                           f"nâng {g_giong:.2f} dB sẽ vượt trần "
+                           f"{DINH_GIONG_TAY_TOI_DA_DB} dBFS — hạn đỉnh phải "
+                           f"gọt ngay trên tiếng nói"),
+            }
+            g_giong = tran_tay
 
     if on_progress:
         on_progress(0.6, "Trộn giọng mới với nhạc nền gốc...")
@@ -4299,6 +4407,12 @@ def tron_thay_giong(nhac_wav: str | Path, manh: list[tuple[float, str]],
         "can_bang": cb,
         "gain_giong_db": round(g_giong, 2),
         "gain_nhac_db": round(g_nhac, 2),
+        # HAI Ô NGƯỜI DÙNG phải nằm trong nhật ký: đọc lại một lượt cũ mà không
+        # biết anh Hùng đã kéo mấy dB thì không đối chiếu được gì (bài học
+        # `cach_tron` phải vào `result`, cổng 86). 0,0 = để mặc định.
+        "muc_tay_giong_db": muc_giong_db,
+        "muc_tay_nen_db": muc_nhac_db,
+        "muc_tay_kep": tay,
         "duck_db_du_kien": DUCK_DB_DO_DUOC if duck else 0.0,
         "duck_nguong": round(nguong_duck, 5) if duck else 0.0,
         "duck_ratio": round(ratio_duck, 3) if duck else 0.0,
