@@ -610,6 +610,30 @@ def thu_muc_vieneu() -> Path:
     return Path(__file__).resolve().parents[2] / "_giong_vieneu"
 
 
+def _venv_that(py) -> Path:
+    """Venv mà pip THẬT SỰ cài vào, suy từ chính python được chạy.
+
+    LỖI THẬT 20/08/2026 — log NÓI SAI làm CHÍNH TÔI chẩn đoán sai. `cai_nhan_ban`
+    lấy `venv = thu_muc_vieneu()/"venv"` cho lời log, nhưng pip lại chạy bằng
+    `_python_vieneu()[0]` = python **ĐANG DÙNG** (trên máy anh Hùng là
+    `%TEMP%\\bq_giong8\\venv`). Nên log ghi:
+
+        [19:00:39] Cài phần nhân bản XONG vào ...\\BQHungVideo\\_giong_vieneu\\venv
+
+    trong khi thư mục đó **KHÔNG HỀ TỒN TẠI**. Đọc dòng đó tôi kết luận ngay
+    *"cài một chỗ, chạy một chỗ khác"* và suýt đi sửa một bug không có. Kiểm chỗ
+    torch thật sự nằm mới thấy pip cài **ĐÚNG** venv đang chạy — chỉ lời log là
+    sai.
+
+    Bài học: **lời log phải suy từ CÁI ĐÃ LÀM, không phải từ cái ĐỊNH LÀM.** Log
+    nói sai còn tệ hơn không log, vì nó phát chứng nhận cho một chẩn đoán sai —
+    cùng họ bẫy "phép đo hỏng phát chứng nhận" của cả repo này.
+    """
+    p = Path(str(py))
+    # <venv>/Scripts/python.exe  hoặc  <venv>/bin/python
+    return p.parent.parent if p.parent.name in ("Scripts", "bin") else p.parent
+
+
 def _ung_vien_python() -> list[Path]:
     """Python có sẵn `vieneu`. Dò theo THỨ TỰ, chỗ ĐÚNG trước chỗ TẠM sau."""
     ds: list[Path] = []
@@ -1177,8 +1201,11 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
         ra["loi"] = loi
         ra["ok"] = not loi
         ra["giay"] = round(time.time() - t0, 2)
-        _ghi_log(("Cài phần nhân bản XONG vào " + str(venv)) if not loi
-                 else ("Cài phần nhân bản HỎNG: " + loi[:300]))
+        # Đọc `ra["venv"]` chứ KHÔNG đọc biến `venv`: biến đó là chỗ ĐỊNH cài,
+        # còn `ra["venv"]` được đặt lại thành chỗ pip THẬT SỰ cài vào ngay sau
+        # khi biết `vpy`. Xem `_venv_that` để biết vì sao chuyện này quan trọng.
+        _ghi_log(("Cài phần nhân bản XONG vào " + str(ra.get("venv") or venv))
+                 if not loi else ("Cài phần nhân bản HỎNG: " + loi[:300]))
         return ra
 
     try:
@@ -1193,6 +1220,12 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
         vpy = Path(py)
         if not vpy.is_file():
             return xong(f"Không thấy python của VieNeu ở {vpy}")
+        # CHỖ THẬT SỰ ĐƯỢC CÀI VÀO — đặt NGAY khi biết `vpy`, để mọi lời log và
+        # mọi lời lỗi từ đây trở đi nêu đúng thư mục pip ghi vào. Máy anh Hùng
+        # chạy VieNeu từ `%TEMP%\bq_giong8\venv` nên chỗ chuẩn KHÔNG tồn tại;
+        # log cũ nêu chỗ chuẩn và làm chẩn đoán đi sai hướng.
+        venv = _venv_that(vpy)
+        ra["venv"] = str(venv)
 
         # ---- 1. đĩa TRƯỚC KHI TẢI ----
         can = mb * _HE_SO_BUNG
@@ -1245,7 +1278,7 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
             if thieu:
                 return xong(
                     "pip trả mã 0 nhưng những gói này KHÔNG nằm trong "
-                    + str(venv) + ": " + ", ".join(thieu)
+                    + str(_venv_that(vpy)) + ": " + ", ".join(thieu)
                     + ". Đừng coi là đã cài — giọng nhân bản vẫn sẽ lùi về "
                       "giọng thường.")
             prog(1.0, "Đã cài xong phần nhân bản giọng.")
