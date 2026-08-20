@@ -1227,6 +1227,22 @@ def _don(d: Path | None) -> None:
     **xoá sạch cây mã** với mã thoát 0. Đã xảy ra thật 19/08/2026
     (`giong_ngoai._don`). Đi qua cửa chung `xoa_an_toan` + còn tự kẹp trong
     `thu_muc()` (hai lớp, cố ý thừa — lớp trong là lớp chịu lực).
+
+    ═══ KHÔNG CÓ ĐƯỜNG LÙI `shutil.rmtree` TRẦN — CỐ Ý, ĐỪNG THÊM LẠI ═══
+    Bản đầu (v2.41.0) có một nhánh lùi `shutil.rmtree(p, ignore_errors=True)`
+    cho ca "import `xoa_an_toan` hỏng". **Cổng 87 xanh nhưng CỔNG 80 bắt được**
+    (CA 6 quét tĩnh bằng AST: mọi file `app/` gọi `shutil.rmtree` phải nằm trong
+    sổ 9 file đã rà). Hai lý do bỏ hẳn thay vì ghi tên file vào sổ:
+
+    1. Nhánh lùi ấy nằm dưới `except Exception` bọc **CẢ lượt gọi**, nên một lỗi
+       **BÊN TRONG** `don_thu_muc` cũng rơi xuống rmtree trần — tức chốt chung bị
+       vô hiệu hoá đúng lúc nó đang hỏng. Đó là *đường lùi âm thầm*, họ bẫy mà cả
+       repo này chống.
+    2. `xoa_an_toan` là module CÙNG GÓI. Nó không import được thì app đã hỏng
+       nặng, và lúc đó thứ đúng đắn là **bỏ lại thư mục tạm** (nằm gọn trong
+       `thu_muc()`, `tempsweep` dọn sau) chứ không phải tự tay gọi rmtree.
+    `piper_tts.py` đã đi đúng đường này từ trước (cổng 80 đo: `rmtree=False` ·
+    `gọi don_thu_muc=True`) nên đây là làm cho khớp, không phải phát minh.
     """
     try:
         if d is None or not str(d).strip():
@@ -1236,16 +1252,12 @@ def _don(d: Path | None) -> None:
         if p == goc or goc not in p.parents:
             _ghi_log(f"TỪ CHỐI dọn {p} — nằm ngoài {goc}")
             return
-        try:
-            from app.core import xoa_an_toan
-            xoa_an_toan.don_thu_muc(p, trong=goc, ghi_log=_ghi_log)
-            return
-        except Exception:  # noqa: BLE001
-            pass
-        if p.is_dir():
-            shutil.rmtree(p, ignore_errors=True)
-    except Exception:  # noqa: BLE001
-        pass
+        from app.core import xoa_an_toan
+        xoa_an_toan.don_thu_muc(p, trong=goc, ghi_log=_ghi_log)
+    except Exception as e:  # noqa: BLE001 - dọn rác KHÔNG BAO GIỜ được ném
+        # GHI LOG chứ không im lặng: "không dọn được" phải đọc ra được, nếu
+        # không thì thư mục tạm phình lên mà không ai biết vì sao.
+        _ghi_log(f"không dọn được {d}: {type(e).__name__}: {e}")
 
 
 def _gan_job(p) -> None:
