@@ -765,6 +765,48 @@ def giong_dung_duoc(ds: list) -> list:
     except Exception:  # noqa: BLE001
         pass                                # thiếu module -> combo y hệt cũ
 
+    # ---- GIỌNG CỦA ANH HÙNG — NHÂN BẢN TỪ MẪU, LƯU LẠI DÙNG MÃI ----
+    # Anh Hùng: *"ném giọng đọc của tôi khoảng mấy giây Reference Audio, sau đó
+    # dán bao nhiêu ký tự dùng giọng đó cũng được... không lấy của bất kỳ ai
+    # nữa, tự động lấy của mình luôn"*.
+    #
+    # **CA THỨ NĂM CỦA CÙNG MỘT BỆNH** sau `giong_bang`, `giong_chatter`,
+    # `giong_vbee`, `giong_kokoro`: `app/core/nhan_ban_giong.py` dựng xong 564
+    # dòng (kiểm mẫu · sổ ra đĩa · chép mẫu vào DATA_DIR · xoá/đổi tên) mà
+    # **không một dòng nào trong `app/ui/` gọi tới** — đo trước khi vá:
+    # `grep -rn "nhan_ban_giong" app/ui/` -> **0 dòng**. Tức tính năng coi như
+    # KHÔNG TỒN TẠI với người không đọc mã.
+    #
+    # ═══ VÌ SAO KHÔNG ĐẺ TIỀN TỐ `toi:` — ĐO ĐƯỢC, KHÔNG PHẢI SỞ THÍCH ═══
+    # Mã giọng ở đây là `vnb:<đường dẫn mẫu>` (VieNeu) / `cb:<lang>|<mẫu>`
+    # (Chatterbox), tức TIỀN TỐ NGUYÊN BẢN CỦA MÁY. Thêm một quy ước thứ ba là
+    # thêm một chỗ để quên, và chỗ quên đó ĐO ĐƯỢC: `giong_bang.nguon("toi:x")`
+    # trả **`'edge'`** — tức một tiền tố chưa đăng ký sẽ bị coi là edge-tts và
+    # cả nhóm giọng rơi vào bẫy "chọn X ra Y" mà `ov:nu_am` / `vn:` / `cb:` /
+    # `kk:` đã sập BỐN lần. Ngược lại `vnb:` đã đăng ký ĐỦ: `giong_bang.
+    # _TIEN_TO` biết nó (đứng TRƯỚC `vn:` vì dài hơn), và **CẢ HAI** cửa đọc
+    # `dubbing._synth_all` + `_synth_all_words` đều rẽ đúng — kiểm bằng AST
+    # (cả hai thân hàm gọi `_vieneu_hay_khong`) VÀ bằng cách GỌI THẬT rồi xem
+    # `giong_vieneu.doc_loat` có nhận `vnb:` không. Cổng 81 CA 7h canh đúng
+    # quyết định này.
+    #
+    # `chi_chay_duoc=False` (mặc định): giọng mà máy CHƯA cài được máy nhân bản
+    # vẫn HIỆN, nhãn tự mang "CHƯA CHẠY ĐƯỢC (thiếu torch, torchaudio)" — tiền
+    # lệ Piper/VieNeu/Kokoro. Giấu đi thì anh Hùng không biết giọng mình đã lưu
+    # còn đó; hiện kèm lý do thì biết phải bấm gì.
+    try:
+        from app.core import nhan_ban_giong
+        cuoi_vi4 = max((i for i, (_n, v) in enumerate(mo_rong)
+                        if str(v).startswith("vi-VN")
+                        or str(v).startswith("piper:")
+                        or str(v).startswith("ov:")
+                        or str(v).startswith("ix:")
+                        or str(v).startswith("vn:")), default=-1)
+        for j, (ma_g, nhan_g) in enumerate(nhan_ban_giong.danh_sach()):
+            mo_rong.insert(cuoi_vi4 + 1 + j, (nhan_g, ma_g))
+    except Exception:  # noqa: BLE001
+        pass                                # thiếu module -> combo y hệt cũ
+
     # ---- GIỌNG Vbee — 3 GIỌNG VIỆT TRẢ TIỀN, HIỆN KỂ CẢ KHI CHƯA CÓ KEY ----
     # Ca thứ BA của cùng một bệnh sau `giong_bang` và `giong_chatter`:
     # `app/core/giong_vbee.py` dựng xong 948 dòng, `danh_sach_giong()` sẵn
@@ -825,6 +867,372 @@ def giong_dung_duoc(ds: list) -> list:
         if con:
             gon.append((nhan, vid))
     return gon
+
+
+class HopGiongToi(QDialog):
+    """GIỌNG CỦA ANH HÙNG — đưa file mẫu vài giây vào, ra một giọng dùng mãi.
+
+    Anh Hùng: *"ném giọng đọc của tôi khoảng mấy giây Reference Audio, sau đó
+    dán bao nhiêu ký tự dùng giọng đó cũng được... đảm bảo giọng đó lưu được
+    với thêm được nhiều giọng"*.
+
+    ═══ "LƯU ĐƯỢC" NGHĨA LÀ GÌ — NÓI CHÍNH XÁC, ĐỪNG HỨA QUÁ ═══
+    VieNeu nhân bản **tại lúc đọc** (zero-shot), nên "lưu" ở đây là: chọn file
+    MỘT LẦN, đặt tên, rồi mãi mãi chỉ chọn cái tên đó. App KHÔNG nén giọng
+    thành một file nhỏ — nói khác đi là hứa một thứ không có. Đổi lại có một
+    thứ bảo đảm thật: **mẫu được CHÉP VÀO `DATA_DIR`**, nên anh Hùng xoá/di
+    chuyển/đổi tên file gốc thì giọng vẫn chạy.
+
+    ═══ HAI NÚT NGHE THỬ, CỐ Ý KHÁC NHAU ═══
+      · **"Nghe thử mẫu"** — phát THẲNG file mẫu vừa chọn. Tức thời, không nạp
+        model. Để trả lời *"tôi có chọn đúng file không"*.
+      · **"Nghe thử giọng"** — chạy NHÂN BẢN THẬT qua `thay_giong.doc_thu`,
+        tức đúng cửa lượt xuất đi. Đo được: **~38 giây** cho câu đầu (phần lớn
+        là nạp model) nên nút phải khoá lại và nói "Đang đọc...", nếu không
+        anh Hùng bấm tiếp 3 lần rồi tưởng app treo.
+    Gộp hai nút làm một là mất cái rẻ hoặc mất cái thật.
+
+    **KHÔNG đụng widget từ thread nền** — mọi kết quả về qua tín hiệu, đúng
+    khuôn `ThayGiongDialog._nghe_xong`. Nhãn TIẾNG VIỆT, **KHÔNG EMOJI** (bài
+    học v2.6.22: máy anh Hùng thiếu glyph nên nút ra Ô ĐEN).
+    """
+
+    #: (đường dẫn wav, nguồn giọng THẬT, lời lỗi, cảnh báo)
+    _nghe_xong = pyqtSignal(str, str, str, str)
+    #: bắn khi sổ giọng ĐỔI -> hộp cha dựng lại combo
+    so_doi = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Giọng của tôi — nhân bản từ file mẫu")
+        self.setMinimumWidth(700)
+        self._mau = ""                       # file mẫu đang chọn
+        lay = QVBoxLayout(self)
+
+        # ---- CẢNH BÁO PHÁP LÝ: ngay tại chỗ chọn file, KHÔNG giấu vào tài
+        # liệu. Đây là rủi ro nặng nhất của cả tính năng và nó không phải rủi
+        # ro kỹ thuật — anh Hùng BÁN app nên người chịu là anh ấy.
+        from app.core import nhan_ban_giong as NB
+        lb_pl = QLabel("LƯU Ý PHÁP LÝ: " + NB.CANH_BAO_PHAP_LY)
+        lb_pl.setWordWrap(True)
+        lb_pl.setStyleSheet("color:#FFB86C")
+        lay.addWidget(lb_pl)
+
+        lay.addWidget(QLabel("Giọng đã lưu:"))
+        self.ds = QListWidget()
+        self.ds.setMinimumHeight(150)
+        lay.addWidget(self.ds, 1)
+
+        # ---- hàng THÊM GIỌNG ----
+        h1 = QHBoxLayout()
+        self.b_chon = QPushButton("Chọn file mẫu...")
+        self.b_chon.setToolTip(
+            "File tiếng của anh, 5-30 giây, CHỈ MỘT NGƯỜI nói, không nhạc "
+            "nền.\nNhận wav / mp3 / m4a / video — app tự đổi sang dạng nó "
+            "dùng được.")
+        self.b_chon.clicked.connect(self._chon_mau)
+        h1.addWidget(self.b_chon)
+        self.lb_mau = QLabel("(chưa chọn file mẫu)")
+        self.lb_mau.setWordWrap(True)
+        h1.addWidget(self.lb_mau, 1)
+        lay.addLayout(h1)
+
+        h2 = QHBoxLayout()
+        h2.addWidget(QLabel("Tên giọng:"))
+        self.o_ten = QLineEdit()
+        self.o_ten.setPlaceholderText("ví dụ: Giọng của tôi")
+        self.o_ten.setToolTip(
+            "Tên anh tự đặt, tiếng Việt có dấu cũng được. Đây là thứ anh sẽ "
+            "thấy trong ô Giọng đọc.")
+        h2.addWidget(self.o_ten, 1)
+        self.b_nghe_mau = QPushButton("Nghe thử mẫu")
+        self.b_nghe_mau.setToolTip(
+            "Phát THẲNG file mẫu vừa chọn — để chắc anh chọn đúng file.\n"
+            "Không nạp model nên nghe được ngay.")
+        self.b_nghe_mau.clicked.connect(self._nghe_mau)
+        h2.addWidget(self.b_nghe_mau)
+        self.b_luu = QPushButton("Lưu giọng này")
+        self.b_luu.clicked.connect(self._luu)
+        h2.addWidget(self.b_luu)
+        lay.addLayout(h2)
+
+        # ---- hàng SỬA GIỌNG ĐÃ LƯU ----
+        h3 = QHBoxLayout()
+        self.b_nghe_giong = QPushButton("Nghe thử giọng")
+        self.b_nghe_giong.setToolTip(
+            "Đọc một câu mẫu bằng CHÍNH giọng đã lưu, đi đúng cửa mà lượt "
+            "xuất thật đi.\nLượt đầu mất khoảng 40 giây vì phải nạp model "
+            "(đo thật) — đừng bấm lại, nút sẽ tự mở khi xong.")
+        self.b_nghe_giong.clicked.connect(self._nghe_giong)
+        h3.addWidget(self.b_nghe_giong)
+        self.b_doi_ten = QPushButton("Đổi tên")
+        self.b_doi_ten.setToolTip(
+            "Đổi tên hiển thị. KHÔNG đụng file mẫu nên mã giọng không đổi — "
+            "kênh nào đang gán giọng này vẫn đúng.")
+        self.b_doi_ten.clicked.connect(self._doi_ten)
+        h3.addWidget(self.b_doi_ten)
+        self.b_xoa = QPushButton("Xoá giọng")
+        self.b_xoa.clicked.connect(self._xoa)
+        h3.addWidget(self.b_xoa)
+        h3.addStretch(1)
+        b_dong = QPushButton("Đóng")
+        b_dong.clicked.connect(self.accept)
+        h3.addWidget(b_dong)
+        lay.addLayout(h3)
+
+        self.lb_tt = QLabel("")
+        self.lb_tt.setWordWrap(True)
+        lay.addWidget(self.lb_tt)
+
+        self._nghe_xong.connect(self._nghe_giong_xong)
+        self._nap()
+
+    # ------------------------------------------------------------------
+    def _nap(self) -> None:
+        """Đổ lại danh sách giọng đã lưu. Giữ dòng đang chọn nếu còn."""
+        from app.core import nhan_ban_giong as NB
+        cu = self._ten_dang_chon()
+        self.ds.clear()
+        so = NB._doc_so()
+        for ten in sorted(so):
+            it = QListWidgetItem(NB.nhan(ten))
+            it.setData(Qt.ItemDataRole.UserRole, ten)
+            self.ds.addItem(it)
+        if not so:
+            self.lb_tt.setText(
+                "Chưa có giọng nào. Bấm «Chọn file mẫu...», đặt tên, rồi "
+                "«Lưu giọng này».")
+        for i in range(self.ds.count()):
+            if self.ds.item(i).data(Qt.ItemDataRole.UserRole) == cu:
+                self.ds.setCurrentRow(i)
+                break
+        # MẤT FILE MẪU thì BÁO, KHÔNG tự xoá khỏi sổ: mẫu có thể chỉ tạm không
+        # thấy (ổ ngoài chưa cắm), mà tự xoá là mất luôn cấu hình kênh đang
+        # trỏ vào nó. Cùng luật `_canh_bao_mau_mat` của mẫu-theo-kênh.
+        mat = NB.sua_mau_mat()
+        if mat:
+            self.lb_tt.setText(
+                "MẤT FILE MẪU của: " + ", ".join(mat[:5])
+                + ". Giọng vẫn còn trong sổ (không tự xoá) nhưng chọn nó thì "
+                  "app sẽ LÙI về giọng thường. Thêm lại mẫu để dùng tiếp.")
+
+    def _ten_dang_chon(self) -> str:
+        it = self.ds.currentItem()
+        return str(it.data(Qt.ItemDataRole.UserRole) or "") if it else ""
+
+    # ------------------------------------------------------------------
+    def _chon_mau(self) -> None:
+        p, _ = QFileDialog.getOpenFileName(
+            self, "Chọn file mẫu giọng", "",
+            "Tiếng và video (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus "
+            "*.mp4 *.mkv *.mov);;Tất cả (*.*)")
+        if not p:
+            return
+        from app.core import nhan_ban_giong as NB
+        self._mau = p
+        kt = NB.kiem_mau(p)
+        self.lb_mau.setText(Path(p).name)
+        if not kt.get("ok"):
+            # MẪU HỎNG THÌ BÁO TỬ TẾ, đừng để tới lúc xuất 30 video mới biết.
+            self.lb_tt.setText("MẪU KHÔNG DÙNG ĐƯỢC: " + (kt.get("loi") or ""))
+            self.lb_mau.setText(Path(p).name + "  — KHÔNG DÙNG ĐƯỢC")
+            return
+        cb = "  ".join(kt.get("canh_bao") or [])
+        self.lb_tt.setText(
+            f"Mẫu dài {kt['giay']:.1f} giây · "
+            f"{100 * kt['ty_le_tieng']:.0f}% thời lượng có tiếng"
+            + (("  |  LƯU Ý: " + cb) if cb else ""))
+
+    def _nghe_mau(self) -> None:
+        """Phát THẲNG file mẫu. Đổi sang wav trước vì `winsound` chỉ nhận wav."""
+        if not self._mau or not Path(self._mau).is_file():
+            QMessageBox.information(
+                self, "Nghe thử mẫu",
+                "Chưa chọn file mẫu. Bấm «Chọn file mẫu...» trước.")
+            return
+        import subprocess
+        import tempfile
+        import uuid
+        from config import settings as _st
+        w = Path(tempfile.gettempdir()) / f"_bqmau_{uuid.uuid4().hex[:8]}.wav"
+        try:
+            r = subprocess.run(
+                [_st.FFMPEG_PATH, "-y", "-v", "error", "-i", self._mau,
+                 "-vn", "-ac", "1", "-ar", "24000", str(w)],
+                capture_output=True, timeout=300,
+                creationflags=(0x08000000 if os.name == "nt" else 0))
+            # ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần trong
+            # repo này -> kiểm KÍCH THƯỚC, đừng tin mã thoát.
+            if r.returncode != 0 or not w.exists() or w.stat().st_size < 1024:
+                raise OSError("ffmpeg không đọc được file mẫu")
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Nghe thử mẫu",
+                                f"Không phát được file mẫu này:\n{e}")
+            return
+        self._phat(str(w))
+
+    def _nghe_giong(self) -> None:
+        """NHÂN BẢN THẬT qua `thay_giong.doc_thu` — đúng cửa lượt xuất đi.
+
+        **KHÔNG gọi thẳng `dubbing._synth_all_words`**: cổng 63 đếm ĐÚNG 3 chỗ
+        gọi hàm đó và sẽ ĐỎ nếu mọc thêm chỗ thứ 4 (bản đầu của nút nghe thử ở
+        cổng 65 đã sập đúng vậy). Đi cửa trên còn được thêm: tự tách `pitch`,
+        tự cắt lề im, và tự NÓI RA khi app lùi về giọng thường.
+        """
+        import threading
+        ten = self._ten_dang_chon()
+        if not ten:
+            QMessageBox.information(
+                self, "Nghe thử giọng",
+                "Chọn một giọng trong danh sách trước đã.")
+            return
+        from app.core import nhan_ban_giong as NB
+        ma = NB.ma_giong(ten)
+        if not ma:
+            QMessageBox.warning(
+                self, "Nghe thử giọng",
+                f"Giọng «{ten}» không dùng được — file mẫu của nó không còn "
+                f"trên đĩa. Thêm lại mẫu rồi thử lại.")
+            return
+        self._ngat_tieng()
+        self.b_nghe_giong.setEnabled(False)
+        self.b_nghe_giong.setText("Đang đọc...")
+        self.lb_tt.setText(
+            "Đang nhân bản giọng — lượt đầu mất khoảng 40 giây vì phải nạp "
+            "model. Không phải app treo.")
+        import tempfile
+        import uuid
+        wav = str(Path(tempfile.gettempdir())
+                  / f"_bqtoi_{uuid.uuid4().hex[:8]}.wav")
+
+        def bg() -> None:
+            try:
+                from app.core import thay_giong as TGC
+                kq = TGC.doc_thu(ma, wav, nn="vi")
+                self._nghe_xong.emit(kq.get("ra") or "", kq.get("nguon") or "",
+                                     kq.get("loi") or "",
+                                     kq.get("canh_bao") or "")
+            except Exception as e:  # noqa: BLE001
+                self._nghe_xong.emit("", "", str(e), "")
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _nghe_giong_xong(self, wav: str, nguon: str, loi: str,
+                         canh_bao: str = "") -> None:
+        """Chạy ở LUỒNG GIAO DIỆN (qua tín hiệu) -> đụng widget mới an toàn."""
+        self.b_nghe_giong.setEnabled(True)
+        self.b_nghe_giong.setText("Nghe thử giọng")
+        if loi or not wav or not Path(wav).exists():
+            QMessageBox.warning(
+                self, "Nghe thử giọng không được",
+                f"Không đọc thử được giọng này.\n\nLý do: {loi or 'không rõ'}"
+                "\n\nGiọng nhân bản cần bộ VieNeu ĐÃ TẢI và có torch — xem "
+                "dòng «CHƯA CHẠY ĐƯỢC» trong danh sách.")
+            return
+        # NGUỒN THẬT, không phải cái vừa chọn: thiếu model thì app LÙI ÊM về
+        # edge-tts, không nói ra thì anh Hùng tưởng đang nghe giọng của mình
+        # rồi gán nó cho 300 kênh.
+        self.lb_tt.setText(
+            f"Nghe thử: nguồn THẬT = {nguon or 'không rõ'}"
+            + (f"  |  LƯU Ý: {canh_bao}" if canh_bao else ""))
+        self._phat(wav)
+
+    def _phat(self, wav: str) -> None:
+        try:
+            import winsound
+            winsound.PlaySound(
+                wav, winsound.SND_FILENAME | winsound.SND_ASYNC
+                | winsound.SND_NODEFAULT)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Không phát được",
+                                f"Máy này không phát được âm thanh:\n{e}")
+
+    def _ngat_tieng(self) -> None:
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ------------------------------------------------------------------
+    def _luu(self) -> None:
+        from app.core import nhan_ban_giong as NB
+        ten = self.o_ten.text().strip()
+        if not ten:
+            QMessageBox.information(self, "Lưu giọng",
+                                    "Đặt tên cho giọng trước đã.")
+            return
+        if not self._mau:
+            QMessageBox.information(self, "Lưu giọng",
+                                    "Chọn file mẫu trước đã.")
+            return
+        r = NB.them_giong(ten, self._mau, lang="vi",
+                          nguon="anh Hùng tự khai qua hộp Giọng của tôi")
+        if not r.get("ok"):
+            QMessageBox.warning(self, "Không lưu được",
+                                str(r.get("loi") or "không rõ lý do"))
+            return
+        cb = "  ".join(r.get("canh_bao") or [])
+        self.o_ten.clear()
+        self._mau = ""
+        self.lb_mau.setText("(chưa chọn file mẫu)")
+        self._nap()
+        self.lb_tt.setText(
+            f"Đã lưu giọng «{ten}». Nó có trong ô Giọng đọc ngay bây giờ."
+            + (("  |  LƯU Ý: " + cb) if cb else ""))
+        self.so_doi.emit()
+
+    def _doi_ten(self) -> None:
+        from app.core import nhan_ban_giong as NB
+        cu = self._ten_dang_chon()
+        if not cu:
+            QMessageBox.information(self, "Đổi tên",
+                                    "Chọn một giọng trong danh sách trước đã.")
+            return
+        moi = self.o_ten.text().strip()
+        if not moi:
+            QMessageBox.information(
+                self, "Đổi tên",
+                f"Gõ TÊN MỚI vào ô «Tên giọng» rồi bấm Đổi tên.\n\n"
+                f"Đang chọn: {cu}")
+            return
+        if not NB.doi_ten(cu, moi):
+            QMessageBox.warning(
+                self, "Không đổi được tên",
+                f"Không đổi được «{cu}» thành «{moi}» — có thể tên mới đã "
+                f"có rồi.")
+            return
+        self.o_ten.clear()
+        self._nap()
+        self.lb_tt.setText(f"Đã đổi tên «{cu}» thành «{moi}».")
+        self.so_doi.emit()
+
+    def _xoa(self) -> None:
+        from app.core import nhan_ban_giong as NB
+        ten = self._ten_dang_chon()
+        if not ten:
+            QMessageBox.information(self, "Xoá giọng",
+                                    "Chọn một giọng trong danh sách trước đã.")
+            return
+        # Nút MẶC ĐỊNH là KHÔNG: bấm Enter theo phản xạ thì không mất giọng.
+        h = QMessageBox(self)
+        h.setWindowTitle("Xoá giọng")
+        h.setText(f"Xoá giọng «{ten}» khỏi danh sách?\n\n"
+                  f"App sẽ xoá luôn FILE MẪU mà nó đã chép vào thư mục dữ "
+                  f"liệu. File gốc của anh KHÔNG bị đụng.\n\n"
+                  f"Kênh nào đang gán giọng này sẽ lùi về giọng thường.")
+        h.setStandardButtons(QMessageBox.StandardButton.Yes
+                             | QMessageBox.StandardButton.No)
+        h.setDefaultButton(QMessageBox.StandardButton.No)
+        if h.exec() != QMessageBox.StandardButton.Yes:
+            return
+        if not NB.xoa(ten):
+            QMessageBox.warning(self, "Không xoá được",
+                                f"Không ghi được sổ giọng nên «{ten}» vẫn còn.")
+            return
+        self._nap()
+        self.lb_tt.setText(f"Đã xoá giọng «{ten}».")
+        self.so_doi.emit()
 
 
 class ThayGiongDialog(QDialog):
@@ -959,6 +1367,21 @@ class ThayGiongDialog(QDialog):
             "Đi đúng cửa mà lượt xuất thật đi, nên nghe sao là ra vậy.")
         self.b_nghe.clicked.connect(self._nghe_thu)
         h2.addWidget(self.b_nghe)
+
+        # GIỌNG CỦA ANH HÙNG — cửa vào hộp nhân bản. Đặt NGAY CẠNH ô Giọng đọc
+        # chứ không nhét vào menu: đây là thứ anh Hùng hỏi đích danh, mà mọi
+        # tính năng phải-đi-tìm-mới-thấy thì coi như không tồn tại (đúng ca
+        # `nhan_ban_giong` vừa nằm chết 564 dòng vì không có nút nào).
+        # Nhãn KHÔNG EMOJI + NGẮN (cổng 84: hàng này đã sát mép).
+        self.b_giong_toi = QPushButton("Giọng của tôi...")
+        self.b_giong_toi.setToolTip(
+            "Đưa vào một file tiếng của anh (5-30 giây, một người nói) — app "
+            "tạo một giọng mới đọc bằng chất giọng đó.\n"
+            "Lưu lại được, thêm được nhiều giọng, và mẫu được CHÉP vào thư "
+            "mục dữ liệu nên xoá file gốc thì giọng vẫn chạy.\n"
+            "CHỈ dùng giọng anh có quyền — xem lời nhắc trong hộp.")
+        self.b_giong_toi.clicked.connect(self._mo_giong_toi)
+        h2.addWidget(self.b_giong_toi)
 
         h2.addSpacing(8)
         h2.addWidget(QLabel("Số luồng:"))
@@ -1593,6 +2016,22 @@ class ThayGiongDialog(QDialog):
         self._timer.start(700)
 
     # ------------------------------------------------------------------
+    # GIỌNG CỦA ANH HÙNG (nhân bản từ mẫu)
+    # ------------------------------------------------------------------
+    def _mo_giong_toi(self) -> None:
+        """Mở hộp nhân bản; sổ đổi thì dựng lại combo NGAY.
+
+        `giu_dang_chon=True` là chốt chống lỗi "chọn X ra Y": người dùng vừa
+        lưu một giọng nhưng CHƯA bấm Chạy, nên QSettings còn là giọng CŨ. Dựng
+        lại combo theo setting là **nuốt mất lựa chọn đang hiện** — đúng lỗi
+        thật của cổng 55 (combo dựng sau thread nền ghi đè giọng user bằng "").
+        """
+        h = HopGiongToi(self)
+        h.so_doi.connect(lambda: self._dung_combo_giong(giu_dang_chon=True))
+        h.exec()
+        self._ngat_tieng()               # hộp con có thể còn đang phát tiếng
+
+    # ------------------------------------------------------------------
     # NGHE THỬ GIỌNG
     # ------------------------------------------------------------------
     def _nghe_thu(self) -> None:
@@ -2187,13 +2626,25 @@ class ThayGiongDialog(QDialog):
 
         threading.Thread(target=bg, daemon=True).start()
 
-    def _dung_combo_giong(self) -> None:
+    def _dung_combo_giong(self, giu_dang_chon: bool = False) -> None:
+        """Dựng lại combo giọng.
+
+        ``giu_dang_chon=True`` -> giữ giọng ĐANG HIỆN trên combo thay vì đọc
+        lại giá trị ĐÃ LƯU. Cố ý phải nói ra bằng tham số, không mặc định:
+          · đường thường (nạp xong danh sách nền) phải lấy giá trị ĐÃ LƯU —
+            đó là lựa chọn của anh Hùng từ lượt trước;
+          · đường "vừa thêm giọng của tôi" thì KHÔNG: người dùng vừa lưu một
+            giọng và chưa bấm Chạy nên setting còn là giọng CŨ, đọc setting là
+            **nuốt mất giọng vừa thêm** — đúng họ lỗi "chọn X ra Y" mà
+            `_tai_gh_xong`/`_tai_kokoro_xong` đã cố ý không gọi hàm này để né.
+        """
         ra = getattr(self, "_ra_giong", None)
         if ra:
             self._giong_tho = list(ra[0] or [])
             if self._giong_tho:
                 _CACHE_GIONG[:] = self._giong_tho
-        muon = str(self._s.value(K_GIONG, "") or "")
+        muon = (str(self.cb_giong.currentData() or "") if giu_dang_chon
+                else str(self._s.value(K_GIONG, "") or ""))
         # NGÔN NGỮ ĐÍCH quyết định thứ tự nhóm: chọn Tiếng Việt thì giọng Việt
         # phải lên đầu, không bị chôn dưới 47 giọng Anh. `_doi_ngon_ngu` đã
         # gọi lại hàm này mỗi lần đổi ngôn ngữ.

@@ -2434,6 +2434,132 @@
      (511,8 s) · chưa có số thời gian CẢ BƯỚC tách trong lượt này (`tach.giay`
      chỉ là `apply_model`; số cả bước lấy ở cổng 71: **0,155x GPU · 0,488x CPU**)
      · cột `trộn` đo LIỀN MẠCH nên chỉ đọc được là *"không chậm hơn"*.
+- **GIỌNG CỦA ANH HÙNG (NHÂN BẢN TỪ MẪU) ĐÃ NỐI VÀO UI — CỔNG 88 (20/08/2026).**
+  Anh Hùng: *"ném giọng đọc của tôi khoảng mấy giây Reference Audio, sau đó dán
+  bao nhiêu ký tự dùng giọng đó cũng được... không lấy của bất kỳ ai nữa, tự
+  động lấy của mình luôn"*.
+  **CA THỨ NĂM CỦA "HÀM XONG ≠ TÍNH NĂNG XONG"** sau `giong_bang` ·
+  `giong_chatter` · `giong_vbee` · `giong_kokoro`: `app/core/nhan_ban_giong.py`
+  dựng xong **564 dòng** (kiểm mẫu · sổ ra đĩa · chép mẫu vào `DATA_DIR` ·
+  xoá/đổi tên) **và cổng 81 đã chấm nó XANH 57/0** — nhưng
+  `grep -rn "nhan_ban_giong" app/ui/` ra **0 dòng**. Cổng 81 canh HÀM, không
+  canh CÁI ANH HÙNG BẤM.
+  **KHÔNG ĐẺ TIỀN TỐ `toi:` — ĐO ĐƯỢC, KHÔNG PHẢI SỞ THÍCH.** Mô tả việc gợi ý
+  một tiền tố mới; đo ra thì đó là bẫy: `giong_bang.nguon("toi:abc")` trả
+  **`'edge'`**, tức tiền tố chưa đăng ký bị coi là edge-tts -> đúng bẫy "chọn X
+  ra Y" mà `ov:nu_am`/`vn:`/`cb:`/`kk:` đã sập BỐN lần. Mã giọng giữ **tiền tố
+  NGUYÊN BẢN của máy** `vnb:`, thứ đã đăng ký đủ ở `giong_bang._TIEN_TO` (đứng
+  TRƯỚC `vn:` vì dài hơn) và **CẢ HAI** cửa `dubbing._synth_all` +
+  `_synth_all_words` (kiểm bằng AST **và** GỌI THẬT: cả hai cửa rẽ vào
+  `giong_vieneu.doc_loat` với đúng `vnb:`). Cổng 81 CA 7h canh quyết định đó,
+  cổng 88 CA 2c' canh mặt còn lại.
+  **3 LỖ CỦA SỔ GIỌNG, cả ba "app vẫn chạy, không một dòng báo":**
+  (a) **MẤT SẠCH SỔ.** `_doc_so` cố ý trả `{}` khi parse hỏng và không tự ghi
+  đè — nhưng chốt đó chặn NỬA đường: lượt ghi kế tiếp lấy `{}` rồi `_ghi_so`
+  **thay NGUYÊN FILE**. Nay `_sao_luu_neu_hong` chép ra
+  `giong_nhan_ban.hong-<ngày>.json` + ghi log. (b) **MỘT MỤC HỎNG GIẾT CẢ
+  COMBO**: `_doc_so` chỉ bảo đảm dict NGOÀI CÙNG, mục lạ (chuỗi/None) làm
+  `g.get()` ném `AttributeError` trong `danh_sach()`, và `giay: "4,5"` (dấu
+  phẩy tiếng Việt) làm `float()` ném trong `nhan()` — nay `_muc()` + `_so_giay()`.
+  (c) **`Path("").exists()` LÀ `True`** nên `sua_mau_mat` coi mục THIẾU khoá
+  `mau` là "mẫu còn nguyên" = báo cáo NGƯỢC sự thật; nay hỏi chuỗi RỖNG trước.
+  `xoa()` nay đi qua `xoa_an_toan.an_toan_de_xoa` (cửa thứ 6 của lớp bệnh đã
+  xoá sạch cây mã 19/08) — đo: xoá mục `mau` rỗng -> TỪ CHỐI, mồi canary còn.
+  **SỐ ĐO (`_do_giong_toi.py` -> `_kq_giong_toi.json`; mẫu là edge-tts
+  `vi-VN-*` = GIỌNG GIẢ LẬP, sạch giấy phép, và là mẫu SẠCH TUYỆT ĐỐI nên mọi
+  số dưới đây là **TRẦN TRÊN** — mẫu điện thoại sẽ tệ hơn, `giong_vieneu` đã
+  đo 7,7% vs 21-31%):**
+
+  | | MẪU A (nữ) | MẪU B (nam) | CLONE_A | CLONE_B | VN_PRESET (không clone) |
+  |---|---|---|---|---|---|
+  | F0 trung vị (nửa cung) | 14,31 | 6,86 | **13,63** | **5,38** | 13,52 |
+  | \|Δ vs MẪU A\| | — | 7,45 | **0,69** | 8,93 | 0,79 |
+  | \|Δ vs MẪU B\| | 7,45 | — | 6,77 | **1,48** | 6,66 |
+  | **nhấn nhá** | 3,10 | 4,01 | **3,15** | **3,73** | 3,18 |
+  | phủ mốc | — | — | **100,0%** | **100,0%** | 100,0% |
+  | rung mốc chữ đầu | — | — | **18,5 ms** | **17,8 ms** | 11,0 ms |
+  | giây / 4 câu | 1,2 | 1,8 | 32,4 | 31,5 | 18,5 |
+  | RAM đỉnh | 62 MB | — | **3.045 MB** | 3.004 MB | 3.009 MB |
+
+  **NHÂN BẢN CHẠY THẬT — nhưng MỘT MẪU THÔI thì KHÔNG chứng minh được, và đây
+  là phần đáng đọc nhất.** `VN_PRESET` cách MẪU A đúng **0,79** nửa cung, gần
+  y hệt `CLONE_A` (**0,69**) — tức nếu chỉ thử với mẫu A thì bảng số **không
+  phân biệt được nhân bản với không nhân bản**, đúng loại DƯƠNG TÍNH GIẢ mà
+  bẫy `use_ref_codes` lượt 4 đã sập. Bằng chứng thật nằm ở **ĐỘ TRẢI**: hai bản
+  sao đứng ở **13,63 và 5,38** = trải **8,25 nửa cung** theo đúng mẫu của
+  chúng, trong khi giọng dựng sẵn **không thể xê dịch** (13,52 cố định, cách
+  `CLONE_B` **8,14** nửa cung). **Quy tắc: phép đo nhân bản phải có ÍT NHẤT
+  HAI mẫu cách nhau xa, và mẫu thứ hai phải xa cao độ mặc định của model.**
+  **NHẤN NHÁ — SỐ NÓI NGƯỢC KỲ VỌNG MỘT PHẦN, ghi đúng số:** mô tả việc đoán
+  *"giọng clone mang ngữ điệu của mẫu nên khả năng cao là HƠN"*. Đo ra:
+  `CLONE_A` **3,15** vs `VN_PRESET` **3,18** = **BẰNG NHAU** (−0,03, nằm TRONG
+  nhiễu — xem dưới); chỉ `CLONE_B` **3,73** mới hơn thật (+0,55). Nhìn theo
+  chiều khác thì rõ hơn: bản sao **thừa hưởng ngữ điệu của MẪU, hơi bị nén
+  lại** (A 3,10 -> 3,15 = +0,05 · B 4,01 -> 3,73 = **−0,28**). Tức **nhấn nhá
+  của giọng nhân bản = nhấn nhá của mẫu anh Hùng đưa vào**, không phải một mức
+  cố định — đưa mẫu đọc trơ thì ra giọng trơ. So mốc: cả hai bản sao **hơn
+  Kokoro `af_bella` 2,33 rất xa**, `CLONE_B` hơn cả Piper 3,24 và HoaiMy 3,40.
+  **ĐỐI CHỨNG TÁI LẬP LÀ CHỖ PHẢI ĐỌC TRƯỚC KHI TIN 4 SỐ TRÊN:** arm edge chạy
+  CÙNG LƯỢT ra `EDGE_B` **4,01** vs mốc **3,96** (lệch 0,05 — tái lập tốt)
+  nhưng `EDGE_A` **3,10** vs mốc **3,40** (lệch **0,30**). Bộ câu ở đây chỉ
+  **4 câu** (`_do_nhan_nha_bang.CAU["vi"]`) nên **0,30 chính là sàn nhiễu của
+  phép đo này** -> chênh 0,03 giữa `CLONE_A` và `VN_PRESET` **không đọc được**,
+  còn +0,55 của `CLONE_B` thì đọc được.
+  **MỐC TỪNG CHỮ TỐT HƠN HẲN MỐC ĐANG GHI, nhưng mẫu NHỎ:** VieNeu không tự
+  trả mốc nên phải qua `giong_hang`; đo được **phủ 100,0% · rung 17,8-18,5 ms**
+  so với mốc đang ghi cho gióng hàng (**98,5-98,6% · 90-119 ms**) và gần
+  edge-tts tự trả (**15,7 ms**). Ba lý do tin được: `VN_PRESET` ra **11,0 ms**,
+  khớp con số **8,5 ms** `giong_vieneu` đã ghi; lệch hệ thống của arm clone chỉ
+  **+1,9/+3,0 ms**; mốc 90-119 ms đo trên tiếng **OmniVoice** (chất lượng thấp
+  hơn). **NHƯNG chỉ 4 câu/arm** — chưa đủ để thay mốc cũ, đừng chép số này vào
+  nhãn.
+  **ĐỌC DÀI 44 CÂU: KHÔNG CỤT CHỮ, KHÔNG TRÔI GIỌNG.** 44/44 câu đọc được ·
+  **135 từ vào -> 135 từ ra = 100,0%** (9/9 câu đủ) · F0 độ lệch chuẩn giữa 44
+  câu chỉ **0,53** nửa cung, lệch giữa các PHẦN TƯ lớn nhất **0,48** -> **bệnh
+  "chia đoạn xong ghép lại thì giọng đổi" của CosyVoice VẮNG MẶT**. Thời gian
+  **180,4 s cho 165,4 s tiếng = 1,090x** (chậm hơn thời gian thật), RAM đỉnh
+  **3.078 MB**, VRAM **2.434 MiB** (POLL trong lúc chạy — lấy mẫu 2 đầu là ra
+  mức nền, bẫy cổng 71/73). **Trần ký tự: `max_chars = 256` mỗi lượt `infer`,
+  và GÓI tự chia chunk** (`normalize_to_chunks_v3_with_gaps`) — app KHÔNG tự
+  chia, câu 65 ký tự là MỘT chunk. **GIÁ CỦA NHÂN BẢN so với giọng dựng sẵn:
+  +13,9 giây cho cùng 4 câu** (32,4 vs 18,5) vì đường `ref_audio` mới đụng
+  torch; lượt đọc ĐẦU của tiến trình mất **~38 giây** (phần lớn là nạp model)
+  nên nút Nghe thử phải khoá lại và nói "Đang đọc...".
+  **UI:** nút **"Giọng của tôi..."** ngay cạnh ô Giọng đọc -> hộp `HopGiongToi`
+  (cảnh báo PHÁP LÝ ngay chỗ chọn file · chọn WAV/MP3/video · đặt tên · **2 nút
+  nghe thử CỐ Ý KHÁC NHAU**: "Nghe thử mẫu" phát thẳng file mẫu, tức thời;
+  "Nghe thử giọng" chạy nhân bản THẬT qua `thay_giong.doc_thu` = đúng cửa lượt
+  xuất đi, **KHÔNG** gọi thẳng `_synth_all_words` để cổng 63 vẫn 24/0 · đổi tên
+  · xoá). Nhãn dài nhất **96 ký tự** (Kokoro 139-178 đã đẩy mất cảnh báo "cần
+  tải") và vào đúng nhóm **TRÊN MÁY**. Đổi tên **KHÔNG đổi mã giọng** nên kênh
+  đang gán vẫn đúng. Hộp bắn `so_doi` -> cha dựng lại combo với
+  **`giu_dang_chon=True`** (đọc từ WIDGET, không từ QSettings: user vừa lưu mà
+  chưa bấm Chạy nên setting còn là giọng CŨ — đúng lỗi thật cổng 55).
+  **CỔNG 88 `_test_giong_toi.py`: ĐẠT 66 · HỎNG 0.** Thử phá
+  `_pha_giong_toi.py` (9 phép, mỗi phép gỡ ĐÚNG 1 chốt): **BẮT 9 · LỌT 0 ·
+  KHÔNG PHÁ ĐƯỢC 0**. Lượt phá ĐẦU ra **BẮT 8 · LỌT 1** và cái LỌT là **lỗi
+  của CỔNG**: mục 10c dùng `ast.unparse` rồi tìm chuỗi, mà **`unparse` GIỮ
+  DOCSTRING** — docstring của `_mo_giong_toi` cố ý trích chính cụm
+  `giu_dang_chon=True` để giải thích chốt, nên gỡ sạch tham số khỏi lời gọi mà
+  cổng vẫn XANH. **Bài học cổng 73 lỗi (b) lặp lại**; nay đi tìm NÚT
+  `ast.keyword` thật + có mục TỰ KIỂM BỘ DÒ.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa ai NGHE bằng tai** một giọng nhân bản nào —
+  mọi số trên là số ĐO, và thước độ giống là **F0 (cao độ)** nên nó trả lời
+  được *"bản sao có đi theo mẫu không"* mà **KHÔNG** trả lời được *"nó có
+  GIỐNG NGƯỜI ĐÓ không"* (hai người khác nhau vẫn có thể cùng cao độ). Muốn
+  câu đó phải dùng **ECAPA-TDNN** như `_do_nhan_ban.py` — `speechbrain` KHÔNG
+  có trong `_lib_giong` lẫn `.venv` nên đường đó chưa chạy được lượt này ·
+  mẫu là **GIẢ LẬP** (edge-tts), chưa đo trên giọng thật của anh Hùng, và mẫu
+  sạch tuyệt đối là ca DỄ NHẤT · nhấn nhá đo trên **4 câu** nên sàn nhiễu 0,30
+  · mốc từng chữ cũng chỉ 4 câu/arm · bộ đếm cụt chữ lượt này **lùi về
+  faster-whisper-small TRÊN MÁY** (không phải Groq — có dòng tải model HF
+  trong log), 9/9 câu khớp đúng nên vẫn tin được nhưng đó là thước KHÁC ·
+  `Chatterbox` (`cb:`, 23 tiếng khác) đã có trong `nhan_ban_giong` nhưng hộp
+  này **chỉ mở đường tiếng Việt** (`lang="vi"` -> VieNeu) · chưa nối vào
+  **giọng RIÊNG THEO KÊNH** (`giong_kenh`) nên chưa gán được giọng nhân bản
+  cho từng kênh trong 200-300 kênh · bản `.exe` KHÔNG gói VieNeu nên máy nhân
+  viên phải bấm nút tải + phải có Python 3, và đường nhân bản còn cần
+  **torch + torchaudio** (nhãn nói đích danh khi thiếu).
 - **GIỌNG KOKORO ĐÃ NỐI VÀO UI + ĐO CẢ 28 GIỌNG (v2.41.0, 20/08/2026).**
   `app/core/giong_kokoro.py` viết xong đủ hàm đọc + hàm cài từ trước mà **UI
   không gọi tới một dòng nào** — đo trước khi vá: `grep -c "kk:"

@@ -234,6 +234,25 @@ CONG = [
     # nhận"; cũng không báo HỎNG — đỏ oan thì người ta bỏ qua cổng).
     # Thử phá `_pha_kokoro.py`: **BẮT 8 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
     ("87 giọng Kokoro",     "_test_kokoro.py",           44),
+    # Cổng 88 — GIỌNG CỦA ANH HÙNG (nhân bản từ mẫu). Số **88** lấy bằng cách
+    # đọc chính `CONG` này (max đang là 87), KHÔNG đếm theo trí nhớ: bảng này
+    # đã có **52 và 77 trùng số**, mà trùng số thì hai cổng ghi đè `_kqNN.txt`
+    # của nhau (bài học 70 vs 69, 85 vs 81).
+    #
+    # Nó nằm ĐÂY vì `app/core/nhan_ban_giong.py` là **ca thứ NĂM** của bệnh
+    # "hàm xong ≠ tính năng xong": 564 dòng đã có cổng 81 chấm XANH mà
+    # `grep -rn "nhan_ban_giong" app/ui/` ra **0 dòng** — cổng 81 canh HÀM,
+    # không canh CÁI ANH HÙNG BẤM. Để cổng này ngoài danh sách thì lần "dọn
+    # gọn" sau có thể gỡ nút mà mọi cổng vẫn xanh (đúng bẫy cổng 70/84).
+    #
+    # RẺ: KHÔNG gọi mạng, KHÔNG tốn lượt Groq/ElevenLabs, KHÔNG nạp model
+    # VieNeu (CA 2 vá `giong_vieneu.doc_loat` rồi xem cửa rẽ vào đâu; CA 7 vá
+    # `co_vieneu` để giả lập máy thiếu model). Phần đắt nhất là 4 lượt ffmpeg
+    # sinh WAV mẫu + 1 tiến trình con đọc lại sổ (~30 giây). Máy chưa tải bộ
+    # VieNeu thì CA 11 tự **BỎ QUA** — không tự cho ĐẠT (đó là "phép đo phát
+    # chứng nhận") và không báo HỎNG (đỏ oan thì người ta bỏ qua cổng).
+    # Thử phá `_pha_giong_toi.py`: 9 phép, mỗi phép gỡ ĐÚNG một chốt.
+    ("88 giọng của tôi",    "_test_giong_toi.py",        66),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

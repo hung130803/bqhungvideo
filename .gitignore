@@ -143,3 +143,6 @@ _kq*.txt
 _kq_hq/
 _kq*/
 bq_test_dg86*/
+
+# Hộp cát phép đo giọng nhân bản (WAV mẫu + tiếng sinh ra, hàng trăm MB)
+_do_giong_toi/
