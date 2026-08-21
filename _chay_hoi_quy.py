@@ -255,7 +255,7 @@ CONG = [
     # 66 -> 104 (20/08/2026): thêm CA 12 — NÚT TẢI PHẦN NHÂN BẢN (torch +
     # torchaudio vào venv VieNeu). NÂNG mốc, không hạ: mốc là SÀN, hạ nó cho
     # cổng xanh là bỏ cổng.
-    ("88 giọng của tôi",    "_test_giong_toi.py",       164),
+    ("88 giọng của tôi",    "_test_giong_toi.py",       170),
     # Cổng 89 — CHỈNH VIDEO THEO GIỌNG (`he_so_hinh`) + độ to bản trộn + hộp
     # Thay giọng gọn. Số **89** lấy bằng cách đọc chính `CONG` này (max đang là
     # 88), KHÔNG đếm theo trí nhớ.
