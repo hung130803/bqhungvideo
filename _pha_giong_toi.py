@@ -140,10 +140,19 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
     # LỖI THẬT, bắt được ở lượt CHẠY THẬT đầu tiên (`_do_cai_nhan_ban.py`):
     # `.replace(",", ".")` trên CẢ CÂU làm dấu phẩy tiếng Việt thành dấu chấm
     # -> *"(khoảng 126 MB. tải 1 lần)"*.
+    #
+    # NEO ĐÃ ĐỔI 21/08/2026 — và đây là LUẬT 2 của file này làm việc lần thứ
+    # hai: bản vá 20/08 (chỉ mục CPU) viết lại dòng tiến độ nên neo cũ
+    # (`"1 lần)..."))`) còn **0 lần** -> phép này rơi vào cột "KHÔNG PHÁ ĐƯỢC"
+    # chứ KHÔNG phải "cổng để lọt". Neo mới là DÒNG CUỐI của cùng lời nhắn đó.
+    # `.replace` đặt sau chuỗi cuối vẫn ăn CẢ CÂU: các chuỗi liền nhau (kể cả
+    # f-string) được gộp thành MỘT atom trước khi lấy thuộc tính — đã kiểm.
     ("20. đổi dấu nghìn trên CẢ CÂU thay vì chỉ con số (dấu phẩy tiếng Việt "
      "thành dấu chấm — đã in ra thật ở lượt tải đầu)",
-     VNC, '                        "1 lần)..."))',
-     '                        "1 lần)...").replace(",", "."))', "12l'''"),
+     VNC, '                       "DLL chia sẻ, app chỉ có ffmpeg.exe '
+          'tĩnh)...")',
+     '                       "DLL chia sẻ, app chỉ có ffmpeg.exe '
+     'tĩnh)...".replace(",", "."))', "12l'''"),
 
     # Neo MỘT DÒNG (LUẬT 2 của file này: repo là CRLF nên neo nhiều dòng dễ
     # trượt). `tt = self._do_nhan_ban()` chỉ có ĐÚNG 1 lần — đã đếm trước.
@@ -217,6 +226,50 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
      "một lượt Disk Cleanup là giọng biến khỏi combo)",
      UI, '                + (("\\n" + o_tam) if o_tam else ""))',
      "                )", "15g"),
+
+    # ═══ BẢN VÁ 20/08 (chỉ mục CPU + chặn torchcodec/transformers) ═══
+    # 4 phép dưới đây sinh ra vì bản vá ấy làm cổng tụt 164 -> 162 và làm mục
+    # 13m **XANH VÌ LÝ DO NGƯỢC HẲN**. Chúng chấm đúng chỗ đó.
+    #
+    # Phép 31 gỡ đúng MỘT chốt của VIỆC 2: dùng cách ĐỔI TÊN KHOÁ (không xoá
+    # dòng) vì mục từ điển này trải 3 dòng và repo là **CRLF** — neo nhiều dòng
+    # viết `\n` KHÔNG khớp (LUẬT 2). Đổi tên khoá là gỡ SẠCH chốt: `_bi_chan`
+    # so `t == k or t.startswith(k)` nên `torchcodec` thôi khớp hoàn toàn.
+    ("31. gỡ `torchcodec` khỏi danh sách CHẶN (trả về đúng trạng thái TRƯỚC "
+     "bản vá 20/08 — vòng tự dò sẽ tự đi cài lại thứ đã ĐO là làm CHẾT đường "
+     "nhân bản: nó đòi FFmpeg dạng DLL chia sẻ mà app chỉ có ffmpeg.exe tĩnh)",
+     VNC, '    "torchcodec": ("cần FFmpeg dạng DLL CHIA SẺ mà app chỉ đóng gói "',
+     '    "_da_go_torchcodec": ("cần FFmpeg dạng DLL CHIA SẺ mà app chỉ đóng '
+     'gói "', "13f'' / 13f''' / 13k''"),
+
+    ("32. gỡ `transformers` khỏi danh sách CHẶN (vòng tự dò tự cài lại ~2,5 GB "
+     "cho thứ ĐO ĐƯỢC là KHÔNG cần — đường nhân bản đã ra WAV 2,32s · RMS "
+     "0,09761 khi nó KHÔNG có mặt, và đó cũng là gói đã phải GỠ LẠI)",
+     VNC, '    "transformers": ("đo được là phụ thuộc KHAI BÁO của gói vieneu, '
+          'KHÔNG "',
+     '    "_da_go_transformers": ("đo được là phụ thuộc KHAI BÁO của gói '
+     'vieneu, KHÔNG "', "13f'' / 13f''' / 13k''"),
+
+    # Phép 33 là phép DUY NHẤT mà chỉ 13f' bắt được — nó dựng ca "một tên vừa
+    # BẮT BUỘC vừa BỊ CHẶN". Rút khoá `torchcodec` về `torch` là lỗi ĐÁNH MÁY
+    # rất dễ xảy ra, và vì `_bi_chan` dùng `startswith` thì nó chặn luôn CẢ HAI
+    # gói `torch`+`torchaudio` mà bước 1 vừa khai là bắt buộc -> vòng tự dò
+    # không bao giờ cài nổi thứ nó cần. `torchcodec` VẪN bị chặn (startswith)
+    # nên 13f''/13f'''/13k'' đều XANH ĐÚNG — mục canh phải là 13f'.
+    ("33. rút khoá chặn `torchcodec` thành `torch` (lỗi đánh máy: `_bi_chan` "
+     "dùng `startswith` nên nó chặn luôn `torch`+`torchaudio` — đúng hai gói "
+     "bước 1 khai là BẮT BUỘC -> bế tắc theo cấu tạo)",
+     VNC, '    "torchcodec": ("cần FFmpeg dạng DLL CHIA SẺ mà app chỉ đóng gói "',
+     '    "torch": ("cần FFmpeg dạng DLL CHIA SẺ mà app chỉ đóng gói "',
+     "13f'"),
+
+    # Phép 34 là phép chứng minh 13m ĐANG ĐO THẬT. Chỉ 13m'/13m'' bắt được:
+    # bỏ chốt thì vòng cứ cài lại mãi rồi HẾT TRẦN, nên `ok=False` VÀ lời lỗi
+    # VẪN chứa tên gói -> mục 13m một mình XANH OAN, đúng lớp bệnh nó vừa mắc.
+    ("34. bỏ chốt \"pip trả mã khác 0\" của vòng tự dò (gói cài HỎNG vẫn được "
+     "kể là đã cài -> vòng lặp tới hết trần rồi báo sai bệnh)",
+     VNC, "                    if ma2 != 0:", "                    if False:",
+     "13m' / 13m''"),
 ]
 
 

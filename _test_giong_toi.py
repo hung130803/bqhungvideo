@@ -1056,9 +1056,54 @@ for _c, _vi in (("gradio", "web"), ("lmdeploy", "máy chủ"),
                 ("llama_cpp", "Windows"), ("fitz", "PDF")):
     ok(f"13f CHẶN `{_c}` và NÓI RA lý do", bool(VN._bi_chan(_c)),
        VN._bi_chan(_c)[:52])
-ok("13f' gói THẬT SỰ cần thì KHÔNG bị chặn",
-   not any(VN._bi_chan(g) for g in ("transformers", "neucodec", "accelerate",
-                                    "torch", "torchaudio")))
+
+
+def _bi_chan_nao(ten_ds) -> list[str]:
+    """Tên nào trong `ten_ds` đang bị `_bi_chan` chặn. Dùng cho CẢ HAI chiều.
+
+    MỘT hàm cho cả 13f' và 13f'' là CỐ Ý: mục đòi *"2 tên này PHẢI bị chặn"*
+    chính là **TỰ KIỂM BỘ DÒ** của mục đòi *"danh sách cần KHÔNG bị chặn"*.
+    Thiếu nó thì `_bi_chan` trả `""` cho MỌI thứ (đúng phép phá 23 "bỏ danh
+    sách CHẶN") vẫn làm 13f' XANH — một mục xanh vì bộ dò đã chết.
+    """
+    return [t for t in ten_ds if VN._bi_chan(t)]
+
+
+#: Tên gói dùng để GIẢ LẬP vòng tự dò (13i · 13m). **BẮT BUỘC không nằm trong
+#: `_CHAN_TU_DO`.** Bản trước dùng `transformers`, rồi bản vá 20/08 chặn đúng
+#: tên đó, và hai ca kia hoá ra đo sang nhánh CHẶN: 13i ĐỎ, còn **13m XANH VÌ
+#: LÝ DO NGƯỢC HẲN** (nó sinh ra để đo nhánh "pip trả mã khác 0"). 13f' canh
+#: chính điều kiện này nên chặn một trong ba tên dưới đây là **13f' đỏ TRƯỚC**,
+#: không để 13i/13m đỏ mà không ai biết vì sao.
+#: Ba tên đều tự-ánh-xạ qua `_ten_pip` (không có trong `_TEN_PIP`) nên pip GIẢ
+#: của hộp cát so `cmd[-1]` được — đổi sang `sklearn` là hỏng phép thử.
+_GOI_KHONG_CHAN = ("neucodec", "accelerate", "soundfile")
+
+#: Gói mà LƯỢT CÀI CHÍNH đòi. Đọc từ `_goi_nhan_ban()` — cửa THẬT của lượt cài
+#: — chứ KHÔNG chép tay danh sách: chép tay là dựng bản sao thứ hai, đúng cái
+#: `_goi_nhan_ban` viết ra để tránh.
+_CAN_THAT = tuple(VN._goi_nhan_ban())
+_CHAN_OAN = _bi_chan_nao(_CAN_THAT + _GOI_KHONG_CHAN)
+ok("13f' gói THẬT SỰ cần thì KHÔNG bị chặn — một tên vừa BẮT BUỘC (bước 1 "
+   "khai là phải có) vừa BỊ CHẶN (vòng tự dò từ chối cài) là bế tắc theo cấu "
+   "tạo, và `_bi_chan` dùng `startswith` nên rút khoá về `torch` là chặn cả "
+   "`torchaudio`",
+   _CHAN_OAN == [],
+   f"cần={list(_CAN_THAT)} · giả lập={list(_GOI_KHONG_CHAN)} · "
+   f"bị chặn oan={_CHAN_OAN}")
+ok("13f'' ĐỐI XỨNG — BẤT BIẾN MỚI (bản vá 20/08): `torchcodec` VÀ "
+   "`transformers` PHẢI bị chặn. Đây cũng là TỰ KIỂM BỘ DÒ của 13f': bộ dò "
+   "chết thì mục này đỏ chứ không để 13f' xanh oan",
+   _bi_chan_nao(("torchcodec", "transformers"))
+   == ["torchcodec", "transformers"],
+   f"bắt được={_bi_chan_nao(('torchcodec', 'transformers'))}")
+ok("13f''' ... và lý do NÊU ĐÍCH DANH nguyên nhân ĐÃ ĐO, không phải một câu "
+   "chung chung (torchcodec: cần FFmpeg dạng DLL CHIA SẺ mà app chỉ có "
+   "ffmpeg.exe TĨNH · transformers: phụ thuộc KHAI BÁO của gói vieneu, đường "
+   "nhân bản vẫn ra WAV 2,32s · RMS 0,09761 khi nó KHÔNG có mặt)",
+   "DLL" in VN._bi_chan("torchcodec")
+   and "vieneu" in VN._bi_chan("transformers"),
+   VN._bi_chan("torchcodec")[:40] + " ¦ " + VN._bi_chan("transformers")[:40])
 ok("13g có TRẦN vòng lặp (không trần = treo máy cả đêm trên đường mạng)",
    isinstance(VN.TRAN_VONG_DO, int) and 2 <= VN.TRAN_VONG_DO <= 10,
    f"{VN.TRAN_VONG_DO}")
@@ -1129,6 +1174,11 @@ def _dung_gia_lap(thieu_dan: list[str], **kw):
         # pip GIẢ: gói cuối dòng lệnh chính là gói đang cài.
         goi = cmd[-1]
         _da_cai.append(goi)
+        # Pop **kể cả khi `ma_pip != 0`** — cố ý, và có hệ quả đáng biết: gỡ
+        # chốt "pip trả mã khác 0" (phép phá 34) làm lượt chạy HOÁ RA THÀNH
+        # CÔNG ở vòng sau, nên 13m đỏ ở vế `ok is False` chứ không ở vế lời
+        # lỗi. Không đụng vào đây: 13m' đo lời lỗi, 13m'' đo `tu_do`, cả hai
+        # vẫn chấm đúng nhánh, còn sửa cái pop này là đổi hành vi của 13i/13j.
         if _con and goi == _con[0]:
             _con.pop(0)
         # `ma_pip` CHỈ áp cho lượt pip của VÒNG TỰ DÒ, không áp cho lượt cài
@@ -1157,13 +1207,15 @@ _py_gia = T / "venvgia" / "Scripts" / "python.exe"
 _py_gia.parent.mkdir(parents=True, exist_ok=True)
 _py_gia.write_bytes(b"")
 try:
-    # (1) thiếu 2 tên rồi lộ tên thứ 3 -> phải cài CẢ BA rồi mới xong
-    _cai = _dung_gia_lap(["transformers", "neucodec", "accelerate"])
+    # (1) thiếu 2 tên rồi lộ tên thứ 3 -> phải cài CẢ BA rồi mới xong.
+    # Tên lấy từ `_GOI_KHONG_CHAN`, KHÔNG ghi tay: danh sách cũ mở đầu bằng
+    # `transformers` nên từ bản vá 20/08 nó dừng ở nhánh CHẶN ngay vòng 1 và ca
+    # này thôi đo cái nó muốn đo (đo được: ok=False · tự cài=[] · vòng=1).
+    _cai = _dung_gia_lap(list(_GOI_KHONG_CHAN))
     _r = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
     ok("13i vòng tự dò: lỗi 'No module named X' -> CÀI X rồi THỬ LẠI, "
        "lộ tên thứ 3 vẫn đi tiếp",
-       _r.get("ok") is True and _r.get("tu_do") ==
-       ["transformers", "neucodec", "accelerate"],
+       _r.get("ok") is True and _r.get("tu_do") == list(_GOI_KHONG_CHAN),
        f"ok={_r.get('ok')} · tự cài={_r.get('tu_do')} · vòng={_r.get('vong')}")
     ok("13i' ... và bằng chứng cuối là WAV CÓ TIẾNG (độ dài + RMS)",
        bool(_r.get("doc_thu", {}).get("co_tieng") is None
@@ -1188,6 +1240,20 @@ try:
     ok("13k' ... và nói RA lý do chặn", "giao diện web"
        in str(_r3.get("loi") or ""), str(_r3.get("loi"))[:90])
 
+    # (3b) ĐỐI XỨNG với 13f'', nhưng ở mức VÒNG chứ không mức dict. Dict đúng
+    # mà vòng vẫn đi cài thì bản vá 20/08 chỉ là trang trí — `_bi_chan` dùng
+    # `startswith` nên một khoá viết sai vẫn "có mặt" trong dict mà không khớp
+    # tên thật. Đây là vế GỌI THẬT của cặp AST/dict + chạy thật.
+    for _tc, _khoa in (("torchcodec", "DLL"), ("transformers", "vieneu")):
+        _cai_x = _dung_gia_lap([_tc])
+        _rx = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+        ok(f"13k'' vòng tự dò đòi `{_tc}` -> KHÔNG cài, và nêu lý do ĐÃ ĐO",
+           _rx.get("ok") is False and _rx.get("bi_chan") == _tc
+           and _khoa in str(_rx.get("bi_chan_vi") or "")
+           and not any(_tc in c for c in _cai_x),
+           f"bị chặn={_rx.get('bi_chan')} · đã cài={_cai_x} · "
+           f"vì={str(_rx.get('bi_chan_vi'))[:44]}")
+
     # (4) "cài đủ danh sách mà ĐỌC vẫn hỏng" -> ĐỎ. ĐÚNG CẢNH ANH HÙNG GẶP.
     _dung_gia_lap(["transformers"])
     VN._chay_vieneu = lambda *a, **k: {         # type: ignore[assignment]
@@ -1199,12 +1265,31 @@ try:
        _r4.get("ok") is False and "ĐỌC THẬT" in str(_r4.get("loi") or ""),
        str(_r4.get("loi"))[:90])
 
-    # (5) pip trả mã KHÁC 0 -> báo thẳng, đừng mừng
-    _dung_gia_lap(["transformers"], ma_pip=1)
+    # (5) pip trả mã KHÁC 0 -> báo thẳng, đừng mừng.
+    # ═══ MỤC NÀY TỪNG **XANH VÌ LÝ DO NGƯỢC HẲN** (20/08/2026) ═══
+    # Bản trước giả lập thiếu `transformers`. Từ lúc tên đó vào `_CHAN_TU_DO`,
+    # vòng dừng ở nhánh CHẶN **trước khi** chạm tới lượt pip nào, nên lời lỗi
+    # là *"nằm trong danh sách CHẶN"* — vẫn `ok=False`, vẫn CHỨA tên gói, nên
+    # mục ĐẠT trong khi nhánh nó sinh ra để đo (`ma2 != 0`) KHÔNG hề chạy. Một
+    # mục xanh vì lý do ngược hẳn còn tệ hơn một mục đỏ: nó phát chứng nhận.
+    # Nay dùng tên KHÔNG bị chặn, và 13m'/13m'' đòi ĐÚNG nhánh đó chạy.
+    _goi5 = _GOI_KHONG_CHAN[0]
+    _cai5 = _dung_gia_lap([_goi5], ma_pip=1)
     _r5 = VN.cai_nhan_ban(han_giay=30, ban_cuda=False)
+    _loi5 = str(_r5.get("loi") or "")
     ok("13m pip trả mã khác 0 khi cài gói tự dò -> ok=False, nêu tên gói",
-       _r5.get("ok") is False and "transformers" in str(_r5.get("loi") or ""),
-       str(_r5.get("loi"))[:90])
+       _r5.get("ok") is False and _goi5 in _loi5, _loi5[:90])
+    ok("13m' CHỐT CHỐNG PASS OAN: lời lỗi nói ĐÚNG BỆNH (`pip trả mã 1`) và "
+       "KHÔNG phải nhánh CHẶN — đọc mỗi 'ok=False + có tên gói' thì hai nhánh "
+       "khác hẳn nhau trông y như nhau",
+       "pip trả mã 1" in _loi5 and _r5.get("bi_chan") is None
+       and "CHẶN" not in _loi5,
+       f"vòng={_r5.get('vong')} · bị chặn={_r5.get('bi_chan')!r}")
+    ok("13m'' ... và pip THẬT SỰ được gọi cho gói đó (chứng minh nhánh có "
+       "chạy) trong khi gói đó KHÔNG được đếm vào `tu_do` (pip hỏng mà kể là "
+       "đã cài thì lượt sau bỏ qua nó vĩnh viễn)",
+       _goi5 in _cai5 and _r5.get("tu_do") == [],
+       f"pip đã gọi={_cai5} · tự cài={_r5.get('tu_do')}")
 finally:
     VN._chay_vieneu = _that_cv                  # type: ignore[assignment]
     VN._chay_theo_dong = _that_ctd              # type: ignore[assignment]
