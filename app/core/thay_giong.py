@@ -2107,6 +2107,88 @@ def doc_thu(voice: str, out_wav: str | Path, text: str = "",
         don_thu_muc(thu_muc, ten_bat_dau="_thu_")
 
 
+# ───────── NHỊP TỪNG CÂU CỦA MÁY ĐỌC GỘP CẢ LOẠT — CỬA DUY NHẤT ─────────────
+#
+# MỌI máy đọc gộp-cả-loạt (VieNeu · Kokoro · Piper · ElevenLabs · Vbee ·
+# Chatterbox) đọc hết trong MỘT lượt gọi, nên `on_done` chỉ nổ Ở CUỐI -> thanh
+# tiến trình đứng chết ở đúng một con số 15-30 phút. Lỗi thật anh Hùng gặp
+# 21/08/2026 với giọng nhân bản: *"nó vẫn dừng ở 62% BƯỚC 5"* — hỏi 4 LẦN và
+# suýt bấm Dừng, mất hơn một tiếng máy chạy ĐÚNG.
+#
+# Thông tin có đủ ở MỌI tầng rồi bị bỏ đúng ở bước cuối: tiến trình con VỐN ĐÃ
+# in `Doc cau N/M` mỗi câu, `giong_vieneu._chay_vieneu` VỐN ĐÃ gọi `on_msg` —
+# chỉ thiếu chỗ TRUYỀN `on_msg` xuống.
+#
+# ĐÂY LÀ CỬA DUY NHẤT cho CẢ BA chỗ gọi TTS của file này (`doc_ban_dich` ·
+# `rut_gon_vua_khung` · `doc_nhanh_vua_khung`). Ba bản sao là ba chỗ để lệch
+# nhau: `a0062b6` chỉ vá bước 5 nên thanh chuyển sang **đứng ở 74% và 79%** —
+# cùng một bệnh, chỉ đổi con số. Thêm chỗ gọi TTS thứ tư thì nối vào đây, đừng
+# chép hàm ra lần nữa.
+
+_RE_TUNG_CAU = re.compile(r"(\d+)\s*/\s*(\d+)")
+
+
+def ty_le_tung_cau(m: str) -> float:
+    """Đọc `N/M` trong lời báo của tiến trình con -> tỉ lệ 0..1.
+
+    Đọc số THẬT chứ không tự đếm: nhánh nào báo `N/M` thì `N` là số câu máy
+    đọc ĐÃ XONG — chính xác hơn mọi phép đoán.
+
+    Trả **0.0 khi không có số nào** (vd `'Nap model doc...'`) để nơi gọi biết
+    mà đi đường lùi. Hàm THUẦN, không đụng gì bên ngoài, KHÔNG BAO GIỜ ném.
+    """
+    g = _RE_TUNG_CAU.search(str(m or ""))
+    if not g:
+        return 0.0
+    try:
+        a, b = int(g.group(1)), int(g.group(2))
+    except (TypeError, ValueError):
+        return 0.0
+    if b <= 0:
+        return 0.0
+    return max(0.0, min(1.0, a / b))
+
+
+def _nhac_tung_cau(on_progress: Optional[Callable[[float, str], None]],
+                   moc_lui: Callable[[], float],
+                   dau: float = 0.0, rong: float = 1.0,
+                   ) -> Callable[[str], None]:
+    """Dựng hàm `on_msg` để truyền xuống `dubbing._synth_all_words`.
+
+    `moc_lui()` = mốc lấy theo BỘ ĐẾM ĐÃ CÓ của nơi gọi (0..1 trong phạm vi
+    lượt đọc này), dùng khi lời báo không có số nào — lúc đó VẪN phải báo, vì
+    chữ đổi chính là dấu hiệu "còn sống".
+    `dau`/`rong` = khúc thanh tiến trình mà lượt đọc này chiếm; nơi gọi nào có
+    nhiều vòng đọc thì đẩy số vòng vào `dau` (xem `rut_gon_vua_khung`).
+
+    HAI BẢO ĐẢM, cả hai đều có lý do đã trả giá:
+      * **KHÔNG BAO GIỜ TỤT LÙI** — nhớ mốc cao nhất đã báo. Không có chốt này
+        thì một lời báo không-có-số sau `Doc cau 12/59` sẽ kéo thanh từ 20% về
+        0%, tức người xem thấy nó CHẠY NGƯỢC.
+      * **KHÔNG BAO GIỜ NÉM** — hàm báo tiến trình mà nổ thì nó giết cả lượt
+        đọc, tức một bản vá HIỂN THỊ lại đi làm hỏng việc THẬT.
+    """
+    cao = {"p": 0.0}
+
+    def _nhac(m: str) -> None:
+        if not on_progress:
+            return
+        p = ty_le_tung_cau(m)
+        if p <= 0.0:
+            try:
+                p = max(0.0, min(1.0, float(moc_lui())))
+            except Exception:  # noqa: BLE001
+                p = 0.0
+        p = max(p, cao["p"])            # thanh KHÔNG BAO GIỜ tụt lùi
+        cao["p"] = p
+        try:
+            on_progress(max(0.0, min(1.0, dau + rong * p)), str(m)[:150])
+        except Exception:  # noqa: BLE001
+            pass
+
+    return _nhac
+
+
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
                  dich_sang: str = "en",
                  on_progress: Optional[Callable[[float, str], None]] = None,
@@ -2132,38 +2214,11 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
             on_progress(xong["n"] / max(1, len(texts)),
                         f"Đang đọc câu {xong['n']}/{len(texts)}...")
 
-    # NHỊP TỪNG CÂU CỦA MÁY ĐỌC GỘP CẢ LOẠT (VieNeu/Kokoro/Piper/ElevenLabs).
-    # Chúng đọc cả loạt trong MỘT lượt gọi nên `on_done` chỉ nổ Ở CUỐI ->
-    # thanh tiến trình đứng chết 15-30 phút ở đúng một con số (lỗi thật anh
-    # Hùng gặp 21/08/2026 với giọng nhân bản: "nó vẫn dừng ở 62% BƯỚC 5", hỏi
-    # 4 lần và suýt bấm Dừng, mất hơn một tiếng máy chạy ĐÚNG). Tiến trình con
-    # VỐN ĐÃ in `Doc cau N/M` mỗi câu và `giong_vieneu._chay_vieneu` VỐN ĐÃ
-    # gọi `on_msg` — trước đây không ai truyền `on_msg` xuống nên lời báo bị
-    # bỏ đi. Thông tin có đủ ở MỌI tầng rồi mất đúng ở bước cuối.
-    # Đọc số THẬT trong câu chứ không tự đếm: nhánh nào báo `N/M` thì `N` là
-    # số câu máy đọc ĐÃ XONG — chính xác hơn mọi phép đoán.
-    _re_cau = re.compile(r"(\d+)\s*/\s*(\d+)")
-
-    def _nhac(m: str) -> None:
-        if not on_progress:
-            return
-        p = 0.0
-        g = _re_cau.search(str(m or ""))
-        if g:
-            try:
-                a, b = int(g.group(1)), int(g.group(2))
-                if b > 0:
-                    p = max(0.0, min(1.0, a / b))
-            except ValueError:
-                p = 0.0
-        # Không đọc ra số thì VẪN báo (chữ đổi = dấu hiệu còn sống), lấy mốc
-        # theo `xong` nên thanh KHÔNG BAO GIỜ tụt lùi.
-        if p <= 0.0:
-            p = xong["n"] / max(1, len(texts))
-        try:
-            on_progress(p, str(m)[:150])
-        except Exception:  # noqa: BLE001
-            pass
+    # NHỊP TỪNG CÂU — xem khối ghi chú ở `_nhac_tung_cau` cho gốc lỗi. Mốc lùi
+    # là bộ đếm `xong` (do `_done` cộng); lượt đọc này chiếm cả khúc tiến
+    # trình của bước nên `dau=0.0 · rong=1.0` (mặc định).
+    _nhac = _nhac_tung_cau(on_progress,
+                           lambda: xong["n"] / max(1, len(texts)))
 
     t0 = time.time()
     # THU LUÔN MỐC TỪNG-TỪ (WordBoundary). Cùng một lượt gọi edge-tts, KHÔNG
@@ -2551,12 +2606,24 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         import asyncio
         from app.core import dubbing
         v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
+        # NHỊP TỪNG CÂU — cùng bệnh bước 5, chỉ đứng ở **74%** thay vì 62%
+        # (xem `_nhac_tung_cau`). Lượt đọc lại này gộp cả loạt câu vừa rút
+        # gọn, có lúc mất hàng phút, mà cả hàm trước đây chỉ báo ĐÚNG 1 nhịp.
+        # Mốc lùi = 0.0 vì cửa này KHÔNG truyền `on_done`; bộ đếm đã có của
+        # hàm là SỐ VÒNG, và nó nằm trong `dau` nên thanh vẫn tiến theo vòng.
+        # Chừa 0.2 đầu cho lượt LLM rút gọn + 0.2 cuối cho cắt lề/đo lại, nhờ
+        # vậy nhịp của vòng này KHÔNG BAO GIỜ tràn sang ô của vòng sau.
+        _n_vong = max(1, vong_toi_da)
+        _nhac = _nhac_tung_cau(on_progress, lambda: 0.0,
+                               dau=(vong + 0.2) / _n_vong,
+                               rong=0.6 / _n_vong)
         # `el_lui=False`: đây là lượt ĐỌC LẠI, câu nào cũng đã có sẵn bản
         # ElevenLabs. Hết credit mà lùi edge thì mấy câu này ra giọng khác
         # phần còn lại = video LẪN HAI GIỌNG; trả False để GIỮ BẢN CŨ.
         ok2, mt2 = asyncio.run(
             dubbing._synth_all_words(thu, v, paths, pitch=_pitch,
-                                     lang=dich_sang, el_lui=False))
+                                     lang=dich_sang, el_lui=False,
+                                     on_msg=_nhac))
         # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
         # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
         paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
@@ -2687,9 +2754,15 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     # trộn giọng. LƯU Ý ĐÁNH ĐỔI THẬT: ElevenLabs KHÔNG có tham số `rate` nên
     # bước ĐỌC NHANH này không rút ngắn được gì, câu tràn khung sẽ phải nhờ
     # `atempo` như trước v2.27.0 (xem mục "chưa được" của ghi chú phát hành).
+    # NHỊP TỪNG CÂU — cùng bệnh bước 5, chỉ đứng ở **79%** (xem
+    # `_nhac_tung_cau`). Mốc lùi = 0.0 vì cửa này KHÔNG truyền `on_done`; bộ
+    # đếm đã có của hàm là lời báo 0.2 ngay trên, và nó nằm trong `dau`.
+    # Chừa 0.9..1.0 cho cắt lề im + đo lại độ dài ở dưới.
+    _nhac = _nhac_tung_cau(on_progress, lambda: 0.0, dau=0.2, rong=0.7)
     ok2, mt2 = asyncio.run(
         dubbing._synth_all_words(thu, v, paths, rate=rates, pitch=_pitch,
-                                 lang=dich_sang, el_lui=False))
+                                 lang=dich_sang, el_lui=False,
+                                 on_msg=_nhac))
     sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0
