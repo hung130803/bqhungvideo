@@ -441,54 +441,72 @@ def goi_y_may(lang: str = "vi") -> str:
 #:
 #: Tức chúng là **phụ thuộc KHAI BÁO của gói**, không phải phụ thuộc của một
 #: lượt ĐỌC. Để chúng ở đây thì trên đúng cái máy nhân bản được, dòng combo ghi
-#: *"CHƯA CHẠY ĐƯỢC"* và nút mời tải **2.485,6 MB** (máy anh Hùng có RTX 3060
-#: nên mặc định đi CUDA) cho thứ KHÔNG CẦN. Báo động giả đắt hơn im lặng.
+#: *"CHƯA CHẠY ĐƯỢC"* và nút mời tải một lượt pip cho thứ KHÔNG CẦN — hồi ấy còn
+#: là **2.485,6 MB** vì nút đi chỉ mục CUDA (máy anh Hùng có RTX 3060); nay nút
+#: LUÔN đi bản CPU nên con số là **126,3 MB**, nhưng báo động giả vẫn là báo
+#: động giả. Báo động giả đắt hơn im lặng.
 #:
-#: ═══ NHƯNG ĐỪNG KẾT LUẬN "ba gói đó vô dụng" ═══
-#: Log máy anh Hùng có THẬT dòng `ModuleNotFoundError: No module named
-#: 'transformers'` từ chính đường nhân bản. Nên nhu cầu ấy CÓ THẬT ở môi trường
-#: đó mà KHÔNG có ở đây (khác `%TEMP%\bq_giong8\venv` vs `_giong_vieneu/venv`;
-#: nghi là do MODEL đã cache nên lượt đọc đi nhánh nhẹ hơn — **chưa truy ra,
-#: đừng ghi như đã biết**).
-#:
-#: ⇒ Kết luận đúng: **danh sách TĨNH không nói thật được ở CẢ HAI CHIỀU** — ở
-#: đây nó báo thiếu oan, ở máy anh Hùng nó báo đủ oan (chỉ có torch+torchaudio
-#: mà đọc vẫn gãy vì transformers). Nên nó chỉ giữ **mức TỐI THIỂU ĐÃ ĐO là
-#: BẮT BUỘC**, còn phần "còn thiếu gì nữa" là việc của **VÒNG TỰ DÒ**
-#: (`giong_vieneu.cai_nhan_ban` bước 3): nó ĐỌC THẬT, bóc tên từ lời lỗi, cài
-#: đúng tên đó rồi thử lại. Thêm tên vào đây là quay lại lối ĐOÁN.
-#: ═══ `transformers` PHẢI Ở ĐÂY — ĐÃ GỠ RA MỘT LẦN VÀ ĐÓ LÀ HỒI QUY ═══
-#: v2.42.2 gỡ `transformers` khỏi danh sách này, lý do là một phép ĐO THẬT trên
-#: venv máy dev: ba gói `transformers`/`neucodec`/`accelerate` **không có mặt** mà
-#: đường nhân bản **vẫn ra WAV có tiếng** (2,32 s · RMS 0,09761). Phép đo đó
-#: KHÔNG SAI — nhưng kết luận rút ra từ nó thì sai, vì nó chỉ đúng cho MỘT máy.
-#:
-#: Log máy anh Hùng, SAU KHI đã cập nhật v2.42.2 (lúc 21:25-21:26, tức sau khi
-#: danh sách bị gỡ):
+#: ⇒ Kết luận đúng: **danh sách TĨNH không nói thật được ở CẢ HAI CHIỀU** — nên
+#: nó chỉ giữ **mức TỐI THIỂU ĐÃ ĐO là BẮT BUỘC**, còn phần "còn thiếu gì nữa"
+#: là việc của **VÒNG TỰ DÒ** (`giong_vieneu.cai_nhan_ban` bước 3): nó ĐỌC THẬT,
+#: bóc tên từ lời lỗi, cài đúng tên đó rồi thử lại. Thêm tên vào đây là quay lại
+#: lối ĐOÁN.
+#: ═══ `transformers` ĐÃ VÀO RA DANH SÁCH NÀY HAI LẦN — ĐỌC HẾT TRƯỚC KHI SỬA ═══
+#: v2.42.2 gỡ `transformers`, lý do là một phép ĐO THẬT trên venv máy dev: ba gói
+#: `transformers`/`neucodec`/`accelerate` **không có mặt** mà đường nhân bản
+#: **vẫn ra WAV có tiếng** (2,32 s · RMS 0,09761). Rồi commit `f37e4a0` TRẢ LẠI,
+#: vì log máy anh Hùng SAU KHI cập nhật v2.42.2 (21:25-21:26) có thật:
 #:     VieNeu đọc hỏng: ModuleNotFoundError: No module named 'transformers'
-#: lặp **5 lượt liền**. Tức trên máy đó `transformers` là **BẮT BUỘC**.
+#: lặp **5 lượt liền**.
 #:
-#: HẬU QUẢ CỦA VIỆC GỠ nặng hơn hẳn việc để thừa, và đây là chỗ phải nhớ:
-#: `thieu` rỗng -> nhãn ghi "đã đủ phần cần thiết" -> **NÚT TẢI ẨN ĐI** -> mà
-#: vòng tự dò lại nằm TRONG `cai_nhan_ban()` (thân cái nút đó) -> **không còn
-#: đường nào chạy tới nó**. Tôi tự bịt cửa duy nhất để sửa. Đó là mặt LẬT NGƯỢC
-#: của luật "nút bám `thieu`": bám `thieu` chỉ an toàn khi `thieu` không bao giờ
-#: BỎ SÓT.
+#: **HAI PHÉP ĐO ĐÓ KHÔNG ĐÁ NHAU — chúng chạy trên HAI BẢN TORCH KHÁC NHAU.**
+#: Đó là mảnh còn thiếu, và nay đã đo được trên chính máy anh Hùng: lượt 21:25
+#: chạy trên torch/torchaudio bản **`+cu126`** mà `cai_nhan_ban()` tự chọn (nó
+#: hỏi `co_gpu_nvidia()`, máy có RTX 3060 -> True -> chỉ mục `cu126`). Đường
+#: nhân bản chỉ chạy được sau khi anh ấy **GỠ TAY** torch về bản **CPU**, và ở
+#: bản CPU thì nó cần **ĐÚNG `torch` + `torchaudio`** — `transformers` KHÔNG
+#: CẦN. Xem `giong_vieneu.ban_cuda_se_tai()` để biết đủ 4 bước chuỗi lỗi (ngắn
+#: gọn: torchaudio+cu126 nạp audio qua `torchcodec`, `torchcodec` đòi FFmpeg
+#: dạng DLL chia sẻ mà app chỉ đóng gói `ffmpeg.exe` TĨNH).
+#: ⇒ `giong_vieneu` nay **LUÔN** cài bản CPU, nên môi trường sinh ra lời lỗi
+#: `transformers` không còn được dựng ra nữa. Danh sách này về đúng mức ĐÃ ĐO.
+#: `transformers` đồng thời vào danh sách CHẶN của vòng tự dò
+#: (`giong_vieneu._CHAN_TU_DO`) — nếu không thì vòng đó tự cài lại nó.
 #:
-#: Nên luật ở đây là **BẤT ĐỐI XỨNG, cố ý**:
+#: ═══ LUẬT BẤT ĐỐI XỨNG — VẪN CÒN HIỆU LỰC, ĐỪNG ĐỌC MỤC TRÊN THÀNH "ĐÃ BỎ" ═══
+#: HẬU QUẢ CỦA VIỆC KÊ THIẾU nặng hơn hẳn việc kê thừa:
+#: `thieu` rỗng -> nhãn ghi "đã đủ phần cần thiết" -> **NÚT TẢI ẨN ĐI**
+#: (`thay_giong_dialog._do_nhan_ban`: `if not thieu: b_tai_nb.setVisible(False)`)
+#: -> mà vòng tự dò lại nằm TRONG `cai_nhan_ban()` (thân cái nút đó) -> **không
+#: còn đường nào chạy tới nó**. Đó là mặt LẬT NGƯỢC của luật "nút bám `thieu`":
+#: bám `thieu` chỉ an toàn khi `thieu` không bao giờ BỎ SÓT.
 #:   · để THỪA một tên  -> nút hiện thừa, mời tải thứ có thể không cần. Dở, nhưng
-#:     người dùng vẫn đi tới đích được.
+#:     người dùng vẫn đi tới đích được -> CHỮA ĐƯỢC.
 #:   · để THIẾU một tên -> nút biến mất, tính năng CHẾT, không có đường sửa từ
-#:     giao diện.
+#:     giao diện -> KHÔNG CHỮA ĐƯỢC.
 #: Hai cái đó KHÔNG ngang nhau. Khi chưa biết chắc thì **nghiêng về để thừa**.
 #:
+#: **LƯỢT NÀY LÀM `thieu` RỖNG TRÊN MÁY DEV — ĐO ĐƯỢC, VÀ ĐÂY LÀ LÝ LẼ:**
+#: `_giong_vieneu/venv` của repo CÓ `torch 2.13.0+cpu` + `torchaudio 2.11.0+cpu`
+#: nên `thieu_de_nhan_ban()` đi từ `['transformers']` -> `[]`, tức nút tải ẨN
+#: trên máy dev. Điều đó **không** phải hồi quy v2.42.2, vì v2.42.2 hại ở chỗ
+#: hai điều CÙNG đúng: (a) `thieu` rỗng **VÀ** (b) đường nhân bản THẬT SỰ hỏng.
+#: Ở đây (b) đã đo là SAI trên chính cấu hình này (WAV 2,32 s · RMS 0,09761 với
+#: torch bản CPU và KHÔNG có transformers) -> ẩn nút là nói THẬT, không phải
+#: giấu bệnh. Nhưng cái **LỖ CẤU TRÚC thì vẫn còn nguyên và lượt này KHÔNG vá**:
+#: cửa duy nhất vào vòng tự dò vẫn là cái nút ấy, nên một máy có đủ
+#: torch+torchaudio mà đọc vẫn gãy vì gói THỨ BA nào đó sẽ lại không có đường
+#: sửa từ giao diện. Việc đáng làm tiếp (chưa làm, chưa đo): cho
+#: `thieu_de_nhan_ban()` báo cả ca **torch/torchaudio LỆCH CÂY `+cu126`** (đọc
+#: `<gói>/version.py` bằng FILE, khuôn `giong_hang._ban_trong_version_py`) — đó
+#: đúng là trạng thái làm chết đường nhân bản mà nút này sửa được, và nó KHÔNG
+#: phải một tên gói đoán bừa.
+#:
 #: Chữa tận gốc vẫn là **vòng tự dò** (đọc thật -> bóc tên gói thiếu -> cài ->
-#: thử lại), vì danh sách tĩnh đã chứng minh nói sai ở CẢ HAI CHIỀU: thiếu trên
-#: máy anh Hùng, thừa trên máy dev. Nhưng vòng đó chỉ chạy khi NÚT CÒN HIỆN —
-#: nên danh sách này là điều kiện để nó sống, không phải thứ thay nó.
-#: **CHƯA TRUY RA** vì sao hai máy khác nhau (nghi model đã cache nên máy dev đi
-#: nhánh nhẹ hơn). Chưa biết thì ghi là chưa biết.
-_CAN_CHO_NHAN_BAN = ("torch", "torchaudio", "transformers")
+#: thử lại), vì danh sách tĩnh đã chứng minh nói sai ở CẢ HAI CHIỀU. Nhưng vòng
+#: đó chỉ chạy khi NÚT CÒN HIỆN — nên danh sách này là điều kiện để nó sống,
+#: không phải thứ thay nó.
+_CAN_CHO_NHAN_BAN = ("torch", "torchaudio")
 
 #: Trần độ dài MỘT DÒNG COMBO giọng. **KHÔNG phải số đặt cho đẹp** — cổng 88 mục
 #: 8d chấm đúng con số này, và nó có gốc: nhãn Kokoro 139-178 ký tự đã bị cắt

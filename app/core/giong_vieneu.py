@@ -996,6 +996,11 @@ def cai_vieneu(on_progress: Optional[Callable[[float, str], None]] = None,
 
 #: Chỉ mục wheel của PyTorch — CÙNG hai địa chỉ `thay_giong`/`giong_kokoro`/
 #: `giong_ngoai` đang dùng, để bốn nút tải không bao giờ chọn khác nhau.
+#:
+#: **ĐƯỜNG NHÂN BẢN CHỈ ĐƯỢC DÙNG `CHI_MUC_TORCH_CPU`** — xem khối 4 bước ở
+#: `ban_cuda_se_tai()`. `CHI_MUC_TORCH_CUDA` giữ lại vì `MB_NB_CUDA` còn phải
+#: nêu ra cái giá đã đo (và cổng 88 mục 12l' đọc hằng đó), **KHÔNG phải để nối
+#: lại vào lệnh pip của `cai_nhan_ban`**.
 CHI_MUC_TORCH_CPU = "https://download.pytorch.org/whl/cpu"
 CHI_MUC_TORCH_CUDA = "https://download.pytorch.org/whl/cu126"
 
@@ -1019,11 +1024,16 @@ _HE_SO_BUNG = 2.2
 
 
 def xin_ban_cpu() -> bool:
-    """Có ai cố ý đòi bản CPU (nhỏ hơn 19,7 lần) không. KHÔNG BAO GIỜ NÉM.
+    """Có ai đặt `BQ_NB_CPU=1` không. KHÔNG BAO GIỜ NÉM.
 
-    Để dành cho hai ca thật: mạng tính theo dung lượng, và lối ĐO (hộp cát của
-    cổng/`_do_*` không nên kéo 2,5 GB). Bật thì `nhan_tai_nhan_ban()` tự đổi
-    số theo — **nhãn luôn khớp đường sẽ đi**, kể cả ở lối đo.
+    **TỪ 21/08/2026 BIẾN NÀY KHÔNG CÒN QUYẾT ĐỊNH GÌ** — đường nhân bản LUÔN
+    lấy bản CPU (xem `ban_cuda_se_tai`), nên bật hay không cũng ra một kết quả.
+    Giữ hàm lại vì hai lý do, đừng xoá:
+      · `CLAUDE.md` còn ghi đích danh biến này; ai đặt nó rồi thấy hàm biến mất
+        sẽ tưởng biến bị đổi tên và đi tìm cái không có.
+      · `cai_nhan_ban()` GỌI nó để ghi một dòng log *"không cần đặt nữa"* —
+        nhờ vậy nó không thành hằng số chết, và người đặt biến đọc được sự thật
+        chứ không phải im lặng.
     """
     return str(os.environ.get("BQ_NB_CPU", "")).strip() in ("1", "true", "True")
 
@@ -1057,18 +1067,70 @@ def co_gpu_nvidia() -> bool:
         return False
 
 
-def ban_cuda_se_tai() -> bool:
-    """Lượt tải SẼ lấy bản CUDA hay không. MỘT chỗ quyết định duy nhất.
+#: Lý do (GỌN) chọn bản CPU — dùng cho nhãn nút và dòng log. Có bản DÀI ở
+#: `LY_DO_CPU`; hai chỗ đọc CHUNG một nguồn để không bao giờ nói lệch nhau.
+LY_DO_CPU_GON = ("bản CUDA đã ĐO là LÀM CHẾT đường nhân bản "
+                 "(torchaudio+cu126 nạp audio qua torchcodec, mà torchcodec "
+                 "đòi FFmpeg dạng DLL chia sẻ — app chỉ có ffmpeg.exe TĨNH)")
 
-    Nhãn nút, tooltip, hộp xác nhận VÀ lệnh pip đều phải hỏi hàm này — ba chỗ
-    tự đoán lấy là đúng lỗi cổng 58 (nút ghi 155 MB, hộp doạ 2 GB).
+#: Lý do ĐẦY ĐỦ, đủ 4 bước của chuỗi lỗi. Đưa ra UI qua
+#: `tinh_trang_nhan_ban()["ly_do_cpu"]`.
+LY_DO_CPU = (
+    "Đường nhân bản LUÔN lấy bản CPU. Chuỗi lỗi đã xảy ra thật trên máy có "
+    "RTX 3060 (20/08/2026):\n"
+    "1. `cai_nhan_ban()` thấy `co_gpu_nvidia()` True nên trỏ pip vào chỉ mục "
+    "CUDA (cu126) -> tải bản `+cu126` (2.485,6 MB).\n"
+    "2. Bản CUDA của `torchaudio` nạp audio qua `load_with_torchcodec`, còn "
+    "bản `+cpu` thì lùi về `soundfile`.\n"
+    "3. `torchcodec` cần FFmpeg dạng DLL CHIA SẺ; app chỉ đóng gói "
+    "`ffmpeg.exe` TĨNH -> `libtorchcodec_core4/5.dll` không nạp được -> "
+    "đường nhân bản CHẾT.\n"
+    "4. Cách chữa duy nhất đã đo được là GỠ TAY torch về bản CPU — tức bấm "
+    "lại nút tải là hỏng lại y như cũ.\n"
+    "Vì vậy bản CPU (126,3 MB) là mặc định CỨNG, không phải lựa chọn.")
+
+
+def ban_cuda_se_tai() -> bool:
+    """Lượt tải của ĐƯỜNG NHÂN BẢN có lấy bản CUDA hay không. **LUÔN False.**
+
+    Vẫn là MỘT chỗ quyết định duy nhất: nhãn nút, tooltip, hộp xác nhận VÀ
+    lệnh pip đều hỏi hàm này (ba chỗ tự đoán lấy là đúng lỗi cổng 58 — nút ghi
+    155 MB, hộp doạ 2 GB). Chỉ khác là nay câu trả lời là hằng số.
+
+    ═══ VÌ SAO CỐ Ý BỎ `co_gpu_nvidia()` Ở ĐÂY — ĐỪNG "TỐI ƯU" NGƯỢC LẠI ═══
+    Máy anh Hùng CÓ RTX 3060, và chính vì thế mà tính năng chết. Chuỗi 4 bước,
+    đã xảy ra thật 20/08/2026:
+
+      1. `cai_nhan_ban()` thấy `co_gpu_nvidia()` True nên trỏ pip vào chỉ mục
+         CUDA (`cu126`) -> tải bản `+cu126` (**2.485,6 MB**).
+      2. Bản CUDA của `torchaudio` nạp audio qua **`load_with_torchcodec`**,
+         còn bản `+cpu` thì lùi về **`soundfile`**.
+      3. `torchcodec` cần **FFmpeg dạng DLL CHIA SẺ**; app chỉ đóng gói
+         `ffmpeg.exe` **TĨNH** -> `libtorchcodec_core4/5.dll` KHÔNG NẠP ĐƯỢC
+         -> đường nhân bản chết.
+      4. Nó chỉ chạy được sau khi anh Hùng **GỠ TAY** torch về bản CPU. Tức
+         **bấm lại nút tải là hỏng lại y như cũ** — đó là cái bịt ở đây.
+
+    Cộng thêm một lượt sai nữa cùng ngày: lời khuyên "cài thêm `torchcodec` và
+    `transformers`" làm hỏng nặng hơn, phải gỡ cả hai. Xem `_CHAN_TU_DO`.
+
+    **KHÔNG suy ra "GPU vô dụng cho mọi thứ".** `co_gpu_nvidia()` VẪN SỐNG và
+    VẪN ĐÚNG cho Demucs — ở đó GPU đo được **nhanh 9,28 lần** (cổng 71). Chỉ
+    ĐƯỜNG NHÂN BẢN của VieNeu là chỗ bản CUDA đổi tốc-độ-chưa-đo lấy một tính
+    năng CHẾT CHẮC. Muốn nối lại thì phải đóng gói FFmpeg dạng DLL chia sẻ
+    TRƯỚC, rồi ĐO đường nhân bản trên GPU — chưa có cả hai thì đừng đụng.
     """
-    return (not xin_ban_cpu()) and co_gpu_nvidia()
+    return False
 
 
 def mb_nhan_ban() -> float:
-    """Số MB nút này SẼ tải, theo đúng đường nó sẽ đi. Đọc lại MỖI LẦN GỌI
-    (bài học `tg_so.duong_so`): cắm/rút GPU giữa phiên thì số phải đổi theo."""
+    """Số MB nút này SẼ tải, theo đúng đường nó sẽ đi.
+
+    Vẫn hỏi `ban_cuda_se_tai()` chứ KHÔNG ghi cứng `MB_NB_CPU`: cái nối nhãn
+    với lệnh pip phải là MỘT phép hỏi, để ngày nào bản CUDA được nối lại (sau
+    khi có FFmpeg DLL chia sẻ) thì nhãn tự đúng theo, không phải sửa hai chỗ và
+    quên một chỗ — đúng lỗi cổng 58. Nay câu trả lời là 126,3 MB.
+    """
     return MB_NB_CUDA if ban_cuda_se_tai() else MB_NB_CPU
 
 
@@ -1142,11 +1204,13 @@ def nhan_tai_nhan_ban(thieu: Optional[list[str]] = None) -> str:
         return "Chưa có bộ giọng VieNeu — tải bộ đó trước"
     mb = so_mb(mb_nhan_ban())
     cuda = ban_cuda_se_tai()
-    # Nói kèm "CHƯA ĐO có nhanh hơn" khi đi đường CUDA: Demucs có số đo 9,28x
-    # để hứa, đường nhân bản của VieNeu thì **chưa ai đo GPU** — hứa nhanh mà
-    # không có số là đúng thứ repo này cấm (khuôn `giong_kokoro.NHAN_TAI_CUDA`).
+    # NHÃN PHẢI NÓI THẬT VÌ SAO LÀ BẢN CPU. Máy anh Hùng có RTX 3060 nên "bản
+    # CPU" nhìn như app dò hỏng hoặc bỏ sót GPU — im lặng ở đây là mời người
+    # sau đi "sửa" bằng cách trỏ lại chỉ mục CUDA, tức dựng lại đúng lỗi vừa
+    # vá. Nhánh CUDA giữ nguyên (hiện KHÔNG chạy tới) để ngày nào bản CUDA
+    # được nối lại thì nhãn vẫn khớp đường sẽ đi, không phải sửa hai chỗ.
     duoi = (f"bản GPU khoảng {mb} MB — CHƯA ĐO có nhanh hơn" if cuda
-            else f"khoảng {mb} MB")
+            else f"bản CPU khoảng {mb} MB, bản CUDA đã ĐO là hỏng")
     if la_goi and len(la_goi) < len(goi):
         return f"Cài tiếp phần còn thiếu ({', '.join(la_goi)} — {duoi})"
     return f"Tải phần nhân bản giọng ({', '.join(goi)} — {duoi})"
@@ -1199,6 +1263,12 @@ def tinh_trang_nhan_ban() -> dict:
         "nhan": nhan_tai_nhan_ban(thieu),
         "mb_tai": mb_nhan_ban(),
         "cuda": ban_cuda_se_tai(),
+        # Lý do ĐẦY ĐỦ (4 bước) để UI/tooltip/hộp xác nhận nói thật được mà
+        # KHÔNG phải chép lại câu chữ — chép là hai chỗ để lệch nhau. Đây là
+        # khoá RIÊNG, cố ý KHÔNG gộp vào `vi_sao`: `vi_sao` khác rỗng là NÚT
+        # BỊ KHOÁ (`cai_duoc = not vi_sao`), mà chọn bản CPU không phải lý do
+        # để khoá nút — nhét vào đó là tự tay giết nút tải.
+        "ly_do_cpu": ("" if ban_cuda_se_tai() else LY_DO_CPU),
         "python": _python_vieneu()[0],
         "thu_muc": str(thu_muc_vieneu()),
     }
@@ -1217,6 +1287,12 @@ TRAN_VONG_DO = 6
 
 #: Gói **KHÔNG BAO GIỜ** tự cài, dù lời lỗi có đòi đích danh. Lý do ghi ngay
 #: cạnh vì người sau sẽ hỏi "sao không cài nốt cho xong":
+#:
+#: ═══ HAI TÊN CUỐI LÀ BÀI HỌC PHẢI TRẢ GIÁ MỚI CÓ (20/08/2026) ═══
+#: Lượt trước tôi khuyên anh Hùng cài thêm `torchcodec` và `transformers` để
+#: chữa đường nhân bản. **Cả hai đều làm hỏng nặng hơn và phải gỡ lại.** Vòng
+#: tự dò là một cái máy tự động làm đúng lời khuyên đó, nên nếu không chặn thì
+#: nó sẽ lặp lại chính lượt sai ấy — không cần ai gõ lệnh.
 _CHAN_TU_DO: dict[str, str] = {
     "gradio": "giao diện web, không dính gì tới một lượt ĐỌC TIẾNG",
     "lmdeploy": "máy chủ suy luận, kéo về là gãy lượt cài",
@@ -1225,6 +1301,24 @@ _CHAN_TU_DO: dict[str, str] = {
     "triton_windows": "triton-windows KHÔNG build được trên Windows",
     "fitz": "PyMuPDF là bộ đọc PDF",
     "pymupdf": "bộ đọc PDF",
+    # torchcodec CHÍNH LÀ bước 3 của chuỗi lỗi ở `ban_cuda_se_tai()`: nó cần
+    # **FFmpeg dạng DLL CHIA SẺ** (avcodec/avformat/avutil-*.dll), còn app chỉ
+    # đóng gói `bin/ffmpeg.exe` **TĨNH** -> `libtorchcodec_core4/5.dll` không
+    # nạp được -> đường nhân bản CHẾT. Cài nó KHÔNG chữa được gì vì thứ thiếu
+    # là mấy cái DLL, không phải gói Python. Bản `torchaudio+cpu` mà VIỆC 1 ép
+    # dùng thì lùi về `soundfile` nên KHÔNG BAO GIỜ đòi tên này — thấy nó xuất
+    # hiện trong log là dấu hiệu chỉ mục CUDA đã lẻn về, đi đọc `chi_muc`.
+    "torchcodec": ("cần FFmpeg dạng DLL CHIA SẺ mà app chỉ đóng gói "
+                   "ffmpeg.exe TĨNH -> libtorchcodec_core4/5.dll không nạp "
+                   "được -> đường nhân bản chết. Cài vào không chữa được gì"),
+    # transformers là **phụ thuộc KHAI BÁO của gói `vieneu`**, KHÔNG phải phụ
+    # thuộc của một lượt ĐỌC — đo được (`_do_may_trang.py`): trên venv KHÔNG
+    # HỀ CÓ transformers/neucodec/accelerate, đường nhân bản vẫn ra **WAV 2,32
+    # giây · RMS 0,09761**. Kéo về là ~2,5 GB (torch/tokenizers) cho thứ lượt
+    # đọc không dùng, và đó cũng là gói đã phải GỠ LẠI sau lượt khuyên sai.
+    "transformers": ("đo được là phụ thuộc KHAI BÁO của gói vieneu, KHÔNG "
+                     "phải của một lượt đọc — đường nhân bản đã ra WAV có "
+                     "tiếng (2,32s · RMS 0,09761) khi nó KHÔNG có mặt"),
 }
 
 #: tên-IMPORT khác tên-PIP. Bảng NHỎ và chỉ chứa ca ĐÃ GẶP hoặc chắc chắn —
@@ -1410,9 +1504,17 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
     site-packages của đúng python đó: cài xong nó phải trả `[]`.
     **Mừng theo nó, KHÔNG theo mã thoát của pip.**
 
-    `ban_cuda=None` -> hỏi `ban_cuda_se_tai()`. Truyền tường minh chỉ để ĐO
-    (hộp cát không nên kéo 2,5 GB) — và khi đó nhãn vẫn khớp vì hộp xác nhận
-    của UI đọc `mb_nhan_ban()` chứ không đọc tham số này.
+    ═══ LUÔN LẤY BẢN CPU — KHÔNG CÓ ĐƯỜNG NÀO RA CHỈ MỤC CUDA ═══
+    Hàm này CỐ Ý không hỏi `co_gpu_nvidia()`. Đọc đủ 4 bước chuỗi lỗi ở
+    `ban_cuda_se_tai()` trước khi nghĩ tới việc trỏ lại `cu126`: máy anh Hùng
+    CÓ RTX 3060 và chính vì thế mà đường nhân bản chết (torchaudio+cu126 nạp
+    audio qua `torchcodec`, `torchcodec` đòi FFmpeg dạng DLL chia sẻ mà app chỉ
+    có `ffmpeg.exe` TĨNH). Nó chỉ chạy lại sau khi anh ấy **GỠ TAY** torch về
+    bản CPU — nên bấm lại nút này mà nó đi CUDA là hỏng lại y như cũ.
+
+    `ban_cuda` giữ lại **chỉ để không phá lối gọi cũ** (cổng 88 truyền
+    `ban_cuda=False`). Truyền `True` KHÔNG còn tác dụng và được **ghi log**,
+    không im lặng bỏ qua.
     """
     def prog(p: float, m: str) -> None:
         if on_progress:
@@ -1423,7 +1525,16 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
 
     t0 = time.time()
     venv = thu_muc_vieneu() / "venv"
-    cuda = ban_cuda_se_tai() if ban_cuda is None else bool(ban_cuda)
+    # MỘT chỗ hỏi, và câu trả lời hiện là hằng False (xem `ban_cuda_se_tai`).
+    # Tham số `ban_cuda` KHÔNG được phép lật nó lên True: đó đúng là cửa hậu
+    # đưa chỉ mục CUDA trở lại. Xin bản CPU (False) thì vốn đã là bản CPU.
+    cuda = ban_cuda_se_tai()
+    if ban_cuda:
+        _ghi_log("BỎ QUA ban_cuda=True: đường nhân bản LUÔN lấy bản CPU — "
+                 + LY_DO_CPU_GON)
+    if xin_ban_cpu():
+        _ghi_log("BQ_NB_CPU=1 không cần đặt nữa: đường nhân bản vốn đã LUÔN "
+                 "lấy bản CPU.")
     mb = MB_NB_CUDA if cuda else MB_NB_CPU
     ra: dict = {"ok": False, "loi": "", "giay": 0.0, "venv": str(venv),
                 "cuda": cuda, "mb_tai": mb, "thieu": [], "nhat_ky": []}
@@ -1473,8 +1584,15 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
             return xong("Đang tải rồi — đợi lượt này xong.")
         try:
             goi = _goi_nhan_ban()
-            chi_muc = CHI_MUC_TORCH_CUDA if cuda else CHI_MUC_TORCH_CPU
+            # ── CHỈ MỤC PIP: **LUÔN LÀ CHI_MUC_TORCH_CPU** ─────────────────
+            # Ghi thẳng hằng CPU, KHÔNG viết `CUDA if cuda else CPU`: một biểu
+            # thức ba ngôi ở đây là chỗ để người sau lật cờ rồi dựng lại đúng
+            # chuỗi 4 bước đã làm chết tính năng (xem `ban_cuda_se_tai`). Muốn
+            # nối lại bản CUDA thì phải đóng gói FFmpeg dạng DLL CHIA SẺ TRƯỚC
+            # rồi ĐO đường nhân bản trên GPU — chưa có cả hai thì đừng đụng.
+            chi_muc = CHI_MUC_TORCH_CPU
             ra["chi_muc"] = chi_muc
+            ra["ly_do_cpu"] = LY_DO_CPU_GON
             # `--extra-index-url` (KHÔNG `--index-url`): ép cả lượt vào chỉ mục
             # của pytorch là hỏng phép giải khi gói phụ thuộc không có ở đó
             # (bài học `cai_demucs`). Vẫn ra bản đúng vì `2.13.0+cu126` >
@@ -1487,10 +1605,17 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
             # `so_mb()` đổi dấu nghìn RIÊNG CON SỐ. Bản đầu `.replace(",",
             # ".")` cả câu và lượt CHẠY THẬT đầu tiên in ra
             # *"(khoảng 126 MB. tải 1 lần)"* — dấu phẩy thành dấu chấm.
-            prog(0.02, ("Máy có GPU NVIDIA — đang tải phần nhân bản bản CUDA "
-                        f"(khoảng {so_mb(mb)} MB, tải 1 lần)..." if cuda else
-                        f"Đang tải phần nhân bản (khoảng {so_mb(mb)} MB, tải "
-                        "1 lần)..."))
+            #
+            # DÒNG TIẾN ĐỘ NÓI RA LÀ **BẢN CPU** VÀ VÌ SAO. Nhánh "máy có GPU
+            # NVIDIA -> bản CUDA" đã BỎ HẲN chứ không để lại sau một cờ luôn
+            # False: mã chết ở đúng chỗ này là cửa để người sau bật lại chuỗi
+            # lỗi 4 bước. Máy anh Hùng có RTX 3060 nên nếu dòng này chỉ ghi
+            # trơn "đang tải phần nhân bản" thì anh ấy có quyền tưởng app dò
+            # hụt GPU.
+            prog(0.02, f"Đang tải phần nhân bản BẢN CPU (khoảng {so_mb(mb)} "
+                       "MB, tải 1 lần) — bản CUDA to gấp 19,7 lần và đã ĐO là "
+                       "làm CHẾT đường nhân bản (torchcodec đòi FFmpeg dạng "
+                       "DLL chia sẻ, app chỉ có ffmpeg.exe tĩnh)...")
             ma, log = _chay_theo_dong(args, han_giay, prog, 0.02, 0.90)
             ra["nhat_ky"] = log[-40:]
             if ma == -1:
@@ -1555,11 +1680,17 @@ def cai_nhan_ban(on_progress: Optional[Callable[[float, str], None]] = None,
                             + kq["loi"][:400], tu_do=them, vong=vong)
                     vi = _bi_chan(ten)
                     if vi:
+                        # BỊ CHẶN KHÔNG ĐƯỢC IM LẶNG BỎ QUA. Ghi log nêu ĐÍCH
+                        # DANH tên + lý do, và trả cả hai ra `loi` + khoá
+                        # `bi_chan` — im lặng ở đây thì người sau chỉ thấy
+                        # "cài xong mà không đọc được" rồi đi cài tay đúng cái
+                        # gói vừa bị chặn (đúng lượt sai của 20/08/2026).
                         _ghi_log(f"Vòng tự dò vòng {vong}: CHẶN `{ten}` ({vi})")
                         return xong(
                             f"Đường nhân bản đòi `{ten}` mà gói đó nằm trong "
-                            f"danh sách CHẶN ({vi}). Không tự cài.",
-                            tu_do=them, vong=vong)
+                            f"danh sách CHẶN ({vi}). Không tự cài — và ĐỪNG "
+                            "cài tay: xem khối ghi chú `_CHAN_TU_DO`.",
+                            tu_do=them, vong=vong, bi_chan=ten, bi_chan_vi=vi)
                     goi_moi = _ten_pip(ten)
                     _ghi_log(f"Vòng tự dò vòng {vong}: thiếu `{ten}` -> "
                              f"cài `{goi_moi}` vào {venv}")
