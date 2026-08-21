@@ -1989,6 +1989,22 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
         # Báo XONG cho MỌI câu kể cả câu rỗng/hỏng: nơi gọi ĐẾM số lần
         # `on_done` để chạy thanh tiến trình, thiếu một nhịp là thanh đứng mãi
         # không đủ (đúng cách `piper_tts.doc_loat` làm).
+        #
+        # NHƯNG ĐÂY LÀ *TẤT CẢ* NHỊP MÀ HÀM NÀY TỪNG BÁO, VÀ ĐÓ LÀ MỘT LỖI
+        # THẬT ANH HÙNG GẶP (21/08/2026): `_xong_het` chỉ chạy Ở CUỐI, nên
+        # suốt 15-30 PHÚT đọc cả loạt thì `on_done` được gọi **0 lần** ->
+        # `doc_ban_dich` không có nhịp nào để cộng -> thanh tiến trình ĐỨNG
+        # CHẾT ở `62% · bước 5/9` rồi nhảy phát một sang 74%. Anh Hùng hỏi
+        # 4 lần "nó vẫn đứng im, có lỗi không" và **suýt bấm Dừng tất cả**,
+        # mất trắng hơn một tiếng máy chạy — trong khi máy đang làm việc
+        # ĐÚNG (đo được: một file tiếng mới mỗi ~10 giây).
+        # Ghi chú ở `dubbing._synth_all_words` còn khẳng định "`doc_loat`
+        # chạy... có nhịp từng câu để bám" — GIẢ ĐỊNH ĐÓ SAI với VieNeu, và
+        # không ai kiểm nên nó nằm im tới hôm nay.
+        # Bản vá KHÔNG ở đây mà ở `doc_ban_dich`: tiến trình con VỐN ĐÃ in
+        # `Doc cau N/M` mỗi câu (xem `_MA_DOC`), `_chay_vieneu` VỐN ĐÃ nhận
+        # và gọi `on_msg` — chỉ thiếu người truyền `on_msg` xuống. Thông tin
+        # có đủ ở MỌI tầng rồi bị bỏ đúng ở bước cuối.
         for i in range(n):
             if on_done:
                 try:

@@ -2132,6 +2132,39 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
             on_progress(xong["n"] / max(1, len(texts)),
                         f"Đang đọc câu {xong['n']}/{len(texts)}...")
 
+    # NHỊP TỪNG CÂU CỦA MÁY ĐỌC GỘP CẢ LOẠT (VieNeu/Kokoro/Piper/ElevenLabs).
+    # Chúng đọc cả loạt trong MỘT lượt gọi nên `on_done` chỉ nổ Ở CUỐI ->
+    # thanh tiến trình đứng chết 15-30 phút ở đúng một con số (lỗi thật anh
+    # Hùng gặp 21/08/2026 với giọng nhân bản: "nó vẫn dừng ở 62% BƯỚC 5", hỏi
+    # 4 lần và suýt bấm Dừng, mất hơn một tiếng máy chạy ĐÚNG). Tiến trình con
+    # VỐN ĐÃ in `Doc cau N/M` mỗi câu và `giong_vieneu._chay_vieneu` VỐN ĐÃ
+    # gọi `on_msg` — trước đây không ai truyền `on_msg` xuống nên lời báo bị
+    # bỏ đi. Thông tin có đủ ở MỌI tầng rồi mất đúng ở bước cuối.
+    # Đọc số THẬT trong câu chứ không tự đếm: nhánh nào báo `N/M` thì `N` là
+    # số câu máy đọc ĐÃ XONG — chính xác hơn mọi phép đoán.
+    _re_cau = re.compile(r"(\d+)\s*/\s*(\d+)")
+
+    def _nhac(m: str) -> None:
+        if not on_progress:
+            return
+        p = 0.0
+        g = _re_cau.search(str(m or ""))
+        if g:
+            try:
+                a, b = int(g.group(1)), int(g.group(2))
+                if b > 0:
+                    p = max(0.0, min(1.0, a / b))
+            except ValueError:
+                p = 0.0
+        # Không đọc ra số thì VẪN báo (chữ đổi = dấu hiệu còn sống), lấy mốc
+        # theo `xong` nên thanh KHÔNG BAO GIỜ tụt lùi.
+        if p <= 0.0:
+            p = xong["n"] / max(1, len(texts))
+        try:
+            on_progress(p, str(m)[:150])
+        except Exception:  # noqa: BLE001
+            pass
+
     t0 = time.time()
     # THU LUÔN MỐC TỪNG-TỪ (WordBoundary). Cùng một lượt gọi edge-tts, KHÔNG
     # tốn thêm giây mạng nào — `_synth_all_words` chỉ đọc thêm loại chunk mà
@@ -2147,7 +2180,8 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
     # True: chưa có gì trong tay, lùi cả track sang edge vẫn ra video ĐÚNG.
     ok, moc_tu = asyncio.run(
         dubbing._synth_all_words(texts, _v, paths, on_done=_done,
-                                 pitch=_pitch, lang=dich_sang))
+                                 pitch=_pitch, lang=dich_sang,
+                                 on_msg=_nhac))
     # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
     # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
     # độ dài file có kèm ~1,07 s im lặng của edge-tts.
