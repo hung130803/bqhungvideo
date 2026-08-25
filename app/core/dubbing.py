@@ -1921,9 +1921,20 @@ async def _synth_all(texts: list[str], voice: str, paths: list[str],
 
     dung_vn, voice = _vieneu_hay_khong(voice)
     if dung_vn:
+        # VIẾT TẮT — xem `doc_viet_tat`. **MẶC ĐỊNH ĐÂY LÀ PASS-THROUGH**: đo
+        # ra VieNeu đọc viết tắt ĐÚNG SẴN (giọng nhân bản 12/12 token) nên
+        # `bat_cho_vieneu()` trả False và `sua_loat` trả nguyên văn. Giữ chỗ
+        # rẽ để máy đọc nào sau này ĐO RA có bệnh thì bật bằng một dòng.
+        # **ĐẶT TRONG `if dung_vn`, KHÔNG đặt ở đầu hàm**: `_vieneu_hay_khong`
+        # có thể trả (False, giọng edge) khi máy
+        # thiếu VieNeu, và lúc đó chữ đã đổi sẽ rơi xuống nhánh edge-tts —
+        # `doi_chu` lượt hai không tìm thấy gì để đổi nữa (chữ đã thành thường)
+        # nên `thay` RỖNG, `tra_moc_ve_goc` thành no-op và mốc ở lại dạng
+        # «gi»/«đi»/«pi» = ĐÚNG cái lỗi lệch mốc mà cả bộ này sinh ra để chặn.
         # Cửa này KHÔNG cần mốc từng chữ -> `lay_moc=False` bỏ hẳn lượt gióng
         # hàng (mở tiến trình con + model 1,18 GB). Đúng cách nhánh Piper ở
-        # ngay trên đang làm.
+        # ngay trên đang làm; và vì không có mốc nên chỉ cần chữ, bỏ `thay`.
+        texts, _tv = doc_viet_tat.sua_loat(texts, voice)
         ok_v, _mv = await _chay_vieneu(texts, paths, voice, lang, on_done,
                                        rate, on_msg, lay_moc=False)
         return ok_v
@@ -2609,13 +2620,27 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
 
     dung_vn, voice = _vieneu_hay_khong(voice)
     if dung_vn:
+        # VIẾT TẮT + TRẢ MỐC VỀ TOKEN GỐC — xem `doc_viet_tat`. **MẶC ĐỊNH
+        # PASS-THROUGH** (số đo bác việc bật cho VieNeu — xem nhánh cùng tên
+        # của `_synth_all`). Đặt TRONG `if dung_vn` chứ không ở đầu hàm: máy
+        # thiếu VieNeu thì `_vieneu_hay_khong` lùi sang edge-tts, và chữ đã
+        # đổi rơi xuống đó là mất hẳn phép gộp mốc.
+        #
+        # KHÁC edge-tts MỘT CHỖ, và nó KHÔNG đổi cách gộp: VieNeu không tự trả
+        # mốc, `giong_vieneu._lay_moc` gọi GIÓNG HÀNG CƯỠNG BỨC — mà gióng hàng
+        # cắt token bằng `_tach_tu(chữ ĐÃ GỬI)` nên mốc cũng mang đúng các mảnh
+        # «gi»/«đi»/«pi», y hệt `WordBoundary`. Cùng định dạng, cùng nguồn chữ
+        # -> dùng lại `tra_moc_ve_goc` (qua cửa cả-loạt `tra_moc_loat`), KHÔNG
+        # viết phép gộp thứ hai.
+        gui, thay_ds = doc_viet_tat.sua_loat(texts, voice)
         # `lay_moc=True`: `giong_vieneu._lay_moc` gọi THẲNG bộ gióng hàng nên
         # mốc trả về đã là mốc gióng hàng rồi. **KHÔNG bọc `_moc_giong_hang`
         # thêm lần nữa** — đó là chạy gióng hàng hai lượt trên cùng bộ file,
         # tốn gấp đôi mà kết quả y hệt. Máy chưa có bộ gióng hàng -> mốc rỗng,
         # tiếng vẫn đúng (nhãn giọng đã nói trước).
-        return await _chay_vieneu(texts, paths, voice, lang, on_done, rate,
-                                  on_msg, lay_moc=True)
+        ok_v, moc_v = await _chay_vieneu(gui, paths, voice, lang, on_done,
+                                         rate, on_msg, lay_moc=True)
+        return ok_v, doc_viet_tat.tra_moc_loat(moc_v, gui, thay_ds)
 
     # VBEE — `lay_moc=True` ở cửa NÀY (khác `_synth_all`): đây là cửa đường
     # thay tiếng, chữ chạy theo MỐC TỪNG CHỮ (cổng 60). `giong_vbee._lay_moc`

@@ -209,13 +209,16 @@ CONG = [
     # Mốc 42 -> 44: mục 4 thêm 2 chốt cho phép CHE KEY (che vẫn tách được từng
     # key · bản in KHÔNG chứa nguyên văn key) — xem cổng 77.
     ("70 model Groq còn sống", "_test_groq_model.py",    44),
-    # Mốc 95 -> 152: CA 9 mở bộ chữa viết tắt sang **giọng NHÂN BẢN `vnb:` và
-    # VieNeu `vn:`** (20/08/2026 — anh Hùng nghe 4 video bằng giọng nhân bản
-    # của chính mình rồi kêu "nói linh ta linh tinh"). Đường đó chạy
-    # `giong_vieneu` nên KHÔNG rơi xuống nhánh edge-tts; CA 9 gọi THẬT hai cửa
-    # chung với máy đọc GIẢ, và mốc giả dựng đúng cách GIÓNG HÀNG dựng (VieNeu
-    # không tự trả mốc). Thử phá `_pha_viet_tat_vnb.py`: BẮT 5 · LỌT 0.
-    ("69 viết tắt + mốc",   "_test_viet_tat.py",        152),
+    # Mốc 95 -> 160: CA 9 (20/08/2026). Việc đặt ra là mở bộ chữa viết tắt
+    # sang **giọng NHÂN BẢN `vnb:` / VieNeu `vn:`** — đường đó chạy
+    # `giong_vieneu` nên không rơi xuống nhánh edge-tts. Đường ĐÃ NỐI và mốc
+    # trả về token gốc đã chứng minh trên GIÓNG HÀNG THẬT (12/12), **nhưng
+    # MẶC ĐỊNH TẮT vì số đo BÁC**: `_do_viet_tat_vieneu.py` (6 token × 2 vòng
+    # đan xen, Groq chép ngược) ra giọng nhân bản đọc THÔ đúng **12/12**, bật
+    # bộ chữa vào còn 10/12 — **TỐT LÊN 0 · TỆ ĐI 2**. Vì vậy bất biến CA 9 là
+    # *"mặc định KHÔNG đụng VieNeu"*; công tắc `BQ_VIET_TAT_VN=1` chỉ để đo.
+    # Thử phá `_pha_viet_tat_vnb.py`: BẮT 6 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0.
+    ("69 viết tắt + mốc",   "_test_viet_tat.py",        160),
     # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
     # cổng từng ĐỎ OAN vì đọc trúng registry thật của anh Hùng).
     # 44 -> 45: thêm mục TỰ KIỂM cho phép đo cỡ chữ (phải có NỀN để trừ, và cỡ

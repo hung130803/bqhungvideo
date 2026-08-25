@@ -28,25 +28,60 @@ Nên cổng này KHÔNG chỉ kiểm "có đổi chữ không". Nó kiểm:
          nó sinh ra để canh thì là cổng phát chứng nhận, không phải cổng.
   CA 8 — nối ĐỦ CỬA trong `dubbing.py` (`_synth_all` · `_synth_all_words` ·
          `synth_demo`) và `_synth_all_words` PHẢI gọi `tra_moc_ve_goc`.
+  CA 9 — **GIỌNG NHÂN BẢN `vnb:` VÀ VieNeu `vn:`** (mở 20/08/2026). Đường đó
+         chạy `giong_vieneu`, KHÔNG rơi xuống nhánh edge-tts nên bộ chữa chưa
+         từng chạm tới nó. Ca này gọi THẬT `_synth_all` / `_synth_all_words`
+         với máy đọc GIẢ, và mốc giả được dựng **đúng cách `giong_hang` dựng**
+         (token = `dubbing._tach_tu(chữ ĐÃ GỬI)`) chứ không phải kiểu
+         `WordBoundary` — vì VieNeu KHÔNG tự trả mốc, nó đi gióng hàng cưỡng
+         bức. Kèm ca **LÙI VỀ EDGE** chạy hết đường `one()` thật với
+         `edge_tts` giả: chốt `sua_loat` phải nằm TRONG nhánh `dung_vn`, đặt
+         ở đầu hàm là chữ đổi HAI LƯỢT -> `thay` rỗng -> mốc kẹt ở
+         «gi»/«đi»/«pi».
 
-KHÔNG GỌI MẠNG, KHÔNG TỐN LƯỢT NÀO. Mốc `WordBoundary` ở đây là mốc DỰNG TAY
-theo đúng định dạng edge-tts trả (`[a, b, từ]`, đơn vị giây) — phần đọc thật
-đã đo riêng ở `_do_viet_tat_app.py` (tỉ lệ đọc sai) và `_do_moc_viet_tat.py`
-(độ lệch chữ-tiếng). Cổng chỉ canh LOGIC, và canh nó bằng đường THẬT
-(`dubbing._synth_all_words` bị chặn mạng, gọi `doc_viet_tat` thật).
+KHÔNG GỌI MẠNG, KHÔNG TỐN LƯỢT NÀO, KHÔNG NẠP MODEL NÀO. Mốc ở đây là mốc DỰNG
+TAY theo đúng định dạng hai nguồn thật trả về (`[a, b, từ]`, đơn vị giây) —
+phần đọc thật đã đo riêng ở `_do_viet_tat_app.py` (tỉ lệ đọc sai) và
+`_do_moc_viet_tat.py` (độ lệch chữ-tiếng). Cổng canh LOGIC, và canh nó bằng
+đường THẬT (`dubbing._synth_all_words` chạy thật, chỉ máy đọc là giả).
 
   .venv\\Scripts\\python -u _test_viet_tat.py
 """
 from __future__ import annotations
 
+import ast
+import asyncio
+import atexit
 import os
 import re
+import shutil
 import sys
+import types
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 os.environ.setdefault("BQ_FFMPEG_SLOTS", "1")
+
+#: HỘP CÁT nằm TRONG cây mã, KHÔNG trong `%TEMP%` — cổng không được để rác
+#: trên máy anh Hùng, và `%TEMP%` là chỗ `tempsweep` lẫn Disk Cleanup đụng
+#: vào. Dọn bằng `atexit` chứ không bằng dòng gọi ở cuối `main()`: lượt thử
+#: phá có phép làm cổng CHẾT GIỮA ĐƯỜNG (bài học cổng 88).
+SB = REPO / f"bq_test_viettat_{os.getpid()}"
+
+
+def _don_hop_cat() -> None:
+    try:
+        p = SB.resolve()
+        # Chốt kiểu `Path("")` -> `WindowsPath('.')`: chỉ xoá thư mục nằm THẬT
+        # SỰ BÊN TRONG cây mã và mang đúng tiền tố cổng này đặt.
+        if p.name.startswith("bq_test_viettat_") and REPO.resolve() in p.parents:
+            shutil.rmtree(p, ignore_errors=True)
+    except Exception:                                        # noqa: BLE001
+        pass
+
+
+atexit.register(_don_hop_cat)
 
 for _f in (sys.stdout, sys.stderr):
     try:
@@ -325,6 +360,282 @@ def main() -> int:                                       # noqa: C901
     kiem("8f nhãn/bảng KHÔNG có emoji",
          not any(ord(c) > 0x2100 for c in "".join(DVT.CHU_ANH.values())))
 
+    # ═══════ CA 9 — MỞ SANG GIỌNG NHÂN BẢN `vnb:` VÀ VieNeu `vn:` ═══════
+    from app.core import dubbing as DUB
+    from app.core import giong_vieneu as VN
+
+    VNB = "vnb:" + str(SB / "mau.wav")
+    VNP = "vn:Ngọc Huyền"
+
+    print("\nCA 9 — VieNeu `vn:`/`vnb:`: MẶC ĐỊNH KHÔNG ĐỤNG (số đo bác)")
+    # BẤT BIẾN SỐNG CÒN. `_do_viet_tat_vieneu.py` đo trên chính cửa chung,
+    # 6 token × 2 vòng đan xen, Groq chép ngược: giọng NHÂN BẢN đọc THÔ đúng
+    # **12/12**, bật bộ chữa vào còn 10/12 (**TỐT LÊN 0 · TỆ ĐI 2**, `GDP` hỏng
+    # ở CẢ 2/2 vòng = tiền định). VieNeu KHÔNG có bệnh của edge-tts. Ai bật lại
+    # mà không kèm bảng số mới thì cổng này phải ĐỎ.
+    kiem("9a `vnb:` (nhân bản) MẶC ĐỊNH TẮT", not DVT.bat_cho_giong(VNB))
+    kiem("9a' `vn:` (VieNeu dựng sẵn) MẶC ĐỊNH TẮT",
+         not DVT.bat_cho_giong(VNP))
+    kiem("9a'' ... và KHÔNG đổi một ký tự nào",
+         DVT.sua_cho_may_doc("GDP tăng mạnh.", VNB) == ("GDP tăng mạnh.", [])
+         and DVT.sua_loat(["GDP tăng mạnh."], VNP)
+         == (["GDP tăng mạnh."], [[]]))
+    kiem("9a''' `bat_cho_vieneu()` mặc định False", not DVT.bat_cho_vieneu())
+    # máy đọc KHÁC cũng phải TẮT — mở quá tay là đổi tiếng của thứ chưa ai đo
+    for v in ("piper:vi_VN-vais1000-medium", "el:pNInz6", "gemini:Kore",
+              "ov:nu_am", "kk:af_bella", "cb:en|D:\\a.wav", "vbee:hcm_diemmy",
+              "en-US-AndrewNeural", "vi", "vnx:abc", "avn:abc"):
+        kiem(f"9b «{v}» TẮT (máy đọc khác / chưa đo)",
+             not DVT.bat_cho_giong(v)
+             and DVT.sua_cho_may_doc("GDP tăng mạnh.", v)
+             == ("GDP tăng mạnh.", []))
+    kiem("9b' edge-tts giọng Việt vẫn BẬT (đừng vá quá tay sang bên kia)",
+         DVT.bat_cho_giong(GIONG_VI))
+
+    # ═══ Từ đây trở xuống: BẬT công tắc đo `BQ_VIET_TAT_VN=1`. Cơ chế phải
+    # ═══ CHẠY ĐÚNG — nó là thứ cho phép mở sang máy đọc nào ĐO RA có bệnh.
+    os.environ["BQ_VIET_TAT_VN"] = "1"
+    print("\nCA 9 (tiếp) — bật `BQ_VIET_TAT_VN=1`: cơ chế phải chạy đúng")
+    kiem("9a4 công tắc bật được", DVT.bat_cho_giong(VNB)
+         and DVT.bat_cho_giong(VNP) and DVT.bat_cho_vieneu())
+    kiem("9a5 bật rồi thì đổi chữ THẬT, không chỉ bật cờ",
+         DVT.sua_cho_may_doc("GDP tăng mạnh.", VNB)[0].startswith("gi đi pi")
+         and DVT.sua_cho_may_doc("GDP tăng mạnh.", VNP)[0]
+         .startswith("gi đi pi"))
+    os.environ["BQ_VIET_TAT"] = "0"
+    tat_nb = DVT.bat_cho_giong(VNB)
+    os.environ.pop("BQ_VIET_TAT", None)
+    kiem("9b'' `BQ_VIET_TAT=0` tắt đè được cả công tắc VieNeu", not tat_nb)
+
+    # --- 9c/9d: hai hàm CẢ LOẠT (hàm thuần) ---
+    LOAT = ["GDP tăng mạnh.", "", "Vị CEO này giá gì cũng nghĩ ra được.",
+            "Không có gì để đổi ở câu này."]
+    gui_ds, thay_ds = DVT.sua_loat(LOAT, VNB)
+    kiem("9c `sua_loat` giữ ĐÚNG số câu (lệch 1 ô là mốc dán sang câu khác)",
+         len(gui_ds) == len(LOAT) and len(thay_ds) == len(LOAT),
+         f"{len(gui_ds)}/{len(thay_ds)}/{len(LOAT)}")
+    kiem("9c' đổi đúng câu có viết tắt, câu khác GIỮ NGUYÊN VĂN",
+         gui_ds[0].startswith("gi đi pi") and gui_ds[1] == ""
+         and "xi i âu" in gui_ds[2] and gui_ds[3] == LOAT[3],
+         str(gui_ds))
+    kiem("9c'' câu không đổi -> `thay` RỖNG",
+         thay_ds[1] == [] and thay_ds[3] == [] and thay_ds[0] and thay_ds[2])
+    g_tat, t_tat = DVT.sua_loat(LOAT, "en-US-AndrewNeural")
+    kiem("9c''' giọng KHÔNG bật -> trả nguyên văn cả loạt, `thay` toàn rỗng",
+         g_tat == LOAT and t_tat == [[], [], [], []])
+    kiem("9c'''' loạt rỗng / None -> không nổ",
+         DVT.sua_loat([], VNB) == ([], []) and DVT.sua_loat(None, VNB)
+         == ([], []))
+
+    moc_ds = [moc_gia(g) for g in gui_ds]
+    ve_goc = DVT.tra_moc_loat(moc_ds, gui_ds, thay_ds)
+    kiem("9d `tra_moc_loat` giữ ĐÚNG số câu",
+         len(ve_goc) == len(moc_ds), f"{len(ve_goc)}/{len(moc_ds)}")
+    for i, cau in enumerate(LOAT):
+        ok9, vi9 = moc_tro_dung(cau, ve_goc[i])
+        kiem(f"9d' mốc câu {i} trỏ đúng chữ GỐC", ok9, vi9)
+    kiem("9d'' câu không có phần thay -> mốc GIỮ Y NGUYÊN",
+         ve_goc[3] == moc_ds[3])
+    kiem("9d''' thiếu `gui`/`thay` tương ứng -> giữ y nguyên, không nổ",
+         DVT.tra_moc_loat(moc_ds, [], []) == [list(m) for m in moc_ds])
+
+    # --- 9e/9f: GỌI THẬT hai cửa chung, máy đọc VieNeu là GIẢ ---
+    def moc_gh_gia(txt: str) -> list:
+        """GIÓNG HÀNG GIẢ — dựng mốc ĐÚNG CÁCH `giong_hang` dựng: token lấy
+        bằng `dubbing._tach_tu(chữ ĐÃ GỬI)` (KHÔNG phải kiểu `WordBoundary`
+        bỏ dấu câu), mốc tăng dần. Giả cái NẰM NGOÀI máy này (model 1,18 GB),
+        không giả cái app dùng."""
+        t, ra = 0.5, []
+        for w in DUB._tach_tu(txt):
+            ra.append([round(t, 3), round(t + 0.24, 3), w])
+            t += 0.30
+        return ra
+
+    def chay_cua(ham, voice: str, texts: list):
+        """Gọi THẬT `_synth_all`/`_synth_all_words`; trả (kết quả, nhận được)."""
+        nhan: dict = {}
+
+        async def gia(_texts, _paths, _voice, _lang, _on_done, _rate, _on_msg,
+                      lay_moc):
+            nhan["texts"] = list(_texts)
+            nhan["voice"] = _voice
+            nhan["lay_moc"] = lay_moc
+            moc = ([moc_gh_gia(t) for t in _texts] if lay_moc
+                   else [[] for _ in _texts])
+            return [True] * len(_texts), moc
+
+        cu_co, cu_chay = VN.co_vieneu, DUB._chay_vieneu
+        VN.co_vieneu = lambda: True
+        DUB._chay_vieneu = gia
+        try:
+            ra = asyncio.run(ham(texts, voice,
+                                 [str(SB / f"c{k}.mp3")
+                                  for k in range(len(texts))]))
+        finally:
+            VN.co_vieneu, DUB._chay_vieneu = cu_co, cu_chay
+        return ra, nhan
+
+    (ok_w, moc_w), nhan_w = chay_cua(DUB._synth_all_words, VNB, CAU_THU)
+    kiem("9e `_synth_all_words` RẼ ĐÚNG sang VieNeu (không rơi xuống edge)",
+         nhan_w.get("voice") == VNB, str(nhan_w.get("voice")))
+    kiem("9e' chữ GỬI cho máy đọc ĐÃ đổi viết tắt",
+         bool(nhan_w.get("texts"))
+         and nhan_w["texts"][0].startswith("gi đi pi")
+         and all(t != c for t, c in zip(nhan_w["texts"], CAU_THU)),
+         str(nhan_w.get("texts", [""])[0])[:44])
+    kiem("9e'' vẫn xin mốc gióng hàng (`lay_moc=True`)",
+         nhan_w.get("lay_moc") is True)
+    kiem("9e''' trả đủ số câu, đủ cờ ok",
+         len(moc_w) == len(CAU_THU) and all(ok_w))
+    for k, cau in enumerate(CAU_THU):
+        ok9, vi9 = moc_tro_dung(cau, moc_w[k])
+        kiem(f"9e mốc trỏ đúng chữ GỐC — «{cau[:26]}...»", ok9, vi9)
+    kiem("9e'''' chữ đã đổi KHÔNG lọt ra mốc",
+         not any(str(m[2]) in ("gi", "đi", "pi", "xi", "âu", "em", "diu",
+                               "ét", "ây", "ti")
+                 for mm in moc_w for m in mm),
+         str([m[2] for m in moc_w[0]])[:70])
+    khop9 = TG._khop_tu_vao_chu(CAU_THU[1], moc_w[1])
+    kiem("9e5 mốc khớp vào ĐÚNG chuỗi ký tự của chính nó (đường chữ chạy)",
+         len(khop9) == len(moc_w[1])
+         and all(CAU_THU[1][c0:c1] == str(m[2])
+                 for (c0, c1, _a, _b), m in zip(khop9, moc_w[1])),
+         f"{len(khop9)}/{len(moc_w[1])}")
+
+    ok_s, nhan_s = chay_cua(DUB._synth_all, VNP, CAU_THU[:3])
+    kiem("9f `_synth_all` (cửa KHÔNG mốc) cũng đổi chữ cho `vn:`",
+         nhan_s.get("voice") == VNP
+         and nhan_s.get("texts", [""])[0].startswith("gi đi pi"),
+         str(nhan_s.get("texts", [""])[0])[:44])
+    kiem("9f' cửa đó KHÔNG tốn lượt gióng hàng (`lay_moc=False`)",
+         nhan_s.get("lay_moc") is False)
+    kiem("9f'' trả đủ cờ ok", len(ok_s) == 3 and all(ok_s))
+
+    # --- 9g: THIẾU VieNeu -> LÙI EDGE. Chốt phải nằm TRONG nhánh `dung_vn` ---
+    # Đặt `sua_loat` ở ĐẦU HÀM thì đường lùi này đổi chữ HAI LƯỢT: lượt hai
+    # không còn viết tắt nào để bắt -> `thay` RỖNG -> `tra_moc_ve_goc` thành
+    # no-op -> mốc kẹt ở «gi»/«đi»/«pi». Ca này chạy hết `one()` THẬT với
+    # `edge_tts` GIẢ nên nó bắt được đúng cách hỏng đó.
+    SB.mkdir(parents=True, exist_ok=True)
+
+    class _CommGia:                                          # noqa: D101
+        def __init__(self, text, voice, **kw):
+            self.text, self.voice, self.kw = text, voice, kw
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"\x00" * 400}
+            t = 0.5
+            for m in re.finditer(r"[^\s]+", self.text):
+                w = m.group(0).strip(".,!?;:\"'“”…()")
+                if not w:
+                    continue
+                yield {"type": "WordBoundary", "text": w,
+                       "offset": int(t * 1e7), "duration": int(0.24 * 1e7)}
+                t += 0.30
+
+    cu_co = VN.co_vieneu
+    cu_log = VN._ghi_log
+    cu_tt = VN.tinh_trang_vieneu
+    cu_mod = sys.modules.get("edge_tts")
+    gia_mod = types.ModuleType("edge_tts")
+    gia_mod.Communicate = _CommGia                           # type: ignore[attr-defined]
+    VN.co_vieneu = lambda: False
+    VN._ghi_log = lambda *_a, **_k: None
+    VN.tinh_trang_vieneu = lambda: {"co": False, "thieu": ["(giả lập)"]}
+    sys.modules["edge_tts"] = gia_mod
+    try:
+        ok_l, moc_l = asyncio.run(DUB._synth_all_words(
+            CAU_THU, VNB, [str(SB / f"l{k}.mp3") for k in range(len(CAU_THU))]))
+    finally:
+        VN.co_vieneu, VN._ghi_log, VN.tinh_trang_vieneu = cu_co, cu_log, cu_tt
+        if cu_mod is not None:
+            sys.modules["edge_tts"] = cu_mod
+        else:
+            sys.modules.pop("edge_tts", None)
+    kiem("9g thiếu VieNeu -> LÙI edge-tts mà vẫn đọc được cả loạt",
+         all(ok_l) and len(moc_l) == len(CAU_THU),
+         f"{sum(1 for x in ok_l if x)}/{len(CAU_THU)}")
+    xau_l = 0
+    for k, cau in enumerate(CAU_THU):
+        ok9, _vi9 = moc_tro_dung(cau, moc_l[k])
+        if not ok9:
+            xau_l += 1
+    kiem("9g' ... và mốc đường LÙI vẫn trỏ đúng chữ GỐC (0 câu hỏng)",
+         xau_l == 0, f"{xau_l}/{len(CAU_THU)} câu hỏng")
+    kiem("9g'' mốc đường lùi KHÔNG kẹt ở mảnh phiên âm",
+         not any(str(m[2]) in ("gi", "đi", "pi", "xi", "âu")
+                 for mm in moc_l for m in mm))
+
+    # --- 9h: quét AST — chốt phải nằm TRONG nhánh, và mốc phải qua hàm gộp ---
+    cay = ast.parse(src)
+    ham = {n.name: n for n in ast.walk(cay)
+           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    def _goi(nut, ten: str) -> list:
+        return [c for c in ast.walk(nut)
+                if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                and c.func.attr == ten]
+
+    for ten_h in ("_synth_all", "_synth_all_words"):
+        h = ham.get(ten_h)
+        kiem(f"9h tìm thấy hàm `{ten_h}`", h is not None)
+        if h is None:
+            continue
+        kiem(f"9h' `{ten_h}` gọi `sua_loat` (nếu không: `vnb:` đọc chữ THÔ)",
+             len(_goi(h, "sua_loat")) >= 1, f"{len(_goi(h, 'sua_loat'))} chỗ")
+        # KHÔNG được nằm ở mức thân hàm — phải trong nhánh `dung_vn`
+        ngoai = [s for s in h.body if _goi(s, "sua_loat")
+                 and not isinstance(s, (ast.If, ast.For, ast.While, ast.Try))]
+        kiem(f"9h'' `{ten_h}`: `sua_loat` KHÔNG đứng ở mức thân hàm "
+             f"(đặt ở đầu hàm = đổi chữ hai lượt khi lùi edge)",
+             not ngoai, f"dòng {[s.lineno for s in ngoai]}")
+    hw = ham.get("_synth_all_words")
+    goi_loat = _goi(hw, "tra_moc_loat") if hw is not None else []
+    kiem("9h''' `_synth_all_words` gọi `tra_moc_loat` cho nhánh VieNeu",
+         len(goi_loat) == 1, f"{len(goi_loat)} chỗ")
+    kiem("9h'''' ... và truyền BIẾN, không phải hằng số/danh sách rỗng",
+         bool(goi_loat) and not any(isinstance(a, ast.Constant)
+                                    for a in goi_loat[0].args))
+    # nhánh VieNeu của cửa CÓ MỐC phải TRẢ VỀ kết quả của hàm gộp, không trả
+    # thẳng mốc thô — trả thẳng là mốc mang «gi»/«đi»/«pi», im lặng hoàn toàn
+    tra = [n for n in ast.walk(hw) if isinstance(n, ast.Return)
+           and isinstance(n.value, ast.Tuple)
+           and any(isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute)
+                   and e.func.attr == "tra_moc_loat" for e in n.value.elts)]
+    kiem("9h5 có lệnh `return (ok, tra_moc_loat(...))` trong nhánh VieNeu",
+         len(tra) == 1, f"{len(tra)} chỗ")
+
+    # --- 9i: TỰ KIỂM BỘ DÒ — bỏ phép gộp thì ca 9e PHẢI hỏng ---
+    xau9 = 0
+    for cau in CAU_THU:
+        g9, _t9 = DVT.sua_cho_may_doc(cau, VNB)
+        ok9, _v9 = moc_tro_dung(cau, moc_gh_gia(g9))   # mốc THÔ, không gộp
+        if not ok9:
+            xau9 += 1
+    kiem("9i TỰ KIỂM: bỏ `tra_moc_loat` -> mốc KHÔNG trỏ được vào chữ gốc",
+         xau9 >= len(CAU_THU) - 1,
+         f"{xau9}/{len(CAU_THU)} câu hỏng khi gỡ chốt")
+    dinh9 = [CAU_THU[1][c0:c1] for c0, c1, _a, _b
+             in TG._khop_tu_vao_chu(
+                 CAU_THU[1], moc_gh_gia(DVT.sua_cho_may_doc(CAU_THU[1], VNB)[0]))]
+    kiem("9i' ... và mốc thô dính vào chữ Việt KHÁC (đúng lỗi đã lường)",
+         any(x in ("gi", "i", "âu", "xi") for x in dinh9)
+         or len(dinh9) < len(moc_w[1]) - 1, f"dính vào: {dinh9[:8]}")
+
+    # TRẢ CÔNG TẮC VỀ MẶC ĐỊNH rồi chấm lại bất biến — quên trả là mọi lượt
+    # chạy sau trong CÙNG tiến trình đo một app KHÁC app đang phát hành.
+    os.environ.pop("BQ_VIET_TAT_VN", None)
+    kiem("9j trả công tắc: `vnb:`/`vn:` TẮT lại như mặc định",
+         not DVT.bat_cho_giong(VNB) and not DVT.bat_cho_giong(VNP))
+    (ok_z, moc_z), nhan_z = chay_cua(DUB._synth_all_words, VNB, CAU_THU[:2])
+    kiem("9j' ... và cửa chung gửi đi CHỮ GỐC, không đổi ký tự nào",
+         nhan_z.get("texts") == CAU_THU[:2] and all(ok_z),
+         str(nhan_z.get("texts", [""])[0])[:44])
+    for k in range(2):
+        ok9, vi9 = moc_tro_dung(CAU_THU[k], moc_z[k])
+        kiem(f"9j'' mốc câu {k} vẫn trỏ đúng chữ gốc khi TẮT", ok9, vi9)
+
+    _don_hop_cat()
     print("\n" + "=" * 72)
     print(f"TỔNG KẾT: ĐẠT {DAT} · HỎNG {HONG}")
     print("=" * 72)

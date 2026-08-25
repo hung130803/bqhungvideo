@@ -38,18 +38,69 @@ Nên cửa chung phải **GỘP dãy mốc của phần thay thế thành MỘT 
 GỐC** (giữ mốc đầu của "gi", mốc cuối của "pi", chữ trả về là `GDP`) — caller
 không bao giờ nhìn thấy chữ đã đổi.
 
-PHẠM VI CỐ Ý HẸP — hẹp là AN TOÀN, và mọi giới hạn đều đúng chiều "để nguyên
-= hành vi hôm nay, không thể tệ hơn":
-  * chỉ **GIỌNG VIỆT** (`vi-*`): Trung/Nhật đo ra ĐÚNG BẰNG TRẦN en-US, không
-    có bệnh để chữa; giọng Anh vốn đánh vần đúng.
-  * chỉ **edge-tts**: đó là máy đọc đã ĐO. ElevenLabs/Gemini/Piper đi đường
-    riêng, KHÔNG đo -> KHÔNG đụng.
+PHẠM VI — hẹp là AN TOÀN, và mọi giới hạn đều đúng chiều "để nguyên = hành vi
+hôm nay, không thể tệ hơn":
+  * chỉ **edge-tts giọng Việt** (`vi-*`) — máy đọc DUY NHẤT đo ra CÓ bệnh.
+    Trung/Nhật đo ra ĐÚNG BẰNG TRẦN en-US, không có bệnh để chữa; giọng Anh
+    vốn đánh vần đúng.
+  * **VieNeu** (`vn:` / `vnb:`) đã nối đường nhưng **MẶC ĐỊNH TẮT** — đo ra nó
+    đọc viết tắt ĐÚNG SẴN, bật vào là làm tệ đi (xem khối ngay dưới).
+  * **KHÔNG** đụng ElevenLabs / Gemini / Piper / Kokoro / Chatterbox /
+    OmniVoice / Vbee: máy đọc khác, CHƯA ĐO.
   * chỉ **2-3 chữ cái HOA**: đúng cỡ đã đo (`AI` `MV` `CEO` `GDP` `OST` `USB`).
     4-5 chữ cái hay bị đọc thành TỪ (`NASA` -> "na-sa" là ĐÚNG rồi), đánh vần
     ra là làm hỏng thứ đang chạy tốt.
   * có **DANH SÁCH BỎ QUA**: số La Mã (`thế kỷ XX` KHÔNG phải "ích ích"), viết
     tắt gốc VIỆT (`TP`, `HCM` — người Việt đọc bằng tên chữ cái VIỆT), và mấy
     cái đọc thành từ (`UFO` -> "u-phô", `OK` -> "ô-kê").
+
+MỞ SANG VieNeu (`vn:` / `vnb:`) — ĐƯỜNG ĐÃ NỐI, NHƯNG **MẶC ĐỊNH TẮT VÌ SỐ ĐO
+BÁC NÓ** (20/08/2026). ĐỌC HẾT KHỐI NÀY TRƯỚC KHI ĐỊNH BẬT LẠI.
+══════════════════════════════════════════════════════════════════════════
+Anh Hùng nghe 4 video thật bằng chính giọng nhân bản của mình rồi kêu *"âm
+thanh nhiều lúc lỗi, nó nói linh ta linh tinh không chuẩn"*. Đường `vnb:` chạy
+`giong_vieneu` nên nó **KHÔNG đi qua nhánh edge-tts ở cuối `_synth_all` /
+`_synth_all_words`** — tức bộ chữa này chưa từng chạm tới nó. Việc đặt ra là
+mở sang, và giả định ngầm là "cùng tiếng Việt thì cùng bệnh".
+
+**GIẢ ĐỊNH ĐÓ SAI. ĐO RỒI MỚI BIẾT** (`_do_viet_tat_vieneu.py`, hai arm đi
+CHUNG cửa `_synth_all_words`, khác nhau đúng một biến `BQ_VIET_TAT`; Groq
+`whisper-large-v3` chép ngược; 6 token đã hiệu chuẩn × 2 vòng ĐAN XEN):
+
+  | giọng                          | THÔ    | ĐÃ ĐỔI | ghép cặp                    |
+  |--------------------------------|--------|--------|-----------------------------|
+  | `vn:Ngọc Huyền` (dựng sẵn)     | 11/12  |  9/12  | TỐT LÊN 1 · TỆ ĐI 3         |
+  | `vnb:` NHÂN BẢN (mẫu edge-tts) | **12/12** | 10/12 | **TỐT LÊN 0 · TỆ ĐI 2**   |
+
+**VieNeu ĐỌC VIẾT TẮT ĐÚNG SẴN — nó KHÔNG có bệnh của edge-tts.** Đường nhân
+bản đọc đúng **12/12**; bật bộ chữa vào là làm hỏng: `GDP` -> "gi đi pi" bị
+nghe thành **"DP"** ở **CẢ 2/2 vòng** (tiền định, không phải nhiễu), `USB` ->
+"diu ét bi" thành **"Ziu FB"**. Không token nào tốt lên ổn định, nên **không
+có tập con nào đáng bật**.
+Đây đúng lớp bằng chứng đã BÁC bảng tên riêng ở lượt trước: *thứ đang ĐÚNG SẴN
+ở bản thô thì chép âm cho nó là RỦI RO THUẦN, 0 lợi ích*.
+
+VÌ SAO GIỮ ĐƯỜNG THAY VÌ XOÁ: nửa KHÓ của việc là **trả mốc về token gốc**, và
+nó ĐÃ ĐƯỢC CHỨNG MINH TRÊN GIÓNG HÀNG THẬT — **12/12 mốc mang token GỐC** ở cả
+hai arm, cả hai giọng. Máy đọc nào sau này ĐO RA có bệnh thì bật bằng đúng một
+dòng (thêm tiền tố + `BQ_VIET_TAT_VN=1`), không phải dựng lại từ đầu. Đường
+vẫn CHẠY mỗi lượt VieNeu (dạng pass-through), không phải mã chết.
+
+CÔNG TẮC: `BQ_VIET_TAT_VN=1` bật lại cho VieNeu — **chỉ để đo**, đừng bật
+trong sản xuất khi chưa có bảng số mới nói ngược bảng trên.
+
+MỘT CHỖ KHÁC edge-tts, PHẢI BIẾT KẺO ĐỌC NHẦM SỐ ĐO: **VieNeu không tự trả
+mốc từng chữ**. Mốc lấy bằng GIÓNG HÀNG CƯỠNG BỨC (`giong_hang.giong_hang_loat`
+-> token do `dubbing._tach_tu` cắt ra từ **chữ ĐÃ GỬI**). Nghĩa là mốc trả về
+mang đúng các mảnh `gi` / `đi` / `pi` y như `WordBoundary` — nên `tra_moc_ve_goc`
+dùng lại được NGUYÊN XI, không phải viết mới. Cửa cả-loạt là `tra_moc_loat`.
+
+**CÒN NỢ, GHI THẲNG:** mẫu giọng nhân bản dùng để đo là **GIẢ LẬP bằng
+edge-tts** (mẫu SẠCH TUYỆT ĐỐI = ca DỄ NHẤT), chưa đo trên mẫu thật của anh
+Hùng — `_mau_giong/*.wav` trên máy này chỉ là fixture 4 byte. Và cỡ mẫu là
+**6 token × 2 vòng**, đủ để bác một bản vá làm TỆ ĐI, KHÔNG đủ để nói tỉ lệ.
+Câu *"nói linh ta linh tinh"* của anh Hùng vì vậy **vẫn còn nguyên nghi phạm
+khác** — lượt này chỉ loại được MỘT nghi phạm bằng số.
 
 Tắt bằng `BQ_VIET_TAT=0` — CHỈ để phép đo chạy được arm đối chứng trong cùng
 một tiến trình (và để cứu hộ nếu có ca lạ). Mặc định BẬT.
@@ -95,16 +146,48 @@ BO_QUA = {
 #: `doi_chu` (nhận biết chữ Việt có dấu) chứ không nhồi vào regex.
 _RE_HOA = re.compile(r"[A-Z]{2,3}")
 
+#: TIỀN TỐ CỦA CÁC MÁY ĐỌC DÙNG MODEL TIẾNG VIỆT ngoài edge-tts. Hôm nay chỉ
+#: có **VieNeu**: `vn:` = 20 giọng dựng sẵn · `vnb:` = giọng NHÂN BẢN từ mẫu.
+#:
+#: **DANH SÁCH NÀY CHỈ CÓ HIỆU LỰC KHI `BQ_VIET_TAT_VN=1`** — mặc định TẮT vì
+#: số đo BÁC (xem bảng ở đầu file: `vnb:` đọc thô ĐÚNG 12/12, bật bộ chữa vào
+#: thì TỆ ĐI 2, TỐT LÊN 0). Giữ danh sách để máy đọc nào sau này ĐO RA có bệnh
+#: thì bật bằng một dòng.
+#:
+#: **THÊM TIỀN TỐ VÀO ĐÂY LÀ ĐỔI TIẾNG CỦA MỘT MÁY ĐỌC CHƯA AI ĐO.** Piper
+#: (`piper:vi_VN-vais1000`) cũng là giọng Việt nhưng là máy đọc KHÁC HẲN
+#: (VITS espeak-ng, không phải model của VieNeu) và chưa có một số đo nào về
+#: cách nó đánh vần viết tắt -> CỐ Ý ĐỂ NGOÀI.
+TIEN_TO_VIET = ("vnb:", "vn:")
+
+
+def bat_cho_vieneu() -> bool:
+    """VieNeu có được sửa viết tắt không? **MẶC ĐỊNH KHÔNG — số đo bác.**
+
+    `BQ_VIET_TAT_VN=1` bật lại, CHỈ để chạy arm đối chứng của phép đo
+    (`_do_viet_tat_vieneu.py`). Đừng bật trong sản xuất khi chưa có bảng số
+    mới nói ngược bảng ở đầu file.
+    """
+    return os.environ.get("BQ_VIET_TAT_VN") == "1"
+
 
 def bat_cho_giong(voice: str) -> bool:
-    """Có sửa viết tắt cho `voice` không? CHỈ edge-tts giọng Việt (`vi-*`).
+    """Có sửa viết tắt cho `voice` không?
 
-    `el:` / `gemini:` / `piper:` -> False (máy đọc khác, chưa đo).
+    BẬT cho: edge-tts giọng Việt (`vi-*`) — máy đọc DUY NHẤT đo ra CÓ bệnh.
+    TẮT cho: mọi thứ còn lại, gồm cả VieNeu (`vn:` / `vnb:`) trừ khi
+    `BQ_VIET_TAT_VN=1`.
     """
     if os.environ.get("BQ_VIET_TAT") == "0":
         return False
     v = str(voice or "").strip().lower()
-    if not v or ":" in v:               # el: / gemini: / piper:
+    if not v:
+        return False
+    # Kiểm tiền tố TRƯỚC chốt `":" in v` — mọi mã máy-đọc-trên-máy đều có dấu
+    # hai chấm, để chốt kia chạy trước là loại sạch chúng.
+    if v.startswith(TIEN_TO_VIET):
+        return bat_cho_vieneu()
+    if ":" in v:                        # el: / gemini: / piper: / ov: / kk: ...
         return False
     return v.startswith("vi-")
 
@@ -231,11 +314,60 @@ def tra_moc_ve_goc(moc: list, txt_gui: str,
 
 def sua_cho_may_doc(text: str, voice: str,
                     ) -> tuple[str, list[tuple[int, int, str]]]:
-    """CỬA DUY NHẤT cho `dubbing._synth_all` / `_synth_all_words` gọi.
+    """CỬA DUY NHẤT cho MỘT CÂU — `dubbing` gọi ở nhánh edge-tts.
 
-    Giọng không phải edge-tts Việt (hoặc `BQ_VIET_TAT=0`) -> trả `(text, [])`,
-    tức KHÔNG đổi một ký tự nào.
+    Giọng không được bật (hoặc `BQ_VIET_TAT=0`) -> trả `(text, [])`, tức
+    KHÔNG đổi một ký tự nào.
     """
     if not bat_cho_giong(voice):
         return str(text or ""), []
     return doi_chu(text)
+
+
+def sua_loat(texts: list, voice: str,
+             ) -> tuple[list, list]:
+    """CỬA CẢ LOẠT — cho máy đọc nhận NGUYÊN MẺ CÂU (VieNeu). HÀM THUẦN.
+
+    Trả `(texts_gửi, thay_ds)` với `thay_ds[i]` = phần `thay` của câu i.
+    Danh sách vào rỗng / giọng không bật -> trả bản SAO nguyên văn và
+    `thay_ds` toàn rỗng (caller không phải kiểm gì thêm).
+
+    VÌ SAO KHÔNG DÙNG THẲNG `sua_cho_may_doc` TRONG VÒNG LẶP Ở `dubbing`:
+    ở đó còn phải ghép với `tra_moc_loat` cho khớp chỉ số, mà chỗ ghép sai
+    chỉ số là chỗ mốc dính sang CÂU KHÁC — im lặng hoàn toàn. Giữ cả hai vế
+    trong một file, cạnh nhau, để cổng chấm được bằng hàm thuần.
+    """
+    ra: list = []
+    thay_ds: list = []
+    bat = bat_cho_giong(voice)
+    for t in list(texts or []):
+        if not bat:
+            ra.append(str(t or ""))
+            thay_ds.append([])
+            continue
+        g, th = doi_chu(t)
+        ra.append(g)
+        thay_ds.append(th)
+    return ra, thay_ds
+
+
+def tra_moc_loat(moc_ds: list, gui_ds: list, thay_ds: list) -> list:
+    """`tra_moc_ve_goc` cho CẢ LOẠT — giữ nguyên chỉ số câu. HÀM THUẦN.
+
+    `moc_ds[i]` = mốc của câu i (do `WordBoundary` HOẶC **gióng hàng cưỡng
+    bức** trả về — hai bên cùng định dạng `[[đầu, cuối, từ], ...]` và cùng lấy
+    chữ từ chuỗi ĐÃ GỬI, nên dùng chung một phép gộp).
+
+    Câu nào thiếu `gui`/`thay` tương ứng -> GIỮ Y NGUYÊN mốc câu đó. Độ dài
+    đầu ra LUÔN bằng `len(moc_ds)`: lệch một ô là mốc của câu này dán vào câu
+    kia, mà lỗi đó không có một dòng báo nào.
+    """
+    ra: list = []
+    for i, moc in enumerate(list(moc_ds or [])):
+        gui = gui_ds[i] if i < len(gui_ds or []) else ""
+        thay = thay_ds[i] if i < len(thay_ds or []) else []
+        if not thay:
+            ra.append(list(moc or []))
+            continue
+        ra.append(tra_moc_ve_goc(moc, gui, thay))
+    return ra
