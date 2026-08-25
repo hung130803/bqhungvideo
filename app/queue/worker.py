@@ -15,6 +15,7 @@ fn(payload: dict, ctx: JobContext) -> dict (result) hoặc None.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -41,9 +42,99 @@ LAN_TG = "tg"
 LOAI_LAN_TG = ("thay_giong",)
 _TG_PLACE = ",".join("?" * len(LOAI_LAN_TG))
 
-#: Trần luồng của làn thay giọng. Demucs ăn ~1,3 GB RAM/video; quá số này là
-#: máy đảo trang -> CHẬM HƠN chứ không nhanh hơn.
+#: Trần luồng của làn thay giọng khi giọng đọc chạy QUA MẠNG (edge-tts,
+#: ElevenLabs). Demucs ăn ~1,3 GB RAM/video; quá số này là máy đảo trang ->
+#: CHẬM HƠN chứ không nhanh hơn.
+#:
+#: **ĐỪNG HẠ SỐ NÀY** — 200-300 kênh đang chạy sản xuất bằng edge-tts, và cổng
+#: 55 CA 2 đo trên chính đường đó: 2 luồng nhanh hơn chạy lần lượt **1,82 lần**
+#: (13,80s so với 25,06s). Cái phải hạ là trần của GIỌNG CHẠY TRÊN MÁY, và nó
+#: là một con số KHÁC — xem `tran_luong_tg`.
 TG_TRAN = 4
+
+# ---------------------------------------------------------------------------
+# TRẦN LUỒNG PHỤ THUỘC LOẠI GIỌNG
+# ---------------------------------------------------------------------------
+# SỐ ĐO 21/08/2026 trên máy anh Hùng (24 nhân · 31,8 GB), CÙNG 4 video, đường
+# giọng NHÂN BẢN (chạy trên máy):
+#   · **4 luồng: hơn 1,5 TIẾNG -> ra 0 VIDEO**
+#   · **1 luồng: khoảng 45 PHÚT -> ra 4 VIDEO**
+# Lúc chạy 4 luồng đo được **23,5 trong 24 nhân bận, máy 100% CPU**, mỗi video
+# chậm đi ~4 lần. Tức ô "Số luồng" đang MỜI người dùng chọn con số làm chậm
+# chính mình.
+#
+# VÌ SAO `TG_TRAN = 4` KHÔNG SAI Ở CHỖ NÓ RA ĐỜI MÀ VẪN HỎNG Ở ĐÂY: nó được
+# đặt theo bước TÁCH NHẠC Demucs (~1,3 GB RAM/video) — đúng với đường edge-tts,
+# vì edge-tts đọc QUA MẠNG nên không đốt một nhân CPU nào. Đường giọng chạy
+# TRÊN MÁY có thêm một bước nặng THỨ HAI mà **chưa ai đo lúc đặt con số đó**:
+# VieNeu ăn ~3 GB RAM và **6,6-8,3 NHÂN CPU mỗi tiến trình**. Bốn tiến trình
+# như thế đòi 26-33 nhân trên một máy 24 nhân -> tranh nhau -> chậm hơn CHÍNH
+# NÓ chạy 1 luồng. Nên đây **KHÔNG phải "hạ trần xuống 1"**, mà là **trần phải
+# PHỤ THUỘC GIỌNG**.
+#
+# SUY RA TỪ MÁY, KHÔNG GHI CỨNG MỘT SỐ: máy 8 nhân và máy 24 nhân không thể
+# dùng chung một con số, và máy nhân viên thì khác hẳn máy anh Hùng.
+#: Nhân CPU cho 1 luồng giọng-trên-máy (đo 6,6-8,3 -> lấy đầu trên).
+NHAN_MOI_LUONG_MAY = 8.0
+#: RAM cho 1 luồng giọng-trên-máy: VieNeu ~3 GB + Demucs ~1,3 GB.
+RAM_MOI_LUONG_MAY_GB = 4.3
+#: Chừa lại cho phần còn lại của app (ffmpeg xuất clip · phân tích · giao diện)
+#: + hệ điều hành. Không chừa thì đúng lúc thay giọng chạy là mọi việc khác
+#: đứng — mà máy anh Hùng LUÔN có prodown tải nền ("Đo A/B phải đan xen").
+NHAN_CHUA = 4.0
+RAM_CHUA_GB = 6.0
+
+
+def phan_cung() -> tuple[int, float]:
+    """(số nhân CPU, RAM GB). Không đọc được RAM -> **0,0 = "không biết"**.
+
+    Đọc thẳng `os`/`psutil` chứ KHÔNG mượn `resource_manager.HARDWARE`: module
+    đó gọi `nvidia-smi` ngay lúc import, mà bộ điều phối phải nạp được cả ở
+    cổng test lẫn máy không GPU.
+    """
+    nhan = os.cpu_count() or 4
+    ram = 0.0
+    try:
+        import psutil
+        nhan = psutil.cpu_count(logical=True) or nhan
+        ram = float(psutil.virtual_memory().total) / (1024 ** 3)
+    except Exception:  # noqa: BLE001 - thiếu psutil -> chỉ mất cột RAM
+        pass
+    return max(1, int(nhan)), ram
+
+
+def tran_luong_tg(tren_may: bool = False, nhan: Optional[int] = None,
+                  ram_gb: Optional[float] = None) -> int:
+    """Trần luồng KHUYẾN NGHỊ của làn thay giọng, THEO LOẠI GIỌNG.
+
+    `tren_may=False` (edge-tts · ElevenLabs — đọc QUA MẠNG) -> trả nguyên
+    `TG_TRAN`, **không đổi một ly hành vi đang chạy sản xuất**.
+
+    `tren_may=True` (nhân bản `vnb:` · VieNeu `vn:` · Kokoro `kk:` · Piper ·
+    giọng ngoài) -> suy từ SỐ NHÂN và RAM của chính máy này.
+
+    Bộ điều phối **KHÔNG tự phân loại giọng** — bảng tiền tố chỉ có một nguồn
+    duy nhất là `giong_bang.tren_may`, hộp Thay giọng hỏi rồi truyền vào. Chép
+    một bảng tiền tố thứ hai vào đây là đẻ chỗ để lệch nhau (đúng ca `ov:` ·
+    `vn:` · `cb:` · `kk:` đã sập bốn lần ở `giong_bang._TIEN_TO`).
+
+    Hàm THUẦN khi truyền `nhan`/`ram_gb` — cổng test chấm được máy 8 nhân mà
+    không cần một cái máy 8 nhân.
+
+    `ram_gb=0` = không đọc được -> **KHÔNG kẹp theo RAM** (luật chung của repo:
+    không xác định được thì GIỮ, đừng đoán rồi hạ oan).
+    """
+    if not tren_may:
+        return TG_TRAN
+    n, r = phan_cung()
+    if nhan is not None:
+        n = max(1, int(nhan))
+    if ram_gb is not None:
+        r = float(ram_gb)
+    tran = min(TG_TRAN, int((n - NHAN_CHUA) // NHAN_MOI_LUONG_MAY))
+    if r > 0:
+        tran = min(tran, int((r - RAM_CHUA_GB) // RAM_MOI_LUONG_MAY_GB))
+    return max(1, tran)
 
 
 def register_handler(job_type: str, fn: Callable) -> None:
@@ -166,6 +257,11 @@ class WorkerPool:
         self.max_cpu = max(1, max_cpu)
         self.max_gpu = max(0, max_gpu)
         self.max_tg = max(1, max_tg)
+        # Giọng đang chọn có chạy TRÊN MÁY không, và người dùng đã CỐ Ý ép số
+        # cao hơn khuyến nghị chưa. Hộp Thay giọng đặt hai cờ này qua
+        # `set_limits`; không ai đặt -> giữ đúng hành vi cũ (trần `TG_TRAN`).
+        self.tg_tren_may = False
+        self.tg_ep = False
         self.poll_interval = poll_interval
 
         # Executor để DƯ sức (cap 16) — số luồng thực tế do self.max_cpu/max_gpu
@@ -243,13 +339,27 @@ class WorkerPool:
 
     def set_limits(self, max_cpu: Optional[int] = None,
                    max_gpu: Optional[int] = None,
-                   max_tg: Optional[int] = None) -> None:
+                   max_tg: Optional[int] = None,
+                   tg_tren_may: Optional[bool] = None,
+                   tg_ep: Optional[bool] = None) -> None:
         """Đổi SỐ LUỒNG lúc đang chạy (cắt = cpu, AI = gpu, thay giọng = tg).
-        Có hiệu lực ngay."""
+        Có hiệu lực ngay.
+
+        `tg_tren_may` = giọng đang chọn có chạy TRÊN MÁY không (hộp Thay giọng
+        hỏi `giong_bang.tren_may` rồi truyền vào — xem `tran_luong_tg`).
+        `tg_ep` = người dùng ĐÃ ĐỌC cảnh báo mà vẫn chọn số cao hơn khuyến
+        nghị -> tôn trọng, chỉ còn trần cứng `TG_TRAN`. **Không ai truyền hai
+        cờ này thì hành vi giống HỆT bản trước** (đường edge-tts của 200-300
+        kênh không đổi một ly).
+        """
         if max_cpu is not None:
             self.max_cpu = max(1, min(16, int(max_cpu)))
         if max_gpu is not None:
             self.max_gpu = max(1, min(16, int(max_gpu)))
+        if tg_tren_may is not None:
+            self.tg_tren_may = bool(tg_tren_may)
+        if tg_ep is not None:
+            self.tg_ep = bool(tg_ep)
         if max_tg is not None:
             self.max_tg = max(1, min(TG_TRAN, int(max_tg)))
         self._notify()   # đánh thức điều phối để áp số mới ngay
@@ -398,8 +508,21 @@ class WorkerPool:
         Thay giọng. Khoá về 1 là biến ô "Số luồng" thành cái nhãn vô nghĩa.
         Trần `TG_TRAN` vì Demucs ăn ~1,3 GB RAM/video — quá số này là máy đảo
         trang, chậm hơn chứ không nhanh hơn.
+
+        **TRẦN PHỤ THUỘC GIỌNG (21/08/2026).** `TG_TRAN` đo theo bước Demucs,
+        đúng cho giọng đọc QUA MẠNG. Giọng chạy TRÊN MÁY còn ăn 6,6-8,3 nhân
+        CPU mỗi tiến trình nữa, nên `tg_tren_may` -> kẹp thêm bằng
+        `tran_luong_tg(True)` (suy từ nhân + RAM của máy này).
+
+        **VẪN CHO ÉP:** `tg_ep` = người dùng đã đọc cảnh báo trên hộp Thay
+        giọng và vẫn chọn số cao hơn -> bỏ kẹp khuyến nghị, chỉ giữ trần cứng.
+        Cùng tinh thần với việc hàm này cố ý không nghe `ECO_MODE`: khoá cứng
+        là biến ô "Số luồng" thành cái nhãn.
         """
-        return max(1, min(TG_TRAN, int(self.max_tg)))
+        tran = TG_TRAN
+        if self.tg_tren_may and not self.tg_ep:
+            tran = min(tran, tran_luong_tg(True))
+        return max(1, min(tran, int(self.max_tg)))
 
     def _dem_lan(self) -> tuple[int, int, int]:
         """(đang chạy GPU, đang chạy CPU, đang chạy THAY GIỌNG).

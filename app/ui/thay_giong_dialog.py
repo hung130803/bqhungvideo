@@ -72,6 +72,7 @@ from app.core import tg_chay, tg_so
 from app.core import thay_giong as TG
 from app.core.captions import CAPTION_PRESETS
 from app.database import db
+from app.queue import worker as W
 from app.ui.appsettings import app_settings
 from app.core import giong_bang as GB
 from app.core import nhan_nha as NN
@@ -1818,18 +1819,50 @@ class ThayGiongDialog(QDialog):
         h2.addSpacing(8)
         h2.addWidget(QLabel("Số luồng:"))
         self.sp_luong = QSpinBox()
-        self.sp_luong.setRange(1, 4)
+        # TRẦN CỨNG lấy từ `worker.TG_TRAN`, KHÔNG ghi số 4 vào đây: hai bản
+        # sao của cùng một trần là hai chỗ để lệch nhau, và ô này chính là chỗ
+        # người dùng nhìn thấy trần đó.
+        self.sp_luong.setRange(1, W.TG_TRAN)
         self.sp_luong.setToolTip(
-            "Số video làm CÙNG LÚC. Bộ tách giọng ăn khoảng 1,3 GB RAM mỗi "
-            "video nên quá 4 là máy đảo trang, chậm hơn chứ không nhanh hơn.\n"
-            "Đo thật: 2 video / 2 luồng = 74,97 giây (chạy lần lượt ~120 "
-            "giây).")
+            "Số video làm CÙNG LÚC.\n"
+            "Giọng đọc QUA MẠNG (edge-tts, ElevenLabs) không đốt CPU máy nên "
+            "chạy được tới " + str(W.TG_TRAN) + " luồng (đo: 2 luồng nhanh "
+            "hơn chạy lần lượt 1,82 lần).\n"
+            "Giọng chạy TRÊN MÁY (nhân bản, VieNeu, Kokoro, Piper, giọng "
+            "ngoài) thì KHÁC HẲN: mỗi luồng ăn 6,6-8,3 nhân CPU + khoảng 4,3 "
+            "GB RAM, nên app tự tính lại theo số nhân và RAM của máy này.\n"
+            "SỐ ĐO 21/08/2026 trên đường giọng nhân bản, cùng 4 video: "
+            "4 luồng = hơn 1,5 TIẾNG ra 0 video · 1 luồng = khoảng 45 PHÚT ra "
+            "4 video.\n"
+            "App KHÔNG khoá ô này — đặt cao hơn khuyến nghị vẫn chạy đúng số "
+            "anh đặt, chỉ hiện cảnh báo.")
+        # Cờ ÉP: người dùng tự tay đổi ô này thì app KHÔNG tự hạ nữa (chỉ cảnh
+        # báo). `_dang_dat_luong` để phân biệt "app đặt" với "người đặt" —
+        # thiếu nó thì chính lượt tự hạ lại tự đánh dấu là ép.
+        self._luong_ep = False
+        self._dang_dat_luong = False
+        self._luong_vua_ha = 0          # số CŨ, chỉ để nói ra trong nhãn
         try:
             self.sp_luong.setValue(int(self._s.value(K_LUONG, 2) or 2))
         except (TypeError, ValueError):
             self.sp_luong.setValue(2)
+        self.sp_luong.valueChanged.connect(self._doi_luong)
         h2.addWidget(self.sp_luong)
         lay.addLayout(h2)
+
+        # ---- NÓI RA LÝ DO SỐ LUỒNG (lùi im lặng là bẫy) ----
+        # Anh Hùng 21/08/2026 chạy 4 luồng giọng nhân bản: hơn 1,5 tiếng ra 0
+        # video. Ô "Số luồng" mời chọn tới 4 mà không nói giọng nào chịu nổi
+        # số đó. App tự hạ được, nhưng hạ mà im lặng thì lần sau anh ấy lại
+        # kéo lên — nên số mới LUÔN đi kèm lý do và số đo.
+        self.lb_luong = QLabel("")
+        self.lb_luong.setWordWrap(True)
+        lay.addWidget(self.lb_luong)
+        # Đổi GIỌNG là đổi luôn loại trần -> phải tính lại. Combo dựng lại
+        # trong `blockSignals` nên `_dung_combo_giong` gọi thẳng hàm này ở
+        # cuối, không dựa mỗi vào tín hiệu.
+        self.cb_giong.currentIndexChanged.connect(
+            lambda *_a: self._cap_nhat_luong())
 
         # ---- GỢI Ý GIỌNG NHIỀU CẢM XÚC ----
         # Anh Hùng 18/08/2026: *"giọng chả có hồn gì, không có cảm xúc, rất là
@@ -3208,6 +3241,10 @@ class ThayGiongDialog(QDialog):
         self.cb_giong.blockSignals(False)
         self._noi_rong_popup()
         self._ve_goi_y()
+        # Combo dựng lại trong `blockSignals` nên tín hiệu KHÔNG bắn — gọi
+        # thẳng, nếu không thì mở hộp với giọng-chạy-trên-máy đã lưu là ô Số
+        # luồng vẫn giữ số của giọng mạng mà không ai nói gì.
+        self._cap_nhat_luong()
 
     def _noi_rong_popup(self) -> None:
         """VIỆC 1 — nới Ô DANH SÁCH cho VỪA CHỮ, chặn trần ở bề rộng cửa sổ.
@@ -3841,6 +3878,97 @@ class ThayGiongDialog(QDialog):
             return str(self.cb_giong.itemText(i)).split("  ·  ")[0]
         return ma
 
+    # ------------------------------------------------------------------
+    # SỐ LUỒNG — TRẦN PHỤ THUỘC GIỌNG, VÀ PHẢI NÓI RA LÝ DO
+    # ------------------------------------------------------------------
+    def giong_tren_may(self) -> bool:
+        """Giọng ĐANG CHỌN có chạy hẳn trên máy không (không gọi mạng lúc đọc).
+
+        Hỏi `giong_bang.tren_may` — **NGUỒN DUY NHẤT** của bảng tiền tố giọng.
+        Chép một bảng `vnb:`/`kk:`/`piper:`... thứ hai vào đây là dựng lại đúng
+        cái bệnh đã sập bốn lần ở `giong_bang._TIEN_TO` (tiền tố lạ bị coi là
+        edge-tts, không một dòng báo).
+
+        Đọc từ **WIDGET đang hiện**, không đọc QSettings: setting còn là giọng
+        của lượt trước cho tới khi bấm Chạy (bài học "đọc combo, không đọc
+        setting").
+        """
+        try:
+            return bool(GB.tren_may(str(self.cb_giong.currentData() or "")))
+        except Exception:  # noqa: BLE001 - mã lạ -> coi như giọng mạng (cũ)
+            return False
+
+    def khuyen_luong(self) -> int:
+        """Số luồng KHUYẾN NGHỊ cho giọng đang chọn. Cửa DUY NHẤT.
+
+        Con số do `worker.tran_luong_tg` tính (nhân + RAM của máy này); ở đây
+        chỉ hỏi loại giọng. Hộp và bộ điều phối vì thế không bao giờ nói hai
+        con số khác nhau.
+        """
+        return W.tran_luong_tg(self.giong_tren_may())
+
+    def _doi_luong(self, _v: int = 0) -> None:
+        """Người dùng tự tay đổi ô Số luồng -> ĐÁNH DẤU ÉP, app thôi tự hạ."""
+        if not self._dang_dat_luong:
+            self._luong_ep = True
+            self._luong_vua_ha = 0
+        self._cap_nhat_luong()
+
+    def _cap_nhat_luong(self) -> None:
+        """Tính lại trần theo GIỌNG, tự hạ nếu cần, và LUÔN nói ra vì sao.
+
+        Ba trạng thái, không có trạng thái thứ tư nào im lặng:
+          · giọng QUA MẠNG -> giữ nguyên trần cũ, nói rõ là không đốt CPU máy;
+          · giọng TRÊN MÁY, số đang đặt trong mức khuyến nghị -> nói con số đó
+            suy ra từ đâu (mấy nhân) và cái giá của việc kéo cao hơn;
+          · giọng TRÊN MÁY, người dùng ÉP cao hơn -> **vẫn chạy đúng số đó**,
+            chỉ đổi nhãn sang cảnh báo. Khoá cứng là biến ô này thành cái nhãn,
+            đúng cái mà `worker._lane_limit_tg` cố ý không làm với `ECO_MODE`.
+        """
+        if not hasattr(self, "lb_luong") or not hasattr(self, "sp_luong"):
+            return
+        may = self.giong_tren_may()
+        khuyen = W.tran_luong_tg(may)
+        nhan, _ram = W.phan_cung()
+        # TỰ HẠ ĐÚNG MỘT LẦN, và chỉ khi người dùng chưa tự đặt: đổi từ giọng
+        # mạng sang giọng máy mà giữ nguyên 4 luồng chính là ca 1,5 tiếng ra 0
+        # video.
+        if may and not self._luong_ep and self.sp_luong.value() > khuyen:
+            cu = int(self.sp_luong.value())
+            self._dang_dat_luong = True
+            try:
+                self.sp_luong.setValue(khuyen)
+            finally:
+                self._dang_dat_luong = False
+            self._luong_vua_ha = cu
+        v = int(self.sp_luong.value())
+        if not may:
+            # Quay lại giọng mạng thì lượt tự hạ trước đó không còn là "vừa" —
+            # để nguyên là nhãn nói một chuyện đã cũ.
+            self._luong_vua_ha = 0
+            self.lb_luong.setStyleSheet(f"color:{MUTED}")
+            self.lb_luong.setText(
+                f"Giọng này đọc QUA MẠNG, không đốt CPU máy — giữ trần "
+                f"{W.TG_TRAN} luồng như cũ (đo: 2 luồng nhanh hơn chạy lần "
+                f"lượt 1,82 lần).")
+        elif v > khuyen:
+            self.lb_luong.setStyleSheet(f"color:{WARN}")
+            self.lb_luong.setText(
+                f"CẢNH BÁO: giọng này chạy TRÊN MÁY, khuyên {khuyen} luồng "
+                f"cho {nhan} nhân mà anh đang đặt {v}. Mỗi luồng ăn 6,6-8,3 "
+                f"nhân CPU — đo 21/08 với 4 luồng: hơn 1,5 tiếng ra 0 video "
+                f"(1 luồng: 45 phút ra 4 video). App vẫn chạy đúng số anh đặt.")
+        else:
+            self.lb_luong.setStyleSheet(f"color:{MUTED}")
+            dau = (f"App vừa hạ {self._luong_vua_ha} xuống {khuyen} luồng. "
+                   if self._luong_vua_ha > khuyen else "")
+            self.lb_luong.setText(
+                f"{dau}Giọng này chạy TRÊN MÁY nên app để {khuyen} luồng cho "
+                f"{nhan} nhân — chọn cao hơn sẽ CHẬM HƠN (đo 21/08: 4 luồng "
+                f"ra 0 video sau hơn 1,5 tiếng · 1 luồng ra 4 video sau 45 "
+                f"phút).")
+        self.lb_luong.setVisible(True)
+
     def _doi_ngon_ngu(self) -> None:
         # Nhãn nhấn nhá bám theo NGÔN NGỮ (số của corpus tiếng Việt không nói
         # được gì về giọng đọc tiếng khác) -> đổi ngôn ngữ phải dựng lại combo.
@@ -4277,7 +4405,15 @@ class ThayGiongDialog(QDialog):
             return 0
         self.luu_cai_dat()
         if self._pool is not None:
-            self._pool.set_limits(max_tg=int(self.sp_luong.value()))
+            # Truyền LOẠI GIỌNG cho bộ điều phối, không chỉ con số: đó là lớp
+            # chắn thứ hai (job xếp xong mà hộp đóng/app khởi động lại thì làn
+            # thay giọng vẫn biết mình đang chạy giọng nào). `tg_ep` = anh Hùng
+            # đã đọc cảnh báo trên nhãn và vẫn chọn số cao hơn -> tôn trọng.
+            _khuyen = self.khuyen_luong()
+            self._pool.set_limits(
+                max_tg=int(self.sp_luong.value()),
+                tg_tren_may=self.giong_tren_may(),
+                tg_ep=int(self.sp_luong.value()) > _khuyen)
         ra = self.thu_muc_dich()
         try:
             os.makedirs(ra, exist_ok=True)
