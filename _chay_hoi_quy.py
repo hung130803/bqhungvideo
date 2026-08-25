@@ -209,7 +209,13 @@ CONG = [
     # Mốc 42 -> 44: mục 4 thêm 2 chốt cho phép CHE KEY (che vẫn tách được từng
     # key · bản in KHÔNG chứa nguyên văn key) — xem cổng 77.
     ("70 model Groq còn sống", "_test_groq_model.py",    44),
-    ("69 viết tắt + mốc",   "_test_viet_tat.py",         95),
+    # Mốc 95 -> 152: CA 9 mở bộ chữa viết tắt sang **giọng NHÂN BẢN `vnb:` và
+    # VieNeu `vn:`** (20/08/2026 — anh Hùng nghe 4 video bằng giọng nhân bản
+    # của chính mình rồi kêu "nói linh ta linh tinh"). Đường đó chạy
+    # `giong_vieneu` nên KHÔNG rơi xuống nhánh edge-tts; CA 9 gọi THẬT hai cửa
+    # chung với máy đọc GIẢ, và mốc giả dựng đúng cách GIÓNG HÀNG dựng (VieNeu
+    # không tự trả mốc). Thử phá `_pha_viet_tat_vnb.py`: BẮT 5 · LỌT 0.
+    ("69 viết tắt + mốc",   "_test_viet_tat.py",        152),
     # Mốc 43 -> 44: thêm mục 7a' TỰ KIỂM bản vá cách ly QSettings (18/08/2026,
     # cổng từng ĐỎ OAN vì đọc trúng registry thật của anh Hùng).
     # 44 -> 45: thêm mục TỰ KIỂM cho phép đo cỡ chữ (phải có NỀN để trừ, và cỡ
@@ -289,6 +295,33 @@ CONG = [
     # cả chuỗi chuyền cờ UI -> `xep_mot` -> payload -> job -> lõi.
     # NÂNG mốc, không hạ — mốc là SÀN.
     ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  104),
+    # Cổng 90 — NHỊP TIẾN TRÌNH CỦA MÁY ĐỌC GỘP CẢ LOẠT. Số **90** lấy bằng
+    # cách ĐỌC chính `CONG` này (max đang là 89), KHÔNG đếm theo trí nhớ: bảng
+    # này đã có **52 và 77 trùng số**, mà trùng số thì hai cổng ghi đè
+    # `_kqNN.txt` của nhau (bài học 70 vs 69, 85 vs 81).
+    #
+    # Nó canh MÓN NỢ ĐÃ GÂY RA MỘT NGÀY MẤT LÒNG TIN (21/08/2026): anh Hùng
+    # hỏi **4 LẦN** *"nó vẫn dừng ở 62% BƯỚC 5, có lỗi không"* và **suýt bấm
+    # Dừng**, mất hơn một tiếng máy chạy ĐÚNG. Bản vá `a0062b6` (bước 5) và
+    # `d4968a6` (4b/4c) đã ra, nhưng **không có cổng nào canh** — cả hai
+    # commit đó tự ghi thẳng trong phần "CHƯA LÀM" rằng đây là món nợ ĐẮNG
+    # NHẤT, vì người sau bỏ `on_msg` đi thì không ai biết.
+    #
+    # MỆNH ĐỀ: ba chỗ gọi TTS (`doc_ban_dich` · `rut_gon_vua_khung` ·
+    # `doc_nhanh_vua_khung`) phải báo **>= 2 nhịp KHÁC NHAU TRONG LÚC ĐANG
+    # ĐỌC**. Đây là mệnh đề về HÀNH VI: cổng giả lập một máy đọc gộp-cả-loạt
+    # phát `Doc cau N/M` rồi GỌI THẬT cả ba hàm và BẮT từng lần `on_progress`
+    # — quét tĩnh "có chữ `on_msg` không" thì luôn có phép phá giữ nguyên mặt
+    # chữ mà đổi nghĩa (`on_msg=None`, bài học cổng 56d). Phần quét tĩnh có
+    # nhưng bằng **AST** và kèm **ca TỰ KIỂM BỘ DÒ**.
+    #
+    # RẺ NHẤT DANH SÁCH: **0,6 giây**, KHÔNG mạng · KHÔNG Groq · KHÔNG
+    # edge-tts · KHÔNG ffmpeg · KHÔNG nạp model (máy đọc, `cat_le_loat`,
+    # `probe_duration` và lượt LLM rút gọn đều là bản GIẢ; ba hàm ĐANG TEST
+    # chạy THẬT). Tiền định — chạy bao nhiêu lượt cũng ra một con số.
+    # Thử phá `_pha_nhip_doc.py`: 11 phép, mỗi phép gỡ ĐÚNG một chốt ->
+    # **BẮT 11 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+    ("90 nhịp lúc đang đọc", "_test_nhip_doc.py",         65),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
