@@ -383,8 +383,19 @@ def ca8_hop_noi_ra() -> None:
     ok(kw is not None, "`_nghe_thu` truyền `nn=` cho `doc_thu`")
     ok(kw is not None and not isinstance(kw.value, ast.Constant),
        "`nn=` là BIỂU THỨC, không phải hằng số")
-    than = _ma_that(src[src.index("def _nghe_thu(") :
-                        src.index("def _ngat_tieng(")])
+    # LẤY THÂN HÀM BẰNG AST, KHÔNG cắt theo VỊ TRÍ CHỮ.
+    # Bản cũ cắt `src[index("def _nghe_thu(") : index("def _ngat_tieng(")]`,
+    # tức ngầm giả định `_ngat_tieng` nằm SAU `_nghe_thu` trong file. Ngày
+    # 21/08/2026 một lượt sửa khác đảo thứ tự (đo: _nghe_thu ở 122.422,
+    # _ngat_tieng ở 74.795) -> lát cắt ra **CHUỖI RỖNG** -> mục dưới ĐỎ OAN
+    # trong khi mã app vẫn đọc `cb_nn` đúng ở dòng 2549, VÀ mục kế bên
+    # ("KHÔNG đọc QSettings") **XANH OAN** vì chuỗi rỗng không chứa gì —
+    # một mục xanh vì lý do NGƯỢC HẲN, tệ hơn một mục đỏ.
+    # Đây là lần thứ TÁM của họ bẫy "quét bằng chuỗi/vị trí thay vì AST"
+    # trong repo này (47/51/53/54/73/80/85/86). Dùng `end_lineno` của chính
+    # nút hàm thì đổi thứ tự bao nhiêu lần cũng không sai.
+    than = _ma_that(ast.get_source_segment(src, nt) or "") if nt else ""
+    ok(bool(than), "đọc được THÂN `_nghe_thu` (lát cắt không rỗng)")
     ok("cb_nn" in than, "lấy ngôn ngữ đích từ WIDGET `cb_nn`")
     ok("_s.value" not in than.replace(" ", ""),
        "KHÔNG đọc ngôn ngữ đích từ QSettings (đó là lựa chọn CŨ)")
