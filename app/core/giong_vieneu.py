@@ -2161,6 +2161,12 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
         _ghi_log(f"CẢNH BÁO: môi trường VieNeu đang nằm trong thư mục TẠM "
                  f"({tt['o_tam']}). Một lượt dọn đĩa là mất. Chỗ đúng: "
                  f"{tt['thu_muc']}\\venv")
+        # ...VÀ TỰ DỜI, chứ không chỉ kêu. Ghi log suông là thứ đã làm suốt
+        # từ 18/08 mà môi trường vẫn nằm nguyên trong `%TEMP%` — không ai đọc
+        # log giọng nói. Hàm dưới KHÔNG CHẶN lượt đọc này (nó đẻ một luồng nền
+        # rồi trả về ngay, và luồng đó còn ĐỢI máy đọc xong mới đụng vào đĩa),
+        # nên câu lệnh này không thêm một mili-giây nào vào đường sản xuất.
+        tu_doi_nen()
 
     if la_giong_nhan_ban(voice):
         mau = ten_giong(voice)
@@ -2170,12 +2176,20 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
             _xong_het()
             return ok, words
 
+    # ĐẾM LƯỢT ĐỌC ĐANG CHẠY — để luồng dời biết lúc nào máy RẢNH. Đổi tên một
+    # thư mục venv trong khi python của nó đang chạy thì Windows từ chối
+    # (sharing violation) và lượt dời hỏng oan; tệ hơn là dời đúng lúc một lượt
+    # sản xuất đang đọc. `try/finally` chứ không đặt sau lời gọi: `_doc` ném là
+    # bộ đếm kẹt vĩnh viễn ở 1 và luồng dời đợi mãi không bao giờ tới lượt.
+    _vao_doc()
     try:
         ok, words = _doc(texts, paths, voice, tt, rate, lang, lay_moc,
                          han_giay, on_msg)
     except Exception as e:  # noqa: BLE001
         _ghi_log(f"VieNeu hỏng ({type(e).__name__}: {e}) -> LÙI về edge-tts")
         ok, words = [False] * n, [[] for _ in range(n)]
+    finally:
+        _ra_doc()
 
     can = [i for i in range(n) if (texts[i] or "").strip()]
     duoc = [i for i in can if ok[i]]
@@ -2295,3 +2309,583 @@ def _don(d: Path) -> None:
             shutil.rmtree(p, ignore_errors=True)
     except Exception:  # noqa: BLE001
         pass
+
+
+# ---------------------------------------------------------------------------
+# APP TỰ DỜI MÔI TRƯỜNG RA KHỎI `%TEMP%` — VÀ DỌN RÁC `_job_*` MỒ CÔI
+# ---------------------------------------------------------------------------
+#
+# ═══ HIỆN TRẠNG ĐO ĐƯỢC 25/08/2026, ĐỪNG ĐO LẠI PHẦN NÀY ═══
+# `%LOCALAPPDATA%\BQHungVideo\_giong_vieneu` **CÓ TỒN TẠI** nhưng **KHÔNG có
+# `venv`** — chỉ có `_bq_vieneu_runner.py`, thư mục `hf`, và **11 thư mục
+# `_job_<pid>_<n>` + 11 thư mục `_tam_<pid>_<n>`** rác của những lượt chạy đã
+# chết. Nên bản `.exe` rơi xuống ứng viên CUỐI là `%TEMP%\bq_giong8\venv`
+# (**43.702 file / 1.411 MB**). Chạy từ MÃ NGUỒN thì đã đúng chỗ rồi
+# (`<repo>/_giong_vieneu/venv`, `o_tam` rỗng) — **chỉ bản đóng gói bị**.
+#
+# ═══ VÌ SAO PHẢI CHỮA, VÀ VÌ SAO PHẢI LÀ *APP TỰ LÀM* ═══
+# Một lượt Windows Disk Cleanup / `tempsweep` / anh Hùng dọn ổ C là **mất
+# sạch**, và triệu chứng KHÔNG phải một dòng lỗi mà là *"giọng nhân bản của
+# tôi tự nhiên biến khỏi combo"* — không ai lần ra nguyên nhân từ triệu chứng
+# đó. Tiền lệ y hệt: môi trường OmniVoice 7,74 GB (đã dời 18/08/2026).
+# Chép tay thì chỉ chữa cho ĐÚNG MỘT máy; app tự làm thì chữa cho **mọi máy
+# nhân viên**, và không vướng quyền.
+#
+# ═══ `o_thu_muc_tam()` KÊU TỪ 18/08 MÀ MÔI TRƯỜNG VẪN NẰM NGUYÊN ĐÓ ═══
+# Docstring của nó ghi *"Hàm này KHÔNG tự dời: dời cả một môi trường sau lưng
+# người đang chạy sản xuất là việc phải hỏi. Nó chỉ NÓI RA."* Lý lẽ đó đúng
+# **với một phép dời mù**. Nhưng một tuần trôi qua và kết quả đo được là: log
+# có kêu, không ai đọc, môi trường vẫn ở `%TEMP%`. Nên phần "phải hỏi" được
+# thay bằng **phải CHỨNG MINH**: chép (không move) -> chạy THẬT bằng bản mới
+# -> hỏng thì trả máy về nguyên trạng. Người dùng không phải trả lời câu hỏi
+# nào, và cũng không mất gì nếu phép dời thất bại.
+#
+# ═══ THỨ TỰ 6 BƯỚC LÀ CẢ BẢN VÁ — ĐỪNG ĐẢO, ĐỪNG RÚT GỌN ═══
+#   1. CHỈ chạy khi đang dùng ứng viên `%TEMP%` **VÀ** chỗ chuẩn CHƯA có venv.
+#      Chỗ chuẩn đã có -> **KHÔNG LÀM GÌ** (không dám đoán bản nào mới hơn).
+#   2. **CHÉP**, không move. Move là phép một chiều: đứt điện giữa chừng thì
+#      mất cả hai đầu.
+#   3. **CHẠY THẬT** bằng bản mới rồi **ĐỌC MẪU WAV THẲNG** (độ dài + RMS).
+#      `doc_loat` trả True chỉ nghĩa là *"tiến trình chạy xong, file tồn tại"*
+#      — đúng bằng khoảng cách đã cho ffmpeg trả mã 0 với file 0 KiB.
+#   4. Bản mới KHÔNG chạy được -> **XOÁ bản vừa chép, GIỮ NGUYÊN bản cũ**.
+#      Tuyệt đối không để máy rơi vào cảnh "cả hai đều hỏng".
+#   5. Chạy được -> **ĐỔI TÊN** bản cũ (không xoá ngay) rồi kiểm lại
+#      `tinh_trang_vieneu()['co']` vẫn True. Đây là phép chứng minh THỨ HAI,
+#      và nó mạnh hơn phép thứ nhất: nó chứng minh bản mới ĐỨNG MỘT MÌNH được.
+#      Không đứng được -> đổi tên NGƯỢC LẠI, trả máy về đúng lúc bắt đầu.
+#   6. Rồi mới xoá bản cũ, **qua `xoa_an_toan`** — KHÔNG `shutil.rmtree` trần.
+#      Đó là lớp bệnh đã xoá sạch cây mã 19/08 (`Path("")` = thư mục đang làm
+#      việc); `_don` ở trên đã đi qua cửa đó, ở đây làm y hệt.
+
+#: Tên bản cũ sau khi đổi tên ở bước 5, và bản MỚI bị loại ở bước 4. Hai tiền
+#: tố RIÊNG vì chúng nằm ở hai thư mục khác nhau và mang hai ý nghĩa khác
+#: nhau — gộp một tên là lượt dọn sau không phân biệt nổi "bản cũ đã thay
+#: được" với "bản mới đã bị loại".
+TIEN_TO_CU = "venv_cu_"
+TIEN_TO_HONG = "venv_hong_"
+
+#: Chỗ chép TẠM trước khi đổi tên vào đúng chỗ. **KHÔNG chép thẳng vào
+#: `<chuẩn>/venv`**: lượt chép 1,4 GB mà đứt giữa chừng (đầy đĩa, tắt app) sẽ
+#: để lại một `venv` DỞ ngay chỗ chuẩn, mà `_ung_vien_python()` xếp chỗ chuẩn
+#: **ĐẦU danh sách** -> từ đó trở đi máy chạy bằng một môi trường cụt và bản
+#: `%TEMP%` còn tốt thì không bao giờ được đụng tới nữa.
+TIEN_TO_MOI = "venv_moi_"
+
+#: Câu để CHỨNG MINH bản mới sống. Ngắn có chủ đích: bước này chỉ trả lời
+#: *"môi trường có chạy không"*, không phải *"đọc hay không"*.
+CAU_THU_DOI = "Xin chào, đây là câu thử."
+
+#: Chừa lại bấy nhiêu MB sau khi chép xong. Ổ C của anh Hùng đã đầy 100% một
+#: lần (30/07) và hậu quả là **studio.db VỠ** — chép 1,4 GB vào ổ sát đáy là mở
+#: lại đúng cửa đó.
+DU_DIA_MB = 500.0
+
+#: Trần số file khi đo cây thư mục. Nguồn đo được 43.702 file nên 400.000 là
+#: rất rộng, nhưng nó chặn được ca cây thư mục bệnh hoạn — bài học cổng 80:
+#: một phép `rglob` không trần đã quét cả ổ C 564 GB và treo cổng ~10 phút.
+TRAN_DEM_FILE = 400_000
+
+#: Nhịp poll lúc đợi máy rảnh, và trần đợi. Hết trần thì BỎ LƯỢT NÀY, thử lại
+#: lần mở app sau — không đợi vô hạn trong một luồng nền.
+_NHIP_CHO = 5.0
+CHO_RANH_GIAY = 1800.0
+
+#: Thư mục tạm do CHÍNH app đặt trong `thu_muc_vieneu()`. Ba tiền tố:
+#: `_job_` (`_chay_vieneu`) · `_tam_` (`_doc`) · `_doi_` (phép thử ở đây).
+#: **Mẫu phải KHỚP TOÀN BỘ TÊN** (`fullmatch`, có `$`): tên gần giống của
+#: người dùng (`_job_cua_toi`, `_tam_1`) không được lọt.
+#: Nhóm 1 = TIỀN TỐ (để còn đưa cho `xoa_an_toan` làm lớp chắn thứ hai),
+#: nhóm 2 = PID.
+_MAU_JOB = re.compile(r"^(_(?:job|tam|doi)_)(\d+)_\d+$")
+
+#: Một lượt dời duy nhất trong cả tiến trình.
+_KHOA_DOI = threading.Lock()
+_DA_KHOI = False
+
+#: Số lượt ĐỌC đang chạy — xem `_vao_doc`.
+_KHOA_DOC = threading.Lock()
+_DANG_DOC = 0
+
+
+def _vao_doc() -> None:
+    """Ghi sổ: một lượt đọc vừa bắt đầu."""
+    global _DANG_DOC
+    with _KHOA_DOC:
+        _DANG_DOC += 1
+
+
+def _ra_doc() -> None:
+    """Ghi sổ: một lượt đọc vừa xong. Kẹp sàn 0 — sổ âm là đợi vô hạn."""
+    global _DANG_DOC
+    with _KHOA_DOC:
+        _DANG_DOC = max(0, _DANG_DOC - 1)
+
+
+def dang_doc() -> int:
+    """Có bao nhiêu lượt đọc VieNeu đang chạy."""
+    with _KHOA_DOC:
+        return _DANG_DOC
+
+
+def tat_tu_doi() -> bool:
+    """`BQ_VN_KHONG_DOI=1` -> KHÔNG tự dời. KHÔNG BAO GIỜ NÉM.
+
+    Có công tắc tắt vì đây là việc động vào 1,4 GB trên đĩa người dùng: máy nào
+    có chuyện lạ thì phải tắt được ngay mà không cần bản mới.
+    """
+    return str(os.environ.get("BQ_VN_KHONG_DOI", "")).strip() in (
+        "1", "true", "True")
+
+
+def _co_venv(d: Path) -> bool:
+    """Thư mục này có python của venv không (Windows lẫn POSIX)."""
+    try:
+        return ((d / "Scripts" / "python.exe").is_file()
+                or (d / "bin" / "python").is_file())
+    except OSError:
+        return False
+
+
+def _nam_trong(p, goc) -> bool:
+    """`p` có nằm trong (hoặc chính là) `goc` không. KHÔNG BAO GIỜ NÉM."""
+    try:
+        pp = Path(str(p)).resolve()
+        gg = Path(str(goc)).resolve()
+        return pp == gg or gg in pp.parents
+    except (OSError, ValueError):
+        return False
+
+
+def _dem_cay(d: Path) -> tuple[int, float]:
+    """(số file, MB) của một cây thư mục. `(-1, -1.0)` = KHÔNG đo được.
+
+    Trả `-1` thay vì `0` khi hỏng, và nơi gọi phải phân biệt hai thứ đó: `0` là
+    *"cây rỗng"* còn `-1` là *"chưa biết"*. Đọc `-1` thành `0` rồi đi so với
+    ngưỡng đĩa là tự cho phép mình chép vào một ổ đã đầy.
+    """
+    n = 0
+    byte = 0
+    try:
+        for goc, _thu, files in os.walk(str(d)):
+            for f in files:
+                try:
+                    byte += os.path.getsize(os.path.join(goc, f))
+                except OSError:
+                    pass                      # file vừa biến mất -> vẫn đếm
+                n += 1
+                if n > TRAN_DEM_FILE:
+                    return (-1, -1.0)
+    except OSError:
+        return (-1, -1.0)
+    return (n, round(byte / 1024 / 1024, 1))
+
+
+def _doi_ten(cu: Path, moi: Path, lan: int = 6) -> str:
+    """Đổi tên thư mục, THỬ LẠI vài nhịp. `""` = xong · khác rỗng = LÝ DO.
+
+    Windows khoá file `.exe` đang chạy nên `os.rename` trên thư mục CHA của nó
+    trả `PermissionError` — đúng cảnh một lượt đọc vừa kết thúc mà tiến trình
+    con chưa thoát hẳn. Thử lại có giãn nhịp (khuôn `_XOA_CHO` của
+    `ffmpeg_utils`, tổng ~7 giây) rồi mới chịu thua.
+    """
+    loi = ""
+    for i in range(max(1, lan)):
+        try:
+            os.rename(str(cu), str(moi))
+            return ""
+        except OSError as e:
+            loi = f"{type(e).__name__}: {e}"
+            time.sleep(0.35 * (i + 1))
+    return loi
+
+
+def _xoa_qua_cua(d: Path, trong: Path, ten_bat_dau: str) -> bool:
+    """Xoá thư mục QUA `xoa_an_toan`. KHÔNG BAO GIỜ NÉM.
+
+    **KHÔNG `shutil.rmtree` trần** — đó là lớp bệnh đã xoá sạch cây mã
+    19/08/2026 (`Path("")` = `WindowsPath('.')` = thư mục đang làm việc, lọt
+    mọi canh truthy/`is_dir`). `trong=` và `ten_bat_dau=` là hai lớp chắn nữa,
+    cố ý thừa: lớp đầu dễ bị một bản vá sau làm hỏng mà không ai thấy.
+
+    `xoa_an_toan` không nạp được thì **TỪ CHỐI XOÁ**, chứ không lùi về `rmtree`.
+    Đường lùi ở đây chính là đường tai nạn (bài học `giong_kokoro._don`: cổng
+    riêng xanh nhưng cổng 80 bắt được đúng nhánh lùi đó).
+    """
+    try:
+        from app.core import xoa_an_toan
+    except Exception as e:  # noqa: BLE001
+        _ghi_log(f"KHÔNG xoá {d}: không nạp được xoa_an_toan ({e}). "
+                 f"Để nguyên còn hơn xoá bằng rmtree trần.")
+        return False
+    try:
+        return bool(xoa_an_toan.don_thu_muc(
+            d, trong=trong, ghi_log=_ghi_log, ten_bat_dau=ten_bat_dau))
+    except Exception as e:  # noqa: BLE001
+        _ghi_log(f"KHÔNG xoá được {d}: {type(e).__name__}: {e}")
+        return False
+
+
+def _pid_con_song(pid: int) -> bool:
+    """PID còn sống? **Không chắc chắn -> trả True** (nghi ngờ thì GIỮ).
+
+    Chép nguyên nghĩa `ffmpeg_utils._pid_con_song` thay vì import nó: cả file
+    này cố ý giữ mặt tiếp xúc import cực nhỏ (xem khối "TIẾN TRÌNH RIÊNG" ở đầu
+    file — một `import` lỡ kéo torch vào tiến trình đã nạp Qt là ACCESS
+    VIOLATION, `try/except` KHÔNG chặn được). Sáu dòng chép lại rẻ hơn hẳn cái
+    rủi ro đó; đổi hành vi thì phải đổi CẢ HAI chỗ.
+    """
+    if pid == os.getpid():
+        return True
+    try:
+        import psutil
+        return bool(psutil.pid_exists(pid))
+    except Exception:  # noqa: BLE001 - thiếu psutil -> không dám phán
+        return True
+
+
+def don_job_mo_coi(thu_muc: Optional[str] = None) -> tuple[int, float]:
+    """Dọn thư mục tạm MỒ CÔI của các lần chạy TRƯỚC. Trả (số thư mục, MB).
+
+    Đo 25/08/2026 trên `%LOCALAPPDATA%\\BQHungVideo\\_giong_vieneu`: **11 thư
+    mục `_job_*` + 11 thư mục `_tam_*`** của những tiến trình đã chết. Chúng
+    sinh ra ở `_chay_vieneu`/`_doc` và chỉ được dọn ở đường ra ÊM — app thoát
+    bằng `os._exit`, huỷ job, hoặc tiến trình con bị giết thì `_don` không bao
+    giờ chạy. Đúng bệnh `_seg_*` của cổng 42, chỉ khác thư mục.
+
+    AN TOÀN — **đừng nới lỏng một dòng nào**, đây là thư mục dữ liệu của người
+    dùng chứ không phải hộp cát:
+      * CHỈ tên khớp TOÀN BỘ `_job_/_tam_/_doi_ <pid>_<n>` (mẫu do chính app
+        đặt). Tên gần giống (`_job_cua_toi`) hay file của user -> KHÔNG ĐỤNG.
+      * PID **còn sống (kể cả CHÍNH MÌNH) -> BỎ QUA**: đó là lượt đang chạy.
+      * Không đọc được PID / thiếu `psutil` -> BỎ QUA (nghi ngờ thì GIỮ).
+      * Xoá **qua `xoa_an_toan`**, kẹp `trong=thu_muc_vieneu()`.
+      * Bị khoá -> im lặng bỏ qua. **KHÔNG BAO GIỜ NÉM.**
+    """
+    try:
+        goc = Path(thu_muc) if thu_muc else thu_muc_vieneu()
+    except Exception:  # noqa: BLE001
+        return (0, 0.0)
+    n = 0
+    mb = 0.0
+    try:
+        ds = [p for p in goc.iterdir() if p.is_dir()]
+    except OSError:
+        return (0, 0.0)
+    for p in ds:
+        m = _MAU_JOB.fullmatch(p.name)
+        if not m:
+            continue
+        try:
+            pid = int(m.group(2))
+        except ValueError:
+            continue
+        if _pid_con_song(pid):
+            continue
+        _n, _mb = _dem_cay(p)
+        if not _xoa_qua_cua(p, goc, m.group(1)):
+            continue
+        n += 1
+        mb += max(0.0, _mb)
+    if n:
+        _ghi_log(f"Dọn {n} thư mục tạm mồ côi trong {goc} "
+                 f"({mb:.1f} MB của những lượt chạy đã chết)")
+    return (n, round(mb, 1))
+
+
+def _bo_ban_moi(dich: Path) -> bool:
+    """Vứt bản VỪA CHÉP ở chỗ chuẩn. Trả True nếu đã xoá hẳn. KHÔNG NÉM.
+
+    **ĐỔI TÊN RA KHỎI CHỮ `venv` TRƯỚC KHI XOÁ — thứ tự này là cả bản vá.**
+    Lượt xoá có thể thất bại (Windows còn khoá file của tiến trình vừa chạy
+    thử), mà một `venv` HỎNG nằm đúng tên đó thì `_ung_vien_python()` xếp nó
+    **ĐẦU danh sách** — máy sẽ chạy bằng môi trường cụt VĨNH VIỄN và bản
+    `%TEMP%` còn tốt không bao giờ được đụng tới nữa. Tức xoá hụt mà đổi tên
+    được thì vẫn AN TOÀN; đổi tên hụt mới là ca xấu.
+    """
+    hong = thu_muc_vieneu() / f"{TIEN_TO_HONG}{int(time.time())}"
+    doi_duoc = not _doi_ten(dich, hong)
+    if not doi_duoc:
+        hong = dich
+    return _xoa_qua_cua(hong, thu_muc_vieneu(),
+                        TIEN_TO_HONG if doi_duoc else "venv")
+
+
+def _thu_ban_moi(dich: Path, han_giay: int) -> dict:
+    """BƯỚC 3 — ĐỌC THẬT bằng bản vừa chép, rồi ĐỌC MẪU WAV THẲNG.
+
+    Trả `{ok, loi, giay, rms, python}`. **KHÔNG BAO GIỜ NÉM.**
+
+    ═══ CHỐT CHỐNG DƯƠNG TÍNH GIẢ — ĐỌC TRƯỚC KHI "DỌN GỌN" ═══
+    `doc_loat` tự đi hỏi `_python_vieneu()`, mà hàm đó trả về ứng viên ĐẦU TIÊN
+    còn ĐỦ FILE. Bản vừa chép mà thiếu file thì nó **lặng lẽ rơi xuống ứng viên
+    `%TEMP%`** và lượt đọc vẫn ra WAV có tiếng — tức phép thử sẽ **cấp chứng
+    nhận cho bản CŨ** rồi ta đi xoá bản cũ đó. Đúng họ bẫy "phép đo hỏng phát
+    chứng nhận" (`astats` cổng 53 · `startswith` cổng 44 · mức mờ 0,40 cổng
+    56b). Vì vậy phải HỎI LẠI python nào sắp được dùng và đòi nó nằm trong
+    `dich`, TRƯỚC khi tin một chữ nào của lượt đọc.
+
+    Dùng giọng **DỰNG SẴN** chứ không phải giọng nhân bản: 20 giọng dựng sẵn đi
+    bằng `onnxruntime` nên phép thử không đòi máy phải có `torch` (đo được:
+    18,5 s so với 32,4 s cho cùng bộ câu). Câu hỏi của bước này là *"môi trường
+    có sống không"*, không phải *"đường nhân bản có đủ gói không"* — cái sau đã
+    có `cai_nhan_ban` tự chứng minh bằng chính vòng tự dò của nó.
+    """
+    ra = {"ok": False, "loi": "", "giay": 0.0, "rms": 0.0, "python": ""}
+    sb = thu_muc_vieneu() / f"_doi_{os.getpid()}_{int(time.time()) % 100000}"
+    try:
+        tt = tinh_trang_vieneu()
+        py = str(tt.get("python") or "")
+        ra["python"] = py
+        if not tt.get("co"):
+            ra["loi"] = (f"bản vừa chép chưa dùng được, còn thiếu: "
+                         f"{tt.get('thieu')}")
+            return ra
+        if not _nam_trong(py, dich):
+            ra["loi"] = (f"phép thử sẽ chạy bằng python KHÁC ({py}) chứ không "
+                         f"phải bản vừa chép ({dich}) — bản chép thiếu file, "
+                         f"KHÔNG coi là đạt")
+            return ra
+        sb.mkdir(parents=True, exist_ok=True)
+        wav = sb / "thu.wav"
+        giong = TIEN_TO + GIONG_VN[0][0]
+        okl, _w = doc_loat([CAU_THU_DOI], [str(wav)], giong,
+                           lay_moc=False, han_giay=han_giay)
+        d = do_wav(wav)
+        ra["giay"], ra["rms"] = d["giay"], d["rms"]
+        if not (okl and okl[0]):
+            ra["loi"] = "bản vừa chép KHÔNG đọc được câu thử"
+            return ra
+        # `doc_loat` trả True = "tiến trình chạy xong, file tồn tại". Bằng
+        # chứng thật là HAI CON SỐ dưới đây.
+        if not d["co_tieng"]:
+            ra["loi"] = (f"chạy xong mà WAV KHÔNG CÓ TIẾNG (dài {d['giay']}s, "
+                         f"RMS {d['rms']}) — KHÔNG coi là đạt")
+            return ra
+        ra["ok"] = True
+        return ra
+    except Exception as e:  # noqa: BLE001
+        ra["loi"] = f"{type(e).__name__}: {e}"
+        return ra
+    finally:
+        _don(sb)
+
+
+def doi_khoi_tam(on_progress: Optional[Callable[[float, str], None]] = None,
+                 han_giay: int = 1800) -> dict:
+    """DỜI môi trường VieNeu từ `%TEMP%` về chỗ chuẩn. **KHÔNG BAO GIỜ NÉM.**
+
+    Trả ``{ok, da_lam, ly_do, loi, nguon, dich, so_file, mb, giay, rms,
+    da_dep_cu, phut}``. Đọc cho đúng, ba khoá đầu nói ba chuyện KHÁC NHAU:
+      · ``da_lam=False`` + ``ly_do`` — **không có việc gì để làm** (chỗ chuẩn
+        đã có venv, máy không nằm ở `%TEMP%`, bị tắt bằng công tắc). Đây KHÔNG
+        phải lỗi.
+      · ``da_lam=True, ok=False`` + ``loi`` — đã thử và **đã trả máy về nguyên
+        trạng**. Bản cũ còn nguyên.
+      · ``ok=True`` — đã dời xong. ``da_dep_cu`` nói bản cũ đã xoá được chưa
+        (xoá không được cũng KHÔNG phải hỏng: nó chỉ là đĩa bị chiếm thừa).
+
+    Sáu bước bắt buộc + lý do từng bước: xem khối ghi chú ngay trên hằng
+    `TIEN_TO_CU`. Hàm này **không hỏi người dùng câu nào** và không chặn giao
+    diện — nó được gọi từ luồng nền `tu_doi_nen()`, và nó tự đủ bằng chứng.
+    """
+    t0 = time.time()
+    ra: dict = {"ok": False, "da_lam": False, "ly_do": "", "loi": "",
+                "nguon": "", "dich": "", "so_file": 0, "mb": 0.0,
+                "giay": 0.0, "rms": 0.0, "da_dep_cu": False, "phut": 0.0}
+
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(max(0.0, min(1.0, p)), m)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def xong(**kw) -> dict:
+        ra.update(kw)
+        ra["phut"] = round(time.time() - t0, 1)
+        return ra
+
+    try:
+        # ---- BƯỚC 1: ĐIỀU KIỆN. Không đủ -> KHÔNG LÀM GÌ, và nói vì sao ----
+        if tat_tu_doi():
+            return xong(ly_do="BQ_VN_KHONG_DOI=1 nên không tự dời")
+        py = _python_vieneu()[0]
+        if not py:
+            return xong(ly_do="máy chưa có môi trường VieNeu để dời")
+        if not o_thu_muc_tam(py):
+            return xong(ly_do=f"môi trường đang dùng KHÔNG nằm trong thư mục "
+                              f"tạm ({py}) — không có gì phải dời")
+        nguon = _venv_that(Path(py))
+        dich = thu_muc_vieneu() / "venv"
+        ra["nguon"], ra["dich"] = str(nguon), str(dich)
+        # Chỗ chuẩn ĐÃ CÓ venv -> **KHÔNG LÀM GÌ**. Cố ý không so bản nào mới
+        # hơn rồi ghi đè: ghi đè một môi trường đang chạy được là cách nhanh
+        # nhất để có "cả hai đều hỏng". Bản `%TEMP%` thừa ra thì chỉ tốn đĩa.
+        if _co_venv(dich):
+            return xong(ly_do=f"chỗ chuẩn ĐÃ có venv ({dich}) — không đụng vào")
+        if dich.exists():
+            return xong(ly_do=f"chỗ chuẩn có thư mục {dich} nhưng KHÔNG có "
+                              f"python trong đó. Không gộp đè lên nó (gộp hai "
+                              f"nửa môi trường là ra một môi trường lai hỏng) "
+                              f"— dọn tay thư mục đó rồi app sẽ tự dời.")
+        if not _co_venv(nguon):
+            return xong(ly_do=f"không tìm ra gốc venv của {py}")
+        # Nguồn PHẢI nằm thật trong %TEMP%, đích thì TUYỆT ĐỐI không.
+        tam = Path(tempfile.gettempdir())
+        if not _nam_trong(nguon, tam):
+            return xong(ly_do=f"nguồn {nguon} không nằm trong {tam}")
+        if _nam_trong(dich, tam):
+            return xong(ly_do=f"chỗ chuẩn {dich} CŨNG nằm trong thư mục tạm — "
+                              f"dời sang đó là vô nghĩa (đặt BQ_DATA_DIR / "
+                              f"BQ_VN_DIR ra ngoài %TEMP% trước)")
+
+        ra["da_lam"] = True
+        so_file, mb = _dem_cay(nguon)
+        ra["so_file"], ra["mb"] = so_file, mb
+        if so_file <= 0:
+            return xong(loi=f"không đo được cây thư mục nguồn {nguon} "
+                            f"(hoặc nó rỗng) — không dám chép")
+        trong = _dia_trong_mb(dich.parent if dich.parent.exists()
+                              else thu_muc_vieneu())
+        can = mb + DU_DIA_MB
+        # `-1` = KHÔNG hỏi được -> ĐỪNG CHẶN (quy tắc repo: không đo được thì
+        # không phán). Chỉ chặn khi ĐO ĐƯỢC và ĐO RA là thiếu.
+        if 0 <= trong < can:
+            return xong(loi=f"ổ chứa {dich} chỉ còn {so_mb(trong)} MB trống, "
+                            f"cần khoảng {so_mb(can)} MB (chép {so_mb(mb)} MB "
+                            f"+ chừa {so_mb(DU_DIA_MB)} MB). Dọn bớt đĩa đã.")
+
+        # ---- BƯỚC 2: CHÉP (KHÔNG move) ----
+        thu_muc_vieneu().mkdir(parents=True, exist_ok=True)
+        tho = thu_muc_vieneu() / f"{TIEN_TO_MOI}{os.getpid()}"
+        if tho.exists():
+            _xoa_qua_cua(tho, thu_muc_vieneu(), TIEN_TO_MOI)
+        prog(0.05, f"Đang chép môi trường VieNeu ra khỏi thư mục tạm "
+                   f"({so_file} file, {so_mb(mb)} MB)...")
+        _ghi_log(f"DỜI khỏi %TEMP%: chép {so_file} file / {so_mb(mb)} MB từ "
+                 f"{nguon} -> {dich}")
+        try:
+            shutil.copytree(str(nguon), str(tho), symlinks=True)
+        except Exception as e:  # noqa: BLE001
+            # Đầy đĩa · nguồn biến mất giữa chừng · không ghi được: dọn bản dở
+            # rồi trả máy về nguyên trạng. Bản cũ CHƯA HỀ bị đụng tới.
+            _xoa_qua_cua(tho, thu_muc_vieneu(), TIEN_TO_MOI)
+            return xong(loi=f"chép hỏng ({type(e).__name__}: {e}) — bản cũ ở "
+                            f"{nguon} còn NGUYÊN, không mất gì")
+
+        # Đổi tên vào ĐÚNG CHỖ. Từ giây này `_python_vieneu()` mới thấy bản mới.
+        loi_ten = _doi_ten(tho, dich)
+        if loi_ten:
+            _xoa_qua_cua(tho, thu_muc_vieneu(), TIEN_TO_MOI)
+            return xong(loi=f"chép xong mà không đặt được vào {dich} "
+                            f"({loi_ten}) — bản cũ còn NGUYÊN")
+
+        # ---- BƯỚC 3: CHẠY THẬT bằng bản mới ----
+        prog(0.55, "Đang chạy thử bản vừa chép (đọc một câu thật)...")
+        thu = _thu_ban_moi(dich, han_giay)
+        ra["giay"], ra["rms"] = thu["giay"], thu["rms"]
+
+        # ---- BƯỚC 4: KHÔNG chạy được -> XOÁ BẢN MỚI, GIỮ BẢN CŨ ----
+        if not thu["ok"]:
+            _bo_ban_moi(dich)
+            _ghi_log(f"DỜI KHÔNG THÀNH: {thu['loi']}. Đã bỏ bản vừa chép, "
+                     f"GIỮ NGUYÊN bản cũ ở {nguon}.")
+            return xong(loi=thu["loi"])
+
+        # ---- BƯỚC 5: ĐỔI TÊN bản cũ, rồi KIỂM LẠI ----
+        prog(0.80, "Bản mới chạy được. Đang cất bản cũ sang một bên...")
+        cu = nguon.parent / f"{TIEN_TO_CU}{int(time.time())}"
+        loi_ten = _doi_ten(nguon, cu)
+        if loi_ten:
+            # Bản mới ĐÃ chạy được và đang ở chỗ chuẩn (ứng viên số 0), nên
+            # máy vẫn dùng nó. Chỉ là bản cũ chưa dọn được -> nói thẳng, để
+            # lượt sau. KHÔNG coi là hỏng.
+            _ghi_log(f"Đã dời xong sang {dich} nhưng CHƯA cất được bản cũ "
+                     f"({loi_ten}). Bản cũ vẫn ở {nguon} — tốn đĩa chứ không "
+                     f"sai; sẽ dọn ở lượt sau.")
+            return xong(ok=True, da_dep_cu=False)
+
+        # PHÉP CHỨNG MINH THỨ HAI, mạnh hơn phép thứ nhất: bản cũ đã bị đổi tên
+        # nên nó KHÔNG còn là ứng viên nào nữa. `co` vẫn True nghĩa là bản mới
+        # ĐỨNG MỘT MÌNH được.
+        if not tinh_trang_vieneu().get("co"):
+            _doi_ten(cu, nguon)      # trả máy về ĐÚNG lúc bắt đầu
+            _bo_ban_moi(dich)
+            _ghi_log("DỜI KHÔNG THÀNH: cất bản cũ đi thì máy hết dùng được "
+                     "VieNeu. Đã trả bản cũ về chỗ và xoá bản chép.")
+            return xong(loi="cất bản cũ đi thì `tinh_trang_vieneu()['co']` "
+                            "thành False — bản chép KHÔNG tự đứng được")
+
+        # ---- BƯỚC 6: giờ mới xoá bản cũ, QUA `xoa_an_toan` ----
+        prog(0.92, "Đang xoá bản cũ trong thư mục tạm...")
+        dep = _xoa_qua_cua(cu, nguon.parent, TIEN_TO_CU)
+        prog(1.0, "Đã dời môi trường VieNeu ra khỏi thư mục tạm.")
+        _ghi_log(f"DỜI XONG: {dich} chạy được (WAV {thu['giay']}s · RMS "
+                 f"{thu['rms']}), {so_file} file / {so_mb(mb)} MB. Bản cũ "
+                 + ("đã xoá." if dep else f"CHƯA xoá được, còn ở {cu}."))
+        return xong(ok=True, da_dep_cu=dep)
+    except Exception as e:  # noqa: BLE001
+        _ghi_log(f"DỜI hỏng bất ngờ: {type(e).__name__}: {e}")
+        return xong(loi=f"{type(e).__name__}: {e}")
+
+
+def _than_doi_nen(cho_ranh_giay: float) -> None:
+    """Thân luồng nền: dọn rác mồ côi, ĐỢI máy rảnh, rồi dời. KHÔNG NÉM."""
+    try:
+        don_job_mo_coi()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        # ĐỢI RẢNH RỒI MỚI ĐỤNG ĐĨA. Hai lý do, cả hai đều đo được:
+        #   · một lượt đọc VieNeu ăn ~3.045 MB RAM, chạy hai lượt cùng lúc chỉ
+        #     để tự kiểm là tranh máy với chính việc anh Hùng đang làm;
+        #   · bước 5 đổi tên thư mục venv, mà Windows khoá `python.exe` đang
+        #     chạy -> đổi tên thất bại và lượt dời hỏng OAN.
+        han = time.time() + max(0.0, float(cho_ranh_giay))
+        while dang_doc() > 0:
+            if time.time() > han:
+                _ghi_log(f"Chưa dời được môi trường khỏi %TEMP%: máy đọc liên "
+                         f"tục quá {cho_ranh_giay / 60:.0f} phút. Sẽ thử lại ở "
+                         f"lần mở app sau.")
+                return
+            time.sleep(_NHIP_CHO)
+        doi_khoi_tam()
+    except Exception as e:  # noqa: BLE001
+        _ghi_log(f"Luồng dời nền hỏng: {type(e).__name__}: {e}")
+
+
+def tu_doi_nen(cho_ranh_giay: float = CHO_RANH_GIAY) -> bool:
+    """Khởi động MỘT luồng nền lo việc dọn rác + dời. Trả True nếu VỪA khởi.
+
+    **KHÔNG BAO GIỜ NÉM và KHÔNG BAO GIỜ CHẶN** — nó chỉ đẻ một luồng daemon
+    rồi trả về ngay, nên chỗ gọi (`doc_loat`) không mất một mili-giây nào.
+
+    ═══ CHẠY LÚC NÀO, VÀ VÌ SAO CHỌN CHỖ NÀY ═══
+    KHÔNG chạy trong hộp thoại: 1,4 GB chép mất hàng phút và người dùng sẽ
+    tưởng app treo. KHÔNG chạy lúc nạp module: một phép chép nặng làm phản ứng
+    phụ của `import` là thứ không ai gỡ rối nổi.
+    Chỗ được chọn là **nhánh `o_tam` của `doc_loat`** — nơi app VỐN ĐÃ phát
+    hiện ra mình đang đứng trên `%TEMP%` và VỐN ĐÃ ghi log cảnh báo. Ba cái lợi:
+      · nó nằm trên **đường chạy THẬT**, không phải một hàm chờ ai đó nối vào
+        (repo này đã có **sáu** ca "hàm xong ≠ tính năng xong" — `giong_bang`,
+        `giong_chatter`, `giong_vbee`, `giong_kokoro`, `cai_nhan_ban`,
+        `cai_vieneu`; đặt hàm rồi chờ UI gọi là ca thứ bảy);
+      · máy nào KHÔNG bị bệnh thì không bao giờ chạy tới đây, nên không tốn gì;
+      · luồng nền còn **ĐỢI máy đọc xong** (`dang_doc() == 0`) mới đụng đĩa.
+    Hàm `doi_khoi_tam()` vẫn để **công khai** để UI gọi thẳng khi cần (nút "dọn
+    dẹp"), nhưng tính năng KHÔNG phụ thuộc vào việc đó có xảy ra hay không.
+    """
+    global _DA_KHOI
+    try:
+        if tat_tu_doi():
+            return False
+        with _KHOA_DOI:
+            if _DA_KHOI:
+                return False
+            _DA_KHOI = True
+        threading.Thread(target=_than_doi_nen, args=(cho_ranh_giay,),
+                         name="bq-vieneu-doi", daemon=True).start()
+        return True
+    except Exception:  # noqa: BLE001
+        return False

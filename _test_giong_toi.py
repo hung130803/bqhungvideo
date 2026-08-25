@@ -1495,6 +1495,405 @@ ok("15f ứng viên %TEMP% đứng SAU chỗ chuẩn trong `_ung_vien_python` "
    f"chuẩn ở {_i_chuan} · tạm ở {_i_tam} · tổng {len(_uv)}")
 
 # ---------------------------------------------------------------------------
+print("\n[CA 16] APP TỰ DỜI MÔI TRƯỜNG RA KHỎI `%TEMP%`")
+# ---------------------------------------------------------------------------
+# CA 15 chấm "có KÊU không". Cổng này chấm "có CHỮA không" — vì kêu suốt một
+# tuần mà `%TEMP%\bq_giong8\venv` (43.702 file / 1.411 MB) vẫn nằm nguyên đó.
+# Đây là chỗ DỄ LÀM MẤT DỮ LIỆU nhất của cả file, nên mọi ca dưới đây đều hỏi
+# thêm MỘT câu: *sau lượt đó máy còn chạy được không.*
+
+
+def _dung_venv_gia(d: Path) -> None:
+    """venv GIẢ: đủ file để `_python_vieneu()` nhận ra. Khuôn hộp cát của
+    CA 12 — `_python_vieneu` dò bằng FILE CÓ TỒN TẠI KHÔNG (cố ý không
+    `find_spec`), nên vài file RỖNG đúng tên là đủ, không phải chép GB nào."""
+    sp = d / "Lib" / "site-packages"
+    for t in VN._CAN_CO:
+        p = sp / t
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x", encoding="utf-8")
+    (sp / "vieneu-3.2.8.dist-info").mkdir(parents=True, exist_ok=True)
+    (d / "Scripts").mkdir(parents=True, exist_ok=True)
+    (d / "Scripts" / "python.exe").write_bytes(b"MZ" + b"\0" * 64)
+
+
+def _wav_that(p: Path, giay: float) -> None:
+    """WAV 16-bit CÓ TIẾNG thật (để `do_wav` đọc ra RMS khác 0)."""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(p), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(24000)
+        w.writeframes(b"".join(
+            (8000 if (i // 60) % 2 else -8000).to_bytes(2, "little", signed=True)
+            for i in range(int(24000 * giay))))
+
+
+_VN_DIR_CU = os.environ.get("BQ_VN_DIR")
+_TAM_CU = tempfile.tempdir
+_DOC_LOAT_THAT = VN.doc_loat
+_DIA_THAT = VN._dia_trong_mb
+_CPT_THAT = shutil.copytree
+_XA_THAT = XA.don_thu_muc
+try:
+    _T16 = T / "ca16"
+    _VNDIR = _T16 / "_giong_vieneu"
+    _TAM16 = _T16 / "temp"
+    _TAM16.mkdir(parents=True, exist_ok=True)
+    # `thu_muc_vieneu()` chạy-nguồn trỏ THẲNG vào `<repo>/_giong_vieneu` THẬT
+    # (chỉ bản `.exe` mới đọc DATA_DIR). Thiếu hai dòng này là cổng đo lên
+    # chính môi trường VieNeu của máy — và CA 16 có ca XOÁ.
+    os.environ["BQ_VN_DIR"] = str(_VNDIR)
+    tempfile.tempdir = str(_TAM16)
+    _NGUON = _TAM16 / "bq_giong8" / "venv"
+    _DICH = _VNDIR / "venv"
+
+    def _moi16() -> None:
+        for d in (_NGUON.parent, _VNDIR):
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+        _dung_venv_gia(_NGUON)
+        _VNDIR.mkdir(parents=True, exist_ok=True)
+
+    def _gia_doc(kieu: str):
+        """`doc_loat` giả. `ok` = đọc ra WAV có tiếng · `cam` = trả True mà
+        WAV rỗng tiếng · `hong` = trả False."""
+        def f(texts, paths, voice, **kw):
+            if kieu == "hong":
+                return [False], [[]]
+            _wav_that(Path(paths[0]), 0.01 if kieu == "cam" else 1.0)
+            return [True], [[]]
+        return f
+
+    # --- (a) chỗ chuẩn ĐÃ có venv -> KHÔNG LÀM GÌ -------------------------
+    # Dựng ĐÚNG ca duy nhất chốt này thật sự chạy tới: chỗ chuẩn có venv nhưng
+    # THIẾU FILE nên `_python_vieneu()` rơi xuống `%TEMP%`. Nếu chỗ chuẩn ĐỦ
+    # file thì `o_tam` rỗng và ca sẽ ĐẠT vì một chốt KHÁC bắt hộ — đúng lỗi
+    # "LỌT 6" của cổng 80 (*mục nào canh MỘT chốt thì phải đọc LÝ DO cụ thể*).
+    _moi16()
+    _dung_venv_gia(_DICH)
+    (_DICH / "Lib" / "site-packages" / "librosa" / "__init__.py").unlink()
+    _r = VN.doi_khoi_tam()
+    ok("16a chỗ chuẩn ĐÃ có venv -> KHÔNG LÀM GÌ (`da_lam=False`)",
+       not _r["da_lam"], _r["ly_do"][:60])
+    ok("16a' ... và nói ĐÚNG LÝ DO đó (không phải chốt khác bắt hộ)",
+       "ĐÃ có venv" in _r["ly_do"], _r["ly_do"][:70])
+    ok("16a'' CHỐT CHỐNG ĐẠT-OAN: ca này máy THẬT SỰ đang ở %TEMP% "
+       "(o_tam khác rỗng), nên chốt 'đã có venv' mới là chốt đang chạy",
+       bool(VN.o_thu_muc_tam()), str(VN.o_thu_muc_tam())[:60])
+    ok("16a''' ... và KHÔNG đè lên bản ở chỗ chuẩn", VN._co_venv(_DICH))
+    ok("16a'''' ... và KHÔNG đụng bản %TEMP%", VN._co_venv(_NGUON))
+
+    # --- (b) không ở %TEMP% / (c) công tắc tắt ----------------------------
+    _moi16()
+    _dung_venv_gia(_DICH)
+    _r = VN.doi_khoi_tam()
+    ok("16b máy KHÔNG chạy từ %TEMP% -> KHÔNG LÀM GÌ",
+       not _r["da_lam"] and "KHÔNG nằm trong thư mục tạm" in _r["ly_do"],
+       _r["ly_do"][:60])
+    _moi16()
+    os.environ["BQ_VN_KHONG_DOI"] = "1"
+    _r = VN.doi_khoi_tam()
+    ok("16c `BQ_VN_KHONG_DOI=1` -> KHÔNG LÀM GÌ (có công tắc tắt)",
+       not _r["da_lam"], _r["ly_do"][:50])
+    ok("16c' ... và KHÔNG đụng gì tới bản đang chạy", VN._co_venv(_NGUON))
+    os.environ.pop("BQ_VN_KHONG_DOI", None)
+
+    # --- (d) CA THÀNH CÔNG -----------------------------------------------
+    _moi16()
+    _so_truoc = VN._dem_cay(_NGUON)[0]
+    VN.doc_loat = _gia_doc("ok")
+    _r = VN.doi_khoi_tam()
+    ok("16d chép được + chạy được -> ok=True", _r["ok"], str(_r["loi"])[:70])
+    ok("16d' bản mới nằm ở CHỖ CHUẨN và dùng được",
+       VN._co_venv(_DICH) and VN.tinh_trang_vieneu()["co"])
+    ok("16d'' ... và python máy sẽ dùng chính là bản mới",
+       VN._nam_trong(VN._python_vieneu()[0], _DICH),
+       VN._python_vieneu()[0][-58:])
+    ok("16d''' bản cũ trong %TEMP% MỚI bị xoá (bước 6, sau khi đã chứng minh)",
+       not _NGUON.exists() and _r["da_dep_cu"])
+    ok(f"16d'''' log/kết quả có SỐ FILE đã chép ({_r['so_file']})",
+       _r["so_file"] == _so_truoc > 0, f"trước {_so_truoc}")
+    ok(f"16d''''' bằng chứng là HAI CON SỐ đọc từ WAV, không phải cờ của "
+       f"`doc_loat` (dài {_r['giay']}s · RMS {_r['rms']})",
+       _r["giay"] > 0 and _r["rms"] > 0)
+
+    # --- (e) BẢN MỚI KHÔNG ĐỌC ĐƯỢC -> giữ cũ, bỏ mới --------------------
+    _moi16()
+    VN.doc_loat = _gia_doc("hong")
+    _r = VN.doi_khoi_tam()
+    ok("16e bản mới KHÔNG đọc được -> ok=False", not _r["ok"] and _r["da_lam"],
+       str(_r["loi"])[:60])
+    ok("16e' BẢN CŨ CÒN NGUYÊN (tuyệt đối không để 'cả hai đều hỏng')",
+       VN._co_venv(_NGUON))
+    ok("16e'' bản vừa chép BỊ BỎ, không còn thư mục tên `venv` ở chỗ chuẩn",
+       not _DICH.exists())
+    ok("16e''' ... nên máy VẪN chạy được VieNeu (dò lại ra bản %TEMP%)",
+       VN.tinh_trang_vieneu()["co"]
+       and VN._nam_trong(VN._python_vieneu()[0], _NGUON))
+    ok("16e'''' CHÉP chứ không MOVE: nguồn còn NGUYÊN VẸN số file",
+       VN._dem_cay(_NGUON)[0] == _so_truoc,
+       f"{VN._dem_cay(_NGUON)[0]} vs {_so_truoc}")
+
+    # --- (f) WAV CÂM tuy `doc_loat` trả True ------------------------------
+    # `doc_loat` trả True chỉ nghĩa là "tiến trình chạy xong, file tồn tại" —
+    # cùng khoảng cách đã cho ffmpeg trả mã 0 với file 0 KiB.
+    _moi16()
+    VN.doc_loat = _gia_doc("cam")
+    _r = VN.doi_khoi_tam()
+    ok("16f `doc_loat` trả True mà WAV KHÔNG CÓ TIẾNG -> vẫn HỎNG",
+       not _r["ok"], str(_r["loi"])[:60])
+    ok("16f' ... và lời lỗi nêu ĐÚNG hai con số đã đo",
+       "KHÔNG CÓ TIẾNG" in str(_r["loi"]), str(_r["loi"])[:80])
+    ok("16f'' ... bản cũ vẫn CÒN NGUYÊN", VN._co_venv(_NGUON))
+
+    # --- (g) DƯƠNG TÍNH GIẢ: bản chép THIẾU FILE --------------------------
+    # Bản chép thiếu file thì `_python_vieneu()` LẶNG LẼ rơi xuống `%TEMP%`,
+    # lượt đọc vẫn ra WAV có tiếng -> phép thử sẽ CẤP CHỨNG NHẬN CHO BẢN CŨ
+    # rồi ta đi xoá đúng bản cũ đó. Đây là ca nguy hiểm nhất của cả CA 16.
+    _moi16()
+    VN.doc_loat = _gia_doc("ok")
+    _sau16 = [0]
+
+    def _cp_thieu(*a, **k):
+        # `copytree` GỌI LẠI CHÍNH NÓ cho thư mục con và truyền POSITIONAL ->
+        # stub `(src, dst, **k)` ném TypeError rồi bị đọc nhầm thành "chép
+        # hỏng" (đã sập 1 lần khi viết ca này).
+        _sau16[0] += 1
+        try:
+            _kq = _CPT_THAT(*a, **k)
+        finally:
+            _sau16[0] -= 1
+        if _sau16[0] == 0:
+            _p = Path(a[1]) / "Lib" / "site-packages" / "vieneu" / "v3turbo.py"
+            if _p.exists():
+                _p.unlink()
+        return _kq
+
+    shutil.copytree = _cp_thieu
+    _r = VN.doi_khoi_tam()
+    shutil.copytree = _CPT_THAT
+    ok("16g bản chép THIẾU FILE -> BẮT ĐƯỢC, không cấp chứng nhận oan",
+       not _r["ok"], str(_r["loi"])[:60])
+    ok("16g' ... và lời lỗi nói đúng bệnh (chạy bằng python KHÁC)",
+       "python KHÁC" in str(_r["loi"]), str(_r["loi"])[:90])
+    ok("16g'' ... bản cũ CÒN NGUYÊN", VN._co_venv(_NGUON))
+
+    # --- (h) ĐĨA / NGUỒN HỎNG -> KHÔNG BAO GIỜ NÉM ------------------------
+    _moi16()
+    VN._dia_trong_mb = lambda d: 1.0
+    _r = VN.doi_khoi_tam()
+    VN._dia_trong_mb = _DIA_THAT
+    ok("16h đĩa đầy -> KHÔNG NÉM, trả loi", not _r["ok"] and bool(_r["loi"]))
+    ok("16h' ... và nói ra CÒN BAO NHIÊU / CẦN BAO NHIÊU",
+       "trống" in str(_r["loi"]) and "cần" in str(_r["loi"]),
+       str(_r["loi"])[:80])
+    ok("16h'' ... bản cũ CÒN NGUYÊN", VN._co_venv(_NGUON))
+
+    _moi16()
+    VN._dia_trong_mb = lambda d: -1.0
+    _r = VN.doi_khoi_tam()
+    VN._dia_trong_mb = _DIA_THAT
+    ok("16h''' KHÔNG hỏi được đĩa (-1) -> ĐỪNG CHẶN (không đo được thì "
+       "không phán) — lượt dời vẫn chạy tới cùng", _r["ok"], str(_r["loi"])[:60])
+
+    _moi16()
+    shutil.copytree = lambda *a, **k: (_ for _ in ()).throw(
+        FileNotFoundError("nguồn biến mất giữa chừng"))
+    _r = VN.doi_khoi_tam()
+    shutil.copytree = _CPT_THAT
+    ok("16i nguồn biến mất giữa chừng -> KHÔNG NÉM",
+       not _r["ok"] and "chép hỏng" in str(_r["loi"]), str(_r["loi"])[:60])
+    ok("16i' ... bản cũ CÒN NGUYÊN", VN._co_venv(_NGUON))
+    ok("16i'' ... và KHÔNG bỏ lại thư mục chép dở nào ở chỗ chuẩn",
+       not any(p.name.startswith(VN.TIEN_TO_MOI) for p in _VNDIR.iterdir()),
+       str([p.name for p in _VNDIR.iterdir()])[:70])
+
+    _moi16()
+    shutil.rmtree(_NGUON.parent, ignore_errors=True)
+    _r = VN.doi_khoi_tam()
+    ok("16i''' không có môi trường nào -> KHÔNG NÉM, chỉ nói không có việc",
+       not _r["da_lam"] and not _r["loi"], _r["ly_do"][:55])
+
+    # --- (j) XOÁ PHẢI ĐI QUA `xoa_an_toan` -------------------------------
+    _moi16()
+    VN.doc_loat = _gia_doc("ok")
+    _dem_xa = [0]
+
+    def _xa_gian_diep(d, **k):
+        _dem_xa[0] += 1
+        return False                       # TỪ CHỐI -> không gì bị xoá
+
+    XA.don_thu_muc = _xa_gian_diep         # type: ignore[assignment]
+    _r = VN.doi_khoi_tam()
+    XA.don_thu_muc = _XA_THAT              # type: ignore[assignment]
+    # Bản cũ đã bị ĐỔI TÊN ở bước 5 nên `_NGUON` không còn — nhưng DỮ LIỆU thì
+    # phải còn nguyên dưới tên `venv_cu_*`. Đòi `_NGUON.exists()` là đọc "đổi
+    # tên" thành "đã xoá"; chính ca này bắt được nhầm lẫn đó khi viết cổng.
+    _con_cu = [p for p in _NGUON.parent.iterdir()
+               if p.name.startswith(VN.TIEN_TO_CU)]
+    ok("16j lượt xoá ĐI QUA `xoa_an_toan.don_thu_muc` (vá nó thành TỪ CHỐI "
+       "thì KHÔNG byte nào của bản cũ mất — nó chỉ bị đổi tên)",
+       _dem_xa[0] > 0 and len(_con_cu) == 1 and VN._co_venv(_con_cu[0]),
+       f"{_dem_xa[0]} lượt gọi · còn {[p.name for p in _con_cu]}")
+    ok("16j' ... và `xoa_an_toan` từ chối cũng KHÔNG làm lượt dời hỏng "
+       "(bản mới vẫn đứng, bản cũ chỉ tốn đĩa)", _r["ok"] and not _r["da_dep_cu"])
+    shutil.rmtree(_NGUON.parent, ignore_errors=True)
+
+    VN.doc_loat = _DOC_LOAT_THAT
+finally:
+    VN.doc_loat = _DOC_LOAT_THAT
+    VN._dia_trong_mb = _DIA_THAT
+    shutil.copytree = _CPT_THAT
+    XA.don_thu_muc = _XA_THAT              # type: ignore[assignment]
+    tempfile.tempdir = _TAM_CU
+    os.environ.pop("BQ_VN_KHONG_DOI", None)
+    if _VN_DIR_CU is None:
+        os.environ.pop("BQ_VN_DIR", None)
+    else:
+        os.environ["BQ_VN_DIR"] = _VN_DIR_CU
+
+# --- (k) QUÉT TĨNH bằng AST + TỰ KIỂM BỘ DÒ ------------------------------
+_cay_vn2 = ast.parse((REPO / "app" / "core" / "giong_vieneu.py")
+                     .read_text(encoding="utf-8"))
+
+
+def _than(ten: str):
+    for n in ast.walk(_cay_vn2):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and n.name == ten:
+            return n
+    return None
+
+
+def _co_rmtree(ten: str) -> bool:
+    """Hàm này có gọi `shutil.rmtree` TRẦN không (đọc AST, không đọc chuỗi)."""
+    n = _than(ten)
+    return bool(n) and any(
+        isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+        and c.func.attr == "rmtree" for c in ast.walk(n))
+
+
+def _goi_trong(ten: str) -> set:
+    n = _than(ten)
+    return set() if n is None else {
+        c.func.id for c in ast.walk(n)
+        if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+
+
+for _h in ("doi_khoi_tam", "_bo_ban_moi", "_xoa_qua_cua", "don_job_mo_coi",
+           "_than_doi_nen", "tu_doi_nen"):
+    ok(f"16k `{_h}` KHÔNG gọi `shutil.rmtree` trần (đó là lớp bệnh đã xoá "
+       f"sạch cây mã 19/08)", not _co_rmtree(_h))
+# BỘ DÒ PHẢI CÓ RĂNG: `_don` là hàm CÓ `rmtree` thật (nó tự canh bằng chốt
+# riêng). Bộ dò không bắt được nó thì 6 mục trên chỉ là con dấu.
+ok("16k' TỰ KIỂM BỘ DÒ: bộ dò BẮT được `_don` (hàm thật sự có `rmtree`)",
+   _co_rmtree("_don"))
+ok("16k'' `_xoa_qua_cua` gọi `don_thu_muc` của `xoa_an_toan`",
+   "don_thu_muc" in _ma_that(Path("app/core/giong_vieneu.py")))
+ok("16l `doc_loat` THẬT SỰ GỌI `tu_doi_nen` (AST — ghi chú nhắc tên nó thì "
+   "không tính; đây là chỗ duy nhất nối tính năng vào đường chạy thật)",
+   "tu_doi_nen" in _goi_trong("doc_loat"))
+ok("16l' TỰ KIỂM BỘ DÒ: hàm KHÔNG gọi thì bộ dò phải nói KHÔNG",
+   "tu_doi_nen" not in _goi_trong("do_wav"))
+ok("16l'' `doc_loat` ĐẾM lượt đọc đang chạy (để luồng dời đợi máy rảnh — "
+   "đổi tên venv lúc python của nó đang chạy là Windows từ chối)",
+   {"_vao_doc", "_ra_doc"} <= _goi_trong("doc_loat"))
+
+# --- (m) luồng nền: 1 lần/tiến trình, KHÔNG chặn -------------------------
+import time as _tm  # noqa: E402
+
+os.environ["BQ_VN_KHONG_DOI"] = "1"
+ok("16m công tắc tắt chặn được CẢ luồng nền", not VN.tu_doi_nen(0.0))
+os.environ.pop("BQ_VN_KHONG_DOI", None)
+_t0 = _tm.time()
+_l1 = VN.tu_doi_nen(0.0)
+_gy = _tm.time() - _t0
+_l2 = VN.tu_doi_nen(0.0)
+ok("16m' `tu_doi_nen` khởi luồng ĐÚNG MỘT LẦN trong cả tiến trình",
+   _l1 and not _l2)
+ok(f"16m'' ... và KHÔNG CHẶN chỗ gọi ({_gy * 1000:.1f} ms) — nó nằm trên "
+   f"đường đọc sản xuất", _gy < 0.5)
+ok("16m''' sổ đếm lượt đọc về 0 sau khi đọc xong (kẹt ở 1 là luồng dời đợi "
+   "vô hạn)", VN.dang_doc() == 0, f"đang đọc {VN.dang_doc()}")
+
+# ---------------------------------------------------------------------------
+print("\n[CA 17] DỌN RÁC `_job_<pid>_<n>` MỒ CÔI — CHỈ RÁC CỦA APP, PID ĐÃ CHẾT")
+# ---------------------------------------------------------------------------
+# Đo 25/08/2026 trên `%LOCALAPPDATA%\BQHungVideo\_giong_vieneu`: **11 `_job_*`
+# + 11 `_tam_*`** của những tiến trình đã chết. Khuôn `don_seg_mo_coi` (cổng
+# 42). Đây là thư mục DỮ LIỆU của người dùng nên mọi ca dưới đây hỏi cùng một
+# câu: *cái KHÔNG phải rác của app có còn nguyên không.*
+_VN_DIR_CU2 = os.environ.get("BQ_VN_DIR")
+try:
+    _T17 = T / "ca17" / "_giong_vieneu"
+    _T17.mkdir(parents=True, exist_ok=True)
+    os.environ["BQ_VN_DIR"] = str(_T17)
+
+    _MO_COI = ("_job_999997_123", "_tam_999998_9", "_doi_999999_1")
+    #: Tên GẦN GIỐNG + đồ thật của app/người dùng. Không cái nào được đụng.
+    _PHAI_CON = ("_job_cua_toi", "_tam_1", "_jobs_1_2", "_job_abc_1",
+                 "_job_1_2_ba", "hf", "venv", f"_job_{os.getpid()}_5")
+    for _t in _MO_COI + _PHAI_CON:
+        (_T17 / _t).mkdir(parents=True, exist_ok=True)
+        (_T17 / _t / "job.json").write_text("{}", encoding="utf-8")
+    (_T17 / "_bq_vieneu_runner.py").write_text("x", encoding="utf-8")
+
+    _n17, _mb17 = VN.don_job_mo_coi()
+    ok(f"17a rác MỒ CÔI (pid đã chết) bị dọn — {_n17} thư mục · {_mb17} MB",
+       _n17 == len(_MO_COI)
+       and not any((_T17 / t).exists() for t in _MO_COI), f"{_n17}")
+    ok(f"17b pid CÒN SỐNG (chính mình) -> KHÔNG ĐỤNG "
+       f"(`_job_{os.getpid()}_5`)", (_T17 / f"_job_{os.getpid()}_5").exists())
+    for _t in ("_job_cua_toi", "_tam_1", "_jobs_1_2", "_job_abc_1",
+               "_job_1_2_ba"):
+        ok(f"17c tên GẦN GIỐNG `{_t}` -> KHÔNG ĐỤNG", (_T17 / _t).exists())
+    ok("17d đồ thật của app/người dùng (`hf`, `venv`, runner) -> KHÔNG ĐỤNG",
+       (_T17 / "hf").exists() and (_T17 / "venv").exists()
+       and (_T17 / "_bq_vieneu_runner.py").exists())
+    # TỰ KIỂM BỘ DÒ: mẫu phải khớp TOÀN BỘ tên. `search` (không có `$`) sẽ cho
+    # `_job_1_2_ba` lọt — mà đó chính là một trong 5 tên ca 17c vừa canh.
+    ok("17e TỰ KIỂM BỘ DÒ: mẫu khớp TOÀN BỘ tên, `_job_1_2_ba` KHÔNG khớp",
+       VN._MAU_JOB.fullmatch("_job_1_2_ba") is None
+       and VN._MAU_JOB.fullmatch("_job_12_3") is not None)
+    ok("17e' ... và bộ dò CÓ RĂNG: nó khớp đúng 3 tên mồ côi vừa dọn",
+       all(VN._MAU_JOB.fullmatch(t) for t in _MO_COI))
+
+    # Không đọc được pid / thiếu psutil -> BỎ QUA (nghi ngờ thì GIỮ).
+    _pid_that = VN._pid_con_song
+    VN._pid_con_song = lambda pid: True    # type: ignore[assignment]
+    for _t in _MO_COI:
+        (_T17 / _t).mkdir(parents=True, exist_ok=True)
+    _n17b, _ = VN.don_job_mo_coi()
+    VN._pid_con_song = _pid_that           # type: ignore[assignment]
+    ok("17f không dám phán pid đã chết -> BỎ QUA hết (nghi ngờ thì GIỮ)",
+       _n17b == 0 and all((_T17 / t).exists() for t in _MO_COI), f"{_n17b}")
+
+    # Đi qua `xoa_an_toan`.
+    _dem17 = [0]
+
+    def _xa17(d, **k):
+        _dem17[0] += 1
+        return False
+
+    XA.don_thu_muc = _xa17                 # type: ignore[assignment]
+    _n17c, _ = VN.don_job_mo_coi()
+    XA.don_thu_muc = _XA_THAT              # type: ignore[assignment]
+    ok("17g lượt dọn ĐI QUA `xoa_an_toan` (vá nó TỪ CHỐI thì 0 thư mục mất)",
+       _dem17[0] >= len(_MO_COI) and _n17c == 0
+       and all((_T17 / t).exists() for t in _MO_COI),
+       f"{_dem17[0]} lượt gọi · dọn {_n17c}")
+
+    ok("17h thư mục không tồn tại -> KHÔNG NÉM, trả (0, 0.0)",
+       VN.don_job_mo_coi(str(T / "khong_he_co")) == (0, 0.0))
+finally:
+    XA.don_thu_muc = _XA_THAT              # type: ignore[assignment]
+    if _VN_DIR_CU2 is None:
+        os.environ.pop("BQ_VN_DIR", None)
+    else:
+        os.environ["BQ_VN_DIR"] = _VN_DIR_CU2
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 74)
 print(f"ĐẠT {_DAT} · HỎNG {len(_HONG)} · BỎ QUA {len(_BOQUA)}")
 for x in _HONG:
