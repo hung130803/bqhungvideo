@@ -108,6 +108,33 @@ PHEP = [
      '    if hinh_theo_giong:\n        tt["hinh_theo_giong"] = True',
      '    if True:\n        tt["hinh_theo_giong"] = bool(hinh_theo_giong)',
      "7", "ô để mặc định thì KHÔNG sinh khoá trong payload"),
+
+    # ───────── ĐỌC ĐỀU (bỏ bước 4c) — 5 chốt mới của MỤC 9 ─────────
+    ("10. nối `dd` VÔ ĐIỀU KIỆN (đổi hash mọi job đã chỉnh hình)", TC,
+     '        if doc_deu:\n            sig += ":dd=1"',
+     '        sig += ":dd=1"  # PHA: vô điều kiện',
+     "9", "cờ chỉ vào hash KHI THẬT SỰ BẬT"),
+
+    ("11. nối `dd` vào GIỮA chuỗi sig thay vì ĐUÔI", TC,
+     '    sig = f"thaygiong:{d}:{dich_sang}:{voice}:{r}"',
+     '    sig = f"thaygiong:{d}:{dich_sang}:{voice}:'
+     '{\'dd=1:\' if doc_deu else \'\'}{r}"',
+     "9", "đuôi nối vào CUỐI, khoá cũ là TIỀN TỐ"),
+
+    ("12. GỠ chốt `and hinh_theo_giong` (bỏ 4c mà không chậm hình)", TG,
+     "        _deu = bool(doc_deu) and bool(hinh_theo_giong)",
+     "        _deu = bool(doc_deu)  # PHA: gỡ chốt",
+     "9", "bỏ 4c chỉ được phép khi ĐANG làm chậm hình"),
+
+    ("13. `chuan_khop_cach` nhận rác thành cách MỚI (lùi sai chiều)", TG,
+     "    if c not in KHOP_CACH:\n        return (False, False)",
+     "    if c not in KHOP_CACH:\n        return (True, True)  # PHA",
+     "9", "không nhận ra -> lùi về hành vi CŨ, không về cách mới"),
+
+    ("14. `thay_giong_mot_video` QUÊN chuyền `doc_deu` xuống lõi", TG,
+     "                         doc_deu=doc_deu,",
+     "                         # PHA: quên chuyền doc_deu",
+     "9", "hàm xong ≠ tính năng xong — cờ phải đi hết chặng"),
 ]
 
 BAT: list[str] = []
@@ -172,8 +199,8 @@ def mot_phep(ten: str, f: Path, neo: str, thay: str, muc: str,
 def main() -> int:
     so = int(sys.argv[1]) if len(sys.argv) > 1 else len(PHEP)
     print(f"THỬ PHÁ CỔNG 89 — {min(so, len(PHEP))} phép\n"
-          f"Mốc trước khi phá: chạy cổng đầy đủ phải ra ĐẠT 73 · HỎNG 0")
-    rc0, tt0 = chay_cong("1,2,3,4,5,6,7,8")
+          f"Mốc trước khi phá: chạy cổng đầy đủ phải ra ĐẠT 104 · HỎNG 0")
+    rc0, tt0 = chay_cong("1,2,3,4,5,6,7,8,9")
     print(f"  ĐỐI CHỨNG (chưa phá): mã {rc0} — {tt0}")
     if rc0 != 0:
         print("  !!! CỔNG ĐÃ ĐỎ TRƯỚC KHI PHÁ — dừng, không đọc được bảng nào")

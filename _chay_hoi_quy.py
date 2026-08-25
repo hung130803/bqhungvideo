@@ -279,7 +279,16 @@ CONG = [
     # `tempo_max` vẫn 1,000, cổng vẫn XANH — trong khi tiếng bị đặt ở mốc CHƯA
     # GIÃN của một video ĐÃ GIÃN, tức tiếng TRÔI khỏi hình mỗi lúc một xa
     # (đúng lỗi v1.87). Nay chấm THẲNG chỗ đặt mảnh + có mục ĐỐI CHỨNG k=1,0.
-    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",   75),
+    #
+    # 75 -> **100** (25/08/2026): thêm MỤC 9 — ĐỌC ĐỀU MỘT TỐC ĐỘ (`doc_deu`,
+    # bỏ bước 4c `doc_nhanh_vua_khung`). Mục này canh: cửa chuẩn hoá
+    # `chuan_khop_cach` · khoá chống trùng TẮT thì giống TỪNG KÝ TỰ mốc và BẬT
+    # thì mọc đuôi `:dd=1` ở CUỐI · **CHẠY THẬT** `thay_giong_video` để chứng
+    # minh bước 4c chạy **0 lần** (không chỉ "mã có nhánh đó" — bài học *"hàm
+    # xong ≠ tính năng xong"*, repo này đã 4 lần có module lõi nằm chết) · và
+    # cả chuỗi chuyền cờ UI -> `xep_mot` -> payload -> job -> lõi.
+    # NÂNG mốc, không hạ — mốc là SÀN.
+    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  104),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

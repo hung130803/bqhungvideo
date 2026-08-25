@@ -1917,9 +1917,11 @@ class ThayGiongDialog(QDialog):
         h3bb = QHBoxLayout()
         h3bb.addWidget(QLabel("Khớp tiếng với hình:"))
         self.cb_khop = QComboBox()
-        self.cb_khop.addItem("Ép giọng vừa video (có thể méo tiếng)", "")
-        self.cb_khop.addItem(
-            "Chỉnh video theo giọng (tiếng đều, khuyên dùng)", "hinh")
+        # Nhãn lấy từ `thay_giong.NHAN_KHOP_CACH` — MỘT NGUỒN DUY NHẤT, để
+        # nhật ký/cổng test và cái người dùng thấy không viết tay hai lần rồi
+        # lệch (y cách `NHAN_CACH_TRON` làm ở hàng 3bc bên dưới).
+        for _m in TG.KHOP_CACH:
+            self.cb_khop.addItem(TG.NHAN_KHOP_CACH[_m], _m)
         self.cb_khop.setToolTip(
             "Ép giọng vừa video: giữ NGUYÊN độ dài video, câu nào đọc dài hơn "
             "khung thì bị ép nhanh lại — đó là chỗ sinh ra 'lúc nhanh lúc "
@@ -1931,7 +1933,20 @@ class ThayGiongDialog(QDialog):
             "GIÁ PHẢI TRẢ: video dài ra, và nhịp hình tụt theo hệ số — app tự "
             "chặn ở mức giữ >= 20 khung/giây, nguồn 23,976 fps thì tối đa "
             "chậm 1,199 lần. Cần chậm hơn mức đó thì phần dư vẫn phải ép "
-            "tiếng, nhưng ít hơn hẳn.")
+            "tiếng, nhưng ít hơn hẳn.\n\n"
+            "Chỉnh video + đọc ĐỀU MỘT TỐC ĐỘ — cách mới, cho ai nghe thấy "
+            "'chỗ đọc chậm chỗ đọc nhanh':\n"
+            "  · hai cách trên vẫn còn một bước ĐỌC LẠI NHANH HƠN cho câu nào\n"
+            "    quá dài, và MỖI CÂU MỘT TỐC ĐỘ khác nhau — đo trên video của\n"
+            "    anh: 22/35 và 33/50 câu bị đọc lại, có câu nhanh thêm tới\n"
+            "    43-50%. Chính chỗ đó nghe ra 'lúc nhanh lúc chậm'.\n"
+            "  · cách này BỎ HẲN bước đó: mọi câu đọc ở đúng một tốc độ tự\n"
+            "    nhiên. Đo được: độ chênh tốc độ đọc giữa các câu GIẢM 31,5%\n"
+            "    (14,29% -> 9,76%), và LÀM NHANH HƠN vì bớt hẳn một lượt đọc.\n"
+            "  · ĐÁNH ĐỔI THẬT: bỏ bước đó thì phải làm chậm hình nhiều hơn\n"
+            "    mức trần cho phép (cần 1,606 lần, trần chỉ 1,199), nên phần\n"
+            "    dư QUAY LẠI ép tiếng — tiếng có thể hơi méo hơn cách thứ hai.\n"
+            "  · CHƯA AI NGHE THỬ bằng tai. Anh nghe rồi hãy dùng cho cả loạt.")
         _i = self.cb_khop.findData(str(self._s.value(K_KHOP_CACH, "") or ""))
         self.cb_khop.setCurrentIndex(max(0, _i))
         h3bb.addWidget(self.cb_khop)
@@ -4284,8 +4299,11 @@ class ThayGiongDialog(QDialog):
         # — bài học "chạy dây chuyền: đọc combo, không đọc setting": widget bị
         # blockSignals thì setting lệch với cái user đang nhìn).
         cc_kieu = self.don_kieu_chu()
-        # ĐỌC TỪ COMBO ĐANG HIỆN, không đọc QSettings (cùng lý do trên).
-        cc_hinh = str(self.cb_khop.currentData() or "") == "hinh"
+        # ĐỌC TỪ COMBO ĐANG HIỆN, không đọc QSettings (cùng lý do trên), và đi
+        # qua `chuan_khop_cach` — cửa DUY NHẤT: không nhận ra thì lùi về cách
+        # CŨ, không lùi về cách mới (lùi về cái mới là âm thầm đổi tiếng của
+        # video người ta). Mục thứ ba trả thêm `cc_deu` = BỎ bước đọc nhanh.
+        cc_hinh, cc_deu = TG.chuan_khop_cach(self.cb_khop.currentData())
         # CÁCH TRỘN cũng đọc từ COMBO ĐANG HIỆN, và đi qua `chuan_cach_tron` —
         # cửa DUY NHẤT chuẩn hoá: không nhận ra thì lùi về cách CŨ, không lùi về
         # cách mới (lùi về cái mới là âm thầm đổi tiếng của video người ta).
@@ -4318,7 +4336,8 @@ class ThayGiongDialog(QDialog):
                     che_chu=cc, che_chu_cach=cc_cach, che_chu_muc=cc_muc,
                     viet_chu=cc_viet, kieu_chu=cc_kieu,
                     hinh_theo_giong=cc_hinh, de_giong=cc_de,
-                    muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db)
+                    muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db,
+                    doc_deu=cc_deu)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

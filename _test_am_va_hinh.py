@@ -142,6 +142,25 @@ def nap_moc(duong: str, ten: str) -> types.ModuleType:
     return m
 
 
+#: **`QApplication` PHẢI CÓ THAM CHIẾU Ở MỨC MODULE.** Bản đầu của MỤC 9 viết
+#: `QApplication.instance() or QApplication([])` mà KHÔNG giữ lại kết quả:
+#: `muc5` tạo app trong một biến CỤC BỘ, biến đó chết khi `muc5` trả về, nên
+#: tới MỤC 9 `instance()` trả `None` -> tạo app mới -> Python thu hồi ngay dòng
+#: sau -> **tiến trình CHẾT CỨNG (mã 0xC0000409), KHÔNG traceback, KHÔNG dòng
+#: tổng kết**. `_pha_khop_video.py` đọc ra "CỔNG ĐÃ ĐỎ TRƯỚC KHI PHÁ" và dừng
+#: hẳn — tức một lỗi của CỔNG làm hỏng cả lượt thử phá mà không nói vì sao.
+_APP = None
+
+
+def app_qt():
+    """QApplication dùng chung cho MỌI mục — giữ tham chiếu, xem `_APP`."""
+    global _APP
+    from PyQt6.QtWidgets import QApplication
+    if _APP is None:
+        _APP = QApplication.instance() or QApplication([])
+    return _APP
+
+
 def than_ham(duong: str, ten: str) -> ast.AST:
     """Nút AST của hàm `ten`. Đọc file bằng **utf-8 tường minh** —
     `inspect.getsource` mở theo bảng mã MẶC ĐỊNH của máy (cp1252) nên docstring
@@ -446,8 +465,7 @@ def muc4() -> None:
 def muc5() -> None:
     """HỘP THAY GIỌNG: gập mặc định, mở ra đủ 9 ô, round-trip giữ đủ."""
     print("\nMỤC 5 — hộp Thay giọng: gọn mà KHÔNG bỏ ô nào")
-    from PyQt6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication([])
+    app = app_qt()
     from app.ui.thay_giong_dialog import ThayGiongDialog
     d = ThayGiongDialog(None)
     try:
@@ -866,10 +884,307 @@ def muc8() -> None:
        f"k={k_pha:.3f} -> {f_pha:.2f} fps")
 
 
+def _sin(d: Path, ten: str, giay: float) -> str:
+    """Một câu TTS GIẢ — file wav thật, độ dài biết trước."""
+    p = d / ten
+    _ff(["-f", "lavfi", "-i", f"sine=f=440:d={giay:.3f}", "-ac", "1",
+         "-ar", "24000", "-c:a", "pcm_s16le", str(p)])
+    return str(p)
+
+
+def _chay_that(tmp: Path, **kw) -> tuple[dict, int]:
+    """CHẠY THẬT `thay_giong_video` với 5 bước RA MẠNG bị thay bằng bản giả.
+
+    Vì sao phải chạy thật chứ không chỉ quét AST: bài học *"hàm xong ≠ tính
+    năng xong"* — repo này đã 4 lần có module lõi nằm chết không ai gọi. Quét
+    AST chỉ chứng minh **mã CÓ nhánh đó**; chỉ lượt chạy mới chứng minh **nhánh
+    đó ĐƯỢC ĐI VÀO** và bước 4c không chạy một lần nào.
+
+    Năm bản giả (chép lời · dịch · đọc · rút gọn · đọc nhanh) đều là cửa ra
+    MẠNG (Groq + edge-tts) — giả để cổng chạy được OFFLINE và TIỀN ĐỊNH, đúng
+    luật "test không được đụng máy thật / mạng thật". Bản giả của bước 4c
+    **có ĐẾM** và **bắt chước đúng cái 4c làm**: trả file NGẮN HƠN cho câu tràn
+    khung. Nhờ vậy cột "hệ số hình cần" của hai arm khác nhau THẬT, đo được cái
+    GIÁ chứ không chỉ khai. Còn phần 4c làm việc đó đúng hay không thì đã có
+    mốc đo trên video thật (`_do_khop_video.py`) — ở đây chỉ hỏi MỘT câu: đường
+    mã có gọi nó không.
+
+    `de_giong=True` để bỏ Demucs (4,3 GB, cần card NVIDIA).
+    Trả `(kq, số lần bước 4c bị gọi)`.
+    """
+    from app.core import thay_giong as tg
+
+    d = tmp
+    d.mkdir(parents=True, exist_ok=True)
+    v = d / "v.mp4"
+    _ff(["-f", "lavfi", "-i", "testsrc2=size=160x120:rate=24:d=9",
+         "-f", "lavfi", "-i", "sine=f=200:d=9", "-c:v", "libx264",
+         "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac",
+         "-shortest", str(v)])
+    # Câu GIỮA đọc 3,2 s trong khung ~2,9 s -> TRÀN khung, đúng ca bước 4c bắn.
+    cau = [{"start": 0.0, "end": 2.0, "text": "mot"},
+           {"start": 3.0, "end": 5.0, "text": "hai"},
+           {"start": 6.0, "end": 8.0, "text": "ba"}]
+    fs = [_sin(d, f"t{i}.wav", g) for i, g in enumerate((1.0, 3.2, 1.0))]
+    #: bản "đã đọc nhanh lại" của câu giữa — NGẮN HƠN, y việc 4c làm thật
+    nhanh = _sin(d, "t1_nhanh.wav", 2.0)
+    texts = ["Cau mot ngan", "Cau hai dai hon han cac cau khac trong bai",
+             "Cau ba ngan"]
+
+    dem = {"n": 0}
+    goc = {k: getattr(tg, k) for k in
+           ("chep_loi", "dich_hau_kiem", "doc_ban_dich", "rut_gon_vua_khung",
+            "doc_nhanh_vua_khung")}
+
+    def _4c_gia(_cau, _texts, files, _ok, *a, **k):
+        dem["n"] += 1
+        f2 = list(files)
+        f2[1] = nhanh                      # đúng câu tràn khung, ngắn lại
+        return {"files": f2, "ok": [True] * 3, "moc_tu": [[] for _ in f2],
+                "so_doc_lai": 1, "rate_max": 43,
+                "can_truoc": [0.35, 1.11, 0.35], "can_sau": [0.35, 0.69, 0.35]}
+
+    tg.chep_loi = lambda *a, **k: {
+        "language": "en", "words": [],
+        "segments": [dict(s) for s in cau], "_nguon": "gia"}
+    tg.dich_hau_kiem = lambda *a, **k: {"ban_dich": list(texts)}
+    tg.doc_ban_dich = lambda *a, **k: {
+        "files": list(fs), "ok": [True] * 3, "voice": "gia", "giay": 0.0,
+        "so_hong": 0, "moc_tu": [[] for _ in fs]}
+    tg.rut_gon_vua_khung = lambda *a, **k: {
+        "texts": list(texts), "files": list(fs), "ok": [True] * 3,
+        "so_sua": 0, "moc_tu": [[] for _ in fs]}
+    tg.doc_nhanh_vua_khung = _4c_gia
+    try:
+        kq = tg.thay_giong_video(v, dich_sang="vi", thu_muc_lam=d / "lam",
+                                 de_giong=True, viet_chu=False, **kw)
+    finally:
+        for k, f in goc.items():
+            setattr(tg, k, f)
+    return kq, dem["n"]
+
+
+def muc9() -> None:
+    """ĐỌC ĐỀU (bỏ bước 4c) — cửa chuẩn hoá · khoá chống trùng · CHẠY THẬT."""
+    print("\nMỤC 9 — đọc ĐỀU một tốc độ: bỏ bước 4c `doc_nhanh_vua_khung`")
+    from app.core import tg_chay as TC
+    from app.core import thay_giong as tg
+
+    # ---- 9a: CỬA DUY NHẤT chuẩn hoá tên cách khớp ----
+    bang = {"": (False, False), "hinh": (True, False),
+            "hinh_deu": (True, True), " HINH_DEU ": (True, True),
+            "rac": (False, False), None: (False, False), "0": (False, False)}
+    sai = [(k, tg.chuan_khop_cach(k), v) for k, v in bang.items()
+           if tg.chuan_khop_cach(k) != v]
+    ok(not sai, f"9a `chuan_khop_cach` đúng cả {len(bang)} ca (kể cả rác)",
+       str(sai[:2]) if sai else "rác/None -> lùi về cách CŨ")
+
+    # ---- 9b: `doc_deu` KHÔNG BAO GIỜ ra True một mình ----
+    # Bỏ 4c mà không làm chậm hình thì phần dôi rơi hết xuống `atempo`, ép
+    # NẶNG HƠN cả cách cũ — tức "chữa" xong còn tệ hơn lúc chưa chữa.
+    mot_minh = [x for x in list(bang) + ["deu", "hinh_deu ", "HINH", 1, 0]
+                if tg.chuan_khop_cach(x)[1] and not tg.chuan_khop_cach(x)[0]]
+    ok(not mot_minh,
+       "9b không giá trị nào cho `doc_deu` bật MỘT MÌNH (không có hình chậm)",
+       str(mot_minh[:3]) if mot_minh else "0/13 ca")
+
+    # ---- 9c: MẶC ĐỊNH VẪN LÀ CÁCH CŨ ----
+    ok(tg.KHOP_CACH[0] == "" and tg.chuan_khop_cach(tg.KHOP_CACH[0])
+       == (False, False),
+       "9c mục ĐẦU của combo = cách CŨ (đổi mặc định là đổi tiếng 200-300 kênh)")
+    ok(len(tg.KHOP_CACH) == 3 and set(tg.NHAN_KHOP_CACH) == set(tg.KHOP_CACH),
+       "9d đủ 3 mục và mục nào cũng có nhãn tiếng Việt",
+       " · ".join(tg.NHAN_KHOP_CACH[m] for m in tg.KHOP_CACH))
+    ok("ép" in tg.NHAN_KHOP_CACH["hinh_deu"].lower()
+       and "đều" in tg.NHAN_KHOP_CACH["hinh_deu"].lower(),
+       "9e nhãn mục mới nêu CẢ HAI chiều: được 'đều' · giá 'ép phần dư'",
+       tg.NHAN_KHOP_CACH["hinh_deu"])
+
+    # ---- 9f-9i: KHOÁ CHỐNG TRÙNG ----
+    moc_tc = nap_moc("app/core/tg_chay.py", "tc")
+    ok("dd=1" not in moc_tc.__dict__["_NGUON_"],
+       "9f mốc `tg_chay` KHÔNG hề có đuôi `dd` (mốc đúng, không tự PASS OAN)")
+    x = ("D:/v/d.mp4", "vi", "g3", "E:/z")
+    k_tat = TC.khoa_chong_trung(*x)
+    k_htg = TC.khoa_chong_trung(*x, hinh_theo_giong=True)
+    k_deu = TC.khoa_chong_trung(*x, hinh_theo_giong=True, doc_deu=True)
+    ok(k_tat == moc_tc.khoa_chong_trung(*x),
+       "9g TẮT -> khoá GIỐNG TỪNG KÝ TỰ bản mốc (không xuất lại 200-300 kênh)")
+    ok(TC.khoa_chong_trung(*x, doc_deu=True) == k_tat,
+       "9h bật `doc_deu` mà KHÔNG chỉnh hình -> khoá KHÔNG đổi "
+       "(cờ vô nghĩa thì không đẻ lượt chạy lại)")
+    ok(k_deu == k_htg + ":dd=1" and k_deu.startswith(k_tat),
+       "9i BẬT -> đuôi `:dd=1` nối vào CUỐI, khoá cũ vẫn là TIỀN TỐ",
+       k_deu[-12:])
+
+    # ---- 9j: payload chỉ mọc khoá khi BẬT, và LỒNG trong nhánh `htg` ----
+    nut = than_ham("app/core/tg_chay.py", "xep_mot")
+
+    def _long(goc_ten: str, trong_ten: str, khoa: str) -> bool:
+        """`tt[khoa]` phải nằm trong `if trong_ten:` mà `if` đó lại nằm trong
+        `if goc_ten:` — quét LỒNG NHAU, không chỉ "nằm trong một if nào đó"."""
+        for n in ast.walk(nut):
+            if not (isinstance(n, ast.If) and isinstance(n.test, ast.Name)
+                    and n.test.id == goc_ten):
+                continue
+            for c in ast.walk(n):
+                if not (isinstance(c, ast.If) and isinstance(c.test, ast.Name)
+                        and c.test.id == trong_ten):
+                    continue
+                for e in ast.walk(c):
+                    if isinstance(e, ast.Subscript) \
+                            and isinstance(e.slice, ast.Constant) \
+                            and e.slice.value == khoa:
+                        return True
+        return False
+
+    ok(_long("hinh_theo_giong", "doc_deu", "doc_deu"),
+       "9j payload mọc khoá `doc_deu` LỒNG trong nhánh `hinh_theo_giong`")
+    # TỰ KIỂM BỘ DÒ: cùng bộ dò, tên KHÔNG có trong mã -> phải trả False.
+    # Thiếu ca này thì `_long` chỉ cần `return True` là mục trên xanh vĩnh viễn.
+    ok(not _long("hinh_theo_giong", "doc_deu", "khong_he_co_khoa_nay")
+       and not _long("khong_he_co_co_nay", "doc_deu", "doc_deu"),
+       "9k TỰ KIỂM BỘ DÒ: khoá/cờ bịa ra thì bộ dò trả HỎNG (dò có răng)")
+
+    # ---- 9l: chốt `and hinh_theo_giong` nằm TRONG lõi, không ở lời gọi ----
+    than = than_ham("app/core/thay_giong.py", "thay_giong_video")
+
+    def _co_chot(a: str, b: str) -> bool:
+        for n in ast.walk(than):
+            if not (isinstance(n, ast.BoolOp) and isinstance(n.op, ast.And)):
+                continue
+            ten = {m.id for v in n.values for m in ast.walk(v)
+                   if isinstance(m, ast.Name)}
+            if a in ten and b in ten:
+                return True
+        return False
+
+    ok(_co_chot("doc_deu", "hinh_theo_giong"),
+       "9l lõi chốt `doc_deu AND hinh_theo_giong` (không bắt người gọi tự nhớ)")
+    ok(not _co_chot("doc_deu", "khong_he_co_bien_nay"),
+       "9m TỰ KIỂM BỘ DÒ: biến bịa ra thì bộ dò `_co_chot` trả HỎNG")
+
+    # ---- 9n-9r: CHẠY THẬT — bước 4c có bị bỏ thật không ----
+    d = hop() / "deu"
+    kq_cu, n_cu = _chay_that(d / "cu", hinh_theo_giong=True, doc_deu=False)
+    kq_deu, n_deu = _chay_that(d / "deu", hinh_theo_giong=True, doc_deu=True)
+    kq_le, n_le = _chay_that(d / "le", hinh_theo_giong=False, doc_deu=True)
+
+    ok(n_cu == 1, "9n arm CŨ vẫn chạy bước 4c ĐÚNG 1 lần (đối chứng có răng)",
+       f"{n_cu} lần")
+    ok(n_deu == 0, "9o BẬT đọc đều -> bước 4c chạy 0 lần (bỏ THẬT, "
+                   "không phải chỉ có nhánh trong mã)", f"{n_deu} lần")
+    ok(n_le == 1,
+       "9p `doc_deu` không kèm chỉnh hình -> 4c VẪN chạy (chốt lõi có tác dụng)",
+       f"{n_le} lần")
+    # `kiem_video_ra` NÉM khi file hỏng (không trả cờ), nên nó chạy tới đây tức
+    # đã ĐẠT: có khung hình · có tiếng · đúng độ dài ĐÍCH (đã nhân hệ số hình).
+    _kv = kq_deu.get("kiem") or {}
+    ok(bool(kq_deu.get("ok")) and Path(kq_deu.get("ra") or "x").exists()
+       and int(_kv.get("khung") or 0) > 0 and float(_kv.get("rms") or 0) > 0,
+       "9q bỏ 4c vẫn RA VIDEO hợp lệ (không phải xanh vì chết sớm)",
+       f"{_kv.get('khung')} khung · {_kv.get('do_dai')}s · "
+       f"lệch {_kv.get('lech_do_dai')}s")
+    ok(kq_deu["hinh"].get("doc_deu") is True
+       and kq_cu["hinh"].get("doc_deu") is False
+       and kq_le["hinh"].get("doc_deu") is False,
+       "9r nhật ký lượt chạy NÓI RA đang đi đường nào (không lặng lẽ đổi)")
+    ok(kq_deu["doc_nhanh"].get("bo_qua") is True
+       and "so_doc_lai" in kq_deu["doc_nhanh"],
+       "9s nhật ký bước 4c ghi rõ 'bỏ qua' + số câu đọc lại = 0",
+       str(kq_deu["doc_nhanh"].get("so_doc_lai")))
+    # GIÁ PHẢI TRẢ, đo ngay trong cổng: bỏ 4c thì hệ số hình CẦN cao hơn hẳn,
+    # nên chạm trần và phần dư quay lại ép tiếng. Nói ra bằng SỐ, không bằng lời.
+    ok(float(kq_deu["hinh"]["k_can"]) > float(kq_cu["hinh"]["k_can"]) + 1e-6,
+       "9t bỏ 4c -> hệ số làm chậm hình CẦN cao hơn (đánh đổi, đo được)",
+       f"CŨ {kq_cu['hinh']['k_can']} -> ĐỀU {kq_deu['hinh']['k_can']}")
+
+    # ---- 9u: LỜI NHẮN tiến trình không làm thanh CHẠY NGƯỢC ----
+    # `tg_so.buoc_tu_tien_trinh` tra bước bằng CHUỖI CON. Nhánh mới thêm một
+    # lời nhắn mới ở mốc 0,79 — nếu nó không chứa cụm "đọc nhanh" thì cụm
+    # "đọc" khớp trước và bảng tiến độ tụt 7 -> 5 = CHẠY NGƯỢC. Lời nhắn lấy
+    # bằng AST từ CHÍNH thân hàm (không chép tay, không grep chuỗi).
+    from app.core import tg_so
+    nhan = []
+    for n in ast.walk(than):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) \
+                and n.func.id == "prog" and len(n.args) == 2 \
+                and isinstance(n.args[0], ast.Constant) \
+                and isinstance(n.args[1], ast.Constant) \
+                and "TỰ NHIÊN" in str(n.args[1].value):
+            nhan.append((float(n.args[0].value), str(n.args[1].value)))
+    ban = [(m, tg_so.buoc_tu_tien_trinh(p, m)[1]) for p, m in nhan
+           if tg_so.buoc_tu_tien_trinh(p, m)[1] != 7]
+    ok(bool(nhan) and not ban,
+       "9u lời nhắn nhánh đọc đều tra ra ĐÚNG bước 7 (thanh không chạy ngược)",
+       str(ban) if ban else f"{len(nhan)} lời nhắn -> bước 7/9")
+
+    # ---- 9v-9x: CHUỖI CHUYỀN CỜ — "hàm xong ≠ tính năng xong" ----
+    # Repo này đã 4 lần có module lõi nằm chết không ai gọi. Cờ phải đi hết
+    # chặng: combo -> `xep_mot` -> payload -> `jobs._thay_giong` ->
+    # `thay_giong_mot_video` (cửa DUY NHẤT job đi qua) -> `thay_giong_video`.
+    # Đứt một mắt là ô bấm xong KHÔNG LÀM GÌ mà không một dòng báo.
+    bat: list = []
+    _that = tg.thay_giong_video
+    tg.thay_giong_video = lambda *a, **k: (bat.append(dict(k)),
+                                           {"ok": False, "loi": "chỉ để bắt"})[1]
+    try:
+        for c in (True, False):
+            tg.thay_giong_mot_video("x.mp4", doc_deu=c, thay_goc=False)
+    finally:
+        tg.thay_giong_video = _that
+    ok(len(bat) == 2 and bat[0].get("doc_deu") is True
+       and bat[1].get("doc_deu") is False,
+       "9v `thay_giong_mot_video` CHUYỀN `doc_deu` xuống lõi (cửa job đi qua)",
+       str([b.get("doc_deu") for b in bat]))
+
+    def _co_kw(duong: str, ham: str, goi: str, kw: str) -> bool:
+        for n in ast.walk(than_ham(duong, ham)):
+            if isinstance(n, ast.Call) and (
+                    getattr(n.func, "id", "") == goi
+                    or getattr(n.func, "attr", "") == goi):
+                if any(k.arg == kw for k in n.keywords):
+                    return True
+        return False
+
+    ok(_co_kw("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+              "doc_deu"),
+       "9w `jobs._thay_giong` đọc `doc_deu` từ payload rồi chuyền tiếp")
+    ok(_co_kw("app/ui/thay_giong_dialog.py", "_chay", "xep_mot", "doc_deu"),
+       "9x hộp Thay giọng chuyền `doc_deu` cho `xep_mot` (ô bấm CÓ tác dụng)")
+    ok(not _co_kw("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+                  "khong_he_co_kw_nay")
+       and not _co_kw("app/ui/thay_giong_dialog.py", "_chay", "xep_mot",
+                      "khong_he_co_kw_nay"),
+       "9y TỰ KIỂM BỘ DÒ: tham số bịa ra thì bộ dò `_co_kw` trả HỎNG")
+
+    # ---- 9z: Ô TRONG HỘP THAY GIỌNG — anh Hùng phải CHỌN được ----
+    app_qt()                                  # giữ tham chiếu — xem `_APP`
+    from app.ui.thay_giong_dialog import ThayGiongDialog
+    dl = ThayGiongDialog(None)
+    try:
+        dat = [dl.cb_khop.itemData(i) for i in range(dl.cb_khop.count())]
+        ok(dat == list(tg.KHOP_CACH),
+           "9z combo 'Khớp tiếng với hình' có ĐỦ 3 mục, đúng thứ tự", str(dat))
+        ok(dl.cb_khop.currentIndex() == 0
+           and tg.chuan_khop_cach(dl.cb_khop.currentData()) == (False, False),
+           "9za MỞ HỘP LÊN mặc định vẫn là CÁCH CŨ (không đổi sau lưng ai)",
+           dl.cb_khop.currentText())
+        dl.cb_khop.setCurrentIndex(2)
+        ok(tg.chuan_khop_cach(dl.cb_khop.currentData()) == (True, True),
+           "9zb chọn mục 3 -> (chỉnh hình BẬT · đọc đều BẬT)")
+        tip = dl.cb_khop.toolTip()
+        ok(all(x in tip for x in ("ĐÁNH ĐỔI", "ép", "NHANH HƠN", "nghe")),
+           "9zc chú thích nói CẢ cái được, CẢ cái mất, CẢ 'chưa ai nghe thử'",
+           f"{len(tip)} ký tự")
+    finally:
+        dl.deleteLater()
+
+
 def main() -> int:
     print("CỔNG 89 — âm thanh bị bé · chỉnh hình theo giọng · hộp gọn · "
-          "che chữ không trôi")
-    muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7(); muc8()
+          "che chữ không trôi · đọc ĐỀU một tốc độ")
+    muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7(); muc8(); muc9()
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
     return 0 if HONG == 0 else 1
 

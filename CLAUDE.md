@@ -3673,6 +3673,65 @@
   đuôi `sig` riêng · mới đo **2 video × 90 s** (arm 3 chỉ **1 video**), chưa
   đo nguồn 30/60 fps (trần sẽ rộng hơn hẳn) · cột `giây chạy` của lượt này
   **KHÔNG đọc được** (máy có việc khác chạy nền giữa lượt đo).
+  **(11) 25/08/2026 — MỤC (10) ĐÃ LÀM XONG PHẦN "NỐI VÀO APP", VÀ BƯỚC 4C
+  HOÁ RA CÒN LÀ THỦ PHẠM CỦA LỜI KÊU THỨ HAI: *"tốc độ làm lồng tiếng cực kỳ
+  chậm"*.** Cờ `thay_giong.doc_deu` + mục thứ BA trong combo *"Khớp tiếng với
+  hình"* (`hinh_deu`, cửa duy nhất `chuan_khop_cach`). **MẶC ĐỊNH VẪN LÀ MỤC
+  ĐẦU** (cách cũ); đuôi `sig` là `:dd=1` và nó **LỒNG TRONG nhánh `htg`** — cờ
+  không có tác dụng khi chưa chỉnh hình thì không được đổi khoá, đúng bài học
+  `chuan_muc_mo` cổng 56e. Đo: TẮT -> `dedup_key` **giống TỪNG KÝ TỰ** mốc
+  v2.37.0 (cổng 89 mục 9g/9h).
+  **ĐO GHÉP CẶP LẠI, 2 VIDEO THẬT × 90 s** (`_do_khop_video.py`, MỘT lượt
+  chạy/video rồi tách 3 arm — 4a/4b dùng chung, arm 3 chỉ bớt đúng 4c):
+
+  | | lt1 CŨ | lt1 MỚI | lt1 **ĐỀU** | lt2 CŨ | lt2 MỚI | lt2 **ĐỀU** |
+  |---|---|---|---|---|---|---|
+  | **GIÂY bước ĐỌC** | 479,41 | 479,41 | **295,76** | 442,37 | 442,37 | **265,52** |
+  | hệ số biến thiên % | 20,11 | 20,77 | **15,64** | 14,08 | 14,26 | **10,88** |
+  | độ lệch chuẩn | 4,155 | 4,249 | **2,804** | 2,859 | 2,877 | **1,962** |
+  | `tempo_max` | 1,275 | 1,064 | 1,113 | 1,360 | 1,135 | 1,136 |
+  | méo phổ TB (dB) | 0,329 | 0,145 | **1,026** | 0,312 | 0,082 | **0,680** |
+  | câu ép quá 1,20 | 2 | 0 | 0 | 1 | 0 | 0 |
+  | chữ chạy khi hết tiếng (s) | 7,72 | 24,77 | 14,87 | 10,44 | 27,33 | 19,06 |
+
+  **NHANH HƠN BAO NHIÊU — cột chưa ai đo, nay đo rồi: bớt 183,65 s (38,31%)
+  và 176,85 s (39,98%) của BƯỚC ĐỌC.** Chi tiết lt1: 4a đọc 163,02 s · 4b rút
+  gọn 132,74 s · **4c đọc nhanh 183,65 s**; lt2: 205,56 · 59,97 · **176,85**.
+  Tức **4c là bước ĐẮT NHẤT của cả khối đọc** (đắt hơn cả lượt đọc đầu ở lt1)
+  — nó đọc lại 23/35 và 31/50 câu RỒI còn cắt lề im từng file. Suy luận thô
+  ban đầu ("bớt ~40% việc đọc") **đúng**, nhưng đúng vì lý do khác: không phải
+  "bớt 1 trong 2,5 lượt" mà vì lượt bị bỏ chính là lượt nặng nhất.
+  **BẤT NGỜ, VÀ NÓ ĐỔI CÁCH ĐỌC BẢNG:** so với **MẶC ĐỊNH ĐANG CHẠY** (arm
+  CŨ), đường ĐỀU vừa đều hơn (CV −22,2% và −22,7%) vừa **ÉP NHẸ HƠN**
+  (`tempo_max` 1,275 -> 1,113 · 1,360 -> 1,136) vừa nhanh hơn ~39%. Cái nó
+  thua arm CŨ chỉ có MỘT: **méo phổ TB 3,1x và 2,2x** — vì nó ép ÍT nhưng ép
+  NHIỀU CÂU, còn arm CŨ ép NẶNG vài câu. Và video dài ra 19,9% (89,7 -> 107,5
+  s) như mọi đường chỉnh hình.
+  **GIÁ ĐÃ ĐỔI SO VỚI LƯỢT 20/08:** lần đó arm MỚI của lt1 **không** chạm
+  trần (k_can 1,152); lượt này **CẢ BA cột đều CHẠM TRẦN** (arm MỚI cần
+  1,341/1,5009 · arm ĐỀU cần **1,4675/1,5433**, trần vẫn 1,1988). Nguyên nhân
+  là bản dịch của lượt này dài hơn — **LLM không tiền định, đó chính là lý do
+  phải đo GHÉP CẶP**, và cũng là lý do KHÔNG được chép số cũ sang bảng mới.
+  **CHƯA LÀM, GHI THẲNG:** **chưa ai NGHE** (tai anh Hùng vẫn là phán quyết
+  cuối) · mẫu **2 video × 90 s, cùng nguồn Douyin 23,976 fps** — quá nhỏ để
+  nói "luôn nhanh hơn 39%", và nguồn 30/60 fps chưa đo (trần rộng hơn hẳn nên
+  giá sẽ RẺ hơn) · **giây bước đọc phụ thuộc MẠNG** (edge-tts + Groq), máy
+  khác/giờ khác ra số khác — phần ghép cặp chỉ bảo đảm HIỆU hai cột, không
+  bảo đảm số tuyệt đối · chưa đo trên đường ĐÈ GIỌNG (`de_giong=True`).
+  Cổng 89: **75 -> 104 ĐẠT · 0 HỎNG** (mục 9 chạy THẬT `thay_giong_video` để
+  chứng minh 4c chạy **0 lần**, không chỉ "mã có nhánh đó").
+  **BẪY MỚI, ĐÃ SẬP TRONG CHÍNH LƯỢT NÀY — `QApplication` KHÔNG GIỮ THAM
+  CHIẾU LÀM TIẾN TRÌNH CHẾT CỨNG, KHÔNG MỘT DÒNG BÁO.** MỤC 9 bản đầu viết
+  `QApplication.instance() or QApplication([])` mà **không gán vào đâu cả**.
+  `muc5` giữ app trong biến CỤC BỘ nên nó chết khi `muc5` trả về; tới MỤC 9
+  `instance()` ra `None` -> tạo app mới -> Python thu hồi ngay dòng sau ->
+  tiến trình tắt với **0xC0000409 (3221226505)**: KHÔNG traceback, KHÔNG dòng
+  `KETQUA`, và chạy tay `_test_am_va_hinh.py` thì XANH 100 vì lúc đó chưa có
+  mục 9z. Hệ quả: `_pha_khop_video.py` đọc lượt ĐỐI CHỨNG ra *"CỔNG ĐÃ ĐỎ
+  TRƯỚC KHI PHÁ"* và **dừng cả 14 phép** — một lỗi của CỔNG giết cả lượt thử
+  phá. Vá: `_APP` ở MỨC MODULE + hàm `app_qt()`, mọi mục dùng chung. Quy tắc:
+  **cổng nào dựng UI thì QApplication phải sống ở mức module, không phải biến
+  cục bộ của mục đầu tiên chạm tới nó.**
 - **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
   (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
   `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.

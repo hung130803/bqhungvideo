@@ -28,7 +28,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      hinh_theo_giong: bool = False,
                      de_giong: bool = False,
                      muc_nen_db: float = 0.0,
-                     muc_giong_db: float = 0.0) -> str:
+                     muc_giong_db: float = 0.0,
+                     doc_deu: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -69,6 +70,19 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     # KÝ TỰ, không đẻ lượt chạy lại cho 200-300 kênh.
     if hinh_theo_giong:
         sig += ":htg=1"
+        # ĐỌC ĐỀU (bỏ bước 4c "đọc nhanh lại câu tràn khung") ra bộ TIẾNG khác
+        # hẳn — mọi câu giữ tốc độ TỰ NHIÊN, hệ số làm chậm hình cũng khác —
+        # nên BẮT BUỘC vào khoá, không thì đổi ô rồi bấm Chạy là bị smart-skip,
+        # không một dòng báo (lỗi cổng 56e).
+        # **NẰM TRONG NHÁNH `htg`, KHÔNG đứng riêng** — y cách `viet_chu` nằm
+        # trong nhánh `che_chu`: cờ này KHÔNG có tác dụng gì khi chưa chỉnh
+        # hình (chốt `and hinh_theo_giong` trong `thay_giong.thay_giong_video`),
+        # nên để nó đổi khoá lúc đó là đẻ job chạy lại cho một thay đổi KHÔNG
+        # TỒN TẠI — đúng bài học `chuan_muc_mo` của cổng 56e.
+        # NỐI VÀO ĐUÔI CHUỖI, KHÔNG thêm phần tử vào tuple nào: thêm vào tuple
+        # là đổi hash của MỌI clip cũ = 200-300 kênh xuất lại từ đầu.
+        if doc_deu:
+            sig += ":dd=1"
     # ĐÈ GIỌNG (không tách) ra file tiếng KHÁC HẲN (tiếng gốc còn nghe được ở
     # dưới) nên BẮT BUỘC vào khoá — không thì đổi ô rồi bấm Chạy là bị
     # smart-skip, không một dòng báo (đúng lỗi cổng 56e đã sập).
@@ -188,6 +202,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             de_giong: bool = False,
             muc_nen_db: float = 0.0,
             muc_giong_db: float = 0.0,
+            doc_deu: bool = False,
             ) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
@@ -230,6 +245,12 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     # -> payload job cũ không mọc thêm khoá nào.
     if hinh_theo_giong:
         tt["hinh_theo_giong"] = True
+        # ĐỌC ĐỀU chỉ có nghĩa khi ĐANG chỉnh hình (xem `khoa_chong_trung` +
+        # chốt `and hinh_theo_giong` trong `thay_giong_video`), nên nó nằm
+        # TRONG nhánh này — y cách `viet_chu` nằm trong nhánh `che_chu`. Chỉ
+        # ghi khoá khi BẬT -> payload job cũ không mọc thêm khoá nào.
+        if doc_deu:
+            tt["doc_deu"] = True
     # ĐÈ GIỌNG (không tách) — cũng CHỈ ghi khoá khi BẬT, nên payload của job cũ
     # nằm sẵn trong DB không mọc thêm khoá nào và `jobs._thay_giong` đọc bằng
     # `.get` ra `False` = hành vi Y HỆT bản trước.
@@ -256,6 +277,11 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
                                    che_chu_cach, che_chu_muc,
                                    bool(che_chu) and bool(viet_chu),
                                    kieu_chu, bool(hinh_theo_giong),
-                                   bool(de_giong), mn, mg),
+                                   bool(de_giong), mn, mg,
+                                   # `and hinh_theo_giong` KHÔNG lặp ở đây:
+                                   # `khoa_chong_trung` đã lồng `dd` trong
+                                   # nhánh `htg` rồi. Hai chốt là hai chỗ để
+                                   # lệch nhau.
+                                   doc_deu=bool(doc_deu)),
         skip_if_done=False, max_attempts=1,
     )

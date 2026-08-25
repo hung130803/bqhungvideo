@@ -352,6 +352,14 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # tiếng vừa khung câu gốc). Job cũ trong DB KHÔNG mang khoá này ->
             # `False` = ép giọng y hệt bản trước. ĐỘC LẬP với `che_chu`.
             hinh_theo_giong=bool(payload.get("hinh_theo_giong")),
+            # ĐỌC ĐỀU: bỏ hẳn bước 4c "đọc nhanh lại câu tràn khung". Bước đó
+            # đọc lại MỖI CÂU MỘT TỐC ĐỘ KHÁC NHAU (đo: 22/35 và 33/50 câu, tới
+            # +43%/+50%) nên nó chính là chỗ sinh ra "chỗ chậm chỗ nhanh".
+            # Job cũ trong DB KHÔNG mang khoá này -> `False` = y hệt bản trước,
+            # không một video nào trong 200-300 kênh đổi tiếng. Chỉ có tác dụng
+            # khi `hinh_theo_giong` bật — chốt nằm trong `thay_giong_video`,
+            # KHÔNG nhân đôi ở đây (hai chốt là hai chỗ để lệch nhau).
+            doc_deu=bool(payload.get("doc_deu")),
             # ĐÈ GIỌNG, KHÔNG TÁCH: giữ NGUYÊN tiếng gốc làm nền, chỉ hạ xuống
             # rồi đè giọng lồng lên. Job cũ trong DB KHÔNG mang khoá này ->
             # `False` = vẫn tách nhạc y hệt bản trước. ĐỘC LẬP với mọi cờ khác;

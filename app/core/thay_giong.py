@@ -110,6 +110,43 @@ def chuan_cach_tron(cach: str | None) -> str:
     return c if c in CACH_TRON else "tach"
 
 
+#: BA CÁCH KHỚP TIẾNG VỚI HÌNH — `""` là hành vi CŨ và là MẶC ĐỊNH, cùng luật
+#: (và cùng lý do) với `CACH_TRON` ở trên.
+#:   · `""`         ép giọng vừa khung câu gốc (`atempo`/`rubberband`)
+#:   · `"hinh"`     làm CHẬM hình cho vừa giọng, giọng giữ tempo 1,0
+#:   · `"hinh_deu"` như trên + **BỎ bước 4c** `doc_nhanh_vua_khung`, tức mọi
+#:                  câu đọc ở đúng MỘT tốc độ tự nhiên của máy đọc
+KHOP_CACH = ("", "hinh", "hinh_deu")
+
+#: Nhãn tiếng Việt — đặt cạnh mã, cùng lý do `NHAN_CACH_TRON`. Nhãn nêu ĐÁNH
+#: ĐỔI của cả ba, không khoe một bên: ô chọn chỉ khoe cái được thì đó không
+#: phải một lựa chọn có thông tin.
+NHAN_KHOP_CACH = {
+    "": "Ép giọng vừa video (có thể méo tiếng)",
+    "hinh": "Chỉnh video theo giọng (tiếng đều, khuyên dùng)",
+    "hinh_deu": "Chỉnh video + đọc ĐỀU MỘT TỐC ĐỘ (có thể phải ép phần dư)",
+}
+
+
+def chuan_khop_cach(cach: str | None) -> tuple[bool, bool]:
+    """CỬA DUY NHẤT: tên cách khớp -> `(hinh_theo_giong, doc_deu)`.
+
+    Một cửa, vì giá trị này tới từ QSettings (người dùng đổi bản), từ combo
+    trong hộp Thay giọng, và từ tham số hàm. Không nhận ra -> `(False, False)`
+    = **hành vi CŨ**, không phải cách mới: lùi về cái mới là âm thầm đổi tiếng
+    của 200-300 kênh đang chạy sản xuất.
+
+    `doc_deu` KHÔNG BAO GIỜ ra `True` một mình — bỏ bước 4c mà không làm chậm
+    hình thì phần dôi rơi hết xuống `atempo`, ép nặng hơn cả cách cũ. Chốt
+    thứ hai nằm trong `thay_giong_video` (`and hinh_theo_giong`); ở đây là
+    chốt tại CỬA VÀO, để một giá trị lạ không đi được xa hơn dòng này.
+    """
+    c = str(cach or "").strip().lower()
+    if c not in KHOP_CACH:
+        return (False, False)
+    return (c in ("hinh", "hinh_deu"), c == "hinh_deu")
+
+
 #: Lớp GIỮ LẠI (nhạc nền + tiếng động hiện trường) và lớp VỨT ĐI.
 LOP_GIU = ("drums", "bass", "other")
 LOP_BO = "vocals"
@@ -4986,6 +5023,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      che_chu_muc: float = 1.0, viet_chu: bool = True,
                      kieu_chu: Optional[dict] = None,
                      hinh_theo_giong: bool = False,
+                     doc_deu: bool = False,
                      bu_giong_goc_bat: bool = True,
                      de_giong: bool = False,
                      muc_nen_db: float = 0.0,
@@ -5025,6 +5063,32 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
     khung câu gốc. Anh Hùng 18/08/2026: *"giọng cứ lúc nhanh lúc chậm không
     đều — đáng nhẽ chỉ chỉnh video sao cho khớp giọng nói chứ"*. Xem
     `he_so_hinh_can` (cách tính hệ số) và `SAN_NHIP_HINH_FPS` (trần + giá).
+
+    `doc_deu=True` -> **BỎ HẲN BƯỚC 4C `doc_nhanh_vua_khung`**, mọi câu giữ
+    tốc độ TỰ NHIÊN của máy đọc; phần dôi ra để HÌNH gánh. **Chỉ có tác dụng
+    khi `hinh_theo_giong` cũng BẬT** (chốt bằng `and` ngay tại chỗ dùng — bỏ
+    4c mà không làm chậm hình thì phần dôi rơi hết xuống `atempo`, ép nặng hơn
+    cả cách cũ).
+    VÌ SAO CÓ CỜ NÀY — số đo GHÉP CẶP, không phải ý tưởng (`_do_khop_video.py`,
+    2 video THẬT × 90 s của anh Hùng, 25/08/2026): 4c đọc LẠI **23/35** và
+    **31/50** câu bằng `rate` của edge-tts với **mỗi câu một tốc độ khác nhau,
+    tới +37%/+40%** -> chính là chỗ sinh ra *"chỗ chậm chỗ nhanh"*.
+
+    | | lt1 CŨ -> ĐỀU | lt2 CŨ -> ĐỀU |
+    |---|---|---|
+    | GIÂY bước đọc | 479,41 -> **295,76** (−38,31%) | 442,37 -> **265,52** (−39,98%) |
+    | hệ số biến thiên tốc độ đọc % | 20,11 -> **15,64** | 14,08 -> **10,88** |
+    | độ lệch chuẩn | 4,155 -> **2,804** | 2,859 -> **1,962** |
+    | `tempo_max` | 1,275 -> **1,113** | 1,360 -> **1,136** |
+    | méo phổ TB (dB) | 0,329 -> **1,026** | 0,312 -> **0,680** |
+
+    Tức so với MẶC ĐỊNH nó vừa ĐỀU hơn vừa BỚT ÉP; **cái mất là MÉO PHỔ** (ép
+    ÍT hơn nhưng ép NHIỀU CÂU hơn) và video dài ra ~19,9%.
+    **ĐÁNH ĐỔI, nói thẳng:** hệ số làm chậm hình CẦN **1,4675** (lt1) /
+    **1,5433** (lt2) mà trần của nguồn 23,976 fps chỉ **1,199** -> **CHẠM TRẦN
+    ở CẢ HAI video**, phần dư quay lại ép tiếng. Trần mới là chỗ bị chặn, không
+    phải thuật toán. MẶC ĐỊNH TẮT: đổi mặc định là đổi tiếng của MỌI video trên
+    200-300 kênh đang chạy sản xuất, và **chưa ai NGHE bằng tai** file nào.
 
     `viet_chu=True` (mặc định) + `che_chu=True` -> sau khi che dòng chữ cháy
     sẵn thì VIẾT LẠI bản dịch vào đúng dải đó, mốc lấy từ CHÍNH GIỌNG vừa
@@ -5120,13 +5184,35 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         kq["loi_cuoi"] = list(rg["texts"])
 
         # --- bước 4c: đọc NHANH lại câu còn dài (thay cho ép atempo méo tiếng)
-        prog(0.79, "Đọc nhanh lại câu còn dài quá khung...")
-        dn = doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"], tong,
-                                 tam_goc / "docnhanh", dich_sang, tts["voice"],
-                                 moc_tu=rg.get("moc_tu"),
-                                 on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
-        kq["doc_nhanh"] = {k: v for k, v in dn.items()
-                           if k not in ("files", "ok", "can_truoc", "can_sau")}
+        # `doc_deu=True` **BỎ HẲN BƯỚC NÀY** — xem docstring và khối ghi chú ở
+        # `doc_nhanh_vua_khung`. `and hinh_theo_giong` CHỐT TẠI ĐÂY, không bắt
+        # người gọi tự nhớ: bỏ 4c mà KHÔNG làm chậm hình thì mọi câu tràn khung
+        # rơi hết xuống `atempo` -> ép tiếng nặng hơn hẳn cách cũ, tức "chữa"
+        # xong còn tệ hơn lúc chưa chữa. Cùng luật `and not de_giong` ở khối bù
+        # giọng gốc bên dưới.
+        _deu = bool(doc_deu) and bool(hinh_theo_giong)
+        if _deu:
+            # LỜI NHẮN PHẢI CHỨA CỤM "đọc nhanh": `tg_so.buoc_tu_tien_trinh`
+            # tra bước bằng CHUỖI CON, khoá `("đọc nhanh", 7)` cho đúng bước 7
+            # — đang đứng ở đó thật. Bỏ chữ đó đi thì cụm "đọc" khớp trước và
+            # bảng tiến độ tụt 7 -> 5 = THANH TIẾN ĐỘ CHẠY NGƯỢC (xem khối ghi
+            # chú ở bước bù giọng gốc, đúng bẫy này đã sập một lần).
+            prog(0.79, "Giữ tốc độ TỰ NHIÊN — không đọc nhanh lại câu nào...")
+            dn = {"files": list(rg["files"]), "ok": list(rg["ok"]),
+                  "moc_tu": rg.get("moc_tu"), "so_doc_lai": 0, "rate_max": 0}
+            kq["doc_nhanh"] = {
+                "bo_qua": True, "so_doc_lai": 0, "rate_max": 0,
+                "vi_sao": "đọc đều — bỏ bước đọc nhanh, mọi câu giữ tốc độ "
+                          "TỰ NHIÊN của máy đọc, phần dôi để hình gánh"}
+        else:
+            prog(0.79, "Đọc nhanh lại câu còn dài quá khung...")
+            dn = doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"],
+                                     tong, tam_goc / "docnhanh", dich_sang,
+                                     tts["voice"], moc_tu=rg.get("moc_tu"),
+                                     on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
+            kq["doc_nhanh"] = {k: v for k, v in dn.items()
+                               if k not in ("files", "ok", "can_truoc",
+                                            "can_sau")}
 
         # --- bước 5: khớp thời gian
         prog(0.80, "Khớp thời gian...")
@@ -5134,7 +5220,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # Tính TRƯỚC khi khớp, vì `khop_thoi_gian` cần nó để đặt mốc. Trần lấy
         # theo fps THẬT của nguồn (nguồn 23,976 fps chừa rất ít chỗ).
         hs = 1.0
-        kq["hinh"] = {"bat": bool(hinh_theo_giong)}
+        kq["hinh"] = {"bat": bool(hinh_theo_giong), "doc_deu": bool(_deu)}
         if hinh_theo_giong:
             _c = he_so_hinh_can(cau, dn["files"], dn["ok"], tong)
             _fps = do_fps(video_in)
@@ -5380,6 +5466,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          che_chu_muc: float = 1.0, viet_chu: bool = True,
                          kieu_chu: Optional[dict] = None,
                          hinh_theo_giong: bool = False,
+                         doc_deu: bool = False,
                          bu_giong_goc_bat: bool = True,
                          de_giong: bool = False,
                          muc_nen_db: float = 0.0,
@@ -5409,6 +5496,12 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # và **MỌI job thay giọng đều LỖI**. Cổng 55 bắt được
                          # đúng thế: 2/2 job `failed`.
                          hinh_theo_giong=hinh_theo_giong,
+                         # ĐỌC ĐỀU (bỏ bước 4c) — CÙNG LUẬT, cùng cái bẫy: cửa
+                         # này là cửa DUY NHẤT job handler đi qua, quên chuyền
+                         # là ô trong hộp Thay giọng bấm xong KHÔNG LÀM GÌ CẢ
+                         # mà không một dòng báo (bài học "hàm xong ≠ tính năng
+                         # xong" — đã 4 lần module lõi nằm chết không ai gọi).
+                         doc_deu=doc_deu,
                          bu_giong_goc_bat=bu_giong_goc_bat,
                          # CỜ THỨ BA CŨNG PHẢI CHUYỀN QUA — cùng lý do hai cờ
                          # trên: `jobs._thay_giong` gọi CỬA NÀY chứ không gọi

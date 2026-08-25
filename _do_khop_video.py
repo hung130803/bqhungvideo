@@ -263,17 +263,42 @@ def mot_video(ten: str, giay: float) -> dict:
     print(f"  {k['tong']:.2f}s · {len(k['cau'])} câu · {goc_ma} -> {DICH_SANG}")
 
     # ===== PHẦN DÙNG CHUNG — chạy ĐÚNG MỘT LƯỢT =====
+    # **BẤM GIỜ TỪNG BƯỚC ĐỌC** — đây là cột anh Hùng kêu ("tốc độ làm lồng
+    # tiếng cực kỳ chậm") và nó ghép cặp THEO CẤU TẠO: cả ba arm dùng CHUNG
+    # bước 4a/4b, arm MỚI-3 (bản vá `doc_deu`) chỉ khác ở chỗ **không chạy 4c**.
+    # Nên "nhanh hơn bao nhiêu" = ĐÚNG BẰNG giây của 4c đo trong CHÍNH lượt
+    # này, không phải hiệu hai lượt chạy rời (LLM không tiền định — CLAUDE.md
+    # ghi hai lượt cùng mã lệch 1,81 lần).
     t0 = time.time()
     dd = tg.dich_hau_kiem(k["cau"], DICH_SANG, goc_ma)
+    g_dich = time.time() - t0
+
+    t0 = time.time()
     tts = tg.doc_ban_dich(dd["ban_dich"], lam / "tts", "", DICH_SANG)
+    g_4a = time.time() - t0
+
+    t0 = time.time()
     rg = tg.rut_gon_vua_khung(k["cau"], dd["ban_dich"], tts, k["tong"],
                               lam / "rutgon", DICH_SANG, tts["voice"])
+    g_4b = time.time() - t0
+
+    t0 = time.time()
     dn = tg.doc_nhanh_vua_khung(k["cau"], rg["texts"], rg["files"], rg["ok"],
                                 k["tong"], lam / "docnhanh", DICH_SANG,
                                 tts["voice"], moc_tu=rg.get("moc_tu"))
-    print(f"  dùng chung xong ({time.time() - t0:.1f}s): giọng {tts['voice']}"
+    g_4c = time.time() - t0
+
+    g_doc_cu = g_4a + g_4b + g_4c            # arm CŨ và arm MỚI
+    g_doc_deu = g_4a + g_4b                  # arm MỚI-3 (bỏ 4c)
+    print(f"  dùng chung xong: giọng {tts['voice']}"
           f" · rút gọn {rg['so_sua']} câu · đọc nhanh lại {dn['so_doc_lai']}"
           f" câu (rate max +{dn['rate_max']}%)")
+    pt = (100.0 * g_4c / g_doc_cu) if g_doc_cu > 0 else 0.0
+    print(f"  GIÂY BƯỚC ĐỌC: 4a đọc {g_4a:.1f}s · 4b rút gọn {g_4b:.1f}s · "
+          f"4c đọc nhanh {g_4c:.1f}s")
+    print(f"    -> CŨ {g_doc_cu:.1f}s  vs  ĐỀU {g_doc_deu:.1f}s  =  "
+          f"BỚT {g_4c:.1f}s ({pt:.1f}%)")
+    print(f"  (dịch: {g_dich:.1f}s — CHUNG cả ba arm, không đổi)")
 
     # SÀN ĐỐI CHỨNG: trải tốc độ đọc VỐN CÓ của máy đọc, trên file TTS THÔ.
     # Hai arm dùng CHUNG bộ file này nên phần trải vượt trên sàn mới là phần
@@ -316,6 +341,12 @@ def mot_video(ten: str, giay: float) -> dict:
     # Arm này khớp hình với bộ file TRƯỚC 4c (`rg["files"]` = tốc độ TỰ NHIÊN
     # của máy đọc). Nếu trải TỤT thật thì đó mới là bản chữa đúng bệnh anh
     # Hùng nghe ra; nếu không thì giả thuyết SAI và phải nói ra.
+    #
+    # **DÒNG DƯỚI PHẢI GIỐNG NHÁNH `_deu` TRONG `thay_giong_video`.** Bản vá
+    # `doc_deu=True` dựng đúng dict này (`files`/`ok`/`moc_tu` lấy thẳng từ
+    # `rg`) thay cho lời gọi 4c — nên arm MỚI-3 ở đây ĐO ĐÚNG đường mã anh
+    # Hùng sẽ chạy khi chọn mục thứ ba. Ai đổi một bên phải đổi cả bên kia;
+    # cổng 89 mục 9o canh phía app (bước 4c chạy 0 lần).
     dn3 = {"files": rg["files"], "ok": rg["ok"], "moc_tu": rg.get("moc_tu")}
     _c3 = tg.he_so_hinh_can(k["cau"], rg["files"], rg["ok"], k["tong"])
     hs3 = max(1.0, min(float(_c3["k_can"]), tran))
@@ -336,6 +367,15 @@ def mot_video(ten: str, giay: float) -> dict:
 
     return {"ten": ten, "do_dai": round(k["tong"], 2),
             "moi3": moi3,
+            # ---- GIÂY BƯỚC ĐỌC (ghép cặp trong CHÍNH lượt này) ----
+            "giay_dich": round(g_dich, 2),
+            "giay_4a_doc": round(g_4a, 2),
+            "giay_4b_rutgon": round(g_4b, 2),
+            "giay_4c_docnhanh": round(g_4c, 2),
+            "giay_doc_cu": round(g_doc_cu, 2),
+            "giay_doc_deu": round(g_doc_deu, 2),
+            "giay_bot": round(g_4c, 2),
+            "phan_tram_bot": round(pt, 2),
             "k_can_bo_4c": _c3["k_can"], "k_dung_bo_4c": round(hs3, 4),
             "cham_tran_bo_4c": float(_c3["k_can"]) > tran + 1e-6,
             "so_cau_doc_nhanh": dn.get("so_doc_lai"),
@@ -392,6 +432,18 @@ def in_bang(r: dict) -> None:
             v = d.get(khoa)
             vs.append(dang.format(v) if v is not None else "?")
         print(f"| {nhan:<48} | {vs[0]:>18} | {vs[1]:>20} | {vs[2]:>19} |")
+    # ---- CỘT ANH HÙNG KÊU: "tốc độ làm lồng tiếng cực kỳ chậm" ----
+    # Ghép cặp theo CẤU TẠO: 4a/4b dùng chung, arm MỚI-3 chỉ bớt đúng 4c.
+    print(f"\n  GIÂY BƯỚC ĐỌC (ghép cặp trong CÙNG lượt chạy):")
+    print(f"    4a đọc bản dịch      {r.get('giay_4a_doc'):>8.2f} s   (cả 3 arm)")
+    print(f"    4b rút gọn câu dài   {r.get('giay_4b_rutgon'):>8.2f} s   "
+          f"(cả 3 arm)")
+    print(f"    4c đọc nhanh lại     {r.get('giay_4c_docnhanh'):>8.2f} s   "
+          f"(CŨ + MỚI có · MỚI-3 BỎ)")
+    print(f"    -> TỔNG bước đọc:  CŨ/MỚI {r.get('giay_doc_cu'):.2f} s  vs  "
+          f"MỚI-3 {r.get('giay_doc_deu'):.2f} s  =  "
+          f"BỚT {r.get('giay_bot'):.2f} s ({r.get('phan_tram_bot'):.2f}%)")
+    print(f"    (dịch {r.get('giay_dich'):.2f} s — CHUNG cả 3 arm, không đổi)")
     print(f"\n  SÀN ĐỐI CHỨNG (TTS thô SAU 4c — arm CŨ và MỚI dùng chung): "
           f"{r['san_kytu_giay_tb']:.2f} ký tự/giây · "
           f"SD {r['san_kytu_giay_sd']:.3f} · CV {r['san_kytu_giay_cv']:.2f}%")
