@@ -371,12 +371,150 @@ def _slug(ten: str) -> str:
 
     Bỏ dấu chứ KHÔNG bỏ chữ: tên file mà rỗng thì hai giọng khác nhau ghi đè
     nhau. Rỗng -> dùng mốc thời gian.
+
+    **``_slug`` MỘT MÌNH KHÔNG ĐỦ ĐỂ ĐẶT TÊN FILE MẪU** — nó cố ý ÁNH XẠ NHIỀU
+    THÀNH MỘT (bỏ dấu + gộp mọi ký tự lạ thành ``_``), nên *"Giọng chị Lan"* và
+    *"giọng chị lan"* ra CÙNG một chuỗi. Chỗ đặt tên file phải đi qua
+    ``_ten_mau_trong`` — xem lý do ở đó.
     """
     s = unicodedata.normalize("NFD", str(ten or ""))
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
     s = s.replace("đ", "d").replace("Đ", "D")
     s = re.sub(r"[^0-9A-Za-z]+", "_", s).strip("_").lower()
     return s or f"giong_{int(time.time())}"
+
+
+def _khoa_mau(mau) -> str:
+    """Khoá so sánh hai đường dẫn mẫu. Rỗng -> ``""`` (KHÔNG so được).
+
+    So bằng chữ THƯỜNG vì Windows không phân biệt hoa/thường: cùng một file mà
+    sổ ghi hai kiểu chữ thì vẫn là DÙNG CHUNG, và bỏ sót ca đó là để lọt đúng
+    cái mã trùng đang đi chữa.
+    """
+    return str(mau or "").strip().lower()
+
+
+def _ten_mau_trong(ten: str, so: dict, bo_qua: str = "") -> Path:
+    """Đường dẫn file mẫu **RIÊNG** cho một bản ghi: chưa ai giữ, chưa có trên đĩa.
+
+    ═══ ĐÂY LÀ CHỐT GIỮ CHO MÃ GIỌNG KHÔNG TRÙNG — ĐỌC TRƯỚC KHI SỬA ═══
+    Mã giọng nhân bản là ``vnb:<đường dẫn mẫu>`` (``giong_vieneu.ma_nhan_ban``),
+    tức **đường dẫn mẫu CHÍNH LÀ danh tính** của giọng. Suy ra một bất biến bắt
+    buộc: **mỗi bản ghi trong sổ phải SỞ HỮU RIÊNG một file mẫu**. Hai bản ghi
+    dùng chung một file là hai cái tên khác nhau ra MỘT mã — anh Hùng chọn
+    *"Giọng chị Lan"* thì app đọc bằng *"Giọng của tôi"*, **không một dòng báo**.
+    Đúng họ lỗi "chọn X ra Y" đã sập bốn lần (``ov:nu_am`` · ``vn:`` · ``cb:`` ·
+    ``kk:``).
+
+    Bản cũ đặt thẳng ``f"{_slug(ten)}.wav"``, và ĐO ĐƯỢC nó hỏng theo hai đường:
+      · ``_slug`` ánh xạ NHIỀU-THÀNH-MỘT nên *"Giọng chị Lan"* và *"giọng chị
+        lan"* ra cùng tên file, trong khi ``them_giong`` chỉ chặn TRÙNG TÊN
+        nguyên văn -> lượt thêm thứ hai lọt cửa;
+      · ffmpeg chạy với ``-y`` nên nó **GHI ĐÈ** file mẫu của bản ghi trước ->
+        không chỉ trùng mã mà **mẫu của giọng cũ MẤT HẲN**, giọng cũ nay đọc
+        bằng tiếng của giọng mới.
+
+    Nên hàm này hỏi ĐỦ HAI CÂU trước khi trả về một cái tên:
+      1. **có bản ghi nào đang giữ tên đó không** (đọc trong sổ) — chốt chống
+         trùng mã;
+      2. **trên đĩa đã có file đó chưa** — chốt chống ghi đè. File mồ côi (sổ
+         không ai nhận, ví dụ ``xoa(xoa_ca_mau=False)`` để lại) vẫn phải được
+         chừa ra: nó có thể là mẫu anh Hùng còn cần.
+
+    ``bo_qua`` = tên bản ghi ĐANG được cấp lại tên (nó không tự chặn mình).
+    """
+    d = thu_muc_mau()
+    giu = {_khoa_mau(_muc(so, t).get("mau"))
+           for t in (so or {}) if t != bo_qua}
+    giu.discard("")
+    goc = _slug(ten)
+    for i in range(1, 500):
+        p = d / (f"{goc}.wav" if i == 1 else f"{goc}_{i}.wav")
+        if _khoa_mau(p) in giu or p.exists():
+            continue
+        return p
+    # Không bao giờ tới đây với người dùng thật; vẫn phải trả một tên DÙNG
+    # ĐƯỢC chứ không ném — một cái tên xấu còn hơn chết cả lượt thêm giọng.
+    return d / f"{goc}_{int(time.time() * 1000)}.wav"
+
+
+def _nhom_mau_trung(so: dict) -> dict[str, list[str]]:
+    """``{khoá mẫu -> [tên bản ghi]}`` cho những file mẫu bị **DÙNG CHUNG**.
+
+    Chỉ trả nhóm từ 2 bản ghi trở lên; sổ lành thì trả ``{}``. Tên trong mỗi
+    nhóm **sắp theo thứ tự chữ** — thứ tự đó quyết định ai GIỮ đường dẫn cũ nên
+    nó phải TIỀN ĐỊNH, không được phụ thuộc thứ tự khoá trong file JSON.
+    """
+    theo: dict[str, list[str]] = {}
+    for t in sorted(so or {}):
+        k = _khoa_mau(_muc(so, t).get("mau"))
+        if k:
+            theo.setdefault(k, []).append(t)
+    return {k: v for k, v in theo.items() if len(v) > 1}
+
+
+def sua_mau_trung(so: dict | None = None) -> list[tuple[str, str]]:
+    """Sổ đã có sẵn hai bản ghi trỏ chung một mẫu -> cho mỗi bản ghi một **BẢN
+    SAO RIÊNG**. Trả ``[(tên, đường mẫu mới)]``. **KHÔNG BAO GIỜ NÉM.**
+
+    ═══ VÌ SAO PHẢI CHỮA CẢ SỔ CŨ, KHÔNG CHỈ CHẶN LƯỢT THÊM MỚI ═══
+    ``_ten_mau_trong`` chặn được mọi giọng thêm TỪ NAY. Nhưng sổ đã nằm trên đĩa
+    máy anh Hùng thì không tự lành: hai bản ghi vẫn ra một mã, combo vẫn nuốt
+    mất một dòng, và ``ten_theo_ma`` vẫn trả về cái tên ĐỨNG TRƯỚC chứ không
+    phải cái người dùng chọn.
+
+    ═══ VÌ SAO **CHÉP** CHỨ KHÔNG ĐỔI TÊN / KHÔNG XOÁ ═══
+    File trong ``_mau_giong`` là mẫu giọng THẬT của anh Hùng. Đổi tên nó là làm
+    hỏng mã của bản ghi đang giữ nó (kênh đang gán tra không ra -> rơi về giọng
+    mặc định, im lặng). Nên: **bản ghi ĐẦU TIÊN theo thứ tự chữ GIỮ NGUYÊN
+    đường dẫn cũ** — mã của nó không đổi một ký tự, tức mọi kênh đang gán mã ấy
+    chạy y như hôm nay; những bản ghi còn lại nhận một BẢN SAO. Không file nào
+    bị xoá, không file nào bị sửa.
+
+    Hệ quả phải nói thẳng: nhóm có N bản ghi thì **N−1 bản ghi đổi mã**. Không
+    tránh được — N cái tên đang chia nhau MỘT mã thì nhiều nhất một cái giữ
+    được. Đổi lại, cái giữ mã là cái mà ``ten_theo_ma`` VẪN ĐANG trả về hôm nay
+    (cùng phép ``sorted``), nên **không kênh nào đổi hành vi**: kênh nào đang
+    đọc ra giọng gì thì sau lượt chữa vẫn đọc ra đúng giọng đó.
+
+    Mẫu dùng chung mà **đã mất trên đĩa** -> BỎ QUA: lúc đó ``ma_giong`` trả
+    ``""`` cho cả nhóm nên không có mã trùng nào lọt ra combo, và việc báo mẫu
+    mất là của ``sua_mau_mat()``. Chép một file không tồn tại thì được gì.
+    """
+    try:
+        if not _nhom_mau_trung(_doc_so() if so is None else so):
+            return []
+        # Sắp GHI -> đọc lại bản mới nhất, đừng ghi đè bằng ảnh chụp của caller.
+        so = _doc_so()
+        nhom = _nhom_mau_trung(so)
+        if not nhom:
+            return []
+        da: list[tuple[str, str]] = []
+        for _k, tens in sorted(nhom.items()):
+            goc = Path(str(_muc(so, tens[0]).get("mau") or ""))
+            if not goc.is_file():
+                continue
+            for t in tens[1:]:
+                moi = _ten_mau_trong(t, so, bo_qua=t)
+                try:
+                    moi.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(goc, moi)
+                except Exception:                              # noqa: BLE001
+                    continue                   # chép không được -> để nguyên
+                g = dict(_muc(so, t))
+                g["mau"] = str(moi)
+                so[t] = g
+                da.append((t, str(moi)))
+        # `_ghi_so` tự sao lưu sổ đọc-không-ra trước khi thay file.
+        if not da or not _ghi_so(so):
+            return []
+        for t, m in da:
+            _ghi_log(f"Giọng «{t}» dùng CHUNG file mẫu với một giọng khác nên "
+                     f"hai giọng ra CÙNG một mã -> đã chép riêng sang "
+                     f"{Path(m).name}. File mẫu cũ GIỮ NGUYÊN, không xoá.")
+        return da
+    except Exception:                                          # noqa: BLE001
+        return []
 
 
 def goi_y_may(lang: str = "vi") -> str:
@@ -663,7 +801,10 @@ def them_giong(ten: str, duong_mau_goc: str, lang: str = "vi",
     try:
         d = thu_muc_mau()
         d.mkdir(parents=True, exist_ok=True)
-        dich = d / f"{_slug(ten)}.wav"
+        # MỘT BẢN GHI = MỘT FILE MẪU RIÊNG. Đặt thẳng `f"{_slug(ten)}.wav"` thì
+        # hai tên khác nhau có thể ra cùng tên file -> ffmpeg `-y` ghi đè mẫu
+        # của giọng cũ VÀ hai giọng ra cùng một mã. Xem `_ten_mau_trong`.
+        dich = _ten_mau_trong(ten, so)
         # 24 kHz mono: đúng tần số cả hai máy nhân bản dùng, nên không phải
         # đổi lại lúc đọc. KHÔNG chép nguyên file gốc — mp3/m4a/video đều có
         # thể là mẫu, mà hai máy chỉ nhận wav.
@@ -702,6 +843,13 @@ def danh_sach(chi_chay_duoc: bool = False) -> list[tuple[str, str]]:
     """
     ra: list[tuple[str, str]] = []
     so = _doc_so()
+    # SỔ CŨ CÓ THỂ ĐANG VI PHẠM BẤT BIẾN "một bản ghi = một file mẫu" (sổ chép
+    # tay, sổ do bản app trước ghi đè mẫu). Chữa NGAY TẠI ĐÂY vì đây đúng là
+    # chỗ mã trùng gây hại: combo nuốt mất một dòng, và mã ấy tra ngược ra SAI
+    # TÊN. Sổ lành thì `sua_mau_trung` chỉ là một phép so tập hợp rồi trả `[]`
+    # — KHÔNG đọc thêm đĩa, KHÔNG ghi gì, nên đường vẽ combo không chậm đi.
+    if sua_mau_trung(so):
+        so = _doc_so()                       # vừa chữa -> đọc lại bản đã sửa
     for ten in sorted(so):
         # `_muc` chứ không `so[ten]`: MỘT mục hỏng không được phép giết cả
         # danh sách (xem `_muc`). Mục hỏng thì `ma_giong` trả "" -> bỏ qua.
@@ -819,7 +967,16 @@ def xoa(ten: str, xoa_ca_mau: bool = True) -> bool:
         try:
             from app.core.xoa_an_toan import an_toan_de_xoa
             p = Path(mau)
-            if not an_toan_de_xoa(p, trong=thu_muc_mau()):
+            # `so` đã bỏ `ten` ở trên, nên vòng này chỉ hỏi NHỮNG BẢN GHI CÒN
+            # LẠI. Sổ cũ có thể còn ca hai bản ghi dùng chung một mẫu (xem
+            # `sua_mau_trung`); xoá file lúc đó là bản ghi kia MẤT MẪU, biến
+            # khỏi combo mà không một dòng báo — đo được ở `_do_ma_trung.py`.
+            con_dung = [t for t in so
+                        if _khoa_mau(_muc(so, t).get("mau")) == _khoa_mau(mau)]
+            if con_dung:
+                _ghi_log(f"GIỮ file mẫu {p.name!r} — giọng {con_dung} vẫn đang "
+                         f"dùng chung nó (giọng «{ten}» đã khỏi sổ)")
+            elif not an_toan_de_xoa(p, trong=thu_muc_mau()):
                 _ghi_log(f"TỪ CHỐI xoá mẫu {mau!r} — nằm ngoài "
                          f"{thu_muc_mau()} (giọng «{ten}» vẫn đã khỏi sổ)")
             elif p.is_file():
