@@ -264,7 +264,11 @@ CONG = [
     # 66 -> 104 (20/08/2026): thêm CA 12 — NÚT TẢI PHẦN NHÂN BẢN (torch +
     # torchaudio vào venv VieNeu). NÂNG mốc, không hạ: mốc là SÀN, hạ nó cho
     # cổng xanh là bỏ cổng.
-    ("88 giọng của tôi",    "_test_giong_toi.py",       170),
+    # 170 -> 233 (26/08/2026): CA 16 + CA 17 canh việc APP TỰ DỜI môi trường
+    # VieNeu ra khỏi `%TEMP%`. Để mốc cũ thì 63 mục mới KHÔNG được sàn nào
+    # canh — bộ so chỉ kêu khi `ĐẠT < mốc`, nên mốc lạc hậu là cổng câm một
+    # nửa (đúng bệnh chính file này đã ghi ở dòng 111-112).
+    ("88 giọng của tôi",    "_test_giong_toi.py",       233),
     # Cổng 89 — CHỈNH VIDEO THEO GIỌNG (`he_so_hinh`) + độ to bản trộn + hộp
     # Thay giọng gọn. Số **89** lấy bằng cách đọc chính `CONG` này (max đang là
     # 88), KHÔNG đếm theo trí nhớ.
@@ -325,6 +329,15 @@ CONG = [
     # Thử phá `_pha_nhip_doc.py`: 11 phép, mỗi phép gỡ ĐÚNG một chốt ->
     # **BẮT 11 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
     ("90 nhịp lúc đang đọc", "_test_nhip_doc.py",         65),
+    #
+    # CỔNG 91 — nhân bản giọng ĐA NGÔN NGỮ (Chatterbox) đã nối vào hộp
+    # «Giọng của tôi», và BỐN CHỐT của bộ đó đều có răng: đọc loạn nhịp (CA 3)
+    # · BẮT BUỘC GPU (CA 4) · ĐÓNG DẤU CHÌM (CA 5) · KHÔNG có tiếng Việt nên
+    # nó BỔ SUNG VieNeu chứ không thay (CA 1).
+    # Không mạng · không nạp model · không đốt GPU · không tốn lượt Groq —
+    # hàm thuần + ffmpeg THẬT trên WAV `lavfi` tự sinh. Thử phá
+    # `_pha_da_ngu.py`: 14 phép, mỗi phép gỡ ĐÚNG một chốt.
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 76),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
