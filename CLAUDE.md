@@ -3081,10 +3081,101 @@
   *"MẪU kéo nhịp đọc"* — cùng câu, hai mẫu ra 1,03x và 1,32x), nên số này đi
   theo mẫu; **2 lượt** đủ để nói "KHÔNG ĐỀU", **không đủ** để nói tỉ lệ hỏng;
   **chưa đo mẫu THẬT của anh Hùng** (`adam_clone.wav` bị ranh giới pháp lý
-  chặn); và **chưa thử phép chữa đáng làm nhất** — dò câu lan man rồi **ĐỌC
-  LẠI** (`giong_chatter.nghi_doc_lan` đã có khuôn, `giong_vieneu` chưa có).
-  Vì cái hỏng là NGẪU NHIÊN nên đọc lại có cơ sở ăn — nhưng chưa đo thì chưa
-  được nối. Cổng **91: 105 -> 131 · HỎNG 0**, thử phá **BẮT 8/8**.
+  chặn); và ~~**chưa thử phép chữa đáng làm nhất** — dò câu lan man rồi **ĐỌC
+  LẠI**~~ — **ĐÃ LÀM 26/08/2026, xem mục ngay dưới.**
+  Cổng **91: 105 -> 131 · HỎNG 0**, thử phá **BẮT 8/8**.
+- **DÒ CÂU LAN MAN RỒI ĐỌC LẠI — ĐÃ NỐI, MẶC ĐỊNH BẬT (26/08/2026,
+  `app/core/doc_lan.py` · cổng 92).** Trả nốt món nợ mục trên. Vì cái hỏng của
+  `vnb:` là **NGẪU NHIÊN theo lượt** (cùng mã cùng mẫu: WER 3,1% vs 12,7%) nên
+  đọc lại là hướng DUY NHẤT còn cơ sở — mọi hướng đã bị bác đều cố sửa một thứ
+  hỏng TIỀN ĐỊNH.
+  **MỘT BỘ DÒ, KHÔNG PHẢI HAI.** Phép tính nằm ở `doc_lan.lan_vuot`;
+  `giong_chatter.nghi_doc_lan` nay GỌI vào đó (số của nó **không đổi**:
+  `("Okay.", 7.15)` vẫn ra **8,58**, bất biến cổng 91). Khác nhau chỉ là CHÍNH
+  SÁCH: chatter dùng **hằng số** và chỉ soi câu ngắn; VieNeu **khớp mốc từ
+  chính loạt đang đọc** và soi mọi câu.
+  **HÌNH DẠNG MỐC PHẢI LÀ `a + b*n`, KHÔNG PHẢI `n × (giây/ký tự)` — bản đầu
+  của tôi dùng cách sau và nó HỎNG ở đúng chỗ quan trọng nhất.** Mục NGẮN có
+  **phí cố định** (lấy hơi, im hai đầu) nên giây/ký tự của chúng cao gấp mấy
+  lần mục dài -> bộ dò kêu oan **22-24/58 mục của arm TRẦN edge-tts**, tức kêu
+  trên giọng bản ngữ đọc ĐÚNG. Đổi sang `a + b*n` khớp bằng **Theil-Sen**
+  (trung vị hệ số góc mọi cặp — KHÔNG phải bình phương tối thiểu, vì chính câu
+  lan man là điểm ngoại lai và BPTT thì bị nó kéo, tức bộ dò tự vô hiệu hoá
+  mình; đo trên cùng bộ số: **Theil-Sen lệch 0,0% · BPTT lệch 23%**):
+
+  | bộ dò | BẮT/bịa | KÊU OAN/lành | **TRẦN edge kêu oan** |
+  |---|---|---|---|
+  | `n × trung vị gc` | 23/25 | 15/91 (16%) | **22/58** |
+  | **`a + b*n`** | 18/25 | **2/91 (2,2%)** | **0/58** |
+
+  **NGƯỠNG 1,5 CHỌN THEO CỘT TRẦN, KHÔNG PHẢI SỐ ĐẸP:** đó là chỗ **thấp nhất
+  mà arm TRẦN không kêu một lần nào** (hạ 0,1 là trần kêu 1/58; nâng lên 2,0
+  thì bỏ sót thêm mà không mua lại được gì). Mốc nhịp đo được lệch nhau rất
+  xa giữa các loạt — `1,561+0,0328n` · `2,028+0,0261n` (VieNeu hai lượt) ·
+  `0,899+0,0470n` (Chatterbox) · `1,860+0,0405n` (edge) — nên **ghim hằng số
+  vào là sai theo cấu tạo**, đúng cái `giong_chatter` đã đo (*"MẪU kéo nhịp
+  đọc"*).
+  **HAI NHÓM **CHỒNG NHAU** — NÓI THẲNG, KHÔNG GIẢ VỜ CÓ ĐƯỜNG KẺ SẠCH.** Riêng
+  trên CÂU (thứ lượt xuất thật sự đọc) chỉ có **2 câu bịa / 68**, `lan` **1,90
+  và 2,32**, câu lành cao nhất **1,86** — khe hở **0,04** thì đó là TRÙNG HỢP,
+  không phải ngưỡng (bài học `ty_giu`: 1 điểm dữ liệu thì KHÔNG đặt ngưỡng).
+  Lưới an toàn thật nằm chỗ khác: **chỉ NHẬN bản đọc lại khi nó THẬT SỰ đỡ hơn**
+  -> kêu oan chỉ tốn thời gian, không đổi được tiếng.
+  **KIỂU HỎNG TRÊN CÂU LÀ "ĐỌC ĐÚNG RỒI NÓI TIẾP"**, không phải đọc sai:
+  «The GDP of the whole country grew quite strongly.» -> đọc đúng, rồi thêm
+  *"I would just add on there, the GDP of the whole country grew quite
+  strongly."* Cả **9,7% bịa** của lượt xấu dồn vào **ĐÚNG 2 câu / 34**.
+  **SỰ THẬT ĐỐI CHỨNG CẦN ASR, NÊN NÓ KHÔNG PHẢI LÀ BỘ DÒ.** `_has_cjk` + lặp
+  cụm + đếm từ chèn chỉ dùng lúc HIỆU CHUẨN (`_do_vnb_lan.py`); thứ chạy lúc
+  sản xuất là tín hiệu **MIỄN PHÍ** — độ dài WAV máy đọc đã trả về sẵn.
+  **ĐO GHÉP CẶP, HAI ARM DÙNG CHUNG LƯỢT ĐỌC ĐẦU TỪNG BYTE** (bọc
+  `_chay_vieneu` rồi CẤT lượt gọi đầy đủ đầu tiên; lượt đọc LẠI mang bộ chữ
+  khác nên không bao giờ trúng kho):
+
+  | vòng | arm | BẮT | đọc lại | NHẬN | bịa % | WER % | +giây |
+  |---|---|---|---|---|---|---|---|
+  | 1 | TẮT | 1 | 0 | 0 | 3,8 | 6,3 | +0,0 |
+  | 1 | **BẬT** | 1 | 2 | 1 | **0,6** | **3,4** | **+15,5** |
+  | 2 | TẮT | 1 | 0 | 0 | 0,9 | 4,3 | +0,0 |
+  | 2 | **BẬT** | 1 | 1 | 1 | **0,6** | **3,7** | **+14,8** |
+
+  **GIÁ: +15,5 s và +14,8 s trên nền 288 s / 248 s = +5,4% / +6,0%** bước đọc.
+  Loạt LÀNH thì giá đúng bằng **0** (0 lượt gọi máy đọc thêm). **CHỐT
+  CHỐNG-ĐẠT-OAN:** arm TẮT **vẫn DÒ** (chỉ không đọc lại) và ra 1 câu bắt mỗi
+  vòng -> thước CÓ RĂNG.
+  **MẶT XẤU, GHI THẲNG:** vòng 2 token sai TRONG CÂU đi **5,1% -> 7,7%** (39
+  token = đúng MỘT token) — bản đọc lại chữa được đoạn lan man nhưng đọc sai
+  một chữ bản cũ đọc đúng. Có lãi, nhưng không phải bữa trưa miễn phí.
+  **BA CHỐT:** không bao giờ BỎ CÂU (hết trần thì GIỮ bản đang có + ghi log) ·
+  chỉ NHẬN khi đỡ hơn quá BIÊN (khuôn `rut_gon_vua_khung`) · lượt chấm lại
+  **dùng MỐC của loạt gốc**, cấm khớp lại trên chính nhóm nghi ngờ (khớp trên
+  3 câu vừa bị bắt thì bản mới luôn trông "bình thường").
+  **KHÔNG ĐỤNG `dedup_key`, VÀ ĐÓ LÀ BẢO ĐẢM DO CẤU TẠO:** cờ nằm gọn trong
+  `giong_vieneu`, KHÔNG đi qua payload job nên `khoa_chong_trung` **không thể**
+  đổi — cố ý KHÔNG làm ô cho user tự bật, vì làm thế là phải nối cờ xuống
+  `tg_chay` tức tự tay mở đúng cái cửa đang được đóng. `BQ_VN_DOC_LAI=0` để tắt.
+  **GIỚI HẠN ĐO ĐƯỢC (không giấu):** mốc khớp bằng TRUNG VỊ nên **quá nửa loạt
+  cùng hỏng một kiểu** thì chính nhóm hỏng thành "bình thường" — đo: 20/30 câu
+  hỏng chỉ bắt **9**. Đánh đổi CỐ Ý (thà bỏ sót còn hơn đọc lại cả video), cổng
+  92 mục 4e'' giữ đúng con số đó để người sau đừng tưởng bộ dò hỏng.
+  **Cổng 92 `_test_doc_lan.py`: ĐẠT 48 · HỎNG 0** (KHÔNG mạng · KHÔNG Groq ·
+  KHÔNG GPU · KHÔNG ffmpeg — máy đọc là hàm giả sinh WAV theo nhịp biết trước,
+  nên tiền định). Thử phá `_pha_doc_lan.py`: **BẮT 10 · LỌT 0 · KHÔNG PHÁ ĐƯỢC
+  0**.
+  **BẪY CỦA CHÍNH SCRIPT THỬ PHÁ, SẬP NGAY LƯỢT ĐẦU — bài học mới:** neo
+  `except Exception as e:  # noqa: BLE001` có **12 chỗ** trong `giong_vieneu.py`,
+  `replace(..., 1)` sửa nhằm chỗ ĐẦU TIÊN (một hàm khác) -> file **SyntaxError**
+  -> cổng chết lúc `import` -> mã thoát 1 -> bảng ghi **BẮT**. Tức phép thử
+  "bắt được" một chốt mà nó **chưa hề chạm tới**. Nay `_pha_doc_lan.py` đòi neo
+  **DUY NHẤT** (có `neo_sau` để tách bạch) và **`compile()` lại bản đã phá** —
+  không biên dịch được là **KHÔNG PHÁ ĐƯỢC**, không phải BẮT.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa ai NGHE** một file nào — mọi số trên là số ĐO
+  · mẫu vẫn chỉ **2 vòng × 1 câu bị bắt mỗi vòng**, đủ để nói "có ăn", **không
+  đủ** để nói tỉ lệ · vẫn **MỘT** file mẫu và vẫn là **giọng MÁY** (ranh giới
+  pháp lý chặn `adam_clone.wav`) · bộ dò **chỉ dùng tín hiệu ĐỘ DÀI**; hai dấu
+  hiệu mạnh hơn (chữ khác hệ chữ · lặp cụm) vẫn nằm ngoài vì chúng cần ASR —
+  chưa đo xem một lượt ASR **cục bộ** (faster-whisper trên máy) có rẻ đủ để
+  đưa vào không · chưa đo trên tiếng VIỆT (corpus hiệu chuẩn là tiếng Anh).
 - **QUÉT CẢ 20 GIỌNG VieNeu TRÊN CÂU TIẾNG VIỆT — 3 GIỌNG LỆCH HẲN, CẦN ĐO LẠI
   (19/08/2026, `_do_vn_quet.py` · `_kq_vn_quet.txt`).** Anh Hùng chỉ nêu đích
   danh Adam, nhưng câu hỏi thật là *"còn mấy kiểu khác nữa"*. Bộ 8 câu (sàng

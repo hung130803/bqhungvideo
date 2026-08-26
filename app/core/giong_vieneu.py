@@ -266,6 +266,8 @@ import wave
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.core import doc_lan
+
 _NO_WIN = 0x08000000 if os.name == "nt" else 0
 
 # ---------------------------------------------------------------------------
@@ -2220,6 +2222,228 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
     return ok, words
 
 
+# ==========================================================================
+# DÒ CÂU LAN MAN RỒI ĐỌC LẠI
+# ==========================================================================
+#
+# ═══ BỆNH: KHÔNG ĐỀU, chứ KHÔNG PHẢI "đọc sai tiếng Anh" ═══
+# Anh Hùng (26/08/2026) về giọng nhân bản `vnb:` đọc tiếng Anh: *"nó đọc như
+# thằng mới học ấy, nói không lưu loát không chuẩn chữ"*. Lượt đo ghép cặp
+# (`_do_vnb_en.py`, cùng file mẫu, cùng bộ chữ, cửa thật `dubbing._synth_all`)
+# **BÁC** chẩn đoán "model tiếng Việt nên đọc tiếng Anh kém":
+#
+#     lượt 1: WER 3,1%  · bịa chữ 0,3%   <- HƠN CẢ giọng bản ngữ (3,7% / 0,9%)
+#     lượt 2: WER 12,7% · bịa chữ 9,7%   <- 31/320 từ máy TỰ THÊM
+#
+# Cùng mã, cùng mẫu, cùng chữ. Tức cái hỏng là **NGẪU NHIÊN THEO LƯỢT** — và
+# đó chính là lý do ĐỌC LẠI có cơ sở ăn thật, khác hẳn mọi hướng đã bị bác
+# (chúng đều cố sửa một thứ hỏng TIỀN ĐỊNH: đổi sang Chatterbox đo ra 17,9%
+# sai chữ trong câu = **tệ hơn 3,5-7 lần**; `doc_viet_tat` thì lớp viết tắt
+# đã đúng sẵn 37-38/39 token).
+#
+# ═══ KIỂU HỎNG, ĐO ĐƯỢC ĐÍCH DANH ═══
+# Trên CÂU, cả 9,7% bịa của lượt 2 dồn vào **ĐÚNG 2 câu / 34**, và cả hai đều
+# cùng một hình dạng: **đọc đúng câu rồi NÓI TIẾP** —
+#   «The GDP of the whole country grew quite strongly.»
+#     -> đọc đúng, rồi thêm *"I would just add on there, the GDP of the whole
+#        country grew quite strongly."* (lặp lại nguyên câu)
+# Trên token rời thì thô bạo hơn: «OST» ra một câu tiếng Trung **lặp 3 lần**,
+# «CEO» ra 24 giây chữ Hán.
+#
+# Cả hai đều để lại **ĐÚNG MỘT dấu vết miễn phí: file tiếng DÀI BẤT THƯỜNG so
+# với số chữ**. Đó là thứ bộ dò bám vào — xem `app/core/doc_lan.py` cho phép
+# tính, ngưỡng và bảng hiệu chuẩn.
+#
+# ═══ BA CHỐT AN TOÀN, MỖI CHỐT MỘT LÝ DO ĐÃ TRẢ GIÁ ═══
+#  1. **KHÔNG BAO GIỜ BỎ CÂU.** Hết trần thì GIỮ bản đang có và ghi log. Bỏ
+#     câu = mất tiếng, đúng lỗi anh Hùng từng kêu (*"chỗ có chỗ không nghe
+#     không được"*).
+#  2. **CHỈ NHẬN BẢN MỚI KHI NÓ THẬT SỰ ĐỠ HƠN** theo chính bộ dò — đúng khuôn
+#     `thay_giong.rut_gon_vua_khung` (*"chỉ nhận khi đọc NGẮN HƠN thật"*).
+#     Nhận bừa là đổi câu hỏng này lấy câu hỏng khác rồi tự khen đã chữa. Đây
+#     cũng là thứ làm cho KÊU OAN gần như vô hại: câu lành đọc lại mà không
+#     ngắn hơn thì bản cũ ở nguyên chỗ cũ.
+#  3. **MỐC NHỊP KHÔNG ĐƯỢC KHỚP LẠI trên nhóm nghi ngờ.** Lượt chấm lại dùng
+#     `moc=` của loạt GỐC; khớp mốc trên 3 câu vừa bị bắt là khớp trên chính
+#     nhóm hỏng, và bản mới sẽ luôn trông "bình thường" so với chúng.
+
+#: Bật/tắt. **MẶC ĐỊNH BẬT — QUYẾT ĐỊNH BẰNG SỐ, KHÔNG PHẢI BẰNG HY VỌNG.**
+#: `BQ_VN_DOC_LAI=0` để tắt (đo A/B · gỡ rối trên máy anh Hùng).
+#:
+#: ĐO GHÉP CẶP (`_do_vnb_doclai.py` -> `_kq_vnb_doclai.json`): **MỘT** lượt đọc
+#: đầu dùng chung cho cả hai arm — từng byte — nên chênh lệch dưới đây KHÔNG
+#: thể là cái nhiễu chạy-khác-chạy của VieNeu (thứ đã cho 3,1% vs 12,7% trên
+#: CÙNG bản mã). 34 câu Anh + 24 token rời, mẫu là giọng MÁY (edge-tts):
+#:
+#:     vòng | arm  | BẮT | đọc lại | NHẬN | bịa %  | WER %  | +giây
+#:       1  | TẮT  |  1  |    0    |  0   |  3,8   |  6,3   |  +0,0
+#:       1  | BẬT  |  1  |    2    |  1   |**0,6** |**3,4** | **+15,5**
+#:       2  | TẮT  |  1  |    0    |  0   |  0,9   |  4,3   |  +0,0
+#:       2  | BẬT  |  1  |    1    |  1   |**0,6** |**3,7** | **+14,8**
+#:
+#: **GIÁ: +15,5 s và +14,8 s trên nền 288 s / 248 s = +5,4% / +6,0%** của bước
+#: đọc. Loạt LÀNH thì giá đúng bằng **0** (không gọi máy đọc thêm lần nào) —
+#: cổng 92 mục 4h canh đúng điều đó.
+#:
+#: **CHỐT CHỐNG-ĐẠT-OAN:** arm TẮT vẫn DÒ và ra **1 câu bắt mỗi vòng** -> thước
+#: CÓ RĂNG. Nó mà ra 0 thì mọi cột trên vô nghĩa.
+#:
+#: **NÓI CẢ MẶT XẤU:** vòng 2, token sai TRONG CÂU đi **5,1% -> 7,7%** (trên 39
+#: token, tức đúng MỘT token) — bản đọc lại chữa được đoạn lan man nhưng đọc
+#: sai một chữ mà bản cũ đọc đúng. Đổi một câu bịa nguyên đoạn lấy một token
+#: sai là đổi có lãi, nhưng **không phải bữa trưa miễn phí**.
+#:
+#: **VÌ SAO BẬT MÀ KHÔNG LÀM Ô CHO USER TỰ BẬT:** cờ này nằm gọn trong
+#: `giong_vieneu`, KHÔNG đi qua payload job, nên `dedup_key` **không thể** đổi
+#: — 200-300 kênh không có gì để xuất lại, và đó là bảo đảm DO CẤU TẠO chứ
+#: không phải do một chuỗi `sig` viết đúng (cổng 92 CA 5b-5d chấm cả hai
+#: chiều). Thêm một ô nữa thì phải nối cờ xuống `tg_chay.khoa_chong_trung`,
+#: tức tự tay mở đúng cái cửa đang được đóng.
+BAT_DOC_LAI = True
+
+#: Trần số lần đọc lại CHO MỖI CÂU. Mỗi vòng là MỘT lượt gọi tiến trình con
+#: (nạp lại model), nên đây cũng là trần số lần nạp thêm.
+DOC_LAI_TOI_DA = 2
+
+#: Trần theo LOẠT: nhiều nhất ngần này phần câu được đem đi đọc lại. Bộ dò đo
+#: được kêu 2,2% trên loạt thật; 15% là chỗ để một lượt đọc hỏng bất thường
+#: vẫn được cứu mà không biến thành "đọc lại cả video".
+DOC_LAI_TY_LE_LOAT = 0.15
+
+#: ...và trần TUYỆT ĐỐI, cho loạt lớn.
+DOC_LAI_TRAN_LOAT = 12
+
+#: Bản mới phải đỡ hơn bản cũ ÍT NHẤT ngần này (theo `lan`) mới được nhận.
+#: Bằng nhau thì GIỮ bản cũ: đổi một file lấy một file y hệt là tự khen suông.
+DOC_LAI_BIEN = 0.05
+
+
+def _bat_doc_lai() -> bool:
+    """Có bật đọc lại không. Đọc env MỖI LẦN GỌI (không cất hằng số)."""
+    v = (os.environ.get("BQ_VN_DOC_LAI") or "").strip()
+    if v:
+        return v != "0"
+    return bool(BAT_DOC_LAI)
+
+
+def _doc_lai_lan_man(items: list[dict], ket: dict, tt: dict, voice: str,
+                     nb: bool, han_giay: int,
+                     on_msg: Optional[Callable[[str], None]],
+                     sb: Path) -> dict:
+    """Dò câu lan man trong `ket` rồi ĐỌC LẠI, trả `ket` đã thay file tốt hơn.
+
+    **KHÔNG BAO GIỜ NÉM và KHÔNG BAO GIỜ BỎ CÂU** — hỏng ở bất cứ đâu thì trả
+    `ket` y như lúc nhận. Số liệu của lượt dò ghi vào `ket["_lan_man"]` để
+    nhật ký và phép đo đọc được (đừng đọc log, log là để người đọc).
+    """
+    bao = {"bat": 0, "doc_lai": 0, "an": 0, "vong": 0, "giay": 0.0,
+           "moc": (0.0, 0.0), "bat_co": _bat_doc_lai(), "chi_tiet": []}
+    ket["_lan_man"] = bao
+    try:
+        t0 = time.time()
+        chu = {int(it["i"]): str(it["text"] or "") for it in items}
+        # ĐO LẠI ĐỘ DÀI FILE, không tin `giay` tiến trình con báo — cùng luật
+        # với "ffmpeg trả mã 0 mà file rỗng" và với chính vòng lặp bên dưới.
+        cur: dict[int, dict] = {}
+        for r in ket.get("ra") or []:
+            i = int(r.get("i", -1))
+            if i in chu:
+                cur[i] = {"r": r, "giay": dai_wav(Path(r.get("p") or ""))}
+        idx = [i for i in cur if cur[i]["giay"] > 0.02]
+        if len(idx) < doc_lan.TOI_THIEU_MUC:
+            return ket
+
+        lan, moc = doc_lan.soi_loat([chu[i] for i in idx],
+                                    [cur[i]["giay"] for i in idx])
+        bao["moc"] = (round(moc[0], 4), round(moc[1], 5))
+        if moc[1] <= 0:
+            return ket
+        nghi = sorted([(lan[k], idx[k]) for k in range(len(idx)) if lan[k] > 0],
+                      reverse=True)
+        bao["bat"] = len(nghi)
+        if not nghi:
+            return ket
+        # TẮT thì vẫn DÒ và vẫn GHI LOG, chỉ không đọc lại. Hai cái lợi:
+        # tật này **không hỏng âm thầm** (đúng lý do `nghi_doc_lan` tồn tại),
+        # và phép đo A/B có **cột đối chứng** — arm TẮT ra 0 câu bắt thì thước
+        # không có răng và mọi cột còn lại vô nghĩa.
+        if not bao["bat_co"]:
+            _ghi_log(f"Đọc lan man: bắt {len(nghi)}/{len(idx)} câu nhưng "
+                     f"ĐỌC LẠI đang TẮT -> giữ nguyên (mốc "
+                     f"{moc[0]:.2f}+{moc[1]:.4f}n)")
+            return ket
+        tran = min(DOC_LAI_TRAN_LOAT,
+                   max(1, int(round(DOC_LAI_TY_LE_LOAT * len(idx)))))
+        if len(nghi) > tran:
+            _ghi_log(f"Đọc lan man: bắt {len(nghi)} câu nhưng TRẦN LOẠT là "
+                     f"{tran} -> chỉ đọc lại {tran} câu tệ nhất, số còn lại "
+                     f"GIỮ NGUYÊN (không bỏ câu nào)")
+            nghi = nghi[:tran]
+        # `lan` hiện tại của từng câu đang theo dõi (bản ĐANG GIỮ).
+        dang: dict[int, float] = {i: v for v, i in nghi}
+
+        for vong in range(1, DOC_LAI_TOI_DA + 1):
+            con = [i for i in dang if dang[i] > 0]
+            if not con:
+                break
+            bao["vong"] = vong
+            bao["doc_lai"] += len(con)
+            if on_msg:
+                try:
+                    on_msg(f"Doc lai {len(con)} cau doc lan man "
+                           f"(lan {vong}/{DOC_LAI_TOI_DA})...")
+                except Exception:  # noqa: BLE001
+                    pass
+            thu = sb / f"lai{vong}"
+            thu.mkdir(parents=True, exist_ok=True)
+            mi = [{"i": i, "text": chu[i], "raw": str(thu / f"c{i:04d}.wav")}
+                  for i in con]
+            k2 = _chay_vieneu(mi, tt["python"],
+                              "" if nb else ten_giong(voice),
+                              ten_giong(voice) if nb else "",
+                              han_giay, None)
+            _don(Path(k2.get("_sandbox") or ""))
+            if not k2.get("ok"):
+                _ghi_log(f"Đọc lại vòng {vong} hỏng ({k2.get('loi')}) -> GIỮ "
+                         f"nguyên {len(con)} câu đang có")
+                break
+            for r2 in k2.get("ra") or []:
+                i = int(r2.get("i", -1))
+                if i not in dang:
+                    continue
+                p2 = Path(r2.get("p") or "")
+                g2 = dai_wav(p2)
+                if g2 <= 0.02:
+                    continue
+                # CHẤM BẰNG MỐC CỦA LOẠT GỐC — xem chốt 3 ở khối trên.
+                l2 = doc_lan.lan_vuot(chu[i], g2, moc[0], moc[1])
+                cu = dang[i]
+                if l2 > 0 and l2 <= cu - DOC_LAI_BIEN:
+                    cur[i]["r"]["p"] = str(p2)
+                    cur[i]["giay"] = g2
+                    dang[i] = 0.0 if l2 < doc_lan.NGUONG_LAN else l2
+                    bao["an"] += 1
+                    bao["chi_tiet"].append(
+                        {"i": i, "vong": vong, "lan_cu": cu, "lan_moi": l2,
+                         "nhan": True})
+                else:
+                    bao["chi_tiet"].append(
+                        {"i": i, "vong": vong, "lan_cu": cu, "lan_moi": l2,
+                         "nhan": False})
+        con_lai = [i for i in dang if dang[i] > 0]
+        bao["giay"] = round(time.time() - t0, 2)
+        _ghi_log(
+            f"Đọc lan man: mốc {moc[0]:.2f}+{moc[1]:.4f}n · bắt {bao['bat']}/"
+            f"{len(idx)} câu · đọc lại {bao['doc_lai']} lượt · NHẬN {bao['an']}"
+            f" · còn nghi {len(con_lai)} (GIỮ bản đang có, không bỏ câu nào) · "
+            f"+{bao['giay']}s")
+        return ket
+    except Exception as e:  # noqa: BLE001
+        _ghi_log(f"Dò câu lan man hỏng ({type(e).__name__}: {e}) -> BỎ QUA, "
+                 f"giữ nguyên cả loạt")
+        return ket
+
+
 def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
          rate: str | list, lang: str, lay_moc: bool, han_giay: int,
          on_msg: Optional[Callable[[str], None]],
@@ -2249,6 +2473,11 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
         _don(sb)
         _don(Path(ket.get("_sandbox") or ""))
         return ok, words
+
+    # DÒ CÂU LAN MAN RỒI ĐỌC LẠI. Đặt ở ĐÂY, giữa lượt đọc và bước `_ep_khung`:
+    # bộ dò cần độ dài TIẾNG THẬT, mà `_ep_khung` co giãn theo `rate` nên đo
+    # sau đó là đo một thứ đã bị bóp méo có chủ ý.
+    ket = _doc_lai_lan_man(items, ket, tt, voice, nb, han_giay, on_msg, sb)
 
     for r in ket.get("ra") or []:
         i = int(r.get("i", -1))

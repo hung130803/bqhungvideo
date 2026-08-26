@@ -1,0 +1,1461 @@
+{
+"nguon": "_do_vnb_lan.py",
+"arm": {
+"edge_en": [
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.97,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.12,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.22,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.16,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.12,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.21,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.37,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.31,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.26,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.06,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.85,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.97,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.93,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.96,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.12,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.35,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.95,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.05,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.02,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.1,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.42,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.31,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.12,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.23,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": false
+}
+],
+"VNB_en": [
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.8,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.87,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.87,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.06,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.33,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.29,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.24,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.25,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.37,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.22,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.44,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.47,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.19,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.09,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.85,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 11.47,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 7.24,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 1.29,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.5,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 2.1,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.54,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 10.41,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.58,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 13.38,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 7.18,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 4.63,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.82,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.82,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.72,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.09,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.05,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.8,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.74,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.74,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.72,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.88,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.81,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.09,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 2.32,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.33,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.27,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.24,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.16,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.42,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.86,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.39,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.14,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.9,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 0.75,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.82,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.85,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 7.85,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.37,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 3.19,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.51,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 3.37,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 9.08,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 11.4,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 3.95,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 11.23,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 4.33,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 4.52,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.64,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.67,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.49,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.46,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.6,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.54,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.59,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.59,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.61,
+"bia": false
+}
+],
+"CB_en": [
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.19,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.15,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.21,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.18,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.53,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.25,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 2.16,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.75,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.4,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.27,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.85,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.87,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.22,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.52,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 2.05,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.6,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.81,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 2.3,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.64,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 1.15,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.25,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.99,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.21,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.19,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.15,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.21,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.18,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.53,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.25,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 2.16,
+"bia": true
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.75,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.4,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.27,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.85,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false
+},
+{
+"loai": "c",
+"lan": 0.87,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.22,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.52,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 2.05,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.6,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.81,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.07,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 2.3,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 0.64,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": true
+},
+{
+"loai": "t",
+"lan": 1.15,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.25,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.99,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.21,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.92,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.13,
+"bia": false
+},
+{
+"loai": "t",
+"lan": 1.08,
+"bia": false
+}
+]
+}
+}

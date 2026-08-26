@@ -203,6 +203,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.core import doc_lan
+
 _NO_WIN = 0x08000000 if os.name == "nt" else 0
 
 #: Tiền tố mã giọng. Mã edge-tts KHÔNG BAO GIỜ chứa `:` nên các họ giọng
@@ -1013,14 +1015,21 @@ def nghi_doc_lan(text: str, giay: float) -> float:
     **VÌ SAO KHÔNG TỰ VỨT CÂU ĐÓ ĐI:** `doc_loat` là all-or-nothing, đánh
     trượt một câu là **cả loạt** lùi về edge-tts — tức một chữ *"Okay."* trong
     kịch bản làm cả video mất giọng nhân bản. Đổi một tật nhỏ lấy một tật to.
+
+    **PHÉP TÍNH NẰM Ở `doc_lan.lan_vuot`, KHÔNG CHÉP LẠI Ở ĐÂY.** `giong_vieneu`
+    cần đúng phép tính này (chỉ khác MỐC so sánh: nó khớp mốc từ chính loạt
+    đang đọc thay vì dùng hằng số), nên hai bên đi chung một hàm — hai bản sao
+    là hai chỗ để lệch nhau. Ở đây mốc là hằng số `a=0 · b=1/6,0` giây/ký tự,
+    và **CHÍNH SÁCH** riêng của bộ này là chỉ soi câu NGẮN (xem
+    `LAN_MAN_CHU_TOI_DA`) — đó là chỗ đo được tật, câu 55-180 ký tự thì
+    0,80-1,18x nên soi vào là kêu oan.
     """
     try:
         n = len(str(text or "").strip())
         if n <= 0 or n > LAN_MAN_CHU_TOI_DA or giay <= 0:
             return 0.0
-        uoc = max(0.35, n / LAN_MAN_CHU_MOI_GIAY)
-        lan = giay / uoc
-        return round(lan, 2) if lan > LAN_MAN_LAN else 0.0
+        lan = doc_lan.lan_vuot(text, giay, 0.0, 1.0 / LAN_MAN_CHU_MOI_GIAY)
+        return lan if lan > LAN_MAN_LAN else 0.0
     except (TypeError, ValueError):
         return 0.0
 

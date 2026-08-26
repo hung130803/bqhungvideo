@@ -386,6 +386,17 @@ CONG = [
     # cảnh báo đã nối tới giao diện (repo có 6 ca "hàm xong ≠ tính năng xong"),
     # và `dedup_key` của `enqueue_thay_giong` KHÔNG đổi một ký tự nào.
     ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 131),
+    # Cổng 92 là bước TIẾP THEO của đúng việc cổng 91 vừa đo. Cổng 91 kết luận
+    # bệnh của `vnb:` đọc tiếng Anh là **KHÔNG ĐỀU** (cùng mã cùng mẫu: lượt 1
+    # WER 3,1% · lượt 2 WER 12,7%) và ghi nợ *"chưa thử phép chữa đáng làm nhất
+    # — dò câu lan man rồi ĐỌC LẠI"*. Cổng này canh đúng phép chữa đó.
+    # Nó **KHÔNG gọi mạng · KHÔNG Groq · KHÔNG GPU · KHÔNG ffmpeg** (máy đọc bị
+    # thay bằng hàm giả sinh WAV theo nhịp BIẾT TRƯỚC) nên TIỀN ĐỊNH và chỉ mất
+    # vài giây — đứng đâu trong danh sách cũng được.
+    # Số **92** lấy bằng cách ĐỌC chính `CONG` này (max đang là 91), KHÔNG đếm
+    # theo trí nhớ: trùng số là hai cổng ghi đè `_kq<n>.txt` của nhau (bài học
+    # 70 vs 69, rồi 85 vs 81).
+    ("92 đọc lại câu lan man", "_test_doc_lan.py",       48),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
