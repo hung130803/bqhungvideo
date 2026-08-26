@@ -352,7 +352,11 @@ CONG = [
     # (nút tải Piper phải KHOÁ khi máy thiếu Python 3, như nút Demucs). Để mốc
     # thấp hơn số thật là mất khả năng bắt "mục lặng lẽ biến mất".
     ("64 Piper",            "_test_piper.py",           57),
-    ("63 biến thể giọng",   "_test_bien_the_giong.py",  24),
+    # Mốc 24 -> 36 (26/08/2026): cổng thật ra 36 từ lâu (lượt nối Chatterbox đo
+    # lại vẫn 36/0). Bộ so CHỈ kêu khi `ĐẠT < mốc`, nên 12 ca dôi ra đó **chưa
+    # bao giờ được canh** — ai vô tình xoá một mục thì cổng vẫn xanh. Đây đúng
+    # bệnh vừa vá cho cổng 88 (170 -> 233) tuần này. NÂNG mốc = cổng CHẶT HƠN.
+    ("63 biến thể giọng",   "_test_bien_the_giong.py",  36),
     ("62 quét cả khung",    "_test_toan_khung.py",      33),
     ("60 chữ theo lời",     "_test_chu_theo_loi.py",    42),
     ("59 đường dài",        "_test_duong_dai.py",       46),
