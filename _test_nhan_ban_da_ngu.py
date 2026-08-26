@@ -729,8 +729,61 @@ def main() -> int:
 
 
 def _don() -> None:
-    shutil.rmtree(T, ignore_errors=True)
+    """Dọn hộp cát của LƯỢT NÀY. **KHÔNG BAO GIỜ NÉM.**
 
+    ═══ `rmtree(ignore_errors=True)` MỘT PHÁT LÀ KHÔNG ĐỦ — ĐO ĐƯỢC ═══
+    Sau lượt dựng cổng này, repo còn đọng **69 thư mục `bq_test_nbdn_*`**,
+    mỗi cái chứa **đúng một file `studio.db`**. Gốc: `app.database.db.db` giữ
+    handle SQLite MỞ, Windows không cho xoá file đang mở, mà
+    `ignore_errors=True` **NUỐT LỖI IM LẶNG** -> `atexit` chạy xong, không
+    một dòng báo, và không xoá được gì. Đúng họ bẫy *"phép dọn hỏng phát
+    chứng nhận"* (`astats` cổng 53 · `startswith` cổng 44).
+    Nên thứ tự bắt buộc: **NHẢ HANDLE trước** -> `rmtree` -> **THỬ LẠI** vài
+    nhịp (Windows còn giữ file một lúc sau khi đóng, đúng khuôn `_XOA_CHO`
+    của `ffmpeg_utils`) -> rồi mới chịu thua.
+    """
+    try:
+        from app.database.db import db as _db
+        _db._reset_conn()
+    except Exception:                                          # noqa: BLE001
+        pass
+    import time as _t
+    for _ in range(6):
+        shutil.rmtree(T, ignore_errors=True)
+        if not T.exists():
+            return
+        _t.sleep(0.25)
+
+
+def _don_mo_coi() -> None:
+    """Quét hộp cát MỒ CÔI của những lượt chạy TRƯỚC đã chết.
+
+    Một lượt thử phá gọi cổng **15 lần**, và bất kỳ lượt nào chết giữa đường
+    (hoặc bị giết) là một thư mục nằm lại vĩnh viễn — đó là cách 69 thư mục
+    kia tích lại. `_don` chỉ lo được lượt ĐANG chạy, nên phải có cửa thứ hai.
+
+    **BẤT BIẾN AN TOÀN (cùng luật `don_seg_mo_coi`):** chỉ đụng thư mục mang
+    ĐÚNG tiền tố của chính cổng này VÀ có **PID KHÔNG CÒN SỐNG** — không bao
+    giờ xoá hộp cát của một lượt đang chạy song song. Đọc PID không được thì
+    **GIỮ** (quy tắc chung của repo: không xác định được thì giữ).
+    """
+    try:
+        import psutil
+    except Exception:                                          # noqa: BLE001
+        return
+    for d in REPO.glob("bq_test_nbdn_*"):
+        try:
+            if not d.is_dir():
+                continue
+            pid = int(d.name.rsplit("_", 1)[1])
+            if pid == os.getpid() or psutil.pid_exists(pid):
+                continue
+            shutil.rmtree(d, ignore_errors=True)
+        except (ValueError, IndexError, OSError):
+            continue
+
+
+_don_mo_coi()
 
 import atexit  # noqa: E402
 
