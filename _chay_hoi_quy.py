@@ -314,21 +314,36 @@ CONG = [
     # commit đó tự ghi thẳng trong phần "CHƯA LÀM" rằng đây là món nợ ĐẮNG
     # NHẤT, vì người sau bỏ `on_msg` đi thì không ai biết.
     #
-    # MỆNH ĐỀ: ba chỗ gọi TTS (`doc_ban_dich` · `rut_gon_vua_khung` ·
-    # `doc_nhanh_vua_khung`) phải báo **>= 2 nhịp KHÁC NHAU TRONG LÚC ĐANG
-    # ĐỌC**. Đây là mệnh đề về HÀNH VI: cổng giả lập một máy đọc gộp-cả-loạt
-    # phát `Doc cau N/M` rồi GỌI THẬT cả ba hàm và BẮT từng lần `on_progress`
-    # — quét tĩnh "có chữ `on_msg` không" thì luôn có phép phá giữ nguyên mặt
-    # chữ mà đổi nghĩa (`on_msg=None`, bài học cổng 56d). Phần quét tĩnh có
-    # nhưng bằng **AST** và kèm **ca TỰ KIỂM BỘ DÒ**.
+    # MỆNH ĐỀ: **SÁU** chỗ gọi TTS phải báo **>= 2 nhịp KHÁC NHAU TRONG LÚC
+    # ĐANG ĐỌC** — ba chỗ của `thay_giong.py` (`doc_ban_dich` ·
+    # `rut_gon_vua_khung` · `doc_nhanh_vua_khung`, đường THAY GIỌNG) và ba chỗ
+    # của `dubbing.build_recap_track` (lượt đọc CHÍNH · lượt VÉT · giọng dự
+    # phòng, đường REUP THUYẾT MINH). Đây là mệnh đề về HÀNH VI: cổng giả lập
+    # một máy đọc gộp-cả-loạt phát `Doc cau N/M` rồi GỌI THẬT cả bốn hàm và
+    # BẮT từng lần `on_progress` — quét tĩnh "có chữ `on_msg` không" thì luôn
+    # có phép phá giữ nguyên mặt chữ mà đổi nghĩa (`on_msg=None`, bài học cổng
+    # 56d). Phần quét tĩnh có nhưng bằng **AST** và kèm **ca TỰ KIỂM BỘ DÒ**.
     #
-    # RẺ NHẤT DANH SÁCH: **0,6 giây**, KHÔNG mạng · KHÔNG Groq · KHÔNG
+    # MỐC 65 -> **113** (26/08/2026) — trả HAI MÓN NỢ mà chính cổng này ghi ra:
+    #  (1) `dubbing.py` còn 3 chỗ gọi mà cổng KHÔNG có ca nào. ĐO
+    #      (`_do_nhip_recap.py`): cả ba đều KHÔNG truyền `on_msg` -> **0 nhịp
+    #      / 3 lượt gọi**, thanh đứng ở **5%** suốt lượt đọc. Đã vá bằng CỬA
+    #      CHUNG `thay_giong._nhac_tung_cau` (không chép bộ thứ hai).
+    #  (2) DÒNG CHỮ vẫn đi lùi được: máy đọc gộp cả loạt nổ `on_done` cho MỌI
+    #      câu ở CUỐI nên `xong/N` hiện sau `6/6` rồi nhảy về `1/6` — đo được
+    #      **5 lần lùi** và tỉ lệ thô tụt **1,0000 -> 0,1667**. Nay mọi lời báo
+    #      đi qua `_nhac`, thêm `chu_khong_lui` (chỉ viết đè khi CÙNG mẫu số).
+    #      Sau vá: **0 lần lùi** trên cả 4 đường.
+    #
+    # RẺ NHẤT DANH SÁCH: **~1 giây**, KHÔNG mạng · KHÔNG Groq · KHÔNG
     # edge-tts · KHÔNG ffmpeg · KHÔNG nạp model (máy đọc, `cat_le_loat`,
-    # `probe_duration` và lượt LLM rút gọn đều là bản GIẢ; ba hàm ĐANG TEST
-    # chạy THẬT). Tiền định — chạy bao nhiêu lượt cũng ra một con số.
-    # Thử phá `_pha_nhip_doc.py`: 11 phép, mỗi phép gỡ ĐÚNG một chốt ->
-    # **BẮT 11 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
-    ("90 nhịp lúc đang đọc", "_test_nhip_doc.py",         65),
+    # `probe_duration`, lượt LLM rút gọn và mọi hàm ffmpeg của
+    # `build_recap_track` đều là bản GIẢ; bốn hàm ĐANG TEST chạy THẬT). Tiền
+    # định — chạy bao nhiêu lượt cũng ra một con số.
+    # Thử phá `_pha_nhip_doc.py`: **18 phép** (11 cũ + 7 mới), mỗi phép gỡ
+    # ĐÚNG một chốt, trên CẢ HAI file đích ->
+    # **BẮT 18 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0**.
+    ("90 nhịp lúc đang đọc", "_test_nhip_doc.py",        113),
     #
     # CỔNG 91 — nhân bản giọng ĐA NGÔN NGỮ (Chatterbox) đã nối vào hộp
     # «Giọng của tôi», và BỐN CHỐT của bộ đó đều có răng: đọc loạn nhịp (CA 3)
@@ -344,7 +359,16 @@ CONG = [
     # `_chatter_hay_khong` có **HAI** nhánh lùi cùng gọi `_ghi_log`, nên phép
     # phá 7 (bỏ log của nhánh THIẾU BỘ = lùi IM LẶNG trên máy nhân viên)
     # **LỌT**. Nay 4f GỌI THẬT nhánh đó rồi bắt sổ lời gọi (+2 mục).
-    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 79),
+    # Mốc 79 -> **100** (26/08/2026, CA 10 — TIẾNG TRUNG): con số báo động đầu
+    # tiên của bộ này là arm `A_nu × zh` **1,81x**, và lượt đo lại đã kết luận
+    # *"không tái hiện được"* rồi HẠ nó khỏi nhãn — trong khi bộ đo lúc ấy
+    # **thiếu đúng bộ câu `zh`** và còn dùng một MẪU khác hẳn. Dựng lại đúng
+    # arm thì tật **CÓ tái hiện (1,665x)**, còn arm đối chứng `B_nam × zh`
+    # vẫn **0,789x** y như bảng cũ. CA 10 canh hai thứ: bộ đo KHÔNG được
+    # thiếu `zh` lần nữa, và nhãn phải nói ra số ĐÍCH DANH theo TIẾNG ở chỗ
+    # người dùng đang QUYẾT (không phải chỉ trong một hằng số không ai đọc —
+    # `giong_chatter.nhan_giong()` quét AST ra **0 chỗ gọi** trong `app/ui`).
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 100),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
@@ -356,7 +380,14 @@ CONG = [
     # lại vẫn 36/0). Bộ so CHỈ kêu khi `ĐẠT < mốc`, nên 12 ca dôi ra đó **chưa
     # bao giờ được canh** — ai vô tình xoá một mục thì cổng vẫn xanh. Đây đúng
     # bệnh vừa vá cho cổng 88 (170 -> 233) tuần này. NÂNG mốc = cổng CHẶT HƠN.
-    ("63 biến thể giọng",   "_test_bien_the_giong.py",  36),
+    # Mốc 36 -> 49 (26/08/2026): CA 7 MỚI — "hàm ghi file tiếng phải chịu được
+    # đích đuôi `.mp3`". Đo ra **3/3 hàm HỎNG** trên đúng đường thật
+    # (`giong_ngoai._ep_khung` phục vụ `ov:`+`cb:` · `giong_vieneu._ep_khung`
+    # phục vụ `vn:`+`vnb:` · `giong_vbee._ghi_wav` phục vụ `vbee:`), cả ba đều
+    # dẫn tới all-or-nothing -> lùi edge-tts = **chọn X ra Y**, `rc` vẫn 0.
+    # Nó thuộc cổng NÀY vì mệnh đề trung tâm của cổng 63 đúng là "sót một cửa
+    # là video LẪN HAI GIỌNG". THỬ PHÁ: gỡ `-f wav` khỏi cả ba -> **40 · 9**.
+    ("63 biến thể giọng",   "_test_bien_the_giong.py",  49),
     ("62 quét cả khung",    "_test_toan_khung.py",      33),
     ("60 chữ theo lời",     "_test_chu_theo_loi.py",    42),
     ("59 đường dài",        "_test_duong_dai.py",       46),

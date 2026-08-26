@@ -3176,6 +3176,26 @@ _RECAP_TEMPO_MAX_TAIL = 1.4
 _BORROW_MAX_S = 3.0
 _BORROW_MAX_FRAC = 0.40
 
+# ---- KHÚC THANH TIẾN TRÌNH CỦA BƯỚC THU GIỌNG (`build_recap_track`) -------
+#
+# ĐƯỜNG RECAP CÓ ĐÚNG CÙNG BỆNH "THANH ĐỨNG IM" mà cổng 90 vá cho
+# `thay_giong.py` — ĐO RA, không suy từ mã (`_do_nhip_recap.py`, máy đọc giả
+# gộp cả loạt, gọi THẬT `build_recap_track`): **0 nhịp trên CẢ BA lượt gọi
+# `_synth_all_words`**, cả ba đều KHÔNG truyền `on_msg` xuống. Trong suốt lượt
+# đọc (hàng phút với giọng VieNeu/Kokoro/Chatterbox/Vbee/giọng ngoài) người
+# dùng chỉ thấy ĐÚNG MỘT dòng `Thu giọng N đoạn...` ở 5%; 6 dòng `Thu giọng
+# đoạn n/N` là do `on_done`, mà máy đọc gộp cả loạt nổ `on_done` cho MỌI câu
+# **ở cuối** — tức chúng bắn hết trong vài ms rồi mới thôi.
+#
+# Ba khúc RIÊNG cho ba lượt gọi (đọc chính · lượt VÉT · giọng dự phòng) chứ
+# KHÔNG dùng chung một bộ nhắc: dùng chung thì `cao["p"]` của lượt đọc chính
+# đã là 1,0, lượt vét báo `Doc cau 1/3` sẽ bị kẹp lên `3/3` = nói dối.
+# Tổng ba khúc dừng đúng ở 0,65 — đúng mốc mà đoạn sau (`0.65 + 0.25 * ...`)
+# tiếp nhận, nên ngân sách thanh KHÔNG đổi một ly.
+_THU_DAU, _THU_RONG = 0.05, 0.57            # lượt đọc CHÍNH   -> [0,05 .. 0,62]
+_VET_DAU, _VET_RONG = 0.62, 0.02            # lượt VÉT đoạn lỗi -> [0,62 .. 0,64]
+_DUPHONG_DAU, _DUPHONG_RONG = 0.64, 0.01    # giọng dự phòng    -> [0,64 .. 0,65]
+
 
 def _recap_word_level() -> bool:
     """Có bật phụ đề narrate WORD-LEVEL (karaoke từng từ) không. Mặc định
@@ -3614,10 +3634,20 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         mp3s = [os.path.join(td, f"n{i}.mp3") for i in range(len(narr))]
         done = {"n": 0}
 
+        # NHỊP TỪNG CÂU — CỬA DUY NHẤT là `thay_giong._nhac_tung_cau`. Import
+        # trong hàm (đúng chiều `thay_giong` vẫn import `dubbing`) và **KHÔNG
+        # chép bộ thứ hai**: hai bản sao là hai chỗ để lệch nhau, đúng lý do
+        # `a0062b6` chỉ vá một chỗ rồi thanh chuyển sang đứng ở 74% và 79%.
+        from app.core.thay_giong import _nhac_tung_cau
+        _nhac = _nhac_tung_cau(on_progress,
+                               lambda: done["n"] / max(1, len(narr)),
+                               dau=_THU_DAU, rong=_THU_RONG)
+
+        # `_tts_done` BÁO QUA `_nhac`, KHÔNG gọi thẳng `prog`: hai nguồn báo
+        # song song thì số nhảy ngược (`Doc cau 6/6` -> `Thu giọng đoạn 1/6`).
         def _tts_done(_i: int) -> None:
             done["n"] += 1
-            prog(0.05 + 0.60 * done["n"] / max(1, len(narr)),
-                 f"Thu giọng đoạn {done['n']}/{len(narr)}...")
+            _nhac(f"Thu giọng đoạn {done['n']}/{len(narr)}...")
 
         word_lists: list[list] = [[] for _ in narr]
         if voice.startswith("el:"):
@@ -3636,9 +3666,13 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             el_model = _ELEVEN_MODEL_V3 if _use_v3 else ""
             _emo = " + cảm xúc v3" if _use_v3 else ""
             prog(0.05, f"Thu giọng {len(narr)} đoạn (ElevenLabs TTS{_emo})...")
+            # `on_msg=_nhac` chứ KHÔNG phải `lambda m: prog(0.06, m)`: hằng số
+            # 0,06 nằm DƯỚI mọi mốc `_tts_done` báo, nên hai nguồn xen kẽ là
+            # thanh chạy giật lùi. Lời báo của ElevenLabs không mang dạng
+            # `N/M` -> `_nhac` tự lùi về bộ đếm `done` (mốc lùi).
             ok = _synth_all_eleven(texts, voice, mp3s, norm_lang(lang),
                                    on_done=_tts_done,
-                                   on_msg=lambda m: prog(0.06, m),
+                                   on_msg=_nhac,
                                    edge_rate=rate, model=el_model,
                                    # đường fallback edge nhận bản ĐÃ strip tag
                                    edge_texts=[n["text"] for n in narr],
@@ -3654,7 +3688,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             prog(0.05, f"Thu giọng {len(narr)} đoạn (Gemini TTS)...")
             ok = _synth_all_gemini(texts, voice, mp3s, norm_lang(lang),
                                    on_done=_tts_done,
-                                   on_msg=lambda m: prog(0.06, m),
+                                   on_msg=_nhac,
                                    edge_rate=rate,
                                    gemini_prefix=gemini_narrate_prefix(lang))
         else:
@@ -3663,21 +3697,31 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             rates = [rate] * len(narr)
             if rates:
                 rates[0] = _bump_rate(rate, 2)
+            # `on_msg=_nhac` — MẮT XÍCH DUY NHẤT từng đứt. Giọng gộp-cả-loạt
+            # (VieNeu · Kokoro · Chatterbox · Vbee · giọng ngoài) rơi vào đúng
+            # nhánh này và chỉ nổ `on_done` Ở CUỐI, nên không có nó thì thanh
+            # đứng chết ở 5% suốt lượt đọc (đo: **0 nhịp**).
             ok, word_lists = asyncio.run(_synth_all_words(
                 texts, voice, mp3s, on_done=_tts_done, rate=rates,
-                pitch=pitch_hz))
+                pitch=pitch_hz, on_msg=_nhac))
             # LƯỢT VÉT: server MS hay lỗi NoAudioReceived THEO ĐỢT — nghỉ
             # ngắn rồi thử lại RIÊNG các part hỏng 1 lần nữa (đo thật cho
             # thấy đợt lỗi qua nhanh; trước đây part hỏng bị bỏ luôn ->
             # khoảng thuyết minh bị câm).
             fails = [i for i, k in enumerate(ok) if not k and texts[i].strip()]
             if fails:
-                prog(0.62, f"Thu lại {len(fails)} đoạn giọng bị lỗi mạng...")
+                prog(_VET_DAU, f"Thu lại {len(fails)} đoạn giọng bị lỗi "
+                               f"mạng...")
                 time.sleep(2.5)
+                # Khúc thanh RIÊNG + mốc lùi 0.0 (cửa này KHÔNG truyền
+                # `on_done`) — đúng khuôn `thay_giong.rut_gon_vua_khung`.
+                _nhac_vet = _nhac_tung_cau(on_progress, lambda: 0.0,
+                                           dau=_VET_DAU, rong=_VET_RONG)
                 ok2, wl2 = asyncio.run(_synth_all_words(
                     [texts[i] for i in fails], voice,
                     [mp3s[i] for i in fails],
-                    rate=[rates[i] for i in fails], pitch=pitch_hz))
+                    rate=[rates[i] for i in fails], pitch=pitch_hz,
+                    on_msg=_nhac_vet))
                 for j, i in enumerate(fails):
                     if ok2[j]:
                         ok[i] = True
@@ -3690,12 +3734,17 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             if fails:
                 fb = _recap_backup_voice(lang, voice)
                 if fb:
-                    prog(0.63, f"Giọng chính lỗi {len(fails)} đoạn -> thử "
-                               f"giọng dự phòng ({fb})...")
+                    prog(_DUPHONG_DAU,
+                         f"Giọng chính lỗi {len(fails)} đoạn -> thử "
+                         f"giọng dự phòng ({fb})...")
+                    _nhac_dp = _nhac_tung_cau(on_progress, lambda: 0.0,
+                                              dau=_DUPHONG_DAU,
+                                              rong=_DUPHONG_RONG)
                     ok3, wl3 = asyncio.run(_synth_all_words(
                         [texts[i] for i in fails], fb,
                         [mp3s[i] for i in fails],
-                        rate=[rates[i] for i in fails], pitch=pitch_hz))
+                        rate=[rates[i] for i in fails], pitch=pitch_hz,
+                        on_msg=_nhac_dp))
                     for j, i in enumerate(fails):
                         if ok3[j]:
                             ok[i] = True

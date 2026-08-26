@@ -2186,6 +2186,62 @@ def ty_le_tung_cau(m: str) -> float:
     return max(0.0, min(1.0, a / b))
 
 
+def mau_tung_cau(m: str) -> int:
+    """Mẫu số `M` trong `N/M` — **0** khi lời báo không có số nào.
+
+    Tách riêng khỏi `ty_le_tung_cau` vì `chu_khong_lui` cần biết hai lời báo
+    có đang đếm trên CÙNG một mẫu số hay không. Hàm THUẦN, KHÔNG BAO GIỜ ném.
+    """
+    g = _RE_TUNG_CAU.search(str(m or ""))
+    if not g:
+        return 0
+    try:
+        b = int(g.group(2))
+    except (TypeError, ValueError):
+        return 0
+    return b if b > 0 else 0
+
+
+def chu_khong_lui(m: str, p_cao: float, mau: int = 0) -> str:
+    """Kéo phần SỐ trong lời báo lên cho khớp mốc CAO NHẤT đã báo.
+
+    DÃY TỈ LỆ `p` đã được `_nhac_tung_cau` canh không tụt từ trước, nhưng
+    **DÒNG CHỮ** thì chưa — và người dùng đọc CHỮ chứ không đọc số thực. Máy
+    đọc gộp cả loạt bắn `Doc cau 1/6 … 6/6` qua `on_msg` rồi mới nổ `on_done`
+    cho MỌI câu ở cuối (`giong_vieneu._xong_het`), nên nơi gọi nào báo thêm
+    `xong/N` sẽ hiện `6/6` rồi **nhảy ngược về `1/6`**. Đo được **5 lần lùi**
+    trên một lượt 6 câu (`_do_nhip_recap.py`) — anh Hùng vừa mất 30 phút nhìn
+    một thanh đứng im, số chạy ngược là thứ anh ấy nhận ra ngay.
+
+    BẤT BIẾN: *phần số trong chữ KHÔNG BAO GIỜ giảm trong cùng một bước*.
+
+    CHỈ SỬA KHI CÙNG MẪU SỐ (`mau`) — cố ý hẹp. Lời báo của các cửa khác đi
+    chung đường này (vd ElevenLabs *"còn ~44222 ký tự, track cần ~1924"*) có
+    thể mang một con số CHẲNG LIÊN QUAN gì tới bộ đếm câu; viết đè lên nó là
+    sửa một chỗ không hỏng, mà lời báo sai còn tệ hơn lời báo cũ. `mau <= 0`
+    (chưa có bộ đếm nào) -> giữ nguyên.
+
+    Hàm THUẦN, KHÔNG BAO GIỜ ném — nó nằm trên đường báo tiến trình.
+    """
+    s = str(m or "")
+    if mau <= 0:
+        return s
+    g = _RE_TUNG_CAU.search(s)
+    if not g:
+        return s
+    try:
+        a, b = int(g.group(1)), int(g.group(2))
+    except (TypeError, ValueError):
+        return s
+    if b != mau or a > b:
+        return s
+    # `int(... + 1 - 1e-9)` = trần (ceil) mà không phải nạp `math`.
+    can = int(p_cao * b + 1.0 - 1e-9)
+    if can <= a:
+        return s
+    return s[:g.start(1)] + str(min(b, can)) + s[g.end(1):]
+
+
 def _nhac_tung_cau(on_progress: Optional[Callable[[float, str], None]],
                    moc_lui: Callable[[], float],
                    dau: float = 0.0, rong: float = 1.0,
@@ -2201,11 +2257,17 @@ def _nhac_tung_cau(on_progress: Optional[Callable[[float, str], None]],
     HAI BẢO ĐẢM, cả hai đều có lý do đã trả giá:
       * **KHÔNG BAO GIỜ TỤT LÙI** — nhớ mốc cao nhất đã báo. Không có chốt này
         thì một lời báo không-có-số sau `Doc cau 12/59` sẽ kéo thanh từ 20% về
-        0%, tức người xem thấy nó CHẠY NGƯỢC.
+        0%, tức người xem thấy nó CHẠY NGƯỢC. Chốt này canh CẢ HAI: dãy tỉ lệ
+        `p` **và** phần SỐ trong DÒNG CHỮ (xem `chu_khong_lui` — người dùng
+        đọc chữ chứ không đọc số thực, và đo được 5 lần chữ nhảy ngược).
       * **KHÔNG BAO GIỜ NÉM** — hàm báo tiến trình mà nổ thì nó giết cả lượt
         đọc, tức một bản vá HIỂN THỊ lại đi làm hỏng việc THẬT.
+
+    MỌI lời báo của một bước phải đi QUA đây, kể cả lời báo `xong/N` dựng từ
+    `on_done`. Gọi thẳng `on_progress` song song là dựng lại đúng cái bệnh
+    "hai nguồn xen kẽ, số nhảy ngược" mà chốt trên vừa chặn.
     """
-    cao = {"p": 0.0}
+    cao = {"p": 0.0, "b": 0}
 
     def _nhac(m: str) -> None:
         if not on_progress:
@@ -2216,10 +2278,15 @@ def _nhac_tung_cau(on_progress: Optional[Callable[[float, str], None]],
                 p = max(0.0, min(1.0, float(moc_lui())))
             except Exception:  # noqa: BLE001
                 p = 0.0
+        elif p >= cao["p"] - 1e-9 or cao["b"] <= 0:
+            # Mẫu số của bộ đếm ĐANG DẪN ĐẦU — `chu_khong_lui` chỉ được viết
+            # đè lên lời báo đếm trên CÙNG mẫu số đó.
+            cao["b"] = mau_tung_cau(m)
         p = max(p, cao["p"])            # thanh KHÔNG BAO GIỜ tụt lùi
         cao["p"] = p
         try:
-            on_progress(max(0.0, min(1.0, dau + rong * p)), str(m)[:150])
+            on_progress(max(0.0, min(1.0, dau + rong * p)),
+                        chu_khong_lui(m, p, cao["b"])[:150])
         except Exception:  # noqa: BLE001
             pass
 
@@ -2245,17 +2312,20 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
 
     xong = {"n": 0}
 
-    def _done(_i: int) -> None:
-        xong["n"] += 1
-        if on_progress:
-            on_progress(xong["n"] / max(1, len(texts)),
-                        f"Đang đọc câu {xong['n']}/{len(texts)}...")
-
     # NHỊP TỪNG CÂU — xem khối ghi chú ở `_nhac_tung_cau` cho gốc lỗi. Mốc lùi
     # là bộ đếm `xong` (do `_done` cộng); lượt đọc này chiếm cả khúc tiến
     # trình của bước nên `dau=0.0 · rong=1.0` (mặc định).
     _nhac = _nhac_tung_cau(on_progress,
                            lambda: xong["n"] / max(1, len(texts)))
+
+    # `_done` BÁO QUA `_nhac`, KHÔNG gọi thẳng `on_progress`. Máy đọc gộp cả
+    # loạt nổ `on_done` cho MỌI câu Ở CUỐI (`giong_vieneu._xong_het`), nên
+    # đường cũ hiện `Doc cau 6/6` xong nhảy ngược về `Đang đọc câu 1/6` — đo
+    # được **5 lần lùi** và tỉ lệ thô tụt **1,0000 -> 0,1667**
+    # (`_do_nhip_recap.py`). Đi qua `_nhac` thì cả số lẫn chữ đều bị kẹp.
+    def _done(_i: int) -> None:
+        xong["n"] += 1
+        _nhac(f"Đang đọc câu {xong['n']}/{len(texts)}...")
 
     t0 = time.time()
     # THU LUÔN MỐC TỪNG-TỪ (WordBoundary). Cùng một lượt gọi edge-tts, KHÔNG
