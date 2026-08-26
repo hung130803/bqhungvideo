@@ -150,3 +150,9 @@ bq_test_dg86*/
 
 # Hộp cát phép đo giọng nhân bản (WAV mẫu + tiếng sinh ra, hàng trăm MB)
 _do_giong_toi/
+
+# Hop cat phep do "doc lai cau lan man" (_do_vnb_lan.py / _do_vnb_doclai.py):
+# WAV mau + tieng sinh ra + ban sao luot doc dau dung chung, hang tram MB.
+# Ban GON co theo doi git la _moc_doc_lan.json (cong 92 doc file do).
+_do_vnb_doclai/
+_do_vnb_en/
