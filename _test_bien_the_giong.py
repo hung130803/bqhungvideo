@@ -189,6 +189,144 @@ def ca6_giong_nhan_ban() -> None:
         shutil.rmtree(hop, ignore_errors=True)
 
 
+def ca7_ghi_ra_duoi_mp3() -> None:
+    """CA 7 — MỌI hàm ghi file tiếng phải CHỊU ĐƯỢC đích đuôi `.mp3`.
+
+    ═══ LỖI THẬT, ĐO 26/08/2026 (`_do_ghi_tieng.py`) ═══
+    Mọi cửa `dubbing._synth_all` / `_synth_all_words` nhận `paths` đuôi
+    **`.mp3`** — `thay_giong.doc_ban_dich` đặt `cau_XXXX.mp3`,
+    `doc_nhanh_vua_khung` đặt `nhanh_XXXX.mp3`. Hợp đồng ghi ngay ở docstring
+    `dubbing._synth_all`: *"Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/
+    ffprobe sniff nội dung)"*.
+    Ba hàm ghi ra đúng đường dẫn đó đều KHÔNG ép muxer, nên ffmpeg chọn theo
+    ĐUÔI rồi bị nhồi PCM vào mp3. Đo trước khi vá, cùng nguồn 1,5 s:
+
+        giong_ngoai._ep_khung  (ov: · **và cb:**)  -> False ·      0 byte
+        giong_vbee._ghi_wav    (vbee:)             -> False ·      0 byte
+        giong_vieneu._ep_khung (vn: · vnb:)        -> False ·  5.228 byte
+                                                     nhưng ffprobe đo 1,200 s!
+
+    Hai kiểu hỏng KHÁC NHAU, và kiểu thứ hai mới là kiểu nguy:
+      · `giong_ngoai`/`giong_vbee` — ffmpeg chết hẳn (`rc=-22 Invalid
+        argument` · *"Nothing was written into output file"*).
+      · `giong_vieneu` — bản vá 20/08 đã bỏ `-c:a` cho đuôi khác `.wav` nên
+        ffmpeg ghi ra mp3 THẬT, **rc=0, file tốt**. Nhưng chốt cuối của hàm là
+        `dai_wav()`, mà `dai_wav` mở bằng `wave.open` -> **chỉ đọc được WAV**
+        -> trả 0.0 -> *"Ép khung ra file 0 giây -> bỏ"*. Tức bản vá chỉ đổi
+        DÒNG LOG, bệnh còn nguyên. Đây đúng họ *"phép đo hỏng phát chứng
+        nhận"* (`astats` cổng 53 · `startswith` cổng 44), chỉ đảo chiều: phép
+        đo hỏng phát **giấy báo tử** cho một file lành.
+
+    HẬU QUẢ Ở CẢ BA: cả loạt hỏng -> chốt all-or-nothing -> lùi edge-tts. Anh
+    Hùng chọn giọng nhân bản của mình / giọng Vbee trả tiền, video ra giọng
+    edge-tts, **`rc` vẫn 0, chỉ có một dòng log**. Đúng mệnh đề trung tâm của
+    cổng này. Với Vbee thì nó là **100%** (hàm chạy cho MỌI câu ở MỌI bước,
+    không phụ thuộc `tempo`) — 3 giọng Việt trả tiền chưa từng ra một câu nào.
+
+    PHÉP ĐO CÓ RĂNG: cùng ba hàm, đích `.wav`, phải ĐẠT — không có cột đối
+    chứng đó thì "cả ba đều hỏng" có thể chỉ là hộp cát dựng sai.
+    """
+    import subprocess
+    from config import settings
+    from app.core import giong_ngoai as GN
+    from app.core import giong_vbee as VB
+    from app.core import giong_vieneu as VN
+
+    print("\nCA 7 — hàm ghi file tiếng phải chịu được đích đuôi `.mp3`")
+    hop = Path(tempfile.mkdtemp(prefix="bq_t63_mp3_"))
+    try:
+        src = hop / "raw.wav"
+        _wav(src, 1.5, 440.0)
+        au = src.read_bytes()
+
+        def dai(p: Path) -> float:
+            """Độ dài THẬT — thước ĐỘC LẬP với `dai_wav` mà hàm đang dùng."""
+            if not p.exists():
+                return 0.0
+            r = subprocess.run(
+                [settings.FFPROBE_PATH, "-v", "error", "-show_entries",
+                 "format=duration", "-of", "default=nw=1:nk=1", str(p)],
+                capture_output=True, text=True)
+            try:
+                return float((r.stdout or "0").strip())
+            except ValueError:
+                return 0.0
+
+        bo = (("giong_ngoai._ep_khung  (ov: · cb:)", "gn",
+               lambda d: GN._ep_khung(src, d, 1.25)),
+              ("giong_vieneu._ep_khung (vn: · vnb:)", "vn",
+               lambda d: VN._ep_khung(src, d, 1.25)),
+              ("giong_vbee._ghi_wav    (vbee:)", "vb",
+               lambda d: VB._ghi_wav(au, d)))
+
+        for ten, ma, fn in bo:
+            for duoi, nhan in ((".mp3", "ĐÚNG đuôi đường thật"),
+                               (".wav", "đối chứng, phép đo CÓ RĂNG")):
+                d = hop / f"{ma}{duoi}"
+                if d.exists():
+                    d.unlink()
+                tra = bool(fn(d))
+                dt = dai(d)
+                byte = d.stat().st_size if d.exists() else 0
+                kiem(f"7{ma}{duoi[1:]} {ten} · đích `{duoi}` ({nhan})",
+                     tra and dt > 0.02,
+                     f"trả {tra} · {byte} byte · ffprobe {dt:.3f}s")
+
+        # ─── CHỐT CHỐNG PASS OAN: file phải là NỘI DUNG WAV, không chỉ "mở
+        # được". Nếu ai đó chữa bằng cách đổi codec theo đuôi (bản vá 20/08)
+        # thì `.mp3` ra mp3 thật -> `dai_wav` mù -> hàm tự vứt file của mình,
+        # và mục trên sẽ ĐỎ. Mục này nói THẲNG ra bất biến đó để người sau
+        # không "dọn cho gọn" bằng cách bỏ `-f wav`.
+        for ma in ("gn", "vn", "vb"):
+            p = hop / f"{ma}.mp3"
+            kiem(f"7{ma}-wav nội dung là WAV (`dai_wav` đọc được) dù tên .mp3",
+                 GN.dai_wav(p) > 0.02, f"dai_wav={GN.dai_wav(p):.3f}s")
+
+        # ─── QUÉT TĨNH bằng AST, KHÔNG quét chuỗi ───────────────────────────
+        # Quét bằng chuỗi thì chính KHỐI GHI CHÚ giải thích bản vá (có chữ
+        # `-f wav`) bị kể là "đã có" -> PASS OAN (bài học 47/51/53/56d/73/85).
+        # Và bộ dò kiểu `tokenize` bỏ STRING cũng SAI ở đây theo chiều NGƯỢC
+        # lại — thứ cần tìm CHÍNH LÀ một chuỗi, bỏ STRING đi là mục ĐỎ OAN
+        # vĩnh viễn (đã sập đúng chỗ này khi viết CA 7).
+        # ĐÚNG: đọc DANH SÁCH đối số truyền cho `subprocess.run`, chỉ xét lệnh
+        # nào THẬT SỰ mã hoá tiếng (`-c:a pcm_s16le`), rồi đòi `-f` `wav`
+        # đứng LIỀN NHAU trong chính danh sách đó.
+        def lenh_ma_hoa(p: Path) -> list[list]:
+            cay = ast.parse(p.read_text("utf-8"))
+            ra = []
+            for nut in ast.walk(cay):
+                if not (isinstance(nut, ast.Call) and nut.args
+                        and isinstance(nut.args[0], (ast.List, ast.Tuple))):
+                    continue
+                f = nut.func
+                if not (isinstance(f, ast.Attribute) and f.attr == "run"):
+                    continue
+                hs = [e.value if isinstance(e, ast.Constant) else None
+                      for e in nut.args[0].elts]
+                if "pcm_s16le" in hs:
+                    ra.append(hs)
+            return ra
+
+        def co_f_wav(hs: list) -> bool:
+            return any(hs[i] == "-f" and i + 1 < len(hs)
+                       and hs[i + 1] == "wav" for i in range(len(hs)))
+
+        for ten, f in (("giong_ngoai", "app/core/giong_ngoai.py"),
+                       ("giong_vieneu", "app/core/giong_vieneu.py"),
+                       ("giong_vbee", "app/core/giong_vbee.py")):
+            ds = lenh_ma_hoa(REPO / f)
+            kiem(f"7q-{ten} MỌI lệnh ffmpeg ghi tiếng đều ép muxer `-f wav`",
+                 bool(ds) and all(co_f_wav(x) for x in ds),
+                 f"{sum(1 for x in ds if co_f_wav(x))}/{len(ds)} lệnh")
+        # TỰ KIỂM BỘ DÒ — thiếu mục này thì `co_f_wav` trả True bừa cũng xanh.
+        kiem("7q-tự-kiểm bộ dò BẮT được lệnh thiếu `-f wav`",
+             not co_f_wav(["ffmpeg", "-i", "a.wav", "-c:a", "pcm_s16le",
+                           "b.mp3"])
+             and co_f_wav(["ffmpeg", "-c:a", "pcm_s16le", "-f", "wav", "b"]))
+    finally:
+        shutil.rmtree(hop, ignore_errors=True)
+
+
 def main() -> int:
     print("=" * 70)
     print("CỔNG 63 — BIẾN THỂ GIỌNG (pitch) NỐI ĐỦ 3 CHỖ GỌI TTS")
@@ -309,6 +447,7 @@ def main() -> int:
          TG.tach_giong_pitch("vi-VN-HoaiMyNeural")[1] == "+0Hz")
 
     ca6_giong_nhan_ban()
+    ca7_ghi_ra_duoi_mp3()
 
     print("\n" + "=" * 70)
     print(f"ĐẠT {DAT} · HỎNG {HONG}")

@@ -1991,31 +1991,45 @@ def _ep_khung(nguon: Path, dich: Path, tempo: float) -> bool:
             return True
         except OSError:
             return False
-    # ═══ CODEC PHẢI THEO ĐUÔI FILE ĐÍCH, KHÔNG GHI CỨNG `pcm_s16le` ═══
+    # ═══ ÉP MUXER `-f wav`, ĐỪNG ĐỂ ffmpeg CHỌN THEO ĐUÔI ═══
     # LỖI THẬT anh Hùng gặp 20/08/2026 khi chạy HÀNG LOẠT: đọc xong **59/59 câu**
     # (log: `nạp 9.8s · sinh 430.62s`) rồi **mất trắng ở bước này**:
     #     Ép khung hỏng (c0057.wav): rc=-22 · Invalid argument
     #     [out#0/mp3] Nothing was written into output file
     #     -> VieNeu đọc 0/59 câu -> BỎ CẢ LOẠT, lùi edge-tts
     # 7 phút sinh tiếng đổ đi vì MỘT tham số. Gốc: `dubbing._synth_all` truyền
-    # `paths` đuôi **`.mp3`** (mọi máy đọc khác đều trả mp3), ffmpeg chọn muxer
-    # theo ĐUÔI nên nó mở mp3 rồi bị nhồi **PCM** vào — mp3 không chứa nổi PCM.
+    # `paths` đuôi **`.mp3`** (`thay_giong.doc_nhanh_vua_khung` đặt
+    # `nhanh_XXXX.mp3`), ffmpeg chọn muxer theo ĐUÔI nên nó mở mp3 rồi bị nhồi
+    # **PCM** vào — mp3 không chứa nổi PCM.
     #
-    # VÌ SAO KHÔNG AI THẤY SỚM HƠN: phép thử của tôi truyền đường dẫn `.wav`
-    # (PCM vào wav thì hợp lệ) nên nó **XANH** trong khi đường thật ĐỎ. Đúng họ
-    # bẫy "đo sai đường rồi phát chứng nhận" — cùng bệnh với `-itsscale`, và là
-    # lần thứ ba trong ngày.
+    # ═══ BẢN VÁ 20/08 CHỈ CHỮA ĐƯỢC NỬA — ĐO LẠI 26/08 (`_do_ghi_tieng.py`) ═══
+    # Bản đó bỏ `-c:a` cho đuôi khác `.wav` để "ffmpeg tự chọn codec của
+    # container". ffmpeg ghi ra mp3 THẬT, **rc=0, 5.228 byte, ffprobe đo đúng
+    # 1,200 s** — file hoàn toàn tốt. Nhưng CHỐT CUỐI của hàm này là
+    # `dai_wav()`, mà `dai_wav` mở bằng `wave.open` nên **chỉ đọc được WAV**:
+    # nó trả `0.0` -> `0.0 <= 0.02` -> *"Ép khung ra file 0 giây -> bỏ"* ->
+    # `return False`. Triệu chứng Y HỆT bản chưa vá (VieNeu 0/59 câu, lùi
+    # edge-tts), chỉ đổi DÒNG LOG. Đo ghép cặp cùng lượt:
+    #     `.mp3` + rate -> ĐỌC ĐƯỢC **0/12** câu
+    #     `.wav` + rate -> ĐỌC ĐƯỢC **12/12** câu   (đối chứng, phép đo CÓ RĂNG)
+    #     `.mp3` + rate "+0%" -> 12/12   (đi nhánh copy ở trên, không qua ffmpeg)
     #
-    # Cách chữa: **để ffmpeg tự chọn codec mặc định của container** (bỏ `-c:a`)
-    # cho mọi đuôi khác `.wav`, và chỉ ghi rõ `pcm_s16le` khi đích LÀ `.wav`.
-    # Không đoán `libmp3lame`: máy nhân viên có thể là bản ffmpeg thiếu lame,
-    # còn muxer mặc định thì luôn có.
-    ma_hoa = (["-c:a", "pcm_s16le"] if dich.suffix.lower() == ".wav" else [])
+    # ═══ CHỮA ĐÚNG: GIỮ NỘI DUNG WAV, MẶC KỆ CÁI ĐUÔI ═══
+    # Hợp đồng của cả repo này ghi ngay ở `dubbing._synth_all` docstring:
+    # *"Ghi WAV vào paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội
+    # dung)"*. Nhánh `tempo≈1.0` ngay trên đã `shutil.copyfile` WAV vào tên
+    # `.mp3` từ lâu và mọi bước sau (`cat_le_loat` · `do_le_im` ·
+    # `giong_hang_loat` — đều giải mã bằng ffmpeg) vẫn chạy. Nên bản vá 20/08
+    # đi NGƯỢC hợp đồng đó: nó làm file khớp cái đuôi rồi vấp chính chốt
+    # `dai_wav` của mình.
+    # `-f wav` ép muxer, `-c:a pcm_s16le` giữ nguyên -> hai nhánh của hàm này
+    # ra CÙNG một loại nội dung, và `dai_wav` đọc được cả hai.
+    # KHÔNG đoán `libmp3lame`: máy nhân viên có thể là bản ffmpeg thiếu lame.
     try:
         r = subprocess.run(
             [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
              "-i", str(nguon), "-filter:a", _tg._co_gian_chuoi(tempo),
-             *ma_hoa, str(dich)],
+             "-c:a", "pcm_s16le", "-f", "wav", str(dich)],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=300, creationflags=_NO_WIN)
     except Exception as e:  # noqa: BLE001

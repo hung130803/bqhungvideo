@@ -1226,6 +1226,19 @@ def _ep_khung(nguon: Path, dich: Path, tempo: float) -> bool:
     hàm đó đã canh sẵn chuyện ffmpeg máy nhân viên không có `rubberband`
     (lùi `atempo`, chia tầng khi > 2,0) và có công tắc `BQ_TG_RUBBERBAND=0`
     để đo A/B. Đẻ đường thứ hai là đẻ chỗ để hai đường lệch nhau.
+
+    ═══ `-f wav` LÀ BẮT BUỘC — xem khối ghi chú dài ở `giong_vieneu._ep_khung`
+    Hàm này là bản SONG SINH của hàm đó, và nó phục vụ **CẢ Chatterbox**
+    (`giong_chatter.doc_loat` gọi thẳng `_gn._ep_khung`). `dich` chính là
+    `paths[i]` của `dubbing._synth_all*`, tức đuôi **`.mp3`**; không ép muxer
+    thì ffmpeg chọn theo ĐUÔI, mở mp3 rồi bị nhồi PCM vào ->
+    `rc=-22 Invalid argument` · *"Nothing was written into output file"* ·
+    **0 byte**. Cả loạt hỏng -> all-or-nothing -> lùi edge-tts, tức người dùng
+    chọn giọng này mà ra giọng khác, chỉ có một dòng log.
+    ĐO 26/08 (`_do_ghi_tieng.py`, cùng nguồn, tempo 1,25):
+        đích `.mp3` -> trả False · **0 byte** · ffprobe 0,000 s
+        đích `.wav` -> trả True  · 57.678 byte · ffprobe 1,200 s (đối chứng)
+    Bản vá 20/08 chỉ sửa hàm song sinh bên `giong_vieneu`, **cửa này bị sót**.
     """
     from config import settings
     from app.core import thay_giong as _tg
@@ -1242,7 +1255,7 @@ def _ep_khung(nguon: Path, dich: Path, tempo: float) -> bool:
         r = subprocess.run(
             [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
              "-i", str(nguon), "-filter:a", _tg._co_gian_chuoi(tempo),
-             "-c:a", "pcm_s16le", str(dich)],
+             "-c:a", "pcm_s16le", "-f", "wav", str(dich)],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
             creationflags=_NO_WIN)
     except Exception as e:  # noqa: BLE001

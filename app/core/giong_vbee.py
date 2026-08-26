@@ -753,6 +753,23 @@ def _ghi_wav(au: bytes, dich: Path) -> bool:
     /số kênh, mà bước gióng hàng và bước trộn sau đó đều muốn PCM đều đặn.
     **ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần trong repo
     này** -> luôn kiểm KÍCH THƯỚC + ĐỘ DÀI, đừng tin mã thoát.
+
+    ═══ `-f wav` LÀ BẮT BUỘC, VÀ THIẾU NÓ THÌ VBEE CHẾT 100% ═══
+    `dich` là `paths[i]` của `dubbing._synth_all*`, tức đuôi **`.mp3`**
+    (`thay_giong.doc_ban_dich` đặt `cau_XXXX.mp3`). Không ép muxer thì ffmpeg
+    chọn theo ĐUÔI -> mở mp3 rồi bị nhồi PCM vào -> `rc=-22 Invalid argument`
+    · *"Nothing was written into output file"* · **0 byte**. Và vì hàm này
+    chạy cho **MỌI câu ở MỌI bước** (khác `_ep_khung`, không phụ thuộc
+    `tempo`), Vbee hỏng **từng câu một** -> chốt all-or-nothing ngay dưới ->
+    *"chỉ đọc được 0/N câu"* -> lùi edge-tts. Tức 3 giọng Việt TRẢ TIỀN của
+    Vbee **chưa bao giờ ra được một câu nào** trên đường thay giọng, và dấu
+    vết duy nhất là một dòng log.
+    ĐO 26/08 (`_do_ghi_tieng.py`, cùng byte nguồn):
+        đích `.mp3` -> trả False · **0 byte** · ffprobe 0,000 s
+        đích `.wav` -> trả True  · 72.078 byte · ffprobe 1,500 s (đối chứng)
+    Hợp đồng của repo ghi ở docstring `dubbing._synth_all`: *"Ghi WAV vào
+    paths[i] (tên .mp3 cũng được — ffmpeg/ffprobe sniff nội dung)"* — nên
+    cách chữa là GIỮ NỘI DUNG WAV, không phải đổi codec theo đuôi.
     """
     try:
         from config import settings
@@ -761,7 +778,7 @@ def _ghi_wav(au: bytes, dich: Path) -> bool:
         tam.write_bytes(au)
         r = subprocess.run(
             [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
-             "-i", str(tam), "-c:a", "pcm_s16le", str(dich)],
+             "-i", str(tam), "-c:a", "pcm_s16le", "-f", "wav", str(dich)],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=300, creationflags=_NO_WIN)
         try:
