@@ -710,11 +710,189 @@ def ca9() -> None:
     ok("9p nhãn KHÔNG EMOJI", not xau, str(xau)[:60])
 
 
+def ca10() -> None:
+    """CHỐT 1 (phần TIẾNG TRUNG) — BỘ ĐO PHẢI CÓ `zh`, NHÃN PHẢI NÓI RA SỐ.
+
+    ═══════════════════════════════════════════════════════════════════════
+    VÌ SAO CÓ CA NÀY — MỘT KẾT LUẬN ĐÃ SUÝT ĐÓNG SỔ MỘT TẬT CÓ THẬT
+    ═══════════════════════════════════════════════════════════════════════
+    Con số báo động đầu tiên của Chatterbox (`_kq_chatter_dangn.json`) đến từ
+    arm **`A_nu × zh`**: đọc 54,9 s cho bộ câu mà trần chỉ 30,4 s = **1,81x**.
+    Lượt đo lại (`_do_chatter_nhip.py`) kết luận *"không tái hiện được"* rồi
+    HẠ con số đó khỏi nhãn — nhưng bộ đo lúc ấy chỉ có `en_ngan` / `en_dai` /
+    `ja`, **THIẾU ĐÚNG `zh`**, và còn dùng một MẪU khác hẳn. Tức nó bác một
+    arm bằng cách đo ba arm KHÁC.
+    Dựng lại đúng arm thì tật **CÓ tái hiện** (số đo trong docstring
+    `giong_chatter`). Nên ca này canh hai thứ:
+      · bộ đo **không được thiếu `zh` lần nữa** — thiếu một arm là một cửa để
+        kết luận "không tái hiện được" mọc lại;
+      · nhãn phải nói ra tật ấy **và nói ĐÍCH DANH tiếng nào**, ở CHỖ NGƯỜI
+        DÙNG ĐANG QUYẾT chứ không phải chỉ trong một hằng số.
+
+    Quét tĩnh ở đây đi bằng **AST** và đọc **GIÁ TRỊ HẰNG**, không quét chuỗi
+    trên cả file (bài học 47/51/53/54/73/80/86 — repo đã sập tám lần).
+    """
+    print("\nCA 10 — CHỐT 1 phần TIẾNG TRUNG: bộ đo có `zh`, nhãn nói ra số")
+    try:
+        import _do_chatter_nhip as DN
+    except Exception as e:                                     # noqa: BLE001
+        ok("10a nạp được bộ đo `_do_chatter_nhip`", False, f"{type(e).__name__}")
+        return
+    ok("10a bộ đo CÓ bộ câu `zh` và `zh_goc`",
+       "zh" in DN.BO and "zh_goc" in DN.BO, ", ".join(DN.BO))
+
+    # 10b — `zh_goc` phải là ĐÚNG bộ câu của arm cũ. Dựng lại độc lập ở đây
+    # (không gọi `DN.tu_kiem_bo_cau`): cổng đi hỏi bộ đo *"anh tự chấm anh có
+    # đúng không"* thì bộ đo hỏng là cổng hỏng theo.
+    from _bo_cau_thu_doc import CORPUS
+    goc = [c for loai in ("cau_thuong", "ban_dia")
+           for (l, c, _t) in CORPUS["zh"] if l == loai][:8]
+    ok("10b `zh_goc` khớp TỪNG CÂU với corpus chuẩn (arm cũ bị đóng băng)",
+       list(DN.BO["zh_goc"]["cau"]) == goc, f"{len(goc)} câu")
+    ok("10b' ...và đọc bằng ĐÚNG mẫu `A_nu` của bảng cũ",
+       DN.BO["zh_goc"].get("mau") == "A_nu"
+       and DN.MAU.get("A_nu") == "vi-VN-HoaiMyNeural",
+       str(DN.BO["zh_goc"].get("mau")))
+
+    # 10c — BẰNG CHỨNG CHO KẾT LUẬN "arm cũ TOÀN CÂU NGẮN". Đây không phải
+    # chi tiết vụn: nó là thứ tách được hai giả thuyết *"tiếng Trung hỏng"* và
+    # *"câu ngắn hỏng"*, và nếu ai đó sửa `zh_goc` cho "phong phú hơn" thì
+    # bằng chứng ấy bốc hơi mà không ai thấy.
+    dai_goc = [len(c) for c in DN.BO["zh_goc"]["cau"]]
+    ok("10c arm cũ TOÀN câu ngắn (mọi câu <= `LAN_MAN_CHU_TOI_DA`)",
+       max(dai_goc) <= CB.LAN_MAN_CHU_TOI_DA,
+       f"{min(dai_goc)}-{max(dai_goc)} ký tự, trần {CB.LAN_MAN_CHU_TOI_DA}")
+
+    dai_mix = sorted(len(c) for c in DN.BO["zh"]["cau"])
+    ok("10d bộ `zh` TRỘN ngắn và dài (nếu không thì nó là `zh_goc` viết dài)",
+       dai_mix[0] <= 20 and dai_mix[-1] >= 40,
+       f"{dai_mix[0]}-{dai_mix[-1]} ký tự")
+    ok("10d' ...và số câu ngang hai bộ `en_*` (8-12 câu)",
+       8 <= len(DN.BO["zh"]["cau"]) <= 12, f"{len(DN.BO['zh']['cau'])} câu")
+
+    # 10e — ĐỐI CHỨNG PHẢI CHẠY CÙNG LƯỢT. Không có nó thì mọi phép so với
+    # bảng cũ là so hai môi trường khác nhau (bài học "đo A/B phải đan xen").
+    arm = [DN.tach_arm(a) for a in DN.ARM_MAC_DINH]
+    tieng = {DN.BO[b]["lang"] for b, _m in arm}
+    ok("10e arm mặc định có ĐỐI CHỨNG tiếng Anh chạy cùng lượt",
+       "en" in tieng, ", ".join(sorted(tieng)))
+    mau_zh = {m for b, m in arm if b == "zh_goc"}
+    ok("10e' ...và CÙNG bộ `zh_goc` chạy với >= 2 MẪU (tật đi theo CẶP)",
+       len(mau_zh) >= 2, ", ".join(sorted(mau_zh)))
+
+    # 10f — TỰ KIỂM BỘ DÒ. Thiếu mục này thì 10b/10c/10d chỉ là con dấu.
+    cu_goc = DN.BO["zh_goc"]["cau"]
+    cu_mix = DN.BO["zh"]["cau"]
+    try:
+        DN.BO["zh_goc"]["cau"] = list(cu_goc[:-1]) + ["今天天气很好。"]
+        DN.BO["zh"]["cau"] = list(cu_goc)          # bỏ hết câu dài
+        lech = list(DN.BO["zh_goc"]["cau"]) != goc
+        d2 = sorted(len(c) for c in DN.BO["zh"]["cau"])
+        het_dai = not (d2[0] <= 20 and d2[-1] >= 40)
+    finally:
+        DN.BO["zh_goc"]["cau"] = cu_goc
+        DN.BO["zh"]["cau"] = cu_mix
+    ok("10f TỰ KIỂM: đổi 1 câu -> phép so 10b TRƯỢT", lech)
+    ok("10f' TỰ KIỂM: bỏ câu dài -> phép so 10d TRƯỢT", het_dai)
+
+    # ═══ NHÃN ═══
+    s = CB.CANH_BAO_CL
+    ok("10g nhãn nói ĐÍCH DANH tiếng Trung", "Trung" in s)
+    ok("10h nhãn mang SỐ ĐO của cả bộ câu, không nói chung chung",
+       "1,85" in s, s[-120:])
+    ok("10i nhãn nói tật này KHÔNG phải đọc sai chữ (WER thấp)",
+       "ĐÚNG CHỮ" in s.upper() or "đúng chữ" in s)
+
+    # 10h' — GHI CẢ HAI ĐẦU, KHÔNG GHI MỘT SỐ. Cùng 8 câu, cùng tiếng, đổi
+    # MẪU thì ra **0,81x** (`B_nam`) và **1,85x** (`A_nu`); và ngay trong cùng
+    # một mẫu `A_nu`, đổi FILE mẫu (edge-tts sinh lại) đã đủ đổi từ 1,67x sang
+    # 1,80x trên thước thô. Chatterbox tiền định theo BYTE của mẫu, nên con số
+    # đi theo MẪU anh Hùng đưa vào và một số lẻ là lời hứa không giữ được.
+    nhip_zh = CB.canh_bao_nhip("zh")
+    ok("10h' nhãn ghi CẢ HAI ĐẦU (0,81x mẫu này · 1,85x mẫu kia)",
+       "0,81" in nhip_zh and "1,85" in nhip_zh, nhip_zh[:70])
+    ok("10h'' ...và nói rõ con số đi theo MẪU người dùng đưa vào",
+       "MẪU" in nhip_zh and "tệ hơn" in nhip_zh)
+    ok("10n `NHIP_DA_DO` SUY TỪ bảng số, không phải danh sách gõ tay thứ hai",
+       tuple(CB.NHIP_DA_DO) == tuple(CB.NHIP_THEO_TIENG),
+       f"{CB.NHIP_DA_DO}")
+    ok("10o tiếng CHƯA ĐO -> nói thẳng 'CHƯA AI ĐO', không im lặng",
+       "CHƯA AI ĐO" in CB.canh_bao_nhip("ko"), CB.canh_bao_nhip("ko")[:50])
+    # NGƯỠNG PHẢI NẰM GIỮA HAI NHÓM ĐÃ ĐO — đặt mò thì mục 10k/10l chỉ là
+    # con dấu. Đây là chốt "đừng nới ngưỡng cho hết kêu".
+    xau = [v[0] for v in CB.NHIP_THEO_TIENG.values() if v[0] >= CB.NHIP_KEU_TU]
+    tot = [v[0] for v in CB.NHIP_THEO_TIENG.values() if v[0] < CB.NHIP_KEU_TU]
+    ok("10p ngưỡng kêu nằm GIỮA nhóm ổn và nhóm hỏng (không đặt mò)",
+       bool(xau) and bool(tot) and max(tot) < CB.NHIP_KEU_TU <= min(xau),
+       f"ổn <= {max(tot) if tot else '-'} | ngưỡng {CB.NHIP_KEU_TU} | "
+       f"hỏng >= {min(xau) if xau else '-'}")
+
+    # 10j — NÓI Ở CHỖ ĐANG QUYẾT, không chỉ trong một hằng số. `nhan_giong()`
+    # (nơi `CANH_BAO_CL` đi ra) **KHÔNG có một chỗ gọi nào trong `app/ui`** —
+    # quét AST ở dưới chứng minh điều đó — nên nhãn ấy một mình là nhãn không
+    # ai đọc. Cửa người dùng THẬT SỰ đọc là dòng cảnh báo của `_nn_doi`.
+    from app.ui import thay_giong_dialog as TGD
+    nut = than_ham(TGD, "_nn_doi")
+    than = list(nut.body)
+    if than and isinstance(than[0], ast.Expr) and \
+            isinstance(than[0].value, ast.Constant):
+        than = than[1:]                            # bỏ DOCSTRING theo cấu trúc
+    src = "\n".join(ast.unparse(x) for x in than)
+    ok("10j' lấy từ BẢNG SỐ của `giong_chatter` (một phép đo, nhiều chỗ đọc)",
+       "canh_bao_nhip" in goi_ten(nut))
+
+    # 10j — TÍNH RA RỒI VỨT ĐI thì mục 10j' vẫn xanh mà người dùng không thấy
+    # gì. Nên phải đòi: cái tên nhận kết quả `canh_bao_nhip(...)` **có mặt
+    # trong đối số của một lời gọi `setText`**. Đây là chốt chống "gọi cho
+    # có" — đúng họ bẫy cổng 56d (quét "có mặt không" thì luôn có phép phá
+    # giữ nguyên mặt chữ mà đổi ý nghĩa).
+    ten_nhan = ""
+    for n in ast.walk(nut):
+        if isinstance(n, ast.Assign) and "canh_bao_nhip" in goi_ten(n.value) \
+                and n.targets and isinstance(n.targets[0], ast.Name):
+            ten_nhan = n.targets[0].id
+    dung_o_settext = any(
+        ten_nhan and any(ten_nhan in ast.unparse(a) for a in n.args)
+        for n in ast.walk(nut)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "setText")
+    ok("10j kết quả `canh_bao_nhip` THẬT SỰ đi vào `setText` (không tính "
+       "rồi vứt)", bool(ten_nhan) and dung_o_settext, f"biến «{ten_nhan}»")
+    ok("10j'' TỰ KIỂM BỘ DÒ: docstring KHÔNG được tính là mã",
+       "BẮT BUỘC GPU NVIDIA" in ast.unparse(nut)
+       and "Máy không GPU thì tính năng này KHÔNG TỒN TẠI" not in src)
+
+    # 10k — cảnh báo phải ĐỔI THEO TIẾNG đang chọn, không phải một câu chung.
+    from PyQt6.QtWidgets import QApplication
+    _app = QApplication.instance() or QApplication([])
+    assert _app is not None
+    h = TGD.HopGiongToi()
+    ds = {}
+    for i in range(h.cb_nn.count()):
+        h.cb_nn.setCurrentIndex(i)
+        ds[str(h.cb_nn.itemData(i))] = h.lb_nn.text()
+    t_zh = ds.get("zh", "")
+    t_en = ds.get("en", "")
+    # SO BẰNG `.upper()` — nhãn viết **"ĐỌC LOẠN NHỊP"** và **"SAI NHỊP"** in
+    # HOA, nên tìm chuỗi thường `"nhịp"` là TRƯỢT trên một nhãn ĐANG ĐÚNG.
+    # Bản đầu của mục này đã ĐỎ OAN đúng vì thế (bài học cổng 85: nhãn cố ý
+    # viết hoa mà mục so nguyên văn chữ thường).
+    ok("10k chọn tiếng TRUNG -> cảnh báo nhịp đọc HIỆN RA",
+       "NHỊP" in t_zh.upper(), t_zh[-70:])
+    ok("10k' ...và nêu SỐ ĐO", "1,85" in t_zh)
+    ok("10l chọn tiếng ANH -> KHÔNG kêu oan (đo được 0,99-1,24x)",
+       "NHỊP" not in t_en.upper(), t_en[-70:])
+    ok("10l' TỰ KIỂM BỘ DÒ: hai dòng đó THẬT SỰ khác nhau",
+       bool(t_zh) and bool(t_en) and t_zh != t_en)
+    ok("10m nhãn tiếng Trung KHÔNG EMOJI",
+       not any(ord(c) > 0x2100 for c in t_zh + CB.canh_bao_nhip("zh")))
+
+
 def main() -> int:
     print("=" * 74)
     print("CỔNG 91 — NHÂN BẢN GIỌNG ĐA NGÔN NGỮ (Chatterbox) ĐÃ NỐI VÀO UI")
     print("=" * 74)
-    for f in (ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9):
+    for f in (ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9, ca10):
         try:
             f()
         except Exception as e:                                 # noqa: BLE001

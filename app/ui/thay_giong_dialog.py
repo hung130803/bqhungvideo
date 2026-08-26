@@ -1115,6 +1115,18 @@ class HopGiongToi(QDialog):
             có tham số `rate` nên bước đọc-nhanh không chữa được.
         Nói ở đây chứ không chỉ ở nhãn combo giọng: đây là lúc người dùng đang
         QUYẾT, còn nhãn combo là lúc đã lỡ rồi.
+
+        ═══ VẾ THỨ BA TỪNG NẰM TRONG DOCSTRING MÀ KHÔNG NẰM TRONG MÃ ═══
+        Ba gạch đầu dòng trên là hợp đồng của hàm này, nhưng tới 26/08/2026
+        thân hàm mới nói **hai** (GPU + dấu chìm). Vế *"đọc dài hơn bản ngữ"*
+        chưa bao giờ được in ra — mà nó lại là vế DUY NHẤT **phụ thuộc TIẾNG
+        đang chọn**, và tiếng Trung đo ra loạn nhịp **1,67 lần cả bộ câu**
+        (`giong_chatter.NHIP_THEO_TIENG`, dựng lại đúng arm đã sinh ra con số
+        1,81x của bảng đầu tiên).
+        Nay lấy THẲNG từ `CB_C.canh_bao_nhip(nn)`: tiếng đo ra hỏng thì kêu
+        KÈM SỐ · tiếng đo ra ổn (`en` 0,99-1,14x · `ja` 1,01x) thì **im** —
+        kêu cho cả 23 tiếng là cảnh báo rác, và cảnh báo rác thì người ta thôi
+        đọc cảnh báo · tiếng **chưa ai đo** thì nói thẳng là chưa đo.
         """
         nn = self.nn_dang_chon()
         la_cb = nn != "vi"
@@ -1124,12 +1136,14 @@ class HopGiongToi(QDialog):
                 "chìm. Đây là đường nhẹ nhất.")
             self.lb_nn.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
         else:
+            nhip = CB_C.canh_bao_nhip(nn)
             self.lb_nn.setText(
                 f"Tiếng {CB_C.TIENG.get(nn, nn)} đi bằng Chatterbox — "
                 f"{CB_C.CANH_BAO_MAY}.\n{CB_C.DONG_DAU_CHIM}.\n"
                 f"Chatterbox KHÔNG đọc được tiếng Việt (ép đọc thì ra chuỗi "
                 f"vô nghĩa mà vẫn báo thành công), nên nó BỔ SUNG cho VieNeu "
-                f"chứ không thay.")
+                f"chứ không thay."
+                + (f"\n{nhip}." if nhip else ""))
             self.lb_nn.setStyleSheet("color:#FFB86C; font-size:11px;")
         self._do_chatter(hien=la_cb)
 

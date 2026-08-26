@@ -132,7 +132,7 @@ CONG = [
     # CHÍNH script runner trong tiến trình con với gói `chatterbox` GIẢ mô
     # phỏng đúng tính dính `self.conds` — thứ biến "đọc kênh A rồi kênh B"
     # thành "kênh B ra giọng kênh A" mà mã thoát vẫn 0.
-    ("82 Chatterbox đã nối", "_test_chatter_noi.py",     58),
+    ("82 Chatterbox đã nối", "_test_chatter_noi.py",     59),
     # Cổng 83 canh lượt 19/08/2026: MỞ HẾT giọng edge-tts (**76 -> 322 giọng /
     # 75 thứ tiếng**) sau khi TÁCH "đọc được" khỏi "đo nhấn nhá". Nó lôi ra hai
     # lỗi thật: `giong_mo.nen_mo` là **MÃ CHẾT** (quét AST: chỉ `loc_mo` gọi,
@@ -363,12 +363,19 @@ CONG = [
     # tiên của bộ này là arm `A_nu × zh` **1,81x**, và lượt đo lại đã kết luận
     # *"không tái hiện được"* rồi HẠ nó khỏi nhãn — trong khi bộ đo lúc ấy
     # **thiếu đúng bộ câu `zh`** và còn dùng một MẪU khác hẳn. Dựng lại đúng
-    # arm thì tật **CÓ tái hiện (1,665x)**, còn arm đối chứng `B_nam × zh`
-    # vẫn **0,789x** y như bảng cũ. CA 10 canh hai thứ: bộ đo KHÔNG được
-    # thiếu `zh` lần nữa, và nhãn phải nói ra số ĐÍCH DANH theo TIẾNG ở chỗ
-    # người dùng đang QUYẾT (không phải chỉ trong một hằng số không ai đọc —
-    # `giong_chatter.nhan_giong()` quét AST ra **0 chỗ gọi** trong `app/ui`).
-    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 100),
+    # arm thì tật **CÓ tái hiện**: dùng lại CHÍNH FILE MẪU của lượt cũ ra
+    # **1,798x** (bảng cũ 1,806x — khớp tới TỪNG CÂU), còn mẫu SINH LẠI hôm nay
+    # ra 1,665x; arm đối chứng `B_nam × zh` vẫn **0,789x** y như bảng cũ.
+    # Hai con số 1,67/1,80 khác nhau đúng ở **BYTE của file mẫu** (edge-tts
+    # không trả audio giống từng byte qua các ngày), nên nhãn ghi DẢI chứ không
+    # ghi một số. (Ba con số trên là thước CŨ — chưa cắt lề — để so thẳng với
+    # bảng 25/08; nhãn thì ghi theo thước ĐÚNG CHO APP là **0,81x/1,85x**, xem
+    # `giong_chatter.NHIP_THEO_TIENG`.)
+    # CA 10 canh hai thứ: bộ đo KHÔNG được thiếu `zh` lần nữa, và nhãn phải nói
+    # ra số ĐÍCH DANH theo TIẾNG ở chỗ người dùng đang QUYẾT (không phải chỉ
+    # trong một hằng số không ai đọc — `giong_chatter.nhan_giong()` quét AST ra
+    # **0 chỗ gọi** trong `app/ui`).
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 105),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

@@ -140,15 +140,19 @@ _MIEN_PHI: frozenset[str] = frozenset(
 #: không lấy 286 MB của `docs/GIONG_DOC_MIEN_PHI.md` (đó là cỡ trọng số,
 #: không phải lượng tải thật). Nhãn phải KHỚP ĐƯỜNG SẼ ĐI — cổng 71 CA 4.
 #: Nguồn không có trong bảng = chạy được ngay, không tải gì.
-#: Chatterbox 5,5 GB — lấy ĐÚNG con số trên nhãn nút `giong_chatter.NHAN_TAI`
-#: (torch CUDA ~2,5 GB + thư viện + trọng số ~3,0 GB), KHÔNG ước bừa. Nhãn phải
-#: KHỚP ĐƯỜNG SẼ ĐI: ghi 155 MB rồi tải 2,5 GB là đúng lỗi cổng 71 CA 4.
+#: Chatterbox — **KHÔNG ghi cứng con số ở đây.** Nó đọc thẳng
+#: `giong_chatter.so_gb()` (nguồn duy nhất, cùng chỗ nhãn nút `NHAN_TAI` lấy)
+#: qua `_gb_chatter()` bên dưới. Ghi cứng là ĐÃ LỆCH THẬT MỘT LẦN: bảng này ghi
+#: **"5,5 GB"** trong khi `NHAN_TAI` đã đo lại ra **"5,59 GB"**, và cổng 82 mục
+#: 1d bắt đúng chỗ đó (`can_tai='5,5 GB'`). Đó là lớp lỗi *"nút ghi 155 MB rồi
+#: hộp doạ 2 GB"* (cổng 58) và *"250 MB là bộ VieNeu, không phải phần đang
+#: thiếu"* — **hai bản sao là hai chỗ để lệch nhau** (bài học `so_mb`).
+#: Nhãn phải KHỚP ĐƯỜNG SẼ ĐI: ghi 155 MB rồi tải 2,5 GB là lỗi cổng 71 CA 4.
 _CAN_TAI: dict[str, str] = {
     PIPER: "212 MB",
     OMNIVOICE: "6,1 GB",
     INDEXTTS: "bộ IndexTTS",
     VIENEU: "250 MB",
-    CHATTER: "5,5 GB",
     # Kokoro 538 MB — **SỐ ĐO 19/08/2026, không ước**: gói pip **211,7 MB**
     # (HTTP HEAD trên CHÍNH 92 wheel mà `pip install --dry-run --report` chọn,
     # 92/92 đo được; riêng torch 116,4 MB) + trọng số **312,1 MB**
@@ -211,9 +215,27 @@ def mien_phi(vid: str) -> bool:
     return nguon(vid) in _MIEN_PHI
 
 
+def _gb_chatter() -> str:
+    """Lượng tải của Chatterbox, đọc từ **NGUỒN DUY NHẤT** `giong_chatter`.
+
+    Import LƯỜI (trong thân hàm) có chủ đích: `giong_bang` là bảng tầng dưới mà
+    mọi module giọng đọc vào, nên import ở đầu file là một vòng nhập tiềm năng.
+    Hỏng thì trả `""`, và `""` nghĩa là *"không cần tải"* -> nhóm hiện sai chỗ;
+    vì vậy nhánh lỗi lùi về con số ĐÃ ĐO chứ không lùi về rỗng.
+    """
+    try:
+        from app.core import giong_chatter as _gc
+        return f"{_gc.so_gb()} GB"
+    except Exception:  # noqa: BLE001
+        return "5,59 GB"
+
+
 def can_tai(vid: str) -> str:
     """Phải tải bao nhiêu thì giọng này mới chạy được ("" = không cần)."""
-    return _CAN_TAI.get(nguon(vid), "")
+    ng = nguon(vid)
+    if ng == CHATTER:
+        return _gb_chatter()
+    return _CAN_TAI.get(ng, "")
 
 
 def tren_may(vid: str) -> bool:
@@ -337,7 +359,10 @@ _DUOI: dict[str, str] = {
     # TRƯỚC khi bấm: phải tải · phải có GPU · KHÔNG đọc được tiếng Việt. Phần
     # đầy đủ (mốc chữ 76 ms so 44 ms · đóng dấu chìm · đọc sai tiếng Trung
     # 28,8%) nằm ở `giong_chatter.nhan_giong`, dòng combo không chứa nổi.
-    CHATTER: ("miễn phí (MIT), cần tải bộ 5,5 GB, cần GPU NVIDIA, "
+    # Con số lượng tải **KHÔNG ghi cứng ở đây** — `_duoi_chatter()` chèn từ
+    # `can_tai()` (tức từ `giong_chatter.so_gb()`). Bản cũ ghi "5,5 GB" và đã
+    # LỆCH thật với nhãn nút "5,59 GB".
+    CHATTER: ("miễn phí (MIT), cần tải bộ {gb}, cần GPU NVIDIA, "
               "KHÔNG có tiếng Việt"),
     # Ba điều người dùng cần biết TRƯỚC khi bấm, theo đúng thứ tự: phải tải ·
     # KHÔNG đọc được tiếng Việt (28 giọng đều Anh-Mỹ/Anh-Anh) · KHÔNG trả mốc
@@ -425,6 +450,11 @@ def duoi_dong(vid: str, nhan: str = "") -> str:
     duoi = _DUOI.get(ng, "")
     if not duoi:
         return ""
+    # `{gb}` chỉ có ở dòng Chatterbox và được điền từ `can_tai()` — tức từ
+    # NGUỒN DUY NHẤT `giong_chatter.so_gb()`. Ghi cứng con số vào `_DUOI` là
+    # đẻ bản sao thứ hai, và bản sao đó ĐÃ lệch thật một lần ("5,5" vs "5,59").
+    if "{gb}" in duoi:
+        duoi = duoi.replace("{gb}", can_tai(vid) or "5,59 GB")
     thap = str(nhan or "").lower()
     if any(t in thap for t in _DO_TRUNG.get(ng, ())):
         return ""

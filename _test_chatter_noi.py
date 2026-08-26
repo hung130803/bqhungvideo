@@ -121,9 +121,20 @@ ok("1b có tên đọc được cho người dùng",
    GB.TEN_NGUON.get(GB.CHATTER) == "Chatterbox")
 ok("1c tính là MIỄN PHÍ (giấy phép MIT, chạy trên máy, 0 lượt mạng)",
    GB.mien_phi(MA_EN) is True)
-ok("1d có nhãn CẦN TẢI và số khớp `giong_chatter.NHAN_TAI`",
-   GB.can_tai(MA_EN) == "5,5 GB" and "5,5 GB" in gc.NHAN_TAI,
-   f"can_tai={GB.can_tai(MA_EN)!r}")
+#: **ĐỪNG ghi hằng số vào mục này.** Bản đầu đòi đúng chuỗi `"5,5 GB"`, nên khi
+#: `NHAN_TAI` được đo lại thành **"5,59 GB"** thì mục đỏ — mà cái đỏ đó KHÔNG
+#: phải app sai, nó là **bảng `giong_bang._CAN_TAI` còn giữ bản sao cũ**. Mệnh
+#: đề thật không phải "con số bằng X" mà là **"hai chỗ người dùng đọc phải nói
+#: CÙNG một số"** (lớp lỗi "nút ghi 155 MB, hộp doạ 2 GB" — cổng 58/71 CA 4).
+#: Viết theo kiểu này thì đo lại dung lượng KHÔNG phải sửa cổng, mà lệch nhau
+#: một chữ số là ĐỎ NGAY.
+_ct = GB.can_tai(MA_EN)
+ok("1d nhãn CẦN TẢI có số, và số đó KHỚP `giong_chatter.NHAN_TAI`",
+   bool(_ct) and _ct in gc.NHAN_TAI and any(k.isdigit() for k in _ct),
+   f"can_tai={_ct!r} · NHAN_TAI={gc.NHAN_TAI!r}")
+ok("1d' dòng combo cũng mang ĐÚNG con số đó (không còn bản sao ghi cứng)",
+   _ct in GB.duoi_dong(MA_EN, ""),
+   f"duoi={GB.duoi_dong(MA_EN, '')!r}")
 ok("1e xếp là giọng CHẠY TRÊN MÁY", GB.tren_may(MA_EN) is True)
 ok("1f cột `khop_ms` để RỖNG (76,2 ms đo bằng thước Groq, "
    "đặt cạnh 15,7 ms của silencedetect là TRỘN HAI THƯỚC)",
@@ -168,8 +179,18 @@ ok("2d nhóm 'giọng Tiếng Việt' KHÔNG chứa mã cb:",
 ok("2e KHÔNG mất giọng nào khi gom nhóm (bất biến cổng 79)",
    {v for _n, v in _ra if v} == {v for _n, v in _ds})
 _nhan = gc.nhan_giong(MA_EN, "Chị Lan")
+#: **"76 ms" ĐÃ BỊ GỠ KHỎI ĐÂY, CÓ CHỦ ĐÍCH — đừng thêm lại.** Bản đầu đòi
+#: chuỗi đó làm bằng chứng cho vế "chất lượng", nhưng 76,2 ms tả một đường
+#: **KHÔNG CÓ trong mã** (Chatterbox không tự trả mốc; mốc do bộ gióng hàng
+#: dựng). Chính mục 1f ngay trên đã chốt là phải để RỖNG vì nó đo bằng thước
+#: Groq — tức cổng tự mâu thuẫn, và nó đang **ép nhãn nói một câu sai**.
+#: Nay vế "chất lượng" phải chứng minh bằng SỐ ĐO THẬT, và đòi **hai** con số
+#: nên mục này CHẶT HƠN bản cũ: phủ mốc tiếng Trung (88,9%) + câu tệ nhất của
+#: tật đọc loạn nhịp (3,56 lần). Đo lại ra số khác thì sửa nhãn VÀ sửa đây.
 ok("2f nhãn mang ĐỦ ba cảnh báo: giấy phép · chất lượng · máy",
-   all(s in _nhan for s in ("MIT", "76 ms", "KHÔNG có tiếng Việt", "GPU")))
+   all(s in _nhan for s in ("MIT", "88,9", "3,56", "LOẠN NHỊP",
+                            "KHÔNG có tiếng Việt", "GPU")),
+   f"thiếu={[s for s in ('MIT', '88,9', '3,56', 'LOẠN NHỊP', 'KHÔNG có tiếng Việt', 'GPU') if s not in _nhan]}")
 ok("2g nhãn nói rõ tiếng Việt hỏng KIỂU GÌ (không ném lỗi, vẫn báo xong)",
    "vẫn báo thành công" in _nhan or "chuỗi vô nghĩa" in _nhan)
 

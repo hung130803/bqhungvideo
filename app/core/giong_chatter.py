@@ -95,6 +95,12 @@ cắt lề im hai đầu ở cả hai bên):
     en_dai   (8)  | 39,37s | 44,68s (1,14x) | 42,38s (1,08x) | **10,80x** -> 10,00x
     ja       (6)  | 24,43s | 24,79s (1,01x) | 22,72s (0,93x) | 1,65x -> 1,15x
 
+**⚠ KẾT LUẬN *"KHÔNG TÁI HIỆN"* Ở TRÊN CHỈ ĐÚNG VỚI `en` VÀ `ja` — ĐỌC TIẾP.**
+Bảng ấy **thiếu đúng bộ câu `zh`**, mà arm sinh ra con số 1,81x lại là
+`A_nu × zh`; nó còn dùng một **MẪU KHÁC HẲN** (`en-US-AndrewMultilingual` thay
+vì `A_nu` = `vi-VN-HoaiMy`). Tức nó bác một arm bằng cách đo ba arm KHÁC — xem
+khối `NHIP_THEO_TIENG` và mục dưới đây.
+
 **Tật KHÔNG rải đều — nó dồn vào CÂU NGẮN.** Câu 55-180 ký tự đọc gần đúng
 nhịp (0,80-1,18x). Câu **5 ký tự** (*"Okay."*, trần 0,66s) ra **7,15 giây**
 = **10,8 lần**: đó không phải khoảng lặng, đó là máy **đọc lan man** — cắt
@@ -221,6 +227,152 @@ TIENG: dict[str, str] = {
 
 GIAY_PHEP = "giấy phép MIT (cả mã lẫn trọng số) - bán được"
 
+# ---------------------------------------------------------------------------
+# NHỊP ĐỌC THEO **TIẾNG** — số đo, và nó KHÔNG rải đều
+# ---------------------------------------------------------------------------
+#: ═══ MỘT TẬT CÓ THẬT SUÝT BỊ ĐÓNG SỔ VÌ ĐO THIẾU MỘT ARM (26/08/2026) ═══
+#: Con số báo động đầu tiên của bộ này là arm **`A_nu × zh`**: đọc **54,9 s**
+#: cho bộ câu mà trần bản ngữ chỉ **30,4 s** = **1,81x** (`_kq_chatter_dangn.
+#: json`). Lượt đo lại kết luận *"không tái hiện được"* rồi **hạ con số đó
+#: khỏi nhãn** — nhưng bộ đo lúc ấy chỉ có `en_ngan`/`en_dai`/`ja`, **THIẾU
+#: ĐÚNG `zh`**, và còn dùng một MẪU khác hẳn. Nó bác một arm bằng cách đo ba
+#: arm KHÁC.
+#:
+#: Dựng lại ĐÚNG arm (cùng 8 câu, cùng mẫu `A_nu`) thì tật **CÓ tái hiện**.
+#: Thước THÔ = độ dài file CHƯA cắt lề (đúng thước bảng 25/08 dùng):
+#:
+#:     arm                        | trần(thô) | THÔ     | tỉ lệ | câu tệ nhất
+#:     zh_goc@A_nu (mẫu 25/08)    |  30,53 s  | 54,88 s | 1,80x |   3,44x
+#:     zh_goc@A_nu (mẫu sinh lại) |  30,53 s  | 50,84 s | 1,67x |   3,26x
+#:     zh_goc@B_nam (ĐỐI CHỨNG)   |  30,53 s  | 24,08 s | 0,79x |   0,92x
+#:
+#: Hàng ĐẦU là phép so thẳng với bảng 25/08 và nó khớp **tới từng câu**:
+#: 3,98/12,06/5,02/7,86/3,94/4,38/8,10/9,54 giây so với 4,0/12,1/5,0/7,9/3,9/
+#: 4,4/8,1/9,5 — tổng **54,88 s vs 54,90 s**, tỉ lệ **1,798x vs 1,806x**.
+#: Tức **1,81x TÁI HIỆN, không phải số rút thăm.**
+#:
+#: ...và trên thước ĐÚNG CHO APP (đã cắt lề hai đầu như `cat_le_loat` làm, rồi
+#: chạy `cat_lang_giua` — tức đúng thứ `khop_thoi_gian` nhìn thấy) thì nó
+#: **TỆ HƠN**, vì trần edge-tts chèn lề đuôi tới 860 ms còn Chatterbox ít hơn:
+#:
+#:     arm            | trần  | THÔ            | SAU CẮT LẶNG   | tệ nhất
+#:     zh_goc@A_nu    | 25,52 | 50,14 (1,97x)  | 47,16 (1,85x)  | 3,79 -> 3,56
+#:     zh_goc@B_nam   | 25,52 | 20,88 (0,82x)  | 20,70 (0,81x)  | 1,00 -> 1,00
+#:     zh@A_nu (trộn) | 62,50 | 78,85 (1,26x)  | 75,07 (1,20x)  | 3,33 -> 2,80
+#:     en_ngan@A_nu   | 37,75 | 49,91 (1,32x)  | 46,88 (1,24x)  | 1,79 -> 1,68
+#:
+#: **CỘT `en_ngan@A_nu` LÀ CHỖ PHẢI ĐỌC KỸ.** Cùng 12 câu tiếng Anh ấy, bảng
+#: 21/08 (mẫu `en-US-AndrewMultilingual`) ra **1,03x**; hôm nay với mẫu `A_nu`
+#: ra **1,32x**. Tức **MẪU kéo nhịp đọc, không riêng gì TIẾNG** — `A_nu` là
+#: một mẫu "đọc chậm" ở mọi tiếng. Nhưng nó chỉ đẩy tiếng Anh từ 1,03 lên 1,32
+#: còn tiếng Trung thì từ 0,81 (mẫu `B_nam`) lên **1,85**: cùng một mẫu, tiếng
+#: Trung đắt hơn tiếng Anh **1,5 lần nữa**, và ĐỘ TRẢI của tiếng Trung
+#: (0,81-1,85) rộng gấp bốn tiếng Anh (0,99-1,24).
+#: Trần đối chứng khớp bảng cũ trong **0,06 s / 0,2%** (37,75 vs 37,81) nên máy
+#: hôm nay không khác máy hôm đó — chênh lệch là của MẪU, không của môi trường.
+#:
+#: **`cat_lang_giua` ĂN ĐƯỢC BAO NHIÊU TRÊN `zh` — ÍT, VÀ PHẢI NÓI THẲNG:**
+#: 7 khoảng lặng giữa câu / 8 câu, tổng **4,39 s** (dài nhất **1,44 s**), cắt
+#: được 5/8 câu và bỏ **2,98 s** chết -> **1,97x xuống 1,85x** (bớt 0,12x,
+#: tức **6%** của phần dôi). Và cột đáng đọc hơn cả: **số câu chạm trần
+#: `atempo` 1,50 KHÔNG đổi — 4/8 trước và 4/8 sau.** Nghĩa là với tiếng Trung,
+#: chỗ dôi ra **KHÔNG phải khoảng lặng** mà là chính tiếng nói bị kéo dài, nên
+#: cắt lặng chữa được rất ít. (Trên `en_dai` nó từng đưa chạm trần 5/26 xuống
+#: 1/26 — khác hẳn.)
+#:
+#: ═══ VÌ SAO CÓ HAI HÀNG `A_nu`, VÀ ĐÂY LÀ BÀI HỌC ĐÁNG NHỚ NHẤT ═══
+#: Hai hàng đó **cùng mẫu câu, cùng giọng mẫu `vi-VN-HoaiMy`, cùng `CAU_MAU`,
+#: cùng seed** — khác nhau đúng một thứ: **BYTE của file mẫu**. edge-tts
+#: KHÔNG trả về audio giống từng byte cho cùng chữ + cùng giọng qua các ngày
+#: (mp3 25/08 và mp3 26/08 **cùng cỡ 49.824 byte, khác MD5**). Chatterbox thì
+#: **TIỀN ĐỊNH tuyệt đối** theo bộ `(chữ, mẫu, tiếng, seed)` — đo được: 6 câu
+#: dùng chung giữa bộ `zh_goc` và bộ `zh` cho ra tỉ lệ GIỐNG NHAU tới 2 chữ
+#: số thập phân, ở HAI tiến trình và HAI vị trí khác nhau trong mẻ.
+#: **QUY TẮC RÚT RA: với máy nhân bản, "cùng giọng, cùng câu" KHÔNG phải là
+#: "cùng mẫu".** Muốn dựng lại một phép đo nhân bản thì phải giữ lại chính
+#: FILE mẫu; sinh lại mẫu là đo một arm khác. Đó cũng là lý do lượt đo lại
+#: 21/08 kết luận nhầm "không tái hiện được".
+#: **HỆ QUẢ CHO ANH HÙNG:** con số này đi theo MẪU anh ấy đưa vào, nên nhãn
+#: ghi DẢI chứ không ghi một số — mẫu khác có thể tệ hơn 1,80x.
+#:
+#: **WER của chính arm đó chỉ 1,5%** -> nó **đọc ĐÚNG CHỮ, SAI NHỊP**. Đó là
+#: lý do mọi thước "đọc sai chữ" đều nói bộ này ổn trong khi tiếng ra dài gấp
+#: rưỡi: hai thước đo hai chuyện khác nhau, và cột WER **không** thay được cột
+#: nhịp.
+#:
+#: **BẢNG NÀY LÀ NGUỒN DUY NHẤT** — nhãn, tooltip và dòng cảnh báo lúc chọn
+#: tiếng đều đọc từ đây (một phép đo, nhiều chỗ đọc; bài học cổng 58 *"nút ghi
+#: 155 MB, hộp doạ 2 GB"*). Đo thêm tiếng nào thì thêm dòng, đừng gõ tay số
+#: vào nhãn.
+#: Khoá = mã ngôn ngữ · giá trị = `(XẤU NHẤT, TỐT NHẤT, CÂU TỆ NHẤT)` đo trên
+#: các MẪU đã thử, **thước SAU `cat_lang_giua`** (= đúng thứ người dùng nhận).
+#: Ghi cả hai đầu là cố ý: một số lẻ ở đây là lời hứa không giữ được, vì con
+#: số đi theo MẪU chứ không theo tiếng.
+NHIP_THEO_TIENG: dict[str, tuple[float, float, float]] = {
+    # zh: A_nu 1,85x · B_nam 0,81x   (câu tệ nhất 3,56x)
+    "zh": (1.85, 0.81, 3.56),
+    # en: A_nu 1,24x · Andrew 0,99x  (câu tệ nhất 1,67x)
+    "en": (1.24, 0.99, 1.67),
+    # ja: mới đo ĐÚNG MỘT mẫu (Andrew) -> hai đầu bằng nhau, và đó là điểm
+    # YẾU của dòng này chứ không phải điểm mạnh: xem "CHƯA ĐO ĐỦ" ở dưới.
+    "ja": (0.93, 0.93, 1.15),
+}
+
+#: Dưới mức này thì **KHÔNG KÊU**. Kêu cho cả `en`/`ja` là cảnh báo rác, mà
+#: cảnh báo rác thì người ta thôi đọc cảnh báo.
+#: **1,25 KHÔNG phải số tròn cho đẹp — nó nằm giữa hai nhóm ĐÃ ĐO:** cao nhất
+#: của nhóm ổn là `en@A_nu` **1,24**, thấp nhất của nhóm hỏng là `zh@A_nu`
+#: **1,85**. Nhưng biên trên chỉ còn **0,01** nên đây là chỗ MỎNG: đo thêm một
+#: mẫu tiếng Anh chậm hơn nữa là `en` sẽ vượt ngưỡng, và lúc đó phải ĐỔI BẢNG
+#: (thêm dòng, nói ra số) chứ **không được nới ngưỡng cho hết kêu**.
+NHIP_KEU_TU = 1.25
+
+#: Tiếng **CHƯA ĐO** thì nói thẳng là chưa đo, đừng im (im = người dùng hiểu
+#: nhầm thành "đã đo và không sao"). 23 thứ tiếng mà mới đo được 3.
+#: **SUY TỪ BẢNG, KHÔNG GÕ TAY** — hai danh sách là hai chỗ để lệch nhau.
+NHIP_DA_DO = tuple(NHIP_THEO_TIENG)
+
+
+def so_thap(x: float) -> str:
+    """``1.67`` -> ``"1,67"``. Dấu phẩy tiếng Việt, **chỉ đổi CON SỐ**.
+
+    Cùng lý do ``so_gb`` tồn tại: ``str(...).replace(",", ".")`` trên CẢ CÂU
+    đã biến *"một lần, dùng chung"* thành *"một lần. dùng chung"* hai lần
+    trong repo này. Để RIÊNG khỏi ``so_gb`` vì hai bên khác đơn vị và khác
+    số chữ số — gộp làm một là lần sau đổi định dạng GB thì nhãn nhịp đổi theo.
+    """
+    try:
+        return f"{float(x):.2f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return "?"
+
+
+def canh_bao_nhip(lang: str) -> str:
+    """Lời cảnh báo NHỊP ĐỌC cho một tiếng. ``""`` = tiếng này đọc đúng nhịp.
+
+    Ba đường ra, và **ba đường đều phải khác nhau**:
+      · tiếng đo được là HỎNG   -> nêu SỐ ĐO + nói rõ là sai NHỊP chứ không
+        phải sai CHỮ (WER 1,5%), vì người đọc rất dễ đi soi bản dịch;
+      · tiếng đo được là ỔN     -> ``""``, không kêu oan;
+      · tiếng CHƯA ĐO           -> nói thẳng *"chưa đo"*.
+    """
+    ma = str(lang or "").strip()
+    ty = NHIP_THEO_TIENG.get(ma)
+    if ty and ty[0] >= NHIP_KEU_TU:
+        return (f"ĐỌC LOẠN NHỊP ở tiếng {TIENG.get(ma, ma)}: đo trên hai MẪU "
+                f"giọng khác nhau ra {so_thap(ty[1])} và {so_thap(ty[0])} lần "
+                f"thời gian một giọng thường đọc cùng chữ ấy, câu tệ nhất "
+                f"{so_thap(ty[2])} lần - nó đọc ĐÚNG CHỮ (sai chữ chỉ 1,5%) "
+                f"nhưng SAI NHỊP, mà bộ này KHÔNG có núm chỉnh tốc độ nên chỉ "
+                f"gỡ được bằng cách ép nhanh (méo tiếng); con số đi theo MẪU "
+                f"anh đưa vào nên mẫu khác có thể tệ hơn")
+    if ma and ma not in NHIP_DA_DO:
+        return (f"nhịp đọc tiếng {TIENG.get(ma, ma)} CHƯA AI ĐO - mới đo Anh, "
+                f"Nhật, Trung; tiếng Trung đo ra loạn nhịp tới "
+                f"{so_thap(NHIP_THEO_TIENG['zh'][0])} lần nên tiếng chưa đo "
+                f"cũng có thể như vậy")
+    return ""
+
 #: Cảnh báo CHẤT LƯỢNG — cùng luật Piper/OmniVoice: tệ hơn edge-tts thì phải
 #: ghi ra ngay trên DÒNG, đừng để người dùng tự phát hiện sau 300 video.
 #:
@@ -240,12 +392,18 @@ GIAY_PHEP = "giấy phép MIT (cả mã lẫn trọng số) - bán được"
 #: Ép đọc tiếng Việt thì nó KHÔNG ném lỗi và KHÔNG câm — nó đọc ra một chuỗi
 #: vô nghĩa (*"Một cơn bão chưa từng có"* -> *"Mokonbel, Chutanko..."*) rồi
 #: trả mã 0. Người dùng nhận được file nghe được, tưởng đã xong.
+#:
+#: ═══ VÁ LẦN HAI 26/08/2026 — NHÃN ĐANG GIẤU MỘT TẬT CÓ THẬT ═══
+#: Bản trước chỉ nói tật CÂU NGẮN (*"5 ký tự -> 7,15 giây"*), vì lượt đo lại
+#: **thiếu đúng bộ câu `zh`** rồi kết luận 1,81x "không tái hiện được". Đo lại
+#: đúng arm thì tiếng Trung **CÓ loạn nhịp cả bộ** — xem `NHIP_THEO_TIENG`.
+#: Vế đó nay lấy THẲNG từ bảng số (`canh_bao_nhip`), không gõ tay.
 CANH_BAO_CL = ("mốc từng chữ do BỘ GIÓNG HÀNG dựng chứ máy đọc KHÔNG tự trả "
                "(phủ mốc: Anh 100,0% · Nhật 92,7% · Trung 88,9%; máy chưa có "
-               "bộ gióng hàng thì chữ không chạy theo lời); CÂU NGẮN THÌ ĐỌC "
+               "bộ gióng hàng thì chữ không chạy theo lời); "
+               + canh_bao_nhip("zh") + "; CÂU NGẮN THÌ ĐỌC "
                "LAN MAN - đo thật một câu 5 ký tự ra 7,15 giây, gấp 10,8 lần "
-               "giọng thường, mà bộ này KHÔNG có núm chỉnh tốc độ nên chỉ gỡ "
-               "được bằng cách ép nhanh (méo tiếng); KHÔNG có tiếng Việt (ép "
+               "giọng thường; KHÔNG có tiếng Việt (ép "
                "đọc thì ra chuỗi vô nghĩa mà vẫn báo thành công); mọi file "
                "đều bị ĐÓNG DẤU CHÌM không tắt được")
 
