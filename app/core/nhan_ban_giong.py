@@ -890,10 +890,39 @@ def nhan(ten: str) -> str:
     # Kokoro sáng nay.
     _t = thieu_de_nhan_ban(may)
     mat = "" if Path(str(g.get("mau") or "")).exists() else " - MẤT FILE MẪU"
-    duoi = (f"{ten} (giọng nhân bản, {ten_may}, "
-            f"mẫu {_so_giay(g):.0f} giây){mat}")
+    # Tách `tên` khỏi `phần sau` để `_vua_tran` biết cắt vào đâu khi dòng dài.
+    sau = (f" (giọng nhân bản, {ten_may}, "
+           f"mẫu {_so_giay(g):.0f} giây){mat}")
+    if may == MAY_CHATTER:
+        # ═══ CHATTERBOX PHẢI TỰ MANG CẢNH BÁO, KHÔNG MƯỢN ĐUÔI ═══
+        # Đo trước khi vá (21/08/2026): dòng cb: **143 ký tự**, vượt trần 130,
+        # tức đúng cái bẫy Kokoro (nhãn 139-178 bị cắt mất cụm "cần tải").
+        # Và nó vượt ở **nhánh KHÔNG thiếu gói** — nhánh duy nhất trước đây
+        # không hề đo mình, nên trần nằm đó mà không bao giờ bập được.
+        #
+        # 89 ký tự đuôi ấy còn THIẾU đúng thứ anh Hùng cần nhất: nó không nhắc
+        # một chữ nào về **ĐÓNG DẤU CHÌM**, mà anh ấy BÁN video ra.
+        # `giong_chatter.canh_bao_gon()` nói đủ bốn vế trong 70 ký tự và mang
+        # sẵn ba chữ `mit` / `cần tải` / `GPU` mà `giong_bang._DO_TRUNG
+        # [CHATTER]` dò — nên `duoi_dong` tự thôi dán đuôi cũ. Đổi được vế
+        # đóng dấu chìm lấy chỗ, mà **không đụng một dòng nào của
+        # `giong_bang.py`** (file đó đang do luồng khác giữ).
+        #
+        # NGÔN NGỮ nằm NGAY TRONG nhãn vì đây là bộ **KHÔNG CÓ TIẾNG VIỆT**:
+        # người dùng phải thấy "giọng này đọc tiếng gì" TRƯỚC khi gán cho kênh.
+        #
+        # **VIẾT ĐÚNG CỤM `"chỉ đọc tiếng"`, ĐỪNG RÚT THÀNH `"tiếng"`** — đó là
+        # một trong 5 chuỗi `giong_bang.duoi_da_ngu` dò để **thôi dán** đuôi
+        # `" - chỉ tiếng Anh"` (16 ký tự nói lại đúng điều nhãn vừa nói). Rút
+        # ngắn cụm này là dòng phồng thêm 16 ký tự cho 0 thông tin.
+        from app.core import giong_chatter as _gc
+        tieng = _gc.TIENG.get(str(g.get("lang") or "").strip().lower()[:2], "?")
+        sau = (f" (nhân bản Chatterbox, chỉ đọc tiếng {tieng})"
+               f"{mat} - {_gc.canh_bao_gon()}")
     if not _t:
-        return duoi
+        # ĐO CẢ NHÁNH NÀY — bản cũ chỉ đo nhánh "còn thiếu gói", nên dòng
+        # Chatterbox **143 ký tự** đi lọt suốt (đo 21/08/2026).
+        return _vua_tran(g, "", ten, sau)
 
     # ═══ HAI MỤC CỔNG **KHÔNG** XUNG ĐỘT — LƯỢT TRƯỚC ĐO SAI CHUỖI ═══
     # Cổng 88 mục **7c** đòi nhãn *"nói ĐÍCH DANH gói thiếu"* (bài học cổng 58);
@@ -933,10 +962,53 @@ def nhan(ten: str) -> str:
     # `giong_bang._DO_TRUNG[VIENEU]` làm `duoi_dong` tự thôi dán đuôi cũ — vừa
     # hết nói sai, vừa trả lại 30 ký tự. **BỎ "miễn phí" hay "cần tải" khỏi câu
     # này là cổng 79 ĐỎ NGAY** (đã đo: 91 · 2).
-    ten_du = f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {', '.join(_t)}) - " + duoi
-    if len(_dong_that(g, ten_du)) <= TRAN_NHAN:
-        return ten_du
-    return f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {len(_t)} gói) - " + duoi
+    dau = f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {', '.join(_t)}) - "
+    if len(_dong_that(g, dau + ten + sau)) <= TRAN_NHAN:
+        return dau + ten + sau
+    return _vua_tran(
+        g, f"CHƯA CHẠY ĐƯỢC (miễn phí, cần tải {len(_t)} gói) - ", ten, sau)
+
+
+def _vua_tran(g: dict, truoc: str, ten: str, sau: str) -> str:
+    """Ghép ``truoc + ten + sau`` sao cho DÒNG COMBO vừa ``TRAN_NHAN``, bằng
+    cách **CẮT TÊN GIỌNG** chứ không cắt cảnh báo. Vừa sẵn -> trả NGUYÊN VĂN,
+    không đụng một ký tự nào (bất biến: nhãn đang vừa thì KHÔNG đổi).
+
+    ═══ VÌ SAO CẮT TÊN CHỨ KHÔNG CẮT CẢNH BÁO ═══
+    Trần này sinh ra từ một lỗi THẬT: nhãn Kokoro 139-178 ký tự bị combo cắt
+    **đúng chỗ cụm "cần tải"**, tức thứ bị mất là thứ quan trọng nhất. Nên khi
+    buộc phải bỏ bớt, phải bỏ theo đúng thứ tự ngược lại: **tên giọng là thứ
+    hy sinh được** (người dùng vẫn nhận ra qua phần đầu, và tooltip/hộp
+    «Giọng của tôi» vẫn có tên đủ), còn *"cần tải"* / *"BẮT BUỘC GPU"* /
+    *"ĐÓNG DẤU CHÌM"* thì không.
+
+    Nhờ vậy trần trở thành **bất biến ĐÚNG VỚI MỌI TÊN** — kể cả tên 200 ký tự
+    anh Hùng tự gõ — chứ không phải một lời hứa chỉ đúng với tên ngắn. Đó là
+    thứ cổng chấm được.
+
+    Đo phần thừa rồi cắt đúng phần đó (không dò từng ký tự): ``_dong_that``
+    gọi cả ``nhan_nha`` lẫn ``da_ngu``, dò tuyến tính trên 300 kênh là đường
+    làm đơ lượt vẽ combo. Vòng lặp chỉ để chốt lại vì đuôi có thể đổi độ dài
+    khi nhãn đổi.
+
+    **KHÔNG BAO GIỜ NÉM** — đây là đường dựng NHÃN; một combo trống một dòng
+    còn tệ hơn một dòng hơi dài.
+    """
+    try:
+        t, s = str(ten or ""), str(sau or "")
+        for _ in range(6):
+            thua = len(_dong_that(g, truoc + t + s)) - TRAN_NHAN
+            if thua <= 0:
+                return truoc + t + s
+            k = len(t) - thua - 1          # `+1` chừa chỗ cho dấu `…`
+            # Cắt tới mức không còn nhận ra tên thì THÔI — thà một dòng hơi dài
+            # còn hơn một dòng không biết là giọng nào.
+            if k < 4:
+                return truoc + t + s
+            t = t[:k].rstrip() + "…"
+        return truoc + t + s
+    except Exception:                                          # noqa: BLE001
+        return f"{truoc}{ten}{sau}"
 
 
 def xoa(ten: str, xoa_ca_mau: bool = True) -> bool:

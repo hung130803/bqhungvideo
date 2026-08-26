@@ -65,6 +65,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core import che_chu as TG_CC
+from app.core import giong_chatter as CB_C
 from app.core import giong_hang as GH
 from app.core import giong_kokoro as KK
 from app.core import giong_vieneu as VN_C
@@ -907,6 +908,8 @@ class HopGiongToi(QDialog):
     _nb_xong = pyqtSignal(bool, str)
     #: tải BỘ GIỌNG VieNeu xong (ok, lời) — bước 1 của chuỗi
     _vn_xong = pyqtSignal(bool, str)
+    #: tải bộ Chatterbox (nhân bản ĐA NGÔN NGỮ) xong (ok, lời)
+    _cb_xong = pyqtSignal(bool, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -983,6 +986,47 @@ class HopGiongToi(QDialog):
         h1.addWidget(self.lb_mau, 1)
         lay.addLayout(h1)
 
+        # ---- hàng NGÔN NGỮ — CHỐT 4: `vi` -> VieNeu · tiếng khác -> Chatterbox
+        # ĐƯỜNG CHỌN TỰ LÀM VIỆC ĐÓ, KHÔNG BẮT ANH HÙNG NHỚ. Người dùng chọn
+        # *"giọng này để đọc tiếng gì"* — một câu anh ấy trả lời được; còn
+        # *"máy nào nhân bản được tiếng đó"* là việc của `nhan_ban_giong.
+        # goi_y_may()`, và nó có căn cứ ĐO ĐƯỢC chứ không phải sở thích:
+        # Chatterbox **không có `vi`** (ép đọc thì ra chuỗi vô nghĩa mà vẫn
+        # báo thành công), còn VieNeu là model TIẾNG VIỆT (bộ phiên âm của nó
+        # từ chối `lang="en"`, và giọng "Adam" của nó đọc tiếng Việt sai
+        # 2,5-5,0% trong khi đọc tiếng Anh sai 12,8%).
+        # Nên hai bộ **BỔ SUNG nhau**, không thay nhau.
+        h_nn = QHBoxLayout()
+        h_nn.addWidget(QLabel("Giọng này để đọc tiếng:"))
+        self.cb_nn = QComboBox()
+        # Tiếng Việt đứng ĐẦU: đó là ngôn ngữ chính của anh Hùng, và là đường
+        # DUY NHẤT không cần GPU + không bị đóng dấu chìm.
+        self.cb_nn.addItem("Việt (VieNeu - chạy được cả trên máy không GPU)",
+                           "vi")
+        for _ma in sorted(CB_C.TIENG, key=lambda k: CB_C.TIENG[k]):
+            self.cb_nn.addItem(f"{CB_C.TIENG[_ma]} (Chatterbox)", _ma)
+        self.cb_nn.currentIndexChanged.connect(self._nn_doi)
+        h_nn.addWidget(self.cb_nn, 1)
+        lay.addLayout(h_nn)
+        self.lb_nn = QLabel("")
+        self.lb_nn.setWordWrap(True)
+        self.lb_nn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        lay.addWidget(self.lb_nn)
+
+        # ---- hàng TẢI BỘ CHATTERBOX (chỉ hiện khi chọn tiếng KHÁC tiếng Việt)
+        self._dang_cai_cb = False
+        h_cb = QHBoxLayout()
+        self.lb_cb = QLabel("")
+        self.lb_cb.setWordWrap(True)
+        h_cb.addWidget(self.lb_cb, 1)
+        self.b_tai_cb = QPushButton(CB_C.NHAN_TAI)
+        self.b_tai_cb.clicked.connect(self._tai_chatter)
+        h_cb.addWidget(self.b_tai_cb)
+        lay.addLayout(h_cb)
+        self.pb_cb = QProgressBar()
+        self.pb_cb.setVisible(False)
+        lay.addWidget(self.pb_cb)
+
         h2 = QHBoxLayout()
         h2.addWidget(QLabel("Tên giọng:"))
         self.o_ten = QLineEdit()
@@ -1033,6 +1077,7 @@ class HopGiongToi(QDialog):
         self._nghe_xong.connect(self._nghe_giong_xong)
         self._nb_xong.connect(self._tai_nhan_ban_xong)
         self._vn_xong.connect(self._tai_vieneu_xong)
+        self._cb_xong.connect(self._tai_chatter_xong)
         # Nhịp vẽ tiến độ. CHỈ chạy trong lúc tải (`start()` ở `_tai_nhan_ban`)
         # — timer chạy suốt trong một hộp thoại là tự làm đơ máy đang chạy sản
         # xuất, và làm cổng test dựng UI phải chờ vô ích.
@@ -1042,6 +1087,200 @@ class HopGiongToi(QDialog):
         self._nap()
         self._do_vieneu()
         self._do_nhan_ban()
+        self._nn_doi()
+
+    # ------------------------------------------------------------------
+    def nn_dang_chon(self) -> str:
+        """Mã ngôn ngữ đang chọn ở combo. **ĐỌC TỪ WIDGET, KHÔNG TỪ QSettings.**
+
+        Setting chỉ được ghi lúc bấm Chạy/đóng hộp nên nó là lựa chọn CŨ —
+        đúng lỗi *"chạy dây chuyền lấy nhóm từ setting nên chạy sai nhóm"*.
+        Trạng thái ĐANG HIỆN nằm ở widget.
+        """
+        try:
+            return str(self.cb_nn.currentData() or "vi")
+        except Exception:  # noqa: BLE001
+            return "vi"
+
+    def _nn_doi(self, *_a) -> None:
+        """Đổi ngôn ngữ -> cập nhật lời cảnh báo + hiện/ẩn hàng tải Chatterbox.
+
+        ═══ BA CHỐT PHẢI NÓI RA Ở ĐÂY, KHÔNG GIẤU ═══
+        Chọn một tiếng KHÔNG PHẢI tiếng Việt là chọn Chatterbox, và bộ đó mang
+        ba cái giá mà anh Hùng phải biết TRƯỚC khi gán cho 200-300 kênh:
+          · **BẮT BUỘC GPU NVIDIA** — CPU đo 0,25x thời gian thật, tức mẻ 300
+            video không chạy nổi. Máy không GPU thì tính năng này KHÔNG TỒN TẠI.
+          · **ĐÓNG DẤU CHÌM Perth, không tắt được** — anh ấy BÁN video ra.
+          · **đọc dài hơn bản ngữ** (số đo ở `giong_chatter`), và bộ này không
+            có tham số `rate` nên bước đọc-nhanh không chữa được.
+        Nói ở đây chứ không chỉ ở nhãn combo giọng: đây là lúc người dùng đang
+        QUYẾT, còn nhãn combo là lúc đã lỡ rồi.
+        """
+        nn = self.nn_dang_chon()
+        la_cb = nn != "vi"
+        if not la_cb:
+            self.lb_nn.setText(
+                "Tiếng Việt đi bằng VieNeu: KHÔNG cần GPU, KHÔNG bị đóng dấu "
+                "chìm. Đây là đường nhẹ nhất.")
+            self.lb_nn.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+        else:
+            self.lb_nn.setText(
+                f"Tiếng {CB_C.TIENG.get(nn, nn)} đi bằng Chatterbox — "
+                f"{CB_C.CANH_BAO_MAY}.\n{CB_C.DONG_DAU_CHIM}.\n"
+                f"Chatterbox KHÔNG đọc được tiếng Việt (ép đọc thì ra chuỗi "
+                f"vô nghĩa mà vẫn báo thành công), nên nó BỔ SUNG cho VieNeu "
+                f"chứ không thay.")
+            self.lb_nn.setStyleSheet("color:#FFB86C; font-size:11px;")
+        self._do_chatter(hien=la_cb)
+
+    def _do_chatter(self, hien: bool = True) -> dict:
+        """Dò bộ Chatterbox rồi cập nhật nhãn + nút. KHÔNG khoá gì cả.
+
+        ═══ NÚT BÁM `thieu`, KHÔNG BÁM `co` ═══
+        Cùng luật `_do_vieneu`/`_do_nhan_ban`: bám cờ *"máy này chạy được
+        không"* thì trên máy dev (đã có `_giong_chatter/venv`) nút **BIẾN
+        MẤT**, không ai bấm thử, và bản `.exe` trên máy nhân viên trắng **mãi
+        mãi không có đường tải**. Đã sập hai lần (cổng 58 `_lib`, hàng Kokoro).
+
+        `gpu` để **RIÊNG**, KHÔNG gộp vào `thieu` — máy không GPU vẫn CHẠY
+        được (0,25x), chỉ là không dùng cho sản xuất; gộp vào là nhãn và nút
+        báo sai trạng thái (đúng lý do `giong_ngoai` tách khoá `o_tam`).
+        Nhưng nó vẫn phải HIỆN RA, và còn phải KHOÁ nút: mời tải 5,59 GB cho
+        một máy chắc chắn không dùng được là lừa người dùng một cách lịch sự.
+
+        Bộ dò hỏng -> nghiêng về **HIỆN nút** (ẩn nút là cách tính năng đã
+        chết một lần) và nói ra là chưa dò được.
+        """
+        try:
+            tt = CB_C.tinh_trang()
+        except Exception as e:  # noqa: BLE001 - dò hỏng, đừng giết hộp
+            tt = {"co": False, "thieu": ["không dò được"], "gpu": False,
+                  "python": "", "thu_muc": ""}
+            self.lb_cb.setText(
+                f"Bộ nhân bản đa ngôn ngữ (Chatterbox): CHƯA DÒ ĐƯỢC "
+                f"({type(e).__name__}: {e}) - bấm thử vẫn được, app sẽ báo lý "
+                f"do rõ.")
+            self.lb_cb.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            self.lb_cb.setVisible(hien)
+            self.b_tai_cb.setVisible(hien)
+            self.b_tai_cb.setEnabled(not self._dang_cai_cb)
+            self._tt_cb = tt
+            return tt
+        self._tt_cb = tt
+        thieu = list(tt.get("thieu") or [])
+        vi_sao = CB_C.vi_sao_khong_cai()
+        gpu = bool(tt.get("gpu"))
+        if not thieu:
+            self.lb_cb.setText(
+                "Bộ nhân bản đa ngôn ngữ (Chatterbox): ĐÃ CÓ - "
+                + ("máy có GPU NVIDIA, đọc nhanh 1,14 lần thời gian thật."
+                   if gpu else
+                   "NHƯNG máy này KHÔNG có GPU NVIDIA nên nó chỉ chạy 0,25 "
+                   "lần thời gian thật - không dùng cho sản xuất được.")
+                + f"\n{CB_C.DONG_DAU_CHIM}.")
+            self.lb_cb.setStyleSheet(
+                (f"color:{SUCCESS}; font-size:11px;") if gpu
+                else "color:#FFB86C; font-size:11px;")
+            self.b_tai_cb.setVisible(False)
+            self.pb_cb.setVisible(False)
+            self.lb_cb.setVisible(hien)
+            return tt
+        self.lb_cb.setText(
+            "Bộ nhân bản đa ngôn ngữ (Chatterbox): CHƯA CÓ, thiếu "
+            + ", ".join(thieu[:3]) + ("..." if len(thieu) > 3 else "")
+            + f".\nTải một lần khoảng {CB_C.so_gb()} GB. "
+            + f"{CB_C.DONG_DAU_CHIM}."
+            + (("\n" + vi_sao) if vi_sao else ""))
+        self.lb_cb.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        self.lb_cb.setVisible(hien)
+        self.b_tai_cb.setVisible(hien)
+        self.b_tai_cb.setText(CB_C.nhan_tai(thieu))
+        # Nút xám KHÔNG MỘT LỜI là câu đố (cổng 58/16/51) — `vi_sao` đã in ra
+        # nhãn ở trên, nên ở đây chỉ cần khoá.
+        self.b_tai_cb.setEnabled(not vi_sao and not self._dang_cai_cb)
+        self.b_tai_cb.setToolTip(
+            f"Tải bộ Chatterbox vào môi trường Python RIÊNG:\n"
+            f"{tt.get('thu_muc')}"
+            + "\n\nKHÔNG cài vào môi trường app đang chạy."
+            + f"\nLượng tải: khoảng {CB_C.so_gb()} GB, tải MỘT LẦN."
+            + f"\n\n{CB_C.CANH_BAO_MAY}."
+            + f"\n{CB_C.DONG_DAU_CHIM}."
+            + (("\n\n" + vi_sao) if vi_sao else ""))
+        return tt
+
+    def _tai_chatter(self) -> None:
+        """NGƯỜI DÙNG BẤM thì mới tải. 5,59 GB nên phải hỏi, và hỏi ĐỦ GIÁ."""
+        if self._dang_cai_cb or self._dang_cai_vn or self._dang_cai_nb:
+            return
+        vi_sao = CB_C.vi_sao_khong_cai()
+        if vi_sao:
+            QMessageBox.information(self, "Chưa tải được", vi_sao)
+            return
+        tt = getattr(self, "_tt_cb", None) or CB_C.tinh_trang()
+        if QMessageBox.question(
+                self, "Tải bộ nhân bản đa ngôn ngữ (Chatterbox)",
+                f"Sẽ tải khoảng {CB_C.so_gb()} GB vào môi trường Python "
+                f"RIÊNG:\n" + str(tt.get("thu_muc", ""))
+                + "\n\nKHÔNG cài vào môi trường app đang chạy."
+                + "\n\nBIẾT TRƯỚC BA ĐIỀU:\n"
+                + f"- {CB_C.CANH_BAO_MAY}.\n"
+                + f"- {CB_C.DONG_DAU_CHIM}.\n"
+                + "- Bộ này KHÔNG có tiếng Việt (giọng nhân bản tiếng Việt "
+                  "vẫn đi bằng VieNeu, không cần bộ này).\n\nTải bây giờ?"
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        self._dang_cai_cb = True
+        self.b_tai_cb.setEnabled(False)
+        self.b_tai_cb.setText("Đang tải...")
+        self.pb_cb.setVisible(True)
+        self.pb_cb.setValue(1)
+        # Dict RIÊNG. Thread nền CHỈ ghi vào dict thường, `_nhip` (timer luồng
+        # UI) mới đọc ra và vẽ — **KHÔNG đụng widget từ thread nền** (luật
+        # `shutdown.safe_emit`; gốc: 8 lần crash 0xc0000005). Dùng chung dict
+        # với hai hàng kia là ba lượt ghi lẫn số của nhau.
+        buoc = {"p": 0.0, "m": "Đang tải bộ Chatterbox..."}
+        self._buoc_chatter = buoc
+        self._dong_ho_nb.start()
+
+        def bg() -> None:
+            try:
+                r = CB_C.cai_chatter(
+                    on_progress=lambda p, m: buoc.update({"p": p, "m": m}))
+                ok, loi = bool(r.get("ok")), str(r.get("loi") or "")[:400]
+            except Exception as e:  # noqa: BLE001 - thread nền KHÔNG được chết
+                ok, loi = False, f"{type(e).__name__}: {e}"[:400]
+            self._cb_xong.emit(ok, loi)
+
+        threading.Thread(target=bg, daemon=True).start()
+
+    def _tai_chatter_xong(self, ok: bool, loi: str) -> None:
+        self._dang_cai_cb = False
+        self.pb_cb.setVisible(False)
+        self.b_tai_cb.setEnabled(True)
+        if not self._dang_cai_vn and not self._dang_cai_nb:
+            self._dong_ho_nb.stop()
+        # MỪNG THEO `thieu`, KHÔNG THEO `ok` của pip: pip trả mã 0 mà gói vẫn
+        # nằm ngoài môi trường đích là chuyện ĐÃ xảy ra thật (cổng 58).
+        tt = self._do_chatter(hien=self.nn_dang_chon() != "vi")
+        self._nap()
+        if tt.get("thieu"):
+            QMessageBox.warning(
+                self, "Chưa xong",
+                "Chưa tải xong bộ Chatterbox.\n"
+                + ("Còn thiếu: " + ", ".join(list(tt.get("thieu") or [])[:4]))
+                + (("\n\n" + loi) if loi else "")
+                + "\n\nApp vẫn chạy bình thường: giọng nhân bản tiếng Việt "
+                  "(VieNeu) không cần bộ này, và giọng nhân bản tiếng khác sẽ "
+                  "đọc bằng giọng thường.\n"
+                  "Chi tiết ở logs/giong_chatter_<ngày>.log")
+            return
+        QMessageBox.information(
+            self, "Đã cài xong",
+            "Đã cài xong bộ nhân bản đa ngôn ngữ.\n"
+            + str(tt.get("thu_muc", ""))
+            + f"\n\n{CB_C.DONG_DAU_CHIM}."
+            + ("" if tt.get("gpu") else
+               f"\n\nLƯU Ý: {CB_C.CANH_BAO_MAY}."))
 
     # ------------------------------------------------------------------
     def _do_vieneu(self) -> dict:
@@ -1404,13 +1643,18 @@ class HopGiongToi(QDialog):
         toàn. Không có nhánh này thì thanh đứng im ở 1% suốt vài phút — đúng
         cái anh Hùng đã kêu ở hộp bên ("chỉ hiện thanh tiến trình, không hiện
         gì cả")."""
-        # HAI NHÁNH, HAI DICT RIÊNG. Gộp vào một dict là hai lượt tải ghi lẫn
-        # số của nhau (và chuỗi bước-1-rồi-bước-2 thì thanh nhảy ngược).
+        # BA NHÁNH, BA DICT RIÊNG. Gộp vào một dict là các lượt tải ghi lẫn số
+        # của nhau (và chuỗi bước-1-rồi-bước-2 thì thanh nhảy ngược).
         if self._dang_cai_vn:
             b = getattr(self, "_buoc_vieneu", {"p": 0.0, "m": ""})
             self.pb_vn.setValue(
                 int(max(1, min(100, float(b.get("p") or 0) * 100))))
             self.lb_tt.setText("Bước 1/2: " + str(b.get("m") or "")[:140])
+        if self._dang_cai_cb:
+            b = getattr(self, "_buoc_chatter", {"p": 0.0, "m": ""})
+            self.pb_cb.setValue(
+                int(max(1, min(100, float(b.get("p") or 0) * 100))))
+            self.lb_tt.setText(str(b.get("m") or "")[:150])
         if not self._dang_cai_nb:
             return
         b = getattr(self, "_buoc_nhan_ban", {"p": 0.0, "m": ""})
@@ -1538,10 +1782,22 @@ class HopGiongToi(QDialog):
         wav = str(Path(tempfile.gettempdir())
                   / f"_bqtoi_{uuid.uuid4().hex[:8]}.wav")
 
+        # NGÔN NGỮ NGHE THỬ LẤY TỪ CHÍNH BẢN GHI, KHÔNG ĐÓNG CỨNG `"vi"`.
+        # Bản trước ghi cứng `nn="vi"`, nên một giọng nhân bản TIẾNG ANH sẽ
+        # được nghe thử bằng một câu TIẾNG VIỆT — ra tiếng lạ, rồi người nghe
+        # kết luận "giọng này hỏng". Đó ĐÚNG cái lỗi cổng 85 vừa chữa cho hộp
+        # bên (*"chọn tiếng Anh ngôn ngữ đó cứ ra tiếng Việt lung ta lung
+        # tung"*), chỉ khác đường vào.
+        # **KHÔNG hỏi `thay_giong.nn_cua_giong(ma)`**: hàm đó trả `""` cho
+        # `cb:` (nó không kết luận cho giọng đa ngữ, và trả `""` là ĐÚNG với
+        # cái nó biết). Sổ giọng thì biết CHẮC — chính người dùng đã khai lúc
+        # lưu. Nguồn nào biết chắc thì hỏi nguồn đó.
+        nn_doc = str(NB._muc(NB._doc_so(), ten).get("lang") or "vi")
+
         def bg() -> None:
             try:
                 from app.core import thay_giong as TGC
-                kq = TGC.doc_thu(ma, wav, nn="vi")
+                kq = TGC.doc_thu(ma, wav, nn=nn_doc)
                 self._nghe_xong.emit(kq.get("ra") or "", kq.get("nguon") or "",
                                      kq.get("loi") or "",
                                      kq.get("canh_bao") or "")
@@ -1599,7 +1855,12 @@ class HopGiongToi(QDialog):
             QMessageBox.information(self, "Lưu giọng",
                                     "Chọn file mẫu trước đã.")
             return
-        r = NB.them_giong(ten, self._mau, lang="vi",
+        # CHỐT 4 — NGÔN NGỮ QUYẾT MÁY, và `them_giong` tự chọn máy qua
+        # `goi_y_may(lang)`: `vi` -> VieNeu · tiếng khác -> Chatterbox.
+        # **KHÔNG truyền `may=` ở đây** — làm thế là dựng bản sao thứ hai của
+        # luật chọn máy, rồi một ngày nào đó hai bản lệch nhau và người dùng
+        # chọn tiếng Anh mà app đi hỏi VieNeu (bộ KHÔNG đọc được tiếng Anh).
+        r = NB.them_giong(ten, self._mau, lang=self.nn_dang_chon(),
                           nguon="anh Hùng tự khai qua hộp Giọng của tôi")
         if not r.get("ok"):
             QMessageBox.warning(self, "Không lưu được",

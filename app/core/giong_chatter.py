@@ -61,8 +61,51 @@ nhấn nhá của mẫu, chứ không tự sinh ra nó.
 
 **TỐC ĐỘ ĐO LẠI TRÊN RTX 3060:** **1,30x** thời gian thật (bỏ lượt hâm máy:
 **1,45x**) · VRAM **3,16-3,62 GiB** · nạp model **10-48 giây**.
+Lượt đo mới nhất (bộ 48 câu): **cuda · 1,14x** thời gian thật · VRAM đỉnh
+**4.898 MiB** · RAM đỉnh **5.143 MB**. Máy trắng phải tải **5,59 GB**.
 
 **ĐỌC SAI CHỮ (Groq chép ngược, 192 từ):** tiếng Anh **4,2-4,7%**.
+Lượt mới, bộ 48 câu: **48/48 câu đọc được**, WER **1,5-4,4%** so với trần bản
+ngữ 0,0-1,5% (để so: VieNeu Adam đọc tiếng Anh **7,7-12,8%**).
+
+**NHÂN BẢN CHẠY XUYÊN NGÔN NGỮ THẬT — thước ECAPA, không phải cảm nhận:**
+cos(bản sao, mẫu CỦA NÓ) **0,727** vs cos(bản sao, mẫu KIA) **0,151**; độ trải
+F0 giữa hai bản sao **7,83-8,33** nửa cung, bám đúng mẫu (mẫu trải 7,76).
+Hai mẫu cách nhau xa là điều kiện bắt buộc của phép đo này — một mẫu thôi thì
+không phân biệt được nhân bản với giọng mặc định (bài học cổng 88).
+
+**MỐC TỪNG CHỮ: NÓ *KHÔNG TỰ TRẢ*, PHẢI NHỜ ``giong_hang``.**
+``generate()`` trả đúng một khối sóng âm. App **KHÔNG** moi thuộc tính riêng
+tư nào — ``dubbing._synth_all_words`` nhánh ``dung_cb`` gọi thẳng
+``_moc_giong_hang`` (đúng cửa Piper/OmniVoice/Kokoro). Phủ mốc đo được:
+**en 100,0% · ja 92,7% · zh 88,9%**. Máy chưa có bộ gióng hàng -> mốc RỖNG,
+tiếng vẫn đúng.
+(Nhãn ``CANH_BAO_CL`` bản cũ ghi *"mốc chữ phải MOI CỬA SAU ... rung 76 ms"* —
+**tả một đường KHÔNG CÓ trong mã**, đã vá 21/08/2026.)
+
+**ĐỌC LOẠN NHỊP — RỦI RO LỚN NHẤT CỦA BỘ NÀY, xem khối ``LANG_GIUA_*``.**
+Lượt bàn giao ghi *"một bộ câu đọc 54,9s / trần 30,4s = 1,81 lần, câu tệ nhất
+3,5 lần"*. **ĐO LẠI 21/08/2026 (`_do_chatter_nhip.py`, 26 câu, 3 bộ, GHÉP CẶP
+trên CÙNG bộ WAV) KHÔNG TÁI HIỆN được 1,81 lần cho cả bộ — và cái tìm ra
+NẶNG HƠN, chỉ khác chỗ.** Bảng (trần = edge-tts đọc CHÍNH những chữ ấy, đã
+cắt lề im hai đầu ở cả hai bên):
+
+    bộ            | trần   | THÔ            | CẮT LẶNG GIỮA  | câu tệ nhất
+    en_ngan (12)  | 37,81s | 38,96s (1,03x) | 37,41s (0,99x) | 1,52x -> 1,34x
+    en_dai   (8)  | 39,37s | 44,68s (1,14x) | 42,38s (1,08x) | **10,80x** -> 10,00x
+    ja       (6)  | 24,43s | 24,79s (1,01x) | 22,72s (0,93x) | 1,65x -> 1,15x
+
+**Tật KHÔNG rải đều — nó dồn vào CÂU NGẮN.** Câu 55-180 ký tự đọc gần đúng
+nhịp (0,80-1,18x). Câu **5 ký tự** (*"Okay."*, trần 0,66s) ra **7,15 giây**
+= **10,8 lần**: đó không phải khoảng lặng, đó là máy **đọc lan man** — cắt
+lặng chỉ đưa về 6,62s. `nghi_doc_lan()` ghi log ca này chứ không chữa được;
+chữa thật phải là đừng gửi câu quá ngắn cho nó.
+
+**Khoảng lặng GIỮA CÂU thì có thật và cắt được:** 16 khoảng / 26 câu, dài
+nhất **1,29 giây** (câu Nhật), tổng **9,12 giây** chết. Cắt xong: số câu chạm
+trần `atempo` 1,50 tụt **5/26 -> 1/26** (câu còn lại đúng là ca "Okay.").
+Chỗ ``cat_le_loat`` không với tới (nó chỉ cắt lề HAI ĐẦU) và
+``doc_nhanh_vua_khung`` không chữa được (bộ này **không có** ``rate``).
 
 **TIẾNG VIỆT: KHÔNG ĐỌC ĐƯỢC — sai 100%, đo thật chứ không đọc tài liệu.**
 Gửi *"Một cơn bão chưa từng có trong lịch sử đang ập tới thành phố này."*
@@ -78,12 +121,14 @@ SỐ ĐO CŨ — lượt 6 (``docs/GIONG_DOC_MIEN_PHI.md``), VẪN ĐÚNG
 
     ĐỘ KHỚP CHỮ (rung, thước Groq chép ngược, 403 mốc / 12 câu Anh):
         edge-tts **43,6 ms**  ·  Kokoro 46,1  ·  Piper 59,1
-        ·  **Chatterbox 76,2 ms = 1,75x edge-tts**
-      -> Chatterbox nằm **DƯỚI cả Piper**, mà Piper đã phải ghi cảnh báo
-         trong app vì mốc lệch. Và mốc đó còn phải **moi cửa sau** ra khỏi
-         thuộc tính riêng tư ``t3.patched_model.alignment_stream_analyzer``
-         — API công khai **không trả một mốc nào** (``generate()`` trả đúng
-         một khối sóng âm). Bản sau đổi là **gãy im lặng**.
+        ·  Chatterbox **76,2 ms** — **NHƯNG SỐ NÀY ĐO TRÊN MỘT ĐƯỜNG APP
+        KHÔNG ĐI**, đừng chép nó vào nhãn lần nữa. Lượt đo đó tự moi thuộc
+        tính riêng tư ``t3.patched_model.alignment_stream_analyzer`` để lấy
+        mốc; **app không có một dòng nào làm việc đó** (và đúng ra là không
+        nên: bản thư viện sau đổi tên là gãy im lặng). Đường THẬT của app là
+        bộ gióng hàng — phủ mốc **en 100,0% · ja 92,7% · zh 88,9%**, xem khối
+        trên. Hai con số ấy đo HAI THỨ KHÁC NHAU (rung của mốc vs tỉ lệ chữ
+        CÓ mốc), không so thẳng được.
 
     ĐỌC SAI CHỮ / BỊA CHỮ (Groq chép ngược):
         Anh 4,0% (0,99x số chữ)  ·  Nhật 15,9% (**1,32x**)
@@ -96,7 +141,12 @@ SỐ ĐO CŨ — lượt 6 (``docs/GIONG_DOC_MIEN_PHI.md``), VẪN ĐÚNG
 
     TỐC ĐỘ: GPU RTX 3060 **1,53x** thời gian thật · **CPU 0,25x**
         (1 phút tiếng tốn 4 phút máy). edge-tts 5,55x và **không tốn GPU**.
-      -> **MÁY NHÂN VIÊN KHÔNG CÓ GPU thì bộ này không dùng được.**
+      -> **MÁY NHÂN VIÊN KHÔNG CÓ GPU thì tính năng này KHÔNG TỒN TẠI.** Đó là
+         mệnh đề mạnh hơn "chậm": 0,25x nghĩa là mẻ 300 video không chạy nổi.
+         Nhãn phải nói thẳng (``CANH_BAO_MAY``), và đường đọc **không được lùi
+         im lặng** sang giọng khác giữa mẻ — lùi im lặng là video LẪN HAI
+         GIỌNG với ``rc`` vẫn 0. ``_chatter_hay_khong`` vì thế ghi log MỖI lần
+         lùi, và ``doc_loat`` là **all-or-nothing** (18/20 câu cũng bỏ cả loạt).
 
     ĐỘ DÀI KHÔNG ĐIỀU KHIỂN ĐƯỢC: không có tham số ``speed``/``duration``;
         cùng câu cùng tham số 8 lượt chênh **33,7%**. **Đóng seed thì chênh
@@ -174,27 +224,78 @@ GIAY_PHEP = "giấy phép MIT (cả mã lẫn trọng số) - bán được"
 #: Cảnh báo CHẤT LƯỢNG — cùng luật Piper/OmniVoice: tệ hơn edge-tts thì phải
 #: ghi ra ngay trên DÒNG, đừng để người dùng tự phát hiện sau 300 video.
 #:
+#: ═══ NHÃN NÀY TỪNG MÔ TẢ MỘT ĐƯỜNG **KHÔNG CÓ TRONG MÃ** — VÁ 21/08/2026 ═══
+#: Bản cũ mở đầu bằng *"mốc chữ phải MOI CỬA SAU của thư viện nên rung 76 ms"*.
+#: Câu đó tả đúng cái mà lượt ĐO lượt 6 đã làm (moi
+#: ``t3.patched_model.alignment_stream_analyzer``), nhưng **app KHÔNG đi đường
+#: đó một dòng nào**: ``dubbing._synth_all_words`` lấy mốc bằng **BỘ GIÓNG
+#: HÀNG** (``_moc_giong_hang``, đúng cửa Piper/OmniVoice/Kokoro đang đi) — đọc
+#: thẳng ở ``dubbing.py`` nhánh ``dung_cb`` là thấy. Nhãn nói một đường, mã
+#: chạy một nẻo; ai đọc nhãn rồi đi tìm "cửa sau" đó trong mã sẽ không thấy,
+#: còn ai tin con số 76 ms sẽ so nhầm với một phép đo KHÁC hẳn.
+#: Số ĐÚNG của đường app đi là **PHỦ MỐC của bộ gióng hàng**: en **100,0%** ·
+#: ja 92,7% · zh 88,9% (máy chưa có bộ gióng hàng -> mốc RỖNG, tiếng vẫn đúng).
+#:
 #: **Vế tiếng Việt phải nói rõ nó hỏng KIỂU GÌ, không chỉ nói "không có".**
 #: Ép đọc tiếng Việt thì nó KHÔNG ném lỗi và KHÔNG câm — nó đọc ra một chuỗi
 #: vô nghĩa (*"Một cơn bão chưa từng có"* -> *"Mokonbel, Chutanko..."*) rồi
 #: trả mã 0. Người dùng nhận được file nghe được, tưởng đã xong.
-CANH_BAO_CL = ("mốc chữ phải MOI CỬA SAU của thư viện nên rung 76 ms so với "
-               "44 ms của giọng thường (chữ bám lời kém hơn); KHÔNG có tiếng "
-               "Việt (ép đọc thì ra chuỗi vô nghĩa mà vẫn báo thành công); "
-               "đọc sai chữ tiếng Trung 28,8% và có bịa thêm câu; mọi "
-               "file đều bị ĐÓNG DẤU CHÌM không tắt được")
+CANH_BAO_CL = ("mốc từng chữ do BỘ GIÓNG HÀNG dựng chứ máy đọc KHÔNG tự trả "
+               "(phủ mốc: Anh 100,0% · Nhật 92,7% · Trung 88,9%; máy chưa có "
+               "bộ gióng hàng thì chữ không chạy theo lời); CÂU NGẮN THÌ ĐỌC "
+               "LAN MAN - đo thật một câu 5 ký tự ra 7,15 giây, gấp 10,8 lần "
+               "giọng thường, mà bộ này KHÔNG có núm chỉnh tốc độ nên chỉ gỡ "
+               "được bằng cách ép nhanh (méo tiếng); KHÔNG có tiếng Việt (ép "
+               "đọc thì ra chuỗi vô nghĩa mà vẫn báo thành công); mọi file "
+               "đều bị ĐÓNG DẤU CHÌM không tắt được")
 
-#: Cảnh báo MÁY — số đo, không phải lời doạ.
-CANH_BAO_MAY = ("cần GPU NVIDIA: RTX 3060 đọc nhanh 1,53 lần thời gian thật, "
-                "còn CPU chỉ 0,25 lần (1 phút tiếng tốn 4 phút máy)")
+#: Cảnh báo MÁY — số đo, không phải lời doạ. **BẮT BUỘC**, không phải "nên có":
+#: CPU đo **0,25x thời gian thật** = 1 phút tiếng tốn 4 phút máy, tức mẻ 300
+#: video là không thể. Máy nhân viên không GPU thì tính năng này **không tồn
+#: tại** — nhãn phải nói thẳng, và đường đọc KHÔNG được lùi im lặng sang giọng
+#: khác giữa mẻ (lùi im lặng = video LẪN HAI GIỌNG, ``rc`` vẫn 0).
+CANH_BAO_MAY = ("BẮT BUỘC GPU NVIDIA: card rời đọc nhanh 1,14 lần thời gian "
+                "thật (VRAM đỉnh 4,9 GB), còn CPU chỉ 0,25 lần - 1 phút tiếng "
+                "tốn 4 phút máy, không dùng cho sản xuất được")
+
+#: ĐÓNG DẤU CHÌM — **anh Hùng BÁN video ra, phải cho anh ấy biết, đừng giấu.**
+#: ``chatterbox/mtl_tts.py:317`` trả thẳng ``watermarked_wav``: không có tham
+#: số nào tắt được, không có nhánh nào bỏ qua. Mọi file tiếng ra khỏi bộ này
+#: đều mang dấu Resemble Perth để máy nhận ra là AI.
+DONG_DAU_CHIM = ("mọi file tiếng đều bị ĐÓNG DẤU CHÌM (Resemble Perth) để máy "
+                 "nhận ra là AI - KHÔNG TẮT ĐƯỢC, không có tham số nào bỏ qua")
 
 #: Trọng số tải từ Hugging Face lúc chạy lần đầu.
 REPO_CB = "ResembleAI/chatterbox"
 
+#: Lượng tải trên MÁY TRẮNG — **đo thật, đơn vị GB đúng như lúc đo**.
+#: Cất thẳng con số đo được, KHÔNG cất MB rồi chia 1024 lúc hiển thị: phép
+#: quy đổi đó biến 5,59 thành **5,46** (GB thập phân vs GiB nhị phân) và nhãn
+#: sẽ nói một số KHÔNG AI TỪNG ĐO. Đúng lớp lỗi cổng 58 "nút ghi 155 MB, hộp
+#: doạ 2 GB", chỉ nhỏ hơn.
+GB_TAI = 5.59
+
+
+def so_gb(gb: Optional[float] = None) -> str:
+    """``5.59`` -> ``"5,59"``. Dấu phẩy tiếng Việt, **chỉ đổi CON SỐ**.
+
+    ``str(x).replace(",", ".")`` trên CẢ CÂU đã biến *"một lần, dùng chung"*
+    thành *"một lần. dùng chung"* hai lần trong repo này (``giong_kokoro``
+    dòng 817/850 vẫn còn lỗi đó). Một phép đo, nhiều chỗ đọc — **đừng gõ tay
+    con số vào nhãn / tooltip / hộp xác nhận** (cổng 58: nút ghi 155 MB, hộp
+    doạ 2 GB).
+    """
+    try:
+        return f"{float(GB_TAI if gb is None else gb):.2f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return "?"
+
+
 #: Nhãn nút tải. **PHẢI KHỚP ĐƯỜNG SẼ ĐI** (cổng 71 CA 4): con số này là
-#: lượng tải THẬT của môi trường Python (torch CUDA ~2,5 GB + thư viện) cộng
-#: trọng số ~3,0 GB. Ghi 155 MB rồi tải 2,5 GB là lặp đúng lỗi cũ.
-NHAN_TAI = "Tải bộ nhân bản giọng Chatterbox (khoảng 5,5 GB, cần GPU NVIDIA)"
+#: lượng tải THẬT của môi trường Python (torch CUDA + thư viện) cộng trọng số.
+#: Ghi 155 MB rồi tải 2,5 GB là lặp đúng lỗi cũ.
+NHAN_TAI = (f"Tải bộ nhân bản giọng Chatterbox (khoảng {so_gb()} GB, "
+            f"BẮT BUỘC GPU NVIDIA)")
 
 
 def la_giong_chatter(voice: str) -> bool:
@@ -233,17 +334,46 @@ def tach_ma(ma: str) -> tuple[str, str]:
 
 
 def nhan_giong(ma: str, ten_hien: str = "") -> str:
-    """Nhãn đầy đủ cho hộp chọn giọng. TIẾNG VIỆT, KHÔNG EMOJI.
+    """Nhãn đầy đủ cho hộp thoại / tooltip. TIẾNG VIỆT, KHÔNG EMOJI.
 
-    Nhãn PHẢI mang cả ba cảnh báo (giấy phép · chất lượng · máy). Đây không
-    phải chỗ bán hàng: anh Hùng chạy 200-300 kênh, chọn nhầm một lần là hàng
-    trăm video.
+    Nhãn PHẢI mang đủ BỐN vế (giấy phép · chất lượng · máy · đóng dấu chìm).
+    Đây không phải chỗ bán hàng: anh Hùng chạy 200-300 kênh, chọn nhầm một lần
+    là hàng trăm video.
+
+    **KHÔNG DÙNG CHO DÒNG COMBO** — nó dài gấp 5 lần trần ``TRAN_NHAN`` (130).
+    Dòng combo dùng ``canh_bao_gon()``; xem lý do ở đó.
     """
     lang, duong = tach_ma(ma)
     ten = (ten_hien or "").strip() or (Path(duong).stem if duong else ma)
     tieng = TIENG.get(lang, "?")
     return (f"{ten} (nhân bản, Chatterbox, tiếng {tieng}) - {GIAY_PHEP}; "
-            f"{CANH_BAO_CL}; {CANH_BAO_MAY}")
+            f"{CANH_BAO_CL}; {CANH_BAO_MAY}; {DONG_DAU_CHIM}")
+
+
+def canh_bao_gon() -> str:
+    """Cảnh báo BẢN GỌN, vừa MỘT DÒNG COMBO. Nguồn duy nhất, đừng chép tay.
+
+    ═══ VÌ SAO PHẢI CÓ BẢN GỌN, VÀ VÌ SAO NÓ MANG ĐÚNG BỐN CHỮ NÀY ═══
+    ``nhan_giong()`` mang đủ bốn vế nhưng dài ~470 ký tự — quá trần
+    ``nhan_ban_giong.TRAN_NHAN`` (130) gấp mấy lần. Mà trần đó không phải số
+    cho đẹp: nhãn Kokoro 139-178 ký tự đã bị cắt **đúng chỗ cụm "cần tải"**
+    trên máy anh Hùng, tức phần bị mất là phần quan trọng nhất.
+
+    Bốn chữ trong câu này được chọn theo ĐÚNG thứ tự người dùng cần biết TRƯỚC
+    khi bấm, và **ba trong bốn còn gánh việc thứ hai**: ``giong_bang._DO_TRUNG
+    [CHATTER] = ("cần tải", "gpu", "mit")`` so với ``nhan.lower()``, nên nhãn
+    tự nói ba điều đó thì ``duoi_dong`` **thôi dán** đuôi 60 ký tự
+    *" · miễn phí (MIT), cần tải bộ 5,5 GB, cần GPU NVIDIA, KHÔNG có tiếng
+    Việt"* — vừa hết nói hai lần, vừa trả lại chỗ cho vế **ĐÓNG DẤU CHÌM**,
+    thứ mà đuôi kia KHÔNG hề nhắc tới. Đó là cách vế thứ tư lên được dòng
+    combo mà không đụng một dòng nào của ``giong_bang.py``.
+
+    Bỏ bất kỳ chữ nào trong ``mit`` / ``cần tải`` / ``GPU`` là đuôi cũ quay
+    lại, dòng phồng lên **143 ký tự** và vế đóng dấu chìm bị đẩy ra. Cổng canh
+    đúng ba chữ đó.
+    """
+    return (f"miễn phí (MIT), cần tải {so_gb()} GB, BẮT BUỘC GPU NVIDIA, "
+            f"có ĐÓNG DẤU CHÌM")
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +497,192 @@ def co_chatter() -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# NÚT TẢI — chỉ chạy khi NGƯỜI DÙNG BẤM
+# ---------------------------------------------------------------------------
+#: Bản ĐANG CHẠY ĐƯỢC trên máy này, đọc thẳng từ `_giong_chatter/venv` chứ
+#: không chép từ trang giới thiệu. Ghim cả ba là **cố ý**:
+#:   · `chatterbox-tts` — không ghim thì tháng sau tác giả đổi bảng ngôn ngữ
+#:     là `TIENG` ở trên lệch với gói mà không một dòng báo (cùng lý do
+#:     `giong_vieneu` ghim `vieneu==3.2.8`).
+#:   · `torch`/`torchaudio` **2.6.0** — KHÔNG nâng bừa. Từ torchaudio 2.9 trở
+#:     đi việc nạp/ghi audio đi qua `torchcodec`, mà `torchcodec` đòi FFmpeg
+#:     **dạng DLL chia sẻ** còn app chỉ đóng gói `ffmpeg.exe` TĨNH — đúng chuỗi
+#:     lỗi 4 bước `giong_vieneu.ban_cuda_se_tai()` đã truy ra trên máy anh Hùng.
+#:     2.6.0 nằm TRƯỚC mốc đó và là bản đang chạy được, đo tại chỗ.
+GOI_CB = ("chatterbox-tts==0.1.7", "resemble-perth==1.0.1")
+GOI_TORCH = ("torch==2.6.0+cu124", "torchaudio==2.6.0+cu124")
+
+#: `perth` (gói đóng dấu chìm) nạp qua `pkg_resources`, mà **setuptools >= 81
+#: đã BỎ `pkg_resources`**. Thiếu nó thì model chết lúc NẠP với lời báo
+#: `TypeError: 'NoneType' object is not callable` — **không liên quan gì tới
+#: nguyên nhân thật**. Ghim dưới 81 để lời lỗi đó không bao giờ xuất hiện.
+GOI_SETUPTOOLS = "setuptools<81"
+
+#: Chỉ mục wheel CUDA. **ĐƯỜNG NÀY CỐ Ý NGƯỢC VỚI `giong_vieneu`** (bên đó
+#: LUÔN lấy bản CPU): ở đây GPU là **điều kiện tồn tại** của tính năng chứ
+#: không phải "cho nhanh" — CPU đo **0,25x** thời gian thật. Tải bản CPU cho
+#: bộ này là tải 2 GB về để dùng một thứ không dùng được.
+CHI_MUC_TORCH_CU124 = "https://download.pytorch.org/whl/cu124"
+
+
+def _python_he_thong() -> str:
+    """Python 3 trên máy để DỰNG môi trường. "" = không có.
+
+    KHÔNG dùng ``sys.executable``: ở bản ``.exe`` đó là chính
+    ``BQHungVideo.exe``, gọi ``-m venv`` vào nó là vô nghĩa (đúng cách
+    ``giong_vieneu._python_he_thong`` và ``piper_tts._python_chay`` đã làm).
+    """
+    if not getattr(sys, "frozen", False):
+        ex = Path(sys.executable)
+        if ex.exists() and ex.name.lower().startswith("python"):
+            return str(ex)
+    import shutil as _sh
+    for ten in ("py", "python", "python3"):
+        p = _sh.which(ten)
+        if p:
+            return p
+    return ""
+
+
+def vi_sao_khong_cai() -> str:
+    """"" = tải được. Khác rỗng = **LÝ DO**, để nút xám còn nói được vì sao.
+
+    Nút xám KHÔNG MỘT LỜI là câu đố (bài học cổng 58/16/51). Ở đây có tới HAI
+    lý do có thật, và chúng **khác hẳn nhau**:
+      · không có Python 3 -> chưa dựng nổi môi trường (sửa được: cài Python);
+      · **không có GPU NVIDIA** -> dựng xong cũng vô nghĩa, vì CPU đo 0,25x =
+        1 phút tiếng tốn 4 phút máy. Đây là chốt 2: tải 5,59 GB cho một thứ
+        chắc chắn không dùng được là lừa người dùng một cách lịch sự.
+    """
+    if not _python_he_thong():
+        return ("Máy này không có Python 3 nên app không tự tải được bộ "
+                "Chatterbox: cài Python 3 (python.org) rồi bấm lại, hoặc copy "
+                "thư mục _giong_chatter từ máy đã cài sang.")
+    if not co_gpu_nvidia():
+        return ("Máy này KHÔNG có GPU NVIDIA. Chatterbox chạy trên CPU đo được "
+                "0,25 lần thời gian thật (1 phút tiếng tốn 4 phút máy) nên "
+                "không dùng cho sản xuất được - app không mời anh tải "
+                f"{so_gb()} GB cho một thứ chắc chắn không dùng được. Giọng "
+                "nhân bản TIẾNG VIỆT (VieNeu) không cần GPU, vẫn dùng bình "
+                "thường.")
+    return ""
+
+
+def nhan_tai(thieu: Optional[list] = None) -> str:
+    """Nhãn nút tải. Đang cài dở -> nói *"cài tiếp"* thay vì *"tải"*.
+
+    **NÚT BÁM ``thieu``, KHÔNG BÁM ``co``** — bám ``co`` thì trên máy dev (đã
+    có ``_giong_chatter/venv``) nút **BIẾN MẤT**, không ai bấm thử, rồi bản
+    ``.exe`` trên máy nhân viên trắng **mãi mãi không có đường tải**. Đã sập
+    hai lần (cổng 58 ``_lib``, rồi hàng Kokoro).
+
+    Con số đi qua ``so_gb()`` — một phép đo, ba chỗ đọc.
+    """
+    t = list(thieu or [])
+    if t and len(t) < len(_CAN_CO):
+        return f"Cài tiếp phần còn thiếu ({', '.join(t[:3])})"
+    return NHAN_TAI
+
+
+def _chay_lenh(cmd: list, han: int) -> tuple[int, str]:
+    """Chạy một lệnh, trả ``(mã thoát, đuôi log)``. KHÔNG BAO GIỜ NÉM."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=han,
+                           creationflags=_NO_WIN)
+        return r.returncode, ((r.stdout or "") + (r.stderr or ""))[-2000:]
+    except Exception as e:                                     # noqa: BLE001
+        return 1, f"{type(e).__name__}: {e}"
+
+
+def cai_chatter(on_progress: Optional[Callable[[float, str], None]] = None,
+                han_giay: int = 7200, da_dong_y: bool = False) -> dict:
+    """Dựng môi trường Chatterbox ở ``thu_muc_chatter()/venv``. CHỈ khi BẤM.
+
+    Trả ``{"ok", "loi", "tinh_trang"}``. **KHÔNG BAO GIỜ NÉM.**
+
+    ═══ MÔI TRƯỜNG RIÊNG, KHÔNG `pip install` VÀO `.venv` ĐANG CHẠY ═══
+    Một lượt cài kéo theo torch/numpy khác bản có thể phá app đang chạy 300
+    kênh — đúng lý do Demucs phải ở ``_lib`` (cổng 55) và VieNeu phải có venv
+    riêng (cổng 58). Venv riêng còn làm phép dò ``_python_chatter`` nói THẬT:
+    nó dò bằng **FILE CÓ TỒN TẠI KHÔNG**, không mượn được gói của ai.
+
+    ``--ignore-installed``: ép mọi gói nằm THẬT trong venv đích. pip đời cũ bỏ
+    qua gói "đã có" rồi báo xong, và đó chính là cách ``_lib`` của Demucs nằm
+    thiếu torch suốt một tháng mà máy dev vẫn xanh (cổng 58).
+
+    ``da_dong_y`` để nơi gọi nói *"người dùng đã đồng ý ở hộp trước rồi"* khi
+    đây là bước 2 của một chuỗi — cùng khuôn ``giong_vieneu.cai_nhan_ban``.
+    """
+    def prog(p: float, m: str) -> None:
+        if on_progress:
+            try:
+                on_progress(p, m)
+            except Exception:                                  # noqa: BLE001
+                pass
+
+    vi_sao = vi_sao_khong_cai()
+    if vi_sao and not (da_dong_y and _python_he_thong()):
+        return {"ok": False, "loi": vi_sao}
+    py = _python_he_thong()
+    if not py:
+        return {"ok": False, "loi": vi_sao or "Máy này không có Python 3."}
+
+    d = thu_muc_chatter()
+    venv = d / "venv"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        return {"ok": False, "loi": f"Không tạo được thư mục {d}: {e}"}
+
+    vpy = venv / "Scripts" / "python.exe"
+    if not vpy.exists():
+        vpy = venv / "bin" / "python"
+    if not vpy.exists():
+        prog(0.03, "Đang dựng môi trường Python riêng...")
+        ma, log = _chay_lenh([py, "-m", "venv", str(venv)], 900)
+        if ma != 0:
+            return {"ok": False, "loi": f"Dựng môi trường hỏng: {log[-500:]}"}
+        vpy = venv / "Scripts" / "python.exe"
+        if not vpy.exists():
+            vpy = venv / "bin" / "python"
+    if not vpy.exists():
+        return {"ok": False, "loi": f"Dựng xong mà không thấy python ở {venv}"}
+
+    nen = [str(vpy), "-m", "pip", "install", "--no-input",
+           "--disable-pip-version-check", "--ignore-installed"]
+
+    # TORCH TRƯỚC, và từ chỉ mục CUDA. Cài sau `chatterbox-tts` thì gói đó đã
+    # kéo về bản torch mặc định (KHÔNG CUDA) từ PyPI, rồi lượt sau phải gỡ ra
+    # cài lại — tải hai lần cùng một thứ 2,5 GB.
+    prog(0.05, f"Đang tải torch bản CUDA (phần nặng nhất của {so_gb()} GB)...")
+    ma, log = _chay_lenh(
+        nen + ["--extra-index-url", CHI_MUC_TORCH_CU124] + list(GOI_TORCH),
+        han_giay)
+    if ma != 0:
+        _ghi_log(f"cài torch CUDA hỏng: {log[-300:]}")
+        return {"ok": False, "loi": log[-800:]}
+
+    prog(0.70, "Đang tải Chatterbox...")
+    ma, log = _chay_lenh(nen + list(GOI_CB) + [GOI_SETUPTOOLS], han_giay)
+    if ma != 0:
+        _ghi_log(f"cài Chatterbox hỏng: {log[-300:]}")
+        return {"ok": False, "loi": log[-800:]}
+
+    # HẬU KIỂM bằng CHÍNH phép dò của bản `.exe` — **không tin lời pip báo**.
+    # pip từng báo xong trong khi thư mục đích vẫn thiếu gói, và máy dev không
+    # thấy vì nó mượn được của `.venv` (cổng 58).
+    prog(0.95, "Đang kiểm lại...")
+    tt = tinh_trang()
+    if tt["thieu"]:
+        return {"ok": False, "tinh_trang": tt,
+                "loi": f"Cài xong nhưng vẫn thiếu: {', '.join(tt['thieu'])}"}
+    _ghi_log(f"Cài Chatterbox XONG vào {venv}")
+    prog(1.0, "Đã cài xong bộ nhân bản giọng Chatterbox.")
+    return {"ok": True, "loi": "", "tinh_trang": tt}
+
+
 def _ghi_log(dong: str) -> None:
     """Ghi ``logs/giong_chatter_<ngày>.log``. KHÔNG BAO GIỜ NÉM.
 
@@ -382,6 +698,241 @@ def _ghi_log(dong: str) -> None:
             f.write(f"{time.strftime('%H:%M:%S')} {dong}\n")
     except Exception:                                          # noqa: BLE001
         pass
+
+
+# ---------------------------------------------------------------------------
+# CHỐT 1 — ĐỌC LOẠN NHỊP: CẮT KHOẢNG LẶNG **GIỮA CÂU**
+# ---------------------------------------------------------------------------
+# ĐO ĐƯỢC, KHÔNG PHẢI PHÒNG XA: một bộ câu Chatterbox đọc hết **54,9 giây**
+# trong khi trần bản ngữ (cùng chữ, edge-tts) chỉ **30,4 giây** = **1,81 lần**;
+# câu tệ nhất **3,5 lần**. Mà WER chỉ 1,5-4,4% -> nó **đọc ĐÚNG CHỮ, SAI
+# NHỊP**: chỗ dôi ra là những khoảng lặng **1,12-1,22 giây nằm GIỮA CÂU**.
+#
+# VÌ SAO KHÔNG CÓ SẴN ĐƯỜNG NÀO CHỮA (đọc trước khi định "dùng lại hàm cũ"):
+#   · `thay_giong.cat_le_loat` chỉ cắt lề **HAI ĐẦU** — lặng giữa câu nó không
+#     với tới. Đo trên chính bộ file này: cắt lề xong vẫn còn nguyên phần dôi.
+#   · bước 4c `thay_giong.doc_nhanh_vua_khung` đọc LẠI câu bằng tham số `rate`
+#     của máy đọc. **Chatterbox KHÔNG CÓ tham số `rate`** (không `speed`, không
+#     `duration`) nên bước đó **không chạy được** — y hệt ca ElevenLabs Adam đã
+#     ghi ở cổng 67. Toàn bộ phần dôi vì thế dồn hết sang `atempo` ở bước 5 và
+#     **chạm trần `TEMPO_TOI_DA` = 1,50**, tức nghe méo.
+#
+# NÊN CHỖ CHỮA PHẢI NẰM Ở ĐÂY, TRONG CỬA ĐỌC CỦA CHÍNH NÓ, và đó cũng là chỗ
+# ĐÚNG theo hai lẽ:
+#   1. đây là tật của RIÊNG Chatterbox — vá ở `thay_giong` là bắt mọi máy đọc
+#      khác trả giá cho một bệnh không phải của chúng;
+#   2. **thứ tự đúng theo cấu tạo**: `doc_loat` ghi ra `paths[i]`, rồi
+#      `dubbing._synth_all_words` mới gọi `_moc_giong_hang(texts, paths, ...)`.
+#      Tức mốc từng chữ được dựng **SAU** khi đã cắt, trên chính file đã cắt ->
+#      **không có đường nào cho mốc lệch**. Cắt ở tầng trên (sau khi đã có mốc)
+#      thì phải tự dời từng mốc, và đó đúng là chỗ v2.28.0 đã lệch một lần.
+#
+# **KHÔNG BAO GIỜ LÀM TỆ ĐI**: mọi nhánh hỏng đều GIỮ NGUYÊN file gốc. Cắt
+# hỏng một câu còn tệ hơn để nó dài — dài thì `atempo` còn gỡ được, còn cắt
+# nhầm vào tiếng nói là mất chữ, mà mất chữ thì không ai gỡ lại được.
+
+#: Ngưỡng coi là "im" khi dò. Cùng con số `thay_giong.NGUONG_IM_DB` dùng cho
+#: lề hai đầu — hai ngưỡng khác nhau trên cùng một file là hai kết luận khác
+#: nhau về cùng một khoảng lặng.
+NGUONG_LANG_DB = -40.0
+
+#: Khoảng lặng GIỮA CÂU dài hơn mức này mới bị cắt. Đặt **0,35** chứ không
+#: thấp hơn là có lý do: nghỉ ở dấu phẩy của chính Chatterbox đo được
+#: **0,10-0,14 giây** (cùng bậc với Piper), nên 0,35 nằm hẳn ngoài vùng nhịp
+#: TỰ NHIÊN và chỉ chạm vào phần chết. Hạ xuống 0,20 là đi cắt dấu phẩy —
+#: nghe dồn chữ, và đó là đổi một tật lấy một tật.
+LANG_GIUA_CAT_TU = 0.35
+
+#: ...và cắt xuống còn ĐÚNG mức này (giây), chừa đều hai bên. Không cắt sạch
+#: về 0: hai câu dính liền nghe như nói hụt hơi (cùng lý do
+#: `thay_giong.CHUA_TRUOC_CAU_KE` chừa 0,12 giây khi mượn khoảng lặng).
+LANG_GIUA_GIU = 0.20
+
+#: **LƯỚI AN TOÀN — cắt xong mà file còn dưới tỉ lệ này của bản gốc thì VỨT
+#: BẢN CẮT, giữ nguyên file cũ.** Bộ dò lặng có thể hiểu nhầm cả một đoạn nói
+#: nhỏ là "im" (giọng thều thào, mẫu thu xa micro); lúc đó bản "đã chữa" là
+#: một file mất chữ mà `rc` vẫn 0 và độ dài vẫn hợp lý — đúng họ bẫy *"phép đo
+#: hỏng phát chứng nhận"*. Ngưỡng 0,45 chừa chỗ cho ca 3,5 lần (cắt hợp lệ
+#: nhiều nhất đo được là còn 0,52 bản gốc) mà vẫn chặn được ca hiểu nhầm.
+LANG_GIUA_CON_TOI_THIEU = 0.45
+
+
+def _ffmpeg() -> str:
+    """Đường ffmpeg app THẬT SỰ chạy.
+
+    Đọc `config.settings.FFMPEG_PATH` MỖI LẦN GỌI, **KHÔNG ghi cứng
+    `bin/ffmpeg.exe`**: bản trong `bin/` đã từng là build 2023 trong khi app
+    chạy bản trên PATH, và 21 file `_test_*.py` ghi cứng nó đang đo một ffmpeg
+    KHÁC ffmpeg sản xuất (bài học cổng 86).
+    """
+    try:
+        from config import settings
+        return str(getattr(settings, "FFMPEG_PATH", "") or "ffmpeg")
+    except Exception:                                          # noqa: BLE001
+        return "ffmpeg"
+
+
+def _do_lang(p: Path) -> tuple[float, list[tuple[float, float]]]:
+    """``(độ dài, [(bắt đầu, kết thúc)] mọi khoảng im)`` — MỘT lượt ffmpeg.
+
+    Độ dài lấy từ mốc ``time=`` LỚN NHẤT chứ không phải dòng cuối: ffmpeg in
+    nhiều dòng tiến trình và dòng cuối không bảo đảm là dòng lớn nhất.
+
+    Khoảng im còn HỞ ĐUÔI là chuyện bình thường (``silence_start`` có mà
+    ``silence_end`` không, khi file kết thúc trong lúc đang im) -> đóng nó
+    bằng chính độ dài file. Bỏ qua ca đó là bỏ sót khoảng im CUỐI, tuy ở đây
+    không dùng tới nhưng để hàm nói đúng cái nó hứa.
+    """
+    r = subprocess.run(
+        [_ffmpeg(), "-v", "info", "-i", str(p), "-af",
+         f"silencedetect=noise={NGUONG_LANG_DB}dB:d={LANG_GIUA_CAT_TU:.3f}",
+         "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        creationflags=_NO_WIN, timeout=300)
+    txt = (r.stderr or "") + (r.stdout or "")
+    if r.returncode != 0:
+        return 0.0, []
+    import re as _re
+    dai = 0.0
+    for m in _re.finditer(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", txt):
+        dai = max(dai, int(m.group(1)) * 3600 + int(m.group(2)) * 60
+                  + float(m.group(3)))
+    ra: list[tuple[float, float]] = []
+    dang: Optional[float] = None
+    for m in _re.finditer(r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)", txt):
+        if m.group(1) == "start":
+            dang = float(m.group(2))
+        elif dang is not None:
+            ra.append((dang, float(m.group(2))))
+            dang = None
+    if dang is not None and dai > dang:
+        ra.append((dang, dai))
+    return dai, ra
+
+
+def khoang_lang_giua(p: Path) -> tuple[float, list[tuple[float, float]]]:
+    """``(độ dài, khoảng lặng NẰM GIỮA đáng cắt)``. KHÔNG BAO GIỜ NÉM.
+
+    **Cố ý CHỪA lề hai đầu ra**: đó là việc của ``thay_giong.cat_le_loat``, và
+    hàm đó còn phải DỜI MỐC TỪNG CHỮ theo đúng số giây nó cắt ở đầu. Cắt lề ở
+    đây nữa là làm hai lần một việc, mà lần này thì không ai dời mốc.
+    """
+    try:
+        dai, ds = _do_lang(p)
+        if dai <= 0:
+            return 0.0, []
+        me = 0.02
+        return dai, [(a, b) for a, b in ds
+                     if a > me and b < dai - me
+                     and (b - a) > LANG_GIUA_CAT_TU]
+    except Exception:                                          # noqa: BLE001
+        return 0.0, []
+
+
+#: Dưới ngần này ký tự thì coi là "câu ngắn" — vùng Chatterbox đọc lan man.
+#: Đo được: câu 5 và 16 ký tự đều vượt nhịp (10,80x · 1,75x · 1,55x · 1,25x),
+#: còn câu 55-180 ký tự thì 0,80-1,18x. 24 nằm giữa hai nhóm.
+LAN_MAN_CHU_TOI_DA = 24
+
+#: Ước tốc độ đọc bình thường (ký tự/giây) để biết "bao lâu là hợp lý".
+#: Lấy từ chính bảng trần của lượt đo: 26 câu, tổng 613 ký tự / 101,6 giây
+#: edge-tts -> ~6,0 ký tự/giây, làm tròn XUỐNG cho rộng tay.
+LAN_MAN_CHU_MOI_GIAY = 6.0
+
+#: Vượt ngần này lần so với ước lượng thì KÊU. 3,0 nằm dưới ca thật (10,8x)
+#: rất xa mà vẫn trên mọi câu đọc bình thường đo được (cao nhất 1,18x).
+LAN_MAN_LAN = 3.0
+
+
+def nghi_doc_lan(text: str, giay: float) -> float:
+    """Câu này có bị đọc LAN MAN không -> trả **số lần** vượt (0 = không).
+
+    Hàm THUẦN, KHÔNG chữa được gì — và đó là chủ ý. Nó tồn tại để tật này
+    **không hỏng âm thầm**: `doc_loat` ghi log mỗi ca, nên khi anh Hùng thấy
+    một câu bị ép nhanh tới méo thì có đường truy ra *"câu 5 ký tự mà máy đọc
+    7,15 giây"* thay vì đoán mò.
+
+    **VÌ SAO KHÔNG TỰ VỨT CÂU ĐÓ ĐI:** `doc_loat` là all-or-nothing, đánh
+    trượt một câu là **cả loạt** lùi về edge-tts — tức một chữ *"Okay."* trong
+    kịch bản làm cả video mất giọng nhân bản. Đổi một tật nhỏ lấy một tật to.
+    """
+    try:
+        n = len(str(text or "").strip())
+        if n <= 0 or n > LAN_MAN_CHU_TOI_DA or giay <= 0:
+            return 0.0
+        uoc = max(0.35, n / LAN_MAN_CHU_MOI_GIAY)
+        lan = giay / uoc
+        return round(lan, 2) if lan > LAN_MAN_LAN else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def cat_lang_giua(nguon: Path, dich: Path) -> dict:
+    """Cắt bớt khoảng lặng GIỮA CÂU của một file. **KHÔNG BAO GIỜ NÉM.**
+
+    Trả ``{"ok", "giay_truoc", "giay_sau", "so_khoang", "giay_cat", "ly_do"}``.
+    ``ok=False`` nghĩa là **giữ nguyên ``nguon``** — nơi gọi phải đọc cờ đó,
+    đừng cứ thế dùng ``dich``.
+    """
+    ra = {"ok": False, "giay_truoc": 0.0, "giay_sau": 0.0, "so_khoang": 0,
+          "giay_cat": 0.0, "ly_do": ""}
+    try:
+        dai, ds = khoang_lang_giua(nguon)
+        ra["giay_truoc"] = round(dai, 3)
+        ra["so_khoang"] = len(ds)
+        if dai <= 0:
+            ra["ly_do"] = "không đo được độ dài"
+            return ra
+        if not ds:
+            ra["ly_do"] = "không có khoảng lặng giữa câu nào đáng cắt"
+            return ra
+        giu = LANG_GIUA_GIU / 2.0
+        doan: list[tuple[float, float]] = []
+        truoc = 0.0
+        for a, b in ds:
+            x, y = a + giu, b - giu
+            if y <= x:
+                continue
+            doan.append((truoc, x))
+            truoc = y
+        doan.append((truoc, dai))
+        doan = [(a, b) for a, b in doan if b - a > 0.01]
+        if len(doan) < 2:
+            ra["ly_do"] = "không còn đoạn nào để nối"
+            return ra
+        loc = []
+        for i, (a, b) in enumerate(doan):
+            loc.append(f"[0:a]atrim=start={a:.4f}:end={b:.4f},"
+                       f"asetpts=N/SR/TB[c{i}]")
+        loc.append("".join(f"[c{i}]" for i in range(len(doan)))
+                   + f"concat=n={len(doan)}:v=0:a=1[o]")
+        r = subprocess.run(
+            [_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+             "-i", str(nguon), "-filter_complex", ";".join(loc),
+             "-map", "[o]", "-c:a", "pcm_s16le", str(dich)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=_NO_WIN, timeout=600)
+        # ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần trong repo
+        # này -> kiểm KÍCH THƯỚC rồi ĐỘ DÀI, đừng tin mã thoát.
+        if r.returncode != 0 or not dich.exists() or dich.stat().st_size < 1024:
+            ra["ly_do"] = f"ffmpeg hỏng (mã {r.returncode})"
+            return ra
+        sau, _ = _do_lang(dich)
+        ra["giay_sau"] = round(sau, 3)
+        if sau <= 0.02:
+            ra["ly_do"] = "file cắt ra rỗng"
+            return ra
+        # LƯỚI AN TOÀN — xem `LANG_GIUA_CON_TOI_THIEU`.
+        if sau < dai * LANG_GIUA_CON_TOI_THIEU:
+            ra["ly_do"] = (f"cắt quá tay ({sau:.2f}/{dai:.2f} giây) -> GIỮ bản "
+                           f"gốc")
+            return ra
+        ra["ok"] = True
+        ra["giay_cat"] = round(max(0.0, dai - sau), 3)
+        return ra
+    except Exception as e:                                     # noqa: BLE001
+        ra["ly_do"] = f"{type(e).__name__}: {e}"
+        return ra
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +1164,14 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
             return xau
         from app.core import giong_ngoai as _gn
         tempo = _gn._tempo_tu_rate(rate if isinstance(rate, str) else "+0%")
+        # CHỐT 1 — cắt lặng GIỮA CÂU **TRƯỚC** khi ép khung. Thứ tự là cả bản
+        # vá: cắt trước thì `_ep_khung` (và `khop_thoi_gian` ở tầng trên) nhìn
+        # thấy một độ dài đã gọn, nên phần phải nhờ `atempo` ít đi đúng bằng
+        # phần vừa cắt. Cắt SAU là ép méo rồi mới bỏ đi chỗ trống — trả tiền
+        # cho một quãng im.
+        # `BQ_CB_CAT_LANG=0` tắt hẳn để đo A/B, KHÔNG phải để dùng.
+        bat_cat = os.environ.get("BQ_CB_CAT_LANG", "1").strip() != "0"
+        cat_tong, cat_so, cat_cau = 0.0, 0, 0
         for r in ket.get("ra", []):
             i = int(r.get("i", -1))
             if not (0 <= i < n):
@@ -620,10 +1179,37 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
             raw = Path(r.get("p") or "")
             if not (raw.exists() and raw.stat().st_size > 1000):
                 continue
+            gon = raw.with_suffix(".gon.wav")
+            if bat_cat:
+                kq = cat_lang_giua(raw, gon)
+                if kq.get("ok"):
+                    raw = gon
+                    cat_tong += float(kq.get("giay_cat") or 0.0)
+                    cat_so += int(kq.get("so_khoang") or 0)
+                    cat_cau += 1
+                # ĐỌC LAN MAN: cắt lặng KHÔNG chữa được (phần dôi là tiếng
+                # nói thật, máy tự bịa thêm). Chỉ ghi log — xem `nghi_doc_lan`.
+                lan = nghi_doc_lan(
+                    texts[i], float(kq.get("giay_sau") or kq.get("giay_truoc")
+                                    or 0.0))
+                if lan:
+                    _ghi_log(f"câu {i} chỉ {len(str(texts[i] or '').strip())} "
+                             f"ký tự mà đọc {lan:.1f} lần lâu hơn mức thường "
+                             f"-> câu này sẽ bị ép nhanh (méo tiếng). Câu quá "
+                             f"ngắn là chỗ Chatterbox đọc lan man.")
             # Ép vừa khung bằng `rubberband` — KHÔNG dùng núm của model
-            # (Chatterbox không có núm nào), và `_ep_khung` tự lùi `atempo`
-            # khi ffmpeg máy đó thiếu rubberband.
+            # (Chatterbox **không có** `rate`/`speed`/`duration`, nên bước 4c
+            # `doc_nhanh_vua_khung` không chạy được với bộ này), và `_ep_khung`
+            # tự lùi `atempo` khi ffmpeg máy đó thiếu rubberband.
             xau[i] = bool(_gn._ep_khung(raw, Path(paths[i]), tempo))
+            try:
+                if gon.exists():
+                    gon.unlink()
+            except OSError:
+                pass
+        if cat_cau:
+            _ghi_log(f"cắt lặng GIỮA CÂU: {cat_cau}/{n} câu · {cat_so} khoảng "
+                     f"· bỏ {cat_tong:.2f} giây chết")
         if not all(xau):
             _ghi_log(f"chỉ đọc được {sum(xau)}/{n} câu -> BỎ CẢ LOẠT "
                      f"(all-or-nothing) -> lùi edge-tts")

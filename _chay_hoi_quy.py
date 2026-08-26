@@ -337,7 +337,14 @@ CONG = [
     # Không mạng · không nạp model · không đốt GPU · không tốn lượt Groq —
     # hàm thuần + ffmpeg THẬT trên WAV `lavfi` tự sinh. Thử phá
     # `_pha_da_ngu.py`: 14 phép, mỗi phép gỡ ĐÚNG một chốt.
-    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 76),
+    # Mốc 76 -> **79** (26/08/2026): mốc 76 đã LẠC HẬU (cổng thật ra 77), và
+    # vì bộ so chỉ kêu khi `ĐẠT < mốc` nên mục dư đó chưa bao giờ được canh —
+    # đúng lớp lỗi cổng 79 đã dính. Lượt thử phá còn lôi ra **một LỖ THẬT của
+    # cổng**: mục 4f cũ hỏi *"thân hàm có chữ `_ghi_log` không"*, mà
+    # `_chatter_hay_khong` có **HAI** nhánh lùi cùng gọi `_ghi_log`, nên phép
+    # phá 7 (bỏ log của nhánh THIẾU BỘ = lùi IM LẶNG trên máy nhân viên)
+    # **LỌT**. Nay 4f GỌI THẬT nhánh đó rồi bắt sổ lời gọi (+2 mục).
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 79),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
