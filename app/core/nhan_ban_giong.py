@@ -100,6 +100,68 @@ CANH_BAO_PHAP_LY = (
     "Zalo, ElevenLabs) - anh đang BÁN app nên chuyện này là rủi ro pháp lý "
     "cho cả app, không phải chuyện chất lượng tiếng.")
 
+#: ═══ GIỌNG NHÂN BẢN ĐỌC **TIẾNG ANH** — BẢNG SỐ ĐO 26/08/2026 ═══
+#: (`_do_vnb_en.py` -> `_kq_vnb_en.txt` · `_do_vnb_nhip.py` -> `_kq_vnb_nhip.json`)
+#:
+#: Anh Hùng: *"khi clone giọng tiếng Anh nó đọc như thằng mới học ấy, nói không
+#: lưu loát không chuẩn chữ"* — màn hình anh ấy là **đích Tiếng Anh** + giọng
+#: **`vnb:`** (nhân bản chạy VieNeu).
+#:
+#: Ba arm **GHÉP CẶP trên CÙNG một file mẫu** (mẫu do edge-tts
+#: `en-US-AndrewMultilingual` sinh — KHÔNG nhân bản giọng thương mại nào), cùng
+#: 34 câu + 24 token rời, đi **cửa thật** `dubbing._synth_all`, chấm bằng đúng
+#: bộ chấm của `_do_vieneu_en.py`. Trần đối chứng lấy lại **đúng file tiếng**
+#: của bảng 19/08 nên hai bảng so được với nhau.
+#:
+#:   arm (cùng mẫu)      | tok TRONG CÂU | tok ĐỌC RỜI | bịa chữ  | WER
+#:   `vnb:` VieNeu       | **2,6-5,1%**  | 29,2-37,5%  | **0,3-9,7%** | **3,1-12,7%**
+#:   `cb:` Chatterbox    | **17,9%**     | 33,3%       | 2,2%     | 6,0%
+#:   edge Aria (TRẦN)    | 0,0%          | 4,2%        | 0,9%     | 3,7%
+#:   `vn:Adam` dựng sẵn  | 7,7-12,8%     | 12,5-25,0%  | 0,6%     | 5,2-7,0%
+#:
+#: **HAI KẾT LUẬN, CẢ HAI ĐỀU NGƯỢC VỚI CÁI ĐƯỢC CHỜ ĐỢI:**
+#:
+#: (1) **ĐỔI SANG CHATTERBOX KHÔNG CHỮA ĐƯỢC** — nó sai chữ TRONG CÂU
+#: **17,9%**, tức **3,5-7 lần TỆ HƠN** `vnb:`; đọc rời cũng ngang ngửa
+#: (33,3% vs 29,2-37,5%). Nó chỉ hơn ở chỗ **ĐỀU**: hai lượt ra số **giống
+#: hệt** (WER 6,05 vs 6,05 — tiền định thật, đúng như `giong_chatter` đã ghi).
+#: Đổi lấy cái đều đó thì phải trả **GPU NVIDIA bắt buộc · đóng dấu chìm Perth
+#: KHÔNG tắt được (anh Hùng BÁN video) · nhịp đọc lệch theo tiếng**. Không
+#: đáng, và số nói thẳng là không đáng.
+#:
+#: (2) **BỆNH THẬT KHÔNG PHẢI "ĐỌC SAI TIẾNG ANH" MÀ LÀ "KHÔNG ỔN ĐỊNH".**
+#: `vnb:` chạy **2 lượt trên ĐÚNG một bộ chữ, ĐÚNG một file mẫu** mà ra:
+#:     lượt 1: WER **3,1%** · bịa chữ **0,3%** (tức **HƠN CẢ TRẦN** edge 3,7%)
+#:     lượt 2: WER **12,7%** · bịa chữ **9,7%** (31/320 từ máy tự thêm vào)
+#: Nhịp đọc cùng chiều (`_kq_vnb_nhip.json`): trung vị chỉ 1,03-1,04x trần,
+#: nhưng câu tệ nhất **1,53x rồi 2,54x**, và số câu vượt trần `atempo` là
+#: **1/34 rồi 3/34** — tức thỉnh thoảng có câu model đọc lan man, đường xuất ép
+#: không nổi. Token ĐỌC RỜI lộ rõ nhất: «2026» nghe ra `在英雄城的美索`, «90%»
+#: ra `请你分赞`, «OST» ra một câu tiếng Trung **lặp 3 lần**.
+#: **Đó đúng là thứ tai nghe ra "như thằng mới học":** phần lớn câu đọc tốt,
+#: rồi bỗng một câu bịa chữ / lặp / lan man.
+#:
+#: **VÌ SAO KHÔNG VÁ BẰNG `doc_viet_tat` (hướng còn lại):** bảng trên đo được
+#: token sai TRONG CÂU của `vnb:` chỉ **1-2 trên 39** — lớp viết-tắt ĐÃ ĐÚNG
+#: SẴN. Chép âm cho thứ đang đúng là **rủi ro thuần**, đúng lớp bằng chứng đã
+#: loại bảng TÊN RIÊNG; và lần vá `doc_viet_tat` cho VieNeu trước đây đo ra
+#: **TỆ ĐI 2 · TỐT LÊN 0** (xem `doc_viet_tat.py`). Không lặp lại.
+#:
+#: **CÒN NỢ, GHI THẲNG:** chỉ đo trên **MỘT** file mẫu. `giong_chatter` đã đo
+#: được *"MẪU kéo nhịp đọc, không riêng gì TIẾNG"* (cùng câu, hai mẫu ra 1,03x
+#: và 1,32x), nên con số này **đi theo mẫu** — mẫu của anh Hùng có thể khác.
+#: Và cỡ mẫu 2 lượt đủ để nói **"KHÔNG ĐỀU"**, KHÔNG đủ để nói tỉ lệ hỏng.
+SO_DO_EN: dict[str, dict[str, str]] = {
+    # khoá = arm · giá trị = {thước: số}. MỘT NGUỒN cho mọi nhãn/cảnh báo —
+    # gõ lại con số ở nhãn là đẻ ra bản sao thứ hai rồi một ngày hai bản lệch.
+    "vnb": {"cau": "2,6-5,1%", "roi": "29,2-37,5%", "bia": "0,3-9,7%",
+            "wer": "3,1-12,7%", "nhip": "1,53x rồi 2,54x"},
+    "cb": {"cau": "17,9%", "roi": "33,3%", "bia": "2,2%", "wer": "6,0%",
+           "nhip": "1,57x"},
+    "tran": {"cau": "0,0%", "roi": "4,2%", "bia": "0,9%", "wer": "3,7%",
+             "nhip": "1,00x"},
+}
+
 #: Sổ ghi ở DATA_DIR. Khoá theo TÊN người dùng đặt.
 _TEN_SO = "giong_nhan_ban.json"
 
@@ -518,13 +580,76 @@ def sua_mau_trung(so: dict | None = None) -> list[tuple[str, str]]:
 
 
 def goi_y_may(lang: str = "vi") -> str:
-    """Ngôn ngữ -> máy nhân bản NÊN dùng.
+    """Ngôn ngữ -> máy nhân bản NÊN dùng, **LÚC TẠO GIỌNG**.
 
     Tiếng Việt chỉ VieNeu làm được (Chatterbox không có ``vi``, đo thật: câu
-    Việt đọc ra thành chuỗi vô nghĩa). Ngoài ra thì Chatterbox.
+    Việt đọc ra thành chuỗi vô nghĩa). Ngoài ra thì Chatterbox — vì đó là bộ
+    DUY NHẤT khai 23 thứ tiếng, không phải vì nó đọc hay hơn.
+
+    ═══ HÀM NÀY **KHÔNG NẰM TRÊN ĐƯỜNG ĐỌC** — ĐO ĐƯỢC, ĐỪNG SUY ═══
+    Truy vết 26/08/2026 (`_do_vet_goiymay.py`, quét bằng **AST** + **GỌI
+    THẬT**, không grep chuỗi):
+      · nơi gọi thật trong `app/`: **đúng 1**, là `them_giong()`;
+      · trong `app/ui/`: **0** (grep chuỗi ra 2 dòng — cả hai là GHI CHÚ);
+      · gọi thật `dubbing._synth_all(voice="vnb:...", lang="en")` -> rẽ vào
+        **`giong_vieneu.doc_loat`**, y như khi `lang="vi"`.
+    Nghĩa là máy đọc được chốt **MỘT LẦN lúc bấm Lưu giọng**, theo ô *"Giọng
+    này để đọc tiếng"*; ô **"Ngôn ngữ đích"** của lượt thay tiếng KHÔNG bao giờ
+    hỏi lại hàm này. Sổ thật của anh Hùng: giọng «adam Clone» ghi
+    ``may='vieneu' lang='vi'`` (mẫu là một đoạn ghi âm **tiếng Anh**), nên
+    chọn đích Tiếng Anh vẫn chạy VieNeu. Đó là lời giải cho câu hỏi *"sao chọn
+    tiếng Anh mà vẫn ra VieNeu"*.
+
+    ═══ VÀ **ĐỪNG** NỐI NÓ VÀO ĐƯỜNG ĐỌC — SỐ ĐO BÁC ═══
+    Nghe thì hợp lý: *"đích tiếng Anh thì đổi sang Chatterbox cho chuẩn"*.
+    Đo rồi thì **ngược**: trên CÙNG một file mẫu, `cb:` sai chữ trong câu
+    **17,9%** còn `vnb:` chỉ **2,6-5,1%** (xem ``SO_DO_EN``). Đổi máy lúc đọc
+    là **làm tệ đi 3,5-7 lần**, lại thêm ba cái giá (GPU · dấu chìm · nhịp).
+    Muốn đổi thì phải có bảng số MỚI nói ngược ``SO_DO_EN``, không phải suy.
     """
     l = (lang or "").strip().lower()[:2]
     return MAY_VIENEU if l in ("", "vi") else MAY_CHATTER
+
+
+#: Ngôn ngữ mà VieNeu là model BẢN ĐỊA (checkpoint `VieNeu-TTS-1000h`).
+_NN_CUA_VIENEU = ("", "vi")
+
+
+def canh_bao_doc_tieng(ma: str, lang: str) -> str:
+    """Câu cảnh báo cho giao diện khi giọng NHÂN BẢN đọc tiếng NGOÀI sở trường.
+
+    Trả ``""`` khi không có gì phải nói — nhãn rỗng là nhãn không gây nhiễu, và
+    kêu oan thì lần sau người ta thôi đọc nhãn.
+
+    **VÌ SAO LÀ NHÃN CHỨ KHÔNG PHẢI MÃ** (đúng tiền lệ `vn:Adam` 19/08): thứ đo
+    được là *giọng này ĐỌC KHÔNG ĐỀU*, không phải *app chọn sai máy*. Chặn thì
+    mất một tính năng đang chạy tốt phần lớn thời gian (lượt 1 đo ra **hơn cả
+    trần** edge-tts); tự đổi máy thì làm tệ đi 3,5-7 lần (xem ``goi_y_may``).
+    Cái còn lại — và là cái repo này luôn đòi — là **nói thật, kèm số**.
+
+    Mọi con số lấy từ ``SO_DO_EN``, KHÔNG gõ tay: một phép đo, một chỗ sửa.
+    """
+    try:
+        m = str(ma or "").strip()
+        l = (lang or "").strip().lower()[:2]
+        if not m.startswith("vnb:") or l in _NN_CUA_VIENEU:
+            return ""
+        v, cb, tr = SO_DO_EN["vnb"], SO_DO_EN["cb"], SO_DO_EN["tran"]
+        return (
+            f"LƯU Ý về giọng nhân bản này: nó chạy trên VieNeu (model TIẾNG "
+            f"VIỆT). Đo 26/08/2026 trên 34 câu tiếng Anh, CÙNG một file mẫu, "
+            f"chạy HAI LƯỢT: sai chữ cả bài {v['wer']} và tự bịa thêm chữ "
+            f"{v['bia']} — tức có lượt HƠN CẢ giọng bản ngữ edge-tts "
+            f"({tr['wer']} / {tr['bia']}), có lượt tệ hẳn. Nó KHÔNG ĐỀU chứ "
+            f"không phải lúc nào cũng hỏng, nên câu nào nghe lạ thì chạy lại "
+            f"video đó là thường hết.\n"
+            f"Đổi sang giọng nhân bản Chatterbox KHÔNG chữa được: cùng mẫu ấy "
+            f"nó sai chữ trong câu {cb['cau']} so với {v['cau']} của VieNeu, "
+            f"lại bắt buộc GPU NVIDIA và đóng dấu chìm không tắt được.\n"
+            f"Muốn CHẮC ĂN cho tiếng Anh thì chọn một giọng bản ngữ (edge-tts "
+            f"en-US) — miễn phí và đo được {tr['wer']} sai chữ.")
+    except Exception:                                          # noqa: BLE001
+        return ""
 
 
 #: Gói mà **ĐƯỜNG NHÂN BẢN** của VieNeu cần, ngoài những gì `co_vieneu()` đã dò.

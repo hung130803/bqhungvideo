@@ -2150,6 +2150,26 @@ class ThayGiongDialog(QDialog):
         self.lb_goi_y.setStyleSheet("color:#7CC4FF")
         lay.addWidget(self.lb_goi_y)
 
+        # ---- GIỌNG NHÂN BẢN ĐANG ĐỌC TIẾNG NGOÀI SỞ TRƯỜNG ----
+        # Anh Hùng 26/08/2026: *"khi clone giọng tiếng Anh nó đọc như thằng mới
+        # học ấy, nói không lưu loát không chuẩn chữ"* — lúc đó ô này là **đích
+        # Tiếng Anh** + giọng **`vnb:`** (nhân bản chạy VieNeu).
+        #
+        # Vì sao dòng này phải TỒN TẠI: máy đọc được chốt lúc **bấm Lưu giọng**
+        # (theo ô "Giọng này để đọc tiếng"), còn ô "Ngôn ngữ đích" ngay bên trái
+        # **KHÔNG hỏi lại** — truy vết bằng AST + gọi thật ở
+        # `nhan_ban_giong.goi_y_may`. Nên màn hình đang bày ra hai thứ trông như
+        # đi với nhau mà thật ra không: *"đích Tiếng Anh"* + một giọng đã bị
+        # khoá vào model tiếng Việt. Im lặng ở đúng chỗ đó là bẫy "chọn X ra Y".
+        #
+        # Chữ + SỐ ĐO nằm ở `nhan_ban_giong.canh_bao_doc_tieng` (bảng
+        # `SO_DO_EN`), KHÔNG gõ lại ở đây — hai bản sao của một con số là hai
+        # chỗ để lệch nhau.
+        self.lb_nb_tieng = QLabel("")
+        self.lb_nb_tieng.setWordWrap(True)
+        self.lb_nb_tieng.setStyleSheet("color:#E8B84B; font-size:11px;")
+        lay.addWidget(self.lb_nb_tieng)
+
         # ---- hàng 3: CHE CHỮ CHÁY SẴN TRONG HÌNH ----
         # Ô này CỐ Ý đặt Ở ĐÂY chứ không bắt sang "Chỉnh mẫu": thay tiếng và
         # xuất clip là HAI ĐƯỜNG KHÁC NHAU (anh Hùng 14/08/2026 bật ô bên kia
@@ -4097,6 +4117,30 @@ class ThayGiongDialog(QDialog):
         except Exception:  # noqa: BLE001
             self.lb_goi_y.setText("")
         self.lb_goi_y.setVisible(bool(self.lb_goi_y.text()))
+        self._ve_canh_bao_nhan_ban()
+
+    def _ve_canh_bao_nhan_ban(self) -> None:
+        """Dòng vàng: giọng NHÂN BẢN đang được giao đọc tiếng ngoài sở trường.
+
+        Gọi từ `_ve_goi_y` — hàm đó đã là chỗ **cả hai** combo dẫn về (đổi
+        NGÔN NGỮ ĐÍCH thì `_doi_ngon_ngu` -> `_dung_combo_giong` -> đây; đổi
+        GIỌNG thì combo dựng lại cũng qua đây). Nối riêng vào từng combo là
+        dựng bản sao thứ hai của cùng một luật rồi quên một cái.
+
+        **KHÔNG BAO GIỜ NÉM**: một dòng nhãn không được phép giết cả hộp thoại.
+        """
+        if not hasattr(self, "lb_nb_tieng"):
+            return
+        t = ""
+        try:
+            from app.core import nhan_ban_giong as _NB
+            t = _NB.canh_bao_doc_tieng(
+                str(self.cb_giong.currentData() or ""),
+                str(self.cb_nn.currentData() or ""))
+        except Exception:  # noqa: BLE001
+            t = ""
+        self.lb_nb_tieng.setText(t)
+        self.lb_nb_tieng.setVisible(bool(t))
 
     def _chu_thich(self, vid: str, nhan: str) -> str:
         """Chữ hiện khi rê chuột lên một dòng giọng.

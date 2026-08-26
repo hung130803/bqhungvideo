@@ -3024,6 +3024,67 @@
   EL −16,1 vs VieNeu −20,1 LUFS = lệch 4 LU), MD5 **6/6 khác nhau** (bẫy cache
   `_eleven_tts`). Tốn **103 ký tự** ElevenLabs (còn 44.222/50.000 trên 5 tài
   khoản). **Tai anh Hùng là phán quyết cuối**, số chỉ để loại sớm cái hỏng rõ.
+- **GIỌNG **NHÂN BẢN** (`vnb:`) ĐỌC TIẾNG ANH — BỆNH LÀ **KHÔNG ĐỀU**, KHÔNG
+  PHẢI "ĐỌC SAI TIẾNG ANH"; VÀ ĐỔI SANG CHATTERBOX LÀM TỆ ĐI (26/08/2026,
+  `_do_vnb_en.py` · `_kq_vnb_en.txt` · `_do_vnb_nhip.py` · `_do_vet_goiymay.py`).**
+  Anh Hùng: *"âm thanh giọng nói oke mà CÁCH PHÁT ÂM BỊ LỖI rồi, khi clone
+  giọng tiếng Anh nó đọc như thằng mới học ấy, nói không lưu loát không chuẩn
+  chữ"* — màn hình: **đích Tiếng Anh** + giọng **`vnb:`**.
+  Bảng 19/08 ở trên đo `vn:Adam` = giọng **DỰNG SẴN**; anh Hùng dùng giọng
+  **NHÂN BẢN**, đường mã khác hẳn (`infer(ref_audio=)`), chưa ai đo. Ba arm
+  **GHÉP CẶP trên CÙNG một file mẫu** (mẫu do edge-tts sinh — KHÔNG đụng
+  `adam_clone.wav`, đó là bản sao một giọng ElevenLabs thương mại), cùng cửa
+  thật `dubbing._synth_all`, cùng bộ chấm, trần lấy lại **đúng file tiếng**
+  của bảng 19/08 nên hai bảng so được:
+
+  | arm (cùng mẫu, 34 câu) | tok TRONG CÂU | tok ĐỌC RỜI | bịa chữ | WER | s/câu |
+  |---|---|---|---|---|---|
+  | **`vnb:` VieNeu** ⇐ đường anh Hùng | **2,6-5,1%** | 29,2-37,5% | **0,3-9,7%** | **3,1-12,7%** | 5,2 |
+  | `cb:` Chatterbox | **17,9%** | 33,3% | 2,2% | 6,0% | 4,0 |
+  | edge Aria (TRẦN) | 0,0% | 4,2% | 0,9% | 3,7% | 0,3 |
+  | `vn:Adam` dựng sẵn (19/08) | 7,7-12,8% | 12,5-25,0% | 0,6% | 5,2-7,0% | 1,2 |
+
+  **CANH ĐỘNG CƠ LÀ THỨ CỨU BẢNG NÀY.** `_synth_all` cố ý **lùi êm về
+  edge-tts** khi máy nhân bản hỏng cả loạt — đúng cho người dùng, **thảm hoạ
+  cho phép đo** (bảng sẽ ghi "Chatterbox 0,0%" trong khi thứ vừa đọc là
+  edge). Nên mỗi arm đếm số câu THẬT SỰ do máy đó trả ra: **58/58 cả bốn
+  lượt**, arm nào lệch là đánh dấu KHÔNG HỢP LỆ.
+  **KẾT LUẬN 1 — KHÔNG ĐỔI MÁY THEO NGÔN NGỮ ĐÍCH.** Chatterbox sai chữ trong
+  câu **17,9%**, tức **3,5-7 lần TỆ HƠN** `vnb:`; đọc rời ngang ngửa. Nó chỉ
+  hơn ở chỗ **ĐỀU** (hai lượt ra WER **6,05 vs 6,05** — tiền định thật). Đổi
+  lấy cái đều đó phải trả **GPU NVIDIA · dấu chìm Perth không tắt được (anh
+  Hùng BÁN video) · nhịp lệch theo tiếng**. Không đáng.
+  **KẾT LUẬN 2 — BỆNH THẬT LÀ ĐỘ KHÔNG ĐỀU, VÀ ĐÓ ĐÚNG LÀ THỨ TAI NGHE RA.**
+  Cùng một bộ chữ, cùng một file mẫu, chạy hai lượt: lượt 1 **WER 3,1% · bịa
+  chữ 0,3%** (**HƠN CẢ TRẦN** edge 3,7%/0,9%), lượt 2 **WER 12,7% · bịa chữ
+  9,7%** (31/320 từ máy tự thêm). Nhịp cùng chiều: trung vị chỉ 1,03-1,04x
+  trần nhưng câu tệ nhất **1,53x rồi 2,54x**, số câu vượt trần `atempo` là
+  **1/34 rồi 3/34**. Token ĐỌC RỜI lộ rõ nhất: «2026» ra `在英雄城的美索`,
+  «90%» ra `请你分赞`, «OST» ra một câu tiếng Trung **lặp 3 lần**.
+  **`goi_y_may` KHÔNG phải hàm chết — nó chạy SAI LÚC** (truy vết AST + GỌI
+  THẬT): đúng **1** nơi gọi (`them_giong`), **0** trong `app/ui/` (grep chuỗi
+  ra 2 dòng, **cả hai là GHI CHÚ**), và `_synth_all(voice="vnb:", lang="en")`
+  rẽ vào `giong_vieneu.doc_loat` y như `lang="vi"`. Máy đọc bị chốt **một lần
+  lúc bấm Lưu giọng**; sổ thật ghi «adam Clone» = `may='vieneu' lang='vi'` dù
+  mẫu là ghi âm **tiếng Anh**. Đó là lời giải cho *"sao chọn tiếng Anh mà vẫn
+  ra VieNeu"*.
+  **`doc_viet_tat` cũng KHÔNG đáng mở** (hướng còn lại): `vnb:` sai **1-2 trên
+  39** token trong câu — lớp viết tắt ĐÃ ĐÚNG SẴN, chép âm cho nó là rủi ro
+  thuần (đúng lớp bằng chứng đã loại bảng TÊN RIÊNG), và lần vá trước cho
+  VieNeu đo ra **TỆ ĐI 2 · TỐT LÊN 0**.
+  **HÀNH ĐỘNG: việc của NHÃN** (đúng tiền lệ `vn:Adam`) — `nhan_ban_giong.
+  SO_DO_EN` giữ bảng số, `canh_bao_doc_tieng()` dựng câu **TỪ bảng đó** (cổng
+  bắt được phép gõ tay số), UI hiện dòng vàng khi `vnb:` + đích ≠ tiếng Việt.
+  **KHÔNG đụng `dedup_key`** — `app/services.py` không có một dòng thay đổi
+  nào, nên 200-300 kênh không xuất lại.
+  **CÒN NỢ, GHI THẲNG:** chỉ **MỘT** file mẫu (mà `giong_chatter` đã đo được
+  *"MẪU kéo nhịp đọc"* — cùng câu, hai mẫu ra 1,03x và 1,32x), nên số này đi
+  theo mẫu; **2 lượt** đủ để nói "KHÔNG ĐỀU", **không đủ** để nói tỉ lệ hỏng;
+  **chưa đo mẫu THẬT của anh Hùng** (`adam_clone.wav` bị ranh giới pháp lý
+  chặn); và **chưa thử phép chữa đáng làm nhất** — dò câu lan man rồi **ĐỌC
+  LẠI** (`giong_chatter.nghi_doc_lan` đã có khuôn, `giong_vieneu` chưa có).
+  Vì cái hỏng là NGẪU NHIÊN nên đọc lại có cơ sở ăn — nhưng chưa đo thì chưa
+  được nối. Cổng **91: 105 -> 131 · HỎNG 0**, thử phá **BẮT 8/8**.
 - **QUÉT CẢ 20 GIỌNG VieNeu TRÊN CÂU TIẾNG VIỆT — 3 GIỌNG LỆCH HẲN, CẦN ĐO LẠI
   (19/08/2026, `_do_vn_quet.py` · `_kq_vn_quet.txt`).** Anh Hùng chỉ nêu đích
   danh Adam, nhưng câu hỏi thật là *"còn mấy kiểu khác nữa"*. Bộ 8 câu (sàng

@@ -888,11 +888,245 @@ def ca10() -> None:
        not any(ord(c) > 0x2100 for c in t_zh + CB.canh_bao_nhip("zh")))
 
 
+def _noi_goi_ham(src: str, ten_ham: str) -> list[str]:
+    """Tên hàm BAO QUANH mỗi nơi gọi ``ten_ham(...)`` — bằng **AST**.
+
+    Quét chuỗi thì DÒNG GHI CHÚ tiếng Việt và DOCSTRING nhắc tên hàm cũng
+    trúng; repo này đã sập bẫy đó **tám lần**, cả hai chiều. `ast.parse` bỏ
+    hẳn ghi chú, còn docstring là node `Constant` nên không lọt vào `ast.Call`
+    (`ast.unparse` thì GIỮ docstring — đó đúng cách mục 9e' từng PASS OAN).
+    """
+    ra: list[str] = []
+    bao: list[str] = []
+
+    class Di(ast.NodeVisitor):
+        def _ham(self, n):
+            bao.append(n.name)
+            self.generic_visit(n)
+            bao.pop()
+
+        visit_FunctionDef = _ham          # noqa: N815
+        visit_AsyncFunctionDef = _ham     # noqa: N815
+
+        def visit_Call(self, n):          # noqa: N802
+            f = n.func
+            if (getattr(f, "attr", None) or getattr(f, "id", None)) == ten_ham:
+                ra.append(bao[-1] if bao else "<tầm module>")
+            self.generic_visit(n)
+
+    Di().visit(ast.parse(src))
+    return ra
+
+
+def ca11() -> None:
+    """CHỐT 5 — `goi_y_may` KHÔNG nằm trên đường ĐỌC, và **đừng nối nó vào**.
+
+    ═══ VIỆC NÀY TỪ ĐÂU RA ═══
+    Anh Hùng 26/08/2026: *"âm thanh giọng nói oke mà CÁCH PHÁT ÂM BỊ LỖI rồi,
+    khi clone giọng tiếng Anh nó đọc như thằng mới học ấy, nói không lưu loát
+    không chuẩn chữ"*. Màn hình: **Ngôn ngữ đích = Tiếng Anh** + giọng
+    **`vnb:`**. Nghi ngờ đầu tiên là `goi_y_may` (`vi`->VieNeu · `en`->
+    Chatterbox) đã thành **hàm chết** — repo có **6 ca** "hàm xong ≠ tính năng
+    xong" nên nghi ngờ đó chính đáng.
+
+    ═══ ĐO RỒI, VÀ CẢ HAI NỬA ĐỀU NGƯỢC VỚI DỰ ĐOÁN ═══
+      (a) Nó **KHÔNG chết**: đúng 1 nơi gọi thật (`them_giong`). Nhưng nó chạy
+          lúc **TẠO GIỌNG**, không phải lúc **ĐỌC** — nên ô "Ngôn ngữ đích"
+          không với tới được nó.
+      (b) Nối nó vào đường đọc là **LÀM TỆ ĐI**: cùng một file mẫu, `cb:` sai
+          chữ trong câu **17,9%** còn `vnb:` chỉ **2,6-5,1%**
+          (`_kq_vnb_en.txt`, 34 câu, cửa thật `dubbing._synth_all`).
+    Nên chốt này canh **HAI CHIỀU**: đường đọc không được tự đổi máy, VÀ bảng
+    số + câu cảnh báo không được biến mất khỏi mã. Bỏ chiều thứ hai thì lần
+    sau lại có người "sửa" bằng cách nối `goi_y_may` vào `_synth_all`.
+    """
+    import inspect as _ins
+    import re as _re
+
+    from app.core import dubbing as DUB
+
+    # ---- 11a TỰ KIỂM BỘ DÒ TRƯỚC (bộ dò sai thì mọi mục dưới vô nghĩa)
+    moi = ('def khong_goi():\n'
+           '    """Docstring nhắc goi_y_may mà KHÔNG gọi."""\n'
+           '    # ghi chú tiếng Việt: goi_y_may(lang) quyết máy\n'
+           '    return "goi_y_may"\n'
+           '\n'
+           'def that_su_goi(l):\n'
+           '    return goi_y_may(l)\n')
+    ok("11a TỰ KIỂM BỘ DÒ: docstring + ghi chú + chuỗi KHÔNG bị tính là gọi",
+       _noi_goi_ham(moi, "goi_y_may") == ["that_su_goi"],
+       str(_noi_goi_ham(moi, "goi_y_may")))
+
+    goi: dict[str, list[str]] = {}
+    for p in sorted(REPO.joinpath("app").rglob("*.py")):
+        try:
+            n = _noi_goi_ham(p.read_text(encoding="utf-8", errors="replace"),
+                             "goi_y_may")
+        except SyntaxError:
+            continue
+        if n:
+            goi[str(p.relative_to(REPO)).replace("\\", "/")] = n
+    ok("11b `goi_y_may` KHÔNG phải hàm chết — có nơi gọi thật", bool(goi),
+       str(goi))
+    ok("11c ...và nơi gọi ấy là `them_giong` (lúc TẠO giọng, không phải đọc)",
+       goi == {"app/core/nhan_ban_giong.py": ["them_giong"]}, str(goi))
+    ok("11d `app/ui/` gọi TRỰC TIẾP: 0 (grep chuỗi ra 2 — cả hai là GHI CHÚ)",
+       not [f for f in goi if f.startswith("app/ui/")])
+
+    # ---- 11e-g ĐƯỜNG ĐỌC KHÔNG TỰ ĐỔI MÁY — **GỌI THẬT**, không đọc mã.
+    # Đọc mã rồi suy là DỪNG QUÁ SỚM (bài học `SEAPipeline(lang="vi")`: đọc
+    # tới đó tưởng đã chứng minh, chạy thật thì chữ Anh ra âm Anh).
+    from app.core import giong_chatter as _GC
+    from app.core import giong_vieneu as _GV
+    _cu_vn, _cu_cb = _GV.doc_loat, _GC.doc_loat
+    di: dict[str, str] = {}
+    _log: list[str] = []
+
+    def _bao(ten):
+        def _g(*a, **k):
+            _log.append(ten)
+            n = len(a[0]) if a else 0
+            return ([False] * n, [[] for _ in range(n)])
+        return _g
+
+    mau = wav("ca11_mau.wav", [("tieng", 5.0)])
+    try:
+        _GV.doc_loat = _bao("vieneu")              # type: ignore[assignment]
+        _GC.doc_loat = _bao("chatter")             # type: ignore[assignment]
+        for nhan, v, lg in (("vnb_en", f"vnb:{mau}", "en"),
+                            ("vnb_vi", f"vnb:{mau}", "vi"),
+                            ("cb_en", f"cb:en|{mau}", "en")):
+            _log.clear()
+            try:
+                asyncio.run(DUB._synth_all(["Hello."], v,
+                                           [str(T / f"ca11_{nhan}.mp3")],
+                                           lang=lg))
+            except Exception as e:                             # noqa: BLE001
+                _log.append(f"[nổ {type(e).__name__}: {e}]")
+            di[nhan] = _log[0] if _log else "edge"
+    finally:
+        _GV.doc_loat = _cu_vn                      # type: ignore[assignment]
+        _GC.doc_loat = _cu_cb                      # type: ignore[assignment]
+    ok("11e GỌI THẬT: đích ANH + giọng `vnb:` VẪN chạy VieNeu (không tự đổi)",
+       di.get("vnb_en") == "vieneu", str(di))
+    ok("11f ...và `cb:` vẫn chạy Chatterbox (bộ dò mục 11e có răng)",
+       di.get("cb_en") == "chatter", str(di))
+    ok("11g ...đích VIỆT rẽ y hệt đích ANH (tiếng KHÔNG đổi máy, hai chiều)",
+       di.get("vnb_en") == di.get("vnb_vi"), str(di))
+
+    # ---- 11h-k BẢNG SỐ phải CÒN, và phải nói ĐÚNG CHIỀU nó đã đo
+    so = getattr(NB, "SO_DO_EN", {})
+    ok("11h `SO_DO_EN` có đủ 3 arm (vnb · cb · trần)",
+       set(so) == {"vnb", "cb", "tran"}, str(sorted(so)))
+    ok("11i mỗi arm có đủ 5 thước",
+       bool(so) and all(set(v) == {"cau", "roi", "bia", "wer", "nhip"}
+                        for v in so.values()))
+
+    def _dau(s: str) -> float:
+        """Số ĐẦU của ô kiểu ``"2,6-5,1%"`` -> 2.6. Đọc **SỐ**, không so chữ.
+
+        So chuỗi thì đổi `"17,9%"` thành `"1,79%"` vẫn "có mặt" và mục PASS
+        OAN — đúng bẫy 56d/64.
+        """
+        return float(_re.split(r"[-–%]", str(s).replace(",", "."))[0])
+
+    ok("11j SỐ nói Chatterbox TỆ HƠN ở token trong câu (đọc SỐ, không chữ)",
+       _dau(so["cb"]["cau"]) > _dau(so["vnb"]["cau"]),
+       f"cb {so['cb']['cau']} vs vnb {so['vnb']['cau']}")
+    ok("11k ...và TRẦN vẫn thấp nhất (bảng không bị đảo lộn)",
+       _dau(so["tran"]["cau"]) <= _dau(so["vnb"]["cau"]))
+
+    # ---- 11l-s CÂU CẢNH BÁO: đúng ca, đủ số, không kêu oan
+    t = NB.canh_bao_doc_tieng("vnb:D:/m.wav", "en")
+    ok("11l `vnb:` + tiếng NGOÀI tiếng Việt -> CÓ cảnh báo", bool(t), t[:60])
+    ok("11m `vnb:` + tiếng VIỆT -> IM (không kêu oan)",
+       NB.canh_bao_doc_tieng("vnb:D:/m.wav", "vi") == "")
+    ok("11n `cb:` -> IM (chốt này nói về VieNeu, không nói về Chatterbox)",
+       NB.canh_bao_doc_tieng("cb:en|D:/m.wav", "en") == "")
+    ok("11o giọng edge-tts -> IM",
+       NB.canh_bao_doc_tieng("en-US-AriaNeural", "en") == "")
+    ok("11p rác/None -> IM, KHÔNG NÉM",
+       NB.canh_bao_doc_tieng(None, None) == ""      # type: ignore[arg-type]
+       and NB.canh_bao_doc_tieng("", "") == "")
+    ok("11q cảnh báo mang SỐ ĐO của CẢ BA arm (không nói chung chung)",
+       all(so[k][c] in t for k, c in (("vnb", "wer"), ("vnb", "bia"),
+                                      ("vnb", "cau"), ("cb", "cau"),
+                                      ("tran", "wer"))), t[:80])
+    # CHỐNG GÕ TAY: đổi bảng thì câu phải đổi theo. Không có mục này thì ai đó
+    # gõ thẳng "17,9%" vào câu và `SO_DO_EN` thành đồ trang trí.
+    _luu = dict(so["cb"])
+    try:
+        so["cb"] = dict(_luu, cau="99,9%")
+        t2 = NB.canh_bao_doc_tieng("vnb:D:/m.wav", "en")
+    finally:
+        so["cb"] = _luu
+    ok("11r TỰ KIỂM: đổi `SO_DO_EN` -> câu ĐỔI THEO (số không bị gõ tay)",
+       "99,9%" in t2 and "99,9%" not in t)
+    ok("11s cảnh báo KHÔNG EMOJI", not any(ord(c) > 0x2100 for c in t))
+
+    # ---- 11t-w UI: "hàm xong ≠ tính năng xong" (repo đã sập 6 lần)
+    from app.ui import thay_giong_dialog as TGD
+    src_ui = Path(_ins.getfile(TGD)).read_text(encoding="utf-8")
+    ok("11t `_ve_goi_y` GỌI `_ve_canh_bao_nhan_ban` (nối vào cửa CHUNG)",
+       "_ve_goi_y" in _noi_goi_ham(src_ui, "_ve_canh_bao_nhan_ban"))
+    ok("11u `_ve_canh_bao_nhan_ban` GỌI `canh_bao_doc_tieng`",
+       "_ve_canh_bao_nhan_ban" in _noi_goi_ham(src_ui, "canh_bao_doc_tieng"))
+
+    from PyQt6.QtWidgets import QApplication
+    _app = QApplication.instance() or QApplication([])
+    assert _app is not None
+    d = TGD.ThayGiongDialog(None)
+    d.cb_giong.addItem("giọng nhân bản thử", "vnb:D:/m.wav")
+    d.cb_giong.setCurrentIndex(d.cb_giong.count() - 1)
+    d.cb_nn.setCurrentIndex(max(0, d.cb_nn.findData("en")))
+    d._ve_goi_y()
+    t_en = d.lb_nb_tieng.text()
+    d.cb_nn.setCurrentIndex(max(0, d.cb_nn.findData("vi")))
+    d._ve_goi_y()
+    t_vi = d.lb_nb_tieng.text()
+    d.deleteLater()
+    ok("11v GỌI THẬT trên hộp thoại: đích ANH + `vnb:` -> dòng vàng HIỆN",
+       bool(t_en), t_en[:60])
+    ok("11w ...đổi đích sang VIỆT -> dòng TẮT (bộ dò mục 11v có răng)",
+       t_vi == "", t_vi[:60])
+
+    # ---- 11x KHÔNG ĐẺ CHỖ GỌI `_synth_all_words` THỨ TƯ trên ĐƯỜNG THAY TIẾNG
+    # (mệnh đề cổng 63, đang canh ĐÚNG 3 chỗ của `thay_giong.py`).
+    # **ĐẾM THEO FILE, KHÔNG ĐẾM TỔNG**: cả `app/` có 6 chỗ — 3 của
+    # `thay_giong.py` (đường THAY TIẾNG) + 3 của `dubbing.build_recap_track`
+    # (đường RECAP, họ khác). Gộp lại thành một con số là mốc sai ngay từ đầu,
+    # và mốc sai thì hoặc đỏ oan hoặc không bao giờ bập.
+    n_theo_file: dict[str, int] = {}
+    for p in sorted(REPO.joinpath("app").rglob("*.py")):
+        try:
+            n = len(_noi_goi_ham(
+                p.read_text(encoding="utf-8", errors="replace"),
+                "_synth_all_words"))
+        except SyntaxError:
+            continue
+        if n:
+            n_theo_file[p.name] = n
+    ok("11x `thay_giong.py` vẫn gọi `_synth_all_words` ĐÚNG 3 chỗ (không đẻ 4)",
+       n_theo_file.get("thay_giong.py") == 3, str(n_theo_file))
+    ok("11x' ...và bản vá này KHÔNG thêm chỗ gọi ở file nào khác",
+       set(n_theo_file) == {"thay_giong.py", "dubbing.py"}, str(n_theo_file))
+
+    # ---- 11y DEDUP_KEY KHÔNG ĐƯỢC ĐỔI — 200-300 kênh không xuất lại.
+    # Bản vá này CỐ Ý không đụng `sig`; mục này là bằng chứng, không phải lời.
+    import inspect as _i2
+
+    from app import services as SV
+    src_sv = _i2.getsource(SV.enqueue_thay_giong)
+    ok("11y `enqueue_thay_giong` vẫn khoá bằng ĐÚNG 4 phần cũ (sig không đổi)",
+       'khoa = f"thaygiong:{duong.lower()}:{dich_sang}:{voice}"' in src_sv,
+       "dedup_key phải giống TỪNG KÝ TỰ bản mốc")
+
+
 def main() -> int:
     print("=" * 74)
     print("CỔNG 91 — NHÂN BẢN GIỌNG ĐA NGÔN NGỮ (Chatterbox) ĐÃ NỐI VÀO UI")
     print("=" * 74)
-    for f in (ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9, ca10):
+    for f in (ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9, ca10, ca11):
         try:
             f()
         except Exception as e:                                 # noqa: BLE001

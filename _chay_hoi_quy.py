@@ -375,7 +375,17 @@ CONG = [
     # ra số ĐÍCH DANH theo TIẾNG ở chỗ người dùng đang QUYẾT (không phải chỉ
     # trong một hằng số không ai đọc — `giong_chatter.nhan_giong()` quét AST ra
     # **0 chỗ gọi** trong `app/ui`).
-    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 105),
+    # Mốc 105 -> 131: thêm **CA 11** (26/08/2026). Anh Hùng báo giọng nhân bản
+    # đọc tiếng Anh *"như thằng mới học"*; nghi phạm số một là `goi_y_may`
+    # (`en`->Chatterbox) đã thành hàm chết. Đo ra **hai chuyện ngược dự đoán**:
+    # nó KHÔNG chết (gọi trong `them_giong`, tức lúc TẠO giọng chứ không phải
+    # lúc ĐỌC), và **nối nó vào đường đọc là LÀM TỆ ĐI** — cùng một file mẫu,
+    # `cb:` sai chữ trong câu **17,9%** so với **2,6-5,1%** của `vnb:`
+    # (`_kq_vnb_en.txt`). CA 11 canh cả hai chiều: đường đọc không tự đổi máy
+    # (AST **và** GỌI THẬT), bảng `SO_DO_EN` còn nguyên và nói đúng chiều, câu
+    # cảnh báo đã nối tới giao diện (repo có 6 ca "hàm xong ≠ tính năng xong"),
+    # và `dedup_key` của `enqueue_thay_giong` KHÔNG đổi một ký tự nào.
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 131),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
