@@ -1579,51 +1579,167 @@ def _dich_lai_sot(goc: list[str], dich: list[str], dich_sang: str,
     return ra
 
 
+# --------------------------------------------------------------------------
+# CHIA MẺ THEO NGÂN SÁCH TOKEN — GỐC RỄ LỖI "DỊCH LINH TINH" (27/08/2026)
+# --------------------------------------------------------------------------
+# Groq trần **8.000 token/phút** và nó tính CẢ `max_tokens` vào cỡ yêu cầu
+# (`llm.GROQ_TPM_TRAN`). Gửi cả 167 câu trong MỘT lượt thì prompt đã ăn
+# **4.064 token**, chỗ trả lời chỉ còn **3.436** — mà bản dịch 167 câu cần
+# ~3.340 token. Sát tới mức model không đủ chỗ: nó **GỘP/BỎ vài câu rồi ĐÁNH
+# SỐ TIẾP**, tức mọi câu phía sau mang bản dịch của câu KHÁC.
+#
+# **ĐÂY LÀ LỖI KHÔNG MỘT PHÉP KIỂM NÀO CỦA APP VỚI TỚI ĐƯỢC**: `_theo_nhan`
+# chỉ hỏi *"nhãn #i có về không"*, mà nhãn VỀ ĐỦ — chỉ nội dung là của câu
+# bên cạnh. Đếm câu vào = câu ra, không sót chữ gốc, không rỗng, mọi cổng
+# xanh; người xem thì nghe lời của cảnh sau đặt lên cảnh trước = đúng chữ anh
+# Hùng dùng: *"không hiểu ngữ nghĩa gì cả, linh tinh"*.
+#
+# SỐ ĐO (video THẬT 396 s / 167 câu, Trung -> Việt, bộ dò dịch-ngược + chrF):
+#     `_dich_loat` cả loạt   -> LỆCH BẬC **6,6% · 31,7%** (2 lượt)
+#     đường app `dich_hau_kiem` -> **29,3%**
+#     Trung -> Anh              -> **25,1%**
+#     video 65 câu (LỌT MỘT LƯỢT) -> **0,0%**   <- chính là đối chứng
+#     chia mẻ                    -> **1,2% · 1,2%**
+#     chia mẻ + ngữ cảnh         -> **0,6% · 0,6%**
+# Kho ngoài xác nhận cùng cơ chế: `rockbenben/subtitle-translator` đã HẠ cửa
+# sổ 100 -> 50 với đúng lý do *"big windows let the LLM merge/renumber lines
+# … shifting translations against their timestamps"*; `llm-subtrans` có sẵn
+# câu retry *"Do NOT merge lines together … it leads to incorrect timings"*.
+#
+#: Token ĐẦU RA ước cho MỘT câu — đo thật: 167 câu ra 3.312 token = 19,8/câu.
+ME_TOKEN_RA_MOI_CAU = 20
+#: Chỗ trả lời phải rộng gấp ngần này lần mức CẦN. Model suy luận ăn CHUNG
+#: ngân sách `max_tokens`; chỗ hẹp là nó "gói lại sớm" -> gộp/bỏ câu -> lệch
+#: bậc. Đây là hằng số chống ĐÚNG chuyện đó, đừng hạ để "tiết kiệm lượt".
+ME_HE_SO_ROI = 4.0
+#: Trần cứng số câu mỗi mẻ (đừng để mẻ to tới mức model lạc số).
+ME_TOI_DA = 30
+#: Số câu NGỮ CẢNH mỗi bên gửi kèm (KHÔNG dịch, chỉ để nối mạch). Đo được:
+#: chia mẻ không thôi còn 1,2% lệch, thêm ngữ cảnh còn 0,6% — và nó chữa cả
+#: lỗi NGHĨA (`腹背受敌` "trước lưng lẫn phía trước" -> "cả phía trước lẫn
+#: phía sau"; `不过很快马森就发现这只老鼠` thôi nuốt mất "con chuột này").
+ME_NGU_CANH_BEN = 3
+#: Bối cảnh cả bài — bao nhiêu ký tự đầu (đủ để biết video nói về cái gì).
+ME_BOI_CANH_KY_TU = 700
+
+
+def chia_me_dich(cau: list[dict], chi_so: list[int], phi_co_dinh: int = 420,
+                 token_ra_moi_cau: int = ME_TOKEN_RA_MOI_CAU,
+                 ) -> list[list[int]]:
+    """Chia `chi_so` thành mẻ sao cho CHỖ TRẢ LỜI luôn rộng gấp `ME_HE_SO_ROI`
+    lần mức cần. Phép chia THEO SỐ (trần TPM của Groq), không phải số đặt mò.
+
+    Hàm THUẦN — cổng gọi thẳng được, không cần mạng.
+    """
+    from app.ai import llm
+    ra: list[list[int]] = []
+    cur: list[int] = []
+    for i in chi_so:
+        thu = cur + [i]
+        s = "".join('#%d [9.9 giay]: "%s"\n' % (j, cau[j].get("text") or "")
+                    for j in thu)
+        pt = llm._uoc_token(s) + phi_co_dinh
+        mt = max(llm.GROQ_OUT_TOI_THIEU,
+                 min(llm.GROQ_OUT_TOI_DA,
+                     llm.GROQ_TPM_TRAN - pt - llm.GROQ_BIEN_AN_TOAN))
+        can = token_ra_moi_cau * len(thu) * ME_HE_SO_ROI
+        if cur and (can > mt or len(thu) > ME_TOI_DA):
+            ra.append(cur)
+            cur = [i]
+        else:
+            cur = thu
+    if cur:
+        ra.append(cur)
+    return ra
+
+
+def _boi_canh_bai(cau: list[dict]) -> str:
+    """Vài câu đầu của CHÍNH bài — để model biết video đang nói về cái gì."""
+    acc, tong = [], 0
+    for c in cau:
+        t = str(c.get("text") or "").strip()
+        if not t or tong + len(t) > ME_BOI_CANH_KY_TU:
+            break
+        acc.append(t)
+        tong += len(t)
+    return " ".join(acc)
+
+
 def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
-    """Dịch cả loạt câu trong 1 lượt LLM. Trả list cùng số phần tử."""
+    """Dịch cả loạt câu, CHIA MẺ theo ngân sách token. Trả list cùng số phần tử.
+
+    Xem khối ghi chú "CHIA MẺ THEO NGÂN SÁCH TOKEN" ngay trên: gửi cả loạt
+    trong MỘT lượt là gốc rễ lỗi LỆCH BẬC (đo 29,3% câu trên đường app thật).
+    """
     from app.ai import llm
 
     ten_dich = _ten_nn(dich_sang)
     system = ("Bạn là chuyên gia dịch THAY TIẾNG cho video. Dịch tự nhiên như "
               "VĂN NÓI, đúng ý, đúng cảm xúc. CHỈ trả JSON thuần.")
+    n = len(cau)
+    boi_canh = _boi_canh_bai(cau)
 
     ra: dict[int, str] = {}
-    con: list[int] = list(range(len(cau)))
+    con: list[int] = list(range(n))
     loi_dau: Optional[Exception] = None
-    for vong in range(VONG_DOI_LAI):
+    for _vong in range(VONG_DOI_LAI):
         if not con:
             break
-        items = []
-        for i in con:
-            c = cau[i]
-            dur = max(0.1, float(c["end"]) - float(c["start"]))
-            items.append(f'#{i} [{dur:.1f} giây]: "{c["text"][:400]}"')
-        prompt = (
-            f"Dịch các câu thoại sau từ {_ten_nn(goc_ma)} sang {ten_dich}.\n"
-            f"{chr(10).join(items)}\n\n"
-            "QUY TẮC:\n"
-            f"- Dịch sang {ten_dich}, văn NÓI tự nhiên — viết như người thật "
-            "đang NÓI trong video, KHÔNG dịch máy móc từng chữ.\n"
-            "- Giữ giọng điệu của câu gốc (kể chuyện, giới thiệu, cảm thán).\n"
-            "- ĐỌC LÊN phải lọt khung [số giây] của câu đó — dài quá thì lược "
-            "từ đệm, GIỮ Ý CHÍNH.\n"
-            "- KHÔNG thêm chú thích, không phiên âm.\n"
-            + _LUAT_KHONG_SOT + "\n"
-            f"- Trả MẢNG JSON {len(con)} đối tượng "
-            '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
-            "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào, KHÔNG gộp hai câu."
-        )
-        try:
-            data = llm.complete_json(prompt, system=system)
-        except Exception as e:      # noqa: BLE001
-            # Hết lượt / mạng chết ở vòng ĐÒI LẠI không được xoá phần đã dịch
-            # được ở vòng trước — thà thiếu vài câu còn hơn mất cả loạt.
-            loi_dau = loi_dau or e
+        duoc_gi = False
+        for phan in chia_me_dich(cau, con):
+            items = []
+            for i in phan:
+                c = cau[i]
+                dur = max(0.1, float(c["end"]) - float(c["start"]))
+                items.append(f'#{i} [{dur:.1f} giây]: "{c["text"][:400]}"')
+            a, b = phan[0], phan[-1]
+            truoc = " ".join(str(cau[j].get("text") or "")
+                             for j in range(max(0, a - ME_NGU_CANH_BEN), a))
+            sau = " ".join(str(cau[j].get("text") or "")
+                           for j in range(b + 1,
+                                          min(n, b + 1 + ME_NGU_CANH_BEN)))
+            prompt = (
+                f"Dịch các câu thoại sau từ {_ten_nn(goc_ma)} sang {ten_dich}.\n"
+                + (f'\nBỐI CẢNH CẢ VIDEO (chỉ để hiểu đúng thuật ngữ và tên '
+                   f'riêng, KHÔNG dịch phần này):\n"{boi_canh}"\n'
+                   if boi_canh else "")
+                + f'\nĐOẠN NGAY TRƯỚC (KHÔNG dịch, chỉ để nối mạch): '
+                  f'"{truoc or "(đầu bài)"}"\n'
+                + f'ĐOẠN NGAY SAU (KHÔNG dịch, chỉ để nối mạch): '
+                  f'"{sau or "(cuối bài)"}"\n'
+                + "\nCÁC CÂU CẦN DỊCH (chỉ dịch đúng những câu có dấu #):\n"
+                + f"{chr(10).join(items)}\n\n"
+                "QUY TẮC:\n"
+                f"- Dịch sang {ten_dich}, văn NÓI tự nhiên — viết như người "
+                "thật đang NÓI trong video, KHÔNG dịch máy móc từng chữ.\n"
+                "- Giữ giọng điệu của câu gốc (kể chuyện, giới thiệu, cảm "
+                "thán).\n"
+                "- ĐỌC LÊN phải lọt khung [số giây] của câu đó — dài quá thì "
+                "lược từ đệm, GIỮ Ý CHÍNH.\n"
+                "- KHÔNG thêm chú thích, không phiên âm.\n"
+                + _LUAT_KHONG_SOT + "\n"
+                "- Câu ngắn/cụt là MỘT MẨU của câu dài đang nói dở: dịch nó "
+                "sao cho NỐI ĐƯỢC với đoạn trước và đoạn sau, đừng dịch nó "
+                "như một câu độc lập.\n"
+                f"- Trả MẢNG JSON {len(phan)} đối tượng "
+                '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
+                "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào, KHÔNG gộp hai câu."
+            )
+            try:
+                data = llm.complete_json(prompt, system=system)
+            except Exception as e:      # noqa: BLE001
+                # Hết lượt / mạng chết KHÔNG được xoá phần đã dịch được —
+                # thà thiếu vài câu còn hơn mất cả loạt. Mẻ khác vẫn chạy
+                # tiếp: một mẻ hỏng không được giết cả video.
+                loi_dau = loi_dau or e
+                continue
+            for i, t in _theo_nhan(data, phan, "t").items():
+                if isinstance(t, str) and t.strip():
+                    ra[i] = t.strip()
+                    duoc_gi = True
+        con = [i for i in range(n) if i not in ra]
+        if not duoc_gi:
             break
-        for i, t in _theo_nhan(data, con, "t").items():
-            if isinstance(t, str) and t.strip():
-                ra[i] = t.strip()
-        con = [i for i in range(len(cau)) if i not in ra]
     if not ra and loi_dau is not None:
         raise loi_dau
     if not ra:
@@ -1643,31 +1759,44 @@ def _dich_nguoc_cham(goc: list[str], dich: list[str], goc_ma: str,
     """
     from app.ai import llm
 
-    items = []
-    for i, (g, d) in enumerate(zip(goc, dich)):
-        items.append(f'#{i}\n  GỐC ({_ten_nn(goc_ma)}): "{g[:300]}"\n'
-                     f'  BẢN DỊCH ({_ten_nn(dich_ma)}): "{d[:300]}"')
+    # **PHẢI CHIA MẺ — ĐO ĐƯỢC LÀ CỔNG NÀY TỰ PASS OAN TRÊN VIDEO DÀI.**
+    # Bản cũ nhét CẢ (câu gốc + bản dịch) của mọi câu vào MỘT prompt. Video
+    # 167 câu ra prompt **9.712 token** — đã vượt trần TPM 8.000 của Groq
+    # TRƯỚC KHI cộng chỗ trả lời -> **413 LLMTooLarge 100% lượt** -> `except`
+    # nuốt -> trả `[10.0] * n`. Tức app báo *"điểm TB 10,0 · 0 câu phải dịch
+    # lại"* cho một bản dịch có ~30% câu LỆCH BẬC. Đây đúng họ bẫy "phép đo
+    # hỏng phát chứng nhận" (`astats` cổng 53 · `startswith` cổng 44), và nó
+    # là lý do lỗi dịch đi thẳng tới tai anh Hùng mà mọi cổng vẫn xanh.
+    # Mẻ ở đây phải NHỎ HƠN mẻ dịch: mỗi mục mang HAI câu (gốc + dịch).
     system = ("Bạn là người soát bản dịch. Hãy DỊCH NGƯỢC bản dịch về tiếng "
               "gốc trong đầu, rồi so nghĩa với câu gốc. CHỈ trả JSON thuần.")
-    prompt = (
-        "Với mỗi cặp dưới đây, chấm ĐỘ GIỐNG NGHĨA giữa BẢN DỊCH và câu GỐC.\n"
-        f"{chr(10).join(items)}\n\n"
-        "THANG ĐIỂM 0-10, CÀNG CAO CÀNG GIỐNG NGHĨA:\n"
-        "- 10 = giống hệt nghĩa, không sót ý, không thêm ý.\n"
-        "- 7  = sát nghĩa, chỉ khác cách diễn đạt.\n"
-        "- 4  = lệch một phần ý, hoặc sót ý quan trọng.\n"
-        "- 0  = SAI nghĩa hẳn, hoặc dịch thiếu gần hết.\n"
-        f"Trả MẢNG JSON {len(goc)} đối tượng "
-        '{"i": <đúng số sau dấu #>, "d": <điểm 0-10>}. '
-        "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào."
-    )
-    try:
-        data = llm.complete_json(prompt, system=system)
-    except Exception:  # noqa: BLE001
-        return [10.0] * len(goc)
-    # Lấy theo NHÃN: điểm rơi nhầm câu thì vòng "dịch lại câu lệch nghĩa" đi
-    # dịch lại ĐÚNG NHỮNG CÂU KHÔNG CẦN, còn câu hỏng thật thì bỏ sót.
-    bang = _theo_nhan(data, list(range(len(goc))), "d")
+    cap = [{"text": f'{g[:300]}\n{d[:300]}'} for g, d in zip(goc, dich)]
+    bang: dict[int, object] = {}
+    for phan in chia_me_dich(cap, list(range(len(goc))),
+                             token_ra_moi_cau=12):
+        items = [f'#{i}\n  GỐC ({_ten_nn(goc_ma)}): "{goc[i][:300]}"\n'
+                 f'  BẢN DỊCH ({_ten_nn(dich_ma)}): "{dich[i][:300]}"'
+                 for i in phan]
+        prompt = (
+            "Với mỗi cặp dưới đây, chấm ĐỘ GIỐNG NGHĨA giữa BẢN DỊCH và câu "
+            "GỐC.\n"
+            f"{chr(10).join(items)}\n\n"
+            "THANG ĐIỂM 0-10, CÀNG CAO CÀNG GIỐNG NGHĨA:\n"
+            "- 10 = giống hệt nghĩa, không sót ý, không thêm ý.\n"
+            "- 7  = sát nghĩa, chỉ khác cách diễn đạt.\n"
+            "- 4  = lệch một phần ý, hoặc sót ý quan trọng.\n"
+            "- 0  = SAI nghĩa hẳn, hoặc dịch thiếu gần hết.\n"
+            f"Trả MẢNG JSON {len(phan)} đối tượng "
+            '{"i": <đúng số sau dấu #>, "d": <điểm 0-10>}. '
+            "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào."
+        )
+        try:
+            data = llm.complete_json(prompt, system=system)
+        except Exception:  # noqa: BLE001
+            continue       # mẻ hỏng -> câu của mẻ đó GIỮ 10.0, mẻ khác vẫn chấm
+        # Lấy theo NHÃN: điểm rơi nhầm câu thì vòng "dịch lại câu lệch nghĩa"
+        # đi dịch lại ĐÚNG NHỮNG CÂU KHÔNG CẦN, còn câu hỏng thật thì bỏ sót.
+        bang.update(_theo_nhan(data, phan, "d"))
     if not bang:
         return [10.0] * len(goc)
     out = []

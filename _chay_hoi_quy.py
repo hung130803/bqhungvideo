@@ -413,6 +413,17 @@ CONG = [
     # · CA 8 (bộ đếm từ CJK-aware) · **CA 9** (hệ chữ ngoài tầm phiên âm ->
     # CHẶN trước khi đốt GPU). CA 9 là chốt CHẶN thật, không phải nhãn.
     ("92 đọc lại câu lan man", "_test_doc_lan.py",       85),
+    # Số **93** lấy bằng cách ĐỌC chính bảng này (max đang là 92), KHÔNG đếm
+    # theo trí nhớ — trùng số là hai cổng ghi đè `_kq93.txt` của nhau (bài học
+    # 70 vs 69, 85 vs 81). Cổng canh HAI bệnh đo được 27/08/2026 trên video
+    # THẬT 396 s / 167 câu: (a) `_dich_loat` gửi CẢ LOẠT trong một lượt ->
+    # chỗ trả lời chật -> model gộp/bỏ câu rồi ĐÁNH SỐ TIẾP -> **LỆCH BẬC
+    # 6,0-31,7% câu**, mà `_theo_nhan` chỉ hỏi "nhãn có về không" nên KHÔNG
+    # phép kiểm nào của app với tới; (b) `_dich_nguoc_cham` dựng prompt
+    # **9.712 token** > trần TPM 8.000 -> 413 mọi lượt -> fail-safe trả 10,0
+    # cho MỌI câu = cổng chất lượng dịch TỰ PASS OAN trên mọi video dài.
+    # KHÔNG gọi mạng (gián điệp thay `complete_json`) nên TIỀN ĐỊNH.
+    ("93 dịch chia mẻ",     "_test_dich_me.py",          27),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
