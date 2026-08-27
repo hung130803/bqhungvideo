@@ -3305,6 +3305,168 @@
   `RAM_MOI_LUONG_MAY_GB = 4.3` là sát trần, 4 luồng sẽ đảo trang) · `4c` vẫn
   đọc lại **44/63 câu** và vẫn là bước đắt thứ ba — mục 3 combo ("đọc ĐỀU") bỏ
   hẳn nó, **chưa đo lại trên đường `vnb:` sau vá**.
+- **"KHÔ KHAN, KHÔNG CÓ CẢM XÚC" — ĐO XONG BA HƯỚNG, VÀ CÂU TRẢ LỜI KHÔNG PHẢI
+  MỘT BẢN VÁ MÃ (27/08/2026; `_do_el_camxuc.py` · `_do_mau_dai.py` ·
+  `_do_san_vnb.py` · `_nghe_thu_cam_xuc.py`).** Anh Hùng sau 10 bản vá:
+  *"thật sự nó chưa được hay, với KHÔNG CÓ CẢM XÚC, KHÔ KHAN, lúc nhanh lúc
+  chậm"*. Ba lời kêu, **KHÔNG cùng một bệnh** — đừng gộp.
+  **ĐỐI CHỨNG TÁI LẬP CHẠY CÙNG LƯỢT, VÀ NÓ BẮT ĐƯỢC LỖI CỦA CHÍNH PHÉP ĐO:**
+  `vi-VN-HoaiMy` 3,18 -> **3,18** · `vi-VN-NamMinh` 4,04 -> **4,04** ·
+  `en-GB-Ryan` 5,38 -> **5,38**, lệch tối đa **0,00** trên cả ba. Lượt ĐẦU
+  Ryan ra **4,76** (lệch 0,62, cổng tự kêu *"THƯỚC LỆCH, KHÔNG TIN"*) vì
+  `doc_4_cau` ghi cứng `CAU["vi"]` cho MỌI giọng -> **giọng Anh đọc câu tiếng
+  Việt**, đúng cái `_do_nhan_nha_bang.cau_cho` đã dặn thành lời. Thước KHÔNG
+  hỏng; **phép đo sai vì cho giọng đọc sai thứ tiếng**. Bài học: cột đối chứng
+  đỏ thì nghi PHÉP ĐO trước khi nghi thước.
+  **HƯỚNG (A) MẪU DÀI HAY MẪU CÓ NHẤN NHÁ — 2x2 TÁCH HAI BIẾN, CÙNG 4 CÂU,
+  mỗi ô 2 lượt (VieNeu không tiền định):**
+
+  | ô | nhấn nhá MẪU | -> BẢN SAO |
+  |---|---|---|
+  | A1 mẫu THẤP · **7 giây** | 2,99 | 3,28-3,35 |
+  | A2 mẫu THẤP · **28 giây** | 3,19 | 3,24-3,25 |
+  | A3 mẫu CAO · **7 giây** | 3,47 | 3,92-4,01 |
+  | A4 mẫu CAO · **28 giây** | 3,83 | 3,66-3,98 |
+  | **A5 TRẦN · 28 giây** | **5,84** | **5,74-5,92** |
+
+  **ĐỘ DÀI MẪU KHÔNG ĂN.** Giữ nguyên giọng nguồn, 7 -> 28 giây: A1 3,31 ->
+  A2 3,25 (**−0,06**) · A3 3,96 -> A4 3,82 (**−0,14**). Cả hai ÂM, nằm trong
+  nhiễu. **Thu mẫu dài ra là vô ích.**
+  **ĐỘ NHẤN NHÁ CỦA MẪU ĂN GẦN 1:1.** A1(mẫu 2,99) 3,31 vs A3(mẫu 3,47) 3,96
+  = **+0,65** · A2(3,19) 3,25 vs A4(3,83) 3,82 = **+0,57** · A2 vs **A5(mẫu
+  5,84) 5,83 = +2,58**. Bản sao đi theo mẫu suốt dải **2,99 -> 5,84** mà
+  **KHÔNG bão hoà** — tức model không có trần cảm xúc quanh 4 như từng lo;
+  nó CHÉP mẫu. Lời khuyên cho anh Hùng vì thế là **THU LẠI MẪU, ĐỌC DIỄN
+  CẢM** (không phải thu dài, không phải đổi máy đọc).
+  Mẫu do **edge-tts / VieNeu dựng sẵn** sinh ra — **KHÔNG dùng
+  `adam_clone.wav`** (bản sao một giọng ElevenLabs thương mại), đúng ranh giới
+  cứng của repo.
+  **HƯỚNG (B) ElevenLabs v3 + THẺ CẢM XÚC: *CHƯA NỐI* TRÊN ĐƯỜNG THAY GIỌNG —
+  CHỨNG MINH BẰNG GỌI THẬT + ĐẾM, có ĐỐI CHỨNG DƯƠNG và ÂM.** Thay
+  `dubbing._eleven_tts_once` (cửa HTTP **DUY NHẤT** tới endpoint
+  text-to-speech) bằng hàm sinh mp3 bằng ffmpeg rồi GHI SỔ model thật sự gửi
+  đi -> **0 ký tự bị tiêu**:
+
+  | arm | số lượt gọi | model gửi đi | text còn thẻ |
+  |---|---|---|---|
+  | RECAP `emotion=True` (đối chứng DƯƠNG) | 2 | **`eleven_v3`** | CÓ |
+  | RECAP `emotion=False` (đối chứng ÂM) | 2 | `eleven_multilingual_v2` | không |
+  | **`thay_giong.doc_ban_dich` + `el:`** | **2** | **`eleven_multilingual_v2`** | CÓ (không ai strip) |
+
+  Ba chốt ĐẠT cả ba: **bản vá ĂN được** (arm1>0 và arm3>0 — bằng 0 thì mọi
+  kết luận vô nghĩa, đúng bẫy cổng 67) · đối chứng DƯƠNG ra v3 · đối chứng ÂM
+  KHÔNG ra v3. Nên *"đường thay giọng không gửi v3"* là **số đo**, không phải
+  suy luận từ mã.
+  **GỐC CƠ CHẾ:** `_chay_eleven` **không có tham số `model`** ->
+  `_synth_all_eleven(model="")` -> `_eleven_effective_model("")` -> mặc định
+  v2. `_synth_all`/`_synth_all_words` cũng không có đường nào nhận cảm xúc.
+  Tức **hộp Thay giọng KHÔNG có một cửa nào chỉ đạo cảm xúc**, và ElevenLabs
+  là máy đọc DUY NHẤT nhận được chỉ đạo đó -> đây là **câu trả lời thật** cho
+  *"không có cảm xúc"* trên đường `el:`.
+  **NỢ KÈM (chưa vá, ghi thẳng):** arm 3 cho thấy thẻ `[...]` đi NGUYÊN sang
+  v2 — `_strip_audio_tags` **không được gọi** ở đường thay giọng. Bình thường
+  bản dịch không có thẻ, nhưng chép lời Groq **có** trả `[Music]`/`[Applause]`
+  -> lúc đó v2 đọc to cái ngoặc. Chưa đo tần suất.
+  **GIÁ, NÓI RA:** ElevenLabs tính **theo KÝ TỰ**. Đo thật 5 tài khoản free:
+  **còn 43.804/50.000**. Video 3 phút ~2.275 ký tự -> **~19 video là hết
+  sạch**. Với 200-300 kênh thì đó **KHÔNG** phải giải pháp hằng ngày; nó là
+  **TRẦN TRÊN** để anh Hùng nghe biết "hay" là hay tới đâu.
+  **HƯỚNG (C) KOKORO — CHỌN ĐƯỢC, NHƯNG THỨ TỰ COMBO ĐANG ĐẨY GIỌNG PHẲNG LÊN
+  ĐẦU.** Gọi thật `giong_kokoro.danh_sach_giong()`: **28/28 dòng có mặt**,
+  nhãn đầy đủ **140-163 ký tự** và **KHÔNG chứa một con số nhấn nhá nào**
+  (`duoi_nhan_nha` trả `' · nhấn nhá 5,7'` nhưng **0 nơi gọi** — cố ý, xem
+  mục Kokoro ở trên; `giong_bang.duoi_nhan_nha('kk:...')` trả `''`).
+  Sắp xếp theo **ĐIỂM TÁC GIẢ**, và điểm đó **không dự đoán được nhấn nhá**
+  (Spearman 0,12 đã ghi) nên hàng đầu bảng là chỗ phẳng nhất:
+  **dòng 2 = `af_bella` nhấn nhá 2,33** (thấp thứ 2 cả bộ) · **dòng 27 =
+  `am_santa` nhấn nhá 5,66** (CAO NHẤT) · dòng 17 `bm_lewis` 4,67 · dòng 22
+  `am_liam` 4,60. Anh Hùng bấm từ trên xuống là trúng đúng giọng phẳng —
+  **và chưa ai nói cho anh ấy biết 26 dòng dưới có gì**. Kokoro **KHÔNG có
+  tiếng Việt** nên hướng này chỉ dùng cho video TIẾNG ANH.
+  **HƯỚNG THỨ TƯ, KHÔNG CÓ TRONG ĐỀ BÀI, VÀ LÀ THỨ RẺ NHẤT — 20 GIỌNG VIỆT
+  DỰNG SẴN ĐÃ CÓ SỐ MÀ CHƯA AI BẮT CHÉO VỚI ĐỘ ĐỌC SAI.** Tra `nhan_nha.BANG`
+  × `nhan_nha.DOC_SAI` (sàn `WER_MOC` = 4,8%):
+
+  | giọng | nhấn nhá | đọc sai % |
+  |---|---|---|
+  | `vn:Xuân Vĩnh` | **6,26** (cao nhất bảng Việt) | **26,4** (5,5x sàn) |
+  | **`vn:Thanh Bình`** | **5,61** | **9,0** |
+  | `vn:Adam` | 5,55 | 6,2 |
+  | `vn:Quang Sơn` | 4,90 | **29,2** |
+  | edge `vi-VN-NamMinh` (đang dùng) | 4,04 | chưa đo |
+  | edge `vi-VN-HoaiMy` | 3,18 | 4,8 (sàn) |
+  | `vn:Ngọc Linh` | 2,95 | chưa đo |
+
+  **Nhấn nhá cao KHÔNG bắt buộc đi kèm đọc sai** — `Thanh Bình` 5,61/9,0% và
+  `Adam` 5,55/6,2% chứng minh điều đó, còn `Quang Sơn` 4,90/29,2% chứng minh
+  chiều ngược. **`vn:Thanh Bình` là đánh đổi tốt nhất đo được**: hơn giọng
+  anh Hùng đang dùng **+1,57 nửa cung** nhấn nhá, đọc sai 9,0%.
+  **VÀ NÓ ĐANG LÀ DÒNG ĐẦU TIÊN của nhóm VieNeu** (gọi thật
+  `giong_vieneu.danh_sach_giong` -> `Thanh Bình` hạng **1**, còn 4 giọng đọc
+  sai nhiều bị đẩy xuống **16-19**) — tức app **đã** sắp đúng, chỉ là **chưa
+  ai nói cho anh Hùng biết**. Ghi chú cũ *"`vn:Xuân Vĩnh` đang là DÒNG ĐẦU"*
+  nay **LẠC HẬU**.
+  **LỜI KÊU "LÚC NHANH LÚC CHẬM" — SÀN CỦA `vnb:` LÀ MỘT DẢI, KHÔNG PHẢI MỘT
+  SỐ.** Đúng thước `_do_khop_video.toc_do_doc` (ký tự/giây TỪNG CÂU trên mốc
+  NÓI THẬT bằng `silencedetect`, **không** `probe_duration`), 20 câu **5-102
+  ký tự** (bộ câu đều nhau ra CV thấp GIẢ), mọi máy đọc CÙNG bộ câu:
+
+  | máy đọc | SÀN CV % |
+  |---|---|
+  | edge `HoaiMy` | 13,30 |
+  | edge `NamMinh` (đối chứng) | 14,03 |
+  | **NHÂN BẢN `vnb:`** | **12,49 và 18,77** (2 lượt) |
+  | `vn:Xuân Vĩnh` | 15,90 và 18,23 |
+  | `vn:Ngọc Linh` | 19,64 và 21,05 |
+
+  **HAI LƯỢT `vnb:` CÙNG MÃ CÙNG MẪU CÙNG CÂU LỆCH 6,3 ĐIỂM** -> sàn của
+  đường nhân bản **KHÔNG TIỀN ĐỊNH**; nói "sàn là X%" là nói sai. So với
+  edge-tts (13,3-14,0, tiền định) thì `vnb:` **tốt nhất là bằng, xấu nhất là
+  tệ hơn**. Đây là cùng một bệnh "không đều" mà mục `_do_vnb_en` đã đo trên
+  chiều đọc sai (WER 3,1% vs 12,7% giữa hai lượt).
+  **HỆ QUẢ: KHÔNG chữa được bằng mã.** Mục 3 combo ("đọc ĐỀU", bỏ bước 4c) đo
+  trên edge-tts kéo CV **14,29 -> 9,76**; phần dưới 9,76 chính là sàn máy
+  đọc. Trên `vnb:` sàn ấy là 12,5-18,8 **và ngẫu nhiên** -> bỏ 4c vẫn giúp
+  (và giúp nhiều hơn edge, vì `giong_vieneu._ep_khung` thực thi `rate` bằng
+  **rubberband co giãn hậu kỳ** chứ không phải đọc nhanh THẬT như edge, tức 4c
+  trên đường clone vừa tạo trải tốc độ vừa thêm méo phổ) **nhưng không thể về
+  0**. Chưa đo ghép cặp bật/tắt mục 3 trên `vnb:` — xem "chưa đo được".
+  **FILE NGHE THỬ: `_NGHE_THU_ANH_HUNG/cam_xuc/`** — 10 file, **chuẩn hoá
+  CÙNG −14 LUFS** bằng chính `thay_giong.chuan_do_to` (I đo lại −14,00 ..
+  −14,59 · TP −1,43 .. −1,97 dBTP), **10/10 MD5 KHÁC NHAU** (bẫy cache
+  `_eleven_tts` theo `sha1(voice|model|text)`). Cùng MỘT câu tiếng Việt cho
+  01-06, cùng MỘT câu tiếng Anh cho 07-08. Tiêu **266 ký tự** ElevenLabs
+  (43.804 -> 43.538) cho 2 file cuối.
+  **BẪY ĐỌC HẠN MỨC, MỚI:** đọc quota NGAY SAU lượt gọi ra **y nguyên 43.804**
+  (tưởng "không tiêu gì"); đọc lại lần 3 mới ra **43.538**. Endpoint
+  `/user/subscription` **cập nhật CHẬM** — muốn biết đã tiêu bao nhiêu thì
+  phải đọc lại sau vài phút, hoặc đếm file mới trong `_cache/tts` (2 file mới
+  đúng giờ chạy = đã gọi thật).
+  **THƯỚC NHẤN NHÁ KHÔNG NÓI "HAY" — nhắc lại vì cả mục này đứng trên nó.**
+  `nhan_nha` tự dặn vậy; nó chỉ nói ĐỘ TRẢI CAO ĐỘ. Vì thế `Xuân Vĩnh` 6,26
+  là giọng "trải" nhất mà **đọc sai 26,4%** — số cao không có nghĩa là chọn
+  được. **Tai anh Hùng là phán quyết cuối.**
+  **CHƯA ĐO ĐƯỢC, VÀ VÌ SAO:** (1) **ghép cặp bật/tắt mục 3 trên `vnb:`** —
+  cần một lượt `thay_giong_video` THẬT/arm, mà đo E2E gần nhất là **726,6
+  giây/video** và đường clone không tiền định nên phải >= 2 lượt/arm; không
+  đủ thời gian lượt này. (2) **chưa ai NGHE** — 10 file đã sinh, mọi con số
+  trên là số ĐO. (3) **mẫu nhỏ**: hướng (A) 2 lượt/ô · sàn 2 lượt/giọng — đủ
+  để nói "độ dài không ăn, nhấn nhá ăn", **không đủ** để nói phân bố.
+  (4) **`vn:Thanh Bình` chưa có số CV** (chỉ đo Xuân Vĩnh và Ngọc Linh).
+  (5) **chưa đo mẫu THẬT của anh Hùng** (7 giây) — ranh giới pháp lý chặn
+  `adam_clone.wav`, nên mọi mẫu là giọng MÁY, và mẫu sạch là ca DỄ NHẤT.
+  (6) tần suất `[Music]`/`[Applause]` lọt vào text thay giọng: **chưa đếm**.
+  **KHÔNG ĐỔI MỘT DÒNG `app/` NÀO trong lượt này** (`git status --porcelain
+  app/ config.py main.py` -> RỖNG) nên `dedup_key` của 200-300 kênh **không
+  thể** đổi — bảo đảm DO CẤU TẠO, không do một chuỗi `sig` viết đúng.
+  **CỔNG (không cổng nào phải nâng vì không có mã mới):** 3 cửa chặn ĐẠT
+  (pyflakes **0** dòng "undefined name" · `_test_app_smoke.py` **exit 0** ·
+  `_test_pipe_dialogs.py` **exit 0**); 76 **31·0** · 87 **44·0** · 63
+  **49·0** · 92 **85·0**. **84 ra 62·2** — đúng mốc *"ĐẠT 62 · HỎNG 2"* mà
+  chính CLAUDE.md đã ghi ở mục Kokoro, nhưng `_chay_hoi_quy.CONG` ghi **63**;
+  hai mục hỏng (*"gõ chuỗi vô nghĩa"* + *"thử phá LỌT 1 phép"*) **CÓ SẴN**,
+  không do lượt này (0 dòng `app/` bị sửa). **KHÔNG hạ mốc 63** — việc đúng
+  là chữa 2 mục đó rồi mới sửa số, chưa làm.
 - **QUÉT CẢ 20 GIỌNG VieNeu TRÊN CÂU TIẾNG VIỆT — 3 GIỌNG LỆCH HẲN, CẦN ĐO LẠI
   (19/08/2026, `_do_vn_quet.py` · `_kq_vn_quet.txt`).** Anh Hùng chỉ nêu đích
   danh Adam, nhưng câu hỏi thật là *"còn mấy kiểu khác nữa"*. Bộ 8 câu (sàng

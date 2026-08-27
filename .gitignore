@@ -156,3 +156,16 @@ _do_giong_toi/
 # Ban GON co theo doi git la _moc_doc_lan.json (cong 92 doc file do).
 _do_vnb_doclai/
 _do_vnb_en/
+
+# LUOT "KHO KHAN, KHONG CAM XUC" 27/08/2026 — HOP CAT cua 4 phep do, deu tai
+# sinh lai duoc (chay lai chinh script do):
+#   bq_do_mau_dai/    30 MB — file MAU giong + 10 luot nhan ban cua phep do
+#                     ghep cap 2x2 "mau dai / mau co nhan nha". Mau la giong
+#                     MAY (edge-tts + VieNeu dung san), KHONG phai nguoi that.
+#   bq_do_san_vnb/    21 MB — 8 luot doc 20 cau de do SAN trai toc do doc.
+#   bq_do_el_camxuc/  hop cat cua phep chung minh eleven_v3 (tu don).
+#   bq_nghe_thu_cx/   hop cat sinh file nghe thu (tu don).
+bq_do_mau_dai/
+bq_do_san_vnb/
+bq_do_el_camxuc/
+bq_nghe_thu_cx/
