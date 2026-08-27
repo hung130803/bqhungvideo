@@ -1018,17 +1018,32 @@ def ca11() -> None:
     so = getattr(NB, "SO_DO_EN", {})
     ok("11h `SO_DO_EN` có đủ 3 arm (vnb · cb · trần)",
        set(so) == {"vnb", "cb", "tran"}, str(sorted(so)))
-    ok("11i mỗi arm có đủ 5 thước",
-       bool(so) and all(set(v) == {"cau", "roi", "bia", "wer", "nhip"}
+    # 5 thước GỐC (26/08) bắt buộc ở MỌI arm; hai thước NGẮT (27/08) chỉ có ở
+    # `vnb` và `tran` — Chatterbox chưa đo ngắt giữa câu bao giờ, và bịa một ô
+    # cho nó là đúng thứ file này cấm.
+    ok("11i mỗi arm có đủ 5 thước GỐC",
+       bool(so) and all({"cau", "roi", "bia", "wer", "nhip"} <= set(v)
                         for v in so.values()))
+    ok("11i2 thước NGẮT chỉ ở `vnb` + `tran` (không bịa ô cho Chatterbox)",
+       {"ngat", "ngat_tv"} <= set(so["vnb"])
+       and {"ngat", "ngat_tv"} <= set(so["tran"])
+       and not ({"ngat", "ngat_tv"} & set(so["cb"])))
 
     def _dau(s: str) -> float:
         """Số ĐẦU của ô kiểu ``"2,6-5,1%"`` -> 2.6. Đọc **SỐ**, không so chữ.
 
         So chuỗi thì đổi `"17,9%"` thành `"1,79%"` vẫn "có mặt" và mục PASS
         OAN — đúng bẫy 56d/64.
+
+        Bốc SỐ ĐẦU bằng regex chứ không `split` theo vài ký tự đoán trước: ô
+        `"0,070 s"` (thước NGẮT, thêm 27/08) có ĐƠN VỊ ở đuôi, mà bản cũ tách
+        theo `[-–%]` nên `float("0.070 s")` **NỔ giữa cổng** — cổng chết thì
+        không phân biệt được với "chưa chạy tới chốt".
         """
-        return float(_re.split(r"[-–%]", str(s).replace(",", "."))[0])
+        m = _re.search(r"-?\d+(?:[.,]\d+)?", str(s))
+        if not m:
+            raise ValueError(f"ô không có số: {s!r}")
+        return float(m.group(0).replace(",", "."))
 
     ok("11j SỐ nói Chatterbox TỆ HƠN ở token trong câu (đọc SỐ, không chữ)",
        _dau(so["cb"]["cau"]) > _dau(so["vnb"]["cau"]),
@@ -1063,6 +1078,53 @@ def ca11() -> None:
     ok("11r TỰ KIỂM: đổi `SO_DO_EN` -> câu ĐỔI THEO (số không bị gõ tay)",
        "99,9%" in t2 and "99,9%" not in t)
     ok("11s cảnh báo KHÔNG EMOJI", not any(ord(c) > 0x2100 for c in t))
+
+    # ---- 11s2-s8 NGẮT GIỮA CÂU — thước của "như trẻ con mới đánh vần"
+    # (27/08/2026). Anh Hùng đổi CÁCH MÔ TẢ: lần trước "không lưu loát" = bịa
+    # chữ ở CUỐI câu (thước `bia`/`wer` ở trên), lần này "đánh vần" = ngắt
+    # quãng GIỮA câu. Hai thứ KHÁC NHAU nên phải có thước RIÊNG, không đọc
+    # bảng cũ rồi kết luận. Số đo trên 184 file tiếng THẬT máy anh ấy vừa đọc
+    # ra, TRẦN là edge-tts BẢN NGỮ đọc CÙNG bộ câu — xem khối `SO_DO_NGAT`.
+    ng = NB.SO_DO_NGAT
+    ok("11s2 `SO_DO_NGAT` đủ 6 khoá (en/vi x vnb/trần/tỉ số)",
+       set(ng) == {"en_vnb", "en_tran", "en_ty", "vi_vnb", "vi_tran",
+                   "vi_ty"}, str(sorted(ng)))
+    # MỆNH ĐỀ TRUNG TÂM của cả lượt đo: tiếng Anh VƯỢT trần bản ngữ, tiếng
+    # Việt DƯỚI trần bản ngữ. Đảo chiều bảng là đảo luôn kết luận.
+    ok("11s3 tiếng ANH ngắt NHIỀU HƠN trần bản ngữ (bệnh nằm ở đây)",
+       _dau(ng["en_vnb"]) > _dau(ng["en_tran"]),
+       f"{ng['en_vnb']} vs {ng['en_tran']}")
+    ok("11s4 tiếng VIỆT ngắt ÍT HƠN trần bản ngữ (cùng engine, cùng máy)",
+       _dau(ng["vi_vnb"]) < _dau(ng["vi_tran"]),
+       f"{ng['vi_vnb']} vs {ng['vi_tran']}")
+    # CHỐNG GÕ TAY LỆCH: tỉ số phải khớp phép chia của chính hai số kia.
+    _ten = _dau(ng["en_vnb"]) / _dau(ng["en_tran"])
+    _tvi = _dau(ng["vi_vnb"]) / _dau(ng["vi_tran"])
+    ok("11s5 tỉ số khớp phép chia (không gõ tay lệch)",
+       abs(_ten - _dau(ng["en_ty"])) < 0.06
+       and abs(_tvi - _dau(ng["vi_ty"])) < 0.06,
+       f"en {_ten:.2f} · vi {_tvi:.2f}")
+    # DẤU HIỆU ĐẶC TRƯNG: chỗ ngắt của giọng bệnh NGẮN hơn của bản ngữ. Đó
+    # chính là lý do KHÔNG vá được bằng cách cắt khoảng lặng — cắt là cắt vào
+    # cái DÀI, mà cái dài lại là của BẢN NGỮ (đo: trần bị đụng 7,5% vs 3,8%).
+    ok("11s6 ngắt của `vnb:` NGẮN HƠN ngắt của trần (nhiều & vụn, không dài)",
+       _dau(so["vnb"]["ngat_tv"]) < _dau(so["tran"]["ngat_tv"]),
+       f"{so['vnb']['ngat_tv']} vs {so['tran']['ngat_tv']}")
+    ok("11s7 cảnh báo mang SỐ NGẮT của CẢ HAI ngôn ngữ",
+       all(x in t for x in (ng["en_vnb"], ng["en_tran"], ng["en_ty"],
+                            ng["vi_vnb"], ng["vi_tran"], ng["vi_ty"],
+                            so["vnb"]["ngat_tv"], so["tran"]["ngat_tv"])),
+       t[-140:])
+    # CHỐNG GÕ TAY (khuôn 11r): đổi bảng thì câu phải đổi theo.
+    _luu2 = dict(ng)
+    try:
+        ng["en_ty"] = "88,8"
+        t3 = NB.canh_bao_doc_tieng("vnb:D:/m.wav", "en")
+    finally:
+        ng.clear()
+        ng.update(_luu2)
+    ok("11s8 TỰ KIỂM: đổi `SO_DO_NGAT` -> câu ĐỔI THEO",
+       "88,8" in t3 and "88,8" not in t)
 
     # ---- 11t-w UI: "hàm xong ≠ tính năng xong" (repo đã sập 6 lần)
     from app.ui import thay_giong_dialog as TGD

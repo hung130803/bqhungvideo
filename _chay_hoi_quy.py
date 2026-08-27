@@ -392,7 +392,12 @@ CONG = [
     # (AST **và** GỌI THẬT), bảng `SO_DO_EN` còn nguyên và nói đúng chiều, câu
     # cảnh báo đã nối tới giao diện (repo có 6 ca "hàm xong ≠ tính năng xong"),
     # và `dedup_key` của `enqueue_thay_giong` KHÔNG đổi một ký tự nào.
-    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 131),
+    # +8 mục (11i2 · 11s2-s8) ngày 27/08/2026: thước **NGẮT GIỮA CÂU** cho
+    # triệu chứng anh Hùng gọi là *"như trẻ con mới đánh vần"* — KHÁC thước
+    # `bia`/`wer` ở trên (kia đếm chữ SAI/BỊA, đây đếm chỗ NGẮT QUÃNG). Chốt
+    # trung tâm: tiếng ANH ngắt 2,45 lần trần bản ngữ · tiếng VIỆT chỉ 0,20
+    # lần — cùng engine, cùng máy. Xem `nhan_ban_giong.SO_DO_NGAT`.
+    ("91 nhân bản đa ngôn ngữ", "_test_nhan_ban_da_ngu.py", 139),
     # Cổng 92 là bước TIẾP THEO của đúng việc cổng 91 vừa đo. Cổng 91 kết luận
     # bệnh của `vnb:` đọc tiếng Anh là **KHÔNG ĐỀU** (cùng mã cùng mẫu: lượt 1
     # WER 3,1% · lượt 2 WER 12,7%) và ghi nợ *"chưa thử phép chữa đáng làm nhất

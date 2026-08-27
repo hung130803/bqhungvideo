@@ -154,12 +154,67 @@ CANH_BAO_PHAP_LY = (
 SO_DO_EN: dict[str, dict[str, str]] = {
     # khoá = arm · giá trị = {thước: số}. MỘT NGUỒN cho mọi nhãn/cảnh báo —
     # gõ lại con số ở nhãn là đẻ ra bản sao thứ hai rồi một ngày hai bản lệch.
+    #
+    # `ngat` / `ngat_tv` THÊM 27/08/2026 — xem khối "NGẮT GIỮA CÂU" ngay dưới.
     "vnb": {"cau": "2,6-5,1%", "roi": "29,2-37,5%", "bia": "0,3-9,7%",
-            "wer": "3,1-12,7%", "nhip": "1,53x rồi 2,54x"},
+            "wer": "3,1-12,7%", "nhip": "1,53x rồi 2,54x",
+            "ngat": "2,65", "ngat_tv": "0,070 s"},
     "cb": {"cau": "17,9%", "roi": "33,3%", "bia": "2,2%", "wer": "6,0%",
            "nhip": "1,57x"},
     "tran": {"cau": "0,0%", "roi": "4,2%", "bia": "0,9%", "wer": "3,7%",
-             "nhip": "1,00x"},
+             "nhip": "1,00x",
+             "ngat": "1,08", "ngat_tv": "0,190 s"},
+}
+
+#: NGẮT GIỮA CÂU — thước của triệu chứng anh Hùng gọi là **"như trẻ con mới
+#: đánh vần"** (27/08/2026). ĐỌC KHỐI NÀY TRƯỚC KHI ĐI SỬA TIẾNG.
+#:
+#: **KHÁC HẲN thước ở `SO_DO_EN` phía trên.** Bảng trên đếm chữ SAI và chữ
+#: BỊA — tức lỗi ở CUỐI/TRONG câu. "Đánh vần" mô tả một thứ khác: đọc **rời
+#: rạc, ngắt quãng GIỮA câu**. Nên phải có thước riêng, và thước đó là số
+#: khoảng lặng nằm GIỮA các khoảng có tiếng (bỏ lề đầu/cuối), quy về
+#: **/100 ký tự** cho câu dài ngắn so được với nhau.
+#:
+#: **ĐO TRÊN CHÍNH TIẾNG MÁY ANH HÙNG VỪA ĐỌC RA**, không phải câu dựng lại:
+#: 184 file `_tam_*/raw/*.wav` còn nguyên trong `%LOCALAPPDATA%\BQHungVideo`,
+#: ghép với `_job_*/job.json` để biết câu nào ra file nào. TRẦN đối chứng là
+#: edge-tts **BẢN NGỮ** đọc **CÙNG bộ câu** — không có trần thì "0,96 ngắt mỗi
+#: câu" là con số vô nghĩa.
+#:
+#:   arm (40 câu đầu, cùng bộ chữ)   | ngắt/100 kt | ngắt/câu | trung vị ngắt
+#:   --------------------------------|-------------|----------|--------------
+#:   `vnb:` đọc **TIẾNG ANH**        | **2,65**    | 1,07     | **0,070 s**
+#:   TRẦN edge `en-US` (bản ngữ)     | 1,08        | 0,53     | 0,190 s
+#:   `vnb:` đọc **TIẾNG VIỆT**       | **0,18**    | 0,05     | —
+#:   TRẦN edge `vi-VN` (bản ngữ)     | 0,91        | 0,33     | 0,070 s
+#:
+#: **HAI TỈ SỐ NÀY LÀ CẢ CÂU TRẢ LỜI: tiếng Anh 2,45 LẦN trần bản ngữ · tiếng
+#: Việt 0,20 LẦN trần bản ngữ — lệch nhau 12 lần.** Cùng engine, cùng máy,
+#: cùng cơ chế nhân bản, hai lượt chạy cách nhau chưa đầy một ngày. Tức triệu
+#: chứng là chuyện **model VieNeu (checkpoint TIẾNG VIỆT) đọc TIẾNG ANH**,
+#: không phải chuyện cấu hình, không phải chuyện bản vá nào.
+#:
+#: **DẤU HIỆU ĐẶC TRƯNG NẰM Ở TRUNG VỊ, ĐỪNG BỎ QUA:** chỗ ngắt của `vnb:`
+#: **NGẮN** (0,070 s) mà **NHIỀU**; chỗ ngắt của bản ngữ **DÀI** (0,190 s) mà
+#: **ÍT**. Ngắt dài và thưa = ngắt nghỉ đúng chỗ; ngắt ngắn và dày = hụt hơi
+#: vụn giữa câu — đúng nghĩa "đánh vần".
+#:
+#: **VÌ SAO KHÔNG VÁ ĐƯỢC BẰNG CÁCH SỬA TIẾNG — ĐÃ ĐO CẢ HAI CHIỀU, CẢ HAI
+#: ĐỀU BỊ BÁC** (`_do_siet_ngat.py`, hàm thuần trên chính 184 file đó):
+#:   * **cắt ngắt DÀI** (ép mọi khoảng lặng xuống <= trần): ở MỌI trần thử
+#:     (0,30 · 0,20 · 0,15 · 0,12 · 0,10 s) thì **TRẦN BẢN NGỮ bị đụng NẶNG
+#:     HƠN** giọng đang hỏng — 7,5% vs 3,8% ở trần 0,30, tới 22,5% vs 14,1% ở
+#:     trần 0,10. Vá thế là bẻ nhịp nói tự nhiên nhiều hơn là chữa chỗ vụn.
+#:   * **gộp ngắt NGẮN** (< 0,15 s): nó xoá **100% (13/13)** khoảng ngắt của
+#:     TRẦN bản ngữ tiếng Việt và 38% của trần tiếng Anh. Không có ngưỡng nào
+#:     tách được "hụt hơi bệnh lý" khỏi "ngắt hơi tự nhiên".
+#: Hai nhóm **CHỒNG NHAU theo ĐỘ DÀI**, chỉ tách nhau theo **MẬT ĐỘ** — mà mật
+#: độ thì không sửa được bằng kéo cắt. Cùng bài học `ty_giu` (*"1 điểm dữ liệu
+#: thì KHÔNG đặt ngưỡng"*) và `doc_lan` (*"hai nhóm CHỒNG NHAU — nói thẳng,
+#: không giả vờ có đường kẻ sạch"*). **Đừng ai đi lại hai đường này.**
+SO_DO_NGAT: dict[str, str] = {
+    "en_vnb": "2,65", "en_tran": "1,08", "en_ty": "2,45",
+    "vi_vnb": "0,18", "vi_tran": "0,91", "vi_ty": "0,20",
 }
 
 #: Sổ ghi ở DATA_DIR. Khoá theo TÊN người dùng đặt.
@@ -635,6 +690,7 @@ def canh_bao_doc_tieng(ma: str, lang: str) -> str:
         if not m.startswith("vnb:") or l in _NN_CUA_VIENEU:
             return ""
         v, cb, tr = SO_DO_EN["vnb"], SO_DO_EN["cb"], SO_DO_EN["tran"]
+        ng = SO_DO_NGAT
         return (
             f"LƯU Ý về giọng nhân bản này: nó chạy trên VieNeu (model TIẾNG "
             f"VIỆT). Đo 26/08/2026 trên 34 câu tiếng Anh, CÙNG một file mẫu, "
@@ -643,6 +699,18 @@ def canh_bao_doc_tieng(ma: str, lang: str) -> str:
             f"({tr['wer']} / {tr['bia']}), có lượt tệ hẳn. Nó KHÔNG ĐỀU chứ "
             f"không phải lúc nào cũng hỏng, nên câu nào nghe lạ thì chạy lại "
             f"video đó là thường hết.\n"
+            f"NGHE RA LÀ \"ĐỌC RỜI RẠC, NHƯ ĐÁNH VẦN\" thì đó là thứ ĐO ĐƯỢC, "
+            f"không phải cảm giác: đo 27/08/2026 trên chính tiếng máy đã đọc "
+            f"ra, giọng này ngắt GIỮA CÂU {ng['en_vnb']} lần trên 100 ký tự "
+            f"so với {ng['en_tran']} của giọng bản ngữ edge-tts đọc CÙNG bộ "
+            f"câu — GẤP {ng['en_ty']} LẦN — và chỗ ngắt rất ngắn (trung vị "
+            f"{v['ngat_tv']} so với {tr['ngat_tv']} của bản ngữ), tức nhiều "
+            f"cú hụt hơi vụn chứ không phải ngắt nghỉ đúng chỗ. Cùng giọng, "
+            f"cùng máy, ĐỌC TIẾNG VIỆT thì NGƯỢC LẠI: {ng['vi_vnb']} so với "
+            f"{ng['vi_tran']} của bản ngữ = chỉ {ng['vi_ty']} lần. Đây là "
+            f"chuyện model tiếng Việt đọc tiếng Anh, KHÔNG phải app đặt sai "
+            f"gì cả, và KHÔNG chữa được bằng cách cắt bớt khoảng lặng (đã đo "
+            f"cả hai chiều: làm vậy bẻ nhịp giọng bản ngữ nặng hơn).\n"
             f"Đổi sang giọng nhân bản Chatterbox KHÔNG chữa được: cùng mẫu ấy "
             f"nó sai chữ trong câu {cb['cau']} so với {v['cau']} của VieNeu, "
             f"lại bắt buộc GPU NVIDIA và đóng dấu chìm không tắt được.\n"
