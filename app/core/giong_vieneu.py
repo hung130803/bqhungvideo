@@ -1832,10 +1832,56 @@ try:
                          % (J["voice"], len(co_giong)))
 
     kw = {}
-    if J.get("ref_audio"):
+    enrol_ok = False
+    t_enrol = 0.0
+    # ENROL CHI LAI KHI LOAT DU DAI — do duoc, khong dat mo. Enrol ton
+    # **46,5s MOT LAN**, doi lai moi cau bot **~29s** (33,5 -> 4,4). Diem hoa
+    # von la ~2 cau, nen duoi 3 cau thi duong CU RE HON.
+    # Ca that phai chan: nut **Nghe thu** doc DUNG 1 CAU — enrol o do la bien
+    # 29s thanh 51s, tuc "toi uu" lam cham chinh cai user dang ngoi doi.
+    CAU_TOI_THIEU_ENROL = 3
+    if J.get("ref_audio") and len(J.get("items") or []) < CAU_TOI_THIEU_ENROL:
+        kw["ref_audio"] = J["ref_audio"]
+    elif J.get("ref_audio"):
         # NHAN BAN. Tham so DUNG la `ref_audio` — `use_ref_codes` la co BOOL,
         # nhet duong dan vao do chi lam no True (bay luot 4 = duong tinh gia).
-        kw["ref_audio"] = J["ref_audio"]
+        #
+        # ═══ ENROL MOT LAN, DUNG CHO CA LOAT ═══
+        # Day la cho DAT NHAT cua ca duong thay giong, va no dat mot cach AM
+        # THAM. `infer(ref_audio=...)` goi `_resolve_ref` ->
+        # `_preclean_reference_audio` (librosa trim + ghi file tam) +
+        # `engine.prepare_reference` (ma hoa NeuCodec **CA MAU 10 giay**) —
+        # va no lam lai **TUNG CAU MOT**.
+        #
+        # DO TREN LUOT CHAY THAT CUA ANH HUNG (`_do_vn_that.py`, doc mtime
+        # file WAV trong `_tam_*/raw` cua chinh app dang chay): **27,4 giay/cau
+        # · 141 cau/video -> 64 PHUT cho MOT luot doc**, va **93% chi phi moi
+        # cau la PHI CO DINH** (cau 23 ky tu 25,5s vs cau 52 ky tu 26,9s: gap
+        # doi chu chi them 1,4s). Tuc gia nam o LUOT GOI, khong o do dai chu.
+        #
+        # `add_voice` chay DUNG HAI dong ay MOT LAN roi cat `speaker_emb` +
+        # `codes` vao `_preset_voices`; `infer(voice=...)` dung lai CHINH hai
+        # mang so do -> **khong doi mot tham so nao dua vao model**, nen day la
+        # ban va TOC DO THUAN, khong phai danh doi chat luong.
+        #
+        # DO GHEP CAP (`_do_vn_refcache.py` — dan xen TUNG CAU, dao thu tu
+        # chan/le, cung tien trinh, cung mau):
+        #   CU 33,5 s/cau -> MOI 4,4 s/cau = **NHANH GAP 7,57**, MOI thang
+        #   **6/6 cau**. Uoc 1 luot doc 141 cau: **78,8 phut -> 11,2 phut**.
+        #
+        # BAN vieneu KHONG CO `add_voice` -> LUI ve duong cu. Lui em chu khong
+        # vo luot doc: cai mat chi la phan nhanh, khong phai ca video.
+        try:
+            t0 = time.time()
+            tts.add_voice("_bq_clone", J["ref_audio"])
+            t_enrol = time.time() - t0
+            kw["voice"] = "_bq_clone"
+            enrol_ok = True
+            bao(0.08, "Da nap mau giong mot lan (%.1fs)" % t_enrol)
+        except Exception as e:
+            kw["ref_audio"] = J["ref_audio"]
+            bao(0.08, "Khong nap san duoc mau (%s) -> doc kieu cu, cham hon"
+                % type(e).__name__)
     elif J.get("voice"):
         kw["voice"] = J["voice"]
     kw["apply_watermark"] = bool(J.get("watermark", True))
@@ -1854,6 +1900,7 @@ try:
     t_gen = time.time() - t1
 
     ket = {"ok": True, "nap": round(t_nap, 2), "gen": round(t_gen, 2),
+           "enrol": round(t_enrol, 2), "enrol_ok": enrol_ok,
            "sr": sr, "ra": ra, "so_giong": len(co_giong),
            "watermark": bool(getattr(tts, "watermarker", None)) and kw["apply_watermark"]}
 except Exception as e:
@@ -2661,8 +2708,16 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
                 if k < len(m):
                     words[i] = m[k]
 
-    _ghi_log(f"VieNeu đọc {sum(1 for i in can if ok[i])}/{len(can)} câu bằng "
-             f"{voice} · nạp {ket.get('nap')}s · sinh {ket.get('gen')}s · "
+    # `enrol` + `giây/câu` PHẢI có trong log: đó là hai con số duy nhất phân
+    # biệt được "máy chậm" với "đường đọc đang nạp lại mẫu giọng từng câu"
+    # (bệnh 27,4 s/câu đã vá 27/08). Thiếu chúng thì lần sau lại phải đi đọc
+    # `mtime` file WAV để đoán ra, đúng cách phải làm lần này.
+    _sc = sum(1 for i in can if ok[i])
+    _gen = float(ket.get("gen") or 0)
+    _ghi_log(f"VieNeu đọc {_sc}/{len(can)} câu bằng "
+             f"{voice} · nạp {ket.get('nap')}s · "
+             f"nạp mẫu {ket.get('enrol')}s (một lần: {ket.get('enrol_ok')}) · "
+             f"sinh {ket.get('gen')}s = {_gen / max(1, len(can)):.1f}s/câu · "
              f"{ket.get('sr')} Hz · watermark {ket.get('watermark')}")
     _don(sb)
     _don(Path(ket.get("_sandbox") or ""))

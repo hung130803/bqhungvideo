@@ -1893,7 +1893,188 @@ finally:
     else:
         os.environ["BQ_VN_DIR"] = _VN_DIR_CU2
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# CA 18 — NẠP MẪU GIỌNG **MỘT LẦN**, KHÔNG PHẢI MỖI CÂU
+# ===========================================================================
+# Anh Hùng 27/08/2026: *"2 tiếng mới được 1 video lồng tiếng 3 phút"*.
+#
+# ĐO TRÊN CHÍNH LƯỢT CHẠY CỦA ANH ẤY (`_do_vn_that.py` — đọc `mtime` file WAV
+# trong `_tam_*/raw` của app đang chạy, KHÔNG đụng một byte):
+#   **27,4 giây/câu · 141 câu/video -> 64 PHÚT cho MỘT lượt đọc**, mà đường
+#   thay giọng gọi đọc **3 lượt** (4a · 4b · 4c). Ra đúng 2 tiếng.
+# Và **93% chi phí mỗi câu là PHÍ CỐ ĐỊNH**: câu 23 ký tự 25,5s vs câu 52 ký
+# tự 26,9s — gấp đôi chữ chỉ thêm 1,4s. Tức giá nằm ở **LƯỢT GỌI**.
+#
+# GỐC: `vieneu.v3turbo.infer(ref_audio=...)` -> `_resolve_ref` ->
+# `_preclean_reference_audio` (librosa trim + ghi file tạm) +
+# `engine.prepare_reference` (mã hoá NeuCodec CẢ MẪU) — **lặp lại TỪNG CÂU**.
+# Gói CÓ SẴN đường làm một lần: `add_voice()` cất `speaker_emb` + `codes`.
+#
+# ĐO GHÉP CẶP (`_do_vn_refcache.py`): **33,5 -> 4,4 s/câu = 7,57 lần**, MỚI
+# thắng **6/6 câu**. Qua cửa thật `doc_loat`: **45,9 -> 5,86 s/câu**.
+#
+# CÁCH CHẤM: **CHẠY THẬT `_MA_DOC`** bằng một `vieneu` GIẢ (không model, không
+# GPU, không mạng -> tiền định, vài giây). Quét chuỗi thì luôn có phép phá giữ
+# nguyên mặt chữ mà đổi ý nghĩa (bài học cổng 56d), nên mọi mệnh đề dưới đây
+# đều đọc **HÀNH VI THẬT** của tiến trình con.
+print("\n--- CA 18: nạp mẫu giọng MỘT LẦN, không phải mỗi câu ---")
+
+_C18 = T / "ca18"
+_C18.mkdir(parents=True, exist_ok=True)
+(_C18 / "vieneu.py").write_text('''
+import json, os
+import numpy as np
+
+
+def _ghi(muc):
+    with open(os.environ["BQ_FAKE_LOG"], "a", encoding="utf-8") as f:
+        f.write(json.dumps(muc) + "\\n")
+
+
+class Vieneu:
+    sample_rate = 24000
+    watermarker = None
+
+    def list_preset_voices(self):
+        return [("mo ta", "Adam")]
+
+    def add_voice(self, name, ref_audio, **kw):
+        if os.environ.get("BQ_FAKE_NO_ADD"):
+            raise AttributeError("ban vieneu nay khong co add_voice")
+        _ghi(["add_voice", name, os.path.basename(str(ref_audio))])
+
+    def infer(self, text=None, **kw):
+        _ghi(["infer", sorted(k for k in kw if k in ("voice", "ref_audio"))])
+        return np.zeros(2400, dtype="float32")
+''', encoding="utf-8")
+
+
+def _chay_runner_gia(so_cau: int, ref: bool = True,
+                     no_add: bool = False) -> tuple:
+    """Chạy THẬT `_MA_DOC` ở tiến trình riêng với `vieneu` GIẢ."""
+    import subprocess
+    sb = _C18 / f"j_{so_cau}_{int(ref)}_{int(no_add)}"
+    if sb.exists():
+        shutil.rmtree(sb, ignore_errors=True)
+    (sb / "raw").mkdir(parents=True, exist_ok=True)
+    log = sb / "goi.jsonl"
+    items = [{"i": i, "text": f"Cau thu {i} de doc.",
+              "raw": str(sb / "raw" / f"c{i}.wav")} for i in range(so_cau)]
+    job = sb / "job.json"
+    job.write_text(json.dumps(
+        {"items": items, "voice": "" if ref else "Adam",
+         "ref_audio": str(_C18 / "mau.wav") if ref else "",
+         "watermark": True}, ensure_ascii=False), encoding="utf-8")
+    runner = sb / "runner.py"
+    runner.write_text(VN._MA_DOC, encoding="utf-8")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(_C18)
+    env["BQ_FAKE_LOG"] = str(log)
+    env["PYTHONUTF8"] = "1"
+    if no_add:
+        env["BQ_FAKE_NO_ADD"] = "1"
+    else:
+        env.pop("BQ_FAKE_NO_ADD", None)
+    ket: dict = {}
+    _r = subprocess.run([sys.executable, "-u", str(runner), str(job)],
+                        capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", env=env, timeout=180)
+    for _d in (_r.stdout or "").splitlines():
+        if _d.startswith("BQJSON\t"):
+            try:
+                ket = json.loads(_d.split("\t", 1)[1])
+            except ValueError:
+                ket = {}
+    goi = []
+    if log.is_file():
+        for _d in log.read_text(encoding="utf-8").splitlines():
+            if _d.strip():
+                goi.append(json.loads(_d))
+    return ket, goi
+
+
+# --- 18a: loạt DÀI -> enrol ĐÚNG MỘT LẦN, mọi câu đọc bằng `voice` ---
+_k18, _g18 = _chay_runner_gia(6)
+_add = [g for g in _g18 if g[0] == "add_voice"]
+_inf = [g for g in _g18 if g[0] == "infer"]
+ok("18a loạt 6 câu chạy được bằng vieneu GIẢ (bộ đo có răng)",
+   bool(_k18.get("ok")) and len(_inf) == 6,
+   f"ok={_k18.get('ok')} · infer={len(_inf)}")
+ok("18a' nạp mẫu ĐÚNG MỘT LẦN cho cả loạt (không phải mỗi câu)",
+   len(_add) == 1, f"add_voice={len(_add)} lượt / {len(_inf)} câu")
+ok("18a'' và MỌI câu đọc bằng `voice=` — KHÔNG câu nào còn `ref_audio=` "
+   "(còn nó là còn mã hoá lại mẫu, tức bản vá không ăn)",
+   len(_inf) == 6 and all(g[1] == ["voice"] for g in _inf),
+   f"tham số từng câu: {[g[1] for g in _inf][:3]}")
+ok("18a''' kết quả khai `enrol` + `enrol_ok` để NHẬT KÝ nói thật "
+   "(thiếu thì lần sau lại phải đo mtime file WAV để đoán ra)",
+   "enrol" in _k18 and _k18.get("enrol_ok") is True)
+
+# --- 18b: loạt NGẮN -> đi đường CŨ (enrol không lãi) ---
+# Enrol tốn 46,5s MỘT LẦN, đổi lại mỗi câu bớt ~29s -> hoà vốn ~2 câu. Nút
+# **Nghe thử** đọc ĐÚNG 1 CÂU: enrol ở đó là biến 29s thành 51s, tức "tối ưu"
+# làm chậm đúng cái người dùng đang ngồi đợi.
+_k18b, _g18b = _chay_runner_gia(1)
+_addb = [g for g in _g18b if g[0] == "add_voice"]
+_infb = [g for g in _g18b if g[0] == "infer"]
+ok("18b loạt 1 câu (Nghe thử) -> KHÔNG enrol, đi đường cũ",
+   len(_addb) == 0 and len(_infb) == 1 and _infb[0][1] == ["ref_audio"],
+   f"add_voice={len(_addb)} · tham số={_infb[0][1] if _infb else None}")
+ok("18b' ... và vẫn ra tiếng bình thường (ngưỡng không làm vỡ lượt đọc)",
+   bool(_k18b.get("ok")) and _k18b.get("enrol_ok") is False)
+
+# --- 18c: bản vieneu KHÔNG CÓ `add_voice` -> LÙI ÊM, không vỡ ---
+_k18c, _g18c = _chay_runner_gia(6, no_add=True)
+_infc = [g for g in _g18c if g[0] == "infer"]
+ok("18c bản vieneu thiếu `add_voice` -> LÙI ÊM về đường cũ, KHÔNG ném "
+   "(mất phần nhanh, không mất cả video)",
+   bool(_k18c.get("ok")) and len(_infc) == 6
+   and all(g[1] == ["ref_audio"] for g in _infc),
+   f"ok={_k18c.get('ok')} · infer={len(_infc)}")
+ok("18c' ... và khai `enrol_ok=False` chứ không khoe cái mình không làm được",
+   _k18c.get("enrol_ok") is False)
+
+# --- 18d: giọng DỰNG SẴN không đụng gì tới đường enrol (bất biến) ---
+_k18d, _g18d = _chay_runner_gia(6, ref=False)
+_infd = [g for g in _g18d if g[0] == "infer"]
+ok("18d giọng DỰNG SẴN (`vn:`) đi Y NGUYÊN đường cũ: 0 enrol, mọi câu "
+   "`voice=` — bản vá KHÔNG chạm 20 giọng đang chạy sản xuất",
+   len([g for g in _g18d if g[0] == "add_voice"]) == 0
+   and len(_infd) == 6 and all(g[1] == ["voice"] for g in _infd))
+
+
+# --- 18e: QUÉT AST — runner phải GỌI THẬT `add_voice`, kèm TỰ KIỂM BỘ DÒ ---
+# Quét chuỗi thì chính khối GHI CHÚ giải thích bản vá (có chữ `add_voice`) bị
+# kể là "đã gọi" -> mục tự ĐẠT vĩnh viễn. Bài học 47/51/53/73/80/85 và 12e.
+def _co_goi18(ma: str, ten_ham: str) -> bool:
+    try:
+        cay = ast.parse(ma)
+    except SyntaxError:
+        return False
+    for n in ast.walk(cay):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == ten_ham):
+            return True
+    return False
+
+
+ok("18e runner GỌI THẬT `add_voice` (đọc bằng AST, không quét chuỗi)",
+   _co_goi18(VN._MA_DOC, "add_voice"))
+_ma_pha18 = VN._MA_DOC.replace("tts.add_voice(", "_khong_goi(", 1)
+ok("18e' TỰ KIỂM BỘ DÒ: gỡ lời gọi -> bộ dò PHẢI kêu "
+   "(bản đã phá vẫn `compile()` được nên đây là phép phá THẬT)",
+   (not _co_goi18(_ma_pha18, "add_voice")) and _ma_pha18 != VN._MA_DOC
+   and bool(compile(_ma_pha18, "<pha18>", "exec")))
+ok("18e'' TỰ KIỂM BỘ DÒ chiều ngược: chữ nằm trong GHI CHÚ thì KHÔNG "
+   "được tính là đã gọi",
+   not _co_goi18("# tts.add_voice(x)\nx = 1\n", "add_voice"))
+
+# --- 18f: NHẬT KÝ phải mang giây/câu + nạp mẫu ---
+_ma_doc18 = _ma_that(REPO / "app" / "core" / "giong_vieneu.py")
+ok("18f nhật ký nêu `s/câu` và `nạp mẫu` — hai con số duy nhất phân biệt "
+   "được 'máy chậm' với 'đang nạp lại mẫu từng câu'",
+   "s/câu" in _ma_doc18 and "nạp mẫu" in _ma_doc18)
+
 print("\n" + "=" * 74)
 print(f"ĐẠT {_DAT} · HỎNG {len(_HONG)} · BỎ QUA {len(_BOQUA)}")
 for x in _HONG:

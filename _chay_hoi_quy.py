@@ -268,7 +268,14 @@ CONG = [
     # VieNeu ra khỏi `%TEMP%`. Để mốc cũ thì 63 mục mới KHÔNG được sàn nào
     # canh — bộ so chỉ kêu khi `ĐẠT < mốc`, nên mốc lạc hậu là cổng câm một
     # nửa (đúng bệnh chính file này đã ghi ở dòng 111-112).
-    ("88 giọng của tôi",    "_test_giong_toi.py",       233),
+    # Mốc 233 -> **246** (27/08/2026): CA 18 canh bản vá CHẶN SẢN XUẤT — anh
+    # Hùng *"2 tiếng mới được 1 video lồng tiếng 3 phút"*. Gốc: đường nhân bản
+    # gọi `infer(ref_audio=...)` nên `vieneu` **mã hoá lại CẢ MẪU cho TỪNG
+    # CÂU** (đo trên chính lượt chạy của anh ấy: **27,4 giây/câu**, trong đó
+    # **93% là phí CỐ ĐỊNH**). Nay enrol MỘT LẦN bằng `add_voice`: đo ghép cặp
+    # **33,5 -> 4,4 s/câu = 7,57 lần**. CA 18 chạy THẬT `_MA_DOC` với một
+    # `vieneu` GIẢ nên TIỀN ĐỊNH — không model, không GPU, không mạng.
+    ("88 giọng của tôi",    "_test_giong_toi.py",       246),
     # Cổng 89 — CHỈNH VIDEO THEO GIỌNG (`he_so_hinh`) + độ to bản trộn + hộp
     # Thay giọng gọn. Số **89** lấy bằng cách đọc chính `CONG` này (max đang là
     # 88), KHÔNG đếm theo trí nhớ.

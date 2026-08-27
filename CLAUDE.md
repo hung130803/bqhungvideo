@@ -3176,6 +3176,135 @@
   hiệu mạnh hơn (chữ khác hệ chữ · lặp cụm) vẫn nằm ngoài vì chúng cần ASR —
   chưa đo xem một lượt ASR **cục bộ** (faster-whisper trên máy) có rẻ đủ để
   đưa vào không · chưa đo trên tiếng VIỆT (corpus hiệu chuẩn là tiếng Anh).
+- **"2 TIẾNG MỚI ĐƯỢC 1 VIDEO 3 PHÚT" — TRUY RA, VÁ, ĐO LẠI: MẪU GIỌNG BỊ MÃ
+  HOÁ LẠI **TỪNG CÂU** (27/08/2026, cổng 88 CA 18).** Anh Hùng: *"làm cực kỳ
+  lâu, không hiểu 2 tiếng mới được 1 video lồng tiếng 3 phút"* = **40 lần thời
+  gian thật**. Mọi số trong file này nói con số đó không thể đúng
+  (`giong_vieneu` ghi **5,2 giây/câu**), nên việc số một là ĐO.
+  **ĐO TRÊN CHÍNH LƯỢT CHẠY CỦA ANH HÙNG, KHÔNG DỰNG LẠI KỊCH BẢN** — và đây
+  là phần đáng chép lại: app của anh ấy để sẵn đủ dấu vết để đo mà **không đụng
+  một byte**. `%LOCALAPPDATA%\BQHungVideo\_giong_vieneu\_job_*/job.json` có ĐỦ
+  danh sách câu; `_tam_*/raw/*.wav` có `mtime` = đúng lúc câu đó đọc xong. Hiệu
+  hai `mtime` liền nhau = **giây/câu THẬT**, trên máy thật, mẫu thật, dưới đúng
+  tải nền thật (`_do_vn_that.py`). Lượt đo bắt được app đang chạy 2 tiến trình
+  VieNeu, mỗi cái **143 luồng · 2,6 GB RSS (phình lên 4,5 GB sau 36 phút)**.
+
+  | job | câu | s/câu | ký tự/câu |
+  |---|---|---|---|
+  | `_job_5148_74210` (xong 103/103) | 103 | **26,2** | 37 |
+  | `_job_5148_79772` | 133 | **25,0** | 39 |
+  | `_job_27196_26007` | 184 | **26,2** | 40 |
+  | `_job_27196_80927` | 143 | **32,3** | 41 |
+
+  **27,4 giây/câu · 141 câu/video -> 64 PHÚT cho MỘT lượt đọc**, mà đường thay
+  giọng gọi đọc **3 lượt** (4a · 4b · 4c). Nhân ra đúng 2 tiếng. **Hai con số
+  đều gấp ~5 lần thứ đang ghi trong tài liệu**, và số câu (103-184, không phải
+  60-70) là nửa bất ngờ thứ hai — `cau_tu_transcript` cắt rất nhỏ, TB **39 ký
+  tự/câu**.
+  **CHỖ HỎNG ĐO ĐƯỢC ĐÍCH DANH: GIÁ NẰM Ở *LƯỢT GỌI*, KHÔNG Ở ĐỘ DÀI CHỮ.**
+  Chia câu làm hai nửa theo số ký tự: câu **23 ký tự -> 25,5s** · câu **52 ký
+  tự -> 26,9s**. Gấp đôi chữ chỉ thêm **1,4 giây** -> khớp `a + b*n` ra **phí
+  CỐ ĐỊNH 19,5-24,4 giây/câu = 78-93%**. Đọc mã ra đúng thủ phạm:
+  `vieneu/v3turbo.py` `infer(ref_audio=...)` -> `_resolve_ref` ->
+  `_preclean_reference_audio` (librosa trim + ghi file tạm) +
+  `engine.prepare_reference` (**mã hoá NeuCodec CẢ MẪU 10 giây**) — **lặp lại
+  CHO TỪNG CÂU**. Tức mỗi câu trả tiền enrol lại giọng từ đầu.
+  **VÁ: gói CÓ SẴN đường làm một lần.** `add_voice(name, ref_audio)` chạy ĐÚNG
+  hai dòng ấy MỘT LẦN rồi cất `speaker_emb` + `codes` vào `_preset_voices`;
+  `infer(voice=name)` dùng lại CHÍNH hai mảng số đó -> **không đổi một tham số
+  nào đưa vào model**. Đây là bản vá **TỐC ĐỘ THUẦN, không đánh đổi chất
+  lượng** (tiếng ra vẫn không giống từng byte vì `infer` lấy mẫu ngẫu nhiên
+  `temperature=0.8 · top_k=25 · top_p=0.95` — bản chất model, đúng cái đã cho
+  3,1% vs 12,7% WER trên CÙNG bản mã).
+  **ĐO GHÉP CẶP** (`_do_vn_refcache.py` — **đan xen TỪNG CÂU**, đảo thứ tự
+  chẵn/lẻ, cùng tiến trình, cùng mẫu, cùng bộ chữ):
+
+  | | CŨ (`ref_audio` mỗi câu) | MỚI (enrol một lần) |
+  |---|---|---|
+  | giây/câu | 33,5 | **4,4** |
+  | ghép cặp | — | **MỚI thắng 6/6 câu** |
+  | ước 1 lượt đọc 141 câu | 78,8 phút | **11,2 phút** |
+
+  Qua **cửa thật `doc_loat`**: `gen` **137,72s/3 câu (45,9 s/câu) -> 17,58s/3
+  câu (5,86 s/câu)** = **7,8 lần**, mốc từng chữ vẫn lấy đủ (10/11/12 từ).
+  **E2E TRÊN ĐÚNG CẤU HÌNH ANH HÙNG SAU VÁ** (`_do_cham_tg.py`; video THẬT
+  148,6s trong `Downloads\longtieng` **copy ra hộp cát**, `vnb:` + đích `en` +
+  tách nhạc + "Chỉnh video theo giọng" + che chữ BẬT; mẫu là **GIỌNG MÁY**
+  edge-tts — luật cấm `adam_clone.wav`): **726,6 giây = 12,1 phút**, `ok=True`,
+  **4,89 lần thời gian thật**, 63 câu.
+
+  | bước | giây | % tổng |
+  |---|---|---|
+  | 0 rút tiếng | 0,8 | 0,1% |
+  | 1 TÁCH NHẠC (Demucs, cuda) | 64,7 | 8,9% |
+  | 2 chép lời (Groq) | 15,2 | 2,1% |
+  | 3 dịch + hậu kiểm (Groq) | 143,5 | 19,8% |
+  | **4a ĐỌC bản dịch** | **258,1** | **35,5%** |
+  | **4b rút gọn** | **94,7** | **13,0%** |
+  | **4c ĐỌC NHANH lại (44/63 câu)** | **92,1** | **12,7%** |
+  | 5 khớp thời gian | 20,7 | 2,9% |
+  | 5b giãn nhạc · 5c bù giọng gốc | 9,5 | 1,3% |
+  | 6 trộn tiếng | 13,9 | 1,9% |
+  | 7 che chữ + ghép | 13,3 | 1,8% |
+
+  **Ba bước ĐỌC = 444,9s = 61,2% tổng** -> đó vẫn là chỗ đắt nhất, chỉ khác là
+  nay nó đắt **hợp lý**. Kèm: **5 lần spawn VieNeu** (63 · 1 · 13 · 5 · 46
+  câu), **16 lượt Groq**, **VRAM đỉnh 2.723 MiB (nền 612 -> +2.111)** đo bằng
+  **POLL trong lúc chạy** (lấy mẫu hai đầu ra mức nền — bẫy đã sập ở cổng
+  71/73), `doc_lan` bắt **1 câu**.
+  **s/câu từng lượt spawn: 2,69 · 5,27 · 0,67 · 0,71 · 0,76.** Lượt **5,27** là
+  lượt `doc_lan` đọc lại **1 CÂU** — nó **CỐ Ý đi đường CŨ**, xem ngưỡng dưới.
+  **NGƯỠNG `CAU_TOI_THIEU_ENROL = 3`, VÀ ĐÓ KHÔNG PHẢI SỐ ĐẶT MÒ:** enrol tốn
+  **46,5s MỘT LẦN**, đổi lại mỗi câu bớt ~29s -> **hoà vốn ~2 câu**. Nút **Nghe
+  thử** (`doc_thu` -> `doc_ban_dich([txt], ...)`) đọc **ĐÚNG 1 CÂU**: enrol ở
+  đó là biến 29s thành 51s, tức "tối ưu" làm chậm đúng cái người dùng đang ngồi
+  đợi. `_doc_lai_lan_man` cũng thường chỉ đọc lại 1-3 câu -> cùng đường.
+  **BẢN `vieneu` KHÔNG CÓ `add_voice` -> LÙI ÊM** về đường cũ (mất phần nhanh,
+  không mất cả video), và khai `enrol_ok=False` chứ không khoe cái mình không
+  làm được.
+  **NHẬT KÝ NAY MANG `s/câu` + `nạp mẫu`** — hai con số duy nhất phân biệt được
+  *"máy chậm"* với *"đường đọc đang nạp lại mẫu từng câu"*. Thiếu chúng thì lần
+  sau lại phải đi đọc `mtime` file WAV để đoán ra, đúng cách phải làm lần này.
+  **KHÔNG ĐỤNG `dedup_key`:** cờ nằm gọn trong tiến trình con của
+  `giong_vieneu`, KHÔNG đi qua payload job -> 200-300 kênh **không có gì để
+  xuất lại**, và đó là bảo đảm DO CẤU TẠO chứ không do một chuỗi `sig` viết
+  đúng. `app/services.py` và `tg_chay.py` **không đổi một dòng nào**.
+  **`giong_chatter` CÓ CÙNG HÌNH DẠNG NHƯNG *ĐỪNG* SỬA** — đã kiểm: nó truyền
+  `audio_prompt_path` vô điều kiện mỗi câu **CÓ CHỦ Ý** (Chatterbox cache
+  conditionals lên `self.conds`, gọi `generate()` không kèm mẫu là nó dùng lại
+  mẫu của lượt TRƯỚC = rò giọng). Và giá ở đó không giống: `cb:` đo **4,0
+  s/câu**, không phải 27.
+  **`TG_TRAN` / `tran_luong_tg`: CỐ Ý KHÔNG ĐỘNG VÀO, và lý do là SỐ.** Mốc
+  *"4 luồng 1,5 tiếng ra 0 video · 1 luồng 45 phút xong 4 video"* (21/08) đo
+  **TRONG LÚC mỗi câu còn mã hoá lại mẫu** — tức nó mô tả một khối lượng công
+  việc **không còn tồn tại**. Đo trên đúng 2 tiến trình pre-vá của anh Hùng:
+  mỗi cái chỉ ăn **3,63 và 3,75 nhân** (không phải 6,6-8,3 như
+  `NHAN_MOI_LUONG_MAY = 8.0` giả định), còn tiến trình **sau vá** của lượt E2E
+  ăn **1,03 nhân**. Nên hạ/siết trần theo bằng chứng cũ là siết theo một phép
+  đo đã lạc hậu. **CHƯA ĐO LẠI ĐƯỢC 4/2/1 luồng** — xem "chưa đạt".
+  **CỔNG 88 CA 18: 233 -> ĐẠT 246 · HỎNG 0.** Cách chấm: **CHẠY THẬT `_MA_DOC`**
+  ở tiến trình riêng với một `vieneu` **GIẢ** ghi sổ từng lượt gọi — không
+  model, không GPU, không mạng, TIỀN ĐỊNH, vài giây. Nhờ vậy cổng đọc **HÀNH VI
+  THẬT** chứ không quét chuỗi (bài học 56d: quét chuỗi thì luôn có phép phá giữ
+  nguyên mặt chữ mà đổi ý nghĩa). 6 câu -> `add_voice` **1 lượt / 6 câu**, mọi
+  câu `voice=`, **0 câu còn `ref_audio=`**; 1 câu -> **0 enrol**; thiếu
+  `add_voice` -> vẫn `ok=True`; giọng DỰNG SẴN `vn:` -> **0 enrol** (bất biến
+  cho 20 giọng đang chạy sản xuất). Kèm **TỰ KIỂM BỘ DÒ hai chiều**: gỡ lời gọi
+  -> bộ dò PHẢI kêu (bản đã phá vẫn `compile()` được, nên là phép phá THẬT) ·
+  chữ nằm trong GHI CHÚ -> KHÔNG được tính là đã gọi.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa ai NGHE** một file nào sau vá — mọi số trên
+  là số ĐO, và bản vá không đổi tham số vào model nhưng *chưa có tai người xác
+  nhận* · **chưa đo được 4 vs 2 vs 1 luồng**: suốt lượt làm việc, app của anh
+  Hùng chạy 2 tiến trình VieNeu nặng (3,6-3,8 nhân mỗi cái, RSS phình tới 4,5
+  GB), nên **mọi phép đo song song đều vô nghĩa** — đan xen cũng không cứu
+  được một tải nền đổi theo thời gian; phải đo lại lúc máy rảnh · con số E2E
+  726,6s vì thế là **TRẦN TRÊN** (đo dưới tải nền), máy rảnh sẽ nhanh hơn ·
+  **1 video · 1 mẫu · 1 lượt** — đủ để nói "ăn 7,5 lần", **không đủ** để nói
+  phân bố · **RSS phình 2,6 -> 4,5 GB sau 36 phút** trên tiến trình pre-vá là
+  chuyện **chưa truy** (có thể là tích luỹ theo số câu; nếu còn sau vá thì
+  `RAM_MOI_LUONG_MAY_GB = 4.3` là sát trần, 4 luồng sẽ đảo trang) · `4c` vẫn
+  đọc lại **44/63 câu** và vẫn là bước đắt thứ ba — mục 3 combo ("đọc ĐỀU") bỏ
+  hẳn nó, **chưa đo lại trên đường `vnb:` sau vá**.
 - **QUÉT CẢ 20 GIỌNG VieNeu TRÊN CÂU TIẾNG VIỆT — 3 GIỌNG LỆCH HẲN, CẦN ĐO LẠI
   (19/08/2026, `_do_vn_quet.py` · `_kq_vn_quet.txt`).** Anh Hùng chỉ nêu đích
   danh Adam, nhưng câu hỏi thật là *"còn mấy kiểu khác nữa"*. Bộ 8 câu (sàng
