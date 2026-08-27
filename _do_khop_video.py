@@ -65,6 +65,20 @@ KQ = REPO / "_kq_khop_video.json"
 DICH_SANG = "vi"          # nguồn Douyin tiếng Trung -> tiếng Việt (ca thật)
 _NW = 0x0800_0000 if os.name == "nt" else 0
 
+#: GIỌNG là biến THỨ HAI (27/08/2026). `vnb:` = ĐÚNG đường anh Hùng đi — nhật
+#: ký `giong_vieneu_20260827.log` ghi 15 lượt `vnb:...\_mau_giong\test.wav` và
+#: 14 lượt `adam_clone.wav` trong đúng khung giờ 4 video trong `xuất` ra đời.
+#: **KHÔNG dùng `adam_clone.wav`** (bản sao một giọng ElevenLabs thương mại) —
+#: ranh giới cứng của repo, nên lấy mẫu còn lại mà anh Hùng cũng đã chạy.
+#: edge-tts là **TRẦN ĐỐI CHỨNG BẮT BUỘC**: không có nó thì "12 khoảng im" là
+#: con số vô nghĩa (không biết bao nhiêu là của cấu trúc câu, bao nhiêu của
+#: máy đọc).
+_MAU_VNB = (Path(os.environ.get("LOCALAPPDATA", "")) / "BQHungVideo"
+            / "_mau_giong" / "test.wav")
+GIONG: list[tuple[str, str]] = [("EDGE", "")]
+if os.environ.get("BQ_KV_VNB", "1") != "0" and _MAU_VNB.exists():
+    GIONG.append(("VNB", f"vnb:{_MAU_VNB}"))
+
 
 # ══════════════════════════ hạ tầng đo ══════════════════════════
 def _probe(path: Path, ent: str, dong: str = "v:0") -> str:
@@ -110,6 +124,54 @@ def toc_do_doc(texts: list[str], moc: list, cau: list[dict]) -> list[float]:
         if n >= 8 and d > 0.25:      # câu quá ngắn -> tỉ số nhiễu, bỏ
             ra.append(n / d)
     return ra
+
+
+#: bề rộng khoảng im mà tai nghe ra là "được đoạn rồi nghỉ"
+BAC_IM = (0.5, 1.0, 2.0)
+
+
+def im_giua_cau(moc: list, tong_ra: float) -> dict:
+    """KHOẢNG IM **GIỮA HAI CÂU LIỀN NHAU** trên luồng tiếng lồng.
+
+    **VÌ SAO THƯỚC NÀY RA ĐỜI (anh Hùng 27/08/2026):** *"nó nói còn KHÔNG LIÊN
+    TIẾP, cứ ĐƯỢC ĐOẠN RỒI NGHỈ, KHÔNG LIỀN MẠCH"*. Mọi thước có sẵn trong
+    repo đều đo **BÊN TRONG một câu** (`tempo_max`, trải ký tự/giây, méo phổ)
+    hoặc đo **từng file WAV RỜI** — mà file rời thì **không có khoảng cách
+    giữa các câu để mà đo**. Đó đúng là chỗ 4 lượt đo trước bỏ sót.
+
+    Nguồn số: `khop_thoi_gian()["moc_tieng"]` = [(i, giây_BẮT_ĐẦU_NÓI,
+    giây_HẾT_NÓI)] trên **TRỤC ĐẦU RA**, đo bằng `silencedetect` trên chính
+    file đã ghi. Nên đây là khoảng im trên BẢN ĐÃ GHÉP, không phải trên file
+    rời — và nó KHÔNG tính lề im còn sót trong từng file (bẫy `probe_duration`
+    của v2.27.0).
+
+    `im_dau`/`im_cuoi` tách riêng: hai đầu phim im là chuyện khác hẳn, gộp vào
+    là làm loãng con số ở giữa.
+    """
+    ms = sorted((float(a), float(b)) for _i, a, b in (moc or []))
+    tr = {"so_cau_do": len(ms), "im_giua_tong": 0.0, "im_giua_so": 0,
+          "im_giua_dai_nhat": 0.0, "im_giua_tb": 0.0, "im_giua_pt": 0.0,
+          "ti_le_co_tieng": 0.0, "im_dau": 0.0, "im_cuoi": 0.0,
+          **{f"im_giua_so_{int(m * 10):02d}": 0 for m in BAC_IM}}
+    if not ms:
+        return tr
+    kho: list[float] = []
+    for (_a0, b0), (a1, _b1) in zip(ms, ms[1:]):
+        g = a1 - b0
+        if g > 0.0:
+            kho.append(g)
+    noi = sum(b - a for a, b in ms)
+    tr["im_giua_tong"] = round(sum(kho), 3)
+    tr["im_giua_so"] = sum(1 for g in kho if g >= 0.05)
+    for m in BAC_IM:
+        tr[f"im_giua_so_{int(m * 10):02d}"] = sum(1 for g in kho if g >= m)
+    tr["im_giua_dai_nhat"] = round(max(kho), 3) if kho else 0.0
+    tr["im_giua_tb"] = round(sum(kho) / len(kho), 3) if kho else 0.0
+    tr["im_giua_pt"] = round(100.0 * sum(kho) / max(0.001, tong_ra), 2)
+    tr["ti_le_co_tieng"] = round(100.0 * noi / max(0.001, tong_ra), 2)
+    tr["im_dau"] = round(max(0.0, ms[0][0]), 3)
+    tr["im_cuoi"] = round(max(0.0, tong_ra - ms[-1][1]), 3)
+    return tr
 
 
 def meo_pho(files: list[str], tempos: list[float], lam: Path) -> dict:
@@ -195,6 +257,10 @@ def mot_arm(ten: str, k: dict, dd: dict, rg: dict, dn: dict, hs: float,
     td_khop = toc_do_doc(rg["texts"], kh.get("moc_tieng") or [], cau)
     tb_k, sd_k, cv_k = _lech(td_khop)
     mp = meo_pho(dn["files"], tem, lam / "meo")
+    # THƯỚC MỚI 27/08/2026 — xem `im_giua_cau`. Đo trên `moc_tieng` của CHÍNH
+    # lượt khớp này, tức trên TRỤC ĐẦU RA đã nhân `k`; nên số của arm chỉnh
+    # hình phải to lên đúng phần `(k−1)` mà phép giãn ĐỀU rót vào chỗ đang im.
+    ig = im_giua_cau(kh.get("moc_tieng") or [], tong_ra)
     do_to = tg.do_do_to(au["ra"])
 
     kv = int(_probe(ra, "stream=nb_read_packets").split()[0] or 0) \
@@ -219,6 +285,7 @@ def mot_arm(ten: str, k: dict, dd: dict, rg: dict, dn: dict, hs: float,
         "kytu_giay_sd": round(sd_k, 3),
         "kytu_giay_cv": round(cv_k, 2),
         "kytu_giay_n": len(td_khop),
+        **ig,
         **mp,
         "chong_lan_ms_max": kh["chong_lan_ms_max"],
         "so_cau_chong_lan": kh["so_cau_chong_lan"],
@@ -273,8 +340,32 @@ def mot_video(ten: str, giay: float) -> dict:
     dd = tg.dich_hau_kiem(k["cau"], DICH_SANG, goc_ma)
     g_dich = time.time() - t0
 
+    # **MỘT bản dịch DÙNG CHUNG cho MỌI GIỌNG.** Giọng là biến THỨ HAI của
+    # phép đo (27/08/2026): `vnb:` = đúng đường anh Hùng đi · edge-tts = TRẦN
+    # ĐỐI CHỨNG. Dịch lại cho từng giọng là để LLM đổi độ dài câu -> đổi
+    # `he_so_hinh_can` -> đổi luôn KHOẢNG IM đang đo. Ghép cặp theo CẤU TẠO.
+    ra_giong: list[dict] = []
+    for _nhan, _v in GIONG:
+        try:
+            ra_giong.append(mot_giong(ten, k, lam, tach, goc_ma, dd, g_dich,
+                                      _v, _nhan))
+        except Exception as e:                          # noqa: BLE001
+            import traceback
+            print(f"\n!!! giọng {_nhan} HỎNG: {type(e).__name__}: {e}")
+            traceback.print_exc()
+    return ra_giong
+
+
+def mot_giong(ten: str, k: dict, lam0: Path, tach: dict, goc_ma: str,
+              dd: dict, g_dich: float, giong_ma: str, nhan: str) -> dict:
+    """Bước 4 -> 3 arm, cho MỘT giọng. `dd` (bản dịch) DÙNG CHUNG mọi giọng."""
+    lam = lam0 / f"g_{nhan}"
+    lam.mkdir(parents=True, exist_ok=True)
+    print(f"\n{'=' * 68}\n=== GIỌNG {nhan}"
+          f"  ({giong_ma or 'edge-tts theo ngôn ngữ'}) ===")
+
     t0 = time.time()
-    tts = tg.doc_ban_dich(dd["ban_dich"], lam / "tts", "", DICH_SANG)
+    tts = tg.doc_ban_dich(dd["ban_dich"], lam / "tts", giong_ma, DICH_SANG)
     g_4a = time.time() - t0
 
     t0 = time.time()
@@ -357,7 +448,7 @@ def mot_video(ten: str, giay: float) -> dict:
     moi3 = mot_arm(ten, k, dd, rg, dn3, hs3, lam / "arm_moi3", tach, "MOI3")
 
     # ---- file NGHE THỬ (cùng một lượt chạy, cùng -14 LUFS) ----
-    ra = NGHE / ten
+    ra = NGHE / ten / nhan
     ra.mkdir(parents=True, exist_ok=True)
     for arm in (cu, moi, moi3):
         p = Path(arm["ra"])
@@ -366,6 +457,7 @@ def mot_video(ten: str, giay: float) -> dict:
             arm["nghe_thu"] = str(ra / p.name)
 
     return {"ten": ten, "do_dai": round(k["tong"], 2),
+            "nhan_giong": nhan, "giong_ma": giong_ma,
             "moi3": moi3,
             # ---- GIÂY BƯỚC ĐỌC (ghép cặp trong CHÍNH lượt này) ----
             "giay_dich": round(g_dich, 2),
@@ -392,6 +484,17 @@ def mot_video(ten: str, giay: float) -> dict:
 
 # ══════════════════════════ bảng ══════════════════════════
 _HANG = [
+    # ---- IM GIỮA CÂU: lời kêu 27/08 "được đoạn rồi nghỉ, không liền mạch" ----
+    ("IM GIỮA CÂU: tổng (giây)", "im_giua_tong", "{:.2f}"),
+    ("IM GIỮA CÂU: % thời lượng", "im_giua_pt", "{:.2f}"),
+    ("IM GIỮA CÂU: số khoảng >= 0,5 s", "im_giua_so_05", "{:d}"),
+    ("IM GIỮA CÂU: số khoảng >= 1,0 s", "im_giua_so_10", "{:d}"),
+    ("IM GIỮA CÂU: số khoảng >= 2,0 s", "im_giua_so_20", "{:d}"),
+    ("IM GIỮA CÂU: dài nhất (giây)", "im_giua_dai_nhat", "{:.2f}"),
+    ("IM GIỮA CÂU: trung bình (giây)", "im_giua_tb", "{:.3f}"),
+    ("TỈ LỆ THỜI GIAN CÓ TIẾNG %", "ti_le_co_tieng", "{:.2f}"),
+    ("im ĐẦU phim (giây)", "im_dau", "{:.2f}"),
+    ("im CUỐI phim (giây)", "im_cuoi", "{:.2f}"),
     ("`tempo_max` (hệ số ép cao nhất)", "tempo_max", "{:.3f}"),
     ("số câu phải ép quá 1,30", "so_qua_130", "{:d}"),
     ("số câu phải ép quá 1,20", "so_qua_120", "{:d}"),
@@ -421,7 +524,8 @@ _HANG = [
 
 def in_bang(r: dict) -> None:
     cu, moi, moi3 = r["cu"], r["moi"], r.get("moi3") or {}
-    print(f"\n===== BẢNG GHÉP CẶP · {r['ten']} · {r['do_dai']}s · "
+    print(f"\n===== BẢNG GHÉP CẶP · {r['ten']} · GIỌNG {r.get('nhan_giong')}"
+          f" ({r.get('giong')}) · {r['do_dai']}s · "
           f"{r['so_cau']} câu · {r['ngon_ngu']} -> {DICH_SANG} =====")
     print(f"| {'chỉ số':<48} | {'arm CŨ (ép tiếng)':>18} | "
           f"{'arm MỚI (khớp video)':>20} | {'MỚI-3 (bỏ 4c)':>19} |")
@@ -490,12 +594,16 @@ def main() -> int:
         tens.append(ten)
         print(f"  {ten} <- {p.name}")
 
+    print(f"Giọng đo lượt này: {[g[0] for g in GIONG]}")
     tat = []
     for ten in tens:
         try:
-            r = mot_video(ten, giay)
-            tat.append(r)
-            in_bang(r)
+            for r in mot_video(ten, giay):
+                tat.append(r)
+                in_bang(r)
+                # GHI NGAY SAU MỖI ARM/GIỌNG — lượt chạy bị giết thì vẫn còn số
+                KQ.write_text(json.dumps(tat, ensure_ascii=False, indent=1),
+                              encoding="utf-8")
         except Exception as e:                          # noqa: BLE001
             import traceback
             print(f"\n!!! {ten} HỎNG: {type(e).__name__}: {e}")

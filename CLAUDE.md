@@ -4175,6 +4175,89 @@
   phá. Vá: `_APP` ở MỨC MODULE + hàm `app_qt()`, mọi mục dùng chung. Quy tắc:
   **cổng nào dựng UI thì QApplication phải sống ở mức module, không phải biến
   cục bộ của mục đầu tiên chạm tới nó.**
+  **(12) "ĐƯỢC ĐOẠN RỒI NGHỈ, KHÔNG LIỀN MẠCH" (27/08/2026) — ĐÂY LÀ ĐÁNH ĐỔI
+  CỦA CHÍNH Ô "CHỈNH VIDEO THEO GIỌNG", KHÔNG PHẢI BUG. ĐỌC TRƯỚC KHI ĐI VÁ.**
+  Anh Hùng: *"nó nói còn KHÔNG LIÊN TIẾP, cứ ĐƯỢC ĐOẠN RỒI NGHỈ, KHÔNG LIỀN
+  MẠCH, KHÔNG KHỚP gì cả"*. Mục (7) ở trên đã ghi *"gần như toàn bộ phần thêm
+  là IM LẶNG giữa câu"* nhưng **chưa ai nối nó với lời kêu này**, và mọi thước
+  cũ đo BÊN TRONG một câu hoặc đo TỪNG FILE WAV RỜI — mà file rời thì không có
+  khoảng cách giữa câu để mà đo. Thước mới `_do_khop_video.im_giua_cau` đo trên
+  `moc_tieng` (trục ĐẦU RA, `silencedetect` trên file đã ghi).
+  **BỐN BẢN XUẤT THẬT ĐỀU CHẠM TRẦN, và đó là số quyết định** (`_do_im_giua_cau.py`,
+  `Downloads\longtieng\xuất` CHỈ ĐỌC): `k` = **1,1987 · 1,1988 · 1,1987 ·
+  1,2499** = ĐÚNG `fps_nguồn/20`; nhịp hình ra **20,002 · 20,000 · 20,001 ·
+  20,000 fps**; **số khung KHÔNG ĐỔI** (3563->3563 · 8708->8708 · 7221->7221 ·
+  9908->9908) -> hình chỉ bị GIÃN, video dài thêm **+29,53 · +72,19 · +59,84 ·
+  +99,06 giây**.
+  **IM ĐẾN TỪ ĐÂU — BA TẦNG, đo ghép cặp trên lt1 90 s** (`_do_gop_cau.py`):
+  **(a) CỦA NGUỒN 0,00 s** (segment chép lời liền nhau; đối chứng độc lập: đo
+  bao hình trên chính video GỐC ra khoảng im dài nhất chỉ **0,38-0,88 s**) ·
+  **(b) bản dịch NGẮN HƠN khung câu: 8,42 s (9,35%)** · **(c) CHỈNH HÌNH:
+  +17,42 s (19,35%)**. Đối chiếu: `(k−1)×90,02 = 17,90 s` vs phần im tăng
+  **17,42 s** = **97,3% phần video dài thêm rơi VÀO KHOẢNG IM**.
+  **GHÉP CẶP 3 ARM × 2 GIỌNG, MỘT bản dịch DÙNG CHUNG** (`_do_khop_video.py`,
+  lt1 90,03 s / 35 câu, Trung -> Việt):
+
+  | im GIỮA CÂU | CŨ | MỤC 2 (đang bật) | MỤC 3 (bỏ 4c) |
+  |---|---|---|---|
+  | **EDGE (TRẦN)** tổng · % · số >=0,5 s · dài nhất | 8,42 s · 9,35% · 2 · 1,27 s | 18,35 s · 18,29% · **15** · 2,00 s | 15,93 s · 14,76% · 10 · 2,54 s |
+  | EDGE · tỉ lệ CÓ TIẾNG | **90,43%** | 81,24% | 85,11% |
+  | **`vnb:` (ĐƯỜNG ANH HÙNG)** tổng · % · số >=0,5 s · dài nhất | 17,94 s · 19,93% · 8 · 3,69 s | **34,92 s · 32,36% · 30 · 4,96 s** | 31,12 s · 28,84% · 23 · 4,96 s |
+  | `vnb:` · tỉ lệ CÓ TIẾNG | 79,70% | **66,89%** | 70,65% |
+  | `vnb:` · hệ số hình cần -> dùng | — | 1,2556 -> **1,1988 CHẠM TRẦN** | 1,3275 -> 1,1988 |
+
+  **HAI NGUYÊN NHÂN CHỒNG NHAU, phải tách ra mới chữa đúng chỗ:** (1) giọng
+  NHÂN BẢN đọc NHANH hơn edge (**23,16 vs 20,62 ký tự/giây**) nên đọc xong sớm
+  hơn trong khung câu CỐ ĐỊNH -> im **9,35% -> 19,93%** *ngay cả khi TẮT chỉnh
+  hình*; (2) chỉnh hình đẩy tiếp **19,93% -> 32,36%**. Tức trên đường anh Hùng
+  đang đi, **một phần ba thời lượng video là im giữa câu, 30 khoảng nghỉ
+  >= 0,5 giây trong 90 giây, khoảng dài nhất 4,96 giây**.
+  **GIÃN KHÔNG ĐỀU (giãn nhiều chỗ im, ít chỗ nói): LÀM ĐƯỢC, GẦN NHƯ MIỄN PHÍ,
+  NHƯNG *KHÔNG NÊN* — ĐÃ ĐO** (`_do_gian_khong_deu.py`, nguồn Douyin thật
+  24,15 s / 579 khung / 23,976 fps, k=1,1988):
+
+  | arm | fps chỗ NÓI | fps chỗ IM | bước nhịp mỗi mối nối | giây | encode |
+  |---|---|---|---|---|---|
+  | ĐỀU + `-itsscale` (đang chạy) | 20,02 | 20,07 | 0,998 | 0,03 | KHÔNG |
+  | ĐỀU + `setpts` (encode lại) | 19,92 | 20,20 | 0,986 | 2,39 | CÓ |
+  | KHÔNG ĐỀU, dồn 50% vào chỗ im | 21,89 | **16,11** | 1,359 | 2,37 | CÓ |
+  | KHÔNG ĐỀU, dồn 100% | 23,88 | **13,93** | 1,714 | 2,34 | CÓ |
+
+  Độ dài + số khung ra **Y HỆT** ở cả 4 arm (28,946 s · 579 khung) nên phép
+  giãn không đều là ĐÚNG, không phải hỏng. Cái chặn là **SÀN `SAN_NHIP_HINH_FPS
+  = 20`**, và đây là **CHỨNG MINH SỐ HỌC, không phải sở thích**: trần
+  `k_cap = fps_nguồn / 20`, giãn ĐỀU ở `k_cap` đưa CẢ phim về ĐÚNG 20 fps ->
+  **mọi phép dồn thêm vào chỗ im đều đẩy chỗ đó XUỐNG DƯỚI 20 fps**, không có
+  một chút chỗ trống nào. Mà 4/4 video anh Hùng đều ĐANG chạm trần. Cộng thêm
+  **bước nhịp 1,36-1,71 lần tại MỖI mối nối** (~100+ lần/video với 103-184 câu)
+  = đúng cái *"hình nhanh-chậm theo nhịp nói"*. **NÓI THẲNG: KHÔNG NÊN NỐI.**
+  Ghi thêm cho người sau: giá ENCODE **không** phải lý do từ chối — 4/4 bản
+  xuất là **h264 trong khi nguồn là hevc**, tức che chữ đang BẬT và nhánh che
+  chữ **vốn đã `setpts` + encode lại**; đo được không đều chỉ tốn 2,37 s so với
+  2,39 s của đều-encode = **0 chi phí thêm**.
+  **GỘP CÂU NGẮN: KHÔNG ĐÁNG, VÀ CÁI CẦN GẠT KHÔNG TỒN TẠI.**
+  `cau_tu_transcript(d, gop_toi_da)` **CHỈ CẮT NHỎ, KHÔNG BAO GIỜ GỘP** — gọi
+  thật với `gop_toi_da` = 8 / 12 / 20 / 60 giây đều ra **35 câu**, và **0
+  segment gốc dài quá 12 s**. Danh sách câu đi thẳng từ `segments` của Groq
+  (đo trên job thật: **103-184 câu/video, TB 39 ký tự/câu**). Mô phỏng một bước
+  gộp MỚI (trần ký tự 60/80/100/140, k=1,1988): tổng im **25,84 -> 25,84 ->
+  25,84 -> 25,33 -> 22,05 s** = gần như **BẢO TOÀN**; nó chỉ đổi NHIỀU khoảng
+  ngắn lấy VÀI khoảng RẤT DÀI — khoảng dài nhất **2,54 -> 8,57 giây**. Với lời
+  kêu *"được đoạn rồi nghỉ"* thì đó là **đi lùi**. Mặt hại lo trước (`atempo`
+  ép nhiều hơn) **KHÔNG xảy ra**: `tempo_max` = 1,000 ở MỌI trần, vì luật
+  "mượn khoảng lặng" cho mỗi khối kéo tới sát khối kế.
+  **CHỖ DUY NHẤT GẠT ĐƯỢC LÀ Ô COMBO** — xem phần "anh Hùng đổi ô nào thì hết"
+  trong báo cáo: mục 1 (không chỉnh hình) đưa im về **19,93%** và tỉ lệ có
+  tiếng lên **79,70%**, đổi lại `tempo_max` 1,000 -> 1,108 (vẫn dưới ngưỡng
+  cảnh báo 1,30). Mục 3 chỉ bớt được **32,36% -> 28,84%**.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa ai NGHE** (file ở
+  `_NGHE_THU_ANH_HUNG/lien_mach/`, 6 file, MD5 6/6 khác nhau) · mới **1 video ×
+  90 s × 1 lượt/giọng**, mà đường `vnb:` KHÔNG tiền định nên đây là *một* điểm
+  dữ liệu, không phải phân bố · mẫu nhân bản là `test.wav` (anh Hùng chạy 15
+  lượt hôm 27/08) chứ không phải `adam_clone.wav` (14 lượt) — ranh giới pháp lý
+  chặn · phép đo bao hình trên BẢN TRỘN CUỐI của 4 file thật **bị NHẠC NỀN che**
+  nên cột im tuyệt đối ở đó KHÔNG đọc thẳng được (1/4 video còn ra HIỆU ÂM);
+  cột đọc được của bảng A là `k` · nhịp hình · số khung.
 - **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
   (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
   `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.
