@@ -114,14 +114,14 @@ def dem_op(goc: str, nghe: str) -> tuple[int, int, int, int]:
     """(THAY, CHÈN, THIẾU, số từ gốc) — gióng hàng Levenshtein CÓ TRUY VẾT.
 
     `_do_vieneu_en.wer` chỉ trả TỔNG lỗi nên không tách được "đọc sai chữ"
-    với "bịa thêm chữ". Chuẩn hoá chữ **y hệt** `wer` (chép đúng biểu thức)
-    để hai cột đọc trên cùng một cách tách từ.
-    """
-    def chuan(s: str) -> list[str]:
-        s = re.sub(r"[^0-9a-zà-ỹA-ZÀ-Ỹ\s]", " ", (s or "").lower())
-        return re.sub(r"\s+", " ", s).strip().split()
+    với "bịa thêm chữ". Hai cột PHẢI đọc trên **cùng một cách tách từ**.
 
-    a, b = chuan(goc), chuan(nghe)
+    Bản đầu **CHÉP LẠI** biểu thức chuẩn hoá của `wer` — hai bản sao là hai
+    chỗ để lệch nhau, và đã lệch thật: lượt vá CJK ngày 26/08 sửa `wer` thì
+    `dem_op` vẫn cắt sạch chữ Hán. Nay GỌI THẲNG `DV.chuan_tu` (một bộ tách,
+    CJK-aware, giữ nguyên hành vi với chữ latin).
+    """
+    a, b = DV.chuan_tu(goc), DV.chuan_tu(nghe)
     if not a:
         return (0, 0, 0, 0)
     n, m = len(a), len(b)

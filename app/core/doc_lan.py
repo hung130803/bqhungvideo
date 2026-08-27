@@ -167,10 +167,62 @@ def moc_nhip(texts: Sequence[str], giays: Sequence[float],
 #: oan thì chỉ tốn thời gian, không đổi được tiếng.
 NGUONG_LAN = 1.5
 
+#: Ngưỡng RIÊNG cho tiếng nào **đo được là phải khác**. Để RỖNG là kết luận,
+#: không phải quên — đọc hai khối dưới trước khi thêm dòng nào vào đây.
+#:
+#: ═══ ĐÃ ĐO 4 TIẾNG (`_do_lan_nn.py` -> `_kq_lan_nn.txt`), KHÔNG TIẾNG NÀO
+#: CẦN SỐ KHÁC ═══
+#: Hiệu chuẩn y hệt cách 1,5 ra đời cho tiếng Anh — *chỗ THẤP NHẤT mà arm TRẦN
+#: (edge-tts BẢN NGỮ đúng tiếng đó, chạy CÙNG LƯỢT) không kêu lần nào*:
+#:
+#:     tiếng | TRẦN kêu oan @1,5 | thấp nhất mà TRẦN im
+#:     Việt  |       0/59        |        1,4
+#:     Trung |       0/58        |        1,3
+#:     Nhật  |       0/58        |        1,4
+#:     Hàn   |       0/58        |        1,3
+#:
+#: Cả bốn **im ở 1,5**, và hạ xuống chỗ thấp nhất mua thêm được **0 câu bắt**
+#: ở cả bốn. Nên 1,5 giữ nguyên và bảng này để RỖNG thay vì chép bốn dòng
+#: `1.5` cho ra vẻ có làm.
+#:
+#: ═══ VỚI TRUNG · NHẬT · HÀN THÌ NGƯỠNG **KHÔNG PHẢI CÂU HỎI ĐÚNG** ═══
+#: `_do_am_vieneu.py` đo ở tầng phiên âm — chạy CHÍNH `phonemize_text` mà
+#: `giong_vieneu._MA_DOC` gọi, trong CHÍNH venv của VieNeu: bộ G2P **xoá sạch**
+#: chữ Hán · kana · hangul (**0 ký tự âm** ra, đo trên cả 5 hệ chữ). Model
+#: KHÔNG BAO GIỜ nhận được câu, nên *"đọc dài gấp mấy lần số chữ"* không đo
+#: một thứ có thật: `lan_vuot` chia cho `a + b*n` với `n` = số ký tự chữ GỐC,
+#: mà chữ gốc thì model có thấy đâu. Đúng như vậy, bảng quét ngưỡng của ba
+#: tiếng ấy có hai nhóm **CHỒNG HOÀN TOÀN** (lành và bịa cùng dải 0,00 ở tiếng
+#: Trung). Đặt số cho chúng là **đặt mò** — đúng thứ bài học `ty_giu` cấm.
+#: Chốt đúng chỗ nằm ở `giong_vieneu.khong_doc_duoc`: **CHẶN TRƯỚC khi đọc**,
+#: không phải chấm điểm sau khi đọc.
+NGUONG_THEO_NN: dict[str, float] = {}
+
+
+def nguong_cho(nn: Optional[str]) -> float:
+    """Ngưỡng `lan` cho ngôn ngữ `nn`. Hàm THUẦN, **KHÔNG BAO GIỜ NÉM**.
+
+    Không biết tiếng / tiếng chưa đo -> trả `NGUONG_LAN` (1,5). Đó là mặc
+    định CÓ CƠ SỞ chứ không phải đoán liều: 1,5 đã đo là **không kêu oan trên
+    arm TRẦN của cả bốn tiếng** đã thử (Việt · Trung · Nhật · Hàn) cộng tiếng
+    Anh lúc hiệu chuẩn gốc.
+
+    Nhận cả `"vi"`, `"vi-VN"`, `"vi_VN"`, `"VI"` — nhãn ngôn ngữ trong repo
+    này đến từ nhiều nguồn (Groq trả `Chinese` lẫn `zh`, UI trả `vi-VN`), và
+    bài học cổng 52 là **thiếu một dạng thì bản vá không bao giờ chạy mà
+    không một dòng báo**.
+    """
+    try:
+        khoa = str(nn or "").strip().lower().replace("_", "-").split("-")[0]
+        return float(NGUONG_THEO_NN.get(khoa, NGUONG_LAN))
+    except (TypeError, ValueError, AttributeError):
+        return NGUONG_LAN
+
 
 def soi_loat(texts: Sequence[str], giays: Sequence[float],
              nguong: Optional[float] = None,
              moc: Optional[tuple[float, float]] = None,
+             nn: Optional[str] = None,
              ) -> tuple[list[float], tuple[float, float]]:
     """Soi CẢ LOẠT -> `(lan[i], mốc (a, b))`. `lan[i] = 0.0` là câu LÀNH.
 
@@ -178,12 +230,16 @@ def soi_loat(texts: Sequence[str], giays: Sequence[float],
     mấy câu vừa đọc lại: khớp mốc trên 3 câu là khớp trên chính nhóm nghi
     ngờ, và bản mới sẽ luôn trông "bình thường" so với chúng.
 
+    `nn` = ngôn ngữ ĐÍCH, chỉ dùng để TRA ngưỡng (`nguong_cho`). Thứ tự ưu
+    tiên: `nguong` truyền tay > bảng theo `nn` > `NGUONG_LAN`. Không truyền
+    gì -> ra **đúng hành vi cũ từng con số**, nên lối gọi cũ không phải sửa.
+
     Không đủ mẫu -> trả toàn `0.0` (không dò được thì im). **KHÔNG BAO GIỜ NÉM.**
     """
     n = len(texts)
     ra = [0.0] * n
     try:
-        ng = float(NGUONG_LAN if nguong is None else nguong)
+        ng = float(nguong_cho(nn) if nguong is None else nguong)
         a, b = moc if moc is not None else moc_nhip(texts, giays)
         if b <= 0:
             return ra, (0.0, 0.0)

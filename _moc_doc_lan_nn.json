@@ -1,0 +1,3411 @@
+{
+"nguon": "_do_lan_nn.py",
+"chen_min": {
+"vi": 8,
+"zh": 8,
+"ja": 8,
+"ko": 1
+},
+"chon_nguong": {
+"vi": 1.4,
+"zh": 1.3,
+"ja": 1.4,
+"ko": 1.3
+},
+"arm": {
+"VNB_vi": [
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.88,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.87,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.81,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.38,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.25,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.37,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.28,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.15,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.24,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.14,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.97,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.75,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 3.71,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 2.96,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.64,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.53,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 3.58,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.51,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 10.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.46,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 3.65,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 8.82,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 12.67,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 2.67,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.77,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.76,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.69,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 3.95,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.67,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.72,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.65,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "vi"
+}
+],
+"EDG_vi": [
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.06,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.22,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.32,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.22,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.25,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.88,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.85,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.85,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.85,
+"bia": true,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.92,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.92,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.88,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 0.91,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.32,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.13,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.02,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.31,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.12,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.1,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.04,
+"bia": false,
+"nn": "vi"
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false,
+"nn": "vi"
+}
+],
+"VNB_zh": [
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "zh"
+}
+],
+"EDG_zh": [
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.85,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.86,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.83,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.82,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.16,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.27,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.78,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": true,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.7,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.83,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.78,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.09,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.09,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.94,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.7,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.88,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.94,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.04,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.94,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.04,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.94,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.88,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "zh"
+},
+{
+"loai": "t",
+"lan": 1.05,
+"bia": false,
+"nn": "zh"
+}
+],
+"VNB_ja": [
+{
+"loai": "t",
+"lan": 4.97,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.39,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 2.74,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.52,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 4.78,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 2.84,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.62,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 3.21,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 2.89,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 10.75,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.84,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.58,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.02,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.78,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.46,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.89,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.68,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.11,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.84,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.78,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.02,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.79,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ja"
+}
+],
+"EDG_ja": [
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.97,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.88,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.89,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.12,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.96,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.09,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.09,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.13,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.15,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.12,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.08,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.06,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.76,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.76,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.68,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.82,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.72,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.04,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.0,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.1,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.73,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.13,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.09,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.16,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.32,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.19,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.21,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.87,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 0.99,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.26,
+"bia": false,
+"nn": "ja"
+},
+{
+"loai": "t",
+"lan": 1.17,
+"bia": false,
+"nn": "ja"
+}
+],
+"VNB_ko": [
+{
+"loai": "c",
+"lan": 7.11,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 5.52,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 10.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 8.89,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.53,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 4.91,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 2.65,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 6.61,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.49,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 9.15,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 3.08,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.76,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.42,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 3.29,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.9,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 7.49,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.84,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.72,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.38,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.07,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.65,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.65,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.69,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.68,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.57,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.53,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 5.67,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 2.63,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 7.34,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 6.78,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 6.24,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 6.67,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.47,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.69,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.66,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.35,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 8.86,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 8.58,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 2.45,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 9.83,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.82,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.51,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 8.09,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.87,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.7,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.34,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 2.17,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.59,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.9,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.98,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.67,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.95,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.71,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.55,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.51,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": true,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.0,
+"bia": false,
+"nn": "ko"
+}
+],
+"EDG_ko": [
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.03,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.97,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.92,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.94,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.97,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.02,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.06,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.9,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.04,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.12,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.14,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.05,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.95,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.1,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.17,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.11,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.98,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.93,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 1.01,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "c",
+"lan": 0.99,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.88,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.82,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.85,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.77,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.82,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.78,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.96,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.97,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.01,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.13,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.79,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.94,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 0.97,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.15,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.17,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.24,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.03,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.0,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.07,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.16,
+"bia": false,
+"nn": "ko"
+},
+{
+"loai": "t",
+"lan": 1.17,
+"bia": false,
+"nn": "ko"
+}
+]
+}
+}

@@ -106,8 +106,38 @@ def _lap_toi_da(chep: str) -> int:
     return tot
 
 
-def _hang(kq: dict, tien_to: str, khoa_chu: str) -> list[dict]:
-    """Trải một arm-lượt thành danh sách câu/token có đủ số đo."""
+#: Hệ chữ mà bản chép ngược **KHÔNG ĐƯỢC PHÉP** có, theo ngôn ngữ đích.
+#:
+#: Luật tiếng Anh (*"chép ngược ra chữ Hán = bịa chắc chắn"*) **KHÔNG bê thẳng
+#: sang tiếng Trung/Nhật được**: ở đó chữ Hán là chữ ĐÚNG, bê sang là gán oan
+#: 100% số câu. Đây đúng họ bẫy `料理` của cổng 52 (chữ Hán dùng chung mặt chữ,
+#: khác nghĩa) — chỉ khác chiều. Tiếng **Hàn** vẫn gặp hanja trong văn bản thật
+#: nên chữ Hán KHÔNG kể là bịa; chỉ kana mới là dấu hiệu.
+LA_HE_CHU: dict[str, tuple[str, ...]] = {
+    "en": ("han", "kana", "hangul"),
+    "vi": ("han", "kana", "hangul"),
+    "zh": ("kana", "hangul"),
+    "ja": ("hangul",),
+    "ko": ("kana",),
+}
+
+
+def _la_he_chu(chep: str, nn: str) -> bool:
+    """Bản chép có hệ chữ LẠ với ngôn ngữ đích không. Hàm thuần."""
+    from app.ai.recap import _HAN_RE, _HANGUL_RE, _KANA_RE
+    s = str(chep or "")
+    bo = {"han": _HAN_RE, "kana": _KANA_RE, "hangul": _HANGUL_RE}
+    return any(bo[k].search(s) for k in LA_HE_CHU.get(nn, ("han",)))
+
+
+def _hang(kq: dict, tien_to: str, khoa_chu: str, nn: str = "en",
+          chen_min: int = 2) -> list[dict]:
+    """Trải một arm-lượt thành danh sách câu/token có đủ số đo.
+
+    `nn` = ngôn ngữ ĐÍCH của arm (quyết định hệ chữ nào là LẠ) · `chen_min` =
+    số từ máy TỰ THÊM để coi là bịa. Mặc định `("en", 2)` giữ NGUYÊN hành vi
+    của lượt hiệu chuẩn tiếng Anh — `_moc_doc_lan.json` không đổi một dòng.
+    """
     ra = []
     goc = HOP / f"{kq['arm']}_v{kq['vong']}"
     ds = kq["cau"] if tien_to == "c" else kq["tok"]
@@ -124,9 +154,11 @@ def _hang(kq: dict, tien_to: str, khoa_chu: str) -> list[dict]:
             continue
         thay, chen, thieu, tong = DA.dem_op(chu, chep)
         lap = _lap_toi_da(chep)
-        cjk = bool(_has_cjk(chep))
+        # `_has_cjk` chỉ đúng khi ĐÍCH không dùng CJK — xem `LA_HE_CHU`.
+        cjk = bool(_has_cjk(chep)) if nn in ("en", "vi") \
+            else _la_he_chu(chep, nn)
         ra.append({
-            "loai": tien_to, "i": i, "chu": chu, "chep": chep,
+            "loai": tien_to, "i": i, "chu": chu, "chep": chep, "nn": nn,
             "giay": round(giay, 3), "n_chu": len(chu.strip()),
             "chen": chen, "thay": thay, "tu": tong, "lap": lap, "cjk": cjk,
             # SỰ THẬT ĐỐI CHỨNG. Ba dấu hiệu, OR lại: chỉ cần một cái đúng là
@@ -134,7 +166,7 @@ def _hang(kq: dict, tien_to: str, khoa_chu: str) -> list[dict]:
             # Ngưỡng `chen >= 2` chứ không phải `>= 1`: chép ngược tự nó có
             # nhiễu (edge-tts TRẦN cũng ra bịa 0,9%), 1 từ thêm nằm trong dải
             # nhiễu đó -> lấy 1 làm mốc là gán oan cho cả nhóm lành.
-            "bia": bool(cjk or lap >= 3 or chen >= 2),
+            "bia": bool(cjk or lap >= 3 or chen >= chen_min),
         })
     return ra
 

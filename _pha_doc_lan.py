@@ -41,6 +41,11 @@ CONG = REPO / "_test_doc_lan.py"
 DL = REPO / "app" / "core" / "doc_lan.py"
 GV = REPO / "app" / "core" / "giong_vieneu.py"
 CB = REPO / "app" / "core" / "giong_chatter.py"
+#: Bộ chấm của chính phép HIỆU CHUẨN. Nó không phải mã app, nhưng ngưỡng của
+#: `doc_lan` sinh ra TỪ nó — bộ chấm hỏng thì bảng hiệu chuẩn tự ĐẠT OAN và
+#: ngưỡng đặt ra từ một bảng số rỗng. Vì vậy nó cũng phải chịu được phép phá.
+DVE = REPO / "_do_vieneu_en.py"
+DAE = REPO / "_do_adam_en.py"
 
 #: (nhãn, file, dòng CŨ, dòng MỚI, neo_sau). Neo MỘT DÒNG — xem luật 2 và 4.
 #: `neo_sau` = một dòng DUY NHẤT nằm trong 3 dòng ngay sau chỗ cần vá, dùng để
@@ -88,6 +93,57 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
      CB,
      "        lan = doc_lan.lan_vuot(text, giay, 0.0, 1.0 / LAN_MAN_CHU_MOI_GIAY)",
      "        lan = round(giay / max(0.35, n / LAN_MAN_CHU_MOI_GIAY), 2)", ""),
+    # ─────────────────────────────────── nhóm ĐA NGÔN NGỮ (26/08, lượt 2)
+    # LƯU Ý LUẬT 1: với một HẰNG SỐ ĐÃ HIỆU CHUẨN thì chính GIÁ TRỊ là cái
+    # chốt, nên "gỡ chốt" ở đây = đặt nó XUỐNG DƯỚI mức hiệu chuẩn. Đây là
+    # chiều LÀM LỎNG (trần bắt đầu kêu oan), không phải chiều làm chặt — nên
+    # nó không dính bẫy "phá xong hàm lại chặt hơn" của cổng 80.
+    ("11. hạ NGƯỠNG xuống dưới mức đã hiệu chuẩn (trần bắt đầu kêu oan)",
+     DL, "NGUONG_LAN = 1.5", "NGUONG_LAN = 1.2", ""),
+    ("12. bộ đếm từ của phép hiệu chuẩn quay về LATIN-ONLY (vứt chữ CJK)",
+     DVE,
+     "    return _tach_tu(_RAC_RE.sub(\" \", (s or \"\").lower()))",
+     "    return re.sub(r\"[^0-9a-zà-ỹA-ZÀ-Ỹ\\\\s]\", \" \", (s or \"\").lower()).split()",
+     ""),
+    ("13. `dem_op` tự đẻ bộ chuẩn hoá thứ hai (bản sao lệch nhau)",
+     DAE,
+     "    a, b = DV.chuan_tu(goc), DV.chuan_tu(nghe)",
+     "    a, b = (goc or \"\").lower().split(), (nghe or \"\").lower().split()",
+     ""),
+    ("14. chép ngược ghi cứng hai ngôn ngữ (ép whisper chép Trung bằng Việt)",
+     DVE, "    ep = nn", "    ep = \"en\" if nn == \"en\" else \"vi\"", ""),
+    ("15. gỡ ALL-OR-NOTHING (cho video lẫn hai giọng giữa chừng)",
+     GV, "TY_LE_TOI_THIEU = 1.0", "TY_LE_TOI_THIEU = 0.0", ""),
+    # ────────────────────── nhóm HỆ CHỮ NGOÀI TẦM PHIÊN ÂM (27/08, lượt 3)
+    # Đây là chốt CHẶN, không phải chốt chấm điểm — phá nó thì hậu quả không
+    # phải "bảng số xấu đi" mà là **video ra 17-21 giây lảm nhảm mỗi câu với
+    # mã thoát 0** (ca tiếng Hàn, đo được ở `_kq_lan_nn.txt`).
+    ("16. gỡ HẲN chốt chặn khỏi `_doc` (không hỏi bộ dò nữa)",
+     GV,
+     "    chan, ty = khong_doc_duoc([texts[i] for i in can])",
+     "    chan, ty = (False, 0.0)", ""),
+    # LUẬT 1 lần nữa: với hằng ĐÃ HIỆU CHUẨN thì GIÁ TRỊ là cái chốt. Ở đây
+    # có HAI chiều hỏng và chúng NGƯỢC nhau, nên phải phá cả hai — phá một
+    # chiều thì mục canh chiều kia vẫn xanh và bảng đọc thành "cổng có răng".
+    # Đo nền: vi/en = 0,000 · zh 0,808 · ja 0,859 · ko 0,853 -> khoảng trống
+    # 0,000-0,808 rất rộng, trần 0,5 nằm giữa.
+    ("17. nới trần chữ-bị-xoá lên 0,9 (BỎ SÓT: tiếng Trung lọt qua chốt)",
+     GV, "TY_LE_CHU_BO_TOI_DA = 0.5", "TY_LE_CHU_BO_TOI_DA = 0.9", ""),
+    ("18. hạ trần chữ-bị-xoá về 0,0 (CHẶN OAN: câu Việt chen chữ Hán bị cấm)",
+     GV, "TY_LE_CHU_BO_TOI_DA = 0.5", "TY_LE_CHU_BO_TOI_DA = 0.0", ""),
+    # Đúng bẫy cổng 54 (`recap._CJK_CHARS` nuốt/để lọt hangul vì dán ký tự
+    # thật vào dải regex), lần này ở chiều ĐỂ LỌT: mất hangul thì tiếng Hàn —
+    # ca DUY NHẤT không tự lùi edge — đi thẳng vào máy đọc.
+    ("19. bỏ HANGUL khỏi bộ dò hệ chữ (ca Hàn lọt: 17-21 giây lảm nhảm)",
+     GV,
+     "    \"가-힣ᄀ-ᇿ]\"          # hangul (âm tiết + jamo)",
+     "    \"]\"", ""),
+    # Núm ngưỡng-theo-tiếng mà không ĐỌC bảng thì nó là đồ trang trí: lượt
+    # hiệu chuẩn sau thêm một dòng vào bảng và tưởng đã đổi được ngưỡng.
+    ("20. `nguong_cho` bỏ qua bảng theo tiếng (núm thành đồ trang trí)",
+     DL,
+     "        return float(NGUONG_THEO_NN.get(khoa, NGUONG_LAN))",
+     "        return float(NGUONG_LAN)", ""),
 ]
 
 

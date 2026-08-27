@@ -264,7 +264,7 @@ import threading
 import time
 import wave
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from app.core import doc_lan
 
@@ -2092,6 +2092,134 @@ def _lay_moc(paths: list[str], texts: list[str], lang: str) -> list[list]:
 
 
 # ---------------------------------------------------------------------------
+# HỆ CHỮ VieNeu **KHÔNG PHIÊN ÂM ĐƯỢC** — chặn TRƯỚC khi đọc
+# ---------------------------------------------------------------------------
+# ═══ ĐO ĐƯỢC, KHÔNG SUY ĐOÁN (`_do_am_vieneu.py` -> `_kq_am_vieneu.txt`) ═══
+# Chạy CHÍNH `vieneu_utils.phonemize_text.phonemize_text` (đúng bộ phiên âm
+# `_MA_DOC` gọi) trong CHÍNH venv VieNeu, trên CÙNG bộ câu `_bo_cau_thu_doc`
+# mà `_do_lan_nn.py` dùng:
+#
+#     hệ chữ vào              -> âm ra
+#     `今天天气很好我们一起去散步`  -> «»            (0 ký tự)
+#     `こんにちはせかい`            -> «»            (0)
+#     `コンニチハセカイ`            -> «»            (0)
+#     `안녕하세요 반갑습니다`       -> «.»           (chỉ còn dấu câu)
+#     `xin chào`                   -> «sˈin tʃˈaː2w.»   (13)
+#     `hello world`                -> «həlˈoʊ wˈɜːld.»  (14)
+#
+# **KHÔNG MỘT ký tự Hán · kana · hangul nào ra được âm.** Trên corpus 34 câu:
+# tiếng Việt và Anh **0/74 và 0/73** mục rỗng; Trung · Nhật · Hàn đều
+# **25/73** mục rỗng, và tính riêng mục KHÔNG có chữ Latin thì **25/41 =
+# 61,0%**. Phần "không rỗng" còn lại KHÔNG phải tin tốt — nó là **CHỮ SỐ được
+# đọc bằng TIẾNG VIỆT**:
+#
+#     `到了 2026 年，一切都完全不一样了。`
+#         -> `hˈaːj ŋˈi2n xˌoŋ tʃˈam hˈaːj mˈyəj sˈaɜw.`  ("hai nghìn không
+#            trăm hai mươi sáu" — cả câu Trung 17 chữ chỉ còn đúng con số)
+#     `그는 촬영 한 번에 500$ 를 냈습니다.`
+#         -> `nˈam tʃˈam jˈuː ˈɛs dˈiː.`                  ("năm trăm u ét đê")
+#
+# ═══ HAI KIỂU HỎNG, VÀ KIỂU THỨ HAI MỚI LÀ KIỂU NGUY HIỂM ═══
+# Đo end-to-end (`_do_lan_nn.py`, 2 vòng, mỗi tiếng 34 câu + 24 token rời):
+#   · **Trung · Nhật** — `_MA_DOC` không ra tiếng cho câu nào, `_synth_all`
+#     **lùi êm về edge-tts**. Người dùng chọn `vnb:` mà nhận giọng edge, không
+#     một dòng báo; và trước khi lùi thì đã đốt **192-297 giây GPU** mỗi lượt.
+#     Canh động cơ của phép đo bắt được: `vieneu trả 24/58` — đúng 24 token
+#     rời CHỮ LATIN (`Netflix` · `TikTok` · `iPhone`…), 0/34 câu.
+#   · **HÀN — KHÔNG lùi, vì synth "thành công".** Câu hangul ra đúng một dấu
+#     chấm, model vẫn đọc dấu chấm đó bằng giọng nhân bản: `vieneu trả 58/58
+#     HỢP LỆ`, WAV dài **17-21 giây/câu**, WER **308,7% và 351,3%**, Groq dán
+#     nhãn tiếng Hàn cho **0-1 / 34** câu. Bản chép ngược nói hết:
+#         «그녀는 미소를 지으며 아무 말 없이 돌아섰습니다» -> «The»
+#         «우리는 어제 오후 내내 거기에서 기다렸습니다.»   -> «I'm not sure if
+#                                                            you can hear me.»
+#     Tức video ra là **21 giây lảm nhảm mỗi câu**, mã thoát 0, `_kiem_wav`
+#     ĐẠT (có tiếng thật mà), không cổng nào bắt. Với 200-300 kênh monetize
+#     thì đây là kiểu hỏng đắt nhất: nó KHÔNG hỏng to.
+#
+# ═══ VÌ SAO CHẶN Ở ĐÂY MÀ KHÔNG PHẢI Ở `doc_lan` ═══
+# `doc_lan` dò câu **đọc dài bất thường so với số chữ**. Ở đây model không hề
+# nhận được chữ, nên mẫu số của phép đo đó là chữ nó chưa từng thấy — bảng
+# quét ngưỡng ra hai nhóm CHỒNG HOÀN TOÀN (xem `doc_lan.NGUONG_THEO_NN`).
+# Chấm điểm sau khi đọc không cứu được thứ lẽ ra không nên đọc.
+#
+# Chặn ở đây thì cả ba tiếng đi CHUNG một đường đã có sẵn và đã được cổng 63
+# canh: trả `ok` toàn `False` -> `dubbing._synth_all_words` lùi edge-tts CẢ
+# VIDEO. Không đẻ nhánh mới, không đẻ chỗ gọi `_synth_all_words` thứ tư,
+# không đụng `dedup_key` (hàm này nằm gọn trong `giong_vieneu`).
+
+#: Hán · kana · **hangul** — đúng ba hệ chữ đo được là ra 0 ký tự âm.
+#: Viết bằng `\u` chứ KHÔNG dán ký tự thật: dòng `"豈-﫿"` chép tay ở
+#: `recap._CJK_CHARS` từng nuốt trọn hangul vì `豈` thật ra là U+8C48 chứ
+#: không phải U+F900 (bài học cổng 54).
+_CHU_G2P_BO = re.compile(
+    "[぀-ヿㇰ-ㇿ"          # kana (hira · kata · mở rộng)
+    "㐀-䶿一-鿿豈-﫿"   # Hán
+    "가-힣ᄀ-ᇿ]"          # hangul (âm tiết + jamo)
+)
+
+#: Ký tự CÓ THỂ thành âm: chữ cái Latin (kể cả dấu tiếng Việt) và CHỮ SỐ.
+#: Chữ số cố ý tính là "đọc được" — nó ra âm thật, chỉ là âm TIẾNG VIỆT.
+#: Nhờ vậy câu Trung toàn số vẫn bị chặn (tỉ lệ chữ bỏ vẫn cao), còn câu Việt
+#: có chen vài chữ Hán thì không bị chặn oan.
+_CHU_CO_AM = re.compile(r"[0-9A-Za-zÀ-ɏḀ-ỿ]")
+
+#: Quá ngần này phần chữ-có-nghĩa bị bộ phiên âm xoá thì coi như KHÔNG ĐỌC
+#: ĐƯỢC. **0,5 chứ không phải 0,0**: câu tiếng Việt hoàn toàn hợp lệ vẫn có
+#: thể chen một hai chữ Hán (tên riêng, trích dẫn) và VieNeu đọc phần còn lại
+#: rất tốt — chặn ở mức "có mặt là cấm" là chặn oan chính tiếng gốc của model.
+#: Đo trên corpus: câu vi/en ra **0,000** ở cả 74+73 mục; câu zh/ja/ko thuần
+#: ra **1,000**, câu zh/ja/ko có chen tên riêng Latin ra **0,63-0,94**.
+TY_LE_CHU_BO_TOI_DA = 0.5
+
+#: Phải có ít nhất ngần này mục mới dám kết luận CẢ LOẠT. Một câu lẻ toàn chữ
+#: Hán giữa video tiếng Việt là chuyện thường; bắt cả video lùi edge vì nó thì
+#: đắt hơn hẳn cái sai nó gây ra.
+TOI_THIEU_MUC_CHAN = 3
+
+
+def ty_le_chu_bo(text: str) -> float:
+    """Phần chữ-có-nghĩa mà bộ phiên âm VieNeu sẽ **XOÁ**. Hàm THUẦN.
+
+    Trả `0.0` khi câu không có chữ nào để đếm (chuỗi rỗng, toàn dấu câu) —
+    **không tính được thì đừng kết tội**. `1.0` = mất sạch.
+    """
+    try:
+        s = str(text or "")
+        bo = len(_CHU_G2P_BO.findall(s))
+        con = len(_CHU_CO_AM.findall(s))
+        tong = bo + con
+        return (bo / tong) if tong > 0 else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def khong_doc_duoc(texts: Sequence[str]) -> tuple[bool, float]:
+    """Cả loạt này có nằm ngoài tầm phiên âm của VieNeu không.
+
+    Trả `(chặn?, tỉ lệ chữ bị xoá của cả loạt)`. Đếm gộp trên TOÀN LOẠT chứ
+    không lấy trung bình từng câu: câu ngắn và câu dài không đáng cân bằng
+    nhau, và loạt thật luôn có vài câu lẻ.
+
+    **KHÔNG BAO GIỜ NÉM** — hỏng ở đâu thì trả `(False, 0.0)` = cứ đọc như cũ.
+    Chốt này chỉ được phép CHẶN khi nó chắc; nghi ngờ thì nhường cho đường cũ.
+    """
+    try:
+        ds = [str(t or "") for t in texts if str(t or "").strip()]
+        if len(ds) < TOI_THIEU_MUC_CHAN:
+            return (False, 0.0)
+        bo = sum(len(_CHU_G2P_BO.findall(s)) for s in ds)
+        con = sum(len(_CHU_CO_AM.findall(s)) for s in ds)
+        tong = bo + con
+        if tong <= 0:
+            return (False, 0.0)
+        ty = bo / tong
+        return (ty > TY_LE_CHU_BO_TOI_DA, round(ty, 4))
+    except Exception:  # noqa: BLE001
+        return (False, 0.0)
+
+
+# ---------------------------------------------------------------------------
 # CỬA CHÍNH — cùng hợp đồng với `piper_tts.doc_loat` / `giong_ngoai.doc_loat`
 # ---------------------------------------------------------------------------
 #: Đọc được bao nhiêu câu thì mới coi cả loạt là dùng được. Xem `doc_loat`.
@@ -2329,7 +2457,7 @@ def _bat_doc_lai() -> bool:
 def _doc_lai_lan_man(items: list[dict], ket: dict, tt: dict, voice: str,
                      nb: bool, han_giay: int,
                      on_msg: Optional[Callable[[str], None]],
-                     sb: Path) -> dict:
+                     sb: Path, lang: str = "vi") -> dict:
     """Dò câu lan man trong `ket` rồi ĐỌC LẠI, trả `ket` đã thay file tốt hơn.
 
     **KHÔNG BAO GIỜ NÉM và KHÔNG BAO GIỜ BỎ CÂU** — hỏng ở bất cứ đâu thì trả
@@ -2353,8 +2481,13 @@ def _doc_lai_lan_man(items: list[dict], ket: dict, tt: dict, voice: str,
         if len(idx) < doc_lan.TOI_THIEU_MUC:
             return ket
 
+        # `nn=` chỉ để TRA ngưỡng. Đo 4 tiếng (Việt · Trung · Nhật · Hàn) ra
+        # KHÔNG tiếng nào cần số khác 1,5 nên bảng `NGUONG_THEO_NN` đang RỖNG
+        # và dòng này ra đúng hành vi cũ — nhưng truyền sẵn thì lượt đo sau
+        # chỉ phải thêm một dòng vào bảng, không phải đi sửa chỗ gọi.
         lan, moc = doc_lan.soi_loat([chu[i] for i in idx],
-                                    [cur[i]["giay"] for i in idx])
+                                    [cur[i]["giay"] for i in idx],
+                                    nn=lang)
         bao["moc"] = (round(moc[0], 4), round(moc[1], 5))
         if moc[1] <= 0:
             return ket
@@ -2421,7 +2554,11 @@ def _doc_lai_lan_man(items: list[dict], ket: dict, tt: dict, voice: str,
                 if l2 > 0 and l2 <= cu - DOC_LAI_BIEN:
                     cur[i]["r"]["p"] = str(p2)
                     cur[i]["giay"] = g2
-                    dang[i] = 0.0 if l2 < doc_lan.NGUONG_LAN else l2
+                    # CÙNG ngưỡng với lượt dò đầu (`soi_loat(nn=lang)`). Đọc
+                    # thẳng `NGUONG_LAN` ở đây là để lại một chỗ lệch: bảng
+                    # theo tiếng vừa thêm một dòng thì vòng dò kêu theo số mới
+                    # còn vòng nhận vẫn xét theo 1,5.
+                    dang[i] = 0.0 if l2 < doc_lan.nguong_cho(lang) else l2
                     bao["an"] += 1
                     bao["chi_tiet"].append(
                         {"i": i, "vong": vong, "lan_cu": cu, "lan_moi": l2,
@@ -2457,6 +2594,23 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
     if not can:
         return ok, words
 
+    # HỆ CHỮ NGOÀI TẦM PHIÊN ÂM -> DỪNG TRƯỚC KHI ĐỐT GPU. Xem khối ghi chú
+    # `_CHU_G2P_BO`: chữ Hán/kana/hangul ra 0 ký tự âm, nên đọc tiếp thì hoặc
+    # lùi edge sau 3-5 phút (Trung · Nhật), hoặc — tệ hơn — ra 17-21 giây
+    # LẢM NHẢM mỗi câu mà mã thoát vẫn 0 (Hàn). `ok` toàn False = nơi gọi lùi
+    # edge-tts CẢ VIDEO, đúng đường all-or-nothing cổng 63 đang canh.
+    chan, ty = khong_doc_duoc([texts[i] for i in can])
+    if chan:
+        _ghi_log(
+            f"VieNeu KHÔNG PHIÊN ÂM ĐƯỢC loạt này: {ty:.0%} chữ bị bộ phiên "
+            f"âm xoá (Hán/kana/hangul ra 0 ký tự âm) -> BỎ máy nhân bản, lùi "
+            f"edge-tts cả loạt. Đây KHÔNG phải máy hỏng: model VieNeu chỉ đọc "
+            f"được chữ Latin/tiếng Việt.")
+        if on_msg:
+            on_msg("Giọng nhân bản không đọc được thứ tiếng này -> dùng giọng "
+                   "máy (edge-tts)")
+        return ok, words
+
     sb = thu_muc_vieneu() / f"_tam_{os.getpid()}_{int(time.time() * 1000) % 100000}"
     (sb / "raw").mkdir(parents=True, exist_ok=True)
     items = [{"i": i, "text": (texts[i] or "").strip().replace("\n", " "),
@@ -2477,7 +2631,8 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
     # DÒ CÂU LAN MAN RỒI ĐỌC LẠI. Đặt ở ĐÂY, giữa lượt đọc và bước `_ep_khung`:
     # bộ dò cần độ dài TIẾNG THẬT, mà `_ep_khung` co giãn theo `rate` nên đo
     # sau đó là đo một thứ đã bị bóp méo có chủ ý.
-    ket = _doc_lai_lan_man(items, ket, tt, voice, nb, han_giay, on_msg, sb)
+    ket = _doc_lai_lan_man(items, ket, tt, voice, nb, han_giay, on_msg, sb,
+                           lang)
 
     for r in ket.get("ra") or []:
         i = int(r.get("i", -1))

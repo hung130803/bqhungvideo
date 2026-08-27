@@ -396,7 +396,11 @@ CONG = [
     # Số **92** lấy bằng cách ĐỌC chính `CONG` này (max đang là 91), KHÔNG đếm
     # theo trí nhớ: trùng số là hai cổng ghi đè `_kq<n>.txt` của nhau (bài học
     # 70 vs 69, rồi 85 vs 81).
-    ("92 đọc lại câu lan man", "_test_doc_lan.py",       48),
+    # Mốc 48 -> 85 (27/08): lượt đo LAN MAN THEO NGÔN NGỮ thêm CA 6 (hiệu
+    # chuẩn ngưỡng 4 tiếng, có arm TRẦN bản ngữ) · CA 7 (tiếng đọc không được)
+    # · CA 8 (bộ đếm từ CJK-aware) · **CA 9** (hệ chữ ngoài tầm phiên âm ->
+    # CHẶN trước khi đốt GPU). CA 9 là chốt CHẶN thật, không phải nhãn.
+    ("92 đọc lại câu lan man", "_test_doc_lan.py",       85),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
