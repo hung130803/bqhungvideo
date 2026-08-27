@@ -96,6 +96,9 @@ K_VIET_CHU = "tg_viet_chu"
 #: CÁCH KHỚP TIẾNG VỚI HÌNH — "" = ép giọng (y như mọi bản trước) · "hinh" =
 #: chỉnh video theo giọng.
 K_KHOP_CACH = "tg_khop_cach"
+#: NHẤN NHÁ — nâng cao độ đúng chữ đáng nhấn. **MẶC ĐỊNH TẮT**: bật là đổi
+#: tiếng của MỌI video từ nay trên 200-300 kênh đang chạy sản xuất.
+K_NHAN_NHA = "tg_nhan_nha"
 #: CÁCH TRỘN TIẾNG — `"tach"` = thay hẳn giọng (tách nhạc, hành vi CŨ, MẶC ĐỊNH)
 #: · `"de"` = đè giọng lên tiếng gốc, KHÔNG tách.
 #: **MẶC ĐỊNH PHẢI LÀ `"tach"`**: đổi mặc định là đổi tiếng của MỌI video từ nay
@@ -2291,6 +2294,31 @@ class ThayGiongDialog(QDialog):
         # duyệt cái nào làm mặc định.
         # NHÃN NÓI RÕ ĐÁNH ĐỔI CỦA CẢ HAI BÊN, không khoe một bên: ô chọn chỉ
         # khoe cái được thì đó không phải một lựa chọn có thông tin.
+        # NHẤN NHÁ — đặt NGAY DƯỚI hàng "Khớp tiếng với hình" vì cùng một
+        # bệnh anh Hùng kêu ("nghe như máy đọc"), chỉ khác đường chữa: hàng
+        # trên chữa NHỊP, hàng này chữa CAO ĐỘ.
+        h3bd = QHBoxLayout()
+        self.ck_nhan_nha = QCheckBox("Nhấn nhá (nâng cao độ chữ đáng nhấn)")
+        self.ck_nhan_nha.setToolTip(
+            "Nâng nhẹ cao độ ĐÚNG chữ đáng nhấn của mỗi câu (số liệu, từ phủ "
+            "định, từ để hỏi, từ cực đoan, tên riêng, chữ cuối câu) — tối đa "
+            "2 chữ mỗi câu, và câu nào không có chữ đáng nhấn thì KHÔNG nhấn "
+            "gì.\n\n"
+            "Đo được trên giọng anh đang dùng (vi-VN-NamMinh, 12 câu liền "
+            "nhau): độ trải cao độ 3,59 -> 3,73 nửa cung, đọc sai KHÔNG đổi "
+            "(5,26% -> 5,26%), độ dài file lệch 0,0 ms nên hình-tiếng không "
+            "xê dịch một phần nghìn giây nào.\n\n"
+            "CHỈ LIỀU NHẸ (+2,0 nửa cung), và với tiếng có THANH ĐIỆU (Việt, "
+            "Trung, Thái) mức đó bị KHOÁ CỨNG trong mã — đẩy mạnh hơn là đổi "
+            "DẤU, tức đổi NGHĨA: đo được liều mạnh làm đọc sai 3,33% -> "
+            "11,67% (bão -> báo, mất -> mắt).\n\n"
+            "TẮT = mọi thứ y hệt bản cũ, không một video nào đổi tiếng.")
+        self.ck_nhan_nha.setChecked(
+            str(self._s.value(K_NHAN_NHA, "0")) in ("1", "true", "True"))
+        h3bd.addWidget(self.ck_nhan_nha)
+        h3bd.addStretch(1)
+        lay.addLayout(h3bd)
+
         h3bc = QHBoxLayout()
         h3bc.addWidget(QLabel("Cách trộn tiếng:"))
         self.cb_tron = QComboBox()
@@ -4478,6 +4506,8 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
         self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
         self._s.setValue(K_KHOP_CACH, self.cb_khop.currentData() or "")
+        self._s.setValue(K_NHAN_NHA,
+                         "1" if self.ck_nhan_nha.isChecked() else "0")
         # Qua `chuan_cach_tron` TRƯỚC KHI GHI: bản sau đổi tên cách trộn thì
         # giá trị cũ trong QSettings không âm thầm biến thành cách MỚI.
         self._s.setValue(K_TRON_CACH,
@@ -4763,6 +4793,7 @@ class ThayGiongDialog(QDialog):
         # cửa DUY NHẤT chuẩn hoá: không nhận ra thì lùi về cách CŨ, không lùi về
         # cách mới (lùi về cái mới là âm thầm đổi tiếng của video người ta).
         cc_de = TG.chuan_cach_tron(self.cb_tron.currentData()) == "de"
+        cc_nn = bool(self.ck_nhan_nha.isChecked())
         # HAI Ô ÂM LƯỢNG cũng đọc từ Ô ĐANG HIỆN (cùng lý do trên), qua cửa
         # duy nhất `muc_am_luong`. (0,0 · 0,0) = mặc định -> `xep_mot` KHÔNG
         # ghi khoá nào vào payload, khoá chống trùng giống TỪNG KÝ TỰ bản trước.
@@ -4792,7 +4823,7 @@ class ThayGiongDialog(QDialog):
                     viet_chu=cc_viet, kieu_chu=cc_kieu,
                     hinh_theo_giong=cc_hinh, de_giong=cc_de,
                     muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db,
-                    doc_deu=cc_deu)
+                    doc_deu=cc_deu, nhan_nha=cc_nn)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

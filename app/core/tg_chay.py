@@ -29,7 +29,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      de_giong: bool = False,
                      muc_nen_db: float = 0.0,
                      muc_giong_db: float = 0.0,
-                     doc_deu: bool = False) -> str:
+                     doc_deu: bool = False,
+                     nhan_nha: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -112,6 +113,14 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     _mg = chuan_muc_db(muc_giong_db)
     if _mg != 0.0:
         sig += f":mg={_mg:+.1f}"
+    # NHẤN NHÁ (nâng cao độ đúng chữ đáng nhấn) đổi NỘI DUNG file tiếng nên
+    # BẮT BUỘC vào khoá — không thì bật ô rồi bấm Chạy là bị smart-skip,
+    # không một dòng báo (đúng lỗi cổng 56e đã sập). Cùng luật với mọi cờ
+    # trên: nối vào **ĐUÔI CHUỖI**, **CHỈ KHI BẬT**, KHÔNG thêm phần tử vào
+    # tuple nào -> mặc định TẮT thì khoá của 200-300 kênh đang chạy sản xuất
+    # giữ NGUYÊN TỪNG KÝ TỰ. Bài học `ovl_spec` (42) · `che_chu` (56e).
+    if nhan_nha:
+        sig += ":nn=1"
     return sig
 
 
@@ -203,7 +212,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             muc_nen_db: float = 0.0,
             muc_giong_db: float = 0.0,
             doc_deu: bool = False,
-            ) -> Optional[int]:
+            nhan_nha: bool = False) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
     `lam_lai=True` xoá mục trong sổ TRƯỚC khi xếp — nếu không thì job chạy
@@ -270,6 +279,11 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     mg = _cmd(muc_giong_db)
     if mg != 0.0:
         tt["muc_giong_db"] = mg
+    # NHẤN NHÁ — **CHỈ ghi khoá khi BẬT**, nên payload của job cũ nằm sẵn
+    # trong DB không mọc thêm khoá nào và `jobs._thay_giong` (`.get` -> False)
+    # cho ra hành vi Y HỆT bản trước.
+    if nhan_nha:
+        tt["nhan_nha"] = True
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
@@ -282,6 +296,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
                                    # `khoa_chong_trung` đã lồng `dd` trong
                                    # nhánh `htg` rồi. Hai chốt là hai chỗ để
                                    # lệch nhau.
-                                   doc_deu=bool(doc_deu)),
+                                   doc_deu=bool(doc_deu),
+                                   nhan_nha=bool(nhan_nha)),
         skip_if_done=False, max_attempts=1,
     )

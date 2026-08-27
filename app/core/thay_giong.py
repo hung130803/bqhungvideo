@@ -2296,6 +2296,7 @@ def _nhac_tung_cau(on_progress: Optional[Callable[[float, str], None]],
 def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
                  dich_sang: str = "en",
                  on_progress: Optional[Callable[[float, str], None]] = None,
+                 nhan_nha: Optional[bool] = None,
                  ) -> dict:
     """Đọc từng câu bản dịch ra mp3 bằng edge-tts (tái dùng `dubbing._synth_all`).
 
@@ -2343,7 +2344,7 @@ def doc_ban_dich(texts: list[str], out_dir: str | Path, voice: str = "",
     ok, moc_tu = asyncio.run(
         dubbing._synth_all_words(texts, _v, paths, on_done=_done,
                                  pitch=_pitch, lang=dich_sang,
-                                 on_msg=_nhac))
+                                 on_msg=_nhac, nhan_nha=nhan_nha))
     # CẮT LỀ IM NGAY TẠI ĐÂY, trước khi bất kỳ ai đo độ dài câu: mọi bước sau
     # (rút gọn, khớp thời gian) phải nhìn thấy ĐỘ DÀI TIẾNG THẬT, không phải
     # độ dài file có kèm ~1,07 s im lặng của edge-tts.
@@ -2651,6 +2652,7 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                       tong: float, out_dir: str | Path, dich_sang: str,
                       voice: str = "", nguong_tempo: float = NGUONG_RUT_GON,
                       vong_toi_da: int = 2,
+                      nhan_nha: Optional[bool] = None,
                       on_progress: Optional[Callable[[float, str], None]] = None,
                       ) -> dict:
     """Rút ngắn câu dịch nào đọc lên vượt khung, ĐỌC LẠI, giữ bản TỐT HƠN.
@@ -2730,7 +2732,7 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         ok2, mt2 = asyncio.run(
             dubbing._synth_all_words(thu, v, paths, pitch=_pitch,
                                      lang=dich_sang, el_lui=False,
-                                     on_msg=_nhac))
+                                     on_msg=_nhac, nhan_nha=nhan_nha))
         # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
         # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
         paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
@@ -2807,6 +2809,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
                         dich_sang: str = "en", voice: str = "",
                         nguong: float = NGUONG_DOC_NHANH,
                         moc_tu: Optional[list] = None,
+                        nhan_nha: Optional[bool] = None,
                         on_progress: Optional[Callable[[float, str], None]] = None,
                         ) -> dict:
     """Câu nào vẫn dài quá khung -> ĐỌC LẠI bằng chính giọng đó, NHANH HƠN.
@@ -2869,7 +2872,7 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     ok2, mt2 = asyncio.run(
         dubbing._synth_all_words(thu, v, paths, rate=rates, pitch=_pitch,
                                  lang=dich_sang, el_lui=False,
-                                 on_msg=_nhac))
+                                 on_msg=_nhac, nhan_nha=nhan_nha))
     sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0
@@ -5098,6 +5101,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      de_giong: bool = False,
                      muc_nen_db: float = 0.0,
                      muc_giong_db: float = 0.0,
+                     nhan_nha: bool = False,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
@@ -5235,6 +5239,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # --- bước 4: đọc bản dịch
         prog(0.62, "Đọc bản dịch...")
         tts = doc_ban_dich(dd["ban_dich"], tam_goc / "tts", voice, dich_sang,
+                           nhan_nha=nhan_nha,
                            on_progress=lambda p, m: prog(0.62 + 0.12 * p, m))
         kq["doc"] = {"voice": tts["voice"], "giay": tts["giay"],
                      "so_hong": tts["so_hong"]}
@@ -5243,6 +5248,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         prog(0.74, "Rút gọn câu dài quá khung...")
         rg = rut_gon_vua_khung(cau, dd["ban_dich"], tts, tong,
                                tam_goc / "rutgon", dich_sang, tts["voice"],
+                               nhan_nha=nhan_nha,
                                on_progress=lambda p, m: prog(0.74 + 0.06 * p, m))
         kq["rut_gon"] = {k: v for k, v in rg.items()
                          if k not in ("texts", "files", "ok")}
@@ -5279,6 +5285,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
             dn = doc_nhanh_vua_khung(cau, rg["texts"], rg["files"], rg["ok"],
                                      tong, tam_goc / "docnhanh", dich_sang,
                                      tts["voice"], moc_tu=rg.get("moc_tu"),
+                                     nhan_nha=nhan_nha,
                                      on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
             kq["doc_nhanh"] = {k: v for k, v in dn.items()
                                if k not in ("files", "ok", "can_truoc",

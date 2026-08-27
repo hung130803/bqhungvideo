@@ -2560,6 +2560,32 @@ async def _moc_giong_hang(texts: list[str], paths: list[str], ok: list,
         return moc_cu
 
 
+def _nn_loat(texts: list[str], paths: list[str], lang: str,
+             ok: list, words: list,
+             bat: "Optional[bool]" = None) -> tuple[list, list]:
+    """CỬA DUY NHẤT của lớp NHẤN NHÁ — mọi đường ra của `_synth_all_words`
+    phải đi qua đây. Toàn bộ luật + chốt nằm ở `app/core/nhan_chu.py`.
+
+    **VÌ SAO KHÔNG BỌC NGOÀI HÀM:** bọc thì phải đổi tên thân hàm, mà **5 cổng
+    đang quét AST đúng cái tên `_synth_all_words`** (giong_hang CA6 đòi
+    `_moc_giong_hang` ở 4 nhánh · nhan_ban_da_ngu 2c · kokoro · giong_toi ·
+    chatter_noi) -> đổi tên là 5 cổng ĐỎ OAN cùng lúc. Vì vậy cửa nằm ở TỪNG
+    `return`, và bất biến được canh bằng AST: *mọi `ast.Return` NGAY TRONG
+    `_synth_all_words` phải là lời gọi `_nn_loat`* — sót một cửa là cổng đỏ,
+    đúng lớp bệnh "sót một cửa = video lẫn hai kiểu".
+
+    **KHÔNG BAO GIỜ NÉM, và KHÔNG BAO GIỜ đổi `ok`/`words`.** Lớp này chỉ sửa
+    NỘI DUNG file tại chỗ; mốc từng chữ đi ra phải y nguyên, nếu không thì
+    `khop_thoi_gian` đặt câu sai khung = lệch tiếng-hình (lỗi v1.87).
+    """
+    try:
+        from app.core import nhan_chu
+        nhan_chu.ap_loat(texts, paths, ok, words, lang, bat=bat)
+    except Exception:  # noqa: BLE001
+        pass
+    return ok, words
+
+
 async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            on_done: Optional[Callable[[int], None]] = None,
                            rate: str | list = "+0%",
@@ -2567,6 +2593,7 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                            lang: str = "",
                            el_lui: bool = True,
                            on_msg: Optional[Callable[[str], None]] = None,
+                           nhan_nha: Optional[bool] = None,
                            ) -> tuple[list[bool], list[list]]:
     """Như _synth_all nhưng THU thêm WORD BOUNDARY của edge-tts (stream API:
     chunk type "WordBoundary" có offset/duration 100-ns) -> mốc TỪNG TỪ theo
@@ -2593,7 +2620,7 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
             rate if isinstance(rate, str) else "+0%", el_lui, moc_el)
         while len(moc_el) < len(texts):     # lùi edge -> API không điền mốc
             moc_el.append([])
-        return ok_e, moc_el
+        return _nn_loat(texts, paths, lang, ok_e, moc_el, nhan_nha)
 
     dung_ngoai, voice = _ngoai_hay_khong(voice)
     if dung_ngoai:
@@ -2607,16 +2634,16 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         co_gh = _gh.co_giong_hang()
         ok_n, moc_n = await _chay_ngoai(texts, voice, paths, lang, on_done,
                                         rate, on_msg, lay_moc=not co_gh)
-        return ok_n, await _moc_giong_hang(texts, paths, ok_n, moc_n, lang,
-                                           voice)
+        return _nn_loat(texts, paths, lang, ok_n, await _moc_giong_hang(
+            texts, paths, ok_n, moc_n, lang, voice), nhan_nha)
 
     dung_piper, voice = _piper_hay_khong(voice)
     if dung_piper:
         from app.core import piper_tts
         ok_p, moc_p = piper_tts.doc_loat(texts, paths, on_done=on_done,
                                          rate=rate)
-        return ok_p, await _moc_giong_hang(texts, paths, ok_p, moc_p, lang,
-                                           voice)
+        return _nn_loat(texts, paths, lang, ok_p, await _moc_giong_hang(
+            texts, paths, ok_p, moc_p, lang, voice), nhan_nha)
 
     dung_vn, voice = _vieneu_hay_khong(voice)
     if dung_vn:
@@ -2640,7 +2667,9 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         # tiếng vẫn đúng (nhãn giọng đã nói trước).
         ok_v, moc_v = await _chay_vieneu(gui, paths, voice, lang, on_done,
                                          rate, on_msg, lay_moc=True)
-        return ok_v, doc_viet_tat.tra_moc_loat(moc_v, gui, thay_ds)
+        return _nn_loat(texts, paths, lang, ok_v,
+                       doc_viet_tat.tra_moc_loat(moc_v, gui, thay_ds),
+                       nhan_nha)
 
     # VBEE — `lay_moc=True` ở cửa NÀY (khác `_synth_all`): đây là cửa đường
     # thay tiếng, chữ chạy theo MỐC TỪNG CHỮ (cổng 60). `giong_vbee._lay_moc`
@@ -2652,7 +2681,7 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
         ok_b, moc_b = await _chay_vbee(texts, paths, voice, lang, on_done,
                                        rate, on_msg, lay_moc=True)
         if any(ok_b):
-            return ok_b, moc_b
+            return _nn_loat(texts, paths, lang, ok_b, moc_b, nhan_nha)
         # all-or-nothing đã hỏng cả loạt và tự ghi sổ lùi -> đọc LẠI cả loạt
         # bằng edge-tts. Đọc lại từng câu hỏng là video LẪN HAI GIỌNG, đúng
         # thứ luật all-or-nothing sinh ra để chặn (mệnh đề cổng 63).
@@ -2669,8 +2698,9 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
             # MỐC: API công khai của Chatterbox KHÔNG trả mốc nào -> đi cửa
             # chung `_moc_giong_hang` như Piper/OmniVoice. Máy chưa có bộ gióng
             # hàng -> mốc RỖNG, tiếng vẫn đúng (nhãn giọng đã nói trước).
-            return ok_c, await _moc_giong_hang(
-                texts, paths, ok_c, [[] for _ in texts], lang, _ma_cb)
+            return _nn_loat(texts, paths, lang, ok_c, await _moc_giong_hang(
+                texts, paths, ok_c, [[] for _ in texts], lang, _ma_cb),
+                nhan_nha)
         voice = _lui_chatter(_ma_cb, lang)
 
     dung_kk, voice = _kokoro_hay_khong(voice)
@@ -2694,8 +2724,9 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
             # an appropriate offset?` ở phép bù mốc đầu), KHÁC hẳn mốc ĐO của
             # `WordBoundary`. Đường sản xuất chỉ đổi khi có SỐ, không đổi vì
             # thấy thư viện có thuộc tính đó.
-            return ok_k, await _moc_giong_hang(
-                texts, paths, ok_k, [[] for _ in texts], lang, _ma_kk)
+            return _nn_loat(texts, paths, lang, ok_k, await _moc_giong_hang(
+                texts, paths, ok_k, [[] for _ in texts], lang, _ma_kk),
+                nhan_nha)
         voice = _lui_kokoro(_ma_kk, lang)
 
     import edge_tts
@@ -2757,7 +2788,7 @@ async def _synth_all_words(texts: list[str], voice: str, paths: list[str],
                 on_done(i)
 
     await asyncio.gather(*(one(i) for i in range(len(texts))))
-    return ok, words
+    return _nn_loat(texts, paths, lang, ok, words, nhan_nha)
 
 
 # ------------------------------------------------------------------

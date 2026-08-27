@@ -375,6 +375,12 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # một hệ số bịa nhân vào tiếng thì không có đường lùi.
             muc_nen_db=tg.chuan_muc_db(payload.get("muc_nen_db")),
             muc_giong_db=tg.chuan_muc_db(payload.get("muc_giong_db")),
+            # NHẤN NHÁ — job cũ trong DB KHÔNG mang khoá này -> `.get` trả
+            # None -> `bool` ra False = y hệt bản trước, không một video nào
+            # trong 200-300 kênh đổi tiếng. Toàn bộ chốt an toàn (liều, khoá
+            # cứng thanh điệu, hậu kiểm độ dài) nằm trong `nhan_chu`, KHÔNG
+            # nhân đôi ở đây — hai chốt là hai chỗ để lệch nhau.
+            nhan_nha=bool(payload.get("nhan_nha")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:
