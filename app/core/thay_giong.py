@@ -5677,6 +5677,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          de_giong: bool = False,
                          muc_nen_db: float = 0.0,
                          muc_giong_db: float = 0.0,
+                         nhan_nha: bool = False,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -5721,6 +5722,14 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # (cổng 55 đã bắt được đúng thế: 2/2 job `failed`).
                          muc_nen_db=muc_nen_db,
                          muc_giong_db=muc_giong_db,
+                         # NHẤN NHÁ (v2.45.0) — CỜ THỨ SÁU, và nó đã NỔ THẬT
+                         # ở v2.45.0/v2.46.0: chuỗi nối đủ từ `thay_giong_
+                         # video` xuống tới máy đọc nhưng SÓT ĐÚNG CỬA NÀY,
+                         # mà `jobs._thay_giong` gọi CỬA NÀY -> mọi job ra
+                         # `unexpected keyword argument 'nhan_nha'`, 4/4
+                         # video LỖI ngay khi anh Hùng bấm Chạy. Đúng cái
+                         # khối ghi chú ngay trên đã cảnh báo ba lần.
+                         nhan_nha=nhan_nha,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r
