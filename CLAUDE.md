@@ -4472,6 +4472,118 @@
   chạy lại · **chưa đo trên nguồn KHÔNG có nhạc nền** (phim thoại khô) — đó là
   ca DUY NHẤT bản vá này có thể đắt, và nó **chưa có số**; nếu anh Hùng gặp
   video kiểu đó thì phương án 3 (chỉ bù mảnh ngắn dưới X giây) mới cần bàn tới.
+  **(15) 28/08/2026 — HƯỚNG "CHẢY LIỀN + NEO Ở RANH GIỚI CẢNH" ĐÃ ĐO: *KHÔNG
+  NỐI*, CHẾT Ở ĐÚNG CỘT ĐÃ GIẾT 3 HƯỚNG TRƯỚC. VÀ PHÉP ĐO LÔI RA MỘT TRẦN SỐ
+  HỌC MÀ CẢ 4 HƯỚNG ĐỀU KHÔNG BIẾT.**
+  Hướng được giao: bỏ khung cố định, câu i+1 bắt đầu ngay khi câu i đọc xong,
+  rồi NEO LẠI ở mốc an toàn. Đo bằng `_do_chay_lien.py` (dựng lại timeline từ
+  ĐÚNG bộ file giọng của lượt chạy thật đã cache -> **TIỀN ĐỊNH**, không LLM,
+  không TTS) + `_do_mat_do_neo.py` (mật độ mốc neo trên 4 video THẬT, ĐẦY ĐỦ).
+  **ĐỐI CHỨNG TÁI LẬP ĐƯỢC LƯỢT CHẠY THẬT** (bắt buộc, không có thì mọi số dưới
+  vô nghĩa): cho MỌI câu làm câu neo = đúng cách app đang chạy -> ra **32,30%**
+  im so với **32,36%** đã công bố (VNB) và **18,22%** so với **18,29%** (EDGE),
+  lệch **0,06-0,07 điểm %**.
+  **MỘT NGUỒN MỐC NEO CHẾT HẲN, ĐO RA MỚI BIẾT:** *"quãng im DÀI của bản gốc"*
+  ra **0 · 1 · 1 · 0 mốc** trên 4 video (ngưỡng 0,35 s / −30 dB) — nguồn Douyin
+  thuyết minh phim **nói liền không nghỉ**. Cắt cảnh thì dày: **23,5-28,2
+  mốc/phút**, cách nhau trung vị **1,84-2,38 s**, nhưng khoảng thưa nhất tới
+  **5,30-14,12 s**.
+  **BẢNG QUYẾT ĐỊNH** (lt1 · `vnb:` · k=1,1988 · 35 câu — đúng cấu hình anh Hùng):
+
+  | | im % | >=0,5s | dài nhất | **TRÔI max** |
+  |---|---|---|---|---|
+  | app hiện tại | 32,30 | 30 | 4,90 s | **0** |
+  | neo cắt cảnh (18 neo) · trần 100 ms | 32,30 | 30 | 4,90 s | 100 ms |
+  | neo cắt cảnh · trần 300 ms | 32,30 | **28** | 4,90 s | 300 ms |
+  | neo cắt cảnh · KHÔNG trần | 32,30 | **16** | 4,90 s | **2 923 ms** |
+  | KHÔNG neo · KHÔNG trần | 5,15 | 0 | 0,23 s | **29 300 ms** |
+
+  Ở trần **300 ms** (mức repo đã đo là tồn tại mà không ai kêu: 269-354 ms) nó
+  mua được **ĐÚNG 2 quãng trong 30**, tổng im **không đổi một phần trăm nào**,
+  quãng dài nhất **không đổi một phần trăm nào**. Muốn 16/30 phải trả **2,9
+  GIÂY** trôi. **Tỉ giá đo được là 1:1** — mỗi giây trôi mua đúng ~1 giây bớt
+  của quãng dài nhất và ~0,5 điểm % im; đưa quãng dài nhất 4,90 s về 1,00 s cần
+  **3,9 giây trôi**.
+  **GỐC RỄ LÀ MỘT PHÉP TRỪ, KHÔNG PHẢI MỘT THUẬT TOÁN — đây là thứ đáng nhớ
+  nhất của cả 4 hướng:** `im giữa câu = độ_dài_VIDEO − tổng_TIẾNG − im hai đầu`.
+  Đo: tiếng thật **72,185 s**, video **107,922 s** -> **im BẮT BUỘC 35,74 s =
+  33,11%**, app đang ở 32,30%. **Không phép SẮP XẾP nào giảm được tổng im**;
+  gộp câu · gộp lượt TTS · giãn hình không đều · chảy liền + neo đều chỉ ĐỔI
+  CHỖ. Hai đường DUY NHẤT làm nó nhỏ đi: **video ngắn lại** (= mục 1 của combo,
+  bỏ chỉnh hình: 32,36% -> 19,93%) hoặc **TIẾNG DÀI RA**.
+  **HƯỚNG THỨ NĂM, TỪ CHÍNH PHÉP ĐO NÀY: GIỮ NGUYÊN KHUNG CỐ ĐỊNH, ĐỌC CHẬM LẠI
+  CHO ĐẦY KHUNG.** Bước 4c của app chỉ biết đọc NHANH lên
+  (`doc_nhanh_vua_khung`); **không có đường nào đọc CHẬM lại**. Câu vẫn nằm đúng
+  mốc gốc -> **lệch tiếng-hình = 0 THEO CẤU TẠO**. Đo THẬT bằng âm thanh
+  (`_do_doc_cham.py`, ghép cặp TỪNG BYTE trên cùng bộ file giọng, chạy 2 lượt ra
+  **Y HỆT**):
+
+  | kéo tối đa | im % | >=0,5s | dài nhất | TRÔI max | méo phổ TB |
+  |---|---|---|---|---|---|
+  | 1,00 (app hiện tại) | 32,36 | 30 | 4,96 s | **0,0 ms** | 0,000 dB |
+  | 1,15 | 23,52 | 19 | 4,57 s | 7,7 ms | 3,113 dB |
+  | **1,25** | **18,81** | **8** | 4,29 s | **7,3 ms** | 3,435 dB |
+  | 1,40 | 15,73 | 6 | 3,94 s | 17,8 ms | 3,530 dB |
+
+  Video thứ hai (lt2 · EDGE · k=1,1519 · 50 câu): **25,31 -> 16,51%** · 15 -> 2
+  quãng · dài nhất 4,14 -> 3,57 s · **trôi 10,3 ms**. lt1 EDGE (k=1,1144):
+  **18,29 -> 9,69%** · 15 -> 2 quãng · 2,00 -> 0,72 s · **trôi 5,8 ms**.
+  Tức ở trôi **7-18 ms** nó mua được thứ mà chảy-liền phải trả **2 923 ms** mới
+  mua được một nửa.
+  **CÁI PHẢI TRẢ — MÉO PHỔ 3,0-3,9 dB**, vì phép đo kéo bằng `rubberband`. Con
+  số 0,061 dB ghi ở khối "chỉnh video theo giọng" là đo trên LỚP NHẠC, không
+  phải trên TIẾNG NÓI — **đừng chép nó sang đây**.
+  **ĐƯỜNG 0 MÉO ĐÃ ĐO ĐƯỢC:** `rate` ÂM của chính máy đọc, 0 phép xử lý tín
+  hiệu (`_do_rate_am.py`, edge-tts THẬT, đo GIÂY NÓI THẬT bằng `do_le_im` chứ
+  không phải độ dài file): **−10% -> 1,1106x · −15% -> 1,1763x · −20% ->
+  1,2507x · −25% -> 1,3329x · −30% -> 1,4295x · −40% -> 1,6680x**, và **lệch
+  giữa các câu chỉ ±0,0008** (1,2500-1,2515 ở −20%) — tuyến tính, không bão hoà,
+  khác hẳn `length_scale` của Piper. Tức `rate = −20%` cho ĐÚNG mức 1,25x đo
+  được ăn nhất, với **méo phổ = 0 theo cấu tạo**.
+  **CHỖ NỐI ĐÚNG LÀ MỘT NHÁNH TRONG `khop_thoi_gian`** (đọc mã, chưa nối):
+  nhánh `(1) if d_nat <= khung: tempo = 1.0` chính là chỗ sinh ra khoảng im.
+  Nối ở đó được MIỄN PHÍ hai thứ: bất biến **0 ms chồng lấn** vẫn đúng (tiếng
+  kéo ra vẫn nằm trong `khung <= tran - CHUA_TRUOC_CAU_KE`), và **mốc TỪNG CHỮ
+  tự co giãn đúng** vì `ty_le = d_fin / d_nat` đã đo trên file đã ghi -> `= k`.
+  Nối ở tầng khác là phải tự lo cả hai.
+  **CHƯA NỐI, VÀ LÝ DO ĐÚNG LUẬT REPO:** **chưa ai NGHE** (file ở
+  `_NGHE_THU_ANH_HUNG/lien_mach_3/`, cặp TRƯỚC/SAU cùng lượt, −14 LUFS đo lại
+  bằng `loudnorm` chạy riêng, MD5 khác nhau) · ba hướng trước chết đúng vì nối
+  trước khi nghe · và **`app/` lượt này KHÔNG đổi một dòng nào** (`git status
+  --porcelain app/ config.py main.py` RỖNG) nên `dedup_key` của 200-300 kênh
+  **không thể** đổi — bảo đảm DO CẤU TẠO.
+  **BẪY CỦA CHÍNH PHÉP ĐO, ĐÃ SẬP 1 LẦN:** `_do_doc_cham.py` bản đầu tra
+  `he_so_hinh` trong `_kq_khop_video.json`, **tra hụt thì LÙI IM LẶNG về
+  1,1988**. File đó bị lượt lt2 ghi đè -> mục lt1/EDGE biến mất -> phép đo lấy
+  1,1988 thay cho **1,1144** THẬT và in ra bảng trông hoàn toàn hợp lý (im
+  23,85% thay vì 18,29%). Đúng họ *"phép đo hỏng phát chứng nhận"*. Nay tra hụt
+  là **NÉM**.
+  **CHƯA ĐẠT, GHI THẲNG:** chưa ai NGHE · `vnb:` mới có **1 video** (lt2/VNB
+  hỏng giữa chừng vì VieNeu trả **file 0,000 giây** cho câu #13 — `ok[i]` vẫn
+  True nên `_kiem_wav` NÉM và giết cả lượt; lỗ này CÓ THẬT trên đường app) ·
+  méo phổ 3,4 dB là số của `rubberband`, đường `rate` âm **chưa đo end-to-end**
+  · **chưa đo TRẢI TỐC ĐỘ ĐỌC** sau khi kéo (cần bản dịch, phép đo này chỉ có
+  file giọng) — mà đó đúng là cột anh Hùng cũng đã kêu (*"lúc nhanh lúc chậm"*),
+  nên **không được hứa** trước khi có số.
+- **VIỆC "ASR CẮT ĐÔI THÀNH NGỮ": TIỀN ĐỀ SAI — NGỮ CẢNH ĐÃ CÓ SẴN (28/08/2026,
+  `_do_gop_dich.py`).** Ca đích danh `前脚…后葬` bị chặt thành #78/#79 và dịch ra
+  *"chôn một chân"* / *"chân còn lại"*. Đề nghị là **gộp câu cho BẢN DỊCH** để
+  LLM thấy đủ ngữ cảnh. **Đo ra thì không có gì để gộp:** video thật ra 163
+  segment -> **167 câu**, chia **6 mẻ × 30 câu**, và **CẢ HAI cặp bị chặt đôi**
+  (`刚…就` #12-13 · `前脚…后脚` #78-79) **nằm CÙNG MỘT MẺ** — tức cùng MỘT lượt
+  gọi LLM, cùng một prompt. Ranh giới mẻ chỉ cắt ngang **5/166 = 3,0%** chỗ nối
+  câu, và mỗi mẻ còn kèm `ME_NGU_CANH_BEN = 3` câu trước/sau + luật đã viết sẵn
+  *"Câu ngắn/cụt là MỘT MẨU của câu dài đang nói dở"*.
+  ⇒ **Model ĐÃ CÓ cả hai nửa mà vẫn dịch sai.** Gộp thêm là vá vào chỗ KHÔNG có
+  bệnh. Bệnh nằm ở **HỢP ĐỒNG ĐẦU RA** (`một "t" cho mỗi "#i"` + *"KHÔNG gộp
+  hai câu"*) ép model dịch từng câu như đơn vị độc lập — chữa được thì phải
+  chữa ở PROMPT (cho phép dịch cả cụm rồi CHIA theo đúng ranh giới), không phải
+  ở tầng cắt câu. **CHƯA LÀM:** tần suất chỉ **2/167 = 1,2%**, quá thấp để đo
+  một bản vá prompt cho ra số tin được trong một lượt.
+  Số kèm theo, đo trên chính video đó: **26,9% câu <= 8 ký tự** (khớp đúng con
+  số đã ghi), ký tự/câu TB **12,2** · trung vị **11** · min **1**, giây/câu TB
+  **2,35 s**, và **0 câu dài quá 12 s** -> `cau_tu_transcript` **chưa từng cắt
+  một câu nào** trên nguồn này, nó chỉ đi qua.
 - **`studio.db` CỤT: ĐO LẠI 28/08/2026 — DỮ LIỆU **CÒN ĐỦ TRONG BẢN SAO LƯU**,
   NHƯNG ĐƯỜNG CỨU BẰNG WAL ĐÃ ĐÓNG. CHỈ ĐO VÀ BÁO, KHÔNG TỰ CHỮA.**
   `%LOCALAPPDATA%\BQHungVideo\studio.db` = **118 KB**, sửa lần cuối **17/08
