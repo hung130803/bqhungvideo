@@ -121,10 +121,30 @@ KHOP_CACH = ("", "hinh", "hinh_deu")
 #: Nhãn tiếng Việt — đặt cạnh mã, cùng lý do `NHAN_CACH_TRON`. Nhãn nêu ĐÁNH
 #: ĐỔI của cả ba, không khoe một bên: ô chọn chỉ khoe cái được thì đó không
 #: phải một lựa chọn có thông tin.
+#
+#: **NHÃN CỦA MỤC `"hinh"` TỪNG NÓI SAI, VÀ NÓ ĐÃ ĐẨY ANH HÙNG ĐI NHẦM Ô GẦN
+#: MỘT TUẦN (28/08/2026) — giữ lại đây kẻo ai viết lại như cũ.** Nó ghi
+#: *"(tiếng đều, khuyên dùng)"*. Chữ "đều" ở đó vốn định nói **hệ số ép về
+#: 1,000** (không `atempo` làm méo tiếng), nhưng người dùng đọc ra **"đọc đều
+#: một nhịp"** — mà đó đúng là thứ mục này KHÔNG làm: nó vẫn chạy bước 4c
+#: `doc_nhanh_vua_khung`, đọc lại mỗi câu một tốc độ.
+#: Đo bằng số (`_do_o_nao_cua_anh_hung.py`, GỌI THẬT `thay_giong_video` rồi
+#: ĐẾM lượt gọi 4c · hệ số biến thiên tốc độ đọc lấy từ mục (11) CLAUDE.md):
+#:     mục 1 `""`         -> 4c chạy **1** lần · CV **20,11 / 14,08 %**
+#:     mục 2 `"hinh"`     -> 4c chạy **1** lần · CV **20,77 / 14,26 %**  <- xấu
+#:                                                       hơn CẢ mục 1
+#:     mục 3 `"hinh_deu"` -> 4c chạy **0** lần · CV **15,64 / 10,88 %**
+#: Tức ô DUY NHẤT đọc đều là mục 3, còn ô mang chữ "đều" lại là mục 2. Anh Hùng
+#: chọn mục 2 (QSettings `tg_khop_cach="hinh"`) rồi kêu *"chỗ đọc nhanh chậm
+#: hình như nó CHỈNH TỐC ĐỘ GIỌNG ĐỌC"* — anh ấy chẩn đúng, và cái đẩy anh ấy
+#: vào ô đó là DÒNG CHỮ NÀY.
+#: Luật rút ra: **nhãn chỉ được mang chữ "đều" khi mục đó thật sự BỎ bước 4c**
+#: (cổng 89 mục 9v canh). Và chữ "khuyên dùng" đi theo SỐ, không theo thói quen.
 NHAN_KHOP_CACH = {
-    "": "Ép giọng vừa video (có thể méo tiếng)",
-    "hinh": "Chỉnh video theo giọng (tiếng đều, khuyên dùng)",
-    "hinh_deu": "Chỉnh video + đọc ĐỀU MỘT TỐC ĐỘ (có thể phải ép phần dư)",
+    "": "Ép giọng vừa video (video giữ NGUYÊN độ dài, tiếng có thể méo)",
+    "hinh": "Chỉnh video theo giọng (không ép tiếng, video dài thêm ~20%)",
+    "hinh_deu": "Chỉnh video + đọc ĐỀU MỘT TỐC ĐỘ — khuyên dùng "
+                "(có thể phải ép phần dư)",
 }
 
 

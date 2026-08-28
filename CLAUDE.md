@@ -4258,6 +4258,114 @@
   chặn · phép đo bao hình trên BẢN TRỘN CUỐI của 4 file thật **bị NHẠC NỀN che**
   nên cột im tuyệt đối ở đó KHÔNG đọc thẳng được (1/4 video còn ra HIỆU ÂM);
   cột đọc được của bảng A là `k` · nhịp hình · số khung.
+  **(13) 28/08/2026 — BỐN LỜI KÊU SAU v2.47.0. HAI LỜI ĐẦU LÀ *MỘT* NGUYÊN
+  NHÂN, LỜI 4 CHỈ CẦN ĐỔI Ô, LỜI 3 KHÔNG TÁI HIỆN.** Anh Hùng chạy thật 4 video
+  sáng 28/08 rồi kêu: (1) *"giọng đọc KHÔNG LIỀN MẠCH"* · (2) *"vẫn DÍNH TIẾNG
+  TRUNG âm thanh gốc"* · (3) *"dịch mấy đoạn lỗi quá"* · (4) *"nó CHỈNH TỐC ĐỘ
+  GIỌNG ĐỌC chứ không phải tốc độ video"*.
+  **CẤU HÌNH THẬT, ĐỌC TỪ REGISTRY + PAYLOAD JOB (không đoán theo ảnh):**
+  `tg_giong=vnb:…test.wav` · `tg_tron_cach=tach` · `tg_khop_cach=hinh` (MỤC 2) ·
+  che chữ + nhấn nhá BẬT · 2 luồng · **`dich_sang=vi`, KHÔNG phải `en`** — 4
+  nguồn độc lập (sổ `thay_giong_so.json`, payload trong `studio.db-wal`,
+  registry, và chữ THẬT được đọc lên) đều ra `vi`; sổ đó ghi được cả `en` (6
+  job ngày 18/08) nên đây không phải giá trị mặc định.
+  **LỜI 1 + LỜI 2 CHUNG MỘT GỐC: `bu_giong_goc` (bước 5c) LẤY CHÍNH GIỌNG GỐC
+  TIẾNG TRUNG LẤP VÀO QUÃNG NGHỈ.** `bu_giong_goc_bat` mặc định **True**; vật
+  liệu lấp là `t["giong"]` = lớp vocals Demucs của bản gốc. Chạy THẬT
+  `thay_giong_video` trên chính video của anh Hùng, đúng cấu hình trên
+  (`_do_bu_goc_that.py`, video 148,61 s -> 178,14 s):
+
+  | arm | giây video | GIÂY BÙ | mảnh | % video | im nếu TẮT | k hình |
+  |---|---|---|---|---|---|---|
+  | **MỤC 2 + bù BẬT (ĐANG CHẠY)** | 178,14 | **25,57** | **31** | **14,35%** | 28,98 | 1,1988 |
+  | MỤC 2 + bù TẮT | 173,46 | 0,00 | 0 | 0,00% | — | 1,1673 |
+  | **MỤC 1 (không chỉnh hình)** | 148,61 | **4,40** | 4 | **2,96%** | 13,48 | — |
+  | MỤC 3 (chỉnh hình + đọc ĐỀU) | 178,14 | 18,78 | 20 | 10,54% | 24,00 | 1,1988 |
+
+  **THƯỚC DỨT ĐIỂM — CHÉP RIÊNG VẬT LIỆU BÙ, ĐỪNG CHÉP BẢN TRỘN.** Nối 31 mảnh
+  bù thành một file rồi đưa Groq chép (tự nhận diện): nhãn **`Chinese`**,
+  **131/140 ký tự Hán (93,6%)**. Ở đó không có mẩu giọng Việt nào lẫn vào nên
+  whisper không có gì để bịa theo. Mốc 31 mảnh nằm ĐÚNG các quãng nghỉ giữa câu
+  (`[11,03-14,43]` dài 3,40 s, `[21,61-22,68]`, `[29,21-30,28]`…) — tức **anh
+  Hùng nghe thấy tiếng Trung Ở CHÍNH CHỖ anh ấy kêu "được đoạn rồi nghỉ". Một
+  nguyên nhân, hai triệu chứng.**
+  **ĐÂY LÀ ĐÁNH ĐỔI CỐ Ý, KHÔNG PHẢI BUG — nhưng nó ĐI NGƯỢC lựa chọn của
+  người dùng.** Bù ra đời 18/08 để chữa *"đoạn không đọc thì bị TẮT TIẾNG"*;
+  ghép cặp theo cấu tạo trong CÙNG lượt: **bật -> 25,57 s tiếng Trung · tắt ->
+  28,98 s IM ở 32 chỗ**. Mà anh Hùng chọn *"Thay hẳn giọng (tách nhạc) — tiếng
+  gốc MẤT HẲN"* (`cach_tron="tach"`), nên bù bằng chính tiếng gốc là làm ngược
+  ô anh ấy bấm. **CHƯA VÁ** — phải để anh Hùng nghe rồi chọn, xem mục CHƯA LÀM.
+  **HAI PHÉP ĐO CỦA CHÍNH LƯỢT NÀY ĐÃ HỎNG VÀ ĐƯỢC BẮT — cả hai đều thuộc họ
+  "phép đo hỏng phát chứng nhận", ghi ra kẻo người sau đi lại:**
+  **(a) CHÉP BẢN TRỘN ĐỂ ĐẾM TIẾNG TRUNG — HỎNG CẢ HAI CHIỀU** (`_do_tieng_
+  trung_con.py`). Thả `language=None`: Groq chấm nhãn CHO CẢ FILE, bản trộn
+  phần lớn là giọng Việt -> nhãn "Vietnamese" -> **0 ký tự Hán trên cả 4 video**
+  = chứng nhận SẠCH hoàn toàn giả. Ép `language="zh"`: ra **85,72%**. Dựng SÀN
+  BỊA bằng cặp sạch nhất có thể (`_do_thuoc_zh_san.py`, cùng video cùng lượt,
+  khác đúng cờ bù): bản **KHÔNG có mẩu tiếng gốc nào** ra **94,99%**, bản **có
+  25,57 s tiếng Trung thật** ra **99,53%** — **chênh 4,54 điểm %**. Thước MÙ,
+  **85,72% là RÁC, đã gạch**. Đối chiếu với lời gốc không cứu được vì bản Việt
+  vốn LÀ bản dịch của lời Trung nên chữ bịa vẫn "trùng" theo nghĩa.
+  **(b) CỬA SỔ GHÉP CÂU-VỚI-LỜI-GỐC ÔM LẸM CÂU BÊN CẠNH** (`_do_dich_cua_anh_
+  hung.ghep_goc`). Bản đầu hốt MỌI segment CHẠM `[bat_dau/k, ket_thuc/k]` với
+  lề 0,35 s; mốc lệch chút ít nên cửa sổ gần như luôn ôm THÊM segment liền
+  TRƯỚC. Bộ chấm đọc đoạn gốc HAI câu, thấy bản dịch MỘT câu, chấm *"bỏ sót"*
+  -> **bản dịch ĐÚNG bị chấm 2 điểm**. Nó kéo theo 3 số sai: điểm 3,02/5 ·
+  "23,33% lệch bậc" · arm TRẦN 4,88 (cao vì nó dịch CẢ cửa sổ hai câu). Sửa
+  thành **lấy ĐÚNG MỘT segment có TÂM gần tâm câu nhất**, mọi số đảo ngược.
+  **LỜI 3 — KHÔNG TÁI HIỆN. Đo trên chính 168 câu anh Hùng đã nghe** (moi từ
+  `khop.moc_tu` trong `studio.db-wal`), chấm bằng `qwen/qwen3.8-27b` (KHÁC
+  `GROQ_LLM_MODEL=openai/gpt-oss-120b` đã dịch), **có SÀN và TRẦN**:
+
+  | | SÀN (ghép lệch 7 câu) | THẬT (anh Hùng) | TRẦN (model tự dịch) |
+  |---|---|---|---|
+  | điểm trung thành /5 | **1,00** | **4,67** | 4,87 |
+  | câu <= 3 điểm | 100% | **6,67%** | 1,67% |
+
+  Trên cả 168 câu: **4,56/5 · 9,52% câu <=3**. Lệch bậc **0,6%** (chrF đúng chỗ
+  **33,58** vs lệch +1 **2,16** vs lệch -1 **2,16** — thước có RĂNG, khác hẳn
+  bản cửa sổ hỏng vốn ra 18,65 vs 18,57 = mù). **Còn chữ Hán 0/168 câu**, khớp
+  bản ghi job (`sot_chu_goc_truoc/sau = 0`) — và vì nhánh lùi `ra.get(i) or
+  c["text"]` trả NGUYÊN VĂN tiếng Trung nên **số câu bị LLM bỏ cũng = 0**.
+  **PHẦN CÒN LẠI PHẦN LỚN LÀ LỖI CỦA CHỮ NGUỒN, NÓI THẲNG: sửa dịch vô ích.**
+  Model chấm soi riêng: **2,38% câu nguồn tự nó vô nghĩa** (`艳师官` đáng lẽ
+  `验尸官` · `劫族先登` không có nghĩa). Nặng hơn và chưa ai ghi: **ASR CẮT ĐÔI
+  thành ngữ** — `眼看尸体前脚下葬` / `后脚他就已经开挖了` là cặp 前脚…后脚
+  ("vừa mới… thì đã…"), tách ra dịch riêng thì mỗi nửa đều vô nghĩa
+  (*"chôn một chân"* / *"chân còn lại anh đã bắt đầu đào"*). Đây là bệnh của
+  bước CẮT CÂU, không phải bước dịch.
+  **LỜI 4 — ANH HÙNG CHẨN ĐÚNG, VÀ CHỈ CẦN ĐỔI Ô. NHÃN COMBO ĐANG NÓI SAI, ĐÃ
+  VÁ.** GỌI THẬT `thay_giong_video` cho cả ba ô rồi ĐẾM lượt gọi bước 4c
+  (`_do_o_nao_cua_anh_hung.py`, mượn `_test_am_va_hinh._chay_that`):
+  **mục 1 -> 4c chạy 1 lần · MỤC 2 (ô anh Hùng) -> 1 lần · mục 3 -> 0 lần.**
+  Ghép với CV tốc độ đọc ở mục (11): **mục 1 20,11/14,08 · mục 2 20,77/14,26 ·
+  mục 3 15,64/10,88**. Tức **mục 2 còn KÉM CẢ mục 1 về độ đều**, mà nhãn của nó
+  lại ghi *"(tiếng đều, khuyên dùng)"* — chữ "đều" ở đó vốn định nói *hệ số ép
+  về 1,000*, nhưng người dùng đọc ra *"đọc đều một nhịp"*. **Chính dòng nhãn đó
+  đẩy anh Hùng vào ô sai.** Vá: nhãn `hinh` bỏ hẳn "tiếng đều/khuyên dùng", nêu
+  giá thật (*"không ép tiếng, video dài thêm ~20%"*); "khuyên dùng" chuyển sang
+  `hinh_deu`. Cổng 89 thêm **9zd** (chữ "đều" chỉ được xuất hiện ở mục thật sự
+  có `doc_deu=True`) + **9ze**; **104 -> 106 ĐẠT · 0 HỎNG**; thử phá bằng cách
+  trả nhãn cũ về -> **BẮT 2 · LỌT 0**.
+  **ĐỔI Ô CHỮA ĐƯỢC MẤY LỜI CÙNG LÚC — đây là cột đáng giá nhất của cả lượt:**
+  từ MỤC 2 sang **MỤC 1** thì tiếng Trung chèn vào tụt **25,57 -> 4,40 giây
+  (bớt 82,8%)**, số mảnh **31 -> 4**, và video không dài ra. Sang **MỤC 3** thì
+  **25,57 -> 18,78 s (bớt 26,6%)** kèm đọc đều hơn. Giá của mục 1: `tempo_max`
+  1,000 -> 1,074 (vẫn xa ngưỡng cảnh báo 1,30).
+  **FILE NGHE THỬ:** `_NGHE_THU_ANH_HUNG/bon_loi/` — `A_BAT_bu25.57s_35giay.wav`
+  · `B_TAT_KHONG_BU_35giay.wav` (CÙNG cửa sổ 10-45 s, cửa sổ này có 6 mảnh bù
+  gồm mảnh dài nhất 3,40 s) · `C_CHI_MANH_BU_31manh_25.57s.wav` (chỉ vật liệu
+  bù). Cả 3 chuẩn về −14 LUFS bằng chính `chuan_do_to`, **đo lại bằng
+  `loudnorm` chạy RIÊNG: −14,04 · −14,03 · −14,37**; MD5 3/3 khác nhau.
+  **CHƯA LÀM, GHI THẲNG:** **chưa ai NGHE** một file nào · 4 arm là 4 LƯỢT
+  CHẠY RIÊNG (LLM + VieNeu không tiền định) nên chỉ cặp BẬT/TẮT ghép cặp theo
+  cấu tạo, ba cột còn lại là **1 điểm dữ liệu/arm**, chưa có DẢI · mới **1
+  video × 148 s**, 3 video kia của anh Hùng chưa dựng lại · **chưa vá bù giọng
+  gốc** (chọn gì khi `cach_tron="tach"`: im, nhạc nền, hay tắt hẳn — quyết định
+  của anh Hùng) · bệnh **ASR cắt đôi thành ngữ** mới thấy 1 ca, chưa đếm được
+  tần suất · `studio.db` **CỤT** (WAL trỏ tới trang 102141-102155 = cần file
+  ~418 MB, file đang có 118 KB) nên 3/4 job sáng 28/08 mất theo, không dựng lại
+  được — bệnh cũ "ổ C đầy" vẫn chưa chữa.
 - **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
   (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
   `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.

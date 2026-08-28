@@ -1000,6 +1000,27 @@ def muc9() -> None:
        "9e nhãn mục mới nêu CẢ HAI chiều: được 'đều' · giá 'ép phần dư'",
        tg.NHAN_KHOP_CACH["hinh_deu"])
 
+    # ---- 9zd-9ze: NHÃN KHÔNG ĐƯỢC HỨA "ĐỀU" Ở MỤC VẪN CHẠY BƯỚC 4C ----
+    # LỖI THẬT, ĐÃ ĐẨY NGƯỜI DÙNG ĐI NHẦM Ô (28/08/2026): nhãn mục `"hinh"`
+    # ghi *"(tiếng đều, khuyên dùng)"*. Chữ "đều" ở đó định nói "hệ số ép về
+    # 1,000", nhưng anh Hùng đọc ra "đọc đều một nhịp" — thứ mục đó KHÔNG làm,
+    # vì nó vẫn chạy 4c `doc_nhanh_vua_khung` (mục 9o dưới đây ĐẾM: mục 2 gọi
+    # 4c, mục 3 gọi 0 lần). Anh ấy chọn mục 2 rồi kêu *"nó CHỈNH TỐC ĐỘ GIỌNG
+    # ĐỌC"* — đúng, và cái đẩy anh ấy vào đó là dòng nhãn.
+    # Chốt: chữ "đều" chỉ được xuất hiện ở mục mà `chuan_khop_cach` trả
+    # `doc_deu=True`. Đây là cổng CÓ RĂNG — trả nhãn cũ về là nó đỏ ngay.
+    hua_deu = [m for m in tg.KHOP_CACH
+               if "đều" in tg.NHAN_KHOP_CACH[m].lower()]
+    sai = [m for m in hua_deu if not tg.chuan_khop_cach(m)[1]]
+    ok(not sai,
+       "9zd nhãn chỉ hứa 'đều' ở mục THẬT SỰ bỏ bước 4c (không dụ nhầm ô)",
+       f"mục hứa 'đều' mà vẫn chạy 4c: {sai}" if sai
+       else f"hứa 'đều': {hua_deu} — đều có doc_deu=True")
+    ok("khuyên dùng" not in tg.NHAN_KHOP_CACH["hinh"].lower(),
+       "9ze mục `hinh` KHÔNG còn tự nhận 'khuyên dùng' (đo ra nó KÉM mục 1 về "
+       "độ đều: CV 20,77/14,26 so với 20,11/14,08)",
+       tg.NHAN_KHOP_CACH["hinh"])
+
     # ---- 9f-9i: KHOÁ CHỐNG TRÙNG ----
     moc_tc = nap_moc("app/core/tg_chay.py", "tc")
     ok("dd=1" not in moc_tc.__dict__["_NGUON_"],
