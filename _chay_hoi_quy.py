@@ -308,7 +308,9 @@ CONG = [
     # xong ≠ tính năng xong"*, repo này đã 4 lần có module lõi nằm chết) · và
     # cả chuỗi chuyền cờ UI -> `xep_mot` -> payload -> job -> lõi.
     # NÂNG mốc, không hạ — mốc là SÀN.
-    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  106),
+    # v2.49.0 thêm MỤC 10 (kéo dài giọng cho đầy khung + lỗ VieNeu trả file 0
+    # giây): 106 -> **156**.
+    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  157),
     # Cổng 90 — NHỊP TIẾN TRÌNH CỦA MÁY ĐỌC GỘP CẢ LOẠT. Số **90** lấy bằng
     # cách ĐỌC chính `CONG` này (max đang là 89), KHÔNG đếm theo trí nhớ: bảng
     # này đã có **52 và 77 trùng số**, mà trùng số thì hai cổng ghi đè

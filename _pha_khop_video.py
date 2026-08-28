@@ -41,6 +41,7 @@ for _f in (sys.stdout, sys.stderr):
 PY = str(REPO / ".venv" / "Scripts" / "python.exe")
 TG = REPO / "app" / "core" / "thay_giong.py"
 TC = REPO / "app" / "core" / "tg_chay.py"
+JB = REPO / "app" / "queue" / "jobs.py"
 
 #: Chạy ĐÚNG các mục liên quan thay vì cả cổng: cả cổng ~3 phút × 9 phép là 27
 #: phút, mà mục 1/2/3/5 (độ to + hộp thoại) không dính bản vá này.
@@ -135,6 +136,68 @@ PHEP = [
      "                         doc_deu=doc_deu,",
      "                         # PHA: quên chuyền doc_deu",
      "9", "hàm xong ≠ tính năng xong — cờ phải đi hết chặng"),
+
+    # ───────── KÉO DÀI GIỌNG CHO ĐẦY KHUNG (MỤC 10) — 11 chốt mới ─────────
+    # LUẬT 3 áp cho cả nhóm: mọi phép dưới đây **GỠ SẠCH** chốt (thay bằng
+    # `if False` / hằng số TẮT / xoá dòng), KHÔNG chỉnh tham số cho nó chặt
+    # hơn — chặt hơn thì cổng xanh ĐÚNG mà bảng đọc thành "không bắt được".
+    ("15. `_keo` không đọc tham số (cờ chết ngay ở lõi)", TG,
+     "        _keo = max(1.0, min(float(keo_dai_giong or 1.0), "
+     "BANG_RATE_AM[-1][0]))",
+     "        _keo = 1.0  # PHA: cờ không tới được bước 4c",
+     "10", "cờ phải đi hết chặng tới máy đọc"),
+
+    ("16. GỠ HẲN nhánh (1b) kéo dài trong `khop_thoi_gian`", TG,
+     "            if keo > 1.0:",
+     "            if False:  # PHA: gỡ nhánh kéo dài",
+     "10", "nhánh 'lọt khung sẵn' chính là chỗ sinh ra khoảng im"),
+
+    ("17. GỠ chốt SÀN `DAI_CAU_TOI_THIEU` (dựng lại DẢI CHẾT)", TG,
+     "        if d_nat < DAI_CAU_TOI_THIEU:",
+     "        if d_nat <= 0:  # PHA: dải chết 0..0,05 s như bản cũ",
+     "10", "sàn phải BẰNG sàn của `_kiem_wav`, không phải 0"),
+
+    ("18. GỠ chốt NGUỒN HỎNG khỏi `cat_le_im_moc`", TG,
+     "    if not _co or probe_duration(src) <= 0:",
+     "    if False:  # PHA: đưa file 0 byte thẳng cho ffmpeg",
+     "10", "file hỏng không được đưa cho ffmpeg (nó NÉM, giết cả video)"),
+
+    ("19. `rate_am_cho` cho phép VƯỢT hệ số xin", TG,
+     "        if muc[0] <= float(he_so) + 1e-9:",
+     "        if muc[0] <= float(he_so) * 2:  # PHA",
+     "10", "đọc chậm quá khung là phải CẮT ĐUÔI = mất chữ"),
+
+    ("20. `chuan_keo_dai` nhận rác/NaN/số âm thành mức kéo", TG,
+     "    if not (v == v) or v <= 1.0 + 1e-9:      # NaN cũng rơi vào đây",
+     "    if False:  # PHA: gỡ chốt rác",
+     "10", "rác/None/NaN -> 1,0 = TẮT"),
+
+    ("21. `thay_giong_mot_video` QUÊN chuyền `keo_dai_giong`", TG,
+     "                         keo_dai_giong=keo_dai_giong,",
+     "                         # PHA: quên chuyền keo_dai_giong",
+     "10", "đúng cửa v2.45.0 đã sót -> anh Hùng bấm Chạy, 4/4 video LỖI"),
+
+    ("22. nối `kd` VÔ ĐIỀU KIỆN (đổi hash MỌI job cũ)", TC,
+     "    if _kd > 1.0:",
+     "    if True:  # PHA: vô điều kiện",
+     "10", "cờ chỉ vào hash KHI THẬT SỰ BẬT"),
+
+    ("23. nối `kd` vào GIỮA chuỗi sig thay vì ĐUÔI", TC,
+     '    sig = f"thaygiong:{d}:{dich_sang}:{voice}:{r}"',
+     '    sig = f"thaygiong:{d}:{dich_sang}:{voice}:'
+     '{\'kd=1:\' if keo_dai_giong else \'\'}{r}"',
+     "10", "đuôi nối vào CUỐI, khoá cũ là TIỀN TỐ"),
+
+    ("24. payload ghi khoá `keo_dai_giong` VÔ ĐIỀU KIỆN", TC,
+     '    if kd > 1.0:\n        tt["keo_dai_giong"] = kd',
+     '    if True:  # PHA\n        tt["keo_dai_giong"] = kd',
+     "10", "ô để mặc định thì KHÔNG sinh khoá trong payload"),
+
+    ("25. `jobs._thay_giong` đọc payload THÔ (bỏ `chuan_keo_dai`)", JB,
+     '            keo_dai_giong=tg.chuan_keo_dai('
+     'payload.get("keo_dai_giong")),',
+     '            keo_dai_giong=payload.get("keo_dai_giong"),  # PHA',
+     "10", "payload mang rác được — hệ số bịa nhân vào ĐỘ DÀI TIẾNG"),
 ]
 
 BAT: list[str] = []

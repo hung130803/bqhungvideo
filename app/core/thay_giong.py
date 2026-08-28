@@ -369,11 +369,29 @@ def do_meo(path: str | Path) -> dict:
     return {"dinh": dinh, "cham_tran": cham}
 
 
+#: SÀN ĐỘ DÀI MỘT CÂU DÙNG ĐƯỢC (giây) — **MỘT NGUỒN DUY NHẤT**.
+#:
+#: `_kiem_wav` NÉM khi file ngắn hơn số này, nên MỌI cửa NHẬN file câu phải
+#: loại ở ĐÚNG con số này. Hai ngưỡng lệch nhau là đẻ ra một **DẢI CHẾT**, và
+#: dải chết đó đã giết cả video thật:
+#:   · `giong_vieneu._dat_file` / `_ep_khung` bỏ câu khi `<= 0,02 s` (v2.47.0)
+#:   · `khop_thoi_gian` bỏ câu khi `<= 0` rồi lại đòi `>= 0,05 s` ở `_kiem_wav`
+#: -> câu dài **0,021..0,049 s** lọt cả hai chốt trên, `ok[i]` vẫn True, rồi
+#: `_kiem_wav` NÉM giữa vòng lặp = **MẤT CẢ VIDEO** chứ không mất một câu.
+#: Đo được (quét dải, ffmpeg thật): 0,000 s -> bỏ đúng · **0,005 / 0,010 /
+#: 0,020 / 0,030 / 0,049 s -> NÉM** · 0,050 s trở lên -> chạy bình thường.
+DAI_CAU_TOI_THIEU = 0.05
+
+
 def _kiem_wav(path: str | Path, cho_phep_im: bool = False,
-              toi_thieu_giay: float = 0.05) -> float:
+              toi_thieu_giay: float = DAI_CAU_TOI_THIEU) -> float:
     """KIỂM file audio vừa ghi: có thật + đủ dài + CÓ TIẾNG. Trả độ dài.
 
     Đây là lá chắn cho bẫy "ffmpeg trả mã 0 mà file 0 KiB / RMS 0".
+
+    Mặc định `toi_thieu_giay` LẤY TỪ `DAI_CAU_TOI_THIEU` chứ không gõ lại số —
+    xem khối ghi chú ở hằng số đó cho lý do (hai bản sao là hai chỗ để lệch
+    nhau, và lần lệch trước đã giết cả video).
     """
     p = Path(path)
     if not p.exists():
@@ -2596,6 +2614,21 @@ def cat_le_im_moc(src: str | Path, dst: str | Path,
     kiến là dời mốc của một phép cắt KHÔNG XẢY RA).
     """
     src, dst = Path(src), Path(dst)
+    # ═══ NGUỒN HỎNG -> KHÔNG ĐƯA CHO ffmpeg, TRẢ (0,0) ═══
+    # `_ffmpeg` NÉM khi mã thoát khác 0. File 0 byte / không giải mã được làm
+    # ffmpeg thoát lỗi ("Output file does not contain any stream"), nên MỘT câu
+    # hỏng giết CẢ VIDEO ngay ở bước 4a — đo được: `RuntimeError: ffmpeg lỗi
+    # khi cắt lề im b.wav (mã thoát 3199971767)`. Máy đọc có thể trả `ok[i]`
+    # True cho một file như thế (đã xảy ra thật với VieNeu), nên chốt phải nằm
+    # Ở ĐÂY chứ không trông vào `ok`.
+    # Trả `(0.0, 0.0)` = "không cắt được gì"; `cat_le_loat` đọc số đó rồi GIỮ
+    # NGUYÊN đường dẫn cũ và đếm câu hỏng — cấm trỏ vào file chưa từng ghi ra.
+    try:
+        _co = src.exists() and src.stat().st_size >= 1024
+    except OSError:
+        _co = False
+    if not _co or probe_duration(src) <= 0:
+        return 0.0, 0.0
     dau, cuoi, tong = do_le_im(src, nguong_db)
     a = max(0.0, dau - GIU_DAU)
     b = max(a + 0.01, tong - max(0.0, cuoi - GIU_CUOI))
@@ -2657,12 +2690,20 @@ def cat_le_loat(files: list[str], ok: list[bool], out_dir: str | Path,
     truoc_tong = 0.0
     sau_tong = 0.0
     n = 0
+    so_hong = 0
     for i, f in enumerate(files):
         if i >= len(ok) or not ok[i] or not f or not Path(f).exists():
             continue
         d0 = probe_duration(f)
         dst = out_dir / f"{tien_to}_{i:04d}.wav"
         d1, cat_dau = cat_le_im_moc(f, dst)
+        # `d1 <= 0` = nguồn hỏng, `cat_le_im_moc` KHÔNG ghi ra file nào. Trỏ
+        # `ra[i]` vào đó là đưa một đường dẫn KHÔNG TỒN TẠI cho bước sau; giữ
+        # nguyên bản cũ thì mọi bước sau tự bỏ câu đó theo chốt độ dài của
+        # chúng. ĐẾM lại — câu mất tiếng là số CẤM GIẤU.
+        if d1 <= 0.0:
+            so_hong += 1
+            continue
         ra[i] = str(dst)
         if moc_tu is not None and i < len(moc_tu):
             moc_tu[i] = doi_moc_tu(moc_tu[i], cat_dau, d1)
@@ -2672,6 +2713,9 @@ def cat_le_loat(files: list[str], ok: list[bool], out_dir: str | Path,
         n += 1
     return ra, {
         "so_cau": n,
+        # CÂU MÁY ĐỌC BÁO "ok" MÀ FILE HỎNG — cấm giấu. Trước bản vá, đúng
+        # những câu này làm `_ffmpeg` NÉM và giết cả video.
+        "so_cau_hong": so_hong,
         "giay_cat_tong": round(cat_tong, 2),
         "giay_cat_tb": round(cat_tong / max(1, n), 3),
         "giay_truoc": round(truoc_tong, 2),
@@ -2953,20 +2997,236 @@ RATE_TOI_DA = 50
 RATE_BU = 4
 
 
+# ==================================================================
+# ĐỌC **CHẬM** LẠI CHO ĐẦY KHUNG — nửa ÂM của `rate` (v2.49.0)
+# ==================================================================
+#
+# GỐC RỄ CỦA "ĐƯỢC ĐOẠN RỒI NGHỈ" LÀ MỘT PHÉP TRỪ, KHÔNG PHẢI MỘT THUẬT TOÁN:
+#     im giữa câu = độ_dài_VIDEO − tổng_TIẾNG − im hai đầu
+# Đo trên lt1 `vnb:` (27-28/08/2026): tiếng THẬT **72,185 s** / video
+# **107,922 s** -> im BẮT BUỘC **33,11%**, app đang ở 32,30%. **Không phép SẮP
+# XẾP nào giảm được tổng im** — bốn hướng trước (gộp câu · gộp lượt TTS · giãn
+# hình không đều · chảy liền + neo) đều chỉ ĐỔI CHỖ, và cả bốn đã bị bác bằng
+# số. Chỉ còn hai đường: **video ngắn lại** (= bỏ chỉnh hình) hoặc **TIẾNG DÀI
+# RA** — đây là đường thứ hai.
+#
+# GIỮ NGUYÊN KHUNG, KÉO DÀI GIỌNG CHO ĐẦY KHUNG -> câu vẫn nằm ĐÚNG mốc gốc
+# -> **lệch tiếng-hình = 0 THEO CẤU TẠO**, đúng cột đã giết 3 hướng trước.
+#
+# HAI ĐƯỜNG THỰC THI, VÀ CHÚNG KHÁC NHAU Ở ĐÚNG MỘT THỨ — MÉO PHỔ:
+#   · **`rate` ÂM** — bảo THẲNG máy đọc đọc chậm. 0 phép xử lý tín hiệu ->
+#     **méo = 0 theo cấu tạo**. Chỉ máy đọc nào thực thi `rate` THẬT mới đi
+#     được đường này (xem `rate_la_doc_that`).
+#   · **KÉO GIÃN** (`rubberband` trong `khop_thoi_gian`) — máy nào cũng chạy
+#     được, nhưng đo được **méo phổ 3,0-3,9 dB**. Đây là ĐƯỜNG LÙI, và nó phải
+#     được NÓI RA trong nhật ký: khoe "méo = 0" trong khi thực tế có méo đúng
+#     là bẫy "phép đo phát chứng nhận" mà cả repo này đang chống.
+
+#: ĐƯỜNG CONG `rate` ÂM — **BẢNG ĐO, KHÔNG PHẢI CÔNG THỨC**.
+#:
+#: `_do_rate_am.py` (edge-tts THẬT, 4 câu tiếng Việt, đo GIÂY NÓI THẬT bằng
+#: `do_le_im` chứ không phải độ dài file):
+#:   −10% -> 1,1106x · −15% -> 1,1763 · −20% -> 1,2507 · −25% -> 1,3329 ·
+#:   −30% -> 1,4295 · −40% -> 1,6680
+#: Lệch giữa các câu chỉ **±0,0008** (1,2500-1,2515 ở −20%) -> tuyến tính,
+#: KHÔNG bão hoà.
+#:
+#: **CẤM TÍNH BẰNG CÔNG THỨC.** Bài học `length_scale` của Piper: đặt 0,45 ra
+#: **0,744x** chứ không phải 1/0,45 — ai tính `ls = khung/độ_dài` thì ép hụt
+#: rất xa rồi tưởng máy đọc hỏng. Nửa DƯƠNG của chính bảng này cũng lệch
+#: −0,4%..−3,0% so với con số ghi trên nhãn.
+BANG_RATE_AM: tuple[tuple[float, str], ...] = (
+    (1.0000, "+0%"),
+    (1.1106, "-10%"),
+    (1.1763, "-15%"),
+    (1.2507, "-20%"),
+    (1.3329, "-25%"),
+    (1.4295, "-30%"),
+    (1.6680, "-40%"),
+)
+
+
+def rate_am_cho(he_so: float) -> tuple[float, str]:
+    """Hệ số kéo dài mong muốn -> `(hệ_số_ĐO_ĐƯỢC, chuỗi rate)`. Hàm THUẦN.
+
+    Lấy mức ĐO ĐƯỢC lớn nhất mà **KHÔNG VƯỢT** `he_so` — thà kéo hụt một chút
+    rồi để `khop_thoi_gian` bù nốt, còn hơn đọc chậm quá khung rồi phải CẮT
+    ĐUÔI (mất chữ) hoặc ép nhanh lại (méo hai lần).
+    """
+    ra = BANG_RATE_AM[0]
+    for muc in BANG_RATE_AM:
+        if muc[0] <= float(he_so) + 1e-9:
+            ra = muc
+        else:
+            break
+    return ra
+
+
+#: SỐ ĐO CỦA TỪNG MỨC KÉO — **NHÃN UI DỰNG TỪ ĐÂY, KHÔNG GÕ TAY**.
+#:
+#: **NGUỒN LÀ ĐƯỜNG THẬT, KHÔNG PHẢI MÔ PHỎNG (`_do_cham_that.py`,
+#: 28/08/2026).** Bảng cũ lấy từ `_do_doc_cham.py` — phép đó tự co giãn bộ file
+#: giọng đã cache bằng `rubberband`, tức nó đo một đường mã SONG SONG chứ không
+#: đo `doc_nhanh_vua_khung` + `khop_thoi_gian` của app. Đo lại trên đường thật
+#: ra số KHÁC HẲN (mức 1,25: mô phỏng 18,81% · đường thật **11,00%**), nên số
+#: mô phỏng đã bị THAY, không giữ lẫn lộn hai nguồn trong một bảng.
+#:
+#: Cấu hình: **CHÍNH cấu hình anh Hùng** — `vnb:` (giọng nhân bản) · đích `vi`
+#: · tách nhạc · chỉnh hình BẬT · nhấn nhá BẬT. Ghép cặp: MỘT lượt dây chuyền
+#: cho mỗi video rồi tách arm ở đúng chỗ cờ tác động.
+#: Video mốc **lt1** (35 câu, 90,03 s) cho các số dưới đây; video thứ hai
+#: **lt2** (50 câu) ra: im 35,07 -> 22,29 -> 16,18% · quãng 39 -> 11 -> 4 ·
+#: kt/s 24,03 -> 20,20 -> 18,71 · CV 13,85 -> 16,54 -> 16,49%.
+#:
+#: Gõ tay số vào nhãn là đúng bẫy đã sập ở `giong_bang._DUOI[KOKORO]` (nhãn
+#: ghi 250 MB trong khi thứ phải tải là 126,3 MB) — cổng 89 mục 10d quét AST
+#: bắt nhãn phải ĐỌC bảng này chứ không được chứa hằng số.
+#:
+#: Khoá: mức kéo -> {im_pt, quang_05, troi_ms, meo_db, kytu_giay, cv_pt, that}.
+#:   · `troi_ms` là **TRUNG BÌNH** lệch tiếng-hình so arm TẮT (ghép cặp từng
+#:     câu). Số ĐỈNH nằm ở `TROI_DINH_MS` bên dưới — đừng gộp hai thứ.
+#:   · `cv_pt` = TRẢI tốc độ đọc. **NÓ TĂNG khi kéo** (13,85-15,87 -> 16,49-
+#:     19,93) — kéo chậm chữa được "được đoạn rồi nghỉ" nhưng làm "lúc nhanh
+#:     lúc chậm" XẤU ĐI. Cả hai đều là lời anh Hùng kêu, nên nhãn phải nói CẢ
+#:     HAI, không được khoe một nửa.
+#:   · `that = False` -> mức đó **CHƯA đo trên đường thật**, số còn là của mô
+#:     phỏng. Nhãn phải nói ra.
+SO_DO_KEO_DAI: dict = {
+    1.00: {"im_pt": 29.01, "quang_05": 26, "troi_ms": 0.0, "meo_db": 0.000,
+           "kytu_giay": 23.61, "cv_pt": 15.87, "that": True},
+    1.15: {"im_pt": 16.73, "quang_05": 10, "troi_ms": 2.3, "meo_db": 3.114,
+           "kytu_giay": 19.78, "cv_pt": 18.44, "that": True},
+    1.25: {"im_pt": 11.00, "quang_05": 2, "troi_ms": 12.0, "meo_db": 3.319,
+           "kytu_giay": 19.02, "cv_pt": 19.93, "that": True},
+    # CHƯA ĐO trên đường thật — số dưới đây còn là của phép MÔ PHỎNG
+    # `_do_doc_cham.py`, và mô phỏng đã lệch 7,8 điểm % ở mức 1,25.
+    1.40: {"im_pt": 15.73, "quang_05": 6, "troi_ms": 17.8, "meo_db": 3.530,
+           "kytu_giay": 0.0, "cv_pt": 0.0, "that": False},
+}
+
+#: TRÔI **ĐỈNH** (ms) — tách riêng khỏi `troi_ms` (trung bình) vì một con số
+#: đỉnh lẻ loi làm người đọc tưởng cả loạt đều thế.
+#: Đo 170 phép so từng câu (2 video × 2 máy đọc × 2 mức): **169 câu <= 40 ms**,
+#: đúng **1 câu** vọt lên **282,3 ms** (lt1 · `vnb:` · mức 1,25 · câu #33 — lề
+#: im đầu câu 44,6 -> 327,0 ms sau khi VieNeu đọc lại ở `rate -15%`). Chưa
+#: truy ra, và **cấm giấu**: nó là 0,6% số câu nhưng nếu rơi vào câu quan
+#: trọng thì tai nghe ra.
+TROI_DINH_MS: dict = {1.00: 0.0, 1.15: 21.2, 1.25: 282.3, 1.40: 0.0}
+
+#: MỨC KHUYÊN THỬ TRƯỚC — **chọn theo SỐ, không theo con số đẹp.**
+#: Giọng nhân bản đọc **23,61-24,03 ký tự/giây**, edge-tts (giọng máy, nhịp
+#: "tự nhiên" của tiếng Việt trong chính app này) đọc **20,63-20,70**. Kéo
+#: **1,15** đưa clone về **19,78-20,20** = ĐÚNG nhịp edge-tts; kéo **1,25** đưa
+#: về **18,71-19,02** = **CHẬM HƠN cả edge**, tức bắt đầu có nguy cơ "lê thê"
+#: mà chưa tai nào xác nhận. 1,15 cũng là mức làm TRẢI tốc độ đọc xấu đi ÍT
+#: hơn (CV +2,57 điểm so với +4,06 của mức 1,25 trên lt1).
+#: Đổi lại, 1,25 cắt khoảng im sâu hơn hẳn (11,00% so với 16,73%) — nên đây là
+#: LỜI KHUYÊN, không phải khoá cửa: anh Hùng nghe rồi tự chọn.
+MUC_KHUYEN_KEO_DAI: float = 1.15
+
+#: Mức chọn được trong UI. `1.0` LUÔN đứng đầu = TẮT = mặc định.
+MUC_KEO_DAI: tuple[float, ...] = tuple(sorted(SO_DO_KEO_DAI))
+
+
+def chuan_keo_dai(muc) -> float:
+    """Chuẩn hoá mức kéo dài — **CỬA DUY NHẤT**, mọi đường vào phải qua đây.
+
+    Rác / `None` / dưới 1,0 -> **1,0 = TẮT**; trên trần bảng đo -> kẹp về trần.
+    Kẹp TRƯỚC KHI BĂM là bắt buộc: `0.0`, `None`, `0.999` và `1.0` đều là "để
+    mặc định", băm giá trị THÔ là đẻ job chạy lại cho một thay đổi KHÔNG TỒN
+    TẠI — đúng bài học `chuan_muc_mo` (cổng 56e) và `chuan_muc_db` (v2.42.0).
+    """
+    try:
+        v = float(muc)
+    except (TypeError, ValueError):
+        return 1.0
+    if not (v == v) or v <= 1.0 + 1e-9:      # NaN cũng rơi vào đây
+        return 1.0
+    return round(min(v, float(MUC_KEO_DAI[-1])), 2)
+
+
+def nhan_keo_dai(muc: float) -> str:
+    """Nhãn tiếng Việt cho một mức — **DỰNG TỪ `SO_DO_KEO_DAI`**, không gõ tay.
+
+    Nhãn phải nói SỐ ĐO chứ không nói lời hứa, và phải nói **CẢ HAI CHIỀU**:
+    kéo chậm làm khoảng im nhỏ đi (*"được đoạn rồi nghỉ"*) nhưng làm TRẢI tốc
+    độ đọc XẤU ĐI (*"lúc nhanh lúc chậm"*) — anh Hùng kêu cả hai. Khoe một nửa
+    là đúng thứ đã đẩy anh ấy vào ô sai một lần (nhãn `hinh` hứa "tiếng đều").
+    """
+    m = chuan_keo_dai(muc)
+    d = SO_DO_KEO_DAI.get(m) or SO_DO_KEO_DAI[1.00]
+    if m <= 1.0:
+        return (f"Không kéo — giữ nguyên như hiện nay (im giữa câu "
+                f"{d['im_pt']:.2f}%, {d['quang_05']} quãng nghỉ, đọc "
+                f"{d['kytu_giay']:.2f} ký tự/giây)").replace(".", ",")
+    if not d.get("that"):
+        return (f"Kéo tối đa {m:.2f}x — CHƯA ĐO trên đường thật (số mô phỏng: "
+                f"im giữa câu {d['im_pt']:.2f}%, {d['quang_05']} quãng nghỉ)"
+                ).replace(".", ",")
+    them = (" — khuyên thử trước" if abs(m - MUC_KHUYEN_KEO_DAI) < 1e-9
+            else "")
+    return (f"Kéo tối đa {m:.2f}x{them} — im giữa câu còn {d['im_pt']:.2f}%, "
+            f"{d['quang_05']} quãng nghỉ; đọc chậm lại còn "
+            f"{d['kytu_giay']:.2f} ký tự/giây, trải tốc độ đọc XẤU ĐI "
+            f"({SO_DO_KEO_DAI[1.00]['cv_pt']:.2f}% -> {d['cv_pt']:.2f}%)"
+            ).replace(".", ",")
+
+
+#: Nguồn giọng THỰC THI `rate` bằng chính máy đọc (méo = 0 theo cấu tạo).
+#:
+#: **edge-tts** nhận `rate` như một tham số của mô hình — đó là nguồn của cả
+#: bảng `BANG_RATE_AM` ở trên.
+#: **Mọi nguồn còn lại đi ĐƯỜNG LÙI, và đây là lý do đích danh từng cái:**
+#:   · `vn:` / `vnb:` (VieNeu) — `giong_vieneu._dat_file` quy `rate` thành
+#:     `_tempo_tu_rate()` rồi gọi `_ep_khung` = **`rubberband` HẬU KỲ**. Chạy
+#:     đúng hướng (âm -> chậm lại) nhưng CÓ MÉO.
+#:   · `kk:` (Kokoro) · `el:` (ElevenLabs) — KHÔNG có tham số `rate` (mục cổng
+#:     67 đã ghi thẳng cho ElevenLabs).
+#:   · `piper:` — có `length_scale` nhưng BÃO HOÀ ở ~0,69x và **KHÔNG tỉ lệ
+#:     thuận** (cổng 64); nửa ÂM của nó CHƯA AI ĐO -> không nhận bừa.
+#: Nói cách khác: hàm này trả lời *"nhật ký được phép ghi méo = 0 không"*, chứ
+#: không phải *"có kéo dài được không"* (kéo được hết, chỉ khác cái giá).
+RATE_AM_NGUON_DOC_THAT = ("edge",)
+
+
+def rate_la_doc_that(voice: str) -> bool:
+    """Máy đọc của `voice` có thực thi `rate` THẬT không (méo = 0)?
+
+    Sai thì vẫn kéo dài được — chỉ là phải đi `rubberband` và **PHẢI NÓI RA**.
+    """
+    from app.core import giong_bang
+    return giong_bang.nguon(str(voice or "")) in RATE_AM_NGUON_DOC_THAT
+
+
 def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
                         ok: list[bool], tong: float, out_dir: str | Path,
                         dich_sang: str = "en", voice: str = "",
                         nguong: float = NGUONG_DOC_NHANH,
                         moc_tu: Optional[list] = None,
                         nhan_nha: Optional[bool] = None,
+                        keo_dai_toi_da: float = 1.0,
                         on_progress: Optional[Callable[[float, str], None]] = None,
                         ) -> dict:
-    """Câu nào vẫn dài quá khung -> ĐỌC LẠI bằng chính giọng đó, NHANH HƠN.
+    """Câu lệch khung -> ĐỌC LẠI bằng CHÍNH giọng đó: dài quá thì NHANH hơn,
+    ngắn quá thì **CHẬM hơn** (`keo_dai_toi_da > 1.0`).
 
-    Chỉ NHẬN bản đọc nhanh khi nó thật sự NGẮN HƠN bản cũ (edge-tts có lúc trả
-    file dài hơn — nhận bừa là tự làm hỏng, cùng luật với bước rút gọn).
+    Chỉ NHẬN bản đọc lại khi nó thật sự đi ĐÚNG HƯỚNG so với bản cũ (edge-tts
+    có lúc trả file dài hơn cả bản chưa ép — nhận bừa là tự làm hỏng, cùng luật
+    với bước rút gọn). Hai chiều dùng CHUNG một chốt đối xứng.
 
-    Trả {files, ok, so_doc_lai, can_truoc, can_sau, rate_max}.
+    **`keo_dai_toi_da` — NỬA ÂM, v2.49.0.** Đây là CỬA ĐỌC-LẠI DUY NHẤT của
+    file này; nối hướng "đọc chậm" vào đây chứ KHÔNG đẻ cửa thứ hai, nên số chỗ
+    gọi `dubbing._synth_all_words` vẫn đúng **3** (cổng 63 canh con số đó, và
+    chốt báo động ấy đã bắt được một lối gọi thứ tư thật ở v2.31.0).
+    Đi qua đây thì mỗi máy đọc tự quyết cách thực thi `rate`:
+      · edge-tts -> mô hình ĐỌC CHẬM THẬT, **méo = 0** (bảng `BANG_RATE_AM`);
+      · VieNeu (`vn:`/`vnb:`) -> `_ep_khung` = **`rubberband` hậu kỳ**, có méo;
+      · ElevenLabs / Kokoro -> KHÔNG có `rate` -> bản đọc lại KHÔNG dài hơn ->
+        chốt "chỉ nhận khi đi đúng hướng" tự loại, phần thiếu để `khop_thoi_
+        gian` kéo giãn.
+    Xem `rate_la_doc_that` cho chỗ nhật ký đọc ra để KHÔNG khoe méo = 0 nhầm.
+
+    Trả {files, ok, so_doc_lai, can_truoc, can_sau, rate_max, ...}.
     """
     import asyncio
     from app.core import dubbing
@@ -2990,23 +3250,63 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
             ra.append(max(1.0, d / kh) if kh > 0 and d > 0 else 1.0)
         return ra
 
+    def _can_keo() -> list[float]:
+        """Hệ số câu CẦN KÉO DÀI ra cho đầy khung (>= 1,0). Ngược chiều `_can`.
+
+        `_can` kẹp sàn ở 1,0 nên nó **không nhìn thấy câu NGẮN** — đúng chỗ mù
+        đã để 33% thời lượng video thành khoảng im mà mọi thước cũ vẫn xanh.
+        """
+        ra = []
+        for i in range(len(cau)):
+            if i >= len(files) or not ok[i] or not Path(files[i]).exists():
+                ra.append(1.0)
+                continue
+            d = probe_duration(files[i])
+            kh = khung_cho_phep(cau, i, tong)
+            ra.append(max(1.0, kh / d) if kh > 0 and d > 0 else 1.0)
+        return ra
+
+    keo = max(1.0, float(keo_dai_toi_da or 1.0))
     truoc = _can()
     xau = [i for i, t in enumerate(truoc) if t > nguong]
-    if not xau:
+    #: CÂU NGẮN QUÁ KHUNG — chỉ dò khi thật sự bật kéo dài. `keo <= 1.0` ->
+    #: danh sách RỖNG -> hàm chạy Y HỆT mọi bản trước, không một phép gọi mạng
+    #: nào thêm (bất biến "mặc định TẮT = giống bản cũ từng ký tự").
+    keo_can = _can_keo() if keo > 1.0 else [1.0] * len(cau)
+    ngan = ([i for i, t in enumerate(keo_can)
+             if t > nguong and i not in set(xau)] if keo > 1.0 else [])
+    if not xau and not ngan:
         return {"files": files, "ok": ok, "so_doc_lai": 0, "moc_tu": moc_tu,
                 "can_truoc": [round(t, 3) for t in truoc],
-                "can_sau": [round(t, 3) for t in truoc], "rate_max": 0}
+                "can_sau": [round(t, 3) for t in truoc], "rate_max": 0,
+                "so_doc_cham": 0, "rate_am_min": 0, "so_cau_ngan": 0}
 
     if on_progress:
-        on_progress(0.2, f"Đọc nhanh lại {len(xau)} câu cho vừa khung...")
+        _m = []
+        if xau:
+            _m.append(f"đọc nhanh lại {len(xau)} câu")
+        if ngan:
+            _m.append(f"đọc CHẬM lại {len(ngan)} câu cho đầy khung")
+        on_progress(0.2, (" · ".join(_m) + "...").capitalize())
     v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
-    thu = [texts[i] if i < len(texts) else "" for i in xau]
+    #: MỘT LƯỢT GỌI cho CẢ HAI chiều — chia hai lượt là tốn gấp đôi phí nạp
+    #: model (Kokoro đo được 60,5 s cho lượt đầu, VieNeu ~9 s nạp + ~6 s nạp
+    #: mẫu) mà không được gì.
+    xau_va_ngan = list(xau) + list(ngan)
+    thu = [texts[i] if i < len(texts) else "" for i in xau_va_ngan]
     rates, paths = [], []
-    for j, i in enumerate(xau):
+    for i in xau:
         r = min(RATE_TOI_DA,
                 max(1, int(round((truoc[i] - 1.0) * 100)) + RATE_BU))
         rates.append(f"+{r}%")
         paths.append(str(out_dir / f"nhanh_{i:04d}.mp3"))
+    for i in ngan:
+        # TRA BẢNG ĐO, KHÔNG TÍNH BẰNG CÔNG THỨC — xem `BANG_RATE_AM`.
+        # `min(keo, ...)` = TRẦN user chọn; `rate_am_cho` lại lấy mức ĐO ĐƯỢC
+        # lớn nhất KHÔNG vượt số đó, nên không bao giờ đọc chậm quá khung.
+        _hs, _r = rate_am_cho(min(keo, keo_can[i]))
+        rates.append(_r)
+        paths.append(str(out_dir / f"cham_{i:04d}.mp3"))
     # `rate` chỉ đổi TỐC ĐỌC của model; WordBoundary server trả theo audio
     # THẬT (đã áp rate) nên mốc từng-từ vẫn đúng, KHÔNG phải bù lại.
     # `el_lui=False` — cùng lý do ở `rut_gon_vua_khung`: giữ bản cũ chứ không
@@ -3025,26 +3325,48 @@ def doc_nhanh_vua_khung(cau: list[dict], texts: list[str], files: list[str],
     sach, _le = cat_le_loat(paths, list(ok2), out_dir / "sach", moc_tu=mt2)
 
     so = 0
-    for j, i in enumerate(xau):
+    so_cham = 0
+    for j, i in enumerate(xau_va_ngan):
         if not ok2[j] or not Path(sach[j]).exists():
             continue
         d_cu = probe_duration(files[i])
         d_moi = probe_duration(sach[j])
-        if d_moi <= 0.05 or d_moi >= d_cu - 0.02:
-            continue                       # không ngắn hơn -> GIỮ bản cũ
+        if d_moi < DAI_CAU_TOI_THIEU:
+            continue
+        cham = j >= len(xau)
+        if cham:
+            # CHIỀU CHẬM: chỉ nhận khi thật sự DÀI HƠN. Máy đọc không có `rate`
+            # (ElevenLabs · Kokoro) trả đúng file cũ -> rơi vào đây -> GIỮ bản
+            # cũ, và phần thiếu để `khop_thoi_gian` kéo giãn. Đó là lý do
+            # KHÔNG cần hỏi trước "máy này có rate không": chốt ĐO THẬT.
+            if d_moi <= d_cu + 0.02:
+                continue
+            so_cham += 1
+        else:
+            if d_moi >= d_cu - 0.02:
+                continue               # không ngắn hơn -> GIỮ bản cũ
+            so += 1
         files[i] = sach[j]
         moc_tu[i] = mt2[j]
         ok[i] = True
-        so += 1
 
     sau = _can()
+    _duong = [int(r.strip("+%")) for r in rates if r.startswith("+")]
+    _am = [int(r.rstrip("%")) for r in rates if r.startswith("-")]
     return {
         "files": files, "ok": ok, "so_doc_lai": so, "moc_tu": moc_tu,
         "can_truoc": [round(t, 3) for t in truoc],
         "can_sau": [round(t, 3) for t in sau],
         "can_max_truoc": round(max(truoc or [1.0]), 3),
         "can_max_sau": round(max(sau or [1.0]), 3),
-        "rate_max": max(int(r.strip("+%")) for r in rates) if rates else 0,
+        # `rate_max` GIỮ NGUYÊN NGHĨA CŨ (chỉ nửa DƯƠNG) — đổi nghĩa một khoá
+        # đã có là làm mọi bảng số cũ đọc sai mà không ai biết.
+        "rate_max": max(_duong) if _duong else 0,
+        # NỬA ÂM, khoá MỚI: số câu đọc chậm lại và mức chậm sâu nhất.
+        "so_cau_ngan": len(ngan),
+        "so_doc_cham": so_cham,
+        "rate_am_min": min(_am) if _am else 0,
+        "keo_dai_toi_da": round(keo, 3),
     }
 
 
@@ -3241,6 +3563,7 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
                    tempo_toi_da: float = TEMPO_TOI_DA,
                    moc_tu: Optional[list] = None,
                    he_so_hinh: float = 1.0,
+                   keo_dai_toi_da: float = 1.0,
                    on_progress: Optional[Callable[[float, str], None]] = None,
                    ) -> dict:
     """Đặt từng câu đã đọc vào ĐÚNG mốc gốc, co giãn khi cần.
@@ -3279,6 +3602,30 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     người nói GỐC, nên chỗ đó là "chữ chạy mà không ai nói". Đo trên chính
     video anh Hùng chê: **tổng 22,52 s / 132,3 s**, câu tệ nhất **6.599 ms**
     (khung 11,89 s mà tiếng chỉ 5,29 s).
+
+    **`keo_dai_toi_da` — KÉO DÀI GIỌNG CHO ĐẦY KHUNG (v2.49.0).** `1.0` =
+    MẶC ĐỊNH, chạy y hệt mọi bản trước (không một phép nhân nào đổi số).
+
+    NỐI Ở NHÁNH **(1)** chứ không ở tầng khác, và đó là quyết định có LÝ DO
+    ĐO ĐƯỢC: nhánh "lọt khung sẵn -> tempo 1.0" CHÍNH LÀ chỗ sinh ra khoảng
+    im. Nối tại đây được MIỄN PHÍ hai bất biến đắt nhất của hàm:
+      · **0 ms CHỒNG LẤN** — trần kéo là `cho_phep`, đúng con số nhánh (2) đã
+        được phép chiếm, và vòng `while` vẫn ĐO LẠI trên file đã ghi rồi cắt;
+      · **MỐC TỪNG CHỮ tự co giãn đúng** — `ty_le = d_fin / d_nat` đo thật, nên
+        chữ giãn theo tiếng mà không phải sửa một dòng nào ở đường mốc.
+    Nối ở tầng khác là phải tự lo CẢ HAI.
+
+    **KÉO TỚI `cho_phep`, KHÔNG PHẢI `khung`** — `cho_phep` là chỗ nhánh (2)
+    vốn đã cho câu tràn chiếm (tới trước câu kế `CHUA_TRUOC_CAU_KE` giây).
+    Dừng ở `khung` thì khoảng im GIỮA `b` và câu kế còn nguyên, tức chữa được
+    một nửa. Mốc BẮT ĐẦU nói KHÔNG ĐỔI nên **lệch tiếng-hình = 0 theo cấu
+    tạo** — đo được **7,3-7,7 ms** (lt1) và **5,8-10,3 ms** (EDGE).
+
+    **CÁI GIÁ, NÓI THẲNG: đây là `rubberband`, tức CÓ MÉO PHỔ (đo 3,0-3,9 dB).**
+    Đường không méo là `rate` ÂM ở bước 4c (`doc_nhanh_vua_khung`); hàm này là
+    chỗ gánh PHẦN DƯ của bước đó, và là đường DUY NHẤT cho máy đọc không có
+    `rate`. `so_cau_keo_dai` + `keo_dai_max` trả về để nhật ký nói đúng sự
+    thật — xem `rate_la_doc_that`.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -3294,6 +3641,16 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     temps: list[float] = []
     so_ep = so_muon = so_cat = 0
     bo_qua = 0
+    #: Câu bị bỏ vì FILE NGẮN HƠN SÀN (`DAI_CAU_TOI_THIEU`) và câu bị bỏ vì
+    #: dựng hỏng — ĐẾM RIÊNG, cấm gộp vào `bo_qua`: `bo_qua` gồm cả câu máy đọc
+    #: đã báo hỏng từ trước (chuyện bình thường), còn hai số này là DẤU HIỆU
+    #: HỎNG và phải đọc được ở nhật ký.
+    so_ngan = 0
+    so_loi = 0
+    loi_cau: list[str] = []
+    #: Hệ số KÉO DÀI thật sự áp cho từng câu (chỉ câu nào có kéo). Cột này là
+    #: chỗ nhật ký đọc ra "có méo hay không" — cấm suy từ cờ bật/tắt.
+    keo_cau: list[float] = []
     #: mép an toàn khi cắt: ffmpeg làm tròn theo mẫu, cắt đúng bằng trần thì
     #: file ra có thể dài hơn vài chục micro-giây -> vẫn tính là chồng lấn.
     _MEP = 0.005
@@ -3302,6 +3659,7 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
     # tự nhiên. `k = 1.0` -> chạy y hệt bản cũ (không một phép nhân nào đổi số).
     k = max(1.0, float(he_so_hinh or 1.0))
     tong_ra = tong * k
+    keo = max(1.0, float(keo_dai_toi_da or 1.0))
 
     for i, c in enumerate(cau):
         if i >= len(files) or not ok[i] or not Path(files[i]).exists():
@@ -3318,12 +3676,31 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         cho_phep = min(tran, max(khung, ke - a - CHUA_TRUOC_CAU_KE))
 
         d_nat = probe_duration(files[i])
-        if d_nat <= 0:
+        # ═══ SÀN PHẢI BẰNG SÀN CỦA `_kiem_wav`, KHÔNG PHẢI 0 ═══
+        # Bản cũ bỏ câu khi `d_nat <= 0` rồi lại đòi `>= DAI_CAU_TOI_THIEU` ở
+        # `_kiem_wav(dst)` bên dưới -> **DẢI CHẾT 0 < d < 0,05 s**: câu đó lọt
+        # vào vòng dựng, ffmpeg ghi ra một file cũng ngắn như thế, rồi
+        # `_kiem_wav` NÉM giữa chừng và **giết CẢ VIDEO** thay vì mất một câu.
+        # Đo được (quét dải, ffmpeg thật): NÉM ở 0,005 · 0,010 · 0,020 · 0,030
+        # · 0,049 s; 0,000 và >= 0,050 thì không.
+        if d_nat < DAI_CAU_TOI_THIEU:
             bo_qua += 1
+            if d_nat > 0:
+                so_ngan += 1
+                loi_cau.append(f"#{i}: file chỉ {d_nat:.3f}s (dưới sàn "
+                               f"{DAI_CAU_TOI_THIEU:.2f}s) -> bỏ câu này")
             continue
 
         if d_nat <= khung + 1e-3:
             tempo = 1.0                       # (1) lọt sẵn
+            # (1b) KÉO DÀI CHO ĐẦY KHUNG — xem docstring. `keo <= 1.0` thì
+            # `kx` luôn 1.0 -> `tempo` giữ nguyên 1.0 -> chuỗi filter KHÔNG
+            # mọc thêm một ký tự nào (bất biến "tắt = giống bản cũ").
+            if keo > 1.0:
+                kx = min(keo, max(1.0, cho_phep / max(0.05, d_nat)))
+                if kx > 1.001:
+                    tempo = 1.0 / kx
+                    keo_cau.append(kx)
         elif d_nat <= cho_phep + 1e-3:
             tempo = 1.0                       # (2) mượn đoạn kế, không méo
             so_muon += 1
@@ -3336,28 +3713,46 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         dst = out_dir / f"khop_{i:04d}.wav"
         d_fin = 0.0
         cat_lan = 0
-        # (4) BẤT BIẾN 0 ms: dựng, ĐO LẠI, còn tràn thì cắt — tối đa 2 vòng.
-        while True:
-            af = ["aresample=44100"]
-            if abs(tempo - 1.0) > 1e-3:
-                # `rubberband` (lùi về `atempo` nếu ffmpeg máy không có) —
-                # xem khối số đo ở `_co_gian_chuoi`.
-                af.append(_co_gian_chuoi(tempo))
-            gioi = tran - _MEP
-            if cat_lan or (d_nat / tempo) > gioi:
-                af.append(f"atrim=0:{gioi:.3f}")
-                af.append("asetpts=N/SR/TB")
-                af.append(f"afade=t=out:st={max(0.0, gioi - 0.10):.3f}:d=0.10")
-            _ffmpeg(["-i", files[i], "-af", ",".join(af), "-ac", "2",
-                     "-ar", str(SR_TACH), "-c:a", "pcm_s16le", str(dst)],
-                    f"khớp thời gian câu #{i}")
-            d_fin = _kiem_wav(dst)
-            if a + d_fin <= ke + 1e-4 or cat_lan >= 2:
-                if cat_lan:
-                    so_cat += 1
-                break
-            cat_lan += 1
-            tran = min(tran, ke - a)          # siết lại rồi cắt thật
+        # ═══ LƯỚI AN TOÀN: MỘT CÂU HỎNG KHÔNG ĐƯỢC GIẾT CẢ VIDEO ═══
+        # Chốt sàn ở trên bịt NGUYÊN NHÂN đã biết (file quá ngắn). Khối
+        # `try` này bịt CẢ LỚP BỆNH: bất cứ thứ gì làm `_ffmpeg`/`_kiem_wav`
+        # ném (file hỏng nửa chừng, ổ đầy, filter lỗi) thì mất ĐÚNG câu đó,
+        # phần còn lại của video vẫn ra. Đây đúng luật đã chốt cho bước đọc
+        # ("một câu hỏng không còn làm MẤT GIỌNG cả video", v2.47.0) — bước
+        # KHỚP THỜI GIAN trước nay là cửa duy nhất còn thiếu nó.
+        # **KHÔNG NUỐT IM LẶNG:** đếm vào `so_cau_loi` + ghi lời lỗi vào
+        # `loi_cau`, và mọi lần append đều nằm SAU khối này nên không có
+        # chuyện ghi nửa vời. `thay_giong_video` vẫn ném khi KHÔNG câu nào
+        # khớp được (`if not kh["manh"]`), tức mất cả loạt thì vẫn báo TO.
+        try:
+            # (4) BẤT BIẾN 0 ms: dựng, ĐO LẠI, còn tràn thì cắt — tối đa 2 vòng.
+            while True:
+                af = ["aresample=44100"]
+                if abs(tempo - 1.0) > 1e-3:
+                    # `rubberband` (lùi về `atempo` nếu ffmpeg máy không có) —
+                    # xem khối số đo ở `_co_gian_chuoi`.
+                    af.append(_co_gian_chuoi(tempo))
+                gioi = tran - _MEP
+                if cat_lan or (d_nat / tempo) > gioi:
+                    af.append(f"atrim=0:{gioi:.3f}")
+                    af.append("asetpts=N/SR/TB")
+                    af.append(
+                        f"afade=t=out:st={max(0.0, gioi - 0.10):.3f}:d=0.10")
+                _ffmpeg(["-i", files[i], "-af", ",".join(af), "-ac", "2",
+                         "-ar", str(SR_TACH), "-c:a", "pcm_s16le", str(dst)],
+                        f"khớp thời gian câu #{i}")
+                d_fin = _kiem_wav(dst)
+                if a + d_fin <= ke + 1e-4 or cat_lan >= 2:
+                    if cat_lan:
+                        so_cat += 1
+                    break
+                cat_lan += 1
+                tran = min(tran, ke - a)      # siết lại rồi cắt thật
+        except Exception as e:                # noqa: BLE001
+            bo_qua += 1
+            so_loi += 1
+            loi_cau.append(f"#{i}: {type(e).__name__}: {str(e)[:120]}")
+            continue
 
         # MỐC TIẾNG THẬT — ĐO, không suy ra từ chỗ đặt file.
         le_d, le_c, _tg = do_le_im(dst, nguong_db=NGUONG_IM_MOC_DB)
@@ -3411,6 +3806,19 @@ def khop_thoi_gian(cau: list[dict], files: list[str], ok: list[bool],
         "moc_tu": moc_tu_ra,
         "so_cau_co_moc_tu": len(moc_tu_ra),
         "so_cau": len(manh), "bo_qua": bo_qua,
+        # HAI SỐ CẤM GIẤU (v2.49.0): trước bản vá, mỗi câu rơi vào một trong
+        # hai cột này đều làm CẢ VIDEO nổ giữa chừng thay vì mất một câu.
+        "so_cau_qua_ngan": so_ngan,
+        "so_cau_loi": so_loi,
+        "loi_cau": loi_cau[:20],
+        # KÉO DÀI GIỌNG (v2.49.0) — ba số này là chỗ nhật ký đọc ra CÓ MÉO hay
+        # không. Cấm suy từ cờ bật/tắt: bật cờ mà 4c đã kéo đủ bằng `rate` thì
+        # ở đây `so_cau_keo_dai` = 0 và méo = 0 thật.
+        "keo_dai_toi_da": round(keo, 3),
+        "so_cau_keo_dai": len(keo_cau),
+        "keo_dai_max": round(max(keo_cau), 3) if keo_cau else 1.0,
+        "keo_dai_tb": (round(sum(keo_cau) / len(keo_cau), 3)
+                       if keo_cau else 1.0),
         "lech_dau_ms_tb": _tb([abs(x) for x in lech_dau]),
         "lech_dau_ms_max": round(max([abs(x) for x in lech_dau] or [0]), 1),
         # CHỮ CHẠY MÀ KHÔNG CÓ TIẾNG — cấm giấu, đây là lỗi anh Hùng nghe ra
@@ -5330,6 +5738,7 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      muc_nen_db: float = 0.0,
                      muc_giong_db: float = 0.0,
                      nhan_nha: bool = False,
+                     keo_dai_giong: float = 1.0,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
@@ -5394,6 +5803,15 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
     ở CẢ HAI video**, phần dư quay lại ép tiếng. Trần mới là chỗ bị chặn, không
     phải thuật toán. MẶC ĐỊNH TẮT: đổi mặc định là đổi tiếng của MỌI video trên
     200-300 kênh đang chạy sản xuất, và **chưa ai NGHE bằng tai** file nào.
+
+    `keo_dai_giong` -> **KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU (v2.49.0)**. `1.0` =
+    MẶC ĐỊNH = tắt = chạy y hệt mọi bản trước. Đây là câu trả lời cho lời kêu
+    *"nó nói còn KHÔNG LIÊN TIẾP, cứ ĐƯỢC ĐOẠN RỒI NGHỈ"*, và nó là hướng THỨ
+    NĂM sau khi bốn hướng "đổi chỗ khoảng im" đều bị bác bằng số — xem khối
+    ghi chú ở `BANG_RATE_AM` cho phép trừ chứng minh vì sao chỉ còn đường này.
+    Chuỗi: 4c `doc_nhanh_vua_khung` ĐỌC CHẬM lại bằng `rate` âm (méo = 0 với
+    máy đọc thực thi `rate` thật) -> bước 5 `khop_thoi_gian` KÉO GIÃN nốt phần
+    dư (có méo). Nhật ký nói ĐÚNG đường nào đã đi: xem `kq["keo_dai"]`.
 
     `viet_chu=True` (mặc định) + `che_chu=True` -> sau khi che dòng chữ cháy
     sẵn thì VIẾT LẠI bản dịch vào đúng dải đó, mốc lấy từ CHÍNH GIỌNG vừa
@@ -5498,6 +5916,11 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # xong còn tệ hơn lúc chưa chữa. Cùng luật "chốt tại đây, không bắt
         # người gọi tự nhớ" của khối bù giọng gốc bên dưới.
         _deu = bool(doc_deu) and bool(hinh_theo_giong)
+        # KÉO DÀI GIỌNG — kẹp trần NGAY TẠI ĐÂY, không bắt người gọi tự nhớ
+        # (cùng luật "chốt tại đây" của `_deu` ngay trên). Trần lấy từ mức sâu
+        # nhất của BẢNG ĐO `BANG_RATE_AM`; trên mức đó chưa ai đo nên không
+        # nhận, đúng luật `RATE_TOI_DA` của nửa dương.
+        _keo = max(1.0, min(float(keo_dai_giong or 1.0), BANG_RATE_AM[-1][0]))
         if _deu:
             # LỜI NHẮN PHẢI CHỨA CỤM "đọc nhanh": `tg_so.buoc_tu_tien_trinh`
             # tra bước bằng CHUỖI CON, khoá `("đọc nhanh", 7)` cho đúng bước 7
@@ -5517,6 +5940,9 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                                      tong, tam_goc / "docnhanh", dich_sang,
                                      tts["voice"], moc_tu=rg.get("moc_tu"),
                                      nhan_nha=nhan_nha,
+                                     # ĐỌC CHẬM cho câu NGẮN — cùng một cửa,
+                                     # cùng một lượt gọi máy đọc.
+                                     keo_dai_toi_da=_keo,
                                      on_progress=lambda p, m: prog(0.79 + 0.01 * p, m))
             kq["doc_nhanh"] = {k: v for k, v in dn.items()
                                if k not in ("files", "ok", "can_truoc",
@@ -5544,8 +5970,46 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         kh = khop_thoi_gian(cau, dn["files"], dn["ok"], tong,
                             tam_goc / "khop", moc_tu=dn.get("moc_tu"),
                             he_so_hinh=hs,
+                            # PHẦN DƯ của bước 4c — máy đọc không có `rate`
+                            # thì đây là đường DUY NHẤT, và nó CÓ MÉO.
+                            keo_dai_toi_da=_keo,
                             on_progress=lambda p, m: prog(0.80 + 0.10 * p, m))
         kq["khop"] = {k: v for k, v in kh.items() if k != "manh"}
+        # ═══ NHẬT KÝ PHẢI NÓI ĐÚNG ĐƯỜNG NÀO ĐÃ ĐI ═══
+        # **BẢN ĐẦU KHOE SAI, VÀ PHÉP ĐO TRÊN ĐƯỜNG THẬT ĐÃ BÁC (28/08/2026).**
+        # Nó ghi *"rate của máy đọc (méo = 0)"* cho mọi lượt dùng edge-tts, dựa
+        # trên một suy luận nghe hợp lý: edge-tts thực thi `rate` thật nên
+        # không có phép cắt-dán nào. Đo `_do_cham_that.py` trên đúng đường app
+        # đi thì edge-tts ra **méo phổ 3,542-3,801 dB**, tức KHÔNG hề bằng 0.
+        # LÝ DO, và nó là tính chất của KIẾN TRÚC chứ không phải một lỗi:
+        #   · bước 4c chỉ đọc chậm câu nào cần TỚI một mức CÓ TRONG `BANG_RATE_
+        #     AM` (thấp nhất 1,1106x) — đo được **2/3** và **4/12** câu ngắn;
+        #   · bước 5 sau đó vẫn kéo giãn **TOÀN BỘ** 35/50 câu bằng `rubberband`
+        #     để lấp nốt phần dư.
+        # Nên `rate` chỉ gánh một PHẦN, và phần lớn méo đến từ bước 5 với CẢ
+        # HAI máy đọc. Khoe "méo = 0" là đúng bẫy "phép đo phát chứng nhận".
+        # Nay `duong` dựng TỪ SỐ ĐO CỦA CHÍNH LƯỢT NÀY, không từ một mệnh đề
+        # tĩnh về máy đọc.
+        _doc_that = rate_la_doc_that(tts["voice"])
+        _n_cham = int(dn.get("so_doc_cham") or 0)
+        _n_gian = int(kh.get("so_cau_keo_dai") or 0)
+        kq["keo_dai"] = {
+            "bat": _keo > 1.0,
+            "muc": round(_keo, 3),
+            "duong": (
+                f"{_n_cham} câu đọc chậm bằng `rate` của máy đọc (méo = 0)"
+                f" · {_n_gian} câu kéo giãn rubberband (CÓ MÉO)"
+                + ("" if _doc_that else
+                   " — máy đọc này KHÔNG thực thi `rate` thật nên phần `rate`"
+                   " cũng là rubberband hậu kỳ")
+                if _keo > 1.0 else "không kéo"),
+            "rate_that": _doc_that,
+            "so_cau_doc_cham": int(dn.get("so_doc_cham") or 0),
+            "so_cau_ngan": int(dn.get("so_cau_ngan") or 0),
+            "rate_am_min": int(dn.get("rate_am_min") or 0),
+            "so_cau_keo_gian": int(kh.get("so_cau_keo_dai") or 0),
+            "keo_gian_max": kh.get("keo_dai_max", 1.0),
+        }
         if not kh["manh"]:
             raise RuntimeError("Không câu nào khớp được thời gian")
         # ĐỘ DÀI ĐẦU RA đổi theo hệ số hình — mọi bước sau (trộn · ghép · kiểm)
@@ -5802,6 +6266,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          muc_nen_db: float = 0.0,
                          muc_giong_db: float = 0.0,
                          nhan_nha: bool = False,
+                         keo_dai_giong: float = 1.0,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -5853,6 +6318,17 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # video LỖI ngay khi anh Hùng bấm Chạy. Đúng cái
                          # khối ghi chú ngay trên đã cảnh báo ba lần.
                          nhan_nha=nhan_nha,
+                         # KÉO DÀI GIỌNG (v2.49.0) — **CỜ THỨ BẢY, VÀ ĐÂY LÀ
+                         # CHỖ ĐÃ NỔ THẬT MỘT LẦN.** v2.45.0 nối `nhan_nha`
+                         # đủ chuỗi từ `thay_giong_video` xuống tới máy đọc
+                         # nhưng SÓT ĐÚNG CỬA NÀY, mà `jobs._thay_giong` gọi
+                         # CỬA NÀY -> `unexpected keyword argument`, **4/4
+                         # video LỖI** ngay khi anh Hùng bấm Chạy. Khối ghi
+                         # chú ngay trên đã cảnh báo đúng thế BA LẦN mà vẫn
+                         # sót. Thêm tham số mới thì bắt buộc đủ 3 phép:
+                         # `inspect.signature` cửa NGOÀI CÙNG · GỌI THẬT bắt
+                         # `TypeError` · CHẠY CỔNG 55.
+                         keo_dai_giong=keo_dai_giong,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r

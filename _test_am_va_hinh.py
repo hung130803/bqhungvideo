@@ -62,6 +62,7 @@ TỰ KIỂM: `_pha_khop_video.py` gỡ từng chốt ra và cổng phải ĐỎ.
 from __future__ import annotations
 
 import ast
+import inspect
 import os
 import shutil
 import subprocess
@@ -892,6 +893,10 @@ def _sin(d: Path, ten: str, giay: float) -> str:
     return str(p)
 
 
+#: SỔ THAM SỐ bước 4c nhận được ở lượt `_chay_that` gần nhất — xem `_4c_gia`.
+_4C_KW: list[dict] = []
+
+
 def _chay_that(tmp: Path, **kw) -> tuple[dict, int]:
     """CHẠY THẬT `thay_giong_video` với 5 bước RA MẠNG bị thay bằng bản giả.
 
@@ -938,6 +943,13 @@ def _chay_that(tmp: Path, **kw) -> tuple[dict, int]:
 
     def _4c_gia(_cau, _texts, files, _ok, *a, **k):
         dem["n"] += 1
+        # GHI SỔ THAM SỐ bước 4c NHẬN ĐƯỢC. MỤC 10 đọc sổ này để chứng minh
+        # `keo_dai_giong` **đi tới được máy đọc**, chứ không dừng ở chữ ký hàm
+        # — bài học "hàm xong ≠ tính năng xong" (v2.45.0 nối đủ chuỗi nhưng
+        # sót cửa NGOÀI CÙNG -> 4/4 video LỖI). Sổ ở MỨC MODULE nên
+        # `_chay_that` giữ NGUYÊN giá trị trả về và MỤC 9 không phải sửa dòng
+        # nào.
+        _4C_KW.append(dict(k))
         f2 = list(files)
         f2[1] = nhanh                      # đúng câu tràn khung, ngắn lại
         return {"files": f2, "ok": [True] * 3, "moc_tu": [[] for _ in f2],
@@ -1202,10 +1214,407 @@ def muc9() -> None:
         dl.deleteLater()
 
 
+def muc10() -> None:
+    """KÉO DÀI GIỌNG CHO ĐẦY KHUNG (v2.49.0) + lỗ VieNeu trả file 0 giây.
+
+    Anh Hùng kêu BA LẦN qua nhiều bản: *"giọng đọc không liền mạch, cứ được
+    đoạn rồi nghỉ"*. Gốc rễ là một PHÉP TRỪ (`im = độ_dài_video − tổng_tiếng`)
+    nên bốn hướng "đổi chỗ khoảng im" đều bị bác bằng số; đường thứ năm là
+    **kéo dài chính TIẾNG cho đầy khung**, và vì câu vẫn nằm ĐÚNG mốc gốc nên
+    lệch tiếng-hình = 0 THEO CẤU TẠO.
+
+    Mục này canh 6 điều, và điều 5 là món nợ CHẶN SẢN XUẤT:
+      1. `chuan_keo_dai` là CỬA DUY NHẤT (rác/None/NaN -> 1,0 = TẮT).
+      2. `rate_am_cho` **không bao giờ VƯỢT** hệ số xin (đọc chậm quá khung là
+         phải cắt đuôi = MẤT CHỮ, hoặc ép nhanh lại = méo HAI LẦN).
+      3. NHÃN dựng TỪ BẢNG SỐ ĐO, không gõ tay một con số nào.
+      4. **CHẠY THẬT** (ffmpeg thật): kéo có ăn, và bất biến **0 ms chồng lấn**
+         + **mốc BẮT ĐẦU NÓI không đổi** vẫn giữ.
+      5. **LỖ VieNeu TRẢ FILE 0 GIÂY** — họ hàng của lỗ đã vá ở v2.47.0 nhưng
+         lọt qua cửa KHÁC: `khop_thoi_gian` bỏ câu khi `d <= 0` rồi lại đòi
+         `>= 0,05 s` ở `_kiem_wav` -> câu dài 0,021..0,049 s lọt cả hai chốt,
+         `_kiem_wav` NÉM giữa vòng lặp và **GIẾT CẢ VIDEO** thay vì mất 1 câu.
+      6. Chuỗi 6 chặng + khoá chống trùng: TẮT -> giống mốc TỪNG KÝ TỰ.
+    """
+    print("\nMỤC 10 — kéo dài giọng cho đầy khung + lỗ file 0 giây")
+    from app.core import tg_chay as TC
+    from app.core import thay_giong as tg
+
+    # ---- 10a: CỬA DUY NHẤT chuẩn hoá mức kéo ----
+    tran = float(tg.MUC_KEO_DAI[-1])
+    bang = {None: 1.0, "rac": 1.0, "": 1.0, 0: 1.0, -5: 1.0, 0.999: 1.0,
+            1.0: 1.0, 1.15: 1.15, 1.153: 1.15, 1.2549: 1.25, 9.9: tran,
+            float("nan"): 1.0, float("inf"): tran, "1.15": 1.15}
+    sai = [(k, tg.chuan_keo_dai(k), v) for k, v in bang.items()
+           if abs(tg.chuan_keo_dai(k) - v) > 1e-9]
+    ok(not sai, f"10a `chuan_keo_dai` đúng cả {len(bang)} ca (kể cả NaN/inf/rác)",
+       str(sai[:2]) if sai else "rác/None/NaN -> 1,0 = TẮT · trên trần -> kẹp")
+
+    # ---- 10b: MẶC ĐỊNH LÀ TẮT ----
+    ok(abs(float(tg.MUC_KEO_DAI[0]) - 1.0) < 1e-9
+       and list(tg.MUC_KEO_DAI) == sorted(tg.MUC_KEO_DAI),
+       "10b mục ĐẦU của combo = 1,00 = TẮT (đổi mặc định là đổi tiếng "
+       "200-300 kênh, và CHƯA AI NGHE)", str(tg.MUC_KEO_DAI))
+
+    # ---- 10c: `rate_am_cho` KHÔNG BAO GIỜ VƯỢT ----
+    vuot = [(x, tg.rate_am_cho(x)) for x in
+            (1.0, 1.05, 1.11, 1.15, 1.18, 1.25, 1.30, 1.40, 1.67, 9.9)
+            if tg.rate_am_cho(x)[0] > x + 1e-9]
+    ok(not vuot, "10c `rate_am_cho` lấy mức ĐO ĐƯỢC lớn nhất mà KHÔNG vượt "
+       "(kéo hụt rồi để bước 5 bù, còn hơn đọc chậm quá khung rồi cắt đuôi)",
+       str(vuot[:2]) if vuot else "10/10 ca không vượt")
+    hs = [m[0] for m in tg.BANG_RATE_AM]
+    ok(hs == sorted(hs) and len(set(hs)) == len(hs)
+       and all(m[1].startswith(("-", "+")) for m in tg.BANG_RATE_AM),
+       "10ca BẢNG ĐO `rate` âm tăng dần, không trùng, mọi mức có chuỗi rate",
+       f"{len(tg.BANG_RATE_AM)} mức · trần {hs[-1]}")
+
+    # ---- 10d: NHÃN DỰNG TỪ BẢNG SỐ ĐO, KHÔNG GÕ TAY ----
+    # Bẫy đã sập ở `giong_bang._DUOI[KOKORO]` (nhãn ghi 250 MB trong khi thứ
+    # phải tải là 126,3 MB). Quét AST thân `nhan_keo_dai`: hằng số thực duy
+    # nhất được phép là 1.0 (dùng để so "có kéo hay không").
+    # `1.0` được phép (so "có kéo hay không"), và mọi số **nhỏ hơn 0,01** cũng
+    # được phép: đó là BIÊN so sánh dấu phẩy động (`< 1e-9`), không phải số đo.
+    # Mọi con số của `SO_DO_KEO_DAI` đều >= 1,0 nên chừa khoảng đó KHÔNG làm
+    # bộ dò mất răng — mục 10dc tự kiểm lại đúng điều đó.
+    so_go_tay = [n.value for n in ast.walk(than_ham(
+        "app/core/thay_giong.py", "nhan_keo_dai"))
+        if isinstance(n, ast.Constant) and isinstance(n.value, float)
+        and abs(n.value - 1.0) > 1e-9 and abs(n.value) >= 0.01]
+    ok(not so_go_tay,
+       "10d `nhan_keo_dai` KHÔNG gõ tay một con số đo nào (đọc `SO_DO_KEO_DAI`)",
+       str(so_go_tay[:3]) if so_go_tay else "0 hằng số lạ trong thân hàm")
+    nh = tg.nhan_keo_dai(1.25)
+    d25 = tg.SO_DO_KEO_DAI[1.25]
+    ok(f"{d25['im_pt']:.2f}".replace(".", ",") in nh
+       and str(d25["quang_05"]) in nh,
+       "10da nhãn mức 1,25 NÓI ĐÚNG số của bảng (im % + số quãng nghỉ)", nh)
+    ok(all(x not in tg.nhan_keo_dai(1.0).lower() for x in ("ms", "lệch")),
+       "10db nhãn mức TẮT không khoe con số lệch nào (nó không đổi gì cả)",
+       tg.nhan_keo_dai(1.0))
+    # TỰ KIỂM BỘ DÒ: hàm CÓ gõ tay số thì bộ dò phải bắt.
+    _gia = ast.parse("def f(m):\n    return 'im %s' % (23.52,) if m < 1e-9"
+                     " else '%s' % (18.81,)\n")
+    _bat = [n.value for n in ast.walk(_gia)
+            if isinstance(n, ast.Constant) and isinstance(n.value, float)
+            and abs(n.value - 1.0) > 1e-9 and abs(n.value) >= 0.01]
+    ok(sorted(_bat) == [18.81, 23.52],
+       "10dc TỰ KIỂM BỘ DÒ: hàm gõ tay số thì bộ dò 10d PHẢI kêu ĐÚNG hai số "
+       "đó, và KHÔNG kêu oan biên so sánh `1e-9`", str(sorted(_bat)))
+
+    # ---- 10dd-10df: NHÃN PHẢI NÓI CẢ HAI CHIỀU + KHÔNG KHOE SỐ CHƯA ĐO ----
+    # LÝ DO CÓ BA MỤC NÀY (28/08/2026): phép đo trên ĐƯỜNG THẬT lôi ra một
+    # MẶT XẤU mà bảng mô phỏng không thấy — **kéo chậm làm TRẢI tốc độ đọc XẤU
+    # ĐI** (CV 15,87 -> 18,44 -> 19,93%). "Lúc nhanh lúc chậm" cũng là lời anh
+    # Hùng kêu, nên nhãn khoe mỗi "im giảm" là đúng cái đã đẩy anh ấy vào ô
+    # sai một lần (nhãn `hinh` hứa "tiếng đều" — mục 9zd).
+    for _m in tg.MUC_KEO_DAI:
+        if _m <= 1.0 or not tg.SO_DO_KEO_DAI[_m].get("that"):
+            continue
+        _n = tg.nhan_keo_dai(_m)
+        ok("XẤU ĐI" in _n and "im giữa câu" in _n,
+           f"10dd nhãn mức {_m:.2f} nói CẢ cái được (im giảm) CẢ cái mất "
+           f"(trải tốc độ đọc xấu đi)", _n[:60])
+    _chua = [m for m in tg.MUC_KEO_DAI if not tg.SO_DO_KEO_DAI[m].get("that")]
+    ok(all("CHƯA ĐO" in tg.nhan_keo_dai(m) for m in _chua),
+       "10de mức CHƯA đo trên đường thật thì nhãn NÓI RA (cấm khoe số mô phỏng "
+       "như số thật — mô phỏng lệch 7,8 điểm % ở mức 1,25)", str(_chua))
+    ok(tg.MUC_KHUYEN_KEO_DAI in tg.MUC_KEO_DAI
+       and tg.SO_DO_KEO_DAI[tg.MUC_KHUYEN_KEO_DAI].get("that")
+       and "khuyên" in tg.nhan_keo_dai(tg.MUC_KHUYEN_KEO_DAI).lower(),
+       "10df mức KHUYÊN có thật trong combo, ĐÃ đo đường thật, và nhãn nói ra",
+       f"{tg.MUC_KHUYEN_KEO_DAI}")
+    # Mức khuyên phải là mức SÂU NHẤT mà tốc độ đọc còn >= nhịp edge-tts
+    # (20,63-20,70 ký tự/giây đo cùng lượt) — dưới mức đó là bắt đầu "lê thê".
+    _sau_hon = [m for m in tg.MUC_KEO_DAI
+                if m > tg.MUC_KHUYEN_KEO_DAI
+                and tg.SO_DO_KEO_DAI[m].get("that")
+                and tg.SO_DO_KEO_DAI[m]["kytu_giay"]
+                >= tg.SO_DO_KEO_DAI[tg.MUC_KHUYEN_KEO_DAI]["kytu_giay"]]
+    ok(not _sau_hon,
+       "10dg mức KHUYÊN là mức sâu nhất còn giữ được tốc độ đọc (mức sâu hơn "
+       "đều đọc CHẬM HƠN nó -> nguy cơ lê thê)",
+       f"kt/s {tg.SO_DO_KEO_DAI[tg.MUC_KHUYEN_KEO_DAI]['kytu_giay']}")
+
+    # ---- 10e: NHẬT KÝ NÓI ĐÚNG ĐƯỜNG NÀO ĐÃ ĐI ----
+    ok(tg.rate_la_doc_that("vi-VN-HoaiMyNeural") is True
+       and tg.rate_la_doc_that("vnb:D:/a.wav") is False
+       and tg.rate_la_doc_that("kk:af_bella") is False
+       and tg.rate_la_doc_that("el:Adam") is False,
+       "10e `rate_la_doc_that`: chỉ edge-tts thực thi `rate` THẬT (méo = 0); "
+       "VieNeu/Kokoro/ElevenLabs đi đường LÙI `rubberband` (CÓ MÉO)")
+
+    # ---- 10f: CHẠY THẬT (ffmpeg thật) — kéo có ăn, bất biến không vỡ ----
+    d = hop() / "keo"
+    d.mkdir(parents=True, exist_ok=True)
+    cau = [{"start": 0.0, "end": 3.0, "text": "a"},
+           {"start": 4.0, "end": 7.0, "text": "b"},
+           {"start": 8.0, "end": 11.0, "text": "c"}]
+    fs = [_sin(d, f"k{i}.wav", 1.2) for i in range(3)]   # 1,2 s / khung 3,0 s
+    kh0 = tg.khop_thoi_gian(cau, list(fs), [True] * 3, 12.0, d / "a0",
+                            keo_dai_toi_da=1.0)
+    kh1 = tg.khop_thoi_gian(cau, list(fs), [True] * 3, 12.0, d / "a1",
+                            keo_dai_toi_da=1.25)
+    ok(kh0["so_cau_keo_dai"] == 0 and kh0["keo_dai_max"] == 1.0
+       and all(abs(t - 1.0) < 1e-3 for t in kh0["tempo_cau"]),
+       "10f TẮT -> KHÔNG câu nào bị kéo, `tempo` giữ nguyên 1,000 "
+       "(bất biến 'tắt = giống bản cũ')",
+       f"tempo {kh0['tempo_cau']}")
+    ok(kh1["so_cau_keo_dai"] == 3 and kh1["keo_dai_max"] > 1.2,
+       "10fa BẬT 1,25 -> cả 3 câu ngắn được kéo",
+       f"{kh1['so_cau_keo_dai']} câu · max {kh1['keo_dai_max']}")
+    d0 = [tg.probe_duration(p) for _a, p in kh0["manh"]]
+    d1 = [tg.probe_duration(p) for _a, p in kh1["manh"]]
+    ok(len(d1) == len(d0) and all(b > a * 1.15 for a, b in zip(d0, d1)),
+       "10fb FILE RA THẬT SỰ DÀI HƠN (đo trên file đã ghi, không tin lời hứa)",
+       f"{[round(x, 3) for x in d0]} -> {[round(x, 3) for x in d1]}")
+    ok(kh1["chong_lan_ms_max"] <= 1.0 and kh1["so_cau_chong_lan"] == 0,
+       "10fc BẤT BIẾN 0 ms CHỒNG LẤN vẫn giữ khi kéo dài",
+       f"{kh1['chong_lan_ms_max']} ms")
+    m0 = {i: a for i, a, _b in kh0["moc_tieng"]}
+    m1 = {i: a for i, a, _b in kh1["moc_tieng"]}
+    troi = [abs(m1[i] - m0[i]) * 1000.0 for i in m0 if i in m1]
+    ok(troi and max(troi) <= 50.0,
+       "10fd MỐC BẮT ĐẦU NÓI KHÔNG ĐỔI -> lệch tiếng-hình = 0 theo cấu tạo "
+       "(đúng cột đã giết 3 hướng trước)",
+       f"trôi max {max(troi):.1f} ms (ngưỡng 50)")
+
+    # ---- 10g: LỖ "FILE 0 GIÂY" — MỘT CÂU HỎNG KHÔNG ĐƯỢC GIẾT CẢ VIDEO ----
+    ok(abs(tg.DAI_CAU_TOI_THIEU - 0.05) < 1e-9,
+       "10g SÀN độ dài câu là MỘT NGUỒN DUY NHẤT `DAI_CAU_TOI_THIEU`",
+       f"{tg.DAI_CAU_TOI_THIEU} s")
+    mac_dinh = inspect.signature(tg._kiem_wav).parameters["toi_thieu_giay"]
+    ok(mac_dinh.default == tg.DAI_CAU_TOI_THIEU,
+       "10ga `_kiem_wav` LẤY sàn từ hằng số đó, không gõ lại số "
+       "(hai bản sao là hai chỗ để lệch nhau -> DẢI CHẾT)")
+    hong = d / "hong.wav"
+    hong.write_bytes(b"")                       # đúng ca VieNeu trả 0,000 s
+    ngan = _sin(d, "ngan.wav", 0.03)            # nằm GIỮA dải chết cũ
+    fs2 = [fs[0], ngan, fs[2]]
+    kh2 = tg.khop_thoi_gian(cau, list(fs2), [True] * 3, 12.0, d / "a2",
+                            keo_dai_toi_da=1.25)
+    ok(kh2["so_cau"] == 2 and kh2["so_cau_qua_ngan"] == 1 and kh2["loi_cau"],
+       "10gb câu 0,03 s (DẢI CHẾT cũ) -> BỎ ĐÚNG CÂU ĐÓ, 2 câu kia vẫn ra, "
+       "KHÔNG ném giết cả video",
+       f"{kh2['so_cau']} câu ra · quá ngắn {kh2['so_cau_qua_ngan']} · "
+       f"{kh2['loi_cau'][:1]}")
+    ok(tg.cat_le_im_moc(hong, d / "hong_out.wav") == (0.0, 0.0)
+       and not (d / "hong_out.wav").exists(),
+       "10gc `cat_le_im_moc` gặp nguồn HỎNG -> trả (0,0), KHÔNG đưa cho ffmpeg "
+       "(ffmpeg mã thoát != 0 làm `_ffmpeg` NÉM = giết cả video ở bước 4a)")
+    ra, le = tg.cat_le_loat([str(hong), fs[0]], [True, True], d / "sach")
+    ok(le.get("so_cau_hong") == 1 and ra[0] == str(hong)
+       and Path(ra[1]).exists(),
+       "10gd `cat_le_loat` ĐẾM câu hỏng (cấm giấu) và GIỮ đường dẫn cũ "
+       "— cấm trỏ vào file chưa từng ghi ra",
+       f"so_cau_hong={le.get('so_cau_hong')}")
+
+    # ---- 10h: CHẠY THẬT `thay_giong_video` — cờ ĐI TỚI ĐƯỢC máy đọc ----
+    _4C_KW.clear()
+    kq_t, _n0 = _chay_that(hop() / "ct_tat", hinh_theo_giong=True)
+    kw_tat = list(_4C_KW)
+    _4C_KW.clear()
+    kq_b, _n1 = _chay_that(hop() / "ct_bat", hinh_theo_giong=True,
+                           keo_dai_giong=1.25)
+    kw_bat = list(_4C_KW)
+    ok(kq_t.get("ok") and kq_b.get("ok"),
+       "10h CHẠY THẬT `thay_giong_video` xong cả hai arm",
+       f"tắt={kq_t.get('ok')} · bật={kq_b.get('ok')}")
+    ok(kw_tat and abs(float(kw_tat[0].get("keo_dai_toi_da", 0)) - 1.0) < 1e-9,
+       "10ha TẮT -> bước 4c nhận `keo_dai_toi_da = 1,0` (không đọc chậm câu nào)",
+       str(kw_tat[0].get("keo_dai_toi_da")) if kw_tat else "KHÔNG GỌI 4c")
+    ok(kw_bat and float(kw_bat[0].get("keo_dai_toi_da", 0)) > 1.2,
+       "10hb BẬT -> cờ ĐI TỚI bước 4c (không dừng ở chữ ký hàm — bài học "
+       "v2.45.0 sót cửa NGOÀI CÙNG, 4/4 video LỖI)",
+       str(kw_bat[0].get("keo_dai_toi_da")) if kw_bat else "KHÔNG GỌI 4c")
+    # **CHỐT NÀY TỪNG LÀ MỘT PHÉP ĐẠT OAN.** Bản đầu chỉ hỏi *"lời `duong` có
+    # chứa chữ 'méo' không"* — mà CẢ HAI nhánh đều chứa (`"méo = 0"` và
+    # `"CÓ MÉO"`), nên nó ĐẠT bất kể app đi đường nào. Đúng bẫy cổng 56d:
+    # quét chuỗi mà chỉ hỏi "có mặt không" thì luôn có phép phá giữ nguyên mặt
+    # chữ mà đổi ý nghĩa. Nay hỏi HAI vế: cờ `rate_that` phải KHỚP
+    # `rate_la_doc_that` của CHÍNH giọng lượt đó, và lời văn phải khớp cờ đó.
+    kd = kq_b.get("keo_dai") or {}
+    v_that = str((kq_b.get("tts") or {}).get("voice") or "gia")
+    mong = tg.rate_la_doc_that(v_that)
+    duong = str(kd.get("duong", ""))
+    ok(kd.get("bat") is True and kd.get("rate_that") is mong
+       and (("méo = 0" in duong) if mong else ("CÓ MÉO" in duong)),
+       "10hc NHẬT KÝ nói ĐÚNG đường đã đi — cờ `rate_that` khớp máy đọc THẬT "
+       "và lời văn khớp cờ đó",
+       f"{v_that} · rate_that={mong} · {duong[:40]}")
+    # NỬA CÒN LẠI: lượt chạy trên chỉ đi được MỘT nhánh, nên nhánh kia phải
+    # đọc bằng HẰNG SỐ trong thân hàm. Khoe "méo = 0" trong khi đi
+    # `rubberband` chính là bẫy "phép đo phát chứng nhận".
+    hs_kd = [n.value for n in ast.walk(than_ham(
+        "app/core/thay_giong.py", "thay_giong_video"))
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    ok(any("CÓ MÉO" in s for s in hs_kd),
+       "10hc2 nhánh LÙI có sẵn lời nói THẲNG là CÓ MÉO (cấm lùi im lặng)")
+    ok((kq_t.get("keo_dai") or {}).get("bat") is False,
+       "10hd TẮT -> nhật ký ghi `bat=False` (không khoe cái không làm)")
+
+    # ---- 10i: KHOÁ CHỐNG TRÙNG ----
+    moc_tc = nap_moc("app/core/tg_chay.py", "tc")
+    ok("keo_dai_giong" not in moc_tc.__dict__["_NGUON_"],
+       f"10i mốc `tg_chay` ({MOC}) KHÔNG hề có `keo_dai_giong` "
+       "(mốc đúng, phép so có nghĩa)")
+    x = ("D:/v/d.mp4", "vi", "g3", "E:/z")
+    k_tat = TC.khoa_chong_trung(*x)
+    ok(k_tat == moc_tc.khoa_chong_trung(*x)
+       and TC.khoa_chong_trung(*x, keo_dai_giong=1.0) == k_tat
+       and TC.khoa_chong_trung(*x, keo_dai_giong=0.0) == k_tat
+       and TC.khoa_chong_trung(*x, keo_dai_giong=None) == k_tat,
+       "10ia TẮT (kể cả 0,0/None) -> khoá GIỐNG TỪNG KÝ TỰ bản mốc "
+       "(không đẻ lượt xuất lại cho 200-300 kênh)")
+    k_b = TC.khoa_chong_trung(*x, keo_dai_giong=1.25)
+    ok(k_b == k_tat + ":kd=1.25" and k_b.startswith(k_tat),
+       "10ib BẬT -> đuôi `:kd=` nối vào CUỐI, khoá cũ vẫn là TIỀN TỐ "
+       "(KHÔNG thêm phần tử tuple = KHÔNG đổi hash job cũ)", k_b[-9:])
+    ok(TC.khoa_chong_trung(*x, keo_dai_giong=1.15) != k_b
+       and TC.khoa_chong_trung(*x, keo_dai_giong=1.2549) == k_b,
+       "10ic hai mức KHÁC -> khoá khác; cùng mức viết khác kiểu -> khoá GIỐNG")
+
+    # ---- 10j: CHUỖI 6 CHẶNG — 3 phép bắt buộc của mọi tham số mới ----
+    for ham in (tg.thay_giong_mot_video, tg.thay_giong_video):
+        ok("keo_dai_giong" in inspect.signature(ham).parameters,
+           f"10j (a) `inspect.signature` cửa {ham.__name__} CÓ `keo_dai_giong`")
+    try:
+        tg.thay_giong_mot_video(r"D:/_khong_ton_tai_89.mp4", dich_sang="vi",
+                                keo_dai_giong=1.15, thay_goc=False)
+        _te = ""
+    except TypeError as e:
+        _te = str(e)
+    except Exception:                                     # noqa: BLE001
+        _te = ""
+    ok(not _te, "10ja (b) GỌI THẬT cửa NGOÀI CÙNG -> KHÔNG `TypeError` "
+       "(đúng chỗ v2.45.0 đã nổ, 4/4 video LỖI)", _te[:80])
+
+    def _co_kw(duong: str, ham: str, goi: str, kw: str) -> bool:
+        for n in ast.walk(than_ham(duong, ham)):
+            if isinstance(n, ast.Call) and (
+                    getattr(n.func, "id", "") == goi
+                    or getattr(n.func, "attr", "") == goi):
+                if any(k.arg == kw for k in n.keywords):
+                    return True
+        return False
+
+    ok(_co_kw("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+              "keo_dai_giong"),
+       "10jb `jobs._thay_giong` đọc `keo_dai_giong` từ payload rồi chuyền tiếp")
+    ok(_co_kw("app/ui/thay_giong_dialog.py", "_chay", "xep_mot",
+              "keo_dai_giong"),
+       "10jc hộp Thay giọng chuyền `keo_dai_giong` cho `xep_mot` "
+       "(ô bấm CÓ tác dụng)")
+    ok(_co_kw("app/core/thay_giong.py", "thay_giong_mot_video",
+              "thay_giong_video", "keo_dai_giong"),
+       "10jd `thay_giong_mot_video` chuyền tiếp xuống lõi")
+    ok(not _co_kw("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+                  "khong_he_co_kw_nay"),
+       "10je TỰ KIỂM BỘ DÒ: tham số bịa ra thì `_co_kw` trả HỎNG")
+    # payload chỉ mọc khoá khi BẬT — job cũ trong DB không mọc thêm khoá nào.
+    #
+    # **BẢN ĐẦU CỦA MỤC NÀY ĐỂ LỌT MỘT PHÉP PHÁ, ĐỌC KẺO LẶP.** Nó chỉ hỏi
+    # *"phép gán có nằm trong MỘT `ast.If` nào đó không"* — mà `if True:` CŨNG
+    # là một `ast.If`, nên phép phá số 24 (`if kd > 1.0:` -> `if True:`) đi
+    # lọt và cổng vẫn XANH 50/0, tức khoá chống trùng của 200-300 kênh mất
+    # người canh. Đúng bài học cổng 80 LỌT 6: *mục nào canh MỘT chốt cụ thể
+    # thì phải đọc LÝ DO cụ thể*, hỏi mỗi "có chặn không" là tự vô hiệu.
+    # Nay đòi mệnh đề `if` phải THẬT SỰ SO SÁNH một biến (`ast.Compare` với vế
+    # trái là `ast.Name`), không nhận hằng số.
+    nut = than_ham("app/core/tg_chay.py", "xep_mot")
+
+    def _if_that(n: ast.If) -> bool:
+        return (isinstance(n.test, ast.Compare)
+                and isinstance(n.test.left, ast.Name))
+
+    trong_if = any(
+        isinstance(e, ast.Subscript) and isinstance(e.slice, ast.Constant)
+        and e.slice.value == "keo_dai_giong"
+        for n in ast.walk(nut) if isinstance(n, ast.If) and _if_that(n)
+        for e in ast.walk(n))
+    ok(not any(_if_that(n) for n in ast.walk(ast.parse("if True:\n    x=1\n"))
+               if isinstance(n, ast.If)),
+       "10jf0 TỰ KIỂM BỘ DÒ: `if True:` KHÔNG được tính là một chốt thật "
+       "(phép phá 24 từng đi lọt đúng chỗ này)")
+    ngoai = [e for e in ast.walk(nut)
+             if isinstance(e, ast.Subscript)
+             and isinstance(e.slice, ast.Constant)
+             and e.slice.value == "keo_dai_giong"]
+    ok(trong_if and len(ngoai) == 1,
+       "10jf payload CHỈ ghi khoá `keo_dai_giong` khi BẬT (nằm trong `if`), "
+       "và chỉ ĐÚNG MỘT chỗ ghi", f"{len(ngoai)} chỗ ghi")
+
+    def _qua_cua(duong: str, ham: str, goi: str, kw: str, cua: str) -> bool:
+        """Giá trị truyền cho `kw` phải là một LỜI GỌI `cua`, không phải giá
+        trị THÔ. Payload/QSettings mang được rác (chuỗi, NaN, số ngoài trần);
+        một hệ số BỊA nhân vào ĐỘ DÀI TIẾNG thì không có đường lùi."""
+        for n in ast.walk(than_ham(duong, ham)):
+            if not (isinstance(n, ast.Call) and (
+                    getattr(n.func, "id", "") == goi
+                    or getattr(n.func, "attr", "") == goi)):
+                continue
+            for k in n.keywords:
+                if k.arg != kw:
+                    continue
+                if isinstance(k.value, ast.Call) and (
+                        getattr(k.value.func, "id", "") == cua
+                        or getattr(k.value.func, "attr", "") == cua):
+                    return True
+                # UI gán ra biến trước rồi mới truyền -> tra biến đó.
+                if isinstance(k.value, ast.Name):
+                    for g in ast.walk(than_ham(duong, ham)):
+                        if (isinstance(g, ast.Assign)
+                                and any(getattr(t, "id", "") == k.value.id
+                                        for t in g.targets)
+                                and isinstance(g.value, ast.Call)
+                                and (getattr(g.value.func, "id", "") == cua
+                                     or getattr(g.value.func, "attr", "")
+                                     == cua)):
+                            return True
+        return False
+
+    ok(_qua_cua("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+                "keo_dai_giong", "chuan_keo_dai"),
+       "10jg `jobs._thay_giong` đọc payload QUA `chuan_keo_dai` "
+       "(payload cũ/rác không được nhân thẳng vào độ dài tiếng)")
+    ok(_qua_cua("app/ui/thay_giong_dialog.py", "_chay", "xep_mot",
+                "keo_dai_giong", "chuan_keo_dai"),
+       "10jh hộp Thay giọng cũng đi QUA `chuan_keo_dai` (CỬA DUY NHẤT)")
+    ok(not _qua_cua("app/queue/jobs.py", "_thay_giong", "thay_giong_mot_video",
+                    "keo_dai_giong", "ham_bia_ra_khong_ton_tai"),
+       "10ji TỰ KIỂM BỘ DÒ: cửa bịa ra thì `_qua_cua` trả HỎNG")
+
+    # ---- 10k: Ô TRONG HỘP THAY GIỌNG ----
+    app_qt()
+    from app.ui.thay_giong_dialog import ThayGiongDialog
+    dl = ThayGiongDialog(None)
+    try:
+        dat = [dl.cb_keo.itemData(i) for i in range(dl.cb_keo.count())]
+        ok([float(x) for x in dat] == [float(x) for x in tg.MUC_KEO_DAI],
+           "10k combo 'Kéo dài giọng' có ĐỦ mức, đúng thứ tự", str(dat))
+        ok(dl.cb_keo.currentIndex() == 0
+           and tg.chuan_keo_dai(dl.cb_keo.currentData()) == 1.0,
+           "10ka MỞ HỘP LÊN mặc định vẫn TẮT (không đổi tiếng sau lưng ai)",
+           dl.cb_keo.currentText())
+        nhan_het = [dl.cb_keo.itemText(i) for i in range(dl.cb_keo.count())]
+        ok(all(n == tg.nhan_keo_dai(float(dl.cb_keo.itemData(i)))
+               for i, n in enumerate(nhan_het)),
+           "10kb nhãn combo DỰNG TỪ `nhan_keo_dai` (một phép đo, một chỗ đọc)")
+        tip = dl.cb_keo.toolTip()
+        ok(all(x in tip for x in ("méo", "nghe")),
+           "10kc chú thích nói CẢ cái giá (méo tiếng) CẢ 'chưa ai nghe thử'",
+           f"{len(tip)} ký tự")
+        ok(not any(ord(c) > 0x2500 for c in "".join(nhan_het) + tip),
+           "10kd nhãn + chú thích KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ô đen)")
+    finally:
+        dl.deleteLater()
+
+
 def main() -> int:
     print("CỔNG 89 — âm thanh bị bé · chỉnh hình theo giọng · hộp gọn · "
-          "che chữ không trôi · đọc ĐỀU một tốc độ")
+          "che chữ không trôi · đọc ĐỀU một tốc độ · KÉO DÀI cho đầy khung")
     muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7(); muc8(); muc9()
+    muc10()
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
     return 0 if HONG == 0 else 1
 

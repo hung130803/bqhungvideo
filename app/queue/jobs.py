@@ -381,6 +381,15 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # cứng thanh điệu, hậu kiểm độ dài) nằm trong `nhan_chu`, KHÔNG
             # nhân đôi ở đây — hai chốt là hai chỗ để lệch nhau.
             nhan_nha=bool(payload.get("nhan_nha")),
+            # KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU (v2.49.0) — job cũ trong DB
+            # KHÔNG mang khoá này -> `.get` trả None -> `chuan_keo_dai` biến
+            # thành **1,0** = TẮT = y hệt bản trước, không một video nào trong
+            # 200-300 kênh đổi tiếng.
+            # ĐỌC QUA `chuan_keo_dai`, KHÔNG `float(... or 1)`: payload có thể
+            # mang rác (chuỗi, NaN, số ngoài trần) từ lối gọi khác/bản sau, mà
+            # một hệ số bịa nhân vào ĐỘ DÀI TIẾNG thì không có đường lùi —
+            # cùng lý do hai ô dB ngay trên đi qua `chuan_muc_db`.
+            keo_dai_giong=tg.chuan_keo_dai(payload.get("keo_dai_giong")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:

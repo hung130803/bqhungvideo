@@ -30,7 +30,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      muc_nen_db: float = 0.0,
                      muc_giong_db: float = 0.0,
                      doc_deu: bool = False,
-                     nhan_nha: bool = False) -> str:
+                     nhan_nha: bool = False,
+                     keo_dai_giong: float = 1.0) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -121,6 +122,23 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     # giữ NGUYÊN TỪNG KÝ TỰ. Bài học `ovl_spec` (42) · `che_chu` (56e).
     if nhan_nha:
         sig += ":nn=1"
+    # KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU (v2.49.0) — đổi ĐỘ DÀI TIẾNG của từng
+    # câu nên BẮT BUỘC vào khoá, không thì chọn mức rồi bấm Chạy là bị
+    # smart-skip, không một dòng báo (đúng lỗi cổng 56e đã sập).
+    # Cùng luật với mọi cờ trên, và **CẢ BA vế đều bắt buộc**:
+    #   · qua `chuan_keo_dai` TRƯỚC khi băm — `0.0` / `None` / `0.999` / `1.0`
+    #     đều là "để mặc định", băm giá trị THÔ là đẻ job chạy lại cho một thay
+    #     đổi KHÔNG TỒN TẠI (bài học `chuan_muc_mo` cổng 56e);
+    #   · nối vào **ĐUÔI CHUỖI**, KHÔNG thêm phần tử vào tuple nào — thêm vào
+    #     tuple là đổi hash của MỌI job cũ = 200-300 kênh chạy lại từ đầu;
+    #   · **CHỈ KHI > 1,0** -> mặc định TẮT thì khoá giống TỪNG KÝ TỰ bản
+    #     trước. `{:.2f}` để 1,15 và 1,150 ra CÙNG một chuỗi.
+    # ĐỨNG RIÊNG, KHÔNG lồng trong `htg` (khác `dd`): kéo dài có tác dụng ở CẢ
+    # HAI chế độ khớp — nó không cần hình chậm lại mới ăn.
+    from app.core.thay_giong import chuan_keo_dai
+    _kd = chuan_keo_dai(keo_dai_giong)
+    if _kd > 1.0:
+        sig += f":kd={_kd:.2f}"
     return sig
 
 
@@ -212,7 +230,8 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             muc_nen_db: float = 0.0,
             muc_giong_db: float = 0.0,
             doc_deu: bool = False,
-            nhan_nha: bool = False) -> Optional[int]:
+            nhan_nha: bool = False,
+            keo_dai_giong: float = 1.0) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
     `lam_lai=True` xoá mục trong sổ TRƯỚC khi xếp — nếu không thì job chạy
@@ -284,6 +303,16 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     # cho ra hành vi Y HỆT bản trước.
     if nhan_nha:
         tt["nhan_nha"] = True
+    # KÉO DÀI GIỌNG — **CHỈ ghi khoá khi > 1,0 (tức KHÁC mặc định)**, nên
+    # payload của job cũ nằm sẵn trong DB không mọc thêm khoá nào và
+    # `jobs._thay_giong` (`.get` -> None -> `chuan_keo_dai` -> 1,0) cho ra hành
+    # vi Y HỆT bản trước. Chuẩn hoá TẠI ĐÂY để payload lưu vào DB là số ĐÃ kẹp
+    # trần — mở lại app sau 3 tháng thì job chạy đúng cái đã hiện trên màn hình
+    # lúc xếp (cùng lý lẽ hai ô dB).
+    from app.core.thay_giong import chuan_keo_dai as _ckd
+    kd = _ckd(keo_dai_giong)
+    if kd > 1.0:
+        tt["keo_dai_giong"] = kd
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
@@ -297,6 +326,11 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
                                    # nhánh `htg` rồi. Hai chốt là hai chỗ để
                                    # lệch nhau.
                                    doc_deu=bool(doc_deu),
-                                   nhan_nha=bool(nhan_nha)),
+                                   nhan_nha=bool(nhan_nha),
+                                   # `khoa_chong_trung` tự gọi `chuan_keo_dai`
+                                   # lần nữa — truyền số ĐÃ chuẩn vào là phép
+                                   # luỹ đẳng, và nó bảo đảm payload với khoá
+                                   # LUÔN khớp nhau.
+                                   keo_dai_giong=kd),
         skip_if_done=False, max_attempts=1,
     )

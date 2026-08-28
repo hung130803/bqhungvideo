@@ -96,6 +96,10 @@ K_VIET_CHU = "tg_viet_chu"
 #: CÁCH KHỚP TIẾNG VỚI HÌNH — "" = ép giọng (y như mọi bản trước) · "hinh" =
 #: chỉnh video theo giọng.
 K_KHOP_CACH = "tg_khop_cach"
+#: KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU — `1.0` = TẮT (y như mọi bản trước).
+#: **MẶC ĐỊNH PHẢI LÀ 1,0**: bật là đổi tiếng của MỌI video từ nay trên
+#: 200-300 kênh đang chạy sản xuất, và chưa ai NGHE bằng tai file nào.
+K_KEO_DAI = "tg_keo_dai"
 #: NHẤN NHÁ — nâng cao độ đúng chữ đáng nhấn. **MẶC ĐỊNH TẮT**: bật là đổi
 #: tiếng của MỌI video từ nay trên 200-300 kênh đang chạy sản xuất.
 K_NHAN_NHA = "tg_nhan_nha"
@@ -2283,6 +2287,56 @@ class ThayGiongDialog(QDialog):
         h3bb.addWidget(self.cb_khop)
         h3bb.addStretch(1)
         lay.addLayout(h3bb)
+
+        # ---- hàng 3bb2: KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU (v2.49.0) ----
+        # Đặt NGAY DƯỚI hàng "Khớp tiếng với hình" vì CÙNG MỘT BỆNH anh Hùng
+        # kêu — *"nó nói còn KHÔNG LIÊN TIẾP, cứ ĐƯỢC ĐOẠN RỒI NGHỈ"* — chỉ
+        # khác đường chữa: hàng trên chỉnh HÌNH cho khớp tiếng, hàng này kéo
+        # dài chính TIẾNG cho đầy khung câu.
+        # VÌ SAO ĐÂY LÀ ĐƯỜNG DUY NHẤT CÒN LẠI: `im giữa câu = độ_dài_video −
+        # tổng_tiếng`, một phép TRỪ. Bốn hướng "đổi chỗ khoảng im" đã bị bác
+        # bằng số; muốn im nhỏ đi thì TIẾNG phải DÀI RA.
+        # MẶC ĐỊNH LÀ MỤC ĐẦU (= TẮT) — CÓ CHỦ Ý: đổi mặc định là đổi tiếng của
+        # MỌI video trên 200-300 kênh đang chạy sản xuất, và CHƯA AI NGHE bằng
+        # tai. Anh Hùng nghe rồi mới duyệt.
+        h3bb2 = QHBoxLayout()
+        h3bb2.addWidget(QLabel("Kéo dài giọng cho đầy khung câu:"))
+        self.cb_keo = QComboBox()
+        # NHÃN DỰNG TỪ BẢNG SỐ ĐO (`TG.SO_DO_KEO_DAI`) qua `TG.nhan_keo_dai` —
+        # **KHÔNG GÕ TAY MỘT CON SỐ NÀO**. Gõ tay là bẫy đã sập ở nhãn Kokoro
+        # (ghi 250 MB trong khi thứ phải tải là 126,3 MB); cổng 93 quét AST bắt
+        # đúng chuyện đó.
+        for _k in TG.MUC_KEO_DAI:
+            self.cb_keo.addItem(TG.nhan_keo_dai(_k), float(_k))
+        self.cb_keo.setToolTip(
+            "Câu dịch đọc xong SỚM hơn khung câu gốc thì phần còn lại của "
+            "khung là IM LẶNG — đó chính là 'được đoạn rồi nghỉ'.\n"
+            "Ô này bảo máy đọc CHẬM LẠI cho vừa hết khung, thay vì đọc nhanh "
+            "rồi ngồi im.\n\n"
+            "MỐC SO SÁNH — đo trên ĐƯỜNG THẬT, đúng cấu hình của anh\n"
+            "(video của anh, giọng nhân bản, 35 câu, có chỉnh hình):\n"
+            + "\n".join(
+                f"  · {TG.nhan_keo_dai(_k)}" for _k in TG.MUC_KEO_DAI) + "\n\n"
+            "Câu vẫn nằm ĐÚNG chỗ người gốc nói, nên tiếng KHÔNG trôi khỏi\n"
+            "hình: 170 phép so từng câu -> lệch trung bình 2,3-12,0 ms,\n"
+            "169/170 câu dưới 40 ms. Có ĐÚNG 1 câu vọt 282 ms ở mức cao\n"
+            "nhất, chưa truy ra — nói ra để anh biết, không giấu.\n\n"
+            "GIÁ PHẢI TRẢ — CẢ HAI MÁY ĐỌC ĐỀU CÓ MÉO:\n"
+            "  app bảo máy đọc CHẬM LẠI được vài câu, phần còn lại vẫn phải\n"
+            "  KÉO GIÃN tiếng. Đo trên đường thật: giọng nhân bản (VieNeu)\n"
+            "  méo 3,1-3,5 dB · giọng máy edge-tts méo 3,5-3,8 dB.\n"
+            "  (Bản đầu ghi 'edge-tts KHÔNG méo tiếng' — phép đo đã BÁC.)\n"
+            "  Nhật ký ghi rõ mỗi lượt bao nhiêu câu đi đường nào.\n\n"
+            "MẶT XẤU THỨ HAI, cũng là thứ anh từng kêu ('lúc nhanh lúc\n"
+            "chậm'): kéo chậm làm TRẢI tốc độ đọc XẤU ĐI, không tốt lên.\n"
+            "Số nằm ngay trong từng dòng của ô này.\n\n"
+            "CHƯA AI NGHE THỬ bằng tai. Anh nghe rồi hãy dùng cho cả loạt.")
+        _i2 = self.cb_keo.findData(
+            TG.chuan_keo_dai(self._s.value(K_KEO_DAI, 1.0)))
+        self.cb_keo.setCurrentIndex(max(0, _i2))
+        h3bb2.addWidget(self.cb_keo)
+        h3bb2.addStretch(1)
+        lay.addLayout(h3bb2)
 
         # ---- hàng 3bc: CÁCH TRỘN TIẾNG (đè giọng / thay hẳn giọng) ----
         # Anh Hùng 19/08/2026: *"thêm tính năng KHÔNG tách nhạc nền, chỉ GIẢM
@@ -4506,6 +4560,8 @@ class ThayGiongDialog(QDialog):
         self._s.setValue(K_CHE_MUC, float(self.sp_che_muc.value()))
         self._s.setValue(K_VIET_CHU, "1" if self.ck_viet.isChecked() else "0")
         self._s.setValue(K_KHOP_CACH, self.cb_khop.currentData() or "")
+        self._s.setValue(K_KEO_DAI,
+                         float(TG.chuan_keo_dai(self.cb_keo.currentData())))
         self._s.setValue(K_NHAN_NHA,
                          "1" if self.ck_nhan_nha.isChecked() else "0")
         # Qua `chuan_cach_tron` TRƯỚC KHI GHI: bản sau đổi tên cách trộn thì
@@ -4798,6 +4854,13 @@ class ThayGiongDialog(QDialog):
         # duy nhất `muc_am_luong`. (0,0 · 0,0) = mặc định -> `xep_mot` KHÔNG
         # ghi khoá nào vào payload, khoá chống trùng giống TỪNG KÝ TỰ bản trước.
         cc_nen_db, cc_giong_db = self.muc_am_luong()
+        # KÉO DÀI GIỌNG cũng đọc từ COMBO ĐANG HIỆN, KHÔNG đọc QSettings — hộp
+        # chỉ ghi cài đặt lúc Chạy/đóng nên setting còn là lựa chọn CŨ, đúng
+        # lỗi thật "chạy dây chuyền lấy nhóm từ setting nên chạy sai nhóm".
+        # Qua `chuan_keo_dai` — cửa DUY NHẤT: rác thì lùi về 1,0 = TẮT, KHÔNG
+        # lùi về một mức kéo (lùi về cái mới là âm thầm đổi tiếng video người
+        # ta), và số đã kẹp trần mới đi vào payload + khoá chống trùng.
+        cc_keo = TG.chuan_keo_dai(self.cb_keo.currentData())
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -4823,7 +4886,8 @@ class ThayGiongDialog(QDialog):
                     viet_chu=cc_viet, kieu_chu=cc_kieu,
                     hinh_theo_giong=cc_hinh, de_giong=cc_de,
                     muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db,
-                    doc_deu=cc_deu, nhan_nha=cc_nn)
+                    doc_deu=cc_deu, nhan_nha=cc_nn,
+                    keo_dai_giong=cc_keo)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)
