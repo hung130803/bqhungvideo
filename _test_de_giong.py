@@ -896,6 +896,210 @@ def ca8(hop_cat: Path) -> None:
 
 
 # ==================================================================
+# CA 9 — CÁCH TRỘN "TÁCH NHẠC" KHÔNG CHÈN LẠI TIẾNG GỐC (v2.48.0)
+# ==================================================================
+# Anh Hùng 28/08/2026: *"Tôi đã bấm 'tiếng gốc MẤT HẲN' thì app không được tự
+# chèn tiếng Trung vào."* Đo trên bản anh ấy xuất: bù chèn **25,57 s / 31 mảnh
+# / 14,35% video**, Groq chép riêng vật liệu bù ra **93,6% chữ Hán**.
+#
+# CA này canh ĐÚNG hai mệnh đề, và canh ở hai mức khác nhau:
+#   · MỨC MÃ  — `manh_tron` không bao giờ được cộng thêm mảnh bù (quét AST,
+#     kèm TỰ KIỂM BỘ DÒ dựng lại đúng dòng mã CŨ);
+#   · MỨC HÀNH VI — `bu_giong_goc(chi_do=True)` chạy THẬT bằng ffmpeg: **0
+#     file** ghi ra mà `so_bu`/`giay_bu` vẫn KHỚP TỪNG ĐƠN VỊ với đường cắt.
+#     Khớp là điều kiện sống còn của VIỆC BÁO: nhãn "đã bỏ N giây" mà đếm bằng
+#     một bộ dò khác đường cắt thì nó là con số bịa.
+# ==================================================================
+def _gan_manh_tron(cay: ast.AST) -> list[str]:
+    """Mọi phép GÁN/CỘNG vào biến `manh_tron`, trả dạng mã của vế phải.
+
+    Đọc bằng AST chứ không tìm chuỗi: chính khối ghi chú của bản vá có nhắc
+    nguyên văn `manh_tron = kh["manh"] + bu["manh"]` để giải thích, nên quét
+    chuỗi là ĐỎ OAN vĩnh viễn (bài học 47/51/53/54/73/80).
+    """
+    ra: list[str] = []
+    for n in ast.walk(cay):
+        if isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name) \
+                and n.target.id == "manh_tron":
+            ra.append("+= " + ast.unparse(n.value))
+        elif isinstance(n, ast.Assign):
+            for t in n.targets:
+                if isinstance(t, ast.Name) and t.id == "manh_tron":
+                    ra.append("= " + ast.unparse(n.value))
+    return ra
+
+
+def ca9(hop_cat: Path) -> None:
+    print("\n[CA 9] CÁCH 'TÁCH NHẠC' KHÔNG CHÈN LẠI TIẾNG GỐC")
+    import inspect
+
+    from app.core import thay_giong as TG
+    from app.core import tg_so
+    f_tg = "app/core/thay_giong.py"
+    n_tgv = than_ham(f_tg, "thay_giong_video")
+
+    # ---- 9a: KHÔNG cộng gì vào `manh_tron`
+    gans = _gan_manh_tron(n_tgv)
+    xau = [g for g in gans if g.startswith("+=") or "bu[" in g or "bu." in g]
+    ok(not xau and len(gans) == 1,
+       "9a `manh_tron` chỉ được gán ĐÚNG MỘT LẦN từ `kh['manh']`, không cộng "
+       "mảnh bù (cách 'tách' = tiếng gốc MẤT HẲN)",
+       f"{gans}")
+
+    # ---- 9a': TỰ KIỂM BỘ DÒ — dựng lại đúng dòng mã CŨ, bộ dò PHẢI kêu
+    cu = ast.parse("def f():\n"
+                   "    manh_tron = list(kh['manh'])\n"
+                   "    manh_tron += bu['manh']\n")
+    ok(any(g.startswith("+=") for g in _gan_manh_tron(cu)),
+       "9a' TỰ KIỂM BỘ DÒ: dựng lại mã CŨ (`manh_tron += bu['manh']`) thì bộ "
+       "dò PHẢI kêu", str(_gan_manh_tron(cu)))
+
+    # ---- 9b: núm chết `bu_giong_goc_bat` đã bị GỠ khỏi CẢ HAI cửa
+    con = [f.__name__ for f in (TG.thay_giong_video, TG.thay_giong_mot_video,
+                                TG.thay_giong_thu_muc)
+           if "bu_giong_goc_bat" in inspect.signature(f).parameters]
+    ok(not con,
+       "9b tham số `bu_giong_goc_bat` đã GỠ HẲN (giữ một núm không còn tác "
+       "dụng là mã chết — ai bật lại rồi tưởng vừa chữa được lỗi mất tiếng)",
+       f"còn ở: {con}" if con else "0/3 cửa")
+
+    # ---- 9c: GỌI THẬT cửa NGOÀI CÙNG bằng ĐÚNG bộ khoá `jobs._thay_giong`
+    # truyền — luật repo cho MỌI thay đổi chữ ký (v2.45.0 sót cửa này -> anh
+    # Hùng bấm Chạy, 4/4 video LỖI). Quét AST rồi GỌI, không chép tay danh sách.
+    ks: list[str] = []
+    for n in ast.walk(than_ham("app/queue/jobs.py", "_thay_giong")):
+        if isinstance(n, ast.Call) and \
+                getattr(n.func, "attr", "") == "thay_giong_mot_video":
+            ks = [k.arg for k in n.keywords if k.arg]
+    ok(len(ks) >= 15, "9c đọc được bộ khoá jobs._thay_giong truyền xuống",
+       f"{len(ks)} khoá")
+    thieu = [k for k in ks
+             if k not in inspect.signature(TG.thay_giong_mot_video).parameters]
+    ok(not thieu, "9c' MỌI khoá jobs._thay_giong truyền đều CÒN trong chữ ký "
+                  "`thay_giong_mot_video` (thiếu là MỌI job nổ TypeError)",
+       f"thiếu: {thieu}" if thieu else f"{len(ks)}/{len(ks)} khớp")
+    try:
+        TG.thay_giong_mot_video(str(hop_cat / "khong-co-file.mp4"),
+                                **{k: None for k in ks if k != "on_progress"})
+        loi9 = ""
+    except TypeError as e:
+        loi9 = str(e)
+    except Exception:                                       # noqa: BLE001
+        loi9 = ""
+    ok(not loi9, "9c'' GỌI THẬT cửa ngoài cùng với đúng bộ khoá đó -> KHÔNG "
+                 "TypeError", loi9)
+
+    # ---- 9d/9e: HÀNH VI THẬT của `chi_do` (ffmpeg thật)
+    d = hop_cat / "ca9"
+    d.mkdir(parents=True, exist_ok=True)
+    # "lớp giọng gốc": có tiếng SUỐT 20 s (mọi quãng trống đều CÓ tiếng gốc để
+    # mà bỏ) — `s=` seed bắt buộc, không thì cổng nhấp nháy.
+    gg = d / "giong_goc.wav"
+    _ff(["-f", "lavfi", "-i",
+         "anoisesrc=d=20:c=pink:a=0.30:r=48000:s=4242",
+         "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(gg)],
+        "dựng lớp giọng gốc")
+    manh = []
+    for i, off in enumerate((0.0, 10.0)):
+        p = d / f"cau_{i}.wav"
+        _ff(["-f", "lavfi", "-i", "sine=f=440:d=2:r=48000",
+             "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(p)],
+            "dựng câu mới")
+        manh.append((off, str(p)))
+
+    ra_do = d / "bu_CHI_DO"
+    r_do = TG.bu_giong_goc(gg, manh, 20.0, ra_do, chi_do=True)
+    file_do = list(ra_do.glob("*")) if ra_do.exists() else []
+    ok(r_do.get("manh") == [] and not file_do,
+       "9d `chi_do=True` KHÔNG trả mảnh nào và KHÔNG ghi một file nào "
+       "(không có gì để trộn vào = tiếng gốc mất hẳn)",
+       f"manh={len(r_do.get('manh') or [])} · file={len(file_do)}")
+    ok((r_do.get("so_bu") or 0) > 0 and (r_do.get("giay_bu") or 0) > 0,
+       "9d' nhưng vẫn ĐO ĐƯỢC phần bị bỏ (không đo thì nhãn báo ra là số bịa)",
+       f"so_bu={r_do.get('so_bu')} · giay_bu={r_do.get('giay_bu')}")
+
+    ra_cat = d / "bu_CAT"
+    r_cat = TG.bu_giong_goc(gg, manh, 20.0, ra_cat, chi_do=False)
+    ok((r_cat.get("so_bu") or 0) > 0,
+       "9e ĐỐI CHỨNG: `chi_do=False` (đường cũ) VẪN cắt ra mảnh — thước CÓ "
+       "RĂNG, không phải cả hai cùng ra 0", f"so_bu={r_cat.get('so_bu')}")
+    ok(r_do.get("so_bu") == r_cat.get("so_bu")
+       and abs((r_do.get("giay_bu") or 0)
+               - (r_cat.get("giay_bu") or 0)) <= 0.05,
+       "9e' HAI CHẾ ĐỘ ĐẾM RA CÙNG MỘT SỐ (nhãn 'đã bỏ N giây' đúng bằng phần "
+       "đường cắt sẽ chèn)",
+       f"đo {r_do.get('so_bu')}/{r_do.get('giay_bu')}s · "
+       f"cắt {r_cat.get('so_bu')}/{r_cat.get('giay_bu')}s")
+
+    # ---- 9f: NHÃN dựng TỪ SỐ ĐO, và không làm thanh tiến độ chạy ngược
+    nh = TG.nhan_bo_tieng_goc(25.57, 31)
+    ok("25,57" in nh and "31" in nh,
+       "9f nhãn nói ĐÚNG SỐ ĐO (dấu phẩy thập phân đổi RIÊNG CON SỐ)", nh)
+    ok(tg_so.buoc_tu_tien_trinh(0.907, nh)[1] == 8,
+       "9f' nhãn ở mốc 0,907 vẫn ra bước 8 (không tụt)",
+       f"bước {tg_so.buoc_tu_tien_trinh(0.907, nh)[1]}")
+    ok(tg_so.buoc_tu_tien_trinh(0.0, nh)[1]
+       == tg_so.buoc_tu_tien_trinh(0.0, "")[1],
+       "9f'' nhãn KHÔNG khớp một khoá bước nào (khớp nhầm = thanh tiến độ "
+       "CHẠY NGƯỢC — bài học mục 5j)",
+       f"có nhãn ra bước {tg_so.buoc_tu_tien_trinh(0.0, nh)[1]}, "
+       f"rỗng ra bước {tg_so.buoc_tu_tien_trinh(0.0, '')[1]}")
+    xau_e = [c for c in nh if ord(c) > 0x2000 and c not in "—’‘“”…·"]
+    ok(not xau_e, "9f''' nhãn KHÔNG EMOJI (máy anh Hùng thiếu glyph -> ô đen)",
+       str(xau_e))
+    ok("0 giây" not in TG.nhan_bo_tieng_goc(0.0, 0)
+       and TG.nhan_bo_tieng_goc(0.0, 0) != nh,
+       "9g không bỏ quãng nào -> câu KHÁC, không khoe một con số 0",
+       TG.nhan_bo_tieng_goc(0.0, 0))
+
+    # ---- 9h: nhật ký còn lại SAU KHI XONG (dòng `prog` bị ghi đè)
+    from config import DATA_DIR
+    from datetime import datetime
+    lg = Path(DATA_DIR) / "logs" / f"bo_tieng_goc_{datetime.now():%Y%m%d}.log"
+    truoc = lg.stat().st_size if lg.exists() else 0
+    TG.ghi_nhat_ky_bo_goc("ca9_cong86.mp4", nh)
+    ok(lg.exists() and lg.stat().st_size > truoc,
+       "9h `ghi_nhat_ky_bo_goc` để lại DÒNG ĐỌC ĐƯỢC sau khi job xong "
+       "(bảng chỉ hiện 'Xong — video mới ở thư mục đích')", str(lg))
+    try:
+        TG.ghi_nhat_ky_bo_goc(None, None)                   # type: ignore[arg-type]
+        nem = False
+    except Exception:                                       # noqa: BLE001
+        nem = True
+    ok(not nem, "9h' nhật ký KHÔNG BAO GIỜ ném lỗi (bước phụ không được giết "
+                "cả lượt xuất)")
+
+    # ---- 9i: NHÁNH ĐÈ GIỌNG KHÔNG BỊ ĐỤNG — hai lý do phải KHÁC NHAU
+    ok(isinstance(TG.VI_SAO_BO_BU, str) and "tách nhạc" in TG.VI_SAO_BO_BU,
+       "9i lý do của cách 'tách' nói đúng cách trộn", TG.VI_SAO_BO_BU[:60])
+
+    # ---- 9j: LỜI NHẮN của khối bỏ-bù cũng không được khớp khoá bước nào.
+    # Khác mục 9f'' (chấm hàm `nhan_bo_tieng_goc`): đây chấm chuỗi VIẾT THẲNG
+    # trong `prog()`. Hai chỗ khác nhau, và chỗ này mới là chỗ dễ vô ý gõ chữ
+    # "đọc"/"dịch" vào rồi thanh tiến độ tụt từ 8/9 về 5/9.
+    cau_bu = []
+    for c in goi_trong_ham(n_tgv, "prog"):
+        for tv in c.args:
+            for nut in ast.walk(tv):
+                # LỌC BẰNG "quãng nghỉ", KHÔNG bằng "tiếng gốc": bản đầu của
+                # mục này lọc theo "tiếng gốc" và **bắt trúng lời nhắn bước
+                # TRỘN** ("Trộn tiếng mới ĐÈ lên tiếng gốc…") — câu đó khớp
+                # khoá bước 9 là ĐÚNG, nên mục HỎNG OAN. Cùng họ bẫy 5i.
+                if isinstance(nut, ast.Constant) \
+                        and isinstance(nut.value, str) \
+                        and "quãng nghỉ" in nut.value:
+                    cau_bu.append(nut.value)
+    ok(len(cau_bu) >= 1, "9j tìm được lời nhắn của khối bỏ-bù (đọc bằng AST — "
+                         "regex bắt trúng chính dòng ghi chú)", str(cau_bu))
+    goc_b = tg_so.buoc_tu_tien_trinh(0.0, "")[1]
+    xau_b = [c for c in cau_bu
+             if tg_so.buoc_tu_tien_trinh(0.0, c)[1] != goc_b]
+    ok(not xau_b, "9j' lời nhắn khối bỏ-bù KHÔNG khớp khoá bước nào (khớp "
+                  "nhầm = thanh tiến độ CHẠY NGƯỢC)",
+       f"khớp nhầm: {xau_b}" if xau_b else f"{len(cau_bu)} câu sạch")
+
+
+# ==================================================================
 def main() -> int:
     hop = REPO / f"bq_test_dg_{os.getpid()}"
     shutil.rmtree(hop, ignore_errors=True)
@@ -912,6 +1116,7 @@ def main() -> int:
         ca6(hop)
         ca7()
         ca8(hop)
+        ca9(hop)
     except Exception as e:                                  # noqa: BLE001
         import traceback
         traceback.print_exc()

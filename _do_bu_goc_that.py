@@ -98,6 +98,23 @@ ARM = {
 }
 
 
+# ============================================================================
+# **SCRIPT NÀY ĐÃ LẠC HẬU TỪ v2.48.0 — ĐỌC TRƯỚC KHI CHẠY.**
+# Tham số `bu_giong_goc_bat` đã bị GỠ HẲN khỏi `thay_giong_video` /
+# `thay_giong_mot_video`: ở cách trộn "tách nhạc" app KHÔNG CÒN chèn lại tiếng
+# gốc vào quãng nghỉ (xem `thay_giong.VI_SAO_BO_BU` + cổng 86 CA 9). Chạy
+# nguyên xi là `TypeError: unexpected keyword argument`.
+# Phép đo thay thế — GHÉP CẶP trong MỘT lượt chạy, và đo cả mức dB trong quãng
+# nghỉ trên BẢN TRỘN CUỐI: **`_do_quang_nghi.py`**.
+# Giữ file lại để tra số cũ, KHÔNG xoá; chặn ở đây để không ai mất một lượt
+# chạy dài rồi mới thấy nó nổ giữa chừng.
+# ============================================================================
+if __name__ == "__main__":
+    print("*** SCRIPT LẠC HẬU: `bu_giong_goc_bat` đã bị gỡ ở v2.48.0. ***")
+    print("    Dùng `_do_quang_nghi.py` (ghép cặp + đo dB quãng nghỉ).")
+    sys.exit(2)
+
+
 def main() -> int:
     arm = (sys.argv[1] if len(sys.argv) > 1 else "BAT").upper()
     bat, hinh, deu = ARM[arm]

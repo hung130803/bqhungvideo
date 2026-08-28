@@ -3699,8 +3699,16 @@ def _muc_noi_manh(manh: list[tuple[float, str]]) -> Optional[float]:
 
 def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
                  tong: float, out_dir: str | Path,
-                 he_so_hinh: float = 1.0) -> dict:
+                 he_so_hinh: float = 1.0, chi_do: bool = False) -> dict:
     """Cắt lớp giọng GỐC ở những khoảng KHÔNG có giọng mới -> mảnh để trộn vào.
+
+    **`chi_do=True` = ĐO, KHÔNG CẮT** (đường app đi từ v2.48.0, xem
+    `thay_giong_video`): chạy Y NGUYÊN phép dò — cùng đường bao, cùng sàn
+    nhiễu, cùng ngưỡng, cùng vòng lặp quyết định từng khoảng — nhưng KHÔNG gọi
+    ffmpeg cắt và KHÔNG ghi file nào, nên `manh` luôn RỖNG còn `giay_bu` /
+    `khoang` / `bo_qua` là ĐÚNG con số của phần đã bị bỏ đi.
+    Chỉ có MỘT bộ dò cho cả hai chế độ — hai bộ dò là hai chỗ để lệch nhau,
+    rồi nhãn "đã bỏ N giây" nói một đằng file ra một nẻo.
 
     Trả `{manh: [(offset, wav)], khoang: [...], giay_bu, giay_trong, bo_qua}`.
     `manh` CỘNG THẲNG vào danh sách mảnh giọng mới rồi đưa cho
@@ -3717,12 +3725,13 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
     được giãn đúng `k` — nếu không thì phần bù trôi mỗi lúc một xa.
     """
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not chi_do:
+        out_dir.mkdir(parents=True, exist_ok=True)
     k = max(1.0, float(he_so_hinh or 1.0))
     trong = khoang_khong_giong(manh, tong)
     ket: dict = {"manh": [], "khoang": [], "giay_bu": 0.0,
                  "giay_trong": round(sum(b - a for a, b in trong), 2),
-                 "so_trong": len(trong), "bo_qua": 0}
+                 "so_trong": len(trong), "bo_qua": 0, "chi_do": bool(chi_do)}
     if not trong or not giong_goc or not Path(str(giong_goc)).exists():
         ket["ly_do"] = "không có khoảng trống" if not trong else "thiếu lớp giọng gốc"
         return ket
@@ -3763,7 +3772,11 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
     #       nó to sẵn nên bớt nâng -> GIỌNG TTS bị nhỏ đi ở cả video.
     # Nên đo mức LỜI của cả hai bên rồi bù cho ngang. Trần ±12 dB để một phép đo
     # lệch không đẩy phần bù thành tiếng rít hay mất hút.
-    muc_moi = _muc_noi_manh(manh)
+    # `chi_do`: KHÔNG cắt thì không có gì để khớp mức, mà `_muc_noi_manh` là 8
+    # lượt ffmpeg cho một con số chỉ dùng lúc cắt -> bỏ hẳn. Đây là chỗ DUY
+    # NHẤT chế độ đo bỏ bớt việc, và nó KHÔNG đụng tới phép dò (sàn/ngưỡng/
+    # quyết định từng khoảng) nên số đếm ra vẫn là số của đường cắt thật.
+    muc_moi = None if chi_do else _muc_noi_manh(manh)
     muc_goc = _bpv([v for v in bao if v > nguong], 0.5) if any(
         v > nguong for v in bao) else None
     gain_db = 0.0
@@ -3782,6 +3795,13 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
         i1 = min(len(bao), max(i0 + 1, int(bg / BU_GOC_BUOC)))
         if not any(bao[j] > nguong for j in range(i0, i1)):
             ket["bo_qua"] += 1              # chỗ này gốc cũng im -> đừng bù
+            continue
+        if chi_do:
+            # Độ dài mảnh nếu CẮT THẬT: `d = max(0.05, (bg - ag) * k)` với
+            # `ag = a/k`, `bg = b/k` -> đúng bằng `b - a`. Ghi cùng công thức
+            # ở cùng chỗ để hai chế độ không bao giờ trả hai con số khác nhau.
+            ket["khoang"].append([round(a, 2), round(b, 2)])
+            ket["giay_bu"] += (b - a)
             continue
         p = out_dir / f"bu_{i:04d}.wav"
         af = [f"atrim=start={ag:.3f}:end={bg:.3f}", "asetpts=N/SR/TB"]
@@ -3811,8 +3831,68 @@ def bu_giong_goc(giong_goc: str | Path, manh: list[tuple[float, str]],
         ket["khoang"].append([round(a, 2), round(b, 2)])
         ket["giay_bu"] += probe_duration(p)
     ket["giay_bu"] = round(ket["giay_bu"], 2)
-    ket["so_bu"] = len(ket["manh"])
+    # ĐẾM THEO `khoang`, KHÔNG theo `manh`: hai danh sách này được thêm CÙNG
+    # LÚC ở đường cắt (nên số giống TỪNG ĐƠN VỊ, không đổi hành vi cũ), nhưng ở
+    # chế độ `chi_do` thì `manh` cố ý RỖNG — đếm `manh` là nhãn báo "đã bỏ 0
+    # quãng" trong khi vừa bỏ 31 quãng.
+    ket["so_bu"] = len(ket["khoang"])
     return ket
+
+
+#: LÝ DO app KHÔNG chèn lại giọng gốc ở cách trộn "tách nhạc" — anh Hùng chốt
+#: 28/08/2026, và lý lẽ là của chính anh ấy: *"Tôi đã bấm 'tiếng gốc MẤT HẲN'
+#: thì app không được tự chèn tiếng Trung vào."*
+#:
+#: Đây KHÔNG phải chuyện hay/dở của phép bù — đo được là nó chạy đúng thiết kế
+#: (25,57 s / 31 mảnh / 14,35% video trên bản anh Hùng xuất 28/08, Groq chép ra
+#: 93,6% chữ Hán). Nó là chuyện app đi ngược LỰA CHỌN TƯỜNG MINH của người dùng:
+#: `cach_tron="tach"` nghĩa đen là bỏ hẳn tiếng gốc, mà bước bù lại lấy CHÍNH
+#: lớp vocals gốc (tiếng Trung) lấp vào quãng nghỉ.
+VI_SAO_BO_BU = ("cách trộn 'tách nhạc' — người dùng đã chọn BỎ HẲN tiếng gốc, "
+                "app không chèn lại tiếng gốc vào quãng nghỉ")
+
+
+def nhan_bo_tieng_goc(giay: float, so_quang: int) -> str:
+    """Câu BÁO CHO NGƯỜI DÙNG, dựng TỪ SỐ ĐO — đừng ai gõ tay con số vào đây.
+
+    Đổi hành vi mà không nói ra là đúng cái bẫy cả repo này đang chống, nên
+    bước bỏ-bù phải để lại một dòng người đọc được: bỏ BAO NHIÊU giây, ở BAO
+    NHIÊU chỗ. Dấu phẩy thập phân đổi RIÊNG CON SỐ (`f"{x:.2f}".replace`), KHÔNG
+    `.replace(",", ".")` trên cả câu — bài học `giong_kokoro.dau_chua_tai`
+    ("một lần, dùng chung" -> "một lần. dùng chung").
+
+    **CÂU NÀY ĐI THẲNG VÀO `prog()`** nên nó KHÔNG được chứa khoá nào của
+    `tg_so.buoc_tu_tien_trinh` ("rút tiếng" · "tách giọng" · "chép lời" · "đọc"
+    · "đọc nhanh" · "rút gọn" · "dịch" · "khớp thời gian" · "trộn tiếng" ·
+    "ghép tiếng"): khớp nhầm là **thanh tiến độ CHẠY NGƯỢC** (bài học khối
+    `khoa` + cổng 86 mục 5j-5l). Không khớp khoá nào thì nó suy theo KHOẢNG
+    tiến trình -> 0,907 < 0,91 -> bước 8, đúng và không lùi.
+    """
+    if so_quang <= 0:
+        return "Quãng nghỉ không có tiếng gốc nào để bỏ"
+    g = f"{max(0.0, float(giay)):.2f}".replace(".", ",")
+    return (f"Đã bỏ {g} giây tiếng gốc ở {int(so_quang)} quãng nghỉ — "
+            f"quãng nghỉ để im (bạn chọn 'tiếng gốc MẤT HẲN')")
+
+
+def ghi_nhat_ky_bo_goc(ten_video: str, nhan: str) -> None:
+    """1 dòng vào `logs/bo_tieng_goc_<ngày>.log`. KHÔNG BAO GIỜ ném lỗi.
+
+    Dòng `prog()` chỉ sống trong lúc job chạy rồi bị "Xong — video mới ở thư
+    mục đích" ghi đè (`thay_giong_dialog._dat_o(r, 3, ...)`), nên phải có thêm
+    một chỗ CÒN LẠI SAU KHI XONG — cùng khuôn `lop_phu.ghi_nhat_ky`.
+    """
+    try:
+        from datetime import datetime
+
+        from config import DATA_DIR
+        d = Path(DATA_DIR) / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"bo_tieng_goc_{datetime.now():%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] {ten_video} — {nhan}\n")
+    except Exception:  # noqa: BLE001 — nhật ký không bao giờ được chặn việc
+        pass
 
 
 def _ghep_track_giong(manh: list[tuple[float, str]], tong: float,
@@ -5246,7 +5326,6 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      kieu_chu: Optional[dict] = None,
                      hinh_theo_giong: bool = False,
                      doc_deu: bool = False,
-                     bu_giong_goc_bat: bool = True,
                      de_giong: bool = False,
                      muc_nen_db: float = 0.0,
                      muc_giong_db: float = 0.0,
@@ -5277,10 +5356,13 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
     Mọi bước còn lại (chép lời · dịch · đọc · rút gọn · khớp · trộn · ducking ·
     chuẩn hoá độ to · che chữ · viết chữ mới) đi Y NGUYÊN đường cũ.
 
-    `bu_giong_goc_bat=True` (mặc định BẬT): đoạn nào KHÔNG được đọc lại thì giữ
-    lại GIỌNG GỐC thay vì để trống. Xem `khoang_khong_giong` — đây là bản chữa
-    lỗi anh Hùng báo 18/08/2026 (*"đoạn nói tiếng Anh nó không đọc thì bị tắt
-    tiếng"*), và mặc định BẬT vì để trống là MẤT NỘI DUNG.
+    **BÙ GIỌNG GỐC ĐÃ BỊ GỠ Ở CẢ HAI CÁCH TRỘN (v2.48.0)** — tham số
+    `bu_giong_goc_bat` KHÔNG CÒN. Bản 18/08/2026 dựng nó để chữa lỗi *"đoạn nói
+    tiếng Anh nó không đọc thì bị tắt tiếng"* và mặc định BẬT; nhưng vật liệu
+    lấp là CHÍNH lớp vocals gốc, nên với nguồn Douyin nó chèn thẳng TIẾNG TRUNG
+    vào video đã bấm "tiếng gốc MẤT HẲN" (đo: 25,57 s / 31 mảnh / 14,35% video,
+    93,6% chữ Hán). Xem `VI_SAO_BO_BU`. Nay bước đó chỉ còn ĐO rồi BÁO
+    (`kq["bu_goc"]["nhan"]` + `logs/bo_tieng_goc_<ngày>.log`), KHÔNG chèn.
 
     `hinh_theo_giong=True` -> **CHỈNH VIDEO THEO GIỌNG** thay vì ép giọng vừa
     khung câu gốc. Anh Hùng 18/08/2026: *"giọng cứ lúc nhanh lúc chậm không
@@ -5413,8 +5495,8 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # `doc_nhanh_vua_khung`. `and hinh_theo_giong` CHỐT TẠI ĐÂY, không bắt
         # người gọi tự nhớ: bỏ 4c mà KHÔNG làm chậm hình thì mọi câu tràn khung
         # rơi hết xuống `atempo` -> ép tiếng nặng hơn hẳn cách cũ, tức "chữa"
-        # xong còn tệ hơn lúc chưa chữa. Cùng luật `and not de_giong` ở khối bù
-        # giọng gốc bên dưới.
+        # xong còn tệ hơn lúc chưa chữa. Cùng luật "chốt tại đây, không bắt
+        # người gọi tự nhớ" của khối bù giọng gốc bên dưới.
         _deu = bool(doc_deu) and bool(hinh_theo_giong)
         if _deu:
             # LỜI NHẮN PHẢI CHỨA CỤM "đọc nhanh": `tg_so.buoc_tu_tien_trinh`
@@ -5511,14 +5593,27 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
         # lại là SAI. Ở chế độ đè, giọng gốc nằm SẴN trong lớp nền; bù thêm mảnh
         # giọng gốc nữa là cộng CÙNG MỘT tín hiệu hai lần -> vang đôi/dội, và
         # tệ hơn là mảnh bù đó còn bị tính vào cân bằng giọng-nhạc rồi kéo lệch
-        # cả phép đo. Chốt bằng `and not de_giong`, KHÔNG bắt người gọi tự nhớ.
+        # cả phép đo. Chốt bằng `de_giong`, KHÔNG bắt người gọi tự nhớ. Nhánh đè
+        # KHÔNG được gọi `bu_giong_goc` một lần nào — cổng 86 mục 5b quét đúng
+        # điều đó.
+        #
+        # **CÁCH TRỘN "TÁCH NHẠC" CŨNG KHÔNG BÙ NỮA (v2.48.0)** — xem
+        # `VI_SAO_BO_BU`. Trước đó `bu_giong_goc_bat` mặc định BẬT nên app lấy
+        # CHÍNH lớp vocals gốc (tiếng Trung) lấp vào quãng nghỉ: đo trên bản anh
+        # Hùng xuất 28/08 ra **25,57 s / 31 mảnh / 14,35% video**, Groq chép
+        # riêng vật liệu bù ra **93,6% chữ Hán**. Người dùng đã bấm "tiếng gốc
+        # MẤT HẲN" thì app không được tự chèn tiếng gốc vào — đây là SỬA BỆNH
+        # "không tôn trọng lựa chọn tường minh", không phải một tuỳ chọn mới.
+        # Tham số `bu_giong_goc_bat` vì thế bị **GỠ HẲN**: giữ lại một cái núm
+        # không còn tác dụng là mã chết, mà mã chết ở đây còn nguy hơn (ai đó
+        # bật lại rồi tưởng mình vừa chữa được lỗi mất tiếng).
         manh_tron = list(kh["manh"])
         if de_giong:
             kq["bu_goc"] = {
                 "bat": False,
                 "vi_sao": "chế độ đè giọng — tiếng gốc còn NGUYÊN trong lớp "
                           "nền, bù thêm là cộng giọng gốc hai lần"}
-        elif bu_giong_goc_bat:
+        else:
             # LỜI NHẮN NÀY CỐ Ý KHÔNG CHỨA CHỮ "ĐỌC" (hay "dịch"/"rút gọn"/
             # "khớp thời gian"…). `tg_so.buoc_tu_tien_trinh` tra bước bằng CHUỖI
             # CON, và khoá `("đọc", 5)` sẽ khớp *"không được đọc lại"* -> bảng
@@ -5526,20 +5621,30 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
             # anh Hùng từng kêu "chạy lùi/treo" (xem chú thích ở `TEN_BUOC` và
             # khối `khoa`). Không khớp khoá nào thì nó suy theo KHOẢNG tiến
             # trình: 0,905 < 0,91 -> bước 8, đúng và không lùi.
-            prog(0.905, "Bù giọng gốc cho đoạn bị bỏ trống...")
+            prog(0.905, "Đo phần tiếng gốc rơi vào quãng nghỉ...")
             try:
+                # `chi_do=True` = chạy Y NGUYÊN phép dò nhưng KHÔNG cắt, KHÔNG
+                # ghi file, và **KHÔNG cộng gì vào `manh_tron`**. Vẫn phải chạy
+                # vì VIỆC BÁO RA cần đúng con số thật (VIỆC 3): đổi hành vi âm
+                # thầm là bẫy repo này chống. Rẻ hơn đường cũ — bỏ 31 lượt cắt
+                # ffmpeg + 8 lượt đo mức.
                 bu = bu_giong_goc(t.get("giong") or "", kh["manh"], tong_ra,
-                                  tam_goc / "bu_goc", he_so_hinh=hs)
-                manh_tron += bu["manh"]
+                                  tam_goc / "bu_goc", he_so_hinh=hs,
+                                  chi_do=True)
                 kq["bu_goc"] = {x: y for x, y in bu.items() if x != "manh"}
+                kq["bu_goc"]["bat"] = False
+                kq["bu_goc"]["vi_sao"] = VI_SAO_BO_BU
+                nhan = nhan_bo_tieng_goc(bu.get("giay_bu") or 0.0,
+                                         bu.get("so_bu") or 0)
+                kq["bu_goc"]["nhan"] = nhan
+                prog(0.907, nhan)
+                ghi_nhat_ky_bo_goc(Path(video_in).name, nhan)
             except Exception as e:                          # noqa: BLE001
-                # Bù được thì tốt, KHÔNG bù được thì vẫn ra video (chỉ thiếu
-                # tiếng ở mấy đoạn đó, y như bản trước) — đừng để bước phụ này
-                # giết cả lượt xuất.
-                kq["bu_goc"] = {"ok": False,
+                # Đo được thì báo, KHÔNG đo được thì vẫn ra video (chỉ thiếu
+                # một dòng nhật ký) — đừng để bước phụ này giết cả lượt xuất.
+                kq["bu_goc"] = {"bat": False, "ok": False,
+                                "vi_sao": VI_SAO_BO_BU,
                                 "loi": f"{type(e).__name__}: {e}"[:200]}
-        else:
-            kq["bu_goc"] = {"bat": False}
 
         # --- bước 6: trộn + thay vào video
         # LỜI NHẮN CỦA CẢ HAI CÁCH PHẢI CHỨA ĐÚNG CỤM **"Trộn tiếng"**.
@@ -5693,7 +5798,6 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          kieu_chu: Optional[dict] = None,
                          hinh_theo_giong: bool = False,
                          doc_deu: bool = False,
-                         bu_giong_goc_bat: bool = True,
                          de_giong: bool = False,
                          muc_nen_db: float = 0.0,
                          muc_giong_db: float = 0.0,
@@ -5729,7 +5833,6 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # mà không một dòng báo (bài học "hàm xong ≠ tính năng
                          # xong" — đã 4 lần module lõi nằm chết không ai gọi).
                          doc_deu=doc_deu,
-                         bu_giong_goc_bat=bu_giong_goc_bat,
                          # CỜ THỨ BA CŨNG PHẢI CHUYỀN QUA — cùng lý do hai cờ
                          # trên: `jobs._thay_giong` gọi CỬA NÀY chứ không gọi
                          # thẳng `thay_giong_video`, thiếu một cờ là job nổ

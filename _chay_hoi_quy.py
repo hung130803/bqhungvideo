@@ -182,7 +182,7 @@ CONG = [
     # nhắn tiến độ phải KHỚP KHOÁ bước 9 (bản vá này từng làm thanh tiến độ
     # sống nhờ đường lùi) · 5m cửa thứ ba của chốt Demucs ở `jobs.py`.
     # THỬ PHÁ `_pha_de_giong.py`: BẮT 8 · LỌT 0 · KHÔNG PHÁ ĐƯỢC 0.
-    ("86 đè giọng",         "_test_de_giong.py",         62),
+    ("86 đè giọng",         "_test_de_giong.py",         82),
     # Mốc 48 -> 98 (19/08/2026, lượt dựng lại `_giong_ngoai/`). Thêm 3 khối:
     # CA 10 môi trường nằm ĐÚNG CHỖ (không %TEMP%, không cạnh `.exe`) · CA 11
     # `cai_omnivoice` — nút dựng lại mà repo THIẾU, nên khi `_don(Path(""))`

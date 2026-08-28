@@ -47,14 +47,14 @@ PHEP = [
      '                       on_progress=lambda p, m: prog(0.06 + 0.24 * p, m))\n',
      "5a"),
 
-    ("2. gỡ chốt BÙ GIỌNG GỐC (chế độ đè cộng giọng gốc HAI LẦN)", F_TG,
+    ("2. gỡ chốt BÙ GIỌNG GỐC (chế độ đè cũng đi đo lớp giọng)", F_TG,
      '        if de_giong:\n'
      '            kq["bu_goc"] = {\n'
      '                "bat": False,\n'
      '                "vi_sao": "chế độ đè giọng — tiếng gốc còn NGUYÊN trong lớp "\n'
      '                          "nền, bù thêm là cộng giọng gốc hai lần"}\n'
-     '        elif bu_giong_goc_bat:\n',
-     '        if bu_giong_goc_bat:\n',
+     '        else:\n',
+     '        if True:\n',
      "5b"),
 
     ("3. `thay_giong_mot_video` truyền HẰNG SỐ `de_giong=False`", F_TG,
@@ -68,9 +68,14 @@ PHEP = [
      '    if (cach_tach or "auto").lower().strip() == "nhe":\n',
      "4b"),
 
+    # NEO CŨ là `if de_giong: ... return sig` — nó khớp hồi `de_giong` còn là
+    # thứ CUỐI CÙNG nối vào `sig`. Từ khi có hai ô âm lượng (`:mn=`/`:mg=`) xen
+    # vào giữa thì neo đó tìm thấy **0 chỗ** và phép thử im lặng thành "KHÔNG
+    # PHÁ ĐƯỢC" — tức một chốt CHẶN SẢN XUẤT không còn ai thử. Neo mới chỉ ôm
+    # đúng hai dòng của cờ, không ôm `return`.
     ("5. cờ KHÔNG vào hash (bấm Chạy bị smart-skip, không một dòng báo)", F_TC,
-     '    if de_giong:\n        sig += ":dg=1"\n    return sig\n',
-     '    return sig\n',
+     '    if de_giong:\n        sig += ":dg=1"\n',
+     '',
      "2d"),
 
     ("6. cờ nối vào hash VÔ ĐIỀU KIỆN (đổi khoá MỌI job cũ)", F_TC,
@@ -87,6 +92,42 @@ PHEP = [
      '    return c if c in CACH_TRON else "tach"\n',
      '    return c if c in CACH_TRON else "de"\n',
      "1b"),
+
+    # ---- v2.48.0: cách "tách nhạc" KHÔNG chèn lại tiếng gốc ----
+    ("9. trả lại dòng CŨ `manh_tron += bu[\"manh\"]` (chèn lại tiếng Trung)",
+     F_TG,
+     '                kq["bu_goc"] = {x: y for x, y in bu.items() '
+     'if x != "manh"}\n'
+     '                kq["bu_goc"]["bat"] = False\n',
+     '                manh_tron += bu["manh"]\n'
+     '                kq["bu_goc"] = {x: y for x, y in bu.items() '
+     'if x != "manh"}\n'
+     '                kq["bu_goc"]["bat"] = False\n',
+     "9a"),
+
+    ("10. `chi_do` bị bỏ qua trong vòng lặp (vẫn cắt ra mảnh + ghi file)",
+     F_TG,
+     '        if chi_do:\n'
+     '            # Độ dài mảnh nếu CẮT THẬT',
+     '        if False:\n'
+     '            # Độ dài mảnh nếu CẮT THẬT',
+     "9d"),
+
+    ("11. `so_bu` đếm theo `manh` (nhãn báo 'đã bỏ 0 quãng' khi vừa bỏ 31)",
+     F_TG,
+     '    ket["so_bu"] = len(ket["khoang"])\n',
+     '    ket["so_bu"] = len(ket["manh"])\n',
+     "9d"),
+
+    ("12. nhãn GÕ TAY con số thay vì dựng từ số đo", F_TG,
+     '    return (f"Đã bỏ {g} giây tiếng gốc ở {int(so_quang)} quãng nghỉ — "\n',
+     '    return ("Đã bỏ vài giây tiếng gốc ở mấy quãng nghỉ — "\n',
+     "9f"),
+
+    ("13. lời nhắn bỏ-bù chứa chữ 'đọc' (thanh tiến độ CHẠY NGƯỢC)", F_TG,
+     '            prog(0.905, "Đo phần tiếng gốc rơi vào quãng nghỉ...")\n',
+     '            prog(0.905, "Đo phần tiếng gốc không được đọc lại...")\n',
+     "9j"),
 ]
 
 
@@ -119,7 +160,18 @@ def main() -> int:
                 print(f"\n-- {ten}\n   KHÔNG PHÁ ĐƯỢC (LỖI CỦA PHÉP THỬ): "
                       f"tìm thấy {s.count(cu)} chỗ khớp")
                 continue
-            f.write_text(s.replace(cu, moi), encoding="utf-8")
+            pha = s.replace(cu, moi)
+            # **BIÊN DỊCH LẠI BẢN ĐÃ PHÁ** — bài học `_pha_doc_lan.py`: phép phá
+            # làm file SyntaxError thì cổng chết lúc `import`, mã thoát 1, và
+            # bảng ghi **BẮT** cho một chốt phép thử chưa hề chạm tới.
+            try:
+                compile(pha, str(f), "exec")
+            except SyntaxError as e:
+                khong.append((ten, f"bản đã phá KHÔNG biên dịch được: {e}"))
+                print(f"\n-- {ten}\n   KHÔNG PHÁ ĐƯỢC (LỖI CỦA PHÉP THỬ): "
+                      f"SyntaxError {e}")
+                continue
+            f.write_text(pha, encoding="utf-8")
             rc, out = chay_cong()
             keu = [l.strip() for l in out.splitlines()
                    if l.strip().startswith("HỎNG") and muc in l]

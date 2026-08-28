@@ -4366,7 +4366,143 @@
   tần suất · `studio.db` **CỤT** (WAL trỏ tới trang 102141-102155 = cần file
   ~418 MB, file đang có 118 KB) nên 3/4 job sáng 28/08 mất theo, không dựng lại
   được — bệnh cũ "ổ C đầy" vẫn chưa chữa.
-- **THƯỚC CHẤM DỊCH (`dich_va_soat`): ĐO END-TO-END XONG — *KHÔNG NỐI*
+  **(14) 28/08/2026 — ĐÃ TẮT HẲN BÙ GIỌNG GỐC Ở CÁCH TRỘN "TÁCH NHẠC"
+  (v2.48.0), VÀ ĐO RA NÓ GẦN NHƯ MIỄN PHÍ: QUÃNG NGHỈ **CÓ NHẠC NỀN**, KHÔNG
+  IM.** Anh Hùng nghe rồi chốt: *"Tôi đã bấm 'tiếng gốc MẤT HẲN' thì app không
+  được tự chèn tiếng Trung vào."* Đây là **SỬA BỆNH**, không phải tuỳ chọn mới
+  — app đang đi ngược LỰA CHỌN TƯỜNG MINH của người dùng — nên **đổi thẳng,
+  KHÔNG đẻ cờ mới**, và tham số `bu_giong_goc_bat` bị **GỠ HẲN** khỏi cả
+  `thay_giong_video` lẫn `thay_giong_mot_video` (giữ một núm không còn tác dụng
+  là mã chết, mà mã chết ở đây nguy hơn: ai bật lại rồi tưởng vừa chữa được lỗi
+  mất tiếng). Nhánh **"đè giọng" KHÔNG BỊ ĐỤNG MỘT DÒNG NÀO** — nó vốn đã không
+  bù (bù ở đó là cộng giọng gốc hai lần), cổng 86 mục 5b vẫn canh đúng điều đó.
+  **`dedup_key` KHÔNG ĐỔI, VÀ ĐÓ LÀ SỐ ĐO CHỨ KHÔNG PHẢI LỜI HỨA:** nạp
+  `git show 5154baa:app/core/tg_chay.py` thành module riêng rồi GỌI THẬT
+  `khoa_chong_trung` trên **9 tổ hợp cờ** -> **GIỐNG TỪNG KÝ TỰ 9/9**;
+  `tg_chay.py` và `services.py` **không đổi một byte** (`git status` sạch, và
+  `grep -c bu_giong app/services.py` = 0). Bảo đảm này là **DO CẤU TẠO**: cờ bù
+  chưa bao giờ có mặt trong `khoa_chong_trung`. 200-300 kênh **không có gì để
+  xuất lại**.
+  **BƯỚC BỎ-BÙ VẪN CHẠY, NHƯNG CHỈ ĐỂ ĐO RỒI BÁO (`bu_giong_goc(chi_do=True)`)**
+  — đổi hành vi âm thầm là bẫy cả repo này chống. Chế độ `chi_do` dùng **Y
+  NGUYÊN một bộ dò** (cùng đường bao, cùng sàn nhiễu, cùng ngưỡng, cùng vòng
+  lặp quyết định từng khoảng), chỉ bỏ phần cắt -> **rẻ hơn đường cũ** (bỏ 20-68
+  lượt ffmpeg cắt + 8 lượt đo mức). Đo được hai chế độ đếm ra **CÙNG MỘT SỐ**
+  trên cả 2 video (16,88 s/20 quãng · 57,70 s/68 quãng) — bắt buộc, vì nhãn "đã
+  bỏ N giây" mà đếm bằng bộ dò khác đường cắt thì nó là số bịa. Người dùng thấy
+  ở **HAI CHỖ**: dòng `prog(0.907, …)` lúc chạy và
+  `logs/bo_tieng_goc_<ngày>.log` (dòng `prog` bị *"Xong — video mới ở thư mục
+  đích"* ghi đè ngay khi job xong, nên một mình nó không đủ).
+  **ĐO GHÉP CẶP, 2 VIDEO THẬT, MỘT LƯỢT CHẠY/VIDEO** (`_do_quang_nghi.py`; arm
+  tách ra ĐÚNG chỗ bản vá tác động `manh_tron = kh["manh"] + bu["manh"]` bằng
+  cách bọc `bu_giong_goc` + `tron_thay_giong`, nên hai arm dùng chung bản tách /
+  chép lời / dịch / **FILE GIỌNG**). Cấu hình đọc từ QSettings của anh Hùng:
+  `vnb:` · đích **`vi`** · `tach` · che chữ + nhấn nhá + chỉnh hình BẬT:
+
+  | | video 1 (169,1 s ra) | video 2 (435,4 s ra) |
+  |---|---|---|
+  | ĐÃ BỎ | **16,88 s / 20 quãng** (9,98%) | **57,70 s / 68 quãng** (13,25%) |
+  | nền TB bản trộn (p50) | −20,30 dBFS | −21,24 dBFS |
+  | mức lời (p90) | −14,00 | −13,17 |
+  | **mức TRONG quãng, arm SAU** | **−30,94 TB · −52,66 thấp nhất** | **−32,21 TB · −36,74 thấp nhất** |
+  | thấp hơn nền | 10,64 dB | 10,97 dB |
+  | GẦN NỀN (>= nền−6 dB) | 9 quãng / 8,43 s | 15 quãng / 10,36 s |
+  | nhỏ hơn nhưng NGHE ĐƯỢC | 8 quãng / 6,19 s | 53 quãng / 47,33 s |
+  | **IM HẲN (<= −45 dBFS)** | **3 quãng / 2,24 s** | **0 quãng / 0,00 s** |
+  | quãng dài nhất | 2,73 s | 4,46 s |
+
+  **CÂU TRẢ LỜI CHO ANH HÙNG: quãng nghỉ KHÔNG im — nó CÓ NHẠC NỀN.** Cộng cả
+  hai video: **85 quãng / 74,55 giây**, trong đó **chỉ 3 quãng / 2,24 giây
+  (3,5% số quãng) thật sự IM**; video 2 **không có quãng nào im**, chỗ nhỏ nhất
+  vẫn −36,74 dBFS. Ở cách "tách nhạc" lớp nhạc chạy SUỐT video nên bỏ giọng gốc
+  đi chỉ làm quãng đó **vơi ~10,6-11,0 dB**, không thành lỗ đen. **Vì vậy bản
+  vá này gần như MIỄN PHÍ** — và điều đó chỉ đọc được khi đo trên **BẢN TRỘN
+  CUỐI**; đo trên LỚP GIỌNG (mốc cũ *"28,98 giây im"*) thì lớp nhạc không có
+  mặt nên con số đó **nói về một file anh Hùng không bao giờ nghe**.
+  **THƯỚC "CÒN TIẾNG TRUNG KHÔNG" LÀ ASR, `language` TỰ NHẬN, CÓ SÀN BỊA:**
+
+  | arm | vật liệu đưa Groq | nhãn | chữ Hán |
+  |---|---|---|---|
+  | TRƯỚC (v2.47.1) | nối riêng 20 / 68 **mảnh bù** | **Chinese** | **87/96 = 90,6%** · **282/340 = 82,9%** |
+  | SAU (v2.48.0) | cắt **ĐÚNG các cửa sổ đó** khỏi bản trộn cuối rồi nối | **English** | **0/10 = 0,0%** · **0/18 = 0,0%** |
+
+  Hàng TRƯỚC là **thước CÓ RĂNG** (ra 0 ở cả hai arm thì phép đo hỏng, không
+  phải bản vá tốt); hàng SAU vừa là phép đo vừa là **SÀN BỊA** — cùng số giây
+  (16,38 / 57,66 s), cùng cửa sổ, mà whisper nghe nhạc nền ra đúng `"Thank
+  you."` chứ không bịa một chữ Hán nào. Nhắc lại bài học lượt trước: chép **CẢ
+  BẢN TRỘN** rồi ép `language=zh` ra **94,99%** chữ Hán trên file KHÔNG có một
+  mẩu tiếng gốc nào — **ép ngôn ngữ là tự phát chứng nhận cho chính mình**.
+  **SỐ ĐO ĐI THEO LƯỢT DỊCH, ĐỪNG CHÉP SANG BẢNG KHÁC:** cùng video 1, cùng bản
+  mã, lượt 27/08 ra **25,57 s / 31 quãng** còn lượt này **16,88 s / 20 quãng**
+  (LLM + VieNeu không tiền định — đúng lý do phải ghép cặp).
+  **CỔNG 86: 62 -> ĐẠT 82 · HỎNG 0** (CA 9, 20 mục: quét AST `manh_tron` không
+  bao giờ được cộng thêm — kèm **TỰ KIỂM BỘ DÒ** dựng lại đúng dòng mã CŨ ·
+  `chi_do` chạy THẬT bằng ffmpeg: 0 file ghi ra mà số đếm vẫn khớp đường cắt ·
+  nhãn dựng TỪ SỐ ĐO · nhãn + lời nhắn không khớp khoá bước nào của
+  `buoc_tu_tien_trinh`). **Thử phá `_pha_de_giong.py`: BẮT 13 · LỌT 0 · KHÔNG
+  PHÁ ĐƯỢC 0.**
+  **HAI LỖI CỦA CHÍNH CỔNG/SCRIPT PHÁ, ghi kẻo lặp:** (a) mục 9j bản đầu lọc
+  lời nhắn theo chuỗi `"tiếng gốc"` và **bắt trúng lời nhắn bước TRỘN** (*"Trộn
+  tiếng mới ĐÈ lên tiếng gốc…"*) — câu đó khớp khoá bước 9 là ĐÚNG, nên mục
+  HỎNG OAN; lọc theo `"quãng nghỉ"` mới đúng (cùng họ bẫy mục 5i). (b) **phép
+  phá số 5 của `_pha_de_giong.py` đã CHẾT ÂM THẦM từ lúc thêm hai ô âm lượng**:
+  neo của nó là `if de_giong: … return sig`, mà `:mn=`/`:mg=` chen vào giữa nên
+  nó tìm thấy **0 chỗ** và im lặng rơi vào cột "KHÔNG PHÁ ĐƯỢC" — tức chốt *"cờ
+  phải vào hash"* (chốt CHẶN SẢN XUẤT) **không còn ai thử** suốt từ đó. Neo mới
+  chỉ ôm hai dòng của cờ; chạy lại ra **BẮT** (`2d 0/6`). Kèm: script phá nay
+  **`compile()` lại bản đã phá** (bài học `_pha_doc_lan.py`).
+  **CỔNG 55 ĐỎ LƯỢT ĐẦU RỒI XANH LƯỢT SAU — ĐÚNG MỤC NHẤP NHÁY ĐÃ GHI:** lượt 1
+  ra **47 · 1** ở mục *"2 luồng NHANH HƠN chạy lần lượt"* (**0,51 lần**) vì đo
+  ngay sau hai lượt dây chuyền dài + 15 lượt cổng 86 (bể key Groq nóng, CPU
+  bận); lượt 2 khi máy nguội ra **48 · 0 · nhanh 1,50 lần**. Chứng minh không
+  phải hồi quy: `git diff app/core/thay_giong.py` **không đụng một dòng nào**
+  của `thay_giong_thu_muc` / `LAN_TG` / `_tg_pool` — toàn bộ thay đổi nằm trong
+  `bu_giong_goc` · `thay_giong_video` · `thay_giong_mot_video`.
+  **FILE NGHE THỬ:** `_NGHE_THU_ANH_HUNG/bo_tieng_trung/` — `A_TRUOC_co_bu_*` /
+  `B_SAU_khong_bu_*` là **CÙNG MỘT ĐOẠN, CÙNG MỘT LƯỢT CHẠY**, lấy quãng bù DÀI
+  NHẤT (2,73 s ở giây 89,15-91,88) kèm 3 giây đệm hai đầu; chuẩn về −14 LUFS
+  bằng chính `chuan_do_to`, **đo lại bằng `loudnorm` chạy RIÊNG: −14,01 và
+  −14,07 LUFS · TP −1,42 / −1,44 dBTP**, MD5 khác nhau. Thêm
+  `C_CHI_MANH_BU_v1_20manh.wav` = chỉ vật liệu bù (nghe là ra tiếng Trung).
+  **CHƯA LÀM, GHI THẲNG:** **chưa ai NGHE** một file nào — mọi số trên là số
+  ĐO · **2 video / 1 lượt mỗi video**, đủ để nói "quãng nghỉ có nhạc", **không
+  đủ** để nói phân bố · ngưỡng IM **−45 dBFS** lấy từ `SAN_LUFS_CHUAN_HOA` của
+  chính app (không đặt mò một số mới) nhưng **chưa ai kiểm bằng tai** xem
+  −36 dBFS trên loa điện thoại có nghe ra không · 2 video kia của anh Hùng chưa
+  chạy lại · **chưa đo trên nguồn KHÔNG có nhạc nền** (phim thoại khô) — đó là
+  ca DUY NHẤT bản vá này có thể đắt, và nó **chưa có số**; nếu anh Hùng gặp
+  video kiểu đó thì phương án 3 (chỉ bù mảnh ngắn dưới X giây) mới cần bàn tới.
+- **`studio.db` CỤT: ĐO LẠI 28/08/2026 — DỮ LIỆU **CÒN ĐỦ TRONG BẢN SAO LƯU**,
+  NHƯNG ĐƯỜNG CỨU BẰNG WAL ĐÃ ĐÓNG. CHỈ ĐO VÀ BÁO, KHÔNG TỰ CHỮA.**
+  `%LOCALAPPDATA%\BQHungVideo\studio.db` = **118 KB**, sửa lần cuối **17/08
+  08:35**, mở đọc được (10 bảng, không "malformed") nhưng **MỌI BẢNG 0 DÒNG** —
+  projects/videos/clips/jobs/analysis/pipeline_files đều rỗng. Tức đây KHÔNG
+  phải "DB vỡ", nó là **DB rỗng còn nguyên lược đồ**.
+  **`studio.db-wal` nay 0 byte** (sửa 28/08 10:40) — lượt trước đo được nó trỏ
+  tới trang 102141-102155 (cần file ~418 MB); WAL đã bị reset từ đó, nên **cứu
+  bằng WAL không còn khả thi**. `-shm` 34 KB (28/08 09:20). App CÓ chạy sáng
+  28/08 và đã ghi vào cái DB rỗng này.
+  **CÒN 3 BẢN SAO LƯU TỰ ĐỘNG, CẢ 3 ĐỌC ĐƯỢC** (`dbmaint` chép trước mỗi lượt
+  dọn, `tempsweep` giữ 3 bản):
+
+  | file | cỡ | mtime | projects · videos · clips · jobs · analysis |
+  |---|---|---|---|
+  | `studio_backup_truoc_don_1787720831.db` | 460,57 MB | 25/08 16:46 | — |
+  | `studio_backup_truoc_don_1787798665.db` | 441,74 MB | 27/08 09:44 | 143 · 2.689 · 6.793 · 97 · 14.607 |
+  | **`studio_backup_truoc_don_1787881356.db`** | **421,21 MB** | **27/08 20:22** | **143 · 2.689 · 6.793 · 110 · 14.503** |
+
+  Đọc bằng `sqlite3.connect("file:…?immutable=1", uri=True)` nên **không tạo
+  `-wal`/`-shm`, không ghi một byte nào** vào thư mục của anh Hùng.
+  **MẤT GÌ:** kênh / video / clip / mẫu **KHÔNG MẤT** — bản 27/08 20:22 còn đủ
+  **143 kênh · 2.689 video · 6.793 clip · 1.566 pipeline_files**. Cái mất là
+  **mọi thứ phát sinh SAU 27/08 20:22**, cụ thể là **4 job thay giọng sáng
+  28/08** (job mới nhất trong bản sao lưu là `thay_giong done 27/08 04:56`).
+  **Ổ ĐĨA KHÔNG CÒN ĐẦY:** C: còn **345,9 / 931,4 GB (37,1%)** · D: còn
+  **251,2 / 931,5 GB (27,0%)** — tức nguyên nhân "ổ C đầy" của lần trước hiện
+  KHÔNG tái hiện, và **chưa truy ra** vì sao file .db tụt về 118 KB.
+  **KHÔNG TỰ CHỮA — anh Hùng phải TẮT APP thì mới đổi được file.** Việc phải
+  làm khi anh ấy tắt app: đổi tên `studio.db` (+ `-wal`/`-shm`) rồi copy
+  `studio_backup_truoc_don_1787881356.db` thành `studio.db`.
   (16/08/2026).** Cờ `thay_giong.DUNG_DICH_SOAT` có sẵn nhưng **mặc định TẮT**;
   `BQ_DICH_SOAT=1` chỉ để đo lại. Đường sống vẫn là `_dich_loat`.
   **VÌ SAO PHẢI ĐO LẠI DÙ ĐÃ CÓ "DO 3":** `_do_dich_ab.py` so `_dich_loat` với
