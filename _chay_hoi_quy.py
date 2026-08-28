@@ -412,7 +412,10 @@ CONG = [
     # chuẩn ngưỡng 4 tiếng, có arm TRẦN bản ngữ) · CA 7 (tiếng đọc không được)
     # · CA 8 (bộ đếm từ CJK-aware) · **CA 9** (hệ chữ ngoài tầm phiên âm ->
     # CHẶN trước khi đốt GPU). CA 9 là chốt CHẶN thật, không phải nhãn.
-    ("92 đọc lại câu lan man", "_test_doc_lan.py",       85),
+    # 85 -> 90 (28/08/2026): CA 7 thêm 5 mục canh bản vá "MỘT câu hỏng KHÔNG
+    # được làm bỏ cả loạt" — ngưỡng đếm theo SỐ CÂU · `khong_co_gi_de_doc` hai
+    # chiều · chữ ngoài tầm phiên âm vẫn tính là HỎNG · `TY_LE_TOI_THIEU` đã gỡ.
+    ("92 đọc lại câu lan man", "_test_doc_lan.py",       90),
     # Số **93** lấy bằng cách ĐỌC chính bảng này (max đang là 92), KHÔNG đếm
     # theo trí nhớ — trùng số là hai cổng ghi đè `_kq93.txt` của nhau (bài học
     # 70 vs 69, 85 vs 81). Cổng canh HAI bệnh đo được 27/08/2026 trên video
@@ -423,7 +426,10 @@ CONG = [
     # **9.712 token** > trần TPM 8.000 -> 413 mọi lượt -> fail-safe trả 10,0
     # cho MỌI câu = cổng chất lượng dịch TỰ PASS OAN trên mọi video dài.
     # KHÔNG gọi mạng (gián điệp thay `complete_json`) nên TIỀN ĐỊNH.
-    ("93 dịch chia mẻ",     "_test_dich_me.py",          27),
+    # 27 -> 34 (28/08/2026): CA 7 canh CỬA THỨ HAI `dubbing._translate_chunks`
+    # (đường lồng tiếng) — v2.46.0 vá `thay_giong._dich_loat` mà bỏ quên nó,
+    # trong khi nó còn hở HƠN (xin mảng CHUỖI THUẦN rồi đọc `data[i]`).
+    ("93 dịch chia mẻ",     "_test_dich_me.py",          34),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

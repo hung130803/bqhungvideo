@@ -113,7 +113,11 @@ PHEP: list[tuple[str, Path, str, str, str]] = [
     ("14. chép ngược ghi cứng hai ngôn ngữ (ép whisper chép Trung bằng Việt)",
      DVE, "    ep = nn", "    ep = \"en\" if nn == \"en\" else \"vi\"", ""),
     ("15. gỡ ALL-OR-NOTHING (cho video lẫn hai giọng giữa chừng)",
-     GV, "TY_LE_TOI_THIEU = 1.0", "TY_LE_TOI_THIEU = 0.0", ""),
+     GV, "BO_LOAT_TU_SO_CAU = 3", "BO_LOAT_TU_SO_CAU = 99999", ""),
+    ("15b. coi câu chỉ-dấu-câu là HỎNG (một dấu `-` giết cả giọng nhân bản)",
+     GV,
+     "        return not (_CHU_CO_AM.search(s) or _CHU_G2P_BO.search(s))",
+     "        return False", ""),
     # ────────────────────── nhóm HỆ CHỮ NGOÀI TẦM PHIÊN ÂM (27/08, lượt 3)
     # Đây là chốt CHẶN, không phải chốt chấm điểm — phá nó thì hậu quả không
     # phải "bảng số xấu đi" mà là **video ra 17-21 giây lảm nhảm mỗi câu với

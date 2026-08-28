@@ -290,6 +290,58 @@ def ca6_tu_kiem() -> None:
     ok(len(diem) == 167, "bản cũ vẫn trả đủ 167 điểm (do gián điệp không 413)")
 
 
+def ca7_dubbing() -> None:
+    """CA 7 — CỬA THỨ HAI `dubbing._translate_chunks` PHẢI CÙNG THUỐC.
+
+    v2.46.0 vá `thay_giong._dich_loat` nhưng bỏ quên cửa lồng tiếng, mà cửa đó
+    còn hở HƠN: nó xin **mảng CHUỖI THUẦN** rồi đọc `data[i]` theo VỊ TRÍ —
+    không có nhãn thì không có cách nào biết mình vừa nhận nhầm câu.
+    """
+    import ast
+    from app.core import dubbing as DUB
+    from app.core import thay_giong as TG
+    print("\nCA 7 — CỬA LỒNG TIẾNG `dubbing._translate_chunks`")
+    c = cau_gia(167)
+    with GianDiep() as g:
+        ra = DUB._translate_chunks(c, "vi")
+    ok(len(g.muc) > 1, "167 câu KHÔNG còn gửi trong MỘT lượt",
+       "%d mẻ, cỡ %s" % (len(g.muc), [m["so_muc"] for m in g.muc]))
+    ok(all(m["so_muc"] <= TG.ME_TOI_DA for m in g.muc),
+       "mẻ nào cũng dưới trần %d câu" % TG.ME_TOI_DA,
+       "lớn nhất %d" % max(m["so_muc"] for m in g.muc))
+    ok(all(m["max_tokens"] >= TG.ME_TOKEN_RA_MOI_CAU * m["so_muc"]
+           * TG.ME_HE_SO_ROI for m in g.muc),
+       "chỗ trả lời luôn RỘNG gấp %.0f lần mức cần" % TG.ME_HE_SO_ROI)
+    ok(len(ra) == 167 and all(ra[i] == "dich_%d" % i for i in range(167)),
+       "167 câu về ĐÚNG chỗ của nó (đọc theo NHÃN)")
+    # ĐẢO thứ tự trong từng mẻ: đọc theo VỊ TRÍ sẽ lệch bậc, đọc theo NHÃN thì
+    # không. Đây là mục phân biệt được hai cách đọc.
+    class DaoThuTu(GianDiep):
+        def bat(self):
+            g = super().bat()
+            from app.ai import llm
+            cu = llm.complete_json
+            llm.complete_json = lambda p, **k: (lambda xs: xs[1:] + xs[:1])(
+                cu(p, **k))
+            return g
+    with DaoThuTu() as g2:
+        ra2 = DUB._translate_chunks(c, "vi")
+    lech = [i for i in range(167) if ra2[i] != "dich_%d" % i]
+    ok(not lech, "kết quả BỊ ĐẢO trong mẻ -> vẫn 0 câu lệch bậc",
+       "lệch %d câu" % len(lech))
+    # KHÔNG ĐẺ HÀM CHIA MẺ THỨ HAI (luật repo).
+    t = ast.parse((REPO / "app" / "core" / "dubbing.py").read_text(
+        encoding="utf-8"))
+    de = [n.name for n in ast.walk(t) if isinstance(n, ast.FunctionDef)
+          and ("chia_me" in n.name or "theo_nhan" in n.name)]
+    ok(not de, "`dubbing.py` KHÔNG tự đẻ hàm chia mẻ / đọc nhãn riêng",
+       ", ".join(de) or "không có")
+    goi = {n.func.attr for n in ast.walk(t) if isinstance(n, ast.Call)
+           and isinstance(n.func, ast.Attribute)}
+    ok("chia_me_dich" in goi and "_theo_nhan" in goi,
+       "...mà GỌI vào cửa chung của `thay_giong`")
+
+
 def main() -> int:
     print("=" * 70)
     print("CỔNG 93 — DỊCH CHIA MẺ THEO NGÂN SÁCH TOKEN")
@@ -300,6 +352,7 @@ def main() -> int:
     ca4_video_ngan()
     ca5_me_hong()
     ca6_tu_kiem()
+    ca7_dubbing()
     print("\n" + "=" * 70)
     print("KETQUA: ĐẠT %d · HỎNG %d" % (DAT, HONG))
     print("=" * 70)

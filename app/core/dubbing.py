@@ -1833,49 +1833,96 @@ _LANG_VI = {
 
 
 def _translate_chunks(chunks: list[dict], target_lang: str) -> list[str]:
-    """Dịch tất cả cụm sang target_lang trong 1 lần gọi LLM. Trả list text dịch
-    (cùng số phần tử; phần tử lỗi/thiếu -> giữ text gốc). Ném LLMError nếu LLM
-    chưa cấu hình hoặc gọi thất bại hoàn toàn."""
+    """Dịch tất cả cụm sang target_lang. Trả list text dịch (cùng số phần tử;
+    phần tử lỗi/thiếu -> giữ text gốc). Ném LLMError nếu LLM chưa cấu hình
+    hoặc gọi thất bại hoàn toàn.
+
+    ═══ CÙNG BỆNH "LỆCH BẬC" ĐÃ VÁ Ở `thay_giong._dich_loat` (v2.46.0) ═══
+    Bản cũ của hàm này gửi **CẢ LOẠT trong MỘT lượt** rồi đọc kết quả **theo
+    VỊ TRÍ `data[i]`** trên một MẢNG CHUỖI THUẦN — tức còn hở hơn cửa kia (cửa
+    kia ít nhất đã xin `{"i":…}`). Groq trần **8.000 token/phút** và tính CẢ
+    `max_tokens` vào cỡ yêu cầu, nên loạt dài làm chỗ trả lời hẹp lại -> model
+    **GỘP/BỎ câu rồi ĐÁNH SỐ TIẾP** -> câu #i mang lời dịch của câu #i+1.
+    Đo trên cửa kia (video THẬT 396 s / 167 câu, bộ dò dịch-ngược + chrF):
+        cả loạt một lượt -> LỆCH BẬC **6,6% · 31,7%**
+        chia mẻ + ngữ cảnh -> **0,6% · 0,6%**
+        video 65 câu (LỌT MỘT LƯỢT) -> **0,0%**  <- bệnh CHỈ lộ ở video DÀI
+    Vì vậy mẫu ngắn KHÔNG tái hiện được; đừng thử bằng 10 câu rồi kết luận.
+
+    ═══ DÙNG LẠI `chia_me_dich` + `_theo_nhan`, KHÔNG ĐẺ CỬA THỨ HAI ═══
+    `chunks` cùng hình dạng `{start,end,text}` với `cau` của `_dich_loat` nên
+    hai hàm ăn thẳng. Đẻ hàm chia mẻ thứ hai là đẻ chỗ để hai bên lệch nhau.
+    """
     from app.ai import llm
+    from app.core import thay_giong as tg
     if not llm.is_configured():
         raise llm.LLMError(
             "Lồng tiếng cần AI để dịch lời thoại — hãy dán key Groq/Gemini "
             "trong Cài đặt AI (hoặc chọn ngôn ngữ trùng với video).")
     lang_name = _LANG_VI.get(target_lang, target_lang)
-    items = []
-    for i, c in enumerate(chunks):
-        dur = c["end"] - c["start"]
-        txt = c["text"].replace("\n", " ")[:500]
-        items.append(f'#{i} [{dur:.1f} giây]: "{txt}"')
-    listing = "\n".join(items)
     system = (
         "Bạn là chuyên gia dịch lồng tiếng video (dubbing). Dịch tự nhiên như "
         "VĂN NÓI, ngắn gọn, giữ đúng ý và cảm xúc. CHỈ trả JSON thuần.")
-    prompt = (
-        f"Dịch các câu thoại sau sang {lang_name} để LỒNG TIẾNG video.\n"
-        "Mỗi dòng: #số_thứ_tự [số giây cho phép]: \"lời thoại gốc\".\n"
-        f"{listing}\n\n"
-        "QUY TẮC:\n"
-        f"- Dịch sang {lang_name}, văn NÓI tự nhiên (không văn viết cứng).\n"
-        "- NGẮN GỌN: độ dài ĐỌC LÊN phải lọt khung [số giây] của từng câu — "
-        "câu gốc dài thì lược bớt từ đệm, giữ ý chính.\n"
-        "- KHÔNG thêm chú thích, không phiên âm, chỉ lời thoại.\n"
-        f"- Trả về MẢNG JSON đúng {len(chunks)} chuỗi, cùng thứ tự:\n"
-        '["câu dịch 1", "câu dịch 2", ...]')
-    data = llm.complete_json(prompt, system=system)
-    if isinstance(data, dict):          # model bọc {"translations": [...]}
-        for v in data.values():
-            if isinstance(v, list):
-                data = v
-                break
-    if not isinstance(data, list):
+    n = len(chunks)
+    ra: dict[int, str] = {}
+    con: list[int] = list(range(n))
+    loi_dau: Optional[Exception] = None
+    for _vong in range(tg.VONG_DOI_LAI):
+        if not con:
+            break
+        duoc_gi = False
+        for phan in tg.chia_me_dich(chunks, con):
+            items = []
+            for i in phan:
+                c = chunks[i]
+                dur = max(0.1, float(c["end"]) - float(c["start"]))
+                txt = str(c["text"]).replace("\n", " ")[:500]
+                items.append(f'#{i} [{dur:.1f} giây]: "{txt}"')
+            a, b = phan[0], phan[-1]
+            truoc = " ".join(str(chunks[j].get("text") or "")
+                             for j in range(max(0, a - tg.ME_NGU_CANH_BEN), a))
+            sau = " ".join(str(chunks[j].get("text") or "")
+                           for j in range(b + 1,
+                                          min(n, b + 1 + tg.ME_NGU_CANH_BEN)))
+            prompt = (
+                f"Dịch các câu thoại sau sang {lang_name} để LỒNG TIẾNG "
+                f"video.\n"
+                'Mỗi dòng: #số_thứ_tự [số giây cho phép]: "lời thoại gốc".\n'
+                + f'\nĐOẠN NGAY TRƯỚC (KHÔNG dịch, chỉ để nối mạch): '
+                  f'"{truoc or "(đầu bài)"}"\n'
+                + f'ĐOẠN NGAY SAU (KHÔNG dịch, chỉ để nối mạch): '
+                  f'"{sau or "(cuối bài)"}"\n'
+                + "\nCÁC CÂU CẦN DỊCH (chỉ dịch đúng những câu có dấu #):\n"
+                + f"{chr(10).join(items)}\n\n"
+                "QUY TẮC:\n"
+                f"- Dịch sang {lang_name}, văn NÓI tự nhiên (không văn viết "
+                f"cứng).\n"
+                "- NGẮN GỌN: độ dài ĐỌC LÊN phải lọt khung [số giây] của từng "
+                "câu — câu gốc dài thì lược bớt từ đệm, giữ ý chính.\n"
+                "- KHÔNG thêm chú thích, không phiên âm, chỉ lời thoại.\n"
+                f"- Trả MẢNG JSON {len(phan)} đối tượng "
+                '{"i": <đúng số sau dấu #>, "t": "<bản dịch>"}. '
+                "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào, KHÔNG gộp hai câu."
+            )
+            try:
+                data = llm.complete_json(prompt, system=system)
+            except Exception as e:      # noqa: BLE001
+                # Một mẻ hỏng KHÔNG được giết cả video: giữ phần đã dịch được,
+                # mẻ khác vẫn chạy tiếp (đúng khuôn `_dich_loat`).
+                loi_dau = loi_dau or e
+                continue
+            for i, t in tg._theo_nhan(data, phan, "t").items():
+                if isinstance(t, str) and t.strip():
+                    ra[i] = t.strip()
+                    duoc_gi = True
+        con = [i for i in range(n) if i not in ra]
+        if not duoc_gi:
+            break
+    if not ra and loi_dau is not None:
+        raise loi_dau
+    if not ra:
         raise llm.LLMError("LLM không trả về mảng bản dịch cho lồng tiếng.")
-    out = []
-    for i, c in enumerate(chunks):
-        t = data[i] if i < len(data) else None
-        out.append(str(t).strip() if isinstance(t, str) and str(t).strip()
-                   else c["text"])
-    return out
+    return [ra.get(i) or c["text"] for i, c in enumerate(chunks)]
 
 
 # ------------------------------------------------------------------

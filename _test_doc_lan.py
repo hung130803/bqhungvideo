@@ -604,12 +604,30 @@ def ca7() -> None:
            and arm.get("EDG_" + k[4:])]
     ok("7a bảng nêu ĐÍCH DANH tiếng giọng nhân bản đọc ra 0 mục dùng được",
        bool(d), ("không có tiếng nào" if not cam else ", ".join(sorted(cam))))
-    # ALL-OR-NOTHING: đọc được 18/20 câu rồi để 2 câu lùi edge-tts thì video
-    # ra LẪN HAI GIỌNG giữa chừng, mã thoát vẫn 0 (mệnh đề cổng 63). Đây là
-    # thứ giữ cho ca "không đọc được tiếng đó" thành **hỏng TO**, không thành
-    # **hỏng ÂM THẦM**.
-    ok("7b `giong_vieneu.TY_LE_TOI_THIEU` vẫn là 1.0 (được ăn cả, ngã về edge)",
-       GV.TY_LE_TOI_THIEU == 1.0, str(GV.TY_LE_TOI_THIEU))
+    # ALL-OR-NOTHING vẫn còn, chỉ thôi bập ở MỘT câu hỏng. Ca "không đọc được
+    # tiếng đó" ra 0/N -> vẫn BỎ CẢ LOẠT (hỏng TO, không hỏng ÂM THẦM); ca
+    # "1/168 hỏng" thì cứu phần còn lại. Xem khối `BO_LOAT_TU_SO_CAU`.
+    ok("7b ngưỡng bỏ loạt đếm theo SỐ CÂU (chùm lẻ tẻ đo được 1-2 câu)",
+       GV.BO_LOAT_TU_SO_CAU == 3, str(GV.BO_LOAT_TU_SO_CAU))
+    ok("7b' loạt NGẮN vẫn có chốt theo tỉ lệ",
+       0.0 < GV.BO_LOAT_TY_LE < 1.0, str(GV.BO_LOAT_TY_LE))
+    ok("7b'' `TY_LE_TOI_THIEU` đã GỠ (đổi thẳng, không để hằng số chết)",
+       not hasattr(GV, "TY_LE_TOI_THIEU"), "còn" if hasattr(
+           GV, "TY_LE_TOI_THIEU") else "đã gỡ")
+    # Câu CHỈ DẤU CÂU: WAV 0 giây là kết quả ĐÚNG, không được tính là hỏng —
+    # đo thật `"-"` -> 0 giây (`_do_bo_loat.py phep_bien`).
+    ok("7c `khong_co_gi_de_doc` bắt đúng câu chỉ có dấu câu",
+       all(GV.khong_co_gi_de_doc(t) for t in ("-", "...", "?", " ", "", "!!")),
+       "6/6")
+    ok("7c' và KHÔNG kêu oan câu có nội dung (kể cả chữ Hán)",
+       not any(GV.khong_co_gi_de_doc(t)
+               for t in ("Xin chào", "hi", "1", "现", "OK.")),
+       "0/5 bị kêu")
+    # `现` là chữ THẬT (có trong transcript anh Hùng) mà VieNeu ra 0 âm vị ->
+    # đọc lại vô ích, nhưng nó vẫn là câu HỎNG, không phải câu được tha.
+    ok("7d chữ ngoài tầm phiên âm KHÔNG bị coi là 'không có gì để đọc'",
+       (not GV.khong_co_gi_de_doc("现")
+        and GV.ty_le_chu_bo("现") > GV.TY_LE_CHU_BO_TOI_DA), "1.0 > 0.5")
 
 
 # =========================================================== CA 8

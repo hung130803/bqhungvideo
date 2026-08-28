@@ -2266,11 +2266,79 @@ def khong_doc_duoc(texts: Sequence[str]) -> tuple[bool, float]:
         return (False, 0.0)
 
 
+def khong_co_gi_de_doc(text: str) -> bool:
+    """Câu này KHÔNG CÓ GÌ để đọc thành tiếng. Hàm THUẦN.
+
+    True khi chuỗi không còn một ký tự nào có thể thành âm **và** cũng không
+    có chữ Hán/kana/hangul — tức nó chỉ là dấu câu (`"-"`, `"..."`, `"?"`).
+    Với câu như thế thì WAV **0 giây là KẾT QUẢ ĐÚNG**, không phải máy hỏng.
+
+    Phân biệt với `ty_le_chu_bo` (câu CÓ nội dung nhưng VieNeu không phiên âm
+    được, ví dụ `"现"`): chỗ đó là hỏng THẬT, chỉ là đọc lại vô ích.
+    """
+    try:
+        s = str(text or "")
+        return not (_CHU_CO_AM.search(s) or _CHU_G2P_BO.search(s))
+    except (TypeError, ValueError):
+        return True
+
+
 # ---------------------------------------------------------------------------
 # CỬA CHÍNH — cùng hợp đồng với `piper_tts.doc_loat` / `giong_ngoai.doc_loat`
 # ---------------------------------------------------------------------------
-#: Đọc được bao nhiêu câu thì mới coi cả loạt là dùng được. Xem `doc_loat`.
-TY_LE_TOI_THIEU = 1.0
+# ═══ VÌ SAO "MỘT CÂU HỎNG = BỎ CẢ LOẠT" PHẢI ĐỔI (28/08/2026) ═══
+# Nhật ký máy anh Hùng, **3 video trong MỘT buổi** (27/08, 11:29 · 11:51 ·
+# 12:09): `Chỉ đọc được 142/143 · 67/68 · 167/168 câu -> BỎ CẢ LOẠT, lùi
+# edge-tts`. Một câu hỏng trên 168 làm CẢ VIDEO mất giọng nhân bản, và nó hỏng
+# **ÂM THẦM** — anh Hùng rất có thể đã nghe edge-tts mà tưởng giọng mình.
+#
+# ═══ GỐC RỄ, ĐO ĐƯỢC ĐÍCH DANH — KHÔNG PHẢI "MÁY ĐỌC NHẤP NHÁY" ═══
+# Quét cả 7 lần "ghi ra file 0 giây" trong nhật ký: **6/7 rơi đúng câu CUỐI**
+# (64/65 · 67/68 ×2 · 142/143 ×2 · 167/168). Nghe như lỗi VỊ TRÍ, nhưng phép
+# đảo thứ tự (`_do_bo_loat.py phep_nho`, 4 lượt × 12 câu, lượt chẵn giữ nguyên
+# lượt lẻ ĐẢO NGƯỢC) ra **48/48 câu lành đều có tiếng ở CẢ HAI chiều** ->
+# **BÁC** giả thuyết vị trí. Và 167 câu dịch THẬT ra **167/167 có tiếng**.
+# Thứ hỏng là **NỘI DUNG CHỮ** (`_do_bo_loat.py phep_bien`, VieNeu THẬT):
+#     `"-"`  -> WAV **0 giây**      (chỉ dấu câu, không có gì để đọc)
+#     `"现"` -> WAV **0 giây**      (chữ Hán: bộ phiên âm ra 0 âm vị)
+#     13/15 chữ còn lại            -> ra tiếng bình thường
+# `khong_doc_duoc()` đã canh đúng lớp bệnh ấy nhưng nó đếm trên **CẢ LOẠT**:
+# một chữ Hán giữa 168 câu Việt ra tỉ lệ 0,0006 — dưới ngưỡng 0,5 rất xa, nên
+# chốt loạt cho qua còn câu đó vẫn ra 0 giây.
+#
+# ═══ CÂU TIẾNG TRUNG LỌT VÀO ĐÂU RA CỦA BƯỚC DỊCH — CHUỖI NHÂN QUẢ ĐỦ ═══
+# `thay_giong._dich_loat` kết bằng `return [ra.get(i) or c["text"] ...]`: câu
+# nào LLM không trả thì **GIỮ NGUYÊN TIẾNG GỐC**. Đếm trên 20 file kết quả
+# dịch THẬT của video v396 (167 câu, Trung -> Việt) bằng chính `ty_le_chu_bo`:
+#     0 câu VieNeu không đọc được : 9 file
+#     **1 câu**                   : 8 file   <- ĐÚNG cảnh anh Hùng gặp
+#     2 câu                       : 2 file
+#     31 câu                      : 1 file   (lượt dịch vỡ hẳn)
+# Tức "1 câu hỏng" KHÔNG hiếm — nó xảy ra ở **8/20 lượt dịch**. Và câu 1 ký tự
+# `现` của bản gốc có lượt được dịch thành `"..."` -> cũng 0 giây, đúng ca `-`.
+#
+# ═══ NGƯỠNG: ĐẾM CÂU, KHÔNG ĐẾM TỈ LỆ — VÀ SỐ LẤY TỪ BẢNG TRÊN ═══
+# Cái hại của việc tha thứ là **SỐ GIÂY IM**, không phải tỉ lệ. Bảng trên tách
+# thành hai chùm rời hẳn nhau: chùm "lẻ tẻ, cứu được" = **1-2 câu**, chùm "lượt
+# dịch vỡ" = **31 câu**. `BO_LOAT_TU_SO_CAU = 3` nằm ngay TRÊN đỉnh chùm một và
+# cách chùm hai **hơn 10 lần** — đặt ở đâu trong khoảng đó cũng ra cùng kết
+# quả, nên đây KHÔNG phải chỗ tinh chỉnh.
+# `BO_LOAT_TY_LE = 0.20` là chốt cho loạt NGẮN: 1 câu hỏng trên 4 câu (25%) thì
+# một phần tư video im, bỏ cả loạt là đúng; 1 trên 6 (16,7%) thì giữ.
+#
+# ═══ VÀ TRƯỚC KHI XÉT NGƯỠNG THÌ **ĐỌC LẠI** ═══
+# Máy đọc này KHÔNG tiền định (đo được WER 3,1% vs 12,7% trên CÙNG bản mã), nên
+# câu hỏng vì nhiễu thì đọc lại là ăn thật — đúng cơ sở đã dựng nên
+# `_doc_lai_lan_man`. Dùng LẠI đường đó (`_chay_vieneu` + `_dat_file`), KHÔNG
+# viết máy đọc thứ hai.
+#: Từ ngần này câu hỏng (SAU khi đã đọc lại) trở lên thì BỎ CẢ LOẠT.
+BO_LOAT_TU_SO_CAU = 3
+
+#: ...hoặc quá ngần này phần loạt. Chốt dành cho loạt NGẮN.
+BO_LOAT_TY_LE = 0.20
+
+#: Trần số vòng ĐỌC LẠI cho nhóm câu hỏng. Mỗi vòng là một lượt nạp model.
+DOC_LAI_HONG_VONG = 2
 
 
 def doc_loat(texts: list[str], paths: list[str], voice: str,
@@ -2382,16 +2450,43 @@ def doc_loat(texts: list[str], paths: list[str], voice: str,
     finally:
         _ra_doc()
 
+    # ĐẾM LẠI, NHƯNG THA CÂU KHÔNG CÓ GÌ ĐỂ ĐỌC. `"-"` / `"..."` ra WAV 0 giây
+    # là kết quả ĐÚNG; tính nó vào cột hỏng thì một dấu gạch ngang trong bản
+    # dịch đủ sức đánh sập giọng nhân bản của cả video (đo được ở `phep_bien`).
     can = [i for i in range(n) if (texts[i] or "").strip()]
+    tha = [i for i in can if not ok[i] and khong_co_gi_de_doc(texts[i])]
+    ke = [i for i in can if i not in tha]
+    hong = [i for i in ke if not ok[i]]
     duoc = [i for i in can if ok[i]]
-    try:
-        nguong = float(os.environ.get("BQ_VN_TY_LE", TY_LE_TOI_THIEU))
-    except ValueError:
-        nguong = TY_LE_TOI_THIEU
-    if can and len(duoc) < nguong * len(can):
+    if tha:
+        _ghi_log(f"{len(tha)} câu không có gì để đọc (chỉ dấu câu) -> im lặng "
+                 f"là ĐÚNG, KHÔNG tính là hỏng: {tha[:5]}")
+    if ke and (len(hong) >= BO_LOAT_TU_SO_CAU
+               or len(hong) > BO_LOAT_TY_LE * len(ke)):
+        # BÁO TO. Một dòng nhật ký là thứ anh Hùng KHÔNG đọc — đó đúng là lý do
+        # ba video liền mất giọng nhân bản mà không ai biết. `on_msg` đi thẳng
+        # lên bảng tiến độ hộp Thay giọng (`thay_giong._nhac_tung_cau`).
+        loi = (f"MẤT GIỌNG NHÂN BẢN: {len(hong)}/{len(ke)} câu đọc hỏng -> cả "
+               f"video phải dùng giọng máy (edge-tts), KHÔNG phải giọng bạn "
+               f"chọn")
         _ghi_log(f"Chỉ đọc được {len(duoc)}/{len(can)} câu bằng {voice} -> "
-                 f"BỎ CẢ LOẠT, lùi edge-tts (không để video lẫn hai giọng)")
+                 f"BỎ CẢ LOẠT, lùi edge-tts (không để video lẫn hai giọng). "
+                 f"Câu hỏng: {hong[:10]}")
+        if on_msg:
+            try:
+                on_msg(loi)
+            except Exception:  # noqa: BLE001
+                pass
         ok, words = [False] * n, [[] for _ in range(n)]
+    elif hong:
+        # GIỮ giọng nhân bản cho phần còn lại. Nói ra, vì đây là đánh đổi thật:
+        # mấy câu này sẽ IM. Im 1 câu/168 vẫn hơn mất giọng cả video.
+        if on_msg:
+            try:
+                on_msg(f"{len(hong)}/{len(ke)} câu đọc hỏng sau khi đã đọc "
+                       f"lại -> giữ giọng nhân bản cho {len(duoc)} câu còn lại")
+            except Exception:  # noqa: BLE001
+                pass
 
     _xong_het()
     return ok, words
@@ -2628,6 +2723,74 @@ def _doc_lai_lan_man(items: list[dict], ket: dict, tt: dict, voice: str,
         return ket
 
 
+def _dat_file(raw: Path, i: int, paths: list[str], rate: str | list) -> bool:
+    """Nhận WAV thô của câu `i` -> ép khung -> đặt vào `paths[i]`. Trả ĐẠT chưa.
+
+    CỬA DUY NHẤT: cả lượt đọc đầu lẫn lượt ĐỌC LẠI đều đi qua đây, nên không
+    có đường nào bỏ sót phép `_ep_khung` hay phép đo lại độ dài.
+    """
+    # KHÔNG tin tiến trình con báo "ok" — ĐO lại file nó ghi ra. Cùng một luật
+    # với "ffmpeg trả mã 0 mà file rỗng".
+    if dai_wav(raw) <= 0.02:
+        _ghi_log(f"VieNeu ghi ra file 0 giây cho câu {i} -> bỏ")
+        return False
+    r_i = (rate[i] if isinstance(rate, list) and i < len(rate)
+           else (rate if isinstance(rate, str) else "+0%"))
+    dich = Path(paths[i])
+    dich.parent.mkdir(parents=True, exist_ok=True)
+    return bool(_ep_khung(raw, dich, _tempo_tu_rate(r_i)))
+
+
+def _doc_lai_hong(thieu: list[int], texts: list[str], paths: list[str],
+                  rate: str | list, tt: dict, voice: str, nb: bool,
+                  han_giay: int, on_msg: Optional[Callable[[str], None]],
+                  sb: Path, ok: list[bool]) -> None:
+    """ĐỌC LẠI riêng các câu hỏng, sửa `ok` tại chỗ. **KHÔNG BAO GIỜ NÉM.**
+
+    Hỏng ở bất cứ đâu thì để `ok` y như lúc nhận — nơi gọi vẫn còn nguyên
+    đường bỏ-cả-loạt, tức bản vá này chỉ có thể làm TỐT LÊN hoặc không đổi.
+    """
+    con = list(thieu)
+    for vong in range(1, DOC_LAI_HONG_VONG + 1):
+        if not con:
+            return
+        try:
+            if on_msg:
+                try:
+                    on_msg(f"Doc lai {len(con)} cau doc hong "
+                           f"(lan {vong}/{DOC_LAI_HONG_VONG})...")
+                except Exception:  # noqa: BLE001
+                    pass
+            thu = sb / f"hong{vong}"
+            thu.mkdir(parents=True, exist_ok=True)
+            mi = [{"i": i, "text": (texts[i] or "").strip().replace("\n", " "),
+                   "raw": str(thu / f"c{i:04d}.wav")} for i in con]
+            k2 = _chay_vieneu(mi, tt["python"],
+                              "" if nb else ten_giong(voice),
+                              ten_giong(voice) if nb else "",
+                              han_giay, None)
+            _don(Path(k2.get("_sandbox") or ""))
+            if not k2.get("ok"):
+                _ghi_log(f"Đọc lại câu hỏng vòng {vong} không chạy được "
+                         f"({k2.get('loi')}) -> giữ nguyên {len(con)} câu")
+                return
+            an = []
+            for r2 in k2.get("ra") or []:
+                i = int(r2.get("i", -1))
+                if i in con and _dat_file(Path(r2.get("p") or ""), i, paths,
+                                          rate):
+                    ok[i] = True
+                    an.append(i)
+            con = [i for i in con if not ok[i]]
+            _ghi_log(f"Đọc lại câu hỏng vòng {vong}: xin {len(mi)} câu · "
+                     f"CỨU ĐƯỢC {len(an)} {an[:10]} · còn hỏng {len(con)} "
+                     f"{con[:10]}")
+        except Exception as e:  # noqa: BLE001
+            _ghi_log(f"Đọc lại câu hỏng vòng {vong} lỗi lạ "
+                     f"({type(e).__name__}: {e}) -> giữ nguyên")
+            return
+
+
 def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
          rate: str | list, lang: str, lay_moc: bool, han_giay: int,
          on_msg: Optional[Callable[[str], None]],
@@ -2685,19 +2848,19 @@ def _doc(texts: list[str], paths: list[str], voice: str, tt: dict,
         i = int(r.get("i", -1))
         if not (0 <= i < n):
             continue
-        raw = Path(r.get("p") or "")
-        # KHÔNG tin tiến trình con báo "ok" — ĐO lại file nó ghi ra. Cùng một
-        # luật với "ffmpeg trả mã 0 mà file rỗng".
-        if dai_wav(raw) <= 0.02:
-            _ghi_log(f"VieNeu ghi ra file 0 giây cho câu {i} -> bỏ")
-            continue
-        r_i = (rate[i] if isinstance(rate, list) and i < len(rate)
-               else (rate if isinstance(rate, str) else "+0%"))
-        dich = Path(paths[i])
-        dich.parent.mkdir(parents=True, exist_ok=True)
-        if not _ep_khung(raw, dich, _tempo_tu_rate(r_i)):
-            continue
-        ok[i] = True
+        if _dat_file(Path(r.get("p") or ""), i, paths, rate):
+            ok[i] = True
+
+    # ĐỌC LẠI RIÊNG CÂU HỎNG — thay vì vứt cả loạt. Xem khối ghi chú ở
+    # `BO_LOAT_TU_SO_CAU`. Câu KHÔNG CÓ GÌ ĐỂ ĐỌC (`"-"`) và câu NGOÀI TẦM
+    # PHIÊN ÂM (`"现"`) thì đọc lại vô ích — hai loại đó bị loại ra ở đây chứ
+    # không phải đem đi nướng thêm hai vòng GPU.
+    thieu = [i for i in can if not ok[i]
+             and not khong_co_gi_de_doc(texts[i])
+             and ty_le_chu_bo(texts[i]) <= TY_LE_CHU_BO_TOI_DA]
+    if thieu:
+        _doc_lai_hong(thieu, texts, paths, rate, tt, voice, nb, han_giay,
+                      on_msg, sb, ok)
 
     if lay_moc:
         xong = [i for i in can if ok[i]]
