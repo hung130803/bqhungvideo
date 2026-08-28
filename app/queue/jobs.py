@@ -390,6 +390,13 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
             # một hệ số bịa nhân vào ĐỘ DÀI TIẾNG thì không có đường lùi —
             # cùng lý do hai ô dB ngay trên đi qua `chuan_muc_db`.
             keo_dai_giong=tg.chuan_keo_dai(payload.get("keo_dai_giong")),
+            # VIẾT ĐẦY CÂU HỤT KHUNG (bước 4b') — job cũ trong DB KHÔNG mang
+            # khoá này -> `.get` trả None -> `bool` ra False = y hệt bản trước,
+            # KHÔNG một lượt LLM nào thêm và không một video nào trong 200-300
+            # kênh đổi chữ. Mọi chốt chống-bịa (trần nới · model KHÁC chấm
+            # nghĩa · chỉ nhận khi dài hơn THẬT) nằm trong `viet_day_vua_khung`,
+            # KHÔNG nhân đôi ở đây — hai chốt là hai chỗ để lệch nhau.
+            viet_day=bool(payload.get("viet_day")),
             on_progress=_prog,
         )
     except tg.HuyBo as e:

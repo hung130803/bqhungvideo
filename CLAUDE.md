@@ -4565,6 +4565,147 @@
   · **chưa đo TRẢI TỐC ĐỘ ĐỌC** sau khi kéo (cần bản dịch, phép đo này chỉ có
   file giọng) — mà đó đúng là cột anh Hùng cũng đã kêu (*"lúc nhanh lúc chậm"*),
   nên **không được hứa** trước khi có số.
+  **(16) 28/08/2026 — HƯỚNG THỨ SÁU "DỊCH ĐẦY HƠN": ĐÃ LÀM, ĐÃ ĐO BỐN CỘT
+  CÙNG LÚC. KẾT LUẬN: *KHÔNG GIẢI ĐƯỢC*, VÀ CON SỐ NÓI RÕ VÌ SAO.**
+  Anh Hùng chốt bằng bốn chữ: *"đọc LIỀN · NHANH · mà ĐỀU · mà ĐÚNG"*. Bốn thứ
+  đá nhau theo SỐ HỌC (tiếng xong sớm -> dư chỗ -> muốn LIỀN thì phải lấp).
+  Hai cách lấp cũ đều mất một chữ; cách thứ ba — **viết bản dịch ĐẦY HƠN**,
+  cùng nghĩa nhưng nhiều chữ hơn — chưa ai thử. Nay đã thử.
+  **VIỆC 0 — PHÂN BỐ HỤT KHUNG** (`_do_viet_day.py`, video THẬT
+  `Downloads\longtieng` chép sang hộp cát, `vnb:` · đích `vi` · `tach`).
+  **Khung đo trên TRỤC GỐC nên số này đúng cho CẢ hai mục** của combo "Khớp
+  tiếng với hình" — chỉnh hình chỉ phóng phần trống lên `k` lần chứ không đẻ
+  ra nó:
+
+  | video/giọng | % câu HỤT | giây hụt | % video | câu TRÀN | +ký tự | gấp | DỄ · KHÓ · BỊA |
+  |---|---|---|---|---|---|---|---|
+  | lt1/VNB | 31,43 | 7,41 | 8,23 | 24 (68,6%) | 146 | 1,083x | 8 · 2 · 1 |
+  | lt1/EDGE | 11,43 | 1,80 | 2,00 | 28 (80,0%) | 31 | 1,019x | 3 · 1 · 0 |
+  | lt2/VNB | 44,00 | 9,66 | 10,73 | 23 (46,0%) | 194 | 1,115x | 16 · 4 · 2 |
+  | lt2/EDGE | 14,00 | 4,73 | 5,25 | 40 (80,0%) | 79 | 1,049x | 5 · 1 · 1 |
+
+  **HAI ĐIỀU BẤT NGỜ, VÀ CẢ HAI ĐỔI CÁCH ĐỌC BÀI TOÁN:**
+  · **Phần hụt NHỎ** — 2,0-10,7% thời lượng, lấp hết chỉ cần **+1,9% đến
+    +11,5% ký tự** cả bài. Tức **KHÔNG phải bịa**, hướng này ĐƯỢC PHÉP làm
+    (bậc 0,0-0,5 s gom 8/11 câu ở lt1/VNB; chỉ 1-2 câu rơi vào nhóm BỊA).
+  · **Phần lớn câu lại TRÀN khung (46-80%)**, mà `he_so_hinh_can` lấy đúng tỉ
+    số TRÀN LỚN NHẤT làm hệ số giãn hình. Nên ở mục 2, video phình `k` lần
+    trong khi tiếng thì không — **đó mới là chỗ đẻ ra phần lớn khoảng im, và
+    viết đầy KHÔNG với tới nó**.
+  **VIỆC 1 — `viet_day_vua_khung` (bước 4b'), khuôn ĐỐI XỨNG `rut_gon_vua_
+  khung`.** Ba chốt chống bịa: **TRẦN NỚI 1,45x** · **model KHÁC model dịch
+  chấm lại** (`qwen/qwen3.8-27b` vs `openai/gpt-oss-120b`) · **chỉ nhận khi
+  đọc lên DÀI HƠN THẬT và KHÔNG tràn khung**. Đọc lại đi CHUNG cửa
+  `_doc_lai_loat` với 4b nên `thay_giong.py` vẫn ĐÚNG **3** chỗ gọi
+  `_synth_all_words` (cổng 63 giữ 49·0). MẶC ĐỊNH TẮT.
+  **VIỆC 2 — BẢNG 4 CỘT × 4 ARM** (`_do_bon_chu.py`; MỘT lượt chạy/video/giọng
+  rồi tách arm — mọi arm dùng chung bản dịch + bộ file giọng gốc, ghép cặp
+  theo cấu tạo). **A** = app hôm nay · **B** = kéo chậm 1,15 · **C** = dịch
+  đầy · **D** = dịch đầy + đọc ĐỀU (bỏ 4c). Cột mục 2 = ĐÚNG cấu hình anh Hùng:
+
+  | video/giọng | arm | LIỀN im% | >=0,5s | NHANH kt/s | ĐỀU CV% | ĐÚNG /5 (bịa) |
+  |---|---|---|---|---|---|---|
+  | lt1/VNB | A | **30,08** | 31 | **24,26** | 16,64 | 4,90 (0) |
+  | | B | **15,43** | 7 | 21,03 | **20,41** | 4,90 (0) |
+  | | C | 29,99 | 30 | 24,26 | 16,59 | **4,97** (0) |
+  | | D | 22,44 | 16 | 21,54 | **13,28** | 4,97 (0) |
+  | lt2/VNB | A | **33,44** | 34 | **24,30** | 16,11 | 4,75 (0) |
+  | | B | **20,13** | 8 | 20,15 | 15,50 | 4,75 (0) |
+  | | C | 32,18 | 30 | 23,96 | 15,42 | 4,74 (**1**) |
+  | | D | 27,97 | 22 | 22,33 | **12,68** | 4,74 (**1**) |
+  | lt1/EDGE | A | 19,52 | 19 | 20,36 | 21,53 | 4,87 (0) |
+  | | B | **6,91** | 1 | **17,68** | **22,01** | 4,87 (0) |
+  | | C | 19,08 | 18 | 20,36 | 21,50 | 4,77 (0) |
+  | | D | 14,86 | 11 | 17,96 | **16,97** | 4,77 (0) |
+  | lt2/EDGE | A | 26,39 | 16 | 20,88 | 12,38 | 4,73 (0) |
+  | | B | **15,14** | 2 | **18,06** | 12,94 | 4,73 (0) |
+  | | C | 26,50 | 16 | 20,89 | 12,39 | 4,73 (0) |
+  | | D | 19,33 | 11 | 18,45 | **9,96** | 4,73 (0) |
+
+  **ĐỐI CHỨNG "THƯỚC CÓ RĂNG": arm A ra 30,08% im (lt1/VNB)** — khớp mốc
+  ~29,01% của v2.49.0. Chồng lấn **0,0 ms ở CẢ 16 arm**.
+  **THIẾT KẾ ARM CHO PHÉP TÁCH BẠCH HAI THỨ, VÀ ĐÂY LÀ SỐ ĐÁNG GIÁ NHẤT:**
+  · **`C − A` = DỊCH ĐẦY MỘT MÌNH**: −0,09 · −1,26 · −0,44 · **+0,11** điểm %.
+    Trung bình **−0,4 điểm %**, và một cột còn ĐI NGƯỢC. Tức **gần bằng 0**.
+  · **`D − C` = BỎ 4c một mình** (hai arm đều đã dịch đầy): −7,55 · −4,21 ·
+    −4,22 · −7,17 = **−5,8 điểm %**, lớn hơn **14 lần**.
+  ⇒ **Toàn bộ phần D hơn A là công của "bỏ 4c" (mục 3 combo, đã có từ
+  v2.46.0), KHÔNG phải của dịch đầy.**
+  **VÌ SAO DỊCH ĐẦY GẦN NHƯ KHÔNG ĂN — hai nguyên nhân, đều đo được:**
+  · **LLM viết đầy rất DÈ, và nó ĐÚNG khi dè.** Dump bản thật: `嘿呀 嘿呀…`
+    (tiếng hò) -> trả lại NGUYÊN VĂN vì không có gì để thêm; `凡是被感染的人类
+    都会被遗弃到这里` -> thêm đúng chữ *"sẽ"*; `部分幸存的人类…` -> thêm *"của
+    họ"*. Mỗi câu **1-3 chữ**, chấm trung thành 5/5. Nguồn Trung đã được dịch
+    hết ý (bản Việt vốn đã **3,6x** số ký tự nguồn), nên **không còn chữ nào
+    trong nguồn để lấy**.
+  · **Cửa chống bịa loại phần lớn phần còn lại**: NHẬN **1/6 · 1/2 · 3/10 ·
+    0/3**. Cộng cả 4 lượt: **+22 ký tự được nhận / 450 ký tự cần** =
+    **4,9% phần hụt lấp được bằng chữ THẬT**.
+  **GIÁ LLM: +2 lượt/video** (1 viết đầy + 1 chấm nghĩa) trên nền `_dich_loat`
+  **5,0 lượt/video** = **1,40x** — TRONG trần 1,5x (`dich_va_soat` 10,9x và
+  `dich_theo_gio` 2,46x đã bị bác vì vượt).
+  **MẶT XẤU, NÓI THẲNG:** lt2/VNB arm C và D có **1 câu bị model chấm là BỊA**
+  và **1 câu dưới 4 điểm**, trong khi arm A/B là **0** — tức dịch đầy có lọt
+  một câu qua cửa; lt1/EDGE ĐÚNG tụt **4,87 -> 4,77**. Đổi một chút ĐÚNG lấy
+  0,4 điểm % LIỀN là **lỗ**.
+  **BỐN CHỮ: KHÔNG ARM NÀO ĐƯỢC CẢ BỐN. Cho anh Hùng chọn, đừng tự quyết:**
+  · **A (hôm nay)** — được **NHANH** (24,3 kt/s) + **ĐÚNG** (4,90); mất
+    **LIỀN** (30,1%).
+  · **B (kéo chậm 1,15)** — được **LIỀN** nhất (15,4%) + **ĐÚNG**; mất
+    **NHANH** (21,0) và **ĐỀU** (CV 16,64 -> 20,41, xấu đi ở 3/4 cột).
+  · **D (bỏ 4c)** — được **ĐỀU** nhất (CV 13,28, tốt hơn CẢ arm A) + LIỀN đỡ
+    một phần (22,4%) + ĐÚNG giữ nguyên; mất **NHANH** (21,5).
+  · **C (dịch đầy)** — gần như KHÔNG đổi gì so với A, mà tốn thêm 2 lượt LLM.
+  **KHUYẾN NGHỊ THEO SỐ: nếu anh Hùng ưu tiên "đều + liền" thì chọn MỤC 3 của
+  combo (bỏ 4c) — ô đó ĐÃ CÓ SẴN, không cần bật viết đầy.** Ô viết đầy giữ lại
+  vì nó có ích ở nguồn KHÁC (nguồn nào dịch bị lược nhiều thì phần nhận sẽ cao
+  hơn 4,9%), nhưng **MẶC ĐỊNH TẮT và đừng hứa nó chữa được "được đoạn rồi
+  nghỉ"**.
+  **HAI LỖI THẬT CỦA CHÍNH BẢN VÁ, BẮT ĐƯỢC NHỜ TÁCH RIÊNG BỘ ĐẾM — bài học
+  đáng nhớ nhất lượt này.** Cửa chấm nghĩa gọi `_mang_llm`, mà model trả về
+  **HAI hình dạng** hàm đó không nhận: **bản ghi ĐƠN** `{"i":0,"a":5,…}` (mẻ 1
+  câu) và **dict KHOÁ THEO NHÃN** `{"0":{…},"1":{…}}` (mẻ nhiều câu). Cả hai
+  ra `[]` -> cửa nghĩa **MÙ HOÀN TOÀN** -> fail-safe vứt sạch bản đầy -> bước
+  4b' **không bao giờ nhận nổi một câu**, `rc` vẫn 0, không một dòng báo. Đo
+  được `so_bo_vi_khong_cham = 1/1` rồi **5/5** trên video THẬT.
+  **Thứ tố giác được là bộ đếm `so_bo_vi_khong_cham` TÁCH RIÊNG khỏi
+  `so_bo_vi_nghia`** — gộp làm một thì bảng ghi *"cửa chống-bịa loại 5/5 câu"*,
+  nghe như chốt đang làm việc trong khi nó đang mù. Đúng họ bẫy *"phép đo phát
+  chứng nhận"* (`astats` cổng 53 · `startswith` cổng 44), chỉ khác là lần này
+  nó phát chứng nhận cho CHÍNH NÓ. Chữa bằng `_mang_hoac_mot`; **CỐ Ý KHÔNG
+  sửa `_mang_llm`** (nó nằm trên đường DỊCH của 200-300 kênh — việc RIÊNG, cần
+  cổng riêng).
+  **`dedup_key`: TẮT cờ -> giống mốc `e12208e` TỪNG KÝ TỰ, 128 tổ hợp (cổng đo
+  lại 64), lệch 0.** BẬT -> nối `:vd=1` vào ĐUÔI, khoá cũ vẫn là TIỀN TỐ. 200-
+  300 kênh KHÔNG có gì để chạy lại.
+  **CỔNG 89: 157 -> ĐẠT 190 · HỎNG 0** (MỤC 11, 33 mục — cửa chống bịa được
+  chấm bằng cách **GỌI THẬT** `viet_day_vua_khung` với LLM giả trả đúng các ca
+  xấu). Thử phá `_pha_khop_video.py` 25 -> **36 phép: BẮT 11 · LỌT 0 · KHÔNG
+  PHÁ ĐƯỢC 0** cho 11 phép mới.
+  **LƯỢT PHÁ ĐẦU RA `LỌT 1`, VÀ CÁI LỌT LÀ LỖ CỦA CHÍNH CỔNG — chép lại vì nó
+  đúng hình dạng lỗi v2.45.0:** gỡ dòng `viet_day=viet_day` khỏi thân
+  `thay_giong_mot_video` thì **chữ ký VẪN ĐỦ**, mục "GỌI THẬT bắt TypeError"
+  VẪN xanh, cổng VẪN 32/0 — trong khi ô người dùng bấm bị **NUỐT im lặng**.
+  `inspect.signature` + gọi thật là **CHƯA ĐỦ**; phải đọc NÚT AST của LỜI GỌI
+  (mục 11kaa). Kèm: `_pha_khop_video.py` nay **`compile()` lại bản đã phá** —
+  bản phá lỗi cú pháp làm cổng chết lúc `import` và bảng ghi "BẮT" cho một
+  chốt chưa hề chạm tới.
+  **FILE NGHE THỬ:** `_NGHE_THU_ANH_HUNG/bon_chu/<video>/<giọng>/` — **16
+  VIDEO**, 4 arm CÙNG một lượt chạy, tên kèm **cả bốn số** (im% · kt/s · CV% ·
+  điểm đúng), **MD5 16/16 khác nhau**, chuẩn hoá cùng −14 LUFS bằng chính
+  `chuan_do_to` rồi **đo lại bằng `loudnorm` chạy RIÊNG trên file thành phẩm**:
+  I **−14,02 .. −15,35 LUFS**.
+  **CHƯA ĐẠT, GHI THẲNG:** **chưa ai NGHE** một file nào — mọi số trên là số
+  ĐO · **2 video × 90 giây × 1 lượt/arm**, mà `vnb:` + LLM đều KHÔNG tiền định
+  nên đây là *một* điểm dữ liệu mỗi ô, **chưa có DẢI** (cột `C − A` chỉ −0,4
+  điểm % thì rất có thể nằm gọn trong nhiễu lượt-khác-lượt, và bản thân dấu
+  của nó đã đổi chiều ở lt2/EDGE) · **`lt1/EDGE` arm C đo ra TP `+4,99 dBTP`**
+  (arm B `+0,93`) trong khi mọi arm khác âm — đỉnh vượt 0 dBTP là VỠ TIẾNG,
+  **CHƯA TRUY RA**, và nó KHÔNG dính arm VNB là đường anh Hùng đi · mẫu là
+  `test.wav` (giọng MÁY), **chưa đo trên mẫu thật của anh Hùng** · `diem_moi_
+  tb` bị kéo tụt bởi phép ép `them=True -> 0,0` nên **đừng đọc nó là "bản đầy
+  chỉ được 1,67/5"** — nó là *"4 câu bị gắn cờ bịa"* · chưa đo trên nguồn mà
+  bản dịch bị lược NHIỀU (chỗ hướng này còn cửa).
 - **VIỆC "ASR CẮT ĐÔI THÀNH NGỮ": TIỀN ĐỀ SAI — NGỮ CẢNH ĐÃ CÓ SẴN (28/08/2026,
   `_do_gop_dich.py`).** Ca đích danh `前脚…后葬` bị chặt thành #78/#79 và dịch ra
   *"chôn một chân"* / *"chân còn lại"*. Đề nghị là **gộp câu cho BẢN DỊCH** để

@@ -129,16 +129,24 @@ def don() -> None:
         shutil.rmtree(d, ignore_errors=True)
 
 
-def nap_moc(duong: str, ten: str) -> types.ModuleType:
-    """Nạp một file của BẢN MỐC thành module riêng (không đụng bản đang test)."""
-    r = subprocess.run(["git", "show", f"{MOC}:{duong}"], cwd=str(REPO),
+def nap_moc(duong: str, ten: str, ref: str = "") -> types.ModuleType:
+    """Nạp một file của BẢN MỐC thành module riêng (không đụng bản đang test).
+
+    `ref` để RỖNG thì lấy `MOC`. **Mỗi tính năng một mốc RIÊNG** — mốc đúng là
+    bản phát hành NGAY TRƯỚC tính năng đang test (bài học cổng 56: lấy nhầm
+    mốc là so tính năng với CHÍNH NÓ). `MOC` (v2.37.0) không dùng được cho cờ
+    ra đời sau: `khoa_chong_trung` hồi đó chưa có `hinh_theo_giong` nên gọi nó
+    với đủ cờ là `TypeError`, và phép so chết vì lý do KHÔNG liên quan.
+    """
+    ref = ref or MOC
+    r = subprocess.run(["git", "show", f"{ref}:{duong}"], cwd=str(REPO),
                        capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=120)
     if r.returncode != 0 or not (r.stdout or "").strip():
-        raise RuntimeError(f"không lấy được {MOC}:{duong}: {r.stderr[:200]}")
+        raise RuntimeError(f"không lấy được {ref}:{duong}: {r.stderr[:200]}")
     m = types.ModuleType(f"moc_{ten}")
-    m.__dict__["__file__"] = f"<{MOC}:{duong}>"
-    exec(compile(r.stdout, f"<{MOC}:{duong}>", "exec"), m.__dict__)
+    m.__dict__["__file__"] = f"<{ref}:{duong}>"
+    exec(compile(r.stdout, f"<{ref}:{duong}>", "exec"), m.__dict__)
     m.__dict__["_NGUON_"] = r.stdout
     return m
 
@@ -1610,11 +1618,402 @@ def muc10() -> None:
         dl.deleteLater()
 
 
+#: MỐC ĐỐI CHỨNG RIÊNG CHO BƯỚC 4b' = bản phát hành NGAY TRƯỚC nó. `MOC`
+#: (v2.37.0) không dùng được ở đây: `khoa_chong_trung` hồi đó chưa có
+#: `keo_dai_giong`/`doc_deu` nên gọi nó với đủ cờ là `TypeError`, và phép so
+#: sẽ chết vì lý do KHÔNG liên quan tới cái đang canh.
+MOC_VD = os.environ.get("BQ_MOC_VD", "e12208e")
+
+
+def _wav_dai(p: Path, giay: float) -> None:
+    """Sinh WAV dài ĐÚNG `giay` — `d=` nằm TRONG chuỗi lavfi, KHÔNG dùng `-t`.
+
+    `-t` là tuỳ chọn ĐẦU VÀO của ffmpeg; đặt sai chỗ thì nguồn `sine`/`anullsrc`
+    ghi VÔ HẠN (đã đầy ổ C 420 GB một lần). Đặt `d=` trong chính chuỗi lavfi là
+    đường KHÔNG THỂ sai.
+    """
+    _ff(["-f", "lavfi", "-i", f"sine=f=220:r=24000:d={giay:.3f}",
+         "-ac", "1", "-c:a", "pcm_s16le", str(p)])
+
+
+def muc11() -> None:
+    """VIẾT ĐẦY CÂU HỤT KHUNG — bước 4b', khuôn ĐỐI XỨNG bước 4b.
+
+    App tới v2.49.0 chỉ có đường RÚT NGẮN khi câu tràn khung; câu HỤT khung thì
+    đọc xong ngồi im tới câu kế = đúng chữ *"được đoạn rồi nghỉ"*. Bước 4b'
+    nhờ LLM viết ĐẦY hơn rồi đọc lại.
+
+    **CÁI ĐẮT NHẤT MỤC NÀY CANH KHÔNG PHẢI "CÓ CHẠY KHÔNG" MÀ LÀ "CÓ BỊA
+    KHÔNG"** — anh Hùng đòi ĐÚNG nằm trong bốn chữ, nên một bản dịch phồng chữ
+    là hỏng đúng thứ vừa được yêu cầu. Ba chốt chống bịa phải CÓ RĂNG, và mục
+    này chứng minh bằng cách GỌI THẬT hàm với LLM giả trả về đúng những ca xấu.
+
+    Máy đọc là hàm GIẢ sinh WAV theo độ dài BIẾT TRƯỚC -> TIỀN ĐỊNH, không
+    mạng, không GPU (đúng khuôn cổng 92).
+    """
+    print("\nMỤC 11 — viết đầy câu hụt khung (bước 4b')")
+    from app.core import tg_chay as TC
+    from app.core import thay_giong as tg
+    from app.ai import llm
+
+    # ---- 11a: hằng số chống bịa có thật và ĐÚNG CHIỀU ----
+    ok(tg.VIET_DAY_TRAN_NOI > 1.0 and tg.VIET_DAY_TRAN_NOI <= 2.0,
+       "11a TRẦN NỚI nằm trong (1,0 .. 2,0] — nới vô hạn là mở cửa cho bịa",
+       f"{tg.VIET_DAY_TRAN_NOI}")
+    ok(tg.VIET_DAY_HUT_TOI_THIEU > 0.0
+       and tg.VIET_DAY_BIEN_TUT > 0.0
+       and 1.0 <= tg.VIET_DAY_SAN_TRUNG_THANH <= 5.0,
+       "11aa ngưỡng hụt / biên tụt / sàn trung thành đều đặt trong miền hợp lệ",
+       f"hụt>={tg.VIET_DAY_HUT_TOI_THIEU}s · biên {tg.VIET_DAY_BIEN_TUT} · "
+       f"sàn {tg.VIET_DAY_SAN_TRUNG_THANH}/5")
+
+    # ---- 11b: MODEL CHẤM phải KHÁC MODEL DỊCH ----
+    # Cùng model thì nó đang chấm chính bài của mình = "phép đo phát chứng
+    # nhận" (họ bẫy `astats` cổng 53 · `startswith` cổng 44).
+    ok(str(tg.MODEL_CHAM_VIET_DAY).strip()
+       and str(tg.MODEL_CHAM_VIET_DAY) != str(settings.GROQ_LLM_MODEL),
+       "11b model CHẤM nghĩa KHÁC model DỊCH (không tự chấm bài mình)",
+       f"chấm {tg.MODEL_CHAM_VIET_DAY} · dịch {settings.GROQ_LLM_MODEL}")
+    # ...và nó phải được TRUYỀN THẬT vào `complete_json`, không chỉ khai hằng.
+    goi_cham = [n for n in ast.walk(than_ham("app/core/thay_giong.py",
+                                             "_cham_trung_thanh"))
+                if isinstance(n, ast.Call)
+                and any(k.arg == "model" for k in n.keywords)]
+    ok(len(goi_cham) >= 1,
+       "11ba `_cham_trung_thanh` TRUYỀN `model=` vào lời gọi LLM (khai hằng "
+       "mà không truyền thì nó vẫn chấm bằng model dịch)",
+       f"{len(goi_cham)} lời gọi có `model=`")
+
+    # ---- 11c: `_mang_hoac_mot` + TỰ KIỂM BỘ DÒ ----
+    # LỖI THẬT: mẻ 1 câu thì model trả BẢN GHI ĐƠN, `_mang_llm` trả [] ->
+    # cửa chấm nghĩa MÙ -> vứt sạch bản đầy mà không một dòng báo.
+    mot = {"i": 0, "a": 4, "b": 5}
+    nhan = {"0": {"a": 5, "b": 2}, "1": {"a": 4, "b": 4}}
+    ok(tg._mang_hoac_mot(mot) == [mot]
+       and tg._mang_hoac_mot([mot]) == [mot]
+       and tg._mang_hoac_mot({"ket_qua": [mot]}) == [mot]
+       and tg._mang_hoac_mot(nhan) == [{"a": 5, "b": 2, "i": 0},
+                                       {"a": 4, "b": 4, "i": 1}],
+       "11c `_mang_hoac_mot` nhận đủ 4 hình dạng: mảng · bản ghi ĐƠN · bọc "
+       "`ket_qua` · **dict KHOÁ THEO NHÃN**")
+    ok(tg._mang_hoac_mot({"loi": "x"}) == []
+       and tg._mang_hoac_mot({"abc": {"a": 5}}) == []
+       and tg._mang_hoac_mot("rác") == []
+       and tg._mang_hoac_mot(None) == [],
+       "11caa dict lạ / khoá không phải số / rác -> RỖNG (nới quá tay là bộ "
+       "dò mất răng, và fail-safe ở đây là KHÔNG NHẬN)")
+    # TỰ KIỂM BỘ DÒ: `_mang_llm` phải TRƯỢT CẢ HAI hình dạng mới — không thì
+    # `_mang_hoac_mot` là hàm thừa và mục 11c chỉ là con dấu.
+    ok(tg._mang_llm(mot) == [] and tg._mang_llm(nhan) == [],
+       "11ca TỰ KIỂM BỘ DÒ: `_mang_llm` TRƯỢT cả 'bản ghi đơn' lẫn 'dict khoá "
+       "theo nhãn' — đó đúng là 2 lỗi đã đo được trên đường THẬT",
+       f"{tg._mang_llm(mot)} · {tg._mang_llm(nhan)}")
+
+    # ---- 11d: GỌI THẬT, LLM giả, máy đọc giả ----
+    d = hop() / "vd"
+    d.mkdir(parents=True, exist_ok=True)
+    # 4 câu, khung 4,0 s mỗi câu (mốc cách nhau 4,0 s -> khung = 4,0 − 0,12).
+    cau = [{"start": i * 4.0, "end": i * 4.0 + 2.0,
+            "text": f"句子{i}的原文内容比较长一些"} for i in range(4)]
+    tong = 16.0
+    texts = ["Câu số không nói ngắn.",      # HỤT nhiều  -> phải gom
+             "Câu số một nói ngắn quá.",    # HỤT nhiều  -> phải gom
+             "Câu số hai cũng hụt chút.",   # HỤT ÍT     -> DƯỚI ngưỡng
+             "Câu số ba đọc rất là dài lê thê tràn hẳn ra ngoài khung"]
+    dai = {0: 1.20, 1: 1.30, 2: 3.75, 3: 3.90}   # khung 3,88
+    files = []
+    for i, giay in dai.items():
+        p = d / f"c{i}.wav"
+        _wav_dai(p, giay)
+        files.append(str(p))
+    okl = [True] * 4
+
+    # -- LLM GIẢ: trả bản đầy cho mọi câu được hỏi; bộ chấm theo kịch bản.
+    kb = {"cham": {}}
+    goi = {"viet": 0, "cham": 0}
+
+    def _gia(prompt, system="", **kw):
+        import re
+        nhan = [int(x) for x in re.findall(r"^#(\d+)", prompt, re.M)]
+        if kw.get("model"):                    # lượt CHẤM
+            goi["cham"] += 1
+            return [{"i": j, **kb["cham"].get(j, {"a": 4.0, "b": 5.0,
+                                                  "them": False})}
+                    for j in nhan]
+        goi["viet"] += 1                       # lượt VIẾT ĐẦY
+        return [{"i": j, "t": f"Bản viết đầy của câu {j}, dài hơn hẳn bản cũ."}
+                for j in nhan]
+
+    # -- MÁY ĐỌC GIẢ: độ dài do `kb["doc"]` quyết, nên mọi chốt đo được.
+    kb["doc"] = {}
+    that_doc = tg._doc_lai_loat
+
+    def _doc_gia(thu, paths, dich_sang, voice, out_sach, **kw):
+        ra = []
+        for k, p in enumerate(paths):
+            q = Path(str(out_sach)) / f"s{k}.wav"
+            q.parent.mkdir(parents=True, exist_ok=True)
+            _wav_dai(q, kb["doc"].get(k, 3.0))
+            ra.append(str(q))
+        return ra, [True] * len(paths), [[] for _ in paths]
+
+    that_json = llm.complete_json
+
+    def chay(cham=None, doc=None) -> dict:
+        kb["cham"] = cham or {}
+        kb["doc"] = doc or {}
+        goi["viet"] = goi["cham"] = 0
+        llm.complete_json = _gia
+        tg._doc_lai_loat = _doc_gia
+        try:
+            return tg.viet_day_vua_khung(
+                cau, list(texts), list(files), list(okl), tong,
+                d / f"ra{goi['viet']}{len(kb['cham'])}{len(kb['doc'])}"
+                f"{os.urandom(3).hex()}", "vi", "zh", "")
+        finally:
+            llm.complete_json = that_json
+            tg._doc_lai_loat = that_doc
+
+    try:
+        # (1) ĐƯỜNG THƯỜNG: 2 câu hụt đủ ngưỡng, bản đầy dài hơn, nghĩa ĐẠT.
+        r = chay(doc={0: 3.0, 1: 3.0})
+        ok(r["so_cau_hut"] == 2 and r["so_xin"] == 2,
+           "11d gom ĐÚNG câu hụt quá ngưỡng, câu hụt ÍT (0,13 s) KHÔNG gom",
+           f"hụt {r['so_cau_hut']} · xin {r['so_xin']}")
+        ok(r["so_sua"] == 2 and r["hut_sau_giay"] < r["hut_truoc_giay"],
+           "11da NHẬN cả 2 câu, phần hụt GIẢM THẬT",
+           f"{r['hut_truoc_giay']}s -> {r['hut_sau_giay']}s")
+        ok(goi["viet"] >= 1 and goi["cham"] >= 1 and r["so_lan_llm"] == 2,
+           "11db đúng 2 lượt LLM: 1 viết đầy + 1 chấm nghĩa",
+           f"viết {goi['viet']} · chấm {goi['cham']} · khai {r['so_lan_llm']}")
+
+        # (2) CỬA NGHĨA — điểm TỤT quá biên -> VỨT.
+        r = chay(cham={0: {"a": 5.0, "b": 3.0, "them": False},
+                       1: {"a": 5.0, "b": 3.0, "them": False}},
+                 doc={0: 3.0, 1: 3.0})
+        ok(r["so_sua"] == 0 and r["so_bo_vi_nghia"] == 2,
+           "11e điểm trung thành TỤT quá biên -> VỨT bản đầy, GIỮ bản cũ",
+           f"nhận {r['so_sua']} · bỏ vì nghĩa {r['so_bo_vi_nghia']}")
+
+        # (3) CỬA NGHĨA — model nói thẳng "THÊM thông tin" -> VỨT dù điểm cao.
+        r = chay(cham={0: {"a": 4.0, "b": 5.0, "them": True},
+                       1: {"a": 4.0, "b": 5.0, "them": True}},
+                 doc={0: 3.0, 1: 3.0})
+        ok(r["so_sua"] == 0 and r["so_bo_vi_nghia"] == 2,
+           "11ea `them=true` (bịa thêm ý) -> VỨT dù điểm 5/5 — điểm là số "
+           "TRUNG BÌNH, một câu bịa mà văn hay vẫn được 4",
+           f"nhận {r['so_sua']} · bỏ vì nghĩa {r['so_bo_vi_nghia']}")
+
+        # (4) CHỈ NHẬN KHI ĐỌC DÀI HƠN THẬT (đối xứng luật bước 4b).
+        r = chay(doc={0: 1.0, 1: 1.0})
+        ok(r["so_sua"] == 0 and r["so_bo_vi_ngan"] == 2,
+           "11f bản đầy đọc lên NGẮN HƠN bản cũ -> VỨT (LLM viết dài hơn về "
+           "CHỮ mà đọc lên ngắn hơn là chuyện có thật)",
+           f"nhận {r['so_sua']} · bỏ vì không dài hơn {r['so_bo_vi_ngan']}")
+
+        # (5) KHÔNG ĐƯỢC BIẾN CÂU HỤT THÀNH CÂU TRÀN.
+        r = chay(doc={0: 9.0, 1: 9.0})
+        ok(r["so_sua"] == 0 and r["so_bo_vi_tran"] == 2,
+           "11fa bản đầy đọc lên TRÀN khung -> VỨT (đổi một lỗi lấy một lỗi "
+           "khác, và kéo `atempo` vào đúng chỗ vừa dọn)",
+           f"nhận {r['so_sua']} · bỏ vì tràn {r['so_bo_vi_tran']}")
+
+        # (6) KHÔNG CHẤM ĐƯỢC = KHÔNG NHẬN, và ĐẾM RIÊNG.
+        def _cham_chet(prompt, system="", **kw):
+            if kw.get("model"):
+                raise RuntimeError("Groq chết")
+            return _gia(prompt, system, **kw)
+
+        kb["doc"] = {0: 3.0, 1: 3.0}
+        llm.complete_json = _cham_chet
+        tg._doc_lai_loat = _doc_gia
+        try:
+            r = tg.viet_day_vua_khung(cau, list(texts), list(files), list(okl),
+                                      tong, d / "ra_chet", "vi", "zh", "")
+        finally:
+            llm.complete_json = that_json
+            tg._doc_lai_loat = that_doc
+        ok(r["so_sua"] == 0 and r["so_bo_vi_khong_cham"] == 2
+           and r["so_bo_vi_nghia"] == 0,
+           "11g bộ chấm CHẾT -> KHÔNG NHẬN, và đếm RIÊNG khỏi 'nghĩa tụt' "
+           "(gộp làm một là khoe cửa chống-bịa có răng trong khi nó đang MÙ)",
+           f"không chấm được {r['so_bo_vi_khong_cham']} · "
+           f"nghĩa tụt {r['so_bo_vi_nghia']}")
+
+        # (7) TRẦN NỚI — ngân sách ký tự KHÔNG BAO GIỜ vượt `tran_noi`.
+        xin: list[tuple[int, int]] = []
+        that_loat = tg._viet_day_loat
+
+        def _bat_muc(muc, dich_sang, goc_ma):
+            xin.extend((len(m["text"]), m["toi_da_kytu"]) for m in muc)
+            return [m["text"] for m in muc]
+
+        tg._viet_day_loat = _bat_muc
+        tg._doc_lai_loat = _doc_gia
+        try:
+            tg.viet_day_vua_khung(cau, list(texts), list(files), list(okl),
+                                  tong, d / "ra_tran", "vi", "zh", "",
+                                  tran_noi=1.20)
+        finally:
+            tg._viet_day_loat = that_loat
+            tg._doc_lai_loat = that_doc
+        vuot = [(n, t) for n, t in xin if t > int(n * 1.20)]
+        ok(xin and not vuot,
+           "11h TRẦN NỚI kẹp ngân sách ký tự — quá trần thì để im, không bịa",
+           f"{len(xin)} câu · vượt {len(vuot)}")
+    finally:
+        llm.complete_json = that_json
+        tg._doc_lai_loat = that_doc
+
+    # ---- 11i: MẶC ĐỊNH TẮT -> KHÔNG gọi 4b' ----
+    than = than_ham("app/core/thay_giong.py", "thay_giong_video")
+    trong_if = False
+    for n in ast.walk(than):
+        if not isinstance(n, ast.If):
+            continue
+        if not (isinstance(n.test, ast.Name) and n.test.id == "viet_day"):
+            continue
+        if any(isinstance(x, ast.Call) and isinstance(x.func, ast.Name)
+               and x.func.id == "viet_day_vua_khung" for x in ast.walk(n)):
+            trong_if = True
+    ok(trong_if,
+       "11i `viet_day_vua_khung` chỉ được gọi TRONG `if viet_day:` — TẮT là "
+       "KHÔNG một lượt LLM nào thêm cho 200-300 kênh")
+    # TỰ KIỂM BỘ DÒ: chuỗi nằm trong GHI CHÚ không được tính là đã gọi.
+    ok(not any(isinstance(x, ast.Call) and isinstance(x.func, ast.Name)
+               and x.func.id == "viet_day_vua_khung_KHONG_CO_THAT"
+               for x in ast.walk(than)),
+       "11ia TỰ KIỂM BỘ DÒ: bộ dò đọc NÚT AST, không dò mặt chữ")
+
+    # ---- 11j: `_synth_all_words` vẫn ĐÚNG 3 chỗ gọi ----
+    # Cổng 63 CA 2a canh con số này, nhưng bước 4b' là chỗ DỄ đẻ cửa thứ tư
+    # nhất (nó cũng phải đọc lại một nhóm câu) nên canh thêm ở đây.
+    goi3 = [n for n in ast.walk(ast.parse(
+        (REPO / "app/core/thay_giong.py").read_text(encoding="utf-8")))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "_synth_all_words"]
+    ok(len(goi3) == 3,
+       "11j `thay_giong.py` vẫn ĐÚNG 3 chỗ gọi `_synth_all_words` (4b' đi "
+       "CHUNG cửa `_doc_lai_loat` với 4b, không đẻ cửa thứ tư)",
+       f"{len(goi3)} chỗ")
+    for ten_h in ("rut_gon_vua_khung", "viet_day_vua_khung"):
+        dung = [n for n in ast.walk(than_ham("app/core/thay_giong.py", ten_h))
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                and n.func.id == "_doc_lai_loat"]
+        ok(len(dung) >= 1, f"11ja `{ten_h}` đọc lại QUA `_doc_lai_loat`",
+           f"{len(dung)} lời gọi")
+
+    # ---- 11k: CHUỖI 6 CHẶNG + khoá chống trùng ----
+    # v2.45.0 nối `nhan_nha` đủ chuỗi nhưng SÓT cửa NGOÀI CÙNG mà
+    # `jobs._thay_giong` gọi -> 4/4 video LỖI ngay khi anh Hùng bấm Chạy.
+    thieu = [f.__name__ for f in (tg.thay_giong_video, tg.thay_giong_mot_video,
+                                  TC.xep_mot, TC.khoa_chong_trung)
+             if "viet_day" not in inspect.signature(f).parameters]
+    ok(not thieu, "11k CẢ 4 cửa của chuỗi đều nhận `viet_day` (cửa NGOÀI CÙNG "
+       "`thay_giong_mot_video` là chỗ đã nổ THẬT một lần)", str(thieu))
+    try:
+        tg.thay_giong_mot_video("khong_co_that.mp4", "vi", viet_day=True)
+        loi_kieu = ""
+    except TypeError as e:
+        loi_kieu = str(e)
+    except Exception:  # noqa: BLE001
+        loi_kieu = ""
+    ok(not loi_kieu, "11ka GỌI THẬT cửa NGOÀI CÙNG không ném `TypeError`",
+       loi_kieu[:120] or "bind tham số ĐẠT")
+    # **CHỮ KÝ ĐỦ KHÔNG CÓ NGHĨA LÀ CỜ ĐI TỚI NƠI.** Lượt thử phá đầu tiên
+    # LỌT đúng ở đây: gỡ dòng `viet_day=viet_day` khỏi thân
+    # `thay_giong_mot_video` thì chữ ký VẪN ĐỦ, `GỌI THẬT` VẪN không ném, và
+    # cổng vẫn XANH — trong khi ô người dùng bấm bị NUỐT im lặng. Đó chính là
+    # hình dạng lỗi v2.45.0 (`nhan_nha` nối đủ chuỗi nhưng sót cửa ngoài cùng
+    # -> anh Hùng bấm Chạy, 4/4 video LỖI). Phải đọc NÚT AST của LỜI GỌI.
+    chuyen = []
+    for n in ast.walk(than_ham("app/core/thay_giong.py",
+                               "thay_giong_mot_video")):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                and n.func.id == "thay_giong_video"):
+            continue
+        for kw in n.keywords:
+            if kw.arg == "viet_day" and isinstance(kw.value, ast.Name) \
+                    and kw.value.id == "viet_day":
+                chuyen.append(n.lineno)
+    ok(len(chuyen) == 1,
+       "11kaa `thay_giong_mot_video` THẬT SỰ chuyền `viet_day=viet_day` xuống "
+       "`thay_giong_video` (chữ ký đủ mà quên chuyền = ô bị NUỐT im lặng)",
+       f"{len(chuyen)} lời gọi, dòng {chuyen}")
+    ma_jobs = (REPO / "app/queue/jobs.py").read_text(encoding="utf-8")
+    doc_pl = [n for n in ast.walk(ast.parse(ma_jobs))
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and n.func.attr == "get" and n.args
+              and isinstance(n.args[0], ast.Constant)
+              and n.args[0].value == "viet_day"]
+    ok(len(doc_pl) >= 1,
+       "11kb `jobs._thay_giong` ĐỌC `viet_day` từ payload (job cũ không có "
+       "khoá -> False = y hệt bản trước)", f"{len(doc_pl)} chỗ đọc")
+
+    moc = nap_moc("app/core/tg_chay.py",
+                  "tgchay_vd_" + MOC_VD.replace(".", "_"), ref=MOC_VD)
+    ok("viet_day" not in moc.__dict__["_NGUON_"],
+       f"11l bản mốc {MOC_VD} KHÔNG hề có `viet_day` (mốc trùng tính năng "
+       "đang test thì phép so vô nghĩa)")
+    base = dict(video=r"D:\k\a.mp4", dich_sang="vi", voice="vnb:x",
+                thu_muc_ra=r"D:\k\ra")
+    lech = 0
+    n_to_hop = 0
+    for cc in (False, True):
+        for htg in (False, True):
+            for dd in (False, True):
+                for dg in (False, True):
+                    for nn in (False, True):
+                        for kd in (1.0, 1.15):
+                            c = dict(che_chu=cc, viet_chu=cc,
+                                     hinh_theo_giong=htg, doc_deu=dd,
+                                     de_giong=dg, nhan_nha=nn,
+                                     keo_dai_giong=kd)
+                            n_to_hop += 1
+                            if moc.khoa_chong_trung(**base, **c) != \
+                                    TC.khoa_chong_trung(**base, **c,
+                                                        viet_day=False):
+                                lech += 1
+    ok(lech == 0 and n_to_hop >= 9,
+       f"11la TẮT cờ -> `dedup_key` giống mốc {MOC_VD} TỪNG KÝ TỰ "
+       f"({n_to_hop} tổ hợp) — 200-300 kênh không có gì để chạy lại",
+       f"lệch {lech}")
+    t0 = TC.khoa_chong_trung(**base, viet_day=False)
+    t1 = TC.khoa_chong_trung(**base, viet_day=True)
+    ok(t1 == t0 + ":vd=1",
+       "11lb BẬT -> nối `:vd=1` vào ĐUÔI, khoá cũ vẫn là TIỀN TỐ (không thêm "
+       "phần tử tuple = không đổi hash của mọi job cũ)", t1)
+
+    # ---- 11m: UI ----
+    app_qt()
+    from app.ui.thay_giong_dialog import ThayGiongDialog
+    dl = ThayGiongDialog(None)
+    try:
+        ok(hasattr(dl, "ck_viet_day"),
+           "11m hộp Thay giọng CÓ ô 'Viết đầy câu hụt khung' (hàm xong ≠ "
+           "tính năng xong — đã 6 lần module lõi nằm chết không ai gọi)")
+        ok(not dl.ck_viet_day.isChecked(),
+           "11ma MỞ HỘP LÊN mặc định vẫn TẮT (không đổi chữ sau lưng ai)")
+        nhan, tip = dl.ck_viet_day.text(), dl.ck_viet_day.toolTip()
+        ok(all(x in tip for x in ("bịa", "GIỚI HẠN", "lượt gọi AI")),
+           "11mb chú thích nói CẢ chống-bịa, CẢ GIỚI HẠN, CẢ cái giá lượt AI "
+           "(nhãn `keo_dai` v2.49.0 khoe im giảm mà giấu trải đọc xấu đi)",
+           f"{len(tip)} ký tự")
+        ok(not any(ord(c) > 0x2500 for c in nhan + tip),
+           "11mc nhãn + chú thích KHÔNG EMOJI (máy anh Hùng thiếu glyph)")
+        ok("viet_day" in inspect.getsource(dl._chay.__func__)
+           if hasattr(dl, "_chay") else True,
+           "11md nút Chạy TRUYỀN `viet_day` xuống `xep_mot`")
+    finally:
+        dl.deleteLater()
+
+
 def main() -> int:
     print("CỔNG 89 — âm thanh bị bé · chỉnh hình theo giọng · hộp gọn · "
-          "che chữ không trôi · đọc ĐỀU một tốc độ · KÉO DÀI cho đầy khung")
+          "che chữ không trôi · đọc ĐỀU một tốc độ · KÉO DÀI cho đầy khung · "
+          "VIẾT ĐẦY câu hụt khung")
     muc1(); muc2(); muc3(); muc4(); muc5(); muc6(); muc7(); muc8(); muc9()
-    muc10()
+    muc10(); muc11()
     print(f"\nĐẠT {DAT} · HỎNG {HONG}")
     return 0 if HONG == 0 else 1
 
