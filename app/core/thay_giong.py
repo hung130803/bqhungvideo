@@ -2841,6 +2841,49 @@ def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
     return out
 
 
+def _doc_lai_loat(thu: list[str], paths: list[str], dich_sang: str,
+                  voice: str, out_sach: str | Path,
+                  nhan_nha: Optional[bool] = None,
+                  on_progress: Optional[Callable[[float, str], None]] = None,
+                  dau: float = 0.0, rong: float = 1.0,
+                  ) -> tuple[list[str], list[bool], list]:
+    """ĐỌC LẠI một NHÓM câu bằng CHÍNH giọng đang dùng, rồi CẮT LỀ IM.
+
+    **CỬA DÙNG CHUNG của bước 4b (rút gọn) và 4b' (viết đầy) — CÓ LÝ DO SỐ
+    HỌC, đừng tách ra làm hai.** Cổng 63 CA 2a đòi `thay_giong.py` có ĐÚNG
+    **3** chỗ gọi `dubbing._synth_all_words` (`doc_ban_dich` · chỗ này ·
+    `doc_nhanh_vua_khung`); chốt báo động ấy đã bắt được một lối gọi thứ tư
+    THẬT ở v2.31.0. Hai bước sửa-chữ-rồi-đọc-lại vì thế đi CHUNG một cửa —
+    thêm cửa thứ tư là sót một chỗ tách `pitch`/`nhan_nha` và ra video LẪN HAI
+    GIỌNG mà `rc` vẫn 0.
+
+    `el_lui=False`: đây là lượt ĐỌC LẠI, câu nào cũng đã có sẵn bản của giọng
+    trả phí. Hết credit mà lùi edge thì mấy câu này ra giọng khác phần còn lại
+    = video lẫn hai giọng; trả `False` để caller GIỮ BẢN CŨ.
+
+    CẮT LỀ ngay tại đây vì cả hai caller đều so ĐỘ DÀI TIẾNG THẬT của bản mới
+    với bản cũ — không cắt thì bản mới bị đo dài hơn thực tế và bị loại oan
+    (bước rút gọn) hoặc được nhận oan (bước viết đầy).
+    """
+    import asyncio
+    from app.core import dubbing
+
+    # BIẾN THỂ GIỌNG: `voice` có thể mang hậu tố `|<pitch>` — phải tách, sót
+    # là câu đi qua đây đọc bằng cao độ GỐC (cổng 63 CA 2b canh).
+    v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
+    # NHỊP TỪNG CÂU — cùng bệnh bước 5 (xem `_nhac_tung_cau`). Lượt đọc lại này
+    # gộp cả loạt câu, có lúc mất hàng phút, mà trước đây chỉ báo ĐÚNG 1 nhịp.
+    # Mốc lùi = 0.0 vì cửa này KHÔNG truyền `on_done`; bộ đếm của caller nằm
+    # trong `dau` nên thanh vẫn tiến.
+    _nhac = _nhac_tung_cau(on_progress, lambda: 0.0, dau=dau, rong=rong)
+    ok2, mt2 = asyncio.run(
+        dubbing._synth_all_words(thu, v, paths, pitch=_pitch,
+                                 lang=dich_sang, el_lui=False,
+                                 on_msg=_nhac, nhan_nha=nhan_nha))
+    sach, _le = cat_le_loat(paths, list(ok2), out_sach, moc_tu=mt2)
+    return sach, list(ok2), mt2
+
+
 def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                       tong: float, out_dir: str | Path, dich_sang: str,
                       voice: str = "", nguong_tempo: float = NGUONG_RUT_GON,
@@ -2901,35 +2944,19 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
                         "toi_da_kytu": max(8, int(kh * kts * RUT_GON_HE_SO))})
         moi = _rut_gon_loat(muc, dich_sang)
 
-        # đọc lại CHỈ các câu vừa rút gọn, vào file RIÊNG để còn so
+        # đọc lại CHỈ các câu vừa rút gọn, vào file RIÊNG để còn so.
+        # Đi qua `_doc_lai_loat` — CỬA DÙNG CHUNG với bước 4b' (xem docstring
+        # ở đó cho lý do cổng 63 không cho đẻ cửa thứ tư).
+        # Chừa 0.2 đầu cho lượt LLM rút gọn + 0.2 cuối cho cắt lề/đo lại, nhờ
+        # vậy nhịp của vòng này KHÔNG BAO GIỜ tràn sang ô của vòng sau.
         thu = [m for m in moi]
         paths = [str(out_dir / f"rg{vong}_{muc[j]['i']:04d}.mp3")
                  for j in range(len(muc))]
-        import asyncio
-        from app.core import dubbing
-        v, _pitch = tach_giong_pitch(voice or giong_theo_ngon_ngu(dich_sang))
-        # NHỊP TỪNG CÂU — cùng bệnh bước 5, chỉ đứng ở **74%** thay vì 62%
-        # (xem `_nhac_tung_cau`). Lượt đọc lại này gộp cả loạt câu vừa rút
-        # gọn, có lúc mất hàng phút, mà cả hàm trước đây chỉ báo ĐÚNG 1 nhịp.
-        # Mốc lùi = 0.0 vì cửa này KHÔNG truyền `on_done`; bộ đếm đã có của
-        # hàm là SỐ VÒNG, và nó nằm trong `dau` nên thanh vẫn tiến theo vòng.
-        # Chừa 0.2 đầu cho lượt LLM rút gọn + 0.2 cuối cho cắt lề/đo lại, nhờ
-        # vậy nhịp của vòng này KHÔNG BAO GIỜ tràn sang ô của vòng sau.
         _n_vong = max(1, vong_toi_da)
-        _nhac = _nhac_tung_cau(on_progress, lambda: 0.0,
-                               dau=(vong + 0.2) / _n_vong,
-                               rong=0.6 / _n_vong)
-        # `el_lui=False`: đây là lượt ĐỌC LẠI, câu nào cũng đã có sẵn bản
-        # ElevenLabs. Hết credit mà lùi edge thì mấy câu này ra giọng khác
-        # phần còn lại = video LẪN HAI GIỌNG; trả False để GIỮ BẢN CŨ.
-        ok2, mt2 = asyncio.run(
-            dubbing._synth_all_words(thu, v, paths, pitch=_pitch,
-                                     lang=dich_sang, el_lui=False,
-                                     on_msg=_nhac, nhan_nha=nhan_nha))
-        # CẮT LỀ như đường chính — không cắt thì bản rút gọn bị đo DÀI HƠN
-        # thực tế và bị loại oan ở phép so "có ngắn hơn không" bên dưới.
-        paths, _le = cat_le_loat(paths, list(ok2), out_dir / f"sach{vong}",
-                                 moc_tu=mt2)
+        paths, ok2, mt2 = _doc_lai_loat(
+            thu, paths, dich_sang, voice, out_dir / f"sach{vong}",
+            nhan_nha=nhan_nha, on_progress=on_progress,
+            dau=(vong + 0.2) / _n_vong, rong=0.6 / _n_vong)
 
         for j, m in enumerate(muc):
             i = m["i"]
@@ -2960,6 +2987,399 @@ def rut_gon_vua_khung(cau: list[dict], texts: list[str], tts: dict,
         "can_truoc": [round(t, 3) for t in truoc],
         "can_sau": [round(t, 3) for t in sau],
     }
+
+
+# ==================================================================
+# BƯỚC 4b' — VIẾT ĐẦY CÂU DỊCH HỤT KHUNG (khuôn ĐỐI XỨNG bước 4b)
+# ==================================================================
+#
+# VÌ SAO CÓ (anh Hùng chốt bốn chữ: *đọc LIỀN · NHANH · mà ĐỀU · mà ĐÚNG*):
+# app tới v2.49.0 CHỈ có đường RÚT NGẮN khi câu tràn khung, **không có đường
+# nào viết DÀI ra khi câu hụt khung**. Câu hụt thì tiếng đọc xong sớm rồi
+# ngồi im tới câu kế = đúng chữ *"được đoạn rồi nghỉ"*. Hai cách lấp cũ đều
+# mất một trong bốn chữ: đọc chậm lại mất NHANH + ĐỀU (v2.49.0 đo được CV
+# 15,87 -> 18,44%), cắt video mất nội dung.
+#
+# **HAI SỐ PHẢI ĐỌC TRƯỚC KHI ĐỘNG VÀO HÀM NÀY** (`_do_viet_day.py`, video
+# THẬT của anh Hùng, `vnb:` · đích `vi` · `tach`):
+#   · phần hụt CHỈ **8,23% thời lượng** (lt1/VNB: 11/35 câu, 7,41 s) và lấp
+#     hết chỉ cần **+146 ký tự = +8,3%** cả bài -> **KHÔNG phải bịa**;
+#   · nhưng **68,6% câu lại TRÀN khung**, và `he_so_hinh_can` lấy đúng tỉ số
+#     TRÀN LỚN NHẤT làm hệ số giãn hình -> ở mục "chỉnh video theo giọng",
+#     video phình `k` lần trong khi tiếng thì không, và đó mới là chỗ đẻ ra
+#     phần lớn khoảng im. **Viết đầy KHÔNG chữa được phần đó** — nó chỉ lấp
+#     đúng phần hụt trên TRỤC GỐC. Ai đọc mục này rồi hứa "hết im" là hứa
+#     sai; con số thật nằm ở bảng 4 arm trong CLAUDE.md.
+
+#: Câu HỤT bao nhiêu GIÂY thì mới đáng gọi LLM. Dưới mức này, thêm dăm ba
+#: chữ không ai nghe ra khác biệt mà vẫn phải trả rủi ro sai nghĩa —
+#: đổi ĐÚNG lấy một thứ không đo được là lỗ. Đo được: bậc 0,0-0,3 s gom 3 câu
+#: mà tổng chỉ 0,54 s (lt1/VNB), tức bỏ hẳn bậc đó gần như không mất gì.
+VIET_DAY_HUT_TOI_THIEU = 0.25
+
+#: **TRẦN NỚI — CHỐT CHỐNG BỊA, ĐỪNG NỚI.** Bản đầy không được dài quá ngần
+#: này lần bản hiện tại. "Viết đủ ý" = bỏ bớt phần đã rút gọn, viết lại trạng
+#: ngữ ĐÃ CÓ trong câu nguồn; cùng một ý mà phải viết dài gấp rưỡi thì trong
+#: câu nguồn KHÔNG CÒN chữ nào để lấy nữa -> phần dôi ra là chữ BỊA.
+#: Đo được (lt1/VNB): 1 câu hụt 3,34 s cần **+66 ký tự trên một câu** = +>60%
+#: — đúng cái câu trần này phải chặn lại. "Quá trần thì thôi, để im còn hơn
+#: bịa": hàm chỉ xin tới trần rồi dừng, phần hụt còn lại để nguyên.
+VIET_DAY_TRAN_NOI = 1.45
+
+#: Điểm TRUNG THÀNH (thang 1-5) chấm bằng model KHÁC model dịch. Bản đầy tụt
+#: quá ngần này so với bản CŨ -> VỨT, giữ bản cũ. Đối xứng đúng luật "chỉ
+#: NHẬN bản rút gọn khi nó đọc NGẮN HƠN thật" của bước 4b: ở đây điều kiện
+#: nhận có HAI vế — dài hơn THẬT **và** không kém trung thành hơn.
+VIET_DAY_BIEN_TUT = 0.5
+
+#: SÀN tuyệt đối — bản đầy dưới mức này thì vứt dù bản cũ cũng thấp. Không có
+#: sàn thì hai câu cùng tệ vẫn "không tụt" và bản bịa vẫn lọt.
+VIET_DAY_SAN_TRUNG_THANH = 3.5
+
+#: Model CHẤM phải KHÁC model DỊCH (`settings.GROQ_LLM_MODEL`, đang là
+#: `openai/gpt-oss-120b`). Cùng model thì nó đang chấm chính bài của mình —
+#: đúng họ bẫy "phép đo phát chứng nhận" mà `astats` (cổng 53) và
+#: `startswith` (cổng 44) đã sập. Tên này lấy từ `_do_dich_cua_anh_hung.py`,
+#: nơi đã dùng nó chấm 168 câu THẬT của anh Hùng.
+MODEL_CHAM_VIET_DAY = "qwen/qwen3.8-27b"
+
+
+def _mang_hoac_mot(data) -> list:
+    """Như `_mang_llm`, nhưng nhận thêm HAI hình dạng model hay trả về.
+
+    **HAI LỖI THẬT, BẮT ĐƯỢC NGAY LƯỢT CHẠY ĐẦU CỦA BƯỚC 4b' — và cả hai đều
+    hỏng ÂM THẦM, `rc` vẫn 0.** `_mang_llm` chỉ nhận `[...]` hoặc một dict có
+    VALUE kiểu list; gặp hai dạng dưới đây nó trả `[]`, cửa chấm nghĩa đọc ra
+    *"KHÔNG CHẤM ĐƯỢC"*, và fail-safe vứt sạch bản đầy -> bước 4b' **không
+    bao giờ nhận nổi một câu nào**:
+
+      · **BẢN GHI ĐƠN** — mẻ 1 câu thì `qwen/qwen3.8-27b` trả thẳng
+        `{"i":0,"a":5,"b":5,"them":false}`. Đo: `so_bo_vi_khong_cham = 1/1`.
+      · **DICT KHOÁ THEO NHÃN** — mẻ nhiều câu thì nó trả
+        `{"0":{"a":5,"b":2,"them":true}, "1":{...}, …}`, tức nhãn nằm ở KHOÁ
+        chứ không nằm trong bản ghi. Đo trên video THẬT của anh Hùng
+        (lt1/VNB): `so_bo_vi_khong_cham = 5/5`.
+
+    Chỗ tố giác được cả hai là bộ đếm **`so_bo_vi_khong_cham` tách RIÊNG** khỏi
+    `so_bo_vi_nghia`. Gộp làm một thì bảng số ghi *"cửa chống-bịa loại 5/5
+    câu"* — nghe như chốt đang làm việc, trong khi nó đang MÙ HOÀN TOÀN. Đây
+    đúng họ bẫy "phép đo phát chứng nhận" (`astats` cổng 53 · `startswith`
+    cổng 44), chỉ khác là lần này nó phát chứng nhận cho CHÍNH NÓ.
+
+    **CỐ Ý KHÔNG SỬA `_mang_llm`** dù nó mang đúng bệnh này: hàm đó nằm trên
+    đường DỊCH của 200-300 kênh đang chạy sản xuất, nới nó ra là đổi hành vi
+    một nhánh đang tồn tại (mẻ 1 câu hiện rơi về giữ nguyên câu gốc). Bản vá
+    ấy là việc RIÊNG, phải có cổng riêng.
+    """
+    xs = _mang_llm(data)
+    if xs:
+        return xs
+    if not isinstance(data, dict):
+        return []
+    if "i" in data:
+        return [data]
+    # DICT KHOÁ THEO NHÃN: nhãn ở KHOÁ, phải bơm vào bản ghi thì `_theo_nhan`
+    # và vòng đọc điểm mới lấy được. Chỉ nhận khoá là SỐ — dict lạ (`{"loi":
+    # "..."}`) vẫn phải ra rỗng, nếu không bộ dò mất răng.
+    ra = []
+    for k, v in data.items():
+        if not isinstance(v, dict) or not str(k).strip().lstrip("-").isdigit():
+            return []
+        ra.append({**v, "i": int(str(k).strip())})
+    return ra
+
+
+def _viet_day_loat(muc: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
+    """Nhờ LLM viết ĐẦY HƠN các câu dịch hụt khung, GIỮ NGUYÊN nghĩa.
+
+    Khuôn đối xứng `_rut_gon_loat`: mỗi câu kèm **NGÂN SÁCH KÝ TỰ** tính từ
+    tốc độ đọc ĐO ĐƯỢC của chính giọng đang dùng. Khác một điểm sống còn —
+    prompt gửi kèm **CÂU NGUỒN**, vì chỗ DUY NHẤT được phép lấy thêm chữ là
+    chi tiết đã có sẵn trong nguồn mà bản dịch lược mất.
+
+    Chia mẻ bằng `chia_me_dich` ĐÃ CÓ (luật repo: không đẻ hàm chia mẻ thứ
+    hai), và lấy kết quả theo **NHÃN** — lệch bậc ở đây là câu A mang lời của
+    câu B mà độ dài vẫn "vừa khung" nên không thước nào kêu.
+    """
+    from app.ai import llm
+
+    ten_dich = _ten_nn(dich_sang)
+    system = ("Bạn là biên tập lời thoại lồng tiếng. Viết ĐẦY ĐỦ hơn mà GIỮ "
+              "NGUYÊN nghĩa, TUYỆT ĐỐI không thêm thông tin mới. "
+              "CHỈ trả JSON thuần.")
+    # `chia_me_dich` đọc khoá `text` — dựng bản ghi giả mang ĐỦ chữ sẽ gửi đi
+    # (câu nguồn + bản dịch) thì phép ước token mới đúng cỡ prompt thật.
+    gia = [{"text": f'{m["goc"][:400]}\n{m["text"][:400]}'} for m in muc]
+    ra: dict[int, str] = {}
+    for phan in chia_me_dich(gia, list(range(len(muc))), token_ra_moi_cau=30):
+        items = []
+        for j in phan:
+            m = muc[j]
+            items.append(
+                f'#{j}\n'
+                f'  CÂU NGUỒN ({_ten_nn(goc_ma)}): "{m["goc"][:400]}"\n'
+                f'  BẢN DỊCH HIỆN TẠI ({ten_dich}, {len(m["text"])} ký tự, đọc '
+                f'lên mất {m["d_nat"]:.1f} giây): "{m["text"][:400]}"\n'
+                f'  KHUNG cho phép {m["khung"]:.1f} giây -> hãy viết lại thành '
+                f'khoảng {m["dich_kytu"]} ký tự (TỐI ĐA {m["toi_da_kytu"]})')
+        prompt = (
+            f"Các câu {ten_dich} sau đọc lên NGẮN HƠN khung thời gian cho "
+            "phép, nên lồng tiếng xong là im một quãng rồi mới sang câu kế. "
+            "Hãy viết lại ĐẦY ĐỦ HƠN cho vừa khung.\n\n"
+            f"{chr(10).join(items)}\n\n"
+            "QUY TẮC — ĐỌC KỸ, ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT:\n"
+            "- **TUYỆT ĐỐI KHÔNG THÊM THÔNG TIN KHÔNG CÓ TRONG CÂU NGUỒN.** "
+            "Không bịa chi tiết, không bịa tên, không bịa con số, không suy "
+            "diễn, không bình luận thêm.\n"
+            "- Chỗ DUY NHẤT được lấy thêm chữ: chi tiết ĐÃ CÓ trong CÂU NGUỒN "
+            "mà bản dịch hiện tại lược mất (trạng ngữ, tân ngữ, chủ ngữ bị "
+            "lược, từ nối, sắc thái).\n"
+            "- Được viết câu ĐỦ THÀNH PHẦN thay cho câu cụt: thêm chủ ngữ, "
+            "nói rõ tân ngữ, dùng từ đầy đủ thay từ tắt.\n"
+            "- Vẫn phải là câu NÓI tự nhiên, KHÔNG lặp lại ý, KHÔNG dài dòng "
+            "sáo rỗng, KHÔNG chêm từ đệm vô nghĩa cho đủ chữ.\n"
+            "- KHÔNG vượt số ký tự TỐI ĐA ghi ở câu đó.\n"
+            "- Nếu câu nguồn vốn đã ngắn gọn và KHÔNG còn chi tiết nào để "
+            "viết ra, hãy TRẢ LẠI ĐÚNG bản dịch hiện tại — đó là câu trả lời "
+            "ĐÚNG, không phải câu trả lời lười.\n"
+            + _LUAT_KHONG_SOT + "\n"
+            f"- Trả MẢNG JSON {len(phan)} đối tượng "
+            '{"i": <đúng số sau dấu #>, "t": "<câu đã viết đầy>"}. '
+            "BẮT BUỘC đủ MỌI số #, KHÔNG bỏ câu nào."
+        )
+        try:
+            data = llm.complete_json(prompt, system=system)
+        except Exception:  # noqa: BLE001
+            continue        # mẻ hỏng KHÔNG được giết cả video — giữ bản cũ
+        # `_mang_hoac_mot` TRƯỚC `_theo_nhan`: mẻ 1 câu thì model trả bản ghi
+        # ĐƠN, và `_theo_nhan` (qua `_mang_llm`) sẽ trả rỗng — xem docstring.
+        for j, t in _theo_nhan(_mang_hoac_mot(data), phan, "t").items():
+            if isinstance(t, str) and t.strip():
+                ra[j] = t.strip()
+    return [ra.get(j) or m["text"] for j, m in enumerate(muc)]
+
+
+def _cham_trung_thanh(muc: list[dict], moi: list[str], goc_ma: str,
+                      dich_sang: str) -> dict[int, tuple[float, float]]:
+    """Chấm ĐỘ TRUNG THÀNH bản CŨ và bản ĐẦY so với CÂU NGUỒN, thang 1-5.
+
+    Trả `{j: (điểm_cũ, điểm_mới)}` — thiếu khoá = KHÔNG CÓ CĂN CỨ, và caller
+    phải hiểu là **GIỮ BẢN CŨ** chứ không phải "chấm đạt". Fail-safe của bước
+    này đi ngược fail-safe của bước dịch: ở đó không có căn cứ thì đừng dịch
+    lại; ở đây không có căn cứ thì đừng NHẬN chữ mới.
+
+    Chấm CẢ HAI bản trong CÙNG một lượt gọi, có chủ ý: (a) chỉ tốn 1 lượt LLM
+    thay vì 2 — đường này đã phải giữ trong trần 1,5x mà `dich_va_soat`
+    (10,9x) và `dich_theo_gio` (2,46x) từng vượt; (b) chấm rời hai lượt thì
+    hai thang điểm trôi khác nhau và hiệu số vô nghĩa.
+    """
+    from app.ai import llm
+
+    system = ("Bạn chấm chất lượng dịch. So NGHĨA của bản dịch với câu gốc. "
+              "CHỈ trả JSON thuần.")
+    gia = [{"text": f'{m["goc"][:300]}\n{m["text"][:300]}\n{moi[j][:300]}'}
+           for j, m in enumerate(muc)]
+    ra: dict[int, tuple[float, float]] = {}
+    for phan in chia_me_dich(gia, list(range(len(muc))), token_ra_moi_cau=16):
+        items = [
+            f'#{j}\n  GỐC ({_ten_nn(goc_ma)}): "{muc[j]["goc"][:300]}"\n'
+            f'  BẢN A ({_ten_nn(dich_sang)}): "{muc[j]["text"][:300]}"\n'
+            f'  BẢN B ({_ten_nn(dich_sang)}): "{moi[j][:300]}"'
+            for j in phan]
+        prompt = (
+            "Với mỗi mục dưới đây có MỘT câu gốc và HAI bản dịch. Chấm ĐỘ "
+            "TRUNG THÀNH của từng bản so với CÂU GỐC, thang 1-5 "
+            "(5 = đúng trọn nghĩa, không thừa không thiếu; "
+            "1 = sai hẳn hoặc thêm thông tin KHÔNG CÓ trong câu gốc).\n"
+            "**Bản nào THÊM chi tiết mà câu gốc không hề nói thì phải bị "
+            "TRỪ ĐIỂM NẶNG**, kể cả khi nó đọc trôi chảy hơn.\n"
+            "Kèm `them`: bản B có thêm thông tin KHÔNG CÓ trong câu gốc "
+            "không (true/false).\n\n"
+            f"{chr(10).join(items)}\n\n"
+            f"Trả MẢNG JSON {len(phan)} đối tượng "
+            '{"i": <đúng số sau dấu #>, "a": <1-5>, "b": <1-5>, '
+            '"them": <true/false>}. BẮT BUỘC đủ MỌI số #.'
+        )
+        try:
+            data = llm.complete_json(prompt, system=system,
+                                     model=MODEL_CHAM_VIET_DAY)
+        except Exception:  # noqa: BLE001
+            continue        # không có căn cứ -> caller GIỮ BẢN CŨ
+        for o in _mang_hoac_mot(data):
+            if not isinstance(o, dict):
+                continue
+            try:
+                j = int(o.get("i"))
+                a = float(o.get("a"))
+                b = float(o.get("b"))
+            except (TypeError, ValueError):
+                continue
+            if j not in phan:
+                continue
+            # `them=True` = model nói thẳng bản B bịa thêm -> ép trượt, không
+            # cần đợi điểm số tự tụt (điểm là số TRUNG BÌNH của nhiều mặt,
+            # một câu bịa mà văn hay vẫn có thể được 4).
+            if bool(o.get("them")):
+                b = 0.0
+            ra[j] = (a, b)
+    return ra
+
+
+def viet_day_vua_khung(cau: list[dict], texts: list[str], files: list[str],
+                       ok: list[bool], tong: float, out_dir: str | Path,
+                       dich_sang: str, goc_ma: str = "", voice: str = "",
+                       moc_tu: Optional[list] = None,
+                       hut_toi_thieu: float = VIET_DAY_HUT_TOI_THIEU,
+                       tran_noi: float = VIET_DAY_TRAN_NOI,
+                       nhan_nha: Optional[bool] = None,
+                       on_progress: Optional[Callable[[float, str], None]] = None,
+                       ) -> dict:
+    """Viết ĐẦY câu dịch nào đọc lên HỤT khung, ĐỌC LẠI, giữ bản TỐT HƠN.
+
+    Khuôn ĐỐI XỨNG `rut_gon_vua_khung` — đọc hàm đó trước. Ba chốt, mỗi chốt
+    là một mặt của bốn chữ anh Hùng đòi:
+      · **LIỀN** — chỉ nhận khi bản mới đọc DÀI HƠN THẬT (đo trên file đã
+        ghi, không tin số dự kiến), và KHÔNG được dài quá khung (biến câu hụt
+        thành câu tràn là đổi một lỗi lấy một lỗi khác, còn kéo `atempo` vào);
+      · **ĐÚNG** — `_cham_trung_thanh` chấm bằng model KHÁC model dịch; tụt
+        quá `VIET_DAY_BIEN_TUT` hoặc dưới sàn hoặc bị gắn cờ "thêm thông tin"
+        -> VỨT bản đầy, giữ bản cũ;
+      · **TRẦN NỚI** — ngân sách ký tự bị kẹp bởi `tran_noi`, quá trần thì để
+        im còn hơn bịa.
+
+    Trả {texts, files, ok, moc_tu, so_sua, ...}. `so_bo_vi_nghia` là con số
+    đáng nhìn nhất: nó nói cửa chống-bịa CÓ RĂNG hay chỉ là trang trí.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    texts = list(texts)
+    files = list(files)
+    ok = list(ok)
+    # Mốc từng-từ đi KÈM file: câu nào bị thay file thì mốc cũ VÔ GIÁ TRỊ.
+    moc_tu = [list(m) for m in (moc_tu or [[] for _ in texts])]
+    while len(moc_tu) < len(texts):
+        moc_tu.append([])
+
+    kq = {"texts": texts, "files": files, "ok": ok, "moc_tu": moc_tu,
+          "so_sua": 0, "so_cau_hut": 0, "so_xin": 0, "so_doi_chu": 0,
+          "so_bo_vi_ngan": 0, "so_bo_vi_nghia": 0, "so_bo_vi_tran": 0,
+          # TÁCH RIÊNG "chấm rồi TRƯỢT" với "KHÔNG CHẤM ĐƯỢC": gộp làm một thì
+          # một lượt Groq chết đọc y hệt một lượt cửa-nghĩa làm việc, và bảng
+          # số sẽ khoe cái chốt đó "có răng" trong khi nó chỉ đang mù.
+          "so_bo_vi_khong_cham": 0, "so_lan_llm": 0,
+          "hut_truoc_giay": 0.0, "hut_sau_giay": 0.0,
+          "them_kytu": 0, "diem_cu_tb": 0.0, "diem_moi_tb": 0.0}
+
+    def _hut(i: int) -> float:
+        """Số giây câu #i còn THIẾU so với khung (>0 = hụt)."""
+        if i >= len(files) or not ok[i] or not Path(files[i]).exists():
+            return 0.0
+        d = probe_duration(files[i])
+        if d <= 0:
+            return 0.0
+        return khung_cho_phep(cau, i, tong) - d
+
+    truoc = [max(0.0, _hut(i)) for i in range(len(cau))]
+    kq["hut_truoc_giay"] = round(sum(truoc), 3)
+    xau = [i for i in range(len(cau)) if truoc[i] >= hut_toi_thieu]
+    kq["so_cau_hut"] = len(xau)
+    if not xau:
+        kq["hut_sau_giay"] = kq["hut_truoc_giay"]
+        return kq
+
+    kts = toc_do_doc(texts, files, ok)      # ký tự/giây ĐO của giọng này
+    muc = []
+    for i in xau:
+        kh = khung_cho_phep(cau, i, tong)
+        n = len(str(texts[i]).strip())
+        # ĐÍCH = số ký tự đọc vừa khung; TRẦN NỚI kẹp lại. `int(n * tran_noi)`
+        # là chỗ "quá trần thì thôi" — câu hụt quá sâu chỉ được nới tới đó.
+        dich_kt = max(n + 1, int(kh * kts))
+        toi_da = max(n + 1, min(dich_kt, int(n * tran_noi)))
+        if toi_da <= n + 1:
+            continue                        # trần không cho nới -> để im
+        muc.append({"i": i, "text": texts[i], "goc": str(cau[i].get("text") or ""),
+                    "khung": kh, "d_nat": kh - truoc[i],
+                    "dich_kytu": min(dich_kt, toi_da), "toi_da_kytu": toi_da})
+    kq["so_xin"] = len(muc)
+    if not muc:
+        kq["hut_sau_giay"] = kq["hut_truoc_giay"]
+        return kq
+
+    if on_progress:
+        on_progress(0.1, f"Viết đầy {len(muc)} câu hụt khung...")
+    moi = _viet_day_loat(muc, dich_sang, goc_ma)
+    kq["so_lan_llm"] += 1
+
+    # ---- CỬA "ĐÚNG": chấm bằng model KHÁC, TRƯỚC khi tốn một lượt TTS ----
+    doi = [j for j, m in enumerate(muc)
+           if str(moi[j]).strip() and str(moi[j]).strip() != m["text"].strip()]
+    diem: dict[int, tuple[float, float]] = {}
+    if doi:
+        if on_progress:
+            on_progress(0.2, f"Soát nghĩa {len(doi)} câu vừa viết đầy...")
+        diem = _cham_trung_thanh([muc[j] for j in doi], [moi[j] for j in doi],
+                                 goc_ma, dich_sang)
+        kq["so_lan_llm"] += 1
+        # `diem` đánh số theo VỊ TRÍ trong danh sách con -> map về `j` gốc.
+        diem = {doi[k]: v for k, v in diem.items() if k < len(doi)}
+
+    kq["so_doi_chu"] = len(doi)
+    giu: list[int] = []
+    for j in doi:
+        a, b = diem.get(j, (None, None))
+        if a is None or b is None:
+            kq["so_bo_vi_khong_cham"] += 1  # không chấm được = KHÔNG NHẬN
+            continue
+        if b < VIET_DAY_SAN_TRUNG_THANH or b < a - VIET_DAY_BIEN_TUT:
+            kq["so_bo_vi_nghia"] += 1
+            continue
+        giu.append(j)
+    if diem:
+        kq["diem_cu_tb"] = round(
+            sum(v[0] for v in diem.values()) / len(diem), 2)
+        kq["diem_moi_tb"] = round(
+            sum(v[1] for v in diem.values()) / len(diem), 2)
+    if not giu:
+        kq["hut_sau_giay"] = kq["hut_truoc_giay"]
+        return kq
+
+    # ---- ĐỌC LẠI chỉ những câu qua được cửa nghĩa ----
+    thu = [moi[j] for j in giu]
+    paths = [str(out_dir / f"vd_{muc[j]['i']:04d}.mp3") for j in giu]
+    sach, ok2, mt2 = _doc_lai_loat(
+        thu, paths, dich_sang, voice, out_dir / "sach",
+        nhan_nha=nhan_nha, on_progress=on_progress, dau=0.3, rong=0.6)
+
+    for k, j in enumerate(giu):
+        m = muc[j]
+        i = m["i"]
+        if not ok2[k] or not Path(sach[k]).exists():
+            continue
+        d_moi = probe_duration(sach[k])
+        if d_moi < DAI_CAU_TOI_THIEU:
+            continue
+        # CHỈ NHẬN KHI DÀI HƠN THẬT — đối xứng đúng luật bước 4b. LLM đôi khi
+        # trả câu dài hơn về CHỮ mà đọc lên lại ngắn hơn (bỏ dấu câu, đọc
+        # dính); nhận bừa là tự làm hỏng.
+        if d_moi <= m["d_nat"] + 0.05:
+            kq["so_bo_vi_ngan"] += 1
+            continue
+        # KHÔNG được tràn khung: biến câu hụt thành câu tràn là kéo `atempo`
+        # vào đúng chỗ vừa dọn xong.
+        if d_moi > m["khung"]:
+            kq["so_bo_vi_tran"] += 1
+            continue
+        texts[i] = thu[k]
+        files[i] = sach[k]
+        moc_tu[i] = mt2[k]
+        ok[i] = True
+        kq["so_sua"] += 1
+        kq["them_kytu"] += len(str(thu[k]).strip()) - len(str(m["text"]).strip())
+
+    kq["hut_sau_giay"] = round(
+        sum(max(0.0, _hut(i)) for i in range(len(cau))), 3)
+    return kq
 
 
 # ==================================================================
@@ -5739,9 +6159,16 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                      muc_giong_db: float = 0.0,
                      nhan_nha: bool = False,
                      keo_dai_giong: float = 1.0,
+                     viet_day: bool = False,
                      on_progress: Optional[Callable[[float, str], None]] = None,
                      ) -> dict:
     """CHẠY ĐỦ 6 BƯỚC cho 1 video, trả file video MỚI (chưa đụng file gốc).
+
+    `viet_day` -> **VIẾT ĐẦY CÂU HỤT KHUNG (bước 4b')**. `False` = MẶC ĐỊNH,
+    tức đường đi giống MỌI BẢN TRƯỚC không một lượt LLM nào thêm. Bật thì
+    `viet_day_vua_khung` chạy giữa 4b và 4c — xem docstring hàm đó cho ba
+    chốt (dài hơn THẬT · không tràn khung · model KHÁC chấm nghĩa) và cho
+    con số nói thẳng nó lấp được bao nhiêu phần trăm.
 
     `muc_nen_db` / `muc_giong_db` — HAI Ô ÂM LƯỢNG anh Hùng tự kéo (v2.42.0).
     `0,0` = MẶC ĐỊNH, tức app tự đo tự quyết y như mọi bản trước. Xem
@@ -5901,11 +6328,29 @@ def thay_giong_video(video_in: str | Path, dich_sang: str = "en",
                                on_progress=lambda p, m: prog(0.74 + 0.06 * p, m))
         kq["rut_gon"] = {k: v for k, v in rg.items()
                          if k not in ("texts", "files", "ok")}
-        # LỜI CUỐI CÙNG app THẬT SỰ đọc lên (sau dịch + rút gọn). Không có mục
-        # này thì không cách nào đối chiếu "app ĐỊNH nói gì" với "file phát ra
-        # cái gì" — đúng chỗ mù đã để lỗi dịch lệch bậc đi tới tận tai anh Hùng
-        # mà mọi cổng vẫn xanh. `doc_nhanh_vua_khung` chỉ đọc lại NHANH HƠN,
-        # không đổi một chữ nào, nên đây là lời cuối.
+
+        # --- bước 4b': VIẾT ĐẦY câu HỤT khung (đối xứng 4b) ---
+        # MẶC ĐỊNH TẮT. Bật thì nó đứng ĐÚNG SAU 4b và ĐÚNG TRƯỚC 4c, vì cả
+        # hai bước quanh nó đều đo ĐỘ DÀI TIẾNG: sửa chữ xong mới đo lại thì
+        # `he_so_hinh_can` và bước 4c mới nhìn thấy bộ file MỚI.
+        if viet_day:
+            prog(0.775, "Viết đầy câu hụt khung...")
+            vd = viet_day_vua_khung(
+                cau, rg["texts"], rg["files"], rg["ok"], tong,
+                tam_goc / "vietday", dich_sang, goc_ma, tts["voice"],
+                moc_tu=rg.get("moc_tu"), nhan_nha=nhan_nha,
+                on_progress=lambda p, m: prog(0.775 + 0.015 * p, m))
+            rg = {**rg, "texts": vd["texts"], "files": vd["files"],
+                  "ok": vd["ok"], "moc_tu": vd["moc_tu"]}
+            kq["viet_day"] = {k: v for k, v in vd.items()
+                              if k not in ("texts", "files", "ok", "moc_tu")}
+        # LỜI CUỐI CÙNG app THẬT SỰ đọc lên (sau dịch + rút gọn + viết đầy).
+        # Không có mục này thì không cách nào đối chiếu "app ĐỊNH nói gì" với
+        # "file phát ra cái gì" — đúng chỗ mù đã để lỗi dịch lệch bậc đi tới
+        # tận tai anh Hùng mà mọi cổng vẫn xanh. **PHẢI ĐỌC SAU 4b'**:
+        # `viet_day_vua_khung` là bước DUY NHẤT khác `rut_gon` còn đổi CHỮ, đặt
+        # dòng này trước nó là nhật ký ghi lời của bản CHƯA viết đầy.
+        # `doc_nhanh_vua_khung` chỉ đọc lại NHANH/CHẬM hơn, không đổi một chữ.
         kq["loi_cuoi"] = list(rg["texts"])
 
         # --- bước 4c: đọc NHANH lại câu còn dài (thay cho ép atempo méo tiếng)
@@ -6267,6 +6712,7 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          muc_giong_db: float = 0.0,
                          nhan_nha: bool = False,
                          keo_dai_giong: float = 1.0,
+                         viet_day: bool = False,
                          on_progress: Optional[
                              Callable[[float, str], None]] = None,
                          ) -> dict:
@@ -6329,6 +6775,11 @@ def thay_giong_mot_video(video_in: str | Path, dich_sang: str = "en",
                          # `inspect.signature` cửa NGOÀI CÙNG · GỌI THẬT bắt
                          # `TypeError` · CHẠY CỔNG 55.
                          keo_dai_giong=keo_dai_giong,
+                         # VIẾT ĐẦY (bước 4b') — **CỜ THỨ TÁM, và đây là cửa
+                         # NGOÀI CÙNG mà `jobs._thay_giong` gọi.** Sót đúng
+                         # dòng này là 4/4 video của anh Hùng LỖI ngay khi bấm
+                         # Chạy, đúng như `nhan_nha` (v2.45.0) đã nổ thật.
+                         viet_day=viet_day,
                          on_progress=on_progress)
     if not r.get("ok"):
         return r

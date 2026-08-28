@@ -310,7 +310,14 @@ CONG = [
     # NÂNG mốc, không hạ — mốc là SÀN.
     # v2.49.0 thêm MỤC 10 (kéo dài giọng cho đầy khung + lỗ VieNeu trả file 0
     # giây): 106 -> **156**.
-    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  157),
+    # v2.50.0 thêm MỤC 11 (VIẾT ĐẦY câu hụt khung — bước 4b'): 157 -> **189**
+    # (32 mục). Phần đắt nhất của mục đó là **cửa chống BỊA**: nó GỌI THẬT
+    # `viet_day_vua_khung` với LLM giả trả đúng các ca xấu (điểm tụt · `them=
+    # true` · bộ chấm CHẾT · đọc không dài hơn · tràn khung) và đòi hàm phải
+    # VỨT bản đầy ở cả năm. Kèm TỰ KIỂM BỘ DÒ cho `_mang_hoac_mot` — hai hình
+    # dạng model trả về mà `_mang_llm` TRƯỢT, và cả hai đã làm cửa chấm nghĩa
+    # MÙ HOÀN TOÀN trên đường thật.
+    ("89 chỉnh hình theo giọng", "_test_am_va_hinh.py",  190),
     # Cổng 90 — NHỊP TIẾN TRÌNH CỦA MÁY ĐỌC GỘP CẢ LOẠT. Số **90** lấy bằng
     # cách ĐỌC chính `CONG` này (max đang là 89), KHÔNG đếm theo trí nhớ: bảng
     # này đã có **52 và 77 trùng số**, mà trùng số thì hai cổng ghi đè

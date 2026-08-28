@@ -198,6 +198,74 @@ PHEP = [
      'payload.get("keo_dai_giong")),',
      '            keo_dai_giong=payload.get("keo_dai_giong"),  # PHA',
      "10", "payload mang rác được — hệ số bịa nhân vào ĐỘ DÀI TIẾNG"),
+
+    # ─────────── BƯỚC 4b' VIẾT ĐẦY (mục 11) ───────────
+    ("26. GỠ HẲN cửa nghĩa — nhận bản đầy mà KHÔNG chấm", TG,
+     "        if b < VIET_DAY_SAN_TRUNG_THANH or b < a - VIET_DAY_BIEN_TUT:",
+     "        if False:  # PHA: gỡ hẳn cửa chấm nghĩa",
+     "11", "chống BỊA — anh Hùng đòi ĐÚNG nằm trong bốn chữ"),
+
+    ("27. KHÔNG chấm được vẫn NHẬN (fail-safe lộn chiều)", TG,
+     "            kq[\"so_bo_vi_khong_cham\"] += 1  # không chấm được = KHÔNG NHẬN\n"
+     "            continue",
+     "            kq[\"so_bo_vi_khong_cham\"] += 1\n"
+     "            giu.append(j)  # PHA: không có căn cứ vẫn nhận\n"
+     "            continue",
+     "11", "không có căn cứ thì GIỮ BẢN CŨ, không phải nhận bừa"),
+
+    ("28. `them=true` (model nói thẳng là BỊA) KHÔNG bị ép trượt", TG,
+     "            if bool(o.get(\"them\")):\n                b = 0.0",
+     "            if False:  # PHA: bỏ cờ bịa\n                b = 0.0",
+     "11", "điểm là số TRUNG BÌNH — câu bịa mà văn hay vẫn được 4"),
+
+    ("29. GỠ TRẦN NỚI — xin bao nhiêu chữ cũng được", TG,
+     "        toi_da = max(n + 1, min(dich_kt, int(n * tran_noi)))",
+     "        toi_da = max(n + 1, dich_kt)  # PHA: gỡ trần nới",
+     "11", "quá trần thì để im còn hơn bịa"),
+
+    ("30. nhận bản đầy dù đọc lên KHÔNG dài hơn", TG,
+     "        if d_moi <= m[\"d_nat\"] + 0.05:",
+     "        if False:  # PHA: nhận cả bản ngắn hơn",
+     "11", "đối xứng luật 4b — chỉ nhận khi ĐI ĐÚNG HƯỚNG thật"),
+
+    ("31. nhận bản đầy dù TRÀN khung", TG,
+     "        if d_moi > m[\"khung\"]:",
+     "        if False:  # PHA: cho tràn khung",
+     "11", "biến câu hụt thành câu tràn = kéo `atempo` vào chỗ vừa dọn"),
+
+    ("32. `viet_day_vua_khung` chạy VÔ ĐIỀU KIỆN (bỏ `if viet_day`)", TG,
+     "        if viet_day:\n            prog(0.775, \"Viết đầy câu hụt khung...\")",
+     "        if True:  # PHA: chạy cả khi TẮT\n"
+     "            prog(0.775, \"Viết đầy câu hụt khung...\")",
+     "11", "TẮT là KHÔNG một lượt LLM nào thêm cho 200-300 kênh"),
+
+    ("33. `thay_giong_mot_video` QUÊN chuyền `viet_day`", TG,
+     "                         viet_day=viet_day,",
+     "                         # PHA: quên chuyền viet_day",
+     "11", "cửa NGOÀI CÙNG — đúng chỗ v2.45.0 sót, 4/4 video LỖI"),
+
+    ("34. nối `vd` VÔ ĐIỀU KIỆN (đổi hash MỌI job cũ)", TC,
+     "    if viet_day:\n        sig += \":vd=1\"",
+     "    if True:  # PHA\n        sig += \":vd=1\"",
+     "11", "cờ chỉ vào hash KHI THẬT SỰ BẬT"),
+
+    ("35. model CHẤM nghĩa = model DỊCH (tự chấm bài mình)", TG,
+     'MODEL_CHAM_VIET_DAY = "qwen/qwen3.8-27b"',
+     "MODEL_CHAM_VIET_DAY = settings.GROQ_LLM_MODEL  # PHA",
+     "11", "phép đo phát chứng nhận — họ bẫy `astats` cổng 53"),
+
+    # PHÉP NÀY PHẢI PHÁ "MỀM", KHÔNG ĐƯỢC LÀM HÀM NỔ. Bản đầu thay guard bằng
+    # `continue` -> `int("abc")` ném `ValueError` -> cổng CHẾT giữa chừng
+    # (`ĐẠT 5 HỎNG 0`, mã 1) và bảng ghi "BẮT" cho một mục CHƯA HỀ chạy. Đó là
+    # đúng cái `compile()` không bắt được, và là họ bẫy đã ghi ở đầu file.
+    ("36. `_mang_hoac_mot` nới quá tay: dict LẠ cũng thành bản ghi", TG,
+     "        if not isinstance(v, dict) or not str(k).strip().lstrip"
+     "(\"-\").isdigit():\n            return []",
+     "        if not isinstance(v, dict):  # PHA: bỏ chốt khoá-phải-là-số\n"
+     "            return []\n"
+     "        if not str(k).strip().lstrip(\"-\").isdigit():\n"
+     "            k = 0",
+     "11", "nới quá tay là bộ dò mất răng, fail-safe ở đây là KHÔNG NHẬN"),
 ]
 
 BAT: list[str] = []
@@ -245,8 +313,20 @@ def mot_phep(ten: str, f: Path, neo: str, thay: str, muc: str,
         print(f"  KHÔNG PHÁ ĐƯỢC — neo khớp {n} chỗ trong {f.name}, cần ĐÚNG 1."
               f"\n  (đây là LỖI CỦA PHÉP THỬ, KHÔNG phải cổng để lọt)")
         return
+    pha = goc.replace(neo_f, thay_f, 1)
+    # **`compile()` LẠI BẢN ĐÃ PHÁ** — bài học `_pha_doc_lan.py`: bản phá không
+    # biên dịch được thì cổng chết ngay lúc `import`, mã thoát 1, và bảng ghi
+    # "BẮT" cho một chốt mà phép thử CHƯA HỀ chạm tới. Đó là phép thử tự phát
+    # chứng nhận cho chính mình — cùng họ bẫy `astats` (cổng 53).
     try:
-        _ghi(f, goc.replace(neo_f, thay_f, 1))
+        compile(pha, str(f), "exec")
+    except SyntaxError as e:
+        KHONG_PHA.append(f"{ten} (bản phá KHÔNG biên dịch được: {e})")
+        print(f"  KHÔNG PHÁ ĐƯỢC — bản đã phá lỗi cú pháp ({e}).\n"
+              f"  (đây là LỖI CỦA PHÉP THỬ, KHÔNG phải cổng bắt được)")
+        return
+    try:
+        _ghi(f, pha)
         rc, tt = chay_cong(muc)
         if rc != 0:
             BAT.append(ten)

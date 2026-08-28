@@ -174,3 +174,9 @@ _do_ct_tam/
 _do_gd_tam/
 _do_rate_am_tam/
 _do_gd_chep.json
+# VIẾT ĐẦY CÂU HỤT KHUNG (bước 4b') — hộp cát + cache của `_do_viet_day.py`
+# và `_do_bon_chu.py`. Trong đó có bộ file giọng THẬT (hàng trăm MB) và cache
+# lượt chấm LLM; không có gì để git theo dõi.
+_do_vd_tam/
+_do_bc_tam/
+_do_bc_cache/

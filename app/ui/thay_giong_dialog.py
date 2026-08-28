@@ -103,6 +103,10 @@ K_KEO_DAI = "tg_keo_dai"
 #: NHẤN NHÁ — nâng cao độ đúng chữ đáng nhấn. **MẶC ĐỊNH TẮT**: bật là đổi
 #: tiếng của MỌI video từ nay trên 200-300 kênh đang chạy sản xuất.
 K_NHAN_NHA = "tg_nhan_nha"
+#: VIẾT ĐẦY CÂU HỤT KHUNG (bước 4b'). **MẶC ĐỊNH TẮT**: bật là đổi CHỮ được
+#: đọc lên của MỌI video từ nay trên 200-300 kênh đang chạy sản xuất, và thêm
+#: ~2 lượt LLM mỗi video. Anh Hùng phải NGHE rồi mới quyết bật đại trà.
+K_VIET_DAY = "tg_viet_day"
 #: CÁCH TRỘN TIẾNG — `"tach"` = thay hẳn giọng (tách nhạc, hành vi CŨ, MẶC ĐỊNH)
 #: · `"de"` = đè giọng lên tiếng gốc, KHÔNG tách.
 #: **MẶC ĐỊNH PHẢI LÀ `"tach"`**: đổi mặc định là đổi tiếng của MỌI video từ nay
@@ -2373,6 +2377,40 @@ class ThayGiongDialog(QDialog):
         h3bd.addStretch(1)
         lay.addLayout(h3bd)
 
+        # VIẾT ĐẦY CÂU HỤT KHUNG — hàng trên chữa CAO ĐỘ, hàng này chữa CHỮ.
+        # Nhãn phải nói CẢ CÁI GIÁ (thêm lượt AI) lẫn GIỚI HẠN (chỉ lấp phần
+        # hụt trên trục gốc), không chỉ khoe phần được: bài học nhãn `keo_dai`
+        # v2.49.0 khoe "im giảm" mà giấu "trải tốc độ đọc xấu đi".
+        h3vd = QHBoxLayout()
+        self.ck_viet_day = QCheckBox(
+            "Viết đầy câu hụt khung (AI viết đủ ý hơn cho vừa khung)")
+        self.ck_viet_day.setToolTip(
+            "Câu dịch nào đọc lên NGẮN HƠN khung thời gian của nó thì lồng "
+            "tiếng xong là im một quãng rồi mới sang câu kế — đúng chỗ anh "
+            "kêu \"được đoạn rồi nghỉ\". Ô này nhờ AI viết câu đó ĐẦY ĐỦ HƠN "
+            "(giữ nguyên nghĩa, chỉ viết đủ thành phần và trả lại chi tiết "
+            "bản dịch đã lược) rồi ĐỌC LẠI.\n\n"
+            "ĐO ĐƯỢC trên video của anh (Trung -> Việt, giọng nhân bản): "
+            "11/35 câu hụt khung, tổng 7,41 giây = 8,23% thời lượng; lấp hết "
+            "chỉ cần thêm 146 ký tự = +8,3% cả bài — tức là VIẾT ĐỦ Ý, không "
+            "phải bịa.\n\n"
+            "BA CHỐT CHỐNG BỊA: (1) không xin quá 1,45 lần số chữ hiện tại — "
+            "quá trần thì để im chứ không bịa; (2) một AI KHÁC chấm lại bản "
+            "mới so với CÂU GỐC, tụt điểm hoặc bị bắt là thêm thông tin thì "
+            "VỨT, giữ bản cũ; (3) chỉ nhận khi đọc lên thật sự DÀI HƠN mà "
+            "KHÔNG tràn khung.\n\n"
+            "GIÁ: thêm khoảng 2 lượt gọi AI cho mỗi video, và một lượt đọc "
+            "lại nhóm câu đó.\n\n"
+            "GIỚI HẠN, nói thẳng: nó chỉ lấp được phần hụt trên khung GỐC. "
+            "Nếu anh đang bật \"Chỉnh video theo giọng\" thì phần trống do "
+            "video bị kéo dài ra KHÔNG thuộc phạm vi ô này.\n\n"
+            "TẮT = mọi thứ y hệt bản cũ, không một lượt AI nào thêm.")
+        self.ck_viet_day.setChecked(
+            str(self._s.value(K_VIET_DAY, "0")) in ("1", "true", "True"))
+        h3vd.addWidget(self.ck_viet_day)
+        h3vd.addStretch(1)
+        lay.addLayout(h3vd)
+
         h3bc = QHBoxLayout()
         h3bc.addWidget(QLabel("Cách trộn tiếng:"))
         self.cb_tron = QComboBox()
@@ -4564,6 +4602,8 @@ class ThayGiongDialog(QDialog):
                          float(TG.chuan_keo_dai(self.cb_keo.currentData())))
         self._s.setValue(K_NHAN_NHA,
                          "1" if self.ck_nhan_nha.isChecked() else "0")
+        self._s.setValue(K_VIET_DAY,
+                         "1" if self.ck_viet_day.isChecked() else "0")
         # Qua `chuan_cach_tron` TRƯỚC KHI GHI: bản sau đổi tên cách trộn thì
         # giá trị cũ trong QSettings không âm thầm biến thành cách MỚI.
         self._s.setValue(K_TRON_CACH,
@@ -4861,6 +4901,9 @@ class ThayGiongDialog(QDialog):
         # lùi về một mức kéo (lùi về cái mới là âm thầm đổi tiếng video người
         # ta), và số đã kẹp trần mới đi vào payload + khoá chống trùng.
         cc_keo = TG.chuan_keo_dai(self.cb_keo.currentData())
+        # VIẾT ĐẦY cũng đọc từ Ô ĐANG HIỆN, KHÔNG đọc QSettings — cùng lý do
+        # với mọi ô trên (setting chỉ ghi lúc Chạy/đóng nên nó là lựa chọn CŨ).
+        cc_vd = bool(self.ck_viet_day.isChecked())
 
         self._jobs.clear()
         self._xong_id.clear()
@@ -4887,7 +4930,7 @@ class ThayGiongDialog(QDialog):
                     hinh_theo_giong=cc_hinh, de_giong=cc_de,
                     muc_nen_db=cc_nen_db, muc_giong_db=cc_giong_db,
                     doc_deu=cc_deu, nhan_nha=cc_nn,
-                    keo_dai_giong=cc_keo)
+                    keo_dai_giong=cc_keo, viet_day=cc_vd)
             except (ValueError, OSError) as e:   # noqa: PERF203
                 loi_xep.append(f"{Path(duong).name}: {e}")
                 self._dat_o(r, 1, "Lỗi", DANGER)

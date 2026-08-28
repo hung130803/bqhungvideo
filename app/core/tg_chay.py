@@ -31,7 +31,8 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
                      muc_giong_db: float = 0.0,
                      doc_deu: bool = False,
                      nhan_nha: bool = False,
-                     keo_dai_giong: float = 1.0) -> str:
+                     keo_dai_giong: float = 1.0,
+                     viet_day: bool = False) -> str:
     """`dedup_key` của job.
 
     Gồm CẢ THƯ MỤC ĐÍCH: đổi thư mục đích rồi bấm Chạy lại là một việc KHÁC,
@@ -139,6 +140,16 @@ def khoa_chong_trung(video: str | Path, dich_sang: str, voice: str,
     _kd = chuan_keo_dai(keo_dai_giong)
     if _kd > 1.0:
         sig += f":kd={_kd:.2f}"
+    # VIẾT ĐẦY CÂU HỤT KHUNG (bước 4b') — đổi CHỮ được đọc lên nên BẮT BUỘC
+    # vào khoá, không thì bật ô rồi bấm Chạy là bị smart-skip, không một dòng
+    # báo (đúng lỗi cổng 56e đã sập). Cùng luật với mọi cờ trên: nối vào
+    # **ĐUÔI CHUỖI**, **CHỈ KHI BẬT**, KHÔNG thêm phần tử vào tuple nào ->
+    # mặc định TẮT thì khoá của 200-300 kênh đang chạy sản xuất giữ NGUYÊN
+    # TỪNG KÝ TỰ. Bài học `ovl_spec` (42) · `che_chu` (56e).
+    # ĐỨNG RIÊNG, KHÔNG lồng trong `htg` (khác `dd`): viết đầy có tác dụng ở
+    # CẢ HAI chế độ khớp — nó sửa CHỮ, không cần hình chậm lại mới ăn.
+    if viet_day:
+        sig += ":vd=1"
     return sig
 
 
@@ -231,7 +242,8 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
             muc_giong_db: float = 0.0,
             doc_deu: bool = False,
             nhan_nha: bool = False,
-            keo_dai_giong: float = 1.0) -> Optional[int]:
+            keo_dai_giong: float = 1.0,
+            viet_day: bool = False) -> Optional[int]:
     """Xếp job cho MỘT video. Trả job id, hoặc None nếu BỎ QUA/không có pool.
 
     `lam_lai=True` xoá mục trong sổ TRƯỚC khi xếp — nếu không thì job chạy
@@ -313,6 +325,11 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
     kd = _ckd(keo_dai_giong)
     if kd > 1.0:
         tt["keo_dai_giong"] = kd
+    # VIẾT ĐẦY CÂU HỤT KHUNG — **CHỈ ghi khoá khi BẬT**, nên payload của job cũ
+    # nằm sẵn trong DB không mọc thêm khoá nào và `jobs._thay_giong`
+    # (`.get` -> False) cho ra hành vi Y HỆT bản trước.
+    if viet_day:
+        tt["viet_day"] = True
     return pool.enqueue(
         "thay_giong", tt,
         needs_gpu=False, priority=5,
@@ -331,6 +348,7 @@ def xep_mot(pool, video: str | Path, dich_sang: str, voice: str = "",
                                    # lần nữa — truyền số ĐÃ chuẩn vào là phép
                                    # luỹ đẳng, và nó bảo đảm payload với khoá
                                    # LUÔN khớp nhau.
-                                   keo_dai_giong=kd),
+                                   keo_dai_giong=kd,
+                                   viet_day=bool(viet_day)),
         skip_if_done=False, max_attempts=1,
     )
