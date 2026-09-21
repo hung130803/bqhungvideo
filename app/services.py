@@ -32,7 +32,7 @@ def _file_hash(path: str, chunk: int = 1 << 20) -> str:
     h.update(str(p.stat().st_size).encode())
     with open(p, "rb") as f:
         h.update(f.read(chunk))
-        if p.stat().st_size > chunk * 2:
+        if p.stat().st_size > chunk:
             f.seek(-chunk, 2)
             h.update(f.read(chunk))
     return h.hexdigest()[:16]
@@ -377,7 +377,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
     # sig phải phủ MỌI thứ ảnh hưởng kết quả: cả mốc cắt start/end của clip
     # (user kéo sửa trim rồi xuất lại) + NỘI DUNG chữ (overlay_png là đường dẫn
     # cố định _ovl_{clip_id}.png nên phải hash nội dung file) + nơi lưu.
-    row = db.query_one("SELECT start_sec, end_sec FROM clips WHERE id=?",
+    row = db.query_one("SELECT start_sec, end_sec, export_path FROM clips WHERE id=?",
                        (clip_id,))
     se = f"{row['start_sec']:.3f}-{row['end_sec']:.3f}" if row else "?"
     ovl = ""
@@ -456,7 +456,9 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         project_id=project_id, video_id=video_id,
         needs_gpu=False, priority=3,   # cắt/xuất libx264 -> lane CPU (luồng cắt riêng)
         dedup_key=f"export:{clip_id}:{out_w}x{out_h}:p{part_no}:{sig}",
-        skip_if_done=not force,
+        skip_if_done=(not force and bool(row and row['export_path']
+                     and Path(row['export_path']).is_file()
+                     and Path(row['export_path']).stat().st_size > 0)),
     )
 
 

@@ -17,7 +17,7 @@
 KHÔNG phải việc phụ.
 
 BẤT BIẾN AN TOÀN (đừng nới lỏng):
-  * CHỈ xoá trong %TEMP% và DATA_DIR, CHỈ những tên khớp danh sách dưới.
+  * Chỉ dọn TEMP có dấu sở hữu .bqhung-owned và snapshot/log trong DATA_DIR.
   * BỎ QUA mọi thứ vừa đổi trong `gio` giờ -> không đụng việc đang chạy.
   * BỎ QUA thư mục _MEI của CHÍNH tiến trình này (sys._MEIPASS).
   * File/thư mục đang bị khoá -> bỏ qua im lặng (đừng cố xoá).
@@ -106,8 +106,12 @@ def _cua_minh() -> set:
 
 
 def quet_temp(gio_min: float = 1.0) -> tuple[int, int]:
-    """Dọn %TEMP%. Trả (số mục, số byte). `gio_min` nhân với tuổi từng mẫu."""
+    """Dọn TEMP thuộc app. Trả (số mục, byte); không đụng TEMP chung."""
     goc = Path(os.environ.get("TEMP") or "/tmp")
+    # TEMP chung không chứng minh quyền sở hữu (_MEI là của mọi app PyInstaller).
+    # Chỉ dọn khi app đã đặt TEMP vào vùng riêng có dấu sở hữu.
+    if not (goc / '.bqhung-owned').is_file():
+        return (0, 0)
     tru = _cua_minh()
     n = byte = 0
     for mau, la_dir, gio, _gc in RAC_TEMP:
@@ -140,9 +144,8 @@ def quet_data_dir(data_dir: Path) -> tuple[int, int]:
     n = byte = 0
     # 1) bản DB do các lần cứu-hộ trước để lại: giữ 3 mới nhất
     try:
-        cu = [p for p in data_dir.glob("studio_*.db")]
-        cu += [p for p in data_dir.glob("studio.db.corrupt*")
-               if not p.name.endswith(("-wal", "-shm"))]
+        # Chỉ luân phiên snapshot do backup_to tạo; giữ mọi bản cứu hộ thô.
+        cu = [p for p in data_dir.glob("studio_backup_truoc_don_*.db")]
         cu.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         for p in cu[_GIU_BAN_DB:]:
             for hau in ("", "-wal", "-shm"):     # xoá kèm wal/shm mồ côi

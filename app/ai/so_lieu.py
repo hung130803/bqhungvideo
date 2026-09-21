@@ -189,7 +189,7 @@ def doc_file(duong_dan: str) -> tuple:
 
 
 def _diem(r: dict) -> float:
-    """Thước xếp hạng: ưu tiên **TỈ LỆ XEM HẾT**, không có thì mới dùng view.
+    """Thước xếp hạng cùng đơn vị: tỉ lệ xem, thiếu dữ liệu trả 0.
 
     Vì sao không dùng thẳng view: view phụ thuộc kênh to/nhỏ và cú hích thuật
     toán, còn "người ta xem được bao nhiêu phần clip" mới nói lên đoạn cắt có
@@ -199,7 +199,7 @@ def _diem(r: dict) -> float:
     xem = float(r.get("xem_tb") or 0)
     if dai > 0 and xem > 0:
         return max(0.0, min(2.0, xem / dai))
-    return float(r.get("view") or 0)
+    return 0.0
 
 
 def nhap_vao_db(duong_dan: str, project_id: int, db, nguon: str = "") -> tuple:
@@ -283,7 +283,15 @@ def so_lieu_cua_kenh(project_id, db, vi_du: int = VI_DU,
     ra["n"] = len(ds)
     if len(ds) < int(toi_thieu):
         return ra
-    ds.sort(key=_diem, reverse=True)
+    # Không trộn số lượt xem (hàng nghìn) với tỉ lệ xem (0..2).
+    retained = [r for r in ds if float(r.get('dai') or 0) > 0
+                and float(r.get('xem_tb') or 0) > 0]
+    if len(retained) >= int(toi_thieu):
+        ds = sorted(retained, key=_diem, reverse=True)
+    elif not retained:
+        ds.sort(key=lambda r: float(r.get('view') or 0), reverse=True)
+    else:
+        return ra  # Chưa đủ mẫu cùng loại để kết luận tốt/tệ.
     k = max(1, int(vi_du))
     ra["tot"] = ds[:k]
     ra["te"] = list(reversed(ds[-k:]))

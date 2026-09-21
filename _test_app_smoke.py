@@ -42,6 +42,8 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QColorDialog,  # noqa: E40
 from app.ui.appsettings import app_settings  # noqa: E402
 
 qapp = QApplication(sys.argv)
+from app.ui.theme import QSS
+qapp.setStyleSheet(QSS)
 st_q = app_settings()
 _KEYS = ("pipe_root", "chan_group", "chan_groups_extra", "pipe_grp_sel",
          "pipe_recycle_dir", "last_template")

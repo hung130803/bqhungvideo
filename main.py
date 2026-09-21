@@ -44,6 +44,9 @@ def _pick_media_backend() -> None:
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == '--self-check':
+        from app.core.self_check import run
+        return run(sys.argv[2])
     # ---- Chế độ TIẾN TRÌNH CON PHÂN TÍCH (bản .exe không chạy được -m module) ----
     if len(sys.argv) >= 3 and sys.argv[1] == "--analyze":
         import app.core.analysis_runner as ar
@@ -62,7 +65,14 @@ def main() -> int:
     from PyQt6.QtWidgets import QApplication
 
     # Nạp DB + đăng ký toàn bộ job handler (analyze, m1_*)
-    import app.queue.jobs  # noqa: F401  (side-effect: register_handler)
+    try:
+        import app.queue.jobs  # noqa: F401  (side-effect: register_handler)
+    except Exception as e:
+        from PyQt6.QtWidgets import QMessageBox
+        error_app = QApplication.instance() or QApplication(sys.argv)
+        error_app.processEvents()
+        QMessageBox.critical(None, 'Không mở được dữ liệu BQHungVideo', str(e))
+        return 1
     from app.ui.main_window import MainWindow
     from app.ui.state import AppState
 

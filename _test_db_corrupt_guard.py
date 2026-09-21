@@ -110,16 +110,19 @@ except sqlite3.DatabaseError as e:
     kiem("ngắt mạch" in str(e) or "hỏng" in str(e),
          "execute ném lỗi có hướng dẫn khởi động lại", str(e)[:60])
 
-print("\n== 6. mở app LẦN SAU trên file vỡ -> tự sao lưu + tạo DB mới ==")
-d2 = Database(T / "t.db")
-kiem(d2.corrupt_live is False, "DB mới dùng được ngay (cờ vỡ = False)")
-d2.execute("INSERT INTO projects(name, assets_dir) VALUES('K2', 'z')")
-kiem(len(d2.query("SELECT name FROM projects")) == 1, "ghi/đọc lại bình thường")
-backups = list(T.glob("*backup*")) + list(T.glob("*corrupt*"))
+print("\n== 6. mở app trên file vỡ -> sao lưu, giữ gốc và dừng an toàn ==")
+before = (T / 't.db').read_bytes()
+try:
+    Database(T / 't.db')
+    kiem(False, 'DB hỏng phải dừng, không mở DB rỗng')
+except RuntimeError:
+    kiem((T / 't.db').read_bytes() == before, 'giữ nguyên DB hỏng để cứu hộ')
+backups = list((T / 'recovery').rglob('t.db'))
 kiem(bool(backups), "file vỡ được SAO LƯU (không xoá vĩnh viễn)",
      str([p.name for p in T.iterdir()])[:120])
 
 print("\n== 7. PRAGMA tối ưu độ mượt có hiệu lực ==")
+d2 = Database(T / 'healthy.db')
 c = d2.conn()
 autock = c.execute("PRAGMA wal_autocheckpoint").fetchone()[0]
 sync = c.execute("PRAGMA synchronous").fetchone()[0]

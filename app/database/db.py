@@ -24,8 +24,8 @@ class Database:
     def __init__(self, path: Path = DB_PATH):
         self.path = str(path)
         self._local = threading.local()
-        # True nếu phải rơi vào DB tạm trong RAM (không lưu qua phiên + TIẾN TRÌNH
-        # CON không chia sẻ được -> phân tích sẽ fail). UI dùng cờ này để cảnh báo.
+        # Giữ thuộc tính tương thích UI cũ; lỗi mở DB nay dừng an toàn, không
+        # chạy trên DB RAM rỗng khác nhau giữa các luồng/tiến trình.
         self.in_memory = False
         # ⚡ NGẮT MẠCH khi DB VỠ GIỮA LÚC ĐANG CHẠY (đo thật trên máy anh Hùng
         # 30/07: studio.db malformed -> app thử lại mỗi query -> ĐỌC ĐĨA
@@ -71,27 +71,16 @@ class Database:
         return c
 
     def init_schema(self) -> None:
-        """Mở/ tạo DB. PHẢI luôn thành công để app mở được, NHƯNG TUYỆT ĐỐI
-        không được hủy dữ liệu người dùng vì một lỗi TẠM THỜI.
+        """Lỗi tạm thời được thử lại; DB hỏng được sao lưu thô rồi dừng.
 
-        Phân loại lỗi rất quan trọng (đây là nguyên nhân MẤT KÊNH/MẪU sau mỗi
-        lần cập nhật của bản cũ):
-          - HỎNG THẬT (malformed / not a database / encrypted / image is
-            malformed): file thực sự không đọc được -> mới được phép cách ly.
-            Nhưng KHÔNG xóa: SAO LƯU (copy) studio.db -> studio_backup_<ts>.db
-            trước, rồi tạo DB mới. Dữ liệu cũ vẫn cứu tay được.
-          - TẠM THỜI (disk I/O error / database is locked / unable to open /
-            timeout...): ngay sau cập nhật thường do AV/OneDrive đang quét file
-            vừa swap, wal/shm mồ côi, hoặc tiến trình app cũ chưa nhả handle.
-            KHÔNG xóa gì cả -> RETRY (đóng connection, đợi tăng dần). Nếu retry
-            hết vẫn lỗi -> GIỮ NGUYÊN studio.db, rơi vào DB RAM cho phiên này
-            (lần mở sau đĩa rảnh sẽ đọc lại được data). Không bao giờ wipe.
+        Không xóa DB/WAL/SHM và không mở một DB trống giả như dữ liệu đã mất.
+        Giao diện khởi động báo rõ lý do; công cụ khôi phục dùng snapshot đã
+        kiểm toàn vẹn để phục hồi khi ứng dụng đã đóng.
         """
         try:
             self._apply_schema()
             return
         except Exception as e:  # noqa: BLE001
-            first_err = e
             if self._is_true_corrupt(e):
                 self._recover_true_corrupt()
                 return
@@ -108,66 +97,79 @@ class Database:
                 self._apply_schema()
                 return
             except Exception as e:  # noqa: BLE001
-                first_err = e
-                if self._is_true_corrupt(e):   # hoá ra hỏng thật -> sao lưu + tạo mới
+                if self._is_true_corrupt(e):   # sao lưu bộ file, giữ gốc rồi dừng
                     self._recover_true_corrupt()
                     return
                 if not self._is_transient_err(e):
                     raise
 
         # ---- Retry hết vẫn lỗi tạm thời: GIỮ NGUYÊN studio.db ----
-        # KHÔNG wipe, KHÔNG đổi tên file. Rơi vào DB RAM để app mở được phiên
-        # này; lần khởi động sau khi đĩa rảnh, studio.db (còn nguyên data) sẽ
-        # đọc lại được. UI đọc self.in_memory để cảnh báo user.
+        # Không mở DB RAM: các worker/tiến trình con cần chung dữ liệu bền.
         self._fallback_memory()
 
     def _recover_true_corrupt(self) -> None:
-        """File studio.db HỎNG THẬT: sao lưu (COPY) rồi tạo DB mới TẠI CHỖ.
-        Không bao giờ xóa vĩnh viễn — bản backup để user/mình cứu tay."""
-        self._backup_db_file(self.path)
-        # Sau khi đã có backup an toàn, dọn file hỏng tại chỗ để tạo mới.
-        # (backup là COPY nên xóa bản gốc hỏng ở đây không mất dữ liệu.)
-        self._wipe_db_files(self.path)
-        try:
-            self._reset_conn()
-            self._apply_schema()
-            return
-        except Exception:  # noqa: BLE001
-            pass
-        # Cùng chỗ tạo mới vẫn lỗi (đĩa/khoá) -> DB RAM cho phiên này.
-        self._fallback_memory()
+        """Giữ cả DB/WAL gốc. Không tạo DB rỗng khiến người dùng mất dấu kênh."""
+        backup = self._backup_db_file(self.path)
+        self._reset_conn()
+        detail = f'Bản sao cứu hộ: {backup}' if backup else 'Chưa sao lưu được; bản gốc vẫn được giữ nguyên.'
+        raise RuntimeError(
+            f'Cơ sở dữ liệu bị hỏng: {self.path}. {detail} '
+            'Dừng xử lý để bảo vệ dữ liệu. Khôi phục từ bản sao hợp lệ trước khi chạy tiếp.')
 
     def _fallback_memory(self) -> None:
-        """DB trong RAM: app VẪN mở, chạy được trong phiên (không lưu qua phiên).
-        CẢNH BÁO: tiến trình con (phân tích) KHÔNG chia sẻ được RAM-DB."""
-        self.path = ":memory:"
-        self.in_memory = True
+        """Không chạy trên DB rỗng/tách biệt giữa các luồng khi DB thật bị khóa."""
         self._reset_conn()
-        self._apply_schema()
+        raise RuntimeError(
+            f'Không mở được cơ sở dữ liệu {self.path} sau nhiều lần thử. '
+            'Dữ liệu được giữ nguyên. Đóng phiên app khác/kiểm tra quyền và dung lượng ổ rồi mở lại.')
 
     def _backup_db_file(self, path: str) -> Optional[str]:
         """COPY studio.db -> studio_backup_<ts>.db (không move/delete). Trả path
         backup, hoặc None nếu không có gì để sao lưu / copy thất bại."""
         import shutil as _sh
+        import hashlib
         src = Path(path)
         if not src.exists() or src.stat().st_size == 0:
             return None
-        dst = src.with_name(f"studio_backup_{int(time.time())}.db")
+        folder = src.parent / 'recovery' / str(time.time_ns())
+        dst = folder / src.name
         try:
-            self._reset_conn()          # nhả handle trước khi copy
-            _sh.copy2(src, dst)
+            folder.mkdir(parents=True)
+            # Giữ nguyên bộ file hỏng, gồm WAL chưa checkpoint. Đây là bản
+            # cứu hộ thô, không được coi là snapshot SQLite đã kiểm tra.
+            for suffix in ('', '-wal', '-shm'):
+                original = Path(path + suffix)
+                if not original.exists():
+                    continue
+                target = Path(str(dst) + suffix)
+                _sh.copy2(original, target)
+                with original.open('rb') as a, target.open('rb') as b:
+                    if hashlib.file_digest(a, 'sha256').digest() != hashlib.file_digest(b, 'sha256').digest():
+                        return None
         except OSError:
             return None
-        # GIỚI HẠN: giữ 3 bản backup mới nhất (mỗi bản = cả cỡ studio.db;
-        # DB hỏng lặp lại nhiều lần sẽ phình đĩa vô hạn nếu không chặn).
-        try:
-            baks = sorted(src.parent.glob("studio_backup_*.db"),
-                          key=lambda p: p.stat().st_mtime, reverse=True)
-            for f in baks[3:]:
-                f.unlink()
-        except OSError:
-            pass
         return str(dst)
+
+    def backup_to(self, destination: Path) -> str:
+        """Snapshot SQLite nhất quán, gồm dữ liệu đang trong WAL; kiểm trước khi dùng."""
+        destination = Path(destination)
+        temporary = destination.with_suffix(destination.suffix + '.partial')
+        deadline = time.monotonic() + 60
+        def progress(status, remaining, total):
+            if time.monotonic() > deadline:
+                raise TimeoutError('Sao lưu DB quá 60 giây; chưa dọn dữ liệu.')
+        try:
+            target = sqlite3.connect(str(temporary))
+            try:
+                self.conn().backup(target, pages=256, progress=progress, sleep=0.05)
+                if target.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                    raise RuntimeError('Bản sao DB không vượt kiểm tra toàn vẹn.')
+            finally:
+                target.close()
+            temporary.replace(destination)
+            return str(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     @staticmethod
     def _is_true_corrupt(e: Exception) -> bool:
@@ -196,7 +198,7 @@ class Database:
                 c.close()
         except Exception:  # noqa: BLE001
             pass
-        self._local = threading.local()
+        self._local.conn = None
 
     def _apply_schema(self) -> None:
         sql = _SCHEMA_PATH.read_text(encoding="utf-8")

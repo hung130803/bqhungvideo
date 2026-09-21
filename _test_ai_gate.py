@@ -66,6 +66,8 @@ def lam_video(p: Path) -> None:
         check=True)
     old = time.time() - STABLE
     os.utime(p, (old, old))
+    from app.core.pipeline import observe_source
+    observe_source(p, now=time.monotonic() - 11)
 
 
 def bom_nhip(n: int) -> None:

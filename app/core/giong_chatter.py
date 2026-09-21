@@ -1224,12 +1224,15 @@ def _chay(items: list[dict], ref: str, lang: str, py: str, han_giay: int,
     duoi: list[str] = []
     ma: Optional[int] = None
     p = None
+    deadline = None
+    from app.core.process_guard import ProcessDeadline, terminate_tree
     try:
         p = subprocess.Popen(
             [py, "-u", str(runner), str(job)], stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
             errors="replace", bufsize=1, env=env, creationflags=_NO_WIN)
         _gan_job(p)
+        deadline = ProcessDeadline(p, han_giay)
         han = time.time() + han_giay
         for dong in p.stdout or ():
             dong = dong.rstrip("\n")
@@ -1253,10 +1256,15 @@ def _chay(items: list[dict], ref: str, lang: str, py: str, han_giay: int,
                 p.kill()
                 return _ra({"ok": False, "loi": "quá giờ (bỏ cuộc)"})
         ma = p.wait(timeout=120)
+        if deadline.expired.is_set():
+            raise TimeoutError("Quá thời gian tạo giọng; đã dừng tiến trình")
     except Exception as e:                                     # noqa: BLE001
         return _ra({"ok": False, "loi": f"{type(e).__name__}: {e}"})
     finally:
+        if deadline is not None:
+            deadline.cancel()
         if p is not None:
+            terminate_tree(p)
             _bo_gan_job(p)
     if not ket:
         ket = {"ok": False,

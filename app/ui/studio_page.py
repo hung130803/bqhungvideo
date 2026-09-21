@@ -1540,6 +1540,11 @@ class StudioPage(QWidget):
         src = QComboBox()
         src.addItem("Groq — mây (FREE, khôn, nhẹ — khuyên dùng)", "groq")
         src.addItem("Gemini — mây (khôn nhất, có phí nhẹ)", "gemini")
+        for label, provider in [('OpenAI', 'openai'), ('DeepSeek', 'deepseek'),
+                                ('Ollama — trên máy', 'ollama')]:
+            src.addItem(label + ' (cấu hình trong .env)', provider)
+        if settings.LLM_PROVIDER and src.findData(settings.LLM_PROVIDER) < 0:
+            src.addItem(settings.LLM_PROVIDER + ' (cấu hình hiện có)', settings.LLM_PROVIDER)
         i = src.findData(settings.LLM_PROVIDER or "groq")
         src.setCurrentIndex(i if i >= 0 else 0)
         c_brain.addWidget(src)
@@ -2080,6 +2085,8 @@ class StudioPage(QWidget):
         def do_test():
             apply_live()
             prov = src.currentData()
+            from app.ai.llm import reset_provider_restriction
+            reset_provider_restriction(prov)
             if prov == "gemini" and not key.toPlainText().strip():
                 set_note("err", "CHƯA NHẬP KEY — dán key Gemini vào ô trên rồi bấm "
                                 "Kiểm tra.")
@@ -4592,7 +4599,8 @@ class StudioPage(QWidget):
                     # video -> _pipe_exports dõi bộ job không bao giờ khớp =
                     # đứng im.
                     self._pipe_on_exported(
-                        vid, list(getattr(self, "_last_export_jids", []) or []))
+                        vid, list(getattr(self, '_export_results', {}).get(vid, {}).get(
+                            'jobs', getattr(self, '_last_export_jids', [])) or []))
                 except Exception as e:  # noqa: BLE001
                     self._pipe_on_export_failed(vid, str(e))
             elif st in ("failed", "canceled", "skipped", ""):
@@ -5616,7 +5624,7 @@ class StudioPage(QWidget):
 
     def _pipe_recycle_dir(self) -> str:
         """THÙNG RÁC dây chuyền (user chọn): video gốc cắt xong chuyển vào đây
-        theo ngày, khôi phục được. Rỗng = xoá hẳn (hành vi cũ)."""
+        theo ngày, khôi phục được. Rỗng = dùng thùng rác _DaXoa cạnh nguồn."""
         return str(self._settings.value("pipe_recycle_dir", "") or "")
 
     def _pipe_src_dirs(self) -> list[str]:
@@ -6211,6 +6219,12 @@ class StudioPage(QWidget):
             return
         pid, name, mode, path = q.pop(0)
         try:
+            from app.core import pipeline as P
+            if path.exists() and not P.observe_source(path):
+                q.append((pid, name, mode, path))
+                self.status.setText(f"⏳ Đợi video ổn định: {path.name}")
+                QTimer.singleShot(100, self._pipe_intake_step)
+                return
             if self._pipe_take(pid, name, mode, path):
                 self._pipe_intake_taken = getattr(self, "_pipe_intake_taken", 0) + 1
         except Exception as e:  # noqa: BLE001 - 1 file lỗi không chặn cả loạt
@@ -6631,6 +6645,7 @@ class StudioPage(QWidget):
         """Nút 🔧 Cứu video kẹt — bấm tay, báo rõ kết quả bằng số."""
         from PyQt6.QtWidgets import QMessageBox
         from app.core import pipeline as P
+        don = self._pipe_retry_stuck()
         try:
             cho = len(P.list_taken())
         except Exception:  # noqa: BLE001
@@ -6638,7 +6653,9 @@ class StudioPage(QWidget):
         if not cho:
             QMessageBox.information(
                 self, "Không có video kẹt",
-                "Không có video nào đang dở giữa đường — dây chuyền sạch.")
+                f"Đã dọn được {don} video gốc bị kẹt.\n"
+                "Không có lượt phân tích/xuất nào cần nối tiếp.\n"
+                "Gốc còn bị khóa sẽ được thử lại khi mở app hoặc chạy dây chuyền.")
             return
         n = self._pipe_resume_taken()
         con = len(P.list_taken())
@@ -6882,15 +6899,14 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001
             info = None
         if not info or (info.duration or 0) <= 0.5:
-            P.mark_bad(pid, path.name, "file hỏng/không đọc được (ffprobe)")
-            dst = P.quarantine(path)
-            self._pipe_log(f"🔴 {name}: {path.name} HỎNG — chuyển "
-                           f"{'_Loi' if dst else 'THẤT BẠI (file kẹt)'}")
+            P.mark_bad(pid, path.name, "Không đọc được metadata hoặc video quá ngắn; giữ nguồn")
+            self._pipe_log(f"⚠ {name}: {path.name} chưa đọc được metadata hoặc quá ngắn. "
+                           "GIỮ NGUYÊN video; kiểm tra ffprobe và file tải về.")
             return False
         try:
             fh = _file_hash(str(path))
             vid = services.import_video(pid, str(path))
-            entry = P.take_file(pid, path.name, fh)
+            entry = P.take_file(pid, path.name, fh, video_id=vid)
         except Exception as e:  # noqa: BLE001
             self._pipe_log(f"🔴 {name}: {path.name} không nhập được — {e}")
             return False
@@ -6954,13 +6970,19 @@ class StudioPage(QWidget):
         `jids`: job xuất CỦA CHÍNH video này, do người gọi lấy ngay sau
         _export_video. Để None chỉ vì tương thích ngược (lùi về biến dùng
         chung) — đường dây chuyền luôn truyền thẳng."""
-        ctx = self._pipe_by_vid.pop(vid, None)
+        ctx = self._pipe_by_vid.get(vid)
         if ctx is None:
+            return
+        outcome = getattr(self, '_export_results', {}).pop(vid, {})
+        if outcome.get('error'):
+            self._pipe_on_export_failed(vid, outcome['error'])
             return
         if jids is None:
             jids = list(getattr(self, "_last_export_jids", []) or [])
         jids = list(jids)
-        self._pipe_exports[vid] = {"jobs": set(jids), "ctx": ctx}
+        self._pipe_exports[vid] = {"jobs": set(jids), "ctx": ctx,
+                                   'clips': outcome.get('clips', [])}
+        self._pipe_by_vid.pop(vid, None)
         if not jids:
             # không có job xuất mới: hoặc mọi Part đã xuất y hệt trước đó
             # (smart-skip) hoặc AI không tạo được clip -> phân xử ngay
@@ -6969,11 +6991,12 @@ class StudioPage(QWidget):
     def _pipe_on_export_failed(self, vid: int, err: str) -> None:
         """Hook từ _check_auto_export: build payload xuất LỖI (mẫu hỏng...)."""
         from app.core import pipeline as P
-        ctx = self._pipe_by_vid.pop(vid, None)
+        ctx = self._pipe_by_vid.get(vid)
         if ctx is None:
             return
         P.mark_error(ctx["entry"], f"lỗi dựng lệnh xuất: {err}")
-        self._pipe_quarantine_ctx(ctx, f"lỗi dựng lệnh xuất: {err}")
+        self._pipe_by_vid.pop(vid, None)
+        self._pipe_log(f"⚠ {ctx['name']}: lỗi dựng lệnh xuất, GIỮ NGUYÊN gốc: {err[:240]}")
 
     def _pipe_quarantine_ctx(self, ctx: dict, why: str) -> None:
         from app.core import pipeline as P
@@ -6990,8 +7013,11 @@ class StudioPage(QWidget):
         try:
             self._pipe_poll_cut()
             self._pipe_poll_exports()
-        except Exception:  # noqa: BLE001 - poll phụ, không được sập app
-            pass
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            if getattr(self, '_pipe_last_poll_error', None) != msg:
+                self._pipe_last_poll_error = msg
+                self._pipe_log(f"⚠ Theo dõi dây chuyền lỗi, giữ việc để thử lại: {msg[:240]}")
 
     def _pipe_poll_cut(self) -> None:
         from app.core import pipeline as P
@@ -7008,32 +7034,34 @@ class StudioPage(QWidget):
                 # KHÔNG chuyển _Loi, KHÔNG xoá. Gỡ theo dõi + TRẢ DÒNG SỔ —
                 # để dòng kẹt 'taken' là hồi phục sau restart tưởng việc dở
                 # rồi tự chạy lại (bug anh Hùng 30/07).
-                ctx = self._pipe_cut.pop(jid)
+                ctx = self._pipe_cut[jid]
+                P.unmark_taken(ctx["entry"])
+                self._pipe_cut.pop(jid, None)
                 self._pipe_by_vid.pop(ctx["vid"], None)
                 self._pending_export.pop(jid, None)
                 getattr(self, "_auto_tpl", {}).pop(jid, None)
-                P.unmark_taken(ctx["entry"])
                 self._pipe_log(
                     f"⏹ {ctx['name']}: {ctx['file']} — đã huỷ, GIỮ NGUYÊN "
                     "video gốc.")
             elif st in ("failed", ""):
-                ctx = self._pipe_cut.pop(jid)
+                ctx = self._pipe_cut[jid]
                 self._pipe_by_vid.pop(ctx["vid"], None)
                 self._pending_export.pop(jid, None)
                 getattr(self, "_auto_tpl", {}).pop(jid, None)
                 err = db.query_one("SELECT error FROM jobs WHERE id=?", (jid,))
                 why = (err["error"] if err and err["error"] else st) or "lỗi"
-                if P.is_transient_error(str(why)):
+                if not P.is_source_error(str(why)):
                     # LỖI TẠM THỜI (Groq 500, mạng, hết lượt…) — video KHÔNG
                     # hỏng. Xoá sổ "đã nhận" để lượt chạy sau nhận lại và cắt
                     # tiếp; GIỮ NGUYÊN video gốc tại thư mục kênh.
                     P.unmark_taken(ctx["entry"])
                     self._pipe_log(
-                        f"⏳ {ctx['name']}: {ctx['file']} — lỗi TẠM THỜI, GIỮ "
+                        f"⏳ {ctx['name']}: {ctx['file']} — xử lý chưa thành công, GIỮ "
                         f"NGUYÊN video để chạy lại: {str(why)[:120]}")
                 else:
                     P.mark_error(ctx["entry"], f"cắt lỗi: {why}")
                     self._pipe_quarantine_ctx(ctx, f"cắt lỗi: {str(why)[:120]}")
+                self._pipe_cut.pop(jid, None)
 
     def _pipe_poll_exports(self, force_vid=None) -> None:
         from app.core import pipeline as P
@@ -7055,11 +7083,12 @@ class StudioPage(QWidget):
             else:
                 canceled = []
                 bad = []
-            ctx = self._pipe_exports.pop(vid)["ctx"]
+            ctx = ent["ctx"]
             if canceled:
                 # Trả dòng sổ như nhánh huỷ bên _pipe_poll_cut — kẹt 'taken'
                 # là hồi phục sau restart tự xuất lại dù user đã huỷ.
                 P.unmark_taken(ctx["entry"])
+                self._pipe_exports.pop(vid, None)
                 self._pipe_log(
                     f"⏹ {ctx['name']}: '{ctx['file']}' — đã huỷ, GIỮ NGUYÊN "
                     "video gốc (lần chạy sau cắt lại).")
@@ -7068,16 +7097,23 @@ class StudioPage(QWidget):
             # 'archived' (part của LẦN PHÂN TÍCH TRƯỚC) — không thì lượt này
             # tưởng đã đủ part rồi dọn video gốc oan.
             clips = db.query(
-                "SELECT export_path FROM clips WHERE video_id=? "
-                "AND status<>'archived' "
-                "AND export_path IS NOT NULL AND export_path<>''", (vid,))
+                "SELECT id, export_path FROM clips WHERE video_id=? "
+                "AND status<>'archived'", (vid,))
+            expected_ids = set(ent.get('clips') or [])
+            if expected_ids and expected_ids != {c['id'] for c in clips}:
+                P.mark_error(ctx['entry'], 'Danh sách clip đã đổi trong lúc xuất; giữ gốc để kiểm tra')
+                self._pipe_exports.pop(vid, None)
+                self._pipe_log(f"⚠ {ctx['name']}: clip đã đổi giữa lượt xuất, GIỮ NGUYÊN video gốc.")
+                continue
             parts = [c["export_path"] for c in clips
-                     if c["export_path"] and os.path.exists(c["export_path"])]
-            if bad or not parts:
+                     if c["export_path"] and os.path.isfile(c["export_path"])
+                     and os.path.getsize(c["export_path"]) > 0]
+            if bad or not parts or len(parts) != len(clips):
                 why = (f"{len(bad)} job xuất lỗi" if bad
-                       else "không có Part nào được xuất")
+                       else f"Chưa đủ Part: {len(parts)}/{len(clips)}; giữ video gốc")
                 P.mark_error(ctx["entry"], why)
-                self._pipe_quarantine_ctx(ctx, why)
+                self._pipe_exports.pop(vid, None)
+                self._pipe_log(f"⚠ {ctx['name']}: {why}. Có thể xuất lại từ video gốc.")
                 continue
             # ĐỦ PART -> dọn VIDEO GỐC (INTEGRATION.md mục 4). Có THÙNG RÁC
             # (Cài đặt dây chuyền) -> CHUYỂN vào đó theo ngày (khôi phục được);
@@ -7101,6 +7137,7 @@ class StudioPage(QWidget):
                     + (" [CƠ BẢN]" if ctx.get("basic") else "")
                     + (MARK_STUCK if action == "stuck" else ""))
             P.mark_done(ctx["entry"], video_id=vid, note=note)
+            self._pipe_exports.pop(vid, None)
             tail = {
                 "recycled": " — đã chuyển video gốc vào Thùng rác (khôi phục được)",
                 "deleted": " — đã xoá video gốc",
@@ -8527,13 +8564,22 @@ class StudioPage(QWidget):
         only_clip_id != None -> chỉ xuất 1 clip đó (giữ đúng số Part của nó).
         Trả số clip đã đưa vào hàng đợi.
         """
+        self._last_export_jids = []
+        if not hasattr(self, '_export_results'):
+            self._export_results = {}
+        outcome = {'jobs': [], 'clips': [], 'error': ''}
+        self._export_results[video_id] = outcome
         clips = services.list_clips(video_id)
         if not clips:
+            outcome['error'] = 'Không có clip để xuất sau phân tích'
             return 0
+        outcome['clips'] = [int(c['id']) for c in clips
+                            if only_clip_id is None or c['id'] == only_clip_id]
         vrow = db.query_one(
             "SELECT v.src_path, v.width, v.height, v.project_id FROM videos v "
             "WHERE v.id=?", (video_id,))
         if not vrow:
+            outcome['error'] = 'Không tìm thấy video trong cơ sở dữ liệu'
             return 0
         # CHẶN TRƯỚC KHI CHẠY FFMPEG: video GỐC đã bị dọn (cắt xong -> xoá /
         # chuyển Thùng rác) -> ffmpeg sẽ báo "No such file" khó hiểu. Báo RÕ +
@@ -8541,6 +8587,7 @@ class StudioPage(QWidget):
         # ĐỘNG xuất lại 1 clip — luồng dây chuyền tự-xuất thì gốc còn nguyên.)
         src_p = ((vrow["src_path"] or "").strip())
         if src_p and not os.path.exists(src_p):
+            outcome['error'] = f'Không tìm thấy video gốc: {src_p}'
             base = os.path.basename(src_p)
             self.status.setText(
                 f"⚠ Không xuất được: VIDEO GỐC đã bị dọn sau khi cắt xong "
@@ -8745,6 +8792,8 @@ class StudioPage(QWidget):
                 "mới. Muốn xuất lại 1 clip: bấm 'Xuất lại' ở clip đó.")
         # 🤖 dây chuyền đọc danh sách job xuất của video vừa gọi (cùng tick)
         self._last_export_jids = list(jids)
+        outcome['jobs'] = list(jids)
+        self._export_results[video_id] = outcome
         return len(jids)
 
     def _export_all(self):

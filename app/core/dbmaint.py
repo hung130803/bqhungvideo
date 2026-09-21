@@ -27,7 +27,6 @@ file .env (key) · clip .mp4 trên đĩa.
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from pathlib import Path
 
@@ -102,12 +101,10 @@ def sao_luu_db() -> str:
     p = str(getattr(db, "path", "") or "")
     if not p or p == ":memory:" or not os.path.exists(p):
         return ""
-    dst = Path(p).with_name(f"studio_backup_truoc_don_{int(time.time())}.db")
+    dst = Path(p).with_name(f"studio_backup_truoc_don_{time.time_ns()}.db")
     try:
-        db.gap_wal()                     # gấp WAL trước để bản sao TỰ ĐỦ
-        shutil.copy2(p, dst)
-        return str(dst)
-    except OSError:
+        return db.backup_to(dst)
+    except Exception:  # Không có snapshot hợp lệ thì tuyệt đối không dọn.
         return ""
 
 
@@ -118,8 +115,8 @@ def don_chep_loi_cu(ngay: float = 30.0, sao_luu: bool = True) -> tuple[int, floa
         ds = _co_the_don(ngay)
         if not ds:
             return (0, 0.0)
-        if sao_luu:
-            sao_luu_db()                 # có đường lùi trước khi xoá lần đầu
+        if sao_luu and not sao_luu_db():
+            return (0, 0.0)
         n = byte = 0
         for vid, b in ds:
             try:
@@ -145,9 +142,10 @@ def nen_db() -> float:
     if not p or p == ":memory:" or not os.path.exists(p):
         return 0.0
     try:
-        truoc = os.path.getsize(p)
         db.gap_wal()
+        truoc = os.path.getsize(p)
         db.conn().execute("VACUUM")
+        db.gap_wal()
         return max(0.0, (truoc - os.path.getsize(p)) / 1048576.0)
     except Exception:  # noqa: BLE001
         return 0.0

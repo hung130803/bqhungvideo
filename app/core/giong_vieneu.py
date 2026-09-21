@@ -1750,6 +1750,8 @@ def _chay_theo_dong(cmd: list[str], han: int,
                              creationflags=_NO_WIN)
     except OSError as e:
         return 1, [str(e)]
+    from app.core.process_guard import ProcessDeadline, terminate_tree
+    deadline = ProcessDeadline(p, han)
     han_lo = time.time() + han
     n = 0
     try:
@@ -1764,11 +1766,13 @@ def _chay_theo_dong(cmd: list[str], han: int,
                 p.kill()
                 return -1, log
     finally:
+        deadline.cancel()
+        terminate_tree(p)
         try:
             p.wait(timeout=60)
         except Exception:  # noqa: BLE001
             p.kill()
-    return int(p.returncode or 0), log
+    return (-1 if deadline.expired.is_set() else int(p.returncode or 0)), log
 
 
 def _chay_lenh(cmd: list[str], han: int) -> tuple[int, str]:
@@ -1942,12 +1946,15 @@ def _chay_vieneu(items: list[dict], py: str, voice: str, ref_audio: str,
     duoi: list[str] = []
     ma: Optional[int] = None
     p = None
+    deadline = None
+    from app.core.process_guard import ProcessDeadline, terminate_tree
     try:
         p = subprocess.Popen(
             [py, "-u", str(runner), str(job)], stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
             errors="replace", bufsize=1, env=env, creationflags=_NO_WIN)
         _gan_job(p)
+        deadline = ProcessDeadline(p, han_giay)
         han = time.time() + han_giay
         for dong in p.stdout or ():
             dong = dong.rstrip("\n")
@@ -1972,11 +1979,16 @@ def _chay_vieneu(items: list[dict], py: str, voice: str, ref_audio: str,
                 return {"ok": False, "loi": "quá giờ (bỏ cuộc)",
                         "_sandbox": str(sb)}
         ma = p.wait(timeout=120)
+        if deadline.expired.is_set():
+            raise TimeoutError("Quá thời gian tạo giọng; đã dừng tiến trình")
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "loi": f"{type(e).__name__}: {e}",
                 "_sandbox": str(sb)}
     finally:
+        if deadline is not None:
+            deadline.cancel()
         if p is not None:
+            terminate_tree(p)
             _bo_gan_job(p)
     if not ket:
         ket = {"ok": False,

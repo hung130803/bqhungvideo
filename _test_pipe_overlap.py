@@ -52,6 +52,8 @@ def lam_video(p: Path, giay: int = 1) -> None:
         check=True)
     old = time.time() - STABLE
     os.utime(p, (old, old))
+    from app.core.pipeline import observe_source
+    observe_source(p, now=time.monotonic() - 11)  # Hai quan sát; bỏ 10s chờ thật của fixture.
 
 
 import app.queue.jobs  # noqa: F401,E402 - handler + cv2 TRƯỚC Qt (thứ tự main.py)

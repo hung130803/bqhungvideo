@@ -208,7 +208,14 @@ class LoginDialog(QDialog):
             self._s.setValue("last_user", self.user)
             self._s.setValue("save_user", self.user)
             if self.remember.isChecked():        # GHI NHỚ mật khẩu cho lần sau
-                self._s.setValue("save_pass", self._enc(p))
+                encrypted = self._enc(p)
+                if encrypted:
+                    self._s.setValue("save_pass", encrypted)
+                else:
+                    self._s.remove("save_pass")
+                    QMessageBox.warning(self, 'Không lưu mật khẩu',
+                                        'Windows không mã hóa được mật khẩu. '
+                                        'Bạn vẫn đăng nhập được; lần sau cần nhập lại mật khẩu.')
             else:
                 self._s.remove("save_pass")
             self.password = p                     # trả mật khẩu cho main/admin
@@ -226,10 +233,7 @@ class LoginDialog(QDialog):
         enc = _dpapi(raw, protect=True)
         if enc is not None:
             return "dpapi:" + base64.b64encode(enc).decode("ascii")
-        try:  # nền tảng không có DPAPI -> đành base64 như cũ
-            return base64.b64encode(raw).decode("ascii")
-        except Exception:  # noqa: BLE001
-            return ""
+        return ""  # Không hạ xuống base64 thuần khi mã hóa hệ điều hành lỗi.
 
     @staticmethod
     def _dec(s: str) -> str:

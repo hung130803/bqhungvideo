@@ -36,6 +36,60 @@ _GEMINI_LOCK = threading.Lock()
 _KEY_STATE: dict = {}
 _KEY_LOCK = threading.Lock()
 
+
+def _provider_blocks_path():
+    from config import DATA_DIR
+    return DATA_DIR / 'ai_provider_blocks.json'
+
+
+def _key_set_id(keys):
+    import hashlib
+    return hashlib.sha256('\n'.join(sorted(set(keys))).encode()).hexdigest()
+
+
+def ensure_provider_available(provider: str, keys) -> None:
+    try:
+        blocks = json.loads(_provider_blocks_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return
+    if blocks.get(provider) == _key_set_id(keys):
+        raise LLMError(f'organization_restricted: Tài khoản {provider} bị hạn chế. '
+                       'Video gốc được giữ nguyên. Xử lý tài khoản với nhà cung cấp, '
+                       'sau đó vào Cài đặt AI → Kiểm tra để thử lại.')
+
+
+def mark_provider_restricted(provider: str, keys) -> None:
+    # Chia sẻ với tiến trình phân tích con; chỉ lưu mã băm, không lưu API key.
+    path = _provider_blocks_path()
+    with _KEY_LOCK:
+        try:
+            blocks = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            blocks = {}
+        blocks[provider] = _key_set_id(keys)
+        import uuid
+        temporary = path.with_suffix('.' + uuid.uuid4().hex + '.tmp')
+        try:
+            temporary.write_text(json.dumps(blocks), encoding='utf-8')
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def reset_provider_restriction(provider: str) -> None:
+    path = _provider_blocks_path()
+    with _KEY_LOCK:
+        try:
+            blocks = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return
+        blocks.pop(provider, None)
+        path.write_text(json.dumps(blocks), encoding='utf-8')
+        for (p, _key), state in _KEY_STATE.items():
+            if p == provider and state.get('state') == 'invalid':
+                state['state'] = 'ready'
+                state['until'] = 0
+
 # Cooldown mặc định khi KHÔNG parse được thời gian chờ từ message lỗi:
 _COOLDOWN_DAILY = 3600.0   # lỗi "per day/TPD": đừng đợi cả ngày, thử lại mỗi giờ
 _COOLDOWN_DEFAULT = 120.0  # rate-limit thường (per minute...)
@@ -183,26 +237,26 @@ def _is_invalid(st: dict) -> bool:
     return bool(st) and st.get("state") == "invalid"
 
 
-def pick_keys(provider: str, keys=None) -> list:
-    """DANH SÁCH key đã SẮP THỨ TỰ ƯU TIÊN để xoay vòng:
-    ready trước (giữ thứ tự settings), limited giữa (hết cooldown sớm nhất
-    trước), key SAI xếp CUỐI (thử sau cùng, phòng khi user vừa sửa key).
-    Không bao giờ rỗng nếu settings có key."""
+def pick_keys(provider: str, keys=None, start_at: int = 0) -> list:
+    """Ready trước, chỉ xoay trong nhóm ready; cooldown sau, loại key đã sai."""
     if keys is None:
         keys = settings.llm_keys_for(provider)
     now = time.time()
-    ready, limited, invalid = [], [], []
+    ready, limited = [], []
     with _KEY_LOCK:
         for k in keys:
             st = _KEY_STATE.get((provider, k))
             if st is not None and _is_invalid(st):
-                invalid.append(k)
+                continue
             elif st is not None and _is_limited(st, now):
                 limited.append((st["until"], k))
             else:
                 ready.append(k)
     limited.sort(key=lambda t: t[0])
-    return ready + [k for _, k in limited] + invalid
+    if ready and start_at:
+        k = start_at % len(ready)
+        ready = ready[k:] + ready[:k]
+    return ready + [k for _, k in limited]
 
 
 def soonest_ready_wait(provider: str, keys=None):
@@ -359,11 +413,27 @@ def bo_khoi_suy_nghi(text: str) -> str:
 
 
 def _bo_phay_thua(s: str) -> str:
-    """Bỏ dấu phẩy THỪA ngay trước `]`/`}` — model hay để lại, `json` thì cấm.
-
-    Hàm thuần. KHÔNG đụng dấu phẩy nằm trong chuỗi vì mẫu đòi ngay sau nó phải
-    là dấu đóng (chuỗi có `, ]` bên trong là cực hiếm và bản gốc cũng đã hỏng)."""
-    return re.sub(r",(\s*[\]}])", r"\1", s or "")
+    """Bỏ dấu phẩy trước ]/} chỉ khi ở ngoài chuỗi JSON, tôn trọng escape."""
+    out = []
+    quoted = escaped = False
+    text = s or ''
+    for i, char in enumerate(text):
+        if quoted:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+            out.append(char)
+        elif char == ',' and text[i + 1:].lstrip().startswith((']', '}')):
+            continue
+        else:
+            out.append(char)
+    return ''.join(out)
 
 
 def _bo_qua_trang(t: str, j: int, them: str = "") -> int:
@@ -1421,6 +1491,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     keys = settings.llm_keys_for(provider)
     if not keys:
         raise LLMError(f"Chưa cấu hình API key cho provider '{provider}' trong .env")
+    ensure_provider_available(provider, keys)
 
     # local (ollama) -> gọi tuần tự qua khóa để không tranh VRAM khi chạy đa luồng
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
@@ -1471,11 +1542,13 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                         saw_retryable = True
                         continue               # key này hết lượt -> thử key tiếp
                     if is_org_restricted(last):
-                        # TÀI KHOẢN bị Groq KHOÁ (400) -> loại key vĩnh viễn
-                        # khỏi vòng xoay, nhảy key kế NGAY — không cho 1 key
-                        # ban giết cả lượt phân tích khi 25 key sau còn sống.
+                        # Hạn chế tài khoản không phải quota: dừng nhà cung cấp,
+                        # giữ nguồn và chờ người dùng xử lý tài khoản.
                         mark_invalid(provider, key)
-                        continue
+                        mark_provider_restricted(provider, keys)
+                        raise LLMError(
+                            'organization_restricted: Tài khoản bị hạn chế. '
+                            'Kiểm tra tài khoản/liên hệ hỗ trợ nhà cung cấp. ' + last)
                     if is_auth_error(last):
                         mark_invalid(provider, key)
                         continue               # KEY SAI -> bỏ qua, thử key khác
@@ -1700,6 +1773,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             keys = settings.groq_keys()
             if not keys:
                 raise LLMError("Chưa cấu hình key Groq cho vision")
+            ensure_provider_available('groq', keys)
             content = [{"type": "text", "text": prompt}]
             for p in image_paths:
                 content.append({"type": "image_url", "image_url":
@@ -1707,10 +1781,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             msgs = ([{"role": "system", "content": system}] if system else []) \
                 + [{"role": "user", "content": content}]
             last = ""
-            _vong = pick_keys("groq", keys)
-            if key_dau and _vong:
-                _i = int(key_dau) % len(_vong)
-                _vong = _vong[_i:] + _vong[:_i]
+            _vong = pick_keys("groq", keys, start_at=int(key_dau))
             for key in _vong:
                 mark_used("groq", key)
                 try:
@@ -1747,6 +1818,11 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                     raise LLMError(f"Vision groq trả về không phải JSON: {e}")
                 except Exception as e:  # noqa: BLE001
                     last = str(e)
+                    if is_org_restricted(last):
+                        mark_invalid('groq', key)
+                        mark_provider_restricted('groq', keys)
+                        raise LLMError('organization_restricted: Tài khoản Groq bị hạn chế; '
+                                       'kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq.') from e
                     if is_too_large_error(last):
                         # gửi quá nhiều/quá to -> caller giảm số ảnh. ĐỪNG phạt
                         # key: đây là lối đã đốt sạch 38 key (xem

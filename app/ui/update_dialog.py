@@ -101,7 +101,9 @@ class UpdateDialog(QDialog):
             zip_path = su.download(
                 self.info["asset_url"], self.info["tag"],
                 on_progress=lambda a, b: self._prog.emit(a, b),
-                is_canceled=lambda: self._canceled)
+                is_canceled=lambda: self._canceled,
+                expected_digest=self.info.get('asset_digest', ''),
+                expected_size=int(self.info.get('asset_size') or 0))
             if self._canceled:            # bấm Hủy đúng lúc vừa tải xong
                 raise su.UpdateCanceled()
             new_dir = su.extract(zip_path)

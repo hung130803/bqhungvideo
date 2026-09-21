@@ -926,6 +926,8 @@ def _doc_dong(src: str | Path, fps: float, rong: int,
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                          creationflags=_CREATE_NO_WINDOW)
+    from app.core.process_guard import ProcessDeadline, terminate_tree
+    deadline = ProcessDeadline(p, han)
     try:
         while True:
             if time.monotonic() > han_luc:
@@ -936,6 +938,8 @@ def _doc_dong(src: str | Path, fps: float, rong: int,
             g = np.frombuffer(buf, np.uint8).reshape(h, w)
             goi.append(np.packbits(_mat_na(g).reshape(-1)))
     finally:
+        deadline.cancel()
+        terminate_tree(p)
         try:
             p.stdout.close()
         except OSError:
@@ -946,6 +950,8 @@ def _doc_dong(src: str | Path, fps: float, rong: int,
             p.wait(timeout=30)
         except subprocess.TimeoutExpired:
             pass
+    if deadline.expired.is_set():
+        raise TimeoutError("Quét chữ quá thời gian; đã dừng ffmpeg")
     if len(goi) < 6:
         return None, 0, 0
     return np.stack(goi), w, h

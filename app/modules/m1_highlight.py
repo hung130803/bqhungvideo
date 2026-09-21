@@ -3946,6 +3946,14 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                    str((result_extra or {}).get("duong") or ""))
     except Exception:  # noqa: BLE001 - ghi chú không được phép làm vỡ xuất
         pass
+    # Dây chuyền chỉ dọn nguồn sau khi thành phẩm có metadata video hợp lệ.
+    from app.core.ffmpeg_utils import probe as _verify_probe
+    _verified = _verify_probe(str(out_path))
+    if (_verified.duration <= 0 or _verified.width <= 0 or _verified.height <= 0):
+        raise RuntimeError('File xuất chưa có video hợp lệ; giữ nguyên nguồn để xuất lại.')
+    result_extra = dict(result_extra or {})
+    result_extra['verified_output'] = {'size': Path(out_path).stat().st_size,
+                                       'duration': _verified.duration}
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",
         (str(out_path), clip_id),

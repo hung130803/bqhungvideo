@@ -47,12 +47,14 @@ def check_latest(timeout: int = 6):
             or f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases")
     if not tag or _parse(tag) <= _parse(__version__):
         return None
-    asset_url, asset_size = "", 0
+    asset_url, asset_size, asset_digest = "", 0, ""
     for a in data.get("assets") or []:
         name = (a.get("name") or "").lower()
         if name.endswith(".zip") and a.get("browser_download_url"):
             asset_url = a["browser_download_url"]
             asset_size = int(a.get("size") or 0)
+            asset_digest = str(a.get('digest') or '')
             break
     return {"tag": tag, "page": page, "asset_url": asset_url,
-            "asset_size": asset_size, "notes": (data.get("body") or "").strip()}
+            "asset_size": asset_size, 'asset_digest': asset_digest,
+            "notes": (data.get("body") or "").strip()}

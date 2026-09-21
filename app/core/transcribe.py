@@ -272,15 +272,12 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
     from openai import OpenAI
     from app.ai import llm
     last = ""
+    llm.ensure_provider_available('groq', keys)
 
     def _order():
         """Danh sách key ưu tiên, xoay start_at vòng (chỉ xoay phần READY để
         chia tải song song; limited/invalid vẫn giữ cuối)."""
-        ordered = llm.pick_keys("groq", keys)
-        if start_at and ordered:
-            k = start_at % len(ordered)
-            ordered = ordered[k:] + ordered[:k]
-        return ordered
+        return llm.pick_keys("groq", keys, start_at=start_at)
 
     # tối đa 2 vòng: vòng 1 thử mọi key; nếu TẤT CẢ đều 429 với reset ngắn
     # (TPM cùng nick), đợi hết cooldown ngắn nhất rồi thử lại vòng 2.
@@ -313,6 +310,13 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                     (_g(r, "text", "") or "")
             except Exception as e:  # noqa: BLE001
                 last = str(e)
+                if llm.is_org_restricted(last):
+                    llm.mark_invalid('groq', key)
+                    llm.mark_provider_restricted('groq', keys)
+                    raise RuntimeError(
+                        'organization_restricted: Tài khoản Groq bị hạn chế. '
+                        'Kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq; '
+                        'video gốc được giữ nguyên.') from e
                 if llm.is_too_large_error(last):
                     # 413 "Request too large" (đoạn tiếng gửi lên quá dài cho
                     # hạn mức token/phút). Groq gắn kèm `rate_limit_exceeded`
@@ -513,6 +517,8 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     keys = settings.groq_keys()
     if not keys:
         raise RuntimeError("Chưa có GROQ key.")
+    from app.ai import llm
+    llm.ensure_provider_available('groq', keys)
     ff = shutil.which("ffmpeg") or settings.FFMPEG_PATH or "ffmpeg"
     fp = shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe"
     flags = 0x0800_0000 if os.name == "nt" else 0

@@ -284,6 +284,11 @@ class WorkerPool:
 
     # ---- vòng đời ----
     def start(self) -> None:
+        if self._dispatcher and self._dispatcher.is_alive():
+            return
+        with self._lock:
+            if self._inflight:
+                raise RuntimeError('Các việc cũ đang dừng. Chờ chúng kết thúc trước khi khởi động lại hàng đợi.')
         self._recover_crashed()
         self._stop.clear()
         # cho phép start LẠI sau stop(): executor đã shutdown thì tạo mới
@@ -394,36 +399,36 @@ class WorkerPool:
                 video_id=None, needs_gpu: bool = False, priority: int = 0,
                 dedup_key: Optional[str] = None, max_attempts: int = 3,
                 skip_if_done: bool = True) -> Optional[int]:
-        if dedup_key:
-            done = skip_if_done and db.query_one(
-                "SELECT id FROM jobs WHERE dedup_key=? AND status='done'",
-                (dedup_key,),
-            )
-            if done:
-                return None  # đã làm rồi -> bỏ qua
-            # đang chờ/đang chạy cùng key -> trả id cũ, không tạo trùng
-            pend = db.query_one(
-                "SELECT id, status FROM jobs WHERE dedup_key=? AND status IN "
-                "('pending','running')", (dedup_key,),
-            )
-            if pend:
-                # Job trùng còn XẾP HÀNG -> cập nhật payload MỚI NHẤT (user vừa
-                # đổi cài đặt rồi bấm lại thì phải áp cài đặt mới). Điều kiện
-                # status='pending' trong UPDATE tránh race với dispatcher.
-                if pend["status"] == "pending":
-                    db.execute(
-                        "UPDATE jobs SET payload=? WHERE id=? AND status='pending'",
-                        (db.dumps(payload), pend["id"]),
-                    )
-                return int(pend["id"])
-
-        job_id = db.insert(
-            """INSERT INTO jobs (type, project_id, video_id, payload, needs_gpu,
+        # BEGIN IMMEDIATE gộp kiểm-trùng + ghi thành một giao dịch, kể cả khi
+        # nhiều thread/tiến trình xếp cùng việc. Không sửa mẫu đã chốt của việc cũ.
+        connection = db.conn()
+        connection.execute('BEGIN IMMEDIATE')
+        try:
+            if dedup_key:
+                done = skip_if_done and connection.execute(
+                    "SELECT id FROM jobs WHERE dedup_key=? AND status='done'",
+                    (dedup_key,),
+                ).fetchone()
+                if done:
+                    connection.commit()
+                    return None
+                pend = connection.execute(
+                    "SELECT id FROM jobs WHERE dedup_key=? AND status IN "
+                    "('pending','running')", (dedup_key,)).fetchone()
+                if pend:
+                    connection.commit()
+                    return int(pend['id'])
+            cursor = connection.execute(
+                """INSERT INTO jobs (type, project_id, video_id, payload, needs_gpu,
                                  priority, dedup_key, max_attempts, status)
                VALUES (?,?,?,?,?,?,?,?, 'pending')""",
-            (job_type, project_id, video_id, db.dumps(payload),
-             1 if needs_gpu else 0, priority, dedup_key, max_attempts),
-        )
+                (job_type, project_id, video_id, db.dumps(payload),
+                 1 if needs_gpu else 0, priority, dedup_key, max_attempts))
+            job_id = cursor.lastrowid
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         self._notify()
         return job_id
 
@@ -435,7 +440,7 @@ class WorkerPool:
         kill_job_procs(job_id)
         # nếu còn pending (chưa chạy) -> đánh dấu canceled luôn
         db.execute(
-            "UPDATE jobs SET status='canceled', message='Đã hủy' "
+             "UPDATE jobs SET status='canceled', cancel_req=1, message='Đã hủy' "
             "WHERE id=? AND status='pending'", (job_id,),
         )
         # đang chạy -> báo 'Đang hủy...' + GHI Ý ĐỊNH HUỶ BỀN vào DB.
@@ -589,6 +594,8 @@ class WorkerPool:
         if isinstance(lan, bool):
             lan = LAN_GPU if lan else LAN_CPU
         for r in rows:
+            if self._stop.is_set():
+                return
             jid = int(r["id"])
             with self._lock:
                 if jid in self._inflight:
@@ -618,24 +625,31 @@ class WorkerPool:
                 raise RuntimeError(f"Không có handler cho job type '{job_type}'")
             # Đóng race Hủy-tất-cả ↔ dispatcher: job vừa bị đánh dấu canceled
             # (khi còn pending) nhưng dispatcher đã kịp submit -> không chạy.
-            if job_id in self._canceled:
+            if job_id in self._canceled or self._stop.is_set():
                 raise CanceledError()
             row = db.query_one("SELECT status FROM jobs WHERE id=?", (job_id,))
             if row and row["status"] == "canceled":
                 raise CanceledError()
-            db.execute(
+            claimed = db.execute(
                 "UPDATE jobs SET status='running', progress=0, "
                 "started_at=datetime('now'), "
-                "attempts=attempts+1, message='Bắt đầu...' WHERE id=?", (job_id,),
+                "attempts=attempts+1, message='Bắt đầu...' WHERE id=? "
+                "AND status='pending' AND COALESCE(cancel_req,0)=0", (job_id,),
             )
+            if not claimed.rowcount:
+                return
             self._notify()
             result = handler(payload, ctx)
-            db.execute(
+            if self._stop.is_set() or job_id in self._canceled:
+                raise CanceledError()
+            completed = db.execute(
                 "UPDATE jobs SET status='done', progress=1.0, result=?, "
                 "error=NULL, message='Hoàn tất', finished_at=datetime('now') "
-                "WHERE id=?",
+                "WHERE id=? AND status='running' AND COALESCE(cancel_req,0)=0",
                 (db.dumps(result) if result is not None else None, job_id),
             )
+            if not completed.rowcount:
+                return
             # GHI HOẠT ĐỘNG GẦN NHẤT thẳng vào kênh/video (bền vững, không mất
             # khi 'Xóa lịch sử' xoá job done). Nhãn dùng chính type job.
             jr = db.query_one(
@@ -649,25 +663,40 @@ class WorkerPool:
                     "UPDATE projects SET last_done_at=datetime('now'), "
                     "last_done_type=? WHERE id=?", (job_type, jr["project_id"]))
         except CanceledError:
+            row = db.query_one('SELECT cancel_req, status FROM jobs WHERE id=?', (job_id,))
+            if self._stop.is_set() and row and not row['cancel_req'] and row['status'] != 'canceled':
+                db.execute(
+                    "UPDATE jobs SET status='pending', progress=0, finished_at=NULL, "
+                    "message='Tạm dừng do tắt app' WHERE id=? AND status IN ('pending','running')",
+                    (job_id,))
+                return
             db.execute(
                 "UPDATE jobs SET status='canceled', message='Đã hủy', "
                 "finished_at=datetime('now') WHERE id=?", (job_id,),
             )
         except Exception as e:  # noqa: BLE001
-            row = db.query_one("SELECT attempts, max_attempts FROM jobs WHERE id=?",
+            row = db.query_one("SELECT attempts, max_attempts, status, cancel_req FROM jobs WHERE id=?",
                                (job_id,))
+            if row and (row['cancel_req'] or row['status'] == 'canceled'):
+                db.execute("UPDATE jobs SET status='canceled', message='Đã hủy', "
+                           "finished_at=datetime('now') WHERE id=?", (job_id,))
+                return
+            if self._stop.is_set():
+                return
             attempts = row["attempts"] if row else 99
             max_att = row["max_attempts"] if row else 3
-            if attempts < max_att:
+            from app.core.pipeline import is_configuration_error
+            if attempts < max_att and not is_configuration_error(str(e)):
                 db.execute(
                     "UPDATE jobs SET status='pending', progress=0, error=?, "
-                    "message=? WHERE id=?",
+                    "message=? WHERE id=? AND status='running' AND COALESCE(cancel_req,0)=0",
                     (str(e), f"Lỗi, thử lại ({attempts}/{max_att})", job_id),
                 )
             else:
                 db.execute(
                     "UPDATE jobs SET status='failed', error=?, "
-                    "message='Thất bại', finished_at=datetime('now') WHERE id=?",
+                    "message='Thất bại', finished_at=datetime('now') WHERE id=? "
+                    "AND status='running' AND COALESCE(cancel_req,0)=0",
                     (str(e), job_id),
                 )
         finally:

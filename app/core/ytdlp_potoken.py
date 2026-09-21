@@ -127,16 +127,21 @@ def _cleanup_legacy() -> None:
         pass
 
 
-def _refresh_provider(tag: str) -> None:
+def _refresh_provider(tag: str) -> bool:
     """Tải lại server exe CÙNG tag với plugin (best-effort; nếu exe đang chạy
     thì Windows khóa file -> giữ bản cũ, lần khởi động sau sẽ thay được)."""
     exe_new = _PROVIDER_DST.with_suffix(".new")
     if not _download(_provider_url(tag), exe_new, timeout=120):
-        return
+        return False
     try:
+        with exe_new.open('rb') as stream:
+            header = stream.read(2)
+        if exe_new.stat().st_size <= 1_000_000 or header != b"MZ":
+            return False
         exe_new.replace(_PROVIDER_DST)
+        return True
     except OSError:                      # file đang bị khóa (server đang chạy)
-        pass
+        return False
 
 
 def _install_plugin() -> bool:
@@ -158,14 +163,15 @@ def _install_plugin() -> bool:
             if tag and have and tag == cur:
                 os.utime(_PLUGIN_ZIP)              # còn mới nhất -> reset TTL
                 return True
-            if tag and _download(_plugin_url(tag), _PLUGIN_ZIP):
-                if tag != cur:
-                    _refresh_provider(tag)   # server phải CÙNG release
-                try:
-                    _TAG_FILE.write_text(tag, encoding="utf-8")
-                except OSError:
-                    pass
-                return True
+            staged = _PLUGIN_ZIP.with_suffix('.new.zip')
+            if tag and _download(_plugin_url(tag), staged):
+                import zipfile
+                valid = zipfile.is_zipfile(staged)
+                if valid and (tag == cur or _refresh_provider(tag)):
+                    staged.replace(_PLUGIN_ZIP)
+                    _TAG_FILE.write_text(tag, encoding='utf-8')
+                    return True
+                staged.unlink(missing_ok=True)
             _REFRESH_FAILED = True          # đừng gọi GitHub mỗi lần bấm Tải
         if have:
             return True                     # cũ nhưng vẫn dùng được

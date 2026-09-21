@@ -4827,7 +4827,7 @@ class ThayGiongDialog(QDialog):
         """
         ep = {str(x) for x in (lam_lai or [])}
         tt = self._do_demucs()
-        if not tt["co"]:
+        if not tt["co"] and not self._de_giong():
             QMessageBox.warning(
                 self, "Chưa có bộ tách giọng",
                 TG.THIEU_DEMUCS + "\n\nBấm '" + TG.NHAN_TAI_DEMUCS + "'.")
@@ -5008,6 +5008,9 @@ class ThayGiongDialog(QDialog):
         """Đánh dấu BỎ QUA — lượt Chạy sau không đụng tới video này nữa."""
         if not duong:
             return
+        jid = self._jobs.get(duong)
+        if jid is not None and self._pool is not None:
+            self._pool.cancel(int(jid))
         tg_so.ghi(duong, tg_so.BO_QUA)
         r = self._dong_theo_duong(duong)
         if r >= 0:

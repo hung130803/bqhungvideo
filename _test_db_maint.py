@@ -138,6 +138,7 @@ if bk:
 
 print("\n══ 5. NÉN DB: giảm cỡ file, không mất dòng ══")
 truoc_dong = db.query_one("SELECT COUNT(*) n FROM clips")["n"]
+db.gap_wal()  # So hai snapshot cùng được checkpoint, không bỏ quên WAL.
 co_truoc = os.path.getsize(db.path)
 giam = dbmaint.nen_db()
 kiem(os.path.getsize(db.path) <= co_truoc,

@@ -22,6 +22,7 @@ from pathlib import Path
 T = Path(tempfile.mkdtemp(prefix="donrac_"))
 TMPD = T / "temp"
 TMPD.mkdir()
+(TMPD / '.bqhung-owned').touch()
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["TEMP"] = os.environ["TMP"] = str(TMPD)   # %TEMP% giả -> an toàn
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
@@ -109,7 +110,7 @@ kiem(not khoa.exists(), "nhả khoá rồi thì lần quét sau xoá được")
 
 print("\n══ 4. DATA_DIR: giữ 3 bản DB mới nhất · log 14 ngày · error.log không phình ══")
 for i in range(6):
-    p = T / f"studio_{1783300000 + i}.db"
+    p = T / f"studio_backup_truoc_don_{1783300000 + i}.db"
     p.write_bytes(b"d" * 1000)
     gia(p, 100 - i)              # i lớn = mới hơn
 (T / "studio.db.corrupt999").write_bytes(b"c" * 1000)
@@ -126,9 +127,9 @@ el.write_bytes(b"A" * 100 + b"CUOI_CUNG" + b"B" * (3 * 1024 * 1024))
 n3, _ = TS.quet_data_dir(T)
 con = sorted(T.glob("studio_*.db"))
 kiem(len(con) == 3, f"giữ đúng 3 bản DB cũ (còn {len(con)})", str([p.name for p in con]))
-kiem((T / "studio_1783300005.db").exists(), "giữ bản MỚI NHẤT")
-kiem(not (T / "studio_1783300000.db").exists(), "xoá bản cũ nhất")
-kiem(not (T / "studio.db.corrupt999").exists(), "xoá bản quarantine quá hạn")
+kiem((T / "studio_backup_truoc_don_1783300005.db").exists(), "giữ bản MỚI NHẤT")
+kiem(not (T / "studio_backup_truoc_don_1783300000.db").exists(), "xoá snapshot cũ nhất")
+kiem((T / "studio.db.corrupt999").exists(), "GIỮ bản cứu hộ thô, không tự xoá")
 kiem(not log_cu.exists(), "xoá log quá 14 ngày")
 kiem(log_moi.exists(), "GIỮ log gần đây (còn để tra lỗi)")
 kiem(el.stat().st_size < 1_200_000, f"cắt error.log phình ({el.stat().st_size} byte)")

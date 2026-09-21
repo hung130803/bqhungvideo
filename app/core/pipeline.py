@@ -10,6 +10,8 @@ chỉ đọc; ghi sổ do tầng chạy gọi (take_file/mark_done/mark_error).
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -28,6 +30,20 @@ TMP_SUFFIXES = (".part", ".ytdl", ".tmp", ".crdownload", ".aria2", ".frag")
 STABLE_AGE_SEC = 30
 # Thư mục chứa file lỗi (INTEGRATION.md mục 4)
 ERR_DIRNAME = "_Loi"
+_OBSERVATIONS: dict[str, tuple[int, int, float]] = {}
+
+
+def observe_source(path: Path, now: float | None = None) -> bool:
+    """Cỡ/mtime phải không đổi ở hai lần quan sát cách nhau ít nhất 10 giây."""
+    now = time.monotonic() if now is None else now
+    st = path.stat()
+    key = os.path.normcase(str(path.resolve()))
+    old = _OBSERVATIONS.get(key)
+    signature = (st.st_size, st.st_mtime_ns)
+    if old is None or old[:2] != signature:
+        _OBSERVATIONS[key] = (*signature, now)
+        return False
+    return now - old[2] >= 10 and st.st_size > 0
 
 
 # ---------------------------------------------------------------- quét file --
@@ -44,9 +60,7 @@ def is_tmp_file(name: str) -> bool:
 
 def is_stable(path: Path, now: float | None = None,
               min_age: float = STABLE_AGE_SEC) -> bool:
-    """File đã "ĐỨNG YÊN" chưa: không phải file tạm + có dung lượng + mtime
-    cách hiện tại >= min_age giây (Windows cập nhật mtime khi đang ghi ->
-    mtime cũ = không ai ghi nữa = tải xong)."""
+    """Lọc tuổi file sơ bộ; intake còn xác nhận hai quan sát bằng observe_source."""
     if is_tmp_file(path.name):
         return False
     try:
@@ -88,13 +102,19 @@ def scan_dir(d: Path, now: float | None = None) -> tuple[list[Path], list[Path]]
             continue
         old = (now - st.st_mtime) >= STABLE_AGE_SEC
         if st.st_size > 0 and old:
+            observe_source(p)
             ready.append(p)                 # hoàn chỉnh + đứng yên
         elif st.st_size == 0 and old:
             continue                        # RÁC 0-byte cũ (tải đứt) — bỏ qua,
                                             # không phải "đang tải"
         else:
             busy.append(p)                  # đang tải dở (mtime/size còn động)
-    ready.sort(key=lambda p: p.stat().st_mtime)
+    def modified(p):
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return float('inf')
+    ready.sort(key=modified)
     return ready, busy
 
 
@@ -120,11 +140,12 @@ def seen_before(project_id: int, file_hash: str) -> dict | None:
     return dict(r) if r else None
 
 
-def take_file(project_id: int, file_name: str, file_hash: str) -> int:
+def take_file(project_id: int, file_name: str, file_hash: str,
+              video_id: int | None = None) -> int:
     """Ghi sổ NHẬN file (status='taken') -> id dòng sổ."""
     return db.insert(
-        "INSERT INTO pipeline_files(project_id, file_name, file_hash, status) "
-        "VALUES(?,?,?, 'taken')", (project_id, file_name, file_hash))
+        "INSERT INTO pipeline_files(project_id, file_name, file_hash, video_id, status) "
+        "VALUES(?,?,?,?, 'taken')", (project_id, file_name, file_hash, video_id))
 
 
 def list_taken() -> list[dict]:
@@ -378,8 +399,7 @@ def quarantine(path: Path, recycle_root: str = "") -> Path | None:
         while dst.exists():
             dst = dst_dir / f"{path.stem}_{i}{path.suffix}"
             i += 1
-        path.rename(dst)
-        return dst
+        return dst if _move_with_retry(path, dst) else None
     except OSError:
         return None
 
@@ -470,20 +490,78 @@ def _unique_in(dst_dir: Path, name: str) -> Path:
 def _move_with_retry(src: Path, dst: Path, tries: int = 5) -> bool:
     """Chuyển file, THỬ LẠI vài lần: trên Windows ffmpeg/handle vừa xong còn
     giữ khoá file chốc lát → rename ngay bị 'file đang dùng'. Chờ tăng dần."""
-    for k in range(tries):
-        try:
-            src.rename(dst)
-            return True
-        except OSError:
-            # khác ổ đĩa → rename thất bại vĩnh viễn: thử copy+xoá
+    import errno
+    import shutil
+    import uuid
+    partial = dst.with_name(dst.name + '.' + uuid.uuid4().hex + '.partial')
+    copied = False
+    try:
+        for k in range(tries):
             try:
-                import shutil
-                shutil.move(str(src), str(dst))
+                if copied:
+                    src.unlink()
+                    return True
+                if dst.exists():
+                    return False
+                try:
+                    src.rename(dst)
+                    return True
+                except OSError as exc:
+                    if exc.errno != errno.EXDEV and getattr(exc, 'winerror', None) != 17:
+                        raise
+                before = src.stat()
+                shutil.copy2(src, partial)
+                after = src.stat()
+                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise OSError('Video nguồn vẫn đang thay đổi; giữ nguyên gốc')
+                if partial.stat().st_size != before.st_size:
+                    raise OSError('Bản sao video chưa đủ dung lượng')
+                # Chỉ tên đích hoàn chỉnh mới được người đọc nhìn thấy.
+                partial.rename(dst)
+                copied = True
+                src.unlink()
                 return True
             except OSError:
-                pass
-            time.sleep(0.4 * (k + 1))
-    return False
+                if k + 1 < tries:
+                    time.sleep(0.4 * (k + 1))
+        return False
+    finally:
+        try:
+            partial.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def channel_dir_name(channel: str) -> str:
+    """Tên thư mục Windows hợp lệ; tên bị đổi có mã để tránh trùng kênh."""
+    raw = channel or "_"
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', raw).rstrip(' .') or '_'
+    if clean.split('.')[0].upper() in {'CON', 'PRN', 'AUX', 'NUL',
+            *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}:
+        clean = '_' + clean
+    clean = clean[:100]
+    if clean != raw:
+        clean += '_' + hashlib.sha256(raw.encode('utf-8')).hexdigest()[:10]
+    return clean
+
+
+def _channel_folder(base: Path, channel: str) -> Path:
+    folder = base / channel_dir_name(channel)
+    folder.mkdir(parents=True, exist_ok=True)
+    # Tên hiển thị/khôi phục vẫn là tên kênh gốc, không phải tên đã làm sạch.
+    meta = folder / '.channel.json'
+    if not meta.exists():
+        meta.write_text(json.dumps({'channel': channel}, ensure_ascii=False),
+                        encoding='utf-8')
+    return folder
+
+
+def _channel_label(folder: Path) -> str:
+    try:
+        return str(json.loads((folder / '.channel.json').read_text(
+            encoding='utf-8'))['channel'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return folder.name
 
 
 def _delete_with_retry(path: Path, tries: int = 5) -> bool:
@@ -505,8 +583,7 @@ def recycle_source(path: Path, channel: str, recycle_root: str,
     if not root:
         return None
     try:
-        dst_dir = Path(root) / (day or _today_str()) / (channel or "_")
-        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst_dir = _channel_folder(Path(root) / (day or _today_str()), channel or "_")
         dst = _unique_in(dst_dir, path.name)
         return dst if _move_with_retry(path, dst) else None
     except OSError:
@@ -529,9 +606,9 @@ def _local_recycle(path: Path, channel: str, day: str | None = None) -> Path | N
     """THÙNG RÁC NỘI BỘ (dự phòng) cạnh thư mục kênh — CÙNG Ổ nên chắc chắn,
     khôi phục được: <gốc>\\_DaXoa\\<ngày>\\<Tên kênh>\\<file>."""
     try:
-        base = path.parent.parent / RECYCLE_DIRNAME / (day or _today_str()) \
-            / (channel or path.parent.name or "_")
-        base.mkdir(parents=True, exist_ok=True)
+        base = _channel_folder(
+            path.parent.parent / RECYCLE_DIRNAME / (day or _today_str()),
+            channel or path.parent.name or "_")
         dst = _unique_in(base, path.name)
         return dst if _move_with_retry(path, dst) else None
     except OSError:
@@ -585,6 +662,25 @@ def is_transient_error(msg: str) -> bool:
     """
     m = (msg or "").lower()
     return any(k in m for k in _TRANSIENT_MARKS)
+
+
+def is_configuration_error(msg: str) -> bool:
+    """Lỗi tài khoản/model/cài đặt không chứng minh video bị hỏng."""
+    m = (msg or '').lower()
+    return any(k in m for k in (
+        'organization_restricted', 'organization has been restricted',
+        'tài khoản bị hạn chế', 'api key', 'api_key', 'authentication',
+        'unauthorized', 'invalid_api_key', 'không hợp lệ', 'sai key',
+        'model_not_found', 'model_decommissioned', 'model đang dùng',
+        'error code: 401', 'error code: 403', 'error code: 404',
+        'permission_denied', 'chưa cài', 'không có handler',
+    ))
+
+
+def is_source_error(msg: str) -> bool:
+    m = (msg or '').lower()
+    return any(k in m for k in ('moov atom not found', 'corrupt input packet',
+                                'invalid data found when processing input', 'truncated file'))
 
 
 def recycle_roots(recycle_root: str, src_dirs: list[str] | None = None) -> list[Path]:
@@ -669,7 +765,7 @@ def list_recycled(recycle_root: str, day: str,
                     sz = f.stat().st_size
                 except OSError:
                     sz = 0
-                out.append({"channel": chdir.name, "name": f.name,
+                out.append({"channel": _channel_label(chdir), "name": f.name,
                             "path": str(f), "size": sz})
     return out
 
@@ -725,7 +821,7 @@ def collect_junk(src_dir: Path, channel: str = "") -> dict[str, list[Path]]:
     out["err"] = _files_under(err_dir_for(src_dir))
     # 3) recycle: _DaXoa/<ngày>/<Kênh> — gốc đã cắt xong, đang giữ để khôi phục
     rec_root = src_dir.parent / RECYCLE_DIRNAME
-    name = channel or src_dir.name
+    name = channel_dir_name(channel or src_dir.name)
     if rec_root.is_dir():
         try:
             for day in rec_root.iterdir():
@@ -757,7 +853,7 @@ def collect_wipe(src_dir: Path, channel: str = "") -> dict[str, list[Path]]:
         pass
     out["err"] = _files_under(err_dir_for(src_dir))
     rec_root = src_dir.parent / RECYCLE_DIRNAME
-    name = channel or src_dir.name
+    name = channel_dir_name(channel or src_dir.name)
     if rec_root.is_dir():
         try:
             for day in rec_root.iterdir():

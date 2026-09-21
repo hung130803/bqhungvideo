@@ -220,8 +220,8 @@ def ca5_xep_hang(SL, pid) -> None:
     bao("`_diem` ưu tiên tỉ lệ xem hết khi có `dai`",
         SL._diem({"view": 100, "xem_tb": 54, "dai": 60})
         > SL._diem({"view": 999999, "xem_tb": 3, "dai": 60}))
-    bao("`_diem` lùi về số view khi KHÔNG có `dai`",
-        SL._diem({"view": 100, "xem_tb": 0, "dai": 0}) == 100.0)
+    bao("`_diem` không trộn view với tỉ lệ khi KHÔNG có `dai`",
+        SL._diem({"view": 100, "xem_tb": 0, "dai": 0}) == 0.0)
 
 
 def ca6_san(SL) -> None:

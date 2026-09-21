@@ -43,6 +43,14 @@ def bundled_exe(name: str) -> str:
             return str(p)
     return ""
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+if FROZEN:
+    # Mọi file tạm do app/tiến trình con tạo được gom vào vùng có chủ sở hữu.
+    import tempfile
+    _owned_temp = DATA_DIR / '_temp'
+    _owned_temp.mkdir(parents=True, exist_ok=True)
+    (_owned_temp / '.bqhung-owned').touch(exist_ok=True)
+    os.environ['TEMP'] = os.environ['TMP'] = str(_owned_temp)
+    tempfile.tempdir = str(_owned_temp)
 load_dotenv(DATA_DIR / ".env")  # nạp .env nếu có
 
 # Nơi lưu dữ liệu chạy (mỗi project 1 thư mục con)
