@@ -135,6 +135,13 @@ jobs:
           python _test_dong_goi.py
           if ($LASTEXITCODE -ne 0) { throw 'Packaged resources check failed' }
 
+      - name: Kiểm tra cửa sổ thật sau cập nhật và mở lần hai
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'bqhung-exe-check/startup.json'
+          python tools/check_startup.py --exe dist/BQHungVideo/BQHungVideo.exe --work-dir $env:RUNNER_TEMP --report $report
+          if ($LASTEXITCODE -ne 0) { throw 'Real EXE startup regression failed' }
+
       - name: Lưu kết quả kiểm thử
         if: always()
         uses: actions/upload-artifact@v4
@@ -143,7 +150,7 @@ jobs:
           path: |
             ${{ runner.temp }}/bqhung-validation/*.log
             ${{ runner.temp }}/bqhung-validation/*.json
-            ${{ runner.temp }}/bqhung-exe-check/result.json
+            ${{ runner.temp }}/bqhung-exe-check/*.json
           retention-days: 14
 
       - name: Nén thư mục app

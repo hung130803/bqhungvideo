@@ -148,9 +148,12 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(call.call_count, 1)
         self.assertTrue(pipeline.is_configuration_error('organization_restricted'))
         with self.assertRaisesRegex(llm.LLMError, 'organization_restricted'):
-            llm.ensure_provider_available('groq', ['first', 'second'])
-        llm.reset_provider_restriction('groq')
+            llm.ensure_provider_available('groq', ['first'], scope='transcription')
+        llm.ensure_provider_available('groq', ['first', 'second'], scope='transcription')
         llm.ensure_provider_available('groq', ['first', 'second'])
+        self.assertEqual(llm.pick_keys('groq', ['first', 'second'], scope='transcription'), ['second'])
+        llm.mark_ok('groq', 'first', scope='transcription')
+        self.assertEqual(llm.pick_keys('groq', ['first', 'second'], scope='transcription'), ['first', 'second'])
 
     def test_silent_process_deadline(self):
         from app.core.process_guard import ProcessDeadline

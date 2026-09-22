@@ -272,12 +272,12 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
     from openai import OpenAI
     from app.ai import llm
     last = ""
-    llm.ensure_provider_available('groq', keys)
+    llm.ensure_provider_available('groq', keys, 'transcription')
 
     def _order():
         """Danh sách key ưu tiên, xoay start_at vòng (chỉ xoay phần READY để
         chia tải song song; limited/invalid vẫn giữ cuối)."""
-        return llm.pick_keys("groq", keys, start_at=start_at)
+        return llm.pick_keys("groq", keys, start_at=start_at, scope="transcription")
 
     # tối đa 2 vòng: vòng 1 thử mọi key; nếu TẤT CẢ đều 429 với reset ngắn
     # (TPM cùng nick), đợi hết cooldown ngắn nhất rồi thử lại vòng 2.
@@ -305,14 +305,13 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                           "end": float(_g(w, "end", 0)),
                           "word": (_g(w, "word", "") or "").strip()}
                          for w in (_g(r, "words", None) or [])]
-                llm.mark_ok("groq", key)
+                llm.mark_ok("groq", key, scope="transcription")
                 return segs, words, (_g(r, "language", None) or language or ""), \
                     (_g(r, "text", "") or "")
             except Exception as e:  # noqa: BLE001
                 last = str(e)
                 if llm.is_org_restricted(last):
-                    llm.mark_invalid('groq', key)
-                    llm.mark_provider_restricted('groq', keys)
+                    llm.mark_provider_restricted('groq', key, 'transcription')
                     raise RuntimeError(
                         'organization_restricted: Tài khoản Groq bị hạn chế. '
                         'Kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq; '
@@ -351,7 +350,7 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
         # <= 90s) -> ĐỢI hết cooldown ngắn nhất rồi thử lại (vòng 2). Reset
         # dài (hết lượt ngày) thì đợi vô ích -> thoát báo lỗi.
         if _round == 1 and not llm.is_auth_error(last):
-            wait = llm.soonest_ready_wait("groq", keys)
+            wait = llm.soonest_ready_wait("groq", keys, scope='transcription')
             if wait is not None and 0 < wait <= 90.0:
                 if on_wait:
                     on_wait(wait)
@@ -518,7 +517,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     if not keys:
         raise RuntimeError("Chưa có GROQ key.")
     from app.ai import llm
-    llm.ensure_provider_available('groq', keys)
+    llm.ensure_provider_available('groq', keys, 'transcription')
     ff = shutil.which("ffmpeg") or settings.FFMPEG_PATH or "ffmpeg"
     fp = shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe"
     flags = 0x0800_0000 if os.name == "nt" else 0

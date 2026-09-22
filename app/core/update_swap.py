@@ -54,7 +54,8 @@ try {
         $journal | ConvertTo-Json | Set-Content -LiteralPath ($PlanFile + '.journal') -Encoding UTF8
     }
     Log 'Update complete; previous executable and libraries retained in backup.'
-    if ($plan.relaunch) { Start-Process -FilePath (Under $destination $plan.exe) -WorkingDirectory $destination -WindowStyle Hidden }
+    # This is the user's interactive application; only the helper stays hidden.
+    if ($plan.relaunch) { Start-Process -FilePath (Under $destination $plan.exe) -WorkingDirectory $destination -WindowStyle Normal }
     exit 0
 } catch {
     Log $_.Exception.Message
@@ -69,7 +70,7 @@ try {
         } catch { $rollbackOk = $false; Log ('Rollback failed: ' + $_.Exception.Message) }
     }
     if ($appExited -and $rollbackOk -and $plan.relaunch) {
-        Start-Process -FilePath (Under $destination $plan.exe) -WorkingDirectory $destination -WindowStyle Hidden
+        Start-Process -FilePath (Under $destination $plan.exe) -WorkingDirectory $destination -WindowStyle Normal
     }
     exit 1
 }

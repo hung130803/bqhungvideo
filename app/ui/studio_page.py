@@ -1622,8 +1622,8 @@ class StudioPage(QWidget):
         # ----- GIẢI THÍCH hạn mức theo TÀI KHOẢN (không theo key) -----
         gwarn = QLabel(
             "⚠ Groq giới hạn theo TÀI KHOẢN, KHÔNG theo key — nhiều key CÙNG 1 "
-            "nick dùng CHUNG hạn mức (không tăng). Muốn nhiều lượt hơn: tạo key "
-            "từ NHIỀU nick khác nhau. Hạn mức reset mỗi ngày.")
+            "tổ chức dùng CHUNG hạn mức (không tăng). Xem Limits trong Groq "
+            "để biết thời gian hồi hoặc yêu cầu nâng hạn mức.")
         gwarn.setWordWrap(True)
         gwarn.setStyleSheet(f"color:{MUTED}; font-size:11px;")
         c_groq.addWidget(gwarn)
@@ -1700,14 +1700,14 @@ class StudioPage(QWidget):
                     return
                 r = box["result"]
                 c = r["counts"]
-                tot = r.get("total_remaining_requests", 0)
                 # "Kẹt" thay vì "hết lượt hôm nay": exhausted giờ gồm cả kẹt
                 # TỪNG MODEL (đánh bóng/kịch bản) và cạn token — dò đủ mọi
                 # model app dùng, hết cảnh "hết giới hạn mà vẫn xanh".
                 summary = (
                     f"✅ Còn lượt: {c['ok']} · ⏳ Kẹt/hết lượt: "
                     f"{c.get('exhausted', 0)} · ❌ Sai: {c['invalid']} · "
-                    f"⚠ Lỗi: {c['error']} · Tổng còn ~{tot} request (model chính)")
+                    f"⛔ Hạn chế tổ chức: {c.get('restricted', 0)} · ⚠ Lỗi: {c['error']}"
+                    "\nKết quả CHAT; chưa kiểm Whisper. Hạn mức các key có thể dùng chung, không cộng thành tổng.")
                 # vài dòng chi tiết từng key kèm hạn mức còn lại
                 lines = []
                 for k, info in r.get("results", [])[:8]:
@@ -1987,7 +1987,7 @@ class StudioPage(QWidget):
         # đóng dialog.
         c_stat = _card(
             "📊 Trạng thái key (thời gian thực)",
-            "Theo dõi từng key Groq: sẵn sàng / đang dùng / hết lượt / sai.")
+            "Trạng thái theo từng dịch vụ; key chưa gọi không có nghĩa đã kiểm tra đạt.")
         kstat = QLabel("")
         kstat.setObjectName("key_status_label")
         kstat.setWordWrap(True)
@@ -2011,18 +2011,28 @@ class StudioPage(QWidget):
             lines = []
             try:
                 for st in llm.key_status("groq"):
-                    if st["state"] == "invalid":
+                    if st["state"] == "unknown":
+                        lines.append(f"⚪ {st['key_masked']} — CHƯA KIỂM TRA")
+                    elif st["state"] == "restricted":
+                        lines.append(f"⛔ {st['key_masked']} — có dịch vụ báo hạn chế tổ chức")
+                    elif st["state"] == "invalid":
                         lines.append(f"🔑 {st['key_masked']} — SAI KEY (kiểm tra "
                                      "lại: xóa dấu cách thừa / dán key đúng)")
                     elif st["state"] == "limited":
                         lines.append(f"⛔ {st['key_masked']} — hết lượt, thử lại "
                                      f"sau {_fmt_wait(st['wait_left'])}")
                     elif st["in_use"]:
-                        lines.append(f"🔵 {st['key_masked']} — ĐANG DÙNG · đã gọi "
+                        lines.append(f"🔵 {st['key_masked']} — vừa gọi · số lần trong phiên "
                                      f"{st['calls']} lần")
                     else:
-                        lines.append(f"🟢 {st['key_masked']} — sẵn sàng · đã gọi "
+                        lines.append(f"🟢 {st['key_masked']} — đã có lần gọi thành công · số lần trong phiên "
                                      f"{st['calls']} lần")
+                    labels = {'chat': 'Chat', 'transcription': 'Chép lời', 'vision': 'Hình ảnh'}
+                    states = {'ok': 'đạt', 'restricted': 'bị hạn chế', 'invalid': 'sai key', 'error': 'lỗi'}
+                    details = [f"{labels[scope]}: {states.get(info.get('state'), 'chưa kiểm')}"
+                               for scope, info in st.get('services', {}).items()]
+                    if details:
+                        lines.append('    ' + ' · '.join(details))
                 # key vừa DÁN nhưng chưa lưu -> nhắc bấm Lưu (không có trong sổ)
                 saved = set(settings.llm_keys_for("groq"))
                 typed = [k.strip() for k in gkeys.toPlainText()
@@ -2085,25 +2095,25 @@ class StudioPage(QWidget):
         def do_test():
             apply_live()
             prov = src.currentData()
-            from app.ai.llm import reset_provider_restriction
-            reset_provider_restriction(prov)
             if prov == "gemini" and not key.toPlainText().strip():
                 set_note("err", "CHƯA NHẬP KEY — dán key Gemini vào ô trên rồi bấm "
                                 "Kiểm tra.")
                 return
-            if prov == "groq" and not gkeys.toPlainText().strip():
+            if (prov == "groq" or wsrc.currentData() == "groq") and not _keys_to_check():
                 set_note("err", "CHƯA NHẬP KEY GROQ — dán key Groq ở ô dưới (mục "
                                 "Nghe-chép) rồi bấm Kiểm tra.")
                 return
-            set_note("wait", "Đang kiểm tra kết nối...")
+            set_note("wait", "Đang kiểm tra riêng AI chat và chép lời (một key mỗi dịch vụ)...")
             # Gọi LLM ở THREAD NỀN: gọi đồng bộ trên UI thread sẽ treo toàn bộ
             # app tới 2 phút nếu mạng chậm/timeout.
             tb.setEnabled(False)
             res: list = []
+            whisper_provider = wsrc.currentData()
 
             def bg():
                 try:
-                    r = llm.complete_text("Trả lời đúng 1 từ: OK", provider=prov)
+                    from app.ai.connection_check import check
+                    r = check(prov, whisper_provider)
                     res.append(("ok", r))
                 except Exception as e:  # noqa: BLE001
                     res.append(("err", str(e)))
@@ -2119,10 +2129,10 @@ class StudioPage(QWidget):
                 tb.setEnabled(True)
                 kind, val = res[0]
                 if kind == "ok":
-                    name = {"gemini": "Gemini (mây)", "groq": "Groq (mây)",
-                            "ollama": "Ollama (máy)"}.get(prov, prov)
-                    set_note("ok", f"AI ĐANG HOẠT ĐỘNG — {name} trả lời: "
-                                   f"“{val.strip()[:30]}”. Bấm Lưu để dùng.")
+                    passed = all(item['ok'] for item in val)
+                    set_note("ok" if passed else "err", "\n".join(item['message'] for item in val)
+                             + "\nChỉ kiểm key ghi trên, không xác nhận toàn bộ danh sách. Bấm Lưu để áp cấu hình.")
+                    refresh_keys()
                 else:
                     set_note("err", "KHÔNG KẾT NỐI ĐƯỢC — " + friendly(val))
 
@@ -2131,7 +2141,7 @@ class StudioPage(QWidget):
 
         # gợi ý trạng thái ban đầu (chưa test) cho người dùng biết đang ở đâu
         set_note("info", "Dán key (Groq free hoặc Gemini) rồi bấm “Kiểm tra kết nối” "
-                         "để xem AI có chạy không.")
+                         "để thử riêng AI chat và chép lời Groq bằng âm thanh mẫu ngắn.")
 
         row = QHBoxLayout()
         tb = QPushButton("Kiểm tra kết nối"); tb.setProperty("ghost", True)

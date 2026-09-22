@@ -37,58 +37,23 @@ _KEY_STATE: dict = {}
 _KEY_LOCK = threading.Lock()
 
 
-def _provider_blocks_path():
-    from config import DATA_DIR
-    return DATA_DIR / 'ai_provider_blocks.json'
+def ensure_provider_available(provider: str, keys, scope: str = 'chat') -> None:
+    from app.ai import key_health
+    # Old ai_provider_blocks.json only hashes the whole key list. It cannot
+    # identify which key failed, so never use it to block healthy credentials.
+    if keys and all(key_health.blocked(provider, key, scope) for key in keys):
+        raise LLMError(f'{provider}/{scope}: Không còn key đã cấu hình dùng được '
+                       'cho bước này. Kiểm tra kết nối để xem lỗi từng dịch vụ; '
+                       'nếu organization_restricted, xử lý tài khoản với nhà cung cấp. '
+                       'Video gốc được giữ nguyên.')
 
 
-def _key_set_id(keys):
-    import hashlib
-    return hashlib.sha256('\n'.join(sorted(set(keys))).encode()).hexdigest()
+def mark_provider_restricted(provider: str, key: str, scope: str = 'chat') -> None:
+    from app.ai import key_health
+    if not isinstance(key, str):
+        raise TypeError('Restriction must identify exactly one key')
+    key_health.record(provider, key, scope, 'restricted', 'organization_restricted')
 
-
-def ensure_provider_available(provider: str, keys) -> None:
-    try:
-        blocks = json.loads(_provider_blocks_path().read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return
-    if blocks.get(provider) == _key_set_id(keys):
-        raise LLMError(f'organization_restricted: Tài khoản {provider} bị hạn chế. '
-                       'Video gốc được giữ nguyên. Xử lý tài khoản với nhà cung cấp, '
-                       'sau đó vào Cài đặt AI → Kiểm tra để thử lại.')
-
-
-def mark_provider_restricted(provider: str, keys) -> None:
-    # Chia sẻ với tiến trình phân tích con; chỉ lưu mã băm, không lưu API key.
-    path = _provider_blocks_path()
-    with _KEY_LOCK:
-        try:
-            blocks = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            blocks = {}
-        blocks[provider] = _key_set_id(keys)
-        import uuid
-        temporary = path.with_suffix('.' + uuid.uuid4().hex + '.tmp')
-        try:
-            temporary.write_text(json.dumps(blocks), encoding='utf-8')
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
-
-
-def reset_provider_restriction(provider: str) -> None:
-    path = _provider_blocks_path()
-    with _KEY_LOCK:
-        try:
-            blocks = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            return
-        blocks.pop(provider, None)
-        path.write_text(json.dumps(blocks), encoding='utf-8')
-        for (p, _key), state in _KEY_STATE.items():
-            if p == provider and state.get('state') == 'invalid':
-                state['state'] = 'ready'
-                state['until'] = 0
 
 # Cooldown mặc định khi KHÔNG parse được thời gian chờ từ message lỗi:
 _COOLDOWN_DAILY = 3600.0   # lỗi "per day/TPD": đừng đợi cả ngày, thử lại mỗi giờ
@@ -162,7 +127,7 @@ def mark_used(provider: str, key: str) -> None:
         st["calls"] += 1
 
 
-def mark_ok(provider: str, key: str) -> None:
+def mark_ok(provider: str, key: str, scope: str = 'chat') -> None:
     """Ghi nhận: gọi thành công -> key chắc chắn còn sống, xóa cờ limited."""
     with _KEY_LOCK:
         st = _state_for(provider, key)
@@ -170,6 +135,8 @@ def mark_ok(provider: str, key: str) -> None:
         st["state"] = "ready"
         st["until"] = 0.0
         st["note"] = ""
+    from app.ai import key_health
+    key_health.record(provider, key, scope, 'ok')
 
 
 # Chuỗi thời lượng kiểu Groq/OpenAI: "7m30.5s", "1h2m3s", "1.234s", "232ms"
@@ -237,11 +204,13 @@ def _is_invalid(st: dict) -> bool:
     return bool(st) and st.get("state") == "invalid"
 
 
-def pick_keys(provider: str, keys=None, start_at: int = 0) -> list:
+def pick_keys(provider: str, keys=None, start_at: int = 0, scope: str = 'chat') -> list:
     """Ready trước, chỉ xoay trong nhóm ready; cooldown sau, loại key đã sai."""
     if keys is None:
         keys = settings.llm_keys_for(provider)
     now = time.time()
+    from app.ai import key_health
+    keys = [k for k in keys if not key_health.blocked(provider, k, scope)]
     ready, limited = [], []
     with _KEY_LOCK:
         for k in keys:
@@ -259,13 +228,15 @@ def pick_keys(provider: str, keys=None, start_at: int = 0) -> list:
     return ready + [k for _, k in limited]
 
 
-def soonest_ready_wait(provider: str, keys=None):
+def soonest_ready_wait(provider: str, keys=None, scope: str = 'chat'):
     """SỐ GIÂY tới khi có key ĐẦU TIÊN hồi (cooldown ngắn nhất trong các key
     limited). Có key ready sẵn -> 0.0. KHÔNG key nào (rỗng) -> None. Dùng để
     quyết định 'đợi TPM rồi thử lại' vs 'báo hết lượt' (reset dài = hết ngày).
     """
     if keys is None:
         keys = settings.llm_keys_for(provider)
+    from app.ai import key_health
+    keys = [key for key in keys if not key_health.blocked(provider, key, scope)]
     if not keys:
         return None
     now = time.time()
@@ -284,19 +255,10 @@ def soonest_ready_wait(provider: str, keys=None):
 
 
 def key_status(provider: str) -> list:
-    """Trạng thái từng key (đúng THỨ TỰ trong settings) cho UI — chỉ đọc RAM,
-    KHÔNG gọi mạng. Mỗi phần tử: key_masked/state/wait_left/last_used_ago/
-    calls/in_use/note."""
+    """Read local observations, including worker results; never call the API."""
     keys = settings.llm_keys_for(provider)
     now = time.time()
-    # key "được chọn kế tiếp" = key READY đầu tiên theo thứ tự settings
-    next_key = None
     with _KEY_LOCK:
-        for k in keys:
-            st = _KEY_STATE.get((provider, k))
-            if st is None or (not _is_limited(st, now) and not _is_invalid(st)):
-                next_key = k
-                break
         out = []
         for k in keys:
             st = _KEY_STATE.get((provider, k)) or {
@@ -313,10 +275,21 @@ def key_status(provider: str) -> list:
                 "last_used_ago": (now - st["last_used"]) if st["last_used"] else None,
                 "last_ok_ago": (now - st["last_ok"]) if st["last_ok"] else None,
                 "calls": st["calls"],
-                "in_use": bool((k == next_key and not limited and not invalid)
-                               or recently),
+                "in_use": bool(recently),
                 "note": st["note"],
             })
+    from app.ai import key_health
+    for key, row in zip(keys, out):
+        health = {scope: key_health.read(provider, key, scope) for scope in key_health.SCOPES}
+        row['services'] = health
+        row['in_use'] = bool(row['last_used_ago'] is not None and row['last_used_ago'] < _IN_USE_WINDOW)
+        if row['state'] == 'ready':
+            if any(h.get('state') == 'restricted' for h in health.values()):
+                row['state'] = 'restricted'
+            elif any(h.get('state') == 'invalid' for h in health.values()):
+                row['state'] = 'invalid'
+            elif row['last_ok_ago'] is None and not any(h.get('state') == 'ok' for h in health.values()):
+                row['state'] = 'unknown'
     return out
 
 # ---- ĐO token Gemini để ước tính CHI PHÍ ----
@@ -684,14 +657,11 @@ def is_too_large_error(msg: str) -> bool:
 
 
 def is_org_restricted(msg: str) -> bool:
-    """Tài khoản Groq của key bị Groq KHOÁ ('Organization has been
-    restricted') — mã 400, KHÔNG phải 401/429 nên cả nhánh auth lẫn
-    rate-limit đều không bắt được.
+    """Recognize an organization denial, distinct from invalid keys or quota.
 
-    VÌ SAO NGUY HIỂM (đo thật 30/07: 2/27 key của anh Hùng dính): key khoá
-    đứng ĐẦU vòng xoay thì mọi lượt gọi chết ngay tại nó (lỗi 'lạ' -> dừng
-    luôn) dù 25 key sau còn sống — nguồn 'Cắt cơ bản' hàng loạt. Phải coi
-    như KEY HỎNG VĨNH VIỄN: mark_invalid + nhảy key kế TỨC THÌ."""
+    Stop this request chain and record the affected key/service. Do not infer
+    that every other configured key is restricted from this single response.
+    """
     m = (msg or "").lower()
     return "organization has been restricted" in m \
         or "organization_restricted" in m \
@@ -912,6 +882,15 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
                 else:
                     ok_any = True
         except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8', 'replace')
+            except Exception:
+                body = ''
+            if is_org_restricted(body):
+                out['kind'] = 'restricted'
+                out['note'] = 'organization_restricted — liên hệ Groq; không kết luận key sai'
+                mark_provider_restricted('groq', key, 'chat')
+                return out
             if e.code in (401, 403):
                 out["kind"] = "invalid"
                 out["note"] = f"key sai/không hợp lệ ({e.code})"
@@ -920,15 +899,6 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
                 # 400 có 2 nghĩa: model bị gỡ (bỏ qua model) HOẶC tài khoản
                 # bị Groq KHOÁ ('Organization has been restricted' — đo thật
                 # 30/07: 2/27 key anh Hùng dính mà check cũ báo mù mờ).
-                try:
-                    body = e.read().decode("utf-8", "replace")
-                except Exception:  # noqa: BLE001
-                    body = ""
-                if is_org_restricted(body):
-                    out["kind"] = "invalid"
-                    out["note"] = ("tài khoản Groq bị KHOÁ (organization "
-                                   "restricted) — xoá key này, không cứu được")
-                    return out
                 continue        # model bị gỡ/đổi tên — không kết tội key
             if e.code == 429:
                 if not got_headers:
@@ -938,8 +908,7 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
                          or e.headers.get("x-ratelimit-reset-tokens"))
                 if not reset:
                     try:
-                        wait = parse_retry_wait(
-                            e.read().decode("utf-8", "replace"))
+                        wait = parse_retry_wait(body)
                         if wait:
                             reset = f"{wait:.0f}s"
                     except Exception:  # noqa: BLE001
@@ -953,6 +922,8 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
             out["note"] = str(e)[:120]
             return out
 
+    if ok_any:
+        mark_ok('groq', key, scope='chat')
     if dead:
         # CÓ model kẹt là phải BÁO — dù model chính còn lượt, vì các pass
         # đánh bóng/kịch bản dùng model kẹt đó sẽ lỗi thật khi chạy.
@@ -989,7 +960,7 @@ def check_groq_keys(keys, progress=None, max_workers: int = 6,
     total = len(keys)
     result_map: dict = {}
     done = 0
-    counts = {"ok": 0, "exhausted": 0, "invalid": 0, "error": 0}
+    counts = {"ok": 0, "exhausted": 0, "invalid": 0, "restricted": 0, "error": 0}
     if not keys:
         if progress:
             progress(0, 0)
@@ -1346,7 +1317,8 @@ def _nhan_reasoning(model: str) -> bool:
 
 def _call_once(provider: str, key: str, prompt: str, system: str,
                temperature: float, model: Optional[str] = None,
-               json_mode: bool = False) -> str:
+               json_mode: bool = False, request_timeout: Optional[float] = None,
+               retries: int = 1) -> str:
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
     if provider in ("openai", "deepseek", "ollama", "groq"):
         from openai import OpenAI
@@ -1365,8 +1337,8 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             base_url, model = None, settings.OPENAI_MODEL
         # timeout: Ollama (máy) có thể chậm -> 300s; mây (groq/openai...) 120s.
         # Chống TREO cả hàng đợi AI nếu 1 lệnh gọi không bao giờ trả về.
-        timeout = 300 if provider == "ollama" else 120
-        client = OpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=1)
+        timeout = request_timeout or (300 if provider == "ollama" else 120)
+        client = OpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=retries)
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         _LAN.ket_thuc = ""
@@ -1467,7 +1439,7 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             resp = model.generate_content(
                 prompt, generation_config={"temperature": temperature,
                                            "max_output_tokens": 8000},
-                request_options={"timeout": 120},
+                request_options={"timeout": request_timeout or 120},
             )
         um = getattr(resp, "usage_metadata", None)
         if um:
@@ -1544,8 +1516,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                     if is_org_restricted(last):
                         # Hạn chế tài khoản không phải quota: dừng nhà cung cấp,
                         # giữ nguồn và chờ người dùng xử lý tài khoản.
-                        mark_invalid(provider, key)
-                        mark_provider_restricted(provider, keys)
+                        mark_provider_restricted(provider, key, 'chat')
                         raise LLMError(
                             'organization_restricted: Tài khoản bị hạn chế. '
                             'Kiểm tra tài khoản/liên hệ hỗ trợ nhà cung cấp. ' + last)
@@ -1773,7 +1744,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             keys = settings.groq_keys()
             if not keys:
                 raise LLMError("Chưa cấu hình key Groq cho vision")
-            ensure_provider_available('groq', keys)
+            ensure_provider_available('groq', keys, 'vision')
             content = [{"type": "text", "text": prompt}]
             for p in image_paths:
                 content.append({"type": "image_url", "image_url":
@@ -1781,7 +1752,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             msgs = ([{"role": "system", "content": system}] if system else []) \
                 + [{"role": "user", "content": content}]
             last = ""
-            _vong = pick_keys("groq", keys, start_at=int(key_dau))
+            _vong = pick_keys("groq", keys, start_at=int(key_dau), scope="vision")
             for key in _vong:
                 mark_used("groq", key)
                 try:
@@ -1812,15 +1783,14 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                             max_tokens=2600,
                             **{k: v for k, v in _kw.items()
                                if k != "max_tokens"})
-                    mark_ok("groq", key)
+                    mark_ok("groq", key, scope="vision")
                     return _extract_json(resp.choices[0].message.content or "")
                 except (ValueError, json.JSONDecodeError) as e:
                     raise LLMError(f"Vision groq trả về không phải JSON: {e}")
                 except Exception as e:  # noqa: BLE001
                     last = str(e)
                     if is_org_restricted(last):
-                        mark_invalid('groq', key)
-                        mark_provider_restricted('groq', keys)
+                        mark_provider_restricted('groq', key, 'vision')
                         raise LLMError('organization_restricted: Tài khoản Groq bị hạn chế; '
                                        'kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq.') from e
                     if is_too_large_error(last):

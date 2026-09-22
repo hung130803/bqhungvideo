@@ -90,6 +90,10 @@ def main() -> int:
     lock = QLockFile(str(DATA_DIR / "app.lock"))
     # (Qt tự kiểm tra PID trong lock: app crash -> lock tự phá, không khoá chết)
     if not lock.tryLock(100):
+        from app.ui.activation import activate_existing
+        valid, owner_pid, _, _ = lock.getLockInfo()
+        if valid and owner_pid and activate_existing(owner_pid):
+            return 0
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(
             None, "BQ Hung Video",
@@ -167,6 +171,7 @@ def main() -> int:
     threading.excepthook = _thread_hook
 
     state = AppState()
+    from app.ui.activation import show_interactive_window
 
     # ---- ĐĂNG NHẬP: chỉ bắt buộc KHI đã cấu hình máy chủ tài khoản (Supabase).
     # Bản phát hành cho team sẽ nướng sẵn cấu hình -> luôn bắt đăng nhập.
@@ -174,8 +179,10 @@ def main() -> int:
     from app.auth_config import is_configured
     if is_configured():
         from PyQt6.QtWidgets import QDialog
+        from PyQt6.QtCore import QTimer
         from app.ui.login import LoginDialog
         login = LoginDialog()
+        QTimer.singleShot(0, lambda: show_interactive_window(login))
         if login.exec() != QDialog.DialogCode.Accepted:
             return 0                       # huỷ/đóng -> thoát app
         state.user = login.user
@@ -188,6 +195,7 @@ def main() -> int:
     # Khởi động worker pool SAU khi cửa sổ đã hiện (tránh giành tài nguyên lúc
     # mở app làm cửa sổ lâu hiện). Model sẽ tự nạp khi bấm "Tạo clip".
     from PyQt6.QtCore import QTimer
+    QTimer.singleShot(0, lambda: show_interactive_window(win))
     QTimer.singleShot(800, state.start)
 
     # ---- TỰ DỌN RÁC ĐĨA (đo 31/07/2026: ổ C còn 5,7/926 GB, %TEMP% 11,6 GB) --
