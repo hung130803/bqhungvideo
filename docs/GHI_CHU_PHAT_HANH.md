@@ -1,6 +1,8 @@
-# BQ Hung Video v2.50.1 — sửa dây chuyền và bảo vệ dữ liệu
+# BQ Hung Video v2.50.2 — sửa dây chuyền và bảo vệ dữ liệu
 
 Bản này tập trung sửa lỗi vận hành, giữ nguyên cách sử dụng và cấu hình hiện có.
+
+Đây là bản phát hành lại sau khi sửa lỗi môi trường kiểm thử và lưu log trên GitHub; lượt đóng gói v2.50.1 trước đó thất bại và chưa công bố bộ cài.
 
 ## Dây chuyền cắt video
 
