@@ -14,9 +14,9 @@ from __future__ import annotations
 import threading
 import webbrowser
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout,
+    QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
 )
 
 from app.version import __version__
@@ -47,12 +47,12 @@ class UpdateDialog(QDialog):
 
         notes = (info.get("notes") or "").strip()
         if notes:
-            if len(notes) > 800:
-                notes = notes[:800] + "…"
-            nl = QLabel(notes)
-            nl.setWordWrap(True)
+            nl = QPlainTextEdit()
+            nl.setPlainText(notes)
+            nl.setReadOnly(True)
+            nl.setMinimumHeight(120)
+            nl.setMaximumHeight(260)
             nl.setStyleSheet("font-size:12px;")
-            nl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             v.addWidget(nl)
 
         self.status = QLabel(

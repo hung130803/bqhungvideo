@@ -401,7 +401,8 @@ else:
 
 ra = tim("zzzzkhongcogiongnao")
 dat("gõ chuỗi vô nghĩa -> nói rõ không có gì khớp (không im lặng)",
-    len(ra) == 1 and "không có giọng nào khớp" in ra[0], str(ra[:1]))
+    len(ra) == 1 and any(text in ra[0].lower() for text in
+        ("không có giọng nào khớp", "không giọng nào khớp")), str(ra[:1]))
 
 # CHỌN GIỌNG Ở NHÓM KHÁC -> combo đổi ĐÚNG mã đó
 tim("")
@@ -709,12 +710,19 @@ TGD.to_nhan_nhom = _goc_nhom
 _goc_rong = TGD.rong_vua_chu
 TGD.rong_vua_chu = lambda fm_, ds, tran: 0
 dlg5 = TGD.ThayGiongDialog(None, None)
+# Saved picker width intentionally overrides automatic sizing in production.
+# Clear that test setting so this mutation actually exercises auto-sizing.
+dlg5._s.remove(TGD.K_GP_RONG)
 dlg5.show()
 _app.processEvents()
 p5 = dlg5._mo_chon_giong()
 _app.processEvents()
-pha(f"gỡ `rong_vua_chu` -> hộp tìm co về {p5.width()} px (bằng combo)",
-    p5.width() <= dlg5.cb_giong.width() + 4)
+pha(f"gỡ `rong_vua_chu` -> hộp tìm co về {p5.width()} px (sàn bố cục)",
+    p5.width() <= max(dlg5.cb_giong.width(), TGD.GP_RONG_CHUAN,
+                     p5.minimumSizeHint().width()) + 4
+    and p5.width() < _goc_rong(dlg5._gp_lst.fontMetrics(),
+        [dlg5.cb_giong.itemText(i) for i in range(dlg5.cb_giong.count())],
+        TGD.rong_toi_da(dlg5.cb_giong)))
 p5.close()
 dlg5.close()
 TGD.rong_vua_chu = _goc_rong

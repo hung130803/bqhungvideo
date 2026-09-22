@@ -769,7 +769,7 @@ class EditorCanvas(QGraphicsView):
         # KHÔNG khóa cỡ: view GIÃN theo chỗ trống của dialog; khung 9:16 tự
         # phóng to bằng fitInView (tọa độ scene FW×FH giữ nguyên -> logic
         # kéo/thả, snap, lưu layout KHÔNG đổi).
-        self.setMinimumSize(420, 620)
+        self.setMinimumSize(260, 380)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Expanding)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1129,14 +1129,14 @@ class EditorDialog(QDialog):
 
     def __init__(self, frame_path, layout=None, parent=None, current_name=""):
         super().__init__(parent)
-        self.setWindowTitle("Chỉnh mẫu — TỰ LƯU khi bấm Xong (bản mới)")
+        self.setWindowTitle("Chỉnh mẫu — xem trước và lưu mẫu xuất")
         # MỞ TO theo màn hình: màn rộng -> khung xem trước to, chỉnh chữ dễ nhìn
         scr = QApplication.primaryScreen().availableGeometry()
-        w = int(min(1560, scr.width() * 0.9))
+        w = int(max(840, min(1560, scr.width() * 0.9)))
         h = int(scr.height() * 0.92)
         self.resize(w, h)
         # min: canvas tối thiểu + cột phải 520 + lề -> cột phải không bao giờ ép hẹp
-        self.setMinimumSize(min(w, 1100), min(h, 700))
+        self.setMinimumSize(min(w, 920), min(h, 600))
         self.move(scr.x() + (scr.width() - w) // 2,
                   scr.y() + (scr.height() - h) // 2)
         self._next = 1
@@ -1180,6 +1180,9 @@ class EditorDialog(QDialog):
             "QScrollArea{border:none; background:transparent;}"
             "QScrollArea>QWidget>QWidget{background:transparent;}")
         rcol = QVBoxLayout(); rcol.setSpacing(8)
+        from app.ui.layout_tools import jump_row
+        nav, self.section_jump = jump_row(rscroll, self)
+        rcol.addLayout(nav)
         rcol.addWidget(rscroll, 1)
         main.addLayout(rcol)
         self._rscroll = rscroll          # để cuộn tới nhóm khi bấm hộp preview
@@ -1208,6 +1211,7 @@ class EditorDialog(QDialog):
             cl = QVBoxLayout(card); cl.setContentsMargins(0, 0, 0, 0); cl.setSpacing(0)
             cl.addWidget(head); cl.addWidget(body)
             right.addWidget(card)
+            self.section_jump.add_section(title, card)
             return v, card
 
         # Nhóm: Mẫu (xanh dương)

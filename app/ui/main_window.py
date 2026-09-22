@@ -1,13 +1,13 @@
 """
-Cửa sổ chính — MỘT màn hình (StudioPage) cho đơn giản, dễ dùng.
-Banner phần cứng ở trên, dock hàng đợi (tiến trình) ở dưới.
+Cửa sổ chính: Video & clip, theo dõi hàng loạt và lối tắt cài đặt.
+Studio luôn tồn tại để bộ điều phối dây chuyền tiếp tục khi đổi màn.
 """
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox, QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QPushButton, QSpinBox, QVBoxLayout, QWidget, QScrollArea, QStackedWidget,
 )
 
 from app.queue.resource_manager import HARDWARE, PROFILE
@@ -40,7 +40,8 @@ class MainWindow(QMainWindow):
             pass
         self.state = state
         self.setWindowTitle(f"BQ Hung Video v{__version__}")
-        self.resize(1240, 840)
+        from app.ui.layout_tools import fit_dialog
+        fit_dialog(self, 1366, 850)
 
         central = QWidget()
         root = QHBoxLayout(central)
@@ -49,17 +50,27 @@ class MainWindow(QMainWindow):
         wrap = QWidget()
         wl = QVBoxLayout(wrap); wl.setContentsMargins(16, 14, 16, 0); wl.setSpacing(0)
         self.studio = StudioPage(state)
-        wl.addWidget(self.studio, 1)
+        from app.ui.batch_page import BatchPage
+        self.batch = BatchPage(state)
+        self.batch.open_video.connect(self._open_batch_video)
+        self.batch.configure_pipeline.connect(self.studio._pipeline_dialog)
+        self.workspace = QStackedWidget()
+        self.workspace.addWidget(self.studio)
+        self.workspace.addWidget(self.batch)
+        wl.addWidget(self.workspace, 1)
         root.addWidget(wrap, 1)
         self.setCentralWidget(central)
 
         dock = QDockWidget("Tiến trình", self)
-        dock.setWidget(QueuePanel(state))
+        self.queue_dock = dock
+        self.queue_panel = QueuePanel(state)
+        dock.setWidget(self.queue_panel)
         dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-        self.resizeDocks([dock], [270], Qt.Orientation.Vertical)
+        self.resizeDocks([dock], [220], Qt.Orientation.Vertical)
 
+        self._show_workspace(0)
         # Tự kiểm tra bản mới (nền, im lặng nếu lỗi mạng)
         self._update_found.connect(self._notify_update)
         self._start_update_check()
@@ -68,6 +79,56 @@ class MainWindow(QMainWindow):
         # (phân tích) KHÔNG dùng chung được DB này -> sẽ báo "không tìm thấy
         # video". Cảnh báo user RÕ ngay thay vì để lỗi khó hiểu về sau.
         self._warn_if_db_in_memory()
+
+    def _show_workspace(self, index):
+        self.workspace.setCurrentIndex(index)
+        self.queue_dock.setVisible(index == 0)
+        if index == 0:
+            self.queue_panel.timer.start(400)
+            self.queue_panel.refresh()
+        else:
+            self.queue_panel.timer.stop()
+        self.nav_video.setChecked(index == 0)
+        self.nav_batch.setChecked(index == 1)
+
+    def _open_batch_video(self, project_id, video_id):
+        self.studio._select_project(project_id)
+        self.studio._reload_videos(select_id=video_id)
+        self._show_workspace(0)
+
+    def _guide(self):
+        from PyQt6.QtWidgets import QDialog, QPlainTextEdit
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Hướng dẫn sử dụng")
+        dlg.resize(740, 540)
+        layout = QVBoxLayout(dlg)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(
+            "VIDEO & CLIP\n"
+            "1. Chọn nhóm, kênh và video. Thêm file hoặc tải từ YouTube.\n"
+            "2. Chọn mẫu và tùy chỉnh cắt. Bấm Tạo clip cho video đang chọn; "
+            "Tạo nhiều để chọn nhiều video trong kênh.\n"
+            "3. Duyệt clip, chỉnh điểm đầu/cuối, rồi xuất. Bật tự động xuất nếu muốn bỏ bước duyệt.\n\n"
+            "HÀNG LOẠT\n"
+            "Theo dõi từng video bằng ô tìm, lọc nhóm/trạng thái. Mở video & clip để xem kết quả. "
+            "Số Part và trạng thái gốc được hiển thị riêng.\n"
+            "Cấu hình & chạy Dây chuyền: chọn đúng nhóm và thư mục từng kênh trước khi chạy. "
+            "Chỉ Dây chuyền quản lý chuyển gốc vào Thùng rác sau khi xác minh đủ Part.\n\n"
+            "THAY GIỌNG\n"
+            "Chọn thư mục nguồn/đích, ngôn ngữ và giọng. Nghe thử trước khi chạy. "
+            "Video gốc được giữ nguyên. Có thể kéo vạch chia để xem thêm bảng tiến trình.\n\n"
+            "CÀI ĐẶT & XỬ LÝ LỖI\n"
+            "Trong AI hoặc Chỉnh mẫu, dùng Đi tới để tìm nhanh nhóm cài đặt. "
+            "Kiểm tra kết nối chỉ xác nhận các dịch vụ/key được ghi trong kết quả thử.\n"
+            "Phân tích xong chưa đồng nghĩa xuất xong. Dấu ~ là tiến độ ước tính của một việc. "
+            "Hủy chỉ áp cho phạm vi ghi trên nút; các việc khác vẫn tiếp tục. "
+            "Khi có lỗi, đọc chi tiết trước khi thử lại; không xóa video gốc khi chưa đủ Part.")
+        layout.addWidget(text, 1)
+        close = QPushButton("Đóng")
+        close.clicked.connect(dlg.accept)
+        layout.addWidget(close)
+        dlg.exec()
 
     def _warn_if_db_in_memory(self):
         from app.database import db
@@ -109,10 +170,10 @@ class MainWindow(QMainWindow):
 
     def _sidebar(self):
         from app.ui.theme import BASE, WINDOW, BORDER, MUTED, TEXT, ACCENT, SUCCESS, DANGER
-        w = QWidget(); w.setObjectName("sidebar"); w.setFixedWidth(230)
+        w = QWidget(); w.setObjectName("sidebar"); w.setMinimumWidth(190)
         w.setStyleSheet(f"#sidebar{{background:{BASE}; border-right:1px solid {BORDER};}}"
                         f"#sidebar QLabel{{background:transparent;}}")
-        v = QVBoxLayout(w); v.setContentsMargins(18, 24, 18, 18); v.setSpacing(6)
+        v = QVBoxLayout(w); v.setContentsMargins(12, 16, 12, 12); v.setSpacing(6)
 
         def hline():
             # đường kẻ MẢNH ngăn cách các nhóm
@@ -136,11 +197,36 @@ class MainWindow(QMainWindow):
         tag = QLabel("Cắt clip viral tự động")
         tag.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         v.addWidget(brand); v.addWidget(brand2); v.addSpacing(2); v.addWidget(tag)
-        v.addSpacing(18)
+        v.addSpacing(10)
+        self.nav_video = QPushButton("Video && clip")
+        self.nav_batch = QPushButton("Hàng loạt")
+        for button in (self.nav_video, self.nav_batch):
+            button.setCheckable(True)
+            button.setMinimumHeight(36)
+            v.addWidget(button)
+        self.nav_video.clicked.connect(lambda: self._show_workspace(0))
+        self.nav_batch.clicked.connect(lambda: self._show_workspace(1))
+        voice = QPushButton("Thay giọng")
+        voice.clicked.connect(lambda: self.studio._thay_giong_dialog())
+        v.addWidget(voice)
+        ai = QPushButton("Cài đặt AI")
+        ai.clicked.connect(lambda: self.studio._ai_settings())
+        v.addWidget(ai)
+        help_button = QPushButton("Hướng dẫn")
+        help_button.clicked.connect(self._guide)
+        v.addWidget(help_button)
+        v.addSpacing(6)
         v.addWidget(hline())
         v.addSpacing(14)
-        v.addWidget(group_lbl("THIẾT BỊ"))
-        v.addSpacing(8)
+        hardware_toggle = QPushButton("Thông tin thiết bị")
+        hardware_toggle.setCheckable(True)
+        details = QWidget()
+        hardware_layout = QVBoxLayout(details)
+        hardware_layout.setContentsMargins(0, 4, 0, 0)
+        v.addWidget(hardware_toggle)
+        v.addWidget(details)
+        details.hide()
+        hardware_toggle.toggled.connect(details.setVisible)
 
         # --- Thông tin máy (gọn, dọc) ---
         def info(label, val, col=None):
@@ -150,7 +236,7 @@ class MainWindow(QMainWindow):
                 f"color:{col or TEXT}; font-size:13px; font-weight:600;")
             b.setWordWrap(True)
             box.addWidget(a); box.addWidget(b)
-            v.addLayout(box); v.addSpacing(10)
+            hardware_layout.addLayout(box); hardware_layout.addSpacing(6)
 
         gpu = HARDWARE.gpu_name if HARDWARE.has_cuda else "CPU (không GPU)"
         info("Máy", f"{HARDWARE.cpu_cores} luồng · {HARDWARE.ram_gb}GB")
@@ -238,7 +324,14 @@ class MainWindow(QMainWindow):
 
         ver = QLabel(f"v{__version__}"); ver.setStyleSheet(f"color:{MUTED}; font-size:11px;")
         v.addWidget(ver)
-        return w
+        scroll = QScrollArea()
+        scroll.setObjectName("navigation")
+        scroll.setFixedWidth(212)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(w)
+        return scroll
 
     def _open_admin(self):
         from app.ui.login import AdminUsersDialog

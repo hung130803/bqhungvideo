@@ -527,8 +527,15 @@ def nhan_gon(nhan: str, fm, tran: int) -> str:
     if any(j > k[0] and j not in k for j in range(len(moc))):
         duoi += DAU_CON_CHU
     con = tran - fm.horizontalAdvance(duoi)
-    if con < 120:                   # đuôi đã kín chỗ -> ép cả dòng, thà cụt tên
-        return fm.elidedText(s, Qt.TextElideMode.ElideRight, tran)
+    if con < 120:
+        # A narrow screen must still show cost/download requirements.
+        # Keep that suffix visible; elide the description before it.
+        cost = ' · '.join(moc[j][2].strip() for j in k if _RE_GIU[-1].match(moc[j][2].strip()))
+        suffix = (' · ' + cost if cost else '') + (DAU_LOI_TAT_GON if lt else '')
+        room = tran - fm.horizontalAdvance(suffix)
+        if room > 80:
+            return fm.elidedText(s, Qt.TextElideMode.ElideRight, room) + suffix
+        return fm.elidedText(suffix.lstrip(' ·') + ' · ' + ten, Qt.TextElideMode.ElideRight, tran)
     return fm.elidedText(ten, Qt.TextElideMode.ElideRight, con) + duoi
 
 
@@ -2000,9 +2007,23 @@ class ThayGiongDialog(QDialog):
         self._da_bao_xong = True            # chưa chạy lượt nào -> không báo
         self._bo_qua_luot = 0               # số video bỏ qua ở lượt vừa bấm
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 14, 14, 14)
+        from PyQt6.QtWidgets import QScrollArea, QSplitter
+        from app.ui.layout_tools import fit_dialog
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 14, 14, 14)
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(0, 0, 12, 0)
         lay.setSpacing(9)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        scroll.setMinimumHeight(140)
+        splitter.addWidget(scroll)
+        outer.addWidget(splitter, 1)
+        self.settings_scroll = scroll
+        fit_dialog(self, 1160, 740)
 
         gt = QLabel(
             "Thay LỜI THOẠI của video sang tiếng khác, GIỮ NGUYÊN nhạc nền và "
@@ -2054,14 +2075,15 @@ class ThayGiongDialog(QDialog):
         self.cb_nn.setCurrentIndex(max(0, i))
         self.cb_nn.currentIndexChanged.connect(self._doi_ngon_ngu)
         h2.addWidget(self.cb_nn)
-
-        h2.addSpacing(8)
+        h2.addStretch(1)
+        lay.addLayout(h2)
+        h2 = QHBoxLayout()
         h2.addWidget(QLabel("Giọng đọc:"))
         # VIỆC 4 — 392 mã giọng thì cuộn tay là không dùng được. Bấm combo mở
         # popup [ô tìm + danh sách] (`_mo_chon_giong`), đúng mẫu đã chạy được
         # của `studio_page._open_chan_picker`.
         self.cb_giong = ComboGiong()
-        self.cb_giong.setMinimumWidth(300)
+        self.cb_giong.setMinimumWidth(260)
         # Đường LÙI (picker ném lỗi -> popup Qt mặc định) chỉ hiện 10 dòng, vô
         # dụng với 364 giọng. Không sửa được "bảng nhỏ" ở đường chính mà bỏ
         # đường lùi thì vẫn còn một cửa bày ra bảng nhỏ.
@@ -2102,7 +2124,8 @@ class ThayGiongDialog(QDialog):
         self.b_giong_toi.clicked.connect(self._mo_giong_toi)
         h2.addWidget(self.b_giong_toi)
 
-        h2.addSpacing(8)
+        lay.addLayout(h2)
+        h2 = QHBoxLayout()
         h2.addWidget(QLabel("Số luồng:"))
         self.sp_luong = QSpinBox()
         # TRẦN CỨNG lấy từ `worker.TG_TRAN`, KHÔNG ghi số 4 vào đây: hai bản
@@ -2134,6 +2157,8 @@ class ThayGiongDialog(QDialog):
             self.sp_luong.setValue(2)
         self.sp_luong.valueChanged.connect(self._doi_luong)
         h2.addWidget(self.sp_luong)
+        self.sp_luong.setMaximumWidth(110)
+        h2.addStretch(1)
         lay.addLayout(h2)
 
         # ---- NÓI RA LÝ DO SỐ LUỒNG (lùi im lặng là bẫy) ----
@@ -2288,8 +2313,7 @@ class ThayGiongDialog(QDialog):
             "  · CHƯA AI NGHE THỬ bằng tai. Anh nghe rồi hãy dùng cho cả loạt.")
         _i = self.cb_khop.findData(str(self._s.value(K_KHOP_CACH, "") or ""))
         self.cb_khop.setCurrentIndex(max(0, _i))
-        h3bb.addWidget(self.cb_khop)
-        h3bb.addStretch(1)
+        h3bb.addWidget(self.cb_khop, 1)
         lay.addLayout(h3bb)
 
         # ---- hàng 3bb2: KÉO DÀI GIỌNG CHO ĐẦY KHUNG CÂU (v2.49.0) ----
@@ -2338,8 +2362,7 @@ class ThayGiongDialog(QDialog):
         _i2 = self.cb_keo.findData(
             TG.chuan_keo_dai(self._s.value(K_KEO_DAI, 1.0)))
         self.cb_keo.setCurrentIndex(max(0, _i2))
-        h3bb2.addWidget(self.cb_keo)
-        h3bb2.addStretch(1)
+        h3bb2.addWidget(self.cb_keo, 1)
         lay.addLayout(h3bb2)
 
         # ---- hàng 3bc: CÁCH TRỘN TIẾNG (đè giọng / thay hẳn giọng) ----
@@ -2435,8 +2458,7 @@ class ThayGiongDialog(QDialog):
         _it = self.cb_tron.findData(
             TG.chuan_cach_tron(self._s.value(K_TRON_CACH, "tach")))
         self.cb_tron.setCurrentIndex(max(0, _it))
-        h3bc.addWidget(self.cb_tron)
-        h3bc.addStretch(1)
+        h3bc.addWidget(self.cb_tron, 1)
         lay.addLayout(h3bc)
         # Đổi cách trộn -> phải tính lại nút Chạy NGAY: cách "đè" không dùng bộ
         # tách giọng nên nó chạy được trên máy CHƯA có Demucs. Không nối tín
@@ -2860,13 +2882,17 @@ class ThayGiongDialog(QDialog):
         # vì câu đó, và chính nó bắt lại được: 256 -> 0 điểm ảnh chữ).
         # 150 px = tiêu đề (~32) + 4 dòng (~29) -> luôn thấy ít nhất 4 video.
         self.bang.setMinimumHeight(150)
-        lay.addWidget(self.bang, 1)
+        splitter.addWidget(self.bang)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setSizes([420, 190])
 
         lb_meo = QLabel(
             "Mẹo: bấm CHUỘT PHẢI vào một dòng để Làm lại video đó · Làm lại "
             "tất cả · Bỏ qua video đó.")
         lb_meo.setStyleSheet(f"color:{MUTED}; font-size:11px;")
-        lay.addWidget(lb_meo)
+        lb_meo.setWordWrap(True)
+        outer.addWidget(lb_meo)
 
         # ---- hàng cuối: nút ----
         h5 = QHBoxLayout()
@@ -2891,7 +2917,7 @@ class ThayGiongDialog(QDialog):
         b_dong = QPushButton("Đóng")
         b_dong.clicked.connect(self.reject)
         h5.addWidget(b_dong)
-        lay.addLayout(h5)
+        outer.addLayout(h5)
 
         self._giong_xong.connect(self._dung_combo_giong)
         self._cai_xong.connect(self._cai_demucs_xong)
@@ -2909,6 +2935,16 @@ class ThayGiongDialog(QDialog):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._nhip)
         self._timer.start(700)
+        # Long explanations belong in the tooltip; they must not force the
+        # whole settings form wider than the user's screen.
+        for combo in content.findChildren(QComboBox):
+            combo.setMinimumContentsLength(18)
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            tip = combo.toolTip()
+            combo.setToolTip(combo.currentText() + ('\n\n' + tip if tip else ''))
+            combo.currentTextChanged.connect(
+                lambda text, c=combo, t=tip: c.setToolTip(text + ('\n\n' + t if t else '')))
+        fit_dialog(self, 1160, 740)
 
     # ------------------------------------------------------------------
     # GIỌNG CỦA ANH HÙNG (nhân bản từ mẫu)
@@ -4737,7 +4773,8 @@ class ThayGiongDialog(QDialog):
     def _doi_gap_kc(self, mo: bool) -> None:
         """Mở/gập khu 9 ô kiểu chữ. GẬP KHÔNG ĐỔI GIÁ TRỊ NÀO.
 
-        Sau khi ẩn/hiện phải `adjustSize()` — không thì hộp giữ nguyên chiều
+        Bố cục cuộn giữ nguyên kích thước hộp khi ẩn/hiện phần kiểu chữ.
+        Với bố cục cũ không có vùng cuộn, `adjustSize()` thay đổi chiều
         cao cũ và chỗ vừa gập thành một khoảng TRỐNG, tức gập mà hộp không gọn
         đi (đúng thứ anh Hùng đang chê).
         """
@@ -4746,7 +4783,7 @@ class ThayGiongDialog(QDialog):
         self._ve_tt_kc()
         # Chỉ CO khi gập: mở ra thì để layout tự giãn, còn gập thì phải ép co
         # (Qt không tự thu cửa sổ khi widget con biến mất).
-        if not mo:
+        if not mo and not hasattr(self, 'settings_scroll'):
             self.adjustSize()
 
     def _ve_tt_kc(self) -> None:

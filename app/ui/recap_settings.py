@@ -96,8 +96,18 @@ class RecapSettingsDialog(QDialog):
         self._s = app_settings()
         self._demo_ready.connect(self._play_demo)
 
-        lay = QVBoxLayout(self)
+        from PyQt6.QtWidgets import QScrollArea, QWidget
+        from app.ui.layout_tools import fit_dialog
+        outer = QVBoxLayout(self)
+        content = QWidget()
+        lay = QVBoxLayout(content)
         lay.setSpacing(10)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+        self.settings_scroll = scroll
+        fit_dialog(self, 690, 690)
 
         # ---- Ghi chú minh bạch: cái gì lấy từ đâu ----
         note = QLabel(
@@ -335,7 +345,7 @@ class RecapSettingsDialog(QDialog):
         save.setDefault(True)
         save.clicked.connect(self._save)
         brow.addWidget(save)
-        lay.addLayout(brow)
+        outer.addLayout(brow)
 
         self._load()
         self._fill_voices_bg()

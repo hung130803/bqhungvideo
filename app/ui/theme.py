@@ -101,6 +101,15 @@ QMenu::item {{ padding: 6px 16px; border-radius: 6px; }}
 QMenu::item:selected {{ background: {ACCENT}; color: white; }}
 QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
 
+/* ---- Tables: explicit alternate background for Windows dark mode ---- */
+QTableView {{
+    background: {WINDOW}; alternate-background-color: {BASE};
+    color: {TEXT}; gridline-color: {BORDER}; border: 1px solid {BORDER};
+    selection-background-color: {SURFACE_HOVER}; selection-color: {TEXT};
+}}
+QHeaderView::section {{ background: {SURFACE}; color: {TEXT}; padding: 6px;
+    border: none; border-right: 1px solid {BORDER}; }}
+
 /* ---- List ---- */
 QListWidget {{
     background: {BASE}; border: 1px solid {BORDER}; border-radius: 10px;

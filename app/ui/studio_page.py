@@ -302,16 +302,26 @@ class StudioPage(QWidget):
         mgv.setToolTip("Xem danh sách video, tích chọn nhiều rồi xóa cùng lúc.")
         mgv.clicked.connect(self._manage_videos); srcrow.addWidget(mgv)
         plw.addWidget(self._sec_hdr("Nguồn video", num=1))
+        from app.ui.layout_tools import button_menu
+        for control in (gman, cpy, np, ren, dash, self.lib_btn, mgv, av):
+            srcrow.removeWidget(control)
+        self.source_menu = button_menu(panel, "Quản lý", (np, gman, cpy, ren, mgv, dash, self.lib_btn))
+        srcrow.addWidget(self.source_menu)
+        self.proj.setMinimumWidth(160)
+        self.vid.setMinimumWidth(170)
+        self.proj.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         plw.addLayout(srcrow)
         # NHÃN hoạt động của KÊNH ĐANG CHỌN (user chạy nhiều kênh cùng lúc,
         # cần biết kênh này đang chạy gì / vừa xong bao lâu ngay tại chỗ).
         self.chan_lbl = QLabel("")
+        self.chan_lbl.setWordWrap(True)
         self.chan_lbl.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         plw.addWidget(self.chan_lbl)
 
         # ===== Hàng tải từ LINK YOUTUBE thẳng vào kênh =====
         ytrow = QHBoxLayout(); ytrow.setSpacing(8)
-        ytrow.addWidget(self._tag("Link YT"))
+        ytrow.addWidget(av)
+        ytrow.addWidget(self._tag("YouTube"))
         self.yt_url = QLineEdit()
         self.yt_url.setPlaceholderText("Dán link YouTube vào đây để tải thẳng về kênh...")
         ytrow.addWidget(self.yt_url, 1)
@@ -369,15 +379,15 @@ class StudioPage(QWidget):
             "AI hiểu nội dung video rồi TỰ SÁNG TÁC lời KỂ CHUYỆN kiểu kênh "
             "recap: đoạn GIỮ TIẾNG GỐC (khoảnh khắc đắt) xen kẽ đoạn GIỌNG "
             "AI kể (video tắt tiếng) — kể bằng ĐÚNG ngôn ngữ video. Giọng "
-            "kể/tỉ lệ/nhịp chỉnh ở nút ⚙ bên cạnh.")
+            "kể/tỉ lệ/nhịp chỉnh trong Công cụ → Cài đặt thuyết minh.")
         self.recap_btn.clicked.connect(self._auto_recap)
         actrow.addWidget(self.recap_btn)
         pipe_btn = QPushButton("🤖 Dây chuyền")
         pipe_btn.setProperty("ghost", True)
         pipe_btn.setToolTip(
             "DÂY CHUYỀN TỰ ĐỘNG (nối tool tải): quét thư mục trung chuyển của\n"
-            "từng kênh, mỗi kênh nhận 1-2 video/ngày, tự cắt/reup + xuất Part\n"
-            "vào thư mục kênh rồi XÓA video gốc. Chạy khi bấm — không tự chạy.")
+            "từng kênh, tự phân tích/cắt + xuất Part.\n"
+            "Chỉ chuyển gốc vào Thùng rác sau khi đủ Part và kiểm tra thành công.")
         pipe_btn.clicked.connect(self._pipeline_dialog)
         actrow.addWidget(pipe_btn)
         # THAY GIỌNG NÓI: nhãn KHÔNG EMOJI (máy anh Hùng thiếu font -> ô đen)
@@ -385,8 +395,8 @@ class StudioPage(QWidget):
         self.tg_btn.setProperty("ghost", True)
         self.tg_btn.setToolTip(
             "THAY GIỌNG NÓI cả THƯ MỤC video sang tiếng khác, GIỮ NGUYÊN nhạc\n"
-            "nền + tiếng động. Xong thì video gốc vào Thùng rác (khôi phục\n"
-            "được) và video mới nằm đúng chỗ cũ. Chạy đa luồng.")
+            "nền + tiếng động. Video mới ghi vào thư mục đích, video gốc\n"
+            "được giữ nguyên. Chạy đa luồng.")
         self.tg_btn.clicked.connect(self._thay_giong_dialog)
         actrow.addWidget(self.tg_btn)
         from app.ai.recap import STYLES as _RECAP_STYLES
@@ -421,13 +431,30 @@ class StudioPage(QWidget):
         self.auto_export_chk.toggled.connect(
             lambda v: self._settings.setValue("auto_export", v))
         actrow.addWidget(self.auto_export_chk)
+        for control in (self.auto_all_btn, self.pick_btn, self.recap_btn, pipe_btn,
+                        self.tg_btn, self.recap_style, self.recap_cfg_btn):
+            actrow.removeWidget(control)
+        self.recap_style.setParent(panel)
+        self.recap_style.hide()
+        self.recap_btn.setText("Tạo clip thuyết minh")
+        self.recap_cfg_btn.setText("Cài đặt thuyết minh")
+        self.recap_cfg_btn.setMinimumWidth(0)
+        self.recap_cfg_btn.setMaximumWidth(16777215)
+        self.batch_menu = button_menu(panel, "Tạo nhiều", (self.auto_all_btn, self.pick_btn))
+        self.tools_menu = button_menu(panel, "Công cụ", (self.recap_btn, self.recap_cfg_btn, self.tg_btn))
+        pipe_btn.setText("Dây chuyền")
+        actrow.insertWidget(1, self.batch_menu)
+        actrow.insertWidget(2, pipe_btn)
+        actrow.insertWidget(3, self.tools_menu)
         plw.addLayout(actrow)
 
         # ===== Hàng 3: MẪU + XUẤT (cấu hình + nút xuất chính) =====
         plw.addWidget(self._sec_hdr("Mẫu & Xuất", num=3))
         cfgrow = QHBoxLayout(); cfgrow.setSpacing(8)
         cfgrow.addWidget(self._tag("Mẫu"))
-        self.tmpl_box = QComboBox(); self.tmpl_box.setMinimumWidth(190)
+        self.tmpl_box = QComboBox(); self.tmpl_box.setMinimumWidth(140)
+        self.tmpl_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.tmpl_box.setMinimumContentsLength(10)
         self.tmpl_box.setToolTip("Mẫu khung/chữ áp khi xuất. Nhớ mẫu đã chọn lần sau.")
         self.tmpl_box.currentIndexChanged.connect(self._on_template_pick)
         cfgrow.addWidget(self.tmpl_box)
@@ -448,14 +475,16 @@ class StudioPage(QWidget):
         # nhãn CLICK ĐƯỢC: đang đỏ "chưa có key!" -> bấm là mở luôn Cài đặt AI
         self.ai_status.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ai_status.mousePressEvent = lambda _e: self._ai_settings()
-        cfgrow.addWidget(self.ai_status)
+        self.ai_status.setWordWrap(True)
+        cfgrow.addWidget(self.ai_status, 1)
         cfgrow.addStretch(1)
         self.dl_chan = QPushButton("Xuất cả kênh")
         self.dl_chan.setProperty("ghost", True)
         self.dl_chan.setToolTip("Xuất clip của MỌI video trong kênh, 1 phát "
                                 "(đúng thứ tự Part từng video).")
         self.dl_chan.clicked.connect(self._export_all_channel)
-        cfgrow.addWidget(self.dl_chan)
+        self.export_menu = button_menu(panel, "Xuất thêm", (self.dl_chan,))
+        cfgrow.addWidget(self.export_menu)
         self.dl_all = QPushButton("Xuất video này")
         self.dl_all.setProperty("primary", True)
         self.dl_all.setMinimumHeight(40); self.dl_all.setMinimumWidth(150)
@@ -1484,6 +1513,10 @@ class StudioPage(QWidget):
         _outer.setSpacing(0)
         _scroll = QScrollArea(); _scroll.setWidgetResizable(True)
         _scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        from app.ui.layout_tools import jump_row
+        nav, section_jump = jump_row(_scroll, dlg)
+        nav.setContentsMargins(18, 10, 18, 4)
+        _outer.addLayout(nav)
         _outer.addWidget(_scroll, 1)
         _content = QWidget(); _scroll.setWidget(_content)
         lay = QVBoxLayout(_content); lay.setSpacing(12)
@@ -1523,6 +1556,7 @@ class StudioPage(QWidget):
                 d.setStyleSheet(f"color:{MUTED}; font-size:11px;")
                 cl.addWidget(d)
             lay.addWidget(fr)
+            section_jump.add_section(title, fr)
             return cl
 
         def _flabel(text):
@@ -1534,12 +1568,11 @@ class StudioPage(QWidget):
         # ============ THẺ 1: 🧠 Bộ não AI ============
         c_brain = _card(
             "🧠 Bộ não AI",
-            "Chọn AI viết kịch bản / chọn đoạn hay. Groq miễn phí, Gemini khôn "
-            "nhất.")
+            "Chọn dịch vụ viết kịch bản / chọn đoạn. Chất lượng và hạn mức phụ thuộc model và tài khoản.")
         c_brain.addWidget(_flabel("Nguồn AI"))
         src = QComboBox()
-        src.addItem("Groq — mây (FREE, khôn, nhẹ — khuyên dùng)", "groq")
-        src.addItem("Gemini — mây (khôn nhất, có phí nhẹ)", "gemini")
+        src.addItem("Groq — xử lý trên mây", "groq")
+        src.addItem("Gemini — xử lý trên mây", "gemini")
         for label, provider in [('OpenAI', 'openai'), ('DeepSeek', 'deepseek'),
                                 ('Ollama — trên máy', 'ollama')]:
             src.addItem(label + ' (cấu hình trong .env)', provider)
@@ -1556,7 +1589,7 @@ class StudioPage(QWidget):
         c_brain.addWidget(_flabel("Model Gemini"))
         mdl = QComboBox()
         mdl.addItem("Gemini 2.5 Flash — nhanh, rẻ (khuyên)", "gemini-2.5-flash")
-        mdl.addItem("Gemini 2.5 Pro — khôn nhất, chậm/đắt hơn", "gemini-2.5-pro")
+        mdl.addItem("Gemini 2.5 Pro", "gemini-2.5-pro")
         j = mdl.findData(settings.GEMINI_MODEL)
         mdl.setCurrentIndex(j if j >= 0 else 0)
         c_brain.addWidget(mdl)
@@ -2162,6 +2195,9 @@ class StudioPage(QWidget):
             self.status.setText(f"Đã lưu cài đặt AI: {src.currentText()} · nghe-chép "
                                 f"{wsrc.currentText().split('—')[0].strip()}")
             dlg.accept()
+        close = QPushButton("Hủy")
+        close.clicked.connect(dlg.reject)
+        row.addWidget(close)
         sv.clicked.connect(do_save); row.addWidget(sv)
         # GHIM hàng nút NGOÀI vùng cuộn -> luôn thấy dù nội dung dài
         _btnbar = QWidget(); _bl = QVBoxLayout(_btnbar)
@@ -2360,6 +2396,7 @@ class StudioPage(QWidget):
         pid = self.proj.currentData()
         if pid is None:
             return
+        self.status.clear()
         self.state.set_project(int(pid))
         # NHẢY tới VIDEO THAO TÁC GẦN NHẤT của kênh này (nhớ ở QSettings), thay
         # vì luôn về video đầu — kênh nào cũng mở đúng chỗ đang làm dở.
@@ -4221,6 +4258,7 @@ class StudioPage(QWidget):
     def _on_vid(self, _i):
         vid = self.vid.currentData()
         if vid is not None:
+            self.status.clear()
             self.state.set_video(int(vid))
             # NHỚ video đang chọn theo KÊNH -> lần sau quay lại kênh mở đúng đây
             if self.state.project_id:
