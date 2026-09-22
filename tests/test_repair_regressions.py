@@ -136,7 +136,7 @@ class RepairTests(unittest.TestCase):
             llm.mark_limited('groq', 'wait', 'rate limit')
             self.assertEqual(llm.pick_keys('groq', ['a', 'b', 'wait', 'bad'], 1), ['b', 'a', 'wait'])
 
-    def test_org_restriction_stops_request_chain(self):
+    def test_org_restriction_never_retries_denied_key(self):
         from app.core.transcribe import _groq_one
         audio = self.folder / 'audio.wav'
         audio.write_bytes(b'fixture')
@@ -144,7 +144,7 @@ class RepairTests(unittest.TestCase):
         client = types.SimpleNamespace(audio=types.SimpleNamespace(transcriptions=types.SimpleNamespace(create=call)))
         with patch('openai.OpenAI', return_value=client), patch.dict(llm._KEY_STATE, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, 'organization_restricted'):
-                _groq_one(str(audio), 'en', ['first', 'second'])
+                _groq_one(str(audio), 'en', ['first'])
         self.assertEqual(call.call_count, 1)
         self.assertTrue(pipeline.is_configuration_error('organization_restricted'))
         with self.assertRaisesRegex(llm.LLMError, 'organization_restricted'):

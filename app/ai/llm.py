@@ -37,15 +37,39 @@ _KEY_STATE: dict = {}
 _KEY_LOCK = threading.Lock()
 
 
+def key_failure_message(provider: str, keys, scope: str, last: str = '') -> str:
+    """Explain exhaustion from per-key evidence; never claim all failed alike."""
+    from app.ai import key_health
+    keys = list(dict.fromkeys(keys))
+    restricted = invalid = 0
+    for key in keys:
+        state = key_health.read(provider, key, scope).get('state')
+        with _KEY_LOCK:
+            bad_key = _is_invalid(_KEY_STATE.get((provider, key)))
+        if state == 'restricted':
+            restricted += 1
+        elif state == 'invalid' or bad_key:
+            invalid += 1
+    detail = str(last)
+    for key in keys:
+        detail = detail.replace(key, '[key]')
+    detail = re.sub(r'gsk_[A-Za-z0-9_-]+', '[key]', detail)[:250]
+    label = {'chat': 'AI chat', 'transcription': 'chép lời', 'vision': 'hình ảnh'}.get(scope, scope)
+    remaining = len(keys) - restricted - invalid
+    reason = 'organization_restricted: ' if restricted and not remaining else ''
+    return (f'{reason}{provider}/{label}: Chưa xử lý được bằng các key đã cấu hình. '
+            f'Tổng {len(keys)} key: {restricted} bị hạn chế, {invalid} sai key, '
+            f'{remaining} không bị đánh dấu chặn. '
+            + (f'Lỗi của lượt gọi còn lại: {detail}. ' if detail and remaining else '')
+            + 'Kiểm tra trạng thái từng dịch vụ trong Cài đặt AI. Video gốc được giữ nguyên.')
+
+
 def ensure_provider_available(provider: str, keys, scope: str = 'chat') -> None:
     from app.ai import key_health
     # Old ai_provider_blocks.json only hashes the whole key list. It cannot
     # identify which key failed, so never use it to block healthy credentials.
     if keys and all(key_health.blocked(provider, key, scope) for key in keys):
-        raise LLMError(f'{provider}/{scope}: Không còn key đã cấu hình dùng được '
-                       'cho bước này. Kiểm tra kết nối để xem lỗi từng dịch vụ; '
-                       'nếu organization_restricted, xử lý tài khoản với nhà cung cấp. '
-                       'Video gốc được giữ nguyên.')
+        raise LLMError(key_failure_message(provider, keys, scope))
 
 
 def mark_provider_restricted(provider: str, key: str, scope: str = 'chat') -> None:
@@ -659,8 +683,8 @@ def is_too_large_error(msg: str) -> bool:
 def is_org_restricted(msg: str) -> bool:
     """Recognize an organization denial, distinct from invalid keys or quota.
 
-    Stop this request chain and record the affected key/service. Do not infer
-    that every other configured key is restricted from this single response.
+    Record the affected key/service and never retry that credential here.
+    This response does not prove that other configured credentials failed.
     """
     m = (msg or "").lower()
     return "organization has been restricted" in m \
@@ -1468,6 +1492,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     # local (ollama) -> gọi tuần tự qua khóa để không tranh VRAM khi chạy đa luồng
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     last = ""
+    last_usable = ""
     with guard:
         # ĐỢI-THỬ-LẠI khi TẤT CẢ key kẹt token/phút (TPM/429): tối đa 3 vòng,
         # mỗi vòng xoay hết key; hết vòng mà mọi key vừa 429 với reset NGẮN
@@ -1482,6 +1507,9 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             # hết đường dù các key trước chỉ đang cooldown ngắn.
             saw_retryable = False
             for key in pick_keys(provider, keys):
+                from app.ai import key_health
+                if key_health.blocked(provider, key, 'chat'):
+                    continue  # A worker may have recorded denial since selection.
                 mark_used(provider, key)
                 try:
                     out = _call_once(provider, key, prompt, system,
@@ -1510,16 +1538,14 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                             f"được — cần cập nhật app. KHÔNG phải hết hạn mức "
                             f"key (41 key vẫn còn nguyên). Chi tiết: {last}")
                     if is_rate_limit_error(last):
+                        last_usable = last
                         mark_limited(provider, key, last)
                         saw_retryable = True
                         continue               # key này hết lượt -> thử key tiếp
                     if is_org_restricted(last):
-                        # Hạn chế tài khoản không phải quota: dừng nhà cung cấp,
-                        # giữ nguồn và chờ người dùng xử lý tài khoản.
                         mark_provider_restricted(provider, key, 'chat')
-                        raise LLMError(
-                            'organization_restricted: Tài khoản bị hạn chế. '
-                            'Kiểm tra tài khoản/liên hệ hỗ trợ nhà cung cấp. ' + last)
+                        continue  # Another configured key may still work.
+                    last_usable = last
                     if is_auth_error(last):
                         mark_invalid(provider, key)
                         continue               # KEY SAI -> bỏ qua, thử key khác
@@ -1551,11 +1577,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
         raise LLMModelMissing(
             f"Groq đã bỏ model đang dùng nên app không gọi được — cần cập "
             f"nhật app. KHÔNG phải hết hạn mức key. Chi tiết: {last}")
-    if is_auth_error(last):
-        raise LLMError(
-            f"Tất cả key {provider} đều SAI/không hợp lệ. Vào 'Cài đặt AI' "
-            f"kiểm tra lại key (xóa dấu cách thừa, dán lại key đúng). Chi tiết: {last}")
-    raise LLMError(f"Gọi {provider} thất bại (hết lượt/lỗi tất cả key): {last}")
+    raise LLMError(key_failure_message(provider, keys, 'chat', last_usable or last))
 
 
 def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
@@ -1752,8 +1774,12 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             msgs = ([{"role": "system", "content": system}] if system else []) \
                 + [{"role": "user", "content": content}]
             last = ""
+            last_usable = ""
             _vong = pick_keys("groq", keys, start_at=int(key_dau), scope="vision")
             for key in _vong:
+                from app.ai import key_health
+                if key_health.blocked('groq', key, 'vision'):
+                    continue
                 mark_used("groq", key)
                 try:
                     client = OpenAI(api_key=key,
@@ -1791,8 +1817,8 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                     last = str(e)
                     if is_org_restricted(last):
                         mark_provider_restricted('groq', key, 'vision')
-                        raise LLMError('organization_restricted: Tài khoản Groq bị hạn chế; '
-                                       'kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq.') from e
+                        continue
+                    last_usable = last
                     if is_too_large_error(last):
                         # gửi quá nhiều/quá to -> caller giảm số ảnh. ĐỪNG phạt
                         # key: đây là lối đã đốt sạch 38 key (xem
@@ -1806,8 +1832,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                         mark_invalid("groq", key)
                         continue         # key sai -> bỏ qua
                     raise LLMError(f"Vision groq lỗi: {last}")
-            raise LLMError(
-                f"Vision groq thất bại (hết lượt/lỗi tất cả key): {last}")
+            raise LLMError(key_failure_message('groq', keys, 'vision', last_usable or last))
 
         if provider in ("ollama", "openai"):
             from openai import OpenAI

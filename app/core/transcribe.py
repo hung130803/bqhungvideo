@@ -272,6 +272,7 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
     from openai import OpenAI
     from app.ai import llm
     last = ""
+    last_usable = ""
     llm.ensure_provider_available('groq', keys, 'transcription')
 
     def _order():
@@ -286,6 +287,9 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
         pending = list(_order())
         while pending:
             key = pending.pop(0)
+            from app.ai import key_health
+            if key_health.blocked('groq', key, 'transcription'):
+                continue  # A parallel chunk may have just marked this key.
             llm.mark_used("groq", key)
             try:
                 client = OpenAI(api_key=key,
@@ -312,10 +316,8 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                 last = str(e)
                 if llm.is_org_restricted(last):
                     llm.mark_provider_restricted('groq', key, 'transcription')
-                    raise RuntimeError(
-                        'organization_restricted: Tài khoản Groq bị hạn chế. '
-                        'Kiểm tra tài khoản hoặc liên hệ hỗ trợ Groq; '
-                        'video gốc được giữ nguyên.') from e
+                    continue  # Keep this audio chunk and try another configured key.
+                last_usable = last
                 if llm.is_too_large_error(last):
                     # 413 "Request too large" (đoạn tiếng gửi lên quá dài cho
                     # hạn mức token/phút). Groq gắn kèm `rate_limit_exceeded`
@@ -349,7 +351,7 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
         # hết vòng: mọi key vừa thử đều limited. Nếu reset NGẮN (TPM/phút,
         # <= 90s) -> ĐỢI hết cooldown ngắn nhất rồi thử lại (vòng 2). Reset
         # dài (hết lượt ngày) thì đợi vô ích -> thoát báo lỗi.
-        if _round == 1 and not llm.is_auth_error(last):
+        if _round == 1:
             wait = llm.soonest_ready_wait("groq", keys, scope='transcription')
             if wait is not None and 0 < wait <= 90.0:
                 if on_wait:
@@ -357,11 +359,7 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                 _time.sleep(wait + 0.5)
                 continue
         break
-    if llm.is_auth_error(last):
-        raise RuntimeError(
-            "Tất cả key Groq đều SAI/không hợp lệ — vào 'Cài đặt AI' kiểm tra "
-            f"lại key (xóa dấu cách thừa, dán key đúng). Chi tiết: {last}")
-    raise RuntimeError(f"Groq whisper lỗi (hết key/quota): {last}")
+    raise RuntimeError(llm.key_failure_message('groq', keys, 'transcription', last_usable or last))
 
 
 def _audio_duration(path: str, ff_probe: str, flags: int) -> float:
