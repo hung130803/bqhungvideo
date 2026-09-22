@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONUTF8: '1'
+      BQ_VALIDATION_DIR: ${{ runner.temp }}/bqhung-validation
     steps:
       - uses: actions/checkout@v4
         with:
@@ -139,8 +140,8 @@ jobs:
         with:
           name: validation-${{ github.ref_name }}
           path: |
-            ../validation/*.log
-            ../validation/*.json
+            ${{ runner.temp }}/bqhung-validation/*.log
+            ${{ runner.temp }}/bqhung-validation/*.json
             ${{ runner.temp }}/bqhung-exe-check/result.json
           retention-days: 14
 
