@@ -1,12 +1,5 @@
-"""
-Khu "Tiến trình": mỗi việc 1 dòng có thanh % rõ ràng + thông báo bước hiện tại.
-Cập nhật TẠI CHỖ (không dựng lại widget mỗi nhịp) -> thanh chạy MƯỢT, không giật.
-
-BỐ CỤC 1 DÒNG (dùng hết bề ngang, không gì bị cắt):
-[chấm kênh] [TÊN VIỆC — chiếm mọi chỗ thừa, elide "…" ở giữa] [thanh %] [trạng
-thái "45% · Đang cắt" — bề ngang CỐ ĐỊNH đo theo font, không bao giờ cụt] [nút].
-Header: chips đếm (trái) + nút Hủy tất cả/Xóa lịch sử (phải) CÙNG 1 hàng khi đủ
-rộng; panel hẹp thì chips tự xuống dòng riêng.
+"""Tiến trình từng việc: tên kênh/video, bước đang chạy, Part và % ước tính.
+Cập nhật tại chỗ và giới hạn số widget khi chạy hàng trăm kênh.
 """
 from __future__ import annotations
 
@@ -205,7 +198,7 @@ class QueuePanel(QWidget):
         self._st_font.setPixelSize(14)            # % + trạng thái rõ số, dễ nhìn
         self._st_font.setWeight(QFont.Weight.DemiBold)
         fm = QFontMetrics(self._st_font)
-        longest = [f"100% · {_RUN_ANALYZE}", f"100% · {_RUN_EXPORT}"]
+        longest = [f"~99% · {_RUN_ANALYZE}", f"99% · {_RUN_EXPORT}"]
         longest += [t for t, _ in _STATUS.values()]
         self._st_w_full = max(fm.horizontalAdvance(s) for s in longest) + 8
         # panel HẸP: trạng thái rút còn "45%" / "✕ Lỗi" (màu vẫn nói giai đoạn)
@@ -217,6 +210,10 @@ class QueuePanel(QWidget):
                           for s in ("Hủy", "Thử lại")) + 26
 
         outer = QVBoxLayout(self)
+        # Header thay từ một sang hai hàng khi thu nhỏ. Đừng để minimumSize
+        # của bố cục cũ chặn resizeEvent trước khi header kịp xuống hàng.
+        outer.setSizeConstraint(QVBoxLayout.SizeConstraint.SetNoConstraint)
+        self.setMinimumWidth(440)
         outer.setContentsMargins(12, 6, 12, 8)
         outer.setSpacing(6)
 
@@ -229,7 +226,7 @@ class QueuePanel(QWidget):
         self.chip_analyze = self._make_chip("🔍", "phân tích", _PHASE_ANALYZE)
         self.chip_export = self._make_chip("✂", "đang cắt", _PHASE_EXPORT)
         self.chip_wait = self._make_chip("⏳", "đợi", WARN)
-        self.chip_done = self._make_chip("✅", "xong", SUCCESS)
+        self.chip_done = self._make_chip("✅", "việc xong", SUCCESS)
         self.chip_fail = self._make_chip("❌", "lỗi", DANGER)
         self.chip_fail["w"].hide()      # chỉ hiện khi CÓ lỗi (đỡ dọa user)
         for ch in (self.chip_analyze, self.chip_export, self.chip_wait,
@@ -263,6 +260,10 @@ class QueuePanel(QWidget):
         self._hdr_wide = None           # None -> ép xếp lần đầu
         self._layout_header()
         outer.addLayout(self._hdr)
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        self.summary.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        outer.addWidget(self.summary)
 
         # ---- vùng CUỘN chứa các dòng (xem lại việc trước) ----
         host = QWidget()
@@ -294,6 +295,7 @@ class QueuePanel(QWidget):
             w = self._st_w_short if narrow else self._st_w_full
             for row in self._rows.values():
                 row["st"].setFixedWidth(w)
+                row["bar"].setVisible(not narrow)
             self._sig = None            # ép viết lại chữ trạng thái theo cỡ mới
             self.refresh()
 
@@ -355,23 +357,14 @@ class QueuePanel(QWidget):
             f"{c['analyzing']} video đang phân tích")
         self.chip_export["w"].setToolTip(
             f"{c['exporting']} clip đang cắt/xuất (mỗi Part là 1 clip)")
-        # GIẢI THÍCH CON SỐ 'đợi' + ƯỚC THỜI GIAN.
-        # Anh Hùng 07/08/2026: "trc tôi chạy có 200 chờ mà tự nhiên con số tự
-        # tăng k biết ở đâu lên 450". Không phải lỗi: MỖI video phân tích xong
-        # sinh thêm ~3 việc XUẤT PART, nên số 'đợi' phải tăng khi phân tích đang
-        # xong dần (đo nhật ký thật 06/08: 138 video nhận -> 449 việc chờ). Cái
-        # sai là app không nói ra, để user tưởng nó hỏng.
-        _wa, _we = int(c.get("wait_analyze", 0)), int(c.get("wait_export", 0))
-        _ch = max(1, int(c.get("analyzing", 0)) + int(c.get("exporting", 0)))
-        # nhịp thật đo được: phân tích ~2,5 phút/video · xuất ~1,2 phút/Part
-        _phut = (_wa * 2.5 + _we * 1.2) / _ch
-        _uoc = (f"~{_phut/60:.1f} giờ" if _phut >= 90 else f"~{_phut:.0f} phút")
+        wa, we = int(c.get("wait_analyze", 0)), int(c.get("wait_export", 0))
         self.chip_wait["w"].setToolTip(
-            f"Đang đợi {c['waiting']} việc — đợi phân tích {_wa} · đợi cắt "
-            f"{_we}\n\nSỐ NÀY TĂNG LÀ BÌNH THƯỜNG: mỗi video phân tích xong "
-            f"sinh thêm ~3 việc XUẤT PART.\nƯớc còn {_uoc} với "
-            f"{_ch} việc chạy song song (tăng 'Luồng AI'/'Luồng cắt' ở cột "
-            f"trái để nhanh hơn).")
+            f"Chờ xử lý/AI: {wa} việc; chờ xuất: {we} Part. "
+            "Phân tích xong có thể thêm các việc xuất Part vào hàng đợi.")
+        self.summary.setText(
+            f"Chờ: {wa} việc AI/xử lý · {we} Part xuất  |  Xong hôm nay: "
+            f"{c.get('done_analyze', 0)} việc AI/xử lý · {c.get('done_export', 0)} Part xuất. "
+            "% theo từng việc; ~ là ước tính. Phân tích xong chưa phải xuất xong.")
         self.chip_done["w"].setToolTip(
             f"{c['done']} việc hoàn tất hôm nay")
         self.chip_fail["w"].setToolTip(
@@ -412,6 +405,9 @@ class QueuePanel(QWidget):
                          for k in ("analyzing", "exporting", "waiting"))
         n_an = max(0, _tong_chay - len(active))
         show = list(active) + list(recent)
+        self._parts = services.export_part_counts(
+            {j["video_id"] for j in show if j["type"] in _EXPORT_TYPES and j["video_id"]})
+        self._source_progress = services.pipeline_progress(self._parts)
         # ── NHỊP THÍCH ỨNG: ít việc -> 400 ms cho mượt mắt; nhiều việc -> giãn
         # ra, vì lúc đó mỗi nhịp tốn nhiều hơn mà user cũng chỉ cần thấy xu thế.
         nhip = 400 if len(show) <= 40 else 900
@@ -508,59 +504,51 @@ class QueuePanel(QWidget):
             self.lay.addWidget(row["w"])
         self.lay.addStretch(1)
 
-    # ---- 1 dòng việc: [chấm] [tên co giãn] [thanh %] [trạng thái] [nút] ----
+    # Hai dòng: danh tính video; bước hiện tại + tiến độ của riêng việc đó.
     def _make_row(self, j):
         w = QWidget()
-        w.setFixedHeight(34)            # dòng cao hơn cho chữ to (15px) dễ đọc
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-
+        w.setFixedHeight(58)
+        lay = QGridLayout(w)
+        lay.setContentsMargins(0, 2, 0, 2)
+        lay.setHorizontalSpacing(8)
+        lay.setVerticalSpacing(2)
+        lay.setColumnStretch(0, 1)
         col = _chan_color(j["project_id"])
-        dot = QLabel()
-        dot.setFixedSize(10, 10)
-        dot.setStyleSheet(f"background:{col}; border-radius:5px;")
-        lay.addWidget(dot)
-
-        full_name, _, _ = _job_name(j)
         name = _ElideLabel()
         name.setFont(self._name_font)
         name.setStyleSheet(f"color:{col};")
-        name.set_full_text(full_name)
-        lay.addWidget(name, 2)          # TÊN ăn PHẦN LỚN chỗ thừa, tự elide "…"
-
+        name.set_full_text(_job_name(j)[0])
+        lay.addWidget(name, 0, 0, 1, 3)
+        detail = _ElideLabel()
+        detail.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        lay.addWidget(detail, 1, 0)
         bar = QProgressBar()
-        bar.setFixedHeight(12)          # thanh vừa phải, rõ nhưng không lấn
+        bar.setFixedHeight(10)
         bar.setRange(0, 100)
-        bar.setTextVisible(False)       # % hiện ở nhãn trạng thái (thanh quá mảnh)
-        # bề ngang VỪA PHẢI: chia chỗ thừa với TÊN theo tỉ lệ 1:2, nở tới
-        # 240px là dừng (dư dồn hết cho tên); panel hẹp co dần, tối thiểu 40px.
-        bar.setMinimumWidth(40)
-        bar.setMaximumWidth(240)
-        bar.setSizePolicy(QSizePolicy.Policy.Expanding,
-                          QSizePolicy.Policy.Fixed)
-        lay.addWidget(bar, 1)
-
+        bar.setTextVisible(False)
+        bar.setFixedWidth(150)
+        bar.setVisible(not self._narrow)
+        lay.addWidget(bar, 1, 1)
         st = QLabel()
         st.setFont(self._st_font)
-        # đo theo chuỗi DÀI NHẤT có thể hiện -> không bao giờ cụt chữ
         st.setFixedWidth(self._st_w_short if self._narrow else self._st_w_full)
-        lay.addWidget(st)
-
+        lay.addWidget(st, 1, 2)
         btn = QPushButton()
         btn.setFixedSize(self._btn_w, 24)
         btn.setStyleSheet("QPushButton{padding:2px 6px; font-size:12px;}")
         sp = btn.sizePolicy()
-        sp.setRetainSizeWhenHidden(True)   # ẩn vẫn GIỮ CHỖ -> cột thẳng hàng
+        sp.setRetainSizeWhenHidden(True)
         btn.setSizePolicy(sp)
-        lay.addWidget(btn)
-
-        row = {"w": w, "bar": bar, "st": st, "btn": btn, "name": name, "col": col}
+        lay.addWidget(btn, 0, 3, 2, 1)
+        row = {"w": w, "bar": bar, "st": st, "btn": btn, "name": name,
+               "detail": detail, "col": col}
         self._wire_btn(btn, j)
         self._update(j, row)
         return row
 
     def _wire_btn(self, btn, j):
+        btn.setProperty("danger", False)
+        btn.setProperty("ghost", False)
         try:
             btn.clicked.disconnect()
         except TypeError:
@@ -579,7 +567,9 @@ class QueuePanel(QWidget):
         row = row or self._rows.get(j["id"])
         if not row:
             return
-        pct = int(round((j["progress"] or 0) * 100))
+        pct = max(0, min(99, int(round((j["progress"] or 0) * 100))))
+        if j["status"] == "pending":
+            pct = 0
         bar = row["bar"]
         if j["status"] == "done":
             pct = 100
@@ -601,13 +591,34 @@ class QueuePanel(QWidget):
             # (màu tím/xanh ngọc vẫn nói đang ở giai đoạn nào).
             phase = (_RUN_EXPORT if j["type"] in _EXPORT_TYPES
                      else _RUN_ANALYZE)
-            txt = f"{pct}%" if self._narrow else f"{pct}% · {phase}"
+            estimate = "" if j["type"] in _EXPORT_TYPES else "~"
+            txt = f"{estimate}{pct}%" if self._narrow else f"{estimate}{pct}% · {phase}"
             color = _phase_color(j["type"])
         else:
             txt, color = _STATUS.get(j["status"], (j["status"], MUTED))
             if self._narrow and j["status"] == "failed":
                 txt = "✕ Lỗi"           # vẫn gạch chân + bấm xem đầy đủ
         row["st"].setText(txt)
+        row["name"].set_full_text(_job_name(j)[0])
+        if j["status"] == "done":
+            detail = ("Đã xuất Part này" if j["type"] in _EXPORT_TYPES else
+                      "Đã xong bước AI/xử lý; xem riêng các việc xuất Part")
+        elif j["status"] == "pending":
+            detail = "Chờ đến lượt xuất Part" if j["type"] in _EXPORT_TYPES else "Chờ đến lượt AI/xử lý"
+        elif j["status"] == "failed":
+            detail = (j["error"] or msg or "Xử lý thất bại").strip()
+        elif j["status"] in ("canceled", "skipped"):
+            detail = "Đã hủy" if j["status"] == "canceled" else "Đã bỏ qua"
+        else:
+            detail = msg or "Đang chuẩn bị xử lý…"
+        counts = getattr(self, "_parts", {}).get(j["video_id"])
+        if counts and j["type"] in _EXPORT_TYPES:
+            detail = f"Video này đã xuất {counts[0]}/{counts[1]} Part · " + detail
+            source = getattr(self, '_source_progress', {}).get(j['video_id'], '')
+            if source and j['status'] == 'done':
+                detail += ' · ' + source
+        row["detail"].set_full_text(" ".join(detail.split()))
+        row["detail"].setToolTip(detail)
         if j["status"] == "failed":
             # LỖI: nhãn phải nói được VÌ SAO — tooltip đủ lỗi trên cả tên +
             # trạng thái, và CLICK vào nhãn trạng thái mở popup đầy đủ.
@@ -623,6 +634,9 @@ class QueuePanel(QWidget):
                 f"color:{color}; text-decoration:underline;")
         else:
             row["st"].setStyleSheet(f"color:{color};")
+            row["st"].unsetCursor()
+            row["st"].mousePressEvent = lambda _e: None
+            row["name"].setToolTip(row["name"].full_text())
             # đang chạy: bước chi tiết ("Đang tách âm thanh...") nằm ở tooltip
             row["st"].setToolTip(msg if j["status"] == "running" and msg
                                  else txt)

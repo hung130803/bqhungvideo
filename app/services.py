@@ -657,6 +657,48 @@ def list_jobs_top(n_chay: int = 24, n_xong: int = 12) -> tuple:
     return chay, xong
 
 
+def export_part_counts(video_ids) -> dict:
+    """Tiến độ Part trong DB, một query cho các video đang hiển thị.
+
+    Không quét file/đọc video trên nhịp vẽ UI. Bộ xuất chỉ đánh dấu exported
+    sau khi ghi thành công; bước dọn gốc kiểm tra lại file thật riêng.
+    """
+    ids = sorted({int(v) for v in video_ids if v})
+    if not ids:
+        return {}
+    marks = ','.join('?' for _ in ids)
+    return {r['video_id']: (r['done'], r['total']) for r in db.query(
+        f"SELECT video_id, COUNT(*) AS total, "
+        f"SUM(CASE WHEN status='exported' AND COALESCE(export_path,'')<>'' THEN 1 ELSE 0 END) AS done "
+        f"FROM clips WHERE video_id IN ({marks}) AND status<>'archived' GROUP BY video_id", ids)}
+
+
+def pipeline_progress(video_ids) -> dict:
+    """Kết quả dọn gốc đã ghi trong sổ, chỉ cho video đang hiện ở hàng đợi."""
+    ids = sorted({int(v) for v in video_ids if v})
+    if not ids:
+        return {}
+    marks = ','.join('?' for _ in ids)
+    result = {}
+    for r in db.query(f"SELECT video_id,status,note FROM pipeline_files "
+                      f"WHERE video_id IN ({marks}) ORDER BY id DESC", ids):
+        vid = r['video_id']
+        if vid in result:
+            continue
+        note = r['note'] or ''
+        if '[GỐC KẸT]' in note:
+            result[vid] = 'Gốc chưa dọn; xem báo cáo Dây chuyền'
+        elif '[GỐC ĐÃ CHUYỂN THÙNG RÁC]' in note:
+            result[vid] = 'Gốc đã chuyển vào Thùng rác'
+        elif r['status'] == 'taken':
+            result[vid] = 'Dây chuyền chưa hoàn tất kiểm tra/dọn gốc'
+        elif r['status'] == 'error':
+            result[vid] = 'Dây chuyền cần kiểm tra: ' + note
+        else:
+            result[vid] = ''
+    return result
+
+
 def queue_counts() -> dict:
     """Đếm job cho BẢNG ĐẾM TRẠNG THÁI khu Tiến trình (1 query GROUP BY nhẹ,
     có idx_jobs_status).
@@ -664,7 +706,7 @@ def queue_counts() -> dict:
     - analyzing / exporting: đang chạy (running) — xuất = m1_export_clip,
       còn lại là giai đoạn phân tích (khớp màu giai đoạn ở queue_panel).
     - waiting: mọi việc pending (kèm tách wait_analyze / wait_export).
-    - done / failed: CHỈ đếm việc tạo HÔM NAY (created_at của SQLite là
+    - done / failed: CHỈ đếm việc kết thúc HÔM NAY (giờ SQLite là
       datetime('now') = UTC -> quy đổi 0h local sang UTC để so sánh).
     - canceled / skipped: KHÔNG tính vào bất kỳ ô nào.
     """
@@ -675,10 +717,11 @@ def queue_counts() -> dict:
     rows = db.query(
         "SELECT status, type, COUNT(*) AS n FROM jobs "
         "WHERE status IN ('running','pending') "
-        "   OR (status IN ('done','failed') AND created_at >= ?) "
+        "   OR (status IN ('done','failed') AND COALESCE(finished_at,created_at) >= ?) "
         "GROUP BY status, type", (day0,))
     c = {"analyzing": 0, "exporting": 0, "waiting": 0,
-         "wait_analyze": 0, "wait_export": 0, "done": 0, "failed": 0}
+         "wait_analyze": 0, "wait_export": 0, "done": 0, "failed": 0,
+         "done_analyze": 0, "done_export": 0}
     for r in rows:
         st, jt, n = r["status"], r["type"], int(r["n"])
         if st == "running":
@@ -688,6 +731,7 @@ def queue_counts() -> dict:
             c["wait_export" if jt == "m1_export_clip" else "wait_analyze"] += n
         elif st == "done":
             c["done"] += n
+            c["done_export" if jt == "m1_export_clip" else "done_analyze"] += n
         elif st == "failed":
             c["failed"] += n
     return c

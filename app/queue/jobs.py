@@ -176,13 +176,14 @@ def _auto(payload: dict, ctx: JobContext) -> dict:
     class _Sub:
         profile = parent.profile
         def progress(self, p, m=""):
-            parent.progress(0.8 + 0.2 * p, m)
+            parent.progress(0.8 + 0.18 * p, m)
         def check_canceled(self):
             parent.check_canceled()
 
     res = generate_highlights(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
     # Hashtag tên file: sinh sẵn ở WORKER để UI không phải gọi LLM (đỡ đơ)
+    ctx.progress(0.99, "Hoàn thiện hashtag cho các Part…")
     _precompute_hashtags(video_id)
     return {"video_id": video_id, **res}
 
@@ -202,12 +203,13 @@ def _auto_mixed(payload: dict, ctx: JobContext) -> dict:
     class _Sub:
         profile = parent.profile
         def progress(self, p, m=""):
-            parent.progress(0.8 + 0.2 * p, m)
+            parent.progress(0.8 + 0.18 * p, m)
         def check_canceled(self):
             parent.check_canceled()
 
     res = generate_mixed_cut(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    ctx.progress(0.99, "Hoàn thiện hashtag cho các Part…")
     _precompute_hashtags(video_id)   # sinh sẵn hashtag ở worker (đỡ đơ UI)
     return {"video_id": video_id, **res}
 
@@ -228,12 +230,13 @@ def _auto_recap(payload: dict, ctx: JobContext) -> dict:
     class _Sub:
         profile = parent.profile
         def progress(self, p, m=""):
-            parent.progress(0.8 + 0.2 * p, m)
+            parent.progress(0.8 + 0.18 * p, m)
         def check_canceled(self):
             parent.check_canceled()
 
     res = generate_recap(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
+    ctx.progress(0.99, "Hoàn thiện hashtag cho các Part…")
     _precompute_hashtags(video_id)   # sinh sẵn hashtag ở worker (đỡ đơ UI)
     return {"video_id": video_id, **res}
 

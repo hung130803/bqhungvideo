@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-        self.resizeDocks([dock], [190], Qt.Orientation.Vertical)
+        self.resizeDocks([dock], [270], Qt.Orientation.Vertical)
 
         # Tự kiểm tra bản mới (nền, im lặng nếu lỗi mạng)
         self._update_found.connect(self._notify_update)

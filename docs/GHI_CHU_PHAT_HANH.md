@@ -1,9 +1,11 @@
-# BQ Hung Video v2.50.4 — sửa xoay key khi chép lời
+# BQ Hung Video v2.50.5 — tiến trình hàng loạt rõ hơn, dọn gốc an toàn hơn
 
-- Sửa lỗi một key Groq báo `organization_restricted` làm cả video thất bại dù các key khác vẫn chép lời được.
-- Đánh dấu key lỗi theo dịch vụ, bỏ qua key đó và tiếp tục xử lý chính đoạn âm thanh bằng key tiếp theo trong danh sách đã cấu hình. Khi tới cuối danh sách có thể quay về key còn dùng được ở đầu.
-- Áp dụng cách xử lý này cho chép lời, AI chat và phân tích hình ảnh. Các worker kiểm tra lại trạng thái trước khi gọi, tránh gọi key vừa bị worker khác đánh dấu chặn.
-- Khi không xử lý được bằng danh sách key, thông báo nêu tổng số key, số bị hạn chế và số sai key; không kết luận tất cả bị khóa chỉ từ một lỗi. Giữ video gốc nếu xử lý chưa hoàn tất.
-- Giữ nguyên các sửa lỗi mở cửa sổ sau cập nhật và kiểm tra riêng chat/Whisper của v2.50.3. Bản này không gỡ hạn chế trên tài khoản Groq đã bị chặn.
+- Mỗi việc hiện tên kênh/video và bước đang thực hiện ngay trên hai dòng. Các việc xuất có số Part, số đã xuất/tổng Part của video và kết quả dọn gốc khi Dây chuyền đã ghi nhận.
+- Tách số việc AI/xử lý và số Part đang chờ, đã xong hôm nay. Phần trăm thuộc từng công việc; dấu `~` là ước tính. Chỉ báo 100% khi việc hoàn tất, hiện riêng bước hoàn thiện hashtag. Phân tích xong không đồng nghĩa đã xuất xong video.
+- Thay thông báo tự xuất dễ bị hiểu là trạng thái hiện tại bằng thông báo rõ về lượt vừa xếp hàng. Nhãn video phân biệt số clip được tạo với số Part đã xuất. Thử lại lỗi không giữ lại thao tác mở thông báo lỗi cũ.
+- Trước khi dọn gốc, đối chiếu đường dẫn và dấu nhận dạng file lúc nhận, kiểm tra đủ file Part và kết quả xuất. Giữ lại video mới nếu file cùng tên bị thay thế; không dọn nhầm file ở thư mục nguồn mới.
+- Khi thử dọn lại gốc từng bị Windows giữ, kiểm tra lại danh sách Part và file đầu ra. Giữ gốc nếu Part thiếu/rỗng/đã đổi hoặc việc xuất chưa thành công.
+- Khi mở lại app, tôn trọng lệnh hủy của từng Part. Lần xuất lại chủ động mới và clip của lần phân tích mới không bị chặn bởi lịch sử hủy cũ.
+- Giữ các sửa lỗi xoay key Groq và mở cửa sổ sau cập nhật từ v2.50.4.
 
-Quy trình phát hành chạy 27 chương trình kiểm thử, gồm 45 ca hồi quy. Bổ sung đối chứng key thứ 9 lỗi rồi chuyển key, nhiều key bị chặn, trạng thái thay đổi giữa các worker và video chín đoạn vẫn ghép đủ nội dung đúng mốc thời gian. EXE phải vượt kiểm tra tài nguyên, xuất FFmpeg và ba tình huống mở cửa sổ thật trước khi phát hành.
+Phát hành được chặn bởi 29 chương trình kiểm thử: gồm 67 ca hồi quy trong bốn bộ unittest, xuất FFmpeg thật hai kênh/bốn Part, kiểm tra hủy/hồi phục và hiệu năng danh sách hàng loạt. EXE phải qua tự kiểm tra tài nguyên, FFmpeg và ba tình huống mở cửa sổ thật trước khi phát hành. Kiểm thử AI của bản sửa tiến trình dùng kết quả mẫu cách ly; không gọi API bằng key của người dùng.

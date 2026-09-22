@@ -518,7 +518,14 @@ p_goc = Path(ctx["path"])
 
 from app.ui.studio_page import MARK_STUCK  # noqa: E402
 
-# Giả lập đúng hiện trường: Part đã xuất xong, sổ 'done' + dấu GỐC KẸT, gốc còn
+# Dựng cả file Part và clip thật: chỉ ghi note "3 part" không chứng minh
+# đã xuất đủ. Cổng dọn gốc phải từ chối trường hợp thiếu file đầu ra.
+db.execute("UPDATE jobs SET status='done' WHERE video_id=?", (ctx['vid'],))
+for num in range(3):
+    part = p_goc.parent / f'Part {num + 1} test.mp4'
+    part.write_bytes(p_goc.read_bytes())
+    db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) "
+              "VALUES(?,0,0.5,'exported',?)", (ctx['vid'], str(part)))
 P.mark_done(ctx["entry"], video_id=ctx["vid"], note="3 part" + MARK_STUCK)
 kiem(p_goc.exists(), "dựng được hiện trường: gốc còn nằm trong thư mục kênh",
      "gốc đã biến mất, ca test vô nghĩa")

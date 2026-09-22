@@ -2547,7 +2547,7 @@ class StudioPage(QWidget):
             if a["failed_recent"]:
                 parts.append(f"🔴 lỗi {a['failed_recent']} (24h)")
             if a["last_done"]:
-                parts.append(f"✅ xong {services.rel_time_vi(a['last_done'])}")
+                parts.append(f"Việc gần nhất xong {services.rel_time_vi(a['last_done'])}")
         chan_txt = " · ".join(parts) or "chưa có hoạt động"
         vid = self.state.video_id
         if vid:      # gộp vắn tắt VIDEO ĐANG CHỌN vào cùng dòng (không thêm nhãn)
@@ -2988,7 +2988,8 @@ class StudioPage(QWidget):
         if a["pending"]:
             return "⏳ đợi"
         if a["clips"]:
-            parts = [f"✅ {a['clips']} clip"]
+            exported = int(a.get('exported', 0) or 0)
+            parts = [f"{a['clips']} clip · đã xuất {exported}/{a['clips']} Part"]
             t = services.rel_time_vi(a["last_done"], short=True)
             if t:
                 parts.append(t)
@@ -4618,8 +4619,8 @@ class StudioPage(QWidget):
                 auto_tpl.pop(jid, None)
         if ready:
             self.status.setText(
-                f"Phân tích xong {ready} video — đang TỰ ĐỘNG xuất {total} clip "
-                "vào thư mục kênh (đúng thứ tự Part)...")
+                f"Lượt tự xuất vừa kiểm tra: {ready} video, đã xếp {total} việc xuất Part. "
+                "Theo dõi bước hiện tại của từng video ở bảng Tiến trình bên dưới.")
 
 
     # ================= 🤖 DÂY CHUYỀN (INTEGRATION.md) =================
@@ -6700,7 +6701,7 @@ class StudioPage(QWidget):
         from app.core import pipeline as P
         try:
             rows = db.query(
-                "SELECT f.id, f.file_name, f.note, p.name AS chan, p.pipe_src, "
+                "SELECT f.id, f.video_id, f.file_name, f.note, p.name AS chan, p.pipe_src, "
                 "       p.export_dir FROM pipeline_files f "
                 "JOIN projects p ON p.id = f.project_id "
                 "WHERE f.status='done' AND f.note LIKE ?", (f"%{MARK_STUCK}%",))
@@ -6721,9 +6722,23 @@ class StudioPage(QWidget):
                     db.execute("UPDATE pipeline_files SET note=? WHERE id=?",
                                (sach, r["id"]))
                     continue
+                from app.core.pipeline_safety import source_problem, parts_problem, note_parts
+                problem = source_problem(r["id"], r["video_id"], p)
+                if problem:
+                    P.mark_error(r["id"], problem)
+                    self._pipe_log(f"⚠ {r['chan']}: {problem}")
+                    continue
+                problem = parts_problem(r["video_id"], note_parts(r["note"]), r["note"])
+                if problem:
+                    # Giữ dấu kẹt để kiểm tra lại sau; không nhận lại/phân tích
+                    # lại một video chỉ vì người dùng vừa di chuyển Part.
+                    self._pipe_log(f"⚠ {r['chan']}: chưa dọn gốc — {problem}")
+                    continue
                 action, _ = P.delete_or_recycle(p, r["chan"],
                                                 self._pipe_recycle_dir())
                 if action != "stuck":
+                    if action == 'recycled':
+                        sach += ' [GỐC ĐÃ CHUYỂN THÙNG RÁC]'
                     db.execute("UPDATE pipeline_files SET note=? WHERE id=?",
                                (sach, r["id"]))
                     xong += 1
@@ -6788,6 +6803,12 @@ class StudioPage(QWidget):
                     xep_lai += 1
                     continue
                 vid = int(vrow["id"])
+                from app.core.pipeline_safety import source_problem
+                problem = source_problem(r["id"], vid, p)
+                if problem:
+                    P.mark_error(r["id"], problem)
+                    self._pipe_log(f"⚠ {r['chan']}: {problem}")
+                    continue
                 mode = (r["pipe_mode"] or "auto")
                 ctx = {"entry": r["id"], "vid": vid, "path": str(p),
                        "pid": int(r["project_id"]), "name": r["chan"],
@@ -6812,11 +6833,8 @@ class StudioPage(QWidget):
                     # ĐÃ phân tích xong nhưng user huỷ các job XUẤT rồi tắt
                     # app -> cũng là huỷ, đừng nối lại kẻo tự xuất lại.
                     if st == "done":
-                        exrow = db.query_one(
-                            "SELECT status FROM jobs WHERE video_id=? AND "
-                            "type='m1_export_clip' ORDER BY id DESC LIMIT 1",
-                            (vid,))
-                        if exrow and (exrow["status"] or "") == "canceled":
+                        from app.core.pipeline_safety import latest_export_states
+                        if any(s in ("canceled", "skipped") for s in latest_export_states(vid).values()):
                             P.unmark_taken(r["id"])
                             self._pipe_log(
                                 f"⏹ {r['chan']}: {r['file_name']} — job xuất "
@@ -7115,22 +7133,29 @@ class StudioPage(QWidget):
                 self._pipe_exports.pop(vid, None)
                 self._pipe_log(f"⚠ {ctx['name']}: clip đã đổi giữa lượt xuất, GIỮ NGUYÊN video gốc.")
                 continue
-            parts = [c["export_path"] for c in clips
-                     if c["export_path"] and os.path.isfile(c["export_path"])
-                     and os.path.getsize(c["export_path"]) > 0]
-            if bad or not parts or len(parts) != len(clips):
+            from app.core.pipeline_safety import parts_problem
+            problem = parts_problem(vid, expected_ids or None)
+            if bad or problem:
                 why = (f"{len(bad)} job xuất lỗi" if bad
-                       else f"Chưa đủ Part: {len(parts)}/{len(clips)}; giữ video gốc")
+                       else problem)
                 P.mark_error(ctx["entry"], why)
                 self._pipe_exports.pop(vid, None)
                 self._pipe_log(f"⚠ {ctx['name']}: {why}. Có thể xuất lại từ video gốc.")
                 continue
+            parts = [c['export_path'] for c in clips]
             # ĐỦ PART -> dọn VIDEO GỐC (INTEGRATION.md mục 4). Có THÙNG RÁC
             # (Cài đặt dây chuyền) -> CHUYỂN vào đó theo ngày (khôi phục được);
-            # không thì XOÁ HẲN. Đều THỬ LẠI chống file kẹt (Windows handle chưa
+            # không cấu hình thì dùng thùng rác dự phòng. Thử lại nếu handle chưa
             # nhả). Gốc không bao giờ chép vào thư mục xuất nên chỉ cần dọn file
             # trung chuyển.
             src = Path(ctx["path"])
+            from app.core.pipeline_safety import source_problem, parts_note
+            problem = source_problem(ctx["entry"], vid, src)
+            if problem:
+                P.mark_error(ctx["entry"], problem)
+                self._pipe_exports.pop(vid, None)
+                self._pipe_log(f"⚠ {ctx['name']}: {problem}")
+                continue
             action, dst = P.delete_or_recycle(
                 src, ctx["name"], self._pipe_recycle_dir())
             # GHI DẤU "gốc còn kẹt" vào sổ để LẦN SAU THỬ DỌN LẠI THẬT.
@@ -7145,7 +7170,8 @@ class StudioPage(QWidget):
             # động lại.
             note = (f"{len(parts)} part"
                     + (" [CƠ BẢN]" if ctx.get("basic") else "")
-                    + (MARK_STUCK if action == "stuck" else ""))
+                    + (' [GỐC ĐÃ CHUYỂN THÙNG RÁC]' if action == 'recycled' else '')
+                    + (MARK_STUCK + parts_note(c['id'] for c in clips) if action == "stuck" else ""))
             P.mark_done(ctx["entry"], video_id=vid, note=note)
             self._pipe_exports.pop(vid, None)
             tail = {
@@ -7933,9 +7959,18 @@ class StudioPage(QWidget):
             return
         r = self._job_progress_row(self.state.video_id)
         if not r:
+            try:
+                bar.setValue(0)
+                step.setText("Video này không còn việc đang chạy/chờ. Xem kết quả các Part bên dưới.")
+                if getattr(self, "_job_pct", None) is not None:
+                    self._job_pct.setText("—")
+                if getattr(self, "_job_sub", None) is not None:
+                    self._job_sub.setText("")
+            except RuntimeError:
+                self._job_bar = self._job_lbl = None
             return
         try:
-            pct = int(max(0.0, min(1.0, float(r["progress"] or 0))) * 100)
+            pct = 0 if r["status"] == "pending" else min(99, int(max(0.0, min(1.0, float(r["progress"] or 0))) * 100))
             jtype = r["type"] or ""
             icon, default_step, color = self._job_phase(jtype)
             msg = (r["message"] or "").strip()
@@ -7957,14 +7992,14 @@ class StudioPage(QWidget):
                 ic.setText(icon)
             pl = getattr(self, "_job_pct", None)
             if pl is not None:
-                pl.setText(f"{pct}%")
+                pl.setText(("~" if jtype != "m1_export_clip" and r["status"] == "running" else "") + f"{pct}%")
                 pl.setStyleSheet(f"color:{color}; font-size:30px; "
                                  "font-weight:800; background:transparent;")
             sub = getattr(self, "_job_sub", None)
             if sub is not None:
                 n = int(r.get("others", 0) or 0)
-                sub.setText(f"⋯ còn {n} việc khác trong hàng đợi"
-                            if n > 0 else "")
+                sub.setText("Tiến độ riêng bước này; ~ là ước tính." +
+                            (f" Còn {n} việc khác đang chạy/chờ." if n > 0 else ""))
         except RuntimeError:          # widget vừa bị gỡ khi rebuild danh sách
             self._job_bar = self._job_lbl = None
 
