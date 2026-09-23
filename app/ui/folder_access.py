@@ -19,7 +19,7 @@ def locations(project_id, video_id, library_root, pipeline_root='', *, include_r
     override=(project['export_dir'] or '').strip()
     channel=Path(override) if override else Path(library_root)/'Đã xuất'/name
     result={'channel':channel,'video':None,'source':None,'pipeline':None,
-            'recorded':[],'channel_name':project['name']}
+            'recorded':[],'recorded_files':[],'channel_name':project['name']}
     source_override=(project['pipe_src'] or '').strip() or override
     if source_override:result['pipeline']=Path(source_override)
     elif pipeline_root:result['pipeline']=Path(pipeline_root)/project['name']
@@ -40,6 +40,7 @@ def locations(project_id, video_id, library_root, pipeline_root='', *, include_r
     else:
         rows=[]
     for row in rows:
+        if row['export_path'] not in result['recorded_files']:result['recorded_files'].append(row['export_path'])
         path=Path(row['export_path']).parent
         if path not in result['recorded']:result['recorded'].append(path)
     return result
@@ -105,16 +106,15 @@ def perform(parent, kind, project_id, video_id, library_root, pipeline_root=''):
             show_locations(parent,data)
             return 'Đã xem các thư mục của kênh: '+data['channel_name']
         if kind=='copy':return copy_path(data['channel'])
-        if kind=='video':
-            # Existing exports remain findable after a rename/root change.
-            candidates=[p for p in data['recorded'] if p.is_absolute() and p.is_dir()]
-            if len(candidates)>1:
-                show_locations(parent,data)
-                return 'Part của video được ghi ở nhiều thư mục; chọn Mở ở đúng đường dẫn.'
-            if candidates:return open_directory(candidates[0])
-            if data['recorded']:
-                show_locations(parent,data)
-                return 'Không tìm thấy thư mục Part đã ghi; kiểm tra đường dẫn cũ hoặc kết nối ổ đĩa. Chưa mở nơi xuất mới thay thế.'
+        if kind in ('inventory','video'):
+            from app.ui.file_inventory import FileInventoryDialog
+            if kind=='inventory':
+                sources=[r['src_path'] for r in db.query('SELECT src_path FROM videos WHERE project_id=?',(project_id,))]
+                FileInventoryDialog(parent,data,sources,data['recorded_files']).exec()
+                return 'Đã xem file thực tế trong thư mục; hồ sơ lịch sử được giữ nguyên.'
+            if data['recorded_files']:
+                FileInventoryDialog(parent,data,recorded=data['recorded_files']).exec()
+                return 'Đã đối chiếu đường dẫn từng Part; file không tìm thấy được ghi rõ trong danh sách.'
             if data['video'] is None:raise ValueError('Chọn video trước khi mở thư mục Part.')
             return open_directory(data['video'])
         if kind not in ('channel','source','pipeline'):raise ValueError('Thao tác thư mục không hợp lệ.')

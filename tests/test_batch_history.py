@@ -16,7 +16,7 @@ sys.path.insert(0,str(ROOT))
 import _test_guard
 import app.queue.jobs
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QDialog, QPushButton
+from PyQt6.QtWidgets import QApplication, QDialog, QPushButton, QMessageBox
 from app import services
 from app.database.db import db
 from app.ui.appsettings import app_settings
@@ -270,6 +270,32 @@ class HistoryTests(unittest.TestCase):
             with patch.object(QDialog,'exec',inspect),patch.object(studio,'_scan_cached',return_value=([],[])):
                 studio._pipeline_dialog()
         state.pool.stop(wait=True)
+
+    def test_hide_restore_preserves_media_database_and_active_work(self):
+        from app.ui.batch_visibility import hidden
+        vid=self.video('hide-source.mp4',True);self.done(vid,'hide-part.mp4',True)
+        self.page.refresh();self.settle();self.page.clear_filters()
+        before=[tuple(r) for r in db.query('SELECT * FROM clips')]
+        self.page.table.selectRow(self.page._visible_ids.index(vid))
+        with patch.object(QMessageBox,'question',return_value=QMessageBox.StandardButton.Yes):
+            self.page.change_visibility(True)
+        self.assertNotIn(vid,self.page._visible_ids)
+        self.page.scope.setCurrentIndex(self.page.scope.findData('hidden'))
+        self.assertIn(vid,self.page._visible_ids)
+        record=next(r for r in self.page.records if r['id']==vid)
+        self.assertTrue(hidden(record))
+        self.assertFalse(hidden(dict(record,job_ids=[123])))
+        self.page.table.selectRow(0);self.page.change_visibility(False);self.page.clear_filters()
+        self.assertIn(vid,self.page._visible_ids)
+        self.assertEqual(before,[tuple(r) for r in db.query('SELECT * FROM clips')])
+        self.assertTrue((AREA/'hide-source.mp4').exists());self.assertTrue((AREA/'hide-part.mp4').exists())
+        self.assertEqual(db.query('SELECT * FROM jobs'),[])
+
+    def test_inventory_button_targets_current_channel(self):
+        self.video('inventory-route.mp4');self.page.refresh()
+        calls=[];self.page.open_folder.connect(lambda *args:calls.append(args))
+        self.page.inventory_btn.click()
+        self.assertEqual(calls,[(self.pid,0,'inventory')])
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

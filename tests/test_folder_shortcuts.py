@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import time
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ from PyQt6.QtGui import QFontDatabase  # noqa: E402
 from PyQt6.QtWidgets import QApplication,QPushButton  # noqa: E402
 from app import services  # noqa: E402
 from app.database.db import db  # noqa: E402
+from app.ui.file_inventory import FileInventoryDialog, scan_inventory, path_key
 from app.ui import folder_access as folders  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
 from app.ui.state import AppState  # noqa: E402
@@ -88,29 +90,52 @@ class FolderShortcuts(unittest.TestCase):
         self.startfile.assert_called_once_with(str(self.src.parent))
         self.assertFalse(self.src.exists())
 
-    def test_video_part_folder_follows_recorded_export_after_rename(self):
-        old=self.area/'Kênh cũ'/'Video cũ';old.mkdir(parents=True)
-        db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",
-            (self.vid,str(old/'Part 1.mp4')))
-        self.perform('video')
-        self.startfile.assert_called_once_with(str(old))
+    def test_recorded_parts_show_missing_even_when_parent_exists(self):
+        old=self.area/'Kênh cũ';old.mkdir()
+        real=old/'Part 1.mp4';real.write_bytes(b'part')
+        missing=old/'Part 2.mp4'
+        for path in (real,missing):
+            db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",(self.vid,str(path)))
+        def inspect(dialog):
+            self.windows.append(dialog)
+            limit=time.monotonic()+3
+            while len(dialog.rows)<2 and time.monotonic()<limit:qapp.processEvents();time.sleep(.01)
+            self.assertEqual({r[2] for r in dialog.rows},{'present','missing'})
+            missing_row=next(i for i,r in enumerate(dialog.rows) if r[2]=='missing')
+            dialog.table.selectRow(missing_row);self.assertFalse(dialog.open_btn.isEnabled())
+            present_row=1-missing_row;dialog.table.selectRow(present_row);dialog.open_btn.click()
+            self.startfile.assert_called_once_with(str(old))
+            real.unlink();dialog.open_btn.click();self.assertIn('không còn',dialog.status.text())
+            self.assertEqual(self.startfile.call_count,1)
+            return 0
+        with patch.object(FileInventoryDialog,'exec',inspect):self.perform('video')
         self.assertFalse(self.expected.exists())
 
-    def test_multiple_recorded_folders_let_user_choose(self):
-        for name in ('Lần xuất cũ','Lần xuất mới'):
-            old=self.area/name;old.mkdir()
-            db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",
-                (self.vid,str(old/'Part 1.mp4')))
-        with patch.object(folders,'show_locations') as show:
-            self.assertIn('nhiều thư mục',self.perform('video'))
-        show.assert_called_once();self.startfile.assert_not_called()
+    def test_inventory_finds_new_sources_and_never_imports_or_deletes(self):
+        folder=self.area/'Inventory';folder.mkdir()
+        for name in ('source.mp4','new.mp4','Part 1 old.mp4','video.mp4.part'):(folder/name).write_bytes(b'x')
+        sources={path_key(folder/'source.mp4')};exports={path_key(folder/'Part 1 old.mp4')}
+        before=[tuple(r) for r in db.query('SELECT * FROM videos')]
+        rows,error=scan_inventory(str(folder),sources,exports)
+        self.assertFalse(error);self.assertEqual(len(rows),4)
+        labels={Path(r[0]).name:r[1] for r in rows}
+        self.assertIn('chưa có hồ sơ',labels['new.mp4'])
+        self.assertIn('Part đã ghi',labels['Part 1 old.mp4'])
+        self.assertIn('tải dở',labels['video.mp4.part'])
+        (folder/'new.mp4').unlink()
+        self.assertEqual(len(scan_inventory(str(folder),sources,exports)[0]),3)
+        self.assertEqual(before,[tuple(r) for r in db.query('SELECT * FROM videos')])
+        self.assertEqual(db.query('SELECT * FROM jobs'),[])
+        self.assertTrue(scan_inventory(str(folder/'missing'),sources,exports)[1])
+        with patch('app.ui.file_inventory.os.scandir',side_effect=PermissionError()):
+            self.assertTrue(scan_inventory(str(folder),sources,exports)[1])
 
     def test_missing_recorded_folder_does_not_silently_open_new_output(self):
-        db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",
-            (self.vid,str(self.area/'Folder moved'/'Part 1.mp4')))
+        missing=self.area/'Folder moved'/'Part 1.mp4'
+        db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",(self.vid,str(missing)))
         self.expected.mkdir(parents=True)
-        with patch.object(folders,'show_locations') as show:
-            self.assertIn('Không tìm thấy thư mục Part đã ghi',self.perform('video'))
+        with patch.object(FileInventoryDialog,'exec',return_value=0) as show:
+            self.assertIn('đối chiếu',self.perform('video'))
         show.assert_called_once();self.startfile.assert_not_called()
 
     def test_wrong_channel_or_missing_selection_never_opens(self):
@@ -165,8 +190,9 @@ class FolderShortcuts(unittest.TestCase):
             win.batch.channels.select_project(other)
             win.batch.clear_btn.click()
             win.batch.table.selectRow(win.batch._visible_ids.index(othervid))
-            win.batch.folder_btn.click()
-            self.startfile.assert_called_once_with(str(old_output))
+            with patch.object(FileInventoryDialog,'exec',return_value=0) as show:
+                win.batch.folder_btn.click()
+            show.assert_called_once();self.startfile.assert_not_called()
             self.assertEqual(selected,(win.studio.proj.currentData(),win.studio.vid.currentData()))
             self.assertEqual(win.workspace.currentIndex(),1)
             self.assertLessEqual(win.width(),1280)

@@ -1,11 +1,8 @@
-# BQ Hung Video v2.50.10 — Kiểm tra file và chạy dây chuyền rõ ràng hơn
+# BQ Hung Video v2.50.11 — Xem file thực tế và ẩn hồ sơ cũ
 
-- **Làm mới** kiểm tra lại file gốc và Part, kể cả khi đường dẫn không đổi. Hiển thị thời điểm kiểm tra; kiểm tra chạy trong nền.
-- Video từng xuất đủ nhưng hiện thiếu Part được đánh dấu **Đã xuất · cần kiểm tra**, xuất hiện trong **Cần xử lý** và bộ lọc **Cần kiểm tra file**. Lịch sử xuất vẫn được giữ nguyên; không tự chạy lại hoặc xóa dữ liệu.
-- Khi đổi kênh, bỏ bộ lọc trạng thái, file và từ khóa của kênh trước. Có nút **Bỏ lọc** và giải thích rõ khi không có kết quả.
-- **Mở Part đã xuất** dùng đường dẫn đã ghi của video. Nếu thư mục cũ không còn, ứng dụng hiển thị đường dẫn cần kiểm tra, không mở nhầm nơi xuất mới. Khu vực kênh ghi rõ **Thư mục xuất hiện tại**.
-- Cấu hình dây chuyền phân biệt thư mục rỗng, chưa đặt, không tìm thấy và không đọc được. Nút chạy ghi số kênh đã bật trong nhóm; ô tìm kiếm chỉ lọc bảng, không thay đổi phạm vi chạy.
-- Đưa **Phân tích / xuất lại kênh…** vào menu **Thêm**, giữ bước xác nhận để tránh thao tác nhầm.
-- Ghi rõ quy trình: xuất Part vào nơi xuất đã đặt, kiểm tra đủ Part rồi chuyển gốc vào **Thùng rác riêng của ứng dụng**. Đây không phải Thùng rác Windows; có thể khôi phục trong Kho video & dọn dẹp.
+- Thêm **File trong thư mục…** trong Dây chuyền: tự quét khi mở, hiển thị video nguồn, Part và file tải dở đang có trực tiếp trong thư mục được chọn. Có nút **Làm mới file**, chọn nguồn/nơi xuất và chép đường dẫn.
+- Phân biệt video đã có hồ sơ với video chưa có hồ sơ tại đường dẫn đó. Việc quét chỉ đọc; dùng **Chọn kênh & chạy** để nhận và xử lý video. Dây chuyền vẫn kiểm tra trùng nội dung trước khi chạy.
+- **Mở Part đã xuất** hiển thị từng đường dẫn Part và trạng thái còn/mất. Chỉ cho mở thư mục chứa file khi file còn, tránh mở thư mục trống rồi tưởng video vẫn ở đó.
+- Thêm menu **Hồ sơ → Ẩn hồ sơ đang chọn…** và **Hiện lại**. Hồ sơ ẩn nằm trong bộ lọc **Hồ sơ đã ẩn**; không xóa video, Part, cơ sở dữ liệu hoặc sổ chống trùng. Video đang xử lý vẫn được hiển thị.
 
-Kiểm tra file trên màn hình chỉ xác nhận đường dẫn và kích thước, không xác nhận nội dung video. “Không tìm thấy” cũng có thể do file đã chuyển nơi khác hoặc ổ đĩa chưa kết nối. Các thay đổi này không thay đổi quy trình an toàn trước khi dọn video gốc.
+Danh sách hồ sơ là lịch sử xử lý, không phải danh sách file trên ổ. Nếu file đã chuyển hoặc xóa bên ngoài, ứng dụng không tự xóa lịch sử hay tự chạy lại. Quét thư mục không đi vào thư mục con; chọn đúng thư mục chứa file. Đánh dấu file còn chỉ xác nhận tồn tại/kích thước, chưa kiểm chứng nội dung.

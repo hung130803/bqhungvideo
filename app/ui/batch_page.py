@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHe
 from app.services_batch import snapshot
 from app.ui.batch_files import FileInspector, fingerprint, file_labels, file_warning
 from app.ui.batch_channels import natural
+from app.ui.batch_visibility import hidden, set_hidden
 from app.ui.theme import ACCENT,DANGER,MUTED,SUCCESS,WARN
 
 
@@ -51,7 +52,9 @@ class BatchPage(QWidget):
         config.setToolTip('Quét video mới trong thư mục nguồn, chọn các kênh của nhóm rồi chạy Dây chuyền.')
         config.setProperty('primary',True)
         config.clicked.connect(self.configure_pipeline.emit)
-        top.addWidget(config);root.addLayout(top)
+        self.inventory_btn=QPushButton('File trong thư mục…')
+        self.inventory_btn.clicked.connect(lambda:self.open_folder.emit(self.channels.pid,0,'inventory'))
+        top.addWidget(self.inventory_btn);top.addWidget(config);root.addLayout(top)
         note=QLabel('Bảng là hồ sơ video đã nhập, gồm cả lịch sử; không phải danh sách file trong thư mục. '
                     'Video mới trong thư mục: bấm Chọn kênh & chạy để quét và nhận.')
         note.setWordWrap(True);note.setStyleSheet(f'color:{MUTED};')
@@ -75,7 +78,7 @@ class BatchPage(QWidget):
         content.addWidget(self.summary)
         views=QHBoxLayout()
         self.scope=QComboBox()
-        for label,value in [('Cần xử lý','work'),('Cần kiểm tra file','attention'),('Lịch sử đã xuất','history'),('Tất cả hồ sơ','all')]:
+        for label,value in [('Cần xử lý','work'),('Cần kiểm tra file','attention'),('Lịch sử đã xuất','history'),('Tất cả hồ sơ chưa ẩn','all'),('Hồ sơ đã ẩn','hidden')]:
             self.scope.addItem(label,value)
         views.addWidget(self.scope)
         self.order=QComboBox()
@@ -143,6 +146,11 @@ class BatchPage(QWidget):
         actions.addWidget(self.retry_btn)
         self.cancel_btn=QPushButton('Hủy video này');self.cancel_btn.setProperty('danger',True)
         self.cancel_btn.clicked.connect(self.cancel_selected);actions.addWidget(self.cancel_btn)
+        self.history_btn=QPushButton('Hồ sơ ▾')
+        history_menu=QMenu(self.history_btn)
+        self.hide_action=history_menu.addAction('Ẩn hồ sơ đang chọn…',lambda:self.change_visibility(True))
+        self.restore_action=history_menu.addAction('Hiện lại hồ sơ đang chọn',lambda:self.change_visibility(False))
+        self.history_btn.setMenu(history_menu);actions.addWidget(self.history_btn)
         actions.addStretch(1);content.addLayout(actions)
         pages=QHBoxLayout();self.page_label=QLabel();pages.addWidget(self.page_label,1)
         self.previous=QPushButton('Trước');self.previous.clicked.connect(lambda:self.change_page(-1))
@@ -179,6 +187,7 @@ class BatchPage(QWidget):
         try:
             self.channels.refresh()
             pid=self.channels.pid
+            self.inventory_btn.setEnabled(bool(pid))
             self.records,self.total=snapshot(pid) if pid else ([],0)
             self.check_files(force=force_files)
             p=next((p for p in self.channels.projects if p['id']==pid),None)
@@ -276,9 +285,11 @@ class BatchPage(QWidget):
         warnings={r['id']:file_warning(r,self._files.get(r['id'])) for r in self.records}
         attention=sum(bool(value) for value in warnings.values())
         self.scope.setItemText(self.scope.findData('attention'),f'Cần kiểm tra file ({attention})')
-        filtered=[r for r in self.records if (not status or r['state']==status)
+        hidden_ids={r['id'] for r in self.records if hidden(r)}
+        filtered=[r for r in self.records if ((r['id'] in hidden_ids) if scope=='hidden' else (r['id'] not in hidden_ids))
+                  and (not status or r['state']==status)
                   and (not query or query in folded(r['channel']+' '+r['video']))
-                  and (scope=='all' or (scope=='history' and r['state']=='done')
+                  and (scope in ('all','hidden') or (scope=='history' and r['state']=='done')
                        or (scope=='attention' and bool(warnings[r['id']]))
                        or (scope=='work' and (r['state']!='done' or bool(warnings[r['id']]))))
                   and self._matches_file(r,file_status)]
@@ -333,8 +344,27 @@ class BatchPage(QWidget):
         self.folder_btn.setEnabled(bool(r and r.get('export_paths')))
         self.folder_btn.setToolTip('Mở nơi đã ghi xuất Part của video này.' if r and r.get('export_paths')
                                    else 'Video này chưa có đường dẫn Part đã xuất. Nơi xuất hiện tại nằm bên trái.')
+        self.hide_action.setEnabled(bool(r and not r['job_ids'] and not hidden(r)))
+        self.restore_action.setEnabled(bool(r and hidden(r)))
         self.cancel_btn.setEnabled(bool(r and r['job_ids']))
         self.retry_btn.setEnabled(bool(r and r['retry_ids']))
+
+    def change_visibility(self,value):
+        r=self.selected()
+        if not r:return
+        vid=r['id']
+        if value and QMessageBox.question(self,'Ẩn hồ sơ cũ',
+                'Ẩn hồ sơ “'+r['video']+'” khỏi danh sách thường dùng?\n'
+                'Không xóa video, Part hoặc lịch sử chống trùng. Xem lại ở Hồ sơ đã ẩn.',
+                QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)!=QMessageBox.StandardButton.Yes:return
+        self.refresh()
+        r=next((row for row in self.records if row['id']==vid),None)
+        if not r:return
+        try:
+            set_hidden(r,value);self.render()
+            self.feedback.setText('Đã ẩn hồ sơ. Chọn Hồ sơ đã ẩn để hiện lại.' if value else 'Đã hiện lại hồ sơ; chọn Tất cả hồ sơ chưa ẩn để xem.')
+        except ValueError as error:self.feedback.setText(str(error))
 
     def open_selected(self):
         r=self.selected()
