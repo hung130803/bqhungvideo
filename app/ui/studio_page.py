@@ -223,7 +223,7 @@ class StudioPage(QWidget):
         self.grp.setToolTip("Lọc kênh theo NHÓM (quốc gia, chủ đề...).\n"
                             "Kênh chưa gán nhóm hiện ở mục 'Chưa phân nhóm'.\n"
                             "Tạo / sửa / xoá nhóm và chuyển KÊNH sang nhóm khác "
-                            "(hàng loạt): bấm nút ⚙ Quản lý nhóm bên cạnh.")
+                            "(hàng loạt): vào Quản lý → Sửa nhóm.")
         # DỒN kênh chưa nhóm vào 'Mỹ' 1 LẦN (bỏ 'Tất cả' -> mọi kênh phải nằm
         # trong 1 nhóm; các dự án làm dở grp='' gom về 'Mỹ'). Chạy TRƯỚC
         # _reload_groups để combo nạp ngay danh sách đúng.
@@ -305,7 +305,12 @@ class StudioPage(QWidget):
         from app.ui.layout_tools import button_menu
         for control in (gman, cpy, np, ren, dash, self.lib_btn, mgv, av):
             srcrow.removeWidget(control)
-        self.source_menu = button_menu(panel, "Quản lý", (np, gman, cpy, ren, mgv, dash, self.lib_btn))
+        move_group = QPushButton("Chuyển kênh sang nhóm…")
+        move_group.clicked.connect(lambda: self._move_group())
+        export_dir = QPushButton("Đổi thư mục lưu của kênh…")
+        export_dir.clicked.connect(lambda: self._set_export_dir_for_current())
+        self.source_menu = button_menu(panel, "Quản lý", (np, gman, cpy, ren, move_group,
+            export_dir, mgv, dash, self.lib_btn))
         srcrow.addWidget(self.source_menu)
         self.proj.setMinimumWidth(160)
         self.vid.setMinimumWidth(170)
@@ -500,10 +505,20 @@ class StudioPage(QWidget):
         self.count_lbl.setStyleSheet("font-size:16px; font-weight:600;")
         headrow.addWidget(self.count_lbl)
         headrow.addStretch(1)
-        op = QPushButton("Mở thư mục"); op.setProperty("ghost", True)
-        op.setToolTip("Mở thư mục 'Đã xuất' chứa clip của kênh/video đang chọn "
-                      "trong Kho video.")
-        op.clicked.connect(self._open_dir); headrow.addWidget(op)
+        self.channel_folder_btn = QPushButton("Mở thư mục kênh")
+        self.channel_folder_btn.setProperty("ghost", True)
+        self.channel_folder_btn.setToolTip("Mở nơi lưu Part hiện tại của kênh đang chọn. Kênh có thư mục riêng sẽ mở đúng thư mục đó.")
+        self.channel_folder_btn.clicked.connect(lambda: self._folder_action('channel'))
+        headrow.addWidget(self.channel_folder_btn)
+        folders = QPushButton("Thư mục khác");folders.setProperty("ghost", True)
+        menu = QMenu(folders)
+        for title, kind in (("Mở thư mục Part của video", 'video'),
+                            ("Mở thư mục video gốc", 'source'),
+                            ("Mở thư mục lấy video Dây chuyền", 'pipeline'),
+                            ("Sao chép đường dẫn thư mục kênh", 'copy'),
+                            ("Xem tất cả đường dẫn…", 'details')):
+            menu.addAction(title, lambda _=False, k=kind: self._folder_action(k))
+        folders.setMenu(menu);headrow.addWidget(folders)
         root.addLayout(headrow)
 
         self.status = QLabel("")
@@ -4284,6 +4299,10 @@ class StudioPage(QWidget):
     def _proj_menu(self, pos):
         m = QMenu(self)
         if self.proj.currentData() is not None:
+            m.addAction("Mở thư mục kênh", lambda: self._folder_action('channel'))
+            m.addAction("Sao chép đường dẫn thư mục kênh", lambda: self._folder_action('copy'))
+            m.addAction("Xem tất cả đường dẫn…", lambda: self._folder_action('details'))
+            m.addSeparator()
             # lambda: triggered truyền checked=False -> đừng lọt vào tham số pid
             m.addAction("✏ Sửa tên kênh", lambda: self._rename_proj())
             m.addAction("Chuyển nhóm...", lambda: self._move_group())
@@ -8906,65 +8925,21 @@ class StudioPage(QWidget):
                                     "Kênh chưa có clip nào. Bấm 'Tất cả video' "
                                     "để tạo clip cho cả kênh trước.")
 
-    def _open_dir(self):
-        """Bọc CHỐNG SẬP cho nút 'Mở thư mục': lỗi bất ngờ (DB/đường dẫn/
-        Explorer) -> báo dòng trạng thái, KHÔNG được làm thoát app (lỗi thật
-        user báo 'ấn mở thư mục cái là app tự out')."""
+    def _folder_action(self, kind):
         try:
-            self._open_dir_impl()
-        except Exception as e:  # noqa: BLE001
-            self.status.setText(f"⚠ Không mở được thư mục: {str(e)[:120]}")
+            from app.ui.folder_access import perform
+            message = perform(self, kind, self.proj.currentData(), self.vid.currentData(),
+                              self._lib_root(), self._pipe_root())
+        except Exception as error:
+            message = 'Không đọc được cấu hình thư mục: ' + str(error)
+        self.status.setText(message)
+
+    def _open_dir(self):
+        # Compatibility for callers of the original video-folder shortcut.
+        self._folder_action('video' if self.vid.currentData() else 'channel')
 
     def _open_dir_impl(self):
-        # mở KHO 'Đã xuất' (theo thư mục gốc hiện tại). Nếu đang chọn video ->
-        # mở thẳng thư mục con của video đó. Tên folder phải làm sạch Y HỆT lúc
-        # xuất (_export_video + m1_highlight._safe_name) kẻo mở trượt sang cha.
-        base = self._export_root()
-        target = base
-        import re
-        # KÊNH CÓ THƯ MỤC LƯU RIÊNG -> mở THẲNG đó (flat: không nối <Kênh>/<video>).
-        ch_export_dir = ""
-        if self.state.project_id:
-            chrow = db.query_one(
-                "SELECT name, export_dir FROM projects WHERE id=?",
-                (self.state.project_id,))
-            ch_export_dir = ((chrow["export_dir"] if chrow else "") or "").strip()
-            if ch_export_dir:
-                target = Path(ch_export_dir)
-            else:
-                # mở thẳng folder KÊNH đang chọn nếu có (sạch tên GIỐNG _export_video)
-                ch = re.sub(r'[<>:"/\\|?*]', "_",
-                            ((chrow["name"] if chrow else "") or "Kenh"))
-                ch = ch.strip().strip(". ") or "Kenh"
-                if (base / ch).is_dir():
-                    target = base / ch
-        if not ch_export_dir and self.state.video_id:  # có video -> vào sâu folder video
-            vrow = db.query_one("SELECT src_path FROM videos WHERE id=?",
-                                (self.state.video_id,))
-            if vrow and vrow["src_path"]:
-                # folder video đặt tên bằng _safe_name lúc xuất -> dùng đúng hàm đó
-                from app.modules.m1_highlight import _safe_name
-                stem = (_safe_name(Path(vrow["src_path"]).stem)
-                        or f"video_{self.state.video_id}")
-                sub = target / stem
-                if sub.is_dir():
-                    target = sub
-        # Thư mục có thể CHƯA tồn tại (chưa xuất clip nào) -> tạo rồi mở,
-        # đừng im lặng không làm gì (user tưởng nút hỏng).
-        try:
-            Path(target).mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-        try:
-            os.startfile(str(target))  # noqa: S606
-            self.status.setText(f"Đã mở: {target}")
-        except Exception:  # noqa: BLE001 - startfile lỗi -> thử explorer.exe
-            import subprocess
-            try:
-                subprocess.Popen(["explorer", str(target)])
-                self.status.setText(f"Đã mở: {target}")
-            except Exception:  # noqa: BLE001
-                self.status.setText(f"⚠ Không mở được thư mục: {target}")
+        self._open_dir()
 
     def _open_file(self, p):
         if p and os.path.isfile(p):

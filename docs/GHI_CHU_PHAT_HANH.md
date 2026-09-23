@@ -1,11 +1,10 @@
-# BQ Hung Video v2.50.6 — bố cục gọn hơn, theo dõi hàng loạt theo từng video
+# BQ Hung Video v2.50.7 — mở đúng thư mục kênh, video và Part
 
-- Thanh bên có Video & clip, Hàng loạt, Thay giọng, Cài đặt AI và Hướng dẫn. Các nút phụ được gom vào Quản lý, Tạo nhiều, Công cụ và Xuất thêm; vẫn giữ các chức năng cũ.
-- Trang Hàng loạt hiển thị kênh/video, bước đang làm, số Part đã xuất/tổng Part và trạng thái video gốc riêng biệt. Tìm không dấu, lọc nhóm/trạng thái, mở đúng video, xem lỗi, thử lại hoặc hủy việc của video đang chọn. Đổi màn không dừng Dây chuyền.
-- Không coi việc phân tích đã xong là đã xuất đủ Part. Việc xuất lỗi hoặc đã hủy vẫn được hiện rõ, kể cả khi còn đường dẫn file xuất cũ. Thử lại phân tích không đồng thời xếp xuất những Part có thể sắp được thay thế.
-- Màn chính vừa bố cục 1.280 × 720 và 1.366 × 768 ở mức hiển thị tiêu chuẩn. Thanh bên có thể cuộn; thông tin máy thu gọn khi không cần.
-- Cài đặt AI và Chỉnh mẫu có ô Đi tới để đến nhanh nhóm cần chỉnh. Thuyết minh có vùng cuộn riêng, nút Lưu/Hủy ở cuối cửa sổ. Thay giọng giữ bảng tiến trình và nút Chạy/Dừng ở ngoài vùng cuộn, có vạch kéo đổi tỷ lệ hai vùng.
-- Sửa màu bảng tối để các dòng đều đọc được. Giữ thông tin chi phí/tải bộ giọng trên nhãn khi màn hình hẹp. Ghi chú cập nhật có vùng cuộn, không bị cắt ở 800 ký tự.
-- Giữ các sửa lỗi tiến trình, dọn gốc an toàn, xoay key và mở app sau cập nhật của các bản trước. Không thay cấu hình AI, mẫu xuất, thư mục đầu ra hoặc quy tắc dọn gốc khi đổi bố cục.
+- Thêm nút Mở thư mục kênh dễ thấy ở màn Video & clip và trang Hàng loạt. Mở đúng nơi lưu riêng của kênh nếu có; nếu chưa xuất lần nào, tạo/mở đúng thư mục kênh thay vì mở kho chung.
+- Thư mục khác tách rõ nơi lưu Part của video, thư mục video gốc và thư mục lấy video Dây chuyền. Có sao chép đường dẫn và cửa sổ xem các nơi lưu. Trong Hàng loạt, chuột phải vào dòng để dùng những thao tác này mà không đổi video đang chọn ở màn chính.
+- Khi đổi tên kênh hoặc đổi kho, vẫn tìm được thư mục Part đã ghi trước đây. Nếu một video có Part ở nhiều nơi, hiển thị các đường dẫn để chọn đúng thư mục.
+- Đưa Chuyển kênh sang nhóm và Đổi thư mục lưu của kênh vào menu Quản lý, không cần nhớ thao tác chuột phải.
+- Khi nguồn đã mất, ổ đĩa không kết nối, đường dẫn không hợp lệ hoặc Windows không mở được thư mục, báo rõ lỗi. Không tự tạo lại thư mục nguồn đã mất và không báo mở thành công khi thất bại.
+- Giữ bố cục và các sửa tiến trình, xoay key, dọn gốc, khởi động sau cập nhật của v2.50.6.
 
-Bản phát hành phải qua 30 chương trình kiểm thử, trong đó có 15 ca mới về bố cục, thao tác đúng video và giữ cấu hình. Có kiểm tra xuất FFmpeg thật, tài nguyên EXE và ba tình huống mở cửa sổ Windows. Phần AI của các kiểm tra này dùng dữ liệu mẫu cách ly; không gọi API bằng key người dùng. Bảng hàng loạt đọc trạng thái đã lưu, tối đa 2.000 video ưu tiên đang chạy/gần nhất, 100 dòng mỗi trang; không quét lại toàn bộ file trên ổ đĩa.
+Có 12 ca kiểm tra mới cho đường dẫn/thao tác đúng video và 31 chương trình kiểm thử trước phát hành. Kiểm tra dùng dữ liệu tạm, không mở Explorer hoặc thay đổi media thật của người dùng. EXE phải qua kiểm tra tài nguyên, FFmpeg và ba tình huống mở cửa sổ Windows.

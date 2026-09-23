@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         from app.ui.batch_page import BatchPage
         self.batch = BatchPage(state)
         self.batch.open_video.connect(self._open_batch_video)
+        self.batch.open_folder.connect(self._open_batch_folder)
         self.batch.configure_pipeline.connect(self.studio._pipeline_dialog)
         self.workspace = QStackedWidget()
         self.workspace.addWidget(self.studio)
@@ -95,6 +96,14 @@ class MainWindow(QMainWindow):
         self.studio._select_project(project_id)
         self.studio._reload_videos(select_id=video_id)
         self._show_workspace(0)
+
+    def _open_batch_folder(self, project_id, video_id, kind):
+        try:
+            from app.ui.folder_access import perform
+            message=perform(self.batch,kind,project_id,video_id,self.studio._lib_root(),self.studio._pipe_root())
+        except Exception as error:
+            message='Không đọc được cấu hình thư mục: '+str(error)
+        self.batch.feedback.setText(message)
 
     def _guide(self):
         from PyQt6.QtWidgets import QDialog, QPlainTextEdit

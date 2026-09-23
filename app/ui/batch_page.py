@@ -1,10 +1,10 @@
 """Theo dõi hàng loạt theo video; mọi thao tác vẫn đi qua worker hiện có."""
 import unicodedata
 
-from PyQt6.QtCore import QTimer,pyqtSignal
+from PyQt6.QtCore import Qt,QTimer,pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHeaderView,
-    QLabel,QLineEdit,QMessageBox,QPlainTextEdit,QPushButton,QTableWidget,QTableWidgetItem,
+    QLabel,QLineEdit,QMenu,QMessageBox,QPlainTextEdit,QPushButton,QTableWidget,QTableWidgetItem,
     QVBoxLayout,QWidget)
 
 from app.services_batch import snapshot
@@ -18,6 +18,7 @@ def folded(text):
 
 class BatchPage(QWidget):
     open_video=pyqtSignal(int,int)
+    open_folder=pyqtSignal(int,int,str)
     configure_pipeline=pyqtSignal()
     PAGE_SIZE=100
 
@@ -73,12 +74,17 @@ class BatchPage(QWidget):
         self.table.setMinimumHeight(160)
         self.table.itemDoubleClicked.connect(lambda _item:self.open_selected())
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.folder_menu)
         root.addWidget(self.table,1)
         self.feedback=QLabel('Chọn một video để xem, thử lại hoặc hủy đúng video đó.')
         self.feedback.setWordWrap(True);root.addWidget(self.feedback)
         actions=QHBoxLayout()
         self.open_btn=QPushButton('Mở video && clip');self.open_btn.setProperty('primary',True)
         self.open_btn.clicked.connect(self.open_selected);actions.addWidget(self.open_btn)
+        self.folder_btn=QPushButton('Mở thư mục kênh')
+        self.folder_btn.setToolTip('Mở thư mục kênh của dòng đang chọn. Chuột phải trên dòng để mở nguồn, Part hoặc sao chép đường dẫn.')
+        self.folder_btn.clicked.connect(lambda:self.folder_selected('channel'));actions.addWidget(self.folder_btn)
         self.detail_btn=QPushButton('Xem chi tiết');self.detail_btn.clicked.connect(self.details)
         actions.addWidget(self.detail_btn)
         self.retry_btn=QPushButton('Thử lại việc lỗi/đã hủy');self.retry_btn.clicked.connect(self.retry_selected)
@@ -172,12 +178,28 @@ class BatchPage(QWidget):
     def _selection_changed(self):
         r=self.selected()
         self.open_btn.setEnabled(bool(r));self.detail_btn.setEnabled(bool(r))
+        self.folder_btn.setEnabled(bool(r))
         self.cancel_btn.setEnabled(bool(r and r['job_ids']))
         self.retry_btn.setEnabled(bool(r and r['retry_ids']))
 
     def open_selected(self):
         r=self.selected()
         if r:self.open_video.emit(r['pid'],r['id'])
+
+    def folder_selected(self,kind):
+        r=self.selected()
+        if r:self.open_folder.emit(r['pid'],r['id'],kind)
+
+    def folder_menu(self,pos):
+        row=self.table.rowAt(pos.y())
+        if row<0:return
+        self.table.selectRow(row)
+        menu=QMenu(self)
+        for title,kind in [('Mở thư mục kênh','channel'),('Mở thư mục Part của video','video'),
+                           ('Mở thư mục video gốc','source'),('Sao chép đường dẫn thư mục kênh','copy'),
+                           ('Xem tất cả đường dẫn…','details')]:
+            menu.addAction(title,lambda _=False,k=kind:self.folder_selected(k))
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def cancel_selected(self):
         r=self.selected()
