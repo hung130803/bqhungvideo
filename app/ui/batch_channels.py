@@ -107,7 +107,7 @@ class BatchChannels(QWidget):
         self._signature = None
         self._group = None
         self.setMinimumWidth(275)
-        layout = QVBoxLayout(self); layout.setContentsMargins(0,0,8,0)
+        layout = QVBoxLayout(self); layout.setContentsMargins(0,0,8,0);layout.setSpacing(5)
         row = QHBoxLayout(); row.addWidget(QLabel('NHÓM ĐÃ LƯU'),1)
         manage = QPushButton('Quản lý'); manage.clicked.connect(self.manage.emit); row.addWidget(manage)
         layout.addLayout(row)
@@ -116,13 +116,19 @@ class BatchChannels(QWidget):
         layout.addWidget(self.group)
         self.search = QLineEdit(); self.search.setPlaceholderText('Tìm kênh trong nhóm…'); self.search.setClearButtonEnabled(True)
         layout.addWidget(self.search)
+        self.order=QComboBox()
+        self.order.addItem('Xếp kênh: tên A → Z','name')
+        self.order.addItem('Xếp kênh: thư mục nguồn','path')
+        self.order.setToolTip('STT là vị trí trong cách xếp đang chọn; không phải số thư mục kênh.')
+        layout.addWidget(self.order)
         self.table = QTableWidget(0,3)
-        self.table.setHorizontalHeaderLabels(['STT','Kênh','Video'])
+        self.table.setHorizontalHeaderLabels(['STT','Kênh','Hồ sơ'])
+        self.table.horizontalHeaderItem(2).setToolTip('Số video từng nhập vào ứng dụng, gồm cả lịch sử; không phải số file hiện trong thư mục.')
         self.table.horizontalHeader().setSectionResizeMode(0,QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0,42)
         self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(2,55)
+        self.table.setColumnWidth(2,65)
         self.table.verticalHeader().hide(); self.table.verticalHeader().setDefaultSectionSize(46)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -133,7 +139,7 @@ class BatchChannels(QWidget):
         self.add_btn = QPushButton('+ Kênh'); self.add_btn.clicked.connect(lambda: self.add.emit(self.group.currentData() or ''))
         self.edit_btn = QPushButton('Sửa tên / nhóm'); self.edit_btn.clicked.connect(lambda: self.edit.emit(self.pid))
         row.addWidget(self.add_btn); row.addWidget(self.edit_btn); layout.addLayout(row)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setMinimumHeight(180)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setMinimumHeight(140)
         scroll.setMaximumHeight(250)
         content = QWidget(); info = QVBoxLayout(content); info.setContentsMargins(8,8,8,8)
         self.title = QLabel('Chọn kênh'); self.title.setWordWrap(True); self.title.setTextFormat(Qt.TextFormat.PlainText)
@@ -143,13 +149,16 @@ class BatchChannels(QWidget):
             label = QLabel(text); label.setStyleSheet(f'color:{MUTED};'); info.addWidget(label)
             field.setReadOnly(True); info.addWidget(field)
         row = QHBoxLayout()
-        self.open_btn = QPushButton('Mở thư mục'); self.open_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'channel'))
+        self.open_btn = QPushButton('Mở Part'); self.open_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'channel'))
         self.copy_btn = QPushButton('Chép'); self.copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.output.text()))
-        row.addWidget(self.open_btn); row.addWidget(self.copy_btn); info.addLayout(row)
+        self.source_btn=QPushButton('Mở nguồn')
+        self.source_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'pipeline'))
+        row.addWidget(self.open_btn); row.addWidget(self.source_btn); row.addWidget(self.copy_btn); info.addLayout(row)
         self.paths_btn = QPushButton('Thêm / đổi đường dẫn…'); self.paths_btn.clicked.connect(lambda: self.paths.emit(self.pid))
         info.addWidget(self.paths_btn); scroll.setWidget(content); layout.addWidget(scroll)
         self.group.currentIndexChanged.connect(self._change_group)
         self.search.textChanged.connect(self.render)
+        self.order.currentIndexChanged.connect(self.render)
         self.table.itemSelectionChanged.connect(self._choose)
 
     def refresh(self):
@@ -186,6 +195,8 @@ class BatchChannels(QWidget):
         changed = self._group != group
         self._group = group
         candidates = sorted([p for p in self.projects if (p['grp'] or '')==group], key=lambda p:(natural(p['name']),p['id']))
+        if self.order.currentData()=='path':
+            candidates.sort(key=lambda p:(natural(p['pipe_src'] or p['export_dir'] or ''),natural(p['name']),p['id']))
         query = folded(self.search.text().strip())
         rows = [(n,p) for n,p in enumerate(candidates,1) if query in folded(p['name'])]
         keep = self.pid
@@ -209,7 +220,7 @@ class BatchChannels(QWidget):
             if selected: self.table.selectRow(ids.index(selected))
             else: self.table.setCurrentCell(-1,-1); self.table.clearSelection()
             self.table.blockSignals(False); self._signature = signature
-        self.count.setText(f'{len(rows)}/{len(candidates)} kênh · {sum(p["videos"] for p in candidates)} video trong nhóm'
+        self.count.setText(f'{len(rows)}/{len(candidates)} kênh · {sum(p["videos"] for p in candidates)} hồ sơ đã nhập trong nhóm'
             f"\n{sum(p['running'] for p in candidates)} video có việc chạy · {sum(p['waiting'] for p in candidates)} có việc chờ")
         self.add_btn.setEnabled(group is not None)
         self._set_selected(selected)
@@ -225,7 +236,7 @@ class BatchChannels(QWidget):
         if pid: self.settings.setValue('batch_channel',pid)
         p = next((p for p in self.projects if p['id']==pid),None)
         self.title.setText(p['name'] if p else 'Nhóm chưa có kênh' if not self.projects else 'Chưa chọn kênh')
-        for b in (self.open_btn,self.copy_btn,self.paths_btn,self.edit_btn): b.setEnabled(bool(p))
+        for b in (self.open_btn,self.source_btn,self.copy_btn,self.paths_btn,self.edit_btn): b.setEnabled(bool(p))
         output=source=''
         if p:
             from config import DATA_DIR

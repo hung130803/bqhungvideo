@@ -159,6 +159,7 @@ class _ChanCombo(QComboBox):
 
 
 class StudioPage(QWidget):
+    open_pipeline_center = pyqtSignal()
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
     dl_progress = pyqtSignal(str)   # thông điệp tiến trình tải (hiện % cho user)
@@ -393,7 +394,7 @@ class StudioPage(QWidget):
             "DÂY CHUYỀN TỰ ĐỘNG (nối tool tải): quét thư mục trung chuyển của\n"
             "từng kênh, tự phân tích/cắt + xuất Part.\n"
             "Chỉ chuyển gốc vào Thùng rác sau khi đủ Part và kiểm tra thành công.")
-        pipe_btn.clicked.connect(self._pipeline_dialog)
+        pipe_btn.clicked.connect(self.open_pipeline_center.emit)
         actrow.addWidget(pipe_btn)
         # THAY GIỌNG NÓI: nhãn KHÔNG EMOJI (máy anh Hùng thiếu font -> ô đen)
         self.tg_btn = QPushButton("Thay giọng nói")
@@ -447,7 +448,8 @@ class StudioPage(QWidget):
         self.recap_cfg_btn.setMaximumWidth(16777215)
         self.batch_menu = button_menu(panel, "Tạo nhiều", (self.auto_all_btn, self.pick_btn))
         self.tools_menu = button_menu(panel, "Công cụ", (self.recap_btn, self.recap_cfg_btn, self.tg_btn))
-        pipe_btn.setText("Dây chuyền")
+        pipe_btn.setText("Mở Dây chuyền")
+        pipe_btn.setToolTip("Đi tới màn Dây chuyền: chọn nhóm/kênh, chạy tự động và xem lịch sử.")
         actrow.insertWidget(1, self.batch_menu)
         actrow.insertWidget(2, pipe_btn)
         actrow.insertWidget(3, self.tools_menu)
@@ -4694,8 +4696,9 @@ class StudioPage(QWidget):
         from app.core import pipeline as P
         from app.ui.wheelguard import NoWheelComboBox, NoWheelSpinBox
         dlg = QDialog(self)
-        dlg.setWindowTitle("🤖 Dây chuyền tự động")
-        dlg.resize(980, 640)
+        dlg.setWindowTitle("Dây chuyền — chọn kênh và chạy")
+        from app.ui.layout_tools import fit_dialog
+        fit_dialog(dlg, 1240, 740)
         self._pipe_dlg = dlg                      # cho test offscreen
         lay = QVBoxLayout(dlg)
         lay.setContentsMargins(14, 14, 14, 14)
@@ -4813,7 +4816,7 @@ class StudioPage(QWidget):
         # ô đen, đã sập ở v2.6.22).
         tbl.setHorizontalHeaderLabels(
             ["✓", "Kênh", "Nhóm", "Chế độ", "Mẫu", "AI xem hình", "Chờ",
-             "Đã cắt", "Hôm nay", "📁 Thư mục lấy video"])
+             "Part đã ghi", "Hôm nay", "📁 Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         # Chọn NHIỀU DÒNG để ẩn một lượt (Ctrl/Shift click) + menu chuột phải.
@@ -4827,10 +4830,15 @@ class StudioPage(QWidget):
             f" padding:6px 8px; border:none;"
             f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
         hh = tbl.horizontalHeader()
-        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
-        for col in (0, 2, 3, 4, 5, 6, 7, 8):
-            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        tbl.setColumnHidden(2, True)  # The selected group is already shown above.
+        for col,width in enumerate((36,220,100,150,160,145,65,75,75,360)):
+            tbl.setColumnWidth(col,width)
+        hh.moveSection(hh.visualIndex(9), 2)
+        hh.moveSection(hh.visualIndex(6), 3)
+        hh.moveSection(hh.visualIndex(7), 4)
+        tbl.setToolTip('Tên kênh, thư mục nguồn và số chờ ở đầu bảng. Cuộn ngang để xem chế độ, mẫu và AI xem hình.')
+        tbl.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         lay.addWidget(tbl, 2)
 
         # --- báo cáo (tiêu đề + nút Xoá + Mở thư mục log) ---
@@ -4978,7 +4986,7 @@ class StudioPage(QWidget):
                         "khác ngay</a></span>" if canh else "")
             ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
                        f"{hid_txt}"
-                       f"  ·  ✂ {done_total} video → {parts_total} Part đã cắt"
+                       f"  ·  Lịch sử: {done_total} video → {parts_total} Part đã ghi"
                        f"{more}{canh_txt}")
             # ⚡ TẮT VẼ + TẮT SẮP CỘT trong lúc dựng ~235 widget của 47 dòng:
             # để bật thì Qt vẽ lại + tính lại bề rộng cột SAU MỖI Ô -> đo thật
@@ -5253,10 +5261,7 @@ class StudioPage(QWidget):
             # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
             # setUpdatesEnabled(False) ở đầu vòng).
             _hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-            _hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            _hh.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
-            for _c in (0, 2, 3, 4, 5, 6, 7, 8):
-                _hh.setSectionResizeMode(_c, QHeaderView.ResizeMode.ResizeToContents)
+            # Keep readable widths and horizontal scrolling; never squeeze channel names to a few pixels.
             tbl.setUpdatesEnabled(True)
             # Gắn TỔNG video chờ cắt vào dòng thống kê → user thấy cả nhóm còn
             # bao nhiêu video sẽ được cắt khi bấm ▶ (khớp cột "Chờ cắt").

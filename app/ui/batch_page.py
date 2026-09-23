@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHe
     QVBoxLayout,QWidget,QSplitter)
 
 from app.services_batch import snapshot
+from app.ui.batch_files import FileInspector, fingerprint, file_labels
+from app.ui.batch_channels import natural
 from app.ui.theme import ACCENT,DANGER,MUTED,SUCCESS,WARN
 
 
@@ -31,17 +33,27 @@ class BatchPage(QWidget):
         self.page=0
         self._visible_ids=[]
         self._rendered=None
+        self._files={}
+        self._scan_key=None
+        self._scan_generation=0
+        self.inspector=FileInspector(self)
+        self.inspector.result.connect(self._file_result)
+        self.inspector.finished.connect(self._file_finished)
+        self.file_timer=QTimer(self);self.file_timer.setSingleShot(True)
+        self.file_timer.timeout.connect(self.render)
         root=QVBoxLayout(self)
-        root.setContentsMargins(8,16,8,12)
-        title=QLabel('Theo dõi hàng loạt')
+        root.setContentsMargins(8,12,8,8);root.setSpacing(5)
+        title=QLabel('Dây chuyền & lịch sử')
         title.setStyleSheet('font-size:22px;font-weight:700;')
         top=QHBoxLayout();top.addWidget(title,1)
-        config=QPushButton('Cấu hình && chạy Dây chuyền')
+        config=QPushButton('Chọn kênh && chạy…')
+        self.config_btn=config
+        config.setToolTip('Quét video mới trong thư mục nguồn, chọn các kênh của nhóm rồi chạy Dây chuyền.')
         config.setProperty('primary',True)
         config.clicked.connect(self.configure_pipeline.emit)
         top.addWidget(config);root.addLayout(top)
-        note=QLabel('Mỗi dòng là một video. Phân tích, xuất Part và dọn gốc là các bước riêng. '
-                    'Bảng dùng trạng thái đã ghi trong ứng dụng; không quét lại file trên ổ đĩa.')
+        note=QLabel('Bảng là hồ sơ video đã nhập, gồm cả lịch sử; không phải danh sách file trong thư mục. '
+                    'Video mới trong thư mục: bấm Chọn kênh & chạy để quét và nhận.')
         note.setWordWrap(True);note.setStyleSheet(f'color:{MUTED};')
         root.addWidget(note)
         from app.ui.batch_channels import BatchChannels
@@ -51,7 +63,7 @@ class BatchPage(QWidget):
         self.channels.open_folder.connect(self.open_folder.emit)
         body=QSplitter(Qt.Orientation.Horizontal)
         body.addWidget(self.channels)
-        right=QWidget();content=QVBoxLayout(right);content.setContentsMargins(8,0,0,0)
+        right=QWidget();content=QVBoxLayout(right);content.setContentsMargins(8,0,0,0);content.setSpacing(5)
         body.addWidget(right);body.setChildrenCollapsible(False)
         body.setStretchFactor(0,0);body.setStretchFactor(1,1);body.setSizes([300,850])
         root.addWidget(body,1)
@@ -61,6 +73,25 @@ class BatchPage(QWidget):
         content.addWidget(self.channel_title)
         self.summary=QLabel();self.summary.setWordWrap(True)
         content.addWidget(self.summary)
+        views=QHBoxLayout()
+        self.scope=QComboBox()
+        for label,value in [('Cần xử lý','work'),('Lịch sử đã xuất','history'),('Tất cả hồ sơ','all')]:
+            self.scope.addItem(label,value)
+        views.addWidget(self.scope)
+        self.order=QComboBox()
+        for label,value in [('Ưu tiên xử lý','priority'),('Tên video A → Z','name'),('Mới nhập trước','new'),('Cũ nhập trước','old')]:
+            self.order.addItem(label,value)
+        views.addWidget(self.order)
+        self.file_filter=QComboBox()
+        for label,value in [('Mọi tình trạng file',''),('Gốc còn file','present'),('Gốc không tìm thấy','missing'),('Chưa rõ file gốc','unknown')]:
+            self.file_filter.addItem(label,value)
+        views.addWidget(self.file_filter)
+        self.check_btn=QPushButton('Kiểm tra file')
+        self.check_btn.clicked.connect(lambda:self.check_files(force=True))
+        views.addWidget(self.check_btn);views.addStretch(1);content.addLayout(views)
+        self.file_status=QLabel('Kiểm tra đường dẫn gốc và Part trong nền; không thay đổi file.')
+        self.file_status.setWordWrap(True);self.file_status.setStyleSheet(f'color:{MUTED};')
+        content.addWidget(self.file_status)
         row=QHBoxLayout()
         self.search=QLineEdit();self.search.setPlaceholderText('Tìm video trong kênh…')
         self.search.setClearButtonEnabled(True);row.addWidget(self.search,1)
@@ -73,24 +104,25 @@ class BatchPage(QWidget):
         refresh=QPushButton('Làm mới');refresh.clicked.connect(self.refresh);row.addWidget(refresh)
         content.addLayout(row)
         self.table=QTableWidget(0,6)
-        self.table.setHorizontalHeaderLabels(['STT','Video','Bước hiện tại','Part','Video gốc','Chi tiết'])
+        self.table.setHorizontalHeaderLabels(['STT','Video','Xử lý đã ghi','Part','File gốc hiện tại','Chi tiết'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.verticalHeader().setDefaultSectionSize(54)
         header=self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(5,QHeaderView.ResizeMode.Stretch)
-        for col,width in enumerate((45,210,155,55,145)):
+        for col,width in enumerate((42,200,150,105,180,280)):
             self.table.setColumnWidth(col,width)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.setMinimumHeight(160)
         self.table.itemDoubleClicked.connect(lambda _item:self.open_selected())
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.folder_menu)
         content.addWidget(self.table,1)
+        self.empty=QLabel();self.empty.setWordWrap(True);content.addWidget(self.empty)
         self.feedback=QLabel('Chọn một video để xem, thử lại hoặc hủy đúng video đó.')
         self.feedback.setWordWrap(True);content.addWidget(self.feedback)
         actions=QHBoxLayout()
@@ -111,8 +143,11 @@ class BatchPage(QWidget):
         self.previous=QPushButton('Trước');self.previous.clicked.connect(lambda:self.change_page(-1))
         self.next=QPushButton('Sau');self.next.clicked.connect(lambda:self.change_page(1))
         pages.addWidget(self.previous);pages.addWidget(self.next);content.addLayout(pages)
+        self.scope.currentIndexChanged.connect(self._scope_changed)
+        self.order.currentIndexChanged.connect(self.apply_filters)
+        self.file_filter.currentIndexChanged.connect(self.apply_filters)
         self.search.textChanged.connect(self.apply_filters)
-        self.filter.currentIndexChanged.connect(self.apply_filters)
+        self.filter.currentIndexChanged.connect(self._status_changed)
         self.timer=QTimer(self);self.timer.setInterval(2500);self.timer.timeout.connect(self.refresh)
         self._selection_changed()
 
@@ -138,11 +173,12 @@ class BatchPage(QWidget):
             self.channels.refresh()
             pid=self.channels.pid
             self.records,self.total=snapshot(pid) if pid else ([],0)
+            self.check_files()
             p=next((p for p in self.channels.projects if p['id']==pid),None)
             self.channel_title.setText(p['name'] if p else 'Chọn hoặc thêm kênh trong nhóm')
             counts={s:sum(r['state']==s for r in self.records) for s in ('running','pending','failed','ready','done','idle','canceled')}
-            self.summary.setText(f"{self.total} video · {counts['running']} chạy · {counts['pending']} chờ · "
-                f"{counts['failed']} lỗi · {counts['ready']} chưa xuất đủ · {counts['done']} xuất đủ · "
+            self.summary.setText(f"{self.total} hồ sơ đã nhập · {counts['running']} chạy · {counts['pending']} chờ · "
+                f"{counts['failed']} lỗi · {counts['ready']} chưa xuất đủ · {counts['done']} lịch sử đã xuất · "
                 f"{counts['idle']} chưa có clip · {counts['canceled']} hủy")
             self.render()
         except Exception as error:
@@ -151,8 +187,57 @@ class BatchPage(QWidget):
         finally:
             self._refreshing=False
 
+    def check_files(self, force=False):
+        key=(self.channels.pid,tuple((r['id'],fingerprint(r)) for r in self.records))
+        if not force and key==self._scan_key:return
+        self._scan_key=key
+        ids={r['id'] for r in self.records}
+        self._files={vid:value for vid,value in self._files.items() if vid in ids}
+        pending=[r for r in self.records if force or self._files.get(r['id'],{}).get('key')!=fingerprint(r)]
+        self._scan_generation=self.inspector.request(pending)
+        self.check_btn.setEnabled(bool(self.records))
+        self.file_status.setText(f'Đang kiểm tra {len(pending)} hồ sơ trong nền… Không thay đổi file.' if pending
+                                 else 'Kết quả kiểm tra theo đường dẫn đã lưu. Bấm Kiểm tra file sau khi di chuyển/xóa file.')
+
+    def _file_result(self, generation, vid, result):
+        if generation!=self._scan_generation:return
+        record=next((r for r in self.records if r['id']==vid),None)
+        if record is None or result['key']!=fingerprint(record):return
+        self._files[vid]=result
+        if not self.file_timer.isActive():self.file_timer.start(120)
+
+    def _file_finished(self,generation):
+        if generation!=self._scan_generation:return
+        values=[self._files[r['id']] for r in self.records if r['id'] in self._files]
+        present=sum(v['source']=='present' for v in values)
+        missing=sum(v['source']=='missing' for v in values)
+        other=len(values)-present-missing
+        self.file_status.setText(f'Đã kiểm tra: {present} gốc còn file · {missing} không thấy tại đường dẫn cũ · {other} cần kiểm tra. '
+                                 'Part: xem cột bên dưới. Bấm Kiểm tra file để cập nhật lại.')
+        self.render()
+
+    def _matches_file(self,record,status):
+        if not status:return True
+        value=self._files.get(record['id'])
+        known=value is not None and value['key']==fingerprint(record)
+        if status=='unknown':return not known or value['source'] not in ('present','missing')
+        return known and value['source']==status
+
     def apply_filters(self,*_):
         self.page=0;self.render()
+
+    def _scope_changed(self,*_):
+        self.filter.blockSignals(True);self.filter.setCurrentIndex(0);self.filter.blockSignals(False)
+        self.apply_filters()
+
+    def _status_changed(self,*_):
+        status=self.filter.currentData()
+        scope=self.scope.currentData()
+        if status and scope!='all':
+            self.scope.blockSignals(True)
+            self.scope.setCurrentIndex(self.scope.findData('history' if status=='done' else 'work'))
+            self.scope.blockSignals(False)
+        self.apply_filters()
 
     def change_page(self,delta):
         self.page=max(0,self.page+delta);self.render()
@@ -169,30 +254,46 @@ class BatchPage(QWidget):
         selected_id=selected['id'] if selected else None
         query=folded(self.search.text().strip())
         status=self.filter.currentData()
+        scope=self.scope.currentData()
+        file_status=self.file_filter.currentData()
         filtered=[r for r in self.records if (not status or r['state']==status)
-                  and (not query or query in folded(r['channel']+' '+r['video']))]
+                  and (not query or query in folded(r['channel']+' '+r['video']))
+                  and (scope=='all' or (r['state']=='done')==(scope=='history'))
+                  and self._matches_file(r,file_status)]
+        order=self.order.currentData()
+        if order=='name':filtered.sort(key=lambda r:(natural(folded(r['video'])),r['id']))
+        elif order in ('new','old'):filtered.sort(key=lambda r:(r['imported_at'],r['id']),reverse=order=='new')
+        else:
+            rank={'running':0,'pending':1,'failed':2,'ready':3,'idle':4,'canceled':5,'done':6}
+            filtered.sort(key=lambda r:(rank.get(r['state'],9),-r['last_job'],-r['id']))
         self.page=min(self.page,max(0,(len(filtered)-1)//self.PAGE_SIZE))
         start=self.page*self.PAGE_SIZE;rows=filtered[start:start+self.PAGE_SIZE]
-        signature=[(r['id'],r['stage'],r['parts'],r['source'],r['detail'],r['channel'],r['group'],r['video'],r['path']) for r in rows]
+        signature=(start,[(r['id'],r['stage'],r['parts'],r['source'],r['detail'],r['video'],r['path'],self._files.get(r['id'])) for r in rows])
         if signature!=self._rendered:
             self.table.blockSignals(True)
             self.table.setUpdatesEnabled(False)
             self.table.setRowCount(len(rows))
             self._visible_ids=[r['id'] for r in rows]
             for row,r in enumerate(rows):
-                values=(str(start+row+1),r['video'],r['stage'],r['parts'],r['source'],r['detail'])
+                source,parts,check_note=file_labels(r,self._files.get(r['id']))
+                stage='Đã ghi xuất đủ' if r['state']=='done' else r['stage']
+                detail=r['detail']+(' · Lịch sử; file có thể đã di chuyển.' if r['state']=='done' else '')
+                values=(str(start+row+1),r['video'],stage,parts,source,detail)
                 for col,value in enumerate(values):
                     item=self.table.item(row,col)
                     if item is None:item=QTableWidgetItem();self.table.setItem(row,col,item)
                     if item.text()!=value:item.setText(value)
-                    item.setToolTip(value if col!=1 else r['path'])
+                    item.setToolTip((check_note+'\n'+r['path']+'\nDọn gốc đã ghi: '+r['source']) if col in (3,4) else (value if col!=1 else r['path']+'\nNhập: '+r['imported_at']))
                     if col==2:item.setForeground(QColor({'running':ACCENT,'failed':DANGER,'done':SUCCESS,'pending':WARN}.get(r['state'],MUTED)))
             if selected_id in self._visible_ids:self.table.selectRow(self._visible_ids.index(selected_id))
             else:self.table.clearSelection();self.table.setCurrentCell(-1,-1)
             self.table.setUpdatesEnabled(True);self.table.blockSignals(False)
             self._rendered=signature
         bound=f" · Đang lấy {len(self.records)}/{self.total} video gần nhất/đang chạy" if self.total>len(self.records) else ''
-        self.page_label.setText(f"{len(filtered)}/{self.total} video trong kênh · Hiện {start+1 if rows else 0}–{start+len(rows)}"+bound)
+        self.page_label.setText(f"{len(filtered)}/{self.total} hồ sơ · Hiện {start+1 if rows else 0}–{start+len(rows)}"+bound)
+        self.empty.setVisible(not rows)
+        self.empty.setText('Không có hồ sơ khớp bộ lọc. Chọn Lịch sử đã xuất / Tất cả hồ sơ để xem các lần trước. '
+                           'Muốn nhận video mới trong thư mục, bấm Chọn kênh & chạy.')
         self.previous.setEnabled(self.page>0);self.next.setEnabled(start+len(rows)<len(filtered))
         self._selection_changed()
 
@@ -252,7 +353,18 @@ class BatchPage(QWidget):
         if not r:return
         dlg=QDialog(self);dlg.setWindowTitle('Chi tiết: '+r['video']);dlg.resize(820,540)
         lay=QVBoxLayout(dlg);text=QPlainTextEdit();text.setReadOnly(True)
-        lines=[r['channel'],r['path'],f"{r['stage']} · Part {r['parts']} · {r['source']}",r['note'],'']
+        source,parts,check_note=file_labels(r,self._files.get(r['id']))
+        lines=[r['channel'],'Nhập vào ứng dụng: '+r['imported_at'],r['path'],
+               f"Lịch sử xử lý: {r['stage']} · Part {r['parts']}",
+               'Dọn gốc đã ghi: '+r['source'],r['note'],'File hiện tại: '+source,check_note,
+               'Các Part đã ghi đường dẫn:']
+        result=self._files.get(r['id'])
+        if result and result['key']==fingerprint(r):
+            labels={'present':'Còn file','missing':'Không tìm thấy','unknown':'Không kiểm tra được',
+                    'empty':'0 byte','invalid':'Không phải file','unset':'Chưa có đường dẫn'}
+            lines.extend(labels.get(status,status)+' — '+path for path,status in result['parts'])
+        else:lines.extend(r['export_paths'])
+        lines.append('')
         for j in r['jobs'][:100]:
             lines.append(f"#{j['id']} · {j['type']} · {j['status']}\n{j['message'] or ''}\n{j['error'] or ''}\n")
         text.setPlainText('\n'.join(lines));lay.addWidget(text,1)

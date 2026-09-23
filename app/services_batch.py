@@ -16,7 +16,7 @@ def snapshot(project_id=None):
     params = (int(project_id),) if project_id is not None else ()
     total = int(db.query_one('SELECT COUNT(*) AS n FROM videos v '+where, params)['n'])
     videos = db.query(
-        "SELECT v.id,v.project_id,v.src_path,p.name AS channel,p.grp,"
+        "SELECT v.id,v.project_id,v.src_path,v.imported_at,p.name AS channel,p.grp,"
         "MAX(CASE WHEN j.status IN ('running','pending') THEN 1 ELSE 0 END) AS active,"
         "MAX(j.id) AS last_job FROM videos v JOIN projects p ON p.id=v.project_id "
         "LEFT JOIN jobs j ON j.video_id=v.id "+where+"GROUP BY v.id "
@@ -108,6 +108,8 @@ def snapshot(project_id=None):
             group=video['grp'] or 'Chưa phân nhóm',video=Path(video['src_path']).name,
             path=video['src_path'],state=state,stage=stage,detail=detail,
             parts=f'{exported}/{len(current)}',source=source,
+            imported_at=video['imported_at'] or '',last_job=video['last_job'] or 0,
+            export_paths=[c['export_path'] for c in current if c['status']=='exported' and c['export_path']],
             job_ids=[j['id'] for j in active],
             retry_ids=[j['id'] for j in retry],
             jobs=jobs[vid],note=(p['note'] or '') if p else ''))

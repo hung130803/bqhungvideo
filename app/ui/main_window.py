@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self.studio = StudioPage(state)
         from app.ui.batch_page import BatchPage
         self.batch = BatchPage(state)
+        self.studio.open_pipeline_center.connect(self._open_pipeline_center)
         self.batch.open_video.connect(self._open_batch_video)
         self.batch.open_folder.connect(self._open_batch_folder)
         self.batch.configure_pipeline.connect(self._batch_pipeline)
@@ -139,11 +140,21 @@ class MainWindow(QMainWindow):
             self.batch.refresh()
             if was_active and self.batch.isVisible():self.batch.timer.start()
 
+    def _open_pipeline_center(self):
+        pid=self.studio.proj.currentData()
+        if pid:self.batch.channels.select_project(pid)
+        self._show_workspace(1)
+
     def _batch_pipeline(self):
         group=self.batch.group.currentData()
         if group is not None:self.studio._settings.setValue('pipe_grp_sel',group)
-        self.studio._pipeline_dialog()
-        self.batch.refresh()
+        was_active=self.batch.timer.isActive()
+        self.batch.timer.stop()
+        try:
+            self.studio._pipeline_dialog()
+        finally:
+            self.batch.refresh()
+            if was_active and self.batch.isVisible():self.batch.timer.start()
 
     def _guide(self):
         from PyQt6.QtWidgets import QDialog, QPlainTextEdit
@@ -159,13 +170,15 @@ class MainWindow(QMainWindow):
             "2. Chọn mẫu và tùy chỉnh cắt. Bấm Tạo clip cho video đang chọn; "
             "Tạo nhiều để chọn nhiều video trong kênh.\n"
             "3. Duyệt clip, chỉnh điểm đầu/cuối, rồi xuất. Bật tự động xuất nếu muốn bỏ bước duyệt.\n\n"
-            "HÀNG LOẠT\n"
+            "DÂY CHUYỀN & LỊCH SỬ\n"
             "Chọn nhóm đã lưu và kênh ở bên trái; bảng bên phải hiển thị video của kênh. "
             "Dùng Thêm / đổi đường dẫn để chọn nơi lưu Part và nguồn Dây chuyền. "
             "Kênh còn việc chạy/chờ phải xử lý xong trước khi đổi đường dẫn. "
             "Mở Video & clip để xem kết quả. "
-            "Số Part và trạng thái gốc được hiển thị riêng.\n"
-            "Cấu hình & chạy Dây chuyền: chọn đúng nhóm và thư mục từng kênh trước khi chạy. "
+            "Cần xử lý và Lịch sử đã xuất được tách riêng. Hồ sơ là video từng nhập, không phải file còn trên ổ đĩa. "
+            "Kiểm tra file đối chiếu đường dẫn gốc và Part; không tìm thấy chưa có nghĩa đã bị app xóa. "
+            "Chọn cách xếp theo tên, thời gian nhập hoặc ưu tiên xử lý.\n"
+            "Chọn kênh & chạy: quét video mới trong thư mục nguồn; chỉ chạy các kênh bật trong nhóm đang chọn. "
             "Chỉ Dây chuyền quản lý chuyển gốc vào Thùng rác sau khi xác minh đủ Part.\n\n"
             "THAY GIỌNG\n"
             "Chọn thư mục nguồn/đích, ngôn ngữ và giọng. Nghe thử trước khi chạy. "
@@ -251,7 +264,7 @@ class MainWindow(QMainWindow):
         v.addWidget(brand); v.addWidget(brand2); v.addSpacing(2); v.addWidget(tag)
         v.addSpacing(10)
         self.nav_video = QPushButton("Video && clip")
-        self.nav_batch = QPushButton("Hàng loạt")
+        self.nav_batch = QPushButton("Dây chuyền")
         for button in (self.nav_video, self.nav_batch):
             button.setCheckable(True)
             button.setMinimumHeight(36)

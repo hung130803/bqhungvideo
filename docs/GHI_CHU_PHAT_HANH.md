@@ -1,10 +1,10 @@
-# BQ Hung Video v2.50.8 — quản lý Hàng loạt theo nhóm và kênh
+# BQ Hung Video v2.50.9 — Dây chuyền và lịch sử rõ ràng hơn
 
-- Bỏ Tất cả nhóm trong Hàng loạt. Chỉ hiển thị các nhóm đã lưu, kể cả nhóm trống; Chưa phân nhóm chỉ xuất hiện khi có kênh chưa được gán nhóm.
-- Bên trái có danh sách kênh theo STT, sắp số tự nhiên (2 trước 10), số video và dấu hiệu đang chạy/chờ. Có tìm kênh không dấu, thêm kênh, sửa tên/nhóm, quản lý nhóm và nhớ lựa chọn khi mở lại.
-- Hiển thị riêng nơi lưu Part và nguồn video Dây chuyền. Mở/chép thư mục kênh ngay cả khi chưa có video; thêm/đổi đường dẫn hoặc về mặc định trong cùng cửa sổ. File đã có giữ tại vị trí cũ.
-- Kiểm tra đường dẫn tồn tại, chặn cấu hình cũ ghi đè cấu hình mới; chặn đổi khi kênh còn việc chạy/chờ hoặc Dây chuyền chưa hoàn tất video. Hủy cửa sổ không lưu thay đổi.
-- Bảng bên phải theo đúng kênh đã chọn, có STT video, tìm kiếm và lọc trạng thái. Không còn bỏ sót video cũ do giới hạn 2.000 video toàn ứng dụng; mỗi trang hiển thị tối đa 100 dòng.
-- Cấu hình Dây chuyền mở theo nhóm đang xem. Các bước phân tích, xuất Part và xử lý gốc vẫn hiển thị riêng.
+- Gom lối vào chạy tự động dưới mục **Dây chuyền**. Nút **Mở Dây chuyền** trong Video & clip đưa tới cùng màn hình và đúng kênh đang chọn.
+- Mặc định xem **Cần xử lý**; chọn **Lịch sử đã xuất** để xem các lần trước. Số **Hồ sơ** là video từng nhập vào ứng dụng, không phải số file đang có trong thư mục.
+- Tự kiểm tra đường dẫn video gốc và Part trong nền khi mở kênh. Hiển thị riêng số Part đã ghi xuất và số file còn tìm thấy. Bấm **Kiểm tra file** sau khi di chuyển/xóa file để cập nhật lại. Kiểm tra này chỉ xác nhận tồn tại/kích thước, không kiểm chứng nội dung video.
+- Có bộ lọc file gốc còn / không tìm thấy / chưa rõ; chọn sắp xếp video theo tên, thời gian nhập hoặc ưu tiên xử lý. Có sắp xếp kênh theo tên hoặc đường dẫn nguồn.
+- Tách nút **Mở Part** và **Mở nguồn**; chi tiết video hiển thị đường dẫn Part đã ghi và kết quả kiểm tra.
+- **Chọn kênh & chạy** mở cấu hình, quét nguồn để nhận video mới. Tên kênh và đường dẫn không còn bị ép thành cột quá hẹp; cột nguồn, chờ cắt được đưa lên trước, các cột khác có thể cuộn ngang.
 
-Kiểm thử dùng cơ sở dữ liệu và file mẫu cách ly. Bao gồm kênh hơn 2.000 video, chuyển nhóm, nhóm/kênh trống, bảo vệ đường dẫn và màn hình 1280×720. Giữ các cổng hồi quy tiến trình, Dây chuyền, xoay key, đóng gói và khởi động Windows.
+Lưu ý: “Không tìm thấy” không khẳng định file đã bị ứng dụng xóa; file có thể đã chuyển nơi khác hoặc ổ đĩa chưa kết nối. Xem/lọc/kiểm tra không xóa dữ liệu, không tự chạy lại video cũ. Dây chuyền vẫn kiểm tra đủ Part trước khi dọn gốc theo quy trình hiện có.
