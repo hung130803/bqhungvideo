@@ -112,6 +112,9 @@ def perform(parent, kind, project_id, video_id, library_root, pipeline_root=''):
                 show_locations(parent,data)
                 return 'Part của video được ghi ở nhiều thư mục; chọn Mở ở đúng đường dẫn.'
             if candidates:return open_directory(candidates[0])
+            if data['recorded']:
+                show_locations(parent,data)
+                return 'Không tìm thấy thư mục Part đã ghi; kiểm tra đường dẫn cũ hoặc kết nối ổ đĩa. Chưa mở nơi xuất mới thay thế.'
             if data['video'] is None:raise ValueError('Chọn video trước khi mở thư mục Part.')
             return open_directory(data['video'])
         if kind not in ('channel','source','pipeline'):raise ValueError('Thao tác thư mục không hợp lệ.')

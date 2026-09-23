@@ -145,11 +145,12 @@ class BatchChannels(QWidget):
         self.title = QLabel('Chọn kênh'); self.title.setWordWrap(True); self.title.setTextFormat(Qt.TextFormat.PlainText)
         info.addWidget(self.title)
         self.output = QLineEdit(); self.source = QLineEdit()
-        for text, field in (('Nơi lưu Part',self.output),('Nguồn Dây chuyền',self.source)):
+        for text, field in (('Thư mục xuất hiện tại',self.output),('Nguồn Dây chuyền',self.source)):
             label = QLabel(text); label.setStyleSheet(f'color:{MUTED};'); info.addWidget(label)
             field.setReadOnly(True); info.addWidget(field)
         row = QHBoxLayout()
-        self.open_btn = QPushButton('Mở Part'); self.open_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'channel'))
+        self.open_btn = QPushButton('Mở nơi xuất'); self.open_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'channel'))
+        self.open_btn.setToolTip('Nơi xuất hiện tại theo cấu hình. Part cũ có thể ở nơi khác; chọn video rồi Mở Part đã xuất.')
         self.copy_btn = QPushButton('Chép'); self.copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.output.text()))
         self.source_btn=QPushButton('Mở nguồn')
         self.source_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'pipeline'))

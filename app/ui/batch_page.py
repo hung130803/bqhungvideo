@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHe
     QVBoxLayout,QWidget,QSplitter)
 
 from app.services_batch import snapshot
-from app.ui.batch_files import FileInspector, fingerprint, file_labels
+from app.ui.batch_files import FileInspector, fingerprint, file_labels, file_warning
 from app.ui.batch_channels import natural
 from app.ui.theme import ACCENT,DANGER,MUTED,SUCCESS,WARN
 
@@ -75,7 +75,7 @@ class BatchPage(QWidget):
         content.addWidget(self.summary)
         views=QHBoxLayout()
         self.scope=QComboBox()
-        for label,value in [('Cần xử lý','work'),('Lịch sử đã xuất','history'),('Tất cả hồ sơ','all')]:
+        for label,value in [('Cần xử lý','work'),('Cần kiểm tra file','attention'),('Lịch sử đã xuất','history'),('Tất cả hồ sơ','all')]:
             self.scope.addItem(label,value)
         views.addWidget(self.scope)
         self.order=QComboBox()
@@ -87,7 +87,7 @@ class BatchPage(QWidget):
             self.file_filter.addItem(label,value)
         views.addWidget(self.file_filter)
         self.check_btn=QPushButton('Kiểm tra file')
-        self.check_btn.clicked.connect(lambda:self.check_files(force=True))
+        self.check_btn.clicked.connect(lambda:self.refresh(force_files=True))
         views.addWidget(self.check_btn);views.addStretch(1);content.addLayout(views)
         self.file_status=QLabel('Kiểm tra đường dẫn gốc và Part trong nền; không thay đổi file.')
         self.file_status.setWordWrap(True);self.file_status.setStyleSheet(f'color:{MUTED};')
@@ -101,7 +101,12 @@ class BatchPage(QWidget):
                             ('Đã xuất đủ','done'),('Chưa có clip','idle')]:
             self.filter.addItem(label,value)
         row.addWidget(self.filter)
-        refresh=QPushButton('Làm mới');refresh.clicked.connect(self.refresh);row.addWidget(refresh)
+        self.refresh_btn=QPushButton('Làm mới')
+        self.refresh_btn.setToolTip('Cập nhật tiến trình và kiểm tra lại file gốc/Part trong nền.')
+        self.refresh_btn.clicked.connect(lambda:self.refresh(force_files=True));row.addWidget(self.refresh_btn)
+        self.clear_btn=QPushButton('Bỏ lọc')
+        self.clear_btn.setToolTip('Xem tất cả hồ sơ của kênh, bỏ tìm kiếm và các bộ lọc.')
+        self.clear_btn.clicked.connect(self.clear_filters);row.addWidget(self.clear_btn)
         content.addLayout(row)
         self.table=QTableWidget(0,6)
         self.table.setHorizontalHeaderLabels(['STT','Video','Xử lý đã ghi','Part','File gốc hiện tại','Chi tiết'])
@@ -128,9 +133,9 @@ class BatchPage(QWidget):
         actions=QHBoxLayout()
         self.open_btn=QPushButton('Video && clip');self.open_btn.setProperty('primary',True)
         self.open_btn.clicked.connect(self.open_selected);actions.addWidget(self.open_btn)
-        self.folder_btn=QPushButton('Thư mục kênh')
-        self.folder_btn.setToolTip('Mở thư mục kênh của dòng đang chọn. Chuột phải trên dòng để mở nguồn, Part hoặc sao chép đường dẫn.')
-        self.folder_btn.clicked.connect(lambda:self.folder_selected('channel'));actions.addWidget(self.folder_btn)
+        self.folder_btn=QPushButton('Mở Part đã xuất')
+        self.folder_btn.setToolTip('Mở nơi đã ghi xuất Part của video này, kể cả khi nơi xuất hiện tại đã đổi.')
+        self.folder_btn.clicked.connect(lambda:self.folder_selected('video'));actions.addWidget(self.folder_btn)
         self.detail_btn=QPushButton('Xem chi tiết');self.detail_btn.clicked.connect(self.details)
         actions.addWidget(self.detail_btn)
         self.retry_btn=QPushButton('Thử lại')
@@ -153,7 +158,7 @@ class BatchPage(QWidget):
 
     def showEvent(self,event):
         super().showEvent(event)
-        self.refresh();self.timer.start()
+        self.refresh(force_files=True);self.timer.start()
 
     def hideEvent(self,event):
         self.timer.stop();super().hideEvent(event)
@@ -164,16 +169,18 @@ class BatchPage(QWidget):
         self._rendered=None
         self.table.clearSelection();self.table.setCurrentCell(-1,-1)
         self.search.blockSignals(True);self.search.clear();self.search.blockSignals(False)
+        for combo in (self.file_filter,self.filter):
+            combo.blockSignals(True);combo.setCurrentIndex(0);combo.blockSignals(False)
         if not self._refreshing:self.refresh()
 
-    def refresh(self):
+    def refresh(self, force_files=False):
         if self._refreshing:return
         self._refreshing=True
         try:
             self.channels.refresh()
             pid=self.channels.pid
             self.records,self.total=snapshot(pid) if pid else ([],0)
-            self.check_files()
+            self.check_files(force=force_files)
             p=next((p for p in self.channels.projects if p['id']==pid),None)
             self.channel_title.setText(p['name'] if p else 'Chọn hoặc thêm kênh trong nhóm')
             counts={s:sum(r['state']==s for r in self.records) for s in ('running','pending','failed','ready','done','idle','canceled')}
@@ -194,6 +201,7 @@ class BatchPage(QWidget):
         ids={r['id'] for r in self.records}
         self._files={vid:value for vid,value in self._files.items() if vid in ids}
         pending=[r for r in self.records if force or self._files.get(r['id'],{}).get('key')!=fingerprint(r)]
+        for record in pending:self._files.pop(record['id'],None)
         self._scan_generation=self.inspector.request(pending)
         self.check_btn.setEnabled(bool(self.records))
         self.file_status.setText(f'Đang kiểm tra {len(pending)} hồ sơ trong nền… Không thay đổi file.' if pending
@@ -213,7 +221,9 @@ class BatchPage(QWidget):
         missing=sum(v['source']=='missing' for v in values)
         other=len(values)-present-missing
         self.file_status.setText(f'Đã kiểm tra: {present} gốc còn file · {missing} không thấy tại đường dẫn cũ · {other} cần kiểm tra. '
-                                 'Part: xem cột bên dưới. Bấm Kiểm tra file để cập nhật lại.')
+                                 'Bấm Làm mới để kiểm tra lại.')
+        latest=max((value['checked_at'] for value in values),default='—')
+        self.file_status.setText(f'Kiểm tra lúc {latest} · '+self.file_status.text())
         self.render()
 
     def _matches_file(self,record,status):
@@ -226,6 +236,13 @@ class BatchPage(QWidget):
     def apply_filters(self,*_):
         self.page=0;self.render()
 
+    def clear_filters(self):
+        self.search.blockSignals(True);self.search.clear();self.search.blockSignals(False)
+        for combo in (self.filter,self.file_filter):
+            combo.blockSignals(True);combo.setCurrentIndex(0);combo.blockSignals(False)
+        self.scope.blockSignals(True);self.scope.setCurrentIndex(self.scope.findData('all'));self.scope.blockSignals(False)
+        self.apply_filters()
+
     def _scope_changed(self,*_):
         self.filter.blockSignals(True);self.filter.setCurrentIndex(0);self.filter.blockSignals(False)
         self.apply_filters()
@@ -233,7 +250,7 @@ class BatchPage(QWidget):
     def _status_changed(self,*_):
         status=self.filter.currentData()
         scope=self.scope.currentData()
-        if status and scope!='all':
+        if status and scope in ('work','history'):
             self.scope.blockSignals(True)
             self.scope.setCurrentIndex(self.scope.findData('history' if status=='done' else 'work'))
             self.scope.blockSignals(False)
@@ -256,9 +273,14 @@ class BatchPage(QWidget):
         status=self.filter.currentData()
         scope=self.scope.currentData()
         file_status=self.file_filter.currentData()
+        warnings={r['id']:file_warning(r,self._files.get(r['id'])) for r in self.records}
+        attention=sum(bool(value) for value in warnings.values())
+        self.scope.setItemText(self.scope.findData('attention'),f'Cần kiểm tra file ({attention})')
         filtered=[r for r in self.records if (not status or r['state']==status)
                   and (not query or query in folded(r['channel']+' '+r['video']))
-                  and (scope=='all' or (r['state']=='done')==(scope=='history'))
+                  and (scope=='all' or (scope=='history' and r['state']=='done')
+                       or (scope=='attention' and bool(warnings[r['id']]))
+                       or (scope=='work' and (r['state']!='done' or bool(warnings[r['id']]))))
                   and self._matches_file(r,file_status)]
         order=self.order.currentData()
         if order=='name':filtered.sort(key=lambda r:(natural(folded(r['video'])),r['id']))
@@ -277,14 +299,17 @@ class BatchPage(QWidget):
             for row,r in enumerate(rows):
                 source,parts,check_note=file_labels(r,self._files.get(r['id']))
                 stage='Đã ghi xuất đủ' if r['state']=='done' else r['stage']
-                detail=r['detail']+(' · Lịch sử; file có thể đã di chuyển.' if r['state']=='done' else '')
+                warning=warnings[r['id']]
+                if warning and r['state']=='done':stage='Đã xuất · cần kiểm tra'
+                detail=warning or r['detail']+(' · Lịch sử; file có thể đã di chuyển.' if r['state']=='done' else '')
                 values=(str(start+row+1),r['video'],stage,parts,source,detail)
                 for col,value in enumerate(values):
                     item=self.table.item(row,col)
                     if item is None:item=QTableWidgetItem();self.table.setItem(row,col,item)
                     if item.text()!=value:item.setText(value)
                     item.setToolTip((check_note+'\n'+r['path']+'\nDọn gốc đã ghi: '+r['source']) if col in (3,4) else (value if col!=1 else r['path']+'\nNhập: '+r['imported_at']))
-                    if col==2:item.setForeground(QColor({'running':ACCENT,'failed':DANGER,'done':SUCCESS,'pending':WARN}.get(r['state'],MUTED)))
+                    if col==2:item.setForeground(QColor(WARN if warning and r['state']=='done' else {'running':ACCENT,'failed':DANGER,'done':SUCCESS,'pending':WARN}.get(r['state'],MUTED)))
+                    elif col in (3,4,5):item.setForeground(QColor(WARN if warning else MUTED))
             if selected_id in self._visible_ids:self.table.selectRow(self._visible_ids.index(selected_id))
             else:self.table.clearSelection();self.table.setCurrentCell(-1,-1)
             self.table.setUpdatesEnabled(True);self.table.blockSignals(False)
@@ -292,15 +317,22 @@ class BatchPage(QWidget):
         bound=f" · Đang lấy {len(self.records)}/{self.total} video gần nhất/đang chạy" if self.total>len(self.records) else ''
         self.page_label.setText(f"{len(filtered)}/{self.total} hồ sơ · Hiện {start+1 if rows else 0}–{start+len(rows)}"+bound)
         self.empty.setVisible(not rows)
-        self.empty.setText('Không có hồ sơ khớp bộ lọc. Chọn Lịch sử đã xuất / Tất cả hồ sơ để xem các lần trước. '
-                           'Muốn nhận video mới trong thư mục, bấm Chọn kênh & chạy.')
+        filters=[self.scope.currentText()]
+        if status:filters.append(self.filter.currentText())
+        if file_status:filters.append(self.file_filter.currentText())
+        if query:filters.append('Tìm: '+self.search.text().strip())
+        self.empty.setText('Không có hồ sơ khớp: '+' · '.join(filters)+'. Bấm Bỏ lọc để xem tất cả. '
+                           'Nhận video mới trong thư mục: Chọn kênh & chạy.')
+        self.clear_btn.setEnabled(bool(query or status or file_status or scope!='all'))
         self.previous.setEnabled(self.page>0);self.next.setEnabled(start+len(rows)<len(filtered))
         self._selection_changed()
 
     def _selection_changed(self):
         r=self.selected()
         self.open_btn.setEnabled(bool(r));self.detail_btn.setEnabled(bool(r))
-        self.folder_btn.setEnabled(bool(r))
+        self.folder_btn.setEnabled(bool(r and r.get('export_paths')))
+        self.folder_btn.setToolTip('Mở nơi đã ghi xuất Part của video này.' if r and r.get('export_paths')
+                                   else 'Video này chưa có đường dẫn Part đã xuất. Nơi xuất hiện tại nằm bên trái.')
         self.cancel_btn.setEnabled(bool(r and r['job_ids']))
         self.retry_btn.setEnabled(bool(r and r['retry_ids']))
 

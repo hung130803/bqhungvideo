@@ -105,6 +105,14 @@ class FolderShortcuts(unittest.TestCase):
             self.assertIn('nhiều thư mục',self.perform('video'))
         show.assert_called_once();self.startfile.assert_not_called()
 
+    def test_missing_recorded_folder_does_not_silently_open_new_output(self):
+        db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",
+            (self.vid,str(self.area/'Folder moved'/'Part 1.mp4')))
+        self.expected.mkdir(parents=True)
+        with patch.object(folders,'show_locations') as show:
+            self.assertIn('Không tìm thấy thư mục Part đã ghi',self.perform('video'))
+        show.assert_called_once();self.startfile.assert_not_called()
+
     def test_wrong_channel_or_missing_selection_never_opens(self):
         other=services.create_project('Khác',grp='Nhóm hai')
         self.assertIn('không thuộc',folders.perform(None,'channel',other,self.vid,self.root))
@@ -148,12 +156,17 @@ class FolderShortcuts(unittest.TestCase):
                     action.trigger();self.assertEqual(perform.call_args.args[1],kind)
             other=services.create_project('Kênh khác',grp='Nhóm hai')
             othervid=db.insert('INSERT INTO videos(project_id,src_path) VALUES(?,?)',(other,str(self.area/'other.mp4')))
+            old_output=self.area/'Old channel output';old_output.mkdir()
+            (old_output/'Part 1.mp4').write_bytes(b'exported fixture')
+            db.insert("INSERT INTO clips(video_id,start_sec,end_sec,status,export_path) VALUES(?,0,2,'exported',?)",
+                (othervid,str(old_output/'Part 1.mp4')))
             selected=(win.studio.proj.currentData(),win.studio.vid.currentData())
             win._show_workspace(1);win.batch.refresh()
             win.batch.channels.select_project(other)
+            win.batch.clear_btn.click()
             win.batch.table.selectRow(win.batch._visible_ids.index(othervid))
             win.batch.folder_btn.click()
-            self.startfile.assert_called_once_with(str(self.root/'Đã xuất'/'Kênh khác'))
+            self.startfile.assert_called_once_with(str(old_output))
             self.assertEqual(selected,(win.studio.proj.currentData(),win.studio.vid.currentData()))
             self.assertEqual(win.workspace.currentIndex(),1)
             self.assertLessEqual(win.width(),1280)

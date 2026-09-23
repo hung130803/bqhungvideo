@@ -59,6 +59,23 @@ def file_labels(record, result):
     return SOURCE_LABELS[result['source']], part_text, message
 
 
+def file_warning(record, result):
+    """Display warning only; never reinterpret recorded exports or auto-retry."""
+    if result is None or result['key'] != fingerprint(record):
+        return ''
+    warnings=[]
+    missing=sum(status=='missing' for _,status in result['parts'])
+    invalid=sum(status in ('empty','invalid') for _,status in result['parts'])
+    unknown=sum(status in ('unknown','unset') for _,status in result['parts'])
+    if missing:warnings.append(f'{missing} Part không tìm thấy')
+    if invalid:warnings.append(f'{invalid} Part rỗng/sai đường dẫn')
+    if unknown:warnings.append(f'{unknown} Part chưa kiểm tra được')
+    # A removed source after successful export is expected in the pipeline.
+    if record['state']!='done' and result['source']!='present':
+        warnings.append(SOURCE_LABELS[result['source']])
+    return ' · '.join(warnings)
+
+
 class FileInspector(QObject):
     """One bounded daemon worker; new requests replace queued work, stale results ignored."""
     result = pyqtSignal(int, int, object)

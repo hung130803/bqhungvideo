@@ -4690,7 +4690,7 @@ class StudioPage(QWidget):
         quản được 50 kênh (INTEGRATION.md)."""
         from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                      QHBoxLayout, QHeaderView, QLabel,
-                                     QPlainTextEdit, QPushButton, QSpinBox,
+                                     QPlainTextEdit, QPushButton, QSpinBox, QMenu,
                                      QTableWidget, QTableWidgetItem,
                                      QVBoxLayout, QWidget)
         from app.core import pipeline as P
@@ -4712,13 +4712,13 @@ class StudioPage(QWidget):
         # menu theo Ý ĐỊNH của user, KHÔNG cắt bớt chức năng nào.
         top = QHBoxLayout(); top.setSpacing(8)
         hint = QLabel("▶ Chạy: lấy video ở thư mục mỗi kênh → cắt → xuất Part "
-                      "vào đó → dọn gốc vào Thùng rác. Chỉ chạy NHÓM đang chọn.")
+                      "vào nơi xuất đã đặt → chuyển gốc vào Thùng rác riêng của ứng dụng sau khi kiểm tra đủ Part.")
         hint.setWordWrap(True)
         hint.setToolTip(
             "Mỗi kênh đặt THƯ MỤC LẤY VIDEO riêng ở cột phải (nút 📂) — tool "
             "tải bỏ video vào đó.\n▶ Chạy dây chuyền: quét thư mục từng kênh "
-            "đang tích ✓ → nhập video → cắt (AI) → xuất Part THẲNG vào thư mục "
-            "kênh → chuyển video gốc vào Thùng rác (khôi phục được; file hỏng "
+            "đang tích ✓ → nhập video → cắt (AI) → xuất Part vào nơi xuất đã đặt của "
+            "kênh → kiểm tra đủ Part → chuyển video gốc vào Thùng rác riêng của ứng dụng (khôi phục được; file hỏng "
             "vào _Loi).\nChỉ chạy các kênh trong NHÓM đang chọn.")
         hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
         top.addWidget(hint, 1)
@@ -4746,6 +4746,7 @@ class StudioPage(QWidget):
         top.addWidget(fix_b)
 
         run_b = QPushButton("▶ Chạy dây chuyền"); run_b.setProperty("primary", True)
+        self._pipe_run_button=run_b
         top.addWidget(run_b)
         lay.addLayout(top)
 
@@ -4801,6 +4802,9 @@ class StudioPage(QWidget):
         ov.linkActivated.connect(lambda _h: self._pipe_recycle_dialog())
         self._pipe_ov = ov
         lay.addWidget(ov)
+        scope_hint=QLabel();scope_hint.setWordWrap(True);scope_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self._pipe_scope_hint=scope_hint
+        lay.addWidget(scope_hint)
 
         # --- bảng kênh (bỏ cột Video/ngày — không giới hạn ngày nữa) ---
         tbl = QTableWidget(0, 10)  # +1 Mẫu riêng · +1 AI xem hình theo kênh
@@ -4832,7 +4836,7 @@ class StudioPage(QWidget):
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         tbl.setColumnHidden(2, True)  # The selected group is already shown above.
-        for col,width in enumerate((36,220,100,150,160,145,65,75,75,360)):
+        for col,width in enumerate((36,220,100,150,160,145,125,75,75,360)):
             tbl.setColumnWidth(col,width)
         hh.moveSection(hh.visualIndex(9), 2)
         hh.moveSection(hh.visualIndex(6), 3)
@@ -4948,6 +4952,8 @@ class StudioPage(QWidget):
             # TỔNG QUAN nhóm (rẻ: 1 truy vấn gộp; không phụ thuộc ô tìm).
             n_all = len(grp_rows)
             n_on = sum(1 for r in grp_rows if r["pipe_on"])
+            run_b.setText(f"▶ Chạy dây chuyền ({n_on} kênh)")
+            run_b.setEnabled(n_on>0)
             done_total = 0
             gids = [int(r["id"]) for r in grp_rows]
             if gids:
@@ -5000,6 +5006,19 @@ class StudioPage(QWidget):
             root = self._pipe_root()
             pend_sum = 0   # tổng video "Chờ cắt" của các dòng đang hiện
             pend_ch = 0    # số KÊNH còn video chờ cắt (để giải thích tổng)
+            from app.ui.pipeline_preview import source_preview
+            previews={}
+            for channel in grp_rows:
+                override=(channel["pipe_src"] or "").strip() or (channel["export_dir"] or "").strip()
+                directory=str(P.resolve_src_dir(root,channel["name"],override)) if override or (root or "").strip() else ''
+                previews[channel['id']]=source_preview(directory,self._scan_cached)
+            enabled=[previews[channel['id']] for channel in grp_rows if channel['pipe_on']]
+            expected=sum(item['ready'] for item in enabled)
+            unreadable=sum(bool(item['error']) for item in enabled)
+            scope_hint.setText(f"Phạm vi chạy: {n_on} kênh đã bật trong nhóm “{gname}” · {expected} file nguồn sẵn sàng"
+                               + (f" · {unreadable} kênh cần kiểm tra thư mục" if unreadable else '')
+                               + '. Ô tìm kiếm chỉ lọc bảng, không thu hẹp phạm vi chạy. File đã làm sẽ được kiểm tra để bỏ qua.')
+            run_b.setToolTip(scope_hint.text())
             for i, r in enumerate(view):
                 pid = int(r["id"])
                 chk = QTableWidgetItem()
@@ -5198,35 +5217,18 @@ class StudioPage(QWidget):
                 # CỘT "Chờ cắt": đếm video SẴN SÀNG trong thư mục (scan_dir chỉ
                 # stat, không hash → nhanh cho 50 kênh). ▶ Chạy sẽ cắt ĐÚNG số
                 # này. (+N⬇ = còn N file đang tải dở, chưa tính).
-                from pathlib import Path as _Pth
                 from PyQt6.QtGui import QColor as _QC
-                n_ready = 0
-                pend_txt = "—"
-                if not no_folder and sd:
-                    d_src = _Pth(sd)
-                    if d_src.is_dir():
-                        try:
-                            rdy, bsy = self._scan_cached(d_src)
-                            n_ready = len(rdy)
-                            pend_txt = str(n_ready)
-                            if bsy:
-                                pend_txt += f" (+{len(bsy)}⬇)"
-                        except OSError:
-                            pend_txt = "—"
-                    else:
-                        pend_txt = "0"
+                preview=previews[pid]
+                n_ready=preview['ready']
+                pend_txt=preview['label']
                 pend_sum += n_ready
                 if n_ready > 0:
                     pend_ch += 1
                 it_pend = QTableWidgetItem(pend_txt)
                 it_pend.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                it_pend.setForeground(_QC("#a6e3a1" if n_ready > 0 else MUTED))
-                it_pend.setToolTip(
-                    f"{n_ready} video đang chờ cắt trong thư mục kênh này. "
-                    "Bấm ▶ Chạy dây chuyền sẽ cắt HẾT số này (mỗi video gốc "
-                    "cho ra nhiều Part). 0 = thư mục trống / đã cắt hết."
-                    if n_ready else
-                    "Chưa có video nào chờ cắt (thư mục trống hoặc đã cắt xong).")
+                it_pend.setForeground(_QC("#f9e2af" if preview["error"] else "#a6e3a1" if n_ready > 0 else MUTED))
+                it_pend.setToolTip(preview['error'] or
+                    f"{n_ready} file nguồn sẵn sàng; {preview['busy']} file đang ghi. Chạy sẽ đối chiếu lịch sử và bỏ qua file đã làm. 0 nghĩa là không có nguồn sẵn sàng tại lần quét này.")
                 tbl.setItem(i, 6, it_pend)
                 fw = QWidget(); fl = QHBoxLayout(fw)
                 fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
@@ -5234,14 +5236,14 @@ class StudioPage(QWidget):
                             if no_folder else sd)
                 lb.setStyleSheet(
                     "color:{}; font-size:11px;".format(
-                        "#f9e2af" if no_folder else "#a6e3a1"))
+                        "#f9e2af" if preview["error"] else "#a6e3a1"))
                 lb.setToolTip(
                     "⚠ Kênh chưa có 'Thư mục lưu'. Đặt nó ở phần quản lý kênh "
                     "(nơi tool tải bỏ video vào) — bảng này tự ăn theo."
                     if no_folder else
-                    "📁 Thư mục lưu của kênh (đặt ở phần Kênh). Tool tải bỏ video "
-                    "vào đây; clip cắt xong xuất thẳng vào đây (tên 'Part N'), "
-                    "rồi xoá video gốc:\n" + sd)
+                    "📁 Thư mục lấy video. Part được lưu vào nơi xuất đã đặt của kênh. "
+                    "Sau khi xuất đủ Part và kiểm tra thành công, gốc được chuyển vào "
+                    "Thùng rác riêng của ứng dụng:\n" + sd)
                 fl.addWidget(lb, 1)
                 # Nút CHỮ (không phụ thuộc emoji). Đã BỎ nút Chọn/Mặc định —
                 # thư mục đặt bên phần kênh, bảng chỉ ăn theo.
@@ -5249,13 +5251,12 @@ class StudioPage(QWidget):
                 ob.setToolTip("Mở thư mục này trong Windows Explorer")
                 ob.clicked.connect(lambda _c, p=sd: open_dir(p))
                 fl.addWidget(ob)
-                rdo = QPushButton("Cắt lại"); rdo.setProperty("ghost", True)
-                rdo.setToolTip("CẮT LẠI kênh này NGAY: xoá sổ đã-làm rồi quét + "
-                               "cắt lại video còn trong thư mục. (Video gốc đã bị "
-                               "xoá sau lần cắt trước thì phải bỏ video vào lại "
-                               "thư mục rồi mới cắt lại được.)")
-                rdo.clicked.connect(
-                    lambda _c, p=pid, nm=r["name"]: self._pipe_redo_one(p, nm, fill))
+                rdo = QPushButton("Thêm"); rdo.setProperty("ghost", True)
+                rdo.setToolTip('Thao tác nâng cao cho riêng kênh này')
+                redo_menu=QMenu(rdo)
+                redo_action=redo_menu.addAction('Phân tích / xuất lại kênh…')
+                redo_action.triggered.connect(lambda _c=False,p=pid,nm=r['name']: self._pipe_redo_one(p,nm,fill))
+                rdo.setMenu(redo_menu)
                 fl.addWidget(rdo)
                 tbl.setCellWidget(i, 9, fw)
             # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
@@ -5267,17 +5268,8 @@ class StudioPage(QWidget):
             # bao nhiêu video sẽ được cắt khi bấm ▶ (khớp cột "Chờ cắt").
             # GHI RÕ ở BAO NHIÊU KÊNH: tránh khó hiểu khi vài dòng đầu = 0 nhưng
             # tổng vẫn lớn (video nằm rải ở các kênh phải cuộn xuống mới thấy).
-            if pend_ch:
-                ov.setText(ov.text()
-                           + f"  ·  ⏳ {pend_sum} video chờ cắt (ở {pend_ch} kênh)")
-                ov.setToolTip(
-                    f"Cả nhóm còn {pend_sum} video GỐC nằm trong thư mục của "
-                    f"{pend_ch} kênh, chưa cắt. Cuộn bảng để thấy từng kênh ở "
-                    "cột 'Chờ cắt'. Bấm ▶ Chạy dây chuyền sẽ cắt HẾT. Nếu dòng "
-                    "đầu = 0 mà tổng vẫn lớn → video nằm ở kênh phía dưới.")
-            else:
-                ov.setText(ov.text() + "  ·  ⏳ 0 video chờ cắt")
-                ov.setToolTip("Không kênh nào còn video gốc chờ cắt trong nhóm này.")
+            ov.setText(ov.text()+f"  ·  Bảng đang hiện: {pend_sum} file nguồn sẵn sàng ở {pend_ch} kênh")
+            ov.setToolTip('Số trong bảng theo bộ lọc; phạm vi nút Chạy được ghi riêng ở dòng bên dưới.')
 
         self._pipe_fill = fill        # để gán mẫu hàng loạt dựng lại bảng ngay
 
@@ -6315,9 +6307,9 @@ class StudioPage(QWidget):
         if QMessageBox.question(
                 self, "Cắt lại kênh",
                 f'CẮT LẠI kênh "{name}"?\nSẽ xoá sổ đã-làm rồi quét + cắt lại '
-                "NGAY video còn trong thư mục.\n\nLƯU Ý: video gốc đã bị XOÁ sau "
-                "lần cắt trước, nên chỉ cắt lại được nếu trong thư mục vẫn còn "
-                "video gốc (chưa cắt). Bộ đếm 'Part đã cắt' về 0."
+                "NGAY video còn trong thư mục.\n\nVideo gốc đã chuyển vào thùng rác nội bộ "
+                "cần được khôi phục về nguồn trước. Part đã xuất vẫn giữ nguyên; "
+                "sổ theo dõi Dây chuyền của kênh sẽ được đặt lại."
                 ) != QMessageBox.StandardButton.Yes:
             return
         n = P.reset_channel(pid)
