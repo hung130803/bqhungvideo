@@ -9,14 +9,19 @@ LIMIT = 2000
 ANALYSIS = {'auto', 'auto_mixed', 'auto_recap', 'analyze', 'm1_highlights', 'm1_mixed_cut'}
 
 
-def snapshot():
-    total = int(db.query_one('SELECT COUNT(*) AS n FROM videos')['n'])
+def snapshot(project_id=None):
+    # The channel view must include older videos too. Keep the legacy bound
+    # only for callers explicitly requesting the global overview.
+    where = 'WHERE v.project_id=? ' if project_id is not None else ''
+    params = (int(project_id),) if project_id is not None else ()
+    total = int(db.query_one('SELECT COUNT(*) AS n FROM videos v '+where, params)['n'])
     videos = db.query(
         "SELECT v.id,v.project_id,v.src_path,p.name AS channel,p.grp,"
         "MAX(CASE WHEN j.status IN ('running','pending') THEN 1 ELSE 0 END) AS active,"
         "MAX(j.id) AS last_job FROM videos v JOIN projects p ON p.id=v.project_id "
-        "LEFT JOIN jobs j ON j.video_id=v.id GROUP BY v.id "
-        "ORDER BY active DESC,COALESCE(last_job,0) DESC,v.id DESC LIMIT ?", (LIMIT,))
+        "LEFT JOIN jobs j ON j.video_id=v.id "+where+"GROUP BY v.id "
+        "ORDER BY active DESC,COALESCE(last_job,0) DESC,v.id DESC"+
+        (" LIMIT ?" if project_id is None else ''), params if project_id is not None else (LIMIT,))
     ids = [v['id'] for v in videos]
     jobs, clips, pipeline = defaultdict(list), defaultdict(list), {}
     for start in range(0,len(ids),400):

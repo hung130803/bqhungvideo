@@ -54,7 +54,11 @@ class MainWindow(QMainWindow):
         self.batch = BatchPage(state)
         self.batch.open_video.connect(self._open_batch_video)
         self.batch.open_folder.connect(self._open_batch_folder)
-        self.batch.configure_pipeline.connect(self.studio._pipeline_dialog)
+        self.batch.configure_pipeline.connect(self._batch_pipeline)
+        self.batch.channels.manage.connect(lambda:self._batch_manage('groups'))
+        self.batch.channels.add.connect(lambda group:self._batch_manage('add',group))
+        self.batch.channels.edit.connect(lambda pid:self._batch_manage('edit',pid))
+        self.batch.channels.paths.connect(lambda pid:self._batch_manage('paths',pid))
         self.workspace = QStackedWidget()
         self.workspace.addWidget(self.studio)
         self.workspace.addWidget(self.batch)
@@ -105,6 +109,42 @@ class MainWindow(QMainWindow):
             message='Không đọc được cấu hình thư mục: '+str(error)
         self.batch.feedback.setText(message)
 
+    def _batch_manage(self, action, target=None):
+        """Keep both pollers out of modal editing; resume even after an error."""
+        was_active=self.batch.timer.isActive()
+        self.batch.timer.stop()
+        try:
+            def edit():
+                from PyQt6.QtWidgets import QDialog, QInputDialog
+                from app import services
+                if action=='groups':
+                    self.studio._manage_groups()
+                elif action=='edit':
+                    self.studio._rename_proj(target)
+                    self.batch.channels.select_project(target)
+                elif action=='paths':
+                    from app.ui.batch_channels import ChannelPathsDialog
+                    if ChannelPathsDialog(target,self.batch).exec()==QDialog.DialogCode.Accepted:
+                        self.batch.feedback.setText('Đã lưu đường dẫn. File đã xuất giữ tại vị trí cũ; lần xử lý sau dùng cấu hình mới.')
+                elif action=='add':
+                    name,ok=QInputDialog.getText(self.batch,'Thêm kênh',f'Tên kênh trong nhóm “{target or "Chưa phân nhóm"}”:')
+                    if ok and name.strip():
+                        pid=services.create_project(name.strip(),target or '')
+                        self.studio._reload_projects()
+                        self.batch.channels.select_project(pid)
+            self.studio._busy_dialog(edit)
+        except Exception as error:
+            self.batch.feedback.setText('Không thực hiện được: '+str(error))
+        finally:
+            self.batch.refresh()
+            if was_active and self.batch.isVisible():self.batch.timer.start()
+
+    def _batch_pipeline(self):
+        group=self.batch.group.currentData()
+        if group is not None:self.studio._settings.setValue('pipe_grp_sel',group)
+        self.studio._pipeline_dialog()
+        self.batch.refresh()
+
     def _guide(self):
         from PyQt6.QtWidgets import QDialog, QPlainTextEdit
         dlg = QDialog(self)
@@ -120,7 +160,10 @@ class MainWindow(QMainWindow):
             "Tạo nhiều để chọn nhiều video trong kênh.\n"
             "3. Duyệt clip, chỉnh điểm đầu/cuối, rồi xuất. Bật tự động xuất nếu muốn bỏ bước duyệt.\n\n"
             "HÀNG LOẠT\n"
-            "Theo dõi từng video bằng ô tìm, lọc nhóm/trạng thái. Mở video & clip để xem kết quả. "
+            "Chọn nhóm đã lưu và kênh ở bên trái; bảng bên phải hiển thị video của kênh. "
+            "Dùng Thêm / đổi đường dẫn để chọn nơi lưu Part và nguồn Dây chuyền. "
+            "Kênh còn việc chạy/chờ phải xử lý xong trước khi đổi đường dẫn. "
+            "Mở Video & clip để xem kết quả. "
             "Số Part và trạng thái gốc được hiển thị riêng.\n"
             "Cấu hình & chạy Dây chuyền: chọn đúng nhóm và thư mục từng kênh trước khi chạy. "
             "Chỉ Dây chuyền quản lý chuyển gốc vào Thùng rác sau khi xác minh đủ Part.\n\n"

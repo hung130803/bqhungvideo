@@ -150,6 +150,7 @@ class FolderShortcuts(unittest.TestCase):
             othervid=db.insert('INSERT INTO videos(project_id,src_path) VALUES(?,?)',(other,str(self.area/'other.mp4')))
             selected=(win.studio.proj.currentData(),win.studio.vid.currentData())
             win._show_workspace(1);win.batch.refresh()
+            win.batch.channels.select_project(other)
             win.batch.table.selectRow(win.batch._visible_ids.index(othervid))
             win.batch.folder_btn.click()
             self.startfile.assert_called_once_with(str(self.root/'Đã xuất'/'Kênh khác'))

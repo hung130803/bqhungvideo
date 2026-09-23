@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt,QTimer,pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHeaderView,
     QLabel,QLineEdit,QMenu,QMessageBox,QPlainTextEdit,QPushButton,QTableWidget,QTableWidgetItem,
-    QVBoxLayout,QWidget)
+    QVBoxLayout,QWidget,QSplitter)
 
 from app.services_batch import snapshot
 from app.ui.theme import ACCENT,DANGER,MUTED,SUCCESS,WARN
@@ -25,6 +25,7 @@ class BatchPage(QWidget):
     def __init__(self,state):
         super().__init__()
         self.state=state
+        self._refreshing=False
         self.records=[]
         self.total=0
         self.page=0
@@ -43,13 +44,26 @@ class BatchPage(QWidget):
                     'Bảng dùng trạng thái đã ghi trong ứng dụng; không quét lại file trên ổ đĩa.')
         note.setWordWrap(True);note.setStyleSheet(f'color:{MUTED};')
         root.addWidget(note)
+        from app.ui.batch_channels import BatchChannels
+        self.channels=BatchChannels()
+        self.group=self.channels.group
+        self.channels.selected.connect(self._channel_changed)
+        self.channels.open_folder.connect(self.open_folder.emit)
+        body=QSplitter(Qt.Orientation.Horizontal)
+        body.addWidget(self.channels)
+        right=QWidget();content=QVBoxLayout(right);content.setContentsMargins(8,0,0,0)
+        body.addWidget(right);body.setChildrenCollapsible(False)
+        body.setStretchFactor(0,0);body.setStretchFactor(1,1);body.setSizes([300,850])
+        root.addWidget(body,1)
+        self.channel_title=QLabel('Chọn nhóm và kênh bên trái')
+        self.channel_title.setWordWrap(True);self.channel_title.setTextFormat(Qt.TextFormat.PlainText)
+        self.channel_title.setStyleSheet('font-size:16px;font-weight:700;')
+        content.addWidget(self.channel_title)
         self.summary=QLabel();self.summary.setWordWrap(True)
-        root.addWidget(self.summary)
+        content.addWidget(self.summary)
         row=QHBoxLayout()
-        self.search=QLineEdit();self.search.setPlaceholderText('Tìm kênh hoặc video… (có thể gõ không dấu)')
+        self.search=QLineEdit();self.search.setPlaceholderText('Tìm video trong kênh…')
         self.search.setClearButtonEnabled(True);row.addWidget(self.search,1)
-        self.group=QComboBox();self.group.addItem('Tất cả nhóm','')
-        row.addWidget(self.group)
         self.filter=QComboBox()
         for label,value in [('Tất cả trạng thái',''),('Đang chạy','running'),('Đang chờ','pending'),
                             ('Có lỗi','failed'),('Đã hủy','canceled'),('Chưa xuất đủ','ready'),
@@ -57,9 +71,9 @@ class BatchPage(QWidget):
             self.filter.addItem(label,value)
         row.addWidget(self.filter)
         refresh=QPushButton('Làm mới');refresh.clicked.connect(self.refresh);row.addWidget(refresh)
-        root.addLayout(row)
+        content.addLayout(row)
         self.table=QTableWidget(0,6)
-        self.table.setHorizontalHeaderLabels(['Kênh / Nhóm','Video','Bước hiện tại','Part','Video gốc','Chi tiết'])
+        self.table.setHorizontalHeaderLabels(['STT','Video','Bước hiện tại','Part','Video gốc','Chi tiết'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -69,35 +83,35 @@ class BatchPage(QWidget):
         header=self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(5,QHeaderView.ResizeMode.Stretch)
-        for col,width in enumerate((180,230,175,60,170)):
+        for col,width in enumerate((45,210,155,55,145)):
             self.table.setColumnWidth(col,width)
         self.table.setMinimumHeight(160)
         self.table.itemDoubleClicked.connect(lambda _item:self.open_selected())
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.folder_menu)
-        root.addWidget(self.table,1)
+        content.addWidget(self.table,1)
         self.feedback=QLabel('Chọn một video để xem, thử lại hoặc hủy đúng video đó.')
-        self.feedback.setWordWrap(True);root.addWidget(self.feedback)
+        self.feedback.setWordWrap(True);content.addWidget(self.feedback)
         actions=QHBoxLayout()
-        self.open_btn=QPushButton('Mở video && clip');self.open_btn.setProperty('primary',True)
+        self.open_btn=QPushButton('Video && clip');self.open_btn.setProperty('primary',True)
         self.open_btn.clicked.connect(self.open_selected);actions.addWidget(self.open_btn)
-        self.folder_btn=QPushButton('Mở thư mục kênh')
+        self.folder_btn=QPushButton('Thư mục kênh')
         self.folder_btn.setToolTip('Mở thư mục kênh của dòng đang chọn. Chuột phải trên dòng để mở nguồn, Part hoặc sao chép đường dẫn.')
         self.folder_btn.clicked.connect(lambda:self.folder_selected('channel'));actions.addWidget(self.folder_btn)
         self.detail_btn=QPushButton('Xem chi tiết');self.detail_btn.clicked.connect(self.details)
         actions.addWidget(self.detail_btn)
-        self.retry_btn=QPushButton('Thử lại việc lỗi/đã hủy');self.retry_btn.clicked.connect(self.retry_selected)
+        self.retry_btn=QPushButton('Thử lại')
+        self.retry_btn.setToolTip('Thử lại các việc lỗi/đã hủy của video đang chọn');self.retry_btn.clicked.connect(self.retry_selected)
         actions.addWidget(self.retry_btn)
-        self.cancel_btn=QPushButton('Hủy việc của video này');self.cancel_btn.setProperty('danger',True)
+        self.cancel_btn=QPushButton('Hủy video này');self.cancel_btn.setProperty('danger',True)
         self.cancel_btn.clicked.connect(self.cancel_selected);actions.addWidget(self.cancel_btn)
-        actions.addStretch(1);root.addLayout(actions)
+        actions.addStretch(1);content.addLayout(actions)
         pages=QHBoxLayout();self.page_label=QLabel();pages.addWidget(self.page_label,1)
         self.previous=QPushButton('Trước');self.previous.clicked.connect(lambda:self.change_page(-1))
         self.next=QPushButton('Sau');self.next.clicked.connect(lambda:self.change_page(1))
-        pages.addWidget(self.previous);pages.addWidget(self.next);root.addLayout(pages)
+        pages.addWidget(self.previous);pages.addWidget(self.next);content.addLayout(pages)
         self.search.textChanged.connect(self.apply_filters)
-        self.group.currentIndexChanged.connect(self.apply_filters)
         self.filter.currentIndexChanged.connect(self.apply_filters)
         self.timer=QTimer(self);self.timer.setInterval(2500);self.timer.timeout.connect(self.refresh)
         self._selection_changed()
@@ -109,25 +123,33 @@ class BatchPage(QWidget):
     def hideEvent(self,event):
         self.timer.stop();super().hideEvent(event)
 
+    def _channel_changed(self, *_):
+        self.page=0
+        self.feedback.setText('Chọn một video để xem, thử lại hoặc hủy đúng video đó.')
+        self._rendered=None
+        self.table.clearSelection();self.table.setCurrentCell(-1,-1)
+        self.search.blockSignals(True);self.search.clear();self.search.blockSignals(False)
+        if not self._refreshing:self.refresh()
+
     def refresh(self):
+        if self._refreshing:return
+        self._refreshing=True
         try:
-            self.records,self.total=snapshot()
+            self.channels.refresh()
+            pid=self.channels.pid
+            self.records,self.total=snapshot(pid) if pid else ([],0)
+            p=next((p for p in self.channels.projects if p['id']==pid),None)
+            self.channel_title.setText(p['name'] if p else 'Chọn hoặc thêm kênh trong nhóm')
+            counts={s:sum(r['state']==s for r in self.records) for s in ('running','pending','failed','ready','done','idle','canceled')}
+            self.summary.setText(f"{self.total} video · {counts['running']} chạy · {counts['pending']} chờ · "
+                f"{counts['failed']} lỗi · {counts['ready']} chưa xuất đủ · {counts['done']} xuất đủ · "
+                f"{counts['idle']} chưa có clip · {counts['canceled']} hủy")
+            self.render()
         except Exception as error:
+            self.records=[];self.total=0;self._rendered=None;self.render()
             self.feedback.setText('Không đọc được tiến trình: '+str(error))
-            return
-        groups=sorted({r['group'] for r in self.records})
-        existing=[self.group.itemData(i) for i in range(1,self.group.count())]
-        if existing!=groups:
-            selected=self.group.currentData()
-            self.group.blockSignals(True)
-            self.group.clear();self.group.addItem('Tất cả nhóm','')
-            for g in groups:self.group.addItem(g,g)
-            self.group.setCurrentIndex(max(0,self.group.findData(selected)))
-            self.group.blockSignals(False)
-        counts={s:sum(r['state']==s for r in self.records) for s in ('running','pending','failed','ready','done')}
-        self.summary.setText(f"{counts['running']} video chạy  ·  {counts['pending']} chờ  ·  "
-            f"{counts['failed']} có lỗi  ·  {counts['ready']} chưa xuất đủ  ·  {counts['done']} đã xuất đủ")
-        self.render()
+        finally:
+            self._refreshing=False
 
     def apply_filters(self,*_):
         self.page=0;self.render()
@@ -146,9 +168,8 @@ class BatchPage(QWidget):
         selected=self.selected()
         selected_id=selected['id'] if selected else None
         query=folded(self.search.text().strip())
-        group,status=self.group.currentData(),self.filter.currentData()
-        filtered=[r for r in self.records if (not group or r['group']==group)
-                  and (not status or r['state']==status)
+        status=self.filter.currentData()
+        filtered=[r for r in self.records if (not status or r['state']==status)
                   and (not query or query in folded(r['channel']+' '+r['video']))]
         self.page=min(self.page,max(0,(len(filtered)-1)//self.PAGE_SIZE))
         start=self.page*self.PAGE_SIZE;rows=filtered[start:start+self.PAGE_SIZE]
@@ -159,7 +180,7 @@ class BatchPage(QWidget):
             self.table.setRowCount(len(rows))
             self._visible_ids=[r['id'] for r in rows]
             for row,r in enumerate(rows):
-                values=(r['channel']+' / '+r['group'],r['video'],r['stage'],r['parts'],r['source'],r['detail'])
+                values=(str(start+row+1),r['video'],r['stage'],r['parts'],r['source'],r['detail'])
                 for col,value in enumerate(values):
                     item=self.table.item(row,col)
                     if item is None:item=QTableWidgetItem();self.table.setItem(row,col,item)
@@ -171,7 +192,7 @@ class BatchPage(QWidget):
             self.table.setUpdatesEnabled(True);self.table.blockSignals(False)
             self._rendered=signature
         bound=f" · Đang lấy {len(self.records)}/{self.total} video gần nhất/đang chạy" if self.total>len(self.records) else ''
-        self.page_label.setText(f"{len(filtered)} video khớp · Hiện {start+1 if rows else 0}–{start+len(rows)}"+bound)
+        self.page_label.setText(f"{len(filtered)}/{self.total} video trong kênh · Hiện {start+1 if rows else 0}–{start+len(rows)}"+bound)
         self.previous.setEnabled(self.page>0);self.next.setEnabled(start+len(rows)<len(filtered))
         self._selection_changed()
 

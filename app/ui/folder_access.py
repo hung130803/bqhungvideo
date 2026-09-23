@@ -11,7 +11,7 @@ from app.database.db import db
 from app.ui.layout_tools import fit_dialog
 
 
-def locations(project_id, video_id, library_root, pipeline_root=''):
+def locations(project_id, video_id, library_root, pipeline_root='', *, include_recorded=True):
     project=db.query_one('SELECT name,export_dir,pipe_src FROM projects WHERE id=?',(project_id,))
     if not project:raise ValueError('Chọn kênh trước khi mở thư mục.')
     # Match the path naming used by StudioPage._export_video exactly.
@@ -33,10 +33,12 @@ def locations(project_id, video_id, library_root, pipeline_root=''):
             result['video']=channel if override else channel/(_safe_name(source.stem) or f'video_{video_id}')
         rows=db.query("SELECT export_path FROM clips WHERE video_id=? AND COALESCE(export_path,'')<>'' "
                       'ORDER BY id DESC',(video_id,))
-    else:
+    elif include_recorded:
         rows=db.query("SELECT c.export_path FROM clips c JOIN videos v ON v.id=c.video_id "
                       "WHERE v.project_id=? AND COALESCE(c.export_path,'')<>'' ORDER BY c.id DESC",
                       (project_id,))
+    else:
+        rows=[]
     for row in rows:
         path=Path(row['export_path']).parent
         if path not in result['recorded']:result['recorded'].append(path)
