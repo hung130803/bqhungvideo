@@ -1734,6 +1734,12 @@ def vision_max_images(provider: Optional[str] = None) -> int:
     return 8
 
 
+def groq_vision_model() -> str:
+    """Migrate the retired default without overwriting a user's custom model."""
+    model=getattr(settings,'GROQ_VISION_MODEL','')
+    return 'qwen/qwen3.8-27b' if model=='qwen/qwen3.6-27b' else model
+
+
 def _b64(path: str) -> str:
     import base64
     with open(path, "rb") as f:
@@ -1793,7 +1799,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                     # Ít token = ít cạn hạn mức 8.000 token/PHÚT của Groq = cả
                     # dây chuyền không phải ngồi chờ. Mô tả cảnh không cần suy
                     # luận nhiều bước nên tắt là đúng việc.
-                    _kw = {"model": settings.GROQ_VISION_MODEL,
+                    _kw = {"model": groq_vision_model(),
                            "messages": msgs, "temperature": 0.3,
                            "max_tokens": 900}
                     try:

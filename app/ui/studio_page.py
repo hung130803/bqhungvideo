@@ -447,7 +447,9 @@ class StudioPage(QWidget):
         self.recap_cfg_btn.setMinimumWidth(0)
         self.recap_cfg_btn.setMaximumWidth(16777215)
         self.batch_menu = button_menu(panel, "Tạo nhiều", (self.auto_all_btn, self.pick_btn))
-        self.tools_menu = button_menu(panel, "Công cụ", (self.recap_btn, self.recap_cfg_btn, self.tg_btn))
+        self.story_btn=QPushButton('AI dựng chuyện kỹ · nhiều Part')
+        self.story_btn.clicked.connect(lambda:self._auto_recap(quality=True))
+        self.tools_menu = button_menu(panel, "Công cụ", (self.story_btn,self.recap_btn, self.recap_cfg_btn, self.tg_btn))
         pipe_btn.setText("Mở Dây chuyền")
         pipe_btn.setToolTip("Đi tới màn Dây chuyền: chọn nhóm/kênh, chạy tự động và xem lịch sử.")
         actrow.insertWidget(1, self.batch_menu)
@@ -4607,6 +4609,20 @@ class StudioPage(QWidget):
         for jid in list(self._pending_export):
             st = states.get(jid, "")
             if st == "done":
+                from app.ai.story_quality import pending_review
+                review_vid=self._pending_export.get(jid)
+                if review_vid is None:continue
+                waiting=pending_review(review_vid)
+                if waiting:
+                    # Keep the completed analysis tracked: approvals survive restart,
+                    # and the existing pipeline resumes only after ALL Parts pass.
+                    if not hasattr(self,'_story_wait_notified'):self._story_wait_notified=set()
+                    if jid not in self._story_wait_notified:
+                        self._story_wait_notified.add(jid)
+                        msg=f"Chờ duyệt {len(waiting)} kịch bản · video #{review_vid}. Mở Video & clip → Duyệt kịch bản từng Part. Chưa xuất; giữ nguyên gốc."
+                        self.status.setText(msg)
+                        if review_vid in getattr(self,'_pipe_by_vid',{}):self._pipe_log(msg)
+                    continue
                 # pop(jid, None): vòng lặp dùng ảnh chụp `states`, dòng sổ có
                 # thể đã bị đường khác (vd _pipe_poll_cut) gỡ giữa lúc chạy.
                 vid = self._pending_export.pop(jid, None)
@@ -7322,6 +7338,10 @@ class StudioPage(QWidget):
         🎙 Reup và 🤖 dây chuyền — 1 nguồn sự thật)."""
         preset = self._cut_preset()
         preset["recap_style"] = self.recap_style.currentData() or "story"
+        preset['story_quality']=str(self._settings.value('story_quality',False)).lower() in ('true','1')
+        preset['story_min_len']=self._settings.value('story_min_sec',61,type=int)
+        preset['story_max_len']=self._settings.value('story_max_sec',120,type=int)
+        preset['recap_voice']=str(self._settings.value('recap_voice','') or '')
         try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
             preset["recap_ratio"] = int(self._settings.value("recap_ratio", 30))
         except (TypeError, ValueError):
@@ -7363,7 +7383,13 @@ class StudioPage(QWidget):
             not in ("false", "0", "no", "off")
         return preset
 
-    def _auto_recap(self):
+    def _show_story_review(self,meta,clip_id=None):
+        from app.ui.story_review import show_story
+        if show_story(self,meta,clip_id):
+            self._refresh_clips(force=True)
+            self.status.setText('Đã duyệt Part. Dây chuyền/tự xuất sẽ tiếp tục khi đã duyệt đủ các Part; hoặc bấm Xuất video này.')
+
+    def _auto_recap(self, _checked=False, *, quality=None):
         """🎙 Reup thuyết minh: AI viết kịch bản thuyết minh xen kẽ tiếng gốc."""
         if not self.state.video_id:
             QMessageBox.information(self, "Chưa chọn video",
@@ -7372,6 +7398,7 @@ class StudioPage(QWidget):
         if not self._require_ai():
             return
         preset = self._recap_preset()
+        if quality is not None:preset['story_quality']=bool(quality)
         jid = services.enqueue_auto_recap(self.state.pool, self.state.video_id,
                                           self.state.project_id, preset)
         # BẬT "Phân tích xong tự động xuất" -> reup xong TỰ xuất luôn (clip
@@ -8151,6 +8178,12 @@ class StudioPage(QWidget):
                 f"({n_nar} đoạn giọng AI, còn lại giữ tiếng gốc). Khi xuất, "
                 "tiếng gốc TẮT trong các đoạn thuyết minh.")
             info.addWidget(_shrinkable(rc_lbl))
+            if rc.get('quality_story'):
+                from app.ai.story_quality import is_approved
+                script_btn=QPushButton('Đã duyệt · Xem/sửa…' if is_approved(rc) else 'CHỜ DUYỆT · Kịch bản…')
+                script_btn.setProperty('ghost',True)
+                script_btn.clicked.connect(lambda _=False,r=rc,cid=c['id']:self._show_story_review(r,cid))
+                info.addWidget(script_btn)
         en = (sig.get("title_en") or "").strip()
         if en:  # tiêu đề tiếng Anh (nhỏ, mờ) = cái sẽ GẮN LÊN video
             en_lbl = QLabel(en)
@@ -8671,6 +8704,12 @@ class StudioPage(QWidget):
         clips = services.list_clips(video_id)
         if not clips:
             outcome['error'] = 'Không có clip để xuất sau phân tích'
+            return 0
+        from app.ai.story_quality import pending_review
+        waiting=pending_review(video_id)
+        if waiting and (only_clip_id is None or only_clip_id in waiting):
+            outcome['error']='Chờ duyệt kịch bản từng Part trước khi xuất. Video gốc được giữ nguyên.'
+            self.status.setText(outcome['error'])
             return 0
         outcome['clips'] = [int(c['id']) for c in clips
                             if only_clip_id is None or c['id'] == only_clip_id]

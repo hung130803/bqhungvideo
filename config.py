@@ -231,7 +231,7 @@ class Settings:
     # Nó là model SUY LUẬN nên trả kèm khối <think> — llm._extract_json đã bóc.
     # Giới hạn cứng: 3 ảnh/lượt (xem llm.vision_max_images).
     # Đặt rỗng để tắt vision Groq.
-    GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+    GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
     # NHIỀU-PASS (mặc định BẬT): AI tự chấm bản nháp rồi viết lại tốt hơn cho
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.

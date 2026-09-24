@@ -598,6 +598,9 @@ def generate_recap(payload: dict, ctx: JobContext) -> dict:
     Kết quả: các dòng clips status='suggested' kèm signals.recap (kịch
     bản). Lỗi LLM -> ném lỗi rõ.
     """
+    if (payload.get("preset") or {}).get("story_quality") is True:
+        from app.ai.story_quality import generate
+        return generate(payload, ctx)
     video_id = int(payload["video_id"])
     preset = payload.get("preset") or {}
     cfg = {**DEFAULTS, **preset}

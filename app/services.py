@@ -377,7 +377,7 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
     # sig phải phủ MỌI thứ ảnh hưởng kết quả: cả mốc cắt start/end của clip
     # (user kéo sửa trim rồi xuất lại) + NỘI DUNG chữ (overlay_png là đường dẫn
     # cố định _ovl_{clip_id}.png nên phải hash nội dung file) + nơi lưu.
-    row = db.query_one("SELECT start_sec, end_sec, export_path FROM clips WHERE id=?",
+    row = db.query_one("SELECT start_sec, end_sec, export_path, signals FROM clips WHERE id=?",
                        (clip_id,))
     se = f"{row['start_sec']:.3f}-{row['end_sec']:.3f}" if row else "?"
     ovl = ""
@@ -422,6 +422,10 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
             _cc_sig += "tk"
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}{_cc_sig}")
+    story=(db.loads(row['signals'],{}) or {}).get('recap') or {} if row else {}
+    if story.get('quality_story'):
+        from app.ai.story_quality import approval_signature
+        sig+=':story'+approval_signature(story)
     tai = {"clip_id": clip_id, "out_w": out_w, "out_h": out_h,
          "mode": mode, "zoom": zoom, "crop_rect": crop_rect,
          "text_overlays": text_overlays or [], "overlay_png": overlay_png,

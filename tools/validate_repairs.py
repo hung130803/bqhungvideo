@@ -24,6 +24,7 @@ for executable in ('FFMPEG_PATH', 'FFPROBE_PATH'):
     if not Path(environment[executable]).is_file():
         raise SystemExit(f'Missing test dependency: {environment[executable]}')
 tests = sys.argv[1:] or [
+    'tests/test_story_quality.py',
     'tests/test_pipeline_safety.py', 'tests/test_queue_progress.py', 'tests/test_workspace_ui.py',
     'tests/test_folder_shortcuts.py',
     'tests/test_batch_channels.py', 'tests/test_batch_history.py',

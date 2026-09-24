@@ -222,6 +222,14 @@ class RecapSettingsDialog(QDialog):
             "LƯỢT NGÀY (cần nhiều key từ nhiều nick).\n"
             "• Tiết kiệm: luôn 1 lượt — nhanh, ít token, chất lượng vẫn tốt.")
         lay.addWidget(self.quality)
+        self.story_quality = QCheckBox('AI dựng chuyện kỹ — đối chiếu hình, lời và hook')
+        self.story_quality.setToolTip('Lấy mẫu hình xuyên suốt nguồn, viết/kiểm tra từng Part. Bạn phải xem/sửa và duyệt kịch bản trước khi xuất. Giữ lời đã duyệt; câu quá dài sẽ báo để sửa.')
+        self.story_quality.setChecked(str(self._s.value('story_quality',False)).lower() in ('true','1'))
+        self.story_quality.toggled.connect(lambda enabled:self.quality.setEnabled(not enabled))
+        self.quality.setEnabled(not self.story_quality.isChecked())
+        lay.addWidget(self.story_quality)
+        story_note=QLabel('Dựng chuyện kỹ cần bạn duyệt kịch bản từng Part tại Video & clip; Dây chuyền và tự xuất sẽ chờ duyệt đủ. Chọn giọng ở trên; nhạc, hiệu ứng và phụ đề theo mẫu xuất. Groq có thể nhận sai hình; hãy xem nguồn trước khi duyệt.')
+        story_note.setWordWrap(True);lay.addWidget(story_note)
 
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
@@ -269,6 +277,7 @@ class RecapSettingsDialog(QDialog):
         self.min_sec.valueChanged.connect(self._min_sec_changed)
         self.max_sec.valueChanged.connect(self._max_sec_changed)
         lay.addLayout(lrow)
+        self.story_quality.toggled.connect(self._story_length_mode)
 
         # ---- Phong cách ----
         lay.addWidget(QLabel("<b>Phong cách kể</b>"))
@@ -412,6 +421,7 @@ class RecapSettingsDialog(QDialog):
         # set Max TRƯỚC rồi Min: nếu Min lưu > Max lưu, handler tự đẩy Max
         self.max_sec.setValue(min(600, max(15, lmax)))
         self.min_sec.setValue(min(180, max(10, lmin)))
+        if self.story_quality.isChecked():self._story_length_mode(True)
         # (Chữ AI kể: màu/nghiêng/giống-mẫu ĐÃ CHUYỂN sang Chỉnh mẫu.)
         # giọng đã lưu: đưa vào combo ngay (list đầy đủ nạp nền sẽ giữ chọn)
         self._want_voice = str(self._s.value("recap_voice", "") or "")
@@ -420,6 +430,7 @@ class RecapSettingsDialog(QDialog):
             self.voice.setCurrentIndex(self.voice.count() - 1)
 
     def _save(self) -> None:
+        self._s.setValue('story_quality',self.story_quality.isChecked())
         self._s.setValue("recap_voice", self.voice.currentData() or "")
         self._s.setValue("recap_style", self.style.currentData() or DEFAULT_STYLE)
         self._s.setValue("recap_ratio", int(self.ratio.value()))
@@ -430,8 +441,9 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue("recap_dim", int(self.dim.value()))
         self._s.setValue("recap_count", int(self.count.value()))
         lmin, lmax = int(self.min_sec.value()), int(self.max_sec.value())
-        self._s.setValue("recap_min_sec", lmin)
-        self._s.setValue("recap_max_sec", max(lmin, lmax))  # ép Min<=Max giây
+        prefix='story' if self.story_quality.isChecked() else 'recap'
+        self._s.setValue(prefix+"_min_sec", lmin)
+        self._s.setValue(prefix+"_max_sec", max(lmin, lmax))
         # Chất lượng kịch bản AI -> CONFIG (recap job đọc settings.RECAP_QUALITY
         # LIVE, không qua QSettings) — update_env ghi .env + cập nhật Settings.
         try:
@@ -485,6 +497,16 @@ class RecapSettingsDialog(QDialog):
 
         timer.timeout.connect(poll)
         timer.start(200)
+
+    def _story_length_mode(self,enabled):
+        prefix='story' if enabled else 'recap'
+        low,high=(61,120) if enabled else (25,80)
+        self.min_sec.setMinimum(61 if enabled else 10)
+        self.max_sec.setMinimum(61 if enabled else 15)
+        self.max_sec.setValue(self._s.value(prefix+'_max_sec',high,type=int))
+        self.min_sec.setValue(self._s.value(prefix+'_min_sec',low,type=int))
+        tip='Dựng chuyện: bắt buộc mỗi Part trên 60 giây. Mặc định 61–120s. Tăng tốc mẫu cũng không được làm Part xuống dưới 61s.' if enabled else 'Độ dài mong muốn mỗi clip Reup.'
+        self.min_sec.setToolTip(tip);self.max_sec.setToolTip(tip)
 
     def _min_sec_changed(self, v: int) -> None:
         """Kéo Min vượt Max -> Max nhích theo (giữ Min <= Max giây)."""

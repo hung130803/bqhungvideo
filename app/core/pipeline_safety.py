@@ -70,6 +70,11 @@ def source_problem(entry_id: int, video_id: int, path: Path) -> str:
 
 
 def parts_problem(video_id: int, expected_ids=None, old_note='') -> str:
+    from app.ai.story_quality import is_approved,approval_signature
+    for row in db.query("SELECT signals FROM clips WHERE video_id=? AND status<>'archived'",(video_id,)):
+        meta=(db.loads(row['signals'],{}) or {}).get('recap') or {}
+        if meta.get('quality_story') and (not is_approved(meta) or meta.get('exported_approval')!=approval_signature(meta)):
+            return 'Part dựng chuyện chưa được duyệt và xuất đúng kịch bản đã duyệt; giữ video gốc'
     clips = db.query("SELECT id, export_path FROM clips WHERE video_id=? AND status<>'archived'",
                      (video_id,))
     ids = {r['id'] for r in clips}

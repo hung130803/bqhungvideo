@@ -173,6 +173,10 @@ try:
             checks.append(('hidden updater' if hidden else 'normal launch') + ': real login visible')
             if hidden:
                 # Hide the existing login, then double-launch the real app.
+                # login.exec() first shows the native window; the zero-delay
+                # activation callback then posts another ShowWindowAsync. Let
+                # that startup event settle before simulating a later user hide.
+                time.sleep(1)
                 api.ShowWindowAsync(hwnd, 0)
                 await_window(process, False)
                 duplicate = launch(folder, True)

@@ -223,15 +223,66 @@ class WorkspaceTests(unittest.TestCase):
                 self.assertLess(button.mapTo(voice,button.rect().bottomRight()).y(),voice.height())
             self.assertGreaterEqual(voice.bang.height(),150)
         s=app_settings();s.setValue('recap_ratio',42);s.setValue('recap_min_sec',40);s.setValue('recap_max_sec',120)
+        s.setValue('story_quality',False)
         with patch.object(RecapSettingsDialog,'_fill_voices_bg'):
             recap=RecapSettingsDialog();self.dialogs.append(recap)
             recap.resize(690,640);recap.show();qapp.processEvents()
+            self.assertFalse(recap.story_quality.isChecked())
+            recap.story_quality.setChecked(True)
+            self.assertEqual(recap.min_sec.value(),61)
+            recap.min_sec.setValue(30)
+            self.assertEqual(recap.min_sec.value(),61)
             recap.settings_scroll.verticalScrollBar().setValue(100000)
             with patch('config.update_env'):recap._save()
             self.assertEqual(int(s.value('recap_ratio')),42)
             self.assertEqual(int(s.value('recap_min_sec')),40)
             self.assertEqual(int(s.value('recap_max_sec')),120)
+            self.assertEqual(int(s.value('story_min_sec')),61)
+            self.assertEqual(int(s.value('story_max_sec')),120)
+            self.assertTrue(s.value('story_quality',type=bool))
         state.pool.stop(wait=True)
+
+    def test_story_review_displays_rendered_words_and_source_evidence(self):
+        from app.ui.story_review import show_story
+        from PyQt6.QtWidgets import QTableWidget
+        original={'start':0,'end':12,'mode':'narrate','text':'A longer initial script.',
+                  'evidence':json.dumps({'transcript':'Source words.','observations':[{'visible':'Blue card','uncertain':'Identity unknown'}]})}
+        meta={'parts':[original],'rendered_parts':[dict(original,text='A blue card.')],'source_signature':[str(AREA/'absent.mp4')]}
+        observed={}
+        def inspect():
+            dlg=qapp.activeModalWidget()
+            if not dlg:return
+            table=dlg.findChild(QTableWidget)
+            observed['text']=table.item(0,2).text()
+            observed['evidence']=dlg.findChild(QPlainTextEdit).toPlainText()
+            observed['source_enabled']=next(b for b in dlg.findChildren(QPushButton) if b.text()=='Mở video nguồn').isEnabled()
+            observed['width']=dlg.width()
+            dlg.grab().save(str(AREA/'story-review.png'))
+            dlg.accept()
+        QTimer.singleShot(80,inspect)
+        show_story(None,meta)
+        self.assertEqual(observed['text'],'A blue card.')
+        self.assertIn('Blue card',observed['evidence'])
+        self.assertFalse(observed['source_enabled'])
+        self.assertLessEqual(observed['width'],1100)
+
+    def test_story_review_close_does_not_approve_and_save_uses_edited_words(self):
+        from app.ui.story_review import show_story
+        from PyQt6.QtWidgets import QTableWidget
+        from PyQt6.QtCore import Qt
+        meta={'parts':[{'start':0,'end':12,'mode':'narrate','text':'Two cards.','evidence':'Source'},
+                       {'start':12,'end':24,'mode':'orig','text':'','evidence':'Original audio'}]}
+        def close():qapp.activeModalWidget().reject()
+        with patch('app.ai.story_quality.approve_script') as approve:
+            QTimer.singleShot(30,close);self.assertFalse(show_story(None,meta,123));approve.assert_not_called()
+            def edit():
+                dlg=qapp.activeModalWidget();table=dlg.findChild(QTableWidget)
+                self.assertTrue(table.item(0,2).flags() & Qt.ItemFlag.ItemIsEditable)
+                self.assertFalse(table.item(1,2).flags() & Qt.ItemFlag.ItemIsEditable)
+                table.item(0,2).setText('One card.')
+                next(b for b in dlg.findChildren(QPushButton) if b.text()=='Lưu & duyệt').click()
+            QTimer.singleShot(30,edit);self.assertTrue(show_story(None,meta,123))
+            self.assertEqual(approve.call_args.args[2],['One card.',''])
 
     def test_update_notes_not_truncated_or_interpreted_as_html(self):
         from app.ui.update_dialog import UpdateDialog

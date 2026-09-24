@@ -3453,6 +3453,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     payload["_ovl_tinh_trang"] = _ovl_tinh_trang
     flip_h = bool(payload.get("flip_h"))        # LẬT GƯƠNG ngang (né content-ID)
     signals = db.loads(clip["signals"], {}) or {}
+    if (signals.get('recap') or {}).get('quality_story') and not video_rect:
+        # Narration and exact windows must not disappear when no canvas template
+        # was supplied (the simple exporter only cuts start_sec..end_sec).
+        video_rect = (0.5,0.5,1.0)
 
     pfx = f"Part {part_no} — " if part_no > 0 else ""   # cho user biết đang xuất Part nào
 
@@ -3491,6 +3495,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         recap_meta = signals.get("recap") or {}
         recap_parts = recap_meta.get("parts") or []
         is_recap = bool(recap_parts)
+        if recap_meta.get('quality_story'):
+            from app.ai.story_quality import verify_export
+            verify_export(recap_meta,segs,src,payload.get('speed',1.))
         # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
         if payload.get("hook_first") and not is_recap:
             hseg = _pick_hook_seg(video_id, signals, segs)
@@ -3537,7 +3544,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 _rvol = 1.15
             dub_path, narr_events = dubbing.build_recap_track(
                 recap_parts, segs,
-                payload.get("recap_voice") or payload.get("dub_voice") or "",
+                recap_meta.get('voice') or payload.get("recap_voice") or payload.get("dub_voice") or "",
                 lang, dw,
                 pace=payload.get("recap_pace") or "normal",
                 # "Tông giọng" (⚙ Cài đặt Reup) -> pitch edge-tts
@@ -3547,8 +3554,14 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                 # 🎭 Giọng cảm xúc (audio tag v3) — BẬT + giọng ElevenLabs ->
                 # model eleven_v3 đọc [excited]/CAPS; giọng khác strip tag.
                 emotion=bool(payload.get("recap_emotion", True)),
+                strict=bool(recap_meta.get('quality_story')),
+                allow_rewrite=not bool(recap_meta.get('quality_story')),
                 on_progress=lambda p, m="": ctx.progress(
                     0.05 + 0.10 * p, f"{pfx}thuyết minh: {m}"))
+            if recap_meta.get('quality_story'):
+                spoken=iter(narr_events)
+                recap_meta['rendered_parts']=[dict(p,text=next(spoken)['text'])
+                    if p.get('mode')=='narrate' else dict(p) for p in recap_parts]
             # Khoảng HẠ tiếng gốc ở timeline ĐẦU RA SAU speed (chia speed
             # như dub — filter duck đặt sau atempo trong export_canvas_clip).
             # Dùng n["duck"] = khoảng AI NÓI THẬT (speech±pad, kẹp trong
@@ -3954,6 +3967,14 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     result_extra = dict(result_extra or {})
     result_extra['verified_output'] = {'size': Path(out_path).stat().st_size,
                                        'duration': _verified.duration}
+    if (signals.get('recap') or {}).get('quality_story'):
+        from app.ai.story_quality import verify_export
+        verify_export(signals['recap'],signals.get('segments'),src,payload.get('speed',1.))
+        expected=sum(float(e)-float(s) for s,e in signals['segments'])/max(.5,min(3.,float(payload.get('speed',1.) or 1.)))
+        if not _verified.has_audio or _verified.duration<=60 or abs(_verified.duration-expected)>max(.35,expected*.01):
+            raise RuntimeError('Part xuất không khớp thời lượng hoặc thiếu âm thanh; giữ nguồn để kiểm tra.')
+        signals['recap']['exported_approval']=signals['recap']['human_approval']['signature']
+        db.execute('UPDATE clips SET signals=? WHERE id=?',(db.dumps(signals),clip_id))
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",
         (str(out_path), clip_id),

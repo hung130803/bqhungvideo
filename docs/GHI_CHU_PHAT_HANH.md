@@ -1,8 +1,14 @@
-# BQ Hung Video v2.50.11 — Xem file thực tế và ẩn hồ sơ cũ
+# BQ Hung Video v2.50.12 — AI dựng chuyện kỹ theo cảnh nguồn
 
-- Thêm **File trong thư mục…** trong Dây chuyền: tự quét khi mở, hiển thị video nguồn, Part và file tải dở đang có trực tiếp trong thư mục được chọn. Có nút **Làm mới file**, chọn nguồn/nơi xuất và chép đường dẫn.
-- Phân biệt video đã có hồ sơ với video chưa có hồ sơ tại đường dẫn đó. Việc quét chỉ đọc; dùng **Chọn kênh & chạy** để nhận và xử lý video. Dây chuyền vẫn kiểm tra trùng nội dung trước khi chạy.
-- **Mở Part đã xuất** hiển thị từng đường dẫn Part và trạng thái còn/mất. Chỉ cho mở thư mục chứa file khi file còn, tránh mở thư mục trống rồi tưởng video vẫn ở đó.
-- Thêm menu **Hồ sơ → Ẩn hồ sơ đang chọn…** và **Hiện lại**. Hồ sơ ẩn nằm trong bộ lọc **Hồ sơ đã ẩn**; không xóa video, Part, cơ sở dữ liệu hoặc sổ chống trùng. Video đang xử lý vẫn được hiển thị.
+- Thêm **Video & clip → Công cụ → AI dựng chuyện kỹ · nhiều Part**. App lấy mẫu hình xuyên suốt video, đối chiếu với lời gốc, lập mạch chuyện, viết hook và kiểm tra từng câu theo cảnh được chọn. Có thể tạo nhiều Part theo thứ tự nguồn, không lặp lại đoạn đã dùng.
+- Trong **Cài đặt Reup thuyết minh**, chọn giọng, phong cách, số Part và thời lượng. Bật **AI dựng chuyện kỹ** để dùng cùng chế độ Reup của Dây chuyền. Đây là lựa chọn riêng, mặc định tắt; cách cắt thường giữ nguyên.
+- **Mỗi Part dựng chuyện bắt buộc trên 60 giây**, mặc định **61–120 giây**. Cấu hình riêng cho chế độ mới; kiểm tra cả thời lượng sau tăng tốc và file xuất thật. Nguồn không đủ sẽ báo giảm số Part/chọn video dài hơn, không lặp cảnh để kéo dài.
+- Mỗi Part mới **CHỜ DUYỆT**: mở **Kịch bản…**, xem video nguồn theo mốc, nhấp đúp lời kể để sửa, rồi **Lưu & duyệt**. Đóng cửa sổ không duyệt. Dây chuyền/tự xuất chờ duyệt đủ các Part, kể cả sau khi khởi động lại app. Không cần thêm AI cục bộ.
+- Giữ nguyên lời đã duyệt. Nếu thu âm dài hơn cảnh, app báo để bạn viết ngắn và duyệt lại; không cắt cụt câu, tự đổi lời hoặc mượn hình của cảnh kế tiếp. Giữ đúng giọng đã chọn; thu âm thiếu sẽ báo lỗi để thử lại.
+- Chặn xuất khi kịch bản chưa duyệt, cảnh hoặc nguồn thay đổi. Sửa kịch bản đã xuất sẽ yêu cầu xuất lại, không dùng kết quả cũ để dọn video gốc.
+- Nhạc nền, hiệu ứng, chuyển cảnh và phụ đề dùng theo mẫu xuất hiện có. Sửa trường hợp thiếu mẫu khung làm chế độ mới bỏ qua ghép đoạn/thuyết minh. Kiểm tra thời lượng và âm thanh của Part trước khi ghi nhận thành công.
+- Lưu kết quả xem hình để tiếp tục khi thử lại. Lỗi máy chủ quá tải được chờ và thử lại có giới hạn. Chuyển model xem hình Groq mặc định đã ngừng hỗ trợ sang `qwen/qwen3.8-27b`; giữ cấu hình model khác do người dùng chọn.
 
-Danh sách hồ sơ là lịch sử xử lý, không phải danh sách file trên ổ. Nếu file đã chuyển hoặc xóa bên ngoài, ứng dụng không tự xóa lịch sử hay tự chạy lại. Quét thư mục không đi vào thư mục con; chọn đúng thư mục chứa file. Đánh dấu file còn chỉ xác nhận tồn tại/kích thước, chưa kiểm chứng nội dung.
+Chế độ này cần AI xem hình và tốn thời gian hơn cắt thường. App lấy mẫu hình, không đọc từng khung hình; Groq vẫn có thể nhận sai đối tượng hoặc tình tiết. Bạn cần xem nguồn khi duyệt và xem Part trước khi đăng. Nếu các lượt kiểm tra AI chưa thống nhất, bản nháp hiện cảnh báo cụ thể để bạn sửa; vẫn bị chặn xuất tới khi bạn duyệt. Mốc cảnh không hợp lệ hoặc không đủ cảnh cho số Part đã chọn sẽ dừng và báo lý do.
+
+Tạo kịch bản không tự xóa nguồn. Dây chuyền chỉ dọn nguồn theo cấu hình hiện có sau khi các Part cần xuất đã thành công.

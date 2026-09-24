@@ -895,6 +895,7 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
                       on_msg: Optional[Callable[[str], None]] = None,
                       edge_rate: str = "+0%",
                       gemini_prefix: str = "",
+                      allow_fallback: bool = True,
                       ) -> list[bool]:
     """Synth TUẦN TỰ từng cụm qua Gemini TTS (hạn mức free thấp — KHÔNG chạy
     song song; _gemini_tts tự retry 429 theo retryDelay).
@@ -912,6 +913,9 @@ def _synth_all_gemini(texts: list[str], voice: str, paths: list[str],
     kể chuyện) — KHÔNG áp cho đường fallback edge-tts (edge sẽ ĐỌC to chỉ
     dẫn thành lời); edge_rate: rate cho đường fallback edge-tts."""
     def _fallback_edge(reason: str) -> list[bool]:
+        if not allow_fallback:
+            if on_msg:on_msg(f"Gemini {reason}; chưa xuất vì cần giữ đúng giọng đã chọn.")
+            return [False] * len(texts)
         # Hết hạn mức/lỗi -> đổi CẢ track sang edge-tts (text GỐC không prefix
         # — edge đọc to mọi chữ trong text). Re-synth TẤT CẢ part -> đồng nhất.
         fb = _edge_fallback_voice(lang)
@@ -3536,6 +3540,7 @@ def _clamp_cues_to_speech(cues: list, speech: list,
 
 def _fit_recap_chunk(src: str, dst_wav: str, window: float,
                      tempo_max: float = _RECAP_TEMPO_MAX,
+                     allow_trim: bool = True,
                      ) -> tuple[float, float, float]:
     """Khớp 1 cụm thuyết minh vào khung `window` giây: atempo 1.0-`tempo_max`
     (KHÔNG BAO GIỜ kéo chậm <1.0 — lời ngắn hơn khung thì giữ tốc độ tự
@@ -3564,6 +3569,8 @@ def _fit_recap_chunk(src: str, dst_wav: str, window: float,
             af.append(_tempo_filters(tempo))
             dur = dur / tempo
     if window > 0.05 and dur > window + 0.05:       # tempo trần vẫn dư -> cắt
+        if not allow_trim:
+            raise RuntimeError('Lời kể còn dài hơn cảnh; giữ video gốc, không cắt cụt câu.')
         af.append(f"atrim=0:{window:.3f}")
         af.append(f"afade=t=out:st={max(0.0, window - 0.12):.3f}:d=0.12")
         # atrim cắt ở D_final=window -> phần gốc bị mất tương ứng: D_nat co lại
@@ -3593,6 +3600,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                       pace: str = "normal", pitch: str = "normal",
                       src_path: str = "", volume: float = 1.0,
                       emotion: bool = False,
+                      strict: bool = False,
+                      allow_rewrite: bool = True,
                       ) -> tuple[str, list[dict]]:
     """Dựng track THUYẾT MINH cho clip recap. Trả (wav_path, narrate_events).
 
@@ -3677,6 +3686,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
     _m = re.match(r"^([a-z]{2})-[A-Z]{2}-", voice or "")
     if (_want and _m and "multilingual" not in (voice or "").lower()
             and _m.group(1) != _want and default_voice(lang)):
+        if strict:
+            raise RuntimeError('Giọng đã chọn khác ngôn ngữ kịch bản. Chọn giọng cùng ngôn ngữ hoặc giọng Multilingual rồi tạo lại kịch bản; không tự đổi giọng đã chốt.')
         voice = default_voice(lang)
 
     # Part narrate -> mốc đầu ra; part rơi ngoài clip/khung quá hẹp -> bỏ
@@ -3695,7 +3706,10 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         from app.ai.recap import _strip_audio_tags
         raw = str(p["text"]).strip()
         narr.append({"start": round(a, 3), "end": round(b, 3),
-                     "text": _strip_audio_tags(raw), "_raw": raw})
+                     "text": raw if strict else _strip_audio_tags(raw), "_raw": raw,
+                     "_evidence":p.get('evidence','')})
+    if strict and len(narr)!=sum(p.get('mode')=='narrate' for p in parts):
+        raise RuntimeError('Một câu kể nằm ngoài cảnh hoặc quá ngắn để đọc; cần viết lại kịch bản.')
     if not narr:
         raise RuntimeError("Kịch bản không có part thuyết minh hợp lệ.")
 
@@ -3754,7 +3768,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                                    edge_rate=rate, model=el_model,
                                    # đường fallback edge nhận bản ĐÃ strip tag
                                    edge_texts=[n["text"] for n in narr],
-                                   words_out=word_lists)
+                                   words_out=word_lists,cho_lui_edge=not strict)
         elif voice.startswith("gemini:"):
             # Gemini TTS KHÔNG trả word boundary -> word_lists rỗng, phụ đề
             # narrate fallback chia theo ký tự (m1._recap_caption_cues).
@@ -3768,7 +3782,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                                    on_done=_tts_done,
                                    on_msg=_nhac,
                                    edge_rate=rate,
-                                   gemini_prefix=gemini_narrate_prefix(lang))
+                                   gemini_prefix=gemini_narrate_prefix(lang),allow_fallback=not strict)
         else:
             prog(0.05, f"Thu giọng {len(narr)} đoạn (edge-tts)...")
             # Câu HOOK (part narrate đầu) đọc nhanh hơn +2% cho có năng lượng
@@ -3809,7 +3823,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # part (bỏ part = mất đoạn thuyết minh — lỗi user gặp thật).
             fails = [i for i, k in enumerate(ok)
                      if not k and texts[i].strip()]
-            if fails:
+            if fails and not strict:
                 fb = _recap_backup_voice(lang, voice)
                 if fb:
                     prog(_DUPHONG_DAU,
@@ -3827,6 +3841,8 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                         if ok3[j]:
                             ok[i] = True
                             word_lists[i] = wl3[j]
+        if strict and not all(ok):
+            raise RuntimeError('Thiếu giọng đọc cho một số câu; chưa xuất Part, không bỏ câu im lặng.')
         if not any(ok):
             raise RuntimeError(
                 "TTS thuyết minh thất bại toàn bộ (mạng/giọng lỗi) — "
@@ -3847,10 +3863,19 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # chấp nhận. Part cuối/không còn chỗ mượn -> nới atempo 1.4
             # rồi mới đành trim + fade.
             dur0 = probe_duration(mp3s[i])
+            if strict:
+                from app.core.story_audio import fit_narration_text
+                replacement, replacement_words = fit_narration_text(
+                    n['text'],n['_evidence'],window,mp3s[i],voice,lang,rate,pitch_hz,
+                    on_progress=lambda msg:prog(.64,msg),allow_rewrite=allow_rewrite)
+                if replacement!=n['text']:
+                    n['text']=replacement;n['_raw']=replacement
+                    word_lists[i]=replacement_words
+                dur0=probe_duration(mp3s[i])
             nxt_start = narr[i + 1]["start"] if i + 1 < len(narr) else total
             room = max(0.0, min(nxt_start, total) - n["end"])
-            tempo_max = _RECAP_TEMPO_MAX
-            if dur0 > 0 and dur0 / _RECAP_TEMPO_MAX > window + 0.05:
+            tempo_max = 1.15 if strict else _RECAP_TEMPO_MAX
+            if not strict and dur0 > 0 and dur0 / _RECAP_TEMPO_MAX > window + 0.05:
                 need = dur0 / _RECAP_TEMPO_MAX - window
                 borrow = min(_BORROW_MAX_S, _BORROW_MAX_FRAC * room,
                              need + 0.1)
@@ -3861,8 +3886,9 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     tempo_max = _RECAP_TEMPO_MAX_TAIL
             try:
                 d_final, d_nat, tempo = _fit_recap_chunk(
-                    mp3s[i], wav, window, tempo_max=tempo_max)
+                    mp3s[i], wav, window, tempo_max=tempo_max,allow_trim=not strict)
             except RuntimeError:
+                if strict:raise
                 continue                    # part hỏng -> bỏ riêng part đó
             fitted.append((n["start"], wav))
             kept.append(n)                  # có audio thật -> mới được duck/sub
