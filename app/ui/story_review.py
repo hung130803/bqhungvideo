@@ -1,5 +1,6 @@
 """Expose source evidence and narration instead of opaque AI quality scores."""
 import json
+from copy import deepcopy
 from pathlib import Path
 from PyQt6.QtCore import QUrl,Qt
 from PyQt6.QtGui import QDesktopServices
@@ -44,7 +45,7 @@ def preview_scene(parent,source,start,end):
 
 def show_story(parent,meta,clip_id=None):
     from app.ai.story_quality import approve_script,digest,is_approved
-    revision=digest(meta);saved=False;voice=meta.get('voice','')
+    revision=digest(meta);saved=False;voice=meta.get('voice','');edit_plan=deepcopy(meta.get('edit_plan'))
     dlg=QDialog(parent);dlg.setWindowTitle('Kịch bản & căn cứ từ video nguồn')
     lay=QVBoxLayout(dlg)
     note=QLabel('Groq có thể nhận sai hình. Mở video nguồn để đối chiếu mốc thời gian; nhấp đúp ô Lời kể để sửa. Chỉ bấm Lưu & duyệt khi đã xem từng câu. Đóng cửa sổ không có nghĩa là duyệt.')
@@ -116,6 +117,17 @@ def show_story(parent,meta,clip_id=None):
         i=table.currentRow()
         if 0<=i<len(parts):preview_scene(dlg,source,parts[i]['start'],parts[i]['end'])
     watch.clicked.connect(watch_selected)
+    edit=QPushButton('Dựng hình & âm thanh');edit.setEnabled(clip_id is not None);row.addWidget(edit)
+    def edit_selected():
+        nonlocal edit_plan
+        from app.ui.editorial_dialog import EditorialDialog
+        current=deepcopy(parts)
+        for i,p in enumerate(current):p['text']=table.item(i,2).text()
+        panel=EditorialDialog(dlg,source,current,edit_plan)
+        if panel.exec()==QDialog.DialogCode.Accepted:
+            edit_plan=panel.plan
+            state.setText(f"Đã chỉnh {len(edit_plan['events'])} điểm nhấn · cần Lưu & duyệt để áp dụng; xuất lại nếu Part đã xuất.")
+    edit.clicked.connect(edit_selected)
     copy=QPushButton('Chép kịch bản');copy.clicked.connect(lambda:QApplication.clipboard().setText('\n\n'.join(
         f"{p['start']:.1f}–{p['end']:.1f}s: {table.item(i,2).text() or '[Giữ tiếng gốc]'}" for i,p in enumerate(parts))));row.addWidget(copy)
     if clip_id is not None:
@@ -124,6 +136,7 @@ def show_story(parent,meta,clip_id=None):
             nonlocal saved
             try:
                 options={'voice':voice} if voice!=meta.get('voice','') else {}
+                if edit_plan is not None:options['edit_plan']=edit_plan
                 approve_script(clip_id,revision,[table.item(i,2).text() for i in range(len(parts))],**options)
             except (RuntimeError,ValueError,OSError) as exc:
                 QMessageBox.warning(dlg,'Chưa duyệt được',str(exc));return

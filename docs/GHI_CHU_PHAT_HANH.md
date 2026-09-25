@@ -1,4 +1,15 @@
-# BQ Hung Video v2.50.15 — Đối chiếu cảnh kỹ hơn, giảm trùng ý và đặt tiếng động theo tình tiết
+# BQ Hung Video v2.50.16 — Dựng hình, sticker động và âm thanh theo từng cảnh
+
+- Trong **Kịch bản & căn cứ → Dựng hình & âm thanh**, thêm/chỉnh/bỏ điểm nhấn: mũi tên, khoanh chi tiết, dấu hỏi, dấu chấm than, lấp lánh, trái tim, tia nhấn, chữ động, zoom, ảnh dừng và phát lại trong ô có nhãn. Ảnh dừng/phát lại không kéo dài hoặc thay cảnh chính; không đổi lời đã duyệt.
+- Chọn bộ **Gọn / Hài / Căng thẳng / Giải thích** trong cấu hình trước phân tích hoặc trong cửa sổ dựng. Gợi ý dùng lời kể và điểm nhấn đã phân tích, không gọi AI thêm. Đây là bản nháp cần người dùng xem lại; không tự suy đoán cảm xúc/nhận dạng vật.
+- Chữ nhấn đã duyệt trong phần mở đầu thay tiêu đề hook tự động của mẫu, tránh hai lớp chữ chồng nhau. Phụ đề lời kể vẫn giữ nguyên.
+- Chỉnh mốc, độ dài, vị trí, kích thước, nhóm tiếng, tiếng cụ thể và mức âm lượng. Tối đa 12 điểm không chồng nhau; chữ tự xuống dòng, nằm dưới phụ đề/logo của mẫu. Không có bộ dựng mới thì mẫu cũ giữ hành vi cũ; có nút tắt bộ dựng để quay về mẫu.
+- **Xem thử điểm nhấn** dựng một khoảng ngắn trên máy với tiếng gốc và khung thử. Bản thử chưa có giọng AI, nhạc hay phụ đề của mẫu; cần xem Part xuất hoàn chỉnh trước khi dùng. Chọn một file tiếng cụ thể để nghe và dùng đúng tiếng đó khi xuất.
+- Mũi tên/khoanh có thể bám chi tiết: bấm **Chọn vật trên hình nguồn**, chọn tâm, xem thử. So khớp ảnh trong cửa sổ ngắn tối đa 4 giây, tự ẩn khi mất dấu. Chưa hỗ trợ bám khi có cắt viền nguồn, metadata xoay hoặc tỉ lệ điểm ảnh đặc biệt; không phải nhận diện vật chính xác tuyệt đối. Kiểm tra lại khi máy quay rung, vật bị che hoặc đổi cảnh.
+- Bổ sung 20 tiếng động tổng hợp nguyên bản vào kho. Nhạc tùy chọn thay đổi nhẹ theo vai trò cảnh, tiếp tục hạ dưới lời kể; chuyển cảnh theo bộ dựng và ghi đúng nhật ký xuất. Không tự sáng tác hay tải nhạc từ mạng.
+- Chỉnh bộ dựng cần **Lưu & duyệt** lại; Part đã xuất được đánh dấu cần xuất lại. Không thay dữ liệu/kịch bản cũ tự động. Vẫn giữ yêu cầu 61–119 giây, bảo vệ nguồn và chờ duyệt trước xuất/dọn nguồn.
+
+## Lịch sử v2.50.15 — Đối chiếu cảnh kỹ hơn, giảm trùng ý và đặt tiếng động theo tình tiết
 
 - Cảnh được chọn đối chiếu thêm hình đầu–giữa–cuối, dùng lại mốc đã lưu. Khi kiểm tra lời phát hiện câu chưa khớp, xem thêm gần đầu/cuối đúng cảnh đó trước khi sửa; không quét lại toàn bộ nguồn.
 - Lập kế hoạch Part mới có góc kể, diễn biến và câu mở đầu của các Part trước để so sánh. **Tự động** có thể tạo ít Part hơn nếu thử lại vẫn xác định trùng ý; chọn số Part thủ công giữ bản nháp và hiện cảnh báo cần kiểm tra. Thiếu kết quả kiểm tra không được coi là đạt.

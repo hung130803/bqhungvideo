@@ -39,6 +39,24 @@ def run(output: str) -> int:
         from app.ui.studio_page import StudioPage
         qapp = QApplication.instance() or QApplication([])
         qapp.setStyleSheet(QSS)
+        from app.ui.fonts import load_fonts
+        load_fonts()
+        from app.core.editorial import validate
+        from app.ui.editorial_dialog import EditorialDialog
+        from app.core.ffmpeg_utils import export_canvas_clip, _assets_sfx_dir
+        parts = [dict(start=0., end=1., role='hook', mode='narrate', text='Kiểm tra')]
+        plan = validate(dict(version=1, style='clean', events=[
+            dict(part=0, offset=.1, duration=.5, kind='label', text='Kiểm tra chữ')]), parts)
+        editor = EditorialDialog(None, str(video), parts, plan)
+        assert editor.checked()['events'][0]['text'] == 'Kiểm tra chữ'
+        editor.reject()
+        assert len(list(_assets_sfx_dir().glob('*/ed_*.opus'))) == 20
+        edited = DATA_DIR / 'editorial.mp4'
+        export_canvas_clip(video, edited, [(0, 1)], (.5, .5, .9), bg='black',
+                           out_w=180, out_h=320, encoder='libx264', fx_fade=False,
+                           fx_whoosh=False, hieu_ung='tat', edit_plan=plan, edit_parts=parts)
+        assert abs(probe(edited).duration - 1.) < .15
+        results['checks'].append('compiled editorial dialog, Unicode render and 20 new sound assets')
         state = AppState()
         page = StudioPage(state)
         results['checks'].append('compiled StudioPage and real QSS')

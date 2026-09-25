@@ -7345,6 +7345,7 @@ class StudioPage(QWidget):
         preset['story_lang']=str(self._settings.value('story_lang','') or '')
         preset['story_audio_mix']=str(self._settings.value('story_audio_mix',True)).lower() in ('true','1')
         preset['story_sfx']=str(self._settings.value('story_sfx',True)).lower() in ('true','1')
+        preset['story_edit_style']=str(self._settings.value('story_edit_style','off'))
         preset['recap_voice']=str(self._settings.value('recap_voice','') or '')
         try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
             preset["recap_ratio"] = int(self._settings.value("recap_ratio", 30))

@@ -1,5 +1,13 @@
 # Nguồn kho tiếng động
 
+## Bộ dựng hình — 20 âm thanh tổng hợp mới
+Các file `ed_*.opus` được tạo bằng `tools/build_editorial_sfx.py`: bubble, wood tap,
+glass chime, soft resolve, muted hit, knock, heartbeat, clock, rubber, descending,
+brush, short air, tension swell, reverse chime, low bell, soft fall, tape stop,
+shutter, soft roll, three taps. Không lấy mẫu từ bên thứ ba. Giấy phép CC0 1.0
+cho các file âm thanh này. Là âm thanh thiết kế, không phải bằng chứng âm thanh
+đã xảy ra trong video nguồn.
+
 ## Tự sinh (không bản quyền)
 `tools/gen_sfx.py` — sinh bằng ffmpeg lavfi (whoosh/riser/drone/...).
 

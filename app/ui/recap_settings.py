@@ -264,6 +264,12 @@ class RecapSettingsDialog(QDialog):
         self.story_sfx=QCheckBox('Tiếng động theo tình tiết · tối đa 3 điểm nhấn AI mỗi Part')
         self.story_sfx.setChecked(str(self._s.value('story_sfx',True)).lower() in ('true','1'))
         lay.addWidget(self.story_sfx)
+        from app.core.editorial import STYLES as EDIT_STYLES
+        self.edit_style=QComboBox();self.edit_style.addItem('Dựng hình: giữ mẫu hiện tại','off')
+        for code,label in EDIT_STYLES.items():self.edit_style.addItem('Dựng hình: '+label,code)
+        self.edit_style.setCurrentIndex(max(0,self.edit_style.findData(str(self._s.value('story_edit_style','off')))))
+        self.edit_style.setToolTip('Tạo điểm nhấn để duyệt/chỉnh trong Kịch bản → Dựng hình & âm thanh; không tự duyệt.')
+        lay.addWidget(self.edit_style)
 
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
@@ -471,6 +477,7 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue('story_music_path',self.story_music.text().strip())
         self._s.setValue('story_audio_mix',self.story_mix.isChecked())
         self._s.setValue('story_sfx',self.story_sfx.isChecked())
+        self._s.setValue('story_edit_style',self.edit_style.currentData())
         self._s.setValue("recap_voice", self.voice.currentData() or "")
         self._s.setValue("recap_style", self.style.currentData() or DEFAULT_STYLE)
         self._s.setValue("recap_ratio", int(self.ratio.value()))

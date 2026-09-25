@@ -414,7 +414,9 @@ def length_limits(preset):
 
 
 def approval_signature(meta):
-    return digest({k:meta.get(k) for k in ('parts','windows','source_signature','voice','lang','contract')})
+    values={k:meta.get(k) for k in ('parts','windows','source_signature','voice','lang','contract')}
+    if 'edit_plan' in meta:values['edit_plan']=meta['edit_plan']
+    return digest(values)
 
 
 def validate_voice(voice,lang):
@@ -436,7 +438,7 @@ def pending_review(video_id):
             if (m:=db.loads(r['signals'],{}).get('recap',{})).get('quality_story') and not is_approved(m)]
 
 
-def approve_script(clip_id,expected_revision,texts,voice=None):
+def approve_script(clip_id,expected_revision,texts,voice=None,edit_plan=None):
     """Human action only; serialize against export scheduling and stale dialogs."""
     from app.database import db
     from datetime import datetime,timezone
@@ -463,6 +465,9 @@ def approve_script(clip_id,expected_revision,texts,voice=None):
                 if not isinstance(text,str) or not text.strip() or len(text.strip())>1000:
                     raise ValueError('Mỗi câu thuyết minh cần có nội dung, tối đa 1.000 ký tự.')
                 p['text']=text.strip()
+        if edit_plan is not None:
+            from app.core.editorial import validate
+            meta['edit_plan']=validate(edit_plan,meta['parts'])
         # The displayed metadata still contains the old contract. Recompute it
         # before comparing so edited words invalidate a previously rendered file.
         meta['contract']=contract(meta['parts'],meta['windows'])
@@ -532,6 +537,9 @@ def generate(payload,ctx):
                         continuous_reason=plan.get('continuous_reason',''),metrics=metrics,
                         music_path=str(preset.get('story_music_path') or ''),audio_mix=bool(preset.get('story_audio_mix',True)),
                         story_sfx=bool(preset.get('story_sfx',True)))
+            if preset.get('story_edit_style','off')!='off':
+                from app.core.editorial import propose
+                meta['edit_plan']=propose(meta['parts'],preset['story_edit_style'])
             signals={'recap':meta,'segments':plan['windows'],'dur':plan['duration'],'llm_used':True,
                      'ai':llm.active_provider(),'vision':True,'n_seg':len(plan['windows'])}
             cur=con.execute("INSERT INTO clips(video_id,start_sec,end_sec,score,reason,title,transcript,signals,status) VALUES(?,?,?,?,?,?,?,?, 'suggested')",

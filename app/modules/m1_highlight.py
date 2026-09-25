@@ -3636,7 +3636,11 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             payload["captions"] = False
             payload["cap_style"] = _cs0
         _hook_txt0 = ""
-        if _cs0.get("hook_on", True):
+        from app.core.editorial import replaces_opening_title
+        _editorial_title = replaces_opening_title(
+            recap_meta.get('edit_plan') if recap_meta.get('quality_story') else None,
+            recap_parts, segs, float(_cs0.get('hook_dur',6.0)))
+        if _cs0.get("hook_on", True) and not _editorial_title:
             # HOOK giật tít = TIÊU ĐỀ đốt lên video (đúng ngôn ngữ video),
             # dùng CHUNG resolve_pub_title với lớp chữ overlay -> KHÔNG bao giờ
             # vừa rỗng vừa mất chữ khi clip có thoại (fix video Hàn/Nhật chỉ
@@ -3768,6 +3772,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # toàn cục `_SFX_LAST_PICK`: 3 làn xuất song song thì nó là của clip nào
         # xong sau cùng).
         _td_log: list = []
+        _edit_log: list = []
         # CHE CHỮ CHÁY SẴN TRONG HÌNH — cờ lấy từ payload (đường chuẩn) hoặc từ
         # MẪU ĐÃ CHỐT theo tên (đường lùi); xem `doc_che_chu`. MẶC ĐỊNH TẮT.
         # `_cc_log` nhận lại ĐÚNG thứ ffmpeg đã làm để ghi vào nhật ký — bật mà
@@ -3801,6 +3806,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             speed=float(payload.get("speed", 1.0)),
             pitch=float(payload.get("pitch", 1.0)),
             bgm_path=(recap_meta.get('music_path') if recap_meta.get('quality_story') else '') or payload.get("bgm_path") or None,
+            edit_plan=recap_meta.get('edit_plan') if recap_meta.get('quality_story') else None,
+            edit_parts=recap_parts,
+            edit_log=_edit_log,
             story_mix=bool(recap_meta.get('quality_story') and recap_meta.get('audio_mix',True)),
             story_beats=recap_parts if recap_meta.get('quality_story') and recap_meta.get('metrics',{}).get('audio_plan_version') else None,
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
@@ -3824,7 +3832,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             # HIỆU ỨNG ĐIỂM NHẤN: AI tự chọn theo SỐ ĐO của chính clip (kho
             # `app/core/hieu_ung.py`) — KHÔNG bốc thăm, KHÔNG thêm lượt LLM.
             # Job cũ (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
-            hieu_ung=str(payload.get("hieu_ung", "nhe") or "tat"),
+            hieu_ung=('tat' if recap_meta.get('edit_plan') is not None and recap_meta['edit_plan'].get('enabled',True) else str(payload.get("hieu_ung", "nhe") or "tat")),
             hieu_ung_log=_hu_log,
             # LỚP PHỦ HẠT chọn theo NỘI DUNG cảnh (xem app/core/lop_phu.py).
             noi_dung=_noi_dung,
@@ -3845,6 +3853,16 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             fit_src=bool(payload.get("fit_src")),
             on_progress=on_prog,
         )
+        if recap_meta.get('edit_plan') is not None:
+            recap_meta['edit_render_log']=[{k:v for k,v in e.items() if k not in ('asset',)} for e in _edit_log]
+            from app.core.editorial import KINDS
+            _edit_speed=max(.5,min(3.,float(payload.get('speed',1.) or 1.)))
+            for event in _edit_log:
+                duration=event['duration']
+                if event.get('track'):duration=min(duration,len(event.get('track_points',[]))/6)
+                if duration<=0:continue
+                _hu_log.append(dict(bat=event['start']/_edit_speed,het=(event['start']+duration)/_edit_speed,
+                    khoa=KINDS[event['kind']],loai='Dựng đã duyệt',vi_sao=event['reason']+' '+event.get('tracking_note','')))
         _cthuc = (ass_path, join_cats, bg)    # ghi log ở CUỐI hàm (1 chỗ duy nhất)
         # (wav lồng tiếng + .ass tạm được caller export_clip dọn qua `temps`)
         result_extra = {"canvas": True, "bg": bg, "n_seg": len(segs),

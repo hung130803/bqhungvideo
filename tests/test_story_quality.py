@@ -38,6 +38,24 @@ def draft(ids):
 
 
 class StoryQuality(unittest.TestCase):
+    def test_edit_plan_is_approved_transactionally_and_reexport_required(self):
+        from app.core.editorial import propose
+        cid,meta=self.review_fixture();texts=[p['text'] for p in meta['parts']]
+        approved=q.approve_script(cid,q.digest(meta),texts)
+        db.execute("UPDATE clips SET status='exported',export_path='old.mp4' WHERE id=?",(cid,))
+        plan=propose(meta['parts'],'clean')
+        changed=q.approve_script(cid,q.digest(approved),texts,edit_plan=plan)
+        self.assertTrue(q.is_approved(changed))
+        self.assertIsNone(db.query_one('SELECT export_path FROM clips WHERE id=?',(cid,))['export_path'])
+        changed['edit_plan']['music_arc']=False
+        self.assertFalse(q.is_approved(changed))
+
+    def test_invalid_edit_plan_rolls_back_script_change(self):
+        cid,meta=self.review_fixture();texts=[p['text'] for p in meta['parts']]
+        with self.assertRaises(ValueError):q.approve_script(cid,q.digest(meta),texts,edit_plan={'version':9})
+        stored=db.loads(db.query_one('SELECT signals FROM clips WHERE id=?',(cid,))['signals'],{})['recap']
+        self.assertEqual(q.digest(meta),q.digest(stored))
+
     def setUp(self):
         db.execute('DELETE FROM projects');self.ctx=Mock();self.src=AREA/'source.mp4';self.src.write_bytes(b'fixture')
         self.pid=services.create_project('Story test','Test')

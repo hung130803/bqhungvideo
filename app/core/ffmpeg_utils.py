@@ -2880,6 +2880,10 @@ def _tach_va_noi_manh(src, segs: list, xf: list, bu: list, encoder: str,
         ra.append(than)
         if j >= n - 1:
             break
+        if nd[j] <= 0:
+            # A contiguous source boundary is a straight cut, with no frames
+            # to encode. Do not create an empty transition and trigger fallback.
+            continue
         d = nd[j] / fps                 # đúng số khung, không phải giây tròn
         kieu = str(xf[j][0])
         cv = os.path.join(tdir, f"_seg_{tag}_g{j}.mkv")
@@ -3227,6 +3231,9 @@ def export_canvas_clip(
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
     story_mix: bool = False,           # fade/duck nhạc riêng cho dựng chuyện
     story_beats: Optional[list] = None, # v15: đúng điểm nhấn đã duyệt, [] = không tiếng động
+    edit_plan: Optional[dict] = None,
+    edit_parts: Optional[list] = None,
+    edit_log: Optional[list] = None,
     orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
@@ -3362,6 +3369,7 @@ def export_canvas_clip(
     # lại ở đây, chỗ rẻ nhất và chắc chắn có người đi qua. Sổ rỗng -> 0 ms.
     don_rac_ton()
     segs = [(float(s), float(e)) for s, e in (segments or []) if e > s]
+    if edit_plan is not None and not edit_plan.get('enabled',True):edit_plan=None
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
     encoder = encoder or detect_encoder()
@@ -3373,6 +3381,15 @@ def export_canvas_clip(
     segs = _cat_theo_do_dai_that(segs, float(_info.duration or 0.0), src)
     multi = len(segs) > 1
     total = sum(e - s for s, e in segs)
+    _edit_events = []
+    if edit_plan is not None:
+        from app.core.editorial import timeline
+        _edit_events=timeline(edit_plan,edit_parts or [],segs)
+        if pre_crop and any(e.get('track') for e in _edit_events):
+            raise ValueError('Bám vật chưa hỗ trợ cắt viền nguồn; tắt bám vật hoặc bỏ cắt viền để xem thử lại.')
+        if any(e.get('track') for e in _edit_events):
+            from app.core.editorial_render import check_tracking_geometry
+            check_tracking_geometry(src)
     dub_on = bool(dub_path and os.path.exists(str(dub_path)))
     # Tắt hẳn tiếng gốc khi lồng tiếng -> KHÔNG concat/lọc audio gốc luôn
     # (concat ra [caud] mà không dùng sẽ làm ffmpeg fail "unconnected output").
@@ -3515,7 +3532,10 @@ def export_canvas_clip(
     # nhận thẳng danh sách [(kiểu, giây)] (test). Sai kiểu/mức lạ -> [] = TẮT.
     _xf: list = []
     if multi:
-        if isinstance(chuyen_canh, str):
+        if edit_plan is not None:
+            from app.core.editorial import transitions
+            _xf=transitions(edit_plan,edit_parts or [],segs)
+        elif isinstance(chuyen_canh, str):
             _xf = chon_chuyen_canh(segs, chuyen_canh)
         elif isinstance(chuyen_canh, (list, tuple)):
             _xf = [(str(k), float(d)) for k, d in chuyen_canh]
@@ -3673,7 +3693,9 @@ def export_canvas_clip(
     # Mốc nào cách mốc đã nhận < `_SFX_CACH_MIN` thì BỎ (điểm nối thường trùng
     # điểm nhấn — 2 tiếng chồng nhau nghe thành "rào rào", đúng loại loè).
     _sfx_diem: list = []            # [(giây, nhóm, "nối"|"điểm nhấn")]
-    if fx_whoosh and story_beats is not None:
+    if fx_whoosh and edit_plan is not None:
+        _sfx_diem=[(e['start']/vspeed,e['sound'],'tình tiết') for e in _edit_events if e['sound']!='none' and e['sound_gain']>0]
+    elif fx_whoosh and story_beats is not None:
         _sfx_diem = [p for p in story_accent_points(story_beats,segs,vspeed) if p[0]<_out_dur]
     elif fx_whoosh:
         for _i, _off in enumerate(whoosh_offsets):
@@ -3789,7 +3811,16 @@ def export_canvas_clip(
     # +0,74 dBFS** so với bản TẮT +0,51 — tức nhỉnh HƠN bản gốc, hỏng 2/5 lượt.
     # (`_tran_tron` tính ở TRÊN vì `_tran_lop`/`_tran_moc` phải bám theo nó.)
 
+    _edit_folder = None
+
     def build(enc: str) -> list[str]:
+        nonlocal _edit_folder, _edit_events
+        if edit_plan is not None and _edit_folder is None:
+            import tempfile
+            from app.core.editorial_render import prepare
+            _edit_folder=tempfile.TemporaryDirectory(prefix='bq_edit_')
+            _edit_events=prepare(_edit_events,src,_edit_folder.name,settings.FFMPEG_PATH)
+            if edit_log is not None:edit_log[:]=_edit_events
         cmd = [settings.FFMPEG_PATH, "-y", *_global_enc_opts()]
         # THIẾT BỊ VULKAN cho nhóm hiệu ứng SHADER (`libplacebo`). CHỈ thêm khi
         # bộ hiệu ứng đã chọn THẬT SỰ có shader — đó là cách giữ BẤT BIẾN SỐNG
@@ -3857,8 +3888,9 @@ def export_canvas_clip(
         final = "[vv]"
         if use_png:
             cmd += ["-i", str(overlay_png)]
-            parts.append(f"[vv][{nextidx}:v]overlay=0:0[v]")
-            final = "[v]"
+            if edit_plan is None:
+                parts.append(f"[vv][{nextidx}:v]overlay=0:0[v]")
+                final = "[v]"
         # NHẠC NỀN: thêm input (loop vô hạn, cắt theo độ dài clip ở dưới)
         bgm_idx = None
         aidx = nextidx + (1 if use_png else 0)
@@ -3907,6 +3939,12 @@ def export_canvas_clip(
             if _ch:
                 parts.append(f"{final}{_ch}[vhu]")
                 final = "[vhu]"
+        if edit_plan is not None:
+            from app.core.editorial_render import append_graph
+            final,aidx=append_graph(cmd,parts,final,aidx,_edit_events,_edit_folder.name,
+                out_w,out_h,_font_file('Arial'),edit_plan['style'],(_info.width,_info.height),video_rect,bg,flip_h)
+            if use_png:
+                parts.append(f'{final}[{nextidx}:v]overlay=0:0[edlogo]');final='[edlogo]'
         if ass_path and os.path.exists(ass_path):
             ap = str(ass_path).replace("\\", "/").replace(":", "\\:")
             sub = f"subtitles='{ap}'"
@@ -4003,6 +4041,9 @@ def export_canvas_clip(
             # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
             music_filter = (story_music_filters(out_dur, bgm_vol, ducks) if story_mix else
                             f"volume={max(0.0, min(1.0, bgm_vol)):.3f},atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS")
+            if edit_plan is not None and story_mix:
+                from app.core.editorial import music_envelope
+                music_filter+=music_envelope(edit_plan,edit_parts or [],segs,vspeed)
             parts.append(f"[{bgm_idx}:a]{music_filter}[bgm]")
             mix.append("[bgm]")
         # HIỆU ỨNG TIẾNG CHUYỂN ĐOẠN: cú NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).
@@ -4059,6 +4100,15 @@ def export_canvas_clip(
                                                noi_mocs=_noi_moc)
                          if n_joint else [])
             _tu_user = bool(sfx_files)
+            if edit_plan is not None:
+                from app.core.editorial import validate as _validate_edit
+                _validate_edit(edit_plan,edit_parts or [])
+                for pi,(at,cat,_role) in enumerate(_sfx_diem):
+                    chosen=next((e.get('sound_file','') for e in _edit_events if abs(e['start']/vspeed-at)<.001),'')
+                    if chosen:
+                        path=_assets_sfx_dir()/cat/chosen
+                        if not path.is_file():raise ValueError('Không thấy tiếng động đã chọn: '+chosen)
+                        picks[pi]=(cat,str(path))
             last_synth: dict = {}
             chosen_log: list = []
             for wi, ((cat, fpath), off, vai) in enumerate(
@@ -4081,6 +4131,8 @@ def export_canvas_clip(
                     vol = tinh_gain_sfx(cat, _mean, _max, _nen_db,
                                         st_db=_st, loi_db=_loi_db,
                                         loi_moc=_loi_moc[wi])
+                    if edit_plan is not None:
+                        vol*=next((e['sound_gain'] for e in _edit_events if abs(e['start']/vspeed-off)<.001),1.)
                     # DÓNG CHỖ TO NHẤT của tiếng vào ĐÚNG giây điểm nhấn: đẩy
                     # sớm lên bằng "giây xảy ra đỉnh" của chính file đó. Không
                     # dóng thì tiếng vào chậm (ding/sparkle) kêu SAU cú va nên
@@ -4121,6 +4173,8 @@ def export_canvas_clip(
                     vol = tinh_gain_sfx(cat, -14.0, -6.0, _nen_db,
                                         st_db=-10.0, loi_db=_loi_db,
                                         loi_moc=_loi_moc[wi])
+                    if edit_plan is not None:
+                        vol*=next((e['sound_gain'] for e in _edit_events if abs(e['start']/vspeed-off)<.001),1.)
                     in_args, branch = _fx_synth_branch(
                         tidx, off, vol, w_idx, f"wh{wi}")
                     cmd += in_args
@@ -4156,6 +4210,7 @@ def export_canvas_clip(
         cmd += ["-filter_complex", ";".join(parts), "-map", final]
         if amap:
             cmd += ["-map", amap]
+        if edit_plan is not None:cmd += ['-t',f'{out_dur:.6f}']
         cmd += [*_enc_args(enc, "high"), "-c:a", "aac", "-b:a", "160k",
                 "-movflags", "+faststart", str(dst)]
         return cmd
@@ -4211,6 +4266,7 @@ def export_canvas_clip(
         # kill) và ghi SỔ NỢ cái nào vẫn không xoá được -> `don_rac_ton()` ở
         # lượt xuất sau nhặt nốt. Trước đây nuốt PermissionError im lặng.
         _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))
+        if _edit_folder is not None:_edit_folder.cleanup()
     return True
 
 
