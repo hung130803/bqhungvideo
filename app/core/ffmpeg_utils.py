@@ -3165,6 +3165,29 @@ def _cc_cach_ten(cach: str) -> str:
     return "phủ khối" if str(cach or "").strip().lower() == "khoi" else "làm mờ"
 
 
+def story_accent_points(parts, segments, speed=1.0):
+    """Map approved story beats to the real output timeline, including merged cuts."""
+    speed=float(speed)
+    if not math.isfinite(speed) or speed<=0:raise ValueError('Tốc độ không hợp lệ.')
+    points=[]
+    for part in parts:
+        category=part.get('sfx','none')
+        if category not in SFX_CATEGORIES:continue
+        try:
+            offset=float(part.get('sfx_offset',0));start=float(part['start']);end=float(part['end'])
+        except (TypeError,ValueError,KeyError):continue
+        if not math.isfinite(offset) or not 0<=offset<end-start:continue
+        source_time=start+offset;elapsed=0.
+        for a,b in segments:
+            if a<=source_time<b:
+                at=(elapsed+source_time-a)/speed
+                if all(abs(at-p[0])>=1.5 for p in points):points.append((at,category,'tình tiết'))
+                break
+            elapsed+=b-a
+        if len(points)>=3:break
+    return sorted(points)
+
+
 def story_music_filters(duration, volume, ranges):
     """Output-timeline envelope: gentle fades and lower music under narration."""
     duration = max(.01, float(duration))
@@ -3203,6 +3226,7 @@ def export_canvas_clip(
     bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
     story_mix: bool = False,           # fade/duck nhạc riêng cho dựng chuyện
+    story_beats: Optional[list] = None, # v15: đúng điểm nhấn đã duyệt, [] = không tiếng động
     orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
@@ -3649,7 +3673,9 @@ def export_canvas_clip(
     # Mốc nào cách mốc đã nhận < `_SFX_CACH_MIN` thì BỎ (điểm nối thường trùng
     # điểm nhấn — 2 tiếng chồng nhau nghe thành "rào rào", đúng loại loè).
     _sfx_diem: list = []            # [(giây, nhóm, "nối"|"điểm nhấn")]
-    if fx_whoosh:
+    if fx_whoosh and story_beats is not None:
+        _sfx_diem = [p for p in story_accent_points(story_beats,segs,vspeed) if p[0]<_out_dur]
+    elif fx_whoosh:
         for _i, _off in enumerate(whoosh_offsets):
             if join_cats[_i] != "none":
                 _sfx_diem.append((float(_off), join_cats[_i], "nối"))
@@ -4176,7 +4202,7 @@ def export_canvas_clip(
             # nẻo" đã sập ở LỖI 5. Điểm NỐI thì giữ nguyên (không liên quan GPU).
             _con = {round(float(c.get("bat", 0.0)), 3) for c in (_hu or [])}
             _sfx_diem = [x for x in _sfx_diem
-                         if x[2] == "nối" or round(x[0], 3) in _con]
+                         if x[2] in ("nối","tình tiết") or round(x[0], 3) in _con]
             _run_with_fallback(build, encoder, out_total, _prog,
                                "xuất được clip", dst=dst)
     finally:

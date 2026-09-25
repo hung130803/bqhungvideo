@@ -103,12 +103,58 @@ class Director(unittest.TestCase):
   for raw in (first,second):
    for shot in raw['shots']:shot.pop('role')
   cards=[{'id':u['id'],'event':'A real event involving the same object','interest':3} for u in units()]
-  with patch.object(q,'ask',side_effect=[first,{'approved':True},second,{'approved':True}]) as ask:
+  with patch.object(q,'ask',side_effect=[first,{'approved':True},second,{'approved':True,'distinct_from_previous':True}]) as ask:
    plans=d.choose_edits(units(),cards,set(),{},2,self.ctx)
   self.assertEqual(len(plans),2);self.assertEqual(ask.call_count,4)
   self.assertIn('The speaker describes a real event',ask.call_args_list[1].args[0])
   self.assertEqual(plans[0]['parts'][0]['role'],'hook');self.assertEqual(plans[0]['parts'][-1]['role'],'payoff')
   self.assertTrue(set(p['source_id'] for p in plans[0]['parts']).isdisjoint(p['source_id'] for p in plans[1]['parts']))
+
+ def test_auto_count_does_not_force_duplicate_stories(self):
+  first=edit();second=edit((1,3,6,10,15,19))
+  cards=[{'id':u['id'],'event':'Same incident','interest':3} for u in units()]
+  calls=[first,{'approved':True}]+[second,{'approved':True,'distinct_from_previous':False,'issues':'Same question and payoff'}]*3
+  with patch.object(q,'ask',side_effect=calls):plans=d.choose_edits(units(),cards,set(),{},2,self.ctx)
+  self.assertEqual(len(plans),1)
+  with patch.object(q,'ask',side_effect=calls):plans=d.choose_edits(units(),cards,set(),{'recap_count':2},2,self.ctx)
+  self.assertEqual(len(plans),2);self.assertTrue(plans[1]['selection_review']['duplicate'])
+  self.assertFalse(plans[1]['selection_review']['approved'])
+
+ def test_unknown_diversity_is_visible_not_silently_certified(self):
+  cards=[{'id':u['id'],'event':'Same incident','interest':3} for u in units()]
+  calls=[edit(),{'approved':True}]+[edit((1,3,6,10,15,19)),{'approved':True}]*3
+  with patch.object(q,'ask',side_effect=calls):plans=d.choose_edits(units(),cards,set(),{},2,self.ctx)
+  self.assertFalse(plans[1]['selection_review']['approved']);self.assertFalse(plans[1]['selection_review']['duplicate'])
+
+ def test_anchor_checks_are_time_based_and_reuse_cache(self):
+  u=dict(id=1,start=10.,end=22.,transcript='Local words',observations=[{'at':16.,'visible':'center'},{'at':16.01,'visible':'same center'}])
+  def see(src,unit,text,ctx,fractions):
+   return dict(unit,observations=[{'at':unit['start']+(unit['end']-unit['start'])*f,'visible':'frame'} for f in fractions])
+  with patch.object(q,'visual_evidence',side_effect=see) as vision:
+   result=d.enrich_scene('src',u,self.ctx,(.15,.5,.85))
+   d.enrich_scene('src',result,self.ctx,(.15,.5,.85))
+  self.assertEqual(vision.call_count,1);self.assertEqual(vision.call_args.kwargs['fractions'],(.15,.85))
+
+ def test_extra_inspection_only_disputed_scene_and_no_repeat(self):
+  plan=d.validate_edit(edit(),units(),set(),61,119)
+  checks=[{'source_id':0,'supported':True,'scene_match':True},{'source_id':2,'supported':False,'scene_match':True}]
+  def see(src,unit,text,ctx,fractions):
+   return dict(unit,observations=[{'at':unit['start']+(unit['end']-unit['start'])*f,'visible':'frame'} for f in fractions])
+  with patch.object(q,'visual_evidence',side_effect=see) as vision:
+   d.inspect_disputed(plan,checks,'src',self.ctx);d.inspect_disputed(plan,checks,'src',self.ctx)
+  self.assertEqual(vision.call_count,1);self.assertEqual(vision.call_args.args[1]['id'],2)
+
+ def test_story_sounds_follow_approved_beats_after_edit_and_speed(self):
+  from app.core.ffmpeg_utils import story_accent_points
+  parts=[{'start':100,'end':112,'sfx':'reveal','sfx_offset':3},
+         {'start':200,'end':212,'sfx':'comedy','sfx_offset':8}]
+  self.assertEqual(story_accent_points(parts,[(100,112),(200,212)],2),[(1.5,'reveal','tình tiết'),(10.,'comedy','tình tiết')])
+  self.assertEqual(story_accent_points([dict(parts[0],sfx_offset=20)],[(100,112)]),[])
+  self.assertEqual(story_accent_points([dict(parts[0],sfx='none')],[(100,112)]),[])
+
+ def test_rewrite_sees_end_of_scene_after_extra_inspection(self):
+  frames=[{'at':t,'visible':str(t)} for t in (11,3,5,1,9)]
+  self.assertEqual([o['at'] for o in d.representative_observations(frames)],[1,5,11])
 
  def test_planner_restores_source_chronology_before_semantic_audit(self):
   raw=edit();raw['shots'][2],raw['shots'][3]=raw['shots'][3],raw['shots'][2]
@@ -168,8 +214,8 @@ class Director(unittest.TestCase):
    return dict(u,observations=[{'at':u['start']+(u['end']-u['start'])*f,'visible':'Bowl','uncertain':''} for f in fractions])
   with patch.object(q,'visual_evidence',side_effect=see):d.refine([plan],source,'source',self.ctx)
   actual=json.loads(p['evidence'])['observations']
-  self.assertTrue(all(0<=o['at']<=4 for o in actual));self.assertEqual(len(actual),2)
-  self.assertIn((0,4,(.2,.8)),seen)
+  self.assertTrue(all(0<=o['at']<=4 for o in actual));self.assertEqual(len(actual),3)
+  self.assertIn((0,4,(.15,.5,.85)),seen)
 
  def test_broken_second_script_preserves_first_structural_draft(self):
   plan=d.validate_edit(edit(),units(),set(),61,119)

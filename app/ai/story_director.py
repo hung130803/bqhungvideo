@@ -168,7 +168,9 @@ def choose_edits(units,cards,used,preset,count,ctx):
                 '"reason":"specific connection to THIS story","mode":"narrate|orig"}]}. '
                 'Narration is the default. Opening always narrated. If repairing, address the specific '
                 'error while retaining valid scenes.\n'+json.dumps({'source_title':preset.get('_source_title',''),
-                'events':notes,'already_planned':[p['title'] for p in plans],'repair':error,'previous_plan':previous},ensure_ascii=False),reasoning='medium')
+                'events':notes,'already_planned':[story_brief(p) for p in plans],
+                'diversity_rule':'Choose a different question and payoff, not the same incident retold using different shots.',
+                'repair':error,'previous_plan':previous},ensure_ascii=False),reasoning='medium')
             try:
                 if not isinstance(raw,dict) or not isinstance(raw.get('shots'),list):raise ValueError('Thiếu danh sách cảnh.')
                 prepared=deepcopy(raw);shots=prepared['shots']
@@ -202,12 +204,20 @@ def choose_edits(units,cards,used,preset,count,ctx):
                     'Reject unrelated topics used as padding, switching one food/object for another without '
                     'evidence, or claiming a reveal/reaction that is not shown or stated. Speech is a speaker '
                     'claim, not objective proof. Do not demand every event appear in a still image. '
-                    'Return {"approved":boolean,"issues":"specific correction","title":"accurate concise title",'
-                    '"angle":"accurate angle"}.\n'+json.dumps({'title':plan['title'],'angle':plan['angle'],'evidence':evidence},ensure_ascii=False),reasoning='medium')
-                if not isinstance(check,dict) or check.get('approved') is not True:
-                    plan['selection_review']={'approved':False,'issues':str(check.get('issues','Cần xem lại mạch chuyện') if isinstance(check,dict) else 'Kiểm tra mạch chuyện chưa trả đủ dữ liệu')[:900]}
+                    'Compare previous stories too: different timestamps or wording alone are NOT a new story. '
+                    'A complementary part must answer a materially different question with its own supported payoff. '
+                    'Return {"approved":boolean,"distinct_from_previous":boolean,"new_value":"what is new",'
+                    '"issues":"specific correction","title":"accurate concise title",'
+                    '"angle":"accurate angle"}.\n'+json.dumps({'title':plan['title'],'angle':plan['angle'],'evidence':evidence,
+                    'previous_stories':[story_brief(p) for p in plans]},ensure_ascii=False),reasoning='medium')
+                distinct=not plans or (isinstance(check,dict) and check.get('distinct_from_previous') is True)
+                if not isinstance(check,dict) or check.get('approved') is not True or not distinct:
+                    issue=str(check.get('issues','Cần xem lại mạch chuyện') if isinstance(check,dict) else 'Kiểm tra mạch chuyện chưa trả đủ dữ liệu')
+                    if not distinct:issue='Cần kiểm tra trùng ý giữa các Part. '+issue
+                    plan['selection_review']={'approved':False,'issues':issue[:900],
+                        'duplicate':bool(plans and isinstance(check,dict) and check.get('distinct_from_previous') is False)}
                     reviewable=plan
-                    raise ValueError(str(check.get('issues','Các cảnh chưa cùng một câu chuyện') if isinstance(check,dict) else 'Kiểm tra mạch chuyện không hợp lệ')[:700])
+                    raise ValueError(plan['selection_review']['issues'][:700])
                 for key in ('title','angle'):
                     if isinstance(check.get(key),str) and check[key].strip():plan[key]=check[key].strip()[:250]
                 plans.append(plan);reserved.update(p['source_id'] for p in plan['parts']);break
@@ -216,10 +226,41 @@ def choose_edits(units,cards,used,preset,count,ctx):
                 previous=raw if isinstance(raw,dict) and q.token_size(raw)<1200 else None
         else:
             if reviewable is None:raise RuntimeError('Chưa chọn được câu chuyện đủ dài và có căn cứ: '+error)
+            if plans and not preset.get('recap_count') and reviewable.get('selection_review',{}).get('duplicate'):
+                ctx.progress(.56,f'Tự động giữ {len(plans)} Part; chưa có góc kể mới đủ khác để thêm Part')
+                return plans
             # Structurally valid drafts remain editable, but semantic doubts are
             # never turned into an automatic approval or hidden from the user.
             plans.append(reviewable);reserved.update(p['source_id'] for p in reviewable['parts'])
     return plans
+
+
+def story_brief(plan):
+    return {'title':plan['title'],'angle':plan.get('angle',''),
+            'beats':[p.get('reason','')[:160] for p in plan['parts']],
+            'hook':plan['parts'][0].get('text','')[:180]}
+
+
+def enrich_scene(src,unit,ctx,fractions):
+    """Only add missing time anchors within the actual cut; never count one frame twice."""
+    a,b=unit['start'],unit['end'];span=b-a
+    observations=[o for o in unit.get('observations',[]) if a<=float(o['at'])<=b]
+    missing=[f for f in fractions if not any(abs(float(o['at'])-(a+span*f))<=span*.08 for o in observations)]
+    if missing:
+        extra=q.visual_evidence(src,unit,unit.get('transcript',''),ctx,fractions=tuple(missing))
+        observations+=extra['observations']
+    return dict(unit,observations=sorted(observations,key=lambda o:float(o['at'])))
+
+
+def inspect_disputed(plan,checks,src,ctx):
+    """An extra bounded look only where narration was disputed, before rewriting."""
+    bad={r['source_id'] for r in checks if r.get('supported') is not True or r.get('scene_match') is not True}
+    for part in plan['parts']:
+        if part['source_id'] not in bad:continue
+        ctx.check_canceled()
+        unit=json.loads(part['evidence'])
+        unit=enrich_scene(src,unit,q.VisionContext(ctx),(.04,.96))
+        part['evidence']=json.dumps(unit,ensure_ascii=False)
 
 
 def refine(plans,units,src,ctx):
@@ -234,10 +275,9 @@ def refine(plans,units,src,ctx):
             match=re.match(r'^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?):',line)
             if match and float(match[2])>p['start'] and float(match[1])<p['end']:lines.append(line)
         u['transcript']='\n'.join(lines)
-        if len(u['observations'])<2:
-            extra=q.visual_evidence(src,u,u['transcript'],child,fractions=(.2,.8) if not u['observations'] else (.85,))
-            u['observations']+=extra['observations']
-            source['observations']=source.get('observations',[])+extra['observations']
+        u=enrich_scene(src,u,child,(.15,.5,.85))
+        merged={float(o['at']):o for o in source.get('observations',[])+u['observations']}
+        source['observations']=list(merged.values())
         return u
     todo=iter(selected);pending={};done=0
     with ThreadPoolExecutor(max_workers=2,thread_name_prefix='story-refine') as executor:
@@ -276,9 +316,13 @@ def audit(plan,ctx):
     if problems:raise AuditFailure('; '.join(str(p) for p in problems)[:900],checks)
     raw=q.ask('Audit this finished SHORT STORY. Specific hook paid off? Clear setup-change-payoff? '
         'No unrelated cuts, repetitive image descriptions, filler, unsupported title, or false causality? '
-        'Natural varied spoken language, not a list of what is on screen? Return '
+        'Natural varied spoken language, not a list of what is on screen? Source-time gaps are intentional '
+        'montage: do NOT reject simply because timestamps jump or require events to be adjacent. '
+        'Reject only if the actual story connection or claimed cause is missing. '
+        'Use the local source speech to distinguish a genuinely unrelated event from an omitted transition. Return '
         '{"approved":boolean,"issues":[strings]}.\n'+json.dumps({k:v for k,v in plan.items() if k!='parts'}|{
-        'shots':[{k:v for k,v in p.items() if k!='evidence'} for p in plan['parts']]},ensure_ascii=False),reasoning='medium')
+        'shots':[{k:v for k,v in p.items() if k!='evidence'}|{
+            'local_speech':json.loads(p['evidence']).get('transcript','')[:240]} for p in plan['parts']]},ensure_ascii=False),reasoning='medium')
     if not isinstance(raw,dict) or raw.get('approved') is not True:raise ValueError(str(raw.get('issues','Chưa đạt mạch chuyện') if isinstance(raw,dict) else 'Kết quả kiểm tra không hợp lệ')[:900])
     return {'approved':True,'checks':checks}
 
@@ -318,7 +362,13 @@ def repair_claims(plan,failure,lang,ctx):
     return candidate
 
 
-def script(plan,preset,lang,ctx,index,count):
+def representative_observations(observations):
+    ordered=sorted(observations,key=lambda o:float(o['at']))
+    if len(ordered)<=3:return ordered
+    return [ordered[0],ordered[len(ordered)//2],ordered[-1]]
+
+
+def script(plan,preset,lang,ctx,index,count,src=None):
     error='';draft=None
     for attempt in range(3):
         ctx.check_canceled();ctx.progress(.70+.24*index/count,f'Viết hook, diễn biến và kết · Part {index+1}/{count}, lượt {attempt+1}/3')
@@ -328,18 +378,26 @@ def script(plan,preset,lang,ctx,index,count):
             u=json.loads(p['evidence'])
             notes.append({k:v for k,v in p.items() if k in ('source_id','start','end','mode','role')}|{'speech':u.get('transcript','')[:750],
                 'max_words':max(3,int((p['end']-p['start'])*1.9)),
-                'visual':[{'at':o.get('at'),'visible':o.get('visible','')[:240],'uncertain':o.get('uncertain','')[:100]} for o in u.get('observations',[])[:3]]})
-        if q.token_size(notes)>3800:
+                'visual':[{'at':o.get('at'),'visible':o.get('visible','')[:240],'uncertain':o.get('uncertain','')[:100]}
+                    for o in representative_observations(u.get('observations',[]))]})
+        previous=[{'source_id':p['source_id'],'text':p['text'][:220]} for p in draft['parts']] if draft else []
+        if q.token_size(notes)+q.token_size(previous)>3800:
             for n in notes:
                 n['speech']=n['speech'][:220]
                 for o in n['visual']:o['visible']=o['visible'][:120];o['uncertain']=o['uncertain'][:70]
         raw=q.ask(f'Write an engaging {lang} short-video narration. '+STYLE.get(preset.get('recap_style'),STYLE['story'])+
             ' Narrate as an outside storyteller, never impersonate the source speaker using I/my/we. '
             'Invent wording, not events. Avoid "we see", generic "nobody expected this", listing frame objects, '
+            'Do not say "the camera shows/lingers" or announce that the narrator is narrating. '
+            'Use short indirect speech instead of filling sentences with literal quotations. '
+            'When footage is unclear, explain only what the local speaker says, without inventing who is visible. '
             'or repeating the same sentence skeleton. Make the FIRST 2-3 seconds a concrete curiosity hook tied '
-            'to the opening scene; pay it off later. Write 3 alternative hooks, choose the strongest supported one. '
+            'to the opening scene; pay it off later. Write 3 alternative hooks, each about 6-10 words, choose the strongest supported one. '
+            'Do not repeat previous Part hooks or just paraphrase them; ask a different supported question. '
             'Use setup -> escalation/change -> reaction/consequence -> satisfying ending. Link distant shots '
-            'with honest bridges; keep uncertainty and speech attribution. Respect every existing shot id/mode/time; '
+            'with honest bridges such as later or meanwhile only when justified; keep uncertainty and speech attribution. '
+            'When repairing a draft, preserve accurate lines and directly fix the listed issues; do not restart with random new claims. '
+            'Respect every existing shot id/mode/time; '
             'do NOT change scene order. Aim 1.3-1.7 spoken words/sec of each narrated window, leave breathing room. '
             'Each row has a HARD max_words limit; a 12-second shot needs roughly 16-22 words, NOT 40-60. '
             'Do not invent or exaggerate an action even for humor. A joke may comment on a REAL contrast, '
@@ -351,9 +409,12 @@ def script(plan,preset,lang,ctx,index,count):
             'Orig rows have empty text. At most 3 editorial SFX accents, select meaningful emotional beats; '
             'Allowed SFX labels ONLY: '+','.join(sorted(SFX))+'. '
             'do not fake police sirens, gunshots or real-event sounds. Return {"hooks":[3 strings],'
-            '"selected_hook":0-2,"shots":[{"source_id":int,"support_quote":"literal source excerpt","text":"...","sfx":"none"}]}. '
+            '"selected_hook":0-2,"shots":[{"source_id":int,"support_quote":"literal source excerpt","text":"...",'
+            '"sfx":"none","sfx_offset":0.0,"sfx_reason":"why here"}]}. '
+            'sfx_offset is seconds from THIS shot start, must be inside the shot; place accents at the actual evidenced beat, not automatically at cuts. '
             'The selected hook must open the first narration, not be repeated in later shots.\n'+
-            json.dumps({'title':plan['title'],'angle':plan['angle'],'shots':notes,'selection_issues':plan.get('selection_review'),'repair':error},ensure_ascii=False),reasoning='medium')
+            json.dumps({'title':plan['title'],'angle':plan['angle'],'shots':notes,'selection_issues':plan.get('selection_review'),
+            'previous_hooks':preset.get('_previous_hooks',[]),'previous_draft':previous,'repair':error},ensure_ascii=False),reasoning='medium')
         try:
             if not isinstance(raw,dict):raise ValueError('Kịch bản không đúng định dạng.')
             rows=raw.get('shots',[]);hooks=raw.get('hooks',[]);selected=raw.get('selected_hook')
@@ -367,6 +428,10 @@ def script(plan,preset,lang,ctx,index,count):
                     raise ValueError(f"Cảnh {p['source_id']} quá nhiều lời: tối đa {int((p['end']-p['start'])*1.9)} từ. Viết ngắn lại từng cảnh, giữ hook trong câu đầu.")
                 if sfx not in SFX:sfx='none'  # An optional sound label must not destroy an otherwise usable draft.
                 p['text']=text.strip() if p['mode']=='narrate' else '';p['sfx']=sfx
+                offset=row.get('sfx_offset',0.0)
+                if type(offset) not in (int,float) or not math.isfinite(offset) or not 0<=offset<p['end']-p['start']:
+                    p['sfx']='none';offset=0.0
+                p['sfx_offset']=float(offset);p['sfx_reason']=str(row.get('sfx_reason',''))[:240]
                 if p['mode']=='narrate':
                     quote=row.get('support_quote','');u=json.loads(p['evidence'])
                     evidence=u.get('transcript','')+'\n'+'\n'.join(o.get('visible','') for o in u.get('observations',[]))
@@ -394,6 +459,9 @@ def script(plan,preset,lang,ctx,index,count):
                 except AuditFailure as exc:
                     candidate['review']={'approved':False,'issues':str(exc),'checks':exc.checks};draft=candidate
                     if repair==2:return draft
+                    if repair==0 and src:
+                        ctx.progress(.75+.2*index/count,f'Xem thêm đầu/cuối cảnh có câu chưa khớp · Part {index+1}/{count}')
+                        inspect_disputed(candidate,exc.checks,src,ctx)
                     ctx.progress(.75+.2*index/count,f'Sửa đúng câu chưa khớp · Part {index+1}/{count}, lượt {repair+1}/2')
                     try:candidate=repair_claims(candidate,exc,lang,ctx)
                     except ValueError:return draft
@@ -415,6 +483,17 @@ def direct(units,src,used,preset,count,lang,ctx,cache=None):
     if cache:
         from app.core.analysis import _set
         _set(cache[0],'story_evidence','done',{'key':cache[1],'units':{str(u['id']):u for u in units},'complete':True},engine=q.llm.active_provider())
-    for i,plan in enumerate(plans):plans[i]=script(plan,preset,lang,ctx,i,count)
+    hooks=[]
+    for i,plan in enumerate(plans):
+        plans[i]=script(plan,dict(preset,_previous_hooks=hooks),lang,ctx,i,len(plans),src=src)
+        hooks.append(plans[i]['parts'][0]['text'][:180])
+    if cache:
+        lookup={u['id']:u for u in units}
+        for plan in plans:
+            for part in plan['parts']:
+                evidence=json.loads(part['evidence']);u=lookup[part['source_id']]
+                u['observations']=list({float(o['at']):o for o in u.get('observations',[])+evidence.get('observations',[])}.values())
+        _set(cache[0],'story_evidence','done',{'key':cache[1],'units':{str(u['id']):u for u in units},'complete':True},engine=q.llm.active_provider())
     return plans,{'planning_seconds':round(time.monotonic()-started,1),'source_units':len(units),
-                  'selected_units':sum(len(p['parts']) for p in plans)}
+                  'selected_units':sum(len(p['parts']) for p in plans),'requested_parts':count,'planned_parts':len(plans),
+                  'audio_plan_version':1}

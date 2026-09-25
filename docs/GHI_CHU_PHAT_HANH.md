@@ -1,4 +1,12 @@
-# BQ Hung Video v2.50.14 — Sửa lỗi chọn tình tiết khi dựng chuyện
+# BQ Hung Video v2.50.15 — Đối chiếu cảnh kỹ hơn, giảm trùng ý và đặt tiếng động theo tình tiết
+
+- Cảnh được chọn đối chiếu thêm hình đầu–giữa–cuối, dùng lại mốc đã lưu. Khi kiểm tra lời phát hiện câu chưa khớp, xem thêm gần đầu/cuối đúng cảnh đó trước khi sửa; không quét lại toàn bộ nguồn.
+- Lập kế hoạch Part mới có góc kể, diễn biến và câu mở đầu của các Part trước để so sánh. **Tự động** có thể tạo ít Part hơn nếu thử lại vẫn xác định trùng ý; chọn số Part thủ công giữ bản nháp và hiện cảnh báo cần kiểm tra. Thiếu kết quả kiểm tra không được coi là đạt.
+- Viết hook ngắn, so sánh với hook trước. Vẫn phải duyệt từng câu: đây là kiểm tra bằng AI, không đảm bảo mọi video đều hay hoặc đúng tuyệt đối.
+- Kịch bản mới ghi mốc tiếng động **bên trong cảnh** và lý do dùng. Hiển thị trong căn cứ khi duyệt. Xuất theo đúng mốc sau ghép/tăng tốc, tối đa ba điểm nhấn; không tự cộng tiếng động theo hiệu ứng hình trong chế độ này. Kịch bản cũ và cắt thường giữ hành vi cũ.
+- Nhạc vẫn do bạn chọn hoặc theo mẫu, được hạ theo khoảng lời kể thực tế. Chưa có chức năng tự sáng tác hoặc tìm nhạc. Mỗi Part vẫn 61–119 giây và bắt buộc duyệt trước khi xuất.
+
+## Lịch sử v2.50.14 — Sửa lỗi chọn tình tiết khi dựng chuyện
 
 - Sửa lỗi dừng với thông báo **“Chưa chọn được các tình tiết có căn cứ”** ở bước thu gọn ghi chú cảnh. Đây có thể là phản hồi sai định dạng của AI, không phải video không có nội dung.
 - Rút ngắn ghi chú trước khi loại ứng viên, giữ toàn bộ mã cảnh đối với nguồn vừa giới hạn. Khi cần thu gọn nguồn dài, nhận đúng mã dạng số/chuỗi số, gộp mã trùng và yêu cầu sửa mã không hợp lệ tối đa một lần. Nếu vẫn sai, giữ nhóm cảnh gốc để lập kế hoạch thay vì bỏ toàn bộ lượt phân tích.

@@ -536,7 +536,7 @@ def generate(payload,ctx):
                      'ai':llm.active_provider(),'vision':True,'n_seg':len(plan['windows'])}
             cur=con.execute("INSERT INTO clips(video_id,start_sec,end_sec,score,reason,title,transcript,signals,status) VALUES(?,?,?,?,?,?,?,?, 'suggested')",
                 (vid,plan['windows'][0][0],plan['windows'][-1][1],80,
-                 f'AI dựng chuyện kỹ · Part {i+1}/{count} · CHỜ DUYỆT kịch bản',plan['title'],'',db.dumps(signals)))
+                 f'AI dựng chuyện kỹ · Part {i+1}/{len(plans)} · CHỜ DUYỆT kịch bản',plan['title'],'',db.dumps(signals)))
             ids.append(cur.lastrowid)
         ctx.check_canceled();con.commit()
     except Exception:con.rollback();raise

@@ -3802,6 +3802,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             pitch=float(payload.get("pitch", 1.0)),
             bgm_path=(recap_meta.get('music_path') if recap_meta.get('quality_story') else '') or payload.get("bgm_path") or None,
             story_mix=bool(recap_meta.get('quality_story') and recap_meta.get('audio_mix',True)),
+            story_beats=recap_parts if recap_meta.get('quality_story') and recap_meta.get('metrics',{}).get('audio_plan_version') else None,
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
             orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,

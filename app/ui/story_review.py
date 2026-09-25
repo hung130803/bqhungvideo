@@ -101,7 +101,10 @@ def show_story(parent,meta,clip_id=None):
                 text+=f"\n\nHÌNH {n} · {obs.get('at','?')}s (mô tả của AI, cần xem lại nguồn)\n{obs.get('visible','')}\nChưa chắc: {obs.get('uncertain','')}"
         except (ValueError,KeyError):text=p.get('evidence','Chưa có căn cứ')
         roles={'hook':'Mở đầu gây tò mò','setup':'Bối cảnh','build':'Diễn biến','payoff':'Kết quả / trả lời hook','ending':'Kết'}
-        evidence.setPlainText('VAI TRÒ: '+roles.get(p.get('role'),p.get('mode',''))+'\nLÝ DO CHỌN: '+p.get('reason','')+'\nTIẾNG ĐỘNG: '+p.get('sfx','none')+'\n\n'+text)
+        sound=p.get('sfx','none')
+        if sound!='none' and 'sfx_offset' in p:
+            sound+=f" · sau {p['sfx_offset']:.1f}s từ đầu cảnh · "+p.get('sfx_reason','')
+        evidence.setPlainText('VAI TRÒ: '+roles.get(p.get('role'),p.get('mode',''))+'\nLÝ DO CHỌN: '+p.get('reason','')+'\nTIẾNG ĐỘNG: '+sound+'\n\n'+text)
     table.itemSelectionChanged.connect(selected)
     if parts:table.selectRow(0)
     row=QHBoxLayout();lay.addLayout(row)
