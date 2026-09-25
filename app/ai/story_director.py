@@ -49,21 +49,59 @@ def catalogue(units,ctx):
     return sorted(cards,key=lambda v:v['id'])
 
 
+def shortlist_ids(raw,allowed,maximum):
+    """Normalize harmless JSON variations without accepting invented source ids."""
+    values=raw.get('ids') if isinstance(raw,dict) else None
+    if not isinstance(values,list) or not values:raise ValueError('Cần ids là danh sách mã cảnh có sẵn.')
+    ids=[]
+    for value in values:
+        if isinstance(value,str) and re.fullmatch(r'[0-9]+',value.strip()):value=int(value.strip())
+        if type(value) is not int or value not in allowed:raise ValueError('Có mã cảnh không nằm trong nhóm nguồn được gửi.')
+        if value not in ids:ids.append(value)
+    if len(ids)>maximum:raise ValueError(f'Chỉ chọn tối đa {maximum} mã cảnh để thu gọn danh sách.')
+    return ids
+
+
 def planning_cards(cards,ctx):
     """For long sources, retain story candidates from every region, then compare."""
-    while q.token_size(cards)>2400:
+    for _ in range(4):
+        if q.token_size(cards)<=2400:break
         selected=[]
-        for block in q.evidence_batches(cards,limit=5500):
-            ctx.check_canceled()
-            raw=q.ask('Select a connected set of the best story seeds from these events: setups AND payoffs, '
-                'not just spectacle. Keep at most half the ids (minimum 2). Return {"ids":[int]}.\n'+json.dumps(block,ensure_ascii=False))
-            ids=raw.get('ids',[]) if isinstance(raw,dict) else []
-            if not ids or len(set(ids))!=len(ids) or any(type(i) is not int or i not in {c['id'] for c in block} for i in ids):
-                raise RuntimeError('Chưa chọn được các tình tiết có căn cứ.')
+        for number,block in enumerate(q.evidence_batches(cards,limit=5500),1):
+            allowed={c['id'] for c in block};maximum=max(2,len(block)//2);error=''
+            for attempt in range(2):
+                ctx.check_canceled();ctx.progress(.51,f'Thu gọn ghi chú cảnh · nhóm {number}, lượt {attempt+1}/2')
+                raw=q.ask('Select a connected set of the best story seeds from these events: setups AND payoffs, '
+                    f'not just spectacle. Keep at most {maximum} ids. Return exactly {{"ids":[integer source ids]}}. '
+                    'Use ids from this batch, not row positions. No objects or descriptions inside ids.\n'+
+                    json.dumps({'events':block,'repair':error},ensure_ascii=False))
+                try:ids=shortlist_ids(raw,allowed,maximum);break
+                except ValueError as exc:error=str(exc)
+            else:
+                # Shortlisting is an optimization, not evidence verification.
+                # Preserve the original batch when its JSON cannot be repaired.
+                ids=allowed
+                ctx.progress(.51,f'Giữ đủ cảnh nhóm {number}; AI chưa trả danh sách thu gọn hợp lệ')
             selected.extend(c for c in block if c['id'] in ids)
-        if len(selected)>=len(cards):raise RuntimeError('AI chưa thu gọn được ứng viên; hãy thử lại.')
+        # Do not starve the actual 61–119s edit or loop on an unshrinking reply.
+        if len(selected)>=len(cards) or len(selected)<8:break
         cards=selected
     return cards
+
+
+def planning_notes(cards,lookup,ctx):
+    """Compact text before dropping any source candidate, including 10–20m videos."""
+    def rows(pool,limit):
+        return [[c['id'],round(lookup[c['id']]['end']-lookup[c['id']]['start'],2),c['event'][:limit]] for c in pool]
+    for limit in (260,140,110,80):
+        notes=rows(cards,limit)
+        if q.token_size(notes)<=3300:return cards,notes
+    selected=planning_cards(cards,ctx)
+    for limit in (140,110,80,60):
+        notes=rows(selected,limit)
+        if q.token_size(notes)<=3300:return selected,notes
+    raise RuntimeError('Ghi chú cảnh còn quá dài sau khi thu gọn; chưa thể gửi vừa giới hạn AI. '
+                       'Phần xem hình đã lưu; thử lại hoặc dùng nguồn ngắn hơn. Đây không phải kết luận video thiếu tình tiết.')
 
 
 def validate_edit(raw,units,used,minimum,maximum):
@@ -108,12 +146,7 @@ def choose_edits(units,cards,used,preset,count,ctx):
         available=[dict(c) for c in cards if c['id'] not in reserved]
         # Compact rows keep EVERY normal-length source interval visible. Do not
         # rank away a quiet setup before the whole-source story is understood.
-        notes=[[c['id'],round(lookup[c['id']]['end']-lookup[c['id']]['start'],2),c['event']] for c in available]
-        if q.token_size(notes)>3300:
-            notes=[[row[0],row[1],row[2][:140]] for row in notes]
-        if q.token_size(notes)>3300:
-            available=planning_cards(available,ctx)
-            notes=[[c['id'],round(lookup[c['id']]['end']-lookup[c['id']]['start'],2),c['event'][:140]] for c in available]
+        available,notes=planning_notes(available,lookup,ctx)
         allowed={n[0] for n in notes};error='';previous=None;reviewable=None
         for attempt in range(3):
             ctx.check_canceled();ctx.progress(.53,f'Chọn mạch chuyện {part_index+1}/{count} · lượt {attempt+1}/3')

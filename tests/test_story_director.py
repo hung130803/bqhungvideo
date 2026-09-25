@@ -22,6 +22,49 @@ def edit(ids=(0,2,5,9,14,18)):
 class Director(unittest.TestCase):
  def setUp(self):self.ctx=Mock()
 
+ def test_shortlist_normalizes_numeric_strings_and_duplicates(self):
+  self.assertEqual(d.shortlist_ids({'ids':['12',12,' 19 ']},{12,19,27},2),[12,19])
+
+ def test_shortlist_rejects_unknown_ids_and_malformed_values(self):
+  for raw in ({'ids':[999]},{'ids':[True]},{'ids':[{'id':12}]},{'ids':'12'},
+              {'ids':[]},{'ids':[12.0]},None,{'ids':[12,19,27]}):
+   with self.subTest(raw=raw),self.assertRaises(ValueError):d.shortlist_ids(raw,{12,19,27},2)
+
+ def test_malformed_shortlist_keeps_evidence_instead_of_failing_video(self):
+  cards=[{'id':i,'event':'Supported speech with setup and outcome. '*6,'interest':3} for i in range(73)]
+  batches=q.evidence_batches(cards,limit=5500)
+  with patch.object(q,'ask',return_value={'ids':[{'wrong':'schema'}]}) as ask:
+   result=d.planning_cards(cards,self.ctx)
+  self.assertEqual(result,cards);self.assertEqual(ask.call_count,2*len(batches))
+
+ def test_shortlist_repairs_only_with_ids_in_each_original_batch(self):
+  cards=[{'id':100+i,'event':'Supported speech with setup and outcome. '*6,'interest':3} for i in range(73)]
+  repaired=[]
+  def reply(prompt):
+   data=json.loads(prompt.split('\n',1)[1]);block=data['events']
+   if not data['repair']:return {'ids':[-1]}
+   repaired.append(data['repair']);return {'ids':[str(c['id']) for c in block[:max(2,len(block)//2)]]}
+  with patch.object(q,'ask',side_effect=reply) as ask:result=d.planning_cards(cards,self.ctx)
+  self.assertTrue(repaired);self.assertLess(len(result),len(cards));self.assertGreaterEqual(len(result),8)
+  self.assertTrue(all(c in cards for c in result));self.assertLess(ask.call_count,100)
+
+ def test_shortlist_provider_and_cancel_errors_are_not_hidden(self):
+  cards=[{'id':i,'event':'Supported event. '*20,'interest':3} for i in range(73)]
+  with patch.object(q,'ask',side_effect=q.llm.LLMError('provider unavailable')):
+   with self.assertRaises(q.llm.LLMError):d.planning_cards(cards,self.ctx)
+  self.ctx.check_canceled.side_effect=RuntimeError('canceled')
+  with patch.object(q,'ask') as ask:
+   with self.assertRaisesRegex(RuntimeError,'canceled'):d.planning_cards(cards,self.ctx)
+   ask.assert_not_called()
+
+ def test_fifteen_minute_notes_preserve_every_source_id_without_shortlisting(self):
+  source=q.coverage(871.050159);lookup={u['id']:u for u in source}
+  cards=[{'id':u['id'],'event':'The speaker describes a specific setup and its later outcome with uncertainty. '*4,'interest':3} for u in source]
+  with patch.object(d,'planning_cards',side_effect=AssertionError('Unnecessary shortlist')):
+   result,notes=d.planning_notes(cards,lookup,self.ctx)
+  self.assertEqual(result,cards);self.assertEqual([r[0] for r in notes],[c['id'] for c in cards])
+  self.assertLessEqual(q.token_size(notes),3300)
+
  def test_deadline_does_not_rotate_forever_and_is_thread_local(self):
   with q.llm.bounded_call(-1):
    with self.assertRaisesRegex(q.llm.LLMError,'quá lâu'):q.llm._check_call_budget()

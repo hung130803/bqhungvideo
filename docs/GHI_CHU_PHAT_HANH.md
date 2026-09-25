@@ -1,4 +1,11 @@
-# BQ Hung Video v2.50.13 — Chọn cảnh toàn nguồn, chọn giọng và phối nhạc
+# BQ Hung Video v2.50.14 — Sửa lỗi chọn tình tiết khi dựng chuyện
+
+- Sửa lỗi dừng với thông báo **“Chưa chọn được các tình tiết có căn cứ”** ở bước thu gọn ghi chú cảnh. Đây có thể là phản hồi sai định dạng của AI, không phải video không có nội dung.
+- Rút ngắn ghi chú trước khi loại ứng viên, giữ toàn bộ mã cảnh đối với nguồn vừa giới hạn. Khi cần thu gọn nguồn dài, nhận đúng mã dạng số/chuỗi số, gộp mã trùng và yêu cầu sửa mã không hợp lệ tối đa một lần. Nếu vẫn sai, giữ nhóm cảnh gốc để lập kế hoạch thay vì bỏ toàn bộ lượt phân tích.
+- Giữ kiểm tra cảnh thật, thời lượng 61–119 giây, không lặp cảnh giữa Part và duyệt kịch bản trước khi xuất. Không tự thay bằng các cảnh ngẫu nhiên để che lỗi.
+- Bấm **Thử lại** ở việc lỗi để dùng lại phần chép lời/xem hình đã lưu khi nguồn và cấu hình AI không thay đổi. Bản vá không tự chạy lại việc cũ hoặc tự duyệt kịch bản.
+
+## Lịch sử v2.50.13 — Chọn cảnh toàn nguồn, chọn giọng và phối nhạc
 
 - **Video & clip → Công cụ → AI dựng chuyện kỹ · nhiều Part** mở cấu hình trước khi chạy: giọng/nghe thử, ngôn ngữ kịch bản, phong cách, số Part, nhạc nền và tiếng động.
 - Tìm tình tiết trên toàn nguồn rồi chọn các cảnh có liên hệ để ghép thành câu chuyện. Không chia đều video thành chương. Mỗi cảnh có vai trò và lý do chọn; các Part không lặp cảnh. Một hành động cần giữ liền phải có giải thích, không cố ghép cảnh không liên quan.
