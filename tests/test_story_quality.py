@@ -16,6 +16,7 @@ sys.path.insert(0,str(ROOT))
 import _test_guard  # noqa: F401,E402
 import app.queue.jobs  # noqa: F401,E402
 from app.ai import story_quality as q
+from app.ai import story_director as director
 from app.core import dubbing as d
 from app.core.story_audio import fit_narration_text
 from app.database import db
@@ -61,7 +62,7 @@ class StoryQuality(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'Chờ duyệt'):q.verify_export(approved,approved['windows'],self.src)
 
     def test_default_duration_and_speed_cannot_produce_short_part(self):
-        self.assertEqual(q.length_limits({}),(61,120))
+        self.assertEqual(q.length_limits({}),(61,119))
         self.assertEqual(q.length_limits({'min_len':30,'max_len':90}),(61,90))
         cid,meta=self.review_fixture()
         approved=q.approve_script(cid,q.digest(meta),[p['text'] for p in meta['parts']])
@@ -81,6 +82,13 @@ class StoryQuality(unittest.TestCase):
         db.execute("UPDATE jobs SET status='canceled' WHERE id=?",(jid,))
         q.approve_script(cid,q.digest(meta),texts)
         with self.assertRaisesRegex(RuntimeError,'đã thay đổi'):q.approve_script(cid,q.digest(meta),texts)
+
+    def test_change_pinned_voice_reapproves_without_reanalysis(self):
+        cid,meta=self.review_fixture()
+        updated=q.approve_script(cid,q.digest(meta),[p['text'] for p in meta['parts']],voice='en-US-AriaNeural')
+        self.assertEqual(updated['voice'],'en-US-AriaNeural');self.assertTrue(q.is_approved(updated))
+        with self.assertRaisesRegex(ValueError,'khác ngôn ngữ'):
+            q.approve_script(cid,q.digest(updated),[p['text'] for p in updated['parts']],voice='vi-VN-NamMinhNeural')
 
     def test_editing_review_invalidates_old_export_without_deleting_file(self):
         from app.core.pipeline_safety import parts_problem
@@ -201,7 +209,7 @@ class StoryQuality(unittest.TestCase):
         def write(pool,context,used,preset,index,count,lang,ctx):
             p=q.validate_plan(draft([u['id'] for u in pool]),pool,used,61,80);p['review']={'approved':True};return p
         with patch.object(q.llm,'is_configured',return_value=True),patch.object(q.llm,'vision_available',return_value=True),\
-             patch.object(q,'build_evidence',return_value=(all_units,signature,'key')),patch.object(q,'overview',return_value=[]),patch.object(q,'write_part',side_effect=write):
+             patch.object(q,'build_evidence',return_value=(all_units,signature,'key')),patch.object(director,'direct',return_value=([write(all_units[:6],[],set(),{},0,2,'English',self.ctx),write(all_units[6:],[],set(),{},1,2,'English',self.ctx)],{})):
             result=q.generate({'video_id':self.vid,'preset':{'recap_count':2,'min_len':61,'max_len':80}},self.ctx)
         self.assertEqual(result['count'],2)
         rows=db.query('SELECT signals FROM clips ORDER BY id')
@@ -214,7 +222,7 @@ class StoryQuality(unittest.TestCase):
         p=q.validate_plan(draft([0,1]),units(),set(),24,40);p['review']={}
         with patch.object(q.llm,'is_configured',return_value=True),patch.object(q.llm,'vision_available',return_value=True),\
              patch.object(q,'build_evidence',return_value=(units(144),q.source_signature(self.src),'key')),\
-             patch.object(q,'overview',return_value=[]),patch.object(q,'write_part',side_effect=[p,RuntimeError('bad second part')]):
+             patch.object(director,'direct',side_effect=RuntimeError('bad second part')):
             with self.assertRaises(RuntimeError):q.generate({'video_id':self.vid,'preset':{'recap_count':2}},self.ctx)
         self.assertEqual(db.query('SELECT * FROM clips'),[])
 
@@ -245,7 +253,7 @@ class StoryQuality(unittest.TestCase):
             self.assertTrue(all(Path(p).stat().st_size>0 for p in paths));return {'visible':'Blue image','uncertain':'No visible action'}
         with patch.object(q.llm,'complete_vision_json',side_effect=vision) as model:
             result=q.visual_evidence(str(source),{'id':0,'start':0,'end':2},'',self.ctx)
-            self.assertEqual(model.call_count,3);self.assertEqual(len(result['observations']),3)
+            self.assertEqual(model.call_count,1);self.assertEqual(len(result['observations']),1)
 
     def test_legacy_recap_dispatch_is_explicit(self):
         from app.modules.m2_recap import generate_recap
@@ -344,6 +352,7 @@ class StoryQuality(unittest.TestCase):
             self.assertAlmostEqual(info.duration,64,delta=.3);self.assertTrue(info.has_audio)
             saved=db.loads(db.query_one('SELECT signals FROM clips WHERE id=?',(cid,))['signals'])
             self.assertEqual(len(saved['recap']['rendered_parts']),2)
+            self.assertIn('da_ap',saved)
             self.assertTrue(source.exists())
         finally:pool.stop(wait=True)
 

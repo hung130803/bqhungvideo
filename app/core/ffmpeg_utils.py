@@ -3165,6 +3165,25 @@ def _cc_cach_ten(cach: str) -> str:
     return "phủ khối" if str(cach or "").strip().lower() == "khoi" else "làm mờ"
 
 
+def story_music_filters(duration, volume, ranges):
+    """Output-timeline envelope: gentle fades and lower music under narration."""
+    duration = max(.01, float(duration))
+    envelopes = []
+    for a, b in ranges:
+        a, b = max(0., float(a)), min(duration, float(b))
+        if b <= a:
+            continue
+        envelopes.append(f"min(1,max(0,(t-{a-.18:.3f})/0.18))*min(1,max(0,({b+.35:.3f}-t)/0.35))")
+    envelope = '0'
+    for item in envelopes:
+        envelope = f'max({envelope},{item})'
+    level = max(0., min(1., float(volume)))
+    fade = min(1., duration/4)
+    return (f"atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:d={fade:.3f},afade=t=out:st={duration-fade:.3f}:d={fade:.3f},"
+            f"volume='{level:.4f}*(1-0.68*({envelope}))':eval=frame")
+
+
 def export_canvas_clip(
     src: str | Path,
     dst: str | Path,
@@ -3183,6 +3202,7 @@ def export_canvas_clip(
     pitch: float = 1.0,                 # đổi giọng (1=gốc, >1 cao/nữ, <1 trầm/nam)
     bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
+    story_mix: bool = False,           # fade/duck nhạc riêng cho dựng chuyện
     orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
     dub_path: Optional[str] = None,     # LỒNG TIẾNG AI: wav 48k dài đúng bằng clip
@@ -3955,8 +3975,9 @@ def export_canvas_clip(
             mix.append("[dub]")
         if bgm_idx is not None:
             # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
-            parts.append(f"[{bgm_idx}:a]volume={max(0.0, min(1.0, bgm_vol)):.3f},"
-                         f"atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS[bgm]")
+            music_filter = (story_music_filters(out_dur, bgm_vol, ducks) if story_mix else
+                            f"volume={max(0.0, min(1.0, bgm_vol)):.3f},atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS")
+            parts.append(f"[{bgm_idx}:a]{music_filter}[bgm]")
             mix.append("[bgm]")
         # HIỆU ỨNG TIẾNG CHUYỂN ĐOẠN: cú NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).
         # Ưu tiên THƯ MỤC tiếng động của user (fx_sfx_dir) nếu có file -> mỗi

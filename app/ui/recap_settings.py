@@ -59,7 +59,7 @@ from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from app.ui.appsettings import app_settings
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,
+    QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,QFileDialog,
 )
 
 from app.ai.recap import DEFAULT_STYLE, STYLES
@@ -89,11 +89,12 @@ class RecapSettingsDialog(QDialog):
 
     _demo_ready = pyqtSignal(str)   # đường dẫn wav demo ("" = lỗi)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, story_start=False, voice_only=False, initial_voice=''):
         super().__init__(parent)
         self.setWindowTitle("Cài đặt Reup thuyết minh")
         self.setMinimumWidth(460)
         self._s = app_settings()
+        if story_start:self.setWindowTitle('Dựng chuyện AI · Chọn giọng, phong cách và số Part')
         self._demo_ready.connect(self._play_demo)
 
         from PyQt6.QtWidgets import QScrollArea, QWidget
@@ -179,6 +180,21 @@ class RecapSettingsDialog(QDialog):
         hint.setStyleSheet("color: #8a8f98; font-size: 11px;")
         lay.addWidget(hint)
 
+        if voice_only:
+            self.setWindowTitle('Giọng đọc của Part này')
+            note.setText('Chọn và nghe thử giọng. Đổi giọng chỉ áp dụng cho Part này sau khi Lưu & duyệt; cần xuất lại để nghe giọng mới. Chọn giọng cùng ngôn ngữ kịch bản hoặc giọng đa ngôn ngữ.')
+            self._want_voice=initial_voice
+            if initial_voice:
+                self.voice.addItem(initial_voice,initial_voice);self.voice.setCurrentIndex(self.voice.count()-1)
+            self._all_toggled(False)
+            self.pace=QComboBox();self.pace.addItem('Bình thường','normal')
+            self.pitch=QComboBox();self.pitch.addItem('Bình thường','normal')
+            self.emotion=QCheckBox();self.emotion.setChecked(False)
+            buttons=QHBoxLayout();outer.addLayout(buttons)
+            choose=QPushButton('Dùng giọng này');choose.clicked.connect(self.accept);buttons.addWidget(choose)
+            cancel=QPushButton('Hủy');cancel.clicked.connect(self.reject);buttons.addWidget(cancel)
+            return
+
         # ---- Âm lượng giọng kể ----
         self.vol_lbl = QLabel()
         lay.addWidget(self.vol_lbl)
@@ -230,6 +246,24 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(self.story_quality)
         story_note=QLabel('Dựng chuyện kỹ cần bạn duyệt kịch bản từng Part tại Video & clip; Dây chuyền và tự xuất sẽ chờ duyệt đủ. Chọn giọng ở trên; nhạc, hiệu ứng và phụ đề theo mẫu xuất. Groq có thể nhận sai hình; hãy xem nguồn trước khi duyệt.')
         story_note.setWordWrap(True);lay.addWidget(story_note)
+        self.story_lang=QComboBox()
+        for label,code in [('Ngôn ngữ kịch bản: theo video gốc',''),('Tiếng Việt','vi'),('English','en'),('日本語','ja'),('한국어','ko'),('中文','zh'),('Español','es')]:self.story_lang.addItem(label,code)
+        self.story_lang.setCurrentIndex(max(0,self.story_lang.findData(str(self._s.value('story_lang','') or ''))))
+        lay.addWidget(self.story_lang)
+        self.story_music=QLineEdit(str(self._s.value('story_music_path','') or ''))
+        self.story_music.setPlaceholderText('Nhạc nền dựng chuyện · bỏ trống để dùng nhạc của mẫu')
+        music_row=QHBoxLayout();music_row.addWidget(self.story_music,1)
+        pick_music=QPushButton('Chọn nhạc…');music_row.addWidget(pick_music)
+        def choose_music():
+            path,_=QFileDialog.getOpenFileName(self,'Chọn nhạc nền','','Âm thanh (*.mp3 *.wav *.m4a *.flac *.ogg)')
+            if path:self.story_music.setText(path)
+        pick_music.clicked.connect(choose_music);lay.addLayout(music_row)
+        self.story_mix=QCheckBox('Phối nhạc theo lời kể: hạ nhạc khi có giọng, vào/ra nhạc êm')
+        self.story_mix.setChecked(str(self._s.value('story_audio_mix',True)).lower() in ('true','1'))
+        lay.addWidget(self.story_mix)
+        self.story_sfx=QCheckBox('Tiếng động theo tình tiết · tối đa 3 điểm nhấn AI mỗi Part')
+        self.story_sfx.setChecked(str(self._s.value('story_sfx',True)).lower() in ('true','1'))
+        lay.addWidget(self.story_sfx)
 
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
@@ -349,7 +383,7 @@ class RecapSettingsDialog(QDialog):
         cancel = QPushButton("Hủy")
         cancel.clicked.connect(self.reject)
         brow.addWidget(cancel)
-        save = QPushButton("Lưu")
+        save = QPushButton('Lưu & bắt đầu phân tích' if story_start else 'Lưu')
         save.setProperty("primary", True)
         save.setDefault(True)
         save.clicked.connect(self._save)
@@ -357,6 +391,8 @@ class RecapSettingsDialog(QDialog):
         outer.addLayout(brow)
 
         self._load()
+        if story_start:
+            self.story_quality.setChecked(True);self.story_quality.setEnabled(False)
         self._fill_voices_bg()
         self._update_el_credit()
 
@@ -431,6 +467,10 @@ class RecapSettingsDialog(QDialog):
 
     def _save(self) -> None:
         self._s.setValue('story_quality',self.story_quality.isChecked())
+        self._s.setValue('story_lang',self.story_lang.currentData() or '')
+        self._s.setValue('story_music_path',self.story_music.text().strip())
+        self._s.setValue('story_audio_mix',self.story_mix.isChecked())
+        self._s.setValue('story_sfx',self.story_sfx.isChecked())
         self._s.setValue("recap_voice", self.voice.currentData() or "")
         self._s.setValue("recap_style", self.style.currentData() or DEFAULT_STYLE)
         self._s.setValue("recap_ratio", int(self.ratio.value()))
@@ -499,13 +539,16 @@ class RecapSettingsDialog(QDialog):
         timer.start(200)
 
     def _story_length_mode(self,enabled):
+        if enabled:self.count.setToolTip('AI tìm câu chuyện trên toàn nguồn, chọn các cảnh có liên hệ và tạo từng Part có hook/kết riêng. Các Part không lặp cảnh; nguồn không đủ sẽ báo rõ. Không chia đều video thành các chương.')
         prefix='story' if enabled else 'recap'
-        low,high=(61,120) if enabled else (25,80)
+        low,high=(61,119) if enabled else (25,80)
+        self.min_sec.setMaximum(119 if enabled else 180)
+        self.max_sec.setMaximum(119 if enabled else 600)
         self.min_sec.setMinimum(61 if enabled else 10)
         self.max_sec.setMinimum(61 if enabled else 15)
         self.max_sec.setValue(self._s.value(prefix+'_max_sec',high,type=int))
         self.min_sec.setValue(self._s.value(prefix+'_min_sec',low,type=int))
-        tip='Dựng chuyện: bắt buộc mỗi Part trên 60 giây. Mặc định 61–120s. Tăng tốc mẫu cũng không được làm Part xuống dưới 61s.' if enabled else 'Độ dài mong muốn mỗi clip Reup.'
+        tip='Dựng chuyện: mỗi Part bắt buộc 61–119s, kể cả sau thay đổi tốc độ mẫu.' if enabled else 'Độ dài mong muốn mỗi clip Reup.'
         self.min_sec.setToolTip(tip);self.max_sec.setToolTip(tip)
 
     def _min_sec_changed(self, v: int) -> None:

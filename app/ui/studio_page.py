@@ -7340,7 +7340,11 @@ class StudioPage(QWidget):
         preset["recap_style"] = self.recap_style.currentData() or "story"
         preset['story_quality']=str(self._settings.value('story_quality',False)).lower() in ('true','1')
         preset['story_min_len']=self._settings.value('story_min_sec',61,type=int)
-        preset['story_max_len']=self._settings.value('story_max_sec',120,type=int)
+        preset['story_max_len']=self._settings.value('story_max_sec',119,type=int)
+        preset['story_music_path']=str(self._settings.value('story_music_path','') or '')
+        preset['story_lang']=str(self._settings.value('story_lang','') or '')
+        preset['story_audio_mix']=str(self._settings.value('story_audio_mix',True)).lower() in ('true','1')
+        preset['story_sfx']=str(self._settings.value('story_sfx',True)).lower() in ('true','1')
         preset['recap_voice']=str(self._settings.value('recap_voice','') or '')
         try:                            # tỉ lệ AI kể từ ⚙ Cài đặt Reup
             preset["recap_ratio"] = int(self._settings.value("recap_ratio", 30))
@@ -7397,6 +7401,9 @@ class StudioPage(QWidget):
             return
         if not self._require_ai():
             return
+        if quality is True:
+            from app.ui.recap_settings import RecapSettingsDialog
+            if not RecapSettingsDialog(self,story_start=True).exec():return
         preset = self._recap_preset()
         if quality is not None:preset['story_quality']=bool(quality)
         jid = services.enqueue_auto_recap(self.state.pool, self.state.video_id,
@@ -7406,7 +7413,8 @@ class StudioPage(QWidget):
         # đây nhánh reup KHÔNG track nên bật ô mà reup vẫn không tự xuất.
         if jid:
             self._track_auto(jid, self.state.video_id)
-        extra = " → xong TỰ xuất" if self.auto_export_chk.isChecked() else ""
+        extra = (' → xem/sửa và duyệt kịch bản trước khi xuất' if preset.get('story_quality') else
+                 ' → xong TỰ xuất' if self.auto_export_chk.isChecked() else '')
         self.status.setText(
             "🎙 Đang phân tích & viết kịch bản thuyết minh "
             f"({self.recap_style.currentText()}){extra}... clip sẽ hiện trong "

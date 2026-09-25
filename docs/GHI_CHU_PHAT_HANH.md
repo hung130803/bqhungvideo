@@ -1,4 +1,18 @@
-# BQ Hung Video v2.50.12 — AI dựng chuyện kỹ theo cảnh nguồn
+# BQ Hung Video v2.50.13 — Chọn cảnh toàn nguồn, chọn giọng và phối nhạc
+
+- **Video & clip → Công cụ → AI dựng chuyện kỹ · nhiều Part** mở cấu hình trước khi chạy: giọng/nghe thử, ngôn ngữ kịch bản, phong cách, số Part, nhạc nền và tiếng động.
+- Tìm tình tiết trên toàn nguồn rồi chọn các cảnh có liên hệ để ghép thành câu chuyện. Không chia đều video thành chương. Mỗi cảnh có vai trò và lý do chọn; các Part không lặp cảnh. Một hành động cần giữ liền phải có giải thích, không cố ghép cảnh không liên quan.
+- Tạo ba gợi ý mở đầu; kiểm tra hook, căn cứ từng câu và mạch kể. Giới hạn lời theo thời lượng cảnh. Kịch bản chưa được AI kiểm tra thống nhất hiện rõ cảnh báo để người dùng sửa.
+- Trong **Kịch bản…**, xem góc kể, căn cứ, vai trò và lý do chọn cảnh. **Xem cảnh đang chọn** phát đúng khoảng nguồn để đối chiếu lời kể. **Chọn giọng / nghe thử** đổi giọng riêng cho Part, không cần phân tích lại; bấm **Lưu & duyệt**, sau đó xuất lại. Giọng khác ngôn ngữ kịch bản được báo rõ.
+- Căn cứ lời gốc lấy theo mốc từng từ trong khoảng cắt, không mang phần cuối câu ở cảnh sau sang cảnh trước. Tiến trình giữ phần trăm khi AI phải sửa lại và hiện bước đang thực hiện.
+- Giảm lượt xem hình: khảo sát một hình mỗi khoảng nguồn tối đa 12 giây, sau đó đối chiếu thêm trong đúng khúc được chọn. Hai lượt xem hình có thể chạy đồng thời trong một video; có giới hạn chung. Lưu căn cứ để tiếp tục khi thử lại, gom lượt lập bản đồ và kiểm tra lời thay vì gọi riêng từng câu.
+- Giới hạn thời gian một lượt gọi AI qua các key/model; lỗi hạn mức phút được chờ và thử lại hữu hạn. Không coi nhiều key là hạn mức vô hạn. Tốc độ thực tế phụ thuộc video, số Part và Groq.
+- Chọn file nhạc riêng hoặc nhạc của mẫu. Nhạc vào/ra êm và hạ dưới lời kể; có thể bật/tắt. AI chọn tối đa ba điểm nhấn tình tiết từ 11 nhóm tiếng động có sẵn; hiệu ứng hình/chuyển cảnh vẫn theo mẫu. Giữ đúng nhật ký hiệu ứng đã xuất.
+- **Mỗi Part bắt buộc 61–119 giây**, kiểm tra cả tốc độ mẫu và file thật. Giữ nguyên lời đã duyệt; lời quá dài cần sửa rồi duyệt lại, không tự cắt cụt hoặc đổi nội dung.
+
+Groq vẫn có thể nhận sai hình hoặc viết sai tình tiết. App lấy mẫu hình, không xem từng khung hình như người; nhanh hơn không đồng nghĩa chính xác tuyệt đối. Mỗi Part vẫn bắt buộc xem/sửa và duyệt trước khi xuất. Tạo kịch bản không xóa nguồn; Dây chuyền chỉ dọn nguồn theo cấu hình sau khi mọi Part cần xuất đã thành công và qua kiểm tra an toàn.
+
+## Lịch sử v2.50.12
 
 - Thêm **Video & clip → Công cụ → AI dựng chuyện kỹ · nhiều Part**. App lấy mẫu hình xuyên suốt video, đối chiếu với lời gốc, lập mạch chuyện, viết hook và kiểm tra từng câu theo cảnh được chọn. Có thể tạo nhiều Part theo thứ tự nguồn, không lặp lại đoạn đã dùng.
 - Trong **Cài đặt Reup thuyết minh**, chọn giọng, phong cách, số Part và thời lượng. Bật **AI dựng chuyện kỹ** để dùng cùng chế độ Reup của Dây chuyền. Đây là lựa chọn riêng, mặc định tắt; cách cắt thường giữ nguyên.

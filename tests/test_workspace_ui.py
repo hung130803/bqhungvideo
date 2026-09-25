@@ -238,7 +238,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(int(s.value('recap_min_sec')),40)
             self.assertEqual(int(s.value('recap_max_sec')),120)
             self.assertEqual(int(s.value('story_min_sec')),61)
-            self.assertEqual(int(s.value('story_max_sec')),120)
+            self.assertEqual(int(s.value('story_max_sec')),119)
             self.assertTrue(s.value('story_quality',type=bool))
         state.pool.stop(wait=True)
 

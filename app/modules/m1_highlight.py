@@ -3498,6 +3498,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         if recap_meta.get('quality_story'):
             from app.ai.story_quality import verify_export
             verify_export(recap_meta,segs,src,payload.get('speed',1.))
+            if recap_meta.get('music_path') and not Path(recap_meta['music_path']).is_file():
+                raise RuntimeError('Không tìm thấy nhạc nền đã chọn. Chọn lại nhạc trước khi xuất; giữ nguyên video nguồn.')
         # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
         if payload.get("hook_first") and not is_recap:
             hseg = _pick_hook_seg(video_id, signals, segs)
@@ -3798,7 +3800,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             blur_amt=int(payload.get("blur_amt", 22)),
             speed=float(payload.get("speed", 1.0)),
             pitch=float(payload.get("pitch", 1.0)),
-            bgm_path=payload.get("bgm_path") or None,
+            bgm_path=(recap_meta.get('music_path') if recap_meta.get('quality_story') else '') or payload.get("bgm_path") or None,
+            story_mix=bool(recap_meta.get('quality_story') and recap_meta.get('audio_mix',True)),
             bgm_vol=float(payload.get("bgm_vol", 0.15)),
             orig_vol=float(payload.get("orig_vol", 1.0)),
             dub_path=dub_path,
@@ -3812,7 +3815,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             dub_mute_original=bool(payload.get("dub_mute")) and not is_recap,
             dub_stretch=dub_stretch,
             fx_fade=bool(payload.get("fx_fade", True)),
-            fx_whoosh=bool(payload.get("fx_whoosh", True)),
+            fx_whoosh=bool(recap_meta.get('story_sfx',payload.get('fx_whoosh',True))) if recap_meta.get('quality_story') else bool(payload.get('fx_whoosh',True)),
             # CHUYỂN CẢNH ở chỗ ghép đoạn: kiểu tự suy theo NỘI DUNG chỗ nối
             # (xem ffmpeg_utils.chon_chuyen_canh) — KHÔNG bốc thăm. Job cũ
             # (payload chưa có khoá này) -> 'nhe' như mặc định mẫu mới.
@@ -3971,9 +3974,15 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         from app.ai.story_quality import verify_export
         verify_export(signals['recap'],signals.get('segments'),src,payload.get('speed',1.))
         expected=sum(float(e)-float(s) for s,e in signals['segments'])/max(.5,min(3.,float(payload.get('speed',1.) or 1.)))
-        if not _verified.has_audio or _verified.duration<=60 or abs(_verified.duration-expected)>max(.35,expected*.01):
+        if not _verified.has_audio or _verified.duration<=60 or _verified.duration>=120 or abs(_verified.duration-expected)>max(.35,expected*.01):
             raise RuntimeError('Part xuất không khớp thời lượng hoặc thiếu âm thanh; giữ nguồn để kiểm tra.')
         signals['recap']['exported_approval']=signals['recap']['human_approval']['signature']
+        # Effects were recorded during rendering; do not overwrite that fresh log.
+        latest=db.query_one('SELECT signals FROM clips WHERE id=?',(clip_id,))
+        if latest:
+            current=db.loads(latest['signals'],{})
+            current['recap']=signals['recap']
+            signals=current
         db.execute('UPDATE clips SET signals=? WHERE id=?',(db.dumps(signals),clip_id))
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",

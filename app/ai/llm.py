@@ -11,7 +11,7 @@ import json
 import re
 import threading
 import time
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +35,34 @@ _GEMINI_LOCK = threading.Lock()
 # Nhiều worker thread (LLM + Groq whisper) cùng ghi -> khóa riêng.
 _KEY_STATE: dict = {}
 _KEY_LOCK = threading.Lock()
+_CALL_BUDGET = threading.local()
+
+
+@contextmanager
+def bounded_call(seconds=180, check=None, reasoning=None):
+    """Opt-in deadline across keys, models and JSON repairs, per worker thread."""
+    previous=getattr(_CALL_BUDGET,'value',None)
+    _CALL_BUDGET.value=(time.monotonic()+seconds,check,reasoning)
+    try:yield
+    finally:_CALL_BUDGET.value=previous
+
+
+def _check_call_budget():
+    value=getattr(_CALL_BUDGET,'value',None)
+    if value:
+        if value[1]:value[1]()
+        left=value[0]-time.monotonic()
+        if left<=0:raise LLMError('AI phản hồi quá lâu; đã giữ phần phân tích hoàn tất để thử lại. Không tiếp tục xoay key vô hạn.')
+        return max(.1,min(45.,left))
+    return None
+
+
+def _retry_sleep(seconds):
+    if not getattr(_CALL_BUDGET,'value',None):
+        time.sleep(seconds);return
+    end=time.monotonic()+seconds
+    while time.monotonic()<end:
+        _check_call_budget();time.sleep(min(.2,max(0,end-time.monotonic())))
 
 
 def key_failure_message(provider: str, keys, scope: str, last: str = '') -> str:
@@ -1394,12 +1422,14 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         # (xem khối ghi chú GROQ_TPM_TRAN — đây là gốc rễ lỗi 18/08/2026).
         mt = max_tokens_groq(prompt, system)
         for i, md in enumerate(chuoi):
+            _check_call_budget()
             cuoi = (i == len(chuoi) - 1)
             them: dict = {"max_tokens": mt}
             if json_mode and _nhan_json_mode(md):
                 them["response_format"] = {"type": "json_object"}
             if _nhan_reasoning(md):
-                them["reasoning_effort"] = "low"
+                budget=getattr(_CALL_BUDGET,'value',None)
+                them["reasoning_effort"] = (budget[2] if budget and budget[2] else 'low')
             try:
                 try:
                     resp = client.chat.completions.create(
@@ -1507,14 +1537,16 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             # hết đường dù các key trước chỉ đang cooldown ngắn.
             saw_retryable = False
             for key in pick_keys(provider, keys):
+                budget_timeout=_check_call_budget()
                 from app.ai import key_health
                 if key_health.blocked(provider, key, 'chat'):
                     continue  # A worker may have recorded denial since selection.
                 mark_used(provider, key)
                 try:
+                    options={'request_timeout':budget_timeout,'retries':0} if budget_timeout is not None else {}
                     out = _call_once(provider, key, prompt, system,
                                      temperature, model=model,
-                                     json_mode=json_mode)
+                                     json_mode=json_mode,**options)
                     mark_ok(provider, key)
                     return out
                 except LLMError:
@@ -1554,7 +1586,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                         # (kết nối mới) + còn vòng ngoài. Trước đây dừng ngay
                         # → 1 cú timeout là cả video rơi về "Cắt cơ bản" dù
                         # key còn đầy (bug anh Hùng 28/07).
-                        time.sleep(1.0)
+                        _retry_sleep(1.0)
                         saw_retryable = True
                         continue
                     # lỗi KHÁC (không nhận diện được) -> dừng luôn, báo rõ
@@ -1569,7 +1601,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             if wait is None or wait <= 0:
                 wait = _RATE_WAIT
             if _round < 2 and wait <= 45.0:
-                time.sleep(wait + 0.3)
+                _retry_sleep(wait + 0.3)
                 continue
             break
     # phân biệt lý do để user biết đường sửa
@@ -1747,7 +1779,8 @@ def _b64(path: str) -> str:
 
 
 def complete_vision_json(prompt: str, image_paths: list, system: str = "",
-                         provider: Optional[str] = None, key_dau: int = 0):
+                         provider: Optional[str] = None, key_dau: int = 0,
+                         request_timeout: Optional[float] = None):
     """
     Gửi NHIỀU ẢNH + text cho model vision -> JSON. Dùng để chấm viral theo khung hình.
     Hỗ trợ ollama (qwen2.5vl) và gemini. Ném LLMError nếu lỗi.
@@ -1783,6 +1816,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             last_usable = ""
             _vong = pick_keys("groq", keys, start_at=int(key_dau), scope="vision")
             for key in _vong:
+                budget_timeout=_check_call_budget()
                 from app.ai import key_health
                 if key_health.blocked('groq', key, 'vision'):
                     continue
@@ -1790,7 +1824,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                 try:
                     client = OpenAI(api_key=key,
                                     base_url="https://api.groq.com/openai/v1",
-                                    timeout=120, max_retries=1)
+                                    timeout=budget_timeout or request_timeout or 120, max_retries=0 if request_timeout or budget_timeout else 1)
                     # TẮT PHẦN "SUY NGHĨ": model vision còn sống trên Groq
                     # (qwen3.6) là model SUY LUẬN, mặc định nó viết cả khối
                     # <think> dài trước khi ra JSON. ĐO 06/08/2026 với 2 ảnh:
