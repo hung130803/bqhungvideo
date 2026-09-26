@@ -111,8 +111,23 @@ def planning_cards(cards,ctx):
 
 def planning_notes(cards,lookup,ctx):
     """Compact text before dropping any source candidate, including 10–20m videos."""
-    def rows(pool,limit):
-        return [[c['id'],round(lookup[c['id']]['end']-lookup[c['id']]['start'],2),c['event'][:limit]] for c in pool]
+    def rows(pool,limit,anchors=False):
+        result=[]
+        for c in pool:
+            u=lookup[c['id']]
+            row=[c['id'],round(u['end']-u['start'],2),c['event'][:limit]]
+            if anchors:
+                timed=[]
+                for o in u.get('observations',[]):
+                    at=float(o.get('at',-1))
+                    if u['start']<=at<=u['end']:
+                        timed.append([round(at-u['start'],2),str(o.get('visible',''))[:max(24,limit//2)]])
+                row.append(timed[:3])
+            result.append(row)
+        return result
+    for limit in (140,80,50):
+        notes=rows(cards,limit,True)
+        if q.token_size(notes)<=3300:return cards,notes
     for limit in (260,140,110,80):
         notes=rows(cards,limit)
         if q.token_size(notes)<=3300:return cards,notes
@@ -135,6 +150,12 @@ def validate_edit(raw,units,used,minimum,maximum):
         if type(uid) is not int or uid not in lookup or uid in seen or uid in used or uid<=last:raise ValueError('Cảnh không có nguồn, trùng hoặc đảo diễn biến.')
         if role not in ROLES or not isinstance(why,str) or len(why.strip())<8:raise ValueError('Thiếu vai trò hoặc lý do chọn cảnh.')
         u=lookup[uid];a=shot.get('start',u['start']);b=shot.get('end',u['end'])
+        if 'in' in shot or 'out' in shot:
+            lo,hi=shot.get('in'),shot.get('out')
+            if ('start' in shot or 'end' in shot or type(lo) not in (int,float)
+                    or type(hi) not in (int,float) or not math.isfinite(lo+hi)):
+                raise ValueError('Mép dựng cần in/out bằng số, không trộn với mốc tuyệt đối.')
+            a=round(u['start']+lo,3);b=round(u['start']+hi,3)
         if type(a) not in (int,float) or type(b) not in (int,float) or not math.isfinite(a+b) or not u['start']<=a<b<=u['end'] or b-a<1.5:
             raise ValueError('Mốc cắt vượt cảnh nguồn hoặc cảnh quá ngắn.')
         mode=shot.get('mode','narrate')
@@ -171,7 +192,8 @@ def choose_edits(units,cards,used,preset,count,ctx):
         for attempt in range(3):
             ctx.check_canceled();ctx.progress(.53,f'Chọn mạch chuyện {part_index+1}/{count} · lượt {attempt+1}/3')
             raw=q.ask(f'Select ONE complete story lasting {minimum}-{maximum}s from these source events. '
-                'Each compact event row is [source_id, seconds, event description]. '
+                'Each compact event row is [source_id, seconds, event description, optional timed visual anchors]. '
+                'A visual anchor is [seconds from interval start, fallible still-image description]. '
                 'Choose a SPECIFIC incident, NOT a montage of unrelated daily activities. First identify its '
                 'setup and its actual outcome/reaction, then select the connected events needed to understand it. '
                 'Look across the WHOLE source: the setup can be minutes before the payoff. Do not assume two '
@@ -180,12 +202,19 @@ def choose_edits(units,cards,used,preset,count,ctx):
                 'Do not abandon the central topic just because still images leave objects uncertain; attributed '
                 'speech can establish what the participants SAY they prepared or discovered. Then distinct remaining '
                 'stories on later Parts. No invented danger, identity, surprise or causal connection. '
-                'Use unique ids in chronological order. SUM their seconds to reach the target: six 12s '
-                'intervals = 72s. Do not take an arbitrary continuous block. If action must remain continuous, '
+                'Use unique ids in chronological order. These intervals are a SEARCH INDEX, not final shots. '
+                'For each shot specify in/out seconds relative to that interval start, with 0 <= in < out <= seconds. '
+                'Trim around supplied timed evidence with context on either side; do not invent a precise '
+                'action time from a vague summary. If there are no useful timing anchors, keep that interval intact. '
+                'Select the useful beat within each interval, omit dead time, and vary shot lengths for a clear '
+                'setup, change and payoff; never default to six identical 12-second blocks. '
+                'SUM the chosen out-in durations to reach the target; use more connected intervals if needed. '
+                'Keep whole intervals for orig dialogue so sentences remain intact. Never create arbitrary cuts '
+                'just to satisfy a count; hold an important reaction when warranted. If action must remain continuous, '
                 'explain why. Never pad an incomplete story with irrelevant scenes. Return '
                 '{"title":"factual title","angle":"one specific real contrast",'
                 '"continuous_reason":"only when necessary","shots":[{"source_id":int,'
-                '"reason":"specific connection to THIS story","mode":"narrate|orig"}]}. '
+                '"in":0.0,"out":8.0,"reason":"specific connection to THIS story","mode":"narrate|orig"}]}. '
                 'Narration is the default. Opening always narrated. If repairing, address the specific '
                 'error while retaining valid scenes.\n'+json.dumps({'source_title':preset.get('_source_title',''),
                 'events':notes,'already_planned':[story_brief(p) for p in plans],

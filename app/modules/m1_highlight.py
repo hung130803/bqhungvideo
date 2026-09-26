@@ -3810,6 +3810,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             bgm_path=_story_bgm if recap_meta.get('quality_story') else payload.get('bgm_path') or None,
             edit_plan=recap_meta.get('edit_plan') if recap_meta.get('quality_story') else None,
             edit_parts=recap_parts,
+            narration_events=narr_events,
             edit_log=_edit_log,
             story_mix=bool(recap_meta.get('quality_story') and recap_meta.get('audio_mix',True)),
             story_beats=recap_parts if recap_meta.get('quality_story') and recap_meta.get('metrics',{}).get('audio_plan_version') else None,

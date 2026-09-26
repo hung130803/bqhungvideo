@@ -1,3 +1,11 @@
+# BQ Hung Video v2.50.21
+
+- Sửa chữ trong khung phóng sự còn hiện sau khi đọc: dùng mốc giọng thực tế, ẩn trong khoảng ngắt và khi đọc xong; vẫn khớp khi đổi tốc độ xuất.
+- Căn cụm phụ đề bằng mốc từng từ của dịch vụ giọng khi có, thay vì chia đều toàn câu. Ghép các thẻ chữ vào một luồng ảnh để tránh mở nhiều bộ giải mã cùng lúc.
+- Chọn cảnh có thêm mép vào/ra bên trong từng khúc nguồn; yêu cầu AI bỏ khoảng thừa, chọn nhịp cảnh khác nhau và giữ câu trọn vẹn khi dùng tiếng gốc. Part vẫn phải 61–119 giây.
+- Hướng dẫn viết lời kể thành mạch chuyện, giảm lối liệt kê hình ảnh. Giao diện dùng tên trung tính “đoạn nguồn”, không tự khẳng định các đoạn đều hay.
+- Xuất lại Part cũ để áp dụng sửa thời gian chữ. Muốn AI chọn cảnh/viết lời theo chỉ dẫn mới cần tạo lượt phân tích mới và duyệt lại. Giọng không đổi sang dịch vụ trả phí; thay đổi này không bảo đảm diễn cảm như người thật.
+
 # BQ Hung Video v2.50.20
 
 - Sửa lỗi xuất Part khi mẫu Phóng sự/Giải thích kế thừa tùy chọn cắt viền đen: tự giữ trọn nguồn, đồng nhất với bản xem thử và tọa độ mũi tên/zoom.

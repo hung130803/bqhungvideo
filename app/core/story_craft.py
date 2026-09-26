@@ -27,6 +27,10 @@ def writing_direction(lang):
             'Read all lines as one spoken paragraph, not isolated captions. Introduce the subject clearly, '
             'resolve pronouns and avoid unexplained jumps. Keep chronological order; never turn correlation into cause. '
             'Use concrete verbs, varied sentence lengths, restrained punctuation and one thought per breath. '
+            'Do not write a sequence of flat image captions such as "she holds X, then she shows Y". '
+            'Explain what each evidenced beat changes in the central question; omit redundant object inventories. '
+            'Join consecutive narration lines with natural references and meaningful pauses, not a fresh introduction every shot. '
+            'Prefer speakable sentences to headline fragments, formal report jargon and forced exclamations. '
             'Leave space for important original dialogue. No stage directions or emotion tags in spoken text. '
             'Humor and tension must arise from the source, not stock cliffhangers. The ending must answer the opening, '
             'without inventing an outcome outside the footage.'+native)

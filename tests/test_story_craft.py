@@ -16,6 +16,46 @@ from app.ui.fonts import load_fonts
 load_fonts()
 
 class Craft(unittest.TestCase):
+    def test_spoken_cards_respect_real_speech_gaps_and_empty_events(self):
+        events=[dict(start=0,end=8,speech=[.5,3.4],text='one two',words=[[.1,1,'one'],[2.5,6,'two']])]
+        cards=report.spoken_cards(events,12)
+        self.assertEqual([(c[0],c[1],round(c[2],3)) for c in cards],[('one',.5,.5),('two',2.5,.9)])
+        self.assertEqual(report.spoken_cards([],12),[])
+        fallback=report.spoken_cards([dict(start=0,end=12,speech=[1,3],text='Một câu đã đọc.')],12)
+        self.assertEqual((fallback[0][1],fallback[-1][1]+fallback[-1][2]),(1,3))
+
+    def test_director_uses_variable_in_out_without_cutting_original_speech(self):
+        units=[dict(id=i,start=i*20,end=i*20+12,safe_orig=True) for i in range(8)]
+        shots=[dict(source_id=i,role='hook' if i==0 else 'payoff' if i==7 else 'build',mode='narrate',
+            reason='Tình tiết có nguồn',**{'in':1.,'out':9. if i%2 else 10.}) for i in range(8)]
+        plan=director.validate_edit(dict(title='Mạch chuyện',shots=shots),units,set(),61,119)
+        self.assertEqual(plan['duration'],68)
+        self.assertEqual(plan['windows'][1],[21.,29.])
+        shots[1]['mode']='orig'
+        with self.assertRaisesRegex(ValueError,'trọn vẹn'):director.validate_edit(dict(title='Mạch chuyện',shots=shots),units,set(),61,119)
+        shots[1]['mode']='narrate';shots[1]['out']=13
+        with self.assertRaises(ValueError):director.validate_edit(dict(title='Mạch chuyện',shots=shots),units,set(),61,119)
+
+    def test_report_text_disappears_after_speech_with_speed_and_disjoint_shots(self):
+        src=AREA/'timed-source.mp4'
+        subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','color=c=blue:size=320x180:rate=30',
+            '-t','8','-c:v','libx264','-preset','ultrafast',str(src)],check=True,timeout=20)
+        parts=[dict(start=0,end=2,mode='narrate',text='Một câu.'),dict(start=6,end=8,mode='narrate',text='Câu khác.')]
+        plan=ed.validate(dict(version=1,style='explain',layout='report',report_title='',events=[]),parts)
+        cues=[dict(start=0,end=2,speech=[.4,1.2],text='Một câu.',words=[[.4,.8,'Một'],[1.,1.2,'câu.']]),
+              dict(start=2,end=4,speech=[2.4,2.8],text='Câu khác.',words=[[2.4,2.8,'Câu khác.']])]
+        out=AREA/'timed-report.mp4'
+        ff.export_canvas_clip(src,out,[(0,2),(6,8)],(.5,.5,1),out_w=180,out_h=320,encoder='libx264',
+            fx_fade=False,fx_whoosh=False,hieu_ung='tat',edit_plan=plan,edit_parts=parts,narration_events=cues,speed=1.25)
+        self.assertAlmostEqual(ff.probe(out).duration,3.2,delta=.1)
+        import numpy as np
+        for source_time,visible in ((.1,False),(.6,True),(.9,False),(1.6,False),(2.6,True),(3.5,False)):
+            raw=subprocess.check_output([settings.FFMPEG_PATH,'-v','error','-ss',str(source_time/1.25),'-i',str(out),
+                '-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'])
+            frame=np.frombuffer(raw,dtype=np.uint8).reshape(320,180,3).astype(int)
+            box=frame[218:248,25:155];panel_pixels=((box[:,:,0]<80)&(box[:,:,1]<80)&(box[:,:,2]<100)).sum()
+            self.assertEqual(panel_pixels>1000,visible,(source_time,panel_pixels))
+
     def test_report_inherited_crop_matches_full_source_and_legacy_crop_still_works(self):
         src=AREA/'crop-source.mp4'
         subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=30',
@@ -91,6 +131,21 @@ class Craft(unittest.TestCase):
             path,events=d.build_recap_track(parts,[(0,8)],'vi-VN-NamMinhNeural','vi',AREA/'voice.wav',strict=True,allow_rewrite=False)
         self.assertAlmostEqual(ff.probe(path).duration,8,delta=.1)
         self.assertEqual([e['text'] for e in events],[p['text'] for p in parts])
+
+    def test_phrase_subtitles_use_provider_boundaries_instead_of_even_spacing(self):
+        words=[[.2+i*.12,.3+i*.12,str(i)] for i in range(4)]+[[2+i*.12,2.1+i*.12,str(i+4)] for i in range(4)]
+        async def synth(texts,voice,paths,**kwargs):
+            for path in paths:
+                subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','sine=frequency=650:duration=3','-f','wav',path],check=True,timeout=10)
+            return [True],[words]
+        part=dict(start=0,end=4,mode='narrate',text='0 1 2 3 4 5 6 7')
+        with patch.object(d,'_synth_all_words',side_effect=synth),patch.object(d,'_recap_word_level',return_value=False),\
+             patch.object(d,'_detect_speech_segments',return_value=[(0,3)]),patch.object(d,'_cue_speech_bias',return_value=0):
+            _,events=d.build_recap_track([part],[(0,4)],'vi-VN-NamMinhNeural','vi',AREA/'measured.wav',strict=True,allow_rewrite=False)
+        measured=events[0]['words']
+        self.assertAlmostEqual(measured[0][0],.2,delta=.03)
+        self.assertTrue(any(c[0]>=1.95 for c in measured),measured)
+        self.assertTrue(any(c[1]<1 for c in measured),measured)
 
     def test_report_zoom_still_disjoint_source_and_music_render(self):
         src=AREA/'source.mp4'

@@ -3972,14 +3972,18 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                 #    cụm chữ vào các đoạn có tiếng; không dò được -> chia đều
                 #    (đúng hành vi cũ).
                 grp = None
-                if stt_wl:
+                if wl:
+                    measured=[[max(0.,float(a)*scale),min(d_final,float(b)*scale),text]
+                              for a,b,text in wl if 0<=float(a)*scale<min(d_final,float(b)*scale)]
+                    grp = _phrase_groups_from_words(measured,n['start'])
+                elif stt_wl:
                     grp = _phrase_groups_from_words(stt_wl, n["start"])
                 if not grp and not wl:
                     segs_sp = _detect_speech_segments(wav, d_final)
                     if len(segs_sp) >= 2:   # ≥2 đoạn -> có ngắt đáng kể
                         grp = _phrase_groups_by_speech(
                             n["text"], n["start"], segs_sp)
-                if not grp:                 # edge / nói liền / dò hỏng -> đều
+                if not grp:                 # no usable measured timing -> estimate
                     grp = _phrase_groups_even(n["text"],
                                               n["start"] + speech_a,
                                               speech_b - speech_a)

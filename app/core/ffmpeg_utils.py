@@ -3233,6 +3233,7 @@ def export_canvas_clip(
     story_beats: Optional[list] = None, # v15: đúng điểm nhấn đã duyệt, [] = không tiếng động
     edit_plan: Optional[dict] = None,
     edit_parts: Optional[list] = None,
+    narration_events: Optional[list] = None, # actual TTS cues, unsped output timeline
     edit_log: Optional[list] = None,
     orig_vol: float = 1.0,              # ÂM LƯỢNG TIẾNG GỐC (0..1); có lồng tiếng
                                         # + để 1.0 -> tự hạ ~0.12 làm nền
@@ -3954,7 +3955,7 @@ def export_canvas_clip(
             final,aidx=append_graph(cmd,parts,final,aidx,_edit_events,_edit_folder.name,
                 out_w,out_h,_font_file('Arial'),edit_plan['style'],(_info.width,_info.height),video_rect,bg,flip_h)
             from app.core.report_layout import append as append_report
-            final,aidx=append_report(cmd,parts,final,aidx,edit_plan,edit_parts or [],segs,_edit_folder.name,out_w,out_h)
+            final,aidx=append_report(cmd,parts,final,aidx,edit_plan,edit_parts or [],segs,_edit_folder.name,out_w,out_h,narration_events)
             if use_png:
                 parts.append(f'{final}[{nextidx}:v]overlay=0:0[edlogo]');final='[edlogo]'
         if ass_path and os.path.exists(ass_path):

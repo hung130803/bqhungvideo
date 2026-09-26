@@ -8226,7 +8226,7 @@ class StudioPage(QWidget):
             total = sig.get("dur") or (c["end_sec"] - c["start_sec"])
             segs = sig.get("segments") or []
             nseg = sig.get("n_seg", len(segs) or 1)
-        seg_note = f" · ghép {nseg} đoạn hay" if nseg and nseg > 1 else ""
+        seg_note = f" · ghép {nseg} đoạn nguồn" if nseg and nseg > 1 else ""
         sub = QLabel(f'{_dur(total)}{seg_note} · {c["reason"] or ""}'[:100])
         sub.setStyleSheet(f"color:{MUTED}; font-size:13px; border:none;")
         info.addWidget(_shrinkable(sub))
