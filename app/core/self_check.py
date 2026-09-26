@@ -66,6 +66,9 @@ def run(output: str) -> int:
                            fx_whoosh=False, hieu_ung='tat', edit_plan=plan, edit_parts=parts,bgm_path=resolve('bqmusic:sector'))
         assert abs(probe(edited).duration - 1.) < .15
         results['checks'].append('compiled editorial dialog, Unicode render and 20 new sound assets')
+        from app.core.story_checks import language_issues
+        assert language_issues([dict(mode='narrate',text='Cô nói I am going to try this now.',evidence=json.dumps({'transcript':'I am going to try this now.'}))],'vi')
+        results['checks'].append('compiled narration language guard')
         from app.core.story_craft import word_budget,delivery_rate
         assert word_budget(12,'vi')==38 and delivery_rate('+0%','reflective')=='-6%'
         report_plan=validate(dict(version=1,style='explain',layout='report',report_title='Chi tiết đã kiểm tra',events=[

@@ -88,6 +88,11 @@ def show_story(parent,meta,clip_id=None):
         hooks.setToolTip('Gợi ý của AI; chép rồi sửa câu đầu trong bảng sau khi đối chiếu nguồn.')
         hook_row.addWidget(hooks,1);copy_hook=QPushButton('Chép hook');hook_row.addWidget(copy_hook)
         copy_hook.clicked.connect(lambda:QApplication.clipboard().setText(hooks.currentData() or ''))
+    from app.core.story_checks import warnings as story_warnings
+    local_warnings=story_warnings(parts,meta.get('lang',''))
+    if local_warnings:
+        local_note=QPlainTextEdit();local_note.setReadOnly(True);local_note.setMaximumHeight(80)
+        local_note.setPlainText('CẦN ĐỐI CHIẾU (kể cả kịch bản đã duyệt trước đây):\n'+'\n'.join(local_warnings));lay.addWidget(local_note)
     if (meta.get('review') or {}).get('approved') is False:
         warning=QPlainTextEdit();warning.setReadOnly(True);warning.setMaximumHeight(70)
         warning.setPlainText('CẦN KIỂM TRA / SỬA: '+str(meta['review'].get('issues','Cần đối chiếu lại nguồn.')))

@@ -19,7 +19,9 @@ def writing_direction(lang):
     native=(' Vietnamese: write idiomatic spoken Vietnamese, not word-for-word English. '
             'Count whitespace tokens as syllables; target 2.3-2.8 syllables/sec, never pad to the maximum. '
             'Use natural subject references; avoid stiff nominal phrases, repeated "người đàn ông này", '
-            'invented slang, and sensational moral judgements.' if str(lang).casefold() in ('vi','vietnamese','vi-vn') else '')
+            'invented slang, and sensational moral judgements. Translate reported speech into Vietnamese; '
+            'never paste a whole English sentence into Vietnamese narration. Keep source quotes only in support_quote, '
+            'not in spoken text. Retain proper names only when clearly supported.' if str(lang).casefold() in ('vi','vietnamese','vi-vn') else '')
     return (' Before wording, internally outline ONE question, the factual context needed to understand it, '
             'the evidenced change and the answer. Each line must move that same story forward. '
             'Read all lines as one spoken paragraph, not isolated captions. Introduce the subject clearly, '

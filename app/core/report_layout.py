@@ -22,7 +22,7 @@ def panel(path,text,width,height,color,title=False):
     from PyQt6.QtGui import QImage,QPainter,QFont,QFontMetrics,QColor,QPen
     image=QImage(width,height,QImage.Format.Format_ARGB32);image.fill(Qt.GlobalColor.transparent)
     painter=QPainter(image);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(13,18,27,240));painter.setPen(QPen(QColor(color),max(1,width/220)))
+    painter.setBrush(QColor(13,18,27,240));painter.setPen(QPen(QColor('#FF5757' if title and color=='#FFDE39' else color),max(1,width/220)))
     painter.drawRoundedRect(QRectF(2,2,width-4,height-4),width*.025,width*.025)
     pad=max(8,int(width*.025));rect=QRectF(pad,pad,width-2*pad,height-2*pad)
     flags=Qt.AlignmentFlag.AlignCenter|Qt.TextFlag.TextWordWrap

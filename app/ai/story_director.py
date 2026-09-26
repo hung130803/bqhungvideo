@@ -7,6 +7,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
 from app.ai import story_quality as q
 from app.core.story_craft import word_budget,writing_direction,DELIVERY,ENERGY
+from app.core.story_checks import context as scene_context,continuity_issues,language_issues
 
 ROLES={'hook','setup','build','payoff','ending'}
 SFX={'none','transition','impact','riser','reveal','pop','suspense','comedy','scratch','sad','drumroll'}
@@ -20,6 +21,24 @@ STYLE={
 class AuditFailure(ValueError):
     def __init__(self,message,checks):
         super().__init__(message);self.checks=checks
+
+
+def compact_context_rows(rows,limit=3600):
+    """Retain every scene/date anchor while bounding added visual audit context."""
+    rows=deepcopy(rows)
+    for size in (240,140,80,40):
+        if q.token_size(rows)<=limit:return rows
+        for row in rows:
+            for key in ('speech','local_speech','event','reason'):
+                if isinstance(row.get(key),str):row[key]=row[key][:size]
+            for observation in row.get('scene_context',{}).get('visual',[]):
+                observation['visible']=observation.get('visible','')[:size]
+                observation['uncertain']=observation.get('uncertain','')[:min(size,60)]
+            if size==40:
+                visual=row.get('scene_context',{}).get('visual',[])
+                if visual:row['scene_context']['visual']=[visual[len(visual)//2]]
+    if q.token_size(rows)>limit:raise ValueError('Bối cảnh còn quá dài để kiểm tra đủ cảnh; cần chọn ít cảnh hơn, không bỏ kiểm tra.')
+    return rows
 
 
 def catalogue(units,ctx):
@@ -191,11 +210,17 @@ def choose_edits(units,cards,used,preset,count,ctx):
                 # Check relationships against original speech, not only condensed event cards.
                 evidence=[{'id':p['source_id'],'reason':p['reason'],
                     'speech':lookup[p['source_id']].get('transcript','')[:750],
-                    'event':next(c['event'] for c in available if c['id']==p['source_id'])} for p in plan['parts']]
+                    'event':next(c['event'] for c in available if c['id']==p['source_id']),
+                    'scene_context':scene_context(lookup[p['source_id']])} for p in plan['parts']]
                 if q.token_size(evidence)>3500:
                     for e in evidence:e['speech']=e['speech'][:300]
+                evidence=compact_context_rows(evidence)
                 check=q.ask('Verify the proposed story using these original source speech excerpts and '
-                    'event notes. Are these scenes about ONE connected story, with a real setup and outcome? '
+                    'event notes AND visual scene context. Are these scenes about ONE connected story, with a real setup and outcome? '
+                    'Treat compilations as multiple incidents: a roadside stop and an airport incident are NOT the same '
+                    'event merely because police occur in both. Compare visible dates, location, clothing and participants; '
+                    'do not bridge conflicting dates or locations without explicit evidence. Visual notes are fallible, '
+                    'so unresolved contradictions mean needs review. '
                     'Anonymous people, unnamed relationships and gaps that skip irrelevant material are valid: '
                     'do not reject solely because a name or identity is unknown. The same incident can be '
                     'understood from attributed dialogue, without demanding proof of every motion in a still. '
@@ -211,6 +236,10 @@ def choose_edits(units,cards,used,preset,count,ctx):
                     '"issues":"specific correction","title":"accurate concise title",'
                     '"angle":"accurate angle"}.\n'+json.dumps({'title':plan['title'],'angle':plan['angle'],'evidence':evidence,
                     'previous_stories':[story_brief(p) for p in plans]},ensure_ascii=False),reasoning='medium')
+                local_warnings=continuity_issues(plan['parts'])
+                if local_warnings:
+                    check=dict(check) if isinstance(check,dict) else {}
+                    check.update(approved=False,issues='; '.join(local_warnings))
                 distinct=not plans or (isinstance(check,dict) and check.get('distinct_from_previous') is True)
                 if not isinstance(check,dict) or check.get('approved') is not True or not distinct:
                     issue=str(check.get('issues','Cần xem lại mạch chuyện') if isinstance(check,dict) else 'Kiểm tra mạch chuyện chưa trả đủ dữ liệu')
@@ -296,6 +325,8 @@ def refine(plans,units,src,ctx):
 
 
 def audit(plan,ctx):
+    language_problems=language_issues(plan['parts'],plan.get('target_language',''))
+    if language_problems:raise ValueError('; '.join(language_problems))
     checks=[]
     # Each check sees complete local evidence, in bounded batches, once.
     for block in q.evidence_batches(plan['parts'],limit=7500):
@@ -322,12 +353,17 @@ def audit(plan,ctx):
         'Source-time gaps are intentional '
         'montage: do NOT reject simply because timestamps jump or require events to be adjacent. '
         'Reject only if the actual story connection or claimed cause is missing. '
-        'Use the local source speech to distinguish a genuinely unrelated event from an omitted transition. Return '
+        'Use local speech AND visual scene context to distinguish unrelated incidents from omitted transitions. '
+        'A shared topic or police uniform does not establish same event. Different visible dates, clothes or '
+        'locations require explicit support for continuity. Check target_language: reported speech must be '
+        'retold in that language, not pasted as untranslated quotations. Return '
         '{"approved":boolean,"issues":[strings]}.\n'+json.dumps({k:v for k,v in plan.items() if k!='parts'}|{
-        'shots':[{k:v for k,v in p.items() if k!='evidence'}|{
-            'local_speech':json.loads(p['evidence']).get('transcript','')[:240]} for p in plan['parts']]},ensure_ascii=False),reasoning='medium')
+        'shots':compact_context_rows([{k:v for k,v in p.items() if k in ('source_id','start','end','text','role','mode','reason')}|{
+            'local_speech':json.loads(p['evidence']).get('transcript','')[:400],
+            'scene_context':scene_context(json.loads(p['evidence']))} for p in plan['parts']],limit=4500)},ensure_ascii=False),reasoning='medium')
     if not isinstance(raw,dict) or raw.get('approved') is not True:raise ValueError(str(raw.get('issues','Chưa đạt mạch chuyện') if isinstance(raw,dict) else 'Kết quả kiểm tra không hợp lệ')[:900])
-    return {'approved':True,'checks':checks}
+    scene_problems=continuity_issues(plan['parts'])
+    return {'approved':not scene_problems,'checks':checks,**({'issues':'; '.join(scene_problems)} if scene_problems else {})}
 
 
 def repair_claims(plan,failure,lang,ctx):
@@ -429,6 +465,7 @@ def script(plan,preset,lang,ctx,index,count,src=None):
             if not isinstance(hooks,list) or len(hooks)!=3 or any(not isinstance(h,str) or not h.strip() for h in hooks) or type(selected) is not int or not 0<=selected<3:raise ValueError('Thiếu lựa chọn hook.')
             if not isinstance(rows,list) or any(not isinstance(r,dict) for r in rows) or len(rows)!=len(plan['parts']) or [r.get('source_id') for r in rows]!=[p['source_id'] for p in plan['parts']]:raise ValueError('Kịch bản đã đổi cảnh.')
             candidate=deepcopy(plan)
+            candidate['target_language']=lang
             if isinstance(raw.get('title'),str) and raw['title'].strip():candidate['title']=raw['title'].strip()[:140]
             from app.core.music_library import MOODS
             mood=raw.get('music_mood')
