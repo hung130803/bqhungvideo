@@ -1,0 +1,336 @@
+{
+  "source": "https://kenney.nl/assets/casino-audio",
+  "license": "CC0-1.0",
+  "files": [
+    {
+      "file": "casino_card_fan_1.opus",
+      "category": "pop",
+      "duration": 0.73,
+      "sha256": "eb76e743b7cacd41ef3f8d67704928f77595298960600c7e8b2781db3e2ba2bc"
+    },
+    {
+      "file": "casino_card_fan_2.opus",
+      "category": "pop",
+      "duration": 1.316,
+      "sha256": "ba00c60a56c45fa8322fe38e4f2a92141f0cbc85c6379dfc29a63bd6df278d9e"
+    },
+    {
+      "file": "casino_card_place_1.opus",
+      "category": "pop",
+      "duration": 0.699,
+      "sha256": "39e22c76864f5806cfabe2fe7c7b0e7e21fded69f1306710da4fa64638d9c991"
+    },
+    {
+      "file": "casino_card_place_2.opus",
+      "category": "pop",
+      "duration": 0.466,
+      "sha256": "b23385403c0d38aaf495577c918ceb871cbd970c183384e1347e0b45bba41e16"
+    },
+    {
+      "file": "casino_card_place_3.opus",
+      "category": "pop",
+      "duration": 0.893,
+      "sha256": "eaeef44112484b605145fc61730ba1c48b17915cc52d409c3a07cd7c6084676d"
+    },
+    {
+      "file": "casino_card_place_4.opus",
+      "category": "pop",
+      "duration": 0.61,
+      "sha256": "a83ea36212d97f5629638091892e22752020d94172509d950dd7e844050dca48"
+    },
+    {
+      "file": "casino_card_shove_1.opus",
+      "category": "pop",
+      "duration": 0.775,
+      "sha256": "c14a69c8351607e072eae558d7118b5c36d6e6560e7b4e45c3d0dc3051829791"
+    },
+    {
+      "file": "casino_card_shove_2.opus",
+      "category": "pop",
+      "duration": 0.776,
+      "sha256": "c6207882a488ce8ece83efc0a5f75c397f10489aed454388e4af7455341f6643"
+    },
+    {
+      "file": "casino_card_shove_3.opus",
+      "category": "pop",
+      "duration": 0.702,
+      "sha256": "494a090e39b9d46e01d2d61ded008f9f0c44a1fb7e77daef8c2c0e25608ef869"
+    },
+    {
+      "file": "casino_card_shove_4.opus",
+      "category": "pop",
+      "duration": 0.819,
+      "sha256": "24bc818ee96353df1040d2b59e67367419a4a043c6420c95491442f76e50a558"
+    },
+    {
+      "file": "casino_card_shuffle.opus",
+      "category": "pop",
+      "duration": 3.109,
+      "sha256": "5215d1a7fe196191e1cf63eed270cadbabd9f0eb15c318aaf601d464ecc0177b"
+    },
+    {
+      "file": "casino_card_slide_1.opus",
+      "category": "pop",
+      "duration": 0.61,
+      "sha256": "2fba95bc85c2f886c337a4f3a5e01cf529765bd32bfe9c4b2b2d9e9be6edc178"
+    },
+    {
+      "file": "casino_card_slide_2.opus",
+      "category": "pop",
+      "duration": 0.593,
+      "sha256": "29d4f6205aea5f4740e96f020b8a1dc824277cf82695154937d15e37f01f323d"
+    },
+    {
+      "file": "casino_card_slide_3.opus",
+      "category": "pop",
+      "duration": 0.608,
+      "sha256": "4c0f002fb0986610d890775e490d92daa5a65b01fe2bc50b641dee36b0ac2cd1"
+    },
+    {
+      "file": "casino_card_slide_4.opus",
+      "category": "pop",
+      "duration": 0.466,
+      "sha256": "4f89a004fd9ebf49b8aa0bed4028602f65419e2e986cd5f964a275438c86a1b6"
+    },
+    {
+      "file": "casino_card_slide_5.opus",
+      "category": "pop",
+      "duration": 0.61,
+      "sha256": "7155bff2de93659c141b7ec31e82deb0218715e2a9ab2b496f16b3d3f5499ee7"
+    },
+    {
+      "file": "casino_card_slide_6.opus",
+      "category": "pop",
+      "duration": 0.61,
+      "sha256": "b7336ac301777b21ec16bcd06b9eb8487485e63f0e56bb84124d15498dc23df1"
+    },
+    {
+      "file": "casino_card_slide_7.opus",
+      "category": "pop",
+      "duration": 0.646,
+      "sha256": "fa1f7f3bead44e277c0d7d03786fda884ebd4597f8e1f4aac927884b394c5be8"
+    },
+    {
+      "file": "casino_card_slide_8.opus",
+      "category": "pop",
+      "duration": 0.681,
+      "sha256": "b2ac86082356b1243095dbe9a2b878bfcf3e212817e4c4784073de0484ca63ff"
+    },
+    {
+      "file": "casino_cards_pack_open_1.opus",
+      "category": "pop",
+      "duration": 0.947,
+      "sha256": "8a9075e2b9e9a98b0b14b7587d0b374028174ea2170b4aa088f1445ce5a885b3"
+    },
+    {
+      "file": "casino_cards_pack_open_2.opus",
+      "category": "pop",
+      "duration": 0.741,
+      "sha256": "8d1c7ba634ea8ed5619633aa66310f926b2c1b984267ee857f5b038fe105b2f8"
+    },
+    {
+      "file": "casino_cards_pack_take_out_1.opus",
+      "category": "pop",
+      "duration": 0.502,
+      "sha256": "71216afcd722a54f045f35fa2971295343392fe60124507681646d125461e985"
+    },
+    {
+      "file": "casino_cards_pack_take_out_2.opus",
+      "category": "pop",
+      "duration": 0.64,
+      "sha256": "734135da1cf752433d1f2b6021fbb044fe9c49b9f28326428a7836e4044c81c9"
+    },
+    {
+      "file": "casino_chip_lay_1.opus",
+      "category": "pop",
+      "duration": 0.179,
+      "sha256": "5f0697c7ed7abfa13c450abf86605c163f58c27061a2cab35a41bbeefa9bbeda"
+    },
+    {
+      "file": "casino_chip_lay_2.opus",
+      "category": "pop",
+      "duration": 0.236,
+      "sha256": "ae490ec326f51629eba91561472951254d674caf6062e5010828728fff83147f"
+    },
+    {
+      "file": "casino_chip_lay_3.opus",
+      "category": "pop",
+      "duration": 0.275,
+      "sha256": "f06293613953cc0fe42849d74436726f1ff18ff4808e434edb5d98747775a296"
+    },
+    {
+      "file": "casino_chips_collide_1.opus",
+      "category": "pop",
+      "duration": 0.265,
+      "sha256": "a0f5c26f16d84558babb32de2ce7dd5016ab00ce1d1886a3ff31cff13d1ea19d"
+    },
+    {
+      "file": "casino_chips_collide_2.opus",
+      "category": "pop",
+      "duration": 0.236,
+      "sha256": "17e296bffafa0d3d536c3934d91b674e49b1d2a1d278db5c79a7fd116cbddddb"
+    },
+    {
+      "file": "casino_chips_collide_3.opus",
+      "category": "pop",
+      "duration": 0.265,
+      "sha256": "8058f9f62ca84e418cd38fb5bf94b0e68592d2dd20d6f75d024fd7fa25d99a87"
+    },
+    {
+      "file": "casino_chips_collide_4.opus",
+      "category": "pop",
+      "duration": 0.222,
+      "sha256": "096fc59f9c59f8b59cbf832b06e15a9410f23dff727b65637d8f9066d94dc0e8"
+    },
+    {
+      "file": "casino_chips_handle_1.opus",
+      "category": "pop",
+      "duration": 0.626,
+      "sha256": "82caccb51db0d70328556a437da161b42b550fdbd660b1221685872d01f14998"
+    },
+    {
+      "file": "casino_chips_handle_2.opus",
+      "category": "pop",
+      "duration": 0.556,
+      "sha256": "73c704270ce7d366dbdc3494f44e4865af4e8fb88bdf0963bb461d3b04ab9026"
+    },
+    {
+      "file": "casino_chips_handle_3.opus",
+      "category": "pop",
+      "duration": 0.236,
+      "sha256": "30b2c25860c4a283500c4877086383f6385d46b3b458dfc54a87d4a24855b001"
+    },
+    {
+      "file": "casino_chips_handle_4.opus",
+      "category": "pop",
+      "duration": 0.366,
+      "sha256": "525efe46753b29bf730775b46c3b1a55f6ab0de755f88e2f6f654b61dfb04eb3"
+    },
+    {
+      "file": "casino_chips_handle_5.opus",
+      "category": "pop",
+      "duration": 0.843,
+      "sha256": "f2bc93764e83b61dfc5671a673ceff635f7edb5e490d8e82415160321bf167bf"
+    },
+    {
+      "file": "casino_chips_handle_6.opus",
+      "category": "pop",
+      "duration": 0.469,
+      "sha256": "19431cb6ebe2c52a90edb58a729b25ec05bb63ee6789dc0528915edddf11f6b4"
+    },
+    {
+      "file": "casino_chips_stack_1.opus",
+      "category": "pop",
+      "duration": 0.294,
+      "sha256": "db016098bc8ff5be1a6ee5cf09d2d04d9ddc64696c2b57707cbb3d3161db4d9e"
+    },
+    {
+      "file": "casino_chips_stack_2.opus",
+      "category": "pop",
+      "duration": 0.179,
+      "sha256": "7cc5f00b5d59fd3200c1bedea17f4e2466d14296d14cfbe6d89a58b0e768f83e"
+    },
+    {
+      "file": "casino_chips_stack_3.opus",
+      "category": "pop",
+      "duration": 0.38,
+      "sha256": "540ac348c0dc8854ac584681b86af597ed26cc00d7238ecadc80e6e854f83906"
+    },
+    {
+      "file": "casino_chips_stack_4.opus",
+      "category": "pop",
+      "duration": 0.236,
+      "sha256": "7cd9b9c643760b894685d178bdd46ac5b8bdda57bd017fe48d508265326b1405"
+    },
+    {
+      "file": "casino_chips_stack_5.opus",
+      "category": "pop",
+      "duration": 0.193,
+      "sha256": "7deb2c80245ed730f6e720a0faed7df9f39d3b3530c0900bf4e6f1cc034e957f"
+    },
+    {
+      "file": "casino_chips_stack_6.opus",
+      "category": "pop",
+      "duration": 0.217,
+      "sha256": "ce97f90ed5349f89b1d4f0263b6774ee23c99ba2a3ae1580529defcf1864ed9d"
+    },
+    {
+      "file": "casino_dice_grab_1.opus",
+      "category": "pop",
+      "duration": 0.714,
+      "sha256": "44ed4be8ce6630a3a4a9574c9808bbb5dac919a96b37993e450ae0c2ac40ecb0"
+    },
+    {
+      "file": "casino_dice_grab_2.opus",
+      "category": "pop",
+      "duration": 0.836,
+      "sha256": "45107998c85724da66c59eddaf7fa6b8b6487c5b4d56197966f778970aef7f79"
+    },
+    {
+      "file": "casino_dice_shake_1.opus",
+      "category": "pop",
+      "duration": 1.49,
+      "sha256": "47627a4198bb3ba54863d91a8105b84766c3046c508c895a6f7f8c2345ece39e"
+    },
+    {
+      "file": "casino_dice_shake_2.opus",
+      "category": "pop",
+      "duration": 1.389,
+      "sha256": "18320c91a71f2cf184407fb3894eee1da5d902094ce55a074a19f76ea076aa08"
+    },
+    {
+      "file": "casino_dice_shake_3.opus",
+      "category": "pop",
+      "duration": 1.533,
+      "sha256": "ddf95f2153ec318b6bc453bcbd1887f6ffb39b337eda7aabf23460c20c47f28a"
+    },
+    {
+      "file": "casino_dice_throw_1.opus",
+      "category": "pop",
+      "duration": 0.642,
+      "sha256": "a2d67a9a583b88d087c47d26dfe9cc0b267b2842562730f1e42008f3d3b876f0"
+    },
+    {
+      "file": "casino_dice_throw_2.opus",
+      "category": "pop",
+      "duration": 0.409,
+      "sha256": "b5d180c55076fc69e2bc78dca0554fe1053b62a0bd9597950acc096da3c26e6a"
+    },
+    {
+      "file": "casino_dice_throw_3.opus",
+      "category": "pop",
+      "duration": 0.584,
+      "sha256": "dbca9bbfc69f8f0eb7d4cd1f622414b71c6d33db5731ee0e428880753fc02c1c"
+    },
+    {
+      "file": "casino_die_throw_1.opus",
+      "category": "reveal",
+      "duration": 0.541,
+      "sha256": "51f0b558fc46cd47c2d9e71474add0c21b48ae281c7a94bb91d488f66e40173b"
+    },
+    {
+      "file": "casino_die_throw_2.opus",
+      "category": "reveal",
+      "duration": 0.656,
+      "sha256": "c8c607ab6e118f05e9c781ceb1748353024a787d1312a47a508b2481f20adf90"
+    },
+    {
+      "file": "casino_die_throw_3.opus",
+      "category": "reveal",
+      "duration": 0.742,
+      "sha256": "68d60b809faa702c5a10d123244f2be7987635e895906143053cc6e6b6b30cff"
+    },
+    {
+      "file": "casino_die_throw_4.opus",
+      "category": "reveal",
+      "duration": 0.481,
+      "sha256": "a4936188024472d9903d4b57c1a4f45f953ba9709df0c80b1f6667ca08c836f3"
+    },
+    {
+      "file": "casino_preview.opus",
+      "category": "reveal",
+      "duration": 35.209,
+      "sha256": "14415709945b81ee7646e012cb4fb887caeb168c616541a549a75eba44b5278f"
+    }
+  ]
+}

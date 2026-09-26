@@ -138,18 +138,21 @@ class RealRender(unittest.TestCase):
     def test_all_visuals_unicode_explicit_audio_duration(self):
         import hashlib
         before=hashlib.sha256(self.src.read_bytes()).hexdigest()
-        events=[]
-        for i,kind in enumerate(ed.KINDS):
-            e=event(kind);e.update(offset=i*2+.1,text="Chi tiết: 50% 'đúng'" if kind=='label' else '',sound='pop' if i==0 else 'none')
-            if kind=='replay':e['offset']=22
-            events.append(e)
-        output=AREA/'all.mp4';logs=[];audio=[]
-        ff.export_canvas_clip(self.src,output,[(0,24)],(.5,.5,.95),bg='black',out_w=320,out_h=568,
-            encoder='libx264',fx_fade=False,hieu_ung='tat',edit_plan=ed.validate(plan(events),PARTS),edit_parts=PARTS,
-            edit_log=logs,tieng_dong_log=audio)
-        info=ff.probe(output);self.assertAlmostEqual(info.duration,24,delta=.15);self.assertTrue(info.has_audio)
-        self.assertEqual(len(logs),len(ed.KINDS));self.assertEqual(len(audio),1)
-        self.assertAlmostEqual(audio[0]['giay'],.1,delta=.03)
+        kinds=list(ed.KINDS);total=0
+        for batch in range(0,len(kinds),11):
+            events=[]
+            for i,kind in enumerate(kinds[batch:batch+11]):
+                e=event(kind);e.update(offset=i*2+.1,text="Chi tiết: 50% 'đúng'" if kind=='label' else '',sound='pop' if i==0 else 'none')
+                if kind=='replay':e['offset']=22
+                events.append(e)
+            output=AREA/f'all{batch}.mp4';logs=[];audio=[]
+            ff.export_canvas_clip(self.src,output,[(0,24)],(.5,.5,.95),bg='black',out_w=320,out_h=568,
+                encoder='libx264',fx_fade=False,hieu_ung='tat',edit_plan=ed.validate(plan(events),PARTS),edit_parts=PARTS,
+                edit_log=logs,tieng_dong_log=audio)
+            info=ff.probe(output);self.assertAlmostEqual(info.duration,24,delta=.15);self.assertTrue(info.has_audio)
+            self.assertEqual(len(logs),len(events));self.assertEqual(len(audio),1);total+=len(logs)
+            self.assertAlmostEqual(audio[0]['giay'],events[0]['offset'],delta=.03)
+        self.assertEqual(total,len(ed.KINDS))
         self.assertEqual(before,hashlib.sha256(self.src.read_bytes()).hexdigest())
 
     def test_optout_and_empty_plan_same_pixels_and_audio(self):

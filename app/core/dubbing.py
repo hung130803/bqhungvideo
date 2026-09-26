@@ -3707,7 +3707,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
         raw = str(p["text"]).strip()
         narr.append({"start": round(a, 3), "end": round(b, 3),
                      "text": raw if strict else _strip_audio_tags(raw), "_raw": raw,
-                     "_evidence":p.get('evidence','')})
+                     "_evidence":p.get('evidence',''), '_delivery':p.get('delivery')})
     if strict and len(narr)!=sum(p.get('mode')=='narrate' for p in parts):
         raise RuntimeError('Một câu kể nằm ngoài cảnh hoặc quá ngắn để đọc; cần viết lại kịch bản.')
     if not narr:
@@ -3787,7 +3787,10 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             prog(0.05, f"Thu giọng {len(narr)} đoạn (edge-tts)...")
             # Câu HOOK (part narrate đầu) đọc nhanh hơn +2% cho có năng lượng
             rates = [rate] * len(narr)
-            if rates:
+            if strict and any(n.get('_delivery') for n in narr):
+                from app.core.story_craft import delivery_rate
+                rates=[delivery_rate(rate,n.get('_delivery','neutral')) for n in narr]
+            elif rates:
                 rates[0] = _bump_rate(rate, 2)
             # `on_msg=_nhac` — MẮT XÍCH DUY NHẤT từng đứt. Giọng gộp-cả-loạt
             # (VieNeu · Kokoro · Chatterbox · Vbee · giọng ngoài) rơi vào đúng
@@ -3795,7 +3798,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
             # đứng chết ở 5% suốt lượt đọc (đo: **0 nhịp**).
             ok, word_lists = asyncio.run(_synth_all_words(
                 texts, voice, mp3s, on_done=_tts_done, rate=rates,
-                pitch=pitch_hz, on_msg=_nhac))
+                pitch=pitch_hz, lang=lang, el_lui=not strict, on_msg=_nhac))
             # LƯỢT VÉT: server MS hay lỗi NoAudioReceived THEO ĐỢT — nghỉ
             # ngắn rồi thử lại RIÊNG các part hỏng 1 lần nữa (đo thật cho
             # thấy đợt lỗi qua nhanh; trước đây part hỏng bị bỏ luôn ->
@@ -3813,7 +3816,7 @@ def build_recap_track(parts: list, clip_segments: list, voice: str,
                     [texts[i] for i in fails], voice,
                     [mp3s[i] for i in fails],
                     rate=[rates[i] for i in fails], pitch=pitch_hz,
-                    on_msg=_nhac_vet))
+                    lang=lang, el_lui=not strict, on_msg=_nhac_vet))
                 for j, i in enumerate(fails):
                     if ok2[j]:
                         ok[i] = True

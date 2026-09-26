@@ -3369,6 +3369,7 @@ def export_canvas_clip(
     # lại ở đây, chỗ rẻ nhất và chắc chắn có người đi qua. Sổ rỗng -> 0 ms.
     don_rac_ton()
     segs = [(float(s), float(e)) for s, e in (segments or []) if e > s]
+    _music_plan = edit_plan if edit_plan is not None else {'music_arc':any('music_energy' in p for p in (edit_parts or []))}
     if edit_plan is not None and not edit_plan.get('enabled',True):edit_plan=None
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
@@ -3411,6 +3412,11 @@ def export_canvas_clip(
             except (ValueError, IndexError):
                 pass
         video_rect = fit_src_video_rect(video_rect, _ew, _eh, out_w, out_h)
+    if edit_plan is not None and edit_plan.get('layout','template')!='template':
+        from app.core.report_layout import geometry
+        if out_h<=out_w:raise ValueError('Mẫu phóng sự cần khung dọc 9:16; đổi kích thước trong mẫu xuất.')
+        if pre_crop:raise ValueError('Mẫu phóng sự giữ trọn nguồn; bỏ cắt viền trước khi xuất.')
+        video_rect=geometry(_info.width,_info.height,out_w,out_h);bg='blur';overlay_png=None;ass_path=None
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)
     use_png = bool(overlay_png and os.path.exists(overlay_png))
@@ -3943,6 +3949,8 @@ def export_canvas_clip(
             from app.core.editorial_render import append_graph
             final,aidx=append_graph(cmd,parts,final,aidx,_edit_events,_edit_folder.name,
                 out_w,out_h,_font_file('Arial'),edit_plan['style'],(_info.width,_info.height),video_rect,bg,flip_h)
+            from app.core.report_layout import append as append_report
+            final,aidx=append_report(cmd,parts,final,aidx,edit_plan,edit_parts or [],segs,_edit_folder.name,out_w,out_h)
             if use_png:
                 parts.append(f'{final}[{nextidx}:v]overlay=0:0[edlogo]');final='[edlogo]'
         if ass_path and os.path.exists(ass_path):
@@ -4041,9 +4049,9 @@ def export_canvas_clip(
             # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
             music_filter = (story_music_filters(out_dur, bgm_vol, ducks) if story_mix else
                             f"volume={max(0.0, min(1.0, bgm_vol)):.3f},atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS")
-            if edit_plan is not None and story_mix:
+            if story_mix and _music_plan.get('enabled',True):
                 from app.core.editorial import music_envelope
-                music_filter+=music_envelope(edit_plan,edit_parts or [],segs,vspeed)
+                music_filter+=music_envelope(_music_plan,edit_parts or [],segs,vspeed)
             parts.append(f"[{bgm_idx}:a]{music_filter}[bgm]")
             mix.append("[bgm]")
         # HIỆU ỨNG TIẾNG CHUYỂN ĐOẠN: cú NHỎ tại MỖI điểm ghép (chỉ khi >1 đoạn).

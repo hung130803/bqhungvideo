@@ -90,6 +90,7 @@ jobs:
           --add-data "app/database/schema.sql;app/database"
           --add-data "app/assets/fonts;app/assets/fonts"
           --add-data "app/assets/sfx;app/assets/sfx"
+          --add-data "app/assets/music;app/assets/music"
           --add-data "app/assets/hieu_ung;app/assets/hieu_ung"
           --add-data "app/core/potoken_plugins;app/core/potoken_plugins"
           --add-data ".env.example;."

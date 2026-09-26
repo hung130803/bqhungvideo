@@ -6,6 +6,7 @@ from copy import deepcopy
 import re
 from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
 from app.ai import story_quality as q
+from app.core.story_craft import word_budget,writing_direction,DELIVERY,ENERGY
 
 ROLES={'hook','setup','build','payoff','ending'}
 SFX={'none','transition','impact','riser','reveal','pop','suspense','comedy','scratch','sad','drumroll'}
@@ -316,7 +317,9 @@ def audit(plan,ctx):
     if problems:raise AuditFailure('; '.join(str(p) for p in problems)[:900],checks)
     raw=q.ask('Audit this finished SHORT STORY. Specific hook paid off? Clear setup-change-payoff? '
         'No unrelated cuts, repetitive image descriptions, filler, unsupported title, or false causality? '
-        'Natural varied spoken language, not a list of what is on screen? Source-time gaps are intentional '
+        'Natural varied spoken language, not a list of what is on screen? Check unexplained pronouns, '
+        'stiff translation, repeated ideas, a hook unanswered by the ending, and narration that merely labels each image. '
+        'Source-time gaps are intentional '
         'montage: do NOT reject simply because timestamps jump or require events to be adjacent. '
         'Reject only if the actual story connection or claimed cause is missing. '
         'Use the local source speech to distinguish a genuinely unrelated event from an omitted transition. Return '
@@ -336,7 +339,7 @@ def repair_claims(plan,failure,lang,ctx):
     candidate=deepcopy(plan);by_id={p['source_id']:p for p in candidate['parts']}
     for block in q.evidence_batches(selected,limit=6500):
         ctx.check_canceled()
-        notes=[dict(p,issue=issues[p['source_id']],max_words=max(3,int((p['end']-p['start'])*1.9))) for p in block]
+        notes=[dict(p,issue=issues[p['source_id']],max_words=word_budget(p['end']-p['start'],lang)) for p in block]
         raw=q.ask(f'Repair ONLY these disputed narration sentences in {lang}. Return '
             '{"shots":[{"source_id":int,"text":"...","support_quote":"literal supporting excerpt"}]}. '
             'Use at most max_words per shot. Anchor the narration in an exact speech or visible-evidence '
@@ -353,7 +356,7 @@ def repair_claims(plan,failure,lang,ctx):
             norm=lambda s:' '.join(str(s).casefold().split())
             if not isinstance(quote,str) or len(quote.strip())<4 or norm(quote) not in norm(source):raise ValueError('Câu sửa chưa dẫn đúng căn cứ của cảnh.')
             if not isinstance(text,str) or not text.strip() or len(text)>1000:raise ValueError('Lời sửa không hợp lệ.')
-            if not re.search(r'[\u3400-\u9fff\u3040-\u30ff]',text) and len(text.split())>max(3,int((p['end']-p['start'])*1.9)):raise ValueError('Lời sửa vẫn quá dài cho cảnh.')
+            if not re.search(r'[\u3400-\u9fff\u3040-\u30ff]',text) and len(text.split())>word_budget(p['end']-p['start'],lang):raise ValueError('Lời sửa vẫn quá dài cho cảnh.')
             p['text']=text.strip();p['support_quote']=quote
     if candidate['parts'][0]['text']!=plan['parts'][0]['text']:
         # Retain old alternatives as suggestions; the repaired opening is the actual selected hook.
@@ -377,7 +380,7 @@ def script(plan,preset,lang,ctx,index,count,src=None):
         for p in plan['parts']:
             u=json.loads(p['evidence'])
             notes.append({k:v for k,v in p.items() if k in ('source_id','start','end','mode','role')}|{'speech':u.get('transcript','')[:750],
-                'max_words':max(3,int((p['end']-p['start'])*1.9)),
+                'max_words':word_budget(p['end']-p['start'],lang),
                 'visual':[{'at':o.get('at'),'visible':o.get('visible','')[:240],'uncertain':o.get('uncertain','')[:100]}
                     for o in representative_observations(u.get('observations',[]))]})
         previous=[{'source_id':p['source_id'],'text':p['text'][:220]} for p in draft['parts']] if draft else []
@@ -385,7 +388,7 @@ def script(plan,preset,lang,ctx,index,count,src=None):
             for n in notes:
                 n['speech']=n['speech'][:220]
                 for o in n['visual']:o['visible']=o['visible'][:120];o['uncertain']=o['uncertain'][:70]
-        raw=q.ask(f'Write an engaging {lang} short-video narration. '+STYLE.get(preset.get('recap_style'),STYLE['story'])+
+        raw=q.ask(f'Write an engaging {lang} short-video narration. '+STYLE.get(preset.get('recap_style'),STYLE['story'])+writing_direction(lang)+
             ' Narrate as an outside storyteller, never impersonate the source speaker using I/my/we. '
             'Invent wording, not events. Avoid "we see", generic "nobody expected this", listing frame objects, '
             'Do not say "the camera shows/lingers" or announce that the narrator is narrating. '
@@ -398,8 +401,9 @@ def script(plan,preset,lang,ctx,index,count,src=None):
             'with honest bridges such as later or meanwhile only when justified; keep uncertainty and speech attribution. '
             'When repairing a draft, preserve accurate lines and directly fix the listed issues; do not restart with random new claims. '
             'Respect every existing shot id/mode/time; '
-            'do NOT change scene order. Aim 1.3-1.7 spoken words/sec of each narrated window, leave breathing room. '
-            'Each row has a HARD max_words limit; a 12-second shot needs roughly 16-22 words, NOT 40-60. '
+            'do NOT change scene order. Leave breathing room; for English aim 1.3-1.7 words/sec, '
+            'for Vietnamese use the language-specific syllable guidance above. '
+            'Each row has a HARD max_words limit (whitespace tokens, language adjusted). Never fill every second with words. '
             'Do not invent or exaggerate an action even for humor. A joke may comment on a REAL contrast, '
             'but must not claim an imaginary accident, reaction, object, relationship or identity. '
             'For EACH narrated shot choose a literal short support_quote from its speech (preferred) or visible '
@@ -407,10 +411,14 @@ def script(plan,preset,lang,ctx,index,count,src=None):
             'from still images. Names are unnecessary: anonymous speaker labels are fine. No imaginary '
             'wind effects, ingredients, identities, or assumptions about what an unclear object really is. '
             'Orig rows have empty text. At most 3 editorial SFX accents, select meaningful emotional beats; '
+            'Assign delivery: neutral/curious/brisk/measured/reflective to match the meaning, not random variation. '
+            'Assign music_energy: auto/hush/low/mid/lift; hush under important original speech, lift only for an evidenced payoff. '
+            'Choose music_mood for this entire Part: calm/mystery/tension/playful/bright/emotional; calm when uncertain. '
             'Allowed SFX labels ONLY: '+','.join(sorted(SFX))+'. '
-            'do not fake police sirens, gunshots or real-event sounds. Return {"hooks":[3 strings],'
+            'Write a concise factual title in the target narration language. '
+            'do not fake police sirens, gunshots or real-event sounds. Return {"title":"...","music_mood":"calm","hooks":[3 strings],'
             '"selected_hook":0-2,"shots":[{"source_id":int,"support_quote":"literal source excerpt","text":"...",'
-            '"sfx":"none","sfx_offset":0.0,"sfx_reason":"why here"}]}. '
+            '"delivery":"neutral","music_energy":"auto","sfx":"none","sfx_offset":0.0,"sfx_reason":"why here"}]}. '
             'sfx_offset is seconds from THIS shot start, must be inside the shot; place accents at the actual evidenced beat, not automatically at cuts. '
             'The selected hook must open the first narration, not be repeated in later shots.\n'+
             json.dumps({'title':plan['title'],'angle':plan['angle'],'shots':notes,'selection_issues':plan.get('selection_review'),
@@ -421,13 +429,20 @@ def script(plan,preset,lang,ctx,index,count,src=None):
             if not isinstance(hooks,list) or len(hooks)!=3 or any(not isinstance(h,str) or not h.strip() for h in hooks) or type(selected) is not int or not 0<=selected<3:raise ValueError('Thiếu lựa chọn hook.')
             if not isinstance(rows,list) or any(not isinstance(r,dict) for r in rows) or len(rows)!=len(plan['parts']) or [r.get('source_id') for r in rows]!=[p['source_id'] for p in plan['parts']]:raise ValueError('Kịch bản đã đổi cảnh.')
             candidate=deepcopy(plan)
+            if isinstance(raw.get('title'),str) and raw['title'].strip():candidate['title']=raw['title'].strip()[:140]
+            from app.core.music_library import MOODS
+            mood=raw.get('music_mood')
+            candidate['music_mood']=mood if isinstance(mood,str) and mood in MOODS else 'calm'
             for row,p in zip(rows,candidate['parts']):
                 text=row.get('text');sfx=row.get('sfx','none')
                 if not isinstance(text,str) or len(text)>1000 or (p['mode']=='narrate' and not text.strip()):raise ValueError('Lời kể thiếu hoặc quá dài.')
-                if p['mode']=='narrate' and not re.search(r'[\u3400-\u9fff\u3040-\u30ff]',text) and len(text.split())>max(3,int((p['end']-p['start'])*1.9)):
-                    raise ValueError(f"Cảnh {p['source_id']} quá nhiều lời: tối đa {int((p['end']-p['start'])*1.9)} từ. Viết ngắn lại từng cảnh, giữ hook trong câu đầu.")
-                if sfx not in SFX:sfx='none'  # An optional sound label must not destroy an otherwise usable draft.
+                if p['mode']=='narrate' and not re.search(r'[\u3400-\u9fff\u3040-\u30ff]',text) and len(text.split())>word_budget(p['end']-p['start'],lang):
+                    raise ValueError(f"Cảnh {p['source_id']} quá nhiều lời: tối đa {word_budget(p['end']-p['start'],lang)} từ. Viết ngắn lại từng cảnh, giữ hook trong câu đầu.")
+                if not isinstance(sfx,str) or sfx not in SFX:sfx='none'  # Optional hints must not destroy a usable draft.
                 p['text']=text.strip() if p['mode']=='narrate' else '';p['sfx']=sfx
+                delivery=row.get('delivery');energy=row.get('music_energy')
+                p['delivery']=delivery if isinstance(delivery,str) and delivery in DELIVERY else 'neutral'
+                p['music_energy']=energy if isinstance(energy,str) and energy in ENERGY else 'auto'
                 offset=row.get('sfx_offset',0.0)
                 if type(offset) not in (int,float) or not math.isfinite(offset) or not 0<=offset<p['end']-p['start']:
                     p['sfx']='none';offset=0.0

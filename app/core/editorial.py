@@ -7,7 +7,10 @@ STYLES = {'clean':'Gọn, rõ nội dung', 'funny':'Hài / prank', 'tension':'C�
 KINDS = {'arrow':'Mũi tên động','circle':'Khoanh chi tiết','question':'Dấu hỏi động',
          'alert':'Dấu chấm than','sparkle':'Lấp lánh','heart':'Trái tim',
          'burst':'Tia nhấn','label':'Chữ nhấn','zoom':'Zoom chi tiết',
-         'freeze':'Ảnh dừng trong ô','replay':'Phát lại trong ô'}
+         'kenburns':'Zoom / lia theo keyframe','freeze':'Ảnh dừng trong ô','replay':'Phát lại trong ô',
+         'check':'Dấu tích','cross':'Dấu gạch chéo','star':'Ngôi sao','bolt':'Tia chớp',
+         'target':'Tâm điểm','clock':'Đồng hồ','eye':'Chú ý nhìn','bubble':'Bong bóng thoại',
+         'quote':'Dấu trích dẫn','bracket':'Khung nhấn','chevrons':'Mũi tên kép','confetti':'Giấy màu'}
 SOUNDS = ('none','transition','impact','riser','reveal','pop','suspense','comedy','scratch','sad','drumroll')
 
 
@@ -49,6 +52,9 @@ def validate(plan, parts):
             x=number(raw.get('x',.5),.05,.95,'Vị trí ngang'),
             y=number(raw.get('y',.22),.05,.95,'Vị trí dọc'),
             size=number(raw.get('size',.18),.08,.45,'Kích thước'),
+            zoom_end=number(raw.get('zoom_end',1.12),1,1.35,'Mức zoom cuối'),
+            end_x=number(raw.get('end_x',raw.get('x',.5)),.05,.95,'Đích ngang'),
+            end_y=number(raw.get('end_y',raw.get('y',.22)),.05,.95,'Đích dọc'),
             track=tracked, target_x=number(raw.get('target_x',.5),.1,.9,'Tâm vật ngang'),
             target_y=number(raw.get('target_y',.5),.1,.9,'Tâm vật dọc'),
             sound=sound, sound_file=sound_file, sound_gain=number(raw.get('sound_gain',.7),0,1,'Âm lượng tiếng nhấn'),
@@ -58,7 +64,11 @@ def validate(plan, parts):
     for a,b in zip(clean,clean[1:]):
         if a['part']==b['part'] and a['offset']+a['duration']>b['offset']+.001:
             raise ValueError('Hai điểm nhấn chồng nhau trong cùng cảnh; hãy dời mốc hoặc rút ngắn.')
-    return dict(version=1,style=plan['style'],events=clean,enabled=bool(plan.get('enabled',True)),transitions=bool(plan.get('transitions',True)),
+    from app.core.report_layout import LAYOUTS
+    layout=plan.get('layout','template');title=plan.get('report_title','')
+    if layout not in LAYOUTS or not isinstance(title,str) or len(title)>140 or any(ord(c)<32 for c in title):
+        raise ValueError('Mẫu bố cục / tiêu đề không hợp lệ (tối đa 140 ký tự, một dòng).')
+    return dict(version=1,style=plan['style'],layout=layout,report_title=title.strip(),events=clean,enabled=bool(plan.get('enabled',True)),transitions=bool(plan.get('transitions',True)),
                 music_arc=bool(plan.get('music_arc',True)))
 
 
@@ -80,8 +90,8 @@ def propose(parts,style='clean'):
         elif p.get('sfx','none')!='none' and p.get('sfx_reason'):
             at=min(max(0.,float(p.get('sfx_offset',0))),length-.5)
             events.append(dict(part=i,offset=at,duration=min(1.2,length-at),
-                kind='burst' if style=='funny' else 'sparkle' if style=='explain' else 'alert',
-                reason=p['sfx_reason'],sound=p['sfx']))
+                kind='kenburns' if p.get('role')=='payoff' else {'funny':('burst','star','confetti'),'explain':('bracket','target','eye'),'tension':('alert','bolt','clock'),'clean':('circle','chevrons','sparkle')}[style][i%3],
+                reason=p['sfx_reason'],sound=p['sfx'],x=.5,y=.5,end_x=.5,end_y=.5))
     return validate(dict(version=1,style=style,events=events,music_arc=True),parts)
 
 
@@ -112,6 +122,7 @@ def sound_parts(plan,parts):
 def replaces_opening_title(plan,parts,segments,hook_duration):
     """One opening text layer: a reviewed label takes priority over template hook."""
     if not plan or not plan.get('enabled',True):return False
+    if plan.get('layout','template')!='template':return True
     return any(e['kind']=='label' and e['start']<hook_duration
                for e in timeline(plan,parts,segments))
 
@@ -127,7 +138,11 @@ def music_envelope(plan,parts,segments,speed):
             lo=max(a,p['start']);hi=min(b,p['end'])
             if hi>lo:
                 start=(elapsed+lo-a)/speed;end=(elapsed+hi-a)/speed
-                delta=levels.get(p.get('role'),.75)-.65
+                level=levels.get(p.get('role'),.75)
+                if p.get('mode')=='orig':level=min(level,.25)
+                level={'hush':.12,'low':.4,'mid':.65,'lift':.9}.get(p.get('music_energy'),level)
+                if p.get('mode')=='orig':level=min(level,.25)
+                delta=level-.65
                 if delta:expr+=f"+({delta:.3f})*min(1,max(0,(t-{start:.4f})/.3))*min(1,max(0,({end:.4f}-t)/.3))"
             elapsed+=b-a
     return f",volume='{expr}':eval=frame"

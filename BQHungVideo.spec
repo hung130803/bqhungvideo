@@ -34,7 +34,7 @@ from PyInstaller.utils.hooks import collect_all
 #     `ren _internal -> _internal.old` rồi `rmdir /S /Q` sẽ xoá sạch (cổng 58
 #     CA5 — đã xảy ra thật với `_lib`).
 #   · Nút tải nằm trong hộp Thay giọng (`giong_hang.cai_giong_hang`).
-datas = [('app/database/schema.sql', 'app/database'), ('app/assets/fonts', 'app/assets/fonts'), ('app/assets/sfx', 'app/assets/sfx'), ('app/assets/hieu_ung', 'app/assets/hieu_ung'), ('app/core/potoken_plugins', 'app/core/potoken_plugins'), ('.env.example', '.'), ('LICENSES.txt', '.')]
+datas = [('app/database/schema.sql', 'app/database'), ('app/assets/fonts', 'app/assets/fonts'), ('app/assets/sfx', 'app/assets/sfx'), ('app/assets/music', 'app/assets/music'), ('app/assets/hieu_ung', 'app/assets/hieu_ung'), ('app/core/potoken_plugins', 'app/core/potoken_plugins'), ('.env.example', '.'), ('LICENSES.txt', '.')]
 binaries = [('bin/ffmpeg.exe', '.'), ('bin/ffprobe.exe', '.'), ('bin/yt-dlp.exe', '.')]
 hiddenimports = ['openai', 'requests', 'psutil', 'dotenv']
 hiddenimports += collect_submodules('app')

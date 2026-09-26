@@ -263,12 +263,29 @@ class RecapSettingsDialog(QDialog):
         story_note.setWordWrap(True);lay.addWidget(story_note)
         self.story_music=QLineEdit(str(self._s.value('story_music_path','') or ''))
         self.story_music.setPlaceholderText('Nhạc nền dựng chuyện · bỏ trống để dùng nhạc của mẫu')
+        self.music_description=QLabel('');self.music_description.setWordWrap(True)
+        def describe_music():
+            from app.core.music_library import describe
+            self.story_music.setVisible(not self.story_music.text().startswith('bqmusic:'))
+            try:self.music_description.setText(describe(self.story_music.text().strip()))
+            except (OSError,ValueError):self.music_description.setText('Không nhận diện được bài; chọn lại trong Kho nhạc.')
+        self.story_music.textChanged.connect(describe_music)
+        describe_music()
+
         music_row=QHBoxLayout();music_row.addWidget(self.story_music,1)
         pick_music=QPushButton('Chọn nhạc…');music_row.addWidget(pick_music)
         def choose_music():
             path,_=QFileDialog.getOpenFileName(self,'Chọn nhạc nền','','Âm thanh (*.mp3 *.wav *.m4a *.flac *.ogg)')
             if path:self.story_music.setText(path)
-        pick_music.clicked.connect(choose_music);lay.addLayout(music_row)
+        pick_music.clicked.connect(choose_music)
+        library=QPushButton('Kho nhạc / nghe thử');music_row.addWidget(library)
+        def choose_library():
+            from app.ui.music_picker import MusicPicker
+            picker=MusicPicker(self,self.story_music.text().strip())
+            if picker.exec():self.story_music.setText(picker.selection)
+        library.clicked.connect(choose_library)
+        lay.addLayout(music_row);lay.addWidget(self.music_description)
+
         self.story_mix=QCheckBox('Phối nhạc theo lời kể: hạ nhạc khi có giọng, vào/ra nhạc êm')
         self.story_mix.setChecked(str(self._s.value('story_audio_mix',True)).lower() in ('true','1'))
         lay.addWidget(self.story_mix)
@@ -281,6 +298,12 @@ class RecapSettingsDialog(QDialog):
         self.edit_style.setCurrentIndex(max(0,self.edit_style.findData(str(self._s.value('story_edit_style','off')))))
         self.edit_style.setToolTip('Tạo điểm nhấn để duyệt/chỉnh trong Kịch bản → Dựng hình & âm thanh; không tự duyệt.')
         lay.addWidget(self.edit_style)
+        from app.core.report_layout import LAYOUTS
+        self.story_layout=QComboBox()
+        for key,label in LAYOUTS.items():self.story_layout.addItem('Bố cục: '+label,key)
+        self.story_layout.setCurrentIndex(max(0,self.story_layout.findData(str(self._s.value('story_layout','template')))))
+        self.story_layout.setToolTip('Phóng sự: nền mờ, tiêu đề và thẻ lời kể theo cảnh; thay chữ/phụ đề mẫu, cần xuất khung dọc. Chỉnh từng Part trong Dựng hình & âm thanh.')
+        lay.addWidget(self.story_layout)
 
         # ---- Số clip thuyết minh ----
         crow = QHBoxLayout()
@@ -527,6 +550,16 @@ class RecapSettingsDialog(QDialog):
         self.language_note.setStyleSheet('color: #ffb454;' if error else 'color: #9aadc9;')
 
     def _save(self) -> None:
+        if self.story_quality.isChecked():
+            from app.core.music_library import choose,resolve
+            from pathlib import Path
+            ref=self.story_music.text().strip()
+            try:
+                chosen=choose(ref,self.edit_style.currentData(),'preview',0)
+                if chosen and chosen!='bqmusic:off' and not Path(resolve(chosen)).is_file():
+                    raise ValueError('Không tìm thấy nhạc nền đã chọn.')
+            except (OSError,ValueError) as exc:
+                QMessageBox.warning(self,'Chọn lại nhạc',str(exc));return
         if self.story_quality.isChecked() and self.story_lang.currentData():
             from app.ai.story_quality import validate_voice
             try:validate_voice(self.voice.currentData() or '',self.story_lang.currentData())
@@ -540,6 +573,7 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue('story_audio_mix',self.story_mix.isChecked())
         self._s.setValue('story_sfx',self.story_sfx.isChecked())
         self._s.setValue('story_edit_style',self.edit_style.currentData())
+        self._s.setValue('story_layout',self.story_layout.currentData())
         self._s.setValue("recap_voice", self.voice.currentData() or "")
         self._s.setValue("recap_style", self.style.currentData() or DEFAULT_STYLE)
         self._s.setValue("recap_ratio", int(self.ratio.value()))

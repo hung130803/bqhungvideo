@@ -51,12 +51,29 @@ def run(output: str) -> int:
         assert editor.checked()['events'][0]['text'] == 'Kiểm tra chữ'
         editor.reject()
         assert len(list(_assets_sfx_dir().glob('*/ed_*.opus'))) == 20
+        from app.core.music_library import catalog,resolve
+        from app.ui.music_picker import MusicPicker
+        tracks=catalog();assert len(tracks)==14
+        for track in tracks:assert Path(resolve('bqmusic:'+track['id'])).is_file()
+        picker=MusicPicker(current='bqmusic:sector',allow_auto=False)
+        assert picker.items.count()==14
+        picker.reject()
+        assert len(list(_assets_sfx_dir().glob('*/casino_*.opus')))==55
+        results['checks'].append('compiled music browser, 14 verified CC0 tracks and 55 new sound files')
         edited = DATA_DIR / 'editorial.mp4'
         export_canvas_clip(video, edited, [(0, 1)], (.5, .5, .9), bg='black',
                            out_w=180, out_h=320, encoder='libx264', fx_fade=False,
-                           fx_whoosh=False, hieu_ung='tat', edit_plan=plan, edit_parts=parts)
+                           fx_whoosh=False, hieu_ung='tat', edit_plan=plan, edit_parts=parts,bgm_path=resolve('bqmusic:sector'))
         assert abs(probe(edited).duration - 1.) < .15
         results['checks'].append('compiled editorial dialog, Unicode render and 20 new sound assets')
+        from app.core.story_craft import word_budget,delivery_rate
+        assert word_budget(12,'vi')==38 and delivery_rate('+0%','reflective')=='-6%'
+        report_plan=validate(dict(version=1,style='explain',layout='report',report_title='Chi tiết đã kiểm tra',events=[
+            dict(part=0,offset=0,duration=.9,kind='kenburns',x=.4,y=.5,end_x=.6,end_y=.5,zoom_end=1.12)]),parts)
+        export_canvas_clip(video,DATA_DIR/'report.mp4',[(0,1)],(.5,.5,1),out_w=180,out_h=320,encoder='libx264',
+                           fx_fade=False,fx_whoosh=False,hieu_ung='tat',edit_plan=report_plan,edit_parts=parts)
+        assert abs(probe(DATA_DIR/'report.mp4').duration-1)<.15
+        results['checks'].append('compiled story delivery, report cards and keyframe render')
         from app.ui.recap_settings import RecapSettingsDialog
         from app.ui.appsettings import app_settings
         from app.core.dubbing import default_voice

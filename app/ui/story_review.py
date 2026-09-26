@@ -45,11 +45,24 @@ def preview_scene(parent,source,start,end):
 
 def show_story(parent,meta,clip_id=None):
     from app.ai.story_quality import approve_script,digest,is_approved
-    revision=digest(meta);saved=False;voice=meta.get('voice','');edit_plan=deepcopy(meta.get('edit_plan'))
+    revision=digest(meta);saved=False;voice=meta.get('voice','');edit_plan=deepcopy(meta.get('edit_plan'));music=meta.get('music_path','')
     dlg=QDialog(parent);dlg.setWindowTitle('Kịch bản & căn cứ từ video nguồn')
     lay=QVBoxLayout(dlg)
     note=QLabel('Groq có thể nhận sai hình. Mở video nguồn để đối chiếu mốc thời gian; nhấp đúp ô Lời kể để sửa. Chỉ bấm Lưu & duyệt khi đã xem từng câu. Đóng cửa sổ không có nghĩa là duyệt.')
     note.setWordWrap(True);lay.addWidget(note)
+    from app.core.music_library import describe
+    music_row=QHBoxLayout();lay.addLayout(music_row)
+    try:music_description=describe(music)
+    except (OSError,ValueError):music_description='Không tìm thấy bài đã chọn; hãy chọn lại nhạc.'
+    music_label=QLabel('Nhạc: '+music_description);music_label.setWordWrap(True);music_label.setTextFormat(Qt.TextFormat.PlainText);music_row.addWidget(music_label,1)
+    choose_music=QPushButton('Đổi nhạc / nghe thử');choose_music.setEnabled(clip_id is not None);music_row.addWidget(choose_music)
+    def change_music():
+        nonlocal music
+        from app.ui.music_picker import MusicPicker
+        picker=MusicPicker(dlg,music,allow_auto=False)
+        if picker.exec()==QDialog.DialogCode.Accepted:
+            music=picker.selection;music_label.setText('Nhạc: '+describe(music)+' · áp dụng khi Lưu & duyệt')
+    choose_music.clicked.connect(change_music)
     parts=meta['parts'] if clip_id is not None else meta.get('rendered_parts') or meta['parts']
     state=QLabel(('Đã duyệt' if is_approved(meta) else 'CHỜ DUYỆT')+' · Giữ nguyên lời đã duyệt. Câu quá dài sẽ yêu cầu bạn viết ngắn rồi duyệt lại.')
     state.setWordWrap(True);lay.addWidget(state)
@@ -79,7 +92,9 @@ def show_story(parent,meta,clip_id=None):
         warning=QPlainTextEdit();warning.setReadOnly(True);warning.setMaximumHeight(70)
         warning.setPlainText('CẦN KIỂM TRA / SỬA: '+str(meta['review'].get('issues','Cần đối chiếu lại nguồn.')))
         lay.addWidget(warning)
-    table=QTableWidget(len(parts),3);table.setHorizontalHeaderLabels(['Mốc nguồn','Vai','Lời kể'])
+    from app.core.story_craft import DELIVERY,ENERGY
+    deliveries=[];energies=[]
+    table=QTableWidget(len(parts),5);table.setHorizontalHeaderLabels(['Mốc nguồn','Vai','Lời kể','Nhịp đọc','Nhạc trong cảnh'])
     table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked|QAbstractItemView.EditTrigger.EditKeyPressed if clip_id is not None else QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -89,6 +104,17 @@ def show_story(parent,meta,clip_id=None):
             item=QTableWidgetItem(value)
             if j!=2 or p['mode']!='narrate':item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             table.setItem(i,j,item)
+        choice=QComboBox()
+        for key,label in DELIVERY.items():choice.addItem(label,key)
+        choice.setCurrentIndex(max(0,choice.findData(p.get('delivery','neutral'))))
+        choice.setEnabled(clip_id is not None and p['mode']=='narrate')
+        choice.setToolTip('Điều chỉnh nhịp đọc nhẹ; khả năng biểu cảm phụ thuộc giọng. Không đổi lời đã viết.')
+        deliveries.append(choice);table.setCellWidget(i,3,choice)
+        energy=QComboBox()
+        for key,label in ENERGY.items():energy.addItem(label,key)
+        energy.setCurrentIndex(max(0,energy.findData(p.get('music_energy','auto'))));energy.setEnabled(clip_id is not None)
+        energy.setToolTip('Áp khi bật Phối nhạc theo lời kể; nếu dùng bộ dựng, cần bật Nhạc theo diễn biến. Tiếng gốc quan trọng luôn được ưu tiên.')
+        energies.append(energy);table.setCellWidget(i,4,energy)
     table.resizeRowsToContents();lay.addWidget(table,3)
     evidence=QPlainTextEdit();evidence.setReadOnly(True);lay.addWidget(evidence,2)
     def selected():
@@ -137,6 +163,11 @@ def show_story(parent,meta,clip_id=None):
             try:
                 options={'voice':voice} if voice!=meta.get('voice','') else {}
                 if edit_plan is not None:options['edit_plan']=edit_plan
+                if music!=meta.get('music_path',''):options['music']=music
+                chosen=[c.currentData() for c in deliveries]
+                if chosen!=[p.get('delivery','neutral') for p in parts]:options['deliveries']=chosen
+                chosen_energy=[c.currentData() for c in energies]
+                if chosen_energy!=[p.get('music_energy','auto') for p in parts]:options['energies']=chosen_energy
                 approve_script(clip_id,revision,[table.item(i,2).text() for i in range(len(parts))],**options)
             except (RuntimeError,ValueError,OSError) as exc:
                 QMessageBox.warning(dlg,'Chưa duyệt được',str(exc));return

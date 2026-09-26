@@ -156,7 +156,7 @@ class LanguageTests(unittest.TestCase):
         draft={'title':'Tấm thẻ màu xanh','shots':[{'source_id':i,'mode':'narrate','text':text} for i in (0,1)]}
         plan=q.validate_plan(draft,evidence,set(),64,64)
         meta=dict(quality_story=q.VERSION,parts=plan['parts'],windows=plan['windows'],voice='vi-VN-NamMinhNeural',
-                  lang='vi',source_signature=q.source_signature(source),contract=q.contract(plan['parts'],plan['windows']))
+                  lang='vi',music_path='bqmusic:softpiano8',music_contract=1,source_signature=q.source_signature(source),contract=q.contract(plan['parts'],plan['windows']))
         cid=db.insert("INSERT INTO clips(video_id,start_sec,end_sec,title,signals,status) VALUES(?,0,72,'Story export',?,'suggested')",
                       (vid,db.dumps({'recap':meta,'segments':plan['windows'],'dur':64})))
         async def synth(texts,voice,paths,**kwargs):

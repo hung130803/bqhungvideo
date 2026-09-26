@@ -416,6 +416,7 @@ def length_limits(preset):
 def approval_signature(meta):
     values={k:meta.get(k) for k in ('parts','windows','source_signature','voice','lang','contract')}
     if 'edit_plan' in meta:values['edit_plan']=meta['edit_plan']
+    if meta.get('music_contract'):values['music_path']=meta.get('music_path','')
     return digest(values)
 
 
@@ -438,7 +439,7 @@ def pending_review(video_id):
             if (m:=db.loads(r['signals'],{}).get('recap',{})).get('quality_story') and not is_approved(m)]
 
 
-def approve_script(clip_id,expected_revision,texts,voice=None,edit_plan=None):
+def approve_script(clip_id,expected_revision,texts,voice=None,edit_plan=None,music=None,deliveries=None,energies=None):
     """Human action only; serialize against export scheduling and stale dialogs."""
     from app.database import db
     from datetime import datetime,timezone
@@ -456,10 +457,27 @@ def approve_script(clip_id,expected_revision,texts,voice=None,edit_plan=None):
         if signals.get('segments')!=meta.get('windows') or contract(meta['parts'],meta['windows'])!=meta.get('contract'):
             raise RuntimeError('Cảnh đã thay đổi; cần phân tích lại trước khi duyệt.')
         if len(texts)!=len(meta['parts']):raise ValueError('Thiếu câu trong kịch bản.')
+        if deliveries is not None:
+            from app.core.story_craft import DELIVERY
+            if not isinstance(deliveries,list) or len(deliveries)!=len(meta['parts']) or any(not isinstance(d,str) or d not in DELIVERY for d in deliveries):
+                raise ValueError('Nhịp kể không hợp lệ.')
+            for p,d in zip(meta['parts'],deliveries):p['delivery']=d
+        if energies is not None:
+            from app.core.story_craft import ENERGY
+            if not isinstance(energies,list) or len(energies)!=len(meta['parts']) or any(not isinstance(e,str) or e not in ENERGY for e in energies):
+                raise ValueError('Mức nhạc không hợp lệ.')
+            for p,e in zip(meta['parts'],energies):p['music_energy']=e
         if voice is not None:
             if not isinstance(voice,str) or not voice.strip() or len(voice)>200:raise ValueError('Giọng đọc không hợp lệ.')
             validate_voice(voice,meta.get('lang',''))
             meta['voice']=voice.strip()
+        if music is not None:
+            from app.core.music_library import resolve,PREFIX
+            if not isinstance(music,str) or len(music)>4096 or music.startswith(PREFIX+'auto:'):
+                raise ValueError('Chọn một bài cụ thể cho Part trước khi duyệt.')
+            if music and music!=PREFIX+'off' and not Path(resolve(music)).is_file():
+                raise ValueError('Không tìm thấy bài nhạc đã chọn.')
+            meta['music_path']=music;meta['music_contract']=1
         for p,text in zip(meta['parts'],texts):
             if p['mode']=='narrate':
                 if not isinstance(text,str) or not text.strip() or len(text.strip())>1000:
@@ -526,7 +544,7 @@ def generate(payload,ctx):
     plans,metrics=direct(units,src,used,preset,count,lang_en_name(lang),ctx,cache=(vid,evidence_key))
     ctx.check_canceled()
     if source_signature(src)!=signature:raise RuntimeError('Video nguồn vừa thay đổi; chưa lưu kịch bản.')
-    con=db.conn();ids=[]
+    con=db.conn();ids=[];used_music=[]
     con.execute('BEGIN IMMEDIATE')
     try:
         for i,plan in enumerate(plans):
@@ -534,12 +552,23 @@ def generate(payload,ctx):
                   'parts':plan['parts'],'windows':plan['windows'],'source_signature':signature,'evidence_key':evidence_key,
                   'review':plan['review'],'contract':contract(plan['parts'],plan['windows'])}
             meta.update(angle=plan.get('angle',''),hooks=plan.get('hooks',[]),selected_hook=plan.get('selected_hook',0),
-                        continuous_reason=plan.get('continuous_reason',''),metrics=metrics,
+                        continuous_reason=plan.get('continuous_reason',''),metrics=metrics,music_mood=plan.get('music_mood','calm'),
                         music_path=str(preset.get('story_music_path') or ''),audio_mix=bool(preset.get('story_audio_mix',True)),
                         story_sfx=bool(preset.get('story_sfx',True)))
+            from app.core.music_library import choose,resolve,PREFIX
+            music=choose(meta['music_path'],preset.get('story_edit_style','clean'),signature,i,used_music,story_mood=plan.get('music_mood','calm'))
+            if music.startswith(PREFIX):
+                resolve(music);meta['music_path']=music;meta['music_contract']=1;used_music.append(music)
             if preset.get('story_edit_style','off')!='off':
                 from app.core.editorial import propose
                 meta['edit_plan']=propose(meta['parts'],preset['story_edit_style'])
+            if preset.get('story_layout','template')!='template':
+                from app.core.editorial import propose,validate
+                edit=meta.get('edit_plan') or propose(meta['parts'],'explain')
+                edit.update(layout=preset['story_layout'],report_title=plan['title'][:140])
+                # The header already carries the title; no duplicate hook sticker.
+                edit['events']=[e for e in edit['events'] if e['kind']!='label']
+                meta['edit_plan']=validate(edit,meta['parts'])
             signals={'recap':meta,'segments':plan['windows'],'dur':plan['duration'],'llm_used':True,
                      'ai':llm.active_provider(),'vision':True,'n_seg':len(plan['windows'])}
             cur=con.execute("INSERT INTO clips(video_id,start_sec,end_sec,score,reason,title,transcript,signals,status) VALUES(?,?,?,?,?,?,?,?, 'suggested')",

@@ -40,6 +40,42 @@ def sprite(path,kind,color):
             curve=QPainterPath(QPointF(65,82));curve.cubicTo(65,4,208,4,193,97)
             curve.cubicTo(188,125,128,126,128,161);p.drawPath(curve);p.drawPoint(128,208)
         elif kind=='alert':p.drawLine(128,40,128,160);p.drawPoint(128,208)
+        elif kind=='check':p.drawLine(45,128,104,191);p.drawLine(104,191,213,58)
+        elif kind=='cross':p.drawLine(55,55,201,201);p.drawLine(201,55,55,201)
+        elif kind=='star':
+            curve=QPainterPath()
+            for j in range(10):
+                angle=-math.pi/2+j*math.pi/5;r=101 if j%2==0 else 43
+                point=QPointF(128+r*math.cos(angle),128+r*math.sin(angle))
+                if j==0:curve.moveTo(point)
+                else:curve.lineTo(point)
+            curve.closeSubpath();p.drawPath(curve)
+        elif kind=='bolt':
+            curve=QPainterPath(QPointF(145,24))
+            for x,y in ((65,139),(120,139),(107,231),(200,104),(142,104)):curve.lineTo(x,y)
+            curve.closeSubpath();p.drawPath(curve)
+        elif kind=='target':
+            p.drawEllipse(QRectF(40,40,176,176));p.drawEllipse(QRectF(87,87,82,82))
+            p.drawLine(128,17,128,68);p.drawLine(128,188,128,239);p.drawLine(17,128,68,128);p.drawLine(188,128,239,128)
+        elif kind=='clock':
+            p.drawEllipse(QRectF(30,30,196,196));p.drawLine(128,65,128,128);p.drawLine(128,128,180,155)
+        elif kind=='eye':
+            curve=QPainterPath(QPointF(24,128));curve.cubicTo(83,30,173,30,232,128);curve.cubicTo(173,226,83,226,24,128)
+            p.drawPath(curve);p.drawEllipse(QRectF(94,94,68,68))
+        elif kind=='bubble':
+            p.drawRoundedRect(QRectF(25,35,206,150),32,32);p.drawLine(60,185,55,225);p.drawLine(55,225,105,185)
+            for x in (80,128,176):p.drawPoint(x,110)
+        elif kind=='quote':
+            for x in (56,153):
+                p.drawRoundedRect(QRectF(x,55,47,68),12,12);p.drawLine(x+47,123,x+22,192)
+        elif kind=='bracket':
+            for x,y,dx,dy in ((33,33,1,1),(223,33,-1,1),(33,223,1,-1),(223,223,-1,-1)):
+                p.drawLine(x,y,x+dx*57,y);p.drawLine(x,y,x,y+dy*57)
+        elif kind=='chevrons':
+            for x in (55,130):p.drawLine(x,55,x+65,128);p.drawLine(x+65,128,x,201)
+        elif kind=='confetti':
+            for x,y,dx,dy in ((42,40,15,18),(116,28,-3,24),(196,50,-14,19),(50,141,22,-9),(135,114,13,20),(207,154,-17,18),(86,215,20,-8),(169,224,6,-22)):
+                p.drawLine(x,y,x+dx,y+dy)
         elif kind=='heart':
             curve=QPainterPath(QPointF(128,215));curve.cubicTo(-42,120,55,-15,128,80)
             curve.cubicTo(201,-15,298,120,128,215);p.drawPath(curve)
@@ -158,7 +194,16 @@ def append_graph(cmd,filters,label,index,events,folder,width,height,font,style,s
     color={'clean':'#4C91FF','funny':'#FFD34E','tension':'#FF6A57','explain':'#49DEC3'}[style]
     for i,e in enumerate(events):
         a=e['start'];b=e['end'];kind=e['kind'];out=f'[ed{i}]';enable=f'gte(t,{a:.5f})*lt(t,{b:.5f})'
-        if kind=='zoom':
+        if kind=='kenburns':
+            # One output frame per input frame at an explicit frame rate.
+            # Smoothstep returns to the unzoomed frame at the end, no hard jump.
+            u=f'min(1,max(0,(on/30-{a:.6f})/{b-a:.6f}))'
+            ease=f'(sin(PI*({u}))*sin(PI*({u})))'
+            z=f'1+{e["zoom_end"]-1:.6f}*({ease})'
+            xx=f'max(0,min(iw-iw/zoom,iw*({e["x"]:.6f}+({e["end_x"]-e["x"]:.6f})*({u}))-iw/zoom/2))'
+            yy=f'max(0,min(ih-ih/zoom,ih*({e["y"]:.6f}+({e["end_y"]-e["y"]:.6f})*({u}))-ih/zoom/2))'
+            filters.append(f"{label}fps=30,zoompan=z='{z}':x='{xx}':y='{yy}':d=1:s={width}x{height}:fps=30{out}")
+        elif kind=='zoom':
             # Short punch-in behind captions, bounded at 1.12x; no duration change.
             cw=int(width/1.12)//2*2;ch=int(height/1.12)//2*2
             xx=int((width-cw)*e['x']);yy=int((height-ch)*e['y'])

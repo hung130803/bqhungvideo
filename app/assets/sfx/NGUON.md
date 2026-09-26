@@ -24,3 +24,7 @@ Chuẩn hoá: mono 48 kHz, dynaudnorm + alimiter đỉnh −0,9, Opus 32 kbps.
 - `music-jingles` — https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip  (kho 86 file, lấy 22)
 
 Gộp lần này: 163 file, 390 KB.
+
+## Bổ sung âm thanh vật liệu — 55 file CC0
+Kenney Casino Audio: https://kenney.nl/assets/casino-audio
+Giấy phép CC0 1.0, chuẩn hoá và nén Opus; các file `casino_*.opus`. Tiếng chip, xu, lá bài, xúc xắc dùng làm tiếng nhấn thiết kế, không giả là âm thanh thật trong cảnh.

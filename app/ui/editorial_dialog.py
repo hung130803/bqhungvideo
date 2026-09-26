@@ -18,12 +18,17 @@ class Preview(QThread):
         try:
             from app.core.ffmpeg_utils import export_canvas_clip,probe
             source,parts,plan,index,folder=self.args
-            event=deepcopy(plan['events'][index]);part=parts[event['part']]
-            lead=max(1.,event['duration'] if event['kind']=='replay' else 1.)
-            a=max(part['start'],part['start']+event['offset']-lead)
-            b=min(part['end'],part['start']+event['offset']+event['duration']+1.)
-            event['offset']=part['start']+event['offset']-a;event['part']=0
-            subset=dict(plan,events=[event]);clip_parts=[dict(part,start=a,end=b)]
+            if index is None:
+                part=parts[0];a=part['start'];b=min(part['end'],a+6.)
+                subset=dict(plan,events=[])
+            else:
+                event=deepcopy(plan['events'][index]);part=parts[event['part']]
+                lead=max(1.,event['duration'] if event['kind']=='replay' else 1.)
+                a=max(part['start'],part['start']+event['offset']-lead)
+                b=min(part['end'],part['start']+event['offset']+event['duration']+1.)
+                event['offset']=part['start']+event['offset']-a;event['part']=0
+                subset=dict(plan,events=[event])
+            clip_parts=[dict(part,start=a,end=b)]
             path=Path(folder)/('preview_'+uuid.uuid4().hex+'.mp4');logs=[]
             export_canvas_clip(source,path,[(a,b)],(.5,.5,.94),bg='black',out_w=360,out_h=640,
                 encoder='libx264',fx_fade=False,fx_whoosh=True,hieu_ung='tat',fit_src=True,
@@ -83,6 +88,12 @@ class EditorialDialog(QDialog):
         suggest=QPushButton('Gợi ý lại theo lời / điểm nhấn');bar.addWidget(suggest);suggest.clicked.connect(self.suggest)
         self.arc=QCheckBox('Nhạc theo diễn biến');self.arc.setChecked(self.plan.get('music_arc',True));bar.addWidget(self.arc)
         self.transitions=QCheckBox('Chuyển cảnh theo bộ dựng');self.transitions.setChecked(self.plan.get('transitions',True));outer.addWidget(self.transitions)
+        from app.core.report_layout import LAYOUTS
+        layout_row=QHBoxLayout();outer.addLayout(layout_row);self.layout_choice=QComboBox()
+        for key,label in LAYOUTS.items():self.layout_choice.addItem(label,key)
+        self.layout_choice.setCurrentIndex(max(0,self.layout_choice.findData(self.plan.get('layout','template'))));layout_row.addWidget(self.layout_choice)
+        self.report_title=QLineEdit(self.plan.get('report_title',''));self.report_title.setMaxLength(140);self.report_title.setPlaceholderText('Tiêu đề phóng sự · chỉ dùng thông tin đã kiểm tra');layout_row.addWidget(self.report_title,1)
+        layout_note=QLabel('Mẫu phóng sự dùng khung dọc, giữ trọn hình; thay lớp chữ/phụ đề của mẫu bằng thẻ lời kể theo cảnh. Zoom/lia dùng tọa độ khung xuất; mũi tên bám vật cần chọn đích.');layout_note.setWordWrap(True);outer.addWidget(layout_note)
         body=QHBoxLayout();outer.addLayout(body,1)
         left=QVBoxLayout();body.addLayout(left,1);self.items=QListWidget();left.addWidget(self.items)
         row=QHBoxLayout();left.addLayout(row)
@@ -100,6 +111,8 @@ class EditorialDialog(QDialog):
         self.text=QLineEdit();self.text.setMaxLength(72);form.addRow('Chữ nhấn',self.text)
         self.x=self.spin(5,95,50);self.y=self.spin(5,95,22);self.size=self.spin(8,45,18)
         form.addRow('Ngang (% khung)',self.x);form.addRow('Dọc (% khung)',self.y);form.addRow('Cỡ (% chiều ngang)',self.size)
+        self.zoom_end=self.spin(100,135,112);self.end_x=self.spin(5,95,50);self.end_y=self.spin(5,95,50)
+        form.addRow('Keyframe: zoom cực đại (%)',self.zoom_end);form.addRow('Keyframe: đích ngang (%)',self.end_x);form.addRow('Keyframe: đích dọc (%)',self.end_y)
         self.track=QCheckBox('Bám chi tiết · chỉ mũi tên / khoanh');form.addRow(self.track)
         self.tx=self.spin(10,90,50);self.ty=self.spin(10,90,50)
         form.addRow('Tâm vật ngang (% nguồn)',self.tx);form.addRow('Tâm vật dọc (% nguồn)',self.ty)
@@ -141,6 +154,7 @@ class EditorialDialog(QDialog):
         self.plan['events'][self.row]=dict(part=self.scene.currentData(),kind=self.kind.currentData(),
             offset=self.offset.value(),duration=self.duration.value(),text=self.text.text(),
             x=self.x.value()/100,y=self.y.value()/100,size=self.size.value()/100,
+            zoom_end=self.zoom_end.value()/100,end_x=self.end_x.value()/100,end_y=self.end_y.value()/100,
             track=self.track.isChecked(),target_x=self.tx.value()/100,target_y=self.ty.value()/100,
             sound=self.sound.currentData(),sound_file=self.variant.currentData() or '',sound_gain=self.gain.value()/100,reason=self.reason.text())
         e=self.plan['events'][self.row]
@@ -154,6 +168,7 @@ class EditorialDialog(QDialog):
         self.scene.setCurrentIndex(e['part']);self.kind.setCurrentIndex(max(0,self.kind.findData(e['kind'])))
         for field,key,default,mult in [(self.offset,'offset',0,1),(self.duration,'duration',1.2,1),
             (self.x,'x',.5,100),(self.y,'y',.22,100),(self.size,'size',.18,100),
+            (self.zoom_end,'zoom_end',1.12,100),(self.end_x,'end_x',.5,100),(self.end_y,'end_y',.5,100),
             (self.tx,'target_x',.5,100),(self.ty,'target_y',.5,100),(self.gain,'sound_gain',.7,100)]:field.setValue(e.get(key,default)*mult)
         self.text.setText(e.get('text',''));self.reason.setText(e.get('reason',''));self.track.setChecked(e.get('track',False))
         self.sound.setCurrentIndex(max(0,self.sound.findData(e.get('sound','none'))));self.fill_sounds()
@@ -183,10 +198,11 @@ class EditorialDialog(QDialog):
 
     def suggest(self):
         if self.plan['events'] and QMessageBox.question(self,'Thay các điểm nhấn?', 'Tạo lại sẽ thay các điểm nhấn đang chỉnh trong cửa sổ này.')!=QMessageBox.StandardButton.Yes:return
-        self.plan=propose(self.parts,self.style.currentData());self.refresh()
+        self.plan=propose(self.parts,self.style.currentData());self.plan.update(layout=self.layout_choice.currentData(),report_title=self.report_title.text());self.refresh()
 
     def checked(self):
         self.store_row();self.plan['style']=self.style.currentData();self.plan['music_arc']=self.arc.isChecked()
+        self.plan['layout']=self.layout_choice.currentData();self.plan['report_title']=self.report_title.text()
         self.plan['enabled']=self.enabled.isChecked()
         self.plan['transitions']=self.transitions.isChecked()
         return validate(self.plan,self.parts)
@@ -201,13 +217,13 @@ class EditorialDialog(QDialog):
         self.player.setSource(QUrl.fromLocalFile(str(_assets_sfx_dir()/self.sound.currentData()/name)));self.player.play()
 
     def preview(self):
-        if self.row<0:return
+        if self.row<0 and self.layout_choice.currentData()=='template':return
         if not self.enabled.isChecked():return self.error('Bộ dựng đang tắt; bản xuất sẽ dùng hiệu ứng mẫu cũ.')
         if self.worker and self.worker.isRunning():return
         try:
-            self.store_row();event=deepcopy(self.plan['events'][self.row]);plan=self.checked()
+            self.store_row();event=deepcopy(self.plan['events'][self.row]) if self.row>=0 else None;plan=self.checked()
             # Validation sorts events: locate selected row by its immutable source interval.
-            index=next(i for i,e in enumerate(plan['events']) if e['part']==event['part'] and e['offset']==event['offset'])
+            index=next(i for i,e in enumerate(plan['events']) if e['part']==event['part'] and e['offset']==event['offset']) if event else None
         except (ValueError,StopIteration) as exc:return self.error(exc)
         self.player.stop();self.player.setSource(QUrl());self.info.setText('Đang dựng bản thử trên máy…');self.preview_button.setEnabled(False)
         self.worker=Preview(self.source,self.parts,plan,index,self.temp.name,self)

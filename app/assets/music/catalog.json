@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "tracks": [
+    {
+      "id": "sector",
+      "title": "Sector",
+      "mood": "mystery",
+      "author": "SRG774",
+      "source": "https://opengameart.org/content/dark-sci-fi-audio-pack",
+      "download": "https://opengameart.org/sites/default/files/sector_0.mp3",
+      "license": "CC0-1.0",
+      "file": "sector.opus",
+      "duration": 56.907,
+      "sha256": "c7f1abdecd22010b9d4d0a1e519d57e376ab9fd0cd97d631a7652a5a1c8ecaf5"
+    },
+    {
+      "id": "airy",
+      "title": "Airy",
+      "mood": "calm",
+      "author": "SRG774",
+      "source": "https://opengameart.org/content/dark-sci-fi-audio-pack",
+      "download": "https://opengameart.org/sites/default/files/airy_0.mp3",
+      "license": "CC0-1.0",
+      "file": "airy.opus",
+      "duration": 64.007,
+      "sha256": "bb5c4a768f4bf29dbafa09b93e783337a740707c9efd3a770023b6da07ba049f"
+    },
+    {
+      "id": "pulse",
+      "title": "Pulse",
+      "mood": "tension",
+      "author": "SRG774",
+      "source": "https://opengameart.org/content/dark-sci-fi-audio-pack",
+      "download": "https://opengameart.org/sites/default/files/pulse_0.mp3",
+      "license": "CC0-1.0",
+      "file": "pulse.opus",
+      "duration": 71.207,
+      "sha256": "950c635e5b288e13bb8b9b3da7a6f489cf1bcbce43c54388eecc516cf541296c"
+    },
+    {
+      "id": "urgent",
+      "title": "Urgent",
+      "mood": "tension",
+      "author": "SRG774",
+      "source": "https://opengameart.org/content/dark-sci-fi-audio-pack",
+      "download": "https://opengameart.org/sites/default/files/urgent_0.mp3",
+      "license": "CC0-1.0",
+      "file": "urgent.opus",
+      "duration": 56.907,
+      "sha256": "74ba09487db35c516d09ebc3ee8912bc36e545b18dfe528d29c83d5930e1f684"
+    },
+    {
+      "id": "transmission",
+      "title": "Transmission",
+      "mood": "mystery",
+      "author": "SRG774",
+      "source": "https://opengameart.org/content/dark-sci-fi-audio-pack",
+      "download": "https://opengameart.org/sites/default/files/transmission_1.mp3",
+      "license": "CC0-1.0",
+      "file": "transmission.opus",
+      "duration": 94.106,
+      "sha256": "424e72ebadb7f306ead08616a1ccf726035e55eaf7ec3dea647384a9ad35039a"
+    },
+    {
+      "id": "searching",
+      "title": "Searching",
+      "mood": "mystery",
+      "author": "yd",
+      "source": "https://opengameart.org/content/searching",
+      "download": "https://opengameart.org/sites/default/files/Searching.ogg",
+      "license": "CC0-1.0",
+      "file": "searching.opus",
+      "duration": 104.609,
+      "sha256": "0b8dd2afa74791c7933510e21ae25e4be1b6bebeb95ff499e06fade501120dac"
+    },
+    {
+      "id": "happybeat",
+      "title": "Happybeat",
+      "mood": "bright",
+      "author": "burabotti",
+      "source": "https://opengameart.org/content/happy-beat",
+      "download": "https://opengameart.org/sites/default/files/happybeat.ogg",
+      "license": "CC0-1.0",
+      "file": "happybeat.opus",
+      "duration": 32.009,
+      "sha256": "ca591a21e6b5fb29564ab9162b0c814d3db4cfb17045f1e4557a07fbb5121f31"
+    },
+    {
+      "id": "happy_adveture",
+      "title": "Happy Adveture",
+      "mood": "bright",
+      "author": "TinyWorlds",
+      "source": "https://opengameart.org/content/happy-adventure-loop",
+      "download": "https://opengameart.org/sites/default/files/happy_adveture.mp3",
+      "license": "CC0-1.0",
+      "file": "happy_adveture.opus",
+      "duration": 46.907,
+      "sha256": "484cb951223a050de441104a503106b41b5d0b26805782408a91c0a8785d4cc4"
+    },
+    {
+      "id": "funked_up",
+      "title": "Funked Up",
+      "mood": "playful",
+      "author": "Joth",
+      "source": "https://opengameart.org/content/funked-up",
+      "download": "https://opengameart.org/sites/default/files/Funked%20Up.mp3",
+      "license": "CC0-1.0",
+      "file": "funked_up.opus",
+      "duration": 66.307,
+      "sha256": "fa1a97c88c16e2c846535612e36a555d1d003a66b6c9588dd1062f531cc64347"
+    },
+    {
+      "id": "wednesday_night",
+      "title": "Wednesday Night",
+      "mood": "playful",
+      "author": "Zane Little Music",
+      "source": "https://opengameart.org/content/wednesday-night-funk-fusion",
+      "download": "https://opengameart.org/sites/default/files/wednesday_night.ogg",
+      "license": "CC0-1.0",
+      "file": "wednesday_night.opus",
+      "duration": 176.609,
+      "sha256": "84d8a3df785775ed113bd01f0ce87dfdddc4512f12b3954a14e997614fe9c698"
+    },
+    {
+      "id": "emotional_piano",
+      "title": "Emotional Piano",
+      "mood": "emotional",
+      "author": "Centurion_of_war",
+      "source": "https://opengameart.org/content/emotional-piano-0",
+      "download": "https://opengameart.org/sites/default/files/emotional_piano_2.ogg",
+      "license": "CC0-1.0",
+      "file": "emotional_piano.opus",
+      "duration": 76.809,
+      "sha256": "05abd2380407d1e5804874cec79db4d3de2d79d15b6fd31af5dad6f5cf1510ec"
+    },
+    {
+      "id": "vampires_piano",
+      "title": "Vampires Piano",
+      "mood": "emotional",
+      "author": "TAD",
+      "source": "https://opengameart.org/content/vampires-piano",
+      "download": "https://opengameart.org/sites/default/files/vampires_piano_6.mp3",
+      "license": "CC0-1.0",
+      "file": "vampires_piano.opus",
+      "duration": 89.507,
+      "sha256": "814759877c9e69805d961502a695de47a4a022906b9c490700b806947c2ec46a"
+    },
+    {
+      "id": "softpiano8",
+      "title": "Softpiano8",
+      "mood": "calm",
+      "author": "Tozan",
+      "source": "https://opengameart.org/content/pianosoft8",
+      "download": "https://opengameart.org/sites/default/files/softpiano8.ogg",
+      "license": "CC0-1.0",
+      "file": "softpiano8.opus",
+      "duration": 122.809,
+      "sha256": "a0d336d66893420cb2aa03b77894a7d4c98785aa6de5040293c496475df077d4"
+    },
+    {
+      "id": "piano_nostalgia",
+      "title": "Piano Nostalgia",
+      "mood": "emotional",
+      "author": "Wolfgang_",
+      "source": "https://opengameart.org/content/regret-short-emotional-piano",
+      "download": "https://opengameart.org/sites/default/files/piano_nostalgia.ogg",
+      "license": "CC0-1.0",
+      "file": "piano_nostalgia.opus",
+      "duration": 49.309,
+      "sha256": "780c848bfc9668f7a82a57d1c085af4f4636fa3562052d72bd544477baa26b8c"
+    }
+  ]
+}

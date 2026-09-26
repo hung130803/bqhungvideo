@@ -463,6 +463,406 @@
 -0.4,
 -53.5
 ],
+"pop/casino_card_fan_1.opus": [
+-23.2,
+-2.6,
+-16.0,
+0.45,
+-9.4,
+-17.0
+],
+"pop/casino_card_fan_2.opus": [
+-31.4,
+-2.1,
+-22.4,
+1.0,
+-8.6,
+-7.3
+],
+"pop/casino_card_place_1.opus": [
+-26.0,
+0.0,
+-15.0,
+0.15,
+-5.0,
+-15.6
+],
+"pop/casino_card_place_2.opus": [
+-31.0,
+-3.0,
+-25.7,
+0.2,
+-1.4,
+-7.8
+],
+"pop/casino_card_place_3.opus": [
+-33.6,
+-1.2,
+-22.8,
+0.45,
+-2.8,
+-8.7
+],
+"pop/casino_card_place_4.opus": [
+-29.8,
+-0.9,
+-20.8,
+0.3,
+-2.2,
+-9.9
+],
+"pop/casino_card_shove_1.opus": [
+-29.4,
+-1.0,
+-23.4,
+0.1,
+-0.3,
+-9.6
+],
+"pop/casino_card_shove_2.opus": [
+-31.4,
+0.0,
+-21.6,
+0.2,
+-2.5,
+-12.9
+],
+"pop/casino_card_shove_3.opus": [
+-31.4,
+-4.3,
+-23.8,
+0.1,
+-3.5,
+-9.5
+],
+"pop/casino_card_shove_4.opus": [
+-26.6,
+0.0,
+-15.5,
+0.2,
+-8.0,
+-14.5
+],
+"pop/casino_card_shuffle.opus": [
+-22.2,
+-0.0,
+-16.5,
+2.4,
+-4.9,
+-8.5
+],
+"pop/casino_card_slide_1.opus": [
+-25.9,
+0.0,
+-15.2,
+0.15,
+-4.3,
+-18.1
+],
+"pop/casino_card_slide_2.opus": [
+-24.7,
+-1.8,
+-14.3,
+0.05,
+-10.5,
+-19.8
+],
+"pop/casino_card_slide_3.opus": [
+-25.6,
+-0.0,
+-15.4,
+0.05,
+-5.8,
+-13.7
+],
+"pop/casino_card_slide_4.opus": [
+-25.3,
+0.0,
+-18.3,
+0.1,
+-4.2,
+-6.3
+],
+"pop/casino_card_slide_5.opus": [
+-29.0,
+-1.3,
+-19.0,
+0.1,
+-9.9,
+-14.0
+],
+"pop/casino_card_slide_6.opus": [
+-30.9,
+-3.3,
+-21.5,
+0.15,
+-7.8,
+-11.4
+],
+"pop/casino_card_slide_7.opus": [
+-31.7,
+-1.8,
+-23.3,
+0.3,
+-1.2,
+-9.4
+],
+"pop/casino_card_slide_8.opus": [
+-30.1,
+-0.6,
+-19.4,
+0.25,
+-1.4,
+-15.8
+],
+"pop/casino_cards_pack_open_1.opus": [
+-29.5,
+-0.4,
+-19.0,
+0.4,
+-0.1,
+-10.0
+],
+"pop/casino_cards_pack_open_2.opus": [
+-27.1,
+-0.9,
+-21.2,
+0.2,
+-0.2,
+-7.2
+],
+"pop/casino_cards_pack_take_out_1.opus": [
+-23.4,
+-4.8,
+-21.3,
+0.15,
+-0.2,
+-7.6
+],
+"pop/casino_cards_pack_take_out_2.opus": [
+-23.7,
+-3.9,
+-21.9,
+0.3,
+-0.1,
+-8.0
+],
+"pop/casino_chip_lay_1.opus": [
+-25.0,
+-0.2,
+-36.6,
+0.05,
+-0.1,
+-3.3
+],
+"pop/casino_chip_lay_2.opus": [
+-31.2,
+-1.0,
+-38.5,
+0.05,
+-0.1,
+-2.0
+],
+"pop/casino_chip_lay_3.opus": [
+-24.8,
+-0.2,
+-18.7,
+0.05,
+-1.6,
+-22.1
+],
+"pop/casino_chips_collide_1.opus": [
+-28.2,
+-0.0,
+-31.8,
+0.05,
+-1.8,
+-2.8
+],
+"pop/casino_chips_collide_2.opus": [
+-29.6,
+-1.6,
+-34.3,
+0.0,
+-0.6,
+-2.6
+],
+"pop/casino_chips_collide_3.opus": [
+-31.6,
+-1.6,
+-38.5,
+0.1,
+-1.2,
+-1.7
+],
+"pop/casino_chips_collide_4.opus": [
+-33.4,
+-1.6,
+-40.5,
+0.05,
+-0.8,
+-1.9
+],
+"pop/casino_chips_handle_1.opus": [
+-31.1,
+-0.0,
+-39.8,
+0.1,
+0.0,
+-4.0
+],
+"pop/casino_chips_handle_2.opus": [
+-34.9,
+-0.0,
+-34.7,
+0.35,
+-1.1,
+-2.6
+],
+"pop/casino_chips_handle_3.opus": [
+-29.1,
+-1.9,
+-36.1,
+0.0,
+-0.8,
+-2.8
+],
+"pop/casino_chips_handle_4.opus": [
+-30.8,
+-1.5,
+-31.7,
+0.05,
+-1.1,
+-3.6
+],
+"pop/casino_chips_handle_5.opus": [
+-25.4,
+-0.9,
+-16.7,
+0.5,
+-10.4,
+-9.6
+],
+"pop/casino_chips_handle_6.opus": [
+-27.3,
+-1.3,
+-25.6,
+0.05,
+-9.1,
+-3.0
+],
+"pop/casino_chips_stack_1.opus": [
+-28.8,
+-2.5,
+-35.9,
+0.05,
+-0.3,
+-1.9
+],
+"pop/casino_chips_stack_2.opus": [
+-27.9,
+-0.2,
+-35.9,
+0.0,
+-0.2,
+-1.8
+],
+"pop/casino_chips_stack_3.opus": [
+-29.4,
+-0.8,
+-30.6,
+0.0,
+-2.0,
+-3.0
+],
+"pop/casino_chips_stack_4.opus": [
+-27.6,
+-0.0,
+-29.3,
+0.05,
+-2.9,
+-4.6
+],
+"pop/casino_chips_stack_5.opus": [
+-30.4,
+-4.2,
+-39.0,
+0.0,
+-1.3,
+-1.9
+],
+"pop/casino_chips_stack_6.opus": [
+-29.1,
+-5.1,
+-37.7,
+0.05,
+-1.0,
+-1.6
+],
+"pop/casino_dice_grab_1.opus": [
+-33.3,
+-0.7,
+-29.4,
+0.25,
+-0.1,
+-4.7
+],
+"pop/casino_dice_grab_2.opus": [
+-38.3,
+-3.9,
+-38.5,
+0.6,
+-0.1,
+-2.2
+],
+"pop/casino_dice_shake_1.opus": [
+-31.7,
+-0.7,
+-29.1,
+0.85,
+-0.2,
+-4.9
+],
+"pop/casino_dice_shake_2.opus": [
+-29.9,
+-0.9,
+-25.0,
+0.7,
+-0.1,
+-6.0
+],
+"pop/casino_dice_shake_3.opus": [
+-28.5,
+0.0,
+-29.4,
+0.9,
+-0.0,
+-2.8
+],
+"pop/casino_dice_throw_1.opus": [
+-30.6,
+-2.0,
+-22.0,
+0.0,
+-1.2,
+-11.3
+],
+"pop/casino_dice_throw_2.opus": [
+-33.1,
+-1.3,
+-28.4,
+0.05,
+-4.8,
+-5.0
+],
+"pop/casino_dice_throw_3.opus": [
+-24.7,
+-1.5,
+-15.3,
+0.05,
+-3.2,
+-25.6
+],
 "pop/click_02.opus": [
 -19.1,
 -2.9,
@@ -742,6 +1142,46 @@
 0.35,
 -0.1,
 -46.2
+],
+"reveal/casino_die_throw_1.opus": [
+-31.6,
+-1.0,
+-21.4,
+0.15,
+-0.8,
+-24.8
+],
+"reveal/casino_die_throw_2.opus": [
+-27.4,
+-2.3,
+-20.5,
+0.2,
+-2.1,
+-24.2
+],
+"reveal/casino_die_throw_3.opus": [
+-32.4,
+-2.2,
+-21.7,
+0.05,
+-1.7,
+-39.6
+],
+"reveal/casino_die_throw_4.opus": [
+-30.6,
+-2.4,
+-21.1,
+0.1,
+-2.5,
+-31.0
+],
+"reveal/casino_preview.opus": [
+-24.8,
+0.0,
+-12.5,
+20.6,
+-1.8,
+-5.2
 ],
 "reveal/ding_hi_01.opus": [
 -9.6,

@@ -3498,8 +3498,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         if recap_meta.get('quality_story'):
             from app.ai.story_quality import verify_export
             verify_export(recap_meta,segs,src,payload.get('speed',1.))
-            if recap_meta.get('music_path') and not Path(recap_meta['music_path']).is_file():
-                raise RuntimeError('Không tìm thấy nhạc nền đã chọn. Chọn lại nhạc trước khi xuất; giữ nguyên video nguồn.')
+            from app.core.music_library import export_path as _story_music_path
+            _story_bgm=_story_music_path(recap_meta,payload.get('bgm_path'))
         # HOOK-FIRST: chiếu 2-4s cao trào nhất lên ĐẦU clip giữ chân người xem
         if payload.get("hook_first") and not is_recap:
             hseg = _pick_hook_seg(video_id, signals, segs)
@@ -3805,7 +3805,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             blur_amt=int(payload.get("blur_amt", 22)),
             speed=float(payload.get("speed", 1.0)),
             pitch=float(payload.get("pitch", 1.0)),
-            bgm_path=(recap_meta.get('music_path') if recap_meta.get('quality_story') else '') or payload.get("bgm_path") or None,
+            bgm_path=_story_bgm if recap_meta.get('quality_story') else payload.get('bgm_path') or None,
             edit_plan=recap_meta.get('edit_plan') if recap_meta.get('quality_story') else None,
             edit_parts=recap_parts,
             edit_log=_edit_log,
