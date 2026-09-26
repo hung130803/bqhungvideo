@@ -101,6 +101,15 @@ class Editorial(unittest.TestCase):
         with patch.object(q.llm,'complete_json',side_effect=AssertionError('Unexpected AI call')):
             for style in ed.STYLES:ed.propose(PARTS,style)
 
+    def test_missing_selected_sound_survives_reopening_editor(self):
+        from app.ui.editorial_dialog import EditorialDialog
+        original=ed.validate(plan([event(sound='pop',sound_file='removed_sound.opus')]),PARTS)
+        dlg=EditorialDialog(None,'missing.mp4',PARTS,original)
+        try:
+            self.assertEqual(dlg.checked()['events'][0]['sound_file'],'removed_sound.opus')
+            self.assertIn('thiếu',dlg.variant.currentText().lower())
+        finally:dlg.reject()
+
     def test_reviewed_opening_label_replaces_template_title_only_when_enabled(self):
         p=plan([dict(event('label'),text='Opening')])
         self.assertTrue(ed.replaces_opening_title(p,PARTS,[(0,24)],6))
@@ -199,6 +208,38 @@ class RealRender(unittest.TestCase):
             '-c','copy',str(path)],check=True,timeout=20)
         with self.assertRaises(ValueError):render.check_tracking_geometry(path)
         render.check_tracking_geometry(self.src)
+
+    def test_reviewed_sound_category_is_not_overridden_by_template_folder(self):
+        folder=AREA/'custom_sfx';folder.mkdir(exist_ok=True)
+        subprocess.run([settings.FFMPEG_PATH,'-v','error','-y','-i',
+            str(ROOT/'app/assets/sfx/comedy/ed_rubber.opus'),str(folder/'wrong_group.wav')],check=True,timeout=15)
+        logs=[];out=AREA/'category.mp4';p=ed.validate(plan([event(sound='reveal')]),PARTS)
+        ff.export_canvas_clip(self.src,out,[(0,3)],(.5,.5,.9),bg='black',out_w=180,out_h=320,
+            encoder='libx264',fx_fade=False,hieu_ung='tat',fx_sfx_dir=str(folder),
+            edit_plan=p,edit_parts=PARTS,tieng_dong_log=logs)
+        self.assertEqual(len(logs),1)
+        self.assertNotEqual(logs[0]['ten'],'wrong_group.wav')
+        self.assertEqual(logs[0]['nguon'],'kho tiếng động của app')
+        legacy=[]
+        ff.export_canvas_clip(self.src,AREA/'legacy_folder.mp4',[(0,2),(8,10)],(.5,.5,.9),bg='black',out_w=180,out_h=320,
+            encoder='libx264',fx_fade=False,hieu_ung='tat',fx_sfx_dir=str(folder),tieng_dong_log=legacy)
+        self.assertEqual(legacy[0]['ten'],'wrong_group.wav')
+
+    def test_tracked_circle_near_edge_keeps_target_anchor(self):
+        # A fixed measured target at 90% width. Render a circle and inspect its
+        # top rim: keeping the sprite entirely in-frame would shift its center.
+        e=ed.timeline(plan([event('circle',track=True,size=.45)]),PARTS,[(0,3)])[0]
+        e['track_points']=[(0.,.9,.5),(.2,.9,.5),(.4,.9,.5)]
+        cmd=[settings.FFMPEG_PATH,'-v','error','-y','-f','lavfi','-i','color=black:s=200x200:r=30:d=3']
+        filters=[]
+        label,_=render.append_graph(cmd,filters,'[0:v]',1,[e],str(AREA),200,200,'','explain',(200,200),(.5,.5,1),'fill',False)
+        out=AREA/'edge.mp4';cmd+=['-filter_complex',';'.join(filters),'-map',label,'-t','3','-c:v','libx264',str(out)]
+        subprocess.run(cmd,check=True,timeout=30)
+        pixels=subprocess.check_output([settings.FFMPEG_PATH,'-v','error','-ss','1.2','-i',str(out),
+            '-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-'])
+        image=np.frombuffer(pixels,dtype=np.uint8).reshape(200,200,3)
+        rim=image[62:67,177:183]
+        self.assertGreater(int(rim[:,:,1].max()),100,'circle must stay centered on target near edge')
 
 
 if __name__=='__main__':

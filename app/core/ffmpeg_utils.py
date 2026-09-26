@@ -4081,7 +4081,9 @@ def export_canvas_clip(
             # ƯU TIÊN 1 — THƯ MỤC tiếng động của USER (giữ tính năng cũ): có file
             # hợp lệ -> mỗi mốc lấy NGẪU NHIÊN 1 file (không phân loại ngữ cảnh
             # vì file user tùy ý). random.sample tránh trùng khi đủ.
-            sfx_files = _list_sfx_files(fx_sfx_dir) if n_joint else []
+            # An explicit editorial category belongs to the bundled library.
+            # The template's unclassified folder only applies to legacy mode.
+            sfx_files = _list_sfx_files(fx_sfx_dir) if n_joint and edit_plan is None else []
             if sfx_files:
                 if len(sfx_files) >= n_joint:
                     picked = _rnd.sample(sfx_files, n_joint)

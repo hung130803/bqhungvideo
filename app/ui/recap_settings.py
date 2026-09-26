@@ -68,6 +68,10 @@ from app.ai.recap import DEFAULT_STYLE, STYLES
 _DEMO_NARR = {
     "vi": "Không ai ngờ nổi... điều gã này sắp làm. Kể cả tôi.",
     "en": "Nobody saw this coming... not even him. And then... it happened.",
+    "ja": "誰も予想していませんでした。そのあと、何が起きたのでしょうか。",
+    "ko": "아무도 예상하지 못했습니다. 그다음에는 무슨 일이 있었을까요?",
+    "zh": "谁也没有想到，接下来会发生这样的事。让我们一起看看。",
+    "es": "Nadie se lo esperaba... ni siquiera él. Y entonces... sucedió.",
 }
 
 # Nhịp kể: (nhãn, key QSettings). Key -> rate edge-tts ở dubbing.RECAP_PACES.
@@ -77,7 +81,7 @@ _PACES = [("Thong thả", "slow"), ("Vừa", "normal"), ("Dồn dập", "fast")]
 # dubbing.RECAP_PITCHES (-18Hz/+0Hz/+18Hz). Gemini không hỗ trợ -> bỏ qua.
 _PITCHES = [("Trầm", "low"), ("Vừa", "normal"), ("Cao", "high")]
 
-_AUTO_VOICE_LABEL = "Tự chọn theo ngôn ngữ video (khuyên dùng)"
+_AUTO_VOICE_LABEL = "Tự chọn theo ngôn ngữ kịch bản (khuyên dùng)"
 
 # cache danh sách giọng cho phiên chạy (đỡ gọi mạng mỗi lần mở dialog):
 # {False: list gọn (đề xuất/hot), True: full ~500 giọng}
@@ -119,6 +123,17 @@ class RecapSettingsDialog(QDialog):
         note.setStyleSheet("color: #8a8f98; font-size: 11px;")
         lay.addWidget(note)
 
+        if not voice_only:
+            lay.addWidget(QLabel('<b>Ngôn ngữ đầu ra</b> — kịch bản và giọng AI đọc'))
+            self.story_lang=QComboBox()
+            for label,code in [('Giữ ngôn ngữ video gốc',''),('Tiếng Việt','vi'),('English','en'),('日本語','ja'),('한국어','ko'),('中文','zh'),('Español','es')]:self.story_lang.addItem(label,code)
+            self.story_lang.setCurrentIndex(max(0,self.story_lang.findData(str(self._s.value('story_lang','') or ''))))
+            lay.addWidget(self.story_lang)
+            self.story_lang.setToolTip('Dựng chuyện AI: chọn Tiếng Việt để viết và đọc lời kể tiếng Việt, kể cả nguồn tiếng Anh. Không đổi ngôn ngữ nhận dạng lời thoại nguồn.')
+            self.language_note=QLabel('')
+            self.language_note.setWordWrap(True)
+            lay.addWidget(self.language_note)
+
         # ---- Giọng kể ----
         lay.addWidget(QLabel("<b>Giọng kể</b> — giọng AI đọc lời thuyết minh"))
         vrow = QHBoxLayout()
@@ -126,7 +141,7 @@ class RecapSettingsDialog(QDialog):
         self.voice.setMinimumWidth(280)
         self.voice.setToolTip(
             "Để 'Tự chọn' thì app dùng giọng hot nhất của ĐÚNG ngôn ngữ "
-            "video.\nChọn cứng 1 giọng nếu muốn mọi clip cùng giọng:\n"
+            "kịch bản đầu ra.\nChọn cứng 1 giọng nếu muốn mọi clip cùng giọng:\n"
             "· 🔥 ĐỀ XUẤT = mượt & hot nhất, có mô tả từng giọng\n"
             "· 🎧 ElevenLabs = chất lượng CAO NHẤT (cần key, free 10k ký tự/"
             "tháng — không chỉnh nhịp/tông, hết hạn mức tự lùi edge-tts)\n"
@@ -246,10 +261,6 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(self.story_quality)
         story_note=QLabel('Dựng chuyện kỹ cần bạn duyệt kịch bản từng Part tại Video & clip; Dây chuyền và tự xuất sẽ chờ duyệt đủ. Chọn giọng ở trên; nhạc, hiệu ứng và phụ đề theo mẫu xuất. Groq có thể nhận sai hình; hãy xem nguồn trước khi duyệt.')
         story_note.setWordWrap(True);lay.addWidget(story_note)
-        self.story_lang=QComboBox()
-        for label,code in [('Ngôn ngữ kịch bản: theo video gốc',''),('Tiếng Việt','vi'),('English','en'),('日本語','ja'),('한국어','ko'),('中文','zh'),('Español','es')]:self.story_lang.addItem(label,code)
-        self.story_lang.setCurrentIndex(max(0,self.story_lang.findData(str(self._s.value('story_lang','') or ''))))
-        lay.addWidget(self.story_lang)
         self.story_music=QLineEdit(str(self._s.value('story_music_path','') or ''))
         self.story_music.setPlaceholderText('Nhạc nền dựng chuyện · bỏ trống để dùng nhạc của mẫu')
         music_row=QHBoxLayout();music_row.addWidget(self.story_music,1)
@@ -399,6 +410,10 @@ class RecapSettingsDialog(QDialog):
         self._load()
         if story_start:
             self.story_quality.setChecked(True);self.story_quality.setEnabled(False)
+        self.story_lang.currentIndexChanged.connect(self._output_language_changed)
+        self.voice.currentIndexChanged.connect(self._output_language_note)
+        self.story_quality.toggled.connect(self._output_language_changed)
+        self._output_language_changed()
         self._fill_voices_bg()
         self._update_el_credit()
 
@@ -471,7 +486,54 @@ class RecapSettingsDialog(QDialog):
             self.voice.addItem(self._want_voice, self._want_voice)
             self.voice.setCurrentIndex(self.voice.count() - 1)
 
+    def _output_language_changed(self, *_args):
+        enabled=self.story_quality.isChecked()
+        self.story_lang.setEnabled(enabled)
+        self._voice_reset_note=''
+        lang=str(self.story_lang.currentData() or '') if enabled else ''
+        if lang:
+            from app.ai.story_quality import validate_voice
+            try:
+                validate_voice(self.voice.currentData() or '',lang)
+            except ValueError:
+                old=self.voice.currentText()
+                self._want_voice=''
+                self.voice.setCurrentIndex(0)
+                self._voice_reset_note=f'Giọng cũ {old} không phù hợp; đã chuyển sang Tự chọn. '
+        self._output_language_note()
+
+    def _output_language_note(self, *_args):
+        if not hasattr(self,'story_quality'):return
+        from app.ai.story_quality import validate_voice
+        from app.core.dubbing import default_voice
+        enabled=self.story_quality.isChecked()
+        lang=str(self.story_lang.currentData() or '') if enabled else ''
+        voice=self.voice.currentData() or ''
+        error=''
+        if lang:
+            try:validate_voice(voice,lang)
+            except ValueError as exc:error=str(exc)
+        if error:
+            note=error+' Chọn Tự chọn hoặc đổi giọng phía dưới trước khi lưu.'
+        elif not enabled:
+            note='Thuyết minh cũ giữ ngôn ngữ nguồn. Bật AI dựng chuyện kỹ để chọn ngôn ngữ đầu ra khác.'
+        elif lang:
+            note=(getattr(self,'_voice_reset_note','')+
+                  f'Kịch bản: {self.story_lang.currentText()} · Giọng: {voice or default_voice(lang)}. '
+                  'Nguồn vẫn được nhận dạng theo tiếng gốc. Những đoạn giữ tiếng gốc không tự dịch.')
+        else:
+            note='Kịch bản giữ ngôn ngữ nguồn. Muốn nguồn tiếng Anh → lời kể tiếng Việt: chọn Tiếng Việt ở trên; giọng Tự chọn sẽ dùng giọng Việt.'
+        self.language_note.setText(note)
+        self.language_note.setStyleSheet('color: #ffb454;' if error else 'color: #9aadc9;')
+
     def _save(self) -> None:
+        if self.story_quality.isChecked() and self.story_lang.currentData():
+            from app.ai.story_quality import validate_voice
+            try:validate_voice(self.voice.currentData() or '',self.story_lang.currentData())
+            except ValueError as exc:
+                QMessageBox.warning(self,'Chọn giọng phù hợp',str(exc)+'\nChọn Tự chọn hoặc giọng cùng ngôn ngữ đầu ra.')
+                self.settings_scroll.ensureWidgetVisible(self.voice)
+                return
         self._s.setValue('story_quality',self.story_quality.isChecked())
         self._s.setValue('story_lang',self.story_lang.currentData() or '')
         self._s.setValue('story_music_path',self.story_music.text().strip())
@@ -662,7 +724,8 @@ class RecapSettingsDialog(QDialog):
         """Dựng lại combo giọng từ list thô + bộ lọc; giữ giọng đang chọn
         (kể cả khi bị lọc khuất — thêm lại item để không mất lựa chọn)."""
         voices = self._filtered_voices()
-        want = self.voice.currentData() or self._want_voice
+        # The empty value is a deliberate Auto selection, not a missing value.
+        want = (self.voice.currentData() or '') if self.voice.currentIndex() >= 0 else self._want_voice
         self.voice.blockSignals(True)
         self.voice.clear()
         self.voice.addItem(_AUTO_VOICE_LABEL, "")
@@ -698,14 +761,15 @@ class RecapSettingsDialog(QDialog):
         # tự cập nhật dòng credit ElevenLabs theo giọng đang chọn.
         if hasattr(self, "el_credit"):
             self._update_el_credit()
+        self._output_language_note()
 
     # ------------------------------------------------------------------
     # 🔊 Nghe thử (pattern editor._dub_preview — winsound, thread nền)
     # ------------------------------------------------------------------
     def _preview(self) -> None:
-        voice = self.voice.currentData() or ""
-        if not voice:                     # "Tự chọn" -> demo giọng hot mặc định
-            voice = "en-US-AndrewMultilingualNeural"
+        from app.core.dubbing import default_voice
+        target=(self.story_lang.currentData() or '') if hasattr(self,'story_quality') and self.story_quality.isChecked() else ''
+        voice = self.voice.currentData() or default_voice(target) or "en-US-AndrewMultilingualNeural"
         pace = self.pace.currentData() or "normal"
         pitch = self.pitch.currentData() or "normal"
         emotion = bool(self.emotion.isChecked())
@@ -733,10 +797,10 @@ class RecapSettingsDialog(QDialog):
                     recap_pitch_hz, synth_demo,
                 )
                 if voice.startswith("gemini:"):
-                    lang = "vi"
+                    lang = target or "vi"
                     txt = gemini_narrate_prefix(lang) + _DEMO_NARR[lang]
                 else:
-                    lang = norm_lang(voice.split("-")[0])
+                    lang = target or norm_lang(voice.split("-")[0])
                     txt = _DEMO_NARR.get(lang) or _DEMO_NARR["en"]
                 # nghe thử áp CẢ nhịp kể + tông giọng đang chọn (Gemini
                 # bỏ qua cả 2 — synth_demo tự xử)

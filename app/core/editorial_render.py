@@ -196,7 +196,12 @@ def append_graph(cmd,filters,label,index,events,folder,width,height,font,style,s
             anchor_x='w*.8' if kind=='arrow' and e.get('track') else 'w/2'
             anchor_y='h*.2' if kind=='arrow' and e.get('track') else 'h/2'
             motion='0' if e.get('track') else f'4*sin((t-{a})*9)'
-            filters.append(f"{label}[es{i}]overlay=x='max(0,min(W-w,W*({x})-{anchor_x}))':"
-                f"y='max(0,min(H-h,H*({y})-{anchor_y}-{motion}))':eof_action=repeat:enable='{enable}'{out}")
+            xpos=f'W*({x})-{anchor_x}';ypos=f'H*({y})-{anchor_y}-{motion}'
+            if not e.get('track'):
+                xpos=f'max(0,min(W-w,{xpos}))';ypos=f'max(0,min(H-h,{ypos}))'
+            # Tracked art may be clipped by the frame; clamping its rectangle
+            # would move the pointer away from the measured target near edges.
+            filters.append(f"{label}[es{i}]overlay=x='{xpos}':"
+                f"y='{ypos}':eof_action=repeat:enable='{enable}'{out}")
         label=out
     return label,index

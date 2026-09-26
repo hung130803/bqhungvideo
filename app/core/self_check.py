@@ -57,6 +57,27 @@ def run(output: str) -> int:
                            fx_whoosh=False, hieu_ung='tat', edit_plan=plan, edit_parts=parts)
         assert abs(probe(edited).duration - 1.) < .15
         results['checks'].append('compiled editorial dialog, Unicode render and 20 new sound assets')
+        from app.ui.recap_settings import RecapSettingsDialog
+        from app.ui.appsettings import app_settings
+        from app.core.dubbing import default_voice
+        prefs=app_settings()
+        saved={key:prefs.value(key) for key in ('story_lang','recap_voice')}
+        prefs.setValue('story_lang','vi');prefs.setValue('recap_voice','en-US-GuyNeural')
+        loader=RecapSettingsDialog._fill_voices_bg
+        RecapSettingsDialog._fill_voices_bg=lambda self:None
+        try:
+            language_dialog=RecapSettingsDialog(story_start=True)
+            assert language_dialog.story_lang.currentData()=='vi'
+            assert language_dialog.voice.currentData()==''
+            assert default_voice('vi') in language_dialog.language_note.text()
+            assert language_dialog.story_lang.isEnabled()
+            language_dialog.reject()
+        finally:
+            RecapSettingsDialog._fill_voices_bg=loader
+            for key,value in saved.items():
+                if value is None:prefs.remove(key)
+                else:prefs.setValue(key,value)
+        results['checks'].append('compiled target-language dialog repairs English voice for Vietnamese output')
         state = AppState()
         page = StudioPage(state)
         results['checks'].append('compiled StudioPage and real QSS')

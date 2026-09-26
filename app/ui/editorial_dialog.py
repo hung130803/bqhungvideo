@@ -157,7 +157,14 @@ class EditorialDialog(QDialog):
             (self.tx,'target_x',.5,100),(self.ty,'target_y',.5,100),(self.gain,'sound_gain',.7,100)]:field.setValue(e.get(key,default)*mult)
         self.text.setText(e.get('text',''));self.reason.setText(e.get('reason',''));self.track.setChecked(e.get('track',False))
         self.sound.setCurrentIndex(max(0,self.sound.findData(e.get('sound','none'))));self.fill_sounds()
-        self.variant.setCurrentIndex(max(0,self.variant.findData(e.get('sound_file',''))))
+        selected=e.get('sound_file','')
+        index=self.variant.findData(selected)
+        if selected and index<0:
+            # Keep the saved choice: reopening must not silently switch to a
+            # random sound when an asset is missing on this machine.
+            self.variant.addItem('Thiếu file: '+selected,selected)
+            index=self.variant.count()-1
+        self.variant.setCurrentIndex(max(0,index))
 
     def refresh(self,index=0):
         self.loading=True;self.row=-1;self.items.clear()

@@ -425,7 +425,7 @@ def validate_voice(voice,lang):
     match=re.match(r'^([a-z]{2})-[A-Z]{2}-',voice or '')
     language=norm_lang(lang)
     if language and match and match[1]!=language and 'multilingual' not in voice.lower():
-        raise ValueError('Giọng đã chọn khác ngôn ngữ kịch bản. Chọn giọng cùng ngôn ngữ hoặc giọng Multilingual.')
+        raise ValueError(f'Giọng đã chọn khác ngôn ngữ kịch bản: đầu ra {language}, giọng {voice} dùng tiếng {match[1]}. Chọn Tự chọn hoặc giọng cùng ngôn ngữ kịch bản. Muốn đổi ngôn ngữ kịch bản: vào Công cụ → AI dựng chuyện kỹ và bắt đầu lượt mới; Thử lại giữ cấu hình việc cũ.')
 
 
 def is_approved(meta):
