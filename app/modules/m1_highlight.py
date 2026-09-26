@@ -3506,7 +3506,9 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             if hseg:
                 segs = [hseg] + [list(p) for p in segs]
         pre_crop = None
-        if payload.get("trim_black"):
+        from app.core.report_layout import keeps_full_source
+        _full_source_report = bool(recap_meta.get('quality_story') and keeps_full_source(recap_meta.get('edit_plan')))
+        if payload.get("trim_black") and not _full_source_report:
             ctx.progress(0.08, f"{pfx}đang dò viền đen...")
             pre_crop = detect_black_crop(src, segs[0][0])
         # LỒNG TIẾNG AI: dựng track thuyết minh (dịch + TTS) TRƯỚC khi export.

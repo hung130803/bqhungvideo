@@ -3,6 +3,10 @@ from pathlib import Path
 
 LAYOUTS={'template':'Theo mẫu xuất hiện tại','report':'Phóng sự · vàng / đỏ','explain':'Giải thích · xanh'}
 
+def keeps_full_source(plan):
+    """Report coordinates and preview refer to the uncropped source image."""
+    return bool(plan and plan.get('enabled',True) and plan.get('layout','template') in ('report','explain'))
+
 def geometry(iw,ih,ow,oh):
     # Source always fits between cards. No crop, including portrait footage.
     scale=min(ow*.98/iw,oh*.34/ih)

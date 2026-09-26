@@ -3371,6 +3371,11 @@ def export_canvas_clip(
     segs = [(float(s), float(e)) for s, e in (segments or []) if e > s]
     _music_plan = edit_plan if edit_plan is not None else {'music_arc':any('music_energy' in p for p in (edit_parts or []))}
     if edit_plan is not None and not edit_plan.get('enabled',True):edit_plan=None
+    from app.core.report_layout import keeps_full_source
+    if keeps_full_source(edit_plan):
+        # Inherited template crop must not change report/tracking coordinates.
+        # Normalize before fit_src and tracking, matching the report preview.
+        pre_crop = None
     if not segs:
         raise RuntimeError("Không có đoạn nào để xuất.")
     encoder = encoder or detect_encoder()
@@ -3415,7 +3420,6 @@ def export_canvas_clip(
     if edit_plan is not None and edit_plan.get('layout','template')!='template':
         from app.core.report_layout import geometry
         if out_h<=out_w:raise ValueError('Mẫu phóng sự cần khung dọc 9:16; đổi kích thước trong mẫu xuất.')
-        if pre_crop:raise ValueError('Mẫu phóng sự giữ trọn nguồn; bỏ cắt viền trước khi xuất.')
         video_rect=geometry(_info.width,_info.height,out_w,out_h);bg='blur';overlay_png=None;ass_path=None
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)

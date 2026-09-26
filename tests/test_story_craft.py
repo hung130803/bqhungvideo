@@ -16,6 +16,27 @@ from app.ui.fonts import load_fonts
 load_fonts()
 
 class Craft(unittest.TestCase):
+    def test_report_inherited_crop_matches_full_source_and_legacy_crop_still_works(self):
+        src=AREA/'crop-source.mp4'
+        subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=30',
+            '-t','1','-c:v','libx264','-preset','ultrafast',str(src)],check=True,timeout=20)
+        parts=[dict(start=0,end=1,mode='orig',text='')]
+        original_hash=hashlib.sha256(src.read_bytes()).hexdigest()
+        def render(name,plan,crop):
+            out=AREA/(name+'.mp4')
+            ff.export_canvas_clip(src,out,[(0,1)],(.5,.5,.8),bg='blur',out_w=180,out_h=320,encoder='libx264',
+                fx_fade=False,fx_whoosh=False,hieu_ung='tat',edit_plan=plan,edit_parts=parts,pre_crop=crop,fit_src=True)
+            self.assertAlmostEqual(ff.probe(out).duration,1,delta=.1)
+            return subprocess.check_output([settings.FFMPEG_PATH,'-v','error','-i',str(out),'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'])
+        for layout in ('report','explain'):
+            plan=ed.validate(dict(version=1,style='explain',layout=layout,events=[]),parts)
+            self.assertTrue(report.keeps_full_source(plan))
+            self.assertEqual(render(layout+'-full',plan,None),render(layout+'-crop',plan,'160:180:160:0'))
+        for plan in (None,dict(version=1,style='explain',layout='template',events=[]),dict(enabled=False,layout='report')):
+            self.assertFalse(report.keeps_full_source(plan))
+            self.assertNotEqual(render('legacy-full',plan,None),render('legacy-crop',plan,'160:180:160:0'))
+        self.assertEqual(original_hash,hashlib.sha256(src.read_bytes()).hexdigest())
+
     def test_vietnamese_budget_is_syllabic_and_rates_are_bounded(self):
         self.assertEqual(craft.word_budget(12,'Vietnamese'),38)
         self.assertEqual(craft.word_budget(12,'en'),22)

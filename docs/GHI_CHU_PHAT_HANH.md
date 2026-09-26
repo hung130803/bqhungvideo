@@ -1,3 +1,9 @@
+# BQ Hung Video v2.50.20
+
+- Sửa lỗi xuất Part khi mẫu Phóng sự/Giải thích kế thừa tùy chọn cắt viền đen: tự giữ trọn nguồn, đồng nhất với bản xem thử và tọa độ mũi tên/zoom.
+- Bỏ lượt dò viền không cần thiết cho hai bố cục này. Mẫu thường và bố cục dựng hình đã tắt vẫn giữ cách cắt viền cũ.
+- Có thể xuất lại các Part đã duyệt, không cần phân tích AI lại vì lỗi này. Không thay đổi kịch bản, cấu hình mẫu đã lưu hay video gốc.
+
 # BQ Hung Video v2.50.19
 
 - Sửa khâu kiểm tra mạch chuyện: dùng thêm bối cảnh hình, ngày ghi, địa điểm và nhân vật; không chỉ dựa vào vài câu thoại khi nối các đoạn xa nhau. Nguồn tổng hợp nhiều vụ việc phải được xem là nhiều câu chuyện riêng.
