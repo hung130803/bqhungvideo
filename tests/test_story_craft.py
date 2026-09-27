@@ -16,6 +16,30 @@ from app.ui.fonts import load_fonts
 load_fonts()
 
 class Craft(unittest.TestCase):
+    def test_phrase_does_not_bridge_pause_inside_four_words(self):
+        words=[[.2,.4,'Một'],[.5,.7,'câu'],[3.,3.2,'tiếp'],[3.3,3.5,'theo']]
+        cues=d._phrase_groups_from_words(words,10)
+        self.assertEqual([c[2] for c in cues],['Một câu','tiếp theo'])
+        self.assertFalse(any(a<=12<b for a,b,_ in cues),cues)
+        self.assertEqual(' '.join(c[2] for c in cues),'Một câu tiếp theo')
+
+    def test_caption_group_preset_preserves_narration_pause(self):
+        from app.modules.m1_highlight import _recap_caption_cues,_group_recap_cues
+        event=dict(start=0,end=3,text='Một câu tiếp theo',clamped=True,
+                   words=[[.2,.7,'Một câu'],[1.1,1.5,'tiếp theo']])
+        cues=_group_recap_cues(_recap_caption_cues([event]),'sent')
+        self.assertFalse(any(a<=.9<b for a,b,*_ in cues),cues)
+        self.assertEqual(' '.join(c[2] for c in cues),'Một câu tiếp theo')
+
+    def test_caption_never_extends_past_event_end_even_with_short_last_word(self):
+        from app.modules.m1_highlight import _recap_caption_cues
+        for clamped in (True,False):
+            event=dict(start=0,end=1,text='Một câu',clamped=clamped,
+                       words=[[.2,.4,'Một'],[.99,1.1,'câu']])
+            cues=_recap_caption_cues([event])
+            self.assertTrue(all(0<=a<b<=1 for a,b,*_ in cues),cues)
+            self.assertEqual(' '.join(c[2] for c in cues),'Một câu')
+
     def test_spoken_cards_respect_real_speech_gaps_and_empty_events(self):
         events=[dict(start=0,end=8,speech=[.5,3.4],text='one two',words=[[.1,1,'one'],[2.5,6,'two']])]
         cards=report.spoken_cards(events,12)
@@ -23,6 +47,37 @@ class Craft(unittest.TestCase):
         self.assertEqual(report.spoken_cards([],12),[])
         fallback=report.spoken_cards([dict(start=0,end=12,speech=[1,3],text='Một câu đã đọc.')],12)
         self.assertEqual((fallback[0][1],fallback[-1][1]+fallback[-1][2]),(1,3))
+
+    def test_measured_pause_survives_report_and_group_subtitle_render(self):
+        from app.modules.m1_highlight import _recap_caption_cues,_group_recap_cues
+        from app.core import captions
+        import numpy as np
+        src=AREA/'pause-source.mp4'
+        subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','color=c=blue:size=180x320:rate=30',
+            '-t','4','-c:v','libx264','-preset','ultrafast',str(src)],check=True,timeout=20)
+        words=[[.2,.4,'Một'],[.5,.7,'câu'],[3.,3.2,'tiếp'],[3.3,3.5,'theo']]
+        phrases=d._phrase_groups_from_words(words,0)
+        event=dict(start=0,end=3.5,speech=[.2,3.5],text='Một câu tiếp theo',clamped=True,words=phrases)
+        cues=_group_recap_cues(_recap_caption_cues([event]),'sent')
+        ass=AREA/'pause.ass'
+        captions.build_ass([],[(0,4)],ass,out_w=180,out_h=320,size=18,color='#FFFFFF',
+                           narr_color='#FFFFFF',extra_cues=cues)
+        for layout in ('report','template'):
+            plan=dict(version=1,style='explain',layout=layout,report_title='',events=[])
+            out=AREA/('pause-'+layout+'.mp4')
+            ff.export_canvas_clip(src,out,[(0,4)],(.5,.5,1),out_w=180,out_h=320,encoder='libx264',
+                fx_fade=False,fx_whoosh=False,hieu_ung='tat',edit_plan=plan,
+                edit_parts=[dict(start=0,end=4,mode='narrate',text=event['text'])],
+                narration_events=[event],ass_path=str(ass),speed=1.25)
+            for t,visible in ((.45,True),(1.8,False),(3.25,True),(3.8,False)):
+                raw=subprocess.check_output([settings.FFMPEG_PATH,'-v','error','-ss',str(t/1.25),'-i',str(out),
+                    '-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'])
+                frame=np.frombuffer(raw,dtype=np.uint8).reshape(320,180,3).astype(int)
+                box=frame[208:300,10:170]
+                # White subtitle glyphs must be present only during speech;
+                # the synthetic blue background contains no white pixels.
+                white=((box[:,:,0]>150)&(box[:,:,1]>150)&(box[:,:,2]>150)).sum()
+                self.assertEqual(white>10,visible,(layout,t,white))
 
     def test_director_uses_variable_in_out_without_cutting_original_speech(self):
         units=[dict(id=i,start=i*20,end=i*20+12,safe_orig=True) for i in range(8)]

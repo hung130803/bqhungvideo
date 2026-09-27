@@ -8,6 +8,7 @@ Nếu không cấu hình key -> chạy fallback (heuristic) để app vẫn ho�
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import time
@@ -184,9 +185,12 @@ def mark_ok(provider: str, key: str, scope: str = 'chat') -> None:
     with _KEY_LOCK:
         st = _state_for(provider, key)
         st["last_ok"] = time.time()
-        st["state"] = "ready"
-        st["until"] = 0.0
-        st["note"] = ""
+        # A chat success does not end a vision cooldown on the same key.
+        if not (_is_limited(st,time.time()) and st.get('limited_scope') not in (None,scope)):
+            st["state"] = "ready"
+            st["until"] = 0.0
+            st["note"] = ""
+            st.pop('limited_scope',None)
     from app.ai import key_health
     key_health.record(provider, key, scope, 'ok')
 
@@ -227,10 +231,18 @@ def parse_retry_wait(err_text: str):
     return None
 
 
-def mark_limited(provider: str, key: str, err_text: str = "") -> float:
+def mark_limited(provider: str, key: str, err_text: str = "", retry_after=None, scope=None) -> float:
     """Ghi nhận: key dính rate-limit. PARSE thời gian chờ từ message lỗi;
     không parse được thì: lỗi daily -> 1h, còn lại 120s. Trả về số giây cooldown."""
-    wait = parse_retry_wait(err_text or "")
+    # Prefer the provider's HTTP Retry-After; SDK exception strings can omit it.
+    try:
+        wait = float(retry_after)
+        if not math.isfinite(wait) or wait <= 0:
+            wait = None
+    except (ValueError, TypeError):
+        wait = None
+    if wait is None:
+        wait = parse_retry_wait(err_text or "")
     if wait is None:
         low = (err_text or "").lower()
         if any(s in low for s in ("per day", "daily", "tpd", "rpd",
@@ -243,6 +255,7 @@ def mark_limited(provider: str, key: str, err_text: str = "") -> float:
         st = _state_for(provider, key)
         st["state"] = "limited"
         st["until"] = time.time() + wait
+        st['limited_scope'] = scope
         st["note"] = (err_text or "").strip()[:200]
     return wait
 
@@ -717,7 +730,7 @@ def is_org_restricted(msg: str) -> bool:
     m = (msg or "").lower()
     return "organization has been restricted" in m \
         or "organization_restricted" in m \
-        or ("organization" in m and "restricted" in m)
+        or bool(re.search(r'\borganization\s+(?:is|was)\s+restricted\b',m))
 
 
 def is_transient_error(msg: str) -> bool:
@@ -799,7 +812,7 @@ def check_groq_key_valid(key: str, timeout: float = 15.0) -> str:
 
     Trả về phân loại:
       "ok"      -> 200: key HỢP LỆ
-      "invalid" -> 401/403: key SAI/không hợp lệ
+      "invalid" -> 401: key SAI/không hợp lệ
       "limited" -> 429: hết hạn mức (tạm thời)
       "error"   -> lỗi mạng/khác (timeout, DNS, 5xx...)
     Dùng urllib (không thêm dependency). Không cập nhật sổ trạng thái RAM."""
@@ -819,7 +832,7 @@ def check_groq_key_valid(key: str, timeout: float = 15.0) -> str:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return "ok" if resp.status == 200 else "error"
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
+        if e.code == 401:
             return "invalid"
         if e.code == 429:
             return "limited"
@@ -943,9 +956,13 @@ def check_groq_key(key: str, timeout: float = 15.0) -> dict:
                 out['note'] = 'organization_restricted — liên hệ Groq; không kết luận key sai'
                 mark_provider_restricted('groq', key, 'chat')
                 return out
-            if e.code in (401, 403):
+            if e.code == 401:
                 out["kind"] = "invalid"
                 out["note"] = f"key sai/không hợp lệ ({e.code})"
+                return out
+            if e.code == 403:
+                out['kind']='error'
+                out['note']='403: bị từ chối truy cập model/dịch vụ hoặc mạng; chưa có bằng chứng key sai, không tự xóa key.'
                 return out
             if e.code in (400, 404):
                 # 400 có 2 nghĩa: model bị gỡ (bỏ qua model) HOẶC tài khoản
@@ -1004,7 +1021,7 @@ def check_groq_keys(keys, progress=None, max_workers: int = 6,
     Trả về dict:
       counts: {"ok","exhausted","invalid","error"} — số lượng mỗi loại
       results: [(key, info_dict), ...] giữ thứ tự đầu vào (info từ check_groq_key)
-      invalid: [key, ...] các key SAI (401/403) — để user xoá
+      invalid: [key, ...] key có bằng chứng xác thực không hợp lệ — để user xoá
       total_remaining_requests: TỔNG remaining_requests của các key SỐNG (kind=ok)
     Dùng để hiển thị tổng kết + hạn mức từng key."""
     from concurrent.futures import ThreadPoolExecutor
@@ -1820,11 +1837,19 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                 from app.ai import key_health
                 if key_health.blocked('groq', key, 'vision'):
                     continue
+                # pick_keys retains cooling keys for legacy callers. Vision
+                # must not send them: another image worker may just have
+                # received a 429. The story coordinator handles the wait.
+                with _KEY_LOCK:
+                    state = _KEY_STATE.get(('groq', key))
+                    unavailable = _is_invalid(state) or _is_limited(state, time.time())
+                if unavailable:
+                    continue
                 mark_used("groq", key)
                 try:
                     client = OpenAI(api_key=key,
                                     base_url="https://api.groq.com/openai/v1",
-                                    timeout=budget_timeout or request_timeout or 120, max_retries=0 if request_timeout or budget_timeout else 1)
+                                    timeout=budget_timeout or request_timeout or 120, max_retries=0)
                     # TẮT PHẦN "SUY NGHĨ": model vision còn sống trên Groq
                     # (qwen3.6) là model SUY LUẬN, mặc định nó viết cả khối
                     # <think> dài trước khi ra JSON. ĐO 06/08/2026 với 2 ảnh:
@@ -1866,12 +1891,16 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                         raise LLMTooLarge(f"Vision: yêu cầu quá lớn cho hạn "
                                           f"mức token/phút: {last}")
                     if is_rate_limit_error(last):
-                        mark_limited("groq", key, last)
+                        headers = getattr(getattr(e, 'response', None), 'headers', {}) or {}
+                        mark_limited("groq", key, last, retry_after=headers.get('retry-after'),scope='vision')
                         continue         # key hết lượt -> thử key kế
                     if is_auth_error(last):
                         mark_invalid("groq", key)
                         continue         # key sai -> bỏ qua
                     raise LLMError(f"Vision groq lỗi: {last}")
+            wait = soonest_ready_wait('groq', keys, scope='vision')
+            if wait is not None and wait > 0:
+                last_usable = f'429: Hạn mức Groq; cần chờ, retry-after: {wait:.3f}s trước khi thử tiếp.'
             raise LLMError(key_failure_message('groq', keys, 'vision', last_usable or last))
 
         if provider in ("ollama", "openai"):

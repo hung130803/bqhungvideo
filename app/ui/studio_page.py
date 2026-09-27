@@ -2040,6 +2040,9 @@ class StudioPage(QWidget):
         c_stat = _card(
             "📊 Trạng thái key (thời gian thực)",
             "Trạng thái theo từng dịch vụ; key chưa gọi không có nghĩa đã kiểm tra đạt.")
+        c_stat.addWidget(QLabel('Key Groq sẽ kiểm tra · Chat / Chép lời / Hình ảnh'))
+        key_choice=QComboBox();key_choice.setObjectName('groq_check_key')
+        c_stat.addWidget(key_choice)
         kstat = QLabel("")
         kstat.setObjectName("key_status_label")
         kstat.setWordWrap(True)
@@ -2062,16 +2065,21 @@ class StudioPage(QWidget):
         def refresh_keys():
             lines = []
             try:
+                choices=_keys_to_check()
+                if choices != [key_choice.itemData(i) for i in range(key_choice.count())]:
+                    selected=key_choice.currentData();key_choice.clear()
+                    for number,credential in enumerate(choices,1):key_choice.addItem(f'{number}. {llm.che_key(credential)}',credential)
+                    key_choice.setCurrentIndex(max(0,key_choice.findData(selected)))
                 for st in llm.key_status("groq"):
                     if st["state"] == "unknown":
                         lines.append(f"⚪ {st['key_masked']} — CHƯA KIỂM TRA")
                     elif st["state"] == "restricted":
-                        lines.append(f"⛔ {st['key_masked']} — có dịch vụ báo hạn chế tổ chức")
+                        lines.append(f"⚠ {st['key_masked']} — có dịch vụ bị hạn chế; xem từng mục bên dưới")
                     elif st["state"] == "invalid":
                         lines.append(f"🔑 {st['key_masked']} — SAI KEY (kiểm tra "
                                      "lại: xóa dấu cách thừa / dán key đúng)")
                     elif st["state"] == "limited":
-                        lines.append(f"⛔ {st['key_masked']} — hết lượt, thử lại "
+                        lines.append(f"⏳ {st['key_masked']} — tạm hết lượt, thử lại "
                                      f"sau {_fmt_wait(st['wait_left'])}")
                     elif st["in_use"]:
                         lines.append(f"🔵 {st['key_masked']} — vừa gọi · số lần trong phiên "
@@ -2155,17 +2163,20 @@ class StudioPage(QWidget):
                 set_note("err", "CHƯA NHẬP KEY GROQ — dán key Groq ở ô dưới (mục "
                                 "Nghe-chép) rồi bấm Kiểm tra.")
                 return
-            set_note("wait", "Đang kiểm tra riêng AI chat và chép lời (một key mỗi dịch vụ)...")
+            refresh_keys()
+            selected_key=key_choice.currentData()
+            set_note("wait", "Đang thử key đã chọn, riêng từng dịch vụ. Dùng ảnh màu và âm thanh mẫu, không gửi video của bạn.")
             # Gọi LLM ở THREAD NỀN: gọi đồng bộ trên UI thread sẽ treo toàn bộ
             # app tới 2 phút nếu mạng chậm/timeout.
             tb.setEnabled(False)
+            key_choice.setEnabled(False)
             res: list = []
             whisper_provider = wsrc.currentData()
 
             def bg():
                 try:
                     from app.ai.connection_check import check
-                    r = check(prov, whisper_provider)
+                    r = check(prov, whisper_provider,groq_key=selected_key,include_vision=True)
                     res.append(("ok", r))
                 except Exception as e:  # noqa: BLE001
                     res.append(("err", str(e)))
@@ -2179,6 +2190,7 @@ class StudioPage(QWidget):
                     return
                 timer.stop()
                 tb.setEnabled(True)
+                key_choice.setEnabled(True)
                 kind, val = res[0]
                 if kind == "ok":
                     passed = all(item['ok'] for item in val)
@@ -2193,7 +2205,7 @@ class StudioPage(QWidget):
 
         # gợi ý trạng thái ban đầu (chưa test) cho người dùng biết đang ở đâu
         set_note("info", "Dán key (Groq free hoặc Gemini) rồi bấm “Kiểm tra kết nối” "
-                         "để thử riêng AI chat và chép lời Groq bằng âm thanh mẫu ngắn.")
+                         "để thử key đã chọn: chat, chép lời Groq và hình ảnh Groq. Thành công ở dịch vụ nào chỉ mở lại dịch vụ đó.")
 
         row = QHBoxLayout()
         tb = QPushButton("Kiểm tra kết nối"); tb.setProperty("ghost", True)

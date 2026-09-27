@@ -85,6 +85,49 @@ class KeyHealthTests(unittest.TestCase):
         with patch.object(llm, '_call_once', return_value='  '):
             self.assertFalse(connection_check.check('groq', 'local')[0]['ok'])
 
+    def test_selected_key_vision_recheck_clears_only_its_vision_denial(self):
+        for key in self.keys:
+            llm.mark_provider_restricted('groq',key,'vision')
+            llm.mark_provider_restricted('groq',key,'transcription')
+        with patch.object(llm,'_call_once',return_value='OK') as chat,patch.object(connection_check,'_vision') as vision:
+            rows=connection_check.check('groq','local',groq_key=self.keys[1],include_vision=True)
+        self.assertTrue(all(r['ok'] for r in rows))
+        self.assertEqual(chat.call_args.args[1],self.keys[1]);vision.assert_called_once_with(self.keys[1])
+        self.assertFalse(key_health.blocked('groq',self.keys[1],'vision'))
+        self.assertTrue(key_health.blocked('groq',self.keys[0],'vision'))
+        self.assertTrue(key_health.blocked('groq',self.keys[1],'transcription'))
+
+    def test_vision_recheck_sends_generated_image_to_selected_model(self):
+        response=types.SimpleNamespace(choices=[types.SimpleNamespace(message=types.SimpleNamespace(content='red'))])
+        with patch('openai.OpenAI') as sdk:
+            create=sdk.return_value.__enter__.return_value.chat.completions.create
+            create.return_value=response
+            connection_check._vision(self.keys[1])
+        self.assertEqual(sdk.call_args.kwargs['api_key'],self.keys[1])
+        request=create.call_args.kwargs
+        self.assertEqual(request['model'],llm.groq_vision_model())
+        self.assertEqual(request['reasoning_effort'],'none')
+        content=request['messages'][0]['content']
+        self.assertTrue(content[1]['image_url']['url'].startswith('data:image/png;base64,'))
+        import base64
+        from PyQt6.QtGui import QImage
+        image=QImage.fromData(base64.b64decode(content[1]['image_url']['url'].split(',',1)[1]))
+        self.assertEqual((image.width(),image.height()),(64,64))
+        self.assertEqual(image.pixelColor(32,32).getRgb()[:3],(220,30,30))
+
+    def test_recheck_429_does_not_mark_usable_key_restricted(self):
+        with patch.object(llm,'_call_once',return_value='OK'),patch.object(connection_check,'_vision',side_effect=RuntimeError('429 retry-after: 10')):
+            rows=connection_check.check('groq','local',groq_key=self.keys[1],include_vision=True)
+        self.assertTrue(any(not r['ok'] for r in rows))
+        self.assertFalse(key_health.blocked('groq',self.keys[1],'vision'))
+        self.assertGreater(llm.soonest_ready_wait('groq',self.keys[1:],scope='vision'),8)
+
+    def test_org_detection_requires_actual_denial_not_unrelated_words(self):
+        for text in ('organization_restricted','Organization has been restricted','Organization is restricted'):
+            self.assertTrue(llm.is_org_restricted(text))
+        for text in ('429 organization org_example rate limit','organization is not restricted','model access restricted for organization'):
+            self.assertFalse(llm.is_org_restricted(text))
+
     def test_worker_state_is_visible_in_ui_without_raw_keys_on_disk(self):
         key = self.keys[0]
         script = "from app.ai import key_health; key_health.record('groq', %r, 'transcription', 'restricted', %r)" % (key, key)
@@ -118,6 +161,25 @@ class KeyHealthTests(unittest.TestCase):
                 result = llm.check_groq_keys([self.keys[0]], max_workers=1)
             self.assertEqual(result['counts']['restricted'], 1)
             self.assertEqual(result['invalid'], [])
+
+    def test_generic_403_is_not_a_bad_key_or_auto_remove_candidate(self):
+        def forbidden(*args,**kwargs):
+            raise urllib.error.HTTPError('https://api.groq.com/test',403,'Forbidden',{},io.BytesIO(b'model access denied'))
+        with patch('urllib.request.urlopen',side_effect=forbidden):
+            self.assertEqual(llm.check_groq_key_valid(self.keys[0]),'error')
+            result=llm.check_groq_keys(self.keys[:1],max_workers=1)
+        self.assertEqual(result['invalid'],[])
+        self.assertEqual(result['counts']['error'],1)
+        self.assertFalse(key_health.blocked('groq',self.keys[0],'chat'))
+
+    def test_chat_success_does_not_reset_vision_cooldown(self):
+        key=self.keys[0]
+        llm.mark_limited('groq',key,'429 retry-after: 30',scope='vision')
+        llm.mark_ok('groq',key,scope='chat')
+        self.assertGreater(llm.soonest_ready_wait('groq',[key],scope='vision'),28)
+        self.assertEqual(key_health.read('groq',key,'chat')['state'],'ok')
+        llm.mark_ok('groq',key,scope='vision')
+        self.assertEqual(llm.soonest_ready_wait('groq',[key],scope='vision'),0)
 
     def _speech_client(self, on_call):
         def factory(api_key, **kwargs):
@@ -224,6 +286,51 @@ class KeyHealthTests(unittest.TestCase):
         with patch('openai.OpenAI', side_effect=factory), patch.object(llm.settings, 'groq_keys', return_value=self.keys):
             self.assertEqual(llm.complete_vision_json('test', [], provider='groq'), {'ok': True})
         self.assertEqual(calls, self.keys)
+
+    def test_vision_never_calls_a_key_during_its_cooldown(self):
+        llm.mark_limited('groq',self.keys[0],'429 retry-after: 30')
+        response=types.SimpleNamespace(choices=[types.SimpleNamespace(message=types.SimpleNamespace(content='{"ok":true}'))])
+        client=types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=lambda **kw:response)))
+        with patch('openai.OpenAI',return_value=client) as sdk,patch.object(llm.settings,'groq_keys',return_value=self.keys):
+            self.assertEqual(llm.complete_vision_json('test',[],provider='groq'),{'ok':True})
+        self.assertEqual([c.kwargs['api_key'] for c in sdk.call_args_list],[self.keys[1]])
+
+    def test_vision_all_cooling_reports_retry_without_api_request(self):
+        for key in self.keys:llm.mark_limited('groq',key,'429 retry-after: 30')
+        with patch('openai.OpenAI') as sdk,patch.object(llm.settings,'groq_keys',return_value=self.keys):
+            with self.assertRaises(llm.LLMError) as error:llm.complete_vision_json('test',[],provider='groq')
+        sdk.assert_not_called()
+        self.assertTrue(llm.is_rate_limit_error(str(error.exception)))
+        self.assertGreater(llm.soonest_ready_wait('groq',scope='vision'),25)
+
+    def test_vision_preserves_retry_after_header_when_body_has_no_wait(self):
+        error=RuntimeError('Error code: 429 - input tokens per minute exceeded')
+        error.response=types.SimpleNamespace(headers={'retry-after':'37'})
+        def create(**kwargs):raise error
+        client=types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create)))
+        with patch('openai.OpenAI',return_value=client),patch.object(llm.settings,'groq_keys',return_value=self.keys):
+            with self.assertRaises(llm.LLMError):llm.complete_vision_json('test',[],provider='groq')
+        wait=llm.soonest_ready_wait('groq',scope='vision')
+        self.assertGreater(wait,35);self.assertLessEqual(wait,37)
+
+    def test_story_vision_waits_for_header_then_resumes_same_request(self):
+        from app.ai import story_quality as q
+        clock=[1000.];calls=[]
+        error=RuntimeError('Error code: 429 - input tokens per minute exceeded')
+        error.response=types.SimpleNamespace(headers={'retry-after':'2'})
+        response=types.SimpleNamespace(choices=[types.SimpleNamespace(message=types.SimpleNamespace(content='{"ok":true}'))])
+        def create(**kwargs):
+            calls.append(clock[0])
+            if len(calls)==1:raise error
+            return response
+        def sleep(seconds):clock[0]+=seconds
+        client=types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create)))
+        with patch('openai.OpenAI',return_value=client),patch.object(llm.settings,'groq_keys',return_value=self.keys[:1]),\
+             patch.object(llm.settings,'llm_keys_for',return_value=self.keys[:1]),patch.object(llm,'active_provider',return_value='groq'),\
+             patch.object(llm.time,'time',side_effect=lambda:clock[0]),patch.object(q.time,'sleep',side_effect=sleep):
+            result=q.provider_call(lambda:llm.complete_vision_json('same image',[],provider='groq'),scope='vision')
+        self.assertEqual(result,{'ok':True})
+        self.assertEqual(len(calls),2);self.assertGreaterEqual(calls[1]-calls[0],2)
 
     def test_mixed_key_failures_report_counts_and_no_raw_secret(self):
         llm.mark_provider_restricted('groq', self.keys[0], 'chat')

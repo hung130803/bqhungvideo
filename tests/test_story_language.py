@@ -103,6 +103,34 @@ class LanguageTests(unittest.TestCase):
         self.assertLess(dlg.story_lang.y(),dlg.voice.y())
         self.assertTrue(dlg.story_lang.visibleRegion().isEmpty() is False)
 
+    def test_settings_tabs_retain_values_and_do_not_scroll_horizontally(self):
+        from PyQt6.QtWidgets import QPushButton
+        from PyQt6.QtGui import QFontDatabase
+        from app.ui.theme import apply_theme
+        for name in ('segoeui.ttf','segoeuib.ttf'):
+            font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/name
+            if font.is_file():QFontDatabase.addApplicationFont(str(font))
+        apply_theme(app)
+        dlg=self.dialog(story_start=True);dlg.resize(760,690);dlg.show();app.processEvents()
+        self.assertEqual(dlg.tabs.count(),3)
+        self.assertTrue(dlg.story_quality.text().startswith('BẬT'))
+        self.assertTrue(dlg.quality.isHidden())
+        dlg.story_lang.setCurrentIndex(dlg.story_lang.findData('vi'))
+        dlg.story_mix.setChecked(False);dlg.min_sec.setValue(65);dlg.max_sec.setValue(110)
+        for index,name in enumerate(('voice','script','visual')):
+            dlg.tabs.setCurrentIndex(index);app.processEvents()
+            self.assertEqual(dlg.section_scrolls[name].horizontalScrollBar().maximum(),0,name)
+            self.assertTrue(any(b.isVisibleTo(dlg) and 'Lưu' in b.text() for b in dlg.findChildren(QPushButton)))
+            screenshot=os.environ.get('BQ_SETTINGS_SCREENSHOTS')
+            if screenshot:
+                Path(screenshot).mkdir(parents=True,exist_ok=True);dlg.grab().save(str(Path(screenshot)/(name+'.png')))
+        self.assertTrue(dlg.story_mix.text().startswith('TẮT'))
+        with patch('config.update_env'):dlg._save()
+        reopened=self.dialog(story_start=True)
+        self.assertEqual(reopened.story_lang.currentData(),'vi')
+        self.assertFalse(reopened.story_mix.isChecked())
+        self.assertEqual((reopened.min_sec.value(),reopened.max_sec.value()),(65,110))
+
     def test_preview_uses_target_language_with_auto_and_multilingual_voice(self):
         dlg=self.dialog(story_start=True)
         dlg.story_lang.setCurrentIndex(dlg.story_lang.findData('vi'))

@@ -1,3 +1,12 @@
+# BQ Hung Video v2.50.22
+
+- Chia cài đặt dựng chuyện thành ba thẻ: Ngôn ngữ/giọng, Kịch bản/Part, Hình/âm thanh. Hiện rõ BẬT/TẮT; giữ cấu hình đã lưu và nút Lưu luôn nhìn thấy. Ẩn số lượt viết lại không áp dụng cho chế độ dựng chuyện kỹ.
+- Sửa Groq vision gọi lại key còn cooldown; đọc Retry-After của dịch vụ, giữ hạn mức hình ảnh khi chat thành công. Tiếp tục tôn trọng key/dịch vụ bị hạn chế và giới hạn thời gian thử.
+- Không coi lỗi 403 chung là bằng chứng key sai hoặc đề xuất xóa key. Nhận diện hạn chế tổ chức bằng thông báo cụ thể.
+- Cài đặt AI cho chọn key để kiểm tra lại chat, chép lời và hình ảnh. Mẫu kiểm tra là âm thanh/ảnh màu tạo sẵn, không gửi video người dùng. Thành công ở dịch vụ nào chỉ mở lại trạng thái dịch vụ đó.
+- Sửa phụ đề cụm vượt khoảng im lặng, bị gom lại qua chỗ ngắt, hoặc kéo dài quá cuối lời đọc. Xuất lại Part để áp dụng; không cần phân tích lại chỉ để sửa thời gian chữ.
+- Bản này không tăng hạn mức Groq, không tự mở khóa tài khoản và không cam kết chất lượng kịch bản/giọng đọc như người dựng chuyên nghiệp.
+
 # BQ Hung Video v2.50.21
 
 - Sửa chữ trong khung phóng sự còn hiện sau khi đọc: dùng mốc giọng thực tế, ẩn trong khoảng ngắt và khi đọc xong; vẫn khớp khi đổi tốc độ xuất.

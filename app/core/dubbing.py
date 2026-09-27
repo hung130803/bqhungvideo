@@ -3458,8 +3458,18 @@ def _phrase_groups_from_words(words: list, start: float,
     `_co_cum` vì 1 phần tử = 1 KÝ TỰ."""
     out = []
     group = _co_cum("".join(str(w[2]) for w in words or []), group)
-    for i in range(0, len(words or []), group):
-        g = words[i:i + group]
+    chunks, current = [], []
+    for word in words or []:
+        # A phrase may contain fewer words at a measured pause. Filling the
+        # word quota across silence leaves old text visible after speech.
+        if current and (len(current) >= group or
+                        float(word[0]) - float(current[-1][1]) >= _CLAMP_MIN_SIL):
+            chunks.append(current)
+            current = []
+        current.append(word)
+    if current:
+        chunks.append(current)
+    for g in chunks:
         txt = _noi_tu([str(w[2]).strip() for w in g if str(w[2]).strip()])
         if not txt:
             continue

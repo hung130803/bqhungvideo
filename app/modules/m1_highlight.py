@@ -2549,7 +2549,8 @@ def _group_recap_cues(cues: list, out_kind: str) -> list:
     other = [c for c in cues
              if not (len(c) > 3 and str(c[3]) in ("word", "orig_word"))]
     grouped = [(a, b, txt, out_kind)
-               for a, b, txt in _cap.group_word_cues(word_cues)]
+               for a, b, txt in _cap.group_word_cues(
+                   word_cues, gap=0.18 if out_kind == 'sent' else 0.6)]
     out = list(other) + grouped
     out.sort(key=lambda c: c[0])
     return out
@@ -2601,10 +2602,11 @@ def _recap_caption_cues(narr_events: list) -> list:
                     end = words[i + 1][0]
                 else:
                     end = b + tail
-                end = min(end, n_end) if not clamped else end
                 a = max(float(n["start"]), float(a))
-                cues.append((round(a, 3), round(max(a + 0.05, end), 3),
-                             wtxt, "word"))
+                end = min(n_end, max(a + 0.05, end))
+                a, end = round(a, 3), round(end, 3)
+                if end > a:
+                    cues.append((a, end, wtxt, "word"))
             continue
         # FALLBACK theo câu (Gemini/không word boundary HOẶC clamped mà cue bị
         # xóa hết): chia câu-cụm theo SỐ KÝ TỰ, phân bố ĐỀU trên KHOẢNG CÓ

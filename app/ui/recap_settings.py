@@ -59,7 +59,7 @@ from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from app.ui.appsettings import app_settings
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,QFileDialog,
+    QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,QFileDialog,QTabWidget,
 )
 
 from app.ai.recap import DEFAULT_STYLE, STYLES
@@ -88,6 +88,14 @@ _AUTO_VOICE_LABEL = "Tự chọn theo ngôn ngữ kịch bản (khuyên dùng)"
 _VOICE_CACHE: dict = {}
 
 
+def _switch(label):
+    box=QCheckBox()
+    box.setAccessibleName(label)
+    def refresh(enabled):box.setText(('BẬT  ·  ' if enabled else 'TẮT  ·  ')+label)
+    box.toggled.connect(refresh);refresh(False)
+    return box
+
+
 class RecapSettingsDialog(QDialog):
     """Cài đặt riêng cho 🎙 Reup thuyết minh. exec() -> Accepted = đã lưu."""
 
@@ -110,18 +118,35 @@ class RecapSettingsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
-        outer.addWidget(scroll, 1)
+        if voice_only:
+            outer.addWidget(scroll, 1)
+        else:
+            self.tabs=QTabWidget()
+            self.tabs.addTab(scroll,'1. Ngôn ngữ · giọng')
+            self.section_layouts={'voice':lay};self.section_scrolls={'voice':scroll}
+            for name,title in [('script','2. Kịch bản · Part'),('visual','3. Hình · âm thanh')]:
+                page=QWidget();page_layout=QVBoxLayout(page);page_layout.setSpacing(12)
+                page_scroll=QScrollArea();page_scroll.setWidgetResizable(True);page_scroll.setWidget(page)
+                self.tabs.addTab(page_scroll,title)
+                self.section_layouts[name]=page_layout;self.section_scrolls[name]=page_scroll
+            outer.addWidget(self.tabs,1)
+            self.setStyleSheet('''
+                QTabBar::tab { padding: 10px 12px; background: #1C2438; color: #BECBE0; }
+                QTabBar::tab:selected { background: #2C4A76; color: #FFFFFF; border-bottom: 3px solid #6FAAFF; }
+                QTabWidget::pane { border: 1px solid #40516E; }
+                QCheckBox { spacing: 9px; background: transparent; padding: 5px 0; }
+                QCheckBox::indicator { width: 17px; height: 17px; border: 2px solid #A8B8D0; border-radius: 4px; }
+                QCheckBox::indicator:checked { background: #4C8DFF; border-color: #A9CBFF; }
+                QComboBox:disabled { color: #A8B8D0; }
+            ''')
         self.settings_scroll = scroll
-        fit_dialog(self, 690, 690)
+        fit_dialog(self, 800, 720)
 
         # ---- Ghi chú minh bạch: cái gì lấy từ đâu ----
-        note = QLabel(
-            "Khung 9:16, nền, logo, nhạc nền, hiệu ứng, lật gương, phụ đề "
-            "đoạn GỐC và CHỮ AI ĐỌC (màu/vị trí/cỡ/nghiêng/hoa) lấy từ 'Chỉnh "
-            "mẫu'. Ở đây chỉnh phần GIỌNG + KỊCH BẢN + ĐỘ DÀI của Reup.")
+        note = QLabel('Chọn lần lượt 3 nhóm bên dưới. Phụ đề, logo và khung xuất chi tiết nằm trong Chỉnh mẫu. Cấu hình chỉ được lưu khi bấm Lưu.')
         note.setWordWrap(True)
-        note.setStyleSheet("color: #8a8f98; font-size: 11px;")
-        lay.addWidget(note)
+        note.setStyleSheet("color: #B6C4D9; font-size: 12px;")
+        outer.insertWidget(0,note)
 
         if not voice_only:
             lay.addWidget(QLabel('<b>Ngôn ngữ đầu ra</b> — kịch bản và giọng AI đọc'))
@@ -140,13 +165,10 @@ class RecapSettingsDialog(QDialog):
         self.voice = QComboBox()
         self.voice.setMinimumWidth(280)
         self.voice.setToolTip(
-            "Để 'Tự chọn' thì app dùng giọng hot nhất của ĐÚNG ngôn ngữ "
-            "kịch bản đầu ra.\nChọn cứng 1 giọng nếu muốn mọi clip cùng giọng:\n"
-            "· 🔥 ĐỀ XUẤT = mượt & hot nhất, có mô tả từng giọng\n"
-            "· 🎧 ElevenLabs = chất lượng CAO NHẤT (cần key, free 10k ký tự/"
-            "tháng — không chỉnh nhịp/tông, hết hạn mức tự lùi edge-tts)\n"
-            "· giọng 'đa ngôn ngữ' đọc được MỌI thứ tiếng\n"
-            "· 🌟 Gemini nét nhất (cần key, hạn mức free thấp).")
+            "Tự chọn dùng giọng mặc định theo ngôn ngữ kịch bản. "
+            "Chọn một giọng cụ thể nếu muốn các Part dùng cùng giọng.\n"
+            "Nghe thử để đánh giá; khả năng biểu cảm và ngôn ngữ phụ thuộc dịch vụ. "
+            "Dựng chuyện kỹ sẽ báo khi giọng đã chọn không dùng được, không âm thầm đổi giọng.")
         self.voice.addItem(_AUTO_VOICE_LABEL, "")
         vrow.addWidget(self.voice, 1)
         self.prev_btn = QPushButton("🔊 Nghe thử")
@@ -176,7 +198,7 @@ class RecapSettingsDialog(QDialog):
             "'nữ'. Xóa chữ để hiện lại đầy đủ.")
         self.search.textChanged.connect(self._rebuild_voice_combo)
         srow.addWidget(self.search, 1)
-        self.all_chk = QCheckBox("Hiện tất cả giọng (~500)")
+        self.all_chk = _switch("Hiện toàn bộ giọng")
         self.all_chk.setToolTip(
             "TẮT (mặc định): chỉ hiện giọng 🔥 đề xuất + ⭐ hot (đã kiểm "
             "chứng mượt).\nBẬT: hiện TOÀN BỘ kho ~500 giọng edge-tts của "
@@ -188,9 +210,7 @@ class RecapSettingsDialog(QDialog):
         self.count_lbl.setToolTip("Số giọng chọn được trong danh sách.")
         self.count_lbl.setStyleSheet("color: #8a8f98; font-size: 11px;")
         lay.addWidget(self.count_lbl)
-        hint = QLabel("💡 Mẹo: giọng 'đa ngôn ngữ' đọc được mọi thứ tiếng — "
-                      "hợp kênh reup nhiều nguồn. Bấm 🔊 nghe thử trước khi "
-                      "chốt.")
+        hint = QLabel('Nghe thử trước khi chọn. Giọng đa ngôn ngữ chỉ đọc được các ngôn ngữ mà dịch vụ hỗ trợ; tên giọng không bảo đảm độ tự nhiên.')
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #8a8f98; font-size: 11px;")
         lay.addWidget(hint)
@@ -223,6 +243,7 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(self.volume)
 
         # ---- 🔦 Làm tối video khi AI kể (spotlight) ----
+        lay=self.section_layouts['visual']
         self.dim_lbl = QLabel()
         lay.addWidget(self.dim_lbl)
         self.dim = QSlider(Qt.Orientation.Horizontal)
@@ -236,8 +257,9 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(self.dim)
 
         # ---- Chất lượng kịch bản AI (đánh đổi chất lượng vs token/ngày Groq) ----
-        lay.addWidget(QLabel(
-            "<b>Chất lượng kịch bản AI</b> — AI viết lời thuyết minh kỹ tới mức nào"))
+        lay=self.section_layouts['script']
+        quality_label=QLabel('<b>Số lượt viết lại</b> — chỉ dùng khi tắt Dựng chuyện kỹ')
+        lay.addWidget(quality_label)
         self.quality = QComboBox()
         for label, key in (
                 ("Cân bằng (khuyên dùng) — video dài tự tiết kiệm", "balance"),
@@ -245,22 +267,24 @@ class RecapSettingsDialog(QDialog):
                 ("Tiết kiệm — nhanh & ít token nhất (1 lượt)", "save")):
             self.quality.addItem(label, key)
         self.quality.setToolTip(
-            "Nhiều-pass = AI viết nháp -> tự chấm -> viết lại hay hơn (tốn "
-            "token gấp 2-3).\n"
-            "• Cân bằng: bật nhiều-pass cho video NGẮN, video DÀI dùng 1 lượt "
-            "để KHÔNG chạm hạn mức token/ngày Groq.\n"
-            "• Tối đa: nhiều-pass MỌI video — hay nhất nhưng video dài dễ HẾT "
-            "LƯỢT NGÀY (cần nhiều key từ nhiều nick).\n"
-            "• Tiết kiệm: luôn 1 lượt — nhanh, ít token, chất lượng vẫn tốt.")
+            "Chỉ áp dụng cho thuyết minh thường. Cân bằng giảm lượt viết lại ở video dài; "
+            "Tối đa tăng lượt kiểm tra/viết lại; Tiết kiệm dùng một lượt. "
+            "Nhiều lượt tốn thêm hạn mức và không bảo đảm nội dung hay hơn.")
         lay.addWidget(self.quality)
-        self.story_quality = QCheckBox('AI dựng chuyện kỹ — đối chiếu hình, lời và hook')
+        self.story_quality = _switch('AI dựng chuyện kỹ · đối chiếu hình, lời và hook')
         self.story_quality.setToolTip('Lấy mẫu hình xuyên suốt nguồn, viết/kiểm tra từng Part. Bạn phải xem/sửa và duyệt kịch bản trước khi xuất. Giữ lời đã duyệt; câu quá dài sẽ báo để sửa.')
         self.story_quality.setChecked(str(self._s.value('story_quality',False)).lower() in ('true','1'))
         self.story_quality.toggled.connect(lambda enabled:self.quality.setEnabled(not enabled))
+        def show_legacy_quality(enabled):
+            quality_label.setVisible(not enabled);self.quality.setVisible(not enabled)
+        self.story_quality.toggled.connect(show_legacy_quality)
+        show_legacy_quality(self.story_quality.isChecked())
         self.quality.setEnabled(not self.story_quality.isChecked())
         lay.addWidget(self.story_quality)
         story_note=QLabel('Dựng chuyện kỹ cần bạn duyệt kịch bản từng Part tại Video & clip; Dây chuyền và tự xuất sẽ chờ duyệt đủ. Chọn giọng ở trên; nhạc, hiệu ứng và phụ đề theo mẫu xuất. Groq có thể nhận sai hình; hãy xem nguồn trước khi duyệt.')
         story_note.setWordWrap(True);lay.addWidget(story_note)
+        lay=self.section_layouts['visual']
+        lay.addWidget(QLabel('<b>Nhạc nền</b> — chọn tệp hoặc chọn trong thư viện'))
         self.story_music=QLineEdit(str(self._s.value('story_music_path','') or ''))
         self.story_music.setPlaceholderText('Nhạc nền dựng chuyện · bỏ trống để dùng nhạc của mẫu')
         self.music_description=QLabel('');self.music_description.setWordWrap(True)
@@ -286,13 +310,14 @@ class RecapSettingsDialog(QDialog):
         library.clicked.connect(choose_library)
         lay.addLayout(music_row);lay.addWidget(self.music_description)
 
-        self.story_mix=QCheckBox('Phối nhạc theo lời kể: hạ nhạc khi có giọng, vào/ra nhạc êm')
+        self.story_mix=_switch('Hạ nhạc khi có lời kể · vào/ra nhạc êm')
         self.story_mix.setChecked(str(self._s.value('story_audio_mix',True)).lower() in ('true','1'))
         lay.addWidget(self.story_mix)
-        self.story_sfx=QCheckBox('Tiếng động theo tình tiết · tối đa 3 điểm nhấn AI mỗi Part')
+        self.story_sfx=_switch('Tiếng động theo tình tiết · tối đa 3 điểm nhấn/Part')
         self.story_sfx.setChecked(str(self._s.value('story_sfx',True)).lower() in ('true','1'))
         lay.addWidget(self.story_sfx)
         from app.core.editorial import STYLES as EDIT_STYLES
+        lay.addWidget(QLabel('<b>Dựng hình và bố cục</b>'))
         self.edit_style=QComboBox();self.edit_style.addItem('Dựng hình: giữ mẫu hiện tại','off')
         for code,label in EDIT_STYLES.items():self.edit_style.addItem('Dựng hình: '+label,code)
         self.edit_style.setCurrentIndex(max(0,self.edit_style.findData(str(self._s.value('story_edit_style','off')))))
@@ -306,10 +331,10 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(self.story_layout)
 
         # ---- Số clip thuyết minh ----
+        lay=self.section_layouts['script']
         crow = QHBoxLayout()
         # ghi rõ "(Part)" để khỏi lẫn với "Số cảnh ghép" bên dưới
-        crow.addWidget(QLabel("<b>Số clip (Part) mỗi video</b> — chia video "
-                              "thành từng chương"))
+        crow.addWidget(QLabel("<b>Số Part mỗi video</b>"))
         self.count = QSpinBox()
         self.count.setRange(0, 8)
         # giá trị 0 hiện thành option "Tự động theo độ dài" (mặc định)
@@ -379,6 +404,7 @@ class RecapSettingsDialog(QDialog):
         # chỉ còn giọng/kịch bản/độ dài của Reup.)
 
         # ---- Nhịp kể + Tông giọng ----
+        lay=self.section_layouts['voice']
         prow = QHBoxLayout()
         pcol1 = QVBoxLayout()
         pcol1.addWidget(QLabel("<b>Nhịp kể</b> — tốc độ giọng đọc"))
@@ -403,8 +429,7 @@ class RecapSettingsDialog(QDialog):
         lay.addLayout(prow)
 
         # ---- 🎭 Giọng cảm xúc (audio tag ElevenLabs v3) ----
-        self.emotion = QCheckBox(
-            "🎭 Giọng cảm xúc (nhấn nhá như người thật)")
+        self.emotion = _switch('Biểu cảm bổ sung · tùy giọng hỗ trợ')
         self.emotion.setToolTip(
             "AI đạo diễn TỰ chèn cảm xúc vào lời kể (hào hứng, thì thầm, "
             "ngừng kịch tính, nhấn từ khoá gây sốc) để giọng lên xuống như "
@@ -416,6 +441,11 @@ class RecapSettingsDialog(QDialog):
             "· Phụ đề LUÔN sạch (không bao giờ hiện [excited] hay CHỮ HOA "
             "nhấn).")
         lay.addWidget(self.emotion)
+        emotion_note=QLabel('Giọng Edge không hỗ trợ thẻ cảm xúc như ElevenLabs. Điều chỉnh nhịp/tông không bảo đảm giọng đọc giống người thật.')
+        emotion_note.setWordWrap(True);emotion_note.setStyleSheet('color: #B6C4D9;')
+        lay.addWidget(emotion_note)
+        for section in self.section_layouts.values():section.addStretch(1)
+        for label in self.findChildren(QLabel):label.setWordWrap(True)
 
         # ---- Nút ----
         brow = QHBoxLayout()
@@ -423,7 +453,7 @@ class RecapSettingsDialog(QDialog):
         cancel = QPushButton("Hủy")
         cancel.clicked.connect(self.reject)
         brow.addWidget(cancel)
-        save = QPushButton('Lưu & bắt đầu phân tích' if story_start else 'Lưu')
+        save = QPushButton('Lưu và bắt đầu phân tích' if story_start else 'Lưu')
         save.setProperty("primary", True)
         save.setDefault(True)
         save.clicked.connect(self._save)
@@ -565,6 +595,7 @@ class RecapSettingsDialog(QDialog):
             try:validate_voice(self.voice.currentData() or '',self.story_lang.currentData())
             except ValueError as exc:
                 QMessageBox.warning(self,'Chọn giọng phù hợp',str(exc)+'\nChọn Tự chọn hoặc giọng cùng ngôn ngữ đầu ra.')
+                self.tabs.setCurrentIndex(0)
                 self.settings_scroll.ensureWidgetVisible(self.voice)
                 return
         self._s.setValue('story_quality',self.story_quality.isChecked())
