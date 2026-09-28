@@ -16,6 +16,9 @@ VERSION=4
 MIN_PART_SECONDS=61.0
 MAX_PART_SECONDS=119.0
 _VISION_SLOTS=threading.BoundedSemaphore(3)
+VISUAL_SCHEMA={'type':'OBJECT','properties':{
+    'visible':{'type':'STRING'},'uncertain':{'type':'STRING'}},
+    'required':['visible','uncertain']}
 
 
 class VisionContext:
@@ -27,7 +30,8 @@ class VisionContext:
         with self._lock:self._wait_until=max(self._wait_until,time.monotonic()+seconds)
     def status(self):
         with self._lock:left=self._wait_until-time.monotonic()
-        return f' · Groq giới hạn phút, chờ ~{math.ceil(left)}s' if left>0 else ''
+        provider=llm.active_provider().capitalize()
+        return f' · {provider} đang giới hạn, chờ ~{math.ceil(left)}s' if left>0 else ''
 
 
 class StoryContext:
@@ -69,8 +73,8 @@ def provider_call(call,check=None,scope='chat',on_wait=None):
                     while remaining>0:
                         canceled();step=min(.2,remaining);time.sleep(step);remaining-=step
                     continue
-            transient=any(x in str(exc).lower() for x in ('error code: 502','error code: 503',
-                'error code: 504','over capacity','connection error','timed out'))
+            transient=llm.is_transient_error(str(exc)) or any(x in str(exc).lower()
+                for x in ('over capacity','model is overloaded'))
             if not transient or attempt==2:raise
             # Server overload is not a bad key. Back off, checking cancellation.
             for _ in range(10*2**attempt):
@@ -147,11 +151,31 @@ def visual_evidence(src,unit,transcript,ctx,fractions=(.5,)):
             while not _VISION_SLOTS.acquire(timeout=.2):ctx.check_canceled()
             try:
                 with llm.bounded_call(180,ctx.check_canceled):
-                    value=provider_call(lambda:llm.complete_vision_json(prompt,[path],system=SYSTEM,key_dau=unit['id'],request_timeout=45),ctx.check_canceled,
-                                        scope='vision',on_wait=getattr(ctx,'wait_for_provider',None))
+                    gemini=llm.active_provider()=='gemini'
+                    options={'response_schema':VISUAL_SCHEMA} if gemini else {}
+                    # Retry the SAME source image, never manufacture observations
+                    # from a transcript or accept salvaged/truncated evidence.
+                    for attempt in range(2 if gemini else 1):
+                        ctx.check_canceled()
+                        retry_prompt=prompt+ ('\nReturn one JSON object only. visible must be a nonempty '
+                            'string describing this image, uncertain must be a string. '
+                            'For a blank/unclear frame, describe that limitation truthfully.' if attempt else '')
+                        try:
+                            value=provider_call(lambda:llm.complete_vision_json(retry_prompt,[path],system=SYSTEM,
+                                key_dau=unit['id'],request_timeout=45,**options),ctx.check_canceled,
+                                scope='vision',on_wait=getattr(ctx,'wait_for_provider',None))
+                            if (not isinstance(value,dict) or not isinstance(value.get('visible'),str)
+                                or not value['visible'].strip() or
+                                ('uncertain' in value and not isinstance(value['uncertain'],str))):
+                                raise llm.LLMInvalidVision('Thiếu mô tả cảnh hoặc mô tả không đúng kiểu dữ liệu.')
+                            break
+                        except llm.LLMInvalidVision as exc:
+                            if gemini and attempt==0:continue
+                            provider=llm.active_provider().capitalize()
+                            raise RuntimeError(f'{provider}: kết quả hình tại {at:.1f}s chưa hợp lệ '
+                                f'sau {attempt+1} lần. {exc} '
+                                'Đã giữ các cảnh kiểm tra xong; bấm Thử lại để tiếp tục.') from None
             finally:_VISION_SLOTS.release()
-            if not isinstance(value,dict) or not isinstance(value.get('visible'),str) or not value['visible'].strip():
-                raise RuntimeError('AI xem hình chưa trả căn cứ hợp lệ; thử lại để tiếp tục từ phần đã kiểm tra.')
             notes.append({'at':round(at,3),'visible':value['visible'][:1800],'uncertain':str(value.get('uncertain',''))[:800]})
         return dict(unit,transcript=transcript,observations=notes)
 

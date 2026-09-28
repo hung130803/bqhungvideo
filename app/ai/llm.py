@@ -1795,9 +1795,101 @@ def _b64(path: str) -> str:
         return base64.b64encode(f.read()).decode()
 
 
+class LLMInvalidVision(LLMError):
+    """A completed request returned unusable evidence, not an invalid key."""
+
+
+def _gemini_vision_json(prompt, image_paths, system, key_dau, request_timeout,
+                        response_schema):
+    import google.generativeai as genai
+    from app.ai import key_health
+    keys = list(dict.fromkeys(settings.llm_keys_for('gemini')))
+    if not keys:
+        raise LLMError('Chưa cấu hình key Gemini cho hình ảnh.')
+    ensure_provider_available('gemini', keys, 'vision')
+    parts = [prompt]
+    for path in image_paths:
+        with open(path, 'rb') as stream:
+            parts.append({'mime_type': 'image/jpeg', 'data': stream.read()})
+    config = {'response_mime_type': 'application/json', 'temperature': 0.2,
+              'max_output_tokens': 8192}
+    if response_schema is not None:
+        config['response_schema'] = response_schema
+    last = ''
+    for key in pick_keys('gemini', keys, start_at=int(key_dau), scope='vision'):
+        _check_call_budget()
+        if key_health.blocked('gemini', key, 'vision'):
+            continue
+        with _KEY_LOCK:
+            state = _KEY_STATE.get(('gemini', key))
+            unavailable = _is_invalid(state) or _is_limited(state, time.time())
+        if unavailable:
+            continue
+        # SDK configure is global. Wait cancelably, and compute the remaining
+        # request timeout AFTER acquiring the lock, not before queueing for it.
+        while not _GEMINI_LOCK.acquire(timeout=.2):
+            _check_call_budget()
+        try:
+            budget = _check_call_budget()
+            timeout = min(request_timeout or 120, budget or 120)
+            mark_used('gemini', key)
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(settings.GEMINI_MODEL,
+                                           system_instruction=system or None)
+            try:
+                resp = model.generate_content(parts, generation_config=config,
+                    request_options={'timeout': timeout, 'retry': None})
+            except Exception as exc:
+                last = str(exc)
+                for secret in keys:
+                    last = last.replace(secret, '[key]')
+                if is_too_large_error(last):
+                    raise LLMTooLarge('Gemini: yêu cầu hình ảnh quá lớn; cần giảm dữ liệu gửi.') from None
+                if is_rate_limit_error(last):
+                    headers = getattr(getattr(exc, 'response', None), 'headers', {}) or {}
+                    mark_limited('gemini', key, last,
+                        retry_after=headers.get('retry-after'), scope='vision')
+                    continue
+                if is_auth_error(last):
+                    mark_invalid('gemini', key)
+                    continue
+                # Permission/model/content errors must not condemn every key.
+                raise LLMError('Gemini/hình ảnh: ' + last[:350]) from None
+        finally:
+            _GEMINI_LOCK.release()
+        _check_call_budget()
+        usage = getattr(resp, 'usage_metadata', None)
+        if usage:
+            _add_usage(getattr(usage, 'prompt_token_count', 0),
+                       getattr(usage, 'candidates_token_count', 0))
+        feedback = getattr(resp, 'prompt_feedback', None)
+        blocked = getattr(feedback, 'block_reason', 0) if feedback else 0
+        candidates = getattr(resp, 'candidates', ()) or ()
+        finish = getattr(candidates[0], 'finish_reason', 0) if candidates else 0
+        # Gemini enums: STOP=1, MAX_TOKENS=2; all other nonzero finishes
+        # (safety, recitation, prohibited content...) are not retryable JSON errors.
+        if blocked or finish not in (0, 1, 2):
+            raise LLMError('Gemini không cung cấp nội dung hình ảnh '
+                           f'(block_reason={blocked}, finish_reason={finish}). '
+                           'Không đánh dấu key hỏng; chưa dùng cảnh này để viết kịch bản.')
+        if finish == 2:
+            raise LLMInvalidVision('Gemini trả kết quả hình ảnh bị cắt giữa chừng (MAX_TOKENS).')
+        try:
+            value = _extract_json(resp.text or '', cho_vot=False)
+        except (ValueError, TypeError, AttributeError):
+            raise LLMInvalidVision('Gemini trả kết quả hình ảnh rỗng hoặc sai định dạng JSON.') from None
+        mark_ok('gemini', key, scope='vision')
+        return value
+    wait = soonest_ready_wait('gemini', keys, scope='vision')
+    if wait is not None and wait > 0:
+        last = f'429: Hạn mức Gemini; retry-after: {wait:.3f}s trước khi thử tiếp.'
+    raise LLMError(key_failure_message('gemini', keys, 'vision', last))
+
+
 def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                          provider: Optional[str] = None, key_dau: int = 0,
-                         request_timeout: Optional[float] = None):
+                         request_timeout: Optional[float] = None,
+                         response_schema: Optional[dict] = None):
     """
     Gửi NHIỀU ẢNH + text cho model vision -> JSON. Dùng để chấm viral theo khung hình.
     Hỗ trợ ollama (qwen2.5vl) và gemini. Ném LLMError nếu lỗi.
@@ -1812,6 +1904,11 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
     nguyên ý nghĩa.
     """
     provider = provider or active_provider()
+    # Keep cancellation exceptions intact; the legacy generic wrapper below
+    # otherwise converts them to ordinary provider failures.
+    if provider == 'gemini':
+        return _gemini_vision_json(prompt, image_paths, system, key_dau,
+                                  request_timeout, response_schema)
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     used_key = ""                       # key đang dùng -> ghi sổ trạng thái
     try:
@@ -1931,27 +2028,6 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
             mark_ok(provider, used_key)
             return _extract_json(resp.choices[0].message.content or "")
 
-        if provider == "gemini":
-            import google.generativeai as genai
-            parts = [prompt]
-            for p in image_paths:
-                with open(p, "rb") as f:
-                    parts.append({"mime_type": "image/jpeg", "data": f.read()})
-            used_key = (settings.llm_key_for("gemini")
-                        or settings.GEMINI_API_KEY)
-            mark_used(provider, used_key)
-            with _GEMINI_LOCK:
-                genai.configure(api_key=used_key)
-                model = genai.GenerativeModel(settings.GEMINI_MODEL,
-                                              system_instruction=system or None)
-                resp = model.generate_content(
-                    parts, request_options={"timeout": 120})
-            um = getattr(resp, "usage_metadata", None)
-            if um:
-                _add_usage(getattr(um, "prompt_token_count", 0),
-                           getattr(um, "candidates_token_count", 0))
-            mark_ok(provider, used_key)
-            return _extract_json(resp.text or "")
     except LLMError:
         raise
     except Exception as e:  # noqa: BLE001

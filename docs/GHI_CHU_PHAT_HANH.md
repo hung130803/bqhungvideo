@@ -1,3 +1,10 @@
+# BQ Hung Video v2.50.23
+
+- Sửa Gemini đọc hình: yêu cầu JSON theo cấu trúc mô tả cảnh, từ chối nội dung bị cắt dở. Cảnh trả sai định dạng được thử lại một lần với cùng ảnh; không lấy lời thoại thay cho căn cứ hình ảnh.
+- Phần hình ảnh Gemini dùng danh sách key và trạng thái chờ, xoay khi 429/key sai; không đánh dấu key hỏng vì lỗi định dạng, quyền truy cập hay nội dung bị chặn.
+- Áp dụng thời hạn gọi và kiểm tra hủy trong lúc chờ Gemini. Thông báo lỗi ghi vị trí cảnh; vẫn giữ kết quả các cảnh đã kiểm tra để tiếp tục.
+- Các key cùng project Google vẫn dùng chung hạn mức; bản sửa không tăng quota và không tự chuyển sang dịch vụ tính phí khác.
+
 # BQ Hung Video v2.50.22
 
 - Chia cài đặt dựng chuyện thành ba thẻ: Ngôn ngữ/giọng, Kịch bản/Part, Hình/âm thanh. Hiện rõ BẬT/TẮT; giữ cấu hình đã lưu và nút Lưu luôn nhìn thấy. Ẩn số lượt viết lại không áp dụng cho chế độ dựng chuyện kỹ.
