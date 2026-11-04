@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
 )
 
+from app.ui.theme import FS_SM, SP_3, SP_4, pad, set_role, set_variant
 from app.version import __version__
 
 
@@ -39,7 +40,7 @@ class UpdateDialog(QDialog):
         self.auto_ok = bool(can_auto_update() and info.get("asset_url"))
 
         v = QVBoxLayout(self)
-        v.setSpacing(10)
+        pad(v, SP_4 + 4, SP_4, spacing=SP_3)
         head = QLabel(f"<b>Đã có phiên bản mới {info['tag']}</b>"
                       f"  (bạn đang dùng v{__version__})")
         head.setWordWrap(True)
@@ -52,7 +53,7 @@ class UpdateDialog(QDialog):
             nl.setReadOnly(True)
             nl.setMinimumHeight(120)
             nl.setMaximumHeight(260)
-            nl.setStyleSheet("font-size:12px;")
+            f = nl.font(); f.setPixelSize(FS_SM); nl.setFont(f)
             v.addWidget(nl)
 
         self.status = QLabel(
@@ -60,6 +61,7 @@ class UpdateDialog(QDialog):
             "không phải làm gì thêm." if self.auto_ok else
             "Bản này không hỗ trợ tự cập nhật — bấm nút để mở trang tải.")
         self.status.setWordWrap(True)
+        set_role(self.status, "muted")
         v.addWidget(self.status)
 
         self.bar = QProgressBar()
@@ -72,9 +74,11 @@ class UpdateDialog(QDialog):
         row.addStretch(1)
         self.later = QPushButton("Để sau")
         self.later.clicked.connect(self.reject)
+        set_variant(self.later, "ghost")
         row.addWidget(self.later)
         self.go = QPushButton("Cập nhật ngay" if self.auto_ok else "Mở trang tải")
         self.go.setDefault(True)
+        set_variant(self.go, "primary")
         self.go.clicked.connect(self._on_go)
         row.addWidget(self.go)
         v.addLayout(row)

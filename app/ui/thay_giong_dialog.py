@@ -81,6 +81,9 @@ from app.ui.editor import nut_chon_mau
 from app.ui.theme import (
     ACCENT, BASE, BORDER, DANGER, MUTED, SUCCESS, SURFACE, SURFACE_HOVER, TEXT,
     WARN,
+    FS_LG, FS_MD, FS_SM, FS_XS, H_COMPACT, H_DEFAULT, R_LG, R_MD, R_SM, SP_1, SP_2,
+    SP_3, SP_4, card, fit_width, pad, rgba, set_phase, set_prop, set_role,
+    set_size, set_style, set_tone, set_variant,
 )
 
 #: Khoá QSettings — đủ để mở lại hộp là thấy y nguyên lần trước.
@@ -928,6 +931,8 @@ class HopGiongToi(QDialog):
     _vn_xong = pyqtSignal(bool, str)
     #: tải bộ Chatterbox (nhân bản ĐA NGÔN NGỮ) xong (ok, lời)
     _cb_xong = pyqtSignal(bool, str)
+    #: đổi file mẫu sang wav (để nghe thử) xong ở luồng nền (wav, lỗi)
+    _mau_wav_xong = pyqtSignal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -942,7 +947,7 @@ class HopGiongToi(QDialog):
         from app.core import nhan_ban_giong as NB
         lb_pl = QLabel("LƯU Ý PHÁP LÝ: " + NB.CANH_BAO_PHAP_LY)
         lb_pl.setWordWrap(True)
-        lb_pl.setStyleSheet("color:#FFB86C")
+        set_style(lb_pl, None, 'warn')
         lay.addWidget(lb_pl)
 
         lay.addWidget(QLabel("Giọng đã lưu:"))
@@ -1028,7 +1033,7 @@ class HopGiongToi(QDialog):
         lay.addLayout(h_nn)
         self.lb_nn = QLabel("")
         self.lb_nn.setWordWrap(True)
-        self.lb_nn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        set_style(self.lb_nn, 'hint', None)
         lay.addWidget(self.lb_nn)
 
         # ---- hàng TẢI BỘ CHATTERBOX (chỉ hiện khi chọn tiếng KHÁC tiếng Việt)
@@ -1093,6 +1098,7 @@ class HopGiongToi(QDialog):
         lay.addWidget(self.lb_tt)
 
         self._nghe_xong.connect(self._nghe_giong_xong)
+        self._mau_wav_xong.connect(self._nghe_mau_ket_qua)
         self._nb_xong.connect(self._tai_nhan_ban_xong)
         self._vn_xong.connect(self._tai_vieneu_xong)
         self._cb_xong.connect(self._tai_chatter_xong)
@@ -1152,7 +1158,7 @@ class HopGiongToi(QDialog):
             self.lb_nn.setText(
                 "Tiếng Việt đi bằng VieNeu: KHÔNG cần GPU, KHÔNG bị đóng dấu "
                 "chìm. Đây là đường nhẹ nhất.")
-            self.lb_nn.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_nn, 'hint', 'success')
         else:
             nhip = CB_C.canh_bao_nhip(nn)
             self.lb_nn.setText(
@@ -1162,7 +1168,7 @@ class HopGiongToi(QDialog):
                 f"vô nghĩa mà vẫn báo thành công), nên nó BỔ SUNG cho VieNeu "
                 f"chứ không thay."
                 + (f"\n{nhip}." if nhip else ""))
-            self.lb_nn.setStyleSheet("color:#FFB86C; font-size:11px;")
+            set_style(self.lb_nn, 'hint', 'warn')
         self._do_chatter(hien=la_cb)
 
     def _do_chatter(self, hien: bool = True) -> dict:
@@ -1192,7 +1198,7 @@ class HopGiongToi(QDialog):
                 f"Bộ nhân bản đa ngôn ngữ (Chatterbox): CHƯA DÒ ĐƯỢC "
                 f"({type(e).__name__}: {e}) - bấm thử vẫn được, app sẽ báo lý "
                 f"do rõ.")
-            self.lb_cb.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            set_style(self.lb_cb, 'hint', None)
             self.lb_cb.setVisible(hien)
             self.b_tai_cb.setVisible(hien)
             self.b_tai_cb.setEnabled(not self._dang_cai_cb)
@@ -1210,9 +1216,7 @@ class HopGiongToi(QDialog):
                    "NHƯNG máy này KHÔNG có GPU NVIDIA nên nó chỉ chạy 0,25 "
                    "lần thời gian thật - không dùng cho sản xuất được.")
                 + f"\n{CB_C.DONG_DAU_CHIM}.")
-            self.lb_cb.setStyleSheet(
-                (f"color:{SUCCESS}; font-size:11px;") if gpu
-                else "color:#FFB86C; font-size:11px;")
+            set_style(self.lb_cb, "hint", "success" if gpu else "warn")
             self.b_tai_cb.setVisible(False)
             self.pb_cb.setVisible(False)
             self.lb_cb.setVisible(hien)
@@ -1223,7 +1227,7 @@ class HopGiongToi(QDialog):
             + f".\nTải một lần khoảng {CB_C.so_gb()} GB. "
             + f"{CB_C.DONG_DAU_CHIM}."
             + (("\n" + vi_sao) if vi_sao else ""))
-        self.lb_cb.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        set_style(self.lb_cb, 'hint', None)
         self.lb_cb.setVisible(hien)
         self.b_tai_cb.setVisible(hien)
         self.b_tai_cb.setText(CB_C.nhan_tai(thieu))
@@ -1347,7 +1351,7 @@ class HopGiongToi(QDialog):
             self.lb_vn.setText(
                 f"Bộ giọng VieNeu: CHƯA DÒ ĐƯỢC ({type(e).__name__}: {e}) — "
                 "bấm thử vẫn được, app sẽ báo lý do rõ.")
-            self.lb_vn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            set_style(self.lb_vn, 'hint', None)
             self.b_tai_vn.setVisible(True)
             self.b_tai_vn.setEnabled(not self._dang_cai_vn)
             self._tt_vn = tt
@@ -1361,9 +1365,7 @@ class HopGiongToi(QDialog):
                 f"Bộ giọng VieNeu: ĐÃ CÓ ({tt.get('so_giong')} giọng dựng "
                 f"sẵn, bản {tt.get('phien_ban') or 'không rõ'})."
                 + (("\n" + o_tam) if o_tam else ""))
-            self.lb_vn.setStyleSheet(
-                (f"color:{SUCCESS}; font-size:11px;") if not o_tam
-                else "color:#FFB86C; font-size:11px;")
+            set_style(self.lb_vn, "hint", "success" if not o_tam else "warn")
             self.b_tai_vn.setVisible(False)
             self.pb_vn.setVisible(False)
             return tt
@@ -1375,7 +1377,7 @@ class HopGiongToi(QDialog):
               "vào, nên phải tải nó trước."
             + (("\n" + vi_sao) if vi_sao else "")
             + (("\n" + o_tam) if o_tam else ""))
-        self.lb_vn.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        set_style(self.lb_vn, 'hint', None)
         self.b_tai_vn.setVisible(True)
         self.b_tai_vn.setText(VN_C.nhan_tai_vieneu(thieu))
         # Nút xám KHÔNG MỘT LỜI là câu đố (cổng 58/16/51) — `vi_sao` đã in ra
@@ -1568,7 +1570,7 @@ class HopGiongToi(QDialog):
             self.lb_nb.setText(
                 "Phần nhân bản giọng: ĐÃ CÓ (torch, torchaudio). Giọng nhân "
                 "bản trong danh sách trên đọc được ngay.")
-            self.lb_nb.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_nb, 'hint', 'success')
             self.b_tai_nb.setVisible(False)
             self.pb_nb.setVisible(False)
             return tt
@@ -1581,7 +1583,7 @@ class HopGiongToi(QDialog):
               "chỉ giọng nhân bản của anh là chưa. Chọn nó bây giờ thì app đọc "
               "bằng giọng thường."
             + (("\n" + str(tt.get("vi_sao") or "")) if tt.get("vi_sao") else ""))
-        self.lb_nb.setStyleSheet("color:#B0B0B0; font-size:11px;")
+        set_style(self.lb_nb, 'hint', None)
         self.b_tai_nb.setVisible(True)
         # Nhãn đọc lại MỖI LẦN DÒ: ca CÀI DỞ (còn 1 trong 2 sau lượt đứt mạng)
         # phải trông KHÁC ca chưa cài lần nào, và số MB phải theo đúng bản sẽ
@@ -1759,26 +1761,72 @@ class HopGiongToi(QDialog):
                 self, "Nghe thử mẫu",
                 "Chưa chọn file mẫu. Bấm «Chọn file mẫu...» trước.")
             return
+        if getattr(self, "_mau_dang_doi", False):
+            return                      # đang đổi wav cho lần bấm trước
         import subprocess
         import tempfile
         import uuid
         from config import settings as _st
         w = Path(tempfile.gettempdir()) / f"_bqmau_{uuid.uuid4().hex[:8]}.wav"
-        try:
-            r = subprocess.run(
-                [_st.FFMPEG_PATH, "-y", "-v", "error", "-i", self._mau,
-                 "-vn", "-ac", "1", "-ar", "24000", str(w)],
-                capture_output=True, timeout=300,
-                creationflags=(0x08000000 if os.name == "nt" else 0))
-            # ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần trong
-            # repo này -> kiểm KÍCH THƯỚC, đừng tin mã thoát.
-            if r.returncode != 0 or not w.exists() or w.stat().st_size < 1024:
-                raise OSError("ffmpeg không đọc được file mẫu")
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, "Nghe thử mẫu",
-                                f"Không phát được file mẫu này:\n{e}")
+        mau = self._mau
+
+        def doi() -> tuple:
+            try:
+                r = subprocess.run(
+                    [_st.FFMPEG_PATH, "-y", "-v", "error", "-i", mau,
+                     "-vn", "-ac", "1", "-ar", "24000", str(w)],
+                    capture_output=True, timeout=300,
+                    creationflags=(0x08000000 if os.name == "nt" else 0))
+                # ffmpeg TRẢ MÃ 0 MÀ FILE RỖNG là chuyện đã xảy ra nhiều lần
+                # trong repo này -> kiểm KÍCH THƯỚC, đừng tin mã thoát.
+                if r.returncode != 0 or not w.exists() or w.stat().st_size < 1024:
+                    raise OSError("ffmpeg không đọc được file mẫu")
+                return (str(w), "")
+            except Exception as e:  # noqa: BLE001
+                return ("", str(e) or type(e).__name__)
+
+        # LUỒNG NỀN (26/10/2026): file mẫu dài/ổ chậm từng làm hộp ĐỨNG tới
+        # 300 s (subprocess.run ngay trong click). Đợi tối đa 0,25 s cho ca
+        # thường (mẫu ngắn -> phát ngay như cũ); lâu hơn thì về qua tín hiệu.
+        kq: dict = {}
+        khoa = threading.Lock()
+
+        def bg() -> None:
+            ra = doi()
+            with khoa:
+                kq["ra"] = ra
+                ve_sau = kq.get("nen", False)
+            if ve_sau:
+                from app.ui.shutdown import safe_emit
+                safe_emit(lambda: self._mau_wav_xong.emit(*ra))
+
+        t = threading.Thread(target=bg, daemon=True)
+        t.start()
+        t.join(0.25)
+        with khoa:
+            ra = kq.get("ra")
+            if ra is None:
+                kq["nen"] = True
+        if ra is not None:
+            self._nghe_mau_ket_qua(*ra)
             return
-        self._phat(str(w))
+        self._mau_dang_doi = True
+        self.b_nghe_mau.setEnabled(False)
+        self.lb_tt.setText("Đang chuẩn bị file mẫu để nghe thử…")
+
+    def _nghe_mau_ket_qua(self, wav: str, loi: str) -> None:
+        """LUỒNG GIAO DIỆN: đổi wav xong -> phát / báo lỗi."""
+        if getattr(self, "_mau_dang_doi", False):
+            self._mau_dang_doi = False
+            try:
+                self.b_nghe_mau.setEnabled(True)
+            except RuntimeError:
+                return
+        if loi or not wav:
+            QMessageBox.warning(self, "Nghe thử mẫu",
+                                f"Không phát được file mẫu này:\n{loi}")
+            return
+        self._phat(wav)
 
     def _nghe_giong(self) -> None:
         """NHÂN BẢN THẬT qua `thay_giong.doc_thu` — đúng cửa lượt xuất đi.
@@ -2010,12 +2058,13 @@ class ThayGiongDialog(QDialog):
         from PyQt6.QtWidgets import QScrollArea, QSplitter
         from app.ui.layout_tools import fit_dialog
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 14)
+        outer.setContentsMargins(SP_4, SP_4, SP_4, SP_4)
+        outer.setSpacing(SP_2)
         splitter = QSplitter(Qt.Orientation.Vertical)
         content = QWidget()
         lay = QVBoxLayout(content)
-        lay.setContentsMargins(0, 0, 12, 0)
-        lay.setSpacing(9)
+        lay.setContentsMargins(0, 0, SP_3, 0)
+        lay.setSpacing(SP_2)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
@@ -2030,7 +2079,7 @@ class ThayGiongDialog(QDialog):
             "tiếng động hiện trường. Video MỚI ghi vào Thư mục đích — video "
             "gốc GIỮ NGUYÊN, app không xoá/không di chuyển gì cả.")
         gt.setWordWrap(True)
-        gt.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(gt, 'hint', None)
         lay.addWidget(gt)
 
         # ---- hàng 1: THƯ MỤC NGUỒN ----
@@ -2039,7 +2088,16 @@ class ThayGiongDialog(QDialog):
         self.ed_thu_muc = QLineEdit(str(self._s.value(K_THUMUC, "") or ""))
         self.ed_thu_muc.setPlaceholderText(
             "Chọn thư mục chứa video cần thay giọng")
-        self.ed_thu_muc.textChanged.connect(self._doi_thu_muc)
+        # GÕ TAY đường dẫn: mỗi phím từng quét thư mục ngay (ổ mạng sai tên
+        # = treo vài giây mỗi phím). Nay chờ ngừng gõ 300 ms (26/10/2026).
+        # Đặt bằng code / nút Chọn thư mục vẫn quét NGAY như cũ.
+        self._go_tay = False
+        self._hen_quet = QTimer(self)
+        self._hen_quet.setSingleShot(True)
+        self._hen_quet.setInterval(300)
+        self._hen_quet.timeout.connect(self._doi_thu_muc)
+        self.ed_thu_muc.textEdited.connect(self._bat_dau_go)
+        self.ed_thu_muc.textChanged.connect(self._doi_thu_muc_khi_doi)
         h1.addWidget(self.ed_thu_muc, 1)
         b_chon = QPushButton("Chọn thư mục nguồn...")
         b_chon.clicked.connect(self._chon_thu_muc)
@@ -2062,7 +2120,7 @@ class ThayGiongDialog(QDialog):
 
         self.lb_dich = QLabel("")
         self.lb_dich.setWordWrap(True)
-        self.lb_dich.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(self.lb_dich, 'hint', None)
         lay.addWidget(self.lb_dich)
 
         # ---- hàng 2: ngôn ngữ · giọng · số luồng ----
@@ -2183,7 +2241,7 @@ class ThayGiongDialog(QDialog):
         # cao nhất cho ngôn ngữ đang chọn. Giọng CHƯA ĐO thì KHÔNG hiện số.
         self.lb_goi_y = QLabel("")
         self.lb_goi_y.setWordWrap(True)
-        self.lb_goi_y.setStyleSheet("color:#7CC4FF")
+        set_style(self.lb_goi_y, None, 'accent')
         lay.addWidget(self.lb_goi_y)
 
         # ---- GIỌNG NHÂN BẢN ĐANG ĐỌC TIẾNG NGOÀI SỞ TRƯỜNG ----
@@ -2203,7 +2261,7 @@ class ThayGiongDialog(QDialog):
         # chỗ để lệch nhau.
         self.lb_nb_tieng = QLabel("")
         self.lb_nb_tieng.setWordWrap(True)
-        self.lb_nb_tieng.setStyleSheet("color:#E8B84B; font-size:11px;")
+        set_style(self.lb_nb_tieng, 'hint', 'warn')
         lay.addWidget(self.lb_nb_tieng)
 
         # ---- hàng 3: CHE CHỮ CHÁY SẴN TRONG HÌNH ----
@@ -2857,15 +2915,9 @@ class ThayGiongDialog(QDialog):
         self.bang.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu)
         self.bang.customContextMenuRequested.connect(self._menu_dong)
-        self.bang.setStyleSheet(
-            f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
-            f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
-            f"QTableWidget::item {{ padding:3px 8px; }}"
-            f"QTableWidget::item:selected {{ background:{ACCENT};"
-            f" color:white; }}"
-            f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
-            f" padding:6px 8px; border:none;"
-            f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
+        # kiểu bảng dữ liệu: QSS chung (theme: QTableView[table="data"] — cùng
+        # padding ô 3px 8px như bản cũ để dòng không bị bóp)
+        self.bang.setProperty("table", "data")
         hh = self.bang.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hh.setStretchLastSection(True)
@@ -2890,15 +2942,15 @@ class ThayGiongDialog(QDialog):
         lb_meo = QLabel(
             "Mẹo: bấm CHUỘT PHẢI vào một dòng để Làm lại video đó · Làm lại "
             "tất cả · Bỏ qua video đó.")
-        lb_meo.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(lb_meo, 'hint', None)
         lb_meo.setWordWrap(True)
         outer.addWidget(lb_meo)
 
         # ---- hàng cuối: nút ----
-        h5 = QHBoxLayout()
+        h5 = QHBoxLayout(); h5.setSpacing(SP_2)
         self.lb_tt = QLabel("")
         self.lb_tt.setWordWrap(True)
-        self.lb_tt.setStyleSheet(f"color:{MUTED};")
+        set_style(self.lb_tt, None, 'muted')
         h5.addWidget(self.lb_tt, 1)
         self.b_chay = QPushButton("Chạy")
         self.b_chay.setProperty("primary", True)
@@ -2913,8 +2965,10 @@ class ThayGiongDialog(QDialog):
         h5.addWidget(self.b_lam_lai)
         self.b_dung = QPushButton("Dừng tất cả")
         self.b_dung.clicked.connect(self._dung)
+        set_variant(self.b_dung, "danger")    # dừng = hành động phá: viền đỏ
         h5.addWidget(self.b_dung)
         b_dong = QPushButton("Đóng")
+        set_variant(b_dong, "ghost")
         b_dong.clicked.connect(self.reject)
         h5.addWidget(b_dong)
         outer.addLayout(h5)
@@ -3125,7 +3179,7 @@ class ThayGiongDialog(QDialog):
                    "cpu": " (chạy trên CPU)"}.get(tt["thiet_bi"], "")
             self.lb_demucs.setText(
                 f"Bộ tách giọng: ĐÃ CÓ ĐỦ trong _lib{_tb}." + chi_tiet)
-            self.lb_demucs.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_demucs, 'hint', 'success')
             self.b_tai.setVisible(False)
         elif tt["co"]:
             # CÀI DỞ: máy này chạy được vì đang MƯỢN gói của môi trường hệ
@@ -3140,7 +3194,7 @@ class ThayGiongDialog(QDialog):
                 + ".\nMáy NÀY vẫn chạy được, nhưng bản .exe trên máy nhân viên "
                   "sẽ báo THIẾU vì ở đó không có gì để mượn. Bấm '"
                 + TG.NHAN_CAI_TIEP + "' để lấy nốt." + chi_tiet)
-            self.lb_demucs.setStyleSheet(f"color:{WARN}; font-size:11px;")
+            set_style(self.lb_demucs, 'hint', 'warn')
             self.b_tai.setVisible(True)
             self.b_tai.setEnabled(bool(tt["cai_duoc"]) and not self._dang_cai)
         else:
@@ -3154,7 +3208,7 @@ class ThayGiongDialog(QDialog):
                    "\nMáy này không có Python/pip nên app không tự tải được: "
                    "cài Python 3 rồi bấm lại, hoặc copy thư mục _lib từ máy "
                    "đã cài sang.") + chi_tiet)
-            self.lb_demucs.setStyleSheet(f"color:{WARN}; font-size:11px;")
+            set_style(self.lb_demucs, 'hint', 'warn')
             self.b_tai.setVisible(True)
             self.b_tai.setEnabled(bool(tt["cai_duoc"]) and not self._dang_cai)
         self._cap_nhat_nut_chay()
@@ -3290,7 +3344,7 @@ class ThayGiongDialog(QDialog):
                     "SUY RA mốc từng chữ — chữ chạy theo lời lệch gấp ~1,4 "
                     "lần so với giọng thường (edge-tts) và trôi dần về cuối "
                     "câu. Cần chữ bám sát lời thì dùng giọng thường.")
-            self.lb_piper.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_piper, 'hint', 'success')
             self.b_tai_piper.setVisible(False)
         else:
             # Máy không có Python 3 -> `cai_piper()` chắc chắn trả lỗi, nên
@@ -3304,7 +3358,7 @@ class ThayGiongDialog(QDialog):
                 + ("" if tt.get("cai_duoc", True) else
                    "\nMáy này chưa cài Python 3 nên app không tự tải được: "
                    "cài Python 3 (python.org) rồi bấm lại."))
-            self.lb_piper.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            set_style(self.lb_piper, 'hint', None)
             self.b_tai_piper.setVisible(True)
             self.b_tai_piper.setEnabled(
                 bool(tt.get("cai_duoc", True)) and not self._dang_cai_piper)
@@ -3366,7 +3420,7 @@ class ThayGiongDialog(QDialog):
                 "ĐÃ CÓ. Chọn trong ô Giọng đọc để dùng.\n"
                 "Lưu ý đã đo: bộ này KHÔNG có tiếng Việt, và KHÔNG tự trả mốc "
                 "từng chữ — cần bộ gióng hàng ở hàng dưới thì chữ mới bám lời.")
-            self.lb_kokoro.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_kokoro, 'hint', 'success')
             self.b_tai_kokoro.setVisible(False)
         else:
             # NÊU ĐÍCH DANH gói còn thiếu (cổng 58): câu "chưa cài" trơn thì
@@ -3381,7 +3435,7 @@ class ThayGiongDialog(QDialog):
                 + ("" if tt.get("cai_duoc") else
                    "\nApp không tự tải được: "
                    + (vi_sao or "máy chưa cài Python 3 (python.org)")))
-            self.lb_kokoro.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            set_style(self.lb_kokoro, 'hint', None)
             self.b_tai_kokoro.setVisible(True)
             # Nhãn nút đổi theo máy: có GPU NVIDIA thì `nhan_tai()` trả bản
             # CUDA kèm chữ "CHƯA ĐO có nhanh hơn" — nói thẳng là chưa đo, đừng
@@ -3508,7 +3562,7 @@ class ThayGiongDialog(QDialog):
                 "Bộ gióng hàng mốc từng chữ: ĐÃ CÓ. Mọi giọng không tự trả "
                 "mốc (Piper, giọng ngoài) sẽ lấy mốc bằng bộ này thay vì nhờ "
                 "máy nghe chép ngược.")
-            self.lb_gh.setStyleSheet(f"color:{SUCCESS}; font-size:11px;")
+            set_style(self.lb_gh, 'hint', 'success')
             self.b_tai_gh.setVisible(False)
         else:
             # Nút xám mà không nói vì sao chỉ là câu đố — `vi_sao_khong_cai`
@@ -3520,7 +3574,7 @@ class ThayGiongDialog(QDialog):
                 "hơn và tốn lượt mạng."
                 + ("\n" + tt["vi_sao_khong_cai"]
                    if tt.get("vi_sao_khong_cai") else ""))
-            self.lb_gh.setStyleSheet("color:#B0B0B0; font-size:11px;")
+            set_style(self.lb_gh, 'hint', None)
             self.b_tai_gh.setVisible(True)
             self.b_tai_gh.setEnabled(
                 bool(tt.get("cai_duoc", True)) and not self._dang_cai_gh)
@@ -3777,7 +3831,7 @@ class ThayGiongDialog(QDialog):
         """
         from PyQt6.QtWidgets import QButtonGroup
         lb = QLabel(ten)
-        lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(lb, 'hint', None)
         hang.addWidget(lb)
         nhom = QButtonGroup(self)
         nhom.setExclusive(True)
@@ -3795,13 +3849,7 @@ class ThayGiongDialog(QDialog):
             b = QPushButton(nhan)
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(
-                f"QPushButton{{background:{SURFACE};color:{MUTED};"
-                f"border:1px solid {BORDER};border-radius:6px;"
-                f"padding:2px 8px;font-size:11px;}}"
-                f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}"
-                f"QPushButton:checked{{background:{ACCENT};color:white;"
-                f"border-color:{ACCENT};font-weight:600;}}")
+            set_variant(b, "chip")          # nút lọc dạng chip (QSS theme)
             b.setChecked(ma == cu)
             b.setProperty("ma_loc", ma)
             nhom.addButton(b)
@@ -3931,9 +3979,7 @@ class ThayGiongDialog(QDialog):
                      | Qt.WindowType.FramelessWindowHint)
         pop.setObjectName("giongPick")
         pop.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
-        pop.setStyleSheet(
-            f"#giongPick{{background:{BASE};border:1px solid {BORDER};"
-            f"border-radius:10px;}}")
+        # khung popup: QSS chung (theme: QFrame#giongPick)
         lay = QVBoxLayout(pop)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
@@ -3948,11 +3994,7 @@ class ThayGiongDialog(QDialog):
         xb = QPushButton("Đóng")          # NÚT CHỮ, KHÔNG EMOJI
         xb.setFixedWidth(58)
         xb.setToolTip("Đóng danh sách (hoặc bấm Esc, hoặc bấm ra ngoài)")
-        xb.setStyleSheet(
-            f"QPushButton{{background:{SURFACE};color:{MUTED};"
-            f"border:1px solid {BORDER};border-radius:6px;padding:3px 6px;"
-            f"font-size:12px;}}"
-            f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}")
+        set_variant(xb, "ghost"); set_size(xb, "compact")
         xb.clicked.connect(pop.close)
         hrow.addWidget(xb)
         lay.addLayout(hrow)
@@ -3984,7 +4026,7 @@ class ThayGiongDialog(QDialog):
         lay.addLayout(r2)
 
         lb = QLabel("")
-        lb.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(lb, 'hint', None)
         lb.setWordWrap(True)
         lay.addWidget(lb)
 
@@ -4421,20 +4463,20 @@ class ThayGiongDialog(QDialog):
             # Quay lại giọng mạng thì lượt tự hạ trước đó không còn là "vừa" —
             # để nguyên là nhãn nói một chuyện đã cũ.
             self._luong_vua_ha = 0
-            self.lb_luong.setStyleSheet(f"color:{MUTED}")
+            set_style(self.lb_luong, None, 'muted')
             self.lb_luong.setText(
                 f"Giọng này đọc QUA MẠNG, không đốt CPU máy — giữ trần "
                 f"{W.TG_TRAN} luồng như cũ (đo: 2 luồng nhanh hơn chạy lần "
                 f"lượt 1,82 lần).")
         elif v > khuyen:
-            self.lb_luong.setStyleSheet(f"color:{WARN}")
+            set_style(self.lb_luong, None, 'warn')
             self.lb_luong.setText(
                 f"CẢNH BÁO: giọng này chạy TRÊN MÁY, khuyên {khuyen} luồng "
                 f"cho {nhan} nhân mà anh đang đặt {v}. Mỗi luồng ăn 6,6-8,3 "
                 f"nhân CPU — đo 21/08 với 4 luồng: hơn 1,5 tiếng ra 0 video "
                 f"(1 luồng: 45 phút ra 4 video). App vẫn chạy đúng số anh đặt.")
         else:
-            self.lb_luong.setStyleSheet(f"color:{MUTED}")
+            set_style(self.lb_luong, None, 'muted')
             dau = (f"App vừa hạ {self._luong_vua_ha} xuống {khuyen} luồng. "
                    if self._luong_vua_ha > khuyen else "")
             self.lb_luong.setText(
@@ -4500,12 +4542,11 @@ class ThayGiongDialog(QDialog):
                 "GHI ĐÈ LÊN VIDEO GỐC. Hãy chọn thư mục đích khác (hoặc để "
                 "trống để app tự dùng " + tg_so.thu_muc_dich_mac_dinh(
                     self.ed_thu_muc.text().strip()) + ").")
-            self.lb_dich.setStyleSheet(
-                f"color:{DANGER}; font-size:11px; font-weight:600;")
+            set_style(self.lb_dich, "tag", "danger")
         else:
             self.lb_dich.setText("Video mới sẽ nằm ở: " + ra
                                  + " · video gốc GIỮ NGUYÊN.")
-            self.lb_dich.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+            set_style(self.lb_dich, 'hint', None)
 
     def _video_trong_thu_muc(self) -> list:
         tm = self.ed_thu_muc.text().strip()
@@ -4513,18 +4554,36 @@ class ThayGiongDialog(QDialog):
             return []
         return TG.liet_ke_video(tm)
 
+    def _bat_dau_go(self, _t: str = "") -> None:
+        self._go_tay = True                 # textEdited bắn TRƯỚC textChanged
+
+    def _doi_thu_muc_khi_doi(self, _t: str = "") -> None:
+        if getattr(self, "_go_tay", False):
+            self._go_tay = False
+            self._hen_quet.start()          # gõ tay -> đợi ngừng gõ
+            return
+        self._doi_thu_muc()
+
     def _doi_thu_muc(self) -> None:
         """Dựng lại bảng theo thư mục + SỔ TRẠNG THÁI đã lưu trên đĩa."""
+        if getattr(self, "_hen_quet", None) is not None:
+            self._hen_quet.stop()
         vids = self._video_trong_thu_muc()
         self._jobs.clear()
         self._xong_id.clear()
-        self.bang.setRowCount(len(vids))
-        for r, v in enumerate(vids):
-            it = QTableWidgetItem(v.name)
-            it.setData(Qt.ItemDataRole.UserRole, str(v))
-            it.setToolTip(str(v))
-            self.bang.setItem(r, 0, it)
-            self._ve_theo_so(r, str(v))
+        # TẮT VẼ trong lúc điền (26/10/2026): vài trăm video = vài trăm lần vẽ
+        # lại + tính lại cột nếu để bật.
+        self.bang.setUpdatesEnabled(False)
+        try:
+            self.bang.setRowCount(len(vids))
+            for r, v in enumerate(vids):
+                it = QTableWidgetItem(v.name)
+                it.setData(Qt.ItemDataRole.UserRole, str(v))
+                it.setToolTip(str(v))
+                self.bang.setItem(r, 0, it)
+                self._ve_theo_so(r, str(v))
+        finally:
+            self.bang.setUpdatesEnabled(True)
         self._nhan_lai_job_dang_chay()
         self._cap_nhat_nhan_dich()
         self._cap_nhat_nut_chay()
@@ -4614,7 +4673,7 @@ class ThayGiongDialog(QDialog):
             return
         vids = [self._duong_dong(r) for r in range(self.bang.rowCount())]
         t = tg_so.tom_tat(vids)
-        self.lb_tt.setStyleSheet(f"color:{MUTED};")
+        set_style(self.lb_tt, None, 'muted')
         self.lb_tt.setText(
             f"{len(vids)} video trong thư mục · đã xong {t['xong']} · "
             f"lỗi {t['loi']} · bỏ qua {t['bo_qua']} · chưa chạy {t['chua']}")
@@ -4713,12 +4772,12 @@ class ThayGiongDialog(QDialog):
         if nen == 0.0 and giong == 0.0:
             self.lb_muc_tt.setText("(đang để MẶC ĐỊNH 0,0 dB — app tự đo tự "
                                    "quyết, y như bản trước)")
-            self.lb_muc_tt.setStyleSheet("color:#8A93A6")
+            set_style(self.lb_muc_tt, None, 'muted')
         else:
             self.lb_muc_tt.setText(
                 f"(đã đổi: nền {nen:+.1f} dB · giọng {giong:+.1f} dB — mặc "
                 f"định là 0,0)".replace(".", ","))
-            self.lb_muc_tt.setStyleSheet("color:#7CC4FF")
+            set_style(self.lb_muc_tt, None, 'accent')
 
     def _dat_kc_mau(self, hexv: str) -> None:
         self._kc_mau = str(hexv or "")
@@ -4801,10 +4860,10 @@ class ThayGiongDialog(QDialog):
             return
         if n:
             self.lb_kc_tt.setText(f"(đã đổi {n} mục)")
-            self.lb_kc_tt.setStyleSheet("color:#7CC4FF")
+            set_style(self.lb_kc_tt, None, 'accent')
         else:
             self.lb_kc_tt.setText("(đang để mặc định — chữ trắng viền đen)")
-            self.lb_kc_tt.setStyleSheet("color:#8A93A6")
+            set_style(self.lb_kc_tt, None, 'muted')
 
     def _doi_viet_chu(self, bat: bool) -> None:
         """Ô kiểu chữ chỉ sống khi ĐANG CHE **và** ĐANG VIẾT chữ mới.
@@ -4989,7 +5048,7 @@ class ThayGiongDialog(QDialog):
                                 "\n".join(loi_xep[:8]))
         if not self._jobs:
             self._da_bao_xong = True     # không có việc nào -> không báo xong
-            self.lb_tt.setStyleSheet(f"color:{SUCCESS};")
+            set_style(self.lb_tt, None, 'success')
             self.lb_tt.setText(
                 f"Không có video nào cần chạy — {self._bo_qua_luot} video đã "
                 f"xong nên bỏ qua. Muốn làm lại: chuột phải vào dòng hoặc bấm "
@@ -5160,7 +5219,7 @@ class ThayGiongDialog(QDialog):
             chay += tt in ("running", "pending")
 
         if chay:
-            self.lb_tt.setStyleSheet(f"color:{MUTED};")
+            set_style(self.lb_tt, None, 'muted')
             self.lb_tt.setText(
                 f"Đang chạy: còn {chay} video · xong {xong} · lỗi {loi}"
                 + (f" · dừng {huy}" if huy else "")
@@ -5182,8 +5241,7 @@ class ThayGiongDialog(QDialog):
                + (f" · {huy} bị dừng" if huy else "")
                + (f" · {self._bo_qua_luot} bỏ qua (đã xong từ trước)"
                   if self._bo_qua_luot else ""))
-        self.lb_tt.setStyleSheet(
-            f"color:{DANGER if loi else SUCCESS}; font-weight:600;")
+        set_style(self.lb_tt, "value", "danger" if loi else "success")
         self.lb_tt.setText(chu)
         self.xong_ca_luot.emit(xong, loi, huy, self._bo_qua_luot)
         them = ""

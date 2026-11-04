@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene,
     QGraphicsView, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout,
-    QWidget,
+    QWidget, QSpinBox,
 )
 
 from app import services
@@ -31,12 +31,20 @@ from app.core.ffmpeg_utils import CHUYEN_CANH_MUC, CHUYEN_CANH_NHAN
 from app.core.hieu_ung import MUC as HIEU_UNG_MUC
 from app.core.hieu_ung import MUC_NHAN as HIEU_UNG_NHAN
 from app.core.dubbing import LANG_LABELS as DUB_LANGS, VOICES as DUB_VOICES
+from app.ui.theme import (
+    ACCENT, ELEV, FS_MD, MUTED, R_MD, SP_2, SP_3, SP_4, SURFACE, TEXT,
+    fit_width, pad, rgba, set_role,
+)
 
 # Cache danh sách giọng lồng tiếng ĐẦY ĐỦ theo ngôn ngữ (nạp 1 lần/phiên app;
 # list_voices_for đã có cache file 7 ngày bên dưới nữa).
 _DUB_VOICE_CACHE: dict[str, list[tuple[str, str]]] = {}
 
 FW, FH = 348, 619          # khung xem trước TO hơn cho dễ nhìn (tỉ lệ 9:16)
+
+
+class _NoWheelSpin(QSpinBox):
+    def wheelEvent(self,e):e.ignore()
 
 
 class _NoWheelSlider(QSlider):
@@ -130,7 +138,8 @@ def _frow(label, *widgets, stretch_at=0):
     """1 hàng 'Nhãn: [control...]' — nhãn rộng cố định để thẳng cột giữa 2 khu.
     stretch_at = index widget được giãn (mặc định widget đầu)."""
     row = QHBoxLayout()
-    lb = QLabel(label); lb.setFixedWidth(_LBL_W)
+    lb = QLabel(label)
+    fit_width(lb, label, pad_px=6, minimum=_LBL_W)   # >= 76 để thẳng cột; chữ dài không cụt
     row.addWidget(lb)
     for i, w in enumerate(widgets):
         row.addWidget(w, 1 if i == stretch_at else 0)
@@ -159,14 +168,15 @@ def nut_chon_mau(parent, get, set_, title="Chọn màu",
             # ô nền = màu đang chọn, chữ A tương phản để thấy rõ
             fg = "#000" if hexv.upper() > "#888888" else "#FFF"
             btn.setText("A")
+            # màu ô = DỮ LIỆU người dùng chọn -> inline là đúng; chỉ đặt khi đổi
             btn.setStyleSheet(
-                f"background:{hexv}; color:{fg}; border:1px solid #666;"
-                "font-weight:bold; border-radius:4px;")
+                f"background:{hexv}; color:{fg}; border:1px solid {MUTED};"
+                "font-weight:bold; border-radius:6px;")
         else:                       # mặc định/theo preset -> hiện chữ "tự"
             btn.setText("tự")
             btn.setStyleSheet(
-                "background:#2A2A34; color:#9AA6BF; border:1px dashed #666;"
-                "border-radius:4px;")
+                f"background:{SURFACE}; color:{MUTED}; border:1px dashed {MUTED};"
+                "border-radius:6px;")
 
     def pick():
         cur = get() or "#FFFFFF"
@@ -312,16 +322,51 @@ def _caption_box_data(preset_name, *, size, font, ny, color="", outline="",
         # ô đầu bảng để phân biệt được ngay (thật thì ô chỉ ôm 1 từ).
         d.update({"bg": True,
                   "bg_color": (p.get("hl_palette") or ["#FFE23D"])[0],
-                  "bg_alpha": 0.95, "radius": 14, "padx": 0.35, "pady": 0.28,
+                  "bg_alpha": 0.95, "radius": 14, "padx": 0.20, "pady": 0.04, "outline": 0.0, "tight_bg": True,
                   "color": p.get("box_text", "#0B0B0B") if not color else col})
     else:
         d["bg"] = False
     return d
 
 
+import threading as _threading
+
+#: Một lượt vẽ lớp chữ tại một thời điểm: hàm này chạy ở NHIỀU luồng nền (dây
+#: chuyền 3 làn) mà bộ máy phông của Qt không bảo đảm an toàn đa luồng.
+_VE_CHU_KHOA = _threading.Lock()
+
+
+def _phong_ra_o_vuong(f) -> bool:
+    """True nếu phông `f` vẽ mọi chữ thành CÙNG một ô vuông (tofu).
+
+    Lỗi thật 27/10/2026 (kênh 32 Part 2): tiêu đề + huy hiệu Part ra một dãy ô
+    trắng, các Part xuất cùng phút vẫn đúng -> trục trặc THOÁNG QUA của bộ máy
+    phông, không phải thiếu file phông. Ô tofu giống hệt nhau với mọi ký tự nên
+    'A' và 'o' ra đường viền y hệt = hỏng."""
+    a, o = QPainterPath(), QPainterPath()
+    a.addText(0, 0, f, "A")
+    o.addText(0, 0, f, "o")
+    ra, ro = a.boundingRect(), o.boundingRect()
+    return (a.elementCount() == o.elementCount()
+            and abs(ra.width() - ro.width()) < 0.5
+            and abs(ra.height() - ro.height()) < 0.5)
+
+
 def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
                        title_vi="", video_px=None, logo=None,
-                       part_case="", hook_case="") -> bool:
+                       part_case="", hook_case="", nghiem=False) -> bool:
+    """nghiem=True (đường XUẤT): chữ ra ô vuông thì NÉM RuntimeError thay vì
+    ghi ảnh hỏng. Mặc định False — chỗ gọi trong giao diện (xem trước, bộ sưu
+    tập mẫu) không bắt lỗi, ném ở đó là SẬP APP (đo được ở cổng hộp thoại)."""
+    with _VE_CHU_KHOA:
+        return _render_overlay_png(layers, part_no, out_w, out_h, path, title,
+                                   title_vi, video_px, logo, part_case, hook_case,
+                                   nghiem)
+
+
+def _render_overlay_png(layers, part_no, out_w, out_h, path, title="",
+                        title_vi="", video_px=None, logo=None,
+                        part_case="", hook_case="", nghiem=False) -> bool:
     """Vẽ tất cả lớp chữ ra PNG trong suốt (dùng khi xuất). Trả True nếu có chữ.
     Placeholder: {n}->số Part, {title}->tiêu đề (Anh) gắn video, {title_vi}->Việt.
     Chữ quá dài TỰ CO NHỎ + bị CLAMP để KHÔNG bao giờ tràn ra ngoài khung.
@@ -376,8 +421,16 @@ def render_overlay_png(layers, part_no, out_w, out_h, path, title="",
         # --- TỰ CO cỡ chữ đến khi hộp nằm gọn trong DẢI cho phép (chống tràn/đè) ---
         base = max(8.0, d["size"] * out_h)
         size, f, fm, lines, lh, bw, bh, px, py = base, None, None, [], 0, 0, 0, 0, 0
+        _ten_phong = d["font"]
+        if _phong_ra_o_vuong(_qfont(_ten_phong, base)):
+            print(f"[lớp chữ] phông «{_ten_phong}» vẽ ra Ô VUÔNG -> dùng Arial")
+            _ten_phong = "Arial"
+            if nghiem and _phong_ra_o_vuong(_qfont(_ten_phong, base)):
+                p.end()
+                raise RuntimeError("Lớp chữ vẽ ra ô vuông (bộ máy phông hỏng) "
+                                   "— không xuất clip mang chữ lỗi")
         for _ in range(20):
-            f = _qfont(d["font"], size)
+            f = _qfont(_ten_phong, size)
             fm = QFontMetricsF(f)
             if d.get("bg"):
                 base_pad = max(6.0, size * 0.25)
@@ -512,6 +565,13 @@ class _VideoBox(QGraphicsItem):
         BỀ NGANG khung kéo, cao theo tỉ lệ NGUỒN, thu vừa canvas nếu tràn —
         khớp CHÍNH XÁC fit_src_video_rect() lúc xuất. Trả (x, y, w, h) theo tọa
         độ CỦA ITEM (gốc 0,0 = góc trên-trái khung kéo)."""
+        if getattr(self, 'design_background', False):
+            from app.core.template_backgrounds import khung, layer_settings
+            cx,cy,sw,giu=khung(self.rect_norm(),1,self.aspect,FW,FH,
+                               layer_settings(getattr(self,'design_mode',''))['cao'])
+            self._design_giu=giu         # phần cao nguồn được giữ (paint cắt theo)
+            w=sw*FW;h=w*self.aspect*giu
+            return cx*FW-w/2-self.x(),cy*FH-h/2-self.y(),w,h
         cx = self.x() + self.w / 2
         cy = self.y() + self.h / 2
         w_px = self.w                      # bề ngang khung kéo (= scale*FW)
@@ -558,7 +618,21 @@ class _VideoBox(QGraphicsItem):
             # đang resize -> vẽ NHANH (fast), nghỉ tay -> mượt (smooth)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,
                             not self._resizing)
-            p.drawPixmap(vrect, src, QRectF(src.rect()))
+            if getattr(self,'design_background',False) or getattr(self,'layered_foreground',False):
+                from app.core.template_backgrounds import draw_foreground
+                if not hasattr(self,'_design_cache'):self._design_cache={}
+                giu=getattr(self,'_design_giu',1.0) if getattr(self,'design_background',False) else 1.0
+                if giu<0.999:            # khớp lúc xuất: cắt đều trên/dưới
+                    # nhớ bản cắt: copy() mỗi lần vẽ đổi cacheKey -> draw_foreground
+                    # uốn cong lại từ đầu mỗi nhịp vẽ (giật khi kéo khung)
+                    k=(src.cacheKey(),round(giu,4))
+                    if getattr(self,'_crop_key',None)!=k:
+                        hh=max(1,int(src.height()*giu))
+                        self._crop_pm=src.copy(0,(src.height()-hh)//2,src.width(),hh)
+                        self._crop_key=k
+                    src=self._crop_pm
+                draw_foreground(p,vrect,src,self.design_mode,self._design_cache)
+            else:p.drawPixmap(vrect, src, QRectF(src.rect()))
         else:
             p.fillRect(vrect, QColor("#333"))
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -566,14 +640,14 @@ class _VideoBox(QGraphicsItem):
         # mode chỉ vẽ 1 viền, KHÔNG có khung chấm "vùng kéo" thứ 2 gây rối.
         # fit_src BẬT + video nhỏ hơn khối kéo -> phần thừa tô mờ để user thấy
         # "sẽ có viền" (giữ trọn hình), nhưng không vẽ đường viền thứ 2.
-        if self.fit_src:
+        if self.fit_src and not getattr(self,'design_background',False):
             drag = QRectF(0, 0, self.w, self.h)
             path = QPainterPath(); path.addRect(drag)
             inner = QPainterPath(); inner.addRect(vrect)
             p.fillPath(path.subtracted(inner), QColor(0, 0, 0, 90))
         p.setPen(QPen(QColor("#6E8BFF"), 2 if sel else 1,
                       Qt.PenStyle.DashLine if sel else Qt.PenStyle.SolidLine))
-        p.drawRect(vrect)
+        if sel or not getattr(self,'design_background',False):p.drawRect(vrect)
         if sel:
             p.setPen(QPen(QColor("#6E8BFF"), 1)); p.setBrush(QColor("white"))
             p.drawRect(self._handle())
@@ -660,7 +734,7 @@ class _TextBox(QGraphicsItem):
         self.prepareGeometryChange()
         fm = QFontMetricsF(self._font())
         if self.d.get("bg"):
-            base_pad = max(4.0, self.px * 0.25)
+            base_pad = 0.0 if self.d.get("tight_bg") else max(4.0, self.px * 0.25)
             self.padx = base_pad + self.d.get("padx", 0.83) * self.px
             self.pady = base_pad + self.d.get("pady", 0.83) * self.px
         else:
@@ -803,6 +877,8 @@ class EditorCanvas(QGraphicsView):
         self.bg_blur.setCacheMode(
             QGraphicsPixmapItem.CacheMode.DeviceCoordinateCache)  # nền tĩnh -> cache
         self.bg_blur.setParentItem(self.clip_root)
+        self.bg_design = QGraphicsPixmapItem(); self.bg_design.setZValue(0)
+        self.bg_design.setParentItem(self.clip_root); self.bg_design.setVisible(False)
         self.vbox = _VideoBox(on_guide=self._set_guides)
         self.vbox.setParentItem(self.clip_root)
         border = QGraphicsRectItem(0, 0, FW, FH)
@@ -952,12 +1028,19 @@ class EditorCanvas(QGraphicsView):
         self.vbox.set_fit_src(on)
 
     def set_bg(self, mode):
+        from app.core.template_backgrounds import decode,image,options,plain_base
         self.bg = mode
-        if mode == "blur":
+        theme,_=decode(mode)
+        self.vbox.design_background=bool(theme);self.vbox.layered_foreground=bool(options(mode)[1]);self.vbox.design_mode=mode;self.vbox.update()
+        self.bg_design.setVisible(bool(theme))
+        if theme:
+            self.bg_design.setPixmap(QPixmap.fromImage(image(theme,FW,FH)))
+            self.bg_blur.setVisible(False);self.bg_solid.setVisible(False)
+        elif plain_base(mode) in ("blur","fill"):
             self.bg_blur.setVisible(True); self.bg_solid.setVisible(False)
         else:
             self.bg_blur.setVisible(False); self.bg_solid.setVisible(True)
-            self.bg_solid.setBrush(QBrush(QColor("white" if mode == "white" else "black")))
+            self.bg_solid.setBrush(QBrush(QColor("white" if plain_base(mode) == "white" else "black")))
 
     def upsert_text(self, lid, data, preview):
         box = self.texts.get(lid)
@@ -992,11 +1075,13 @@ class _LayerRow(QWidget):
         # Part = viền xanh dương, chữ thường = viền hồng (khớp màu nhóm Lớp chữ)
         edge = "110,139,255" if is_part else "244,114,182"
         self.setStyleSheet(
-            f"_LayerRow{{background:#1d1d25; border:1px solid rgba({edge},0.5);"
+            f"_LayerRow{{background:{ELEV}; border:1px solid rgba({edge},0.5);"
             f"border-left:4px solid rgb({edge}); border-radius:10px;}}")
         lay = QVBoxLayout(self); lay.setContentsMargins(8, 8, 8, 8); lay.setSpacing(6)
         r1 = QHBoxLayout()
-        lbl = QLabel(f"<b>{'Part' if is_part else 'Chữ'}</b>"); lbl.setFixedWidth(34)
+        lbl = QLabel(f"<b>{'Part' if is_part else 'Chữ'}</b>")
+        _bf = lbl.font(); _bf.setBold(True); lbl.setFont(_bf)
+        fit_width(lbl, "Part", pad_px=6, minimum=34)
         r1.addWidget(lbl)
         self.text = QLineEdit("Part {n}" if is_part else "")
         self.text.setPlaceholderText("Part {n}" if is_part else "Nhập chữ...")
@@ -1005,7 +1090,8 @@ class _LayerRow(QWidget):
         rm.clicked.connect(lambda: on_remove(self.lid)); r1.addWidget(rm)
         lay.addLayout(r1)
         def _lb(t, w=58):
-            x = QLabel(t); x.setFixedWidth(w); return x
+            # >= w để các hàng thẳng cột; chữ dài hơn (font to/DPI cao) không cụt
+            x = QLabel(t); fit_width(x, t, pad_px=6, minimum=w); return x
 
         # r2: Cỡ chữ + kiểu chữ + MÀU CHỮ
         r2 = QHBoxLayout(); r2.addWidget(_lb("Cỡ chữ"))
@@ -1083,9 +1169,9 @@ class _LayerRow(QWidget):
         # ô màu chữ: nền = màu chữ, chữ "A" tương phản để thấy rõ
         self.color_btn.setStyleSheet(
             f"background:{self.color}; color:{'#000' if self.color.upper() > '#888888' else '#FFF'};"
-            "border:1px solid #555; font-weight:bold;")
-        self.bg_btn.setStyleSheet(f"background:{self.bg_color};border:1px solid #555;")
-        self.oc_btn.setStyleSheet(f"background:{self.outline_color};border:1px solid #555;")
+            f"border:1px solid {MUTED}; font-weight:bold; border-radius:6px;")
+        self.bg_btn.setStyleSheet(f"background:{self.bg_color};border:1px solid {MUTED};border-radius:6px;")
+        self.oc_btn.setStyleSheet(f"background:{self.outline_color};border:1px solid {MUTED};border-radius:6px;")
 
     def _ch(self, *_):
         self.on_change(self.lid)
@@ -1126,6 +1212,7 @@ class EditorDialog(QDialog):
 
     _demo_ready = pyqtSignal(str)        # đường-dẫn-mp4 demo kiểu chữ (hoặc '' nếu lỗi)
     _dub_demo_ready = pyqtSignal(str)    # đường-dẫn-mp3 nghe thử giọng (hoặc '')
+    _bgm_nghe_ready = pyqtSignal(str, str)   # (wav nghe thử nhạc nền, dòng báo)
 
     def __init__(self, frame_path, layout=None, parent=None, current_name=""):
         super().__init__(parent)
@@ -1155,31 +1242,29 @@ class EditorDialog(QDialog):
         self._dub_loading: set[str] = set()
         self._dub_demo_ready.connect(self._play_dub_demo)
 
-        main = QHBoxLayout(self); main.setSpacing(14)
+        main = QHBoxLayout(self); pad(main, SP_4, spacing=SP_4)
         # ----- CỘT TRÁI (GIÃN hết phần rộng còn lại): xem trước + ghi chú -----
-        left = QVBoxLayout(); left.setSpacing(8)
+        left = QVBoxLayout(); left.setSpacing(SP_2)
         self.canvas = EditorCanvas(on_resize=self._on_resized)
         left.addWidget(self.canvas, 1)
         hint = QLabel("Kéo <b>khối video</b> để dời/phóng to · <b>góc</b> để đổi cỡ · "
                       "bật <b>“giữ trọn hình”</b> = có viền, tắt = lấp đầy cắt bớt · "
                       "kéo <b>ô vàng</b> đặt chỗ phụ đề · kéo vào giữa có vạch căn.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color:#9A9AA8; font-size:12px;")
+        set_role(hint, "muted")
         left.addWidget(hint)
         main.addLayout(left, 1)
 
         # ----- CỘT PHẢI: cố định ~520px, tự CUỘN dọc khi màn thấp -----
         right_host = QWidget()
         right = QVBoxLayout(right_host)
-        right.setSpacing(12); right.setContentsMargins(0, 0, 8, 0)
+        right.setSpacing(SP_3); right.setContentsMargins(0, 0, SP_2, 0)
         rscroll = QScrollArea(); rscroll.setWidgetResizable(True)
         rscroll.setWidget(right_host)
         rscroll.setFixedWidth(520)
         rscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        rscroll.setStyleSheet(
-            "QScrollArea{border:none; background:transparent;}"
-            "QScrollArea>QWidget>QWidget{background:transparent;}")
-        rcol = QVBoxLayout(); rcol.setSpacing(8)
+        # nền trong + không viền: QSS chung (theme) đã có cho QScrollArea
+        rcol = QVBoxLayout(); rcol.setSpacing(SP_2)
         from app.ui.layout_tools import jump_row
         nav, self.section_jump = jump_row(rscroll, self)
         rcol.addLayout(nav)
@@ -1191,22 +1276,25 @@ class EditorDialog(QDialog):
         self._sec_n = 0
 
         def _group(title, rgb):
-            # 1 CARD/nhóm: thanh tiêu đề màu đặc ở trên + thân nền nhạt dưới
-            # (header rời hẳn, KHÔNG đè lên viền như QGroupBox -> sạch sẽ)
+            # 1 CARD/nhóm: thanh tiêu đề (nền màu NHẠT + vạch màu trái, chữ
+            # sáng — bản cũ chữ TRẮNG trên nền vàng/xanh lá đặc rất khó đọc)
+            # + thân nền nhạt dưới. Màu nhóm = nhận diện, giữ nguyên.
             self._sec_n += 1
             r, gg, b = rgb
-            head = QLabel(f"  {self._sec_n}.  {title}")
+            head = QLabel(f"{self._sec_n}.  {title}")
             head.setObjectName(f"secHead{self._sec_n}")
             head.setStyleSheet(
-                f"#secHead{self._sec_n}{{font-weight:700; font-size:14px; color:white;"
-                f"background:rgb({r},{gg},{b}); padding:7px 4px;"
-                f"border-top-left-radius:11px; border-top-right-radius:11px;}}")
+                f"#secHead{self._sec_n}{{font-weight:700; font-size:{FS_MD}px; color:{TEXT};"
+                f"background:rgba({r},{gg},{b},0.22); padding:8px 10px;"
+                f"border:1px solid rgba({r},{gg},{b},0.45); border-bottom:none;"
+                f"border-left:3px solid rgb({r},{gg},{b});"
+                f"border-top-left-radius:{R_MD}px; border-top-right-radius:{R_MD}px;}}")
             body = QWidget(); body.setObjectName(f"secBody{self._sec_n}")
             body.setStyleSheet(
-                f"#secBody{self._sec_n}{{background:rgba({r},{gg},{b},0.10);"
-                f"border:1px solid rgba({r},{gg},{b},0.45); border-top:none;"
-                f"border-bottom-left-radius:11px; border-bottom-right-radius:11px;}}")
-            v = QVBoxLayout(body); v.setSpacing(8); v.setContentsMargins(12, 10, 12, 12)
+                f"#secBody{self._sec_n}{{background:rgba({r},{gg},{b},0.06);"
+                f"border:1px solid rgba({r},{gg},{b},0.30); border-top:none;"
+                f"border-bottom-left-radius:{R_MD}px; border-bottom-right-radius:{R_MD}px;}}")
+            v = QVBoxLayout(body); pad(v, SP_3, spacing=SP_2)
             card = QWidget()
             cl = QVBoxLayout(card); cl.setContentsMargins(0, 0, 0, 0); cl.setSpacing(0)
             cl.addWidget(head); cl.addWidget(body)
@@ -1227,6 +1315,8 @@ class EditorDialog(QDialog):
         dlt.setToolTip("Xóa mẫu đang chọn"); dlt.clicked.connect(self._del_tmpl)
         _fit_button(dlt); mr.addWidget(dlt)
         gt.addLayout(mr)
+        gallery=QPushButton('Kho mẫu — xem bố cục sẵn')
+        gallery.clicked.connect(self._open_gallery);gt.addWidget(gallery)
 
         # Nhóm: Nền khung (xanh lá)
         gb, gb_box = _group("Nền khung", (52, 211, 153))
@@ -1236,11 +1326,42 @@ class EditorDialog(QDialog):
             b = QPushButton(label)
             b.setToolTip("Lấp đầy = crop cắt 2 bên cho video đầy khung (chuẩn TikTok)"
                          if mode == "fill" else "")
-            b.clicked.connect(lambda _, m=mode: self.canvas.set_bg(m))
+            b.clicked.connect(lambda _, m=mode: self._set_plain_background(m))
             _fit_button(b)
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             bgrow.addWidget(b)
         gb.addLayout(bgrow)
+        self.layered_style_btn=QPushButton('Áp dụng kiểu cong nhiều lớp')
+        self.layered_style_btn.setToolTip('Đặt video giữa khung, nền trên/dưới và lớp video sau nhẹ hơn. Giữ chữ, phụ đề, giọng và hiệu ứng đã chọn. Bấm Lưu để lưu vào mẫu.')
+        self.layered_style_btn.clicked.connect(self._apply_layered_style)
+        gb.addWidget(self.layered_style_btn)
+        from app.core.template_backgrounds import THEMES
+        self.design_bg=_NoWheelCombo();self.design_bg.addItem('Chọn nền thiết kế…','')
+        for key,(label,_,__) in THEMES.items():self.design_bg.addItem(label,key)
+        self.design_motion=QCheckBox('Nền chuyển động nhẹ khi xuất')
+        self.design_motion.setToolTip('Chỉ nền chuyển nhẹ; video giữ đúng tỉ lệ. Xem trước bố cục là ảnh tĩnh.')
+        self.design_curve=QCheckBox('Khung video uốn cong nhẹ')
+        self.design_echo=QCheckBox('Hai lớp video đồng bộ (lớp sau rõ nét)')
+        self.design_curve.toggled.connect(self._set_design_background)
+        self.design_echo.toggled.connect(self._set_design_background)
+        self.design_bg.currentIndexChanged.connect(self._set_design_background)
+        self.design_motion.toggled.connect(self._set_design_background)
+        gb.addWidget(self.design_bg);gb.addWidget(self.design_motion);gb.addWidget(self.design_curve);gb.addWidget(self.design_echo)
+        self.design_layer_controls={}
+        for key,label,low,high,value in [('opacity','Độ hiện lớp sau (%)',20,100,100),('scale','Kích thước lớp sau (%)',100,140,108),('ngang','Bề ngang lớp sau (%) · 0 = như kích thước',0,140,0),('shift','Lệch dọc lớp sau (%)',-20,20,0)]:
+            row=QHBoxLayout();row.addWidget(QLabel(label))
+            control=_NoWheelSpin();control.setRange(low,high);control.setValue(value)
+            control.valueChanged.connect(self._set_design_background)
+            self.design_layer_controls[key]=control;row.addWidget(control);gb.addLayout(row)
+        self.design_echo.setToolTip('Hai bản sao cùng khung hình, chỉ phát một luồng tiếng. Lớp sau lớn hơn và không làm mờ mặc định.')
+        # CHIỀU CAO khung video trên nền thiết kế — bề ngang luôn kín 100%,
+        # video cao hơn mức này thì cắt bớt trên/dưới (template_backgrounds.khung)
+        from app.core.template_backgrounds import CAO_KHOANG, CAO_MAC_DINH
+        row=QHBoxLayout();row.addWidget(QLabel('Chiều cao khung video (%)'))
+        self.design_cao=_NoWheelSpin();self.design_cao.setRange(*CAO_KHOANG);self.design_cao.setValue(CAO_MAC_DINH)
+        self.design_cao.setToolTip('Bề ngang video LUÔN kín khung. Video cao hơn mức này thì cắt bớt trên/dưới. Chỉ áp cho nền thiết kế.')
+        self.design_cao.valueChanged.connect(self._set_design_background)
+        row.addWidget(self.design_cao);gb.addLayout(row)
         br = QHBoxLayout(); br.addWidget(QLabel("Độ mờ nền"))
         self.blur_amt = _NoWheelSlider(Qt.Orientation.Horizontal)
         self.blur_amt.setRange(2, 50); self.blur_amt.setValue(22)
@@ -1368,6 +1489,8 @@ class EditorDialog(QDialog):
             "da (lệch U/V < 3).\n"
             "Cùng 1 clip KHÔNG lặp một kiểu. TẮT = ra file y hệt bản cũ.")
         hrow.addWidget(self.hieu_ung_cb, 1)
+        fx_library=QPushButton('Kho hiệu ứng…');fx_library.clicked.connect(self._open_effects_gallery)
+        hrow.addWidget(fx_library)
         gb.addLayout(hrow)
         # LẬT GƯƠNG (mirror trái-phải) để NÉ content-ID khi reup. Chỉ lật HÌNH;
         # chữ tiêu đề/Part + phụ đề chồng SAU nên vẫn đọc bình thường.
@@ -1379,6 +1502,18 @@ class EditorDialog(QDialog):
             "tiêu đề, chữ Part và phụ đề vẫn đọc bình thường (không bị ngược). "
             "Thời lượng, tiếng, mọi thứ khác giữ nguyên.")
         gb.addWidget(self.flip_h_chk)
+        # NÂNG SÁNG NHẸ (31/10/2026): gamma, 0 = không đụng; trần 20%.
+        _hs = QHBoxLayout()
+        _hs.addWidget(QLabel("Nâng sáng video (%)"))
+        self.do_sang_spin = _NoWheelSpin()
+        self.do_sang_spin.setRange(0, 20)
+        self.do_sang_spin.setValue(0)
+        self.do_sang_spin.setToolTip(
+            "Làm video sáng hơn một chút (chỉnh gamma: sáng vùng tối/vùng giữa, "
+            "giữ nguyên chỗ trắng và chỗ đen nên không cháy sáng). 0 = giữ "
+            "nguyên. Nên để 5-10; tối đa 20.")
+        _hs.addWidget(self.do_sang_spin)
+        gb.addLayout(_hs)
         # ---- CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) ----
         # Nguồn Douyin/reup đốt phụ đề VÀO KHUNG, gỡ ra không được. Ô này che nó
         # đi (không "xoá chữ"/inpaint — đã cân nhắc và loại, xem đầu che_chu.py).
@@ -1425,7 +1560,7 @@ class EditorDialog(QDialog):
             "ra nhìn bằng mắt thì VẪN ĐỌC ĐƯỢC bóng chữ Trung. Từ 0,60 trở lên "
             "mới thật sự không đọc nổi.")
         self.che_chu_muc_lbl = QLabel(f"{CHE_CHU_MAC_DINH:.2f}".replace(".", ","))
-        self.che_chu_muc_lbl.setFixedWidth(44)
+        fit_width(self.che_chu_muc_lbl, "0,00", pad_px=8, minimum=44)
         self.che_chu_muc.valueChanged.connect(
             lambda v: self.che_chu_muc_lbl.setText(
                 f"{v / 100:.2f}".replace(".", ",")))
@@ -1461,7 +1596,7 @@ class EditorDialog(QDialog):
             "phụ đề hay nằm); chữ ở GIỮA hình, GÓC TRÊN hay chữ trong biển "
             "hiệu thì KHÔNG dò được và không che. Mức mờ chặn cứng ở 0,60: đo "
             "thật, mức 0,40 máy báo sạch mà mắt vẫn đọc ra chữ.")
-        self.che_chu_note.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        set_role(self.che_chu_note, "hint")
         self.che_chu_note.setWordWrap(True)
         gb.addWidget(self.che_chu_note)
         self._che_chu_ui()
@@ -1484,7 +1619,7 @@ class EditorDialog(QDialog):
         srow.addWidget(self.fx_sfx_clear)
         gb.addLayout(srow)
         self.fx_sfx_lbl = QLabel("")
-        self.fx_sfx_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        set_role(self.fx_sfx_lbl, "hint")
         self.fx_sfx_lbl.setWordWrap(True)
         gb.addWidget(self.fx_sfx_lbl)
         self._fx_sfx_update()
@@ -1493,10 +1628,17 @@ class EditorDialog(QDialog):
         gx, gx_box = _group("Nhạc nền + Logo kênh", (244, 114, 182))
         mrow = QHBoxLayout(); mrow.addWidget(QLabel("Nhạc nền"))
         self.bgm_mode = _NoWheelCombo()
-        for label, m in (("Tắt", "off"), ("Ngẫu nhiên từ thư mục", "random"),
+        for label, m in (("Tự chọn theo nội dung (mặc định)", "auto"),
+                         ("Tắt hẳn (không nhạc)", "none"),
+                         ("Ngẫu nhiên từ thư mục", "random"),
                          ("1 bài cố định", "fixed")):
             self.bgm_mode.addItem(label, m)
         self.bgm_mode.setToolTip(
+            "Tự chọn theo nội dung: app nghe LỜI THOẠI + tiêu đề từng Part rồi "
+            "chọn bài cùng không khí trong kho nhạc CC0 của app (căng thẳng / "
+            "buồn / bí ẩn / êm / vui). Cảnh kịch tính KHÔNG BAO GIỜ ra nhạc vui. "
+            "Âm lượng TỰ ĐẶT dưới lời nói, đang nói tự hạ thêm; video gốc đã "
+            "có nhạc thì tự bỏ qua.\n"
             "Ngẫu nhiên: mỗi clip xuất sẽ tự lấy 1 bài bất kỳ trong thư mục "
             "nhạc của bạn. Nhạc tự lặp/cắt cho khớp độ dài clip, trộn NHỎ dưới "
             "tiếng nói gốc.")
@@ -1510,19 +1652,64 @@ class EditorDialog(QDialog):
         mrow.addWidget(self.bgm_pick)
         gx.addLayout(mrow)
         self.bgm_lbl = QLabel("")
-        self.bgm_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        set_role(self.bgm_lbl, "hint")
         self.bgm_lbl.setWordWrap(True)
         gx.addWidget(self.bgm_lbl)
         self._bgm_dir = ""; self._bgm_file = ""
-        vrow = QHBoxLayout(); vrow.addWidget(QLabel("Âm lượng nhạc"))
+        vrow = QHBoxLayout()
+        self.bgm_vol_tieu_de = QLabel("Âm lượng nhạc")
+        vrow.addWidget(self.bgm_vol_tieu_de)
         self.bgm_vol = _NoWheelSlider(Qt.Orientation.Horizontal)
         self.bgm_vol.setRange(5, 60); self.bgm_vol.setValue(15)  # 5%..60%
         vrow.addWidget(self.bgm_vol, 1)
-        self.bgm_vol_lbl = QLabel("15%"); self.bgm_vol_lbl.setFixedWidth(40)
+        self.bgm_vol_lbl = QLabel("15%"); fit_width(self.bgm_vol_lbl, "100%", pad_px=6, minimum=40)
         self.bgm_vol.valueChanged.connect(
             lambda v: self.bgm_vol_lbl.setText(f"{v}%"))
         vrow.addWidget(self.bgm_vol_lbl)
         gx.addLayout(vrow)
+        # NHẠC TỰ CHỌN: độ to do anh Hùng tự chỉnh + NGHE THỬ (02/11/2026).
+        # Nhãn chữ, KHÔNG emoji (luật v2.6.22: máy thiếu glyph ra ô đen).
+        from app.core.music_library import MOODS as _MOODS
+        # THANH KÉO (anh Hùng 02/11/2026: "không kéo chỉnh được âm thanh à" —
+        # bản trước là ô chọn 5 mức). Giá trị thanh s = 0..20 -> nhạc nằm
+        # DƯỚI lời (24 - s) dB: kéo PHẢI = TO hơn. Mặc định s=12 (dưới lời 12).
+        arow = QHBoxLayout(); arow.addWidget(QLabel("Độ to nhạc tự chọn"))
+        self.bgm_auto_muc = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self.bgm_auto_muc.setRange(0, 20)
+        self.bgm_auto_muc.setValue(12)
+        self.bgm_auto_muc.setToolTip(
+            "Kéo PHẢI = nhạc TO hơn, kéo TRÁI = nhỏ hơn. Số là nhạc nằm DƯỚI "
+            "giọng nói bao nhiêu dB (6 = rất to, 20 = rất nhỏ). Lúc đang nói "
+            "nhạc tự hạ thêm ~6 dB nên không lấn giọng.")
+        arow.addWidget(self.bgm_auto_muc, 1)
+        self.bgm_auto_lbl = QLabel("")
+        fit_width(self.bgm_auto_lbl, "Rất nhỏ · dưới lời 24 dB", pad_px=6,
+                  minimum=60)
+        self.bgm_auto_muc.valueChanged.connect(lambda _v: self._bgm_auto_lbl())
+        arow.addWidget(self.bgm_auto_lbl)
+        gx.addLayout(arow)
+        self._bgm_auto_lbl()
+        nrow = QHBoxLayout(); nrow.addWidget(QLabel("Nghe thử với"))
+        self.bgm_nghe_mood = _NoWheelCombo()
+        self.bgm_nghe_mood.addItem("Tự đoán theo video", "")
+        for _k, _ten in _MOODS.items():
+            self.bgm_nghe_mood.addItem(_ten, _k)
+        nrow.addWidget(self.bgm_nghe_mood, 1)
+        self.bgm_nghe_btn = QPushButton("Nghe thử nhạc nền")
+        self.bgm_nghe_btn.setToolTip(
+            "Nghe 20 giây: tiếng của video đang chọn + nhạc ở ĐÚNG mức độ to "
+            "đang chọn (giống hệt lúc xuất). Chưa chọn video thì nghe nhạc riêng.")
+        self.bgm_nghe_btn.clicked.connect(self._bgm_nghe_thu)
+        nrow.addWidget(self.bgm_nghe_btn)
+        self.bgm_dung_btn = QPushButton("Dừng")
+        self.bgm_dung_btn.clicked.connect(self._bgm_dung)
+        nrow.addWidget(self.bgm_dung_btn)
+        gx.addLayout(nrow)
+        self.bgm_nghe_lbl = QLabel("")
+        set_role(self.bgm_nghe_lbl, "hint")
+        self.bgm_nghe_lbl.setWordWrap(True)
+        gx.addWidget(self.bgm_nghe_lbl)
+        self._bgm_nghe_ready.connect(self._bgm_nghe_xong)
         # ÂM LƯỢNG TIẾNG GỐC (độc lập nhạc nền): kéo nhỏ khi muốn nhạc/lồng
         # tiếng nổi hơn. Mặc định 100%. Khi có lồng tiếng, tiếng gốc tự hạ
         # (~12%) trừ khi user kéo tại đây (giá trị này luôn được ưu tiên).
@@ -1534,7 +1721,7 @@ class EditorDialog(QDialog):
             "muốn nhạc nền/lồng tiếng nổi hơn. Khi bật lồng tiếng, để 100% thì "
             "tiếng gốc tự hạ nhỏ làm nền; kéo tay để tự quyết mức.")
         orow.addWidget(self.orig_vol, 1)
-        self.orig_vol_lbl = QLabel("100%"); self.orig_vol_lbl.setFixedWidth(40)
+        self.orig_vol_lbl = QLabel("100%"); fit_width(self.orig_vol_lbl, "200%", pad_px=6, minimum=40)
         self.orig_vol.valueChanged.connect(
             lambda v: self.orig_vol_lbl.setText(f"{v}%"))
         orow.addWidget(self.orig_vol_lbl)
@@ -1553,7 +1740,7 @@ class EditorDialog(QDialog):
         _fit_button(lc); lrow.addWidget(lc)
         gx.addLayout(lrow)
         self.logo_lbl = QLabel("(chưa có logo)")
-        self.logo_lbl.setStyleSheet("color:#9AA6BF; font-size:11px;")
+        set_role(self.logo_lbl, "hint")
         self.logo_lbl.setWordWrap(True)
         gx.addWidget(self.logo_lbl)
         l2 = QHBoxLayout(); l2.addWidget(QLabel("Góc"))
@@ -1667,7 +1854,7 @@ class EditorDialog(QDialog):
         self.cap_ow.setValue(0)
         self.cap_ow.setToolTip("Độ dày viền chữ (0 = theo preset).")
         self.cap_ow.valueChanged.connect(self._refresh_cap_soon)
-        self.cap_ow_lbl = QLabel("preset"); self.cap_ow_lbl.setFixedWidth(44)
+        self.cap_ow_lbl = QLabel("preset"); fit_width(self.cap_ow_lbl, "preset", pad_px=6, minimum=44)
         self.cap_ow.valueChanged.connect(
             lambda v: self.cap_ow_lbl.setText("preset" if v == 0 else str(v)))
         gc.addLayout(_frow("Độ dày viền", self.cap_ow, self.cap_ow_lbl))
@@ -1675,7 +1862,7 @@ class EditorDialog(QDialog):
         self.cap_size = _NoWheelSlider(Qt.Orientation.Horizontal)
         self.cap_size.setRange(18, 80); self.cap_size.setValue(40)  # = 4.0%
         self.cap_size.valueChanged.connect(self._refresh_cap_soon)   # gộp -> khỏi đơ
-        self.cap_lbl_sz = QLabel("4.0%"); self.cap_lbl_sz.setFixedWidth(44)
+        self.cap_lbl_sz = QLabel("4.0%"); fit_width(self.cap_lbl_sz, "10.0%", pad_px=6, minimum=44)
         self.cap_size.valueChanged.connect(
             lambda v: self.cap_lbl_sz.setText(f"{v/10:.1f}%"))
         gc.addLayout(_frow("Cỡ chữ", self.cap_size, self.cap_lbl_sz))
@@ -1690,14 +1877,14 @@ class EditorDialog(QDialog):
         gc.addLayout(_frow("Font", self.cap_font))
         # 8. VỊ TRÍ (kéo ô vàng trên khung) + KHỚP GIỜ + HOOK — phần riêng của
         # phụ đề gốc (không đối xứng sang khu AI, để cuối khu).
-        cs3 = QHBoxLayout(); lb3 = QLabel("Khớp giờ"); lb3.setFixedWidth(_LBL_W)
+        cs3 = QHBoxLayout(); lb3 = QLabel("Khớp giờ"); fit_width(lb3, "Khớp giờ", pad_px=6, minimum=_LBL_W)
         cs3.addWidget(lb3)
         self.cap_delay = _NoWheelSlider(Qt.Orientation.Horizontal)
         self.cap_delay.setRange(-300, 500)      # -0.3s (sớm) .. +0.5s (trễ)
         self.cap_delay.setValue(120)            # mặc định trễ 0.12s
         self.cap_delay.setToolTip("Kéo PHẢI nếu chữ hiện SỚM hơn lời; kéo TRÁI nếu "
                                   "hiện TRỄ. Đơn vị mili-giây.")
-        self.cap_lbl = QLabel("+120ms"); self.cap_lbl.setFixedWidth(56)
+        self.cap_lbl = QLabel("+120ms"); fit_width(self.cap_lbl, "-1200ms", pad_px=6, minimum=56)
         self.cap_delay.valueChanged.connect(
             lambda v: self.cap_lbl.setText(f"{'+' if v >= 0 else ''}{v}ms"))
         cs3.addWidget(self.cap_delay, 1); cs3.addWidget(self.cap_lbl)
@@ -1772,7 +1959,7 @@ class EditorDialog(QDialog):
         self.narr_ow.setValue(0)
         self.narr_ow.setToolTip("Độ dày viền chữ AI đọc (0 = theo kiểu).")
         self.narr_ow.valueChanged.connect(self._refresh_narr_soon)
-        self.narr_ow_lbl = QLabel("preset"); self.narr_ow_lbl.setFixedWidth(44)
+        self.narr_ow_lbl = QLabel("preset"); fit_width(self.narr_ow_lbl, "preset", pad_px=6, minimum=44)
         self.narr_ow.valueChanged.connect(
             lambda v: self.narr_ow_lbl.setText("preset" if v == 0 else str(v)))
         gn.addLayout(_frow("Độ dày viền", self.narr_ow, self.narr_ow_lbl))
@@ -1780,7 +1967,7 @@ class EditorDialog(QDialog):
         self.narr_size = _NoWheelSlider(Qt.Orientation.Horizontal)
         self.narr_size.setRange(18, 80); self.narr_size.setValue(45)  # = 4.5%
         self.narr_size.valueChanged.connect(self._refresh_narr_soon)
-        self.narr_sz_lbl = QLabel("4.5%"); self.narr_sz_lbl.setFixedWidth(44)
+        self.narr_sz_lbl = QLabel("4.5%"); fit_width(self.narr_sz_lbl, "10.0%", pad_px=6, minimum=44)
         self.narr_size.valueChanged.connect(
             lambda v: self.narr_sz_lbl.setText(f"{v/10:.1f}%"))
         gn.addLayout(_frow("Cỡ chữ", self.narr_size, self.narr_sz_lbl))
@@ -1825,10 +2012,10 @@ class EditorDialog(QDialog):
         a1.clicked.connect(lambda: self._add(is_part=False))
         _fit_button(a1); ar.addWidget(a1)
         gl.addLayout(ar)
-        self.box = QVBoxLayout(); self.box.setSpacing(8)
+        self.box = QVBoxLayout(); self.box.setSpacing(SP_2)
         host = QWidget(); host.setLayout(self.box)
         sc = QScrollArea(); sc.setWidgetResizable(True); sc.setWidget(host)
-        sc.setStyleSheet("QScrollArea{border:none;}")
+        # không viền: QSS chung (theme) đã đặt cho QScrollArea
         gl.addWidget(sc, 1)
         self._grp_layers = gl_box        # cả nhóm Lớp chữ
         self._layer_scroll = sc          # cuộn nội bộ tới đúng _LayerRow
@@ -1860,6 +2047,22 @@ class EditorDialog(QDialog):
             if vr:
                 self.canvas.vbox.set_rect(*vr)
             self.canvas.set_bg(layout.get("bg", "blur"))
+            from app.core.template_backgrounds import decode
+            theme,motion=decode(layout.get('bg'))
+            self.design_bg.blockSignals(True);self.design_motion.blockSignals(True)
+            self.design_bg.setCurrentIndex(max(0,self.design_bg.findData(theme or '')))
+            self.design_motion.setChecked(motion)
+            self.design_bg.blockSignals(False);self.design_motion.blockSignals(False)
+            self.design_motion.setEnabled(bool(theme))
+            from app.core.template_backgrounds import options
+            flags=options(layout.get('bg'))[1]
+            for control,key in ((self.design_curve,'curve'),(self.design_echo,'echo')):
+                control.blockSignals(True);control.setChecked(key in flags);control.setEnabled(True);control.blockSignals(False)
+            from app.core.template_backgrounds import layer_settings
+            values=layer_settings(layout.get('bg'))
+            for key,control in self.design_layer_controls.items():
+                control.blockSignals(True);control.setValue(values[key]);control.setEnabled('echo' in flags);control.blockSignals(False)
+            self.design_cao.blockSignals(True);self.design_cao.setValue(values['cao']);self.design_cao.setEnabled(bool(theme));self.design_cao.blockSignals(False)
             self.trim_chk.setChecked(layout.get("trim_black", False))
             self.fit_src_chk.setChecked(bool(layout.get("fit_src", False)))
             # đồng bộ chắc chắn (setChecked không phát toggled nếu state trùng
@@ -1920,11 +2123,12 @@ class EditorDialog(QDialog):
             # "kệ nó đi, k bỏ vậy") => 200-300 kênh đang chạy sẽ CÓ hiệu ứng
             # điểm nhấn ngay khi cập nhật. Muốn tắt hết thì đổi 3 chỗ mặc định:
             # đây, `studio_page._export_video_inner`, `m1_highlight`.
-            _hi = self.hieu_ung_cb.findData(
-                str(layout.get("hieu_ung", "nhe") or "tat"))
-            if _hi >= 0:
-                self.hieu_ung_cb.setCurrentIndex(_hi)
+            self._set_effects_value(str(layout.get('hieu_ung','nhe') or 'tat'))
             self.flip_h_chk.setChecked(bool(layout.get("flip_h", False)))
+            try:
+                self.do_sang_spin.setValue(int(round(float(layout.get("do_sang", 0) or 0))))
+            except (TypeError, ValueError):
+                self.do_sang_spin.setValue(0)
             # CHE CHỮ CHÁY SẴN — mẫu CŨ chưa có khoá này -> TẮT (mặc định an
             # toàn: 200-300 kênh đang chạy không được tự nhiên bị che hình).
             self.che_chu_chk.setChecked(bool(layout.get("che_chu", False)))
@@ -1945,12 +2149,15 @@ class EditorDialog(QDialog):
             self._che_chu_ui()
             self._fx_sfx_dir = layout.get("fx_sfx_dir", "") or ""
             self._fx_sfx_update()
-            bi = self.bgm_mode.findData(layout.get("bgm_mode", "off"))
+            # 'off' cũ / thiếu khoá = TỰ CHỌN (mặc định mới, xem che_do_mau)
+            from app.core.nhac_tu_dong import che_do_mau
+            bi = self.bgm_mode.findData(che_do_mau(layout.get("bgm_mode")))
             if bi >= 0:
                 self.bgm_mode.setCurrentIndex(bi)
             self._bgm_dir = layout.get("bgm_dir", "") or ""
             self._bgm_file = layout.get("bgm_file", "") or ""
             self.bgm_vol.setValue(int(float(layout.get("bgm_vol", 0.15)) * 100))
+            self._dat_bgm_auto_db(layout.get("bgm_auto_db", 12))
             self.orig_vol.setValue(int(float(layout.get("orig_vol", 1.0)) * 100))
             self._bgm_mode_ui()
             # lồng tiếng AI (voice để "pending" — list giọng nạp nền xong
@@ -2128,8 +2335,8 @@ class EditorDialog(QDialog):
             w.setObjectName(nm)
         w.setStyleSheet(
             self._hl_qss
-            + f"\n#{nm}{{background:rgba(110,139,255,0.30);"
-              "border:2px solid #6E8BFF; border-radius:11px;}}")
+            + f"\n#{nm}{{background:{rgba(ACCENT, 0.22)};"
+              f"border:2px solid {ACCENT}; border-radius:{R_MD}px;}}")
 
         def _restore():
             if getattr(self, "_hl_widget", None) is w:
@@ -2365,10 +2572,126 @@ class EditorDialog(QDialog):
             pass
         super().done(r)
 
+    # ---- Nghe thử NHẠC NỀN TỰ CHỌN (chạy nền, không đơ giao diện) ----
+    def _bgm_nghe_thu(self):
+        import os, tempfile, threading, uuid
+        self._bgm_dung()
+        self.bgm_nghe_btn.setEnabled(False)
+        self.bgm_nghe_btn.setText("Đang dựng…")
+        self.bgm_nghe_lbl.setText("")
+        mood = self.bgm_nghe_mood.currentData() or None
+        duoi = self._bgm_auto_db()
+        # NHẠC RIÊNG của anh (thư mục / 1 bài): nghe ĐÚNG file + ĐÚNG thanh
+        # "Âm lượng nhạc" như lúc xuất. Thư mục -> bốc ngẫu nhiên 1 bài.
+        m = self.bgm_mode.currentData()
+        nhac_file, vol = None, self.bgm_vol.value() / 100.0
+        if m == "fixed":
+            # mất file -> báo NGAY (khỏi chạy nền rồi mới báo; cổng 106 bắt
+            # được mục này nhấp nháy 1/4 lượt vì báo trễ)
+            nhac_file = (self._bgm_file if self._bgm_file
+                         and os.path.isfile(self._bgm_file) else "")
+        elif m == "random":
+            import random
+            try:
+                ds = [os.path.join(self._bgm_dir, f)
+                      for f in os.listdir(self._bgm_dir or "")
+                      if os.path.splitext(f)[1].lower() in
+                      (".mp3", ".m4a", ".wav", ".ogg", ".opus", ".aac", ".flac")]
+            except OSError:
+                ds = []
+            nhac_file = random.choice(ds) if ds else ""
+        if nhac_file == "":
+            self._bgm_nghe_xong("", "Chưa có file nhạc: chọn thư mục / bài trước "
+                                    "(hoặc đổi sang 'Tự chọn theo nội dung').")
+            return
+        src = getattr(self, "_nghe_src", None)
+        tr = getattr(self, "_nghe_transcript", None)
+        t0 = float(getattr(self, "_nghe_t0", 0.0) or 0.0)
+        tmp = tempfile.gettempdir()
+        for old in os.listdir(tmp):
+            if old.startswith("_bgmnghe_") and old.endswith(".wav"):
+                try:
+                    os.remove(os.path.join(tmp, old))
+                except OSError:
+                    pass
+        wav = os.path.join(tmp, f"_bgmnghe_{uuid.uuid4().hex[:8]}.wav")
+
+        def work():
+            from app.core.nhac_tu_dong import dung_nghe_thu
+            kq = dung_nghe_thu(wav, mood=mood, duoi_db=duoi, src=src,
+                               transcript=tr, t0=t0, nhac_file=nhac_file,
+                               vol=vol)
+            if kq.get("ok"):
+                tt = f"{kq['bai']} — {kq.get('tac_gia', '')} ({kq['tam_trang']})"
+                ghi = ("tiếng video đang chọn + nhạc" if kq.get("co_loi")
+                       else "chưa chọn video: nghe nhạc riêng ở đúng mức")
+                self._bgm_nghe_ready.emit(wav, f"Đang phát: {tt} · {ghi}")
+            else:
+                self._bgm_nghe_ready.emit("", "Nghe thử lỗi: "
+                                          + str(kq.get("loi", ""))[:160])
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _bgm_nghe_xong(self, wav, bao):
+        import os
+        self.bgm_nghe_btn.setText("Nghe thử nhạc nền")
+        self.bgm_nghe_btn.setEnabled(self.bgm_mode.currentData() != "none")
+        self.bgm_nghe_lbl.setText(bao)
+        if not wav or not os.path.exists(wav):
+            return
+        try:
+            import winsound
+            winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC
+                               | winsound.SND_NODEFAULT)
+        except Exception as e:  # noqa: BLE001 — máy không phát được tiếng
+            self.bgm_nghe_lbl.setText(f"Không phát được âm thanh: {e}")
+
+    def _bgm_auto_db(self) -> int:
+        """Số dB nhạc tự chọn nằm DƯỚI lời, từ thanh kéo (phải = to)."""
+        return 24 - int(self.bgm_auto_muc.value())
+
+    def _dat_bgm_auto_db(self, db) -> None:
+        try:
+            d = int(round(float(db)))
+        except (TypeError, ValueError):
+            d = 12
+        self.bgm_auto_muc.setValue(max(0, min(20, 24 - d)))
+        self._bgm_auto_lbl()
+
+    def _bgm_auto_lbl(self) -> None:
+        d = self._bgm_auto_db()
+        ten = ("Rất nhỏ" if d >= 18 else "Nhỏ" if d >= 14 else
+               "Vừa" if d >= 11 else "To" if d >= 8 else "Rất to")
+        self.bgm_auto_lbl.setText(f"{ten} · dưới lời {d} dB")
+
+    def _bgm_dung(self):
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:  # noqa: BLE001
+            pass
+
     # ---- Nhạc nền + logo ----
     def _bgm_mode_ui(self):
         m = self.bgm_mode.currentData()
-        self.bgm_pick.setEnabled(m != "off")
+        self.bgm_pick.setEnabled(m not in ("none", "auto"))
+        # tự chọn: âm lượng do app đo theo lời nói của từng clip -> khoá thanh
+        self.bgm_vol.setEnabled(m in ("random", "fixed"))
+        self.bgm_auto_muc.setEnabled(m == "auto")
+        # tự chọn: thanh "Âm lượng nhạc" (dành cho NHẠC CỦA ANH) không dùng ->
+        # ẨN hẳn cho khỏi nhầm (ảnh anh Hùng: thanh mờ mà vẫn hiện "13%")
+        for _w in (self.bgm_vol_tieu_de, self.bgm_vol, self.bgm_vol_lbl):
+            _w.setVisible(m in ("random", "fixed"))
+        # nghe thử được ở MỌI chế độ có nhạc (anh Hùng dùng thư mục nhạc riêng
+        # mà nút bị mờ -> "đâu có thấy đâu", 02/11/2026); chọn tâm trạng chỉ
+        # có nghĩa với nhạc tự chọn
+        self.bgm_nghe_btn.setEnabled(m != "none")
+        self.bgm_nghe_mood.setEnabled(m == "auto")
+        self.bgm_nghe_lbl.setText(
+            "" if m in ("auto", "none") else
+            "Đang dùng NHẠC CỦA ANH: chỉnh bằng thanh 'Âm lượng nhạc' rồi bấm "
+            "Nghe thử. Muốn dùng kho nhạc của app + 'Độ to nhạc tự chọn' thì "
+            "đổi Nhạc nền sang 'Tự chọn theo nội dung'.")
         self.bgm_pick.setText("Chọn thư mục…" if m == "random" else
                               "Chọn bài…" if m == "fixed" else "Chọn…")
         self._bgm_lbl_update()
@@ -2379,6 +2702,15 @@ class EditorDialog(QDialog):
             self.bgm_lbl.setText(f"Thư mục nhạc: {self._bgm_dir or '(chưa chọn)'}")
         elif m == "fixed":
             self.bgm_lbl.setText(f"Bài: {self._bgm_file or '(chưa chọn)'}")
+        elif m == "auto":
+            try:
+                from app.core.music_library import catalog
+                n = len(catalog())
+            except Exception:  # noqa: BLE001 — kho hỏng: nói ra, không nổ
+                n = 0
+            self.bgm_lbl.setText(
+                f"App tự chọn trong {n} bài theo không khí từng Part · âm lượng "
+                f"tự đặt NHỎ dưới lời nói (thanh âm lượng không dùng)")
         else:
             self.bgm_lbl.setText("")
 
@@ -2678,7 +3010,7 @@ class EditorDialog(QDialog):
         pl.errorOccurred.connect(on_err)
         dlg._pl = pl; dlg._ao = ao
         info = QLabel("Phát lặp lại. Ưng thì bấm Đóng — kiểu này đã được chọn sẵn.")
-        info.setStyleSheet("color:#9AA6BF; font-size:12px;"); v.addWidget(info)
+        set_role(info, "muted"); v.addWidget(info)
         cb = QPushButton("Đóng"); cb.setProperty("primary", True)
         cb.clicked.connect(lambda: (pl.stop(), dlg.accept())); v.addWidget(cb)
         pl.play()
@@ -2740,6 +3072,7 @@ class EditorDialog(QDialog):
         lay["hieu_ung"] = self.hieu_ung_cb.currentData() or "tat"
         lay["fx_sfx_dir"] = self._fx_sfx_dir
         lay["flip_h"] = self.flip_h_chk.isChecked()
+        lay["do_sang"] = int(self.do_sang_spin.value())
         # CHE CHỮ CHÁY SẴN — mức mờ đi qua `chuan_muc_mo` LẦN NỮA trước khi lưu
         # (thanh kéo đã chặn min=60, nhưng sàn phải nằm trong MÃ chứ không chỉ
         # ở widget: mẫu do bản khác/sửa tay ghi ra vẫn phải bị kẹp).
@@ -2747,10 +3080,11 @@ class EditorDialog(QDialog):
         lay["che_chu_cach"] = che_chu_chuan_cach(self.che_chu_cach.currentData())
         lay["che_chu_muc"] = che_chu_chuan_muc(self.che_chu_muc.value() / 100.0)
         lay["che_chu_toan_khung"] = self.che_chu_tk.isChecked()
-        lay["bgm_mode"] = self.bgm_mode.currentData() or "off"
+        lay["bgm_mode"] = self.bgm_mode.currentData() or "auto"
         lay["bgm_dir"] = self._bgm_dir
         lay["bgm_file"] = self._bgm_file
         lay["bgm_vol"] = self.bgm_vol.value() / 100.0
+        lay["bgm_auto_db"] = self._bgm_auto_db()
         lay["orig_vol"] = self.orig_vol.value() / 100.0
         lay["dub_lang"] = self.dub_lang.currentData() or ""
         # list giọng còn đang nạp nền -> giữ voice của layout cũ (pending)
@@ -2796,7 +3130,19 @@ class EditorDialog(QDialog):
         services.save_template(name, self._collect_layout())
         self._current_name = name
         self._db_changed = True
-        QMessageBox.information(self, "Đã lưu", f"Đã cập nhật mẫu “{name}”.")
+        # báo NỔI không chặn (anim.toast) — hộp OK chặn tay chỉ để báo "đã lưu"
+        # làm chậm thao tác chỉnh-lưu liên tục; lỗi gì thì lùi về hộp cũ.
+        try:
+            from app.ui.anim import toast
+            if toast(self, f"Đã cập nhật mẫu “{name}”.", kind="success") is None:
+                raise RuntimeError
+        except Exception:  # noqa: BLE001
+            try:
+                from app.ui.anim import toast
+                if toast(self, f"Đã cập nhật mẫu “{name}”.", kind="success") is None:
+                    raise RuntimeError
+            except Exception:  # noqa: BLE001
+                QMessageBox.information(self, "Đã lưu", f"Đã cập nhật mẫu “{name}”.")
 
     def _save_tmpl_new(self):
         name, ok = QInputDialog.getText(self, "Lưu mẫu mới", "Tên mẫu:")
@@ -2818,6 +3164,74 @@ class EditorDialog(QDialog):
             self._current_name = ""
             self._db_changed = True
             self._reload_tmpl()
+
+    def _apply_layered_style(self):
+        # Use the existing shared preview/export settings, not a second renderer.
+        controls=[self.design_bg,self.design_motion,self.design_curve,self.design_echo,*self.design_layer_controls.values()]
+        previous=[c.blockSignals(True) for c in controls]
+        try:
+            # Nền đang là VIDEO MỜ / LẤP ĐẦY thì GIỮ nguyên làm nền dưới
+            # (ra layer:blur:curve:echo — video chạy song song phía sau). Bản
+            # cũ luôn nhảy sang nền GIẤY: anh Hùng bấm nút này trên mẫu «chữ
+            # mới eng» (nền mờ) ngày 30/10/2026 rồi Lưu -> nền video mất, chỉ
+            # còn tờ giấy tĩnh. Chỉ nền Đen/Trắng mới đổi sang giấy như cũ.
+            from app.core.template_backgrounds import plain_base
+            if (not self.design_bg.currentData()
+                    and plain_base(str(self.canvas.bg or '')) not in ('blur', 'fill')):
+                self.design_bg.setCurrentIndex(self.design_bg.findData('paper'))
+            self.design_motion.setChecked(True)
+            self.design_curve.setChecked(True)
+            self.design_echo.setChecked(True)
+            for key,value in {'opacity':55,'scale':112,'shift':0}.items():
+                self.design_layer_controls[key].setValue(value)
+        finally:
+            for control,blocked in zip(controls,previous):control.blockSignals(blocked)
+        self.canvas.vbox.set_rect(.5,.5,1.)
+        self.fit_src_chk.setChecked(True)
+        self._set_design_background()
+        self.canvas.update()
+
+    def _set_plain_background(self,mode):
+        self.canvas.set_bg(mode)
+        self.design_bg.blockSignals(True);self.design_motion.blockSignals(True)
+        self.design_bg.setCurrentIndex(0);self.design_motion.setChecked(False)
+        self.design_bg.blockSignals(False);self.design_motion.blockSignals(False)
+        self.design_motion.setEnabled(False)
+        for control in (self.design_curve,self.design_echo):
+            control.blockSignals(True);control.setChecked(False);control.setEnabled(True);control.blockSignals(False)
+        for control in self.design_layer_controls.values():control.setEnabled(False)
+        if hasattr(self,'design_cao'):self.design_cao.setEnabled(False)
+
+    def _set_design_background(self,*_):
+        from app.core.template_backgrounds import encode,encode_plain
+        theme=self.design_bg.currentData()
+        self.design_motion.setEnabled(bool(theme))
+        self.design_curve.setEnabled(True);self.design_echo.setEnabled(True)
+        for control in getattr(self,'design_layer_controls',{}).values():control.setEnabled(self.design_echo.isChecked())
+        _cao=self.design_cao.value() if hasattr(self,'design_cao') else 44
+        if hasattr(self,'design_cao'):self.design_cao.setEnabled(bool(theme))
+        if theme:self.canvas.set_bg(encode(theme,self.design_motion.isChecked(),self.design_curve.isChecked(),self.design_echo.isChecked(),cao=_cao,**{key:control.value() for key,control in getattr(self,'design_layer_controls',{}).items()}))
+        else:self.canvas.set_bg(encode_plain(self.canvas.bg,self.design_curve.isChecked(),self.design_echo.isChecked(),**{key:control.value() for key,control in self.design_layer_controls.items()}))
+
+    def _set_effects_value(self,value):
+        from app.core.effects_config import parse
+        level,keys=parse(value)
+        index=self.hieu_ung_cb.findData(value)
+        if index<0 and keys is not None:
+            label=f"Tùy chỉnh · {HIEU_UNG_NHAN[level].split(' (')[0]} · {len(keys)} kiểu"
+            self.hieu_ung_cb.addItem(label,value);index=self.hieu_ung_cb.count()-1
+        self.hieu_ung_cb.setCurrentIndex(max(0,index))
+
+    def _open_effects_gallery(self):
+        from app.ui.effects_gallery import EffectsGallery
+        dlg=EffectsGallery(self,self.hieu_ung_cb.currentData() or 'tat')
+        if dlg.exec():self._set_effects_value(dlg.value)
+
+    def _open_gallery(self):
+        from app.ui.template_gallery import TemplateGallery
+        dlg=TemplateGallery(self,self.tmpl.currentData() or '',button_text='Dùng mẫu trong trình chỉnh')
+        if dlg.exec() and dlg.selected_name:
+            self._reload_tmpl(dlg.selected_name);self._load_tmpl()
 
     def _load_tmpl(self):
         name = self.tmpl.currentData()

@@ -177,7 +177,7 @@ print("\n=== 6. HÀNG 'Nguồn video' — nơi cổng này TỪNG KHÔNG NGÓ T�
 # 52px (CỤT trên máy anh Hùng) và 3 nút EMOJI TRẦN `⚙`/`✏`/`📊` — đúng họ
 # lỗi v2.6.22 "xấu quá tự nhiên có cái ô đen" trên máy thiếu phông màu.
 _i0 = _src.find("srcrow = QHBoxLayout()")
-_i1 = _src.find('plw.addWidget(self._sec_hdr("Nguồn video"', _i0)
+_i1 = _src.find('# ---- hết hàng Nguồn video ----', _i0)
 ok(_i0 > 0 and _i1 > _i0, "6a khoanh được vùng hàng Nguồn video",
    f"{_i1 - _i0} ký tự")
 _hang = _src[_i0:_i1]

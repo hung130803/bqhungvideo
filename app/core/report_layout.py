@@ -2,15 +2,19 @@
 from pathlib import Path
 import math
 
-LAYOUTS={'template':'Theo mẫu xuất hiện tại','report':'Phóng sự · vàng / đỏ','explain':'Giải thích · xanh'}
+LAYOUTS={'template':'Theo mẫu xuất hiện tại','report':'Phóng sự · vàng / đỏ','explain':'Giải thích · xanh',
+         'paper':'Tạp chí · nền giấy', 'navy':'Bản tin · xanh đêm', 'mint':'Tối giản · xanh ngọc'}
+BACKGROUNDS={'auto':'Theo bố cục','blur':'Video làm mờ','paper':'Giấy ấm','navy':'Xanh đêm','mint':'Xanh ngọc','black':'Đen'}
 
 def keeps_full_source(plan):
     """Report coordinates and preview refer to the uncropped source image."""
-    return bool(plan and plan.get('enabled',True) and plan.get('layout','template') in ('report','explain'))
+    return bool(plan and plan.get('enabled',True) and plan.get('layout','template') in set(LAYOUTS)-{'template'})
 
-def geometry(iw,ih,ow,oh):
+def geometry(iw,ih,ow,oh,plan=None):
     # Source always fits between cards. No crop, including portrait footage.
-    scale=min(ow*.98/iw,oh*.34/ih)
+    height=float((plan or {}).get('video_height',.34))
+    if not math.isfinite(height) or not .20<=height<=.44:raise ValueError('Chiều cao khung video phải từ 20 đến 44%.')
+    scale=min(ow*.98/iw,oh*height/ih)
     return (.5,.46,iw*scale/ow)
 
 def pages(text,limit=150):
@@ -63,7 +67,7 @@ def spoken_cards(events,total):
     return sorted(cards,key=lambda c:c[1])
 
 
-def append_spoken_track(cmd,filters,label,index,cards,folder,width,height,color,total):
+def append_spoken_track(cmd,filters,label,index,cards,folder,width,height,color,total,y=.65):
     """One timed image stream, not one FFmpeg decoder per spoken phrase."""
     from PyQt6.QtGui import QImage
     from PyQt6.QtCore import Qt
@@ -89,16 +93,19 @@ def append_spoken_track(cmd,filters,label,index,cards,folder,width,height,color,
     manifest.write_text('\n'.join(lines)+'\n',encoding='utf-8')
     cmd+=['-f','concat','-safe','0','-i',str(manifest)]
     filters.append(f'[{index}:v]format=rgba,setpts=PTS-STARTPTS[reportspoken]')
-    filters.append(f"{label}[reportspoken]overlay=x=(W-w)/2:y=H*.65:eof_action=pass[reportspokenout]")
+    filters.append(f"{label}[reportspoken]overlay=x=(W-w)/2:y=H*{y:.4f}:eof_action=pass[reportspokenout]")
     return '[reportspokenout]',index+1
 
 
 def append(cmd,filters,label,index,plan,parts,segments,folder,width,height,narration_events=None):
     if plan.get('layout','template')=='template':return label,index
-    color='#FFDE39' if plan['layout']=='report' else '#64D9FF'
+    color={'report':'#FFDE39','explain':'#64D9FF','paper':'#EDC9A0','navy':'#A9CFFF','mint':'#74DDBB'}[plan['layout']]
+    spacious=plan.get('video_height',.34)>.34 or plan['layout'] in ('paper','navy','mint')
+    title_y=.09 if spacious else .14
+    spoken_y=.72 if spacious else .65
     total=sum(b-a for a,b in segments);cards=[]
     title=plan.get('report_title','').strip()
-    if title:cards.append((title,0,total,.14,.13,True))
+    if title:cards.append((title,0,total,title_y,.13,True))
     if narration_events is not None:cards.extend(spoken_cards(narration_events,total))
     elapsed=0.
     for a,b in segments:
@@ -109,11 +116,13 @@ def append(cmd,filters,label,index,plan,parts,segments,folder,width,height,narra
             lines=pages(p.get('text','')) if p.get('mode')=='narrate' else ['ÂM THANH GỐC']
             for j,text in enumerate(lines):
                 duration=(hi-lo)/len(lines)
-                cards.append((text,elapsed+lo-a+j*duration,duration,.65,.16,False))
+                cards.append((text,elapsed+lo-a+j*duration,duration,spoken_y,.16,False))
         elapsed+=b-a
     if narration_events is not None:
-        label,index=append_spoken_track(cmd,filters,label,index,[c for c in cards if not c[-1]],folder,width,height,color,total)
+        label,index=append_spoken_track(cmd,filters,label,index,[c for c in cards if not c[-1]],folder,width,height,color,total,spoken_y)
         cards=[c for c in cards if c[-1]]
+    footer=plan.get('footer','').strip()
+    if footer:cards.append((footer,0,total,.90,.065,True))
     for n,(text,start,duration,y,h,title) in enumerate(cards):
         path=Path(folder)/f'report_{n}.png';cw=int(width*.94)//2*2;ch=int(height*h)//2*2
         panel(path,text,cw,ch,color,title)
@@ -122,3 +131,32 @@ def append(cmd,filters,label,index,plan,parts,segments,folder,width,height,narra
         filters.append(f"{label}[reportcard{n}]overlay=x=(W-w)/2:y=H*{y:.4f}:eof_action=repeat:enable='gte(t,{start:.6f})*lt(t,{start+duration:.6f})'[reportout{n}]")
         label=f'[reportout{n}]';index+=1
     return label,index
+
+
+def background_image(plan,folder,width,height):
+    """Built-in backgrounds generated locally; never stretch/crop foreground."""
+    from PyQt6.QtCore import Qt,QPointF
+    from PyQt6.QtGui import QImage,QPainter,QColor,QLinearGradient,QPen
+    mode=plan.get('background','auto')
+    if mode=='auto':mode=plan.get('layout') if plan.get('layout') in ('paper','navy','mint') else 'blur'
+    if mode=='blur':return None
+    palettes={'paper':('#EFDBC0','#C8A17D'),'navy':('#111E38','#294A72'),
+              'mint':('#E1F1E9','#8FCAB9'),'black':('#080B12','#080B12')}
+    if mode not in palettes:raise ValueError('Nền chưa hỗ trợ.')
+    path=Path(folder)/'story_background.png'
+    image=QImage(width,height,QImage.Format.Format_RGB32)
+    paint=QPainter(image);gradient=QLinearGradient(QPointF(0,0),QPointF(width,height))
+    for at,col in zip((0.,1.),palettes[mode]):gradient.setColorAt(at,QColor(col))
+    paint.fillRect(image.rect(),gradient)
+    if mode=='paper':
+        import random
+        rng=random.Random(26)
+        for _ in range(min(80000,width*height//12)):
+            paint.setPen(QColor(90,60,30,rng.randrange(5,24)))
+            paint.drawPoint(rng.randrange(width),rng.randrange(height))
+    elif mode!='black':
+        paint.setPen(QPen(QColor(255,255,255,15),max(1,width/600)))
+        for x in range(-height,width,max(16,width//12)):paint.drawLine(x,0,x+height,height)
+    paint.end()
+    if not image.save(str(path)):raise RuntimeError('Không tạo được nền mẫu.')
+    return str(path)

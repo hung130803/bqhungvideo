@@ -423,17 +423,29 @@ def b1_log_that() -> None:
     # ở CẢ ĐIỂM NHẤN HÌNH chứ không chỉ điểm nối. Anh Hùng xem clip thật và
     # nói *"có hiệu ứng mà không có âm thanh"* — đo ra ĐÚNG 0,0 dB ở mốc điểm
     # nhấn (cổng 44). Nên ở đây kiểm ĐỦ CẢ HAI VAI, không kiểm mỗi con số 2.
-    _noi = [t for t in td if t.get("vai") == "nối"]
-    _nhan = [t for t in td if t.get("vai") == "điểm nhấn"]
-    bao("`tieng_dong_log` có đúng 2 điểm NỐI (3 đoạn = 2 chỗ nối)",
-        len(_noi) == 2, f"{len(_noi)} nối / {len(td)} tổng: "
-        + ", ".join(f"{t['giay']}s/{t.get('vai')}/{t['loai']}" for t in td))
-    _xa = [c for c in hu
-           if all(abs(float(c["bat"]) - float(t["giay"])) >= 0.8 for t in _noi)]
-    bao("MỖI điểm nhấn hình (không trùng chỗ nối) đều CÓ tiếng đi kèm",
-        len(_nhan) == len(_xa),
-        f"{len(_nhan)} tiếng / {len(_xa)} điểm nhấn: "
-        + ", ".join(f"{c['bat']}s {c['khoa']}" for c in _xa))
+    # 02/11/2026 — ĐỔI KỲ VỌNG theo luật chọn mốc mới (`app/core/sfx_chon.py`,
+    # cổng 105): nối nào/điểm nhấn nào cũng kêu là đúng cái anh Hùng chê "thêm
+    # nhiều quá". Bất biến nay là: nhật ký khớp ĐÚNG quyết định của bộ chọn
+    # trên chính các ứng viên của clip này (2 chỗ nối + mọi điểm nhấn), và có
+    # ÍT NHẤT 1 tiếng. Không nới — vẫn so TỪNG mốc + TỪNG nhóm.
+    from app.core import sfx_chon as _SC
+    _acc, _uv = 0.0, []
+    for _s, _e in segs[:-1]:
+        _acc += _e - _s
+        _uv.append({"t": _acc, "cat": "transition", "vai": "nối",
+                    "loai_diem": "noi_doan"})
+    for c in hu:
+        _cat = _SC.nhom_cho_hieu_ung(c.get("khoa", ""), c.get("loai", ""))
+        if _cat is None and c.get("loai") == "hook":
+            _cat = "transition"
+        _uv.append({"t": float(c["bat"]), "cat": _cat, "vai": "điểm nhấn",
+                    "loai_diem": c.get("loai", "")})
+    _giu, _bo = _SC.chon_moc(_uv, sum(e - s for s, e in segs))
+    bao("`tieng_dong_log` khớp ĐÚNG từng mốc + nhóm mà bộ chọn quyết định",
+        [(round(t["giay"], 2), t["loai"], t.get("vai")) for t in td]
+        == [(round(a, 2), b, v) for a, b, v in _giu] and len(td) >= 1,
+        f"log {[(t['giay'], t['loai'], t.get('vai')) for t in td]} · "
+        f"bộ chọn {[(round(a, 2), b, v) for a, b, v in _giu]} · bỏ {_bo}")
     bao("mỗi hiệu ứng có LÝ DO KÈM SỐ (không chung chung)",
         bool(hu) and all(len(str(c.get("vi_sao", ""))) > 10
                          and any(ch.isdigit() for ch in str(c.get("vi_sao", "")))

@@ -48,13 +48,13 @@ def bounded_call(seconds=180, check=None, reasoning=None):
     finally:_CALL_BUDGET.value=previous
 
 
-def _check_call_budget():
+def _check_call_budget(max_request_seconds=45.):
     value=getattr(_CALL_BUDGET,'value',None)
     if value:
         if value[1]:value[1]()
         left=value[0]-time.monotonic()
         if left<=0:raise LLMError('AI phản hồi quá lâu; đã giữ phần phân tích hoàn tất để thử lại. Không tiếp tục xoay key vô hạn.')
-        return max(.1,min(45.,left))
+        return max(.1,min(float(max_request_seconds),left))
     return None
 
 
@@ -180,7 +180,7 @@ def mark_used(provider: str, key: str) -> None:
         st["calls"] += 1
 
 
-def mark_ok(provider: str, key: str, scope: str = 'chat') -> None:
+def mark_ok(provider: str, key: str, scope: str = 'chat', observed_at=None) -> None:
     """Ghi nhận: gọi thành công -> key chắc chắn còn sống, xóa cờ limited."""
     with _KEY_LOCK:
         st = _state_for(provider, key)
@@ -193,6 +193,11 @@ def mark_ok(provider: str, key: str, scope: str = 'chat') -> None:
             st.pop('limited_scope',None)
     from app.ai import key_health
     key_health.record(provider, key, scope, 'ok')
+    if provider == 'groq':
+        from app.ai import groq_dispatch
+        import sqlite3
+        try:groq_dispatch.clear(key, scope, time.time() if observed_at is None else observed_at)
+        except (OSError, sqlite3.Error):pass  # Keep a completed response; expiry remains safe.
 
 
 # Chuỗi thời lượng kiểu Groq/OpenAI: "7m30.5s", "1h2m3s", "1.234s", "232ms"
@@ -251,12 +256,30 @@ def mark_limited(provider: str, key: str, err_text: str = "", retry_after=None, 
         else:
             wait = _COOLDOWN_DEFAULT
     wait = min(float(wait), _COOLDOWN_MAX)
+    if provider == 'groq' and (scope or 'chat') == 'chat':
+        # Chỉ lượt CHAT: chép lời / xem hình có hạn mức riêng (giây tiếng/giờ,
+        # ảnh) — thử lại sau 5 phút là tải LẠI cả đoạn tiếng chỉ để ăn 429.
+        # 01/11/2026 — ĐO TRÊN MÁY ANH HÙNG: 2 key app đang giữ nghỉ thêm > 15
+        # phút (theo "try again in 22m…" của lỗi TPD) mà gọi thử NGAY vẫn được
+        # Groq nhận, kể cả max_tokens=7000. Hạn mức NGÀY là cửa sổ trượt, phần
+        # dùng cũ rơi ra sớm hơn con số Groq ước -> nghỉ đủ thời gian Groq báo
+        # là để key RẢNH nằm im. Nay nghỉ tối đa `GROQ_NGHI_TOI_DA` (mặc định
+        # 300 s) rồi thử lại: còn hết thì chỉ tốn 1 lượt 429 (~0,3 s, không tốn
+        # token, hạn 1.000 lượt/ngày còn dư xa) và nghỉ tiếp.
+        try:
+            tran = float(getattr(settings, 'GROQ_NGHI_TOI_DA', 300) or 300)
+        except (TypeError, ValueError):
+            tran = 300.0
+        wait = min(wait, max(5.0, tran))
     with _KEY_LOCK:
         st = _state_for(provider, key)
         st["state"] = "limited"
         st["until"] = time.time() + wait
         st['limited_scope'] = scope
         st["note"] = (err_text or "").strip()[:200]
+    if provider == 'groq':
+        from app.ai import groq_dispatch
+        groq_dispatch.defer(key, scope or 'chat', wait)
     return wait
 
 
@@ -277,19 +300,36 @@ def pick_keys(provider: str, keys=None, start_at: int = 0, scope: str = 'chat') 
     from app.ai import key_health
     keys = [k for k in keys if not key_health.blocked(provider, k, scope)]
     ready, limited = [], []
+    if provider == 'groq':
+        from app.ai import groq_dispatch
+        shared = {k: groq_dispatch.remaining(k, scope) for k in keys}
+    else:
+        shared = {}
     with _KEY_LOCK:
         for k in keys:
             st = _KEY_STATE.get((provider, k))
             if st is not None and _is_invalid(st):
                 continue
-            elif st is not None and _is_limited(st, now):
-                limited.append((st["until"], k))
+            elif shared.get(k, 0) > 0 or (st is not None and _is_limited(st, now) and st.get("limited_scope") in (None, scope)):
+                limited.append((max(now + shared.get(k, 0), (st or {}).get('until', 0)), k))
             else:
                 ready.append(k)
     limited.sort(key=lambda t: t[0])
     if ready and start_at:
         k = start_at % len(ready)
         ready = ready[k:] + ready[:k]
+    elif ready:
+        # XOAY THEO KEY LÂU CHƯA DÙNG NHẤT (01/11/2026). Trước đây mọi lượt chat
+        # lấy key rảnh ĐẦU danh sách -> 3 làn gọi cùng lúc dồn vào CÙNG một key,
+        # 2 lượt "high" (~7-9K token) vượt hạn 8.000 token/PHÚT của key đó ->
+        # 429 -> đợi, trong khi hàng chục key khác đang rảnh. Key chưa dùng lần
+        # nào giữ đúng thứ tự cài đặt (sort ổn định, last_used = 0).
+        with _KEY_LOCK:
+            dung = {k: float((_KEY_STATE.get((provider, k)) or {}).get("last_used", 0) or 0)
+                    for k in ready}
+        # Key vừa dùng trong 60 giây XẾP SAU mọi key khác: 1 lượt "high" ăn gần
+        # trọn 8.000 token/PHÚT của key, gọi tiếp ngay là 429 chắc chắn.
+        ready.sort(key=lambda k: (now - dung[k] < 60.0, dung[k]))
     return ready + [k for _, k in limited]
 
 
@@ -306,14 +346,19 @@ def soonest_ready_wait(provider: str, keys=None, scope: str = 'chat'):
         return None
     now = time.time()
     soonest = None
+    if provider == 'groq':
+        from app.ai import groq_dispatch
+        shared = {k: groq_dispatch.remaining(k, scope) for k in keys}
+    else:
+        shared = {}
     with _KEY_LOCK:
         for k in keys:
             st = _KEY_STATE.get((provider, k))
-            if st is None or not _is_limited(st, now):
-                if not (st is not None and _is_invalid(st)):
-                    return 0.0            # có key sẵn sàng ngay
-                continue                  # invalid -> bỏ qua
-            left = st.get("until", 0) - now
+            if st is not None and _is_invalid(st):
+                continue
+            left = max(shared.get(k, 0), st.get('until', 0) - now if _is_limited(st, now) and st.get('limited_scope') in (None, scope) else 0)
+            if left <= 0:
+                return 0.0
             if soonest is None or left < soonest:
                 soonest = left
     return soonest
@@ -414,6 +459,17 @@ def estimate_cost_vnd(usage: dict, model: str = "") -> int:
 
 class LLMError(Exception):
     pass
+
+
+class LLMContentBlocked(LLMError):
+    """Provider rejected content; retrying unchanged input is not recovery."""
+    def __init__(self, detail, provider='Gemini'):
+        super().__init__(f'ai_content_blocked: {provider} đã chặn nội dung yêu cầu. '
+                         'App dừng việc này, không tự thử lại hoặc đổi key. '
+                         'Đây không phải lỗi hết lượt hay key hỏng. '
+                         'Phản hồi này chưa xác định câu/hình cụ thể bị chặn. '
+                         + detail)
+
 
 
 def active_provider() -> str:
@@ -748,7 +804,10 @@ def is_transient_error(msg: str) -> bool:
         "temporarily unavailable", "service unavailable",
         "internal server error", "bad gateway", "gateway timeout",
         "error code: 5", "remote end closed", "incomplete read",
-        "reset by peer", "aborted", "eof occurred", "ssl"))
+        "reset by peer", "aborted", "eof occurred", "ssl",
+        # hết làn gọi chung cả máy sau 180 s (groq_dispatch.slot): bận, KHÔNG
+        # phải lỗi -> thử lại (rà soát 01/11/2026)
+        "groq đang bận"))
 
 
 def is_daily_limit_error(msg: str) -> bool:
@@ -1198,7 +1257,7 @@ def chuoi_model_groq(model: Optional[str] = None) -> list:
             return loc
         # Không tên nào khớp danh sách sống (user gõ sai / Groq vừa đổi hết):
         # lấy model MẠNH NHẤT còn sống làm phao, đừng để dây chuyền rỗng.
-        for uu in ("openai/gpt-oss-120b", "groq/compound", "openai/gpt-oss-20b"):
+        for uu in ("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"):
             if uu in song:
                 return [uu]
     return ra
@@ -1368,8 +1427,15 @@ def la_loi_tham_so_them(msg: str) -> bool:
     m = (msg or "").lower()
     if "400" not in m:
         return False
+    # "Failed to VALIDATE JSON" (code json_validate_failed, failed_generation
+    # RỖNG) — thân lỗi thứ tư, ĐO 30/10/2026: khuôn `json_schema strict` của
+    # bước CHỌN ĐOẠN, model nhả RỖNG -> Groq trả 400. Thiếu câu này thì
+    # complete_json gọi lại Y HỆT 3 lần, hỏng cả 3 -> "Cắt cơ bản" (2/2 video
+    # thật trong lượt chạy thử; 12/105 job phân tích 26-28/10 trên máy thật).
+    # Gọi lại kiểu TRẦN vẫn an toàn: complete_json KIỂM KHUÔN lại kết quả.
     return any(s in m for s in ("reasoning_effort", "response_format",
-                                "json_object", "failed to generate json"))
+                                "json_object", "failed to generate json",
+                                "failed to validate json"))
 
 
 def _nhan_reasoning(model: str) -> bool:
@@ -1384,10 +1450,197 @@ def _nhan_reasoning(model: str) -> bool:
     return "gpt-oss" in (model or "").lower()
 
 
+# --------------------------------------------------------------------------
+# MỨC SUY NGHĨ THEO TỪNG VIỆC (26/10/2026 — anh Hùng: "chất lượng trước",
+# key Groq gần vô hạn, chấp nhận phân tích chậm hơn).
+# Trước đây MỌI lượt gpt-oss đều `reasoning_effort="low"` (đo 18/08: đủ cho
+# DỊCH). Nhưng khâu QUYẾT ĐỊNH bộ mặt kênh (chọn đoạn, chấm, tiêu đề, hậu kiểm
+# mạch, viết kịch bản recap) đáng được nghĩ kỹ -> `config.GROQ_REASONING_EFFORT`
+# (mặc định "high"). Việc HÀNG LOẠT (dịch, thay giọng...) GIỮ "low".
+# Ghi đè từng việc: `GROQ_REASONING_EFFORT_TASKS="select=high,judge=medium"`.
+# Gắn việc cho lượt gọi: `with llm.tac_vu("judge"): ...` (file mình sở hữu)
+# hoặc tự NHẬN DIỆN theo system prompt (m1_highlight — xem `_nhan_dien_tac_vu`).
+# --------------------------------------------------------------------------
+MUC_HOP_LE = ("low", "medium", "high")
+_MUC_THAP_HON = {"high": "medium", "medium": "low"}
+TAC_VU_QUAN_TRONG = ("select", "judge", "title", "coherence", "recap")
+#: CHỖ TRẢ LỜI tối thiểu để dám nghĩ ở mức đó. ƯỚC LƯỢNG từ số đo 18/08
+#: (mặc định=medium tiêu 3.247 token, low 1.214 token cho prompt dịch 50 câu):
+#: chỗ hẹp hơn mức này thì gần chắc phần "nghĩ" ăn hết -> hạ mức TRƯỚC khi gửi
+#: (tiết kiệm 1 lượt hỏng). KHÔNG nới trần TPM — chỉ hạ mức.
+_CHO_TOI_THIEU = {"high": 4096, "medium": 2560}
+_TAC_VU = threading.local()
+
+
+def _chuan_muc(v, mac_dinh: str = "low") -> str:
+    v = str(v or "").strip().lower()
+    return v if v in MUC_HOP_LE else mac_dinh
+
+
+def _ghi_de_tac_vu() -> dict:
+    """`GROQ_REASONING_EFFORT_TASKS` -> {việc: mức}. Rác -> bỏ qua. Hàm thuần."""
+    ra = {}
+    raw = str(getattr(settings, "GROQ_REASONING_EFFORT_TASKS", "") or "")
+    for cap in re.split(r"[,;\s]+", raw):
+        if "=" in cap:
+            k, v = cap.split("=", 1)
+            v = v.strip().lower()
+            if k.strip() and v in MUC_HOP_LE:
+                ra[k.strip().lower()] = v
+    return ra
+
+
+def muc_suy_nghi_cho(tac_vu: Optional[str]) -> str:
+    """Mức `reasoning_effort` cho một VIỆC. Việc lạ/None -> "low" (y cũ)."""
+    t = str(tac_vu or "").strip().lower()
+    gd = _ghi_de_tac_vu()
+    if t in gd:
+        return gd[t]
+    if t in TAC_VU_QUAN_TRONG:
+        return _chuan_muc(getattr(settings, "GROQ_REASONING_EFFORT", "high"),
+                          "high")
+    return "low"
+
+
+@contextmanager
+def tac_vu(ten: Optional[str]):
+    """Gắn VIỆC cho mọi lượt LLM trong khối (theo LUỒNG; lồng nhau -> trong cùng
+    thắng). Không bao giờ ném."""
+    truoc = getattr(_TAC_VU, "ten", None)
+    _TAC_VU.ten = ten
+    try:
+        yield
+    finally:
+        _TAC_VU.ten = truoc
+
+
+def theo_tac_vu(ten: str):
+    """Decorator: cả hàm chạy trong `tac_vu(ten)`."""
+    def boc(fn):
+        from functools import wraps
+
+        @wraps(fn)
+        def w(*a, **k):
+            with tac_vu(ten):
+                return fn(*a, **k)
+        return w
+    return boc
+
+
+#: NHẬN DIỆN việc theo system prompt / đầu prompt cho file KHÔNG sửa được
+#: (m1_highlight, social, continuity_cut). Đọc hằng LƯỜI qua sys.modules — không
+#: import vòng. `startswith` vì complete_json NỐI thêm lời nhắc khi gọi lại.
+_NHAN_HANG_SYSTEM = (
+    ("app.modules.m1_highlight", "_SEL_SYSTEM", "select"),
+    ("app.modules.m1_highlight", "_REFINE_SEL_SYSTEM", "select"),
+    ("app.modules.m1_highlight", "_REFINE_SYSTEM", "select"),
+    ("app.ai.social", "_SYSTEM", "title"),
+)
+_NHAN_DAU_SYSTEM = (
+    ("Bạn là chuyên gia viral short-form", "judge"),      # m1._llm_scores
+    ("Bạn là đạo diễn dựng clip viral", "select"),       # chọn đoạn không lời
+    ("Bạn là chuyên gia đặt tiêu đề video viral", "title"),  # _polish_titles
+)
+_NHAN_HANG_PROMPT = (
+    ("app.ai.continuity_cut", "RULES", "coherence"),
+)
+
+
+def _nhan_dien_tac_vu(system: str, prompt: str) -> Optional[str]:
+    import sys as _sys
+    try:
+        s = system or ""
+        for mod, ten, viec in _NHAN_HANG_SYSTEM:
+            h = getattr(_sys.modules.get(mod), ten, None)
+            if s and isinstance(h, str) and h and s.startswith(h):
+                return viec
+        for dau, viec in _NHAN_DAU_SYSTEM:
+            if s.startswith(dau):
+                return viec
+        p = prompt or ""
+        for mod, ten, viec in _NHAN_HANG_PROMPT:
+            h = getattr(_sys.modules.get(mod), ten, None)
+            if p and isinstance(h, str) and h and p.startswith(h):
+                return viec
+    except Exception:  # noqa: BLE001 — nhận diện hỏng -> mức mặc định
+        return None
+    return None
+
+
+def muc_cho_loi_goi(system: str = "", prompt: str = "",
+                    cho_tra_loi: Optional[int] = None) -> str:
+    """Mức suy nghĩ cho MỘT lượt gọi. Thứ tự: `tac_vu(...)` tường minh ->
+    `bounded_call(reasoning=...)` (story_*) -> nhận diện -> "low". Sau đó bị
+    chặn bởi TRẦN HẠ MỨC của lượt hiện tại (`_LAN.muc_tran`, xem complete_text)
+    và bởi CHỖ TRẢ LỜI (`_CHO_TOI_THIEU`)."""
+    ten = getattr(_TAC_VU, "ten", None)
+    if ten:
+        muc = muc_suy_nghi_cho(ten)
+    else:
+        budget = getattr(_CALL_BUDGET, "value", None)
+        if budget and budget[2]:
+            muc = _chuan_muc(budget[2], "low")
+        else:
+            muc = muc_suy_nghi_cho(_nhan_dien_tac_vu(system, prompt))
+    tran = getattr(_LAN, "muc_tran", None)
+    if tran in MUC_HOP_LE and MUC_HOP_LE.index(tran) < MUC_HOP_LE.index(muc):
+        muc = tran
+    if cho_tra_loi is not None:
+        while muc in _CHO_TOI_THIEU and cho_tra_loi < _CHO_TOI_THIEU[muc]:
+            muc = _MUC_THAP_HON[muc]
+    return muc
+
+
+def _pham_vi_muc(fn):
+    """Một lượt complete_json/complete_text NGOÀI CÙNG = một phạm vi: trần hạ
+    mức (`_LAN.muc_tran`) sống suốt các lượt gọi lại bên trong rồi XOÁ khi ra."""
+    from functools import wraps
+
+    @wraps(fn)
+    def w(*a, **k):
+        if getattr(_LAN, "pv_muc", False):
+            return fn(*a, **k)
+        _LAN.pv_muc, _LAN.muc_tran = True, None
+        try:
+            return fn(*a, **k)
+        finally:
+            _LAN.pv_muc, _LAN.muc_tran = False, None
+    return w
+
+
+def _groq_create(client, key, scope='chat', **kwargs):
+    from app.ai import groq_dispatch
+    from app.core.job_resume import _scope
+    def check():
+        _check_call_budget()
+        state = _scope.get()
+        if state and state.get('check'): state['check']()
+    with groq_dispatch.slot(scope, check):
+        remaining = groq_dispatch.remaining(key, scope)
+        if remaining > 0:
+            raise RuntimeError(f'429: Groq shared cooldown; retry in {remaining:.3f}s')
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            message = str(exc)
+            if is_rate_limit_error(message) and not is_too_large_error(message):
+                headers = getattr(getattr(exc, 'response', None), 'headers', {}) or {}
+                mark_limited('groq', key, message, retry_after=headers.get('retry-after'), scope=scope)
+            raise
+
+
 def _call_once(provider: str, key: str, prompt: str, system: str,
                temperature: float, model: Optional[str] = None,
                json_mode: bool = False, request_timeout: Optional[float] = None,
-               retries: int = 1) -> str:
+               retries: int = 1, response_schema=None) -> str:
+    if provider == 'apiforcode':
+        from app.ai.apiforcode import chat,TEXT_REQUEST_TIMEOUT
+        text,finish,usage=chat(key,settings.APIFORCODE_MODEL,prompt,system,
+            timeout=request_timeout or TEXT_REQUEST_TIMEOUT)
+        _LAN.ket_thuc='length' if finish=='length' else 'stop'
+        _LAN.chan_doan={'model':settings.APIFORCODE_MODEL,'ket_thuc':_LAN.ket_thuc,'so_ky_tu':len(text)}
+        _add_usage(usage.get('prompt_tokens',0),usage.get('completion_tokens',0))
+        return text
     # openai/deepseek/ollama/groq đều dùng SDK openai (chỉ khác base_url + model)
     if provider in ("openai", "deepseek", "ollama", "groq"):
         from openai import OpenAI
@@ -1407,7 +1660,8 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
         # timeout: Ollama (máy) có thể chậm -> 300s; mây (groq/openai...) 120s.
         # Chống TREO cả hàng đợi AI nếu 1 lệnh gọi không bao giờ trả về.
         timeout = request_timeout or (300 if provider == "ollama" else 120)
-        client = OpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=retries)
+        if provider == 'groq':timeout = min(timeout, 120)
+        client = OpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=0 if provider == "groq" else retries)
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         _LAN.ket_thuc = ""
@@ -1444,12 +1698,25 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             them: dict = {"max_tokens": mt}
             if json_mode and _nhan_json_mode(md):
                 them["response_format"] = {"type": "json_object"}
+            if response_schema is not None:
+                from app.ai.structured import STRICT_MODELS
+                if md in STRICT_MODELS:
+                    them["response_format"] = {"type":"json_schema", "json_schema":{
+                        "name":"bq_result", "strict":True, "schema":response_schema}}
+            muc_dung = None
             if _nhan_reasoning(md):
-                budget=getattr(_CALL_BUDGET,'value',None)
-                them["reasoning_effort"] = (budget[2] if budget and budget[2] else 'low')
+                muc_dung = muc_cho_loi_goi(system, prompt, mt)
+                them["reasoning_effort"] = muc_dung
+            elif "qwen3" in (md or "").lower():
+                # Model dự phòng KHÁC HỌ (31/10/2026): tắt phần nghĩ để nó
+                # không lặp lại đúng bệnh "nghĩ hết chỗ rồi trả RỖNG" của
+                # gpt-oss. Groq nhận "none" cho qwen3 (đo: 0,7s, JSON đúng);
+                # bị từ chối thì lưới `la_loi_tham_so_them` gọi lại kiểu trần.
+                them["reasoning_effort"] = "none"
+            _LAN.muc_da_dung = muc_dung
             try:
                 try:
-                    resp = client.chat.completions.create(
+                    resp = _groq_create(client, key,
                         model=md, messages=msgs, temperature=temperature,
                         extra_body=extra, **them,
                     )
@@ -1460,7 +1727,8 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
                     # trần chính là hành vi app đã chạy suốt từ trước.
                     if not la_loi_tham_so_them(str(e_th)):
                         raise
-                    resp = client.chat.completions.create(
+                    muc_dung = _LAN.muc_da_dung = None
+                    resp = _groq_create(client, key,
                         model=md, messages=msgs, temperature=temperature,
                         extra_body=extra, max_tokens=mt,
                     )
@@ -1485,6 +1753,13 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             _ghi_ket_thuc(resp)
             out = resp.choices[0].message.content or ""
             _ghi_chan_doan(md, resp, out)
+            if muc_dung in _MUC_THAP_HON and (
+                    not out.strip() or _LAN.ket_thuc == "length"):
+                # NGHĨ KỸ mà hết chỗ (rỗng / bị cắt): KHÔNG rơi sang model
+                # yếu hơn — báo complete_text hạ mức rồi gọi lại bằng KEY KHÁC
+                # (key này vừa tiêu gần trọn 8.000 token/phút của model).
+                _LAN.can_ha_muc = muc_dung
+                return out
             if out.strip() or cuoi:
                 return out
             # Thân RỖNG ở model chưa-phải-cuối -> sang model kế. Ghi lại SỐ ĐO
@@ -1500,31 +1775,83 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             f"Mọi model Groq trong dây chuyền đều hỏng ({', '.join(chuoi)}): "
             f"{loi_model}")
 
+    if provider == "gemini" and json_mode and getattr(_CALL_BUDGET,'value',None) and re.fullmatch(r'gemini-2\.5-(?:flash|pro)',settings.GEMINI_MODEL):
+        # Legacy SDK 0.8.3 cannot express thinkingConfig. Keep reasoning on,
+        # but reserve space for complete JSON instead of spending all 8k on it.
+        import requests
+        model_name=settings.GEMINI_MODEL
+        budget=_check_call_budget()
+        body={'contents':[{'role':'user','parts':[{'text':prompt}]}],
+              'generationConfig':{'temperature':temperature,'maxOutputTokens':12288,
+                  'responseMimeType':'application/json','thinkingConfig':{'thinkingBudget':4096}}}
+        if system:body['systemInstruction']={'parts':[{'text':system}]}
+        response=requests.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent',
+            headers={'x-goog-api-key':key},json=body,timeout=min(request_timeout or 120,budget or 120),allow_redirects=False)
+        try:data=response.json()
+        except ValueError:
+            raise RuntimeError(f'Gemini Error code: {response.status_code} - invalid JSON response') from None
+        if not response.ok:
+            message=str(data.get('error',{}).get('message','Request failed')).replace(key,'[key]')
+            # Non-LLMError lets the existing auth/quota rotation classify HTTP errors.
+            raise RuntimeError(f'Gemini Error code: {response.status_code} - {message}')
+        candidates=data.get('candidates') or []
+        candidate=candidates[0] if candidates else {}
+        finish=candidate.get('finishReason','')
+        blocked=data.get('promptFeedback',{}).get('blockReason')
+        if blocked or finish in ('SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY'):
+            raise LLMContentBlocked(f'block_reason={blocked or "không có"}; finish_reason={finish or "không có"}.')
+        if finish not in ('STOP','MAX_TOKENS'):
+            raise LLMError(f'Gemini không trả nội dung: finish_reason={finish}, block_reason={blocked}. Không đánh dấu key hỏng.')
+        _LAN.ket_thuc='length' if finish=='MAX_TOKENS' else 'stop'
+        usage=data.get('usageMetadata',{})
+        _add_usage(usage.get('promptTokenCount',0),usage.get('candidatesTokenCount',0)+usage.get('thoughtsTokenCount',0))
+        out=''.join(p.get('text','') for p in candidate.get('content',{}).get('parts',[]) if not p.get('thought'))
+        _LAN.chan_doan={'model':model_name,'ket_thuc':_LAN.ket_thuc,'so_ky_tu':len(out),
+                       'token_vao':usage.get('promptTokenCount',0),'token_ra':usage.get('candidatesTokenCount',0)}
+        return out
+
     if provider == "gemini":
         import google.generativeai as genai
-        with _GEMINI_LOCK:      # configure là state toàn cục -> không cho đè key
+        while not _GEMINI_LOCK.acquire(timeout=.2):
+            _check_call_budget()
+        try:
+            budget=_check_call_budget()
             genai.configure(api_key=key)
             model = genai.GenerativeModel(
                 settings.GEMINI_MODEL, system_instruction=system or None,
             )
             resp = model.generate_content(
                 prompt, generation_config={"temperature": temperature,
-                                           "max_output_tokens": 8000},
-                request_options={"timeout": request_timeout or 120},
+                    "max_output_tokens": 8000,**({'response_mime_type':'application/json'} if json_mode else {})},
+                request_options={"timeout": min(request_timeout or 120,budget or 120),"retry":None},
             )
+        finally:_GEMINI_LOCK.release()
         um = getattr(resp, "usage_metadata", None)
         if um:
             _add_usage(getattr(um, "prompt_token_count", 0),
                        getattr(um, "candidates_token_count", 0))
+        candidates=getattr(resp,'candidates',()) or ()
+        finish=getattr(candidates[0],'finish_reason',0) if candidates else 0
+        feedback=getattr(resp,'prompt_feedback',None)
+        blocked=getattr(feedback,'block_reason',0) if feedback else 0
+        finish_name=getattr(finish,'name',str(finish))
+        if blocked or finish_name in ('SAFETY','RECITATION','BLOCKLIST','PROHIBITED_CONTENT','SPII','IMAGE_SAFETY'):
+            raise LLMContentBlocked(f'block_reason={blocked}; finish_reason={finish_name}.')
+        _LAN.ket_thuc='length' if finish==2 else 'stop' if finish==1 else ''
         return resp.text or ""
 
     raise LLMError(f"Provider không hỗ trợ: {provider}")
 
 
+from app.core.job_resume import completed_ai_call
+
+
+@completed_ai_call
+@_pham_vi_muc
 def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                   provider: Optional[str] = None,
                   model: Optional[str] = None,
-                  json_mode: bool = False) -> str:
+                  json_mode: bool = False, response_schema=None) -> str:
     """`model`: đè model CHỈ với provider groq (vd kimi-k2 cho pass viết
     kịch bản); provider khác bỏ qua — an toàn khi user chọn gemini/ollama.
 
@@ -1540,6 +1867,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     guard = _LLM_LOCK if provider == "ollama" else nullcontext()
     last = ""
     last_usable = ""
+    ha_cho = None      # câu trả lời rỗng/bị cắt đang chờ gọi lại ở mức thấp hơn
     with guard:
         # ĐỢI-THỬ-LẠI khi TẤT CẢ key kẹt token/phút (TPM/429): tối đa 3 vòng,
         # mỗi vòng xoay hết key; hết vòng mà mọi key vừa 429 với reset NGẮN
@@ -1554,21 +1882,54 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
             # hết đường dù các key trước chỉ đang cooldown ngắn.
             saw_retryable = False
             for key in pick_keys(provider, keys):
-                budget_timeout=_check_call_budget()
+                from app.ai.apiforcode import TEXT_REQUEST_TIMEOUT
+                budget_timeout=_check_call_budget(TEXT_REQUEST_TIMEOUT if provider=='apiforcode' else 45.)
                 from app.ai import key_health
                 if key_health.blocked(provider, key, 'chat'):
                     continue  # A worker may have recorded denial since selection.
+                if provider == 'groq':
+                    from app.ai import groq_dispatch
+                    wait = groq_dispatch.remaining(key, 'chat')
+                    if wait > 0:
+                        last_usable = last = f'429: Groq shared cooldown; retry in {wait:.3f}s'
+                        saw_retryable = True
+                        continue
                 mark_used(provider, key)
                 try:
                     options={'request_timeout':budget_timeout,'retries':0} if budget_timeout is not None else {}
+                    if response_schema is not None: options["response_schema"]=response_schema
+                    request_started = time.time()
+                    _LAN.can_ha_muc = None
                     out = _call_once(provider, key, prompt, system,
                                      temperature, model=model,
                                      json_mode=json_mode,**options)
-                    mark_ok(provider, key)
+                    mark_ok(provider, key, observed_at=request_started)
+                    muc_ha = (getattr(_LAN, "can_ha_muc", None)
+                              if provider == "groq" else None)
+                    _LAN.can_ha_muc = None
+                    if muc_ha in _MUC_THAP_HON:
+                        # LƯỚI AN TOÀN suy nghĩ kỹ: hạ 1 bậc (high->medium->low)
+                        # cho MỌI lượt còn lại của lần gọi này, thử KEY KẾ.
+                        # Key vẫn TỐT (đã mark_ok) — lỗi ở độ dài, không ở key.
+                        moi = _MUC_THAP_HON[muc_ha]
+                        _LAN.muc_tran = moi
+                        ha_cho = out
+                        cd = chan_doan_lan()
+                        _ghi_log_rong(
+                            f"model «{cd.get('model', '?')}» effort={muc_ha} "
+                            + ("trả RỖNG" if not (out or "").strip()
+                               else "bị CẮT (length)")
+                            + f" · token_ra={cd.get('token_ra', 0)}"
+                            f" · token_vào={cd.get('token_vao', 0)}"
+                            f" -> hạ suy nghĩ xuống {moi}, gọi lại bằng key khác")
+                        saw_retryable = True
+                        continue
                     return out
                 except LLMError:
                     raise
                 except Exception as e:  # noqa: BLE001
+                    from app.queue.worker import CanceledError
+                    if isinstance(e,CanceledError):raise
                     last = str(e)
                     if is_too_large_error(last):
                         # KHÔNG phạt key, KHÔNG thử key khác (mọi key cùng hạn
@@ -1588,7 +1949,7 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                             f"key (41 key vẫn còn nguyên). Chi tiết: {last}")
                     if is_rate_limit_error(last):
                         last_usable = last
-                        mark_limited(provider, key, last)
+                        mark_limited(provider, key, last, scope='chat')
                         saw_retryable = True
                         continue               # key này hết lượt -> thử key tiếp
                     if is_org_restricted(last):
@@ -1621,6 +1982,8 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                 _retry_sleep(wait + 0.3)
                 continue
             break
+    if ha_cho is not None:
+        return ha_cho      # hết đường hạ mức -> trả y như trước (caller xử lý)
     # phân biệt lý do để user biết đường sửa
     if _is_model_missing_error(last):
         raise LLMModelMissing(
@@ -1629,8 +1992,10 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
     raise LLMError(key_failure_message(provider, keys, 'chat', last_usable or last))
 
 
+@completed_ai_call
+@_pham_vi_muc
 def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
-                  model: Optional[str] = None):
+                  model: Optional[str] = None, strict_object: bool = False, response_schema=None):
     """Gọi LLM và parse JSON. Ném LLMError nếu không parse được.
     `model`: đè model chỉ với groq (xem complete_text).
 
@@ -1652,6 +2017,25 @@ def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
 
     KHÔNG PHẠT KEY ở đây: JSON hỏng là lỗi ĐỊNH DẠNG, mọi key đều như nhau.
     """
+    def checked(value):
+        if response_schema is not None:
+            from app.ai.structured import validate
+            validate(value,response_schema)
+        return value
+    schema_options={'response_schema':response_schema} if response_schema is not None else {}
+    if (provider or active_provider())=='apiforcode':
+        raw=complete_text(prompt,system=system,temperature=.3,provider='apiforcode',model=model,json_mode=True)
+        if ly_do_ket_thuc()=='length':
+            raise LLMCatCut('apiforcode_request_uncertain: Kết quả JSON bị cắt; không tự gửi lại yêu cầu tính lượt.')
+        try:
+            cleaned=bo_khoi_suy_nghi(raw).strip()
+            fenced=re.fullmatch(r'```(?:json)?\s*(.*?)\s*```',cleaned,re.DOTALL)
+            if fenced:cleaned=fenced.group(1)
+            value=json.loads(cleaned)
+            if strict_object and not isinstance(value,dict):raise ValueError('Expected object')
+            return checked(value)
+        except (ValueError,TypeError):
+            raise LLMError('apiforcode_request_uncertain: APIforcode trả JSON chưa hợp lệ; không tự gọi lại hoặc dùng phần thiếu.') from None
     last_exc: Optional[LLMError] = None
     sys_now = system
     vot_tot: object = None
@@ -1660,8 +2044,19 @@ def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
     so_rong = 0
     for _attempt in range(3):
         cuoi = (_attempt == 2)
-        raw = complete_text(prompt, system=sys_now, temperature=0.3,
-                            provider=provider, model=model, json_mode=True)
+        try:
+            raw = complete_text(prompt, system=sys_now, temperature=0.3,
+                                provider=provider, model=model, json_mode=True, **schema_options)
+        except LLMError as exc:
+            # Groq can reject generated JSON at HTTP level before returning text.
+            # Retry only its explicit generation-format error, not auth, quota,
+            # timeout or an uncertain paid-provider request. Never salvage failed_generation.
+            if (provider or active_provider())!='groq' or 'json_validate_failed' not in str(exc):
+                raise
+            if cuoi:
+                raise LLMError('Groq trả JSON sai định dạng sau 3 lượt; phần đã hoàn tất vẫn được giữ. Thử lại để tiếp tục bước này.') from None
+            sys_now = system + '\nReturn one complete valid JSON object only. No markdown or explanation. Keep strings concise and escape quotes correctly.'
+            continue
         cat = (ly_do_ket_thuc() == "length")
         bi_cat = bi_cat or cat
 
@@ -1698,13 +2093,21 @@ def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
             continue
 
         try:
-            return _extract_json(raw, cho_vot=False)
+            if strict_object:
+                if cat:raise ValueError('Phản hồi bị cắt; chưa nhận đủ cấu trúc ngoài cùng.')
+                cleaned=bo_khoi_suy_nghi(raw).strip()
+                fenced=re.fullmatch(r'```(?:json)?\s*(.*?)\s*```',cleaned,re.DOTALL)
+                if fenced:cleaned=fenced.group(1)
+                value=json.loads(cleaned)
+                if not isinstance(value,dict):raise ValueError('Cần đúng một JSON object đầy đủ.')
+                return checked(value)
+            return checked(_extract_json(raw, cho_vot=False))
         except (ValueError, json.JSONDecodeError) as e:
             try:
                 v = vot_json_cut(bo_khoi_suy_nghi(raw))
             except Exception:  # noqa: BLE001
                 v = None
-            if v is not None and len(v) > so_vot:
+            if not strict_object and response_schema is None and v is not None and len(v) > so_vot:
                 vot_tot, so_vot = v, len(v)
             last_exc = (
                 LLMCatCut(
@@ -1758,6 +2161,8 @@ def vision_available(provider: Optional[str] = None) -> bool:
     provider = provider or active_provider()
     if provider == "ollama":
         return bool(settings.OLLAMA_VL_MODEL) and _ollama_has(settings.OLLAMA_VL_MODEL)
+    if provider == 'apiforcode':
+        return bool(settings.llm_keys_for(provider) and settings.APIFORCODE_VISION_MODEL)
     if provider == "gemini":
         return bool(settings.GEMINI_API_KEY)
     if provider == "groq":
@@ -1778,6 +2183,8 @@ def vision_max_images(provider: Optional[str] = None) -> int:
     images" khi gửi 4 ảnh. Gửi quá là MẤT TRẮNG cả batch (caller nào cũng
     `except: continue`) nên phải chia batch theo số này, đừng đoán."""
     provider = provider or active_provider()
+    if provider == 'apiforcode':
+        return 8
     if provider == "groq":
         return 3
     return 8
@@ -1868,7 +2275,9 @@ def _gemini_vision_json(prompt, image_paths, system, key_dau, request_timeout,
         finish = getattr(candidates[0], 'finish_reason', 0) if candidates else 0
         # Gemini enums: STOP=1, MAX_TOKENS=2; all other nonzero finishes
         # (safety, recitation, prohibited content...) are not retryable JSON errors.
-        if blocked or finish not in (0, 1, 2):
+        if blocked or getattr(finish,'name',str(finish)) in ('SAFETY','RECITATION','BLOCKLIST','PROHIBITED_CONTENT','SPII','IMAGE_SAFETY'):
+            raise LLMContentBlocked(f'Phân tích hình ảnh: block_reason={blocked}; finish_reason={finish}.')
+        if finish not in (0, 1, 2):
             raise LLMError('Gemini không cung cấp nội dung hình ảnh '
                            f'(block_reason={blocked}, finish_reason={finish}). '
                            'Không đánh dấu key hỏng; chưa dùng cảnh này để viết kịch bản.')
@@ -1886,6 +2295,7 @@ def _gemini_vision_json(prompt, image_paths, system, key_dau, request_timeout,
     raise LLMError(key_failure_message('gemini', keys, 'vision', last))
 
 
+@completed_ai_call
 def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                          provider: Optional[str] = None, key_dau: int = 0,
                          request_timeout: Optional[float] = None,
@@ -1906,6 +2316,30 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
     provider = provider or active_provider()
     # Keep cancellation exceptions intact; the legacy generic wrapper below
     # otherwise converts them to ordinary provider failures.
+    if provider == 'apiforcode':
+        from app.ai.apiforcode import chat
+        keys=settings.llm_keys_for(provider)
+        if not keys:raise LLMError('APIforcode: chưa có key; chọn file key trong Cài đặt AI.')
+        ensure_provider_available(provider,keys,'vision')
+        key=keys[0]
+        mark_used(provider,key)
+        budget=_check_call_budget(120.)
+        try:
+            text,finish,usage=chat(key,settings.APIFORCODE_VISION_MODEL,prompt,system,image_paths,
+                timeout=min(request_timeout or 120,budget or 120))
+            _add_usage(usage.get('prompt_tokens',0),usage.get('completion_tokens',0))
+            if finish=='length':raise LLMInvalidVision('apiforcode_request_uncertain: APIforcode: kết quả hình bị cắt giữa chừng (MAX_TOKENS).')
+            try:value=_extract_json(text,cho_vot=False)
+            except (ValueError,TypeError):
+                raise LLMInvalidVision('apiforcode_request_uncertain: Kết quả hình sai JSON; không tự gửi lại.') from None
+            if not isinstance(value,dict):raise LLMInvalidVision('apiforcode_request_uncertain: APIforcode: cần JSON object cho kết quả hình.')
+            mark_ok(provider,key,scope='vision')
+            return value
+        except LLMError:raise
+        except Exception as error:
+            detail=str(error).replace(key,'[key]')
+            if is_rate_limit_error(detail):mark_limited(provider,key,detail,scope='vision')
+            raise LLMError('APIforcode/hình ảnh: '+detail) from None
     if provider == 'gemini':
         return _gemini_vision_json(prompt, image_paths, system, key_dau,
                                   request_timeout, response_schema)
@@ -1946,7 +2380,7 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                 try:
                     client = OpenAI(api_key=key,
                                     base_url="https://api.groq.com/openai/v1",
-                                    timeout=budget_timeout or request_timeout or 120, max_retries=0)
+                                    timeout=min(budget_timeout or request_timeout or 120, 120), max_retries=0)
                     # TẮT PHẦN "SUY NGHĨ": model vision còn sống trên Groq
                     # (qwen3.6) là model SUY LUẬN, mặc định nó viết cả khối
                     # <think> dài trước khi ra JSON. ĐO 06/08/2026 với 2 ảnh:
@@ -1955,11 +2389,12 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                     # Ít token = ít cạn hạn mức 8.000 token/PHÚT của Groq = cả
                     # dây chuyền không phải ngồi chờ. Mô tả cảnh không cần suy
                     # luận nhiều bước nên tắt là đúng việc.
+                    request_started = time.time()
                     _kw = {"model": groq_vision_model(),
                            "messages": msgs, "temperature": 0.3,
                            "max_tokens": 900}
                     try:
-                        resp = client.chat.completions.create(
+                        resp = _groq_create(client, key, scope="vision",
                             reasoning_effort="none", **_kw)
                     except Exception as e_re:  # noqa: BLE001
                         # model KHÁC không nhận tham số này (Groq trả 400
@@ -1967,14 +2402,18 @@ def complete_vision_json(prompt: str, image_paths: list, system: str = "",
                         # kiểu thường, đừng để user đổi model là chết vision.
                         if "reasoning_effort" not in str(e_re):
                             raise
-                        resp = client.chat.completions.create(
+                        resp = _groq_create(client, key, scope="vision",
                             max_tokens=2600,
                             **{k: v for k, v in _kw.items()
                                if k != "max_tokens"})
-                    mark_ok("groq", key, scope="vision")
+                    mark_ok("groq", key, scope="vision", observed_at=request_started)
+                    if getattr(resp.choices[0],"finish_reason",None)=="length":
+                        raise LLMInvalidVision("Groq: mô tả hình bị cắt giữa chừng (MAX_TOKENS).")
                     return _extract_json(resp.choices[0].message.content or "")
-                except (ValueError, json.JSONDecodeError) as e:
-                    raise LLMError(f"Vision groq trả về không phải JSON: {e}")
+                except LLMInvalidVision:
+                    raise
+                except (ValueError, json.JSONDecodeError):
+                    raise LLMInvalidVision("Groq: kết quả hình rỗng hoặc sai JSON.") from None
                 except Exception as e:  # noqa: BLE001
                     last = str(e)
                     if is_org_restricted(last):

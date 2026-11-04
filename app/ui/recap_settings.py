@@ -57,6 +57,7 @@ import uuid
 
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from app.ui.appsettings import app_settings
+from app.ui.theme import SP_2,SP_3,SP_4,pad,set_role,set_style,set_tone,set_variant
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout,QFileDialog,QTabWidget,
@@ -111,10 +112,10 @@ class RecapSettingsDialog(QDialog):
 
         from PyQt6.QtWidgets import QScrollArea, QWidget
         from app.ui.layout_tools import fit_dialog
-        outer = QVBoxLayout(self)
+        outer = QVBoxLayout(self); pad(outer, SP_4, spacing=SP_3)
         content = QWidget()
         lay = QVBoxLayout(content)
-        lay.setSpacing(10)
+        lay.setSpacing(SP_3)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
@@ -125,27 +126,21 @@ class RecapSettingsDialog(QDialog):
             self.tabs.addTab(scroll,'1. Ngôn ngữ · giọng')
             self.section_layouts={'voice':lay};self.section_scrolls={'voice':scroll}
             for name,title in [('script','2. Kịch bản · Part'),('visual','3. Hình · âm thanh')]:
-                page=QWidget();page_layout=QVBoxLayout(page);page_layout.setSpacing(12)
+                page=QWidget();page_layout=QVBoxLayout(page);pad(page_layout,SP_3,spacing=SP_3)
                 page_scroll=QScrollArea();page_scroll.setWidgetResizable(True);page_scroll.setWidget(page)
                 self.tabs.addTab(page_scroll,title)
                 self.section_layouts[name]=page_layout;self.section_scrolls[name]=page_scroll
             outer.addWidget(self.tabs,1)
-            self.setStyleSheet('''
-                QTabBar::tab { padding: 10px 12px; background: #1C2438; color: #BECBE0; }
-                QTabBar::tab:selected { background: #2C4A76; color: #FFFFFF; border-bottom: 3px solid #6FAAFF; }
-                QTabWidget::pane { border: 1px solid #40516E; }
-                QCheckBox { spacing: 9px; background: transparent; padding: 5px 0; }
-                QCheckBox::indicator { width: 17px; height: 17px; border: 2px solid #A8B8D0; border-radius: 4px; }
-                QCheckBox::indicator:checked { background: #4C8DFF; border-color: #A9CBFF; }
-                QComboBox:disabled { color: #A8B8D0; }
-            ''')
+            # tab/checkbox/combo lấy kiểu từ QSS chung (theme.py); chỉ giữ khoảng
+            # đệm dọc cho hàng công tắc để dễ bấm như bản cũ
+            self.setStyleSheet('QTabBar::tab { padding: 10px 14px; } QCheckBox { padding: 5px 0; }')
         self.settings_scroll = scroll
         fit_dialog(self, 800, 720)
 
         # ---- Ghi chú minh bạch: cái gì lấy từ đâu ----
         note = QLabel('Chọn lần lượt 3 nhóm bên dưới. Phụ đề, logo và khung xuất chi tiết nằm trong Chỉnh mẫu. Cấu hình chỉ được lưu khi bấm Lưu.')
         note.setWordWrap(True)
-        note.setStyleSheet("color: #B6C4D9; font-size: 12px;")
+        set_style(note, 'muted', None)
         outer.insertWidget(0,note)
 
         if not voice_only:
@@ -182,7 +177,7 @@ class RecapSettingsDialog(QDialog):
         # Dòng credit ElevenLabs — CHỈ hiện khi đang chọn giọng el: (nạp
         # NỀN khi mở dialog/đổi giọng, dubbing cache quota 5 phút).
         self.el_credit = QLabel("")
-        self.el_credit.setStyleSheet("color: #8a8f98; font-size: 11px;")
+        set_style(self.el_credit, 'hint', None)
         self.el_credit.setVisible(False)
         lay.addWidget(self.el_credit)
         self.voice.currentIndexChanged.connect(self._update_el_credit)
@@ -208,11 +203,11 @@ class RecapSettingsDialog(QDialog):
         lay.addLayout(srow)
         self.count_lbl = QLabel("")
         self.count_lbl.setToolTip("Số giọng chọn được trong danh sách.")
-        self.count_lbl.setStyleSheet("color: #8a8f98; font-size: 11px;")
+        set_style(self.count_lbl, 'hint', None)
         lay.addWidget(self.count_lbl)
         hint = QLabel('Nghe thử trước khi chọn. Giọng đa ngôn ngữ chỉ đọc được các ngôn ngữ mà dịch vụ hỗ trợ; tên giọng không bảo đảm độ tự nhiên.')
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #8a8f98; font-size: 11px;")
+        set_style(hint, 'hint', None)
         lay.addWidget(hint)
 
         if voice_only:
@@ -226,8 +221,10 @@ class RecapSettingsDialog(QDialog):
             self.pitch=QComboBox();self.pitch.addItem('Bình thường','normal')
             self.emotion=QCheckBox();self.emotion.setChecked(False)
             buttons=QHBoxLayout();outer.addLayout(buttons)
-            choose=QPushButton('Dùng giọng này');choose.clicked.connect(self.accept);buttons.addWidget(choose)
-            cancel=QPushButton('Hủy');cancel.clicked.connect(self.reject);buttons.addWidget(cancel)
+            buttons.addStretch(1)
+            cancel=QPushButton('Hủy');set_variant(cancel,'ghost');cancel.clicked.connect(self.reject)
+            choose=QPushButton('Dùng giọng này');set_variant(choose,'primary');choose.clicked.connect(self.accept)
+            buttons.addWidget(cancel);buttons.addWidget(choose)
             return
 
         # ---- Âm lượng giọng kể ----
@@ -262,8 +259,8 @@ class RecapSettingsDialog(QDialog):
         lay.addWidget(quality_label)
         self.quality = QComboBox()
         for label, key in (
-                ("Cân bằng (khuyên dùng) — video dài tự tiết kiệm", "balance"),
-                ("Tối đa — AI mài kịch bản mọi video (tốn token nhất)", "max"),
+                ("Cân bằng — video dài tự tiết kiệm token", "balance"),
+                ("Tối đa (khuyên dùng) — AI mài kịch bản mọi video, tốn token nhất", "max"),
                 ("Tiết kiệm — nhanh & ít token nhất (1 lượt)", "save")):
             self.quality.addItem(label, key)
         self.quality.setToolTip(
@@ -271,6 +268,18 @@ class RecapSettingsDialog(QDialog):
             "Tối đa tăng lượt kiểm tra/viết lại; Tiết kiệm dùng một lượt. "
             "Nhiều lượt tốn thêm hạn mức và không bảo đảm nội dung hay hơn.")
         lay.addWidget(self.quality)
+        # ---- Chất lượng AI tối đa: GROQ_REASONING_EFFORT high/low + kéo combo
+        # trên về max/balance (vẫn chỉnh tay combo được sau đó) ----
+        self.ai_max = _switch('Chất lượng AI tối đa (suy nghĩ kỹ hơn, phân tích chậm hơn)')
+        self.ai_max.setToolTip(
+            "BẬT: AI nghĩ KỸ ở các khâu quyết định (chọn đoạn, chấm điểm, tiêu đề, "
+            "kiểm tra mạch ghép, viết kịch bản) + mài kịch bản mọi video. Phân tích "
+            "chậm hơn, tốn lượt key hơn. Dịch/thay giọng vẫn chạy nhanh như cũ.\n"
+            "TẮT: nghĩ nhanh (như bản cũ), kịch bản chế độ Cân bằng.")
+        self.ai_max.toggled.connect(
+            lambda on: self.quality.setCurrentIndex(
+                max(0, self.quality.findData("max" if on else "balance"))))
+        lay.addWidget(self.ai_max)
         self.story_quality = _switch('AI dựng chuyện kỹ · đối chiếu hình, lời và hook')
         self.story_quality.setToolTip('Lấy mẫu hình xuyên suốt nguồn, viết/kiểm tra từng Part. Bạn phải xem/sửa và duyệt kịch bản trước khi xuất. Giữ lời đã duyệt; câu quá dài sẽ báo để sửa.')
         self.story_quality.setChecked(str(self._s.value('story_quality',False)).lower() in ('true','1'))
@@ -330,6 +339,26 @@ class RecapSettingsDialog(QDialog):
         self.story_layout.setToolTip('Phóng sự: nền mờ, tiêu đề và thẻ lời kể theo cảnh; thay chữ/phụ đề mẫu, cần xuất khung dọc. Chỉnh từng Part trong Dựng hình & âm thanh.')
         lay.addWidget(self.story_layout)
 
+        twelve_button=QPushButton('TwelveLabs · hỗ trợ tìm cảnh…')
+        def configure_twelve():
+            from app.ui.twelve_dialog import TwelveDialog
+            TwelveDialog(self).exec()
+        twelve_button.clicked.connect(configure_twelve)
+        self.section_layouts['script'].addWidget(twelve_button)
+        self.transnet=QCheckBox('Dò ranh giới cảnh bằng TransNet V2 (trên máy)')
+        self.transnet.setChecked(str(self._s.value('story_transnet',False)).lower() in ('true','1'))
+        from app.core.intelligence_local import ready
+        if not ready():
+            self.transnet.setChecked(False);self.transnet.setEnabled(False)
+            self.transnet.setToolTip('Chưa cài bộ TransNet trên máy này.')
+        self.section_layouts['script'].addWidget(self.transnet)
+        self.talknet=QCheckBox('Crop dọc theo người nói · TalkNet (thử nghiệm)')
+        self.talknet.setChecked(str(self._s.value('story_talknet',False)).lower() in ('true','1'))
+        from app.core.speaker_focus import ready as speaker_ready
+        self.talknet.setEnabled(speaker_ready())
+        self.talknet.setToolTip('Chỉ dùng khi mẫu không bật Giữ trọn hình. Cắt bớt hai bên; không đủ chắc sẽ giữ khung cũ. Chỉ xử lý các cảnh đã chọn, không gửi video lên mạng.')
+        self.section_layouts['script'].addWidget(self.talknet)
+
         # ---- Số clip thuyết minh ----
         lay=self.section_layouts['script']
         crow = QHBoxLayout()
@@ -361,6 +390,7 @@ class RecapSettingsDialog(QDialog):
         lrow = QHBoxLayout()
         lrow.addWidget(QLabel("Min [giây]"))
         self.min_sec = QSpinBox()
+        self.min_sec.setKeyboardTracking(False)
         self.min_sec.setRange(10, 180)
         _len_tip = ("Độ dài mong muốn mỗi clip Reup. AI cố cắt trong khoảng "
                     "này (mong muốn, không cứng tuyệt đối).")
@@ -368,6 +398,7 @@ class RecapSettingsDialog(QDialog):
         lrow.addWidget(self.min_sec)
         lrow.addWidget(QLabel("–  Max [giây]"))
         self.max_sec = QSpinBox()
+        self.max_sec.setKeyboardTracking(False)
         self.max_sec.setRange(15, 600)
         self.max_sec.setToolTip(_len_tip)
         lrow.addWidget(self.max_sec)
@@ -395,8 +426,9 @@ class RecapSettingsDialog(QDialog):
         self.ratio.setToolTip(
             "AI kể chiếm bao nhiêu % thời lượng clip (phần còn lại giữ "
             "tiếng gốc).\nÍt = tập trung video gốc (AI chỉ mở đầu + vài cầu "
-            "nối ngắn); nhiều = kể dày như kênh recap.\nApp ÉP CỨNG: AI kể "
-            "vượt tỉ lệ này quá 12% sẽ bị cắt bớt phần kể giữa clip.")
+            "nối ngắn); nhiều = kể dày như kênh recap.\nDựng chuyện kỹ dùng "
+            "tỷ lệ này để chọn cảnh và giới hạn độ dài lời viết. Thời gian nói "
+            "thực tế còn phụ thuộc giọng; không cắt cụt lời đã duyệt.")
         self.ratio.valueChanged.connect(self._ratio_changed)
         lay.addWidget(self.ratio)
 
@@ -442,7 +474,7 @@ class RecapSettingsDialog(QDialog):
             "nhấn).")
         lay.addWidget(self.emotion)
         emotion_note=QLabel('Giọng Edge không hỗ trợ thẻ cảm xúc như ElevenLabs. Điều chỉnh nhịp/tông không bảo đảm giọng đọc giống người thật.')
-        emotion_note.setWordWrap(True);emotion_note.setStyleSheet('color: #B6C4D9;')
+        emotion_note.setWordWrap(True);set_style(emotion_note, None, 'muted')
         lay.addWidget(emotion_note)
         for section in self.section_layouts.values():section.addStretch(1)
         for label in self.findChildren(QLabel):label.setWordWrap(True)
@@ -451,6 +483,7 @@ class RecapSettingsDialog(QDialog):
         brow = QHBoxLayout()
         brow.addStretch(1)
         cancel = QPushButton("Hủy")
+        set_variant(cancel, "ghost")
         cancel.clicked.connect(self.reject)
         brow.addWidget(cancel)
         save = QPushButton('Lưu và bắt đầu phân tích' if story_start else 'Lưu')
@@ -508,6 +541,13 @@ class RecapSettingsDialog(QDialog):
             dimv = 14
         self.dim.setValue(min(40, max(0, dimv)))
         self._dim_changed(self.dim.value())
+        try:                             # chất lượng AI tối đa (từ config)
+            from config import settings as _cfg
+            _e = str(getattr(_cfg, "GROQ_REASONING_EFFORT", "high")
+                     or "high").strip().lower()
+        except Exception:  # noqa: BLE001
+            _e = "high"
+        self.ai_max.setChecked(_e == "high")   # TRƯỚC combo: toggled kéo combo
         try:                             # chất lượng kịch bản AI (từ config)
             from config import settings as _cfg
             _q = str(getattr(_cfg, "RECAP_QUALITY", "balance")
@@ -577,9 +617,11 @@ class RecapSettingsDialog(QDialog):
         else:
             note='Kịch bản giữ ngôn ngữ nguồn. Muốn nguồn tiếng Anh → lời kể tiếng Việt: chọn Tiếng Việt ở trên; giọng Tự chọn sẽ dùng giọng Việt.'
         self.language_note.setText(note)
-        self.language_note.setStyleSheet('color: #ffb454;' if error else 'color: #9aadc9;')
+        set_style(self.language_note, None, 'warn' if error else 'muted')
 
     def _save(self) -> None:
+        self.min_sec.interpretText()
+        self.max_sec.interpretText()
         if self.story_quality.isChecked():
             from app.core.music_library import choose,resolve
             from pathlib import Path
@@ -614,6 +656,8 @@ class RecapSettingsDialog(QDialog):
         self._s.setValue("recap_volume", int(self.volume.value()))
         self._s.setValue("recap_dim", int(self.dim.value()))
         self._s.setValue("recap_count", int(self.count.value()))
+        self._s.setValue("story_transnet",self.transnet.isChecked())
+        self._s.setValue("story_talknet",self.talknet.isChecked() and self.talknet.isEnabled())
         lmin, lmax = int(self.min_sec.value()), int(self.max_sec.value())
         prefix='story' if self.story_quality.isChecked() else 'recap'
         self._s.setValue(prefix+"_min_sec", lmin)
@@ -622,7 +666,15 @@ class RecapSettingsDialog(QDialog):
         # LIVE, không qua QSettings) — update_env ghi .env + cập nhật Settings.
         try:
             from config import update_env
-            update_env({"RECAP_QUALITY": self.quality.currentData() or "balance"})
+            # Ô chỉ có 2 trạng thái: tích = "high". KHÔNG tích mà .env đang là
+            # "medium" (anh Hùng chọn 01/11/2026) thì GIỮ "medium" — bấm Lưu
+            # hộp này không được âm thầm hạ xuống "low".
+            from config import settings as _cfg
+            _cu = str(getattr(_cfg, "GROQ_REASONING_EFFORT", "") or "").strip().lower()
+            update_env({"RECAP_QUALITY": self.quality.currentData() or "balance",
+                        "GROQ_REASONING_EFFORT":
+                            "high" if self.ai_max.isChecked()
+                            else ("medium" if _cu == "medium" else "low")})
         except Exception:  # noqa: BLE001 - không chặn lưu các mục khác
             pass
         # (Chữ AI kể ĐÃ CHUYỂN sang Chỉnh mẫu — không lưu recap_narr_* nữa.)
@@ -676,13 +728,13 @@ class RecapSettingsDialog(QDialog):
         if enabled:self.count.setToolTip('AI tìm câu chuyện trên toàn nguồn, chọn các cảnh có liên hệ và tạo từng Part có hook/kết riêng. Các Part không lặp cảnh; nguồn không đủ sẽ báo rõ. Không chia đều video thành các chương.')
         prefix='story' if enabled else 'recap'
         low,high=(61,119) if enabled else (25,80)
-        self.min_sec.setMaximum(119 if enabled else 180)
-        self.max_sec.setMaximum(119 if enabled else 600)
-        self.min_sec.setMinimum(61 if enabled else 10)
-        self.max_sec.setMinimum(61 if enabled else 15)
+        self.min_sec.setMaximum(2147483647 if enabled else 180)
+        self.max_sec.setMaximum(2147483647 if enabled else 600)
+        self.min_sec.setMinimum(1 if enabled else 10)
+        self.max_sec.setMinimum(1 if enabled else 15)
         self.max_sec.setValue(self._s.value(prefix+'_max_sec',high,type=int))
         self.min_sec.setValue(self._s.value(prefix+'_min_sec',low,type=int))
-        tip='Dựng chuyện: mỗi Part bắt buộc 61–119s, kể cả sau thay đổi tốc độ mẫu.' if enabled else 'Độ dài mong muốn mỗi clip Reup.'
+        tip='Dựng chuyện: nhập số giây Min–Max bạn muốn. Không giới hạn 119 giây. Nguồn phải đủ thời lượng; app kiểm tra khoảng đã lưu trước khi xuất, kể cả khi đổi tốc độ.' if enabled else 'Độ dài mong muốn mỗi clip Reup.'
         self.min_sec.setToolTip(tip);self.max_sec.setToolTip(tip)
 
     def _min_sec_changed(self, v: int) -> None:
@@ -863,7 +915,8 @@ class RecapSettingsDialog(QDialog):
                 )
                 if voice.startswith("gemini:"):
                     lang = target or "vi"
-                    txt = gemini_narrate_prefix(lang) + _DEMO_NARR[lang]
+                    from app.core.story_craft import gemini_delivery_prefix
+                    txt = gemini_delivery_prefix(lang,pace,emotion=emotion) + (_DEMO_NARR.get(lang) or _DEMO_NARR['en'])
                 else:
                     lang = target or norm_lang(voice.split("-")[0])
                     txt = _DEMO_NARR.get(lang) or _DEMO_NARR["en"]
@@ -882,8 +935,10 @@ class RecapSettingsDialog(QDialog):
                 from app.core.ffmpeg_utils import _CREATE_NO_WINDOW
                 ff = (shutil.which("ffmpeg") or settings.FFMPEG_PATH
                       or r"C:\ffmpeg\ffmpeg.exe")
+                from app.core.story_craft import gemini_pace_tempo
+                tempo_args=['-af',f'atempo={gemini_pace_tempo(pace):.3f}'] if voice.startswith('gemini:') else []
                 r = subprocess.run(
-                    [ff, "-nostdin", "-y", "-i", mp3, wav],
+                    [ff, "-nostdin", "-y", "-i", mp3, *tempo_args, wav],
                     capture_output=True, timeout=60,
                     creationflags=_CREATE_NO_WINDOW,
                     stdin=subprocess.DEVNULL)

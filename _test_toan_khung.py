@@ -146,8 +146,10 @@ def main() -> int:
             self.layout_tpl = tpl
 
     def _chay_bt(tpl):
+        # `L` = BẢN CHỤP mẫu mà `_export_prepare` dùng từ khi lời gọi dời khỏi
+        # `self.layout_tpl` (31/10/2026: đỏ OAN "name 'L' is not defined").
         return eval(compile(ast.Expression(v), "<sp>", "eval"),  # noqa: S307
-                    {}, {"self": _SelfGia(tpl)})
+                    {}, {"self": _SelfGia(tpl), "L": tpl})
 
     try:
         r_khong, r_bat, r_tat = _chay_bt({}), _chay_bt(

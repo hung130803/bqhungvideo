@@ -2434,6 +2434,260 @@
      (511,8 s) · chưa có số thời gian CẢ BƯỚC tách trong lượt này (`tach.giay`
      chỉ là `apply_model`; số cả bước lấy ở cổng 71: **0,155x GPU · 0,488x CPU**)
      · cột `trộn` đo LIỀN MẠCH nên chỉ đọc được là *"không chậm hơn"*.
+  100. `_test_wal_cu.py` → **SỔ TẠM (WAL) CŨ KHÔNG ĐƯỢC LÀM HỎNG DB ĐANG LÀNH**
+     (31/10/2026, lần thứ 3 sau 27/10 và 28/08). Cạnh `studio.db` lành (ghi tới
+     13:46) nằm một `studio.db-wal` CŨ (13:15, 58 khung, commit size 34.637
+     trang) mà vẫn "hợp lệ" -> SQLite chép trang cũ đè lên file chính -> 
+     'malformed', 7 job "đang phân tích" ma, `analysis_worker_timeout`. File
+     chính MỘT MÌNH kiểm `integrity_check` = ok, đủ dữ liệu. GỐC vì sao sổ tạm
+     kẹt bản cũ **CHƯA TÌM RA** — bộ file sự cố cất ở
+     `%LOCALAPPDATA%/BQHungVideo/recovery/truoc_chua_31-10_134733`.
+     `Database._cat_wal_cu_neu_hong` (gọi ĐẦU `init_schema`): giành sổ tạm bằng
+     đổi tên (ai đang mở DB -> bỏ qua), kiểm (chính + sổ tạm) trên BẢN CHÉP —
+     **mở thẳng file thật cùng sổ tạm cũ là lúc đóng SQLite gộp trang cũ vào,
+     tự tay phá file lành**. Chỉ cất khi file chính một mình LÀNH và (cộng sổ
+     tạm thì HỎNG **hoặc** `sqlite_sequence` của file chính LỚN HƠN). Vế thứ
+     hai do cổng lôi ra: sổ tạm cũ tự nhất quán thì cộng vào vẫn `quick_check`
+     = ok nhưng **dữ liệu LÙI ÂM THẦM** (đo 4.500 dòng -> 500) — kiểm toàn vẹn
+     một mình KHÔNG đủ. Không bao giờ xoá: dời vào `recovery/wal_cu_<giờ>/`, ghi
+     `logs/db_tu_chua.txt`. Giá 0,45-0,53 s/149 MB, chỉ khi sổ tạm khác rỗng.
+     **ĐẠT 22 · HỎNG 0**, CA 6 chạy chính bộ file sự cố thật. Thử phá 3 phép,
+     bắt 3. BẪY ĐÃ SẬP: hàm kiểm đặt tham số tên `uri` rồi gọi kèm `uri=True`
+     -> TypeError bị `except` nuốt -> lưới "không chắc thì giữ nguyên" = **im
+     lặng không làm gì**; chỉ ca dùng file THẬT mới lộ.
+- **XUẤT NỀN CONG NHANH ~28% + NÂNG SÁNG NHẸ (31/10/2026, cổng 102
+  `_test_sang_yuv.py`).** Đo 1 Part thật 108 s (mẫu «chữ mới eng»): lượt dựng cuối
+  = 71% thời gian; riêng nền `layer:blur:curve:echo` chậm ~2,5x nền mờ thường, và
+  lớp sau RGBA + `overlay format=auto` kéo CẢ khung 1080x1920 qua RGB. Nay
+  `template_backgrounds.dung_yuv()` (MẶC ĐỊNH BẬT, `BQ_NEN_CONG_YUV=0` = cũ) dựng ở
+  YUV: cả lượt xuất **174 -> 123 s** (3 lượt mỗi bên), đủ 2.428 khung, đúng
+  101,268 s. KHÔNG trùng từng điểm ảnh: khung lệch **1 điểm ảnh** (overlay yuv420
+  làm tròn vị trí chẵn) — bù 1 điểm ảnh thì ĐỘ SÁNG 51 dB, video thật 42-44 dB
+  (bằng mức cũ-so-với-chính-nó). Anh Hùng xem cùng Part 2 cách rồi duyệt.
+  ĐÃ THỬ VÀ LOẠI: thêm lệnh xuất song song (3 lệnh 60 s · 5 lệnh 61 s); `remap`
+  vốn đã đa luồng. **BẪY ĐO:** xuất cùng Part 2 lần mà KHÔNG bọc
+  `job_resume.scope` thì hiệu ứng/tiếng động chọn NGẪU NHIÊN -> cũ-so-với-cũ chỉ
+  SSIM 0,960 (TỆ hơn cũ-so-với-mới) — phải bọc scope mới so được.
+  `ffmpeg_utils.loc_do_sang` + khoá mẫu `do_sang` (% gamma, trần 20, ô "Nâng sáng
+  video (%)" trong Chỉnh mẫu): gamma nâng vùng tối/giữa, giữ điểm trắng/đen -> 0
+  điểm cháy. 0 = lệnh ffmpeg + `dedup_key` GIỐNG TỪNG KÝ TỰ; >0 nối `:ds<x>` vào
+  ĐUÔI `sig`. Áp ở cả 3 đường (canvas · stitched · vertical). Mẫu «chữ mới eng» = 8.
+- **RÀ SOÁT TOÀN BỘ 01/11/2026 — cổng 103 `_test_het_luot_giua.py` (20) + cổng
+  104 `_test_ra_soat_0111.py` (29).** Anh Hùng: "rà soát cả bot cả phần mềm, fix
+  1 lần". 4 mảng rà song song (ghi file · dây chuyền · bot · AI/key). Các luật
+  MỚI, đừng "dọn gọn" mất:
+  * **Phân tích phải ra Part**: hết lượt AI giữa chừng -> `DoiLuotAI` (đợi key
+    hồi, job về hàng KHÔNG tính lượt thử, bước đã xong dùng lại); AI chọn 0 đoạn
+    -> cắt cơ bản (không còn "0 Part"/"chờ xem lại"); `selection_allows_export`
+    = có Part là xuất. Bộ đếm vòng đợi GHI ĐĨA (`_cache/vong_doi_ai.json`, trần
+    12/video). 413/tài khoản bị khoá KHÔNG phải hết lượt.
+  * **Part ghi qua `_xuat_<pid>_….mp4` rồi `os.replace`** sang tên thật ngay
+    trước khi ghi DB. Gốc lỗi: ffmpeg ghi thẳng tên thật, tắt app giữa chừng để
+    file thiếu `moov` -> tool đăng chết. `pipeline.is_tmp_file` bỏ qua `_xuat_`,
+    `_dt_`, `.temp.`, `.part-Frag`; mở app cất file tạm của PID đã chết vào
+    `<gốc>/_Loi/part_hong/<kênh>`. `parts_problem` đòi Part MỞ ĐƯỢC (ffprobe).
+  * **Key Groq**: trần nghỉ 5 phút (`GROQ_NGHI_TOI_DA`) CHỈ cho chat — đo: key bị
+    giữ 20+ phút vẫn nhận ngay; xoay key LÂU CHƯA DÙNG, key dùng < 60 s xếp sau
+    (3 làn từng dồn 1 key -> 429 TPM). Mỗi video ~49K token (mức high); 1 key
+    200K token/ngày ≈ 4 video — key cạn theo NGÀY là đúng, không phải lỗi.
+  * **Bot**: đếm video CHƯA nhận trong thư mục kênh (khớp luật dây chuyền:
+    `<gốc>/<tên>`, bỏ dup/đang tải, `pipe_daily<2` = không giới hạn); "HẾT hàng
+    chờ" cần 2 lượt rỗng + DB lành; job kẹt vòng đợi (đếm ngược) vẫn bị báo; báo
+    lỗi mức sổ dây chuyền; gác cổng báo khi app SẬP.
+  * **Mở app tự nhận lại video vàng** (`_pipe_nhan_lai_vang`): chỉ kết quả AI CỤT
+    + gốc trong thư mục dây chuyền + chưa có Part xuất + kênh không ẩn.
+  * **BÀI HỌC ĐO**: ghi DB từ BÊN NGOÀI lúc app đang chạy -> app KHÔNG thấy (ghi
+    vào sổ tạm WAL app không dùng). Đừng sửa `studio.db` từ ngoài; dùng chính
+    đường của app (hồi phục lúc mở app / nút trong app).
+  CÒN NỢ, GHI THẲNG: cooldown chưa theo MODEL (429 của 120b chặn cả qwen) ·
+  /dongapp vẫn giết ffmpeg ngay (nay vô hại nhờ ghi qua file tạm) · hội đồng 3
+  trọng tài hết lượt thì im lặng bỏ qua.
+- **TIẾNG ĐỘNG: KHO ĐA DẠNG + CHỌN HỢP LÝ (02/11/2026, cổng 105
+  `_test_sfx_hop_ly.py`, thử phá `_pha_sfx_hop_ly.py` BẮT 10/10).** Anh Hùng:
+  *"vài kiểu ít quá mà đơn điệu ... thêm nhiều đoạn cũng buồn cười"*. ĐO trên
+  nhật ký thật (1.317 Part) + phát lại 2.997 clip trong DB (`_do_sfx_hop_ly.py`,
+  arm CŨ khớp app thật 2.979/2.997): **70/97 kiểu hiệu ứng không có trong bảng
+  kiểu -> tiếng nên rơi về 'impact'** (kể cả chỉnh màu/tuyết rơi = cú "keng"
+  giữa cảnh êm); họ `impactGlass_light` 27,5% mọi tiếng; 50,7% clip có 2 tiếng
+  CÙNG HỌ (file `_v2`/`_003` là cùng một tiếng); tới 20 tiếng/clip; 920 cặp
+  < 2 s. Số SAU (cùng ứng viên): họ đầu **7,0%** · 3 họ đầu 47,0 -> **18,2%** ·
+  lặp họ **0%** · tối đa **6**/clip · cặp < 2 s **0** · tiếng ở kiểu dịu 455 -> **0**.
+  * `app/core/sfx_chon.py` (thuần): bảng kiểu -> tiếng ĐỦ 97 kiểu (`None` =
+    không kêu: màu/hạt/thời tiết/ánh sáng dịu) · bỏ chỗ nối 'pop' (gần liền
+    mạch) · ngân sách `1+ceil(dur/15)` trần 6 · cách >= 2 s · ưu tiên hook >
+    cao trào > nối đổi cảnh · không 3 tiếng cùng nhóm liền · comedy <= 1 ·
+    NGỮ CẢNH LỜI (câu nặng: chết/tai nạn/khóc... -> bỏ ding/pop, impact ->
+    suspense; câu đang cười -> comedy; "chết cười" là VUI, "deadline" không
+    phải "dead"). Nối ở nhánh MẶC ĐỊNH của `export_canvas_clip`; đường
+    `edit_plan`/`story_beats` + thư mục tiếng của user KHÔNG đổi.
+    `BQ_SFX_CU=1` = đường cũ y nguyên.
+  * Bộ bốc file: chống lặp theo **HỌ** (trong clip + 3 họ gần đây/nhóm) và
+    sàn độ sáng TUYỆT ĐỐI `_SFX_SANG_SAN` -33 dB cho mốc đang nói (cửa tương
+    đối 10 dB co nhóm impact về 2 họ khi kho có file rất sáng).
+  * Kho +75 file (72 qua bộ lọc) / 29 họ mới (`tools/them_sfx_v2.py`, Kenney CC0
+    impact/rpg/interface + tự sinh ffmpeg; nguồn + sha256 `v2-provenance.json`,
+    NGUON.md, LICENSES.txt). Tiếng đấm/gỗ phải làm bản "hợp loa" (cắt 2 tầng
+    320 Hz + nhấn 2,6 kHz) không thì hụt 7-28 dB trên loa điện thoại. ĐÃ BỎ:
+    `doorClose` (quá nghĩa đen), `impactWood/Soft_heavy`, reverse swell.
+  * **BẪY ĐÃ SẬP:** tiếng mới vào rất gắt -> trên nguồn đã nóng (đỉnh +0,11)
+    1/4 lượt bản BẬT ra +0,18 dBFS > bản TẮT. Biên trần bản trộn 1,2 -> **1,8 dB**
+    dưới đỉnh nguồn (đường mới): 10/10 lượt <= -0,57 dBFS. Cổng 44 nới RIÊNG
+    ngân sách trong tiến trình cổng (nó đo độ NGHE ĐƯỢC, không đo chính sách);
+    cổng 42 nay đòi nhật ký khớp ĐÚNG bộ chọn. Cổng 23: trần kho 700 KB đã ĐỎ
+    SẴN từ 26/09 (895 KB) -> 1.500 KB. Cổng 105 bản đầu so khoảng cách với
+    CHÍNH `SC.CACH_MIN` -> phá về 0,8 s vẫn xanh (LỌT); nay so hằng số 2,0.
+  * KHÔNG đụng `services.py`/`dedup_key` -> 200-300 kênh không xuất lại.
+    CHƯA: chưa ai NGHE (`_NGHE_THU_ANH_HUNG/sfx_moi/`) · luật ngữ cảnh lời mới
+    đo bằng câu mẫu, chưa chạy trên chép lời thật trong file nghe thử.
+- **NHẠC NỀN TỰ CHỌN THEO NỘI DUNG (02/11/2026, cổng 106
+  `_test_nhac_tu_dong.py`, thử phá `_pha_nhac_tu_dong.py`).** Anh Hùng: *"tự
+  chọn, âm lượng nhỏ thôi ... đang kịch tính lại cho nhạc vui không được"*.
+  Chỉnh mẫu > Nhạc nền = "Tự chọn theo nội dung (kho của app)" (MẶC ĐỊNH TẮT)
+  -> `bgm_path` = `nhac_tu_dong.MA_TU_DONG` (chuỗi đánh dấu). Chuỗi đó NẰM
+  TRONG khoá chống trùng sẵn có (`services` băm `bgm_path`) nên KHÔNG sửa
+  `services.py`; kênh không bật giữ khoá y nguyên.
+  * `app/core/nhac_tu_dong.py` (thuần): tâm trạng từ LỜI + TIÊU ĐỀ, chấm điểm
+    MẠNH 2 / YẾU 1, ngưỡng 2. Thứ tự: căng > buồn > bí ẩn > (nặng chưa đủ
+    điểm -> ÊM) > vui > tích cực > êm. **Có dấu hiệu nặng thì KHÔNG BAO GIỜ ra
+    nhạc vui** (cổng quét 3.000 tổ hợp). Soi 3.000 tiêu đề thật: chữ câu view
+    "Shocking/Secret", "crying" (My Wallet's Crying), "death" (Death Match),
+    "shot", "nhớ", "xin lỗi", "run" đã BỎ/HẠ YẾU vì đoán sai.
+  * Mức: nhạc dưới mức lời (bpv90 của chính clip) 12 dB (18 -> 12: anh Hùng nghe "bé quá"), đang nói (câu chép
+    lời + khoảng thuyết minh recap) hạ thêm 6 dB, mờ vào 1 s / ra 1,5 s, không
+    tăng quá +3 dB; clip câm -> mức tuyệt đối thấp. Nguồn có nền GẦN TO BẰNG LỜI
+    (< 3 dB — hạ từ 12 -> 6 -> 3 theo file nghe thử thật; đo 18 video ồn nền 5,6-22,5 dB; trộn
+    nhạc vào video thật làm độ chênh/độ phẳng phổ đổi rất ít -> KHÔNG đo phân
+    biệt được "đã có nhạc" vs "ồn") -> KHÔNG chèn. Đo file thật: dưới lời 18,3 dB,
+    (số đo lúc 18 dB) né thêm 7,4 dB; nhạc dài hơn clip -> cắt đúng; ngắn hơn -> lặp đủ.
+  * Kho 14 -> 87 bài CC0 (OpenGameArt, `tools/tai_nhac_cc0.py`: mở TỪNG trang
+    kiểm khối giấy phép có CC0 — bộ lọc tìm kiếm trả cả bài CC-BY), gán tâm
+    trạng theo THẺ của chính bài, loại chất game/thẻ mâu thuẫn; Opus 48k,
+    <= 120 s, chuẩn -20 LUFS, cột `lufs` đo thật cho MỌI bài. Chỉ dùng 6 tâm
+    trạng `music_library.MOODS` — tâm trạng lạ làm `catalog()` NÉM, hỏng luôn
+    đường dựng phóng sự. FreePD đã ĐÓNG CỬA. Thư mục nhạc 15 -> 66 MB.
+  * **LỖI CŨ cổng 106 lôi ra:** `_do_muc_clip` BỎ cửa sổ im tuyệt đối khỏi
+    đường bao -> mọi mốc sau LỆCH thời gian (`muc_tai_moc`/`la_moc_dang_noi`
+    của tiếng động đọc sai chỗ). Nay giữ vị trí bằng `_SAN_IM`; `nen_tai_moc`
+    bỏ qua giá trị đó để giữ nghĩa cũ.
+  * **MẶC ĐỊNH MỌI VIDEO CÓ NHẠC (anh Hùng chốt 02/11/2026: "video nào cũng
+    phải chèn, nhưng vừa thôi"):** `nhac_tu_dong.che_do_mau` — 'off' cũ / thiếu
+    khoá = TỰ CHỌN; chỉ "Tắt hẳn" (`none`) mới tắt; bài cố định mất file / thư
+    mục nhạc rỗng -> lùi TỰ CHỌN. `bo_qua()` nay LUÔN '' (không bỏ video nào).
+    Mức 18 -> **12 dB** dưới lời ("bé quá, không nghe thấy"). HỆ QUẢ PHẢI BIẾT:
+    `bgm_path` của mọi mẫu đang 'off' đổi sang chuỗi đánh dấu -> khoá chống
+    trùng của clip CHƯA xuất đổi theo; clip ĐÃ xuất mà bấm "Xuất cả kênh" lại
+    sẽ KHÔNG smart-skip (xuất lại có nhạc). Dây chuyền chỉ xuất clip mới.
+  * **ANH HÙNG TỰ CHỈNH ĐỘ TO + NGHE THỬ (02/11/2026):** Chỉnh mẫu có ô "Độ to
+    nhạc tự chọn" (Rất nhỏ 20 · Nhỏ 16 · Vừa 12 · To 9 · Rất to 6 dB dưới lời,
+    khoá mẫu `bgm_auto_db`) — mã hoá vào chuỗi đánh dấu `MA_TU_DONG@<dB>`, mức
+    MẶC ĐỊNH ra ĐÚNG chuỗi cũ (khoá chống trùng không đổi). Nút "Nghe thử nhạc
+    nền" (`nhac_tu_dong.dung_nghe_thu`, chạy nền ~0,2 s): 20 s tiếng THẬT của
+    video đang chọn + nhạc ở đúng mức đó, cùng công thức lúc xuất. Đo: "Rất to"
+    to hơn "Rất nhỏ" 14,0 dB. Trần tăng nhạc 3 -> 6 dB cho mức "Rất to".
+    `_test_guard` nay CHẶN `winsound.PlaySound` (trước đó test bấm mọi nút có
+    thể làm loa máy anh Hùng kêu).
+  * **BẪY ĐO (cổng 106 sập 1 lần):** đọc PCM bằng `-ac 1` thì ffmpeg cộng 2
+    kênh hệ số 0,707 -> tiếng giống nhau 2 kênh PHỒNG +3 dB (file đỉnh -2,98
+    đọc ra -0,05 = báo méo OAN). Trộn mono bằng TRUNG BÌNH 2 kênh.
+  * **BẪY ffmpeg (cả N-126207 lẫn bản trong bộ cài):** AAC **192k** TREO VĨNH
+    VIỄN với tiếng MONO có đoạn im tuyệt đối rồi vào âm thuần (160k/128k/
+    stereo/có chút nhiễu/`-aac_coder fast` đều chạy). Cổng test phải dùng 160k
+    + `timeout`. App xuất clip ở 160k (an toàn); `thay_giong.py` còn 2 chỗ
+    192k nhưng ra stereo có nhạc nền -> rủi ro thấp, CHƯA đổi.
+- **"Khởi động phân tích quá 180 giây" + CHIP LỖI KHÔNG MẤT (03/11/2026, cổng 107
+  `_test_loi_da_chay_lai.py` 12/0).** Tiến trình phân tích con mở ở IDLE = ưu tiên
+  ĐĨA rất thấp; 5 lượt xuất ffmpeg (BELOW_NORMAL) ghi đĩa thì nó không nạp nổi mã
+  trong 3 phút (log nguồn sống TRỐNG 10:09-10:15 = kẹt trước dòng mã đầu). Nay mở
+  ở BELOW_NORMAL, có trạng thái đầu tiên rồi mới hạ IDLE (`idle_when_ready`).
+  Chip/bảng: việc LỖI đã có lượt mới cùng loại + cùng video (chờ/chạy/xong) =
+  `services._DA_THU_LAI` -> không đếm, dòng ghi "Đã chạy lại", ẩn Thử lại; lượt
+  mới cũng lỗi thì VẪN đếm. Dữ liệu thật: 2/2 job lỗi sáng 03/11 đều đã chạy lại.
+  CHƯA RÕ: `_test_pipe_e2e.py` đỏ vì phông (kể cả Arial) vẽ ra ô vuông trong hộp
+  cát — không liên quan bản vá này, chưa truy.
+- **VIDEO KHÔNG LỜI RA TÊN FILE TIẾNG NA UY (03/11/2026, cổng 109
+  `_test_khong_loi_ten.py` 30/0).** "Part 1 Gå inn i bygget. #Rengar #AllRight"
+  cho video Mỹ quay công trường: 173 từ/1.088 s (0,16 từ/giây) -> Groq BỊA chữ
+  Na Uy/Hà Lan/Nga, có video bị dán nhãn "Norwegian Nynorsk". App ĐÃ đo được
+  "không lời" (`co_loi_noi_that`) nhưng dấu chỉ gắn vào dict tạm `_c`, **signals
+  lưu DB không có khoá `khong_loi`** (lỗi CÓ TỪ ĐẦU) -> lúc xuất vẫn đốt phụ đề
+  bịa, tên file lấy câu bịa, hashtag sinh từ chữ bịa, `_polish_titles` viết tiêu
+  đề theo nhãn Na Uy. Nay `app/ai/ngon_ngu_video.py` là cửa chung: không lời ->
+  ngôn ngữ theo TÊN FILE GỐC, tiêu đề AI chỉ giữ khi đúng chữ ngôn ngữ đó
+  (`hop_ngon_ngu`), lùi về tên file gốc thay câu bịa; hashtag sinh từ tên file
+  (bộ đệm có khoá `nguon`). Video CÓ lời: kết quả GIỐNG HỆT (đo 1.357 Part:
+  0 đổi oan). Quét DB: 35/1.357 Part xuất từ 20/10 là video không lời, chỉ
+  **6 Part** đổi tên (đúng 6 cái hỏng). Bản đầu gắt quá (đổi 38 Part, bỏ cả tiêu
+  đề Anh tốt) — đã nới bằng `hop_ngon_ngu`. CHƯA: Part đã xuất KHÔNG tự đổi tên
+  file; video Latin không phải Anh/Việt (Pháp, Đức...) tên file đoán ra 'en'.
+- **KEY DÁN VÀO CÀI ĐẶT AI MẤT ÂM THẦM (03/11/2026, cổng 108 `_test_luu_key.py`
+  13/0, thử phá 2/2).** Anh Hùng dán 2 key lúc 11h, key chạy (nút Kiểm tra áp TẠM
+  vào bộ nhớ) mà .env vẫn bản 01/11 -> tắt app là mất. Nay: mở hộp thì
+  `config.nap_lai_tu_dia` đọc .env TRÊN ĐĨA trước (key thêm từ ngoài hiện ra + app
+  dùng ngay, Lưu không ghi đè mất); đóng hộp (Hủy/X/Esc) mà đã sửa thì HỎI Lưu /
+  Không lưu / Quay lại (`_HopCaiDatAI`); Không lưu -> bộ nhớ trả về đúng file.
+- **BOT TELEGRAM KHÔNG THẤY NHÓM MỚI — ĐÃ SỬA (02/11/2026, cổng 97 112/0).**
+  Nhóm "Mỹ BKT" (16 kênh, chưa tích "Bật") biến mất khỏi `/chay` vì bot chỉ
+  liệt kê nhóm có kênh BẬT, không một lời giải thích. Nay: mọi nhóm đều hiện
+  (kể cả nhóm rỗng chỉ có trong QSettings — `goi_ui("nhom_rong")`), nhóm chưa
+  bật -> nói rõ + nút `/batnhom` (bỏ qua kênh ẨN, như "Bật tất cả"). Kèm:
+  `services.create_project` cho kênh mới THỪA HƯỞNG trạng thái dây chuyền của
+  nhóm (nhóm có kênh bật -> kênh mới bật).
+- **GỌI AI GROQ: 1 LÀN -> 3 LÀN (31/10/2026, cổng 101 `_test_groq_lan.py`).**
+  `groq_dispatch.slot` cho ĐÚNG 1 lượt chat/cả máy. Đo thật lúc chạy 7 luồng AI:
+  làn BẬN 81% thời gian (11 lượt/90 s, ~8 s/lượt) trong khi luôn có 7-16 key
+  RẢNH (TB 12) -> mỗi video chờ trung vị **56 phút** mới được phân tích (chạy
+  thật chỉ 16,8 phút). Nay `so_lan('chat')` = 3 (`GROQ_SONG_SONG`, trần 8; `=1`
+  là hành vi cũ); vision/audio giữ 1; làn 0 giữ đúng tên cũ. Cùng model, cùng
+  câu hỏi, cùng mức suy nghĩ -> chất lượng KHÔNG đổi. KHÔNG mở cao hơn: mỗi key
+  chịu ~1 lượt suy nghĩ cao/phút (8.000 token/phút).
+  **LỖI CŨ CỔNG LÔI RA:** tiến trình bị giết khi đang giữ làn (Huỷ / `os._exit`)
+  khoá làn tới hết lease **180 s** = cả máy đứng gọi AI 3 phút. Nay owner =
+  `<pid>:<uuid>`, pid chết thì người sau lấy làn NGAY (đo 0,7 s). Thử phá 2 chốt
+  (về 1 làn · bỏ cướp làn chết) -> bắt cả 2.
+  **GIỚI HẠN THẬT:** 3 làn chỉ nhanh hơn khi CÒN KEY RẢNH. Hết hạn mức token
+  thì app ĐỢI (`_call_waiting_quota`), không cắt cơ bản — không có đường tắt.
+- **RÀ SOÁT TOÀN BỘ 31/10/2026 — 5 LỖI THẬT ĐÃ VÁ (đọc trước khi "dọn gọn"):**
+  (1) **Groq đã gỡ `groq/compound`** -> dây chuyền dự phòng thực chất chỉ còn 2
+  model CÙNG HỌ gpt-oss, mà cả hai cùng trả RỖNG (nghĩ hết ~5.800 token ở mức
+  "low", `finish_reason=length`; 20 lượt trong `logs/llm_rong_20261031.log`,
+  làm 1 video "AI chưa phân tích đủ"). `GROQ_LLM_FALLBACK` nay =
+  `qwen/qwen3.8-27b` (còn sống, KHÁC HỌ) và `llm` gửi `reasoning_effort="none"`
+  cho qwen3 (đo thật: 0,7-2,0 s, JSON đúng). Dây chuyền: 120b -> qwen -> 20b.
+  `cham_dich.MODEL_HOI_DONG` cũng bỏ compound.
+  (2) **Đỉnh tiếng vượt trần**: 9/646 Part (6 ngày) ra > −1 dBTP, tệ nhất
+  **+3,6 dBTP** — `chuan_do_to_clip` NHẬN luôn bậc cuối dù vẫn vượt. Nay bậc cuối
+  vượt thì HẠ đúng số dB dư (+0,3) và đo lại, tối đa 3 lần (cổng 66 CA 14).
+  Ghi kèm: `alimiter` của ffmpeg khi bị vượt NHIỀU (cú nổ gắt) **ghì cả bài và
+  không nhả** (đo: nâng +7,1 dB ra −30 LUFS thay vì −14, cả 2 bản ffmpeg) —
+  trên clip thật chỉ 3/646 Part dính, chưa thay limiter.
+  (3) **Phụ đề**: bản chạy sản xuất (có trong mọi .exe từ 26/10) bỏ thời lượng
+  tối thiểu -> **2,03% chữ hiện ngắn hơn 1 khung = không bao giờ lên màn hình**
+  và **bỏ hẳn ~11.400 chữ** có thời lượng 0 (`if end > a`). Nay
+  `captions._SAN_HIEN_CHU = 0,07` s (2 khung): đo lại **0 chữ bị nuốt**. Cùng
+  bản đó bỏ sàn 0,06 s/từ ở `_remap_words` -> lời nói NHANH (0,03 s/từ) ra **0
+  dòng ô sáng = mất sạch chữ** (cổng 21 C4 đỏ, có hay không có bản vá sàn hiện
+  chữ cũng vậy) -> đã trả sàn 0,06 s về `_remap_words`. Cổng 21 mục 12 + cổng 68
+  mục 2 nay so KIỂU CHỮ từng byte (phần trước `[Events]`) + nội dung chữ từng
+  dòng, KHÔNG so mốc giờ (thời gian đã đổi CÓ CHỦ Ý); thử phá đổi màu preset ->
+  bắt.
+  (4) **edge-tts 7.2.8 bị Microsoft trả 403 cho MỌI giọng** — `.venv` máy dev
+  còn kẹt 7.2.8 dù `requirements.txt` đòi >=7.3.1; bản .exe (7.3.1) KHÔNG dính.
+  Hệ quả trên hồi quy: cổng 83 đỏ "nghi MẠNG" và **cổng 85 TREO >10 phút** (thử
+  lại vô hạn). Nay `.venv` = 7.3.1, cổng 85 chạy 51 s. **Cổng giọng đọc đỏ/treo
+  thì kiểm `pip show edge-tts` của `.venv` TRƯỚC khi nghi mã.**
+  (5) Cổng lỗi thời đã sửa cho đúng hành vi hiện tại (mỗi cái có thử phá):
+  56 (lời gọi xuất dời sang `_export_prepare`; smart-skip nay CHỈ khi file Part
+  còn trên đĩa; việc xuất cùng file đích đang chờ thì GỘP — cả 3 là luật đúng) ·
+  62 (biểu thức đọc `L` = bản chụp mẫu) · 90 (hàm giả theo chữ ký
+  `_fit_recap_chunk` mới; `rut_gon_vua_khung` đọc lại qua `_doc_lai_loat`) ·
+  91 (`story_audio.py` gọi máy đọc 1 chỗ hợp lệ) · 99 (4 tiến trình ghi NỐI một
+  file trên Windows MẤT dòng -> mỗi tiến trình một file) · 65 (đợi nút 60 s) · 78 (bù giọng gốc đã GỠ ở
+  v2.48.0 -> đòi cờ KHÔNG mọc lại) · 69 (dò `tra_moc_loat` LỒNG trong
+  `_nn_loat(...)`, thử phá -> bắt) · 83 (bảng không ghi số tải thì không chấm).
+  **CÒN ĐỎ VÌ THIẾU DỮ LIỆU MẪU (một lượt dọn rác trước đã xoá), KHÔNG PHẢI MÃ:**
+  52/54 (`_tq_work/trung_transcript.json`, corpus lời Trung) · 56 CA15-17/20
+  (`D:\claude\_do_che_chu\nguon` video Douyin có chữ cháy) · 65 (4 file mốc
+  `_do_lt\e2e\_cantieng`). Muốn xanh lại phải dựng lại kho mẫu từ video gốc.
 - **"GẦN CUỐI VIDEO KHÔNG CHE MỜ CHỮ GÌ CẢ" — TRUY RA, VÁ, ĐO LẠI, CỔNG 56 CA 25
   (20/08/2026).** Anh Hùng: *"kiểm tra lại cái phần làm mờ sao cứ đến gần cuối
   video nó k che mờ chữ gì cả"*. Anh ấy nói **"cứ đến"** — tức CÓ QUY LUẬT, và

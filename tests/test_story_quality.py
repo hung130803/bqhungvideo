@@ -81,11 +81,11 @@ class StoryQuality(unittest.TestCase):
 
     def test_default_duration_and_speed_cannot_produce_short_part(self):
         self.assertEqual(q.length_limits({}),(61,119))
-        self.assertEqual(q.length_limits({'min_len':30,'max_len':90}),(61,90))
+        self.assertEqual(q.length_limits({'min_len':30,'max_len':90}),(30,90))
         cid,meta=self.review_fixture()
         approved=q.approve_script(cid,q.digest(meta),[p['text'] for p in meta['parts']])
         q.verify_export(approved,approved['windows'],self.src,1)
-        with self.assertRaisesRegex(RuntimeError,'trên 60 giây'):q.verify_export(approved,approved['windows'],self.src,1.2)
+        with self.assertRaisesRegex(RuntimeError,'ngoài khoảng đã lưu'):q.verify_export(approved,approved['windows'],self.src,1.2)
 
     def test_short_source_or_too_many_parts_stops_before_vision_calls(self):
         with patch.object(q.llm,'is_configured',return_value=True),patch.object(q.llm,'vision_available',return_value=True),patch.object(q,'build_evidence') as vision:
@@ -250,6 +250,33 @@ class StoryQuality(unittest.TestCase):
             d._fit_recap_chunk(str(source),str(out),1,tempo_max=1.15,allow_trim=False)
         final,natural,tempo=d._fit_recap_chunk(str(source),str(out),4,tempo_max=1.15,allow_trim=False)
         self.assertAlmostEqual(final,3,delta=.1);self.assertEqual(tempo,1)
+
+    def test_strict_fit_applies_small_tempo_instead_of_false_overflow(self):
+        source=AREA/'slightly-long.wav';out=AREA/'slightly-fitted.wav';wav(source,10.52)
+        final,natural,tempo=d._fit_recap_chunk(str(source),str(out),10.4,tempo_max=1.15,allow_trim=False)
+        self.assertGreater(tempo,1);self.assertLess(tempo,1.02)
+        self.assertLessEqual(final,10.45);self.assertAlmostEqual(natural,10.52,delta=.02)
+
+    def test_gemini_overflow_retakes_identical_text_once_without_rewrite(self):
+        path=AREA/'gemini-long.wav';wav(path,9.8)
+        def synth(texts,voice,paths,*args,**kwargs):
+            self.assertEqual(texts,['Keep every approved word.']);self.assertEqual(voice,'gemini:Kore')
+            self.assertFalse(kwargs['allow_fallback']);self.assertIn('7.52 seconds',kwargs['gemini_prefix'])
+            wav(paths[0],8.4);return [True]
+        with patch.object(q,'shorten') as shorter,patch.object(d,'_synth_all_gemini',side_effect=synth) as tts:
+            text,words=fit_narration_text('Keep every approved word.','evidence',8,str(path),'gemini:Kore','en','+0%','+0Hz',allow_rewrite=False)
+            self.assertEqual(text,'Keep every approved word.');self.assertEqual(words,[])
+            shorter.assert_not_called();tts.assert_called_once()
+
+    def test_gemini_overflow_failed_retake_preserves_original_audio(self):
+        from app.core import pipeline
+        path=AREA/'gemini-still-long.wav';wav(path,9.8);original=path.read_bytes()
+        def synth(texts,voice,paths,*args,**kwargs):wav(paths[0],15);return [True]
+        with patch.object(q,'shorten') as shorter,patch.object(d,'_synth_all_gemini',side_effect=synth) as tts:
+            with self.assertRaisesRegex(RuntimeError,'story_narration_too_long') as raised:
+                fit_narration_text('Keep every approved word.','evidence',8,str(path),'gemini:Kore','en','+0%','+0Hz',allow_rewrite=False)
+            self.assertTrue(pipeline.is_configuration_error(str(raised.exception)))
+            self.assertEqual(path.read_bytes(),original);shorter.assert_not_called();tts.assert_called_once()
 
     def test_overflow_rewrites_and_revoices_with_new_word_timing(self):
         path=AREA/'overflow.wav';wav(path,6)

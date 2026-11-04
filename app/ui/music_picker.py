@@ -3,6 +3,7 @@ from PyQt6.QtCore import QUrl,Qt
 from PyQt6.QtWidgets import QDialog,QVBoxLayout,QHBoxLayout,QLabel,QComboBox,QLineEdit,QListWidget,QListWidgetItem,QPushButton,QMessageBox
 from app.core import music_library as lib
 from app.ui.layout_tools import fit_dialog
+from app.ui.theme import SP_2,SP_4,pad,set_role,set_variant
 
 class MusicPicker(QDialog):
     def __init__(self,parent=None,current='',allow_auto=True):
@@ -10,8 +11,8 @@ class MusicPicker(QDialog):
         self.selection=current;self._allow_auto=allow_auto
         from PyQt6.QtMultimedia import QMediaPlayer,QAudioOutput
         self.player=QMediaPlayer(self);self.audio=QAudioOutput(self);self.audio.setVolume(.4);self.player.setAudioOutput(self.audio)
-        layout=QVBoxLayout(self)
-        intro=QLabel('Chọn theo cảm xúc, nghe thử rồi áp dụng. Tự chọn theo phong cách dùng nhóm đã gán sẵn; không tự suy đoán cảm xúc người trong video.');intro.setWordWrap(True);layout.addWidget(intro)
+        layout=QVBoxLayout(self);pad(layout,SP_4,spacing=SP_2)
+        intro=QLabel('Chọn theo cảm xúc, nghe thử rồi áp dụng. Tự chọn theo phong cách dùng nhóm đã gán sẵn; không tự suy đoán cảm xúc người trong video.');intro.setWordWrap(True);set_role(intro,'muted');layout.addWidget(intro)
         self.mode=QComboBox();self.mode.addItem('Chọn bài cụ thể','fixed');self.mode.addItem('Theo nhạc của mẫu xuất','');self.mode.addItem('Tắt nhạc nền',lib.PREFIX+'off')
         if allow_auto:
             self.mode.addItem('AI chọn theo nội dung từng Part · nghe duyệt trước khi xuất',lib.PREFIX+'auto:story')
@@ -23,13 +24,16 @@ class MusicPicker(QDialog):
         for key,label in lib.MOODS.items():self.mood.addItem(label,key)
         bar.addWidget(self.mood);self.search=QLineEdit();self.search.setPlaceholderText('Tìm bài / tác giả…');bar.addWidget(self.search,1)
         self.items=QListWidget();layout.addWidget(self.items,1)
-        self.info=QLabel('');self.info.setWordWrap(True);layout.addWidget(self.info)
+        self.info=QLabel('');self.info.setWordWrap(True);set_role(self.info,'muted');layout.addWidget(self.info)
         self.mood.currentIndexChanged.connect(self.fill);self.search.textChanged.connect(self.fill)
         self.items.currentItemChanged.connect(self.selected)
         self.player.errorOccurred.connect(lambda _code,message:self.info.setText('Không nghe thử được: '+message))
         row=QHBoxLayout();layout.addLayout(row)
         for label,fn in [('Nghe thử',self.preview),('Dừng',self.player.stop),('Dùng lựa chọn',self.apply),('Hủy',self.reject)]:
+            if label=='Dùng lựa chọn':row.addStretch(1)      # hành động chính dồn phải
             b=QPushButton(label);b.clicked.connect(fn);row.addWidget(b)
+            if label=='Dùng lựa chọn':set_variant(b,'primary')
+            elif label=='Hủy':set_variant(b,'ghost')
         self.finished.connect(lambda _:self.player.stop());self.fill();fit_dialog(self,720,560)
 
     def fill(self,*_):

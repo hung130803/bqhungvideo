@@ -67,11 +67,12 @@ def copy_path(path):
 
 def show_locations(parent, data):
     dlg=QDialog(parent);dlg.setWindowTitle('Thư mục của kênh — '+data['channel_name'])
-    root=QVBoxLayout(dlg)
+    from app.ui.theme import SP_2,SP_3,SP_4,card,pad,set_role,set_variant
+    root=QVBoxLayout(dlg);pad(root,SP_4,spacing=SP_3)
     note=QLabel('Thư mục lưu hiện tại và nơi đã ghi file trước đây có thể khác nhau nếu bạn đổi tên kênh hoặc đổi nơi lưu. Mở thư mục không di chuyển file.')
-    note.setWordWrap(True);root.addWidget(note)
+    note.setWordWrap(True);set_role(note,'muted');root.addWidget(note)
     scroll=QScrollArea();scroll.setWidgetResizable(True)
-    content=QWidget();items=QVBoxLayout(content);scroll.setWidget(content);root.addWidget(scroll,1)
+    content=QWidget();items=QVBoxLayout(content);pad(items,0,0,SP_2,0,spacing=SP_2);scroll.setWidget(content);root.addWidget(scroll,1)
     feedback=QLabel('');feedback.setWordWrap(True)
     feedback.setTextFormat(Qt.TextFormat.PlainText)
 
@@ -86,16 +87,18 @@ def show_locations(parent, data):
     known={p for _,p,_ in rows if p}
     rows += [('Part — đường dẫn đã ghi trước đây',p,False) for p in data['recorded'] if p not in known]
     for label,path,create in rows:
-        heading=QLabel(label);items.addWidget(heading)
-        line=QHBoxLayout();field=QLineEdit(str(path) if path else 'Chưa có / chưa chọn video')
+        # mỗi thư mục = 1 thẻ: nhãn mờ ở trên, ô đường dẫn + nút ở dưới
+        box,box_lay=card(margins=(SP_3,SP_2,SP_3,SP_3),spacing=6);items.addWidget(box)
+        heading=QLabel(label);set_role(heading,'muted');box_lay.addWidget(heading)
+        line=QHBoxLayout();line.setSpacing(SP_2);field=QLineEdit(str(path) if path else 'Chưa có / chưa chọn video')
         field.setReadOnly(True);field.setCursorPosition(0);field.setToolTip(field.text());line.addWidget(field,1)
         op=QPushButton('Mở');op.setEnabled(path is not None)
         op.clicked.connect(lambda _=False,p=path,c=create:act(p,create=c));line.addWidget(op)
         cp=QPushButton('Sao chép');cp.setEnabled(path is not None)
         cp.clicked.connect(lambda _=False,p=path:act(p,copy=True));line.addWidget(cp)
-        items.addLayout(line)
+        set_variant(cp,'ghost');box_lay.addLayout(line)
     items.addStretch(1);root.addWidget(feedback)
-    close=QPushButton('Đóng');close.clicked.connect(dlg.accept);root.addWidget(close)
+    close=QPushButton('Đóng');close.clicked.connect(dlg.accept);root.addWidget(close,0,Qt.AlignmentFlag.AlignRight)
     fit_dialog(dlg,900,560);dlg.exec()
 
 

@@ -1,0 +1,456 @@
+{
+ "nguon_kenney": "https://kenney.nl/assets/<goi> — CC0 1.0",
+ "tu_sinh": "ffmpeg lavfi (tools/them_sfx_v2.py) — CC0 1.0",
+ "files": [
+  {
+   "file": "impact/k2_impact_impactPunch_heavy_000.opus",
+   "nguon": "kenney impact-sounds/impactPunch_heavy_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "d29c92af8c45fdabdbb2c7a8c45a50b4ba1ab746d20a040f097cc90ad0dd5533"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_heavy_001.opus",
+   "nguon": "kenney impact-sounds/impactPunch_heavy_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "51b5306c7738fe66e0ec117eb55677f8c87f8b1dba0696e60fbee077238bb072"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_heavy_002.opus",
+   "nguon": "kenney impact-sounds/impactPunch_heavy_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "f8fa139232643d1d6731c4ba8466fb5d60c3e49bd1be527a1506d1b02ce884bd"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_heavy_003.opus",
+   "nguon": "kenney impact-sounds/impactPunch_heavy_003.ogg",
+   "license": "CC0-1.0",
+   "sha256": "7b5a04e1c92e1bc367b9f2089add5a3725690d54e6ebd1c2f40e4c53af1a9390"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_heavy_004.opus",
+   "nguon": "kenney impact-sounds/impactPunch_heavy_004.ogg",
+   "license": "CC0-1.0",
+   "sha256": "8be4bb3c61c3fb452302faba60bbe5a7525e3c76375184f854ad44047202f773"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_medium_000.opus",
+   "nguon": "kenney impact-sounds/impactPunch_medium_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "c205b1814715e99ce9cef9e502ca3974c135017a8d72812daa9b6efde85b4e48"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_medium_001.opus",
+   "nguon": "kenney impact-sounds/impactPunch_medium_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "3d3a5d4e601c10de484fe8465b8eda07fa18b5dd8d299535d21fccc561f04955"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_medium_002.opus",
+   "nguon": "kenney impact-sounds/impactPunch_medium_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "53bc2372465276e8d9c392d9774cded66aa71373ded00ddbd5cee106c607d82a"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_medium_003.opus",
+   "nguon": "kenney impact-sounds/impactPunch_medium_003.ogg",
+   "license": "CC0-1.0",
+   "sha256": "c2a2f5798fc8216cb114beee6710e747e43d390bb248e859866eeaf14ca16bd4"
+  },
+  {
+   "file": "impact/k2_impact_impactPunch_medium_004.opus",
+   "nguon": "kenney impact-sounds/impactPunch_medium_004.ogg",
+   "license": "CC0-1.0",
+   "sha256": "5cfabf33c9ae6b7955757248eeee9801212829aaf6c77cb879d88b877482f196"
+  },
+  {
+   "file": "impact/k2_impact_impactWood_medium_000.opus",
+   "nguon": "kenney impact-sounds/impactWood_medium_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "24607f57a59e3aa1a56691219e8669b4216394d5e13d631b63e7a006e8ea596f"
+  },
+  {
+   "file": "impact/k2_impact_impactWood_medium_001.opus",
+   "nguon": "kenney impact-sounds/impactWood_medium_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "5e57bd3df588472f7fa35a265e9c44a7ce522884592818259f1817212350d72e"
+  },
+  {
+   "file": "impact/k2_impact_impactWood_medium_002.opus",
+   "nguon": "kenney impact-sounds/impactWood_medium_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "34e9329c7e119621a416e693cb40f097c1036dac217622c52e8eb60a260fb619"
+  },
+  {
+   "file": "impact/k2_impact_impactPlate_medium_000.opus",
+   "nguon": "kenney impact-sounds/impactPlate_medium_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "4584c390f5f05fd9328d4eeb3ac6ee129a557913d10968ca16ff839d9eaf04b5"
+  },
+  {
+   "file": "impact/k2_impact_impactPlate_medium_001.opus",
+   "nguon": "kenney impact-sounds/impactPlate_medium_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "24258038349d9b6cd58fa2e9818519b6fd8f2c156677276442fc85e6da8f8406"
+  },
+  {
+   "file": "impact/k2_impact_impactPlate_medium_002.opus",
+   "nguon": "kenney impact-sounds/impactPlate_medium_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "4d7c2581ea7b8a64541ee0ddf6c0c0c2b1adc22a2e123ca84a04cb76e8080563"
+  },
+  {
+   "file": "impact/k2_impact_impactPlank_medium_000.opus",
+   "nguon": "kenney impact-sounds/impactPlank_medium_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "2ba54c1f09b94435fd236b6147882d7b8806f05b5f20438f0609450a2dab0445"
+  },
+  {
+   "file": "impact/k2_impact_impactPlank_medium_001.opus",
+   "nguon": "kenney impact-sounds/impactPlank_medium_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "e4cd0cd453f5c483ac4c4ffa964b18e110b99dd0214564cbfecd076b1d19eabb"
+  },
+  {
+   "file": "impact/k2_impact_impactPlank_medium_002.opus",
+   "nguon": "kenney impact-sounds/impactPlank_medium_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "256273fd95aeae13ae3806cdfd94a8efb51ff7d3bd45461ddfced76d0b29fa6d"
+  },
+  {
+   "file": "impact/k2_impact_impactTin_medium_000.opus",
+   "nguon": "kenney impact-sounds/impactTin_medium_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "10e218da3884d54623eb66f0f39b5ddcce9f4d0facaefa0822cbbf13e6948810"
+  },
+  {
+   "file": "impact/k2_impact_impactTin_medium_001.opus",
+   "nguon": "kenney impact-sounds/impactTin_medium_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "17715a83c6a1ac5063f74211bff5552145003710b6c6869a3396efc05d7ac1a3"
+  },
+  {
+   "file": "impact/k2_impact_impactMetal_light_000.opus",
+   "nguon": "kenney impact-sounds/impactMetal_light_000.ogg",
+   "license": "CC0-1.0",
+   "sha256": "355c75cdbd1e141fe2d7af224ce1c2b0847f17a07260c5cc85ffce513f3de140"
+  },
+  {
+   "file": "impact/k2_impact_impactMetal_light_001.opus",
+   "nguon": "kenney impact-sounds/impactMetal_light_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "9eda3cb3f6c7bb1ee88f121579d94481cffdfcd3f6ceba967143e465c4614436"
+  },
+  {
+   "file": "impact/k2_impact_impactMetal_light_002.opus",
+   "nguon": "kenney impact-sounds/impactMetal_light_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "8fcf18a19eacbeedf0aa706dd8034d1c8d2fccde7391560e7db5a810afe354c5"
+  },
+  {
+   "file": "transition/k2_rpg_cloth1.opus",
+   "nguon": "kenney rpg-audio/cloth1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "6d027c0ce52bac121403a1262980e19cee404744f990187823fabe14d2cf5ed6"
+  },
+  {
+   "file": "transition/k2_rpg_cloth2.opus",
+   "nguon": "kenney rpg-audio/cloth2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "baca5978153031959fc36e399e16146de0c74f19eacacca811cfed99c8a79324"
+  },
+  {
+   "file": "transition/k2_rpg_cloth3.opus",
+   "nguon": "kenney rpg-audio/cloth3.ogg",
+   "license": "CC0-1.0",
+   "sha256": "af98314ec6770fc74634704208d634a7ff54d0a947dd8b0853041613ccc69cd7"
+  },
+  {
+   "file": "transition/k2_rpg_cloth4.opus",
+   "nguon": "kenney rpg-audio/cloth4.ogg",
+   "license": "CC0-1.0",
+   "sha256": "d7c408e6da5f93164f7d9be561b9bc7de983c92ba5d0095413fc1d32cdef9c50"
+  },
+  {
+   "file": "transition/k2_rpg_bookFlip1.opus",
+   "nguon": "kenney rpg-audio/bookFlip1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "311cb9dba103bffe6e369d7bd8e2e55566c5422d945bb252e399f392db7e20a5"
+  },
+  {
+   "file": "transition/k2_rpg_bookFlip2.opus",
+   "nguon": "kenney rpg-audio/bookFlip2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "0cf421dcf45c54101a45904eaa1f088b901dd4c59a4b75c553a2f2023097ddb1"
+  },
+  {
+   "file": "transition/k2_rpg_bookFlip3.opus",
+   "nguon": "kenney rpg-audio/bookFlip3.ogg",
+   "license": "CC0-1.0",
+   "sha256": "d659bcb2ddee453e9ffa4e79073ce39a5e807c0b51c26b2054050afdb7686b53"
+  },
+  {
+   "file": "transition/k2_rpg_drawKnife1.opus",
+   "nguon": "kenney rpg-audio/drawKnife1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "b013e2c7a3a4833163847a962ef5eb5c48ad85357fae0b42d73d139373c07f07"
+  },
+  {
+   "file": "transition/k2_rpg_drawKnife2.opus",
+   "nguon": "kenney rpg-audio/drawKnife2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "32bc4765566ff5bcd91fc718ab7efdc1cf039d4fedc8a3afa98ef77d4596baf8"
+  },
+  {
+   "file": "transition/k2_rpg_drawKnife3.opus",
+   "nguon": "kenney rpg-audio/drawKnife3.ogg",
+   "license": "CC0-1.0",
+   "sha256": "157810f92ffda9395f016d0af8cc6668ec85d7ec574483b78f833e1ad70ef84c"
+  },
+  {
+   "file": "transition/k2_rpg_knifeSlice.opus",
+   "nguon": "kenney rpg-audio/knifeSlice.ogg",
+   "license": "CC0-1.0",
+   "sha256": "9956552b327a62c1cafec579a9a0720a53bca9664bdeb35ef5048707c094daee"
+  },
+  {
+   "file": "transition/k2_rpg_knifeSlice2.opus",
+   "nguon": "kenney rpg-audio/knifeSlice2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "b30b2863988c3f91b1e9ff1ae5b86e38588a44d86b3673a5b8754751f3464347"
+  },
+  {
+   "file": "transition/k2_rpg_clothBelt.opus",
+   "nguon": "kenney rpg-audio/clothBelt.ogg",
+   "license": "CC0-1.0",
+   "sha256": "2fdbd64e593dcd82bcc71f5462f867e6fed799968490b6911cacd54d68550bbe"
+  },
+  {
+   "file": "transition/k2_rpg_clothBelt2.opus",
+   "nguon": "kenney rpg-audio/clothBelt2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "6ba63e3bb4001e2b6e1eb104d60b96d222750db9a46b1a8e7bfee92c4bd1343f"
+  },
+  {
+   "file": "pop/k2_rpg_bookPlace1.opus",
+   "nguon": "kenney rpg-audio/bookPlace1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "7465e1e24ea6149d220230a94f19e35cddee88822920fee9a99c46ad3a4de013"
+  },
+  {
+   "file": "pop/k2_rpg_bookPlace2.opus",
+   "nguon": "kenney rpg-audio/bookPlace2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "d72c50bda6f25764340feb45465f94e91327300dd02038630a6e4502ac238dfc"
+  },
+  {
+   "file": "pop/k2_rpg_bookPlace3.opus",
+   "nguon": "kenney rpg-audio/bookPlace3.ogg",
+   "license": "CC0-1.0",
+   "sha256": "7f37d283f7c4da12cae30a4471e2ae97cbe8e52538129876216d1b44a9bd4102"
+  },
+  {
+   "file": "pop/k2_rpg_metalClick.opus",
+   "nguon": "kenney rpg-audio/metalClick.ogg",
+   "license": "CC0-1.0",
+   "sha256": "dfe497a6dc5f34f9152309b955a962c53452d0794d5972c08f8b1f8aa7676a08"
+  },
+  {
+   "file": "pop/k2_rpg_metalLatch.opus",
+   "nguon": "kenney rpg-audio/metalLatch.ogg",
+   "license": "CC0-1.0",
+   "sha256": "73669393632a961843ce62ad75a209ab697c30f9a172a3456671cd9172e50548"
+  },
+  {
+   "file": "pop/k2_rpg_beltHandle1.opus",
+   "nguon": "kenney rpg-audio/beltHandle1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "a3a7a0bfe9aabe4ca556b5814fe73862404f1cd44619f228fa9060d6d0315be6"
+  },
+  {
+   "file": "pop/k2_rpg_beltHandle2.opus",
+   "nguon": "kenney rpg-audio/beltHandle2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "5ccc163e76e3d0c17ddee6176648dd3e0d642476953b993a62debee396439408"
+  },
+  {
+   "file": "pop/k2_rpg_handleSmallLeather.opus",
+   "nguon": "kenney rpg-audio/handleSmallLeather.ogg",
+   "license": "CC0-1.0",
+   "sha256": "1e08c62d697251d0c68a206e885ce897b4439ce69e86878325c1640a3317fe1c"
+  },
+  {
+   "file": "pop/k2_rpg_handleSmallLeather2.opus",
+   "nguon": "kenney rpg-audio/handleSmallLeather2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "6537e0c21bf396615798f3108f2ad75fb4b2399cfe17d2cd45ef390e0ab4121d"
+  },
+  {
+   "file": "reveal/k2_rpg_handleCoins.opus",
+   "nguon": "kenney rpg-audio/handleCoins.ogg",
+   "license": "CC0-1.0",
+   "sha256": "22318b45af181b61aa7ddd3c31226fb9add03c83f82227dcb0409bd2095f0c4f"
+  },
+  {
+   "file": "reveal/k2_rpg_handleCoins2.opus",
+   "nguon": "kenney rpg-audio/handleCoins2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "2f6624cca9a3bf61de4240702a0a418c8cc3c45cf3937d22940d13520aa19b9a"
+  },
+  {
+   "file": "suspense/k2_rpg_creak1.opus",
+   "nguon": "kenney rpg-audio/creak1.ogg",
+   "license": "CC0-1.0",
+   "sha256": "4551239c9203a9fbf88399c87ba046d0ca17b61556acd37c3035c15b2922d307"
+  },
+  {
+   "file": "suspense/k2_rpg_creak2.opus",
+   "nguon": "kenney rpg-audio/creak2.ogg",
+   "license": "CC0-1.0",
+   "sha256": "5c8693767285afcf2a98908421a550fb514f8af3a75161bb5772a7a0d8a61bbd"
+  },
+  {
+   "file": "suspense/k2_rpg_creak3.opus",
+   "nguon": "kenney rpg-audio/creak3.ogg",
+   "license": "CC0-1.0",
+   "sha256": "d916308327ab84154330ac549513ae29dcabc435745502dd8a2ad1dc51df1986"
+  },
+  {
+   "file": "pop/k2_interface_glass_001.opus",
+   "nguon": "kenney interface-sounds/glass_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "2b3a8f846990da9dc1963ab747b7c360a260a03115348e872288f5f2d63c160c"
+  },
+  {
+   "file": "pop/k2_interface_glass_002.opus",
+   "nguon": "kenney interface-sounds/glass_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "1e4de00e71d46dd0878d8d5567cf37bf15c410868919bc8062fa1dd38bbaa652"
+  },
+  {
+   "file": "pop/k2_interface_glass_003.opus",
+   "nguon": "kenney interface-sounds/glass_003.ogg",
+   "license": "CC0-1.0",
+   "sha256": "2da2bb6a9ae9d02e8bd1c3e22eb44b6479cd29846525a2e3fabb0f8e6131109e"
+  },
+  {
+   "file": "pop/k2_interface_glass_004.opus",
+   "nguon": "kenney interface-sounds/glass_004.ogg",
+   "license": "CC0-1.0",
+   "sha256": "19780df1cc8a2736833a65ecb3557c706baf1a2438911cebdc0832b525774968"
+  },
+  {
+   "file": "pop/k2_interface_glass_005.opus",
+   "nguon": "kenney interface-sounds/glass_005.ogg",
+   "license": "CC0-1.0",
+   "sha256": "ca6dc4fc6079503e7df96be22d470dd57595b4ad8ec1682a50873d8cfeb77252"
+  },
+  {
+   "file": "pop/k2_interface_glass_006.opus",
+   "nguon": "kenney interface-sounds/glass_006.ogg",
+   "license": "CC0-1.0",
+   "sha256": "a70256f2fc7a4f6c87726627056ab9161f80705c215067e0a019e3eb9ce99ff5"
+  },
+  {
+   "file": "pop/k2_interface_drop_001.opus",
+   "nguon": "kenney interface-sounds/drop_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "11800e73cf254a05550ff69dc7594fe94bad459168fad4db2b2f3e29f5899f81"
+  },
+  {
+   "file": "pop/k2_interface_drop_002.opus",
+   "nguon": "kenney interface-sounds/drop_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "52e77b8b9b44c954ec39067d44011a33947083f465f0bebcd6c51737f1eb5d04"
+  },
+  {
+   "file": "pop/k2_interface_drop_003.opus",
+   "nguon": "kenney interface-sounds/drop_003.ogg",
+   "license": "CC0-1.0",
+   "sha256": "6d643e5eb3973e179c37045d456c29f3ee06dae88aed82f6a083258883682290"
+  },
+  {
+   "file": "pop/k2_interface_drop_004.opus",
+   "nguon": "kenney interface-sounds/drop_004.ogg",
+   "license": "CC0-1.0",
+   "sha256": "284235621e2dd88ea7d6eaeb501385dbd2ce451b34640983001fae24fe5a0f3c"
+  },
+  {
+   "file": "pop/k2_interface_pluck_001.opus",
+   "nguon": "kenney interface-sounds/pluck_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "6382641a7bb581c92cae9d81509541aa79c95171331aac67e04e180d90762cd6"
+  },
+  {
+   "file": "pop/k2_interface_pluck_002.opus",
+   "nguon": "kenney interface-sounds/pluck_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "0220577ec50857d7da37d967077ca60b4c5f7be2266ad21321648d40f65c0a9a"
+  },
+  {
+   "file": "scratch/k2_interface_glitch_001.opus",
+   "nguon": "kenney interface-sounds/glitch_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "f8891ef0c605fcd21125c72fc0d669a710e80dfa9586e912b0020c23d303b444"
+  },
+  {
+   "file": "scratch/k2_interface_glitch_002.opus",
+   "nguon": "kenney interface-sounds/glitch_002.ogg",
+   "license": "CC0-1.0",
+   "sha256": "50a2c5888d2eac4924e1850cb70844746fce64df8e66f49476b96e30176c89cd"
+  },
+  {
+   "file": "scratch/k2_interface_glitch_003.opus",
+   "nguon": "kenney interface-sounds/glitch_003.ogg",
+   "license": "CC0-1.0",
+   "sha256": "09359cea3d7ade6ecaba28abb27e8c2e366dd556aabcc58e6789a67ddc8baef1"
+  },
+  {
+   "file": "scratch/k2_interface_glitch_004.opus",
+   "nguon": "kenney interface-sounds/glitch_004.ogg",
+   "license": "CC0-1.0",
+   "sha256": "be771bafa571afc767e70ecda6b7363b59aa6d19a8ed70466ae44d7207fb035c"
+  },
+  {
+   "file": "reveal/k2_interface_bong_001.opus",
+   "nguon": "kenney interface-sounds/bong_001.ogg",
+   "license": "CC0-1.0",
+   "sha256": "81bad4b273ef4795eeae5a9027dd1ce7947b88f29e3b0f56d40a4397680b8344"
+  },
+  {
+   "file": "comedy/s2_truot_coi_len.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "bae0ee00cccac24397ca20d9eede82e0136b403ed291130ab1bee9d1d22ded7f"
+  },
+  {
+   "file": "comedy/s2_truot_coi_xuong.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "de0dc4c93be2ee0eece3b966f24c65d28cf01e719db05946c48660a812422e1a"
+  },
+  {
+   "file": "comedy/s2_bloop.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "5caee075b273c3a0b2490a199ff2e1c49a8e66228751445ef4dba81556ed9d8c"
+  },
+  {
+   "file": "comedy/s2_bloop_doi.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "ad66fdf07ca938505c3ae474a0446c2b4d3b206f02e9e671ff5eee219a80b682"
+  },
+  {
+   "file": "comedy/s2_lo_xo.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "0a6d19341356536cbc64d6c37b174077bcecaeaddfc773bd835f60489a06ca5d"
+  },
+  {
+   "file": "transition/s2_vut_gio.opus",
+   "nguon": "tự sinh ffmpeg lavfi",
+   "license": "CC0-1.0",
+   "sha256": "249f2f338670a8a6539e4d951f8f6f2cdff90d99c31836cf2794e47bdf9f6108"
+  }
+ ]
+}

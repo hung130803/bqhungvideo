@@ -65,6 +65,20 @@ import subprocess
 import sys
 import threading
 import time
+
+
+def _viec_dich(fn):
+    """Gắn nhãn việc "translate" cho mọi lượt AI trong hàm (01/11/2026): mức
+    suy nghĩ của DỊCH chỉnh được qua `GROQ_REASONING_EFFORT_TASKS`
+    ("translate=high"). Trước đây các lượt này không nhãn -> luôn "low"."""
+    from functools import wraps
+
+    @wraps(fn)
+    def w(*a, **k):
+        from app.ai import llm
+        with llm.tac_vu("translate"):
+            return fn(*a, **k)
+    return w
 from importlib.machinery import PathFinder
 from pathlib import Path
 from typing import Callable, Optional
@@ -1575,6 +1589,7 @@ def con_chu_goc(text: str, dich_sang: str) -> bool:
     return recap._has_cjk(str(text or ""))
 
 
+@_viec_dich
 def _dich_lai_sot(goc: list[str], dich: list[str], dich_sang: str,
                   goc_ma: str) -> list[str]:
     """Dịch LẠI riêng những câu còn sót chữ gốc, prompt siết chặt hơn.
@@ -1703,6 +1718,7 @@ def _boi_canh_bai(cau: list[dict]) -> str:
     return " ".join(acc)
 
 
+@_viec_dich
 def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     """Dịch cả loạt câu, CHIA MẺ theo ngân sách token. Trả list cùng số phần tử.
 
@@ -1788,6 +1804,7 @@ def _dich_loat(cau: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     return [ra.get(i) or c["text"] for i, c in enumerate(cau)]
 
 
+@_viec_dich
 def _dich_nguoc_cham(goc: list[str], dich: list[str], goc_ma: str,
                      dich_ma: str) -> list[float]:
     """DỊCH NGƯỢC bản dịch về tiếng gốc rồi CHẤM độ giống nghĩa.
@@ -2795,6 +2812,7 @@ def toc_do_doc(texts: list[str], files: list[str], ok: list[bool]) -> float:
     return (kt / gy) if gy > 0.5 else 16.0
 
 
+@_viec_dich
 def _rut_gon_loat(muc: list[dict], dich_sang: str) -> list[str]:
     """Nhờ LLM rút NGẮN các câu dịch quá dài, GIỮ Ý CHÍNH.
 
@@ -3089,6 +3107,7 @@ def _mang_hoac_mot(data) -> list:
     return ra
 
 
+@_viec_dich
 def _viet_day_loat(muc: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     """Nhờ LLM viết ĐẦY HƠN các câu dịch hụt khung, GIỮ NGUYÊN nghĩa.
 
@@ -3159,6 +3178,7 @@ def _viet_day_loat(muc: list[dict], dich_sang: str, goc_ma: str) -> list[str]:
     return [ra.get(j) or m["text"] for j, m in enumerate(muc)]
 
 
+@_viec_dich
 def _cham_trung_thanh(muc: list[dict], moi: list[str], goc_ma: str,
                       dich_sang: str) -> dict[int, tuple[float, float]]:
     """Chấm ĐỘ TRUNG THÀNH bản CŨ và bản ĐẦY so với CÂU NGUỒN, thang 1-5.

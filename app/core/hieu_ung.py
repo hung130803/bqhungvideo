@@ -348,6 +348,7 @@ class HieuUng:
               fps: float = 30, font: str = "", i: int = 0) -> str:
         d = max(0.0, min(DAM_MAX, float(dam))) / DAM_MAX      # 0..1
         s = self.mau
+        _so_tt = int(i)       # vòng `for i` bên dưới DÙNG LẠI tên `i`
         # `{i}` = SỐ THỨ TỰ hiệu ứng trong clip -> tên nhãn `[q0a]`, `[q1a]`…
         # KHÔNG có nó thì 2 hiệu ứng shader trong cùng 1 clip dùng TRÙNG nhãn và
         # ffmpeg báo "Duplicate output pad" rồi chết cả lượt xuất.
@@ -375,7 +376,68 @@ class HieuUng:
               # "29.970029970029973" -> zoompan bắt lỗi cú pháp video_rate.
               .replace("{FPS}", f"{float(fps):g}")
               .replace("{FONT}", font.replace("\\", "/").replace(":", "\\:")))
+        if (s.startswith("zoompan=") and os.environ.get(
+                "BQ_ZOOMPAN_CA_CLIP", "").strip() != "1"
+                and _ram_cua_so(a, fps, W, H) <= ZOOMPAN_RAM_TRAN):
+            s = _zoompan_cua_so(s, a, b, fps, _so_tt)
         return s
+
+
+#: Trần RAM cho đường cắt-cửa-sổ của zoompan. `split=3`+`concat` bắt ffmpeg
+#: GIỮ trong RAM mọi khung chưa nén từ đầu clip tới cửa sổ, cho CẢ 2 nhánh
+#: sau (concat chỉ đọc nhánh đầu). Đo thật 27/10/2026 trên máy anh Hùng: cửa sổ
+#: ở giây 14,3 · 60 fps · 1080x1920 sau frei0r (RGBA) -> MỘT tiến trình ffmpeg
+#: **17,7 GB RAM**, máy còn 1 GB trống = cả máy đơ. Quá trần -> chạy zoompan
+#: trên cả clip như trước 26/10 (chậm hơn chút, RAM không phình).
+ZOOMPAN_RAM_TRAN = 512 * 1024 * 1024
+
+
+def _ram_cua_so(a: float, fps: float, W: int, H: int) -> float:
+    """Ước RAM (byte) mà `_zoompan_cua_so` bắt ffmpeg giữ: 2 nhánh chờ × số
+    khung trước cửa sổ × khung RGBA (4 byte/điểm — trường hợp xấu nhất, vì
+    hiệu ứng frei0r đứng trước đổi khung sang RGBA)."""
+    return 2.0 * max(0.0, float(a)) * max(1.0, float(fps)) * int(W) * int(H) * 4
+
+
+def _tach_bo_loc_dau(s: str) -> tuple[str, str]:
+    """Tách bộ lọc ĐẦU chuỗi (tới dấu phẩy ĐẦU TIÊN nằm ngoài nháy đơn)."""
+    trong_nhay = False
+    for k, ch in enumerate(s):
+        if ch == "'":
+            trong_nhay = not trong_nhay
+        elif ch == "," and not trong_nhay:
+            return s[:k], s[k + 1:]
+    return s, ""
+
+
+def _zoompan_cua_so(s: str, a: float, b: float, fps: float, i: int) -> str:
+    """CHỈ cho `zoompan` chạy trong CỬA SỔ hiệu ứng (TĂNG TỐC 26/10/2026).
+
+    `zoompan` KHÔNG có timeline `enable` nên bản cũ chạy nó trên CẢ CLIP chỉ
+    để dùng 0,3-0,8 giây. Ngoài cửa sổ z=1, dịch=0 -> khung ra Y HỆT khung vào
+    (đã so md5 từng khung), nên cắt mảnh như `_SH_MAU`/`_lp` là an toàn.
+    3 chi tiết BẮT BUỘC (thiếu cái nào là lệch file — đã đo từng cái):
+      * `zoompan` đóng dấu lại mốc = SỐ THỨ TỰ khung / fps. Mảnh ngoài cửa sổ
+        phải làm y hệt: `settb=1/FPS,setpts=N` (nguồn VFR/mkv mốc ms cũng ra
+        đúng mốc như cũ).
+      * `fps=FPS` trên mảnh ngoài: mốc đã nằm đúng lưới nên KHÔNG thêm/bớt
+        khung, chỉ để `concat` thấy CÙNG frame_rate (lệch -> concat ra VFR ->
+        encoder CFR lùi về 25 fps = rớt khung).
+      * `settb=1/FPS` sau `concat` (concat đổi timebase sang micro giây).
+    Cửa sổ nới ±nửa khung: khung thừa đi qua zoompan với z=1 = y hệt gốc.
+    ĐO: so file mp4 xuất ra md5 TRÙNG KHÍT với bản cũ (30 / 29,97 / 30000/1001
+    fps, cửa sổ ở đầu, ở cuối, 2 zoompan nối nhau). `BQ_ZOOMPAN_CA_CLIP=1` ép
+    về đường cũ (đo A/B, gỡ rối trên máy user)."""
+    zp, con_lai = _tach_bo_loc_dau(s)
+    f = f"{float(fps):g}"
+    h = 0.5 / max(1.0, float(fps))
+    s0, e0 = max(0.0, float(a) - h), float(b) + h
+    ra = (f"split=3[zw{i}a][zw{i}b][zw{i}c];"
+          f"[zw{i}a]trim=end={s0:.4f},settb=1/{f},setpts=N,fps={f}[zw{i}d];"
+          f"[zw{i}b]trim=start={s0:.4f}:end={e0:.4f},{zp}[zw{i}e];"
+          f"[zw{i}c]trim=start={e0:.4f},settb=1/{f},setpts=N,fps={f}[zw{i}f];"
+          f"[zw{i}d][zw{i}e][zw{i}f]concat=n=3:v=1:a=0,settb=1/{f}")
+    return ra + ("," + con_lai if con_lai else "")
 
 
 def _f0r(mod: str, params: str = "") -> str:
@@ -1830,6 +1892,9 @@ def chon_hieu_ung(tong_giay: float, muc: str = "vua",
     if m not in MUC_DAM or float(tong_giay or 0) < 2.0:
         return []
     dung = list(co_the_dung if co_the_dung is not None else dung_duoc())
+    if co_the_dung is None:
+        from app.core.effects_config import allowed
+        dung=allowed(dung,None)
     if not dung:
         return []
     dam = MUC_DAM[m]
@@ -2260,8 +2325,22 @@ def duong_filter(p: str) -> str:
 
 
 
+#: NHỚ KẾT QUẢ `do_nhip` (TĂNG TỐC 26/10/2026). Đo nhịp = GIẢI MÃ CẢ Part
+#: 1080p; xuất lại đúng Part đó (thử lại sau lỗi, bấm xuất lại, lùi encoder)
+#: là giải mã lại y hệt để ra y hệt con số. Khoá do caller dựng từ thứ QUYẾT
+#: ĐỊNH đầu vào (đường dẫn + mtime + cỡ file nguồn + các đoạn + vân tay mảnh
+#: pha 1) -> trùng khoá = cùng khung = cùng số đo. Có khoá mới nhớ; giới hạn
+#: `_NHIP_NHO_MAX` mục (mỗi mục 2 list ngắn) nên RAM không phình. Có khoá cho
+#: 3 làn xuất song song.
+_NHIP_NHO: dict = {}
+_NHIP_NHO_MAX = 64
+_NHIP_KHOA = __import__("threading").Lock()
+
+
 def do_nhip(path: str, ffmpeg: str = "",
-            dau_vao: Optional[list] = None) -> tuple[list, list]:
+            dau_vao: Optional[list] = None,
+            khoa_nho: Optional[tuple] = None,
+            co_tieng: Optional[bool] = None) -> tuple[list, list]:
     """Đo mức ÂM + mức ĐỘNG từng giây của 1 FILE (timeline = timeline file).
 
     1 LỆNH ffmpeg, 1 lượt giải mã, 2 nhánh filter (audio astats + video
@@ -2274,7 +2353,31 @@ def do_nhip(path: str, ffmpeg: str = "",
       nhiều đoạn: ["-f","concat","-safe","0","-i", <file danh sách>]
       một đoạn  : ["-ss", s, "-t", e-s, "-i", <nguồn>]
     Không truyền -> đo cả file `path` như cũ.
+
+    `khoa_nho`: khoá NHỚ kết quả (xem `_NHIP_NHO`); None = không nhớ (như cũ).
+    `co_tieng=False`: caller ĐÃ BIẾT nguồn không có tiếng -> bỏ qua lượt đo có
+    nhánh tiếng (lượt đó chắc chắn hỏng rồi mới chạy lượt chỉ hình = giải mã
+    thừa một lượt). None = như cũ (thử có tiếng trước).
     """
+    if khoa_nho is not None:
+        with _NHIP_KHOA:
+            _co = _NHIP_NHO.get(khoa_nho)
+        if _co is not None:
+            return list(_co[0]), list(_co[1])
+    nl, cd, xong = _do_nhip_that(path, ffmpeg, dau_vao, co_tieng)
+    # Chỉ nhớ lượt ffmpeg TRẢ MÃ 0 và CÓ SỐ: lượt bị giết giữa chừng (Huỷ,
+    # đóng app) ra số CỤT — nhớ nó là khoá luôn đường "lần sau đo đủ".
+    if khoa_nho is not None and xong and cd:
+        with _NHIP_KHOA:
+            if len(_NHIP_NHO) >= _NHIP_NHO_MAX:
+                _NHIP_NHO.pop(next(iter(_NHIP_NHO)))     # bỏ mục CŨ nhất
+            _NHIP_NHO[khoa_nho] = (list(nl), list(cd))
+    return nl, cd
+
+
+def _do_nhip_that(path: str, ffmpeg: str, dau_vao: Optional[list],
+                  co_tieng: Optional[bool]) -> tuple[list, list, bool]:
+    """Phần đo THẬT của `do_nhip` (không nhớ). Trả thêm cờ `xong`."""
     import re
     import tempfile
     ff = ffmpeg or _ffmpeg()
@@ -2290,22 +2393,31 @@ def do_nhip(path: str, ffmpeg: str = "",
     nl: list = []
     cd: list = []
     vao = [str(x) for x in (dau_vao or ["-i", str(path)])]
-    for graph, maps in ((gv + ";" + ga, ["-map", "[vo]", "-map", "[ao]"]),
-                        (gv, ["-map", "[vo]"])):
+    xong = False                        # có lượt ffmpeg nào trả mã 0 không
+    luot = ((gv + ";" + ga, ["-map", "[vo]", "-map", "[ao]"]),
+            (gv, ["-map", "[vo]"]))
+    if co_tieng is False:
+        luot = luot[1:]
+    for graph, maps in luot:
         # SIẾT LUỒNG CHO LỆNH ĐO (đo thật 08/08/2026, 10 làn): lệnh này **CỐ Ý
         # KHÔNG qua cửa chờ ffmpeg** (xem `_chay_ffmpeg`) nên 10 làn có thể sinh
         # nhiều lệnh đo CÙNG LÚC. Để mặc định `-threads 0` thì mỗi lệnh ăn ~17
         # luồng giải mã + luồng filter -> tổng luồng ffmpeg vọt lên **115
         # (4,79x số nhân)**, phá mốc "<= 2x nhân". Việc ở đây bé tí (fps=4,
         # rộng 160 px) nên 1 luồng là đủ, KHÔNG chậm đi.
+        # 26/10/2026: giải mã 1 -> 2 luồng. Lệnh này nay ĐI QUA cửa chờ
+        # (qua_cua_cho=True, số lệnh đồng thời đã bị chặn) nên không còn nguy
+        # cơ vọt luồng như ghi chú trên; giải mã H.264 nhiều luồng cho ra khung
+        # Y HỆT nên số đo nhịp không đổi, chỉ nhả chỗ ffmpeg sớm hơn.
         cmd = [ff, "-y", "-hide_banner", "-nostats", "-v", "error",
-               "-threads", "1", "-filter_threads", "1",
+               "-threads", "2", "-filter_threads", "1",
                "-filter_complex_threads", "1",
                *vao, "-filter_complex", graph, *maps,
                "-f", "null", os.devnull]
         # `_chay_ffmpeg`: VÀO SỔ tiến trình để đóng app giết được (xem docstring
         # của nó). Lệnh này giải mã CẢ clip nên là chỗ rò ffmpeg mồ côi nặng nhất.
         if _chay_ffmpeg(cmd, 600, qua_cua_cho=True) == 0:
+            xong = True
             break                       # có tiếng -> xong; không thì thử nhánh 2
     try:
         if os.path.exists(fa):
@@ -2323,7 +2435,7 @@ def do_nhip(path: str, ffmpeg: str = "",
     finally:
         import shutil
         shutil.rmtree(td, ignore_errors=True)
-    return nl, cd
+    return nl, cd, xong
 
 
 if __name__ == "__main__":         # in kho ra cho người đọc
@@ -2335,3 +2447,7 @@ if __name__ == "__main__":         # in kho ra cho người đọc
     for k, h in KHO.items():
         print(f"{k:<14}{h.ten:<26}{h.capcut:<19}{h.nhom:<8}{'CÓ' if k in dd else 'KHÔNG'}")
     print(thong_ke())
+
+# New looks are opt-in through the effect gallery; legacy automatic pools exclude them.
+from app.core.effects_config import register as _register_extra_effects
+_register_extra_effects(HieuUng, _dk, _UV_THEO_LOAI)

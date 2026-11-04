@@ -337,7 +337,10 @@ BA_CHO = [
 # lượt đọc (`_do_nhip_recap.py`).
 #
 # Ffmpeg/Groq bị vá bằng bản GIẢ — `build_recap_track` thì chạy THẬT.
-def _fit_gia(src, dst_wav, window, tempo_max=1.28):
+def _fit_gia(src, dst_wav, window, tempo_max=1.28, allow_trim=True,
+             requested_tempo=1.0):
+    # Chữ ký PHẢI theo `dubbing._fit_recap_chunk` thật (thêm `allow_trim`,
+    # `requested_tempo` cho đường kể chuyện) — 31/10/2026 đỏ OAN vì thiếu.
     Path(dst_wav).parent.mkdir(parents=True, exist_ok=True)
     Path(dst_wav).write_bytes(b"\0" * 16)
     d = max(0.5, float(window) - 0.2)
@@ -764,8 +767,27 @@ def soi_cho_goi(nguon: str, ten_ham: str) -> dict:
             "hang_so": hang}
 
 
+def _qua_cua_chung(nguon: str, ten_ham: str) -> dict:
+    """`ten_ham` đọc lại qua CỬA CHUNG `_doc_lai_loat` (truyền `on_progress`
+    là BIỂU THỨC) và CỬA đó gọi `_synth_all_words` có `on_msg` biểu thức.
+    Từ bước 4b' (31/10/2026) `rut_gon_vua_khung` không gọi thẳng máy đọc nữa —
+    đòi gọi thẳng là ĐỎ OAN; bất biến thật là "nhịp tiến độ vẫn chảy tới máy đọc"."""
+    fn = _tim_ham(nguon, ten_ham)
+    if fn is None:
+        return {"co_ham": False, "so_goi": 0, "co_on_msg": False, "hang_so": False}
+    goi = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+           and getattr(n.func, "id", getattr(n.func, "attr", "")) == "_doc_lai_loat"]
+    op = [kw for c in goi for kw in c.keywords if kw.arg == "on_progress"]
+    cua = soi_cho_goi(nguon, "_doc_lai_loat")
+    return {"co_ham": True, "so_goi": len(goi) and cua["so_goi"],
+            "co_on_msg": bool(op) and cua["co_on_msg"],
+            "hang_so": any(isinstance(k.value, ast.Constant) for k in op) or cua["hang_so"]}
+
+
 for ten_ham in ("doc_ban_dich", "rut_gon_vua_khung", "doc_nhanh_vua_khung"):
     d = soi_cho_goi(NGUON, ten_ham)
+    if d["co_ham"] and d["so_goi"] == 0:
+        d = _qua_cua_chung(NGUON, ten_ham)
     ok(f"AST · {ten_ham} có gọi `_synth_all_words`",
        d["co_ham"] and d["so_goi"] >= 1, str(d))
     ok(f"AST · {ten_ham} truyền keyword `on_msg`", d["co_on_msg"], str(d))

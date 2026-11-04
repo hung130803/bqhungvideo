@@ -167,9 +167,13 @@ def ca_a_quet_tinh() -> None:
 def ca_b_ban_da_build() -> None:
     """Nếu có dist/ thì kiểm bản build THẬT (đếm file + ngày sửa .exe)."""
     print("\n[CA B] bản đã build trong dist/ (bỏ qua nếu chưa build)")
-    d = REPO / "dist" / "BQHungVideo"
+    explicit = os.environ.get("BQ_TEST_BUILD_DIR")
+    d = Path(explicit).resolve() if explicit else REPO / "dist" / "BQHungVideo"
     exe = d / "BQHungVideo.exe"
     if not exe.exists():
+        if explicit:
+            bao("Bản build được chỉ định phải tồn tại",False,str(exe))
+            return
         print("  (chưa có dist/BQHungVideo/BQHungVideo.exe — bỏ qua)")
         return
     tuoi = (time.time() - exe.stat().st_mtime) / 86400.0
@@ -177,7 +181,7 @@ def ca_b_ban_da_build() -> None:
           f"{time.strftime('%d/%m/%Y %H:%M', time.localtime(exe.stat().st_mtime))} "
           f"({tuoi:.1f} ngày trước)")
     noi = d / "_internal" / "app" / "assets"
-    for ten in ("fonts", "sfx", "hieu_ung"):
+    for ten in ("fonts", "sfx", "music", "hieu_ung"):
         goc = ASSETS / ten
         if not goc.is_dir():
             continue

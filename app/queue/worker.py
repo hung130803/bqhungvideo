@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
@@ -322,8 +323,8 @@ class WorkerPool:
             "WHERE status='running' AND cancel_req=1"
         )
         db.execute(
-            "UPDATE jobs SET status='pending', progress=0, "
-            "message='Tạm dừng do tắt app' WHERE status='running'"
+            "UPDATE jobs SET status='pending', attempts=MAX(0,attempts-1), "
+            "message='Tạm dừng do tắt app; sẽ dùng lại các bước đã lưu' WHERE status='running'"
         )
         self._cpu_pool.shutdown(wait=wait, cancel_futures=True)
         if self._gpu_pool:
@@ -334,6 +335,46 @@ class WorkerPool:
     def add_listener(self, fn: Callable[[], None]) -> None:
         """UI đăng ký để được báo khi có thay đổi (cập nhật bảng job)."""
         self._listeners.append(fn)
+
+    # ---- TẠM DỪNG NHẬN VIỆC MỚI (bot Telegram / người dùng) ----
+    # Tạm dừng = bộ điều phối KHÔNG lấy job 'pending' nào nữa; job ĐANG chạy
+    # vẫn chạy hết (không kill, không mất nửa chừng). Job chờ vẫn nằm nguyên
+    # trong DB nên "Chạy tiếp" là chạy đúng chỗ dừng. Cờ ghi RA ĐĨA để tắt app
+    # / tự cập nhật xong mở lại vẫn còn dừng — "dừng là dừng".
+    @staticmethod
+    def _co_tam_dung() -> Path:
+        from config import DATA_DIR
+        return Path(DATA_DIR) / "tam_dung.flag"
+
+    def tam_dung(self, ly_do: str = "") -> None:
+        try:
+            self._co_tam_dung().write_text(ly_do or "tạm dừng", encoding="utf-8")
+        except OSError:
+            pass
+        self._tam_dung_ram = True
+        self._notify()
+
+    def chay_tiep(self) -> None:
+        try:
+            self._co_tam_dung().unlink(missing_ok=True)
+        except OSError:
+            pass
+        self._tam_dung_ram = False
+        self._notify()
+
+    def dang_tam_dung(self) -> bool:
+        v = getattr(self, "_tam_dung_ram", None)
+        if v is None:
+            try:
+                v = self._co_tam_dung().exists()
+            except Exception:  # noqa: BLE001 - thiếu config (test) -> chạy
+                v = False
+            self._tam_dung_ram = v
+        return bool(v)
+
+    def dem_dang_chay(self) -> tuple[int, int, int]:
+        """(GPU, CPU, thay giọng) đang chạy — đọc bộ nhớ, cho bot đọc."""
+        return self._dem_lan()
 
     def _notify(self) -> None:
         for fn in list(self._listeners):
@@ -404,6 +445,13 @@ class WorkerPool:
         connection = db.conn()
         connection.execute('BEGIN IMMEDIATE')
         try:
+            if job_type == 'm1_export_clip':
+                from app.core.export_recovery import same_destination
+                active = connection.execute("SELECT id,payload FROM jobs WHERE type='m1_export_clip' AND status IN ('pending','running') AND json_extract(payload,'$.clip_id')=? ORDER BY id",(payload.get('clip_id'),)).fetchall()
+                for previous in active:
+                    if same_destination(db.loads(previous['payload'],{}) or {}, payload):
+                        connection.commit()
+                        return int(previous['id'])
             if dedup_key:
                 done = skip_if_done and connection.execute(
                     "SELECT id FROM jobs WHERE dedup_key=? AND status='done'",
@@ -570,6 +618,8 @@ class WorkerPool:
         không thì job thay giọng lại nằm chung cửa sổ 50 dòng của làn CPU và
         lỗi chết đói tái diễn y hệt, chỉ đổi tên thủ phạm.
         """
+        if self.dang_tam_dung():
+            return                          # tạm dừng: không lấy việc MỚI
         for lan in (LAN_GPU, LAN_CPU, LAN_TG):
             if self._capacity_lan(lan) <= 0:
                 continue                    # làn đang đầy -> khỏi truy vấn
@@ -639,14 +689,17 @@ class WorkerPool:
             if not claimed.rowcount:
                 return
             self._notify()
-            result = handler(payload, ctx)
+            from app.core.job_resume import scope
+            with scope(job_id, payload, ctx.check_canceled):
+                result = handler(payload, ctx)
             if self._stop.is_set() or job_id in self._canceled:
                 raise CanceledError()
+            completion_note = (result.get("selection_note") if isinstance(result, dict) else None) or "Hoàn tất"
             completed = db.execute(
                 "UPDATE jobs SET status='done', progress=1.0, result=?, "
-                "error=NULL, message='Hoàn tất', finished_at=datetime('now') "
+                "error=NULL, message=?, finished_at=datetime('now') "
                 "WHERE id=? AND status='running' AND COALESCE(cancel_req,0)=0",
-                (db.dumps(result) if result is not None else None, job_id),
+                (db.dumps(result) if result is not None else None, str(completion_note), job_id),
             )
             if not completed.rowcount:
                 return
@@ -675,7 +728,7 @@ class WorkerPool:
                 "finished_at=datetime('now') WHERE id=?", (job_id,),
             )
         except Exception as e:  # noqa: BLE001
-            row = db.query_one("SELECT attempts, max_attempts, status, cancel_req FROM jobs WHERE id=?",
+            row = db.query_one("SELECT attempts, max_attempts, status, cancel_req, message FROM jobs WHERE id=?",
                                (job_id,))
             if row and (row['cancel_req'] or row['status'] == 'canceled'):
                 db.execute("UPDATE jobs SET status='canceled', message='Đã hủy', "
@@ -683,10 +736,20 @@ class WorkerPool:
                 return
             if self._stop.is_set():
                 return
+            if getattr(e, "doi_luot", False):
+                # Hết lượt AI giữa chừng (m1.DoiLuotAI): job ĐÃ tự đợi key hồi
+                # rồi mới ném -> về hàng đợi, KHÔNG tính lượt thử (không thì 3
+                # lần hết lượt là chết 'failed' dù video không có gì hỏng).
+                db.execute(
+                    "UPDATE jobs SET status='pending', progress=0, "
+                    "attempts=MAX(0,attempts-1), error=NULL, message=? "
+                    "WHERE id=? AND status='running' AND COALESCE(cancel_req,0)=0",
+                    ("Hết lượt AI giữa chừng — chờ phân tích lại phần còn thiếu", job_id))
+                return
             attempts = row["attempts"] if row else 99
             max_att = row["max_attempts"] if row else 3
-            from app.core.pipeline import is_configuration_error
-            if attempts < max_att and not is_configuration_error(str(e)):
+            from app.core.pipeline import is_configuration_error, is_content_block_error
+            if attempts < max_att and not is_configuration_error(str(e)) and not is_content_block_error(e):
                 db.execute(
                     "UPDATE jobs SET status='pending', progress=0, error=?, "
                     "message=? WHERE id=? AND status='running' AND COALESCE(cancel_req,0)=0",
@@ -695,9 +758,9 @@ class WorkerPool:
             else:
                 db.execute(
                     "UPDATE jobs SET status='failed', error=?, "
-                    "message='Thất bại', finished_at=datetime('now') WHERE id=? "
+                    "message=?, finished_at=datetime('now') WHERE id=? "
                     "AND status='running' AND COALESCE(cancel_req,0)=0",
-                    (str(e), job_id),
+                    (str(e), (row['message'] if row else '') or 'Thất bại', job_id),
                 )
         finally:
             _clear_current_job()

@@ -411,7 +411,7 @@ def ca_lenh_do_phai_siet_luong() -> None:
         "chon_doan.chuyen_dong": (REPO / "app" / "ai" / "chon_doan.py",
                                   "def chuyen_dong"),
         "hieu_ung.do_nhip": (REPO / "app" / "core" / "hieu_ung.py",
-                             "def do_nhip"),
+                             "def _do_nhip_that"),   # lệnh ffmpeg dời sang đây (31/10/2026)
         # TÁCH TIẾNG cho chép lời: đo được **132 luồng = 5,50× nhân** — đỉnh
         # lớn nhất của cả lượt dây chuyền, còn hơn cả lệnh XUẤT (81).
         "ffmpeg_utils.extract_audio_wav_why":

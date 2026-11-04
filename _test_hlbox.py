@@ -285,7 +285,16 @@ for ten in [t for t in CU.CAPTION_PRESETS if t not in _MOI]:
                 "narr_preset": "Karaoke hồng"}):
         _, a, _, _, _ = dung(ten, n=9, mod=C, **kw)
         _, b, _, _, _ = dung(ten, n=9, mod=CU, **kw)
-        if a != b:
+
+        # So KIỂU CHỮ từng byte (trước [Events]) + CHỮ từng dòng, KHÔNG so mốc
+        # giờ: thời gian hiện chữ đã đổi CÓ CHỦ Ý (chạy sản xuất từ trước
+        # 26/10/2026; giống cổng 68 mục 2). 31/10/2026.
+        def _tach(t):
+            t = t if isinstance(t, str) else str(t)
+            dau, _, sau = t.partition("[Events]")
+            return dau, [ln.split(",", 9)[9] for ln in sau.splitlines()
+                         if ln.startswith("Dialogue:")]
+        if _tach(a) != _tach(b):
             khac.append(f"{ten}/{list(kw)[:2]}")
 kiem(not khac, f"{len(CU.CAPTION_PRESETS) - len(_MOI)} preset CŨ × 4 bộ tham số: "
                f"KHÔNG đổi 1 byte", str(khac[:5]))

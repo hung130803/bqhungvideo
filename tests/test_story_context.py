@@ -76,11 +76,11 @@ class Context(unittest.TestCase):
         calls=[]
         def ask(prompt,**kwargs):
             calls.append(prompt)
-            if prompt.startswith('Write an engaging'):return draft(good if len(calls)>1 else bad)
+            if 'Write an engaging' in prompt:return draft(good if len(calls)>1 else bad)
             if prompt.startswith('Audit EACH'):return {'checks':[dict(source_id=0,supported=True,scene_match=True)]}
             return {'approved':True,'issues':[]}
         with patch.object(q,'ask',side_effect=ask):result=d.script(plan,{},'Vietnamese',Mock(),0,1)
         self.assertEqual(result['parts'][0]['text'],good);self.assertTrue(result['review']['approved'])
-        self.assertEqual(len([c for c in calls if c.startswith('Write an engaging')]),2)
+        self.assertEqual(len([c for c in calls if 'Write an engaging' in c]),2)
 
 if __name__=='__main__':unittest.main(verbosity=2)

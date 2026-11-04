@@ -28,3 +28,22 @@ Gộp lần này: 163 file, 390 KB.
 ## Bổ sung âm thanh vật liệu — 55 file CC0
 Kenney Casino Audio: https://kenney.nl/assets/casino-audio
 Giấy phép CC0 1.0, chuẩn hoá và nén Opus; các file `casino_*.opus`. Tiếng chip, xu, lá bài, xúc xắc dùng làm tiếng nhấn thiết kế, không giả là âm thanh thật trong cảnh.
+
+## Lượt 2 — 75 file, 29 HỌ tiếng mới (02/11/2026)
+Công cụ: `tools/them_sfx_v2.py`. Mục tiêu là HỌ tiếng mới, không thêm biến thể
+của họ cũ (đo nhật ký thật: 3 họ chiếm 51% mọi lượt chèn).
+
+Tải về — Kenney.nl, giấy phép CC0 1.0 (đã đọc `License.txt` trong từng gói):
+- `impact-sounds` — https://kenney.nl/assets/impact-sounds (đấm, gỗ, ván,
+  đĩa, thiếc, kim loại nhẹ — bản "hợp loa": cắt dưới 320 Hz + nhấn 2,6 kHz)
+- `rpg-audio` — https://kenney.nl/assets/rpg-audio (vải phẩy, lật trang, rút
+  dao, chém, đặt sách, chốt kim loại, xu, cửa kẽo kẹt, đóng cửa)
+- `interface-sounds` — https://kenney.nl/assets/interface-sounds (ly thuỷ
+  tinh, giọt, gảy dây, glitch, bong)
+
+Tự sinh bằng ffmpeg lavfi (CC0 1.0, không mẫu bên thứ ba): còi trượt lên/
+xuống, bloop, bloop đôi, lò xo (nhóm `comedy`), vút gió (`transition`).
+
+Nguồn + sha256 từng file: `v2-provenance.json`. Đã THỬ rồi BỎ: `impactWood_heavy`,
+`impactSoft_heavy` (thân tiếng dưới 300 Hz — câm trên loa điện thoại) và
+"reverse swell" (đỉnh ở cuối — app luôn loại vì vào chậm).

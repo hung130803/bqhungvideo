@@ -21,6 +21,10 @@ _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 # Ưu tiên IDLE cho tiến trình phân tích (whisper/mediapipe chạy dài, nặng):
 # Windows LUÔN nhường app khác trước -> máy yếu cũng KHÔNG đơ khi phân tích.
 _IDLE_PRIORITY = 0x00000040 if sys.platform == "win32" else 0
+# Mở tiến trình ở BELOW_NORMAL (ưu tiên ĐĨA bình thường) rồi mới hạ IDLE khi
+# đã khởi động xong — IDLE ngay từ đầu làm bước nạp mã bị đói đĩa khi máy đang
+# xuất nhiều Part -> 'Khởi động phân tích quá 180 giây' (03/11/2026).
+_BELOW_NORMAL = 0x00004000 if sys.platform == "win32" else 0
 
 
 def _run_analyze(video_id: int, ctx: JobContext, force: bool,
@@ -35,6 +39,9 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
     if force:
         args.append("force")
     env = dict(os.environ)
+    from app.queue.worker import current_job_id
+    if current_job_id() is not None:
+        env["BQ_RESUME_JOB_ID"] = str(current_job_id())
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     # NGÂN SÁCH LUỒNG cho lib native trong tiến trình phân tích (whisper/
@@ -49,67 +56,10 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
                 "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
                 "CT2_INTRA_THREADS"):
         env.setdefault(var, str(n))
-    proc = subprocess.Popen(
-        args, cwd=str(ROOT_DIR), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
-        creationflags=_CREATE_NO_WINDOW | _IDLE_PRIORITY,
-    )
-    from app.core.ffmpeg_utils import register_proc, unregister_proc
-    register_proc(proc)
-    last_error = ""
-
-    # Đọc stdout bằng THREAD RIÊNG + poll hủy mỗi 0.5s: nếu đọc trực tiếp,
-    # lúc tiến trình con im lặng lâu (nạp model whisper, transcribe đoạn dài)
-    # sẽ không có dòng nào -> nút Hủy bị lờ tới dòng PROGRESS kế tiếp.
-    import queue as _q
-    import threading
-    lines: _q.Queue = _q.Queue()
-
-    def _reader():
-        try:
-            for raw in proc.stdout:  # type: ignore[union-attr]
-                lines.put(raw.rstrip("\n"))
-        except Exception:  # noqa: BLE001
-            pass
-        finally:
-            lines.put(None)          # hết stdout (tiến trình thoát)
-
-    threading.Thread(target=_reader, daemon=True).start()
-    try:
-        while True:
-            ctx.check_canceled()     # nhạy với nút Hủy kể cả pha im lặng
-            try:
-                line = lines.get(timeout=0.5)
-            except _q.Empty:
-                continue
-            if line is None:
-                break
-            if line.startswith("PROGRESS\t"):
-                parts = line.split("\t", 2)
-                try:
-                    p = float(parts[1])
-                except (ValueError, IndexError):
-                    p = 0.0
-                ctx.progress(base + span * p, parts[2] if len(parts) > 2 else "")
-            elif line.startswith("ERROR\t"):
-                last_error = line.split("\t", 1)[1]
-    except CanceledError:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        raise
-    finally:
-        unregister_proc(proc)
-    code = proc.wait()
-    if code != 0:
-        if last_error:
-            raise RuntimeError(f"Phân tích lỗi: {last_error}")
-        raise RuntimeError(
-            f"Tiến trình phân tích dừng đột ngột (mã {code}). Thường do whisper GPU "
-            "thiếu cuDNN — bỏ trống WHISPER_DEVICE trong .env (chạy CPU) rồi thử lại.")
+    from app.core.analysis_process import supervise
+    supervise(args, str(ROOT_DIR), env, ctx, base=base, span=span,
+              creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
+              idle_when_ready=bool(_IDLE_PRIORITY))
 
 
 def _analyze(payload: dict, ctx: JobContext) -> dict:
@@ -148,15 +98,24 @@ def _precompute_hashtags(video_id: int) -> None:
         # NHÃN whisper có thể đoán bừa ('mi' Māori cho video Anh) -> resolve
         # theo lời thoại TRƯỚC khi bảo AI viết (lỗi thật: hashtag Māori).
         lang = resolve_lang(tr.get("language", "") or "", text)
+        # video KHÔNG LỜI: chữ chép là chữ bịa -> hashtag theo TÊN FILE (cổng 109)
+        from app.ai import ngon_ngu_video as _nv
+        _v = _db.query_one("SELECT src_path FROM videos WHERE id=?", (video_id,))
+        title, text, lang, nguon = _nv.dau_vao_hashtag(
+            tr, (_v["src_path"] or "") if _v else "", title, text, lang)
         pre = get_analysis(video_id, "hashtags") or {}
         if pre.get("tags"):
             # đã có VÀ sinh với ĐÚNG ngôn ngữ -> khỏi tốn LLM. Bản cũ không
             # lưu 'lang' / lang khác (video từng dán nhãn sai) -> SINH LẠI.
-            if str(pre.get("lang") or "") == lang:
+            if (str(pre.get("lang") or "") == lang
+                    and str(pre.get("nguon") or "") == nguon):
                 return
         tags = social.write_hashtags(title, text, lang, max_tags=4)
         if tags:
-            _set(video_id, "hashtags", "done", {"tags": tags, "lang": lang})
+            _luu = {"tags": tags, "lang": lang}
+            if nguon:
+                _luu["nguon"] = nguon
+            _set(video_id, "hashtags", "done", _luu)
     except Exception:  # noqa: BLE001 - tiện ích phụ, không được làm hỏng job
         pass
 
@@ -183,8 +142,9 @@ def _auto(payload: dict, ctx: JobContext) -> dict:
     res = generate_highlights(
         {"video_id": video_id, "preset": payload.get("preset")}, _Sub())
     # Hashtag tên file: sinh sẵn ở WORKER để UI không phải gọi LLM (đỡ đơ)
-    ctx.progress(0.99, "Hoàn thiện hashtag cho các Part…")
-    _precompute_hashtags(video_id)
+    if res.get("count", 0) > 0:
+        ctx.progress(0.99, "Hoàn thiện hashtag cho các Part…")
+        _precompute_hashtags(video_id)
     return {"video_id": video_id, **res}
 
 
@@ -418,9 +378,20 @@ def _thay_giong(payload: dict, ctx: JobContext) -> dict:
 
     # --- ĐẶT BẢN MỚI VÀO THƯ MỤC ĐÍCH (giữ NGUYÊN tên file gốc) ---
     try:
-        if os.path.exists(dich):     # lần chạy lại -> thay bản cũ trong đích
-            os.remove(dich)
-        shutil.move(str(r["ra"]), dich)
+        # THAY NGUYÊN TỬ (rà soát 01/11/2026): bản cũ xoá TRƯỚC rồi mới chuyển
+        # bản mới thì tắt app giữa 2 dòng là mất cả hai trong khi sổ ghi "xong".
+        # Thư mục tạm nằm TRONG thư mục đích (cùng ổ) -> os.replace nguyên tử;
+        # khác ổ (hiếm) thì chép sang tên tạm cạnh đích rồi mới replace.
+        try:
+            os.replace(str(r["ra"]), dich)
+        except OSError:
+            _tam = dich + ".dang_chep"
+            shutil.copy2(str(r["ra"]), _tam)
+            os.replace(_tam, dich)
+            try:
+                os.remove(str(r["ra"]))
+            except OSError:
+                pass
     except OSError as e:
         tg_so.ghi(goc, tg_so.LOI, loi=f"không đặt được file vào đích: {e}")
         raise RuntimeError(

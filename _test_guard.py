@@ -32,6 +32,11 @@ import time
 import webbrowser
 from pathlib import Path
 
+# Test KHÔNG BAO GIỜ được bật bot Telegram thật (nhắn tin lên điện thoại
+# anh Hùng / giành token với app đang chạy sản xuất).
+os.environ["BQ_TAT_BOT"] = "1"
+os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+
 # In được tiếng Việt ở MỌI console (cp1252 -> UnicodeEncodeError làm test "FAIL"
 # oan ngay dòng print đầu tiên, tưởng code hỏng).
 for _f in (sys.stdout, sys.stderr):
@@ -202,6 +207,22 @@ webbrowser.open = _wb_gia            # type: ignore[assignment]
 webbrowser.open_new = _wb_gia        # type: ignore[assignment]
 webbrowser.open_new_tab = _wb_gia    # type: ignore[assignment]
 
+# ── 3b. winsound: test bấm MỌI nút (Nghe thử giọng / nhạc nền...) -> KHÔNG
+# được phát tiếng ra LOA máy anh Hùng (02/11/2026: thêm nút Nghe thử nhạc nền
+# mới phát hiện guard chưa chặn cửa này).
+try:
+    import winsound as _ws
+
+    def _ps_gia(*a, **k):
+        if a and a[0] is not None:
+            DA_CHAN.append(f"winsound.PlaySound({a[0]})")
+        return None
+    _ws.PlaySound = _ps_gia          # type: ignore[assignment]
+except ImportError:      # máy không phải Windows
+    _ws = None
+    _ps_gia = None
+
+
 def _chan_qt() -> None:
     """Vá QDesktopServices — gọi LÚC PyQt6 đã nạp. KHÔNG tự import PyQt6 ở đây:
     repo này bắt buộc cv2 (app.queue.jobs) nạp TRƯỚC Qt, guard mà kéo Qt lên
@@ -252,6 +273,8 @@ def tu_kiem(im: bool = False) -> None:
         xau.append("subprocess.run")
     if webbrowser.open is not _wb_gia:
         xau.append("webbrowser.open")
+    if _ws is not None and _ws.PlaySound is not _ps_gia:
+        xau.append("winsound.PlaySound")
     if xau:
         print("❌ CANH CỔNG BỊ GHI ĐÈ: " + ", ".join(xau) +
               " — dừng test, không để Explorer/trình phát nhảy lên máy user.")

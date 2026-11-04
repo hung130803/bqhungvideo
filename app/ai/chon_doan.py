@@ -183,6 +183,75 @@ def chuyen_dong(src: str, ffmpeg: str, fps: float = 4.0) -> list[float]:
     return [min(1.0, max(diem[i:i + n])) for i in range(0, len(diem), n)]
 
 
+def _doc_nl(text: str) -> list[float]:
+    ra = []
+    for m in re.finditer(r"RMS_level=(-?[0-9.]+|-inf)", text or ""):
+        v = m.group(1)
+        if v == "-inf":
+            ra.append(0.0)
+            continue
+        try:
+            ra.append(min(1.0, 10 ** (float(v) / 20.0)))
+        except ValueError:
+            ra.append(0.0)
+    return ra
+
+
+def _doc_cd(text: str, fps: float) -> list[float]:
+    diem = [min(1.0, float(m.group(1)) / 64.0)
+            for m in re.finditer(r"signalstats\.YAVG=([0-9.]+)", text or "")]
+    if not diem:
+        return []
+    n = max(1, int(round(fps)))
+    return [min(1.0, max(diem[i:i + n])) for i in range(0, len(diem), n)]
+
+
+def nghe_va_xem(src: str, ffmpeg: str, fps: float = 4.0,
+                bao=None) -> tuple[list[float], list[float]]:
+    """`nang_luong` + `chuyen_dong` trong MỘT lượt đọc file -> (nl, cd).
+
+    VÌ SAO (đo 31/10/2026, máy anh Hùng): 2 hàm kia mỗi hàm đọc TRỌN video gốc
+    một lần, cộng tách tiếng nữa là 3 lượt đọc/video trên ổ D: (ổ cứng cơ) đang
+    nghẽn hàng đợi 14-19. Gộp lại: 1 ffmpeg giải mã 1 lần, nhánh tiếng và nhánh
+    hình chạy CÙNG bộ lọc như 2 hàm cũ, ghi 2 file số liệu riêng -> số ra GIỐNG
+    HỆT (cổng `_test_muot_o_cung.py` so từng giá trị với 2 hàm cũ).
+
+    Video KHÔNG có tiếng / lỗi bất kỳ -> lùi về gọi 2 hàm cũ lần lượt (đúng
+    hành vi trước bản vá). Giữ chỗ ở CỬA CHỜ ĐỌC ĐĨA (`cua_doc_dia`) suốt lượt."""
+    import tempfile
+    from app.core.cua_doc_dia import giu_cho
+    with giu_cho(src, bao=bao):
+        try:
+            with tempfile.TemporaryDirectory(prefix="bq_nx_") as d:
+                # tên file TƯƠNG ĐỐI + cwd=d: khỏi phải thoát ký tự ':' '\' của
+                # đường dẫn Windows bên trong chuỗi bộ lọc.
+                fc = (f"[0:a:0]aresample=16000,asetnsamples=n={int(16000 * CUA_SO)},"
+                      f"astats=metadata=1:reset=1,"
+                      f"ametadata=print:key=lavfi.astats.Overall.RMS_level:file=a.txt[ao];"
+                      f"[0:v:0]fps={fps},scale=160:-2,format=gray,"
+                      f"tblend=all_mode=difference,signalstats,"
+                      f"metadata=print:key=lavfi.signalstats.YAVG:file=v.txt[vo]")
+                r = subprocess.run(
+                    [ffmpeg, "-hide_banner", "-nostats", *_num_luong(), "-i", src,
+                     "-filter_complex", fc,
+                     "-map", "[ao]", "-f", "null", os.devnull,
+                     "-map", "[vo]", "-f", "null", os.devnull],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", creationflags=_NO_WIN, timeout=1800, cwd=d)
+                if r.returncode == 0:
+                    with open(os.path.join(d, "a.txt"), encoding="utf-8",
+                              errors="replace") as h:
+                        nl = _doc_nl(h.read())
+                    with open(os.path.join(d, "v.txt"), encoding="utf-8",
+                              errors="replace") as h:
+                        cd = _doc_cd(h.read(), fps)
+                    if nl and cd:
+                        return nl, cd
+        except Exception:  # noqa: BLE001 - lùi về đường cũ bên dưới
+            pass
+        return nang_luong(src, ffmpeg), chuyen_dong(src, ffmpeg, fps)
+
+
 def cua_so_dong_khong_loi(cd: list[float], transcript: dict,
                           tong_giay: float, top: int = 8,
                           pha: float = 0.4,
@@ -468,67 +537,44 @@ def hook_theo_tieng(clip: dict, nl: list[float],
 
 
 def san_thich_ung(clips: list, ty_le: float = 0.72, san_rac: float = 28.0,
-                  giu_it_nhat: int = 1, so_part: int = 0) -> tuple[list, list]:
-    """SÀN TỰ THÍCH ỨNG: giữ clip đủ tốt **so với clip hay nhất CÙNG video**.
+                  giu_it_nhat: int = 0, so_part: int = 0) -> tuple[list, list]:
+    """Giữ tối đa so_part đoạn đạt ngưỡng; không cứu đoạn yếu cho đủ số.
 
-    VÌ SAO KHÔNG DÙNG SÀN SỐ CỨNG (đo thật 06/08/2026): trọng tài chấm mù cho
-    40-60 điểm (thang khó tính), còn sàn cũ là 55 theo thang AI-tự-chấm (85-95)
-    -> 7/9 clip bị loại oan, mỗi video còn 1 Part. HAI THANG KHÔNG CÙNG ĐƠN VỊ.
-
-    Nay lọc theo TƯƠNG QUAN: clip nào < `ty_le` × điểm-clip-đầu-bảng thì bỏ
-    (kém hơn hẳn), cộng thêm 1 sàn rác tuyệt đối cho đoạn dở hẳn.
-
-    ƯU TIÊN SỐ PART USER ĐẶT (anh Hùng 06/08/2026: "nếu 3 part thì phải 3 part,
-    không hơn; video ngắn quá không đủ thì 1-2 cũng được"): `so_part` > 0 ->
-    LUÔN giữ đủ `so_part` clip TỐT NHẤT nếu có sẵn, chỉ bỏ clip DỞ HẲN (dưới
-    `san_rac`). Thiếu ứng viên (video ngắn) thì ra bao nhiêu giữ bấy nhiêu.
-    Trả (giữ, [(clip, lý_do)])."""
+    giu_it_nhat giữ trong chữ ký để tương thích caller cũ, không hạ ngưỡng.
+    Ngưỡng tương đối dùng cùng thang điểm trọng tài, cộng sàn rác tuyệt đối.
+    """
     if not clips:
-        return clips, []
+        return [], []
     diem = [float(c.get("score", 0) or 0) for c in clips]
-    top = max(diem) if diem else 0.0
-    if top <= 0:
-        return clips, []
-    # user đặt SỐ PART -> chỉ lọc RÁC, không lọc tương quan (không được ra ít
-    # Part hơn yêu cầu chỉ vì đoạn này hơi kém đoạn kia)
-    nguong = san_rac if so_part > 0 else max(san_rac, top * ty_le)
+    top = max(diem)
+    nguong = max(san_rac, top * ty_le)
     giu, bo = [], []
     for c, d in zip(clips, diem):
         if d >= nguong:
             giu.append(c)
         else:
-            bo.append((c, f"điểm {d:.0f} < ngưỡng {nguong:.0f}"
-                          + ("" if so_part > 0 else
-                             f" (kém hơn hẳn đoạn hay nhất {top:.0f})")))
+            bo.append((c, f"điểm {d:.0f} < ngưỡng {nguong:.0f}"))
     if so_part > 0 and len(giu) > so_part:
-        # giữ ĐÚNG so_part clip điểm cao nhất, phần dư ghi rõ lý do
-        thu = sorted(zip(giu, [float(c.get("score", 0) or 0) for c in giu]),
-                     key=lambda x: -x[1])
-        du = [c for c, _ in thu[so_part:]]
-        giu = [c for c, _ in thu[:so_part]]
-        bo += [(c, f"vượt số Part đã đặt ({so_part})") for c in du]
-    # KHÔNG nâng `giu_it_nhat` theo so_part: cứu-nguy sẽ KÉO LẠI cả đoạn RÁC
-    # cho "đủ part" (cổng 24 bắt: đoạn 5 điểm bị lôi về khi đặt 3 part). Thiếu
-    # part vì video không có đủ đoạn dùng được là ĐÚNG — thà 1-2 Part sạch.
-    if len(giu) < giu_it_nhat:                      # đừng trắng tay
-        thu = sorted(zip(clips, diem), key=lambda x: -x[1])[:giu_it_nhat]
-        giu = [c for c, _ in thu]
-        bo = [(c, ly) for c, ly in bo if c not in giu]
+        ranked = sorted(giu, key=lambda c: -float(c.get("score", 0) or 0))
+        bo += [(c, f"vượt tối đa {so_part} Part") for c in ranked[so_part:]]
+        giu = ranked[:so_part]
     return giu, bo
 
 
 # ---------------- TRỌNG TÀI CHẤM MÙ ----------------
 THANG = (
-    "Cho điểm 0-100 theo 5 tiêu chí (mỗi cái 0-20):\n"
-    "1. HOOK 3 giây đầu: có câu/hành động khiến người ta KHÔNG lướt qua?\n"
-    "2. XUNG ĐỘT/LEO THANG: có căng thẳng, tranh cãi, nguy hiểm tăng dần?\n"
-    "3. BƯỚC NGOẶT/TIẾT LỘ: có thông tin bất ngờ, lật kèo, sự thật phơi ra?\n"
-    "4. CÂU CHỐT: kết đoạn có câu/hành động đóng lại thoả mãn (không lửng lơ)?\n"
-    "5. TỰ ĐỦ NGHĨA: xem RIÊNG đoạn này vẫn hiểu, không cần xem trước đó?\n"
-    "TRỪ ĐIỂM MẠNH nếu: nói đều đều/giải thích thủ tục, lời chào kênh, kêu gọi "
-    "đăng ký, quảng cáo, im lặng dài, chỉ mô tả bối cảnh.\n"
-    "KHÓ TÍNH: đoạn tầm tầm cho 40-55; chỉ đoạn thật sự cuốn mới >70."
+    "Chấm 0-100 để XẾP HẠNG, không dùng điểm làm điều kiện được xuất. "
+    "Đánh giá theo THỂ LOẠI thực tế, không áp thang drama cho video công việc, "
+    "đời thường, săn đồ cũ, hướng dẫn. Mỗi tiêu chí 0-20:\n"
+    "1. Mở đầu rõ và có lý do theo dõi (tò mò, nhiệm vụ, món đồ, vấn đề).\n"
+    "2. Có tiến triển: thao tác, khám phá, thương lượng, xử lý vấn đề hoặc diễn biến.\n"
+    "3. Giá trị người xem: mẹo, chi tiết, giá trị món đồ, kỹ năng, cảm xúc hoặc giải trí.\n"
+    "4. Có kết quả hoặc điểm dừng tự nhiên, không cắt cụt ý.\n"
+    "5. Tự đủ nghĩa, nội dung cụ thể và hình/thoại có căn cứ.\n"
+    "Không trừ điểm chỉ vì không có twist, tranh cãi, nguy hiểm hay nói chậm. "
+    "Quảng cáo/chào kênh thuần túy, lặp lại hoặc không có nội dung mới đáng trừ điểm."
 )
+
 
 
 def _tom_tat_clip(clips: list, transcript: dict, max_ky_tu: int = 900) -> list:
@@ -574,6 +620,22 @@ def _trung_vi(xs: list) -> float:
     return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
 
 
+def gan_tac_vu(complete_text, ten: str):
+    """Bọc `complete_text` để MỌI lượt gọi chạy trong `llm.tac_vu(ten)` -> model
+    suy luận Groq nghĩ theo mức của việc đó (`config.GROQ_REASONING_EFFORT`).
+    llm lỗi/không có -> trả nguyên hàm (không bao giờ chặn khâu chấm)."""
+    try:
+        from app.ai import llm as _llm
+        _ctx = _llm.tac_vu
+    except Exception:  # noqa: BLE001
+        return complete_text
+
+    def _goi(*a, **k):
+        with _ctx(ten):
+            return complete_text(*a, **k)
+    return _goi
+
+
 def cham_hoi_dong(clips: list, transcript: dict, complete_text,
                   model: str = "") -> dict[int, dict]:
     """HỘI ĐỒNG 3 TRỌNG TÀI chấm mù, lấy TRUNG VỊ điểm.
@@ -610,6 +672,7 @@ def cham_mu(clips: list, transcript: dict, complete_text,
     tt = _tom_tat_clip(clips, transcript)
     if not tt:
         return {}
+    complete_text = gan_tac_vu(complete_text, "judge")   # nghĩ KỸ khi chấm
     pr = ((vai_tro or "Bạn là BIÊN TẬP KHÓ TÍNH của kênh video ngắn.")
           + " Dưới đây là các đoạn ứng viên (chỉ có LỜI THOẠI). " + THANG +
           "\nTrả về DUY NHẤT JSON: "

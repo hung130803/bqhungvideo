@@ -59,8 +59,13 @@ kiem(len(du3) >= 8, f"{len(du3)} nhóm có >= 3 file (cần >= 8)")
 print("     " + " · ".join(f"{k} {len(v)}" for k, v in sorted(lib.items())))
 base = FU._assets_sfx_dir()
 cỡ = sum(f.stat().st_size for f in base.rglob("*.*") if f.suffix != ".md")
-kiem(cỡ <= 700 * 1024, f"toàn kho = {cỡ/1024:.0f} KB (trần 700 KB · WAV cũ "
-                       f"1 598 KB)")
+# Trần 700 KB ĐÃ ĐỎ SẴN từ 26/09/2026 (HEAD đo 895 KB — kho casino + bộ dựng
+# hình) mà không ai nâng -> cổng đỏ thường trực = cổng bị bỏ qua. 02/11/2026
+# kho lượt 2 thêm 124 KB (75 file Opus) -> 1.046 KB. Trần mới 1.500 KB: vẫn
+# chặn được ai lỡ thả WAV (1 598 KB cho 43 file) mà không đỏ oan; bộ cài ~240 MB
+# nên kho 1,5 MB là 0,6%.
+kiem(cỡ <= 1500 * 1024, f"toàn kho = {cỡ/1024:.0f} KB (trần 1.500 KB · WAV cũ "
+                        f"1 598 KB)")
 n_wav = len(list(base.rglob("*.wav")))
 print(f"     định dạng: {len(list(base.rglob('*.opus')))} opus · {n_wav} wav")
 

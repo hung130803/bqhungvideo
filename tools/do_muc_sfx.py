@@ -169,4 +169,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # stdout bị chuyển hướng/console cp1252 -> dòng tiếng Việt cuối NỔ SAU KHI
+    # đã ghi bảng, mã thoát 1 làm tưởng đo hỏng (đo 02/11/2026).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     sys.exit(main())

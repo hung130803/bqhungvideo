@@ -1,3 +1,26 @@
+## 2.50.26 — Giọng kể Gemini và bố cục dựng chuyện
+
+- Gemini nhận cách nhấn từng cảnh; nhịp nhanh/chậm được áp dụng bằng audio giữ cao độ (nhanh +12%, chậm -5%) vì chỉ dẫn tốc độ AI không ổn định; bỏ chỉ dẫn ngắt nghỉ kịch tính dùng chung. Nghe thử dùng cùng nhịp/cảm xúc đã chọn. Không kéo chậm lời để lấp cảnh.
+- Kịch bản Việt ưu tiên từ Việt dễ nói, giữ đúng tên riêng; yêu cầu hook có căn cứ và góc kể riêng cho mỗi Part. TTS nhận chỉ dẫn đọc tên ngoại ngữ trong câu Việt; vẫn cần nghe duyệt, không bảo đảm phát âm mọi tên.
+- Thêm bố cục giấy ấm, xanh đêm, xanh ngọc; chọn nền riêng, khung video cao 20–44%, nhãn cuối tối đa 48 ký tự. Giữ nguyên tỉ lệ nguồn. Sửa tại Kịch bản → Dựng hình & âm thanh; chọn Theo mẫu xuất hiện tại để dùng Chỉnh mẫu.
+- Không tự viết lại kịch bản đã duyệt. Muốn nội dung mới cần chỉnh/duyệt hoặc phân tích lại; mẫu mới có thể áp dụng vào Part hiện có.
+
+# BQ Hung Video v2.50.25
+
+- Sửa báo lỗi giả khi lời chỉ dài hơn cảnh dưới 2%: áp mức điều chỉnh nhịp nhỏ được cho phép, không bỏ qua rồi chặn xuất.
+- Giọng Gemini quá dài được thu lại một lần bằng đúng lời và giọng đã duyệt, kèm thời lượng cảnh; không đổi kịch bản, cắt câu hay tự đổi giọng. Nếu vẫn quá dài, báo rõ số cảnh, mốc nguồn và câu cần sửa.
+- Lỗi lời dài hơn cảnh không tự chạy lại toàn việc xuất 3 lần. Bảng duyệt đánh số cảnh và hiển thị độ dài chữ ước tính; phân biệt duyệt nội dung với đo thời lượng giọng thật.
+
+# BQ Hung Video v2.50.24
+
+- Gemini dùng ngân sách đầu vào riêng cho dựng chuyện, không còn chịu ngưỡng nhỏ 5.800 token của nhánh Groq. Vẫn chặn yêu cầu quá lớn; không cắt bỏ căn cứ để lách kiểm tra.
+- Lập bản đồ Gemini gộp nhóm lớn hơn có giới hạn, giữ đủ từng cảnh để giảm số lượt gọi. Không hạ mật độ xem hình hay bỏ kiểm tra lời kể.
+- Cảnh AI cắt ngắn sẽ dùng lời kể nếu mép cắt không bảo toàn lời gốc; sửa sai số làm tròn ở mép cảnh nguyên vẹn, tránh thử chọn lại chỉ vì lệch vài phần nghìn giây.
+- Lưu bản đồ tình tiết, mạch chuyện, đối chiếu cảnh và từng Part hoàn tất; thử lại tiếp tục phần còn thiếu. Đổi nguồn, cài đặt hoặc model sẽ bỏ bộ nhớ đệm không còn phù hợp.
+- Lỗi vượt ngân sách của app không tự chạy lại toàn bộ 3 lượt. Hiển thị bước/yêu cầu đang chạy và ghi thời gian xử lý từng yêu cầu, không ghi key hoặc nội dung lời thoại vào log thời gian.
+- Chờ SDK Gemini có kiểm tra hủy và thời hạn; tắt vòng thử lại ngầm để tránh chờ nhiều tầng. Chất lượng kịch bản vẫn cần người dùng xem và duyệt.
+- Dựng chuyện chỉ nhận JSON object đầy đủ; không lấy nhầm danh sách hook bên trong phản hồi bị cắt làm kịch bản. Với Gemini 2.5 Flash/Pro, các yêu cầu JSON có thời hạn giữ ngân sách suy luận 4.096 và trần đầu ra 12.288 token qua API chính thức, dành chỗ cho câu trả lời; vẫn kiểm tra từng cảnh và duyệt kịch bản.
+
 # BQ Hung Video v2.50.23
 
 - Sửa Gemini đọc hình: yêu cầu JSON theo cấu trúc mô tả cảnh, từ chối nội dung bị cắt dở. Cảnh trả sai định dạng được thử lại một lần với cùng ảnh; không lấy lời thoại thay cho căn cứ hình ảnh.

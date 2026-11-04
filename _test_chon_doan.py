@@ -110,21 +110,21 @@ kiem(len(giu) == 3 and not bo, f"3 đoạn NGANG điểm -> giữ đủ 3 (ra {l
 giu, bo = CD.san_thich_ung([clip(0, 60, 80), clip(100, 160, 30)])
 kiem(len(giu) == 1 and len(bo) == 1, "1 đoạn trội -> bỏ đoạn kém hơn hẳn")
 giu, bo = CD.san_thich_ung([clip(0, 60, 5), clip(100, 160, 4)])
-kiem(len(giu) >= 1, "toàn đoạn dở -> vẫn giữ >= 1 (không trắng tay)")
+kiem(len(giu) == 0, "toàn đoạn dưới sàn -> không cứu đoạn yếu")
 kiem(CD.san_thich_ung([])[0] == [], "danh sách rỗng -> không nổ")
 giu, _ = CD.san_thich_ung([clip(0, 60, 0), clip(1, 2, 0)])
-kiem(len(giu) == 2, "điểm toàn 0 -> giữ nguyên (không lọc bừa)")
+kiem(len(giu) == 0, "điểm toàn 0 -> không đạt ngưỡng chất lượng")
 
 print("\n══ 3b. TUÂN THỦ SỐ PART USER ĐẶT (anh Hùng: đặt 3 thì phải ra 3) ══")
 g, b = CD.san_thich_ung([clip(0, 60, 80), clip(100, 160, 45),
                          clip(200, 260, 40)], so_part=3)
-kiem(len(g) == 3 and not b, f"đặt 3 part, điểm 80/45/40 -> ra ĐỦ 3 (ra {len(g)})")
+kiem(len(g) == 1 and len(b) == 2, f"tối đa 3 Part, chỉ 80 điểm đạt ngưỡng tương đối (ra {len(g)})")
 g, b = CD.san_thich_ung([clip(0, 60, 50), clip(100, 160, 90),
-                         clip(200, 260, 70), clip(300, 360, 60)], so_part=2)
+                         clip(200, 260, 70), clip(300, 360, 68)], so_part=2)
 kiem(len(g) == 2, f"đặt 2 part, có 4 ứng viên -> ra ĐÚNG 2 (ra {len(g)})")
 kiem(sorted(float(c["score"]) for c in g) == [70.0, 90.0],
      "2 clip giữ lại là 2 clip ĐIỂM CAO NHẤT (90, 70)")
-kiem(any("vượt số Part" in l for _c, l in b),
+kiem(any("vượt tối đa" in l for _c, l in b),
      "clip dư ghi rõ lý do 'vượt số Part'", str(b))
 g, b = CD.san_thich_ung([clip(0, 60, 55)], so_part=3)
 kiem(len(g) == 1, "video ngắn chỉ có 1 đoạn mà đặt 3 -> ra 1 (không nổ)")

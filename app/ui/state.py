@@ -34,6 +34,9 @@ class AppState(QObject):
         )
         self.project_id: int | None = None
         self.video_id: int | None = None
+        # TĂNG mỗi lần bấm "Hủy tất cả": lượt dựng lệnh xuất Part đã XẾP HÀNG
+        # trước lúc hủy sẽ bỏ, không tạo job mới sau khi user đã hủy.
+        self.huy_gen: int = 0
         # phiên đăng nhập (gán sau khi qua màn Login)
         self.user: str | None = None
         self.role: str | None = None
@@ -41,8 +44,32 @@ class AppState(QObject):
 
     def start(self):
         self.pool.start()
+        # Bot Telegram quản lý dây chuyền: không có token trong .env thì không
+        # làm gì; có lỗi gì cũng KHÔNG được làm app mở hỏng.
+        try:
+            from app.core import tele_bot
+            tele_bot.khoi_dong(self.pool)
+            # bot GÁC CỔNG: tiến trình nền riêng, sống tiếp khi app tắt ->
+            # điện thoại gõ /moapp vẫn mở lại được app (xem tele_gac)
+            from app.core import tele_gac
+            tele_gac.bat_neu_chua(log=tele_bot._ghi_log)
+        except Exception as e:  # noqa: BLE001
+            # nuốt im lặng là không ai biết vì sao bot không lên -> ghi log
+            try:
+                from datetime import datetime
+                from config import LOGS_DIR
+                with open(LOGS_DIR / f"telegram_{datetime.now():%Y%m%d}.log", "a",
+                          encoding="utf-8") as f:
+                    f.write(f"[{datetime.now():%H:%M:%S}] bot KHÔNG khởi động: {e!r}\n")
+            except Exception:  # noqa: BLE001
+                pass
 
     def stop(self):
+        try:
+            from app.core import tele_bot
+            tele_bot.tat()
+        except Exception:  # noqa: BLE001
+            pass
         self.pool.stop()
 
     def set_project(self, pid: int):

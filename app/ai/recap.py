@@ -556,6 +556,9 @@ def _is_vi_lang(lang_name: str) -> bool:
 # "São") -> không bắt oan từ mượn trong lời kể tiếng Anh.
 _VI_CHAR_SET = frozenset(
     "ăằắẳẵặầấẩẫậđềếểễệồốổỗộơờớởỡợưừứửữựạảẹẻẽịỉĩọỏụủũỹỵỷỳ")
+# Dấu tiếng Việt DÙNG CHUNG với ngôn ngữ khác — chỉ được đếm khi câu đã có
+# ít nhất 1 chữ RIÊNG Việt (xem looks_vietnamese).
+_VI_DAU_CHUNG = frozenset("àáãâèéêìíòóõôùúý")
 
 
 def looks_vietnamese(text: str) -> bool:
@@ -567,7 +570,17 @@ def looks_vietnamese(text: str) -> bool:
     if not letters:
         return False
     hits = sum(1 for c in letters if c in _VI_CHAR_SET)
-    return hits >= 2 and hits / len(letters) > 0.10
+    if hits >= 2 and hits / len(letters) > 0.10:
+        return True
+    # Câu Việt ngắn có thể chỉ mang 1 chữ RIÊNG Việt, còn lại là dấu dùng
+    # chung với Pháp/Bồ (à á â ê ô ú...): "Kết thúc hoành tráng" chỉ có 'ế'
+    # -> bản cũ trả False -> tiêu đề Việt lọt lên video tiếng Anh (lỗi thật
+    # 27/10/2026, kênh 131). Có >= 1 chữ RIÊNG Việt thì đếm cả dấu chung;
+    # "café"/"São" vẫn False vì không có chữ riêng nào.
+    if hits >= 1:
+        broad = sum(1 for c in letters if c in _VI_CHAR_SET or c in _VI_DAU_CHUNG)
+        return broad >= 2 and broad / len(letters) > 0.10
+    return False
 
 
 def _looks_wrong_lang(text: str, lang_name: str) -> bool:
@@ -2567,6 +2580,7 @@ def _script_draft_digest(result: dict) -> str:
 _MULTIPASS_MAX_LISTING = 4000
 
 
+@llm.theo_tac_vu("recap")
 def _refine_script(result: dict, sentences: list, lang_name: str, style: str,
                    min_total: float, max_total: float, duration: float,
                    win_max: int, emotion: bool, ratio: float,
@@ -2662,6 +2676,7 @@ def _refine_script(result: dict, sentences: list, lang_name: str, style: str,
         return result
 
 
+@llm.theo_tac_vu("recap")
 def write_director_script(sentences: list, lang_name: str, style: str,
                           duration: float, min_total: float,
                           max_total: float, ratio: float = 55,
@@ -2819,6 +2834,7 @@ def write_director_script(sentences: list, lang_name: str, style: str,
     return _maybe_refine(_enforce_script_lang(result, lang_name, _lang_retry))
 
 
+@llm.theo_tac_vu("recap")
 def write_script(sentences: list, lang_name: str, style: str,
                  clip_start: float, clip_end: float,
                  title: str = "",

@@ -323,7 +323,7 @@ def ca7_ui() -> None:
         ok(dlg.b_nghe.text() != "Nghe thử", "nút báo đang xử lý",
            repr(dlg.b_nghe.text()))
         # đợi thread nền xong rồi bắn tín hiệu qua vòng lặp Qt
-        for _ in range(240):
+        for _ in range(1200):  # 60 s: combo chưa có giọng edge thì rơi về VieNeu, nạp model > 12 s (31/10/2026)
             qapp.processEvents()
             if dlg.b_nghe.isEnabled():
                 break

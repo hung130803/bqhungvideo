@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QAbstractItemView,QComboBox,QDialog,QHBoxLayout,QHe
 
 from app.ui.batch_files import presence
 from app.ui.layout_tools import fit_dialog
+from app.ui.theme import SP_2,SP_4,pad,set_role,set_variant
 
 
 def path_key(path):
@@ -62,10 +63,10 @@ class FileInventoryDialog(QDialog):
         self.sources={path_key(p) for p in sources if p};self.exports={path_key(p) for p in exports if p}
         self.rows=[]
         self.setWindowTitle(('Part của video — ' if recorded is not None else 'File trong thư mục — ')+data['channel_name'])
-        layout=QVBoxLayout(self)
+        layout=QVBoxLayout(self);pad(layout,SP_4,spacing=SP_2)
         note=QLabel('Đối chiếu từng đường dẫn Part đã ghi; file thiếu vẫn hiện để bạn kiểm tra.' if recorded is not None else
                     'Quét file trực tiếp trong thư mục đang chọn, không quét thư mục con. File mới chưa tự nhập hoặc chạy; dùng Chọn kênh & chạy để xử lý.')
-        note.setWordWrap(True);layout.addWidget(note)
+        note.setWordWrap(True);set_role(note,'muted');layout.addWidget(note)
         line=QHBoxLayout();self.folders=QComboBox()
         seen=set()
         for label,path in [('Nguồn',data['pipeline']),('Nơi xuất hiện tại',data['channel'])]+[('Nơi xuất cũ',p) for p in data['recorded']]:
@@ -75,7 +76,7 @@ class FileInventoryDialog(QDialog):
         self.folders.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.folders.setVisible(recorded is None);line.addWidget(self.folders,1)
         self.refresh_btn=QPushButton('Làm mới file');line.addWidget(self.refresh_btn);layout.addLayout(line)
-        self.status=QLabel();self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.status)
+        self.status=QLabel();set_role(self.status,'muted');self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.status)
         self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(['Tên file','Nhận diện','Hiện tại'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -88,7 +89,7 @@ class FileInventoryDialog(QDialog):
         self.open_btn=QPushButton('Mở thư mục chứa file');self.copy_btn=QPushButton('Chép đường dẫn file')
         self.open_btn.clicked.connect(self.open_selected);self.copy_btn.clicked.connect(self.copy_selected)
         actions.addWidget(self.open_btn);actions.addWidget(self.copy_btn);actions.addStretch(1)
-        close=QPushButton('Đóng');close.clicked.connect(self.accept);actions.addWidget(close);layout.addLayout(actions)
+        close=QPushButton('Đóng');set_variant(close,'ghost');close.clicked.connect(self.accept);actions.addWidget(close);layout.addLayout(actions)
         self.worker=InventoryWorker(self);self.worker.ready.connect(self.finished_scan)
         self.folders.currentIndexChanged.connect(self.refresh);self.refresh_btn.clicked.connect(self.refresh)
         self.table.itemSelectionChanged.connect(self.selection_changed)

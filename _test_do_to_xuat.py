@@ -585,6 +585,39 @@ def ca13_khong_lech_hinh_tieng(kq: dict) -> None:
        f"{tot} mẫu = {tot / 48.0:+.3f} ms")
 
 
+def ca14_bac_cuoi_van_vuot_tran() -> None:
+    print("\n== CA 14: bậc cuối VẪN vượt trần -> HẠ TIẾP tới khi lọt (31/10/2026) ==")
+    import shutil
+    from app.core import ffmpeg_utils as fu
+    # Đo thật 6 ngày: 9/646 Part ra > -1 dBTP, tệ nhất +3,6 dBTP — bậc cuối
+    # được NHẬN dù vẫn vượt. Giả lập: lượt áp nào nâng > +1 dB thì đỉnh ra
+    # VƯỢT trần 4 dB (đúng kiểu ca thật), hạ xuống thì đỉnh hạ theo.
+    p = TAM / "vuot.mp4"
+    shutil.copy2(_sinh("qua_nho"), p)
+    that_ap, that_do = fu._ap_do_to, fu.do_do_to_clip
+    goi: list = []
+    state = {"nang": 0.0}
+    def _ap(src, dst, nang, tran):
+        goi.append(round(nang, 2)); state["nang"] = nang
+        shutil.copy2(src, dst)
+    def _do(path, han=900):
+        if Path(str(path)).name == "vuot.mp4":
+            return {"I": -20.0, "TP": -5.0, "LRA": 6.0}
+        n = state["nang"]
+        return {"I": -20.0 + n, "TP": -5.0 + n + (4.0 if n > 1.0 else 0.0), "LRA": 6.0}
+    try:
+        fu._ap_do_to, fu.do_do_to_clip = _ap, _do
+        kq = fu.chuan_do_to_clip(p)
+    finally:
+        fu._ap_do_to, fu.do_do_to_clip = that_ap, that_do
+    tp = (kq.get("sau") or {}).get("TP")
+    ok(tp is not None and tp <= fu.TRAN_DINH_THAT_CLIP + 1e-9,
+       "đỉnh ra LỌT trần dù bậc cuối vượt", f"TP {tp} · lượt nâng {goi}")
+    ok(not kq.get("qua_tran_dinh"), "không còn cờ ⚠ ĐỈNH VẪN VƯỢT TRẦN")
+    ok(kq.get("ha_them_lan", 0) >= 1, "ghi lại số lần phải hạ thêm",
+       str(kq.get("ha_them_lan")))
+
+
 def ca12_huy_la_huy() -> None:
     print("\n== CA 12: HUỶ giữa lúc chuẩn hoá -> nổi lên, không bị nuốt ==")
     import hashlib
@@ -663,6 +696,7 @@ def main() -> int:
     ca11_hong_thi_giu_clip()
     ca12_huy_la_huy()
     ca13_khong_lech_hinh_tieng(kq)
+    ca14_bac_cuoi_van_vuot_tran()
     print("\n" + "=" * 78)
     print(f"ĐẠT {DAT} · HỎNG {HONG}")
     print("=" * 78)

@@ -24,11 +24,13 @@ for executable in ('FFMPEG_PATH', 'FFPROBE_PATH'):
     if not Path(environment[executable]).is_file():
         raise SystemExit(f'Missing test dependency: {environment[executable]}')
 tests = sys.argv[1:] or [
+    'tests/test_story_vision_batch.py', 'tests/test_apiforcode.py', 'tests/test_content_block.py',
+    'tests/test_story_delivery_layout.py',
     'tests/test_story_context.py', 'tests/test_story_craft.py', 'tests/test_media_library.py', 'tests/test_story_language.py', 'tests/test_story_quality.py', 'tests/test_story_director.py', 'tests/test_editorial.py',
     'tests/test_pipeline_safety.py', 'tests/test_queue_progress.py', 'tests/test_workspace_ui.py',
     'tests/test_folder_shortcuts.py',
     'tests/test_batch_channels.py', 'tests/test_batch_history.py',
-    'tests/test_gemini_vision.py', 'tests/test_key_health.py', 'tools/check_startup.py',
+    'tests/test_story_resume.py', 'tests/test_gemini_vision.py', 'tests/test_key_health.py', 'tools/check_startup.py',
     'tests/test_repair_regressions.py', '_test_app_smoke.py',
     '_test_pipe_dialogs.py', '_test_pipe_overlap.py', '_test_cancel_persist.py',
     '_test_lane_starve.py', '_test_shutdown_safety.py', '_test_db_corrupt_guard.py',

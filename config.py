@@ -98,6 +98,11 @@ class Settings:
     # LLM (mặc định Groq: free, khôn, nhẹ — khỏi cần Ollama tốn ổ)
     LLM_PROVIDER = _env("LLM_PROVIDER", "groq").lower()
 
+    APIFORCODE_API_KEY = _env("APIFORCODE_API_KEY")
+    APIFORCODE_KEYS_FILE = _env("APIFORCODE_KEYS_FILE")
+    APIFORCODE_MODEL = _env("APIFORCODE_MODEL", "claude-opus-5-on")
+    APIFORCODE_VISION_MODEL = _env("APIFORCODE_VISION_MODEL", "claude-opus-5-on")
+
     OPENAI_API_KEY = _env("OPENAI_API_KEY")
     OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-4o-mini")
 
@@ -148,6 +153,17 @@ class Settings:
     # yt-dlp tải 4 mảnh song song (thay vì 8). Tắt = "Hiệu năng tối đa" (nhiều
     # job song song, chia đều ngân sách luồng — vẫn ưu tiên thấp + chừa 2 nhân).
     ECO_MODE = _env("ECO_MODE", "1") == "1"
+    # TRẦN BITRATE file Part xuất (Mbps). 0 = không trần (như bản cũ).
+    # 26/10/2026 anh Hùng: Part 2 phút ra 585 MB (~34 Mbps) -> up TikTok rất
+    # lâu. Mẫu nền mờ + lớp vọng + video bodycam nhiễu làm CQ 19 "đòi" bitrate
+    # rất cao; TikTok nén lại còn vài Mbps nên phần vượt 12 Mbps không thấy
+    # được trên điện thoại. Trần chỉ chạm vào cảnh nặng, cảnh thường giữ nguyên.
+    EXPORT_MAX_MBPS = _env_int("EXPORT_MAX_MBPS", 12)
+    # Núm nén hiệu quả của NVENC (lookahead, AQ, khung B) — tự thử máy có hỗ
+    # trợ không. 0 = tắt, dùng đúng lệnh NVENC cũ.
+    EXPORT_NVENC_HQ = _env("EXPORT_NVENC_HQ", "1") == "1"
+    # BÌA TIKTOK: khung đầu không fade từ đen + lưu ảnh bìa đẹp nhất vào _Bia.
+    EXPORT_COVER = _env("EXPORT_COVER", "1") == "1"
 
     # Whisper
     WHISPER_PROVIDER = _env("WHISPER_PROVIDER", "local").lower()  # local | groq
@@ -208,7 +224,12 @@ class Settings:
     # CHỈ nhận low/medium/high — `"none"` trả 400 (llm.py đã có lưới gọi lại).
     GROQ_LLM_MODEL = _env("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
     GROQ_LLM_MODEL_CREATIVE = _env("GROQ_LLM_MODEL_CREATIVE", "")
-    GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "groq/compound")
+    # 31/10/2026: `groq/compound` ĐÃ BỊ GROQ GỠ (không còn trong /models) -> dây
+    # chuyền thực chất chỉ còn 2 model CÙNG HỌ gpt-oss, mà cả hai cùng trả RỖNG
+    # theo một kiểu (nghĩ hết ~5.800 token ở mức "low", finish=length; đo 20
+    # lượt trong logs/llm_rong_20261031.log). Dự phòng nay là qwen3.8-27b: còn
+    # sống, KHÁC HỌ, tắt được phần nghĩ (`reasoning_effort="none"`, đo 0,7s).
+    GROQ_LLM_FALLBACK = _env("GROQ_LLM_FALLBACK", "qwen/qwen3.8-27b")
     #: DÂY CHUYỀN DỰ PHÒNG THÊM (phân cách bằng dấu phẩy) — thử sau model chính
     #: và model dự phòng. Groq sẽ còn khai tử model nữa; có dây chuyền thì lần
     #: sau app chỉ chậm đi một nhịp chứ không chết. Xem `llm.chuoi_model_groq`.
@@ -232,6 +253,20 @@ class Settings:
     # Giới hạn cứng: 3 ảnh/lượt (xem llm.vision_max_images).
     # Đặt rỗng để tắt vision Groq.
     GROQ_VISION_MODEL = _env("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
+    # MỨC SUY NGHĨ của model suy luận Groq (gpt-oss) cho khâu QUAN TRỌNG: chọn
+    # đoạn, chấm, tiêu đề, hậu kiểm mạch, viết kịch bản recap (low|medium|high).
+    # Mặc định "high" (26/10/2026 — anh Hùng: chất lượng trước, chậm cũng được).
+    # Dịch/thay giọng (hàng loạt) LUÔN "low" — đo 18/08: low đủ cho dịch.
+    # Nghĩ kỹ mà hết chỗ trả lời -> llm.py TỰ hạ high->medium->low + gọi lại
+    # bằng key khác (log `llm_rong_*.log`). Nút ⚙ "Chất lượng AI tối đa".
+    GROQ_REASONING_EFFORT = _env("GROQ_REASONING_EFFORT", "high")
+    # (tùy chọn) ghi đè từng việc: "select=high,judge=medium,translate=low".
+    # Việc: select · judge · title · coherence · recap (khác -> low).
+    GROQ_REASONING_EFFORT_TASKS = _env("GROQ_REASONING_EFFORT_TASKS", "")
+    # Trần thời gian NGHỈ của 1 key Groq sau lỗi hết lượt (giây). Lỗi hạn mức
+    # NGÀY (TPD) Groq hay báo "thử lại sau 20-30 phút" nhưng key thường dùng
+    # lại được sớm hơn nhiều (đo 01/11/2026) -> nghỉ tối đa 5 phút rồi thử lại.
+    GROQ_NGHI_TOI_DA = _env("GROQ_NGHI_TOI_DA", "300")
     # NHIỀU-PASS (mặc định BẬT): AI tự chấm bản nháp rồi viết lại tốt hơn cho
     # CẮT GHÉP clip + THOẠI recap. Mọi pass mới nếu lỗi/không hợp lệ/tệ hơn ->
     # TỰ QUAY VỀ bản cũ (fail-safe, không bao giờ làm xấu đi). Đặt =0 để tắt.
@@ -304,7 +339,9 @@ class Settings:
     #   "balance" = nhiều-pass cho video NGẮN, 1-pass cho video DÀI (mặc định)
     #   "max"     = nhiều-pass MỌI video (chất lượng cao nhất, tốn token nhất —
     #               video dài dễ chạm HẠN MỨC TOKEN/NGÀY của Groq)
-    RECAP_QUALITY = _env("RECAP_QUALITY", "balance")
+    # Mặc định "max" từ 26/10/2026 (anh Hùng có hàng trăm key xoay vòng). An
+    # toàn: critic/refine lỗi (413/hết lượt) -> recap._refine_script GIỮ bản nháp.
+    RECAP_QUALITY = _env("RECAP_QUALITY", "max")
     WHISPER_MODEL = _env("WHISPER_MODEL")      # rỗng = auto theo phần cứng
     WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE") or None
     # Thiết bị chạy whisper: cpu | cuda. Rỗng = cpu (ổn định nhất).
@@ -324,6 +361,14 @@ class Settings:
     AI_WORKERS = _env("AI_WORKERS")          # phân tích + AI chọn cảnh (mỗi video)
     EXPORT_WORKERS = _env("EXPORT_WORKERS")  # cắt/xuất video theo mẫu
     VIDEO_ENCODER = _env("VIDEO_ENCODER", "auto").lower()
+    #: GIẢI MÃ BẰNG GPU (NVDEC) khi xuất. 27/10/2026: mặc định "auto" — máy
+    #: xuất bằng NVENC thì THỬ THẬT giải mã GPU 1 lần, chạy được mới dùng.
+    #: Giải mã H.264/HEVC/VP9/AV1 theo chuẩn cho ĐÚNG từng điểm ảnh như CPU, nên
+    #: hình không đổi; chỉ bớt việc cho CPU. "1" = luôn bật, "0" = tắt hẳn.
+    #: Lỗi giữa chừng -> tự chạy lại bằng CPU và tắt cho cả phiên.
+    HWACCEL_DECODE = {"1": True, "true": True, "yes": True, "on": True,
+                      "0": False, "false": False, "no": False, "off": False
+                      }.get(_env("HWACCEL_DECODE", "auto").lower(), "auto")
 
     @classmethod
     def llm_key_for(cls, provider: str) -> str:
@@ -335,6 +380,17 @@ class Settings:
     def llm_keys_for(cls, provider: str) -> list:
         """DANH SÁCH key (để XOAY VÒNG khi hết quota). Tách theo dòng hoặc dấu phẩy.
         Groq gộp thêm key từ GROQ_KEYS_FILE (hàng trăm key) qua groq_keys()."""
+        if provider == "apiforcode":
+            pasted=(cls.APIFORCODE_API_KEY or '').replace(',', '\n').splitlines()
+            path=cls.APIFORCODE_KEYS_FILE
+            try:
+                raw=Path(path).read_bytes() if path else b''
+                text=raw.decode('utf-16' if raw.startswith((b'\xff\xfe',b'\xfe\xff')) else 'utf-8-sig')
+                pasted.extend(text.splitlines())
+            except (OSError,UnicodeError):
+                pass
+            # Purchased key files may contain a label/account on the same line.
+            return list(dict.fromkeys(re.findall(r'(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])', '\n'.join(pasted))))
         if provider == "groq":
             return cls.groq_keys()
         raw = {
@@ -418,13 +474,62 @@ def update_env(values: dict) -> None:
             out.append(ln)
     for k, v in pending.items():
         out.append(f"{k}={v}")
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
-    # áp ngay vào bộ nhớ
+    # GHI NGUYÊN TỬ (rà soát 01/11/2026): file này chứa MỌI key Groq; ghi đè
+    # tại chỗ mà mất điện / tắt app giữa chừng là .env cụt -> mất sạch key ->
+    # app lặng lẽ chép lời bằng whisper máy (chậm hàng chục lần). Ghi file tạm,
+    # flush + fsync rồi os.replace; giữ 1 bản .env.bak trước khi thay.
+    tam = path.with_name(path.name + ".tmp")
+    with open(tam, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    try:
+        if path.exists():
+            import shutil as _sh
+            _sh.copy2(path, path.with_name(path.name + ".bak"))
+    except OSError:
+        pass
+    os.replace(tam, path)
+    _ap_vao_bo_nho(values)
+
+
+def _ap_vao_bo_nho(values: dict) -> None:
+    """Áp giá trị .env vào `Settings` đang chạy (đúng kiểu từng khoá)."""
     for k, v in values.items():
         val = v
         if k == "LLM_PROVIDER":
             val = (str(v) or "groq").strip().lower()  # khớp mặc định ở trên
-        elif k in ("USE_VISION", "LIGHT_MODE", "ECO_MODE"):
+        elif k in ("USE_VISION", "LIGHT_MODE", "ECO_MODE", "EXPORT_COVER"):
             val = str(v) == "1"    # setting bool: giữ đúng kiểu khi áp live
+        elif k == "EXPORT_MAX_MBPS":
+            try:
+                val = max(0, int(str(v).strip() or 0))
+            except ValueError:
+                val = 12
         if hasattr(Settings, k):
             setattr(Settings, k, val)
+
+
+def nap_lai_tu_dia(keys) -> list:
+    """Đọc lại các khoá `keys` từ file .env TRÊN ĐĨA rồi áp vào app đang chạy.
+
+    03/11/2026: anh Hùng thêm 2 key Groq mà không vào được file. Hộp Cài đặt
+    AI dựng ô key từ BỘ NHỚ của app, nên (a) key ghi vào .env từ ngoài (bot,
+    lượt sửa tay, bản app khác) không hiện ra và app không dùng tới cho tới khi
+    mở lại, (b) bấm Lưu lúc đó còn GHI ĐÈ mất các key đó. Gọi hàm này lúc mở
+    hộp thì file trên đĩa là sự thật duy nhất. Khoá không có trong file -> giữ
+    nguyên bộ nhớ. Trả danh sách khoá đã đổi. Không bao giờ ném lỗi."""
+    try:
+        from dotenv import dotenv_values
+        tren_dia = dotenv_values(DATA_DIR / ".env")
+    except Exception:  # noqa: BLE001
+        return []
+    doi = {}
+    for k in keys:
+        if k in tren_dia and tren_dia[k] is not None:
+            v = tren_dia[k]
+            if str(getattr(Settings, k, "") or "") != v:
+                doi[k] = v
+    if doi:
+        _ap_vao_bo_nho(doi)
+    return sorted(doi)

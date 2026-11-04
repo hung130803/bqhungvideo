@@ -145,16 +145,24 @@ def do_cap(goc: str, sau: str, td: str) -> tuple[list, list, list]:
     """1 lệnh ffmpeg -> (sáng_gốc[], sáng_sau[], %pixel_đổi[]) TỪNG KHUNG,
     ĐỘ PHÂN GIẢI GỐC. Xem bẫy (a) và (b) ở đầu file."""
     f0, f1, fd = (os.path.join(td, x) for x in ("_l0.txt", "_l1.txt", "_dd.txt"))
-    for f in (f0, f1, fd):
+    fm = os.path.join(td, "_dm.txt")
+    for f in (f0, f1, fd, fm):
         try:
             os.remove(f)
         except OSError:
             pass
-    g = (f"[0:v]format=yuv420p,split=2[a][a2];"
-         f"[1:v]format=yuv420p,split=2[b][b2];"
+    # MÀU (31/10/2026): kiểu TÔNG MÀU `mau_*` cố ý đổi MÀU chứ không đổi độ
+    # sáng -> chỉ đo Y là chấm oan "KHÔNG-CHẠY". Đo thêm % điểm ảnh |dU|/|dV|
+    # > 12 trên ảnh 4:4:4 (khung màu đầy đủ), kết quả cất ở `_MAU_CUOI`.
+    g = (f"[0:v]format=yuv420p,split=3[a][a2][a3];"
+         f"[1:v]format=yuv420p,split=3[b][b2][b3];"
          f"[a][b]blend=all_mode=difference,"
          f"lutyuv=y='if(gt(val,12),255,0)',signalstats,"
          f"metadata=print:key=lavfi.signalstats.YAVG:file='{_esc(fd)}'[d];"
+         f"[a3]format=yuv444p[a4];[b3]format=yuv444p[b4];"
+         f"[a4][b4]blend=all_mode=difference,"
+         f"lutyuv=y='if(gt(max(val,0),-1),0,0)':u='if(gt(val,4),255,0)':v='if(gt(val,4),255,0)',"
+         f"signalstats,metadata=print:file='{_esc(fm)}'[m];[m]nullsink;"
          f"[a2]signalstats,"
          f"metadata=print:key=lavfi.signalstats.YAVG:file='{_esc(f0)}'[x0];"
          f"[b2]signalstats,"
@@ -164,7 +172,28 @@ def do_cap(goc: str, sau: str, td: str) -> tuple[list, list, list]:
                     "-filter_complex", g, "-map", "[d]", "-f", "null", "-"])
     if rc != 0:
         raise RuntimeError("lệnh đo hỏng: " + err[-400:])
+    global _MAU_CUOI
+    _MAU_CUOI = []
+    try:
+        u = v = None
+        with open(fm, "r", encoding="utf-8", errors="replace") as f:
+            for ln in f:
+                mt = re.search(r"signalstats\.(UAVG|VAVG)=\s*([-\d.]+)", ln)
+                if not mt:
+                    continue
+                if mt.group(1) == "UAVG":
+                    u = float(mt.group(2))
+                else:
+                    v = float(mt.group(2))
+                if u is not None and v is not None:
+                    _MAU_CUOI.append(max(u, v) / 2.55)
+                    u = v = None
+    except (OSError, ValueError):
+        _MAU_CUOI = []
     return (_doc(f0), _doc(f1), [v / 2.55 for v in _doc(fd)])
+
+
+_MAU_CUOI: list = []
 
 
 def nguon(td: str) -> str:
@@ -201,23 +230,58 @@ def nguon(td: str) -> str:
     return dst
 
 
+def _nguon_mau(td: str) -> str:
+    """Nguồn NHIỀU MÀU (testsrc2) cùng cỡ/nhịp/độ dài nguồn chính — dựng 1 lần."""
+    p = os.path.join(td, "_nguon_mau.mp4")
+    if not os.path.exists(p):
+        rc, err = chay([FF, "-y", "-v", "error", "-f", "lavfi", "-i",
+                        f"testsrc2=s={W}x{H}:r={FPS}:d={DAI}", "-an", "-c:v",
+                        "libx264", "-preset", "veryfast", "-crf", "18",
+                        "-pix_fmt", "yuv420p", p])
+        if rc != 0:
+            raise RuntimeError("không dựng nổi nguồn màu: " + err[-300:])
+    return p
+
+
+def _moc_mau(td: str) -> str:
+    """Nguồn màu NÉN LẠI y hệt lượt có hiệu ứng nhưng KHÔNG hiệu ứng: so với bản
+    này thì nhiễu nén triệt tiêu (so với nguồn gốc, cả 6 kiểu cùng 'rò' ĐÚNG
+    2,13% — đó là nhiễu nén ở ngưỡng màu 4 mức, không phải rò thật)."""
+    p = os.path.join(td, "_moc_mau.mp4")
+    if not os.path.exists(p):
+        rc, err = chay([FF, "-y", "-v", "error", "-i", _nguon_mau(td), "-an",
+                        "-vf", "null", "-c:v", "libx264", "-preset", "veryfast",
+                        "-qp", "0", "-pix_fmt", "yuv420p", p])
+        if rc != 0:
+            raise RuntimeError("không dựng nổi mốc màu: " + err[-300:])
+    return p
+
+
 def quet_mot(k: str, src: str, td: str, n_goc: int, font: str) -> dict:
     ch = HU.chuoi_filter([{"khoa": k, "bat": BAT, "het": HET,
                            "dam": HU.DAM_MAX}], W, H, FPS, font)
     if not ch:
         return {"kq": "BỎ-QUA", "ghi": "chuỗi filter rỗng (thiếu font/shader)"}
     dst = os.path.join(td, f"e_{k}.mp4")
+    if k.startswith("mau_"):
+        # Kiểu TÔNG MÀU (giảm/tăng BÃO HOÀ) đo trên NGUỒN NHIỀU MÀU: nguồn thật
+        # tự chọn có thể là cảnh gần XÁM ("LuxuryDark" 31/10/2026) — bão hoà
+        # nhân vào màu ~0 thì đúng là không đổi gì, chấm "KHÔNG-CHẠY" là OAN.
+        src = _nguon_mau(td)
     cmd = [FF, "-y", "-v", "error"]
     if HU.can_vulkan([{"khoa": k}]):
         cmd += ["-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk"]
+    # Nhóm màu nén KHÔNG MẤT DỮ LIỆU (`-qp 0`, bài học cổng 46): crf 18 làm
+    # khung lân cận cửa sổ nén khác đi -> 'rò' giả ~1,7% đều nhau ở cả 6 kiểu.
+    _nen = ["-qp", "0"] if k.startswith("mau_") else ["-crf", "18"]
     cmd += ["-i", src, "-an", "-vf", ch, "-c:v", "libx264", "-preset",
-            "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", dst]
+            "veryfast", *_nen, "-pix_fmt", "yuv420p", dst]
     rc, err = chay(cmd)
     if rc != 0:
         return {"kq": "FFMPEG-LỖI",
                 "ghi": (err.strip().splitlines() or [""])[-1][:110]}
     n = dem_khung(dst)
-    s0, s1, dd = do_cap(src, dst, td)
+    s0, s1, dd = do_cap(_moc_mau(td) if k.startswith("mau_") else src, dst, td)
     if not s1:
         return {"kq": "0-KHUNG", "ghi": f"nb_read_frames={n}"}
     m = min(len(s0), len(s1), len(dd))
@@ -234,6 +298,11 @@ def quet_mot(k: str, src: str, td: str, n_goc: int, font: str) -> dict:
     ngoai_i = [i for i in range(m) if i < i0 - 1 or i > i1 + 1]
     trong = max((dd[i] for i in trong_i), default=-1.0)
     ngoai = max((dd[i] for i in ngoai_i), default=0.0)
+    if k.startswith("mau_") and _MAU_CUOI:
+        # kiểu TÔNG MÀU: "có chạy" + "rò" chấm theo MÀU (xem `do_cap`)
+        mm = _MAU_CUOI
+        trong = max(trong, max((mm[i] for i in trong_i if i < len(mm)), default=-1.0))
+        ngoai = max(ngoai, max((mm[i] for i in ngoai_i if i < len(mm)), default=0.0))
     ty = min((s1[i] / s0[i]) for i in trong_i if s0[i] > 5) if trong_i else 1.0
     # ĐỈNH sáng trong cửa sổ — cần cho kiểu LÀM SÁNG (`loe_sang`, `nhay_sang`):
     # chúng chỉ sáng ở GIỮA cửa sổ nên `min` không nói được gì về chiều.

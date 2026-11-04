@@ -469,8 +469,10 @@ def build_vision_digest(video_id: int, src_path: str, duration: float,
                     # `bi` vừa là thứ tự lượt vừa là MỐC XUẤT PHÁT trong vòng
                     # xoay key -> mỗi lượt bắt đầu ở một key khác nhau, không
                     # chen vào cùng một hàng đợi (đo: 40-45s -> 0,9s cho 3/4).
-                    ket = list(ex.map(lambda t: _mot_batch(t[1], t[0], chot),
-                                      list(enumerate(lo))))
+                    from app.core.job_resume import bind_context
+                    futures = [ex.submit(bind_context(_mot_batch), batch, bi, chot)
+                               for bi, batch in enumerate(lo)]
+                    ket = [future.result() for future in futures]
                 for (rows, err), batch in zip(ket, lo):
                     if err:
                         LOI_CUOI = err     # đếm 503 nằm TRONG _mot_batch

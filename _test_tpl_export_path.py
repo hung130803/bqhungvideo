@@ -129,7 +129,7 @@ for k, (pid, vid, _f, _s) in enumerate(kenh):
     pg._track_auto(jid, vid, pid)
 BAT.clear()
 t0 = time.time()
-pg._check_auto_export_inner()
+pg._check_auto_export()
 dt = time.time() - t0
 sai = []
 for pid, vid, font, size in kenh:
@@ -179,7 +179,7 @@ pg._track_auto(jid_c, vid_c, pid_c)              # chốt FONT3
 services.set_project_template(pid_c, "mau9")     # user đổi sang FONT9 SAU đó
 pg.layout_tpl = {"cap_font": "DOI_TRANG_CHINH", "cap_size": 1}
 BAT.clear()
-pg._check_auto_export_inner()
+pg._check_auto_export()
 kiem(bool(BAT) and BAT[0]["font"] == "FONT3",
      "job đã chốt vẫn xuất bằng FONT3 (không nhận mẫu đổi sau)",
      str(BAT[0] if BAT else None))

@@ -108,10 +108,12 @@ def _build_candidates(transcript: dict, scenes: dict, duration: float,
                 # đã đủ dài + ở ranh giới sạch -> cắt; hoặc lố target đáng kể
                 if ends_sentence or near_cut or length >= target + 8.0:
                     break
-            if length >= max_len:              # chạm trần cứng -> dừng
+            # max_len 0 = KHÔNG giới hạn. Bản cũ so `length >= 0` -> dừng sau
+            # câu ĐẦU -> mọi ứng viên < min -> 0 đoạn, "Cắt cơ bản" cũng chết.
+            if max_len > 0 and length >= max_len:   # chạm trần cứng -> dừng
                 break
         length = end - a
-        if length > max_len:                   # câu cuối lố trần -> ép về max
+        if max_len > 0 and length > max_len:   # câu cuối lố trần -> ép về max
             end = round(a + max_len, 2)
             length = max_len
         # KHÔNG nhận clip < min (trừ đoạn cuối video: hết câu mà chưa đủ min).
@@ -335,7 +337,8 @@ def _target_len(min_len: float, max_len: float) -> float:
     ĐA DẠNG (cái ngắn cái dài) thay vì dồn đều 1 con số. Nghiêng nhẹ về giữa-trên
     khoảng cho clip đủ 'đầy đặn' (dùng trung bình 2 lần random -> ít ra sát Min).
     Chỉ có Min -> [min, min*1.8]. Không có Min -> 0 (tự do)."""
-    import random
+    from app.core.job_resume import random_for
+    random = random_for("target_len", [min_len, max_len])
     if min_len and min_len > 0 and max_len and max_len > min_len:
         lo, hi = min_len, max_len
         t = (random.uniform(lo, hi) + random.uniform(lo, hi)) / 2  # dồn về giữa
@@ -351,7 +354,8 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
                    min_len: float = 60.0, max_len: float = 0.0,
                    count: int = 0, visual_block: str = "",
                    nghe_xem: str = "") -> str:
-    extra = ""
+    from app.ai.editorial_context import SELECTION_RULES
+    extra = SELECTION_RULES
     if _PURPOSE_HINT.get(purpose):
         extra += "- " + _PURPOSE_HINT[purpose] + "\n"
     if _STYLE_HINT.get(style):
@@ -368,7 +372,7 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
             "HÀNH ĐỘNG CAO (act>=7: rượt đuổi, va chạm, cao trào thị giác, "
             "khoảnh khắc sốc) RẤT ĐÁNG CHỌN kể cả khi ÍT LỜI THOẠI — đừng "
             "chỉ dựa vào lời nói.\n")
-    how_many = (f"Chọn ĐÚNG {count} clip hay nhất" if count > 0
+    how_many = (f"Mục tiêu chọn đủ {count} clip khác nhau từ nội dung có thật, không vượt {count}. Chỉ trả ít hơn khi không đủ đoạn riêng biệt, đủ độ dài và có nội dung; KHÔNG giảm số chỉ vì điểm thấp hay thiếu twist" if count > 0
                 else "Chọn 3-6 clip hay nhất")
     if min_len and min_len > 0:                 # có Min/Max -> độ dài ĐA DẠNG
         mx = f"{int(max_len)}" if max_len else "180"
@@ -392,10 +396,8 @@ def _select_prompt(listing: str, lang_name: str = "ngôn ngữ gốc của video
         f"Video này nói bằng {lang_name.upper()}.\n"
         f"{how_many} trong đoạn này. QUY TẮC:\n"
         + extra + vis_rule + (nghe_xem or "") +
-        "- ĐA DẠNG + RẢI ĐỀU: chọn các đoạn RẢI ĐỀU toàn video (đầu / giữa / "
-        "cuối), nội dung KHÁC NHAU — ĐỪNG chọn nhiều đoạn cùng 1 cảnh/chủ đề "
-        "hay dồn cụm 1 chỗ; ưu tiên các khoảnh khắc KHÁC nhau cho phong phú.\n"
-        "- Ưu tiên cảnh ĐỈNH ĐIỂM/cao trào, có hook ở đầu, giữ chân người xem.\n"
+        "- ƯU TIÊN MẠCH CHUYỆN: chọn chuyện hoàn chỉnh hấp dẫn nhất, không ép rải đều đầu/giữa/cuối. Các Part khác nhau về tình tiết, không chia vụn cùng một sự việc. Giữ câu hỏi/câu trả lời, nguyên nhân/phản ứng/kết quả. So sánh ít nhất hai phương án trước khi chốt; ưu tiên ít điểm ghép nếu sức hấp dẫn tương đương.\n"
+        "- Chọn theo THỂ LOẠI: video công việc/đời thường đáng xem nhờ thao tác, tiến triển, vấn đề và cách giải quyết; săn đồ nhờ phát hiện món đồ, thương lượng, giá trị, kết quả. Không bắt mọi video có tranh cãi, cú sốc hay twist.\n"
         "- TUYỆT ĐỐI TRÁNH RÁC KÊNH (bất kể ngôn ngữ): intro chào kênh/trailer "
         "nhá hàng mở đầu video, đoạn kêu gọi subscribe/like/bấm chuông/link mô "
         "tả/sponsor/quảng cáo, lời chào tạm biệt cuối video (\"thanks for "
@@ -524,7 +526,7 @@ def _first_clean_line(transcript: dict, start_sec, end_sec,
 
 
 def resolve_pub_title(transcript: dict, signals: dict, clip_title_vi: str,
-                      start_sec, end_sec) -> str:
+                      start_sec, end_sec, ten_nguon: str = "") -> str:
     """TIÊU ĐỀ ĐỐT LÊN VIDEO (đúng ngôn ngữ video) — dùng CHUNG cho lớp chữ
     overlay ({title}) và hook libass, đảm bảo KHÔNG rỗng khi clip có thoại.
     Thứ tự: title_pub(title_en) -> hook -> tiêu đề Việt (CHỈ khi video Việt
@@ -534,6 +536,29 @@ def resolve_pub_title(transcript: dict, signals: dict, clip_title_vi: str,
     transcript = dict analysis 'transcript' (có 'language','text','segments').
     Hàm thuần — unit test được."""
     tr = transcript or {}
+    # VIDEO KHÔNG LỜI (cổng 109): chép lời là chữ Whisper BỊA (vd công trường
+    # Mỹ ra "Gå inn i bygget." tiếng Na Uy) -> ngôn ngữ theo TÊN FILE GỐC, chỉ
+    # tin tiêu đề AI đã viết ĐÚNG ngôn ngữ đó, lùi về tên file thay câu bịa.
+    from app.ai import ngon_ngu_video as _nv
+    ten_nguon = ten_nguon or str(signals.get("ten_nguon") or "")
+    if signals.get("khong_loi") or (ten_nguon and not signals.get("recap")
+                                    and _nv.khong_loi(tr)):
+        lang = _nv.ngon_ngu_ten(ten_nguon) or str(signals.get("lang_tieu_de") or "")
+        vi_video = _recap._is_vi_lang(lang)
+        ai_ok = _nv.cung_ngon_ngu(signals.get("lang_tieu_de"), lang)
+        # tên clip của video KHÔNG phải Việt chính là tiêu đề AI (đường _t_show)
+        # -> cùng luật với tiêu đề AI, không phải chỗ lùi an toàn
+        for cand, la_ai in ((signals.get("title_en"), True),
+                            (signals.get("title_pub"), True),
+                            (clip_title_vi, not vi_video)):
+            cand = str(cand or "").strip()
+            if not cand or (la_ai and not ai_ok
+                            and not _nv.hop_ngon_ngu(cand, lang)):
+                continue
+            if not vi_video and _recap.looks_vietnamese(cand):
+                continue
+            return cand
+        return _nv.tieu_de_tu_ten(ten_nguon)
     lang = _recap.resolve_lang(tr.get("language", ""), tr.get("text", "") or "")
     vi_video = _recap._is_vi_lang(lang)
     for cand in (signals.get("title_en"), signals.get("title_pub"),
@@ -937,7 +962,7 @@ def _chunk_span(listing: str) -> tuple:
 def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                       scenes: dict = None, cfg: dict = None,
                       digest: list = None,
-                      nghe_xem: str = "") -> list:
+                      nghe_xem: str = "", audit: dict = None) -> list:
     """
     AI tự chọn các clip hay: CHIA transcript thành nhiều khúc, gọi LLM từng khúc
     (prompt gọn -> model local trả ổn định), rồi GỘP. Mỗi clip có thể gồm nhiều
@@ -946,6 +971,8 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     digest: VISION DIGEST (app/core/vision_digest) — có thì chèn khối 'HÌNH ẢNH
     THEO MỐC' của đúng khoảng chunk vào prompt; rỗng/None -> prompt Y HỆT cũ.
     """
+    if audit is not None:
+        audit.update(analysis_complete=False, chunks_total=0, chunks_failed=0)
     if not llm.is_configured():
         return [], []
     segs = (transcript or {}).get("segments", [])
@@ -960,7 +987,8 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         # truyền transcript RỖNG vào đây... và dòng chặn cũ `if not segs` NÉM
         # SẠCH cả hai. Bỏ 3-4 phút xem hình xong không dùng gì, rơi cắt cơ bản.
         # Nay đi tiếp bằng HÌNH + TIẾNG — đúng căn cứ duy nhất còn lại.
-        return _chon_doan_khong_loi(duration, ctx, scenes, cfg, digest, nghe_xem)
+        result = _chon_doan_khong_loi(duration, ctx, scenes, cfg, digest, nghe_xem, audit=audit)
+        return result
     _tho = [0, 0]         # [số đoạn AI đề xuất, số đoạn bị loại vì độ dài]
     cfg = cfg or {}
     min_len = float(cfg.get("min_len", 60.0))
@@ -973,7 +1001,10 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     chunks = _chunk_transcript(segs)
     all_clips: list = []
     errors: list[str] = []
-    for ci, listing in enumerate(chunks):
+    from app.ai.editorial_context import contextual_chunks
+    from config import settings as _retry_settings
+    retry_deadline = time.monotonic() + max(0., float(getattr(_retry_settings, 'AI_QUOTA_WAIT_SEC', 900)))
+    for ci, listing in enumerate(contextual_chunks(chunks)):
         if ctx is not None:
             frac = ci / max(1, len(chunks))
             ctx.progress(0.30 + 0.25 * frac,
@@ -992,21 +1023,28 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
             # config.SELECT_MODEL — đã đo là nhận nổi prompt, không 413).
             from config import settings as _st_sel
             _md_sel = str(getattr(_st_sel, "SELECT_MODEL", "") or "")
-            data = llm.complete_json(
+            data = _stage_json(
                 _select_prompt(listing, lang_name, purpose, style, min_len,
                                max_len, count, visual_block=vis_block,
                                nghe_xem=nghe_xem),
-                system=_SEL_SYSTEM, model=_md_sel or None)
+                system=_SEL_SYSTEM, model=_md_sel or None, ctx=ctx, deadline=retry_deadline)
         except Exception as e:  # noqa: BLE001 - gom lỗi, không làm sập job
+            if ctx is not None:ctx.check_canceled()
             errors.append(str(e))
             continue
         if isinstance(data, list):
             rows = data
         elif isinstance(data, dict):
-            rows = data.get("clips") or [data]
-        else:               # JSON scalar (chuỗi/số/null) -> chunk này không có clip
-            rows = []
-        for r in rows or []:
+            rows = data.get("clips") if "clips" in data else [data]
+        else:
+            rows = None
+        if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+            errors.append("AI trả danh sách clip sai định dạng")
+            continue
+        if rows and any(not (r.get("segments") or "start" in r or "start_sec" in r) for r in rows):
+            errors.append("AI trả clip thiếu mốc thời gian")
+            continue
+        for r in rows:
             _tho[0] += 1               # AI đã ĐỀ XUẤT bao nhiêu đoạn (thô)
             clip = _normalize_clip(r, duration, boundaries, min_len, max_len,
                                    segs)
@@ -1019,6 +1057,9 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                                                     min_len)
                 all_clips.append(clip)
 
+    if audit is not None:
+        audit.update(chunk_errors=errors[:8], analysis_complete=not errors, chunks_total=len(chunks),
+                     chunks_failed=len(errors), proposed=_tho[0], rejected_normalization=_tho[1])
     if not all_clips:
         if errors:  # LLM có cấu hình nhưng gọi lỗi -> để generate_highlights báo rõ
             raise llm.LLMError(errors[0])
@@ -1040,32 +1081,17 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     # toàn CTA) -> giữ như cũ, không phá pipeline.
     _clean = [c for c in all_clips
               if _junk_ratio(c["segments"], segs) <= _recap._CTA_MAX]
-    if _clean:
-        all_clips = _clean
+    junk_removed = len(all_clips) - len(_clean)
+    all_clips = _clean
 
     # Khử TRÙNG NỘI DUNG: giữ clip điểm cao trước, BỎ clip nào ĐÈ LÊN clip đã
     # giữ. So theo TOÀN KHOẢNG [đầu..cuối] chứ không chỉ điểm bắt đầu — vì clip
     # đã được nới dài (tới ~target) nên 2 clip bắt đầu cách xa vẫn có thể chồng
     # 40-50s -> Part 1 & Part 2 bị trùng đoạn. Bỏ nếu chồng > 25% clip ngắn hơn.
-    def _span(c):
-        return c["segments"][0][0], c["segments"][-1][1]
-
-    all_clips.sort(key=lambda c: c["score"], reverse=True)
-    kept: list = []
-    for c in all_clips:
-        cs, ce = _span(c)
-        clash = False
-        for k in kept:
-            ks, ke = _span(k)
-            ov = min(ce, ke) - max(cs, ks)          # độ chồng lấn (giây)
-            if ov > 0 and ov > 0.25 * min(ce - cs, ke - ks):
-                clash = True
-                break
-        if clash:
-            continue
-        kept.append(c)
-        if len(kept) >= (count if count > 0 else 12):  # đúng số user đặt (hoặc 12)
-            break
+    # Compare actual used intervals, never the envelope across omitted footage.
+    from app.ai.chon_doan import bo_trung_nhau
+    kept, _ = bo_trung_nhau(all_clips, ty_le=0.25)
+    kept = sorted(kept, key=lambda c: c['score'], reverse=True)[:count if count > 0 else 12]
     kept.sort(key=lambda c: c["segments"][0][0])  # theo thứ tự thời gian (Part 1,2,3)
 
     # PASS 2 — AI ĐỌC KỸ từng clip, cắt gọn bỏ phần thừa (hiểu nội dung, giữ đoạn đắt)
@@ -1080,6 +1106,10 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     warns = ([f"{len(errors)}/{len(chunks)} phần transcript gọi AI lỗi "
               f"(phần sau video có thể chưa được phân tích)"]
              if errors else [])
+    if junk_removed:
+        warns.append(f"bỏ {junk_removed} đoạn quảng cáo/chào kênh")
+    if audit is not None:
+        audit.update(rejected_junk=junk_removed, candidates=len(refined))
     return refined, warns
 
 
@@ -1087,7 +1117,7 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
 # 🔁 NHIỀU-PASS CẮT CLIP (v8): sau khi có danh sách clip ứng viên, AI ĐỌC
 # LẠI toàn cảnh + CHẤM/CHỌN top viral, loại clip trùng/lê thê. FAIL-SAFE:
 # chỉ LỌC + SẮP XẾP LẠI (KHÔNG đổi start/end), keo rỗng/hỏng -> giữ nguyên;
-# lỗi bất kỳ -> giữ nguyên. Bù đủ want_n từ danh sách gốc nếu thiếu.
+# lỗi bất kỳ -> giữ nguyên. Không bù đoạn bị loại để đủ số Part.
 # ------------------------------------------------------------------
 _REFINE_SEL_SYSTEM = (
     "Bạn là giám khảo chọn clip viral cho TikTok/Reels/Shorts. Từ danh sách "
@@ -1140,8 +1170,7 @@ def _clip_digest(clips: list, segs: list, vdigest: list = None) -> str:
 
 def _parse_unusable(data, n: int) -> set:
     """Đọc trường 'usable' từ JSON critic -> tập index KHÔNG đáng đăng
-    (usable=false). FAIL-SAFE: dạng lạ / index sai -> bỏ qua; TẤT CẢ clip
-    đều false -> trả set rỗng (giữ như cũ, đừng trắng tay). Hàm thuần."""
+    (usable=false). Dạng lạ/index sai bỏ qua; tất cả false thì loại tất cả."""
     raw = data.get("usable") if isinstance(data, dict) else None
     if not isinstance(raw, dict):
         return set()
@@ -1156,18 +1185,15 @@ def _parse_unusable(data, n: int) -> set:
         if v is False or (isinstance(v, str)
                           and v.strip().lower() in ("false", "no", "0")):
             bad.add(idx)
-    if len(bad) >= n:                  # tất cả false -> fail-safe giữ như cũ
-        return set()
     return bad
 
 
 def _refine_clip_selection(clips: list, transcript: dict, language: str,
                            want_n: int, min_len: float, max_len: float,
-                           vdigest: list = None) -> list:
-    """NHIỀU-PASS: AI chấm + chọn top clip. Trả list ĐÃ LỌC + SẮP XẾP theo độ
-    hay (KHÔNG đổi start/end). Fail-safe: keep rỗng/không hợp lệ / lỗi -> trả
-    NGUYÊN `clips`. Bù đủ want_n từ danh sách gốc (thứ tự cũ) nếu thiếu.
-    Bounded: đúng 1 lần gọi LLM, KHÔNG lặp."""
+                           vdigest: list = None, audit: dict = None, ctx=None) -> list:
+    """Chọn tối đa want_n. Không phục hồi clip critic đã loại.
+    Dữ liệu critic hỏng/lỗi giữ ứng viên nhưng ghi rõ chưa kiểm tra đầy đủ.
+    """
     try:
         if not clips or len(clips) <= 1:
             return clips
@@ -1181,9 +1207,9 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
             "clip ỨNG VIÊN (đã có mốc thời gian cố định, KHÔNG đổi được):\n"
             f"{digest}\n\n"
             "Hãy CHẤM & CHỌN theo tiêu chí:\n"
-            "- HOOK 3 giây đầu phải mạnh (gây tò mò/sốc ngay).\n"
+            "- Mở đầu rõ việc đang diễn ra và lý do đáng theo dõi; không bắt buộc gây sốc.\n"
             "- Câu chuyện TỰ ĐỦ: xem KHÔNG cần biết bối cảnh trước đó.\n"
-            "- Tiềm năng VIRAL cao (cảm xúc, twist, cao trào, câu chốt đắt).\n"
+            "- Giá trị theo thể loại: phát hiện, thao tác, mẹo, tiến triển công việc, kết quả hoặc cảm xúc. Thiếu twist/xung đột KHÔNG phải lý do loại.\n"
             "- KHÔNG lê thê/khoảng chết.\n"
             "- KHÔNG dính RÁC KÊNH: intro chào kênh/trailer mở đầu, kêu gọi "
             "subscribe/like/link mô tả/sponsor, lời tạm biệt cuối video — "
@@ -1192,16 +1218,21 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
             "subscriber, nhắc video trước, giveaway, cảm ơn patron, nói lan "
             "man không có nội dung — clip dính mấy đoạn đó đánh usable=false.\n"
             "- 2 clip KHÔNG trùng nội dung (tránh nhàm + ăn bản quyền).\n"
-            f"Chọn tối đa {target_n} clip TỐT NHẤT. Trả DUY NHẤT 1 JSON: "
+            "- KHÔNG xét chủ đề nhạy cảm / chính sách nền tảng — chủ kênh tự "
+            "chịu trách nhiệm nội dung. Phóng sự bắt quả tang, tội phạm, cảnh "
+            "sát, chửi tục, cãi vã vẫn là nội dung DÙNG ĐƯỢC; KHÔNG đánh "
+            "usable=false vì chủ đề.\n"
+            f"Xếp hạng và ưu tiên đủ {target_n} clip khác nhau nếu có nội dung dùng được; điểm thấp vẫn được chọn. Trả DUY NHẤT 1 JSON: "
             '{"keep":[index theo thứ tự TỐT->kém], "drop":[index yếu/trùng], '
-            '"usable":{"index":true/false — clip có ĐÁNG ĐĂNG không (false '
-            'nếu dính quảng cáo/rác/lan man không dùng được)}, '
+            '"usable":{"index":true/false — chỉ false khi toàn quảng cáo/chào kênh, thiếu nội dung hoặc trùng ứng viên khác; không false chỉ vì điểm thấp hoặc thiếu kịch tính}, '
             '"reason":{"index":"lý do ngắn"}}')
-        data = llm.complete_json(prompt, system=_REFINE_SEL_SYSTEM)
+        data = _stage_json(prompt, system=_REFINE_SEL_SYSTEM, ctx=ctx, deadline=time.monotonic()+_han_buoc_ai())
         keep_raw = None
         if isinstance(data, dict):
             keep_raw = data.get("keep")
         if not isinstance(keep_raw, list):
+            if audit is not None:
+                audit["critic_incomplete"] = True
             return clips               # JSON không có keep hợp lệ -> giữ nguyên
         # chỉ nhận index HỢP LỆ, dedup giữ thứ tự (thứ tự tốt->kém của AI)
         seen: set = set()
@@ -1214,36 +1245,40 @@ def _refine_clip_selection(clips: list, transcript: dict, language: str,
             if 0 <= idx < len(clips) and idx not in seen:
                 seen.add(idx)
                 order.append(idx)
-        if not order:
-            return clips               # keep rỗng/không hợp lệ -> giữ nguyên
-        # 🚮 usable=false (clip dính quảng cáo/rác/lan man) -> DROP khi còn
-        # clip khác thay; tất cả false / drop hết -> giữ order như cũ.
+        if keep_raw and not order:
+            if audit is not None:
+                audit["critic_incomplete"] = True
+            return clips
         unusable = _parse_unusable(data, len(clips))
-        if unusable:
-            filt = [i for i in order if i not in unusable]
-            if filt:                   # còn clip thay thế -> mới dám drop
-                order = filt
-        picked = [clips[i] for i in order]
-        if auto:
-            return picked              # AI tự quyết số clip -> không bù/không cắt
-        # BÙ đủ want_n từ gốc (thứ tự cũ) nếu AI chọn thiếu — ưu tiên clip
-        # KHÔNG bị đánh usable=false; vẫn thiếu mới đụng tới clip unusable.
-        if len(picked) < target_n:
-            for skip_bad in (True, False):
-                for i, c in enumerate(clips):
-                    if i in seen or (skip_bad and i in unusable):
-                        continue
-                    if not skip_bad and i not in unusable:
-                        continue       # vòng 2 chỉ bù clip unusable còn lại
-                    picked.append(c)
-                    seen.add(i)
-                    if len(picked) >= target_n:
-                        break
-                if len(picked) >= target_n:
-                    break
-        return picked[:target_n]
-    except Exception:  # noqa: BLE001 - bất kỳ lỗi nào -> fail-safe giữ nguyên
+        # Weak-ranked/omitted candidates remain usable. Structural overlap is
+        # removed later; explicit unusable decisions are never restored.
+        rest = sorted((i for i in range(len(clips)) if i not in seen),
+                      key=lambda i: -float(clips[i].get("score", 0) or 0))
+        order.extend(rest)
+        picked = [clips[i] for i in order if i not in unusable][:target_n]
+        # CRITIC LOẠI HẾT -> VẪN CẮT (anh Hùng 31/10/2026: "cứ cắt cho tôi").
+        # Trước đây loại hết = 0 Part + "chờ xem lại" giữ gốc; với kênh phóng
+        # sự bắt quả tang, critic hay loại hết vì CHỦ ĐỀ chứ không vì đoạn dở.
+        # Giữ đúng thứ tự critic xếp (keep trước, rồi theo điểm) và ghi rõ.
+        all_out = bool(clips) and not picked
+        if all_out:
+            picked = [clips[i] for i in order][:target_n]
+        if audit is not None:
+            audit["critic_all_rejected"] = all_out
+            audit["rejected_critic"] = 0 if all_out else len(clips) - len(picked)
+            # LÝ DO critic loại — trước 31/10/2026 chỉ nằm trong nháp job nên
+            # "chờ xem lại" trông như lỗi không rõ nguyên nhân.
+            rs = data.get("reason") if isinstance(data.get("reason"), dict) else {}
+            audit["critic_reasons"] = [
+                str(rs.get(str(i)) or rs.get(i) or "").strip()[:140]
+                for i in sorted(unusable)]
+        return picked
+    except Exception:  # critic optional; failures must remain visible
+        if ctx is not None:ctx.check_canceled()
+        if audit is not None:
+            audit["critic_incomplete"] = True
         return clips
+
 
 
 def _smart_model():
@@ -1273,7 +1308,8 @@ def _title_lang_ok(title: str, want_code: str) -> bool:
     return got == (want_code or "")
 
 
-def _polish_titles(ai_clips: list, transcript: dict, ctx=None) -> int:
+def _polish_titles(ai_clips: list, transcript: dict, ctx=None,
+                   lang_ep: str = "") -> int:
     """ĐÁNH BÓNG TIÊU ĐỀ XUẤT BẢN (title_en) bằng model thông minh nhất
     (GROQ_LLM_MODEL_SMART — prompt NGẮN nên gpt-oss-120b free chạy tốt):
     viết lại giật tít hơn, BẮT BUỘC đúng ngôn ngữ video; clip thiếu title_en
@@ -1290,10 +1326,13 @@ def _polish_titles(ai_clips: list, transcript: dict, ctx=None) -> int:
                                   resolve_lang)
         if not llm.is_configured():
             return 0
-        lang = resolve_lang(transcript.get("language", ""),
-                            transcript.get("text", "") or "")
+        lang = lang_ep or resolve_lang(transcript.get("language", ""),
+                                       transcript.get("text", "") or "")
         lang_name = lang_en_name(lang)
-        want = detect_lang_by_script(transcript.get("text", "") or "")
+        want = (detect_lang_by_script(transcript.get("text", "") or "")
+                if not lang_ep else
+                (lang_ep if lang_ep in ("ja", "ko", "zh", "th", "ru", "ar",
+                                        "hi", "he") else ""))
         tsegs = (transcript or {}).get("segments", []) or []
 
         def _excerpt(c) -> str:
@@ -1309,8 +1348,13 @@ def _polish_titles(ai_clips: list, transcript: dict, ctx=None) -> int:
         lines = []
         for i, c in enumerate(ai_clips[:10], 1):
             cur = str(c.get("title_en") or "").strip()
-            lines.append(f'{i}. thoại: "{_excerpt(c)}" | tiêu đề hiện tại: '
-                         f'"{cur or "(chưa có)"}"')
+            _ex = _excerpt(c)
+            if _ex:
+                lines.append(f'{i}. thoại: "{_ex}" | tiêu đề hiện tại: '
+                             f'"{cur or "(chưa có)"}"')
+            else:                    # video không lời: chỉ có ý chính (Việt)
+                lines.append(f'{i}. nội dung (tiếng Việt, cần viết lại): '
+                             f'"{str(c.get("title") or "").strip()}"')
         prompt = (
             f"Video nói bằng {lang_name.upper()}. Các clip ngắn cắt từ video:\n"
             + "\n".join(lines) + "\n\n"
@@ -1336,15 +1380,10 @@ def _polish_titles(ai_clips: list, transcript: dict, ctx=None) -> int:
 
 
 def _apply_quality_floor(clips: list, floor: float) -> tuple[list, int]:
-    """SÀN CHẤT LƯỢNG: bỏ clip score < floor — "mọi đoạn thừa phải bỏ, CHỈ
-    lấy đoạn hay dùng được". FAIL-SAFE: <2 clip hoặc floor<=0 -> giữ nguyên;
-    tất cả dưới sàn -> vẫn GIỮ 1 clip điểm cao nhất (đừng trắng tay).
-    Trả (clips_giữ, số_clip_bị_bỏ). Hàm thuần — unit test được."""
-    if not clips or len(clips) < 2 or not floor or floor <= 0:
+    """Bỏ mọi clip dưới sàn, kể cả clip duy nhất. floor<=0 tắt lọc."""
+    if not clips or not floor or floor <= 0:
         return clips, 0
-    kept = [c for c in clips if float(c.get("score", 0)) >= floor]
-    if not kept:
-        kept = [max(clips, key=lambda c: float(c.get("score", 0)))]
+    kept = [c for c in clips if float(c.get("score", 0) or 0) >= floor]
     return kept, len(clips) - len(kept)
 
 
@@ -1528,7 +1567,7 @@ def _clip_used_ranges(signals: dict, start: float, end: float) -> list:
     return []
 
 
-def load_used_ranges(video_id: int, statuses=_USED_STATUSES) -> list:
+def load_used_ranges(video_id: int, statuses=_USED_STATUSES, retry_clip_ids=()) -> list:
     """Tập các khoảng [s,e] video này ĐÃ dùng ở các clip trước (mọi trạng thái
     trong `statuses`). Đọc từ clips.signals (segments/recap.windows/moments) —
     lùi start_sec/end_sec. Trả list đã sort tăng (chưa gộp). Gọi TRƯỚC khi
@@ -1537,10 +1576,17 @@ def load_used_ranges(video_id: int, statuses=_USED_STATUSES) -> list:
     if not statuses:
         return []
     ph = ",".join("?" * len(statuses))
+    retry_ids = tuple(int(cid) for cid in retry_clip_ids)
+    retry_filter = ""
+    if retry_ids:
+        marks = ",".join("?" for _ in retry_ids)
+        retry_filter = (f" AND NOT (status='suggested' AND id IN ({marks})"
+                        " AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.video_id=clips.video_id"
+                        " AND j.type='m1_export_clip' AND j.status IN ('pending','running')))" )
     rows = db.query(
         f"SELECT start_sec, end_sec, signals FROM clips "
-        f"WHERE video_id=? AND status IN ({ph})",
-        (video_id, *statuses))
+        f"WHERE video_id=? AND status IN ({ph})" + retry_filter,
+        (video_id, *statuses, *retry_ids))
     used: list = []
     for r in rows or []:
         sig = db.loads(r["signals"], {}) or {}
@@ -1569,7 +1615,7 @@ def _overlap_frac(s: float, e: float, used: list) -> float:
 
 
 def _chon_doan_khong_loi(duration: float, ctx, scenes, cfg: dict,
-                         digest: list, nghe_xem: str) -> tuple:
+                         digest: list, nghe_xem: str, audit: dict = None) -> tuple:
     """AI chọn đoạn cho VIDEO KHÔNG CÓ LỜI NÓI — căn cứ là HÌNH + TIẾNG.
 
     Anh Hùng 07/08/2026: "chỉ những video k nói mới bị cắt cơ bản thôi". Đúng, và
@@ -1597,7 +1643,7 @@ def _chon_doan_khong_loi(duration: float, ctx, scenes, cfg: dict,
             for d in digest[:14])
     prompt = (
         f"Video dài {duration:.0f} giây, KHÔNG CÓ LỜI NÓI (chỉ hình + tiếng "
-        f"động/nhạc). Hãy chọn {count} đoạn ĐÁNG XEM NHẤT dựa HOÀN TOÀN vào "
+        f"động/nhạc). Hãy chọn TỐI ĐA {count} đoạn; được ít hơn hoặc 0 khi không đủ đoạn đạt. Dựa vào "
         "hình ảnh và năng lượng tiếng.\n\n"
         + (kh_h + "\n\n" if kh_h else "") + (nghe_xem or "")
         + f"\n\nMỗi đoạn dài {min_len:.0f}"
@@ -1612,7 +1658,9 @@ def _chon_doan_khong_loi(duration: float, ctx, scenes, cfg: dict,
     except Exception as e:  # noqa: BLE001
         return [], [f"AI xem hình chọn đoạn lỗi: {str(e)[:90]}"]
     if isinstance(rows, dict):
-        rows = rows.get("clips") or rows.get("items") or []
+        rows = rows.get("clips", rows.get("items"))
+    if audit is not None:
+        audit.update(analysis_complete=isinstance(rows, list), mode="visual_audio")
     if not isinstance(rows, list) or not rows:
         return [], ["AI xem hình không trả về đoạn nào (video quá đều?)"]
     # Không lời -> transcript rỗng, nên ranh giới chỉ lấy từ MỐC CẢNH thật.
@@ -1707,7 +1755,11 @@ def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
             budget = float(getattr(_st_q, "AI_QUOTA_WAIT_SEC", 900) or 0)
         except (TypeError, ValueError):
             budget = 900.0
-    da_doi = 0.0
+    # NGÂN SÁCH TÍNH THEO ĐỒNG HỒ THẬT (rà soát 01/11/2026): bản cũ chỉ cộng
+    # thời gian NGỦ, bỏ qua thời gian nằm TRONG fn() (complete_text tự ngủ tới
+    # ~90 s/lượt) -> với trần nghỉ key 5 phút, vòng này chạy HÀNG GIỜ thay vì
+    # 15 phút cho MỘT bước.
+    _bat_dau = time.monotonic()
     while True:
         try:
             return fn()
@@ -1732,8 +1784,8 @@ def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
             if wait is None:
                 raise                       # không có key nào để mà đợi
             wait = max(5.0, min(float(wait) + 1.0, 300.0))
-            if da_doi + wait > budget:
-                raise                       # cooldown dài (hết lượt NGÀY) -> chịu
+            if (time.monotonic() - _bat_dau) + wait > budget:
+                raise                       # hết ngân sách -> để DoiLuotAI lo
             moc = time.time() + wait
             while True:
                 con = moc - time.time()
@@ -1746,7 +1798,275 @@ def _call_waiting_quota(fn, ctx, provider: str, budget: Optional[float] = None):
                         f"⏳ mọi key AI đang hồi lượt — đợi {int(con)}s rồi "
                         "phân tích tiếp (KHÔNG cắt cơ bản)...")
                 time.sleep(min(5.0, max(0.05, con)))
-            da_doi += wait
+
+
+def _stage_json(prompt, ctx=None, deadline=None, **kwargs):
+    """Retry the failing call, not an entire video. Completed stages are cached."""
+    from app.core.job_resume import local_step
+    def run():
+        last = None
+        for attempt in range(3):
+            if ctx is not None:
+                ctx.check_canceled()
+            remaining = max(0.0, deadline - time.monotonic()) if deadline else 120.0
+            try:
+                return _call_waiting_quota(
+                    lambda: llm.complete_json(prompt, **kwargs), ctx,
+                    llm.active_provider(), budget=remaining)
+            except llm.LLMError as exc:
+                last = exc
+                if isinstance(exc, (llm.LLMTooLarge, llm.LLMModelMissing, llm.LLMContentBlocked)):
+                    raise
+                if not (llm.is_transient_error(str(exc)) or isinstance(exc, llm.LLMRong)):
+                    raise
+                if attempt == 2 or (deadline and time.monotonic() >= deadline):
+                    raise
+                for _ in range(5):
+                    if ctx is not None:ctx.check_canceled()
+                    time.sleep(.2)
+        raise last
+    return local_step('highlight_stage_v58', [prompt, kwargs, llm.active_provider()], run)
+
+
+def _file_hong(p) -> bool:
+    """File video HỎNG CHẮC CHẮN (ffprobe CHẠY ĐƯỢC và báo không đọc được) ->
+    True. ffprobe không chạy được / quá giờ -> False (không chứng minh hỏng)."""
+    import subprocess as _sp
+    from config import settings as _st
+    fp = str(getattr(_st, "FFPROBE_PATH", "") or "ffprobe")
+    try:
+        r = _sp.run([fp, "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=nw=1:nk=1", str(p)], capture_output=True,
+                    text=True, errors="replace", timeout=60,
+                    creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+    except Exception:  # noqa: BLE001 - không chạy được ffprobe: KHÔNG kết luận
+        return False
+    if r.returncode == 0:
+        try:
+            return not (float((r.stdout or "").strip().splitlines()[0]) > 0)
+        except (ValueError, IndexError):
+            return True
+    return True
+
+
+def _file_mo_coi(p) -> bool:
+    """File Part ở đường dẫn này là RÁC của lượt xuất bị ngắt: HỎNG, hoặc lành
+    nhưng KHÔNG clip nào trong DB ghi nhận là file của mình.
+    File CÒN ĐANG LỚN (lượt xuất khác đang ghi trùng tên) -> KHÔNG phải rác."""
+    # 1) Có clip nào trong DB nhận file này là của mình -> TUYỆT ĐỐI không đụng
+    #    (kể cả khi ffprobe lỗi: ffprobe treo/thiếu không chứng minh file hỏng).
+    try:
+        k = os.path.normcase(os.path.abspath(str(p)))
+        for r in db.query("SELECT export_path FROM clips WHERE export_path LIKE ?",
+                          ("%" + Path(str(p)).name,)):
+            if os.path.normcase(os.path.abspath(str(r["export_path"] or ""))) == k:
+                return False
+    except Exception:  # noqa: BLE001 - không chắc thì coi là CỦA AI ĐÓ, giữ
+        return False
+    # 2) File còn đang thay đổi (lượt khác đang ghi) -> không phải rác.
+    try:
+        st0 = os.stat(str(p))
+        for _ in range(3):
+            time.sleep(1.0)
+            st1 = os.stat(str(p))
+            if (st1.st_size, st1.st_mtime_ns) != (st0.st_size, st0.st_mtime_ns):
+                return False
+    except OSError:
+        return False
+    # 3) Không ai nhận + đứng yên: rác của lượt bị ngắt (hỏng hoặc bản thừa).
+    return True
+
+
+def _cat_file_mo_coi(p) -> None:
+    """CẤT (không xoá) file Part mồ côi + file tạm `_dt_<pid>_` của tiến trình
+    đã chết vào `<thư mục gốc>/_Loi/part_hong/<kênh>/` CÙNG Ổ (dời tức thì).
+    Lỗi gì cũng bỏ qua: lượt xuất vẫn chạy, cùng lắm đặt tên "(2)" như cũ."""
+    import shutil as _sh
+    p = Path(str(p))
+    dich = p.parent.parent / "_Loi" / "part_hong" / p.parent.name
+    cac = [p]
+    try:
+        import psutil as _ps
+        for t in p.parent.glob("_dt_*_" + p.name):
+            pid = t.name.split("_")[2]
+            if pid.isdigit() and not _ps.pid_exists(int(pid)):
+                cac.append(t)
+    except Exception:  # noqa: BLE001
+        pass
+    for f in cac:
+        try:
+            dich.mkdir(parents=True, exist_ok=True)
+            d = dich / f.name
+            if d.exists():
+                d = dich / f"{f.stem}.{time.strftime('%Y%m%d_%H%M%S')}{f.suffix}"
+            _sh.move(str(f), str(d))
+        except Exception:  # noqa: BLE001
+            pass
+
+
+class DoiLuotAI(Exception):
+    """Phân tích bị CỤT vì hết lượt AI giữa chừng -> đưa job về hàng đợi.
+
+    01/11/2026 (anh Hùng, ảnh thanh vàng «0 Part»): khi mọi key Groq cùng hồi
+    lượt, vài lượt gọi con (chép lời từng phần, xem hình, hậu kiểm) hết ngân
+    sách đợi rồi thất bại; video vẫn được chốt 'xong' với 0 Part hoặc 3 Part
+    chọn từ NỬA video, tô vàng, không một dòng đỏ. Nay: đợi tới khi có key hồi
+    rồi ném lỗi này; bộ điều phối đưa job về 'pending' KHÔNG tính lượt thử, lần
+    chạy lại dùng lại mọi bước đã lưu (`local_step`) nên chỉ gọi lại phần lỗi.
+    `doi_luot` là cờ để worker nhận ra mà không phải import module này."""
+    doi_luot = True
+
+
+_DAU_HET_LUOT = ("chưa xử lý được bằng các key", "shared cooldown", "hồi lượt",
+                 "groq đang bận")
+#: Lỗi KHÔNG tự hết khi đợi (413 quá lớn, tài khoản bị khoá, sai định dạng):
+#: gặp chúng thì KHÔNG coi là hết lượt, kẻo đợi-rồi-làm-lại mãi vô ích.
+_KHONG_PHAI_HET_LUOT = ("request too large", "413", "organization_restricted",
+                        "organization has been restricted")
+
+
+def _han_buoc_ai() -> float:
+    """Hạn cho các bước AI phụ (tinh chọn, hậu kiểm mạch): phải DÀI HƠN thời
+    gian nghỉ key tối đa, nếu không mọi lần đợi key là bước đó bỏ cuộc ngay."""
+    try:
+        from config import settings as _st
+        return max(360.0, float(getattr(_st, "GROQ_NGHI_TOI_DA", 300) or 300) + 60.0)
+    except (TypeError, ValueError):
+        return 360.0
+
+
+def _cut_vi_het_luot(result, audit) -> bool:
+    """Kết quả CHƯA đầy đủ và nguyên nhân là hết lượt AI (không phải key chết,
+    nội dung bị chặn hay AI trả sai định dạng)."""
+    sel = (result or {}).get("selection") or {}
+    day_du = bool(sel.get("analysis_complete")) and not (
+        sel.get("critic_incomplete") or sel.get("continuity_incomplete"))
+    if day_du:
+        return False
+    txt = " ".join([str((result or {}).get("selection_note") or "")]
+                   + [str(x) for x in ((audit or {}).get("chunk_errors") or [])]).lower()
+    if "organization_restricted" in txt and "429" not in txt:
+        return False                       # mọi key bị khoá hẳn: đợi vô ích
+    if (any(x in txt for x in _KHONG_PHAI_HET_LUOT) and "429" not in txt
+            and "shared cooldown" not in txt and "hồi lượt" not in txt):
+        return False
+    if llm.is_rate_limit_error(txt) or any(d in txt for d in _DAU_HET_LUOT):
+        return True
+    # Lỗi không ghi rõ nguyên nhân (vd "critic lỗi hoặc trả sai định dạng" nuốt
+    # mất lời 429): đúng lúc này MỌI key đang hồi lượt -> coi là hết lượt.
+    try:
+        w = llm.soonest_ready_wait(llm.active_provider())
+    except Exception:  # noqa: BLE001
+        w = None
+    return bool(w and w > 0)
+
+
+#: Trần số vòng "đợi rồi phân tích lại" cho MỘT video trong một phiên app
+#: (~12 vòng × tối đa 15 phút ≈ 3 giờ). Quá trần -> chốt kết quả đang có (vẫn
+#: xuất Part) thay vì quay vòng mãi nếu nguyên nhân hoá ra không phải hết lượt.
+_VONG_DOI_TOI_DA = 12
+_VONG_DOI: dict = {}
+
+
+def _so_vong_doi_file():
+    try:
+        from config import DATA_DIR
+        return Path(DATA_DIR) / "_cache" / "vong_doi_ai.json"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _doc_vong_doi() -> dict:
+    import json as _js
+    f = _so_vong_doi_file()
+    try:
+        d = _js.loads(f.read_text(encoding="utf-8")) if f and f.exists() else {}
+        return d if isinstance(d, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _ghi_vong_doi(d: dict) -> None:
+    import json as _js
+    f = _so_vong_doi_file()
+    if not f:
+        return
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tam = f.with_suffix(".tmp")
+        tam.write_text(_js.dumps(d), encoding="utf-8")
+        os.replace(tam, f)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _con_vong_doi(video_id) -> bool:
+    """Còn được đợi-rồi-làm-lại cho video này không. Đếm GHI RA ĐĨA (rà soát
+    01/11/2026): đếm trong RAM thì mỗi lần mở app / tự cập nhật lại được thêm
+    12 vòng -> video lỗi không-phải-hết-lượt có thể quay vòng mãi."""
+    d = _doc_vong_doi()
+    k = str(video_id)
+    n = int(d.get(k, 0) or 0) + 1
+    d[k] = n
+    _VONG_DOI[video_id] = n
+    _ghi_vong_doi(d)
+    return n <= _VONG_DOI_TOI_DA
+
+
+def _xoa_vong_doi(video_id) -> None:
+    """Video đã chốt kết quả -> xoá bộ đếm (lần phân tích sau đủ 12 vòng)."""
+    _VONG_DOI.pop(video_id, None)
+    d = _doc_vong_doi()
+    if d.pop(str(video_id), None) is not None:
+        _ghi_vong_doi(d)
+
+
+def _doi_luot_roi_lam_lai(ctx, ghi_chu: str):
+    """Đợi tới lúc có key AI hồi (huỷ được) rồi ném `DoiLuotAI`."""
+    try:
+        wait = llm.soonest_ready_wait(llm.active_provider())
+    except Exception:  # noqa: BLE001
+        wait = None
+    wait = 60.0 if wait is None else float(wait)
+    wait = max(20.0, min(wait + 5.0, 900.0))
+    moc = time.time() + wait
+    while True:
+        con = moc - time.time()
+        if con <= 0:
+            break
+        if ctx is not None:
+            ctx.check_canceled()
+            ctx.progress(0.32, f"⏳ hết lượt AI giữa chừng — đợi {int(con)}s rồi "
+                               "phân tích lại phần còn thiếu (KHÔNG ra Part từ bản thiếu)")
+        time.sleep(min(5.0, max(0.05, con)))
+    raise DoiLuotAI("Hết lượt AI giữa chừng — phân tích lại phần còn thiếu. "
+                    + str(ghi_chu or "")[:200])
+
+
+def _selection_result(clip_ids, cfg, provider, audit, warnings):
+    requested = max(0, int(cfg.get("count", 0) or 0))
+    count = len(clip_ids)
+    complete = bool(audit.get("analysis_complete"))
+    review_complete = not (audit.get("critic_incomplete", False) or audit.get("continuity_incomplete", False))
+    if not complete:
+        reason = "phân tích chưa đầy đủ; chưa thể kết luận video thiếu đoạn hay"
+    elif not review_complete:
+        reason = "chưa kiểm tra xong chất lượng; cần xem lại trước khi xuất"
+    elif not count:
+        reason = "không có ứng viên dùng được sau chọn/lọc; giữ video gốc"
+    elif requested and count < requested:
+        reason = "chưa đủ ứng viên riêng biệt dùng được; điểm không chặn xuất"
+    else:
+        reason = "đã chọn đủ ứng viên dùng được; điểm chỉ để xếp hạng"
+    note = f"AI chọn {count}" + (f"/{requested}" if requested else "") + " Part: " + reason
+    if warnings:
+        note += " — " + "; ".join(str(w) for w in warnings)
+    selection = dict(audit, requested_max=requested, selected=count,
+                     warnings=list(warnings), reason=reason)
+    return {"count": count, "clip_ids": clip_ids, "llm_used": True,
+            "ai_used": True, "ai": provider, "selection": selection,
+            "selection_note": note,
+            "auto_export_allowed": bool(count)}
 
 
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
@@ -1757,6 +2077,12 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     """
     video_id = int(payload["video_id"])
     cfg = {**DEFAULTS, **(payload.get("preset") or {})}
+    from app.core.job_resume import generation_result, publish_highlights
+    resumed = generation_result('highlights', cfg)
+    if resumed is not None and resumed.get("auto_export_allowed") is not False:
+        ctx.progress(1.0, "Đã khôi phục danh sách Part đã lưu; tiếp tục bước còn lại…")
+        return resumed
+
 
     ctx.progress(0.05, "Đọc kết quả phân tích...")
     transcript = get_analysis(video_id, "transcript") or {}
@@ -1777,10 +2103,13 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # PHẢI ĐO TRƯỚC khối vision ngay dưới: video không lời thì HÌNH là căn cứ
     # DUY NHẤT còn lại -> đáng bỏ 3-4 phút xem hình, dù công tắc VISION_CUT tắt.
     _khong_loi = False
+    _lang_ten = ""
+    from app.ai import ngon_ngu_video as _nv_mod
     try:
         _co, _vs, _mds = _cd_mod.co_loi_noi_that(transcript, duration)
         if not _co:
             _khong_loi = True
+            _lang_ten = _nv_mod.ngon_ngu_ten((vrow["src_path"] or "") if vrow else "")
             ctx.progress(0.22, f"Video KHÔNG có lời nói ({_vs}) — chọn đoạn "
                                f"bằng TIẾNG + HÌNH, bỏ chữ bịa")
     except Exception:  # noqa: BLE001
@@ -1803,7 +2132,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # 🚫 CHỐNG TRÙNG QUA CÁC LẦN TẠO: đọc các đoạn ĐÃ dùng của video này TRƯỚC
     # khi _delete_suggested (giữ được cả lần bấm trước còn treo suggested) ->
     # loại/phạt ứng viên trùng để lần này ra đoạn KHÁC.
-    used_ranges = load_used_ranges(video_id)
+    used_ranges = load_used_ranges(video_id, retry_clip_ids=(resumed or {}).get("clip_ids", ()))
 
     # ---- 👂👁 CHO AI NGHE + THẤY (yêu cầu anh Hùng 06/08/2026) ----
     # Đo thật trên 3 video của anh: AI chỉ đọc CHỮ nên đoạn "gào khóc" và đoạn
@@ -1820,8 +2149,25 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     if getattr(_stt, "DEEP_SENSE", True) and _src_path and os.path.exists(_src_path):
         try:
             ctx.progress(0.24, "Đang NGHE tiếng + XEM chuyển động để tìm cao trào...")
-            _nl = _cd_mod.nang_luong(_src_path, _stt.FFMPEG_PATH)
-            _cd = _cd_mod.chuyen_dong(_src_path, _stt.FFMPEG_PATH)
+            from app.core.job_resume import local_step, file_stamp
+            _stamp = file_stamp(_src_path)
+            # MỘT lượt đọc file cho cả nghe + xem (trước: 2 lượt đọc TRỌN
+            # video gốc trên ổ cứng cơ — đo 31/10/2026, xem
+            # chon_doan.nghe_va_xem). Checkpoint vẫn giữ 2 khoá cũ: khoá nào
+            # đã có thì lấy lại, chỉ khi thiếu mới chạy lượt đọc (1 lần).
+            _nx: dict = {}
+
+            def _mot_luot():
+                if "v" not in _nx:
+                    _nx["v"] = _cd_mod.nghe_va_xem(
+                        _src_path, _stt.FFMPEG_PATH,
+                        bao=lambda m: ctx.progress(0.24, m))
+                return _nx["v"]
+            _nl = local_step('audio_energy_v1', _stamp, lambda: _mot_luot()[0])
+            ctx.check_canceled()
+            ctx.progress(0.25, "Đã có năng lượng tiếng; tiếp tục kiểm tra chuyển động…")
+            _cd = local_step('motion_v1', _stamp, lambda: _mot_luot()[1])
+            ctx.check_canceled()
             _khoi_nghe_xem = (
                 _cd_mod.khoi_prompt_nghe(_cd_mod.cua_so_cang(_nl), duration)
                 + _cd_mod.khoi_prompt_hanh_dong(
@@ -1855,6 +2201,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     ctx.progress(0.30, f"AI [{prov_name}] đang đọc nội dung & chọn đoạn hay...")
     llm_error = ""
     ai_warns: list = []
+    selection_audit = {}
     try:
         # ⏳ hết lượt tạm thời -> ĐỢI key hồi rồi gọi lại (xem _call_waiting_quota)
         ai_clips, ai_warns = _call_waiting_quota(
@@ -1862,7 +2209,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 ({"segments": [], "words": [], "language": ""} if _khong_loi
                  else transcript),
                 duration, ctx, scenes, cfg, digest=digest,
-                nghe_xem=_khoi_nghe_xem),
+                nghe_xem=_khoi_nghe_xem, audit=selection_audit),
             ctx, prov)
     except llm.LLMError as e:  # lỗi thật/đợi quá ngân sách -> báo rõ, lùi heuristic
         ai_clips = []
@@ -1870,6 +2217,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # 🔁 NHIỀU-PASS: AI đọc lại toàn cảnh, chấm + chọn top viral, loại clip
     # trùng/lê thê. FAIL-SAFE (chỉ lọc/sắp xếp, không đổi boundary; lỗi/keo
     # rỗng -> giữ nguyên). Chạy TRƯỚC dedup cross-run (used_ranges) như cũ.
+    selection_audit["candidates_before_critic"] = len(ai_clips)
     if ai_clips:
         from config import settings as _st0
         if getattr(_st0, "AI_MULTIPASS", True):
@@ -1878,7 +2226,17 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             ai_clips = _refine_clip_selection(
                 ai_clips, transcript, (transcript or {}).get("language", ""),
                 _want, float(cfg.get("min_len", 60.0)),
-                float(cfg.get("max_len", 0.0) or 0.0), vdigest=digest)
+                float(cfg.get("max_len", 0.0) or 0.0), vdigest=digest, audit=selection_audit, ctx=ctx)
+            if selection_audit.get("rejected_critic"):
+                _ly = [x for x in selection_audit.get("critic_reasons", []) if x]
+                ai_warns.append(f"critic loại {selection_audit['rejected_critic']} ứng viên yếu/trùng"
+                                + (" (lý do: " + " | ".join(_ly[:3]) + ")" if _ly else ""))
+            if selection_audit.get("critic_all_rejected"):
+                _ly = [x for x in selection_audit.get("critic_reasons", []) if x]
+                ai_warns.append("critic loại hết ứng viên — vẫn cắt theo điểm"
+                                + (" (critic nói: " + " | ".join(_ly[:3]) + ")" if _ly else ""))
+            if selection_audit.get("critic_incomplete"):
+                ai_warns.append("critic lỗi hoặc trả sai định dạng; chất lượng chưa kiểm tra đầy đủ")
     if ai_clips:
         from config import settings as _st
         # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript
@@ -1939,14 +2297,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                         str(int(v["score"])) for v in _cham.values()))
             except Exception:  # noqa: BLE001 - chấm lỗi -> giữ điểm tự chấm
                 pass
-        # 🚪 BỎ CLIP NẰM HẲN TRONG INTRO / OUTRO (đo: clip đầu của 1 video bắt
-        # đầu ở 0,6 giây -> ăn nguyên đoạn mở đầu kênh).
-        try:
-            ai_clips, _bo_io = _cd_mod.loc_intro_outro(ai_clips, duration)
-            for _c0, _ly in _bo_io:
-                ai_warns.append(f"bỏ 1 clip vì {_ly}")
-        except Exception:  # noqa: BLE001
-            pass
+        # Intro/outro is rejected by actual text/critic, not merely by
+        # position: a useful first-minute scene in a long video is valid.
         if _khong_loi:                 # video ASMR/nhạc -> KHÔNG đốt phụ đề rác
             for _c in ai_clips:
                 _c["khong_loi"] = True
@@ -1960,30 +2312,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                         _c["hook_seg"] = _hs
                 except Exception:  # noqa: BLE001
                     continue
-        # 🚪 SÀN CHẤT LƯỢNG (QUALITY_FLOOR, mặc định 55; 0=tắt): sau chọn +
-        # chấm (điểm đã trộn vision nếu có), bỏ clip điểm thấp — chỉ giữ
-        # đoạn đáng dùng. Fail-safe trong helper: luôn giữ >=1 clip cao nhất.
-        if _da_cham_mu:
-            # Điểm trọng tài (40-60) KHÁC THANG với điểm AI tự chấm (85-95) nên
-            # KHÔNG dùng sàn số cứng 55 — sẽ loại oan 7/9 clip (đo 06/08/2026).
-            # TUÂN THỦ SỐ PART USER ĐẶT: có count -> giữ đủ count clip tốt
-            # nhất (chỉ bỏ clip DỞ HẲN); không đặt -> lọc theo tương quan.
-            ai_clips, _bo_san = _cd_mod.san_thich_ung(
-                ai_clips, so_part=int(cfg.get("count", 0) or 0))
-            _n_low = len(_bo_san)
-            for _c1, _ly1 in _bo_san:
-                ai_warns.append(f"bỏ 1 clip: {_ly1}")
-            _floor = 0.0
-        else:
-            _floor = 0.0
-            try:
-                _floor = float(getattr(_st, "QUALITY_FLOOR", 55) or 0)
-            except (TypeError, ValueError):
-                _floor = 55.0
-            ai_clips, _n_low = _apply_quality_floor(ai_clips, _floor)
-        if _n_low:
-            ctx.progress(0.62, f"bỏ {_n_low} clip điểm thấp (<{int(_floor)}) "
-                               "— chỉ giữ đoạn đáng dùng")
+        # Scores rank; no absolute/relative threshold drops usable clips.
+        # The requested count is capped after deduplication, before storage.
+        selection_audit["score_policy"] = "rank_only"
+        selection_audit["rejected_quality"] = 0
+        ai_clips.sort(key=lambda c: -float(c.get("score", 0) or 0))
         # 🚫 CHỐNG TRÙNG GIỮA CÁC PART CỦA CHÍNH LƯỢT NÀY (anh Hùng 07/08/2026:
         # "cắt ghép các đoạn hợp lý với nhau nhưng k được trùng").
         # LỖI THẬT bộ đo phơi ra: Part1 173,0-259,9s và Part2 244,6-315,8s dùng
@@ -2010,12 +2343,21 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             if exhausted:
                 exhausted_note = ("video này đã tạo nhiều clip, các đoạn mới có "
                                   "thể trùng phần đã dùng")
-        _delete_suggested(video_id)
         # ✨ ĐÁNH BÓNG TIÊU ĐỀ bằng model thông minh nhất (prompt ngắn —
         # gpt-oss-120b free chạy tốt): giật tít hơn + BẮT BUỘC đúng ngôn ngữ
         # video (hậu kiểm chữ viết, sai thứ tiếng -> giữ bản cũ). Lỗi gì
         # cũng không chặn flow.
-        _n_pol = _polish_titles(ai_clips, transcript, ctx)
+        if _khong_loi:
+            # tiêu đề lúc chọn đoạn viết khi KHÔNG có lời -> không rõ ngôn
+            # ngữ; bỏ đi, viết lại theo ngôn ngữ TÊN FILE gốc (cổng 109)
+            for _c in ai_clips:
+                _c["title_en"] = ""
+                _c["hook"] = ""
+            _n_pol = _polish_titles(
+                ai_clips, {"language": _lang_ten, "text": "", "segments": []},
+                ctx, lang_ep=_lang_ten) if _lang_ten else 0
+        else:
+            _n_pol = _polish_titles(ai_clips, transcript, ctx)
         if _n_pol:
             ctx.progress(0.66, f"✨ đánh bóng {_n_pol} tiêu đề (model thông minh)")
         # 🔒 RÀO CHẮN CUỐI: MỌI clip PHẢI lọt [min_len, max_len]. Chạy SAU tất
@@ -2033,54 +2375,13 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         # 'AI tự quyết' -> không cắt.
         _want = int(cfg.get("count", 0) or 0)
         if _want > 0 and len(ai_clips) > _want:
-            ai_clips = ai_clips[:_want]
-        # ---- 🔎 HẬU KIỂM BẢN GHÉP (app/ai/mach_lac.py) ----
-        # App chọn 3 đoạn hay rồi ghép, và tới v2.20.0 **chưa bao giờ xem lại
-        # bản ghép**. Ba đoạn hay riêng lẻ vẫn có thể rời rạc. Đây là lượt đọc
-        # LỜI THOẠI của chính các đoạn đã chọn (rẻ — chữ đã có sẵn), chỉ dùng
-        # `vision_digest` nếu CACHE đã có (không bao giờ tự bật AI xem hình).
-        # Đặt ở ĐÂY, TRƯỚC `_trim_junk_edges`/`_enforce_len`, để `_enforce_len`
-        # vẫn là NGƯỜI NÓI CUỐI về độ dài (bài học cổng 12).
-        # FAIL-SAFE: mọi lỗi -> GIỮ NGUYÊN lựa chọn ban đầu.
-        if getattr(_st, "HAU_KIEM_GHEP", True):
-            try:
-                from app.ai import mach_lac as _ml_mod
-                _dg_ml = get_analysis(video_id, _vd.VD_KIND) or []
-                ctx.progress(0.67, "🔎 xem lại bản ghép có mạch lạc không...")
-                for _ci, _c in enumerate(ai_clips):
-                    _sg = _c.get("segments") or []
-                    if len(_sg) < _ml_mod.DOAN_TOI_THIEU:
-                        continue
-                    try:
-                        # GỌI THẲNG `complete_text`, **KHÔNG** bọc
-                        # `_call_waiting_quota`. Vòng đợi-hết-lượt là dành cho
-                        # khâu CHỌN ĐOẠN (đợi vài phút để có clip AI vẫn rẻ hơn
-                        # xuất clip cơ bản rồi làm lại). Hậu kiểm thì NGƯỢC LẠI:
-                        # nó là thứ THÊM VÀO, fail-safe của nó là "giữ nguyên
-                        # lựa chọn ban đầu" — không tốn gì. Bọc vòng đợi vào đây
-                        # là biến một khâu tuỳ chọn thành **15 PHÚT/Part** khi
-                        # cả 38 key đang cooldown; 3 Part x 300 kênh thì đứng cả
-                        # dây chuyền. Hết lượt -> ném -> `hau_kiem` bắt -> GIỮ
-                        # NGUYÊN, đúng yêu cầu.
-                        _sg2, _ly = _ml_mod.hau_kiem(
-                            _sg, transcript, llm.complete_text,
-                            digest=_dg_ml,
-                            min_giay=float(cfg.get("min_len", 0.0) or 0.0),
-                            model=str(getattr(_st, "JUDGE_MODEL", "") or ""))
-                    except Exception as _e_ml:  # noqa: BLE001
-                        _sg2 = _sg
-                        _ly = (f"hậu kiểm lỗi ({type(_e_ml).__name__}) -> "
-                               "GIỮ NGUYÊN lựa chọn ban đầu")
-                    if _sg2 is not _sg and _sg2 != _sg:
-                        _c["segments"] = _sg2
-                        _c["mach_lac"] = _ly
-                        ai_warns.append(f"Part {_ci + 1} sửa mạch: {_ly[:70]}")
-                    _ml_mod.ghi_nhat_ky(
-                        _ly, f"video {video_id} · Part {_ci + 1}")
-            except Exception:  # noqa: BLE001 - hậu kiểm KHÔNG được chặn lượt cắt
-                pass
+            ai_clips = sorted(ai_clips, key=lambda c: -float(c.get("score", 0) or 0))[:_want]
+        ai_clips.sort(key=lambda c: c["segments"][0][0])
+        # Continuity review now runs AFTER duration enforcement so its evidence
+        # describes the actual saved cut, not a draft that is extended later.
         _len_notes: list = []
         clip_ids = []
+        _clip_rows = []
         for c in ai_clips:
             # 🚮 CẮT MÉP CTA/chào TRƯỚC, rồi mới ÉP ĐỘ DÀI — thứ tự này sống
             # còn (anh Hùng 30/07: đặt 60-80s mà ra dưới 60s). Trước đây trim
@@ -2090,6 +2391,29 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             segs = _trim_junk_edges(c["segments"], _tsegs, _min)
             segs, _note = _enforce_len(segs, _min, _max, duration, _bnd)
             c["segments"] = segs
+            continuity = {"status": "disabled", "changed": False}
+            if getattr(_st, "HAU_KIEM_GHEP", True):
+                from app.ai.continuity_cut import review as review_continuity
+                ctx.progress(0.68, "Kiểm tra câu dẫn, diễn biến và kết quả của bản ghép…")
+                blocked = [p for other in ai_clips if other is not c
+                           for p in other.get("segments", [])]
+                blocked.extend(used_ranges)
+                _review_deadline = time.monotonic() + _han_buoc_ai()
+                def _review_call(prompt, **options):
+                    return _stage_json(prompt, ctx=ctx, deadline=_review_deadline, **options)
+                segs, continuity = review_continuity(
+                    segs, transcript, duration, _min, _max, _review_call,
+                    check=ctx.check_canceled, forbidden=blocked,
+                    model=str(getattr(_st, "JUDGE_MODEL", "") or "") or None)
+                # Context additions must not reintroduce channel ads/CTA.
+                if _junk_ratio(segs, _tsegs) > _junk_ratio(c["segments"], _tsegs):
+                    segs = c["segments"]
+                    continuity = {"status": "needs_review", "changed": False,
+                                  "reason": "Đoạn nối chứa lời quảng cáo/chào kênh; giữ bản chọn"}
+                c["segments"] = segs
+                if continuity["status"] != "reviewed":
+                    selection_audit["continuity_incomplete"] = True
+                    ai_warns.append("Mạch chuyện: " + continuity.get("reason", "chưa kiểm tra"))
             if _note:
                 _len_notes.append(_note)
             total = sum(e - s for s, e in segs)
@@ -2098,7 +2422,15 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "vision": used_vision, "vscore": c.get("vscore"),
                        "title_en": c.get("title_en", ""), "hook": c.get("hook", ""),
                        "hook_seg": c.get("hook_seg"),
-                       "dur": round(total, 1)}
+                       "dur": round(total, 1), "continuity_review": continuity}
+            if _khong_loi:
+                # DẤU "KHÔNG LỜI" PHẢI VÀO CLIP (cổng 109): trước đây chỉ gắn
+                # vào dict tạm nên lúc xuất không ai biết -> phụ đề chữ bịa vẫn
+                # đốt lên video, tên file lấy câu bịa.
+                signals["khong_loi"] = True
+                signals["ten_nguon"] = os.path.basename(_src_path or "")
+                if str(c.get("title_en") or "").strip():
+                    signals["lang_tieu_de"] = _lang_ten
             # 🌐 TÊN CLIP THEO NGÔN NGỮ VIDEO: video KHÔNG phải tiếng Việt ->
             # tên hiển thị = title_pub (đúng ngôn ngữ video); tiêu đề Việt chỉ
             # dùng cho video tiếng Việt (user muốn tiêu đề Nhật cho video Nhật
@@ -2107,18 +2439,14 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             _t_pub = str(c.get("title_en") or "").strip()
             if _t_pub:
                 from app.ai import recap as _rec
-                _lg = _rec.resolve_lang(transcript.get("language", ""),
-                                        transcript.get("text", "") or "")
+                _lg = (_lang_ten if _khong_loi else
+                       _rec.resolve_lang(transcript.get("language", ""),
+                                         transcript.get("text", "") or ""))
                 if not _rec._is_vi_lang(_lg):
                     _t_show = _t_pub
-            cid = db.insert(
-                """INSERT INTO clips (video_id, start_sec, end_sec, score, reason,
-                                      title, transcript, signals, status)
-                   VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
-                (video_id, segs[0][0], segs[-1][1], round(c["score"], 1),
-                 c["reason"], _t_show, "", db.dumps(signals)),
-            )
-            clip_ids.append(cid)
+            _clip_rows.append((video_id, segs[0][0], segs[-1][1], round(c["score"], 1),
+                               c["reason"], _t_show, "", db.dumps(signals)))
+            clip_ids.append(len(_clip_rows))  # count only until atomic publication
         msg = (f"AI [{prov_name}] chọn {len(clip_ids)} clip"
                + (" (có xem hình)" if used_vision else ""))
         if ai_warns:
@@ -2134,11 +2462,40 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             tok = u["in"] + u["out"]
             msg += f" · tốn ~{tok:,} token ≈ {vnd:,}₫"
             cost = {"tokens": tok, "cost_vnd": vnd}
-        ctx.progress(1.0, msg)
-        return {"count": len(clip_ids), "clip_ids": clip_ids,
-                "llm_used": True, "ai_used": True, "ai": prov,
-                "vision": used_vision, **cost}
+        result = _selection_result(clip_ids, cfg, prov, selection_audit, ai_warns)
+        result.update(vision=used_vision, **cost)
+        if _len_notes:
+            result["selection_note"] += " — " + "; ".join(_len_notes)
+        if exhausted_note:
+            result["selection_note"] += " — " + exhausted_note
+        ctx.check_canceled()
+        if _cut_vi_het_luot(result, selection_audit) and _con_vong_doi(video_id):
+            _doi_luot_roi_lam_lai(ctx, result.get("selection_note", ""))
+        result = publish_highlights(video_id, _clip_rows, result, cfg)
+        _xoa_vong_doi(video_id)
+        ctx.progress(1.0, result["selection_note"])
+        return result
 
+    # AI chạy xong mà 0 Part: hết lượt giữa chừng -> đợi rồi phân tích lại;
+    # còn lại (AI/bộ lọc gạt hết) -> KHÔNG trả 0 Part nữa mà cắt kiểu CƠ BẢN
+    # bên dưới, ghi rõ lý do (anh Hùng 01/11/2026: "phân tích kiểu gì cũng phải
+    # ra Part, không báo vàng, không trả về video").
+    if not llm_error and llm.is_configured():
+        result = _selection_result([], cfg, prov, selection_audit, ai_warns)
+        if _cut_vi_het_luot(result, selection_audit) and _con_vong_doi(video_id):
+            _doi_luot_roi_lam_lai(ctx, result.get("selection_note", ""))
+
+    # AI chọn đoạn chết HẲN vì HẾT LƯỢT (mọi phần chép lời đều 429 sau khi đã
+    # đợi hết ngân sách) -> ĐỢI rồi phân tích lại, KHÔNG cắt cơ bản (rà soát
+    # 01/11/2026: nhánh đợi-làm-lại bên trên chỉ chạy khi `not llm_error`, nên
+    # đúng ca hết lượt phổ biến nhất lại rơi thẳng xuống cắt cơ bản).
+    if llm_error and llm.is_configured():
+        _t = str(llm_error).lower()
+        if (llm.is_rate_limit_error(_t) or any(d in _t for d in _DAU_HET_LUOT)) \
+                and not any(x in _t for x in _KHONG_PHAI_HET_LUOT) \
+                and _con_vong_doi(video_id):
+            _doi_luot_roi_lam_lai(ctx, str(llm_error)[:200])
+    _xoa_vong_doi(video_id)
     # ---- Fallback heuristic (LLM chưa cấu hình HOẶC gọi lỗi) ----
     # ⚠ MINH BẠCH: nói RÕ đây là cắt kiểu CƠ BẢN (kém thông minh hơn AI) +
     # gợi ý dán key để AI chọn đoạn hay + đa dạng hơn. Trả cờ ai_used=False.
@@ -2231,6 +2588,7 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     ĐỀU đầu/giữa/cuối. Ép KHOẢNG CÁCH tối thiểu giữa các đoạn (>=8% thời lượng
     hoặc 30s). CHỐNG TRÙNG (VIỆC 1): loại ứng viên trùng >30% với used_ranges.
     """
+    from app.core.job_resume import publish_highlights
     ctx.progress(0.5, "Tạo đoạn ứng viên (không có AI)...")
     candidates = _build_candidates(transcript, scenes, duration, cfg)
     if not candidates:
@@ -2254,6 +2612,15 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     # cx phải có ... hay ăn theo tên video"). Video KHÔNG TIẾNG thì không có
     # lời để đặt tên -> ăn theo TÊN FILE GỐC là chỗ dựa duy nhất còn lại.
     _ten_co_ban = _ten_tu_file(video_id)
+    _kl_heu, _ten_nguon_heu = False, ""
+    try:
+        from app.ai import ngon_ngu_video as _nvh
+        _kl_heu = _nvh.khong_loi(transcript)
+        if _kl_heu:
+            _r = db.query_one("SELECT src_path FROM videos WHERE id=?", (video_id,))
+            _ten_nguon_heu = os.path.basename((_r["src_path"] or "") if _r else "")
+    except Exception:  # noqa: BLE001
+        pass
     if duration > 0 and tsegs:
         _head, _tail = 0.03 * duration, 0.97 * duration
         _no_junk = [
@@ -2277,8 +2644,8 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
     min_len = float(cfg.get("min_len", 60.0))
     max_len = float(cfg.get("max_len", 0.0) or 0.0)
     _bnd = _natural_boundaries(transcript, scenes)
-    _delete_suggested(video_id)
     clip_ids = []
+    _clip_rows = []
     for c in candidates:
         # 🚮 CẮT MÉP CTA/chào TRƯỚC, 🔒 RÀO CHẮN ĐỘ DÀI SAU CÙNG (cùng thứ tự
         # với đường AI — anh Hùng 30/07: đặt 60-80s ra dưới 60s vì trim chạy
@@ -2293,22 +2660,22 @@ def _generate_heuristic(video_id, cfg, transcript, audio, scenes, duration, ctx,
         signals = {"segments": [[c_start, c_end]], "n_seg": 1,
                    "llm_used": False, "ai": "", "audio": round(a_s, 1),
                    "scene": round(s_s, 1)}
-        cid = db.insert(
-            """INSERT INTO clips (video_id, start_sec, end_sec, score, reason,
-                                  title, transcript, signals, status)
-               VALUES (?,?,?,?,?,?,?,?, 'suggested')""",
-            (video_id, c_start, c_end, round(final, 1),
-             "Năng lượng/chuyển cảnh nổi bật.", _ten_co_ban or "Clip",
-             c["text"], db.dumps(signals)),
-        )
-        clip_ids.append(cid)
+        if _kl_heu:
+            signals["khong_loi"] = True
+            signals["ten_nguon"] = _ten_nguon_heu
+        _clip_rows.append((video_id, c_start, c_end, round(final, 1),
+                           "Năng lượng/chuyển cảnh nổi bật.", _ten_co_ban or "Clip",
+                           c["text"], db.dumps(signals)))
+        clip_ids.append(len(_clip_rows))
     msg = note or f"Đề xuất {len(clip_ids)} clip (cắt cơ bản)"
     if exhausted_note:
         msg += f" — ⚠ {exhausted_note}"
     ctx.progress(1.0, msg)
     # ai_used=False -> UI/card biết đây là cắt CƠ BẢN (không phải AI chọn)
-    return {"count": len(clip_ids), "clip_ids": clip_ids, "llm_used": False,
-            "ai_used": False, "note": note}
+    ctx.check_canceled()
+    return publish_highlights(video_id, _clip_rows,
+        {"count": len(clip_ids), "clip_ids": clip_ids, "llm_used": False,
+         "ai_used": False, "note": note}, cfg)
 
 
 # ============================================================
@@ -2859,7 +3226,8 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
                    hu_log: list | None = None, duong: str = "canvas",
                    td_log: list | None = None,
                    cc_log: list | None = None,
-                   dt_log: dict | None = None) -> None:
+                   dt_log: dict | None = None,
+                   bgm_log: dict | None = None) -> None:
     """Ghi 1 dòng "CÔNG THỨC" của Part vừa xuất vào `logs/pipeline_<ngày>.log`.
 
     Ghi ĐÚNG cái đã áp, lấy từ chính payload đã dùng để gọi ffmpeg + danh sách
@@ -2906,12 +3274,29 @@ def _ghi_cong_thuc(payload: dict, ass_path, join_cats, flip_h, bg, pfx,
         tieng = ["KHÔNG có (clip 1 đoạn hoặc đã tắt tiếng chuyển đoạn)"]
     hieu_ung = []
     if payload.get("fx_fade", True):
-        hieu_ung.append("fade 0,35s")
+        try:
+            from config import settings as _stb
+            _bia_on = bool(getattr(_stb, "EXPORT_COVER", True))
+        except Exception:  # noqa: BLE001
+            _bia_on = False
+        hieu_ung.append("fade cuối 0,35s (đầu vào thẳng — bìa TikTok)" if _bia_on
+                        else "fade 0,35s")
     if flip_h:
         hieu_ung.append("lật gương")
     if float(payload.get("speed", 1.0) or 1.0) != 1.0:
         hieu_ung.append(f"tốc độ x{float(payload['speed']):.2f}")
-    if payload.get("bgm_path"):
+    if bgm_log:
+        # nhạc nền TỰ CHỌN: ghi tâm trạng + bài + mức, hoặc lý do KHÔNG chèn
+        if bgm_log.get("bo_qua"):
+            hieu_ung.append(f"nhạc nền tự chọn: KHÔNG chèn — {bgm_log['bo_qua']}")
+        else:
+            hieu_ung.append(
+                f"nhạc nền tự chọn: {bgm_log.get('bai', '?')} "
+                f"({bgm_log.get('tam_trang', '?')} · {bgm_log.get('vi_sao', '')})"
+                + (f" · {bgm_log['he_so_db']:+.1f} dB" if "he_so_db" in bgm_log
+                   else "")
+                + (" · né lời" if bgm_log.get("ne_loi") else ""))
+    elif payload.get("bgm_path"):
         hieu_ung.append("nhạc nền")
     hieu_ung.append(f"nền {bg}")
     # LỚP CHỮ (hộp tiêu đề + huy hiệu Part) — phải ghi ra, vì đây đúng thứ đã
@@ -3314,8 +3699,12 @@ def _dung_lai_anh_chu(payload: dict, ovl: str) -> str:
             tuple(vpx) if vpx else None,
             logo=spec.get("logo") or None,
             part_case=spec.get("part_case") or "",
-            hook_case=spec.get("hook_case") or "")
+            hook_case=spec.get("hook_case") or "", nghiem=True)
         return ovl if (ok and os.path.exists(ovl)) else ""
+    except RuntimeError as e:
+        if "ô vuông" in str(e):
+            raise          # chữ hỏng: để job LỖI + thử lại, đừng xuất clip mất chữ
+        return ""
     except Exception:  # noqa: BLE001 - dựng lại hỏng KHÔNG được làm chết xuất
         return ""
 
@@ -3331,6 +3720,20 @@ def export_clip(payload: dict, ctx: JobContext) -> dict:
       - _ovl_ (UI render sẵn, handler KHÔNG dựng lại được): dọn khi xong/hủy;
         khi lỗi chỉ dọn nếu job đã HẾT lượt thử lại (giữ cho retry ra đúng chữ).
     """
+    # LỆNH TRÙNG của Part đã xuất xong (xếp lại lúc mở app khi lệnh cũ còn
+    # chờ) -> KHÔNG xuất lại lần hai, trả ngay Part đã có (xem
+    # export_recovery._ban_da_xong). Lỗi kiểm tra -> xuất bình thường.
+    try:
+        from app.core.export_recovery import _ban_da_xong
+        _row = db.query_one("SELECT id,payload,created_at FROM jobs WHERE id=?",
+                            (int(ctx.job_id),))
+        _hit = _ban_da_xong(_row) if _row else None
+    except Exception:  # noqa: BLE001
+        _hit = None
+    if _hit:
+        ctx.progress(1.0, f"Part đã xuất xong ở việc #{_hit[0]} — bỏ lượt trùng")
+        return {"clip_id": payload.get("clip_id"), "export_path": _hit[1],
+                "superseded_by": _hit[0], "reason": "duplicate_after_done"}
     temps: list = []                       # impl append: _dub_*.wav, _cap_*.ass
     ovl = str(payload.get("overlay_png") or "")
     ovl_tmp = ovl if os.path.basename(ovl).startswith("_ovl_") else ""
@@ -3422,11 +3825,28 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     # CHỐNG TRÙNG TÊN: nếu đã có file KHÁC (video khác cùng tên Part+tiêu đề) -> thêm
     # số để KHÔNG ghi đè/lẫn sang video khác. Re-export chính clip này thì ghi đè.
     prev = clip["export_path"] or ""
+    if out_path.exists() and str(out_path) != prev and _file_mo_coi(out_path):
+        # FILE CÙNG TÊN LÀ "MỒ CÔI" (01/11/2026 — anh Hùng: tool đăng video báo
+        # 4 Part "moov atom not found"): lượt xuất trước bị TẮT APP / SẬP đúng
+        # lúc đang ghi -> file dở mang TÊN THẬT của Part, lượt chạy lại thấy tên
+        # đã có nên ghi sang "(2)" và bỏ file hỏng nằm trong thư mục kênh. Nay
+        # file cùng tên mà HỎNG hoặc KHÔNG clip nào trong DB nhận là của mình ->
+        # CẤT vào DATA_DIR/recovery/part_mo_coi_<ngày> (không xoá) rồi dùng lại
+        # đúng tên. File của Part KHÁC (có trong DB) vẫn được giữ, đặt "(2)".
+        _cat_file_mo_coi(out_path)
     if out_path.exists() and str(out_path) != prev:
         k = 2
         while (out_dir / f"{stem} ({k}).mp4").exists():
             k += 1
         out_path = out_dir / f"{stem} ({k}).mp4"
+    # GHI QUA FILE TẠM RỒI MỚI ĐỔI TÊN (rà soát 01/11/2026). Trước đây ffmpeg ghi
+    # THẲNG vào "Part N ….mp4": tắt app / sập giữa lúc ghi là file dở mang TÊN
+    # THẬT nằm lại (tool đăng báo "moov atom not found"); "Xuất lại" còn xoá bản
+    # tốt ngay từ đầu. Nay ffmpeg + chuẩn hoá độ to + kiểm ffprobe đều làm trên
+    # `_xuat_<pid>_….mp4` (tên mở đầu "_" -> dây chuyền / tool đăng bỏ qua), xong
+    # hết mới `os.replace` (cùng thư mục = nguyên tử) sang tên thật.
+    _dich_that = out_path
+    out_path = out_dir / f"_xuat_{os.getpid()}_{clip_id}_{int(time.time())}.mp4"
 
     encoder = ctx.profile.get("encoder", "libx264")
     out_w = int(payload.get("out_w", DEFAULTS["out_w"]))
@@ -3513,6 +3933,19 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         if payload.get("trim_black") and not _full_source_report:
             ctx.progress(0.08, f"{pfx}đang dò viền đen...")
             pre_crop = detect_black_crop(src, segs[0][0])
+        if recap_meta.get('speaker_crop'):
+            if _full_source_report or payload.get('fit_src'):
+                ctx.progress(.08, 'Giữ trọn hình theo mẫu · không crop TalkNet')
+            else:
+                from app.core.speaker_focus import inspect as speaker_inspect, crop_filter
+                speaker_result=speaker_inspect(src,segs,ctx)
+                from app.core.ffmpeg_utils import probe as speaker_probe
+                speaker_info=speaker_probe(src)
+                focus=crop_filter(speaker_result,segs,speaker_info.width,speaker_info.height,bool(payload.get('flip_h')))
+                if focus:
+                    pre_crop=focus
+                else:
+                    ctx.progress(.08, 'TalkNet chưa đủ chắc để crop · giữ khung cũ')
         # LỒNG TIẾNG AI: dựng track thuyết minh (dịch + TTS) TRƯỚC khi export.
         # Dựng theo segs SAU hook-first -> mốc khớp đúng timeline đầu ra.
         dub_path = None
@@ -3630,6 +4063,15 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         # -> bỏ trống hook (thà không chữ còn hơn sai ngôn ngữ).
         ass_path = fonts_dir = None
         _cs0 = payload.get("cap_style") or {}
+        if not signals.get("khong_loi") and not signals.get("recap")                 and signals.get("n_seg") is not None:
+            # clip CŨ (trước cổng 109 dấu không vào DB) -> đo lại tại chỗ
+            try:
+                from app.ai import ngon_ngu_video as _nvx
+                if _nvx.khong_loi(get_analysis(video_id, "transcript") or {}):
+                    signals = dict(signals)
+                    signals["khong_loi"] = True
+            except Exception:  # noqa: BLE001
+                pass
         if signals.get("khong_loi"):
             # VIDEO KHÔNG CÓ LỜI NÓI: bản chép lời là chữ Whisper BỊA (đo thật
             # 06/08/2026: 40s tiếng ồn -> "Thank you." + gán English). Đốt lên
@@ -3801,6 +4243,43 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             }
         except Exception:  # noqa: BLE001 — không có nội dung thì bỏ nhóm này
             _noi_dung = {}
+        # NHẠC NỀN TỰ CHỌN THEO NỘI DUNG (02/11/2026, `app/core/nhac_tu_dong`):
+        # mẫu đặt `bgm_path` = chuỗi đánh dấu -> chọn bài theo LỜI THOẠI + TIÊU
+        # ĐỀ của chính Part này. Mọi lỗi (kho hỏng, thiếu file, sai sha256) ->
+        # KHÔNG nhạc + ghi lý do, tuyệt đối không làm hỏng lượt xuất.
+        _bgm_xuat = (_story_bgm if recap_meta.get('quality_story')
+                     else payload.get('bgm_path') or None)
+        _bgm_td = None
+        _bgm_td_log: dict = {}
+        try:
+            from app.core import nhac_tu_dong as _NT
+            if _NT.la_tu_dong(_bgm_xuat):
+                # mức "Độ to nhạc" user chọn trong mẫu (mã hoá trong chuỗi)
+                _duoi_bgm = _NT.muc_tu_ma(_bgm_xuat)
+                from app.core import music_library as _ML
+                _tr_bgm = (_noi_dung or {}).get("transcript") or {}
+                _mood, _ly = _NT.tam_trang(
+                    (_noi_dung or {}).get("loi") or "",
+                    " ".join(str(signals.get(k) or "") for k in
+                             ("title_en", "hook", "title_pub")))
+                _bai = _NT.chon_bai(list(_ML.catalog()), _mood,
+                                    f"{video_id}|{segs[0][0] if segs else 0}")
+                _bgm_td_log.update({"tam_trang": _mood, "vi_sao": _ly})
+                if _bai is None:
+                    _bgm_xuat = None
+                    _bgm_td_log["bo_qua"] = "kho nhạc rỗng"
+                else:
+                    _bgm_xuat = _ML.resolve(_ML.PREFIX + _bai["id"])
+                    _bgm_td_log["bai"] = _bai.get("title") or _bai["id"]
+                    if not recap_meta.get('quality_story'):
+                        _bgm_td = {"lufs": float(_bai.get("lufs", -20.0)),
+                                   "duoi_loi_db": _duoi_bgm,
+                                   "transcript": _tr_bgm,
+                                   "log": _bgm_td_log}
+        except Exception as _e_bgm:  # noqa: BLE001 — lỗi nhạc không giết clip
+            _bgm_xuat = None
+            _bgm_td = None
+            _bgm_td_log["bo_qua"] = f"lỗi kho nhạc: {_e_bgm}"
         export_canvas_clip(
             src, out_path, [(s, e) for s, e in segs],
             tuple(video_rect), bg=bg, out_w=out_w, out_h=out_h,
@@ -3809,7 +4288,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             blur_amt=int(payload.get("blur_amt", 22)),
             speed=float(payload.get("speed", 1.0)),
             pitch=float(payload.get("pitch", 1.0)),
-            bgm_path=_story_bgm if recap_meta.get('quality_story') else payload.get('bgm_path') or None,
+            bgm_path=_bgm_xuat,
+            bgm_tu_dong=_bgm_td,
             edit_plan=recap_meta.get('edit_plan') if recap_meta.get('quality_story') else None,
             edit_parts=recap_parts,
             narration_events=narr_events,
@@ -3844,7 +4324,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             tieng_dong_log=_td_log,
             fx_sfx_dir=payload.get("fx_sfx_dir") or None,
             join_categories=join_cats,
-            flip_h=flip_h,
+            flip_h=flip_h, do_sang=payload.get("do_sang", 0) or 0,
             # CHE CHỮ CHÁY SẴN: GỘP vào chuỗi filter của chính lượt mã hoá này
             # (không thêm lệnh ffmpeg thứ hai). TẮT -> export_canvas_clip không
             # dò, không thêm filter nào => file ra GIỐNG HỆT bản cũ.
@@ -3885,7 +4365,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             out_w=out_w, out_h=out_h, encoder=encoder,
             mode=(mode if mode != "manual" else "face"), zoom=zoom,
             text_overlays=text_overlays, overlay_png=overlay_png,
-            flip_h=flip_h,
+            flip_h=flip_h, do_sang=payload.get("do_sang", 0) or 0,
             on_progress=on_prog,
         )
         result_extra = {"mixed": True, "moments": len(signals.get("moments", []))}
@@ -3905,7 +4385,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             encoder=encoder, mode=mode, zoom=zoom,
             crop_rect=tuple(crop_rect) if crop_rect else None,
             text_overlays=text_overlays, overlay_png=overlay_png,
-            flip_h=flip_h,
+            flip_h=flip_h, do_sang=payload.get("do_sang", 0) or 0,
             on_progress=on_prog,
         )
         # ĐỪNG IM LẶNG: nhánh này KHÔNG có chuyển cảnh / hiệu ứng điểm nhấn /
@@ -3968,6 +4448,7 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
                        td_log=locals().get("_td_log") or [],
                        # CHE CHỮ CHÁY: cùng lý do — list RIÊNG của lượt này.
                        cc_log=locals().get("_cc_log") or [],
+                       bgm_log=locals().get("_bgm_td_log") or None,
                        # ĐỘ TO: số đo THẬT của chính file vừa xuất.
                        dt_log=locals().get("_dt_log") or None)
     except Exception:  # noqa: BLE001 - ghi log không được phép làm vỡ xuất
@@ -3990,6 +4471,10 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
     from app.core.ffmpeg_utils import probe as _verify_probe
     _verified = _verify_probe(str(out_path))
     if (_verified.duration <= 0 or _verified.width <= 0 or _verified.height <= 0):
+        try:
+            os.remove(str(out_path))
+        except OSError:
+            pass
         raise RuntimeError('File xuất chưa có video hợp lệ; giữ nguyên nguồn để xuất lại.')
     result_extra = dict(result_extra or {})
     result_extra['verified_output'] = {'size': Path(out_path).stat().st_size,
@@ -3998,8 +4483,8 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
         from app.ai.story_quality import verify_export
         verify_export(signals['recap'],signals.get('segments'),src,payload.get('speed',1.))
         expected=sum(float(e)-float(s) for s,e in signals['segments'])/max(.5,min(3.,float(payload.get('speed',1.) or 1.)))
-        if not _verified.has_audio or _verified.duration<=60 or _verified.duration>=120 or abs(_verified.duration-expected)>max(.35,expected*.01):
-            raise RuntimeError('Part xuất không khớp thời lượng hoặc thiếu âm thanh; giữ nguồn để kiểm tra.')
+        from app.ai.story_quality import verify_rendered_media
+        verify_rendered_media(signals['recap'],_verified.duration,_verified.has_audio,expected)
         signals['recap']['exported_approval']=signals['recap']['human_approval']['signature']
         # Effects were recorded during rendering; do not overwrite that fresh log.
         latest=db.query_one('SELECT signals FROM clips WHERE id=?',(clip_id,))
@@ -4008,6 +4493,18 @@ def _export_clip_impl(payload: dict, ctx: JobContext, temps: list) -> dict:
             current['recap']=signals['recap']
             signals=current
         db.execute('UPDATE clips SET signals=? WHERE id=?',(db.dumps(signals),clip_id))
+    # Đổi tên file tạm -> tên Part THẬT ngay TRƯỚC khi ghi DB (cùng thư mục nên
+    # nguyên tử: tool đăng chỉ bao giờ thấy file ĐỦ hoặc không thấy gì).
+    if str(out_path) != str(_dich_that):
+        for _lan in range(10):
+            try:
+                os.replace(str(out_path), str(_dich_that))
+                break
+            except PermissionError:
+                if _lan == 9:
+                    raise
+                time.sleep(0.5)
+        out_path = _dich_that
     db.execute(
         "UPDATE clips SET status='exported', export_path=? WHERE id=?",
         (str(out_path), clip_id),

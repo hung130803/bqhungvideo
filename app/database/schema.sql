@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS clips (
 );
 CREATE INDEX IF NOT EXISTS idx_clips_video ON clips(video_id);
 
+-- Completed steps belong to the queued job; clearing history cleans them too.
+CREATE TABLE IF NOT EXISTS job_checkpoints (
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    step TEXT NOT NULL,
+    data TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    PRIMARY KEY(job_id,scope,step)
+);
+
 -- ---- Preset: combo cấu hình tái dùng (M1 và các module sau) ----
 CREATE TABLE IF NOT EXISTS presets (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

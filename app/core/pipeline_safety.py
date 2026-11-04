@@ -31,8 +31,11 @@ def latest_export_states(video_id: int) -> dict:
         "SELECT id FROM clips WHERE video_id=? AND status<>'archived'", (video_id,))}
     result = {}
     for row in db.query(
-            "SELECT id, payload, status FROM jobs WHERE video_id=? "
+            "SELECT id, payload, status, result FROM jobs WHERE video_id=? "
             "AND type='m1_export_clip' ORDER BY id DESC", (video_id,)):
+        receipt = db.loads(row['result'], {}) or {}
+        if isinstance(receipt, dict) and receipt.get('superseded_by'):
+            continue
         try:
             cid = int((json.loads(row['payload'] or '{}') or {}).get('clip_id') or 0)
         except (ValueError, TypeError, AttributeError):
@@ -90,5 +93,15 @@ def parts_problem(video_id: int, expected_ids=None, old_note='') -> str:
                or Path(r['export_path']).stat().st_size <= 0 for r in clips):
             return 'Part bị thiếu hoặc rỗng; giữ video gốc'
     except OSError:
+        return 'Không kiểm tra được file Part; giữ video gốc'
+    # MỞ ĐƯỢC THẬT, không chỉ "có file khác rỗng" (rà soát 01/11/2026): file
+    # ghi dở (thiếu 'moov') vẫn có cỡ > 0 -> trước đây gốc bị dọn trong khi
+    # Part không xem được. Hỏng/không đọc được thì GIỮ gốc (hướng an toàn).
+    try:
+        from app.core.ffmpeg_utils import probe as _pr
+        for r in clips:
+            if not (_pr(str(r['export_path'])).duration > 0):
+                return 'Part xuất ra không mở được (file hỏng); giữ video gốc'
+    except Exception:  # noqa: BLE001
         return 'Không kiểm tra được file Part; giữ video gốc'
     return ''

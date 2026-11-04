@@ -233,9 +233,11 @@ def nap_ban_pha(bo_chot: bool) -> types.ModuleType:
     src = (REPO / "app" / "core" / "ffmpeg_utils.py").read_text(encoding="utf-8")
     if bo_chot:
         cu = ('return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,\n'
+              '            *_tran_bitrate(),\n'
               '            "-pix_fmt", "yuv420p", "-profile:v", "high",\n'
               '            "-threads", str(encode_threads())]')
         moi = ('return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,\n'
+               '            *_tran_bitrate(),\n'
                '            "-threads", str(encode_threads())]')
         if cu not in src:
             raise RuntimeError(

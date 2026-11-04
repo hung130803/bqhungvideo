@@ -12,6 +12,7 @@ from app.ui.batch_files import FileInspector, fingerprint, file_labels, file_war
 from app.ui.batch_channels import natural
 from app.ui.batch_visibility import hidden, set_hidden
 from app.ui.theme import ACCENT,DANGER,MUTED,SUCCESS,WARN
+from app.ui.theme import SP_1,SP_2,SP_3,SP_4,pad,set_role,set_style,set_variant
 
 
 def folded(text):
@@ -43,21 +44,44 @@ class BatchPage(QWidget):
         self.file_timer=QTimer(self);self.file_timer.setSingleShot(True)
         self.file_timer.timeout.connect(self.render)
         root=QVBoxLayout(self)
-        root.setContentsMargins(8,12,8,8);root.setSpacing(5)
-        title=QLabel('Dây chuyền & lịch sử')
-        title.setStyleSheet('font-size:22px;font-weight:700;')
-        top=QHBoxLayout();top.addWidget(title,1)
-        config=QPushButton('Chọn kênh && chạy…')
+        pad(root,SP_2,SP_1,SP_2,SP_2,spacing=SP_2)
+        title=QLabel('Dây chuyền')
+        set_role(title,'h1')
+        top=QHBoxLayout();top.setSpacing(SP_2);top.addWidget(title)
+        top.addSpacing(SP_3)
+        # MỘT CHỖ cho dây chuyền (26/10: "lung ta lung tung"): 2 thẻ trong
+        # cùng màn — CHẠY (bật kênh, bấm chạy, xem báo cáo) và THEO DÕI (hồ sơ
+        # từng video, thử lại / hủy). Bỏ hộp thoại riêng "Chọn kênh & chạy".
+        config=QPushButton('Chọn kênh && chạy')
         self.config_btn=config
-        config.setToolTip('Quét video mới trong thư mục nguồn, chọn các kênh của nhóm rồi chạy Dây chuyền.')
-        config.setProperty('primary',True)
-        config.clicked.connect(self.configure_pipeline.emit)
+        config.setToolTip('Bật kênh trong nhóm, bấm Chạy, xem báo cáo lần chạy.')
+        track=QPushButton('Theo dõi từng video')
+        track.setToolTip('Hồ sơ từng video đã nhập: tiến độ, Part đã xuất, thử lại / hủy.')
+        self.track_btn=track
+        for b in (config,track):
+            b.setCheckable(True);set_variant(b,'chip');b.setProperty('tab',True);b.setMinimumHeight(34)
+            top.addWidget(b)
+        config.clicked.connect(lambda:self.show_view(0))
+        track.clicked.connect(lambda:self.show_view(1))
+        top.addStretch(1)
         self.inventory_btn=QPushButton('File trong thư mục…')
+        self.inventory_btn.setProperty('ghost',True)
         self.inventory_btn.clicked.connect(lambda:self.open_folder.emit(self.channels.pid,0,'inventory'))
-        top.addWidget(self.inventory_btn);top.addWidget(config);root.addLayout(top)
-        note=QLabel('Bảng là hồ sơ video đã nhập, gồm cả lịch sử; không phải danh sách file trong thư mục. '
-                    'Video mới trong thư mục: bấm Chọn kênh & chạy để quét và nhận.')
-        note.setWordWrap(True);note.setStyleSheet(f'color:{MUTED};')
+        top.addWidget(self.inventory_btn);root.addLayout(top)
+        from PyQt6.QtWidgets import QStackedWidget
+        self.views=QStackedWidget();root.addWidget(self.views,1)
+        self.run_host=QWidget();self._run_lay=QVBoxLayout(self.run_host);pad(self._run_lay,0,SP_2,0,0,spacing=0)
+        self._run_placeholder=QLabel('Đang mở bảng chạy…');set_style(self._run_placeholder,None,'muted')
+        self._run_lay.addWidget(self._run_placeholder,1,Qt.AlignmentFlag.AlignCenter)
+        self.run_panel=None;self.run_factory=None
+        self.views.addWidget(self.run_host)
+        track_host=QWidget();root_track=QVBoxLayout(track_host);pad(root_track,0,SP_2,0,0,spacing=SP_2)
+        self.views.addWidget(track_host)
+        root=root_track
+        note=QLabel('Bảng là hồ sơ video đã nhập (gồm cả lịch sử). Video mới trong thư mục: sang thẻ “Chọn kênh & chạy”.')
+        note.setToolTip('Bảng là hồ sơ video đã nhập, gồm cả lịch sử; không phải danh sách file trong thư mục. '
+                        'Video mới trong thư mục: bấm Chọn kênh & chạy để quét và nhận.')
+        note.setWordWrap(True);set_style(note, None, 'muted')
         root.addWidget(note)
         from app.ui.batch_channels import BatchChannels
         self.channels=BatchChannels()
@@ -66,15 +90,17 @@ class BatchPage(QWidget):
         self.channels.open_folder.connect(self.open_folder.emit)
         body=QSplitter(Qt.Orientation.Horizontal)
         body.addWidget(self.channels)
-        right=QWidget();content=QVBoxLayout(right);content.setContentsMargins(8,0,0,0);content.setSpacing(5)
+        right=QWidget();content=QVBoxLayout(right);pad(content,SP_3,0,0,0,spacing=SP_2)
         body.addWidget(right);body.setChildrenCollapsible(False)
         body.setStretchFactor(0,0);body.setStretchFactor(1,1);body.setSizes([300,850])
         root.addWidget(body,1)
         self.channel_title=QLabel('Chọn nhóm và kênh bên trái')
         self.channel_title.setWordWrap(True);self.channel_title.setTextFormat(Qt.TextFormat.PlainText)
-        self.channel_title.setStyleSheet('font-size:16px;font-weight:700;')
-        content.addWidget(self.channel_title)
-        self.summary=QLabel();self.summary.setWordWrap(True)
+        set_role(self.channel_title,'heading')
+        self._title_row=QHBoxLayout();self._title_row.setSpacing(SP_2)
+        self._title_row.addWidget(self.channel_title,1)
+        content.addLayout(self._title_row)
+        self.summary=QLabel();self.summary.setWordWrap(True);set_role(self.summary,'muted')
         content.addWidget(self.summary)
         views=QHBoxLayout()
         self.scope=QComboBox()
@@ -90,27 +116,39 @@ class BatchPage(QWidget):
             self.file_filter.addItem(label,value)
         views.addWidget(self.file_filter)
         self.check_btn=QPushButton('Kiểm tra file')
+        self.check_btn.setProperty('ghost',True)
+        self.check_btn.setToolTip('Kiểm tra lại đường dẫn gốc và Part trong nền (không thay đổi file).')
         self.check_btn.clicked.connect(lambda:self.refresh(force_files=True))
-        views.addWidget(self.check_btn);views.addStretch(1);content.addLayout(views)
-        self.file_status=QLabel('Kiểm tra đường dẫn gốc và Part trong nền; không thay đổi file.')
-        self.file_status.setWordWrap(True);self.file_status.setStyleSheet(f'color:{MUTED};')
-        content.addWidget(self.file_status)
-        row=QHBoxLayout()
+        # GỘP 2 hàng lọc thành 1 THANH CÔNG CỤ (bố cục gọn 26/10):
+        # [tìm…………][phạm vi][trạng thái][file][xếp] [Bỏ lọc] | [Kiểm tra file][Làm mới]
+        row=views
         self.search=QLineEdit();self.search.setPlaceholderText('Tìm video trong kênh…')
-        self.search.setClearButtonEnabled(True);row.addWidget(self.search,1)
+        self.search.setClearButtonEnabled(True)
+        self.search.setMinimumWidth(140);self.search.setMaximumWidth(320)
         self.filter=QComboBox()
         for label,value in [('Tất cả trạng thái',''),('Đang chạy','running'),('Đang chờ','pending'),
                             ('Có lỗi','failed'),('Đã hủy','canceled'),('Chưa xuất đủ','ready'),
                             ('Đã xuất đủ','done'),('Chưa có clip','idle')]:
             self.filter.addItem(label,value)
-        row.addWidget(self.filter)
+        row.insertWidget(1,self.filter)
         self.refresh_btn=QPushButton('Làm mới')
         self.refresh_btn.setToolTip('Cập nhật tiến trình và kiểm tra lại file gốc/Part trong nền.')
-        self.refresh_btn.clicked.connect(lambda:self.refresh(force_files=True));row.addWidget(self.refresh_btn)
-        self.clear_btn=QPushButton('Bỏ lọc')
+        self.refresh_btn.clicked.connect(lambda:self.refresh(force_files=True))
+        self.clear_btn=QPushButton('Bỏ lọc');self.clear_btn.setProperty('ghost',True)
         self.clear_btn.setToolTip('Xem tất cả hồ sơ của kênh, bỏ tìm kiếm và các bộ lọc.')
-        self.clear_btn.clicked.connect(self.clear_filters);row.addWidget(self.clear_btn)
+        self.clear_btn.clicked.connect(self.clear_filters)
+        row.addWidget(self.clear_btn);row.addStretch(1)
+        for combo in (self.scope,self.filter,self.order,self.file_filter):
+            # muốn đủ chữ, nhưng cửa sổ hẹp thì được co (không đẩy bề ngang app)
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+            combo.setMinimumWidth(92)
+        # Kiểm tra file / Làm mới lên hàng TIÊU ĐỀ kênh (cạnh tên kênh)
+        self._title_row.addWidget(self.search,1)
+        self._title_row.addWidget(self.check_btn);self._title_row.addWidget(self.refresh_btn)
         content.addLayout(row)
+        self.file_status=QLabel('Kiểm tra đường dẫn gốc và Part trong nền; không thay đổi file.')
+        self.file_status.setWordWrap(True);set_style(self.file_status, None, 'muted')
+        content.addWidget(self.file_status)
         self.table=QTableWidget(0,6)
         self.table.setHorizontalHeaderLabels(['STT','Video','Xử lý đã ghi','Part','File gốc hiện tại','Chi tiết'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -118,9 +156,11 @@ class BatchPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(54)
+        self.table.verticalHeader().setDefaultSectionSize(48)
         header=self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)     # cột Chi tiết lấp hết bề ngang
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
         for col,width in enumerate((42,200,150,105,180,280)):
             self.table.setColumnWidth(col,width)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -161,12 +201,52 @@ class BatchPage(QWidget):
         self.file_filter.currentIndexChanged.connect(self.apply_filters)
         self.search.textChanged.connect(self.apply_filters)
         self.filter.currentIndexChanged.connect(self._status_changed)
-        self.timer=QTimer(self);self.timer.setInterval(2500);self.timer.timeout.connect(self.refresh)
+        # Nhịp 2,5 s: so CHỮ KÝ rẻ trước (26/10/2026) — không đổi gì thì khỏi
+        # dựng lại ảnh chụp mọi job của kênh. Cứ 6 nhịp (~15 s) làm mới đủ 1
+        # lần cho chắc (job thiếu project_id...). Bấm tay vẫn làm mới đủ ngay.
+        self._sig=None;self._sig_tick=0
+        self.timer=QTimer(self);self.timer.setInterval(2500);self.timer.timeout.connect(self._timer_refresh)
         self._selection_changed()
+
+    def show_view(self,index):
+        """0 = Chạy dây chuyền (bảng kênh nhúng), 1 = Theo dõi video & lịch sử."""
+        index=1 if index else 0
+        if index==0:
+            self.configure_pipeline.emit()     # main_window dựng/đồng bộ bảng chạy
+            self.ensure_run_panel()
+        self.views.setCurrentIndex(index)
+        self.config_btn.setChecked(index==0);self.track_btn.setChecked(index==1)
+        self.inventory_btn.setVisible(index==1)
+        try:
+            from app.ui.appsettings import app_settings
+            app_settings().setValue('batch_view',index)
+        except Exception:  # noqa: BLE001
+            pass
+        if index==1 and self.isVisible():
+            self.refresh()
+
+    def ensure_run_panel(self):
+        if self.run_panel is not None or self.run_factory is None:return self.run_panel
+        try:
+            panel=self.run_factory()
+        except Exception as error:  # noqa: BLE001 - không được sập màn
+            self._run_placeholder.setText('Không mở được bảng chạy: '+str(error));return None
+        if isinstance(panel,QWidget):
+            self._run_placeholder.hide()
+            self._run_lay.addWidget(panel,1);self.run_panel=panel
+        return self.run_panel
 
     def showEvent(self,event):
         super().showEvent(event)
-        self.refresh(force_files=True);self.timer.start()
+        if not getattr(self,'_view_init',False):
+            self._view_init=True
+            try:
+                from app.ui.appsettings import app_settings
+                v=int(app_settings().value('batch_view',0) or 0)
+            except Exception:  # noqa: BLE001
+                v=0
+            self.show_view(v)
+        self.refresh(force_files=self.views.currentIndex()==1);self.timer.start()
 
     def hideEvent(self,event):
         self.timer.stop();super().hideEvent(event)
@@ -181,6 +261,25 @@ class BatchPage(QWidget):
             combo.blockSignals(True);combo.setCurrentIndex(0);combo.blockSignals(False)
         if not self._refreshing:self.refresh()
 
+    def _timer_refresh(self):
+        if self._refreshing:return
+        self._sig_tick=(self._sig_tick+1)%6
+        pid=self.channels.pid
+        if pid and self._sig_tick:
+            try:
+                from app.services_batch import signature
+                sig=(pid,signature(pid))
+            except Exception:  # noqa: BLE001 - đọc chữ ký lỗi -> làm mới đủ
+                sig=None
+            if sig is not None and sig==self._sig:
+                try:
+                    self.channels.refresh()
+                except Exception:  # noqa: BLE001
+                    pass
+                if self.channels.pid==pid:
+                    return
+        self.refresh()
+
     def refresh(self, force_files=False):
         if self._refreshing:return
         self._refreshing=True
@@ -188,6 +287,11 @@ class BatchPage(QWidget):
             self.channels.refresh()
             pid=self.channels.pid
             self.inventory_btn.setEnabled(bool(pid))
+            try:
+                from app.services_batch import signature
+                self._sig=(pid,signature(pid)) if pid else None
+            except Exception:  # noqa: BLE001
+                self._sig=None
             self.records,self.total=snapshot(pid) if pid else ([],0)
             self.check_files(force=force_files)
             p=next((p for p in self.channels.projects if p['id']==pid),None)

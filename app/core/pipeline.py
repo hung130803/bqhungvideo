@@ -53,6 +53,14 @@ def is_tmp_file(name: str) -> bool:
     low = name.lower()
     if low.endswith(TMP_SUFFIXES):
         return True
+    # File TẠM CỦA CHÍNH APP nằm trong thư mục kênh (rà soát 01/11/2026):
+    # `_xuat_<pid>_…` (Part đang ghi), `_dt_<pid>_…` (chuẩn hoá độ to). Tắt app
+    # giữa chừng là chúng nằm lại; không lọc thì dây chuyền CẮT LẠI một Part như
+    # video gốc mới. Kèm file ghép dở của yt-dlp (`x.temp.mp4`, `.part-Frag`).
+    if low.startswith(("_xuat_", "_dt_")):
+        return True
+    if ".temp." in low or ".part-frag" in low:
+        return True
     # mảnh định dạng yt-dlp: name.f140.m4a / name.f313.webm
     parts = low.rsplit(".", 2)
     return len(parts) == 3 and parts[1].startswith("f") and parts[1][1:].isdigit()
@@ -286,6 +294,36 @@ def resolve_src_dir(root: str, name: str, pipe_src: str | None) -> Path:
     return Path(s) if s else Path(root) / name
 
 
+def part_ten_la(d: Path, project_id: int) -> list[str]:
+    """Video tên "Part N…" trong thư mục kênh mà KHÔNG có trong sổ clip đã
+    xuất (không phải Part do app xuất) -> danh sách tên file."""
+    try:
+        cand = [p for p in d.iterdir() if p.is_file()
+                and p.suffix.lower() in VIDEO_EXTS and _PART_RE.match(p.name)
+                and not is_tmp_file(p.name)]
+    except OSError:
+        return []
+    if not cand:
+        return []
+    known = set()
+    for r in db.query(
+            "SELECT c.export_path FROM clips c JOIN videos v ON v.id=c.video_id "
+            "WHERE v.project_id=? AND c.export_path IS NOT NULL", (project_id,)):
+        try:
+            known.add(os.path.normcase(os.path.abspath(str(r["export_path"]))))
+        except (OSError, ValueError):
+            continue
+    ra = []
+    for p in cand:
+        try:
+            k = os.path.normcase(os.path.abspath(str(p)))
+        except OSError:
+            continue
+        if k not in known:
+            ra.append(p.name)
+    return sorted(ra)
+
+
 def plan_channel(project_id: int, name: str, root: str,
                  pipe_src: str | None, pipe_daily: int,
                  now: float | None = None,
@@ -310,6 +348,19 @@ def plan_channel(project_id: int, name: str, root: str,
         return it
     ready, busy = scan_dir(d, now)
     it.busy = len(busy)
+    # File tên "Part N…" bị scan_dir BỎ QUA IM LẶNG (để không cắt lại Part
+    # do app xuất). Nhưng video GỐC có tên kiểu "Part 2 - …" thì nằm im mãi
+    # không ai báo -> anh Hùng thấy "bấm chạy mà có cái không phân tích".
+    # Báo ra những file như vậy mà KHÔNG phải Part app đã xuất (theo sổ clip).
+    try:
+        la = part_ten_la(d, project_id)
+        if la:
+            vd = ", ".join(f"'{x}'" for x in la[:3]) + (f" … (+{len(la) - 3})" if len(la) > 3 else "")
+            it.skips.append((f"{len(la)} file", "tên bắt đầu bằng chữ 'Part' nên app "
+                             "coi là Part đã xuất, KHÔNG cắt: " + vd + ". Nếu đây là "
+                             "video gốc, đổi tên bỏ chữ 'Part' ở đầu rồi chạy lại"))
+    except Exception:  # noqa: BLE001 - chỉ để báo cáo
+        pass
     # KHÔNG có video sẵn sàng + KHÔNG có file đang tải dở -> báo RÕ lý do
     # (nếu không, _pipe_run im lặng, user tưởng "chạy không lên gì"). Case hay
     # gặp nhất: video gốc đã cắt xong & bị xoá, thư mục chỉ còn file Part.
@@ -664,6 +715,15 @@ def is_transient_error(msg: str) -> bool:
     return any(k in m for k in _TRANSIENT_MARKS)
 
 
+def is_content_block_error(error) -> bool:
+    """Recognize both current and persisted legacy provider block messages."""
+    message = str(error).lower()
+    return ('ai_content_blocked:' in message
+            or bool(re.search(r'(?:block_reason|finish_reason)\s*=\s*(?:prohibited_content|safety|blocklist|recitation|spii|image_safety)\b', message))
+            or ('gemini không cung cấp nội dung hình ảnh' in message
+                and bool(re.search(r'block_reason\s*=\s*[1-9]\d*', message))))
+
+
 def is_configuration_error(msg: str) -> bool:
     """Lỗi tài khoản/model/cài đặt không chứng minh video bị hỏng."""
     m = (msg or '').lower()
@@ -674,6 +734,10 @@ def is_configuration_error(msg: str) -> bool:
         'model_not_found', 'model_decommissioned', 'model đang dùng',
         'error code: 401', 'error code: 403', 'error code: 404',
         'permission_denied', 'chưa cài', 'không có handler',
+        'story_input_too_large',
+        'api_request_exhausted', 'apiforcode_request_uncertain',
+        'story_narration_too_long',
+        'analysis_worker_timeout', 'analysis_worker_failed',
     ))
 
 

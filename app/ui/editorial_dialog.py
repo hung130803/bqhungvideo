@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,
     QDoubleSpinBox,QPushButton,QLineEdit,QCheckBox,QListWidget,QMessageBox,QScrollArea,QWidget)
 from app.core.editorial import STYLES,KINDS,SOUNDS,validate,propose
 from app.ui.layout_tools import fit_dialog
+from app.ui.theme import SP_2,SP_3,SP_4,pad,set_role,set_variant
 
 
 class Preview(QThread):
@@ -78,9 +79,9 @@ class EditorialDialog(QDialog):
         super().__init__(parent);self.setWindowTitle('Dựng hình & âm thanh · duyệt theo từng cảnh')
         self.parts=deepcopy(parts);self.source=source;self.plan=deepcopy(plan) if plan else dict(version=1,style='clean',events=[],music_arc=True)
         self.row=-1;self.loading=False;self.worker=None;self.temp=tempfile.TemporaryDirectory(prefix='bq_edit_preview_',ignore_cleanup_errors=True)
-        outer=QVBoxLayout(self)
+        outer=QVBoxLayout(self);pad(outer,SP_4,spacing=SP_2)
         note=QLabel('Hiệu ứng là lựa chọn biên tập, không chứng minh lời kể đúng. Chữ nhấn trong phần mở đầu thay tiêu đề hook của mẫu để tránh chồng chữ. Xem thử dùng tiếng gốc và khung thử. Lưu ở đây chưa duyệt; cần Lưu & duyệt trong cửa sổ Kịch bản.')
-        note.setWordWrap(True);outer.addWidget(note)
+        note.setWordWrap(True);set_role(note,'muted');outer.addWidget(note)
         self.enabled=QCheckBox('Dùng bộ dựng này thay điểm nhấn/tiếng động tự động của mẫu');self.enabled.setChecked(self.plan.get('enabled',True));outer.addWidget(self.enabled)
         bar=QHBoxLayout();outer.addLayout(bar);self.style=QComboBox()
         for k,v in STYLES.items():self.style.addItem(v,k)
@@ -93,13 +94,27 @@ class EditorialDialog(QDialog):
         for key,label in LAYOUTS.items():self.layout_choice.addItem(label,key)
         self.layout_choice.setCurrentIndex(max(0,self.layout_choice.findData(self.plan.get('layout','template'))));layout_row.addWidget(self.layout_choice)
         self.report_title=QLineEdit(self.plan.get('report_title',''));self.report_title.setMaxLength(140);self.report_title.setPlaceholderText('Tiêu đề phóng sự · chỉ dùng thông tin đã kiểm tra');layout_row.addWidget(self.report_title,1)
-        layout_note=QLabel('Mẫu phóng sự dùng khung dọc, giữ trọn hình; thay lớp chữ/phụ đề của mẫu bằng thẻ lời kể theo cảnh. Zoom/lia dùng tọa độ khung xuất; mũi tên bám vật cần chọn đích.');layout_note.setWordWrap(True);outer.addWidget(layout_note)
-        body=QHBoxLayout();outer.addLayout(body,1)
+        layout_note=QLabel('Bố cục riêng dùng khung dọc, giữ đúng tỉ lệ và trọn hình; chọn Theo mẫu xuất hiện tại để dùng thiết kế từ Chỉnh mẫu; thay lớp chữ/phụ đề của mẫu bằng thẻ lời kể theo cảnh. Zoom/lia dùng tọa độ khung xuất; mũi tên bám vật cần chọn đích.');layout_note.setWordWrap(True);set_role(layout_note,'hint');outer.addWidget(layout_note)
+        from app.core.report_layout import BACKGROUNDS
+        appearance=QHBoxLayout();outer.addLayout(appearance)
+        self.background=QComboBox()
+        for key,label in BACKGROUNDS.items():self.background.addItem(label,key)
+        self.background.setCurrentIndex(max(0,self.background.findData(self.plan.get('background','auto'))))
+        appearance.addWidget(QLabel('Nền'));appearance.addWidget(self.background)
+        self.video_height=self.spin(20,44,self.plan.get('video_height',.34)*100)
+        appearance.addWidget(QLabel('Khung video cao (%)'));appearance.addWidget(self.video_height)
+        self.footer=QLineEdit(self.plan.get('footer',''));self.footer.setMaxLength(48)
+        self.footer.setPlaceholderText('Nhãn dưới, ví dụ: Part 4');appearance.addWidget(self.footer,1)
+        def layout_controls():
+            active=self.layout_choice.currentData()!='template'
+            for widget in (self.background,self.video_height,self.footer):widget.setEnabled(active)
+        self.layout_choice.currentIndexChanged.connect(layout_controls);layout_controls()
+        body=QHBoxLayout();body.setSpacing(SP_3);outer.addLayout(body,1)
         left=QVBoxLayout();body.addLayout(left,1);self.items=QListWidget();left.addWidget(self.items)
         row=QHBoxLayout();left.addLayout(row)
         add=QPushButton('+ Điểm nhấn');delete=QPushButton('Bỏ điểm');row.addWidget(add);row.addWidget(delete)
         add.clicked.connect(self.add);delete.clicked.connect(self.delete)
-        pane=QWidget();form=QFormLayout(pane);scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(pane);body.addWidget(scroll,2)
+        pane=QWidget();form=QFormLayout(pane);form.setHorizontalSpacing(SP_3);form.setVerticalSpacing(SP_2);scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(pane);body.addWidget(scroll,2)
         self.scene=QComboBox()
         for i,p in enumerate(parts):self.scene.addItem(f"Cảnh {i+1} · {p['start']:.1f}–{p['end']:.1f}s",i)
         form.addRow('Cảnh nguồn',self.scene)
@@ -118,7 +133,7 @@ class EditorialDialog(QDialog):
         form.addRow('Tâm vật ngang (% nguồn)',self.tx);form.addRow('Tâm vật dọc (% nguồn)',self.ty)
         target=QPushButton('Chọn vật trên hình nguồn…');target.clicked.connect(self.pick_target);form.addRow(target)
         warning=QLabel('Bám vật so khớp ảnh trong cửa sổ ngắn, tự ẩn khi mất dấu. Tâm vật tính trên nguồn chưa cắt/lật. Không hỗ trợ cắt viền, metadata xoay hoặc tỉ lệ điểm ảnh đặc biệt. Luôn xem thử; không tự nhận diện người/vật.')
-        warning.setWordWrap(True);form.addRow(warning)
+        warning.setWordWrap(True);set_role(warning,'hint');form.addRow(warning)
         self.sound=QComboBox()
         for name in SOUNDS:self.sound.addItem('Không tiếng nhấn' if name=='none' else name,name)
         form.addRow('Nhóm âm thanh',self.sound)
@@ -130,13 +145,14 @@ class EditorialDialog(QDialog):
         from PyQt6.QtMultimediaWidgets import QVideoWidget
         self.video_surface=QVideoWidget();self.video_surface.setMinimumSize(180,220);left.addWidget(self.video_surface,1)
         self.player=QMediaPlayer(self);self.audio=QAudioOutput(self);self.player.setAudioOutput(self.audio);self.player.setVideoOutput(self.video_surface)
-        self.info=QLabel('Chọn điểm nhấn rồi bấm Xem thử.');self.info.setWordWrap(True);outer.addWidget(self.info)
+        self.info=QLabel('Chọn điểm nhấn rồi bấm Xem thử.');self.info.setWordWrap(True);set_role(self.info,'muted');outer.addWidget(self.info)
         self.player.errorOccurred.connect(lambda code,msg:self.info.setText('Không phát được: '+msg))
         buttons=QHBoxLayout();outer.addLayout(buttons)
         self.preview_button=QPushButton('Xem thử điểm nhấn');self.preview_button.clicked.connect(self.preview);buttons.addWidget(self.preview_button)
-        again=QPushButton('Phát lại bản thử');again.clicked.connect(lambda:(self.player.setPosition(0),self.player.play()));buttons.addWidget(again)
-        save=QPushButton('Lưu chỉnh sửa');save.clicked.connect(self.save);buttons.addWidget(save)
-        close=QPushButton('Hủy');close.clicked.connect(self.reject);buttons.addWidget(close)
+        again=QPushButton('Phát lại bản thử');set_variant(again,'ghost');again.clicked.connect(lambda:(self.player.setPosition(0),self.player.play()));buttons.addWidget(again)
+        buttons.addStretch(1)                       # lưu/hủy dồn phải
+        save=QPushButton('Lưu chỉnh sửa');set_variant(save,'primary');save.clicked.connect(self.save);buttons.addWidget(save)
+        close=QPushButton('Hủy');set_variant(close,'ghost');close.clicked.connect(self.reject);buttons.addWidget(close)
         self.items.currentRowChanged.connect(self.select);self.sound.currentIndexChanged.connect(self.fill_sounds)
         self.refresh();fit_dialog(self,1050,760)
 
@@ -203,6 +219,7 @@ class EditorialDialog(QDialog):
     def checked(self):
         self.store_row();self.plan['style']=self.style.currentData();self.plan['music_arc']=self.arc.isChecked()
         self.plan['layout']=self.layout_choice.currentData();self.plan['report_title']=self.report_title.text()
+        self.plan.update(background=self.background.currentData(),video_height=self.video_height.value()/100,footer=self.footer.text())
         self.plan['enabled']=self.enabled.isChecked()
         self.plan['transitions']=self.transitions.isChecked()
         return validate(self.plan,self.parts)

@@ -190,6 +190,8 @@ def hau_kiem(segs: list, transcript: dict, complete_text,
     if n < DOAN_TOI_THIEU:
         return segs, f"clip chỉ {n} đoạn -> không có gì để xem lại"
     from app.ai import llm
+    from app.ai.chon_doan import gan_tac_vu
+    complete_text = gan_tac_vu(complete_text, "coherence")   # nghĩ KỸ
     try:
         pr = khoi_prompt(segs, transcript, digest)
         raw = (complete_text(pr, model=model) if model else complete_text(pr))

@@ -170,10 +170,16 @@ class BatchChannelTests(unittest.TestCase):
             created=next(p for p in win.batch.channels.projects if p['name']=='Kênh mới')
             self.assertEqual(created['grp'],'Nhật')
             self.assertEqual(win.batch.channels.pid,created['id'])
+            # Bảng chạy NHÚNG trong màn Dây chuyền (26/10/2026): dựng 1 lần,
+            # các lần sau chỉ đồng bộ nhóm — không mở hộp thoại riêng.
+            win.batch.show_view(0);qapp.processEvents()
+            self.assertIsNotNone(win.batch.run_panel)
             with patch.object(win.studio,'_pipeline_dialog') as configure:
                 win._batch_pipeline()
-            configure.assert_called_once()
+            configure.assert_not_called()
             self.assertEqual(win.studio._settings.value('pipe_grp_sel'),'Nhật')
+            self.assertEqual(win.studio._pipe_grp_cb.currentData(),'Nhật')
+            win.batch.show_view(1);qapp.processEvents()
             for button in (win.batch.channels.paths_btn,win.batch.cancel_btn,win.batch.next):
                 self.assertLess(button.mapTo(win,button.rect().bottomRight()).y(),win.height())
             win.batch.grab().save(str(AREA/'batch.png'))

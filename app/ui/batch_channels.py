@@ -12,6 +12,7 @@ from app.database.db import db
 from app.ui.appsettings import app_settings
 from app.ui.folder_access import locations
 from app.ui.theme import MUTED
+from app.ui.theme import SP_2,SP_3,pad,set_role,set_style,set_variant
 
 
 def natural(value):
@@ -108,8 +109,10 @@ class BatchChannels(QWidget):
         self._group = None
         self.setMinimumWidth(275)
         layout = QVBoxLayout(self); layout.setContentsMargins(0,0,8,0);layout.setSpacing(5)
-        row = QHBoxLayout(); row.addWidget(QLabel('NHÓM ĐÃ LƯU'),1)
-        manage = QPushButton('Quản lý'); manage.clicked.connect(self.manage.emit); row.addWidget(manage)
+        _hdr = QLabel('NHÓM ĐÃ LƯU'); set_role(_hdr, 'section')
+        row = QHBoxLayout(); row.addWidget(_hdr,1)
+        manage = QPushButton('Quản lý'); set_variant(manage, 'ghost')
+        manage.clicked.connect(self.manage.emit); row.addWidget(manage)
         layout.addLayout(row)
         self.group = QComboBox(); self.group.setMinimumContentsLength(10)
         self.group.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -128,8 +131,8 @@ class BatchChannels(QWidget):
         self.table.setColumnWidth(0,42)
         self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(2,65)
-        self.table.verticalHeader().hide(); self.table.verticalHeader().setDefaultSectionSize(46)
+        self.table.setColumnWidth(2,72)
+        self.table.verticalHeader().hide(); self.table.verticalHeader().setDefaultSectionSize(42)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -141,22 +144,35 @@ class BatchChannels(QWidget):
         row.addWidget(self.add_btn); row.addWidget(self.edit_btn); layout.addLayout(row)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setMinimumHeight(140)
         scroll.setMaximumHeight(250)
-        content = QWidget(); info = QVBoxLayout(content); info.setContentsMargins(8,8,8,8)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget(); content.setObjectName('ctlPanel')
+        content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        info = QVBoxLayout(content); info.setContentsMargins(12,10,12,12); info.setSpacing(6)
         self.title = QLabel('Chọn kênh'); self.title.setWordWrap(True); self.title.setTextFormat(Qt.TextFormat.PlainText)
+        set_role(self.title, 'heading')
         info.addWidget(self.title)
         self.output = QLineEdit(); self.source = QLineEdit()
         for text, field in (('Thư mục xuất hiện tại',self.output),('Nguồn Dây chuyền',self.source)):
-            label = QLabel(text); label.setStyleSheet(f'color:{MUTED};'); info.addWidget(label)
+            label = QLabel(text); set_style(label, None, 'muted'); info.addWidget(label)
             field.setReadOnly(True); info.addWidget(field)
         row = QHBoxLayout()
         self.open_btn = QPushButton('Mở nơi xuất'); self.open_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'channel'))
         self.open_btn.setToolTip('Nơi xuất hiện tại theo cấu hình. Part cũ có thể ở nơi khác; chọn video rồi Mở Part đã xuất.')
-        self.copy_btn = QPushButton('Chép'); self.copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.output.text()))
+        self.copy_btn = QPushButton('Chép đường dẫn'); self.copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.output.text()))
         self.source_btn=QPushButton('Mở nguồn')
         self.source_btn.clicked.connect(lambda: self.open_folder.emit(self.pid,0,'pipeline'))
-        row.addWidget(self.open_btn); row.addWidget(self.source_btn); row.addWidget(self.copy_btn); info.addLayout(row)
-        self.paths_btn = QPushButton('Thêm / đổi đường dẫn…'); self.paths_btn.clicked.connect(lambda: self.paths.emit(self.pid))
-        info.addWidget(self.paths_btn); scroll.setWidget(content); layout.addWidget(scroll)
+        row.addWidget(self.open_btn); row.addWidget(self.source_btn); info.addLayout(row)
+        self.paths_btn = QPushButton('Đổi đường dẫn…'); self.paths_btn.clicked.connect(lambda: self.paths.emit(self.pid))
+        self.paths_btn.setToolTip('Thêm / đổi thư mục lưu Part và thư mục nguồn Dây chuyền của kênh.')
+        row2 = QHBoxLayout(); row2.addWidget(self.copy_btn); row2.addWidget(self.paths_btn)
+        info.addLayout(row2)
+        from PyQt6.QtWidgets import QSizePolicy as _SP
+        for b in (self.open_btn, self.source_btn, self.copy_btn, self.paths_btn):
+            b.setSizePolicy(_SP.Policy.Ignored, _SP.Policy.Fixed)   # chia đều, không tràn cột
+        for b in (self.open_btn, self.source_btn, self.copy_btn): set_variant(b, 'ghost')
+        content.setMinimumWidth(0)
+        scroll.setWidget(content); layout.addWidget(scroll)
         self.group.currentIndexChanged.connect(self._change_group)
         self.search.textChanged.connect(self.render)
         self.order.currentIndexChanged.connect(self.render)

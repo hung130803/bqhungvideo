@@ -47,9 +47,19 @@ def create_project(name: str, grp: str = "") -> int:
         assets = Path(f"{base}_{i}")
         i += 1
     assets.mkdir(parents=True, exist_ok=True)
+    g = (grp or "").strip()
+    # KÊNH MỚI THỪA HƯỞNG trạng thái dây chuyền của NHÓM (02/11/2026): anh Hùng
+    # thêm kênh vào nhóm đang chạy mà kênh mới nằm TẮT (pipe_on mặc định 0) ->
+    # dây chuyền + bot bỏ qua kênh đó không một lời. Nhóm có >= 1 kênh (không
+    # ẩn) đang BẬT -> kênh mới BẬT; nhóm chưa bật / chưa phân nhóm -> giữ TẮT.
+    on = 0
+    if g:
+        r = db.query_one("SELECT 1 FROM projects WHERE grp=? AND pipe_on=1 "
+                         "AND pipe_hidden=0 LIMIT 1", (g,))
+        on = 1 if r else 0
     return db.insert(
-        "INSERT INTO projects (name, assets_dir, grp) VALUES (?,?,?)",
-        (name, str(assets), (grp or "").strip()),
+        "INSERT INTO projects (name, assets_dir, grp, pipe_on) VALUES (?,?,?,?)",
+        (name, str(assets), g, on),
     )
 
 
@@ -143,9 +153,12 @@ def rename_project(project_id: int, new_name: str) -> str:
 
 
 # ---- Video ----
-def import_video(project_id: int, src_path: str) -> int:
-    info = probe(src_path)
-    fh = _file_hash(src_path)
+def import_video(project_id: int, src_path: str, info=None,
+                 file_hash: str | None = None) -> int:
+    # info/file_hash: kết quả ffprobe + băm ĐÃ LÀM SẴN (dây chuyền soi ở luồng
+    # nền, 26/10/2026) -> khỏi chạy lại lần 2 trên luồng giao diện.
+    info = info if info is not None else probe(src_path)
+    fh = file_hash or _file_hash(src_path)
     # smart-skip: cùng project + cùng file đã import -> trả lại id cũ
     existing = db.query_one(
         "SELECT id FROM videos WHERE project_id=? AND file_hash=?",
@@ -355,6 +368,10 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
                    hieu_ung: str = "nhe",
                    fx_sfx_dir: str = "", flip_h: bool = False,
                    fit_src: bool = False,
+                   # NÂNG SÁNG NHẸ (% gamma, `ffmpeg_utils.loc_do_sang`). 0 =
+                   # không đụng -> payload KHÔNG mang khoá, `sig` GIỐNG TỪNG KÝ TỰ
+                   # bản cũ (200-300 kênh không xuất lại). >0 nối ĐUÔI `sig`.
+                   do_sang: float = 0.0,
                    # CHE CHỮ CHÁY SẴN TRONG HÌNH (`app/core/che_chu.py`) —
                    # cùng khuôn `flip_h`/`fx_sfx_dir`: cờ CHỐT lúc xếp job nên
                    # mẫu bị sửa/xoá giữa chừng cũng không đổi kết quả clip.
@@ -420,6 +437,12 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
         # TỪNG KÝ TỰ, không đẻ job xuất lại cho 200-300 kênh.
         if che_chu_toan_khung:
             _cc_sig += "tk"
+    try:
+        _ds = max(0.0, min(20.0, float(do_sang or 0)))
+    except (TypeError, ValueError):
+        _ds = 0.0
+    if _ds > 0:
+        _cc_sig += f":ds{_ds:.1f}"
     sig = (f"{se}:{mode}:{zoom}:{crop_rect}:{video_rect}:{bg}:{trim_black}:"
            f"cap{int(captions)}:{blur_amt}:{speed}:{pitch}:{extra}{_cc_sig}")
     story=(db.loads(row['signals'],{}) or {}).get('recap') or {} if row else {}
@@ -445,6 +468,8 @@ def enqueue_export(pool: WorkerPool, clip_id: int, video_id: int,
          "chuyen_canh": chuyen_canh, "hieu_ung": hieu_ung,
          "fx_sfx_dir": fx_sfx_dir, "flip_h": flip_h, "fit_src": fit_src,
          "flat": bool(flat_export)}
+    if _ds > 0:
+        tai["do_sang"] = _ds
     if che_chu is not None:
         # CHỈ đặt khoá khi lối gọi ĐÃ CHỐT cờ. Đặt vô điều kiện là bịt đường
         # lùi "tra mẫu theo tên" của mọi lối gọi chưa nối (`doc_che_chu` chọn
@@ -592,8 +617,14 @@ def project_template(project_id) -> Optional[dict]:
 def clear_finished_jobs() -> int:
     """Xóa lịch sử job ĐÃ XONG/lỗi/hủy khỏi danh sách tiến trình. GIỮ việc đang
     chạy/chờ. Trả số dòng đã xóa."""
+    # GIỮ job của video dây chuyền ĐANG LÀM (sổ 'taken'): dây chuyền đọc trạng
+    # thái các job xuất đó để quyết định dọn gốc; xoá giữa chừng thì job "biến
+    # mất" bị coi là LỖI -> sổ 'error' -> lần sau phân tích lại + xuất TRÙNG
+    # (rà soát 01/11/2026).
     cur = db.execute(
-        "DELETE FROM jobs WHERE status IN ('done','failed','canceled','skipped')")
+        "DELETE FROM jobs WHERE status IN ('done','failed','canceled','skipped') "
+        "AND (video_id IS NULL OR video_id NOT IN (SELECT video_id FROM "
+        "pipeline_files WHERE status='taken' AND video_id IS NOT NULL))")
     try:
         return cur.rowcount if cur else 0
     except Exception:  # noqa: BLE001
@@ -621,6 +652,15 @@ def job_states(job_ids) -> dict:
     return {int(r["id"]): r["status"] for r in rows}
 
 
+# Việc LỖI đã có lượt MỚI hơn (cùng loại, cùng video) đang chờ/chạy/xong =
+# đã được thử lại -> không còn là "lỗi cần xử lý". 03/11/2026 anh Hùng: "nó chạy
+# lại rồi mà sao cái lỗi không biến mất" — app tự thử lại sau 15 phút, video
+# phân tích tiếp tới 86% mà chip vẫn ghi "2 lỗi". Dùng idx_jobs_video.
+_DA_THU_LAI = ("EXISTS (SELECT 1 FROM jobs n WHERE n.video_id = {t}.video_id "
+               "AND n.type = {t}.type AND n.id > {t}.id "
+               "AND n.status IN ('pending','running','done'))")
+
+
 def list_jobs(limit: int = 100) -> list:
     # kèm tên KÊNH + đường dẫn video để thanh tiến trình hiện rõ việc nào của ai
     return db.query(
@@ -634,7 +674,9 @@ def list_jobs(limit: int = 100) -> list:
     )
 
 
-_JOB_COT = ("SELECT j.*, p.name AS chan_name, v.src_path AS vid_path FROM jobs j "
+_JOB_COT = ("SELECT j.*, p.name AS chan_name, v.src_path AS vid_path, "
+            "CASE WHEN j.status = 'failed' AND " + _DA_THU_LAI.format(t="j") +
+            " THEN 1 ELSE 0 END AS da_thu_lai FROM jobs j "
             "LEFT JOIN projects p ON p.id = j.project_id "
             "LEFT JOIN videos v ON v.id = j.video_id ")
 
@@ -647,17 +689,38 @@ def list_jobs_top(n_chay: int = 24, n_xong: int = 12) -> tuple:
     dòng bị chiếm hết bởi việc đang chạy -> **danh sách MẤT SẠCH việc "✅ Xong"**
     (user tưởng chưa xong cái nào). Lấy riêng thì bên nào cũng đủ, mà còn nhẹ
     hơn: chỉ đọc đúng số dòng sẽ vẽ thay vì 200 dòng rồi bỏ 164."""
+    # TĂNG TỐC (đo 26/10/2026, DB 150k job): bản cũ `WHERE status IN (...)
+    # ORDER BY CASE..., id DESC` bắt SQLite gom HẾT mọi job đã xong rồi sắp xếp
+    # (TEMP B-TREE) -> 69 ms MỖI NHỊP 0,4 s trên luồng giao diện, càng dùng lâu
+    # càng chậm. Bản mới lấy từng trạng thái riêng bằng idx_jobs_status (đã có
+    # sẵn, mỗi nhánh chỉ đọc đúng LIMIT dòng mới nhất) rồi ghép — 0,1 ms.
+    # KẾT QUẢ Y HỆT bản cũ (đã so từng dòng): cùng thứ tự ưu tiên, cùng trần.
+    n_chay = max(1, int(n_chay))
+    n_xong = max(1, int(n_xong))
     chay = db.query(
-        _JOB_COT + "WHERE j.status IN ('running','pending') ORDER BY "
-        "CASE j.status WHEN 'running' THEN 0 ELSE 1 END, j.id DESC LIMIT ?",
-        (max(1, int(n_chay)),))
+        _JOB_COT + "JOIN (SELECT id, k FROM ("
+        "  SELECT id, 0 AS k FROM (SELECT id FROM jobs WHERE status='running' "
+        "    ORDER BY id DESC LIMIT ?)"
+        "  UNION ALL SELECT id, 1 FROM (SELECT id FROM jobs "
+        "    WHERE status='pending' ORDER BY id DESC LIMIT ?)"
+        ") ORDER BY k, id DESC LIMIT ?) s ON s.id = j.id "
+        "ORDER BY s.k, j.id DESC", (n_chay, n_chay, n_chay))
     # việc LỖI xếp TRƯỚC: danh sách bị cắt trần nên nếu xếp thuần theo id thì
     # hàng chục việc "✅ Xong" đẩy việc LỖI ra khỏi bảng -> user không thấy để
     # bấm "Thử lại". Lỗi mới là thứ cần nhìn nhất.
     xong = db.query(
-        _JOB_COT + "WHERE j.status IN ('done','failed','canceled','skipped') "
-        "ORDER BY CASE j.status WHEN 'failed' THEN 0 ELSE 1 END, j.id DESC "
-        "LIMIT ?", (max(1, int(n_xong)),))
+        _JOB_COT + "JOIN (SELECT id, k FROM ("
+        "  SELECT id, CASE WHEN " + _DA_THU_LAI.format(t="jobs") + " THEN 1 ELSE 0 END "
+        "    AS k FROM (SELECT id, video_id, type FROM jobs WHERE status='failed' "
+        "    ORDER BY id DESC LIMIT ?) jobs"
+        "  UNION ALL SELECT id, 1 FROM (SELECT id FROM jobs "
+        "    WHERE status='done' ORDER BY id DESC LIMIT ?)"
+        "  UNION ALL SELECT id, 1 FROM (SELECT id FROM jobs "
+        "    WHERE status='canceled' ORDER BY id DESC LIMIT ?)"
+        "  UNION ALL SELECT id, 1 FROM (SELECT id FROM jobs "
+        "    WHERE status='skipped' ORDER BY id DESC LIMIT ?)"
+        ") ORDER BY k, id DESC LIMIT ?) s ON s.id = j.id "
+        "ORDER BY s.k, j.id DESC", (n_xong,) * 5)
     return chay, xong
 
 
@@ -718,11 +781,24 @@ def queue_counts() -> dict:
     day0 = (datetime.now()
             .replace(hour=0, minute=0, second=0, microsecond=0)
             .astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+    # Tách 3 nhánh để SQLite dùng chỉ mục (idx_jobs_status / idx_jobs_status_fin)
+    # thay vì quét cả bảng jobs mỗi nhịp 0,4 s: `COALESCE(...) >= ?` nằm trong
+    # OR thì không chỉ mục nào dùng được. Tương đương logic tuyệt đối:
+    # COALESCE(f, c) >= d  <=>  (f >= d)  HOẶC  (f IS NULL VÀ c >= d).
     rows = db.query(
         "SELECT status, type, COUNT(*) AS n FROM jobs "
-        "WHERE status IN ('running','pending') "
-        "   OR (status IN ('done','failed') AND COALESCE(finished_at,created_at) >= ?) "
-        "GROUP BY status, type", (day0,))
+        "WHERE status IN ('running','pending') GROUP BY status, type "
+        "UNION ALL "
+        "SELECT status, type, COUNT(*) AS n FROM ("
+        "  SELECT status, type FROM jobs "
+        "  WHERE status IN ('done','failed') AND finished_at >= ? "
+        "    AND NOT (status = 'failed' AND " + _DA_THU_LAI.format(t="jobs") + ") "
+        "  UNION ALL "
+        "  SELECT status, type FROM jobs "
+        "  WHERE status IN ('done','failed') AND finished_at IS NULL "
+        "    AND created_at >= ? "
+        "    AND NOT (status = 'failed' AND " + _DA_THU_LAI.format(t="jobs") + ") "
+        ") GROUP BY status, type", (day0, day0))
     c = {"analyzing": 0, "exporting": 0, "waiting": 0,
          "wait_analyze": 0, "wait_export": 0, "done": 0, "failed": 0,
          "done_analyze": 0, "done_export": 0}
@@ -769,13 +845,25 @@ def channel_activity() -> dict:
            for p in db.query(
                "SELECT id, last_done_at, last_done_type FROM projects")}
     for r in db.query(
-            "SELECT project_id AS pid, "
-            "SUM(status='running') AS running, "
-            "SUM(status='pending') AS pending, "
-            "SUM(status='failed' AND COALESCE(finished_at, created_at) >= ?) "
-            "  AS failed_recent "
-            "FROM jobs WHERE project_id IS NOT NULL GROUP BY project_id",
-            (cutoff,)):
+            # TĂNG TỐC (đo 26/10/2026, 150k job: 131 ms -> 0,3 ms): bản cũ quét
+            # CẢ bảng jobs (mọi job đã xong từ trước tới nay) mỗi ~4,5 s chỉ để
+            # đếm vài việc đang chạy. Nay chỉ đọc job running/pending + job lỗi
+            # trong 24h, qua chỉ mục. Kết quả khác 0 y hệt bản cũ.
+            "SELECT pid, SUM(running) AS running, SUM(pending) AS pending, "
+            "SUM(failed_recent) AS failed_recent FROM ("
+            "  SELECT project_id AS pid, SUM(status='running') AS running, "
+            "    SUM(status='pending') AS pending, 0 AS failed_recent "
+            "  FROM jobs WHERE status IN ('running','pending') "
+            "    AND project_id IS NOT NULL GROUP BY project_id "
+            "  UNION ALL SELECT project_id, 0, 0, COUNT(*) FROM jobs "
+            "  WHERE status='failed' AND finished_at >= ? "
+            "    AND project_id IS NOT NULL GROUP BY project_id "
+            "  UNION ALL SELECT project_id, 0, 0, COUNT(*) FROM jobs "
+            "  WHERE status='failed' AND finished_at IS NULL "
+            "    AND created_at >= ? AND project_id IS NOT NULL "
+            "  GROUP BY project_id"
+            ") GROUP BY pid",
+            (cutoff, cutoff)):
         a = act.get(int(r["pid"]))
         if a is None:          # job của project vừa bị xóa (race) -> bỏ qua
             continue
@@ -790,17 +878,50 @@ def channel_activity() -> dict:
         a = act.get(int(r["pid"]))
         if a is not None:
             a["videos"] = int(r["n"])
+    # Gộp theo video TRƯỚC (đọc thẳng chỉ mục phủ idx_clips_vse, không chạm
+    # bảng clips) rồi mới cộng theo kênh: 108 ms -> ~13 ms trên 120k clip.
     for r in db.query(
-            "SELECT v.project_id AS pid, COUNT(*) AS n, "
-            "SUM(c.export_path IS NOT NULL AND c.export_path<>'') AS exported "
-            "FROM clips c JOIN videos v ON v.id = c.video_id "
-            "WHERE c.status<>'archived' "   # kho lưu trữ không tính vào đuôi combo
+            "SELECT v.project_id AS pid, SUM(s.n) AS n, SUM(s.ex) AS exported "
+            "FROM (SELECT video_id, COUNT(*) AS n, "
+            "        SUM(export_path IS NOT NULL AND export_path<>'') AS ex "
+            "      FROM clips "
+            "      WHERE status<>'archived' "  # kho lưu trữ không tính vào đuôi combo
+            "      GROUP BY video_id) s "
+            "JOIN videos v ON v.id = s.video_id "
             "GROUP BY v.project_id"):
         a = act.get(int(r["pid"]))
         if a is not None:
             a["clips"] = int(r["n"])
             a["exported"] = int(r["exported"] or 0)
     return act
+
+
+def channel_activity_one(project_id: int) -> dict:
+    """Bản RÚT GỌN của channel_activity cho ĐÚNG 1 kênh — chỉ các khoá nhãn
+    'Kênh: …' cần (running/pending/failed_recent/last_done/last_done_type).
+
+    26/10/2026: nhãn kênh đổi mỗi lần bấm kênh/video và mỗi ~4,5 s, mà bản đầy
+    đủ gộp clip của MỌI kênh (120k clip) -> 50-180 ms trên luồng giao diện mỗi
+    lần. Bản này chỉ đọc job đang chạy/lỗi của 1 kênh qua idx_jobs_project."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
+              ).strftime("%Y-%m-%d %H:%M:%S")
+    p = db.query_one("SELECT last_done_at, last_done_type FROM projects "
+                     "WHERE id=?", (project_id,))
+    if not p:
+        return {}
+    r = db.query_one(
+        "SELECT SUM(status='running') AS running, SUM(status='pending') AS "
+        "pending FROM jobs WHERE project_id=? AND status IN "
+        "('running','pending')", (project_id,))
+    f = db.query_one(
+        "SELECT COUNT(*) AS n FROM jobs WHERE project_id=? AND status='failed' "
+        "AND COALESCE(finished_at, created_at) >= ?", (project_id, cutoff))
+    return {"running": int((r["running"] if r else 0) or 0),
+            "pending": int((r["pending"] if r else 0) or 0),
+            "failed_recent": int((f["n"] if f else 0) or 0),
+            "last_done": p["last_done_at"],
+            "last_done_type": p["last_done_type"] or ""}
 
 
 # ---- Hoạt động theo TỪNG VIDEO trong 1 kênh (đuôi combo Video + nhãn +

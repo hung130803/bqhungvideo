@@ -1171,7 +1171,11 @@ def ca11() -> None:
     ok("11x `thay_giong.py` vẫn gọi `_synth_all_words` ĐÚNG 3 chỗ (không đẻ 4)",
        n_theo_file.get("thay_giong.py") == 3, str(n_theo_file))
     ok("11x' ...và bản vá này KHÔNG thêm chỗ gọi ở file nào khác",
-       set(n_theo_file) == {"thay_giong.py", "dubbing.py"}, str(n_theo_file))
+       # `story_audio.py` = đường KỂ CHUYỆN recap (ra đời sau cổng này), gọi
+       # đúng 1 chỗ với `el_lui=False` (không trộn giọng) — hợp lệ. File KHÁC
+       # mọc thêm chỗ gọi thì vẫn ĐỎ (31/10/2026).
+       set(n_theo_file) <= {"thay_giong.py", "dubbing.py", "story_audio.py"}
+       and n_theo_file.get("story_audio.py", 0) <= 1, str(n_theo_file))
 
     # ---- 11y DEDUP_KEY KHÔNG ĐƯỢC ĐỔI — 200-300 kênh không xuất lại.
     # Bản vá này CỐ Ý không đụng `sig`; mục này là bằng chứng, không phải lời.

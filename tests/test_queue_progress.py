@@ -67,6 +67,26 @@ class QueueProgress(unittest.TestCase):
         self.assertEqual(row['bar'].value(),100)
         self.assertIn('xem riêng',row['detail'].full_text())
 
+    def test_completed_selection_displays_review_and_zero_part_reasons(self):
+        jid=self.job(status='done')
+        for count,note,label in [(1,'AI chọn 1/3 Part: điểm thấp, cần xem lại','Cần xem lại'),
+                                 (0,'AI chọn 0/3 Part: không có ứng viên dùng được','0 Part')]:
+            db.execute('UPDATE jobs SET result=?,message=? WHERE id=?',
+                       (db.dumps(dict(count=count,selection_note=note,auto_export_allowed=False)),note,jid))
+            self.panel.refresh();row=self.panel._rows[jid]
+            self.assertEqual(row['st'].text(),label)
+            self.assertEqual(row['detail'].full_text(),note)
+            self.assertNotIn('Xong',row['st'].text())
+
+    def test_old_low_score_review_is_now_done_without_yellow_gate(self):
+        jid=self.job(status='done')
+        result=dict(count=1,selection_note='Điểm thấp, cần xem lại',auto_export_allowed=False,
+                    selection=dict(analysis_complete=True,quality_review_required=True))
+        db.execute('UPDATE jobs SET result=? WHERE id=?',(db.dumps(result),jid))
+        self.panel.refresh();row=self.panel._rows[jid]
+        self.assertIn('Xong',row['st'].text())
+        self.assertIn('không cần duyệt',row['detail'].full_text())
+
     def test_retry_clears_error_click_and_pending_stale_progress(self):
         jid=self.job(status='failed')
         db.execute("UPDATE jobs SET error='Lỗi mạng thử nghiệm' WHERE id=?",(jid,))

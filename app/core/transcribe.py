@@ -328,7 +328,7 @@ def _groq_one(audio_path: str, language, keys: list, start_at: int = 0,
                     raise llm.LLMTooLarge(f"Chép lời: đoạn tiếng quá lớn cho "
                                           f"hạn mức token/phút: {last}")
                 if llm.is_rate_limit_error(last):
-                    llm.mark_limited("groq", key, last)
+                    llm.mark_limited("groq", key, last, scope="transcription")
                     continue                   # key hết lượt -> xoay key kế
                 if llm.is_auth_error(last):
                     llm.mark_invalid("groq", key)
@@ -520,8 +520,17 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
     fp = shutil.which("ffprobe") or settings.FFPROBE_PATH or "ffprobe"
     flags = 0x0800_0000 if os.name == "nt" else 0
     chunk = 600
+    if on_progress:
+        on_progress(0.02, "Đang đo thời lượng âm thanh để chép lời Groq…")
     total = _audio_duration(audio_path, fp, flags)
     n = max(1, math.ceil(total / chunk)) if total > 0 else 1
+    from app.core.job_resume import local_step, content_stamp, bind_context
+    audio_key = content_stamp(audio_path)
+    def one_part(path, lang, key_list, start_at=0, on_wait=None):
+        # Encoded parts may live in different temporary directories after restart.
+        key = [audio_key, content_stamp(path), lang, 'whisper-large-v3']
+        return local_step('groq_transcript_part_v1', key,
+            lambda: _groq_one(path, lang, key_list, start_at=start_at, on_wait=on_wait))
     work = tempfile.mkdtemp(prefix="gq_")
     try:
         all_segs, all_words, full, lang = [], [], [], (language or "")
@@ -539,6 +548,8 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             # header mp3 một mình đã đủ 400 byte.
             if total > 0 and (total - start) < _CAT_TOI_THIEU:
                 continue
+            if on_progress:
+                on_progress(0.02 + 0.06 * i / n, f"Đang chuẩn bị âm thanh Groq: phần {i + 1}/{n} (chưa gửi AI)…")
             part = os.path.join(work, f"p{i}.mp3")
             cmd = [ff, "-y", "-ss", str(start)]
             if total > 0:
@@ -597,7 +608,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             _lang_ep = _ma_iso(language)
             if not _lang_ep and len(idx_list) > 1:
                 _i0 = idx_list[0]
-                results[_i0] = _groq_one(parts[_i0], None, keys, start_at=0,
+                results[_i0] = one_part(parts[_i0], None, keys, start_at=0,
                                          on_wait=_on_wait)
                 done += 1
                 _lg0, _txt0 = results[_i0][2], results[_i0][3]
@@ -620,7 +631,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                                 f"Chép lời (Groq) 1/{n} phần — đã khoá ngôn ngữ "
                                 f"«{_lang_ep or 'tự nhận diện'}» cho cả video")
             with ThreadPoolExecutor(max_workers=min(3, max(1, len(idx_list)))) as ex:
-                futs = {ex.submit(_groq_one, parts[i], _lang_ep, keys,
+                futs = {ex.submit(bind_context(one_part), parts[i], _lang_ep, keys,
                                   start_at=pos, on_wait=_on_wait): i
                         for pos, i in enumerate(idx_list)}
                 for fut in as_completed(futs):
@@ -643,7 +654,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
                                   "end": round(w["end"] + start, 3),
                                   "word": w["word"]})
         if not all_words and not all_segs:       # nén/cắt hỏng -> gửi nguyên file
-            segs, words, lang, _ = _groq_one(audio_path, language, keys)
+            segs, words, lang, _ = one_part(audio_path, language, keys)
             all_segs, all_words = segs, words
             full = [s["text"] for s in segs]
         elif failed_windows:

@@ -18,3 +18,155 @@ Các bản sao được chuẩn hoá âm lượng và nén Opus; không phải n
 - Piano Nostalgia — Wolfgang_ — CC0 1.0 — https://opengameart.org/content/regret-short-emotional-piano
 
 Giấy phép: https://creativecommons.org/publicdomain/zero/1.0/
+
+## Lượt 2 (02/11/2026, `tools/tai_nhac_cc0.py`) — OpenGameArt, mỗi trang đã kiểm khối giấy phép có CC0
+
+- Mysterious Ambience (song21) — cynicmusic — CC0 1.0 — https://opengameart.org/content/mysterious-ambience-song21
+- ambient sound creepy — DaGameKnower — CC0 1.0 — https://opengameart.org/content/ambient-sound-creepy
+- Blackout — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/blackout
+- Bleu — Loyalty Freak Music — CC0 1.0 — https://opengameart.org/content/bleu
+- Dark Shrine Loop — qubodup — CC0 1.0 — https://opengameart.org/content/dark-shrine-loop
+- Forbidden Exploration — Technodono — CC0 1.0 — https://opengameart.org/content/forbidden-exploration
+- Forbidden Space — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/forbidden-space
+- I swear I saw it - background track — yd — CC0 1.0 — https://opengameart.org/content/i-swear-i-saw-it-background-track
+- Moil — Ruskerdax — CC0 1.0 — https://opengameart.org/content/moil
+- Stay Around — Pro Sensory — CC0 1.0 — https://opengameart.org/content/stay-around
+- The Y Files — TAD — CC0 1.0 — https://opengameart.org/content/the-y-files
+- Calm Ambient 3 (Lifewave 2k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-3-lifewave-2k
+- Calm Ambient 2 (Synthwave 15k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-2-synthwave-15k
+- Calm Piano 1 (Vaporware) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-piano-1-vaporware
+- November Snow — cynicmusic — CC0 1.0 — https://opengameart.org/content/november-snow
+- Calm Ambient 1 (Synthwave 4k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-1-synthwave-4k
+- I think I'd stay (jungle chill) — Emmntt — CC0 1.0 — https://opengameart.org/content/i-think-id-stay-jungle-chill
+- lofi Compilation — TAD — CC0 1.0 — https://opengameart.org/content/lofi-compilation
+- lofi hip hop — omfgdude — CC0 1.0 — https://opengameart.org/content/lofi-hip-hop
+- Slow Stride — isaiah658 — CC0 1.0 — https://opengameart.org/content/slow-stride
+- Subtle Bass — TinyWorlds — CC0 1.0 — https://opengameart.org/content/subtle-bass
+- The hex, november snow & the charm (Pixelsphere megamix: Steven Ruud, cynicmusic remixed) — glitchart — CC0 1.0 — https://opengameart.org/content/the-hex-november-snow-the-charm-pixelsphere-megamix-steven-ruud-cynicmusic-remixed
+- Chill lofi inspired — omfgdude — CC0 1.0 — https://opengameart.org/content/chill-lofi-inspired
+- Horror Cliche — Indieteur — CC0 1.0 — https://opengameart.org/content/horror-cliche
+- Darkest Hour — Indieteur — CC0 1.0 — https://opengameart.org/content/darkest-hour
+- Ends of the Earth — neonarkade — CC0 1.0 — https://opengameart.org/content/ends-of-the-earth
+- Hallway — thenewkgb — CC0 1.0 — https://opengameart.org/content/hallway
+- Horror Atmosphere — SubspaceAudio — CC0 1.0 — https://opengameart.org/content/horror-atmosphere
+- Assault — congusbongus — CC0 1.0 — https://opengameart.org/content/assault
+- Custa Gravity Platforms — Tozan — CC0 1.0 — https://opengameart.org/content/custa-gravity-platforms
+- DERGUNERIN — cinameng — CC0 1.0 — https://opengameart.org/content/dergunerin
+- Gammadrae Homeworld BGM — Tozan — CC0 1.0 — https://opengameart.org/content/gammadrae-homeworld-bgm
+- Garg Oilers — iamoneabe — CC0 1.0 — https://opengameart.org/content/garg-oilers
+- Narrow Corridors — TinyWorlds — CC0 1.0 — https://opengameart.org/content/narrow-corridors
+- Space Graveyard - Ambient Track — TinyWorlds — CC0 1.0 — https://opengameart.org/content/space-graveyard-ambient-track
+- Tension Theme — Umplix — CC0 1.0 — https://opengameart.org/content/tension-theme
+- Happy moments — Centurion_of_war — CC0 1.0 — https://opengameart.org/content/happy-moments
+- Montage — wipics — CC0 1.0 — https://opengameart.org/content/montage
+- Bravery Beats — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-beats
+- Bravery Knight — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-knight
+- Bravery Run — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-run
+- Dawn of the New Era — Indieteur — CC0 1.0 — https://opengameart.org/content/dawn-of-the-new-era
+- Happy synths loop with slight christmas feeling — 3xBlast — CC0 1.0 — https://opengameart.org/content/happy-synths-loop-with-slight-christmas-feeling
+- La Montagne — Loyalty Freak Music — CC0 1.0 — https://opengameart.org/content/la-montagne
+- Loop Town — Fupi — CC0 1.0 — https://opengameart.org/content/loop-town
+- Pianocomp2 — symphony — CC0 1.0 — https://opengameart.org/content/pianocomp2
+- Summers — symphony — CC0 1.0 — https://opengameart.org/content/summers
+- Sunflower Valley — isaiah658 — CC0 1.0 — https://opengameart.org/content/sunflower-valley
+- Catch! — Gena Sealov — CC0 1.0 — https://opengameart.org/content/catch
+- Comedy Funny Background Song — Almitory — CC0 1.0 — https://opengameart.org/content/comedy-funny-background-song
+- Happy Awkward trumpet — GloriaTheAnimator — CC0 1.0 — https://opengameart.org/content/happy-awkward-trumpet
+- Recorder Jam — Of Far Different Nature — CC0 1.0 — https://opengameart.org/content/recorder-jam
+- Vintage Porn — Oldschool Alien — CC0 1.0 — https://opengameart.org/content/vintage-porn
+- A respectable amount of Bounce — Some Weirdo — CC0 1.0 — https://opengameart.org/content/a-respectable-amount-of-bounce
+- Banana Track — skrjablin — CC0 1.0 — https://opengameart.org/content/banana-track
+- Catch me if you can! — poinl — CC0 1.0 — https://opengameart.org/content/catch-me-if-you-can
+- Goofy Attitude! — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/goofy-attitude
+- Red Heels (piano ver) — TAD — CC0 1.0 — https://opengameart.org/content/red-heels-piano-ver
+- Seaside Village — KarateStudios — CC0 1.0 — https://opengameart.org/content/seaside-village
+- Silly Springcore — Spring Spring — CC0 1.0 — https://opengameart.org/content/silly-springcore
+- Long Winter — Indieteur — CC0 1.0 — https://opengameart.org/content/long-winter
+- Complicated Feelings — Some Weirdo — CC0 1.0 — https://opengameart.org/content/complicated-feelings
+- Contemplation — Joth — CC0 1.0 — https://opengameart.org/content/contemplation-0
+- Cursed Light — Cethiel — CC0 1.0 — https://opengameart.org/content/cursed-light
+- Dreamlike State — Tarush Singhal — CC0 1.0 — https://opengameart.org/content/dreamlike-state
+- Fantasy Orchestral Theme & Emotional piano loop (Joth vs extenz) — glitchart — CC0 1.0 — https://opengameart.org/content/fantasy-orchestral-theme-emotional-piano-loop-joth-vs-extenz
+- Midnight — AR — CC0 1.0 — https://opengameart.org/content/midnight
+- Sleepy Clouds — Fupi — CC0 1.0 — https://opengameart.org/content/sleepy-clouds
+- Small Things — 3xBlast — CC0 1.0 — https://opengameart.org/content/small-things
+- Solo Piano 4 — Tozan — CC0 1.0 — https://opengameart.org/content/solo-piano-4
+- The Origin's Story — Bobjt — CC0 1.0 — https://opengameart.org/content/the-origins-story-0
+- Together — hothxcc — CC0 1.0 — https://opengameart.org/content/together
+- Veritas — Adiutorium — CC0 1.0 — https://opengameart.org/content/veritas
+
+## Lượt 2 (02/11/2026, `tools/tai_nhac_cc0.py`) — OpenGameArt, mỗi trang đã kiểm khối giấy phép có CC0
+
+- Mysterious Ambience (song21) — cynicmusic — CC0 1.0 — https://opengameart.org/content/mysterious-ambience-song21
+- ambient sound creepy — DaGameKnower — CC0 1.0 — https://opengameart.org/content/ambient-sound-creepy
+- Blackout — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/blackout
+- Bleu — Loyalty Freak Music — CC0 1.0 — https://opengameart.org/content/bleu
+- Dark Shrine Loop — qubodup — CC0 1.0 — https://opengameart.org/content/dark-shrine-loop
+- Forbidden Exploration — Technodono — CC0 1.0 — https://opengameart.org/content/forbidden-exploration
+- Forbidden Space — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/forbidden-space
+- I swear I saw it - background track — yd — CC0 1.0 — https://opengameart.org/content/i-swear-i-saw-it-background-track
+- Moil — Ruskerdax — CC0 1.0 — https://opengameart.org/content/moil
+- Stay Around — Pro Sensory — CC0 1.0 — https://opengameart.org/content/stay-around
+- The Y Files — TAD — CC0 1.0 — https://opengameart.org/content/the-y-files
+- Calm Ambient 3 (Lifewave 2k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-3-lifewave-2k
+- Calm Ambient 2 (Synthwave 15k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-2-synthwave-15k
+- Calm Piano 1 (Vaporware) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-piano-1-vaporware
+- November Snow — cynicmusic — CC0 1.0 — https://opengameart.org/content/november-snow
+- Calm Ambient 1 (Synthwave 4k) — cynicmusic — CC0 1.0 — https://opengameart.org/content/calm-ambient-1-synthwave-4k
+- I think I'd stay (jungle chill) — Emmntt — CC0 1.0 — https://opengameart.org/content/i-think-id-stay-jungle-chill
+- lofi Compilation — TAD — CC0 1.0 — https://opengameart.org/content/lofi-compilation
+- lofi hip hop — omfgdude — CC0 1.0 — https://opengameart.org/content/lofi-hip-hop
+- Slow Stride — isaiah658 — CC0 1.0 — https://opengameart.org/content/slow-stride
+- Subtle Bass — TinyWorlds — CC0 1.0 — https://opengameart.org/content/subtle-bass
+- The hex, november snow & the charm (Pixelsphere megamix: Steven Ruud, cynicmusic remixed) — glitchart — CC0 1.0 — https://opengameart.org/content/the-hex-november-snow-the-charm-pixelsphere-megamix-steven-ruud-cynicmusic-remixed
+- Chill lofi inspired — omfgdude — CC0 1.0 — https://opengameart.org/content/chill-lofi-inspired
+- Horror Cliche — Indieteur — CC0 1.0 — https://opengameart.org/content/horror-cliche
+- Darkest Hour — Indieteur — CC0 1.0 — https://opengameart.org/content/darkest-hour
+- Ends of the Earth — neonarkade — CC0 1.0 — https://opengameart.org/content/ends-of-the-earth
+- Hallway — thenewkgb — CC0 1.0 — https://opengameart.org/content/hallway
+- Horror Atmosphere — SubspaceAudio — CC0 1.0 — https://opengameart.org/content/horror-atmosphere
+- Assault — congusbongus — CC0 1.0 — https://opengameart.org/content/assault
+- Custa Gravity Platforms — Tozan — CC0 1.0 — https://opengameart.org/content/custa-gravity-platforms
+- DERGUNERIN — cinameng — CC0 1.0 — https://opengameart.org/content/dergunerin
+- Gammadrae Homeworld BGM — Tozan — CC0 1.0 — https://opengameart.org/content/gammadrae-homeworld-bgm
+- Garg Oilers — iamoneabe — CC0 1.0 — https://opengameart.org/content/garg-oilers
+- Narrow Corridors — TinyWorlds — CC0 1.0 — https://opengameart.org/content/narrow-corridors
+- Space Graveyard - Ambient Track — TinyWorlds — CC0 1.0 — https://opengameart.org/content/space-graveyard-ambient-track
+- Tension Theme — Umplix — CC0 1.0 — https://opengameart.org/content/tension-theme
+- Happy moments — Centurion_of_war — CC0 1.0 — https://opengameart.org/content/happy-moments
+- Montage — wipics — CC0 1.0 — https://opengameart.org/content/montage
+- Bravery Beats — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-beats
+- Bravery Knight — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-knight
+- Bravery Run — MintoDog — CC0 1.0 — https://opengameart.org/content/bravery-run
+- Dawn of the New Era — Indieteur — CC0 1.0 — https://opengameart.org/content/dawn-of-the-new-era
+- Happy synths loop with slight christmas feeling — 3xBlast — CC0 1.0 — https://opengameart.org/content/happy-synths-loop-with-slight-christmas-feeling
+- La Montagne — Loyalty Freak Music — CC0 1.0 — https://opengameart.org/content/la-montagne
+- Loop Town — Fupi — CC0 1.0 — https://opengameart.org/content/loop-town
+- Pianocomp2 — symphony — CC0 1.0 — https://opengameart.org/content/pianocomp2
+- Summers — symphony — CC0 1.0 — https://opengameart.org/content/summers
+- Sunflower Valley — isaiah658 — CC0 1.0 — https://opengameart.org/content/sunflower-valley
+- Catch! — Gena Sealov — CC0 1.0 — https://opengameart.org/content/catch
+- Comedy Funny Background Song — Almitory — CC0 1.0 — https://opengameart.org/content/comedy-funny-background-song
+- Happy Awkward trumpet — GloriaTheAnimator — CC0 1.0 — https://opengameart.org/content/happy-awkward-trumpet
+- Recorder Jam — Of Far Different Nature — CC0 1.0 — https://opengameart.org/content/recorder-jam
+- Vintage Porn — Oldschool Alien — CC0 1.0 — https://opengameart.org/content/vintage-porn
+- A respectable amount of Bounce — Some Weirdo — CC0 1.0 — https://opengameart.org/content/a-respectable-amount-of-bounce
+- Banana Track — skrjablin — CC0 1.0 — https://opengameart.org/content/banana-track
+- Catch me if you can! — poinl — CC0 1.0 — https://opengameart.org/content/catch-me-if-you-can
+- Goofy Attitude! — SkyleTheFrench — CC0 1.0 — https://opengameart.org/content/goofy-attitude
+- Red Heels (piano ver) — TAD — CC0 1.0 — https://opengameart.org/content/red-heels-piano-ver
+- Seaside Village — KarateStudios — CC0 1.0 — https://opengameart.org/content/seaside-village
+- Silly Springcore — Spring Spring — CC0 1.0 — https://opengameart.org/content/silly-springcore
+- Long Winter — Indieteur — CC0 1.0 — https://opengameart.org/content/long-winter
+- Complicated Feelings — Some Weirdo — CC0 1.0 — https://opengameart.org/content/complicated-feelings
+- Contemplation — Joth — CC0 1.0 — https://opengameart.org/content/contemplation-0
+- Cursed Light — Cethiel — CC0 1.0 — https://opengameart.org/content/cursed-light
+- Dreamlike State — Tarush Singhal — CC0 1.0 — https://opengameart.org/content/dreamlike-state
+- Fantasy Orchestral Theme & Emotional piano loop (Joth vs extenz) — glitchart — CC0 1.0 — https://opengameart.org/content/fantasy-orchestral-theme-emotional-piano-loop-joth-vs-extenz
+- Midnight — AR — CC0 1.0 — https://opengameart.org/content/midnight
+- Sleepy Clouds — Fupi — CC0 1.0 — https://opengameart.org/content/sleepy-clouds
+- Small Things — 3xBlast — CC0 1.0 — https://opengameart.org/content/small-things
+- Solo Piano 4 — Tozan — CC0 1.0 — https://opengameart.org/content/solo-piano-4
+- The Origin's Story — Bobjt — CC0 1.0 — https://opengameart.org/content/the-origins-story-0
+- Together — hothxcc — CC0 1.0 — https://opengameart.org/content/together
+- Veritas — Adiutorium — CC0 1.0 — https://opengameart.org/content/veritas

@@ -439,8 +439,39 @@ CONG = [
     # (đường lồng tiếng) — v2.46.0 vá `thay_giong._dich_loat` mà bỏ quên nó,
     # trong khi nó còn hở HƠN (xin mảng CHUỖI THUẦN rồi đọc `data[i]`).
     ("93 dịch chia mẻ",     "_test_dich_me.py",          34),
+    # Cổng 94 (27/10/2026): hậu kiểm mạch chuyện chấm trượt 10/10 clip THẬT
+    # (Groq thật) và 295/296 lượt chọn mang cảnh báo. Canh: giữ nguyên = 1 lượt
+    # gọi, không cảnh báo · kiểm chứng SO SÁNH thay vì tuyệt đối · chặn giữa
+    # câu chỉ ở mốc bị dời · nhận đề xuất KHÔNG được phá hook-first. Thử phá
+    # bằng bản cũ: ĐẠT 9 · HỎNG 14.
+    ("94 hậu kiểm mạch chuyện", "_test_mach_chuyen.py",  23),
+    # Cổng 95 (27/10/2026): file tải về HÌNH 1.257 s · TIẾNG 9,6 s -> mọi Part
+    # sau giây 9,6 chết "NaN for volume" cả 3 lượt. Canh bộ dò `tieng_hut` +
+    # xuất đoạn ngoài/một phần phần có tiếng; tự kiểm bằng bản cũ -> chết.
+    ("95 tiếng ngắn hơn hình", "_test_tieng_hut.py",      10),
+    ("96 nền không xanh + chữ không ô vuông", "_test_nen_xanh_chu.py", 26),
+    # 97 -> 112 (02/11/2026): nhóm chưa bật / nhóm rỗng phải hiện trên bot +
+    # /batnhom + kênh mới thừa hưởng trạng thái dây chuyền của nhóm.
+    ("97 bot Telegram quản lý dây chuyền", "_test_tele_bot.py", 112),
+    # Cổng 98 (30/10/2026): tự đăng nhập + bot GÁC CỔNG (/moapp khi app tắt
+    # hoặc đứng ở màn đăng nhập). Bắt được lỗi thật: màn đăng nhập vẫn soi cờ
+    # sau khi đăng nhập xong -> `.text()` trên chuỗi = sập app. Thử phá: HỎNG 3.
+    ("98 tự đăng nhập + bot gác cổng + đóng app", "_test_tu_dang_nhap.py", 79),
+    ("99 không nghẽn ổ cứng cơ + không dịch lại mã", "_test_muot_o_cung.py", 27),
+    ("100 sổ tạm cũ không làm hỏng DB đang lành", "_test_wal_cu.py", 22),
+    ("101 gọi AI Groq song song có giới hạn", "_test_groq_lan.py", 8),
+    ("102 nâng sáng nhẹ + nền cong YUV", "_test_sang_yuv.py", 20),
+    ("103 hết lượt AI giữa chừng -> đợi, không ra Part thiếu", "_test_het_luot_giua.py", 27),
+    ("104 rà soát toàn bộ 01/11 (ghi file · dây chuyền · bot · AI)", "_test_ra_soat_0111.py", 29),
+    # 02/11/2026: tiếng động — kho lượt 2 (75 file CC0, 29 họ mới) + chọn mốc
+    # hợp lý (`app/core/sfx_chon.py`). Thử phá `_pha_sfx_hop_ly.py`: BẮT 10/10.
+    ("105 tiếng động đa dạng + hợp lý", "_test_sfx_hop_ly.py", 52),
+    ("106 nhạc nền tự chọn theo nội dung", "_test_nhac_tu_dong.py", 96),
+    ("107 lỗi đã chạy lại + phân tích không đói đĩa", "_test_loi_da_chay_lai.py", 12),
+    ("108 key Cài đặt AI không mất âm thầm", "_test_luu_key.py", 13),
+    ("109 video không lời: tên/hashtag không lấy chữ bịa", "_test_khong_loi_ten.py", 30),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
-    ("66 độ to đường xuất", "_test_do_to_xuat.py",       50),
+    ("66 độ to đường xuất", "_test_do_to_xuat.py",       53),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
     # Mốc 47 -> 57: cổng đã mọc thêm mục từ lâu (đo 53) và 18/08 thêm CA 3g
     # (nút tải Piper phải KHOÁ khi máy thiếu Python 3, như nút Demucs). Để mốc

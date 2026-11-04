@@ -598,11 +598,13 @@ def main() -> int:                                       # noqa: C901
                                     for a in goi_loat[0].args))
     # nhánh VieNeu của cửa CÓ MỐC phải TRẢ VỀ kết quả của hàm gộp, không trả
     # thẳng mốc thô — trả thẳng là mốc mang «gi»/«đi»/«pi», im lặng hoàn toàn
-    tra = [n for n in ast.walk(hw) if isinstance(n, ast.Return)
-           and isinstance(n.value, ast.Tuple)
+    # Dò LỒNG: từ khi có lớp nhấn nhá, lệnh trả về là `_nn_loat(..., tra_moc_loat(...), ...)`
+    # chứ không còn đúng dạng `(ok, tra_moc_loat(...))` (31/10/2026: đỏ OAN).
+    # Bất biến thật là "mốc trả về đi QUA phép gộp", không phải hình dạng tuple.
+    tra = [n for n in ast.walk(hw) if isinstance(n, ast.Return) and n.value is not None
            and any(isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute)
-                   and e.func.attr == "tra_moc_loat" for e in n.value.elts)]
-    kiem("9h5 có lệnh `return (ok, tra_moc_loat(...))` trong nhánh VieNeu",
+                   and e.func.attr == "tra_moc_loat" for e in ast.walk(n.value))]
+    kiem("9h5 lệnh return của nhánh VieNeu đi QUA `tra_moc_loat(...)`",
          len(tra) == 1, f"{len(tra)} chỗ")
 
     # --- 9i: TỰ KIỂM BỘ DÒ — bỏ phép gộp thì ca 9e PHẢI hỏng ---

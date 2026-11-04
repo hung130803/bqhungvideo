@@ -43,7 +43,51 @@ def _pick_media_backend() -> None:
     os.environ["QT_MEDIA_BACKEND"] = "windows"
 
 
+def _nguon_song_bat() -> None:
+    """Bản .exe có `nguon_ma.txt` cạnh nó -> chạy mã nguồn trong thư mục dự
+    án (sửa xong mở lại app là có bản mới, không phải đóng gói). Xem
+    _nguon_song.py. Lỗi bất kỳ -> chạy bản đóng gói như cũ."""
+    try:
+        import _nguon_song as _ns
+        if _ns.bat():
+            _ns.thu_nap()
+    except Exception:  # noqa: BLE001
+        try:
+            import _nguon_song as _ns
+            _ns.tat("lỗi khi bật nguồn sống")
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _doi_ban_cu_tat() -> None:
+    """`--doi-pid N`: app vừa tự mở lại -> chờ bản cũ (PID N) tắt hẳn rồi
+    mới chạy tiếp (không thì khoá 1-app-1-lúc tưởng app đang mở)."""
+    if "--doi-pid" not in sys.argv:
+        return
+    i = sys.argv.index("--doi-pid")
+    try:
+        pid = int(sys.argv[i + 1])
+    except (IndexError, ValueError):
+        pid = 0
+    del sys.argv[i:i + 2]
+    if not pid:
+        return
+    import time as _t
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001
+        _t.sleep(5)
+        return
+    han = _t.time() + 60
+    while _t.time() < han:
+        if not psutil.pid_exists(pid):
+            return
+        _t.sleep(0.3)
+
+
 def main() -> int:
+    _doi_ban_cu_tat()
+    _nguon_song_bat()
     if len(sys.argv) == 3 and sys.argv[1] == '--self-check':
         from app.core.self_check import run
         return run(sys.argv[2])

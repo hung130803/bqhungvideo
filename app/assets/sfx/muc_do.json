@@ -71,6 +71,62 @@
 -0.1,
 -49.3
 ],
+"comedy/ed_descending.opus": [
+-23.5,
+-9.9,
+-14.8,
+0.0,
+-0.3,
+-61.3
+],
+"comedy/ed_rubber.opus": [
+-23.5,
+-9.9,
+-15.0,
+0.0,
+-13.8,
+-81.2
+],
+"comedy/s2_bloop.opus": [
+-13.7,
+-3.7,
+-8.7,
+0.0,
+-4.3,
+-48.9
+],
+"comedy/s2_bloop_doi.opus": [
+-14.3,
+-2.9,
+-9.6,
+0.15,
+-0.5,
+-54.3
+],
+"comedy/s2_lo_xo.opus": [
+-13.8,
+0.0,
+-10.6,
+0.0,
+-1.9,
+-2.0
+],
+"comedy/s2_truot_coi_len.opus": [
+-2.8,
+0.0,
+-1.8,
+0.3,
+0.1,
+-10.6
+],
+"comedy/s2_truot_coi_xuong.opus": [
+-4.1,
+0.0,
+-1.3,
+0.25,
+-0.9,
+-14.8
+],
 "comedy/spring_02.opus": [
 -8.7,
 -2.6,
@@ -94,6 +150,22 @@
 0.05,
 -2.1,
 -19.1
+],
+"drumroll/ed_soft_roll.opus": [
+-25.4,
+-10.7,
+-23.6,
+0.3,
+-13.1,
+-19.3
+],
+"drumroll/ed_three_taps.opus": [
+-28.9,
+-10.4,
+-23.2,
+0.4,
+-3.3,
+-19.5
 ],
 "drumroll/roll_01.opus": [
 -18.4,
@@ -191,6 +263,22 @@
 -40.9,
 -63.2
 ],
+"impact/ed_knock.opus": [
+-27.8,
+-10.2,
+-21.1,
+0.0,
+-12.6,
+-19.5
+],
+"impact/ed_muted_hit.opus": [
+-31.8,
+-9.7,
+-22.5,
+0.0,
+-18.2,
+-20.3
+],
 "impact/hit_mid_02.opus": [
 -18.3,
 -2.1,
@@ -198,6 +286,198 @@
 0.0,
 -12.4,
 -56.2
+],
+"impact/k2_impact_impactMetal_light_000.opus": [
+-18.6,
+-0.0,
+-11.5,
+0.0,
+-0.2,
+-11.2
+],
+"impact/k2_impact_impactMetal_light_001.opus": [
+-17.3,
+0.0,
+-10.6,
+0.0,
+-0.2,
+-13.6
+],
+"impact/k2_impact_impactMetal_light_002.opus": [
+-18.1,
+-0.0,
+-13.3,
+0.0,
+-0.2,
+-8.4
+],
+"impact/k2_impact_impactPlank_medium_000.opus": [
+-34.0,
+-7.6,
+-22.3,
+0.0,
+-2.0,
+-18.8
+],
+"impact/k2_impact_impactPlank_medium_001.opus": [
+-32.0,
+-8.7,
+-20.2,
+0.0,
+-2.4,
+-21.1
+],
+"impact/k2_impact_impactPlank_medium_002.opus": [
+-31.5,
+-5.3,
+-19.8,
+0.0,
+-2.0,
+-20.1
+],
+"impact/k2_impact_impactPlate_medium_000.opus": [
+-22.7,
+-0.6,
+-12.8,
+0.0,
+-5.0,
+-19.5
+],
+"impact/k2_impact_impactPlate_medium_001.opus": [
+-21.7,
+-0.0,
+-11.6,
+0.0,
+-4.9,
+-20.3
+],
+"impact/k2_impact_impactPlate_medium_002.opus": [
+-21.5,
+-0.8,
+-12.7,
+0.0,
+-5.4,
+-21.3
+],
+"impact/k2_impact_impactPunch_heavy_000.opus": [
+-29.7,
+-8.6,
+-20.0,
+0.0,
+-4.4,
+-36.9
+],
+"impact/k2_impact_impactPunch_heavy_001.opus": [
+-26.8,
+-7.1,
+-17.8,
+0.0,
+-3.5,
+-32.5
+],
+"impact/k2_impact_impactPunch_heavy_002.opus": [
+-27.6,
+-8.7,
+-18.6,
+0.0,
+-3.5,
+-46.2
+],
+"impact/k2_impact_impactPunch_heavy_003.opus": [
+-26.2,
+-6.6,
+-17.2,
+0.0,
+-3.2,
+-34.6
+],
+"impact/k2_impact_impactPunch_heavy_004.opus": [
+-27.4,
+-7.2,
+-18.1,
+0.0,
+-4.2,
+-37.5
+],
+"impact/k2_impact_impactPunch_medium_000.opus": [
+-24.5,
+-6.1,
+-16.2,
+0.0,
+-4.7,
+-35.4
+],
+"impact/k2_impact_impactPunch_medium_001.opus": [
+-22.8,
+-4.1,
+-14.6,
+0.0,
+-3.9,
+-38.7
+],
+"impact/k2_impact_impactPunch_medium_002.opus": [
+-26.3,
+-6.2,
+-17.8,
+0.0,
+-4.3,
+-29.4
+],
+"impact/k2_impact_impactPunch_medium_003.opus": [
+-24.5,
+-5.1,
+-16.1,
+0.0,
+-4.5,
+-33.8
+],
+"impact/k2_impact_impactPunch_medium_004.opus": [
+-27.1,
+-6.9,
+-18.5,
+0.0,
+-4.8,
+-38.8
+],
+"impact/k2_impact_impactTin_medium_000.opus": [
+-18.4,
+-0.0,
+-13.5,
+0.0,
+-3.1,
+-34.0
+],
+"impact/k2_impact_impactTin_medium_001.opus": [
+-20.1,
+-0.4,
+-14.8,
+0.0,
+-3.2,
+-34.2
+],
+"impact/k2_impact_impactWood_medium_000.opus": [
+-31.3,
+-12.3,
+-23.5,
+0.0,
+-5.1,
+-40.1
+],
+"impact/k2_impact_impactWood_medium_001.opus": [
+-31.5,
+-12.1,
+-23.8,
+0.0,
+-5.3,
+-40.9
+],
+"impact/k2_impact_impactWood_medium_002.opus": [
+-28.7,
+-9.7,
+-21.0,
+0.0,
+-3.9,
+-31.0
 ],
 "impact/k_impactsounds_impactBell_heavy_000.opus": [
 -16.6,
@@ -871,6 +1151,190 @@
 -0.1,
 -42.4
 ],
+"pop/ed_bubble.opus": [
+-23.2,
+-9.9,
+-16.2,
+0.0,
+-0.1,
+-53.3
+],
+"pop/ed_wood_tap.opus": [
+-27.7,
+-10.8,
+-22.0,
+0.0,
+-2.0,
+-20.9
+],
+"pop/k2_interface_drop_001.opus": [
+-19.9,
+-0.0,
+-15.7,
+0.0,
+-0.4,
+-22.1
+],
+"pop/k2_interface_drop_002.opus": [
+-17.7,
+-0.6,
+-11.9,
+0.0,
+-0.5,
+-44.3
+],
+"pop/k2_interface_drop_003.opus": [
+-17.5,
+-0.0,
+-11.7,
+0.0,
+-0.5,
+-44.3
+],
+"pop/k2_interface_drop_004.opus": [
+-18.4,
+-0.0,
+-10.9,
+0.0,
+-0.8,
+-47.7
+],
+"pop/k2_interface_glass_001.opus": [
+-19.9,
+-1.6,
+-13.0,
+0.0,
+-0.0,
+-26.1
+],
+"pop/k2_interface_glass_002.opus": [
+-19.7,
+-1.0,
+-15.7,
+0.0,
+-0.1,
+-24.5
+],
+"pop/k2_interface_glass_003.opus": [
+-15.8,
+-2.2,
+-13.0,
+0.0,
+-0.2,
+-25.7
+],
+"pop/k2_interface_glass_004.opus": [
+-20.3,
+-0.4,
+-40.4,
+0.0,
+-1.4,
+-0.7
+],
+"pop/k2_interface_glass_005.opus": [
+-20.5,
+-1.2,
+-16.9,
+0.0,
+-0.0,
+-11.5
+],
+"pop/k2_interface_glass_006.opus": [
+-19.6,
+-0.6,
+-15.3,
+0.0,
+-0.0,
+-25.3
+],
+"pop/k2_interface_pluck_001.opus": [
+-20.1,
+0.0,
+-18.5,
+0.0,
+-0.2,
+-12.3
+],
+"pop/k2_interface_pluck_002.opus": [
+-20.0,
+-0.2,
+-16.5,
+0.0,
+-0.0,
+-11.9
+],
+"pop/k2_rpg_beltHandle1.opus": [
+-25.7,
+0.0,
+-46.3,
+0.1,
+0.0,
+-3.1
+],
+"pop/k2_rpg_beltHandle2.opus": [
+-28.6,
+-0.2,
+-43.5,
+0.15,
+-0.0,
+-3.6
+],
+"pop/k2_rpg_bookPlace1.opus": [
+-17.6,
+0.0,
+-13.0,
+0.0,
+-3.9,
+-17.7
+],
+"pop/k2_rpg_bookPlace2.opus": [
+-17.8,
+0.0,
+-10.4,
+0.05,
+-2.8,
+-20.2
+],
+"pop/k2_rpg_bookPlace3.opus": [
+-17.6,
+0.0,
+-11.1,
+0.0,
+-2.7,
+-17.1
+],
+"pop/k2_rpg_handleSmallLeather.opus": [
+-33.9,
+-11.5,
+-27.8,
+0.0,
+-5.4,
+-19.8
+],
+"pop/k2_rpg_handleSmallLeather2.opus": [
+-36.6,
+-15.4,
+-32.9,
+0.0,
+-0.8,
+-13.1
+],
+"pop/k2_rpg_metalClick.opus": [
+-32.2,
+-3.3,
+-26.9,
+0.25,
+-0.0,
+-7.3
+],
+"pop/k2_rpg_metalLatch.opus": [
+-21.8,
+0.0,
+-22.9,
+0.0,
+-1.3,
+-3.8
+],
 "pop/k_uiaudio_click1.opus": [
 -22.2,
 -1.1,
@@ -1215,6 +1679,46 @@
 -0.1,
 -53.9
 ],
+"reveal/ed_glass_chime.opus": [
+-26.4,
+-9.9,
+-17.1,
+0.0,
+-0.0,
+-32.0
+],
+"reveal/ed_soft_resolve.opus": [
+-26.3,
+-9.9,
+-16.8,
+0.0,
+-0.3,
+-52.2
+],
+"reveal/k2_interface_bong_001.opus": [
+-30.3,
+-17.5,
+-26.4,
+0.0,
+-9.1,
+-43.5
+],
+"reveal/k2_rpg_handleCoins.opus": [
+-27.5,
+-0.2,
+-31.2,
+0.1,
+-0.1,
+-3.8
+],
+"reveal/k2_rpg_handleCoins2.opus": [
+-30.6,
+-9.4,
+-32.7,
+0.1,
+-0.0,
+-4.0
+],
 "reveal/k_interfacesounds_confirmation_001.opus": [
 -11.4,
 -1.1,
@@ -1294,6 +1798,22 @@
 0.05,
 -0.0,
 -22.6
+],
+"riser/ed_reverse_chime.opus": [
+-24.7,
+-9.5,
+-20.7,
+0.45,
+-0.6,
+-14.8
+],
+"riser/ed_tension_swell.opus": [
+-27.1,
+-10.7,
+-22.4,
+0.85,
+-1.8,
+-15.3
 ],
 "riser/riser_fast_05.opus": [
 -3.9,
@@ -1415,6 +1935,22 @@
 -0.4,
 -11.3
 ],
+"sad/ed_low_bell.opus": [
+-26.2,
+-10.0,
+-16.6,
+0.0,
+-9.5,
+-80.2
+],
+"sad/ed_soft_fall.opus": [
+-23.6,
+-9.9,
+-14.2,
+0.0,
+-1.9,
+-77.6
+],
 "sad/note_deep_03.opus": [
 -10.8,
 -3.0,
@@ -1494,6 +2030,54 @@
 0.3,
 -10.8,
 -32.3
+],
+"scratch/ed_shutter.opus": [
+-29.1,
+-10.8,
+-22.4,
+0.0,
+-0.1,
+-20.3
+],
+"scratch/ed_tape_stop.opus": [
+-23.4,
+-9.9,
+-14.8,
+0.0,
+-6.7,
+-85.1
+],
+"scratch/k2_interface_glitch_001.opus": [
+-13.0,
+-0.0,
+-17.3,
+0.0,
+-0.6,
+-12.9
+],
+"scratch/k2_interface_glitch_002.opus": [
+-16.5,
+-2.0,
+-20.9,
+0.0,
+-0.3,
+-7.7
+],
+"scratch/k2_interface_glitch_003.opus": [
+-11.6,
+-0.0,
+-18.8,
+0.0,
+-0.1,
+-9.7
+],
+"scratch/k2_interface_glitch_004.opus": [
+-14.2,
+-0.3,
+-24.6,
+0.0,
+-0.2,
+-5.5
 ],
 "scratch/k_interfacesounds_error_001.opus": [
 -16.9,
@@ -1719,6 +2303,46 @@
 -30.6,
 -49.9
 ],
+"suspense/ed_clock.opus": [
+-33.5,
+-10.7,
+-23.7,
+0.55,
+-0.1,
+-19.7
+],
+"suspense/ed_heartbeat.opus": [
+-31.8,
+-10.6,
+-22.5,
+0.65,
+-16.5,
+-20.0
+],
+"suspense/k2_rpg_creak1.opus": [
+-20.6,
+-3.8,
+-13.7,
+0.25,
+-0.0,
+-13.7
+],
+"suspense/k2_rpg_creak2.opus": [
+-18.1,
+-0.0,
+-10.5,
+0.55,
+-0.1,
+-18.0
+],
+"suspense/k2_rpg_creak3.opus": [
+-18.0,
+-5.2,
+-12.4,
+0.0,
+-0.1,
+-28.8
+],
 "transition/air_soft_05.opus": [
 -16.3,
 -3.7,
@@ -1742,6 +2366,142 @@
 0.2,
 -2.3,
 -34.3
+],
+"transition/ed_brush.opus": [
+-25.9,
+-10.2,
+-22.3,
+0.2,
+-1.0,
+-14.4
+],
+"transition/ed_short_air.opus": [
+-24.6,
+-10.1,
+-21.1,
+0.1,
+-0.9,
+-13.9
+],
+"transition/k2_rpg_bookFlip1.opus": [
+-28.7,
+-0.0,
+-23.7,
+0.5,
+-0.2,
+-5.4
+],
+"transition/k2_rpg_bookFlip2.opus": [
+-34.1,
+-6.6,
+-32.3,
+0.0,
+-0.3,
+-8.8
+],
+"transition/k2_rpg_bookFlip3.opus": [
+-30.8,
+-5.3,
+-30.7,
+0.0,
+-0.0,
+-5.1
+],
+"transition/k2_rpg_cloth1.opus": [
+-25.0,
+-2.4,
+-18.8,
+0.35,
+-0.2,
+-17.6
+],
+"transition/k2_rpg_cloth2.opus": [
+-27.3,
+-4.0,
+-22.8,
+0.0,
+-0.5,
+-19.2
+],
+"transition/k2_rpg_cloth3.opus": [
+-30.7,
+-10.6,
+-25.5,
+0.0,
+-1.0,
+-20.7
+],
+"transition/k2_rpg_cloth4.opus": [
+-31.1,
+-12.1,
+-27.1,
+0.25,
+-2.3,
+-16.1
+],
+"transition/k2_rpg_clothBelt.opus": [
+-26.2,
+0.0,
+-31.1,
+0.0,
+-0.2,
+-3.2
+],
+"transition/k2_rpg_clothBelt2.opus": [
+-25.4,
+-3.3,
+-23.6,
+0.05,
+-0.0,
+-4.1
+],
+"transition/k2_rpg_drawKnife1.opus": [
+-43.8,
+-25.9,
+-46.4,
+0.0,
+-0.0,
+-4.8
+],
+"transition/k2_rpg_drawKnife2.opus": [
+-37.8,
+-19.5,
+-34.9,
+0.15,
+-0.2,
+-10.3
+],
+"transition/k2_rpg_drawKnife3.opus": [
+-35.4,
+-10.5,
+-27.8,
+0.0,
+-2.3,
+-20.2
+],
+"transition/k2_rpg_knifeSlice.opus": [
+-20.7,
+-2.6,
+-18.2,
+0.15,
+0.0,
+-4.6
+],
+"transition/k2_rpg_knifeSlice2.opus": [
+-20.0,
+-0.9,
+-18.7,
+0.0,
+-0.2,
+-4.2
+],
+"transition/s2_vut_gio.opus": [
+-45.1,
+-34.8,
+-39.3,
+0.3,
+-0.0,
+-28.7
 ],
 "transition/swoosh_air_03.opus": [
 -19.9,

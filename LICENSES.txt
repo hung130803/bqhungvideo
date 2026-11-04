@@ -174,6 +174,18 @@ Phần tự sinh : sinh bằng ffmpeg lavfi (`tools/gen_sfx.py`) — không bả
 Phần tải về  : Kenney.nl — CC0 1.0 (public domain), dùng thương mại được,
                không bắt buộc ghi nguồn.  https://kenney.nl/
 Danh sách nguồn từng gói: _internal/app/assets/sfx/NGUON.md
+Lượt 2 (02/11/2026, `tools/them_sfx_v2.py`): Kenney.nl `impact-sounds`,
+               `rpg-audio`, `interface-sounds` — CC0 1.0 (đã đọc License.txt
+               gốc từng gói); kèm tiếng tự sinh ffmpeg lavfi (CC0). Nguồn +
+               sha256 từng file: _internal/app/assets/sfx/v2-provenance.json
+
+Kho NHẠC NỀN  —  CC0 1.0
+Tệp kèm theo : _internal/app/assets/music/  (nguồn gốc: app/assets/music)
+Nguồn        : OpenGameArt.org — chỉ nhận bài mà khối giấy phép TRÊN TRANG
+               ghi CC0 (công cụ `tools/tai_nhac_cc0.py` kiểm từng trang).
+               Dùng thương mại được, không bắt buộc ghi nguồn.
+Danh sách từng bài (tác giả + trang gốc): _internal/app/assets/music/NGUON.md;
+mã băm sha256 từng file: _internal/app/assets/music/catalog.json
 
 
 ================================================================================

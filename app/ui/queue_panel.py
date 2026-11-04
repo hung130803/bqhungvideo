@@ -6,13 +6,20 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app import services
+from app.database.db import db
+from app.core.highlight_policy import selection_allows_export, selection_note as display_selection_note
 from app.ui.state import AppState
-from app.ui.theme import ACCENT, DANGER, MUTED, SUCCESS, SURFACE, WARN
+from app.ui.anim import SmoothProgressBar
+from app.ui.theme import (
+    ACCENT, CHANNEL_COLORS, DANGER, FS_MD, H_COMPACT, MUTED, PURPLE, SP_1,
+    SP_2, SP_3, SUCCESS, TEAL, set_chan, set_phase, set_prop, set_role,
+    set_size, set_tone, set_variant,
+)
 
 _TYPE = {"auto": "Tạo clip", "analyze": "Phân tích", "m1_highlights": "Tìm highlight",
          "m1_mixed_cut": "Mixed-Cut", "auto_mixed": "Mixed-Cut",
@@ -29,9 +36,13 @@ _TYPE_TAG = {"auto": "🔍 Phân tích", "analyze": "🔍 Phân tích",
 _STATUS = {"running": ("Đang chạy", ACCENT), "pending": ("Đang chờ", MUTED),
            "done": ("✅ Xong", SUCCESS), "failed": ("✕ Lỗi · bấm xem", DANGER),
            "canceled": ("Đã hủy", MUTED), "skipped": ("Bỏ qua", MUTED)}
+#: vai màu (QSS theme: QLabel[tone=...]) của từng trạng thái — đổi màu bằng
+#: property thay vì setStyleSheet mỗi nhịp (setStyleSheet = restyle cả cây con).
+_STATUS_TONE = {"running": "accent", "pending": "muted", "done": "success",
+                "failed": "danger", "canceled": "muted", "skipped": "muted"}
 # MÀU THANH theo GIAI ĐOẠN: phân tích/AI = TÍM; cắt/xuất video = XANH NGỌC.
-_PHASE_ANALYZE = "#A78BFA"      # phân tích + AI chọn clip
-_PHASE_EXPORT = "#14B8A6"       # cắt + xuất video
+_PHASE_ANALYZE = PURPLE         # phân tích + AI chọn clip   (token theme)
+_PHASE_EXPORT = TEAL            # cắt + xuất video
 _EXPORT_TYPES = {"m1_export_clip"}
 # chữ giai đoạn khi ĐANG CHẠY (đặt sau %): "45% · Đang cắt"
 _RUN_ANALYZE = "Đang phân tích"
@@ -44,8 +55,15 @@ _NARROW_PX = 520                # dưới cỡ này: trạng thái rút gọn "4
 _MAX_CHAY = 24                  # việc đang chạy / đang chờ
 _MAX_XONG = 12                  # việc đã xong / lỗi gần nhất
 # màu phân biệt KÊNH (mỗi kênh 1 màu cố định theo id)
-_PALETTE = ["#4F7DFF", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
-            "#A78BFA", "#EF4444", "#14B8A6", "#F97316", "#8B5CF6"]
+_PALETTE = CHANNEL_COLORS        # 10 màu kênh — QSS có sẵn QLabel[chan="i"]
+
+
+def _da_thu_lai(j) -> bool:
+    """Việc lỗi đã có lượt mới hơn (services._DA_THU_LAI) -> không còn là lỗi."""
+    try:
+        return bool(j["da_thu_lai"])
+    except (IndexError, KeyError):
+        return False
 
 
 def _chan_color(pid):
@@ -62,6 +80,11 @@ def _rgba(hex_color: str, a: float) -> str:
 def _phase_color(jtype: str) -> str:
     """Màu thanh theo giai đoạn: xuất video = xanh ngọc, còn lại = tím."""
     return _PHASE_EXPORT if jtype in _EXPORT_TYPES else _PHASE_ANALYZE
+
+
+def _phase_name(jtype: str) -> str:
+    """Tên giai đoạn cho property `phase`/`tone` của theme."""
+    return "export" if jtype in _EXPORT_TYPES else "analyze"
 
 
 def _part_no(j) -> int:
@@ -191,11 +214,14 @@ class QueuePanel(QWidget):
         self.setMinimumHeight(70)        # cho phép kéo to/nhỏ (như terminal)
 
         # ---- font + BỀ NGANG CỐ ĐỊNH đo bằng font metrics (không bao giờ cụt) --
+        # Cỡ theo token FS_MD (13 px). Trước đây đặt 15/14 px nhưng luật QSS
+        # `* {font-size:13px}` ĐÈ mất (chữ thật vẫn 13) -> nay theme bỏ luật `*`,
+        # giữ 13 px để bố cục hàng (cao 58) y như anh Hùng đang thấy.
         self._name_font = QFont(self.font())
-        self._name_font.setPixelSize(15)          # to hơn cho dễ đọc tên bước
+        self._name_font.setPixelSize(FS_MD)
         self._name_font.setWeight(QFont.Weight.DemiBold)
         self._st_font = QFont(self.font())
-        self._st_font.setPixelSize(14)            # % + trạng thái rõ số, dễ nhìn
+        self._st_font.setPixelSize(FS_MD)         # % + trạng thái rõ số, dễ nhìn
         self._st_font.setWeight(QFont.Weight.DemiBold)
         fm = QFontMetrics(self._st_font)
         longest = [f"~99% · {_RUN_ANALYZE}", f"99% · {_RUN_EXPORT}"]
@@ -214,20 +240,22 @@ class QueuePanel(QWidget):
         # của bố cục cũ chặn resizeEvent trước khi header kịp xuống hàng.
         outer.setSizeConstraint(QVBoxLayout.SizeConstraint.SetNoConstraint)
         self.setMinimumWidth(440)
-        outer.setContentsMargins(12, 6, 12, 8)
-        outer.setSpacing(6)
+        outer.setContentsMargins(SP_3, SP_1, SP_3, SP_2)
+        outer.setSpacing(SP_2)
 
         # ---- HEADER 1 hàng: chips đếm (trái) + Hủy tất cả/Xóa lịch sử (phải).
         # Hẹp quá -> chips tự xuống hàng riêng (xem _layout_header).
         self._chips_w = QWidget()
         chips = QHBoxLayout(self._chips_w)
         chips.setContentsMargins(0, 0, 0, 0)
-        chips.setSpacing(6)
-        self.chip_analyze = self._make_chip("🔍", "phân tích", _PHASE_ANALYZE)
-        self.chip_export = self._make_chip("✂", "đang cắt", _PHASE_EXPORT)
-        self.chip_wait = self._make_chip("⏳", "đợi", WARN)
-        self.chip_done = self._make_chip("✅", "việc xong", SUCCESS)
-        self.chip_fail = self._make_chip("❌", "lỗi", DANGER)
+        chips.setSpacing(SP_2)
+        _ttl = QLabel("TIẾN TRÌNH"); set_role(_ttl, "section")
+        chips.addWidget(_ttl); chips.addSpacing(SP_1)
+        self.chip_analyze = self._make_chip("🔍", "phân tích", "analyze")
+        self.chip_export = self._make_chip("✂", "đang cắt", "export")
+        self.chip_wait = self._make_chip("⏳", "đợi", "warn")
+        self.chip_done = self._make_chip("✅", "việc xong", "success")
+        self.chip_fail = self._make_chip("❌", "lỗi", "danger")
         self.chip_fail["w"].hide()      # chỉ hiện khi CÓ lỗi (đỡ dọa user)
         for ch in (self.chip_analyze, self.chip_export, self.chip_wait,
                    self.chip_done, self.chip_fail):
@@ -237,22 +265,22 @@ class QueuePanel(QWidget):
         self._btns_w = QWidget()
         bh = QHBoxLayout(self._btns_w)
         bh.setContentsMargins(0, 0, 0, 0)
-        bh.setSpacing(6)
-        ca = QPushButton("Hủy tất cả"); ca.setProperty("danger", True)
+        bh.setSpacing(SP_2)
+        ca = QPushButton("Hủy tất cả"); set_variant(ca, "danger")
+        set_size(ca, "compact")
         ca.setToolTip("Hủy MỌI việc đang chạy & đang chờ cùng lúc.")
-        ca.setStyleSheet("QPushButton{padding:3px 12px; font-size:12px;}")
         ca.clicked.connect(self._cancel_all)
         bh.addWidget(ca)
-        clr = QPushButton("Xóa lịch sử"); clr.setProperty("ghost", True)
+        clr = QPushButton("Xóa lịch sử"); set_variant(clr, "ghost")
+        set_size(clr, "compact")
         clr.setToolTip("Xóa việc đã xong/lỗi khỏi danh sách (việc đang chạy giữ nguyên).")
-        clr.setStyleSheet("QPushButton{padding:3px 12px; font-size:12px;}")
         clr.clicked.connect(self._clear_history)
         bh.addWidget(clr)
 
         self._hdr = QGridLayout()
         self._hdr.setContentsMargins(0, 0, 0, 0)
-        self._hdr.setHorizontalSpacing(8)
-        self._hdr.setVerticalSpacing(4)
+        self._hdr.setHorizontalSpacing(SP_2)
+        self._hdr.setVerticalSpacing(SP_1)
         self._hdr.setColumnStretch(0, 1)
         self._hdr.addWidget(self._btns_w, 0, 1,
                             Qt.AlignmentFlag.AlignRight
@@ -262,27 +290,45 @@ class QueuePanel(QWidget):
         outer.addLayout(self._hdr)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
-        self.summary.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_role(self.summary, "muted")
         outer.addWidget(self.summary)
 
         # ---- vùng CUỘN chứa các dòng (xem lại việc trước) ----
         host = QWidget()
         self.lay = QVBoxLayout(host)
         self.lay.setContentsMargins(0, 0, 0, 0)
-        self.lay.setSpacing(4)
-        self.empty = QLabel("Chưa có việc nào đang chạy.")
-        self.empty.setStyleSheet(f"color:{MUTED}; font-size:14px;")
+        self.lay.setSpacing(SP_1)
+        self.empty = self._make_empty()
         self.lay.addWidget(self.empty)
         self.lay.addStretch(1)
         sc = QScrollArea(); sc.setWidgetResizable(True); sc.setWidget(host)
         sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         sc.setFrameShape(QScrollArea.Shape.NoFrame)
         outer.addWidget(sc, 1)
+        self._scroll = sc
+        self._collapsed = False
         self._rows: dict[int, dict] = {}
         self._sig = None                # chữ ký (id, status) để biết khi nào dựng lại
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(400)           # nhịp nhanh hơn cho mượt
+
+    def add_header_widget(self, w) -> None:
+        """Thêm nút vào ĐẦU cụm nút bên phải hàng chip (vd Thu gọn)."""
+        self._btns_w.layout().insertWidget(0, w)
+        self._hdr_wide = None
+        self._layout_header()
+
+    # ---- THU GỌN: chỉ còn hàng chip đếm (bố cục gọn 26/10) ----
+    def set_collapsed(self, collapsed: bool) -> None:
+        collapsed = bool(collapsed)
+        self._collapsed = collapsed
+        self.summary.setVisible(not collapsed)
+        self._scroll.setVisible(not collapsed)
+        self.setMinimumHeight(0 if collapsed else 70)
+
+    def is_collapsed(self) -> bool:
+        return self._collapsed
 
     # ---- header co giãn: đủ rộng = chips + nút CÙNG hàng; hẹp = 2 hàng ----
     def resizeEvent(self, e):  # noqa: N802
@@ -316,24 +362,29 @@ class QueuePanel(QWidget):
             self._hdr.addWidget(self._chips_w, 1, 0, 1, 2,
                                 Qt.AlignmentFlag.AlignLeft)
 
+    @staticmethod
+    def _make_empty() -> QLabel:
+        lb = QLabel("Chưa có việc nào đang chạy.")
+        lb.setProperty("tone", "muted")
+        lb.setContentsMargins(SP_1, SP_2, SP_1, SP_2)
+        return lb
+
     # ---- chip đếm trạng thái ----
     @staticmethod
-    def _make_chip(icon: str, label: str, color: str) -> dict:
-        """1 ô đếm GỌN: 'icon SỐ nhãn' — ôm sát nội dung, xếp cạnh nhau."""
+    def _make_chip(icon: str, label: str, tone: str) -> dict:
+        """1 ô đếm GỌN: 'icon SỐ nhãn' — ôm sát nội dung, xếp cạnh nhau.
+        Màu lấy từ QSS theme: QFrame#chip[tone=...] (không stylesheet riêng)."""
         w = QFrame()
-        w.setStyleSheet(
-            f"QFrame{{background:{_rgba(color, 0.13)}; "
-            f"border:1px solid {_rgba(color, 0.35)}; border-radius:8px;}}")
+        w.setObjectName("chip")
+        w.setProperty("tone", tone)
         w.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         h = QHBoxLayout(w)
-        h.setContentsMargins(8, 3, 8, 3)
-        h.setSpacing(4)
+        h.setContentsMargins(SP_2, 3, SP_2, 3)
+        h.setSpacing(SP_1)
         num = QLabel(f"{icon} 0")
-        num.setStyleSheet(f"color:{color}; font-size:12px; font-weight:700; "
-                          f"background:transparent; border:none;")
+        num.setObjectName("chipNum")
         lab = QLabel(label)
-        lab.setStyleSheet(f"color:{MUTED}; font-size:11px; "
-                          f"background:transparent; border:none;")
+        lab.setObjectName("chipLabel")
         h.addWidget(num)
         h.addWidget(lab)
         return {"w": w, "num": num, "icon": icon}
@@ -377,6 +428,10 @@ class QueuePanel(QWidget):
     def _cancel_all(self):
         # 1 lời gọi: pending -> canceled ngay (1 SQL), job đang chạy -> kill
         # tiến trình con tức thì. Không join/chờ gì -> UI không đơ.
+        try:
+            self.state.huy_gen = int(getattr(self.state, "huy_gen", 0)) + 1
+        except Exception:  # noqa: BLE001
+            pass
         self.state.pool.cancel_all()
         self._sig = None
         self.refresh()
@@ -388,6 +443,15 @@ class QueuePanel(QWidget):
 
     # ---- vòng cập nhật ----
     def refresh(self):
+        # Cửa sổ đang THU NHỎ xuống taskbar: không ai nhìn bảng này -> bỏ nhịp
+        # (đỡ 2,5 lượt truy vấn DB + vẽ lại mỗi giây khi app chạy nền hàng giờ).
+        # Mở lại cửa sổ thì nhịp kế tiếp (<= 0,9 s) vẽ đủ ngay, không mất gì:
+        # việc chạy/xuất KHÔNG phụ thuộc bảng này, nó chỉ để hiển thị.
+        try:
+            if self.window().isMinimized():
+                return
+        except RuntimeError:            # widget đã bị huỷ lúc đóng app
+            return
         self._update_chips()            # bảng đếm dùng CHUNG nhịp poll này
         # Lấy RỘNG hơn + giữ NHIỀU job xong hơn: chạy 100 kênh xuất Part liên
         # tục, giới hạn 20 làm job "✅ Xong" bị đẩy mất → user tưởng chưa xong.
@@ -431,8 +495,7 @@ class QueuePanel(QWidget):
         widget (không tạo lại thanh tiến trình -> không nhấp nháy, không đơ)."""
         if not show:
             self._clear()
-            self.empty = QLabel("Chưa có việc nào đang chạy.")
-            self.empty.setStyleSheet(f"color:{MUTED}; font-size:14px;")
+            self.empty = self._make_empty()
             self.lay.addWidget(self.empty)
             self.lay.addStretch(1)
             return
@@ -477,7 +540,7 @@ class QueuePanel(QWidget):
                "ẩn bớt để app không bị đơ")
         if lb is None:
             lb = QLabel(txt)
-            lb.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+            set_role(lb, "muted")
             self._lb_con = lb
             self.lay.addWidget(lb)
         else:
@@ -493,8 +556,7 @@ class QueuePanel(QWidget):
     def _rebuild(self, show):
         self._clear()
         if not show:
-            self.empty = QLabel("Chưa có việc nào đang chạy.")
-            self.empty.setStyleSheet(f"color:{MUTED}; font-size:14px;")
+            self.empty = self._make_empty()
             self.lay.addWidget(self.empty)
             self.lay.addStretch(1)
             return
@@ -506,24 +568,28 @@ class QueuePanel(QWidget):
 
     # Hai dòng: danh tính video; bước hiện tại + tiến độ của riêng việc đó.
     def _make_row(self, j):
-        w = QWidget()
+        # QFrame#qrow: nền trong, rê chuột sáng nhẹ (QSS theme) — không
+        # stylesheet riêng cho từng dòng.
+        w = QFrame()
+        w.setObjectName("qrow")
         w.setFixedHeight(58)
         lay = QGridLayout(w)
-        lay.setContentsMargins(0, 2, 0, 2)
-        lay.setHorizontalSpacing(8)
+        lay.setContentsMargins(SP_2, SP_1, SP_2, SP_1)
+        lay.setHorizontalSpacing(SP_3)
         lay.setVerticalSpacing(2)
         lay.setColumnStretch(0, 1)
         col = _chan_color(j["project_id"])
         name = _ElideLabel()
         name.setFont(self._name_font)
-        name.setStyleSheet(f"color:{col};")
+        set_chan(name, j["project_id"])
         name.set_full_text(_job_name(j)[0])
         lay.addWidget(name, 0, 0, 1, 3)
         detail = _ElideLabel()
-        detail.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_role(detail, "muted")
         lay.addWidget(detail, 1, 0)
-        bar = QProgressBar()
-        bar.setFixedHeight(10)
+        # SmoothProgressBar: % trôi mượt ~300 ms; value() vẫn trả số ĐÍCH ngay
+        bar = SmoothProgressBar()
+        bar.setFixedHeight(8)
         bar.setRange(0, 100)
         bar.setTextVisible(False)
         bar.setFixedWidth(150)
@@ -534,8 +600,8 @@ class QueuePanel(QWidget):
         st.setFixedWidth(self._st_w_short if self._narrow else self._st_w_full)
         lay.addWidget(st, 1, 2)
         btn = QPushButton()
-        btn.setFixedSize(self._btn_w, 24)
-        btn.setStyleSheet("QPushButton{padding:2px 6px; font-size:12px;}")
+        set_size(btn, "compact")
+        btn.setFixedSize(self._btn_w, H_COMPACT)
         sp = btn.sizePolicy()
         sp.setRetainSizeWhenHidden(True)
         btn.setSizePolicy(sp)
@@ -547,18 +613,20 @@ class QueuePanel(QWidget):
         return row
 
     def _wire_btn(self, btn, j):
-        btn.setProperty("danger", False)
-        btn.setProperty("ghost", False)
+        # set_variant repolish ĐÚNG khi đổi (bản cũ đổi property mà không
+        # polish -> nút "Hủy" đỏ còn nguyên màu đỏ sau khi việc lỗi thành "Thử lại")
         try:
             btn.clicked.disconnect()
         except TypeError:
             pass
         if j["status"] in ("running", "pending"):
-            btn.setText("Hủy"); btn.setProperty("danger", True); btn.show()
+            btn.setText("Hủy"); set_variant(btn, "danger"); btn.show()
             btn.clicked.connect(lambda _, i=j["id"]: self._cancel(i))
+        elif j["status"] == "failed" and _da_thu_lai(j):
+            btn.hide()                  # đã có lượt mới -> không còn gì để bấm
         elif j["status"] in ("failed", "canceled"):
             # retry() hỗ trợ cả 'canceled' -> lỡ tay hủy vẫn chạy lại được
-            btn.setText("Thử lại"); btn.setProperty("ghost", True); btn.show()
+            btn.setText("Thử lại"); set_variant(btn, "ghost"); btn.show()
             btn.clicked.connect(lambda _, i=j["id"]: self._retry(i))
         else:
             btn.hide()
@@ -571,19 +639,31 @@ class QueuePanel(QWidget):
         if j["status"] == "pending":
             pct = 0
         bar = row["bar"]
+        outcome = db.loads(j["result"], {}) if "result" in j.keys() else {}
+        if not isinstance(outcome, dict):
+            outcome = {}
+        selection_note = display_selection_note(outcome)
+        needs_review = (j["status"] == "done" and bool(selection_note)
+                        and not selection_allows_export(outcome))
         if j["status"] == "done":
             pct = 100
         bar.setValue(pct)
         # màu thanh: lỗi=đỏ, xong=xanh dịu; ĐANG CHẠY/CHỜ = màu theo GIAI ĐOẠN
         # (phân tích=tím, cắt/xuất=xanh ngọc) -> nhìn màu biết ngay đang làm gì
-        chunk = {"failed": DANGER, "done": SUCCESS}.get(
-            j["status"], _phase_color(j["type"]))
-        bar.setStyleSheet(
-            f"QProgressBar{{background:{SURFACE}; border:none; border-radius:5px;}} "
-            f"QProgressBar::chunk{{background:{chunk}; border-radius:5px;}}")
+        phase = {"failed": "failed", "done": "done"}.get(
+            j["status"], _phase_name(j["type"]))
+        if needs_review:
+            phase = "warn"
+        # setStyleSheet bắt Qt tính lại kiểu cả cây widget -> TỐN (bản cũ gọi MỖI
+        # NHỊP cho MỌI dòng). Nay chỉ đổi property `phase`; set_phase() tự bỏ qua
+        # khi không đổi -> nhịp thường KHÔNG restyle gì.
+        set_phase(bar, phase)
         # việc đã xong/hủy: MỜ BỚT tên (đỡ tranh chú ý với việc đang chạy)
-        faded = j["status"] in ("done", "canceled", "skipped")
-        row["name"].setStyleSheet(f"color:{MUTED if faded else row['col']};")
+        cu = j["status"] == "failed" and _da_thu_lai(j)
+        if cu:
+            set_phase(bar, "done")
+        faded = cu or j["status"] in ("done", "canceled", "skipped")
+        set_tone(row["name"], "muted" if faded else None)
         msg = (j["message"] or j["error"] or "").strip()
         if j["status"] == "running":
             # chữ CỐ ĐỊNH "45% · Đang cắt"/"· Đang phân tích" (vừa khít cột,
@@ -593,18 +673,27 @@ class QueuePanel(QWidget):
                      else _RUN_ANALYZE)
             estimate = "" if j["type"] in _EXPORT_TYPES else "~"
             txt = f"{estimate}{pct}%" if self._narrow else f"{estimate}{pct}% · {phase}"
-            color = _phase_color(j["type"])
+            tone = _phase_name(j["type"])
         else:
-            txt, color = _STATUS.get(j["status"], (j["status"], MUTED))
+            txt = _STATUS.get(j["status"], (j["status"], MUTED))[0]
+            tone = _STATUS_TONE.get(j["status"], "muted")
             if self._narrow and j["status"] == "failed":
                 txt = "✕ Lỗi"           # vẫn gạch chân + bấm xem đầy đủ
+            if cu:
+                txt, tone = "Đã chạy lại", "muted"
+        if needs_review:
+            txt, tone = ("0 Part" if outcome.get("count") == 0 else "Cần xem lại"), "warn"
+        set_tone(row["st"], tone)
         row["st"].setText(txt)
         row["name"].set_full_text(_job_name(j)[0])
         if j["status"] == "done":
             detail = ("Đã xuất Part này" if j["type"] in _EXPORT_TYPES else
-                      "Đã xong bước AI/xử lý; xem riêng các việc xuất Part")
+                      selection_note or "Đã xong bước AI/xử lý; xem riêng các việc xuất Part")
         elif j["status"] == "pending":
             detail = "Chờ đến lượt xuất Part" if j["type"] in _EXPORT_TYPES else "Chờ đến lượt AI/xử lý"
+        elif cu:
+            detail = ("Đã tự chạy lại ở lượt mới (xem dòng phía trên) · lỗi cũ: "
+                      + (j["error"] or msg or "Xử lý thất bại").strip())
         elif j["status"] == "failed":
             detail = (j["error"] or msg or "Xử lý thất bại").strip()
         elif j["status"] in ("canceled", "skipped"):
@@ -630,10 +719,9 @@ class QueuePanel(QWidget):
             title = row["name"].full_text()
             row["st"].mousePressEvent = \
                 lambda _e, t=title, m=err: self._show_error(t, m)
-            row["st"].setStyleSheet(
-                f"color:{color}; text-decoration:underline;")
+            set_prop(row["st"], "link", True)
         else:
-            row["st"].setStyleSheet(f"color:{color};")
+            set_prop(row["st"], "link", None)
             row["st"].unsetCursor()
             row["st"].mousePressEvent = lambda _e: None
             row["name"].setToolTip(row["name"].full_text())
@@ -646,7 +734,7 @@ class QueuePanel(QWidget):
         """Ghép LÝ DO LỖI đầy đủ: error chính + thông báo bước cuối (nếu khác)."""
         err = (j["error"] or "").strip()
         last = (j["message"] or "").strip()
-        if err and last and last not in err:
+        if err and last and last not in ('Thất bại', 'Bắt đầu...') and last not in err:
             return err + "\n\nBước cuối trước khi lỗi: " + last
         return err or last or "Không rõ nguyên nhân (thử bấm 'Thử lại')."
 

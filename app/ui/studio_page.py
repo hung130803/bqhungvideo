@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea,
-    QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
+    QFrame, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app import services
@@ -30,7 +30,11 @@ from app.ui.appsettings import app_settings
 from app.ui.editor import EditorDialog, render_overlay_png
 from app.ui.state import AppState
 from app.ui.theme import (
-    ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, SUCCESS, SURFACE, TEXT, WARN,
+    ACCENT, BASE, BORDER, DANGER, ELEV, MUTED, PURPLE, SUCCESS, SURFACE, TEAL,
+    TEXT, WARN, WINDOW,
+    FS_LG, FS_MD, FS_SM, FS_XS, H_COMPACT, H_DEFAULT, R_LG, R_MD, R_SM, SP_1, SP_2,
+    SP_3, SP_4, card, fit_width, pad, rgba, set_phase, set_prop, set_role,
+    set_size, set_style, set_tone, set_variant,
 )
 
 #: Dấu ghi trong note của sổ dây chuyền: cắt/xuất XONG nhưng CHƯA dọn được
@@ -65,6 +69,24 @@ PRO_NAME = "Pro (giật tít + phụ đề vàng)"
 _OLD_PRO_NAME = "⭐ Pro (giật tít + phụ đề vàng)"   # tên cũ có emoji tofu -> dọn
 
 
+def _bao_nhanh(parent, title, text, kind=None):
+    """Thông báo NGẮN không chặn (toast góc dưới-phải) thay cho hộp OK phải
+    bấm tắt. Không hiện được toast thì quay về QMessageBox như cũ."""
+    if kind is None:
+        t = str(title or "")
+        kind = ("success" if t.startswith(("Đã", "Khôi phục", "Sạch"))
+                else "warn" if t.startswith(("Chưa", "Không", "Đang", "Đoạn"))
+                else "info")
+    try:
+        from app.ui.anim import toast
+        ms = 6000 if len(str(text)) > 90 else 3800
+        if toast(parent, str(text), kind=kind, ms=ms) is not None:
+            return
+    except Exception:  # noqa: BLE001 - toast lỗi -> hộp cũ
+        pass
+    QMessageBox.information(parent, title, text)
+
+
 def _vua_chu(btn, *nhan):
     """ĐẶT BỀ RỘNG NÚT THEO FONT THẬT LÚC CHẠY, không đặt số cứng.
 
@@ -81,8 +103,12 @@ def _vua_chu(btn, *nhan):
     CHỮ y hệt lỗi cũ — hai chỗ dùng chung một bản mới hết tái phát.
     """
     btn.ensurePolished()
-    fm = btn.fontMetrics()
-    rong = max(fm.horizontalAdvance(str(t)) for t in nhan) + 30
+    # đo bằng font ĐẬM: nút primary/hover in đậm -> chữ rộng hơn font thường
+    # ("Xuất lại" từng ra "Kuất lạ" trên nút xanh).
+    from PyQt6.QtGui import QFont, QFontMetrics
+    _f = QFont(btn.font()); _f.setWeight(QFont.Weight.Bold)
+    fm = QFontMetrics(_f)
+    rong = max(fm.horizontalAdvance(str(t).replace("&&", "&")) for t in nhan) + 34
     btn.setFixedWidth(max(56, rong))
     return btn
 
@@ -158,12 +184,55 @@ class _ChanCombo(QComboBox):
         super().showPopup()
 
 
+class _PipeEmbed(QDialog):
+    """Khối Dây chuyền NHÚNG trong màn (không phải cửa sổ riêng): cờ Widget
+    + chặn Esc/accept/reject để bấm Esc không làm khối biến mất."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Widget)
+        self.setObjectName("pipeEmbed")
+
+    def reject(self):  # noqa: D401 - Esc không ẩn khối nhúng
+        pass
+
+    def accept(self):
+        pass
+
+
+class _HopCaiDatAI(QDialog):
+    """Hộp Cài đặt AI: đóng (Hủy / X / Esc) mà còn thay đổi chưa lưu thì HỎI.
+
+    03/11/2026: anh Hùng dán 2 key Groq, chúng chạy được (nút Kiểm tra áp tạm
+    vào bộ nhớ) nhưng không bao giờ vào file — tắt app là mất. `truoc_khi_dong`
+    trả True = cho đóng."""
+    truoc_khi_dong = None
+
+    def reject(self):
+        f = self.truoc_khi_dong
+        if f is not None and not f():
+            return
+        super().reject()
+
+
+class _AutoHideLabel(QLabel):
+    """Nhãn trạng thái TỰ ẨN khi rỗng — không để lại dải trống giữa tiêu đề
+    và danh sách clip (bố cục gọn 26/10)."""
+    def setText(self, text):  # noqa: N802
+        super().setText(text)
+        vis = bool(text)
+        if vis != (not self.isHidden()):
+            self.setVisible(vis)
+
+
 class StudioPage(QWidget):
     open_pipeline_center = pyqtSignal()
     thumbs_ready = pyqtSignal()  # báo đã tạo xong thumbnail (chạy ngầm)
     dl_done = pyqtSignal(str, str)  # (đường-dẫn-file, lỗi) khi tải YouTube xong
     dl_progress = pyqtSignal(str)   # thông điệp tiến trình tải (hiện % cho user)
     dl_one = pyqtSignal(str, str, str)  # 1 video TRONG LOẠT xong (path, lỗi, url)
+    # VIỆC NẶNG CHẠY NỀN XONG -> (hàm tiếp theo, kết quả) về LUỒNG GIAO DIỆN.
+    # Hàng đợi Qt (queued) nên hàm tiếp luôn chạy ở luồng UI, đúng thứ tự phát.
+    nen_xong = pyqtSignal(object, object)
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -187,7 +256,9 @@ class StudioPage(QWidget):
         # => đệm 10s: mở hộp/tích/gõ liên tục chỉ quét 1 lượt.
         self._scan_cache: dict = {}
         self._warned_no_ai = False    # popup "chưa có key Groq" 1 lần/phiên (luồng tải)
-        self._pending_export = {}     # job_id phân tích -> video_id (chờ tự xuất)
+        from app.core.auto_export_resume import JobMap
+        self._pending_export = JobMap('video')
+        self._auto_tpl = JobMap('template')
         # 🤖 DÂY CHUYỀN (INTEGRATION.md): theo dõi job cắt + job xuất của
         # từng video dây chuyền để XÓA GỐC an toàn khi đủ Part.
         self._pipe_cut = {}           # cut_job_id -> ctx
@@ -196,7 +267,15 @@ class StudioPage(QWidget):
         self._pipe_report = []        # dòng báo cáo lần chạy gần nhất
         self._hashtag_cache = {}      # video_id -> " #a #b" (sinh 1 lần/video)
         self._settings = app_settings()
-        self.thumbs_ready.connect(self._rebuild_rows)
+        self._thumb_moi = set()       # id clip vừa có ảnh (luồng nền ghi)
+        self.thumbs_ready.connect(self._on_thumbs_ready)
+        # LUỒNG NỀN cho việc nặng (26/10/2026, "bấm phải ăn ngay, chạy hàng
+        # trăm video không được đơ"): dựng lệnh xuất Part, soi ffprobe/băm file
+        # lúc nhận, băm + chuyển gốc lúc dọn. Sổ RAM (_pending_export/_pipe_*)
+        # vẫn CHỈ sửa ở luồng giao diện — luồng nền trả kết quả qua nen_xong.
+        self.nen_xong.connect(self._nen_xong_slot)
+        self._xuat_dang = set()       # video ĐANG dựng lệnh xuất ở nền
+        self._auto_dang = set()       # jid tự-xuất đang dựng ở nền
         self.setAcceptDrops(True)        # KÉO-THẢ video vào app
 
         # nội dung GIÃN theo cửa sổ (màn rộng dùng đủ bề ngang, không bó giữa)
@@ -205,14 +284,14 @@ class StudioPage(QWidget):
         content = QWidget()
         outer.addWidget(content, 1)
         root = QVBoxLayout(content)
-        root.setContentsMargins(8, 16, 8, 12)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 0, 0, SP_3)
+        root.setSpacing(SP_3)
 
         # ===== THẺ điều khiển (gom các nút vào 1 khối có viền cho dễ nhận biết) =====
+        # kiểu thẻ ở QSS chung (theme: QWidget#ctlPanel)
         panel = QWidget(); panel.setObjectName("ctlPanel")
-        panel.setStyleSheet(f"#ctlPanel{{background:{BASE}; border:1px solid {BORDER};"
-                            f"border-radius:12px;}}")
-        plw = QVBoxLayout(panel); plw.setContentsMargins(16, 8, 16, 14); plw.setSpacing(8)
+        panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        plw = QVBoxLayout(panel); plw.setContentsMargins(SP_4, SP_2, SP_4, SP_4); plw.setSpacing(SP_2)
         root.addWidget(panel)
 
         # ===== Hàng 1: chọn NHÓM + KÊNH + VIDEO =====
@@ -302,7 +381,8 @@ class StudioPage(QWidget):
         mgv = QPushButton("Quản lý video"); mgv.setProperty("ghost", True)
         mgv.setToolTip("Xem danh sách video, tích chọn nhiều rồi xóa cùng lúc.")
         mgv.clicked.connect(self._manage_videos); srcrow.addWidget(mgv)
-        plw.addWidget(self._sec_hdr("Nguồn video", num=1))
+        # ---- hết hàng Nguồn video ---- (bố cục gọn 26/10: bỏ 3 tiêu đề BƯỚC
+        # 1-2-3 chiếm ~100px dọc -> danh sách clip có thêm chỗ)
         from app.ui.layout_tools import button_menu
         for control in (gman, cpy, np, ren, dash, self.lib_btn, mgv, av):
             srcrow.removeWidget(control)
@@ -321,18 +401,19 @@ class StudioPage(QWidget):
         # cần biết kênh này đang chạy gì / vừa xong bao lâu ngay tại chỗ).
         self.chan_lbl = QLabel("")
         self.chan_lbl.setWordWrap(True)
-        self.chan_lbl.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_style(self.chan_lbl, 'muted', None)
         plw.addWidget(self.chan_lbl)
 
         # ===== Hàng tải từ LINK YOUTUBE thẳng vào kênh =====
         ytrow = QHBoxLayout(); ytrow.setSpacing(8)
         ytrow.addWidget(av)
-        ytrow.addWidget(self._tag("YouTube"))
         self.yt_url = QLineEdit()
-        self.yt_url.setPlaceholderText("Dán link YouTube vào đây để tải thẳng về kênh...")
+        self.yt_url.setPlaceholderText("Dán link YouTube để tải thẳng về kênh đang chọn…")
+        self.yt_url.setClearButtonEnabled(True)
+        self.yt_url.returnPressed.connect(lambda: self.yt_btn.click())
         ytrow.addWidget(self.yt_url, 1)
-        self.yt_btn = QPushButton("Tải về"); self.yt_btn.setProperty("primary", True)
-        self.yt_btn.setMinimumHeight(40); self.yt_btn.setMinimumWidth(110)
+        self.yt_btn = QPushButton("Tải về")
+        self.yt_btn.setMinimumWidth(96)
         self.yt_btn.setToolTip("Tải video 1080p từ link vào kênh đang chọn (yt-dlp).")
         self.yt_btn.clicked.connect(self._download_youtube)
         ytrow.addWidget(self.yt_btn)
@@ -345,17 +426,24 @@ class StudioPage(QWidget):
         self.ck_btn.clicked.connect(self._on_cookie_btn)
         ytrow.addWidget(self.ck_btn)
         self._refresh_cookie_btn_tip()
+        for control in (self.yt_many_btn, self.ck_btn):
+            ytrow.removeWidget(control)
+        self.yt_menu = button_menu(panel, "Thêm", (self.yt_many_btn, self.ck_btn))
+        self.yt_menu.setToolTip("Tải nhiều link cùng lúc · Cookie YouTube")
+        ytrow.addWidget(self.yt_menu)
         plw.addLayout(ytrow)
+        _sep = QFrame(); _sep.setObjectName("ctlSep")
+        _sep.setFrameShape(QFrame.Shape.HLine); _sep.setFixedHeight(1)
+        plw.addWidget(_sep)
         self.dl_done.connect(self._on_dl_done)
         self.dl_progress.connect(lambda m: self.status.setText(m))
         self.dl_one.connect(self._on_batch_one)
 
         # ===== Hàng 2: HÀNH ĐỘNG tạo clip + công tắc tự xuất =====
-        plw.addWidget(self._sec_hdr("Tạo clip", num=2))
         actrow = QHBoxLayout(); actrow.setSpacing(8)
         self.auto_btn = QPushButton("Tạo clip")
         self.auto_btn.setProperty("primary", True)
-        self.auto_btn.setMinimumHeight(40); self.auto_btn.setMinimumWidth(160)
+        self.auto_btn.setMinimumHeight(38); self.auto_btn.setMinimumWidth(130)
         self.auto_btn.setToolTip("Phân tích (nếu chưa) + AI tự tìm và cắt các đoạn "
                                  "hay nhất của VIDEO đang chọn.")
         self.auto_btn.clicked.connect(self._auto); actrow.addWidget(self.auto_btn)
@@ -428,7 +516,7 @@ class StudioPage(QWidget):
         self.recap_cfg_btn.clicked.connect(self._recap_settings)
         actrow.addWidget(self.recap_cfg_btn)
         actrow.addStretch(1)
-        self.auto_export_chk = QCheckBox("Phân tích xong tự động xuất")
+        self.auto_export_chk = QCheckBox("Tự xuất khi phân tích xong")
         self.auto_export_chk.setToolTip(
             "BẬT: phân tích + AI cắt xong là tự xuất hết clip vào thư mục kênh.\n"
             "TẮT: xem/sửa clip rồi tự bấm Xuất.")
@@ -449,21 +537,20 @@ class StudioPage(QWidget):
         self.batch_menu = button_menu(panel, "Tạo nhiều", (self.auto_all_btn, self.pick_btn))
         self.story_btn=QPushButton('AI dựng chuyện kỹ · nhiều Part')
         self.story_btn.clicked.connect(lambda:self._auto_recap(quality=True))
-        self.tools_menu = button_menu(panel, "Công cụ", (self.story_btn,self.recap_btn, self.recap_cfg_btn, self.tg_btn))
         pipe_btn.setText("Mở Dây chuyền")
         pipe_btn.setToolTip("Đi tới màn Dây chuyền: chọn nhóm/kênh, chạy tự động và xem lịch sử.")
+        self.tools_menu = button_menu(panel, "Công cụ", (self.story_btn,self.recap_btn, self.recap_cfg_btn, self.tg_btn, pipe_btn))
         actrow.insertWidget(1, self.batch_menu)
-        actrow.insertWidget(2, pipe_btn)
-        actrow.insertWidget(3, self.tools_menu)
-        plw.addLayout(actrow)
+        actrow.insertWidget(2, self.tools_menu)
+        # auto_export_chk chuyển lên hàng Mẫu (cấu hình), hàng này chỉ còn NÚT LÀM
+        actrow.removeWidget(self.auto_export_chk)
 
         # ===== Hàng 3: MẪU + XUẤT (cấu hình + nút xuất chính) =====
-        plw.addWidget(self._sec_hdr("Mẫu & Xuất", num=3))
         cfgrow = QHBoxLayout(); cfgrow.setSpacing(8)
         cfgrow.addWidget(self._tag("Mẫu"))
-        self.tmpl_box = QComboBox(); self.tmpl_box.setMinimumWidth(140)
+        self.tmpl_box = QComboBox(); self.tmpl_box.setMinimumWidth(200)
         self.tmpl_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.tmpl_box.setMinimumContentsLength(10)
+        self.tmpl_box.setMinimumContentsLength(18)
         self.tmpl_box.setToolTip("Mẫu khung/chữ áp khi xuất. Nhớ mẫu đã chọn lần sau.")
         self.tmpl_box.currentIndexChanged.connect(self._on_template_pick)
         cfgrow.addWidget(self.tmpl_box)
@@ -473,19 +560,31 @@ class StudioPage(QWidget):
             "Sửa mẫu đang chọn: khung video, nền, chữ, phụ đề, logo, nhạc nền...")
         self.tmpl_edit_btn.clicked.connect(self._edit_template)
         cfgrow.addWidget(self.tmpl_edit_btn)
+        gallery_btn=QPushButton('Kho mẫu');gallery_btn.setProperty('ghost',True)
+        gallery_btn.clicked.connect(self._open_template_gallery);cfgrow.addWidget(gallery_btn)
         cut = QPushButton("Tùy chỉnh cắt"); cut.setProperty("ghost", True)
         cut.setToolTip("Ngôn ngữ, độ dài Min/Max clip, mục đích & phong cách cắt.")
         cut.clicked.connect(self._cut_settings); cfgrow.addWidget(cut)
         aiset = QPushButton("Cài đặt AI"); aiset.setProperty("ghost", True)
         aiset.setToolTip("Chọn AI máy/mây + key; Nghe-chép Local/Groq.")
         aiset.clicked.connect(self._ai_settings); cfgrow.addWidget(aiset)
-        self.ai_status = QLabel("")
+        self.ai_status = QLabel(""); self.ai_status.setObjectName("aiStatus")
         self.ai_status.setToolTip("AI đang dùng. Bấm vào nhãn này để mở Cài đặt AI.")
         # nhãn CLICK ĐƯỢC: đang đỏ "chưa có key!" -> bấm là mở luôn Cài đặt AI
         self.ai_status.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ai_status.mousePressEvent = lambda _e: self._ai_settings()
-        self.ai_status.setWordWrap(True)
-        cfgrow.addWidget(self.ai_status, 1)
+        self.ai_status.setWordWrap(False)
+        for control in (gallery_btn, cut, aiset):
+            cfgrow.removeWidget(control)
+        self.setup_menu = button_menu(panel, "Thiết lập", (gallery_btn, cut, aiset))
+        self.setup_menu.setToolTip("Kho mẫu · Tùy chỉnh cắt (độ dài, ngôn ngữ) · Cài đặt AI")
+        cfgrow.addWidget(self.setup_menu)
+        cfgrow.addSpacing(4)
+        cfgrow.addWidget(self.ai_status)
+        cfgrow.addStretch(1)
+        cfgrow.addWidget(self.auto_export_chk)
+        plw.addLayout(cfgrow)
+        cfgrow = actrow                 # nút XUẤT nằm cuối hàng NÚT LÀM
         cfgrow.addStretch(1)
         self.dl_chan = QPushButton("Xuất cả kênh")
         self.dl_chan.setProperty("ghost", True)
@@ -496,7 +595,7 @@ class StudioPage(QWidget):
         cfgrow.addWidget(self.export_menu)
         self.dl_all = QPushButton("Xuất video này")
         self.dl_all.setProperty("primary", True)
-        self.dl_all.setMinimumHeight(40); self.dl_all.setMinimumWidth(150)
+        self.dl_all.setMinimumHeight(38); self.dl_all.setMinimumWidth(140)
         self.dl_all.setToolTip("Xuất clip của VIDEO đang chọn.")
         self.dl_all.clicked.connect(self._export_all)
         cfgrow.addWidget(self.dl_all)
@@ -506,7 +605,7 @@ class StudioPage(QWidget):
         # ===== Hàng kết quả: đếm clip + mở thư mục =====
         headrow = QHBoxLayout(); headrow.setSpacing(8)
         self.count_lbl = QLabel("Chưa có clip")
-        self.count_lbl.setStyleSheet("font-size:16px; font-weight:600;")
+        set_role(self.count_lbl, "heading")
         headrow.addWidget(self.count_lbl)
         headrow.addStretch(1)
         self.channel_folder_btn = QPushButton("Mở thư mục kênh")
@@ -525,9 +624,10 @@ class StudioPage(QWidget):
         folders.setMenu(menu);headrow.addWidget(folders)
         root.addLayout(headrow)
 
-        self.status = QLabel("")
-        self.status.setStyleSheet(f"color:{MUTED}; font-size:13px;")
+        self.status = _AutoHideLabel("")
+        set_style(self.status, None, 'muted')
         self.status.setWordWrap(True)
+        self.status.hide()
         root.addWidget(self.status)
 
         # ---- danh sách clip ----
@@ -562,33 +662,32 @@ class StudioPage(QWidget):
                 services.delete_template(_OLD_PRO_NAME)
             if not services.get_template(PRO_NAME):
                 services.save_template(PRO_NAME, copy.deepcopy(PRO_LAYOUT))
+            from app.core.template_library import ensure_templates
+            ensure_templates()
         except Exception:  # noqa: BLE001
             pass
 
     def _tag(self, text):
         """Nhãn nhỏ mờ cho ô chọn (Kênh/Video/Mẫu)."""
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"color:{MUTED}; font-size:13px; font-weight:600;")
+        set_style(lbl, 'value', 'muted')
         return lbl
 
     def _sec_hdr(self, text, color=ACCENT, num=None):
         """Tiêu đề BƯỚC: số tròn màu accent + chữ to đậm (phân cấp rõ ràng)."""
-        w = QWidget(); w.setStyleSheet("background:transparent;")
+        w = QWidget()                     # nền trong (không luật QSS nền)
         r = QHBoxLayout(w)
-        r.setContentsMargins(0, 8, 0, 0); r.setSpacing(9)
+        r.setContentsMargins(0, SP_2, 0, 0); r.setSpacing(SP_2)
         if num is not None:
-            dot = QLabel(str(num)); dot.setFixedSize(22, 22)
+            dot = QLabel(str(num)); dot.setFixedSize(22, 22); dot.setObjectName("stepDot")
             dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            dot.setStyleSheet(f"background:{ACCENT}; color:white; border-radius:11px;"
-                              "font-size:12px; font-weight:800;")
             lab = QLabel(text)
-            lab.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:700;")
+            set_style(lab, 'heading', None)
         else:
             dot = QLabel(); dot.setFixedSize(9, 9)
             dot.setStyleSheet(f"background:{color}; border-radius:4px;")
             lab = QLabel(text.upper())
-            lab.setStyleSheet(f"color:{MUTED}; font-size:11px; font-weight:800;"
-                              "letter-spacing:1px;")
+            set_role(lab, "section")
         r.addWidget(dot); r.addWidget(lab); r.addStretch(1)
         return w
 
@@ -597,17 +696,21 @@ class StudioPage(QWidget):
         from config import settings
         p = settings.LLM_PROVIDER
         if p == "gemini":
-            txt, col = (("AI: Gemini (có key)", SUCCESS)
+            txt, col = (("● Gemini sẵn sàng", SUCCESS)
                         if settings.GEMINI_API_KEY else
-                        ("AI: Gemini (chưa có key!)", DANGER))
+                        ("● Gemini: chưa có key", DANGER))
+        elif p == "apiforcode":
+            ready=bool(settings.llm_keys_for(p))
+            txt,col=("● APIforcode sẵn sàng",SUCCESS) if ready else ("● APIforcode: chưa có key",DANGER)
         elif p == "groq":
-            txt, col = (("AI: Groq (mây, free)", SUCCESS)
+            txt, col = (("● Groq sẵn sàng", SUCCESS)
                         if settings.groq_keys() else
-                        ("AI: Groq (chưa có key!)", DANGER))
+                        ("● Groq: chưa có key", DANGER))
         else:
-            txt, col = "AI: Ollama (máy)", MUTED
+            txt, col = "● Ollama (máy)", MUTED
         self.ai_status.setText(txt)
-        self.ai_status.setStyleSheet(f"color:{col}; font-size:12px; font-weight:700;")
+        set_style(self.ai_status, "muted",
+                  {SUCCESS: "success", DANGER: "danger"}.get(col, "text"))
 
     # ---- CHẶN SỚM khi chưa có cách chép lời (không key Groq, không whisper máy) ----
     _NO_AI_MSG = ("Chưa có cách chép lời. Bấm nút 'Cài đặt AI' dán key Groq "
@@ -657,7 +760,7 @@ class StudioPage(QWidget):
     def _cut_settings(self):
         from config import update_env, Settings, settings
         s = self._settings
-        dlg = QDialog(self); dlg.setWindowTitle("Tùy chỉnh cắt"); dlg.resize(440, 380)
+        dlg = QDialog(self); dlg.setWindowTitle("Tùy chỉnh cắt & xuất"); dlg.resize(460, 440)
         lay = QVBoxLayout(dlg); lay.setSpacing(8)
         lay.addWidget(QLabel("Ngôn ngữ video (nghe-chép chính xác hơn nếu chọn đúng):"))
         lang = QComboBox()
@@ -681,11 +784,11 @@ class StudioPage(QWidget):
         lay.addWidget(QLabel("(Bỏ trống = đặt 0 thì độ dài NGẪU NHIÊN theo nội dung)"))
         # Số clip muốn cắt
         crow = QHBoxLayout()
-        crow.addWidget(QLabel("Số clip muốn cắt:"))
+        crow.addWidget(QLabel("Số Part tối đa:"))
         cnt = QSpinBox(); cnt.setRange(0, 20); cnt.setValue(s.value("cut_count", 0, type=int))
-        cnt.setToolTip("0 = tự động/ngẫu nhiên (AI tự chọn 3-6 clip).")
+        cnt.setToolTip("0 = AI tự chọn. Đặt 3 = ưu tiên đủ 3 Part khác nhau; chỉ ít hơn khi thiếu đoạn dùng được. Điểm thấp vẫn xuất.")
         crow.addWidget(cnt)
-        crow.addWidget(QLabel("(0 = ngẫu nhiên)"))
+        crow.addWidget(QLabel("(0 = tự động)"))
         crow.addStretch(1)
         lay.addLayout(crow)
         lay.addWidget(QLabel("Mục đích cắt:"))
@@ -704,7 +807,34 @@ class StudioPage(QWidget):
                          ("Tình tiết/Story", "story")):
             style.addItem(label, key)
         style.setCurrentIndex(max(0, style.findData(s.value("cut_style", "") or "")))
-        lay.addWidget(style); lay.addStretch(1)
+        lay.addWidget(style)
+        # DUNG LƯỢNG FILE XUẤT (26/10/2026: Part 2 phút ra 585 MB, up TikTok lâu)
+        lay.addWidget(QLabel("Dung lượng file xuất:"))
+        size_cb = QComboBox()
+        for label, val in (("Rất gọn — tối đa 8 Mbps (up qua proxy chậm)", 8),
+                           ("Gọn cho TikTok — tối đa 12 Mbps (khuyên dùng)", 12),
+                           ("Cao — tối đa 20 Mbps", 20),
+                           ("Không giới hạn (như bản cũ, file rất nặng)", 0)):
+            size_cb.addItem(label, val)
+        _cur = int(getattr(settings, "EXPORT_MAX_MBPS", 12) or 0)
+        _i = size_cb.findData(_cur)
+        if _i < 0:
+            size_cb.addItem(f"Tùy chỉnh — tối đa {_cur} Mbps", _cur); _i = size_cb.count() - 1
+        size_cb.setCurrentIndex(_i)
+        size_cb.setToolTip(
+            "Trần bitrate cho file Part. Chất lượng vẫn theo chế độ cao như cũ; "
+            "trần chỉ chạm vào cảnh rất nặng (nền mờ chuyển động, video nhiễu).\n"
+            "TikTok nén lại mọi video còn vài Mbps, nên vượt 12 Mbps không thấy "
+            "khác trên điện thoại — chỉ làm file nặng và up lâu.")
+        lay.addWidget(size_cb)
+        # 27/10/2026 anh Hùng bỏ hẳn ảnh bìa `_Bia`; ô này chỉ còn chặn màn
+        # đen đầu clip (TikTok lấy khung ĐẦU làm bìa mặc định).
+        cover_chk = QCheckBox("Bìa TikTok không bị đen: không mở đầu clip bằng màn đen")
+        cover_chk.setChecked(bool(getattr(settings, "EXPORT_COVER", True)))
+        cover_chk.setToolTip(
+            "TikTok lấy khung ĐẦU TIÊN làm ảnh bìa — fade từ đen làm bìa đen.\n"
+            "Bật: hình vào thẳng nội dung (tiếng vẫn vào êm, cuối clip vẫn fade).")
+        lay.addWidget(cover_chk); lay.addStretch(1)
         rowb = QHBoxLayout(); rowb.addStretch(1)
         sv = QPushButton("Lưu"); sv.setProperty("primary", True)
 
@@ -714,8 +844,10 @@ class StudioPage(QWidget):
             s.setValue("cut_purpose", purpose.currentData() or "")
             s.setValue("cut_style", style.currentData() or "")
             # ngôn ngữ -> .env để tiến trình phân tích (chạy riêng) đọc được
-            update_env({"WHISPER_LANGUAGE": lang.currentData() or ""})
-            self.status.setText("Đã lưu tùy chỉnh cắt. Áp dụng cho clip tạo MỚI.")
+            update_env({"WHISPER_LANGUAGE": lang.currentData() or "",
+                        "EXPORT_MAX_MBPS": str(int(size_cb.currentData() or 0)),
+                        "EXPORT_COVER": "1" if cover_chk.isChecked() else "0"})
+            self.status.setText("Đã lưu tùy chỉnh cắt & xuất. Áp dụng cho clip tạo/xuất MỚI.")
             dlg.accept()
         sv.clicked.connect(save); rowb.addWidget(sv)
         cancel = QPushButton("Hủy"); cancel.setProperty("ghost", True)
@@ -897,10 +1029,10 @@ class StudioPage(QWidget):
         # ===== KHU 1: NHÓM =====
         left = QVBoxLayout(); left.setSpacing(8)
         h1 = QLabel("Nhóm")
-        h1.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        set_style(h1, 'heading', None)
         left.addWidget(h1)
         s1 = QLabel("Bấm 1 nhóm để xem CÁC KÊNH trong nhóm đó ở bảng bên phải.")
-        s1.setWordWrap(True); s1.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        s1.setWordWrap(True); set_style(s1, 'muted', None)
         left.addWidget(s1)
         glist = QListWidget(); glist.setMinimumWidth(220)
         self._mg_glist = glist
@@ -916,11 +1048,11 @@ class StudioPage(QWidget):
         # ===== KHU 2: KÊNH =====
         right = QVBoxLayout(); right.setSpacing(8)
         h2 = QLabel("Kênh")
-        h2.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        set_style(h2, 'heading', None)
         right.addWidget(h2)
         s2 = QLabel("Tích ô các kênh cần chuyển, chọn nhóm đích bên dưới rồi bấm "
                     "Chuyển. Nháy đúp 1 dòng để đổi nhanh nhóm dòng đó.")
-        s2.setWordWrap(True); s2.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        s2.setWordWrap(True); set_style(s2, 'muted', None)
         right.addWidget(s2)
         tbl = QTableWidget(0, 4)
         self._mg_tbl = tbl
@@ -932,17 +1064,8 @@ class StudioPage(QWidget):
         tbl.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection)
         tbl.verticalHeader().setVisible(False)
-        tbl.setStyleSheet(
-            f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
-            f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
-            f"QTableWidget::item {{ padding:3px 8px; }}"
-            f"QTableWidget::item:selected {{ background:{ACCENT};"
-            f" color:white; }}"
-            f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
-            f" padding:6px 8px; border:none;"
-            f" border-bottom:1px solid {BORDER}; font-weight:600; }}"
-            f"QTableCornerButton::section {{ background:{SURFACE};"
-            f" border:none; }}")
+        # kiểu bảng dữ liệu: QSS chung (theme: QTableView[table="data"])
+        tbl.setProperty("table", "data")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -1072,7 +1195,7 @@ class StudioPage(QWidget):
             if not ok or not name:
                 return
             if name in self._all_group_names():
-                QMessageBox.information(dlg, "Đã có", f"Nhóm “{name}” đã tồn tại.")
+                _bao_nhanh(dlg, "Đã có", f"Nhóm “{name}” đã tồn tại.")
                 return
             # nhóm RỖNG -> lưu QSettings (chưa có kênh nào)
             self._save_extra_groups(self._extra_groups() + [name])
@@ -1081,7 +1204,7 @@ class StudioPage(QWidget):
         def rename_group():
             old = _cur_real_group()
             if not old:
-                QMessageBox.information(
+                _bao_nhanh(
                     dlg, "Chưa chọn nhóm",
                     "Chọn 1 NHÓM (không phải 'Tất cả kênh'/'Chưa phân nhóm') "
                     "để sửa tên.")
@@ -1108,7 +1231,7 @@ class StudioPage(QWidget):
         def del_group():
             g = _cur_real_group()
             if not g:
-                QMessageBox.information(
+                _bao_nhanh(
                     dlg, "Chưa chọn nhóm",
                     "Chọn 1 NHÓM (không phải 'Tất cả kênh'/'Chưa phân nhóm') "
                     "để xoá.")
@@ -1134,7 +1257,7 @@ class StudioPage(QWidget):
                 if c and c.checkState() == Qt.CheckState.Checked:
                     ids.append(int(c.data(Qt.ItemDataRole.UserRole)))
             if not ids:
-                QMessageBox.information(
+                _bao_nhanh(
                     dlg, "Chưa chọn kênh", "Tích ô các kênh cần chuyển trước.")
                 return
             for pid in ids:
@@ -1158,7 +1281,7 @@ class StudioPage(QWidget):
         def set_export_dir():
             ids = _checked_or_selected_ids()
             if not ids:
-                QMessageBox.information(
+                _bao_nhanh(
                     dlg, "Chưa chọn kênh",
                     "Tích ô (hoặc chọn dòng) kênh cần đặt thư mục lưu trước.")
                 return
@@ -1173,7 +1296,7 @@ class StudioPage(QWidget):
             for pid in ids:
                 services.set_project_export_dir(pid, d)
             fill_channels()
-            QMessageBox.information(
+            _bao_nhanh(
                 dlg, "Đã đặt thư mục lưu",
                 f"{len(ids)} kênh sẽ lưu clip THẲNG vào:\n{d}\n\n"
                 "(Không tạo thư mục con theo tên video.)")
@@ -1181,7 +1304,7 @@ class StudioPage(QWidget):
         def clear_export_dir():
             ids = _checked_or_selected_ids()
             if not ids:
-                QMessageBox.information(
+                _bao_nhanh(
                     dlg, "Chưa chọn kênh",
                     "Tích ô (hoặc chọn dòng) kênh cần đưa về mặc định trước.")
                 return
@@ -1236,8 +1359,17 @@ class StudioPage(QWidget):
         i = self.proj.findData(pid)
         if i < 0:
             self._reload_groups(services.project_group(int(pid)))
-            self._reload_projects()
+            # KHÔNG nạp kênh đầu nhóm rồi mới nhảy sang kênh cần chọn (2 lượt
+            # nạp video + clip + nhãn = cú khựng khi dây chuyền đưa video ra
+            # màn chính — đo 26/10/2026).
+            self._reload_projects(chon=False)
             i = self.proj.findData(pid)
+            if i >= 0 and i == self.proj.currentIndex():
+                self._on_proj(i)
+                return
+            if i < 0 and self.proj.count():
+                self._on_proj(self.proj.currentIndex())
+                return
         if i >= 0 and i != self.proj.currentIndex():
             self.proj.setCurrentIndex(i)
 
@@ -1291,9 +1423,7 @@ class StudioPage(QWidget):
                      | Qt.WindowType.FramelessWindowHint)
         pop.setObjectName("chanPick")
         pop.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
-        pop.setStyleSheet(
-            f"#chanPick{{background:{BASE};border:1px solid {BORDER};"
-            f"border-radius:10px;}}")
+        # khung popup: QSS chung (theme: QFrame#chanPick)
         lay = QVBoxLayout(pop)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
@@ -1305,13 +1435,9 @@ class StudioPage(QWidget):
         # NÚT CHỮ, KHÔNG emoji: máy anh Hùng thiếu glyph 📋/✕ nên nút ra Ô ĐEN
         # trơ ("xấu quá tự nhiên có cái ô đen"). Bài học đã có trong file này
         # ("Nút CHỮ (không phụ thuộc emoji)") — nay áp cho cả popup tìm kênh.
-        xb = _QPB("Đóng"); xb.setFixedWidth(58)
+        xb = _QPB("Đóng"); fit_width(xb, "Đóng", pad_px=28, minimum=58)
         xb.setToolTip("Đóng danh sách (hoặc bấm Esc)")
-        xb.setStyleSheet(
-            f"QPushButton{{background:{SURFACE};color:{MUTED};"
-            f"border:1px solid {BORDER};border-radius:6px;padding:3px 6px;"
-            f"font-size:12px;}}"
-            f"QPushButton:hover{{color:{TEXT};border-color:{MUTED};}}")
+        set_variant(xb, "ghost"); set_size(xb, "compact")
         xb.clicked.connect(pop.close)
         hrow.addWidget(xb)
         lay.addLayout(hrow)
@@ -1342,7 +1468,6 @@ class StudioPage(QWidget):
             w = QWidget()
             h = _QHB(w); h.setContentsMargins(6, 1, 2, 1); h.setSpacing(6)
             lb = QLabel(nhan)
-            lb.setStyleSheet("background:transparent;")
             h.addWidget(lb, 1)
             # NÚT CHỮ "Copy" — thấy rõ, không phụ thuộc font emoji (xem chú
             # thích ở nút Đóng). Viền + chữ sáng để nổi trên dòng tối.
@@ -1353,7 +1478,7 @@ class StudioPage(QWidget):
                 f"QPushButton{{background:{SURFACE};color:{ACCENT};"
                 f"border:1px solid {BORDER};border-radius:6px;"
                 f"padding:2px 6px;font-size:12px;}}"
-                f"QPushButton:hover{{background:{ACCENT};color:#0B1220;"
+                f"QPushButton:hover{{background:{ACCENT};color:{BASE};"
                 f"border-color:{ACCENT};}}")
             cp.setToolTip(f"Copy tên kênh: {ten_goc}")
             cp.clicked.connect(lambda _c=False, t=ten_goc: self._copy_chan_text(t))
@@ -1475,7 +1600,8 @@ class StudioPage(QWidget):
             parts.append("✅" + services.rel_time_vi(a["last_done"], short=True))
         return ("  · " + " · ".join(parts)) if parts else ""
 
-    def _reload_projects(self):
+    def _reload_projects(self, chon=True):
+        """chon=False: chỉ nạp danh sách, KHÔNG mở kênh đầu (người gọi tự chọn)."""
         grp = self._cur_group()
         self.proj.blockSignals(True); self.proj.clear()
         # TÊN GỐC từng kênh (không đuôi trạng thái) — text item có thể mang đuôi
@@ -1487,7 +1613,8 @@ class StudioPage(QWidget):
             self.proj.addItem(f"{idx}. {p['name']}", p["id"])
         self.proj.blockSignals(False)
         if self.proj.count():
-            self._on_proj(self.proj.currentIndex())
+            if chon:
+                self._on_proj(self.proj.currentIndex())
         elif grp:
             # nhóm đang lọc KHÔNG có kênh (nhóm mới trống) -> không popup tạo
             # kênh; dọn trạng thái + gợi ý ('+ Kênh' bây giờ tạo vào nhóm này)
@@ -1521,9 +1648,17 @@ class StudioPage(QWidget):
     def _ai_settings(self):
         """Hộp thoại chọn nguồn AI (máy/Gemini) + nhập key + chọn model + kiểm tra."""
         from PyQt6.QtWidgets import QApplication
-        from config import settings, Settings, update_env
+        from config import settings, Settings, update_env, nap_lai_tu_dia
         from app.ai import llm
-        dlg = QDialog(self); dlg.setWindowTitle("Cài đặt AI")
+        # File .env trên đĩa là sự thật: key thêm từ ngoài (bot, sửa tay) hiện
+        # ra ngay + app đang chạy dùng luôn, và bấm Lưu không ghi đè mất chúng.
+        _khoa_ai = ("LLM_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL",
+                    "APIFORCODE_KEYS_FILE", "APIFORCODE_MODEL",
+                    "APIFORCODE_VISION_MODEL", "WHISPER_PROVIDER",
+                    "GROQ_API_KEYS", "GROQ_KEYS_FILE", "ELEVENLABS_API_KEYS",
+                    "VBEE_APP_ID", "VBEE_TOKEN")
+        nap_lai_tu_dia(_khoa_ai)
+        dlg = _HopCaiDatAI(self); dlg.setWindowTitle("Cài đặt AI")
         # NHIỀU mục (Gemini/Groq/file key/ElevenLabs/trạng thái key) -> nội dung
         # DÀI hơn màn hình -> CUỘN được + cao vừa màn hình + nút Lưu GHIM dưới
         # (trước đây tràn màn hình, che mất nút Lưu/Kiểm tra).
@@ -1534,12 +1669,12 @@ class StudioPage(QWidget):
         _scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         from app.ui.layout_tools import jump_row
         nav, section_jump = jump_row(_scroll, dlg)
-        nav.setContentsMargins(18, 10, 18, 4)
+        nav.setContentsMargins(SP_4, SP_3, SP_4, SP_1)
         _outer.addLayout(nav)
         _outer.addWidget(_scroll, 1)
         _content = QWidget(); _scroll.setWidget(_content)
-        lay = QVBoxLayout(_content); lay.setSpacing(12)
-        lay.setContentsMargins(18, 16, 18, 16)
+        lay = QVBoxLayout(_content); lay.setSpacing(SP_3)
+        lay.setContentsMargins(SP_4, SP_4, SP_4, SP_4)
         try:
             _sh = self.screen().availableGeometry().height()
         except Exception:  # noqa: BLE001
@@ -1548,11 +1683,11 @@ class StudioPage(QWidget):
 
         # ---- Tiêu đề dialog + mô tả ngắn ----
         _hdr = QLabel("Cài đặt AI")
-        _hdr.setStyleSheet(f"color:{TEXT}; font-size:19px; font-weight:800;")
+        set_style(_hdr, 'h1', None)
         lay.addWidget(_hdr)
         _sub = QLabel("Cấu hình AI cho toàn bộ app — dán key rồi bấm Kiểm tra.")
         _sub.setWordWrap(True)
-        _sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_style(_sub, 'muted', None)
         lay.addWidget(_sub)
 
         # ---- Nhà máy THẺ: QFrame bo góc 10px, nền nổi hơn nền dialog, viền mảnh,
@@ -1560,19 +1695,16 @@ class StudioPage(QWidget):
         def _card(title, desc=""):
             fr = QFrame()
             fr.setObjectName("aiCard")
-            fr.setStyleSheet(
-                f"#aiCard{{background:{ELEV}; border:1px solid {BORDER};"
-                f"border-radius:10px;}}"
-                f"#aiCard QLabel{{background:transparent;}}")
+            # kiểu thẻ: QSS chung (theme: QFrame#aiCard)
             cl = QVBoxLayout(fr)
-            cl.setContentsMargins(15, 13, 15, 14)
-            cl.setSpacing(9)
+            cl.setContentsMargins(SP_4, SP_3, SP_4, SP_4)
+            cl.setSpacing(SP_2)
             t = QLabel(title)
-            t.setStyleSheet(f"color:{TEXT}; font-size:14px; font-weight:700;")
+            set_style(t, 'heading', None)
             cl.addWidget(t)
             if desc:
                 d = QLabel(desc); d.setWordWrap(True)
-                d.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+                set_style(d, 'hint', None)
                 cl.addWidget(d)
             lay.addWidget(fr)
             section_jump.add_section(title, fr)
@@ -1581,7 +1713,7 @@ class StudioPage(QWidget):
         def _flabel(text):
             """Nhãn phụ (mô tả field) — MUTED nhỏ, canh sát control bên dưới."""
             x = QLabel(text); x.setWordWrap(True)
-            x.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+            set_style(x, 'hint', None)
             return x
 
         # ============ THẺ 1: 🧠 Bộ não AI ============
@@ -1592,6 +1724,7 @@ class StudioPage(QWidget):
         src = QComboBox()
         src.addItem("Groq — xử lý trên mây", "groq")
         src.addItem("Gemini — xử lý trên mây", "gemini")
+        src.addItem("APIforcode — gói API đã mua", "apiforcode")
         for label, provider in [('OpenAI', 'openai'), ('DeepSeek', 'deepseek'),
                                 ('Ollama — trên máy', 'ollama')]:
             src.addItem(label + ' (cấu hình trong .env)', provider)
@@ -1600,18 +1733,42 @@ class StudioPage(QWidget):
         i = src.findData(settings.LLM_PROVIDER or "groq")
         src.setCurrentIndex(i if i >= 0 else 0)
         c_brain.addWidget(src)
-        c_brain.addWidget(_flabel(
-            "Gemini API key (nhiều key mỗi dòng 1 — tự xoay vòng khi hết lượt)"))
+        gemini_key_label=_flabel("Gemini API key (nhiều key mỗi dòng 1 — tự xoay vòng khi hết lượt)")
+        c_brain.addWidget(gemini_key_label)
         key = QPlainTextEdit(settings.GEMINI_API_KEY or "")
         key.setPlaceholderText("Dán 1 hoặc NHIỀU key, mỗi dòng 1 key")
         key.setFixedHeight(60); c_brain.addWidget(key)
-        c_brain.addWidget(_flabel("Model Gemini"))
+        gemini_model_label=_flabel("Model Gemini");c_brain.addWidget(gemini_model_label)
         mdl = QComboBox()
         mdl.addItem("Gemini 2.5 Flash — nhanh, rẻ (khuyên)", "gemini-2.5-flash")
         mdl.addItem("Gemini 2.5 Pro", "gemini-2.5-pro")
         j = mdl.findData(settings.GEMINI_MODEL)
         mdl.setCurrentIndex(j if j >= 0 else 0)
         c_brain.addWidget(mdl)
+        c_api=_card("APIforcode · Phân tích hình và viết kịch bản",
+            "Gom tối đa 8 ảnh/lượt, lưu tiến độ để tiếp tục. Viết và kiểm tra kịch bản vẫn dùng thêm lượt. Giọng đọc và chép lời dùng dịch vụ riêng.")
+        api_file=QLineEdit(settings.APIFORCODE_KEYS_FILE or '')
+        api_file.setObjectName('apiforcode_key_file')
+        api_file.setPlaceholderText('Chọn file .txt chứa key; key không hiện tại đây')
+        api_row=QHBoxLayout();api_row.addWidget(api_file)
+        api_pick=QPushButton('Chọn file key…');api_row.addWidget(api_pick);c_api.addLayout(api_row)
+        def pick_api_key():
+            path,_=QFileDialog.getOpenFileName(dlg,'Chọn file key APIforcode',api_file.text(),'Text (*.txt);;All files (*)')
+            if path:api_file.setText(path)
+        api_pick.clicked.connect(pick_api_key)
+        c_api.addWidget(_flabel('Model viết kịch bản (đúng tên bên bán cung cấp)'))
+        api_model=QLineEdit(settings.APIFORCODE_MODEL);api_model.setObjectName('apiforcode_model');c_api.addWidget(api_model)
+        c_api.addWidget(_flabel('Model đọc ảnh khung hình'))
+        api_vision=QLineEdit(settings.APIFORCODE_VISION_MODEL);api_vision.setObjectName('apiforcode_vision_model');c_api.addWidget(api_vision)
+        c_api.addWidget(_flabel('Đã thử đọc ảnh với claude-opus-5-on. Đổi model cần kiểm tra lại khả năng nhận ảnh. Không tự chuyển sang Gemini khi lỗi.'))
+
+        c_api.addWidget(_flabel('Kiểm tra kết nối bên dưới dùng 1 lượt chat; chưa kiểm tra hình. Bấm Lưu không gọi API.'))
+        def update_provider_fields():
+            selected=src.currentData()=='apiforcode'
+            for widget in (gemini_key_label,key,gemini_model_label,mdl):widget.setVisible(not selected)
+            c_api.parentWidget().setVisible(selected)
+        src.currentIndexChanged.connect(update_provider_fields)
+        update_provider_fields()
 
         # ============ THẺ 2: 🔑 Key Groq ============
         c_groq = _card(
@@ -1629,7 +1786,7 @@ class StudioPage(QWidget):
         gnote = QLabel("Dán vài key vào ô, hoặc trỏ file .txt cho HÀNG TRĂM key. "
                        "App gộp cả hai.")
         gnote.setWordWrap(True)
-        gnote.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(gnote, 'hint', None)
         c_groq.addWidget(gnote)
         gfrow = QHBoxLayout()
         gfbtn = QPushButton("📄 Chọn file key (mỗi dòng 1 key)")
@@ -1640,7 +1797,7 @@ class StudioPage(QWidget):
         gflbl = QLabel("")
         gflbl.setWordWrap(True)
         gflbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        gflbl.setStyleSheet(f"color:{TEXT}; font-size:11px;")
+        set_style(gflbl, 'hint', 'text')
         c_groq.addWidget(gflbl)
 
         def _refresh_gfile():
@@ -1677,7 +1834,7 @@ class StudioPage(QWidget):
             "tổ chức dùng CHUNG hạn mức (không tăng). Xem Limits trong Groq "
             "để biết thời gian hồi hoặc yêu cầu nâng hạn mức.")
         gwarn.setWordWrap(True)
-        gwarn.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(gwarn, 'hint', None)
         c_groq.addWidget(gwarn)
 
         # ----- NÚT "KIỂM TRA TẤT CẢ KEY GROQ" (còn lượt/hết lượt/sai) -----
@@ -1696,7 +1853,7 @@ class StudioPage(QWidget):
         gckstat.setObjectName("groq_check_label")
         gckstat.setWordWrap(True)
         gckstat.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        gckstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        set_style(gckstat, 'muted', 'text')
         c_groq.addWidget(gckstat)
         # nút xoá key chết khỏi ô dán (chỉ hiện khi có key 401)
         gckdel = QPushButton("Xoá key chết khỏi ô dán")
@@ -1842,7 +1999,7 @@ class StudioPage(QWidget):
             "(mục 1c) và có thể bị khoá tài khoản vĩnh viễn. Gói trả phí thì "
             "được dùng thương mại.")
         el_dk.setWordWrap(True)
-        el_dk.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(el_dk, 'hint', None)
         c_eleven.addWidget(el_dk)
 
         # Nút "Kiểm tra" credit ElevenLabs: gọi GET /user/subscription cho
@@ -1860,7 +2017,7 @@ class StudioPage(QWidget):
         elstat.setWordWrap(True)
         elstat.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
-        elstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        set_style(elstat, 'muted', 'text')
         c_eleven.addWidget(elstat)
 
         def check_eleven():
@@ -1941,7 +2098,7 @@ class StudioPage(QWidget):
             "cho video kiếm tiền hay không — hỏi contact@vbee.ai trước khi "
             "chạy sản xuất.")
         vb_note.setWordWrap(True)
-        vb_note.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(vb_note, 'hint', None)
         c_vbee.addWidget(vb_note)
 
         vbrow = QHBoxLayout()
@@ -1956,7 +2113,7 @@ class StudioPage(QWidget):
         vbstat.setWordWrap(True)
         vbstat.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
-        vbstat.setStyleSheet(f"color:{TEXT}; font-size:12px;")
+        set_style(vbstat, 'muted', 'text')
         c_vbee.addWidget(vbstat)
 
         def check_vbee():
@@ -2047,10 +2204,23 @@ class StudioPage(QWidget):
         kstat.setObjectName("key_status_label")
         kstat.setWordWrap(True)
         kstat.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        kstat.setStyleSheet(f"color:{TEXT}; background:{SURFACE}; border:1px solid "
-                            f"{BORDER}; border-radius:8px; padding:8px 10px; "
-                            "font-size:12px; line-height:1.5;")
-        c_stat.addWidget(kstat)
+        # khung chữ: QSS chung (theme: QLabel#key_status_label)
+        # GÓI TRONG Ô CUỘN CAO CỐ ĐỊNH (anh Hùng 02/11/2026: "kéo dài quá, chỉ
+        # kéo trong vùng này thôi"): 77 key x 2 dòng làm cả hộp Cài đặt AI dài
+        # lê thê. Nay danh sách cuộn RIÊNG trong khung 280 px, dòng tóm tắt số
+        # key ở trên luôn nhìn thấy.
+        ksum = QLabel("")
+        ksum.setObjectName("key_status_sum")
+        ksum.setWordWrap(True)
+        c_stat.addWidget(ksum)
+        kscroll = QScrollArea()
+        kscroll.setObjectName("key_status_scroll")
+        kscroll.setWidgetResizable(True)
+        kscroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        kscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        kscroll.setFixedHeight(280)
+        kscroll.setWidget(kstat)
+        c_stat.addWidget(kscroll)
 
         def _fmt_wait(sec: float) -> str:
             s = int(round(sec))
@@ -2064,6 +2234,7 @@ class StudioPage(QWidget):
 
         def refresh_keys():
             lines = []
+            dem = {"ok": 0, "limited": 0, "restricted": 0, "invalid": 0, "unknown": 0}
             try:
                 choices=_keys_to_check()
                 if choices != [key_choice.itemData(i) for i in range(key_choice.count())]:
@@ -2071,6 +2242,7 @@ class StudioPage(QWidget):
                     for number,credential in enumerate(choices,1):key_choice.addItem(f'{number}. {llm.che_key(credential)}',credential)
                     key_choice.setCurrentIndex(max(0,key_choice.findData(selected)))
                 for st in llm.key_status("groq"):
+                    dem[st["state"] if st["state"] in dem else "ok"] += 1
                     if st["state"] == "unknown":
                         lines.append(f"⚪ {st['key_masked']} — CHƯA KIỂM TRA")
                     elif st["state"] == "restricted":
@@ -2102,8 +2274,15 @@ class StudioPage(QWidget):
                         lines.append(f"⚪ …{k[-6:]} — (bấm Lưu để áp)")
             except Exception as e:  # noqa: BLE001 - trạng thái chỉ để xem, không sập dialog
                 lines = [f"(không đọc được trạng thái: {e})"]
+            _tong = sum(dem.values())
+            ksum.setText(
+                f"Tổng {_tong} key · dùng được {dem['ok']} · tạm hết lượt "
+                f"{dem['limited']} · bị hạn chế {dem['restricted']} · sai key "
+                f"{dem['invalid']} · chưa kiểm {dem['unknown']}" if _tong else "")
+            _vt = kscroll.verticalScrollBar().value()   # giữ chỗ đang cuộn
             kstat.setText("\n".join(lines) or "Chưa có key Groq nào — dán key ở "
                                               "ô trên rồi bấm Lưu.")
+            kscroll.verticalScrollBar().setValue(_vt)
 
         ktimer = QTimer(dlg)
         ktimer.setObjectName("key_status_timer")
@@ -2118,11 +2297,8 @@ class StudioPage(QWidget):
 
         def set_note(kind, text):
             # kind: ok(xanh) / err(đỏ) / wait(vàng) / info(xám)
-            c = {"ok": SUCCESS, "err": DANGER, "wait": WARN, "info": MUTED}[kind]
-            bg = {"ok": "rgba(61,214,140,0.14)", "err": "rgba(255,107,116,0.14)",
-                  "wait": "rgba(245,181,68,0.14)", "info": "transparent"}[kind]
-            note.setStyleSheet(f"color:{c}; background:{bg}; border-radius:8px;"
-                               f"padding:9px 11px; font-size:13px; font-weight:600;")
+            # dải màu theo kind: QSS chung QLabel[banner=...] (chỉ repolish khi đổi)
+            set_prop(note, "banner", kind)
             note.setText(text)
 
         def friendly(err):
@@ -2146,6 +2322,9 @@ class StudioPage(QWidget):
             Settings.LLM_PROVIDER = src.currentData()
             Settings.GEMINI_API_KEY = key.toPlainText().strip()
             Settings.GEMINI_MODEL = mdl.currentData()
+            Settings.APIFORCODE_KEYS_FILE = api_file.text().strip()
+            Settings.APIFORCODE_MODEL = api_model.text().strip()
+            Settings.APIFORCODE_VISION_MODEL = api_vision.text().strip()
             Settings.GROQ_API_KEYS = gkeys.toPlainText().strip()
             Settings.GROQ_KEYS_FILE = gfile[0]
             Settings.ELEVENLABS_API_KEYS = elkeys.toPlainText().strip()
@@ -2155,6 +2334,9 @@ class StudioPage(QWidget):
         def do_test():
             apply_live()
             prov = src.currentData()
+            if prov == 'apiforcode' and not settings.llm_keys_for(prov):
+                set_note('err','Chọn file key APIforcode hợp lệ trước khi kiểm tra.')
+                return
             if prov == "gemini" and not key.toPlainText().strip():
                 set_note("err", "CHƯA NHẬP KEY — dán key Gemini vào ô trên rồi bấm "
                                 "Kiểm tra.")
@@ -2212,16 +2394,22 @@ class StudioPage(QWidget):
         tb.clicked.connect(do_test); row.addWidget(tb); row.addStretch(1)
         sv = QPushButton("Lưu"); sv.setProperty("primary", True)
 
-        def do_save():
-            update_env({"LLM_PROVIDER": src.currentData(),
+        def gia_tri():
+            return {"LLM_PROVIDER": src.currentData(),
                         "GEMINI_API_KEY": key.toPlainText().strip(),
                         "GEMINI_MODEL": mdl.currentData(),
+                        "APIFORCODE_KEYS_FILE": api_file.text().strip(),
+                        "APIFORCODE_MODEL": api_model.text().strip(),
+                        "APIFORCODE_VISION_MODEL": api_vision.text().strip(),
                         "WHISPER_PROVIDER": wsrc.currentData(),
                         "GROQ_API_KEYS": gkeys.toPlainText().strip(),
                         "GROQ_KEYS_FILE": gfile[0],
                         "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip(),
                         "VBEE_APP_ID": vb_id.text().strip(),
-                        "VBEE_TOKEN": vb_tk.text().strip()})
+                        "VBEE_TOKEN": vb_tk.text().strip()}
+
+        def do_save():
+            update_env(gia_tri())
             self._update_ai_status()
             self.status.setText(f"Đã lưu cài đặt AI: {src.currentText()} · nghe-chép "
                                 f"{wsrc.currentText().split('—')[0].strip()}")
@@ -2234,6 +2422,33 @@ class StudioPage(QWidget):
         _btnbar = QWidget(); _bl = QVBoxLayout(_btnbar)
         _bl.setContentsMargins(14, 6, 14, 10); _bl.addLayout(row)
         _outer.addWidget(_btnbar)
+        _goc = gia_tri()
+
+        def truoc_khi_dong():
+            if gia_tri() == _goc:
+                return True
+            hoi = QMessageBox(dlg)
+            hoi.setIcon(QMessageBox.Icon.Question)
+            hoi.setWindowTitle("Chưa lưu")
+            hoi.setText("Anh đã sửa cài đặt AI (key, nguồn AI…) nhưng CHƯA bấm Lưu.\n"
+                        "Không lưu thì tắt app là mất các thay đổi này.")
+            b_luu = hoi.addButton("Lưu", QMessageBox.ButtonRole.AcceptRole)
+            b_bo = hoi.addButton("Không lưu", QMessageBox.ButtonRole.DestructiveRole)
+            hoi.addButton("Quay lại", QMessageBox.ButtonRole.RejectRole)
+            hoi.setDefaultButton(b_luu)
+            hoi.exec()
+            bam = hoi.clickedButton()
+            if bam is b_luu:
+                do_save()             # tự accept() hộp
+                return False
+            if bam is b_bo:
+                # nút Kiểm tra đã áp TẠM vào bộ nhớ -> trả về đúng như file
+                nap_lai_tu_dia(_khoa_ai)
+                self._update_ai_status()
+                return True
+            return False
+
+        dlg.truoc_khi_dong = truoc_khi_dong
         dlg.exec()
 
     # ---- KHO VIDEO chung: <gốc>/Đã tải + <gốc>/Đã xuất/<tên video> ----
@@ -2372,7 +2587,7 @@ class StudioPage(QWidget):
                 self.status.setText(f"Đã đổi tên kênh “{old}” → “{name}”.")
                 # ĐƯỜNG XUẤT '<gốc>/Đã xuất/<Kênh>/...' dựng từ TÊN KÊNH lúc
                 # xuất -> báo rõ kẻo user đi tìm clip mới trong thư mục tên cũ.
-                QMessageBox.information(
+                _bao_nhanh(
                     self, "Đã đổi tên kênh",
                     f"Đã đổi “{old}” → “{name}”.\n\n"
                     f"Clip xuất MỚI sẽ nằm trong thư mục:  Đã xuất\\{name}\\...\n"
@@ -2428,7 +2643,12 @@ class StudioPage(QWidget):
         if pid is None:
             return
         self.status.clear()
+        self._vact_dem = None    # đổi kênh: đọc mới 1 lần, các bước sau dùng chung
         self.state.set_project(int(pid))
+        if hasattr(self, 'tmpl_box'):
+            name = services.project_template_name(int(pid)) or self._settings.value('last_template', '') or ''
+            self._populate_templates(name)
+            self._apply_selected_template()
         # NHẢY tới VIDEO THAO TÁC GẦN NHẤT của kênh này (nhớ ở QSettings), thay
         # vì luôn về video đầu — kênh nào cũng mở đúng chỗ đang làm dở.
         try:
@@ -2466,6 +2686,15 @@ class StudioPage(QWidget):
         # dọn gốc) KHÔNG chạy nhịp nào. ĐO ĐƯỢC: 0/2 nhịp. Phân tích vẫn chạy
         # ngầm nên user thấy "đứng im", đóng dialog mới thấy nó chạy ào ào.
         chi_may = QApplication.activeModalWidget() is not None
+        # Cửa sổ THU NHỎ xuống taskbar (26/10/2026): không ai nhìn trang chính
+        # -> bỏ phần VẼ LẠI (danh sách clip, nhãn kênh...), vẫn chạy phần MÁY
+        # (tự xuất + dõi dây chuyền) y như lúc có hộp thoại che. Mở lại cửa sổ
+        # là nhịp kế tiếp vẽ đủ.
+        try:
+            if self.window().isMinimized():
+                chi_may = True
+        except RuntimeError:
+            pass
         # ⛔ DB VỠ giữa lúc chạy: DỪNG POLL + báo user 1 lần. Không dừng thì
         # mỗi nhịp lại nã hàng loạt query vào DB hỏng — đo thật trên máy anh
         # Hùng 30/07: 24,7 MB/s đọc đĩa + 50% CPU lúc app đứng yên = đơ đặc.
@@ -2483,9 +2712,12 @@ class StudioPage(QWidget):
         # -> hoạt động kênh. Lỗi 1 việc không được chặn các việc sau.
         # MÁY (phải chạy dù có dialog): _check_auto_export + _pipe_poll.
         # VẼ (bỏ khi dialog che): _poll_done, _refresh_clips, _poll_chan_activity.
-        viec = ((self._check_auto_export, self._pipe_poll) if chi_may else
-                (self._poll_done, self._refresh_clips, self._check_auto_export,
-                 self._pipe_poll, self._poll_chan_activity))
+        # 26/10/2026: bản _nhip = phần nặng (dựng Part, băm/dọn gốc) chạy ở
+        # LUỒNG NỀN, nhịp này chỉ xếp việc + đọc sổ -> không còn khựng.
+        viec = ((self._check_auto_export_nhip, self._pipe_poll_nhip) if chi_may else
+                (self._poll_done, self._refresh_clips,
+                 self._check_auto_export_nhip, self._pipe_poll_nhip,
+                 self._poll_chan_activity))
         for fn in viec:
             try:
                 fn()
@@ -2521,15 +2753,19 @@ class StudioPage(QWidget):
         # LƯỚI AN TOÀN mỗi ~60s: video có clip mà không ai xuất -> xuất tiếp.
         # Xem _quet_bo_sot_xuat (sổ theo dõi chỉ ở RAM nên tắt đột ngột là mất).
         if self._act_tick % 40 == 0:
+            # cờ nhịp: lời gọi từ nhịp poll dựng Part ở LUỒNG NỀN (26/10/2026)
+            self._quet_nen = True
             try:
                 self._quet_bo_sot_xuat()
             except Exception:  # noqa: BLE001 - việc phụ, không được sập app
                 pass
+            finally:
+                self._quet_nen = False
         if self._act_tick % 3:
             return
         self._refresh_chan_label()
 
-    def _quet_bo_sot_xuat(self) -> int:
+    def _quet_bo_sot_xuat(self, nen=False) -> int:
         """LƯỚI AN TOÀN: tìm video ĐÃ CÓ CLIP mà KHÔNG AI ĐỊNH XUẤT, rồi xuất.
 
         Anh Hùng 07/08/2026: "tự out ra vào lại nó k tự xuất ra nữa".
@@ -2557,10 +2793,38 @@ class StudioPage(QWidget):
                 "  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.video_id = v.id "
                 "        AND j.type = 'm1_export_clip' "
                 "        AND j.status IN ('canceled','skipped')) "
-                "GROUP BY v.id LIMIT 10") or []
+                # 26/10/2026: 10 -> 3 video mỗi lượt. Việc dựng Part chạy trên
+                # luồng giao diện (ảnh tiêu đề, ghi DB) nên 10 video một lúc = app
+                # đứng vài giây mỗi phút. Lưới quét lại mỗi ~60 s nên vẫn vét hết,
+                # chỉ rải đều ra thay vì dồn một cục.
+                "GROUP BY v.id LIMIT 3") or []
         except Exception:  # noqa: BLE001 - DB bận/vỡ -> lần sau quét lại
             return 0
         n = 0
+        nen = nen or getattr(self, "_quet_nen", False)
+        if nen and hasattr(self, "_xuat_nen"):
+            # LUỒNG NỀN (26/10/2026): xếp từng video vào luồng dựng Part, báo
+            # từng video khi xong. Trả số video ĐÃ XẾP.
+            def _xong(v, so, loi):
+                if loi:
+                    self._pipe_log(f"⚠ lưới an toàn: video {v} xuất lỗi — {loi}")
+                elif so:
+                    self._pipe_log(
+                        f"🛟 LƯỚI AN TOÀN: video {v} đã phân tích xong nhưng "
+                        "không ai xuất (do app tắt đột ngột / xoá lịch sử job) "
+                        "— đã cho xuất Part tiếp.")
+            for r in rows:
+                vid = int(r["vid"])
+                if vid in getattr(self, "_pending_export", {}).values() \
+                        or vid in self._xuat_dang:
+                    continue                  # đang có sổ dõi / đang dựng rồi
+                try:
+                    if self._xuat_nen(vid, tpl=self._tpl_for_project(r["pid"]),
+                                      khi_xong=_xong):
+                        n += 1
+                except Exception as e:  # noqa: BLE001
+                    self._pipe_log(f"⚠ lưới an toàn: video {vid} xuất lỗi — {e}")
+            return n
         for r in rows:
             vid = int(r["vid"])
             if vid in getattr(self, "_pending_export", {}).values():
@@ -2605,7 +2869,14 @@ class StudioPage(QWidget):
         if not pid:
             self.chan_lbl.setText("")
             return
-        a = (act if act is not None else self._chan_activity()).get(int(pid))
+        if act is not None:
+            a = act.get(int(pid))
+        else:
+            # chỉ cần ĐÚNG kênh này -> bản rút gọn (xem channel_activity_one)
+            try:
+                a = services.channel_activity_one(int(pid))
+            except Exception:  # noqa: BLE001 - nhãn phụ, lỗi không được sập app
+                a = None
         parts = []
         if a:
             if a["running"]:
@@ -2721,18 +2992,9 @@ class StudioPage(QWidget):
             # không style QHeaderView -> Windows vẽ header nền SÁNG mặc định
             # nhưng chữ vẫn ăn '* {color: TEXT}' (chữ sáng trên nền sáng =
             # không đọc được). Chỉ định rõ nền tối / chữ sáng đồng bộ theme.
-            t.setStyleSheet(
-                f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
-                f" border-radius:8px; gridline-color:{BORDER};"
-                f" color:{TEXT}; }}"
-                f"QTableWidget::item {{ padding:3px 8px; }}"
-                f"QTableWidget::item:selected {{ background:{ACCENT};"
-                f" color:white; }}"
-                f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
-                f" padding:6px 8px; border:none;"
-                f" border-bottom:1px solid {BORDER}; font-weight:600; }}"
-                f"QTableCornerButton::section {{ background:{SURFACE};"
-                f" border:none; }}")
+            # nay QSS chung (theme) đã đặt header tối cho mọi bảng; bảng dữ liệu
+            # dùng property table="data" (viền bo + header đậm có vạch dưới)
+            t.setProperty("table", "data")
             hh = t.horizontalHeader()
             # MỌI cột KÉO CHỈNH ĐƯỢC theo ý (Interactive) — user tự chỉnh rộng
             # hẹp; cột cuối tự đầy phần trống. Bề rộng user kéo GIỮ nguyên khi
@@ -2746,30 +3008,30 @@ class StudioPage(QWidget):
         pg1 = QWidget(); l1 = QVBoxLayout(pg1)
         l1.setContentsMargins(0, 0, 0, 0); l1.setSpacing(8)
         hd = QLabel("📊 Tình hình các kênh")
-        hd.setStyleSheet(f"color:{TEXT}; font-size:16px; font-weight:800;")
+        set_style(hd, 'h1', None)
         l1.addWidget(hd)
         sub = QLabel("Nháy đúp 1 kênh để xem CHI TIẾT TỪNG VIDEO của kênh đó. "
                      "Chuột phải 1 kênh để ✏ sửa tên. "
                      "Kênh đang chạy / vừa xong mới nhất nằm trên cùng.")
         sub.setWordWrap(True)
-        sub.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_style(sub, 'muted', None)
         l1.addWidget(sub)
         # lọc bảng theo NHÓM kênh ('Tất cả' + nhóm distinct — nạp lại mỗi fill)
         frow = QHBoxLayout(); frow.setSpacing(8)
-        gl = QLabel("Nhóm:"); gl.setStyleSheet(f"color:{MUTED};")
+        gl = QLabel("Nhóm:"); set_style(gl, None, 'muted')
         frow.addWidget(gl)
         gflt = QComboBox(); gflt.setMinimumWidth(130)
         frow.addWidget(gflt)
         # KỲ xem lại: hôm nay / hôm qua / 7 ngày / 30 ngày (cột Video·Part đếm
         # theo kỳ này). Nhãn nhắc rõ để xem lại theo ngày/tuần.
-        kl = QLabel("Kỳ:"); kl.setStyleSheet(f"color:{MUTED};")
+        kl = QLabel("Kỳ:"); set_style(kl, None, 'muted')
         frow.addWidget(kl)
         rflt = QComboBox(); rflt.setMinimumWidth(120)
         for _t, _d in (("Hôm nay", "today"), ("Hôm qua", "yesterday"),
                        ("7 ngày qua", "7d"), ("30 ngày qua", "30d")):
             rflt.addItem(_t, _d)
         frow.addWidget(rflt)
-        sl = QLabel("Lọc:"); sl.setStyleSheet(f"color:{MUTED};")
+        sl = QLabel("Lọc:"); set_style(sl, None, 'muted')
         frow.addWidget(sl)
         sflt = QComboBox(); sflt.setMinimumWidth(150)
         for _t, _d in (("Tất cả", ""), ("✅ Đã làm", "done"),
@@ -2784,8 +3046,7 @@ class StudioPage(QWidget):
         l1.addLayout(frow)
         # DÒNG TỔNG KẾT (rollup theo nhóm đang lọc) — nhìn 1 phát biết hôm nay.
         summ = QLabel("")
-        summ.setStyleSheet(f"color:{TEXT}; font-size:13px; font-weight:700;"
-                           f" padding:4px 2px;")
+        set_role(summ, "value"); summ.setContentsMargins(2, 4, 2, 4)
         summ.setWordWrap(True)
         l1.addWidget(summ)
         tbl = _mk_table(
@@ -2806,13 +3067,13 @@ class StudioPage(QWidget):
         back.setProperty("ghost", True)
         row2.addWidget(back)
         hd2 = QLabel("")
-        hd2.setStyleSheet(f"color:{TEXT}; font-size:15px; font-weight:800;")
+        set_style(hd2, 'heading', None)
         row2.addWidget(hd2, 1)
         l2.addLayout(row2)
         sub2 = QLabel("Nháy đúp 1 video để CHUYỂN app sang kênh + video đó. "
                       "Video đang chạy / hoạt động mới nhất nằm trên cùng.")
         sub2.setWordWrap(True)
-        sub2.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_style(sub2, 'muted', None)
         l2.addWidget(sub2)
         vtbl = _mk_table(["Video", "Đang chạy", "Đợi", "Clip đã tạo",
                           "Đã xuất", "Hoạt động gần nhất"])
@@ -2912,11 +3173,11 @@ class StudioPage(QWidget):
                     x = QTableWidgetItem(txt)
                     x.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     if c == 3 and td["v"]:
-                        x.setForeground(QColor("#a6e3a1"))
+                        x.setForeground(QColor(SUCCESS))
                     elif c == 4 and td["p"]:
-                        x.setForeground(QColor("#a6e3a1"))
+                        x.setForeground(QColor(SUCCESS))
                     elif c == 5 and a["failed_recent"]:
-                        x.setForeground(QColor("#f38ba8"))
+                        x.setForeground(QColor(DANGER))
                     elif c == 8 and a["last_done"]:
                         # chi tiết NGÀY GIỜ tuyệt đối khi rê chuột
                         x.setToolTip(f"Lần xong gần nhất: {a['last_done']} (UTC)")
@@ -3040,10 +3301,20 @@ class StudioPage(QWidget):
         không được sập app)."""
         if not self.state.project_id:
             return {}
+        # ĐỆM 1,5 s theo kênh (26/10/2026): 1 lần bấm kênh từng gọi hàm này 3
+        # lần liền (_reload_videos + nhãn x2) = 3 lượt GROUP BY trên jobs. Nhãn
+        # chỉ là hiển thị, trễ tối đa 1,5 s không sao.
+        pid = int(self.state.project_id)
+        now = time.monotonic()
+        dem = getattr(self, "_vact_dem", None)
+        if dem and dem[0] == pid and now - dem[1] < 1.5:
+            return dem[2]
         try:
-            return services.video_activity(int(self.state.project_id))
+            act = services.video_activity(pid)
         except Exception:  # noqa: BLE001 - nhãn trạng thái lỗi không được sập app
             return {}
+        self._vact_dem = (pid, now, act)
+        return act
 
     @staticmethod
     def _vid_mark(a) -> str:
@@ -3135,7 +3406,7 @@ class StudioPage(QWidget):
 
     def _add_video(self):
         if not self.state.project_id:
-            QMessageBox.information(self, "Chưa có kênh", "Tạo kênh trước.")
+            _bao_nhanh(self, "Chưa có kênh", "Tạo kênh trước.")
             return
         start = str(self._dl_dir()) if self._dl_dir().is_dir() else ""
         files, _ = self._busy_dialog(
@@ -3152,7 +3423,7 @@ class StudioPage(QWidget):
         import lần lượt, status báo 'Đang nhập video i/n...', xong mới
         _reload_videos + báo lỗi gộp (giữ nguyên cách gom lỗi OSError cũ)."""
         if not self.state.project_id:
-            QMessageBox.information(self, "Chưa có kênh",
+            _bao_nhanh(self, "Chưa có kênh",
                                    "Tạo/chọn kênh trước khi thêm video.")
             return
         vids = [p for p in paths
@@ -3394,7 +3665,7 @@ class StudioPage(QWidget):
             "app hết hạn ngay. Mỗi tài khoản chỉ dùng ở 1 nơi (app HOẶC trình "
             "duyệt); muốn xem YouTube thì dùng tài khoản/trình duyệt khác.")
         guide.setWordWrap(True)
-        guide.setStyleSheet(f"color:{MUTED}; font-size:13px;")
+        set_style(guide, None, 'muted')
         v.addWidget(guide)
 
         # --- hàng CHỌN HỒ SƠ cookie ---
@@ -3409,7 +3680,7 @@ class StudioPage(QWidget):
 
         # --- CHỈ BÁO TÌNH TRẠNG cookie của hồ sơ đang chọn ---
         health = QLabel(""); health.setWordWrap(True)
-        health.setStyleSheet("font-size:13px; font-weight:600;")
+        set_role(health, "value")
         v.addWidget(health)
 
         def refresh_health():
@@ -3419,8 +3690,8 @@ class StudioPage(QWidget):
             else:
                 state, msg = self._cookie_health(self._cookie_profile_path(name))
             text, col = self._cookie_health_label(state, msg)
-            health.setStyleSheet(
-                f"color:{col}; font-size:13px; font-weight:600;")
+            from app.ui.theme import tone_for_color
+            set_style(health, "value", tone_for_color(col))
             health.setText(text)
 
         # nút nạp THẲNG từ file cookies.txt (khỏi copy-paste)
@@ -3448,7 +3719,7 @@ class StudioPage(QWidget):
         v.addLayout(brow)
 
         note = QLabel(""); note.setWordWrap(True)
-        note.setStyleSheet("font-size:12px;"); v.addWidget(note)
+        set_role(note, "muted"); v.addWidget(note)
 
         rowb = QHBoxLayout(); rowb.addStretch(1)
         sv = QPushButton("Lưu"); sv.setProperty("primary", True)
@@ -3494,10 +3765,10 @@ class StudioPage(QWidget):
             try:
                 txt = open(path, "r", encoding="utf-8", errors="ignore").read()
             except Exception as e:  # noqa: BLE001
-                note.setStyleSheet(f"color:{DANGER}; font-size:12px;")
+                set_style(note, 'muted', 'danger')
                 note.setText("Đọc file lỗi: " + str(e)[:120]); return
             box.setPlainText(txt)
-            note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
+            set_style(note, 'muted', 'success')
             note.setText("Đã nạp file. Bấm Lưu để dùng.")
         filb.clicked.connect(do_load_file)
 
@@ -3508,7 +3779,7 @@ class StudioPage(QWidget):
                 self._cookie_profile_path(name.strip()).write_text(
                     "# Netscape HTTP Cookie File\n", encoding="utf-8")
                 refresh_combo(select=name.strip())
-                note.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+                set_style(note, 'muted', None)
                 note.setText("Đã tạo hồ sơ. Dán cookie vào ô rồi bấm Lưu.")
         addb.clicked.connect(do_add)
 
@@ -3523,7 +3794,7 @@ class StudioPage(QWidget):
             if st.value("yt_cookie_active", "") == name:
                 st.setValue("yt_cookie_active", "")
             refresh_combo()
-            note.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+            set_style(note, 'muted', None)
             note.setText("Đã xóa hồ sơ.")
         delb.clicked.connect(do_del)
 
@@ -3536,7 +3807,7 @@ class StudioPage(QWidget):
             # ưu tiên hồ sơ cũ (hết hạn) và nhánh trình duyệt không bao giờ chạy.
             if br != "(không)" and not txt:
                 st.setValue("yt_cookie_active", "")
-                note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
+                set_style(note, 'muted', 'success')
                 note.setText(f"Sẽ lấy cookie từ trình duyệt '{br}'. "
                              "(Lưu ý: nên ĐÓNG trình duyệt trước khi tải.)")
                 dlg.accept()
@@ -3554,7 +3825,7 @@ class StudioPage(QWidget):
             st.setValue("yt_cookie_active", name)
             refresh_health()
             self._refresh_cookie_btn_tip()
-            note.setStyleSheet(f"color:{SUCCESS}; font-size:12px;")
+            set_style(note, 'muted', 'success')
             note.setText(f"Đã lưu & chọn hồ sơ '{name}'. Giờ bấm Tải lại nhé.")
             dlg.accept()
         sv.clicked.connect(do_save)
@@ -3567,7 +3838,7 @@ class StudioPage(QWidget):
     def _yt_ready(self):
         """Kiểm tra sẵn sàng tải. Trả (exe, dl, ff_dir) hoặc None (kèm cảnh báo)."""
         if not self.state.project_id:
-            QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
+            _bao_nhanh(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
             return None
         from config import settings, bundled_exe
         exe = bundled_exe("yt-dlp") or shutil.which("yt-dlp")   # ưu tiên bản đóng gói
@@ -3808,7 +4079,7 @@ class StudioPage(QWidget):
         """Đang có lượt tải chạy? 2 yt-dlp ghi cùng thư mục sẽ loạn tiến trình
         + fallback vớ nhầm file của lượt kia."""
         if getattr(self, "_dl_active", 0) > 0:
-            QMessageBox.information(
+            _bao_nhanh(
                 self, "Đang tải",
                 "Đang có lượt tải chạy — chờ xong rồi tải tiếp nhé.")
             return True
@@ -3822,7 +4093,7 @@ class StudioPage(QWidget):
     def _download_youtube(self):
         url = self.yt_url.text().strip()
         if not url:
-            QMessageBox.information(self, "Chưa có link", "Dán link YouTube vào ô.")
+            _bao_nhanh(self, "Chưa có link", "Dán link YouTube vào ô.")
             return
         if self._is_multi_url(url):
             QMessageBox.warning(
@@ -3905,7 +4176,7 @@ class StudioPage(QWidget):
         v.addWidget(box, 1)
         hint = QLabel("Tải xong từng video sẽ TỰ phân tích + cắt clip. Muốn xuất luôn "
                       "thì bật ô 'Phân tích xong tự động xuất' ở mục Tạo clip.")
-        hint.setWordWrap(True); hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        hint.setWordWrap(True); set_style(hint, 'muted', None)
         v.addWidget(hint)
         rowb = QHBoxLayout(); rowb.addStretch(1)
         ok = QPushButton("Tải hết"); ok.setProperty("primary", True)
@@ -3918,7 +4189,7 @@ class StudioPage(QWidget):
         urls = [u for u in _re.split(r"[\s,]+", box.toPlainText())
                 if u.strip().startswith("http")]
         if not urls:
-            QMessageBox.information(self, "Chưa có link", "Dán ít nhất 1 link hợp lệ.")
+            _bao_nhanh(self, "Chưa có link", "Dán ít nhất 1 link hợp lệ.")
             return
         multi = [u for u in urls if self._is_multi_url(u)]
         if multi:
@@ -4169,7 +4440,7 @@ class StudioPage(QWidget):
         lay.addLayout(row)
 
         # cắt tay: đặt đầu/cuối tại vị trí đang xem
-        info = QLabel(); info.setStyleSheet(f"color:{MUTED}; font-size:13px;")
+        info = QLabel(); set_style(info, None, 'muted')
         lay.addWidget(info)
         cutrow = QHBoxLayout()
         bin_ = QPushButton("Đặt ĐẦU tại đây"); bin_.setProperty("ghost", True)
@@ -4374,7 +4645,7 @@ class StudioPage(QWidget):
         services.set_project_export_dir(int(pid), d)
         name = getattr(self, "_proj_names", {}).get(int(pid), "")
         self.status.setText(f"Kênh “{name}” sẽ lưu clip vào: {d}")
-        QMessageBox.information(
+        _bao_nhanh(
             self, "Đã đặt thư mục lưu",
             f"Kênh “{name}” sẽ lưu clip THẲNG vào:\n{d}\n\n"
             "(Không tạo thư mục con theo tên video.)")
@@ -4409,7 +4680,7 @@ class StudioPage(QWidget):
         def run():
             ids = checked()
             if not ids:
-                QMessageBox.information(dlg, "Chưa chọn", "Hãy TÍCH ô mục cần xóa.")
+                _bao_nhanh(dlg, "Chưa chọn", "Hãy TÍCH ô mục cần xóa.")
                 return
             if QMessageBox.question(
                 dlg, title, f"Xóa {len(ids)} mục đã chọn? Không hoàn tác được."
@@ -4438,11 +4709,11 @@ class StudioPage(QWidget):
 
     def _manage_videos(self):
         if not self.state.project_id:
-            QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
+            _bao_nhanh(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
             return
         vids = services.list_videos(self.state.project_id)
         if not vids:
-            QMessageBox.information(self, "Chưa có video", "Kênh chưa có video nào.")
+            _bao_nhanh(self, "Chưa có video", "Kênh chưa có video nào.")
             return
         # Trạng thái + hoạt động gần nhất từng video (1 lượt query gộp cho cả
         # kênh — trước đây list_clips TỪNG video, kênh nhiều video bị chậm).
@@ -4471,7 +4742,7 @@ class StudioPage(QWidget):
     def _manage_projects(self):
         projs = services.list_projects()
         if not projs:
-            QMessageBox.information(self, "Chưa có kênh", "Chưa có kênh nào.")
+            _bao_nhanh(self, "Chưa có kênh", "Chưa có kênh nào.")
             return
         rows = [(p["id"], f'{p["name"]}   ({len(services.list_videos(p["id"]))} video)')
                 for p in projs]
@@ -4567,6 +4838,64 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001
             pass
 
+    # ---- CHẠY NỀN (26/10/2026) ----
+    def _nen_xong_slot(self, khi_xong, kq) -> None:
+        """Luồng giao diện nhận kết quả việc nền. Trang đã xoá/app đang đóng
+        -> bỏ qua (không chạm widget chết)."""
+        from app.ui.shutdown import alive
+        if not alive(self):
+            return
+        try:
+            khi_xong(kq)
+        except Exception:  # noqa: BLE001 - 1 kết quả lỗi không làm sập nhịp
+            import traceback
+            traceback.print_exc()
+
+    def _chay_nen(self, viec, khi_xong, ten: str = "bq-nen") -> None:
+        """Chạy `viec()` ở LUỒNG NỀN rồi gọi `khi_xong(kq)` ở LUỒNG GIAO DIỆN.
+        kq = (True, giá trị) | (False, lời lỗi). App đang đóng -> im lặng bỏ."""
+        from app.ui.shutdown import is_closing, safe_emit
+
+        def bg():
+            if is_closing():
+                return
+            try:
+                kq = (True, viec())
+            except Exception as e:  # noqa: BLE001
+                kq = (False, f"{e}" or type(e).__name__)
+            safe_emit(lambda: self.nen_xong.emit(khi_xong, kq))
+        threading.Thread(target=bg, daemon=True, name=ten).start()
+
+    def _lan_xuat_dua(self, viec, khi_xong) -> None:
+        """Như _chay_nen nhưng xếp vào MỘT luồng dựng-lệnh-xuất DUY NHẤT, làm
+        lần lượt: thứ tự giữ nguyên, không bao giờ 2 lượt dựng chạy song song
+        (render ảnh chữ + ghi DB không giành nhau)."""
+        q = getattr(self, "_lan_xuat_q", None)
+        if q is None:
+            import queue
+            q = self._lan_xuat_q = queue.Queue()
+            threading.Thread(target=self._lan_xuat_chay, args=(q,),
+                             daemon=True, name="bq-dung-part").start()
+        q.put((viec, khi_xong))
+
+    def _lan_xuat_chay(self, q) -> None:
+        from app.ui.shutdown import is_closing, safe_emit
+        while not is_closing():
+            # Bọc CẢ vòng (không chỉ viec()): luồng này là luồng dựng Part DUY
+            # NHẤT — chết một lần là mọi lượt xuất sau treo im lặng.
+            try:
+                viec, khi_xong = q.get()
+                if is_closing():
+                    return
+                try:
+                    kq = (True, viec())
+                except Exception as e:  # noqa: BLE001
+                    kq = (False, f"{e}" or type(e).__name__)
+                safe_emit(lambda: self.nen_xong.emit(khi_xong, kq))
+            except BaseException:  # noqa: BLE001 - giữ luồng sống
+                if is_closing():
+                    return
+
     def _track_auto(self, job_id, video_id, pid=None):
         """Nếu BẬT tự-động-xuất: ghi nhớ job phân tích này để xong thì tự xuất.
         🔒 CHỐT MẪU: chụp lại mẫu (deepcopy) gắn với job — phân tích xong dù
@@ -4578,9 +4907,19 @@ class StudioPage(QWidget):
                 self._auto_tpl = {}
             self._auto_tpl[job_id] = self._tpl_for_project(pid)
 
-    def _check_auto_export(self):
+    def _check_auto_export_nhip(self):
+        """Bản của NHỊP POLL (26/10/2026): dựng lệnh xuất ở LUỒNG NỀN.
+        Gọi thẳng _check_auto_export() (test, lối cũ) vẫn chạy đồng bộ."""
+        fn = self._check_auto_export
+        if getattr(fn, "__func__", None) is StudioPage._check_auto_export:
+            fn(nen=True)
+        else:
+            fn()          # đã bị thay (test/móc ngoài) -> gọi đúng chữ ký cũ
+
+    def _check_auto_export(self, nen=False):
         """Định kỳ: job phân tích nào XONG -> tự xuất hết clip của video đó
-        bằng ĐÚNG MẪU đã chốt lúc bấm (không phải mẫu hiện tại)."""
+        bằng ĐÚNG MẪU đã chốt lúc bấm (không phải mẫu hiện tại).
+        nen=True: phần dựng Part chạy ở luồng nền (xem _xuat_nen)."""
         if not self._pending_export:
             return
         # CHỐNG TÁI NHẬP: _export_video gọi QApplication.processEvents() giữa
@@ -4594,9 +4933,34 @@ class StudioPage(QWidget):
             return
         self._auto_export_busy = True
         try:
-            self._check_auto_export_inner()
+            if nen:
+                self._check_auto_export_inner(nen=True)
+            else:
+                self._check_auto_export_inner()
         finally:
             self._auto_export_busy = False
+
+    def _auto_xuat_xong(self, jid, vid, n, loi) -> None:
+        """LUỒNG GIAO DIỆN: lượt dựng tự-xuất ở nền đã xong -> y hệt phần sau
+        `_export_video` của đường đồng bộ (ghi job vào dây chuyền, gỡ sổ)."""
+        self._auto_dang.discard(jid)
+        auto_tpl = getattr(self, "_auto_tpl", {})
+        try:
+            if loi or n is None:
+                self._pipe_on_export_failed(vid, loi or "lỗi không rõ")
+            else:
+                self._pipe_on_exported(
+                    vid, list(getattr(self, '_export_results', {}).get(vid, {}).get(
+                        'jobs', getattr(self, '_last_export_jids', [])) or []))
+                self.status.setText(
+                    f"Lượt tự xuất vừa kiểm tra: 1 video, đã xếp {n} việc xuất "
+                    "Part. Theo dõi bước hiện tại của từng video ở bảng Tiến "
+                    "trình bên dưới.")
+        except Exception as e:  # noqa: BLE001
+            self._pipe_on_export_failed(vid, str(e))
+        finally:
+            self._pending_export.pop(jid, None)
+            auto_tpl.pop(jid, None)
 
     def _video_cut_basic(self, vid: int) -> bool:
         """Video này vừa được cắt kiểu CƠ BẢN (chưa qua AI) phải không? Đọc
@@ -4613,14 +4977,47 @@ class StudioPage(QWidget):
                 return False
         return True
 
-    def _check_auto_export_inner(self):
+    def _check_auto_export_inner(self, nen=False):
         auto_tpl = getattr(self, "_auto_tpl", {})
         ready, total = 0, 0
+        # jid đang dựng lệnh xuất ở luồng nền -> nhịp này BỎ QUA (không dựng 2
+        # lượt cho cùng 1 video; dòng sổ giữ nguyên tới khi kết quả về).
+        auto_dang = getattr(self, "_auto_dang", set())
         # 1 query GỘP cho mọi job đang theo dõi (thay vì N query mỗi 1.5s)
         states = services.job_states(list(self._pending_export))
         for jid in list(self._pending_export):
+            if jid in auto_dang:
+                continue
             st = states.get(jid, "")
             if st == "done":
+                job_row = db.query_one("SELECT result FROM jobs WHERE id=?", (jid,))
+                outcome = db.loads(job_row["result"], {}) if job_row else {}
+                if isinstance(outcome, dict) and outcome.get("selection_note"):
+                    from app.core.highlight_policy import selection_allows_export, selection_note
+                    note = selection_note(outcome)
+                    vid = self._pending_export.get(jid)
+                    if vid in getattr(self, "_pipe_by_vid", {}):
+                        notified = getattr(self, "_selection_notified", set())
+                        if jid not in notified:
+                            self._pipe_log(note)
+                            notified.add(jid)
+                            self._selection_notified = notified
+                    if not selection_allows_export(outcome):
+                        # Do not export stale clips from an earlier run or retry
+                        # an explicit quality rejection. Preserve the source.
+                        self._pending_export.pop(jid, None)
+                        auto_tpl.pop(jid, None)
+                        getattr(self, "_pipe_cut", {}).pop(jid, None)
+                        ctx = getattr(self, "_pipe_by_vid", {}).pop(vid, None)
+                        if ctx and self._pipe_ai_hen_thu_lai(ctx, outcome, note):
+                            pass        # AI lỗi TẠM THỜI -> tự thử lại sau
+                        elif ctx:
+                            from app.core import pipeline as P
+                            P.mark_error(ctx["entry"], "Chờ xem lại; giữ gốc. " + note)
+                            self._pipe_log(f"🟡 {ctx['name']}: '{ctx['file']}' — chờ xem "
+                                           f"lại, GIỮ video gốc: {note[:200]}")
+                        self.status.setText(note + " · Chưa tự xuất; giữ video gốc.")
+                        continue
                 from app.ai.story_quality import pending_review
                 review_vid=self._pending_export.get(jid)
                 if review_vid is None:continue
@@ -4637,10 +5034,10 @@ class StudioPage(QWidget):
                     continue
                 # pop(jid, None): vòng lặp dùng ảnh chụp `states`, dòng sổ có
                 # thể đã bị đường khác (vd _pipe_poll_cut) gỡ giữa lúc chạy.
-                vid = self._pending_export.pop(jid, None)
+                vid = self._pending_export.get(jid)
                 if vid is None:
                     continue
-                tpl_snap = auto_tpl.pop(jid, None)
+                tpl_snap = auto_tpl.get(jid)
                 # 🔍 VAN KIỂM SOÁT AI (anh Hùng 30/07: "cắt lỗi ra không biết
                 # cái nào"): video DÂY CHUYỀN mà lượt phân tích rơi về CƠ BẢN
                 # -> THỬ PHÂN TÍCH LẠI đúng 1 lần (AI đã lì hơn từ v2.6.6,
@@ -4669,6 +5066,8 @@ class StudioPage(QWidget):
                             self._pipe_cut.pop(jid, None)
                             self._pipe_cut[new_jid] = ctx_pipe
                             self._pending_export[new_jid] = vid
+                            self._pending_export.pop(jid, None)
+                            auto_tpl.pop(jid, None)
                             if tpl_snap is not None:
                                 auto_tpl[new_jid] = tpl_snap
                             self._pipe_log(
@@ -4682,12 +5081,23 @@ class StudioPage(QWidget):
                         "CƠ BẢN sau 2 lần phân tích (AI lỗi kéo dài). Xuất để "
                         "không tắc dây chuyền — soát lại key/mạng ở Cài đặt AI; "
                         "video này bị đánh dấu [CƠ BẢN] trong báo cáo.")
+                if nen and hasattr(self, "_xuat_nen"):
+                    # LUỒNG NỀN (26/10/2026): dựng Part ở "bq-dung-part", sổ
+                    # RAM chỉ sửa khi kết quả về (_auto_xuat_xong, luồng UI).
+                    # Video đang dựng dở bởi đường khác -> để nhịp sau.
+                    if self._xuat_nen(
+                            vid, tpl=tpl_snap, resume=True,
+                            khi_xong=lambda v, n, loi, j=jid:
+                            self._auto_xuat_xong(j, v, n, loi)):
+                        auto_dang.add(jid)
+                        self._auto_dang = auto_dang
+                    continue
                 try:
                     # MẪU ĐÃ CHỐT lúc xếp job -> truyền thẳng vào _export_video
                     # (chính hàm đó lo đổi/khôi phục self.layout_tpl). Không
                     # còn tự đổi ở đây: đổi ở 2 nơi từng là chỗ dễ trộn mẫu khi
                     # có lượt xuất chen ngang.
-                    total += self._export_video(vid, tpl=tpl_snap)
+                    total += self._export_video(vid, tpl=tpl_snap, resume=True)
                     ready += 1
                     # 🤖 video dây chuyền: ghi nhận các job xuất để dõi xong.
                     # Lấy danh sách job NGAY tại đây rồi TRUYỀN THẲNG — không
@@ -4701,6 +5111,9 @@ class StudioPage(QWidget):
                             'jobs', getattr(self, '_last_export_jids', [])) or []))
                 except Exception as e:  # noqa: BLE001
                     self._pipe_on_export_failed(vid, str(e))
+                finally:
+                    self._pending_export.pop(jid, None)
+                    auto_tpl.pop(jid, None)
             elif st in ("failed", "canceled", "skipped", ""):
                 self._pending_export.pop(jid, None)   # lỗi/mất -> thôi, không xuất
                 auto_tpl.pop(jid, None)
@@ -4712,10 +5125,15 @@ class StudioPage(QWidget):
 
     # ================= 🤖 DÂY CHUYỀN (INTEGRATION.md) =================
 
-    def _pipeline_dialog(self):
+    def _pipeline_dialog(self, embed=False):
         """🤖 Trung tâm DÂY CHUYỀN: chọn thư mục trung chuyển, bật/cấu hình
         từng kênh (chế độ cắt, video/ngày), chạy + xem báo cáo — 1 màn hình
-        quản được 50 kênh (INTEGRATION.md)."""
+        quản được 50 kênh (INTEGRATION.md).
+
+        embed=True (26/10/2026): trả về KHỐI NHÚNG (không exec) để đặt thẳng
+        vào thẻ 'Chạy dây chuyền' của màn Dây chuyền — một chỗ duy nhất thay
+        vì màn + hộp thoại riêng. Nhịp làm mới tự nghỉ khi thẻ bị ẩn
+        (_fill_thua / _bao_cao_an_toan kiểm isVisible)."""
         from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                      QHBoxLayout, QHeaderView, QLabel,
                                      QPlainTextEdit, QPushButton, QSpinBox, QMenu,
@@ -4723,14 +5141,18 @@ class StudioPage(QWidget):
                                      QVBoxLayout, QWidget)
         from app.core import pipeline as P
         from app.ui.wheelguard import NoWheelComboBox, NoWheelSpinBox
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Dây chuyền — chọn kênh và chạy")
-        from app.ui.layout_tools import fit_dialog
-        fit_dialog(dlg, 1240, 740)
+        if embed:
+            dlg = _PipeEmbed()
+        else:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Dây chuyền — chọn kênh và chạy")
+            from app.ui.layout_tools import fit_dialog
+            fit_dialog(dlg, 1560, 900)     # màn to: thấy đủ cột, không phải cuộn ngang
         self._pipe_dlg = dlg                      # cho test offscreen
         lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(14, 14, 14, 14)
-        lay.setSpacing(8)
+        _m = 0 if embed else SP_4
+        lay.setContentsMargins(_m, _m, _m, _m)
+        lay.setSpacing(SP_2)
 
         # --- hàng 1: hướng dẫn + nút chạy (BỎ "thư mục trung chuyển" chung —
         #     mỗi kênh tự đặt Thư mục lấy video riêng ở cột bên phải) ---
@@ -4739,26 +5161,27 @@ class StudioPage(QWidget):
         # rác — anh Hùng chọn, + Chạy dây chuyền); việc thi thoảng gom vào 2
         # menu theo Ý ĐỊNH của user, KHÔNG cắt bớt chức năng nào.
         top = QHBoxLayout(); top.setSpacing(8)
-        hint = QLabel("▶ Chạy: lấy video ở thư mục mỗi kênh → cắt → xuất Part "
-                      "vào nơi xuất đã đặt → chuyển gốc vào Thùng rác riêng của ứng dụng sau khi kiểm tra đủ Part.")
-        hint.setWordWrap(True)
+        hint = QLabel("Lấy video ở thư mục mỗi kênh → cắt → xuất Part → kiểm tra đủ Part "
+                      "rồi mới chuyển gốc vào Thùng rác của app.")
+        hint.setWordWrap(True); set_role(hint, "muted")
         hint.setToolTip(
             "Mỗi kênh đặt THƯ MỤC LẤY VIDEO riêng ở cột phải (nút 📂) — tool "
             "tải bỏ video vào đó.\n▶ Chạy dây chuyền: quét thư mục từng kênh "
             "đang tích ✓ → nhập video → cắt (AI) → xuất Part vào nơi xuất đã đặt của "
             "kênh → kiểm tra đủ Part → chuyển video gốc vào Thùng rác riêng của ứng dụng (khôi phục được; file hỏng "
             "vào _Loi).\nChỉ chạy các kênh trong NHÓM đang chọn.")
-        hint.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_style(hint, 'muted', None)
         top.addWidget(hint, 1)
 
-        kho_b = QPushButton("🗑 Kho video & dọn dẹp ▾")
+        # NHÃN CHỮ, không emoji (máy anh Hùng thiếu glyph -> ô đen)
+        kho_b = QPushButton("Kho video && dọn dẹp ▾")
         kho_b.setProperty("ghost", True)
         kho_b.setToolTip("Thùng rác / khôi phục video đã cắt xong · file lỗi "
                          "(_Loi) · dọn file rác trong thư mục kênh.")
         kho_b.clicked.connect(lambda: self._pipe_menu_kho(kho_b))
         top.addWidget(kho_b)
 
-        clean_b = QPushButton("🧹 Dọn file rác"); clean_b.setProperty("ghost", True)
+        clean_b = QPushButton("Dọn file rác"); clean_b.setProperty("ghost", True)
         clean_b.setToolTip(
             "DỌN file rác trong thư mục của các kênh ĐANG TÍCH ✓ (nhóm đang "
             "chọn): mảnh tải dở, file 0 byte, và tuỳ chọn xoá _Loi / Thùng rác.\n"
@@ -4767,7 +5190,7 @@ class StudioPage(QWidget):
         clean_b.clicked.connect(self._pipe_clean_junk_dialog)
         top.addWidget(clean_b)
 
-        fix_b = QPushButton("🔧 Sửa & làm lại ▾"); fix_b.setProperty("ghost", True)
+        fix_b = QPushButton("Sửa && làm lại ▾"); fix_b.setProperty("ghost", True)
         fix_b.setToolTip("Cứu video kẹt lượt trước · phân tích lại video lỡ ra "
                          "'Cắt cơ bản' · bắt cả nhóm cắt lại.")
         fix_b.clicked.connect(lambda: self._pipe_menu_fix(fix_b))
@@ -4783,16 +5206,17 @@ class StudioPage(QWidget):
         grow.addWidget(self._tag("Nhóm:"))
         grp_cb = NoWheelComboBox()   # khoá cuộn đổi nhóm ngoài ý muốn
         self._pipe_grp_cb = grp_cb
-        grow.addWidget(grp_cb, 1)
+        grp_cb.setMinimumWidth(220)
+        grow.addWidget(grp_cb)
         # 🔎 TÌM KÊNH trong nhóm (hữu ích khi có 50-300 kênh) — lọc bảng ngay.
         from PyQt6.QtWidgets import QLineEdit as _QLE
-        search = _QLE(); search.setPlaceholderText("🔎 Tìm kênh trong nhóm…")
-        search.setClearButtonEnabled(True); search.setMaximumWidth(240)
-        search.setStyleSheet(f"QLineEdit{{background:{BASE};color:{TEXT};"
-                             f"border:1px solid {BORDER};border-radius:6px;"
-                             f"padding:4px 8px;}}")
+        search = _QLE(); search.setPlaceholderText("Tìm kênh trong nhóm…")
+        search.setClearButtonEnabled(True)
         self._pipe_search = search
-        grow.addWidget(search)
+        grow.addWidget(search, 1)
+        gallery_b=QPushButton('Kho mẫu');gallery_b.setProperty('ghost',True)
+        gallery_b.clicked.connect(lambda:self._open_template_gallery(dlg))
+        grow.addWidget(gallery_b)
         # 1 Ô TÍCH thay 2 nút "Bật tất cả"/"Tắt tất cả" — tích = bật hết, bỏ
         # tích = tắt hết (đúng thói quen bảng tính). KHÔNG kéo kênh đã ẩn về.
         from PyQt6.QtWidgets import QCheckBox as _QCB
@@ -4824,8 +5248,7 @@ class StudioPage(QWidget):
         # --- dải TỔNG QUAN nhóm (đếm nhanh: bao nhiêu kênh / đang bật / đã cắt
         #     — nhìn phát biết ngay tình hình nhóm, không phải nhẩm bằng mắt) ---
         ov = QLabel("")
-        ov.setStyleSheet(f"color:{TEXT}; font-size:12px; padding:2px 2px;"
-                         f"border-bottom:1px solid {BORDER};")
+        ov.setObjectName("pipeOverview")
         ov.setOpenExternalLinks(False)      # link 'fix' xử lý TRONG app
         ov.linkActivated.connect(lambda _h: self._pipe_recycle_dialog())
         self._pipe_ov = ov
@@ -4848,30 +5271,27 @@ class StudioPage(QWidget):
         # ô đen, đã sập ở v2.6.22).
         tbl.setHorizontalHeaderLabels(
             ["✓", "Kênh", "Nhóm", "Chế độ", "Mẫu", "AI xem hình", "Chờ",
-             "Part đã ghi", "Hôm nay", "📁 Thư mục lấy video"])
+             "Part đã ghi", "Hôm nay", "Thư mục lấy video"])
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         # Chọn NHIỀU DÒNG để ẩn một lượt (Ctrl/Shift click) + menu chuột phải.
         tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         tbl.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        tbl.setStyleSheet(
-            f"QTableWidget {{ background:{BASE}; border:1px solid {BORDER};"
-            f" border-radius:8px; gridline-color:{BORDER}; color:{TEXT}; }}"
-            f"QHeaderView::section {{ background:{SURFACE}; color:{TEXT};"
-            f" padding:6px 8px; border:none;"
-            f" border-bottom:1px solid {BORDER}; font-weight:600; }}")
+        # bảng kênh Dây chuyền: viền bo + header đậm (QSS chung, KHÔNG padding
+        # ô vì ô chứa widget nút/combo)
+        tbl.setProperty("table", "plain")
         hh = tbl.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         tbl.setColumnHidden(2, True)  # The selected group is already shown above.
-        for col,width in enumerate((36,220,100,150,160,145,125,75,75,360)):
+        for col,width in enumerate((36,200,100,140,160,110,64,92,76,310)):
             tbl.setColumnWidth(col,width)
         hh.moveSection(hh.visualIndex(9), 2)
         hh.moveSection(hh.visualIndex(6), 3)
         hh.moveSection(hh.visualIndex(7), 4)
         tbl.setToolTip('Tên kênh, thư mục nguồn và số chờ ở đầu bảng. Cuộn ngang để xem chế độ, mẫu và AI xem hình.')
         tbl.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        lay.addWidget(tbl, 2)
+        lay.addWidget(tbl, 3)
 
         # --- báo cáo (tiêu đề + nút Xoá + Mở thư mục log) ---
         rhead = QHBoxLayout(); rhead.setSpacing(6)
@@ -4881,21 +5301,34 @@ class StudioPage(QWidget):
         rhead.addWidget(open_log_b); rhead.addWidget(clr_b)
         lay.addLayout(rhead)
         rep = QPlainTextEdit(); rep.setReadOnly(True)
-        rep.setStyleSheet(f"background:{BASE}; color:{TEXT}; border:1px solid "
-                          f"{BORDER}; border-radius:8px; font-size:12px;")
+        # Hộp tự bỏ dòng cũ khi quá 400 dòng (thay cho setPlainText cả khối).
+        rep.setMaximumBlockCount(400)
+        _rf = rep.font(); _rf.setPixelSize(FS_SM); rep.setFont(_rf)
         self._pipe_rep_box = rep
         lay.addWidget(rep, 1)
+
+        _rep = {"n": 0, "cuoi": None}   # số dòng báo cáo hộp NÀY đã hiện
 
         def refresh_report():
             # CHỈ ghi lại khi báo cáo THẬT SỰ đổi. setPlainText 400 dòng mỗi
             # nhịp là dựng lại toàn bộ khối chữ + kéo thanh cuộn -> tốn vô ích
             # khi dây chuyền im (đo 06/08/2026 lúc anh Hùng báo "đơ lắm").
-            _txt = "\n".join(self._pipe_report[-400:])
-            if getattr(self, "_pipe_rep_cache", None) == _txt:
+            # 26/10/2026: dây chuyền chạy thì báo cáo đổi LIÊN TỤC -> vẫn dựng
+            # lại 400 dòng mỗi 2 s. Nay chỉ NỐI THÊM dòng mới (appendPlainText,
+            # hộp tự giới hạn 400 dòng); danh sách bị xoá/cắt mới dựng lại.
+            rp = self._pipe_report
+            n = len(rp)
+            da = _rep["n"]
+            if n == da and (not n or rp[-1] is _rep["cuoi"]):
                 return
-            self._pipe_rep_cache = _txt
-            rep.setPlainText(_txt)
             sb = rep.verticalScrollBar()
+            if n > da and da and rp[da - 1] is _rep["cuoi"]:
+                rep.appendPlainText("\n".join(rp[max(da, n - 400):]))
+            else:
+                rep.setPlainText("\n".join(rp[-400:]))
+            _rep["n"] = n
+            _rep["cuoi"] = rp[-1] if rp else None
+            self._pipe_rep_cache = None
             sb.setValue(sb.maximum())
 
         # Nhóm đang chọn để LỌC + CHẠY (theo TỪNG nhóm, không có "tất cả").
@@ -4939,6 +5372,7 @@ class StudioPage(QWidget):
         def clear_report():
             self._pipe_report.clear()
             rep.setPlainText("")
+            _rep["n"], _rep["cuoi"] = 0, None
         clr_b.clicked.connect(clear_report)
 
         def open_log_dir():
@@ -4947,6 +5381,8 @@ class StudioPage(QWidget):
             d.mkdir(parents=True, exist_ok=True)
             open_dir(str(d))
         open_log_b.clicked.connect(open_log_dir)
+
+        _bang = {}      # khoá dòng đã dựng widget (cập nhật tại chỗ, xem fill)
 
         def fill():
             rows = db.query(
@@ -5018,7 +5454,7 @@ class StudioPage(QWidget):
                         "mất (app tự dọn vào <b>_DaXoa</b> cạnh thư mục kênh) — "
                         "<a href='fix' style='color:#89B4FA'>📂 chọn thư mục "
                         "khác ngay</a></span>" if canh else "")
-            ov.setText(f"📊 Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
+            ov.setText(f"Nhóm \"{gname}\":  {n_all} kênh  ·  ✓ {n_on} đang bật"
                        f"{hid_txt}"
                        f"  ·  Lịch sử: {done_total} video → {parts_total} Part đã ghi"
                        f"{more}{canh_txt}")
@@ -5047,40 +5483,57 @@ class StudioPage(QWidget):
                                + (f" · {unreadable} kênh cần kiểm tra thư mục" if unreadable else '')
                                + '. Ô tìm kiếm chỉ lọc bảng, không thu hẹp phạm vi chạy. File đã làm sẽ được kiểm tra để bỏ qua.')
             run_b.setToolTip(scope_hint.text())
-            for i, r in enumerate(view):
+            # ⚡ CẬP NHẬT TẠI CHỖ (26/10/2026). Đo (100 kênh, dây chuyền chạy):
+            # mỗi ~8 s bảng dựng lại 5 widget x 50 dòng (4 combo + ô thư mục)
+            # = ~0,5 s đứng hình, kèm 3 query/dòng. Nay: số liệu đọc 3 query
+            # GỘP; widget của dòng nào KHÔNG đổi (cùng kênh, nhóm, chế độ, mẫu,
+            # thư mục...) thì GIỮ NGUYÊN, chỉ thay chữ các ô số. Dòng phải dựng
+            # mới: 8 dòng đầu dựng ngay, phần còn lại dựng dần 3 dòng/nhịp
+            # qua vòng sự kiện (hộp hiện ra NGAY, không chờ đủ 100 dòng).
+            _ids = [int(r["id"]) for r in view]
+            _last_by, _dn_by, _today_by = {}, {}, {}
+            if _ids:
+                _ph = ",".join("?" * len(_ids))
+                for _r in db.query(
+                        "SELECT project_id AS pid, MAX(taken_at) AS t FROM "
+                        "pipeline_files WHERE status IN ('taken','done','error') AND "
+                        f"project_id IN ({_ph}) GROUP BY project_id", _ids):
+                    # 'error' cũng là ĐÃ NHẬN video (vd "chờ xem lại" giữ gốc):
+                    # bỏ nó ra là kênh vừa nhận video hôm nay vẫn bị gắn
+                    # "⚠ NGUỒN CẠN?" oan (lỗi thật 31/10/2026, kênh 26).
+                    if _r["t"]:
+                        _last_by[int(_r["pid"])] = _r["t"]
+                for _r in db.query(
+                        "SELECT project_id AS pid, COUNT(*) AS n, "
+                        "COALESCE(SUM(CAST(note AS INTEGER)),0) AS p "
+                        "FROM pipeline_files WHERE status='done' AND "
+                        f"project_id IN ({_ph}) GROUP BY project_id", _ids):
+                    _dn_by[int(_r["pid"])] = _r
+                for _r in db.query(
+                        "SELECT project_id AS pid, SUM(status='done') AS d, "
+                        "SUM(status='error' AND COALESCE(note,'') NOT LIKE 'Chờ xem lại%') AS e, "
+                        "SUM(status='error' AND note LIKE 'Chờ xem lại%') AS r, "
+                        "SUM(status='taken') AS t "
+                        "FROM pipeline_files WHERE "
+                        "date(taken_at,'localtime')=date('now','localtime') "
+                        f"AND project_id IN ({_ph}) GROUP BY project_id", _ids):
+                    _today_by[int(_r["pid"])] = _r
+            _tpl_list = list(services.list_templates())
+            _mc = (self.tmpl_box.currentData() or "").strip()
+            _ky_chung = (tuple(all_groups), tuple(t["name"] for t in _tpl_list),
+                         _mc, _XH_MD_NHAN(), root)
+            if _bang.get("chung") != _ky_chung:
+                _bang["chung"] = _ky_chung
+                _bang["dong"] = []
+            _ky_cu = _bang.get("dong") or []
+            _ky_moi = []
+            _can_dung = []
+            _bang["gen"] = _bang.get("gen", 0) + 1
+
+            def _dung_widget(i, r, sd, no_folder, preview):
+                """5 widget của 1 dòng (nhóm / chế độ / mẫu / xem hình / thư
+                mục) — y hệt bản cũ, chỉ gói lại để dựng khi CẦN."""
                 pid = int(r["id"])
-                chk = QTableWidgetItem()
-                chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable
-                             | Qt.ItemFlag.ItemIsEnabled)
-                chk.setCheckState(Qt.CheckState.Checked if r["pipe_on"]
-                                  else Qt.CheckState.Unchecked)
-                chk.setData(Qt.ItemDataRole.UserRole, pid)
-                tbl.setItem(i, 0, chk)
-                # Tên + cảnh báo NGUỒN CẠN (gộp vào tooltip cho gọn cột).
-                last = P.last_intake_at(pid)
-                warn = ""
-                tip = "Kênh: " + r["name"]
-                if last:
-                    try:
-                        d0 = datetime.strptime(last[:10], "%Y-%m-%d").date()
-                        nd = (datetime.now().date() - d0).days
-                        if nd >= 3:
-                            warn = "⚠ "
-                            tip = (f"⚠ NGUỒN CẠN? {nd} ngày không có video mới "
-                                   f"— kiểm tra tool tải / đổi key.")
-                        else:
-                            tip = ("nhận video: hôm nay" if nd <= 0
-                                   else f"nhận video: {nd} ngày trước")
-                    except ValueError:
-                        pass
-                _st = pipe_seq.get(pid)
-                itn = QTableWidgetItem(
-                    (f"{_st}. " if _st else "") + warn + r["name"])
-                itn.setToolTip(tip)
-                if warn:
-                    from PyQt6.QtGui import QColor
-                    itn.setForeground(QColor("#f38ba8"))
-                tbl.setItem(i, 1, itn)
                 # Cột NHÓM — DROPDOWN CHỌN (KHÔNG gõ tự do): tránh render xấu
                 # (ô nhập editable) + tránh gõ/cuộn nhầm làm MẤT nhóm. Gồm các
                 # nhóm hiện có + "(Chưa phân nhóm)" + "➕ Nhóm mới…" để tạo nhóm.
@@ -5138,7 +5591,7 @@ class StudioPage(QWidget):
                 # dùng đúng mẫu ở trang chính.
                 _mc = (self.tmpl_box.currentData() or "").strip()
                 tcb.addItem(f"(mẫu đang chọn: {_mc or 'Mặc định'})", "")
-                for _t in services.list_templates():
+                for _t in _tpl_list:
                     tcb.addItem(_t["name"], _t["name"])
                 _tcur = (r["tpl_name"] or "").strip() if "tpl_name" in r.keys() \
                     else ""
@@ -5195,15 +5648,73 @@ class StudioPage(QWidget):
                         p, None if not d else (d == "1"))
                 vcb.activated.connect(_on_xh)
                 tbl.setCellWidget(i, 5, vcb)
+                fw = QWidget(); fl = QHBoxLayout(fw)
+                fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
+                lb = QLabel("⚠ Chưa có Thư mục lưu — đặt ở phần Kênh"
+                            if no_folder else sd)
+                set_style(lb, "hint", "warn" if preview["error"] else "success")
+                lb.setToolTip(
+                    "⚠ Kênh chưa có 'Thư mục lưu'. Đặt nó ở phần quản lý kênh "
+                    "(nơi tool tải bỏ video vào) — bảng này tự ăn theo."
+                    if no_folder else
+                    "📁 Thư mục lấy video. Part được lưu vào nơi xuất đã đặt của kênh. "
+                    "Sau khi xuất đủ Part và kiểm tra thành công, gốc được chuyển vào "
+                    "Thùng rác riêng của ứng dụng:\n" + sd)
+                fl.addWidget(lb, 1)
+                # Nút CHỮ (không phụ thuộc emoji). Đã BỎ nút Chọn/Mặc định —
+                # thư mục đặt bên phần kênh, bảng chỉ ăn theo.
+                ob = QPushButton("Mở"); ob.setProperty("ghost", True)
+                ob.setToolTip("Mở thư mục này trong Windows Explorer")
+                ob.clicked.connect(lambda _c, p=sd: open_dir(p))
+                fl.addWidget(ob)
+                rdo = QPushButton("Thêm"); rdo.setProperty("ghost", True)
+                rdo.setToolTip('Thao tác nâng cao cho riêng kênh này')
+                redo_menu=QMenu(rdo)
+                redo_action=redo_menu.addAction('Phân tích / xuất lại kênh…')
+                redo_action.triggered.connect(lambda _c=False,p=pid,nm=r['name']: self._pipe_redo_one(p,nm,fill))
+                rdo.setMenu(redo_menu)
+                fl.addWidget(rdo)
+                tbl.setCellWidget(i, 9, fw)
+
+            for i, r in enumerate(view):
+                pid = int(r["id"])
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable
+                             | Qt.ItemFlag.ItemIsEnabled)
+                chk.setCheckState(Qt.CheckState.Checked if r["pipe_on"]
+                                  else Qt.CheckState.Unchecked)
+                chk.setData(Qt.ItemDataRole.UserRole, pid)
+                tbl.setItem(i, 0, chk)
+                # Tên + cảnh báo NGUỒN CẠN (gộp vào tooltip cho gọn cột).
+                last = _last_by.get(pid)   # tra sổ gộp (1 query cho cả bảng)
+                warn = ""
+                tip = "Kênh: " + r["name"]
+                if last:
+                    try:
+                        d0 = datetime.strptime(last[:10], "%Y-%m-%d").date()
+                        nd = (datetime.now().date() - d0).days
+                        if nd >= 3:
+                            warn = "⚠ "
+                            tip = (f"⚠ NGUỒN CẠN? {nd} ngày không có video mới "
+                                   f"— kiểm tra tool tải / đổi key.")
+                        else:
+                            tip = ("nhận video: hôm nay" if nd <= 0
+                                   else f"nhận video: {nd} ngày trước")
+                    except ValueError:
+                        pass
+                _st = pipe_seq.get(pid)
+                itn = QTableWidgetItem(
+                    (f"{_st}. " if _st else "") + warn + r["name"])
+                itn.setToolTip(tip)
+                if warn:
+                    from PyQt6.QtGui import QColor
+                    itn.setForeground(QColor(DANGER))
+                tbl.setItem(i, 1, itn)
                 # PART ĐÃ CẮT (tổng mọi ngày): cột 'note' lưu "N part" mỗi video
                 # xong -> CAST lấy số Part; COUNT(*) = số video gốc đã xử lý.
                 # Hiện SỐ PART (clip xuất ra — đúng cái user quan tâm để đăng),
                 # tooltip ghi rõ có mấy video gốc để khỏi nhầm.
-                dn = db.query_one(
-                    "SELECT COUNT(*) AS n, "
-                    "COALESCE(SUM(CAST(note AS INTEGER)),0) AS p "
-                    "FROM pipeline_files WHERE project_id=? AND status='done'",
-                    (pid,))
+                dn = _dn_by.get(pid)       # tra sổ gộp
                 nvid = (dn["n"] if dn else 0) or 0
                 nparts = (dn["p"] if dn else 0) or 0
                 it_done = QTableWidgetItem(str(nparts))
@@ -5213,22 +5724,27 @@ class StudioPage(QWidget):
                     "(clip để đăng). 1 video thường ra nhiều Part.")
                 tbl.setItem(i, 7, it_done)
                 # HÔM NAY: ✅ xong / ⏳ đang / 🔴 lỗi trong ngày.
-                today = db.query_one(
-                    "SELECT SUM(status='done') AS d, SUM(status='error') AS e,"
-                    " SUM(status='taken') AS t FROM pipeline_files WHERE "
-                    "project_id=? AND date(taken_at,'localtime')="
-                    "date('now','localtime')", (pid,))
+                today = _today_by.get(pid)  # tra sổ gộp
                 cell = "·"
-                if today and (today["d"] or today["e"] or today["t"]):
+                # 🟡 = "chờ xem lại" (AI không tìm được đoạn dùng được, GIỮ
+                # video gốc) — KHÔNG phải lỗi máy; trước 31/10/2026 nó bị đếm
+                # chung vào 🔴 nên anh Hùng tưởng app hỏng.
+                _rv = (today["r"] or 0) if today else 0
+                if today and (today["d"] or today["e"] or today["t"] or _rv):
                     bits = []
                     if today["d"]:
                         bits.append(f"✅{today['d']}")
                     if today["t"]:
                         bits.append(f"⏳{today['t']}")
+                    if _rv:
+                        bits.append(f"🟡{_rv}")
                     if today["e"]:
                         bits.append(f"🔴{today['e']}")
                     cell = " ".join(bits)
                 it6 = QTableWidgetItem(cell)
+                it6.setToolTip("✅ xong · ⏳ đang làm · 🟡 chờ xem lại (AI không "
+                               "thấy đoạn dùng được, video gốc được GIỮ — không "
+                               "phải lỗi) · 🔴 lỗi")
                 it6.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 tbl.setItem(i, 8, it6)
                 # THƯ MỤC LẤY video (nơi tool cắt đọc video của kênh này):
@@ -5254,39 +5770,51 @@ class StudioPage(QWidget):
                     pend_ch += 1
                 it_pend = QTableWidgetItem(pend_txt)
                 it_pend.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                it_pend.setForeground(_QC("#f9e2af" if preview["error"] else "#a6e3a1" if n_ready > 0 else MUTED))
+                it_pend.setForeground(_QC(WARN if preview["error"] else SUCCESS if n_ready > 0 else MUTED))
                 it_pend.setToolTip(preview['error'] or
                     f"{n_ready} file nguồn sẵn sàng; {preview['busy']} file đang ghi. Chạy sẽ đối chiếu lịch sử và bỏ qua file đã làm. 0 nghĩa là không có nguồn sẵn sàng tại lần quét này.")
                 tbl.setItem(i, 6, it_pend)
-                fw = QWidget(); fl = QHBoxLayout(fw)
-                fl.setContentsMargins(4, 0, 4, 0); fl.setSpacing(4)
-                lb = QLabel("⚠ Chưa có Thư mục lưu — đặt ở phần Kênh"
-                            if no_folder else sd)
-                lb.setStyleSheet(
-                    "color:{}; font-size:11px;".format(
-                        "#f9e2af" if preview["error"] else "#a6e3a1"))
-                lb.setToolTip(
-                    "⚠ Kênh chưa có 'Thư mục lưu'. Đặt nó ở phần quản lý kênh "
-                    "(nơi tool tải bỏ video vào) — bảng này tự ăn theo."
-                    if no_folder else
-                    "📁 Thư mục lấy video. Part được lưu vào nơi xuất đã đặt của kênh. "
-                    "Sau khi xuất đủ Part và kiểm tra thành công, gốc được chuyển vào "
-                    "Thùng rác riêng của ứng dụng:\n" + sd)
-                fl.addWidget(lb, 1)
-                # Nút CHỮ (không phụ thuộc emoji). Đã BỎ nút Chọn/Mặc định —
-                # thư mục đặt bên phần kênh, bảng chỉ ăn theo.
-                ob = QPushButton("Mở"); ob.setProperty("ghost", True)
-                ob.setToolTip("Mở thư mục này trong Windows Explorer")
-                ob.clicked.connect(lambda _c, p=sd: open_dir(p))
-                fl.addWidget(ob)
-                rdo = QPushButton("Thêm"); rdo.setProperty("ghost", True)
-                rdo.setToolTip('Thao tác nâng cao cho riêng kênh này')
-                redo_menu=QMenu(rdo)
-                redo_action=redo_menu.addAction('Phân tích / xuất lại kênh…')
-                redo_action.triggered.connect(lambda _c=False,p=pid,nm=r['name']: self._pipe_redo_one(p,nm,fill))
-                rdo.setMenu(redo_menu)
-                fl.addWidget(rdo)
-                tbl.setCellWidget(i, 9, fw)
+                _tpl_r = ((r["tpl_name"] or "").strip()
+                          if "tpl_name" in r.keys() else "")
+                _xh_r = r["xem_hinh"] if "xem_hinh" in r.keys() else None
+                _k = (pid, r["name"], r["grp"] or "", r["pipe_mode"] or "auto",
+                      _tpl_r, _xh_r, sd, no_folder, bool(preview["error"]))
+                _ky_moi.append(_k)
+                if i < len(_ky_cu) and _ky_cu[i] == _k \
+                        and tbl.cellWidget(i, 9) is not None:
+                    continue                      # widget dòng này còn đúng
+                if i < 8:
+                    _dung_widget(i, r, sd, no_folder, preview)
+                else:
+                    # gỡ widget cũ (của kênh khác) NGAY để không bấm nhầm
+                    for _c in (2, 3, 4, 5, 9):
+                        tbl.removeCellWidget(i, _c)
+                    _can_dung.append((i, r, sd, no_folder, preview))
+            _bang["dong"] = _ky_moi
+            if _can_dung:
+                _gen = _bang["gen"]
+
+                def _dung_tiep(viec=_can_dung, gen=_gen):
+                    try:
+                        if gen != _bang.get("gen"):
+                            return                # đã có lượt dựng mới hơn
+                        tbl.rowCount()            # bảng còn sống?
+                    except RuntimeError:          # hộp đã đóng/xoá
+                        return
+                    lo, viec[:] = viec[:3], viec[3:]
+                    tbl.setUpdatesEnabled(False)
+                    try:
+                        for (i, r, sd, no_folder, preview) in lo:
+                            it0 = tbl.item(i, 0)
+                            if it0 is None or it0.data(
+                                    Qt.ItemDataRole.UserRole) != int(r["id"]):
+                                continue
+                            _dung_widget(i, r, sd, no_folder, preview)
+                    finally:
+                        tbl.setUpdatesEnabled(True)
+                    if viec:
+                        QTimer.singleShot(0, _dung_tiep)
+                QTimer.singleShot(0, _dung_tiep)
             # ⚡ dựng xong -> tính bề rộng cột 1 LẦN rồi bật vẽ lại (xem chỗ
             # setUpdatesEnabled(False) ở đầu vòng).
             _hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -5455,7 +5983,7 @@ class StudioPage(QWidget):
                 pids = [it.data(Qt.ItemDataRole.UserRole)
                         for it in lst.selectedItems()]
                 if not pids:
-                    QMessageBox.information(
+                    _bao_nhanh(
                         d2, "Chưa chọn", "Chọn ít nhất 1 kênh để bỏ ẩn.")
                     return
                 set_hidden([int(p) for p in pids], 0)
@@ -5510,7 +6038,7 @@ class StudioPage(QWidget):
                               "AND pipe_hidden=0 AND grp=? ORDER BY name",
                               (g or "",))
             if not rs:
-                QMessageBox.information(
+                _bao_nhanh(
                     self, "Chưa có kênh nào bật",
                     f"Không có kênh nào đang bật ở {gname}.\n\n"
                     "Tích cột 'Bật' cho kênh muốn chạy, hoặc bấm ✓ Bật tất cả.")
@@ -5567,7 +6095,7 @@ class StudioPage(QWidget):
             box.setTextFormat(Qt.TextFormat.RichText)
             box.setText(
                 f"Chạy dây chuyền cho <b>{len(rs)} kênh</b> ở {gname}?<br><br>"
-                f"{line2}<br><br><span style='color:#9aa4b2'>{names}</span>")
+                f"{line2}<br><br><span style='color:{MUTED}'>{names}</span>")
             box.setInformativeText(
                 "Mỗi video gốc sẽ được cắt → xuất Part → XOÁ video gốc "
                 "(vào thùng rác, khôi phục được).")
@@ -5615,7 +6143,9 @@ class StudioPage(QWidget):
                                        "kênh Reup có thể lỗi giữa chừng")
                 except Exception:  # noqa: BLE001 - check phụ, lỗi bỏ qua
                     pass
-            self._pipe_run()
+            # nen=True: quét thư mục + soi file ở LUỒNG NỀN (26/10/2026) —
+            # bấm Chạy là hộp trả lời ngay, không 'Not Responding'.
+            self._pipe_run(nen=True)
             fill()
             refresh_report()
         run_b.clicked.connect(do_run)
@@ -5708,6 +6238,8 @@ class StudioPage(QWidget):
             pass
         t.start(2000)
         dlg._t = t
+        if embed:
+            return dlg
         dlg.exec()
         t.stop()
 
@@ -5778,22 +6310,23 @@ class StudioPage(QWidget):
             if cfg and not P._is_safe_recycle_root(cfg):
                 return (f"⚠ Bỏ qua thư mục đã chọn (nằm trong Temp — Windows tự "
                         f"dọn, sẽ MẤT video). Video đang ở: "
-                        + (str(roots[0]) if roots else "(chưa có)"), "#f9e2af")
+                        + (str(roots[0]) if roots else "(chưa có)"), WARN)
             if roots:
                 extra = f"  (+{len(roots) - 1} nơi khác)" if len(roots) > 1 else ""
-                return (str(roots[0]) + extra, "#a6e3a1")
-            return ("Chưa có video nào trong thùng rác.", "#f9e2af")
+                return (str(roots[0]) + extra, SUCCESS)
+            return ("Chưa có video nào trong thùng rác.", WARN)
         _wt, _wc = where_txt()
         path_lb = QLabel(_wt)
         path_lb.setWordWrap(True)
-        path_lb.setStyleSheet(f"color:{_wc};font-size:12px;")
+        from app.ui.theme import tone_for_color
+        set_style(path_lb, "muted", tone_for_color(_wc))
         row1.addWidget(path_lb, 1)
         pick_b = QPushButton("📂 Chọn/đổi thư mục"); pick_b.setProperty("ghost", True)
         row1.addWidget(pick_b); lay.addLayout(row1)
         hint = QLabel("Từ nay video gốc cắt xong sẽ CHUYỂN vào đây theo ngày "
                       "(thay vì xoá). Chọn ngày rồi Khôi phục để đưa video về "
                       "đúng thư mục kênh (mtime làm mới → cắt lại được ngay).")
-        hint.setWordWrap(True); hint.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        hint.setWordWrap(True); set_style(hint, 'hint', None)
         lay.addWidget(hint)
         # hàng chọn ngày
         row2 = QHBoxLayout(); row2.setSpacing(8)
@@ -5904,7 +6437,7 @@ class StudioPage(QWidget):
                     self._pipe_log(f"↩ Khôi phục '{it['name']}' → {it['channel']}")
                 else:
                     fail += 1
-            QMessageBox.information(
+            _bao_nhanh(
                 dlg, "Khôi phục",
                 f"Đã khôi phục {done} video" + (f", {fail} lỗi" if fail else "")
                 + ".\nMở lại 🤖 Dây chuyền để thấy chúng ở cột 'Chờ cắt'.")
@@ -5918,7 +6451,7 @@ class StudioPage(QWidget):
                 self._settings.setValue("pipe_recycle_dir", d)
                 t, c = where_txt()
                 path_lb.setText(t)
-                path_lb.setStyleSheet(f"color:{c};font-size:12px;")
+                set_style(path_lb, "muted", tone_for_color(c))
                 refill_days()
 
         def restore_all():
@@ -5974,7 +6507,7 @@ class StudioPage(QWidget):
             "SELECT id, name, pipe_src, export_dir FROM projects "
             "WHERE pipe_on=1 AND pipe_hidden=0 AND grp=? ORDER BY name", (sel or "",))
         if not rows:
-            QMessageBox.information(
+            _bao_nhanh(
                 self, "Chưa có kênh nào bật",
                 "Nhóm này chưa kênh nào TÍCH ✓ ở cột 'Bật'. "
                 "Tích kênh muốn dọn rồi bấm lại.")
@@ -6006,7 +6539,7 @@ class StudioPage(QWidget):
         # Chỉ báo "sạch" khi KHÔNG còn gì để xoá ở CẢ 2 chế độ — nếu không có
         # rác nhưng còn video/Part thì vẫn phải mở hộp thoại để dùng XOÁ SẠCH.
         if not any(cnt for cnt, _ in s_wipe.values()):
-            QMessageBox.information(
+            _bao_nhanh(
                 self, "Sạch rồi",
                 f"Đã quét {n_ch} kênh đang tích ✓ — thư mục trống, "
                 "không có gì để xoá.")
@@ -6042,7 +6575,7 @@ class StudioPage(QWidget):
         note = QLabel("Video gốc chưa cắt và clip “Part N” đã xuất "
                       "<b>KHÔNG bị đụng</b>.")
         note.setWordWrap(True)
-        note.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        set_style(note, 'hint', None)
         v.addWidget(note)
 
         # ---- CHẾ ĐỘ XOÁ SẠCH (nguy hiểm nhất): cả video gốc + clip Part ----
@@ -6051,7 +6584,7 @@ class StudioPage(QWidget):
         chk_wipe = QCheckBox(
             f"☠ XOÁ SẠCH thư mục kênh — CẢ video gốc + clip Part: "
             f"{tot_w} file ({self._fmt_mb(byte_w)})")
-        chk_wipe.setStyleSheet("color:#f38ba8; font-weight:600;")
+        set_style(chk_wipe, 'value', 'danger')
         chk_wipe.setToolTip(
             "Dùng khi ĐÃ ĐĂNG hết Part lên kênh và muốn giải phóng ổ đĩa.\n"
             "XOÁ HẾT mọi file ở thư mục kênh (video gốc, clip Part, rác) + _Loi "
@@ -6059,7 +6592,7 @@ class StudioPage(QWidget):
         v.addWidget(chk_wipe)
         warn = QLabel()
         warn.setWordWrap(True)
-        warn.setStyleSheet("color:#f38ba8; font-size:11px;")
+        set_style(warn, 'hint', 'danger')
         v.addWidget(warn)
         typed = QLineEdit()
         typed.setPlaceholderText("Gõ XOA để cho phép xoá sạch")
@@ -6132,11 +6665,16 @@ class StudioPage(QWidget):
             return sel
         return self._settings.value("pipe_grp_sel", "__ALL__")
 
-    def _pipe_run(self):
+    def _pipe_run(self, nen=False, nhom=Ellipsis):
         """▶ CHẠY DÂY CHUYỀN (chạy khi bấm — không tự chạy nền): quét thư mục
         trung chuyển của mọi kênh bật dây chuyền -> mỗi kênh nhận tối đa
         pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
-        -> đủ Part thì XÓA video gốc. Trả số video đã nhận lần này."""
+        -> đủ Part thì XÓA video gốc. Trả số video đã nhận lần này.
+
+        nen=True (nút ▶ Chạy, 26/10/2026): QUÉT thư mục (iterdir + stat + băm
+        2 MB mỗi file) ở luồng nền, NHẬN từng file với ffprobe + băm soi trước
+        ở luồng nền -> luồng giao diện chỉ còn ghi sổ. Gọi trơn (test, lối
+        cũ) vẫn chạy đồng bộ như trước."""
         from app.core import pipeline as P
         self._scan_cache_clear()      # chạy thật -> KHÔNG dùng số liệu đệm
         # Không còn "thư mục trung chuyển" chung — mỗi kênh tự đặt thư mục
@@ -6146,6 +6684,7 @@ class StudioPage(QWidget):
         # HỒI PHỤC TRƯỚC expire_stale_taken: video dở của phiên trước phải được
         # nối tiếp (xuất Part + dọn gốc) chứ không bị đổi sang 'error' rồi phân
         # tích lại từ đầu — đốt lại lượt Groq đã tốn.
+        self._pipe_bo_xuat_trung()    # lệnh xuất trùng chặn dọn gốc -> bỏ
         self._pipe_resume_taken()
         self._pipe_retry_stuck()      # gốc kẹt lượt trước -> thử dọn lại THẬT
         # BỎ QUA dòng đang được dõi: sau khi hồi phục qua đêm, taken_at vẫn là
@@ -6155,7 +6694,9 @@ class StudioPage(QWidget):
         if n_stale:
             self._pipe_log(f"dọn {n_stale} lượt nhận treo (gián đoạn trước đó)")
         # CHẠY ĐÚNG NHÓM ĐANG HIỆN trên combo (xem _pipe_selected_group).
-        sel = self._pipe_selected_group()
+        # nhom != Ellipsis: lối gọi từ bot Telegram (chọn nhóm từ xa, không
+        # được đọc combo đang hiện trên máy).
+        sel = self._pipe_selected_group() if nhom is Ellipsis else nhom
         # pipe_daily=0 (ép) = KHÔNG giới hạn ngày: có video là xử lý hết.
         if sel is None or sel == "__ALL__":
             chans = db.query(
@@ -6204,6 +6745,42 @@ class StudioPage(QWidget):
         # tiến độ, nên hộp luôn "sống" và anh Hùng thấy nó đang chạy tới đâu.
         from PyQt6.QtWidgets import QApplication as _QApp
         _bat = [c for c in chans if c["pipe_on"]]
+        if nen:
+            # LUỒNG NỀN: quét đủ mọi kênh rồi mới về luồng giao diện dựng danh
+            # sách nhận (đối chiếu file đang bay NGAY LÚC ĐÓ — chồng lượt vẫn
+            # đúng như bản đồng bộ).
+            _kenh = [(int(c["id"]), c["name"], c["pipe_src"],
+                      int(c["pipe_daily"] or 1),
+                      (c["export_dir"] if "export_dir" in c.keys() else None))
+                     for c in _bat]
+            _mode = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
+
+            def _quet():
+                kq, loi = [], []
+                for _pid, _ten, _src, _daily, _ed in _kenh:
+                    from app.ui.shutdown import is_closing
+                    if is_closing():
+                        break
+                    try:
+                        kq.append(P.plan_channel(_pid, _ten, root, _src, _daily,
+                                                 export_dir=_ed))
+                    except Exception as _e:  # noqa: BLE001
+                        loi.append(f"⚠ {_ten}: quét thư mục lỗi — {_e}")
+                return kq, loi
+
+            def _quet_xong(kq):
+                ok, val = kq
+                if not ok:
+                    self._pipe_log(f"⚠ quét thư mục lỗi — {val}")
+                    self.status.setText("⚠ Dây chuyền: quét thư mục lỗi — xem báo cáo.")
+                    return
+                for _l in val[1]:
+                    self._pipe_log(_l)
+                self._pipe_run_tiep(val[0], _mode, nen=True)
+            self.status.setText(f"🤖 Đang quét thư mục {len(_bat)} kênh ở nền… "
+                                "(giao diện vẫn dùng được)")
+            self._chay_nen(_quet, _quet_xong, "bq-quet-kenh")
+            return 0
         plans = []
         for _i, _c in enumerate(_bat):
             try:
@@ -6222,6 +6799,79 @@ class StudioPage(QWidget):
                     "(giao diện vẫn dùng được)")
                 _QApp.processEvents()
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
+        return self._pipe_run_tiep(plans, mode_by_pid)
+
+    def _bot_chay_day_chuyen(self, nhom) -> dict:
+        """Lệnh "chạy dây chuyền" từ bot Telegram — CHẠY Ở LUỒNG GIAO DIỆN
+        (tele_bot đưa vào hàng đợi, main_window rút ra bằng QTimer).
+
+        Cùng các cửa chặn của nút ▶ Chạy (thiếu key AI -> chặn) rồi gọi ĐÚNG
+        `_pipe_run(nen=True)` như nút bấm, chỉ khác là nhóm do bot chỉ định.
+        Hộp xác nhận của nút được thay bằng nút "Xác nhận" trên Telegram."""
+        from app.ai import llm as _llm
+        if not _llm.is_configured():
+            self._pipe_log("🔴 Bot: CHẶN CHẠY — chưa có key AI")
+            return {"ok": False, "ly_do": "Chưa có key AI (Cài đặt AI) nên app không chạy."}
+        pool = getattr(self.state, "pool", None)
+        if pool is not None and pool.dang_tam_dung():
+            return {"ok": False, "ly_do": "App đang TẠM DỪNG — gõ /chaytiep trước."}
+        if nhom is None or nhom == "__ALL__":
+            r = db.query_one("SELECT COUNT(*) n FROM projects WHERE pipe_on=1 "
+                             "AND pipe_hidden=0")
+        else:
+            r = db.query_one("SELECT COUNT(*) n FROM projects WHERE pipe_on=1 "
+                             "AND pipe_hidden=0 AND grp=?", (nhom,))
+        n = int(r["n"]) if r else 0
+        if not n:
+            return {"ok": False, "ly_do": "Nhóm này không có kênh nào BẬT dây chuyền."}
+        self._pipe_log(f"🤖 Lệnh từ bot Telegram: chạy dây chuyền ({n} kênh)")
+        self._pipe_run(nen=True, nhom=nhom)
+        return {"ok": True, "kenh": n}
+
+    def _bot_nhom_rong(self) -> list:
+        """Nhóm mới tạo CÒN RỖNG (chỉ nằm trong QSettings, chưa có trong DB) —
+        bot phải thấy cả những nhóm này (lỗi thật 02/11/2026)."""
+        return list(self._extra_groups())
+
+    def _bot_bat_nhom(self, nhom) -> dict:
+        """Bot: bật dây chuyền cho MỌI kênh (không ẩn) của 1 nhóm — đúng như nút
+        'Bật tất cả' trong hộp Dây chuyền (cũng bỏ qua kênh ĐÃ ẨN)."""
+        if nhom is None or nhom == "__ALL__":
+            return {"ok": False, "ly_do": "Chỉ bật theo từng nhóm."}
+        g = str(nhom)
+        r = db.query_one("SELECT COUNT(*) n FROM projects WHERE "
+                         "COALESCE(grp,'')=? AND pipe_hidden=0", (g,))
+        n = int(r["n"]) if r else 0
+        if not n:
+            return {"ok": False, "ly_do": "Nhóm này chưa có kênh nào (hoặc đều ẩn)."}
+        db.execute("UPDATE projects SET pipe_on=1 WHERE COALESCE(grp,'')=? "
+                   "AND pipe_hidden=0", (g,))
+        self._pipe_log(f"🤖 Bot Telegram: BẬT dây chuyền {n} kênh nhóm «{g}»")
+        try:
+            fill = getattr(self, "_pipe_fill", None)
+            if fill is not None:
+                fill()                 # hộp Dây chuyền đang mở -> hiện tích mới
+        except Exception:  # noqa: BLE001 — làm mới bảng không được thì thôi
+            pass
+        return {"ok": True, "n": n}
+
+    def _bot_nen_xem_truoc(self) -> dict:
+        """Bot xem trước nhóm cần ĐÚNG 2 thứ mà hộp xác nhận ▶ Chạy dùng: thư
+        mục gốc + video đang chạy dở (để không đếm trùng). Chỉ đọc, rất nhanh."""
+        return {"ok": True, "root": self._pipe_root(),
+                "dang_bay": sorted(self._pipe_paths_in_flight())}
+
+    def _bot_dang_nhan(self) -> int:
+        """Số video còn trong hàng NHẬN của lượt chạy (bot đọc để biết lượt
+        còn đang quét/nhận hay đã xong). Chỉ đọc len -> an toàn từ luồng nền."""
+        try:
+            return len(getattr(self, "_pipe_intake_q", None) or [])
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _pipe_run_tiep(self, plans, mode_by_pid, nen=False):
+        """Nửa sau của _pipe_run (LUỒNG GIAO DIỆN): kế hoạch quét -> hàng đợi
+        nhận. Tách ra để bản quét-nền gọi lại được."""
         # Gom DANH SÁCH file cần nhận (log skip/note/busy ngay). KHÔNG nhận
         # đồng loạt ở đây: mỗi file phải probe (ffprobe) ~0.3-0.5s — 100 kênh
         # nhận 1 lượt sẽ TREO giao diện vài chục giây. Thay vào đó nhận TỪNG
@@ -6282,6 +6932,7 @@ class StudioPage(QWidget):
                 f"{len(self._pipe_intake_q)} video chờ nhận.")
             return 0        # KHÔNG gọi _pipe_intake_step: vòng cũ vẫn đang chạy
         self._pipe_intake_q = worklist
+        self._pipe_intake_nen = bool(nen)   # vòng nhận này soi file ở nền
         self._pipe_intake_taken = 0
         self._pipe_intake_total = len(worklist)
         self._pipe_intake_nchan = len(plans)
@@ -6310,6 +6961,8 @@ class StudioPage(QWidget):
             if getattr(self, "_pipe_focus_target", None):
                 self._pipe_focus(*self._pipe_focus_target)
             return
+        if getattr(self, "_pipe_intake_nen", False):
+            return self._pipe_intake_step_nen()
         pid, name, mode, path = q.pop(0)
         try:
             from app.core import pipeline as P
@@ -6323,6 +6976,95 @@ class StudioPage(QWidget):
         except Exception as e:  # noqa: BLE001 - 1 file lỗi không chặn cả loạt
             self._pipe_log(f"🔴 {name}: {getattr(path, 'name', path)} lỗi nhận — {e}")
         # Nhường event loop rồi làm file kế → UI vẽ lại, không treo.
+        QTimer.singleShot(0, self._pipe_intake_step)
+
+    @staticmethod
+    def _pipe_khoa(path) -> str:
+        try:
+            return os.path.normcase(os.path.abspath(str(path)))
+        except OSError:
+            return str(path)
+
+    def _pipe_soi_truoc(self, so: int = 3) -> None:
+        """SOI TRƯỚC ở luồng nền (ffprobe + băm) tối đa `so` file đầu hàng đợi
+        nhận. Kết quả kèm chữ ký (cỡ, mtime) để lúc nhận kiểm file KHÔNG đổi."""
+        from app.core.ffmpeg_utils import probe
+        from app.services import _file_hash
+        soi = self.__dict__.setdefault("_pipe_soi", {})
+        dang = sum(1 for v in soi.values() if v is None)
+        for item in list(getattr(self, "_pipe_intake_q", None) or [])[:so]:
+            if dang >= so:
+                break
+            path = item[3]
+            k = self._pipe_khoa(path)
+            if k in soi:
+                continue
+            soi[k] = None                       # None = đang soi
+            dang += 1
+
+            def viec(p=str(path)):
+                st = os.stat(p)
+                ra = {"sig": (st.st_size, st.st_mtime_ns)}
+                try:
+                    ra["info"] = probe(p)
+                except Exception:  # noqa: BLE001 - _pipe_take báo lỗi như cũ
+                    ra["info"] = None
+                try:
+                    ra["fh"] = _file_hash(p)
+                except OSError:
+                    ra["fh"] = None             # _pipe_take tự băm lại
+                st2 = os.stat(p)
+                if (st2.st_size, st2.st_mtime_ns) != ra["sig"]:
+                    ra["sig"] = None            # file đổi giữa lúc soi
+                return ra
+
+            def xong(kq, k=k):
+                ok, val = kq
+                cur = self.__dict__.setdefault("_pipe_soi", {})
+                cur[k] = val if ok else {"sig": None, "loi": str(val)}
+                if getattr(self, "_pipe_intake_cho", False):
+                    self._pipe_intake_cho = False
+                    QTimer.singleShot(0, self._pipe_intake_step)
+            self._chay_nen(viec, xong, "bq-soi-file")
+
+    def _pipe_intake_step_nen(self) -> None:
+        """Bước nhận BẢN NỀN: luồng giao diện chỉ còn stat + ghi sổ; ffprobe
+        + băm (0,3-2 s/video trên máy thật) đã soi sẵn ở luồng nền."""
+        q = self._pipe_intake_q
+        self._pipe_soi_truoc()
+        pid, name, mode, path = q[0]
+        k = self._pipe_khoa(path)
+        soi = self.__dict__.setdefault("_pipe_soi", {})
+        pre = soi.get(k)
+        if pre is None:
+            # chưa soi xong -> chờ, luồng nền gọi lại bước này khi có kết quả
+            self._pipe_intake_cho = True
+            return
+        q.pop(0)
+        soi.pop(k, None)
+        try:
+            from app.core import pipeline as P
+            if path.exists() and not P.observe_source(path):
+                q.append((pid, name, mode, path))
+                self.status.setText(f"⏳ Đợi video ổn định: {path.name}")
+                QTimer.singleShot(100, self._pipe_intake_step)
+                return
+            try:
+                st = path.stat()
+                sig = (st.st_size, st.st_mtime_ns)
+            except OSError:
+                sig = None
+            if sig is not None and pre.get("sig") != sig:
+                # file đổi kể từ lúc soi -> soi lại (đừng ghi dấu cũ vào sổ)
+                q.insert(0, (pid, name, mode, path))
+                QTimer.singleShot(50, self._pipe_intake_step)
+                return
+            # file biến mất (sig None) -> _pipe_take tự báo lỗi như bản cũ
+            if self._pipe_take(pid, name, mode, path,
+                               pre=pre if sig is not None else None):
+                self._pipe_intake_taken = getattr(self, "_pipe_intake_taken", 0) + 1
+        except Exception as e:  # noqa: BLE001 - 1 file lỗi không chặn cả loạt
+            self._pipe_log(f"🔴 {name}: {getattr(path, 'name', path)} lỗi nhận — {e}")
         QTimer.singleShot(0, self._pipe_intake_step)
 
     def _pipe_redo_one(self, pid: int, name: str, refresh=None) -> None:
@@ -6379,9 +7121,17 @@ class StudioPage(QWidget):
         Kênh khác nhóm đang lọc thì _select_project tự đổi nhóm để hiện ra."""
         try:
             self._select_project(int(pid))
-            self._reload_videos(select_id=int(vid))
-            self._refresh_chan_label()
-            self._refresh_clips(force=True)
+            # 26/10/2026: trước đây luôn nạp lại video + nhãn + clip LẦN NỮA
+            # dù _on_proj/_on_vid vừa làm xong (4 lượt nạp cho 1 cú nhảy).
+            if self.state.video_id != int(vid):
+                i = self.vid.findData(int(vid))
+                if i >= 0:
+                    self.vid.setCurrentIndex(i)      # -> _on_vid lo clip + nhãn
+                else:
+                    self._reload_videos(select_id=int(vid))
+            if self.state.video_id != int(vid):
+                self._refresh_chan_label()
+                self._refresh_clips(force=True)
         except Exception:  # noqa: BLE001 - chỉ điều hướng hiển thị, lỗi bỏ qua
             pass
 
@@ -6479,7 +7229,7 @@ class StudioPage(QWidget):
         from app.ai import so_lieu as _sl
         pid = getattr(getattr(self, "state", None), "project_id", None)
         if not pid:
-            QMessageBox.information(self, "Nhập số liệu",
+            _bao_nhanh(self, "Nhập số liệu",
                                     "Hãy chọn một kênh trước đã.")
             return
         n_co = _sl.so_lieu_cua_kenh(pid, db).get("n", 0)
@@ -6762,10 +7512,289 @@ class StudioPage(QWidget):
 
     def _pipe_resume_auto(self) -> None:
         """Hồi phục TỰ ĐỘNG 4s sau khi mở app — bọc kín, lỗi không được sập app
-        và cũng không được làm user hoảng nếu chẳng có gì cần hồi phục."""
+        và cũng không được làm user hoảng nếu chẳng có gì cần hồi phục.
+
+        26/10/2026: bước kiểm dấu nhận dạng (băm 2 MB MỖI video gốc còn dở —
+        dây chuyền chạy hàng trăm video thì sau khi mở lại app là hàng chục
+        video) chạy ở LUỒNG NỀN trước, rồi mới nối sổ ở luồng giao diện."""
+        from app.core import pipeline as P
         try:
-            n = self._pipe_resume_taken()
+            rows = P.list_taken()
+            root = self._pipe_root()
+            ds = []
+            for r in rows or []:
+                try:
+                    p = Path(str(P.resolve_src_dir(
+                        root, r["chan"], (r["pipe_src"] or "").strip()
+                        or (r["export_dir"] or "").strip()))) / str(r["file_name"])
+                    ds.append((r["id"], r["project_id"], r["file_hash"], str(p)))
+                except Exception:  # noqa: BLE001 - dòng lỗi: để bản đồng bộ lo
+                    continue
+        except Exception:  # noqa: BLE001
+            ds = []
+        if not ds:
+            self._pipe_resume_auto_tiep(None)
+            return
+
+        def viec():
+            from app.core.pipeline_safety import source_problem
+            from app.ui.shutdown import is_closing
+            ra = {}
+            for eid, pid, fh, p in ds:
+                if is_closing():
+                    break
+                try:
+                    if not os.path.exists(p):
+                        continue
+                    v = db.query_one("SELECT id FROM videos WHERE project_id=? "
+                                     "AND file_hash=?", (pid, fh))
+                    if v:
+                        ra[eid] = (p, int(v["id"]),
+                                   source_problem(eid, int(v["id"]), Path(p)))
+                except Exception:  # noqa: BLE001 - để bản đồng bộ kiểm lại
+                    continue
+            return ra
+        self._chay_nen(viec, lambda kq: self._pipe_resume_auto_tiep(
+            kq[1] if kq[0] else None), "bq-hoi-phuc")
+
+    #: AI lỗi TẠM THỜI (key Groq bị hạn chế, LLM trả lỗi): tự thử lại tối đa
+    #: 3 lần, cách 15 / 30 / 45 phút. Sau đó mới để "chờ xem lại".
+    _AI_THU_LAI_TOI_DA = 3
+    _AI_THU_LAI_PHUT = 15
+
+    def _pipe_ai_hen_thu_lai(self, ctx, outcome, note) -> bool:
+        """LỖI THẬT (sổ anh Hùng 25/10/2026): 45/55 video "Chờ xem lại; giữ gốc"
+        là do AI CHƯA PHÂN TÍCH XONG ("7/8 phần transcript gọi AI lỗi",
+        "Tổng 52 key: 34 bị hạn chế") chứ không phải video dở. Video nằm im
+        trong thư mục, không ai phân tích lại -> anh thấy "phân tích xong mà
+        không xoá video" và "bấm chạy hàng loạt vẫn có cái không phân tích".
+        Nay: lỗi kiểu đó -> gỡ sổ nhận, GIỮ gốc, hẹn tự nhận lại sau. AI đã
+        chấm xong mà loại hết đoạn (video thật sự dở) thì vẫn để chờ xem lại.
+        Trả True nếu đã hẹn thử lại."""
+        audit = (outcome or {}).get("selection") if isinstance(outcome, dict) else None
+        if not isinstance(audit, dict):
+            return False
+        tam_thoi = (not audit.get("analysis_complete", True)
+                    or bool(audit.get("critic_incomplete")))
+        if not tam_thoi:
+            return False
+        k = self._pipe_khoa(ctx["path"])
+        dem = self.__dict__.setdefault("_ai_thu_lai_dem", {})
+        lan = int(dem.get(k, 0)) + 1
+        if lan > self._AI_THU_LAI_TOI_DA:
+            return False
+        import time as _t
+        from app.core import pipeline as P
+        try:
+            P.unmark_taken(ctx["entry"])      # để lượt sau NHẬN LẠI được
+        except Exception:  # noqa: BLE001
+            return False
+        dem[k] = lan
+        phut = self._AI_THU_LAI_PHUT * lan
+        self.__dict__.setdefault("_ai_thu_lai_q", {})[k] = {
+            "due": _t.time() + phut * 60, "pid": ctx["pid"], "name": ctx["name"],
+            "mode": ctx.get("mode") or "auto", "path": ctx["path"], "lan": lan}
+        self._pipe_log(
+            f"⏳ {ctx['name']}: '{ctx['file']}' — AI chưa phân tích đủ (key Groq "
+            f"bận/lỗi tạm). GIỮ video gốc, tự thử lại sau {phut} phút "
+            f"(lần {lan}/{self._AI_THU_LAI_TOI_DA}).")
+        return True
+
+    def _pipe_hen_thu_lai_may(self, ctx, why: str) -> bool:
+        """Lỗi của TIẾN TRÌNH PHÂN TÍCH (chết giữa chừng, khởi động quá lâu,
+        không đóng được) = lỗi MÁY lúc nghẽn, KHÔNG phải video hỏng -> gỡ sổ
+        nhận, GIỮ gốc, hẹn tự nhận lại sau (15/30/45 phút, tối đa 3 lần).
+        Trả True nếu đã hẹn; False -> caller xử lý như cũ."""
+        m = (why or "").lower()
+        if "analysis_worker_" not in m:
+            return False
+        k = self._pipe_khoa(ctx["path"])
+        dem = self.__dict__.setdefault("_ai_thu_lai_dem", {})
+        lan = int(dem.get(k, 0)) + 1
+        if lan > self._AI_THU_LAI_TOI_DA:
+            return False
+        import time as _t
+        from app.core import pipeline as P
+        try:
+            P.unmark_taken(ctx["entry"])
+        except Exception:  # noqa: BLE001
+            return False
+        dem[k] = lan
+        phut = self._AI_THU_LAI_PHUT * lan
+        self.__dict__.setdefault("_ai_thu_lai_q", {})[k] = {
+            "due": _t.time() + phut * 60, "pid": ctx["pid"], "name": ctx["name"],
+            "mode": ctx.get("mode") or "auto", "path": ctx["path"], "lan": lan}
+        self._pipe_log(
+            f"⏳ {ctx['name']}: '{ctx['file']}' — tiến trình phân tích lỗi lúc máy "
+            f"nghẽn ({why[:90]}). GIỮ video gốc, TỰ thử lại sau {phut} phút "
+            f"(lần {lan}/{self._AI_THU_LAI_TOI_DA}).")
+        return True
+
+    def _pipe_ai_thu_lai_nhip(self) -> None:
+        """Tới hẹn -> nhận lại video AI lỗi tạm thời (không cần bấm Chạy)."""
+        q = getattr(self, "_ai_thu_lai_q", None)
+        if not q:
+            return
+        import time as _t
+        now = _t.time()
+        dang_bay = None
+        for k, it in list(q.items()):
+            if it["due"] > now:
+                continue
+            q.pop(k, None)
+            p = Path(it["path"])
+            if not p.exists():
+                continue                      # đã bị xoá/dời tay -> thôi
+            if dang_bay is None:
+                dang_bay = self._pipe_paths_in_flight()
+            if k in dang_bay:
+                continue                      # đã có lượt khác nhận rồi
+            self._pipe_log(f"🔁 {it['name']}: thử lại AI cho '{p.name}' "
+                           f"(lần {it['lan']}/{self._AI_THU_LAI_TOI_DA})")
+            try:
+                self._pipe_take(it["pid"], it["name"], it["mode"], p)
+            except Exception as e:  # noqa: BLE001
+                self._pipe_log(f"🔴 {it['name']}: thử lại '{p.name}' lỗi — {e}")
+
+    def _pipe_bo_xuat_trung(self) -> int:
+        """Bỏ lệnh xuất ĐANG CHỜ là bản trùng của Part đã xuất xong (xem
+        export_recovery.bo_xuat_trung_da_xong) — để dây chuyền dọn được gốc
+        ngay và không xuất lại cùng Part lần hai."""
+        import time as _t
+        self._pipe_trung_luc = _t.time()
+        try:
+            from app.core.export_recovery import bo_xuat_trung_da_xong
+            n = bo_xuat_trung_da_xong()
+        except Exception:  # noqa: BLE001 - dọn phụ, không được chặn dây chuyền
+            return 0
+        if n:
+            self._pipe_log(f"🧹 bỏ {n} lệnh xuất trùng (Part đã xuất xong từ trước) "
+                           "— video gốc của chúng sẽ được dọn ngay, không xuất lại")
+        return n
+
+    def _pipe_don_tam_mo_coi(self) -> int:
+        """Mở app: CẤT file tạm của lượt xuất bị ngắt còn nằm trong thư mục
+        kênh — `_xuat_<pid>_…` (Part đang ghi) và `_dt_<pid>_…` (chuẩn hoá độ
+        to) của tiến trình ĐÃ CHẾT — vào `<thư mục gốc>/_Loi/part_hong/<kênh>`
+        (dời, không xoá). Rà soát 01/11/2026: tắt app / sập giữa lúc xuất là
+        chúng nằm lại vĩnh viễn, tool đăng đọc phải, tốn chỗ ổ D."""
+        import shutil as _sh
+        from app.core import pipeline as P
+        try:
+            import psutil as _ps
+            rows = db.query("SELECT name, pipe_src, export_dir FROM projects "
+                            "WHERE COALESCE(pipe_on,0)=1")
+        except Exception:  # noqa: BLE001
+            return 0
+        root = self._pipe_root()
+        da_quet, n = set(), 0
+        for r in rows:
+            try:
+                d = P.resolve_src_dir(root, r["name"], (r["pipe_src"] or "").strip()
+                                      or (r["export_dir"] or "").strip())
+                k = os.path.normcase(str(d))
+                if k in da_quet or not d.is_dir():
+                    continue
+                da_quet.add(k)
+                for f in d.iterdir():
+                    if not f.is_file() or not f.name.startswith(("_xuat_", "_dt_")):
+                        continue
+                    pid = f.name.split("_")[2]
+                    if not pid.isdigit() or _ps.pid_exists(int(pid)):
+                        continue
+                    dich = d.parent / "_Loi" / "part_hong" / d.name
+                    dich.mkdir(parents=True, exist_ok=True)
+                    _sh.move(str(f), str(dich / f.name))
+                    n += 1
+            except Exception:  # noqa: BLE001 - 1 kênh lỗi không chặn kênh khác
+                continue
+        if n:
+            self._pipe_log(f"🧹 Mở app: cất {n} file tạm của lượt xuất bị ngắt "
+                           "(tắt app giữa chừng) vào _Loi\\part_hong")
+        return n
+
+    def _pipe_nhan_lai_vang(self, so_ngay: int = 3) -> int:
+        """Mở app -> TỰ NHẬN LẠI video 'vàng' còn nằm trong thư mục kênh.
+
+        01/11/2026 (anh Hùng: "mấy video báo vàng vẫn không tự chạy lại, tôi
+        phải bấm chạy lại"): bản cũ chốt 'xong' video phân tích CỤT vì hết lượt
+        AI (0 Part / Part chọn từ nửa video), gỡ dòng sổ, GIỮ gốc trong thư mục
+        rồi chỉ hẹn thử lại TRONG BỘ NHỚ -> tắt app là mất hẹn, video nằm im tới
+        khi user bấm ▶ Chạy. Nay mỗi lần mở app: video có kết quả phân tích CỤT
+        gần đây + gốc còn trên đĩa + chưa có dòng sổ 'taken/done' + kênh bật
+        dây chuyền -> nhận lại qua `_pipe_take` (đường nhận thường, có dõi xuất
+        + dọn gốc). Bản sửa cùng ngày khiến m1 đợi lượt thay vì ra kết quả cụt
+        nên tập này chỉ còn video CŨ. Trả số video đã nhận lại."""
+        from app.core import pipeline as P
+        try:
+            rows = db.query(
+                "SELECT v.id AS vid, v.project_id AS pid, v.src_path, v.file_hash, "
+                "       p.name, p.pipe_mode, j.result "
+                "FROM videos v JOIN projects p ON p.id = v.project_id "
+                "JOIN jobs j ON j.id = (SELECT MAX(id) FROM jobs WHERE video_id=v.id "
+                "     AND type IN ('auto','auto_recap')) "
+                "WHERE COALESCE(p.pipe_on,0)=1 AND COALESCE(p.pipe_hidden,0)=0 "
+                "AND j.status='done' AND j.finished_at >= datetime('now', ?) "
+                # Đã có Part XUẤT RỒI (bấm tay hoặc lượt trước) -> KHÔNG nhận lại:
+                # nhận lại là phân tích lại, archive Part cũ và xuất TRÙNG.
+                "AND NOT EXISTS (SELECT 1 FROM clips c WHERE c.video_id=v.id "
+                "     AND c.status IN ('exported','archived','done'))",
+                (f"-{int(so_ngay)} days",))
+        except Exception:  # noqa: BLE001
+            return 0
+        dang_bay = self._pipe_paths_in_flight()
+        nhan = 0
+        for r in rows:
+            try:
+                res = db.loads(r["result"], {}) or {}
+                sel = res.get("selection") or {}
+                # CHỈ kết quả AI phân tích CỤT (có `selection` ghi chưa đủ). 0 Part
+                # do video quá ngắn / heuristic không ra ứng viên KHÔNG nhận lại —
+                # nhận lại là vòng lặp vô tận (rà soát 01/11/2026).
+                cut = isinstance(sel, dict) and bool(sel) and (
+                    not sel.get("analysis_complete")
+                    or sel.get("critic_incomplete")
+                    or sel.get("continuity_incomplete"))
+                if not cut or res.get("quality_story"):
+                    continue
+                p = Path(str(r["src_path"] or ""))
+                if not p.is_file():
+                    continue
+                # Video phải nằm trong THƯ MỤC DÂY CHUYỀN của kênh (video thêm
+                # tay ở chỗ khác thì không tự nhận, không tự dọn gốc).
+                try:
+                    _prow = db.query_one("SELECT pipe_src, export_dir FROM projects "
+                                         "WHERE id=?", (int(r["pid"]),))
+                    _d = P.resolve_src_dir(self._pipe_root(), str(r["name"]),
+                                           (_prow["pipe_src"] or "").strip()
+                                           or (_prow["export_dir"] or "").strip())
+                    if os.path.normcase(os.path.abspath(str(p.parent))) !=                             os.path.normcase(os.path.abspath(str(_d))):
+                        continue
+                except Exception:  # noqa: BLE001 - không chắc thì KHÔNG tự nhận
+                    continue
+                if os.path.normcase(os.path.abspath(str(p))) in dang_bay:
+                    continue
+                if r["file_hash"] and P.seen_before(int(r["pid"]), str(r["file_hash"])):
+                    continue
+                if self._pipe_take(int(r["pid"]), str(r["name"]),
+                                   str(r["pipe_mode"] or "auto"), p):
+                    nhan += 1
+                    dang_bay.add(os.path.normcase(os.path.abspath(str(p))))
+            except Exception as e:  # noqa: BLE001 - 1 video lỗi không chặn cả loạt
+                self._pipe_log(f"⚠ nhận lại video vàng '{r['src_path']}' lỗi — {e}")
+        if nhan:
+            self._pipe_log(f"🔁 Mở app: tự nhận lại {nhan} video phân tích CỤT lượt "
+                           "trước (vàng) — phân tích lại, hết lượt AI thì đợi")
+        return nhan
+
+    def _pipe_resume_auto_tiep(self, kiem_truoc) -> None:
+        """Nửa sau của hồi phục tự động (LUỒNG GIAO DIỆN)."""
+        try:
+            self._pipe_bo_xuat_trung()
+            n = self._pipe_resume_taken(kiem_truoc=kiem_truoc)
             self._pipe_retry_stuck()  # gốc kẹt phiên trước -> thử dọn lại THẬT
+            n += self._pipe_nhan_lai_vang()
+            self._pipe_don_tam_mo_coi()
         except Exception:  # noqa: BLE001
             return
         if n:
@@ -6831,7 +7860,7 @@ class StudioPage(QWidget):
                            "lượt trước (giờ Windows đã nhả file).")
         return xong
 
-    def _pipe_resume_taken(self) -> int:
+    def _pipe_resume_taken(self, kiem_truoc=None) -> int:
         """HỒI PHỤC dây chuyền sau khi app tắt/khởi động lại (kể cả tự cập nhật
         rồi tự mở lại). Trả số video đã nối lại.
 
@@ -6869,11 +7898,31 @@ class StudioPage(QWidget):
                 if khoa in dang_bay:
                     continue                  # đang được dõi rồi, không đụng
                 if not p.exists():
-                    # Gốc KHÔNG còn trong thư mục kênh: đã dọn vào Thùng rác /
-                    # _Loi ở lượt trước, chỉ thiếu dòng ghi. Đóng sổ để nó
-                    # không kẹt 'taken' và không chặn bộ chống-trùng.
-                    P.mark_done(r["id"], note="hồi phục: gốc đã được dọn trước đó")
-                    don_so += 1
+                    # Gốc KHÔNG còn trong thư mục kênh. Chỉ ĐÓNG SỔ 'done' khi
+                    # Part đã xuất ĐỦ (đúng ca "đã dọn gốc, thiếu dòng ghi"). Ổ
+                    # ngoài chưa cắm / đổi thư mục kênh giữa chừng thì GIỮ sổ
+                    # 'taken' để lần sau thử lại — đóng 'done' là video bị coi
+                    # là ĐÃ LÀM vĩnh viễn (rà soát 01/11/2026).
+                    try:
+                        from app.core.pipeline_safety import parts_problem as _pp
+                        _vr = db.query_one(
+                            "SELECT id FROM videos WHERE project_id=? AND file_hash=?",
+                            (r["project_id"], r["file_hash"]))
+                        _du = bool(_vr) and not _pp(int(_vr["id"])) and bool(db.query_one(
+                            "SELECT 1 FROM clips WHERE video_id=? AND status='exported'",
+                            (int(_vr["id"]),)))
+                    except Exception:  # noqa: BLE001
+                        _du = False
+                    # Thư mục kênh VẪN CÒN (ổ đã cắm, đường dẫn đúng) mà riêng
+                    # file gốc mất = đã dọn ở lượt trước -> đóng sổ như cũ. Chỉ
+                    # GIỮ sổ khi CẢ THƯ MỤC không thấy (ổ ngoài chưa cắm / đổi
+                    # thư mục kênh).
+                    if _du or Path(str(d_src)).is_dir():
+                        P.mark_done(r["id"], note="hồi phục: gốc đã được dọn trước đó")
+                        don_so += 1
+                    else:
+                        self._pipe_log(f"⚠ {r['chan']}: không thấy gốc '{r['file_name']}' "
+                                       "(ổ chưa cắm / đổi thư mục?) — GIỮ sổ, thử lại lần sau")
                     continue
                 vrow = db.query_one(
                     "SELECT id FROM videos WHERE project_id=? AND file_hash=?",
@@ -6886,7 +7935,14 @@ class StudioPage(QWidget):
                     continue
                 vid = int(vrow["id"])
                 from app.core.pipeline_safety import source_problem
-                problem = source_problem(r["id"], vid, p)
+                # kiem_truoc: kết quả băm ĐÃ LÀM ở luồng nền (_pipe_resume_auto)
+                # cho đúng dòng sổ + đúng file + đúng video. Lệch -> băm lại.
+                # (Trước khi XOÁ gốc, _pipe_poll_exports còn kiểm LẠI lần nữa.)
+                kt = (kiem_truoc or {}).get(r["id"])
+                if kt is not None and kt[0] == str(p) and kt[1] == vid:
+                    problem = kt[2]
+                else:
+                    problem = source_problem(r["id"], vid, p)
                 if problem:
                     P.mark_error(r["id"], problem)
                     self._pipe_log(f"⚠ {r['chan']}: {problem}")
@@ -6896,7 +7952,7 @@ class StudioPage(QWidget):
                        "pid": int(r["project_id"]), "name": r["chan"],
                        "file": r["file_name"], "mode": mode}
                 jrow = db.query_one(
-                    "SELECT id, status FROM jobs WHERE video_id=? AND type IN "
+                    "SELECT id, status, error FROM jobs WHERE video_id=? AND type IN "
                     "('auto','auto_recap') ORDER BY id DESC LIMIT 1", (vid,))
                 st = (jrow["status"] if jrow else "") or ""
                 if st in ("canceled", "skipped"):
@@ -6924,6 +7980,17 @@ class StudioPage(QWidget):
                                 "(gốc giữ nguyên).")
                             continue
                 else:
+                    # Job lỗi VĨNH VIỄN (video hỏng / sai key-cấu hình / nội dung
+                    # bị chặn) -> KHÔNG xếp lại mỗi lần mở app (rà soát
+                    # 01/11/2026): ghi lỗi, giữ gốc, như nhịp poll đang làm.
+                    _err = str((jrow["error"] if jrow else "") or "")
+                    if st == "failed" and _err and (
+                            P.is_source_error(_err) or P.is_configuration_error(_err)
+                            or P.is_content_block_error(_err)):
+                        P.mark_error(r["id"], _err[:300])
+                        self._pipe_log(f"⚠ {r['chan']}: {r['file_name']} — lỗi không "
+                                       f"tự hết, không chạy lại: {_err[:120]}")
+                        continue
                     # Job phân tích mất/lỗi -> xếp lại job MỚI (video đã
                     # nhập rồi nên không phải nhận lại từ thư mục).
                     try:
@@ -6950,7 +8017,7 @@ class StudioPage(QWidget):
                 self._pending_export[jid] = vid
                 if not hasattr(self, "_auto_tpl"):
                     self._auto_tpl = {}
-                self._auto_tpl[jid] = self._tpl_for_project(int(r["project_id"]))
+                self._auto_tpl.setdefault(jid, self._tpl_for_project(int(r["project_id"])))
                 dang_bay.add(khoa)
                 noi_lai += 1
             except Exception as e:  # noqa: BLE001 - 1 dòng lỗi không chặn cả loạt
@@ -6998,24 +8065,38 @@ class StudioPage(QWidget):
             them(ent["ctx"]["path"])
         return ra
 
-    def _pipe_take(self, pid: int, name: str, mode: str, path) -> bool:
+    def _pipe_take(self, pid: int, name: str, mode: str, path, pre=None) -> bool:
         """Nhận 1 file vào dây chuyền: soi ffprobe -> nhập -> ghi sổ -> đưa
-        vào cắt (auto/recap) + chốt mẫu hiện tại. Trả True nếu đã nhận."""
+        vào cắt (auto/recap) + chốt mẫu hiện tại. Trả True nếu đã nhận.
+        `pre` = kết quả soi sẵn ở luồng nền (info/fh) -> khỏi ffprobe/băm lại
+        trên luồng giao diện (26/10/2026)."""
         from app.core import pipeline as P
         from app.core.ffmpeg_utils import probe
         from app.services import _file_hash
-        try:
-            info = probe(str(path))
-        except Exception:  # noqa: BLE001
-            info = None
+        if pre is not None and "info" in pre:
+            info = pre.get("info")
+        else:
+            try:
+                info = probe(str(path))
+            except Exception:  # noqa: BLE001
+                info = None
         if not info or (info.duration or 0) <= 0.5:
             P.mark_bad(pid, path.name, "Không đọc được metadata hoặc video quá ngắn; giữ nguồn")
             self._pipe_log(f"⚠ {name}: {path.name} chưa đọc được metadata hoặc quá ngắn. "
                            "GIỮ NGUYÊN video; kiểm tra ffprobe và file tải về.")
             return False
+        from app.core.ffmpeg_utils import tieng_hut
+        _hut = tieng_hut(info)
+        if _hut:
+            # 27/10/2026: hình 1.257 s · tiếng 9,6 s -> mọi Part sau giây 9,6
+            # CÂM và AI chép lời chỉ được 9 giây. Báo rõ để tải lại, không cắt.
+            P.mark_bad(pid, path.name, _hut[:1].upper() + _hut[1:])
+            self._pipe_quarantine_ctx({"path": str(path), "name": name,
+                                       "file": path.name}, _hut + " — không cắt")
+            return False
         try:
-            fh = _file_hash(str(path))
-            vid = services.import_video(pid, str(path))
+            fh = (pre or {}).get("fh") or _file_hash(str(path))
+            vid = services.import_video(pid, str(path), info=info, file_hash=fh)
             entry = P.take_file(pid, path.name, fh, video_id=vid)
         except Exception as e:  # noqa: BLE001
             self._pipe_log(f"🔴 {name}: {path.name} không nhập được — {e}")
@@ -7104,9 +8185,26 @@ class StudioPage(QWidget):
         ctx = self._pipe_by_vid.get(vid)
         if ctx is None:
             return
-        P.mark_error(ctx["entry"], f"lỗi dựng lệnh xuất: {err}")
         self._pipe_by_vid.pop(vid, None)
-        self._pipe_log(f"⚠ {ctx['name']}: lỗi dựng lệnh xuất, GIỮ NGUYÊN gốc: {err[:240]}")
+        e = str(err or "")
+        # HUỶ (bấm Hủy tất cả lúc đang dựng lệnh xuất) = huỷ, KHÔNG phải lỗi: gỡ
+        # sổ, giữ gốc, lần ▶ Chạy sau nhận lại (rà soát 01/11/2026).
+        if "Đã hủy" in e or "Đã huỷ" in e or "CanceledError" in e:
+            P.unmark_taken(ctx["entry"])
+            self._pipe_log(f"⏹ {ctx['name']}: {ctx['file']} — đã HUỶ lúc dựng lệnh xuất, "
+                           "gốc giữ nguyên")
+            return
+        # 0 Part THẬT (video quá ngắn / không có đoạn nào): đóng sổ 'done' kèm
+        # ghi chú, GIỮ gốc. Để 'error' thì mỗi lần ▶ Chạy lại phân tích lại từ
+        # đầu, ra 0 Part, lặp vô tận tốn lượt AI.
+        if "Không có clip để xuất" in e:
+            P.mark_done(ctx["entry"], note="0 Part — không có đoạn dùng được (video quá "
+                                           "ngắn?); GIỮ gốc, không tự chạy lại")
+            self._pipe_log(f"⚠ {ctx['name']}: {ctx['file']} — phân tích ra 0 Part, GIỮ gốc, "
+                           "không tự chạy lại")
+            return
+        P.mark_error(ctx["entry"], f"lỗi dựng lệnh xuất: {e}")
+        self._pipe_log(f"⚠ {ctx['name']}: lỗi dựng lệnh xuất, GIỮ NGUYÊN gốc: {e[:240]}")
 
     def _pipe_quarantine_ctx(self, ctx: dict, why: str) -> None:
         from app.core import pipeline as P
@@ -7117,12 +8215,34 @@ class StudioPage(QWidget):
         self._pipe_log(f"🔴 {ctx['name']}: {ctx['file']} — {why}"
                        + (" (đã chuyển _Loi)" if dst else ""))
 
-    def _pipe_poll(self) -> None:
+    def _pipe_poll_nhip(self) -> None:
+        """Bản của NHỊP POLL (26/10/2026): băm + chuyển video gốc ở LUỒNG NỀN."""
+        fn = self._pipe_poll
+        if getattr(fn, "__func__", None) is StudioPage._pipe_poll:
+            fn(nen=True)
+        else:
+            fn()          # đã bị thay (test/móc ngoài) -> gọi đúng chữ ký cũ
+
+    def _pipe_poll(self, nen=False) -> None:
         """Tick 1.5s: (1) job CẮT dây chuyền lỗi -> báo + _Loi; (2) mọi job
-        XUẤT của video xong -> kiểm Part rồi XÓA video gốc. Bọc chống sập."""
+        XUẤT của video xong -> kiểm Part rồi XÓA video gốc. Bọc chống sập.
+        nen=True: bước băm/chuyển gốc (đọc 2 MB + có thể chép cả file khi
+        khác ổ) chạy ở luồng nền — xem _don_goc_nen."""
+        # 5 phút/lần: dọn lệnh xuất trùng + tự thử lại video AI lỗi tạm thời
+        import time as _t
+        if getattr(self, "_pipe_by_vid", None) and \
+                _t.time() - getattr(self, "_pipe_trung_luc", 0) > 300:
+            self._pipe_bo_xuat_trung()
+        try:
+            self._pipe_ai_thu_lai_nhip()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self._pipe_poll_cut()
-            self._pipe_poll_exports()
+            if nen:
+                self._pipe_poll_exports(nen=True)
+            else:
+                self._pipe_poll_exports()
         except Exception as e:  # noqa: BLE001
             msg = str(e)
             if getattr(self, '_pipe_last_poll_error', None) != msg:
@@ -7164,22 +8284,35 @@ class StudioPage(QWidget):
                     # LỖI TẠM THỜI (Groq 500, mạng, hết lượt…) — video KHÔNG
                     # hỏng. Xoá sổ "đã nhận" để lượt chạy sau nhận lại và cắt
                     # tiếp; GIỮ NGUYÊN video gốc tại thư mục kênh.
-                    P.unmark_taken(ctx["entry"])
-                    self._pipe_log(
-                        f"⏳ {ctx['name']}: {ctx['file']} — xử lý chưa thành công, GIỮ "
-                        f"NGUYÊN video để chạy lại: {str(why)[:120]}")
+                    #
+                    # LỖI THẬT 27/10/2026 (anh Hùng: "thỉnh thoảng có video
+                    # không chạy phân tích"): tiến trình phân tích chết / khởi
+                    # động quá 180s lúc máy nghẽn -> bản cũ chỉ gỡ sổ rồi THÔI.
+                    # Lượt chạy sau là nhóm KHÁC nên 3 video nhóm "Mỹ" nằm im 76
+                    # giờ. Nay lỗi MÁY kiểu đó được HẸN TỰ NHẬN LẠI (cùng hàng
+                    # hẹn với lỗi AI tạm thời, có trần số lần) — máy đã nhẹ thì
+                    # chạy được, không cần ai bấm Chạy lại đúng nhóm.
+                    if self._pipe_hen_thu_lai_may(ctx, str(why)):
+                        pass
+                    else:
+                        P.unmark_taken(ctx["entry"])
+                        self._pipe_log(
+                            f"⏳ {ctx['name']}: {ctx['file']} — xử lý chưa thành công, GIỮ "
+                            f"NGUYÊN video để chạy lại: {str(why)[:120]}")
                 else:
                     P.mark_error(ctx["entry"], f"cắt lỗi: {why}")
                     self._pipe_quarantine_ctx(ctx, f"cắt lỗi: {str(why)[:120]}")
                 self._pipe_cut.pop(jid, None)
 
-    def _pipe_poll_exports(self, force_vid=None) -> None:
+    def _pipe_poll_exports(self, force_vid=None, nen=False) -> None:
         from app.core import pipeline as P
         vids = [force_vid] if force_vid is not None             else list(self._pipe_exports)
         for vid in vids:
             ent = self._pipe_exports.get(vid)
             if ent is None:
                 continue
+            if ent.get("dang_don"):
+                continue                     # luồng nền đang băm/dọn gốc
             jobs = ent["jobs"]
             if jobs:
                 states = services.job_states(list(jobs))
@@ -7231,6 +8364,13 @@ class StudioPage(QWidget):
             # nhả). Gốc không bao giờ chép vào thư mục xuất nên chỉ cần dọn file
             # trung chuyển.
             src = Path(ctx["path"])
+            if nen and hasattr(self, "_don_goc_nen"):
+                # LUỒNG NỀN (26/10/2026): băm 2 MB gốc + chuyển Thùng rác
+                # (khác ổ = chép CẢ file) từng chặn luồng giao diện cả giây.
+                # Dòng sổ GIỮ trong _pipe_exports tới khi xong -> lượt chạy
+                # sau vẫn biết file này đang bận, không nhận lại.
+                self._don_goc_nen(vid, ent, src, clips, parts)
+                continue
             from app.core.pipeline_safety import source_problem, parts_note
             problem = source_problem(ctx["entry"], vid, src)
             if problem:
@@ -7264,6 +8404,70 @@ class StudioPage(QWidget):
             }.get(action, "")
             self._pipe_log(
                 f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part" + tail)
+
+    def _don_goc_nen(self, vid, ent, src, clips, parts) -> None:
+        """Kiểm dấu nhận dạng + dọn video gốc ở LUỒNG NỀN; ghi sổ RAM + báo
+        cáo ở luồng giao diện (y hệt nhánh đồng bộ của _pipe_poll_exports)."""
+        from app.core import pipeline as P
+        from app.core.pipeline_safety import parts_note, source_problem
+        ctx = ent["ctx"]
+        rac = self._pipe_recycle_dir()           # QSettings: đọc ở luồng UI
+        ids = [c['id'] for c in clips]
+        ent["dang_don"] = True
+
+        def viec():
+            # KIỂM LẠI NGAY TRƯỚC KHI DỌN (luồng nền chạy SAU lượt kiểm Part ở
+            # luồng giao diện): user có thể vừa bấm "Xuất lại" một Part -> có
+            # job xuất mới đang chờ/chạy -> chưa được dọn gốc. Ném lỗi = GIỮ
+            # việc, nhịp sau thử lại.
+            from app.core.pipeline_safety import parts_problem
+            if db.query_one(
+                    "SELECT 1 FROM jobs WHERE video_id=? AND type='m1_export_clip' "
+                    "AND status IN ('pending','running') LIMIT 1", (vid,)):
+                raise RuntimeError("video vừa có Part đang xuất lại — đợi xong "
+                                   "rồi mới dọn video gốc")
+            problem = parts_problem(vid, set(ent.get('clips') or []) or None)
+            if problem:
+                P.mark_error(ctx["entry"], problem)
+                return ("loi", problem)
+            problem = source_problem(ctx["entry"], vid, src)
+            if problem:
+                P.mark_error(ctx["entry"], problem)
+                return ("loi", problem)
+            action, _dst = P.delete_or_recycle(src, ctx["name"], rac)
+            note = (f"{len(parts)} part"
+                    + (" [CƠ BẢN]" if ctx.get("basic") else "")
+                    + (' [GỐC ĐÃ CHUYỂN THÙNG RÁC]' if action == 'recycled' else '')
+                    + (MARK_STUCK + parts_note(ids) if action == "stuck" else ""))
+            P.mark_done(ctx["entry"], video_id=vid, note=note)
+            return ("xong", action)
+
+        def xong(kq):
+            ok, val = kq
+            if not ok:
+                # lỗi bất ngờ (DB bận...) -> GIỮ việc, nhịp sau thử lại
+                ent["dang_don"] = False
+                msg = str(val)
+                if getattr(self, '_pipe_last_poll_error', None) != msg:
+                    self._pipe_last_poll_error = msg
+                    self._pipe_log(f"⚠ Theo dõi dây chuyền lỗi, giữ việc để "
+                                   f"thử lại: {msg[:240]}")
+                return
+            if self._pipe_exports.get(vid) is ent:
+                self._pipe_exports.pop(vid, None)
+            kind, x = val
+            if kind == "loi":
+                self._pipe_log(f"⚠ {ctx['name']}: {x}")
+                return
+            tail = {
+                "recycled": " — đã chuyển video gốc vào Thùng rác (khôi phục được)",
+                "deleted": " — đã xoá video gốc",
+                "stuck": " — ⚠ CHƯA dọn được gốc (file kẹt), sẽ TỰ THỬ DỌN LẠI "
+                         "khi mở app / chạy lượt sau",
+            }.get(x, "")
+            self._pipe_log(
+                f"✅ {ctx['name']}: '{ctx['file']}' xong {len(parts)} Part" + tail)
+        self._chay_nen(viec, xong, "bq-don-goc")
 
     def _auto(self):
         if not (self.state.project_id and self.state.video_id):
@@ -7356,6 +8560,12 @@ class StudioPage(QWidget):
         preset['story_music_path']=str(self._settings.value('story_music_path','') or '')
         preset['story_lang']=str(self._settings.value('story_lang','') or '')
         preset['story_audio_mix']=str(self._settings.value('story_audio_mix',True)).lower() in ('true','1')
+        preset['story_talknet']=str(self._settings.value('story_talknet',False)).lower() in ('true','1')
+        preset['story_transnet']=str(self._settings.value('story_transnet',False)).lower() in ('true','1')
+        preset['story_twelve']=str(self._settings.value('story_twelve',False)).lower() in ('true','1')
+        preset['story_twelve_key']=self._settings.value('story_twelve_key',0,type=int)
+        preset['story_twelve_index']=str(self._settings.value('story_twelve_index',''))
+        preset['story_twelve_max_minutes']=self._settings.value('story_twelve_max_minutes',60,type=int)
         preset['story_sfx']=str(self._settings.value('story_sfx',True)).lower() in ('true','1')
         preset['story_edit_style']=str(self._settings.value('story_edit_style','off'))
         preset['story_layout']=str(self._settings.value('story_layout','template'))
@@ -7538,13 +8748,27 @@ class StudioPage(QWidget):
         out = d / "_tpl_sample.jpg"
         img = QImage(360, 640, QImage.Format.Format_RGB888)
         g = QLinearGradient(0, 0, 0, 640)
-        g.setColorAt(0.0, QColor("#2A3550")); g.setColorAt(1.0, QColor("#0E1320"))
+        g.setColorAt(0.0, QColor(BORDER)); g.setColorAt(1.0, QColor(WINDOW))
         pt = QPainter(img); pt.fillRect(img.rect(), g)
-        pt.setPen(QColor("#9AA6BF")); pt.setFont(QFont("Arial", 13))
+        pt.setPen(QColor(MUTED)); pt.setFont(QFont("Arial", 13))
         pt.drawText(img.rect(), Qt.AlignmentFlag.AlignCenter,
                     "XEM TRƯỚC MẪU\n(chưa chọn video)")
         pt.end(); img.save(str(out), "JPG", 90)
         return str(out)
+
+    def _open_template_gallery(self, parent=None):
+        from app.ui.template_gallery import TemplateGallery
+        # clicked(bool) is not a QWidget parent.
+        host=parent if isinstance(parent,QWidget) else self
+        dlg=TemplateGallery(host,self.tmpl_box.currentData() or '',
+            button_text='Dùng cho kênh đang chọn' if host is self and self.state.project_id else 'Dùng làm mẫu mặc định')
+        if dlg.exec() and dlg.selected_name:
+            self._populate_templates(dlg.selected_name)
+            self._on_template_pick(assign_channel=host is self)
+            if host is not self:
+                self.status.setText('Đã chọn mẫu mặc định: '+dlg.selected_name+
+                                    '. Gán riêng từng kênh tại cột Mẫu trong Dây chuyền.')
+            if host is not self and hasattr(self,'_pipe_fill'):self._pipe_fill()
 
     def _edit_template(self):
         """Bấm 'Chỉnh mẫu': lấy khung hình Ở THREAD NỀN rồi mới mở editor —
@@ -7582,6 +8806,19 @@ class StudioPage(QWidget):
     def _open_editor(self, frame):
         dlg = EditorDialog(frame, self.layout_tpl, self,
                            current_name=self.tmpl_box.currentData() or "")
+        # NGHE THỬ NHẠC NỀN dùng tiếng THẬT của video đang chọn (+ lời chép để
+        # nhạc né lời như lúc xuất). Lỗi gì cũng chỉ mất phần nghe-cùng-video.
+        try:
+            vid = self.state.video_id
+            if vid:
+                vr = db.query_one("SELECT src_path FROM videos WHERE id=?", (vid,))
+                cl = services.list_clips(vid)
+                dlg._nghe_src = vr["src_path"] if vr else None
+                dlg._nghe_t0 = float(cl[0]["start_sec"]) if cl else 0.0
+                from app.core.analysis import get_analysis as _ga
+                dlg._nghe_transcript = _ga(vid, "transcript") or {}
+        except Exception:  # noqa: BLE001
+            pass
         accepted = bool(dlg.exec() and dlg.layout_result)
         # NẠP LẠI cả khi user bấm Lưu/Lưu mới/Xóa rồi đóng bằng Hủy/X: DB đã
         # đổi mà layout_tpl trong RAM còn bản CŨ -> mở lại editor / xuất clip
@@ -7600,7 +8837,9 @@ class StudioPage(QWidget):
             self.layout_tpl = dlg.layout_result
         self.status.setText(f"Đã lưu & đang dùng mẫu: {name or 'Mặc định'}. "
                             "Bấm Tải để xuất theo mẫu này.")
-        self._canh_bao_mau_khong_ap(name)
+        if self.state.project_id is not None and not getattr(dlg, '_save_failed', False):
+            services.set_project_template(self.state.project_id, name)
+            self.status.setText(f"Đã lưu mẫu cho kênh đang chọn: {name or 'Mặc định'}. Bấm Xuất lại để áp dụng.")
 
     def _canh_bao_mau_khong_ap(self, ten_mau: str) -> None:
         """Sau khi Lưu mẫu: nếu các kênh đang gán MẪU KHÁC thì nói NGAY + cho
@@ -7803,12 +9042,16 @@ class StudioPage(QWidget):
         tpl = services.get_template(name) if name else None
         self.layout_tpl = tpl if tpl else copy.deepcopy(DEFAULT_LAYOUT)
 
-    def _on_template_pick(self):
+    def _on_template_pick(self, _index=None, *, assign_channel=True):
         name = self.tmpl_box.currentData() or ""
-        self._settings.setValue("last_template", name)  # nhớ cho lần sau
+        self._settings.setValue("last_template", name)
         self._apply_selected_template()
-        self.status.setText(f"Đang dùng mẫu: {self.tmpl_box.currentText()}. "
-                            "Bấm Tải/Tải tất cả để xuất theo mẫu này.")
+        pid = self.state.project_id
+        if assign_channel and pid is not None:
+            services.set_project_template(pid, name)
+        target = 'cho kênh đang chọn' if assign_channel and pid is not None else 'mặc định'
+        self.status.setText(f"Đã chọn mẫu {target}: {self.tmpl_box.currentText()}. "
+                            "Bấm Xuất lại để áp dụng; việc đã xếp hàng giữ mẫu đã chốt.")
 
     # ---- danh sách clip ----
     def _poll_done(self):
@@ -7823,6 +9066,7 @@ class StudioPage(QWidget):
         if vid is None or vid != prev_vid or busy or not prev_busy:
             return                        # không phải chuyển busy -> xong
         n = len(services.list_clips(vid))
+        self._vact_dem = None    # job vừa xong -> đuôi combo phải đọc MỚI
         # cập nhật đuôi '✂ N clip' ở combo, GIỮ video đang chọn (không giật)
         self._reload_videos(select_id=vid)   # tự gọi _refresh_clips(force)
         if n:
@@ -7837,8 +9081,30 @@ class StudioPage(QWidget):
         vid = self.state.video_id
         if force:
             self._thumb_failed = set()   # cho thử tạo lại ảnh (đổi video/Cắt lại/khôi phục)
-        clips = services.list_clips(vid) if vid else []
         busy = self._video_busy(vid)      # để empty-state đổi khi job chạy/xong
+        if not force and vid:
+            # CHỮ KÝ RẺ mỗi nhịp 1,5 s (26/10/2026): chỉ (id, status, đã xuất)
+            # qua chỉ mục — KHÔNG kéo cột signals/transcript (vài KB/clip) chỉ
+            # để biết "có gì đổi không". Đổi mới đọc đủ như cũ.
+            try:
+                ky = tuple(
+                    (r["id"], r["status"], bool(r["export_path"]))
+                    for r in db.query(
+                        "SELECT id, status, export_path FROM clips WHERE "
+                        "video_id=? AND status<>'archived' ORDER BY start_sec, id",
+                        (vid,)))
+            except Exception:  # noqa: BLE001 - đọc lỗi -> đi đường cũ
+                ky = None
+            if ky is not None and ky == getattr(self, "_clip_ky", None) \
+                    and getattr(self, "_clip_ky_vid", None) == vid \
+                    and getattr(self, "_busy", None) == busy:
+                return
+        else:
+            ky = None
+        clips = services.list_clips(vid) if vid else []
+        self._clip_ky_vid = vid
+        self._clip_ky = tuple((c["id"], c["status"], bool(c["export_path"]))
+                              for c in clips)
         st_cu = getattr(self, "_st", {})
         doi = {c["id"] for c in clips if st_cu.get(c["id"]) != c["status"]}
         if not force and getattr(self, "_n", -1) == len(clips) \
@@ -7953,14 +9219,25 @@ class StudioPage(QWidget):
             # để _rebuild_rows không dựng-lại vô hạn (gây "nháy đen" + treo).
             if not tp.exists():
                 self._thumb_failed.add(c["id"])
+            else:
+                self._thumb_moi.add(c["id"])
         self._thumb_busy = False
         safe_emit(lambda: self.thumbs_ready.emit())
+
+    def _on_thumbs_ready(self):
+        """Ảnh thu nhỏ chạy ngầm đã xong: CHỈ thay đúng các dòng vừa có ảnh
+        (26/10/2026). Trước đây dựng lại CẢ danh sách (~15-20 widget/clip) mỗi
+        lần — chính là cú giật khi mở video mới. Không làm tại chỗ được (danh
+        sách đã đổi) thì `_rebuild_rows` tự lùi về dựng lại toàn bộ như cũ."""
+        moi = self._thumb_moi
+        self._thumb_moi = set()        # đổi sổ mới TRƯỚC: luồng nền ghi tiếp vào sổ mới
+        self._rebuild_rows(moi or None)
 
     # ---- tiến độ job của video đang chọn (hiện NGAY vùng clip) ----
     # màu + icon theo GIAI ĐOẠN của job (khớp queue_panel): phân tích/AI = tím,
     # cắt/xuất video = xanh ngọc.
-    _PHASE_ANALYZE_COLOR = "#A78BFA"
-    _PHASE_EXPORT_COLOR = "#14B8A6"
+    _PHASE_ANALYZE_COLOR = PURPLE          # token theme
+    _PHASE_EXPORT_COLOR = TEAL
     _EXPORT_TYPES = {"m1_export_clip"}
 
     @classmethod
@@ -8006,44 +9283,56 @@ class StudioPage(QWidget):
         """KHỐI TIẾN TRÌNH NỔI BẬT: icon + tên bước TO, thanh % dày, số % chữ
         LỚN, và 'còn N việc trong hàng'. compact=True: dải gọn hơn ở đầu danh
         sách clip (khi đã có clip); False: khối lớn giữa empty-state."""
+        # kiểu khối/nhãn/thanh: QSS chung (theme.py: #jobProgBox, #jobPct,
+        # #jobIcon, QProgressBar[phase]) — không stylesheet riêng
         w = QWidget(); w.setObjectName("jobProgBox")
+        w.setProperty("compact", bool(compact))
         w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        w.setStyleSheet(
-            f"#jobProgBox{{background:{BASE}; border:1px solid {BORDER}; "
-            f"border-radius:14px;}}")
-        lay = QVBoxLayout(w); lay.setSpacing(10)
-        m = 14 if compact else 22
-        lay.setContentsMargins(m + 4, m, m + 4, m)
+        lay = QVBoxLayout(w); lay.setSpacing(SP_2)
+        m = SP_3 if compact else SP_4 + SP_1
+        lay.setContentsMargins(m + SP_1, m, m + SP_1, m)
 
         # ---- hàng 1: icon + tên bước (TO, đậm) ----- căn trái để dễ đọc
-        head = QHBoxLayout(); head.setSpacing(10)
-        icon = QLabel("🔍")
-        icon.setStyleSheet("font-size:26px; background:transparent;")
+        head = QHBoxLayout(); head.setSpacing(SP_3)
+        icon = QLabel("🔍"); icon.setObjectName("jobIcon")
         head.addWidget(icon)
         step = QLabel("Đang xử lý…")
-        step.setWordWrap(True)
-        step.setStyleSheet("font-size:18px; font-weight:700; background:transparent;")
+        step.setWordWrap(not compact)
+        # compact (đầu danh sách clip): MỘT HÀNG gọn — icon · bước · thanh · %
+        # (bản cũ 3 hàng chữ to chiếm ~100px, đẩy Part 1 xuống mép màn 768)
+        set_role(step, "heading" if compact else "h1")
         step.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         head.addWidget(step, 1)
         # số % CHỮ LỚN bên phải
-        pctlbl = QLabel("0%")
-        pctlbl.setStyleSheet("font-size:30px; font-weight:800; "
-                             "background:transparent;")
+        pctlbl = QLabel("0%"); pctlbl.setObjectName("jobPct")
         pctlbl.setAlignment(Qt.AlignmentFlag.AlignRight
                             | Qt.AlignmentFlag.AlignVCenter)
         head.addWidget(pctlbl)
         lay.addLayout(head)
 
         # ---- hàng 2: thanh % DÀY ----
-        bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(0)
-        bar.setFixedHeight(18 if compact else 24)
+        # SmoothProgressBar: % trôi mượt; value() vẫn trả số đích ngay
+        from app.ui.anim import SmoothProgressBar
+        bar = SmoothProgressBar(); bar.setRange(0, 100); bar.setValue(0)
+        bar.setFixedHeight(10 if compact else 24)
         bar.setTextVisible(False)     # số % đã hiện TO ở trên
-        lay.addWidget(bar)
+        if compact:
+            step.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+            bar.setMinimumWidth(160)
+            head.insertWidget(2, bar, 1)
+            head.setStretch(1, 0)
+        else:
+            lay.addWidget(bar)
 
         # ---- hàng 3: dòng phụ 'còn N việc trong hàng' ----
         sub = QLabel("")
-        sub.setStyleSheet(f"color:{MUTED}; font-size:12px; background:transparent;")
+        set_role(sub, "muted")
         lay.addWidget(sub)
+        if compact:
+            sub.hide()                # nội dung vào tooltip của khối (xem _update)
+            self._job_box = w
+        else:
+            self._job_box = None
 
         self._job_bar = bar
         self._job_lbl = step
@@ -8085,10 +9374,12 @@ class StudioPage(QWidget):
             else:
                 step_txt = msg or default_step
             bar.setValue(pct)
-            bar.setStyleSheet(
-                f"QProgressBar{{background:{SURFACE}; border:none; "
-                f"border-radius:6px;}} "
-                f"QProgressBar::chunk{{background:{color}; border-radius:6px;}}")
+            # Màu theo GIAI ĐOẠN qua property `phase` (theme QSS). set_phase chỉ
+            # repolish khi đổi -> nhịp 1,5 s thường KHÔNG restyle gì (bản trước
+            # cache chuỗi setStyleSheet trong property _bq_ss).
+            from app.ui.theme import phase_for_color
+            phase = phase_for_color(color)
+            set_phase(bar, phase)
             step.setText(step_txt)
             ic = getattr(self, "_job_icon", None)
             if ic is not None:
@@ -8096,13 +9387,15 @@ class StudioPage(QWidget):
             pl = getattr(self, "_job_pct", None)
             if pl is not None:
                 pl.setText(("~" if jtype != "m1_export_clip" and r["status"] == "running" else "") + f"{pct}%")
-                pl.setStyleSheet(f"color:{color}; font-size:30px; "
-                                 "font-weight:800; background:transparent;")
+                set_tone(pl, phase)
             sub = getattr(self, "_job_sub", None)
             if sub is not None:
                 n = int(r.get("others", 0) or 0)
                 sub.setText("Tiến độ riêng bước này; ~ là ước tính." +
                             (f" Còn {n} việc khác đang chạy/chờ." if n > 0 else ""))
+                box = getattr(self, "_job_box", None)
+                if box is not None and box.toolTip() != sub.text():
+                    box.setToolTip(sub.text())
         except RuntimeError:          # widget vừa bị gỡ khi rebuild danh sách
             self._job_bar = self._job_lbl = None
 
@@ -8119,7 +9412,7 @@ class StudioPage(QWidget):
         elif vid:
             ic, ic_col = "✂", ACCENT
             head = "Chưa có clip"
-            sub = "Bấm nút ② Tạo clip để AI phân tích & cắt video này."
+            sub = "Bấm nút “Tạo clip” để AI phân tích & cắt video này."
         else:
             ic, ic_col = "+", ACCENT
             head = "Chưa có clip nào"
@@ -8128,18 +9421,19 @@ class StudioPage(QWidget):
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 60, 0, 0)
-        lay.setSpacing(10)
-        icon = QLabel(ic)
-        icon.setStyleSheet(f"font-size:46px; font-weight:700; color:{ic_col};")
+        lay.setSpacing(SP_2)
+        icon = QLabel(ic); icon.setObjectName("heroIcon")
+        from app.ui.theme import phase_for_color
+        set_tone(icon, phase_for_color(ic_col))
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(icon)
         t1 = QLabel(head)
-        t1.setStyleSheet("font-size:18px; font-weight:600;")
+        set_role(t1, "h1")
         t1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(t1)
         t2 = QLabel(sub)
         t2.setWordWrap(True)
-        t2.setStyleSheet(f"color:{MUTED}; font-size:14px;")
+        set_style(t2, 'title', 'muted')
         t2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(t2)
         if busy:
@@ -8152,31 +9446,30 @@ class StudioPage(QWidget):
         sig = db.loads(c["signals"], {}) or {}
         w = QWidget(); w.setObjectName("clipCard")
         w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # thẻ KHÔNG viền — phân biệt bằng nền + sáng lên khi rê chuột
-        w.setStyleSheet(f"#clipCard{{background:{BASE}; border-radius:14px;}}"
-                        f"#clipCard:hover{{background:{SURFACE};}}")
-        lay = QHBoxLayout(w); lay.setContentsMargins(12, 10, 16, 10); lay.setSpacing(14)
+        # thẻ: nền + sáng lên khi rê chuột — kiểu ở QSS chung (theme #clipCard).
+        # KHÔNG stylesheet riêng từng thẻ/nhãn: 30 thẻ x ~10 setStyleSheet là
+        # thứ làm dựng lại danh sách chậm (đo 26/10/2026, xem báo cáo).
+        lay = QHBoxLayout(w); lay.setContentsMargins(SP_3, SP_3, SP_4, SP_3); lay.setSpacing(SP_3)
 
         # ---- SỐ THỨ TỰ PART (đầu thẻ, theo thứ tự danh sách = thứ tự xuất) ----
         pw = QWidget(); pw.setFixedWidth(48)
         pcol = QVBoxLayout(pw); pcol.setContentsMargins(0, 0, 0, 0); pcol.setSpacing(0)
         cap = QLabel("PART"); cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cap.setStyleSheet(f"color:{MUTED}; font-size:9px; font-weight:700;")
+        set_style(cap, 'hint', None)
         num = QLabel(str(part_no)); num.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        num.setStyleSheet(f"color:{ACCENT}; font-size:26px; font-weight:800;")
+        set_style(num, 'display', 'accent')
         pcol.addWidget(cap); pcol.addWidget(num)
         lay.addWidget(pw)
 
         # ---- thumbnail (ảnh đại diện) ----
-        thumb = QLabel(); thumb.setFixedSize(132, 74)
-        thumb.setStyleSheet("background:#000; border-radius:9px;")
+        thumb = QLabel(); thumb.setFixedSize(132, 74); thumb.setObjectName("thumb")
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pm = self._thumb(c, sig, vrow)
         if pm:
             thumb.setPixmap(pm)
         lay.addWidget(thumb)
 
-        info = QVBoxLayout(); info.setSpacing(2)
+        info = QVBoxLayout(); info.setSpacing(3)
 
         def _shrinkable(lbl):
             # cho nhãn CO LẠI được, không đẩy thẻ rộng ra (tránh tràn/cuộn ngang)
@@ -8185,7 +9478,7 @@ class StudioPage(QWidget):
 
         title = QLabel(("[Ghép] " if sig.get("mode") == "mixed" else "")
                        + (c["title"] or "Clip"))
-        title.setStyleSheet("font-size:16px; font-weight:500; border:none;")
+        set_role(title, "title")
         title.setToolTip("Tiêu đề tiếng Việt — để đọc hiểu nội dung")
         info.addWidget(_shrinkable(title))
         if (sig.get("recap") or {}).get("parts"):
@@ -8193,8 +9486,7 @@ class StudioPage(QWidget):
             rc = sig["recap"]
             n_nar = sum(1 for p in rc["parts"] if p.get("mode") == "narrate")
             rc_lbl = QLabel("🎙 Thuyết minh")
-            rc_lbl.setStyleSheet(f"color:{ACCENT}; font-size:11px; "
-                                 "font-weight:700; border:none;")
+            set_style(rc_lbl, "tag", "accent")
             rc_lbl.setToolTip(
                 f"Kịch bản thuyết minh AI: {len(rc['parts'])} đoạn "
                 f"({n_nar} đoạn giọng AI, còn lại giữ tiếng gốc). Khi xuất, "
@@ -8203,13 +9495,13 @@ class StudioPage(QWidget):
             if rc.get('quality_story'):
                 from app.ai.story_quality import is_approved
                 script_btn=QPushButton('Đã duyệt · Xem/sửa…' if is_approved(rc) else 'CHỜ DUYỆT · Kịch bản…')
-                script_btn.setProperty('ghost',True)
+                set_variant(script_btn,'ghost');set_size(script_btn,'compact')
                 script_btn.clicked.connect(lambda _=False,r=rc,cid=c['id']:self._show_story_review(r,cid))
                 info.addWidget(script_btn)
         en = (sig.get("title_en") or "").strip()
         if en:  # tiêu đề tiếng Anh (nhỏ, mờ) = cái sẽ GẮN LÊN video
             en_lbl = QLabel(en)
-            en_lbl.setStyleSheet(f"color:{MUTED}; font-size:12px; border:none;")
+            set_role(en_lbl, "muted")
             en_lbl.setToolTip("Tiêu đề tiếng Anh — sẽ gắn lên video khi xuất")
             info.addWidget(_shrinkable(en_lbl))
         # ---- BÁO RÕ AI nào đã phân tích clip này ----
@@ -8224,8 +9516,7 @@ class StudioPage(QWidget):
             btxt = "Cắt cơ bản (chưa qua AI)"
             bcol = WARN
         ai_lbl = QLabel(btxt)
-        ai_lbl.setStyleSheet(f"color:{bcol}; font-size:11px; font-weight:700; "
-                             "border:none;")
+        set_style(ai_lbl, "tag", {SUCCESS: "success", WARN: "warn"}.get(bcol, "accent"))
         info.addWidget(_shrinkable(ai_lbl))
         # Mixed-Cut lưu key KHÁC (moments/n) so với clip AI (segments/n_seg/dur).
         # Đọc nhầm -> card hiện SPAN đầu-cuối (vd 93s) + không có thanh đoạn nên
@@ -8240,7 +9531,7 @@ class StudioPage(QWidget):
             nseg = sig.get("n_seg", len(segs) or 1)
         seg_note = f" · ghép {nseg} đoạn nguồn" if nseg and nseg > 1 else ""
         sub = QLabel(f'{_dur(total)}{seg_note} · {c["reason"] or ""}'[:100])
-        sub.setStyleSheet(f"color:{MUTED}; font-size:13px; border:none;")
+        set_tone(sub, "muted")
         info.addWidget(_shrinkable(sub))
         # ---- ĐÃ THÊM HIỆU ỨNG / TIẾNG ĐỘNG GÌ? (anh Hùng 08/08/2026: "làm sao
         # để biết có thêm hiệu ứng hay âm thanh gì k"). Trước nay chỉ nhật ký
@@ -8250,8 +9541,7 @@ class StudioPage(QWidget):
             chu, mau, tip = fx
             fx_lbl = QLabel(f"<a href='#' style='color:{mau}; "
                             f"text-decoration:underline;'>{chu}</a>")
-            fx_lbl.setStyleSheet(f"color:{mau}; font-size:11px; "
-                                 "font-weight:700; border:none;")
+            set_style(fx_lbl, "tag", {WARN: "warn", ACCENT: "accent"}.get(mau, "muted"))
             fx_lbl.setToolTip(tip)
             fx_lbl.setOpenExternalLinks(False)   # KHÔNG mở trình duyệt máy user
             fx_lbl.linkActivated.connect(
@@ -8264,23 +9554,22 @@ class StudioPage(QWidget):
         # ---- điểm viral: BADGE TRÒN màu theo mức (>=80 xanh, >=60 vàng, <60 xám) ----
         score = int(c["score"] or 0)
         scol = SUCCESS if score >= 80 else (WARN if score >= 60 else MUTED)
-        sc = QLabel(str(score))
+        sc = QLabel(str(score)); sc.setObjectName("score")
         sc.setFixedSize(38, 38)
         sc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sc.setStyleSheet(f"background:{SURFACE}; color:{scol}; border:1px solid {scol};"
-                         "border-radius:19px; font-size:13px; font-weight:700;")
+        sc.setProperty("tone", {SUCCESS: "success", WARN: "warn"}.get(scol, "muted"))
         sc.setToolTip("Điểm tiềm năng viral (0–100) — AI chấm theo nội dung + hình ảnh")
         lay.addWidget(sc)
 
-        pv = _vua_chu(QPushButton("Xem & sửa"), "Xem & sửa")
+        pv = _vua_chu(QPushButton("Xem && sửa"), "Xem && sửa")   # && = chữ & thật (& đơn là phím tắt -> gạch chân)
         pv.setProperty("ghost", True)
-        pv.setFixedHeight(28)
+        pv.setFixedHeight(H_DEFAULT)
         pv.setToolTip("Phát video, chỉnh tốc độ, cắt tay đầu/cuối rồi xuất.")
         pv.clicked.connect(lambda _, cc=c, n=part_no: self._review_clip(cc, n))
         lay.addWidget(pv)
         cap = _vua_chu(QPushButton("Caption"), "Caption")
         cap.setProperty("ghost", True)
-        cap.setFixedHeight(28)
+        cap.setFixedHeight(H_DEFAULT)
         cap.setToolTip("AI viết TIÊU ĐỀ + CAPTION + HASHTAG đăng bài cho clip "
                        "này — copy dán thẳng lên TikTok/Reels/Shorts.")
         cap.clicked.connect(lambda _, cc=c: self._write_caption(cc))
@@ -8290,27 +9579,30 @@ class StudioPage(QWidget):
         # nút nữa là chật mà lúc chỉ NHÌN danh sách thì cũng chưa xem clip nên
         # chưa có ý kiến gì để dạy AI. Đặt trong hộp xem lại là ĐÚNG LÚC: vừa
         # xem xong, thấy hay/nhạt thì bấm ngay.)
+        # nút "Mở" LUÔN giữ chỗ (ẩn khi chưa xuất) -> cột nút các thẻ THẲNG hàng
+        mo = _vua_chu(QPushButton("Mở"), "Mở")
+        mo.setProperty("ghost", True)
+        mo.setFixedHeight(H_DEFAULT)
+        _sp = mo.sizePolicy(); _sp.setRetainSizeWhenHidden(True); mo.setSizePolicy(_sp)
+        lay.addWidget(mo)
         if c["status"] == "exported" and c["export_path"]:
-            mo = _vua_chu(QPushButton("Mở"), "Mở")
-            mo.setProperty("ghost", True)
-            mo.setFixedHeight(28)
             mo.setToolTip("Phát file clip đã xuất.")
             mo.clicked.connect(lambda _, p=c["export_path"]: self._open_file(p))
-            lay.addWidget(mo)
             label = "Xuất lại"
         else:
+            mo.hide()
             label = "Xuất"
         # đo CẢ 2 nhãn: clip xuất xong đổi chữ thành "Xuất lại" mà nút không nở
         dl = _vua_chu(QPushButton(label), "Xuất", "Xuất lại")
         dl.setProperty("primary", True)
-        dl.setFixedHeight(32)
+        dl.setFixedHeight(H_DEFAULT)
         dl.setToolTip("Xuất clip này ra file MP4 (Kho video > Đã xuất).")
         dl.clicked.connect(
             lambda _, cid=c["id"]: self._export_video(self.state.video_id, cid))
         lay.addWidget(dl)
         rm = _vua_chu(QPushButton("Xóa"), "Xóa")
         rm.setProperty("danger", True)
-        rm.setFixedHeight(28)
+        rm.setFixedHeight(H_DEFAULT)
         rm.clicked.connect(lambda _, cid=c["id"]: self._del_clip(cid))
         lay.addWidget(rm)
         return w
@@ -8398,11 +9690,24 @@ class StudioPage(QWidget):
         if not vrow:
             return None
         tp = Path(services.cache_dir(vrow["assets_dir"])) / f"_thumb_{c['id']}.jpg"
-        if tp.exists():
-            pm = QPixmap(str(tp))
-            if not pm.isNull():
-                return pm.scaled(132, 74, Qt.AspectRatioMode.KeepAspectRatio,
-                                 Qt.TransformationMode.SmoothTransformation)
+        # BỘ NHỚ ĐỆM (26/10/2026): trước đây MỖI lần dựng danh sách lại đọc ảnh
+        # từ đĩa + co mượt từng ảnh. Khoá theo đường dẫn + giờ sửa file nên ảnh
+        # tạo lại (cùng tên) vẫn được đọc mới.
+        try:
+            st = tp.stat()
+        except OSError:
+            return None
+        from PyQt6.QtGui import QPixmapCache
+        khoa = f"bqthumb|{tp}|{st.st_mtime_ns}|{st.st_size}"
+        pm = QPixmapCache.find(khoa)
+        if pm is not None and not pm.isNull():
+            return pm
+        pm = QPixmap(str(tp))
+        if not pm.isNull():
+            pm = pm.scaled(132, 74, Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+            QPixmapCache.insert(khoa, pm)
+            return pm
         return None
 
     def _del_clip(self, cid):
@@ -8502,27 +9807,32 @@ class StudioPage(QWidget):
         dlg.exec()
 
     # ---- xuất ----
-    def _video_px_for(self, vrow):
-        """Vùng KHỐI VIDEO trong khung 1080x1920 (để chữ tránh, không đè video)."""
-        vr = self.layout_tpl.get("video_rect")
+    def _video_px_for(self, vrow, tpl=None):
+        """Vùng KHỐI VIDEO trong khung 1080x1920 (để chữ tránh, không đè video).
+        `tpl` = mẫu đã chốt (luồng nền truyền vào); None -> self.layout_tpl."""
+        L = self.layout_tpl if tpl is None else tpl
+        vr = L.get("video_rect")
         if not vr or not vrow or not vrow["width"] or not vrow["height"]:
             return None
-        cx, cy, sw = vr
         ow, oh = 1080, 1920
+        from app.core.template_backgrounds import decode,fit_rect
+        if L.get('fit_src') and decode(L.get('bg'))[0]:
+            vr=fit_rect(vr,float(vrow['width']),float(vrow['height']),ow,oh)
+        cx, cy, sw = vr
         vw = sw * ow
         vh = vw * (float(vrow["height"]) / float(vrow["width"]))
         return (cx * ow - vw / 2, cy * oh - vh / 2, vw, vh)
 
-    def _fixed_label(self):
+    def _fixed_label(self, tpl=None):
         """Chữ cố định đầu tiên trong mẫu (khi clip không có tiêu đề AI)."""
-        for ly in self.layout_tpl.get("layers", []):
+        for ly in (self.layout_tpl if tpl is None else tpl).get("layers", []):
             t = (ly.get("text") or "").strip()
             if (t and not ly.get("is_part")
                     and not any(k in t for k in ("{title}", "{title_vi}", "{n}"))):
                 return t
         return ""
 
-    def _ovl_spec(self, part_no, title="", title_vi="", video_px=None):
+    def _ovl_spec(self, part_no, title="", title_vi="", video_px=None, tpl=None):
         """ĐƠN THUỐC vẽ lớp chữ — đủ để DỰNG LẠI ảnh chữ lúc xuất, không cần UI.
 
         Vì sao phải có (lỗi thật 08/08/2026): ảnh `_ovl_<cid>.png` do UI vẽ sẵn
@@ -8531,62 +9841,87 @@ class StudioPage(QWidget):
         bỏ overlay IM LẶNG -> clip ra không hộp tiêu đề đỏ, không huy hiệu
         "Part N". Có đơn thuốc trong payload thì job tự dựng lại được.
         """
-        layers = self.layout_tpl.get("layers", []) or []
+        L = self.layout_tpl if tpl is None else tpl
+        layers = L.get("layers", []) or []
         logo = None
-        lp = self.layout_tpl.get("logo_path", "")
+        lp = L.get("logo_path", "")
         if lp and os.path.exists(lp):
             logo = {"path": lp,
-                    "pos": self.layout_tpl.get("logo_pos", "tr"),
-                    "size": float(self.layout_tpl.get("logo_size", 0.14)),
-                    "opacity": float(self.layout_tpl.get("logo_op", 0.9))}
+                    "pos": L.get("logo_pos", "tr"),
+                    "size": float(L.get("logo_size", 0.14)),
+                    "opacity": float(L.get("logo_op", 0.9))}
         return {"layers": layers, "logo": logo, "part_no": int(part_no or 0),
                 "title": title or "", "title_vi": title_vi or "",
                 "video_px": (list(video_px) if video_px else None),
-                "part_case": self.layout_tpl.get("part_case", "") or "",
-                "hook_case": self.layout_tpl.get("hook_case", "") or ""}
+                "part_case": L.get("part_case", "") or "",
+                "hook_case": L.get("hook_case", "") or ""}
 
     def _render_png(self, part_no, title="", cid=0, title_vi="", video_px=None,
-                    project_id=None):
-        spec = self._ovl_spec(part_no, title, title_vi, video_px)
+                    project_id=None, tpl=None):
+        # Chạy được ở LUỒNG NỀN (render_overlay_png vẽ QImage, không QPixmap)
+        # khi có `tpl` + `project_id` — không đọc gì của widget.
+        spec = self._ovl_spec(part_no, title, title_vi, video_px, tpl)
         pid = project_id or self.state.project_id
         if (not spec["layers"] and not spec["logo"]) or not pid:
             return None
         # mỗi clip 1 PNG riêng (theo cid) vì tiêu đề khác nhau — để trong _cache
         png = os.path.join(services.project_cache_dir(pid),
                            f"_ovl_{cid or part_no}.png")
-        return (png if render_overlay_png(
-            spec["layers"], part_no, 1080, 1920, png, title, title_vi, video_px,
-            logo=spec["logo"],
-            # KIỂU CHỮ HOA lớp overlay (từ mẫu): Part -> part_case; tiêu đề/
-            # hook/cố định -> hook_case.
-            part_case=spec["part_case"], hook_case=spec["hook_case"])
-                else None)
+        try:
+            ok = render_overlay_png(
+                spec["layers"], part_no, 1080, 1920, png, title, title_vi, video_px,
+                logo=spec["logo"],
+                # KIỂU CHỮ HOA lớp overlay (từ mẫu): Part -> part_case; tiêu đề/
+                # hook/cố định -> hook_case.
+                part_case=spec["part_case"], hook_case=spec["hook_case"],
+                nghiem=True)
+        except RuntimeError:
+            # Chữ vẽ ra Ô VUÔNG: KHÔNG ghi ảnh hỏng; trả đường dẫn (chưa có
+            # file) để job xuất tự DỰNG LẠI từ `ovl_spec` lúc chạy.
+            try:
+                os.remove(png)       # ảnh CŨ cùng tên mà còn thì job dùng nhầm
+            except OSError:
+                pass
+            return png
+        return png if ok else None
 
     _MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
 
-    def _pick_bgm(self) -> str:
+    def _pick_bgm(self, tpl=None) -> str:
         """Chọn file NHẠC NỀN theo mẫu: '' = không nhạc.
         random = mỗi clip 1 bài ngẫu nhiên từ thư mục nhạc của user."""
-        mode = self.layout_tpl.get("bgm_mode", "off")
+        L = self.layout_tpl if tpl is None else tpl
+        # MẶC ĐỊNH VIDEO NÀO CŨNG CÓ NHẠC (anh Hùng 02/11/2026): 'off' cũ /
+        # thiếu khoá -> TỰ CHỌN theo nội dung; chỉ 'none' (Tắt hẳn) mới không
+        # nhạc. Bài cố định mất file / thư mục rỗng -> lùi TỰ CHỌN chứ không im.
+        from app.core.nhac_tu_dong import che_do_mau, ma_tu_dong
+        # mức "Độ to nhạc" của mẫu (dB nhạc nằm DƯỚI lời); mặc định -> chuỗi
+        # đánh dấu CŨ y nguyên (khoá chống trùng không đổi)
+        MA_TU_DONG = ma_tu_dong(L.get("bgm_auto_db"))
+        mode = che_do_mau(L.get("bgm_mode"))
+        if mode == "none":
+            return ""
         if mode == "fixed":
-            f = self.layout_tpl.get("bgm_file", "")
-            return f if f and os.path.exists(f) else ""
+            f = L.get("bgm_file", "")
+            return f if f and os.path.exists(f) else MA_TU_DONG
         if mode == "random":
-            d = self.layout_tpl.get("bgm_dir", "")
+            d = L.get("bgm_dir", "")
             try:
                 files = [str(p) for p in Path(d).iterdir()
                          if p.suffix.lower() in self._MUSIC_EXT]
             except OSError:
-                return ""
+                files = []
             import random
-            return random.choice(files) if files else ""
-        return ""
+            return random.choice(files) if files else MA_TU_DONG
+        # chuỗi đánh dấu -> m1 chọn bài theo nội dung lúc xuất (xem
+        # app/core/nhac_tu_dong.py). Nằm trong khoá chống trùng (bgm_path).
+        return MA_TU_DONG
 
-    def _pick_sfx_dir(self) -> str:
+    def _pick_sfx_dir(self, tpl=None) -> str:
         """Thư mục tiếng động chuyển đoạn của user (tùy chọn). '' = dùng bộ
         tiếng TỔNG HỢP đa dạng trong ffmpeg. Chỉ trả khi thư mục tồn tại (việc
         chọn file ngẫu nhiên/validate để ffmpeg_utils lo, an toàn fallback)."""
-        d = self.layout_tpl.get("fx_sfx_dir", "") or ""
+        d = (self.layout_tpl if tpl is None else tpl).get("fx_sfx_dir", "") or ""
         return d if d and os.path.isdir(d) else ""
 
     def _video_hashtags(self, video_id, clips) -> str:
@@ -8612,11 +9947,19 @@ class StudioPage(QWidget):
             from app.ai.recap import resolve_lang as _rl
             lang = _rl(tr.get("language", "") or "",
                        tr.get("text", "") or "")
+            # video KHÔNG LỜI: chữ chép là chữ bịa -> hashtag theo TÊN FILE
+            # gốc (cổng 109; lỗi thật "#Rengar #AllRight" cho video công trường)
+            from app.ai import ngon_ngu_video as _nv
+            _vr = db.query_one("SELECT src_path FROM videos WHERE id=?",
+                               (video_id,))
+            _ten = (_vr["src_path"] or "") if _vr else ""
+            _t0, _x0, lang, _nguon = _nv.dau_vao_hashtag(tr, _ten, "", "", lang)
             pre = get_analysis(video_id, "hashtags") or {}
             tags = [t for t in (pre.get("tags") or []) if t]
             # hashtag sinh sẵn nhưng SAI ngôn ngữ (bản cũ không lưu 'lang' /
             # video từng dán nhãn bừa) -> BỎ cache, sinh lại đúng tiếng
-            if tags and str(pre.get("lang") or "") != lang:
+            if tags and (str(pre.get("lang") or "") != lang
+                         or str(pre.get("nguon") or "") != _nguon):
                 tags = []
             if not tags and _llm.is_configured():
                 # tiêu đề tổng + lời thoại: gom transcript các clip (đại diện video)
@@ -8631,6 +9974,8 @@ class StudioPage(QWidget):
                 if not text.strip():
                     text = " ".join(s.get("text", "")
                                     for s in tr.get("segments", []))
+                if _nguon:
+                    title, text = _t0, _x0
                 tags = social.write_hashtags(title, text, lang, max_tags=4)
         except Exception:  # noqa: BLE001 - lỗi/không key -> bỏ hashtag, không sập
             tags = []
@@ -8667,7 +10012,7 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001 - không dựng lại được thì thôi
             pass
 
-    def _export_video(self, video_id, only_clip_id=None, tpl=None):
+    def _export_video(self, video_id, only_clip_id=None, tpl=None, resume=False):
         """CHỐT MẪU ĐÚNG KÊNH rồi mới xuất — cửa DUY NHẤT cho mọi đường xuất.
 
         LỖI THẬT tìm được 31/07/2026 khi rà lại theo yêu cầu anh Hùng ("chạy
@@ -8702,71 +10047,139 @@ class StudioPage(QWidget):
             (tpl_dung or {}).get("_ten_mau")
             or (self._ten_mau_trang_chinh() if not tpl_dung else "(không rõ)"))
         if not tpl_dung:
-            return self._export_video_inner(video_id, only_clip_id)
+            return self._export_video_inner(video_id, only_clip_id, resume=True) if resume else self._export_video_inner(video_id, only_clip_id)
         _luu = self.layout_tpl
         self.layout_tpl = tpl_dung
         try:
-            return self._export_video_inner(video_id, only_clip_id)
+            return self._export_video_inner(video_id, only_clip_id, resume=True) if resume else self._export_video_inner(video_id, only_clip_id)
         finally:
             self.layout_tpl = _luu
 
-    def _export_video_inner(self, video_id, only_clip_id=None):
+    def _export_snap(self, video_id=None) -> dict:
+        """CHỤP ở LUỒNG GIAO DIỆN mọi thứ lượt dựng Part cần đọc từ UI/QSettings
+        (26/10/2026) để phần dựng chạy được ở luồng nền. Mẫu = self.layout_tpl
+        lúc gọi (đã được _export_video/_xuat_nen chốt đúng kênh)."""
+        s = self._settings
+        # Kho 'Đã xuất' chỉ cần khi kênh KHÔNG có thư mục lưu riêng — giữ đúng
+        # như cũ: không tạo thư mục kho thừa cho kênh xuất thẳng.
+        goc = ""
+        try:
+            r = db.query_one(
+                "SELECT p.export_dir FROM videos v JOIN projects p "
+                "ON p.id = COALESCE(v.project_id, ?) WHERE v.id=?",
+                (self.state.project_id, video_id)) if video_id is not None else None
+            if not (r and (r["export_dir"] or "").strip()):
+                goc = str(self._export_root())
+        except Exception:  # noqa: BLE001 - lỗi đọc DB -> vẫn tính kho ở ĐÂY
+            try:                       # (luồng giao diện), phần dựng nền không tự
+                goc = str(self._export_root())   # gọi hàm chạm widget nữa
+            except Exception:  # noqa: BLE001
+                goc = ""
+        return {
+            "tpl": self.layout_tpl,
+            "mau": getattr(self, "_ten_mau_hien", "") or "",
+            "export_root": goc,
+            "pid_mac_dinh": self.state.project_id,
+            "pool": self.state.pool,
+            "recap_voice": str(s.value("recap_voice", "") or ""),
+            "recap_pace": str(s.value("recap_pace", "normal") or "normal"),
+            "recap_pitch": str(s.value("recap_pitch", "normal") or "normal"),
+            "recap_emotion": str(s.value("recap_emotion", True)).strip()
+            .lower() not in ("false", "0", "no", "off"),
+            "recap_volume": self._recap_volume(),
+            "recap_dim": self._recap_dim(),
+        }
+
+    def _export_video_inner(self, video_id, only_clip_id=None, resume=False):
         """
         Xuất clip của 1 video THEO ĐÚNG THỨ TỰ: Part = vị trí trong danh sách
         clip (sắp theo thời gian). part_no gán cố định nên dù chạy đa luồng/hàng
         loạt vẫn đúng (vd1 Part1,2; vd2 Part1..5...). Tên file: "<video> - Part N <tiêu đề>".
         only_clip_id != None -> chỉ xuất 1 clip đó (giữ đúng số Part của nó).
         Trả số clip đã đưa vào hàng đợi.
+
+        Đường ĐỒNG BỘ (xuất 1 Part bấm tay, test). Tự-xuất / xuất cả video /
+        cả kênh đi _xuat_nen: cùng _export_prepare nhưng ở luồng nền.
         """
-        self._last_export_jids = []
+        snap = self._export_snap(video_id)
+        out = self._export_prepare(video_id, only_clip_id, resume, snap)
+        return self._export_apply(video_id, only_clip_id, out)
+
+    def _export_apply(self, video_id, only_clip_id, out) -> int:
+        """LUỒNG GIAO DIỆN: ghi kết quả dựng vào sổ RAM + báo user."""
         if not hasattr(self, '_export_results'):
             self._export_results = {}
-        outcome = {'jobs': [], 'clips': [], 'error': ''}
-        self._export_results[video_id] = outcome
+        self._export_results[video_id] = {
+            'jobs': list(out.get('jobs') or []),
+            'clips': list(out.get('clips') or []),
+            'error': out.get('error') or ''}
+        # 🤖 dây chuyền đọc danh sách job xuất của video vừa gọi (cùng tick)
+        self._last_export_jids = list(out.get('jobs') or [])
+        if out.get('status'):
+            self.status.setText(out['status'])
+        src_p = out.get('src_missing') or ''
+        if src_p and only_clip_id:     # user bấm Xuất/Xuất lại 1 Part -> hiện hộp rõ
+            try:
+                QMessageBox.warning(
+                    self, "Video gốc đã bị dọn",
+                    "Không xuất lại được vì VIDEO GỐC không còn ở ổ đĩa "
+                    f"(đã bị dọn sau khi cắt xong):\n\n{src_p}\n\n"
+                    "Cách khắc phục:\n"
+                    "• Mở 🤖 Dây chuyền → 🗑 Thùng rác → Khôi phục video "
+                    "này (bản v1.96.0+ có Thùng rác), rồi xuất lại;\n"
+                    "• Hoặc chép video gốc vào lại thư mục kênh rồi cắt lại.")
+            except Exception:  # noqa: BLE001
+                pass
+        return int(out.get('ret') or 0)
+
+    def _export_prepare(self, video_id, only_clip_id, resume, snap) -> dict:
+        """DỰNG lệnh xuất Part — KHÔNG đụng widget, KHÔNG đọc QSettings, KHÔNG
+        sửa sổ RAM: chạy được ở LUỒNG NỀN (26/10/2026). Đọc mẫu từ snap['tpl'],
+        mọi thứ của UI đã chụp sẵn trong snap (xem _export_snap).
+        Trả {'jobs','clips','error','status','src_missing','ret'}."""
+        out = {'jobs': [], 'clips': [], 'error': '', 'status': '',
+               'src_missing': '', 'ret': 0}
+        L = snap["tpl"]
         clips = services.list_clips(video_id)
         if not clips:
-            outcome['error'] = 'Không có clip để xuất sau phân tích'
-            return 0
+            out['error'] = 'Không có clip để xuất sau phân tích'
+            return out
         from app.ai.story_quality import pending_review
         waiting=pending_review(video_id)
         if waiting and (only_clip_id is None or only_clip_id in waiting):
-            outcome['error']='Chờ duyệt kịch bản từng Part trước khi xuất. Video gốc được giữ nguyên.'
-            self.status.setText(outcome['error'])
-            return 0
-        outcome['clips'] = [int(c['id']) for c in clips
-                            if only_clip_id is None or c['id'] == only_clip_id]
+            out['error']='Chờ duyệt kịch bản từng Part trước khi xuất. Video gốc được giữ nguyên.'
+            out['status'] = out['error']
+            return out
+        out['clips'] = [int(c['id']) for c in clips
+                        if only_clip_id is None or c['id'] == only_clip_id]
+        if resume:
+            from app.core.export_recovery import saved_job
+            existing = [saved_job(cid) for cid in out['clips']]
+            if existing and all(jid is not None for jid in existing):
+                out['jobs'] = existing
+                out['ret'] = len(existing)
+                return out
         vrow = db.query_one(
             "SELECT v.src_path, v.width, v.height, v.project_id FROM videos v "
             "WHERE v.id=?", (video_id,))
         if not vrow:
-            outcome['error'] = 'Không tìm thấy video trong cơ sở dữ liệu'
-            return 0
+            out['error'] = 'Không tìm thấy video trong cơ sở dữ liệu'
+            return out
         # CHẶN TRƯỚC KHI CHẠY FFMPEG: video GỐC đã bị dọn (cắt xong -> xoá /
         # chuyển Thùng rác) -> ffmpeg sẽ báo "No such file" khó hiểu. Báo RÕ +
         # hướng dẫn khôi phục thay vì để lỗi kỹ thuật. (Chỉ chặn khi user CHỦ
         # ĐỘNG xuất lại 1 clip — luồng dây chuyền tự-xuất thì gốc còn nguyên.)
         src_p = ((vrow["src_path"] or "").strip())
         if src_p and not os.path.exists(src_p):
-            outcome['error'] = f'Không tìm thấy video gốc: {src_p}'
+            out['error'] = f'Không tìm thấy video gốc: {src_p}'
             base = os.path.basename(src_p)
-            self.status.setText(
+            out['status'] = (
                 f"⚠ Không xuất được: VIDEO GỐC đã bị dọn sau khi cắt xong "
                 f"({base}). Khôi phục từ 🗑 Thùng rác (trong 🤖 Dây chuyền) "
                 "rồi xuất lại — hoặc chép video gốc vào lại thư mục.")
-            if only_clip_id:     # user bấm Xuất/Xuất lại 1 Part -> hiện hộp rõ
-                try:
-                    QMessageBox.warning(
-                        self, "Video gốc đã bị dọn",
-                        "Không xuất lại được vì VIDEO GỐC không còn ở ổ đĩa "
-                        f"(đã bị dọn sau khi cắt xong):\n\n{src_p}\n\n"
-                        "Cách khắc phục:\n"
-                        "• Mở 🤖 Dây chuyền → 🗑 Thùng rác → Khôi phục video "
-                        "này (bản v1.96.0+ có Thùng rác), rồi xuất lại;\n"
-                        "• Hoặc chép video gốc vào lại thư mục kênh rồi cắt lại.")
-                except Exception:  # noqa: BLE001
-                    pass
-            return 0
-        pid = vrow["project_id"] or self.state.project_id   # đúng KÊNH của video
+            out['src_missing'] = src_p
+            return out
+        pid = vrow["project_id"] or snap["pid_mac_dinh"]   # đúng KÊNH của video
         # KHO 'Đã xuất' / <tên KÊNH> / <tên video> -> không lẫn giữa các kênh
         chrow = db.query_one("SELECT name, export_dir FROM projects WHERE id=?",
                              (pid,))
@@ -8783,12 +10196,20 @@ class StudioPage(QWidget):
             out_root = ch_export_dir
             flat_export = True
         else:
-            out_root = str(self._export_root() / chname)
+            # kho 'Đã xuất' đã tính sẵn ở luồng giao diện (mkdir + báo lỗi ổ
+            # rút); thiếu (DB đổi giữa chừng) thì mới tính tại đây như cũ.
+            # LUỒNG NỀN: KHÔNG gọi self._export_root() (đọc QSettings + có thể
+            # ghi self.status = chạm widget ngoài luồng giao diện).
+            _goc = snap.get("export_root")
+            if not _goc:
+                raise RuntimeError("Chưa xác định được thư mục lưu clip của kênh "
+                                   "(ổ thư viện có thể đã rút) — bấm xuất lại sau.")
+            out_root = str(Path(_goc) / chname)
             flat_export = False
-        vr = self.layout_tpl.get("video_rect")
-        bg = self.layout_tpl.get("bg", "blur")
-        tb = self.layout_tpl.get("trim_black", False)
-        vpx = self._video_px_for(vrow)
+        vr = L.get("video_rect")
+        bg = L.get("bg", "blur")
+        tb = L.get("trim_black", False)
+        vpx = self._video_px_for(vrow, L)
         # HASHTAG chung cho MỌI Part của video (sinh 1 lần, cache theo video_id)
         tags_str = self._video_hashtags(video_id, clips)
         # NGÔN NGỮ video: tra 1 LẦN cho CẢ video (transcript word-level có thể
@@ -8804,6 +10225,13 @@ class StudioPage(QWidget):
             no = i + 1                         # số Part = vị trí trong video này
             if only_clip_id and c["id"] != only_clip_id:
                 continue
+            if resume:
+                from app.core.export_recovery import saved_job
+                existing = saved_job(c["id"])
+                if existing is not None:
+                    jids.append(existing)
+                    n += 1
+                    continue
             sig = db.loads(c["signals"], {}) or {}
             vi = (c["title"] or "").strip()
             # 🌐 TIÊU ĐỀ ĐỐT LÊN VIDEO + TÊN FILE theo NGÔN NGỮ VIDEO:
@@ -8819,142 +10247,202 @@ class StudioPage(QWidget):
                         from app.core.analysis import get_analysis as _ga
                         _vid_tr = _ga(video_id, "transcript") or {}
                     en = _m1.resolve_pub_title(
-                        _vid_tr, sig, vi, c["start_sec"], c["end_sec"])
+                        _vid_tr, sig, vi, c["start_sec"], c["end_sec"],
+                        ten_nguon=src_p)
                 except Exception:  # noqa: BLE001 - lỗi tra cứu -> giữ như cũ
                     en = vi
-            label = en or self._fixed_label()
+            label = en or self._fixed_label(L)
             # tên gọn "Part 1 <tiêu đề> #tag1 #tag2" — hashtag CHUNG toàn video,
             # đúng ngôn ngữ nội dung. _safe_name ở export_clip giữ '#'/ký tự có dấu.
             out_name = f"Part {no} {label}".strip() + tags_str
             jid = services.enqueue_export(
-                self.state.pool, c["id"], video_id, pid,
+                snap["pool"], c["id"], video_id, pid,
                 out_dir=out_root,   # <gốc>/Đã xuất/<KÊNH>/<video>/Part N.mp4
                                     # HOẶC thư mục riêng của kênh (flat)
                 flat_export=flat_export,
                 video_rect=vr, bg=bg, trim_black=tb, part_no=no, out_name=out_name,
-                captions=bool(self.layout_tpl.get("captions", True)),
+                captions=bool(L.get("captions", True)),
                 cap_style={
-                    "font": self.layout_tpl.get("cap_font", "Anton"),
-                    "size": self.layout_tpl.get("cap_size", 0),
-                    "color": self.layout_tpl.get("cap_color", ""),
+                    "font": L.get("cap_font", "Anton"),
+                    "size": L.get("cap_size", 0),
+                    "color": L.get("cap_color", ""),
                     # màu viền / độ dày viền TÙY CHỌN cho phụ đề gốc (Chỉnh mẫu
                     # khu Phụ đề); ''/0 -> theo preset.
-                    "cap_outline": self.layout_tpl.get("cap_outline", "") or "",
-                    "cap_ow": float(self.layout_tpl.get("cap_ow", 0.0) or 0.0),
-                    "ny": self.layout_tpl.get("cap_ny", 0.78),
-                    "preset": self.layout_tpl.get("cap_preset",
+                    "cap_outline": L.get("cap_outline", "") or "",
+                    "cap_ow": float(L.get("cap_ow", 0.0) or 0.0),
+                    "ny": L.get("cap_ny", 0.78),
+                    "preset": L.get("cap_preset",
                                                   "Trắng đơn giản"),
                     # tên MẪU đang áp — đi kèm để m1 ghi vào nhật ký từng Part
                     # (đi trong cap_style nên KHÔNG phải đổi chữ ký services /
                     # không đụng hash chống trùng job).
-                    "_mau": getattr(self, "_ten_mau_hien", "") or "",
-                    "delay": self.layout_tpl.get("cap_delay", 0.12),
-                    "hook_on": self.layout_tpl.get("cap_hook", False),
-                    "hook_dur": self.layout_tpl.get("cap_hook_dur", 6.0),
+                    "_mau": snap["mau"],
+                    "delay": L.get("cap_delay", 0.12),
+                    "hook_on": L.get("cap_hook", False),
+                    "hook_dur": L.get("cap_hook_dur", 6.0),
                     # vị trí/cỡ ô HOOK user kéo trong Chỉnh mẫu
-                    "hook_nx": self.layout_tpl.get("hook_nx", 0.5),
-                    "hook_ny": self.layout_tpl.get("hook_ny", 0.10),
-                    "hook_size": self.layout_tpl.get("hook_size", 0.0),
+                    "hook_nx": L.get("hook_nx", 0.5),
+                    "hook_ny": L.get("hook_ny", 0.10),
+                    "hook_size": L.get("hook_size", 0.0),
                     # 🎙 CHỮ AI ĐỌC (thuyết minh) — từ MẪU (Chỉnh mẫu), chỉ
                     # ảnh hưởng cue narrate (Style Narrate) của clip recap;
                     # clip thường / đoạn gốc bỏ qua.
-                    "narr_color": self.layout_tpl.get("narr_color", ""),
-                    "narr_outline": self.layout_tpl.get("narr_outline", "")
+                    "narr_color": L.get("narr_color", ""),
+                    "narr_outline": L.get("narr_outline", "")
                     or "",
-                    "narr_ow": float(self.layout_tpl.get("narr_ow", 0.0)
+                    "narr_ow": float(L.get("narr_ow", 0.0)
                                      or 0.0),
                     # KIỂU chạy chữ RIÊNG cho chữ AI ('(giống phụ đề gốc)' =
                     # Style Default). narr_same giữ cho tương thích.
-                    "narr_preset": self.layout_tpl.get("narr_preset", "") or "",
+                    "narr_preset": L.get("narr_preset", "") or "",
                     # FONT chữ AI kể ('(giống phụ đề gốc)'/rỗng -> font phụ đề gốc)
-                    "narr_font": self.layout_tpl.get("narr_font", "") or "",
-                    "narr_italic": bool(self.layout_tpl.get("narr_italic", True)),
-                    "narr_same": bool(self.layout_tpl.get("narr_same", False)),
-                    "narr_ny": float(self.layout_tpl.get("narr_ny", 0.0) or 0.0),
-                    "narr_size": float(self.layout_tpl.get("narr_size", 0.0)
+                    "narr_font": L.get("narr_font", "") or "",
+                    "narr_italic": bool(L.get("narr_italic", True)),
+                    "narr_same": bool(L.get("narr_same", False)),
+                    "narr_ny": float(L.get("narr_ny", 0.0) or 0.0),
+                    "narr_size": float(L.get("narr_size", 0.0)
                                        or 0.0),
                     # KIỂU CHỮ HOA từng phần (từ mẫu)
-                    "cap_case": self.layout_tpl.get("cap_case", "") or "",
-                    "narr_case": self.layout_tpl.get("narr_case", "") or "",
-                    "hook_case": self.layout_tpl.get("hook_case", "") or ""},
-                blur_amt=int(self.layout_tpl.get("blur_amt", 22)),
-                speed=float(sig.get("speed", self.layout_tpl.get("speed", 1.0))),
-                pitch=float(self.layout_tpl.get("pitch", 1.0)),
-                hook_first=bool(self.layout_tpl.get("hook_first")),
-                bgm_path=self._pick_bgm(),
-                bgm_vol=float(self.layout_tpl.get("bgm_vol", 0.15)),
-                orig_vol=float(self.layout_tpl.get("orig_vol", 1.0)),
-                dub_lang=self.layout_tpl.get("dub_lang", "") or "",
-                dub_voice=self.layout_tpl.get("dub_voice", "") or "",
-                dub_mute=bool(self.layout_tpl.get("dub_mute", False)),
-                dub_mode=self.layout_tpl.get("dub_mode", "natural") or "natural",
+                    "cap_case": L.get("cap_case", "") or "",
+                    "narr_case": L.get("narr_case", "") or "",
+                    "hook_case": L.get("hook_case", "") or ""},
+                blur_amt=int(L.get("blur_amt", 22)),
+                speed=float(sig.get("speed", L.get("speed", 1.0))),
+                pitch=float(L.get("pitch", 1.0)),
+                hook_first=bool(L.get("hook_first")),
+                bgm_path=self._pick_bgm(L),
+                bgm_vol=float(L.get("bgm_vol", 0.15)),
+                orig_vol=float(L.get("orig_vol", 1.0)),
+                dub_lang=L.get("dub_lang", "") or "",
+                dub_voice=L.get("dub_voice", "") or "",
+                dub_mute=bool(L.get("dub_mute", False)),
+                dub_mode=L.get("dub_mode", "natural") or "natural",
                 # 🎙 giọng + nhịp KỂ từ ⚙ Cài đặt Reup (toàn cục, KHÔNG theo
                 # mẫu) — chỉ clip có signals.recap dùng; clip thường bỏ qua
-                recap_voice=str(self._settings.value("recap_voice", "") or ""),
-                recap_pace=str(self._settings.value("recap_pace", "normal")
-                               or "normal"),
-                recap_pitch=str(self._settings.value("recap_pitch", "normal")
-                                or "normal"),
+                # (QSettings đọc SẴN ở luồng giao diện — xem _export_snap)
+                recap_voice=snap["recap_voice"],
+                recap_pace=snap["recap_pace"],
+                recap_pitch=snap["recap_pitch"],
                 # 🎭 emotion: BẬT + giọng ElevenLabs -> model v3 đọc audio
                 # tag; ảnh hưởng model TTS -> vào sig dedup (đổi -> xuất lại).
-                recap_emotion=str(
-                    self._settings.value("recap_emotion", True)).strip()
-                .lower() not in ("false", "0", "no", "off"),
-                recap_volume=self._recap_volume(),
+                recap_emotion=snap["recap_emotion"],
+                recap_volume=snap["recap_volume"],
                 # 🔦 làm tối hình khi AI kể (spotlight) — toàn cục từ ⚙
-                recap_dim=self._recap_dim(),
+                recap_dim=snap["recap_dim"],
                 # (CHỮ AI ĐỌC giờ lấy từ MẪU qua cap_style, không còn ở ⚙)
-                fx_fade=bool(self.layout_tpl.get("fx_fade", True)),
-                fx_whoosh=bool(self.layout_tpl.get("fx_whoosh", True)),
+                fx_fade=bool(L.get("fx_fade", True)),
+                fx_whoosh=bool(L.get("fx_whoosh", True)),
                 # CHUYỂN CẢNH chỗ ghép đoạn (xfade) — theo MẪU. Mẫu cũ chưa có
                 # khoá này -> 'nhe' (mặc định BẬT mức nhẹ như đã chốt).
-                chuyen_canh=str(self.layout_tpl.get("chuyen_canh", "nhe")
+                chuyen_canh=str(L.get("chuyen_canh", "nhe")
                                 or "tat"),
                 # HIỆU ỨNG ĐIỂM NHẤN — theo MẪU, cùng đường với chuyển cảnh.
-                # `self.layout_tpl` ở đây là mẫu ĐÃ CHỐT do `_export_video`
+                # `L` ở đây là mẫu ĐÃ CHỐT do `_export_video`
                 # (cửa DUY NHẤT mọi đường xuất đi qua — cổng 19) đặt vào, nên
                 # bấm tay / xuất cả kênh / dây chuyền đều ăn ĐÚNG mẫu của kênh.
-                hieu_ung=str(self.layout_tpl.get("hieu_ung", "nhe") or "tat"),
-                fx_sfx_dir=self._pick_sfx_dir(),
-                flip_h=bool(self.layout_tpl.get("flip_h", False)),
-                fit_src=bool(self.layout_tpl.get("fit_src", False)),
+                hieu_ung=str(L.get("hieu_ung", "nhe") or "tat"),
+                fx_sfx_dir=self._pick_sfx_dir(L),
+                flip_h=bool(L.get("flip_h", False)),
+                do_sang=L.get("do_sang", 0) or 0,
+                fit_src=bool(L.get("fit_src", False)),
                 # CHE CHỮ CHÁY SẴN TRONG HÌNH — theo MẪU ĐÃ CHỐT, cùng đường
                 # với `flip_h`. Truyền THẲNG (thay vì để `m1.doc_che_chu` tra
                 # mẫu theo tên) vì chỉ đường này mới đưa được cờ vào hash
                 # chống trùng: bật ô rồi bấm "Xuất cả kênh" phải xuất LẠI
                 # thật, chứ không bị smart-skip bắt user bấm "Xuất lại" từng
                 # clip. Mẫu cũ chưa có khoá -> False/'' -> y hệt hành vi cũ.
-                che_chu=bool(self.layout_tpl.get("che_chu", False)),
-                che_chu_cach=str(self.layout_tpl.get("che_chu_cach", "")
+                che_chu=bool(L.get("che_chu", False)),
+                che_chu_cach=str(L.get("che_chu_cach", "")
                                  or ""),
-                che_chu_muc=self.layout_tpl.get("che_chu_muc"),
+                che_chu_muc=L.get("che_chu_muc"),
                 # QUÉT CẢ KHUNG — mẫu CŨ chưa có khoá thì để `None` (theo env,
                 # mặc định TẮT), KHÔNG ép `False`: ép là bịt luôn đường bật
                 # bằng `BQ_CHE_TOAN_KHUNG` mà các phép đo đang dùng.
                 che_chu_toan_khung=(
-                    None if self.layout_tpl.get("che_chu_toan_khung") is None
-                    else bool(self.layout_tpl.get("che_chu_toan_khung"))),
-                overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid),
+                    None if L.get("che_chu_toan_khung") is None
+                    else bool(L.get("che_chu_toan_khung"))),
+                overlay_png=self._render_png(no, en, c["id"], vi, vpx, pid, L),
                 # ĐƠN THUỐC lớp chữ đi CÙNG job: ảnh `_ovl_` có mất thì job tự
                 # dựng lại được (tắt app giữa lượt xuất / user dọn _cache).
                 # KHÔNG vào hash chống trùng -> clip cũ không bị xuất lại.
-                ovl_spec=self._ovl_spec(no, en, vi, vpx),
+                ovl_spec=self._ovl_spec(no, en, vi, vpx, L),
                 force=force_one)
             if jid:
                 jids.append(jid)
             n += 1
-            QApplication.processEvents()   # nhả cho UI đỡ đơ khi vẽ ảnh chữ hàng loạt
+            # (26/10/2026) BỎ QApplication.processEvents() ở đây: việc dựng
+            # Part nay chạy ở LUỒNG NỀN (_xuat_nen) cho tự-xuất / xuất cả
+            # video / cả kênh; processEvents chỉ còn là nguồn TÁI NHẬP.
         if n and not jids:
             # mọi clip đều bị smart-skip (đã xuất y hệt trước đó) -> BÁO RÕ,
             # không để user chờ file mới mà không có job nào chạy
-            self.status.setText(
+            out['status'] = (
                 "Các clip này đã xuất trước đó (không đổi gì) — không tạo job "
                 "mới. Muốn xuất lại 1 clip: bấm 'Xuất lại' ở clip đó.")
-        # 🤖 dây chuyền đọc danh sách job xuất của video vừa gọi (cùng tick)
-        self._last_export_jids = list(jids)
-        outcome['jobs'] = list(jids)
-        self._export_results[video_id] = outcome
-        return len(jids)
+        out['jobs'] = list(jids)
+        out['ret'] = len(jids)
+        return out
+
+    def _xuat_nen(self, video_id, tpl=None, resume=False, only_clip_id=None,
+                  khi_xong=None) -> bool:
+        """DỰNG lệnh xuất Part ở LUỒNG NỀN (26/10/2026).
+
+        ĐO THẬT (DB 150k job, video 3 Part): _export_video trên luồng giao diện
+        đứng ~0,5 s/video (ảnh chữ 1080x1920 ~70 ms/Part + parse transcript +
+        ghi DB), lưới an toàn 3 video = 1,5 s đơ — đúng lúc dây chuyền chạy.
+        Nay: chốt mẫu + chụp QSettings ở đây (luồng UI), dựng ở luồng
+        "bq-dung-part" (MỘT luồng, làm lần lượt), kết quả về `khi_xong(vid, n,
+        lỗi)` ở luồng UI. Trả False nếu video này ĐANG dựng dở (không bao giờ 2
+        lượt dựng cùng 1 video)."""
+        vid = int(video_id)
+        if vid in self._xuat_dang:
+            return False
+        tpl_dung = tpl if isinstance(tpl, dict) and tpl else None
+        if tpl_dung is None:
+            _vr = db.query_one("SELECT project_id FROM videos WHERE id=?",
+                               (vid,))
+            _pid = (_vr["project_id"] if _vr else None) or self.state.project_id
+            tpl_dung = self._tpl_for_project(_pid)
+        ten_mau = str((tpl_dung or {}).get("_ten_mau")
+                      or (self._ten_mau_trang_chinh() if not tpl_dung
+                          else "(không rõ)"))
+        _luu, _luu_ten = self.layout_tpl, getattr(self, "_ten_mau_hien", "")
+        self.layout_tpl = tpl_dung or copy.deepcopy(self.layout_tpl)
+        self._ten_mau_hien = ten_mau
+        try:
+            snap = self._export_snap(vid)
+        finally:
+            self.layout_tpl, self._ten_mau_hien = _luu, _luu_ten
+        self._xuat_dang.add(vid)
+        # "Hủy tất cả" bấm SAU lúc xếp hàng mà TRƯỚC lúc tới lượt dựng -> bỏ
+        # lượt này (review 26/10: hủy rồi mà Part vẫn tự hiện lại vài giây sau).
+        _gen = getattr(self.state, "huy_gen", 0)
+
+        def _da_huy():
+            return getattr(self.state, "huy_gen", 0) != _gen
+
+        def viec():
+            if _da_huy():
+                return None
+            return self._export_prepare(vid, only_clip_id, bool(resume), snap)
+
+        def xong(kq):
+            self._xuat_dang.discard(vid)
+            ok, val = kq
+            n, loi = None, ""
+            if _da_huy():
+                ok, val = False, "Đã hủy (bấm Hủy tất cả) — chưa xếp việc xuất."
+            if ok:
+                try:
+                    n = self._export_apply(vid, only_clip_id, val)
+                except Exception as e:  # noqa: BLE001
+                    n, loi = None, str(e) or type(e).__name__
+            else:
+                loi = str(val)
+            if khi_xong is not None:
+                khi_xong(vid, n, loi)
+        self._lan_xuat_dua(viec, xong)
+        return True
 
     def _export_all(self):
         """Tải tất cả clip của VIDEO đang chọn (theo Part)."""
@@ -8964,8 +10452,19 @@ class StudioPage(QWidget):
             QMessageBox.information(self, "Chưa có clip",
                                     "Bấm nút 'Tạo clip' để AI cắt clip trước.")
             return
-        n = self._export_video(self.state.video_id)
-        self.status.setText(f"Đang xuất {n} clip (video này) theo thứ tự Part...")
+        # LUỒNG NỀN (26/10/2026): bấm là ăn ngay, dựng Part không đơ app.
+        def _xong(_v, n, loi):
+            if loi:
+                self.status.setText(f"⚠ Không dựng được lệnh xuất: {loi[:200]}")
+            elif n:
+                self.status.setText(
+                    f"Đang xuất {n} clip (video này) theo thứ tự Part...")
+        if self._xuat_nen(self.state.video_id, khi_xong=_xong):
+            self.status.setText("Đang chuẩn bị xuất video này (dựng ảnh chữ "
+                                "từng Part)…")
+        else:
+            self.status.setText("Video này đang được chuẩn bị xuất — đợi "
+                                "chút là xong.")
 
     def _export_all_channel(self):
         """Xuất TẤT CẢ clip của MỌI video trong kênh — đúng thứ tự Part từng video."""
@@ -8973,15 +10472,37 @@ class StudioPage(QWidget):
             QMessageBox.information(self, "Chưa có kênh", "Tạo/chọn kênh trước.")
             return
         vids = services.list_videos(self.state.project_id)
-        total = sum(self._export_video(v["id"]) for v in vids)
-        if total:
-            self.status.setText(
-                f"Đang xuất {total} clip của CẢ KÊNH (theo thứ tự Part từng "
-                "video, chạy song song)...")
-        else:
+        # LUỒNG NỀN (26/10/2026): trước đây 200 video x vài Part dựng ngay
+        # trên luồng giao diện = app đứng hàng chục giây. Nay xếp vào luồng
+        # dựng Part, đếm dần, báo khi xong hết.
+        dem = {"con": 0, "tong": 0}
+
+        def _xong(_v, n, _loi):
+            dem["con"] -= 1
+            dem["tong"] += int(n or 0)
+            if dem["con"] > 0:
+                self.status.setText(
+                    f"Đang chuẩn bị xuất CẢ KÊNH… đã xếp {dem['tong']} clip, "
+                    f"còn {dem['con']} video.")
+                return
+            if dem["tong"]:
+                self.status.setText(
+                    f"Đang xuất {dem['tong']} clip của CẢ KÊNH (theo thứ tự "
+                    "Part từng video, chạy song song)...")
+            else:
+                QMessageBox.information(self, "Chưa có clip",
+                                        "Kênh chưa có clip nào. Bấm 'Tất cả video' "
+                                        "để tạo clip cho cả kênh trước.")
+        for v in vids:
+            if self._xuat_nen(v["id"], khi_xong=_xong):
+                dem["con"] += 1
+        if not dem["con"]:
             QMessageBox.information(self, "Chưa có clip",
                                     "Kênh chưa có clip nào. Bấm 'Tất cả video' "
                                     "để tạo clip cho cả kênh trước.")
+        else:
+            self.status.setText(f"Đang chuẩn bị xuất CẢ KÊNH ({dem['con']} "
+                                "video)…")
 
     def _folder_action(self, kind):
         try:

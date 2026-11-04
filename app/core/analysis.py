@@ -67,7 +67,7 @@ def _project_audio_path(video_id: int) -> Path:
     base = Path(row["assets_dir"]) if row else (PROJECTS_DIR / "tmp")
     base = base / "_cache"          # file audio tạm -> _cache, không lẫn folder người dùng
     base.mkdir(parents=True, exist_ok=True)
-    return base / f"audio_{video_id}.wav"
+    return base / f"audio_verified_{video_id}.wav"
 
 
 def run_analysis(
@@ -107,6 +107,8 @@ def run_analysis(
             continue
 
         _set(video_id, kind, "running")
+        if on_progress:
+            on_progress(base, f"Phân tích {i + 1}/{n} · {label}: bắt đầu")
         # BƯỚC nào / trên TỔNG mấy bước — user thấy rõ "Phân tích 1/5" ở đầu
         # message (khu tiến trình lớn hiện nguyên câu này).
         _pfx = f"Phân tích {i + 1}/{n} · {label} — "
@@ -151,6 +153,8 @@ def _run_one(video_id: int, kind: str, src: str, profile: dict, prog: ProgressFn
     def ensure_audio() -> str:
         wav = _project_audio_path(video_id)
         if not wav.exists():
+            if prog:
+                prog(0.01, "Đang tách âm thanh từ video trên máy…")
             from app.core import ffmpeg_utils as _fu
             from app.core.ffmpeg_utils import extract_audio_wav_why
             # ĐANG ĐỢI LƯỢT THÌ PHẢI NÓI: tách audio đi qua CỬA CHỜ ffmpeg

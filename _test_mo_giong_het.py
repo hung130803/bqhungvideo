@@ -534,6 +534,12 @@ for _ng, _mod_ten in ((GB.PIPER, "piper_tts"), (GB.VIENEU, "giong_vieneu"),
     _so_gb = GB._CAN_TAI.get(_ng, "")
     _con_so = re.sub(r"[^0-9]", "", _so_gb)
     _kho_chu = re.sub(r"[^0-9]", "", _moi_chu(_mod_ten) + " " + _CHU_UI)
+    if not _con_so:
+        # Bảng KHÔNG ghi con số tải nào cho máy đọc này (Chatterbox đã rời
+        # `_CAN_TAI` trong bản đã commit) -> nhãn không hứa con số nào, không có
+        # gì để lệch. Chấm ở đây là ĐỎ OAN (31/10/2026).
+        print(f"  (bỏ qua 8 · `{_ng}`: bảng không ghi con số tải)")
+        continue
     ok(f"8 · nhãn `{_ng}` ({_so_gb}) khớp con số người dùng THẬT SỰ thấy",
        bool(_con_so) and _con_so in _kho_chu,
        f"bảng {_so_gb!r}")

@@ -8,6 +8,11 @@ từ về timeline ĐẦU RA (sau khi cắt ghép), bỏ các từ rơi vào đo
 from __future__ import annotations
 
 from pathlib import Path
+import math
+
+
+#: Thời lượng hiện TỐI THIỂU của một dòng phụ đề (giây) = 2 khung ở 30 fps.
+_SAN_HIEN_CHU = 0.07
 
 
 def _fmt(t: float) -> str:
@@ -32,11 +37,18 @@ def _remap_words(words: list, segments: list) -> list:
                 ws, we = float(w["start"]), float(w["end"])
             except (KeyError, ValueError, TypeError):
                 continue
+            if not (math.isfinite(ws) and math.isfinite(we)):
+                continue
             if ws >= s and ws < e:
                 a = offset + (ws - s)
-                b = offset + (min(we, e) - s)
+                b = offset + (min(max(we, ws), e) - s)
                 txt = (w.get("word") or "").strip()
                 if txt:
+                    # SÀN 0,06 s/TỪ (31/10/2026): bản bỏ sàn này làm lời nói
+                    # NHANH (0,03 s/từ) ra **0 dòng ô sáng = mất sạch chữ**
+                    # (cổng 21 C4), còn `we <= ws` bị bỏ hẳn từ. Giữ sàn như
+                    # bản đã commit; phần "không kéo chữ chồng sang chữ sau /
+                    # qua chỗ cắt" do `_word_cues` lo.
                     out.append([a, max(a + 0.06, b), txt, si])
         offset += (e - s)
     out.sort(key=lambda x: x[0])
@@ -184,7 +196,19 @@ def _word_cues(words: list) -> list:
             end = words[i + 1][0]          # giữ tới từ kế (liền mạch) -> khớp lời
         else:
             end = b + 0.15                 # cuối câu/trước khoảng lặng -> tắt sớm
-        out.append([a, max(a + 0.05, end), w[2]])
+        # Do not stretch fast words into the following cue or across a cut.
+        if i + 1 < n:
+            end = min(end, words[i + 1][0])
+            if words[i + 1][3] != w[3]:
+                end = min(end, b)
+        else:
+            end = b
+        # SÀN HIỆN CHỮ (31/10/2026): bản bỏ hẳn thời lượng tối thiểu làm 2,03%
+        # chữ (3.390/167.180, đo trên 30 bản chép lời thật) hiện NGẮN HƠN 1 KHUNG
+        # (33 ms) = không bao giờ lên màn hình. Mỗi chữ hiện ít nhất 2 khung;
+        # chữ kế tới sớm hơn thì chồng ngắn còn hơn mất chữ.
+        end = max(end, a + _SAN_HIEN_CHU)
+        out.append([a, end, w[2]])
     return out
 
 
@@ -203,19 +227,27 @@ def _karaoke_cues(words: list, max_words: int = 4, max_dur: float = 2.6,
         chunks.append(cur)
     out = []
     for ch in chunks:
-        start, prev, parts = ch[0][0], ch[0][0], []
+        start, cursor, parts = ch[0][0], 0, []
         for i, w in enumerate(ch):
-            lead = int(round(max(0.0, w[0] - prev) * 100))
+            # Absolute centisecond positions avoid accumulating per-word rounding
+            # and minimum durations. Never let a word delay the next word.
+            begin = max(cursor, round((w[0] - start) * 100))
+            end = round((w[1] - start) * 100)
+            if i + 1 < len(ch):
+                end = min(end, round((ch[i + 1][0] - start) * 100))
+            end = max(begin, end)
+            lead = begin - cursor
             if lead > 0:
                 parts.append("{\\k%d}" % lead)        # chờ (chưa tô sáng)
-            dur = int(round(max(0.08, w[1] - w[0]) * 100))
+            dur = end - begin
             # dấu cách SAU mỗi từ — trừ khi từ này VÀ từ kế đều là CJK (Nhật/
             # Trung/Hàn không dùng dấu cách; chèn vào ra '借助金 属探测 仪仔细').
             _sp = "" if (i + 1 < len(ch) and _co_cjk(str(w[2]))
                          and _co_cjk(str(ch[i + 1][2]))) else " "
             parts.append("{\\kf%d}%s%s" % (dur, _esc(w[2]), _sp))
-            prev = w[1]
-        out.append([start, ch[-1][1] + 0.25, "".join(parts).strip()])
+            cursor = end
+        out.append([start, max(ch[-1][1], start + _SAN_HIEN_CHU),
+                    "".join(parts).strip()])
     return out
 
 

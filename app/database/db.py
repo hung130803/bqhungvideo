@@ -33,6 +33,7 @@ class Database:
         # Vỡ rồi thì mọi query sau TRẢ RỖNG NGAY, KHÔNG đụng đĩa nữa.
         self.corrupt_live = False       # UI đọc để báo user + dừng poll
         self._corrupt_note = ""
+        self.tu_chua_note = ""          # lưới tự cất sổ tạm cũ (xem _cat_wal_cu_neu_hong)
         self.init_schema()
         # Chốt path THỰC vào biến môi trường để MỌI tiến trình con (phân tích)
         # spawn sau (jobs.py truyền env=dict(os.environ)) mở ĐÚNG file này —
@@ -78,6 +79,10 @@ class Database:
         kiểm toàn vẹn để phục hồi khi ứng dụng đã đóng.
         """
         try:
+            self._cat_wal_cu_neu_hong()
+        except Exception:  # noqa: BLE001 - lưới an toàn không được chặn mở app
+            pass
+        try:
             self._apply_schema()
             return
         except Exception as e:  # noqa: BLE001
@@ -106,6 +111,108 @@ class Database:
         # ---- Retry hết vẫn lỗi tạm thời: GIỮ NGUYÊN studio.db ----
         # Không mở DB RAM: các worker/tiến trình con cần chung dữ liệu bền.
         self._fallback_memory()
+
+    def _cat_wal_cu_neu_hong(self) -> str:
+        """LƯỚI AN TOÀN: SỔ TẠM (WAL) CŨ LÀM HỎNG FILE CHÍNH ĐANG LÀNH.
+
+        Sự cố thật 31/10/2026 13:15 (lần thứ 3, sau 27/10 và 28/08): cạnh
+        `studio.db` (lành, ghi tới 13:46) nằm một `studio.db-wal` CŨ mà vẫn
+        "hợp lệ" -> mỗi lần mở SQLite chép 5 trang cũ đè lên dữ liệu mới và cắt
+        file về 34.637 trang -> 'malformed', job treo, phải tắt app chữa tay.
+        Gốc vì sao sổ tạm bị kẹt bản cũ CHƯA tìm ra.
+
+        Luật: CHỈ cất sổ tạm khi (file chính + sổ tạm) kiểm HỎNG mà file chính
+        MỘT MÌNH kiểm LÀNH. Sổ tạm bình thường sau khi tắt đột ngột chứa dữ liệu
+        MỚI NHẤT -> kiểm lành -> GIỮ NGUYÊN (cất nhầm là mất việc vừa làm).
+        Kiểm trên BẢN CHÉP: mở thẳng file thật cùng sổ tạm cũ thì lúc đóng
+        SQLite gộp luôn trang cũ vào file chính = tự tay phá file lành.
+        Chỉ chạy khi giành được sổ tạm (đổi tên được = không tiến trình nào
+        đang mở DB); tiến trình phân tích con / bot gác thì bỏ qua. Không xoá gì:
+        sổ tạm cũ được dời vào `recovery/wal_cu_<giờ>/`. Trả lời nhắn ('' = không làm gì)."""
+        import shutil as _sh
+        import tempfile
+        if self.path == ":memory:" or os.environ.get("BQ_TAT_TU_CHUA_WAL") == "1":
+            return ""
+        db_file = Path(self.path)
+        wal, shm = Path(self.path + "-wal"), Path(self.path + "-shm")
+        try:
+            if not db_file.exists() or not wal.exists() or wal.stat().st_size == 0:
+                return ""
+        except OSError:
+            return ""
+        giu = Path(f"{self.path}-wal.kiem{os.getpid()}")
+        try:
+            os.replace(wal, giu)            # giành sổ tạm; ai đang mở DB -> lỗi -> bỏ qua
+        except OSError:
+            return ""
+
+        def tra_lai() -> None:
+            for _ in range(20):
+                try:
+                    os.replace(giu, wal)
+                    return
+                except OSError:
+                    time.sleep(0.1)
+
+        def kiem(dich_mo: str, **kw):
+            """(lành?, {bảng: số thứ tự tự tăng lớn nhất})."""
+            try:
+                c = sqlite3.connect(dich_mo, **kw)
+                try:
+                    tot = c.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+                    try:
+                        seq = {str(r[0]): int(r[1] or 0) for r in
+                               c.execute("SELECT name, seq FROM sqlite_sequence")}
+                    except sqlite3.Error:
+                        seq = {}
+                    return tot, seq
+                finally:
+                    c.close()
+            except sqlite3.Error:
+                return False, {}
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="bq_kiem_wal_") as tmp:
+                ban = Path(tmp) / "studio.db"
+                _sh.copy2(db_file, ban)
+                _sh.copy2(giu, Path(str(ban) + "-wal"))
+                ca_hai_lanh, seq_hai = kiem(str(ban))
+            chinh_lanh, seq_chinh = kiem(db_file.resolve().as_uri() + "?immutable=1", uri=True)
+        except Exception:  # noqa: BLE001 - không chắc thì GIỮ nguyên như cũ
+            tra_lai()
+            return ""
+        # LÙI DỮ LIỆU ÂM THẦM (cổng 100 lôi ra): sổ tạm cũ tự nhất quán thì
+        # cộng vào vẫn kiểm "lành" nhưng dữ liệu QUAY VỀ bản cũ (đo: 4.500 dòng
+        # -> 500, quick_check vẫn ok). Sổ tạm hợp lệ chỉ có thể làm số thứ tự
+        # tự tăng TĂNG lên; file chính một mình có số LỚN HƠN = sổ tạm già hơn.
+        lui = [b for b, s in seq_chinh.items() if s > seq_hai.get(b, 0)] if ca_hai_lanh else []
+        if not chinh_lanh or (ca_hai_lanh and not lui):
+            tra_lai()                        # sổ tạm bình thường, hoặc hỏng thật -> cứu hộ cũ lo
+            return ""
+        dich = db_file.parent / "recovery" / ("wal_cu_" + time.strftime("%Y%m%d_%H%M%S"))
+        try:
+            dich.mkdir(parents=True, exist_ok=True)
+            co = giu.stat().st_size
+            os.replace(giu, dich / "studio.db-wal")
+            if shm.exists():
+                try:
+                    os.replace(shm, dich / "studio.db-shm")
+                except OSError:
+                    pass
+        except OSError:
+            tra_lai()
+            return ""
+        note = (f"Đã tự chữa cơ sở dữ liệu: sổ tạm cũ ({co // 1024} KB) làm hỏng file "
+                f"chính đang lành -> đã cất sang {dich} (không xoá). Dữ liệu giữ nguyên.")
+        self.tu_chua_note = note
+        try:
+            logs = db_file.parent / "logs"
+            logs.mkdir(exist_ok=True)
+            with open(logs / "db_tu_chua.txt", "a", encoding="utf-8") as f:
+                f.write(time.strftime("[%Y-%m-%d %H:%M:%S] ") + note + "\n")
+        except OSError:
+            pass
+        return note
 
     def _recover_true_corrupt(self) -> None:
         """Giữ cả DB/WAL gốc. Không tạo DB rỗng khiến người dùng mất dấu kênh."""
@@ -423,6 +530,27 @@ class Database:
                     "ALTER TABLE jobs ADD COLUMN cancel_req "
                     "INTEGER NOT NULL DEFAULT 0")
                 self.conn().commit()
+        except Exception:  # noqa: BLE001
+            pass
+        # CHỈ MỤC TĂNG TỐC cho các truy vấn giao diện chạy LẶP (bảng Tiến trình
+        # mỗi 0,4 s, nhãn kênh mỗi ~4,5 s). Đo 26/10/2026 trên DB 150k job /
+        # 120k clip: nhãn kênh 214 ms -> ~15 ms. Khối try RIÊNG, từng lệnh một:
+        # lỗi thì chỉ mất tốc độ, không chặn các bước di trú khác, không đụng
+        # dữ liệu. DB cũ tạo chỉ mục 1 lần lúc mở app (vài trăm ms).
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS idx_jobs_status_fin "
+            "ON jobs(status, finished_at)",
+            "CREATE INDEX IF NOT EXISTS idx_clips_vse "
+            "ON clips(video_id, status, export_path)",
+            "CREATE INDEX IF NOT EXISTS idx_pipefiles_video "
+            "ON pipeline_files(video_id)",
+        ):
+            try:
+                self.conn().execute(ddl)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            self.conn().commit()
         except Exception:  # noqa: BLE001
             pass
 

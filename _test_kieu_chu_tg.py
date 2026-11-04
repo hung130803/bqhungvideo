@@ -209,7 +209,16 @@ def muc2() -> None:
             if not (ra and "Style: Default," in ta and "Dialogue:" in ta):
                 rong += 1
                 continue
-            if ta == tb and ra == rb:
+            # So KIỂU CHỮ từng byte (mọi thứ trước [Events]) + NỘI DUNG CHỮ
+            # từng dòng — KHÔNG so mốc giờ: thời gian hiện chữ đã đổi CÓ CHỦ Ý
+            # (bản chạy sản xuất từ trước 26/10/2026: không kéo chữ chồng sang
+            # chữ sau, sàn hiện 2 khung), cổng này canh KIỂU CHỮ của preset cũ.
+            def _tach(t):
+                dau, _, sau = t.partition("[Events]")
+                chu = [ln.split(",", 9)[9] for ln in sau.splitlines()
+                       if ln.startswith("Dialogue:")]
+                return dau, chu
+            if _tach(ta) == _tach(tb) and ra == rb:
                 giong += 1
             else:
                 lech += 1
@@ -217,7 +226,7 @@ def muc2() -> None:
                     print(f"       LỆCH ĐẦU: «{ten}» bộ {i}")
     ok(rong == 0, "mọi phép so đều dựng được .ass THẬT (không so chuỗi rỗng)",
        f"rỗng {rong}")
-    ok(lech == 0 and giong > 0, "preset CŨ ra .ass giống từng byte",
+    ok(lech == 0 and giong > 0, "preset CŨ: KIỂU CHỮ giống từng byte + đủ chữ từng dòng",
        f"giống {giong} · lệch {lech}")
 
 

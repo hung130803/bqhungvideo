@@ -158,7 +158,7 @@ from typing import Iterable
 # agentic của Groq): vẫn KHÁC HỌ với gpt-oss, giữ được ý "3 góc nhìn".
 MODEL_HOI_DONG = (
     "openai/gpt-oss-120b",
-    "groq/compound",
+    "qwen/qwen3.8-27b",      # 31/10/2026: groq/compound bị Groq gỡ
     "openai/gpt-oss-20b",
 )
 
@@ -353,7 +353,9 @@ def _cham_mot_model(goc: list[str], dich: list[str], goc_ma: str, dich_ma: str,
             '"noi": <0-10>, "tron": <0-10>}. BẮT BUỘC đủ MỌI số #.'
         )
         try:
-            data = llm.complete_json(prompt, system=system, model=model)
+            # chấm DỊCH = việc hàng loạt -> mức suy nghĩ "low" (đo 18/08: đủ)
+            with llm.tac_vu("translate"):
+                data = llm.complete_json(prompt, system=system, model=model)
         except Exception:                        # noqa: BLE001
             continue                             # thiếu 1 ý kiến, hội đồng vẫn chạy
         for khoa in TIEU_CHI:
@@ -443,7 +445,8 @@ def _soat_mot_model(goc: list[str], dich: list[str], goc_ma: str, dich_ma: str,
             '"sai": ["<từ gốc> -> <bản dịch sai> (đúng: <nghĩa đúng>)", ...]}.'
         )
         try:
-            data = llm.complete_json(prompt, system=system, model=model)
+            with llm.tac_vu("translate"):
+                data = llm.complete_json(prompt, system=system, model=model)
         except Exception:                        # noqa: BLE001
             continue
         for i, v in _theo_nhan(data, nhom, "sai").items():

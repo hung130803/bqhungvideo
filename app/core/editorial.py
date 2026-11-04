@@ -64,11 +64,15 @@ def validate(plan, parts):
     for a,b in zip(clean,clean[1:]):
         if a['part']==b['part'] and a['offset']+a['duration']>b['offset']+.001:
             raise ValueError('Hai điểm nhấn chồng nhau trong cùng cảnh; hãy dời mốc hoặc rút ngắn.')
-    from app.core.report_layout import LAYOUTS
+    from app.core.report_layout import LAYOUTS,BACKGROUNDS
     layout=plan.get('layout','template');title=plan.get('report_title','')
     if layout not in LAYOUTS or not isinstance(title,str) or len(title)>140 or any(ord(c)<32 for c in title):
         raise ValueError('Mẫu bố cục / tiêu đề không hợp lệ (tối đa 140 ký tự, một dòng).')
-    return dict(version=1,style=plan['style'],layout=layout,report_title=title.strip(),events=clean,enabled=bool(plan.get('enabled',True)),transitions=bool(plan.get('transitions',True)),
+    background=plan.get('background','auto');footer=plan.get('footer','')
+    if background not in BACKGROUNDS or not isinstance(footer,str) or len(footer)>48 or any(ord(c)<32 for c in footer):
+        raise ValueError('Nền hoặc nhãn cuối không hợp lệ (tối đa 48 ký tự).')
+    video_height=number(plan.get('video_height',.34),.20,.44,'Chiều cao khung video')
+    return dict(version=1,style=plan['style'],layout=layout,report_title=title.strip(),background=background,footer=footer.strip(),video_height=video_height,events=clean,enabled=bool(plan.get('enabled',True)),transitions=bool(plan.get('transitions',True)),
                 music_arc=bool(plan.get('music_arc',True)))
 
 

@@ -10,8 +10,11 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo Dang mo BQ Hung Video...
-REM Xoa cache .pyc cu de chac chan chay CODE MOI nhat
-for /d /r "app" %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" >nul 2>&1
+REM KHONG xoa cache .pyc nua (26/10/2026): Python TU biet file .py nao doi
+REM (so ngay sua + kich thuoc) va chi dich lai dung file do. Xoa het moi lan
+REM mo bat app dich lai ~2 MB ma nguon -> mo cham hon, bam Thay giong lan dau
+REM cung cham. Neu nghi chay nham ma cu: chay run.bat sach  hoac xoa tay.
+if /i "%~1"=="sach" for /d /r "app" %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" >nul 2>&1
 ".venv\Scripts\python.exe" main.py
 if errorlevel 1 (
     echo.

@@ -23,7 +23,13 @@ _CREATE_NO_WINDOW = 0x08000000 if hasattr(subprocess, "STARTUPINFO") else 0
 # Ưu tiên IDLE cho tác vụ NẶNG (encode/phân tích dài): Windows LUÔN nhường mọi
 # app khác trước -> máy KHÔNG đơ khi đang xuất; máy rảnh thì encode vẫn full tốc.
 # (Tác vụ ngắn probe/demo giữ nguyên ưu tiên thường — xong trong vài giây.)
-_IDLE_PRIORITY = 0x00000040 if hasattr(subprocess, "STARTUPINFO") else 0
+# ĐỔI 26/10/2026: IDLE (0x40) -> BELOW_NORMAL (0x4000). IDLE chỉ được CPU khi
+# KHÔNG tiến trình nào khác muốn — mà ở chế độ dây chuyền máy luôn bận (3 làn AI,
+# yt-dlp, trình duyệt, chính app) nên ffmpeg xuất bị bỏ đói, chạy rề rề dù CPU
+# không đầy. BELOW_NORMAL vẫn NHƯỜNG mọi app người dùng đang mở (ưu tiên thường)
+# nên máy không đơ, nhưng không còn bị mọi tác vụ nền khác chen ngang.
+# Tên biến giữ nguyên để không đụng các chỗ gọi.
+_IDLE_PRIORITY = 0x00004000 if hasattr(subprocess, "STARTUPINFO") else 0
 
 
 # Theo dõi tiến trình con đang chạy để DỪNG khi tắt app (tránh ffmpeg mồ côi
@@ -332,13 +338,18 @@ def _run_khong_cho(cmd: list[str],
         # Thoát bất thường (on_line ném CanceledError khi bấm Hủy, lỗi khác...)
         # -> PHẢI giết ffmpeg, nếu không nó chạy hết clip ăn CPU/GPU và giữ file
         # output; đã unregister thì đóng app cũng không dọn được nữa.
-        if proc.poll() is None:
-            proc.kill()
+        try:
+            if proc.poll() is None:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        finally:
             try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-        unregister_proc(proc)
+                if proc.stdout is not None:proc.stdout.close()
+            finally:
+                unregister_proc(proc)
 
 
 @dataclass
@@ -348,6 +359,26 @@ class MediaInfo:
     height: int = 0
     fps: float = 0.0
     has_audio: bool = False
+    #: độ dài LUỒNG TIẾNG (0 = không đọc được). Có thể NGẮN HƠN hình nhiều:
+    #: 27/10/2026 file tải về hình 1.257 s mà tiếng chỉ 9,6 s -> mọi Part cắt
+    #: sau giây 9,6 có [0:a] RỖNG -> `volume` ra NaN + aac chết, xuất lại 3
+    #: lượt đều hỏng. Xem `tieng_hut`.
+    audio_duration: float = 0.0
+
+
+def tieng_hut(info: "MediaInfo") -> str:
+    """File có luồng tiếng NGẮN HƠN HẲN hình (tải/ghép lỗi) -> câu báo; ổn -> ''.
+
+    Ngưỡng: thiếu > 30 s VÀ tiếng < 80% hình — lệch vài giây ở đuôi (nhạc kết
+    hết trước hình) là bình thường, không được báo oan."""
+    a, d = float(info.audio_duration or 0.0), float(info.duration or 0.0)
+    if not info.has_audio or a <= 0 or d <= 0:
+        return ""
+    if d - a > 30.0 and a < 0.8 * d:
+        so = lambda x: f"{x:.1f}".replace(".", ",")   # riêng CON SỐ, kiểu Việt
+        return (f"file hỏng: luồng tiếng chỉ {so(a)} s trong khi hình dài "
+                f"{so(d)} s (tải/ghép tiếng lỗi) — tải lại video này")
+    return ""
 
 
 def probe(path: str | Path) -> MediaInfo:
@@ -382,6 +413,11 @@ def probe(path: str | Path) -> MediaInfo:
                 info.fps = 0.0
         elif s.get("codec_type") == "audio":
             info.has_audio = True
+            try:
+                info.audio_duration = max(info.audio_duration,
+                                          float(s.get("duration") or 0))
+            except (TypeError, ValueError):
+                pass
     return info
 
 
@@ -452,6 +488,38 @@ def _looks_nvenc_env_failure(log: str) -> bool:
     """Lỗi driver/thư viện NVIDIA (dính cả máy) -> đáng ghi cache file."""
     low = (log or "").lower()
     return any(s in low for s in _NVENC_ENV_SIGNS)
+
+
+# Chữ ký lỗi NVENC TẠM THỜI — hết phiên encode / hết VRAM lúc 3 làn + lượt
+# phân tích cùng giữ GPU. Driver vẫn khoẻ, vài giây sau là mở được phiên mới.
+# LỖI CŨ: nhánh lỗi NVENC coi mọi lỗi như nhau -> chạy lại CẢ Part bằng
+# libx264 (Part 60-120 s, CPU tốn gấp nhiều lần) VÀ hạ CẢ PHIÊN về CPU tới khi
+# mở lại app; "no capable devices" (ffmpeg in ra NGAY SAU `OpenEncodeSessionEx
+# failed` khi hết phiên) còn bị ghi cache file 1 ngày như thể máy không GPU.
+_NVENC_TAM_SIGNS = (
+    "openencodesessionex failed", "incompatible client key",
+    "out of memory", "cuda_error_out_of_memory",
+)
+#: Chờ trước khi thử NVENC lại (giây). Lúc chờ KHÔNG giữ chỗ ffmpeg.
+_NVENC_CHO_THU_LAI = 4.0
+
+
+def _looks_nvenc_transient(log: str) -> bool:
+    """Lỗi NVENC kiểu HẾT PHIÊN / HẾT VRAM (tạm thời, driver vẫn khoẻ)?
+
+    Chỉ tính khi log có dòng của CHÍNH encoder (`[h264_nvenc @`) hoặc chữ ký
+    `OpenEncodeSessionEx` — "out of memory" đứng riêng có thể là lỗi RAM của
+    bộ lọc, đổi encoder không chữa được gì. Lỗi driver cũ / thiếu thư viện
+    (`_NVENC_ENV_SIGNS` trừ "no capable devices") -> KHÔNG phải tạm thời."""
+    low = (log or "").lower()
+    if not any(s in low for s in _NVENC_TAM_SIGNS):
+        return False
+    if "[h264_nvenc @" not in low and "openencodesessionex" not in low:
+        return False
+    vinh_vien = ("minimum required nvidia driver", "required nvenc api version",
+                 "cannot load nvcuda", "failed loading nvenc",
+                 "no nvidia devices")
+    return not any(s in low for s in vinh_vien)
 
 
 def _looks_nvenc_failure(log: str) -> bool:
@@ -634,41 +702,61 @@ def extract_audio_wav_why(src: str | Path, dst: str | Path,
             return (False, f"video gốc RỖNG 0 byte: {src}")
     except OSError:
         pass
-    tail: list[str] = []
+    import uuid
+    import wave
+    target = Path(dst)
+    if p.resolve() == target.resolve():
+        return False, "Đường dẫn audio tạm trùng video gốc; giữ nguyên nguồn."
+    staging = target.with_name(target.stem + "." + uuid.uuid4().hex + ".partial.wav")
+    tail, causes = [], []
 
     def keep(line: str) -> None:
-        s = (line or "").strip()
-        if s:
-            tail.append(s)
-            if len(tail) > 6:          # giữ vài dòng cuối là đủ chẩn đoán
-                tail.pop(0)
-    # SIẾT LUỒNG GIẢI MÃ (`-threads` PHẢI đứng TRƯỚC `-i`, sau `-i` là ENCODE).
-    # LỖI THẬT đo được khi TỔNG RÀ SOÁT 08/08/2026 (`_ra_luong_toan_may.py` soi
-    # MỌI ffmpeg trên máy trong lúc dây chuyền chạy): lệnh NÀY **một mình ăn
-    # 132 luồng = 5,50× số nhân** — nhiều hơn cả lệnh XUẤT (81) — và tạo đỉnh
-    # lớn nhất của cả lượt (156 luồng khi chạy cùng lệnh đo). Nó đứng NGOÀI cửa
-    # chờ ffmpeg và KHÔNG dùng `_global_enc_opts()` nên chưa từng bị siết.
-    # Việc thật của nó rất nhẹ (giải mã rồi ghi PCM 16 kHz MỘT kênh — không
-    # encode, không filter) nên mức 4 là quá đủ. Cùng công thức với
-    # `chon_doan._num_luong()` để chỉ có một quy tắc về luồng lệnh-ngoài-cửa-chờ.
-    _dt = str(min(4, max(1, (os.cpu_count() or 4) // 2)))
-    cmd = [
-        settings.FFMPEG_PATH, "-y", "-threads", _dt, "-i", str(src),
-        "-vn", "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(dst),
-    ]
-    # ƯU TIÊN THẤP: tách audio chạy NỀN, còn XUẤT là việc anh Hùng đang nhìn
-    # thanh %. Có van chống đói (`_DOI_TOI_DA`) nên lệnh này không bao giờ bị
-    # bỏ quên — quá 20s chờ là được nâng ngang hàng với xuất.
-    rc = _run(cmd, keep, uu_tien=UT_PHAN_TICH)
-    if rc == 0:
-        return (True, "")
-    why = " | ".join(tail[-3:]) or f"ffmpeg trả mã {rc}"
-    low = why.lower()
-    if "no space" in low or "disk full" in low:
-        why = "Ổ ĐĨA HẾT CHỖ khi ghi audio tạm — dọn ổ đĩa rồi cắt lại."
-    elif "does not contain any stream" in low:
-        why = f"Video KHÔNG CÓ TIẾNG nên không tách được audio. ({why})"
-    return (False, why)
+        line = (line or "").strip()
+        if not line:
+            return
+        tail.append(line)
+        del tail[:-4]
+        low = line.lower()
+        terms = ("error", "invalid", "failed", "no space", "disk full",
+                 "permission denied", "does not contain", "not found", "rematrix")
+        if any(t in low for t in terms) and line not in causes and len(causes) < 6:
+            causes.append(line)
+
+    threads = str(min(4, max(1, (os.cpu_count() or 4) // 2)))
+    cmd = [settings.FFMPEG_PATH, "-hide_banner", "-y", "-threads", threads,
+           "-i", str(src), "-vn", "-ac", "1", "-ar", str(sr),
+           "-c:a", "pcm_s16le", str(staging)]
+    try:
+        # ĐỌC TRỌN video gốc -> xin chỗ ở CỬA CHỜ ĐỌC ĐĨA chung mọi tiến trình
+        # (ổ cứng cơ, xem app/core/cua_doc_dia.py). Ổ SSD: vào thẳng như cũ.
+        from app.core.cua_doc_dia import giu_cho as _giu_doc
+        with _giu_doc(str(src), bao=_bao_cho):
+            rc = _run(cmd, keep, uu_tien=UT_PHAN_TICH)
+        if rc == 0:
+            try:
+                with wave.open(str(staging), "rb") as wav:
+                    if wav.getnframes() <= 0 or wav.getframerate() != sr:
+                        raise ValueError("audio rỗng hoặc sai tần số")
+                staging.replace(target)
+                return True, ""
+            except (OSError, EOFError, wave.Error, ValueError) as error:
+                return False, f"Không lưu được audio hoàn chỉnh: {error}"
+        why = _gom_log(causes, tail) or f"ffmpeg trả mã {rc}"
+        low = why.lower()
+        if "no space" in low or "disk full" in low:
+            why = "Ổ đĩa hết chỗ khi ghi audio tạm; cần dọn dung lượng. " + why
+        elif "does not contain any stream" in low:
+            why = "Video không có luồng âm thanh. " + why
+        elif any(t in low for t in ("error submitting packet", "invalid band", "rematrix")):
+            why = ("Luồng âm thanh trong video có dữ liệu lỗi, không tách được đầy đủ. "
+                   "Giữ nguyên video gốc; tải lại nguồn hoặc dùng bản âm thanh tốt. " + why)
+        return False, why
+    finally:
+        # Only our private staging file is disposable; never publish partial audio.
+        try:
+            staging.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 # ---- NGÂN SÁCH CPU TOÀN CỤC cho encode ----
@@ -690,7 +778,12 @@ def _max_encode_jobs() -> int:
         from app.queue.worker import active_pool
         pool = active_pool()
         if pool is not None:
-            return max(1, int(pool.max_cpu))
+            # CHIA THEO SỐ LỆNH THỰC SỰ CHẠY CÙNG LÚC (26/10/2026). Bản cũ chia
+            # cho "Luồng cắt": anh Hùng để 5 nhưng cửa chờ chỉ cho 3 lệnh ffmpeg
+            # chạy (máy 24 luồng + NVENC) -> mỗi lệnh chỉ được 14//5 = 2 luồng
+            # lọc hình, 3 lệnh dùng 6/24 luồng, máy bỏ không phần lớn trong khi
+            # bộ lọc (khung cong, mờ nền, phụ đề) là phần chậm nhất của Part.
+            return max(1, min(int(pool.max_cpu), so_ffmpeg_song_song()))
     except Exception:  # noqa: BLE001 - không có pool (subprocess/test) -> mặc định
         pass
     return 2
@@ -735,6 +828,77 @@ def decode_threads() -> int:
     return max(1, min(2 if settings.ECO_MODE else 4, cores))
 
 
+# NÉN HIỆU QUẢ HƠN cho NVENC (26/10/2026, anh Hùng: "hình vẫn nét nguyên bản
+# mà dung lượng nén vào"): cùng mức chất lượng CQ, các núm dưới đây giúp
+# encoder phân bổ bit khôn hơn -> file NHỎ HƠN ở cùng độ nét (hoặc NÉT HƠN ở
+# cùng trần bitrate):
+#   -tune hq            : chế độ chất lượng cao của NVENC
+#   -rc-lookahead 20    : nhìn trước 20 khung để chia bit theo cảnh
+#   -spatial-aq / -temporal-aq : dồn bit vào vùng mắt dễ thấy (mặt, chữ),
+#                         bớt ở vùng nhiễu/mờ — đúng loại nền mờ của mẫu
+#   -bf 3 -b_ref_mode middle   : khung B làm tham chiếu (Turing/Ampere trở lên)
+# Card/driver CŨ có thể từ chối vài núm -> THỬ THẬT 1 lần (encode 8 khung
+# nhỏ) theo 3 bậc, bậc đầu chạy được thì dùng; không bậc nào chạy thì dùng
+# đúng lệnh cũ. Không bao giờ vì núm này mà rơi về CPU.
+_NVENC_HQ_TANG = (
+    ["-tune", "hq", "-rc-lookahead", "20", "-spatial-aq", "1",
+     "-temporal-aq", "1", "-bf", "3", "-b_ref_mode", "middle"],
+    ["-rc-lookahead", "20", "-spatial-aq", "1", "-bf", "3"],
+    [],
+)
+_NVENC_HQ_CACHE: Optional[list] = None
+_NVENC_HQ_LOCK = _threading.Lock()
+
+
+def _nvenc_hq_args() -> list[str]:
+    """Núm nén hiệu quả cho NVENC mà MÁY NÀY chạy được (thử thật, nhớ trong
+    phiên). Tắt bằng EXPORT_NVENC_HQ=0."""
+    global _NVENC_HQ_CACHE
+    if not getattr(settings, "EXPORT_NVENC_HQ", True):
+        return []
+    if _NVENC_HQ_CACHE is not None:
+        return list(_NVENC_HQ_CACHE)
+    with _NVENC_HQ_LOCK:
+        if _NVENC_HQ_CACHE is not None:
+            return list(_NVENC_HQ_CACHE)
+        chon: list = []
+        for tang in _NVENC_HQ_TANG[:-1]:
+            cmd = [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "testsrc2=size=320x256:rate=30",
+                   "-frames:v", "8", "-pix_fmt", "yuv420p",
+                   "-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr",
+                   "-cq", "19", "-b:v", "0", "-maxrate", "12M",
+                   "-bufsize", "24M", *tang, "-profile:v", "high",
+                   "-f", "null", "-"]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
+                                   creationflags=_CREATE_NO_WINDOW, timeout=25)
+                if r.returncode == 0:
+                    chon = list(tang)
+                    break
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                break
+        _NVENC_HQ_CACHE = chon
+        return list(chon)
+
+
+def _tran_bitrate() -> list[str]:
+    """`-maxrate/-bufsize` theo settings.EXPORT_MAX_MBPS (0 = không trần).
+
+    Vẫn là CHẾ ĐỘ CHẤT LƯỢNG (cq/crf giữ nguyên) — trần chỉ cắt đỉnh ở cảnh
+    nặng (nền mờ chuyển động + nhiễu), cảnh thường encoder vốn dùng ít hơn
+    trần nên KHÔNG đổi gì. bufsize = 2x trần: cho phép dồn bit cho cảnh khó
+    ngắn mà không vỡ hình."""
+    try:
+        cap = int(getattr(settings, "EXPORT_MAX_MBPS", 12) or 0)
+    except (TypeError, ValueError):
+        cap = 12
+    if cap <= 0:
+        return []
+    return ["-maxrate", f"{cap}M", "-bufsize", f"{cap * 2}M"]
+
+
 def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     """Tham số encode theo encoder + mức chất lượng."""
     if encoder == "h264_nvenc":
@@ -746,7 +910,13 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
         # (concat+blur+overlay+đốt .ass): thêm `-threads 4` hạ 58 -> 46 luồng,
         # wall 1,00x, và log ffmpeg VẪN ghi `h264_nvenc` -> KHÔNG rớt về CPU
         # (đúng điều lần thử trước nghi mà không ai ghi log lại để biết).
+        # có trần: thêm `-b:v 0` (công thức chuẩn "CQ + trần VBV" của NVENC:
+        # để CQ quyết định, maxrate chỉ chặn đỉnh). Không trần: GIỮ NGUYÊN
+        # đúng lệnh cũ từng byte.
+        _tran = _tran_bitrate()
         return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq,
+                *(["-b:v", "0", *_tran] if _tran else []),
+                *_nvenc_hq_args(),
                 "-pix_fmt", "yuv420p", "-profile:v", "high",
                 "-threads", str(encode_threads())]
     # 'veryfast' nhanh hơn 'medium' nhiều lần, chất lượng vẫn tốt cho clip ngắn
@@ -779,6 +949,7 @@ def _enc_args(encoder: str, quality: str = "high") -> list[str]:
     # GIỚI HẠN thread mỗi ffmpeg theo NGÂN SÁCH TOÀN CỤC (xem encode_threads):
     # mặc định libx264 ăn HẾT luồng CPU -> 2-3 job song song là máy đơ 100%.
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", crf,
+            *_tran_bitrate(),
             "-pix_fmt", "yuv420p", "-profile:v", "high",
             "-threads", str(encode_threads())]
 
@@ -1164,6 +1335,10 @@ _SFX_LAST_PICK: list = []
 #: mà nghe mãi 1 tiếng. Nay nhớ N file gần nhất theo TỪNG NHÓM.
 _SFX_GAN_DAY: dict = {}
 _SFX_NHO = 6
+#: HỌ tiếng đã dùng gần đây theo TỪNG NHÓM (xuyên các Part). Nhớ 3 họ: nhóm
+#: hẹp (sad/drumroll ~4-5 họ) mà nhớ nhiều hơn là tự khoá hết lựa chọn.
+_SFX_HO_GAN_DAY: dict = {}
+_SFX_HO_NHO = 3
 
 
 def _sfx_library() -> dict:
@@ -1239,6 +1414,7 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None,
     lib = _sfx_library()
     out: list = []
     last_by_cat: dict = {}
+    ho_da_dung: set = set()       # HỌ tiếng đã dùng trong CLIP này
     for _i, cat in enumerate(cats):
         cat = cat if cat in SFX_CATEGORIES else "transition"
         files = lib.get(cat) or []
@@ -1295,6 +1471,27 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None,
             # ÍT NHẤT 3 file để còn ngẫu nhiên được (anh Hùng cần 3 Part không
             # kêu giống hệt nhau) — nhóm nào sáng đều thì lấy đúng 3 sáng nhất.
             files = _sang if len(_sang) >= 3 else _sx[:3]
+            # VÀ ÍT NHẤT 3 **HỌ** (02/11/2026): đo nhật ký thật, bộ lọc này
+            # luôn ra 3-5 file `impactGlass_light_00x` = MỘT tiếng đổi số thứ
+            # tự -> 28% mọi lượt chèn là đúng một tiếng "keng". Thiếu họ thì
+            # nới dần sang file sáng kế tiếp (vẫn trong nhóm, vẫn qua lọc mức).
+            if not _sfx_chon_tat():
+                from app.core.sfx_chon import ho_tieng as _ho
+                # SÀN TUYỆT ĐỐI thay cho "cách file sáng nhất 10 dB": kho mới có
+                # file RẤT sáng (-8 dB) làm cửa tương đối co nhóm impact còn 2
+                # họ (phát lại 150 clip: 1 họ = 15,5% mọi tiếng). Số nghe được
+                # là số TUYỆT ĐỐI: A/B 09/08 đo độ sáng -32,6 dB vẫn nổi +4,2 dB
+                # trên giọng (RÕ >= 3) -> sàn `_SFX_SANG_SAN`.
+                _san = [f for f in _sx if do_sang_sfx(f) >= _SFX_SANG_SAN]
+                if len({_ho(f) for f in _san}) >= 3:
+                    files = _san
+                _hs = {_ho(f) for f in files}
+                for f in _sx:
+                    if len(_hs) >= 3:
+                        break
+                    if f not in files and _ho(f) not in _hs:
+                        files = files + [f]
+                        _hs.add(_ho(f))
         if not files:
             out.append((cat, None))
             continue
@@ -1305,11 +1502,28 @@ def _pick_sfx_by_category(cats: list, seed: Optional[int] = None,
         choices = [f for f in files if f != prev and f not in _gd]
         if not choices:
             choices = [f for f in files if f != prev] or files
+        # CHỐNG LẶP THEO **HỌ** (02/11/2026): `_v2`/`_003` là CÙNG một tiếng,
+        # tai nghe ra ngay. Đo nhật ký thật: 49% Part có >= 2 tiếng cùng họ.
+        # Ưu tiên họ CHƯA dùng trong clip này VÀ chưa dùng ở các Part gần đây;
+        # hết thì nới dần — không bao giờ để rỗng.
+        if not _sfx_chon_tat():
+            from app.core.sfx_chon import ho_tieng as _ho
+            _hgd = _SFX_HO_GAN_DAY.get(cat) or []
+            _c1 = [f for f in choices
+                   if _ho(f) not in ho_da_dung and _ho(f) not in _hgd]
+            _c2 = [f for f in choices if _ho(f) not in ho_da_dung]
+            choices = _c1 or _c2 or choices
         pick = rng.choice(choices)
         last_by_cat[cat] = pick
         _q = _SFX_GAN_DAY.setdefault(cat, [])
         _q.append(pick)
         del _q[:-_SFX_NHO]
+        if not _sfx_chon_tat():
+            from app.core.sfx_chon import ho_tieng as _ho
+            ho_da_dung.add(_ho(pick))
+            _qh = _SFX_HO_GAN_DAY.setdefault(cat, [])
+            _qh.append(_ho(pick))
+            del _qh[:-_SFX_HO_NHO]
         out.append((cat, pick))
     return out
 
@@ -1478,6 +1692,10 @@ _SFX_LOA_HUT_MAX = -6.0
 #: phía +9,6. Cửa 8 dB còn 5 file (bắt đầu lặp tiếng), cửa 15 dB nhận lại
 #: 16/20 = gần như không lọc.
 _SFX_SANG_DU = 10.0
+#: Sàn độ sáng TUYỆT ĐỐI cho mốc đang nói (đường chọn mới 02/11/2026). Xem chỗ
+#: dùng trong `_pick_sfx_by_category`. -33 = sát dưới mốc đã đo -32,6 dB (+4,2
+#: dB trên giọng = RÕ); cổng 44 đo lại độ nổi trên video thật.
+_SFX_SANG_SAN = -33.0
 #: DÓNG CÚ VA VÀO ĐÚNG MỐC: đẩy tiếng động sớm lên đúng bằng "giây xảy ra
 #: đỉnh" để chỗ TO NHẤT của nó rơi vào đúng giây điểm nhấn. Kho có 18/184 file
 #: vào chậm hơn mức này (trung vị 0,10 s · bpv90 0,35 s · max 0,60 s) — số đó
@@ -1578,6 +1796,19 @@ def _la_hook_first(segs: list) -> bool:
                 and float(segs[0][0]) > float(segs[1][0]) + 0.05)
     except (TypeError, ValueError, IndexError):
         return False
+
+
+#: Mốc tiếng động BỊ BỎ ở lượt xuất gần nhất + lý do (cho test / nhật ký).
+_SFX_BO_GAN_NHAT: list = []
+
+
+def _sfx_chon_tat() -> bool:
+    """`BQ_SFX_CU=1` -> đường chọn mốc CŨ (đo A/B, gỡ rối máy user)."""
+    try:
+        from app.core import sfx_chon as _SC
+        return _SC.tat()
+    except Exception:  # noqa: BLE001 — module hỏng thì lùi đường cũ, không nổ
+        return True
 
 
 def loai_sfx_theo_hieu_ung(khoa: str) -> str:
@@ -1768,6 +1999,10 @@ def _bpv(xs: list, q: float) -> float:
     return y[min(len(y) - 1, int(len(y) * q))] if y else 0.0
 
 
+#: mức ghi cho cửa sổ IM TUYỆT ĐỐI trong đường bao (giữ vị trí thời gian)
+_SAN_IM = -120.0
+
+
 def _do_muc_clip(dau_vao: list) -> Optional[dict]:
     """MỌI số đo mức của tiếng nguồn trên ĐÚNG timeline sắp xuất — MỘT lượt.
 
@@ -1803,14 +2038,24 @@ def _do_muc_clip(dau_vao: list) -> Optional[dict]:
         return None
     vd = _doc_volumedetect(r.stderr or "")
     bao = []
+    # ĐƯỜNG BAO THEO ĐÚNG VỊ TRÍ THỜI GIAN. LỖI CŨ (bắt được 02/11/2026 bằng
+    # cổng 106): cửa sổ IM TUYỆT ĐỐI (-inf) bị BỎ khỏi danh sách -> mọi cửa sổ
+    # sau đó LỆCH thời gian -> `muc_tai_moc`/`la_moc_dang_noi` đọc mức của
+    # CHỖ KHÁC (đo: nguồn có 3 đoạn im, mức "lúc không nói" ra đúng bằng mức
+    # lời). Nay cửa sổ im ghi `_SAN_IM` để giữ vị trí; các bách phân vị
+    # (nền/lời) vẫn tính trên cửa sổ CÓ tiếng y như cũ.
+    bao_vt = []
     for ln in (r.stdout or "").splitlines():
         if "RMS_level=" in ln:
             try:
                 v = float(ln.split("=", 1)[1])
             except (ValueError, IndexError):
-                continue
+                v = float("-inf")
             if v > -200.0:              # -inf = cửa sổ im lặng tuyệt đối
                 bao.append(v)
+                bao_vt.append(v)
+            else:
+                bao_vt.append(_SAN_IM)
     if not bao and vd is None:
         return None
     if not bao:
@@ -1825,7 +2070,7 @@ def _do_muc_clip(dau_vao: list) -> Optional[dict]:
             # `asetnsamples=n=400` sau `aresample=8000` = đúng 50 ms/cửa sổ,
             # cùng thước với cổng đo. Không tốn thêm một lượt ffmpeg nào: số này
             # vốn đã dựng xong ở trên, bản cũ chỉ vứt đi sau khi lấy bách phân vị.
-            "bao": bao, "buoc": 400.0 / 8000.0}
+            "bao": bao_vt, "buoc": 400.0 / 8000.0}
 
 
 def muc_tai_moc(bao: list, buoc: float, giay: float,
@@ -1862,7 +2107,10 @@ def nen_tai_moc(bao: list, buoc: float, giay: float,
     i1 = min(len(bao), int(round((float(giay) + rong / 2.0) / buoc)) + 1)
     if i1 <= i0:
         return None
-    return _bpv(list(bao[i0:i1]), 0.20)
+    # cửa sổ IM TUYỆT ĐỐI (`_SAN_IM`) không tính vào nền — giữ đúng nghĩa cũ
+    # (bản trước đường bao vốn không có chúng); chỉ còn im -> None.
+    co = [v for v in bao[i0:i1] if v > _SAN_IM]
+    return _bpv(co, 0.20) if co else None
 
 
 def la_moc_dang_noi(bao: list, buoc: float, giay: float) -> bool:
@@ -2231,6 +2479,102 @@ def _gom_log(loi: list, tail: list) -> str:
     return "\n".join(ra[:10])
 
 
+#: GIẢI MÃ BẰNG GPU (`-hwaccel cuda`, KHÔNG `-hwaccel_output_format` -> khung
+#: tự tải về RAM, mọi bộ lọc CPU chạy y như cũ). Mặc định "auto": chỉ bật khi
+#: `_nvdec_works()` chứng minh GPU cho ĐÚNG MÀU như CPU qua chuỗi nền mờ (xem
+#: `_nvdec_dung_mau` — khung nv12 + boxblur ra nền XANH LÈ, 30/10/2026).
+#: Lỗi lần đầu -> tắt cho cả phiên.
+_HWACCEL_HONG = False
+
+
+_NVDEC_CACHE: Optional[bool] = None
+_NVDEC_LOCK = _threading.Lock()
+
+
+def _nvdec_works() -> bool:
+    """Thử THẬT giải mã GPU 1 lần/phiên: tạo file H.264 nhỏ rồi giải bằng
+    `-hwaccel cuda`. ffmpeg lỗi khởi tạo hwaccel vẫn có thể trả mã 0 (tự lùi
+    về CPU) nên coi BẤT KỲ dòng lỗi nào là KHÔNG dùng được."""
+    global _NVDEC_CACHE
+    if _NVDEC_CACHE is not None:
+        return _NVDEC_CACHE
+    with _NVDEC_LOCK:
+        if _NVDEC_CACHE is not None:
+            return _NVDEC_CACHE
+        ok = False
+        import tempfile
+        d = tempfile.mkdtemp(prefix="bq_nvdec_")
+        f = os.path.join(d, "t.mp4")
+        try:
+            r = subprocess.run(
+                [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
+                 "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30",
+                 "-frames:v", "30", "-pix_fmt", "yuv420p", "-c:v", "libx264",
+                 "-preset", "ultrafast", f],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", creationflags=_CREATE_NO_WINDOW, timeout=30)
+            if r.returncode == 0 and os.path.exists(f):
+                ok = _nvdec_dung_mau(f)
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            ok = False
+        finally:
+            try:
+                import shutil as _sh
+                _sh.rmtree(d, ignore_errors=True)
+            except Exception:  # noqa: BLE001
+                pass
+        _NVDEC_CACHE = ok
+        return ok
+
+
+#: Chuỗi DẢI NỀN mờ (export_canvas_clip). ĐO 30/10/2026: ffmpeg đóng gói giải
+#: mã `-hwaccel cuda` ra khung nv12, và `boxblur` làm mờ khung nv12 HỎNG MÀU
+#: nửa phải (R=0, G~200, B=0 = xanh lè) — rc=0, không một dòng lỗi. Bị cả
+#: h264/vp9/av1, 1080p lẫn 4K: 90/164 Part 27-30/10 có nền xanh. Bỏ boxblur
+#: khỏi chuỗi thử thì GPU vẫn ra đúng màu -> bài thử PHẢI có boxblur, và thử
+#: "chạy được không" như bản cũ KHÔNG bắt được; phải SO MÀU với giải mã CPU.
+_NVDEC_CHUOI_THU = ("scale=270:480:force_original_aspect_ratio=increase,"
+                    "crop=270:480,boxblur=5:1,format=rgb24")
+
+
+def _nvdec_dung_mau(f: str) -> bool:
+    """Giải 1 khung bằng CPU và bằng GPU qua đúng phép co của nền rồi SO MÀU.
+    Lệch trung bình > 6/255 (hoặc lỗi bất kỳ) -> KHÔNG dùng giải mã GPU."""
+    import numpy as np
+    out = []
+    for hw in ([], ["-hwaccel", "cuda"]):
+        r = subprocess.run(
+            [settings.FFMPEG_PATH, "-hide_banner", "-loglevel", "error", *hw,
+             "-ss", "0.5", "-i", f, "-frames:v", "1", "-vf", _NVDEC_CHUOI_THU,
+             "-f", "rawvideo", "-"],
+            capture_output=True, creationflags=_CREATE_NO_WINDOW, timeout=30)
+        if r.returncode != 0 or (r.stderr or b"").strip() \
+                or len(r.stdout) != 270 * 480 * 3:
+            return False
+        out.append(np.frombuffer(r.stdout, np.uint8).astype(np.int16))
+    lech = float(np.abs(out[0] - out[1]).mean())
+    if lech > 6.0:
+        print(f"[hwaccel] giải mã GPU LỆCH MÀU {lech:.1f}/255 so với CPU -> dùng CPU")
+        return False
+    return True
+
+
+def _hwaccel_vao() -> list:
+    """Tham số đặt TRƯỚC `-i` của đầu vào HÌNH chính; [] nếu tắt/đã hỏng."""
+    if _HWACCEL_HONG:
+        return []
+    try:
+        bat = getattr(settings, "HWACCEL_DECODE", "auto")
+    except Exception:  # noqa: BLE001
+        bat = False
+    if bat == "auto" or (isinstance(bat, str) and bat.lower() == "auto"):
+        try:
+            bat = detect_encoder() == "h264_nvenc" and _nvdec_works()
+        except Exception:  # noqa: BLE001
+            bat = False
+    return ["-hwaccel", "cuda"] if bool(bat) else []
+
+
 def _run_with_fallback(build_cmd, encoder: str, total: float,
                        on_progress, what: str, dst=None) -> None:
     """Chạy ffmpeg với encoder; nếu NVENC lỗi -> thử libx264. Ném lỗi kèm log.
@@ -2240,7 +2584,11 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
     """
     encoders_to_try = [encoder] if encoder == "libx264" else [encoder, "libx264"]
     last_log = ""
-    for enc in encoders_to_try:
+    da_thu_lai_nvenc = False
+    k = 0
+    while k < len(encoders_to_try):
+        enc = encoders_to_try[k]
+        k += 1
         # Đang đóng app (terminate_all_children đã giết ffmpeg NVENC) -> KHÔNG
         # được spawn ffmpeg libx264 mới chạy mồ côi sau khi app tắt.
         if _SHUTDOWN.is_set():
@@ -2269,12 +2617,21 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
                     pass
 
         try:
-            code = _run(build_cmd(enc), _line)
+            _cmd = build_cmd(enc)
+            code = _run(_cmd, _line)
         except Exception:          # CanceledError (bấm Hủy) hoặc lỗi khác
             _cleanup_dst(dst)
             raise
         if code == 0 and not dau["rong"]:
             return
+        if code != 0 and "-hwaccel" in _cmd:
+            # GIẢI MÃ GPU (tuỳ chọn, mặc định TẮT) hỏng -> tắt cho CẢ PHIÊN rồi
+            # chạy lại ĐÚNG encoder này bằng giải mã CPU (đường cũ y nguyên).
+            global _HWACCEL_HONG
+            _HWACCEL_HONG = True
+            print(f"[hwaccel] giải mã GPU lỗi khi {what} -> tắt, giải mã CPU")
+            encoders_to_try.insert(k, enc)
+            continue
         if dau["rong"]:
             # Đổi encoder KHÔNG chữa được: rỗng là vì mốc cắt nằm ngoài phim.
             _cleanup_dst(dst)
@@ -2291,6 +2648,27 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
             # 7 ngày -> "xuất chậm hẳn + máy đơ dù bật tiết kiệm" trong khi
             # GPU hoàn toàn khỏe. (vẫn THỬ libx264 cho lượt này — vô hại.)
             full = "\n".join(tail)
+            if _looks_nvenc_transient(full):
+                # HẾT PHIÊN/VRAM TẠM THỜI (26/10/2026): chờ chút rồi thử NVENC
+                # LẠI ĐÚNG 1 LẦN; vẫn hỏng thì lượt NÀY đi libx264 nhưng KHÔNG
+                # hạ cả phiên về CPU và KHÔNG ghi cache "NVENC hỏng".
+                if not da_thu_lai_nvenc and not _SHUTDOWN.is_set():
+                    da_thu_lai_nvenc = True
+                    print(f"[nvenc] lỗi tạm thời (hết phiên/VRAM) khi {what} "
+                          f"-> chờ {_NVENC_CHO_THU_LAI:g}s rồi thử NVENC lại")
+                    try:
+                        _cho = 0.0
+                        while _cho < _NVENC_CHO_THU_LAI:
+                            _raise_if_job_canceled()
+                            if _SHUTDOWN.wait(0.25):
+                                break
+                            _cho += 0.25
+                        _raise_if_job_canceled()
+                    except Exception:      # CanceledError: dọn rồi ném tiếp
+                        _cleanup_dst(dst)
+                        raise
+                    encoders_to_try.insert(k, "h264_nvenc")
+                continue
             if _looks_nvenc_failure(full):
                 global _ENCODER_CACHE, _NVENC_NOTE
                 _ENCODER_CACHE = "libx264"     # phiên này khỏi thử NVENC nữa
@@ -2302,6 +2680,24 @@ def _run_with_fallback(build_cmd, encoder: str, total: float,
                     _save_nvenc_cache(False, _NVENC_NOTE)
     _cleanup_dst(dst)
     raise RuntimeError(f"ffmpeg không {what}. Log cuối:\n" + (last_log or "(trống)"))
+
+
+def loc_do_sang(do_sang) -> str:
+    """Bộ lọc NÂNG SÁNG NHẸ của mẫu (`do_sang` = % , 0 = không đụng gì).
+
+    31/10/2026 anh Hùng: "video tối quá, nâng sáng tí thôi không được sáng
+    quá". Dùng GAMMA (`eq=gamma=1+x/100`) chứ không cộng sáng đều: gamma nâng
+    vùng tối/giữa, GIỮ NGUYÊN điểm trắng và điểm đen -> không cháy sáng, không
+    bạc màu. Kẹp 0..20 (trần 1,20) để không ai lỡ tay làm video loá. 0 -> chuỗi
+    rỗng -> lệnh ffmpeg của mọi mẫu khác GIỐNG TỪNG KÝ TỰ như cũ."""
+    try:
+        v = float(do_sang or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not (v == v) or v <= 0:          # NaN / âm / 0 -> không đụng
+        return ""
+    v = min(20.0, v)
+    return f"eq=gamma={1 + v / 100:.3f}"
 
 
 def export_vertical_clip(
@@ -2321,6 +2717,7 @@ def export_vertical_clip(
     overlay_png: Optional[str] = None,
     flip_h: bool = False,
     on_progress: Optional[Callable[[float], None]] = None,
+    do_sang: float = 0.0,
 ) -> bool:
     """
     Cắt [start,end] -> đặt khung 9:16 (mode face/center/fit_blur/manual + zoom hoặc
@@ -2350,8 +2747,10 @@ def export_vertical_clip(
     # hình soi gương, chữ overlay chồng sau nên KHÔNG ngược.
     vin = "0:v"
     pre = ""
-    if flip_h:
-        pre = "[0:v]hflip[vflip];"
+    _sang = loc_do_sang(do_sang)
+    if flip_h or _sang:
+        _lc = ",".join(x for x in ("hflip" if flip_h else "", _sang) if x)
+        pre = f"[0:v]{_lc}[vflip];"
         vin = "vflip"
     base = reframe_chain(mode, cx, out_w, out_h, zoom, vin, base_out, "0",
                          crop_rect=crop_rect)
@@ -2394,6 +2793,7 @@ def export_stitched_clip(
     overlay_png: Optional[str] = None,
     flip_h: bool = False,
     on_progress: Optional[Callable[[float], None]] = None,
+    do_sang: float = 0.0,
 ) -> bool:
     """
     GHÉP nhiều đoạn rời rạc thành 1 video dọc 9:16, trong DUY NHẤT 1 lệnh ffmpeg
@@ -2427,7 +2827,7 @@ def export_stitched_clip(
                    "-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
         # LẬT GƯƠNG: hflip TRƯỚC reframe/concat/overlay -> chỉ hình soi
         # gương, overlay chữ + phụ đề chồng sau nên KHÔNG ngược.
-        flip_f = "hflip," if flip_h else ""
+        flip_f = ("hflip," if flip_h else "") + (loc_do_sang(do_sang) + "," if loc_do_sang(do_sang) else "")
         parts.append(f"[{i}:v]{flip_f}setpts=PTS-STARTPTS[pv{i}]")
         parts.append(reframe_chain(mode, cx, out_w, out_h, zoom,
                                    f"pv{i}", f"v{i}", str(i)))
@@ -2864,6 +3264,7 @@ def _tach_va_noi_manh(src, segs: list, xf: list, bu: list, encoder: str,
 
         def _b(enc: str, _s=ss, _n=nb, _p=than) -> list:
             c = [settings.FFMPEG_PATH, "-y", "-threads", str(decode_threads()),
+                 *_hwaccel_vao(),
                  "-ss", f"{_s:.3f}", "-t", f"{_n / fps + 1.0 / fps:.6f}",
                  "-i", str(src)]
             c += _enc_mezz(enc) + ["-r", f"{fps:g}", "-fps_mode:v", "cfr",
@@ -2944,7 +3345,8 @@ def _tach_va_noi_manh(src, segs: list, xf: list, bu: list, encoder: str,
 def _extract_segments_to_temp(src, segs: list, encoder: str,
                               on_progress=None,
                               chuyen_canh: Optional[list] = None,
-                              temps_out: Optional[list] = None
+                              temps_out: Optional[list] = None,
+                              info: Optional["MediaInfo"] = None
                               ) -> tuple[str, list]:
     """PHA 1 của ghép nhiều đoạn: TÁCH từng đoạn ra FILE TẠM (.mkv, mezzanine
     chất lượng cao) rồi trả (đường_dẫn_file_danh_sách_concat, [file_tạm]).
@@ -2980,7 +3382,9 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     cảnh làm nó nặng thêm vì pha 1.5 là một chỗ ném lỗi MỚI. Đúng loại rác
     1,71 GB phải dọn tay hôm 31/07 khi ổ C đầy 100%."""
     import tempfile
-    info = probe(src)
+    # `info`: caller (export_canvas_clip) ĐÃ probe nguồn — dùng lại, khỏi chạy
+    # ffprobe lần 2 trên cùng file (26/10/2026). Không truyền -> probe như cũ.
+    info = info if info is not None else probe(src)
     fps = info.fps if 10.0 <= (info.fps or 0) <= 120.0 else 30.0
     tdir = tempfile.gettempdir()
     # TÊN CÓ ĐÓNG DẤU PID (`_tag_moi`) -> lúc mở app phân biệt được mảnh của lượt
@@ -3070,6 +3474,7 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
             # `decode_threads`): mức 4 giữ nguyên wall (0,99x) mà hạ 61 -> 49
             # luồng; mức 1 mới chậm thật (nvenc +30%, libx264 +155%).
             c = [settings.FFMPEG_PATH, "-y", "-threads", str(decode_threads()),
+                 *_hwaccel_vao(),
                  "-ss", f"{_s:.3f}", "-t", f"{_e - _s:.3f}", "-i", str(src)]
             if enc == "h264_nvenc":
                 c += ["-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr",
@@ -3164,6 +3569,49 @@ def _extract_segments_to_temp(src, segs: list, encoder: str,
     return lst, temps
 
 
+def _van_tay_file(p, doc: int = 1 << 20) -> tuple:
+    """Vân tay RẺ của 1 mảnh pha 1: (cỡ, băm 1 MB GIỮA + 1 MB CUỐI).
+
+    BỎ 4 KB ĐẦU là cố ý: đo 2 lần tách cùng một đoạn, file .mkv chỉ khác
+    nhau ở ~60 byte đầu (UID + ngày giờ do muxer ghi) — băm cả phần đầu thì
+    không bao giờ trùng. Phần còn lại trùng từng byte (x264 cùng tham số ra
+    cùng dòng bit), đổi encoder (nvenc <-> libx264) là đổi cỡ + dữ liệu."""
+    import hashlib
+    co = os.stat(p).st_size
+    h = hashlib.blake2b(digest_size=16)
+    with open(p, "rb") as f:
+        for vt in (max(4096, co // 2), max(4096, co - doc)):
+            f.seek(min(vt, co))
+            h.update(f.read(doc))
+    return (co, h.hexdigest())
+
+
+def _khoa_nho_nhip(src, segs: list, seg_list: str = "") -> Optional[tuple]:
+    """Khoá NHỚ cho `hieu_ung.do_nhip` (xem `_NHIP_NHO`). None = không nhớ.
+
+    Một đoạn: đo thẳng trên NGUỒN -> khoá = nguồn (đường dẫn, mtime, cỡ) +
+    đoạn. Nhiều đoạn: đo trên MẢNH pha 1 (mezzanine, có thể ra từ nvenc HOẶC
+    libx264 lùi, số đo lệch nhau chút ít) -> thêm vân tay TỪNG mảnh để chỉ
+    trùng khi mảnh trùng (cùng khung = cùng số đo). Lỗi gì cũng None."""
+    try:
+        st = os.stat(src)
+        khoa = ("v1", os.path.abspath(str(src)), st.st_mtime_ns, st.st_size,
+                tuple((round(float(s), 3), round(float(e), 3)) for s, e in segs))
+        if seg_list:
+            manh = []
+            with open(seg_list, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if ln.startswith("file '") and ln.endswith("'"):
+                        manh.append(_van_tay_file(ln[6:-1]))
+            if not manh:
+                return None
+            khoa += (tuple(manh),)
+        return khoa
+    except Exception:  # noqa: BLE001 — không dựng được khoá thì đo như cũ
+        return None
+
+
 def _cc_cach_ten(cach: str) -> str:
     """Nhãn TIẾNG VIỆT của cách che (cho nhật ký). KHÔNG emoji."""
     return "phủ khối" if str(cach or "").strip().lower() == "khoi" else "làm mờ"
@@ -3229,6 +3677,10 @@ def export_canvas_clip(
     pitch: float = 1.0,                 # đổi giọng (1=gốc, >1 cao/nữ, <1 trầm/nam)
     bgm_path: Optional[str] = None,     # NHẠC NỀN: file nhạc trộn dưới tiếng gốc
     bgm_vol: float = 0.15,              # âm lượng nhạc nền (0..1)
+    # NHẠC NỀN TỰ CHỌN (02/11/2026, `app/core/nhac_tu_dong.py`): dict
+    # {"lufs": mức file kho, "cau": [(đầu, cuối, ...)] câu nói trên timeline
+    # ĐẦU RA, "log": dict caller nhận lại quyết định}. None = đường cũ y nguyên.
+    bgm_tu_dong: Optional[dict] = None,
     story_mix: bool = False,           # fade/duck nhạc riêng cho dựng chuyện
     story_beats: Optional[list] = None, # v15: đúng điểm nhấn đã duyệt, [] = không tiếng động
     edit_plan: Optional[dict] = None,
@@ -3267,6 +3719,7 @@ def export_canvas_clip(
                                         # đúng loại (recap climax -> impact, kết ->
                                         # reveal, thường -> transition). None/thiếu
                                         # -> transition cho mọi điểm nối (như cũ).
+    do_sang: float = 0.0,               # NÂNG SÁNG NHẸ của mẫu (%, gamma) — `loc_do_sang`
     flip_h: bool = False,               # LẬT GƯƠNG ngang (né content-ID khi
                                         # reup). Áp hflip lên KHỐI video content
                                         # TRƯỚC overlay chữ/phụ đề -> hình soi
@@ -3388,6 +3841,17 @@ def export_canvas_clip(
     segs = _cat_theo_do_dai_that(segs, float(_info.duration or 0.0), src)
     multi = len(segs) > 1
     total = sum(e - s for s, e in segs)
+    # TIẾNG NGẮN HƠN HÌNH (file tải/ghép lỗi — xem `tieng_hut`): đoạn nằm
+    # ngoài phần có tiếng thì [0:a] RỖNG -> ffmpeg chết "NaN for volume".
+    # Đoạn đơn phủ MỘT PHẦN -> đệm im lặng tới đủ độ dài (`_dem_tieng`); còn
+    # lại (hết tiếng / ghép nhiều đoạn có đoạn thiếu) -> xuất như video câm.
+    _dem_tieng = 0.0
+    _tieng_den = float(_info.audio_duration or 0.0)
+    if has_audio and 0.0 < _tieng_den < max(e for _s, e in segs) - 0.05:
+        if not multi and segs[0][0] < _tieng_den - 0.5:
+            _dem_tieng = total
+        else:
+            has_audio = False
     _edit_events = []
     if edit_plan is not None:
         from app.core.editorial import timeline
@@ -3417,11 +3881,13 @@ def export_canvas_clip(
                     _ew, _eh = _pw, _ph
             except (ValueError, IndexError):
                 pass
-        video_rect = fit_src_video_rect(video_rect, _ew, _eh, out_w, out_h)
+        from app.core.template_backgrounds import decode as _design_decode, fit_rect as _design_fit, layer_settings as _design_ls
+        video_rect = (_design_fit(video_rect,_ew,_eh,out_w,out_h,_design_ls(bg)['cao']) if _design_decode(bg)[0]
+                      else fit_src_video_rect(video_rect, _ew, _eh, out_w, out_h))
     if edit_plan is not None and edit_plan.get('layout','template')!='template':
         from app.core.report_layout import geometry
         if out_h<=out_w:raise ValueError('Mẫu phóng sự cần khung dọc 9:16; đổi kích thước trong mẫu xuất.')
-        video_rect=geometry(_info.width,_info.height,out_w,out_h);bg='blur';overlay_png=None;ass_path=None
+        video_rect=geometry(_info.width,_info.height,out_w,out_h,edit_plan);bg='blur';overlay_png=None;ass_path=None
     cx, cy, sw = video_rect
     vw = max(2, int(round(sw * out_w)) // 2 * 2)
     use_png = bool(overlay_png and os.path.exists(overlay_png))
@@ -3561,7 +4027,7 @@ def export_canvas_clip(
             _seg_list, _seg_temps = _extract_segments_to_temp(
                 src, segs,
                 encoder, lambda p: on_progress and on_progress(p * 0.35),
-                chuyen_canh=_xf, temps_out=_seg_temps)
+                chuyen_canh=_xf, temps_out=_seg_temps, info=_info)
         except Exception:
             _cleanup_paths(_seg_temps)
             raise
@@ -3583,7 +4049,8 @@ def export_canvas_clip(
     # hơn tiếng. Nền mờ/fill thì luồng vẫn là hình gốc nên giữ fps nguồn (mọi
     # mezzanine pha 1 đã ép CFR bằng đúng fps này).
     _hu_fps = _info.fps if 10.0 <= (_info.fps or 0) <= 120.0 else 30.0
-    if bg not in ("blur", "fill"):
+    from app.core.template_backgrounds import plain_base
+    if plain_base(bg) not in ("blur", "fill"):
         _hu_fps = 30.0
     # Timeline ĐẦU RA (sau speed) — CÙNG hệ quy chiếu duck_ranges/dim_ranges/
     # whoosh_offsets. LỖI 3: trước đây mốc được sinh trên timeline NỘI BỘ (chưa
@@ -3600,9 +4067,11 @@ def export_canvas_clip(
         # cần font khi máy thiếu font -> nếu để nó chọn rồi mới bỏ thì nhật ký
         # khoe hiệu ứng KHÔNG có trong file, và điểm nhấn đó mất trắng 1 suất.
         _font = _HU.font_mac_dinh(str(fonts_dir or ""))
+        from app.core.effects_config import parse as _parse_fx, allowed as _allowed_fx
+        _fx_level,_fx_keys=_parse_fx(hieu_ung)
         if isinstance(hieu_ung, (list, tuple)):
             _hu = [dict(x) for x in hieu_ung]
-        elif str(hieu_ung or "").strip().lower() in ("nhe", "vua", "manh"):
+        elif _fx_level in ("nhe", "vua", "manh") and _fx_keys != ():
             if multi and _seg_list:
                 _vao = ["-f", "concat", "-safe", "0", "-i", _seg_list]
             else:
@@ -3610,7 +4079,10 @@ def export_canvas_clip(
                 _vao = ["-ss", f"{_s0:.3f}", "-t", f"{_e0 - _s0:.3f}",
                         "-i", str(src)]
             _nl, _cd = _HU.do_nhip("", ffmpeg=settings.FFMPEG_PATH,
-                                   dau_vao=_vao)
+                                   dau_vao=_vao,
+                                   khoa_nho=_khoa_nho_nhip(
+                                       src, segs, _seg_list if multi else ""),
+                                   co_tieng=(None if has_audio else False))
             # ĐO CỤT = ĐO SAI — VỨT, ĐI ĐƯỜNG CẤU TRÚC (xem `hieu_ung.do_du`).
             # `do_nhip` có thể trả về một danh sách NGẮN mà không hề báo lỗi
             # (file `metadata=print` bị GHI ĐÈ khi ffmpeg dựng lại filter graph
@@ -3631,7 +4103,7 @@ def export_canvas_clip(
             # mốc chỗ nối trên timeline ĐẦU RA (xfade đã bù nên mốc KHÔNG đổi)
             _moc = [sum(e - s for s, e in segs[:i + 1]) / vspeed
                     for i in range(len(segs) - 1)]
-            _dung_kieu = _HU.dung_duoc(co_font=bool(_font))
+            _dung_kieu = _allowed_fx(_HU.dung_duoc(co_font=bool(_font)),_fx_keys)
             # ---- LỚP PHỦ HẠT CHỌN THEO NỘI DUNG (`app/core/lop_phu.py`) ----
             # Chạy TRƯỚC `chon_hieu_ung` rồi đưa vào bằng `dat_truoc`: bằng
             # chứng NỘI DUNG mạnh hơn số đo tiếng/hình, nên nó được đặt chỗ
@@ -3667,12 +4139,12 @@ def export_canvas_clip(
                                .get("language") or "")
                 _lp_chon, _lp_ly = _LP.chon_lop_phu(
                     _lp_moc, _lp_loi, _out_dur,
-                    str(hieu_ung).strip().lower(), co_the_dung=_dung_kieu,
+                    _fx_level, co_the_dung=_dung_kieu,
                     ngon_ngu=_lp_lang)
                 _LP.ghi_nhat_ky(_lp_ly, os.path.basename(str(dst)))
             except Exception:  # noqa: BLE001 — lớp phủ KHÔNG được chặn lượt xuất
                 _lp_chon = []
-            _hu = _HU.chon_hieu_ung(_out_dur, str(hieu_ung).strip().lower(),
+            _hu = _HU.chon_hieu_ung(_out_dur, _fx_level,
                                     nl=_nl, cd=_cd, moc_noi=_moc,
                                     co_the_dung=_dung_kieu,
                                     hook=_la_hook_first(segs),
@@ -3708,6 +4180,30 @@ def export_canvas_clip(
         _sfx_diem=[(e['start']/vspeed,e['sound'],'tình tiết') for e in _edit_events if e['sound']!='none' and e['sound_gain']>0]
     elif fx_whoosh and story_beats is not None:
         _sfx_diem = [p for p in story_accent_points(story_beats,segs,vspeed) if p[0]<_out_dur]
+    elif fx_whoosh and not _sfx_chon_tat():
+        # CHỌN HỢP LÝ (02/11/2026, xem `app/core/sfx_chon.py`): bảng kiểu ->
+        # tiếng đầy đủ (kiểu chỉnh màu/hạt/thời tiết KHÔNG kêu), bỏ chỗ nối
+        # gần liền mạch, ngân sách theo độ dài, cách nhau >= 2 s, ngữ cảnh lời.
+        from app.core import sfx_chon as _SC
+        _uv = []
+        for _i, _off in enumerate(whoosh_offsets):
+            _uv.append({"t": float(_off), "cat": join_cats[_i], "vai": "nối",
+                        "loai_diem": "noi_doan", "khoa": ""})
+        for _c in (_hu or []):
+            _ld = str(_c.get("loai", "") or "")
+            _cat = _SC.nhom_cho_hieu_ung(_c.get("khoa", ""), _ld)
+            if _cat is None and _ld == "hook":
+                _cat = "transition"     # hook vẫn phải có cú vào
+            _uv.append({"t": float(_c.get("bat", 0.0)), "cat": _cat,
+                        "vai": "điểm nhấn", "loai_diem": _ld,
+                        "khoa": str(_c.get("khoa", "") or "")})
+        try:
+            _cau_ra = _SC.cau_ra_timeline(
+                (noi_dung or {}).get("transcript") or {}, segs, vspeed)
+        except Exception:  # noqa: BLE001 — thiếu lời thì bỏ luật ngữ cảnh
+            _cau_ra = []
+        _sfx_diem, _sfx_bo = _SC.chon_moc(_uv, _out_dur, _cau_ra)
+        _SFX_BO_GAN_NHAT[:] = _sfx_bo
     elif fx_whoosh:
         for _i, _off in enumerate(whoosh_offsets):
             if join_cats[_i] != "none":
@@ -3731,20 +4227,23 @@ def export_canvas_clip(
     _dinh_goc = -6.0
     _con_goc = bool(has_audio and use_voice and voice_vol > 0.05)
     _vao_a: list = []
-    if _sfx_diem and _con_goc:
+    _can_do = bool(_sfx_diem) or (bgm_tu_dong is not None and bool(bgm_path))
+    if _can_do and _con_goc:
         if multi and _seg_list:
             _vao_a = ["-f", "concat", "-safe", "0", "-i", _seg_list]
         else:
             _s0, _e0 = segs[0]
             _vao_a = ["-ss", f"{_s0:.3f}", "-t", f"{_e0 - _s0:.3f}",
                       "-i", str(src)]
-    elif _sfx_diem and dub_on:
+    elif _can_do and dub_on:
         _vao_a = ["-i", str(dub_path)]
     _bao_goc: list = []          # đường bao RMS 50 ms của tiếng nguồn (dBFS)
     _bao_buoc = 0.05
+    _do_duoc_loi = False
     if _vao_a:
         _mc = _do_muc_clip(_vao_a)
         if _mc is not None and -70.0 < _mc["nen"] < 0.0:
+            _do_duoc_loi = True
             # tiếng gốc còn bị nhân `voice_vol` trong graph -> nền THẬT ở đầu ra
             # thấp hơn chỗ đo đúng bấy nhiêu dB. Không tính bù là tiếng động
             # thành nhỏ so với lời khi user kéo thanh "âm lượng tiếng gốc".
@@ -3759,8 +4258,63 @@ def export_canvas_clip(
             # lời CẢ CLIP nên mốc rơi vào lúc đang nói bị tính hụt tới 5,2 dB.
             _bao_goc = [float(v) + _bu for v in (_mc.get("bao") or [])]
             _bao_buoc = float(_mc.get("buoc") or 0.05)
+    # ---- NHẠC NỀN TỰ CHỌN: mức + né lời + bỏ qua khi nguồn đã có nền to ----
+    _bgm_tu_dong_loc = ""            # chuỗi filter riêng của nhạc tự chọn
+    if bgm_tu_dong is not None and bgm_path:
+        from app.core import nhac_tu_dong as _NT
+        _lg = bgm_tu_dong.setdefault("log", {})
+        _cau_bgm = list(bgm_tu_dong.get("cau") or [])
+        if not _cau_bgm and bgm_tu_dong.get("transcript"):
+            try:
+                from app.core.sfx_chon import cau_ra_timeline as _crt
+                _cau_bgm = _crt(bgm_tu_dong["transcript"], segs, vspeed)
+            except Exception:  # noqa: BLE001 — không né lời, vẫn nhỏ
+                _cau_bgm = []
+        # recap: lúc AI THUYẾT MINH (khoảng hạ tiếng gốc) cũng là lúc có giọng
+        # -> nhạc phải né cả ở đó, không chỉ né lời gốc.
+        _cau_bgm = sorted(list(_cau_bgm) + [(a, b, "") for a, b in ducks])
+        _loi_bgm = _loi_db if _do_duoc_loi else None
+        _nen_kn = None
+        if _do_duoc_loi and _bao_goc:
+            # mức nền lúc KHÔNG nói: trung vị đường bao ngoài mọi câu (cần
+            # >= 1 s mẫu); không có câu -> lấy bpv20 (`nen`).
+            _ngoai = [v for i, v in enumerate(_bao_goc)
+                      if not any(c[0] - 0.2 <= i * _bao_buoc <= c[1] + 0.2
+                                 for c in _cau_bgm)]
+            if _cau_bgm and len(_ngoai) * _bao_buoc >= 1.0:
+                _ngoai.sort()
+                _nen_kn = _ngoai[len(_ngoai) // 2]
+            else:
+                # không có câu: bpv20 của đường bao ĐÚNG VỊ TRÍ (tính cả cửa sổ
+                # im). KHÔNG dùng `_nen_db` — nó chỉ tính cửa sổ CÓ tiếng nên
+                # nguồn nhiều đoạn im ra "nền" = mức lời -> bỏ nhạc oan (cổng
+                # 106 bắt được 02/11/2026).
+                _nen_kn = _bpv(list(_bao_goc), 0.20)
+        _ld = _NT.bo_qua(_loi_bgm, _nen_kn)
+        _lg.update({"loi_db": _loi_bgm, "nen_khong_noi_db": _nen_kn})
+        if _ld:
+            _lg["bo_qua"] = _ld
+            bgm_path = None
+        else:
+            _g = _NT.he_so_db(_loi_bgm, float(bgm_tu_dong.get("lufs", -20.0)),
+                              bgm_tu_dong.get("duoi_loi_db"))
+            _ne = _NT.bieu_thuc_ne(_cau_bgm, _out_dur)
+            _vi, _vo = _NT.VAO_RA
+            _bgm_tu_dong_loc = (
+                f"atrim=0:{_out_dur:.3f},asetpts=PTS-STARTPTS,"
+                f"volume={_g:.2f}dB" + (f",{_ne}" if _ne else "")
+                + f",afade=t=in:d={_vi:.2f}"
+                + f",afade=t=out:st={max(0.0, _out_dur - _vo):.3f}:d={_vo:.2f}")
+            _lg.update({"he_so_db": round(_g, 1), "ne_loi": bool(_ne),
+                        "duoi_loi_db": bgm_tu_dong.get("duoi_loi_db")})
     # TRẦN CỦA LỚP HẠN ĐỈNH CUỐI phải tính TRƯỚC trần lớp (xem `_tran_lop`).
-    _tran_tron = max(_SFX_TRAN_TRON_DB, min(-0.2, _dinh_goc - 1.2))
+    # Biên dưới đỉnh nguồn: 1,2 dB (cũ) -> 1,8 dB ở đường chọn mới (02/11/2026).
+    # Kho lượt 2 có tiếng vào RẤT GẮT (đấm/ván đã nhấn 2,6 kHz); trên nguồn đã
+    # nóng sẵn (đỉnh +0,11 dBFS) lớp AAC vọt qua `alimiter`: đo 1/4 lượt bản
+    # BẬT ra +0,18 dBFS > bản TẮT +0,11 = phá luật "bật không méo hơn tắt".
+    # Chỉ nguồn NÓNG (đỉnh > -2,4 dBFS) mới chạm vế này.
+    _tran_tron = max(_SFX_TRAN_TRON_DB, min(
+        -0.2, _dinh_goc - (1.2 if _sfx_chon_tat() else 1.8)))
     # TRẦN ĐỈNH CỦA MỘT LỚP tiếng động — bám theo ĐÍCH của chính clip này chứ
     # không cố định. Clip yên có đích thấp; nếu vẫn cho lớp đội đỉnh tới
     # -2 dBFS thì cộng với tiếng gốc là vượt trần, và lớp hạn đỉnh cuối gọt
@@ -3823,9 +4377,10 @@ def export_canvas_clip(
     # (`_tran_tron` tính ở TRÊN vì `_tran_lop`/`_tran_moc` phải bám theo nó.)
 
     _edit_folder = None
+    _design_folder = None
 
     def build(enc: str) -> list[str]:
-        nonlocal _edit_folder, _edit_events
+        nonlocal _edit_folder, _edit_events, _design_folder
         if edit_plan is not None and _edit_folder is None:
             import tempfile
             from app.core.editorial_render import prepare
@@ -3845,10 +4400,12 @@ def export_canvas_clip(
         # Các input phụ (màu nền/overlay/nhạc/dub) đánh số sau input video.
         vin = 1
         if multi:
-            cmd += ["-f", "concat", "-safe", "0", "-i", _seg_list]
+            cmd += [*_hwaccel_vao(), "-f", "concat", "-safe", "0",
+                    "-i", _seg_list]
         else:
             s, e = segs[0]
-            cmd += ["-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(src)]
+            cmd += [*_hwaccel_vao(), "-ss", f"{s:.3f}", "-t", f"{e - s:.3f}",
+                    "-i", str(src)]
         content, aud, aud_map = "[0:v]", "[0:a]", "0:a?"
         # CHE CHỮ CHÁY SẴN: áp TRƯỚC MỌI THỨ, kể cả `hflip`. Toạ độ dải do
         # `do_dai_chu` trả về là PIXEL CỦA KHUNG NGUỒN — mà `[0:v]` ở đây đúng
@@ -3866,11 +4423,70 @@ def export_canvas_clip(
         if flip_h:
             parts.append(f"{content}hflip[cflip]")
             content = "[cflip]"
+        # NÂNG SÁNG NHẸ (mẫu): áp lên KHỐI video ngay sau lật gương -> nền mờ
+        # (lấy từ chính khối này) sáng theo, chữ/phụ đề chồng sau KHÔNG bị đổi.
+        _sang = loc_do_sang(do_sang)
+        if _sang:
+            parts.append(f"{content}{_sang}[csang]")
+            content = "[csang]"
         vsrc = content
         if pre_crop:
             parts.append(f"{content}crop={pre_crop}[cc]")
             vsrc = "[cc]"
-        if bg == "fill":            # CROP cắt 2 bên cho video ĐẦY khung 9:16
+        from app.core.template_backgrounds import decode as _bg_decode, write_background, video_filter
+        design_bg=None
+        if _bg_decode(bg)[0] and not keeps_full_source(edit_plan):
+            import tempfile
+            if _design_folder is None:_design_folder=tempfile.TemporaryDirectory(prefix='bq_design_')
+            design_bg=write_background(bg,_design_folder.name,out_w,out_h)
+        story_bg=None
+        if keeps_full_source(edit_plan):
+            from app.core.report_layout import background_image
+            story_bg=background_image(edit_plan,_edit_folder.name,out_w,out_h)
+        if story_bg:
+            cmd += ['-framerate','30','-i',story_bg]
+            parts.append(f'[{vin}:v]loop=loop=-1:size=1:start=0,trim=duration={total:.3f},setsar=1[base]')
+            parts.append(f'{vsrc}scale={vw}:-2:flags=lanczos,setsar=1[fg]')
+            parts.append(f"[base][fg]overlay=x='{cx:.4f}*W-w/2':y='{cy:.4f}*H-h/2'[vv]")
+            nextidx=vin+1
+        elif design_bg:
+            cmd += ['-framerate','30','-i',design_bg]
+            parts.append(f'[{vin}:v]loop=loop=-1:size=1:start=0,trim=duration={total:.3f},{video_filter(bg,out_w,out_h)}[base]')
+            from app.core.template_backgrounds import compose_foreground
+            _dw,_dh=_info.width,_info.height
+            if pre_crop:
+                try:_dw,_dh=(int(float(v)) for v in str(pre_crop).split(':')[:2])
+                except (ValueError,IndexError):pass
+            # BỀ NGANG LUÔN KÍN (template_backgrounds.khung): nguồn cao hơn mức
+            # `cao` của mẫu thì CẮT ĐỀU trên/dưới trước khi uốn cong, KHÔNG thu
+            # nhỏ bề ngang. Chỉ khi fit_src (giữ khung theo nguồn) mới áp.
+            from app.core.template_backgrounds import khung as _khung, layer_settings as _ls
+            _giu=_khung((cx,cy,1.0),_dw,_dh,out_w,out_h,_ls(bg)['cao'])[3] if fit_src else 1.0
+            _vsrc_d=vsrc
+            if _giu<0.999:
+                parts.append(f"{vsrc}crop=iw:trunc(ih*{_giu:.5f}/2)*2:0:(ih-oh)/2[designcrop]")
+                _vsrc_d='[designcrop]'
+            nextidx=compose_foreground(parts,_vsrc_d,bg,vw,cx,cy,cmd,vin+1,_design_folder.name,total,_giu*_dh/max(1,_dw))
+        elif str(bg).startswith('layer:'):
+            from app.core.template_backgrounds import plain_base,compose_foreground
+            import tempfile
+            if _design_folder is None:_design_folder=tempfile.TemporaryDirectory(prefix='bq_design_')
+            if plain_base(bg) in ('blur','fill'):
+                bw,bh=max(2,out_w//4),max(2,out_h//4)
+                parts.append(f'{vsrc}split=2[layerbv][layerfv]')
+                parts.append(f'[layerbv]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},boxblur={max(2,blur_amt//4)}:1,scale={out_w}:{out_h},setsar=1[base]')
+                foreground='[layerfv]';nextidx=vin
+            else:
+                col='white' if plain_base(bg)=='white' else 'black'
+                cmd += ['-f','lavfi','-t',f'{total:.3f}','-i',f'color=c={col}:s={out_w}x{out_h}:r=30']
+                parts.append(f'[{vin}:v]setsar=1[base]')
+                foreground=vsrc;nextidx=vin+1
+            dw,dh=_info.width,_info.height
+            if pre_crop:
+                try:dw,dh=(int(float(v)) for v in str(pre_crop).split(':')[:2])
+                except (ValueError,IndexError):pass
+            nextidx=compose_foreground(parts,foreground,bg,vw,cx,cy,cmd,nextidx,_design_folder.name,total,dh/max(1,dw))
+        elif bg == "fill":            # CROP cắt 2 bên cho video ĐẦY khung 9:16
             parts.append(f"{vsrc}scale={out_w}:{out_h}:"
                          f"force_original_aspect_ratio=increase,"
                          f"crop={out_w}:{out_h},setsar=1[vv]")
@@ -3980,8 +4596,14 @@ def export_canvas_clip(
         _fd = 0.35
         if fx_fade and out_dur > _fd * 2 + 0.05:
             fout_st = max(0.0, out_dur - _fd)
-            parts.append(f"{final}fade=t=in:st=0:d={_fd:.3f},"
-                         f"fade=t=out:st={fout_st:.3f}:d={_fd:.3f}[vfx]")
+            # BÌA TIKTOK (27/10/2026): TikTok lấy KHUNG ĐẦU làm bìa mặc định
+            # -> fade từ đen = bìa đen. Bật EXPORT_COVER thì bỏ fade-IN của
+            # HÌNH (tiếng vẫn vào êm), khung đầu là hình thật có tiêu đề.
+            if getattr(settings, "EXPORT_COVER", True):
+                parts.append(f"{final}fade=t=out:st={fout_st:.3f}:d={_fd:.3f}[vfx]")
+            else:
+                parts.append(f"{final}fade=t=in:st=0:d={_fd:.3f},"
+                             f"fade=t=out:st={fout_st:.3f}:d={_fd:.3f}[vfx]")
             final = "[vfx]"
         # ĐỔI GIỌNG + tốc độ cho AUDIO GỐC (chỉ khi video CÓ tiếng)
         af = []
@@ -4005,7 +4627,8 @@ def export_canvas_clip(
         # không thừa 1 nhánh im lặng làm loãng các lớp khác.
         include_voice = use_voice and voice_vol > 0.0005
         if include_voice:
-            vf = ["aresample=48000"] + af
+            vf = ["aresample=48000"] + (
+                [f"apad=whole_dur={_dem_tieng:.3f}"] if _dem_tieng else []) + af
             apply_vol = abs(voice_vol - 1.0) > 0.001
             if apply_vol:
                 vf.append(f"volume={voice_vol:.3f}")   # âm lượng tiếng gốc
@@ -4053,6 +4676,7 @@ def export_canvas_clip(
         if bgm_idx is not None:
             # nhạc nền: chỉnh âm lượng + cắt đúng độ dài clip (sau tăng tốc)
             music_filter = (story_music_filters(out_dur, bgm_vol, ducks) if story_mix else
+                            _bgm_tu_dong_loc if _bgm_tu_dong_loc else
                             f"volume={max(0.0, min(1.0, bgm_vol)):.3f},atrim=0:{out_dur:.3f},asetpts=PTS-STARTPTS")
             if story_mix and _music_plan.get('enabled',True):
                 from app.core.editorial import music_envelope
@@ -4218,7 +4842,8 @@ def export_canvas_clip(
         # CHỈ thêm khi thật sự có tiếng động: mọi đường khác (kể cả mức "tat")
         # giữ nguyên `[aout]` -> chuỗi filter KHÔNG khác một ký tự nào so với
         # bản cũ (bất biến sống còn, cổng 36 đo PSNR).
-        if whoosh_on and amap and amap.startswith("["):
+        if ((whoosh_on or (_bgm_tu_dong_loc and bgm_idx is not None))
+                and amap and amap.startswith("[")):
             parts.append(f"{amap}{_han_dinh(_tran_tron, nha=10)}[alim]")
             amap = "[alim]"
         # amap còn None + không voice -> video câm, chỉ xuất hình
@@ -4282,6 +4907,7 @@ def export_canvas_clip(
         # lượt xuất sau nhặt nốt. Trước đây nuốt PermissionError im lặng.
         _cleanup_paths(_seg_temps + ([_seg_list] if _seg_list else []))
         if _edit_folder is not None:_edit_folder.cleanup()
+        if _design_folder is not None:_design_folder.cleanup()
     return True
 
 
@@ -4574,6 +5200,21 @@ def chuan_do_to_clip(path: str | Path,
                     f"{dai_sau:.3f}) — KHÔNG nhận")
             tut = truoc["LRA"] - sau["LRA"]
             qua = sau["TP"] > tran_tp + 1e-9
+            # BẬC CUỐI MÀ VẪN VƯỢT TRẦN -> HẠ TIẾP, ĐO LẠI (31/10/2026). Bậc cuối
+            # "theo cấu tạo không chạm đỉnh" nhưng ĐO THẬT 9/646 Part vẫn ra
+            # > −1 dBTP, tệ nhất +3,6 dBTP (vỡ tiếng) — và bản cũ NHẬN LUÔN vì
+            # bậc cuối không có đường lùi. Hạ đúng số dB đang dư (+0,3 biên),
+            # tối đa 3 lần; lần nào lọt trần thì lấy. Chỉ chạy khi đã sai.
+            lan_ha = 0
+            while qua and buoc == len(bac) and lan_ha < 3:
+                lan_ha += 1
+                nang = nang - (sau["TP"] - tran_tp) - 0.3
+                _ap_do_to(p, tam, nang, tran_lim)
+                sau = do_do_to_clip(tam)
+                tut = truoc["LRA"] - sau["LRA"]
+                qua = sau["TP"] > tran_tp + 1e-9
+            if lan_ha:
+                kq["ha_them_lan"] = lan_ha
             # BIÊN 1e-6 KHÔNG PHẢI CHO ĐẸP — ĐÃ CẮN THẬT: `ebur128` in LRA một
             # chữ số thập phân, `10.9 - 10.7` trong dấu phẩy động ra
             # **0,20000000000000107** > 0,2 -> bậc ĐANG ĐẠT bị loại, clip tụt

@@ -103,6 +103,14 @@ for _s in (sys.stdout, sys.stderr):
 import numpy as np                            # noqa: E402
 from app.core import ffmpeg_utils as FU      # noqa: E402
 from app.core import hieu_ung as HU          # noqa: E402
+from app.core import sfx_chon as _SCX         # noqa: E402
+
+# CỔNG NÀY ĐO **ĐỘ NGHE ĐƯỢC** từng mốc (hệ số, ducking, hạn đỉnh, bốc file),
+# không đo CHÍNH SÁCH chọn mốc — cái đó là cổng 105. Luật mới (02/11/2026)
+# giới hạn số tiếng/clip + cách nhau >= 2 s nên bỏ bớt mốc tự dò của cổng ->
+# mốc bị bỏ đọc ra "+0,0 dB" và cổng ĐỎ OAN (đo: 8 mục). Nới RIÊNG ngân sách +
+# khoảng cách trong tiến trình cổng; bộ bốc file + mức + ducking vẫn là bản MỚI.
+_SCX.TOI_DA, _SCX.GIAY_MOI_TIENG, _SCX.CACH_MIN = 99, 0.5, 0.8
 from config import settings                  # noqa: E402
 
 _NOWIN = 0x08000000 if os.name == "nt" else 0
@@ -325,8 +333,10 @@ HU_MOC = [
 MOC_NOI = 7.0                  # điểm nối đoạn (timeline đầu ra) khi 2 đoạn
 #: Kiểu hiệu ứng dùng cho mốc tự dò — trải đủ nhóm tiếng (impact/scratch/
 #: reveal/riser) để không vô tình chỉ kiểm một nhóm.
+# 02/11/2026: "quang_sang" (quầng sáng dịu) nay CỐ Ý KHÔNG kêu (`sfx_chon`)
+# -> thay bằng "luot_ngang" (lướt ngang, tiếng vút) để mốc đo vẫn có tiếng.
 KHOA_DO = ["zoom_nhoi", "glitch_khoi", "loe_sang", "rung_lac", "tuong_phan",
-           "quang_sang"]
+           "luot_ngang"]
 
 
 def chon_moc(src: str, ss: float, dai: float) -> tuple[list, list]:
@@ -892,15 +902,26 @@ def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
     ra = rms_day(pa)
     rl = rms_day(hieu(pa, pb))
     n_db = db(nen(ra))
+    # 02/11/2026 — LUẬT MỚI `app/core/sfx_chon.py`: điểm nhấn có NGÂN SÁCH
+    # (clip 10 s = 2 tiếng) và cách nhau >= 2 s, nên "MỌI điểm nhấn đều kêu"
+    # không còn là bất biến. Bất biến thật: mốc nào app CHỌN giữ thì đúng như
+    # `chon_moc` nói, đúng nhóm theo bảng mới, và CÓ tiếng thật trong file.
+    from app.core import sfx_chon as _SC
+    _giu, _bo = _SC.chon_moc(
+        [{"t": c["bat"], "cat": _SC.nhom_cho_hieu_ung(c["khoa"]),
+          "vai": "điểm nhấn", "loai_diem": ""} for c in hu], 10.0)
     bao("clip 1 đoạn vẫn có tiếng động (bản cũ: KHÔNG có cái nào)",
-        len(log) == len(hu), f"{len(log)} tiếng / {len(hu)} điểm nhấn: "
+        len(log) == len(_giu) >= 1, f"{len(log)} tiếng / {len(hu)} điểm "
+        f"nhấn (luật mới giữ {len(_giu)}): "
         + ", ".join(f"{x['giay']}s {x['loai']}" for x in log))
-    bao("nhật ký ghi ĐÚNG nhóm theo kiểu hiệu ứng",
-        [x["loai"] for x in log] == [FU.loai_sfx_theo_hieu_ung(c["khoa"])
-                                     for c in hu],
-        " · ".join(f"{c['khoa']}->{x['loai']}" for c, x in zip(hu, log)))
+    bao("nhật ký ghi ĐÚNG nhóm + ĐÚNG mốc theo luật chọn mới",
+        [(round(x["giay"], 2), x["loai"]) for x in log]
+        == [(round(t, 2), c) for t, c, _v in _giu],
+        f"log {[(x['giay'], x['loai']) for x in log]} · luật {_giu}")
+    hu_giu = [c for c in hu if any(abs(c["bat"] - t) < 1e-6
+                                   for t, _c, _v in _giu)]
     xau = []
-    for c in hu:
+    for c in hu_giu:
         g = float(c["bat"])
         lop = db(dinh(rl, g))                 # lớp tiếng động RIÊNG
         chenh = db(dinh(ra, g)) - n_db        # nổi hơn nền bao nhiêu
@@ -910,7 +931,7 @@ def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
             xau.append(f"{c['khoa']}@{g}s lớp {lop:.1f} dB")
     bao("mốc nào cũng CÓ lớp tiếng động thật (không phải 0 như bản cũ)",
         not xau, "; ".join(xau) if xau else
-        f"3/3 mốc có tiếng, nền clip {n_db:.1f} dB")
+        f"{len(hu_giu)}/{len(hu_giu)} mốc giữ có tiếng, nền clip {n_db:.1f} dB")
     # RÒ RA NGOÀI — đo TƯƠNG ĐỐI, đừng đo bằng ngưỡng tuyệt đối.
     # BẪY ĐÃ SẬP: ngưỡng cứng `nền - 6 dB` bắt oan 5 cửa sổ ở giây 2,2-2,4 —
     # chỗ đó KHÔNG có tiếng động nào, mà là **nhiễu lượng tử của AAC**: hai bản
@@ -918,7 +939,7 @@ def ca_diem_nhan_co_tieng(src: str, td: str) -> None:
     # nên sóng HIỆU có năng lượng thật. Số đúng phải là: chỗ ngoài mốc phải
     # THẤP HƠN HẲN chỗ có tiếng động.
     trong_i = {i for i in range(len(rl))
-               if any(abs(i * CUA - float(c["bat"])) < 0.8 for c in hu)}
+               if any(abs(i * CUA - float(c["bat"])) < 0.8 for c in hu_giu)}
     ngoai = [db(rl[i]) for i in range(len(rl)) if i not in trong_i]
     trong = [db(rl[i]) for i in range(len(rl)) if i in trong_i]
     bao("lớp tiếng động NGOÀI điểm nhấn thấp hơn hẳn (>= 10 dB) chỗ CÓ tiếng",

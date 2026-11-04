@@ -334,7 +334,7 @@ goc_export = pg._export_video
 chen = {"n": 0}
 
 
-def _export_chen_ngang(vid, only_clip_id=None, tpl=None):
+def _export_chen_ngang(vid, only_clip_id=None, tpl=None, resume=False):
     """Bắt chước processEvents: lần xuất ĐẦU TIÊN gọi lại _check_auto_export.
 
     PHẢI nhận cả `tpl` — v2.6.27 đưa việc chốt MẪU THEO KÊNH vào chính

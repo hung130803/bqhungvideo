@@ -7,6 +7,11 @@ import traceback
 
 
 def run(output: str) -> int:
+    # `--self-check --gac`: BOT GÁC CỔNG (cửa này có sẵn trong main.py đã đóng
+    # gói, nên bản .exe chạy nguồn sống không phải build lại) — xem tele_gac.
+    if output == "--gac":
+        from app.core import tele_gac
+        return tele_gac.main()
     if not os.environ.get('BQ_DATA_DIR') or not os.environ.get('BQ_QSETTINGS_INI'):
         raise RuntimeError('Self-check cần BQ_DATA_DIR và BQ_QSETTINGS_INI cách ly.')
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -53,13 +58,13 @@ def run(output: str) -> int:
         assert len(list(_assets_sfx_dir().glob('*/ed_*.opus'))) == 20
         from app.core.music_library import catalog,resolve
         from app.ui.music_picker import MusicPicker
-        tracks=catalog();assert len(tracks)==14
+        tracks=catalog();assert len(tracks)>=14 and all(t.get('mood') for t in tracks)
         for track in tracks:assert Path(resolve('bqmusic:'+track['id'])).is_file()
         picker=MusicPicker(current='bqmusic:sector',allow_auto=False)
-        assert picker.items.count()==14
+        assert picker.items.count()==len(tracks)
         picker.reject()
         assert len(list(_assets_sfx_dir().glob('*/casino_*.opus')))==55
-        results['checks'].append('compiled music browser, 14 verified CC0 tracks and 55 new sound files')
+        results['checks'].append('compiled music browser, verified CC0 tracks and 55 new sound files')
         edited = DATA_DIR / 'editorial.mp4'
         export_canvas_clip(video, edited, [(0, 1)], (.5, .5, .9), bg='black',
                            out_w=180, out_h=320, encoder='libx264', fx_fade=False,
@@ -101,6 +106,27 @@ def run(output: str) -> int:
         state = AppState()
         page = StudioPage(state)
         results['checks'].append('compiled StudioPage and real QSS')
+        from app.ui.template_gallery import TemplateGallery
+        from app.core.template_library import catalog as template_catalog
+        gallery=TemplateGallery(page)
+        assert gallery.grid.count()==8
+        gallery.reject()
+        design=template_catalog()[0]['layout']
+        export_canvas_clip(video,DATA_DIR/'design.mp4',[(0,1)],design['video_rect'],bg=design['bg'],
+                           out_w=180,out_h=320,encoder='libx264',fit_src=True,
+                           fx_fade=False,fx_whoosh=False,hieu_ung='tat')
+        assert abs(probe(DATA_DIR/'design.mp4').duration-1)<.15
+        results['checks'].append('compiled template gallery: 8 layouts and actual moving-paper export')
+        from app.ui.effects_gallery import EffectsGallery
+        from app.core.hieu_ung import KHO
+        effects=EffectsGallery(page)
+        assert effects.items.count()==97
+        effects.pack.setCurrentText('Phim — màu / ánh sáng');effects._use()
+        subprocess.run([settings.FFMPEG_PATH,'-v','error','-y','-i',str(video),
+            '-vf',KHO['mau_am_diu'].chuoi(.25,.1,.8,160,120,25),'-c:v','libx264',str(DATA_DIR/'color-effect.mp4')],
+            check=True,timeout=30,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        results['checks'].append('compiled 97-effect gallery and actual color effect export')
+
         from app.ui.shutdown import set_closing
         set_closing()
         page.close()

@@ -14,7 +14,13 @@ from PyQt6.QtWidgets import (
 
 from app.core import auth
 from app.ui.appsettings import app_settings
-from app.ui.theme import ACCENT, BORDER, DANGER, MUTED, SUCCESS, TEXT
+from app.ui.theme import (
+    H_HERO, SP_2, SP_3, SP_4, SP_5, SP_6, pad, set_role, set_size, set_tone,
+    set_variant,
+)
+
+#: kiểu ghi chú -> vai màu QSS (theme.QLabel[tone=...]); không setStyleSheet
+_NOTE_TONE = {"err": "danger", "ok": "success", "info": "muted"}
 
 
 def _wait(on: bool):
@@ -51,6 +57,29 @@ def _dpapi(data: bytes, protect: bool):
         return None
 
 
+#: số giây đếm ngược trước khi tự đăng nhập
+TU_DANG_NHAP_GIAY = 5
+
+
+def tu_dang_nhap_bat() -> bool:
+    """Tắt bằng env BQ_TU_DANG_NHAP=0 (gỡ rối / máy dùng chung)."""
+    import os
+    return (os.environ.get("BQ_TU_DANG_NHAP", "1").strip() or "1") != "0"
+
+
+def _ghi_log(dong: str):
+    """Ghi logs/dang_nhap_<ngày>.log — người ở xa (qua điện thoại) không thấy
+    màn hình, nên lý do bot không lên phải đọc được ở đây. KHÔNG ghi mật khẩu."""
+    try:
+        from datetime import datetime
+        from config import LOGS_DIR
+        with open(LOGS_DIR / f"dang_nhap_{datetime.now():%Y%m%d}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] {dong}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class ServerConfigDialog(QDialog):
     """Nhập địa chỉ Supabase + anon key (admin làm 1 lần nếu app chưa nướng sẵn)."""
 
@@ -59,7 +88,7 @@ class ServerConfigDialog(QDialog):
         self.setWindowTitle("Cấu hình máy chủ tài khoản (Supabase)")
         self.resize(560, 240)
         from app.auth_config import supabase_key, supabase_url
-        v = QVBoxLayout(self)
+        v = QVBoxLayout(self); pad(v, SP_4, spacing=SP_3)
         v.addWidget(QLabel(
             "Dán 2 thứ lấy từ Supabase → Project Settings → API:\n"
             "• Project URL  (vd https://abcd.supabase.co)\n"
@@ -75,7 +104,8 @@ class ServerConfigDialog(QDialog):
         row = QHBoxLayout(); row.addStretch(1)
         save = QPushButton("Lưu"); save.setProperty("primary", True)
         save.clicked.connect(self._save)
-        cancel = QPushButton("Đóng"); cancel.clicked.connect(self.reject)
+        cancel = QPushButton("Đóng"); set_variant(cancel, "ghost")
+        cancel.clicked.connect(self.reject)
         row.addWidget(cancel); row.addWidget(save)
         v.addLayout(row)
 
@@ -100,16 +130,15 @@ class LoginDialog(QDialog):
         self.setWindowTitle("BQ Hung Video — Đăng nhập")
         self.setModal(True)
         self.resize(420, 300)
-        self.setStyleSheet(f"QDialog{{background:#11131A;}} QLabel{{color:{TEXT};}}")
-
-        v = QVBoxLayout(self); v.setContentsMargins(28, 24, 28, 22); v.setSpacing(10)
+        # nền/ô nhập/chữ lấy từ QSS chung (theme.py) — không stylesheet riêng
+        v = QVBoxLayout(self); pad(v, SP_6, SP_5, SP_6, SP_5, spacing=SP_3)
         brand = QLabel("BQ Hung Video")
-        brand.setStyleSheet(f"color:{ACCENT}; font-size:22px; font-weight:800;")
+        set_role(brand, "display"); set_tone(brand, "accent")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub = QLabel("Đăng nhập để sử dụng")
-        sub.setStyleSheet(f"color:{MUTED}; font-size:13px;")
+        set_tone(sub, "muted")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(brand); v.addWidget(sub); v.addSpacing(8)
+        v.addWidget(brand); v.addWidget(sub); v.addSpacing(SP_2)
 
         self.username = QLineEdit()
         self.username.setPlaceholderText("Tên đăng nhập")
@@ -117,15 +146,12 @@ class LoginDialog(QDialog):
         self.password.setPlaceholderText("Mật khẩu")
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         for w in (self.username, self.password):
-            w.setMinimumHeight(38)
-            w.setStyleSheet(
-                f"QLineEdit{{background:#1B1E27; border:1px solid {BORDER}; "
-                f"border-radius:8px; padding:6px 10px; color:{TEXT};}}")
+            w.setMinimumHeight(H_HERO)
         v.addWidget(self.username); v.addWidget(self.password)
 
         # GHI NHỚ mật khẩu: lần sau tự điền sẵn -> chỉ bấm Đăng nhập
         self.remember = QCheckBox("Ghi nhớ mật khẩu (lần sau khỏi gõ)")
-        self.remember.setStyleSheet(f"color:{MUTED}; font-size:12px;")
+        set_tone(self.remember, "muted")
         v.addWidget(self.remember)
         saved_u = self._s.value("save_user", "") or self._s.value("last_user", "") or ""
         saved_p = self._dec(self._s.value("save_pass", "") or "")
@@ -135,11 +161,12 @@ class LoginDialog(QDialog):
             self.remember.setChecked(True)
 
         self.note = QLabel(""); self.note.setWordWrap(True)
-        self.note.setStyleSheet("font-size:12px;")
+        set_role(self.note, "muted")
         v.addWidget(self.note)
 
         self.btn = QPushButton("Đăng nhập"); self.btn.setProperty("primary", True)
-        self.btn.setMinimumHeight(40); self.btn.setDefault(True)
+        self.btn.setMinimumHeight(H_HERO); self.btn.setDefault(True)
+        set_size(self.btn, "hero")
         self.btn.clicked.connect(self._do_login)
         v.addWidget(self.btn)
 
@@ -155,15 +182,108 @@ class LoginDialog(QDialog):
         self.username.returnPressed.connect(self.password.setFocus)
         self.password.returnPressed.connect(self._do_login)
 
+        # TỰ ĐĂNG NHẬP khi đã ghi nhớ mật khẩu: máy bật lên (app tự mở cùng
+        # Windows) thì không ai ngồi bấm nút -> bot Telegram chỉ lên SAU khi
+        # đăng nhập, nên đứng ở màn này là điện thoại không điều khiển được.
+        # Có đếm ngược + nút Huỷ để vẫn đổi được tài khoản; gõ vào ô = huỷ.
+        from PyQt6.QtCore import QTimer
+        self._tu_dong = False          # lượt đang chạy là tự động?
+        self._con_lai = 0
+        self._lan_thu = 0
+        self._dem = QTimer(self); self._dem.setInterval(1000)
+        self._dem.timeout.connect(self._dem_nhip)
+        self.huy_tu = QPushButton("Huỷ tự đăng nhập")
+        self.huy_tu.setProperty("ghost", True)
+        self.huy_tu.clicked.connect(self._huy_tu_dong)
+        self.huy_tu.setVisible(False)
+        v.insertWidget(v.indexOf(self.btn) + 1, self.huy_tu)
+        for w in (self.username, self.password):
+            w.textEdited.connect(self._huy_tu_dong)
+        if saved_p and saved_u and tu_dang_nhap_bat():
+            self._bat_dem(TU_DANG_NHAP_GIAY)
+        # lệnh /moapp từ điện thoại (bot gác cổng) khi app đang đứng ở màn này
+        self._soi_co = QTimer(self); self._soi_co.setInterval(2000)
+        self._soi_co.timeout.connect(self._xem_co_tu_xa)
+        self._soi_co.start()
+
     def _set_note(self, kind, text):
-        col = {"err": DANGER, "ok": SUCCESS, "info": MUTED}.get(kind, MUTED)
-        self.note.setStyleSheet(f"color:{col}; font-size:12px;")
+        set_tone(self.note, _NOTE_TONE.get(kind, "muted"))
         self.note.setText(text)
 
     def _config(self):
         ServerConfigDialog(self).exec()
 
-    def _do_login(self):
+    # ---- tự đăng nhập ----
+    def _bat_dem(self, giay: int):
+        self._tu_dong = True
+        self._con_lai = max(1, int(giay))
+        self.huy_tu.setVisible(True)
+        self._dem_nhip(dau=True)
+        self._dem.start()
+
+    def _dem_nhip(self, dau=False):
+        if not dau:
+            self._con_lai -= 1
+        if self._con_lai <= 0:
+            self._dem.stop()
+            self._do_login(tu_dong=True)
+            return
+        lan = f" (thử lại lần {self._lan_thu + 1})" if self._lan_thu else ""
+        self._set_note("info", f"Tự đăng nhập sau {self._con_lai} giây{lan}... "
+                               "Bấm 'Huỷ tự đăng nhập' nếu muốn đổi tài khoản.")
+
+    def done(self, r):
+        # main.py GIỮ đối tượng này suốt đời app (đọc .user/.password), và
+        # đăng nhập xong `self.password` thành CHUỖI -> phải tắt 2 bộ đếm, không
+        # thì cờ /moapp sau này gọi `.text()` trên chuỗi = lỗi trong slot Qt =
+        # SẬP CẢ APP (cổng 98 bắt được).
+        for t in (getattr(self, "_dem", None), getattr(self, "_soi_co", None)):
+            if t is not None:
+                t.stop()
+        super().done(r)
+
+    def _xem_co_tu_xa(self):
+        if not isinstance(self.password, QLineEdit):
+            return
+        try:
+            from app.core import tele_gac
+            if tele_gac.co_dong_app_moi():
+                # điện thoại bấm ⛔ Đóng app lúc app đứng ở màn đăng nhập
+                _ghi_log("lệnh đóng app từ xa (Telegram /dongapp)")
+                self._dem.stop()
+                self.reject()
+                return
+            co = tele_gac.file_co_dang_nhap()
+            if not co.exists():
+                return
+            co.unlink()
+        except Exception:  # noqa: BLE001
+            return
+        if not self.btn.isEnabled():
+            return                        # đang đăng nhập rồi
+        if not (self.username.text().strip() and self.password.text()):
+            self._set_note("err", "Điện thoại bấm đăng nhập nhưng chưa có mật khẩu "
+                                  "ghi nhớ — nhập tay 1 lần + tick 'Ghi nhớ'.")
+            _ghi_log("lệnh đăng nhập từ xa: KHÔNG có mật khẩu ghi nhớ")
+            return
+        _ghi_log("lệnh đăng nhập từ xa (Telegram /moapp)")
+        self._lan_thu = 0
+        self._bat_dem(1)
+
+    def _huy_tu_dong(self, *_):
+        if not self._tu_dong and not self._dem.isActive():
+            return
+        self._tu_dong = False
+        self._dem.stop()
+        self.huy_tu.setVisible(False)
+        self._set_note("info", "Đã huỷ tự đăng nhập.")
+        _ghi_log("huỷ tự đăng nhập (người dùng)")
+
+    def _do_login(self, tu_dong=False):
+        if not tu_dong:                 # bấm tay = thôi đếm ngược
+            self._dem.stop()
+            self._tu_dong = False
+            self.huy_tu.setVisible(False)
         u = self.username.text().strip()
         p = self.password.text()
         if not u or not p:
@@ -197,13 +317,29 @@ class LoginDialog(QDialog):
             timer.stop()
             self.btn.setEnabled(True)
             kind, res = out[0]
+            tu = tu_dong and self._tu_dong   # bị huỷ giữa lượt thì thôi
             if kind == "err":
                 self._set_note("err", str(res))
+                if tu:
+                    # mất mạng lúc vừa bật máy là chuyện thường -> THỬ LẠI,
+                    # giãn dần 15s -> 30s -> 60s (không bỏ cuộc: bỏ cuộc là
+                    # bot không bao giờ lên mà không ai ở máy để biết).
+                    self._lan_thu += 1
+                    cho = min(60, 15 * (2 ** min(self._lan_thu - 1, 2)))
+                    _ghi_log(f"lỗi kết nối lần {self._lan_thu}: {res} -> thử lại sau {cho}s")
+                    self._bat_dem(cho)
                 return
             if not res:
                 self._set_note("err",
                                "Sai tên đăng nhập/mật khẩu, hoặc tài khoản bị khoá.")
+                if tu:
+                    # SAI mật khẩu thì KHÔNG thử lại (thử lặp là tự khoá tài khoản)
+                    self._tu_dong = False; self.huy_tu.setVisible(False)
+                    _ghi_log("SAI mật khẩu/tài khoản bị khoá -> dừng tự đăng nhập")
                 return
+            if tu:
+                _ghi_log(f"tự đăng nhập THÀNH CÔNG ({res['username']})"
+                         + (f" sau {self._lan_thu} lần lỗi" if self._lan_thu else ""))
             self.user = res["username"]; self.role = res["role"]
             self._s.setValue("last_user", self.user)
             self._s.setValue("save_user", self.user)
@@ -260,7 +396,7 @@ class AdminUsersDialog(QDialog):
         self._apass = admin_pass
         self.setWindowTitle("Quản lý tài khoản (Admin)")
         self.resize(720, 480)
-        v = QVBoxLayout(self)
+        v = QVBoxLayout(self); pad(v, SP_4, spacing=SP_3)
         top = QHBoxLayout()
         top.addWidget(QLabel(f"<b>Admin:</b> {admin_user}"))
         top.addStretch(1)
@@ -279,7 +415,7 @@ class AdminUsersDialog(QDialog):
         self.tbl.verticalHeader().setVisible(False)
         v.addWidget(self.tbl, 1)
 
-        self.note = QLabel(""); self.note.setStyleSheet("font-size:12px;")
+        self.note = QLabel(""); set_role(self.note, "muted"); self.note.setWordWrap(True)
         v.addWidget(self.note)
         close = QPushButton("Đóng"); close.setProperty("ghost", True)
         close.clicked.connect(self.accept)
@@ -287,8 +423,7 @@ class AdminUsersDialog(QDialog):
         self._load()
 
     def _msg(self, kind, text):
-        col = {"err": DANGER, "ok": SUCCESS}.get(kind, MUTED)
-        self.note.setStyleSheet(f"color:{col}; font-size:12px;")
+        set_tone(self.note, _NOTE_TONE.get(kind, "muted"))
         self.note.setText(text)
 
     def _load(self):
@@ -313,6 +448,7 @@ class AdminUsersDialog(QDialog):
 
     def _actions(self, usr):
         w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(2, 2, 2, 2); h.setSpacing(4)
+        # nút trong ô bảng: cỡ GỌN (padding 3px) — cỡ thường 7px bị cụt theo chiều cao dòng
         uname = usr.get("username", ""); is_admin = usr.get("role") == "admin"
         active = usr.get("active", True)
         lock = QPushButton("Mở khoá" if not active else "Khoá")
@@ -329,12 +465,17 @@ class AdminUsersDialog(QDialog):
         dl.setEnabled(not is_admin)         # không xoá admin
         dl.clicked.connect(lambda _, n=uname: self._delete(n))
         h.addWidget(dl)
+        for b in (lock, rs, dl):
+            set_size(b, "compact")
+        self.tbl.verticalHeader().setMinimumSectionSize(34)
+        self.tbl.verticalHeader().setDefaultSectionSize(34)
         return w
 
     def _add(self):
         dlg = QDialog(self); dlg.setWindowTitle("Thêm / Đặt lại tài khoản")
         dlg.resize(380, 230)
-        v = QVBoxLayout(dlg); form = QFormLayout()
+        v = QVBoxLayout(dlg); pad(v, SP_4, spacing=SP_3); form = QFormLayout()
+        form.setHorizontalSpacing(SP_3); form.setVerticalSpacing(SP_2)
         u = QLineEdit(); p = QLineEdit()
         role = QComboBox(); role.addItem("Người dùng", "user"); role.addItem("Admin", "admin")
         form.addRow("Tên đăng nhập:", u)
@@ -342,12 +483,12 @@ class AdminUsersDialog(QDialog):
         form.addRow("Quyền:", role)
         v.addLayout(form)
         hint = QLabel("Nếu tên đã tồn tại → sẽ ĐẶT LẠI mật khẩu/quyền cho tên đó.")
-        hint.setWordWrap(True); hint.setStyleSheet(f"color:{MUTED}; font-size:11px;")
+        hint.setWordWrap(True); set_role(hint, "hint")
         v.addWidget(hint)
         row = QHBoxLayout(); row.addStretch(1)
         ok = QPushButton("Lưu"); ok.setProperty("primary", True)
         ok.clicked.connect(dlg.accept)
-        cancel = QPushButton("Huỷ"); cancel.clicked.connect(dlg.reject)
+        cancel = QPushButton("Huỷ"); set_variant(cancel, "ghost"); cancel.clicked.connect(dlg.reject)
         row.addWidget(cancel); row.addWidget(ok); v.addLayout(row)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return

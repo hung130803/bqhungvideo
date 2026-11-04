@@ -1074,7 +1074,14 @@ def ca23_co_vao_hash_chong_trung():
     # XANH. Ở đây đòi giá trị truyền vào là BIỂU THỨC (đọc từ mẫu), không được
     # là hằng số đóng cứng.
     from app.ui import studio_page as SP
-    goi = _tim_goi(SP.StudioPage._export_video_inner, "enqueue_export")
+    # Lời gọi đã dời sang `_export_prepare` (chuẩn bị xuất từ BẢN CHỤP mẫu `L`)
+    # — tìm ở cả hai, lấy chỗ nào có (31/10/2026: cổng đỏ OAN vì chỉ tìm hàm cũ).
+    goi = None
+    for _ten in ("_export_prepare", "_export_video_inner"):
+        _ham = getattr(SP.StudioPage, _ten, None)
+        goi = _tim_goi(_ham, "enqueue_export") if _ham else None
+        if goi:
+            break
     kw = {k.arg: k.value for k in (goi.keywords if goi else []) if k.arg}
     thieu = [k for k in ("che_chu", "che_chu_cach", "che_chu_muc")
              if k not in kw]
@@ -1110,6 +1117,13 @@ def ca23_co_vao_hash_chong_trung():
     _CID = DB.insert(
         "INSERT INTO clips (video_id, start_sec, end_sec, status) "
         "VALUES (?,?,?,?)", (_VID, 12.0, 48.5, "suggested"))
+    # Từ khi có luật "file Part đã xuất BỊ MẤT thì xuất lại" (services:
+    # `skip_if_done` chỉ khi `export_path` còn trên đĩa), smart-skip chỉ xảy ra
+    # khi clip CÓ file xuất thật -> dựng file đó (31/10/2026: cổng đỏ OAN).
+    _xuat = SAN / "_cc_kenh" / "Part 1.mp4"
+    _xuat.parent.mkdir(parents=True, exist_ok=True)
+    _xuat.write_bytes(b"x" * 2048)
+    DB.execute("UPDATE clips SET export_path=? WHERE id=?", (str(_xuat), _CID))
 
     p_lui, k_lui = _key()                                   # KHÔNG truyền
     p_tat, k_tat = _key(che_chu=False)                      # CHỐT tắt
@@ -1208,6 +1222,11 @@ def ca23_co_vao_hash_chong_trung():
     kiem("CA23-4d bấm lần nữa -> trả ID JOB CŨ, không đẻ trùng "
          "(bài học 'enqueue trả jid CŨ, không trả None')", j_bat2 == j_bat,
          f"{j_bat} vs {j_bat2}")
+    # Việc trước phải XONG đã: hàng đợi cố ý GỘP mọi việc xuất cùng clip đang
+    # chờ/đang chạy vào CÙNG một file đích (`export_recovery.same_destination`
+    # — hai ffmpeg ghi một file là hỏng file), nên đổi cách che lúc việc cũ còn
+    # chờ thì trả lại việc cũ là ĐÚNG (31/10/2026: cổng đỏ OAN ở đây).
+    DB.execute("UPDATE jobs SET status='done' WHERE id=?", (j_bat,))
     j_khoi = SV.enqueue_export(pool, _CID, _VID, _PID, che_chu=True,
                                che_chu_cach="khoi")
     kiem("CA23-4e đổi sang PHỦ KHỐI -> job KHÁC nữa",

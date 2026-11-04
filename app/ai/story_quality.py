@@ -9,13 +9,29 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
 import threading
+from contextlib import contextmanager
 
 from app.ai import llm
 
-VERSION=4
+VERSION=5
 MIN_PART_SECONDS=61.0
 MAX_PART_SECONDS=119.0
 _VISION_SLOTS=threading.BoundedSemaphore(3)
+_STORY_STAGE=threading.local()
+
+
+def request_input_limit():
+    # Application safety budgets, NOT provider quota/context declarations.
+    # Gemini must not inherit Groq's small free-tier request budget.
+    return 24000 if llm.active_provider()=='gemini' else 5800
+
+
+@contextmanager
+def request_stage(ctx,label,progress):
+    previous=getattr(_STORY_STAGE,'value',None)
+    _STORY_STAGE.value=[ctx,label,progress,0]
+    try:yield
+    finally:_STORY_STAGE.value=previous
 VISUAL_SCHEMA={'type':'OBJECT','properties':{
     'visible':{'type':'STRING'},'uncertain':{'type':'STRING'}},
     'required':['visible','uncertain']}
@@ -81,15 +97,46 @@ def provider_call(call,check=None,scope='chat',on_wait=None):
                 canceled();time.sleep(.2)
 
 
-def ask(prompt,reasoning=None):
+def ask(prompt,reasoning=None,response_schema=None):
     # Leave room for JSON output and provider overhead, including CJK sources.
-    if llm._uoc_token(prompt)+llm._uoc_token(SYSTEM)>5800:
-        raise RuntimeError('Một đoạn căn cứ quá dài cho AI. Chưa gửi yêu cầu quá cỡ; hãy chia nhỏ video nguồn.')
+    size=llm._uoc_token(prompt)+llm._uoc_token(SYSTEM)
+    if response_schema is not None:size+=llm._uoc_token(json.dumps(response_schema))
+    limit=request_input_limit();stage=getattr(_STORY_STAGE,'value',None)
+    label=stage[1] if stage else 'Dựng kịch bản'
+    if size>limit:
+        raise RuntimeError(f'story_input_too_large: {label} · {llm.active_provider()} · '
+            f'ước tính {size}/{limit} token đầu vào. App chưa chia dữ liệu vừa ngân sách bước này; '
+            'đã giữ tiến độ, không tự chạy lại toàn bộ và không cần cắt file video gốc.')
     from app.queue.worker import current_job_canceled,CanceledError
     def check():
         if current_job_canceled():raise CanceledError()
-    with llm.bounded_call(180,check,reasoning=reasoning):
-        return provider_call(lambda:llm.complete_json(prompt,system=SYSTEM),check)
+    started=time.monotonic()
+    if stage:
+        stage[3]+=1
+        stage[0].progress(stage[2],f'{label} · yêu cầu {stage[3]} · {llm.active_provider()} · ~{size} token')
+    from app.ai.apiforcode import request_progress,TEXT_REQUEST_TIMEOUT
+    is_api=llm.active_provider()=='apiforcode'
+    def transport_progress(phase,elapsed,maximum):
+        if not stage:return
+        phases={'waiting_headers':'chờ máy chủ phản hồi đầu tiên','receiving_stream':'đang nhận nội dung','reading_json':'đang nhận JSON'}
+        stage[0].progress(stage[2],f'{label} · yêu cầu {stage[3]} · APIforcode {phases.get(phase,phase)} · {elapsed:.0f}/{maximum:.0f}s')
+    try:
+        with request_progress(transport_progress if is_api else None),llm.bounded_call(TEXT_REQUEST_TIMEOUT+5 if is_api else 180,check,reasoning=reasoning):
+            result=provider_call(lambda:llm.complete_json(prompt,system=SYSTEM,strict_object=True,
+                **({"response_schema":response_schema} if response_schema is not None else {})),check,
+                on_wait=(lambda seconds:stage[0].progress(stage[2],
+                    f'{label} · nhà cung cấp giới hạn, chờ ~{math.ceil(seconds)}s')) if stage else None)
+        return result
+    finally:
+        # Log counters only, never prompts, video transcripts, or API keys.
+        if stage:
+            from config import LOGS_DIR
+            try:
+                LOGS_DIR.mkdir(parents=True,exist_ok=True)
+                with (LOGS_DIR/('story_timing_'+time.strftime('%Y%m%d')+'.log')).open('a',encoding='utf-8') as stream:
+                    stream.write(json.dumps({'stage':label,'provider':llm.active_provider(),
+                        'request':stage[3],'input_estimate':size,'seconds':round(time.monotonic()-started,2)},ensure_ascii=False)+'\n')
+            except OSError:pass
 
 
 def source_signature(path):
@@ -135,6 +182,9 @@ def frame_paths(src, unit, directory,fractions=(.12,.5,.88)):
 
 def visual_evidence(src,unit,transcript,ctx,fractions=(.5,)):
     """No transcript-only fallback: every interval must produce valid visual evidence."""
+    if llm.active_provider()=='apiforcode':
+        from app.ai.story_vision_batch import inspect
+        return inspect(src,unit,transcript,ctx,fractions)
     with tempfile.TemporaryDirectory(prefix='bq_story_frames_') as folder:
         paths=frame_paths(src,unit,folder,fractions);notes=[]
         # One image per call: multi-image captions confused objects in separate
@@ -155,7 +205,8 @@ def visual_evidence(src,unit,transcript,ctx,fractions=(.5,)):
                     options={'response_schema':VISUAL_SCHEMA} if gemini else {}
                     # Retry the SAME source image, never manufacture observations
                     # from a transcript or accept salvaged/truncated evidence.
-                    for attempt in range(2 if gemini else 1):
+                    attempts=3 if llm.active_provider()=='groq' else 2 if gemini else 1
+                    for attempt in range(attempts):
                         ctx.check_canceled()
                         retry_prompt=prompt+ ('\nReturn one JSON object only. visible must be a nonempty '
                             'string describing this image, uncertain must be a string. '
@@ -170,7 +221,7 @@ def visual_evidence(src,unit,transcript,ctx,fractions=(.5,)):
                                 raise llm.LLMInvalidVision('Thiếu mô tả cảnh hoặc mô tả không đúng kiểu dữ liệu.')
                             break
                         except llm.LLMInvalidVision as exc:
-                            if gemini and attempt==0:continue
+                            if attempt+1<attempts:continue
                             provider=llm.active_provider().capitalize()
                             raise RuntimeError(f'{provider}: kết quả hình tại {at:.1f}s chưa hợp lệ '
                                 f'sau {attempt+1} lần. {exc} '
@@ -187,7 +238,8 @@ def build_evidence(video_id,src,duration,segs,scenes,ctx,words=None):
     # v3 full evidence remains valid. Reuse it rather than spending calls again.
     key=digest([3,signature,duration,segs,scenes,llm.active_provider(),
                 llm.groq_vision_model(),getattr(settings,'OLLAMA_VL_MODEL',''),
-                getattr(settings,'GEMINI_MODEL','')])
+                getattr(settings,'GEMINI_MODEL','')] +
+                ([settings.APIFORCODE_VISION_MODEL] if llm.active_provider()=='apiforcode' else []))
     saved=get_analysis(video_id,'story_evidence') or {}
     cache=saved.get('units',{}) if saved.get('key')==key else {}
     units=coverage(duration,(scenes or {}).get('cut_points',[]))
@@ -195,6 +247,14 @@ def build_evidence(video_id,src,duration,segs,scenes,ctx,words=None):
     # long sentence must not import words actually spoken after the cut.
     for unit in units:
         if str(unit['id']) in cache:cache[str(unit['id'])]['transcript']=text_for(segs,unit['start'],unit['end'],words)
+    if llm.active_provider()=='apiforcode':
+        from app.ai.story_vision_batch import build
+        def commit():
+            _set(video_id,'story_evidence','done',{'key':key,'units':cache,'complete':False},engine=llm.active_provider())
+        result=build(src,units,cache,segs,words,ctx,commit)
+        if source_signature(src)!=signature:raise RuntimeError('File nguồn vừa thay đổi; cần phân tích lại.')
+        _set(video_id,'story_evidence','done',{'key':key,'units':cache,'complete':True},engine=llm.active_provider())
+        return result,signature,key
     todo=iter(u for u in units if str(u['id']) not in cache);pending={};done=sum(str(u['id']) in cache for u in units)
     workers=2 if llm.active_provider()=='groq' else 1
     started=time.monotonic()
@@ -218,6 +278,14 @@ def build_evidence(video_id,src,duration,segs,scenes,ctx,words=None):
                 _set(video_id,'story_evidence','done',{'key':key,'units':cache,'complete':False},engine=llm.active_provider())
             fill()
     result=[cache[str(u['id'])] for u in units]
+    # Safe inner dialogue boundaries also apply to cached visual evidence.
+    for item in result:
+        inside=[s for s in segs if item['start']<=float(s['start'])<float(s['end'])<=item['end']]
+        item.pop('orig_window',None)
+        if inside:
+            a=min(float(s['start']) for s in inside);b=max(float(s['end']) for s in inside)
+            if b-a>=1 and not any(float(s['start'])+.001<t<float(s['end'])-.001 for s in segs for t in (a,b)):
+                item['orig_window']=[a,b]
     if source_signature(src)!=signature:raise RuntimeError('File nguồn vừa thay đổi; cần phân tích lại.')
     _set(video_id,'story_evidence','done',{'key':key,'units':cache,'complete':True},engine=llm.active_provider())
     return result,signature,key
@@ -248,11 +316,11 @@ def overview(units,ctx):
     return summaries
 
 
-def evidence_batches(units,limit=7000):
+def evidence_batches(units,limit=7000,token_limit=3000):
     blocks=[];block=[];size=0
     for unit in units:
         n=len(json.dumps(unit,ensure_ascii=False))
-        if block and (size+n>limit or token_size(block+[unit])>3000 or len(block)>=24):blocks.append(block);block=[];size=0
+        if block and (size+n>limit or token_size(block+[unit])>token_limit or len(block)>=24):blocks.append(block);block=[];size=0
         block.append(unit);size+=n
     if block:blocks.append(block)
     return blocks
@@ -352,7 +420,8 @@ def review_plan(plan,units,ctx):
             raise ValueError('Câu kể chưa khớp cảnh nguồn '+str(p['source_id'])+': '+str(issues)[:700])
     compact={'title':plan['title'],'shots':[{k:v for k,v in p.items() if k!='evidence'} for p in plan['parts']],
              'source_notes':planning_evidence(units,ctx)}
-    prompt=('Independently audit this narration against the evidence. Return {"approved":boolean, '
+    from app.ai.editorial_context import CONTINUITY_REVIEW
+    prompt=(CONTINUITY_REVIEW + 'Independently audit this narration against the evidence. Return {"approved":boolean, '
             '"factual":boolean,"scene_match":boolean,"hook_paid_off":boolean,"coherent":boolean,'
             '"language_ok":boolean,"issues":[strings]}. ALL checks must pass: every spoken claim and title '
             'supported by evidence, uncertainty retained, each sentence describes its own displayed interval, '
@@ -373,7 +442,8 @@ def write_part(units,context,used,preset,index,count,lang,ctx):
     if token_size(available)>3000 or sum(u['end']-u['start'] for u in available)>maximum*2:
         available,notes=choose_pool(available,minimum,maximum,used,ctx)
     else:notes=available
-    instructions=(f'Create Part {index+1}/{count} in {lang}. Style: {preset.get("recap_style","story")}. '
+    from app.ai.editorial_context import SCENE_CRAFT, NARRATION_RULES
+    instructions=(SCENE_CRAFT + NARRATION_RULES + f'Create Part {index+1}/{count} in {lang}. Style: {preset.get("recap_style","story")}. '
         f'Total duration {minimum}-{maximum} seconds. Each shot uses its ENTIRE source interval. '
         f'Choose chronological source_id values, no duplicates. Aim for {preset.get("recap_ratio",45)}% narrated time. '
         'Return {"title":"...","shots":[{"source_id":integer,"mode":"narrate or orig","text":"...",'
@@ -424,21 +494,40 @@ def verify_export(meta,windows,src,speed=1.0):
         raise RuntimeError('Chờ duyệt kịch bản: mở Duyệt kịch bản trên từng Part, xem/sửa lời rồi bấm Lưu & duyệt. Video gốc được giữ nguyên.')
     if meta.get('quality_story'):
         seconds=sum(float(b)-float(a) for a,b in windows)/max(.5,min(3.,float(speed or 1.)))
-        if not MIN_PART_SECONDS<=seconds<=MAX_PART_SECONDS:
-            raise RuntimeError('Mỗi Part dựng chuyện bắt buộc trên 60 giây và dưới 120 giây (61–119s). Chỉnh tốc độ mẫu hoặc tạo lại kịch bản đúng độ dài.')
+        minimum,maximum=length_limits(meta.get('duration_settings') or {})
+        if not math.isfinite(seconds) or not minimum-0.001<=seconds<=maximum+0.001:
+            raise RuntimeError(f'Part sau tốc độ mẫu dài {seconds:.2f}s, ngoài khoảng đã lưu {minimum:g}–{maximum:g}s. Chỉnh tốc độ hoặc tạo lại kịch bản; app không tự đổi thời lượng bạn chọn.')
 
 
 def length_limits(preset):
-    minimum=float(preset.get('story_min_len',preset.get('min_len',61)))
-    maximum=float(preset.get('story_max_len',preset.get('max_len',119)))
-    if not math.isfinite(minimum) or not math.isfinite(maximum) or minimum>600 or maximum>600:
-        raise RuntimeError('Độ dài Part không hợp lệ.')
-    minimum=min(MAX_PART_SECONDS,max(MIN_PART_SECONDS,minimum))
-    return minimum,min(MAX_PART_SECONDS,max(minimum,maximum))
+    try:
+        minimum=float(preset.get('story_min_len',preset.get('min_len',61)))
+        maximum=float(preset.get('story_max_len',preset.get('max_len',119)))
+    except (TypeError,ValueError,OverflowError):
+        raise RuntimeError('Độ dài Part phải là số giây hợp lệ.') from None
+    if not math.isfinite(minimum) or not math.isfinite(maximum) or not 1<=minimum<=maximum<=2147483647:
+        raise RuntimeError('Độ dài Part không hợp lệ: cần 1 ≤ Min ≤ Max. App không tự đổi cài đặt.')
+    return minimum,maximum
+
+
+
+
+def verify_rendered_media(meta,actual,has_audio,expected):
+    """Check actual output against saved bounds and the approved edit timeline."""
+    if not has_audio:
+        raise RuntimeError('File Part xuất thiếu luồng âm thanh; giữ nguồn để kiểm tra.')
+    minimum,maximum=length_limits(meta.get('duration_settings') or {})
+    tolerance=max(.35,expected*.01)
+    if not math.isfinite(actual) or actual<=0 or abs(actual-expected)>tolerance:
+        raise RuntimeError(f'File Part dài {actual:.3f}s, kế hoạch {expected:.3f}s (sai số cho phép {tolerance:.3f}s); giữ nguồn để kiểm tra.')
+    # Container/frame rounding may differ slightly from exact selected windows.
+    if not minimum-tolerance<=actual<=maximum+tolerance:
+        raise RuntimeError(f'File Part dài {actual:.3f}s, ngoài khoảng đã lưu {minimum:g}–{maximum:g}s; giữ nguồn để kiểm tra.')
 
 
 def approval_signature(meta):
     values={k:meta.get(k) for k in ('parts','windows','source_signature','voice','lang','contract')}
+    if 'duration_settings' in meta:values['duration_settings']=meta['duration_settings']
     if 'edit_plan' in meta:values['edit_plan']=meta['edit_plan']
     if meta.get('music_contract'):values['music_path']=meta.get('music_path','')
     return digest(values)
@@ -538,6 +627,11 @@ def shorten(text,evidence,seconds,ctx_check=lambda:None):
 
 
 def generate(payload,ctx):
+    from app.core.job_resume import generation_result, remember_generation
+    resumed = generation_result('story', payload)
+    if resumed is not None:
+        ctx.progress(1, 'Đã khôi phục kịch bản đã lưu; chờ bạn xem và duyệt.')
+        return resumed
     ctx=StoryContext(ctx)
     from app.core.analysis import get_analysis
     from app.database import db
@@ -554,14 +648,23 @@ def generate(payload,ctx):
     minimum,maximum=length_limits(preset)
     requested=int(preset.get('recap_count',0) or 0)
     if duration<minimum*max(1,min(8,requested)):
-        raise RuntimeError('Nguồn không đủ thời lượng để mỗi Part trên 60 giây. Giảm số Part hoặc chọn video dài hơn; không lặp cảnh để kéo dài.')
+        raise RuntimeError(f'Nguồn dài {duration:g}s, không đủ thời lượng cho số Part đã chọn với Min {minimum:g}s. Giảm số Part/Min hoặc chọn video dài hơn; không tự đổi cài đặt hay lặp cảnh để kéo dài.')
     lang=preset.get('story_lang') or resolve_lang(tr.get('language',''),tr.get('text','')) or 'vi'
     voice=preset.get('recap_voice') or default_voice(lang)
     validate_voice(voice,lang)
-    units,signature,evidence_key=build_evidence(vid,src,duration,segs,get_analysis(vid,'scenes') or {},ctx,words=tr.get('words'))
+    from app.ai.twelve_moments import retrieve,candidate_ids
+    twelve=retrieve(src,duration,preset,ctx)
+    scene_data=get_analysis(vid,'scenes') or {}
+    if preset.get('story_transnet'):
+        from app.core.intelligence_local import scenes
+        scene_data=scenes(src,duration,ctx)
+    units,signature,evidence_key=build_evidence(vid,src,duration,segs,scene_data,ctx,words=tr.get('words'))
+    if twelve:
+        preset=dict(preset,_twelve_candidate_ids=candidate_ids(units,twelve))
     from app.modules.m2_recap import _auto_recap_count
     requested=int(preset.get('recap_count',0) or 0)
     count=max(1,min(8,requested or _auto_recap_count(duration)))
+    if not requested:count=min(count,max(1,int(duration//minimum)))
     previous=load_used_ranges(vid)
     used={u['id'] for u in units if any(u['start']<b and u['end']>a for a,b in previous)}
     from app.ai.story_director import direct
@@ -574,7 +677,9 @@ def generate(payload,ctx):
         for i,plan in enumerate(plans):
             meta={'quality_story':VERSION,'style':preset.get('recap_style','story'),'lang':lang,'voice':voice,
                   'parts':plan['parts'],'windows':plan['windows'],'source_signature':signature,'evidence_key':evidence_key,
-                  'review':plan['review'],'contract':contract(plan['parts'],plan['windows'])}
+                  'review':plan['review'],'contract':contract(plan['parts'],plan['windows']),
+                  'duration_settings':{'story_min_len':minimum,'story_max_len':maximum}}
+            meta['speaker_crop']=bool(preset.get('story_talknet',False))
             meta.update(angle=plan.get('angle',''),hooks=plan.get('hooks',[]),selected_hook=plan.get('selected_hook',0),
                         continuous_reason=plan.get('continuous_reason',''),metrics=metrics,music_mood=plan.get('music_mood','calm'),
                         music_path=str(preset.get('story_music_path') or ''),audio_mix=bool(preset.get('story_audio_mix',True)),
@@ -599,6 +704,8 @@ def generate(payload,ctx):
                 (vid,plan['windows'][0][0],plan['windows'][-1][1],80,
                  f'AI dựng chuyện kỹ · Part {i+1}/{len(plans)} · CHỜ DUYỆT kịch bản',plan['title'],'',db.dumps(signals)))
             ids.append(cur.lastrowid)
+        result={'count':len(ids),'clip_ids':ids,'scripts':len(ids),'quality_story':True,'needs_review':True,'llm_used':True}
+        remember_generation(con, 'story', payload, result)
         ctx.check_canceled();con.commit()
     except Exception:con.rollback();raise
     ctx.progress(1,'Chờ bạn xem/sửa và duyệt kịch bản từng Part trước khi xuất.')

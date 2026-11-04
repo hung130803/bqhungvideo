@@ -398,13 +398,13 @@ def main() -> int:
                 ok("mảnh đưa vào `tron_thay_giong` là danh sách ĐÃ CỘNG phần bù"
                    " (không phải `kh[\"manh\"]` trần)",
                    ten == "manh_tron", f"tham số 2 = {ten or type(arg2).__name__}")
-            # cờ mặc định phải BẬT: để trống là MẤT NỘI DUNG
-            mac = None
-            for a, d in zip(ham.args.args[-len(ham.args.defaults):],
-                            ham.args.defaults):
-                if a.arg == "bu_giong_goc_bat":
-                    mac = getattr(d, "value", None)
-            ok("cờ `bu_giong_goc_bat` MẶC ĐỊNH BẬT", mac is True, str(mac))
+            # v2.48.0 (28/08/2026, anh Hùng chốt "tiếng gốc MẤT HẲN là mất
+            # hẳn"): cờ bù đã GỠ HẲN khỏi chữ ký — giữ một núm không tác dụng
+            # là mã chết; hành vi mới do cổng 86 CA 9 canh. Cổng này chỉ đòi
+            # cờ đó KHÔNG được mọc lại.
+            ten_tham_so = [a.arg for a in ham.args.args + ham.args.kwonlyargs]
+            ok("cờ `bu_giong_goc_bat` ĐÃ GỠ (v2.48.0), không mọc lại",
+               "bu_giong_goc_bat" not in ten_tham_so, str(ten_tham_so[-6:]))
 
         # ─── MỤC 4b: BẢNG TIẾN ĐỘ KHÔNG ĐƯỢC CHẠY NGƯỢC ───────────────────
         print("\nMỤC 4b — thêm bước mới KHÔNG được làm thanh tiến độ chạy NGƯỢC")
@@ -426,8 +426,9 @@ def main() -> int:
         ok("dãy số bước KHÔNG GIẢM (thanh tiến độ không chạy ngược)",
            not giam, str(giam) if giam else " -> ".join(map(str, buoc)))
         # và ĐÍCH DANH bước bù: phải là bước 8, không phải bước 5 ("đọc")
-        bu_moc = [(p, m) for p, m in moc if "bù giọng gốc" in m.lower()]
-        ok("có mốc tiến trình cho bước BÙ GIỌNG GỐC", len(bu_moc) == 1,
+        # Từ v2.48.0 bước này chỉ ĐO phần tiếng gốc rơi vào quãng nghỉ rồi báo.
+        bu_moc = [(p, m) for p, m in moc if "quãng nghỉ" in m.lower()]
+        ok("có mốc tiến trình cho bước ĐO QUÃNG NGHỈ (thay bước bù)", len(bu_moc) == 1,
            str(bu_moc))
         if bu_moc:
             b8 = tg_so.buoc_tu_tien_trinh(*bu_moc[0])
