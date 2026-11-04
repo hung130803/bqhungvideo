@@ -268,6 +268,23 @@ for ten, mo, attr, bo in HOP:
         k = quet(dlg, f"trong {ten}", bo)
         print(f"      bấm {k} nút bên trong")
 
+# Hộp Tự chạy: nút Lưu kiểm thư mục phiếu ở LUỒNG NỀN (trả "dang_kiem") ->
+# phải đợi kết quả, không được coi "bấm xong" là xong (Đợt 1b).
+_dtc = getattr(S, "_tu_chay_dlg", None)
+if _dtc is not None and hasattr(_dtc, "_ket_luu"):
+    import time as _tm
+    _t0 = _tm.time()
+    while _dtc._ket_luu is None and _tm.time() - _t0 < 8:
+        qapp.processEvents()
+        _tm.sleep(0.02)
+    if _dtc._ket_luu is not True:
+        LOI.append(f"[Tự chạy] Lưu chạy nền không ra kết quả lưu ({_dtc._ket_luu})")
+        print("  ✗ Tự chạy: Lưu chạy nền không ra kết quả")
+    else:
+        print("  ✓ Tự chạy: Lưu (kiểm thư mục ở nền) đã lưu")
+elif _dtc is not None:
+    LOI.append("[Tự chạy] smoke KHÔNG bấm tới nút Lưu của hộp Tự chạy")
+
 # 4) các hộp thoại module riêng: Chỉnh mẫu, Cài đặt Reup, Cài đặt AI, Tiến trình
 print("\n── 4. hộp thoại module riêng ──")
 RIENG = []

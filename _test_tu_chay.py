@@ -102,7 +102,6 @@ for _n in ("question", "information", "warning", "critical"):
 _llm.is_configured = lambda *a, **k: True
 
 st = app_settings()
-(T / "daychuyen").mkdir(exist_ok=True)       # thư mục phiếu (Lưu kiểm tồn tại)
 st.setValue("pipe_root", str(T / "nguon"))
 st.setValue("pipe_recycle_dir", str(T / "thungrac"))
 st.sync()
@@ -665,8 +664,12 @@ nhan = [b.text() for b in dlg.findChildren(QPushButton)]
 ok(set(nhan) >= {"Lưu", "Đóng", "Chọn thư mục"}, "đủ nút bằng CHỮ", str(nhan))
 ok(not any(ord(c) > 0x2FFF for t in nhan for c in t), "nhãn nút không emoji")
 dlg._o["bat"].setChecked(True)
-dlg._luu()
+_hop0 = SO_HOP[0]
+ok(dlg._luu() == "dang_kiem", "Lưu kiểm thư mục ở luồng NỀN")
 bom(6, lambda: getattr(dlg, "_ket_luu", None) is not None)
+ok(dlg._ket_luu is True and SO_HOP[0] == _hop0 + 1,
+   "thư mục phiếu MẶC ĐỊNH chưa có -> CẢNH BÁO nhưng VẪN lưu (chỉ mất báo cáo nhóm)",
+   f"{dlg._ket_luu} {SO_HOP[0] - _hop0}")
 ok(TC.doc_cau_hinh(app_settings()).bat is True, "Lưu -> ghi QSettings tiền tố pipe_auto_")
 ok(all(k.startswith("pipe_auto_") for k in app_settings().allKeys() if "auto_" in k and "pipe" in k),
    "khoá đều tiền tố pipe_auto_")

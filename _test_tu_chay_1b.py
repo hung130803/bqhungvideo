@@ -282,8 +282,16 @@ o["thu_muc"].setText(str(T / "khong_co"))
 CANH_BAO.clear()
 ok(dlg._luu() == "dang_kiem" and o["ngay"].isEnabled(), "Lưu kiểm thư mục ở NỀN (không chặn giao diện)")
 bom(6, lambda: dlg._ket_luu is not None)
-ok(dlg._ket_luu is False and CANH_BAO and "không tồn tại" in CANH_BAO[0],
-   "thư mục phiếu không tồn tại -> báo, KHÔNG lưu", str(CANH_BAO))
+ok(dlg._ket_luu is True and CANH_BAO and "không tồn tại" in CANH_BAO[0]
+   and TC.doc_cau_hinh(app_settings()).thu_muc == str(T / "khong_co"),
+   "thư mục phiếu không tồn tại -> CẢNH BÁO rồi VẪN lưu", str(CANH_BAO))
+o["bat"].setChecked(False)
+CANH_BAO.clear()
+dlg._luu()
+bom(6, lambda: dlg._ket_luu is not None)
+ok(dlg._ket_luu is True and not CANH_BAO and not TC.doc_cau_hinh(app_settings()).bat,
+   "chỉ TẮT Tự chạy -> không kiểm thư mục, lưu ngay", str(CANH_BAO))
+o["bat"].setChecked(True)
 o["thu_muc"].setText(str(T))
 o["het_ngay"].setChecked(True)
 o["phut"].setValue(5)
@@ -719,7 +727,8 @@ from PyQt6.QtCore import QObject  # noqa: E402
 
 class _Gia(QObject):
     TC_BAO_CHO_MS = 30
-    TC_BAO_LAN = 5
+    TC_BAO_TRAN_MS = 80
+    TC_BAO_TONG_MS = 24 * 3_600_000
     _tu_chay_noi = _mw.MainWindow._tu_chay_noi
     _tu_chay_bao_loi_dung = _mw.MainWindow._tu_chay_bao_loi_dung
 
@@ -732,9 +741,13 @@ class _Gia(QObject):
 _goc_ui = _tcu.TuChayUI
 
 
+_DUNG_HONG: list = []
+
+
 class _Hong(_goc_ui):
     def bat_dau(self):
         super().bat_dau()
+        _DUNG_HONG.append(self)
         raise RuntimeError("thử dựng lỗi")
 
 
@@ -747,16 +760,20 @@ lan = {"n": 0}
 def _gui_d(cid, t, phim=False, html=True):
     lan["n"] += 1
     GUI_D.append(t)
-    return 1 if lan["n"] >= 3 else None
+    return 1 if lan["n"] >= 6 else None
 
 
 TB._bot = TB.BotQuanLy("tok", {9}, None)
 TB._bot.gui = _gui_d
 g._tu_chay_noi()
 _tcu.TuChayUI = _goc_ui
-bom(3, lambda: g._tu_chay_loi_dung["xong"])
-ok(g._tu_chay is None and g._tu_chay_loi_dung["xong"] and len(GUI_D) == 3,
-   "báo 'KHÔNG khởi động được' — thử lại tới khi gửi được (lần 3)", str(len(GUI_D)))
+bom(5, lambda: g._tu_chay_loi_dung["xong"])
+ok(g._tu_chay is None and g._tu_chay_loi_dung["xong"] and len(GUI_D) == 6,
+   "báo 'KHÔNG khởi động được' — thử lại QUÁ 5 lần tới khi gửi được (lần 6)", str(len(GUI_D)))
+ok(g._tu_chay_loi_dung["cho"] == 80, "giãn dần tới trần (x2 mỗi lần)", str(g._tu_chay_loi_dung))
+_h0 = _DUNG_HONG[0]
+ok(not _h0._t20.isActive() and not _h0._t15.isActive() and not _h0._t60.isActive(),
+   "dựng hỏng -> huỷ CẢ lượt đo đầu (singleShot) lẫn 2 nhịp")
 TB._bot = None
 
 print("\nS7 — phiếu cắt ghi lỗi kéo dài -> báo bot")
@@ -773,6 +790,47 @@ for _ in range(13):
     m.now[0] += 60
 PD.ghi_nguyen_tu = _goc_ghi
 ok(dem(m.tele, "không ghi được phiếu cắt") == 1, "ghi phiếu lỗi > 10 phút -> báo bot 1 lần", str(m.tele))
+
+print("\nN3 — lỗi phần NỀN kéo dài 2 giờ: đúng 1 tin lỗi mỗi giờ, 0 tin 'đã ổn'")
+don_sach()
+lam_kenh("N3", "N3", 0)
+cau_hinh(nhom="N3")
+m = Moi()
+m.tc.lich.hen = m.now[0] + 10 ** 9
+_goc_ko = TC.kiem_o_dia
+TC.kiem_o_dia = lambda *a, **k: 1 / 0
+for i in range(120):
+    m.now[0] += 60
+    n = m.tc.lan_nen
+    m.tc.nhip_60(m.now[0])
+    bom(5, lambda: m.tc.lan_nen > n)
+    m.now[0] += 1
+    m.tc.nhip()
+TC.kiem_o_dia = _goc_ko
+loi_nen = [t for t in m.tele if t.startswith("⚠") and "đo ổ / đọc phiếu" in t]
+ok(len(loi_nen) == 2 and dem(m.tele, "đã ổn lại") == 0,
+   "2 giờ lỗi phần nền xen nhịp 15 s + phần đồng bộ thành công -> 2 tin lỗi, 0 'ổn'", str(m.tele))
+
+print("\nN6 — Tự chạy TẮT mà ghi file bận lỗi: log 1 lần, KHÔNG Telegram")
+cau_hinh(nhom="N3", bat=False)
+m = Moi()
+m.tc.ghi_ban = lambda *a, **k: 1 / 0
+for _ in range(5):
+    m.now[0] += 60
+    m.tc.nhip_60(m.now[0])
+ok(not m.tele and dem(m.pg._pipe_report, "nhịp 60 s") == 1, "tắt = im lặng như cũ (log 1 lần)",
+   f"{m.tele} {m.pg._pipe_report[-3:]}")
+
+print("\nN5 — ô trạng thái đếm việc chờ có đệm 5 s (không truy vấn mỗi giây)")
+cau_hinh(nhom="N3")
+m = Moi()
+_dem_goi = []
+m.tc._dem_cho = lambda: (_dem_goi.append(1), 0)[-1]
+for i in range(10):
+    m.tc.trang_thai(m.now[0] + i * 0.5)
+ok(len(_dem_goi) == 1, "10 lần vẽ trong 5 giây -> 1 truy vấn", str(len(_dem_goi)))
+m.tc.trang_thai(m.now[0] + 6)
+ok(len(_dem_goi) == 2, "qua 5 giây -> đếm lại")
 
 print("\n" + "=" * 60)
 print(f"KETQUA CỔNG 112 tự chạy 1b: ĐẠT {len(DAT)} · HỎNG {len(HONG)}")

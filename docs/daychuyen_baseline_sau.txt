@@ -263,3 +263,17 @@ pyflakes: 77 dòng · undefined name: 0
   _test_shutdown_safety.py  mã thoát 0 · 1s · KẾT QUẢ: TẤT CẢ ĐẠT — luồng nền không thể làm sập app nữa
   _test_tu_chay_1b.py  mã thoát 0 · KETQUA CỔNG 112 tự chạy 1b: ĐẠT 96 · HỎNG 0
   thử phá 9 chốt mới (nháp): BẮT 9 · LỌT 0 (lượt đầu LỌT 1 ở mã lượt quét — test giả lập về muộn bằng tay, đã viết lại bằng 2 lượt quét thật -> BẮT)
+
+=== LƯỢT 6 (N1-N6) — 2026-11-04 15:05:50 — HEAD 4447acc + thay đổi chưa commit
+pyflakes: 77 dòng · undefined name: 0
+  _test_app_smoke.py  mã thoát 0 · 6s · ✅ KHÔNG LỖI: mọi trang, mọi nút, mọi hộp thoại, 40 nhịp poll
+  _test_pipe_dialogs.py  mã thoát 0 · 4s · ✅ MỌI HỘP THOẠI + NÚT MỞ ĐƯỢC, KHÔNG LỖI
+  _test_tele_bot.py  mã thoát 0 · 23s · KETQUA ĐẠT 112 · HỎNG 0
+  _test_tu_chay.py  mã thoát 0 · 14s · KETQUA CỔNG 110 tự chạy: ĐẠT 91 · HỎNG 0
+  _test_phieu_dot.py  mã thoát 0 · 4s · KETQUA CỔNG 111 phiếu đợt: ĐẠT 70 · HỎNG 0
+  _test_pipe_overlap.py  mã thoát 0 · 11s · ✅ TẤT CẢ ĐẠT
+  _test_cancel_persist.py  mã thoát 0 · 4s · KẾT QUẢ: TẤT CẢ ĐẠT — huỷ là huỷ, tắt app mở lại không tự chạy
+  _test_ui_smooth.py  mã thoát 0 · 2s · KẾT QUẢ: TẤT CẢ ĐẠT — dialog mở vẫn chạy, danh sách không nhấp nháy
+  _test_shutdown_safety.py  mã thoát 0 · 1s · KẾT QUẢ: TẤT CẢ ĐẠT — luồng nền không thể làm sập app nữa
+  _test_tu_chay_1b.py  mã thoát 0 · KETQUA CỔNG 112 tự chạy 1b: ĐẠT 103 · HỎNG 0
+  thử phá 6 chốt N (nháp): BẮT 6 · LỌT 0

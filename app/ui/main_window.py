@@ -165,9 +165,7 @@ class MainWindow(QMainWindow):
             # dựng dở (vd đăng ký bot lỗi SAU bat_dau): DỪNG timer, không để
             # nửa Tự chạy chạy ngầm.
             try:
-                for t in (self._tu_chay._t15, self._tu_chay._t60):
-                    if t is not None:
-                        t.stop()
+                self._tu_chay.dung()            # cả 3 timer, kể cả lượt đo đầu
             except Exception:  # noqa: BLE001
                 pass
             self._tu_chay = None
@@ -177,13 +175,16 @@ class MainWindow(QMainWindow):
             except Exception:  # noqa: BLE001
                 pass
             # 1b-V6: báo lên bot của CHÍNH app — thử lại tới khi GỬI ĐƯỢC
-            self._tu_chay_loi_dung = {"loi": loi, "lan": 0, "xong": False}
+            self._tu_chay_loi_dung = {"loi": loi, "lan": 0, "xong": False,
+                                      "cho": self.TC_BAO_CHO_MS, "tong": 0}
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(self.TC_BAO_CHO_MS, self._tu_chay_bao_loi_dung)
 
-    #: chờ bot lên rồi báo "Tự chạy KHÔNG khởi động được"; thử tối đa TC_BAO_LAN
+    #: chờ bot lên rồi báo "Tự chạy KHÔNG khởi động được"; thử lại GIÃN DẦN
+    #: (x2, tối đa 1 giờ/lần) tới khi gửi được, trong tối đa 24 giờ (N4).
     TC_BAO_CHO_MS = 60_000
-    TC_BAO_LAN = 5
+    TC_BAO_TRAN_MS = 3_600_000
+    TC_BAO_TONG_MS = 24 * 3_600_000
 
     def _tu_chay_bao_loi_dung(self) -> None:
         st = getattr(self, "_tu_chay_loi_dung", None)
@@ -204,9 +205,11 @@ class MainWindow(QMainWindow):
                 b._viec.submit(gui)
         except Exception:  # noqa: BLE001
             pass
-        if st["lan"] < self.TC_BAO_LAN:
+        st["tong"] += st["cho"]
+        if st["tong"] < self.TC_BAO_TONG_MS:
+            st["cho"] = min(self.TC_BAO_TRAN_MS, st["cho"] * 2)
             from PyQt6.QtCore import QTimer
-            QTimer.singleShot(self.TC_BAO_CHO_MS, self._tu_chay_bao_loi_dung)
+            QTimer.singleShot(st["cho"], self._tu_chay_bao_loi_dung)
 
     def _bot_dong_app(self) -> dict:
         """Bot xin ĐÓNG APP. Trả lời ngay rồi mới đóng sau 3 giây: bot kịp gửi tin

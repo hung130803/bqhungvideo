@@ -166,6 +166,16 @@ try:
         except Exception as e:  # noqa: BLE001
             FAIL.append(f"Tự chạy: nút '{t}' — {type(e).__name__}: {e}")
             print(f"  ✗ nút '{t}'  << {type(e).__name__}: {e}")
+    _t0 = time.time()
+    while getattr(pg._tu_chay_dlg, "_ket_luu", None) is None and time.time() - _t0 < 8:
+        qapp.processEvents()
+        time.sleep(0.02)
+    if getattr(pg._tu_chay_dlg, "_ket_luu", None) is not True:
+        FAIL.append("Tự chạy: bấm Lưu (kiểm thư mục ở nền) không ra kết quả lưu "
+                    f"({getattr(pg._tu_chay_dlg, '_ket_luu', None)})")
+        print("  ✗ Lưu chạy nền không ra kết quả")
+    else:
+        print("  ✓ Lưu (kiểm thư mục ở nền) ra kết quả: đã lưu")
 except Exception as e:  # noqa: BLE001
     FAIL.append(f"mở hộp Tự chạy — {type(e).__name__}: {e}")
     print(f"  ✗ không mở được hộp Tự chạy: {e}")

@@ -43,7 +43,8 @@ TREO_GIAY = 1200
 GHI_LOI_GIAY = 600
 TEN_LOI = {
     "loi_nhip": "Tự chạy lỗi trong nhịp chạy",
-    "loi_60": "Tự chạy lỗi trong nhịp 60 s (đo ổ / phiếu / trạng thái bận)",
+    "loi_60": "Tự chạy lỗi trong nhịp 60 s (trạng thái bận / chuẩn bị đo)",
+    "loi_nen": "Tự chạy lỗi khi đo ổ / đọc phiếu (luồng nền)",
     "nhom_rong": "nhóm Tự chạy đã chọn không còn kênh nào BẬT",
     "thu_muc_phieu": "không có thư mục phiếu đợt",
     "ghi_phieu": "không ghi được phiếu cắt",
@@ -97,7 +98,15 @@ class TuChayUI(QObject):
         self._t60 = QTimer(self)
         self._t60.timeout.connect(self.nhip_60)
         self._t60.start(60_000)
-        QTimer.singleShot(20_000, self.nhip_60)
+        self._t20 = QTimer(self)                # lượt đo đầu (huỷ được khi dựng hỏng)
+        self._t20.setSingleShot(True)
+        self._t20.timeout.connect(self.nhip_60)
+        self._t20.start(20_000)
+
+    def dung(self) -> None:
+        for t in (self._t15, self._t60, getattr(self, "_t20", None)):
+            if t is not None:
+                t.stop()
 
     def cau_hinh(self) -> TC.CauHinh:
         from app.ui.appsettings import app_settings
@@ -238,9 +247,20 @@ class TuChayUI(QObject):
         try:
             self._nhip_60(now)
         except Exception as e:  # noqa: BLE001
-            # khoá RIÊNG cho đường 60 s: nhịp 15 s thành công không được gọi
-            # "đã ổn" cho lỗi của đường này (B1).
-            self.bao_loi("loi_60", f"{TEN_LOI['loi_60']}: {type(e).__name__}: {e}", now)
+            loi = f"{TEN_LOI['loi_60']}: {type(e).__name__}: {e}"
+            try:
+                bat = self.cau_hinh().bat
+            except Exception:  # noqa: BLE001
+                bat = False
+            if not bat:
+                # Tự chạy TẮT (chỉ còn ghi file bận): im lặng như cũ — log 1
+                # lần, KHÔNG gửi Telegram (N6).
+                if self.lich.nen_noi("log:loi_60_tat", now):
+                    self.studio._pipe_log("⚠ " + loi)
+                return
+            # khoá RIÊNG cho phần ĐỒNG BỘ của đường 60 s; lỗi phần NỀN dùng
+            # "loi_nen" và chỉ _nen_xong thành công mới gỡ (B1/N3).
+            self.bao_loi("loi_60", loi, now)
             return
         self.het_loi("loi_60", now)
 
@@ -315,9 +335,9 @@ class TuChayUI(QObject):
         ok, val = kq
         now = self._dong_ho()
         if not ok:
-            self.bao_loi("loi_60", f"{TEN_LOI['loi_60']}: đo ổ / đọc phiếu lỗi — {val}", now)
+            self.bao_loi("loi_nen", f"{TEN_LOI['loi_nen']} — {val}", now)
             return
-        self.het_loi("loi_60", now)
+        self.het_loi("loi_nen", now)
         self.o_dia = val["o"]
         if val.get("het_ai") is not None:
             self.het_luot_ai = bool(val["het_ai"])
@@ -496,7 +516,10 @@ class TuChayUI(QObject):
         if self.lich.ly_do_cuoi:
             d.append(f"Lý do hoãn gần nhất ({TC.gio_hien(self.lich.ly_do_luc)}): "
                      + h(TC.LOI_NOI.get(self.lich.ly_do_cuoi, self.lich.ly_do_cuoi)))
-        self.cho_phan_tich = self._dem_cho()        # số MỚI mỗi lần vẽ
+        # số việc chờ MỚI khi vẽ, đệm 5 s (hộp vẽ mỗi giây trên luồng GD — N5)
+        if now - getattr(self, "_dem_luc", -1e18) >= 5:
+            self._dem_luc = now
+            self.cho_phan_tich = self._dem_cho()
         d.append(f"Việc phân tích đang chờ: {self.cho_phan_tich} (ngưỡng nhận thêm "
                  f"{cfg.nguong_cho})" + (" · AI HẾT LƯỢT kéo dài" if self.het_luot_ai else ""))
         if self.o_dia is not None:
@@ -856,9 +879,12 @@ def mo_hop(studio, exec_: bool = True):
         b_luu.setEnabled(False)
         b_luu.setText("Đang kiểm thư mục")
         hop: dict = {}
+        thu_muc = ed.text().strip()            # đọc ở LUỒNG GIAO DIỆN (N1)
+        if not cb_bat.isChecked():
+            hop["loi"] = ""                    # chỉ TẮT -> không kiểm (N2)
 
         def kiem():
-            hop["loi"] = kiem_thu_muc_phieu(ed.text().strip())
+            hop["loi"] = kiem_thu_muc_phieu(thu_muc)
 
         def het_han():
             if trang_luu["the"] != the or not trang_luu["dang"]:
@@ -868,6 +894,12 @@ def mo_hop(studio, exec_: bool = True):
             _ket_qua()
 
         def _ket_qua():
+            try:
+                _ket_qua_that()
+            except RuntimeError:               # hộp đã đóng/huỷ giữa lúc kiểm
+                trang_luu["dang"] = False
+
+        def _ket_qua_that():
             if not trang_luu["dang"] or trang_luu["the"] != the:
                 return
             trang_luu["dang"] = False
@@ -878,9 +910,11 @@ def mo_hop(studio, exec_: bool = True):
                 return
             loi = hop.get("loi") or ""
             if loi:
-                QMessageBox.warning(dlg, "Thư mục phiếu đợt", loi + "\nChưa lưu.")
-                dlg._ket_luu = False
-                return
+                # N2: thiếu / không ghi được thư mục phiếu chỉ làm MẤT phần báo
+                # cáo nhóm, video vẫn cắt theo quét -> cảnh báo rồi VẪN lưu.
+                QMessageBox.warning(dlg, "Thư mục phiếu đợt", loi + "\nVẫn lưu: video "
+                                    "vẫn được cắt theo quét thư mục, chỉ thiếu báo cáo "
+                                    "nhóm cho tới khi thư mục có (tool tải tạo ra).")
             dlg._ket_luu = _ghi()
 
         def _cho():
@@ -889,7 +923,8 @@ def mo_hop(studio, exec_: bool = True):
             elif trang_luu["dang"] and trang_luu["the"] == the:
                 QTimer.singleShot(50, _cho)
         dlg._ket_luu = None
-        threading.Thread(target=kiem, daemon=True, name="bq-kiem-phieu").start()
+        if "loi" not in hop:
+            threading.Thread(target=kiem, daemon=True, name="bq-kiem-phieu").start()
         QTimer.singleShot(50, _cho)
         QTimer.singleShot(5000, het_han)
         return "dang_kiem"
