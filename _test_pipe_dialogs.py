@@ -116,6 +116,7 @@ HOP_THOAI = [
     ("Quản lý video", lambda: pg._manage_videos()),
     ("Quản lý kênh", lambda: pg._manage_projects()),
     ("Sửa tên/cấu hình kênh", lambda: pg._build_edit_proj_dialog(pid)),
+    ("Tự chạy dây chuyền", lambda: pg._tu_chay_dialog()),
 ]
 
 print("\n══ SMOKE: mở từng hộp thoại (bắt lỗi ngay khi bấm) ══")
@@ -148,6 +149,26 @@ try:
 except Exception as e:  # noqa: BLE001
     FAIL.append(f"mở hộp Dây chuyền để bấm nút — {type(e).__name__}: {e}")
     print(f"  ✗ không mở được hộp Dây chuyền: {e}")
+
+# Hộp Tự chạy (Đợt 1, 04/11/2026): bấm HẾT nút, kể cả Lưu (bật ô không chạy ngay)
+print("\n══ SMOKE: bấm mọi nút trong hộp Tự chạy dây chuyền ══")
+try:
+    pg._tu_chay_dialog()
+    from PyQt6.QtWidgets import QCheckBox as _QCB, QPushButton as _QPB2
+    for c in pg._tu_chay_dlg.findChildren(_QCB):
+        c.click()
+    for b in pg._tu_chay_dlg.findChildren(_QPB2):
+        t = b.text()
+        try:
+            b.click()
+            qapp.processEvents()
+            print(f"  ✓ nút '{t}'")
+        except Exception as e:  # noqa: BLE001
+            FAIL.append(f"Tự chạy: nút '{t}' — {type(e).__name__}: {e}")
+            print(f"  ✗ nút '{t}'  << {type(e).__name__}: {e}")
+except Exception as e:  # noqa: BLE001
+    FAIL.append(f"mở hộp Tự chạy — {type(e).__name__}: {e}")
+    print(f"  ✗ không mở được hộp Tự chạy: {e}")
 
 for k, v in _saved.items():
     if v is None:
@@ -183,7 +204,7 @@ for _ten, _fn, _can in (
         ("🗑 Kho video & dọn dẹp", pg._pipe_menu_kho, ["Thùng rác", "Dọn file rác"]),
         ("🔧 Sửa & làm lại", pg._pipe_menu_fix,
          ["Cứu video kẹt", "Cắt cơ bản", "Làm lại cả nhóm"]),
-        ("⋮ thêm", pg._pipe_menu_more, ["kênh đã ẩn"])):
+        ("⋮ thêm", pg._pipe_menu_more, ["kênh đã ẩn", "Tự chạy"])):
     _m = _muc_menu(_fn)
     _thieu = [c for c in _can if not any(c.lower() in x.lower() for x in _m)]
     if _thieu:

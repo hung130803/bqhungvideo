@@ -249,6 +249,9 @@ HOP = [
     ("Quản lý video", lambda: S._manage_videos(), None, ()),
     ("Quản lý kênh", lambda: S._manage_projects(), None, ()),
     ("Sửa cấu hình kênh", lambda: S._build_edit_proj_dialog(pid), None, ()),
+    # Đợt 1 dây chuyền tự động (04/11/2026): hộp cài đặt Tự chạy (menu ⋮).
+    # Bấm cả "Lưu" với ô Bật đã đổi: bật ô KHÔNG được chạy gì ngay.
+    ("Tự chạy dây chuyền", lambda: S._tu_chay_dialog(), "_tu_chay_dlg", ()),
 ]
 for ten, mo, attr, bo in HOP:
     try:

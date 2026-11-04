@@ -1,0 +1,202 @@
+=== NỀN dây chuyền — 2026-11-04 12:15:33 — HEAD 6f43789 — nhánh daychuyen-tu-dong
+
+=== [1] pyflakes app config.py main.py
+mã thoát 1
+số dòng: 77 · undefined name: 0
+
+=== [2] _chay_hoi_quy.py
+==============================================================================
+HỒI QUY — 64 cổng · BQ_MOC_REF=v2.25.0
+==============================================================================
+  80 không xoá nhầm      rc=0      2.4s  ĐẠT   69 · HỎNG 0     (mốc 69)
+  77 không lộ key        rc=0    175.1s  ĐẠT   27 · HỎNG 0     (mốc 27)
+  78 bù giọng gốc        rc=0      7.0s  ĐẠT   52 · HỎNG 0     (mốc 52)
+  74 JSON bao dung       rc=0     27.4s  ĐẠT   80 · HỎNG 0     (mốc 80)
+  75 clip mở được        rc=0     20.7s  ĐẠT   63 · HỎNG 0     (mốc 63)
+  76 nhấn nhá từng giọng rc=0      0.6s  ĐẠT   31 · HỎNG 0     (mốc 29)
+  79 gom nhóm giọng      rc=0      2.7s  ĐẠT   93 · HỎNG 0     (mốc 87)
+  81 giọng theo kênh     rc=0      0.8s  ĐẠT   57 · HỎNG 0     (mốc 57)
+  82 Chatterbox đã nối   rc=0     45.9s  ĐẠT   59 · HỎNG 0     (mốc 59)
+  83 mở hết giọng        rc=0      4.7s  ĐẠT   42 · HỎNG 0     (mốc 41)
+  84 ô tìm giọng         rc=0      7.5s  ĐẠT   63 · HỎNG 0     (mốc 63)
+  86 đè giọng            rc=0     37.0s  ĐẠT   82 · HỎNG 0     (mốc 82)
+  72 giọng ngoài         rc=0     41.4s  ĐẠT   98 · HỎNG 0     (mốc 98)
+  73 gióng hàng          rc=0    145.9s  ĐẠT   50 · HỎNG 0     · BỎ QUA 1  << TỤT so mốc 52
+  71 tách giọng GPU      rc=0      0.7s  ĐẠT   22 · HỎNG 0     (mốc 22)
+  70 model Groq còn sống rc=0     23.8s  ĐẠT   44 · HỎNG 0     (mốc 44)
+  69 viết tắt + mốc      rc=0      0.5s  ĐẠT  160 · HỎNG 0     (mốc 160)
+  68 kiểu chữ thay giọng rc=0     25.2s  ĐẠT   45 · HỎNG 0     (mốc 45)
+  85 nghe thử đúng tiếng rc=0     80.7s  ĐẠT   76 · HỎNG 0     (mốc 67)
+  87 giọng Kokoro        rc=0     81.4s  ĐẠT   44 · HỎNG 0     (mốc 44)
+  88 giọng của tôi       rc=0      9.1s  ĐẠT  246 · HỎNG 0     (mốc 246)
+  89 chỉnh hình theo giọng rc=0     47.4s  ĐẠT  190 · HỎNG 0     (mốc 190)
+  90 nhịp lúc đang đọc   rc=0      4.9s  ĐẠT  113 · HỎNG 0     (mốc 113)
+  91 nhân bản đa ngôn ngữ rc=0     12.9s  ĐẠT  139 · HỎNG 0     (mốc 139)
+  92 đọc lại câu lan man rc=0     12.2s  ĐẠT   90 · HỎNG 0     (mốc 90)
+  93 dịch chia mẻ        rc=0      0.5s  ĐẠT   34 · HỎNG 0     (mốc 34)
+  94 hậu kiểm mạch chuyện rc=0      0.2s  ĐẠT   23 · HỎNG 0     (mốc 23)
+  95 tiếng ngắn hơn hình rc=0      4.1s  ĐẠT   10 · HỎNG 0     (mốc 10)
+  96 nền không xanh + chữ không ô vuông rc=0      3.2s  ĐẠT   26 · HỎNG 0     (mốc 26)
+  97 bot Telegram quản lý dây chuyền rc=0     26.8s  ĐẠT  112 · HỎNG 0     (mốc 112)
+  98 tự đăng nhập + bot gác cổng + đóng app rc=0     36.2s  ĐẠT   79 · HỎNG 0     (mốc 79)
+  99 không nghẽn ổ cứng cơ + không dịch lại mã rc=0      7.4s  ĐẠT   27 · HỎNG 0     (mốc 27)
+  100 sổ tạm cũ không làm hỏng DB đang lành rc=0      3.2s  ĐẠT   22 · HỎNG 0     (mốc 22)
+  101 gọi AI Groq song song có giới hạn rc=0     19.8s  ĐẠT    8 · HỎNG 0     (mốc 8)
+  102 nâng sáng nhẹ + nền cong YUV rc=0     28.8s  ĐẠT   20 · HỎNG 0     (mốc 20)
+  103 hết lượt AI giữa chừng -> đợi, không ra Part thiếu rc=0      8.4s  ĐẠT   27 · HỎNG 0     (mốc 27)
+  104 rà soát toàn bộ 01/11 (ghi file · dây chuyền · bot · AI) rc=0     14.1s  ĐẠT   29 · HỎNG 0     (mốc 29)
+  105 tiếng động đa dạng + hợp lý rc=0     30.9s  ĐẠT   52 · HỎNG 0     (mốc 52)
+  106 nhạc nền tự chọn theo nội dung rc=0     39.3s  ĐẠT   96 · HỎNG 0     (mốc 96)
+  107 lỗi đã chạy lại + phân tích không đói đĩa rc=0      4.5s  ĐẠT   12 · HỎNG 0     (mốc 12)
+  108 key Cài đặt AI không mất âm thầm rc=0      2.0s  ĐẠT   13 · HỎNG 0     (mốc 13)
+  109 video không lời: tên/hashtag không lấy chữ bịa rc=0      0.5s  ĐẠT   30 · HỎNG 0     (mốc 30)
+  67 Adam ElevenLabs     rc=0     19.3s  ĐẠT   35 · HỎNG 0     (mốc 35)
+  66 độ to đường xuất    rc=0     23.7s  ĐẠT   53 · HỎNG 0     (mốc 53)
+  65 độ to + nghe thử    rc=1    100.0s  ĐẠT   31 · HỎNG 4     << TỤT so mốc 47
+  64 Piper               rc=0     74.4s  ĐẠT   57 · HỎNG 0     (mốc 57)
+  63 biến thể giọng      rc=0      2.4s  ĐẠT   49 · HỎNG 0     (mốc 49)
+  62 quét cả khung       rc=0      2.6s  ĐẠT   33 · HỎNG 0     (mốc 33)
+  60 chữ theo lời        rc=0      0.8s  ĐẠT   42 · HỎNG 0     (mốc 42)
+  59 đường dài           rc=0      8.9s  ĐẠT   46 · HỎNG 0     (mốc 46)
+  57 bảng tiến độ        rc=0     20.8s  ĐẠT   57 · HỎNG 0     (mốc 57)
+  56 che chữ             rc=1     30.9s  ĐẠT   88 · HỎNG 1     << TỤT so mốc 132
+  55 thay giọng UI       rc=0    239.9s  ĐẠT   48 · HỎNG 0     (mốc 48)
+  54 dubbing CJK         rc=1      0.3s  ĐẠT    ? · HỎNG ?   
+  53 thay giọng          rc=0     12.2s  ĐẠT   44 · HỎNG 0     (mốc 44)
+  52 CJK vá              rc=1      5.5s  ĐẠT   33 · HỎNG 13    << TỤT so mốc 46
+  52b mảnh cuối          rc=0      3.1s  ĐẠT    9 · HỎNG 0   
+  31 nút không cụt       rc=0      1.8s  ĐẠT   18 · HỎNG 0   
+  và/lỡ phụ đề           rc=0      0.8s  ĐẠT   16 · HỎNG 0     (mốc 16)
+  không popup            rc=0      5.4s  ĐẠT    ? · HỎNG ?   
+  làn cắt đói            rc=0      0.2s  ĐẠT    ? · HỎNG ?   
+  smoke                  rc=0     50.0s  ĐẠT    ? · HỎNG ?   
+  cửa chặn: hộp dây chuyền rc=0      3.4s  ĐẠT    ? · HỎNG ?   
+  77 không lộ key (lượt cuối) rc=0    119.7s  ĐẠT   27 · HỎNG 0     (mốc 27)
+==============================================================================
+ĐỎ: 4 cổng -> ['65 độ to + nghe thử', '56 che chữ', '54 dubbing CJK', '52 CJK vá']
+ĐÁNG NGỜ (rc=0 mà không thấy dòng tổng kết / chạy <0,3s): ['94 hậu kiểm mạch chuyện', 'không popup', 'làn cắt đói', 'smoke', 'cửa chặn: hộp dây chuyền']
+TỤT SỐ MỤC so với mốc: ['73 gióng hàng', '65 độ to + nghe thử', '56 che chữ', '52 CJK vá']
+MỤC KHÔNG CHẤM (máy bận, không phải ĐẠT cũng không phải HỎNG): [('73 gióng hàng', 1)]
+mã thoát 1 · 1775s
+
+=== [riêng] _test_pipe_overlap.py
+mã thoát 0 · 13s
+  ✓ bất biến vàng vẫn giữ sau khi qua đêm
+  ✓ video huỷ được nhận LẠI khi user CHỦ ĐỘNG bấm ▶ Chạy
+
+==============================================================
+✅ TẤT CẢ ĐẠT
+==============================================================
+
+=== [riêng] _test_shutdown_safety.py
+mã thoát 0 · 2s
+  ✓ vẫn dừng worker pool trước khi thoát
+  ✓ closeEvent: bật cờ đóng TRƯỚC khi giết tiến trình con
+  ✓ mọi emit từ luồng nền đã bọc safe_emit
+  ✓ không còn emit TRẦN trong _bg_thumbs
+
+KẾT QUẢ: TẤT CẢ ĐẠT — luồng nền không thể làm sập app nữa
+
+=== [riêng] _test_cancel_persist.py
+mã thoát 0 · 4s
+  ✓ đối chứng: việc DỞ thật (pending) vẫn được nối lại
+  ✓ poll huỷ (app sống): dòng sổ được trả ngay
+  ✓ poll huỷ: video gốc VẪN NẰM trong thư mục kênh
+  ✓ poll huỷ: KHÔNG file nào bị đẩy vào `_Loi` (huỷ ≠ lỗi)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — huỷ là huỷ, tắt app mở lại không tự chạy
+
+=== [riêng] _test_ui_smooth.py
+mã thoát 0 · 2s
+  ✓ thêm clip -> danh sách có 4 dòng
+== 5. ngân sách 1 nhịp poll với 100 kênh ==
+     (_poll_tick: 0.24 ms/nhịp)
+  ✓ 1 nhịp poll < 30ms (đo 0.24ms) — UI không thể là nguồn đơ
+
+KẾT QUẢ: TẤT CẢ ĐẠT — dialog mở vẫn chạy, danh sách không nhấp nháy
+
+=== [riêng] _test_guard.py
+mã thoát 0 · 0s
+
+=== [riêng] _test_ai_gate.py
+mã thoát 0 · 2s
+══ 4. video qua AI xuất thẳng ══
+[lớp chữ] phông «Montserrat» vẽ ra Ô VUÔNG -> dùng Arial
+  ✓ KHÔNG phân tích lại video đã qua AI
+  ✓ không bị đánh dấu [CƠ BẢN] oan
+
+KẾT QUẢ: TẤT CẢ ĐẠT — nhìn được video nào qua AI, video nào không
+
+=== [riêng] _test_db_corrupt_guard.py
+mã thoát 0 · 0s
+
+== 7. PRAGMA tối ưu độ mượt có hiệu lực ==
+  ✓ wal_autocheckpoint = 256 (WAL không phình)
+  ✓ synchronous = NORMAL (1) — bớt fsync, UI mượt
+
+KẾT QUẢ: TẤT CẢ ĐẠT — DB vỡ không còn làm app đơ
+
+=== [riêng] _test_tpl_per_channel.py
+mã thoát 0 · 2s
+  ✓ MỌI kênh đang hiện nhận 'Mẫu ĐỎ' sau khi bấm Đồng ý
+  ✓ bảng HIỆN NGAY mẫu mới (không phải mở lại hộp mới thấy)
+  ✓ bấm KHÔNG ở hộp xác nhận -> giữ nguyên mẫu cũ
+  ✓ chọn '(mẫu đang chọn ở trang chính)' -> BỎ gán cho cả loạt (về như cũ)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — mỗi kênh 1 mẫu riêng, chưa gán thì như cũ
+
+=== [riêng] _test_tpl_export_path.py
+mã thoát 0 · 2s
+
+══ 9. MỞ HỘP DÂY CHUYỀN với 200 kênh — ngân sách < 4s ══
+  ✓ mở hộp 212 dòng trong 176ms (< 4s)
+  ✓ ô chọn mẫu liệt kê đủ mẫu (có 215)
+
+KẾT QUẢ: TẤT CẢ ĐẠT — mẫu theo kênh đúng tới payload ffmpeg, 200 kênh
+
+=== [riêng] _test_don_rac.py
+mã thoát 0 · 0s
+══ 8. gap_wal không được nổ ở mọi trạng thái ══
+  ✓ DB đã ngắt mạch -> trả 0, không đụng đĩa
+  ✓ DB RAM -> trả 0
+  ✓ gọi 2 lần liên tiếp vẫn trả số
+
+KẾT QUẢ: TẤT CẢ ĐẠT — app tự dọn rác đúng thứ của mình, gấp WAL khi thoát
+
+=== [riêng] _test_pipe_integ.py
+mã thoát 0 · 174s
+[12:45:55] nhận dần 1 video từ 1 kênh (từng cái — không treo giao diện)…
+[12:46:05] ▶ Kênh Integ: nhận 'video_that.mp4' (auto) — bắt đầu cắt
+[12:46:06] tổng nhận 1/1 video từ 1 kênh
+[12:48:28] AI chọn 3 Part: đã chọn đủ ứng viên dùng được; điểm chỉ để xếp hạng — chọn đoạn bằng XEM HÌNH (3 đoạn, video không lời); trọng tài chấm: 27, 19, 2
+[12:48:33] ⚠ Kênh Integ: 3 job xuất lỗi. Có thể xuất lại từ video gốc.
+TONG: FAIL
+
+=== [riêng] _test_100_kenh.py
+mã thoát 1 · 8s
+══ 3. Điều phối job khi có 0 job chờ ══
+Traceback (most recent call last):
+  File "D:\claude\ai-content-studio\_test_100_kenh.py", line 128, in <module>
+    jid0 = list(pg._pipe_cut)[0]
+           ~~~~~~~~~~~~~~~~~~^^^
+IndexError: list index out of range
+
+=== [riêng] _test_muot_tram_kenh.py
+mã thoát 0 · 2s
+=== 7. Nhịp poll TRANG CHÍNH vẫn trong ngân sách ===
+  ✅ 7a đếm job + liệt kê 200 kênh < 10 ms mỗi cái — đếm 0.1 ms · kênh 0.5 ms
+
+==============================================================
+ĐẠT 18 · SAI 0
+✅ CỔNG 30 ĐẠT — chạy hàng trăm kênh, giao diện còn trong ngân sách
+
+=== [riêng] _test_pipe_e2e.py
+mã thoát 0 · 118s
+[12:49:04] ⚠ Kênh Test: hong.mp4 chưa đọc được metadata hoặc quá ngắn. GIỮ NGUYÊN video; kiểm tra ffprobe và file tải về.
+[12:49:05] ▶ Kênh Test: nhận 'video_nguon.mp4' (auto) — bắt đầu cắt
+[12:49:06] tổng nhận 1/2 video từ 1 kênh
+[12:50:40] AI chọn 1 Part: chưa kiểm tra xong chất lượng; cần xem lại trước khi xuất — Mạch chuyện: Đoạn nối chứa lời quảng cáo/chào kênh; giữ bản chọn
+[12:50:42] ⚠ Kênh Test: 1 job xuất lỗi. Có thể xuất lại từ video gốc.
+TONG: FAIL
+
+=== XONG 2026-11-04 12:50:42

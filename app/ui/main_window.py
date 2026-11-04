@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
         self._ban_sua_theo_doi()
         self._tam_dung_theo_doi()
         self._bot_noi_giao_dien()
+        self._tu_chay_noi()
         # Tự kiểm tra bản mới (nền, im lặng nếu lỗi mạng)
         self._update_found.connect(self._notify_update)
         self._start_update_check()
@@ -148,6 +149,17 @@ class MainWindow(QMainWindow):
             self._bot_timer = t
         except Exception:  # noqa: BLE001 - bot là phụ, không làm hỏng app
             pass
+
+    # ---- TỰ CHẠY DÂY CHUYỀN (INTEGRATION.md mục 5, 11, 12) ----
+    def _tu_chay_noi(self):
+        """QTimer RIÊNG của MainWindow (không treo vào _poll_tick). Công tắc
+        mặc định TẮT -> mọi nhịp trả về ngay, app chạy y như trước."""
+        try:
+            from app.ui.tu_chay_ui import TuChayUI
+            self._tu_chay = TuChayUI(self, self.studio, self.state)
+            self._tu_chay.bat_dau()
+        except Exception:  # noqa: BLE001 - tự chạy là phụ, không làm hỏng app
+            self._tu_chay = None
 
     def _bot_dong_app(self) -> dict:
         """Bot xin ĐÓNG APP. Trả lời ngay rồi mới đóng sau 3 giây: bot kịp gửi tin
@@ -677,6 +689,13 @@ class MainWindow(QMainWindow):
         self.state.pool._notify()      # đánh thức dispatcher áp giới hạn mới
 
     def closeEvent(self, event):
+        # Trạng thái bận cho PCBot: ghi lần cuối ban=false (mục 12) TRƯỚC khi
+        # bật cờ đóng (sau đó mọi việc nền im lặng bỏ).
+        try:
+            if getattr(self, "_tu_chay", None) is not None:
+                self._tu_chay.thoat()
+        except Exception:  # noqa: BLE001
+            pass
         # ĐẦU TIÊN bật cờ ĐANG ĐÓNG: 19 luồng nền (ảnh thu nhỏ/tải/TTS) phải im
         # lặng dừng, KHÔNG emit vào widget đang bị Qt phá — đó là gốc crash
         # 0xc0000005 mà WER ghi 8 lần (xem app/ui/shutdown.py).

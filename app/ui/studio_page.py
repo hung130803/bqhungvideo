@@ -6665,7 +6665,7 @@ class StudioPage(QWidget):
             return sel
         return self._settings.value("pipe_grp_sel", "__ALL__")
 
-    def _pipe_run(self, nen=False, nhom=Ellipsis):
+    def _pipe_run(self, nen=False, nhom=Ellipsis, im=False):
         """▶ CHẠY DÂY CHUYỀN (chạy khi bấm — không tự chạy nền): quét thư mục
         trung chuyển của mọi kênh bật dây chuyền -> mỗi kênh nhận tối đa
         pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
@@ -6674,12 +6674,17 @@ class StudioPage(QWidget):
         nen=True (nút ▶ Chạy, 26/10/2026): QUÉT thư mục (iterdir + stat + băm
         2 MB mỗi file) ở luồng nền, NHẬN từng file với ffprobe + băm soi trước
         ở luồng nền -> luồng giao diện chỉ còn ghi sổ. Gọi trơn (test, lối
-        cũ) vẫn chạy đồng bộ như trước."""
+        cũ) vẫn chạy đồng bộ như trước.
+
+        im=True (lượt TỰ CHẠY, 04/11/2026): KHÔNG nhảy màn hình — không đổi
+        `_pipe_focus_target` của lượt bấm tay đang chạy song song, video nhận
+        ở lượt này không bao giờ được đưa ra màn chính."""
         from app.core import pipeline as P
         self._scan_cache_clear()      # chạy thật -> KHÔNG dùng số liệu đệm
         # Không còn "thư mục trung chuyển" chung — mỗi kênh tự đặt thư mục
         # riêng (export_dir/pipe_src). root chỉ là fallback cũ (thường rỗng).
-        self._pipe_focus_target = None   # video ĐẦU TIÊN nhận -> đưa ra màn chính
+        if not im:
+            self._pipe_focus_target = None   # video ĐẦU TIÊN nhận -> đưa ra màn chính
         root = self._pipe_root()
         # HỒI PHỤC TRƯỚC expire_stale_taken: video dở của phiên trước phải được
         # nối tiếp (xuất Part + dọn gốc) chứ không bị đổi sang 'error' rồi phân
@@ -6769,6 +6774,7 @@ class StudioPage(QWidget):
                 return kq, loi
 
             def _quet_xong(kq):
+                self._pipe_dang_quet = max(0, getattr(self, "_pipe_dang_quet", 0) - 1)
                 ok, val = kq
                 if not ok:
                     self._pipe_log(f"⚠ quét thư mục lỗi — {val}")
@@ -6776,9 +6782,12 @@ class StudioPage(QWidget):
                     return
                 for _l in val[1]:
                     self._pipe_log(_l)
-                self._pipe_run_tiep(val[0], _mode, nen=True)
+                self._pipe_run_tiep(val[0], _mode, nen=True, im=im)
             self.status.setText(f"🤖 Đang quét thư mục {len(_bat)} kênh ở nền… "
                                 "(giao diện vẫn dùng được)")
+            # cờ ĐANG QUÉT riêng: lúc quét nền _bot_dang_nhan() = 0 nên Tự chạy
+            # không dựa được vào nó để biết lượt trước còn dở.
+            self._pipe_dang_quet = getattr(self, "_pipe_dang_quet", 0) + 1
             self._chay_nen(_quet, _quet_xong, "bq-quet-kenh")
             return 0
         plans = []
@@ -6799,15 +6808,19 @@ class StudioPage(QWidget):
                     "(giao diện vẫn dùng được)")
                 _QApp.processEvents()
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
-        return self._pipe_run_tiep(plans, mode_by_pid)
+        return self._pipe_run_tiep(plans, mode_by_pid, im=im)
 
-    def _bot_chay_day_chuyen(self, nhom) -> dict:
+    def _bot_chay_day_chuyen(self, nhom, tu_dong=False) -> dict:
         """Lệnh "chạy dây chuyền" từ bot Telegram — CHẠY Ở LUỒNG GIAO DIỆN
         (tele_bot đưa vào hàng đợi, main_window rút ra bằng QTimer).
 
         Cùng các cửa chặn của nút ▶ Chạy (thiếu key AI -> chặn) rồi gọi ĐÚNG
         `_pipe_run(nen=True)` như nút bấm, chỉ khác là nhóm do bot chỉ định.
-        Hộp xác nhận của nút được thay bằng nút "Xác nhận" trên Telegram."""
+        Hộp xác nhận của nút được thay bằng nút "Xác nhận" trên Telegram.
+
+        tu_dong=True: lượt TỰ CHẠY (app/ui/tu_chay_ui.py) — cùng các cửa chặn,
+        cùng `_pipe_run(nen=True)`, chỉ khác: không nhảy màn hình (im=True) và
+        nhật ký ghi rõ là Tự chạy. Kiểu trả về giữ nguyên."""
         from app.ai import llm as _llm
         if not _llm.is_configured():
             self._pipe_log("🔴 Bot: CHẶN CHẠY — chưa có key AI")
@@ -6824,9 +6837,18 @@ class StudioPage(QWidget):
         n = int(r["n"]) if r else 0
         if not n:
             return {"ok": False, "ly_do": "Nhóm này không có kênh nào BẬT dây chuyền."}
+        if tu_dong:
+            self._pipe_log(f"Tự chạy: chạy dây chuyền ({n} kênh) — nhóm "
+                           f"\"{'tất cả' if nhom in (None, '__ALL__') else (nhom or 'Chưa phân nhóm')}\"")
+            self._pipe_run(nen=True, nhom=nhom, im=True)
+            return {"ok": True, "kenh": n}
         self._pipe_log(f"🤖 Lệnh từ bot Telegram: chạy dây chuyền ({n} kênh)")
         self._pipe_run(nen=True, nhom=nhom)
         return {"ok": True, "kenh": n}
+
+    def _pipe_dang_quet_n(self) -> int:
+        """Số lượt QUÉT NỀN đang dở (Tự chạy đọc để bỏ nhịp)."""
+        return int(getattr(self, "_pipe_dang_quet", 0) or 0)
 
     def _bot_nhom_rong(self) -> list:
         """Nhóm mới tạo CÒN RỖNG (chỉ nằm trong QSettings, chưa có trong DB) —
@@ -6869,7 +6891,7 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001
             return 0
 
-    def _pipe_run_tiep(self, plans, mode_by_pid, nen=False):
+    def _pipe_run_tiep(self, plans, mode_by_pid, nen=False, im=False):
         """Nửa sau của _pipe_run (LUỒNG GIAO DIỆN): kế hoạch quét -> hàng đợi
         nhận. Tách ra để bản quét-nền gọi lại được."""
         # Gom DANH SÁCH file cần nhận (log skip/note/busy ngay). KHÔNG nhận
@@ -6904,6 +6926,19 @@ class StudioPage(QWidget):
                                    "trong dây chuyền (lượt trước chưa xong)")
                     continue
                 dang_bay.add(khoa)
+                if im and self._pipe_da_huy(it.project_id, khoa):
+                    _dn = self.__dict__.setdefault("_pipe_huy_da_noi", set())
+                    if khoa not in _dn:
+                        _dn.add(khoa)
+                        self._pipe_log(f"⏭ {it.name}: {path.name} — đã HUỶ trước đó, "
+                                       "Tự chạy KHÔNG nhận lại (bấm Chạy dây chuyền "
+                                       "tay nếu muốn làm lại)")
+                    dang_bay.discard(khoa)
+                    continue
+                if im:
+                    # video của lượt TỰ CHẠY: không bao giờ được chọn làm video
+                    # đưa ra màn chính (kể cả khi lượt tay nối vào cùng hàng).
+                    self.__dict__.setdefault("_pipe_im_khoa", set()).add(khoa)
                 worklist.append((it.project_id, it.name,
                                  mode_by_pid.get(it.project_id, "auto"), path))
         if not worklist:
@@ -6920,6 +6955,8 @@ class StudioPage(QWidget):
         # "tổng nhận X/Y" sai bét.
         dang_chay = bool(getattr(self, "_pipe_intake_q", None))
         if dang_chay:
+            if not im:
+                self._pipe_intake_tay = True     # có lượt bấm tay trong hàng
             self._pipe_intake_q.extend(worklist)
             self._pipe_intake_total = getattr(self, "_pipe_intake_total", 0) + len(worklist)
             self._pipe_intake_nchan = getattr(self, "_pipe_intake_nchan", 0) + len(plans)
@@ -6932,6 +6969,7 @@ class StudioPage(QWidget):
                 f"{len(self._pipe_intake_q)} video chờ nhận.")
             return 0        # KHÔNG gọi _pipe_intake_step: vòng cũ vẫn đang chạy
         self._pipe_intake_q = worklist
+        self._pipe_intake_tay = not im      # lượt tự chạy thuần -> không nhảy màn
         self._pipe_intake_nen = bool(nen)   # vòng nhận này soi file ở nền
         self._pipe_intake_taken = 0
         self._pipe_intake_total = len(worklist)
@@ -6943,6 +6981,29 @@ class StudioPage(QWidget):
             "treo máy) — sẽ tự phân tích/cắt/xuất và dọn gốc vào Thùng rác.")
         self._pipe_intake_step()
         return 0
+
+    def _pipe_da_huy(self, pid, khoa) -> bool:
+        """Video này (cùng đường dẫn) có lượt phân tích/xuất gần nhất ĐÃ HUỶ
+        không. Chỉ lượt TỰ CHẠY hỏi: huỷ là huỷ, nhịp sau không tự làm lại
+        (lượt bấm tay vẫn nhận lại như cũ)."""
+        try:
+            from app.core.pipeline_safety import latest_export_states
+            for v in db.query("SELECT id, src_path FROM videos WHERE project_id=? "
+                              "ORDER BY id DESC", (int(pid),)):
+                if self._pipe_khoa(v["src_path"] or "") != khoa:
+                    continue
+                j = db.query_one("SELECT status, cancel_req FROM jobs WHERE video_id=? "
+                                 "AND type IN ('auto','auto_recap') ORDER BY id DESC "
+                                 "LIMIT 1", (int(v["id"]),))
+                if not j:
+                    return False
+                if j["status"] in ("canceled", "skipped") or j["cancel_req"]:
+                    return True
+                return any(s in ("canceled", "skipped")
+                           for s in latest_export_states(int(v["id"])).values())
+        except Exception:  # noqa: BLE001 - không chắc thì để như cũ (nhận)
+            return False
+        return False
 
     def _pipe_intake_step(self) -> None:
         """Nhận 1 video mỗi nhịp QTimer rồi nhường event loop → chạy 100 kênh
@@ -6958,7 +7019,8 @@ class StudioPage(QWidget):
             self.status.setText(
                 f"🤖 Dây chuyền: đã nhận {taken} video — đang phân tích/cắt, "
                 "xong tự xuất Part + dọn gốc vào Thùng rác. Theo dõi ở Tiến trình.")
-            if getattr(self, "_pipe_focus_target", None):
+            if getattr(self, "_pipe_focus_target", None) \
+                    and getattr(self, "_pipe_intake_tay", True):
                 self._pipe_focus(*self._pipe_focus_target)
             return
         if getattr(self, "_pipe_intake_nen", False):
@@ -7214,7 +7276,16 @@ class StudioPage(QWidget):
                       "Studio / YouTube Studio rồi nhập vào đây — AI sẽ học "
                       "clip nào thật sự giữ chân người xem.")
         a2.triggered.connect(self._nhap_so_lieu_dialog)
+        a3 = m.addAction("Tự chạy dây chuyền (khung giờ, nhịp)…")
+        a3.setToolTip("Tự bấm Chạy dây chuyền theo nhịp trong khung giờ. Mặc "
+                      "định TẮT. Có phiếu đợt + file trạng thái bận cho PCBot.")
+        a3.triggered.connect(self._tu_chay_dialog)
         m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _tu_chay_dialog(self):
+        """Hộp cài đặt TỰ CHẠY (INTEGRATION.md mục 5). Xem app/ui/tu_chay_ui.py."""
+        from app.ui.tu_chay_ui import mo_hop
+        return mo_hop(self)
 
     def _nhap_so_lieu_dialog(self) -> None:
         """📊 NHẬP SỐ LIỆU VIEW THẬT cho kênh ĐANG CHỌN.
@@ -8103,7 +8174,11 @@ class StudioPage(QWidget):
             return False
         # Video ĐẦU TIÊN nhận trong lần chạy này -> nhớ để đưa ra màn hình chính
         # (hiện tên + tiến trình + Part ở khung giữa, như luồng bấm 'Tạo clip').
-        if getattr(self, "_pipe_focus_target", None) is None:
+        _im = self.__dict__.get("_pipe_im_khoa") or set()
+        _k = self._pipe_khoa(path)
+        if _k in _im:
+            _im.discard(_k)               # lượt TỰ CHẠY: không nhảy màn hình
+        elif getattr(self, "_pipe_focus_target", None) is None:
             self._pipe_focus_target = (int(pid), int(vid))
         ctx = {"entry": entry, "vid": vid, "path": str(path), "pid": pid,
                "name": name, "file": path.name, "mode": mode}

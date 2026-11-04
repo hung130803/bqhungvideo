@@ -38,6 +38,9 @@ CHO_LEN_GIAY = 150     # sau /moapp chờ bot chính lên tối đa bấy nhiêu
 CHO_DONG_GIAY = 20     # sau /dongapp chờ app thoát tối đa bấy nhiêu rồi báo
 CO_DONG_HAN_GIAY = 60  # cờ đóng app cũ hơn số này = bỏ (không đóng nhầm lần sau)
 MANH_HAN_GIAY = 120    # nút "Tắt cưỡng bức" chỉ có hiệu lực bấy nhiêu giây
+#: app đứng ở màn ĐĂNG NHẬP quá chừng này giây (khi đang bật Tự chạy dây
+#: chuyền) -> báo đỏ 1 lần (#5: phiên Supabase hết hạn = mất cả ngày).
+KET_DANG_NHAP_GIAY = 300
 
 _PHIM = {"inline_keyboard": [[{"text": "🔓 Mở app + đăng nhập", "callback_data": "/moapp"},
                               {"text": "Trạng thái", "callback_data": "/trangthai"}],
@@ -199,6 +202,40 @@ class Gac:
         self._mo_app = mo_app or (lambda: _chay_tach(lenh_mo_app()))
         self._offset = 0
         self._dang_cho = False
+        self._ket_tu = None
+        self._da_bao_ket = False
+
+    def kiem_ket_dang_nhap(self, now: float | None = None, pid: int | None = None,
+                           song: bool | None = None, tu_chay: bool | None = None):
+        """#5: app mở (có pid) mà bot chính không sống = đứng ở màn đăng nhập.
+        Quá KET_DANG_NHAP_GIAY -> báo đỏ ĐÚNG 1 lần cho tới khi trạng thái đổi.
+        Chỉ khi đang bật Tự chạy (tắt = hành vi như cũ). Trả lời đã gửi/None."""
+        now = time.time() if now is None else now
+        if tu_chay is None:
+            try:
+                from app.ui.appsettings import app_settings
+                tu_chay = bool(app_settings().value("pipe_auto_bat", False, type=bool))
+            except Exception:  # noqa: BLE001
+                tu_chay = False
+        pid = app_pid() if pid is None else pid
+        song = bot_chinh_song(now) if song is None else song
+        if not (tu_chay and pid and not song):
+            self._ket_tu, self._da_bao_ket = None, False
+            return None
+        if self._ket_tu is None:
+            self._ket_tu = now
+            return None
+        if self._da_bao_ket or now - self._ket_tu < KET_DANG_NHAP_GIAY:
+            return None
+        self._da_bao_ket = True
+        msg = (f"🔴 <b>App trên máy {socket.gethostname()} kẹt ở MÀN ĐĂNG NHẬP "
+               f"{int((now - self._ket_tu) // 60)} phút</b> — dây chuyền tự chạy KHÔNG "
+               "chạy. Bấm /moapp để đăng nhập hộ (phiên đăng nhập có thể đã hết "
+               "hạn: phải nhập lại mật khẩu trên máy).")
+        for cid in self.cho_phep:
+            self.gui(cid, msg, phim=True)
+        _log("báo kẹt màn đăng nhập")
+        return msg
 
     def gui(self, cid: int, text: str, phim=False) -> None:
         data = {"chat_id": cid, "text": text, "parse_mode": "HTML",
@@ -416,6 +453,10 @@ class Gac:
             if song_truoc is True and not song:
                 self._bao_app_tat()
             song_truoc = song
+            try:
+                self.kiem_ket_dang_nhap(song=song)
+            except Exception as e:  # noqa: BLE001
+                _log(f"kiểm kẹt đăng nhập lỗi: {e!r}")
             if song:
                 self._offset = 0          # bot chính giữ offset; lần sau lấy lại
                 time.sleep(10)

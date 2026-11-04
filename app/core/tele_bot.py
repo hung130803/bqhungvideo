@@ -1361,6 +1361,22 @@ class BotQuanLy:
             self._bao_db = True
             tin.append("🛑 <b>Cơ sở dữ liệu báo hỏng</b> — app đã dừng đọc. Khởi động lại "
                        "app để tự chữa (sao lưu tự động vẫn còn).")
+        # báo cáo nhóm của phiếu đợt: gộp vào tin HẾT hàng chờ nếu có (#28)
+        bc = _lay_bao_cao_nhom()
+        if bc:
+            gop = "\n\n".join(t for t, _ in bc)
+            i_het = next((i for i, t in enumerate(tin)
+                          if "HẾT hàng chờ" in t or "Hết việc đang chạy" in t), None)
+            if i_het is not None:
+                tin[i_het] = tin[i_het] + "\n\n" + gop
+            else:
+                tin.append(gop)
+            for _, fn in bc:
+                try:
+                    if fn:
+                        fn()
+                except Exception:  # noqa: BLE001
+                    pass
         self._lan_dau = False
         return tin
 
@@ -1421,6 +1437,26 @@ _PHIM_SONG = {"inline_keyboard": [[
     {"text": "⏸ Tạm dừng", "callback_data": "/tamdung"},
     {"text": "▶ Chạy tiếp", "callback_data": "/chaytiep"},
     {"text": "Lỗi", "callback_data": "/loi"}]]}
+
+
+# ---- BÁO CÁO NHÓM (phiếu đợt, INTEGRATION.md mục 11) ----
+# Tự chạy đẩy vào đây khi CẢ 2 phiếu của 1 nhóm đã đóng. Lượt soi kế tiếp gửi
+# nó GỘP vào tin "HẾT hàng chờ" nếu lượt đó có tin ấy (không báo trùng), không
+# thì gửi riêng. `khi_gui()` đánh dấu phiếu cắt -> mở lại app không gửi lại.
+_BAO_NHOM: list = []
+_BAO_NHOM_KHOA = threading.Lock()
+
+
+def them_bao_cao_nhom(text: str, khi_gui=None) -> None:
+    with _BAO_NHOM_KHOA:
+        _BAO_NHOM.append((text, khi_gui))
+
+
+def _lay_bao_cao_nhom() -> list:
+    with _BAO_NHOM_KHOA:
+        ra = list(_BAO_NHOM)
+        _BAO_NHOM.clear()
+    return ra
 
 
 def goi_dang_nhan() -> int:

@@ -470,6 +470,10 @@ CONG = [
     ("107 lỗi đã chạy lại + phân tích không đói đĩa", "_test_loi_da_chay_lai.py", 12),
     ("108 key Cài đặt AI không mất âm thầm", "_test_luu_key.py", 13),
     ("109 video không lời: tên/hashtag không lấy chữ bịa", "_test_khong_loi_ten.py", 30),
+    # Đợt 1 dây chuyền tự động (04/11/2026, INTEGRATION.md mục 5/11/12):
+    # Tự chạy (V1-V9, V21-V24 ổ đĩa, #5) + phiếu đợt/phiếu cắt (V10-V20).
+    ("110 tự chạy dây chuyền", "_test_tu_chay.py", 75),
+    ("111 phiếu đợt + phiếu cắt", "_test_phieu_dot.py", 51),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       53),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),
