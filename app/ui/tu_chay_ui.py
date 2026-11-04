@@ -48,6 +48,7 @@ class TuChayUI(QObject):
         self.lan_nen = 0
         self._t15 = self._t60 = None
         self._nen_tu = 0.0
+        self._nen_the = 0
 
     # ------------------------------------------------------------ nhịp --
     def bat_dau(self) -> None:
@@ -160,6 +161,8 @@ class TuChayUI(QObject):
                                       f"{NEN_TOI_DA_GIAY // 60} phút — đo lại")
         self._nen_dang = True
         self._nen_tu = now
+        self._nen_the += 1
+        the = self._nen_the
         S = self.studio
         root = S._pipe_root()
         goc = PD.thu_muc_phieu(cfg.thu_muc)
@@ -173,9 +176,13 @@ class TuChayUI(QObject):
                 ra["phieu"] = PD.cap_nhat_tat_ca(goc, bo_doc, PD.ngu_canh_db(root), now)
                 PD.don_phieu_cu(goc / "cat", now)
             return ra
-        S._chay_nen(viec, self._nen_xong, "bq-tu-chay")
+        S._chay_nen(viec, lambda kq, g=the: self._nen_xong(kq, g), "bq-tu-chay")
 
-    def _nen_xong(self, kq) -> None:
+    def _nen_xong(self, kq, the: int | None = None) -> None:
+        # Lượt nền CŨ (bị coi là treo, đã có lượt mới thay) về muộn: bỏ qua,
+        # KHÔNG được xoá cờ đang-chạy của lượt mới.
+        if the is not None and the != self._nen_the:
+            return
         self._nen_dang = False
         self.lan_nen += 1
         ok, val = kq

@@ -770,15 +770,18 @@ class BotQuanLy:
                     continue
             raise RuntimeError(f"{method} {r.status_code}: {j.get('description')}")
 
-    def gui(self, chat_id: int, text: str, phim=False) -> Optional[int]:
-        """Gửi tin -> message_id (None nếu lỗi). Không bao giờ ném."""
+    def gui(self, chat_id: int, text: str, phim=False, html: bool = True) -> Optional[int]:
+        """Gửi tin -> message_id (None nếu lỗi). Không bao giờ ném.
+        html=False: gửi CHỮ THƯỜNG (không parse_mode) — đường lùi cuối của báo
+        cáo nhóm khi bản HTML bị Telegram từ chối mãi."""
         if len(text) > 3900:
-            text = text[:3900] + "\n…"
+            text = (cat_html(text, 3900) if html else text[:3900]) + "\n…"
         if self._gui_ngoai:
             self._gui_ngoai(chat_id, text)
             return None
-        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                "disable_web_page_preview": True}
+        data = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+        if html:
+            data["parse_mode"] = "HTML"
         if phim:
             data["reply_markup"] = _PHIM if phim is True else phim
         try:
@@ -791,7 +794,7 @@ class BotQuanLy:
     def sua(self, chat_id: int, mid: int, text: str, phim=None) -> bool:
         """Sửa 1 tin đã gửi (tiến độ) thay vì gửi tin mới."""
         if len(text) > 3900:
-            text = text[:3900] + "\n…"
+            text = cat_html(text, 3900) + "\n…"
         if self._gui_ngoai:
             self._gui_ngoai(chat_id, f"[sửa {mid}] " + text)
             return True
@@ -820,25 +823,56 @@ class BotQuanLy:
                 ok = False
         return ok
 
+    def _gui_toi(self, text: str, chats, html: bool = True) -> set:
+        """Gửi cho các chat chỉ định -> tập chat gửi THÀNH CÔNG."""
+        ok = set()
+        for cid in chats:
+            if self.gui(cid, text, html=html) is not None or self._gui_ngoai:
+                ok.add(cid)
+        return ok
+
     def gui_tin_soi(self, tin: list) -> None:
-        """Gửi các tin của 1 lượt soi. Tin mang BÁO CÁO NHÓM (phiếu đợt): gửi
-        được mới gọi khi_gui() (đánh dấu phiếu); lỗi -> xếp lại, lượt sau gửi."""
+        """Gửi các tin của 1 lượt soi. Tin mang BÁO CÁO NHÓM (phiếu đợt): mỗi
+        báo cáo nhớ chat ĐÃ nhận (không gửi lại cho chat đó); đủ mọi chat mới
+        gọi khi_gui() (đánh dấu phiếu). Lỗi -> thử lại tối đa BAO_NHOM_THU
+        lượt soi; quá thì gửi 1 bản CHỮ THƯỜNG cho chat còn thiếu + ghi log rồi
+        đánh dấu (không thử vô hạn)."""
         cho = getattr(self, "_bao_nhom_cho", None)
         self._bao_nhom_cho = None
+        lai = getattr(self, "_bao_nhom_lai", None) or []
+        self._bao_nhom_lai = []
+        tat_ca = set(self.cho_phep)
         for t in tin:
-            ok = self._gui_het(t)
             if cho is not None and t is cho[0]:
-                if ok:
-                    for _, fn in cho[1]:
-                        try:
-                            if fn:
-                                fn()
-                        except Exception:  # noqa: BLE001
-                            pass
+                da = self._gui_toi(t, tat_ca)
+                for bc in cho[1]:
+                    bc["da"] |= da
+                    lai.append(bc)
+            else:
+                self._gui_het(t)
+        for bc in lai:
+            con = tat_ca - bc["da"]
+            if con and bc["lan"] > 0:
+                bc["da"] |= self._gui_toi(bc["text"], con)
+                con = tat_ca - bc["da"]
+            if con:
+                bc["lan"] += 1
+                if bc["lan"] >= BAO_NHOM_THU:
+                    tron = _bo_html(bc["text"])
+                    bc["da"] |= self._gui_toi(tron, con, html=False)
+                    _ghi_log(f"báo cáo nhóm lỗi {bc['lan']} lượt — đã gửi bản chữ thường "
+                             f"cho {len(con)} chat, thôi thử lại")
+                    con = set()
                 else:
-                    with _BAO_NHOM_KHOA:
-                        _BAO_NHOM[:0] = cho[1]
-                    _ghi_log("gửi báo cáo nhóm lỗi — giữ lại, lượt soi sau gửi lại")
+                    self._bao_nhom_lai.append(bc)
+                    _ghi_log(f"gửi báo cáo nhóm lỗi (lượt {bc['lan']}/{BAO_NHOM_THU}) — "
+                             "lượt soi sau gửi lại cho chat còn thiếu")
+                    continue
+            try:
+                if bc["fn"]:
+                    bc["fn"]()
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- điều phối lệnh --
     def _khoa_cho(self, khoa: str) -> threading.Lock:
@@ -1392,7 +1426,7 @@ class BotQuanLy:
         # báo cáo nhóm của phiếu đợt: gộp vào tin HẾT hàng chờ nếu có (#28)
         bc = _lay_bao_cao_nhom()
         if bc:
-            gop = "\n\n".join(t for t, _ in bc)
+            gop = "\n\n".join(x["text"] for x in bc)
             i_het = next((i for i, t in enumerate(tin)
                           if "HẾT hàng chờ" in t or "Hết việc đang chạy" in t), None)
             if i_het is not None:
@@ -1472,9 +1506,42 @@ _BAO_NHOM: list = []
 _BAO_NHOM_KHOA = threading.Lock()
 
 
+#: báo cáo nhóm gửi lỗi -> thử lại tối đa bấy nhiêu lượt soi (~30 s/lượt), rồi
+#: gửi 1 bản chữ thường (không HTML) và thôi.
+BAO_NHOM_THU = 5
+
+
 def them_bao_cao_nhom(text: str, khi_gui=None) -> None:
     with _BAO_NHOM_KHOA:
-        _BAO_NHOM.append((text, khi_gui))
+        _BAO_NHOM.append({"text": text, "fn": khi_gui, "lan": 0, "da": set()})
+
+
+def _bo_html(t: str) -> str:
+    """Bản chữ thường của tin HTML (bỏ thẻ, trả thực thể về ký tự)."""
+    import html as _h
+    return _h.unescape(re.sub(r"<[^>]*>", "", t))
+
+
+def cat_html(t: str, n: int) -> str:
+    """Cắt tin HTML còn <= n ký tự mà KHÔNG cắt giữa thẻ / thực thể và đóng
+    lại thẻ <b>/<i> đang mở (cắt hỏng = Telegram từ chối cả tin)."""
+    if len(t) <= n:
+        return t
+    s = t[:n]
+    lt, gt = s.rfind("<"), s.rfind(">")
+    if lt > gt:
+        s = s[:lt]
+    amp, sc = s.rfind("&"), s.rfind(";")
+    if amp > sc and len(s) - amp <= 8:
+        s = s[:amp]
+    mo = []
+    for m in re.finditer(r"<(/?)(b|i)>", s):
+        if m.group(1):
+            if mo and mo[-1] == m.group(2):
+                mo.pop()
+        else:
+            mo.append(m.group(2))
+    return s + "".join(f"</{x}>" for x in reversed(mo))
 
 
 def _lay_bao_cao_nhom() -> list:

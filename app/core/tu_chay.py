@@ -243,10 +243,18 @@ def _o_cua(p) -> str:
     return ""
 
 
+#: ổ -> luồng đo đang treo. Ổ mạng chết: mỗi ổ CHỈ 1 luồng treo, nhịp sau
+#: thấy luồng cũ còn sống thì bỏ qua ổ đó luôn (không đẻ thêm luồng mỗi 60 s).
+_DANG_DO: dict = {}
+
+
 def _co_han(fn, o, han: float):
     """Gọi fn(o) ở luồng phụ, chờ tối đa `han` giây (ổ mạng chết có thể treo
     shutil.disk_usage hàng phút). Quá hạn -> ném TimeoutError."""
     import threading
+    cu = _DANG_DO.get(o)
+    if cu is not None and cu.is_alive():
+        raise TimeoutError(f"ổ {o} vẫn đang treo từ lượt đo trước")
     hop: dict = {}
 
     def chay():
@@ -255,6 +263,7 @@ def _co_han(fn, o, han: float):
         except BaseException as e:  # noqa: BLE001
             hop["e"] = e
     t = threading.Thread(target=chay, daemon=True, name="bq-do-o")
+    _DANG_DO[o] = t
     t.start()
     t.join(han)
     if t.is_alive():

@@ -539,6 +539,29 @@ tc4._nen_tu = N4[0] - 10_000          # giả: lượt nền trước treo quá 
 n_nen = tc4.lan_nen
 tc4.nhip_60(N4[0])
 ok(bom(15, lambda: tc4.lan_nen > n_nen), "lượt nền treo quá hạn -> nhịp sau đo lại")
+the_moi = tc4._nen_the
+tc4._nen_dang = True
+tc4._nen_xong((True, {"o": (True, ""), "phieu": None, "goc": None}), the_moi - 1)
+ok(tc4._nen_dang is True, "lượt nền CŨ về muộn KHÔNG xoá cờ của lượt mới")
+tc4._nen_xong((True, {"o": (True, ""), "phieu": None, "goc": None}), the_moi)
+ok(tc4._nen_dang is False, "lượt nền đúng thế hệ thì xoá cờ")
+import threading as _thd  # noqa: E402
+_tha = threading_ev = _thd.Event()
+
+
+def _treo(o):
+    _tha.wait(20)
+    return 999
+
+
+TC._DANG_DO.clear()
+n_luong0 = sum(1 for t in _thd.enumerate() if t.name == "bq-do-o")
+for _ in range(4):
+    TC.kiem_o_dia([r"Q:\chet"], 30, 10, dung_luong=_treo, han=0.1)
+n_luong = sum(1 for t in _thd.enumerate() if t.name == "bq-do-o") - n_luong0
+ok(n_luong == 2, "ổ chết (Q + C đều treo): 4 lượt đo chỉ có 1 luồng treo MỖI Ổ, không rò luồng",
+   str(n_luong))
+_tha.set()
 tc4.o_dia = (True, "")
 
 print("\nV24 — file trạng thái bận")

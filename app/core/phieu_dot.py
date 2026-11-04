@@ -239,7 +239,10 @@ def _tt_tu_so(so: dict | None) -> tuple[str, int, str]:
         return "xong", int(so.get("parts") or 0), ""
     if st == "dup":
         return "trung", 0, str(so.get("note") or "")[:200]
-    if st in ("error", "bad"):
+    if st == "bad":
+        # file hỏng / không đọc được: app KHÔNG thử lại -> kết quả CUỐI
+        return "loi", 0, ("file hỏng/không đọc được: " + str(so.get("note") or ""))[:200]
+    if st == "error":
         return "loi", 0, str(so.get("note") or st)[:200]
     return "", 0, ""
 
@@ -299,7 +302,8 @@ def dung_phieu_cat(ptai: dict, cu: dict | None, nc: dict,
                         so = moi_sd.pop(0)
                         fname = str(so.get("file_name") or "")
                 tt, part, loi = _tt_tu_so(so)
-                if tt == "loi" and fname and nc["co_file"](tm, fname):
+                if (tt == "loi" and (so or {}).get("status") != "bad"
+                        and fname and nc["co_file"](tm, fname)):
                     tam = True           # gốc còn trong thư mục -> lượt sau thử lại
                 if not tt:
                     tt = "chua_thay"

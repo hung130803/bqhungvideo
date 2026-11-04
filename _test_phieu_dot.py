@@ -368,7 +368,7 @@ bot._gui_ngoai = None
 _lan = {"n": 0}
 
 
-def _gui_gia(cid, text, phim=False):
+def _gui_gia(cid, text, phim=False, html=True):
     _lan["n"] += 1
     GUI.append((cid, text))
     return None if _lan["n"] == 1 else 99
@@ -376,27 +376,79 @@ def _gui_gia(cid, text, phim=False):
 
 bot.gui = _gui_gia
 bot.gui_tin_soi(tin)
-ok(not (phieu_cat("20261104-10") or {}).get("bao_cao_luc") and len(TB._BAO_NHOM) == 1,
-   "Telegram lỗi -> KHÔNG đánh dấu, báo cáo xếp lại để lượt sau gửi", str(TB._BAO_NHOM))
+ok(not (phieu_cat("20261104-10") or {}).get("bao_cao_luc") and len(bot._bao_nhom_lai) == 1,
+   "Telegram lỗi -> KHÔNG đánh dấu, báo cáo xếp lại để lượt sau gửi", str(bot._bao_nhom_lai))
 bot._co_viec = True
 bot._rong_dem = 1
 tin = bot.soi_mot_lan()
 bot.gui_tin_soi(tin)
-ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")) and not TB._BAO_NHOM,
+ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")) and not bot._bao_nhom_lai,
    "lượt sau gửi được -> mới đánh dấu đã báo")
+
 pgR = trang()                                  # mở lại app
 tcR = TuChayUI(None, pgR, pgR.state, dong_ho=lambda: NOW[0])
 tcR.tele = lambda t: None
 nR = tcR.lan_nen
 tcR.nhip_60(NOW[0])
 bom(15, lambda: tcR.lan_nen > nR)
-ok(not TB._BAO_NHOM, "mở lại app -> KHÔNG gửi lại")
+ok(not TB._BAO_NHOM, "mở lại app -> KHÔNG gửi lại", str([(x["text"][:60]) for x in TB._BAO_NHOM]))
 TB._BAO_NHOM.clear()
 TB.them_bao_cao_nhom("📦 <b>Nhóm «X»</b>", None)
 bot._co_viec = False
 tin2 = bot.soi_mot_lan()
 ok(sum("Nhóm «X»" in t for t in tin2) == 1, "không có tin HẾT -> báo cáo vẫn gửi riêng 1 tin")
 TB._bot = None
+
+print("\nBÁO CÁO NHÓM: nhớ chat đã nhận + thử lại có giới hạn + bản chữ thường")
+b2 = TB.BotQuanLy("tok", {1, 2}, None)
+NHAN: list = []
+LOI_CHAT = {2}
+
+
+def _g2(cid, text, phim=False, html=True):
+    NHAN.append((cid, html, text))
+    return None if cid in LOI_CHAT else 7
+
+
+b2.gui = _g2
+DD = []
+TB._BAO_NHOM.clear()
+TB.them_bao_cao_nhom("📦 <b>Nhóm «A &amp; B»</b>", lambda: DD.append(1))
+b2._lan_dau = False
+t2 = b2.soi_mot_lan()
+b2.gui_tin_soi(t2)
+NHAN.clear()
+b2.gui_tin_soi(b2.soi_mot_lan())
+ok([c for c, _, t in NHAN if "Nhóm «A" in t] == [2], "thử lại CHỈ gửi cho chat còn thiếu (chat 1 không nhận lại)",
+   str(NHAN))
+for _ in range(TB.BAO_NHOM_THU):
+    b2.gui_tin_soi(b2.soi_mot_lan())
+tron = [(c, h, t) for c, h, t in NHAN if h is False]
+ok(len(tron) == 1 and tron[0][0] == 2 and "<b>" not in tron[0][2] and "A & B" in tron[0][2],
+   "quá BAO_NHOM_THU lượt -> gửi 1 bản CHỮ THƯỜNG cho chat thiếu", str(tron))
+ok(DD == [1] and not b2._bao_nhom_lai, "rồi đánh dấu + thôi thử (không thử vô hạn)", f"{DD} {b2._bao_nhom_lai}")
+n0 = len(NHAN)
+b2.gui_tin_soi(b2.soi_mot_lan())
+ok(not any("Nhóm «A" in t for _, _, t in NHAN[n0:]), "lượt sau không gửi lại nữa")
+dai = "<b>" + "x" * 3895 + "&amp;y</b>"
+c = TB.cat_html(dai, 3900)
+import re as _re2  # noqa: E402
+ok(c.endswith("</b>") and "&am" not in c[-8:] and len(c) <= 3905,
+   "cắt 3900 ký tự không cắt giữa thực thể + đóng lại <b>", c[-12:])
+c2 = TB.cat_html("a" * 3897 + "<b>zz</b>", 3900)
+ok(not c2.endswith("<") and not _re2.search(r"<[^>]*$", c2), "không cắt giữa thẻ", c2[-6:])
+
+print("\n#4 — file KHÔNG đọc được (mark_bad, vẫn nằm trong thư mục) là kết quả CUỐI")
+pidB, srcB = lam_kenh("KBad", "B", ["bad.mp4"])
+phieu_tai("20261104-15", "B", [{"thu_muc": str(srcB), "video": [vd("yt:b", "bad.mp4")]}],
+          trang_thai="da_dong", dong=time.time() - 60)
+P.mark_bad(pidB, "bad.mp4", "Không đọc được metadata; giữ nguồn")
+nen60()
+vb = tt_video("20261104-15", "yt:b")
+ok(vb.get("trang_thai") == "loi" and not vb.get("tam") and "file hỏng" in (vb.get("loi") or ""),
+   "bad -> loi CUỐI, lý do 'file hỏng/không đọc được'", str(vb))
+ok((phieu_cat("20261104-15") or {}).get("trang_thai") == "da_dong",
+   "phiếu cắt đóng ngay, không giữ mở 6 giờ")
 
 print("\nHTML — tên chứa & < > không làm Telegram từ chối tin")
 import re as _re  # noqa: E402
