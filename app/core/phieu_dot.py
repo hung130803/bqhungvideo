@@ -411,6 +411,12 @@ def cap_nhat_tat_ca(goc: Path, bo_doc: BoDoc, nc: dict,
             cu, _ = doc_json(fcat)
             cu = cu if isinstance(cu, dict) and cu.get("dot_id") == ptai["dot_id"] else None
             pc, su = dung_phieu_cat(ptai, cu, nc, now)
+            # S1: tra cứu sổ là LƯỜI (trong lúc dựng) — DB hỏng GIỮA lượt thì
+            # mọi tra cứu ra rỗng -> phiếu sai. Kiểm lại NGAY TRƯỚC khi ghi;
+            # hỏng thì bỏ CẢ lượt, không ghi gì thêm.
+            if nc.get("hong") and nc["hong"]():
+                ra["db_hong"] = True
+                return ra
             ra["su_kien"].extend(su)
             if cu is None or _ruot(pc) != _ruot(cu):
                 try:
@@ -501,7 +507,8 @@ def ngu_canh_db(root: str) -> dict:
         except OSError:
             return False
 
-    return {"kenh": kenh, "so": so, "moi": moi, "co_file": co_file}
+    return {"kenh": kenh, "so": so, "moi": moi, "co_file": co_file,
+            "hong": lambda: bool(getattr(db, "corrupt_live", False))}
 
 
 # -------------------------------------------------------- trạng thái bận --

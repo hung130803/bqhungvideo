@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
     def _tu_chay_noi(self):
         """QTimer RIÊNG của MainWindow (không treo vào _poll_tick). Công tắc
         mặc định TẮT -> mọi nhịp trả về ngay, app chạy y như trước."""
+        self._tu_chay = None
         try:
             from app.ui.tu_chay_ui import TuChayUI
             self._tu_chay = TuChayUI(self, self.studio, self.state)
@@ -161,26 +162,51 @@ class MainWindow(QMainWindow):
             from app.core import tele_bot
             tele_bot.dang_ky_ui("tu_chay", self._tu_chay.lenh)
         except Exception as e:  # noqa: BLE001 - tự chạy là phụ, không làm hỏng app
+            # dựng dở (vd đăng ký bot lỗi SAU bat_dau): DỪNG timer, không để
+            # nửa Tự chạy chạy ngầm.
+            try:
+                for t in (self._tu_chay._t15, self._tu_chay._t60):
+                    if t is not None:
+                        t.stop()
+            except Exception:  # noqa: BLE001
+                pass
             self._tu_chay = None
             loi = f"{type(e).__name__}: {e}"
             try:
                 self.studio._pipe_log(f"⚠ Tự chạy KHÔNG khởi động được — {loi}")
             except Exception:  # noqa: BLE001
                 pass
-            # 1b-V6: báo lên bot của CHÍNH app (bot bật sau ~1 s, đợi 60 s)
+            # 1b-V6: báo lên bot của CHÍNH app — thử lại tới khi GỬI ĐƯỢC
+            self._tu_chay_loi_dung = {"loi": loi, "lan": 0, "xong": False}
             from PyQt6.QtCore import QTimer
-            QTimer.singleShot(60_000, lambda: self._tu_chay_bao_loi_dung(loi))
+            QTimer.singleShot(self.TC_BAO_CHO_MS, self._tu_chay_bao_loi_dung)
 
-    def _tu_chay_bao_loi_dung(self, loi: str) -> None:
+    #: chờ bot lên rồi báo "Tự chạy KHÔNG khởi động được"; thử tối đa TC_BAO_LAN
+    TC_BAO_CHO_MS = 60_000
+    TC_BAO_LAN = 5
+
+    def _tu_chay_bao_loi_dung(self) -> None:
+        st = getattr(self, "_tu_chay_loi_dung", None)
+        if not st or st["xong"]:
+            return
+        st["lan"] += 1
         try:
             import html as _h
             from app.core import tele_bot
             b = tele_bot._bot
             if b is not None:
-                b._viec.submit(b.bao_tat_ca, "🔴 <b>Tự chạy dây chuyền KHÔNG khởi động "
-                               "được</b> — " + _h.escape(loi[:300], quote=False))
+                txt = ("🔴 <b>Tự chạy dây chuyền KHÔNG khởi động được</b> — "
+                       + _h.escape(st["loi"][:300], quote=False))
+
+                def gui():
+                    if b._gui_het(txt):
+                        st["xong"] = True
+                b._viec.submit(gui)
         except Exception:  # noqa: BLE001
             pass
+        if st["lan"] < self.TC_BAO_LAN:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(self.TC_BAO_CHO_MS, self._tu_chay_bao_loi_dung)
 
     def _bot_dong_app(self) -> dict:
         """Bot xin ĐÓNG APP. Trả lời ngay rồi mới đóng sau 3 giây: bot kịp gửi tin

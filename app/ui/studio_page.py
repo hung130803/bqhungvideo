@@ -6774,15 +6774,27 @@ class StudioPage(QWidget):
                 return kq, loi
 
             def _quet_xong(kq):
-                self._pipe_dang_quet = max(0, getattr(self, "_pipe_dang_quet", 0) - 1)
+                # MÃ LƯỢT: chỉ lượt CÒN trong sổ mới trừ (lượt đã bị gỡ vì treo về
+                # muộn thì không phá bộ đếm của lượt mới).
+                self.__dict__.setdefault("_pipe_quet_tok", {}).pop(_the, None)
                 ok, val = kq
                 if not ok:
                     self._pipe_log(f"⚠ quét thư mục lỗi — {val}")
                     self.status.setText("⚠ Dây chuyền: quét thư mục lỗi — xem báo cáo.")
                     return
-                for _l in val[1]:
-                    self._pipe_log(_l)
-                if _the <= getattr(self, "_pipe_bo_quet", 0):
+                if im and val[1]:
+                    # 1b-V7: lượt tự chạy -> lỗi quét từng kênh gộp 1 dòng/giờ
+                    _lc = self.__dict__.setdefault("_pipe_gon_luc", {})
+                    if time.time() - _lc.get("quet_loi", 0) >= 3600:
+                        _lc["quet_loi"] = time.time()
+                        self._pipe_log(f"Tự chạy: {len(val[1])} kênh quét lỗi (gộp, "
+                                       f"1 dòng/giờ) — vd {val[1][0][:160]}")
+                else:
+                    for _l in val[1]:
+                        self._pipe_log(_l)
+                _bo = self.__dict__.setdefault("_pipe_bo_tok", set())
+                if _the in _bo:
+                    _bo.discard(_the)
                     self._pipe_log("⏹ bỏ kết quả quét (đã bấm Dừng lượt / lượt quét "
                                    "bị gỡ vì treo) — video vẫn nằm nguyên trong thư mục")
                     return
@@ -6791,9 +6803,9 @@ class StudioPage(QWidget):
                                 "(giao diện vẫn dùng được)")
             # cờ ĐANG QUÉT riêng: lúc quét nền _bot_dang_nhan() = 0 nên Tự chạy
             # không dựa được vào nó để biết lượt trước còn dở.
-            self._pipe_dang_quet = getattr(self, "_pipe_dang_quet", 0) + 1
             self._pipe_quet_the = getattr(self, "_pipe_quet_the", 0) + 1
             _the = self._pipe_quet_the
+            self.__dict__.setdefault("_pipe_quet_tok", {})[_the] = bool(im)
             self._chay_nen(_quet, _quet_xong, "bq-quet-kenh")
             return 0
         plans = []
@@ -6854,26 +6866,37 @@ class StudioPage(QWidget):
 
     def _pipe_dang_quet_n(self) -> int:
         """Số lượt QUÉT NỀN đang dở (Tự chạy đọc để bỏ nhịp)."""
-        return int(getattr(self, "_pipe_dang_quet", 0) or 0)
+        return len(self.__dict__.get("_pipe_quet_tok") or {})
 
-    def _pipe_dung_luot(self, go_co_quet: bool = False) -> dict:
+    def _pipe_dung_luot(self, go_co_quet: bool = False, chi_tu_chay: bool = True) -> dict:
         """Nút "Dừng lượt đang chạy" (Tự chạy / bot): NGỪNG NHẬN THÊM — bỏ các
         video còn trong hàng nhận + bỏ kết quả các lượt quét nền đang dở. KHÔNG
         đụng job đang cắt/xuất, video gốc vẫn nằm nguyên trong thư mục (lượt
-        sau nhận lại). go_co_quet=True: gỡ luôn cờ đang quét (lượt quét treo)."""
+        sau nhận lại).
+        chi_tu_chay=True (mặc định, nút Dừng): CHỈ bỏ lượt TỰ CHẠY — lượt bấm
+        tay đang quét/nhận song song giữ nguyên. go_co_quet=True: gỡ luôn khỏi
+        sổ đang-quét (lượt quét treo) — khi đó bỏ MỌI lượt đang treo."""
         q = getattr(self, "_pipe_intake_q", None) or []
-        bo = len(q)
-        im = self.__dict__.get("_pipe_im_khoa")
+        im = self.__dict__.get("_pipe_im_khoa") or set()
+        if chi_tu_chay and not go_co_quet:
+            giu = [it for it in q if self._pipe_khoa(it[3]) not in im]
+        else:
+            giu = []
+        bo = len(q) - len(giu)
         for it in list(q):
-            if im:
-                im.discard(self._pipe_khoa(it[3]))
+            im.discard(self._pipe_khoa(it[3]))
         if q:
-            q.clear()
-        self._pipe_intake_cho = False
-        quet = self._pipe_dang_quet_n()
-        self._pipe_bo_quet = getattr(self, "_pipe_quet_the", 0)
+            q[:] = giu
+        if not q:
+            self._pipe_intake_cho = False
+        tok = self.__dict__.setdefault("_pipe_quet_tok", {})
+        chon = [t for t, la_tc in tok.items()
+                if go_co_quet or la_tc or not chi_tu_chay]
+        quet = len(chon)
+        self.__dict__.setdefault("_pipe_bo_tok", set()).update(chon)
         if go_co_quet:
-            self._pipe_dang_quet = 0
+            for t in chon:
+                tok.pop(t, None)
         self._pipe_log(f"⏹ Dừng lượt: bỏ {bo} video chưa nhận"
                        + (f" + {quet} lượt quét đang dở" if quet else "")
                        + " — việc đang cắt/xuất vẫn chạy tiếp, gốc giữ nguyên")
@@ -6942,7 +6965,10 @@ class StudioPage(QWidget):
                 else:
                     self._pipe_log(f"⏳ {it.name}: {it.busy} file đang tải dở — chờ")
             for fname, why in it.skips:
-                self._pipe_log(f"⏭ {it.name}: {fname} — {why}")
+                if im:
+                    _gon["skip"] = _gon.get("skip", 0) + 1
+                else:
+                    self._pipe_log(f"⏭ {it.name}: {fname} — {why}")
             for k, path in enumerate(it.files):
                 if k >= it.quota:
                     self._pipe_log(f"⏭ {it.name}: {path.name} — quá hạn mức "
@@ -7000,7 +7026,9 @@ class StudioPage(QWidget):
         if im and (_gon["note"] or _gon["busy"] or not worklist):
             self._pipe_log(f"Tự chạy: quét {len(plans)} kênh — {len(worklist)} video "
                            f"mới · {_gon['note']} kênh không có video mới"
-                           + (f" · {_gon['busy']} kênh có file đang tải dở" if _gon["busy"] else ""))
+                           + (f" · {_gon['busy']} kênh có file đang tải dở" if _gon["busy"] else "")
+                           + (f" · {_gon['skip']} file bỏ qua (trùng/tên Part/không đọc được)"
+                              if _gon.get("skip") else ""))
         if not worklist:
             if not im:
                 self._pipe_log(f"không nhận video nào từ {len(plans)} kênh")

@@ -33,6 +33,9 @@ os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")
 os.environ["BQ_PCBOT_EXCHANGE"] = str(T / "exchange")
 os.environ["BQ_DAYCHUYEN_DIR"] = str(T / "daychuyen")
 os.environ["BQ_TAT_BOT"] = "1"
+# key GIẢ (không gọi mạng): soonest_ready_wait chỉ xét key có trong settings,
+# không có key nào thì nó trả None = "hết lượt" (S3) -> mọi nhịp bị chặn oan.
+os.environ["GROQ_API_KEYS"] = "khoa_gia_test_1,khoa_gia_test_2"
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
@@ -161,7 +164,7 @@ pg = trang()
 NOW = [time.time()]
 tc = TuChayUI(None, pg, pg.state, dong_ho=lambda: NOW[0])
 TELE: list = []
-tc.tele = lambda t, khi_ok=None: (TELE.append(t), khi_ok and khi_ok(), True)[-1]
+tc.tele = lambda t, khi_ok=None, khi_xong=None: (TELE.append(t), khi_ok and khi_ok(), khi_xong and khi_xong(True), True)[-1]
 tc.nhip(NOW[0])                     # nhịp đầu: khởi động sổ hẹn (mở app)
 
 
@@ -387,7 +390,7 @@ ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")) and not bot._bao_nh
 
 pgR = trang()                                  # mở lại app
 tcR = TuChayUI(None, pgR, pgR.state, dong_ho=lambda: NOW[0])
-tcR.tele = lambda t, khi_ok=None: True
+tcR.tele = lambda t, khi_ok=None, khi_xong=None: True
 nR = tcR.lan_nen
 tcR.nhip_60(NOW[0])
 bom(15, lambda: tcR.lan_nen > nR)
@@ -407,7 +410,12 @@ LOI_CHAT = {2}
 
 def _g2(cid, text, phim=False, html=True):
     NHAN.append((cid, html, text))
-    return None if cid in LOI_CHAT else 7
+    if cid in LOI_CHAT and (html or TRON_LOI["v"]):
+        return None
+    return 7
+
+
+TRON_LOI = {"v": False}
 
 
 b2.gui = _g2
@@ -430,6 +438,15 @@ ok(DD == [1] and not b2._bao_nhom_lai, "rồi đánh dấu + thôi thử (không
 n0 = len(NHAN)
 b2.gui_tin_soi(b2.soi_mot_lan())
 ok(not any("Nhóm «A" in t for _, _, t in NHAN[n0:]), "lượt sau không gửi lại nữa")
+TRON_LOI["v"] = True                          # bản chữ thường CŨNG lỗi
+DD.clear()
+TB._BAO_NHOM.clear()
+TB.them_bao_cao_nhom("📦 <b>Nhóm «C»</b>", lambda: DD.append(2))
+b2._bao_nhom_lai = []
+for _ in range(TB.BAO_NHOM_THU + 2):
+    b2.gui_tin_soi(b2.soi_mot_lan())
+ok(not DD and not b2._bao_nhom_lai, "bản chữ thường cũng lỗi -> KHÔNG đánh dấu đã báo, thôi thử",
+   f"{DD} {b2._bao_nhom_lai}")
 dai = "<b>" + "x" * 3895 + "&amp;y</b>"
 c = TB.cat_html(dai, 3900)
 import re as _re2  # noqa: E402
@@ -468,6 +485,7 @@ phieu_tai("20261104-11", "Nhóm <A> & B", [{"thu_muc": str(srcH), "video": [
 phieu_tai(f"{time.strftime('%Y%m%d')}-12", "X", [{"thu_muc": str(T / "nguon" / "A & <B>"),
                                                    "video": [vd("yt:h2", "x.mp4")]}])
 st.setValue(TC.KHOA + "kck_ngay", "")
+st.sync()
 TELE.clear()
 TB._BAO_NHOM.clear()
 TB._bot = None

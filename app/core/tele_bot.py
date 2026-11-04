@@ -867,9 +867,15 @@ class BotQuanLy:
                 if bc["lan"] >= BAO_NHOM_THU:
                     tron = _bo_html(bc["text"])
                     bc["da"] |= self._gui_toi(tron, con, html=False)
-                    _ghi_log(f"báo cáo nhóm lỗi {bc['lan']} lượt — đã gửi bản chữ thường "
-                             f"cho {len(con)} chat, thôi thử lại")
-                    con = set()
+                    con = tat_ca - bc["da"]
+                    if con:
+                        # bản chữ thường CŨNG lỗi: KHÔNG đánh dấu đã báo (mở lại
+                        # app sẽ thử lại), thôi thử trong phiên này.
+                        _ghi_log(f"báo cáo nhóm lỗi {bc['lan']} lượt, bản chữ thường "
+                                 f"cũng lỗi ({len(con)} chat) — KHÔNG đánh dấu đã báo")
+                        continue
+                    _ghi_log(f"báo cáo nhóm lỗi {bc['lan']} lượt — đã gửi bản chữ thường, "
+                             "thôi thử lại")
                 else:
                     self._bao_nhom_lai.append(bc)
                     _ghi_log(f"gửi báo cáo nhóm lỗi (lượt {bc['lan']}/{BAO_NHOM_THU}) — "
@@ -1013,7 +1019,10 @@ class BotQuanLy:
     def _tu_chay(self, chat_id: int, lenh: str, text: str) -> None:
         p = text.split()
         ts = next((x[1:] for x in p[1:] if x.startswith("t") and x[1:].isdigit()), None)
-        arg = next((x for x in p[1:] if not (x.startswith("t") and x[1:].isdigit())), None)
+        con_lai = [x for x in p[1:] if not (x.startswith("t") and x[1:].isdigit())]
+        # "/tuchaygio 06:00 - 22:00" (có dấu cách) vẫn phải nhận
+        arg = (" ".join(con_lai) if lenh == "/tuchaygio" else
+               (con_lai[0] if con_lai else None)) or None
         if ts is not None and time.time() - int(ts) > TC_NUT_HAN:
             self.gui(chat_id, "Nút này đã CŨ — không làm gì. Gõ /tuchay để lấy nút mới.")
             return

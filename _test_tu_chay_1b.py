@@ -34,6 +34,9 @@ os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")
 os.environ["BQ_PCBOT_EXCHANGE"] = str(T / "exchange")
 os.environ["BQ_DAYCHUYEN_DIR"] = str(T / "daychuyen")
 os.environ["BQ_TAT_BOT"] = "1"
+# key GIẢ (không gọi mạng): soonest_ready_wait chỉ xét key có trong settings,
+# không có key nào thì nó trả None = "hết lượt" (S3) -> mọi nhịp bị chặn oan.
+os.environ["GROQ_API_KEYS"] = "khoa_gia_test_1,khoa_gia_test_2"
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
@@ -168,10 +171,12 @@ class Moi:
         self.pg._bot_chay_day_chuyen = spy
         self.tc.nhip()
 
-    def _tele(self, t, khi_ok=None):
+    def _tele(self, t, khi_ok=None, khi_xong=None):
         self.tele.append(t)
         if self.gui_ok and khi_ok:
             khi_ok()
+        if khi_xong:
+            khi_xong(self.gui_ok)
         return True
 
     def toi(self, giay=601):
@@ -209,7 +214,8 @@ for _ in range(2):
     m.now[0] += 60
 ok(not (GOC / "cat" / "20261104-01.json").exists(),
    "DB hỏng -> KHÔNG dựng phiếu cắt (không gán bừa khong_co_kenh rồi đóng 'xong')")
-ok(dem(m.tele, "cơ sở dữ liệu hỏng") == 1, "báo bot ĐÚNG 1 lần", str(m.tele))
+ok(dem(m.tele, "cơ sở dữ liệu") == 0 and dem(m.pg._pipe_report, "cơ sở dữ liệu hỏng") == 1,
+   "KHÔNG gửi tin DB riêng (gộp tin _bao_db của bot) — chỉ log 1 lần", str(m.tele))
 ok(not any("Nhóm «" in t for t in m.tele) and not any("Không có kênh cắt" in t for t in m.tele),
    "không gửi báo cáo nhóm / báo kck nhầm")
 db.corrupt_live = False
@@ -224,7 +230,6 @@ ok(not (GOC / "cat" / "20261104-01.json").exists(),
 n = m.tc.lan_nen
 m.tc.nhip_60(m.now[0])
 bom(10, lambda: m.tc.lan_nen > n)
-ok(dem(m.tele, "đã ổn lại") == 1, "DB lành lại -> báo 'đã ổn lại'", str(m.tele))
 ok((GOC / "cat" / "20261104-01.json").exists(), "DB lành -> phiếu cắt dựng bình thường")
 
 print("\n1b-V2 — hộp: nút Chạy ngay / Dừng lượt / Bỏ qua + trạng thái TỰ CẬP NHẬT")
@@ -249,9 +254,9 @@ o["ngay"].click()
 o["ngay"].click()                              # bấm 2 lần
 ok(len(m.goi) == 1, "Chạy ngay bấm 2 lần -> CHỈ 1 lượt", str(m.goi))
 bom(1.5)
-ok(o["trang_thai"].text() != t0 and "QUÉT" in o["trang_thai"].text() or
-   "NHẬN" in o["trang_thai"].text() or "Đã chạy 1 lượt" in o["trang_thai"].text(),
-   "ô trạng thái TỰ CẬP NHẬT (không phải nhãn tĩnh)", o["trang_thai"].text())
+_tt = o["trang_thai"].text()
+ok(_tt != t0 and ("QUÉT" in _tt or "NHẬN" in _tt or "Đã chạy 1 lượt" in _tt),
+   "ô trạng thái TỰ CẬP NHẬT (không phải nhãn tĩnh)", _tt)
 bom(5, lambda: m.pg._bot_dang_nhan() > 0)
 o["dung"].click()
 ok(not m.pg._bot_dang_nhan(), "Dừng lượt -> hàng nhận rỗng")
@@ -275,12 +280,16 @@ ok(TC.doc_cau_hinh(app_settings()).bo_ngay == "", "bấm lại -> 'Chạy lại 
 # Lưu: thư mục phiếu không tồn tại -> không lưu
 o["thu_muc"].setText(str(T / "khong_co"))
 CANH_BAO.clear()
-ok(dlg._luu() is False and CANH_BAO and "không tồn tại" in CANH_BAO[0],
+ok(dlg._luu() == "dang_kiem" and o["ngay"].isEnabled(), "Lưu kiểm thư mục ở NỀN (không chặn giao diện)")
+bom(6, lambda: dlg._ket_luu is not None)
+ok(dlg._ket_luu is False and CANH_BAO and "không tồn tại" in CANH_BAO[0],
    "thư mục phiếu không tồn tại -> báo, KHÔNG lưu", str(CANH_BAO))
 o["thu_muc"].setText(str(T))
 o["het_ngay"].setChecked(True)
 o["phut"].setValue(5)
-ok(dlg._luu() is not False and TC.doc_cau_hinh(app_settings()).den == 1440,
+dlg._luu()
+bom(6, lambda: dlg._ket_luu is not None)
+ok(dlg._ket_luu is True and TC.doc_cau_hinh(app_settings()).den == 1440,
    "ô 'đến hết ngày (24:00)' -> lưu 24:00")
 ok(TC.doc_cau_hinh(app_settings()).phut == 5 and m.tc.lich.hen is not None and
    m.tc.lich.hen <= m.now[0] + 5 * 60 + 1, "Lưu nhịp mới -> HẸN LẠI NGAY theo nhịp mới",
@@ -321,12 +330,26 @@ ok(len(m.goi) == 1 and "1 lượt" in r1 and "chưa chạy thêm" in r2,
    "bấm Chạy ngay trên bot 2 lần -> 1 lượt, lần 2 nói rõ", f"{m.goi} | {r1} | {r2}")
 ok("CŨ" in bot_lenh(f"/tuchayngay t{int(time.time()) - 3600}"), "nút tin cũ hết hạn -> báo, không làm")
 doi_xong(m.pg)
-bot_lenh("/chayok 0")                         # /chay (tay) lúc vừa tự chạy xong: không trùng
+# S7: bot /chayok CHỒNG đúng lúc lượt tự chạy ĐANG quét (không đợi xong)
+db.execute("DELETE FROM pipeline_files")
+db.execute("DELETE FROM jobs")
+for _d in (m.pg._pipe_cut, m.pg._pipe_by_vid, m.pg._pending_export):
+    _d.clear()                                 # quên việc RAM của lượt trước
+P._OBSERVATIONS.clear()
+for f in srcB.glob("*.mp4"):
+    old = time.time() - 70
+    os.utime(f, (old, old))
+    P.observe_source(f, now=time.monotonic() - 11)
+m.tc.lich.hen = m.now[0] - 1
+ok(m.tc.nhip() == "chay" and m.pg._pipe_dang_quet_n() == 1, "lượt tự chạy đang QUÉT")
 bot._nhom_map = {0: "B"}
-bot_lenh("/chayok 0")
+bot_lenh("/chayok 0")                         # chồng lượt bấm qua bot
 doi_xong(m.pg)
 nt = db.query_one("SELECT COUNT(*) n FROM pipeline_files WHERE status='taken'")["n"]
-ok(nt == 2, "bot /chay ngay sau lượt tự chạy -> không nhận trùng (2 video / 2 dòng sổ)", str(nt))
+nj = db.query_one("SELECT COUNT(*) n FROM jobs")["n"]
+ok(nt == 2 and nj == 2, "bot /chayok CHỒNG lúc tự chạy đang quét -> không trùng (2 dòng sổ / 2 job)",
+   f"{nt}/{nj}")
+ok("06:00–22:00" in bot_lenh("/tuchaygio 06:00 - 22:00"), "/tuchaygio có dấu cách vẫn nhận")
 ok("cả ngày" in bot_lenh("/tuchaygio 06:00-06:00"), "/tuchaygio 06:00-06:00 = cả ngày")
 ok("24:00" in bot_lenh("/tuchaygio 06:00-24:00") and TC.doc_cau_hinh(app_settings()).den == 1440,
    "/tuchaygio ...-24:00 = tới hết ngày")
@@ -386,7 +409,7 @@ lam_kenh("KT", "TREO", 0)                    # nhóm có kênh nhưng thư mục
 cau_hinh(nhom="TREO")
 m = Moi()
 m.tc.lich.hen = m.now[0] + 10 ** 9           # tách bạch: chỉ đo phần canh treo
-m.pg._pipe_dang_quet = 1
+m.pg._pipe_quet_tok = {-1: True}         # lượt quét giả bị treo
 m.toi(60)
 m.toi(600)
 ok(m.pg._pipe_dang_quet_n() == 1, "10 phút -> chưa coi là treo")
@@ -446,7 +469,7 @@ ok(len(m.goi) == n0 + 1 and r_sau == "cho", "ngủ đông dậy -> chạy ĐÚNG
 cau_hinh(nhom="N", bat=False)
 m.toi()
 lam_video(T / "nguon" / "KN" / "moi.mp4")
-m.pg._pipe_dang_quet = 0
+m.pg._pipe_quet_tok = {}
 ok(m.toi() == "tat" and m.toi() == "tat" and len(m.goi) == n0 + 1,
    "tắt giữa chừng -> không lượt nào nữa")
 
@@ -527,6 +550,229 @@ m.pg._pipe_report.clear()
 m.pg._pipe_run(nen=True, nhom="GON")
 doi_xong(m.pg)
 ok(dem(m.pg._pipe_report, "không có video mới để cắt") == 5, "bấm tay -> vẫn từng kênh 1 dòng như cũ")
+
+print("\nB1 — chống báo lặp: lỗi 60 s xen nhịp 15 s thành công trong 1 giờ -> ĐÚNG 1 tin")
+don_sach()
+lam_kenh("B1", "B1", 0)
+cau_hinh(nhom="B1")
+m = Moi()
+_goc_ban = m.tc.ghi_ban
+m.tc.ghi_ban = lambda *a, **k: 1 / 0          # đường 60 s lỗi liên tục
+for i in range(60):                            # 1 giờ: mỗi phút 1 nhịp 60 s + 4 nhịp 15 s
+    m.now[0] += 15
+    m.tc.nhip()
+    if i % 4 == 0:
+        m.tc.nhip_60(m.now[0])
+ok(dem(m.tele, "nhịp 60 s") == 1 and dem(m.tele, "đã ổn lại") == 0,
+   "lỗi 60 s kéo dài, nhịp 15 s vẫn ổn -> 1 tin lỗi, 0 tin 'đã ổn'", str(m.tele))
+m.tc.ghi_ban = _goc_ban
+m.tele.clear()
+for i in range(8):                             # chập chờn: lỗi - ổn - lỗi - ổn ...
+    m.now[0] += 60
+    m.tc.ghi_ban = (lambda *a, **k: 1 / 0) if i % 2 == 0 else _goc_ban
+    m.tc.nhip_60(m.now[0])
+m.tc.ghi_ban = _goc_ban
+_loi_tin = [t for t in m.tele if t.startswith("⚠") and "nhịp 60 s" in t]
+ok(not _loi_tin and dem(m.tele, "đã ổn lại") == 1,
+   "lỗi chập chờn trong cùng giờ -> KHÔNG báo lỗi lại (mốc gửi giữ qua 'ổn'), 'ổn' 1 lần",
+   str(m.tele))
+m.pg._pipe_quet_tok = {-5: True}
+m.tc.lich.hen = m.now[0] + 10 ** 9
+m.toi(60)
+m.toi(1300)
+m.pg._pipe_quet_tok = {-6: True}
+m.toi(60)
+m.toi(1300)
+ok(sum(t.startswith("⚠") and "QUÉT thư mục bị treo" in t for t in m.tele) == 1,
+   "treo tái phát sau 20 phút -> vẫn 1 tin lỗi/giờ", str(m.tele))
+m.pg._pipe_quet_tok = {}
+
+print("\nS1 — DB hỏng GIỮA lượt: kiểm lại trước mỗi lần ghi, không lặp tin")
+bom(4)                                         # đợi các lượt nền của ca trước ghi xong
+for f in (GOC / "cat").glob("*.json"):
+    f.unlink()
+lam_kenh("KDB", "Mỹ", 0)                     # don_sach() đã xoá kênh, dựng lại
+_goc_nc2 = PD.ngu_canh_db
+
+
+def nc_hong_giua(root):
+    nc = _goc_nc2(root)
+    goc_so = nc["so"]
+
+    def so(pid, f):
+        db.corrupt_live = True                 # DB vỡ ngay trong lúc tra
+        return goc_so(pid, f)
+    nc["so"] = so
+    return nc
+
+
+PD.ngu_canh_db = nc_hong_giua
+m = Moi()
+m.tc.lich.hen = m.now[0] + 10 ** 9
+n = m.tc.lan_nen
+m.tc.nhip_60(m.now[0])
+bom(10, lambda: m.tc.lan_nen > n)
+PD.ngu_canh_db = _goc_nc2
+db.corrupt_live = False
+ok(not (GOC / "cat" / "20261104-01.json").exists(), "DB vỡ giữa lượt -> KHÔNG ghi phiếu cắt nào")
+ok(dem(m.tele, "cơ sở dữ liệu") == 0, "không gửi tin DB riêng (bot đã có tin _bao_db 1 lần)", str(m.tele))
+ok(dem(m.pg._pipe_report, "cơ sở dữ liệu hỏng") == 1, "chỉ ghi log 1 lần")
+
+print("\nS2 — không có kênh cắt: log 1 lần/ngày, không xếp gửi trùng khi bot chậm")
+hom = time.strftime("%Y%m%d")
+PD.ghi_nguyen_tu(GOC / "dot" / f"{hom}-77.json", {
+    "schema": 1, "dot_id": f"{hom}-77", "nhom": "X", "mo_luc": PD.gio_iso(time.time() - 60),
+    "trang_thai": "dang_tai", "kenh": [{"thu_muc": str(T / "nguon" / "kenh 39"),
+                                         "video": [{"id": "yt:39", "trang_thai": "cho"}]}]})
+st.setValue(TC.KHOA + "kck_ngay", "")
+m = Moi()
+m.tc.lich.hen = m.now[0] + 10 ** 9
+CHO_GUI: list = []
+m.tc.tele = lambda t, khi_ok=None, khi_xong=None: (CHO_GUI.append((t, khi_ok)), True)[-1]
+for _ in range(3):
+    n = m.tc.lan_nen
+    m.tc.nhip_60(m.now[0])
+    bom(10, lambda: m.tc.lan_nen > n)
+    m.now[0] += 60
+ok(sum("Không có kênh cắt" in t for t, _ in CHO_GUI) == 1, "bot chậm -> chỉ xếp gửi 1 lần", str(CHO_GUI))
+ok(dem(m.pg._pipe_report, "KHÔNG có kênh cắt") == 1, "log 1 lần/ngày (không mỗi 60 s)")
+(GOC / "dot" / f"{hom}-77.json").unlink()
+
+print("\nS3 — hết lượt AI qua đường soonest_ready_wait THẬT (mọi key bị chặn -> None)")
+from app.ai import key_health as _kh  # noqa: E402
+_goc_bl = _kh.blocked
+_kh.blocked = lambda *a, **k: True
+m = Moi()
+m.tc.lich.hen = m.now[0] + 10 ** 9
+n = m.tc.lan_nen
+m.tc.nhip_60(m.now[0])
+bom(10, lambda: m.tc.lan_nen > n)
+ok(_llm.soonest_ready_wait(_llm.active_provider()) is None and m.tc.het_luot_ai is True,
+   "mọi key bị chặn -> soonest_ready_wait None -> coi là HẾT LƯỢT", str(m.tc.het_luot_ai))
+_kh.blocked = _goc_bl
+n = m.tc.lan_nen
+m.tc.nhip_60(m.now[0])
+bom(10, lambda: m.tc.lan_nen > n)
+ok(m.tc.het_luot_ai is False, "key dùng lại được -> hết cờ")
+
+print("\nS4 — Dừng lúc ĐANG QUÉT thật: chỉ bỏ lượt tự chạy, lượt tay song song giữ")
+don_sach()
+pidS, srcS = lam_kenh("S4", "S4", 2)
+pidS2, srcS2 = lam_kenh("S4tay", "S4tay", 2)
+cau_hinh(nhom="S4")
+m = Moi()
+m.tc.lich.hen = m.now[0] - 1
+m.tc.nhip()                                    # tự chạy: quét nhóm S4
+m.pg._pipe_run(nen=True, nhom="S4tay")         # tay: quét nhóm S4tay song song
+ok(m.pg._pipe_dang_quet_n() == 2, "2 lượt quét đang dở (1 tự chạy + 1 tay)")
+kq = m.pg._pipe_dung_luot()
+ok(kq["quet"] == 1, "Dừng chỉ nhắm lượt TỰ CHẠY", str(kq))
+doi_xong(m.pg)
+ta = db.query_one("SELECT COUNT(*) n FROM pipeline_files WHERE project_id=?", (pidS,))["n"]
+tt_ = db.query_one("SELECT COUNT(*) n FROM pipeline_files WHERE project_id=?", (pidS2,))["n"]
+ok(ta == 0 and tt_ == 2, "kết quả quét tự chạy bị BỎ, lượt tay vẫn nhận đủ", f"tự={ta} tay={tt_}")
+ok(m.pg._pipe_dang_quet_n() == 0, "bộ đếm quét về 0 đúng")
+# lượt quét THẬT bị treo về muộn (qua _quet_xong thật) không phá bộ đếm lượt mới
+_ev = {"S4": threading.Event(), "S4tay": threading.Event()}
+_goc_plan = P.plan_channel
+
+
+def _plan_cham(pid, ten, *a, **k):
+    if ten in _ev:
+        _ev[ten].wait(15)
+    return _goc_plan(pid, ten, *a, **k)
+
+
+P.plan_channel = _plan_cham
+m.pg._pipe_run(nen=True, nhom="S4")            # lượt 1: treo
+bom(0.3)
+m.pg._pipe_dung_luot(go_co_quet=True, chi_tu_chay=False)   # gỡ vì treo
+m.pg._pipe_run(nen=True, nhom="S4tay")          # lượt 2: đang quét
+bom(0.3)
+_ev["S4"].set()                                # lượt 1 về MUỘN
+bom(1.0)
+ok(m.pg._pipe_dang_quet_n() == 1, "lượt treo về muộn (qua _quet_xong thật) KHÔNG trừ lượt mới",
+   str(m.pg.__dict__.get("_pipe_quet_tok")))
+_ev["S4tay"].set()
+doi_xong(m.pg)
+P.plan_channel = _goc_plan
+ok(m.pg._pipe_dang_quet_n() == 0, "lượt mới xong -> bộ đếm về 0")
+
+print("\nS7 — đổi nhịp khi đang quét/nhận: hẹn lại, không chạy chồng")
+m.tc.lich.hen = m.now[0] - 1
+cau_hinh(nhom="S4", phut=10)
+m.tc.nhip()
+m.now[0] += 1
+cau_hinh(nhom="S4", phut=3)
+r_ = m.tc.nhip()
+ok(r_ in ("cho", "bo") and abs(m.tc.lich.hen - (m.tc.lich.moc + 180)) < 2,
+   "đổi nhịp giữa lượt -> hẹn lại theo nhịp mới, không chạy chồng", f"{r_}")
+doi_xong(m.pg)
+
+print("\nS5 — dựng Tự chạy LỖI: báo bot (thử lại tới khi gửi được) + dừng timer")
+from app.ui import main_window as _mw  # noqa: E402
+import app.ui.tu_chay_ui as _tcu  # noqa: E402
+
+
+from PyQt6.QtCore import QObject  # noqa: E402
+
+
+class _Gia(QObject):
+    TC_BAO_CHO_MS = 30
+    TC_BAO_LAN = 5
+    _tu_chay_noi = _mw.MainWindow._tu_chay_noi
+    _tu_chay_bao_loi_dung = _mw.MainWindow._tu_chay_bao_loi_dung
+
+    def __init__(self, pg):
+        super().__init__()
+        self.studio = pg
+        self.state = pg.state
+
+
+_goc_ui = _tcu.TuChayUI
+
+
+class _Hong(_goc_ui):
+    def bat_dau(self):
+        super().bat_dau()
+        raise RuntimeError("thử dựng lỗi")
+
+
+_tcu.TuChayUI = _Hong
+g = _Gia(m.pg)
+GUI_D: list = []
+lan = {"n": 0}
+
+
+def _gui_d(cid, t, phim=False, html=True):
+    lan["n"] += 1
+    GUI_D.append(t)
+    return 1 if lan["n"] >= 3 else None
+
+
+TB._bot = TB.BotQuanLy("tok", {9}, None)
+TB._bot.gui = _gui_d
+g._tu_chay_noi()
+_tcu.TuChayUI = _goc_ui
+bom(3, lambda: g._tu_chay_loi_dung["xong"])
+ok(g._tu_chay is None and g._tu_chay_loi_dung["xong"] and len(GUI_D) == 3,
+   "báo 'KHÔNG khởi động được' — thử lại tới khi gửi được (lần 3)", str(len(GUI_D)))
+TB._bot = None
+
+print("\nS7 — phiếu cắt ghi lỗi kéo dài -> báo bot")
+_goc_ghi = PD.ghi_nguyen_tu
+PD.ghi_nguyen_tu = lambda *a, **k: (_ for _ in ()).throw(OSError("đĩa khoá"))
+for f in (GOC / "cat").glob("*.json"):
+    f.unlink()
+m = Moi()
+m.tc.lich.hen = m.now[0] + 10 ** 9
+for _ in range(13):
+    n = m.tc.lan_nen
+    m.tc.nhip_60(m.now[0])
+    bom(10, lambda: m.tc.lan_nen > n)
+    m.now[0] += 60
+PD.ghi_nguyen_tu = _goc_ghi
+ok(dem(m.tele, "không ghi được phiếu cắt") == 1, "ghi phiếu lỗi > 10 phút -> báo bot 1 lần", str(m.tele))
 
 print("\n" + "=" * 60)
 print(f"KETQUA CỔNG 112 tự chạy 1b: ĐẠT {len(DAT)} · HỎNG {len(HONG)}")

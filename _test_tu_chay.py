@@ -37,6 +37,9 @@ os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")
 os.environ["BQ_PCBOT_EXCHANGE"] = str(T / "exchange")
 os.environ["BQ_DAYCHUYEN_DIR"] = str(T / "daychuyen")
 os.environ["BQ_TAT_BOT"] = "1"
+# key GIẢ (không gọi mạng): soonest_ready_wait chỉ xét key có trong settings,
+# không có key nào thì nó trả None = "hết lượt" (S3) -> mọi nhịp bị chặn oan.
+os.environ["GROQ_API_KEYS"] = "khoa_gia_test_1,khoa_gia_test_2"
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 import _test_guard  # noqa: E402,F401 - CẤM test mở Explorer/trình phát trên máy user
@@ -99,6 +102,7 @@ for _n in ("question", "information", "warning", "critical"):
 _llm.is_configured = lambda *a, **k: True
 
 st = app_settings()
+(T / "daychuyen").mkdir(exist_ok=True)       # thư mục phiếu (Lưu kiểm tồn tại)
 st.setValue("pipe_root", str(T / "nguon"))
 st.setValue("pipe_recycle_dir", str(T / "thungrac"))
 st.sync()
@@ -158,7 +162,7 @@ def gan_spy(pg):
     return goi, nhay
 
 
-def doi_nhan_xong(pg, giay=20):
+def doi_nhan_xong(pg, giay=20):  # noqa: E302
     """Đợi quét + nhận xong. Hàng rỗng chưa phải là xong: bước KẾT THÚC lượt
     nhận (chỗ gọi _pipe_focus) còn nằm trong singleShot(0) -> bơm thêm."""
     r = bom(giay, lambda: pg._pipe_dang_quet_n() == 0 and not pg._bot_dang_nhan())
@@ -252,10 +256,10 @@ N4[0] += 601
 pg4._pipe_intake_q = [(1, "x", "auto", Path("x.mp4"))]
 ok(tc4.nhip() == "bo" and not goi4, "còn file trong hàng nhận -> bỏ nhịp")
 pg4._pipe_intake_q = []
-pg4._pipe_dang_quet = 1
+pg4._pipe_quet_tok = {-1: True}          # 1 lượt quét giả đang dở
 N4[0] += 601
 ok(tc4.nhip() == "bo" and not goi4, "đang quét nền -> bỏ nhịp")
-pg4._pipe_dang_quet = 0
+pg4._pipe_quet_tok = {}
 N4[0] += 601
 ok(tc4.nhip() == "chay" and len(goi4) == 1, "hết bận -> nhịp kế chạy")
 doi_nhan_xong(pg4)
@@ -343,7 +347,7 @@ pg4.state.pool.chay_tiep()
 
 print("\nV7 — không có key AI: không chạy, báo Telegram 1 lần")
 tele = []
-tc4.tele = lambda t, khi_ok=None: (tele.append(t), khi_ok and khi_ok(), True)[-1]
+tc4.tele = lambda t, khi_ok=None, khi_xong=None: (tele.append(t), khi_ok and khi_ok(), True)[-1]
 _llm.is_configured = lambda *a, **k: False
 n0 = len(goi4)
 for i in range(3):
@@ -662,6 +666,7 @@ ok(set(nhan) >= {"Lưu", "Đóng", "Chọn thư mục"}, "đủ nút bằng CH�
 ok(not any(ord(c) > 0x2FFF for t in nhan for c in t), "nhãn nút không emoji")
 dlg._o["bat"].setChecked(True)
 dlg._luu()
+bom(6, lambda: getattr(dlg, "_ket_luu", None) is not None)
 ok(TC.doc_cau_hinh(app_settings()).bat is True, "Lưu -> ghi QSettings tiền tố pipe_auto_")
 ok(all(k.startswith("pipe_auto_") for k in app_settings().allKeys() if "auto_" in k and "pipe" in k),
    "khoá đều tiền tố pipe_auto_")
