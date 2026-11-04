@@ -260,15 +260,60 @@ N4[0] += 601
 ok(tc4.nhip() == "chay" and len(goi4) == 1, "hết bận -> nhịp kế chạy")
 doi_nhan_xong(pg4)
 
-print("\nV4 — hộp Dây chuyền (modal Qt) đang mở -> vẫn chạy")
-d = QDialog(pg4)
-d.setModal(True)
-d.show()
-qapp.processEvents()
-N4[0] += 601
-ok(QApplication.activeModalWidget() is not None and tc4.nhip() == "chay",
-   "có modal Qt -> nhịp vẫn chạy (bài học cổng 14)")
-d.close()
+print("\nV3' — chồng lượt THẬT (giống CA4 overlap): chỉ MỘT vòng nhận")
+for i in range(3):
+    lam_kenh(f"V3_{i}", "V3", 3)
+cau_hinh(bat=True, nhom="V3", phut=10)
+pg3b = trang()
+N3b = [time.time()]
+tc3b = TuChayUI(None, pg3b, pg3b.state, dong_ho=lambda: N3b[0])
+tc3b.o_dia = (True, "")
+tc3b.nhip()
+N3b[0] += 601
+r0 = tc3b.nhip()                         # lượt tự chạy: quét nền
+bo_nhip = 0
+pg3b._pipe_run(nhom="V3")                # lượt TAY chen giữa lúc quét nền
+for _ in range(6):                       # nhịp tự chạy dồn tới trong lúc nhận
+    bom(0.05)
+    N3b[0] += 601
+    bo_nhip += tc3b.nhip() == "bo"
+doi_nhan_xong(pg3b, 40)
+v3_ids = [r_["id"] for r_ in db.query("SELECT id FROM projects WHERE grp='V3'")]
+q = ",".join("?" * len(v3_ids))
+taken = db.query_one(f"SELECT COUNT(*) n FROM pipeline_files WHERE status='taken' "
+                     f"AND project_id IN ({q})", v3_ids)["n"]
+ctx = len({c["entry"] for c in list(pg3b._pipe_cut.values()) + list(pg3b._pipe_by_vid.values())
+           if c["pid"] in v3_ids})
+n_tong = sum(1 for d_ in pg3b._pipe_report if "tổng nhận" in d_)
+ok(r0 == "chay" and bo_nhip >= 1, "nhịp tới lúc còn quét/nhận -> bị BỎ", f"r0={r0} bo={bo_nhip}")
+ok(taken == 9 and ctx == 9, "9 file / 9 dòng sổ / 9 ctx — không trùng, không mất", f"{taken}/{ctx}")
+ok(n_tong == 1, "chỉ MỘT vòng nhận (log 'tổng nhận' 1 lần)", str(n_tong))
+
+print("\nV4 — hộp Dây chuyền THẬT (_pipeline_dialog, exec modal) đang mở -> vẫn chạy")
+cau_hinh(bat=True, phut=10)
+KQ4 = {}
+_cu_exec = QDialog.exec
+
+
+def _exec_co_nhip(self):
+    self.setModal(True)
+    self.show()
+    qapp.processEvents()
+    if getattr(pg4, "_pipe_dlg", None) is self:
+        N4[0] += 601
+        KQ4["modal"] = QApplication.activeModalWidget() is self
+        KQ4["nhip"] = tc4.nhip()
+    self.close()
+    return 0
+
+
+QDialog.exec = _exec_co_nhip
+try:
+    pg4._pipeline_dialog()
+finally:
+    QDialog.exec = _cu_exec
+ok(KQ4.get("modal") and KQ4.get("nhip") == "chay",
+   "_pipeline_dialog đang mở modal -> nhịp vẫn chạy (bài học cổng 14)", str(KQ4))
 doi_nhan_xong(pg4)
 
 print("\nV5 — hộp chọn file hệ thống (_modal_busy) -> hoãn, không crash")
@@ -423,6 +468,29 @@ doi_nhan_xong(pg22)
 ok(bool(db.query("SELECT 1 FROM pipeline_files WHERE status='taken'")),
    "bấm Chạy TAY vẫn nhận lại (hành vi cũ giữ nguyên)")
 
+print("\nKHOÁ KHÔNG-NHẢY gỡ ở MỌI lối ra (file hỏng ở lượt tự chạy)")
+don_sach()
+P._OBSERVATIONS.clear()
+pidK, srcK = lam_kenh("KHong", "GK", 0)
+fk = srcK / "hong.mp4"
+fk.write_bytes(b"khong phai video" * 100)
+old = time.time() - 70
+os.utime(fk, (old, old))
+observe_source(fk, now=time.monotonic() - 11)
+cau_hinh(bat=True, nhom="GK", phut=10)
+pgK = trang()
+gan_spy(pgK)
+NK = [time.time()]
+tcK = TuChayUI(None, pgK, pgK.state, dong_ho=lambda: NK[0])
+tcK.o_dia = (True, "")
+tcK.nhip()
+NK[0] += 601
+tcK.nhip()
+doi_nhan_xong(pgK)
+ok(not (pgK.__dict__.get("_pipe_im_khoa") or set()),
+   "file hỏng (mark_bad) ở lượt tự chạy -> khoá không-nhảy đã gỡ",
+   str(pgK.__dict__.get("_pipe_im_khoa")))
+
 print("\nV23 (ổ đĩa) — kiểm TỪNG ổ chứa thư mục kênh")
 ok(TC.kiem_o_dia([r"D:\a", r"E:\b"], 30, 10,
                  dung_luong=lambda o: {"C:\\": 50, "D:\\": 100, "E:\\": 12}[o])
@@ -447,11 +515,50 @@ ok(any("DỪNG" in t for t in tele), "báo Telegram rõ lý do ổ đầy", str(
 tc4.o_dia = None
 N4[0] += 601
 ok(tc4.nhip() == "hoan", "chưa đo ổ lần nào -> hoãn, không chạy mù")
+_lg5 = []
+_g5 = pg4._pipe_log
+pg4._pipe_log = lambda x: _lg5.append(x)
+tc4.lich.da_noi.pop("cho_do_o", None)
+for _ in range(3):
+    N4[0] += 601
+    tc4.nhip()
+pg4._pipe_log = _g5
+ok(sum("HOÃN" in x for x in _lg5) == 1, "hoãn vì chưa đo được ổ -> NÓI RA 1 lần (không im lặng)",
+   str(_lg5))
+
+
+def _cham(o):
+    time.sleep(3)
+    return 999
+t0 = time.time()
+kq5 = TC.kiem_o_dia([r"Q:\mang"], 30, 10, dung_luong=_cham, han=0.3)
+ok(kq5[0] is True and time.time() - t0 < 2.5, "ổ mạng treo -> quá hạn thì bỏ qua ổ đó, không treo cả lượt",
+   f"{kq5} {time.time() - t0:.1f}s")
+tc4.nhip_60(N4[0])
+tc4._nen_tu = N4[0] - 10_000          # giả: lượt nền trước treo quá lâu
+n_nen = tc4.lan_nen
+tc4.nhip_60(N4[0])
+ok(bom(15, lambda: tc4.lan_nen > n_nen), "lượt nền treo quá hạn -> nhịp sau đo lại")
 tc4.o_dia = (True, "")
 
 print("\nV24 — file trạng thái bận")
+_th_dung = []
+_goc_nd = PD.noi_dung_ban
+
+
+def _nd_spy(*a, **k):
+    import threading as _t
+    _th_dung.append(_t.current_thread() is _t.main_thread())
+    return _goc_nd(*a, **k)
+
+
+PD.noi_dung_ban = _nd_spy
 ex = T / "exchange"
-ok(tc4.ghi_ban(time.time()) is False, "chưa có thư mục exchange -> bỏ qua im lặng")
+_nl = []
+_gl = pg4._pipe_log
+pg4._pipe_log = lambda x: _nl.append(x)
+ok(tc4.ghi_ban(time.time()) is False and not _nl, "chưa có thư mục exchange -> bỏ qua IM LẶNG")
+pg4._pipe_log = _gl
 ex.mkdir()
 don_sach()
 pid24, src24 = lam_kenh("K24", "G24", 1)
@@ -493,6 +600,15 @@ ok(d3["ban"] is False, "thoát êm -> ghi lần cuối ban=false (đồng bộ)"
 import inspect  # noqa: E402
 import app.ui.tu_chay_ui as _tcu  # noqa: E402
 src_ui = inspect.getsource(_tcu.TuChayUI.ghi_ban)
+ok(_th_dung and all(_th_dung), "MỌI lần dựng nội dung bận đều ở LUỒNG GIAO DIỆN",
+   str(_th_dung))
+PD.noi_dung_ban = _goc_nd
+cau_hinh(bat=False)
+(ex / PD.TEN_FILE_BAN).unlink()
+tc24.so_ghi_ban = 0
+tc24.nhip_60()
+bom(2, lambda: tc24.so_ghi_ban > 0)
+ok((ex / PD.TEN_FILE_BAN).exists(), "Tự chạy TẮT vẫn ghi file bận (PCBot biết app bận khi cắt tay)")
 ok("noi_dung_ban(now" in src_ui and src_ui.index("noi_dung_ban(now") < src_ui.index("def ghi():"),
    "nội dung bận dựng ở luồng giao diện TRƯỚC khi đẻ luồng ghi")
 
@@ -543,8 +659,25 @@ g.kiem_ket_dang_nhap(now=900, pid=123, song=False, tu_chay=True)
 ok(len(gui) == 1, "không báo lặp")
 g.kiem_ket_dang_nhap(now=901, pid=123, song=True, tu_chay=True)
 g.kiem_ket_dang_nhap(now=902, pid=123, song=False, tu_chay=True)
-ok(g.kiem_ket_dang_nhap(now=1300, pid=123, song=False, tu_chay=True) and len(gui) == 2,
-   "đăng nhập được rồi kẹt lại -> báo lần mới")
+ok(g.kiem_ket_dang_nhap(now=1300, pid=123, song=False, tu_chay=True) is None and len(gui) == 1,
+   "bot chính TỪNG sống ở pid này rồi im = app TREO (đã có tin riêng) -> không báo kẹt đăng nhập")
+g.kiem_ket_dang_nhap(now=1301, pid=456, song=False, tu_chay=True)
+ok(g.kiem_ket_dang_nhap(now=1700, pid=456, song=False, tu_chay=True) and len(gui) == 2,
+   "app mở lại (pid mới) rồi kẹt ở màn đăng nhập -> báo lần mới")
+g3 = G.Gac("tok", {7}, goi=lambda m, d, **k: [])
+_goc_pid = G.app_pid
+
+
+def _cam_doc():
+    raise AssertionError("đọc app_pid khi Tự chạy tắt")
+
+
+G.app_pid = _cam_doc
+try:
+    g3._tc_doc = (1e18, False)
+    ok(g3.kiem_ket_dang_nhap(now=1e18 + 1) is None, "Tự chạy tắt -> KHÔNG đọc app_pid mỗi vòng")
+finally:
+    G.app_pid = _goc_pid
 g2 = G.Gac("tok", {7}, goi=lambda m, d, **k: gui.append("x") or [])
 g2.kiem_ket_dang_nhap(now=0, pid=1, song=False, tu_chay=False)
 ok(g2.kiem_ket_dang_nhap(now=9999, pid=1, song=False, tu_chay=False) is None,

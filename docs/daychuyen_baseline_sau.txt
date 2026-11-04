@@ -215,3 +215,16 @@ TONG: FAIL
 * _test_do_to_xuat.py (66): lượt cả bộ ra 52·1 (de_do_lech -16,7 LU, máy đang tải nặng); chạy RIÊNG ra:
 ĐẠT 53 · HỎNG 0
   -> nhấp nháy do tải, mã độ to không bị đụng (git diff app/core/ffmpeg_utils.py m1 rỗng).
+
+=== LƯỢT 2 (sửa theo duyệt của phiên điều phối) — 2026-11-04 13:41:18 — HEAD b92ab59 + thay đổi chưa commit
+pyflakes: 77 dòng · undefined name: 0
+  _test_app_smoke.py  mã thoát 0 · 7s · ✅ KHÔNG LỖI: mọi trang, mọi nút, mọi hộp thoại, 40 nhịp poll
+  _test_pipe_dialogs.py  mã thoát 0 · 2s · ✅ MỌI HỘP THOẠI + NÚT MỞ ĐƯỢC, KHÔNG LỖI
+  _test_tele_bot.py  mã thoát 0 · 24s · KETQUA ĐẠT 112 · HỎNG 0
+  _test_tu_chay.py  mã thoát 0 · 14s · KETQUA CỔNG 110 tự chạy: ĐẠT 86 · HỎNG 0
+  _test_phieu_dot.py  mã thoát 0 · 4s · KETQUA CỔNG 111 phiếu đợt: ĐẠT 61 · HỎNG 0
+  _test_pipe_overlap.py  mã thoát 0 · 12s · ✅ TẤT CẢ ĐẠT
+  _test_cancel_persist.py  mã thoát 0 · 3s · KẾT QUẢ: TẤT CẢ ĐẠT — huỷ là huỷ, tắt app mở lại không tự chạy
+  _test_ui_smooth.py  mã thoát 0 · 3s · KẾT QUẢ: TẤT CẢ ĐẠT — dialog mở vẫn chạy, danh sách không nhấp nháy
+  _test_shutdown_safety.py  mã thoát 0 · 1s · KẾT QUẢ: TẤT CẢ ĐẠT — luồng nền không thể làm sập app nữa
+  thử phá 5 chốt mới (script ở thư mục nháp, KHÔNG vào repo): BẮT 5 · LỌT 0

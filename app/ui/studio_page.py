@@ -6926,7 +6926,7 @@ class StudioPage(QWidget):
                                    "trong dây chuyền (lượt trước chưa xong)")
                     continue
                 dang_bay.add(khoa)
-                if im and self._pipe_da_huy(it.project_id, khoa):
+                if im and self._pipe_da_huy(it.project_id, path):
                     _dn = self.__dict__.setdefault("_pipe_huy_da_noi", set())
                     if khoa not in _dn:
                         _dn.add(khoa)
@@ -6982,28 +6982,31 @@ class StudioPage(QWidget):
         self._pipe_intake_step()
         return 0
 
-    def _pipe_da_huy(self, pid, khoa) -> bool:
+    def _pipe_da_huy(self, pid, path) -> bool:
         """Video này (cùng đường dẫn) có lượt phân tích/xuất gần nhất ĐÃ HUỶ
         không. Chỉ lượt TỰ CHẠY hỏi: huỷ là huỷ, nhịp sau không tự làm lại
-        (lượt bấm tay vẫn nhận lại như cũ)."""
+        (lượt bấm tay vẫn nhận lại như cũ). 1-2 truy vấn có chỉ mục / file —
+        KHÔNG quét cả bảng video của kênh trên luồng giao diện."""
         try:
             from app.core.pipeline_safety import latest_export_states
-            for v in db.query("SELECT id, src_path FROM videos WHERE project_id=? "
-                              "ORDER BY id DESC", (int(pid),)):
-                if self._pipe_khoa(v["src_path"] or "") != khoa:
-                    continue
-                j = db.query_one("SELECT status, cancel_req FROM jobs WHERE video_id=? "
-                                 "AND type IN ('auto','auto_recap') ORDER BY id DESC "
-                                 "LIMIT 1", (int(v["id"]),))
-                if not j:
-                    return False
-                if j["status"] in ("canceled", "skipped") or j["cancel_req"]:
-                    return True
-                return any(s in ("canceled", "skipped")
-                           for s in latest_export_states(int(v["id"])).values())
+            p = str(path)
+            v = db.query_one(
+                "SELECT id FROM videos WHERE project_id=? AND (src_path=? OR "
+                "LOWER(REPLACE(src_path,'/',?))=?) ORDER BY id DESC LIMIT 1",
+                (int(pid), p, os.sep, self._pipe_khoa(p).lower()))
+            if not v:
+                return False
+            j = db.query_one("SELECT status, cancel_req FROM jobs WHERE video_id=? "
+                             "AND type IN ('auto','auto_recap') ORDER BY id DESC "
+                             "LIMIT 1", (int(v["id"]),))
+            if not j:
+                return False
+            if j["status"] in ("canceled", "skipped") or j["cancel_req"]:
+                return True
+            return any(s in ("canceled", "skipped")
+                       for s in latest_export_states(int(v["id"])).values())
         except Exception:  # noqa: BLE001 - không chắc thì để như cũ (nhận)
             return False
-        return False
 
     def _pipe_intake_step(self) -> None:
         """Nhận 1 video mỗi nhịp QTimer rồi nhường event loop → chạy 100 kênh
@@ -8144,6 +8147,14 @@ class StudioPage(QWidget):
         from app.core import pipeline as P
         from app.core.ffmpeg_utils import probe
         from app.services import _file_hash
+        # Khoá "không nhảy màn hình" của lượt TỰ CHẠY: gỡ NGAY ở đầu để mọi lối
+        # ra (file hỏng / quarantine / lỗi nhập / mất file) đều không để sót
+        # khoá, không thì lượt ▶ tay sau với cùng file sẽ không nhảy tới nó.
+        _im_set = self.__dict__.get("_pipe_im_khoa")
+        _k = self._pipe_khoa(path)
+        _la_tu_chay = bool(_im_set) and _k in _im_set
+        if _la_tu_chay:
+            _im_set.discard(_k)
         if pre is not None and "info" in pre:
             info = pre.get("info")
         else:
@@ -8174,10 +8185,8 @@ class StudioPage(QWidget):
             return False
         # Video ĐẦU TIÊN nhận trong lần chạy này -> nhớ để đưa ra màn hình chính
         # (hiện tên + tiến trình + Part ở khung giữa, như luồng bấm 'Tạo clip').
-        _im = self.__dict__.get("_pipe_im_khoa") or set()
-        _k = self._pipe_khoa(path)
-        if _k in _im:
-            _im.discard(_k)               # lượt TỰ CHẠY: không nhảy màn hình
+        if _la_tu_chay:
+            pass                          # lượt TỰ CHẠY: không nhảy màn hình
         elif getattr(self, "_pipe_focus_target", None) is None:
             self._pipe_focus_target = (int(pid), int(vid))
         ctx = {"entry": entry, "vid": vid, "path": str(path), "pid": pid,

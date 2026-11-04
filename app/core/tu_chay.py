@@ -39,6 +39,8 @@ LUOT_DAU_GIAY = 120
 KICH_BO_CU_GIAY = 600
 #: lý do không chạy được nói lại tối đa 1 lần / chừng này giây (V6).
 NOI_LAI_GIAY = 3600
+#: thời hạn đo dung lượng 1 ổ (ổ mạng chết -> bỏ qua ổ đó, không treo cả lượt).
+DO_O_HAN_GIAY = 30
 
 KHOA = "pipe_auto_"     # tiền tố QSettings
 #: QSettings .ini có thể đọc chuỗi rỗng thành None -> lưu nhóm rỗng bằng mã này
@@ -241,8 +243,30 @@ def _o_cua(p) -> str:
     return ""
 
 
+def _co_han(fn, o, han: float):
+    """Gọi fn(o) ở luồng phụ, chờ tối đa `han` giây (ổ mạng chết có thể treo
+    shutil.disk_usage hàng phút). Quá hạn -> ném TimeoutError."""
+    import threading
+    hop: dict = {}
+
+    def chay():
+        try:
+            hop["v"] = fn(o)
+        except BaseException as e:  # noqa: BLE001
+            hop["e"] = e
+    t = threading.Thread(target=chay, daemon=True, name="bq-do-o")
+    t.start()
+    t.join(han)
+    if t.is_alive():
+        raise TimeoutError(f"đo ổ {o} quá {han:.0f} giây")
+    if "e" in hop:
+        raise hop["e"]
+    return hop["v"]
+
+
 def kiem_o_dia(thu_muc_kenh, o_video_gb: float = O_VIDEO_GB,
-               o_c_gb: float = O_C_GB, dung_luong=None) -> tuple[bool, str]:
+               o_c_gb: float = O_C_GB, dung_luong=None,
+               han: float = DO_O_HAN_GIAY) -> tuple[bool, str]:
     """#20: kiểm TỪNG ổ chứa thư mục kênh (ngưỡng o_video_gb) + ổ C (o_c_gb).
     Gọi ở LUỒNG NỀN (ổ mạng chết có thể treo cả chục giây). Ổ không đọc được
     (chưa cắm) không tính là đầy — quét kênh tự bỏ qua kênh đó."""
@@ -256,8 +280,8 @@ def kiem_o_dia(thu_muc_kenh, o_video_gb: float = O_VIDEO_GB,
     thieu = []
     for o, ng in sorted(nguong.items()):
         try:
-            con = float(du(o))
-        except Exception:  # noqa: BLE001
+            con = float(_co_han(du, o, han))
+        except Exception:  # noqa: BLE001 - ổ chưa cắm / quá hạn: không tính là đầy
             continue
         if con < ng:
             thieu.append(f"ổ {o.rstrip(chr(92))} còn {con:.1f} GB (cần ≥ {ng:.0f} GB)")

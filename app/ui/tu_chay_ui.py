@@ -26,6 +26,10 @@ from app.core import phieu_dot as PD
 from app.core import tu_chay as TC
 
 
+#: lượt nền (đo ổ + phiếu) chạy quá chừng này giây thì coi là treo, cho đo lại.
+NEN_TOI_DA_GIAY = 300
+
+
 class TuChayUI(QObject):
     def __init__(self, parent, studio, state, dong_ho=None):
         super().__init__(parent)
@@ -43,6 +47,7 @@ class TuChayUI(QObject):
         self.so_ghi_ban = 0
         self.lan_nen = 0
         self._t15 = self._t60 = None
+        self._nen_tu = 0.0
 
     # ------------------------------------------------------------ nhịp --
     def bat_dau(self) -> None:
@@ -115,12 +120,17 @@ class TuChayUI(QObject):
             if self.lich.nen_noi(ly, now):
                 self.studio._pipe_log(f"⏸ Tự chạy: không chạy lượt mới — {loi}")
                 if ly == "o_day":
-                    self.tele(f"💾 <b>Tự chạy dây chuyền DỪNG</b> — {loi}. "
+                    self.tele(f"💾 <b>Tự chạy dây chuyền DỪNG</b> — {PD._h(loi)}. "
                               "Dọn ổ rồi app tự chạy lại ở nhịp sau.")
             if ly == "khong_key" and not self._da_bao_key:
                 self._da_bao_key = True
                 self.tele("🔴 <b>Tự chạy dây chuyền KHÔNG chạy</b> — chưa có key AI "
                           "(Cài đặt AI). Thêm key là nhịp sau tự chạy.")
+        if viec == "hoan" and ly == "cho_do_o" and self.lich.nen_noi(ly, now):
+            # #5 phiên điều phối: ổ mạng chết -> đo ổ không bao giờ xong -> mọi
+            # nhịp hoãn IM LẶNG. Nói ra 1 lần/giờ.
+            self.studio._pipe_log("⏸ Tự chạy: đang HOÃN — chưa đo xong dung lượng "
+                                  "ổ chứa thư mục kênh (ổ mạng chậm/chưa cắm?)")
         return viec
 
     # -------------------------------------------------- 60 s: bận + phiếu --
@@ -134,13 +144,22 @@ class TuChayUI(QObject):
                 pass
 
     def _nhip_60(self, now: float) -> None:
+        # Trạng thái bận ghi LUÔN khi app chạy (kể cả Tự chạy TẮT) để PCBot biết
+        # app bận cả khi anh Hùng bấm cắt tay. Hộp cát test / chưa cài PCBot
+        # (không có thư mục exchange) -> im lặng bỏ qua.
+        self.ghi_ban(now)
         cfg = self.cau_hinh()
         if not cfg.bat:
             return
-        self.ghi_ban(now)
         if self._nen_dang:
-            return                       # lượt nền trước chưa xong (ổ mạng chậm)
+            if now - self._nen_tu < NEN_TOI_DA_GIAY:
+                return                   # lượt nền trước chưa xong (ổ mạng chậm)
+            # lượt nền treo quá lâu (ổ mạng chết giữa chừng): bỏ chờ nó, đo lại
+            if self.lich.nen_noi("nen_treo", now):
+                self.studio._pipe_log("⚠ Tự chạy: đo ổ / đọc phiếu treo quá "
+                                      f"{NEN_TOI_DA_GIAY // 60} phút — đo lại")
         self._nen_dang = True
+        self._nen_tu = now
         S = self.studio
         root = S._pipe_root()
         goc = PD.thu_muc_phieu(cfg.thu_muc)
@@ -173,7 +192,7 @@ class TuChayUI(QObject):
             self.lich.them_kich(dot, vid, ts, now)
         for s in ra["bao"]:
             self.studio._pipe_log("⚠ Phiếu đợt: " + s)
-            self.tele("⚠ <b>Phiếu đợt</b>: " + s)
+            self.tele("⚠ <b>Phiếu đợt</b>: " + PD._h(s))
         if ra.get("loi_ghi") and self.lich.nen_noi("ghi_phieu", now):
             self.studio._pipe_log("⚠ " + ra["loi_ghi"])
         for su in ra["su_kien"]:
@@ -182,7 +201,9 @@ class TuChayUI(QObject):
                      f"nhưng sau {PD.MAT_FILE_PHUT} phút không thấy file trong thư "
                      "mục và không có trong sổ")
                 self.studio._pipe_log("⚠ " + t)
-                self.tele("⚠ <b>" + t.split(":")[0] + "</b>:" + t.split(":", 1)[1])
+                self.tele(f"⚠ <b>MẤT FILE</b>: kênh «{PD._h(su[1])}» — phiếu tải ghi "
+                          f"xong '{PD._h(su[2])}' nhưng sau {PD.MAT_FILE_PHUT} phút "
+                          "không thấy file trong thư mục và không có trong sổ")
         self._bao_kck(ra.get("kck") or [], now)
         for dot, text in ra["bao_cao"]:
             if dot in self._da_dua_bao:
@@ -206,7 +227,7 @@ class TuChayUI(QObject):
         t = (f"{len(set(ds))} thư mục trong phiếu tải KHÔNG có kênh cắt nào: {ten} "
              "— tạo kênh / sửa thư mục kênh (video ở đó sẽ không được cắt)")
         self.studio._pipe_log("⚠ " + t)
-        self.tele("⚠ <b>Không có kênh cắt</b>: " + t)
+        self.tele("⚠ <b>Không có kênh cắt</b>: " + PD._h(t))
 
     def _dua_bao_cao(self, goc, dot: str, text: str) -> None:
         """#28: báo cáo nhóm đi chung tin "HẾT hàng chờ" của bot (không báo
@@ -260,11 +281,7 @@ class TuChayUI(QObject):
         if d is None:
             return False
         if not d.is_dir():
-            if not self._ban_loi_da_ghi:
-                self._ban_loi_da_ghi = True
-                self.studio._pipe_log(f"ℹ Trạng thái bận: không có thư mục {d} "
-                                      "(chưa cài PCBot?) — bỏ qua")
-            return False
+            return False                 # chưa cài PCBot -> im lặng (mục 12)
         nd = self.noi_dung_ban(now, dang_thoat)
         f = d / PD.TEN_FILE_BAN
 
@@ -288,10 +305,9 @@ class TuChayUI(QObject):
         return True
 
     def thoat(self) -> None:
-        """closeEvent: ghi lần cuối `ban=false` (chỉ khi đang bật Tự chạy)."""
+        """closeEvent: ghi lần cuối `ban=false` (mục 12)."""
         try:
-            if self.cau_hinh().bat:
-                self.ghi_ban(self._dong_ho(), dang_thoat=True, dong_bo=True)
+            self.ghi_ban(self._dong_ho(), dang_thoat=True, dong_bo=True)
         except Exception:  # noqa: BLE001
             pass
 

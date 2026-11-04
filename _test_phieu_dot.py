@@ -361,7 +361,29 @@ ok(len(het) == 1 and "Nhóm «Mỹ mới»" in het[0] and "Part mới 2" in het[
    and sum("Nhóm «" in t for t in tin) == 1,
    "báo cáo GỘP vào tin HẾT hàng chờ (1 tin, không báo trùng)", str(tin))
 ok("tải 1/2" in het[0] and "tải lỗi 1" in het[0], "báo cáo nêu tải x/y + lỗi tải", het[0])
-ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")), "phiếu cắt đánh dấu đã báo")
+ok(not (phieu_cat("20261104-10") or {}).get("bao_cao_luc"),
+   "CHƯA gửi thật -> CHƯA đánh dấu (gửi lỗi mà đã đánh dấu là mất báo cáo)")
+# gửi THẬT lần 1: Telegram lỗi (gui trả None, không có gui_ngoai)
+bot._gui_ngoai = None
+_lan = {"n": 0}
+
+
+def _gui_gia(cid, text, phim=False):
+    _lan["n"] += 1
+    GUI.append((cid, text))
+    return None if _lan["n"] == 1 else 99
+
+
+bot.gui = _gui_gia
+bot.gui_tin_soi(tin)
+ok(not (phieu_cat("20261104-10") or {}).get("bao_cao_luc") and len(TB._BAO_NHOM) == 1,
+   "Telegram lỗi -> KHÔNG đánh dấu, báo cáo xếp lại để lượt sau gửi", str(TB._BAO_NHOM))
+bot._co_viec = True
+bot._rong_dem = 1
+tin = bot.soi_mot_lan()
+bot.gui_tin_soi(tin)
+ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")) and not TB._BAO_NHOM,
+   "lượt sau gửi được -> mới đánh dấu đã báo")
 pgR = trang()                                  # mở lại app
 tcR = TuChayUI(None, pgR, pgR.state, dong_ho=lambda: NOW[0])
 tcR.tele = lambda t: None
@@ -375,6 +397,64 @@ bot._co_viec = False
 tin2 = bot.soi_mot_lan()
 ok(sum("Nhóm «X»" in t for t in tin2) == 1, "không có tin HẾT -> báo cáo vẫn gửi riêng 1 tin")
 TB._bot = None
+
+print("\nHTML — tên chứa & < > không làm Telegram từ chối tin")
+import re as _re  # noqa: E402
+
+
+def html_hop_le(t):
+    """parse_mode=HTML: bỏ thẻ app tự đặt (<b> <i>), phần còn lại không được
+    còn '<' '>' thô hay '&' không phải thực thể."""
+    t2 = _re.sub(r"</?(b|i)>", "", t)
+    return "<" not in t2 and ">" not in t2 and not _re.search(r"&(?!amp;|lt;|gt;)", t2)
+
+
+pidH, srcH = lam_kenh("Tom & Jerry kênh", "Nhóm <A> & B")
+phieu_tai("20261104-11", "Nhóm <A> & B", [{"thu_muc": str(srcH), "video": [
+    vd("yt:h1", "Tom & Jerry <1>.mp4", xong=time.time() - 20 * 60)]}],
+    trang_thai="da_dong", dong=time.time() - 7 * 3600)
+phieu_tai(f"{time.strftime('%Y%m%d')}-12", "X", [{"thu_muc": str(T / "nguon" / "A & <B>"),
+                                                   "video": [vd("yt:h2", "x.mp4")]}])
+st.setValue(TC.KHOA + "kck_ngay", "")
+TELE.clear()
+TB._BAO_NHOM.clear()
+TB._bot = None
+GOM = []
+_goc_dua = tc._dua_bao_cao
+tc._dua_bao_cao = lambda goc, dot, text: GOM.append(text)
+tc._da_dua_bao.discard("20261104-11")
+nen60()
+tc._dua_bao_cao = _goc_dua
+ok(any("MẤT FILE" in t for t in TELE) and any("Không có kênh cắt" in t for t in TELE),
+   "có đủ tin MẤT FILE + không có kênh cắt", str(TELE))
+ok(all(html_hop_le(t) for t in TELE), "mọi tin Telegram là HTML hợp lệ", str(TELE))
+ok(any("Tom &amp; Jerry &lt;1&gt;.mp4" in t for t in TELE), "tên file được thoát &amp; &lt; &gt;")
+ok(GOM and all(html_hop_le(t) for t in GOM) and "Nhóm &lt;A&gt; &amp; B" in GOM[0],
+   "báo cáo nhóm: tên nhóm được thoát", str(GOM))
+bd_h = PD.BoDoc()
+f_s = T / "hong & x"
+f_s.mkdir()
+fs = f_s / "20261104-13.json"
+fs.write_text('{"schema": 9, "dot_id": "20261104-13"}', encoding="utf-8")
+_, bao_s = bd_h.doc(fs)
+ok(bao_s and all(html_hop_le("⚠ <b>Phiếu đợt</b>: " + PD._h(x)) for x in bao_s),
+   "lời báo phiếu (có đường dẫn) thoát đúng")
+
+print("\n#8 — lỗi TẠM (gốc còn trong thư mục, sẽ thử lại) chưa là kết quả cuối")
+pid8, src8 = lam_kenh("K8L", "L", ["l.mp4"])
+p8 = phieu_tai("20261104-14", "L", [{"thu_muc": str(src8), "video": [vd("yt:8", "l.mp4")]}],
+               trang_thai="da_dong", dong=time.time() - 60)
+e8 = P.take_file(pid8, "l.mp4", "h8")
+P.mark_error(e8, "gián đoạn — lượt sau thử lại")
+nen60()
+v8 = tt_video("20261104-14", "yt:8")
+ok(v8.get("trang_thai") == "loi" and v8.get("tam") is True, "gốc còn -> loi TẠM", str(v8))
+ok((phieu_cat("20261104-14") or {}).get("trang_thai") != "da_dong",
+   "lỗi tạm -> phiếu cắt CHƯA đóng")
+(src8 / "l.mp4").rename(T / "l_da_doi.mp4")      # gốc bị dời ra _Loi
+nen60()
+ok((phieu_cat("20261104-14") or {}).get("trang_thai") == "da_dong",
+   "gốc đã dời khỏi thư mục -> lỗi CUỐI -> phiếu đóng")
 
 print("\n#23 — ghi nguyên tử + đọc chịu lỗi")
 f = T / "nt" / "20261104-99.json"

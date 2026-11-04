@@ -204,6 +204,8 @@ class Gac:
         self._dang_cho = False
         self._ket_tu = None
         self._da_bao_ket = False
+        self._pid_da_song = 0           # pid mà bot chính ĐÃ từng sống
+        self._tc_doc = (-1e18, False)   # (lúc đọc, Tự chạy bật?) — đọc 60 s/lần
 
     def kiem_ket_dang_nhap(self, now: float | None = None, pid: int | None = None,
                            song: bool | None = None, tu_chay: bool | None = None):
@@ -212,14 +214,25 @@ class Gac:
         Chỉ khi đang bật Tự chạy (tắt = hành vi như cũ). Trả lời đã gửi/None."""
         now = time.time() if now is None else now
         if tu_chay is None:
-            try:
-                from app.ui.appsettings import app_settings
-                tu_chay = bool(app_settings().value("pipe_auto_bat", False, type=bool))
-            except Exception:  # noqa: BLE001
-                tu_chay = False
-        pid = app_pid() if pid is None else pid
+            if now - self._tc_doc[0] >= 60:
+                try:
+                    from app.ui.appsettings import app_settings
+                    v = bool(app_settings().value("pipe_auto_bat", False, type=bool))
+                except Exception:  # noqa: BLE001
+                    v = False
+                self._tc_doc = (now, v)
+            tu_chay = self._tc_doc[1]
+        if not tu_chay:                  # tắt -> như cũ, khỏi đọc app_pid
+            self._ket_tu, self._da_bao_ket = None, False
+            return None
         song = bot_chinh_song(now) if song is None else song
-        if not (tu_chay and pid and not song):
+        pid = app_pid() if pid is None else pid
+        if song and pid:
+            self._pid_da_song = pid
+        # Bot chính TỪNG sống ở đúng pid này rồi im = app TREO / bot chết (đã
+        # có tin "TẮT ĐỘT NGỘT hoặc không phản hồi" của _bao_app_tat) — KHÔNG
+        # phải kẹt màn đăng nhập. Không báo 2 tin cho 1 sự cố.
+        if not (pid and not song) or pid == self._pid_da_song:
             self._ket_tu, self._da_bao_ket = None, False
             return None
         if self._ket_tu is None:

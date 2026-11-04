@@ -18,6 +18,7 @@ với đồng hồ giả; phần đọc DB thật nằm ở `ngu_canh_db()`.
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -51,6 +52,13 @@ CUOI = ("xong", "loi", "trung", "mat_file", "kenh_tat", "khong_co_kenh")
 CAN_CAT = ("xong", "tre")
 
 _KHOA_CAT = threading.Lock()
+
+
+def _h(x) -> str:
+    """Tin Telegram gửi parse_mode=HTML: mọi chuỗi từ dữ liệu (tên nhóm, tên
+    kênh/file, đường dẫn, lời lỗi) PHẢI thoát & < > — 'Tom & Jerry.mp4' đi thô
+    là Telegram từ chối CẢ tin (và tin này còn gộp vào tin HẾT hàng chờ)."""
+    return html.escape(str(x if x is not None else ""), quote=False)
 
 
 # ------------------------------------------------------------ đường dẫn --
@@ -274,6 +282,7 @@ def dung_phieu_cat(ptai: dict, cu: dict | None, nc: dict,
             fname = str(v.get("file") or "")
             old = cu_v.get((kh, vid)) or {}
             tt, part, loi = "chua_thay", 0, ""
+            tam = False
             if ch is None:
                 tt = "khong_co_kenh"
             elif not ch.get("on"):
@@ -290,6 +299,8 @@ def dung_phieu_cat(ptai: dict, cu: dict | None, nc: dict,
                         so = moi_sd.pop(0)
                         fname = str(so.get("file_name") or "")
                 tt, part, loi = _tt_tu_so(so)
+                if tt == "loi" and fname and nc["co_file"](tm, fname):
+                    tam = True           # gốc còn trong thư mục -> lượt sau thử lại
                 if not tt:
                     tt = "chua_thay"
                     xl = doc_iso(v.get("xong_luc"))
@@ -300,7 +311,7 @@ def dung_phieu_cat(ptai: dict, cu: dict | None, nc: dict,
             if tt == "mat_file" and old.get("trang_thai") != "mat_file":
                 su.append(("mat_file", (ch or {}).get("ten") or tm, fname))
             rec = {"id": vid, "file": fname or None, "tai": tai, "trang_thai": tt,
-                   "part": part, "loi": loi or None,
+                   "part": part, "loi": loi or None, "tam": tam,
                    "cap_nhat": old.get("cap_nhat") if old.get("trang_thai") == tt
                    and old.get("part") == part else gio_iso(now)}
             ds_v.append(rec)
@@ -317,7 +328,9 @@ def dung_phieu_cat(ptai: dict, cu: dict | None, nc: dict,
     if pc["trang_thai"] != "da_dong" and ptai.get("trang_thai") == "da_dong":
         can = [v for k in kenh_ra for v in k["video"]
                if v["tai"] in CAN_CAT or v["trang_thai"] in ("kenh_tat", "khong_co_kenh")]
-        het = all(v["trang_thai"] in CUOI for v in can)
+        # `loi` mà gốc còn trong thư mục (lỗi tạm, app sẽ thử lại) CHƯA là kết
+        # quả cuối; chỉ lỗi đã dời khỏi thư mục (_Loi / quarantine) mới cuối.
+        het = all(v["trang_thai"] in CUOI and not v.get("tam") for v in can)
         dl = doc_iso(ptai.get("dong_luc")) or now
         if het or now - dl >= HAN_CAT_GIO * 3600:
             pc["trang_thai"] = "da_dong"
@@ -343,12 +356,12 @@ def bao_cao_nhom(ptai: dict, pc: dict) -> str:
     xong = [v for v in vs if v.get("trang_thai") == "xong"]
     loi = [v for v in vs if v.get("trang_thai") == "loi"]
     part = sum(int(v.get("part") or 0) for v in xong)
-    dong = [f"📦 <b>Nhóm «{ptai.get('nhom') or '?'}»</b> (đợt {pc.get('dot_id')}): "
+    dong = [f"📦 <b>Nhóm «{_h(ptai.get('nhom') or '?')}»</b> (đợt {_h(pc.get('dot_id'))}): "
             f"tải {n_tai}/{len(tong)}"
             + (f" ({n_tre} trễ)" if n_tre else "")
             + (f" · tải lỗi {n_tl}" if n_tl else "")
             + f" · cắt xong {len(xong)}"
-            + (f" · lỗi {len(loi)} ({(loi[0].get('loi') or '')[:60]})" if loi else "")
+            + (f" · lỗi {len(loi)} ({_h((loi[0].get('loi') or '')[:60])})" if loi else "")
             + f" · Part mới {part}"]
     phu = []
     for tt, nhan in (("trung", "trùng"), ("mat_file", "MẤT FILE"),

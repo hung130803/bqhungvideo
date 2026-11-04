@@ -812,6 +812,34 @@ class BotQuanLy:
         for cid in self.cho_phep:
             self.gui(cid, text)
 
+    def _gui_het(self, text: str) -> bool:
+        """Gửi cho mọi chat; True nếu không chat nào lỗi."""
+        ok = True
+        for cid in self.cho_phep:
+            if self.gui(cid, text) is None and not self._gui_ngoai:
+                ok = False
+        return ok
+
+    def gui_tin_soi(self, tin: list) -> None:
+        """Gửi các tin của 1 lượt soi. Tin mang BÁO CÁO NHÓM (phiếu đợt): gửi
+        được mới gọi khi_gui() (đánh dấu phiếu); lỗi -> xếp lại, lượt sau gửi."""
+        cho = getattr(self, "_bao_nhom_cho", None)
+        self._bao_nhom_cho = None
+        for t in tin:
+            ok = self._gui_het(t)
+            if cho is not None and t is cho[0]:
+                if ok:
+                    for _, fn in cho[1]:
+                        try:
+                            if fn:
+                                fn()
+                        except Exception:  # noqa: BLE001
+                            pass
+                else:
+                    with _BAO_NHOM_KHOA:
+                        _BAO_NHOM[:0] = cho[1]
+                    _ghi_log("gửi báo cáo nhóm lỗi — giữ lại, lượt soi sau gửi lại")
+
     # -- điều phối lệnh --
     def _khoa_cho(self, khoa: str) -> threading.Lock:
         with self._khoa_doi_tuong_k:
@@ -1371,12 +1399,10 @@ class BotQuanLy:
                 tin[i_het] = tin[i_het] + "\n\n" + gop
             else:
                 tin.append(gop)
-            for _, fn in bc:
-                try:
-                    if fn:
-                        fn()
-                except Exception:  # noqa: BLE001
-                    pass
+                i_het = len(tin) - 1
+            # ĐÁNH DẤU "đã báo" chỉ SAU KHI GỬI THẬT thành công (gui_tin_soi):
+            # gửi lỗi mà đã đánh dấu là mất báo cáo vĩnh viễn.
+            self._bao_nhom_cho = (tin[i_het], bc)
         self._lan_dau = False
         return tin
 
@@ -1393,8 +1419,7 @@ class BotQuanLy:
                 if time.monotonic() - lan_soi >= NHIP_THEO_DOI - 1:
                     lan_soi = time.monotonic()
                     tin = self.soi_mot_lan()
-                    for t in tin:
-                        self.bao_tat_ca(t)
+                    self.gui_tin_soi(tin)
                     het = any(("HẾT hàng chờ" in t) or ("Hết việc đang chạy" in t) for t in tin)
                 else:
                     het = False
