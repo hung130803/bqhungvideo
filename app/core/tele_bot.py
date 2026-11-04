@@ -529,6 +529,10 @@ TRO_GIUP = ("🤖 <b>Bot quản lý dây chuyền</b> — bấm nút hoặc gõ 
             "/huy &lt;số&gt; — huỷ 1 việc (vd /huy 1234), video gốc giữ nguyên\n"
             "/moapp — app TẮT hoặc chưa đăng nhập: mở app + tự đăng nhập\n"
             "/dongapp — ĐÓNG app an toàn (hỏi xác nhận trước)\n"
+            "/tuchay — TỰ CHẠY: trạng thái + nút Bật/Tắt · Chạy ngay · Dừng lượt · "
+            "Bỏ qua hôm nay · Đổi nhóm\n"
+            "/tuchaygio 06:00-22:00 — khung giờ (06:00-24:00 = tới hết ngày, "
+            "06:00-06:00 = cả ngày) · /tuchaynhip 10 — nhịp (phút)\n"
             "Bot tự nhắn khi: có việc lỗi · việc kẹt quá "
             f"{KET_PHUT} phút · chạy hết hàng chờ · ổ đĩa dưới {O_TRONG_GB} GB · "
             "cơ sở dữ liệu hỏng.")
@@ -556,6 +560,9 @@ LENH_MENU = [
     ("chaytiep", "Chạy tiếp sau tạm dừng"),
     ("moapp", "Mở app + tự đăng nhập (khi app tắt)"),
     ("dongapp", "Đóng app an toàn (hỏi trước)"),
+    ("tuchay", "Tự chạy: trạng thái + Bật/Tắt/Chạy ngay/Dừng"),
+    ("tuchaygio", "Tự chạy: đặt khung giờ, vd 06:00-22:00"),
+    ("tuchaynhip", "Tự chạy: đặt nhịp (phút), vd 10"),
     ("trangthai", "App đang tắt / chờ đăng nhập / chạy"),
     ("start", "Hiện bảng nút + trợ giúp"),
 ]
@@ -974,6 +981,8 @@ class BotQuanLy:
                 self._dong_app_ok(chat_id, text)
             elif lenh == "/huybo":
                 self.gui(chat_id, "Đã bỏ, không chạy gì.")
+            elif lenh.startswith("/tuchay"):
+                self._tu_chay(chat_id, lenh, text)
             else:
                 self.gui(chat_id, TRO_GIUP, phim=True)
         except Exception as e:  # noqa: BLE001
@@ -983,6 +992,67 @@ class BotQuanLy:
             dt = time.monotonic() - t0
             if dt > CHAM_LOG:
                 _ghi_log(f"CHẬM: lệnh {lenh} mất {dt:.1f}s")
+
+    # -- TỰ CHẠY dây chuyền (Đợt 1b): cùng các nút của hộp trong app --
+    _TC_VIEC = {"/tuchaybat": "bat", "/tuchaytat": "tat", "/tuchayngay": "ngay",
+                "/tuchaydungok": "dung", "/tuchayboqua": "bo_qua",
+                "/tuchaylai": "chay_lai", "/tuchaygio": "gio", "/tuchaynhip": "nhip"}
+
+    def _phim_tu_chay(self) -> dict:
+        t = f"t{int(time.time())}"
+        return {"inline_keyboard": [
+            [{"text": "Bật", "callback_data": f"/tuchaybat {t}"},
+             {"text": "Tắt", "callback_data": f"/tuchaytat {t}"},
+             {"text": "Làm mới", "callback_data": "/tuchay"}],
+            [{"text": "Chạy ngay", "callback_data": f"/tuchayngay {t}"},
+             {"text": "Dừng lượt", "callback_data": f"/tuchaydung {t}"}],
+            [{"text": "Bỏ qua hôm nay", "callback_data": f"/tuchayboqua {t}"},
+             {"text": "Chạy lại hôm nay", "callback_data": f"/tuchaylai {t}"}],
+            [{"text": "Đổi nhóm", "callback_data": "/tuchaynhom"}]]}
+
+    def _tu_chay(self, chat_id: int, lenh: str, text: str) -> None:
+        p = text.split()
+        ts = next((x[1:] for x in p[1:] if x.startswith("t") and x[1:].isdigit()), None)
+        arg = next((x for x in p[1:] if not (x.startswith("t") and x[1:].isdigit())), None)
+        if ts is not None and time.time() - int(ts) > TC_NUT_HAN:
+            self.gui(chat_id, "Nút này đã CŨ — không làm gì. Gõ /tuchay để lấy nút mới.")
+            return
+        if lenh == "/tuchay":
+            kq = goi_ui("tu_chay", "xem")
+            self.gui(chat_id, "🤖 <b>Tự chạy dây chuyền</b>\n"
+                     + (kq.get("text") or _html(kq.get("ly_do", ""))),
+                     phim=self._phim_tu_chay())
+            return
+        if lenh == "/tuchaydung":
+            self.gui(chat_id, "Dừng lượt Tự chạy đang chạy? App NGỪNG NHẬN thêm video; "
+                     "việc đang cắt/xuất vẫn chạy tiếp, video gốc giữ nguyên.",
+                     phim={"inline_keyboard": [[
+                         {"text": "Dừng lượt", "callback_data":
+                          f"/tuchaydungok t{int(time.time())}"},
+                         {"text": "Thôi", "callback_data": "/huybo"}]]})
+            return
+        if lenh == "/tuchaynhom":
+            self._ds_nhom_nut(chat_id, "Chọn NHÓM cho Tự chạy:", "/tuchaynhomok")
+            return
+        if lenh == "/tuchaynhomok":
+            k = int(arg) if arg and arg.isdigit() else -1
+            g = self._nhom_map.get(k)
+            if g is None:
+                self.gui(chat_id, "Danh sách nhóm đã cũ — gõ /tuchaynhom để chọn lại.")
+                return
+            kq = goi_ui("tu_chay", "nhom", g)
+        elif lenh in self._TC_VIEC:
+            viec = self._TC_VIEC[lenh]
+            if viec in ("gio", "nhip") and not arg:
+                self.gui(chat_id, "Gõ kèm giá trị, vd <code>/tuchaygio 06:00-22:00</code> "
+                         "hoặc <code>/tuchaynhip 10</code>.")
+                return
+            kq = goi_ui("tu_chay", viec, arg)
+        else:
+            self.gui(chat_id, TRO_GIUP, phim=True)
+            return
+        self.gui(chat_id, (kq.get("text") or _html(kq.get("ly_do", "")))
+                 + "\n\nGõ /tuchay để xem trạng thái.")
 
     def _huy(self, chat_id: int, text: str) -> None:
         p = text.split()
@@ -1505,6 +1575,9 @@ _PHIM_SONG = {"inline_keyboard": [[
 _BAO_NHOM: list = []
 _BAO_NHOM_KHOA = threading.Lock()
 
+
+#: nút /tuchay… trên tin cũ hơn chừng này giây thì không làm (bấm nhầm tin cũ).
+TC_NUT_HAN = 600
 
 #: báo cáo nhóm gửi lỗi -> thử lại tối đa bấy nhiêu lượt soi (~30 s/lượt), rồi
 #: gửi 1 bản chữ thường (không HTML) và thôi.

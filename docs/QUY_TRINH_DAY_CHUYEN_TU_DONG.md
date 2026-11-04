@@ -383,3 +383,29 @@ Phiên "Quy trình khởi tạo công việc tự động" làm điều phối v
 - Mỗi báo cáo xong việc phải ghi tên nhánh. Phiên điều phối đọc diff trên đúng nhánh đó và chạy lại test, không tin vào lời báo cáo.
 
 Về sau, khi cần thêm tính năng liên quan nhiều tool (ví dụ PCBot thêm lệnh, hoặc đổi giờ chạy), làm theo cùng vòng: sửa giao kèo trước, giao việc cho từng phiên, duyệt, rồi mới nghiệm thu.
+
+## Đợt 1b — nút điều khiển, lệnh bot, rà mọi lối chạy (BQ Hung Video, 04/11/2026)
+
+Anh Hùng yêu cầu: mọi thứ có nút, chỉnh được giờ, rà mọi lối chạy (nhanh / chậm / tắt giữa chừng / bấm nhiều), xong mới chạy tiếp, lỗi phải báo lên bot của CHÍNH app này. Cùng nhánh `daychuyen-tu-dong`, công tắc vẫn mặc định TẮT.
+
+**Điều khiển — trong hộp "Tự chạy dây chuyền" (menu ⋮ của hộp Dây chuyền) và qua bot BQ Hung Video:**
+
+| Việc | Trong app | Bot |
+| --- | --- | --- |
+| Bật / Tắt | ô "Bật Tự chạy dây chuyền" + Lưu | `/tuchay` → nút Bật / Tắt |
+| Khung giờ | 2 ô giờ + ô "đến hết ngày (24:00)"; ghi rõ "Từ = Đến là chạy CẢ NGÀY" | `/tuchaygio 06:00-22:00` (`-24:00` = hết ngày, `06:00-06:00` = cả ngày) |
+| Nhịp | ô phút (đổi là HẸN LẠI NGAY theo mốc cũ, không chạy tức thì) | `/tuchaynhip 10` |
+| Nhóm | ô chọn nhóm | nút Đổi nhóm |
+| Chạy ngay | nút (hỏi xác nhận); bấm nhiều lần = 1 lượt | nút Chạy ngay |
+| Dừng lượt đang chạy | nút (hỏi xác nhận): ngừng nhận thêm, KHÔNG phá job đang cắt/xuất, gốc giữ nguyên | nút Dừng lượt → hỏi xác nhận |
+| Bỏ qua hôm nay | nút, bấm lại = "Chạy lại hôm nay" | nút Bỏ qua hôm nay / Chạy lại hôm nay |
+| Ngưỡng nhận | "Chỉ nhận thêm khi việc phân tích chờ dưới N" (mặc định 20) | — |
+| Trạng thái | ô TỰ CẬP NHẬT mỗi giây: đang làm gì, lượt tới, lý do hoãn gần nhất, việc chờ, ổ đĩa, đợt đang mở, lỗi đang có | `/tuchay` |
+
+Nút trên tin bot cũ hơn 10 phút thì không làm, bảo lấy nút mới. Thư mục phiếu được kiểm tồn tại + ghi được khi bấm Lưu.
+
+**Việc đã sửa:** 1b-V1 DB hỏng → không cập nhật phiếu cắt (3 lớp chắn: cờ trước lượt, cờ trong luồng nền, 0 kênh đọc được), báo bot 1 lần, lành lại báo "đã ổn" · 1b-V3 xong mới nhận tiếp: chỉ nhận khi việc phân tích chờ dưới ngưỡng, mỗi lượt nhận tối đa (ngưỡng − đang chờ) video chia đều theo kênh; mọi key AI phải đợi > 30 phút → ngừng nhận + báo · 1b-V4 quét/nhận đứng im > 20 phút → báo bot + tự gỡ cờ · 1b-V5 đổi nhịp hẹn lại ngay, 24:00, từ = đến · 1b-V6 báo bot (không chỉ log): dựng Tự chạy lỗi, lỗi lặp trong nhịp, nhóm hết kênh, thiếu thư mục phiếu, ghi phiếu lỗi kéo dài; không có bot thì không đánh dấu báo cáo nhóm · 1b-V7 lượt tự chạy 1 dòng log tổng, lượt bấm tay giữ nguyên.
+
+**Quy tắc báo:** mỗi loại lỗi tối đa 1 lần/giờ; hết lỗi báo "đã ổn lại" (ở nhịp SAU, không cùng nhịp vừa gỡ); chỉ đánh dấu "đã báo" khi gửi thành công; chuỗi dữ liệu luôn thoát HTML.
+
+**Test:** cổng 112 `_test_tu_chay_1b.py` (bấm 2 lần, tắt giữa chừng, đổi nhịp/khung giữa chừng, nhóm bị xoá, bot `/chay` lúc tự chạy, ngủ đông rồi dậy, qua nửa đêm ở mức tick, backlog lớn, hết lượt AI, thư mục phiếu thiếu, DB hỏng).

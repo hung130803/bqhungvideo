@@ -39,6 +39,12 @@ LUOT_DAU_GIAY = 120
 KICH_BO_CU_GIAY = 600
 #: lý do không chạy được nói lại tối đa 1 lần / chừng này giây (V6).
 NOI_LAI_GIAY = 3600
+#: 1b-V3 "XONG MỚI NHẬN TIẾP": lượt tự chạy chỉ nhận thêm khi số việc PHÂN TÍCH
+#: đang chờ dưới ngưỡng này, và chỉ nhận tối đa (ngưỡng - đang chờ) video.
+NGUONG_CHO = 20
+#: mọi key AI phải đợi quá chừng này giây mới có key hồi = hết lượt kéo dài
+#: -> ngừng nhận thêm + báo bot (có lại thì báo "đã ổn").
+HET_LUOT_AI_GIAY = 1800
 #: thời hạn đo dung lượng 1 ổ (ổ mạng chết -> bỏ qua ổ đó, không treo cả lượt).
 DO_O_HAN_GIAY = 30
 
@@ -49,7 +55,8 @@ NHOM_CHUA = "__CHUA_PHAN_NHOM__"
 
 
 def doc_gio(s, mac_dinh: str) -> int:
-    """"06:30" -> 390 (phút trong ngày). Sai dạng -> mặc định."""
+    """"06:30" -> 390 (phút trong ngày). "24:00" -> 1440 = HẾT NGÀY (chỉ có
+    nghĩa ở ô "đến"). Sai dạng -> mặc định."""
     for v in (s, mac_dinh):
         try:
             h, m = str(v).strip().split(":")[:2]
@@ -63,7 +70,8 @@ def doc_gio(s, mac_dinh: str) -> int:
 
 def trong_khung(now: float, tu: int, den: int) -> bool:
     """Giờ máy `now` có nằm trong [tu, den) không. tu > den = khung qua nửa
-    đêm (vd 22:00-06:00). tu == den = cả ngày."""
+    đêm (vd 22:00-06:00). **tu == den = CẢ NGÀY** (vd 06:00-06:00). den = 1440
+    (24:00) = tới hết ngày."""
     d = datetime.fromtimestamp(now)
     m = d.hour * 60 + d.minute
     if tu == den:
@@ -83,6 +91,21 @@ class CauHinh:
     thu_muc: str = ""
     o_video_gb: float = O_VIDEO_GB
     o_c_gb: float = O_C_GB
+    nguong_cho: int = NGUONG_CHO
+    #: "YYYY-MM-DD" = đã bấm "Bỏ qua hôm nay" cho ngày đó.
+    bo_ngay: str = ""
+
+
+def hom_nay(now: float) -> str:
+    return datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+
+
+def mo_ta_khung(tu: int, den: int) -> str:
+    def f(m):
+        return "24:00" if m >= 1440 else f"{m // 60:02d}:{m % 60:02d}"
+    if tu == den:
+        return "cả ngày"
+    return f"{f(tu)}–{f(den)}" + (" (qua nửa đêm)" if tu > den else "")
 
 
 def doc_cau_hinh(s) -> CauHinh:
@@ -108,11 +131,16 @@ def doc_cau_hinh(s) -> CauHinh:
         oc = float(v("o_c_gb", O_C_GB))
     except (TypeError, ValueError):
         ov, oc = O_VIDEO_GB, O_C_GB
+    try:
+        ng = max(1, min(1000, int(v("nguong_cho", NGUONG_CHO))))
+    except (TypeError, ValueError):
+        ng = NGUONG_CHO
     return CauHinh(bat=bool(v("bat", False, bool)),
                    tu=doc_gio(v("tu", TU_MAC_DINH), TU_MAC_DINH),
                    den=doc_gio(v("den", DEN_MAC_DINH), DEN_MAC_DINH),
                    phut=phut, nhom=str(nhom), thu_muc=str(v("thu_muc", "") or ""),
-                   o_video_gb=ov, o_c_gb=oc)
+                   o_video_gb=ov, o_c_gb=oc, nguong_cho=ng,
+                   bo_ngay=str(v("bo_ngay", "") or ""))
 
 
 @dataclass
@@ -126,6 +154,10 @@ class TinhTrang:
     db_hong: bool = False
     #: None = chưa đo xong lần nào; (True, "") ổn; (False, "lý do") đầy.
     o_dia: tuple | None = (True, "")
+    #: số việc PHÂN TÍCH đang chờ (pending) — 1b-V3.
+    cho_phan_tich: int = 0
+    #: mọi key AI đang phải đợi quá HET_LUOT_AI_GIAY.
+    het_luot_ai: bool = False
 
 
 @dataclass
@@ -138,6 +170,11 @@ class LichTuChay:
     lan_chay: int = 0
     lan_cuoi: float | None = None
     dang_bat: bool = False
+    phut: int = 0                     # nhịp đang dùng (đổi -> hẹn lại ngay)
+    moc: float | None = None          # mốc tính nhịp (lúc bật / lượt cuối)
+    ep: bool = False                  # đã bấm "Chạy ngay", chưa xử lý
+    ly_do_cuoi: str = ""              # lý do hoãn/bỏ gần nhất (hiện trạng thái)
+    ly_do_luc: float | None = None
 
     # -- bật/tắt --
     def dong_bo(self, cfg: CauHinh, now: float, luc_mo_app: bool = False) -> None:
@@ -146,10 +183,26 @@ class LichTuChay:
         if cfg.bat and not self.dang_bat:
             cho = LUOT_DAU_GIAY if luc_mo_app else cfg.phut * 60
             self.hen = now + cho
+            self.moc = now
+            self.phut = cfg.phut
+        elif cfg.bat and cfg.phut != self.phut:
+            # 1b-V5: ĐỔI NHỊP -> HẸN LẠI NGAY theo nhịp mới tính từ mốc cũ
+            # (không bắt đợi hết nhịp cũ, không chạy ngay lập tức).
+            self.phut = cfg.phut
+            self.hen = max(now + 60, (self.moc or now) + cfg.phut * 60)
         if not cfg.bat:
             self.hen = None
             self.kich.clear()
+            self.ep = False
         self.dang_bat = cfg.bat
+
+    def chay_ngay(self) -> bool:
+        """Nút "Chạy ngay". Bấm nhiều lần trước khi kịp chạy = vẫn 1 lượt.
+        Trả False nếu đã xếp sẵn rồi."""
+        if self.ep:
+            return False
+        self.ep = True
+        return True
 
     def them_kich(self, dot_id: str, vid: str, xong_ts: float, now: float) -> bool:
         """Phiếu tải ghi `xong` -> hẹn 1 lượt ở xong_ts + 45 s. Khử trùng theo
@@ -180,11 +233,25 @@ class LichTuChay:
         nhịp kế, không bỏ)."""
         if not cfg.bat:
             return "cho", "tat"
+        ep = self.ep
         toi_thuong = self.hen is not None and now >= self.hen
         toi_kich = self._toi_kich(now)
-        if not (toi_thuong or toi_kich):
+        if not (toi_thuong or toi_kich or ep):
             return "cho", ""
-        if not trong_khung(now, cfg.tu, cfg.den):
+        kq = self._quyet(cfg, tt, now, ep, toi_thuong, toi_kich)
+        if kq[0] in ("bo", "hoan"):
+            self.ly_do_cuoi, self.ly_do_luc = kq[1], now
+        if ep and kq[0] != "hoan":
+            self.ep = False            # "Chạy ngay" chỉ dùng 1 lần
+        return kq
+
+    def _quyet(self, cfg, tt, now, ep, toi_thuong, toi_kich):
+        if cfg.bo_ngay and cfg.bo_ngay == hom_nay(now) and not ep:
+            self.kich.clear()
+            if toi_thuong:
+                self.hen = now + cfg.phut * 60
+            return "bo", "bo_qua_ngay"
+        if not ep and not trong_khung(now, cfg.tu, cfg.den):
             # ngoài giờ: kích theo phiếu bỏ luôn (nhịp thường đầu khung lo),
             # nhịp thường dời sang lượt sau.
             self.kich.clear()
@@ -205,17 +272,24 @@ class LichTuChay:
             return "hoan", "cho_do_o"
         elif not tt.o_dia[0]:
             ly_do = "o_day"
+        elif tt.het_luot_ai:
+            ly_do = "het_luot_ai"
+        elif tt.cho_phan_tich >= cfg.nguong_cho:
+            ly_do = "nhieu_viec"
         if ly_do:
             if toi_thuong:
                 self.hen = now + cfg.phut * 60
             if ly_do != "dang_nhan":
                 self.kich.clear()      # còn lỗi thì lượt kích cũng không chạy được
             return "bo", ly_do
+        if ep:
+            return "chay", "tay"
         return "chay", "kich" if (toi_kich and not toi_thuong) else "nhip"
 
     def da_chay(self, cfg: CauHinh, now: float) -> None:
         self.lan_chay += 1
         self.lan_cuoi = now
+        self.moc = now
         self.hen = now + cfg.phut * 60
         for k in [k for k, t in self.kich.items() if t <= now]:
             self.kich.pop(k, None)
@@ -228,6 +302,11 @@ LOI_NOI = {
     "tam_dung": "hàng việc đang TẠM DỪNG (bot: /chaytiep)",
     "khong_key": "chưa có key AI (Cài đặt AI)",
     "o_day": "ổ đĩa sắp đầy",
+    "bo_qua_ngay": "đã bấm Bỏ qua hôm nay",
+    "het_luot_ai": "mọi key AI đang hết lượt (đợi hồi quá 30 phút)",
+    "nhieu_viec": "còn nhiều việc phân tích đang chờ — xong bớt mới nhận tiếp",
+    "modal": "đang mở hộp chọn file",
+    "cho_do_o": "chưa đo xong dung lượng ổ đĩa",
 }
 
 

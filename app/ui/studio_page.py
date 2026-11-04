@@ -6665,7 +6665,7 @@ class StudioPage(QWidget):
             return sel
         return self._settings.value("pipe_grp_sel", "__ALL__")
 
-    def _pipe_run(self, nen=False, nhom=Ellipsis, im=False):
+    def _pipe_run(self, nen=False, nhom=Ellipsis, im=False, toi_da=None):
         """▶ CHẠY DÂY CHUYỀN (chạy khi bấm — không tự chạy nền): quét thư mục
         trung chuyển của mọi kênh bật dây chuyền -> mỗi kênh nhận tối đa
         pipe_daily video/ngày -> nhập -> cắt/reup theo pipe_mode -> tự xuất
@@ -6782,12 +6782,18 @@ class StudioPage(QWidget):
                     return
                 for _l in val[1]:
                     self._pipe_log(_l)
-                self._pipe_run_tiep(val[0], _mode, nen=True, im=im)
+                if _the <= getattr(self, "_pipe_bo_quet", 0):
+                    self._pipe_log("⏹ bỏ kết quả quét (đã bấm Dừng lượt / lượt quét "
+                                   "bị gỡ vì treo) — video vẫn nằm nguyên trong thư mục")
+                    return
+                self._pipe_run_tiep(val[0], _mode, nen=True, im=im, toi_da=toi_da)
             self.status.setText(f"🤖 Đang quét thư mục {len(_bat)} kênh ở nền… "
                                 "(giao diện vẫn dùng được)")
             # cờ ĐANG QUÉT riêng: lúc quét nền _bot_dang_nhan() = 0 nên Tự chạy
             # không dựa được vào nó để biết lượt trước còn dở.
             self._pipe_dang_quet = getattr(self, "_pipe_dang_quet", 0) + 1
+            self._pipe_quet_the = getattr(self, "_pipe_quet_the", 0) + 1
+            _the = self._pipe_quet_the
             self._chay_nen(_quet, _quet_xong, "bq-quet-kenh")
             return 0
         plans = []
@@ -6808,9 +6814,9 @@ class StudioPage(QWidget):
                     "(giao diện vẫn dùng được)")
                 _QApp.processEvents()
         mode_by_pid = {int(c["id"]): (c["pipe_mode"] or "auto") for c in chans}
-        return self._pipe_run_tiep(plans, mode_by_pid, im=im)
+        return self._pipe_run_tiep(plans, mode_by_pid, im=im, toi_da=toi_da)
 
-    def _bot_chay_day_chuyen(self, nhom, tu_dong=False) -> dict:
+    def _bot_chay_day_chuyen(self, nhom, tu_dong=False, toi_da=None) -> dict:
         """Lệnh "chạy dây chuyền" từ bot Telegram — CHẠY Ở LUỒNG GIAO DIỆN
         (tele_bot đưa vào hàng đợi, main_window rút ra bằng QTimer).
 
@@ -6840,7 +6846,7 @@ class StudioPage(QWidget):
         if tu_dong:
             self._pipe_log(f"Tự chạy: chạy dây chuyền ({n} kênh) — nhóm "
                            f"\"{'tất cả' if nhom in (None, '__ALL__') else (nhom or 'Chưa phân nhóm')}\"")
-            self._pipe_run(nen=True, nhom=nhom, im=True)
+            self._pipe_run(nen=True, nhom=nhom, im=True, toi_da=toi_da)
             return {"ok": True, "kenh": n}
         self._pipe_log(f"🤖 Lệnh từ bot Telegram: chạy dây chuyền ({n} kênh)")
         self._pipe_run(nen=True, nhom=nhom)
@@ -6849,6 +6855,29 @@ class StudioPage(QWidget):
     def _pipe_dang_quet_n(self) -> int:
         """Số lượt QUÉT NỀN đang dở (Tự chạy đọc để bỏ nhịp)."""
         return int(getattr(self, "_pipe_dang_quet", 0) or 0)
+
+    def _pipe_dung_luot(self, go_co_quet: bool = False) -> dict:
+        """Nút "Dừng lượt đang chạy" (Tự chạy / bot): NGỪNG NHẬN THÊM — bỏ các
+        video còn trong hàng nhận + bỏ kết quả các lượt quét nền đang dở. KHÔNG
+        đụng job đang cắt/xuất, video gốc vẫn nằm nguyên trong thư mục (lượt
+        sau nhận lại). go_co_quet=True: gỡ luôn cờ đang quét (lượt quét treo)."""
+        q = getattr(self, "_pipe_intake_q", None) or []
+        bo = len(q)
+        im = self.__dict__.get("_pipe_im_khoa")
+        for it in list(q):
+            if im:
+                im.discard(self._pipe_khoa(it[3]))
+        if q:
+            q.clear()
+        self._pipe_intake_cho = False
+        quet = self._pipe_dang_quet_n()
+        self._pipe_bo_quet = getattr(self, "_pipe_quet_the", 0)
+        if go_co_quet:
+            self._pipe_dang_quet = 0
+        self._pipe_log(f"⏹ Dừng lượt: bỏ {bo} video chưa nhận"
+                       + (f" + {quet} lượt quét đang dở" if quet else "")
+                       + " — việc đang cắt/xuất vẫn chạy tiếp, gốc giữ nguyên")
+        return {"ok": True, "bo": bo, "quet": quet}
 
     def _bot_nhom_rong(self) -> list:
         """Nhóm mới tạo CÒN RỖNG (chỉ nằm trong QSettings, chưa có trong DB) —
@@ -6891,7 +6920,7 @@ class StudioPage(QWidget):
         except Exception:  # noqa: BLE001
             return 0
 
-    def _pipe_run_tiep(self, plans, mode_by_pid, nen=False, im=False):
+    def _pipe_run_tiep(self, plans, mode_by_pid, nen=False, im=False, toi_da=None):
         """Nửa sau của _pipe_run (LUỒNG GIAO DIỆN): kế hoạch quét -> hàng đợi
         nhận. Tách ra để bản quét-nền gọi lại được."""
         # Gom DANH SÁCH file cần nhận (log skip/note/busy ngay). KHÔNG nhận
@@ -6900,11 +6929,18 @@ class StudioPage(QWidget):
         # FILE qua QTimer (nhường event loop giữa mỗi file → UI mượt).
         worklist: list = []
         dang_bay = self._pipe_paths_in_flight()
+        _gon = {"note": 0, "busy": 0}       # 1b-V7: lượt TỰ CHẠY gộp 1 dòng
         for it in plans:
             if it.note:
-                self._pipe_log(f"⏭ {it.name}: {it.note}")
+                if im:
+                    _gon["note"] += 1
+                else:
+                    self._pipe_log(f"⏭ {it.name}: {it.note}")
             if it.busy:
-                self._pipe_log(f"⏳ {it.name}: {it.busy} file đang tải dở — chờ")
+                if im:
+                    _gon["busy"] += 1
+                else:
+                    self._pipe_log(f"⏳ {it.name}: {it.busy} file đang tải dở — chờ")
             for fname, why in it.skips:
                 self._pipe_log(f"⏭ {it.name}: {fname} — {why}")
             for k, path in enumerate(it.files):
@@ -6941,8 +6977,33 @@ class StudioPage(QWidget):
                     self.__dict__.setdefault("_pipe_im_khoa", set()).add(khoa)
                 worklist.append((it.project_id, it.name,
                                  mode_by_pid.get(it.project_id, "auto"), path))
+        if im and toi_da is not None and len(worklist) > max(0, int(toi_da)):
+            # 1b-V3 XONG MỚI NHẬN TIẾP: nhận tối đa toi_da video, chia ĐỀU theo
+            # kênh (vòng tròn, giữ thứ tự cũ-trước trong từng kênh). Phần dư
+            # vẫn nằm trong thư mục, lượt sau nhận.
+            theo_kenh: dict = {}
+            for w in worklist:
+                theo_kenh.setdefault(w[0], []).append(w)
+            chon, n = [], max(0, int(toi_da))
+            while len(chon) < n and any(theo_kenh.values()):
+                for k in list(theo_kenh):
+                    if theo_kenh[k] and len(chon) < n:
+                        chon.append(theo_kenh[k].pop(0))
+            con = len(worklist) - len(chon)
+            _im = self.__dict__.get("_pipe_im_khoa") or set()
+            for w in worklist:
+                if w not in chon:
+                    _im.discard(self._pipe_khoa(w[3]))
+            worklist = chon
+            self._pipe_log(f"Tự chạy: nhận {len(chon)} video, GIỮ LẠI {con} video "
+                           "cho lượt sau (xong bớt việc đang chờ mới nhận tiếp)")
+        if im and (_gon["note"] or _gon["busy"] or not worklist):
+            self._pipe_log(f"Tự chạy: quét {len(plans)} kênh — {len(worklist)} video "
+                           f"mới · {_gon['note']} kênh không có video mới"
+                           + (f" · {_gon['busy']} kênh có file đang tải dở" if _gon["busy"] else ""))
         if not worklist:
-            self._pipe_log(f"không nhận video nào từ {len(plans)} kênh")
+            if not im:
+                self._pipe_log(f"không nhận video nào từ {len(plans)} kênh")
             self.status.setText("🤖 Dây chuyền: không có video mới để nhận.")
             return 0
         # NỐI THÊM vào hàng đợi đang chạy, KHÔNG ghi đè.

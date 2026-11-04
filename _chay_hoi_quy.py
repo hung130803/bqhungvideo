@@ -474,6 +474,8 @@ CONG = [
     # Tự chạy (V1-V9, V21-V24 ổ đĩa, #5) + phiếu đợt/phiếu cắt (V10-V20).
     ("110 tự chạy dây chuyền", "_test_tu_chay.py", 89),
     ("111 phiếu đợt + phiếu cắt", "_test_phieu_dot.py", 69),
+    # Đợt 1b: nút + bot + trạng thái sống, xong mới nhận tiếp, lỗi báo bot.
+    ("112 tự chạy 1b (nút · bot · rà lối chạy)", "_test_tu_chay_1b.py", 75),
     ("67 Adam ElevenLabs",  "_test_eleven_tg.py",        35),
     ("66 độ to đường xuất", "_test_do_to_xuat.py",       53),
     ("65 độ to + nghe thử", "_test_do_to_nghe_thu.py",   47),

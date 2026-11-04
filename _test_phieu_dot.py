@@ -161,7 +161,7 @@ pg = trang()
 NOW = [time.time()]
 tc = TuChayUI(None, pg, pg.state, dong_ho=lambda: NOW[0])
 TELE: list = []
-tc.tele = lambda t: TELE.append(t)
+tc.tele = lambda t, khi_ok=None: (TELE.append(t), khi_ok and khi_ok(), True)[-1]
 tc.nhip(NOW[0])                     # nhịp đầu: khởi động sổ hẹn (mở app)
 
 
@@ -387,7 +387,7 @@ ok(bool((phieu_cat("20261104-10") or {}).get("bao_cao_luc")) and not bot._bao_nh
 
 pgR = trang()                                  # mở lại app
 tcR = TuChayUI(None, pgR, pgR.state, dong_ho=lambda: NOW[0])
-tcR.tele = lambda t: None
+tcR.tele = lambda t, khi_ok=None: True
 nR = tcR.lan_nen
 tcR.nhip_60(NOW[0])
 bom(15, lambda: tcR.lan_nen > nR)

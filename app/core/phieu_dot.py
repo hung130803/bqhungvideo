@@ -392,7 +392,7 @@ def cap_nhat_tat_ca(goc: Path, bo_doc: BoDoc, nc: dict,
     "bao_cao": [(dot_id, text)], "kck": [thư mục], "loi_ghi": str}."""
     now = time.time() if now is None else now
     ra: dict = {"xong_moi": [], "su_kien": [], "bao": [], "bao_cao": [],
-                "kck": [], "loi_ghi": ""}
+                "kck": [], "loi_ghi": "", "mo": []}
     d_dot, d_cat = Path(goc) / "dot", Path(goc) / "cat"
     hom_nay = datetime.fromtimestamp(now).strftime("%Y%m%d")
     for p in ds_phieu(d_dot):
@@ -419,6 +419,9 @@ def cap_nhat_tat_ca(goc: Path, bo_doc: BoDoc, nc: dict,
                 except OSError as e:
                     ra["loi_ghi"] = f"không ghi được phiếu cắt {fcat.name}: {e}"
                     continue
+        if pc.get("trang_thai") != "da_dong":
+            ra["mo"].append((ptai["dot_id"], ptai.get("nhom") or "",
+                             ptai.get("trang_thai") or "", pc.get("trang_thai") or ""))
         if pc.get("trang_thai") == "da_dong" and not pc.get("bao_cao_luc"):
             ra["bao_cao"].append((ptai["dot_id"], bao_cao_nhom(ptai, pc)))
         if str(ptai["dot_id"]).startswith(hom_nay):

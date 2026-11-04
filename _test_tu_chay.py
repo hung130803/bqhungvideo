@@ -148,9 +148,9 @@ def gan_spy(pg):
     goi = []
     goc = pg._bot_chay_day_chuyen
 
-    def spy(nhom, tu_dong=False):
+    def spy(nhom, tu_dong=False, **k):
         goi.append((nhom, tu_dong))
-        return goc(nhom, tu_dong=tu_dong)
+        return goc(nhom, tu_dong=tu_dong, **k)
     pg._bot_chay_day_chuyen = spy
     nhay = []
     goc_f = pg._pipe_focus
@@ -343,7 +343,7 @@ pg4.state.pool.chay_tiep()
 
 print("\nV7 — không có key AI: không chạy, báo Telegram 1 lần")
 tele = []
-tc4.tele = lambda t: tele.append(t)
+tc4.tele = lambda t, khi_ok=None: (tele.append(t), khi_ok and khi_ok(), True)[-1]
 _llm.is_configured = lambda *a, **k: False
 n0 = len(goi4)
 for i in range(3):
