@@ -435,6 +435,11 @@ def so_luot_du_phong() -> int:
     return int(getattr(_TLS, "du_phong", 0) or 0)
 
 
+def ghi_luot_du_phong() -> None:
+    """Cộng 1 lượt Gemini dự phòng cho thread này (bước đọc lại từ bộ nhớ đệm)."""
+    _TLS.du_phong = so_luot_du_phong() + 1
+
+
 def get_usage() -> dict:
     return dict(_usage())
 
@@ -1868,6 +1873,11 @@ _DP_LOCK = threading.Lock()
 _DP_GROQ_NGHI_TOI = 0.0
 _DP_VONG_429 = 3
 _DP_DOI_TOI_DA = 70.0
+#: Groq báo "retry in 292s" (hạn mức chung của tài khoản) mà bản cũ chỉ nghỉ
+#: 30-55 s theo key hồi sớm nhất -> cứ chưa tới 1 phút lại gọi Groq, ăn 429,
+#: rồi mới sang Gemini (đo 07/11/2026: 4 lượt liền, nghỉ 30/30/52/55 s trong
+#: khi Groq đòi 293/293/228/287 s). Nay nghỉ ĐÚNG số giây Groq đòi, trần 20 phút.
+_DP_NGHI_TRAN = 1200.0
 
 
 def _du_phong_bat(provider_arg) -> bool:
@@ -1897,11 +1907,12 @@ def _dat_groq_nghi(loi: LLMError) -> float:
     """Không gọi lại Groq trong bao lâu, để khỏi đi hết key chết ở MỖI lượt."""
     global _DP_GROQ_NGHI_TOI
     msg = str(loi)
-    if isinstance(loi, (LLMTooLarge, LLMCatCut, LLMRong)):
+    if isinstance(loi, (LLMTooLarge, LLMCatCut, LLMRong, LLMContentBlocked)):
         return 0.0           # lỗi của RIÊNG yêu cầu này, Groq vẫn khoẻ
     if is_rate_limit_error(msg):
-        cho = soonest_ready_wait('groq')
-        nghi = min(max(float(cho or 60.0), 30.0), 300.0)
+        cho = max(float(soonest_ready_wait('groq') or 0.0),
+                  float(parse_retry_wait(msg) or 0.0)) or 60.0
+        nghi = min(max(cho, 30.0), _DP_NGHI_TRAN)
     elif is_transient_error(msg):
         nghi = 60.0
     else:
@@ -1918,8 +1929,11 @@ def _goi_gemini_du_phong(goi):
     try:
         for vong in range(_DP_VONG_429 + 1):
             try:
+                t0 = time.monotonic()
                 out = goi('gemini')
                 _TLS.du_phong = so_luot_du_phong() + 1
+                _ghi_log_du_phong(f"Gemini dự phòng XONG ({settings.GEMINI_DU_PHONG_MODEL}, "
+                                  f"{time.monotonic() - t0:.1f}s)")
                 return out
             except (LLMTooLarge, LLMModelMissing, LLMContentBlocked):
                 raise
@@ -1937,8 +1951,20 @@ def _goi_gemini_du_phong(goi):
 def _voi_du_phong(provider_arg, goi):
     """`goi(provider)` chạy lượt AI thật. Groq lỗi -> chuyển Gemini, báo nhật ký."""
     global _DP_GROQ_NGHI_TOI
-    if not _du_phong_bat(provider_arg):
+    # LỒNG NHAU: complete_json gọi complete_text bên trong; không chặn thì lớp
+    # trong tự chuyển Gemini rồi lớp ngoài lại chuyển Gemini LẦN NỮA (gấp đôi
+    # lượt Gemini, gấp đôi thời gian đợi, nhật ký ghi "Groq lỗi" cho lỗi Gemini).
+    if getattr(_LAN, 'trong_du_phong', False) or not _du_phong_bat(provider_arg):
         return goi(provider_arg)
+    _LAN.trong_du_phong = True
+    try:
+        return _voi_du_phong_than(goi)
+    finally:
+        _LAN.trong_du_phong = False
+
+
+def _voi_du_phong_than(goi):
+    global _DP_GROQ_NGHI_TOI
     with _DP_LOCK:
         dang_nghi = time.monotonic() < _DP_GROQ_NGHI_TOI
     if dang_nghi:

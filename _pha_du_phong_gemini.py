@@ -8,12 +8,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 REPO = Path(__file__).resolve().parent
 LLM = REPO / "app/ai/llm.py"
 M1 = REPO / "app/modules/m1_highlight.py"
+CFG_PY = REPO / "config.py"
 PHEP = [
     ("không bao giờ chuyển Gemini", LLM, "    if provider_arg is not None or active_provider() != 'groq':\n        return False\n",
      "    return False\n"),
     ("gọi provider tường minh vẫn chuyển", LLM, "    if provider_arg is not None or active_provider() != 'groq':\n", "    if active_provider() != 'groq':\n"),
     ("hết ngân sách job vẫn chuyển", LLM, "        if 'phản hồi quá lâu' in str(g):\n            raise            # hết ngân sách thời gian của job, không đổi nhà cung cấp\n", ""),
-    ("413 cũng cho Groq nghỉ", LLM, "    if isinstance(loi, (LLMTooLarge, LLMCatCut, LLMRong)):\n        return 0.0           # lỗi của RIÊNG yêu cầu này, Groq vẫn khoẻ\n", ""),
+    ("413 cũng cho Groq nghỉ", LLM, "    if isinstance(loi, (LLMTooLarge, LLMCatCut, LLMRong, LLMContentBlocked)):\n        return 0.0           # lỗi của RIÊNG yêu cầu này, Groq vẫn khoẻ\n", ""),
     ("không nhớ Groq đang nghỉ", LLM, "        dang_nghi = time.monotonic() < _DP_GROQ_NGHI_TOI\n", "        dang_nghi = False\n"),
     ("không đặt model dự phòng", LLM, "    _LAN.gemini_model = settings.GEMINI_DU_PHONG_MODEL\n", "    _LAN.gemini_model = ''\n"),
     ("model dự phòng rò sang lượt sau", LLM, "    finally:\n        _LAN.gemini_model = cu\n", "    finally:\n        pass\n"),
@@ -24,6 +25,13 @@ PHEP = [
     ("Groq cũng bị gọn số đoạn", M1, "    if llm.so_luot_du_phong():\n        # Gemini dự phòng hay ghép", "    if True:\n        # Gemini dự phòng hay ghép"),
     ("đoạn hook có thể bị bỏ", M1, "min(ds[1:], key=", "min(ds, key="),
     ("Part không ghi dấu dự phòng", M1, '                signals["ai_du_phong"] = "gemini"\n', "                pass\n"),
+    ("bỏ chặn lồng 2 lớp dự phòng", LLM, "    if getattr(_LAN, 'trong_du_phong', False) or not _du_phong_bat(provider_arg):\n", "    if not _du_phong_bat(provider_arg):\n"),
+    ("nghỉ Groq bỏ qua số giây Groq đòi", LLM, "                  float(parse_retry_wait(msg) or 0.0)) or 60.0\n", "                  0.0) or 60.0\n"),
+    ("không ghi nhật ký Gemini xong", LLM, '                _ghi_log_du_phong(f"Gemini dự phòng XONG', '                (f"Gemini dự phòng XONG'),
+    ("nội dung bị chặn bắt Groq nghỉ", LLM, "(LLMTooLarge, LLMCatCut, LLMRong, LLMContentBlocked)):\n        return 0.0", "(LLMTooLarge, LLMCatCut, LLMRong)):\n        return 0.0"),
+    ("bước đã lưu quên dấu Gemini", M1, "        llm.ghi_luot_du_phong()\n", "        pass\n"),
+    ("thẻ Part vẫn ghi Groq", M1, '                signals["ai_name"] = "Gemini dự phòng (Groq hết lượt)"\n', "                pass\n"),
+    ("lưu cài đặt không ghi nhật ký", CFG_PY, "    _ghi_nhat_ky_luu(path, pending)\n", ""),
 ]
 bat = lot = hong = 0
 for ten, f, a, b in PHEP:

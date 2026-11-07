@@ -1745,6 +1745,14 @@ class StudioPage(QWidget):
         j = mdl.findData(settings.GEMINI_MODEL)
         mdl.setCurrentIndex(j if j >= 0 else 0)
         c_brain.addWidget(mdl)
+        # Anh Hùng 07/11/2026 hỏi "sao hiện 2.5": ô trên chỉ dùng khi Nguồn AI
+        # là Gemini. Đang để Groq thì lúc Groq hết lượt app tự gọi model DỰ
+        # PHÒNG riêng (key miễn phí gọi 2.5 bị 404) -> nói thẳng ở đây.
+        c_brain.addWidget(_flabel(
+            "Ô model này chỉ dùng khi Nguồn AI = Gemini. Đang để Groq thì lúc Groq "
+            "hết lượt app TỰ chuyển sang " + str(settings.GEMINI_DU_PHONG_MODEL)
+            + " bằng các key Gemini ở trên; Part làm bằng Gemini ghi "
+            "\"Phân tích bằng Gemini dự phòng\". Nhật ký: logs\\du_phong_<ngày>.log"))
         c_api=_card("APIforcode · Phân tích hình và viết kịch bản",
             "Gom tối đa 8 ảnh/lượt, lưu tiến độ để tiếp tục. Viết và kiểm tra kịch bản vẫn dùng thêm lượt. Giọng đọc và chép lời dùng dịch vụ riêng.")
         api_file=QLineEdit(settings.APIFORCODE_KEYS_FILE or '')
@@ -9684,7 +9692,7 @@ class StudioPage(QWidget):
                                            "ollama": "Ollama (máy)"}.get(ai, "AI")
             btxt = "Phân tích bằng " + aname + (" + xem hình"
                                                 if sig.get("vision") else "")
-            bcol = SUCCESS if ai == "gemini" else ACCENT
+            bcol = SUCCESS if (ai == "gemini" or sig.get("ai_du_phong")) else ACCENT
         else:
             btxt = "Cắt cơ bản (chưa qua AI)"
             bcol = WARN

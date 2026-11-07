@@ -1846,7 +1846,18 @@ def _stage_json(prompt, ctx=None, deadline=None, **kwargs):
                     if ctx is not None:ctx.check_canceled()
                     time.sleep(.2)
         raise last
-    return local_step('highlight_stage_v58', [prompt, kwargs, llm.active_provider()], run)
+    khoa = [prompt, kwargs, llm.active_provider()]
+    truoc = llm.so_luot_du_phong()
+    out = local_step('highlight_stage_v58', khoa, run)
+    # Bước đã xong được LƯU rồi dùng lại khi job chạy tiếp (sau "hết lượt AI
+    # giữa chừng"); bộ đếm Gemini lại về 0 mỗi lượt -> Part ghi "Groq" dù phần
+    # chọn đoạn do Gemini làm (đo 07/11/2026, Part iKnowAyrel 23:46). Lưu kèm
+    # một dấu riêng, đọc lại thì cộng vào bộ đếm. Bước cũ không có dấu -> y cũ.
+    if llm.so_luot_du_phong() > truoc:
+        local_step('highlight_stage_gemini_v1', khoa, lambda: True)
+    elif local_step('highlight_stage_gemini_v1', khoa, lambda: False):
+        llm.ghi_luot_du_phong()
+    return out
 
 
 def _file_hong(p) -> bool:
@@ -2448,6 +2459,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "dur": round(total, 1), "continuity_review": continuity}
             if llm.so_luot_du_phong():
                 signals["ai_du_phong"] = "gemini"
+                signals["ai_name"] = "Gemini dự phòng (Groq hết lượt)"
             if _khong_loi:
                 # DẤU "KHÔNG LỜI" PHẢI VÀO CLIP (cổng 109): trước đây chỉ gắn
                 # vào dict tạm nên lúc xuất không ai biết -> phụ đề chữ bịa vẫn

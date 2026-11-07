@@ -495,6 +495,34 @@ def update_env(values: dict) -> None:
         pass
     os.replace(tam, path)
     _ap_vao_bo_nho(values)
+    _ghi_nhat_ky_luu(path, pending)
+
+
+def _ghi_nhat_ky_luu(path, pending: dict) -> None:
+    """07/11/2026: anh Hùng bấm Lưu (app hiện "Đã lưu cài đặt AI") mà file
+    .env trên đĩa vẫn bản 03/11, 1 key Gemini. Ghi lại MỖI lượt lưu: đường dẫn
+    thật, giờ sửa file, SỐ key ghi vs số key đọc lại được (KHÔNG ghi key) để
+    lần sau nhìn là biết lưu đi đâu / có lọt không. Không bao giờ ném lỗi."""
+    try:
+        import datetime
+        from dotenv import dotenv_values
+        doc = dotenv_values(path)
+        dem = lambda v: len([x for x in re.split(r"[,\s]+", str(v or "")) if x])
+        phan = []
+        for k in ("GEMINI_API_KEY", "GROQ_API_KEYS", "ELEVENLABS_API_KEYS"):
+            if k in pending:
+                ghi, doc_lai = dem(pending[k]), dem(doc.get(k))
+                phan.append(f"{k}: ghi {ghi} · đọc lại {doc_lai}"
+                            + ("" if ghi == doc_lai else " · LỆCH!"))
+        ts = datetime.datetime.now()
+        d = DATA_DIR / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"luu_cai_dat_{ts:%Y%m%d}.log", "a", encoding="utf-8") as f:
+            f.write(f"{ts:%H:%M:%S} pid={os.getpid()} {path} "
+                    f"(sửa {datetime.datetime.fromtimestamp(path.stat().st_mtime):%d/%m %H:%M:%S}) "
+                    + " | ".join(phan) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _ap_vao_bo_nho(values: dict) -> None:

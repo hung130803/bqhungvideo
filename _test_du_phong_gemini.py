@@ -344,5 +344,79 @@ ok(sigs and all(s.get("llm_used") for s in sigs), "Part đi đường AI, KHÔNG
 ok(sigs and all(s.get("ai_du_phong") == "gemini" for s in sigs), "Part ghi rõ đã dùng Gemini dự phòng")
 ok(any("Gemini dự phòng" in str(w) for w in (res or {}).get("warnings", [])) or any("Gemini dự phòng" in json.dumps(res, ensure_ascii=False, default=str) for _ in [0]), "kết quả job báo đã dùng dự phòng")
 
+ok(sigs and all("Gemini dự phòng" in str(s.get("ai_name")) for s in sigs),
+   "thẻ Part ghi tên 'Gemini dự phòng' chứ không phải 'Groq'", str(sigs[0].get("ai_name") if sigs else ""))
+
+print("CA 11: các lỗi tìm ra 07/11/2026 trên máy anh Hùng")
+
+
+def log_txt():
+    f = list(Path(TMP, "logs").glob("du_phong_*.log"))
+    return f[0].read_text(encoding="utf-8") if f else ""
+
+
+# 11a — complete_json gọi complete_text bên trong: KHÔNG được chuyển Gemini 2 lớp
+moi(groq=LOI["429 hết lượt"], gemini='{"ok":3}')
+truoc = log_txt().count("chuyển Gemini")
+ok(llm.complete_json("p") == {"ok": 3} and nha().count("gemini") == 1,
+   "11a complete_json: Gemini gọi ĐÚNG 1 lần (không lồng 2 lớp dự phòng)", str(nha()))
+ok(log_txt().count("chuyển Gemini") - truoc == 1, "11a nhật ký ghi 1 lần chuyển, không 2")
+moi(groq=LOI["429 hết lượt"], gemini=RuntimeError("Error code: 503 - unavailable"))
+truoc = log_txt().count("Gemini dự phòng cũng lỗi")
+try:
+    llm.complete_json("p")
+except llm.LLMError:
+    pass
+ok(log_txt().count("Gemini dự phòng cũng lỗi") - truoc == 1,
+   "11a' Gemini cũng lỗi: chỉ 1 lượt dự phòng (lớp ngoài không chạy lại)", str(nha()))
+
+# 11b/c — nghỉ Groq ĐÚNG số giây Groq đòi (bản cũ 30-55 s khi Groq đòi ~290 s)
+moi(groq=RuntimeError("429: Groq shared cooldown; retry in 292.630s"), gemini="g")
+t0 = llm.time.monotonic()
+llm.complete_text("p")
+con = llm._DP_GROQ_NGHI_TOI - t0
+ok(280 <= con <= 300, "11b Groq đòi 292s -> nghỉ ĐÚNG ~292s", f"{con:.0f}s")
+GOI.clear()
+llm.complete_text("p2")
+ok(nha() == ["gemini"], "11b' trong lúc Groq nghỉ: lượt sau đi THẲNG Gemini", str(nha()))
+moi(groq=RuntimeError("429: rate_limit_exceeded; retry in 2h"), gemini="g")
+t0 = llm.time.monotonic()
+llm.complete_text("p")
+con = llm._DP_GROQ_NGHI_TOI - t0
+ok(1100 <= con <= 1201, "11c đòi 2 giờ -> trần 20 phút rồi thử lại Groq", f"{con:.0f}s")
+ok("Gemini dự phòng XONG" in log_txt(), "11d nhật ký ghi cả lượt Gemini THÀNH CÔNG")
+ok(llm._dat_groq_nghi(llm.LLMContentBlocked("x")) == 0.0, "11e nội dung bị chặn KHÔNG bắt Groq nghỉ")
+
+# 11f — bước đã lưu (job chạy tiếp sau "hết lượt giữa chừng") vẫn nhớ là Gemini làm
+from app.core import job_resume  # noqa: E402
+jid = db.execute("INSERT INTO jobs(type,video_id,status,payload) VALUES('highlight',?,'running','{}')", (vid,)).lastrowid
+moi(groq=LOI["429 hết lượt"], gemini='{"x":1}')
+with job_resume.scope(jid, {"video_id": vid}):
+    r1 = M1._stage_json("PROMPT BƯỚC", ctx=None)
+    n1 = llm.so_luot_du_phong()
+    llm.reset_usage()
+    GOI.clear()
+    r2 = M1._stage_json("PROMPT BƯỚC", ctx=None)
+    n2 = llm.so_luot_du_phong()
+ok(r1 == r2 == {"x": 1} and n1 == 1, "11f lượt đầu: Gemini làm, đếm 1", f"{r1} {n1}")
+ok(nha() == [] and n2 == 1, "11f chạy lại dùng bước đã lưu: 0 lượt gọi mà VẪN đếm là Gemini", f"{nha()} {n2}")
+moi(groq='{"y":2}', gemini='{"y":9}')
+with job_resume.scope(jid, {"video_id": vid}):
+    M1._stage_json("PROMPT KHÁC", ctx=None)
+    llm.reset_usage()
+    M1._stage_json("PROMPT KHÁC", ctx=None)
+    ok(llm.so_luot_du_phong() == 0, "11f' bước Groq làm thì đọc lại KHÔNG bị gắn nhầm Gemini")
+
+# 11g — lưu cài đặt AI để lại dấu kiểm (lỗi "bấm Lưu mà file vẫn bản cũ")
+import config  # noqa: E402
+config.update_env({"GEMINI_API_KEY": "kA\nkB\nkC"})
+fl = list(Path(TMP, "logs").glob("luu_cai_dat_*.log"))
+tl = fl[0].read_text(encoding="utf-8") if fl else ""
+ok("GEMINI_API_KEY: ghi 3 · đọc lại 3" in tl and "kA" not in tl,
+   "11g lưu xong ghi nhật ký số key ghi/đọc lại, không lộ key", tl.strip()[-70:])
+src = Path(REPO, "app/ui/studio_page.py").read_text(encoding="utf-8")
+ok("GEMINI_DU_PHONG_MODEL" in src and 'sig.get("ai_du_phong")' in src,
+   "11h hộp Cài đặt AI nói rõ model dự phòng + thẻ Part tô màu Gemini")
+
 print(f"\nCỔNG 114: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)
