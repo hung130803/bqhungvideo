@@ -427,6 +427,12 @@ USD_TO_VND = 25500          # tỉ giá ước tính (đổi tại đây nếu l
 
 def reset_usage() -> None:
     _usage().update(**{"in": 0, "out": 0, "calls": 0})
+    _TLS.du_phong = 0
+
+
+def so_luot_du_phong() -> int:
+    """Số lượt AI của thread này đã chạy bằng Gemini dự phòng từ reset_usage."""
+    return int(getattr(_TLS, "du_phong", 0) or 0)
 
 
 def get_usage() -> dict:
@@ -1130,7 +1136,8 @@ def _is_model_missing_error(msg: str) -> bool:
     return any(s in m for s in (
         "model_not_found", "model not found", "does not exist",
         "decommissioned", "model_decommissioned", "unknown model",
-        "invalid model", "no longer supported", "has been deprecated"))
+        "invalid model", "no longer supported", "has been deprecated",
+        "no longer available"))
 
 
 #: tên CÔNG KHAI (cổng test + complete_text dùng) — giữ tên cũ cho tương thích.
@@ -1775,15 +1782,22 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             f"Mọi model Groq trong dây chuyền đều hỏng ({', '.join(chuoi)}): "
             f"{loi_model}")
 
-    if provider == "gemini" and json_mode and getattr(_CALL_BUDGET,'value',None) and re.fullmatch(r'gemini-2\.5-(?:flash|pro)',settings.GEMINI_MODEL):
+    gemini_model=getattr(_LAN,'gemini_model','') or settings.GEMINI_MODEL
+    if provider == "gemini" and re.fullmatch(r'gemini-(?:2\.5|3\.\d+)-(?:flash(?:-lite)?|pro)',gemini_model):
         # Legacy SDK 0.8.3 cannot express thinkingConfig. Keep reasoning on,
         # but reserve space for complete JSON instead of spending all 8k on it.
+        # Mọi lượt gọi đều đi đường này (cổng 113): đo 06/11/2026 đường SDK để
+        # phần "nghĩ" ăn 7.676/8.000 token, tính tiền nhưng không được đếm, và
+        # giữ _GEMINI_LOCK nên cả máy chỉ gọi được 1 lượt.
         import requests
-        model_name=settings.GEMINI_MODEL
+        model_name=gemini_model
         budget=_check_call_budget()
         body={'contents':[{'role':'user','parts':[{'text':prompt}]}],
               'generationConfig':{'temperature':temperature,'maxOutputTokens':12288,
-                  'responseMimeType':'application/json','thinkingConfig':{'thinkingBudget':4096}}}
+                  }}
+        # Dòng 3.x tự nghĩ gọn (đo 3.5-flash: 1.420 token, 12 giây/lượt); chỉ 2.5 cần trần.
+        if model_name.startswith('gemini-2.5-'):body['generationConfig']['thinkingConfig']={'thinkingBudget':4096}
+        if json_mode:body['generationConfig']['responseMimeType']='application/json'
         if system:body['systemInstruction']={'parts':[{'text':system}]}
         response=requests.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent',
             headers={'x-goog-api-key':key},json=body,timeout=min(request_timeout or 120,budget or 120),allow_redirects=False)
@@ -1818,7 +1832,7 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
             budget=_check_call_budget()
             genai.configure(api_key=key)
             model = genai.GenerativeModel(
-                settings.GEMINI_MODEL, system_instruction=system or None,
+                gemini_model, system_instruction=system or None,
             )
             resp = model.generate_content(
                 prompt, generation_config={"temperature": temperature,
@@ -1846,12 +1860,133 @@ def _call_once(provider: str, key: str, prompt: str, system: str,
 from app.core.job_resume import completed_ai_call
 
 
+# ---- GEMINI DỰ PHÒNG KHI GROQ KHÔNG CHẠY (cổng 114) ----
+# Cửa chung của mọi lượt AI chữ: cùng prompt, cùng bước kiểm đầu ra, chỉ đổi nhà
+# cung cấp. Chỉ áp khi provider là Groq do cấu hình chọn; truyền provider tường
+# minh thì đi thẳng. Thiếu key Gemini hoặc GEMINI_DU_PHONG=0 -> hành vi y như cũ.
+_DP_LOCK = threading.Lock()
+_DP_GROQ_NGHI_TOI = 0.0
+_DP_VONG_429 = 3
+_DP_DOI_TOI_DA = 70.0
+
+
+def _du_phong_bat(provider_arg) -> bool:
+    if provider_arg is not None or active_provider() != 'groq':
+        return False
+    return bool(getattr(settings, 'GEMINI_DU_PHONG', False)
+                and settings.llm_keys_for('gemini'))
+
+
+def _ghi_log_du_phong(dong: str) -> None:
+    try:
+        import datetime
+        from config import DATA_DIR
+        p = Path(DATA_DIR) / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now()
+        dong = str(dong)
+        for key in list(settings.llm_keys_for('gemini')) + list(settings.llm_keys_for('groq')):
+            dong = dong.replace(key, '[key]')
+        with open(p / f"du_phong_{ts:%Y%m%d}.log", "a", encoding="utf-8") as f:
+            f.write(f"{ts:%H:%M:%S} {dong[:600]}\n")
+    except OSError:
+        pass
+
+
+def _dat_groq_nghi(loi: LLMError) -> float:
+    """Không gọi lại Groq trong bao lâu, để khỏi đi hết key chết ở MỖI lượt."""
+    global _DP_GROQ_NGHI_TOI
+    msg = str(loi)
+    if isinstance(loi, (LLMTooLarge, LLMCatCut, LLMRong)):
+        return 0.0           # lỗi của RIÊNG yêu cầu này, Groq vẫn khoẻ
+    if is_rate_limit_error(msg):
+        cho = soonest_ready_wait('groq')
+        nghi = min(max(float(cho or 60.0), 30.0), 300.0)
+    elif is_transient_error(msg):
+        nghi = 60.0
+    else:
+        nghi = 300.0         # key bị khoá/sai, model bị gỡ
+    with _DP_LOCK:
+        _DP_GROQ_NGHI_TOI = time.monotonic() + nghi
+    return nghi
+
+
+def _goi_gemini_du_phong(goi):
+    """Gọi Gemini bằng model dự phòng; hết lượt theo phút thì đợi rồi thử lại."""
+    cu = getattr(_LAN, 'gemini_model', '')
+    _LAN.gemini_model = settings.GEMINI_DU_PHONG_MODEL
+    try:
+        for vong in range(_DP_VONG_429 + 1):
+            try:
+                out = goi('gemini')
+                _TLS.du_phong = so_luot_du_phong() + 1
+                return out
+            except (LLMTooLarge, LLMModelMissing, LLMContentBlocked):
+                raise
+            except LLMError as e:
+                if vong >= _DP_VONG_429 or not is_rate_limit_error(str(e)):
+                    raise
+                cho = soonest_ready_wait('gemini')
+                if cho is None or cho > _DP_DOI_TOI_DA:
+                    raise
+                _retry_sleep(max(float(cho), 0.0) + 0.5)
+    finally:
+        _LAN.gemini_model = cu
+
+
+def _voi_du_phong(provider_arg, goi):
+    """`goi(provider)` chạy lượt AI thật. Groq lỗi -> chuyển Gemini, báo nhật ký."""
+    global _DP_GROQ_NGHI_TOI
+    if not _du_phong_bat(provider_arg):
+        return goi(provider_arg)
+    with _DP_LOCK:
+        dang_nghi = time.monotonic() < _DP_GROQ_NGHI_TOI
+    if dang_nghi:
+        try:
+            return _goi_gemini_du_phong(goi)
+        except LLMContentBlocked:
+            raise
+        except LLMError as e:
+            _ghi_log_du_phong(f"Gemini lỗi khi Groq đang nghỉ -> thử lại Groq: {e}")
+            with _DP_LOCK:
+                _DP_GROQ_NGHI_TOI = 0.0
+    try:
+        return goi(None)
+    except LLMError as g:
+        if 'phản hồi quá lâu' in str(g):
+            raise            # hết ngân sách thời gian của job, không đổi nhà cung cấp
+        nghi = _dat_groq_nghi(g)
+        _ghi_log_du_phong(f"Groq lỗi ({type(g).__name__}) -> chuyển Gemini "
+                          f"{settings.GEMINI_DU_PHONG_MODEL}, nghỉ Groq {nghi:.0f}s: {g}")
+        try:
+            return _goi_gemini_du_phong(goi)
+        except LLMContentBlocked:
+            raise
+        except LLMError as e:
+            _ghi_log_du_phong(f"Gemini dự phòng cũng lỗi: {e}")
+            try:
+                gop = type(g)(f"{g} | Gemini dự phòng cũng lỗi: {e}")
+            except TypeError:
+                gop = LLMError(f"{g} | Gemini dự phòng cũng lỗi: {e}")
+            raise gop from e
+
+
 @completed_ai_call
 @_pham_vi_muc
 def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                   provider: Optional[str] = None,
                   model: Optional[str] = None,
                   json_mode: bool = False, response_schema=None) -> str:
+    """Xem `_complete_text_mot_nha`; thêm Gemini dự phòng khi Groq không chạy."""
+    return _voi_du_phong(provider, lambda p: _complete_text_mot_nha(
+        prompt, system=system, temperature=temperature, provider=p, model=model,
+        json_mode=json_mode, response_schema=response_schema))
+
+
+def _complete_text_mot_nha(prompt: str, system: str = "", temperature: float = 0.4,
+                           provider: Optional[str] = None,
+                           model: Optional[str] = None,
+                           json_mode: bool = False, response_schema=None) -> str:
     """`model`: đè model CHỈ với provider groq (vd kimi-k2 cho pass viết
     kịch bản); provider khác bỏ qua — an toàn khi user chọn gemini/ollama.
 
@@ -1944,9 +2079,14 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
                         # lời báo nói RÕ là app cần cập nhật, đừng để nó trông
                         # giống hết hạn mức (xem LLMModelMissing).
                         raise LLMModelMissing(
-                            f"Groq đã bỏ model đang dùng nên app không gọi "
+                            f"{provider.capitalize()} đã bỏ model đang dùng nên app không gọi "
                             f"được — cần cập nhật app. KHÔNG phải hết hạn mức "
                             f"key (41 key vẫn còn nguyên). Chi tiết: {last}")
+                    if provider == 'gemini' and 'credits are depleted' in last.lower():
+                        # Key trả trước hết tiền: thử key khác, 1 giờ sau mới thử lại.
+                        last_usable = last
+                        mark_limited(provider, key, last, retry_after=3600, scope='chat')
+                        continue
                     if is_rate_limit_error(last):
                         last_usable = last
                         mark_limited(provider, key, last, scope='chat')
@@ -1996,6 +2136,15 @@ def complete_text(prompt: str, system: str = "", temperature: float = 0.4,
 @_pham_vi_muc
 def complete_json(prompt: str, system: str = "", provider: Optional[str] = None,
                   model: Optional[str] = None, strict_object: bool = False, response_schema=None):
+    """Xem `_complete_json_mot_nha`; JSON Groq rỗng/cắt/hỏng cũng sang Gemini."""
+    return _voi_du_phong(provider, lambda p: _complete_json_mot_nha(
+        prompt, system=system, provider=p, model=model,
+        strict_object=strict_object, response_schema=response_schema))
+
+
+def _complete_json_mot_nha(prompt: str, system: str = "", provider: Optional[str] = None,
+                           model: Optional[str] = None, strict_object: bool = False,
+                           response_schema=None):
     """Gọi LLM và parse JSON. Ném LLMError nếu không parse được.
     `model`: đè model chỉ với groq (xem complete_text).
 

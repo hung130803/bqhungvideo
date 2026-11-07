@@ -1110,7 +1110,28 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         warns.append(f"bỏ {junk_removed} đoạn quảng cáo/chào kênh")
     if audit is not None:
         audit.update(rejected_junk=junk_removed, candidates=len(refined))
+    if llm.so_luot_du_phong():
+        # Gemini dự phòng hay ghép quá trần "tối đa ~6 khúc" của prompt (đo 11
+        # khúc/clip). Groq KHÔNG đi nhánh này nên kết quả 200-300 kênh không đổi.
+        for c in refined:
+            c["segments"] = _gon_so_doan(c.get("segments") or [])
     return refined, warns
+
+
+def _gon_so_doan(segs: list, toi_da: int = 6, khe_noi: float = 8.0) -> list:
+    """Đưa clip về tối đa `toi_da` đoạn, giữ thứ tự: nối 2 đoạn liền nhau có khe
+    nhỏ nhất (khe <= `khe_noi` giây), không còn khe nhỏ thì bỏ đoạn ngắn nhất."""
+    ds = [list(s) for s in segs]
+    while len(ds) > max(1, int(toi_da)):
+        khe = [(ds[i + 1][0] - ds[i][1], i) for i in range(len(ds) - 1)
+               if ds[i + 1][0] >= ds[i][1]]
+        if khe and min(khe)[0] <= khe_noi:
+            i = min(khe)[1]
+            ds[i][1] = ds[i + 1][1]
+            del ds[i + 1]
+        else:
+            ds.remove(min(ds[1:], key=lambda s: s[1] - s[0]))   # đoạn đầu có thể là hook
+    return ds
 
 
 # ------------------------------------------------------------------
@@ -2237,6 +2258,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                                 + (" (critic nói: " + " | ".join(_ly[:3]) + ")" if _ly else ""))
             if selection_audit.get("critic_incomplete"):
                 ai_warns.append("critic lỗi hoặc trả sai định dạng; chất lượng chưa kiểm tra đầy đủ")
+    if llm.so_luot_du_phong():
+        ai_warns.append("Groq không chạy được nên đã dùng Gemini dự phòng")
     if ai_clips:
         from config import settings as _st
         # máy yếu: KHÔNG chấm điểm bằng hình (ngốn CPU + tốn lượt) -> chỉ dựa transcript
@@ -2423,6 +2446,8 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "title_en": c.get("title_en", ""), "hook": c.get("hook", ""),
                        "hook_seg": c.get("hook_seg"),
                        "dur": round(total, 1), "continuity_review": continuity}
+            if llm.so_luot_du_phong():
+                signals["ai_du_phong"] = "gemini"
             if _khong_loi:
                 # DẤU "KHÔNG LỜI" PHẢI VÀO CLIP (cổng 109): trước đây chỉ gắn
                 # vào dict tạm nên lúc xuất không ai biết -> phụ đề chữ bịa vẫn

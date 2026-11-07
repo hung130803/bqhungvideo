@@ -108,6 +108,10 @@ class Settings:
 
     GEMINI_API_KEY = _env("GEMINI_API_KEY")
     GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-2.5-flash")
+    # Groq hết key/lỗi thì tự chuyển sang Gemini (cổng 114). Model riêng vì tài
+    # khoản mới bị 404 với 2.5, còn 3.5-flash free chỉ 20 lượt/ngày (đo 06/11/2026).
+    GEMINI_DU_PHONG = _env("GEMINI_DU_PHONG", "1") == "1"
+    GEMINI_DU_PHONG_MODEL = _env("GEMINI_DU_PHONG_MODEL", "gemini-3.5-flash-lite")
 
     DEEPSEEK_API_KEY = _env("DEEPSEEK_API_KEY")
     DEEPSEEK_MODEL = _env("DEEPSEEK_MODEL", "deepseek-chat")

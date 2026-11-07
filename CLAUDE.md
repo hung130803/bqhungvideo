@@ -2594,6 +2594,22 @@
     stereo/có chút nhiễu/`-aac_coder fast` đều chạy). Cổng test phải dùng 160k
     + `timeout`. App xuất clip ở 160k (an toàn); `thay_giong.py` còn 2 chỗ
     192k nhưng ra stereo có nhạc nền -> rủi ro thấp, CHƯA đổi.
+- **GROQ CHẾT THÌ TỰ CHUYỂN GEMINI (07/11/2026, cổng 114 `_test_du_phong_gemini.py`, thử phá `_pha_du_phong_gemini.py`).**
+  Cửa chung `llm.complete_text/complete_json` -> `_voi_du_phong`: chỉ khi provider=groq do cấu hình + có key
+  Gemini; cùng prompt, chỉ đổi nhà cung cấp, model riêng `GEMINI_DU_PHONG_MODEL` = `gemini-3.5-flash-lite`
+  (key free mới: 2.5 trả 404; 3.5-flash chỉ 20 lượt/ngày; lite 15 lượt/phút, 12 video chưa chạm trần ngày).
+  `GEMINI_DU_PHONG=0` tắt. Huỷ và hết ngân sách job KHÔNG chuyển; 413 không cho Groq nghỉ. Gemini ghép tới 11
+  khúc trong khi prompt ghi tối đa ~6 -> `_gon_so_doan` CHỈ áp khi đã dùng dự phòng, Groq không đổi (đoạn đầu có
+  thể là hook nên không bị bỏ). Part mang `signals.ai_du_phong`; nhật ký `logs/du_phong_<ngày>.log`. Chép lời vẫn
+  phụ thuộc Groq, bước này KHÔNG được dự phòng. BẪY ĐO: 2 key Gemini có phần đầu giống nhau nên grep tiền tố
+  kết luận nhầm key đã lưu; phải so nguyên chuỗi. Stub lỗi 'restricted' trên key thật ghi sổ khoá trong hộp cát
+  -> các lượt sau trong cùng script không gọi Groq nữa (đặt ca đó CUỐI).
+- **GEMINI: TRẦN NGHĨ + BÀI HỌC ĐỐT TIỀN KHI ĐO (06/11/2026, cổng 113 `_test_gemini_nghi.py` 12/0).**
+  Đường SDK cũ của `gemini-2.5-*` không đặt trần nghĩ: đo 7.676 + 309 = sát trần 8.000 token (chưa soi cờ
+  kết thúc), phần nghĩ gấp 16,7 lần câu trả lời, tính tiền mà không đếm, và giữ `_GEMINI_LOCK` nên cả máy
+  gọi 1 lượt. Nay mọi lượt `gemini-2.5-*` đi REST (`thinkingBudget` 4096, max 12288, đếm cả nghĩ). HIỆU
+  QUẢ THẬT CHƯA ĐO: key Gemini của anh Hùng là TRẢ TRƯỚC và đã hết tiền (HTTP 402, `RESOURCE_EXHAUSTED`)
+  giữa lượt đo. TỰ KIỂM: đo bằng key thật là TIÊU TIỀN THẬT — hỏi trước, đừng bắn hàng trăm lượt thử trần.
 - **"Khởi động phân tích quá 180 giây" + CHIP LỖI KHÔNG MẤT (03/11/2026, cổng 107
   `_test_loi_da_chay_lai.py` 12/0).** Tiến trình phân tích con mở ở IDLE = ưu tiên
   ĐĨA rất thấp; 5 lượt xuất ffmpeg (BELOW_NORMAL) ghi đĩa thì nó không nạp nổi mã

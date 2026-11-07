@@ -470,6 +470,8 @@ CONG = [
     ("107 lỗi đã chạy lại + phân tích không đói đĩa", "_test_loi_da_chay_lai.py", 12),
     ("108 key Cài đặt AI không mất âm thầm", "_test_luu_key.py", 13),
     ("109 video không lời: tên/hashtag không lấy chữ bịa", "_test_khong_loi_ten.py", 30),
+    ("113 Gemini: trần nghĩ, đếm token, không khoá 1 lượt", "_test_gemini_nghi.py", 12),
+    ("114 Groq chết thì tự chuyển Gemini, đúng yêu cầu cắt ghép", "_test_du_phong_gemini.py", 58),
     # Đợt 1 dây chuyền tự động (04/11/2026, INTEGRATION.md mục 5/11/12):
     # Tự chạy (V1-V9, V21-V24 ổ đĩa, #5) + phiếu đợt/phiếu cắt (V10-V20).
     ("110 tự chạy dây chuyền", "_test_tu_chay.py", 91),
