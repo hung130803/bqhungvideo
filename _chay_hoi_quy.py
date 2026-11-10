@@ -452,7 +452,7 @@ CONG = [
     ("96 nền không xanh + chữ không ô vuông", "_test_nen_xanh_chu.py", 26),
     # 97 -> 112 (02/11/2026): nhóm chưa bật / nhóm rỗng phải hiện trên bot +
     # /batnhom + kênh mới thừa hưởng trạng thái dây chuyền của nhóm.
-    ("97 bot Telegram quản lý dây chuyền", "_test_tele_bot.py", 112),
+    ("97 bot Telegram quản lý dây chuyền", "_test_tele_bot.py", 116),
     # Cổng 98 (30/10/2026): tự đăng nhập + bot GÁC CỔNG (/moapp khi app tắt
     # hoặc đứng ở màn đăng nhập). Bắt được lỗi thật: màn đăng nhập vẫn soi cờ
     # sau khi đăng nhập xong -> `.text()` trên chuỗi = sập app. Thử phá: HỎNG 3.

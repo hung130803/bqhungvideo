@@ -606,6 +606,7 @@ LENH_NHE = {"/moapp", "/dongapp","/dangnhap", "/mo", "/trangthai", "/tt", "/star
 _BO_QUA_429 = {"editMessageText", "editMessageReplyMarkup", "answerCallbackQuery",
                "deleteMessage"}
 GIAN_GUI = 0.35             # giây tối thiểu giữa 2 lần send*
+PHIEN_NGHI_TOI_DA = 30.0    # phiên HTTP để lâu hơn -> mở mới (xem `_phien`)
 CHAM_LOG = 3.0              # lệnh xử lý lâu hơn số giây này -> ghi log
 SONG_NHIP = 15              # giây giữa 2 lần sửa tin "theo dõi"
 SONG_TOI_DA = 4 * 3600      # tin theo dõi tự dừng sau 4 giờ
@@ -732,10 +733,23 @@ class BotQuanLy:
 
     # -- mạng --
     def _phien(self):
+        """Phiên HTTP riêng mỗi luồng. Để không quá PHIEN_NGHI_TOI_DA giây thì BỎ
+        phiên cũ, mở phiên mới (10/11/2026): lệnh nặng (/chay…) chạy ở luồng phụ
+        có khi hàng giờ không gửi gì, Telegram đã đóng kết nối giữ sẵn ở phía
+        nó -> lần gửi kế đi vào kết nối CHẾT, treo đúng 20 s rồi 'sendMessage:
+        ReadTimeout' và tin trả lời MẤT (nhật ký 07/11 + 10/11: /chay 20,2 ·
+        20,5 · 20,1 s, bấm lại thì nhanh). Mở mới không gửi lại tin -> không trùng."""
         s = getattr(self._tl, "s", None)
+        if s is not None and time.monotonic() - getattr(self._tl, "luc", 0.0) > PHIEN_NGHI_TOI_DA:
+            try:
+                s.close()
+            except Exception:  # noqa: BLE001
+                pass
+            s = self._tl.s = None
         if s is None:
             import requests
             s = self._tl.s = requests.Session()
+        self._tl.luc = time.monotonic()
         return s
 
     def _goi(self, method: str, data: dict, timeout: float = 20):
@@ -760,6 +774,7 @@ class BotQuanLy:
                 raise RuntimeError(f"{method}: {type(e).__name__}") from None
             finally:
                 _LUONG.ipv4 = cu
+                self._tl.luc = time.monotonic()   # tính "để không" từ lúc gọi XONG
             try:
                 j = r.json()
             except ValueError:

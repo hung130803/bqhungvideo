@@ -745,6 +745,24 @@ ok(any(m.startswith("PyQt") for m in [
     a.name for n in ast.walk(ast.parse("import PyQt6.QtCore")) if isinstance(n, ast.Import)
     for a in n.names]), "tự kiểm: bộ dò bắt được import PyQt")
 
+# ====================================================================== 8
+print("CA 8 — phiên HTTP để lâu thì mở mới (lỗi /chay treo 20 s, 10/11/2026)")
+import threading as _th  # noqa: E402
+_b8 = B.BotQuanLy.__new__(B.BotQuanLy)
+_b8._tl = _th.local()
+_s1 = _b8._phien()
+ok(_b8._phien() is _s1, "gọi liền nhau -> dùng lại đúng phiên (không mở mới vô cớ)")
+_b8._tl.luc -= B.PHIEN_NGHI_TOI_DA + 1          # giả lập để không quá ngưỡng
+_s2 = _b8._phien()
+ok(_s2 is not _s1, "để không quá ngưỡng -> mở phiên MỚI (kết nối cũ có thể đã chết)")
+ok(B.PHIEN_NGHI_TOI_DA <= 60, "ngưỡng ≤ 60 s (Telegram đóng kết nối rảnh rất sớm)",
+   str(B.PHIEN_NGHI_TOI_DA))
+_tg = _th.Thread(target=lambda: _kq8.append(_b8._phien()))
+_kq8 = []
+_tg.start()
+_tg.join()
+ok(_kq8 and _kq8[0] is not _s2, "mỗi luồng một phiên riêng (giữ nguyên thiết kế cũ)")
+
 bt.dung()
 srv.shutdown()
 pool.stop()
