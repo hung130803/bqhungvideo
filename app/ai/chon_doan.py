@@ -24,7 +24,11 @@ import re
 import subprocess
 import sys
 
-_NO_WIN = 0x08000000 if sys.platform == "win32" else 0
+# Giấu cửa sổ + ưu tiên BELOW_NORMAL (10/11/2026): 3 lệnh ở đây giải mã TRỌN
+# video gốc (vài chục phút) — đúng loại "tác vụ nặng" mà ffmpeg_utils._run chạy
+# BELOW_NORMAL. Trước đây chúng chạy ưu tiên THƯỜNG, đo được 2 lệnh ăn ~11 nhân
+# và chen trước lượt dựng hình của khâu xuất (BELOW_NORMAL). Số đo không đổi.
+_NO_WIN = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
 #: cửa sổ đo năng lượng (giây). 1,0s đủ mịn để bắt tiếng gào/đập mà rẻ.
 CUA_SO = 1.0
 

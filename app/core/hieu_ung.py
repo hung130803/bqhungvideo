@@ -207,6 +207,9 @@ def ly_do_khong_co_frei0r() -> str:
 _MOD_CACHE: dict = {}
 
 
+_UU_TIEN_THAP = 0x00004000 if sys.platform == "win32" else 0   # BELOW_NORMAL
+
+
 def _chay_ffmpeg(cmd: list, giay: int, qua_cua_cho: bool = False) -> int:
     """Chạy 1 lệnh ffmpeg phụ (thử plugin / đo nhịp) — CÓ VÀO SỔ TIẾN TRÌNH.
 
@@ -240,7 +243,10 @@ def _chay_ffmpeg(cmd: list, giay: int, qua_cua_cho: bool = False) -> int:
         p = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
             errors="replace",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            # BELOW_NORMAL như mọi lệnh ffmpeg nặng của app (ffmpeg_utils._run):
+            # trước 10/11/2026 lệnh đo nhịp chạy ưu tiên THƯỜNG nên chen trước
+            # chính lượt dựng hình của khâu xuất (BELOW_NORMAL).
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | _UU_TIEN_THAP)
         try:
             from app.core import ffmpeg_utils as _fu
             _fu.register_proc(p)

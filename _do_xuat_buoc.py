@@ -70,6 +70,47 @@ LENH = []          # (giây, trong hàm, lệnh)
 _dang = []         # ngăn xếp nhãn hàm lớn
 
 
+GIU = os.environ.get("BQ_GIU_LENH", "")
+
+
+def giu_lenh(cmd):
+    """Chép MỌI file đầu vào của lượt dựng hình chính (kể cả các mảnh trong
+    danh sách concat) ra thư mục GIU rồi ghi lệnh đã đổi đường dẫn -> đo lại
+    được lượt đó một mình, nhiều biến thể, trên SSD."""
+    d = Path(GIU)
+    d.mkdir(parents=True, exist_ok=True)
+    moi = []
+    for i, a in enumerate(cmd):
+        if i > 0 and cmd[i - 1] == "-i" and os.path.isfile(a):
+            dst = d / f"in{i}_{Path(a).name}"
+            if a.endswith("_list.txt"):
+                dong = []
+                for ln in Path(a).read_text(encoding="utf-8").splitlines():
+                    if ln.startswith("file "):
+                        f = ln[5:].strip().strip("'")
+                        g = d / Path(f).name
+                        shutil.copy2(f, g)
+                        dong.append(f"file '{g.as_posix()}'")
+                    else:
+                        dong.append(ln)
+                dst.write_text("\n".join(dong) + "\n", encoding="utf-8")
+            else:
+                shutil.copy2(a, dst)
+            moi.append(str(dst))
+        else:
+            moi.append(a)
+    # file .ass của phụ đề nằm TRONG chuỗi filter -> chép theo tên
+    import re
+    for i, a in enumerate(moi):
+        for m in re.findall(r"subtitles='([^']+\.ass)'", a):
+            goc = m.replace("\\:", ":")
+            if os.path.isfile(goc):
+                g = d / Path(goc).name
+                shutil.copy2(goc, g)
+                moi[i] = moi[i].replace(m, g.as_posix().replace(":", "\\:"))
+    (d / "lenh.json").write_text(json.dumps(moi, ensure_ascii=False, indent=0), encoding="utf-8")
+
+
 def nhan_lenh(cmd):
     s = " ".join(map(str, cmd))
     exe = os.path.basename(str(cmd[0])).lower()
@@ -98,6 +139,8 @@ def boc_popen():
             self._cha = _dang[-1] if _dang else ""
             self._ghi = False
             self._cmd = " ".join(map(str, cmd)) if isinstance(cmd, (list, tuple)) else str(cmd)
+            if GIU and isinstance(cmd, (list, tuple)) and "curve_" in self._cmd and "concat" in self._cmd:
+                giu_lenh(list(map(str, cmd)))
             super().__init__(cmd, *a, **k)
 
         def _xong(self):
