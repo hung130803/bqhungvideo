@@ -2375,6 +2375,16 @@ def do_nhip(path: str, ffmpeg: str = "",
     return nl, cd
 
 
+def _luong_do_nhip() -> int:
+    """Số luồng GIẢI MÃ cho lượt đo nhịp (`-threads` đặt trước `-i`): 8, hoặc
+    2 khi bật Tiết kiệm máy. Số đo giống hệt mọi mức (xem `_do_nhip_that`)."""
+    try:
+        from config import settings
+        return 2 if getattr(settings, "ECO_MODE", False) else 8
+    except Exception:  # noqa: BLE001
+        return 2
+
+
 def _do_nhip_that(path: str, ffmpeg: str, dau_vao: Optional[list],
                   co_tieng: Optional[bool]) -> tuple[list, list, bool]:
     """Phần đo THẬT của `do_nhip` (không nhớ). Trả thêm cờ `xong`."""
@@ -2409,8 +2419,14 @@ def _do_nhip_that(path: str, ffmpeg: str, dau_vao: Optional[list],
         # (qua_cua_cho=True, số lệnh đồng thời đã bị chặn) nên không còn nguy
         # cơ vọt luồng như ghi chú trên; giải mã H.264 nhiều luồng cho ra khung
         # Y HỆT nên số đo nhịp không đổi, chỉ nhả chỗ ffmpeg sớm hơn.
+        # 10/11/2026: 2 -> 8 luồng. Đo bước xuất 1 Part ghép 4 đoạn (121 s):
+        # lượt đo nhịp này ăn 17,4 s = 13% cả lượt xuất. Đo riêng 120 s video
+        # thật, 2 lượt xen kẽ: 2 luồng 7,48/7,31 s · 4 luồng 4,25/4,20 · 8 luồng
+        # 3,03/3,05 · tự động 2,34/2,31 — MD5 số đo GIỐNG HỆT ở cả 4 mức.
+        # Không lấy "tự động" (ăn hết máy khi 3 Part xuất cùng lúc). Tiết kiệm
+        # máy -> giữ 2 như cũ.
         cmd = [ff, "-y", "-hide_banner", "-nostats", "-v", "error",
-               "-threads", "2", "-filter_threads", "1",
+               "-threads", str(_luong_do_nhip()), "-filter_threads", "1",
                "-filter_complex_threads", "1",
                *vao, "-filter_complex", graph, *maps,
                "-f", "null", os.devnull]
