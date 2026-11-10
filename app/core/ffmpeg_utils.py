@@ -11,6 +11,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -301,14 +302,31 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None,
     _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
     co_cho = _xin_cho_ffmpeg(uu_tien)
     try:
-        return _run_khong_cho(cmd, on_line)
+        return _run_khong_cho(cmd, on_line, muc_he_dieu_hanh=_muc_uu_tien(uu_tien))
     finally:
         if co_cho:
             _tra_cho_ffmpeg()
 
 
+def _muc_uu_tien(uu_tien: int) -> int:
+    """Mức ưu tiên HỆ ĐIỀU HÀNH cho 1 lệnh ffmpeg qua `_run`.
+
+    10/11/2026 (anh Hùng duyệt "có, thử luôn"): khâu XUẤT là nút cổ chai (xả
+    ~58 Part/giờ, phân tích sinh ~90). Đo CÙNG lượt dựng hình 1 Part 121 s lúc
+    máy đang chạy dây chuyền: ưu tiên THƯỜNG 28,9 · 27,9 · 33,5 · 31,8 s;
+    BELOW_NORMAL 67,9 · 217,9 · 236,3 · 85,0 s. Nên lệnh của khâu xuất
+    (`UT_XUAT`) chạy THƯỜNG; việc phân tích (`UT_PHAN_TICH`) và mọi lệnh chạy
+    trong tiến trình phân tích con (`--analyze`) giữ BELOW_NORMAL như cũ.
+    Tắt bằng BQ_XUAT_UU_TIEN_THUONG=0 (về hành vi trước)."""
+    if (uu_tien == UT_XUAT and os.environ.get("BQ_XUAT_UU_TIEN_THUONG", "1") != "0"
+            and "--analyze" not in sys.argv):
+        return 0
+    return _IDLE_PRIORITY
+
+
 def _run_khong_cho(cmd: list[str],
-                   on_line: Optional[Callable[[str], None]] = None) -> int:
+                   on_line: Optional[Callable[[str], None]] = None,
+                   muc_he_dieu_hanh: Optional[int] = None) -> int:
     """Thân cũ của `_run` — KHÔNG qua cửa chờ. Đừng gọi trực tiếp."""
     proc = subprocess.Popen(
         cmd,
@@ -317,7 +335,8 @@ def _run_khong_cho(cmd: list[str],
         universal_newlines=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=_CREATE_NO_WINDOW | _IDLE_PRIORITY,
+        creationflags=_CREATE_NO_WINDOW | (
+            _IDLE_PRIORITY if muc_he_dieu_hanh is None else muc_he_dieu_hanh),
     )
     # register_proc: vào _ACTIVE_PROCS (dọn khi tắt app) + gắn vào JOB đang chạy
     # (nút Hủy job kill NGAY tiến trình này thay vì đợi nó chạy xong).

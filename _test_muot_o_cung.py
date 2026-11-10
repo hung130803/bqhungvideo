@@ -328,5 +328,49 @@ ok(any(isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
        and getattr(n.value.func, "id", "") == "_bo_dem_ma_nguon_song" for n in init.body),
    "4h app/__init__.py tự bật bộ đệm mã lúc nạp (bản .exe cũ cũng hưởng)")
 
+# ---- CA 5: mức ưu tiên hệ điều hành của ffmpeg (10/11/2026) ----
+# Khâu xuất (UT_XUAT) chạy THƯỜNG; phân tích + mọi lệnh đo nặng chạy
+# BELOW_NORMAL. Đo: cùng lượt dựng hình, THƯỜNG 28-34 s vs BELOW_NORMAL 68-236 s.
+print("\nCA 5 — mức ưu tiên ffmpeg: xuất THƯỜNG, phân tích/đo BELOW_NORMAL")
+import threading as _th5  # noqa: E402
+import psutil as _ps5  # noqa: E402
+from app.core import ffmpeg_utils as _fu5  # noqa: E402
+from app.core import hieu_ung as _hu5  # noqa: E402
+BN = 0x00004000
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == 0, "5a lệnh khâu XUẤT -> ưu tiên THƯỜNG")
+ok(_fu5._muc_uu_tien(_fu5.UT_PHAN_TICH) == BN, "5b lệnh PHÂN TÍCH -> BELOW_NORMAL")
+os.environ["BQ_XUAT_UU_TIEN_THUONG"] = "0"
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5c công tắc BQ_XUAT_UU_TIEN_THUONG=0 -> về như cũ")
+os.environ.pop("BQ_XUAT_UU_TIEN_THUONG")
+sys.argv.append("--analyze")
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5d trong tiến trình phân tích con -> BELOW_NORMAL")
+sys.argv.remove("--analyze")
+ok(cd._NO_WIN & BN == BN, "5e lệnh nghe+xem (chon_doan) mang cờ BELOW_NORMAL")
+
+
+def _muc_that(goi):
+    """Chạy THẬT 1 lệnh ffmpeg ~3 s qua `goi`, đọc mức ưu tiên tiến trình con."""
+    kq = []
+    t = _th5.Thread(target=goi)
+    t.start()
+    for _ in range(40):
+        time.sleep(0.1)
+        ff = [p for p in _ps5.Process().children(recursive=True) if p.name().lower() == "ffmpeg.exe"]
+        if ff:
+            kq.append(ff[0].nice())
+            break
+    t.join()
+    return int(kq[0]) if kq else None
+
+
+_lenh5 = [_fu5.settings.FFMPEG_PATH, "-v", "error", "-re", "-f", "lavfi",
+          "-i", "testsrc2=d=3:s=320x240", "-f", "null", "NUL"]
+m_xuat = _muc_that(lambda: _fu5._run(list(_lenh5)))
+m_pt = _muc_that(lambda: _fu5._run(list(_lenh5), uu_tien=_fu5.UT_PHAN_TICH))
+m_nhip = _muc_that(lambda: _hu5._chay_ffmpeg(list(_lenh5), 30))
+ok(m_xuat == 32, "5f CHẠY THẬT: ffmpeg khâu xuất là NORMAL (32)", str(m_xuat))
+ok(m_pt == BN, "5g CHẠY THẬT: ffmpeg phân tích là BELOW_NORMAL", str(m_pt))
+ok(m_nhip == BN, "5h CHẠY THẬT: ffmpeg đo nhịp là BELOW_NORMAL", str(m_nhip))
+
 print(f"\nKẾT QUẢ: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)
