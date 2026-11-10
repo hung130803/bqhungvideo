@@ -141,8 +141,9 @@ def main() -> int:
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(
             None, "BQ Hung Video",
-            "App đang mở rồi (kiểm tra thanh taskbar).\n"
-            "Không thể chạy 2 cửa sổ cùng lúc.")
+            "App đang mở rồi (kiểm tra thanh taskbar), hoặc đang TẮT DỞ.\n"
+            "Không thể chạy 2 cửa sổ cùng lúc. Vừa tắt app thì đợi khoảng\n"
+            "30 giây rồi mở lại (app tự thoát hẳn sau tối đa 20 giây).")
         return 0
     qapp._single_lock = lock          # giữ tham chiếu tới khi thoát
 
@@ -274,6 +275,22 @@ def main() -> int:
         target=_don_rac, daemon=True, name="don-rac-dia").start())
 
     rc = qapp.exec()
+
+    # ---- CHỐT TẮT TỐI ĐA 20 GIÂY (10/11/2026) ----
+    # Anh Hùng tắt app rồi mở lại thì bị "App đang mở rồi": cửa sổ đã đóng mà
+    # tiến trình vẫn sống (đo: 32 luồng, CPU gần 0 = đang CHỜ). Các bước dưới
+    # (dừng worker, gấp WAL) mỗi bước có thể chờ khoá DB tới 30 giây. Quá 20
+    # giây thì faulthandler GHI stack mọi luồng vào crash_native.txt (biết đích
+    # danh chỗ chờ) rồi thoát hẳn; job đang 'running' được nhận lại lúc mở app.
+    try:
+        import faulthandler
+        _cf = getattr(qapp, "_crash_file", None)
+        if _cf is not None:
+            _cf.write(f"\n----- tắt app {datetime.now():%Y-%m-%d %H:%M:%S} "
+                      "(quá 20 giây sẽ ghi stack dưới đây rồi thoát hẳn) -----\n")
+            faulthandler.dump_traceback_later(20, exit=True, file=_cf)
+    except Exception:  # noqa: BLE001 - chốt an toàn không được chặn thoát
+        pass
 
     # ---- THOÁT SẠCH: KHÔNG finalize interpreter khi luồng daemon còn chạy ----
     # Đây là gốc crash 0xc0000005 (giải thích đầy đủ trong app/ui/shutdown.py):

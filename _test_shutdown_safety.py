@@ -142,6 +142,20 @@ def _thoat(ma: int) -> None:
     os._exit(ma)
 
 
+# Chốt tắt tối đa 20 giây (10/11/2026: tắt app rồi mở lại bị "App đang mở rồi"
+# vì tiến trình còn chờ khoá DB). Đọc bằng AST: phải GỌI dump_traceback_later
+# với exit=True, nằm SAU qapp.exec() — ghi chú nhắc tên hàm không được tính.
+import ast as _ast  # noqa: E402
+_m = _ast.parse(Path(__file__).resolve().parent.joinpath("main.py").read_text(encoding="utf-8"))
+_goi = [n for n in _ast.walk(_m) if isinstance(n, _ast.Call)
+        and getattr(n.func, "attr", "") == "dump_traceback_later"]
+_exec = [n.lineno for n in _ast.walk(_m) if isinstance(n, _ast.Call)
+         and getattr(n.func, "attr", "") == "exec" and getattr(n.func.value, "id", "") == "qapp"]
+kiem(bool(_goi) and any(k.arg == "exit" and getattr(k.value, "value", None) is True
+                        for k in _goi[0].keywords)
+     and bool(_exec) and _goi[0].lineno > _exec[0],
+     "tắt app kẹt quá 20 giây -> ghi stack rồi thoát hẳn (dump_traceback_later exit=True sau qapp.exec)")
+
 print()
 if FAIL:
     print(f"KẾT QUẢ: {len(FAIL)} FAIL -> {FAIL}")
