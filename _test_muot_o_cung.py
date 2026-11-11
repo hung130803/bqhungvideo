@@ -463,6 +463,17 @@ _goi = [n for n in _ast6.walk(_main) if isinstance(n, _ast6.ImportFrom)
 _ham = [n for n in _ast6.walk(_main) if isinstance(n, _ast6.Call)
         and isinstance(n.func, _ast6.Name) and n.func.id == "_nhuong_may"]
 ok(bool(_goi) and bool(_ham), "6k main.py THẬT SỰ gọi nhuong_may.khoi_dong lúc mở app")
+# bản .exe chạy main.py ĐÓNG GÓI SẴN, chỉ lấy app/ từ mã nguồn -> lời gọi
+# trong main.py KHÔNG chạy trên máy anh Hùng (đo 11/11: 0/25 tiến trình con
+# bị giới hạn). Cửa sổ chính (app/ui) phải tự gọi.
+_mw = _ast6.parse(Path(__file__).resolve().parent.joinpath("app", "ui", "main_window.py").read_text(encoding="utf-8"))
+_init = [f for c in _ast6.walk(_mw) if isinstance(c, _ast6.ClassDef) and c.name == "MainWindow"
+         for f in c.body if isinstance(f, _ast6.FunctionDef) and f.name == "__init__"]
+_goi2 = [n for f in _init for n in _ast6.walk(f) if isinstance(n, _ast6.ImportFrom)
+         and n.module == "app.core.nhuong_may" and any(a.name == "khoi_dong" for a in n.names)]
+_ham2 = [n for f in _init for n in _ast6.walk(f) if isinstance(n, _ast6.Call)
+         and isinstance(n.func, _ast6.Name) and n.func.id == "_nhuong_may"]
+ok(bool(_goi2) and bool(_ham2), "6l MainWindow.__init__ (mã nguồn sống) gọi nhuong_may.khoi_dong")
 
 print(f"\nKẾT QUẢ: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)

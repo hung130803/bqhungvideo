@@ -38,6 +38,14 @@ class MainWindow(QMainWindow):
             _wg(QApplication.instance())
         except Exception:  # noqa: BLE001 - chặn cuộn là phụ, lỗi thì bỏ qua
             pass
+        # NHƯỜNG NHÂN MẠNH khi anh Hùng đang ngồi máy (app/core/nhuong_may.py).
+        # Gọi Ở ĐÂY chứ không chỉ ở main.py: bản .exe chạy main.py ĐÓNG GÓI SẴN,
+        # chỉ lấy app/ từ mã nguồn -> lời gọi trong main.py không bao giờ chạy.
+        try:
+            from app.core.nhuong_may import khoi_dong as _nhuong_may
+            _nhuong_may()
+        except Exception:  # noqa: BLE001 - không được làm app chết
+            pass
         self.state = state
         self.setWindowTitle(f"BQ Hung Video v{__version__}")
         from app.ui.layout_tools import fit_dialog
