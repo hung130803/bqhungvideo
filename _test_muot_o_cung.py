@@ -337,10 +337,24 @@ import psutil as _ps5  # noqa: E402
 from app.core import ffmpeg_utils as _fu5  # noqa: E402
 from app.core import hieu_ung as _hu5  # noqa: E402
 BN = 0x00004000
-ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5a MẶC ĐỊNH lệnh khâu XUẤT -> BELOW_NORMAL (máy mượt, anh Hùng 11/11)")
+NP = 0x00000020
+_roi_that = _fu5.giay_roi_may
+_r0 = _roi_that()
+ok(_r0 is not None and _r0 >= 0, "5k đọc được số giây rời máy THẬT (GetLastInputInfo)", str(_r0))
+_fu5.giay_roi_may = lambda: 3.0
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5a TỰ ĐỘNG + đang dùng máy -> xuất BELOW_NORMAL (máy mượt)")
+_fu5.giay_roi_may = lambda: 999.0
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == NP, "5a' TỰ ĐỘNG + rời máy 999 s -> xuất THƯỜNG")
+_fu5.giay_roi_may = lambda: None
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5a'' không đọc được giờ rời máy -> BELOW_NORMAL (an toàn)")
+_fu5.giay_roi_may = lambda: 999.0
+os.environ["BQ_XUAT_UU_TIEN_THUONG"] = "0"
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5l ép =0 thì kể cả rời máy vẫn BELOW_NORMAL")
+os.environ.pop("BQ_XUAT_UU_TIEN_THUONG")
+_fu5.giay_roi_may = lambda: 3.0
 ok(_fu5._muc_uu_tien(_fu5.UT_PHAN_TICH) == BN, "5b lệnh PHÂN TÍCH -> BELOW_NORMAL")
 os.environ["BQ_XUAT_UU_TIEN_THUONG"] = "1"
-ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == 0, "5c bật BQ_XUAT_UU_TIEN_THUONG=1 -> xuất THƯỜNG")
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == NP, "5c bật BQ_XUAT_UU_TIEN_THUONG=1 -> xuất THƯỜNG")
 sys.argv.append("--analyze")
 ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5d trong tiến trình phân tích con -> BELOW_NORMAL")
 sys.argv.remove("--analyze")
@@ -371,6 +385,36 @@ m_nhip = _muc_that(lambda: _hu5._chay_ffmpeg(list(_lenh5), 30))
 ok(m_xuat == BN, "5f CHẠY THẬT: ffmpeg khâu xuất MẶC ĐỊNH là BELOW_NORMAL", str(m_xuat))
 ok(m_pt == BN, "5g CHẠY THẬT: ffmpeg phân tích là BELOW_NORMAL", str(m_pt))
 ok(m_nhip == BN, "5h CHẠY THẬT: ffmpeg đo nhịp là BELOW_NORMAL", str(m_nhip))
+
+# 5i — lệnh xuất ĐANG CHẠY phải đổi mức theo việc anh rời/quay lại máy
+_fu5._CANH_NHIP = 0.3
+_trang = {"roi": 3.0}
+_fu5.giay_roi_may = lambda: _trang["roi"]
+_lenh_dai = list(_lenh5); _lenh_dai[_lenh_dai.index("testsrc2=d=3:s=320x240")] = "testsrc2=d=8:s=320x240"
+_th_dai = _th5.Thread(target=lambda: _fu5._run(list(_lenh_dai)))
+_th_dai.start()
+_ff = None
+for _ in range(40):
+    time.sleep(0.1)
+    _l = [p for p in _ps5.Process().children(recursive=True) if p.name().lower() == "ffmpeg.exe"]
+    if _l:
+        _ff = _l[0]; break
+_dau = _ff.nice() if _ff else None
+_trang["roi"] = 999.0
+time.sleep(1.5)
+_giua = _ff.nice() if _ff else None
+_trang["roi"] = 1.0
+time.sleep(1.5)
+_cuoi = _ff.nice() if _ff else None
+_th_dai.join()
+ok(_dau == BN, "5i lúc đầu (đang dùng máy) lệnh xuất BELOW_NORMAL", str(_dau))
+ok(_giua == NP, "5i' anh rời máy -> lệnh ĐANG CHẠY tự lên THƯỜNG", str(_giua))
+ok(_cuoi == BN, "5i'' anh quay lại -> lệnh đang chạy tự về BELOW_NORMAL", str(_cuoi))
+time.sleep(1.0)
+ok(not _fu5._XUAT_DANG_CHAY and _fu5._CANH_LUONG is None,
+   "5m xuất xong -> sổ theo dõi rỗng + luồng canh tự thoát",
+   f"{len(_fu5._XUAT_DANG_CHAY)} · {_fu5._CANH_LUONG}")
+_fu5.giay_roi_may = _roi_that
 
 print(f"\nKẾT QUẢ: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)

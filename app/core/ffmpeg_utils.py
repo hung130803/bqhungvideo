@@ -302,7 +302,9 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None,
     _raise_if_job_canceled()   # job đã bị Hủy -> KHÔNG spawn thêm ffmpeg
     co_cho = _xin_cho_ffmpeg(uu_tien)
     try:
-        return _run_khong_cho(cmd, on_line, muc_he_dieu_hanh=_muc_uu_tien(uu_tien))
+        return _run_khong_cho(cmd, on_line, muc_he_dieu_hanh=_muc_uu_tien(uu_tien),
+                              tu_doi=(uu_tien == UT_XUAT and "--analyze" not in sys.argv
+                                      and che_do_xuat() == "tu_dong"))
     finally:
         if co_cho:
             _tra_cho_ffmpeg()
@@ -311,28 +313,136 @@ def _run(cmd: list[str], on_line: Optional[Callable[[str], None]] = None,
 def _muc_uu_tien(uu_tien: int) -> int:
     """Mức ưu tiên HỆ ĐIỀU HÀNH cho 1 lệnh ffmpeg qua `_run`.
 
-    10/11/2026 (anh Hùng duyệt "có, thử luôn"): khâu XUẤT là nút cổ chai (xả
-    ~58 Part/giờ, phân tích sinh ~90). Đo CÙNG lượt dựng hình 1 Part 121 s lúc
-    máy đang chạy dây chuyền: ưu tiên THƯỜNG 28,9 · 27,9 · 33,5 · 31,8 s;
-    BELOW_NORMAL 67,9 · 217,9 · 236,3 · 85,0 s. Nên lệnh của khâu xuất
-    (`UT_XUAT`) chạy THƯỜNG; việc phân tích (`UT_PHAN_TICH`) và mọi lệnh chạy
-    trong tiến trình phân tích con (`--analyze`) giữ BELOW_NORMAL như cũ.
-    11/11/2026 — ĐÃ TRẢ MẶC ĐỊNH VỀ BELOW_NORMAL: app chạy thẳng mã nguồn nên
-    bản này lên máy anh Hùng ngay, và anh báo "đơ lag" khi chạy 5 luồng (Task
-    Manager: ffmpeg xuất ở Normal ăn 18% CPU + 17% GPU cạnh trình duyệt). Phép
-    đo trễ ngủ-dậy của 1 luồng python KHÔNG bắt được độ giật màn hình/trình
-    duyệt, nên số "máy không ì hơn" là đo sai thứ. Máy mượt quan trọng hơn
-    xuất nhanh -> chỉ bật THƯỜNG khi đặt BQ_XUAT_UU_TIEN_THUONG=1."""
-    if (uu_tien == UT_XUAT and os.environ.get("BQ_XUAT_UU_TIEN_THUONG", "0") == "1"
-            and "--analyze" not in sys.argv):
-        return 0
-    return _IDLE_PRIORITY
+    Lịch sử: 10/11/2026 khâu XUẤT chạy THƯỜNG (đo cùng lượt dựng hình 1 Part
+    121 s: THƯỜNG 28-34 s, BELOW_NORMAL 68-236 s). 11/11 anh Hùng báo máy "đơ
+    lag" khi chạy 5 luồng -> trả về BELOW_NORMAL. Nay TỰ ĐỘNG theo việc anh có
+    đang dùng máy không (`che_do_xuat`): đang dùng -> BELOW_NORMAL (máy mượt),
+    rời máy >= `_RANH_GIAY` -> THƯỜNG (xuất nhanh). Lệnh đang chạy cũng được
+    đổi theo (`_canh_ranh`), không chỉ lệnh mới. Phân tích (`UT_PHAN_TICH`) và
+    mọi lệnh trong tiến trình phân tích con (`--analyze`) LUÔN BELOW_NORMAL."""
+    if uu_tien != UT_XUAT or "--analyze" in sys.argv:
+        return _IDLE_PRIORITY
+    return _muc_xuat_bay_gio()
+
+
+# ---- TỰ ĐỔI ƯU TIÊN KHÂU XUẤT THEO VIỆC NGƯỜI DÙNG CÓ ĐANG DÙNG MÁY ----
+_NORMAL_PRIORITY = 0x00000020   # NORMAL_PRIORITY_CLASS
+_RANH_GIAY = float(os.environ.get("BQ_RANH_GIAY", "120") or 120)
+_CANH_NHIP = 2.0                # giây giữa 2 lần xét lại lệnh đang chạy
+_XUAT_LOCK = _threading.Lock()
+_XUAT_DANG_CHAY: dict = {}      # proc -> mức đang áp
+_CANH_LUONG = None
+_MUC_TRUOC = None               # để ghi nhật ký khi ĐỔI chế độ
+
+
+def che_do_xuat() -> str:
+    """'thuong' (BQ_XUAT_UU_TIEN_THUONG=1) · 'thap' (=0) · 'tu_dong' (mặc định)."""
+    v = os.environ.get("BQ_XUAT_UU_TIEN_THUONG", "").strip()
+    return "thuong" if v == "1" else "thap" if v == "0" else "tu_dong"
+
+
+def giay_roi_may() -> Optional[float]:
+    """Số giây từ lần cuối người dùng chạm chuột/bàn phím (None = không đọc được).
+
+    GetLastInputInfo trả tick 32 bit -> trừ theo modulo 2^32 (máy bật > 49 ngày
+    vẫn đúng)."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _LII(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+        lii = _LII()
+        lii.cbSize = ctypes.sizeof(_LII)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return None
+        bay_gio = ctypes.windll.kernel32.GetTickCount() & 0xFFFFFFFF
+        return ((bay_gio - lii.dwTime) & 0xFFFFFFFF) / 1000.0
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _muc_xuat_bay_gio() -> int:
+    cd = che_do_xuat()
+    if cd == "thuong":
+        return _NORMAL_PRIORITY
+    if cd == "thap":
+        return _IDLE_PRIORITY
+    roi = giay_roi_may()
+    # không đọc được = coi như ĐANG dùng máy (máy mượt là mặc định an toàn)
+    return _NORMAL_PRIORITY if (roi is not None and roi >= _RANH_GIAY) else _IDLE_PRIORITY
+
+
+def _ghi_doi_muc(muc: int) -> None:
+    global _MUC_TRUOC
+    if muc == _MUC_TRUOC:
+        return
+    _MUC_TRUOC = muc
+    try:
+        d = Path(getattr(settings, "DATA_DIR", ".")) / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / f"uu_tien_xuat_{time.strftime('%Y%m%d')}.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] khâu xuất -> "
+                    f"{'THƯỜNG (anh rời máy)' if muc == _NORMAL_PRIORITY else 'THẤP (anh đang dùng máy)'}"
+                    f" · {len(_XUAT_DANG_CHAY)} lệnh đang chạy" + chr(10))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _dat_muc(proc, muc: int) -> bool:
+    try:
+        import psutil
+        psutil.Process(proc.pid).nice(muc)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _canh_ranh() -> None:
+    """Luồng nền: mỗi `_CANH_NHIP` giây đổi mức của các lệnh xuất ĐANG chạy
+    theo `_muc_xuat_bay_gio`. Tự thoát khi không còn lệnh xuất nào."""
+    global _CANH_LUONG
+    while True:
+        time.sleep(_CANH_NHIP)
+        with _XUAT_LOCK:
+            if not _XUAT_DANG_CHAY:
+                _CANH_LUONG = None
+                return
+            muc = _muc_xuat_bay_gio()
+            for proc, da in list(_XUAT_DANG_CHAY.items()):
+                if proc.poll() is not None:
+                    _XUAT_DANG_CHAY.pop(proc, None)
+                elif da != muc and _dat_muc(proc, muc):
+                    _XUAT_DANG_CHAY[proc] = muc
+            _ghi_doi_muc(muc)
+
+
+def _theo_doi_xuat(proc, muc: int) -> None:
+    global _CANH_LUONG
+    with _XUAT_LOCK:
+        _XUAT_DANG_CHAY[proc] = muc
+        if _CANH_LUONG is None:
+            _CANH_LUONG = _threading.Thread(target=_canh_ranh, daemon=True,
+                                            name="canh_ranh_xuat")
+            _CANH_LUONG.start()
+
+
+def _bo_theo_doi_xuat(proc) -> None:
+    with _XUAT_LOCK:
+        _XUAT_DANG_CHAY.pop(proc, None)
 
 
 def _run_khong_cho(cmd: list[str],
                    on_line: Optional[Callable[[str], None]] = None,
-                   muc_he_dieu_hanh: Optional[int] = None) -> int:
-    """Thân cũ của `_run` — KHÔNG qua cửa chờ. Đừng gọi trực tiếp."""
+                   muc_he_dieu_hanh: Optional[int] = None,
+                   tu_doi: bool = False) -> int:
+    """Thân cũ của `_run` — KHÔNG qua cửa chờ. Đừng gọi trực tiếp.
+
+    `tu_doi`: lệnh khâu xuất ở chế độ tự động -> `_canh_ranh` đổi mức lúc chạy."""
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -346,6 +456,8 @@ def _run_khong_cho(cmd: list[str],
     # register_proc: vào _ACTIVE_PROCS (dọn khi tắt app) + gắn vào JOB đang chạy
     # (nút Hủy job kill NGAY tiến trình này thay vì đợi nó chạy xong).
     register_proc(proc)
+    if tu_doi:
+        _theo_doi_xuat(proc, _IDLE_PRIORITY if muc_he_dieu_hanh is None else muc_he_dieu_hanh)
     try:
         # đóng race: bấm Hủy đúng lúc vừa spawn (trước khi register xong)
         _raise_if_job_canceled()
@@ -374,6 +486,8 @@ def _run_khong_cho(cmd: list[str],
                 if proc.stdout is not None:proc.stdout.close()
             finally:
                 unregister_proc(proc)
+                if tu_doi:
+                    _bo_theo_doi_xuat(proc)
 
 
 @dataclass
