@@ -271,6 +271,15 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             pass
 
+    # ---- NHƯỜNG NHÂN MẠNH khi anh Hùng đang ngồi máy (11/11/2026) ----
+    # Đo: app vẫn chạy nhưng tiến trình con chỉ ở 8 nhân phụ -> "k đơ giật".
+    # Xem app/core/nhuong_may.py. Tắt: BQ_NHUONG_MAY=0.
+    try:
+        from app.core.nhuong_may import khoi_dong as _nhuong_may
+        _nhuong_may()
+    except Exception:  # noqa: BLE001 - không được làm app chết
+        pass
+
     QTimer.singleShot(5000, lambda: __import__("threading").Thread(
         target=_don_rac, daemon=True, name="don-rac-dia").start())
 

@@ -416,5 +416,53 @@ ok(not _fu5._XUAT_DANG_CHAY and _fu5._CANH_LUONG is None,
    f"{len(_fu5._XUAT_DANG_CHAY)} · {_fu5._CANH_LUONG}")
 _fu5.giay_roi_may = _roi_that
 
+# ---- CA 6: NHƯỜNG NHÂN MẠNH khi anh Hùng đang ngồi máy (11/11/2026) ----
+# Đo trên máy anh: app vẫn chạy, tiến trình con chỉ ở 8 nhân phụ -> "k đơ giật".
+print("\nCA 6 — nhường nhân mạnh: đang dùng máy -> tiến trình con chỉ ở nhân phụ")
+import ast as _ast6  # noqa: E402
+import subprocess as _sp6  # noqa: E402
+from app.core import nhuong_may as _nm  # noqa: E402
+_phu, _tat = _nm.nhan_phu_va_tat_ca()
+ok(len(_tat) == (os.cpu_count() or 1), "6a đọc đủ mọi nhân logic", f"{len(_tat)}")
+_lai = len(_phu) > 0
+ok(not _lai or (0 < len(_phu) < len(_tat)), "6b máy hai loại nhân -> nhân phụ là tập con THẬT SỰ",
+   f"phụ {_phu}")
+_con = _sp6.Popen([_fu5.settings.FFMPEG_PATH, "-v", "error", "-re", "-f", "lavfi", "-i",
+                   "testsrc2=d=15:s=160x120", "-f", "null", "NUL"],
+                  stdout=_sp6.DEVNULL, stderr=_sp6.DEVNULL, creationflags=0x08000000)
+time.sleep(0.5)
+_pc = _ps5.Process(_con.pid)
+_toi = _ps5.Process()
+_mat_toi = sorted(_toi.cpu_affinity())
+if _lai:
+    _n = _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="nhuong")
+    ok(_n >= 1 and sorted(_pc.cpu_affinity()) == _phu,
+       "6c ĐANG DÙNG MÁY: tiến trình con bị giới hạn vào nhân phụ", f"{_n} · {sorted(_pc.cpu_affinity())}")
+    ok(sorted(_toi.cpu_affinity()) == _mat_toi, "6d tiến trình GIAO DIỆN (chính app) KHÔNG bị giới hạn")
+    _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="het_suc")
+    ok(sorted(_pc.cpu_affinity()) == _tat, "6e RỜI MÁY: trả lại MỌI nhân", f"{len(_pc.cpu_affinity())}")
+    _fu5.giay_roi_may = lambda: 5.0
+    ok(_nm.che_do_bay_gio() == "nhuong", "6f vừa chạm chuột 5 s trước -> nhường")
+    _fu5.giay_roi_may = lambda: 999.0
+    ok(_nm.che_do_bay_gio() == "het_suc", "6g rời máy 999 s -> hết sức")
+    _fu5.giay_roi_may = lambda: None
+    ok(_nm.che_do_bay_gio() == "nhuong", "6h không đọc được giờ rời máy -> nhường (an toàn)")
+    _fu5.giay_roi_may = _roi_that
+else:
+    print("  (máy MỘT loại nhân — bỏ qua 6c-6h)")
+ok(_nm.ap_mot_luot(goc=_toi, phu=[], tat_ca=_tat, che_do="nhuong") == 0
+   and sorted(_pc.cpu_affinity()) == _tat,
+   "6i máy MỘT loại nhân (máy nhân viên) -> không đụng gì")
+_con.kill(); _con.wait()
+os.environ["BQ_NHUONG_MAY"] = "0"
+ok(_nm.khoi_dong() is False, "6j BQ_NHUONG_MAY=0 -> không chạy luồng canh")
+os.environ.pop("BQ_NHUONG_MAY")
+_main = _ast6.parse(Path(__file__).resolve().parent.joinpath("main.py").read_text(encoding="utf-8"))
+_goi = [n for n in _ast6.walk(_main) if isinstance(n, _ast6.ImportFrom)
+        and n.module == "app.core.nhuong_may" and any(a.name == "khoi_dong" for a in n.names)]
+_ham = [n for n in _ast6.walk(_main) if isinstance(n, _ast6.Call)
+        and isinstance(n.func, _ast6.Name) and n.func.id == "_nhuong_may"]
+ok(bool(_goi) and bool(_ham), "6k main.py THẬT SỰ gọi nhuong_may.khoi_dong lúc mở app")
+
 print(f"\nKẾT QUẢ: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)
