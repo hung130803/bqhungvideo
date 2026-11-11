@@ -337,14 +337,14 @@ import psutil as _ps5  # noqa: E402
 from app.core import ffmpeg_utils as _fu5  # noqa: E402
 from app.core import hieu_ung as _hu5  # noqa: E402
 BN = 0x00004000
-ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == 0, "5a lệnh khâu XUẤT -> ưu tiên THƯỜNG")
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5a MẶC ĐỊNH lệnh khâu XUẤT -> BELOW_NORMAL (máy mượt, anh Hùng 11/11)")
 ok(_fu5._muc_uu_tien(_fu5.UT_PHAN_TICH) == BN, "5b lệnh PHÂN TÍCH -> BELOW_NORMAL")
-os.environ["BQ_XUAT_UU_TIEN_THUONG"] = "0"
-ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5c công tắc BQ_XUAT_UU_TIEN_THUONG=0 -> về như cũ")
-os.environ.pop("BQ_XUAT_UU_TIEN_THUONG")
+os.environ["BQ_XUAT_UU_TIEN_THUONG"] = "1"
+ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == 0, "5c bật BQ_XUAT_UU_TIEN_THUONG=1 -> xuất THƯỜNG")
 sys.argv.append("--analyze")
 ok(_fu5._muc_uu_tien(_fu5.UT_XUAT) == BN, "5d trong tiến trình phân tích con -> BELOW_NORMAL")
 sys.argv.remove("--analyze")
+os.environ.pop("BQ_XUAT_UU_TIEN_THUONG")
 ok(cd._NO_WIN & BN == BN, "5e lệnh nghe+xem (chon_doan) mang cờ BELOW_NORMAL")
 
 
@@ -368,7 +368,7 @@ _lenh5 = [_fu5.settings.FFMPEG_PATH, "-v", "error", "-re", "-f", "lavfi",
 m_xuat = _muc_that(lambda: _fu5._run(list(_lenh5)))
 m_pt = _muc_that(lambda: _fu5._run(list(_lenh5), uu_tien=_fu5.UT_PHAN_TICH))
 m_nhip = _muc_that(lambda: _hu5._chay_ffmpeg(list(_lenh5), 30))
-ok(m_xuat == 32, "5f CHẠY THẬT: ffmpeg khâu xuất là NORMAL (32)", str(m_xuat))
+ok(m_xuat == BN, "5f CHẠY THẬT: ffmpeg khâu xuất MẶC ĐỊNH là BELOW_NORMAL", str(m_xuat))
 ok(m_pt == BN, "5g CHẠY THẬT: ffmpeg phân tích là BELOW_NORMAL", str(m_pt))
 ok(m_nhip == BN, "5h CHẠY THẬT: ffmpeg đo nhịp là BELOW_NORMAL", str(m_nhip))
 

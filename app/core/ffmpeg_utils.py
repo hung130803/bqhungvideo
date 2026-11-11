@@ -317,8 +317,13 @@ def _muc_uu_tien(uu_tien: int) -> int:
     BELOW_NORMAL 67,9 · 217,9 · 236,3 · 85,0 s. Nên lệnh của khâu xuất
     (`UT_XUAT`) chạy THƯỜNG; việc phân tích (`UT_PHAN_TICH`) và mọi lệnh chạy
     trong tiến trình phân tích con (`--analyze`) giữ BELOW_NORMAL như cũ.
-    Tắt bằng BQ_XUAT_UU_TIEN_THUONG=0 (về hành vi trước)."""
-    if (uu_tien == UT_XUAT and os.environ.get("BQ_XUAT_UU_TIEN_THUONG", "1") != "0"
+    11/11/2026 — ĐÃ TRẢ MẶC ĐỊNH VỀ BELOW_NORMAL: app chạy thẳng mã nguồn nên
+    bản này lên máy anh Hùng ngay, và anh báo "đơ lag" khi chạy 5 luồng (Task
+    Manager: ffmpeg xuất ở Normal ăn 18% CPU + 17% GPU cạnh trình duyệt). Phép
+    đo trễ ngủ-dậy của 1 luồng python KHÔNG bắt được độ giật màn hình/trình
+    duyệt, nên số "máy không ì hơn" là đo sai thứ. Máy mượt quan trọng hơn
+    xuất nhanh -> chỉ bật THƯỜNG khi đặt BQ_XUAT_UU_TIEN_THUONG=1."""
+    if (uu_tien == UT_XUAT and os.environ.get("BQ_XUAT_UU_TIEN_THUONG", "0") == "1"
             and "--analyze" not in sys.argv):
         return 0
     return _IDLE_PRIORITY

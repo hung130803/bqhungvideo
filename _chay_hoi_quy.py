@@ -457,7 +457,7 @@ CONG = [
     # hoặc đứng ở màn đăng nhập). Bắt được lỗi thật: màn đăng nhập vẫn soi cờ
     # sau khi đăng nhập xong -> `.text()` trên chuỗi = sập app. Thử phá: HỎNG 3.
     ("98 tự đăng nhập + bot gác cổng + đóng app", "_test_tu_dang_nhap.py", 79),
-    ("99 không nghẽn ổ cứng cơ + không dịch lại mã + xuất ưu tiên THƯỜNG", "_test_muot_o_cung.py", 35),
+    ("99 không nghẽn ổ cứng cơ + không dịch lại mã + xuất ưu tiên thấp (máy mượt)", "_test_muot_o_cung.py", 35),
     ("100 sổ tạm cũ không làm hỏng DB đang lành", "_test_wal_cu.py", 22),
     ("101 gọi AI Groq song song có giới hạn", "_test_groq_lan.py", 8),
     ("102 nâng sáng nhẹ + nền cong YUV", "_test_sang_yuv.py", 20),
