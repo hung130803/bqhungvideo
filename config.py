@@ -314,6 +314,12 @@ class Settings:
     #: Mã song song vẫn giữ (đã đo: KHÔNG mất mốc nào, 7/7 cả 6 lượt) để bật
     #: bằng `VISION_SONG_SONG=6` khi Groq đổi hành vi — nhưng KHÔNG bật sẵn.
     VISION_SONG_SONG = int(_env("VISION_SONG_SONG", "1") or 1)
+    #: KHÂU TRỌNG TÀI CHẤM MÙ — MẶC ĐỊNH TẮT (anh Hùng chốt 13/11/2026).
+    #: Đo `_do_cham_diem.py` (5 video thật, Groq thật): Part xuất ra GIỐNG HỆT
+    #: 5/5 khi bỏ khâu này, vì điểm chỉ dùng để XẾP HẠNG (rank_only) và lúc đó
+    #: số clip đã <= số Part. Giá của nó ~12K token (~23%) + 20-30 s/video.
+    #: `BLIND_JUDGE=1` bật lại (điểm trên thẻ clip lúc đó là điểm trọng tài).
+    BLIND_JUDGE = _env("BLIND_JUDGE", "0") == "1"
     JUDGE_PANEL = _env("JUDGE_PANEL", "1") == "1"
     #: model cho khâu CHẤM. **ĐỂ RỖNG — đã ĐO, model suy luận KHÔNG hơn.**
     #: Đo 06/08/2026 (bộ đo `_do_trongtai.py`: 3 clip biết trước thứ tự hay/dở
