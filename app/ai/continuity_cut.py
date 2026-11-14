@@ -116,8 +116,11 @@ def review(segments, transcript, duration, minimum, maximum, complete_json,
         f'Tổng clip phải trong {minimum}-{maximum or duration} giây. '
         'Trả JSON {"ids":[...],"reason":"lý do"}.\n')+json.dumps({'options':compact,'texts':texts},ensure_ascii=False)
     # Do not silently truncate the evidence and pretend the whole cut was reviewed.
+    # 'skipped', not 'unreviewed': the same prompt is rebuilt on every rerun, so
+    # treating this as "not finished" only made m1 wait and re-analyse in vain.
     if len(prompt)>14000:
-        return original,dict(audit,reason='Ngữ cảnh vượt ngân sách hậu kiểm; giữ bản chọn')
+        return original,dict(status='skipped',changed=False,
+            reason='Ngữ cảnh vượt ngân sách hậu kiểm; giữ bản chọn')
     check()
     try:data=complete_json(prompt,model=model)
     except Exception as exc:
@@ -125,7 +128,11 @@ def review(segments, transcript, duration, minimum, maximum, complete_json,
         return original,dict(audit,reason='Hậu kiểm chưa hoàn tất: '+_error_detail(exc))
     check()
     revised=validate(data.get('ids') if isinstance(data,dict) else None,options,original,minimum,maximum)
-    if revised is None:return original,dict(audit,reason='Đề xuất sai mốc hoặc sai thời lượng; giữ bản chọn')
+    # An unusable proposal is a finished review that keeps the cut (13/11/2026:
+    # as 'unreviewed' it was 187/229 November "chưa kiểm tra xong" warnings, and
+    # m1 read it as "hết lượt" -> wait + rerun, replaying the cached answer).
+    if revised is None:return original,dict(status='reviewed',changed=False,
+        reason='Đề xuất sai mốc hoặc sai thời lượng; giữ bản chọn')
     # Keeping the cut is a completed decision, not a failure: no second call,
     # no warning. (Before 27/10/2026 a strict verifier then rejected 10/10 real
     # clips, so every video carried a "needs review" warning.)
@@ -143,6 +150,12 @@ def review(segments, transcript, duration, minimum, maximum, complete_json,
                     reason='Đề xuất cắt giữa câu; giữ bản chọn')
     def _texts(spans):
         return [_text_in(a,b,transcript) for a,b in spans]
+    # Same dialogue in both versions: the extension only adds silence/music, so
+    # there is nothing to judge (13/11/2026: 240/1941 verify calls answered
+    # "hai bản giống nhau"). Keep the cut without spending a call.
+    if _texts(original)==_texts(revised):
+        return original,dict(status='reviewed',changed=False,
+            reason='Bản mở rộng không thêm lời thoại; giữ bản chọn')
     # Compare, do not certify: a 1-2 minute excerpt of a long video never has
     # full setting/characters/ending, so an absolute pass/fail always failed.
     verify=RULES+('\nĐây là 2 bản ghép của CÙNG một clip ngắn trích từ video dài: '

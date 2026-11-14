@@ -2092,8 +2092,10 @@ _UV_THEO_LOAI: dict = {
     # kiểu ĐO RA MẠNH NHẤT và có tiếng đi kèm đắt: zoom nhồi (impact), loé sáng
     # (reveal), tương phản (impact), rung lắc (impact). KHÔNG dùng kiểu "mood"
     # (hạt phim / tối viền) — mở clip bằng hạt phim thì chẳng ai dừng lại.
-    "hook": ("zoom_nhoi", "loe_sang", "tuong_phan", "rung_lac", "nhay_sang",
-             "luot_ngang", "rung_xoay", "xao_khoi"),
+    # 14/11/2026 anh Hùng: "thêm hiệu ứng ở đầu là thấy giật giật". Đo (`do_dau_giat.py`): KHÔNG rớt/lặp
+    # khung (1,0% vs bản tắt 1,6%, ngang nguồn) -> cái giật là CHÍNH các kiểu xô hình. Bỏ khỏi HOOK:
+    # rung_lac · rung_xoay · luot_ngang · xao_khoi (57% hook của 294 Part gần nhất). Giữa clip vẫn dùng.
+    "hook": ("zoom_nhoi", "loe_sang", "tuong_phan", "nhay_sang"),
 }
 #: HOOK: điểm nhấn mở đầu đặt ở giây này (không đặt 0,00 — `fx_fade` đang fade
 #: vào 0,35 s đầu nên biên độ ở giây 0 bị nhân với hình đang tối, phí).

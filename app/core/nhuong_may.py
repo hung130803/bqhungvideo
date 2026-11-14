@@ -71,6 +71,19 @@ def nhan_phu_va_tat_ca() -> tuple[list[int], list[int]]:
         return [], tat_ca
 
 
+def mat_na_nhuong(phu: list[int], tat_ca: list[int]) -> list[int]:
+    """Mặt nạ lúc anh ĐANG dùng máy: nhân phụ + `BQ_NHUONG_THEM` luồng nhân MẠNH CUỐI (mặc định 4 =
+    2 nhân mạnh). Đo 14/11/2026 13:14 lúc dây chuyền chạy: nhân phụ 100%, nhân mạnh chỉ 6% ->
+    16 luồng mạnh để không trong khi 21 việc xếp hàng trên 8 nhân yếu. Anh vẫn còn 12 luồng mạnh
+    (6 nhân) riêng. =0 là cách cũ (chỉ nhân phụ)."""
+    try:
+        them = max(0, int(os.environ.get("BQ_NHUONG_THEM", "4")))
+    except ValueError:
+        them = 4
+    manh = [i for i in tat_ca if i not in set(phu)]
+    return sorted(set(phu) | set(manh[len(manh) - them:] if them else []))
+
+
 def bat() -> bool:
     return os.environ.get("BQ_NHUONG_MAY", "1").strip() != "0"
 
@@ -110,11 +123,13 @@ def ap_mot_luot(goc=None, phu=None, tat_ca=None, che_do=None) -> int:
         if not phu:
             return 0
         che_do = che_do or che_do_bay_gio()
-        mat_na = phu if che_do == "nhuong" else tat_ca
+        mat_na = mat_na_nhuong(phu, tat_ca) if che_do == "nhuong" else tat_ca
         goc = goc or psutil.Process(os.getpid())
         n = 0
         for ch in goc.children(recursive=True):
             try:
+                if _la_app_moi(ch):
+                    continue
                 if sorted(ch.cpu_affinity()) != mat_na:
                     ch.cpu_affinity(mat_na)
                 n += 1
@@ -128,11 +143,40 @@ def ap_mot_luot(goc=None, phu=None, tat_ca=None, che_do=None) -> int:
         return 0
 
 
+def _la_app_moi(ch) -> bool:
+    """Tiến trình con là BẢN APP MỚI do "mở lại app" đẻ ra (`--doi-pid`).
+
+    LỖI THẬT 13/11/2026: `QProcess.startDetached` vẫn để app mới là CON của app
+    cũ, và app cũ còn sống vài giây (app mới đợi nó tắt) -> vòng canh của app cũ
+    ghim LUÔN cửa sổ app mới vào 8 nhân phụ. Mặt nạ đó không ai gỡ (vòng canh
+    chỉ lo tiến trình CON) và mọi ffmpeg sau đó THỪA HƯỞNG nó. Đo trên máy anh
+    Hùng: app mở 20:23:31 chạy trọn trên [16..23]."""
+    try:
+        return "--doi-pid" in (ch.cmdline() or [])
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def tra_nhan_cho_chinh_minh(tat_ca=None) -> bool:
+    """Trả MỌI nhân cho chính tiến trình giao diện (chữa app đã bị ghim)."""
+    try:
+        import psutil
+        tat_ca = tat_ca or nhan_phu_va_tat_ca()[1]
+        me = psutil.Process(os.getpid())
+        if sorted(me.cpu_affinity()) != sorted(tat_ca):
+            me.cpu_affinity(tat_ca)
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
 def _vong() -> None:
     phu, tat_ca = nhan_phu_va_tat_ca()
     if not phu:
         return  # máy một loại nhân -> không có gì để nhường
     while True:
+        tra_nhan_cho_chinh_minh(tat_ca)   # mỗi nhịp: app cũ có thể ghim mình muộn
         ap_mot_luot(phu=phu, tat_ca=tat_ca)
         time.sleep(_NHIP)
 

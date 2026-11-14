@@ -57,15 +57,43 @@ def _run_analyze(video_id: int, ctx: JobContext, force: bool,
                 "CT2_INTRA_THREADS"):
         env.setdefault(var, str(n))
     from app.core.analysis_process import supervise
+    # KHÔNG hạ IDLE nữa (13/11/2026). Đo trên máy anh Hùng: tiến trình phân
+    # tích ở IDLE + "nhường nhân" dồn còn 8 nhân phụ, mà 8 nhân đó đang bị các
+    # lượt XUẤT (BELOW_NORMAL) chiếm hết -> ffmpeg con (kế thừa IDLE) gần như
+    # KHÔNG được chạy: 8 lệnh cắt 10 phút tiếng (việc 1 giây) đứng >4 phút, chỉ
+    # được 1,2 giây CPU, file ra 0 KB — đúng chỗ "chép lời mãi không xong" và
+    # giữ luôn chỗ đọc ổ D. Ngang hàng xuất (BELOW_NORMAL) vẫn nhường giao diện.
     supervise(args, str(ROOT_DIR), env, ctx, base=base, span=span,
               creationflags=_CREATE_NO_WINDOW | _BELOW_NORMAL,
-              idle_when_ready=bool(_IDLE_PRIORITY))
+              idle_when_ready=False)
 
 
 def _analyze(payload: dict, ctx: JobContext) -> dict:
     video_id = int(payload["video_id"])
     _run_analyze(video_id, ctx, payload.get("force", False))
     return {"video_id": video_id, "status": analysis_status(video_id)}
+
+
+def _hashtag_muse(video_id: int) -> list:
+    """Hashtag Muse đã trả kèm lúc chọn đoạn (MUSE_LAM_HET) -> khỏi tốn 1 lượt
+    Groq. Video không lời (`nguon` = tên file) KHÔNG dùng: hashtag phải theo tên
+    file (cổng 109). Lỗi/không có -> [] (Groq viết như cũ)."""
+    try:
+        import json as _json
+        from app.ai.muse_agent import la_bat
+        from app.ai.social import chuan_hashtag
+        from app.database import db as _db
+        from config import settings as _s
+        if not la_bat(getattr(_s, "MUSE_LAM_HET", True)):
+            return []
+        for r in _db.query("SELECT signals FROM clips WHERE video_id=? AND status<>'archived' "
+                           "ORDER BY start_sec", (video_id,)):
+            tags = chuan_hashtag(_json.loads(r["signals"] or "{}").get("hashtags_muse"), 4)
+            if len(tags) >= 2:
+                return tags
+    except Exception:  # noqa: BLE001
+        pass
+    return []
 
 
 def _precompute_hashtags(video_id: int) -> None:
@@ -110,7 +138,9 @@ def _precompute_hashtags(video_id: int) -> None:
             if (str(pre.get("lang") or "") == lang
                     and str(pre.get("nguon") or "") == nguon):
                 return
-        tags = social.write_hashtags(title, text, lang, max_tags=4)
+        tags = [] if nguon else _hashtag_muse(video_id)
+        if not tags:
+            tags = social.write_hashtags(title, text, lang, max_tags=4)
         if tags:
             _luu = {"tags": tags, "lang": lang}
             if nguon:

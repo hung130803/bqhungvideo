@@ -298,6 +298,39 @@ for ten, chu, mong_co_hop in CA:
 bao("tiêu đề RỖNG: huy hiệu Part vẫn phải còn (không mất cả 2)", True,
     "xem dòng trên")
 
+# ═══ CA 6 — HIỆU ỨNG HOOK KHÔNG ĐƯỢC KÉO THEO HỘP TIÊU ĐỀ / NHÃN PART ════════
+# Anh Hùng 13/11/2026: "mấy giây đầu tự nhiên khựng giật". Lớp chữ dán TRƯỚC
+# hiệu ứng nên hook ở giây 0,12 (rung/lướt/zoom nhồi) phóng to, xô lệch, cụt
+# chữ hộp tiêu đề. Hook-first = đoạn đầu MUỘN HƠN đoạn sau -> app đặt hook 0,12.
+print("\n═══ CA 6 — hook giây 0,12 không được làm xô lệch hộp tiêu đề / nhãn Part ═══")
+src6 = lam_nguon(_SB / "src6.mp4", 8.0)
+png6 = _SB / "_ovl_6.png"
+editor.render_overlay_png(LOP, 1, OUT_W, OUT_H, str(png6),
+                          "Hiệu ứng hook không được kéo chữ", "")
+_log6: list = []
+dst6 = _SB / "ca6.mp4"
+for _kieu in ("vua", "manh"):
+    _log6.clear()
+    export_canvas_clip(str(src6), str(dst6), [(4.0, 7.5), (0.5, 3.5)], (0.5, 0.5, 0.9),
+                       bg="blur", out_w=OUT_W, out_h=OUT_H, encoder="libx264",
+                       overlay_png=str(png6), hieu_ung=_kieu, chuyen_canh="tat",
+                       fx_whoosh=False, fx_fade=False, hieu_ung_log=_log6)
+    if any(c.get("loai") == "hook" for c in _log6):
+        break
+_hook = [c for c in _log6 if c.get("loai") == "hook"]
+bao("6a clip hook-first có hiệu ứng hook (không thì ca này không đo gì)",
+    bool(_hook), str([(c.get("khoa"), c.get("bat"), c.get("het")) for c in _hook]))
+if _hook:
+    _a = float(_hook[0].get("bat", 0.12))
+    _b = float(_hook[0].get("het", _a + 0.3))
+    t0, d0 = do_do(dst6, 0.02)
+    _do_trong = [do_do(dst6, _a + (_b - _a) * k) for k in (0.25, 0.5, 0.75)]
+    _lech = max(max(abs(t - t0), abs(d - d0)) for t, d in _do_trong)
+    bao("6b trong cửa sổ hook, hộp tiêu đề + nhãn Part GIỮ NGUYÊN (lệch đỏ <= 0,3%)",
+        _lech <= 0.3,
+        f"{_hook[0].get('khoa')} · trước: trên {t0:.3f}% dưới {d0:.3f}% · "
+        f"trong: {[(round(t, 3), round(d, 3)) for t, d in _do_trong]} · lệch tối đa {_lech:.3f}%")
+
 # ═══════════════════════════════ TỔNG KẾT ════════════════════════════════════
 print("\n" + "═" * 74)
 print(f"ĐẠT {len(_OK)} · HỎNG {len(_LOI)}")

@@ -137,9 +137,18 @@ def run_analysis(
 
     # Dọn file audio tạm: kết quả đã cache trong DB, không cần giữ .wav (~8MB/video).
     # Nếu sau này phân tích lại, ensure_audio() sẽ tự tách lại.
+    # NGOẠI LỆ (13/11/2026): Muse bật -> GIỮ file, bước chọn đoạn (m1._chi_nghe)
+    # đo âm lượng trên nó thay vì đọc lại video gốc ở ổ D rồi TỰ XOÁ sau khi đo.
+    # Xoá ở đây thì m1 phải xếp hàng đọc ổ D sau các lượt dựng bản nhẹ của Muse
+    # (đo trên máy anh Hùng: "đang đợi lượt đọc ổ D · 172 giây").
+    try:
+        from app.ai import muse_agent as _ma
+        _giu = _ma.bat()
+    except Exception:  # noqa: BLE001
+        _giu = False
     try:
         wav = _project_audio_path(video_id)
-        if wav.exists():
+        if wav.exists() and not _giu:
             wav.unlink()
     except OSError:
         pass

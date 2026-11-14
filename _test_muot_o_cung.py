@@ -37,6 +37,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 GOC = Path(__file__).resolve().parent
 sys.path.insert(0, str(GOC))
+import _test_guard  # noqa: E402,F401  (cổng 17: mọi test nhắc MainWindow phải có canh cổng)
 T = Path(tempfile.mkdtemp(prefix="muot_o_cung_"))
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
@@ -249,8 +250,17 @@ ok(_with_goi(ma_that(GOC / "app" / "core" / "ffmpeg_utils.py"), "extract_audio_w
 ok(_with_goi(ma_that(GOC / "app" / "ai" / "chon_doan.py"), "nghe_va_xem"),
    "3b nghe + xem giữ chỗ đọc đĩa")
 m1 = ma_that(GOC / "app" / "modules" / "m1_highlight.py")
+# 13/11/2026: khi MUSE BẬT, `_chi_nghe` chỉ đo TIẾNG (file tiếng đã tách trên ổ C,
+# lùi về luồng tiếng của video gốc TRONG `giu_cho`) và BỎ hẳn đo chuyển động ->
+# vẫn tối đa 1 lượt đọc video gốc. Lời gọi `nang_luong` nằm trong hàm đó là hợp lệ;
+# `chuyen_dong` thì cấm ở mọi chỗ.
+_cn = [f for f in ast.walk(m1) if isinstance(f, ast.FunctionDef) and f.name == "_chi_nghe"]
+_trong_cn = {id(n) for f in _cn for n in ast.walk(f)}
 goi_cu = [n for n in ast.walk(m1) if isinstance(n, ast.Call)
-          and getattr(n.func, "attr", "") in ("nang_luong", "chuyen_dong")]
+          and (getattr(n.func, "attr", "") == "chuyen_dong"
+               or (getattr(n.func, "attr", "") == "nang_luong" and id(n) not in _trong_cn))]
+ok(bool(_cn) and _with_goi(m1, "_chi_nghe"),
+   "3c' Muse bật: đo tiếng trên video gốc (đường lùi) vẫn GIỮ CHỖ đọc đĩa")
 goi_moi = [n for n in ast.walk(m1) if isinstance(n, ast.Call)
            and getattr(n.func, "attr", "") == "nghe_va_xem"]
 ok(not goi_cu and goi_moi, "3c m1 dùng 1 lượt `nghe_va_xem`, không gọi lẻ 2 hàm cũ",
@@ -436,7 +446,7 @@ _toi = _ps5.Process()
 _mat_toi = sorted(_toi.cpu_affinity())
 if _lai:
     _n = _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="nhuong")
-    ok(_n >= 1 and sorted(_pc.cpu_affinity()) == _phu,
+    ok(_n >= 1 and sorted(_pc.cpu_affinity()) == _nm.mat_na_nhuong(_phu, _tat),
        "6c ĐANG DÙNG MÁY: tiến trình con bị giới hạn vào nhân phụ", f"{_n} · {sorted(_pc.cpu_affinity())}")
     ok(sorted(_toi.cpu_affinity()) == _mat_toi, "6d tiến trình GIAO DIỆN (chính app) KHÔNG bị giới hạn")
     _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="het_suc")
@@ -474,6 +484,32 @@ _goi2 = [n for f in _init for n in _ast6.walk(f) if isinstance(n, _ast6.ImportFr
 _ham2 = [n for f in _init for n in _ast6.walk(f) if isinstance(n, _ast6.Call)
          and isinstance(n.func, _ast6.Name) and n.func.id == "_nhuong_may"]
 ok(bool(_goi2) and bool(_ham2), "6l MainWindow.__init__ (mã nguồn sống) gọi nhuong_may.khoi_dong")
+
+# CA 6m — LỖI THẬT 13/11/2026: "mở lại app" đẻ app MỚI làm CON của app cũ; vòng
+# canh của app cũ ghim luôn cửa sổ app mới vào nhân phụ (đo: GUI mở 20:23:31 chạy
+# trọn trên [16..23]) và mọi ffmpeg sau đó thừa hưởng mặt nạ đó.
+if _lai:
+    _gia = _sp6.Popen([sys.executable, "-c", "import time; time.sleep(20)", "--doi-pid", "1"],
+                      creationflags=0x08000000)
+    time.sleep(0.6)
+    _pg = _ps5.Process(_gia.pid)
+    _pg.cpu_affinity(_tat)
+    _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="nhuong")
+    ok(sorted(_pg.cpu_affinity()) == _tat,
+       "6m app MỚI (--doi-pid) là con của app cũ -> KHÔNG bị ghim vào nhân phụ",
+       f"{len(_pg.cpu_affinity())} nhân")
+    # tự kiểm bộ dò: bỏ chốt thì tiến trình đó PHẢI bị ghim (phép đo có răng)
+    _goc_chot = _nm._la_app_moi
+    _nm._la_app_moi = lambda ch: False
+    _nm.ap_mot_luot(goc=_toi, phu=_phu, tat_ca=_tat, che_do="nhuong")
+    ok(sorted(_pg.cpu_affinity()) == _nm.mat_na_nhuong(_phu, _tat), "6m' tự kiểm: gỡ chốt thì app mới BỊ ghim (bộ dò có răng)")
+    _nm._la_app_moi = _goc_chot
+    _gia.kill(); _gia.wait()
+    _toi.cpu_affinity(_phu)
+    ok(_nm.tra_nhan_cho_chinh_minh(_tat) and sorted(_toi.cpu_affinity()) == _tat,
+       "6n app ĐÃ bị ghim vào nhân phụ -> tự trả lại mọi nhân cho chính mình")
+    ok(not _nm.tra_nhan_cho_chinh_minh(_tat), "6n' đã đủ nhân -> không đụng gì")
+    _toi.cpu_affinity(_mat_toi)
 
 print(f"\nKẾT QUẢ: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)

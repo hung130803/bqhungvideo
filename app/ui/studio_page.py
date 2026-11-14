@@ -1656,7 +1656,8 @@ class StudioPage(QWidget):
                     "APIFORCODE_KEYS_FILE", "APIFORCODE_MODEL",
                     "APIFORCODE_VISION_MODEL", "WHISPER_PROVIDER",
                     "GROQ_API_KEYS", "GROQ_KEYS_FILE", "ELEVENLABS_API_KEYS",
-                    "VBEE_APP_ID", "VBEE_TOKEN")
+                    "VBEE_APP_ID", "VBEE_TOKEN", "MUSE_CHON_DOAN", "MUSE_LUI_GROQ",
+                    "MUSE_LAM_HET")
         nap_lai_tu_dia(_khoa_ai)
         dlg = _HopCaiDatAI(self); dlg.setWindowTitle("Cài đặt AI")
         # NHIỀU mục (Gemini/Groq/file key/ElevenLabs/trạng thái key) -> nội dung
@@ -1699,7 +1700,7 @@ class StudioPage(QWidget):
             cl = QVBoxLayout(fr)
             cl.setContentsMargins(SP_4, SP_3, SP_4, SP_4)
             cl.setSpacing(SP_2)
-            t = QLabel(title)
+            t = QLabel(title); t.setWordWrap(True)
             set_style(t, 'heading', None)
             cl.addWidget(t)
             if desc:
@@ -1753,6 +1754,250 @@ class StudioPage(QWidget):
             "hết lượt app TỰ chuyển sang " + str(settings.GEMINI_DU_PHONG_MODEL)
             + " bằng các key Gemini ở trên; Part làm bằng Gemini ghi "
             "\"Phân tích bằng Gemini dự phòng\". Nhật ký: logs\\du_phong_<ngày>.log"))
+        c_muse = _card(
+            "Muse (Meta) · chọn đoạn hay",
+            "Gửi bản nhẹ của video + lời thoại cho agent Muse chọn Part (dùng token Muse, "
+            "không tốn lượt Groq cho bước chọn đoạn). Cần cài MuseAI-API theo HUONG_DAN_MUSE.md. "
+            "Chép lời vẫn dùng Groq; Groq/Gemini là dự phòng khi Muse hỏng.")
+        from app.ai.muse_agent import la_bat as _la_bat, bat as _muse_bat
+        muse_on = QCheckBox("Chọn đoạn bằng Muse")
+        # chưa từng lưu -> TỰ ĐỘNG (bật khi máy có Muse): ô hiện đúng trạng thái thật
+        muse_on.setChecked(_muse_bat())
+        c_muse.addWidget(muse_on)
+        muse_lui = QCheckBox("Muse lỗi thì tự chuyển Groq / Gemini")
+        muse_lui.setChecked(_la_bat(getattr(settings, "MUSE_LUI_GROQ", True)))
+        c_muse.addWidget(muse_lui)
+        muse_het = QCheckBox("Muse làm luôn tiêu đề + chấm điểm + ghép mạch (đỡ token Groq)")
+        muse_het.setChecked(_la_bat(getattr(settings, "MUSE_LAM_HET", True)))
+        c_muse.addWidget(muse_het)
+        c_muse.addWidget(_flabel(
+            "Bỏ tích ô thứ hai thì Muse lỗi sẽ đợi 1 phút rồi thử Muse lại (tối đa 12 lần/video, "
+            "sau đó vẫn chuyển Groq để video không kẹt). Nhật ký: logs\\muse_<ngày>.log"))
+        muse_lui.setEnabled(muse_on.isChecked())
+        muse_on.toggled.connect(muse_lui.setEnabled)
+        muse_het.setEnabled(muse_on.isChecked())
+        muse_on.toggled.connect(muse_het.setEnabled)
+        # ----- Tài khoản Muse: danh sách + thêm / đăng nhập lại / đổi tên / gỡ -----
+        # App tự chia mỗi video cho tài khoản ít việc nhất (xoay vòng); tài khoản
+        # hết đăng nhập bị tạm bỏ qua 10 phút và video tự làm lại ở tài khoản khác.
+        from app.ai import muse_agent as _ma
+        c_muse.addWidget(_flabel("Tài khoản Muse (app tự xoay vòng: video mới đi tài khoản đang ít việc nhất)"))
+        tk_list = QListWidget()
+        tk_list.setObjectName("muse_tk_list")
+        tk_list.setMinimumHeight(96)
+        c_muse.addWidget(tk_list)
+        tk_note = _flabel("")
+        c_muse.addWidget(tk_note)
+        tk_row = QHBoxLayout()
+        tk_them = QPushButton("Thêm tài khoản…")
+        tk_kiem = QPushButton("Kiểm tra tất cả")
+        tk_lai = QPushButton("Đăng nhập lại")
+        tk_ten = QPushButton("Đổi tên")
+        tk_go = QPushButton("Gỡ")
+        # 2 hàng: 5 nút một hàng tràn ngang hộp thoại (đo ảnh chụp 760 px: nút "Gỡ"
+        # bị cắt + hiện thanh cuộn ngang).
+        tk_row.addWidget(tk_them)
+        tk_row.addWidget(tk_kiem)
+        tk_row.addStretch(1)
+        c_muse.addLayout(tk_row)
+        tk_row2 = QHBoxLayout()
+        for _b in (tk_lai, tk_ten, tk_go):
+            tk_row2.addWidget(_b)
+        tk_row2.addStretch(1)
+        c_muse.addLayout(tk_row2)
+        _tk_kq: dict = {}            # thư mục -> (ok, lý do) lần kiểm gần nhất
+
+        def tk_nap():
+            cur = tk_list.currentItem().data(Qt.ItemDataRole.UserRole) if tk_list.currentItem() else None
+            tk_list.clear()
+            try:
+                ds = _ma.ds_tai_khoan()
+            except Exception as e:  # noqa: BLE001
+                ds = []
+                tk_note.setText(f"Không đọc được danh sách tài khoản: {e}")
+            for t in ds:
+                kq = _tk_kq.get(t["thu_muc"])
+                tt = ("dùng được" if kq[0] else kq[1]) if kq else t["trang_thai"]
+                it = QListWidgetItem(f"{t['ten']}  ·  {tt}  ·  đang chạy {t['dang_chay']} video")
+                it.setData(Qt.ItemDataRole.UserRole, t["thu_muc"])
+                tk_list.addItem(it)
+                if t["thu_muc"] == cur:
+                    tk_list.setCurrentItem(it)
+            if not ds:
+                tk_note.setText("Chưa có tài khoản nào. Bấm \"Thêm tài khoản…\" (cần cài MuseAI-API "
+                                "bằng CAI_MUSE.bat trước).")
+            elif not tk_note.text().startswith("Đang"):
+                tk_note.setText(f"{len(ds)} tài khoản. Chọn một dòng để đăng nhập lại / đổi tên / gỡ.")
+            co = tk_list.currentItem() is not None
+            for _b in (tk_lai, tk_ten, tk_go):
+                _b.setEnabled(co)
+
+        def tk_doi_chon(*_):
+            for _b in (tk_lai, tk_ten, tk_go):
+                _b.setEnabled(tk_list.currentItem() is not None)
+        tk_list.currentItemChanged.connect(tk_doi_chon)
+
+        def tk_chon():
+            it = tk_list.currentItem()
+            return it.data(Qt.ItemDataRole.UserRole) if it else None
+
+        def tk_kiem_tat_ca():
+            ds = [t["thu_muc"] for t in _ma.ds_tai_khoan()]
+            if not ds:
+                tk_nap()
+                return
+            tk_kiem.setEnabled(False)
+            tk_note.setText(f"Đang kiểm {len(ds)} tài khoản…")
+            xong: list = []
+
+            def bg():
+                for d in ds:
+                    try:
+                        _tk_kq[d] = _ma.kiem_tk(d)
+                    except Exception as e:  # noqa: BLE001
+                        _tk_kq[d] = (False, str(e)[:120])
+                xong.append(1)
+            threading.Thread(target=bg, daemon=True).start()
+            from PyQt6.QtCore import QTimer
+            t = QTimer(dlg)
+
+            def poll():
+                if not xong:
+                    return
+                t.stop()
+                tk_kiem.setEnabled(True)
+                tot = sum(1 for d in ds if _tk_kq.get(d, (False,))[0])
+                tk_note.setText(f"Kiểm xong: {tot}/{len(ds)} tài khoản dùng được.")
+                tk_nap()
+            t.timeout.connect(poll)
+            t.start(300)
+
+        def tk_dang_nhap(thu_muc=None):
+            """Hộp đăng nhập: (tên mới nếu thêm) + email -> app gửi mã OTP -> anh gõ mã."""
+            from PyQt6.QtCore import QTimer
+            hop = QDialog(dlg)
+            hop.setWindowTitle("Đăng nhập tài khoản Muse" if thu_muc else "Thêm tài khoản Muse")
+            v = QVBoxLayout(hop)
+            ten = QLineEdit()
+            if thu_muc:
+                v.addWidget(QLabel(f"Tài khoản: {_ma.ten_tk(thu_muc)}"))
+            else:
+                v.addWidget(QLabel("Tên ngắn cho tài khoản (chữ không dấu, số, - hoặc _):"))
+                ten.setPlaceholderText("vd tk2")
+                v.addWidget(ten)
+            v.addWidget(QLabel("Email tài khoản Muse:"))
+            email = QLineEdit()
+            email.setPlaceholderText("email@...")
+            v.addWidget(email)
+            gui = QPushButton("Gửi mã OTP về email")
+            v.addWidget(gui)
+            tt = QLabel("")
+            tt.setWordWrap(True)
+            v.addWidget(tt)
+            v.addWidget(QLabel("Mã OTP (xem trong email):"))
+            ma = QLineEdit()
+            ma.setEnabled(False)
+            v.addWidget(ma)
+            xn = QPushButton("Xác nhận mã")
+            xn.setEnabled(False)
+            v.addWidget(xn)
+            dong = QPushButton("Đóng")
+            v.addWidget(dong)
+            st = {"dn": None}
+            t = QTimer(hop)
+
+            def bat_dau():
+                d = thu_muc
+                if not d:
+                    p, ly = _ma.thu_muc_tk_moi(ten.text())
+                    if p is None:
+                        tt.setText(ly)
+                        return
+                    if (p / "cookies.json").is_file():
+                        tt.setText("Đã có tài khoản tên này — chọn nó rồi bấm Đăng nhập lại.")
+                        return
+                    d = str(p)
+                if "@" not in email.text():
+                    tt.setText("Nhập email hợp lệ.")
+                    return
+                gui.setEnabled(False)
+                ten.setEnabled(False)
+                email.setEnabled(False)
+                st["dn"] = _ma.DangNhap(d, email.text())
+                st["dn"].bat_dau()
+                t.start(300)
+
+            def poll():
+                dn = st["dn"]
+                if dn is None:
+                    return
+                tt.setText(dn.trang_thai)
+                ma.setEnabled(dn.cho_ma)
+                xn.setEnabled(dn.cho_ma)
+                if dn.cho_ma and not ma.hasFocus():
+                    ma.setFocus()
+                if dn.xong:
+                    t.stop()
+                    if not dn.ok:
+                        gui.setEnabled(True)
+                        ten.setEnabled(not thu_muc)
+                        email.setEnabled(True)
+                    _tk_kq[str(dn.thu_muc)] = (dn.ok, dn.trang_thai)
+                    tk_nap()
+
+            def xac_nhan():
+                if st["dn"] is not None and ma.text().strip():
+                    xn.setEnabled(False)
+                    ma.setEnabled(False)
+                    st["dn"].nhap_ma(ma.text())
+
+            def dong_hop():
+                if st["dn"] is not None and not st["dn"].xong:
+                    st["dn"].huy()
+                hop.accept()
+            gui.clicked.connect(bat_dau)
+            xn.clicked.connect(xac_nhan)
+            ma.returnPressed.connect(xac_nhan)
+            dong.clicked.connect(dong_hop)
+            t.timeout.connect(poll)
+            hop.exec()
+            if st["dn"] is not None and not st["dn"].xong:
+                st["dn"].huy()
+            tk_nap()
+
+        def tk_doi_ten():
+            d = tk_chon()
+            if not d:
+                return
+            moi, ok = QInputDialog.getText(dlg, "Đổi tên tài khoản Muse", "Tên mới:",
+                                           text=_ma.ten_tk(d))
+            if not ok or not moi.strip():
+                return
+            ok2, ly = _ma.doi_ten_tk(d, moi)
+            tk_note.setText("Đã đổi tên." if ok2 else ly)
+            tk_nap()
+
+        def tk_go_tk():
+            d = tk_chon()
+            if not d:
+                return
+            if QMessageBox.question(
+                    dlg, "Gỡ tài khoản Muse",
+                    f"Gỡ tài khoản \"{_ma.ten_tk(d)}\" khỏi app?\n\nThư mục đăng nhập được CẤT vào "
+                    "_tk_da_go (không xoá); video mới sẽ không dùng tài khoản này nữa.") \
+                    != QMessageBox.StandardButton.Yes:
+                return
+            ok2, ly = _ma.go_tk(d)
+            tk_note.setText("Đã gỡ (cất ở " + ly + ")." if ok2 else ly)
+            _tk_kq.pop(d, None)
+            tk_nap()
+
+        tk_them.clicked.connect(lambda: tk_dang_nhap(None))
+        tk_lai.clicked.connect(lambda: tk_dang_nhap(tk_chon()) if tk_chon() else None)
+        tk_kiem.clicked.connect(tk_kiem_tat_ca)
+        tk_ten.clicked.connect(tk_doi_ten)
+        tk_go.clicked.connect(tk_go_tk)
+        tk_nap()
         c_api=_card("APIforcode · Phân tích hình và viết kịch bản",
             "Gom tối đa 8 ảnh/lượt, lưu tiến độ để tiếp tục. Viết và kiểm tra kịch bản vẫn dùng thêm lượt. Giọng đọc và chép lời dùng dịch vụ riêng.")
         api_file=QLineEdit(settings.APIFORCODE_KEYS_FILE or '')
@@ -2338,6 +2583,9 @@ class StudioPage(QWidget):
             Settings.ELEVENLABS_API_KEYS = elkeys.toPlainText().strip()
             Settings.VBEE_APP_ID = vb_id.text().strip()
             Settings.VBEE_TOKEN = vb_tk.text().strip()
+            Settings.MUSE_CHON_DOAN = muse_on.isChecked()
+            Settings.MUSE_LUI_GROQ = muse_lui.isChecked()
+            Settings.MUSE_LAM_HET = muse_het.isChecked()
 
         def do_test():
             apply_live()
@@ -2414,7 +2662,10 @@ class StudioPage(QWidget):
                         "GROQ_KEYS_FILE": gfile[0],
                         "ELEVENLABS_API_KEYS": elkeys.toPlainText().strip(),
                         "VBEE_APP_ID": vb_id.text().strip(),
-                        "VBEE_TOKEN": vb_tk.text().strip()}
+                        "VBEE_TOKEN": vb_tk.text().strip(),
+                        "MUSE_CHON_DOAN": "1" if muse_on.isChecked() else "0",
+                        "MUSE_LUI_GROQ": "1" if muse_lui.isChecked() else "0",
+                        "MUSE_LAM_HET": "1" if muse_het.isChecked() else "0"}
 
         def do_save():
             update_env(gia_tri())

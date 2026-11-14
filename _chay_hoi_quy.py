@@ -457,7 +457,7 @@ CONG = [
     # hoặc đứng ở màn đăng nhập). Bắt được lỗi thật: màn đăng nhập vẫn soi cờ
     # sau khi đăng nhập xong -> `.text()` trên chuỗi = sập app. Thử phá: HỎNG 3.
     ("98 tự đăng nhập + bot gác cổng + đóng app", "_test_tu_dang_nhap.py", 79),
-    ("99 không nghẽn ổ cứng cơ + không dịch lại mã + xuất tự đổi ưu tiên + nhường nhân mạnh khi đang dùng máy", "_test_muot_o_cung.py", 55),
+    ("99 không nghẽn ổ cứng cơ + không dịch lại mã + xuất tự đổi ưu tiên + nhường nhân mạnh khi đang dùng máy", "_test_muot_o_cung.py", 60),
     ("100 sổ tạm cũ không làm hỏng DB đang lành", "_test_wal_cu.py", 22),
     ("101 gọi AI Groq song song có giới hạn", "_test_groq_lan.py", 8),
     ("102 nâng sáng nhẹ + nền cong YUV", "_test_sang_yuv.py", 20),
@@ -471,7 +471,12 @@ CONG = [
     ("108 key Cài đặt AI không mất âm thầm", "_test_luu_key.py", 13),
     ("109 video không lời: tên/hashtag không lấy chữ bịa", "_test_khong_loi_ten.py", 30),
     ("113 Gemini: trần nghĩ, đếm token, không khoá 1 lượt", "_test_gemini_nghi.py", 12),
-    ("114 Groq chết thì tự chuyển Gemini, đúng yêu cầu cắt ghép", "_test_du_phong_gemini.py", 58),
+    ("114 Groq chết thì tự chuyển Gemini, đúng yêu cầu cắt ghép", "_test_du_phong_gemini.py", 81),
+    ("115 hậu kiểm đã có quyết định thì không bị coi là chưa kiểm", "_test_hau_kiem_xong.py", 25),
+    ("116 bộ điều tiết Groq không chết vì 'database is locked'", "_test_groq_khoa.py", 24),
+    # 117 (13/11/2026): chọn đoạn bằng agent Muse qua CLI rời, mặc định TẮT,
+    # hỏng/trễ -> Groq. Thử phá (bỏ chốt bat()): HỎNG 5.
+    ("117 Muse chọn đoạn (CLI rời, mặc định tắt)", "_test_muse_chon.py", 159),
     # Đợt 1 dây chuyền tự động (04/11/2026, INTEGRATION.md mục 5/11/12):
     # Tự chạy (V1-V9, V21-V24 ổ đĩa, #5) + phiếu đợt/phiếu cắt (V10-V20).
     ("110 tự chạy dây chuyền", "_test_tu_chay.py", 91),

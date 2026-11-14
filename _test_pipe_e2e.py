@@ -8,6 +8,9 @@ from pathlib import Path
 
 T = Path(tempfile.mkdtemp(prefix="pipe_e2e_"))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+# offscreen KHÔNG tự nạp phông Windows -> mọi chữ (kể cả Arial) thành Ô VUÔNG ->
+# app từ chối xuất "lớp chữ hỏng" -> cổng ĐỎ OAN (13/11/2026). App thật không dính.
+os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 os.environ["BQ_DB_PATH"] = str(T / "t.db")
 os.environ["BQ_DATA_DIR"] = str(T)
 os.environ["BQ_QSETTINGS_INI"] = str(T / "settings.ini")   # KHÔNG chạm registry thật
@@ -173,14 +176,17 @@ print("so cai:", final)
 parts = sorted(out_dir.glob("Part *.mp4"))   # Part xuất thẳng vào thư mục kênh
 print(f"part xuat ra: {len(parts)} -> {[p.name for p in parts][:5]}")
 print("goc da xoa:", not src.exists())
-print("hong vao _Loi:", (root / "_Loi" / "Kênh Test" / "hong.mp4").exists())
+# Từ v2.50.1 file HỎNG được GIỮ NGUYÊN tại chỗ + đánh dấu "bad" trong sổ (không
+# chuyển _Loi nữa — app không tự di chuyển file người dùng khi chỉ đọc lỗi metadata).
+_hong_tai_cho = (out_dir / "hong.mp4").exists() and not (root / "_Loi" / "Kênh Test" / "hong.mp4").exists()
+print("hong GIU NGUYEN tai cho:", _hong_tai_cho)
 rep = "\n".join(pg._pipe_report)
 print("--- bao cao ---")
 print(rep)
 
 ok = (final and final["status"] == "done" and len(parts) >= 1
       and not src.exists()
-      and (root / "_Loi" / "Kênh Test" / "hong.mp4").exists())
+      and _hong_tai_cho)
 print("TONG:", "PASS" if ok else "FAIL")
 
 for k, v in _saved.items():

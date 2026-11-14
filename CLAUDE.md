@@ -2594,6 +2594,238 @@
     stereo/có chút nhiễu/`-aac_coder fast` đều chạy). Cổng test phải dùng 160k
     + `timeout`. App xuất clip ở 160k (an toàn); `thay_giong.py` còn 2 chỗ
     192k nhưng ra stereo có nhạc nền -> rủi ro thấp, CHƯA đổi.
+- **"MỞ LẠI APP" GHIM CỬA SỔ APP MỚI VÀO 8 NHÂN PHỤ (13/11/2026, cổng 99 mục 6m/6n).**
+  Anh Hùng: *"đặt 5 luồng mà đơ lắm · máy tính giật luôn"*. Đo: GUI mở 20:23:31 qua
+  nút mở lại (`--doi-pid`) có mặt nạ đúng `[16..23]` = 8 nhân phụ. `startDetached`
+  vẫn để app mới là CON của app cũ; app cũ còn sống lúc app mới đợi nó tắt -> vòng
+  `nhuong_may` của app cũ ghim luôn app mới; không ai gỡ, mọi ffmpeg/phân tích sau
+  đó thừa hưởng. Nay `_la_app_moi` bỏ qua tiến trình con có `--doi-pid` và
+  `tra_nhan_cho_chinh_minh` trả mọi nhân cho GUI mỗi nhịp 2 s. CHƯA ĐO: phần đơ còn
+  lại khi 5 luồng (GPU / ổ cứng D: HDD) — cần một lượt đo lúc xuất thật.
+- **CHỌN ĐOẠN BẰNG AGENT MUSE (Meta) — TUỲ CHỌN, MẶC ĐỊNH TẮT (13/11/2026, cổng 117 `_test_muse_chon.py` 156/0, thử phá bỏ chốt `bat()` -> HỎNG 5).**
+  `app/ai/muse_agent.py` gọi CLI `muse-ai` (MuseAI-API, KHÔNG chính thức, KHÔNG giấy phép) như CHƯƠNG TRÌNH RỜI —
+  CẤM `import muse_ai` vào app (cổng quét AST). Lệnh dùng (đọc từ `muse_ai/cli.py`): `--help` · `ping` · `upload` ·
+  `generate --prompt P --no-download --min-videos 1 --timeout 15` (CLI KHÔNG có lệnh "gửi tin" riêng: không ra video
+  thì nó ném "No new Muse video appeared ... for session S" = ĐÃ GỬI + có session id) · `history --session-id S`.
+  CLI KHÔNG có lệnh xoá -> thư mục `workspace/bq/<mã>` nằm lại trên Muse. Bật bằng `MUSE_CHON_DOAN=1` + `MUSE_AI_CLI`
+  + `MUSE_STATE_DIR` (HUONG_DAN_MUSE.md). Nối ở `_llm_select_clips(nguon_video=...)`: rows Muse đi qua ĐÚNG
+  `_normalize_clip`/`_trim_junk_edges`/khử trùng/cắt số Part/`_enforce_len` như Groq; hỏng/quá hạn/0 clip hợp lệ ->
+  Groq; chỉ `CanceledError` nổi lên. Cờ tắt -> 0 lượt CLI, kết quả Y HỆT. Không đụng `services.py`/`dedup_key`.
+  Bản nhẹ (480p, 2 khung/giây, CRF 34, mono 24 kbps) đo video THẬT 24,2 phút/978 MB -> **21,9 MB trong 58,5 s**.
+  ĐA LUỒNG (đo 13/11/2026, 1 tài khoản): **30 video cùng lúc ra 30/30 trong 245 s**; Muse có từ chối mở kết nối (HTTP 400/429/reset) **12 lần** nhưng cả 12 lần thử lại ĐẦU TIÊN là được (`_RE_KET_NOI` + `_RE_429`, giãn 0,5 s mỗi lượt mở). 401/403 KHÔNG thử lại (là lỗi đăng nhập). `MUSE_MOI_TK` mặc định 16 (= trần làn AI của app).
+  Bộ nhớ kết quả theo video để `_call_waiting_quota` thử lại không gửi Muse lần 2 (15-19 phút/lượt).
+  CHƯA ĐO VỚI CLI THẬT: khuôn JSON của `history` (app dò mọi chuỗi chứa mã việc, bỏ chính prompt) và chuyện
+  không có `--session-id` thì Muse mở phiên mới hay dồn vào phiên đang mở.
+  **ĐÃ CHẠY THẬT 13/11/2026 (tài khoản anh Hùng), lôi ra 3 lỗi — cả 3 đã vá:**
+  (a) **Thư viện MuseAI-API bản trên GitHub HỎNG CẢ KHO**: 15 file dính tiền tố số dòng `  1 | ` (tác giả dán từ trình
+  xem) -> pip không đọc nổi `pyproject.toml`. Bản ở `D:\MuseAI-API` đã gỡ tiền tố + soát mã (chỉ nối `muse.ai` và
+  `hatch.metaaivm.com`, không subprocess/eval, không đọc file ngoài `.muse-state`); `CAI_MUSE.bat` KHÔNG `git pull` nữa
+  để giữ đúng bản đã soát. (b) **`upload_file` LUÔN báo "failed size validation" với file > 512 KB**: máy chủ bọc
+  `fs/stat` thành `{"ok":true,"result":{...}}` mà thư viện đọc thiếu lớp `result` (đã đo: ghi nối 3 mảnh ra ĐÚNG
+  1.049.576 byte). Vá 3 dòng trong `D:\MuseAI-API\muse_ai\filesystem.py`. (c) **Không có `--session-id` thì MỌI việc
+  dồn vào cuộc chat CHÍNH** (đo: 3 việc khác nhau chung một chat_id) -> chạy song song là lẫn trả lời. Gửi một uuid
+  MỚI thì máy chủ tự mở cuộc chat riêng (7 -> 8 phiên). NHƯNG `generate` của CLI đọc lịch sử TRƯỚC khi gửi ->
+  404 "session not found" -> việc không bao giờ được gửi. Nay `muse_agent._MA_GUI` chạy bằng python CỦA VENV MuseAI
+  (tiến trình rời, app vẫn không import) gọi thẳng `chat_stream(session_id=<uuid>)`; `generate` chỉ còn là đường lùi
+  khi MUSE_AI_CLI không phải `muse-ai.exe`.
+  **SỐ ĐO** (Doctorin1946.mp4 18,8 phút, đặt 3 Part 60-90 s): bản nhẹ 7,64 MB/3,5 s · Muse trả lời sau **54-79 s** ·
+  cả `generate_highlights` **247 s** (bản Groq cùng video 176 s) · 3/3 Part do Muse chọn, dài 79,0/82,5/86,9 s,
+  bắt đầu đúng đầu câu. 54-79 s cho video 19 phút = Muse chủ yếu ĐỌC LỜI, không xem hết khung hình.
+  Nút trong Cài đặt AI: "Chọn đoạn bằng Muse" + "Muse lỗi thì tự chuyển Groq (rồi Gemini)" (`MUSE_LUI_GROQ`, mặc định
+  bật; tắt -> đợi `MUSE_DOI_GIAY` rồi DoiLuotAI thử Muse lại, hết trần 12 vòng/video vẫn rơi Groq). Muse ra THIẾU số
+  Part -> Groq chọn bổ sung. Chép lời / cắt gọn / critic / tiêu đề / hậu kiểm VẪN là Groq.
+  **ĐA LUỒNG + NHIỀU TÀI KHOẢN (đo 13/11/2026, 1 tài khoản):** việc nhỏ 10/20/30 cùng lúc xong 10/10 · 20/20 ·
+  30/30 (29 đúng) trong 12/14/20 s. Video thật: 6 cùng lúc 6/6 trong 123 s; 15 cùng lúc lần ĐẦU 12/15 — 3 việc
+  bị **HTTP 429 lúc mở websocket** (mỗi lần gọi CLI = 1 kết nối mới, 15 việc hỏi lịch sử cùng nhịp). Nay `_chay`
+  giãn nhịp mở kết nối 0,5 s (mọi luồng) + gặp 429 đợi lùi 3/6/12/24/48 s rồi thử lại (`THU_429`=6); đo lại
+  **15/15, 45/45 Part đúng độ dài, 147 s**. Video 56 phút: bản nhẹ 22,9 MB, Muse trả lời trong **88 s**.
+  `MUSE_SONG_SONG` mặc định 2 -> **10**. Nhiều tài khoản: `ds_phien` = `MUSE_STATE_DIRS` + `MUSE_STATE_DIR` + mọi
+  `.muse-state*` cạnh nó (`THEM_TK_MUSE.bat` tạo `.muse-state-<tên>`, app tự nhận); `chon_phien` chọn tài khoản
+  ít việc nhất, MỘT việc dùng đúng MỘT tài khoản cho tải lên/gửi/đọc; lỗi đăng nhập (401/403/login) -> tạm bỏ
+  tài khoản 10 phút + `chon_doan` tự làm lại trên tài khoản kế; `co_muse` chỉ cần MỘT tài khoản ping đạt. Cổng
+  117 CA 9-13 (thử phá: gỡ tự chuyển tài khoản -> HỎNG 13f' · gỡ đếm tải -> HỎNG 13b).
+  **LƯỢT SOÁT ĐỘC LẬP 13/11/2026 lôi ra 1 lỗi NẶNG + 2 lỗi vừa, cổng cũ đều XANH — đã vá, mỗi cái 1 ca CA 15:**
+  (a) **Bỏ tích "Chọn đoạn bằng Muse" rồi Lưu mà Muse VẪN chạy**: `update_env` áp chuỗi `"0"` vào `Settings`,
+  `bool("0")` = True. Nay `_ap_vao_bo_nho` đổi `MUSE_CHON_DOAN`/`MUSE_LUI_GROQ`/`GEMINI_DU_PHONG` sang bool +
+  `muse_agent.la_bat()` đọc an toàn cả chuỗi. (b) Đường lùi `generate` gửi mã phiên MỚI -> luôn 404; nay dùng
+  phiên chính + khoá MỘT-việc-một-lúc (`_KHOA_CHUNG`). (c) Thử lại khi chuỗi "429" xuất hiện BẤT KỲ đâu (uuid,
+  số byte, lỗi ffmpeg) -> gửi trùng prompt; nay `_RE_429` đúng mẫu HTTP 429 và ffmpeg/`generate` không thử lại.
+  Kèm: lỗi đăng nhập ở bước gửi/đọc lịch sử cũng đổi tài khoản ngay (trước chỉ ở bước tải lên, đọc lịch sử 401
+  thì đợi tới 3.600 s); `co_muse` có khoá (10 job không ping trùng); Muse hỏng được nhớ 5 phút
+  (`_CACHE_HONG`) để vòng đợi-hết-lượt Groq không dựng + tải lại bản nhẹ mỗi vòng; nhận diện lỗi đăng nhập chỉ
+  bắt `MuseAuthError`/HTTP 401/403/unauthorized (bản đầu bắt cả chữ 'login' trong traceback lỗi MẠNG).
+  **BẪY CỦA CHÍNH LƯỢT SỬA:** viết regex `\b` qua heredoc + chuỗi Python thường thì ra ký tự BACKSPACE (0x08) trong
+  file — regex chạy mà KHÔNG khớp gì, không một dòng báo. Đã quét 0x00-0x1F mọi file vừa sửa.
+  **QUẢN LÝ TÀI KHOẢN trong Cài đặt AI → thẻ Muse:** danh sách (tên · tình trạng · số video đang chạy) + Thêm /
+  Kiểm tra tất cả / Đăng nhập lại / Đổi tên / Gỡ. Thêm/đăng nhập lại: `muse_agent.DangNhap` chạy `muse-ai login`
+  ở tiến trình rời, đợi dòng `Muse OTP: ` rồi đưa mã ANH GÕ vào stdin (app không lưu mã). Gỡ = CẤT vào
+  `_tk_da_go/`, không xoá; tài khoản đang chạy video thì không cho đổi tên/gỡ. Cổng 117 CA 16 (19 mục, CLI giả có
+  `login`). Ảnh chụp hộp thoại 760 px lôi ra thêm: hàng 5 nút tràn ngang (nay 2 hàng) và tiêu đề thẻ Vbee
+  (CÓ SẴN) không xuống dòng -> hộp thoại cuộn ngang 171 px; nay `_card` cho tiêu đề `setWordWrap`, rộng tối thiểu
+  921 -> 654 px.
+  **MUSE LÀM HẾT (`MUSE_LAM_HET`, mặc định BẬT khi Muse bật; 13/11/2026).** Muse trả sẵn tiêu đề ·
+  điểm · mốc hook · hashtag trong CÙNG lượt chọn đoạn, nên khi MỌI clip đều do Muse chọn
+  (`m1.muse_lam_het`) app BỎ 4 bước Groq: cắt gọn từng clip · critic chấm-chọn · đánh bóng tiêu đề
+  (chỉ gọi cho clip tiêu đề rỗng/sai thứ tiếng) · hậu kiểm mạch (`continuity` = 'skipped'). Hashtag
+  lấy `signals.hashtags_muse` (`jobs._hashtag_muse`), Groq chỉ viết khi Muse không có. Có MỘT clip
+  Groq bổ sung là quay về đường Groq đầy đủ. Trim CTA + `_enforce_len` + chốt số Part VẪN chạy.
+  ĐO THẬT (DontBeaS, 3 Part 60-90 s): chọn Part **84,6 s, 0 lượt Groq** (Groq đủ bước 158 s · Muse +
+  Groq 201 s). 3 video cùng lúc: 88-113 s, đúng 3/3 Part mỗi video, không lẫn đoạn giữa video.
+  **VIDEO KHÔNG LỜI:** Muse XEM video thay bước Groq xem hình (~3-4 phút); `generate_highlights` bỏ
+  dựng digest khi Muse bật, Muse hỏng thì `_llm_select_clips` dựng digest NGAY rồi đi đường cũ.
+  Đo Dai56 (56 phút): 256 s, 3/3 Part, tiêu đề "Midnight Siren: Doctor Races…" (đường cũ ra
+  "20-21min Audio Shockwave…"), 1 lượt Groq (đánh bóng tiêu đề theo tên file, cổng 109).
+  **LƯỢT SOÁT THỨ HAI (13/11) — 9 lỗi, đã vá, mỗi cái một ca CA 19:** Huỷ lúc đợi chỗ tài khoản
+  làm RÒ chỗ song song vĩnh viễn (nay mọi thứ sau `sem.acquire` nằm trong try/finally) ·
+  `_CACHE_KQ` không hết hạn -> "Phân tích lại" nhận y Part cũ (nay 30 phút + `quen_ket_qua` khi chọn
+  đoạn xong) · tài khoản dự phòng không được đếm tải · `co_muse` giữ khoá qua 6 lần thử ping (nay 1
+  lần, 45 s, lỗi mạng 2 lần thì dừng, CHỈ lỗi đăng nhập mới tạm bỏ tài khoản) · khoá đường lùi
+  `generate` không kiểm Huỷ · bước GỬI thử lại khi "connection reset" = có thể gửi prompt 2 lần (nay
+  chỉ thử lại khi bị từ chối LÚC BẮT TAY, `_RE_TU_CHOI`) · `MUSE_SESSION_ID` dồn mọi việc vào 1 chat
+  (nay đường gửi riêng luôn phiên mới) · `_CACHE_CO` đọc 2 lần (KeyError) · giết tiến trình chỉ giết
+  VỎ khởi chạy (nay `_giet_cay` = `taskkill /T /F`). Thử phá: bỏ chốt "bỏ cắt gọn" -> HỎNG 19b; bỏ
+  trả tải tài khoản -> HỎNG 13d' + 19e. **Cổng 117: 156/0.**
+  **CHÉP LỜI VẪN LÀ GROQ — đã đo:** file 40 s có đáp án: Groq Việt sai 6,67% trong 2,6 s · Anh 8,21%
+  trong 1,2 s; Muse Anh sai 8,21% nhưng **325 s**, Việt **không trả kết quả sau 30 phút**, và Muse
+  KHÔNG trả mốc từng chữ (phụ đề cần). Chép lời dùng hạn mức ÂM THANH của Groq, không đụng token chat.
+  **THỬ LẠI 13/11 TỐI — Muse KHÔNG NGHE ĐƯỢC FILE TIẾNG trên ổ của nó.** Gửi riêng opus 16k + dặn
+  "nghe trực tiếp, không chạy công cụ": cả vi lẫn en **0 câu sau 15 phút**. Muse tự trả lời: *"không nghe
+  được âm thanh từ file trên ổ đĩa — chỉ nghe được khi đính kèm trực tiếp vào tin nhắn"*, mà CLI/thư viện
+  chỉ có đường tải file lên ổ (đính kèm chỉ có ảnh cho `generate`). Tức bản en lượt trước (giống TỪNG CHỮ
+  bản Groq, 325 s) là Muse tự chạy một bộ chép lời máy trong máy ảo. **Đường chép lời bằng Muse ĐÓNG.**
+  Hệ quả cần nhớ: lúc chọn đoạn, Muse "nghe" được video là nhờ FILE CHÉP LỜI app gửi kèm.
+  **NHƯNG Muse CÓ XEM HÌNH THẬT (đo 13/11 tối, `xem_hinh.py`):** video câm 60 s, mỗi 15 s một chữ +
+  màu nền khác nhau, lời thoại RỖNG, gửi y kiểu app -> **4/4 chữ + 4/4 màu ĐÚNG, 35 s**. Muse tự khai:
+  *"trích khung bằng ffmpeg, mỗi 5 giây một khung (12 khung)"*. Tức nó XEM bằng khung TRÍCH THƯA, không
+  xem cả 2 khung/giây của bản nhẹ. CHƯA ĐO: mật độ khung trên video DÀI (45 phút trả lời trong 56 s ->
+  nghi rất thưa) — đó là chỗ có thể mất cảnh hành động ngắn.
+  **MẬT ĐỘ KHUNG TRÊN VIDEO DÀI, ĐO 13/11 tối (`mat_do_khung.py`, ĐÚNG prompt chọn đoạn của app + khoá
+  `moc_khung`):** 19 phút -> **37 khung, 1 khung/30 s** (thưa nhất 60 s), trả lời 99 s · `Dai56` (= cùng
+  phim nối 3 lần, 56 phút) -> **26 khung**, cách TB 38 s, có khoảng **240 s**, phủ chỉ ~955 s đầu; Muse
+  tự ghép khung thành 3 contact sheet bằng PIL. Tức cảnh HÌNH ngắn hơn ~30 s có thể lọt giữa 2 khung —
+  video NHIỀU LỜI vẫn ổn (đọc đủ file chép lời), video ÍT LỜI là chỗ rủi ro. Hướng chưa đo: app tự trích
+  contact sheet dày (vd 5 s/khung, có ghi giây) gửi kèm.
+  **A/B ẢNH TỔNG HỢP, ĐO 13/11 tối (`anh_tong_hop.py`, phim thật 19 phút + 4 thẻ 6 s cài lệch lưới 30 s,
+  ĐÚNG prompt app, 2 vòng A/B song song):** A (như app) bắt **1/4 · 0/4** thẻ · B (+10 ảnh tổng hợp 6x4, 1 khung/
+  5 s có ghi giây, 1,36 MB, dựng 0,2 s) bắt **4/4 · 4/4**, lệch giờ <= 3 s. Muse trả lời B NHANH HƠN (80/50 s vs
+  96/80 s) nhưng tải 10 file lẻ tốn +48-53 s -> tổng chậm hơn ~25-30 s/video. CHƯA nối vào app; chưa đo chất
+  lượng PART (B chọn 2/6 đoạn khác A).
+  **ĐÃ NỐI 13/11 tối (`muse_agent.dung_bang`/`_tai_bang`, `MUSE_BANG_GIAY`=5, 0 = tắt):** dựng từ bản nhẹ, tải
+  SONG SONG 4 luồng -> video 19 phút **10 ảnh dựng + tải 16,5 s** (lần lượt ~50 s); trừ đi phần Muse trả lời
+  nhanh hơn thì tổng gần như HOÀ. Video dài giãn nhịp để <= 40 ảnh. Một ảnh tải lỗi -> bỏ cả bộ, gửi như cũ.
+  Không ảnh -> prompt giống TỪNG KÝ TỰ bản cũ. Cổng 117 CA 22 (167/0), thử phá bỏ nối prompt -> HỎNG 22b.
+  **ĐÊM 14/11 — 4 LỖI DÂY CHUYỀN THẬT (cổng 117 CA 23/24, 175/0; thử phá bỏ ping-lại -> HỎNG 3):**
+  (a) **Muse "không trả lời" = video NGẮN.** Xin count+3 = 6 ứng viên x 100-180 s không trùng -> video < 600 s Muse
+  trả lời bằng CHỮ ("không đủ cho 6 clip, cần 600 giây") -> app đợi tới hết giờ (22-25 phút). Đêm đó MỌI lượt không
+  trả lời đều < 600 s (354-505 s), mọi lượt trả lời đều >= 637 s. Nay `dung_prompt` xin số VỪA độ dài + "LUÔN JSON";
+  thật: video 450 s -> 3 ứng viên JSON sau 99 s. Video đủ dài prompt y cũ. (b) Đợi Muse 2x dài+600 s -> 0,1x+300 s
+  (trả lời thật luôn 55-109 s). (c) **Khoá oan tài khoản duy nhất 10 phút** 2 lần: `history` 401 thoáng qua và
+  thư viện ném `MuseAuthError` cho MỌI lỗi >= 400 lúc `wake_vm` — ping ngay sau đều 200. Nay `_danh_dau_tk` ping lại:
+  ping tốt -> chỉ tránh ở lượt này, ping hỏng mới khoá. (d) ĐÃ THỬ cho bản nhẹ Muse qua `cua_doc_dia.giu_cho` rồi
+  GỠ (14/11 trưa): bản nhẹ bị GIẢI MÃ chặn, không bị đĩa chặn — 2 bản nhẹ video dài giữ 2 chỗ 9 phút
+  trong khi ổ D chỉ đọc 3,4 MB/s, 9 việc chép lời đứng đợi 11 phút. ĐỪNG đưa bản nhẹ vào cửa đĩa.
+  Thay vào đó: tối đa 3 bản nhẹ cùng lúc khi anh RỜI máy, **1 khi anh đang dùng máy** (13:30: "chết máy"; CPU trễ 0,5 ms, ổ rảnh, chỉ NVDEC 93% -> ép 1 bản còn 8%, "giờ ít đơ rồi") (`cua_doc_dia.giu_cho_ten("muse_ban_nhe")`,
+  `BQ_MUSE_BAN_NHE`) — đo 14/11 12:30: 14 bản cùng lúc -> NVDEC 99%, mỗi bản 262-460 s. Kèm
+  `muse_agent._gan_song_chet` (Job Object KILL_ON_JOB_CLOSE): mở lại app từng bỏ lại 13 ffmpeg bản nhẹ
+  MỒ CÔI chạy 8-13 phút; thử thật giết cha -> con chết theo. Cổng 117 175/0 (1 lượt 174/1 ở mục "Huỷ
+  vẫn dọn tạm" khi máy đang bận NVDEC 99%, chạy lại 175/0 — nhạy thời gian, không phải hồi quy).
+  **BỎ BẢN NHẸ, CHỈ GỬI ẢNH TỪ KHUNG CHÍNH: ĐO RỒI, KHÔNG BẬT (14/11, `khung_chinh_ab.py` + `cham_mu_ab.py`).**
+  Khung chính video kho cách 5-6 s; ảnh tổng hợp từ khung chính (`-skip_frame nokey`) dựng **1,4 s** vs bản nhẹ +
+  ảnh **43,9 s**; thẻ hình 6 s vẫn bắt **4/4 · 4/4**. Nhưng đoạn chọn A-A trùng 63%, A-C chỉ 42-53%, và CHẤM MÙ
+  (2 model x 2 chiều x 4 cặp): A hơn C ở **cả 4 cặp** (+0,25 · +1,50 · +0,25 · +0,50; thắng 10 / thua 6), trọng tài
+  nhiều lần chê bộ C "lặp nội dung". Sàn nhiễu A1-A2 -0,75 nên chưa chắc, nhưng không lượt nào C hơn -> GIỮ bản nhẹ. Nhật ký nay ghi mã phiên (đọc lại được Muse
+  nói gì). Kèm: HOOK bỏ rung_lac/rung_xoay/luot_ngang/xao_khoi (anh Hùng: "đầu giật giật"; đo KHÔNG rớt khung).
+  **NHẬT KÝ THẬT 10-12/11 (331 video):** 55 lần "database is locked" ở Groq (đã vá cổng 116, cần
+  mở lại app) · Gemini dự phòng: 3.402 lượt đạt nhưng xen kẽ ~30% lỗi "free tier is not available
+  for this project" (cùng 1 key, lúc được lúc không) — chỉ là dự phòng, app tự quay lại Groq.
+  **2 LỖI CŨ cổng smoke lôi ra lượt hồi quy 13/11 (đã vá):** (a) `transcribe.is_available` IMPORT
+  faster_whisper -> ctranslate2 -> torch ngay trên LUỒNG QT (`studio_page._ai_ready`) -> **ACCESS
+  VIOLATION** sau khi bấm hết nút, đúng máy KHÔNG có key Groq (máy nhân viên mới). Nay dò bằng
+  `find_spec`. (b) `main_window._mo_lai_app` chạy từ mã nguồn gọi `python --doi-pid` THIẾU `main.py`
+  -> app không tự mở lại; và `_test_guard` chưa chặn `QProcess.startDetached` nên cổng smoke từng bật
+  THẬT tiến trình ra máy. Nay guard chặn + tự kiểm cả cái đó.
+  **THỨ TỰ KHI MUSE HỎNG: Muse -> GEMINI -> Groq (anh Hùng 13/11/2026).** `llm.uu_tien_gemini(True)`
+  bật cờ THEO LUỒNG khi `_thu_muse` không ra clip / Muse thiếu Part / clip Muse bị loại hết; mọi lượt
+  `complete_text/json` của job đó gọi Gemini TRƯỚC (`_gemini_truoc`), Gemini lỗi -> nghỉ Gemini 60 s
+  rồi Groq. Vỏ `generate_highlights` (thân thật là `_generate_highlights`) tắt cờ khi job ra, kể cả
+  khi ném lỗi. Muse TẮT hoặc Muse chạy tốt -> thứ tự cũ (Groq trước, Gemini dự phòng). Cổng 114
+  CA 12 (81/0), cổng 117 CA 21; thử phá bỏ dòng bật cờ -> HỎNG 21a. Đo thật (Muse giả hỏng, Gemini +
+  Groq thật): 3/3 Part trong 27,7 s, **0 lượt Groq**.
+  **`_test_pipe_e2e.py` ĐỎ OAN 2 lý do, đã sửa:** Qt `offscreen` không tự nạp phông Windows -> mọi chữ
+  ra ô vuông -> app từ chối xuất (nay `QT_QPA_FONTDIR=C:\Windows\Fonts`); và cổng còn đòi file hỏng
+  vào `_Loi` trong khi từ v2.50.1 app CỐ Ý giữ nguyên tại chỗ. Chạy thật có Muse: PASS, Part xuất
+  ra tên kèm hashtag Muse, gốc vào Thùng rác.
+  **TIẾT KIỆM ĐO ĐƯỢC (DontBeaS, chọn 3 Part):** chỉ Groq 14 lượt / **52.420 token** (21.500 vào +
+  30.920 ra) / 140 s · Muse làm hết **0 lượt / 0 token Groq** / 85 s. Muse KHÔNG có lệnh xem số dư
+  (CLI chỉ ping/model/history; history không ghi token) -> đo token Muse phải xem trên muse.ai.
+- **MUSE KHÔNG CHẠY CẢ BUỔI CHIỀU 13/11/2026 — CÀI ĐẶT GHI TỪ CLAUDE KHÔNG TỚI APP THẬT.**
+  Anh Hùng: *"nó có dùng muse k đó sao lâu thế"* -> 0 file `muse_*.log`, Part ghi "Gemini dự
+  phòng". `MUSE_CHON_DOAN=1` do Claude ghi bằng `update_env` từ sandbox nên Windows (MSIX)
+  chuyển vào `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\BQHungVideo\.env`; Claude
+  đọc lại thấy BẬT, còn app thật (`psutil.Process(pid).environ()`) không có khoá MUSE nào ->
+  mặc định "0" -> TẮT im lặng. Thêm nữa UI không có ô đường dẫn CLI nên dù tích ô, app vẫn
+  không tìm thấy `muse-ai`. SỬA: `MUSE_CHON_DOAN` rỗng (chưa từng lưu) = TỰ ĐỘNG — bật khi
+  `lenh_cli()` tìm thấy CLI (PATH, rồi `<ổ C..H>:\MuseAI-API\.venv\Scripts\muse-ai.exe`) VÀ có
+  ≥1 tài khoản đã đăng nhập (`muse_agent.bat`, chỉ hỏi file tồn tại, nhớ 60 s). Máy nhân
+  viên không cài MuseAI-API -> vẫn TẮT. "0"/"1" người dùng lưu vẫn thắng. **KHÔNG BAO GIỜ đổi
+  cài đặt app bằng cách ghi file từ công cụ của Claude** — sửa mặc định trong mã, hoặc để anh
+  Hùng tích/Lưu trong app.
+- **HIỆU ỨNG HOOK KÉO THEO HỘP TIÊU ĐỀ + NHÃN PART (13/11/2026, cổng 42b `_test_tieu_de_part.py`
+  CA 6, 21/0, thử phá trả thứ tự cũ -> HỎNG 6b lệch 2,56%).** Anh Hùng: *"mấy giây đầu tự nhiên
+  khựng giật"*. Đo 3 Part thật: 0 khung trùng, 0 đứng hình, 0 nhảy mốc — file KHÔNG hỏng. Thủ
+  phạm: `export_canvas_clip` dán ảnh lớp chữ (`overlay_png`) TRƯỚC khối hiệu ứng điểm nhấn, nên
+  hook giây 0,12 (rung lắc/rung xoay/lướt ngang/zoom nhồi/xáo khối — Part nào cũng có) phóng to,
+  xô lệch, cụt chữ hộp tiêu đề. Chú thích cũ ghi "đặt TRƯỚC overlay chữ nên CHỮ vẫn nét" chỉ đúng
+  với `.ass`. Nay `_dan_lop_chu`: dán SAU hiệu ứng + spotlight, TRƯỚC phụ đề. Đường `edit_plan`
+  không đổi. Lệch đỏ hộp tiêu đề trong cửa sổ hook: **0,000%**.
+- **BẢN NHẸ MUSE DÙNG GPU GIẢI MÃ + ƯU TIÊN THẤP (13/11/2026).** `dung_proxy` cũ: `scale` TRƯỚC
+  `fps` (thu nhỏ cả 30 khung/giây rồi mới bỏ 28) + giải mã CPU + ưu tiên THƯỜNG = thủ phạm "máy
+  đơ". Đo 5 phút video thật, đan xen 2 vòng: cũ **201 CPU-giây / 15,7 s** · fps-trước 170 / 12,7 ·
+  NVDEC **34 CPU-giây (-83%) / 24,2 s**, file Y HỆT 7,86 MB. Nay `-hwaccel cuda` (khi
+  `nvidia-smi` chạy được, `BQ_MUSE_GPU=0` tắt) lùi CPU nếu lỗi, `them_co=BELOW_NORMAL`. Video
+  27 phút thật: 126,6 s, 36,6 MB, h264 480p 2 khung/giây. ĐÃ CÂN NHẮC RỒI BỎ: gộp tách tiếng +
+  bản nhẹ vào 1 lượt đọc — tách tiếng chỉ đọc luồng tiếng (đo 4,9 s cho video 30 phút), gộp vào
+  là bắt chép lời ĐỢI dựng bản nhẹ (~2 phút) -> chậm hơn. Xuất Part ĐÃ dùng NVDEC sẵn
+  (`_hwaccel_vao`).
+- **TIẾN TRÌNH PHÂN TÍCH KHÔNG ĐƯỢC HẠ IDLE NỮA (13/11/2026).** "Chép lời mãi không xong"
+  KHÔNG phải do ổ D: đo lúc kẹt ổ D rảnh **99%**. Gốc: `jobs._run_analyze` hạ tiến trình con về
+  IDLE (cổng 107) + "nhường nhân" dồn còn 8 nhân phụ, mà 8 nhân đó bị lượt XUẤT (BELOW_NORMAL)
+  chiếm -> ffmpeg con kế thừa IDLE bị BỎ ĐÓI: 8 lệnh cắt 10 phút tiếng (1 giây việc) đứng
+  **>4 phút, 1,2 giây CPU, file 0 KB**, cùng lệnh chạy tay xong **1,1 s**. Đã loại giả thuyết
+  stdin bằng số đo (pipe mở / DEVNULL / -nostdin đều 1,1-1,2 s). Nâng tay 16 tiến trình IDLE ->
+  BELOW_NORMAL thì 6 lệnh treo xong trong < 8 giây. Nay `idle_when_ready=False` (ngang hàng
+  xuất, vẫn nhường giao diện); transcribe thêm `-nostdin` + `stdin=DEVNULL` + timeout (vô hại).
+- **MUSE BẬT THÌ BỎ BƯỚC GIẢI MÃ HÌNH "ĐO CHUYỂN ĐỘNG" (13/11/2026, cổng 99 3c' 56/0).**
+  Anh Hùng: *"chép lời lâu lắm, nửa tiếng"*. Đo trực tiếp: ổ D (HDD WD10EZEX) chỉ đọc ~8 MB/s,
+  RẢNH 75%, CPU máy 46% — nghẽn là `nghe_va_xem` GIẢI MÃ TRỌN video (fps=4) giữ 1 trong 2 chỗ
+  `cua_doc_dia` suốt hơn 5 phút, 14 video xếp hàng sau. Số chuyển động chỉ dùng làm khối gợi ý
+  cho prompt Groq/Gemini; Muse tự xem video. Nay `muse_agent.bat()` -> `_chi_nghe`: âm lượng (cho
+  hook) đo trên `audio_verified_<id>.wav` đã tách ở bước chép lời (ổ C SSD), thiếu file thì đo
+  luồng tiếng video gốc TRONG `giu_cho`; chuyển động = [] và KHÔNG ghi checkpoint `motion_v1`
+  rỗng. ĐO video thật 1.802 s: cũ **787,4 s** -> mới **2,9 s**; top-20 giây to nhất trùng
+  **19/20**, tương quan **0,999**. GIÁ: Muse hỏng thì Groq/Gemini chọn KHÔNG có khối "hành động
+  không lời" (chỉ còn khối âm lượng).
+- **HẬU KIỂM ĐÃ CÓ QUYẾT ĐỊNH THÌ KHÔNG PHẢI "CHƯA KIỂM" (13/11/2026, cổng 115 `_test_hau_kiem_xong.py` 25/0, thử phá 5/5).**
+  187/229 cảnh báo "chưa kiểm tra xong chất lượng" tháng 11 là `continuity_cut` trả 'unreviewed' cho "Đề xuất sai mốc hoặc sai
+  thời lượng" (AI đưa id hỏng, app GIỮ bản chọn). Hệ quả: `continuity_incomplete` -> `m1._cut_vi_het_luot` thấy có key đang hồi
+  -> coi là HẾT LƯỢT -> đợi + phân tích lại, mà câu trả lời đã lưu (`local_step`) nên lượt sau ra Y HỆT; `_pipe_nhan_lai_vang`
+  cũng nhận lại lúc mở app. Đo: 161 job mang lý do này có lượt cuối trung vị 0,1 phút (phát lại cache), xếp->xong 56,5 phút vs
+  35,3 phút job khác (nhân quả CHƯA chạy lại để chứng minh). Nay: sai mốc + đoạn nối dính quảng cáo = 'reviewed'; vượt ngân sách
+  14.000 ký tự = 'skipped'; m1 chỉ đánh dấu chưa kiểm khi status không thuộc (reviewed, skipped). Lỗi mạng/hết lượt/kiểm chứng
+  sai định dạng VẪN là chưa kiểm (chạy lại có thể khác).
+  Kèm (rà soát mục 5/6): bản mở rộng mà CHỮ hai bản giống hệt (chỉ thêm im/nhạc) -> giữ bản chọn, KHÔNG gọi
+  lượt kiểm chứng (240/1.941 lượt kiểm chứng tháng 11 tự trả lời "hai bản giống nhau"); thêm lời thì vẫn hỏi
+  (CA 6c đối chứng). `llm._ghi_log_cache` ghi `logs/groq_cache_<ngày>.log` (token vào · cached_tokens) — 0
+  lượt gọi thêm, để biết prompt caching có ăn không; CHƯA có số thật (chưa chạy với Groq).
+- **BỘ ĐIỀU TIẾT GROQ KHÔNG ĐƯỢC CHẾT VÌ "database is locked" (13/11/2026, cổng 116 `_test_groq_khoa.py` 24/0, thử phá 9/9).**
+  22 dòng log tháng 11 "database is locked" giết bước hậu kiểm. `groq_dispatch` mở kết nối MỚI mỗi lượt (timeout 2 s, nhật ký
+  rollback = người ghi chặn người đọc, 3 CREATE TABLE mỗi lượt), `pick_keys`/`soonest_ready_wait` gọi `remaining()` TỪNG key
+  (41 kết nối). Nay: WAL bền + synchronous=NORMAL · tạo bảng 1 lần/tiến trình (file bị xoá / mất bảng -> tự tạo lại) ·
+  `remaining_many` 1 truy vấn (41 key: 12,3 -> 0,7 ms) · đọc gặp khoá thử 3 lần rồi trả 0.0 (= chưa biết hạn chung; `llm` vẫn
+  giữ `_KEY_STATE` riêng, cùng lắm nhận 429 thật) · `defer`/`clear` gặp khoá thử 3 lần rồi BỎ. Đo 7 tiến trình tranh 5 s:
+  mã cũ 197 vòng · mới 2.652-2.833 vòng, 0 lỗi. Khoá ĐỘC QUYỀN kéo dài: đọc trả sau ~3,4 s, ghi ~3,4 s, KHÔNG ném. Lỗi CŨ kèm:
+  `_connect` cũ không đóng kết nối khi CREATE TABLE ném -> rò handle (Windows không xoá được file). Giá: `remaining()` lẻ
+  chậm hơn (~0,6 ms/lượt vì pragma + kiểm file) — chỉ còn 2 chỗ gọi lẻ trong `llm`.
 - **GROQ CHẾT THÌ TỰ CHUYỂN GEMINI (07/11/2026, cổng 114 `_test_du_phong_gemini.py`, thử phá `_pha_du_phong_gemini.py`).**
   Cửa chung `llm.complete_text/complete_json` -> `_voi_du_phong`: chỉ khi provider=groq do cấu hình + có key
   Gemini; cùng prompt, chỉ đổi nhà cung cấp, model riêng `GEMINI_DU_PHONG_MODEL` = `gemini-3.5-flash-lite`

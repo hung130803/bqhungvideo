@@ -193,3 +193,46 @@ def giu_cho(path: str, bao: Optional[Callable[[str], None]] = None,
         yield
     finally:
         _nha(fd)
+
+
+@contextmanager
+def giu_cho_ten(ten: str, n: int, bao: Optional[Callable[[str], None]] = None,
+                kiem_huy: Optional[Callable[[], None]] = None, nhan: str = "",
+                nhip: float = 0.25):
+    """Giữ 1 trong `n` chỗ CÓ TÊN, dùng chung MỌI tiến trình của app (cùng cơ chế khoá file của
+    `giu_cho`, tiến trình chết là chỗ tự nhả). Dùng cho tài nguyên KHÔNG phải ổ đĩa — vd bộ giải
+    mã NVDEC của card đồ hoạ. n <= 0 -> vào thẳng."""
+    if sys.platform != "win32" or n <= 0:
+        yield
+        return
+    try:
+        d = _thu_muc_khoa()
+    except OSError:
+        yield
+        return
+    files = [os.path.join(d, f"{ten}_{i}.lock") for i in range(n)]
+    huy = kiem_huy or _kiem_huy_mac_dinh
+    fd = None
+    bat_dau = time.monotonic()
+    lan_bao = 0.0
+    while fd is None:
+        for f in files:
+            fd = _thu_giu(f)
+            if fd is not None:
+                break
+        if fd is not None:
+            break
+        huy()
+        now = time.monotonic()
+        if bao and now - lan_bao >= 1.0:
+            lan_bao = now
+            try:
+                bao(f"{nhan or 'đang đợi lượt'} ({n} việc đang chạy) · {int(now - bat_dau)} giây")
+            except Exception as e:  # noqa: BLE001 - Huỷ phải nổi lên
+                if type(e).__name__ == "CanceledError":
+                    raise
+        time.sleep(nhip)
+    try:
+        yield
+    finally:
+        _nha(fd)

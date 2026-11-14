@@ -113,6 +113,46 @@ class Settings:
     GEMINI_DU_PHONG = _env("GEMINI_DU_PHONG", "1") == "1"
     GEMINI_DU_PHONG_MODEL = _env("GEMINI_DU_PHONG_MODEL", "gemini-3.5-flash-lite")
 
+    # CHỌN ĐOẠN BẰNG AGENT MUSE (Meta) qua CLI `muse-ai` RỜI — cổng 117,
+    # app/ai/muse_agent.py, HUONG_DAN_MUSE.md. "1" bật · "0" tắt (đường Groq y
+    # nguyên) · RỖNG = TỰ ĐỘNG: bật khi máy có `muse-ai` + đã đăng nhập Muse
+    # (`muse_agent.bat`). Máy nhân viên không cài MuseAI-API -> tắt như cũ.
+    # 13/11/2026: anh Hùng chạy cả buổi mà Muse không lần nào được gọi — dòng
+    # MUSE_CHON_DOAN=1 Claude ghi bị Windows chuyển sang .env RIÊNG của Claude
+    # (MSIX), .env thật không có -> mặc định "0" -> TẮT im lặng.
+    MUSE_CHON_DOAN = _env("MUSE_CHON_DOAN", "")
+    # Muse hỏng/quá giờ/0 clip -> 1 = tự chọn bằng Groq (rồi Gemini dự phòng) như
+    # cũ; 0 = ĐỢI rồi thử Muse lại (DoiLuotAI, trần vòng đợi chung 12/video, hết
+    # trần vẫn rơi Groq để video không kẹt mãi).
+    MUSE_LUI_GROQ = _env("MUSE_LUI_GROQ", "1") == "1"
+    # Muse chọn đoạn xong thì DÙNG LUÔN tiêu đề/điểm/mốc hook của Muse, bỏ 4 bước
+    # Groq phía sau (cắt gọn · chấm · đánh bóng tiêu đề · hậu kiểm mạch). Groq chỉ
+    # còn chép lời + dự phòng khi Muse hỏng. 0 = Groq làm các bước sau như cũ.
+    MUSE_LAM_HET = _env("MUSE_LAM_HET", "1") == "1"
+    MUSE_DOI_GIAY = float(_env("MUSE_DOI_GIAY", "60") or 60)   # đợi trước khi thử Muse lại
+    MUSE_AI_CLI = _env("MUSE_AI_CLI")            # rỗng = tìm `muse-ai` trên PATH
+    MUSE_STATE_DIR = _env("MUSE_STATE_DIR")      # thư mục .muse-state (cookies)
+    # NHIỀU tài khoản: các thư mục .muse-state cách nhau bởi dấu phẩy; mỗi video
+    # đi tài khoản đang ít việc nhất (muse_agent.chon_phien).
+    MUSE_STATE_DIRS = _env("MUSE_STATE_DIRS")
+    MUSE_SESSION_ID = _env("MUSE_SESSION_ID")    # rỗng = mỗi việc một phiên mới
+    # Đo 13/11/2026 (1 tài khoản): 6 video cùng lúc 6/6 · 15 cùng lúc 12/15 (3 lỗi
+    # HTTP 429 lúc mở kết nối -> nay có giãn nhịp + thử lại).
+    MUSE_SONG_SONG = _env_int("MUSE_SONG_SONG", 100)   # trần CỨNG cả máy
+    MUSE_MOI_TK = _env_int("MUSE_MOI_TK", 16)   # mỗi tài khoản tối đa N video cùng lúc (đo 13/11: 1 tài khoản 30 việc cùng lúc ra 30/30)
+    # Đo 14/11/2026 (19 lượt thật): Muse TRẢ LỜI thì luôn trong 55-109 s (kể cả video 21 phút); 7/19
+    # lượt KHÔNG BAO GIỜ trả lời và app đợi 22-25 phút (2x độ dài + 600 s). Gửi lại thì trả trong 55 s.
+    # Nay đợi 0,1x độ dài + 300 s (19 phút -> ~7 phút, 56 phút -> ~10,5 phút) rồi bỏ để gửi lại.
+    MUSE_TIMEOUT_HE_SO = float(_env("MUSE_TIMEOUT_HE_SO", "0.1") or 0.1)
+    MUSE_TIMEOUT_THEM = float(_env("MUSE_TIMEOUT_THEM", "300") or 300)
+    MUSE_TIMEOUT_MAX = float(_env("MUSE_TIMEOUT_MAX", "3600") or 3600)
+    MUSE_POLL_GIAY = float(_env("MUSE_POLL_GIAY", "20") or 20)
+    MUSE_PROXY_CAO = _env_int("MUSE_PROXY_CAO", 480)
+    MUSE_PROXY_FPS = float(_env("MUSE_PROXY_FPS", "2") or 2)
+    # Ảnh tổng hợp gửi kèm Muse: 1 khung mỗi N giây (0 = tắt). Đo 13/11/2026: Muse tự trích
+    # khung thưa 30-38 s nên lỡ cảnh hình ngắn (bắt 0-1/4 thẻ 6 s); kèm ảnh 5 s -> 4/4.
+    MUSE_BANG_GIAY = float(_env("MUSE_BANG_GIAY", "5") or 0)
+
     DEEPSEEK_API_KEY = _env("DEEPSEEK_API_KEY")
     DEEPSEEK_MODEL = _env("DEEPSEEK_MODEL", "deepseek-chat")
 
@@ -537,7 +577,8 @@ def _ap_vao_bo_nho(values: dict) -> None:
         val = v
         if k == "LLM_PROVIDER":
             val = (str(v) or "groq").strip().lower()  # khớp mặc định ở trên
-        elif k in ("USE_VISION", "LIGHT_MODE", "ECO_MODE", "EXPORT_COVER"):
+        elif k in ("USE_VISION", "LIGHT_MODE", "ECO_MODE", "EXPORT_COVER",
+                   "MUSE_CHON_DOAN", "MUSE_LUI_GROQ", "MUSE_LAM_HET", "GEMINI_DU_PHONG"):
             val = str(v) == "1"    # setting bool: giữ đúng kiểu khi áp live
         elif k == "EXPORT_MAX_MBPS":
             try:

@@ -80,10 +80,16 @@ def release_models() -> None:
 
 
 def is_available() -> bool:
+    """Máy có faster-whisper không — dò bằng `find_spec`, KHÔNG import.
+
+    `_ai_ready` của giao diện gọi hàm này trên LUỒNG QT; import faster_whisper
+    kéo theo ctranslate2 -> torch, mà torch nạp SAU Qt là ACCESS VIOLATION
+    (try/except không chặn được). Đo 13/11/2026: cổng smoke bấm hết nút xong
+    thì app SẬP đúng ở đây trên máy không có key Groq."""
     try:
-        import faster_whisper  # noqa: F401
-        return True
-    except ImportError:
+        import importlib.util
+        return importlib.util.find_spec("faster_whisper") is not None
+    except (ImportError, ValueError):
         return False
 
 
@@ -368,7 +374,8 @@ def _audio_duration(path: str, ff_probe: str, flags: int) -> float:
         r = subprocess.run(
             [ff_probe, "-v", "error", "-show_entries", "format=duration",
              "-of", "default=nw=1:nk=1", path],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=flags)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+            stdin=subprocess.DEVNULL, creationflags=flags)
         return float((r.stdout or "0").strip() or 0)
     except Exception:  # noqa: BLE001
         return 0.0
@@ -394,14 +401,15 @@ def _co_giong_nguoi(audio_path: str, a: float, b: float) -> bool:
     # luôn số đo -> hàm này trả False MỌI LÚC -> vá lỗ không bao giờ chạy mà
     # cũng không báo lỗi. Đúng bẫy `volumedetect` đã sập một lần trước đây.
     r = subprocess.run(
-        [settings.FFMPEG_PATH, "-hide_banner", "-nostats", "-ss", f"{a:.3f}",
+        [settings.FFMPEG_PATH, "-nostdin", "-hide_banner", "-nostats", "-ss", f"{a:.3f}",
          "-t", f"{b - a:.3f}", "-i", audio_path,
          # 3 TẦNG (đo 07/08/2026): 1 tầng quá thoải, tiếng ù máy 80Hz chỉ tụt
          # còn -44 dB nên vẫn bị coi là giọng người. 3 tầng -> -67 dB.
          "-af", "highpass=f=300:poles=2,highpass=f=300:poles=2,"
                 "lowpass=f=3400:poles=2,astats=metadata=1:reset=0",
          "-f", "null", "-"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=_NO_WINDOW)
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW, timeout=300)
     m = re.findall(r"RMS level dB:\s*(-?[\d.]+|-?inf)", r.stderr or "")
     if not m:
         return False
@@ -464,11 +472,11 @@ def va_lo_chep_loi(audio_path: str, segs: list, words: list, lang: str,
                 a2, b2 = max(0.0, a - VA_LO_DEM), b + VA_LO_DEM
                 p = os.path.join(work, f"lo{k}.m4a")
                 subprocess.run(
-                    [settings.FFMPEG_PATH, "-v", "error", "-y",
+                    [settings.FFMPEG_PATH, "-nostdin", "-v", "error", "-y",
                      "-ss", f"{a2:.3f}", "-t", f"{b2 - a2:.3f}", "-i", audio_path,
                      "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac",
                      "-b:a", "48k", p],
-                    creationflags=_NO_WINDOW)
+                    stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW, timeout=300)
                 if not os.path.exists(p) or os.path.getsize(p) < 800:
                     continue
                 s2, w2, _lg2, _tx2 = _groq_one(p, _ma_iso(lang), keys)
@@ -551,7 +559,11 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             if on_progress:
                 on_progress(0.02 + 0.06 * i / n, f"Đang chuẩn bị âm thanh Groq: phần {i + 1}/{n} (chưa gửi AI)…")
             part = os.path.join(work, f"p{i}.mp3")
-            cmd = [ff, "-y", "-ss", str(start)]
+            # `-nostdin` + stdin=DEVNULL BẮT BUỘC (13/11/2026): trong tiến trình
+            # phân tích con, ffmpeg kế thừa stdin rồi ĐỨNG chờ phím — đo trên máy
+            # anh Hùng: 8 lệnh cắt 10 phút tiếng đứng >3 phút, file ra 0 KB, CPU
+            # 1 s; cùng lệnh có -nostdin xong trong 1 giây.
+            cmd = [ff, "-nostdin", "-y", "-ss", str(start)]
             if total > 0:
                 cmd += ["-t", str(chunk)]        # 1 cửa sổ 10 phút (chính xác)
             cmd += ["-i", audio_path, "-ac", "1", "-ar", "16000", "-b:a", "48k",
@@ -563,7 +575,7 @@ def _transcribe_groq(audio_path: str, language, on_progress) -> dict:
             for _attempt in (1, 2):
                 try:
                     subprocess.run(cmd, capture_output=True, creationflags=flags,
-                                   timeout=900)
+                                   stdin=subprocess.DEVNULL, timeout=900)
                 except Exception:  # noqa: BLE001
                     pass
                 if os.path.exists(part) and os.path.getsize(part) >= 400:

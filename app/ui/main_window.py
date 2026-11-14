@@ -323,7 +323,11 @@ class MainWindow(QMainWindow):
         import os, sys
         from PyQt6.QtCore import QProcess
         args = [a for a in sys.argv[1:] if a != "--doi-pid"]
-        ok = QProcess.startDetached(sys.executable, ["--doi-pid", str(os.getpid())] + args)
+        # Chạy từ MÃ NGUỒN thì sys.executable là python.exe -> phải kèm main.py,
+        # không thì python báo "unknown option --doi-pid" và app không mở lại.
+        dau = ([] if getattr(sys, "frozen", False)
+               else [os.path.abspath(sys.argv[0] or "main.py")])
+        ok = QProcess.startDetached(sys.executable, dau + ["--doi-pid", str(os.getpid())] + args)
         if isinstance(ok, tuple):
             ok = ok[0]
         if ok:

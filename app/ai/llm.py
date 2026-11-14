@@ -302,7 +302,7 @@ def pick_keys(provider: str, keys=None, start_at: int = 0, scope: str = 'chat') 
     ready, limited = [], []
     if provider == 'groq':
         from app.ai import groq_dispatch
-        shared = {k: groq_dispatch.remaining(k, scope) for k in keys}
+        shared = groq_dispatch.remaining_many(keys, scope)  # 1 truy vấn, không 41 kết nối
     else:
         shared = {}
     with _KEY_LOCK:
@@ -348,7 +348,7 @@ def soonest_ready_wait(provider: str, keys=None, scope: str = 'chat'):
     soonest = None
     if provider == 'groq':
         from app.ai import groq_dispatch
-        shared = {k: groq_dispatch.remaining(k, scope) for k in keys}
+        shared = groq_dispatch.remaining_many(keys, scope)  # 1 truy vấn, không 41 kết nối
     else:
         shared = {}
     with _KEY_LOCK:
@@ -1386,8 +1386,43 @@ def _ghi_chan_doan(model: str, resp, out: str) -> None:
             "token_vao": int(getattr(u, "prompt_tokens", 0) or 0) if u else 0,
             "dau_than": raw[:200],
         }
+        _ghi_log_cache(_LAN.chan_doan["model"], u)
     except Exception:  # noqa: BLE001 — sổ ghi chú, không được làm chết lượt gọi
         _LAN.chan_doan = {}
+
+
+def _cached_tokens(u) -> int:
+    """`usage.prompt_tokens_details.cached_tokens` (Groq/OpenAI) — 0 khi không có."""
+    try:
+        det = getattr(u, "prompt_tokens_details", None)
+        if det is None and isinstance(u, dict):
+            det = u.get("prompt_tokens_details")
+        if isinstance(det, dict):
+            return int(det.get("cached_tokens") or 0)
+        return int(getattr(det, "cached_tokens", 0) or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _ghi_log_cache(model: str, u) -> None:
+    """Ghi `logs/groq_cache_<ngày>.log`: model · token vào · token lấy từ bộ nhớ
+    đệm prompt. 0 lượt gọi thêm — chỉ để biết prompt caching có ăn không
+    (13/11/2026, rà soát mục 6). KHÔNG BAO GIỜ ghi key, không bao giờ ném."""
+    try:
+        if not u:
+            return
+        import datetime
+        from config import DATA_DIR
+        vao = int(getattr(u, "prompt_tokens", 0) or 0)
+        ra = int(getattr(u, "completion_tokens", 0) or 0)
+        cache = _cached_tokens(u)
+        p = Path(DATA_DIR) / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now()
+        with open(p / f"groq_cache_{ts:%Y%m%d}.log", "a", encoding="utf-8") as f:
+            f.write(f"[{ts:%H:%M:%S}] {model} vao={vao} ra={ra} cache={cache}\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _ghi_log_rong(dong: str) -> None:
@@ -1963,8 +1998,43 @@ def _voi_du_phong(provider_arg, goi):
         _LAN.trong_du_phong = False
 
 
+_DP_GEMINI_NGHI_TOI = 0.0
+_DP_GEMINI_NGHI = 60.0      # Gemini lỗi khi đang ưu tiên -> bỏ qua Gemini 60 s (key free hay
+#                             trả "free tier not available" xen kẽ — đo 10-12/11: ~30% lượt)
+
+
+def uu_tien_gemini(bat: bool) -> None:
+    """Anh Hùng 13/11/2026: "muse lỗi ưu tiên gemini xong mới đến groq". Bật cho
+    LUỒNG này (job chọn Part có Muse hỏng) -> mọi lượt AI gọi Gemini TRƯỚC, Gemini
+    lỗi mới tới Groq. Chỉ có tác dụng khi bật GEMINI_DU_PHONG + có key Gemini."""
+    _LAN.uu_tien_gemini = bool(bat)
+
+
+def dang_uu_tien_gemini() -> bool:
+    return bool(getattr(_LAN, "uu_tien_gemini", False))
+
+
+def _gemini_truoc(goi):
+    """Thứ tự Muse -> GEMINI -> Groq. Gemini lỗi (kể cả bị chặn nội dung) -> Groq.
+    Huỷ (CanceledError) không phải LLMError nên vẫn nổi lên."""
+    global _DP_GEMINI_NGHI_TOI
+    with _DP_LOCK:
+        gem_nghi = time.monotonic() < _DP_GEMINI_NGHI_TOI
+    if not gem_nghi:
+        try:
+            return _goi_gemini_du_phong(goi)
+        except LLMError as e:
+            with _DP_LOCK:
+                _DP_GEMINI_NGHI_TOI = time.monotonic() + _DP_GEMINI_NGHI
+            _ghi_log_du_phong(f"Ưu tiên Gemini (Muse hỏng) nhưng Gemini lỗi -> sang Groq, "
+                              f"nghỉ Gemini {_DP_GEMINI_NGHI:.0f}s: {e}")
+    return goi(None)
+
+
 def _voi_du_phong_than(goi):
     global _DP_GROQ_NGHI_TOI
+    if dang_uu_tien_gemini():
+        return _gemini_truoc(goi)
     with _DP_LOCK:
         dang_nghi = time.monotonic() < _DP_GROQ_NGHI_TOI
     if dang_nghi:

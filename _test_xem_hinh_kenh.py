@@ -338,7 +338,7 @@ _clip_gia = [{"score": 70.0, "segments": [[10.0, 40.0]]},
 GOI["n"] = 0
 M1._vision_rescore(_lam_video(p_tat), [dict(c) for c in _clip_gia], None)
 _n_ham = GOI["n"]
-_nhanh = inspect.getsource(M1.generate_highlights)
+_nhanh = inspect.getsource(M1._generate_highlights)  # thân thật (generate_highlights là vỏ giữ cờ ưu tiên Gemini)
 ok(_n_ham > 0,
    "4f (bối cảnh) `_vision_rescore` THẬT SỰ gọi vision khi LIGHT_MODE tắt — "
    "nên đây là cửa thứ hai có thật, không phải lo hão", f"{_n_ham} lượt")

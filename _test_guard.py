@@ -241,6 +241,19 @@ def _chan_qt() -> None:
         QDesktopServices.openUrl = staticmethod(_mo_gia)   # type: ignore[assignment]
     except Exception:  # noqa: BLE001 - không có PyQt6 thì thôi
         pass
+    # QProcess.startDetached: nút "Mở lại app" của cửa sổ chính dùng nó. Đo
+    # 13/11/2026: cổng smoke bấm nút đó là bật THẬT một tiến trình python ra máy.
+    try:
+        if "PyQt6.QtCore" in sys.modules:
+            from PyQt6.QtCore import QProcess
+            if not getattr(QProcess.startDetached, "_canh_cong", False):
+                def _tach_gia(*a, **k):
+                    DA_CHAN.append("QProcess.startDetached")
+                    return False
+                _tach_gia._canh_cong = True            # type: ignore[attr-defined]
+                QProcess.startDetached = staticmethod(_tach_gia)   # type: ignore[assignment]
+    except Exception:  # noqa: BLE001
+        pass
 
 
 _chan_qt()
@@ -275,6 +288,10 @@ def tu_kiem(im: bool = False) -> None:
         xau.append("webbrowser.open")
     if _ws is not None and _ws.PlaySound is not _ps_gia:
         xau.append("winsound.PlaySound")
+    if "PyQt6.QtCore" in sys.modules:
+        from PyQt6.QtCore import QProcess
+        if not getattr(QProcess.startDetached, "_canh_cong", False):
+            xau.append("QProcess.startDetached")
     if xau:
         print("❌ CANH CỔNG BỊ GHI ĐÈ: " + ", ".join(xau) +
               " — dừng test, không để Explorer/trình phát nhảy lên máy user.")

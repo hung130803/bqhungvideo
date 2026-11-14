@@ -123,8 +123,14 @@ def write_hashtags(title: str, transcript: str, language: str = "",
         data = data[0] if data and isinstance(data[0], dict) else {}
     if not isinstance(data, dict):
         raise llm.LLMError("AI trả về định dạng lạ.")
+    return chuan_hashtag(data.get("hashtags"), max_tags)
+
+
+def chuan_hashtag(ds, max_tags: int = 4) -> list[str]:
+    """Làm sạch danh sách hashtag (bỏ dấu cách, thêm #, bỏ trùng, cắt trần).
+    Dùng chung cho Groq (write_hashtags) và hashtag Muse trả sẵn."""
     tags: list[str] = []
-    for t in (data.get("hashtags") or []):
+    for t in (ds if isinstance(ds, list) else []):
         t = str(t).strip().replace(" ", "")
         if t and not t.startswith("#"):
             t = "#" + t

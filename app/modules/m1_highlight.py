@@ -962,7 +962,8 @@ def _chunk_span(listing: str) -> tuple:
 def _llm_select_clips(transcript: dict, duration: float, ctx=None,
                       scenes: dict = None, cfg: dict = None,
                       digest: list = None,
-                      nghe_xem: str = "", audit: dict = None) -> list:
+                      nghe_xem: str = "", audit: dict = None,
+                      nguon_video: str = "", video_id=None) -> list:
     """
     AI tự chọn các clip hay: CHIA transcript thành nhiều khúc, gọi LLM từng khúc
     (prompt gọn -> model local trả ổn định), rồi GỘP. Mỗi clip có thể gồm nhiều
@@ -976,6 +977,22 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     if not llm.is_configured():
         return [], []
     segs = (transcript or {}).get("segments", [])
+    if not segs and nguon_video:
+        # VIDEO KHÔNG LỜI + MUSE: Muse XEM được video nên làm thay cho bước Groq
+        # xem hình (~3-4 phút/video). generate_highlights đã BỎ dựng digest khi
+        # Muse bật; Muse hỏng thì dựng digest NGAY BÂY GIỜ rồi đi đường cũ.
+        _rows = _thu_muse(nguon_video, [], duration, cfg or {}, "", video_id, ctx)
+        _kq = _muse_khong_loi(_rows, duration, scenes, cfg or {}) if _rows else []
+        if _kq:
+            if audit is not None:
+                audit.update(analysis_complete=True, muse=True, proposed=len(_rows),
+                             candidates=len(_kq), mode="muse_xem_video")
+            return _kq, [f"Muse chọn đoạn bằng XEM video ({len(_kq)} đoạn, video không lời)"]
+        if not digest and video_id is not None:
+            if ctx is not None:
+                ctx.progress(0.20, "Muse không chọn được — AI Groq XEM HÌNH (~3 phút)...")
+            digest = _vd.build_vision_digest(video_id, nguon_video, duration,
+                                             ctx=ctx, bat_buoc=True)
     if not segs and not (digest or nghe_xem):
         # Không lời VÀ cũng không có căn cứ HÌNH/TIẾNG -> thật sự không có gì.
         return [], ["chép lời RỖNG (0 câu) và không có dữ liệu hình/tiếng nên "
@@ -1004,6 +1021,45 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     from app.ai.editorial_context import contextual_chunks
     from config import settings as _retry_settings
     retry_deadline = time.monotonic() + max(0., float(getattr(_retry_settings, 'AI_QUOTA_WAIT_SEC', 900)))
+    # 🤖 MUSE (agent Meta, cổng 117): CHỈ khi MUSE_CHON_DOAN=1 VÀ caller đưa
+    # đường dẫn video. Có clip -> bỏ vòng Groq, clip đi qua ĐÚNG các bước chuẩn
+    # hoá bên dưới. Hỏng/quá giờ/rỗng -> chạy Groq như cũ. Tắt cờ -> nhánh này
+    # không chạm CLI, không đổi gì.
+    _muse_rows = _thu_muse(nguon_video, segs, duration, cfg, lang_name,
+                           video_id, ctx) if nguon_video else None
+    if _muse_rows:
+        _chunks_groq = chunks
+        chunks = []
+        for r in _muse_rows:
+            _tho[0] += 1
+            clip = _normalize_clip(r, duration, boundaries, min_len, max_len, segs)
+            if not clip:
+                _tho[1] += 1
+                continue
+            clip["segments"] = _trim_junk_edges(clip["segments"], segs, min_len)
+            clip["ai_nguon"] = "muse"
+            from app.ai.social import chuan_hashtag
+            clip["hashtags_muse"] = chuan_hashtag(r.get("hashtags"), 4)
+            all_clips.append(clip)
+        if all_clips:
+            if audit is not None:
+                audit["muse"] = True
+            _can = int(cfg.get("count", 0) or 0)
+            if _can and len(all_clips) < _can:
+                # Muse ra THIẾU số Part anh đặt (clip bị loại khi chuẩn hoá) ->
+                # Groq chọn bổ sung; khử trùng + critic phía sau giữ đúng số Part.
+                from app.ai import muse_agent as _ma
+                _ma.ghi_log(f"video_id={video_id}: Muse ra {len(all_clips)}/{_can} clip hợp lệ "
+                            "— Gemini/Groq chọn bổ sung")
+                llm.uu_tien_gemini(True)
+                chunks = _chunks_groq
+        else:                       # Muse trả clip nhưng không cái nào hợp lệ -> Groq
+            from app.ai import muse_agent as _ma
+            _ma.ghi_log(f"video_id={video_id}: {_tho[0]} clip Muse bị loại hết "
+                        "khi chuẩn hoá — rơi về Gemini/Groq")
+            llm.uu_tien_gemini(True)
+            _tho = [0, 0]
+            chunks = _chunk_transcript(segs)
     for ci, listing in enumerate(contextual_chunks(chunks)):
         if ctx is not None:
             frac = ci / max(1, len(chunks))
@@ -1095,7 +1151,13 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
     kept.sort(key=lambda c: c["segments"][0][0])  # theo thứ tự thời gian (Part 1,2,3)
 
     # PASS 2 — AI ĐỌC KỸ từng clip, cắt gọn bỏ phần thừa (hiểu nội dung, giữ đoạn đắt)
+    # Clip do MUSE chọn (MUSE_LAM_HET): Muse đã cắt theo ranh giới câu nên KHÔNG
+    # gọi Groq cắt gọn lại; trim CTA + ép Min/Max của app vẫn chạy bình thường.
     refined = []
+    if muse_lam_het(kept):
+        if audit is not None:
+            audit["muse_lam_het"] = True
+        kept, refined = [], list(kept)
     for i, c in enumerate(kept):
         if ctx is not None:
             ctx.progress(0.55 + 0.05 * (i / max(1, len(kept))),
@@ -1116,6 +1178,66 @@ def _llm_select_clips(transcript: dict, duration: float, ctx=None,
         for c in refined:
             c["segments"] = _gon_so_doan(c.get("segments") or [])
     return refined, warns
+
+
+def muse_lam_het(clips) -> bool:
+    """True khi MỌI clip đều do Muse chọn và đang bật MUSE_LAM_HET -> bỏ các bước
+    Groq phía sau (cắt gọn · chấm · đánh bóng tiêu đề · hậu kiểm mạch). Có MỘT
+    clip Groq bổ sung là quay về đường Groq đầy đủ cho cả lượt (chất lượng đồng
+    đều). Đọc cờ bằng `la_bat` để chuỗi "0" trong .env không thành True."""
+    if not clips:
+        return False
+    from config import settings as _s
+    from app.ai.muse_agent import la_bat, bat as _muse_bat
+    if not (_muse_bat() and la_bat(getattr(_s, "MUSE_LAM_HET", True))):
+        return False
+    return all(c.get("ai_nguon") == "muse" for c in clips)
+
+
+def _thu_muse(src, segs, duration, cfg, lang_name, video_id, ctx):
+    """Gọi agent Muse (app/ai/muse_agent). Trả list dict JSON thô hoặc None.
+    Chỉ CanceledError nổi lên; mọi lỗi khác -> None + log, Groq làm tiếp."""
+    from app.ai import muse_agent
+    if not muse_agent.bat():
+        return None
+    from app.queue.worker import CanceledError
+    try:
+        rows, ly_do = muse_agent.chon_doan(
+            src, segs, duration, cfg, lang_name, video_id=video_id,
+            check=(ctx.check_canceled if ctx is not None else None),
+            progress=((lambda m: ctx.progress(0.32, m)) if ctx is not None else None))
+    except CanceledError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        rows, ly_do = None, f"lỗi: {e}"
+    if not rows:
+        # Muse hỏng -> phần còn lại của job này: Gemini TRƯỚC, Groq sau
+        llm.uu_tien_gemini(True)
+        _muse_khong_ra(ctx, video_id, ly_do)
+        return None
+    return rows
+
+
+def _muse_khong_ra(ctx, video_id, ly_do: str) -> None:
+    """Muse không ra clip. MUSE_LUI_GROQ=1 (mặc định) -> ghi log rồi để Groq/
+    Gemini chọn như cũ. =0 -> đợi rồi ném DoiLuotAI để job quay lại hàng và thử
+    Muse lần nữa; hết trần vòng đợi (12/video, ghi đĩa) thì vẫn rơi Groq."""
+    from app.ai import muse_agent
+    from config import settings as _s
+    from app.ai.muse_agent import la_bat as _lb
+    if _lb(getattr(_s, "MUSE_LUI_GROQ", True)) or not _con_vong_doi(video_id):
+        muse_agent.ghi_log(f"video_id={video_id}: rơi về Groq — {ly_do}")
+        return
+    muse_agent.ghi_log(f"video_id={video_id}: Muse không ra clip ({ly_do}) — "
+                       "đang TẮT tự chuyển Groq -> đợi rồi thử Muse lại")
+    moc = time.time() + max(0.0, float(getattr(_s, "MUSE_DOI_GIAY", 60) or 0))
+    while time.time() < moc:
+        if ctx is not None:
+            ctx.check_canceled()
+            ctx.progress(0.32, f"Muse chưa chọn được ({str(ly_do)[:80]}) — đợi "
+                               f"{int(moc - time.time())}s rồi thử lại Muse")
+        time.sleep(1.0)
+    raise DoiLuotAI("Muse chưa chọn được đoạn — thử lại Muse. " + str(ly_do)[:200])
 
 
 def _gon_so_doan(segs: list, toi_da: int = 6, khe_noi: float = 8.0) -> list:
@@ -1635,6 +1757,31 @@ def _overlap_frac(s: float, e: float, used: list) -> float:
     return min(1.0, covered / span)
 
 
+def _muse_khong_loi(rows, duration: float, scenes, cfg: dict) -> list:
+    """Chuẩn hoá clip Muse cho video KHÔNG LỜI: ranh giới lấy từ MỐC CẢNH, ép
+    Min/Max của app, bỏ trùng, chốt đúng số Part. Rỗng -> [] (caller lùi Groq)."""
+    from app.ai.chon_doan import bo_trung_nhau
+    from app.ai.social import chuan_hashtag
+    count = int((cfg or {}).get("count", 0) or 0)
+    min_len = float((cfg or {}).get("min_len", 60.0))
+    max_len = float((cfg or {}).get("max_len", 0.0) or 0.0)
+    _bnd = _natural_boundaries({}, scenes or {})
+    out = []
+    for r in rows or []:
+        clip = _normalize_clip(r, duration, _bnd, min_len, max_len, [])
+        if not clip:
+            continue
+        clip["segments"], _ = _enforce_len(clip["segments"], min_len, max_len, duration, _bnd)
+        clip["ai_nguon"] = "muse"
+        clip["xem_hinh"] = True
+        clip["hashtags_muse"] = chuan_hashtag(r.get("hashtags"), 4)
+        out.append(clip)
+    out, _ = bo_trung_nhau(out, ty_le=0.25)
+    out = sorted(out, key=lambda c: -float(c.get("score", 0) or 0))[:count if count > 0 else 12]
+    out.sort(key=lambda c: c["segments"][0][0])
+    return out
+
+
 def _chon_doan_khong_loi(duration: float, ctx, scenes, cfg: dict,
                          digest: list, nghe_xem: str, audit: dict = None) -> tuple:
     """AI chọn đoạn cho VIDEO KHÔNG CÓ LỜI NÓI — căn cứ là HÌNH + TIẾNG.
@@ -2102,6 +2249,16 @@ def _selection_result(clip_ids, cfg, provider, audit, warnings):
 
 
 def generate_highlights(payload: dict, ctx: JobContext) -> dict:
+    """Bọc `_generate_highlights`: cờ "ưu tiên Gemini" (bật khi Muse hỏng) chỉ
+    sống TRONG job này — luồng worker chạy job khác sau đó phải về Groq trước."""
+    llm.uu_tien_gemini(False)
+    try:
+        return _generate_highlights(payload, ctx)
+    finally:
+        llm.uu_tien_gemini(False)
+
+
+def _generate_highlights(payload: dict, ctx: JobContext) -> dict:
     """
     Bước "tìm highlight" — được job 'auto' (jobs.py) gọi sau khi phân tích.
     AI tự chọn clip (độ dài linh hoạt, bỏ đoạn thừa, ghép khúc hay). Nếu bật vision,
@@ -2152,7 +2309,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
     # Kênh chưa đụng tới (NULL) -> trả đúng thứ `vision_digest_enabled()` trả ở
     # v2.21.0. `build_vision_digest` tự tra lại ô đó nên đây chỉ quyết định có
     # HIỆN dòng tiến trình hay không, không phải cửa duy nhất.
-    if _vd.nen_xem_hinh(video_id) or _khong_loi:
+    from app.ai import muse_agent as _ma_kl
+    # Video không lời + Muse bật: Muse XEM video thay bước Groq xem hình 3-4 phút
+    # (Muse hỏng thì `_llm_select_clips` tự dựng digest lúc đó).
+    _muse_xem = _khong_loi and _ma_kl.bat()
+    if (_vd.nen_xem_hinh(video_id) or _khong_loi) and not _muse_xem:
         ctx.progress(0.20, "AI đang xem khung hình khắp video..."
                      if not _khong_loi else
                      "Video không lời — AI XEM HÌNH để hiểu nội dung "
@@ -2188,6 +2349,38 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             # chon_doan.nghe_va_xem). Checkpoint vẫn giữ 2 khoá cũ: khoá nào
             # đã có thì lấy lại, chỉ khi thiếu mới chạy lượt đọc (1 lần).
             _nx: dict = {}
+            # MUSE ĐANG BẬT -> Muse tự XEM video nên khối "xem chuyển động" chỉ
+            # còn là gợi ý cho Groq lúc Muse hỏng. Bước đó GIẢI MÃ TRỌN video gốc
+            # (đo 13/11/2026 máy anh Hùng: 1 lệnh chạy >5 phút, ~1,6 nhân, giữ 1
+            # trong 2 chỗ đọc ổ D: -> 14 video xếp hàng sau nó trong khi ổ D rảnh
+            # 75%). Nay bỏ phần hình; âm lượng (cho hook) đo trên file TIẾNG ĐÃ
+            # TÁCH sẵn ở bước chép lời (ổ C, không giải mã hình). Không có file đó
+            # thì đo tiếng trên video gốc (chỉ luồng tiếng, -vn).
+            from app.ai import muse_agent as _ma_nx
+            _muse_nx = _ma_nx.bat()
+            if _muse_nx:
+                def _chi_nghe():
+                    _wav = ""
+                    try:
+                        from app.core.analysis import _project_audio_path
+                        _w = _project_audio_path(video_id)
+                        _wav = str(_w) if _w.exists() and _w.stat().st_size > 1000 else ""
+                    except Exception:  # noqa: BLE001
+                        _wav = ""
+                    if _wav:
+                        _r = _cd_mod.nang_luong(_wav, _stt.FFMPEG_PATH)
+                        # analysis giữ file này lại riêng cho bước này -> đo xong xoá
+                        try:
+                            os.remove(_wav)
+                        except OSError:
+                            pass
+                        if _r:
+                            return _r
+                    from app.core.cua_doc_dia import giu_cho
+                    with giu_cho(_src_path, bao=lambda m: ctx.progress(0.24, m)):
+                        return _cd_mod.nang_luong(_src_path, _stt.FFMPEG_PATH)
+                _nx["v"] = (local_step('audio_energy_v1', _stamp, _chi_nghe), [])
+                ctx.progress(0.25, "Muse sẽ XEM video — bỏ bước giải mã hình đo chuyển động")
 
             def _mot_luot():
                 if "v" not in _nx:
@@ -2198,7 +2391,10 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             _nl = local_step('audio_energy_v1', _stamp, lambda: _mot_luot()[0])
             ctx.check_canceled()
             ctx.progress(0.25, "Đã có năng lượng tiếng; tiếp tục kiểm tra chuyển động…")
-            _cd = local_step('motion_v1', _stamp, lambda: _mot_luot()[1])
+            # Muse bật: KHÔNG ghi checkpoint 'motion_v1' rỗng (tắt Muse sau này
+            # thì video vẫn được đo chuyển động thật, không nhận lại list rỗng)
+            _cd = ([] if _muse_nx
+                   else local_step('motion_v1', _stamp, lambda: _mot_luot()[1]))
             ctx.check_canceled()
             _khoi_nghe_xem = (
                 _cd_mod.khoi_prompt_nghe(_cd_mod.cua_so_cang(_nl), duration)
@@ -2241,18 +2437,26 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 ({"segments": [], "words": [], "language": ""} if _khong_loi
                  else transcript),
                 duration, ctx, scenes, cfg, digest=digest,
-                nghe_xem=_khoi_nghe_xem, audit=selection_audit),
+                nghe_xem=_khoi_nghe_xem, audit=selection_audit,
+                nguon_video=((vrow["src_path"] if vrow else "") or ""),
+                video_id=video_id),
             ctx, prov)
     except llm.LLMError as e:  # lỗi thật/đợi quá ngân sách -> báo rõ, lùi heuristic
         ai_clips = []
         llm_error = str(e)
+    if vrow and vrow["src_path"]:
+        # Chọn đoạn XONG -> quên kết quả Muse nhớ tạm, để lần "Phân tích lại"
+        # sau gửi Muse mới chứ không nhận y nguyên Part cũ (soát 13/11/2026).
+        from app.ai.muse_agent import quen_ket_qua
+        quen_ket_qua(vrow["src_path"])
     # 🔁 NHIỀU-PASS: AI đọc lại toàn cảnh, chấm + chọn top viral, loại clip
     # trùng/lê thê. FAIL-SAFE (chỉ lọc/sắp xếp, không đổi boundary; lỗi/keo
     # rỗng -> giữ nguyên). Chạy TRƯỚC dedup cross-run (used_ranges) như cũ.
     selection_audit["candidates_before_critic"] = len(ai_clips)
+    _muse_het = muse_lam_het(ai_clips)
     if ai_clips:
         from config import settings as _st0
-        if getattr(_st0, "AI_MULTIPASS", True):
+        if getattr(_st0, "AI_MULTIPASS", True) and not _muse_het:
             _want = int(cfg.get("count", 0) or 0)
             ctx.progress(0.58, f"AI [{prov_name}] chấm & chọn clip tốt nhất...")
             ai_clips = _refine_clip_selection(
@@ -2304,7 +2508,7 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
         # clip nào từng được chấm cao -> điểm mới có nghĩa để lọc. Lỗi/không
         # parse được -> GIỮ điểm tự chấm (không bao giờ làm hỏng lượt cắt).
         _da_cham_mu = False
-        if getattr(_st, "BLIND_JUDGE", True) and len(ai_clips) > 1:
+        if getattr(_st, "BLIND_JUDGE", True) and len(ai_clips) > 1 and not _muse_het:
             try:
                 # HỘI ĐỒNG 3 TRỌNG TÀI (3 góc nhìn, lấy TRUNG VỊ) + cho phép
                 # dùng model BIẾT SUY LUẬN cho khâu chấm (prompt chấm NGẮN nên
@@ -2390,6 +2594,14 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             _n_pol = _polish_titles(
                 ai_clips, {"language": _lang_ten, "text": "", "segments": []},
                 ctx, lang_ep=_lang_ten) if _lang_ten else 0
+        elif _muse_het:
+            # Muse đã viết tiêu đề đúng ngôn ngữ video; chỉ gọi Groq cho clip
+            # nào tiêu đề RỖNG hoặc SAI thứ tiếng (soi chữ viết, cổng 109).
+            from app.ai.recap import detect_lang_by_script as _dls
+            _want_sc = _dls((transcript or {}).get("text", "") or "")
+            _hong = [_c for _c in ai_clips
+                     if not _title_lang_ok(str(_c.get("title_en") or ""), _want_sc)]
+            _n_pol = _polish_titles(_hong, transcript, ctx) if _hong else 0
         else:
             _n_pol = _polish_titles(ai_clips, transcript, ctx)
         if _n_pol:
@@ -2426,7 +2638,10 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
             segs, _note = _enforce_len(segs, _min, _max, duration, _bnd)
             c["segments"] = segs
             continuity = {"status": "disabled", "changed": False}
-            if getattr(_st, "HAU_KIEM_GHEP", True):
+            if _muse_het:
+                continuity = {"status": "skipped", "changed": False,
+                              "reason": "Muse đã chọn đoạn theo mạch chuyện"}
+            elif getattr(_st, "HAU_KIEM_GHEP", True):
                 from app.ai.continuity_cut import review as review_continuity
                 ctx.progress(0.68, "Kiểm tra câu dẫn, diễn biến và kết quả của bản ghép…")
                 blocked = [p for other in ai_clips if other is not c
@@ -2442,10 +2657,12 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                 # Context additions must not reintroduce channel ads/CTA.
                 if _junk_ratio(segs, _tsegs) > _junk_ratio(c["segments"], _tsegs):
                     segs = c["segments"]
-                    continuity = {"status": "needs_review", "changed": False,
+                    # Rejecting the addition is a finished decision, not an
+                    # unfinished review (would trigger a futile wait + rerun).
+                    continuity = {"status": "reviewed", "changed": False,
                                   "reason": "Đoạn nối chứa lời quảng cáo/chào kênh; giữ bản chọn"}
                 c["segments"] = segs
-                if continuity["status"] != "reviewed":
+                if continuity["status"] not in ("reviewed", "skipped"):
                     selection_audit["continuity_incomplete"] = True
                     ai_warns.append("Mạch chuyện: " + continuity.get("reason", "chưa kiểm tra"))
             if _note:
@@ -2457,6 +2674,11 @@ def generate_highlights(payload: dict, ctx: JobContext) -> dict:
                        "title_en": c.get("title_en", ""), "hook": c.get("hook", ""),
                        "hook_seg": c.get("hook_seg"),
                        "dur": round(total, 1), "continuity_review": continuity}
+            if c.get("ai_nguon") == "muse":
+                signals["ai"] = "muse"
+                signals["ai_name"] = "Meta Muse (agent)"
+                if _muse_het and c.get("hashtags_muse"):
+                    signals["hashtags_muse"] = c["hashtags_muse"]
             if llm.so_luot_du_phong():
                 signals["ai_du_phong"] = "gemini"
                 signals["ai_name"] = "Gemini dự phòng (Groq hết lượt)"

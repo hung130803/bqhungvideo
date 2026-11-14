@@ -418,5 +418,58 @@ src = Path(REPO, "app/ui/studio_page.py").read_text(encoding="utf-8")
 ok("GEMINI_DU_PHONG_MODEL" in src and 'sig.get("ai_du_phong")' in src,
    "11h hộp Cài đặt AI nói rõ model dự phòng + thẻ Part tô màu Gemini")
 
+print("CA 12: MUSE HỎNG -> GEMINI TRƯỚC, GROQ SAU (anh Hùng 13/11/2026)")
+moi(groq="kq groq", gemini="kq gemini")
+llm._DP_GEMINI_NGHI_TOI = 0.0
+llm.uu_tien_gemini(True)
+ok(llm.complete_text("p") == "kq gemini" and nha() == ["gemini"],
+   "12a Muse hỏng: gọi Gemini TRƯỚC, Groq 0 lượt", str(nha()))
+moi(groq='{"a":1}', gemini='{"b":2}')
+ok(llm.complete_json("p") == {"b": 2} and nha() == ["gemini"],
+   "12a' JSON cũng Gemini trước (không gọi lồng 2 lần)", str(nha()))
+moi(groq="kq groq", gemini=LOI["key sai"])
+llm._DP_GEMINI_NGHI_TOI = 0.0
+ok(llm.complete_text("p") == "kq groq" and nha() == ["gemini", "groq"],
+   "12b Gemini lỗi -> sang Groq, ra kết quả", str(nha()))
+moi(groq="kq groq", gemini="kq gemini")
+ok(llm.complete_text("p") == "kq groq" and nha() == ["groq"],
+   "12c vừa lỗi Gemini -> nghỉ Gemini 60 s, đi thẳng Groq (không phí thời gian)", str(nha()))
+moi(groq=LOI["mất mạng/503"], gemini=LOI["key sai"])
+llm._DP_GEMINI_NGHI_TOI = 0.0
+try:
+    llm.complete_text("p")
+    _ra = "không ném"
+except llm.LLMError:
+    _ra = "ném"
+ok(_ra == "ném" and nha().count("gemini") >= 1 and "groq" in nha(),
+   "12d cả hai chết -> báo lỗi (để vòng đợi-hết-lượt lo), đã thử đủ 2 nhà", str(nha()))
+llm.uu_tien_gemini(False)
+moi(groq="kq groq", gemini="kq gemini")
+llm._DP_GEMINI_NGHI_TOI = 0.0
+ok(llm.complete_text("p") == "kq groq" and nha() == ["groq"],
+   "12e KHÔNG có Muse hỏng -> giữ Groq trước như cũ", str(nha()))
+moi(groq="kq groq", gemini="kq gemini", gem_key=False)
+llm.uu_tien_gemini(True)
+ok(llm.complete_text("p") == "kq groq" and nha() == ["groq"],
+   "12f không có key Gemini -> cờ ưu tiên vô hại, Groq chạy", str(nha()))
+llm.uu_tien_gemini(False)
+# cờ chỉ sống trong job: vỏ generate_highlights tắt cờ khi ra (kể cả khi job ném lỗi)
+from app.modules import m1_highlight as _M1  # noqa: E402
+llm.uu_tien_gemini(True)
+_tam = _M1._generate_highlights
+_M1._generate_highlights = lambda p, c: (llm.uu_tien_gemini(True), (_ for _ in ()).throw(RuntimeError("x")))
+try:
+    _M1.generate_highlights({"video_id": 1}, None)
+except RuntimeError:
+    pass
+_M1._generate_highlights = _tam
+ok(llm.dang_uu_tien_gemini() is False,
+   "12g job xong (kể cả lỗi) -> cờ tắt, job sau trên cùng luồng lại Groq trước")
+_ts = threading.Thread(target=lambda: R.append(llm.dang_uu_tien_gemini())) if (R := []) == [] else None
+llm.uu_tien_gemini(True)
+_ts.start(); _ts.join()
+llm.uu_tien_gemini(False)
+ok(R == [False], "12h cờ theo TỪNG LUỒNG: job khác chạy song song không bị lây", R)
+
 print(f"\nCỔNG 114: ĐẠT {DAT} · HỎNG {HONG}")
 sys.exit(1 if HONG else 0)

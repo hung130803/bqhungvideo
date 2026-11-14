@@ -2671,6 +2671,10 @@ def _nvdec_works() -> bool:
 #: h264/vp9/av1, 1080p lẫn 4K: 90/164 Part 27-30/10 có nền xanh. Bỏ boxblur
 #: khỏi chuỗi thử thì GPU vẫn ra đúng màu -> bài thử PHẢI có boxblur, và thử
 #: "chạy được không" như bản cũ KHÔNG bắt được; phải SO MÀU với giải mã CPU.
+# ĐÃ THỬ 13/11/2026 VÀ BỎ: thêm `format=yuv420p` ngay sau giải mã GPU thì màu ĐÚNG
+# (lệch 0,0, file xuất giống CPU từng điểm ảnh) NHƯNG xuất 58 s video thật 60 khung
+# tốn 525 CPU-giây / 21,9 s so với giải mã CPU 399 / 16,6 s (3 vòng đan xen) — chép
+# khung GPU -> RAM đắt hơn tự giải mã. Để bài thử này TỪ CHỐI là đúng, đừng "chữa".
 _NVDEC_CHUOI_THU = ("scale=270:480:force_original_aspect_ratio=increase,"
                     "crop=270:480,boxblur=5:1,format=rgb24")
 
@@ -4651,11 +4655,14 @@ def export_canvas_clip(
                          f"y='{cy:.4f}*H-h/2'[vv]")
             nextidx = vin + 1
         final = "[vv]"
+        # LỚP CHỮ (hộp tiêu đề + nhãn "Part N") dán SAU hiệu ứng điểm nhấn +
+        # spotlight (xem `_dan_lop_chu` bên dưới). LỖI THẬT 13/11/2026 (anh Hùng:
+        # "mấy giây đầu tự nhiên khựng giật"): trước đây dán NGAY ĐÂY, tức TRƯỚC
+        # hiệu ứng -> hook ở giây 0,12 (rung/lướt/zoom nhồi/xáo khối) kéo CẢ hộp
+        # tiêu đề + nhãn Part theo: phóng to, xô lệch, cụt chữ ở mép khung.
+        _dan_lop_chu = bool(use_png and edit_plan is None)
         if use_png:
             cmd += ["-i", str(overlay_png)]
-            if edit_plan is None:
-                parts.append(f"[vv][{nextidx}:v]overlay=0:0[v]")
-                final = "[v]"
         # NHẠC NỀN: thêm input (loop vô hạn, cắt theo độ dài clip ở dưới)
         bgm_idx = None
         aidx = nextidx + (1 if use_png else 0)
@@ -4704,6 +4711,9 @@ def export_canvas_clip(
             if _ch:
                 parts.append(f"{final}{_ch}[vhu]")
                 final = "[vhu]"
+        if _dan_lop_chu:
+            parts.append(f"{final}[{nextidx}:v]overlay=0:0[v]")
+            final = "[v]"
         if edit_plan is not None:
             from app.core.editorial_render import append_graph
             final,aidx=append_graph(cmd,parts,final,aidx,_edit_events,_edit_folder.name,
