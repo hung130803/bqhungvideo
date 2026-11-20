@@ -52,7 +52,7 @@ def _check_call_budget(max_request_seconds=45.):
     value=getattr(_CALL_BUDGET,'value',None)
     if value:
         if value[1]:value[1]()
-        left=value[0]-time.monotonic()
+        left=round(value[0]-time.monotonic(),3)  # bỏ sai số dấu phẩy động (180.00000000000003 > ngân sách 180)
         if left<=0:raise LLMError('AI phản hồi quá lâu; đã giữ phần phân tích hoàn tất để thử lại. Không tiếp tục xoay key vô hạn.')
         return max(.1,min(float(max_request_seconds),left))
     return None

@@ -1,5 +1,6 @@
-## 2.51.0 — Muse chọn đoạn, dây chuyền tự động, máy bớt đơ
+## 2.51.1 — Muse chọn đoạn, dây chuyền tự động, máy bớt đơ
 
+- Sửa lỗi bộ kiểm thử phát hành (ngân sách thời gian gọi AI lệch sai số dấu phẩy động) khiến bản 2.51.0 không đóng gói được.
 - Chọn đoạn bằng Muse (tự bật khi máy có MuseAI-API và ít nhất 1 tài khoản đã đăng nhập; máy không cài thì vẫn chạy Groq/Gemini như cũ). Muse hỏng thì tự chuyển Gemini rồi Groq. Video ngắn dưới 10 phút không còn bị Muse im lặng.
 - Muse xem thêm ảnh tổng hợp khung hình (5 giây/khung) nên bắt được cảnh ngắn; quản lý nhiều tài khoản Muse trong Cài đặt AI.
 - Groq chết thì tự chuyển Gemini, giữ đúng yêu cầu cắt ghép; bộ điều tiết Groq không còn chết vì "database is locked".
