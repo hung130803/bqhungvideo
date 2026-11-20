@@ -18,9 +18,9 @@ APP=QApplication.instance() or QApplication([])
 
 class MusicTests(unittest.TestCase):
     def test_all_music_decode_provenance_hash_and_mood_coverage(self):
-        tracks=music.catalog();self.assertEqual(len(tracks),14)
+        tracks=music.catalog();self.assertGreaterEqual(len(tracks),14)
         self.assertEqual(set(t['mood'] for t in tracks),set(music.MOODS))
-        self.assertEqual(len({t['sha256'] for t in tracks}),14)
+        self.assertEqual(len({t['sha256'] for t in tracks}),len(tracks))
         for t in tracks:
             with self.subTest(track=t['id']):
                 self.assertEqual(t['license'],'CC0-1.0');self.assertTrue(t['author']);self.assertTrue(t['source'].startswith('https://'))

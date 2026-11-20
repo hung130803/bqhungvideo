@@ -111,7 +111,7 @@ class StoryQuality(unittest.TestCase):
     def test_editing_review_invalidates_old_export_without_deleting_file(self):
         from app.core.pipeline_safety import parts_problem
         cid,meta=self.review_fixture();approved=q.approve_script(cid,q.digest(meta),[p['text'] for p in meta['parts']])
-        output=AREA/'previous.mp4';output.write_bytes(b'previous file')
+        output=AREA/'previous.mp4';subprocess.run([settings.FFMPEG_PATH,'-y','-v','error','-f','lavfi','-i','color=size=64x64:rate=5:duration=1','-c:v','libx264','-pix_fmt','yuv420p',str(output)],check=True,timeout=30)
         approved['exported_approval']=q.approval_signature(approved)
         db.execute("UPDATE clips SET status='exported',export_path=?,signals=? WHERE id=?",(str(output),db.dumps({'recap':approved,'segments':approved['windows']}),cid))
         self.assertEqual(parts_problem(self.vid),'')

@@ -1,3 +1,13 @@
+## 2.51.0 — Muse chọn đoạn, dây chuyền tự động, máy bớt đơ
+
+- Chọn đoạn bằng Muse (tự bật khi máy có MuseAI-API và ít nhất 1 tài khoản đã đăng nhập; máy không cài thì vẫn chạy Groq/Gemini như cũ). Muse hỏng thì tự chuyển Gemini rồi Groq. Video ngắn dưới 10 phút không còn bị Muse im lặng.
+- Muse xem thêm ảnh tổng hợp khung hình (5 giây/khung) nên bắt được cảnh ngắn; quản lý nhiều tài khoản Muse trong Cài đặt AI.
+- Groq chết thì tự chuyển Gemini, giữ đúng yêu cầu cắt ghép; bộ điều tiết Groq không còn chết vì "database is locked".
+- Máy bớt đơ: khâu xuất tự hạ ưu tiên khi đang dùng máy, nhường nhân cho người dùng, bản nhẹ Muse giải mã bằng GPU và giới hạn số bản dựng cùng lúc; "Mở lại app" không còn ghim app mới vào 8 nhân phụ.
+- Tắt mặc định khâu trọng tài chấm mù (đo 5 video: Part giống hệt, bớt ~23% token/video).
+- Hiệu ứng mở đầu không còn làm giật hộp tiêu đề / nhãn Part; bot Telegram hết treo /chay.
+- Dây chuyền tự động (đợt 1, mặc định TẮT): nút + lệnh bot + trạng thái sống.
+
 ## 2.50.26 — Giọng kể Gemini và bố cục dựng chuyện
 
 - Gemini nhận cách nhấn từng cảnh; nhịp nhanh/chậm được áp dụng bằng audio giữ cao độ (nhanh +12%, chậm -5%) vì chỉ dẫn tốc độ AI không ổn định; bỏ chỉ dẫn ngắt nghỉ kịch tính dùng chung. Nghe thử dùng cùng nhịp/cảm xúc đã chọn. Không kéo chậm lời để lấp cảnh.

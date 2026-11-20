@@ -33,6 +33,15 @@ from PyQt6.QtCore import QTimer
 app = QApplication([])
 
 
+# Part phải MỞ ĐƯỢC THẬT (parts_problem dò bằng ffprobe từ 01/11/2026) nên
+# fixture dùng một mp4 thật nhỏ, không dùng byte giả.
+def _mp4_that(path, n):
+    subprocess.run([str(ROOT/'bin/ffmpeg.exe'),'-y','-v','error','-f','lavfi','-i',
+                    f'color=c=0x{n:02x}2030:size=64x64:rate=5:duration=1','-c:v','libx264',
+                    '-pix_fmt','yuv420p',str(path)],check=True,timeout=30,
+                   creationflags=subprocess.CREATE_NO_WINDOW)
+
+
 class PipelineAudit(unittest.TestCase):
     def setUp(self):
         self.folder = AREA/hashlib.sha1(self._testMethodName.encode()).hexdigest()[:8]
@@ -49,7 +58,7 @@ class PipelineAudit(unittest.TestCase):
         self.clips, self.parts, self.jobs = [], [], []
         for i in range(2):
             part = self.folder/f'Part {i+1}.mp4'
-            part.write_bytes(b'nonempty part '+bytes([i]))
+            _mp4_that(part, i)
             cid = db.insert('INSERT INTO clips(video_id,start_sec,end_sec,title,status,export_path,signals) VALUES(?,?,?,?,?,?,?)',
                             (self.vid, i*2, i*2+2, f'clip {i}', 'exported', str(part), db.dumps({'llm_used':True})))
             jid = db.insert('INSERT INTO jobs(type,project_id,video_id,status,payload) VALUES(?,?,?,?,?)',
